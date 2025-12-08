@@ -1,20 +1,22 @@
-import { StatusBar } from 'expo-status-bar';
-import { StyleSheet, Text, View } from 'react-native';
+import "./global.css";
+import { StatusBar } from "expo-status-bar";
+import { Provider } from "react-redux";
+import { store } from "./src/store";
+import AppNavigator from "./src/navigation/AppNavigator";
+import { GestureHandlerRootView } from "react-native-gesture-handler";
+// 1. Provider'ı import et
+import { BottomSheetModalProvider } from "@gorhom/bottom-sheet";
 
 export default function App() {
   return (
-    <View style={styles.container}>
-      <Text>Open up App.js to start working on your app!</Text>
-      <StatusBar style="auto" />
-    </View>
+    <GestureHandlerRootView style={{ flex: 1 }}>
+      <Provider store={store}>
+        {/* 2. Uygulamanı bu Provider ile sarmala */}
+        <BottomSheetModalProvider>
+          <AppNavigator />
+          <StatusBar style="light" />
+        </BottomSheetModalProvider>
+      </Provider>
+    </GestureHandlerRootView>
   );
 }
-
-const styles = StyleSheet.create({
-  container: {
-    flex: 1,
-    backgroundColor: '#fff',
-    alignItems: 'center',
-    justifyContent: 'center',
-  },
-});

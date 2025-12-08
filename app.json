@@ -13,17 +13,28 @@
       "backgroundColor": "#ffffff"
     },
     "ios": {
-      "supportsTablet": true
+      "supportsTablet": true,
+      "bundleIdentifier": "com.uygarcapar.unitinder",
+      "infoPlist": {
+        "ITSAppUsesNonExemptEncryption": false
+      }
     },
     "android": {
       "adaptiveIcon": {
         "foregroundImage": "./assets/adaptive-icon.png",
         "backgroundColor": "#ffffff"
       },
+      "package": "com.uygarcapar.unitinder",
       "edgeToEdgeEnabled": true
     },
     "web": {
       "favicon": "./assets/favicon.png"
-    }
+    },
+    "extra": {
+      "eas": {
+        "projectId": "6ba3a4c5-832e-4996-8c40-bf0a66b678ec"
+      }
+    },
+    "owner": "uygarcapar"
   }
 }
