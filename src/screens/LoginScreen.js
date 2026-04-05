@@ -4,13 +4,15 @@ import {
   Text,
   TextInput,
   TouchableOpacity,
-  KeyboardAvoidingView,
-  Platform,
-  ScrollView,
   ActivityIndicator,
+  TouchableWithoutFeedback,
+  Keyboard,
 } from "react-native";
 import { useDispatch, useSelector } from "react-redux";
-import { login, clearError } from "../store/slices/authSlice";
+import { login, fetchUserData } from "../store/slices/authSlice";
+import { Eye, EyeOff } from "lucide-react-native";
+import { LinearGradient } from "expo-linear-gradient";
+import { KeyboardStickyView } from "react-native-keyboard-controller";
 
 export default function LoginScreen({ navigation }) {
   const [email, setEmail] = useState("");
@@ -26,132 +28,158 @@ export default function LoginScreen({ navigation }) {
       return;
     }
 
-    dispatch(login({ email, password }));
+    try {
+      const result = await dispatch(login({ email, password })).unwrap();
+
+      // Fetch updated user data after successful login
+      const userId = result.user?.userId || result.user?.id;
+      const token = result.token;
+
+      if (userId && token) {
+        dispatch(fetchUserData({ userId, token }));
+      }
+    } catch (error) {
+      console.log("Login error:", error);
+    }
   };
 
   return (
-    <KeyboardAvoidingView
-      behavior={Platform.OS === "ios" ? "padding" : "height"}
-      className="flex-1"
-    >
-      <ScrollView
-        contentContainerStyle={{ flexGrow: 1 }}
-        keyboardShouldPersistTaps="handled"
-      >
-        <View className="flex-1 justify-center px-2 py-12 bg-white">
-          {/* Logo/Title Section */}
-          <View className="items-center mb-12">
-            <Text className="text-5xl font-bold text-black mb-2">
-              Uni Tinder
-            </Text>
-          </View>
+    <View className="flex-1 bg-[#121212]">
+      {/* Header */}
+      <View className="bg-[#121212] pt-16 pb-6 px-6">
+        <TouchableOpacity
+          activeOpacity={1}
+          onPress={() => navigation.goBack()}
+          className="flex-row items-center"
+        >
+          <Text className="text-4xl mr-2 text-white">←</Text>
+        </TouchableOpacity>
+      </View>
 
-          {/* Login Form */}
-          <View className="bg-white rounded-3xl p-8">
-            <Text className="text-2xl font-bold text-gray-800 mb-6">
-              Giriş Yap
-            </Text>
+      <TouchableWithoutFeedback onPress={Keyboard.dismiss}>
+        <View className="flex-1 px-6 py-6 pt-0">
+          <View className="flex flex-col gap-2">
+            <Text className="text-4xl font-bold text-white">Giriş Yap.</Text>
 
             {/* Error Message */}
-            {error && (
-              <View className="bg-red-100 border border-red-400 rounded-2xl p-4 mb-4">
-                <Text className="text-red-700 text-sm">{error}</Text>
+            {error ? (
+              <View className="mt-2">
+                <Text className="text-[18px] font-normal text-red-500 mb-6">
+                  {error}.
+                </Text>
               </View>
+            ) : (
+              <Text className="text-[18px] font-normal text-gray-400 mb-6 mt-2">
+                Giriş yapmak için E-Mail ve şifreni kullan.
+              </Text>
             )}
+          </View>
 
-            {/* Email Input */}
-            <View className="mb-4">
-              <Text className="text-gray-700 font-semibold mb-2">Email</Text>
+          {/* Email Input */}
+          <View className="mb-4">
+            <Text className="text-white text-lg font-semibold mb-2">
+              E-Mail
+            </Text>
+            <TextInput
+              style={{
+                borderRadius: 999,
+                borderCurve: "continuous",
+                overflow: "hidden",
+              }}
+              className={`border-[0.5px] px-4 py-5 text-[18px] text-white ${
+                error ? "border-red-500" : "border-white/10 "
+              }`}
+              placeholder="ornek@universite.edu.tr"
+              placeholderTextColor="#9CA3AF"
+              value={email}
+              onChangeText={setEmail}
+              keyboardType="email-address"
+              autoCapitalize="none"
+              editable={!loading}
+            />
+          </View>
+
+          {/* Password Input */}
+          <View className="mb-6">
+            <Text className="text-white text-lg font-semibold mb-2">Şifre</Text>
+            <View
+              style={{
+                borderRadius: 999,
+                borderCurve: "continuous",
+                overflow: "hidden",
+              }}
+              className={`border-[0.5px] px-4 py-[14.5px] flex-row items-center ${
+                error ? "border-red-500" : "border-white/10"
+              }`}
+            >
               <TextInput
-                className="bg-gray-100 rounded-2xl px-4 py-4 text-gray-800"
-                placeholder="ornek@universite.edu.tr"
+                className="flex-1 text-[18px] text-white"
+                placeholder="••••••••"
                 placeholderTextColor="#9CA3AF"
-                value={email}
-                onChangeText={setEmail}
-                keyboardType="email-address"
-                autoCapitalize="none"
+                value={password}
+                onChangeText={setPassword}
+                secureTextEntry={!showPassword}
                 editable={!loading}
               />
+              <TouchableOpacity
+                activeOpacity={0.7}
+                onPress={() => setShowPassword(!showPassword)}
+                className=""
+              >
+                <View pointerEvents="none">
+                  {showPassword ? (
+                    <Eye size={24} strokeWidth={1.5} color="#D1D5DB" />
+                  ) : (
+                    <EyeOff size={24} strokeWidth={1.5} color="#D1D5DB" />
+                  )}
+                </View>
+              </TouchableOpacity>
             </View>
+          </View>
 
-            {/* Password Input */}
-            <View className="mb-6">
-              <Text className="text-gray-700 font-semibold mb-2">Şifre</Text>
-              <View className="relative">
-                <TextInput
-                  className="bg-gray-100 rounded-2xl px-4 py-4 text-gray-800 pr-12"
-                  placeholder="••••••••"
-                  placeholderTextColor="#9CA3AF"
-                  value={password}
-                  onChangeText={setPassword}
-                  secureTextEntry={!showPassword}
-                  editable={!loading}
-                />
-                <TouchableOpacity
-                  onPress={() => setShowPassword(!showPassword)}
-                  className="absolute right-4 top-4"
-                >
-                  <Text className="text-2xl">{showPassword ? "👁️" : "🙈"}</Text>
-                </TouchableOpacity>
-              </View>
-            </View>
-
-            {/* Forgot Password */}
-            <TouchableOpacity className="mb-6">
-              <Text className="text-purple-600 font-semibold text-right">
-                Şifremi Unuttum
+          {/* Forgot Password */}
+          <TouchableOpacity activeOpacity={1} className="mb-4">
+            <Text className="font-normal text-gray-400 text-[15px]">
+              Şifreni mi unutttun?{" "}
+              <Text className="font-semibold underline text-white">
+                Buradan sıfırla
               </Text>
-            </TouchableOpacity>
+            </Text>
+          </TouchableOpacity>
+        </View>
+      </TouchableWithoutFeedback>
 
-            {/* Login Button */}
-            <TouchableOpacity
-              onPress={handleLogin}
-              disabled={loading}
-              className={`${
-                loading ? "bg-purple-400" : "bg-purple-600"
-              } rounded-2xl py-4 items-center shadow-lg`}
+      {/* Sticky Button with KeyboardStickyView */}
+      <KeyboardStickyView offset={{ closed: 0, opened: 0 }}>
+        <View className="px-8 pb-8 pt-4 bg-[#121212]">
+          <TouchableOpacity
+            activeOpacity={1}
+            onPress={handleLogin}
+            disabled={loading}
+            className="rounded-full overflow-hidden"
+            style={{
+              borderRadius: 999,
+              borderCurve: "continuous",
+              overflow: "hidden",
+            }}
+          >
+            <LinearGradient
+              colors={["#fc5a26", "#fc4526"]}
+              start={{ x: 0, y: 0 }}
+              end={{ x: 1, y: 0 }}
+              className="py-3.5"
             >
               {loading ? (
-                <ActivityIndicator color="#fff" />
+                <ActivityIndicator className="py-[20px]" color="#fff" />
               ) : (
-                <Text className="text-white font-bold text-lg">Giriş Yap</Text>
+                <Text className="text-white py-[20px] font-bold text-[15px] text-center">
+                  Giriş Yap
+                </Text>
               )}
-            </TouchableOpacity>
-
-            {/* Divider */}
-            <View className="flex-row items-center my-6">
-              <View className="flex-1 h-px bg-gray-300" />
-              <Text className="px-4 text-gray-500">veya</Text>
-              <View className="flex-1 h-px bg-gray-300" />
-            </View>
-
-            {/* Social Login Buttons */}
-            <View className="space-y-3">
-              <TouchableOpacity className="bg-blue-600 rounded-2xl py-4 items-center flex-row justify-center">
-                <Text className="text-2xl mr-2">📘</Text>
-                <Text className="text-white font-semibold">
-                  Facebook ile Devam Et
-                </Text>
-              </TouchableOpacity>
-
-              <TouchableOpacity className="bg-white border-2 border-gray-300 rounded-2xl py-4 items-center flex-row justify-center">
-                <Text className="text-2xl mr-2">🔍</Text>
-                <Text className="text-gray-700 font-semibold">
-                  Google ile Devam Et
-                </Text>
-              </TouchableOpacity>
-            </View>
-          </View>
-
-          {/* Sign Up Link */}
-          <View className="flex-row justify-center mt-8">
-            <Text className="text-black">Hesabın yok mu? </Text>
-            <TouchableOpacity onPress={() => navigation.navigate("Register")}>
-              <Text className="text-black font-bold underline">Kayıt Ol</Text>
-            </TouchableOpacity>
-          </View>
+            </LinearGradient>
+          </TouchableOpacity>
         </View>
-      </ScrollView>
-    </KeyboardAvoidingView>
+      </KeyboardStickyView>
+    </View>
   );
 }

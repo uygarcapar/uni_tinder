@@ -8,18 +8,20 @@ import {
   KeyboardAvoidingView,
   Platform,
 } from 'react-native';
-import { useDispatch } from 'react-redux';
+import { useDispatch, useSelector } from 'react-redux';
 import { authService } from '../services/authService';
-import { setUser, clearVerification } from '../store/slices/authSlice';
+import { setUser, clearVerification, logout } from '../store/slices/authSlice';
 
 export default function EmailVerificationScreen({ route, navigation }) {
-  const { email } = route.params;
+  const { user, isAuthenticated } = useSelector((state) => state.auth);
+  const email = route?.params?.email || user?.email;
   const [code, setCode] = useState(['', '', '', '', '', '']);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState('');
   const [resendLoading, setResendLoading] = useState(false);
   const [resendSuccess, setResendSuccess] = useState(false);
   const [countdown, setCountdown] = useState(0);
+  const [isLoggingOut, setIsLoggingOut] = useState(false);
 
   const inputRefs = useRef([]);
   const dispatch = useDispatch();
@@ -73,17 +75,25 @@ export default function EmailVerificationScreen({ route, navigation }) {
       const response = await authService.verifyEmailCode(email, finalCode);
 
       if (response.isSuccess) {
-        // Update user verification status and authenticate
+        // Update user state with verified email and mark as authenticated
+        // This will trigger AppNavigator to switch from AuthNavigator to MainNavigator
+        // which will then route to CompleteProfileStep1 based on isProfileCreated: false
         dispatch(setUser({
-          ...response.user,
           isVerified: true,
+          isMailVerified: true
         }));
         dispatch(clearVerification());
-        // AppNavigator will automatically switch to HomeScreen when isAuthenticated becomes true
+
+        // No need to navigate manually - AppNavigator will handle routing based on user state
+        // The user will automatically be routed to CompleteProfileStep1 because:
+        // 1. isAuthenticated becomes true (from register)
+        // 2. isMailVerified is now true
+        // 3. isProfileCreated is false
       } else {
         setError(response.message || 'Doğrulama başarısız');
       }
     } catch (err) {
+      console.error('❌ Verification error:', err);
       setError(err.response?.data?.message || 'Kod doğrulanamadı');
     } finally {
       setLoading(false);
@@ -108,9 +118,34 @@ export default function EmailVerificationScreen({ route, navigation }) {
         setError(response.message || 'Kod gönderilemedi');
       }
     } catch (err) {
+      console.error('❌ Resend error:', err.response?.data?.message || err.message);
       setError(err.response?.data?.message || 'Kod gönderilemedi');
     } finally {
       setResendLoading(false);
+    }
+  };
+
+  const handleGoBack = () => {
+    // Prevent multiple clicks while logging out
+    if (isLoggingOut) return;
+
+    // Check if user is authenticated (logged in) or not (just registered)
+    // After login: isAuthenticated = true -> logout and return to login
+    // After registration: isAuthenticated = false -> go back to RegisterStep5
+    console.log('📧 EmailVerification: isAuthenticated =', isAuthenticated);
+
+    if (isAuthenticated) {
+      // User came from login flow - logout and return to login screen
+      console.log('📧 EmailVerification: Going back from login flow - logging out');
+      setIsLoggingOut(true);
+      dispatch(logout());
+      // AppNavigator will automatically switch to AuthNavigator after logout
+    } else {
+      // User came from registration flow - go back to RegisterStep5
+      console.log('📧 EmailVerification: Going back from registration flow');
+      dispatch(clearVerification());
+      // Use goBack instead of navigate to return to the previous RegisterStep5 in the stack
+      navigation.goBack();
     }
   };
 
@@ -119,6 +154,20 @@ export default function EmailVerificationScreen({ route, navigation }) {
       behavior={Platform.OS === 'ios' ? 'padding' : 'height'}
       className="flex-1 bg-gradient-to-br from-purple-600 to-pink-500"
     >
+      {/* Back Button */}
+      <View className="pt-16 px-6">
+        <TouchableOpacity
+          activeOpacity={0.7}
+          onPress={handleGoBack}
+          disabled={isLoggingOut}
+          className="flex-row items-center"
+        >
+          <Text className="text-4xl text-white" style={{ opacity: isLoggingOut ? 0.5 : 1 }}>
+            ←
+          </Text>
+        </TouchableOpacity>
+      </View>
+
       <View className="flex-1 justify-center px-6 py-12">
         {/* Header */}
         <View className="items-center mb-12">

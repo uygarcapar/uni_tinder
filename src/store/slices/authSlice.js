@@ -1,5 +1,22 @@
 import { createSlice, createAsyncThunk } from '@reduxjs/toolkit';
 import { authService } from '../../services/authService';
+import { clearProfile } from './profileSlice';
+
+// Async thunk to fetch user data
+export const fetchUserData = createAsyncThunk(
+  'auth/fetchUserData',
+  async ({ userId, token }, { rejectWithValue }) => {
+    try {
+      console.log('🔍 Fetching user data from /api/user/GetUser/' + userId);
+      const response = await authService.getUserById(userId, token);
+      console.log('📦 GetUser Response:', JSON.stringify(response, null, 2));
+      return response;
+    } catch (error) {
+      console.log('❌ GetUser Error:', error.message);
+      return rejectWithValue(error.message || 'Failed to fetch user data');
+    }
+  }
+);
 
 // Async thunks
 export const login = createAsyncThunk(
@@ -21,12 +38,15 @@ export const register = createAsyncThunk(
       const response = await authService.register(userData);
       return response;
     } catch (error) {
+      console.error('❌ Registration error:', error.response?.data?.message || error.message);
       return rejectWithValue(error.response?.data?.message || 'Registration failed');
     }
   }
 );
 
-export const logout = createAsyncThunk('auth/logout', async () => {
+export const logout = createAsyncThunk('auth/logout', async (_, thunkAPI) => {
+  // Clear profile data when logging out
+  thunkAPI.dispatch(clearProfile());
   await authService.logout();
 });
 
@@ -38,6 +58,16 @@ const initialState = {
   pendingVerificationEmail: null,
   loading: false,
   error: null,
+  registrationForm: {
+    firstName: '',
+    lastName: '',
+    gender: '',
+    dateOfBirth: new Date(2000, 0, 1).toISOString(),
+    password: '',
+    confirmPassword: '',
+    phoneNumber: '',
+    email: '',
+  },
 };
 
 const authSlice = createSlice({
@@ -48,8 +78,16 @@ const authSlice = createSlice({
       state.error = null;
     },
     setUser: (state, action) => {
-      state.user = action.payload;
+      // Merge user data instead of replacing
+      state.user = { ...state.user, ...action.payload };
       state.isAuthenticated = true;
+    },
+    setUserAndToken: (state, action) => {
+      state.user = action.payload.user;
+      state.token = action.payload.token;
+      state.isAuthenticated = true;
+      console.log('🔑 Redux: User and token set');
+      console.log('🔑 Token exists:', !!state.token);
     },
     setNeedsVerification: (state, action) => {
       state.needsVerification = true;
@@ -58,6 +96,27 @@ const authSlice = createSlice({
     clearVerification: (state) => {
       state.needsVerification = false;
       state.pendingVerificationEmail = null;
+    },
+    updateRegistrationField: (state, action) => {
+      const { field, value } = action.payload;
+      state.registrationForm[field] = value;
+    },
+    clearRegistrationForm: (state) => {
+      state.registrationForm = {
+        firstName: '',
+        lastName: '',
+        gender: '',
+        dateOfBirth: new Date(2000, 0, 1).toISOString(),
+        password: '',
+        confirmPassword: '',
+        phoneNumber: '',
+        email: '',
+      };
+    },
+    setProfileCompleted: (state) => {
+      if (state.user) {
+        state.user.isProfileCreated = true;
+      }
     },
   },
   extraReducers: (builder) => {
@@ -73,6 +132,9 @@ const authSlice = createSlice({
         state.user = action.payload.user;
         state.token = action.payload.token;
         state.error = null;
+        console.log('✅ Login successful - User data:', JSON.stringify(action.payload.user, null, 2));
+        console.log('✅ isMailVerified:', action.payload.user?.isMailVerified);
+        console.log('✅ isProfileCreated:', action.payload.user?.isProfileCreated);
       })
       .addCase(login.rejected, (state, action) => {
         state.loading = false;
@@ -88,9 +150,10 @@ const authSlice = createSlice({
         state.isAuthenticated = false; // Don't authenticate until email is verified
         state.needsVerification = true;
         state.pendingVerificationEmail = action.payload.user?.email;
-        state.user = null; // Don't set user until verified
-        state.token = null; // Don't set token until verified
+        state.user = action.payload.user; // Save user data
+        state.token = action.payload.token; // Save token for later use
         state.error = null;
+        console.log('🔑 Register: Token saved to Redux:', !!state.token);
       })
       .addCase(register.rejected, (state, action) => {
         state.loading = false;
@@ -102,10 +165,29 @@ const authSlice = createSlice({
         state.token = null;
         state.isAuthenticated = false;
         state.error = null;
+      })
+      // Fetch User Data
+      .addCase(fetchUserData.fulfilled, (state, action) => {
+        if (action.payload.isSuccess && action.payload.result) {
+          console.log('✅ fetchUserData successful - Updated user data');
+          console.log('✅ Updated isProfileCreated:', action.payload.result.isProfileCreated);
+          state.user = action.payload.result;
+        }
+      })
+      .addCase(fetchUserData.rejected, (state, action) => {
+        console.log('❌ fetchUserData failed:', action.payload);
       });
   },
 });
 
-export const { clearError, setUser, setNeedsVerification, clearVerification } =
-  authSlice.actions;
+export const {
+  clearError,
+  setUser,
+  setUserAndToken,
+  setNeedsVerification,
+  clearVerification,
+  updateRegistrationField,
+  clearRegistrationForm,
+  setProfileCompleted,
+} = authSlice.actions;
 export default authSlice.reducer;

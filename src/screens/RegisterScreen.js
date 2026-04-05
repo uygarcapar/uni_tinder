@@ -12,8 +12,8 @@ import {
   TouchableOpacity,
   KeyboardAvoidingView,
   Platform,
-  ScrollView,
   ActivityIndicator,
+  Keyboard,
 } from "react-native";
 import { useDispatch, useSelector } from "react-redux";
 import { register } from "../store/slices/authSlice";
@@ -51,6 +51,9 @@ export default function RegisterScreen({ navigation }) {
   const bottomSheetModalRef = useRef(null);
   const [tempGender, setTempGender] = useState("");
 
+  // Input ref'i - picker kapanınca odaklanmak için
+  const firstNameInputRef = useRef(null);
+
   // Modal'ın ne kadar yükseleceği (örn: %40)
   const snapPoints = useMemo(() => ["40%"], []);
 
@@ -74,19 +77,28 @@ export default function RegisterScreen({ navigation }) {
 
   // Modalı Aç
   const handlePresentModalPress = useCallback(() => {
-    setTempGender(formData.gender || "");
+    Keyboard.dismiss(); // Klavyeyi kapat
+    setTempGender(formData.gender || "Male"); // Mevcut değeri tempGender'a kopyala
     bottomSheetModalRef.current?.present();
   }, [formData.gender]);
 
   // Modalı Kapat (Kaydet)
   const confirmGenderSelection = () => {
-    updateField("gender", tempGender);
+    updateField("gender", tempGender); // Sadece Bitti'ye basınca güncelle
     bottomSheetModalRef.current?.dismiss();
+    // Modal kapandıktan sonra input'a focus yap
+    setTimeout(() => {
+      firstNameInputRef.current?.focus();
+    }, 300);
   };
 
   // Modalı Kapat (İptal)
   const cancelGenderSelection = () => {
     bottomSheetModalRef.current?.dismiss();
+    // Modal kapandıktan sonra input'a focus yap
+    setTimeout(() => {
+      firstNameInputRef.current?.focus();
+    }, 300);
   };
 
   // --- CUSTOM BACKDROP (BLUR EFEKTİ BURADA) ---
@@ -98,6 +110,13 @@ export default function RegisterScreen({ navigation }) {
         appearsOnIndex={0}
         opacity={1} // Görünür kalsın (ama rengi şeffaf olacak)
         pressBehavior="close" // Tıklayınca kapansın
+        onPress={() => {
+          // Backdrop'a basınca modal kapansın ve input'a focus yap
+          bottomSheetModalRef.current?.dismiss();
+          setTimeout(() => {
+            firstNameInputRef.current?.focus();
+          }, 300);
+        }}
         // İŞTE ÇÖZÜM: Kendi siyah rengini transparan yapıyoruz 👇
         style={[props.style, { backgroundColor: "transparent" }]}
       >
@@ -181,7 +200,9 @@ export default function RegisterScreen({ navigation }) {
 
   const handleNext = () => {
     if (validateStep()) {
-      if (currentStep < 5) setCurrentStep(currentStep + 1);
+      if (currentStep < 5) {
+        setCurrentStep(currentStep + 1);
+      }
     }
   };
 
@@ -224,30 +245,34 @@ export default function RegisterScreen({ navigation }) {
               </Text>
             </View>
 
-            <View className="mb-4">
-              <Text className="text-gray-900 text-lg font-semibold mb-2">
-                Ad *
-              </Text>
-              <TextInput
-                className="border-2 rounded-2xl px-4 py-4 text-[18px] text-gray-900"
-                placeholder="Adın"
-                placeholderTextColor="#9CA3AF"
-                value={formData.firstName}
-                onChangeText={(value) => updateField("firstName", value)}
-              />
-            </View>
+            <View className="flex flex-row w-full gap-2 mb-4">
+              <View className="flex-1">
+                <Text className="text-gray-900 text-lg font-semibold mb-2">
+                  Ad *
+                </Text>
+                <TextInput
+                  ref={firstNameInputRef}
+                  className="border border-gray-300 rounded-2xl px-4 py-3.5 text-[18px] text-gray-900"
+                  placeholder="Adın"
+                  placeholderTextColor="#9CA3AF"
+                  value={formData.firstName}
+                  onChangeText={(value) => updateField("firstName", value)}
+                  autoFocus={true}
+                />
+              </View>
 
-            <View className="mb-4">
-              <Text className="text-gray-900 text-lg font-semibold mb-2">
-                Soyad *
-              </Text>
-              <TextInput
-                className="border-2 rounded-2xl px-4 py-4 text-[18px] text-gray-900"
-                placeholder="Soyadın"
-                placeholderTextColor="#9CA3AF"
-                value={formData.lastName}
-                onChangeText={(value) => updateField("lastName", value)}
-              />
+              <View className="flex-1">
+                <Text className="text-gray-900 text-lg font-semibold mb-2">
+                  Soyad *
+                </Text>
+                <TextInput
+                  className="border border-gray-300  rounded-2xl px-4 py-3.5 text-[18px] text-gray-900"
+                  placeholder="Soyadın"
+                  placeholderTextColor="#9CA3AF"
+                  value={formData.lastName}
+                  onChangeText={(value) => updateField("lastName", value)}
+                />
+              </View>
             </View>
 
             {/* Cinsiyet Seçim Butonu */}
@@ -258,9 +283,13 @@ export default function RegisterScreen({ navigation }) {
               <TouchableOpacity
                 activeOpacity={1}
                 onPress={handlePresentModalPress} // Burası ref ile açıyor
-                className="border-2 border-gray-900 rounded-2xl px-4 py-4 flex-row items-center justify-between"
+                className="border border-gray-300  rounded-2xl px-4 py-3.5 flex-row items-center justify-between"
               >
-                <Text className="text-gray-900 text-base">
+                <Text
+                  className={`${
+                    formData.gender ? "text-gray-900" : "text-gray-500"
+                  } text-[18px]`}
+                >
                   {getGenderLabel()}
                 </Text>
                 <Text className="text-gray-400 text-xl">▼</Text>
@@ -268,7 +297,6 @@ export default function RegisterScreen({ navigation }) {
             </View>
           </View>
         );
-      // ... (Diğer case'ler 2, 3, 4, 5 aynı kalacak, sadece case 1 değişti)
       case 2:
         return (
           <View>
@@ -306,7 +334,6 @@ export default function RegisterScreen({ navigation }) {
           </View>
         );
       case 3:
-        // Case 3 (Password) kodların buraya gelecek (değişiklik yok)
         return (
           <View>
             <Text className="text-3xl font-bold text-gray-800 mb-2">
@@ -344,7 +371,6 @@ export default function RegisterScreen({ navigation }) {
           </View>
         );
       case 4:
-        // Case 4 (Phone) kodların buraya gelecek
         return (
           <View>
             <Text className="text-3xl font-bold text-gray-800 mb-2">
@@ -360,7 +386,6 @@ export default function RegisterScreen({ navigation }) {
           </View>
         );
       case 5:
-        // Case 5 (Email) kodların buraya gelecek
         return (
           <View>
             <Text className="text-3xl font-bold text-gray-800 mb-2">
@@ -397,50 +422,37 @@ export default function RegisterScreen({ navigation }) {
         </TouchableOpacity>
       </View>
 
-      <ScrollView
-        contentContainerStyle={{ flexGrow: 1 }}
-        keyboardShouldPersistTaps="handled"
-        showsVerticalScrollIndicator={false}
-      >
-        <View className="flex-1 px-6 py-8 pt-0">
-          <View className="flex-1">{renderStep()}</View>
+      <View className="flex-1 px-6 py-6 pt-0">
+        <View className="flex-1">{renderStep()}</View>
 
-          {/* Buttons */}
-          <View className="mt-8">
-            {currentStep === 5 ? (
-              <TouchableOpacity
-                activeOpacity={1}
-                onPress={handleRegister}
-                disabled={loading}
-                className={`${
-                  loading ? "bg-purple-400" : "bg-purple-600"
-                } rounded-full py-4 items-center`}
-              >
-                {loading ? (
-                  <ActivityIndicator color="#fff" />
-                ) : (
-                  <Text className="text-white font-bold text-lg">Kayıt Ol</Text>
-                )}
-              </TouchableOpacity>
-            ) : (
-              <TouchableOpacity
-                activeOpacity={1}
-                onPress={handleNext}
-                className="bg-purple-600 rounded-full py-4 items-center"
-              >
-                <Text className="text-white font-bold text-lg">Devam Et</Text>
-              </TouchableOpacity>
-            )}
-          </View>
-
-          <View className="flex-row justify-center mt-6 mb-8">
-            <Text className="text-gray-600">Zaten hesabın var mı? </Text>
-            <TouchableOpacity onPress={() => navigation.navigate("Login")}>
-              <Text className="text-purple-600 font-bold">Giriş Yap</Text>
+        {/* Buttons */}
+        <View className="mt-8">
+          {currentStep === 5 ? (
+            <TouchableOpacity
+              activeOpacity={1}
+              onPress={handleRegister}
+              disabled={loading}
+              className={`${
+                loading ? "bg-purple-400" : "bg-purple-600"
+              } rounded-full py-4 items-center`}
+            >
+              {loading ? (
+                <ActivityIndicator color="#fff" />
+              ) : (
+                <Text className="text-white font-bold text-lg">Kayıt Ol</Text>
+              )}
             </TouchableOpacity>
-          </View>
+          ) : (
+            <TouchableOpacity
+              activeOpacity={1}
+              onPress={handleNext}
+              className="bg-[#f57656] rounded-full py-3.5 items-center"
+            >
+              <Text className="text-white font-bold text-lg">Devam Et</Text>
+            </TouchableOpacity>
+          )}
         </View>
-      </ScrollView>
+      </View>
 
       {/* --- GORHOM BOTTOM SHEET MODAL --- */}
       <BottomSheetModal
@@ -457,13 +469,13 @@ export default function RegisterScreen({ navigation }) {
       >
         <BottomSheetView className="flex-1 bg-white px-4 pb-8">
           {/* Modal Header */}
-          <View className="flex-row justify-between items-center py-4 mb-2">
+          <View className="flex-row justify-between items-center py-4 px-4">
             <TouchableOpacity onPress={cancelGenderSelection}>
-              <Text className="text-gray-500 text-lg">İptal</Text>
+              <Text className="text-gray-500 text-xl">İptal</Text>
             </TouchableOpacity>
-            <Text className="text-lg font-bold text-gray-800">Cinsiyet</Text>
+
             <TouchableOpacity onPress={confirmGenderSelection}>
-              <Text className="text-purple-600 text-lg font-bold">Bitti</Text>
+              <Text className="text-black text-xl font-bold">Bitti</Text>
             </TouchableOpacity>
           </View>
 
@@ -473,7 +485,6 @@ export default function RegisterScreen({ navigation }) {
             onValueChange={(value) => setTempGender(value)}
             style={{ height: 200 }}
           >
-            <Picker.Item label="Seçiniz..." value="" color="#9CA3AF" />
             <Picker.Item label="Erkek" value="Male" />
             <Picker.Item label="Kadın" value="Female" />
             <Picker.Item label="Belirtmek İstemiyorum" value="PreferNotToSay" />

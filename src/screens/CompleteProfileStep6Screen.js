@@ -1,0 +1,374 @@
+import React, { useState, useRef, useEffect } from "react";
+import {
+  View,
+  Text,
+  TouchableOpacity,
+  ScrollView,
+  Animated,
+  ActivityIndicator,
+} from "react-native";
+import { useDispatch, useSelector } from "react-redux";
+import { updateMultipleFields } from "../store/slices/profileSlice";
+import { LinearGradient } from "expo-linear-gradient";
+import { API_BASE_URL, API_ENDPOINTS } from "../constants/api";
+import {
+  Music,
+  Dumbbell,
+  Film,
+  BookOpen,
+  Plane,
+  Utensils,
+  Camera,
+  Gamepad2,
+  Music2,
+  Palette,
+  Coffee,
+  Wine,
+  Code,
+  Dog,
+  Cat,
+  Trees,
+  Flower2,
+  Heart,
+  Drama,
+  Mic2,
+  Guitar,
+  Piano,
+  Mountain,
+  Waves,
+  BookOpenCheck,
+  Lightbulb,
+  Briefcase,
+  Users,
+  Trophy,
+  Footprints,
+  Fish,
+  Smartphone,
+  Bike,
+  HandMetal,
+  Sparkles,
+  PartyPopper,
+  Tent,
+  Sandwich,
+  Cake,
+  Sunrise,
+  Book,
+  Languages,
+  Puzzle,
+  Headphones,
+  Newspaper,
+  TrendingUp,
+  Globe,
+  Theater,
+  Soup,
+  ShoppingBag,
+  Orbit,
+} from "lucide-react-native";
+
+// Icon mapping for hobbies - maps exact backend names to icons
+const getHobbyIcon = (hobbyName) => {
+  const iconMap = {
+    // Fitness & Spor (IDs 0-10)
+    "Fitness & Spor": Dumbbell,
+    Yoga: Heart,
+    Koşu: Footprints,
+    Yüzme: Waves,
+    Bisiklet: Bike,
+    "Doğa Yürüyüşü": Trees,
+    "Kaya Tırmanışı": Mountain,
+    Boks: HandMetal,
+    "Dövüş Sanatları": Trophy,
+    Dans: Music2,
+    Pilates: Sparkles,
+
+    // Yemek & İçecek (IDs 11-17)
+    "Yemek Pişirme": Utensils,
+    Fırıncılık: Cake,
+    "Şarap Tadımı": Wine,
+    "Kahve Tutkusu": Coffee,
+    Gurme: Soup,
+    "Vegan Mutfak": Sandwich,
+    Miksologluk: Wine,
+
+    // Sanat & Yaratıcılık (IDs 18-25)
+    Fotoğrafçılık: Camera,
+    Resim: Palette,
+    Çizim: Palette,
+    Yazarlık: BookOpenCheck,
+    Şiir: Book,
+    "El Sanatları": Sparkles,
+    "Kendin Yap (DIY)": Flower2,
+    Moda: ShoppingBag,
+
+    // Müzik & Eğlence (IDs 26-32)
+    Müzik: Headphones,
+    Konserler: PartyPopper,
+    "Gitar Çalmak": Guitar,
+    "Piyano Çalmak": Piano,
+    "Şarkı Söylemek": Mic2,
+    "DJ'lik": Music,
+    Festivaller: PartyPopper,
+
+    // Doğa & Macera (IDs 33-40)
+    Seyahat: Plane,
+    Kamp: Tent,
+    "Balık Tutma": Fish,
+    Sörf: Waves,
+    Kayak: Mountain,
+    Snowboard: Mountain,
+    Bahçıvanlık: Flower2,
+    "Plaj Hayatı": Sunrise,
+
+    // Kültür & Öğrenme (IDs 41-48)
+    Okumak: BookOpen,
+    Müzeler: Theater,
+    "Sanat Galerileri": Palette,
+    Tiyatro: Drama,
+    Sinema: Film,
+    Belgesel: Film,
+    Öğrenme: Lightbulb,
+    Diller: Languages,
+
+    // Oyun & Teknoloji (IDs 49-55)
+    "Video Oyunları": Gamepad2,
+    "Masa Oyunları": Puzzle,
+    Satranç: Puzzle,
+    Yazılım: Code,
+    Oyun: Gamepad2,
+    VR: Smartphone,
+    "Podcast'ler": Headphones,
+
+    // Sosyal & Yaşam Tarzı (IDs 56-66)
+    Gönüllülük: Users,
+    "Evcil Hayvanlar": Dog,
+    Köpekler: Dog,
+    Kediler: Cat,
+    Meditasyon: Heart,
+    Astroloji: Orbit,
+    Alışveriş: ShoppingBag,
+    "Gece Hayatı": Music2,
+    Brunch: Coffee,
+    "Sosyal İçici": Wine,
+    Network: Briefcase,
+
+    // Entelektüel (IDs 67-72)
+    Siyaset: Newspaper,
+    Felsefe: BookOpen,
+    Bilim: Lightbulb,
+    Tarih: Book,
+    Yatırım: TrendingUp,
+    Girişimcilik: Briefcase,
+  };
+
+  return iconMap[hobbyName] || Heart; // Default icon
+};
+
+// Animated Hobby Item Component
+const HobbyItem = ({ hobby, isSelected, onPress }) => {
+  const scaleValue = useRef(new Animated.Value(1)).current;
+  const Icon = getHobbyIcon(hobby.name);
+
+  const handlePressIn = () => {
+    Animated.spring(scaleValue, {
+      toValue: 0.95,
+      useNativeDriver: true,
+      speed: 20,
+    }).start();
+  };
+
+  const handlePressOut = () => {
+    Animated.spring(scaleValue, {
+      toValue: 1,
+      useNativeDriver: true,
+      bounciness: 8,
+      speed: 20,
+    }).start();
+  };
+
+  return (
+    <Animated.View
+      style={{
+        flex: 1,
+        minWidth: "45%",
+        transform: [{ scale: scaleValue }],
+      }}
+    >
+      <TouchableOpacity
+        activeOpacity={1}
+        onPressIn={handlePressIn}
+        onPressOut={handlePressOut}
+        onPress={() => onPress(hobby.id)}
+        style={{
+          borderRadius: 50,
+          borderCurve: "continuous",
+          overflow: "hidden",
+        }}
+        className={` border-[0.5px] py-[45px] items-center justify-center ${
+          isSelected
+            ? "bg-[#3e3e3e] border-white/30"
+            : "bg-[#1E1E1E] border-white/10"
+        }`}
+      >
+        <View pointerEvents="none" className="items-center justify-center">
+          <Icon size={32} color="#FFFFFF" strokeWidth={2} />
+          <Text className="text-[14px] font-medium mt-3 text-white text-center px-2">
+            {hobby.name}
+          </Text>
+        </View>
+      </TouchableOpacity>
+    </Animated.View>
+  );
+};
+
+export default function CompleteProfileStep6Screen({ navigation }) {
+  const dispatch = useDispatch();
+  const profile = useSelector((state) => state.profile || {});
+
+  const [hobbies, setHobbies] = useState(profile.hobbies || []);
+  const [hobbyCategories, setHobbyCategories] = useState([]);
+  const [loadingHobbies, setLoadingHobbies] = useState(false);
+
+  // Fetch hobbies on mount
+  useEffect(() => {
+    fetchHobbies();
+  }, []);
+
+  const fetchHobbies = async () => {
+    try {
+      setLoadingHobbies(true);
+      const response = await fetch(
+        `${API_BASE_URL}${API_ENDPOINTS.GET_HOBBIES}`,
+      );
+      const data = await response.json();
+
+      if (data.isSuccess && data.result) {
+        setHobbyCategories(data.result);
+      } else {
+        alert("Hobiler yüklenirken bir hata oluştu");
+      }
+    } catch (error) {
+      console.error("Error fetching hobbies:", error);
+      alert("Hobiler yüklenirken bir hata oluştu");
+    } finally {
+      setLoadingHobbies(false);
+    }
+  };
+
+  const toggleHobby = (hobbyId) => {
+    setHobbies((prev) => {
+      if (prev.includes(hobbyId)) {
+        return prev.filter((h) => h !== hobbyId);
+      } else {
+        if (prev.length < 10) {
+          return [...prev, hobbyId];
+        }
+        return prev;
+      }
+    });
+  };
+
+  const handleNext = () => {
+    if (hobbies.length === 0) {
+      alert("Lütfen en az bir hobi seçin");
+      return;
+    }
+
+    dispatch(
+      updateMultipleFields({
+        hobbies,
+      }),
+    );
+    navigation.navigate("CompleteProfileStep7");
+  };
+
+  const handleBack = () => {
+    navigation.goBack();
+  };
+
+  if (loadingHobbies) {
+    return (
+      <View className="flex-1 bg-[#121212] items-center justify-center">
+        <ActivityIndicator size="small" color="#fff" />
+      </View>
+    );
+  }
+
+  return (
+    <View className="flex-1 bg-[#121212]">
+      {/* Header */}
+      <View className="bg-[#121212] pt-16 pb-6 px-6">
+        <View className="flex-row items-center justify-center relative">
+          <TouchableOpacity
+            activeOpacity={1}
+            onPress={handleBack}
+            className="absolute left-0"
+          >
+            <Text className="text-4xl text-white">←</Text>
+          </TouchableOpacity>
+          <Text className="text-white text-[26px] font-bold tracking-wider">
+            Hobiler {hobbies.length}/10
+          </Text>
+        </View>
+      </View>
+
+      <ScrollView
+        className="flex-1 px-6 py-6 pt-0"
+        keyboardShouldPersistTaps="handled"
+        showsVerticalScrollIndicator={false}
+      >
+        <View className="flex flex-col gap-2 mb-3">
+          <Text className="text-[18px] font-normal text-gray-400 mb-6">
+            İlgi alanlarını seç. Seninle ortak noktası olan kişilerle eşleşmeni
+            sağlar.
+          </Text>
+        </View>
+
+        {hobbyCategories.map((category, categoryIndex) => (
+          <View key={categoryIndex} className="mb-10">
+            <Text className="text-[13px] text-center font-bold text-gray-300 mb-10">
+              {category.category}
+            </Text>
+            <View className="flex-row flex-wrap gap-3">
+              {category.hobbies.map((hobby) => (
+                <HobbyItem
+                  key={hobby.id}
+                  hobby={hobby}
+                  isSelected={hobbies.includes(hobby.id)}
+                  onPress={toggleHobby}
+                />
+              ))}
+            </View>
+          </View>
+        ))}
+
+        {/* ScrollView sonu boşluğu */}
+        <View className="h-20" />
+      </ScrollView>
+
+      {/* Sticky Button with KeyboardStickyView */}
+      <View className="px-8 pb-8 pt-4 absolute bottom-0 left-0 right-0">
+        <TouchableOpacity
+          activeOpacity={1}
+          onPress={handleNext}
+          className="rounded-full overflow-hidden"
+          style={{
+            borderRadius: 999,
+            borderCurve: "continuous",
+            overflow: "hidden",
+          }}
+        >
+          <LinearGradient
+            colors={["#fc2426", "#fc0e26"]}
+            start={{ x: 0, y: 0 }}
+            end={{ x: 1, y: 0 }}
+            className="py-3.5"
+          >
+            <Text className="text-white py-[20px] font-bold text-[15px] text-center">
+              Devam Et
+            </Text>
+          </LinearGradient>
+        </TouchableOpacity>
+      </View>
+    </View>
+  );
+}

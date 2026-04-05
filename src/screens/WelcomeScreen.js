@@ -1,4 +1,4 @@
-import { View, Text, TouchableOpacity, Dimensions } from "react-native";
+import { View, Text, TouchableOpacity, Dimensions, Image } from "react-native";
 import { LinearGradient } from "expo-linear-gradient";
 import { StatusBar } from "expo-status-bar";
 
@@ -10,12 +10,12 @@ export default function WelcomeScreen({ navigation }) {
     <View className="flex-1 bg-white">
       <StatusBar style="light" />
 
-      {/* 1. style prop'u kullandık. 
+      {/* 1. style prop'u kullandık.
          2. absolute yaptık.
          3. width ve height'i elle verdik ki kaçarı olmasın.
       */}
       <LinearGradient
-        colors={["#f57656", "#f53f11"]}
+        colors={["#fc0335", "#FF4D4D", "#fc7126"]}
         start={{ x: 0.1, y: 0.2 }}
         end={{ x: 0.9, y: 0.8 }}
         style={{
@@ -33,9 +33,14 @@ export default function WelcomeScreen({ navigation }) {
       <View className="flex-1 justify-between px-8 py-16 z-10">
         {/* Üst Kısım */}
         <View className="flex-1 justify-center items-center">
-          <Text className="text-6xl font-extrabold text-white mb-4 text-center tracking-tighter">
-            Uni Tinder
-          </Text>
+          <Image
+            source={require("../../assets/lit_name_white.png")}
+            style={{
+              width: width * 0.7,
+              height: 100,
+            }}
+            resizeMode="contain"
+          />
         </View>
 
         {/* Alt Kısım - Butonlar */}
@@ -43,20 +48,30 @@ export default function WelcomeScreen({ navigation }) {
           <View className="flex flex-col gap-4">
             <TouchableOpacity
               activeOpacity={0.9}
-              onPress={() => navigation.navigate("Register")}
-              className="bg-white rounded-full py-4 items-center"
+              onPress={() => navigation.navigate("RegisterStep1")}
+              className="bg-white py-5 items-center"
+              style={{
+                borderRadius: 999,
+                borderCurve: "continuous",
+                overflow: "hidden",
+              }}
             >
-              <Text className="text-[#FD297B] font-bold text-lg">
+              <Text className="text-[#FD297B] font-bold text-[15px]">
                 Hesap Oluştur
               </Text>
             </TouchableOpacity>
 
             <TouchableOpacity
-              activeOpacity={0.8}
+              activeOpacity={0.9}
               onPress={() => navigation.navigate("Login")}
-              className="border-2 border-white rounded-full py-3.5 items-center"
+              className="border-[0.5px] border-white py-5 items-center"
+              style={{
+                borderRadius: 999,
+                borderCurve: "continuous",
+                overflow: "hidden",
+              }}
             >
-              <Text className="text-white font-bold text-lg">
+              <Text className="text-white font-bold text-[15px]">
                 Zaten Hesabım Var
               </Text>
             </TouchableOpacity>

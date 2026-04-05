@@ -1,5 +1,8 @@
 import api from './api';
 import { API_ENDPOINTS } from '../constants/api';
+import axios from 'axios';
+import { API_BASE_URL } from '../constants/api';
+import { getRefreshToken, clearAllTokens } from '../utils/tokenStorage';
 
 export const authService = {
   // Login
@@ -19,8 +22,43 @@ export const authService = {
 
   // Logout
   logout: async () => {
-    // Clear local storage or async storage
+    try {
+      const refreshToken = await getRefreshToken();
+      if (refreshToken) {
+        // Call revoke token endpoint (fire & forget)
+        await axios.post(`${API_BASE_URL}${API_ENDPOINTS.REVOKE_TOKEN}`, {
+          refreshToken,
+        }).catch(() => {});
+      }
+    } catch (error) {
+      console.error('Logout error:', error);
+    } finally {
+      // Always clear tokens locally
+      await clearAllTokens();
+    }
     return true;
+  },
+
+  // Refresh Token
+  refreshToken: async (refreshToken) => {
+    const response = await axios.post(
+      `${API_BASE_URL}${API_ENDPOINTS.REFRESH_TOKEN}`,
+      { refreshToken }
+    );
+    return response.data.result;
+  },
+
+  // Validate Token
+  validateToken: async (token) => {
+    const response = await axios.get(
+      `${API_BASE_URL}${API_ENDPOINTS.VALIDATE_TOKEN}`,
+      {
+        headers: {
+          Authorization: `Bearer ${token}`,
+        },
+      }
+    );
+    return response.data.result;
   },
 
   // Verify Email with Code
@@ -62,5 +100,15 @@ export const authService = {
       newPassword,
     });
     return response.result;
+  },
+
+  // Get User by ID
+  getUserById: async (userId, token) => {
+    const response = await api.get(`${API_ENDPOINTS.GET_USER}/${userId}`, {
+      headers: {
+        Authorization: `Bearer ${token}`,
+      },
+    });
+    return response;
   },
 };
