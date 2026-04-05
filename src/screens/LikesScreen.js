@@ -12,19 +12,18 @@ import {
   SafeAreaView,
   useSafeAreaInsets,
 } from "react-native-safe-area-context";
-import { useSelector } from "react-redux";
 import { LinearGradient } from "expo-linear-gradient";
 import MaskedView from "@react-native-masked-view/masked-view";
 import { BlurView } from "expo-blur";
 import { Flame, Heart, HeartCrack, Menu } from "lucide-react-native";
-import { API_BASE_URL, API_ENDPOINTS } from "../constants/api";
+import api from "../services/api";
+import { API_ENDPOINTS } from "../constants/api";
 
 const { width } = Dimensions.get("window");
 const CARD_WIDTH = (width - 44) / 2; // 2 columns with padding
 const CARD_HEIGHT = CARD_WIDTH * 1.2; // Aspect ratio
 
 export default function LikesScreen() {
-  const token = useSelector((state) => state.auth.token);
   const [likes, setLikes] = useState([]);
   const [loading, setLoading] = useState(true);
   const [totalProfiles, setTotalProfiles] = useState(0);
@@ -35,47 +34,23 @@ export default function LikesScreen() {
   const fetchWhoLikedMe = async (page = 1) => {
     try {
       setLoading(true);
-      console.log("🔄 Fetching who liked me...");
-      console.log(
-        "📍 URL:",
-        `${API_BASE_URL}${API_ENDPOINTS.WHO_LIKED_ME}?pageNumber=${page}&pageSize=10`,
+      const data = await api.get(
+        `${API_ENDPOINTS.WHO_LIKED_ME}?pageNumber=${page}&pageSize=10`
       );
-      console.log("🔑 Token:", token ? "✓ Available" : "✗ Missing");
-
-      const response = await fetch(
-        `${API_BASE_URL}${API_ENDPOINTS.WHO_LIKED_ME}?pageNumber=${page}&pageSize=10`,
-        {
-          method: "GET",
-          headers: {
-            Authorization: `Bearer ${token}`,
-            "Content-Type": "application/json",
-          },
-        },
-      );
-
-      console.log("📡 Response status:", response.status);
-
-      const data = await response.json();
-      console.log("📦 API Response:", JSON.stringify(data, null, 2));
 
       if (data.isSuccess && data.result) {
         const profiles = data.result.profiles.map((profile) => ({
           id: profile.profileId.toString(),
           name: profile.displayName,
           age: profile.age,
-          mainPhoto: profile.photos[0] || "",
+          mainPhoto: profile.photos?.[0] || "",
           likedAt: profile.likedMeAt,
         }));
-
-        console.log("✅ Mapped profiles:", profiles.length);
-        console.log("👥 Profiles data:", JSON.stringify(profiles, null, 2));
 
         setLikes(profiles);
         setTotalProfiles(data.result.totalProfiles);
         setHasNextPage(data.result.hasNextPage);
         setCurrentPage(data.result.currentPage);
-      } else {
-        console.log("❌ API request not successful:", data.message);
       }
     } catch (error) {
       console.error("❌ Error fetching who liked me:", error);
@@ -170,7 +145,6 @@ export default function LikesScreen() {
         </View>
       </SafeAreaView>
       <View className="flex-row flex-wrap gap-2 px-6">
-        {" "}
         <View
           style={{
             borderRadius: 999,
