@@ -1,6 +1,8 @@
 import { createSlice, createAsyncThunk } from '@reduxjs/toolkit';
 import { authService } from '../../services/authService';
 import { clearProfile } from './profileSlice';
+import { saveAccessToken, saveRefreshToken } from '../../utils/tokenStorage';
+import { setCurrentAccessToken } from '../../services/api';
 
 // Async thunk to fetch user data
 export const fetchUserData = createAsyncThunk(
@@ -24,6 +26,14 @@ export const login = createAsyncThunk(
   async ({ email, password }, { rejectWithValue }) => {
     try {
       const response = await authService.login(email, password);
+      // Persist tokens so the refresh interceptor can use them
+      if (response?.token) {
+        setCurrentAccessToken(response.token);
+        await saveAccessToken(response.token);
+      }
+      if (response?.refreshToken) {
+        await saveRefreshToken(response.refreshToken);
+      }
       return response;
     } catch (error) {
       return rejectWithValue(error.response?.data?.message || 'Login failed');
@@ -36,6 +46,14 @@ export const register = createAsyncThunk(
   async (userData, { rejectWithValue }) => {
     try {
       const response = await authService.register(userData);
+      // Persist tokens so the refresh interceptor can use them
+      if (response?.token) {
+        setCurrentAccessToken(response.token);
+        await saveAccessToken(response.token);
+      }
+      if (response?.refreshToken) {
+        await saveRefreshToken(response.refreshToken);
+      }
       return response;
     } catch (error) {
       console.error('❌ Registration error:', error.response?.data?.message || error.message);

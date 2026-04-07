@@ -168,7 +168,7 @@ const getHobbyIcon = (hobbyName) => {
   return iconMap[hobbyName] || Heart;
 };
 
-export default function SwipeCard({ profile }) {
+export default function SwipeCard({ profile, hideActions = false }) {
   const [isFilled, setIsFilled] = useState(false);
   const [currentPhotoIndex, setCurrentPhotoIndex] = useState(0);
 
@@ -297,7 +297,7 @@ export default function SwipeCard({ profile }) {
               }}
               maskElement={
                 <LinearGradient
-                  colors={["transparent", "rgba(0,0,0,1)"]}
+                  colors={["transparent", "rgba(0,0,0,0.6)", "rgba(0,0,0,1)"]}
                   locations={[0, 0.6, 1]}
                   style={{ flex: 1 }}
                 />
@@ -306,32 +306,34 @@ export default function SwipeCard({ profile }) {
               <BlurView intensity={90} tint="dark" style={{ flex: 1 }} />
             </MaskedView>
 
-            {/* Message Button - Bottom Right */}
-            <View className="absolute top-6 right-6">
-              <TouchableOpacity
-                activeOpacity={0.9}
-                onPress={() => setIsFilled(!isFilled)}
-              >
-                <View
-                  className="flex items-center justify-center"
-                  style={{
-                    borderRadius: 9999,
-                    width: 56,
-                    height: 56,
-                    overflow: "hidden",
-                  }}
+            {/* Like Button - hidden in preview mode */}
+            {!hideActions && (
+              <View className="absolute top-6 right-6">
+                <TouchableOpacity
+                  activeOpacity={0.9}
+                  onPress={() => setIsFilled(!isFilled)}
                 >
-                  <View pointerEvents="none">
-                    <Heart
-                      size={35}
-                      color="#fff"
-                      strokeWidth={1.5}
-                      fill={isFilled ? "#fff" : "transparent"}
-                    />
+                  <View
+                    className="flex items-center justify-center"
+                    style={{
+                      borderRadius: 9999,
+                      width: 56,
+                      height: 56,
+                      overflow: "hidden",
+                    }}
+                  >
+                    <View pointerEvents="none">
+                      <Heart
+                        size={35}
+                        color="#fff"
+                        strokeWidth={1.5}
+                        fill={isFilled ? "#fff" : "transparent"}
+                      />
+                    </View>
                   </View>
-                </View>
-              </TouchableOpacity>
-            </View>
+                </TouchableOpacity>
+              </View>
+            )}
 
             {/* Name and Age on Photo */}
             <View

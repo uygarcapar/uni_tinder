@@ -24,7 +24,9 @@ export const API_ENDPOINTS = {
   // Profile endpoints
   COMPLETE_PROFILE: "/api/profile/CompleteProfile",
   UPDATE_PROFILE: "/api/profile/UpdateProfile",
+  GET_MY_PROFILE: "/api/profile/GetMyProfile",
   GET_MY_PHOTOS: "/api/profile/GetMyPhotos",
+  UPDATE_PREFERENCES: "/api/profile/update-preferences",
 
   // Photo endpoints
   GET_PHOTO: "/api/photo/GetPhoto",
@@ -33,6 +35,9 @@ export const API_ENDPOINTS = {
   GET_POTENTIAL_MATCHES: "/api/swipe/GetPotentialMatches",
   SWIPE_LIKE: "/api/swipe/Like",
   SWIPE_PASS: "/api/swipe/Pass",
+  SWIPE_SUPER_LIKE: "/api/swipe/SuperLike",
+  SWIPE_STATS: "/api/swipe/Stats",
+  SWIPE_MATCHES: "/api/swipe/GetMatches",
   WHO_LIKED_ME: "/api/swipe/wholikedme",
 
   // Common endpoints (Enums)

@@ -1,6 +1,9 @@
+import { useEffect } from 'react';
 import { NavigationContainer } from '@react-navigation/native';
 import { createNativeStackNavigator } from '@react-navigation/native-stack';
-import { useSelector } from 'react-redux';
+import { useSelector, useDispatch } from 'react-redux';
+import { setCurrentAccessToken, setOnTokenRefreshed } from '../services/api';
+import { setUserAndToken } from '../store/slices/authSlice';
 import AuthNavigator from './AuthNavigator';
 import TabNavigator from './TabNavigator';
 import CompleteProfileStep1Screen from '../screens/CompleteProfileStep1Screen';
@@ -77,7 +80,20 @@ function MainNavigator() {
 }
 
 export default function AppNavigator() {
-  const { isAuthenticated, user } = useSelector((state) => state.auth);
+  const { isAuthenticated, user, token } = useSelector((state) => state.auth);
+  const dispatch = useDispatch();
+
+  // Keep the api axios instance in sync with the Redux/persisted token
+  useEffect(() => {
+    setCurrentAccessToken(token ?? null);
+  }, [token]);
+
+  // After a background token refresh, keep Redux auth.token in sync
+  useEffect(() => {
+    setOnTokenRefreshed((newToken) => {
+      dispatch(setUserAndToken({ user, token: newToken }));
+    });
+  }, [user, dispatch]);
 
   // Determine which navigator to show
   const showMainNavigator = isAuthenticated && user?.isMailVerified;
