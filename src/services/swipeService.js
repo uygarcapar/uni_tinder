@@ -18,12 +18,12 @@ class SwipeService {
   }
 
   async likeUser(targetUserId) {
-    const response = await api.post(API_ENDPOINTS.SWIPE_LIKE, { targetUserId });
+    const response = await api.post(API_ENDPOINTS.SWIPE_LIKE, { targetUserId, swipeType: 'like' });
     return response;
   }
 
   async passUser(targetUserId) {
-    const response = await api.post(API_ENDPOINTS.SWIPE_PASS, { targetUserId });
+    const response = await api.post(API_ENDPOINTS.SWIPE_PASS, { targetUserId, swipeType: 'pass' });
     return response;
   }
 }
