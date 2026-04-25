@@ -248,8 +248,12 @@ export default function ProfileScreen() {
   const handleSaveHobbies = async () => {
     setSavingHobbies(true);
     try {
-      // Integer ID'leri gönder — backend enum integer değerlerini kabul eder
-      await profileService.updateProfile({ Hobbies: draftHobbies });
+      // Boş liste = "kaldır" intent'i. Aksi halde profileService null/boş array'i
+      // FormData'ya hiç eklemediği için backend update'i atlar.
+      const payload = draftHobbies.length > 0
+        ? { Hobbies: draftHobbies }
+        : { ClearHobbies: true };
+      await profileService.updateProfile(payload);
       setMyProfile((p) => ({ ...p, hobbies: draftHobbies }));
       setEditHobbiesVisible(false);
     } catch (e) {
@@ -278,10 +282,25 @@ export default function ProfileScreen() {
   const handleSaveLifestyle = async () => {
     setSavingLifestyle(true);
     try {
+      // Bir alan için draft null'sa kullanıcı seçimi kaldırmış demektir. Backend
+      // null/eksik alanı "değişmedi" olarak yorumlar, bu yüzden mevcut profilde
+      // bir değer varsa explicit Clear* flag'i ile silme intent'i iletiyoruz.
       const updates = {};
-      if (draftSmoking != null)      updates.SmokingStatus = draftSmoking.id;
-      if (draftZodiac != null)        updates.ZodiacSign = draftZodiac.id;
-      if (draftUsagePurpose != null)  updates.UsagePurpose = draftUsagePurpose.id;
+
+      if (draftSmoking != null) updates.SmokingStatus = draftSmoking.id;
+      else if (myProfile?.smokingStatus != null) updates.ClearSmokingStatus = true;
+
+      if (draftZodiac != null) updates.ZodiacSign = draftZodiac.id;
+      else if (myProfile?.zodiacSign != null) updates.ClearZodiacSign = true;
+
+      if (draftUsagePurpose != null) updates.UsagePurpose = draftUsagePurpose.id;
+      else if (myProfile?.usagePurpose != null) updates.ClearUsagePurpose = true;
+
+      // Hiçbir değişiklik yoksa boşa istek gönderme
+      if (Object.keys(updates).length === 0) {
+        setEditLifestyleVisible(false);
+        return;
+      }
 
       await profileService.updateProfile(updates);
 
