@@ -32,6 +32,11 @@ api.interceptors.request.use(
   (config) => {
     if (currentAccessToken) {
       config.headers.Authorization = `Bearer ${currentAccessToken}`;
+      // Log only first 20 chars of token for debugging
+      const tokenPreview = currentAccessToken.substring(0, 20) + '...';
+      console.log(`🔐 Request: ${config.method?.toUpperCase()} ${config.url} - Token: ${tokenPreview}`);
+    } else {
+      console.log(`⚠️ Request: ${config.method?.toUpperCase()} ${config.url} - Token YOK!`);
     }
     // FormData gönderilirken Content-Type'ı sil —
     // React Native'in native kodu doğru multipart/form-data boundary'yi otomatik ekler.
@@ -86,8 +91,11 @@ api.interceptors.response.use(
       isRefreshing = true;
 
       const refreshToken = await getRefreshToken();
+      console.log('🔄 Token refresh başlatılıyor - Refresh token:', refreshToken ? 'Mevcut' : 'YOK');
+
       if (!refreshToken) {
         // No refresh token available - clear tokens and reject
+        console.log('❌ Refresh token bulunamadı - Logout yapılıyor');
         isRefreshing = false;
         await clearAllTokens();
         setCurrentAccessToken(null);
@@ -97,11 +105,13 @@ api.interceptors.response.use(
 
       try {
         // Request new access token using refresh token
+        console.log('🔄 Refresh token endpoint\'ine istek gönderiliyor...');
         const response = await axios.post(
           `${API_BASE_URL}${API_ENDPOINTS.REFRESH_TOKEN}`,
           { refreshToken }
         );
 
+        console.log('✅ Token refresh başarılı');
         const { token: newAccessToken, refreshToken: newRefreshToken } = response.data.result;
 
         // Save new tokens
@@ -110,7 +120,7 @@ api.interceptors.response.use(
         await saveRefreshToken(newRefreshToken);
 
         // Notify listeners (e.g. Redux store) of the new token
-        if (onTokenRefreshed) onTokenRefreshed(newAccessToken);
+        if (onTokenRefreshed) onTokenRefreshed(newAccessToken, newRefreshToken);
 
         // Process queued requests with new token
         processQueue(null, newAccessToken);
@@ -120,6 +130,7 @@ api.interceptors.response.use(
         return api(originalRequest);
       } catch (refreshError) {
         // Refresh token is invalid or expired
+        console.log('❌ Token refresh başarısız:', refreshError?.response?.status, refreshError?.response?.data || refreshError?.message);
         processQueue(refreshError, null);
         await clearAllTokens();
         setCurrentAccessToken(null);

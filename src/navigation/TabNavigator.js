@@ -48,7 +48,8 @@ export default function TabNavigator() {
   return (
     <Tab.Navigator
       screenOptions={({ route }) => ({
-        header: route.name === "Likes" ? undefined : () => <CustomHeader />,
+        header: route.name === "Likes" || route.name === "Profile" || route.name === "Discover" ? undefined : () => <CustomHeader />,
+        headerShown: route.name === "Discover" ? false : undefined,
         tabBarHideOnKeyboard: true,
         tabBarStyle: {
           backgroundColor: "#121212",
@@ -118,7 +119,10 @@ export default function TabNavigator() {
       <Tab.Screen
         name="Profile"
         component={ProfileScreen}
-        options={{ tabBarLabel: "Profil" }}
+        options={{
+          tabBarLabel: "Profil",
+          headerShown: false
+        }}
       />
     </Tab.Navigator>
   );

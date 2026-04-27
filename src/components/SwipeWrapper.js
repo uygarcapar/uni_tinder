@@ -11,12 +11,19 @@ import Animated, {
   Extrapolate,
   useDerivedValue,
   useAnimatedReaction,
+  Easing, // ✅ Easing eklendi
 } from "react-native-reanimated";
 import * as Haptics from "expo-haptics";
 import SwipeCard from "./SwipeCard";
 
 const { width } = Dimensions.get("window");
 const SWIPE_THRESHOLD = 120;
+
+// ✅ Animasyon sürelerini daha ince ayarlamak için ayırdık
+const EXIT_DURATION = 180; // Kartın ekrandan çıkma süresi (hız korundu ama Easing ile yumuşatıldı)
+const FADE_IN_DURATION = 100; // İkonların belirmesi (hızlı)
+const FADE_OUT_DURATION = 350; // İkonların kaybolması (daha yavaş, yumuşak fade efekti)
+const EXIT_DISTANCE = width * 1.2; // Kartın gideceği mesafe biraz kısaltıldı (daha yavaş gitmiş hissi verir)
 
 export default function SwipeWrapper({
   profile,
@@ -27,16 +34,16 @@ export default function SwipeWrapper({
   overlayOpacity,
   buttonDragX,
   programmaticSwipe,
+  onPass,
+  onLike,
 }) {
   const tx = useSharedValue(0);
   const hasVibrated = useSharedValue(false);
 
-  // Haptic feedback fonksiyonu
   const triggerHaptic = () => {
     Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Medium);
   };
 
-  // ✅ DÜZELTME: Kart en üste (aktif) duruma geçtiğinde değerleri sıfırla.
   useEffect(() => {
     if (isTopCard) {
       dragX.value = 0;
@@ -47,59 +54,62 @@ export default function SwipeWrapper({
     }
   }, [isTopCard, dragX, overlayDragX, overlayOpacity, buttonDragX]);
 
-  // Programmatic swipe'ı izle
+  // Yumuşak çıkış animasyonu ayarı
+  const exitConfig = {
+    duration: EXIT_DURATION,
+    easing: Easing.out(Easing.cubic),
+  };
+  // Yumuşak fade out ayarı
+  const fadeOutConfig = {
+    duration: FADE_OUT_DURATION,
+    easing: Easing.out(Easing.quad),
+  };
+
   useAnimatedReaction(
     () => programmaticSwipe?.value,
     (value, previous) => {
       if (!isTopCard || value === 0 || value === previous) return;
 
       if (value === 1) {
-        // Left swipe animation
-        dragX.value = withTiming(-150, { duration: 200 });
-        overlayDragX.value = withTiming(-150, { duration: 200 });
-        buttonDragX.value = withTiming(-150, { duration: 200 });
-        overlayOpacity.value = withTiming(1, { duration: 100 });
+        dragX.value = withTiming(-150, { duration: FADE_IN_DURATION });
+        overlayDragX.value = withTiming(-150, { duration: FADE_IN_DURATION });
+        buttonDragX.value = withTiming(-150, { duration: FADE_IN_DURATION });
+        overlayOpacity.value = withTiming(1, { duration: 50 });
 
-        tx.value = withSpring(-width * 1.5, { velocity: 15 }, () => {
+        // Kart yumuşak bir ivmeyle çıkar
+        tx.value = withTiming(-EXIT_DISTANCE, exitConfig, () => {
           runOnJS(onSwipe)("left", profile.userId);
         });
 
-        // Overlay'i fade out yap
-        overlayOpacity.value = withTiming(0, { duration: 250, delay: 200 });
-        buttonDragX.value = withTiming(0, { duration: 250, delay: 200 });
-
-        // Reset trigger
+        // Overlay (ikonlar) daha uzun sürede fade out olur
+        overlayOpacity.value = withTiming(0, fadeOutConfig);
+        buttonDragX.value = withTiming(0, fadeOutConfig);
         programmaticSwipe.value = 0;
       } else if (value === 2) {
-        // Right swipe animation
-        dragX.value = withTiming(150, { duration: 200 });
-        overlayDragX.value = withTiming(150, { duration: 200 });
-        buttonDragX.value = withTiming(150, { duration: 200 });
-        overlayOpacity.value = withTiming(1, { duration: 100 });
+        dragX.value = withTiming(150, { duration: FADE_IN_DURATION });
+        overlayDragX.value = withTiming(150, { duration: FADE_IN_DURATION });
+        buttonDragX.value = withTiming(150, { duration: FADE_IN_DURATION });
+        overlayOpacity.value = withTiming(1, { duration: 50 });
 
-        tx.value = withSpring(width * 1.5, { velocity: 15 }, () => {
+        // Kart yumuşak bir ivmeyle çıkar
+        tx.value = withTiming(EXIT_DISTANCE, exitConfig, () => {
           runOnJS(onSwipe)("right", profile.userId);
         });
 
-        // Overlay'i fade out yap
-        overlayOpacity.value = withTiming(0, { duration: 250, delay: 200 });
-        buttonDragX.value = withTiming(0, { duration: 250, delay: 200 });
-
-        // Reset trigger
+        // Overlay (ikonlar) daha uzun sürede fade out olur
+        overlayOpacity.value = withTiming(0, fadeOutConfig);
+        buttonDragX.value = withTiming(0, fadeOutConfig);
         programmaticSwipe.value = 0;
       }
     },
-    [isTopCard]
+    [isTopCard],
   );
 
   const scale = useDerivedValue(() => {
-    // Eğer kart en üstteyse, arkadaki animasyondan etkilenmeden
-    // direkt tam boyutta (1) kalmalıdır.
     if (isTopCard) {
       return withSpring(1, { damping: 20, stiffness: 100 });
     }
 
-    // Arkadaki kartın sürükleme sırasındaki büyüme oranı
     return interpolate(
       Math.abs(dragX.value),
       [0, SWIPE_THRESHOLD],
@@ -116,34 +126,37 @@ export default function SwipeWrapper({
       overlayDragX.value = event.translationX;
       buttonDragX.value = event.translationX;
 
-      // Threshold geçildiğinde bir kere titreşim yap
-      if (!hasVibrated.value && Math.abs(event.translationX) > SWIPE_THRESHOLD) {
+      if (
+        !hasVibrated.value &&
+        Math.abs(event.translationX) > SWIPE_THRESHOLD
+      ) {
         hasVibrated.value = true;
         runOnJS(triggerHaptic)();
       }
 
-      // Threshold'un altına düştüğünde flag'i sıfırla (tekrar geçişte titreşsin)
       if (hasVibrated.value && Math.abs(event.translationX) < SWIPE_THRESHOLD) {
         hasVibrated.value = false;
       }
     })
     .onEnd(() => {
-      // Reset vibration flag
       hasVibrated.value = false;
+
       if (tx.value > SWIPE_THRESHOLD) {
-        // Butonların renklerini yumuşak geçişle sıfırla
-        buttonDragX.value = withTiming(0, { duration: 250 });
-        // Overlay'i 250ms'de opacity azalarak kapat (translateX değişmesin)
-        overlayOpacity.value = withTiming(0, { duration: 250 });
-        tx.value = withSpring(width * 1.5, { velocity: 15 }, () => {
+        // İkonlar ve butonlar yumuşakça kaybolsun
+        buttonDragX.value = withTiming(0, fadeOutConfig);
+        overlayOpacity.value = withTiming(0, fadeOutConfig);
+
+        // Kartın gidişi Easing ile yumuşatıldı
+        tx.value = withTiming(EXIT_DISTANCE, exitConfig, () => {
           runOnJS(onSwipe)("right", profile.userId);
         });
       } else if (tx.value < -SWIPE_THRESHOLD) {
-        // Butonların renklerini yumuşak geçişle sıfırla
-        buttonDragX.value = withTiming(0, { duration: 250 });
-        // Overlay'i 250ms'de opacity azalarak kapat (translateX değişmesin)
-        overlayOpacity.value = withTiming(0, { duration: 250 });
-        tx.value = withSpring(-width * 1.5, { velocity: 15 }, () => {
+        // İkonlar ve butonlar yumuşakça kaybolsun
+        buttonDragX.value = withTiming(0, fadeOutConfig);
+        overlayOpacity.value = withTiming(0, fadeOutConfig);
+
+        // Kartın gidişi Easing ile yumuşatıldı
+        tx.value = withTiming(-EXIT_DISTANCE, exitConfig, () => {
           runOnJS(onSwipe)("left", profile.userId);
         });
       } else {
@@ -164,7 +177,6 @@ export default function SwipeWrapper({
         { rotate: isTopCard ? `${rotate}deg` : "0deg" },
         { scale: scale.value },
       ],
-      // Opaklık ayarı: Üstteki hep 1, alttaki kaydırma sırasında netleşir
       opacity: isTopCard
         ? 1
         : interpolate(
@@ -173,7 +185,7 @@ export default function SwipeWrapper({
             [0.8, 1],
             Extrapolate.CLAMP,
           ),
-      zIndex: isTopCard ? 10 : 1, // Z-index garantisi
+      zIndex: isTopCard ? 10 : 1,
     };
   });
 
@@ -182,7 +194,7 @@ export default function SwipeWrapper({
       <Animated.View
         style={[animatedStyle, { position: "absolute", inset: 0 }]}
       >
-        <SwipeCard profile={profile} />
+        <SwipeCard profile={profile} onPass={onPass} onLike={onLike} />
       </Animated.View>
     </GestureDetector>
   );

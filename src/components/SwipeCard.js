@@ -13,8 +13,9 @@ import {
   MapPin,
   GraduationCap,
   BookOpen,
-  MessageCircle,
   Heart,
+  X,
+  Check,
   Cigarette,
   Sparkles,
   Target,
@@ -168,7 +169,12 @@ const getHobbyIcon = (hobbyName) => {
   return iconMap[hobbyName] || Heart;
 };
 
-export default function SwipeCard({ profile, hideActions = false }) {
+export default function SwipeCard({
+  profile,
+  hideActions = false,
+  onPass,
+  onLike,
+}) {
   const [isFilled, setIsFilled] = useState(false);
   const [currentPhotoIndex, setCurrentPhotoIndex] = useState(0);
 
@@ -337,7 +343,7 @@ export default function SwipeCard({ profile, hideActions = false }) {
 
             {/* Name and Age on Photo */}
             <View
-              className="absolute bottom-[13%] left-6 right-6"
+              className="absolute bottom-10 left-6 right-6"
               pointerEvents="none"
             >
               {profile.isPremium && (
@@ -412,7 +418,7 @@ export default function SwipeCard({ profile, hideActions = false }) {
               </View>
               <View className="flex-row flex-wrap items-center gap-3">
                 <View
-                  className="bg-[#1E1E1E] self-start flex-row items-center border-[0.5px] border-white/10"
+                  className=" self-start flex-row items-center border-[0.5px] border-white/10"
                   style={{
                     borderRadius: 999,
                     borderCurve: "continuous",
@@ -429,11 +435,11 @@ export default function SwipeCard({ profile, hideActions = false }) {
                       flexDirection: "row",
                       alignItems: "center",
                       paddingHorizontal: 14,
-                      paddingVertical: 12,
+                      paddingVertical: 14,
                       gap: 8,
                     }}
                   >
-                    <GraduationCap size={21} color="#fff" strokeWidth={1.5} />
+                    <GraduationCap size={18} color="#fff" strokeWidth={1.5} />
                     <View className="flex-col items-start gap-1">
                       <Text className="text-white font-medium text-[14px]">
                         {profile.universityName}
@@ -467,7 +473,7 @@ export default function SwipeCard({ profile, hideActions = false }) {
                   return (
                     <View
                       key={index}
-                      className="self-start bg-[#1E1E1E] border-[0.5px] border-white/10"
+                      className="self-start  border-[0.5px] border-white/10"
                       style={{
                         borderRadius: 999,
                         borderCurve: "continuous",
@@ -484,11 +490,11 @@ export default function SwipeCard({ profile, hideActions = false }) {
                           flexDirection: "row",
                           alignItems: "center",
                           paddingHorizontal: 12,
-                          paddingVertical: 12,
+                          paddingVertical: 14,
                           gap: 8,
                         }}
                       >
-                        <HobbyIcon size={21} color="#fff" strokeWidth={1.5} />
+                        <HobbyIcon size={18} color="#fff" strokeWidth={1.5} />
                         <Text className="text-white font-medium text-[14px]">
                           {hobby}
                         </Text>
@@ -511,7 +517,7 @@ export default function SwipeCard({ profile, hideActions = false }) {
               <View className="flex-row flex-wrap gap-2">
                 {profile.cityDisplay && profile.districtDisplay && (
                   <View
-                    className="self-start bg-[#1E1E1E] border-[0.5px] border-white/10"
+                    className="self-start  border-[0.5px] border-white/10"
                     style={{
                       borderRadius: 999,
                       borderCurve: "continuous",
@@ -528,11 +534,11 @@ export default function SwipeCard({ profile, hideActions = false }) {
                         flexDirection: "row",
                         alignItems: "center",
                         paddingHorizontal: 14,
-                        paddingVertical: 12,
+                        paddingVertical: 14,
                         gap: 8,
                       }}
                     >
-                      <MapPin size={21} color="#fff" strokeWidth={1.5} />
+                      <MapPin size={18} color="#fff" strokeWidth={1.5} />
                       <View className="flex-col items-start gap-1">
                         <Text className="text-white font-medium text-[14px]">
                           {profile.districtDisplay}, {profile.cityDisplay}
@@ -559,7 +565,7 @@ export default function SwipeCard({ profile, hideActions = false }) {
               <View className="flex-row flex-wrap gap-2">
                 {profile.smokingStatusDisplay && (
                   <View
-                    className="self-start bg-[#1E1E1E] border-[0.5px] border-white/10"
+                    className="self-start  border-[0.5px] border-white/10"
                     style={{
                       borderRadius: 999,
                       borderCurve: "continuous",
@@ -576,11 +582,11 @@ export default function SwipeCard({ profile, hideActions = false }) {
                         flexDirection: "row",
                         alignItems: "center",
                         paddingHorizontal: 12,
-                        paddingVertical: 12,
+                        paddingVertical: 14,
                         gap: 8,
                       }}
                     >
-                      <Cigarette size={21} color="#fff" strokeWidth={1.5} />
+                      <Cigarette size={18} color="#fff" strokeWidth={1.5} />
                       <Text className="text-white font-medium text-[14px]">
                         {profile.smokingStatusDisplay}
                       </Text>
@@ -589,7 +595,7 @@ export default function SwipeCard({ profile, hideActions = false }) {
                 )}
                 {profile.zodiacSignDisplay && (
                   <View
-                    className="self-start bg-[#1E1E1E] border-[0.5px] border-white/10"
+                    className="self-start  border-[0.5px] border-white/10"
                     style={{
                       borderRadius: 999,
                       borderCurve: "continuous",
@@ -606,11 +612,11 @@ export default function SwipeCard({ profile, hideActions = false }) {
                         flexDirection: "row",
                         alignItems: "center",
                         paddingHorizontal: 12,
-                        paddingVertical: 12,
+                        paddingVertical: 14,
                         gap: 8,
                       }}
                     >
-                      <Sparkles size={21} color="#fff" strokeWidth={1.5} />
+                      <Sparkles size={18} color="#fff" strokeWidth={1.5} />
                       <Text className="text-white font-medium text-[14px]">
                         {profile.zodiacSignDisplay} Burcu
                       </Text>
@@ -631,7 +637,7 @@ export default function SwipeCard({ profile, hideActions = false }) {
               </View>
               <View className="flex-row flex-wrap gap-2">
                 <View
-                  className="self-start bg-[#1E1E1E] border-[0.5px] border-white/10"
+                  className="self-start  border-[0.5px] border-white/10"
                   style={{
                     borderRadius: 999,
                     borderCurve: "continuous",
@@ -648,11 +654,11 @@ export default function SwipeCard({ profile, hideActions = false }) {
                       flexDirection: "row",
                       alignItems: "center",
                       paddingHorizontal: 12,
-                      paddingVertical: 12,
+                      paddingVertical: 14,
                       gap: 8,
                     }}
                   >
-                    <Target size={21} color="#fff" strokeWidth={1.5} />
+                    <Target size={18} color="#fff" strokeWidth={1.5} />
                     <Text className="text-white font-medium text-[14px]">
                       {profile.usagePurposeDisplay}
                     </Text>
@@ -681,23 +687,66 @@ export default function SwipeCard({ profile, hideActions = false }) {
                   shadowRadius: 15,
                   elevation: 5,
                 }}
-                className="self-start bg-[#1E1E1E] border-[0.5px] border-white/10"
+                className="self-start  border-[0.5px] border-white/10"
               >
                 <View
                   style={{
                     flexDirection: "row",
                     alignItems: "center",
                     paddingHorizontal: 14,
-                    paddingVertical: 12,
+                    paddingVertical: 14,
                     gap: 8,
                   }}
                 >
-                  <Pen size={21} color="#fff" strokeWidth={1.5} />
+                  <Pen size={18} color="#fff" strokeWidth={1.5} />
                   <Text className="text-white font-normal text-[14px] leading-6">
                     {profile.bio}
                   </Text>
                 </View>
               </View>
+            </View>
+          )}
+          {/* Action Buttons */}
+          {!hideActions && (onPass || onLike) && (
+            <View
+              style={{
+                flexDirection: "row",
+                justifyContent: "center",
+                gap: 80,
+                paddingVertical: 40,
+                paddingBottom: 40,
+              }}
+            >
+              <TouchableOpacity
+                onPress={onPass}
+                activeOpacity={0.7}
+                style={{
+                  width: 68,
+                  height: 68,
+                  borderRadius: 34,
+                  alignItems: "center",
+                  justifyContent: "center",
+                }}
+              >
+                <View pointerEvents="none">
+                  <X size={75} color="#fff" strokeWidth={5} />
+                </View>
+              </TouchableOpacity>
+              <TouchableOpacity
+                onPress={onLike}
+                activeOpacity={0.8}
+                style={{
+                  width: 68,
+                  height: 68,
+                  borderRadius: 34,
+                  alignItems: "center",
+                  justifyContent: "center",
+                }}
+              >
+                <View pointerEvents="none">
+                  <Check size={75} color="#fff" strokeWidth={5} />
+                </View>
+              </TouchableOpacity>
             </View>
           )}
         </View>

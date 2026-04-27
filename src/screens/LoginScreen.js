@@ -170,7 +170,7 @@ export default function LoginScreen({ navigation }) {
               className="py-3.5"
             >
               {loading ? (
-                <ActivityIndicator className="py-[20px]" color="#fff" />
+                <ActivityIndicator className="py-[17.5px]" color="#fff" />
               ) : (
                 <Text className="text-white py-[20px] font-bold text-[15px] text-center">
                   Giriş Yap

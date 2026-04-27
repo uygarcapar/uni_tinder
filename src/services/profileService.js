@@ -12,10 +12,14 @@ class ProfileService {
     Object.entries(updates).forEach(([key, value]) => {
       if (value !== undefined && value !== null) {
         if (key === 'NewPhotos' && Array.isArray(value)) {
-          // File objects — append as-is for multipart upload
           value.forEach((file) => formData.append('NewPhotos', file));
+        } else if (key === 'PhotoOrders' && Array.isArray(value)) {
+          // ASP.NET Core indexed model binding for nested objects
+          value.forEach((item, i) => {
+            formData.append(`PhotoOrders[${i}].PhotoId`, String(item.photoId));
+            formData.append(`PhotoOrders[${i}].NewOrder`, String(item.newOrder));
+          });
         } else if (Array.isArray(value)) {
-          // ASP.NET Core model binding: same key repeated for arrays
           value.forEach((item) => formData.append(key, String(item)));
         } else {
           formData.append(key, String(value));

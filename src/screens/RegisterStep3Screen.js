@@ -94,49 +94,75 @@ export default function RegisterStep3Screen({ navigation }) {
 
       <TouchableWithoutFeedback onPress={Keyboard.dismiss}>
         <View className="flex-1 px-6 py-6 pt-0">
-        <View className="flex flex-col gap-2">
-          <Text className="text-4xl font-bold text-white">
-            Şifreni oluştur.
-          </Text>
-          <Text className="text-[18px] font-normal text-gray-400 mb-6">
-            Güçlü bir şifre, hesabını güvende tutmana yardımcı olur.
-          </Text>
-        </View>
+          <View className="flex flex-col gap-2">
+            <Text className="text-4xl font-bold text-white">
+              Şifreni oluştur.
+            </Text>
+            <Text className="text-[18px] font-normal text-gray-400 mb-6">
+              Güçlü bir şifre, hesabını güvende tutmana yardımcı olur.
+            </Text>
+          </View>
 
-        {/* Şifre Input */}
-        <View className="mb-4">
-          <Text className="text-white text-lg font-semibold mb-2">
-            Şifre *
-          </Text>
-          <TextInput
-            ref={passwordInputRef}
-            className={`border rounded-2xl px-4 py-3.5 text-[18px] text-white ${
-              error ? "border-red-500" : "border-gray-300"
-            }`}
-            placeholder="En az 8 karakter"
-            placeholderTextColor="#9CA3AF"
-            value={password}
-            onChangeText={(v) => updateField("password", v)}
-            secureTextEntry={true}
-          />
-        </View>
+          {/* Şifre Input */}
+          <View className="mb-4">
+            <Text className="text-gray-300 text-lg font-semibold mb-2">
+              Şifre *
+            </Text>
+            <View
+              style={{
+                borderRadius: 999,
+                borderCurve: "continuous",
+                overflow: "hidden",
+                borderWidth: 0.5,
+                borderColor: error ? "#ef4444" : "rgba(255,255,255,0.1)",
+              }}
+            >
+              <TextInput
+                ref={passwordInputRef}
+                style={{
+                  paddingHorizontal: 16,
+                  paddingVertical: 16,
+                  fontSize: 18,
+                  color: "#fff",
+                }}
+                placeholder="En az 8 karakter"
+                placeholderTextColor="#9CA3AF"
+                value={password}
+                onChangeText={(v) => updateField("password", v)}
+                secureTextEntry={true}
+              />
+            </View>
+          </View>
 
-        {/* Şifre Tekrar Input */}
-        <View className="mb-4">
-          <Text className="text-white text-lg font-semibold mb-2">
-            Şifre Tekrar *
-          </Text>
-          <TextInput
-            className={`border rounded-2xl px-4 py-3.5 text-[18px] text-white ${
-              error ? "border-red-500" : "border-gray-300"
-            }`}
-            placeholder="Şifrenizi tekrar girin"
-            placeholderTextColor="#9CA3AF"
-            value={confirmPassword}
-            onChangeText={(v) => updateField("confirmPassword", v)}
-            secureTextEntry={true}
-          />
-        </View>
+          {/* Şifre Tekrar Input */}
+          <View className="mb-4">
+            <Text className="text-gray-300 text-lg font-semibold mb-2">
+              Şifre Tekrar *
+            </Text>
+            <View
+              style={{
+                borderRadius: 999,
+                borderCurve: "continuous",
+                overflow: "hidden",
+                borderWidth: 0.5,
+                borderColor: error ? "#ef4444" : "rgba(255,255,255,0.1)",
+              }}
+            >
+              <TextInput
+                style={{
+                  paddingHorizontal: 16,
+                  paddingVertical: 16,
+                  fontSize: 18,
+                  color: "#fff",
+                }}
+                placeholder="Şifrenizi tekrar girin"
+                placeholderTextColor="#9CA3AF"
+                value={confirmPassword}
+                onChangeText={(v) => updateField("confirmPassword", v)}
+                secureTextEntry={true}
+              />
+            </View>
+          </View>
 
           {/* Error Message */}
           {error ? (
@@ -149,7 +175,7 @@ export default function RegisterStep3Screen({ navigation }) {
 
       {/* Sticky Button with KeyboardStickyView */}
       <KeyboardStickyView offset={{ closed: 0, opened: 0 }}>
-        <View className="px-6 pb-8 pt-4 bg-[#121212]">
+        <View className="px-6 pb-8 pt-4">
           <TouchableOpacity
             activeOpacity={1}
             onPress={handleNext}
@@ -159,9 +185,9 @@ export default function RegisterStep3Screen({ navigation }) {
               colors={["#fc3526", "#fc1c35"]}
               start={{ x: 0, y: 0 }}
               end={{ x: 1, y: 0 }}
-              className="py-3.5"
+              className=""
             >
-              <Text className="text-white py-[16px] font-bold text-[15px] text-center">
+              <Text className="text-white py-[20px] font-bold text-[15px] text-center">
                 Devam Et
               </Text>
             </LinearGradient>

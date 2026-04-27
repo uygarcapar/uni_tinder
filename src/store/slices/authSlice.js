@@ -71,6 +71,7 @@ export const logout = createAsyncThunk('auth/logout', async (_, thunkAPI) => {
 const initialState = {
   user: null,
   token: null,
+  refreshToken: null, // Add refresh token to Redux state
   isAuthenticated: false,
   needsVerification: false,
   pendingVerificationEmail: null,
@@ -103,6 +104,9 @@ const authSlice = createSlice({
     setUserAndToken: (state, action) => {
       state.user = action.payload.user;
       state.token = action.payload.token;
+      if (action.payload.refreshToken) {
+        state.refreshToken = action.payload.refreshToken;
+      }
       state.isAuthenticated = true;
       console.log('🔑 Redux: User and token set');
       console.log('🔑 Token exists:', !!state.token);
@@ -149,6 +153,7 @@ const authSlice = createSlice({
         state.isAuthenticated = true;
         state.user = action.payload.user;
         state.token = action.payload.token;
+        state.refreshToken = action.payload.refreshToken; // Save refresh token to Redux
         state.error = null;
         console.log('✅ Login successful - User data:', JSON.stringify(action.payload.user, null, 2));
         console.log('✅ isMailVerified:', action.payload.user?.isMailVerified);
@@ -170,6 +175,7 @@ const authSlice = createSlice({
         state.pendingVerificationEmail = action.payload.user?.email;
         state.user = action.payload.user; // Save user data
         state.token = action.payload.token; // Save token for later use
+        state.refreshToken = action.payload.refreshToken; // Save refresh token to Redux
         state.error = null;
         console.log('🔑 Register: Token saved to Redux:', !!state.token);
       })
@@ -181,6 +187,7 @@ const authSlice = createSlice({
       .addCase(logout.fulfilled, (state) => {
         state.user = null;
         state.token = null;
+        state.refreshToken = null;
         state.isAuthenticated = false;
         state.error = null;
       })

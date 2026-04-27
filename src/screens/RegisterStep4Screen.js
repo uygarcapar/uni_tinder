@@ -99,13 +99,34 @@ export default function RegisterStep4Screen({ navigation }) {
           </View>
 
           {/* Telefon Input Alanı */}
-          <Text className="text-white text-lg font-semibold mb-2">
+          <Text className="text-gray-300 text-lg font-semibold mb-2">
             Telefon Numarası *
           </Text>
 
-          <View className="flex-row items-center border border-gray-300 rounded-2xl px-4 py-3.5">
+          <View
+            style={{
+              borderRadius: 999,
+              borderCurve: "continuous",
+              overflow: "hidden",
+              borderWidth: 0.5,
+              borderColor: "rgba(255,255,255,0.1)",
+              flexDirection: "row",
+              alignItems: "center",
+              paddingHorizontal: 16,
+              paddingVertical: 16,
+            }}
+          >
             {/* Sabit +90 Alanı */}
-            <View className="flex-row items-center border-r border-gray-300 pr-3 mr-3">
+            <View
+              style={{
+                flexDirection: "row",
+                alignItems: "center",
+                borderRightWidth: 0.5,
+                borderRightColor: "rgba(255,255,255,0.15)",
+                paddingRight: 12,
+                marginRight: 12,
+              }}
+            >
               <Image
                 source={turkey_flag}
                 style={{ width: 20, height: 20, marginRight: 8 }}
@@ -117,7 +138,7 @@ export default function RegisterStep4Screen({ navigation }) {
             {/* Dinamik Input */}
             <TextInput
               ref={phoneInputRef}
-              className="flex-1 text-[18px] text-white h-full"
+              style={{ flex: 1, fontSize: 18, color: "#fff" }}
               placeholder="5XX XXX XX XX"
               placeholderTextColor="#9CA3AF"
               keyboardType="number-pad"
@@ -131,7 +152,7 @@ export default function RegisterStep4Screen({ navigation }) {
 
       {/* Sticky Button with KeyboardStickyView */}
       <KeyboardStickyView offset={{ closed: 0, opened: 0 }}>
-        <View className="px-6 pb-8 pt-4 bg-[#121212]">
+        <View className="px-6 pb-8 pt-4 ">
           <TouchableOpacity
             activeOpacity={1}
             onPress={handleNext}
@@ -141,9 +162,9 @@ export default function RegisterStep4Screen({ navigation }) {
               colors={["#fc2235", "#fc0d35"]}
               start={{ x: 0, y: 0 }}
               end={{ x: 1, y: 0 }}
-              className="py-3.5"
+              className=""
             >
-              <Text className="text-white py-[16px] font-bold text-[15px] text-center">
+              <Text className="text-white py-[20px] font-bold text-[15px] text-center">
                 Devam Et
               </Text>
             </LinearGradient>

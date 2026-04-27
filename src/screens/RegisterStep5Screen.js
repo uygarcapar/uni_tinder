@@ -36,11 +36,18 @@ export default function RegisterStep5Screen({ navigation }) {
   useEffect(() => {
     // Only navigate to EmailVerification after successful registration
     // Use ref to prevent re-navigation when coming back from EmailVerification
-    console.log('📧 RegisterStep5: needsVerification =', needsVerification);
-    console.log('📧 RegisterStep5: hasNavigatedToVerification =', hasNavigatedToVerification.current);
+    console.log("📧 RegisterStep5: needsVerification =", needsVerification);
+    console.log(
+      "📧 RegisterStep5: hasNavigatedToVerification =",
+      hasNavigatedToVerification.current,
+    );
 
-    if (needsVerification && pendingVerificationEmail && !hasNavigatedToVerification.current) {
-      console.log('📧 RegisterStep5: Navigating to EmailVerification');
+    if (
+      needsVerification &&
+      pendingVerificationEmail &&
+      !hasNavigatedToVerification.current
+    ) {
+      console.log("📧 RegisterStep5: Navigating to EmailVerification");
       hasNavigatedToVerification.current = true;
       // Don't clear form - keep data so user can go back and modify email
       navigation.navigate("EmailVerification", {
@@ -50,7 +57,7 @@ export default function RegisterStep5Screen({ navigation }) {
 
     // Reset ref when needsVerification becomes false (user went back from EmailVerification)
     if (!needsVerification && hasNavigatedToVerification.current) {
-      console.log('📧 RegisterStep5: Resetting navigation flag');
+      console.log("📧 RegisterStep5: Resetting navigation flag");
       hasNavigatedToVerification.current = false;
     }
   }, [needsVerification, pendingVerificationEmail]);
@@ -111,18 +118,31 @@ export default function RegisterStep5Screen({ navigation }) {
             </Text>
           </View>
 
-          <TextInput
-            ref={inputRef}
-            className={`border rounded-2xl px-4 py-3.5 text-[18px] text-white ${
-              error ? "border-red-500" : "border-gray-300"
-            }`}
-            placeholder="edu.tr"
-            placeholderTextColor="#9CA3AF"
-            keyboardType="email-address"
-            autoCapitalize="none"
-            value={formData.email}
-            onChangeText={(v) => updateField("email", v)}
-          />
+          <View
+            style={{
+              borderRadius: 999,
+              borderCurve: "continuous",
+              overflow: "hidden",
+              borderWidth: 0.5,
+              borderColor: error ? "#ef4444" : "rgba(255,255,255,0.1)",
+            }}
+          >
+            <TextInput
+              ref={inputRef}
+              style={{
+                paddingHorizontal: 16,
+                paddingVertical: 16,
+                fontSize: 18,
+                color: "#fff",
+              }}
+              placeholder="edu.tr"
+              placeholderTextColor="#9CA3AF"
+              keyboardType="email-address"
+              autoCapitalize="none"
+              value={formData.email}
+              onChangeText={(v) => updateField("email", v)}
+            />
+          </View>
 
           {error && (
             <View className="mt-3 px-2 rounded-lg">
@@ -145,12 +165,12 @@ export default function RegisterStep5Screen({ navigation }) {
               colors={["#fc0d35", "#fc0335"]}
               start={{ x: 0, y: 0 }}
               end={{ x: 1, y: 0 }}
-              className="py-3.5"
+              className=""
             >
               {loading ? (
-                <ActivityIndicator className="py-[13.5px]" color="#fff" />
+                <ActivityIndicator className="py-[17.5px]" color="#fff" />
               ) : (
-                <Text className="text-white py-[16px] font-bold text-[15px] text-center">
+                <Text className="text-white py-[20px] font-bold text-[15px] text-center">
                   Kayıt Ol
                 </Text>
               )}

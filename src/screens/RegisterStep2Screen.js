@@ -1,5 +1,12 @@
 import React, { useState } from "react";
-import { View, Text, TouchableOpacity, Platform, TouchableWithoutFeedback, Keyboard } from "react-native";
+import {
+  View,
+  Text,
+  TouchableOpacity,
+  Platform,
+  TouchableWithoutFeedback,
+  Keyboard,
+} from "react-native";
 import { useDispatch, useSelector } from "react-redux";
 import { updateRegistrationField } from "../store/slices/authSlice";
 import DateTimePicker from "@react-native-community/datetimepicker";
@@ -78,9 +85,17 @@ export default function RegisterStep2Screen({ navigation }) {
 
             <TouchableOpacity
               onPress={() => setShowDatePicker(true)}
-              className={`border rounded-2xl px-4 py-3.5 flex-row items-center justify-between ${
-                error ? "border-red-500" : "border-gray-300"
-              }`}
+              style={{
+                borderRadius: 999,
+                borderCurve: "continuous",
+                borderWidth: 0.5,
+                borderColor: error ? "#ef4444" : "rgba(255,255,255,0.1)",
+                paddingHorizontal: 16,
+                paddingVertical: 16,
+                flexDirection: "row",
+                alignItems: "center",
+                justifyContent: "space-between",
+              }}
             >
               <Text className="text-[18px] text-white">
                 {dateOfBirth.toLocaleDateString("tr-TR", {
@@ -123,7 +138,7 @@ export default function RegisterStep2Screen({ navigation }) {
 
       {/* Sticky Button with KeyboardStickyView */}
       <KeyboardStickyView offset={{ closed: 0, opened: 0 }}>
-        <View className="px-6 pb-8 pt-4 bg-[#121212]">
+        <View className="px-6 pb-8 pt-4 ">
           <TouchableOpacity
             activeOpacity={1}
             onPress={handleNext}
@@ -133,9 +148,9 @@ export default function RegisterStep2Screen({ navigation }) {
               colors={["#fc4826", "#fc2f26"]}
               start={{ x: 0, y: 0 }}
               end={{ x: 1, y: 0 }}
-              className="py-3.5"
+              className=""
             >
-              <Text className="text-white py-[16px] font-bold text-[15px] text-center">
+              <Text className="text-white py-[20px] font-bold text-[15px] text-center">
                 Devam Et
               </Text>
             </LinearGradient>

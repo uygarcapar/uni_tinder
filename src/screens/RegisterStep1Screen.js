@@ -168,7 +168,9 @@ export default function RegisterStep1Screen({ navigation }) {
       <TouchableWithoutFeedback onPress={Keyboard.dismiss}>
         <View className="flex-1 px-6 py-6 pt-0">
           <View className="flex flex-col gap-2">
-            <Text className="text-4xl font-bold text-white">Seni tanıyalım.</Text>
+            <Text className="text-4xl font-bold text-white">
+              Seni tanıyalım.
+            </Text>
             <Text className="text-[18px] font-normal text-gray-400 mb-6">
               Bize biraz kendinden bahset. Seni tanımamıza yardımcı olmak için
               kutucukları doldur.
@@ -176,63 +178,101 @@ export default function RegisterStep1Screen({ navigation }) {
           </View>
 
           <View className="flex flex-row w-full gap-2 mb-4">
-          <View className="flex-1">
-            <Text className="text-gray-300 text-lg font-semibold mb-2">
-              Ad *
-            </Text>
-            <TextInput
-              ref={firstNameInputRef}
-              className={`border rounded-2xl px-4 py-3.5 text-[18px] text-white ${
-                errorFields.includes("firstName")
-                  ? "border-red-500"
-                  : "border-gray-300"
-              }`}
-              placeholder="Adın"
-              placeholderTextColor="#9CA3AF"
-              value={firstName}
-              onChangeText={(value) => updateField("firstName", value)}
-            />
+            <View className="flex-1">
+              <Text className="text-gray-300 text-lg font-semibold mb-2">
+                Ad *
+              </Text>
+              <View
+                style={{
+                  borderRadius: 999,
+                  borderCurve: "continuous",
+                  overflow: "hidden",
+                  borderWidth: 0.5,
+                  borderColor: errorFields.includes("firstName")
+                    ? "#ef4444"
+                    : "rgba(255,255,255,0.1)",
+                }}
+              >
+                <TextInput
+                  ref={firstNameInputRef}
+                  style={{
+                    paddingHorizontal: 16,
+                    paddingVertical: 16,
+                    fontSize: 18,
+                    color: "#fff",
+                  }}
+                  placeholder="Adın"
+                  placeholderTextColor="#9CA3AF"
+                  value={firstName}
+                  onChangeText={(value) => updateField("firstName", value)}
+                />
+              </View>
+            </View>
+
+            <View className="flex-1">
+              <Text className="text-gray-300 text-lg font-semibold mb-2">
+                Soyad *
+              </Text>
+              <View
+                style={{
+                  borderRadius: 999,
+                  borderCurve: "continuous",
+                  overflow: "hidden",
+                  borderWidth: 0.5,
+                  borderColor: errorFields.includes("lastName")
+                    ? "#ef4444"
+                    : "rgba(255,255,255,0.1)",
+                }}
+              >
+                <TextInput
+                  style={{
+                    paddingHorizontal: 16,
+                    paddingVertical: 16,
+                    fontSize: 18,
+                    color: "#fff",
+                  }}
+                  placeholder="Soyadın"
+                  placeholderTextColor="#9CA3AF"
+                  value={lastName}
+                  onChangeText={(value) => updateField("lastName", value)}
+                />
+              </View>
+            </View>
           </View>
 
-          <View className="flex-1">
+          <View className="mb-4">
             <Text className="text-gray-300 text-lg font-semibold mb-2">
-              Soyad *
+              Cinsiyet *
             </Text>
-            <TextInput
-              className={`border rounded-2xl px-4 py-3.5 text-[18px] text-white ${
-                errorFields.includes("lastName")
-                  ? "border-red-500"
-                  : "border-gray-300"
-              }`}
-              placeholder="Soyadın"
-              placeholderTextColor="#9CA3AF"
-              value={lastName}
-              onChangeText={(value) => updateField("lastName", value)}
-            />
-          </View>
-        </View>
-
-        <View className="mb-4 relative">
-          <Text className="text-gray-300 text-lg font-semibold mb-2">
-            Cinsiyet *
-          </Text>
-          <TouchableOpacity
-            activeOpacity={1}
-            onPress={handlePresentModalPress}
-            className={`border rounded-2xl px-4 py-3.5 flex-row items-center justify-between ${
-              errorFields.includes("gender")
-                ? "border-red-500"
-                : "border-gray-300"
-            }`}
-          >
-            <Text
-              className={`${isGenderSelected ? "text-white" : "text-gray-400"} text-[18px]`}
+            <TouchableOpacity
+              activeOpacity={1}
+              onPress={handlePresentModalPress}
+              style={{
+                borderRadius: 999,
+                borderCurve: "continuous",
+                overflow: "hidden",
+                borderWidth: 0.5,
+                borderColor: errorFields.includes("gender")
+                  ? "#ef4444"
+                  : "rgba(255,255,255,0.1)",
+                paddingHorizontal: 16,
+                paddingVertical: 16,
+                flexDirection: "row",
+                alignItems: "center",
+                justifyContent: "space-between",
+              }}
             >
-              {getGenderLabel()}
-            </Text>
-            <Text className="text-gray-300 text-xl">▼</Text>
-          </TouchableOpacity>
-        </View>
+              <Text
+                style={{
+                  color: isGenderSelected ? "#fff" : "#9CA3AF",
+                  fontSize: 18,
+                }}
+              >
+                {getGenderLabel()}
+              </Text>
+              <Text className="text-gray-300 text-xl">▼</Text>
+            </TouchableOpacity>
+          </View>
 
           {/* Hata Mesajı Bölümü */}
           {error ? (
@@ -244,7 +284,7 @@ export default function RegisterStep1Screen({ navigation }) {
       </TouchableWithoutFeedback>
 
       <KeyboardStickyView offset={{ closed: 0, opened: 0 }}>
-        <View className="px-6 pb-8 pt-4 bg-[#121212]">
+        <View className="px-6 pb-8 pt-4 ">
           <TouchableOpacity
             activeOpacity={1}
             onPress={handleNext}
@@ -254,9 +294,9 @@ export default function RegisterStep1Screen({ navigation }) {
               colors={["#fc5a26", "#fc4526"]}
               start={{ x: 0, y: 0 }}
               end={{ x: 1, y: 0 }}
-              className="py-3.5"
+              className=""
             >
-              <Text className="text-white py-[16px] font-bold text-[15px] text-center">
+              <Text className="text-white py-[20px] font-bold text-[15px] text-center">
                 Devam Et
               </Text>
             </LinearGradient>

@@ -39,6 +39,9 @@ export const API_ENDPOINTS = {
   SWIPE_STATS: "/api/swipe/Stats",
   SWIPE_MATCHES: "/api/swipe/GetMatches",
   WHO_LIKED_ME: "/api/swipe/wholikedme",
+  SWIPE_UNDO: "/api/swipe/Undo",
+  SWIPE_FILTERS: "/api/swipe/Filters",
+  SWIPE_UPDATE_FILTERS: "/api/swipe/UpdateFilters",
 
   // Common endpoints (Enums)
   GET_CITIES: "/api/common/cities",

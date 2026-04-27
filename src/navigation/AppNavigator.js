@@ -1,9 +1,11 @@
-import { useEffect } from 'react';
+import { useEffect, useState } from 'react';
 import { NavigationContainer } from '@react-navigation/native';
 import { createNativeStackNavigator } from '@react-navigation/native-stack';
 import { useSelector, useDispatch } from 'react-redux';
+import { View, ActivityIndicator } from 'react-native';
 import { setCurrentAccessToken, setOnTokenRefreshed } from '../services/api';
 import { setUserAndToken } from '../store/slices/authSlice';
+import { saveRefreshToken } from '../utils/tokenStorage';
 import AuthNavigator from './AuthNavigator';
 import TabNavigator from './TabNavigator';
 import CompleteProfileStep1Screen from '../screens/CompleteProfileStep1Screen';
@@ -80,20 +82,40 @@ function MainNavigator() {
 }
 
 export default function AppNavigator() {
-  const { isAuthenticated, user, token } = useSelector((state) => state.auth);
+  const { isAuthenticated, user, token, refreshToken } = useSelector((state) => state.auth);
   const dispatch = useDispatch();
+  const [tokenInitialized, setTokenInitialized] = useState(false);
 
   // Keep the api axios instance in sync with the Redux/persisted token
   useEffect(() => {
+    console.log('🔑 AppNavigator: Setting access token from Redux:', token ? 'Token exists' : 'No token');
+    console.log('🔑 AppNavigator: Refresh token from Redux:', refreshToken ? 'Refresh token exists' : 'No refresh token');
     setCurrentAccessToken(token ?? null);
-  }, [token]);
+    // Also sync refresh token to AsyncStorage for the interceptor
+    if (refreshToken) {
+      saveRefreshToken(refreshToken);
+    }
+    // Mark token as initialized after first sync
+    if (!tokenInitialized) {
+      setTokenInitialized(true);
+    }
+  }, [token, refreshToken, tokenInitialized]);
 
   // After a background token refresh, keep Redux auth.token in sync
   useEffect(() => {
-    setOnTokenRefreshed((newToken) => {
-      dispatch(setUserAndToken({ user, token: newToken }));
+    setOnTokenRefreshed((newToken, newRefreshToken) => {
+      dispatch(setUserAndToken({ user, token: newToken, refreshToken: newRefreshToken }));
     });
   }, [user, dispatch]);
+
+  // Show loading until token is initialized from persisted state
+  if (!tokenInitialized) {
+    return (
+      <View style={{ flex: 1, justifyContent: 'center', alignItems: 'center', backgroundColor: '#000' }}>
+        <ActivityIndicator size="large" color="#f57656" />
+      </View>
+    );
+  }
 
   // Determine which navigator to show
   const showMainNavigator = isAuthenticated && user?.isMailVerified;

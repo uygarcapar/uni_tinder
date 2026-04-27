@@ -15,9 +15,10 @@ import {
 import { LinearGradient } from "expo-linear-gradient";
 import MaskedView from "@react-native-masked-view/masked-view";
 import { BlurView } from "expo-blur";
-import { Flame, Heart, HeartCrack, Menu } from "lucide-react-native";
+import { Flame, Heart, HeartCrack, Menu, Lock } from "lucide-react-native";
 import api from "../services/api";
 import { API_ENDPOINTS } from "../constants/api";
+import profileService from "../services/profileService";
 
 const { width } = Dimensions.get("window");
 const CARD_WIDTH = (width - 44) / 2; // 2 columns with padding
@@ -29,14 +30,18 @@ export default function LikesScreen() {
   const [totalProfiles, setTotalProfiles] = useState(0);
   const [currentPage, setCurrentPage] = useState(1);
   const [hasNextPage, setHasNextPage] = useState(false);
+  const [isPremium, setIsPremium] = useState(false);
   const insets = useSafeAreaInsets();
 
   const fetchWhoLikedMe = async (page = 1) => {
     try {
       setLoading(true);
-      const data = await api.get(
-        `${API_ENDPOINTS.WHO_LIKED_ME}?pageNumber=${page}&pageSize=10`
-      );
+      const [data, profile] = await Promise.all([
+        api.get(`${API_ENDPOINTS.WHO_LIKED_ME}?pageNumber=${page}&pageSize=10`),
+        profileService.getMyProfile().catch(() => null),
+      ]);
+
+      if (profile?.isPremium) setIsPremium(true);
 
       if (data.isSuccess && data.result) {
         const profiles = data.result.profiles.map((profile) => ({
@@ -80,40 +85,61 @@ export default function LikesScreen() {
           resizeMode="cover"
         />
 
-        {/* Gradient Overlay */}
-        <MaskedView
-          style={{
-            position: "absolute",
-            bottom: 0,
-            left: 0,
-            right: 0,
-            height: 120,
-          }}
-          maskElement={
-            <LinearGradient
-              colors={["transparent", "rgba(0,0,0,0.85)", "rgba(0,0,0,1)"]}
-              locations={[0, 0.5, 1]}
-              style={{ flex: 1 }}
-            />
-          }
-        >
-          <BlurView intensity={60} tint="dark" style={{ flex: 1 }} />
-        </MaskedView>
+        {isPremium ? (
+          <>
+            {/* Gradient Overlay */}
+            <MaskedView
+              style={{
+                position: "absolute",
+                bottom: 0,
+                left: 0,
+                right: 0,
+                height: 120,
+              }}
+              maskElement={
+                <LinearGradient
+                  colors={["transparent", "rgba(0,0,0,0.85)", "rgba(0,0,0,1)"]}
+                  locations={[0, 0.5, 1]}
+                  style={{ flex: 1 }}
+                />
+              }
+            >
+              <BlurView intensity={60} tint="dark" style={{ flex: 1 }} />
+            </MaskedView>
 
-        {/* Name and Age */}
-        <View className="absolute bottom-5 left-5 right-5">
+            {/* Name and Age */}
+            <View className="absolute bottom-5 left-5 right-5">
+              <BlurView
+                intensity={90}
+                className="mb-1 py-1.5 px-3 overflow-hidden rounded-full self-start flex-row items-center gap-2"
+              >
+                <Text className="text-white text-[10px] font-bold">
+                  Seni beğendi
+                </Text>
+              </BlurView>
+              <Text className="text-white text-[20px] font-bold">
+                {item.name}, {item.age}
+              </Text>
+            </View>
+          </>
+        ) : (
+          /* Blur + Lock overlay for non-premium */
           <BlurView
-            intensity={90}
-            className=" mb-1 py-1.5 px-3 overflow-hidden rounded-full self-start flex-row items-center gap-2"
+            intensity={70}
+            tint="dark"
+            style={{
+              position: "absolute",
+              top: 0,
+              left: 0,
+              right: 0,
+              bottom: 0,
+              alignItems: "center",
+              justifyContent: "center",
+            }}
           >
-            <Text className="text-white text-[10px] font-bold">
-              Seni beğendi
-            </Text>
+            <Lock size={40} color="#fff" strokeWidth={2} />
           </BlurView>
-          <Text className="text-white text-[20px] font-bold">
-            {item.name}, {item.age}
-          </Text>
-        </View>
+        )}
       </View>
     </TouchableOpacity>
   );

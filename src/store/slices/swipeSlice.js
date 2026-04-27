@@ -67,6 +67,11 @@ const swipeSlice = createSlice({
         state.currentIndex += 1;
       }
     },
+    rewindCard: (state) => {
+      if (state.currentIndex > 0) {
+        state.currentIndex -= 1;
+      }
+    },
   },
   extraReducers: (builder) => {
     builder
@@ -102,5 +107,5 @@ const swipeSlice = createSlice({
   },
 });
 
-export const { nextCard } = swipeSlice.actions;
+export const { nextCard, rewindCard } = swipeSlice.actions;
 export default swipeSlice.reducer;

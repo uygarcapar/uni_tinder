@@ -1,32 +1,56 @@
-import React, { useEffect, useState } from "react";
-import { View, Text, TouchableOpacity } from "react-native";
+import React, { useEffect, useState, useRef, useCallback } from "react";
+import {
+  View,
+  Text,
+  Image,
+  TouchableOpacity,
+  TextInput,
+  ActivityIndicator,
+  Alert,
+} from "react-native";
 import { useDispatch, useSelector } from "react-redux";
 import { GestureHandlerRootView } from "react-native-gesture-handler";
 import Animated, {
-  interpolateColor,
-  useAnimatedProps,
-  useAnimatedStyle,
-  interpolate,
   useSharedValue,
   withRepeat,
   withSequence,
   withTiming,
+  useAnimatedStyle,
 } from "react-native-reanimated";
-import { X, Check, Flame } from "lucide-react-native";
+import { SafeAreaView } from "react-native-safe-area-context";
+import {
+  BottomSheetModal,
+  BottomSheetScrollView,
+  BottomSheetBackdrop,
+} from "@gorhom/bottom-sheet";
+import {
+  Flame,
+  RotateCcw,
+  SlidersHorizontal,
+  X,
+  Lock,
+} from "lucide-react-native";
 import { LinearGradient } from "expo-linear-gradient";
-import { BlurView } from "expo-blur"; // BlurView eklendi
 import MaskedView from "@react-native-masked-view/masked-view";
 import SwipeWrapper from "../components/SwipeWrapper";
 import SwipeOverlay from "../components/SwipeOverlay";
-
-const AnimatedLinearGradient = Animated.createAnimatedComponent(LinearGradient);
+import api from "../services/api";
+import { API_ENDPOINTS } from "../constants/api";
 import {
   fetchPotentialMatches,
   performLike,
   performPass,
   nextCard,
   loadMoreProfiles,
+  rewindCard,
 } from "../store/slices/swipeSlice";
+
+const GENDER_OPTIONS = [
+  { label: "Erkek", value: "Male" },
+  { label: "Kadın", value: "Female" },
+  { label: "Non-Binary", value: "NonBinary" },
+  { label: "Diğer", value: "Other" },
+];
 
 const AnimatedFlameLoader = () => {
   const scale = useSharedValue(1);
@@ -42,11 +66,9 @@ const AnimatedFlameLoader = () => {
     );
   }, []);
 
-  const animatedStyle = useAnimatedStyle(() => {
-    return {
-      transform: [{ scale: scale.value }],
-    };
-  });
+  const animatedStyle = useAnimatedStyle(() => ({
+    transform: [{ scale: scale.value }],
+  }));
 
   return (
     <View className="flex-1 justify-center items-center bg-[#121212]">
@@ -78,12 +100,329 @@ const AnimatedFlameLoader = () => {
   );
 };
 
+function FilterModal({ bottomSheetRef, filters, isPremium, onSave, saving }) {
+  const [local, setLocal] = useState(filters);
+
+  useEffect(() => {
+    setLocal(filters);
+  }, [filters]);
+
+  const renderBackdrop = useCallback(
+    (props) => (
+      <BottomSheetBackdrop
+        {...props}
+        appearsOnIndex={0}
+        disappearsOnIndex={-1}
+        opacity={0.5}
+      />
+    ),
+    [],
+  );
+
+  const toggleGender = (value) => {
+    const current = local.genders || [];
+    setLocal((prev) => ({
+      ...prev,
+      genders: current.includes(value)
+        ? current.filter((g) => g !== value)
+        : [...current, value],
+    }));
+  };
+
+  const pillInput = (val, onChange) => (
+    <View
+      style={{
+        borderRadius: 999,
+        borderCurve: "continuous",
+        overflow: "hidden",
+        borderWidth: 0.5,
+        borderColor: "rgba(255,255,255,0.1)",
+      }}
+    >
+      <TextInput
+        style={{
+          color: "#fff",
+          fontSize: 16,
+          paddingHorizontal: 16,
+          paddingVertical: 14,
+        }}
+        value={String(val ?? "")}
+        onChangeText={onChange}
+        keyboardType="number-pad"
+        maxLength={3}
+        placeholderTextColor="#6B7280"
+      />
+    </View>
+  );
+
+  return (
+    <BottomSheetModal
+      ref={bottomSheetRef}
+      snapPoints={["80%"]}
+      enablePanDownToClose
+      enableOverDrag={false}
+      backdropComponent={renderBackdrop}
+      backgroundStyle={{
+        backgroundColor: "#121212",
+        borderTopLeftRadius: 36,
+        borderTopRightRadius: 36,
+      }}
+      handleIndicatorStyle={{ backgroundColor: "rgba(255,255,255,0.3)" }}
+    >
+      {/* Header */}
+      <View
+        style={{
+          flexDirection: "row",
+          alignItems: "center",
+          paddingHorizontal: 20,
+          paddingTop: 32,
+          paddingBottom: 12,
+        }}
+      >
+        <TouchableOpacity
+          onPress={() => bottomSheetRef.current?.dismiss()}
+          activeOpacity={0.7}
+          style={{ width: 60 }}
+        >
+          <X size={22} color="#9CA3AF" strokeWidth={2} />
+        </TouchableOpacity>
+        <Text
+          style={{
+            flex: 1,
+            color: "#fff",
+            fontSize: 15,
+            fontWeight: "700",
+            textAlign: "center",
+          }}
+        >
+          Filtreler
+        </Text>
+        <TouchableOpacity
+          onPress={() => onSave(local)}
+          disabled={saving}
+          activeOpacity={0.7}
+          style={{ width: 60, alignItems: "flex-end" }}
+        >
+          {saving ? (
+            <ActivityIndicator size={18} color="#fff" />
+          ) : (
+            <View
+              style={{
+                borderRadius: 999,
+                borderCurve: "continuous",
+                overflow: "hidden",
+                borderWidth: 0.5,
+                borderColor: "rgba(255,255,255,0.1)",
+                paddingHorizontal: 12,
+                paddingVertical: 10,
+              }}
+            >
+              <Text style={{ color: "#fff", fontWeight: "700", fontSize: 13 }}>
+                Kaydet
+              </Text>
+            </View>
+          )}
+        </TouchableOpacity>
+      </View>
+
+      <BottomSheetScrollView
+        style={{ flex: 1 }}
+        contentContainerStyle={{ paddingHorizontal: 20, paddingBottom: 40 }}
+        showsVerticalScrollIndicator={false}
+      >
+        {/* Age Range */}
+        <Text
+          style={{
+            color: "#fff",
+            fontWeight: "700",
+            fontSize: 16,
+            marginTop: 20,
+            marginBottom: 12,
+          }}
+        >
+          Yaş Aralığı
+        </Text>
+        <View style={{ flexDirection: "row", gap: 12 }}>
+          <View style={{ flex: 1 }}>
+            <Text style={{ color: "#9CA3AF", fontSize: 12, marginBottom: 8 }}>
+              Minimum
+            </Text>
+            {pillInput(local.ageRangeMin, (v) =>
+              setLocal((p) => ({ ...p, ageRangeMin: parseInt(v) || 18 })),
+            )}
+          </View>
+          <View style={{ flex: 1 }}>
+            <Text style={{ color: "#9CA3AF", fontSize: 12, marginBottom: 8 }}>
+              Maksimum
+            </Text>
+            {pillInput(local.ageRangeMax, (v) =>
+              setLocal((p) => ({ ...p, ageRangeMax: parseInt(v) || 30 })),
+            )}
+          </View>
+        </View>
+
+        {/* Distance */}
+        <Text
+          style={{
+            color: "#fff",
+            fontWeight: "700",
+            fontSize: 16,
+            marginTop: 28,
+            marginBottom: 12,
+          }}
+        >
+          Maksimum Mesafe (km)
+        </Text>
+        {pillInput(local.maxDistance, (v) =>
+          setLocal((p) => ({ ...p, maxDistance: parseInt(v) || 50 })),
+        )}
+
+        {/* Gender */}
+        <Text
+          style={{
+            color: "#fff",
+            fontWeight: "700",
+            fontSize: 16,
+            marginTop: 28,
+            marginBottom: 12,
+          }}
+        >
+          Cinsiyet
+        </Text>
+        <View style={{ flexDirection: "row", flexWrap: "wrap", gap: 8 }}>
+          {GENDER_OPTIONS.map((opt) => {
+            const selected = (local.genders || []).includes(opt.value);
+            return (
+              <TouchableOpacity
+                key={opt.value}
+                onPress={() => toggleGender(opt.value)}
+                activeOpacity={0.8}
+                style={{
+                  borderRadius: 999,
+                  borderCurve: "continuous",
+                  borderWidth: 0.5,
+                  borderColor: selected ? "#fc4526" : "rgba(255,255,255,0.15)",
+                  backgroundColor: selected
+                    ? "rgba(252,69,38,0.12)"
+                    : "transparent",
+                  paddingHorizontal: 16,
+                  paddingVertical: 10,
+                }}
+              >
+                <Text
+                  style={{
+                    color: selected ? "#fc4526" : "#9CA3AF",
+                    fontWeight: "600",
+                    fontSize: 14,
+                  }}
+                >
+                  {opt.label}
+                </Text>
+              </TouchableOpacity>
+            );
+          })}
+        </View>
+
+        {/* Premium-only fields */}
+        <View
+          style={{
+            marginTop: 28,
+            opacity: 0.4,
+            pointerEvents: isPremium ? "auto" : "none",
+          }}
+        >
+          <View
+            style={{
+              flexDirection: "row",
+              alignItems: "center",
+              marginBottom: 12,
+            }}
+          >
+            <Text
+              style={{
+                color: "#fff",
+                fontWeight: "700",
+                fontSize: 16,
+                flex: 1,
+              }}
+            >
+              Şehir
+            </Text>
+            {!isPremium && <Lock size={15} color="#9CA3AF" />}
+          </View>
+          <View
+            style={{
+              borderRadius: 999,
+              borderWidth: 0.5,
+              borderColor: "rgba(255,255,255,0.1)",
+              paddingHorizontal: 16,
+              paddingVertical: 14,
+            }}
+          >
+            <Text style={{ color: "#6B7280", fontSize: 16 }}>
+              {local.preferredCity || "Seçilmedi"}
+            </Text>
+          </View>
+
+          <View
+            style={{
+              flexDirection: "row",
+              alignItems: "center",
+              marginTop: 20,
+              marginBottom: 12,
+            }}
+          >
+            <Text
+              style={{
+                color: "#fff",
+                fontWeight: "700",
+                fontSize: 16,
+                flex: 1,
+              }}
+            >
+              Üniversite
+            </Text>
+            {!isPremium && <Lock size={15} color="#9CA3AF" />}
+          </View>
+          <View
+            style={{
+              borderRadius: 999,
+              borderWidth: 0.5,
+              borderColor: "rgba(255,255,255,0.1)",
+              paddingHorizontal: 16,
+              paddingVertical: 14,
+            }}
+          >
+            <Text style={{ color: "#6B7280", fontSize: 16 }}>
+              {local.preferredUniversityDomain || "Seçilmedi"}
+            </Text>
+          </View>
+        </View>
+      </BottomSheetScrollView>
+    </BottomSheetModal>
+  );
+}
+
 export default function DiscoverScreen() {
   const dispatch = useDispatch();
   const { potentialMatches, currentIndex, loading, hasNextPage, loadingMore } =
     useSelector((state) => state.swipe);
 
   const [isSwiping, setIsSwiping] = useState(false);
+  const [rewindLoading, setRewindLoading] = useState(false);
+  const [remainingUndos, setRemainingUndos] = useState(null);
+  const [filters, setFilters] = useState({
+    ageRangeMin: 18,
+    ageRangeMax: 30,
+    maxDistance: 50,
+    genders: [],
+    preferredCity: null,
+    preferredUniversityDomain: null,
+    isPremium: false,
+  });
+  const [filterSaving, setFilterSaving] = useState(false);
+
+  const filterBottomSheetRef = useRef(null);
 
   const dragX = useSharedValue(0);
   const overlayDragX = useSharedValue(0);
@@ -91,105 +430,27 @@ export default function DiscoverScreen() {
   const buttonDragX = useSharedValue(0);
   const programmaticSwipe = useSharedValue(0);
 
-  // Blur görünmesi için katı #1E1E1E renkleri saydam RGBA'ya çevrildi.
-  // Aktif gradyan renklerine de hafif bir alpha (0.85) eklendi ki cam hissiyatı korunsun.
-  const likeGradientProps = useAnimatedProps(() => {
-    const color1 = interpolateColor(
-      buttonDragX.value,
-      [0, 100],
-      ["rgba(255, 255, 255, 0.05)", "rgba(0, 180, 216, 0.85)"],
-    );
-    const color2 = interpolateColor(
-      buttonDragX.value,
-      [0, 100],
-      ["rgba(255, 255, 255, 0.05)", "rgba(61, 255, 175, 0.85)"],
-    );
-    const color3 = interpolateColor(
-      buttonDragX.value,
-      [0, 100],
-      ["rgba(255, 255, 255, 0.05)", "rgba(5, 255, 0, 0.85)"],
-    );
-    return { colors: [color1, color2, color3] };
-  });
-
-  const passGradientProps = useAnimatedProps(() => {
-    const color1 = interpolateColor(
-      buttonDragX.value,
-      [-100, 0],
-      ["rgba(255, 42, 95, 0.85)", "rgba(255, 255, 255, 0.05)"],
-    );
-    const color2 = interpolateColor(
-      buttonDragX.value,
-      [-100, 0],
-      ["rgba(255, 77, 77, 0.85)", "rgba(255, 255, 255, 0.05)"],
-    );
-    const color3 = interpolateColor(
-      buttonDragX.value,
-      [-100, 0],
-      ["rgba(255, 142, 83, 0.85)", "rgba(255, 255, 255, 0.05)"],
-    );
-    return { colors: [color1, color2, color3] };
-  });
-
-  // İkon renkleri tamamen senin orijinal tasarımınla aynı bırakıldı
-  const likeIconGradientProps = useAnimatedProps(() => {
-    const color1 = interpolateColor(
-      buttonDragX.value,
-      [0, 100],
-      ["#00FFFF", "#000000"],
-    );
-    const color2 = interpolateColor(
-      buttonDragX.value,
-      [0, 100],
-      ["#3DFFAF", "#000000"],
-    );
-    const color3 = interpolateColor(
-      buttonDragX.value,
-      [0, 100],
-      ["#04ff00", "#000000"],
-    );
-    return { colors: [color1, color2, color3] };
-  });
-
-  const passIconGradientProps = useAnimatedProps(() => {
-    const color1 = interpolateColor(
-      buttonDragX.value,
-      [-100, 0],
-      ["#000000", "#fc0341"],
-    );
-    const color2 = interpolateColor(
-      buttonDragX.value,
-      [-100, 0],
-      ["#000000", "#FF4D4D"],
-    );
-    const color3 = interpolateColor(
-      buttonDragX.value,
-      [-100, 0],
-      ["#000000", "#ffef42"],
-    );
-    return { colors: [color1, color2, color3] };
-  });
-
-  const likeButtonScale = useAnimatedStyle(() => {
-    const scale = interpolate(
-      buttonDragX.value,
-      [-100, 0, 100],
-      [0.92, 1, 1.08],
-    );
-    return { transform: [{ scale }] };
-  });
-
-  const passButtonScale = useAnimatedStyle(() => {
-    const scale = interpolate(
-      buttonDragX.value,
-      [-100, 0, 100],
-      [1.08, 1, 0.92],
-    );
-    return { transform: [{ scale }] };
-  });
-
   useEffect(() => {
     dispatch(fetchPotentialMatches(1));
+  }, []);
+
+  useEffect(() => {
+    api
+      .get(API_ENDPOINTS.SWIPE_FILTERS)
+      .then((res) => {
+        if (res.isSuccess && res.result) setFilters(res.result);
+      })
+      .catch(() => {});
+
+    api
+      .get(API_ENDPOINTS.SWIPE_STATS)
+      .then((res) => {
+        console.log("📊 SWIPE_STATS response:", JSON.stringify(res, null, 2));
+        if (res.isSuccess && res.result?.remainingUndosToday != null) {
+          setRemainingUndos(res.result.remainingUndosToday);
+        }
+      })
+      .catch((err) => console.log("📊 SWIPE_STATS error:", err));
   }, []);
 
   useEffect(() => {
@@ -203,6 +464,64 @@ export default function DiscoverScreen() {
     dispatch(nextCard());
     if (direction === "right") dispatch(performLike(userId));
     else dispatch(performPass(userId));
+  };
+
+  const handleRewind = async () => {
+    if (rewindLoading) return;
+    setRewindLoading(true);
+    try {
+      const res = await api.post(API_ENDPOINTS.SWIPE_UNDO);
+      if (res.isSuccess) {
+        dispatch(rewindCard());
+        if (res.result?.remainingUndosToday != null) {
+          setRemainingUndos(res.result.remainingUndosToday);
+        }
+      } else {
+        Alert.alert("", res.result?.message || res.message || "Geri alınamadı");
+      }
+    } catch {
+      Alert.alert("", "Geri alınamadı");
+    } finally {
+      setRewindLoading(false);
+    }
+  };
+
+  const handleSaveFilters = async (localFilters) => {
+    setFilterSaving(true);
+    try {
+      const payload = {
+        ageRangeMin: localFilters.ageRangeMin,
+        ageRangeMax: localFilters.ageRangeMax,
+        maxDistance: localFilters.maxDistance,
+        genders: localFilters.genders,
+      };
+      const res = await api.put(API_ENDPOINTS.SWIPE_UPDATE_FILTERS, payload);
+      if (res.isSuccess) {
+        setFilters(res.result);
+        filterBottomSheetRef.current?.dismiss();
+        dispatch(fetchPotentialMatches(1));
+      } else {
+        Alert.alert("", res.message || "Filtreler kaydedilemedi");
+      }
+    } catch {
+      Alert.alert("", "Filtreler kaydedilemedi");
+    } finally {
+      setFilterSaving(false);
+    }
+  };
+
+  const handlePassButton = () => {
+    if (isSwiping || potentialMatches.length <= currentIndex) return;
+    setIsSwiping(true);
+    programmaticSwipe.value = 1;
+    setTimeout(() => setIsSwiping(false), 300);
+  };
+
+  const handleLikeButton = () => {
+    if (isSwiping || potentialMatches.length <= currentIndex) return;
+    setIsSwiping(true);
+    programmaticSwipe.value = 2;
+    setTimeout(() => setIsSwiping(false), 300);
   };
 
   if (loading && potentialMatches.length === 0) {
@@ -226,186 +545,123 @@ export default function DiscoverScreen() {
             overlayOpacity={overlayOpacity}
             buttonDragX={buttonDragX}
             programmaticSwipe={programmaticSwipe}
+            onPass={handlePassButton}
+            onLike={handleLikeButton}
           />
         );
       });
   };
 
-  const handlePassButton = () => {
-    if (isSwiping || potentialMatches.length <= currentIndex) return;
-
-    setIsSwiping(true);
-    programmaticSwipe.value = 1;
-
-    setTimeout(() => {
-      setIsSwiping(false);
-    }, 1000);
-  };
-
-  const handleLikeButton = () => {
-    if (isSwiping || potentialMatches.length <= currentIndex) return;
-
-    setIsSwiping(true);
-    programmaticSwipe.value = 2;
-
-    setTimeout(() => {
-      setIsSwiping(false);
-    }, 1000);
-  };
-
   return (
-    <GestureHandlerRootView className="flex-1 bg-[#121212]">
-      <View className="flex-1 pt-1 pb-1">
+    <GestureHandlerRootView style={{ flex: 1, backgroundColor: "#121212" }}>
+      {/* Header */}
+      <SafeAreaView edges={["top"]} style={{ backgroundColor: "#121212" }}>
+        <View
+          style={{
+            paddingHorizontal: 24,
+            paddingVertical: 4,
+            flexDirection: "row",
+            alignItems: "center",
+            justifyContent: "center",
+          }}
+        >
+          {/* Rewind */}
+          <TouchableOpacity
+            style={{ position: "absolute", left: 24 }}
+            onPress={handleRewind}
+            disabled={rewindLoading}
+            activeOpacity={0.7}
+          >
+            {rewindLoading ? (
+              <ActivityIndicator size={24} color="#fff" />
+            ) : (
+              <View style={{ position: "relative" }} pointerEvents="none">
+                <RotateCcw size={24} color="#fff" strokeWidth={2} />
+                {remainingUndos !== null && remainingUndos >= 0 && (
+                  <View
+                    style={{
+                      position: "absolute",
+                      bottom: -4,
+                      right: -6,
+                      backgroundColor:
+                        remainingUndos === 0 ? "#6B7280" : "#fc4526",
+                      borderRadius: 999,
+                      minWidth: 16,
+                      height: 16,
+                      alignItems: "center",
+                      justifyContent: "center",
+                      paddingHorizontal: 3,
+                    }}
+                  >
+                    <Text
+                      style={{ color: "#fff", fontSize: 9, fontWeight: "700" }}
+                    >
+                      {remainingUndos}
+                    </Text>
+                  </View>
+                )}
+              </View>
+            )}
+          </TouchableOpacity>
+
+          {/* Logo */}
+          <Image
+            source={require("../../assets/lit_name_white.png")}
+            style={{ height: 50, width: 120 }}
+            resizeMode="contain"
+          />
+
+          {/* Filter */}
+          <TouchableOpacity
+            style={{ position: "absolute", right: 24 }}
+            onPress={() => filterBottomSheetRef.current?.present()}
+            activeOpacity={0.7}
+          >
+            <View pointerEvents="none">
+              <SlidersHorizontal size={24} color="#fff" strokeWidth={2} />
+            </View>
+          </TouchableOpacity>
+        </View>
+      </SafeAreaView>
+
+      {/* Cards */}
+      <View style={{ flex: 1, paddingTop: 1, paddingBottom: 1 }}>
         {potentialMatches.length > currentIndex ? (
-          <View className="flex-1 relative">
+          <View style={{ flex: 1, position: "relative" }}>
             {renderStack()}
             <SwipeOverlay dragX={overlayDragX} opacity={overlayOpacity} />
-
-            <View
-              className="absolute bottom-4 left-0 right-0 flex-row justify-center items-center gap-[60px]"
-              style={{ zIndex: 100 }}
-              pointerEvents="box-none"
-            >
-              {/* PASS BUTTON */}
-              <Animated.View style={passButtonScale}>
-                <TouchableOpacity
-                  onPress={handlePassButton}
-                  activeOpacity={0.9}
-                  disabled={isSwiping}
-                  style={{
-                    shadowColor: "#000",
-                    shadowOffset: { width: 0, height: 4 },
-                    shadowOpacity: 0.3,
-                    shadowRadius: 8,
-                    elevation: 8,
-                    zIndex: 100,
-                  }}
-                >
-                  <View
-                    style={{
-                      borderRadius: 9999,
-                      width: 75,
-                      height: 75,
-                      overflow: "hidden",
-                    }}
-                  >
-                    {/* Arkaplanı Blur Yapan Katman */}
-                    <BlurView
-                      intensity={70}
-                      tint="dark"
-                      style={{
-                        position: "absolute",
-                        width: "100%",
-                        height: "100%",
-                      }}
-                    />
-
-                    {/* Üstteki Animasyonlu Gradyan (Transparan olduğu için altındaki blur'u gösterir) */}
-                    <AnimatedLinearGradient
-                      animatedProps={passGradientProps}
-                      start={{ x: 0, y: 0 }}
-                      end={{ x: 1, y: 1 }}
-                      style={{
-                        width: "100%",
-                        height: "100%",
-                        alignItems: "center",
-                        justifyContent: "center",
-                      }}
-                    >
-                      <MaskedView
-                        maskElement={
-                          <X size={45} color="white" strokeWidth={4} />
-                        }
-                        style={{ width: 45, height: 45 }}
-                      >
-                        <AnimatedLinearGradient
-                          animatedProps={passIconGradientProps}
-                          start={{ x: 0, y: 0 }}
-                          end={{ x: 1, y: 1 }}
-                          style={{ width: 45, height: 45 }}
-                        />
-                      </MaskedView>
-                    </AnimatedLinearGradient>
-                  </View>
-                </TouchableOpacity>
-              </Animated.View>
-
-              {/* LIKE BUTTON */}
-              <Animated.View style={likeButtonScale}>
-                <TouchableOpacity
-                  onPress={handleLikeButton}
-                  activeOpacity={0.9}
-                  disabled={isSwiping}
-                  style={{
-                    shadowColor: "#000",
-                    shadowOffset: { width: 0, height: 4 },
-                    shadowOpacity: 0.3,
-                    shadowRadius: 8,
-                    elevation: 8,
-                    zIndex: 100,
-                  }}
-                >
-                  <View
-                    className=""
-                    style={{
-                      borderRadius: 9999,
-                      width: 75,
-                      height: 75,
-                      overflow: "hidden",
-                      borderCurve: "continuous",
-                    }}
-                  >
-                    {/* Arkaplanı Blur Yapan Katman */}
-                    <BlurView
-                      intensity={70}
-                      tint="dark"
-                      style={{
-                        position: "absolute",
-                        width: "100%",
-                        height: "100%",
-                      }}
-                    />
-
-                    {/* Üstteki Animasyonlu Gradyan */}
-                    <AnimatedLinearGradient
-                      animatedProps={likeGradientProps}
-                      start={{ x: 0, y: 0 }}
-                      end={{ x: 1, y: 1 }}
-                      style={{
-                        width: "100%",
-                        height: "100%",
-                        alignItems: "center",
-                        justifyContent: "center",
-                      }}
-                    >
-                      <MaskedView
-                        maskElement={
-                          <Check size={45} color="white" strokeWidth={4} />
-                        }
-                        style={{ width: 45, height: 45 }}
-                      >
-                        <AnimatedLinearGradient
-                          animatedProps={likeIconGradientProps}
-                          start={{ x: 0, y: 0 }}
-                          end={{ x: 1, y: 1 }}
-                          style={{ width: 45, height: 45 }}
-                        />
-                      </MaskedView>
-                    </AnimatedLinearGradient>
-                  </View>
-                </TouchableOpacity>
-              </Animated.View>
-            </View>
           </View>
         ) : (
-          <View className="flex-1 items-center justify-center mb-20">
+          <View
+            style={{
+              flex: 1,
+              alignItems: "center",
+              justifyContent: "center",
+              marginBottom: 80,
+            }}
+          >
             <Flame size={80} color="#6B7280" strokeWidth={2} />
-            <Text className="text-gray-500 font-bold text-[13px] mt-2">
+            <Text
+              style={{
+                color: "#6B7280",
+                fontWeight: "700",
+                fontSize: 13,
+                marginTop: 8,
+              }}
+            >
               Yeni profiller için bekle.
             </Text>
           </View>
         )}
       </View>
+
+      <FilterModal
+        bottomSheetRef={filterBottomSheetRef}
+        filters={filters}
+        isPremium={filters.isPremium}
+        onSave={handleSaveFilters}
+        saving={filterSaving}
+      />
     </GestureHandlerRootView>
   );
 }
