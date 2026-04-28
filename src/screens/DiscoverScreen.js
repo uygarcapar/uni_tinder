@@ -7,6 +7,8 @@ import {
   TextInput,
   ActivityIndicator,
   Alert,
+  Dimensions,
+  Keyboard,
 } from "react-native";
 import { useDispatch, useSelector } from "react-redux";
 import { GestureHandlerRootView } from "react-native-gesture-handler";
@@ -16,7 +18,13 @@ import Animated, {
   withSequence,
   withTiming,
   useAnimatedStyle,
+  Easing,
 } from "react-native-reanimated";
+
+const { width: SCREEN_WIDTH } = Dimensions.get("window");
+const ENTRY_DISTANCE = SCREEN_WIDTH * 1.2;
+const ENTRY_DURATION = 180;
+const ENTRY_EASING = Easing.out(Easing.cubic);
 import { SafeAreaView } from "react-native-safe-area-context";
 import {
   BottomSheetModal,
@@ -198,7 +206,10 @@ function FilterModal({ bottomSheetRef, filters, isPremium, onSave, saving }) {
           Filtreler
         </Text>
         <TouchableOpacity
-          onPress={() => onSave(local)}
+          onPress={() => {
+            Keyboard.dismiss();
+            onSave(local);
+          }}
           disabled={saving}
           activeOpacity={0.7}
           style={{ width: 60, alignItems: "flex-end" }}
@@ -247,17 +258,19 @@ function FilterModal({ bottomSheetRef, filters, isPremium, onSave, saving }) {
             <Text style={{ color: "#9CA3AF", fontSize: 12, marginBottom: 8 }}>
               Minimum
             </Text>
-            {pillInput(local.ageRangeMin, (v) =>
-              setLocal((p) => ({ ...p, ageRangeMin: parseInt(v) || 18 })),
-            )}
+            {pillInput(local.ageRangeMin, (v) => {
+              const n = parseInt(v);
+              setLocal((p) => ({ ...p, ageRangeMin: isNaN(n) ? "" : n }));
+            })}
           </View>
           <View style={{ flex: 1 }}>
             <Text style={{ color: "#9CA3AF", fontSize: 12, marginBottom: 8 }}>
               Maksimum
             </Text>
-            {pillInput(local.ageRangeMax, (v) =>
-              setLocal((p) => ({ ...p, ageRangeMax: parseInt(v) || 30 })),
-            )}
+            {pillInput(local.ageRangeMax, (v) => {
+              const n = parseInt(v);
+              setLocal((p) => ({ ...p, ageRangeMax: isNaN(n) ? "" : n }));
+            })}
           </View>
         </View>
 
@@ -273,9 +286,10 @@ function FilterModal({ bottomSheetRef, filters, isPremium, onSave, saving }) {
         >
           Maksimum Mesafe (km)
         </Text>
-        {pillInput(local.maxDistance, (v) =>
-          setLocal((p) => ({ ...p, maxDistance: parseInt(v) || 50 })),
-        )}
+        {pillInput(local.maxDistance, (v) => {
+          const n = parseInt(v);
+          setLocal((p) => ({ ...p, maxDistance: isNaN(n) ? "" : n }));
+        })}
 
         {/* Gender */}
         <Text
@@ -409,7 +423,6 @@ export default function DiscoverScreen() {
     useSelector((state) => state.swipe);
 
   const [isSwiping, setIsSwiping] = useState(false);
-  const [rewindLoading, setRewindLoading] = useState(false);
   const [remainingUndos, setRemainingUndos] = useState(null);
   const [filters, setFilters] = useState({
     ageRangeMin: 18,
@@ -423,12 +436,18 @@ export default function DiscoverScreen() {
   const [filterSaving, setFilterSaving] = useState(false);
 
   const filterBottomSheetRef = useRef(null);
+  const lastSwipePromiseRef = useRef(null);
 
   const dragX = useSharedValue(0);
   const overlayDragX = useSharedValue(0);
   const overlayOpacity = useSharedValue(1);
   const buttonDragX = useSharedValue(0);
   const programmaticSwipe = useSharedValue(0);
+  const stackEntryX = useSharedValue(0);
+
+  const stackEntryStyle = useAnimatedStyle(() => ({
+    transform: [{ translateX: stackEntryX.value }],
+  }));
 
   useEffect(() => {
     dispatch(fetchPotentialMatches(1));
@@ -462,27 +481,58 @@ export default function DiscoverScreen() {
 
   const handleSwipe = (direction, userId) => {
     dispatch(nextCard());
-    if (direction === "right") dispatch(performLike(userId));
-    else dispatch(performPass(userId));
+    const action = direction === "right" ? performLike(userId) : performPass(userId);
+    lastSwipePromiseRef.current = dispatch(action);
   };
 
   const handleRewind = async () => {
-    if (rewindLoading) return;
-    setRewindLoading(true);
+    if (currentIndex === 0) return;
+    if (remainingUndos !== null && remainingUndos <= 0) return;
+
+    // Optimistic UI: kart hemen geri gelir + animasyon
+    dispatch(rewindCard());
+    stackEntryX.value = -ENTRY_DISTANCE;
+    stackEntryX.value = withTiming(0, {
+      duration: ENTRY_DURATION,
+      easing: ENTRY_EASING,
+    });
+    const prevUndos = remainingUndos;
+    if (remainingUndos !== null) setRemainingUndos((n) => n - 1);
+
+    // Race fix: bekleyen swipe varsa onun POST'u tamamlansın
+    const pending = lastSwipePromiseRef.current;
+    let swipeOk = true;
+    if (pending) {
+      try {
+        const result = await pending;
+        swipeOk = result?.meta?.requestStatus === "fulfilled";
+      } catch {
+        swipeOk = false;
+      }
+    }
+    lastSwipePromiseRef.current = null;
+
+    // Swipe POST başarısız olduysa: backend'de zaten swipe yok → Undo gönderme
+    if (!swipeOk) {
+      if (prevUndos !== null) setRemainingUndos(prevUndos);
+      return;
+    }
+
     try {
       const res = await api.post(API_ENDPOINTS.SWIPE_UNDO);
       if (res.isSuccess) {
-        dispatch(rewindCard());
         if (res.result?.remainingUndosToday != null) {
           setRemainingUndos(res.result.remainingUndosToday);
         }
       } else {
+        dispatch(nextCard());
+        if (prevUndos !== null) setRemainingUndos(prevUndos);
         Alert.alert("", res.result?.message || res.message || "Geri alınamadı");
       }
     } catch {
+      dispatch(nextCard());
+      if (prevUndos !== null) setRemainingUndos(prevUndos);
       Alert.alert("", "Geri alınamadı");
-    } finally {
-      setRewindLoading(false);
     }
   };
 
@@ -490,16 +540,23 @@ export default function DiscoverScreen() {
     setFilterSaving(true);
     try {
       const payload = {
-        ageRangeMin: localFilters.ageRangeMin,
-        ageRangeMax: localFilters.ageRangeMax,
-        maxDistance: localFilters.maxDistance,
+        ageRangeMin: localFilters.ageRangeMin || 18,
+        ageRangeMax: localFilters.ageRangeMax || 30,
+        maxDistance: localFilters.maxDistance || 50,
         genders: localFilters.genders,
       };
       const res = await api.put(API_ENDPOINTS.SWIPE_UPDATE_FILTERS, payload);
       if (res.isSuccess) {
         setFilters(res.result);
+        await dispatch(fetchPotentialMatches(1))
+          .unwrap()
+          .catch(() => {});
+        stackEntryX.value = ENTRY_DISTANCE;
+        stackEntryX.value = withTiming(0, {
+          duration: ENTRY_DURATION,
+          easing: ENTRY_EASING,
+        });
         filterBottomSheetRef.current?.dismiss();
-        dispatch(fetchPotentialMatches(1));
       } else {
         Alert.alert("", res.message || "Filtreler kaydedilemedi");
       }
@@ -569,39 +626,33 @@ export default function DiscoverScreen() {
           <TouchableOpacity
             style={{ position: "absolute", left: 24 }}
             onPress={handleRewind}
-            disabled={rewindLoading}
             activeOpacity={0.7}
           >
-            {rewindLoading ? (
-              <ActivityIndicator size={24} color="#fff" />
-            ) : (
-              <View style={{ position: "relative" }} pointerEvents="none">
-                <RotateCcw size={24} color="#fff" strokeWidth={2} />
-                {remainingUndos !== null && remainingUndos >= 0 && (
-                  <View
-                    style={{
-                      position: "absolute",
-                      bottom: -4,
-                      right: -6,
-                      backgroundColor:
-                        remainingUndos === 0 ? "#6B7280" : "#fc4526",
-                      borderRadius: 999,
-                      minWidth: 16,
-                      height: 16,
-                      alignItems: "center",
-                      justifyContent: "center",
-                      paddingHorizontal: 3,
-                    }}
+            <View style={{ position: "relative" }} pointerEvents="none">
+              <RotateCcw size={24} color="#fff" strokeWidth={2} />
+              {remainingUndos !== null && remainingUndos >= 0 && (
+                <View
+                  style={{
+                    position: "absolute",
+                    bottom: -4,
+                    right: -6,
+                    backgroundColor: "#121212",
+                    borderRadius: 999,
+                    minWidth: 16,
+                    height: 16,
+                    alignItems: "center",
+                    justifyContent: "center",
+                    paddingHorizontal: 3,
+                  }}
+                >
+                  <Text
+                    style={{ color: "#fff", fontSize: 15, fontWeight: "700" }}
                   >
-                    <Text
-                      style={{ color: "#fff", fontSize: 9, fontWeight: "700" }}
-                    >
-                      {remainingUndos}
-                    </Text>
-                  </View>
-                )}
-              </View>
-            )}
+                    {remainingUndos}
+                  </Text>
+                </View>
+              )}
+            </View>
           </TouchableOpacity>
 
           {/* Logo */}
@@ -627,10 +678,10 @@ export default function DiscoverScreen() {
       {/* Cards */}
       <View style={{ flex: 1, paddingTop: 1, paddingBottom: 1 }}>
         {potentialMatches.length > currentIndex ? (
-          <View style={{ flex: 1, position: "relative" }}>
+          <Animated.View style={[{ flex: 1, position: "relative" }, stackEntryStyle]}>
             {renderStack()}
             <SwipeOverlay dragX={overlayDragX} opacity={overlayOpacity} />
-          </View>
+          </Animated.View>
         ) : (
           <View
             style={{

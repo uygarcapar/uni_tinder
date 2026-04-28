@@ -793,10 +793,14 @@ function ProfileEditModal({
           onPress={onSave}
           disabled={saving || saveDisabled}
           activeOpacity={0.7}
-          style={{ width: 60, alignItems: "flex-end", opacity: saveDisabled ? 0.35 : 1 }}
+          style={{
+            width: 60,
+            alignItems: "flex-end",
+            opacity: saveDisabled ? 0.35 : 1,
+          }}
         >
           {saving ? (
-            <ActivityIndicator size={18} color="#fff" />
+            <ActivityIndicator className="py-[8.5px]" size={18} color="#fff" />
           ) : (
             <View
               style={{
