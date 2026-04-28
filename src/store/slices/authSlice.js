@@ -26,6 +26,8 @@ export const login = createAsyncThunk(
   async ({ email, password }, { rejectWithValue }) => {
     try {
       const response = await authService.login(email, password);
+      console.log("🔑 Login response keys:", Object.keys(response || {}));
+      console.log("🔑 Login refreshToken received:", response?.refreshToken ? "YES" : "NO");
       // Persist tokens so the refresh interceptor can use them
       if (response?.token) {
         setCurrentAccessToken(response.token);

@@ -196,8 +196,8 @@ export default function LikesScreen() {
         numColumns={2}
         ListEmptyComponent={
           <View className="flex-1 items-center justify-center mb-20">
-            <HeartCrack size={80} color="#6B7280" strokeWidth={2} />
-            <Text className="text-gray-500 font-bold text-[13px] mt-2">
+            <HeartCrack size={80} color="#fff" strokeWidth={1.3} />
+            <Text className="text-gray-400 font-bold text-[14px] mt-2">
               Henüz seni beğenen kimse yok.
             </Text>
           </View>
