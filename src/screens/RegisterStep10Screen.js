@@ -1,62 +1,80 @@
-import { useState } from "react";
-import { View, Text, TouchableOpacity } from "react-native";
+import { useState, useRef } from "react";
+import { View, Text, TouchableOpacity, Animated } from "react-native";
 import { useDispatch, useSelector } from "react-redux";
 import { updateMultipleFields } from "../store/slices/profileSlice";
 import { KeyboardStickyView } from "react-native-keyboard-controller";
 import { LinearGradient } from "expo-linear-gradient";
-import MultiSlider from "@ptomasroos/react-native-multi-slider";
+import { Check, InfoIcon } from "lucide-react-native";
 import RegisterProgressBar from "../components/RegisterProgressBar";
-import { InfoIcon } from "lucide-react-native";
+import AnimatedPressableShared from "../components/AnimatedPressable";
+
+const OPTIONS = [
+  { id: 0, label: "Erkek" },
+  { id: 1, label: "Kadın" },
+  { id: 2, label: "Non-Binary" },
+];
+
+const AnimatedPressable = ({ onPress, style, activeOpacity = 1, children }) => {
+  const scale = useRef(new Animated.Value(1)).current;
+
+  const handlePressIn = () => {
+    Animated.spring(scale, {
+      toValue: 0.97,
+      useNativeDriver: true,
+      speed: 20,
+    }).start();
+  };
+
+  const handlePressOut = () => {
+    Animated.spring(scale, {
+      toValue: 1,
+      useNativeDriver: true,
+      bounciness: 8,
+      speed: 20,
+    }).start();
+  };
+
+  return (
+    <Animated.View style={{ transform: [{ scale }] }}>
+      <TouchableOpacity
+        activeOpacity={activeOpacity}
+        onPressIn={handlePressIn}
+        onPressOut={handlePressOut}
+        onPress={onPress}
+        style={style}
+      >
+        {children}
+      </TouchableOpacity>
+    </Animated.View>
+  );
+};
 
 export default function RegisterStep10Screen({ navigation }) {
   const dispatch = useDispatch();
   const profile = useSelector((state) => state.profile || {});
 
-  const [ageRange, setAgeRange] = useState([
-    profile.ageRangeMin ?? 18,
-    profile.ageRangeMax ?? 65,
-  ]);
+  const initial =
+    Array.isArray(profile.interestedIn) && profile.interestedIn.length > 0
+      ? profile.interestedIn
+      : [];
+  const [selected, setSelected] = useState(initial);
+  const [error, setError] = useState("");
 
-  const handleValuesChange = (values) => {
-    setAgeRange(values);
+  const toggle = (id) => {
+    setError("");
+    setSelected((prev) =>
+      prev.includes(id) ? prev.filter((v) => v !== id) : [...prev, id],
+    );
   };
 
   const handleNext = () => {
-    if (ageRange[0] >= ageRange[1]) {
-      alert("Minimum yaş maksimum yaştan küçük olmalıdır");
+    if (selected.length === 0) {
+      setError("En az bir seçenek seçmelisin.");
       return;
     }
-
-    if (ageRange[1] - ageRange[0] < 5) {
-      alert("Yaş aralığı en az 5 yıl olmalıdır");
-      return;
-    }
-
-    dispatch(
-      updateMultipleFields({
-        ageRangeMin: ageRange[0],
-        ageRangeMax: ageRange[1],
-      }),
-    );
+    dispatch(updateMultipleFields({ interestedIn: selected }));
     navigation.navigate("RegisterStep11");
   };
-
-  const handleBack = () => {
-    navigation.goBack();
-  };
-
-  const handleSkip = () => {
-    dispatch(
-      updateMultipleFields({
-        ageRangeMin: null,
-        ageRangeMax: null,
-      }),
-    );
-    navigation.navigate("RegisterStep11");
-  };
-
-  // Check if age range is at default values
-  const isDefaultRange = ageRange[0] === 18 && ageRange[1] === 65;
 
   return (
     <View className="flex-1 bg-[#121212]">
@@ -65,115 +83,120 @@ export default function RegisterStep10Screen({ navigation }) {
         <View className="flex-row items-center justify-between">
           <TouchableOpacity
             activeOpacity={1}
-            onPress={handleBack}
+            onPress={() => navigation.goBack()}
             className="flex-row items-center"
           >
             <Text className="text-4xl mr-2 text-white">←</Text>
           </TouchableOpacity>
-          {isDefaultRange && (
-            <TouchableOpacity activeOpacity={0.9} onPress={handleSkip}>
-              <Text className="text-gray-400 text-[16px] font-semibold">
-                Atla
-              </Text>
-            </TouchableOpacity>
-          )}
         </View>
       </View>
 
-      <RegisterProgressBar step={11} />
+      <RegisterProgressBar step={10} />
 
       <View className="flex-1 px-6 py-6 pt-0">
         <View className="flex flex-col gap-2">
-          <Text className="text-4xl font-bold text-white">Yaş Aralığı</Text>
+          <Text className="text-4xl font-bold text-white">İlgi Alanın</Text>
           <Text className="text-[18px] font-normal text-gray-400 mb-6">
-            Görmeyi tercih ettiğin yaş aralığını seç.
+            Kiminle eşleşmek istersin? Birden fazla seçebilirsin.
           </Text>
         </View>
 
-        {/* Multi Slider */}
-        <View className="mb-2 items-center">
-          <MultiSlider
-            values={ageRange}
-            onValuesChange={handleValuesChange}
-            min={18}
-            max={65}
-            step={1}
-            sliderLength={320}
-            minMarkerOverlapDistance={100}
-            selectedStyle={{
-              backgroundColor: "#fff",
-            }}
-            unselectedStyle={{
-              backgroundColor: "#374151",
-            }}
-            markerStyle={{
-              backgroundColor: "#fff",
-              height: 28,
-              width: 28,
-              borderRadius: 100,
-              borderWidth: 0,
-              marginTop: 2,
-              shadowColor: "transparent",
-              shadowOffset: { width: 0, height: 0 },
-              shadowOpacity: 0,
-              shadowRadius: 0,
-              elevation: 0,
-            }}
-            containerStyle={{
-              height: 40,
-            }}
-            trackStyle={{
-              height: 4,
-              borderRadius: 3,
-            }}
-          />
+        <View style={{ gap: 12 }}>
+          {OPTIONS.map((opt) => {
+            const active = selected.includes(opt.id);
+            return (
+              <AnimatedPressable
+                key={opt.id}
+                onPress={() => toggle(opt.id)}
+                style={{
+                  borderRadius: 30,
+                  borderCurve: "continuous",
+                  borderWidth: 0.5,
+                  borderColor: active
+                    ? "rgba(255,255,255,0.3)"
+                    : "rgba(255,255,255,0.1)",
+                  backgroundColor: active ? "#3e3e3e" : "#1E1E1E",
+                  paddingHorizontal: 20,
+                  paddingVertical: 18,
+                  position: "relative",
+                }}
+              >
+                <Text
+                  style={{ color: "#fff", fontSize: 17, fontWeight: "600" }}
+                >
+                  {opt.label}
+                </Text>
+                {active && (
+                  <View
+                    pointerEvents="none"
+                    style={{
+                      position: "absolute",
+                      right: 20,
+                      top: 0,
+                      bottom: 0,
+                      justifyContent: "center",
+                    }}
+                  >
+                    <Check size={20} color="#fff" strokeWidth={2.5} />
+                  </View>
+                )}
+              </AnimatedPressable>
+            );
+          })}
         </View>
-        {/* Age Range Display */}
-        <View className="flex-row justify-between mb-4">
-          <View>
-            <Text className="text-white text-2xl font-bold">
-              {ageRange[0]} yaş
-            </Text>
-          </View>
-          <View className="items-end">
-            <Text className="text-white text-2xl font-bold">
-              {ageRange[1] === 65 ? "65+" : ageRange[1]} yaş
-            </Text>
-          </View>
-        </View>
+
         <View className="flex-row gap-2 px-2 mr-6 items-center mt-5">
           <InfoIcon size={16} color="#9CA3AF" className="mt-3" />
           <Text className="text-gray-400 text-[12px]">
-            Seçtiğin yaş aralığına göre eşleşmeler göreceksin. Daha geniş bir
-            aralık seçmek, daha fazla eşleşme görmene yardımcı olabilir.
+            Seçimlerini profilinden filtreleyerek detaylandırabilirsin.
           </Text>
         </View>
-      </View>
 
-      {/* Sticky Button with KeyboardStickyView */}
-      <KeyboardStickyView offset={{ closed: 0, opened: 0 }}>
-        <View className="px-8 pb-8 pt-4 bg-[#121212]">
-          <TouchableOpacity
-            activeOpacity={1}
-            onPress={handleNext}
-            className="rounded-full overflow-hidden"
+        {error ? (
+          <Text
             style={{
-              borderRadius: 999,
-              borderCurve: "continuous",
-              overflow: "hidden",
+              color: "#ef4444",
+              textAlign: "center",
+              marginTop: 20,
+              fontSize: 14,
             }}
           >
+            {error}
+          </Text>
+        ) : null}
+      </View>
+
+      <KeyboardStickyView offset={{ closed: 0, opened: 0 }}>
+        <View
+          style={{
+            paddingHorizontal: 32,
+            paddingBottom: 32,
+            paddingTop: 16,
+            backgroundColor: "#121212",
+          }}
+        >
+          <AnimatedPressableShared
+            onPress={handleNext}
+            style={{ borderRadius: 999, overflow: "hidden" }}
+          >
             <LinearGradient
-              colors={["#fc2126", "#fc1626"]}
+              colors={["#fc2726", "#fc1b26"]}
               start={{ x: 0, y: 0 }}
               end={{ x: 1, y: 0 }}
-              className="py-3.5"
             >
-              <Text className="text-white py-[20px] font-bold text-[15px] text-center">
+              <Text
+                style={{
+                  color: "#fff",
+                  paddingVertical: 20,
+                  fontWeight: "700",
+                  fontSize: 15,
+                  textAlign: "center",
+                }}
+              >
                 Devam Et
               </Text>
             </LinearGradient>
-          </TouchableOpacity>
+          </AnimatedPressableShared>
         </View>
       </KeyboardStickyView>
     </View>

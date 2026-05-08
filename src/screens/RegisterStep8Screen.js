@@ -6,6 +6,7 @@ import {
   Keyboard,
   TouchableWithoutFeedback,
   ActivityIndicator,
+  Animated,
 } from "react-native";
 import { useDispatch, useSelector } from "react-redux";
 import {
@@ -14,13 +15,14 @@ import {
   BottomSheetTextInput,
   BottomSheetFlatList,
 } from "@gorhom/bottom-sheet";
-import { Check, Search, SearchX } from "lucide-react-native";
+import { Check, Search, SearchX, ChevronDown } from "lucide-react-native";
 import { BlurView } from "expo-blur";
 import { updateMultipleFields } from "../store/slices/profileSlice";
 import { KeyboardStickyView } from "react-native-keyboard-controller";
 import { LinearGradient } from "expo-linear-gradient";
 import { API_BASE_URL, API_ENDPOINTS } from "../constants/api";
 import RegisterProgressBar from "../components/RegisterProgressBar";
+import AnimatedPressableShared from "../components/AnimatedPressable";
 
 const YEAR_OF_STUDY_OPTIONS = [
   { value: "0", label: "Hazırlık" },
@@ -31,6 +33,46 @@ const YEAR_OF_STUDY_OPTIONS = [
   { value: "5", label: "5. Sınıf" },
   { value: "6", label: "6. Sınıf" },
 ];
+
+const AnimatedPressable = ({
+  onPress,
+  style,
+  activeOpacity = 1,
+  children,
+}) => {
+  const scale = useRef(new Animated.Value(1)).current;
+
+  const handlePressIn = () => {
+    Animated.spring(scale, {
+      toValue: 0.95,
+      useNativeDriver: true,
+      speed: 20,
+    }).start();
+  };
+
+  const handlePressOut = () => {
+    Animated.spring(scale, {
+      toValue: 1,
+      useNativeDriver: true,
+      bounciness: 8,
+      speed: 20,
+    }).start();
+  };
+
+  return (
+    <Animated.View style={{ transform: [{ scale }] }}>
+      <TouchableOpacity
+        activeOpacity={activeOpacity}
+        onPressIn={handlePressIn}
+        onPressOut={handlePressOut}
+        onPress={onPress}
+        style={style}
+      >
+        {children}
+      </TouchableOpacity>
+    </Animated.View>
+  );
+};
 
 const DepartmentPickerContent = ({
   initialDepartment,
@@ -54,9 +96,28 @@ const DepartmentPickerContent = ({
     );
   }, [search, departments]);
 
+  const orderedDepartments = useMemo(() => {
+    if (!localDepartment) return filteredDepartments;
+    const selectedItem = departments.find(
+      (d) => String(d.id) === localDepartment,
+    );
+    if (!selectedItem) return filteredDepartments;
+
+    const q = search.trim().toLocaleLowerCase("tr");
+    // Search var ama seçili eşleşmiyorsa pin'i kaldır
+    if (q && !(selectedItem.name ?? "").toLocaleLowerCase("tr").includes(q)) {
+      return filteredDepartments;
+    }
+
+    const rest = filteredDepartments.filter(
+      (d) => String(d.id) !== localDepartment,
+    );
+    return [selectedItem, ...rest];
+  }, [filteredDepartments, departments, localDepartment, search]);
+
   return (
     <BottomSheetFlatList
-      data={filteredDepartments}
+      data={orderedDepartments}
       keyExtractor={(item) => String(item.id)}
       keyboardShouldPersistTaps="handled"
       showsVerticalScrollIndicator={false}
@@ -121,6 +182,19 @@ const DepartmentPickerContent = ({
       ListEmptyComponent={
         <View style={{ paddingVertical: 32, alignItems: "center" }}>
           <SearchX size={36} color="#fff" strokeWidth={1.75} />
+          {search.trim() !== "" && (
+            <Text
+              style={{
+                color: "#fff",
+                fontSize: 15,
+                fontWeight: "500",
+                marginTop: 12,
+                textAlign: "center",
+              }}
+            >
+              '{search.trim()}' bulunamadı
+            </Text>
+          )}
         </View>
       }
       renderItem={({ item }) => {
@@ -325,7 +399,7 @@ export default function RegisterStep8Screen({ navigation }) {
 
           {loadingDepartments ? (
             <View className="mb-6">
-              <Text className="text-gray-300 text-lg font-semibold mb-2">
+              <Text className="text-gray-300 text-[14px] font-semibold mb-2">
                 Bölüm *
               </Text>
               <View
@@ -341,7 +415,7 @@ export default function RegisterStep8Screen({ navigation }) {
             </View>
           ) : (
             <View className="mb-6">
-              <Text className="text-gray-300 text-lg font-semibold mb-2">
+              <Text className="text-gray-300 text-[14px] font-semibold mb-2">
                 Bölüm *
               </Text>
               <TouchableOpacity
@@ -361,13 +435,18 @@ export default function RegisterStep8Screen({ navigation }) {
                 >
                   {getDepartmentLabel()}
                 </Text>
-                <Text className="text-gray-400 text-xl">▼</Text>
+                <ChevronDown
+                  size={20}
+                  color="#9CA3AF"
+                  strokeWidth={2}
+                  pointerEvents="none"
+                />
               </TouchableOpacity>
             </View>
           )}
 
           <View className="mb-4">
-            <Text className="text-gray-300 text-lg font-semibold mb-2">
+            <Text className="text-gray-300 text-[14px] font-semibold mb-2">
               Sınıf *
             </Text>
             <View
@@ -380,10 +459,9 @@ export default function RegisterStep8Screen({ navigation }) {
               {YEAR_OF_STUDY_OPTIONS.map((opt) => {
                 const isSelected = yearOfStudy === opt.value;
                 return (
-                  <TouchableOpacity
+                  <AnimatedPressable
                     key={opt.value}
                     onPress={() => setYearOfStudy(opt.value)}
-                    activeOpacity={0.8}
                     style={{
                       borderRadius: 999,
                       borderCurve: "continuous",
@@ -406,7 +484,7 @@ export default function RegisterStep8Screen({ navigation }) {
                     >
                       {opt.label}
                     </Text>
-                  </TouchableOpacity>
+                  </AnimatedPressable>
                 );
               })}
             </View>
@@ -417,10 +495,8 @@ export default function RegisterStep8Screen({ navigation }) {
       {/* Sticky Button with KeyboardStickyView */}
       <KeyboardStickyView offset={{ closed: 0, opened: 0 }}>
         <View className="px-8 pb-8 pt-4 bg-[#121212]">
-          <TouchableOpacity
-            activeOpacity={1}
+          <AnimatedPressableShared
             onPress={handleNext}
-            className=""
             style={{
               borderRadius: 999,
               borderCurve: "continuous",
@@ -437,7 +513,7 @@ export default function RegisterStep8Screen({ navigation }) {
                 Devam Et
               </Text>
             </LinearGradient>
-          </TouchableOpacity>
+          </AnimatedPressableShared>
         </View>
       </KeyboardStickyView>
 

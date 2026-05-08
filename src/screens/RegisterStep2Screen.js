@@ -16,9 +16,12 @@ import {
   logout,
   setEmailVerifiedToken,
 } from "../store/slices/authSlice";
-import { Mailbox, RotateCcw } from "lucide-react-native";
+import { Mailbox, RotateCcw, ArrowLeft } from "lucide-react-native";
 import { LinearGradient } from "expo-linear-gradient";
 import { API_BASE_URL, API_ENDPOINTS } from "../constants/api";
+import { useReanimatedKeyboardAnimation } from "react-native-keyboard-controller";
+import Animated, { useAnimatedStyle } from "react-native-reanimated";
+import AnimatedPressable from "../components/AnimatedPressable";
 
 export default function RegisterStep2Screen({ route, navigation }) {
   const { user, isAuthenticated } = useSelector((state) => state.auth);
@@ -36,6 +39,11 @@ export default function RegisterStep2Screen({ route, navigation }) {
 
   const inputRefs = useRef([]);
   const dispatch = useDispatch();
+
+  const { height: keyboardHeight } = useReanimatedKeyboardAnimation();
+  const liftStyle = useAnimatedStyle(() => ({
+    transform: [{ translateY: keyboardHeight.value / 2 }],
+  }));
 
   useEffect(() => {
     if (countdown > 0) {
@@ -79,16 +87,19 @@ export default function RegisterStep2Screen({ route, navigation }) {
     try {
       if (isRegistrationMode) {
         // New registration flow: verify-email → save token → go to RegisterStep1
-        const response = await fetch(`${API_BASE_URL}${API_ENDPOINTS.VERIFY_EMAIL_REGISTRATION}`, {
-          method: "POST",
-          headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({ email, code: finalCode }),
-        });
+        const response = await fetch(
+          `${API_BASE_URL}${API_ENDPOINTS.VERIFY_EMAIL_REGISTRATION}`,
+          {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({ email, code: finalCode }),
+          },
+        );
         const data = await response.json();
 
         if (data.isSuccess && data.result?.emailVerifiedToken) {
           dispatch(setEmailVerifiedToken(data.result.emailVerifiedToken));
-          navigation.reset({ index: 0, routes: [{ name: "RegisterStep6" }] });
+          navigation.reset({ index: 0, routes: [{ name: "RegisterStep3" }] });
         } else {
           setError(data.message || "Doğrulama başarısız");
         }
@@ -118,11 +129,14 @@ export default function RegisterStep2Screen({ route, navigation }) {
     try {
       let response;
       if (isRegistrationMode) {
-        const res = await fetch(`${API_BASE_URL}${API_ENDPOINTS.SEND_VERIFICATION}`, {
-          method: "POST",
-          headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({ email }),
-        });
+        const res = await fetch(
+          `${API_BASE_URL}${API_ENDPOINTS.SEND_VERIFICATION}`,
+          {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({ email }),
+          },
+        );
         response = await res.json();
       } else {
         response = await authService.resendVerification(email);
@@ -156,23 +170,35 @@ export default function RegisterStep2Screen({ route, navigation }) {
   return (
     <View className="flex-1 bg-[#121212] -mt-[100px]">
       <TouchableWithoutFeedback onPress={Keyboard.dismiss}>
-        <View className="flex-1 justify-center px-6 py-12">
+        <Animated.View
+          style={[
+            {
+              flex: 1,
+              justifyContent: "center",
+              paddingHorizontal: 24,
+              paddingVertical: 48,
+            },
+            liftStyle,
+          ]}
+        >
           <View className="items-center flex flex-col gap-10 p-8">
-            <Mailbox strokeWidth={1.5} size={100} color="#fff" />
+            <Mailbox strokeWidth={1} size={100} color="#fff" />
             <View>
-              <Text className="text-3xl font-bold text-white mb-2 text-center">
+              <Text className="text-3xl font-bold text-white mb-3 text-center">
                 E-Mail'ini doğrula.
               </Text>
-              <Text className="text-white/80 text-lg text-center px-4">
+              <Text className="text-white/80 text-[15px] text-center px-3">
                 {isPending
                   ? "Bu adrese daha önce kod gönderildi. Mailinizi kontrol edin."
                   : "Bu adrese gönderilen 6 haneli kodu girin"}
               </Text>
               <View
                 style={{ borderCurve: "continuous" }}
-                className="border-[0.5px] border-white/15 items-center flex-row justify-center mt-4 py-3 px-4 rounded-full overflow-hidden self-center"
+                className="border-[0.5px] border-white/15 items-center flex-row justify-center mt-5 py-3 px-4 rounded-full overflow-hidden self-center"
               >
-                <Text className="text-white text-lg text-center px-4">{email}</Text>
+                <Text className="text-white text-lg text-center px-4">
+                  {email}
+                </Text>
               </View>
             </View>
           </View>
@@ -191,7 +217,7 @@ export default function RegisterStep2Screen({ route, navigation }) {
                 <TextInput
                   key={index}
                   ref={(ref) => (inputRefs.current[index] = ref)}
-                  className={`w-12 h-16 bg-[#1e1e1e] text-white rounded-[15px] text-center text-2xl font-medium p-0 ${
+                  className={`w-12 h-16 bg-[#1e1e1e] text-white rounded-[15px] text-center text-2xl font-semibold p-0 ${
                     error ? "border border-red-600" : ""
                   }`}
                   style={{
@@ -216,31 +242,40 @@ export default function RegisterStep2Screen({ route, navigation }) {
             </View>
 
             <View className="flex-row mb-3 justify-center items-center py-[15px] pt-0 rounded-full overflow-hidden">
-              <TouchableOpacity onPress={handleResend} disabled={resendLoading || countdown > 0}>
+              <TouchableOpacity
+                activeOpacity={0.8}
+                onPress={handleResend}
+                disabled={resendLoading || countdown > 0}
+              >
                 {resendLoading ? (
                   <ActivityIndicator size="small" color="#fff" />
                 ) : countdown > 0 ? (
                   <View className="flex-row items-center gap-2">
                     <RotateCcw size={16} color="#d1d5db" strokeWidth={2.5} />
-                    <Text className="text-gray-300 font-medium">Tekrar gönder ({countdown}s)</Text>
+                    <Text className="text-gray-300 font-medium">
+                      Tekrar gönder ({countdown}s)
+                    </Text>
                   </View>
                 ) : (
                   <View className="flex-row py-[2px] items-center gap-2">
                     <RotateCcw size={16} color="#fff" strokeWidth={2.5} />
-                    <Text className="text-white font-medium">Tekrar Gönder</Text>
+                    <Text className="text-white font-medium">
+                      Tekrar Gönder
+                    </Text>
                   </View>
                 )}
               </TouchableOpacity>
             </View>
 
-            <TouchableOpacity
+            <AnimatedPressable
               style={{
+                borderRadius: 999,
                 borderCurve: "continuous",
+                overflow: "hidden",
                 opacity: loading || code.some((d) => d === "") ? 0.5 : 1,
               }}
               onPress={() => handleVerify()}
               disabled={loading || code.some((d) => d === "")}
-              className="rounded-full overflow-hidden"
             >
               <LinearGradient
                 colors={["#fc5426", "#fc4026"]}
@@ -256,16 +291,31 @@ export default function RegisterStep2Screen({ route, navigation }) {
                   </Text>
                 )}
               </LinearGradient>
-            </TouchableOpacity>
+            </AnimatedPressable>
           </View>
 
-          <View className="flex-row justify-center mt-8">
-            <Text className="text-gray-300">Yanlış email mi? </Text>
-            <TouchableOpacity onPress={handleGoBack}>
+          <View className="items-center mt-4">
+            <TouchableOpacity
+              activeOpacity={1}
+              onPress={handleGoBack}
+              style={{
+                flexDirection: "row",
+                alignItems: "center",
+                alignSelf: "center",
+                gap: 6,
+                borderWidth: 0,
+                borderColor: "rgba(255,255,255,0.15)",
+                borderRadius: 999,
+                borderCurve: "continuous",
+                paddingHorizontal: 18,
+                paddingVertical: 18,
+              }}
+            >
+              <ArrowLeft size={16} color="#fff" strokeWidth={2.5} />
               <Text className="text-white font-medium">Geri Dön</Text>
             </TouchableOpacity>
           </View>
-        </View>
+        </Animated.View>
       </TouchableWithoutFeedback>
     </View>
   );

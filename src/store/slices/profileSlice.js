@@ -229,23 +229,49 @@ export const registerAndComplete = createAsyncThunk(
       }
       formData.append("MainPhotoIndex", mainPhotoIndex);
 
+      // Log what we're actually sending
+      console.log("📤 [registerAndComplete] Sending to backend:");
+      for (const [key, value] of formData.entries?.() ?? []) {
+        if (typeof value === "object" && value?.uri) {
+          console.log(`  ${key}: <photo ${value.name}>`);
+        } else {
+          console.log(`  ${key}:`, value);
+        }
+      }
+
       const response = await fetch(`${API_BASE_URL}${API_ENDPOINTS.REGISTER_AND_COMPLETE}`, {
         method: "POST",
         body: formData,
       });
 
+      const rawText = await response.text();
+      console.log("📥 [registerAndComplete] HTTP", response.status);
+      console.log("📥 [registerAndComplete] Response body:", rawText);
+
       let data = null;
       try {
-        const rawText = await response.text();
         if (rawText?.trim()) data = JSON.parse(rawText);
-      } catch {}
+      } catch (parseErr) {
+        console.error("❌ JSON parse error:", parseErr.message);
+      }
 
       if (!response.ok || (data && !data.isSuccess)) {
-        return rejectWithValue(data?.message || `HTTP ${response.status}`);
+        const errMsg =
+          data?.message ||
+          data?.title ||
+          data?.errors ||
+          rawText ||
+          `HTTP ${response.status}`;
+        console.error("❌ Backend error detail:", errMsg);
+        if (data?.errors) {
+          console.error("❌ Field errors:", JSON.stringify(data.errors, null, 2));
+        }
+        return rejectWithValue(typeof errMsg === "string" ? errMsg : JSON.stringify(errMsg));
       }
 
       return data;
     } catch (error) {
+      console.error("❌ registerAndComplete exception:", error);
       return rejectWithValue(error.message || "Kayıt tamamlanamadı");
     }
   }
@@ -285,6 +311,17 @@ const profileSlice = createSlice({
         state.loading = false;
         state.error = action.payload;
         // DON'T clear profile state on error - keep data for retry
+      })
+      .addCase(registerAndComplete.pending, (state) => {
+        state.loading = true;
+        state.error = null;
+      })
+      .addCase(registerAndComplete.fulfilled, () => {
+        return initialState;
+      })
+      .addCase(registerAndComplete.rejected, (state, action) => {
+        state.loading = false;
+        state.error = action.payload;
       });
   },
 });

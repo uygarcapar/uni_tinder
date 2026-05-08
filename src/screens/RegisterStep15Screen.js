@@ -14,12 +14,15 @@ import {
   updateMultipleFields,
   registerAndComplete,
 } from "../store/slices/profileSlice";
-import { setUserAndToken, clearRegistrationForm } from "../store/slices/authSlice";
+import {
+  setUserAndToken,
+  clearRegistrationForm,
+} from "../store/slices/authSlice";
 import * as Location from "expo-location";
-import { KeyboardStickyView } from "react-native-keyboard-controller";
 import { LinearGradient } from "expo-linear-gradient";
 import { Plus, X } from "lucide-react-native";
 import RegisterProgressBar from "../components/RegisterProgressBar";
+import AnimatedPressable from "../components/AnimatedPressable";
 import { Gesture, GestureDetector } from "react-native-gesture-handler";
 import Animated, {
   useSharedValue,
@@ -38,7 +41,7 @@ const ITEM_WIDTH = AVAILABLE_WIDTH * 0.48;
 const ITEM_HEIGHT = ITEM_WIDTH * (4 / 3);
 const HORIZONTAL_GAP = AVAILABLE_WIDTH - ITEM_WIDTH * 2;
 const ROW_GAP = 20;
-const SPRING_CONFIG = { damping: 24, stiffness: 200, mass: 0.8 };
+const SPRING_CONFIG = { damping: 22, stiffness: 140, mass: 1.4 };
 
 const getPosition = (index) => {
   "worklet";
@@ -63,6 +66,7 @@ function SortablePhoto({
   children,
   onDragStart,
   onDragEnd,
+  disabled = false,
 }) {
   const isDragging = useSharedValue(false);
   const position = getPosition(index);
@@ -85,6 +89,7 @@ function SortablePhoto({
   );
 
   const panGesture = Gesture.Pan()
+    .enabled(!disabled)
     .onStart(() => {
       isDragging.value = true;
       startX.value = translateX.value;
@@ -131,7 +136,6 @@ function SortablePhoto({
       { scale: withSpring(isDragging.value ? 1.05 : 1, SPRING_CONFIG) },
     ],
     zIndex: isDragging.value ? 100 : 0,
-    opacity: isDragging.value ? 0.9 : 1,
   }));
 
   return (
@@ -174,7 +178,7 @@ function PhotoCard({ photo, onRemove }) {
           justifyContent: "center",
           zIndex: 50,
           backgroundColor: "#1E1E1E",
-          borderWidth: 1,
+          borderWidth: 0.4,
           borderColor: "#696b70",
         }}
       >
@@ -308,11 +312,13 @@ export default function RegisterStep15Screen({ navigation }) {
       }
 
       // Save tokens + user — AppNavigator will switch to MainNavigator automatically
-      dispatch(setUserAndToken({
-        user: response.result.user,
-        token: response.result.token,
-        refreshToken: response.result.refreshToken,
-      }));
+      dispatch(
+        setUserAndToken({
+          user: response.result.user,
+          token: response.result.token,
+          refreshToken: response.result.refreshToken,
+        }),
+      );
       dispatch(clearRegistrationForm());
     } catch (err) {
       console.log("❌ CompleteProfile error:", err);
@@ -358,7 +364,7 @@ export default function RegisterStep15Screen({ navigation }) {
             İlk sıradaki ana profil fotoğrafındır.
           </Text>
           {error ? (
-            <Text className="text-red-500 text-[14px] font-medium mt-2">
+            <Text className="text-red-500 text-[14px] font-normal mt-2">
               {error}
             </Text>
           ) : null}
@@ -381,8 +387,12 @@ export default function RegisterStep15Screen({ navigation }) {
               maxIndex={photos.length - 1}
               onDragStart={handleDragStart}
               onDragEnd={handleDragEnd}
+              disabled={loading}
             >
-              <PhotoCard photo={photo} onRemove={() => removePhoto(photo)} />
+              <PhotoCard
+                photo={photo}
+                onRemove={loading ? undefined : () => removePhoto(photo)}
+              />
             </SortablePhoto>
           ))}
 
@@ -399,6 +409,7 @@ export default function RegisterStep15Screen({ navigation }) {
               <TouchableOpacity
                 activeOpacity={1}
                 onPress={pickImage}
+                disabled={loading}
                 style={{
                   width: "100%",
                   height: "100%",
@@ -410,6 +421,7 @@ export default function RegisterStep15Screen({ navigation }) {
                   backgroundColor: "#1E1E1E",
                   alignItems: "center",
                   justifyContent: "center",
+                  opacity: loading ? 0.5 : 1,
                 }}
               >
                 <View pointerEvents="none">
@@ -422,42 +434,38 @@ export default function RegisterStep15Screen({ navigation }) {
       </ScrollView>
 
       {/* Sticky Button */}
-      <KeyboardStickyView offset={{ closed: 0, opened: 0 }}>
-        <View className="px-8 pb-8 pt-4">
-          <TouchableOpacity
-            activeOpacity={1}
-            onPress={handleCompleteProfile}
-            disabled={loading || photos.length < 2 || isDraggingPhoto}
-            className="rounded-full overflow-hidden"
-            style={{
-              borderRadius: 999,
-              borderCurve: "continuous",
-              overflow: "hidden",
-            }}
+      <View className="px-8 pb-8 pt-4 absolute bottom-0 left-0 right-0">
+        <AnimatedPressable
+          onPress={handleCompleteProfile}
+          disabled={loading || photos.length < 2 || isDraggingPhoto}
+          style={{
+            borderRadius: 999,
+            borderCurve: "continuous",
+            overflow: "hidden",
+          }}
+        >
+          <LinearGradient
+            colors={
+              loading || photos.length < 2 || isDraggingPhoto
+                ? ["#9CA3AF", "#6B7280"]
+                : ["#fc0a26", "#fc0326"]
+            }
+            start={{ x: 0, y: 0 }}
+            end={{ x: 1, y: 0 }}
+            className="py-3.5"
           >
-            <LinearGradient
-              colors={
-                loading || photos.length < 2 || isDraggingPhoto
-                  ? ["#9CA3AF", "#6B7280"]
-                  : ["#fc0a26", "#fc0326"]
-              }
-              start={{ x: 0, y: 0 }}
-              end={{ x: 1, y: 0 }}
-              className="py-3.5"
-            >
-              {loading ? (
-                <View className="py-[20px]">
-                  <ActivityIndicator color="#fff" />
-                </View>
-              ) : (
-                <Text className="text-white py-[20px] font-bold text-[15px] text-center">
-                  Profili Tamamla
-                </Text>
-              )}
-            </LinearGradient>
-          </TouchableOpacity>
-        </View>
-      </KeyboardStickyView>
+            {loading ? (
+              <View className="py-[18px]">
+                <ActivityIndicator color="#fff" />
+              </View>
+            ) : (
+              <Text className="text-white py-[20px] font-bold text-[15px] text-center">
+                Profili Tamamla
+              </Text>
+            )}
+          </LinearGradient>
+        </AnimatedPressable>
+      </View>
     </View>
   );
 }

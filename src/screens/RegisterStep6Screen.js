@@ -1,4 +1,4 @@
-import React, { useState, useRef } from "react";
+import { useState, useRef } from "react";
 import {
   View,
   Text,
@@ -12,78 +12,132 @@ import { updateRegistrationField } from "../store/slices/authSlice";
 import { KeyboardStickyView } from "react-native-keyboard-controller";
 import { LinearGradient } from "expo-linear-gradient";
 import RegisterProgressBar from "../components/RegisterProgressBar";
+import AnimatedPressable from "../components/AnimatedPressable";
+import { InfoIcon } from "lucide-react-native";
+
+const calculateAge = (day, month, year) => {
+  const today = new Date();
+  const birth = new Date(year, month - 1, day);
+  let age = today.getFullYear() - birth.getFullYear();
+  const m = today.getMonth() - birth.getMonth();
+  if (m < 0 || (m === 0 && today.getDate() < birth.getDate())) age--;
+  return age;
+};
 
 export default function RegisterStep6Screen({ navigation }) {
   const dispatch = useDispatch();
-  const { password, confirmPassword } = useSelector(
-    (state) => state.auth.registrationForm,
+  const dateOfBirthString = useSelector(
+    (state) => state.auth.registrationForm.dateOfBirth,
   );
 
-  const passwordInputRef = useRef(null);
-  const [error, setError] = useState("");
+  const initial = dateOfBirthString ? new Date(dateOfBirthString) : null;
+  const [day, setDay] = useState(
+    initial ? String(initial.getDate()).padStart(2, "0") : "",
+  );
+  const [month, setMonth] = useState(
+    initial ? String(initial.getMonth() + 1).padStart(2, "0") : "",
+  );
+  const [year, setYear] = useState(
+    initial ? String(initial.getFullYear()) : "",
+  );
 
-  const updateField = (field, value) => {
-    dispatch(updateRegistrationField({ field, value }));
-    // Kullanıcı yeni bir şey yazdığında hatayı temizle
-    if (error) setError("");
+  const [error, setError] = useState("");
+  const [errorFields, setErrorFields] = useState([]);
+
+  const monthRef = useRef(null);
+  const yearRef = useRef(null);
+
+  const clearFieldError = (field) => {
+    setErrorFields((prev) => {
+      const next = prev.filter((f) => f !== field);
+      if (next.length === 0) setError("");
+      return next;
+    });
   };
 
-  /**
-   * Şifre doğrulama kurallarını kontrol eder.
-   * @param {string} pass - Kontrol edilecek şifre.
-   * @returns {string | null} - Hata mesajı veya kural geçerliyse null.
-   */
-  const validatePasswordRules = (pass) => {
-    // 1. Kural: En az 8 karakter
-    if (pass.length < 8) {
-      return "Şifreniz en az 8 karakter olmalıdır.";
-    }
-    // 2. Kural: En az 1 büyük harf
-    if (!/[A-Z]/.test(pass)) {
-      return "Şifreniz en az 1 büyük harf içermelidir.";
-    }
-    // 3. Kural: En az 1 rakam (0-9) (YENİ KURAL)
-    if (!/[0-9]/.test(pass)) {
-      return "Şifreniz en az 1 rakam (0-9) içermelidir.";
-    }
-    // 4. Kural: En az 1 özel karakter (YENİ KURAL)
-    // Örnek özel karakterler: !@#$%^&*(),.?":{}|<>
-    if (!/[!@#$%^&*(),.?":{}|<>]/.test(pass)) {
-      return "Şifreniz en az 1 özel karakter içermelidir.";
-    }
+  const handleDayChange = (val) => {
+    const clean = val.replace(/[^0-9]/g, "").slice(0, 2);
+    setDay(clean);
+    clearFieldError("day");
+    if (clean.length === 2) monthRef.current?.focus();
+  };
 
-    return null;
+  const handleMonthChange = (val) => {
+    const clean = val.replace(/[^0-9]/g, "").slice(0, 2);
+    setMonth(clean);
+    clearFieldError("month");
+    if (clean.length === 2) yearRef.current?.focus();
+  };
+
+  const handleYearChange = (val) => {
+    const clean = val.replace(/[^0-9]/g, "").slice(0, 4);
+    setYear(clean);
+    clearFieldError("year");
   };
 
   const handleNext = () => {
     Keyboard.dismiss();
-    // Önce boşluk kontrolü
-    if (!password || !confirmPassword) {
-      setError("Lütfen tüm şifre alanlarını doldurun.");
+    const errors = [];
+    const d = parseInt(day);
+    const mo = parseInt(month);
+    const y = parseInt(year);
+
+    if (!day || day.length < 2 || isNaN(d) || d < 1 || d > 31)
+      errors.push("day");
+    if (!month || month.length < 2 || isNaN(mo) || mo < 1 || mo > 12)
+      errors.push("month");
+    if (
+      !year ||
+      year.length < 4 ||
+      isNaN(y) ||
+      y < 1900 ||
+      y > new Date().getFullYear()
+    )
+      errors.push("year");
+
+    if (errors.length > 0) {
+      setErrorFields(errors);
+      setError("Geçerli bir doğum tarihi gir.");
       return;
     }
 
-    // Şifre kurallarını kontrol et
-    const validationError = validatePasswordRules(password);
-    if (validationError) {
-      setError(validationError);
+    const age = calculateAge(d, mo, y);
+    if (age < 18) {
+      setError("Uygulamayı kullanabilmek için 18 yaşından büyük olmalısın.");
+      setErrorFields(["day", "month", "year"]);
       return;
     }
 
-    // Şifreler eşleşiyor mu?
-    if (password !== confirmPassword) {
-      setError("Girdiğiniz şifreler birbiriyle eşleşmiyor.");
-      return;
-    }
-
-    // Her şey tamamsa devam et
+    const date = new Date(y, mo - 1, d);
+    dispatch(
+      updateRegistrationField({
+        field: "dateOfBirth",
+        value: date.toISOString(),
+      }),
+    );
     setError("");
+    setErrorFields([]);
     navigation.navigate("RegisterStep7");
   };
 
+  const inputStyle = (field) => ({
+    borderRadius: 999,
+    borderCurve: "continuous",
+    overflow: "hidden",
+    borderWidth: 0.5,
+    borderColor: errorFields.includes(field)
+      ? "#ef4444"
+      : "rgba(255,255,255,0.1)",
+    paddingHorizontal: 16,
+    paddingVertical: 16,
+    fontSize: 22,
+    fontWeight: "600",
+    color: "#fff",
+    textAlign: "center",
+  });
+
   return (
     <View className="flex-1 bg-[#121212]">
-      {/* Header */}
       <View className="bg-[#121212] pt-16 pb-6 px-6">
         <TouchableOpacity
           activeOpacity={1}
@@ -94,81 +148,72 @@ export default function RegisterStep6Screen({ navigation }) {
         </TouchableOpacity>
       </View>
 
-      <RegisterProgressBar step={3} />
+      <RegisterProgressBar step={6} />
 
       <TouchableWithoutFeedback onPress={Keyboard.dismiss}>
         <View className="flex-1 px-6 py-6 pt-0">
           <View className="flex flex-col gap-2">
-            <Text className="text-4xl font-bold text-white">
-              Şifreni oluştur.
-            </Text>
+            <Text className="text-4xl font-bold text-white">Yaşını gir.</Text>
             <Text className="text-[18px] font-normal text-gray-400 mb-6">
-              Güçlü bir şifre, hesabını güvende tutmana yardımcı olur.
+              Doğum tarihin, doğru eşleşmeler bulmamıza yardımcı olur.
             </Text>
           </View>
 
-          {/* Şifre Input */}
-          <View className="mb-4">
-            <Text className="text-gray-300 text-lg font-semibold mb-2">
-              Şifre *
-            </Text>
-            <View
-              style={{
-                borderRadius: 999,
-                borderCurve: "continuous",
-                overflow: "hidden",
-                borderWidth: 0.5,
-                borderColor: error ? "#ef4444" : "rgba(255,255,255,0.1)",
-              }}
-            >
+          <View style={{ flexDirection: "row", alignItems: "center", gap: 8 }}>
+            <View style={{ flex: 1 }}>
+              <Text className="text-gray-300 text-[14px] font-semibold mb-2 text-center">
+                Gün
+              </Text>
               <TextInput
-                ref={passwordInputRef}
-                style={{
-                  paddingHorizontal: 16,
-                  paddingVertical: 16,
-                  fontSize: 18,
-                  color: "#fff",
-                }}
-                placeholder="En az 8 karakter"
-                placeholderTextColor="#9CA3AF"
-                value={password}
-                onChangeText={(v) => updateField("password", v)}
-                secureTextEntry={true}
+                style={inputStyle("day")}
+                placeholder="GG"
+                placeholderTextColor="#4B5563"
+                keyboardType="number-pad"
+                maxLength={2}
+                value={day}
+                onChangeText={handleDayChange}
+                returnKeyType="next"
+                onSubmitEditing={() => monthRef.current?.focus()}
+              />
+            </View>
+
+            <View style={{ flex: 1 }}>
+              <Text className="text-gray-300 text-[14px] font-semibold mb-2 text-center">
+                Ay
+              </Text>
+              <TextInput
+                ref={monthRef}
+                style={inputStyle("month")}
+                placeholder="AA"
+                placeholderTextColor="#4B5563"
+                keyboardType="number-pad"
+                maxLength={2}
+                value={month}
+                onChangeText={handleMonthChange}
+                returnKeyType="next"
+                onSubmitEditing={() => yearRef.current?.focus()}
+              />
+            </View>
+
+            <View style={{ flex: 2 }}>
+              <Text className="text-gray-300 text-[14px] font-semibold mb-2 text-center">
+                Yıl
+              </Text>
+              <TextInput
+                ref={yearRef}
+                style={inputStyle("year")}
+                placeholder="YYYY"
+                placeholderTextColor="#4B5563"
+                keyboardType="number-pad"
+                maxLength={4}
+                value={year}
+                onChangeText={handleYearChange}
+                returnKeyType="done"
+                onSubmitEditing={Keyboard.dismiss}
               />
             </View>
           </View>
 
-          {/* Şifre Tekrar Input */}
-          <View className="mb-4">
-            <Text className="text-gray-300 text-lg font-semibold mb-2">
-              Şifre Tekrar *
-            </Text>
-            <View
-              style={{
-                borderRadius: 999,
-                borderCurve: "continuous",
-                overflow: "hidden",
-                borderWidth: 0.5,
-                borderColor: error ? "#ef4444" : "rgba(255,255,255,0.1)",
-              }}
-            >
-              <TextInput
-                style={{
-                  paddingHorizontal: 16,
-                  paddingVertical: 16,
-                  fontSize: 18,
-                  color: "#fff",
-                }}
-                placeholder="Şifrenizi tekrar girin"
-                placeholderTextColor="#9CA3AF"
-                value={confirmPassword}
-                onChangeText={(v) => updateField("confirmPassword", v)}
-                secureTextEntry={true}
-              />
-            </View>
-          </View>
-
-          {/* Error Message */}
           {error ? (
             <Text className="text-red-500 text-center font-normal mb-3 mt-4">
               {error}
@@ -177,25 +222,26 @@ export default function RegisterStep6Screen({ navigation }) {
         </View>
       </TouchableWithoutFeedback>
 
-      {/* Sticky Button with KeyboardStickyView */}
-      <KeyboardStickyView offset={{ closed: 0, opened: 0 }}>
+      <KeyboardStickyView offset={{ closed: 0, opened: 15 }}>
         <View className="px-6 pb-8 pt-4">
-          <TouchableOpacity
-            activeOpacity={1}
+          <AnimatedPressable
             onPress={handleNext}
-            className="rounded-full overflow-hidden"
+            style={{
+              borderRadius: 999,
+              borderCurve: "continuous",
+              overflow: "hidden",
+            }}
           >
             <LinearGradient
-              colors={["#fc4f26", "#fc3c26"]}
+              colors={["#fc3d26", "#fc2d26"]}
               start={{ x: 0, y: 0 }}
               end={{ x: 1, y: 0 }}
-              className=""
             >
               <Text className="text-white py-[20px] font-bold text-[15px] text-center">
                 Devam Et
               </Text>
             </LinearGradient>
-          </TouchableOpacity>
+          </AnimatedPressable>
         </View>
       </KeyboardStickyView>
     </View>

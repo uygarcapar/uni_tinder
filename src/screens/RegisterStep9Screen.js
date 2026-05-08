@@ -20,12 +20,13 @@ import {
   BottomSheetTextInput,
   BottomSheetFlatList,
 } from "@gorhom/bottom-sheet";
-import { Check, Search, SearchX } from "lucide-react-native";
+import { Check, Search, SearchX, ChevronDown } from "lucide-react-native";
 import { BlurView } from "expo-blur";
 import { KeyboardStickyView } from "react-native-keyboard-controller";
 import { LinearGradient } from "expo-linear-gradient";
 import { API_BASE_URL, API_ENDPOINTS } from "../constants/api";
 import RegisterProgressBar from "../components/RegisterProgressBar";
+import AnimatedPressable from "../components/AnimatedPressable";
 
 const SearchableListSheet = ({ initialValue, onConfirm, onCancel, items }) => {
   const isValid =
@@ -41,9 +42,23 @@ const SearchableListSheet = ({ initialValue, onConfirm, onCancel, items }) => {
     );
   }, [search, items]);
 
+  const orderedItems = useMemo(() => {
+    if (!localValue) return filtered;
+    const selectedItem = items.find((i) => String(i.id) === localValue);
+    if (!selectedItem) return filtered;
+
+    const q = search.trim().toLocaleLowerCase("tr");
+    if (q && !(selectedItem.name ?? "").toLocaleLowerCase("tr").includes(q)) {
+      return filtered;
+    }
+
+    const rest = filtered.filter((i) => String(i.id) !== localValue);
+    return [selectedItem, ...rest];
+  }, [filtered, items, localValue, search]);
+
   return (
     <BottomSheetFlatList
-      data={filtered}
+      data={orderedItems}
       keyExtractor={(item) => String(item.id)}
       keyboardShouldPersistTaps="handled"
       showsVerticalScrollIndicator={false}
@@ -108,6 +123,19 @@ const SearchableListSheet = ({ initialValue, onConfirm, onCancel, items }) => {
       ListEmptyComponent={
         <View style={{ paddingVertical: 32, alignItems: "center" }}>
           <SearchX size={36} color="#fff" strokeWidth={1.75} />
+          {search.trim() !== "" && (
+            <Text
+              style={{
+                color: "#fff",
+                fontSize: 15,
+                fontWeight: "500",
+                marginTop: 12,
+                textAlign: "center",
+              }}
+            >
+              '{search.trim()}' bulunamadı
+            </Text>
+          )}
         </View>
       }
       renderItem={({ item }) => {
@@ -338,7 +366,7 @@ export default function RegisterStep9Screen({ navigation }) {
     }
 
     dispatch(updateMultipleFields(updates));
-    navigation.navigate("RegisterStep12");
+    navigation.navigate("RegisterStep10");
   };
 
   const handleBack = () => {
@@ -352,7 +380,7 @@ export default function RegisterStep9Screen({ navigation }) {
         district: null,
       }),
     );
-    navigation.navigate("RegisterStep12");
+    navigation.navigate("RegisterStep10");
   };
 
   return (
@@ -389,81 +417,92 @@ export default function RegisterStep9Screen({ navigation }) {
           </Text>
         </View>
 
-        {loadingCities ? (
-          <View className="flex-1 items-center justify-center">
-            <ActivityIndicator size="small" color="#fff" />
+        <>
+          <View className="mb-4">
+            <Text className="text-gray-300 text-[14px] font-semibold mb-2">
+              Şehir
+            </Text>
+            <TouchableOpacity
+              style={{
+                borderRadius: 999,
+                borderCurve: "continuous",
+                overflow: "hidden",
+              }}
+              activeOpacity={1}
+              onPress={handleOpenCityModal}
+              disabled={loadingCities}
+              className=" border-[0.5px] border-white/10 px-4 py-5 flex-row items-center justify-between"
+            >
+              {loadingCities ? (
+                <View className="flex-1 items-center justify-center">
+                  <ActivityIndicator size="small" color="#fff" />
+                </View>
+              ) : (
+                <>
+                  <Text
+                    className={`${
+                      city ? "text-white" : "text-gray-400"
+                    } text-[18px]`}
+                  >
+                    {getCityLabel()}
+                  </Text>
+                  <ChevronDown
+                    size={20}
+                    color="#9CA3AF"
+                    strokeWidth={2}
+                    pointerEvents="none"
+                  />
+                </>
+              )}
+            </TouchableOpacity>
           </View>
-        ) : (
-          <>
-            <View className="mb-4">
-              <Text className="text-gray-300 text-lg font-semibold mb-2">
-                Şehir
-              </Text>
-              <TouchableOpacity
-                style={{
-                  borderRadius: 999,
-                  borderCurve: "continuous",
-                  overflow: "hidden",
-                }}
-                activeOpacity={1}
-                onPress={handleOpenCityModal}
-                className=" border-[0.5px] border-white/10 px-4 py-5 flex-row items-center justify-between"
-              >
-                <Text
-                  className={`${
-                    city ? "text-white" : "text-gray-400"
-                  } text-[18px]`}
-                >
-                  {getCityLabel()}
-                </Text>
-                <Text className="text-gray-400 text-xl">▼</Text>
-              </TouchableOpacity>
-            </View>
 
-            <View className="mb-4">
-              <Text className="text-gray-300 text-lg font-semibold mb-2">
-                İlçe
-              </Text>
-              <TouchableOpacity
-                style={{
-                  borderRadius: 999,
-                  borderCurve: "continuous",
-                  overflow: "hidden",
-                }}
-                activeOpacity={1}
-                onPress={handleOpenDistrictModal}
-                disabled={!city || loadingDistricts}
-                className="  border-[0.5px] border-white/10 px-4 py-5 flex-row items-center justify-between"
-              >
-                {loadingDistricts ? (
-                  <View className="flex-1 items-center justify-center">
-                    <ActivityIndicator size="small" color="#fff" />
-                  </View>
-                ) : (
-                  <>
-                    <Text
-                      className={`${
-                        district ? "text-white" : "text-gray-400"
-                      } text-[18px]`}
-                    >
-                      {getDistrictLabel()}
-                    </Text>
-                    <Text className="text-gray-400 text-xl">▼</Text>
-                  </>
-                )}
+          <View className="mb-4">
+            <Text className="text-gray-300 text-[14px] font-semibold mb-2">
+              İlçe
+            </Text>
+            <TouchableOpacity
+              style={{
+                borderRadius: 999,
+                borderCurve: "continuous",
+                overflow: "hidden",
+              }}
+              activeOpacity={1}
+              onPress={handleOpenDistrictModal}
+              disabled={!city || loadingDistricts}
+              className="  border-[0.5px] border-white/10 px-4 py-5 flex-row items-center justify-between"
+            >
+              {loadingDistricts ? (
+                <View className="flex-1 items-center justify-center">
+                  <ActivityIndicator size="small" color="#fff" />
+                </View>
+              ) : (
+                <>
+                  <Text
+                    className={`${
+                      district ? "text-white" : "text-gray-400"
+                    } text-[18px]`}
+                  >
+                    {getDistrictLabel()}
+                  </Text>
+                  <ChevronDown
+                    size={20}
+                    color="#9CA3AF"
+                    strokeWidth={2}
+                    pointerEvents="none"
+                  />
+                </>
+              )}
               </TouchableOpacity>
             </View>
-          </>
-        )}
+        </>
       </View>
 
       {/* Sticky Button with KeyboardStickyView */}
       <KeyboardStickyView offset={{ closed: 0, opened: 0 }}>
         <View className="px-8 pb-8 pt-4 bg-[#121212]">
-          <TouchableOpacity
-            activeOpacity={1}
+          <AnimatedPressable
             onPress={handleNext}
-            className="rounded-full overflow-hidden"
             style={{
               borderRadius: 999,
               borderCurve: "continuous",
@@ -480,7 +519,7 @@ export default function RegisterStep9Screen({ navigation }) {
                 {!city && !district ? "Atla" : "Devam Et"}
               </Text>
             </LinearGradient>
-          </TouchableOpacity>
+          </AnimatedPressable>
         </View>
       </KeyboardStickyView>
 

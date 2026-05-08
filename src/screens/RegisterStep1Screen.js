@@ -14,6 +14,7 @@ import { clearError, setRegistrationEmail } from "../store/slices/authSlice";
 import { KeyboardStickyView } from "react-native-keyboard-controller";
 import { LinearGradient } from "expo-linear-gradient";
 import { API_BASE_URL, API_ENDPOINTS } from "../constants/api";
+import AnimatedPressable from "../components/AnimatedPressable";
 import { InfoIcon } from "lucide-react-native";
 
 export default function RegisterStep1Screen({ navigation }) {
@@ -49,7 +50,7 @@ export default function RegisterStep1Screen({ navigation }) {
         if (checkData.isSuccess) {
           console.log("✅ [RegisterStep1] Token valid — skipping to Step3");
           setLoading(false);
-          navigation.reset({ index: 0, routes: [{ name: "RegisterStep6" }] });
+          navigation.reset({ index: 0, routes: [{ name: "RegisterStep3" }] });
           return;
         }
         console.log("⚠️ [RegisterStep1] Stored token expired — proceeding with new verification");
@@ -171,11 +172,14 @@ export default function RegisterStep1Screen({ navigation }) {
 
       <KeyboardStickyView offset={{ closed: 0, opened: 15 }}>
         <View className="px-6 pb-8 pt-4 bg-[#121212]">
-          <TouchableOpacity
-            activeOpacity={1}
+          <AnimatedPressable
             onPress={handleSendVerification}
             disabled={loading}
-            className="rounded-full overflow-hidden"
+            style={{
+              borderRadius: 999,
+              borderCurve: "continuous",
+              overflow: "hidden",
+            }}
           >
             <LinearGradient
               colors={["#fc5a26", "#fc4526"]}
@@ -190,7 +194,7 @@ export default function RegisterStep1Screen({ navigation }) {
                 </Text>
               )}
             </LinearGradient>
-          </TouchableOpacity>
+          </AnimatedPressable>
         </View>
       </KeyboardStickyView>
     </View>
