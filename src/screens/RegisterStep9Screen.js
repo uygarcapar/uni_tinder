@@ -14,101 +14,155 @@ import {
 } from "react-native";
 import { useDispatch, useSelector } from "react-redux";
 import { updateMultipleFields } from "../store/slices/profileSlice";
-import { Picker } from "@react-native-picker/picker";
 import {
   BottomSheetModal,
-  BottomSheetView,
   BottomSheetBackdrop,
+  BottomSheetTextInput,
+  BottomSheetFlatList,
 } from "@gorhom/bottom-sheet";
+import { Check, Search, SearchX } from "lucide-react-native";
 import { BlurView } from "expo-blur";
 import { KeyboardStickyView } from "react-native-keyboard-controller";
 import { LinearGradient } from "expo-linear-gradient";
 import { API_BASE_URL, API_ENDPOINTS } from "../constants/api";
+import RegisterProgressBar from "../components/RegisterProgressBar";
 
-const CityPickerContent = ({ initialCity, onConfirm, onCancel, cities }) => {
-  const isValidCity =
-    initialCity !== null && initialCity !== undefined && initialCity !== "";
+const SearchableListSheet = ({ initialValue, onConfirm, onCancel, items }) => {
+  const isValid =
+    initialValue !== null && initialValue !== undefined && initialValue !== "";
+  const localValue = isValid ? String(initialValue) : "";
+  const [search, setSearch] = useState("");
 
-  const [localCity, setLocalCity] = useState(
-    isValidCity ? String(initialCity) : "",
-  );
+  const filtered = useMemo(() => {
+    const q = search.trim().toLocaleLowerCase("tr");
+    if (!q) return items;
+    return items.filter((i) =>
+      (i.name ?? "").toLocaleLowerCase("tr").includes(q),
+    );
+  }, [search, items]);
 
   return (
-    <BottomSheetView className="flex-1 bg-[#121212] px-4 pb-8">
-      <View className="flex-row justify-between items-center py-4 px-4">
-        <TouchableOpacity onPress={onCancel}>
-          <Text className="text-gray-400 text-xl">İptal</Text>
-        </TouchableOpacity>
-        <TouchableOpacity onPress={() => onConfirm(localCity)}>
-          <Text className="text-white text-xl font-bold">Bitti</Text>
-        </TouchableOpacity>
-      </View>
-      <Picker
-        selectedValue={localCity}
-        onValueChange={(value) => setLocalCity(value)}
-        style={{ height: 200, color: "#FFFFFF" }}
-        itemStyle={{ color: "#FFFFFF" }}
-      >
-        <Picker.Item label="Şehir Seçiniz" value="" color="#9CA3AF" />
-        {cities.map((city) => (
-          <Picker.Item
-            key={city.id}
-            label={city.name}
-            value={String(city.id)}
-            color="#FFFFFF"
-          />
-        ))}
-      </Picker>
-    </BottomSheetView>
+    <BottomSheetFlatList
+      data={filtered}
+      keyExtractor={(item) => String(item.id)}
+      keyboardShouldPersistTaps="handled"
+      showsVerticalScrollIndicator={false}
+      stickyHeaderIndices={[0]}
+      style={{ backgroundColor: "#121212" }}
+      contentContainerStyle={{
+        paddingHorizontal: 16,
+        paddingBottom: 32,
+      }}
+      ListHeaderComponent={
+        <View
+          style={{
+            backgroundColor: "#121212",
+            paddingTop: 32,
+            paddingBottom: 8,
+          }}
+        >
+          <View className="flex-row justify-between items-center py-4 px-2">
+            <TouchableOpacity onPress={onCancel}>
+              <Text className="text-gray-400 text-xl">İptal</Text>
+            </TouchableOpacity>
+            <TouchableOpacity onPress={() => onConfirm(localValue)}>
+              <Text className="text-white text-xl font-bold">Bitti</Text>
+            </TouchableOpacity>
+          </View>
+          <View style={{ position: "relative", marginBottom: 10 }}>
+            <View
+              pointerEvents="none"
+              style={{
+                position: "absolute",
+                left: 18,
+                top: 0,
+                bottom: 0,
+                justifyContent: "center",
+                zIndex: 1,
+              }}
+            >
+              <Search size={18} color="#9CA3AF" strokeWidth={2} />
+            </View>
+            <BottomSheetTextInput
+              defaultValue=""
+              onChangeText={setSearch}
+              placeholder=""
+              autoCorrect={false}
+              autoCapitalize="none"
+              style={{
+                borderRadius: 999,
+                borderCurve: "continuous",
+                borderWidth: 0.5,
+                borderColor: "rgba(255,255,255,0.1)",
+                backgroundColor: "transparent",
+                paddingLeft: 44,
+                paddingRight: 16,
+                paddingVertical: 20,
+                color: "#fff",
+                fontSize: 15,
+              }}
+            />
+          </View>
+        </View>
+      }
+      ListEmptyComponent={
+        <View style={{ paddingVertical: 32, alignItems: "center" }}>
+          <SearchX size={36} color="#fff" strokeWidth={1.75} />
+        </View>
+      }
+      renderItem={({ item }) => {
+        const isSelected = String(item.id) === localValue;
+        return (
+          <TouchableOpacity
+            activeOpacity={0.7}
+            onPress={() => onConfirm(String(item.id))}
+            style={{
+              paddingVertical: 20,
+              paddingHorizontal: 16,
+              flexDirection: "row",
+              alignItems: "center",
+              borderCurve: "continuous",
+              overflow: "hidden",
+              borderRadius: 999,
+              backgroundColor: isSelected
+                ? "rgba(255,255,255,0.1)"
+                : "transparent",
+              position: "relative",
+            }}
+          >
+            <Text
+              style={{
+                color: isSelected ? "#fff" : "#9CA3AF",
+                fontSize: 16,
+                fontWeight: "400",
+                flex: 1,
+                marginRight: 32,
+              }}
+            >
+              {item.name}
+            </Text>
+            {isSelected && (
+              <View
+                pointerEvents="none"
+                style={{
+                  position: "absolute",
+                  right: 16,
+                  top: 0,
+                  bottom: 0,
+                  justifyContent: "center",
+                }}
+              >
+                <Check size={18} color="#fff" strokeWidth={2.5} />
+              </View>
+            )}
+          </TouchableOpacity>
+        );
+      }}
+    />
   );
 };
 
-const DistrictPickerContent = ({
-  initialDistrict,
-  onConfirm,
-  onCancel,
-  districts,
-}) => {
-  const isValidDistrict =
-    initialDistrict !== null &&
-    initialDistrict !== undefined &&
-    initialDistrict !== "";
-
-  const [localDistrict, setLocalDistrict] = useState(
-    isValidDistrict ? String(initialDistrict) : "",
-  );
-
-  return (
-    <BottomSheetView className="flex-1 bg-[#121212] px-4 pb-8">
-      <View className="flex-row justify-between items-center py-4 px-4">
-        <TouchableOpacity onPress={onCancel}>
-          <Text className="text-gray-400 text-xl">İptal</Text>
-        </TouchableOpacity>
-        <TouchableOpacity onPress={() => onConfirm(localDistrict)}>
-          <Text className="text-white text-xl font-bold">Bitti</Text>
-        </TouchableOpacity>
-      </View>
-      <Picker
-        selectedValue={localDistrict}
-        onValueChange={(value) => setLocalDistrict(value)}
-        style={{ height: 200, color: "#FFFFFF" }}
-        itemStyle={{ color: "#FFFFFF" }}
-      >
-        <Picker.Item label="İlçe Seçiniz" value="" color="#9CA3AF" />
-        {districts.map((district) => (
-          <Picker.Item
-            key={district.id}
-            label={district.name}
-            value={String(district.id)}
-            color="#FFFFFF"
-          />
-        ))}
-      </Picker>
-    </BottomSheetView>
-  );
-};
-
-export default function CompleteProfileStep2Screen({ navigation }) {
+export default function RegisterStep9Screen({ navigation }) {
   const dispatch = useDispatch();
   const profile = useSelector((state) => state.profile || {});
 
@@ -130,7 +184,7 @@ export default function CompleteProfileStep2Screen({ navigation }) {
 
   const citySheetRef = useRef(null);
   const districtSheetRef = useRef(null);
-  const snapPoints = useMemo(() => ["50%"], []);
+  const snapPoints = useMemo(() => ["75%"], []);
 
   // Fetch cities on mount
   useEffect(() => {
@@ -284,7 +338,7 @@ export default function CompleteProfileStep2Screen({ navigation }) {
     }
 
     dispatch(updateMultipleFields(updates));
-    navigation.navigate("CompleteProfileStep3");
+    navigation.navigate("RegisterStep12");
   };
 
   const handleBack = () => {
@@ -298,7 +352,7 @@ export default function CompleteProfileStep2Screen({ navigation }) {
         district: null,
       }),
     );
-    navigation.navigate("CompleteProfileStep3");
+    navigation.navigate("RegisterStep12");
   };
 
   return (
@@ -322,6 +376,8 @@ export default function CompleteProfileStep2Screen({ navigation }) {
           )}
         </View>
       </View>
+
+      <RegisterProgressBar step={9} />
 
       <View className="flex-1 px-6 py-6 pt-0">
         <View className="flex flex-col gap-2">
@@ -415,7 +471,7 @@ export default function CompleteProfileStep2Screen({ navigation }) {
             }}
           >
             <LinearGradient
-              colors={["#fc5026", "#fc3826"]}
+              colors={["#fc2c26", "#fc1f26"]}
               start={{ x: 0, y: 0 }}
               end={{ x: 1, y: 0 }}
               className="py-3.5"
@@ -433,7 +489,7 @@ export default function CompleteProfileStep2Screen({ navigation }) {
         ref={citySheetRef}
         index={0}
         backgroundStyle={{
-          borderRadius: 32,
+          borderRadius: 44,
           backgroundColor: "#121212",
         }}
         snapPoints={snapPoints}
@@ -441,11 +497,11 @@ export default function CompleteProfileStep2Screen({ navigation }) {
         enablePanDownToClose={true}
         handleIndicatorStyle={{ backgroundColor: "#4B5563", width: 50 }}
       >
-        <CityPickerContent
-          initialCity={city}
+        <SearchableListSheet
+          initialValue={city}
           onConfirm={confirmCitySelection}
           onCancel={cancelCitySelection}
-          cities={cities}
+          items={cities}
         />
       </BottomSheetModal>
 
@@ -454,7 +510,7 @@ export default function CompleteProfileStep2Screen({ navigation }) {
         ref={districtSheetRef}
         index={0}
         backgroundStyle={{
-          borderRadius: 32,
+          borderRadius: 44,
           backgroundColor: "#121212",
         }}
         snapPoints={snapPoints}
@@ -462,11 +518,11 @@ export default function CompleteProfileStep2Screen({ navigation }) {
         enablePanDownToClose={true}
         handleIndicatorStyle={{ backgroundColor: "#4B5563", width: 50 }}
       >
-        <DistrictPickerContent
-          initialDistrict={district}
+        <SearchableListSheet
+          initialValue={district}
           onConfirm={confirmDistrictSelection}
           onCancel={cancelDistrictSelection}
-          districts={districts}
+          items={districts}
         />
       </BottomSheetModal>
     </View>

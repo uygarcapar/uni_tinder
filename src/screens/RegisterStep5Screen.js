@@ -1,100 +1,142 @@
-import React, { useEffect, useRef } from "react";
+import { useState, useRef } from "react";
 import {
   View,
   Text,
   TextInput,
   TouchableOpacity,
-  ActivityIndicator,
   TouchableWithoutFeedback,
   Keyboard,
 } from "react-native";
 import { useDispatch, useSelector } from "react-redux";
-import {
-  updateRegistrationField,
-  register,
-  clearError,
-} from "../store/slices/authSlice";
+import { updateRegistrationField } from "../store/slices/authSlice";
 import { KeyboardStickyView } from "react-native-keyboard-controller";
 import { LinearGradient } from "expo-linear-gradient";
+import RegisterProgressBar from "../components/RegisterProgressBar";
+import { InfoIcon } from "lucide-react-native";
+
+const calculateAge = (day, month, year) => {
+  const today = new Date();
+  const birth = new Date(year, month - 1, day);
+  let age = today.getFullYear() - birth.getFullYear();
+  const m = today.getMonth() - birth.getMonth();
+  if (m < 0 || (m === 0 && today.getDate() < birth.getDate())) age--;
+  return age;
+};
 
 export default function RegisterStep5Screen({ navigation }) {
   const dispatch = useDispatch();
-  const formData = useSelector((state) => state.auth.registrationForm);
-  const { loading, error, needsVerification, pendingVerificationEmail } =
-    useSelector((state) => state.auth);
-  const inputRef = useRef(null);
-  const hasNavigatedToVerification = useRef(false);
+  const dateOfBirthString = useSelector(
+    (state) => state.auth.registrationForm.dateOfBirth,
+  );
 
-  const updateField = (field, value) => {
-    dispatch(updateRegistrationField({ field, value }));
-    // Kullanıcı yazmaya başladığında hatayı temizle
-    if (error) {
-      dispatch(clearError());
-    }
+  const initial = dateOfBirthString ? new Date(dateOfBirthString) : null;
+  const [day, setDay] = useState(
+    initial ? String(initial.getDate()).padStart(2, "0") : "",
+  );
+  const [month, setMonth] = useState(
+    initial ? String(initial.getMonth() + 1).padStart(2, "0") : "",
+  );
+  const [year, setYear] = useState(
+    initial ? String(initial.getFullYear()) : "",
+  );
+
+  const [error, setError] = useState("");
+  const [errorFields, setErrorFields] = useState([]);
+
+  const monthRef = useRef(null);
+  const yearRef = useRef(null);
+
+  const clearFieldError = (field) => {
+    setErrorFields((prev) => {
+      const next = prev.filter((f) => f !== field);
+      if (next.length === 0) setError("");
+      return next;
+    });
   };
 
-  useEffect(() => {
-    // Only navigate to EmailVerification after successful registration
-    // Use ref to prevent re-navigation when coming back from EmailVerification
-    console.log("📧 RegisterStep5: needsVerification =", needsVerification);
-    console.log(
-      "📧 RegisterStep5: hasNavigatedToVerification =",
-      hasNavigatedToVerification.current,
-    );
+  const handleDayChange = (val) => {
+    const clean = val.replace(/[^0-9]/g, "").slice(0, 2);
+    setDay(clean);
+    clearFieldError("day");
+    if (clean.length === 2) monthRef.current?.focus();
+  };
 
+  const handleMonthChange = (val) => {
+    const clean = val.replace(/[^0-9]/g, "").slice(0, 2);
+    setMonth(clean);
+    clearFieldError("month");
+    if (clean.length === 2) yearRef.current?.focus();
+  };
+
+  const handleYearChange = (val) => {
+    const clean = val.replace(/[^0-9]/g, "").slice(0, 4);
+    setYear(clean);
+    clearFieldError("year");
+  };
+
+  const handleNext = () => {
+    Keyboard.dismiss();
+    const errors = [];
+    const d = parseInt(day);
+    const mo = parseInt(month);
+    const y = parseInt(year);
+
+    if (!day || day.length < 2 || isNaN(d) || d < 1 || d > 31)
+      errors.push("day");
+    if (!month || month.length < 2 || isNaN(mo) || mo < 1 || mo > 12)
+      errors.push("month");
     if (
-      needsVerification &&
-      pendingVerificationEmail &&
-      !hasNavigatedToVerification.current
-    ) {
-      console.log("📧 RegisterStep5: Navigating to EmailVerification");
-      hasNavigatedToVerification.current = true;
-      // Don't clear form - keep data so user can go back and modify email
-      navigation.navigate("EmailVerification", {
-        email: pendingVerificationEmail,
-      });
-    }
+      !year ||
+      year.length < 4 ||
+      isNaN(y) ||
+      y < 1900 ||
+      y > new Date().getFullYear()
+    )
+      errors.push("year");
 
-    // Reset ref when needsVerification becomes false (user went back from EmailVerification)
-    if (!needsVerification && hasNavigatedToVerification.current) {
-      console.log("📧 RegisterStep5: Resetting navigation flag");
-      hasNavigatedToVerification.current = false;
-    }
-  }, [needsVerification, pendingVerificationEmail]);
-
-  const handleRegister = async () => {
-    if (!formData.email) {
-      alert("Lütfen üniversite email adresinizi girin");
+    if (errors.length > 0) {
+      setErrorFields(errors);
+      setError("Geçerli bir doğum tarihi gir.");
       return;
     }
 
-    const registrationData = {
-      firstName: formData.firstName,
-      lastName: formData.lastName,
-      dateOfBirth: formData.dateOfBirth, // Already an ISO string
-      gender: formData.gender, // Already a number (0, 1, or 2)
-      email: formData.email,
-      password: formData.password,
-      universityDomain: "",
-      universityName: "",
-      phoneNumber: formData.phoneNumber,
-      emailVerifiedAt: null,
-      lastVerificationCheck: null,
-      isUniversityVerified: false,
-      role: null,
-    };
+    const age = calculateAge(d, mo, y);
+    if (age < 18) {
+      setError("Uygulamayı kullanabilmek için 18 yaşından büyük olmalısın.");
+      setErrorFields(["day", "month", "year"]);
+      return;
+    }
 
-    console.log(
-      "Registration Request Data:",
-      JSON.stringify(registrationData, null, 2),
+    const date = new Date(y, mo - 1, d);
+    dispatch(
+      updateRegistrationField({
+        field: "dateOfBirth",
+        value: date.toISOString(),
+      }),
     );
-
-    await dispatch(register(registrationData));
+    setError("");
+    setErrorFields([]);
+    navigation.navigate("RegisterStep4");
   };
+
+  const inputStyle = (field) => ({
+    borderRadius: 999,
+    borderCurve: "continuous",
+    overflow: "hidden",
+    borderWidth: 0.5,
+    borderColor: errorFields.includes(field)
+      ? "#ef4444"
+      : "rgba(255,255,255,0.1)",
+    paddingHorizontal: 16,
+    paddingVertical: 16,
+    fontSize: 22,
+    fontWeight: "600",
+    color: "#fff",
+    textAlign: "center",
+  });
 
   return (
     <View className="flex-1 bg-[#121212]">
-      {/* Header */}
       <View className="bg-[#121212] pt-16 pb-6 px-6">
         <TouchableOpacity
           activeOpacity={1}
@@ -105,75 +147,95 @@ export default function RegisterStep5Screen({ navigation }) {
         </TouchableOpacity>
       </View>
 
-      {/* Content */}
+      <RegisterProgressBar step={6} />
+
       <TouchableWithoutFeedback onPress={Keyboard.dismiss}>
         <View className="flex-1 px-6 py-6 pt-0">
           <View className="flex flex-col gap-2">
-            <Text className="text-4xl font-bold text-white">
-              Üniversite E-Maili
-            </Text>
+            <Text className="text-4xl font-bold text-white">Yaşını gir.</Text>
             <Text className="text-[18px] font-normal text-gray-400 mb-6">
-              Üniversite e-mail adresin, öğrenci olduğunu doğrulamamıza yardımcı
-              olur. Bu kısım zorunlu.
+              Doğum tarihin, doğru eşleşmeler bulmamıza yardımcı olur.
             </Text>
           </View>
 
-          <View
-            style={{
-              borderRadius: 999,
-              borderCurve: "continuous",
-              overflow: "hidden",
-              borderWidth: 0.5,
-              borderColor: error ? "#ef4444" : "rgba(255,255,255,0.1)",
-            }}
-          >
-            <TextInput
-              ref={inputRef}
-              style={{
-                paddingHorizontal: 16,
-                paddingVertical: 16,
-                fontSize: 18,
-                color: "#fff",
-              }}
-              placeholder="edu.tr"
-              placeholderTextColor="#9CA3AF"
-              keyboardType="email-address"
-              autoCapitalize="none"
-              value={formData.email}
-              onChangeText={(v) => updateField("email", v)}
-            />
+          <View style={{ flexDirection: "row", alignItems: "center", gap: 8 }}>
+            <View style={{ flex: 1 }}>
+              <Text className="text-gray-300 text-sm font-semibold mb-2 text-center">
+                Gün
+              </Text>
+              <TextInput
+                style={inputStyle("day")}
+                placeholder="GG"
+                placeholderTextColor="#4B5563"
+                keyboardType="number-pad"
+                maxLength={2}
+                value={day}
+                onChangeText={handleDayChange}
+                returnKeyType="next"
+                onSubmitEditing={() => monthRef.current?.focus()}
+              />
+            </View>
+
+            <View style={{ flex: 1 }}>
+              <Text className="text-gray-300 text-sm font-semibold mb-2 text-center">
+                Ay
+              </Text>
+              <TextInput
+                ref={monthRef}
+                style={inputStyle("month")}
+                placeholder="AA"
+                placeholderTextColor="#4B5563"
+                keyboardType="number-pad"
+                maxLength={2}
+                value={month}
+                onChangeText={handleMonthChange}
+                returnKeyType="next"
+                onSubmitEditing={() => yearRef.current?.focus()}
+              />
+            </View>
+
+            <View style={{ flex: 2 }}>
+              <Text className="text-gray-300 text-sm font-semibold mb-2 text-center">
+                Yıl
+              </Text>
+              <TextInput
+                ref={yearRef}
+                style={inputStyle("year")}
+                placeholder="YYYY"
+                placeholderTextColor="#4B5563"
+                keyboardType="number-pad"
+                maxLength={4}
+                value={year}
+                onChangeText={handleYearChange}
+                returnKeyType="done"
+                onSubmitEditing={Keyboard.dismiss}
+              />
+            </View>
           </View>
 
-          {error && (
-            <View className="mt-3 px-2 rounded-lg">
-              <Text className="text-red-700">{error}</Text>
-            </View>
-          )}
+          {error ? (
+            <Text className="text-red-500 text-center font-normal mb-3 mt-4">
+              {error}
+            </Text>
+          ) : null}
         </View>
       </TouchableWithoutFeedback>
 
-      {/* Sticky Button with KeyboardStickyView */}
-      <KeyboardStickyView offset={{ closed: 0, opened: 0 }}>
-        <View className="px-6 pb-8 pt-4 bg-[#121212]">
+      <KeyboardStickyView offset={{ closed: 0, opened: 15 }}>
+        <View className="px-6 pb-8 pt-4">
           <TouchableOpacity
             activeOpacity={1}
-            onPress={handleRegister}
-            disabled={loading}
+            onPress={handleNext}
             className="rounded-full overflow-hidden"
           >
             <LinearGradient
-              colors={["#fc0d35", "#fc0335"]}
+              colors={["#fc3d26", "#fc2d26"]}
               start={{ x: 0, y: 0 }}
               end={{ x: 1, y: 0 }}
-              className=""
             >
-              {loading ? (
-                <ActivityIndicator className="py-[17.5px]" color="#fff" />
-              ) : (
-                <Text className="text-white py-[20px] font-bold text-[15px] text-center">
-                  Kayıt Ol
-                </Text>
-              )}
+              <Text className="text-white py-[20px] font-bold text-[15px] text-center">
+                Devam Et
+              </Text>
             </LinearGradient>
           </TouchableOpacity>
         </View>

@@ -1,4 +1,4 @@
-import React, { useState, useRef, useEffect } from "react";
+import React, { useState, useRef, useEffect, useCallback, memo } from "react";
 import {
   View,
   Text,
@@ -58,17 +58,16 @@ import {
   Headphones,
   Newspaper,
   TrendingUp,
-  Globe,
   Theater,
   Soup,
   ShoppingBag,
   Orbit,
 } from "lucide-react-native";
+import RegisterProgressBar from "../components/RegisterProgressBar";
 
 // Icon mapping for hobbies - maps exact backend names to icons
 const getHobbyIcon = (hobbyName) => {
   const iconMap = {
-    // Fitness & Spor (IDs 0-10)
     "Fitness & Spor": Dumbbell,
     Yoga: Heart,
     Koşu: Footprints,
@@ -80,8 +79,6 @@ const getHobbyIcon = (hobbyName) => {
     "Dövüş Sanatları": Trophy,
     Dans: Music2,
     Pilates: Sparkles,
-
-    // Yemek & İçecek (IDs 11-17)
     "Yemek Pişirme": Utensils,
     Fırıncılık: Cake,
     "Şarap Tadımı": Wine,
@@ -89,8 +86,6 @@ const getHobbyIcon = (hobbyName) => {
     Gurme: Soup,
     "Vegan Mutfak": Sandwich,
     Miksologluk: Wine,
-
-    // Sanat & Yaratıcılık (IDs 18-25)
     Fotoğrafçılık: Camera,
     Resim: Palette,
     Çizim: Palette,
@@ -99,8 +94,6 @@ const getHobbyIcon = (hobbyName) => {
     "El Sanatları": Sparkles,
     "Kendin Yap (DIY)": Flower2,
     Moda: ShoppingBag,
-
-    // Müzik & Eğlence (IDs 26-32)
     Müzik: Headphones,
     Konserler: PartyPopper,
     "Gitar Çalmak": Guitar,
@@ -108,8 +101,6 @@ const getHobbyIcon = (hobbyName) => {
     "Şarkı Söylemek": Mic2,
     "DJ'lik": Music,
     Festivaller: PartyPopper,
-
-    // Doğa & Macera (IDs 33-40)
     Seyahat: Plane,
     Kamp: Tent,
     "Balık Tutma": Fish,
@@ -118,8 +109,6 @@ const getHobbyIcon = (hobbyName) => {
     Snowboard: Mountain,
     Bahçıvanlık: Flower2,
     "Plaj Hayatı": Sunrise,
-
-    // Kültür & Öğrenme (IDs 41-48)
     Okumak: BookOpen,
     Müzeler: Theater,
     "Sanat Galerileri": Palette,
@@ -128,8 +117,6 @@ const getHobbyIcon = (hobbyName) => {
     Belgesel: Film,
     Öğrenme: Lightbulb,
     Diller: Languages,
-
-    // Oyun & Teknoloji (IDs 49-55)
     "Video Oyunları": Gamepad2,
     "Masa Oyunları": Puzzle,
     Satranç: Puzzle,
@@ -137,8 +124,6 @@ const getHobbyIcon = (hobbyName) => {
     Oyun: Gamepad2,
     VR: Smartphone,
     "Podcast'ler": Headphones,
-
-    // Sosyal & Yaşam Tarzı (IDs 56-66)
     Gönüllülük: Users,
     "Evcil Hayvanlar": Dog,
     Köpekler: Dog,
@@ -150,8 +135,6 @@ const getHobbyIcon = (hobbyName) => {
     Brunch: Coffee,
     "Sosyal İçici": Wine,
     Network: Briefcase,
-
-    // Entelektüel (IDs 67-72)
     Siyaset: Newspaper,
     Felsefe: BookOpen,
     Bilim: Lightbulb,
@@ -160,11 +143,11 @@ const getHobbyIcon = (hobbyName) => {
     Girişimcilik: Briefcase,
   };
 
-  return iconMap[hobbyName] || Heart; // Default icon
+  return iconMap[hobbyName] || Heart;
 };
 
-// Animated Hobby Item Component
-const HobbyItem = ({ hobby, isSelected, onPress }) => {
+// Gereksiz render'ları engellemek için memo ile sarmalandı
+const HobbyItem = memo(({ hobby, isSelected, onPress }) => {
   const scaleValue = useRef(new Animated.Value(1)).current;
   const Icon = getHobbyIcon(hobby.name);
 
@@ -218,9 +201,9 @@ const HobbyItem = ({ hobby, isSelected, onPress }) => {
       </TouchableOpacity>
     </Animated.View>
   );
-};
+});
 
-export default function CompleteProfileStep6Screen({ navigation }) {
+export default function RegisterStep13Screen({ navigation }) {
   const dispatch = useDispatch();
   const profile = useSelector((state) => state.profile || {});
 
@@ -228,7 +211,6 @@ export default function CompleteProfileStep6Screen({ navigation }) {
   const [hobbyCategories, setHobbyCategories] = useState([]);
   const [loadingHobbies, setLoadingHobbies] = useState(false);
 
-  // Fetch hobbies on mount
   useEffect(() => {
     fetchHobbies();
   }, []);
@@ -254,7 +236,8 @@ export default function CompleteProfileStep6Screen({ navigation }) {
     }
   };
 
-  const toggleHobby = (hobbyId) => {
+  // useCallback ile sarmalandı, fonksiyon referansı sabitlendi
+  const toggleHobby = useCallback((hobbyId) => {
     setHobbies((prev) => {
       if (prev.includes(hobbyId)) {
         return prev.filter((h) => h !== hobbyId);
@@ -265,7 +248,7 @@ export default function CompleteProfileStep6Screen({ navigation }) {
         return prev;
       }
     });
-  };
+  }, []);
 
   const handleNext = () => {
     if (hobbies.length === 0) {
@@ -278,20 +261,12 @@ export default function CompleteProfileStep6Screen({ navigation }) {
         hobbies,
       }),
     );
-    navigation.navigate("CompleteProfileStep7");
+    navigation.navigate("RegisterStep14");
   };
 
   const handleBack = () => {
     navigation.goBack();
   };
-
-  if (loadingHobbies) {
-    return (
-      <View className="flex-1 bg-[#121212] items-center justify-center">
-        <ActivityIndicator size="small" color="#fff" />
-      </View>
-    );
-  }
 
   return (
     <View className="flex-1 bg-[#121212]">
@@ -311,39 +286,47 @@ export default function CompleteProfileStep6Screen({ navigation }) {
         </View>
       </View>
 
-      <ScrollView
-        className="flex-1 px-6 py-6 pt-0"
-        keyboardShouldPersistTaps="handled"
-        showsVerticalScrollIndicator={false}
-      >
-        <View className="flex flex-col gap-2 mb-3">
-          <Text className="text-[18px] font-normal text-gray-400 mb-6">
-            İlgi alanlarını seç. Seninle ortak noktası olan kişilerle eşleşmeni
-            sağlar.
-          </Text>
+      <RegisterProgressBar step={13} />
+
+      {loadingHobbies ? (
+        <View className="flex-1 items-center justify-center">
+          <ActivityIndicator size="small" color="#fff" />
         </View>
-
-        {hobbyCategories.map((category, categoryIndex) => (
-          <View key={categoryIndex} className="mb-10">
-            <Text className="text-[13px] text-center font-bold text-gray-300 mb-10">
-              {category.category}
+      ) : (
+        <ScrollView
+          className="flex-1 px-6 py-6 pt-0"
+          keyboardShouldPersistTaps="handled"
+          showsVerticalScrollIndicator={false}
+        >
+          <View className="flex flex-col gap-2 mb-3">
+            <Text className="text-[18px] font-normal text-gray-400 mb-6">
+              İlgi alanlarını seç. Seninle ortak noktası olan kişilerle
+              eşleşmeni sağlar.
             </Text>
-            <View className="flex-row flex-wrap gap-3">
-              {category.hobbies.map((hobby) => (
-                <HobbyItem
-                  key={hobby.id}
-                  hobby={hobby}
-                  isSelected={hobbies.includes(hobby.id)}
-                  onPress={toggleHobby}
-                />
-              ))}
-            </View>
           </View>
-        ))}
 
-        {/* ScrollView sonu boşluğu */}
-        <View className="h-20" />
-      </ScrollView>
+          {hobbyCategories.map((category, categoryIndex) => (
+            <View key={categoryIndex} className="mb-10">
+              <Text className="text-[13px] text-center font-bold text-gray-300 mb-10">
+                {category.category}
+              </Text>
+              <View className="flex-row flex-wrap gap-3">
+                {category.hobbies.map((hobby) => (
+                  <HobbyItem
+                    key={hobby.id}
+                    hobby={hobby}
+                    isSelected={hobbies.includes(hobby.id)}
+                    onPress={toggleHobby}
+                  />
+                ))}
+              </View>
+            </View>
+          ))}
+
+          {/* ScrollView sonu boşluğu */}
+          <View className="h-20" />
+        </ScrollView>
+      )}
 
       {/* Sticky Button with KeyboardStickyView */}
       <View className="px-8 pb-8 pt-4 absolute bottom-0 left-0 right-0">
@@ -358,7 +341,7 @@ export default function CompleteProfileStep6Screen({ navigation }) {
           }}
         >
           <LinearGradient
-            colors={["#fc2426", "#fc0e26"]}
+            colors={["#fc1526", "#fc0c26"]}
             start={{ x: 0, y: 0 }}
             end={{ x: 1, y: 0 }}
             className="py-3.5"

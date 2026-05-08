@@ -73,12 +73,16 @@ export const logout = createAsyncThunk('auth/logout', async (_, thunkAPI) => {
 const initialState = {
   user: null,
   token: null,
-  refreshToken: null, // Add refresh token to Redux state
+  refreshToken: null,
   isAuthenticated: false,
   needsVerification: false,
   pendingVerificationEmail: null,
+  kvkkVersion: null,
   loading: false,
   error: null,
+  // Persisted across restarts for registration resume flow
+  registrationEmail: null,
+  emailVerifiedToken: null,
   registrationForm: {
     firstName: '',
     lastName: '',
@@ -125,7 +129,15 @@ const authSlice = createSlice({
       const { field, value } = action.payload;
       state.registrationForm[field] = value;
     },
+    setEmailVerifiedToken: (state, action) => {
+      state.emailVerifiedToken = action.payload;
+    },
+    setRegistrationEmail: (state, action) => {
+      state.registrationEmail = action.payload;
+    },
     clearRegistrationForm: (state) => {
+      state.registrationEmail = null;
+      state.emailVerifiedToken = null;
       state.registrationForm = {
         firstName: '',
         lastName: '',
@@ -141,6 +153,9 @@ const authSlice = createSlice({
       if (state.user) {
         state.user.isProfileCreated = true;
       }
+    },
+    setKvkkAccepted: (state, action) => {
+      state.kvkkVersion = action.payload;
     },
   },
   extraReducers: (builder) => {
@@ -214,7 +229,10 @@ export const {
   setNeedsVerification,
   clearVerification,
   updateRegistrationField,
+  setEmailVerifiedToken,
+  setRegistrationEmail,
   clearRegistrationForm,
   setProfileCompleted,
+  setKvkkAccepted,
 } = authSlice.actions;
 export default authSlice.reducer;

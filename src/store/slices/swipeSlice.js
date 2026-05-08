@@ -60,6 +60,21 @@ const swipeSlice = createSlice({
     loading: false,
     loadingMore: false,
     error: null,
+    remainingSwipes: null,
+    superLikesRemaining: null,
+    swipeCountResetAt: null,
+    superLikeCountResetAt: null,
+    premiumExpiresAt: null,
+    isPremium: false,
+    totalSwipesToday: 0,
+    likesToday: 0,
+    passesToday: 0,
+    superLikesToday: 0,
+    matchesToday: 0,
+    remainingUndos: null,
+    undoCountResetAt: null,
+    remainingMissedMatchRecovery: null,
+    missedMatchRecoveryResetAt: null,
   },
   reducers: {
     nextCard: (state) => {
@@ -71,6 +86,24 @@ const swipeSlice = createSlice({
       if (state.currentIndex > 0) {
         state.currentIndex -= 1;
       }
+    },
+    updateSwipeStats: (state, action) => {
+      const p = action.payload;
+      if (p.remainingSwipes !== undefined) state.remainingSwipes = p.remainingSwipes;
+      if (p.superLikesRemaining !== undefined) state.superLikesRemaining = p.superLikesRemaining;
+      if (p.swipeCountResetAt !== undefined) state.swipeCountResetAt = p.swipeCountResetAt;
+      if (p.superLikeCountResetAt !== undefined) state.superLikeCountResetAt = p.superLikeCountResetAt;
+      if (p.premiumExpiresAt !== undefined) state.premiumExpiresAt = p.premiumExpiresAt;
+      if (p.isPremium !== undefined) state.isPremium = p.isPremium;
+      if (p.totalSwipesToday !== undefined) state.totalSwipesToday = p.totalSwipesToday;
+      if (p.likesToday !== undefined) state.likesToday = p.likesToday;
+      if (p.passesToday !== undefined) state.passesToday = p.passesToday;
+      if (p.superLikesToday !== undefined) state.superLikesToday = p.superLikesToday;
+      if (p.matchesToday !== undefined) state.matchesToday = p.matchesToday;
+      if (p.remainingUndos !== undefined) state.remainingUndos = p.remainingUndos;
+      if (p.undoCountResetAt !== undefined) state.undoCountResetAt = p.undoCountResetAt;
+      if (p.remainingMissedMatchRecovery !== undefined) state.remainingMissedMatchRecovery = p.remainingMissedMatchRecovery;
+      if (p.missedMatchRecoveryResetAt !== undefined) state.missedMatchRecoveryResetAt = p.missedMatchRecoveryResetAt;
     },
   },
   extraReducers: (builder) => {
@@ -107,5 +140,5 @@ const swipeSlice = createSlice({
   },
 });
 
-export const { nextCard, rewindCard } = swipeSlice.actions;
+export const { nextCard, rewindCard, updateSwipeStats } = swipeSlice.actions;
 export default swipeSlice.reducer;

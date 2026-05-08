@@ -14,7 +14,7 @@
     },
     "ios": {
       "supportsTablet": true,
-      "bundleIdentifier": "com.uygarcapar.unitinder",
+      "bundleIdentifier": "com.uygarcapar.lit",
       "infoPlist": {
         "ITSAppUsesNonExemptEncryption": false
       }
@@ -24,7 +24,7 @@
         "foregroundImage": "./assets/adaptive-icon.png",
         "backgroundColor": "#ffffff"
       },
-      "package": "com.uygarcapar.unitinder",
+      "package": "com.uygarcapar.lit",
       "edgeToEdgeEnabled": true
     },
     "web": {

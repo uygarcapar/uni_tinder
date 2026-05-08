@@ -1,162 +1,272 @@
-import React, { useState } from "react";
+import { useState, useRef, useEffect } from "react";
 import {
   View,
   Text,
+  TextInput,
   TouchableOpacity,
-  Platform,
+  ActivityIndicator,
   TouchableWithoutFeedback,
   Keyboard,
 } from "react-native";
 import { useDispatch, useSelector } from "react-redux";
-import { updateRegistrationField } from "../store/slices/authSlice";
-import DateTimePicker from "@react-native-community/datetimepicker";
-import { FontAwesomeIcon } from "@fortawesome/react-native-fontawesome";
-import { faCalendar } from "@fortawesome/free-regular-svg-icons";
-import { KeyboardStickyView } from "react-native-keyboard-controller";
+import { authService } from "../services/authService";
+import {
+  setUser,
+  clearVerification,
+  logout,
+  setEmailVerifiedToken,
+} from "../store/slices/authSlice";
+import { Mailbox, RotateCcw } from "lucide-react-native";
 import { LinearGradient } from "expo-linear-gradient";
+import { API_BASE_URL, API_ENDPOINTS } from "../constants/api";
 
-export default function RegisterStep2Screen({ navigation }) {
+export default function RegisterStep2Screen({ route, navigation }) {
+  const { user, isAuthenticated } = useSelector((state) => state.auth);
+  const email = route?.params?.email || user?.email;
+  const isRegistrationMode = route?.params?.mode === "registration";
+  const isPending = route?.params?.pending === true;
+
+  const [code, setCode] = useState(["", "", "", "", "", ""]);
+  const [loading, setLoading] = useState(false);
+  const [error, setError] = useState("");
+  const [resendLoading, setResendLoading] = useState(false);
+  const [resendSuccess, setResendSuccess] = useState(false);
+  const [countdown, setCountdown] = useState(0);
+  const [isLoggingOut, setIsLoggingOut] = useState(false);
+
+  const inputRefs = useRef([]);
   const dispatch = useDispatch();
 
-  // Redux'tan gelen tarih string'ini Date objesine çevir
-  const dateOfBirthString = useSelector(
-    (state) => state.auth.registrationForm.dateOfBirth,
-  );
-  const dateOfBirth = new Date(dateOfBirthString);
-
-  const [showDatePicker, setShowDatePicker] = useState(true);
-
-  // Hata mesajı için state
-  const [error, setError] = useState("");
-
-  const updateField = (field, value) => {
-    dispatch(updateRegistrationField({ field, value }));
-  };
-
-  // Yaş Hesaplama Fonksiyonu
-  const calculateAge = (dob) => {
-    const today = new Date();
-    const birthDate = new Date(dob);
-    let age = today.getFullYear() - birthDate.getFullYear();
-    const m = today.getMonth() - birthDate.getMonth();
-
-    // Eğer doğum ayı henüz gelmediyse veya doğum ayında ama günü gelmediyse yaşı 1 düşür
-    if (m < 0 || (m === 0 && today.getDate() < birthDate.getDate())) {
-      age--;
+  useEffect(() => {
+    if (countdown > 0) {
+      const timer = setTimeout(() => setCountdown(countdown - 1), 1000);
+      return () => clearTimeout(timer);
     }
-    return age;
-  };
+  }, [countdown]);
 
-  const handleNext = () => {
-    const age = calculateAge(dateOfBirth);
-
-    if (age < 18) {
-      setError("Uygulamayı kullanabilmek için 18 yaşından büyük olmalısın.");
-      return; // Fonksiyonu burada durdur, sayfayı değiştirme
-    }
-
-    // Yaş uygunsa hatayı temizle ve devam et
+  const handleCodeChange = (text, index) => {
+    if (text && !/^\d+$/.test(text)) return;
+    const newCode = [...code];
+    newCode[index] = text;
+    setCode(newCode);
     setError("");
-    navigation.navigate("RegisterStep3");
+    if (text && index < 5) inputRefs.current[index + 1]?.focus();
+    if (text && index === 5 && newCode.every((d) => d !== "")) {
+      handleVerify(newCode.join(""));
+    }
+  };
+
+  const handleKeyPress = (e, index) => {
+    if (e.nativeEvent.key === "Backspace" && code[index] === "" && index > 0) {
+      const newCode = [...code];
+      newCode[index - 1] = "";
+      setCode(newCode);
+      inputRefs.current[index - 1]?.focus();
+    }
+  };
+
+  const handleVerify = async (verificationCode = null) => {
+    Keyboard.dismiss();
+    const finalCode = verificationCode || code.join("");
+    if (finalCode.length !== 6) {
+      setError("Lütfen 6 haneli kodu girin");
+      return;
+    }
+
+    setLoading(true);
+    setError("");
+
+    try {
+      if (isRegistrationMode) {
+        // New registration flow: verify-email → save token → go to RegisterStep1
+        const response = await fetch(`${API_BASE_URL}${API_ENDPOINTS.VERIFY_EMAIL_REGISTRATION}`, {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ email, code: finalCode }),
+        });
+        const data = await response.json();
+
+        if (data.isSuccess && data.result?.emailVerifiedToken) {
+          dispatch(setEmailVerifiedToken(data.result.emailVerifiedToken));
+          navigation.reset({ index: 0, routes: [{ name: "RegisterStep6" }] });
+        } else {
+          setError(data.message || "Doğrulama başarısız");
+        }
+      } else {
+        // Login flow: verify → setUser → AppNavigator switches to Main
+        const response = await authService.verifyEmailCode(email, finalCode);
+        if (response.isSuccess) {
+          dispatch(setUser({ isVerified: true, isMailVerified: true }));
+          dispatch(clearVerification());
+        } else {
+          setError(response.message || "Doğrulama başarısız");
+        }
+      }
+    } catch (err) {
+      setError(err.response?.data?.message || "Kod doğrulanamadı");
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  const handleResend = async () => {
+    if (countdown > 0) return;
+    setResendLoading(true);
+    setResendSuccess(false);
+    setError("");
+
+    try {
+      let response;
+      if (isRegistrationMode) {
+        const res = await fetch(`${API_BASE_URL}${API_ENDPOINTS.SEND_VERIFICATION}`, {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ email }),
+        });
+        response = await res.json();
+      } else {
+        response = await authService.resendVerification(email);
+      }
+
+      if (response.isSuccess) {
+        setResendSuccess(true);
+        setCountdown(60);
+        setTimeout(() => setResendSuccess(false), 3000);
+      } else {
+        setError(response.message || "Kod gönderilemedi");
+      }
+    } catch {
+      setError("Kod gönderilemedi");
+    } finally {
+      setResendLoading(false);
+    }
+  };
+
+  const handleGoBack = () => {
+    if (isLoggingOut) return;
+    if (isAuthenticated && !isRegistrationMode) {
+      setIsLoggingOut(true);
+      dispatch(logout());
+    } else {
+      dispatch(clearVerification());
+      navigation.goBack();
+    }
   };
 
   return (
-    <View className="flex-1 bg-[#121212]">
-      {/* Header */}
-      <View className="bg-[#121212] pt-16 pb-6 px-6">
-        <TouchableOpacity
-          activeOpacity={1}
-          onPress={() => navigation.goBack()}
-          className="flex-row items-center"
-        >
-          <Text className="text-4xl mr-2 text-white">←</Text>
-        </TouchableOpacity>
-      </View>
-
+    <View className="flex-1 bg-[#121212] -mt-[100px]">
       <TouchableWithoutFeedback onPress={Keyboard.dismiss}>
-        <View className="flex-1 px-6 py-6 pt-0">
-          <View className="flex-1">
-            <View className="flex flex-col gap-2">
-              <Text className="text-4xl font-bold text-white">Yaşını gir.</Text>
-              <Text className="text-[18px] font-normal text-gray-400 mb-6">
-                Doğum tarihin, doğru eşleşmeler bulmamıza yardımcı olur.
+        <View className="flex-1 justify-center px-6 py-12">
+          <View className="items-center flex flex-col gap-10 p-8">
+            <Mailbox strokeWidth={1.5} size={100} color="#fff" />
+            <View>
+              <Text className="text-3xl font-bold text-white mb-2 text-center">
+                E-Mail'ini doğrula.
               </Text>
+              <Text className="text-white/80 text-lg text-center px-4">
+                {isPending
+                  ? "Bu adrese daha önce kod gönderildi. Mailinizi kontrol edin."
+                  : "Bu adrese gönderilen 6 haneli kodu girin"}
+              </Text>
+              <View
+                style={{ borderCurve: "continuous" }}
+                className="border-[0.5px] border-white/15 items-center flex-row justify-center mt-4 py-3 px-4 rounded-full overflow-hidden self-center"
+              >
+                <Text className="text-white text-lg text-center px-4">{email}</Text>
+              </View>
+            </View>
+          </View>
+
+          <View>
+            {resendSuccess && (
+              <View className="bg-green-100 border border-green-400 rounded-2xl p-4 mb-6">
+                <Text className="text-green-700 text-sm text-center">
+                  ✅ Kod başarıyla gönderildi!
+                </Text>
+              </View>
+            )}
+
+            <View className="flex-row justify-between mb-8 p-8 py-4">
+              {code.map((digit, index) => (
+                <TextInput
+                  key={index}
+                  ref={(ref) => (inputRefs.current[index] = ref)}
+                  className={`w-12 h-16 bg-[#1e1e1e] text-white rounded-[15px] text-center text-2xl font-medium p-0 ${
+                    error ? "border border-red-600" : ""
+                  }`}
+                  style={{
+                    borderCurve: "continuous",
+                    overflow: "hidden",
+                    textAlignVertical: "center",
+                    includeFontPadding: false,
+                    paddingVertical: 0,
+                    lineHeight: 25,
+                  }}
+                  value={digit}
+                  onChangeText={(text) => handleCodeChange(text, index)}
+                  onKeyPress={(e) => handleKeyPress(e, index)}
+                  keyboardType="number-pad"
+                  maxLength={1}
+                  editable={!loading}
+                  allowFontScaling={false}
+                  selectionColor="white"
+                  cursorColor="white"
+                />
+              ))}
+            </View>
+
+            <View className="flex-row mb-3 justify-center items-center py-[15px] pt-0 rounded-full overflow-hidden">
+              <TouchableOpacity onPress={handleResend} disabled={resendLoading || countdown > 0}>
+                {resendLoading ? (
+                  <ActivityIndicator size="small" color="#fff" />
+                ) : countdown > 0 ? (
+                  <View className="flex-row items-center gap-2">
+                    <RotateCcw size={16} color="#d1d5db" strokeWidth={2.5} />
+                    <Text className="text-gray-300 font-medium">Tekrar gönder ({countdown}s)</Text>
+                  </View>
+                ) : (
+                  <View className="flex-row py-[2px] items-center gap-2">
+                    <RotateCcw size={16} color="#fff" strokeWidth={2.5} />
+                    <Text className="text-white font-medium">Tekrar Gönder</Text>
+                  </View>
+                )}
+              </TouchableOpacity>
             </View>
 
             <TouchableOpacity
-              onPress={() => setShowDatePicker(true)}
               style={{
-                borderRadius: 999,
                 borderCurve: "continuous",
-                borderWidth: 0.5,
-                borderColor: error ? "#ef4444" : "rgba(255,255,255,0.1)",
-                paddingHorizontal: 16,
-                paddingVertical: 16,
-                flexDirection: "row",
-                alignItems: "center",
-                justifyContent: "space-between",
+                opacity: loading || code.some((d) => d === "") ? 0.5 : 1,
               }}
+              onPress={() => handleVerify()}
+              disabled={loading || code.some((d) => d === "")}
+              className="rounded-full overflow-hidden"
             >
-              <Text className="text-[18px] text-white">
-                {dateOfBirth.toLocaleDateString("tr-TR", {
-                  day: "2-digit",
-                  month: "long",
-                  year: "numeric",
-                })}
-              </Text>
-              <FontAwesomeIcon size={20} icon={faCalendar} color="#fff" />
+              <LinearGradient
+                colors={["#fc5426", "#fc4026"]}
+                start={{ x: 0, y: 0 }}
+                end={{ x: 1, y: 0 }}
+                className="items-center"
+              >
+                {loading ? (
+                  <ActivityIndicator className="py-[20px]" color="#fff" />
+                ) : (
+                  <Text className="text-white py-[20px] text-center font-medium text-[15px]">
+                    Doğrula
+                  </Text>
+                )}
+              </LinearGradient>
             </TouchableOpacity>
+          </View>
 
-            {showDatePicker && (
-              <DateTimePicker
-                value={dateOfBirth}
-                mode="date"
-                display={Platform.OS === "ios" ? "spinner" : "default"}
-                themeVariant="dark"
-                textColor="#FFFFFF"
-                onChange={(_, selectedDate) => {
-                  setShowDatePicker(Platform.OS === "ios");
-                  if (selectedDate) {
-                    // Date objesini ISO string'e çevir ve Redux'a kaydet
-                    updateField("dateOfBirth", selectedDate.toISOString());
-                    setError(""); // Tarih değişince eski hata mesajını sil
-                  }
-                }}
-                maximumDate={new Date()}
-                minimumDate={new Date(1950, 0, 1)}
-              />
-            )}
-
-            {error ? (
-              <Text className="text-red-500 text-center font-normal mb-3 mt-4">
-                {error}
-              </Text>
-            ) : null}
+          <View className="flex-row justify-center mt-8">
+            <Text className="text-gray-300">Yanlış email mi? </Text>
+            <TouchableOpacity onPress={handleGoBack}>
+              <Text className="text-white font-medium">Geri Dön</Text>
+            </TouchableOpacity>
           </View>
         </View>
       </TouchableWithoutFeedback>
-
-      {/* Sticky Button with KeyboardStickyView */}
-      <KeyboardStickyView offset={{ closed: 0, opened: 0 }}>
-        <View className="px-6 pb-8 pt-4 ">
-          <TouchableOpacity
-            activeOpacity={1}
-            onPress={handleNext}
-            className="rounded-full overflow-hidden"
-          >
-            <LinearGradient
-              colors={["#fc4826", "#fc2f26"]}
-              start={{ x: 0, y: 0 }}
-              end={{ x: 1, y: 0 }}
-              className=""
-            >
-              <Text className="text-white py-[20px] font-bold text-[15px] text-center">
-                Devam Et
-              </Text>
-            </LinearGradient>
-          </TouchableOpacity>
-        </View>
-      </KeyboardStickyView>
     </View>
   );
 }

@@ -66,12 +66,28 @@ const processQueue = (error, token = null) => {
   failedQueue = [];
 };
 
+const sleep = (ms) => new Promise((resolve) => setTimeout(resolve, ms));
+
 api.interceptors.response.use(
   (response) => {
     return response.data;
   },
   async (error) => {
     const originalRequest = error.config;
+
+    // 429 Too Many Requests — exponential backoff (max 3 deneme)
+    if (error.response?.status === 429) {
+      originalRequest._retryCount = (originalRequest._retryCount || 0) + 1;
+      if (originalRequest._retryCount <= 3) {
+        const retryAfter = error.response.headers?.['retry-after'];
+        const delay = retryAfter
+          ? parseInt(retryAfter, 10) * 1000
+          : 1000 * Math.pow(2, originalRequest._retryCount - 1);
+        console.log(`⏳ 429 alındı, ${delay}ms bekleyip tekrar denenecek (deneme ${originalRequest._retryCount}/3)`);
+        await sleep(delay);
+        return api(originalRequest);
+      }
+    }
 
     // If 401 and not already retried
     if (error.response?.status === 401 && !originalRequest._retry) {

@@ -1,9 +1,53 @@
-import { View, Text, TouchableOpacity, Dimensions, Image } from "react-native";
+import { useRef } from "react";
+import {
+  View,
+  Text,
+  TouchableOpacity,
+  Dimensions,
+  Image,
+  Animated,
+} from "react-native";
 import { LinearGradient } from "expo-linear-gradient";
 import { StatusBar } from "expo-status-bar";
 
 // Ekran boyutunu alıyoruz (Garanti olsun diye)
 const { width, height } = Dimensions.get("window");
+
+const PressableScaleButton = ({ onPress, style, className, children }) => {
+  const scale = useRef(new Animated.Value(1)).current;
+
+  const handlePressIn = () => {
+    Animated.spring(scale, {
+      toValue: 0.95,
+      useNativeDriver: true,
+      speed: 20,
+    }).start();
+  };
+
+  const handlePressOut = () => {
+    Animated.spring(scale, {
+      toValue: 1,
+      useNativeDriver: true,
+      bounciness: 8,
+      speed: 20,
+    }).start();
+  };
+
+  return (
+    <Animated.View style={{ transform: [{ scale }] }}>
+      <TouchableOpacity
+        activeOpacity={1}
+        onPressIn={handlePressIn}
+        onPressOut={handlePressOut}
+        onPress={onPress}
+        style={style}
+        className={className}
+      >
+        {children}
+      </TouchableOpacity>
+    </Animated.View>
+  );
+};
 
 export default function WelcomeScreen({ navigation }) {
   return (
@@ -45,36 +89,34 @@ export default function WelcomeScreen({ navigation }) {
 
         {/* Alt Kısım - Butonlar */}
         <View className="space-y-4 mb-4">
-          <View className="flex flex-col gap-4">
-            <TouchableOpacity
-              activeOpacity={0.9}
+          <View className="flex flex-col gap-3">
+            <PressableScaleButton
               onPress={() => navigation.navigate("RegisterStep1")}
-              className="bg-white py-5 items-center"
+              className="bg-white py-[20px] items-center"
               style={{
                 borderRadius: 999,
                 borderCurve: "continuous",
                 overflow: "hidden",
               }}
             >
-              <Text className="text-[#FD297B] font-bold text-[15px]">
+              <Text className="text-[#FD297B] font-bold text-[14px]">
                 Hesap Oluştur
               </Text>
-            </TouchableOpacity>
+            </PressableScaleButton>
 
-            <TouchableOpacity
-              activeOpacity={0.9}
+            <PressableScaleButton
               onPress={() => navigation.navigate("Login")}
-              className="border-[0.5px] border-white py-5 items-center"
+              className="border-[0.5px] border-white py-[20px] items-center"
               style={{
                 borderRadius: 999,
                 borderCurve: "continuous",
                 overflow: "hidden",
               }}
             >
-              <Text className="text-white font-bold text-[15px]">
+              <Text className="text-white font-bold text-[14px]">
                 Zaten Hesabım Var
               </Text>
-            </TouchableOpacity>
+            </PressableScaleButton>
           </View>
 
           <Text className="text-white text-sm text-center mt-8">

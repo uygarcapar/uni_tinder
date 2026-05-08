@@ -11,7 +11,6 @@ import {
   TouchableOpacity,
   Alert,
   TextInput,
-  Modal,
   ScrollView,
   Image,
   ActivityIndicator,
@@ -28,13 +27,15 @@ import {
 import * as ImagePicker from "expo-image-picker";
 import { useDispatch, useSelector } from "react-redux";
 import { logout } from "../store/slices/authSlice";
-import { API_BASE_URL, API_ENDPOINTS } from "../constants/api";
+import { API_ENDPOINTS } from "../constants/api";
 import profileService from "../services/profileService";
 import api from "../services/api";
 import SwipeCard from "../components/SwipeCard";
+import PreviewModal from "../components/PreviewModal";
+import SettingsModal from "../components/SettingsModal";
+import PurchaseModal from "../components/PurchaseModal";
 import {
   LogOut,
-  Trash2,
   Pencil,
   Check,
   X,
@@ -734,6 +735,8 @@ function ProfileEditModal({
   children,
   bottomSheetRef,
 }) {
+  const snapPoints = useMemo(() => ["90%"], []);
+
   const renderBackdrop = useCallback(
     (props) => (
       <BottomSheetBackdrop
@@ -749,7 +752,7 @@ function ProfileEditModal({
   return (
     <BottomSheetModal
       ref={bottomSheetRef}
-      snapPoints={["90%"]}
+      snapPoints={snapPoints}
       enablePanDownToClose={true}
       enableOverDrag={false}
       onDismiss={onClose}
@@ -794,7 +797,6 @@ function ProfileEditModal({
           disabled={saving || saveDisabled}
           activeOpacity={0.7}
           style={{
-            width: 60,
             alignItems: "flex-end",
             opacity: saveDisabled ? 0.35 : 1,
           }}
@@ -833,10 +835,13 @@ function ProfileEditModal({
 // ══════════════════════════════════════════════════════════════════════════════
 export default function ProfileScreen() {
   const dispatch = useDispatch();
-  const { user, token } = useSelector((state) => state.auth);
+  const { user } = useSelector((state) => state.auth);
 
-  // ── Bottom Sheet Ref ───────────────────────────────────────────────────────
+  // ── Bottom Sheet Ref & Görünürlük Stateleri ────────────────────────────────
   const editBottomSheetRef = useRef(null);
+  const settingsBottomSheetRef = useRef(null);
+  const purchaseBottomSheetRef = useRef(null);
+  const [previewVisible, setPreviewVisible] = useState(false);
 
   // ── Profil verisi ──────────────────────────────────────────────────────────
   const [myProfile, setMyProfile] = useState(null);
@@ -849,11 +854,6 @@ export default function ProfileScreen() {
   // ── Genel UI ───────────────────────────────────────────────────────────────
   const [loading, setLoading] = useState(true);
   const [refreshing, setRefreshing] = useState(false);
-  const [previewVisible, setPreviewVisible] = useState(false);
-  const [showDeleteModal, setShowDeleteModal] = useState(false);
-  const [password, setPassword] = useState("");
-  const [deleteLoading, setDeleteLoading] = useState(false);
-
   // Accordion State
   const [expandedSection, setExpandedSection] = useState(null);
 
@@ -1242,53 +1242,6 @@ export default function ProfileScreen() {
       },
     ]);
 
-  const confirmDelete = () =>
-    Alert.alert("Hesabı Sil", "Bu işlem geri alınamaz. Emin misin?", [
-      { text: "İptal", style: "cancel" },
-      {
-        text: "Devam Et",
-        style: "destructive",
-        onPress: () => setShowDeleteModal(true),
-      },
-    ]);
-
-  const handleDeleteAccount = async () => {
-    if (!password.trim()) return Alert.alert("Hata", "Lütfen şifrenizi girin");
-    setDeleteLoading(true);
-    try {
-      const response = await fetch(
-        `${API_BASE_URL}${API_ENDPOINTS.DELETE_ACCOUNT}`,
-        {
-          method: "DELETE",
-          headers: {
-            Authorization: `Bearer ${token}`,
-            "Content-Type": "application/json",
-          },
-          body: JSON.stringify({ userId: user?.userId, password }),
-        },
-      );
-      const data = await response.json();
-      if (response.ok && data.isSuccess) {
-        Alert.alert("Başarılı", "Hesabınız silindi", [
-          {
-            text: "Tamam",
-            onPress: () => {
-              setShowDeleteModal(false);
-              setPassword("");
-              dispatch(logout());
-            },
-          },
-        ]);
-      } else {
-        Alert.alert("Hata", data.message || "Hesap silinemedi");
-      }
-    } catch {
-      Alert.alert("Hata", "Bir hata oluştu. Lütfen tekrar deneyin.");
-    } finally {
-      setDeleteLoading(false);
-    }
-  };
-
   const handleAccordionToggle = (key) => {
     setExpandedSection(expandedSection === key ? null : key);
   };
@@ -1385,23 +1338,28 @@ export default function ProfileScreen() {
               paddingHorizontal: 21,
               flexDirection: "row",
               alignItems: "center",
-              justifyContent: "space-between",
               height: 50,
             }}
           >
-            <Text
-              style={{
-                color: "#fff",
-                fontSize: 26,
-                fontWeight: "700",
-                letterSpacing: 0.5,
-              }}
-            >
-              Profil
-            </Text>
-            <TouchableOpacity activeOpacity={0.7}>
-              <Settings size={25} strokeWidth={2} color="#fff" />
-            </TouchableOpacity>
+            <View style={{ flex: 1 }} />
+            <Image
+              source={require("../../assets/lit_name_white.png")}
+              style={{ height: 50, width: 120 }}
+              resizeMode="contain"
+            />
+            <View style={{ flex: 1, alignItems: "flex-end" }}>
+              <TouchableOpacity
+                activeOpacity={0.7}
+                onPress={() => settingsBottomSheetRef.current?.present()}
+              >
+                <Settings
+                  size={25}
+                  strokeWidth={2}
+                  color="#fff"
+                  pointerEvents="none"
+                />
+              </TouchableOpacity>
+            </View>
           </View>
         </SafeAreaView>
 
@@ -1495,7 +1453,9 @@ export default function ProfileScreen() {
               gap: 16,
             }}
           >
-            <View
+            <TouchableOpacity
+              activeOpacity={0.85}
+              onPress={() => mainPhoto && setPreviewVisible(true)}
               style={{
                 width: 80,
                 height: 80,
@@ -1515,7 +1475,7 @@ export default function ProfileScreen() {
               ) : (
                 <User size={40} color="#374151" strokeWidth={1} />
               )}
-            </View>
+            </TouchableOpacity>
 
             <View style={{ flex: 1, justifyContent: "space-between" }}>
               <Text
@@ -1557,7 +1517,10 @@ export default function ProfileScreen() {
           {/* --- PREMIUM UPSELL BANNER & COMPARISON --- */}
           {!myProfile?.isPremium && (
             <View className="mb-10 px-4 mt-2">
-              <TouchableOpacity activeOpacity={0.9}>
+              <TouchableOpacity
+                activeOpacity={0.9}
+                onPress={() => purchaseBottomSheetRef.current?.present()}
+              >
                 <LinearGradient
                   colors={["#ff173a", "#FF4D4D", "#fc803d"]}
                   start={{ x: 0, y: 0 }}
@@ -1745,22 +1708,6 @@ export default function ProfileScreen() {
                   Çıkış Yap
                 </Text>
               </TouchableOpacity>
-              <TouchableOpacity
-                onPress={confirmDelete}
-                style={{
-                  borderRadius: 999,
-                  borderCurve: "continuous",
-                  overflow: "hidden",
-                }}
-                className="flex-row justify-center text-center items-center border-[0.5px] border-white/10 px-3 py-5 gap-2 mt-3"
-              >
-                <Trash2 size={20} color="#d10d27" strokeWidth={1.5} />
-                <Text
-                  style={{ color: "#d10d27", fontWeight: "500", fontSize: 14 }}
-                >
-                  Hesabı Sil
-                </Text>
-              </TouchableOpacity>
             </View>
           </View>
         </ScrollView>
@@ -1777,7 +1724,17 @@ export default function ProfileScreen() {
           {/* Kartımı Önizle Butonu */}
           <TouchableOpacity
             activeOpacity={0.85}
-            onPress={() => setPreviewVisible(true)}
+            onPress={() => {
+              console.log("🎬 Edit kapatılıyor...");
+              // 1. Önce düzenleme ekranını kapatıyoruz
+              editBottomSheetRef.current?.dismiss();
+
+              // 2. Kapanma animasyonunun bitmesini bekleyip orijinal Modalı tetikliyoruz
+              setTimeout(() => {
+                console.log("🎬 Orijinal Modal ile Preview açılıyor!");
+                setPreviewVisible(true);
+              }, 400);
+            }}
             style={{ marginTop: 8, marginBottom: 16 }}
           >
             <View
@@ -2240,147 +2197,25 @@ export default function ProfileScreen() {
           )}
         </ProfileEditModal>
 
-        {/* ══ PREVİEW MODALI ══ */}
-        <Modal
-          visible={previewVisible}
-          animationType="slide"
-          onRequestClose={() => setPreviewVisible(false)}
-        >
-          <View style={{ flex: 1, backgroundColor: "#121212" }}>
-            <View
-              style={{ position: "absolute", top: 52, right: 16, zIndex: 100 }}
-            >
-              <TouchableOpacity
-                onPress={() => setPreviewVisible(false)}
-                style={{
-                  backgroundColor: "rgba(0,0,0,0.5)",
-                  borderRadius: 999,
-                  padding: 9,
-                }}
-              >
-                <X size={20} color="#fff" strokeWidth={2} />
-              </TouchableOpacity>
-            </View>
-            {previewProfile ? (
-              <SwipeCard profile={previewProfile} hideActions />
-            ) : (
-              <View
-                style={{
-                  flex: 1,
-                  alignItems: "center",
-                  justifyContent: "center",
-                }}
-              >
-                <ActivityIndicator color="#fff" />
-              </View>
-            )}
-          </View>
-        </Modal>
+        {/* ══ PURCHASE MODALI ══ */}
+        <PurchaseModal
+          bottomSheetRef={purchaseBottomSheetRef}
+          onClose={() => purchaseBottomSheetRef.current?.dismiss()}
+          onSuccess={loadProfile}
+        />
 
-        {/* ══ HESAP SİL MODALI ══ */}
-        <Modal
-          visible={showDeleteModal}
-          transparent
-          animationType="fade"
-          onRequestClose={() => setShowDeleteModal(false)}
-        >
-          <View
-            style={{
-              flex: 1,
-              backgroundColor: "rgba(0,0,0,0.65)",
-              justifyContent: "center",
-              alignItems: "center",
-              paddingHorizontal: 24,
-            }}
-          >
-            <View
-              style={{
-                backgroundColor: "#1E1E1E",
-                borderRadius: 28,
-                padding: 24,
-                width: "100%",
-              }}
-            >
-              <Text
-                style={{
-                  color: "#fff",
-                  fontSize: 22,
-                  fontWeight: "800",
-                  marginBottom: 6,
-                }}
-              >
-                Hesabı Sil
-              </Text>
-              <Text
-                style={{
-                  color: "#9CA3AF",
-                  fontSize: 14,
-                  marginBottom: 20,
-                  lineHeight: 20,
-                }}
-              >
-                Hesabınızı kalıcı olarak silmek için şifrenizi girin.
-              </Text>
-              <TextInput
-                style={{
-                  borderWidth: 1,
-                  borderColor: "#374151",
-                  borderRadius: 16,
-                  paddingHorizontal: 16,
-                  paddingVertical: 14,
-                  fontSize: 16,
-                  color: "#fff",
-                  marginBottom: 20,
-                }}
-                placeholder="Şifreniz"
-                placeholderTextColor="#4B5563"
-                value={password}
-                onChangeText={setPassword}
-                secureTextEntry
-                editable={!deleteLoading}
-              />
-              <View style={{ flexDirection: "row", gap: 10 }}>
-                <TouchableOpacity
-                  onPress={() => {
-                    setShowDeleteModal(false);
-                    setPassword("");
-                  }}
-                  style={{
-                    flex: 1,
-                    backgroundColor: "#2A2A2A",
-                    borderRadius: 16,
-                    paddingVertical: 14,
-                    alignItems: "center",
-                  }}
-                  disabled={deleteLoading}
-                >
-                  <Text style={{ color: "#fff", fontWeight: "700" }}>
-                    İptal
-                  </Text>
-                </TouchableOpacity>
-                <TouchableOpacity
-                  onPress={handleDeleteAccount}
-                  style={{
-                    flex: 1,
-                    backgroundColor: "#DC2626",
-                    borderRadius: 16,
-                    paddingVertical: 14,
-                    alignItems: "center",
-                  }}
-                  disabled={deleteLoading}
-                >
-                  {deleteLoading ? (
-                    <ActivityIndicator color="#fff" />
-                  ) : (
-                    <Text style={{ color: "#fff", fontWeight: "700" }}>
-                      Sil
-                    </Text>
-                  )}
-                </TouchableOpacity>
-              </View>
-            </View>
-          </View>
-        </Modal>
+        {/* ══ SETTINGS MODALI ══ */}
+        <SettingsModal
+          bottomSheetRef={settingsBottomSheetRef}
+          onClose={() => settingsBottomSheetRef.current?.dismiss()}
+        />
+
+        {/* ══ PREVİEW MODALI (ARTIK ORIJINAL MODAL) ══ */}
+        <PreviewModal
+          visible={previewVisible}
+          onClose={() => setPreviewVisible(false)}
+          profile={previewProfile}
+        />
       </View>
     </GestureHandlerRootView>
   );

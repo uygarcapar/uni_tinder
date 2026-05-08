@@ -150,7 +150,7 @@ export default function LoginScreen({ navigation }) {
       </TouchableWithoutFeedback>
 
       {/* Sticky Button with KeyboardStickyView */}
-      <KeyboardStickyView offset={{ closed: 0, opened: 0 }}>
+      <KeyboardStickyView offset={{ closed: 0, opened: 15 }}>
         <View className="px-8 pb-8 pt-4 bg-[#121212]">
           <TouchableOpacity
             activeOpacity={1}

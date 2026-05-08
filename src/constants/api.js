@@ -4,6 +4,12 @@ export const API_BASE_URL =
 
 // API Endpoints
 export const API_ENDPOINTS = {
+  // New auth endpoints (email-first registration flow)
+  SEND_VERIFICATION: "/api/auth/send-verification",
+  VERIFY_EMAIL_REGISTRATION: "/api/auth/verify-email",
+  CHECK_REGISTRATION_TOKEN: "/api/auth/check-registration-token",
+  REGISTER_AND_COMPLETE: "/api/auth/register-and-complete",
+
   // User endpoints
   REGISTER: "/api/user/Register",
   LOGIN: "/api/user/Login",
@@ -43,7 +49,18 @@ export const API_ENDPOINTS = {
   SWIPE_FILTERS: "/api/swipe/Filters",
   SWIPE_UPDATE_FILTERS: "/api/swipe/UpdateFilters",
 
+  // Privacy / KVKK endpoints
+  PRIVACY_DELETE_ACCOUNT: "/api/privacy/delete-account",
+  PRIVACY_CANCEL_DELETION: "/api/privacy/cancel-deletion",
+  PRIVACY_DELETION_STATUS: "/api/privacy/deletion-status",
+  PRIVACY_MY_DATA: "/api/privacy/my-data",
+  PRIVACY_ACCEPT_CONSENT: "/api/privacy/accept-consent",
+
+  // Subscription
+  SUBSCRIPTION_STATUS: "/api/subscription/status",
+
   // Common endpoints (Enums)
+  GET_GENDERS: "/api/common/genders",
   GET_CITIES: "/api/common/cities",
   GET_DISTRICTS: "/api/common/cities", // Base path, cityId will be appended
   GET_CLASSES: "/api/common/classes",

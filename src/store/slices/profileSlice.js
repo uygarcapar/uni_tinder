@@ -12,7 +12,7 @@ const initialState = {
   ageRangeMax: 65,
   height: "",
   bio: "",
-  interestedIn: "",
+  interestedIn: [],
   hobbies: [],
   smokingStatus: null, // Now stores Integer ID
   zodiacSign: null, // Now stores Integer ID
@@ -44,7 +44,9 @@ export const completeProfile = createAsyncThunk(
       formData.append("Department", profileData.department);
       formData.append("YearOfStudy", profileData.yearOfStudy);
       formData.append("Height", profileData.height);
-      formData.append("InterestedIn", profileData.interestedIn);
+      profileData.interestedIn.forEach((val) => {
+        formData.append("InterestedIn", String(val));
+      });
       formData.append("Latitude", latitude);
       formData.append("Longitude", longitude);
 
@@ -164,6 +166,87 @@ export const completeProfile = createAsyncThunk(
     } catch (error) {
       console.error("❌ Complete Profile Error:", error.message);
       return rejectWithValue(error.message || "Profil tamamlanırken bir hata oluştu");
+    }
+  }
+);
+
+export const registerAndComplete = createAsyncThunk(
+  "profile/registerAndComplete",
+  async ({ photos, mainPhotoIndex, latitude, longitude }, { getState, rejectWithValue }) => {
+    try {
+      const state = getState();
+      const reg = state.auth.registrationForm;
+      const profile = state.profile;
+
+      const formData = new FormData();
+
+      // Email-verified token + account fields
+      formData.append("EmailVerifiedToken", state.auth.emailVerifiedToken);
+      formData.append("Email", state.auth.registrationEmail);
+      formData.append("FirstName", reg.firstName);
+      formData.append("LastName", reg.lastName);
+      formData.append("DisplayName", `${reg.firstName} ${reg.lastName}`);
+      formData.append("Gender", reg.gender);
+      formData.append("DateOfBirth", reg.dateOfBirth);
+      formData.append("Password", reg.password);
+      if (reg.phoneNumber) formData.append("PhoneNumber", reg.phoneNumber);
+
+      // Profile fields
+      formData.append("Height", profile.height);
+      formData.append("Department", profile.department);
+      formData.append("YearOfStudy", profile.yearOfStudy);
+      formData.append("Latitude", latitude);
+      formData.append("Longitude", longitude);
+
+      // Arrays
+      profile.interestedIn.forEach((val) => formData.append("InterestedIn", String(val)));
+      profile.hobbies.forEach((val) => formData.append("Hobbies", String(val)));
+
+      // Optional profile fields
+      if (profile.bio) formData.append("Bio", profile.bio);
+      if (profile.city) formData.append("City", profile.city);
+      if (profile.district) formData.append("District", profile.district);
+      if (profile.ageRangeMin) formData.append("AgeRangeMin", profile.ageRangeMin);
+      if (profile.ageRangeMax) formData.append("AgeRangeMax", profile.ageRangeMax);
+      if (profile.smokingStatus != null) formData.append("SmokingStatus", profile.smokingStatus);
+      if (profile.zodiacSign != null) formData.append("ZodiacSign", profile.zodiacSign);
+      if (profile.usagePurpose != null) formData.append("UsagePurpose", profile.usagePurpose);
+
+      // Defaults
+      formData.append("MaxDistance", 50);
+      formData.append("ShowMyUniversity", true);
+      formData.append("ShowMeOnApp", true);
+      formData.append("ShowDistance", true);
+      formData.append("ShowAge", true);
+
+      // Photos
+      for (let i = 0; i < photos.length; i++) {
+        const photo = photos[i];
+        const filename = photo.split("/").pop();
+        const match = /\.(\w+)$/.exec(filename);
+        const type = match ? `image/${match[1]}` : "image/jpeg";
+        formData.append("Photos", { uri: photo, name: filename, type });
+      }
+      formData.append("MainPhotoIndex", mainPhotoIndex);
+
+      const response = await fetch(`${API_BASE_URL}${API_ENDPOINTS.REGISTER_AND_COMPLETE}`, {
+        method: "POST",
+        body: formData,
+      });
+
+      let data = null;
+      try {
+        const rawText = await response.text();
+        if (rawText?.trim()) data = JSON.parse(rawText);
+      } catch {}
+
+      if (!response.ok || (data && !data.isSuccess)) {
+        return rejectWithValue(data?.message || `HTTP ${response.status}`);
+      }
+
+      return data;
+    } catch (error) {
+      return rejectWithValue(error.message || "Kayıt tamamlanamadı");
     }
   }
 );

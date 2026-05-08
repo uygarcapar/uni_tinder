@@ -5,6 +5,7 @@ import { combineReducers } from '@reduxjs/toolkit';
 import authReducer from './slices/authSlice';
 import profileReducer from './slices/profileSlice';
 import swipeReducer from './slices/swipeSlice';
+import subscriptionReducer from './slices/subscriptionSlice';
 
 // Auth slice specific persist config - only persist essential auth data
 const authPersistConfig = {
@@ -25,6 +26,7 @@ const rootReducer = combineReducers({
   auth: persistReducer(authPersistConfig, authReducer),
   profile: persistReducer(profilePersistConfig, profileReducer),
   swipe: swipeReducer,
+  subscription: subscriptionReducer,
 });
 
 // Root persist config

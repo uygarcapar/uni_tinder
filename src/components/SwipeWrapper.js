@@ -138,24 +138,30 @@ export default function SwipeWrapper({
         hasVibrated.value = false;
       }
     })
-    .onEnd(() => {
+    .onEnd((event) => {
       hasVibrated.value = false;
 
-      if (tx.value > SWIPE_THRESHOLD) {
-        // İkonlar ve butonlar yumuşakça kaybolsun
+      const VELOCITY_THRESHOLD = 900;
+      const goRight =
+        tx.value > SWIPE_THRESHOLD ||
+        (event.velocityX > VELOCITY_THRESHOLD && tx.value > 0);
+      const goLeft =
+        tx.value < -SWIPE_THRESHOLD ||
+        (event.velocityX < -VELOCITY_THRESHOLD && tx.value < 0);
+
+      if (goRight) {
+        dragX.value = withTiming(SWIPE_THRESHOLD, exitConfig);
+        overlayDragX.value = withTiming(SWIPE_THRESHOLD, exitConfig);
         buttonDragX.value = withTiming(0, fadeOutConfig);
         overlayOpacity.value = withTiming(0, fadeOutConfig);
-
-        // Kartın gidişi Easing ile yumuşatıldı
         tx.value = withTiming(EXIT_DISTANCE, exitConfig, () => {
           runOnJS(onSwipe)("right", profile.userId);
         });
-      } else if (tx.value < -SWIPE_THRESHOLD) {
-        // İkonlar ve butonlar yumuşakça kaybolsun
+      } else if (goLeft) {
+        dragX.value = withTiming(-SWIPE_THRESHOLD, exitConfig);
+        overlayDragX.value = withTiming(-SWIPE_THRESHOLD, exitConfig);
         buttonDragX.value = withTiming(0, fadeOutConfig);
         overlayOpacity.value = withTiming(0, fadeOutConfig);
-
-        // Kartın gidişi Easing ile yumuşatıldı
         tx.value = withTiming(-EXIT_DISTANCE, exitConfig, () => {
           runOnJS(onSwipe)("left", profile.userId);
         });

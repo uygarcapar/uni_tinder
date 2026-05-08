@@ -4,112 +4,94 @@ import { createNativeStackNavigator } from '@react-navigation/native-stack';
 import { useSelector, useDispatch } from 'react-redux';
 import { View, ActivityIndicator } from 'react-native';
 import { setCurrentAccessToken, setOnTokenRefreshed } from '../services/api';
-import { setUserAndToken } from '../store/slices/authSlice';
+import { setUserAndToken, clearRegistrationForm } from '../store/slices/authSlice';
 import { saveRefreshToken } from '../utils/tokenStorage';
+import { fetchSubscriptionStatus } from '../store/slices/subscriptionSlice';
+import { initRevenueCat, loginRevenueCat } from '../services/subscriptionService';
 import AuthNavigator from './AuthNavigator';
 import TabNavigator from './TabNavigator';
-import CompleteProfileStep1Screen from '../screens/CompleteProfileStep1Screen';
-import CompleteProfileStep2Screen from '../screens/CompleteProfileStep2Screen';
-import CompleteProfileStep3Screen from '../screens/CompleteProfileStep3Screen';
-import CompleteProfileStep4Screen from '../screens/CompleteProfileStep4Screen';
-import CompleteProfileStep5Screen from '../screens/CompleteProfileStep5Screen';
-import CompleteProfileStep6Screen from '../screens/CompleteProfileStep6Screen';
-import CompleteProfileStep7Screen from '../screens/CompleteProfileStep7Screen';
-import CompleteProfileStep8Screen from '../screens/CompleteProfileStep8Screen';
+import KVKKConsentScreen, { CURRENT_KVKK_VERSION } from '../screens/KVKKConsentScreen';
+import DeletionBanner from '../components/DeletionBanner';
+import { API_BASE_URL, API_ENDPOINTS } from '../constants/api';
 
 const Stack = createNativeStackNavigator();
 
 function MainNavigator() {
-  const { user } = useSelector((state) => state.auth);
-
-  // Determine initial route based on user status
-  const getInitialRoute = () => {
-    console.log('🔍 getInitialRoute - user:', JSON.stringify(user, null, 2));
-    console.log('🔍 isMailVerified:', user?.isMailVerified);
-    console.log('🔍 isProfileCreated:', user?.isProfileCreated);
-
-    if (!user?.isProfileCreated) {
-      console.log('➡️ Routing to: CompleteProfileStep1');
-      return 'CompleteProfileStep1';
-    }
-    console.log('➡️ Routing to: HomeTabs');
-    return 'HomeTabs';
-  };
-
   return (
     <Stack.Navigator
-      screenOptions={{
-        headerShown: false,
-        animation: 'slide_from_right',
-      }}
-      initialRouteName={getInitialRoute()}
+      screenOptions={{ headerShown: false, animation: 'slide_from_right' }}
+      initialRouteName="HomeTabs"
     >
       <Stack.Screen name="HomeTabs" component={TabNavigator} />
-      <Stack.Screen
-        name="CompleteProfileStep1"
-        component={CompleteProfileStep1Screen}
-      />
-      <Stack.Screen
-        name="CompleteProfileStep2"
-        component={CompleteProfileStep2Screen}
-      />
-      <Stack.Screen
-        name="CompleteProfileStep3"
-        component={CompleteProfileStep3Screen}
-      />
-      <Stack.Screen
-        name="CompleteProfileStep4"
-        component={CompleteProfileStep4Screen}
-      />
-      <Stack.Screen
-        name="CompleteProfileStep5"
-        component={CompleteProfileStep5Screen}
-      />
-      <Stack.Screen
-        name="CompleteProfileStep6"
-        component={CompleteProfileStep6Screen}
-      />
-      <Stack.Screen
-        name="CompleteProfileStep7"
-        component={CompleteProfileStep7Screen}
-      />
-      <Stack.Screen
-        name="CompleteProfileStep8"
-        component={CompleteProfileStep8Screen}
-      />
     </Stack.Navigator>
   );
 }
 
 export default function AppNavigator() {
-  const { isAuthenticated, user, token, refreshToken } = useSelector((state) => state.auth);
+  const { isAuthenticated, user, token, refreshToken, kvkkVersion, emailVerifiedToken, registrationEmail } = useSelector(
+    (state) => state.auth,
+  );
   const dispatch = useDispatch();
   const [tokenInitialized, setTokenInitialized] = useState(false);
+  const [resumeRoute, setResumeRoute] = useState(null); // null = checking
 
-  // Keep the api axios instance in sync with the Redux/persisted token
+  // Sync axios token with Redux/persisted state
   useEffect(() => {
-    console.log('🔑 AppNavigator: Setting access token from Redux:', token ? 'Token exists' : 'No token');
-    console.log('🔑 AppNavigator: Refresh token from Redux:', refreshToken ? 'Refresh token exists' : 'No refresh token');
     setCurrentAccessToken(token ?? null);
-    // Also sync refresh token to AsyncStorage for the interceptor
-    if (refreshToken) {
-      saveRefreshToken(refreshToken);
-    }
-    // Mark token as initialized after first sync
-    if (!tokenInitialized) {
-      setTokenInitialized(true);
-    }
+    if (refreshToken) saveRefreshToken(refreshToken);
+    if (!tokenInitialized) setTokenInitialized(true);
   }, [token, refreshToken, tokenInitialized]);
 
-  // After a background token refresh, keep Redux auth.token in sync
+  // Keep Redux token in sync after background refresh
   useEffect(() => {
     setOnTokenRefreshed((newToken, newRefreshToken) => {
       dispatch(setUserAndToken({ user, token: newToken, refreshToken: newRefreshToken }));
     });
   }, [user, dispatch]);
 
-  // Show loading until token is initialized from persisted state
-  if (!tokenInitialized) {
+  // RevenueCat init + subscription status when authenticated
+  useEffect(() => {
+    if (!isAuthenticated || !user) return;
+    initRevenueCat(user.userId);
+    if (user.userId) loginRevenueCat(user.userId).catch(() => {});
+    dispatch(fetchSubscriptionStatus());
+  }, [isAuthenticated, user?.userId]);
+
+  // Resume flow: check if user has a valid in-progress registration
+  useEffect(() => {
+    if (!tokenInitialized) return;
+
+    if (isAuthenticated) {
+      setResumeRoute('Welcome');
+      return;
+    }
+
+    if (!emailVerifiedToken || !registrationEmail) {
+      setResumeRoute('Welcome');
+      return;
+    }
+
+    // Token exists — validate it before resuming
+    fetch(`${API_BASE_URL}${API_ENDPOINTS.CHECK_REGISTRATION_TOKEN}`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ email: registrationEmail, emailVerifiedToken }),
+    })
+      .then((r) => r.json())
+      .then((data) => {
+        if (data.isSuccess) {
+          setResumeRoute('RegisterStep3');
+        } else {
+          dispatch(clearRegistrationForm());
+          setResumeRoute('Welcome');
+        }
+      })
+      .catch(() => {
+        setResumeRoute('Welcome');
+      });
+  }, [tokenInitialized, isAuthenticated]);
+
+  if (!tokenInitialized || resumeRoute === null) {
     return (
       <View style={{ flex: 1, justifyContent: 'center', alignItems: 'center', backgroundColor: '#000' }}>
         <ActivityIndicator size="large" color="#f57656" />
@@ -117,25 +99,22 @@ export default function AppNavigator() {
     );
   }
 
-  // Determine which navigator to show
-  const showMainNavigator = isAuthenticated && user?.isMailVerified;
-
-  // Create a unique key for NavigationContainer to force remount when auth state changes
-  const navigationKey = `nav-${isAuthenticated ? 'auth' : 'guest'}-${user?.isMailVerified ? 'verified' : 'unverified'}`;
-
-  // If user is authenticated but email is not verified, force logout
-  // This happens when user logs in with an unverified email
-  if (isAuthenticated && user && !user.isMailVerified) {
-    console.log('⚠️ User authenticated but email not verified - showing AuthNavigator with EmailVerification');
-  }
+  const isVerifiedUser = user?.isMailVerified || user?.isProfileCreated;
+  const showMainNavigator = isAuthenticated && isVerifiedUser;
+  const needsKvkkConsent = showMainNavigator && kvkkVersion !== CURRENT_KVKK_VERSION;
+  const navigationKey = `nav-${isAuthenticated ? 'auth' : 'guest'}-${isVerifiedUser ? 'verified' : 'unverified'}`;
 
   return (
-    <NavigationContainer key={navigationKey}>
-      {showMainNavigator ? (
-        <MainNavigator />
-      ) : (
-        <AuthNavigator />
-      )}
-    </NavigationContainer>
+    <>
+      <NavigationContainer key={navigationKey}>
+        {showMainNavigator ? <MainNavigator /> : <AuthNavigator initialRoute={resumeRoute} />}
+      </NavigationContainer>
+
+      {/* Global KVKK consent overlay — appears on top of everything */}
+      <KVKKConsentScreen visible={needsKvkkConsent} />
+
+      {/* Soft-delete banner — floats above tab content when account is scheduled for deletion */}
+      {showMainNavigator && <DeletionBanner />}
+    </>
   );
 }

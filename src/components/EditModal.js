@@ -74,7 +74,7 @@ export default function EditModal({
           onPress={onSave}
           disabled={saving}
           activeOpacity={0.7}
-          style={{ width: 60, alignItems: "flex-end" }}
+          style={{ alignItems: "flex-end" }}
         >
           {saving ? (
             <ActivityIndicator size={18} color="#fff" />

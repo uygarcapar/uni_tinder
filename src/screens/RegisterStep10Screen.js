@@ -1,12 +1,14 @@
-import React, { useState } from "react";
+import { useState } from "react";
 import { View, Text, TouchableOpacity } from "react-native";
 import { useDispatch, useSelector } from "react-redux";
 import { updateMultipleFields } from "../store/slices/profileSlice";
 import { KeyboardStickyView } from "react-native-keyboard-controller";
 import { LinearGradient } from "expo-linear-gradient";
 import MultiSlider from "@ptomasroos/react-native-multi-slider";
+import RegisterProgressBar from "../components/RegisterProgressBar";
+import { InfoIcon } from "lucide-react-native";
 
-export default function CompleteProfileStep3Screen({ navigation }) {
+export default function RegisterStep10Screen({ navigation }) {
   const dispatch = useDispatch();
   const profile = useSelector((state) => state.profile || {});
 
@@ -36,7 +38,7 @@ export default function CompleteProfileStep3Screen({ navigation }) {
         ageRangeMax: ageRange[1],
       }),
     );
-    navigation.navigate("CompleteProfileStep4");
+    navigation.navigate("RegisterStep11");
   };
 
   const handleBack = () => {
@@ -50,7 +52,7 @@ export default function CompleteProfileStep3Screen({ navigation }) {
         ageRangeMax: null,
       }),
     );
-    navigation.navigate("CompleteProfileStep4");
+    navigation.navigate("RegisterStep11");
   };
 
   // Check if age range is at default values
@@ -77,6 +79,8 @@ export default function CompleteProfileStep3Screen({ navigation }) {
           )}
         </View>
       </View>
+
+      <RegisterProgressBar step={11} />
 
       <View className="flex-1 px-6 py-6 pt-0">
         <View className="flex flex-col gap-2">
@@ -137,6 +141,13 @@ export default function CompleteProfileStep3Screen({ navigation }) {
             </Text>
           </View>
         </View>
+        <View className="flex-row gap-2 px-2 mr-6 items-center mt-5">
+          <InfoIcon size={16} color="#9CA3AF" className="mt-3" />
+          <Text className="text-gray-400 text-[12px]">
+            Seçtiğin yaş aralığına göre eşleşmeler göreceksin. Daha geniş bir
+            aralık seçmek, daha fazla eşleşme görmene yardımcı olabilir.
+          </Text>
+        </View>
       </View>
 
       {/* Sticky Button with KeyboardStickyView */}
@@ -153,7 +164,7 @@ export default function CompleteProfileStep3Screen({ navigation }) {
             }}
           >
             <LinearGradient
-              colors={["#fc4526", "#fc2e26"]}
+              colors={["#fc2126", "#fc1626"]}
               start={{ x: 0, y: 0 }}
               end={{ x: 1, y: 0 }}
               className="py-3.5"

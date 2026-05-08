@@ -375,9 +375,9 @@ export default function SwipeCard({
                     borderCurve: "continuous",
                     overflow: "hidden",
                   }}
-                  className="flex-row items-center border-[0.5px] border-white/10 self-start px-3 py-3 gap-2"
+                  className="flex-row items-center border-[0.5px] border-white/10 self-start px-3 py-3 gap-1"
                 >
-                  <GraduationCap size={20} color="#d1d5db" strokeWidth={1.5} />
+                  <GraduationCap size={16} color="#d1d5db" strokeWidth={1.5} />
                   <Text className="ml-[2px] text-gray-300 font-medium text-[14px]">
                     {profile.universityName}
                   </Text>
@@ -389,9 +389,9 @@ export default function SwipeCard({
                       borderCurve: "continuous",
                       overflow: "hidden",
                     }}
-                    className="flex-row items-center border-[0.5px] border-white/10 self-start px-3 py-3 gap-2"
+                    className="flex-row items-center border-[0.5px] border-white/10 self-start px-3 py-3 gap-1"
                   >
-                    <Target size={20} color="#d1d5db" strokeWidth={1.5} />
+                    <Target size={16} color="#d1d5db" strokeWidth={1.5} />
                     <Text className="ml-[2px] text-gray-300 font-medium text-[14px]">
                       {profile.usagePurposeDisplay}
                     </Text>
@@ -555,115 +555,127 @@ export default function SwipeCard({
           )}
 
           {/* Lifestyle Info */}
-          {(profile.smokingStatusDisplay || profile.zodiacSignDisplay) && (
+          {(profile.smokingStatusDisplay ||
+            profile.zodiacSignDisplay ||
+            profile.usagePurposeDisplay) && (
             <View className="mb-4 p-4">
               <View className="flex-row items-center mb-4">
                 <Text className="text-gray-300 text-[13px] font-bold">
                   Yaşam Tarzı
                 </Text>
               </View>
-              <View className="flex-row flex-wrap gap-2">
+              <View style={{ gap: 8 }}>
                 {profile.smokingStatusDisplay && (
                   <View
-                    className="self-start  border-[0.5px] border-white/10"
                     style={{
-                      borderRadius: 999,
+                      borderRadius: 40,
                       borderCurve: "continuous",
                       overflow: "hidden",
-                      shadowColor: "#fff",
-                      shadowOffset: { width: 0, height: 0 },
-                      shadowOpacity: 0.02,
-                      shadowRadius: 15,
-                      elevation: 5,
+                      borderWidth: 0,
+                      borderColor: "rgba(255,255,255,0.1)",
+                      flexDirection: "row",
+                      alignItems: "center",
+                      justifyContent: "space-between",
+                      padding: 16,
                     }}
                   >
                     <View
                       style={{
                         flexDirection: "row",
                         alignItems: "center",
-                        paddingHorizontal: 12,
-                        paddingVertical: 14,
-                        gap: 8,
+                        gap: 10,
                       }}
                     >
                       <Cigarette size={18} color="#fff" strokeWidth={1.5} />
-                      <Text className="text-white font-medium text-[14px]">
-                        {profile.smokingStatusDisplay}
+                      <Text
+                        style={{
+                          color: "#fff",
+                          fontSize: 14,
+                          fontWeight: "500",
+                        }}
+                      >
+                        Sigara Kullanımı
                       </Text>
                     </View>
+                    <Text style={{ color: "#9CA3AF", fontSize: 14 }}>
+                      {profile.smokingStatusDisplay}
+                    </Text>
                   </View>
                 )}
                 {profile.zodiacSignDisplay && (
                   <View
-                    className="self-start  border-[0.5px] border-white/10"
                     style={{
-                      borderRadius: 999,
+                      borderRadius: 40,
                       borderCurve: "continuous",
                       overflow: "hidden",
-                      shadowColor: "#fff",
-                      shadowOffset: { width: 0, height: 0 },
-                      shadowOpacity: 0.02,
-                      shadowRadius: 15,
-                      elevation: 5,
+                      borderWidth: 0,
+                      borderColor: "rgba(255,255,255,0.1)",
+                      flexDirection: "row",
+                      alignItems: "center",
+                      justifyContent: "space-between",
+                      padding: 16,
                     }}
                   >
                     <View
                       style={{
                         flexDirection: "row",
                         alignItems: "center",
-                        paddingHorizontal: 12,
-                        paddingVertical: 14,
-                        gap: 8,
+                        gap: 10,
                       }}
                     >
                       <Sparkles size={18} color="#fff" strokeWidth={1.5} />
-                      <Text className="text-white font-medium text-[14px]">
-                        {profile.zodiacSignDisplay} Burcu
+                      <Text
+                        style={{
+                          color: "#fff",
+                          fontSize: 14,
+                          fontWeight: "500",
+                        }}
+                      >
+                        Burç
                       </Text>
                     </View>
+                    <Text style={{ color: "#9CA3AF", fontSize: 14 }}>
+                      {profile.zodiacSignDisplay}
+                    </Text>
                   </View>
                 )}
-              </View>
-            </View>
-          )}
-
-          {/* Relationship Preference */}
-          {profile.usagePurposeDisplay && (
-            <View className="mb-4 p-4">
-              <View className="flex-row items-center mb-4">
-                <Text className="text-gray-300 text-[13px] font-bold">
-                  İlişki Tercihi
-                </Text>
-              </View>
-              <View className="flex-row flex-wrap gap-2">
-                <View
-                  className="self-start  border-[0.5px] border-white/10"
-                  style={{
-                    borderRadius: 999,
-                    borderCurve: "continuous",
-                    overflow: "hidden",
-                    shadowColor: "#fff",
-                    shadowOffset: { width: 0, height: 0 },
-                    shadowOpacity: 0.02,
-                    shadowRadius: 15,
-                    elevation: 5,
-                  }}
-                >
+                {profile.usagePurposeDisplay && (
                   <View
                     style={{
+                      borderRadius: 40,
+                      borderCurve: "continuous",
+                      overflow: "hidden",
+                      borderWidth: 0,
+                      borderColor: "rgba(255,255,255,0.1)",
                       flexDirection: "row",
                       alignItems: "center",
-                      paddingHorizontal: 12,
-                      paddingVertical: 14,
-                      gap: 8,
+                      justifyContent: "space-between",
+                      padding: 16,
                     }}
                   >
-                    <Target size={18} color="#fff" strokeWidth={1.5} />
-                    <Text className="text-white font-medium text-[14px]">
+                    <View
+                      style={{
+                        flexDirection: "row",
+                        alignItems: "center",
+                        gap: 10,
+                      }}
+                    >
+                      <Target size={18} color="#fff" strokeWidth={1.5} />
+                      <Text
+                        style={{
+                          color: "#fff",
+                          fontSize: 14,
+                          fontWeight: "500",
+                        }}
+                      >
+                        Kullanım Amacı
+                      </Text>
+                    </View>
+                    <Text style={{ color: "#9CA3AF", fontSize: 14 }}>
                       {profile.usagePurposeDisplay}
                     </Text>
                   </View>
-                </View>
+                )}
               </View>
             </View>
           )}
@@ -678,28 +690,38 @@ export default function SwipeCard({
               </View>
               <View
                 style={{
-                  borderRadius: 999,
+                  borderRadius: 40,
                   borderCurve: "continuous",
                   overflow: "hidden",
-                  shadowColor: "#fff",
-                  shadowOffset: { width: 0, height: 0 },
-                  shadowOpacity: 0.02,
-                  shadowRadius: 15,
-                  elevation: 5,
+                  borderWidth: 0.5,
+                  borderColor: "rgba(255,255,255,0.1)",
                 }}
-                className="self-start  border-[0.5px] border-white/10"
               >
                 <View
                   style={{
                     flexDirection: "row",
-                    alignItems: "center",
+                    alignItems: "flex-start",
                     paddingHorizontal: 14,
                     paddingVertical: 14,
                     gap: 8,
                   }}
                 >
-                  <Pen size={18} color="#fff" strokeWidth={1.5} />
-                  <Text className="text-white font-normal text-[14px] leading-6">
+                  <Pen
+                    size={18}
+                    color="#fff"
+                    strokeWidth={1.5}
+                    style={{ marginTop: 2 }}
+                  />
+                  <Text
+                    style={{
+                      color: "#fff",
+                      fontSize: 14,
+                      lineHeight: 22,
+                      flex: 1,
+                      flexShrink: 1,
+                      flexWrap: "wrap",
+                    }}
+                  >
                     {profile.bio}
                   </Text>
                 </View>

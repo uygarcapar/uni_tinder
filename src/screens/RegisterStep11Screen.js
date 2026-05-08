@@ -1,4 +1,4 @@
-import React, { useState } from "react";
+import { useState } from "react";
 import {
   View,
   Text,
@@ -11,8 +11,9 @@ import { useDispatch, useSelector } from "react-redux";
 import { updateMultipleFields } from "../store/slices/profileSlice";
 import { KeyboardStickyView } from "react-native-keyboard-controller";
 import { LinearGradient } from "expo-linear-gradient";
+import RegisterProgressBar from "../components/RegisterProgressBar";
 
-export default function CompleteProfileStep4Screen({ navigation }) {
+export default function RegisterStep11Screen({ navigation }) {
   const dispatch = useDispatch();
   const profile = useSelector((state) => state.profile || {});
 
@@ -36,6 +37,7 @@ export default function CompleteProfileStep4Screen({ navigation }) {
   };
 
   const handleNext = () => {
+    Keyboard.dismiss();
     const newErrorFields = [];
 
     // Height is required
@@ -73,7 +75,7 @@ export default function CompleteProfileStep4Screen({ navigation }) {
         bio: bio && bio.trim() !== "" ? bio : null,
       }),
     );
-    navigation.navigate("CompleteProfileStep5");
+    navigation.navigate("RegisterStep13");
   };
 
   const handleBack = () => {
@@ -92,6 +94,8 @@ export default function CompleteProfileStep4Screen({ navigation }) {
           <Text className="text-4xl mr-2 text-white">←</Text>
         </TouchableOpacity>
       </View>
+
+      <RegisterProgressBar step={12} />
 
       <TouchableWithoutFeedback onPress={Keyboard.dismiss}>
         <View className="flex-1 px-6 py-6 pt-0">
@@ -169,7 +173,7 @@ export default function CompleteProfileStep4Screen({ navigation }) {
             }}
           >
             <LinearGradient
-              colors={["#fc3a26", "#fc2226"]}
+              colors={["#fc1b26", "#fc1126"]}
               start={{ x: 0, y: 0 }}
               end={{ x: 1, y: 0 }}
               className="py-3.5"
