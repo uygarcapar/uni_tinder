@@ -1,171 +1,161 @@
 import { useState } from "react";
-import {
-  View,
-  Text,
-  TextInput,
-  TouchableOpacity,
-  TouchableWithoutFeedback,
-  Keyboard,
-} from "react-native";
+import { View, Text, TouchableOpacity } from "react-native";
 import { useDispatch, useSelector } from "react-redux";
 import { updateMultipleFields } from "../store/slices/profileSlice";
 import { KeyboardStickyView } from "react-native-keyboard-controller";
 import { LinearGradient } from "expo-linear-gradient";
+import MultiSlider from "@ptomasroos/react-native-multi-slider";
 import RegisterProgressBar from "../components/RegisterProgressBar";
+import AnimatedPressable from "../components/AnimatedPressable";
+import { InfoIcon } from "lucide-react-native";
 
 export default function RegisterStep11Screen({ navigation }) {
   const dispatch = useDispatch();
   const profile = useSelector((state) => state.profile || {});
 
-  const [height, setHeight] = useState(profile.height?.toString() || "");
-  const [bio, setBio] = useState(profile.bio || "");
+  const [ageRange, setAgeRange] = useState([
+    profile.ageRangeMin ?? 18,
+    profile.ageRangeMax ?? 65,
+  ]);
 
-  // Error handling states
-  const [error, setError] = useState("");
-  const [errorFields, setErrorFields] = useState([]);
-
-  const updateHeight = (value) => {
-    setHeight(value);
-    // Clear error when user types
-    if (errorFields.includes("height")) {
-      const newErrorFields = errorFields.filter((f) => f !== "height");
-      setErrorFields(newErrorFields);
-      if (newErrorFields.length === 0) {
-        setError("");
-      }
-    }
+  const handleValuesChange = (values) => {
+    setAgeRange(values);
   };
 
   const handleNext = () => {
-    Keyboard.dismiss();
-    const newErrorFields = [];
-
-    // Height is required
-    if (!height || height.trim() === "") {
-      newErrorFields.push("height");
-    } else {
-      const heightNum = parseInt(height);
-      if (isNaN(heightNum) || heightNum < 140 || heightNum > 220) {
-        newErrorFields.push("height");
-        setError("Boy 140-220 cm arasında olmalıdır");
-        setErrorFields(newErrorFields);
-        return;
-      }
-    }
-
-    if (newErrorFields.length > 0) {
-      setErrorFields(newErrorFields);
-      setError("Lütfen boy alanını doldur.");
+    if (ageRange[0] >= ageRange[1]) {
+      alert("Minimum yaş maksimum yaştan küçük olmalıdır");
       return;
     }
 
-    // Bio validation (only if filled)
-    if (bio && bio.length > 500) {
-      setError("Biyografi en fazla 500 karakter olabilir");
+    if (ageRange[1] - ageRange[0] < 5) {
+      alert("Yaş aralığı en az 5 yıl olmalıdır");
       return;
     }
-
-    // Clear errors and proceed
-    setError("");
-    setErrorFields([]);
 
     dispatch(
       updateMultipleFields({
-        height: parseInt(height),
-        bio: bio && bio.trim() !== "" ? bio : null,
+        ageRangeMin: ageRange[0],
+        ageRangeMax: ageRange[1],
       }),
     );
-    navigation.navigate("RegisterStep13");
+    navigation.navigate("RegisterStep12");
   };
 
   const handleBack = () => {
     navigation.goBack();
   };
 
+  const handleSkip = () => {
+    dispatch(
+      updateMultipleFields({
+        ageRangeMin: null,
+        ageRangeMax: null,
+      }),
+    );
+    navigation.navigate("RegisterStep12");
+  };
+
+  // Check if age range is at default values
+  const isDefaultRange = ageRange[0] === 18 && ageRange[1] === 65;
+
   return (
     <View className="flex-1 bg-[#121212]">
       {/* Header */}
       <View className="bg-[#121212] pt-16 pb-6 px-6">
-        <TouchableOpacity
-          activeOpacity={1}
-          onPress={handleBack}
-          className="flex-row items-center"
-        >
-          <Text className="text-4xl mr-2 text-white">←</Text>
-        </TouchableOpacity>
+        <View className="flex-row items-center justify-between">
+          <TouchableOpacity
+            activeOpacity={1}
+            onPress={handleBack}
+            className="flex-row items-center"
+          >
+            <Text className="text-4xl mr-2 text-white">←</Text>
+          </TouchableOpacity>
+          {isDefaultRange && (
+            <TouchableOpacity activeOpacity={0.9} onPress={handleSkip}>
+              <Text className="text-gray-400 text-[16px] font-semibold">
+                Atla
+              </Text>
+            </TouchableOpacity>
+          )}
+        </View>
       </View>
 
-      <RegisterProgressBar step={12} />
+      <RegisterProgressBar step={11} />
 
-      <TouchableWithoutFeedback onPress={Keyboard.dismiss}>
-        <View className="flex-1 px-6 py-6 pt-0">
-          <View className="flex flex-col gap-2">
-            <Text className="text-4xl font-bold text-white">Hakkında</Text>
-            <Text className="text-[18px] font-normal text-gray-400 mb-6">
-              Boyunu ve kısa bir biyografi yaz.
-            </Text>
-          </View>
-
-          <View className="mb-4">
-            <Text className="text-gray-300 text-lg font-semibold mb-2">
-              Boy (cm) *
-            </Text>
-            <TextInput
-              style={{
-                borderRadius: 999,
-                borderCurve: "continuous",
-                overflow: "hidden",
-              }}
-              className={`border-[0.5px] border-white/10 px-4 py-5 text-[18px] text-white ${
-                errorFields.includes("height")
-                  ? "border-red-500"
-                  : "border-gray-300"
-              }`}
-              placeholder="170"
-              placeholderTextColor="#9CA3AF"
-              keyboardType="numeric"
-              value={height}
-              onChangeText={updateHeight}
-            />
-          </View>
-          <View className="mb-4">
-            <Text className="text-gray-300 text-lg font-semibold mb-2">
-              Biyografi
-            </Text>
-            <TextInput
-              style={{
-                borderRadius: 35,
-                borderCurve: "continuous",
-                overflow: "hidden",
-                minHeight: 100,
-              }}
-              className=" border-[0.5px] border-white/10 px-5 py-5 text-[18px] text-white"
-              placeholder="Kendinden bahset..."
-              placeholderTextColor="#9CA3AF"
-              multiline
-              numberOfLines={6}
-              maxLength={200}
-              textAlignVertical="top"
-              value={bio}
-              onChangeText={setBio}
-            />
-          </View>
-          {/* Error Message */}
-          {error ? (
-            <Text className="text-red-500 text-center font-normal mb-3 mt-4">
-              {error}
-            </Text>
-          ) : null}
+      <View className="flex-1 px-6 py-6 pt-0">
+        <View className="flex flex-col gap-2">
+          <Text className="text-4xl font-bold text-white">Yaş Aralığı</Text>
+          <Text className="text-[18px] font-normal text-gray-400 mb-6">
+            Görmeyi tercih ettiğin yaş aralığını seç.
+          </Text>
         </View>
-      </TouchableWithoutFeedback>
+
+        {/* Multi Slider */}
+        <View className="mb-2 items-center">
+          <MultiSlider
+            values={ageRange}
+            onValuesChange={handleValuesChange}
+            min={18}
+            max={65}
+            step={1}
+            sliderLength={320}
+            minMarkerOverlapDistance={100}
+            selectedStyle={{
+              backgroundColor: "#fff",
+            }}
+            unselectedStyle={{
+              backgroundColor: "#374151",
+            }}
+            markerStyle={{
+              backgroundColor: "#fff",
+              height: 28,
+              width: 28,
+              borderRadius: 100,
+              borderWidth: 0,
+              marginTop: 2,
+              shadowColor: "transparent",
+              shadowOffset: { width: 0, height: 0 },
+              shadowOpacity: 0,
+              shadowRadius: 0,
+              elevation: 0,
+            }}
+            containerStyle={{
+              height: 40,
+            }}
+            trackStyle={{
+              height: 4,
+              borderRadius: 3,
+            }}
+          />
+        </View>
+        {/* Age Range Display */}
+        <View className="flex-row justify-between mb-4">
+          <View>
+            <Text className="text-white text-2xl font-bold">
+              {ageRange[0]} yaş
+            </Text>
+          </View>
+          <View className="items-end">
+            <Text className="text-white text-2xl font-bold">
+              {ageRange[1] === 65 ? "65+" : ageRange[1]} yaş
+            </Text>
+          </View>
+        </View>
+        <View className="flex-row gap-2 px-2 mr-6 items-center mt-5">
+          <InfoIcon size={16} color="#9CA3AF" className="mt-3" />
+          <Text className="text-gray-400 text-[12px]">
+            Seçtiğin yaş aralığına göre eşleşmeler göreceksin. Daha geniş bir
+            aralık seçmek, daha fazla eşleşme görmene yardımcı olabilir.
+          </Text>
+        </View>
+      </View>
 
       {/* Sticky Button with KeyboardStickyView */}
       <KeyboardStickyView offset={{ closed: 0, opened: 0 }}>
         <View className="px-8 pb-8 pt-4 bg-[#121212]">
-          <TouchableOpacity
-            activeOpacity={1}
+          <AnimatedPressable
             onPress={handleNext}
-            className="rounded-full overflow-hidden"
             style={{
               borderRadius: 999,
               borderCurve: "continuous",
@@ -173,7 +163,7 @@ export default function RegisterStep11Screen({ navigation }) {
             }}
           >
             <LinearGradient
-              colors={["#fc1b26", "#fc1126"]}
+              colors={["#fc2126", "#fc1626"]}
               start={{ x: 0, y: 0 }}
               end={{ x: 1, y: 0 }}
               className="py-3.5"
@@ -182,7 +172,7 @@ export default function RegisterStep11Screen({ navigation }) {
                 Devam Et
               </Text>
             </LinearGradient>
-          </TouchableOpacity>
+          </AnimatedPressable>
         </View>
       </KeyboardStickyView>
     </View>

@@ -269,7 +269,7 @@ const getZodiacIcon = (name) => {
 };
 
 // YAYLANMA (BOUNCE) EFEKTİNİ AZALTAN SABİT DEĞERLER
-const SPRING_CONFIG = { damping: 24, stiffness: 200, mass: 0.8 };
+const SPRING_CONFIG = { damping: 22, stiffness: 140, mass: 1.4 };
 
 // ─── Shimmer skeleton ────────────────────────────────────────────────────────
 function SkeletonShimmer() {
@@ -438,10 +438,9 @@ function SortablePhoto({
       transform: [
         { translateX: translateX.value },
         { translateY: translateY.value },
-        { scale: withSpring(isDragging.value ? 1.05 : 1, SPRING_CONFIG) },
+        { scale: withSpring(isDragging.value ? 1.1 : 1, SPRING_CONFIG) },
       ],
       zIndex: isDragging.value ? 100 : 0,
-      opacity: isDragging.value ? 0.9 : 1,
     };
   });
 

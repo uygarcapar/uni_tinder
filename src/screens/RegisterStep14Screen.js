@@ -8,12 +8,10 @@ import {
 } from "react-native";
 import { useDispatch, useSelector } from "react-redux";
 import { updateMultipleFields } from "../store/slices/profileSlice";
-import { KeyboardStickyView } from "react-native-keyboard-controller";
 import { LinearGradient } from "expo-linear-gradient";
 import { API_BASE_URL, API_ENDPOINTS } from "../constants/api";
 import {
   Check,
-  Cigarette,
   Sparkles,
   Users,
   Briefcase,
@@ -31,6 +29,7 @@ import {
   Fish,
 } from "lucide-react-native";
 import RegisterProgressBar from "../components/RegisterProgressBar";
+import AnimatedPressable from "../components/AnimatedPressable";
 
 const getZodiacIcon = (name) => {
   const map = {
@@ -90,43 +89,40 @@ const SectionDescription = ({ children }) => (
   </View>
 );
 
-const SimpleOptionItem = ({ option, isSelected, onPress, icon: Icon }) => (
-  <TouchableOpacity
-    activeOpacity={1}
+const SimpleOptionItem = ({ option, isSelected, onPress }) => (
+  <AnimatedPressable
     onPress={onPress}
     style={{
-      flexDirection: "row",
-      alignItems: "center",
-      justifyContent: "space-between",
+      borderRadius: 30,
+      borderCurve: "continuous",
+      borderWidth: 0.5,
+      borderColor: isSelected
+        ? "rgba(255,255,255,0.3)"
+        : "rgba(255,255,255,0.1)",
+      backgroundColor: isSelected ? "#3e3e3e" : "#1E1E1E",
+      paddingHorizontal: 20,
+      paddingVertical: 18,
+      position: "relative",
     }}
   >
-    <View
-      style={{
-        flexDirection: "row",
-        alignItems: "center",
-        gap: 10,
-        paddingVertical: 18,
-      }}
-    >
-      {Icon && (
-        <Icon
-          size={16}
-          color={isSelected ? "#fff" : "#9CA3AF"}
-          strokeWidth={1.5}
-        />
-      )}
-      <Text
+    <Text style={{ color: "#fff", fontSize: 14, fontWeight: "600" }}>
+      {option.name}
+    </Text>
+    {isSelected && (
+      <View
+        pointerEvents="none"
         style={{
-          color: isSelected ? "#fff" : "#9CA3AF",
-          fontSize: 15,
-          fontWeight: "500",
+          position: "absolute",
+          right: 20,
+          top: 0,
+          bottom: 0,
+          justifyContent: "center",
         }}
       >
-        {option.name}
-      </Text>
-    </View>
-    {isSelected && <Check size={20} color="#fff" strokeWidth={2.5} />}
-  </TouchableOpacity>
+        <Check size={20} color="#fff" strokeWidth={2.5} />
+      </View>
+    )}
+  </AnimatedPressable>
 );
 
 const PurposeOptionItem = ({ option, isSelected, onPress }) => {
@@ -412,27 +408,23 @@ export default function RegisterStep14Screen({ navigation }) {
                 <Text
                   style={{
                     color: "#fff",
-                    fontSize: 17,
+                    fontSize: 14,
                     fontWeight: "600",
-                    marginBottom: 6,
+                    marginBottom: 12,
                   }}
                 >
                   Sigara Kullanımı
                 </Text>
-                <SectionDescription>
-                  Sigara kullanım durumunu seç. Bu bilgi, sigara içen veya
-                  içmeyen kullanıcıların birbirlerini daha kolay bulmasını
-                  sağlar.
-                </SectionDescription>
-                {smokingStatuses.map((opt) => (
-                  <SimpleOptionItem
-                    key={opt.id}
-                    option={opt}
-                    icon={Cigarette}
-                    isSelected={String(opt.id) === String(smokingStatus)}
-                    onPress={() => toggleSmoking(opt.id)}
-                  />
-                ))}
+                <View style={{ gap: 12 }}>
+                  {smokingStatuses.map((opt) => (
+                    <SimpleOptionItem
+                      key={opt.id}
+                      option={opt}
+                      isSelected={String(opt.id) === String(smokingStatus)}
+                      onPress={() => toggleSmoking(opt.id)}
+                    />
+                  ))}
+                </View>
               </View>
             )}
 
@@ -442,17 +434,13 @@ export default function RegisterStep14Screen({ navigation }) {
                 <Text
                   style={{
                     color: "#fff",
-                    fontSize: 17,
+                    fontSize: 14,
                     fontWeight: "600",
-                    marginBottom: 6,
+                    marginBottom: 12,
                   }}
                 >
                   Burç
                 </Text>
-                <SectionDescription>
-                  Burç seçimini yap. Bazı kullanıcılar için burç bilgisi, ortak
-                  ilgi alanlarını keşfetmek açısından önemli olabilir.
-                </SectionDescription>
                 <View
                   style={{ flexDirection: "row", flexWrap: "wrap", gap: 8 }}
                 >
@@ -474,16 +462,13 @@ export default function RegisterStep14Screen({ navigation }) {
                 <Text
                   style={{
                     color: "#fff",
-                    fontSize: 17,
+                    fontSize: 14,
                     fontWeight: "600",
-                    marginBottom: 6,
+                    marginBottom: 12,
                   }}
                 >
                   Kullanım Amacı
                 </Text>
-                <SectionDescription>
-                  Lit'i hangi amaçla kullandığını seç.
-                </SectionDescription>
                 {usagePurposes.map((opt) => (
                   <PurposeOptionItem
                     key={opt.id}
@@ -496,35 +481,31 @@ export default function RegisterStep14Screen({ navigation }) {
             )}
           </>
         )}
+        <View className="h-32" />
       </ScrollView>
 
       {/* Sticky Button */}
-      <KeyboardStickyView offset={{ closed: 0, opened: 0 }}>
-        <View className="px-8 pb-8 pt-4 bg-[#121212]">
-          <TouchableOpacity
-            style={{
-              borderRadius: 999,
-              borderCurve: "continuous",
-              overflow: "hidden",
-            }}
-            activeOpacity={1}
-            onPress={handleNext}
-            className=""
+      <View className="px-8 pb-8 pt-4 absolute bottom-0 left-0 right-0">
+        <AnimatedPressable
+          style={{
+            borderRadius: 999,
+            borderCurve: "continuous",
+            overflow: "hidden",
+          }}
+          onPress={handleNext}
+        >
+          <LinearGradient
+            colors={["#fc1026", "#fc0826"]}
+            start={{ x: 0, y: 0 }}
+            end={{ x: 1, y: 0 }}
+            className="py-3.5"
           >
-            <LinearGradient
-              colors={["#fc1026", "#fc0826"]}
-              start={{ x: 0, y: 0 }}
-              end={{ x: 1, y: 0 }}
-              className="py-3.5"
-            >
-              <Text className="text-white py-[20px] font-bold text-[15px] text-center">
-                {allFieldsEmpty ? "Atla" : "Devam Et"}
-              </Text>
-            </LinearGradient>
-          </TouchableOpacity>
-        </View>
-      </KeyboardStickyView>
-
+            <Text className="text-white py-[20px] font-bold text-[15px] text-center">
+              {allFieldsEmpty ? "Atla" : "Devam Et"}
+            </Text>
+          </LinearGradient>
+        </AnimatedPressable>
+      </View>
     </View>
   );
 }

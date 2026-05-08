@@ -64,6 +64,7 @@ import {
   Orbit,
 } from "lucide-react-native";
 import RegisterProgressBar from "../components/RegisterProgressBar";
+import AnimatedPressable from "../components/AnimatedPressable";
 
 // Icon mapping for hobbies - maps exact backend names to icons
 const getHobbyIcon = (hobbyName) => {
@@ -330,10 +331,8 @@ export default function RegisterStep13Screen({ navigation }) {
 
       {/* Sticky Button with KeyboardStickyView */}
       <View className="px-8 pb-8 pt-4 absolute bottom-0 left-0 right-0">
-        <TouchableOpacity
-          activeOpacity={1}
+        <AnimatedPressable
           onPress={handleNext}
-          className="rounded-full overflow-hidden"
           style={{
             borderRadius: 999,
             borderCurve: "continuous",
@@ -350,7 +349,7 @@ export default function RegisterStep13Screen({ navigation }) {
               Devam Et
             </Text>
           </LinearGradient>
-        </TouchableOpacity>
+        </AnimatedPressable>
       </View>
     </View>
   );
