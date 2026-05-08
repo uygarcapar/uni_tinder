@@ -1,4 +1,4 @@
-import { useCallback, useState, useRef } from "react";
+import { useCallback, useState, useRef, useEffect } from "react";
 import {
   View,
   Text,
@@ -6,20 +6,44 @@ import {
   ActivityIndicator,
   Alert,
   Linking,
+  Switch,
 } from "react-native";
 import {
   BottomSheetModal,
   BottomSheetScrollView,
   BottomSheetBackdrop,
 } from "@gorhom/bottom-sheet";
-import { X, Download, Trash2, AlertCircle } from "lucide-react-native";
+import { X, Download, Trash2, AlertCircle, Eye, BellOff } from "lucide-react-native";
 import api from "../services/api";
 import { API_ENDPOINTS } from "../constants/api";
+import chatService from "../services/chatService";
 
 export default function SettingsModal({ bottomSheetRef, onClose }) {
   const [downloadLoading, setDownloadLoading] = useState(false);
   const [deleteLoading, setDeleteLoading] = useState(false);
+  const [prefs, setPrefs] = useState(null);
   const pollingRef = useRef(null);
+
+  // Notification preferences (read receipt opt-out, skip push when online) — fresh fetch.
+  useEffect(() => {
+    let cancelled = false;
+    chatService.getNotificationPreferences()
+      .then((p) => { if (!cancelled) setPrefs(p); })
+      .catch(() => {});
+    return () => { cancelled = true; };
+  }, []);
+
+  const togglePref = async (field) => {
+    if (!prefs) return;
+    const next = { ...prefs, [field]: !prefs[field] };
+    setPrefs(next); // optimistic
+    try {
+      await chatService.updateNotificationPreferences(next);
+    } catch (e) {
+      setPrefs(prefs);
+      Alert.alert("Hata", "Tercih güncellenemedi.");
+    }
+  };
 
   const renderBackdrop = useCallback(
     (props) => (
@@ -157,13 +181,47 @@ export default function SettingsModal({ bottomSheetRef, onClose }) {
         showsVerticalScrollIndicator={false}
         nestedScrollEnabled={true}
       >
-        {/* Gizlilik Bölümü */}
+        {/* Mesajlaşma Bölümü */}
         <Text
           style={{
             color: "#9CA3AF",
             fontSize: 13,
             fontWeight: "700",
             marginTop: 20,
+            marginBottom: 12,
+            marginLeft: 4,
+          }}
+        >
+          Mesajlaşma
+        </Text>
+
+        {/* Read receipt opt-out */}
+        <SettingsToggleRow
+          icon={<Eye size={20} color="#fff" strokeWidth={1.5} />}
+          title="Okundu Bilgisi"
+          subtitle="Mesajları okuduğunda partner görsün"
+          value={prefs?.showReadReceipts ?? true}
+          disabled={!prefs}
+          onToggle={() => togglePref('showReadReceipts')}
+        />
+
+        {/* Skip push when online */}
+        <SettingsToggleRow
+          icon={<BellOff size={20} color="#fff" strokeWidth={1.5} />}
+          title="Online'ken Bildirim Susturma"
+          subtitle="Uygulama açıkken push bildirimi alma"
+          value={prefs?.skipPushWhenOnline ?? false}
+          disabled={!prefs}
+          onToggle={() => togglePref('skipPushWhenOnline')}
+        />
+
+        {/* Gizlilik Bölümü */}
+        <Text
+          style={{
+            color: "#9CA3AF",
+            fontSize: 13,
+            fontWeight: "700",
+            marginTop: 24,
             marginBottom: 12,
             marginLeft: 4,
           }}
@@ -269,5 +327,46 @@ export default function SettingsModal({ bottomSheetRef, onClose }) {
         </View>
       </BottomSheetScrollView>
     </BottomSheetModal>
+  );
+}
+
+// Reusable toggle row — icon + title + subtitle + Switch.
+// Optimistic toggle pattern: parent state'i hemen değişir, fail durumunda rollback.
+function SettingsToggleRow({ icon, title, subtitle, value, disabled, onToggle }) {
+  return (
+    <View
+      style={{
+        borderRadius: 40,
+        borderCurve: "continuous",
+        overflow: "hidden",
+        borderWidth: 0.5,
+        borderColor: "rgba(255,255,255,0.1)",
+        flexDirection: "row",
+        alignItems: "center",
+        justifyContent: "space-between",
+        padding: 18,
+        marginBottom: 8,
+      }}
+    >
+      <View style={{ flexDirection: "row", alignItems: "center", gap: 12, flex: 1 }}>
+        {icon}
+        <View style={{ flex: 1 }}>
+          <Text style={{ color: "#fff", fontSize: 14, fontWeight: "500" }}>
+            {title}
+          </Text>
+          <Text style={{ color: "#9CA3AF", fontSize: 12, marginTop: 2 }}>
+            {subtitle}
+          </Text>
+        </View>
+      </View>
+      <Switch
+        value={value}
+        onValueChange={onToggle}
+        disabled={disabled}
+        trackColor={{ false: "#3a3a3a", true: "#f57656" }}
+        thumbColor="#fff"
+        ios_backgroundColor="#3a3a3a"
+      />
+    </View>
   );
 }

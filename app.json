@@ -16,7 +16,9 @@
       "supportsTablet": true,
       "bundleIdentifier": "com.uygarcapar.lit",
       "infoPlist": {
-        "ITSAppUsesNonExemptEncryption": false
+        "ITSAppUsesNonExemptEncryption": false,
+        "NSMicrophoneUsageDescription": "Sesli mesaj gönderebilmen için mikrofon erişimine izin vermen gerekir.",
+        "UIBackgroundModes": ["remote-notification"]
       }
     },
     "android": {
@@ -25,8 +27,20 @@
         "backgroundColor": "#ffffff"
       },
       "package": "com.uygarcapar.lit",
-      "edgeToEdgeEnabled": true
+      "edgeToEdgeEnabled": true,
+      "useNextNotificationsApi": true,
+      "permissions": ["RECORD_AUDIO"]
     },
+    "plugins": [
+      [
+        "expo-notifications",
+        {
+          "icon": "./assets/adaptive-icon.png",
+          "color": "#f57656",
+          "defaultChannel": "unitinder_notifications"
+        }
+      ]
+    ],
     "web": {
       "favicon": "./assets/favicon.png"
     },
