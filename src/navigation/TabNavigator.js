@@ -12,14 +12,12 @@ import {
   UserRound,
   MessageCircle,
 } from "lucide-react-native";
+import { useSelector } from "react-redux";
 import DiscoverScreen from "../screens/DiscoverScreen";
 import LikesScreen from "../screens/LikesScreen";
 import ProfileScreen from "../screens/ProfileScreen";
-
-// Temporary Messages Screen
-function MessagesScreen() {
-  return null;
-}
+import MessagesScreen from "../screens/MessagesScreen";
+import uiBus from "../services/uiBus";
 
 const Tab = createBottomTabNavigator();
 
@@ -34,7 +32,11 @@ function CustomHeader() {
             resizeMode="contain"
           />
         </View>
-        <TouchableOpacity className="p-2 absolute right-4">
+        <TouchableOpacity
+          className="p-2 absolute right-4"
+          onPress={() => uiBus.emit('openSettings')}
+          hitSlop={10}
+        >
           <Settings size={24} color="#fff" strokeWidth={2} />
         </TouchableOpacity>
       </View>
@@ -44,6 +46,7 @@ function CustomHeader() {
 
 export default function TabNavigator() {
   const insets = useSafeAreaInsets();
+  const unreadTotal = useSelector((s) => s.chat.unreadTotal);
 
   return (
     <Tab.Navigator
@@ -114,7 +117,12 @@ export default function TabNavigator() {
       <Tab.Screen
         name="Messages"
         component={MessagesScreen}
-        options={{ tabBarLabel: "Mesajlar" }}
+        options={{
+          tabBarLabel: "Mesajlar",
+          headerShown: false,
+          tabBarBadge: unreadTotal > 0 ? (unreadTotal > 99 ? '99+' : String(unreadTotal)) : undefined,
+          tabBarBadgeStyle: { backgroundColor: '#f57656', color: '#fff', fontSize: 10 },
+        }}
       />
       <Tab.Screen
         name="Profile"

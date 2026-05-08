@@ -6,6 +6,7 @@ import authReducer from './slices/authSlice';
 import profileReducer from './slices/profileSlice';
 import swipeReducer from './slices/swipeSlice';
 import subscriptionReducer from './slices/subscriptionSlice';
+import chatReducer from './slices/chatSlice';
 
 // Auth slice specific persist config - only persist essential auth data
 const authPersistConfig = {
@@ -22,11 +23,14 @@ const profilePersistConfig = {
 };
 
 // Combine reducers with persisted auth and profile
+// Chat: persist EDILMEZ — mesaj geçmişi büyük + AsyncStorage rehydrate latency yaratır.
+// App açılışta SignalR + REST ile fresh state çekilir.
 const rootReducer = combineReducers({
   auth: persistReducer(authPersistConfig, authReducer),
   profile: persistReducer(profilePersistConfig, profileReducer),
   swipe: swipeReducer,
   subscription: subscriptionReducer,
+  chat: chatReducer,
 });
 
 // Root persist config

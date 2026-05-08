@@ -2,6 +2,10 @@
 export const API_BASE_URL =
   "https://universitytinder-production.up.railway.app";
 
+// SignalR Hub URL — JWT querystring (?access_token=...) backend tarafında bekleniyor.
+// realtimeService.js bu URL'e accessTokenFactory ile bağlanır.
+export const HUB_URL = `${API_BASE_URL}/hubs/match`;
+
 // API Endpoints
 export const API_ENDPOINTS = {
   // New auth endpoints (email-first registration flow)
@@ -58,6 +62,39 @@ export const API_ENDPOINTS = {
 
   // Subscription
   SUBSCRIPTION_STATUS: "/api/subscription/status",
+
+  // ============ Messaging ============
+  // Conversation list + history + send + read + restore + media + reactions + edit/delete + search.
+  // Backend kontratı ChatDtos.cs ile birebir uyumlu.
+  MESSAGES_CONVERSATIONS: "/api/messages/conversations",
+  MESSAGES_HISTORY_CURSOR: (convId) => `/api/messages/conversations/${convId}/history-cursor`,
+  MESSAGES_HISTORY: (convId) => `/api/messages/conversations/${convId}/history`,
+  MESSAGES_SEND: "/api/messages/send",
+  MESSAGES_MARK_READ: (convId) => `/api/messages/conversations/${convId}/mark-read`,
+  MESSAGES_UNREAD_COUNT: "/api/messages/unread-count",
+  MESSAGES_UNREAD_PER_CONV: "/api/messages/unread-per-conversation",
+  MESSAGES_DEACTIVATE_CONV: (convId) => `/api/messages/conversations/${convId}`,
+  MESSAGES_RESTORE_CONV: (convId) => `/api/messages/conversations/${convId}/restore`,
+  MESSAGES_EDIT: (msgId) => `/api/messages/${msgId}`,
+  MESSAGES_DELETE: (msgId) => `/api/messages/${msgId}`,
+  MESSAGES_REACTIONS: (msgId) => `/api/messages/${msgId}/reactions`,
+  MESSAGES_DELIVERED: (msgId) => `/api/messages/${msgId}/delivered`,
+  MESSAGES_SEARCH: (convId) => `/api/messages/conversations/${convId}/search`,
+  MESSAGES_UPLOAD_URL: "/api/messages/upload-url",
+
+  // Moderation — block / unblock / report
+  MODERATION_BLOCK: (userId) => `/api/moderation/block/${userId}`,
+  MODERATION_BLOCKS: "/api/moderation/blocks",
+  MODERATION_REPORT: "/api/moderation/report",
+
+  // Notifications (Settings — read receipt opt-out vb.)
+  NOTIFICATIONS_PREFERENCES: "/api/notifications/preferences",
+  NOTIFICATIONS_DEVICES: "/api/notifications/devices",
+  NOTIFICATIONS_DEVICE_BY_TOKEN: (token) => `/api/notifications/devices/${encodeURIComponent(token)}`,
+  NOTIFICATIONS_FEED: "/api/notifications",
+  NOTIFICATIONS_UNREAD_COUNT: "/api/notifications/unread-count",
+  NOTIFICATIONS_READ_ONE: (id) => `/api/notifications/${id}/read`,
+  NOTIFICATIONS_READ_ALL: "/api/notifications/read-all",
 
   // Common endpoints (Enums)
   GET_GENDERS: "/api/common/genders",
