@@ -10,6 +10,11 @@ let currentAccessToken = null;
 let onTokenRefreshed = null;
 export const setOnTokenRefreshed = (cb) => { onTokenRefreshed = cb; };
 
+// Optional callback: called when refresh token fails / is missing → kullanıcı
+// logout edilmeli. AppNavigator dispatch(logout())'u burada tetikler.
+let onAuthLost = null;
+export const setOnAuthLost = (cb) => { onAuthLost = cb; };
+
 export const setCurrentAccessToken = (token) => {
   currentAccessToken = token;
 };
@@ -115,7 +120,7 @@ api.interceptors.response.use(
         isRefreshing = false;
         await clearAllTokens();
         setCurrentAccessToken(null);
-        // Trigger logout in Redux (will be handled by App.js)
+        if (onAuthLost) onAuthLost();
         return Promise.reject(error);
       }
 
@@ -150,7 +155,7 @@ api.interceptors.response.use(
         processQueue(refreshError, null);
         await clearAllTokens();
         setCurrentAccessToken(null);
-        // Trigger logout in Redux (will be handled by App.js)
+        if (onAuthLost) onAuthLost();
         return Promise.reject(refreshError);
       } finally {
         isRefreshing = false;

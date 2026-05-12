@@ -16,7 +16,7 @@ import {
   logout,
   setEmailVerifiedToken,
 } from "../store/slices/authSlice";
-import { Mailbox, RotateCcw, ArrowLeft } from "lucide-react-native";
+import { Mailbox, RotateCcw, ArrowLeft, Check } from "lucide-react-native";
 import { LinearGradient } from "expo-linear-gradient";
 import { API_BASE_URL, API_ENDPOINTS } from "../constants/api";
 import { useReanimatedKeyboardAnimation } from "react-native-keyboard-controller";
@@ -145,7 +145,7 @@ export default function RegisterStep2Screen({ route, navigation }) {
       if (response.isSuccess) {
         setResendSuccess(true);
         setCountdown(60);
-        setTimeout(() => setResendSuccess(false), 3000);
+        setTimeout(() => setResendSuccess(false), 1500);
       } else {
         setError(response.message || "Kod gönderilemedi");
       }
@@ -169,6 +169,42 @@ export default function RegisterStep2Screen({ route, navigation }) {
 
   return (
     <View className="flex-1 bg-[#121212] -mt-[100px]">
+      {resendSuccess && (
+        <View
+          pointerEvents="none"
+          style={{
+            position: "absolute",
+            top: 0,
+            left: 0,
+            right: 0,
+            bottom: 0,
+            alignItems: "center",
+            justifyContent: "center",
+            zIndex: 9999,
+          }}
+        >
+          <View
+            style={{
+              borderRadius: 999,
+              borderCurve: "continuous",
+              backgroundColor: "rgba(30,30,30,0.95)",
+              borderWidth: 0.3,
+              borderColor: "rgba(255,255,255,0.15)",
+              paddingHorizontal: 20,
+              paddingVertical: 14,
+              flexDirection: "row",
+              alignItems: "center",
+              gap: 10,
+            }}
+          >
+            <Check size={20} color="#fff" strokeWidth={3} />
+            <Text className="text-white text-[15px] font-medium">
+              Kod başarıyla gönderildi!
+            </Text>
+          </View>
+        </View>
+      )}
+
       <TouchableWithoutFeedback onPress={Keyboard.dismiss}>
         <Animated.View
           style={[
@@ -204,14 +240,6 @@ export default function RegisterStep2Screen({ route, navigation }) {
           </View>
 
           <View>
-            {resendSuccess && (
-              <View className="bg-green-100 border border-green-400 rounded-2xl p-4 mb-6">
-                <Text className="text-green-700 text-sm text-center">
-                  ✅ Kod başarıyla gönderildi!
-                </Text>
-              </View>
-            )}
-
             <View className="flex-row justify-between mb-8 p-8 py-4">
               {code.map((digit, index) => (
                 <TextInput
@@ -235,8 +263,7 @@ export default function RegisterStep2Screen({ route, navigation }) {
                   maxLength={1}
                   editable={!loading}
                   allowFontScaling={false}
-                  selectionColor="white"
-                  cursorColor="white"
+                  caretHidden={true}
                 />
               ))}
             </View>

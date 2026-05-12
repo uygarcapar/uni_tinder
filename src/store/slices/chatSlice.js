@@ -309,10 +309,34 @@ const chatSlice = createSlice({
       })
       .addCase(fetchConversations.fulfilled, (state, action) => {
         state.conversationsLoading = false;
-        state.conversations = action.payload;
-        state.unreadTotal = action.payload.reduce((sum, c) => sum + (c.unreadCount || 0), 0);
+        // Merge: backend cevabı server-of-record, ama local'de daha yeni
+        // optimistic preview varsa (mesaj gönderildi, backend henüz reflect etmedi)
+        // local lastMessagePreview/At/unreadCount'u koru.
+        const merged = action.payload.map((serverConv) => {
+          const localConv = state.conversations.find(
+            (c) => c.conversationId === serverConv.conversationId,
+          );
+          if (!localConv) return serverConv;
+          const localTime = localConv.lastMessageAt
+            ? new Date(localConv.lastMessageAt).getTime()
+            : 0;
+          const serverTime = serverConv.lastMessageAt
+            ? new Date(serverConv.lastMessageAt).getTime()
+            : 0;
+          if (localTime > serverTime) {
+            return {
+              ...serverConv,
+              lastMessagePreview: localConv.lastMessagePreview,
+              lastMessageAt: localConv.lastMessageAt,
+              lastMessageContentType: localConv.lastMessageContentType,
+            };
+          }
+          return serverConv;
+        });
+        state.conversations = merged;
+        state.unreadTotal = merged.reduce((sum, c) => sum + (c.unreadCount || 0), 0);
         // Presence map'i de doldur (UI başlangıçta yeşil noktayı doğru gösterebilsin).
-        action.payload.forEach((c) => {
+        merged.forEach((c) => {
           if (c.partnerUserId) {
             state.presenceByUser[c.partnerUserId] = {
               isOnline: !!c.partnerIsOnline,
@@ -381,6 +405,7 @@ function updateConversationLastMessage(state, msg) {
   if (!conv) return;
   conv.lastMessagePreview = msg.content;
   conv.lastMessageAt = msg.sentAt;
+  conv.lastMessageContentType = msg.contentType ?? 0;
   // List'i en başa al (LastMessageAt'e göre sıralı tutmak için).
   const idx = state.conversations.indexOf(conv);
   if (idx > 0) {

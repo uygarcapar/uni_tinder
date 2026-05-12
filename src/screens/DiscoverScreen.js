@@ -1,4 +1,10 @@
-import React, { useEffect, useState, useRef, useCallback } from "react";
+import React, {
+  useEffect,
+  useState,
+  useRef,
+  useCallback,
+  useMemo,
+} from "react";
 import {
   View,
   Text,
@@ -10,14 +16,23 @@ import {
   Dimensions,
   Keyboard,
 } from "react-native";
-import { useDispatch, useSelector } from "react-redux";
 import { GestureHandlerRootView } from "react-native-gesture-handler";
 import Animated, {
   useSharedValue,
   withTiming,
+  withRepeat,
   useAnimatedStyle,
+  useAnimatedProps,
   Easing,
 } from "react-native-reanimated";
+import { LinearGradient } from "expo-linear-gradient";
+import MaskedView from "@react-native-masked-view/masked-view";
+import Svg, {
+  Path,
+  Defs,
+  LinearGradient as SvgLinearGradient,
+  Stop,
+} from "react-native-svg";
 
 const { width: SCREEN_WIDTH } = Dimensions.get("window");
 const ENTRY_DISTANCE = SCREEN_WIDTH * 1.2;
@@ -37,21 +52,25 @@ import {
   X,
   Lock,
 } from "lucide-react-native";
-import LottieView from "lottie-react-native";
 import SwipeWrapper from "../components/SwipeWrapper";
 import SwipeOverlay from "../components/SwipeOverlay";
 import PurchaseModal from "../components/PurchaseModal";
-import api from "../services/api";
-import { API_ENDPOINTS } from "../constants/api";
 import {
-  fetchPotentialMatches,
-  performLike,
-  performPass,
-  nextCard,
-  loadMoreProfiles,
-  rewindCard,
-  updateSwipeStats,
-} from "../store/slices/swipeSlice";
+  usePotentialMatches,
+  useSwipeFilters,
+  useSwipeStats,
+  useSwipeMutation,
+  useSaveFilters,
+  useUndoSwipe,
+  useUpdateStatsCache,
+} from "../queries/swipeQueries";
+import { cardExpandAnim } from "../services/uiBus";
+
+// Tab bar geometry — TabNavigator ile tutarlı:
+// FLOATING_BAR_HEIGHT (64) + FLOATING_BAR_BOTTOM_GAP (-10) + insets.bottom + extra gap (12)
+const TAB_BAR_HEIGHT = 64;
+const TAB_BAR_BOTTOM_GAP = -10;
+const CARD_BOTTOM_GAP = 12;
 
 const GENDER_OPTIONS = [
   { label: "Erkek", value: "Male" },
@@ -60,23 +79,245 @@ const GENDER_OPTIONS = [
   { label: "Diğer", value: "Other" },
 ];
 
-const AnimatedFlameLoader = () => {
+// TEST FLAG — true iken SkeletonCard her zaman gösterilir (loading state'i ignore).
+// Production'da false yap.
+const SHOW_SKELETON_DEBUG = true;
+
+// Placeholder block — kendi içinde shimmer animasyonu olan dark rect.
+// borderCurve:continuous + overflow:hidden ile yumuşak köşeli kapsayıcı.
+const SkeletonBlock = ({ width, height, borderRadius = 8, style }) => {
+  const shimmer = useSharedValue(-width);
+  useEffect(() => {
+    shimmer.value = withRepeat(
+      withTiming(width * 2, { duration: 1200, easing: Easing.linear }),
+      -1,
+      false,
+    );
+  }, [shimmer, width]);
+  const shimmerStyle = useAnimatedStyle(() => ({
+    transform: [{ translateX: shimmer.value }],
+  }));
+  return (
+    <View
+      style={[
+        {
+          width,
+          height,
+          borderRadius,
+          borderCurve: "continuous",
+          overflow: "hidden",
+          backgroundColor: "#2A2A2A",
+        },
+        style,
+      ]}
+    >
+      <Animated.View
+        pointerEvents="none"
+        style={[
+          {
+            position: "absolute",
+            top: 0,
+            left: 0,
+            width: width * 2,
+            height: "100%",
+          },
+          shimmerStyle,
+        ]}
+      >
+        <LinearGradient
+          colors={["transparent", "rgba(255,255,255,0.12)", "transparent"]}
+          start={{ x: 0, y: 0 }}
+          end={{ x: 1, y: 0 }}
+          style={{ flex: 1 }}
+        />
+      </Animated.View>
+    </View>
+  );
+};
+
+// SwipeCard ile aynı dış yapı (borderRadius:40, full frame) + photo overlay
+// alanları (name, pills) için placeholder block'lar + shimmer overlay.
+const SkeletonCard = () => {
+  const shimmer = useSharedValue(-SCREEN_WIDTH);
+  useEffect(() => {
+    shimmer.value = withRepeat(
+      withTiming(SCREEN_WIDTH * 2, { duration: 1200, easing: Easing.linear }),
+      -1,
+      false,
+    );
+  }, [shimmer]);
+  const shimmerStyle = useAnimatedStyle(() => ({
+    transform: [{ translateX: shimmer.value }],
+  }));
   return (
     <View
       style={{
         flex: 1,
-        alignItems: "center",
-        justifyContent: "center",
-        marginBottom: 80,
+        borderRadius: 40,
+        borderCurve: "continuous",
+        overflow: "hidden",
+        backgroundColor: "#1E1E1E",
       }}
     >
-      <LottieView
-        source={require("../../assets/Flame animation.json")}
-        autoPlay
-        loop
-        style={{ width: 200, height: 200 }}
-      />
+      {/* Pagination — tek pill */}
+      <View
+        pointerEvents="none"
+        style={{
+          position: "absolute",
+          top: 20,
+          left: 0,
+          right: 0,
+          alignItems: "center",
+        }}
+      >
+        <SkeletonBlock width={40} height={6} borderRadius={3} />
+      </View>
+
+      {/* SwipeCard.js:830-905 birebir mirror:
+            className="absolute bottom-[70px] left-6 right-6"
+            Premium BlurView: mb-2 py-3 px-3 self-start text-[11px] (~36h)
+            Name wrapper: {marginBottom:2, gap:4} text-4xl (~44h)
+            Pills wrapper: {flexDirection:'row',flexWrap:'wrap',gap:8,marginTop:4,marginBottom:16}
+              Uni pill: px-1 py-1 + icon20 + text-[15px] (~28h) — usage purpose yorum satırı, tek pill */}
+      <View
+        pointerEvents="none"
+        style={{
+          position: "absolute",
+          bottom: 70,
+          left: 24,
+          right: 24,
+        }}
+      >
+        {/* Premium pill */}
+        <View style={{ alignSelf: "flex-start", marginBottom: 8 }}>
+          <SkeletonBlock width={70} height={30} borderRadius={999} />
+        </View>
+        {/* Name + age */}
+        <View style={{ marginBottom: 2, gap: 4 }}>
+          <SkeletonBlock width={150} height={35} borderRadius={999} />
+        </View>
+        {/* Pills row — tek uni pill (usage purpose yorum satırı) */}
+        <View
+          style={{
+            flexDirection: "row",
+            flexWrap: "wrap",
+            gap: 8,
+            marginTop: 4,
+            marginBottom: 16,
+          }}
+        >
+          <SkeletonBlock width={180} height={28} borderRadius={999} />
+        </View>
+      </View>
+
+      {/* Shimmer pass — tüm placeholder'lar üzerinden geçer */}
+      <Animated.View
+        pointerEvents="none"
+        style={[
+          {
+            position: "absolute",
+            top: 0,
+            left: 0,
+            width: SCREEN_WIDTH * 2,
+            height: "100%",
+          },
+          shimmerStyle,
+        ]}
+      >
+        <LinearGradient
+          colors={["transparent", "rgba(255,255,255,0.07)", "transparent"]}
+          start={{ x: 0, y: 0 }}
+          end={{ x: 1, y: 0 }}
+          style={{ flex: 1 }}
+        />
+      </Animated.View>
     </View>
+  );
+};
+
+// Lit logo'yu dalgalı + gradient turuncu olarak alttan yukarı doldurur.
+// fillRatio (0-1) → kullanılan swipe oranı. 1 = hak doldu.
+// MaskedView ile logo şekli mask, içeride SVG path dalgalı dolgu + animated phase.
+const LOGO_W = 120;
+const LOGO_H = 50;
+const AnimatedPath = Animated.createAnimatedComponent(Path);
+
+const WaveFillLogo = ({ fillRatio = 0 }) => {
+  const phase = useSharedValue(0);
+  const fillSV = useSharedValue(fillRatio);
+
+  useEffect(() => {
+    phase.value = withRepeat(
+      withTiming(2 * Math.PI, { duration: 1500, easing: Easing.linear }),
+      -1,
+      false,
+    );
+  }, [phase]);
+
+  useEffect(() => {
+    fillSV.value = withTiming(fillRatio, { duration: 600 });
+  }, [fillRatio, fillSV]);
+
+  const animatedProps = useAnimatedProps(() => {
+    const f = Math.min(1, Math.max(0, fillSV.value));
+    const baselineY = LOGO_H - f * LOGO_H;
+    const ph = phase.value;
+    // Amplitude fill ile büyür — fill=0 iken dalga yok, sıvının düz görünmesini engeller.
+    const amp = 4 * Math.min(1, f * 4);
+    const freq = 2; // genişlik boyunca 2 dalga
+    const segments = 40;
+    let d = `M 0 ${baselineY + amp * Math.sin(ph)}`;
+    for (let i = 1; i <= segments; i++) {
+      const x = (i / segments) * LOGO_W;
+      const y =
+        baselineY + amp * Math.sin((i / segments) * freq * 2 * Math.PI + ph);
+      d += ` L ${x} ${y}`;
+    }
+    d += ` L ${LOGO_W} ${LOGO_H} L 0 ${LOGO_H} Z`;
+    return { d };
+  });
+
+  return (
+    <MaskedView
+      maskElement={
+        <Image
+          source={require("../../assets/lit_name_white.png")}
+          style={{ width: LOGO_W, height: LOGO_H }}
+          resizeMode="contain"
+        />
+      }
+      style={{ width: LOGO_W, height: LOGO_H }}
+    >
+      {/* Beyaz baz (dolmamış alan) */}
+      <View
+        style={{ width: LOGO_W, height: LOGO_H, backgroundColor: "#fff" }}
+      />
+      {/* Dalgalı turuncu dolgu */}
+      <View
+        style={{
+          position: "absolute",
+          top: 0,
+          left: 0,
+          width: LOGO_W,
+          height: LOGO_H,
+        }}
+      >
+        <Svg width={LOGO_W} height={LOGO_H}>
+          <Defs>
+            <SvgLinearGradient id="litFillGrad" x1="0" y1="0" x2="0" y2="1">
+              <Stop offset="0" stopColor="#fa8532" />
+              <Stop offset="0.3" stopColor="#fa8532" />
+              <Stop offset="0.6" stopColor="#f7521b" />
+              <Stop offset="1" stopColor="#f51111" />
+            </SvgLinearGradient>
+          </Defs>
+          <AnimatedPath
+            animatedProps={animatedProps}
+            fill="url(#litFillGrad)"
+          />
+        </Svg>
+      </View>
+    </MaskedView>
   );
 };
 
@@ -423,25 +664,50 @@ function FilterModal({ bottomSheetRef, filters, isPremium, onSave, saving }) {
   );
 }
 
-export default function DiscoverScreen() {
-  const dispatch = useDispatch();
-  const insets = useSafeAreaInsets();
-  const { potentialMatches, currentIndex, loading, hasNextPage, loadingMore, remainingUndos } =
-    useSelector((state) => state.swipe);
+const DEFAULT_FILTERS = {
+  ageRangeMin: 18,
+  ageRangeMax: 30,
+  maxDistance: 50,
+  genders: [],
+  preferredCity: null,
+  preferredUniversityDomain: null,
+  isPremium: false,
+};
 
+export default function DiscoverScreen() {
+  const insets = useSafeAreaInsets();
+
+  const matchesQuery = usePotentialMatches();
+  const filtersQuery = useSwipeFilters();
+  const statsQuery = useSwipeStats();
+  const swipeMutation = useSwipeMutation();
+  const saveFiltersMutation = useSaveFilters();
+  const undoMutation = useUndoSwipe();
+  const updateStatsCache = useUpdateStatsCache();
+
+  const potentialMatches = useMemo(
+    () => matchesQuery.data?.pages.flatMap((p) => p.profiles) ?? [],
+    [matchesQuery.data],
+  );
+  const loading = matchesQuery.isLoading;
+  const filters = filtersQuery.data ?? DEFAULT_FILTERS;
+  const remainingUndos = statsQuery.data?.remainingUndos ?? null;
+
+  // Lit logosu için fill oranı: Premium → sınırsız (fill=0).
+  // Free → günlük 30 limit, (30 - remaining) / 30.
+  const DAILY_SWIPE_LIMIT = 30;
+  const swipeFillRatio = useMemo(() => {
+    if (statsQuery.data?.isPremium) return 0;
+    const rem = statsQuery.data?.remainingSwipes;
+    if (rem == null) return 0;
+    const used = Math.max(0, DAILY_SWIPE_LIMIT - rem);
+    return Math.min(1, used / DAILY_SWIPE_LIMIT);
+  }, [statsQuery.data?.remainingSwipes, statsQuery.data?.isPremium]);
+
+  const [currentIndex, setCurrentIndex] = useState(0);
   const [isSwiping, setIsSwiping] = useState(false);
   const [lastSwipeWasPass, setLastSwipeWasPass] = useState(false);
   const purchaseBottomSheetRef = useRef(null);
-  const [filters, setFilters] = useState({
-    ageRangeMin: 18,
-    ageRangeMax: 30,
-    maxDistance: 50,
-    genders: [],
-    preferredCity: null,
-    preferredUniversityDomain: null,
-    isPremium: false,
-  });
-  const [filterSaving, setFilterSaving] = useState(false);
 
   const filterBottomSheetRef = useRef(null);
   const lastSwipePromiseRef = useRef(null);
@@ -457,58 +723,42 @@ export default function DiscoverScreen() {
     transform: [{ translateX: stackEntryX.value }],
   }));
 
-  useEffect(() => {
-    dispatch(fetchPotentialMatches(1));
-  }, []);
+  // Tab bar tarafından kaplanan dikey alan — kartın bottom'unun üstünde durması için.
+  // cardExpandAnim'e bağlı: pull sırasında container progressively büyür → içerik
+  // pull oranıyla görünür hale gelir. photoHeight set-once olduğu için onLayout
+  // loop'u tetiklenmez, lag yok.
+  const tabBarOccupied =
+    insets.bottom + TAB_BAR_HEIGHT + TAB_BAR_BOTTOM_GAP + CARD_BOTTOM_GAP;
+  const cardContainerStyle = useAnimatedStyle(() => ({
+    paddingBottom: tabBarOccupied * (1 - cardExpandAnim.value),
+  }));
 
-  useEffect(() => {
-    api
-      .get(API_ENDPOINTS.SWIPE_FILTERS)
-      .then((res) => {
-        if (res.isSuccess && res.result) setFilters(res.result);
-      })
-      .catch(() => {});
-
-    api
-      .get(API_ENDPOINTS.SWIPE_STATS)
-      .then((res) => {
-        if (res.isSuccess && res.result) {
-          const r = res.result;
-          dispatch(updateSwipeStats({
-            remainingSwipes: r.remainingSwipes ?? null,
-            superLikesRemaining: r.superLikesRemaining ?? null,
-            swipeCountResetAt: r.swipeCountResetAt ?? null,
-            superLikeCountResetAt: r.superLikeCountResetAt ?? null,
-            premiumExpiresAt: r.premiumExpiresAt ?? null,
-            isPremium: r.isPremium ?? false,
-            totalSwipesToday: r.totalSwipesToday ?? 0,
-            likesToday: r.likesToday ?? 0,
-            passesToday: r.passesToday ?? 0,
-            superLikesToday: r.superLikesToday ?? 0,
-            matchesToday: r.matchesToday ?? 0,
-            remainingUndos: r.remainingUndos ?? null,
-            undoCountResetAt: r.undoCountResetAt ?? null,
-            remainingMissedMatchRecovery: r.remainingMissedMatchRecovery ?? null,
-            missedMatchRecoveryResetAt: r.missedMatchRecoveryResetAt ?? null,
-          }));
-        }
-      })
-      .catch(() => {});
-  }, []);
-
+  // Pre-fetch sonraki sayfa: kart stack 5'in altına düşünce.
   useEffect(() => {
     const remainingCards = potentialMatches.length - currentIndex;
-    if (remainingCards <= 5 && hasNextPage && !loadingMore) {
-      dispatch(loadMoreProfiles());
+    if (
+      remainingCards <= 5 &&
+      matchesQuery.hasNextPage &&
+      !matchesQuery.isFetchingNextPage
+    ) {
+      matchesQuery.fetchNextPage();
     }
-  }, [currentIndex, hasNextPage, loadingMore, potentialMatches.length]);
+  }, [
+    currentIndex,
+    potentialMatches.length,
+    matchesQuery.hasNextPage,
+    matchesQuery.isFetchingNextPage,
+    matchesQuery.fetchNextPage,
+  ]);
 
   const handleSwipe = (direction, userId) => {
-    dispatch(nextCard());
-    const isPass = direction !== "right";
+    setCurrentIndex((i) => i + 1);
+    const isPass = direction === "left";
     setLastSwipeWasPass(isPass);
-    const action = isPass ? performPass(userId) : performLike(userId);
-    lastSwipePromiseRef.current = dispatch(action);
+    lastSwipePromiseRef.current = swipeMutation.mutateAsync({
+      direction,
+      userId,
+    });
   };
 
   const handleRewind = async () => {
@@ -520,7 +770,7 @@ export default function DiscoverScreen() {
     }
 
     // Optimistic UI: kart hemen geri gelir + animasyon
-    dispatch(rewindCard());
+    setCurrentIndex((i) => Math.max(0, i - 1));
     setLastSwipeWasPass(false);
     stackEntryX.value = -ENTRY_DISTANCE;
     stackEntryX.value = withTiming(0, {
@@ -529,16 +779,15 @@ export default function DiscoverScreen() {
     });
     const prevUndos = remainingUndos;
     if (remainingUndos !== null && remainingUndos !== -1) {
-      dispatch(updateSwipeStats({ remainingUndos: remainingUndos - 1 }));
+      updateStatsCache({ remainingUndos: remainingUndos - 1 });
     }
 
-    // Race fix: bekleyen swipe varsa onun POST'u tamamlansın
+    // Race fix: bekleyen swipe POST'u tamamlansın
     const pending = lastSwipePromiseRef.current;
     let swipeOk = true;
     if (pending) {
       try {
-        const result = await pending;
-        swipeOk = result?.meta?.requestStatus === "fulfilled";
+        await pending;
       } catch {
         swipeOk = false;
       }
@@ -547,56 +796,31 @@ export default function DiscoverScreen() {
 
     // Swipe POST başarısız olduysa: backend'de zaten swipe yok → Undo gönderme
     if (!swipeOk) {
-      if (prevUndos !== null) dispatch(updateSwipeStats({ remainingUndos: prevUndos }));
+      if (prevUndos !== null) updateStatsCache({ remainingUndos: prevUndos });
       return;
     }
 
     try {
-      const res = await api.post(API_ENDPOINTS.SWIPE_UNDO);
-      if (res.isSuccess) {
-        if (res.result?.remainingUndosToday != null) {
-          dispatch(updateSwipeStats({ remainingUndos: res.result.remainingUndosToday }));
-        }
-      } else {
-        dispatch(nextCard());
-        if (prevUndos !== null) dispatch(updateSwipeStats({ remainingUndos: prevUndos }));
-        Alert.alert("", res.result?.message || res.message || "Geri alınamadı");
-      }
-    } catch {
-      dispatch(nextCard());
-      if (prevUndos !== null) dispatch(updateSwipeStats({ remainingUndos: prevUndos }));
-      Alert.alert("", "Geri alınamadı");
+      await undoMutation.mutateAsync();
+    } catch (err) {
+      setCurrentIndex((i) => i + 1);
+      if (prevUndos !== null) updateStatsCache({ remainingUndos: prevUndos });
+      Alert.alert("", err?.message || "Geri alınamadı");
     }
   };
 
   const handleSaveFilters = async (localFilters) => {
-    setFilterSaving(true);
     try {
-      const payload = {
-        ageRangeMin: localFilters.ageRangeMin || 18,
-        ageRangeMax: localFilters.ageRangeMax || 30,
-        maxDistance: localFilters.maxDistance || 50,
-        genders: localFilters.genders,
-      };
-      const res = await api.put(API_ENDPOINTS.SWIPE_UPDATE_FILTERS, payload);
-      if (res.isSuccess) {
-        setFilters(res.result);
-        await dispatch(fetchPotentialMatches(1))
-          .unwrap()
-          .catch(() => {});
-        stackEntryX.value = ENTRY_DISTANCE;
-        stackEntryX.value = withTiming(0, {
-          duration: ENTRY_DURATION,
-          easing: ENTRY_EASING,
-        });
-        filterBottomSheetRef.current?.dismiss();
-      } else {
-        Alert.alert("", res.message || "Filtreler kaydedilemedi");
-      }
-    } catch {
-      Alert.alert("", "Filtreler kaydedilemedi");
-    } finally {
-      setFilterSaving(false);
+      await saveFiltersMutation.mutateAsync(localFilters);
+      setCurrentIndex(0);
+      stackEntryX.value = ENTRY_DISTANCE;
+      stackEntryX.value = withTiming(0, {
+        duration: ENTRY_DURATION,
+        easing: ENTRY_EASING,
+      });
+      filterBottomSheetRef.current?.dismiss();
+    } catch (err) {
+      Alert.alert("", err?.message || "Filtreler kaydedilemedi");
     }
   };
 
@@ -611,6 +835,13 @@ export default function DiscoverScreen() {
     if (isSwiping || potentialMatches.length <= currentIndex) return;
     setIsSwiping(true);
     programmaticSwipe.value = 2;
+    setTimeout(() => setIsSwiping(false), 300);
+  };
+
+  const handleSuperLikeButton = () => {
+    if (isSwiping || potentialMatches.length <= currentIndex) return;
+    setIsSwiping(true);
+    programmaticSwipe.value = 3;
     setTimeout(() => setIsSwiping(false), 300);
   };
 
@@ -633,6 +864,7 @@ export default function DiscoverScreen() {
             programmaticSwipe={programmaticSwipe}
             onPass={handlePassButton}
             onLike={handleLikeButton}
+            onSuperLike={handleSuperLikeButton}
           />
         );
       });
@@ -689,12 +921,8 @@ export default function DiscoverScreen() {
             </TouchableOpacity>
           </View>
 
-          {/* Logo */}
-          <Image
-            source={require("../../assets/lit_name_white.png")}
-            style={{ height: 50, width: 120 }}
-            resizeMode="contain"
-          />
+          {/* Logo — kullanılan swipe oranına göre dalgalı turuncu doldurma */}
+          <WaveFillLogo fillRatio={swipeFillRatio} />
 
           {/* Filter */}
           <View style={{ flex: 1, alignItems: "flex-end" }}>
@@ -711,9 +939,9 @@ export default function DiscoverScreen() {
       </View>
 
       {/* Cards */}
-      <View style={{ flex: 1, paddingTop: 1, paddingBottom: 1 }}>
+      <Animated.View style={[{ flex: 1, paddingTop: 1 }, cardContainerStyle]}>
         {loading && potentialMatches.length === 0 ? (
-          <AnimatedFlameLoader />
+          <SkeletonCard />
         ) : potentialMatches.length > currentIndex ? (
           <Animated.View
             style={[{ flex: 1, position: "relative" }, stackEntryStyle]}
@@ -734,7 +962,7 @@ export default function DiscoverScreen() {
             <Text
               className="text-gray-400"
               style={{
-                fontWeight: "700",
+                fontWeight: "500",
                 fontSize: 13,
                 marginTop: 8,
               }}
@@ -743,14 +971,14 @@ export default function DiscoverScreen() {
             </Text>
           </View>
         )}
-      </View>
+      </Animated.View>
 
       <FilterModal
         bottomSheetRef={filterBottomSheetRef}
         filters={filters}
         isPremium={filters.isPremium}
         onSave={handleSaveFilters}
-        saving={filterSaving}
+        saving={saveFiltersMutation.isPending}
       />
       <PurchaseModal bottomSheetRef={purchaseBottomSheetRef} />
     </GestureHandlerRootView>

@@ -9,10 +9,14 @@ import {
   Keyboard,
 } from "react-native";
 import { useDispatch, useSelector } from "react-redux";
-import { login, fetchUserData } from "../store/slices/authSlice";
+import { login } from "../store/slices/authSlice";
 import { Eye, EyeOff } from "lucide-react-native";
 import { LinearGradient } from "expo-linear-gradient";
-import { KeyboardStickyView } from "react-native-keyboard-controller";
+import {
+  KeyboardStickyView,
+  useReanimatedKeyboardAnimation,
+} from "react-native-keyboard-controller";
+import Animated, { useAnimatedStyle } from "react-native-reanimated";
 
 export default function LoginScreen({ navigation }) {
   const [email, setEmail] = useState("");
@@ -22,6 +26,11 @@ export default function LoginScreen({ navigation }) {
   const dispatch = useDispatch();
   const { loading, error } = useSelector((state) => state.auth);
 
+  const { height: keyboardHeight } = useReanimatedKeyboardAnimation();
+  const liftStyle = useAnimatedStyle(() => ({
+    transform: [{ translateY: keyboardHeight.value / 10 }],
+  }));
+
   const handleLogin = async () => {
     if (!email || !password) {
       alert("Lütfen tüm alanları doldurun");
@@ -29,15 +38,7 @@ export default function LoginScreen({ navigation }) {
     }
 
     try {
-      const result = await dispatch(login({ email, password })).unwrap();
-
-      // Fetch updated user data after successful login
-      const userId = result.user?.userId || result.user?.id;
-      const token = result.token;
-
-      if (userId && token) {
-        dispatch(fetchUserData({ userId, token }));
-      }
+      await dispatch(login({ email, password })).unwrap();
     } catch (error) {
       console.log("Login error:", error);
     }
@@ -45,19 +46,27 @@ export default function LoginScreen({ navigation }) {
 
   return (
     <View className="flex-1 bg-[#121212]">
-      {/* Header */}
-      <View className="bg-[#121212] pt-16 pb-6 px-6">
-        <TouchableOpacity
-          activeOpacity={1}
-          onPress={() => navigation.goBack()}
-          className="flex-row items-center"
-        >
-          <Text className="text-4xl mr-2 text-white">←</Text>
-        </TouchableOpacity>
-      </View>
+      <Animated.View style={[{ flex: 1 }, liftStyle]}>
+        {/* Header */}
+        <View className="bg-[#121212] pt-16 pb-6 px-6">
+          <TouchableOpacity
+            activeOpacity={1}
+            onPress={() => navigation.goBack()}
+            className="flex-row items-center"
+          >
+            <Text className="text-4xl mr-2 text-white">←</Text>
+          </TouchableOpacity>
+        </View>
 
-      <TouchableWithoutFeedback onPress={Keyboard.dismiss}>
-        <View className="flex-1 px-6 py-6 pt-0">
+        <TouchableWithoutFeedback onPress={Keyboard.dismiss}>
+          <View
+            style={{
+              flex: 1,
+              paddingHorizontal: 24,
+              paddingVertical: 24,
+              paddingTop: 0,
+            }}
+          >
           <View className="flex flex-col gap-2">
             <Text className="text-4xl font-bold text-white">Giriş Yap.</Text>
 
@@ -146,8 +155,9 @@ export default function LoginScreen({ navigation }) {
               </Text>
             </Text>
           </TouchableOpacity>
-        </View>
-      </TouchableWithoutFeedback>
+          </View>
+        </TouchableWithoutFeedback>
+      </Animated.View>
 
       {/* Sticky Button with KeyboardStickyView */}
       <KeyboardStickyView offset={{ closed: 0, opened: 15 }}>

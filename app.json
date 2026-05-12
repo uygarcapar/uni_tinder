@@ -18,7 +18,9 @@
       "infoPlist": {
         "ITSAppUsesNonExemptEncryption": false,
         "NSMicrophoneUsageDescription": "Sesli mesaj gönderebilmen için mikrofon erişimine izin vermen gerekir.",
-        "UIBackgroundModes": ["remote-notification"]
+        "UIBackgroundModes": [
+          "remote-notification"
+        ]
       }
     },
     "android": {
@@ -29,7 +31,9 @@
       "package": "com.uygarcapar.lit",
       "edgeToEdgeEnabled": true,
       "useNextNotificationsApi": true,
-      "permissions": ["RECORD_AUDIO"]
+      "permissions": [
+        "RECORD_AUDIO"
+      ]
     },
     "plugins": [
       [
@@ -39,7 +43,8 @@
           "color": "#f57656",
           "defaultChannel": "unitinder_notifications"
         }
-      ]
+      ],
+      "expo-maps"
     ],
     "web": {
       "favicon": "./assets/favicon.png"

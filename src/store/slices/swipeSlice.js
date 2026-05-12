@@ -50,6 +50,14 @@ export const performPass = createAsyncThunk(
   },
 );
 
+export const performSuperLike = createAsyncThunk(
+  "swipe/performSuperLike",
+  async (targetUserId, { getState }) => {
+    const state = getState();
+    return await swipeService.superLikeUser(targetUserId, state.auth.token);
+  },
+);
+
 const swipeSlice = createSlice({
   name: "swipe",
   initialState: {

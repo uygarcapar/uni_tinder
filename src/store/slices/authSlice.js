@@ -38,7 +38,20 @@ export const login = createAsyncThunk(
       }
       return response;
     } catch (error) {
-      return rejectWithValue(error.response?.data?.message || 'Login failed');
+      console.log('❌ Login error — status:', error.response?.status);
+      console.log('❌ Login error — data:', JSON.stringify(error.response?.data, null, 2));
+      const data = error.response?.data;
+      // Backend nested error format: { error: { code, title, message, action } }
+      const nestedError = data?.error;
+      const message =
+        (nestedError && typeof nestedError === 'object' && nestedError.message) ||
+        (typeof nestedError === 'string' && nestedError) ||
+        data?.message ||
+        data?.Message ||
+        (Array.isArray(data?.errors) && typeof data.errors[0] === 'string' && data.errors[0]) ||
+        error.message ||
+        'Login failed';
+      return rejectWithValue(String(message));
     }
   }
 );

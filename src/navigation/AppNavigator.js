@@ -12,8 +12,8 @@ import {
 } from '../services/pushService';
 import uiBus from '../services/uiBus';
 import SettingsModal from '../components/SettingsModal';
-import { setCurrentAccessToken, setOnTokenRefreshed } from '../services/api';
-import { setUserAndToken, clearRegistrationForm } from '../store/slices/authSlice';
+import { setCurrentAccessToken, setOnTokenRefreshed, setOnAuthLost } from '../services/api';
+import { setUserAndToken, clearRegistrationForm, logout } from '../store/slices/authSlice';
 import { saveRefreshToken } from '../utils/tokenStorage';
 import { fetchSubscriptionStatus } from '../store/slices/subscriptionSlice';
 import { initRevenueCat, loginRevenueCat } from '../services/subscriptionService';
@@ -101,12 +101,20 @@ export default function AppNavigator() {
     });
   }, [user, dispatch]);
 
+  // Auth lost (refresh fail / missing) → Redux logout, AuthNavigator'a düş.
+  useEffect(() => {
+    setOnAuthLost(() => {
+      dispatch(logout());
+    });
+  }, [dispatch]);
+
   // RevenueCat init + subscription status when authenticated
+  // GEÇİCİ KAPALI — API key invalid, hatalar log'u dolduruyor. Sonra açılacak.
   useEffect(() => {
     if (!isAuthenticated || !user) return;
-    initRevenueCat(user.userId);
-    if (user.userId) loginRevenueCat(user.userId).catch(() => {});
-    dispatch(fetchSubscriptionStatus());
+    // initRevenueCat(user.userId);
+    // if (user.userId) loginRevenueCat(user.userId).catch(() => {});
+    // dispatch(fetchSubscriptionStatus());
   }, [isAuthenticated, user?.userId]);
 
   // ============ SignalR lifecycle + Hub → Redux bridge ============
@@ -259,9 +267,13 @@ export default function AppNavigator() {
   }, [isAuthenticated, token, dispatch]);
 
   // ============ Logout cleanup — push token deactivate ============
+  // Sadece logout transition'ında (true → false) tetiklen; app açılışta değil.
+  const prevAuthRef = useRef(isAuthenticated);
   useEffect(() => {
-    if (isAuthenticated) return;
-    unregisterPushToken().catch(() => {});
+    if (prevAuthRef.current && !isAuthenticated) {
+      unregisterPushToken().catch(() => {});
+    }
+    prevAuthRef.current = isAuthenticated;
   }, [isAuthenticated]);
 
   // ============ Global Settings modal — uiBus üzerinden her ekran açabilir ============

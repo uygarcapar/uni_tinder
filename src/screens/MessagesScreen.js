@@ -1,4 +1,4 @@
-import { useEffect, useCallback, useMemo } from 'react';
+import { useEffect, useCallback, useMemo } from "react";
 import {
   View,
   Text,
@@ -8,16 +8,25 @@ import {
   ActivityIndicator,
   RefreshControl,
   Alert,
-} from 'react-native';
-import { SafeAreaView, useSafeAreaInsets } from 'react-native-safe-area-context';
-import { useDispatch, useSelector } from 'react-redux';
-import { useNavigation } from '@react-navigation/native';
-import { MessageCircle, Trash2, Bell } from 'lucide-react-native';
+} from "react-native";
+import {
+  SafeAreaView,
+  useSafeAreaInsets,
+} from "react-native-safe-area-context";
+import { useDispatch, useSelector } from "react-redux";
+import { useNavigation } from "@react-navigation/native";
+import {
+  MessageCircle,
+  Bell,
+  Camera as CameraIcon,
+  Mic,
+  Video,
+} from "lucide-react-native";
 import {
   fetchConversations,
   setActiveConversation,
-} from '../store/slices/chatSlice';
-import chatService from '../services/chatService';
+} from "../store/slices/chatSlice";
+import chatService from "../services/chatService";
 
 export default function MessagesScreen() {
   const dispatch = useDispatch();
@@ -38,7 +47,7 @@ export default function MessagesScreen() {
   const openChat = useCallback(
     (conv) => {
       dispatch(setActiveConversation(conv.conversationId));
-      navigation.navigate('Chat', {
+      navigation.navigate("Chat", {
         conversationId: conv.conversationId,
         partner: {
           userId: conv.partnerUserId,
@@ -48,78 +57,95 @@ export default function MessagesScreen() {
         isActive: conv.isActive,
       });
     },
-    [dispatch, navigation]
+    [dispatch, navigation],
   );
 
-  const handleLongPress = useCallback((conv) => {
-    if (!conv.isActive) {
-      // Kapanmış sohbet — restore offer (24h grace).
+  const handleLongPress = useCallback(
+    (conv) => {
+      if (!conv.isActive) {
+        // Kapanmış sohbet — restore offer (24h grace).
+        Alert.alert(
+          "Eşleşmeyi geri al",
+          "Bu sohbet sonlandırıldı. 24 saat içinde geri alabilirsin.",
+          [
+            { text: "İptal", style: "cancel" },
+            {
+              text: "Geri Al",
+              onPress: async () => {
+                try {
+                  const ok = await chatService.restoreConversation(
+                    conv.conversationId,
+                  );
+                  if (!ok) {
+                    Alert.alert(
+                      "Geri alınamadı",
+                      "24 saatlik süre dolmuş olabilir.",
+                    );
+                  }
+                  dispatch(fetchConversations());
+                } catch (err) {
+                  Alert.alert("Hata", "İşlem başarısız.");
+                }
+              },
+            },
+          ],
+        );
+        return;
+      }
+      // Aktif sohbet — unmatch confirm.
       Alert.alert(
-        'Eşleşmeyi geri al',
-        'Bu sohbet sonlandırıldı. 24 saat içinde geri alabilirsin.',
+        "Eşleşmeyi kaldır",
+        `${conv.partnerDisplayName || "Kullanıcı"} ile sohbeti sonlandır. 24 saat içinde geri alabilirsin.`,
         [
-          { text: 'İptal', style: 'cancel' },
+          { text: "İptal", style: "cancel" },
           {
-            text: 'Geri Al',
+            text: "Kaldır",
+            style: "destructive",
             onPress: async () => {
               try {
-                const ok = await chatService.restoreConversation(conv.conversationId);
-                if (!ok) {
-                  Alert.alert('Geri alınamadı', '24 saatlik süre dolmuş olabilir.');
-                }
+                await chatService.deactivateConversation(conv.conversationId);
                 dispatch(fetchConversations());
               } catch (err) {
-                Alert.alert('Hata', 'İşlem başarısız.');
+                Alert.alert("Hata", "Eşleşme kaldırılamadı.");
               }
             },
           },
         ],
       );
-      return;
-    }
-    // Aktif sohbet — unmatch confirm.
-    Alert.alert(
-      'Eşleşmeyi kaldır',
-      `${conv.partnerDisplayName || 'Kullanıcı'} ile sohbeti sonlandır. 24 saat içinde geri alabilirsin.`,
-      [
-        { text: 'İptal', style: 'cancel' },
-        {
-          text: 'Kaldır',
-          style: 'destructive',
-          onPress: async () => {
-            try {
-              await chatService.deactivateConversation(conv.conversationId);
-              dispatch(fetchConversations());
-            } catch (err) {
-              Alert.alert('Hata', 'Eşleşme kaldırılamadı.');
-            }
-          },
-        },
-      ],
-    );
-  }, [dispatch]);
+    },
+    [dispatch],
+  );
 
   const renderItem = ({ item }) => (
     <ConversationRow
       conv={item}
-      isTyping={Object.keys(typingByConv?.[item.conversationId] || {}).length > 0}
+      isTyping={
+        Object.keys(typingByConv?.[item.conversationId] || {}).length > 0
+      }
       onPress={() => openChat(item)}
       onLongPress={() => handleLongPress(item)}
     />
   );
 
   return (
-    <SafeAreaView edges={['top', 'bottom']} className="flex-1 bg-[#0a0a0a]">
-      <View className="px-5 py-4 border-b border-[#1a1a1a] flex-row items-center justify-between">
-        <Text className="text-white text-2xl font-bold">Mesajlar</Text>
-        <TouchableOpacity
-          onPress={() => navigation.navigate('Notifications')}
-          hitSlop={10}
-          className="p-2"
+    <View className="flex-1 bg-[#121212]">
+      {/* Custom Header */}
+      <SafeAreaView edges={["top"]} className="bg-[#121212]">
+        <View
+          className="px-6 flex-row items-center justify-between"
+          style={{ height: 50 }}
         >
-          <Bell size={22} color="#fff" />
-        </TouchableOpacity>
-      </View>
+          <Text className="text-white text-[26px] font-bold tracking-wider">
+            Mesajlar
+          </Text>
+          <TouchableOpacity
+            onPress={() => navigation.navigate("Notifications")}
+            hitSlop={10}
+          >
+            <Bell size={25} strokeWidth={2} color="#fff" fill="#fff" />
+          </TouchableOpacity>
+        </View>
+      </SafeAreaView>
 
       {conversationsLoading && conversations.length === 0 ? (
         <View className="flex-1 items-center justify-center">
@@ -142,16 +168,45 @@ export default function MessagesScreen() {
           }
         />
       )}
-    </SafeAreaView>
+    </View>
   );
 }
 
 function ConversationRow({ conv, isTyping, onPress, onLongPress }) {
   const subtitle = useMemo(() => {
-    if (isTyping) return 'yazıyor…';
-    if (!conv.lastMessagePreview) return 'Konuşmaya başla 👋';
-    return conv.lastMessagePreview;
-  }, [isTyping, conv.lastMessagePreview]);
+    if (isTyping)
+      return { kind: "text", text: "yazıyor…", className: "text-[#f57656]" };
+    if (!conv.isActive)
+      return {
+        kind: "text",
+        text: "Sohbet kapatıldı",
+        className: "text-gray-400",
+      };
+
+    // Media (no text content) — icon + label
+    const ct = conv.lastMessageContentType;
+    if (ct === 1) return { kind: "media", icon: CameraIcon, text: "Fotoğraf" };
+    if (ct === 2) return { kind: "media", icon: Mic, text: "Sesli mesaj" };
+    if (ct === 3) return { kind: "media", icon: Video, text: "Video" };
+
+    if (!conv.lastMessagePreview) {
+      return {
+        kind: "text",
+        text: "Konuşmaya başla 👋",
+        className: "text-gray-400",
+      };
+    }
+    return {
+      kind: "text",
+      text: conv.lastMessagePreview,
+      className: "text-gray-400",
+    };
+  }, [
+    isTyping,
+    conv.lastMessagePreview,
+    conv.lastMessageContentType,
+    conv.isActive,
+  ]);
 
   return (
     <TouchableOpacity
@@ -172,13 +227,13 @@ function ConversationRow({ conv, isTyping, onPress, onLongPress }) {
               width: 56,
               height: 56,
               borderRadius: 28,
-              backgroundColor: '#262626',
-              alignItems: 'center',
-              justifyContent: 'center',
+              backgroundColor: "#262626",
+              alignItems: "center",
+              justifyContent: "center",
             }}
           >
-            <Text className="text-white text-xl font-bold">
-              {(conv.partnerDisplayName || '?').charAt(0).toUpperCase()}
+            <Text className="text-white text-[xl] font-bold">
+              {(conv.partnerDisplayName || "?").charAt(0).toUpperCase()}
             </Text>
           </View>
         )}
@@ -186,15 +241,15 @@ function ConversationRow({ conv, isTyping, onPress, onLongPress }) {
         {conv.partnerIsOnline && (
           <View
             style={{
-              position: 'absolute',
+              position: "absolute",
               bottom: 2,
               right: 2,
               width: 14,
               height: 14,
               borderRadius: 7,
-              backgroundColor: '#34d399',
+              backgroundColor: "#34d399",
               borderWidth: 2,
-              borderColor: '#0a0a0a',
+              borderColor: "#0a0a0a",
             }}
           />
         )}
@@ -203,34 +258,51 @@ function ConversationRow({ conv, isTyping, onPress, onLongPress }) {
       <View className="flex-1 ml-3">
         <View className="flex-row items-center justify-between">
           <Text
-            className={`text-base font-semibold ${conv.isActive ? 'text-white' : 'text-gray-500'}`}
+            className={`text-[16px] font-semibold ${conv.isActive ? "text-white" : "text-gray-500"}`}
             numberOfLines={1}
           >
-            {conv.partnerDisplayName || 'Kullanıcı'}
+            {conv.partnerDisplayName || "Kullanıcı"}
           </Text>
           {conv.lastMessageAt && (
-            <Text className="text-gray-500 text-xs ml-2">
+            <Text className="text-gray-500 text-[16px] font-normal ml-2">
               {formatRelativeTime(conv.lastMessageAt)}
             </Text>
           )}
         </View>
 
         <View className="flex-row items-center justify-between mt-1">
-          <Text
-            className={`text-sm ${isTyping ? 'text-[#f57656]' : 'text-gray-400'}`}
-            numberOfLines={1}
-            style={{ flex: 1 }}
-          >
-            {!conv.isActive ? 'Sohbet kapatıldı' : subtitle}
-          </Text>
+          {subtitle.kind === "media" ? (
+            <View className="flex-row items-center" style={{ flex: 1, gap: 4 }}>
+              <subtitle.icon size={14} color="#9CA3AF" strokeWidth={2} />
+              <Text
+                className="text-[14px] text-gray-400"
+                numberOfLines={1}
+                style={{ flex: 1 }}
+              >
+                {subtitle.text}
+              </Text>
+            </View>
+          ) : (
+            <Text
+              className={`text-[14px] ${subtitle.className}`}
+              numberOfLines={1}
+              style={{ flex: 1 }}
+            >
+              {subtitle.text}
+            </Text>
+          )}
 
           {conv.unreadCount > 0 && (
             <View
               className="ml-2 px-2 py-0.5 rounded-full"
-              style={{ backgroundColor: '#f57656', minWidth: 22, alignItems: 'center' }}
+              style={{
+                backgroundColor: "#f57656",
+                minWidth: 22,
+                alignItems: "center",
+              }}
             >
               <Text className="text-white text-xs font-bold">
-                {conv.unreadCount > 99 ? '99+' : conv.unreadCount}
+                {conv.unreadCount > 99 ? "99+" : conv.unreadCount}
               </Text>
             </View>
           )}
@@ -244,7 +316,9 @@ function EmptyState() {
   return (
     <View className="flex-1 items-center justify-center px-8">
       <MessageCircle size={56} color="#3a3a3a" />
-      <Text className="text-white text-lg font-bold mt-4">Henüz mesajın yok</Text>
+      <Text className="text-white text-lg font-bold mt-4">
+        Henüz mesajın yok
+      </Text>
       <Text className="text-gray-400 text-sm text-center mt-2">
         Eşleştiğin kişilerle konuşmaya başlamak için Keşfet sekmesini kullan.
       </Text>
@@ -253,17 +327,25 @@ function EmptyState() {
 }
 
 function formatRelativeTime(iso) {
-  if (!iso) return '';
+  if (!iso) return "";
   const d = new Date(iso);
   const now = new Date();
-  const diffMs = now - d;
-  const diffMin = Math.floor(diffMs / 60000);
-  const diffH = Math.floor(diffMin / 60);
-  const diffD = Math.floor(diffH / 24);
 
-  if (diffMin < 1) return 'şimdi';
-  if (diffMin < 60) return `${diffMin}d`;
-  if (diffH < 24) return `${diffH}s`;
-  if (diffD < 7) return `${diffD}g`;
-  return d.toLocaleDateString('tr-TR', { day: '2-digit', month: '2-digit' });
+  const startOfDay = (date) =>
+    new Date(date.getFullYear(), date.getMonth(), date.getDate());
+  const dayDiff = Math.floor(
+    (startOfDay(now) - startOfDay(d)) / (1000 * 60 * 60 * 24),
+  );
+
+  if (dayDiff <= 0) {
+    return d.toLocaleTimeString("tr-TR", {
+      hour: "2-digit",
+      minute: "2-digit",
+    });
+  }
+  if (dayDiff === 1) return "Dün";
+  if (dayDiff < 7) {
+    return d.toLocaleDateString("tr-TR", { weekday: "long" });
+  }
+  return d.toLocaleDateString("tr-TR", { day: "2-digit", month: "2-digit" });
 }

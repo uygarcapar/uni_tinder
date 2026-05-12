@@ -20,10 +20,7 @@ import {
   Platform,
   UIManager,
 } from "react-native";
-import {
-  SafeAreaView,
-  useSafeAreaInsets,
-} from "react-native-safe-area-context";
+import { useSafeAreaInsets } from "react-native-safe-area-context";
 import * as ImagePicker from "expo-image-picker";
 import { useDispatch, useSelector } from "react-redux";
 import { logout } from "../store/slices/authSlice";
@@ -107,6 +104,8 @@ import {
   Wind,
   Navigation,
   ChevronDown,
+  InfoIcon,
+  UserRound,
 } from "lucide-react-native";
 import { LinearGradient } from "expo-linear-gradient";
 import { BlurView } from "expo-blur";
@@ -308,6 +307,182 @@ function SkeletonShimmer() {
         style={{ flex: 1 }}
       />
     </Animated.View>
+  );
+}
+
+// ─── Generic skeleton box w/ shimmer ─────────────────────────────────────────
+function SkeletonBox({ width: w, height: h, borderRadius = 8, style }) {
+  const animW = typeof w === "number" ? w : width;
+  const shimmer = useSharedValue(-animW);
+
+  useEffect(() => {
+    shimmer.value = withRepeat(
+      withTiming(animW * 2, { duration: 1200, easing: Easing.linear }),
+      -1,
+      false,
+    );
+  }, [shimmer, animW]);
+
+  const animStyle = useAnimatedStyle(() => ({
+    transform: [{ translateX: shimmer.value }],
+  }));
+
+  return (
+    <View
+      style={[
+        {
+          width: w ?? "100%",
+          height: h,
+          borderRadius,
+          borderCurve: "continuous",
+          backgroundColor: "#1E1E1E",
+          overflow: "hidden",
+        },
+        style,
+      ]}
+    >
+      <Animated.View
+        pointerEvents="none"
+        style={[
+          {
+            position: "absolute",
+            top: 0,
+            left: 0,
+            width: animW * 2,
+            height: "100%",
+          },
+          animStyle,
+        ]}
+      >
+        <LinearGradient
+          colors={["transparent", "rgba(255,255,255,0.07)", "transparent"]}
+          start={{ x: 0, y: 0 }}
+          end={{ x: 1, y: 0 }}
+          style={{ flex: 1 }}
+        />
+      </Animated.View>
+    </View>
+  );
+}
+
+// ─── Hero avatar — image yüklenirken skeleton overlay ────────────────────────
+function HeroAvatar({ uri, size = 80, onPress }) {
+  const [imgLoading, setImgLoading] = useState(true);
+  return (
+    <TouchableOpacity
+      activeOpacity={0.85}
+      onPress={onPress}
+      style={{
+        width: size,
+        height: size,
+        borderRadius: size / 2,
+        borderCurve: "continuous",
+        overflow: "hidden",
+        backgroundColor: "#1E1E1E",
+        alignItems: "center",
+        justifyContent: "center",
+      }}
+    >
+      {uri ? (
+        <>
+          <Image
+            source={{ uri }}
+            style={{ width: "100%", height: "100%" }}
+            resizeMode="cover"
+            onLoadStart={() => setImgLoading(true)}
+            onLoadEnd={() => setImgLoading(false)}
+          />
+          {imgLoading && (
+            <View
+              style={{
+                position: "absolute",
+                top: 0,
+                left: 0,
+                right: 0,
+                bottom: 0,
+              }}
+            >
+              <SkeletonBox width={size} height={size} borderRadius={size / 2} />
+            </View>
+          )}
+        </>
+      ) : (
+        <UserRound size={40} color="#fff" strokeWidth={1.5} />
+      )}
+    </TouchableOpacity>
+  );
+}
+
+// ─── Skeleton body — header'sız, sadece içerik kısmı ─────────────────────────
+function SkeletonBody() {
+  return (
+    <ScrollView
+      showsVerticalScrollIndicator={false}
+      scrollEnabled={false}
+      contentInsetAdjustmentBehavior="never"
+    >
+      {/* Progress bar */}
+      <View style={{ paddingHorizontal: 20, paddingTop: 10 }}>
+        <SkeletonBox height={4} borderRadius={999} />
+      </View>
+
+      {/* Hero */}
+      <View
+        style={{
+          paddingHorizontal: 20,
+          paddingTop: 20,
+          paddingBottom: 24,
+          flexDirection: "row",
+          alignItems: "center",
+          gap: 16,
+        }}
+      >
+        <SkeletonBox width={80} height={80} borderRadius={50} />
+        <View style={{ flex: 1 }}>
+          <SkeletonBox
+            width={160}
+            height={20}
+            borderRadius={6}
+            style={{ marginBottom: 12 }}
+          />
+          <SkeletonBox width={140} height={42} borderRadius={999} />
+        </View>
+      </View>
+
+      {/* Premium banner */}
+      <View style={{ paddingHorizontal: 16, marginTop: 8, marginBottom: 40 }}>
+        <SkeletonBox height={340} borderRadius={40} />
+      </View>
+
+      {/* Profile completion */}
+      <View style={{ paddingHorizontal: 16, paddingBottom: 24 }}>
+        <SkeletonBox
+          width={130}
+          height={13}
+          borderRadius={4}
+          style={{ marginBottom: 12, marginLeft: 4 }}
+        />
+        {[1, 2, 3].map((i) => (
+          <SkeletonBox
+            key={i}
+            height={62}
+            borderRadius={999}
+            style={{ marginBottom: 8 }}
+          />
+        ))}
+      </View>
+
+      {/* Account */}
+      <View style={{ paddingHorizontal: 16, paddingBottom: 64 }}>
+        <SkeletonBox
+          width={50}
+          height={13}
+          borderRadius={4}
+          style={{ marginBottom: 12, marginLeft: 4 }}
+        />
+        <SkeletonBox height={62} borderRadius={999} />
+      </View>
+    </ScrollView>
   );
 }
 
@@ -835,6 +1010,7 @@ function ProfileEditModal({
 export default function ProfileScreen() {
   const dispatch = useDispatch();
   const { user } = useSelector((state) => state.auth);
+  const insets = useSafeAreaInsets();
 
   // ── Bottom Sheet Ref & Görünürlük Stateleri ────────────────────────────────
   const editBottomSheetRef = useRef(null);
@@ -1307,31 +1483,16 @@ export default function ProfileScreen() {
     },
   ];
 
-  if (loading) {
-    return (
-      <View
-        style={{
-          flex: 1,
-          backgroundColor: "#121212",
-          alignItems: "center",
-          justifyContent: "center",
-        }}
-      >
-        <ActivityIndicator size="large" color="#fff" />
-      </View>
-    );
-  }
-
   const resolvedHobbies = resolveHobbies(myProfile?.hobbies);
-  const previewProfile = buildPreviewProfile();
+  const previewProfile = loading ? null : buildPreviewProfile();
 
   return (
     <GestureHandlerRootView style={{ flex: 1 }}>
-      <View style={{ flex: 1, backgroundColor: "#121212" }}>
+      <View className="pb-20" style={{ flex: 1, backgroundColor: "#121212" }}>
         <StatusBar barStyle="light-content" />
 
         {/* Custom Header */}
-        <SafeAreaView edges={["top"]} style={{ backgroundColor: "#121212" }}>
+        <View style={{ paddingTop: insets.top, backgroundColor: "#121212" }}>
           <View
             style={{
               paddingHorizontal: 21,
@@ -1360,294 +1521,311 @@ export default function ProfileScreen() {
               </TouchableOpacity>
             </View>
           </View>
-        </SafeAreaView>
+        </View>
 
-        <ScrollView
-          showsVerticalScrollIndicator={false}
-          refreshControl={
-            <RefreshControl
-              refreshing={refreshing}
-              onRefresh={onRefresh}
-              tintColor="#fff"
-            />
-          }
-        >
-          {/* ── Progress Bar ── */}
-          {completionPct > 0 && (
-            <View
-              style={{
-                paddingHorizontal: 20,
-                paddingTop: 10,
-                position: "relative",
-              }}
-            >
+        {loading ? (
+          <SkeletonBody />
+        ) : (
+          <ScrollView
+            showsVerticalScrollIndicator={false}
+            contentInsetAdjustmentBehavior="never"
+            refreshControl={
+              <RefreshControl
+                refreshing={refreshing}
+                onRefresh={onRefresh}
+                tintColor="#fff"
+              />
+            }
+          >
+            {/* ── Progress Bar ── */}
+            {completionPct > 0 && (
               <View
                 style={{
-                  height: 4,
-                  borderRadius: 999,
-                  backgroundColor: "rgba(255,255,255,0.1)",
-                  overflow: "visible",
+                  paddingHorizontal: 20,
+                  paddingTop: 10,
+                  position: "relative",
                 }}
-                onLayout={(e) =>
-                  setBarContainerWidth(e.nativeEvent.layout.width)
-                }
-              >
-                <Animated.View
-                  style={[
-                    {
-                      height: "100%",
-                      borderRadius: 999,
-                      backgroundColor: "#fff",
-                    },
-                    progressBarStyle,
-                  ]}
-                />
-                {/* Yüzde Badge */}
-                <Animated.View
-                  style={[
-                    {
-                      position: "absolute",
-                      top: "50%",
-                      transform: [{ translateY: -13 }],
-                    },
-                    progressBadgeStyle,
-                  ]}
-                >
-                  <View
-                    className="border-[3px] border-[#121212]"
-                    style={{
-                      backgroundColor: "#fff",
-                      paddingHorizontal: 6,
-                      paddingVertical: 4,
-                      borderRadius: 999,
-                      minWidth: 30,
-                      alignItems: "center",
-                      borderCurve: "continuous",
-                      overflow: "hidden",
-                    }}
-                  >
-                    <Text
-                      style={{
-                        color: "#000",
-                        fontSize: 12,
-                        fontWeight: "700",
-                      }}
-                    >
-                      {completionPct}%
-                    </Text>
-                  </View>
-                </Animated.View>
-              </View>
-            </View>
-          )}
-
-          {/* ── Hero Section ── */}
-          <View
-            style={{
-              paddingHorizontal: 20,
-              paddingTop: 20,
-              paddingBottom: 24,
-              flexDirection: "row",
-              alignItems: "center",
-              gap: 16,
-            }}
-          >
-            <TouchableOpacity
-              activeOpacity={0.85}
-              onPress={() => mainPhoto && setPreviewVisible(true)}
-              style={{
-                width: 80,
-                height: 80,
-                borderRadius: 50,
-                overflow: "hidden",
-                backgroundColor: "#1E1E1E",
-                alignItems: "center",
-                justifyContent: "center",
-              }}
-            >
-              {mainPhoto ? (
-                <Image
-                  source={{ uri: mainPhoto }}
-                  style={{ width: "100%", height: "100%" }}
-                  resizeMode="cover"
-                />
-              ) : (
-                <User size={40} color="#374151" strokeWidth={1} />
-              )}
-            </TouchableOpacity>
-
-            <View style={{ flex: 1, justifyContent: "space-between" }}>
-              <Text
-                style={{
-                  color: "#fff",
-                  fontSize: 18,
-                  fontWeight: "600",
-                  lineHeight: 28,
-                }}
-              >
-                {myProfile?.displayName ||
-                  `${user?.firstName ?? ""} ${user?.lastName ?? ""}`.trim()}
-              </Text>
-
-              <TouchableOpacity
-                onPress={openEditProfile}
-                activeOpacity={0.95}
-                style={{ marginTop: 8 }}
               >
                 <View
                   style={{
+                    height: 4,
                     borderRadius: 999,
-                    borderCurve: "continuous",
-                    overflow: "hidden",
+                    backgroundColor: "rgba(255,255,255,0.1)",
+                    overflow: "visible",
                   }}
-                  className="flex-row bg-[#1E1E1E] self-start justify-center text-center items-center border-[0.5px] border-white/10 px-3 py-3 gap-2"
+                  onLayout={(e) =>
+                    setBarContainerWidth(e.nativeEvent.layout.width)
+                  }
                 >
-                  <Pencil size={18} color="#fff" strokeWidth={1.5} />
-                  <Text
-                    style={{ color: "#fff", fontWeight: "500", fontSize: 13 }}
-                  >
-                    Profili Düzenle
-                  </Text>
-                </View>
-              </TouchableOpacity>
-            </View>
-          </View>
-
-          {/* --- PREMIUM UPSELL BANNER & COMPARISON --- */}
-          {!myProfile?.isPremium && (
-            <View className="mb-10 px-4 mt-2">
-              <TouchableOpacity
-                activeOpacity={0.9}
-                onPress={() => purchaseBottomSheetRef.current?.present()}
-              >
-                <LinearGradient
-                  colors={["#ff173a", "#FF4D4D", "#fc803d"]}
-                  start={{ x: 0, y: 0 }}
-                  end={{ x: 1, y: 1 }}
-                  style={{
-                    borderRadius: 40,
-                    borderCurve: "continuous",
-                    overflow: "hidden",
-                    shadowColor: "#FFD700",
-                    shadowOffset: { width: 0, height: 4 },
-                    shadowOpacity: 0.2,
-                    shadowRadius: 8,
-                    elevation: 5,
-                  }}
-                >
-                  {/* Top Banner Section */}
-                  <View className="p-5 flex-row items-center justify-between">
-                    <View className="flex-1 pr-4">
-                      <View className="flex-row items-center gap-2 mb-2">
-                        <Text
-                          className="pr-2"
-                          style={{
-                            color: "#fff",
-                            fontSize: 50,
-                            fontFamily: "Duckie-regular",
-                          }}
-                        >
-                          lit gold
-                        </Text>
-                      </View>
-                      <Text className="text-[#fff] font-medium text-[14px] leading-5 opacity-90">
-                        Lit Gold ile eşleşmelerini hızlandır, seni beğenenleri
-                        gör ve daha fazlasını keşfet!
-                      </Text>
-                    </View>
-                    <View
-                      className="border-[1px] border-white/50 px-4 py-4"
-                      style={{
+                  <Animated.View
+                    style={[
+                      {
+                        height: "100%",
                         borderRadius: 999,
-                        overflow: "hidden",
+                        backgroundColor: "#fff",
+                      },
+                      progressBarStyle,
+                    ]}
+                  />
+                  {/* Yüzde Badge */}
+                  <Animated.View
+                    style={[
+                      {
+                        position: "absolute",
+                        top: "50%",
+                        transform: [{ translateY: -13 }],
+                      },
+                      progressBadgeStyle,
+                    ]}
+                  >
+                    <View
+                      className="border-[3px] border-[#121212]"
+                      style={{
+                        backgroundColor: "#fff",
+                        paddingHorizontal: 6,
+                        paddingVertical: 4,
+                        borderRadius: 999,
+                        minWidth: 30,
+                        alignItems: "center",
                         borderCurve: "continuous",
+                        overflow: "hidden",
                       }}
                     >
-                      <Text className="text-[#fff] font-bold text-[13px]">
-                        Yükselt
+                      <Text
+                        style={{
+                          color: "#000",
+                          fontSize: 12,
+                          fontWeight: "700",
+                        }}
+                      >
+                        {completionPct}%
                       </Text>
                     </View>
-                  </View>
+                  </Animated.View>
+                </View>
+              </View>
+            )}
 
-                  {/* Comparison Table Section */}
-                  <View className="pt-5 pb-2">
-                    {/* Table Header */}
-                    <View className="flex-row items-center justify-between mb-2 px-6">
-                      <Text className="text-white/70 font-bold text-[12px] uppercase tracking-wider flex-1">
-                        Özellikler
-                      </Text>
-                      <View className="flex-row items-center gap-4">
-                        <Text className="text-white/70 font-bold text-[12px] uppercase w-16 text-center">
-                          Standart
+            {/* ── Hero Section ── */}
+            <View
+              style={{
+                paddingHorizontal: 20,
+                paddingTop: 20,
+                paddingBottom: 24,
+                flexDirection: "row",
+                alignItems: "center",
+                gap: 16,
+              }}
+            >
+              <HeroAvatar
+                uri={mainPhoto}
+                size={80}
+                onPress={() => mainPhoto && setPreviewVisible(true)}
+              />
+
+              <View style={{ flex: 1, justifyContent: "space-between" }}>
+                <Text
+                  style={{
+                    color: "#fff",
+                    fontSize: 18,
+                    fontWeight: "600",
+                    lineHeight: 28,
+                  }}
+                >
+                  {myProfile?.displayName ||
+                    `${user?.firstName ?? ""} ${user?.lastName ?? ""}`.trim()}
+                </Text>
+
+                <TouchableOpacity
+                  onPress={openEditProfile}
+                  activeOpacity={0.95}
+                  style={{ marginTop: 8 }}
+                >
+                  <View
+                    style={{
+                      borderRadius: 999,
+                      borderCurve: "continuous",
+                      overflow: "hidden",
+                    }}
+                    className="flex-row bg-[#1E1E1E] self-start justify-center text-center items-center border-[0.5px] border-white/10 px-3 py-3 gap-2"
+                  >
+                    <Pencil size={18} color="#fff" strokeWidth={1.5} />
+                    <Text
+                      style={{ color: "#fff", fontWeight: "500", fontSize: 13 }}
+                    >
+                      Profili Düzenle
+                    </Text>
+                  </View>
+                </TouchableOpacity>
+              </View>
+            </View>
+
+            {/* --- PREMIUM UPSELL BANNER & COMPARISON --- */}
+            {!myProfile?.isPremium && (
+              <View className="mb-10 px-4 mt-2">
+                <TouchableOpacity
+                  activeOpacity={0.9}
+                  onPress={() => purchaseBottomSheetRef.current?.present()}
+                >
+                  <LinearGradient
+                    colors={["#ff173a", "#FF4D4D", "#fc803d"]}
+                    start={{ x: 0, y: 0 }}
+                    end={{ x: 1, y: 1 }}
+                    style={{
+                      borderRadius: 40,
+                      borderCurve: "continuous",
+                      overflow: "hidden",
+                      shadowColor: "#FFD700",
+                      shadowOffset: { width: 0, height: 4 },
+                      shadowOpacity: 0.2,
+                      shadowRadius: 8,
+                      elevation: 5,
+                    }}
+                  >
+                    {/* Top Banner Section */}
+                    <View className="p-5 flex-row items-center justify-between">
+                      <View className="flex-1 pr-4">
+                        <View className="flex-row items-center gap-2 mb-2">
+                          <Text
+                            className="pr-2"
+                            style={{
+                              color: "#fff",
+                              fontSize: 50,
+                              fontFamily: "Duckie-regular",
+                            }}
+                          >
+                            lit gold
+                          </Text>
+                        </View>
+                        <Text className="text-[#fff] font-medium text-[14px] leading-5 opacity-90">
+                          Lit Gold ile eşleşmelerini hızlandır, seni beğenenleri
+                          gör ve daha fazlasını keşfet!
                         </Text>
-                        <Text
-                          className="w-16 text-center mb-2"
-                          style={{
-                            color: "#fff",
-                            fontSize: 25,
-                            fontFamily: "Duckie-regular",
-                          }}
-                        >
-                          gold
+                      </View>
+                      <View
+                        className="border-[1px] border-white/50 px-4 py-4"
+                        style={{
+                          borderRadius: 999,
+                          overflow: "hidden",
+                          borderCurve: "continuous",
+                        }}
+                      >
+                        <Text className="text-[#fff] font-bold text-[13px]">
+                          Yükselt
                         </Text>
                       </View>
                     </View>
 
-                    {/* Feature Rows */}
-                    {[
-                      { title: "Sınırsız Beğeni" },
-                      { title: "Seni Beğenenleri Gör" },
-                      { title: "Geri Alma (Rewind)" },
-                      { title: "Reklamsız Deneyim" },
-                    ].map((feature, index, arr) => (
-                      <View
-                        key={index}
-                        className={`flex-row items-center justify-between px-6 ${
-                          index !== arr.length - 1 ? "mb-4" : ""
-                        }`}
-                      >
-                        <Text className="text-white font-[500] text-[13px] flex-1 pr-2">
-                          {feature.title}
+                    {/* Comparison Table Section */}
+                    <View className="pt-5 pb-2">
+                      {/* Table Header */}
+                      <View className="flex-row items-center justify-between mb-2 px-6">
+                        <Text className="text-white/70 font-bold text-[12px] uppercase tracking-wider flex-1">
+                          Özellikler
                         </Text>
                         <View className="flex-row items-center gap-4">
-                          <View className="w-16 items-center">
-                            <X
-                              size={18}
-                              color="rgba(255, 255, 255, 0.4)"
-                              strokeWidth={2}
-                            />
-                          </View>
-                          <View className="w-16 items-center">
-                            <Check size={18} color="#fff" strokeWidth={2} />
-                          </View>
+                          <Text className="text-white/70 font-bold text-[12px] uppercase w-16 text-center">
+                            Standart
+                          </Text>
+                          <Text
+                            className="w-16 text-center mb-2"
+                            style={{
+                              color: "#fff",
+                              fontSize: 25,
+                              fontFamily: "Duckie-regular",
+                            }}
+                          >
+                            gold
+                          </Text>
                         </View>
                       </View>
-                    ))}
-                  </View>
 
-                  {/* Purchase Action Button */}
-                  <View className="px-5 pb-6 pt-3">
-                    <View
-                      className=" w-full border-[0.7px] border-white/50 py-[17px] items-center justify-center flex-row gap-2"
-                      style={{
-                        borderRadius: 999,
-                        borderCurve: "continuous",
-                        overflow: "hidden",
-                      }}
-                    >
-                      <Text className="font-medium text-[15px] text-white">
-                        249.99 ₺ / Ay
-                      </Text>
+                      {/* Feature Rows */}
+                      {[
+                        { title: "Sınırsız Beğeni" },
+                        { title: "Seni Beğenenleri Gör" },
+                        { title: "Geri Alma (Rewind)" },
+                        { title: "Reklamsız Deneyim" },
+                      ].map((feature, index, arr) => (
+                        <View
+                          key={index}
+                          className={`flex-row items-center justify-between px-6 ${
+                            index !== arr.length - 1 ? "mb-4" : ""
+                          }`}
+                        >
+                          <Text className="text-white font-[500] text-[13px] flex-1 pr-2">
+                            {feature.title}
+                          </Text>
+                          <View className="flex-row items-center gap-4">
+                            <View className="w-16 items-center">
+                              <X
+                                size={18}
+                                color="rgba(255, 255, 255, 0.4)"
+                                strokeWidth={2}
+                              />
+                            </View>
+                            <View className="w-16 items-center">
+                              <Check size={18} color="#fff" strokeWidth={2} />
+                            </View>
+                          </View>
+                        </View>
+                      ))}
                     </View>
-                  </View>
-                </LinearGradient>
-              </TouchableOpacity>
-            </View>
-          )}
 
-          {/* ── Profil Tamamlama Göstergeleri (Accordion) ── */}
-          {completionMetrics.some((m) => m.current < m.max) && (
-            <View style={{ paddingHorizontal: 16, paddingBottom: 24 }}>
+                    {/* Purchase Action Button */}
+                    <View className="px-5 pb-6 pt-3">
+                      <View
+                        className=" w-full border-[0.7px] border-white/50 py-[17px] items-center justify-center flex-row gap-2"
+                        style={{
+                          borderRadius: 999,
+                          borderCurve: "continuous",
+                          overflow: "hidden",
+                        }}
+                      >
+                        <Text className="font-medium text-[15px] text-white">
+                          249.99 ₺ / Ay
+                        </Text>
+                      </View>
+                    </View>
+                  </LinearGradient>
+                </TouchableOpacity>
+              </View>
+            )}
+
+            {/* ── Profil Tamamlama Göstergeleri (Accordion) ── */}
+            {completionMetrics.some((m) => m.current < m.max) && (
+              <View style={{ paddingHorizontal: 16, paddingBottom: 24 }}>
+                <Text
+                  style={{
+                    color: "#9CA3AF",
+                    fontSize: 13,
+                    fontWeight: "700",
+                    marginBottom: 12,
+                    marginLeft: 4,
+                  }}
+                >
+                  Profilini Tamamla
+                </Text>
+                {completionMetrics
+                  .filter((m) => m.current < m.max)
+                  .map((metric) => (
+                    <CompletionAccordion
+                      key={metric.key}
+                      title={metric.title}
+                      icon={metric.icon}
+                      current={metric.current}
+                      max={metric.max}
+                      description={metric.desc}
+                      isExpanded={expandedSection === metric.key}
+                      onToggle={() => handleAccordionToggle(metric.key)}
+                      onEdit={openEditProfile}
+                    />
+                  ))}
+              </View>
+            )}
+
+            {/* ── Hesap Sil / Çıkış Yap ── */}
+            <View style={{ paddingHorizontal: 16, paddingBottom: 64 }}>
               <Text
                 style={{
                   color: "#9CA3AF",
@@ -1657,59 +1835,29 @@ export default function ProfileScreen() {
                   marginLeft: 4,
                 }}
               >
-                Profilini Tamamla
+                Hesap
               </Text>
-              {completionMetrics
-                .filter((m) => m.current < m.max)
-                .map((metric) => (
-                  <CompletionAccordion
-                    key={metric.key}
-                    title={metric.title}
-                    icon={metric.icon}
-                    current={metric.current}
-                    max={metric.max}
-                    description={metric.desc}
-                    isExpanded={expandedSection === metric.key}
-                    onToggle={() => handleAccordionToggle(metric.key)}
-                    onEdit={openEditProfile}
-                  />
-                ))}
-            </View>
-          )}
-
-          {/* ── Hesap Sil / Çıkış Yap ── */}
-          <View style={{ paddingHorizontal: 16, paddingBottom: 64 }}>
-            <Text
-              style={{
-                color: "#9CA3AF",
-                fontSize: 13,
-                fontWeight: "700",
-                marginBottom: 12,
-                marginLeft: 4,
-              }}
-            >
-              Hesap
-            </Text>
-            <View>
-              <TouchableOpacity
-                onPress={handleLogout}
-                style={{
-                  borderRadius: 999,
-                  borderCurve: "continuous",
-                  overflow: "hidden",
-                }}
-                className="flex-row justify-center text-center items-center border-[0.5px] border-white/10 px-3 py-5 gap-2"
-              >
-                <LogOut size={20} color="#fff" strokeWidth={1.5} />
-                <Text
-                  style={{ color: "#fff", fontWeight: "500", fontSize: 14 }}
+              <View>
+                <TouchableOpacity
+                  onPress={handleLogout}
+                  style={{
+                    borderRadius: 999,
+                    borderCurve: "continuous",
+                    overflow: "hidden",
+                  }}
+                  className="flex-row justify-center text-center items-center border-[0.5px] border-white/10 px-3 py-5 gap-2"
                 >
-                  Çıkış Yap
-                </Text>
-              </TouchableOpacity>
+                  <LogOut size={20} color="#fff" strokeWidth={1.5} />
+                  <Text
+                    style={{ color: "#fff", fontWeight: "500", fontSize: 14 }}
+                  >
+                    Çıkış Yap
+                  </Text>
+                </TouchableOpacity>
+              </View>
             </View>
-          </View>
-        </ScrollView>
+          </ScrollView>
+        )}
 
         {/* ══ PROFİL DÜZENLEME MODALI ══ */}
         <ProfileEditModal
@@ -1771,24 +1919,27 @@ export default function ProfileScreen() {
               <Text
                 style={{
                   color: "#fff",
-                  fontSize: 15,
+                  fontSize: 20,
                   fontWeight: "600",
                   marginBottom: 6,
                 }}
               >
                 Fotoğraflar
               </Text>
-              <Text
-                style={{
-                  color: "#9CA3AF",
-                  fontSize: 15,
-                  fontWeight: "500",
-                  marginBottom: 12,
-                }}
-              >
-                Sıralamak için basılı tut ve sürükle. İlk fotoğrafın ana
-                fotoğrafın olur.
-              </Text>
+              <View className="flex-row items-center gap-2 mb-3 pr-4">
+                {" "}
+                <InfoIcon size={16} color="#9CA3AF" />
+                <Text
+                  style={{
+                    color: "#9CA3AF",
+                    fontSize: 14,
+                    fontWeight: "400",
+                  }}
+                >
+                  Sıralamak için basılı tut ve sürükle. İlk fotoğrafın ana
+                  fotoğrafın olur.
+                </Text>
+              </View>
               {savingPhoto && (
                 <ActivityIndicator size="small" color="#9CA3AF" />
               )}
@@ -1895,24 +2046,27 @@ export default function ProfileScreen() {
               <Text
                 style={{
                   color: "#fff",
-                  fontSize: 15,
+                  fontSize: 20,
                   fontWeight: "600",
                   marginBottom: 6,
                 }}
               >
                 Biyografi
               </Text>
-              <Text
-                style={{
-                  color: "#9CA3AF",
-                  fontSize: 15,
-                  fontWeight: "500",
-                  marginBottom: 12,
-                }}
-              >
-                Kendini tanıtabileceğin kısa bir biyografi yazabilirsin. Neler
-                yaptığından bahset.
-              </Text>
+              <View className="flex-row items-center gap-2 mb-3 pr-4">
+                {" "}
+                <InfoIcon size={16} color="#9CA3AF" />
+                <Text
+                  style={{
+                    color: "#9CA3AF",
+                    fontSize: 14,
+                    fontWeight: "400",
+                  }}
+                >
+                  Kendini tanıtabileceğin kısa bir biyografi yazabilirsin. Neler
+                  yaptığından bahset.
+                </Text>
+              </View>
             </View>
             <TextInput
               value={bioText}
@@ -1951,23 +2105,26 @@ export default function ProfileScreen() {
               <Text
                 style={{
                   color: "#fff",
-                  fontSize: 15,
+                  fontSize: 20,
                   fontWeight: "600",
                   marginBottom: 6,
                 }}
               >
                 Hobiler ({draftHobbies.length} seçildi)
               </Text>
-              <Text
-                style={{
-                  color: "#9CA3AF",
-                  fontSize: 15,
-                  fontWeight: "500",
-                }}
-              >
-                Hangi hobilerle ilgileniyorsan onları seç. Diğer kullanıcılar
-                seni daha iyi tanımak için bu bilgileri kullanacak.
-              </Text>
+              <View className="flex-row items-center gap-2 mb-3 pr-4">
+                <InfoIcon size={16} color="#9CA3AF" />
+                <Text
+                  style={{
+                    color: "#9CA3AF",
+                    fontSize: 14,
+                    fontWeight: "400",
+                  }}
+                >
+                  Sıralamak için basılı tut ve sürükle. İlk fotoğrafın ana
+                  fotoğrafın olur.
+                </Text>
+              </View>
             </View>
             {hobbyGroups.map((group, gi) => (
               <View key={gi} style={{ marginTop: 16 }}>
@@ -2013,25 +2170,27 @@ export default function ProfileScreen() {
                 <Text
                   style={{
                     color: "#fff",
-                    fontSize: 15,
+                    fontSize: 20,
                     fontWeight: "600",
                     marginBottom: 6,
                   }}
                 >
                   Sigara Kullanımı
                 </Text>
-                <Text
-                  style={{
-                    color: "#9CA3AF",
-                    fontSize: 15,
-                    fontWeight: "500",
-                    marginBottom: 12,
-                  }}
-                >
-                  Sigara kullanım durumunu seç. Bu bilgi, sigara içen veya
-                  içmeyen kullanıcıların birbirlerini daha kolay bulmasını
-                  sağlar.
-                </Text>
+                <View className="flex-row items-center gap-2 mb-3 pr-4">
+                  <InfoIcon size={16} color="#9CA3AF" />
+                  <Text
+                    style={{
+                      color: "#9CA3AF",
+                      fontSize: 14,
+                      fontWeight: "400",
+                    }}
+                  >
+                    Sigara kullanım durumunu seç. Bu bilgi, sigara içen veya
+                    içmeyen kullanıcıların birbirlerini daha kolay bulmasını
+                    sağlar.
+                  </Text>
+                </View>
               </View>
               {smokingOptions.map((opt) => (
                 <OptionListItem
@@ -2061,24 +2220,27 @@ export default function ProfileScreen() {
                 <Text
                   style={{
                     color: "#fff",
-                    fontSize: 15,
+                    fontSize: 20,
                     fontWeight: "600",
                     marginBottom: 6,
                   }}
                 >
                   Burç
                 </Text>
-                <Text
-                  style={{
-                    color: "#9CA3AF",
-                    fontSize: 15,
-                    fontWeight: "500",
-                    marginBottom: 12,
-                  }}
-                >
-                  Burç seçimini yap. Bazı kullanıcılar için burç bilgisi, ortak
-                  ilgi alanlarını keşfetmek açısından önemli olabilir.
-                </Text>
+
+                <View className="flex-row items-center gap-2 mb-3 pr-4">
+                  <InfoIcon size={16} color="#9CA3AF" />
+                  <Text
+                    style={{
+                      color: "#9CA3AF",
+                      fontSize: 14,
+                      fontWeight: "400",
+                    }}
+                  >
+                    Burç seçimini yap. Bazı kullanıcılar için burç bilgisi,
+                    ortak ilgi alanlarını keşfetmek açısından önemli olabilir.
+                  </Text>
+                </View>
               </View>
               <View style={{ flexDirection: "row", flexWrap: "wrap", gap: 8 }}>
                 {zodiacOptions.map((opt) => {
@@ -2140,23 +2302,25 @@ export default function ProfileScreen() {
                 <Text
                   style={{
                     color: "#fff",
-                    fontSize: 15,
+                    fontSize: 20,
                     fontWeight: "600",
                     marginBottom: 6,
                   }}
                 >
                   Kullanım Amacı
                 </Text>
-                <Text
-                  style={{
-                    color: "#9CA3AF",
-                    fontSize: 15,
-                    fontWeight: "500",
-                    marginBottom: 12,
-                  }}
-                >
-                  Lit'i hangi amaçla kullandığını seç.
-                </Text>
+                <View className="flex-row items-center gap-2 mb-3 pr-4">
+                  <InfoIcon size={16} color="#9CA3AF" />
+                  <Text
+                    style={{
+                      color: "#9CA3AF",
+                      fontSize: 14,
+                      fontWeight: "400",
+                    }}
+                  >
+                    Lit'i hangi amaçla kullandığını seç.
+                  </Text>
+                </View>
               </View>
               {usagePurposeOptions.map((opt) => {
                 const purposeMap = {
