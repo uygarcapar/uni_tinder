@@ -81,6 +81,9 @@ export const API_ENDPOINTS = {
   MESSAGES_DELIVERED: (msgId) => `/api/messages/${msgId}/delivered`,
   MESSAGES_SEARCH: (convId) => `/api/messages/conversations/${convId}/search`,
   MESSAGES_UPLOAD_URL: "/api/messages/upload-url",
+  // FAZ 6: chat economy — per-room quota state + unlock receipt redeem.
+  MESSAGES_QUOTA: (convId) => `/api/messages/conversations/${convId}/quota`,
+  MESSAGES_UNLOCK: (convId) => `/api/messages/conversations/${convId}/unlock`,
 
   // Moderation — block / unblock / report
   MODERATION_BLOCK: (userId) => `/api/moderation/block/${userId}`,

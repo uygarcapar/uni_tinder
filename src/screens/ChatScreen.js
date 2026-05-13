@@ -15,7 +15,7 @@ import {
 } from 'react-native';
 import { SafeAreaView, useSafeAreaInsets } from 'react-native-safe-area-context';
 import { useDispatch, useSelector } from 'react-redux';
-import { ChevronLeft, MoreVertical, X } from 'lucide-react-native';
+import { ChevronLeft, MoreVertical, X, Lock, Infinity as InfinityIcon } from 'lucide-react-native';
 import * as Haptics from 'expo-haptics';
 import {
   fetchHistory,
@@ -24,6 +24,8 @@ import {
   failOptimisticMessage,
   removeOptimisticMessage,
   clearUnreadForConversation,
+  fetchChatQuota,
+  decrementQuotaLocally,
 } from '../store/slices/chatSlice';
 import chatService from '../services/chatService';
 import realtimeService from '../services/realtimeService';
@@ -37,6 +39,8 @@ import SearchSheet from '../components/SearchSheet';
 import ReportModal from '../components/ReportModal';
 import DateSeparator, { withDateSeparators } from '../components/DateSeparator';
 import moderationService from '../services/moderationService';
+import ChatUnlockSheet from '../components/ChatUnlockSheet';
+import uiBus from '../services/uiBus';
 
 const ContentType = { Text: 0, Image: 1, Voice: 2, Video: 3, System: 99 };
 
@@ -80,6 +84,20 @@ export default function ChatScreen({ route, navigation }) {
   const [reportOpen, setReportOpen] = useState(false);
   const deliveredAckedRef = useRef(new Set()); // tek seferlik ack
   const listRef = useRef(null);
+  // FAZ 6: chat economy quota state — Redux'ta tutuluyor, hem optimistic hem authoritative refresh.
+  const quota = useSelector((s) => s.chat.quotaByConv?.[conversationId]);
+  const unlockSheetRef = useRef(null);
+
+  // FAZ 6: SignalR hub "Error" → CHAT_QUOTA_EXHAUSTED — AppNavigator uiBus üzerinden
+  // bildiriyor. Aktif chat ekranındaysak paywall'ı aç + authoritative quota fetch et.
+  useEffect(() => {
+    const unsub = uiBus.on('chatQuotaExhausted', (payload) => {
+      if (payload?.conversationId !== conversationId) return;
+      dispatch(fetchChatQuota(conversationId));
+      unlockSheetRef.current?.present?.();
+    });
+    return unsub;
+  }, [conversationId, dispatch]);
 
   // Active conversation life-cycle.
   useEffect(() => {
@@ -89,7 +107,7 @@ export default function ChatScreen({ route, navigation }) {
     };
   }, [conversationId, dispatch]);
 
-  // İlk yüklemede history fetch + Hub join + mark read.
+  // İlk yüklemede history fetch + Hub join + mark read + chat quota fetch.
   useEffect(() => {
     let mounted = true;
     (async () => {
@@ -99,6 +117,8 @@ export default function ChatScreen({ route, navigation }) {
         await realtimeService.joinConversation(conversationId).catch(() => {});
         await chatService.markRead(conversationId).catch(() => {});
         dispatch(clearUnreadForConversation(conversationId));
+        // FAZ 6: per-conversation quota status (premium / unlocked / kalan mesaj).
+        dispatch(fetchChatQuota(conversationId));
       } catch (err) {
         console.warn('chat init err:', err?.message);
       }
@@ -142,6 +162,13 @@ export default function ChatScreen({ route, navigation }) {
   }, [conversationId, dispatch, hasMore, loadingHistory, nextCursor]);
 
   const handleSend = useCallback(async ({ content, contentType, mediaUrl, replyToMessageId, clientMessageId }) => {
+    // FAZ 6: pre-send guard. Quota authoritatively yüklenmiş olmalı (initial fetch).
+    // Bilinen exhaustion → paywall aç, optimistic message bile insert etme.
+    if (quota && quota.requiresUnlock) {
+      unlockSheetRef.current?.present?.();
+      return;
+    }
+
     const optimistic = {
       id: `temp-${clientMessageId}`,
       conversationId,
@@ -186,11 +213,24 @@ export default function ChatScreen({ route, navigation }) {
           mediaUrl,
         });
       }
+
+      // FAZ 6: başarılı send → quota counter'ı optimistic decrement et (unlimited ise no-op).
+      dispatch(decrementQuotaLocally({ conversationId }));
     } catch (err) {
+      // FAZ 6: backend 402 → quota cap dolu, paywall aç. Optimistic mesajı failed olarak işaretle.
+      const status = err?.response?.status;
+      const paywallType = err?.response?.data?.result?.paywallType;
+      if (status === 402 || paywallType === 'CHAT_QUOTA_EXHAUSTED') {
+        dispatch(removeOptimisticMessage({ conversationId, clientMessageId }));
+        // Authoritative state'i yenile + paywall aç
+        dispatch(fetchChatQuota(conversationId));
+        unlockSheetRef.current?.present?.();
+        return;
+      }
       console.warn('send failed:', err?.message);
       dispatch(failOptimisticMessage({ conversationId, clientMessageId }));
     }
-  }, [conversationId, dispatch, messages, myUserId]);
+  }, [conversationId, dispatch, messages, myUserId, quota]);
 
   const handleTypingChange = useCallback((isTyping) => {
     if (isTyping) realtimeService.startTyping(conversationId).catch(() => {});
@@ -372,6 +412,8 @@ export default function ChatScreen({ route, navigation }) {
         onMenu={() => setOptionsOpen(true)}
       />
 
+      <QuotaBanner quota={quota} onUnlockPress={() => unlockSheetRef.current?.present?.()} />
+
       <KeyboardAvoidingView
         style={{ flex: 1 }}
         behavior={Platform.OS === 'ios' ? 'padding' : undefined}
@@ -471,8 +513,100 @@ export default function ChatScreen({ route, navigation }) {
         onCancel={() => setEditTarget(null)}
         onSave={handleEditSave}
       />
+
+      {/* FAZ 6: chat economy paywall — consumable Chat Unlock satın alma */}
+      <ChatUnlockSheet
+        bottomSheetRef={unlockSheetRef}
+        conversationId={conversationId}
+        onClose={() => unlockSheetRef.current?.dismiss?.()}
+      />
     </SafeAreaView>
   );
+}
+
+// FAZ 6: chat quota status banner. Sadece bilgi-değeri olan durumlarda görünür:
+//   - exhausted → CTA tıklanabilir bar
+//   - <= 10 mesaj kaldı → uyarı banner'ı
+//   - unlocked → küçük "Sınırsız" rozeti (kullanıcı satın aldığını görsün)
+//   - Both-premium / loading / plenty-left → render etme (UI temiz kalsın)
+function QuotaBanner({ quota, onUnlockPress }) {
+  if (!quota) return null;
+  if (quota.bothPremium) return null;
+
+  if (quota.isUnlocked) {
+    return (
+      <View
+        style={{
+          flexDirection: 'row',
+          alignItems: 'center',
+          gap: 6,
+          paddingHorizontal: 16,
+          paddingVertical: 8,
+          backgroundColor: 'rgba(52,211,153,0.08)',
+          borderBottomWidth: 0.5,
+          borderBottomColor: 'rgba(255,255,255,0.05)',
+        }}
+      >
+        <InfinityIcon size={14} color="#34d399" strokeWidth={2} pointerEvents="none" />
+        <Text style={{ color: '#34d399', fontSize: 12, fontWeight: '600' }}>
+          Sınırsız sohbet
+        </Text>
+      </View>
+    );
+  }
+
+  const remaining = quota.remainingMessages;
+  if (remaining == null) return null; // unlimited (premium-premium / unlocked zaten yukarıda yakalandı)
+
+  if (remaining <= 0 || quota.requiresUnlock) {
+    return (
+      <TouchableOpacity
+        onPress={onUnlockPress}
+        activeOpacity={0.85}
+        style={{
+          flexDirection: 'row',
+          alignItems: 'center',
+          justifyContent: 'space-between',
+          paddingHorizontal: 16,
+          paddingVertical: 10,
+          backgroundColor: 'rgba(252,69,38,0.12)',
+          borderBottomWidth: 0.5,
+          borderBottomColor: 'rgba(252,69,38,0.3)',
+        }}
+      >
+        <View style={{ flexDirection: 'row', alignItems: 'center', gap: 8 }}>
+          <Lock size={14} color="#fc4526" strokeWidth={2} pointerEvents="none" />
+          <Text style={{ color: '#fc4526', fontSize: 13, fontWeight: '700' }}>
+            Mesaj sınırına ulaştın
+          </Text>
+        </View>
+        <Text style={{ color: '#fc4526', fontSize: 12, fontWeight: '600' }}>
+          Sohbeti Aç →
+        </Text>
+      </TouchableOpacity>
+    );
+  }
+
+  if (remaining <= 10) {
+    return (
+      <View
+        style={{
+          paddingHorizontal: 16,
+          paddingVertical: 8,
+          backgroundColor: 'rgba(245,118,86,0.08)',
+          borderBottomWidth: 0.5,
+          borderBottomColor: 'rgba(255,255,255,0.05)',
+        }}
+      >
+        <Text style={{ color: '#f57656', fontSize: 12, fontWeight: '600' }}>
+          {remaining} mesaj hakkın kaldı — ikiniz Premium olursanız sınırsız olur
+        </Text>
+      </View>
+    );
+  }
+
+  // Çok mesaj kaldı (10+) — UI'yı kalabalık etme.
+  return null;
 }
 
 function ChatHeader({ partner, isOnline, isTyping, onBack, onMenu }) {
