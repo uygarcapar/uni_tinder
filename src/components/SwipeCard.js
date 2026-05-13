@@ -604,7 +604,7 @@ export default function SwipeCard({
     <Animated.View
       style={[
         {
-          borderRadius: 40,
+          borderRadius: 50,
           borderCurve: "continuous",
           overflow: "hidden",
         },

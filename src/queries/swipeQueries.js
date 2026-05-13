@@ -75,9 +75,15 @@ export function useSwipeStats() {
         undoCountResetAt: r.undoCountResetAt ?? null,
         remainingMissedMatchRecovery: r.remainingMissedMatchRecovery ?? null,
         missedMatchRecoveryResetAt: r.missedMatchRecoveryResetAt ?? null,
+        swipeResetInSeconds: r.swipeResetInSeconds ?? null,
+        nextSwipeResetAt: r.nextSwipeResetAt ?? null,
       };
     },
-    staleTime: 30 * 1000,
+    // Stats sadece bir kez fetch — sonraki update'ler optimistik setQueryData
+    // ile. Otomatik refetch yok (her swipe sonrası gereksiz GET Stats önlenir).
+    staleTime: Infinity,
+    refetchOnMount: false,
+    refetchOnReconnect: false,
   });
 }
 

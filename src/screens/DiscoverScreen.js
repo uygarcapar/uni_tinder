@@ -21,6 +21,8 @@ import Animated, {
   useSharedValue,
   withTiming,
   withRepeat,
+  withSequence,
+  cancelAnimation,
   useAnimatedStyle,
   useAnimatedProps,
   Easing,
@@ -245,6 +247,7 @@ const AnimatedPath = Animated.createAnimatedComponent(Path);
 const WaveFillLogo = ({ fillRatio = 0 }) => {
   const phase = useSharedValue(0);
   const fillSV = useSharedValue(fillRatio);
+  const shakeX = useSharedValue(0);
 
   useEffect(() => {
     phase.value = withRepeat(
@@ -258,12 +261,37 @@ const WaveFillLogo = ({ fillRatio = 0 }) => {
     fillSV.value = withTiming(fillRatio, { duration: 600 });
   }, [fillRatio, fillSV]);
 
+  // Swipe hakkı bittiğinde (fill=1) logo sürekli titrer — kullanıcıya görsel uyarı.
+  useEffect(() => {
+    if (fillRatio >= 1) {
+      shakeX.value = withRepeat(
+        withSequence(
+          withTiming(-2, { duration: 50 }),
+          withTiming(2, { duration: 50 }),
+          withTiming(-2, { duration: 50 }),
+          withTiming(2, { duration: 50 }),
+          withTiming(0, { duration: 50 }),
+          withTiming(0, { duration: 1200 }),
+        ),
+        -1,
+        false,
+      );
+    } else {
+      cancelAnimation(shakeX);
+      shakeX.value = withTiming(0, { duration: 100 });
+    }
+  }, [fillRatio, shakeX]);
+
+  const shakeStyle = useAnimatedStyle(() => ({
+    transform: [{ translateX: shakeX.value }],
+  }));
+
   const animatedProps = useAnimatedProps(() => {
     const f = Math.min(1, Math.max(0, fillSV.value));
-    const baselineY = LOGO_H - f * LOGO_H;
+    // Minimum 6px taban → f=0 olsa bile altta ince dalga görünür ve oynar.
+    const baselineY = Math.min(LOGO_H - 6, LOGO_H - f * LOGO_H);
     const ph = phase.value;
-    // Amplitude fill ile büyür — fill=0 iken dalga yok, sıvının düz görünmesini engeller.
-    const amp = 4 * Math.min(1, f * 4);
+    const amp = 4; // sabit amplitude → dalga her zaman görünür
     const freq = 2; // genişlik boyunca 2 dalga
     const segments = 40;
     let d = `M 0 ${baselineY + amp * Math.sin(ph)}`;
@@ -278,6 +306,7 @@ const WaveFillLogo = ({ fillRatio = 0 }) => {
   });
 
   return (
+    <Animated.View style={shakeStyle}>
     <MaskedView
       maskElement={
         <Image
@@ -318,6 +347,7 @@ const WaveFillLogo = ({ fillRatio = 0 }) => {
         </Svg>
       </View>
     </MaskedView>
+    </Animated.View>
   );
 };
 
@@ -722,21 +752,28 @@ export default function DiscoverScreen() {
   const undoMutation = useUndoSwipe();
   const updateStatsCache = useUpdateStatsCache();
 
-  const potentialMatches = useMemo(
-    () => matchesQuery.data?.pages.flatMap((p) => p.profiles) ?? [],
-    [matchesQuery.data],
-  );
+  const potentialMatches = useMemo(() => {
+    const all = matchesQuery.data?.pages.flatMap((p) => p.profiles) ?? [];
+    // Dedupe by userId — backend bazen sayfa kenarlarında aynı user'ı tekrar
+    // dönebiliyor; duplicate key error'unu engeller.
+    const seen = new Set();
+    return all.filter((p) => {
+      if (!p?.userId || seen.has(p.userId)) return false;
+      seen.add(p.userId);
+      return true;
+    });
+  }, [matchesQuery.data]);
   const loading = matchesQuery.isLoading;
   const filters = filtersQuery.data ?? DEFAULT_FILTERS;
   const remainingUndos = statsQuery.data?.remainingUndos ?? null;
 
-  // Lit logosu için fill oranı: Premium → sınırsız (fill=0).
+  // Lit logosu için fill oranı: Premium veya remainingSwipes===-1 → sınırsız (fill=0).
   // Free → günlük 30 limit, (30 - remaining) / 30.
   const DAILY_SWIPE_LIMIT = 30;
   const swipeFillRatio = useMemo(() => {
     if (statsQuery.data?.isPremium) return 0;
     const rem = statsQuery.data?.remainingSwipes;
-    if (rem == null) return 0;
+    if (rem == null || rem < 0) return 0;
     const used = Math.max(0, DAILY_SWIPE_LIMIT - rem);
     return Math.min(1, used / DAILY_SWIPE_LIMIT);
   }, [statsQuery.data?.remainingSwipes, statsQuery.data?.isPremium]);
@@ -755,6 +792,46 @@ export default function DiscoverScreen() {
     });
     return unsub;
   }, []);
+
+  // Logo tap bildirim mesajı (string veya null). 2s sonra kapanır.
+  const [logoNotif, setLogoNotif] = useState(null);
+  const logoNotifTimer = useRef(null);
+
+  const showLogoNotif = useCallback((text) => {
+    if (logoNotifTimer.current) clearTimeout(logoNotifTimer.current);
+    setLogoNotif(text);
+    logoNotifTimer.current = setTimeout(() => setLogoNotif(null), 2000);
+  }, []);
+
+  useEffect(
+    () => () => {
+      if (logoNotifTimer.current) clearTimeout(logoNotifTimer.current);
+    },
+    [],
+  );
+
+  const handleLogoPress = useCallback(() => {
+    const rem = statsQuery.data?.remainingSwipes;
+    const isPremium = statsQuery.data?.isPremium;
+    // Premium veya rem === -1 (unlimited) → sınırsız mesajı
+    if (isPremium || rem === -1) {
+      showLogoNotif("Sınırsız swipe hakkın var");
+      return;
+    }
+    if (rem == null || rem > 0) {
+      showLogoNotif(`Kalan ${rem ?? "—"} swipe hakkın`);
+    } else {
+      const sec = statsQuery.data?.swipeResetInSeconds ?? 0;
+      const h = Math.floor(sec / 3600);
+      const m = Math.floor((sec % 3600) / 60);
+      showLogoNotif(`${h} saat ${m} dakika sonra yenilenir`);
+    }
+  }, [
+    statsQuery.data?.remainingSwipes,
+    statsQuery.data?.isPremium,
+    statsQuery.data?.swipeResetInSeconds,
+    showLogoNotif,
+  ]);
 
   const filterBottomSheetRef = useRef(null);
   const lastSwipePromiseRef = useRef(null);
@@ -976,8 +1053,16 @@ export default function DiscoverScreen() {
             </TouchableOpacity>
           </View>
 
-          {/* Logo — kullanılan swipe oranına göre dalgalı turuncu doldurma */}
-          <WaveFillLogo fillRatio={swipeFillRatio} />
+          {/* Logo — tap: hak varsa refresh + bildirim, yoksa reset süresi bildirimi */}
+          <TouchableOpacity
+            onPress={handleLogoPress}
+            activeOpacity={0.7}
+            hitSlop={10}
+          >
+            <View pointerEvents="none">
+              <WaveFillLogo fillRatio={swipeFillRatio} />
+            </View>
+          </TouchableOpacity>
 
           {/* Filter */}
           <View style={{ flex: 1, alignItems: "flex-end" }}>
@@ -991,6 +1076,43 @@ export default function DiscoverScreen() {
             </TouchableOpacity>
           </View>
         </View>
+        {/* Logo tap bildirimi — absolute overlay (header altına float), 2s sonra kapanır */}
+        {logoNotif && (
+          <View
+            pointerEvents="none"
+            style={{
+              position: "absolute",
+              top: insets.top + 50,
+              left: 0,
+              right: 0,
+              alignItems: "center",
+              zIndex: 100,
+            }}
+          >
+            <View
+              style={{
+                borderRadius: 999,
+                borderCurve: "continuous",
+                overflow: "hidden",
+                paddingHorizontal: 14,
+                paddingVertical: 8,
+                backgroundColor: "rgba(30,30,30,0.95)",
+                borderWidth: 0.5,
+                borderColor: "rgba(255,255,255,0.12)",
+              }}
+            >
+              <Text
+                style={{
+                  color: "#fff",
+                  fontSize: 12,
+                  fontWeight: "600",
+                }}
+              >
+                {logoNotif}
+              </Text>
+            </View>
+          </View>
+        )}
       </View>
 
       {/* Cards */}

@@ -15,8 +15,9 @@ import SettingsModal from '../components/SettingsModal';
 import { setCurrentAccessToken, setOnTokenRefreshed, setOnAuthLost } from '../services/api';
 import { setUserAndToken, clearRegistrationForm, logout } from '../store/slices/authSlice';
 import { saveRefreshToken } from '../utils/tokenStorage';
-import { fetchSubscriptionStatus } from '../store/slices/subscriptionSlice';
+import { fetchSubscriptionStatus, setPremium } from '../store/slices/subscriptionSlice';
 import { initRevenueCat, loginRevenueCat } from '../services/subscriptionService';
+import { queryClient } from '../queries/queryClient';
 import AuthNavigator from './AuthNavigator';
 import TabNavigator from './TabNavigator';
 import KVKKConsentScreen, { CURRENT_KVKK_VERSION } from '../screens/KVKKConsentScreen';
@@ -285,6 +286,21 @@ export default function AppNavigator() {
     }
     prevAuthRef.current = isAuthenticated;
   }, [isAuthenticated]);
+
+  // ============ User identity change → cache reset ============
+  // user.userId değiştiğinde (logout, hesap değiştirme, yeni kayıt) per-user
+  // cache'leri temizle: React Query (swipe stats/matches/filters, profile)
+  // ve subscription Redux slice'ı. Aksi halde User A'nın stats'i User B'de
+  // dalga animasyonu ve kalan swipe sayısı olarak sızar (reload düzeltir).
+  const currentUserId = user?.userId ?? null;
+  const prevUserIdRef = useRef(currentUserId);
+  useEffect(() => {
+    if (prevUserIdRef.current !== currentUserId) {
+      queryClient.clear();
+      dispatch(setPremium({ isPremium: false, expiresAt: null }));
+      prevUserIdRef.current = currentUserId;
+    }
+  }, [currentUserId, dispatch]);
 
   // ============ Global Settings modal — uiBus üzerinden her ekran açabilir ============
   useEffect(() => {

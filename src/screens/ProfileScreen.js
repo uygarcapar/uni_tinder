@@ -829,6 +829,7 @@ function CompletionAccordion({
       }}
     >
       <TouchableOpacity
+        className="bg-[#1E1E1E]"
         activeOpacity={1}
         onPress={onToggle}
         style={{
@@ -859,7 +860,7 @@ function CompletionAccordion({
           </Animated.View>
         </View>
       </TouchableOpacity>
-      <Animated.View style={contentStyle}>
+      <Animated.View className="bg-[#1E1E1E]" style={contentStyle}>
         <View style={{ paddingHorizontal: 16, paddingBottom: 16 }}>
           <Text
             style={{
@@ -872,13 +873,13 @@ function CompletionAccordion({
             {description}
           </Text>
           <TouchableOpacity
-            className="border-[0.5px] border-white/10"
+            className="border-[0.5px] border-white/10 "
             onPress={onEdit}
             activeOpacity={1}
             style={{
               borderCurve: "continuous",
               overflow: "hidden",
-              backgroundColor: "#1E1E1E",
+              backgroundColor: "#383838",
               paddingVertical: 16,
               borderRadius: 999,
               alignItems: "center",
@@ -1011,6 +1012,7 @@ function ProfileEditModal({
 export default function ProfileScreen() {
   const dispatch = useDispatch();
   const { user } = useSelector((state) => state.auth);
+  const subscriptionIsPremium = useSelector((s) => s.subscription?.isPremium);
   const insets = useSafeAreaInsets();
 
   // ── Bottom Sheet Ref & Görünürlük Stateleri ────────────────────────────────
@@ -1048,6 +1050,7 @@ export default function ProfileScreen() {
 
   // ── Profil verisi ──────────────────────────────────────────────────────────
   const [myProfile, setMyProfile] = useState(null);
+  const isPremium = subscriptionIsPremium || myProfile?.isPremium;
   const [hobbyMap, setHobbyMap] = useState({});
   const [hobbyGroups, setHobbyGroups] = useState([]);
   const [smokingOptions, setSmokingOptions] = useState([]);
@@ -1689,7 +1692,7 @@ export default function ProfileScreen() {
             </View>
 
             {/* --- PREMIUM UPSELL BANNER & COMPARISON --- */}
-            {!myProfile?.isPremium && (
+            {!isPremium && (
               <View className="mb-10 px-4 mt-2">
                 <TouchableOpacity
                   activeOpacity={0.9}
