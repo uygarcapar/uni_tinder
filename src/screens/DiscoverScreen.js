@@ -321,13 +321,28 @@ const WaveFillLogo = ({ fillRatio = 0 }) => {
   );
 };
 
+// Backend (DiscoveryOptions.FreeMaxDistanceKm) bunu zaten 50'ye clamp ediyor — UI'da da
+// aynı sınırı görünür hâle getir, kullanıcı 100 yazıp 50 sonuç alıp şaşırmasın.
+const FREE_MAX_DISTANCE_KM = 50;
+
 function FilterModal({ bottomSheetRef, filters, isPremium, onSave, saving }) {
-  const [local, setLocal] = useState(filters);
+  // Free user için maxDistance'ı initial state'te de clamp et — backend zaten yapıyor
+  // ama UI bunu yansıtmazsa kullanıcı "100 km" görür, sonuç 50 km içinden gelir → şaşırır.
+  const clampFiltersForFree = (f) => {
+    if (isPremium || !f) return f;
+    const d = parseInt(f.maxDistance);
+    if (!isNaN(d) && d > FREE_MAX_DISTANCE_KM) {
+      return { ...f, maxDistance: FREE_MAX_DISTANCE_KM };
+    }
+    return f;
+  };
+
+  const [local, setLocal] = useState(() => clampFiltersForFree(filters));
   const [isDragging, setIsDragging] = useState(false);
 
   useEffect(() => {
-    setLocal(filters);
-  }, [filters]);
+    setLocal(clampFiltersForFree(filters));
+  }, [filters, isPremium]);
 
   const renderBackdrop = useCallback(
     (props) => (
@@ -535,8 +550,30 @@ function FilterModal({ bottomSheetRef, filters, isPremium, onSave, saving }) {
         </Text>
         {pillInput(local.maxDistance, (v) => {
           const n = parseInt(v);
-          setLocal((p) => ({ ...p, maxDistance: isNaN(n) ? "" : n }));
+          if (isNaN(n)) {
+            setLocal((p) => ({ ...p, maxDistance: "" }));
+            return;
+          }
+          // Free user: backend 50km clamp ediyor — UI'da da clamp et + altta uyarı göster.
+          const capped = !isPremium && n > FREE_MAX_DISTANCE_KM ? FREE_MAX_DISTANCE_KM : n;
+          setLocal((p) => ({ ...p, maxDistance: capped }));
         })}
+        {!isPremium && (
+          <View
+            style={{
+              flexDirection: "row",
+              alignItems: "center",
+              gap: 6,
+              marginTop: 8,
+              paddingHorizontal: 4,
+            }}
+          >
+            <Lock size={12} color="#9CA3AF" />
+            <Text style={{ color: "#9CA3AF", fontSize: 12 }}>
+              Free üye sınırı {FREE_MAX_DISTANCE_KM} km — daha fazlası için Premium
+            </Text>
+          </View>
+        )}
 
         {/* Gender */}
         <Text
@@ -840,6 +877,14 @@ export default function DiscoverScreen() {
 
   const handleSuperLikeButton = () => {
     if (isSwiping || potentialMatches.length <= currentIndex) return;
+    // Kota yoksa backend 403 dönecek; UX olarak doğrudan paywall'a yönlendir.
+    // Premium kullanıcının 5/gün kotası bittiğinde de bu yol çalışır — paywall'da
+    // ileride SuperLike consumable pack satın alma akışı açılacak (FAZ 6).
+    const remaining = statsQuery.data?.superLikesRemaining;
+    if (typeof remaining === "number" && remaining <= 0) {
+      purchaseBottomSheetRef.current?.present();
+      return;
+    }
     setIsSwiping(true);
     programmaticSwipe.value = 3;
     setTimeout(() => setIsSwiping(false), 300);

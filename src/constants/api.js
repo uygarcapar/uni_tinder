@@ -62,6 +62,7 @@ export const API_ENDPOINTS = {
 
   // Subscription
   SUBSCRIPTION_STATUS: "/api/subscription/status",
+  SUBSCRIPTION_SYNC: "/api/subscription/sync",
 
   // ============ Messaging ============
   // Conversation list + history + send + read + restore + media + reactions + edit/delete + search.

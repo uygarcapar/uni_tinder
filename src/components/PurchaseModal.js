@@ -19,7 +19,11 @@ import {
   purchasePackage,
   restorePurchases,
 } from "../services/subscriptionService";
-import { fetchSubscriptionStatus, setPremium } from "../store/slices/subscriptionSlice";
+import {
+  fetchSubscriptionStatus,
+  setPremium,
+  syncSubscriptionWithRetry,
+} from "../store/slices/subscriptionSlice";
 
 const FEATURES = [
   { icon: Zap, label: "Sınırsız Beğeni" },
@@ -64,10 +68,13 @@ export default function PurchaseModal({ bottomSheetRef, onClose, onSuccess }) {
     try {
       const isPremium = await purchasePackage(pkg);
       if (isPremium) {
+        // 1) Optimistic UI — RC entitlement'i hemen geldi.
         dispatch(setPremium({ isPremium: true }));
-        dispatch(fetchSubscriptionStatus());
         onClose?.();
         onSuccess?.();
+        // 2) Backend sync — webhook hemen düşmeyebilir; retry ile bekle.
+        // synced=true gelince Redux'taki state authoritative değerle güncellenir.
+        dispatch(syncSubscriptionWithRetry({ maxAttempts: 4, delayMs: 1500 }));
       }
     } catch (e) {
       if (!e.userCancelled) {
@@ -84,9 +91,10 @@ export default function PurchaseModal({ bottomSheetRef, onClose, onSuccess }) {
       const isPremium = await restorePurchases();
       if (isPremium) {
         dispatch(setPremium({ isPremium: true }));
-        dispatch(fetchSubscriptionStatus());
         onClose?.();
         onSuccess?.();
+        // Restore'da webhook genelde önceden gelmiştir; tek sefer fetch yeterli.
+        dispatch(fetchSubscriptionStatus());
       } else {
         Alert.alert("Bulunamadı", "Aktif bir abonelik bulunamadı.");
       }
@@ -99,6 +107,17 @@ export default function PurchaseModal({ bottomSheetRef, onClose, onSuccess }) {
 
   const monthlyPkg = offering?.monthly ?? offering?.availablePackages?.[0];
   const priceString = monthlyPkg?.product?.priceString ?? "249,99 ₺";
+
+  // RC paketinden trial bilgisini al; product.introPrice.periodNumberOfUnits "3" gibi gelir.
+  // Yoksa varsayılan 3 gün (FAZ 0 kararı). Eligibility runtime'da Apple/Google'a sorulur,
+  // burada sadece ürün metadata'sını gösteriyoruz.
+  const introPrice = monthlyPkg?.product?.introPrice;
+  const introUnits = introPrice?.periodNumberOfUnits;
+  const trialDays = (() => {
+    if (typeof introUnits === "number" && introUnits > 0) return introUnits;
+    return 3;
+  })();
+  const showTrialBadge = Boolean(introPrice) || trialDays > 0;
 
   return (
     <BottomSheetModal
@@ -181,6 +200,23 @@ export default function PurchaseModal({ bottomSheetRef, onClose, onSuccess }) {
           >
             Eşleşmelerini hızlandır, seni beğenenleri gör ve daha fazlasını keşfet!
           </Text>
+
+          {showTrialBadge && (
+            <View
+              style={{
+                marginTop: 14,
+                paddingHorizontal: 14,
+                paddingVertical: 6,
+                borderRadius: 999,
+                borderCurve: "continuous",
+                backgroundColor: "rgba(255,255,255,0.18)",
+              }}
+            >
+              <Text style={{ color: "#fff", fontSize: 12, fontWeight: "700" }}>
+                İlk {trialDays} gün ücretsiz
+              </Text>
+            </View>
+          )}
         </LinearGradient>
 
         {/* Features */}
@@ -252,7 +288,9 @@ export default function PurchaseModal({ bottomSheetRef, onClose, onSuccess }) {
                 <ActivityIndicator color="#000" />
               ) : (
                 <Text style={{ color: "#000", fontWeight: "700", fontSize: 15 }}>
-                  {priceString} / Ay — Abone Ol
+                  {showTrialBadge
+                    ? `${trialDays} Gün Ücretsiz Dene`
+                    : `${priceString} / Ay — Abone Ol`}
                 </Text>
               )}
             </TouchableOpacity>
@@ -283,7 +321,9 @@ export default function PurchaseModal({ bottomSheetRef, onClose, onSuccess }) {
             lineHeight: 16,
           }}
         >
-          Abonelik her ay otomatik yenilenir. İstediğin zaman iptal edebilirsin.
+          {showTrialBadge
+            ? `İlk ${trialDays} gün ücretsiz, ardından ${priceString}/ay olarak otomatik yenilenir. İstediğin zaman iptal edebilirsin — deneme süresi dolmadan iptal edersen ücret alınmaz.`
+            : "Abonelik her ay otomatik yenilenir. İstediğin zaman iptal edebilirsin."}
         </Text>
       </BottomSheetScrollView>
     </BottomSheetModal>
