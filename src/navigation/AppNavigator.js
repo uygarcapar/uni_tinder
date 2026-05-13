@@ -108,14 +108,16 @@ export default function AppNavigator() {
     });
   }, [dispatch]);
 
-  // RevenueCat init + subscription status when authenticated
-  // GEÇİCİ KAPALI — API key invalid, hatalar log'u dolduruyor. Sonra açılacak.
+  // RevenueCat init + subscription status when authenticated.
+  // subscriptionService kendi içinde guard yapıyor — API key yoksa configure() çağrılmaz,
+  // login/getOfferings/purchase no-op olur. Yani .env doldurulmasa da app çalışmaya devam eder.
+  // Backend subscription status'u (canonical) yine de fetch edilir — webhook ile flip olabilir.
   useEffect(() => {
     if (!isAuthenticated || !user) return;
-    // initRevenueCat(user.userId);
-    // if (user.userId) loginRevenueCat(user.userId).catch(() => {});
-    // dispatch(fetchSubscriptionStatus());
-  }, [isAuthenticated, user?.userId]);
+    initRevenueCat(user.userId);
+    if (user.userId) loginRevenueCat(user.userId).catch(() => {});
+    dispatch(fetchSubscriptionStatus());
+  }, [isAuthenticated, user?.userId, dispatch]);
 
   // ============ SignalR lifecycle + Hub → Redux bridge ============
   // Authenticated user için Hub'a bağlan, tüm event'leri Redux'a forward et.
