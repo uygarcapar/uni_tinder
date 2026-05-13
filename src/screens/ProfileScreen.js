@@ -31,6 +31,7 @@ import SwipeCard from "../components/SwipeCard";
 import PreviewModal from "../components/PreviewModal";
 import SettingsModal from "../components/SettingsModal";
 import PurchaseModal from "../components/PurchaseModal";
+import { getOfferings } from "../services/subscriptionService";
 import {
   LogOut,
   Pencil,
@@ -1018,6 +1019,33 @@ export default function ProfileScreen() {
   const purchaseBottomSheetRef = useRef(null);
   const [previewVisible, setPreviewVisible] = useState(false);
 
+  // ── Premium teaser fiyatı (inline upsell kartı için) ──────────────────────
+  // Inline kartta hardcoded "249.99 ₺ / Ay" yerine RC offering'ten okunan canlı
+  // monthly fiyatı gösterilir. RC configure değilse veya offering boşsa generic
+  // CTA fallback'i devreye girer.
+  const [teaserPrice, setTeaserPrice] = useState(null);
+
+  useEffect(() => {
+    let cancelled = false;
+    getOfferings()
+      .then((offering) => {
+        if (cancelled) return;
+        const monthlyPkg =
+          offering?.monthly ??
+          offering?.availablePackages?.find(
+            (p) => /monthly|month/i.test(p?.product?.identifier ?? "")
+          );
+        const priceString = monthlyPkg?.product?.priceString;
+        if (priceString) setTeaserPrice(priceString);
+      })
+      .catch(() => {
+        // RC configure değil veya network hatası — generic CTA göster
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, []);
+
   // ── Profil verisi ──────────────────────────────────────────────────────────
   const [myProfile, setMyProfile] = useState(null);
   const [hobbyMap, setHobbyMap] = useState({});
@@ -1783,7 +1811,9 @@ export default function ProfileScreen() {
                         }}
                       >
                         <Text className="font-medium text-[15px] text-white">
-                          249.99 ₺ / Ay
+                          {teaserPrice
+                            ? `${teaserPrice} / Ay'dan başlayan planlar`
+                            : "Planları İncele →"}
                         </Text>
                       </View>
                     </View>
