@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useState } from "react";
+import { useCallback, useEffect, useMemo, useState } from "react";
 import {
   View,
   Text,
@@ -24,6 +24,8 @@ import {
   setPremium,
   syncSubscriptionWithRetry,
 } from "../store/slices/subscriptionSlice";
+import api from "../services/api";
+import { API_ENDPOINTS } from "../constants/api";
 
 const FEATURES = [
   { icon: Zap, label: "Sınırsız Beğeni" },
@@ -32,19 +34,136 @@ const FEATURES = [
   { icon: Ban, label: "Reklamsız Deneyim" },
 ];
 
+// RC offering field'ları period bazında. Backend /plans endpoint'i ile bu key'leri
+// eşleştiriyoruz — RC offering bu key'leri otomatik üretmez ama RC default convention
+// monthly/annual/weekly. availablePackages içinde de bulunabilir, fallback olarak
+// productId pattern üzerinden eşleştiriyoruz.
+const PERIOD_LABELS = {
+  weekly: { short: "Haftalık", per: "hafta" },
+  monthly: { short: "Aylık", per: "ay" },
+  yearly: { short: "Yıllık", per: "yıl" },
+};
+
+// productId convention (backend SubscriptionProductOptions ile eşleşmeli).
+const PRODUCT_ID_PERIOD_HINTS = [
+  { match: /weekly|week/i, period: "weekly" },
+  { match: /yearly|annual|year/i, period: "yearly" },
+  { match: /monthly|month/i, period: "monthly" },
+];
+
+function detectPeriodFromProductId(productId) {
+  if (!productId) return null;
+  for (const hint of PRODUCT_ID_PERIOD_HINTS) {
+    if (hint.match.test(productId)) return hint.period;
+  }
+  return null;
+}
+
+// RC offering içinden plan listesi türet. RC convention'ı:
+//   offering.weekly / offering.monthly / offering.annual gibi shorthand'leri varsa kullan
+//   yoksa availablePackages içinden productId'ye göre tahmin et
+function extractPlansFromOffering(offering) {
+  if (!offering) return [];
+  const collected = new Map();
+
+  // Shorthand alanlar
+  if (offering.weekly) collected.set("weekly", offering.weekly);
+  if (offering.monthly) collected.set("monthly", offering.monthly);
+  if (offering.annual) collected.set("yearly", offering.annual);
+
+  // availablePackages içinden eksikleri tamamla
+  const pkgs = offering.availablePackages ?? [];
+  for (const pkg of pkgs) {
+    const productId = pkg?.product?.identifier;
+    const detected = detectPeriodFromProductId(productId);
+    if (detected && !collected.has(detected)) {
+      collected.set(detected, pkg);
+    }
+  }
+
+  return Array.from(collected.entries()).map(([period, pkg]) => ({
+    period,
+    pkg,
+    productId: pkg?.product?.identifier ?? null,
+    priceString: pkg?.product?.priceString ?? null,
+    price: pkg?.product?.price ?? null, // sayısal
+    currencyCode: pkg?.product?.currencyCode ?? null,
+    introPrice: pkg?.product?.introPrice ?? null,
+  }));
+}
+
+// Backend metadata (displayName / highlight / sortOrder) ile RC paketlerini birleştir.
+function mergePlansWithBackend(rcPlans, backendPlans) {
+  const backendByPeriod = new Map();
+  for (const b of backendPlans ?? []) {
+    if (b.period) backendByPeriod.set(b.period, b);
+  }
+
+  return rcPlans
+    .map((rc) => {
+      const meta = backendByPeriod.get(rc.period);
+      return {
+        ...rc,
+        displayName: meta?.displayName ?? PERIOD_LABELS[rc.period]?.short ?? rc.period,
+        highlight: meta?.highlight ?? null,
+        sortOrder: meta?.sortOrder ?? 99,
+      };
+    })
+    .sort((a, b) => a.sortOrder - b.sortOrder);
+}
+
+// "Aylığa kıyasla %X tasarruf" hesaplaması. Monthly price referans alınır.
+function computeSavings(plan, plans) {
+  if (!plan?.price || plan.period === "monthly") return null;
+  const monthly = plans.find((p) => p.period === "monthly");
+  if (!monthly?.price) return null;
+
+  const months = plan.period === "yearly" ? 12 : plan.period === "weekly" ? 1 / 4.345 : null;
+  if (!months) return null;
+
+  const equivalentMonthlyTotal = monthly.price * months;
+  if (equivalentMonthlyTotal <= 0) return null;
+
+  const savingsRatio = 1 - plan.price / equivalentMonthlyTotal;
+  if (savingsRatio <= 0.02) return null; // %2'nin altını gösterme — round-off gürültüsü
+  return Math.round(savingsRatio * 100);
+}
+
 export default function PurchaseModal({ bottomSheetRef, onClose, onSuccess }) {
   const dispatch = useDispatch();
   const [offering, setOffering] = useState(null);
   const [loadingOffering, setLoadingOffering] = useState(true);
+  const [backendPlans, setBackendPlans] = useState(null);
   const [purchasing, setPurchasing] = useState(false);
   const [restoring, setRestoring] = useState(false);
+  const [selectedPeriod, setSelectedPeriod] = useState(null);
 
   useEffect(() => {
-    getOfferings()
-      .then((o) => setOffering(o))
-      .catch(() => setOffering(null))
+    Promise.all([
+      getOfferings().catch(() => null),
+      api.get(API_ENDPOINTS.SUBSCRIPTION_PLANS).then((r) => r?.result?.plans ?? []).catch(() => []),
+    ])
+      .then(([o, plans]) => {
+        setOffering(o);
+        setBackendPlans(plans);
+      })
       .finally(() => setLoadingOffering(false));
   }, []);
+
+  // RC + backend birleştirilmiş plan listesi
+  const plans = useMemo(
+    () => mergePlansWithBackend(extractPlansFromOffering(offering), backendPlans ?? []),
+    [offering, backendPlans]
+  );
+
+  // İlk render'da default seçim — highlight olan veya monthly
+  useEffect(() => {
+    if (selectedPeriod || plans.length === 0) return;
+    const highlighted = plans.find((p) => p.highlight);
+    setSelectedPeriod(highlighted?.period ?? plans.find((p) => p.period === "monthly")?.period ?? plans[0].period);
+  }, [plans, selectedPeriod]);
+
+  const selectedPlan = plans.find((p) => p.period === selectedPeriod) ?? plans[0];
 
   const renderBackdrop = useCallback(
     (props) => (
@@ -59,7 +178,7 @@ export default function PurchaseModal({ bottomSheetRef, onClose, onSuccess }) {
   );
 
   const handlePurchase = async () => {
-    const pkg = offering?.monthly ?? offering?.availablePackages?.[0];
+    const pkg = selectedPlan?.pkg;
     if (!pkg) {
       Alert.alert("Hata", "Paket bulunamadı.");
       return;
@@ -68,12 +187,9 @@ export default function PurchaseModal({ bottomSheetRef, onClose, onSuccess }) {
     try {
       const isPremium = await purchasePackage(pkg);
       if (isPremium) {
-        // 1) Optimistic UI — RC entitlement'i hemen geldi.
         dispatch(setPremium({ isPremium: true }));
         onClose?.();
         onSuccess?.();
-        // 2) Backend sync — webhook hemen düşmeyebilir; retry ile bekle.
-        // synced=true gelince Redux'taki state authoritative değerle güncellenir.
         dispatch(syncSubscriptionWithRetry({ maxAttempts: 4, delayMs: 1500 }));
       }
     } catch (e) {
@@ -93,7 +209,6 @@ export default function PurchaseModal({ bottomSheetRef, onClose, onSuccess }) {
         dispatch(setPremium({ isPremium: true }));
         onClose?.();
         onSuccess?.();
-        // Restore'da webhook genelde önceden gelmiştir; tek sefer fetch yeterli.
         dispatch(fetchSubscriptionStatus());
       } else {
         Alert.alert("Bulunamadı", "Aktif bir abonelik bulunamadı.");
@@ -105,19 +220,14 @@ export default function PurchaseModal({ bottomSheetRef, onClose, onSuccess }) {
     }
   };
 
-  const monthlyPkg = offering?.monthly ?? offering?.availablePackages?.[0];
-  const priceString = monthlyPkg?.product?.priceString ?? "249,99 ₺";
-
-  // RC paketinden trial bilgisini al; product.introPrice.periodNumberOfUnits "3" gibi gelir.
-  // Yoksa varsayılan 3 gün (FAZ 0 kararı). Eligibility runtime'da Apple/Google'a sorulur,
-  // burada sadece ürün metadata'sını gösteriyoruz.
-  const introPrice = monthlyPkg?.product?.introPrice;
+  // Trial bilgisi seçili plana göre — RC her plan için ayrı intro price tanımlayabilir.
+  const introPrice = selectedPlan?.introPrice;
   const introUnits = introPrice?.periodNumberOfUnits;
-  const trialDays = (() => {
-    if (typeof introUnits === "number" && introUnits > 0) return introUnits;
-    return 3;
-  })();
-  const showTrialBadge = Boolean(introPrice) || trialDays > 0;
+  const trialDays = typeof introUnits === "number" && introUnits > 0 ? introUnits : 3;
+  const showTrialBadge = Boolean(introPrice) || (selectedPlan && trialDays > 0);
+
+  const selectedPriceString = selectedPlan?.priceString ?? "—";
+  const selectedPeriodLabel = PERIOD_LABELS[selectedPlan?.period ?? "monthly"]?.per ?? "ay";
 
   return (
     <BottomSheetModal
@@ -181,7 +291,7 @@ export default function PurchaseModal({ bottomSheetRef, onClose, onSuccess }) {
             borderCurve: "continuous",
             overflow: "hidden",
             padding: 24,
-            marginBottom: 24,
+            marginBottom: 20,
             alignItems: "center",
           }}
         >
@@ -218,6 +328,76 @@ export default function PurchaseModal({ bottomSheetRef, onClose, onSuccess }) {
             </View>
           )}
         </LinearGradient>
+
+        {/* Plan Selector (FAZ 5) */}
+        {!loadingOffering && plans.length > 1 && (
+          <View style={{ marginBottom: 20 }}>
+            {plans.map((plan) => {
+              const isSelected = plan.period === selectedPeriod;
+              const savings = computeSavings(plan, plans);
+              return (
+                <TouchableOpacity
+                  key={plan.period}
+                  onPress={() => setSelectedPeriod(plan.period)}
+                  activeOpacity={0.85}
+                  style={{
+                    borderRadius: 20,
+                    borderCurve: "continuous",
+                    borderWidth: isSelected ? 1.5 : 0.5,
+                    borderColor: isSelected ? "#fc4526" : "rgba(255,255,255,0.12)",
+                    backgroundColor: isSelected ? "rgba(252,69,38,0.08)" : "rgba(255,255,255,0.02)",
+                    paddingHorizontal: 18,
+                    paddingVertical: 16,
+                    marginBottom: 10,
+                    flexDirection: "row",
+                    alignItems: "center",
+                    justifyContent: "space-between",
+                  }}
+                >
+                  <View style={{ flex: 1 }}>
+                    <View style={{ flexDirection: "row", alignItems: "center", gap: 8, marginBottom: 4 }}>
+                      <Text style={{ color: "#fff", fontSize: 15, fontWeight: "700" }}>
+                        {plan.displayName}
+                      </Text>
+                      {plan.highlight && (
+                        <View
+                          style={{
+                            paddingHorizontal: 8,
+                            paddingVertical: 2,
+                            borderRadius: 999,
+                            backgroundColor: "#fc4526",
+                          }}
+                        >
+                          <Text style={{ color: "#fff", fontSize: 10, fontWeight: "700" }}>
+                            {plan.highlight}
+                          </Text>
+                        </View>
+                      )}
+                    </View>
+                    <Text style={{ color: "#9CA3AF", fontSize: 13 }}>
+                      {plan.priceString ?? "—"}
+                      {savings ? `  ·  %${savings} tasarruf` : ""}
+                    </Text>
+                  </View>
+                  <View
+                    style={{
+                      width: 22,
+                      height: 22,
+                      borderRadius: 11,
+                      borderWidth: 1.5,
+                      borderColor: isSelected ? "#fc4526" : "rgba(255,255,255,0.3)",
+                      alignItems: "center",
+                      justifyContent: "center",
+                      backgroundColor: isSelected ? "#fc4526" : "transparent",
+                    }}
+                  >
+                    {isSelected && <Check size={12} color="#fff" strokeWidth={3} pointerEvents="none" />}
+                  </View>
+                </TouchableOpacity>
+              );
+            })}
+          </View>
+        )}
 
         {/* Features */}
         <Text
@@ -272,7 +452,7 @@ export default function PurchaseModal({ bottomSheetRef, onClose, onSuccess }) {
           <>
             <TouchableOpacity
               onPress={handlePurchase}
-              disabled={purchasing || restoring}
+              disabled={purchasing || restoring || !selectedPlan}
               activeOpacity={0.85}
               style={{
                 borderRadius: 999,
@@ -282,6 +462,7 @@ export default function PurchaseModal({ bottomSheetRef, onClose, onSuccess }) {
                 paddingVertical: 17,
                 alignItems: "center",
                 marginBottom: 12,
+                opacity: selectedPlan ? 1 : 0.5,
               }}
             >
               {purchasing ? (
@@ -290,7 +471,7 @@ export default function PurchaseModal({ bottomSheetRef, onClose, onSuccess }) {
                 <Text style={{ color: "#000", fontWeight: "700", fontSize: 15 }}>
                   {showTrialBadge
                     ? `${trialDays} Gün Ücretsiz Dene`
-                    : `${priceString} / Ay — Abone Ol`}
+                    : `${selectedPriceString} / ${selectedPeriodLabel} — Abone Ol`}
                 </Text>
               )}
             </TouchableOpacity>
@@ -322,8 +503,8 @@ export default function PurchaseModal({ bottomSheetRef, onClose, onSuccess }) {
           }}
         >
           {showTrialBadge
-            ? `İlk ${trialDays} gün ücretsiz, ardından ${priceString}/ay olarak otomatik yenilenir. İstediğin zaman iptal edebilirsin — deneme süresi dolmadan iptal edersen ücret alınmaz.`
-            : "Abonelik her ay otomatik yenilenir. İstediğin zaman iptal edebilirsin."}
+            ? `İlk ${trialDays} gün ücretsiz, ardından ${selectedPriceString}/${selectedPeriodLabel} olarak otomatik yenilenir. İstediğin zaman iptal edebilirsin — deneme süresi dolmadan iptal edersen ücret alınmaz.`
+            : `Abonelik her ${selectedPeriodLabel} otomatik yenilenir. İstediğin zaman iptal edebilirsin.`}
         </Text>
       </BottomSheetScrollView>
     </BottomSheetModal>
