@@ -7,6 +7,7 @@ import {
 import api from "../services/api";
 import { API_ENDPOINTS } from "../constants/api";
 import swipeService from "../services/swipeService";
+import uiBus from "../services/uiBus";
 
 export const swipeKeys = {
   matches: ["swipe", "matches"],
@@ -113,6 +114,18 @@ export function useSwipeMutation() {
         }
         return next;
       });
+    },
+    onSuccess: (response) => {
+      // Backend SwipeResultDto.IsSuccess=false + ShowPaywall=true ile geldiğinde
+      // (kotaya ulaşıldı) → uiBus üzerinden Discover'a haber ver, paywall açılsın.
+      // ResponseDto wrapper: response = { isSuccess, result: { showPaywall, paywallType, ... } }
+      const swipeResult = response?.result;
+      if (swipeResult?.showPaywall) {
+        uiBus.emit("swipePaywall", {
+          paywallType: swipeResult.paywallType,
+          message: swipeResult.paywallMessage || swipeResult.message,
+        });
+      }
     },
     onSettled: () => {
       qc.invalidateQueries({ queryKey: swipeKeys.stats });

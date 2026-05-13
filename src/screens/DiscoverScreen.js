@@ -64,7 +64,7 @@ import {
   useUndoSwipe,
   useUpdateStatsCache,
 } from "../queries/swipeQueries";
-import { cardExpandAnim } from "../services/uiBus";
+import uiBus, { cardExpandAnim } from "../services/uiBus";
 
 // Tab bar geometry — TabNavigator ile tutarlı:
 // FLOATING_BAR_HEIGHT (64) + FLOATING_BAR_BOTTOM_GAP (-10) + insets.bottom + extra gap (12)
@@ -745,6 +745,16 @@ export default function DiscoverScreen() {
   const [isSwiping, setIsSwiping] = useState(false);
   const [lastSwipeWasPass, setLastSwipeWasPass] = useState(false);
   const purchaseBottomSheetRef = useRef(null);
+
+  // Backend SwipeResultDto.ShowPaywall=true geldiğinde (Like/Pass kotası dolu) veya
+  // GetPotentialMatches response'unda quota=0 geldiğinde useSwipeMutation uiBus'a event
+  // emit eder; biz burada subscribe olup paywall'ı açıyoruz.
+  useEffect(() => {
+    const unsub = uiBus.on("swipePaywall", () => {
+      purchaseBottomSheetRef.current?.present?.();
+    });
+    return unsub;
+  }, []);
 
   const filterBottomSheetRef = useRef(null);
   const lastSwipePromiseRef = useRef(null);
