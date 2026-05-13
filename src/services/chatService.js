@@ -149,6 +149,24 @@ export const chatService = {
   async updateNotificationPreferences(prefs) {
     await api.put(API_ENDPOINTS.NOTIFICATIONS_PREFERENCES, prefs);
   },
+
+  // ============ FAZ 6: Chat Economy ============
+  // GET /api/messages/conversations/{id}/quota
+  // Returns: { conversationId, bothPremium, isUnlocked, messageCount, freeMessageLimit,
+  //            remainingMessages, requiresUnlock }
+  async getQuota(conversationId) {
+    const res = await api.get(API_ENDPOINTS.MESSAGES_QUOTA(conversationId));
+    return res.result;
+  },
+
+  // POST /api/messages/conversations/{id}/unlock
+  // Body: { transactionId } — RC consumable purchase'tan gelen transactionId.
+  // Backend Subscription tablosunda transactionId'yi doğrular + odayı kalıcı açar.
+  // 402 → satın alma henüz doğrulanmadı (webhook gecikti) — client retry yapmalı.
+  async unlockChat(conversationId, transactionId) {
+    const res = await api.post(API_ENDPOINTS.MESSAGES_UNLOCK(conversationId), { transactionId });
+    return res.result;
+  },
 };
 
 export default chatService;

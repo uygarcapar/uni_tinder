@@ -45,6 +45,38 @@ export const fetchUnreadCount = createAsyncThunk(
   async () => chatService.getUnreadCount()
 );
 
+// FAZ 6: chat economy quota fetch + unlock redeem
+export const fetchChatQuota = createAsyncThunk(
+  'chat/fetchQuota',
+  async (conversationId, { rejectWithValue }) => {
+    try {
+      const status = await chatService.getQuota(conversationId);
+      return { conversationId, status };
+    } catch (e) {
+      return rejectWithValue(e?.response?.data?.message || e?.message || 'Failed');
+    }
+  }
+);
+
+// Receipt redeem — RC consumable purchase tamamlandıktan sonra çağrılır.
+// Backend 402 dönerse (webhook henüz gelmedi) caller retry yapabilir.
+export const redeemChatUnlock = createAsyncThunk(
+  'chat/redeemUnlock',
+  async ({ conversationId, transactionId }, { rejectWithValue, dispatch }) => {
+    try {
+      await chatService.unlockChat(conversationId, transactionId);
+      // Unlock başarılı → backend state'i tekrar çek, UI counter güncellensin.
+      dispatch(fetchChatQuota(conversationId));
+      return { conversationId };
+    } catch (e) {
+      return rejectWithValue({
+        status: e?.response?.status,
+        message: e?.response?.data?.message || e?.message || 'Failed',
+      });
+    }
+  }
+);
+
 const initialState = {
   conversations: [],
   conversationsLoading: false,
@@ -55,6 +87,10 @@ const initialState = {
   unreadTotal: 0,
   // Aktif sohbet — typing/read receipt scope kararı için (foreground/background ayrımı UI tarafında).
   activeConversationId: null,
+  // FAZ 6: chat economy state — per-conversation ChatQuotaStatusDto.
+  // shape: { [convId]: { bothPremium, isUnlocked, messageCount, freeMessageLimit,
+  //                       remainingMessages (null = unlimited), requiresUnlock } }
+  quotaByConv: {},
 };
 
 const chatSlice = createSlice({
@@ -267,6 +303,34 @@ const chatSlice = createSlice({
       });
     },
 
+    // ============ FAZ 6: chat quota helpers ============
+
+    // Send başarılı olduğunda kalan sayacı tahmin amaçlı decrement et — backend authoritative
+    // sayım için fetchChatQuota tekrar çağrılabilir. unlimited (remainingMessages=null) ise no-op.
+    decrementQuotaLocally: (state, action) => {
+      const convId = action.payload?.conversationId;
+      if (!convId) return;
+      const q = state.quotaByConv[convId];
+      if (!q || q.remainingMessages == null) return;
+      q.messageCount = (q.messageCount ?? 0) + 1;
+      q.remainingMessages = Math.max(0, q.remainingMessages - 1);
+      if (q.remainingMessages === 0 && !q.isUnlocked && !q.bothPremium) {
+        q.requiresUnlock = true;
+      }
+    },
+
+    // Unlock yapıldı (örn. RC consumable redeem sonrası) — UI hemen güncellensin diye.
+    // fetchChatQuota authoritative fetch'i de paralel tetiklenebilir.
+    markQuotaUnlocked: (state, action) => {
+      const convId = action.payload?.conversationId;
+      if (!convId) return;
+      const q = state.quotaByConv[convId];
+      if (!q) return;
+      q.isUnlocked = true;
+      q.requiresUnlock = false;
+      q.remainingMessages = null;
+    },
+
     // ============ Optimistic UI helpers ============
 
     appendOptimisticMessage: (state, action) => {
@@ -395,6 +459,11 @@ const chatSlice = createSlice({
       })
       .addCase(fetchUnreadCount.fulfilled, (state, action) => {
         state.unreadTotal = action.payload;
+      })
+      // FAZ 6: chat quota lifecycle
+      .addCase(fetchChatQuota.fulfilled, (state, action) => {
+        const { conversationId, status } = action.payload;
+        state.quotaByConv[conversationId] = status;
       });
   },
 });
@@ -433,6 +502,8 @@ export const {
   failOptimisticMessage,
   removeOptimisticMessage,
   resetChat,
+  decrementQuotaLocally,
+  markQuotaUnlocked,
 } = chatSlice.actions;
 
 export default chatSlice.reducer;

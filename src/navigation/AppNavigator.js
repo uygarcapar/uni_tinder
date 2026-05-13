@@ -177,7 +177,15 @@ export default function AppNavigator() {
           dispatch(fetchConversations());
         }
       }),
-      realtimeService.on('Error', (err) => console.warn('Hub error:', err)),
+      realtimeService.on('Error', (err) => {
+        // FAZ 6: chat quota cap doldu — aktif sohbette paywall aç.
+        if (err?.code === 'CHAT_QUOTA_EXHAUSTED' && err?.showPaywall) {
+          const convId = activeConvRef.current;
+          if (convId) uiBus.emit('chatQuotaExhausted', { conversationId: convId });
+          return;
+        }
+        console.warn('Hub error:', err);
+      }),
       realtimeService.on('__connectionStateChanged', (state) => {
         // Reconnect sonrası fresh state pull et — eksik event'ler için.
         if (state === 'connected') {
