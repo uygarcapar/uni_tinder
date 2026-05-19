@@ -198,11 +198,11 @@ const DepartmentPickerContent = ({
         </View>
       }
       renderItem={({ item }) => {
-        const isSelected = String(item.id) === localDepartment;
+        const isSelected = item.enumName === localDepartment;
         return (
           <TouchableOpacity
             activeOpacity={0.7}
-            onPress={() => onConfirm(String(item.id))}
+            onPress={() => onConfirm(item.enumName)}
             style={{
               paddingVertical: 20,
               paddingHorizontal: 16,
@@ -258,10 +258,10 @@ export default function RegisterStep8Screen({ navigation }) {
       ? String(profile.yearOfStudy)
       : "",
   );
+  // Backend Department'ı enumName ("ComputerEngineering") bekliyor.
+  // Eski persisted state'lerde number kalmış olabilir → string'e zorla.
   const [department, setDepartment] = useState(
-    profile.department !== undefined && profile.department !== null
-      ? String(profile.department)
-      : "",
+    typeof profile.department === "string" ? profile.department : "",
   );
 
   const [departments, setDepartments] = useState([]);
@@ -345,7 +345,7 @@ export default function RegisterStep8Screen({ navigation }) {
   const getDepartmentLabel = () => {
     if (!department) return "Bölüm Seçiniz";
     const selectedDepartment = departments.find(
-      (d) => String(d.id) === String(department),
+      (d) => d.enumName === department,
     );
     return selectedDepartment ? selectedDepartment.name : "Bölüm Seçiniz";
   };
@@ -358,7 +358,7 @@ export default function RegisterStep8Screen({ navigation }) {
 
     const updatedFields = {
       yearOfStudy: parseInt(yearOfStudy),
-      department: parseInt(department),
+      department,
     };
 
     console.log("📤 Step1: Before dispatch - updatedFields:", updatedFields);

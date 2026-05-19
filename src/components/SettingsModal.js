@@ -11,8 +11,8 @@ import {
 import {
   BottomSheetModal,
   BottomSheetScrollView,
-  BottomSheetBackdrop,
 } from "@gorhom/bottom-sheet";
+import BlurBottomSheetBackdrop from "./BlurBottomSheetBackdrop";
 import { X, Download, Trash2, AlertCircle, Eye, BellOff } from "lucide-react-native";
 import api from "../services/api";
 import { API_ENDPOINTS } from "../constants/api";
@@ -46,15 +46,8 @@ export default function SettingsModal({ bottomSheetRef, onClose }) {
   };
 
   const renderBackdrop = useCallback(
-    (props) => (
-      <BottomSheetBackdrop
-        {...props}
-        appearsOnIndex={0}
-        disappearsOnIndex={-1}
-        opacity={0.5}
-      />
-    ),
-    [],
+    (props) => <BlurBottomSheetBackdrop {...props} onPress={onClose} />,
+    [onClose],
   );
 
   // ── Verilerimi İndir ────────────────────────────────────────────────────────

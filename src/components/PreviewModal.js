@@ -57,7 +57,12 @@ export default function PreviewModal({ visible, onClose, profile }) {
       >
         <View style={{ flex: 1 }}>
           {profile ? (
-            <SwipeCard profile={profile} hideActions />
+            <SwipeCard
+              profile={profile}
+              hideActions
+              previewMode
+              expanded
+            />
           ) : (
             <View
               style={{

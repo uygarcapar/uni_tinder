@@ -8,10 +8,11 @@ import { Check, InfoIcon } from "lucide-react-native";
 import RegisterProgressBar from "../components/RegisterProgressBar";
 import AnimatedPressableShared from "../components/AnimatedPressable";
 
+// Backend InterestedIn enumName ("Men"/"Women"/"NonBinary") bekliyor.
 const OPTIONS = [
-  { id: 0, label: "Erkek" },
-  { id: 1, label: "Kadın" },
-  { id: 2, label: "Non-Binary" },
+  { enumName: "Men", label: "Erkek" },
+  { enumName: "Women", label: "Kadın" },
+  { enumName: "NonBinary", label: "Non-Binary" },
 ];
 
 const AnimatedPressable = ({ onPress, style, activeOpacity = 1, children }) => {
@@ -53,17 +54,20 @@ export default function RegisterStep10Screen({ navigation }) {
   const dispatch = useDispatch();
   const profile = useSelector((state) => state.profile || {});
 
+  // Eski persisted state'lerde number kalmış olabilir → sadece string'leri al.
   const initial =
     Array.isArray(profile.interestedIn) && profile.interestedIn.length > 0
-      ? profile.interestedIn
+      ? profile.interestedIn.filter((v) => typeof v === "string")
       : [];
   const [selected, setSelected] = useState(initial);
   const [error, setError] = useState("");
 
-  const toggle = (id) => {
+  const toggle = (enumName) => {
     setError("");
     setSelected((prev) =>
-      prev.includes(id) ? prev.filter((v) => v !== id) : [...prev, id],
+      prev.includes(enumName)
+        ? prev.filter((v) => v !== enumName)
+        : [...prev, enumName],
     );
   };
 
@@ -103,11 +107,11 @@ export default function RegisterStep10Screen({ navigation }) {
 
         <View style={{ gap: 12 }}>
           {OPTIONS.map((opt) => {
-            const active = selected.includes(opt.id);
+            const active = selected.includes(opt.enumName);
             return (
               <AnimatedPressable
-                key={opt.id}
-                onPress={() => toggle(opt.id)}
+                key={opt.enumName}
+                onPress={() => toggle(opt.enumName)}
                 style={{
                   borderRadius: 30,
                   borderCurve: "continuous",

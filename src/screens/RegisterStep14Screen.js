@@ -217,20 +217,17 @@ export default function RegisterStep14Screen({ navigation }) {
   const dispatch = useDispatch();
   const profile = useSelector((state) => state.profile || {});
 
+  // Backend SmokingStatus/ZodiacSign/UsagePurpose'u enum string bekliyor
+  // (örn "Sometimes", "Leo", "Dating"). State'te option.name'i tutuyoruz.
+  // Eski persisted state'lerde number/ID kalmış olabilir → string'e zorla.
   const [smokingStatus, setSmokingStatus] = useState(
-    profile.smokingStatus !== undefined && profile.smokingStatus !== null
-      ? String(profile.smokingStatus)
-      : "",
+    typeof profile.smokingStatus === "string" ? profile.smokingStatus : "",
   );
   const [zodiacSign, setZodiacSign] = useState(
-    profile.zodiacSign !== undefined && profile.zodiacSign !== null
-      ? String(profile.zodiacSign)
-      : "",
+    typeof profile.zodiacSign === "string" ? profile.zodiacSign : "",
   );
   const [usagePurpose, setUsagePurpose] = useState(
-    profile.usagePurpose !== undefined && profile.usagePurpose !== null
-      ? String(profile.usagePurpose)
-      : "",
+    typeof profile.usagePurpose === "string" ? profile.usagePurpose : "",
   );
 
   const [smokingStatuses, setSmokingStatuses] = useState([]);
@@ -311,33 +308,29 @@ export default function RegisterStep14Screen({ navigation }) {
     }
   };
 
-  const toggleSmoking = (id) => {
-    const next = String(id) === String(smokingStatus) ? "" : String(id);
+  // Backend enumName ("None"/"Aries"/"Dating") bekliyor. State + dispatch enumName.
+  const toggleSmoking = (enumName) => {
+    if (!enumName) return;
+    const next = enumName === smokingStatus ? "" : enumName;
     setSmokingStatus(next);
     dispatch(
-      updateMultipleFields({
-        smokingStatus: next === "" ? null : parseInt(next),
-      }),
+      updateMultipleFields({ smokingStatus: next === "" ? null : next }),
     );
   };
 
-  const toggleZodiac = (id) => {
-    const next = String(id) === String(zodiacSign) ? "" : String(id);
+  const toggleZodiac = (enumName) => {
+    if (!enumName) return;
+    const next = enumName === zodiacSign ? "" : enumName;
     setZodiacSign(next);
-    dispatch(
-      updateMultipleFields({
-        zodiacSign: next === "" ? null : parseInt(next),
-      }),
-    );
+    dispatch(updateMultipleFields({ zodiacSign: next === "" ? null : next }));
   };
 
-  const toggleUsagePurpose = (id) => {
-    const next = String(id) === String(usagePurpose) ? "" : String(id);
+  const toggleUsagePurpose = (enumName) => {
+    if (!enumName) return;
+    const next = enumName === usagePurpose ? "" : enumName;
     setUsagePurpose(next);
     dispatch(
-      updateMultipleFields({
-        usagePurpose: next === "" ? null : parseInt(next),
-      }),
+      updateMultipleFields({ usagePurpose: next === "" ? null : next }),
     );
   };
 
@@ -420,8 +413,8 @@ export default function RegisterStep14Screen({ navigation }) {
                     <SimpleOptionItem
                       key={opt.id}
                       option={opt}
-                      isSelected={String(opt.id) === String(smokingStatus)}
-                      onPress={() => toggleSmoking(opt.id)}
+                      isSelected={opt.enumName === smokingStatus}
+                      onPress={() => toggleSmoking(opt.enumName)}
                     />
                   ))}
                 </View>
@@ -448,8 +441,8 @@ export default function RegisterStep14Screen({ navigation }) {
                     <ZodiacPill
                       key={opt.id}
                       option={opt}
-                      isSelected={String(opt.id) === String(zodiacSign)}
-                      onPress={() => toggleZodiac(opt.id)}
+                      isSelected={opt.enumName === zodiacSign}
+                      onPress={() => toggleZodiac(opt.enumName)}
                     />
                   ))}
                 </View>
@@ -473,8 +466,8 @@ export default function RegisterStep14Screen({ navigation }) {
                   <PurposeOptionItem
                     key={opt.id}
                     option={opt}
-                    isSelected={String(opt.id) === String(usagePurpose)}
-                    onPress={() => toggleUsagePurpose(opt.id)}
+                    isSelected={opt.enumName === usagePurpose}
+                    onPress={() => toggleUsagePurpose(opt.enumName)}
                   />
                 ))}
               </View>

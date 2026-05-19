@@ -197,38 +197,49 @@ function spotifyColor(hex) {
 }
 
 // Spotify-tarzı color picking:
-// 1) Foto'nun en baskın rengi (iOS=primary, Android=dominant) alınır.
-// 2) Eğer baskın renk monokromatik (saturation<0.1 veya aşırı koyu/açık) ise,
-//    küçük bir aksan rengini takip etmek YANLIŞ olur (beyaz fotoda mor aksan
-//    gibi). Bunun yerine nötr koyu gradient (#2a2a2a) kullan.
-// 3) Aksi takdirde baskın rengi seç. spotifyColor() sonra HSL clamp uygular.
+// Alan-ağırlıklı slotlar önceliklendirilir; vibrant/primary küçük ama saturated
+// aksanları seçtiği için sona itildi. Örnek: fotoda büyük sarı tişört + küçük
+// kırmızı araba → lib'in `primary`/`vibrant`'ı kırmızıyı verirdi (saturation
+// avantajı), ama `background`/`dominant`/`lightVibrant`/`muted` sarıyı yakalar.
+//
+// iOS (UIImageColors):
+//   - background: en yaygın alan rengi (= subject baskın renk genelde)
+//   - primary: background ile KONTRAST eden renk (text/aksan)
+//   - secondary, detail: ikincil aksanlar
+//
+// Android (Palette API):
+//   - dominant: histogram'da en yaygın bucket (alan-ağırlıklı)
+//   - lightVibrant/darkVibrant/vibrant: en saturated; AMA alan ağırlığı yok
+//   - lightMuted/darkMuted/muted: az saturated, genellikle daha geniş alan
 function pickSpotifyColor(result) {
   if (!result) return null;
 
-  const primary = result.platform === "ios" ? result.primary : result.dominant;
-
-  // Primary varsa kalitesini değerlendir
-  if (primary) {
-    const [pr, pg, pb] = hexToRgb(primary);
-    const [, ps, pl] = rgbToHsl(pr, pg, pb);
-    // Monokromatik mi? (gri / aşırı beyaz / aşırı siyah)
-    const isMonochromatic = ps < 0.1 || pl > 0.9 || pl < 0.05;
-    if (!isMonochromatic) {
-      return primary;
-    }
-  }
-
-  // Primary uygun değil → diğer adayları sırayla dene (yine viable olanı)
-  const fallbacks =
+  // Alan-ağırlıklı (subject likely) → saturated-aksan (small accent likely)
+  const candidates =
     result.platform === "ios"
-      ? [result.detail, result.secondary, result.background]
-      : [result.vibrant, result.darkVibrant, result.muted, result.darkMuted];
-  for (const c of fallbacks) {
+      ? [
+          result.background, // en yaygın alan rengi
+          result.detail,
+          result.secondary,
+          result.primary, // contrast — son çare
+        ]
+      : [
+          result.dominant, // histogram baskın
+          result.lightVibrant, // parlak büyük objeler (sarı tişört vs.)
+          result.lightMuted,
+          result.muted,
+          result.darkVibrant,
+          result.darkMuted,
+          result.vibrant, // küçük çok saturated aksan — son çare
+        ];
+
+  // İlk geçerli rengi al (monokromatik değil, anlamlı saturation/lightness).
+  for (const c of candidates) {
     if (!c) continue;
     const [r, g, b] = hexToRgb(c);
     const [, s, l] = rgbToHsl(r, g, b);
-    // Gerçekten anlamlı bir renk mi?
-    if (s >= 0.18 && l >= 0.08 && l <= 0.85) {
+    const isMonochromatic = s < 0.12 || l > 0.92 || l < 0.05;
+    if (!isMonochromatic && s >= 0.18 && l >= 0.08 && l <= 0.85) {
       return c;
     }
   }
@@ -419,6 +430,8 @@ export default function SwipeCard({
   superLikeProgress,
   isTopCard = true,
   expanded = false,
+  previewMode = false,
+  superLikeDisabled = false,
 }) {
   const [isFilled, setIsFilled] = useState(false);
   const [currentPhotoIndex, setCurrentPhotoIndex] = useState(0);
@@ -450,16 +463,21 @@ export default function SwipeCard({
   // Expand animasyonu progress — module-level shared value (uiBus.cardExpandAnim).
   // ScrollHandler scroll pozisyonuna göre direkt yazar (0 = top, 1 = scroll>=150).
   // TabNavigator de bu değeri okuyarak tab bar translateY uyguluyor.
-  const expandAnim = cardExpandAnim;
+  // previewMode'da kendi local shared value'umuzu kullanırız — Discover'daki
+  // gerçek kartı etkilemeyelim, ve hemen expanded başlayalım.
+  const localExpandAnim = useSharedValue(previewMode ? 1 : 0);
+  const expandAnim = previewMode ? localExpandAnim : cardExpandAnim;
   // Top card unmount/remount olduğunda baseline'ı resetle.
   // containerExpand de reset edilir → expanded'ken swipe atılırsa yeni top kart
   // padded boyutta gelir (tab bar üstünde durur).
+  // previewMode'da reset YOK — modal expanded açılsın.
   useEffect(() => {
+    if (previewMode) return;
     if (isTopCard) {
       expandAnim.value = 0;
       containerExpand.value = 0;
     }
-  }, [isTopCard, expandAnim]);
+  }, [isTopCard, expandAnim, previewMode]);
 
   // Profile Info heavy mount swipe sonu lag'inin sebebi olmadığı test edildi
   // (Test A — gate kaldırıldı, lag aynıydı). Yine de gate'i koruyoruz: Profile
@@ -785,7 +803,8 @@ export default function SwipeCard({
                     <TouchableOpacity
                       activeOpacity={0.9}
                       onPress={() => {
-                        setIsFilled(true);
+                        // Kota yoksa fill'leme — parent modal'ı açacak.
+                        if (!superLikeDisabled) setIsFilled(true);
                         onSuperLike?.();
                       }}
                     >
@@ -845,7 +864,6 @@ export default function SwipeCard({
                     {profile.isPremium && (
                       <Animated.View style={nameAnimStyle}>
                         <BlurView
-                          intensity={90}
                           style={{
                             borderRadius: 999,
                             borderCurve: "continuous",
@@ -979,10 +997,9 @@ export default function SwipeCard({
                 </View>
                 {/* University & Department */}
                 {profile.showUniversity && profile.departmentDisplay && (
-                  <BlurView
-                    intensity={70}
+                  <View
                     style={{ borderCurve: "continuous", overflow: "hidden" }}
-                    className=" p-4 py-7 -mt-3 rounded-[45px] mb-4 border-white/10 border-[0.5px]"
+                    className=" p-4 py-7 -mt-3 rounded-[45px] mb-4 border-white/10 border-[0.5px] bg-[#12121296]"
                   >
                     <View className="flex-row flex-wrap items-center gap-3">
                       <View className=" self-start flex-row items-center">
@@ -1016,18 +1033,17 @@ export default function SwipeCard({
                         </View>
                       </View>
                     </View>
-                  </BlurView>
+                  </View>
                 )}
 
                 {profile.hobbies && profile.hobbies.length > 0 && (
-                  <BlurView
-                    intensity={70}
+                  <View
                     style={{
                       borderRadius: 40,
                       borderCurve: "continuous",
                       overflow: "hidden",
                     }}
-                    className="mb-4 p-5 py-5 border-[0.5px] border-white/10"
+                    className="mb-4 p-5 py-5 border-[0.5px] border-white/10 bg-[#12121296]"
                   >
                     <View className="flex-row items-center mb-4 px-4">
                       <Text className="text-white text-[13px] font-semibold">
@@ -1070,21 +1086,20 @@ export default function SwipeCard({
                         );
                       })}
                     </View>
-                  </BlurView>
+                  </View>
                 )}
 
                 {/* Lifestyle Info */}
                 {(profile.smokingStatusDisplay ||
                   profile.zodiacSignDisplay ||
                   profile.usagePurposeDisplay) && (
-                  <BlurView
-                    intensity={70}
+                  <View
                     style={{
                       borderRadius: 40,
                       borderCurve: "continuous",
                       overflow: "hidden",
                     }}
-                    className="mb-4 p-5 py-5 border-[0.5px] border-white/10"
+                    className="mb-4 p-5 py-5 border-[0.5px] border-white/10 bg-[#12121296]"
                   >
                     <View className="flex-row items-center mb-4 px-4">
                       <Text className="text-white text-[13px] font-semibold">
@@ -1212,19 +1227,18 @@ export default function SwipeCard({
                         </View>
                       )}
                     </View>
-                  </BlurView>
+                  </View>
                 )}
 
                 {/* Bio */}
                 {profile.bio && (
-                  <BlurView
-                    intensity={70}
+                  <View
                     style={{
                       borderRadius: 40,
                       borderCurve: "continuous",
                       overflow: "hidden",
                     }}
-                    className="mb-4 p-5 py-5 border-[0.5px] border-white/10"
+                    className="mb-4 p-5 py-5 border-[0.5px] border-white/10 bg-[#12121296]"
                   >
                     <View className="flex-row items-center mb-2 px-4">
                       <Text className="text-white text-[13px] font-semibold">
@@ -1269,7 +1283,7 @@ export default function SwipeCard({
                         </Text>
                       </View>
                     </View>
-                  </BlurView>
+                  </View>
                 )}
                 {/* Location Info */}
                 {(profile.cityDisplay || profile.districtDisplay) && (

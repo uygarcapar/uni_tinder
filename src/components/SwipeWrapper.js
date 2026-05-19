@@ -15,7 +15,7 @@ import Animated, {
 } from "react-native-reanimated";
 import * as Haptics from "expo-haptics";
 import SwipeCard from "./SwipeCard";
-import { cardExpandAnim, cardPullProgress } from "../services/uiBus";
+import uiBus, { cardExpandAnim, cardPullProgress } from "../services/uiBus";
 
 const { width, height } = Dimensions.get("window");
 const SWIPE_THRESHOLD = 125;
@@ -28,7 +28,7 @@ const FADE_IN_DURATION = 100;
 const FADE_OUT_DURATION = 350;
 const EXIT_DISTANCE = width * 1.2;
 
-export default function SwipeWrapper({
+function SwipeWrapper({
   profile,
   onSwipe,
   isTopCard,
@@ -40,6 +40,8 @@ export default function SwipeWrapper({
   onPass,
   onLike,
   onSuperLike,
+  swipeQuotaExhausted = false,
+  superLikeQuotaExhausted = false,
 }) {
   const tx = useSharedValue(0);
   const ty = useSharedValue(0);
@@ -68,12 +70,34 @@ export default function SwipeWrapper({
   const nativeScrollGesture = React.useMemo(() => Gesture.Native(), []);
 
   const triggerHaptic = () => {
-    Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Heavy);
+    Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
   };
 
   const triggerSuperLikeHaptic = () => {
     Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Heavy);
   };
+
+  const triggerExpandHaptic = () => {
+    Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
+  };
+
+  const openPaywall = () => {
+    uiBus.emit("swipePaywall", {});
+  };
+
+  const openSuperLikePaywall = () => {
+    uiBus.emit("superLikePaywall", {});
+  };
+
+  // Worklet'ten okumak için mirror — runOnJS'siz quota check.
+  const quotaExhaustedSV = useSharedValue(swipeQuotaExhausted);
+  useEffect(() => {
+    quotaExhaustedSV.value = swipeQuotaExhausted;
+  }, [swipeQuotaExhausted, quotaExhaustedSV]);
+  const superLikeExhaustedSV = useSharedValue(superLikeQuotaExhausted);
+  useEffect(() => {
+    superLikeExhaustedSV.value = superLikeQuotaExhausted;
+  }, [superLikeQuotaExhausted, superLikeExhaustedSV]);
 
   useEffect(() => {
     if (isTopCard) {
@@ -204,6 +228,19 @@ export default function SwipeWrapper({
         (event.velocityX < -VELOCITY_THRESHOLD &&
           tx.value < -VELOCITY_MIN_DISPLACEMENT);
 
+      // Kota bittiyse: swipe yönü gerçekleşmiş olsa bile karta geri dönsün,
+      // istek atılmasın, paywall açılsın.
+      if ((goRight || goLeft) && quotaExhaustedSV.value) {
+        const cfg = { damping: 16, stiffness: 380, mass: 1 };
+        tx.value = withSpring(0, cfg);
+        dragX.value = withSpring(0, cfg);
+        overlayDragX.value = withSpring(0, cfg);
+        overlayOpacity.value = 1;
+        buttonDragX.value = withSpring(0, cfg);
+        runOnJS(openPaywall)();
+        return;
+      }
+
       if (goRight) {
         dragX.value = withTiming(SWIPE_THRESHOLD, exitConfig);
         overlayDragX.value = withTiming(SWIPE_THRESHOLD, exitConfig);
@@ -269,7 +306,7 @@ export default function SwipeWrapper({
           cardExpandAnim.value = 1 - progress;
           if (progress >= 1 && !collapseHapticFired.value) {
             collapseHapticFired.value = true;
-            runOnJS(triggerSuperLikeHaptic)();
+            runOnJS(triggerExpandHaptic)();
           } else if (progress < 1 && collapseHapticFired.value) {
             collapseHapticFired.value = false;
           }
@@ -318,7 +355,7 @@ export default function SwipeWrapper({
         cardPullProgress.value = progress;
         if (progress >= 1 && !expandHapticFired.value) {
           expandHapticFired.value = true;
-          runOnJS(triggerSuperLikeHaptic)();
+          runOnJS(triggerExpandHaptic)();
         } else if (progress < 1 && expandHapticFired.value) {
           expandHapticFired.value = false;
         }
@@ -363,7 +400,15 @@ export default function SwipeWrapper({
       superLikeReady.value = false;
       expandHapticFired.value = false;
 
-      if (wasReady) {
+      if (wasReady && superLikeExhaustedSV.value) {
+        // SuperLike kotası bitti — kart geri yerine spring ile dönsün, istek yok,
+        // ayrı superlike paywall modal'ı açılsın.
+        const cfg = { damping: 16, stiffness: 380, mass: 1 };
+        ty.value = withSpring(0, cfg);
+        superLikeProgress.value = withSpring(0);
+        cardPullProgress.value = withSpring(0);
+        runOnJS(openSuperLikePaywall)();
+      } else if (wasReady) {
         ty.value = withTiming(
           -EXIT_HEIGHT,
           { duration: 320, easing: Easing.out(Easing.cubic) },
@@ -446,8 +491,26 @@ export default function SwipeWrapper({
           superLikeProgress={superLikeProgress}
           isTopCard={isTopCard}
           expanded={expanded}
+          superLikeDisabled={superLikeQuotaExhausted}
         />
       </Animated.View>
     </GestureDetector>
   );
 }
+
+// React.memo: DiscoverScreen optimistic stats update'inde re-render olunca
+// SwipeWrapper'lar tekrar render edilmesin. Profile + isTopCard + quota
+// flag'leri değişmediği sürece skip et. Handler ref'leri DiscoverScreen'de
+// useCallback ile stabilize edildi.
+export default React.memo(SwipeWrapper, (prev, next) => {
+  return (
+    prev.profile?.userId === next.profile?.userId &&
+    prev.isTopCard === next.isTopCard &&
+    prev.swipeQuotaExhausted === next.swipeQuotaExhausted &&
+    prev.superLikeQuotaExhausted === next.superLikeQuotaExhausted &&
+    prev.onSwipe === next.onSwipe &&
+    prev.onPass === next.onPass &&
+    prev.onLike === next.onLike &&
+    prev.onSuperLike === next.onSuperLike
+  );
+});

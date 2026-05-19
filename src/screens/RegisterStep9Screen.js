@@ -139,11 +139,11 @@ const SearchableListSheet = ({ initialValue, onConfirm, onCancel, items }) => {
         </View>
       }
       renderItem={({ item }) => {
-        const isSelected = String(item.id) === localValue;
+        const isSelected = item.enumName === localValue;
         return (
           <TouchableOpacity
             activeOpacity={0.7}
-            onPress={() => onConfirm(String(item.id))}
+            onPress={() => onConfirm(item.enumName)}
             style={{
               paddingVertical: 20,
               paddingHorizontal: 16,
@@ -194,15 +194,13 @@ export default function RegisterStep9Screen({ navigation }) {
   const dispatch = useDispatch();
   const profile = useSelector((state) => state.profile || {});
 
+  // Backend City/District'i enumName ("Istanbul"/"Besiktas") bekliyor.
+  // Eski persisted state'lerde number kalmış olabilir → string'e zorla.
   const [city, setCity] = useState(
-    profile.city !== undefined && profile.city !== null
-      ? String(profile.city)
-      : "",
+    typeof profile.city === "string" ? profile.city : "",
   );
   const [district, setDistrict] = useState(
-    profile.district !== undefined && profile.district !== null
-      ? String(profile.district)
-      : "",
+    typeof profile.district === "string" ? profile.district : "",
   );
 
   const [cities, setCities] = useState([]);
@@ -219,15 +217,15 @@ export default function RegisterStep9Screen({ navigation }) {
     fetchCities();
   }, []);
 
-  // Fetch districts when city changes
+  // Fetch districts when city changes — URL ID gerektiriyor, cities'ten lookup.
   useEffect(() => {
-    if (city) {
-      fetchDistricts(city);
-    } else {
+    if (!city || cities.length === 0) {
       setDistricts([]);
-      setDistrict("");
+      return;
     }
-  }, [city]);
+    const match = cities.find((c) => c.enumName === city);
+    if (match) fetchDistricts(match.id);
+  }, [city, cities]);
 
   const fetchCities = async () => {
     try {
@@ -337,35 +335,23 @@ export default function RegisterStep9Screen({ navigation }) {
 
   const getCityLabel = () => {
     if (!city) return "Şehir Seçiniz";
-    const selectedCity = cities.find((c) => String(c.id) === String(city));
+    const selectedCity = cities.find((c) => c.enumName === city);
     return selectedCity ? selectedCity.name : "Şehir Seçiniz";
   };
 
   const getDistrictLabel = () => {
     if (!district) return "İlçe Seçiniz";
-    const selectedDistrict = districts.find(
-      (d) => String(d.id) === String(district),
-    );
+    const selectedDistrict = districts.find((d) => d.enumName === district);
     return selectedDistrict ? selectedDistrict.name : "İlçe Seçiniz";
   };
 
   const handleNext = () => {
-    const updates = {};
-
-    // Only add filled values to updates
-    if (city) {
-      updates.city = parseInt(city);
-    } else {
-      updates.city = null;
-    }
-
-    if (district) {
-      updates.district = parseInt(district);
-    } else {
-      updates.district = null;
-    }
-
-    dispatch(updateMultipleFields(updates));
+    dispatch(
+      updateMultipleFields({
+        city: city || null,
+        district: district || null,
+      }),
+    );
     navigation.navigate("RegisterStep10");
   };
 

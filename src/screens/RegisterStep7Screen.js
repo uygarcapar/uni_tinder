@@ -8,46 +8,65 @@ import { Check, InfoIcon, ChevronUp, ChevronDown } from "lucide-react-native";
 import RegisterProgressBar from "../components/RegisterProgressBar";
 import AnimatedPressableShared from "../components/AnimatedPressable";
 
+// Backend Gender'ı enumName ("Male"/"Female"/"NonBinary" vb.) bekliyor.
+// Hardcoded liste — API'dan fetch etmek yerine. Transgender (id 5) iki kategoride
+// de geçiyor ama enumName aynı, sorun değil.
 const GENDER_CATEGORIES = [
   {
     id: 0,
     categoryName: "Erkek",
     subGenders: [
-      { id: 0, name: "Erkek" },
-      { id: 5, name: "Transgender" },
-      { id: 6, name: "Trans Erkek" },
+      { id: 0, name: "Erkek", enumName: "Male" },
+      { id: 5, name: "Transgender", enumName: "Transgender" },
+      { id: 6, name: "Trans Erkek", enumName: "TransMale" },
     ],
   },
   {
     id: 1,
     categoryName: "Kadın",
     subGenders: [
-      { id: 1, name: "Kadın" },
-      { id: 5, name: "Transgender" },
-      { id: 7, name: "Trans Kadın" },
+      { id: 1, name: "Kadın", enumName: "Female" },
+      { id: 5, name: "Transgender", enumName: "Transgender" },
+      { id: 7, name: "Trans Kadın", enumName: "TransFemale" },
     ],
   },
   {
     id: 2,
     categoryName: "Non-Binary",
     subGenders: [
-      { id: 2, name: "Non-Binary" },
-      { id: 8, name: "Genderfluid" },
-      { id: 9, name: "Genderqueer" },
-      { id: 10, name: "Agender" },
-      { id: 11, name: "Bigender" },
-      { id: 12, name: "İnterseks" },
-      { id: 13, name: "Two-Spirit" },
-      { id: 14, name: "Pangender" },
+      { id: 2, name: "Non-Binary", enumName: "NonBinary" },
+      { id: 8, name: "Genderfluid", enumName: "Genderfluid" },
+      { id: 9, name: "Genderqueer", enumName: "Genderqueer" },
+      { id: 10, name: "Agender", enumName: "Agender" },
+      { id: 11, name: "Bigender", enumName: "Bigender" },
+      { id: 12, name: "İnterseks", enumName: "Intersex" },
+      { id: 13, name: "Two-Spirit", enumName: "TwoSpirit" },
+      { id: 14, name: "Pangender", enumName: "Pangender" },
     ],
   },
 ];
 
-const getInitialCategory = (genderId) => {
-  if (genderId === null || genderId === undefined || genderId === "")
-    return null;
+// gender hem eski ID (number) hem yeni enumName (string) olabilir — ikisini de eşle.
+const getInitialCategory = (gender) => {
+  if (gender === null || gender === undefined || gender === "") return null;
   for (const cat of GENDER_CATEGORIES) {
-    if (cat.subGenders.some((sg) => sg.id === genderId)) return cat.id;
+    if (
+      cat.subGenders.some(
+        (sg) => sg.id === gender || sg.enumName === gender,
+      )
+    )
+      return cat.id;
+  }
+  return null;
+};
+
+// enumName → local ID (UI state). Backward-compat için ID geldiyse olduğu gibi döner.
+const resolveGenderId = (gender) => {
+  if (typeof gender === "number") return gender;
+  if (typeof gender !== "string" || !gender) return null;
+  for (const cat of GENDER_CATEGORIES) {
+    const sub = cat.subGenders.find((sg) => sg.enumName === gender);
+    if (sub) return sub.id;
   }
   return null;
 };
@@ -98,8 +117,7 @@ export default function RegisterStep7Screen({ navigation }) {
   const dispatch = useDispatch();
   const { gender } = useSelector((state) => state.auth.registrationForm);
 
-  const initialGender =
-    gender !== "" && gender !== null && gender !== undefined ? gender : null;
+  const initialGender = resolveGenderId(gender);
 
   const [selectedGender, setSelectedGender] = useState(initialGender);
   // Explicit category state — avoids shared-ID ambiguity (e.g. Transgender id:5 in both Erkek/Kadın)
@@ -138,9 +156,16 @@ export default function RegisterStep7Screen({ navigation }) {
       setError("Lütfen bir seçenek seç.");
       return;
     }
-    dispatch(
-      updateRegistrationField({ field: "gender", value: selectedGender }),
-    );
+    // selectedCatId ile kategoriyi belirle (Transgender id 5 iki kategoride olsa
+    // bile doğru enumName'i çek), sonra subGender'dan enumName al.
+    const cat = GENDER_CATEGORIES.find((c) => c.id === selectedCatId);
+    const sub = cat?.subGenders.find((s) => s.id === selectedGender);
+    const enumName = sub?.enumName;
+    if (!enumName) {
+      setError("Lütfen bir seçenek seç.");
+      return;
+    }
+    dispatch(updateRegistrationField({ field: "gender", value: enumName }));
     navigation.navigate("RegisterStep8");
   };
 

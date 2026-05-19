@@ -59,6 +59,7 @@ export function useSwipeStats() {
       const res = await api.get(API_ENDPOINTS.SWIPE_STATS);
       if (!res.isSuccess || !res.result) throw new Error("Stats fetch failed");
       const r = res.result;
+      if (__DEV__) console.log("[SwipeStats response]", r);
       return {
         remainingSwipes: r.remainingSwipes ?? null,
         superLikesRemaining: r.superLikesRemaining ?? null,
@@ -76,7 +77,11 @@ export function useSwipeStats() {
         remainingMissedMatchRecovery: r.remainingMissedMatchRecovery ?? null,
         missedMatchRecoveryResetAt: r.missedMatchRecoveryResetAt ?? null,
         swipeResetInSeconds: r.swipeResetInSeconds ?? null,
+        superLikeResetInSeconds: r.superLikeResetInSeconds ?? null,
+        undoResetInSeconds: r.undoResetInSeconds ?? null,
         nextSwipeResetAt: r.nextSwipeResetAt ?? null,
+        nextSuperLikeResetAt: r.nextSuperLikeResetAt ?? null,
+        nextUndoResetAt: r.nextUndoResetAt ?? null,
       };
     },
     // Stats sadece bir kez fetch — sonraki update'ler optimistik setQueryData
@@ -97,15 +102,24 @@ export function useSwipeMutation() {
     },
     // Optimistik: swipe sonrası remainingSwipes'ı hemen 1 azalt → logo dalga
     // animasyonu anlık güncellensin. SuperLike için superLikesRemaining da.
+    // SuperLike (direction === "up") backend tarafında daily swipe limit'ten
+    // muaf — DailySwipeCount artmıyor. remainingSwipes/totalSwipesToday'i de
+    // ona göre dokunma, aksi halde refetch'te revert flicker'ı oluyor.
     onMutate: ({ direction }) => {
       qc.setQueryData(swipeKeys.stats, (prev) => {
         if (!prev) return prev;
         const next = { ...prev };
-        if (typeof next.remainingSwipes === "number" && next.remainingSwipes > 0) {
-          next.remainingSwipes -= 1;
+        const isSuperLike = direction === "up";
+        if (!isSuperLike) {
+          if (
+            typeof next.remainingSwipes === "number" &&
+            next.remainingSwipes > 0
+          ) {
+            next.remainingSwipes -= 1;
+          }
+          next.totalSwipesToday = (next.totalSwipesToday ?? 0) + 1;
         }
-        next.totalSwipesToday = (next.totalSwipesToday ?? 0) + 1;
-        if (direction === "up") {
+        if (isSuperLike) {
           if (
             typeof next.superLikesRemaining === "number" &&
             next.superLikesRemaining > 0
@@ -121,21 +135,45 @@ export function useSwipeMutation() {
         return next;
       });
     },
-    onSuccess: (response) => {
+    onSuccess: (response, variables) => {
+      if (__DEV__) {
+        console.log(
+          `[Swipe response] dir=${variables?.direction}`,
+          response,
+        );
+      }
       // Backend SwipeResultDto.IsSuccess=false + ShowPaywall=true ile geldiğinde
       // (kotaya ulaşıldı) → uiBus üzerinden Discover'a haber ver, paywall açılsın.
       // ResponseDto wrapper: response = { isSuccess, result: { showPaywall, paywallType, ... } }
       const swipeResult = response?.result;
+      const isSuperLike = variables?.direction === "up";
       if (swipeResult?.showPaywall) {
-        uiBus.emit("swipePaywall", {
+        // SuperLike için ayrı modal — paywallType "superlike" olabilir veya
+        // direction üzerinden de bilebiliriz.
+        const isSuperLikePaywall =
+          isSuperLike ||
+          String(swipeResult?.paywallType ?? "").toLowerCase().includes("super");
+        const event = isSuperLikePaywall ? "superLikePaywall" : "swipePaywall";
+        uiBus.emit(event, {
           paywallType: swipeResult.paywallType,
           message: swipeResult.paywallMessage || swipeResult.message,
         });
       }
     },
-    onSettled: () => {
-      qc.invalidateQueries({ queryKey: swipeKeys.stats });
+    onError: (err, variables) => {
+      if (__DEV__) {
+        console.log(
+          `[Swipe error] dir=${variables?.direction}`,
+          err?.response?.data ?? err?.message,
+        );
+      }
     },
+    // Önceden onSettled'te her swipe sonrası stats invalidation vardı —
+    // gereksiz GET /swipe/stats + ~7 subscriber re-render cascade JS thread'i
+    // kasıyordu. Stats sadece session başına 1 kez fetch'leniyor; sonraki tüm
+    // hak azaltmaları onMutate içindeki optimistic setQueryData ile yapılıyor
+    // (hem normal swipe hem superlike için). Reload edilirse cache resetlenip
+    // bir sonraki useSwipeStats() çağrısı fresh fetch atar.
   });
 }
 
