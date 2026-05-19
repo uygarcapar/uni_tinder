@@ -20,9 +20,13 @@ import { getCurrentAccessToken } from './api';
  *     CheckUserOnline(targetUserId)
  *
  *   SERVER → CLIENT events:
- *     MatchNotification, ReceiveMessage, MessageSent, MessageDelivered, MessageEdited,
+ *     MatchNotification, IncomingLike, ReceiveMessage, MessageSent, MessageDelivered, MessageEdited,
  *     MessageDeleted, MessagesRead, ReactionsChanged, UserStartedTyping, UserStoppedTyping,
  *     UserStatusChanged, UserStatusResponse, NewNotification, Error
+ *
+ *   IncomingLike payload: { likerUserId, likerDisplayName, likerPhotoUrl, isSuperLike, likedAt }
+ *   — match OLUŞMADAN tek-yönlü like alındığında. Mutual like'ta gönderilmez
+ *     (MatchNotification yeterli — backend dedup).
  *
  * Authentication: JWT querystring (?access_token=...) çünkü WebSocket transport
  * Authorization header taşıyamaz. accessTokenFactory her reconnect'te taze token okur.
@@ -124,6 +128,7 @@ class RealtimeService {
     // Backend SERVER → CLIENT event'lerini fan-out et.
     const events = [
       'MatchNotification',
+      'IncomingLike',
       'ReceiveMessage',
       'MessageSent',
       'MessageDelivered',

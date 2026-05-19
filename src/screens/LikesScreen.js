@@ -36,6 +36,7 @@ import PurchaseModal from "../components/PurchaseModal";
 import WaveFillLogo from "../components/WaveFillLogo";
 import { useSwipeStats } from "../queries/swipeQueries";
 import { setWhoLikedMeCount } from "../store/slices/swipeSlice";
+import uiBus from "../services/uiBus";
 
 const { width } = Dimensions.get("window");
 const CARD_WIDTH = (width - 44) / 2; // 2 columns with padding
@@ -229,7 +230,7 @@ function LikeCard({ item, isPremium }) {
             textAlign: "left",
           }}
         >
-          {item.name}, {item.age}
+          {item.age != null ? `${item.name}, ${item.age}` : item.name}
         </Text>
       )}
     </TouchableOpacity>
@@ -328,6 +329,52 @@ export default function LikesScreen() {
 
   useEffect(() => {
     fetchWhoLikedMe();
+  }, []);
+
+  // Realtime: socket'ten yeni IncomingLike geldiğinde listeyi reload etmeden prepend et.
+  // AppNavigator IncomingLike SignalR event'ini yakalayıp uiBus.emit('incomingLike', payload)
+  // çağırır; payload backend IncomingLikeDto = { likerUserId, likerDisplayName,
+  // likerPhotoUrl, isSuperLike, likedAt }. Mutual like'ta backend bu event'i
+  // göndermez (MatchNotification akışı çalışır) — burada dedup gerekmiyor.
+  useEffect(() => {
+    const unsub = uiBus.on("incomingLike", (payload) => {
+      if (!payload?.likerUserId) return;
+      setLikes((prev) => {
+        // Aynı liker zaten listedeyse (ör. reconnect race) ekleme.
+        const isSuper = !!payload.isSuperLike;
+        const dupId = `${isSuper ? "sl" : "l"}_live_${payload.likerUserId}`;
+        const existingByUser = prev.some(
+          (it) =>
+            it.id === dupId ||
+            it.likerUserId === payload.likerUserId,
+        );
+        if (existingByUser) return prev;
+
+        const card = {
+          // profileId yok (DTO sadece userId döner) — live kart için sentetik id.
+          id: dupId,
+          likerUserId: payload.likerUserId,
+          name: payload.likerDisplayName || "",
+          age: null, // backend payload'da age yok; kart "İsim, " olarak görünür — kabul
+          mainPhoto: payload.likerPhotoUrl || "",
+          likedAt: payload.likedAt,
+          isSuperLike: isSuper,
+        };
+
+        // Yeni SuperLike → listenin en başına (en yeni en üstte).
+        if (isSuper) return [card, ...prev];
+
+        // Yeni normal Like → SuperLike bloğunun hemen altına, normal like'ların başına.
+        const firstNonSuper = prev.findIndex((it) => !it.isSuperLike);
+        if (firstNonSuper === -1) return [...prev, card];
+        return [
+          ...prev.slice(0, firstNonSuper),
+          card,
+          ...prev.slice(firstNonSuper),
+        ];
+      });
+    });
+    return unsub;
   }, []);
 
   const tabsRow = (

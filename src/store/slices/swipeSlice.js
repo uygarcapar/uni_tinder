@@ -89,6 +89,9 @@ const swipeSlice = createSlice({
     setWhoLikedMeCount: (state, action) => {
       state.whoLikedMeCount = action.payload || 0;
     },
+    incrementWhoLikedMeCount: (state) => {
+      state.whoLikedMeCount = (state.whoLikedMeCount || 0) + 1;
+    },
     nextCard: (state) => {
       if (state.currentIndex < state.potentialMatches.length) {
         state.currentIndex += 1;
@@ -157,5 +160,6 @@ export const {
   rewindCard,
   updateSwipeStats,
   setWhoLikedMeCount,
+  incrementWhoLikedMeCount,
 } = swipeSlice.actions;
 export default swipeSlice.reducer;

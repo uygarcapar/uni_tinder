@@ -46,6 +46,7 @@ import {
   fetchUnreadCount,
   resetChat,
 } from '../store/slices/chatSlice';
+import { incrementWhoLikedMeCount } from '../store/slices/swipeSlice';
 
 const Stack = createNativeStackNavigator();
 
@@ -170,6 +171,14 @@ export default function AppNavigator() {
           realtimeService.joinConversation(m.conversationId).catch(() => {});
         }
         setPendingMatch(m); // global modal aç
+      }),
+      // Birisi seni Like/SuperLike attı ama henüz match değil.
+      // Tab badge'i +1, LikesScreen açıksa uiBus üzerinden anlık kart prepend.
+      // Mutual like'ta backend bu event'i göndermez (MatchNotification yeterli — dedup).
+      realtimeService.on('IncomingLike', (payload) => {
+        if (!mounted) return;
+        dispatch(incrementWhoLikedMeCount());
+        uiBus.emit('incomingLike', payload);
       }),
       // NewNotification — in-app feed (match/like/system push). UI henüz feed ekranı yok;
       // şimdilik conv list'i refresh et + log. Future: notifications slice + screen.
