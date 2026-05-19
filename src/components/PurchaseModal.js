@@ -1,19 +1,129 @@
-import { useCallback, useEffect, useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import {
   View,
   Text,
   TouchableOpacity,
   ActivityIndicator,
   Alert,
+  Dimensions,
+  Animated,
+  Easing,
 } from "react-native";
+import { FlatList } from "react-native-gesture-handler";
+import * as Haptics from "expo-haptics";
+
+const { width: SCREEN_WIDTH } = Dimensions.get("window");
+const PLAN_CARD_WIDTH = SCREEN_WIDTH - 40;
+const PLAN_CARD_GAP = 12;
+const PLAN_SNAP = PLAN_CARD_WIDTH + PLAN_CARD_GAP;
+
+function SelectedBadge({ active }) {
+  const progress = useRef(new Animated.Value(active ? 1 : 0)).current;
+
+  useEffect(() => {
+    Animated.timing(progress, {
+      toValue: active ? 1 : 0,
+      duration: 320,
+      easing: Easing.bezier(0.4, 0, 0.2, 1),
+      useNativeDriver: true,
+    }).start();
+  }, [active]);
+
+  return (
+    <Animated.View
+      style={{
+        marginTop: 14,
+        alignSelf: "flex-start",
+        flexDirection: "row",
+        alignItems: "center",
+        gap: 5,
+        paddingHorizontal: 4,
+        paddingVertical: 6,
+        borderRadius: 999,
+        opacity: progress,
+      }}
+    >
+      <ShoppingBag size={15} color="#000" strokeWidth={2} />
+      <Text
+        style={{
+          color: "#000",
+          fontSize: 15,
+          fontWeight: "600",
+        }}
+      >
+        Satın Al
+      </Text>
+    </Animated.View>
+  );
+}
+
+function CardOpacityWrapper({ active, children }) {
+  const opacity = useRef(new Animated.Value(active ? 1 : 0.45)).current;
+
+  useEffect(() => {
+    Animated.timing(opacity, {
+      toValue: active ? 1 : 0.45,
+      duration: 320,
+      easing: Easing.bezier(0.4, 0, 0.2, 1),
+      useNativeDriver: true,
+    }).start();
+  }, [active]);
+
+  return <Animated.View style={{ opacity }}>{children}</Animated.View>;
+}
+
+function PaginationDot({ active }) {
+  const progress = useRef(new Animated.Value(active ? 1 : 0)).current;
+
+  useEffect(() => {
+    Animated.timing(progress, {
+      toValue: active ? 1 : 0,
+      duration: 280,
+      easing: Easing.bezier(0.4, 0, 0.2, 1),
+      useNativeDriver: false,
+    }).start();
+  }, [active]);
+
+  const width = progress.interpolate({
+    inputRange: [0, 1],
+    outputRange: [6, 20],
+  });
+  const opacity = progress.interpolate({
+    inputRange: [0, 1],
+    outputRange: [0.3, 1],
+  });
+
+  return (
+    <Animated.View
+      style={{
+        width,
+        height: 6,
+        borderRadius: 999,
+        backgroundColor: "#fff",
+        opacity,
+      }}
+    />
+  );
+}
 import {
   BottomSheetModal,
   BottomSheetScrollView,
-  BottomSheetBackdrop,
+  BottomSheetFooter,
 } from "@gorhom/bottom-sheet";
-import { X, Check, Zap, Eye, RotateCcw, Ban } from "lucide-react-native";
+import BlurBottomSheetBackdrop from "./BlurBottomSheetBackdrop";
+import {
+  X,
+  Check,
+  Zap,
+  Eye,
+  RotateCcw,
+  Ban,
+  ShoppingBag,
+} from "lucide-react-native";
 import { LinearGradient } from "expo-linear-gradient";
-import { useDispatch } from "react-redux";
+import { BlurView } from "expo-blur";
+import AnimatedPressable from "./AnimatedPressable";
+import { useDispatch, useSelector } from "react-redux";
 import {
   getOfferings,
   purchasePackage,
@@ -93,6 +203,8 @@ function extractPlansFromOffering(offering) {
 }
 
 // Backend metadata (displayName / highlight / sortOrder) ile RC paketlerini birleştir.
+// Sabit sıralama: yearly → monthly → weekly.
+const PERIOD_ORDER = { yearly: 0, monthly: 1, weekly: 2 };
 function mergePlansWithBackend(rcPlans, backendPlans) {
   const backendByPeriod = new Map();
   for (const b of backendPlans ?? []) {
@@ -104,12 +216,15 @@ function mergePlansWithBackend(rcPlans, backendPlans) {
       const meta = backendByPeriod.get(rc.period);
       return {
         ...rc,
-        displayName: meta?.displayName ?? PERIOD_LABELS[rc.period]?.short ?? rc.period,
+        displayName:
+          meta?.displayName ?? PERIOD_LABELS[rc.period]?.short ?? rc.period,
         highlight: meta?.highlight ?? null,
         sortOrder: meta?.sortOrder ?? 99,
       };
     })
-    .sort((a, b) => a.sortOrder - b.sortOrder);
+    .sort(
+      (a, b) => (PERIOD_ORDER[a.period] ?? 99) - (PERIOD_ORDER[b.period] ?? 99),
+    );
 }
 
 // "Aylığa kıyasla %X tasarruf" hesaplaması. Monthly price referans alınır.
@@ -118,7 +233,8 @@ function computeSavings(plan, plans) {
   const monthly = plans.find((p) => p.period === "monthly");
   if (!monthly?.price) return null;
 
-  const months = plan.period === "yearly" ? 12 : plan.period === "weekly" ? 1 / 4.345 : null;
+  const months =
+    plan.period === "yearly" ? 12 : plan.period === "weekly" ? 1 / 4.345 : null;
   if (!months) return null;
 
   const equivalentMonthlyTotal = monthly.price * months;
@@ -129,19 +245,87 @@ function computeSavings(plan, plans) {
   return Math.round(savingsRatio * 100);
 }
 
+// displayName render: solda büyük "premium" (Duckie-regular), sağında küçük
+// "/ Aylık" (veya hangi periyot ise). Backend displayName format'ı genelde
+// "Aylık Premium" — period word ile premium'u ayır.
+function renderPlanName(
+  name,
+  { primarySize = 44, secondaryColor = "#000" } = {},
+) {
+  if (!name) return null;
+  const m = name.match(/premium/i);
+  if (!m) {
+    return (
+      <Text
+        style={{
+          color: secondaryColor,
+          fontSize: 17,
+          fontWeight: "600",
+        }}
+      >
+        {name}
+      </Text>
+    );
+  }
+  const before = name.slice(0, m.index).trim();
+  const after = name.slice(m.index + m[0].length).trim();
+  const periodText = before || after;
+  return (
+    <View style={{ flexDirection: "row", alignItems: "flex-end" }}>
+      <Text
+        style={{
+          color: secondaryColor,
+          fontFamily: "Duckie-regular",
+          fontSize: primarySize,
+          includeFontPadding: false,
+          paddingRight: primarySize * 0.18,
+        }}
+      >
+        premium
+      </Text>
+      {periodText ? (
+        <Text
+          style={{
+            color: secondaryColor,
+            fontSize: 14,
+            fontWeight: "500",
+            marginLeft: 4,
+            marginBottom: 6,
+          }}
+        >
+          / {periodText}
+        </Text>
+      ) : null}
+    </View>
+  );
+}
+
 export default function PurchaseModal({ bottomSheetRef, onClose, onSuccess }) {
   const dispatch = useDispatch();
+  const isPremium = useSelector((s) => s.subscription?.isPremium ?? false);
   const [offering, setOffering] = useState(null);
   const [loadingOffering, setLoadingOffering] = useState(true);
   const [backendPlans, setBackendPlans] = useState(null);
   const [purchasing, setPurchasing] = useState(false);
   const [restoring, setRestoring] = useState(false);
   const [selectedPeriod, setSelectedPeriod] = useState(null);
+  const planListRef = useRef(null);
+  const initialScrollDoneRef = useRef(false);
+
+  // onClose prop'u verilmezse default davranış: sheet'i ref üzerinden dismiss et.
+  // Aksi halde DiscoverScreen gibi onClose pass etmeyen yerlerde X/backdrop çalışmıyor.
+  const handleClose = useCallback(() => {
+    if (onClose) onClose();
+    else bottomSheetRef?.current?.dismiss?.();
+  }, [onClose, bottomSheetRef]);
 
   useEffect(() => {
     Promise.all([
       getOfferings().catch(() => null),
-      api.get(API_ENDPOINTS.SUBSCRIPTION_PLANS).then((r) => r?.result?.plans ?? []).catch(() => []),
+      api
+        .get(API_ENDPOINTS.SUBSCRIPTION_PLANS)
+        .then((r) => r?.result?.plans ?? [])
+        .catch(() => []),
     ])
       .then(([o, plans]) => {
         setOffering(o);
@@ -152,33 +336,50 @@ export default function PurchaseModal({ bottomSheetRef, onClose, onSuccess }) {
 
   // RC + backend birleştirilmiş plan listesi
   const plans = useMemo(
-    () => mergePlansWithBackend(extractPlansFromOffering(offering), backendPlans ?? []),
-    [offering, backendPlans]
+    () =>
+      mergePlansWithBackend(
+        extractPlansFromOffering(offering),
+        backendPlans ?? [],
+      ),
+    [offering, backendPlans],
   );
 
-  // İlk render'da default seçim — highlight olan veya monthly
+  // İlk render'da default seçim — highlight'lı plan (varsa) yoksa ilk plan
   useEffect(() => {
     if (selectedPeriod || plans.length === 0) return;
     const highlighted = plans.find((p) => p.highlight);
-    setSelectedPeriod(highlighted?.period ?? plans.find((p) => p.period === "monthly")?.period ?? plans[0].period);
+    setSelectedPeriod(highlighted?.period ?? plans[0].period);
   }, [plans, selectedPeriod]);
 
-  const selectedPlan = plans.find((p) => p.period === selectedPeriod) ?? plans[0];
+  const selectedPlan =
+    plans.find((p) => p.period === selectedPeriod) ?? plans[0];
+
+  // İlk açılışta default plan'ın pozisyonuna kaydır (sadece bir kez).
+  // idx 0 ise FlatList zaten 0'da, scrollToIndex çağırmıyoruz — initial render'ı
+  // bozmasın ve ilk swipe snap'ini etkilemesin.
+  useEffect(() => {
+    if (initialScrollDoneRef.current) return;
+    if (!selectedPeriod || plans.length === 0) return;
+    const idx = plans.findIndex((p) => p.period === selectedPeriod);
+    if (idx < 0) return;
+    initialScrollDoneRef.current = true;
+    if (idx === 0) return;
+    requestAnimationFrame(() => {
+      planListRef.current?.scrollToIndex?.({
+        index: idx,
+        animated: false,
+      });
+    });
+  }, [selectedPeriod, plans.length]);
 
   const renderBackdrop = useCallback(
-    (props) => (
-      <BottomSheetBackdrop
-        {...props}
-        appearsOnIndex={0}
-        disappearsOnIndex={-1}
-        opacity={0.5}
-      />
-    ),
-    []
+    (props) => <BlurBottomSheetBackdrop {...props} onPress={handleClose} />,
+    [handleClose],
   );
 
-  const handlePurchase = async () => {
-    const pkg = selectedPlan?.pkg;
+  const handlePurchase = async (planOverride) => {
+    const plan = planOverride ?? selectedPlan;
+    const pkg = plan?.pkg;
     if (!pkg) {
       Alert.alert("Hata", "Paket bulunamadı.");
       return;
@@ -188,13 +389,16 @@ export default function PurchaseModal({ bottomSheetRef, onClose, onSuccess }) {
       const isPremium = await purchasePackage(pkg);
       if (isPremium) {
         dispatch(setPremium({ isPremium: true }));
-        onClose?.();
+        handleClose();
         onSuccess?.();
         dispatch(syncSubscriptionWithRetry({ maxAttempts: 4, delayMs: 1500 }));
       }
     } catch (e) {
       if (!e.userCancelled) {
-        Alert.alert("Satın Alma Hatası", e.message || "İşlem gerçekleştirilemedi.");
+        Alert.alert(
+          "Satın Alma Hatası",
+          e.message || "İşlem gerçekleştirilemedi.",
+        );
       }
     } finally {
       setPurchasing(false);
@@ -207,7 +411,7 @@ export default function PurchaseModal({ bottomSheetRef, onClose, onSuccess }) {
       const isPremium = await restorePurchases();
       if (isPremium) {
         dispatch(setPremium({ isPremium: true }));
-        onClose?.();
+        handleClose();
         onSuccess?.();
         dispatch(fetchSubscriptionStatus());
       } else {
@@ -223,69 +427,210 @@ export default function PurchaseModal({ bottomSheetRef, onClose, onSuccess }) {
   // Trial bilgisi seçili plana göre — RC her plan için ayrı intro price tanımlayabilir.
   const introPrice = selectedPlan?.introPrice;
   const introUnits = introPrice?.periodNumberOfUnits;
-  const trialDays = typeof introUnits === "number" && introUnits > 0 ? introUnits : 3;
+  const trialDays =
+    typeof introUnits === "number" && introUnits > 0 ? introUnits : 3;
   const showTrialBadge = Boolean(introPrice) || (selectedPlan && trialDays > 0);
 
   const selectedPriceString = selectedPlan?.priceString ?? "—";
-  const selectedPeriodLabel = PERIOD_LABELS[selectedPlan?.period ?? "monthly"]?.per ?? "ay";
+  const selectedPeriodLabel =
+    PERIOD_LABELS[selectedPlan?.period ?? "monthly"]?.per ?? "ay";
+
+  // Sticky footer — BottomSheetFooter ile sheet'in alt kısmında sabit kalır.
+  const renderFooter = useCallback(
+    (props) => (
+      <BottomSheetFooter {...props}>
+        <BlurView
+          intensity={70}
+          tint="dark"
+          style={{
+            paddingHorizontal: 20,
+            paddingTop: 12,
+            paddingBottom: 24,
+            borderTopWidth: 0.5,
+            borderTopColor: "rgba(255,255,255,0.08)",
+            overflow: "hidden",
+          }}
+        >
+          {loadingOffering ? (
+            <ActivityIndicator color="#fff" style={{ marginVertical: 20 }} />
+          ) : (
+            <>
+              <AnimatedPressable
+                onPress={() => handlePurchase()}
+                disabled={isPremium || purchasing || restoring || !selectedPlan}
+                pressScale={0.95}
+                style={{
+                  borderRadius: 999,
+                  borderCurve: "continuous",
+                  overflow: "hidden",
+                  marginBottom: 8,
+                  opacity: isPremium ? 0.6 : selectedPlan ? 1 : 0.5,
+                }}
+              >
+                <LinearGradient
+                  colors={["#ffffff", "#e5e7eb", "#9ca3af"]}
+                  locations={[0, 0.35, 0.85]}
+                  start={{ x: 0, y: 0 }}
+                  end={{ x: 1, y: 1 }}
+                  style={{
+                    paddingVertical: 18,
+                    alignItems: "center",
+                    justifyContent: "center",
+                  }}
+                >
+                  <Text
+                    style={{
+                      color: "#000",
+                      fontWeight: "700",
+                      fontSize: 14,
+                      opacity: purchasing ? 0 : 1,
+                    }}
+                  >
+                    {isPremium
+                      ? "Hesap Zaten Premium"
+                      : showTrialBadge
+                        ? `${trialDays} Gün Ücretsiz Dene`
+                        : `${selectedPriceString} / ${selectedPeriodLabel} — Abone Ol`}
+                  </Text>
+                  {purchasing && (
+                    <ActivityIndicator
+                      size="small"
+                      color="#000"
+                      style={{ position: "absolute" }}
+                    />
+                  )}
+                </LinearGradient>
+              </AnimatedPressable>
+
+              <TouchableOpacity
+                onPress={handleRestore}
+                disabled={purchasing || restoring}
+                activeOpacity={0.8}
+                style={{ alignItems: "center", paddingVertical: 8 }}
+              >
+                {restoring ? (
+                  <ActivityIndicator size="small" color="#9CA3AF" />
+                ) : (
+                  <Text style={{ color: "#6B7280", fontSize: 13 }}>
+                    Satın alımları geri yükle
+                  </Text>
+                )}
+              </TouchableOpacity>
+
+              <Text
+                style={{
+                  marginHorizontal: 10,
+                  color: "#4B5563",
+                  fontSize: 11,
+                  textAlign: "center",
+                  marginTop: 8,
+                  lineHeight: 16,
+                }}
+              >
+                Lit Gold aboneliği, App Store üzerinden otomatik olarak
+                yenilenen bir aboneliktir. Aboneliğiniz, satın alma işleminin
+                onaylanmasından sonra App Store hesabınızdan ücretlendirilir.
+              </Text>
+            </>
+          )}
+        </BlurView>
+      </BottomSheetFooter>
+    ),
+    [
+      loadingOffering,
+      purchasing,
+      restoring,
+      selectedPlan,
+      showTrialBadge,
+      trialDays,
+      selectedPriceString,
+      selectedPeriodLabel,
+    ],
+  );
 
   return (
     <BottomSheetModal
       ref={bottomSheetRef}
-      snapPoints={["90%"]}
+      snapPoints={["100%"]}
       enablePanDownToClose
       enableOverDrag={false}
-      onDismiss={onClose}
+      onDismiss={() => {
+        setSelectedPeriod(null);
+        initialScrollDoneRef.current = false;
+        handleClose();
+      }}
       backdropComponent={renderBackdrop}
+      footerComponent={renderFooter}
       backgroundStyle={{
         backgroundColor: "#121212",
         borderTopLeftRadius: 36,
         borderTopRightRadius: 36,
       }}
-      handleIndicatorStyle={{ backgroundColor: "rgba(255,255,255,0.3)" }}
+      handleComponent={null}
     >
-      {/* Header */}
-      <View
+      {/* Close button — sağ üst köşede absolute, BlurView arkaplanlı */}
+      <TouchableOpacity
+        onPress={handleClose}
+        activeOpacity={0.7}
+        hitSlop={12}
         style={{
-          flexDirection: "row",
-          alignItems: "center",
-          paddingHorizontal: 20,
-          paddingTop: 32,
-          paddingBottom: 12,
-          backgroundColor: "#121212",
+          position: "absolute",
+          top: 16,
+          right: 16,
+          zIndex: 10,
+          width: 45,
+          height: 45,
+          borderRadius: 999,
+          overflow: "hidden",
+          borderWidth: 0.5,
+          borderColor: "rgba(255,255,255,0.1)",
         }}
       >
-        <TouchableOpacity
-          onPress={onClose}
-          activeOpacity={0.7}
-          style={{ width: 60 }}
-        >
-          <X size={22} color="#9CA3AF" strokeWidth={2} pointerEvents="none" />
-        </TouchableOpacity>
-        <Text
+        <BlurView
+          intensity={60}
+          tint="dark"
           style={{
             flex: 1,
-            color: "#fff",
-            fontSize: 15,
-            fontWeight: "700",
-            textAlign: "center",
+            alignItems: "center",
+            justifyContent: "center",
           }}
         >
-          lit gold
-        </Text>
-        <View style={{ width: 60 }} />
-      </View>
+          <X size={18} color="#fff" strokeWidth={2.5} pointerEvents="none" />
+        </BlurView>
+      </TouchableOpacity>
+
+      {/* Üstte hafif gradient accent — solid bg üzerinde sabit overlay, full-screen
+          gradient'in GPU yüküne karşı küçük bir alan kapsar, modal animasyonunu
+          etkilemez. */}
+      <LinearGradient
+        pointerEvents="none"
+        colors={["#3a3a3e", "#121212"]}
+        locations={[0, 1]}
+        start={{ x: 0.5, y: 0 }}
+        end={{ x: 0.5, y: 1 }}
+        style={{
+          position: "absolute",
+          top: 0,
+          left: 0,
+          right: 0,
+          height: 700,
+          borderTopLeftRadius: 36,
+          borderTopRightRadius: 36,
+          overflow: "hidden",
+        }}
+      />
 
       <BottomSheetScrollView
-        style={{ flex: 1, backgroundColor: "#121212" }}
-        contentContainerStyle={{ paddingHorizontal: 20, paddingBottom: 40 }}
+        style={{ flex: 1 }}
+        contentContainerStyle={{
+          paddingHorizontal: 20,
+          paddingTop: 24,
+          paddingBottom: 40,
+        }}
         showsVerticalScrollIndicator={false}
       >
         {/* Gradient Card */}
-        <LinearGradient
-          colors={["#ff173a", "#FF4D4D", "#fc803d"]}
-          start={{ x: 0, y: 0 }}
-          end={{ x: 1, y: 1 }}
+        <View
           style={{
             borderRadius: 32,
             borderCurve: "continuous",
@@ -301,211 +646,241 @@ export default function PurchaseModal({ bottomSheetRef, onClose, onSuccess }) {
               fontSize: 56,
               fontFamily: "Duckie-regular",
               marginBottom: 8,
+              // Duckie font glyph metrics → sağ taraf clip oluyor; padding ile aç.
+              paddingRight: 12,
+              includeFontPadding: false,
             }}
           >
-            lit gold
+            lit shop
           </Text>
           <Text
-            style={{ color: "rgba(255,255,255,0.85)", fontSize: 14, textAlign: "center" }}
+            style={{
+              color: "rgba(255,255,255,0.85)",
+              fontSize: 14,
+              fontWeight: "400",
+              textAlign: "center",
+            }}
           >
-            Eşleşmelerini hızlandır, seni beğenenleri gör ve daha fazlasını keşfet!
+            Eşleşmelerini hızlandır, seni beğenenleri gör ve daha fazlasını
+            keşfet!
           </Text>
 
-          {showTrialBadge && (
+          {!showTrialBadge && (
             <View
               style={{
                 marginTop: 14,
                 paddingHorizontal: 14,
-                paddingVertical: 6,
+                paddingVertical: 10,
                 borderRadius: 999,
                 borderCurve: "continuous",
                 backgroundColor: "rgba(255,255,255,0.18)",
               }}
             >
-              <Text style={{ color: "#fff", fontSize: 12, fontWeight: "700" }}>
+              <Text style={{ color: "#fff", fontSize: 13, fontWeight: "600" }}>
                 İlk {trialDays} gün ücretsiz
               </Text>
             </View>
           )}
-        </LinearGradient>
+        </View>
 
-        {/* Plan Selector (FAZ 5) */}
-        {!loadingOffering && plans.length > 1 && (
-          <View style={{ marginBottom: 20 }}>
-            {plans.map((plan) => {
-              const isSelected = plan.period === selectedPeriod;
-              const savings = computeSavings(plan, plans);
-              return (
-                <TouchableOpacity
-                  key={plan.period}
-                  onPress={() => setSelectedPeriod(plan.period)}
-                  activeOpacity={0.85}
-                  style={{
-                    borderRadius: 20,
-                    borderCurve: "continuous",
-                    borderWidth: isSelected ? 1.5 : 0.5,
-                    borderColor: isSelected ? "#fc4526" : "rgba(255,255,255,0.12)",
-                    backgroundColor: isSelected ? "rgba(252,69,38,0.08)" : "rgba(255,255,255,0.02)",
-                    paddingHorizontal: 18,
-                    paddingVertical: 16,
-                    marginBottom: 10,
-                    flexDirection: "row",
-                    alignItems: "center",
-                    justifyContent: "space-between",
-                  }}
-                >
-                  <View style={{ flex: 1 }}>
-                    <View style={{ flexDirection: "row", alignItems: "center", gap: 8, marginBottom: 4 }}>
-                      <Text style={{ color: "#fff", fontSize: 15, fontWeight: "700" }}>
-                        {plan.displayName}
-                      </Text>
-                      {plan.highlight && (
-                        <View
+        {/* Plan Selector — yatay paging carousel: kaydırınca o plan seçili. */}
+        {!loadingOffering && plans.length > 0 && selectedPlan && (
+          <View style={{ marginBottom: 20, marginHorizontal: -20 }}>
+            <FlatList
+              ref={planListRef}
+              data={plans}
+              keyExtractor={(p) => p.period}
+              horizontal
+              showsHorizontalScrollIndicator={false}
+              snapToInterval={PLAN_SNAP}
+              snapToAlignment="start"
+              decelerationRate="fast"
+              disableIntervalMomentum
+              initialNumToRender={plans.length}
+              windowSize={plans.length + 1}
+              removeClippedSubviews={false}
+              contentContainerStyle={{ paddingHorizontal: 20 }}
+              getItemLayout={(_, index) => ({
+                length: PLAN_SNAP,
+                offset: PLAN_SNAP * index,
+                index,
+              })}
+              scrollEventThrottle={16}
+              onScroll={(e) => {
+                const idx = Math.round(
+                  e.nativeEvent.contentOffset.x / PLAN_SNAP,
+                );
+                if (plans[idx] && plans[idx].period !== selectedPeriod) {
+                  Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light).catch(
+                    () => {},
+                  );
+                  setSelectedPeriod(plans[idx].period);
+                }
+              }}
+              renderItem={({ item: plan }) => {
+                const planIntro = plan.introPrice;
+                const planTrialUnits = planIntro?.periodNumberOfUnits;
+                const planTrialDays =
+                  typeof planTrialUnits === "number" && planTrialUnits > 0
+                    ? planTrialUnits
+                    : 3;
+                const planShowTrial =
+                  Boolean(planIntro) || (plan && planTrialDays > 0);
+                const planPeriodLabel =
+                  PERIOD_LABELS[plan?.period ?? "monthly"]?.per ?? "ay";
+                const isSelected = plan.period === selectedPlan.period;
+                return (
+                  <CardOpacityWrapper active={isSelected}>
+                    <AnimatedPressable
+                      pressScale={0.97}
+                      onPress={() => {
+                        if (isPremium) return;
+                        if (!isSelected) setSelectedPeriod(plan.period);
+                        handlePurchase(plan);
+                      }}
+                      disabled={
+                        isPremium || purchasing || restoring || loadingOffering
+                      }
+                      style={{
+                        width: PLAN_CARD_WIDTH,
+                        borderRadius: 32,
+                        borderCurve: "continuous",
+                        borderWidth: 0.5,
+                        borderColor: "rgba(255,255,255,0.2)",
+                        overflow: "hidden",
+                      }}
+                    >
+                      <LinearGradient
+                        colors={["#ffffff", "#e5e7eb", "#9ca3af"]}
+                        locations={[0, 0.5, 1]}
+                        start={{ x: 0, y: 0 }}
+                        end={{ x: 1, y: 1 }}
+                        style={{
+                          paddingHorizontal: 20,
+                          paddingTop: 10,
+                          paddingBottom: 22,
+                        }}
+                      >
+                        <View style={{ marginBottom: 6 }}>
+                          {renderPlanName(plan.displayName, {
+                            primarySize: 55,
+                            secondaryColor: "#000",
+                          })}
+                        </View>
+                        <Text
                           style={{
-                            paddingHorizontal: 8,
-                            paddingVertical: 2,
-                            borderRadius: 999,
-                            backgroundColor: "#fc4526",
+                            color: "#000",
+                            fontSize: 18,
+                            fontWeight: "400",
                           }}
                         >
-                          <Text style={{ color: "#fff", fontSize: 10, fontWeight: "700" }}>
-                            {plan.highlight}
+                          {plan.priceString ?? "—"}
+                        </Text>
+                        {planShowTrial && (
+                          <Text
+                            style={{
+                              color: "#4B5563",
+                              fontSize: 12,
+                              fontWeight: "400",
+                              marginTop: 4,
+                              lineHeight: 15,
+                            }}
+                          >
+                            İlk {planTrialDays} gün ücretsiz kullanabilirsin,
+                            ardından {plan.priceString ?? "—"}/{planPeriodLabel}{" "}
+                            olarak otomatik yenilenir.
                           </Text>
-                        </View>
-                      )}
-                    </View>
-                    <Text style={{ color: "#9CA3AF", fontSize: 13 }}>
-                      {plan.priceString ?? "—"}
-                      {savings ? `  ·  %${savings} tasarruf` : ""}
-                    </Text>
-                  </View>
-                  <View
-                    style={{
-                      width: 22,
-                      height: 22,
-                      borderRadius: 11,
-                      borderWidth: 1.5,
-                      borderColor: isSelected ? "#fc4526" : "rgba(255,255,255,0.3)",
-                      alignItems: "center",
-                      justifyContent: "center",
-                      backgroundColor: isSelected ? "#fc4526" : "transparent",
-                    }}
-                  >
-                    {isSelected && <Check size={12} color="#fff" strokeWidth={3} pointerEvents="none" />}
-                  </View>
-                </TouchableOpacity>
-              );
-            })}
+                        )}
+                        <SelectedBadge active={isSelected} />
+                      </LinearGradient>
+                    </AnimatedPressable>
+                  </CardOpacityWrapper>
+                );
+              }}
+              ItemSeparatorComponent={() => (
+                <View style={{ width: PLAN_CARD_GAP }} />
+              )}
+            />
+            {/* Pagination dots */}
+            <View
+              style={{
+                flexDirection: "row",
+                justifyContent: "center",
+                gap: 6,
+                marginTop: 14,
+              }}
+            >
+              {plans.map((p) => (
+                <PaginationDot
+                  key={p.period}
+                  active={p.period === selectedPlan.period}
+                />
+              ))}
+            </View>
           </View>
         )}
 
-        {/* Features */}
-        <Text
-          style={{
-            color: "#9CA3AF",
-            fontSize: 13,
-            fontWeight: "700",
-            marginBottom: 12,
-            marginLeft: 4,
-          }}
-        >
-          Özellikler
-        </Text>
+        {/* Features — BlurView arkaplan (üstteki plan kartı ile aynı stil) */}
         <View
           style={{
-            borderRadius: 32,
+            borderRadius: 28,
             borderCurve: "continuous",
-            overflow: "hidden",
             borderWidth: 0.5,
-            borderColor: "rgba(255,255,255,0.1)",
+            borderColor: "rgba(255,255,255,0.3)",
+            overflow: "hidden",
             marginBottom: 24,
           }}
         >
-          {FEATURES.map(({ icon: Icon, label }, i) => (
-            <View
-              key={label}
-              style={{
-                flexDirection: "row",
-                alignItems: "center",
-                justifyContent: "space-between",
-                paddingHorizontal: 18,
-                paddingVertical: 16,
-                borderBottomWidth: i < FEATURES.length - 1 ? 0.5 : 0,
-                borderBottomColor: "rgba(255,255,255,0.07)",
-              }}
-            >
-              <View style={{ flexDirection: "row", alignItems: "center", gap: 12 }}>
-                <Icon size={18} color="#fff" strokeWidth={1.5} pointerEvents="none" />
-                <Text style={{ color: "#fff", fontSize: 14, fontWeight: "500" }}>
-                  {label}
+          <BlurView intensity={60} tint="dark" style={{ paddingVertical: 20 }}>
+            {/* Header row */}
+            <View className="flex-row items-center justify-between mb-2 px-6">
+              <Text className="text-white/70 font-bold text-[12px] uppercase tracking-wider flex-1">
+                Özellikler
+              </Text>
+              <View className="flex-row items-center gap-4">
+                <Text className="text-white/70 font-bold text-[12px] uppercase w-16 text-center">
+                  Standart
+                </Text>
+                <Text
+                  className="w-16 text-center mb-2"
+                  style={{
+                    color: "#fff",
+                    fontSize: 25,
+                    fontFamily: "Duckie-regular",
+                  }}
+                >
+                  gold
                 </Text>
               </View>
-              <Check size={16} color="#fff" strokeWidth={2.5} pointerEvents="none" />
             </View>
-          ))}
+
+            {/* Feature rows */}
+            {FEATURES.map(({ label }, index) => (
+              <View
+                key={label}
+                className={`flex-row items-center justify-between px-6 ${
+                  index !== FEATURES.length - 1 ? "mb-4" : ""
+                }`}
+              >
+                <Text className="text-white font-[500] text-[13px] flex-1 pr-2">
+                  {label}
+                </Text>
+                <View className="flex-row items-center gap-4">
+                  <View className="w-16 items-center">
+                    <X
+                      size={18}
+                      color="rgba(255, 255, 255, 0.4)"
+                      strokeWidth={2}
+                    />
+                  </View>
+                  <View className="w-16 items-center">
+                    <Check size={18} color="#fff" strokeWidth={2} />
+                  </View>
+                </View>
+              </View>
+            ))}
+          </BlurView>
         </View>
-
-        {/* Price + CTA */}
-        {loadingOffering ? (
-          <ActivityIndicator color="#fff" style={{ marginVertical: 20 }} />
-        ) : (
-          <>
-            <TouchableOpacity
-              onPress={handlePurchase}
-              disabled={purchasing || restoring || !selectedPlan}
-              activeOpacity={0.85}
-              style={{
-                borderRadius: 999,
-                borderCurve: "continuous",
-                overflow: "hidden",
-                backgroundColor: "#fff",
-                paddingVertical: 17,
-                alignItems: "center",
-                marginBottom: 12,
-                opacity: selectedPlan ? 1 : 0.5,
-              }}
-            >
-              {purchasing ? (
-                <ActivityIndicator color="#000" />
-              ) : (
-                <Text style={{ color: "#000", fontWeight: "700", fontSize: 15 }}>
-                  {showTrialBadge
-                    ? `${trialDays} Gün Ücretsiz Dene`
-                    : `${selectedPriceString} / ${selectedPeriodLabel} — Abone Ol`}
-                </Text>
-              )}
-            </TouchableOpacity>
-
-            <TouchableOpacity
-              onPress={handleRestore}
-              disabled={purchasing || restoring}
-              activeOpacity={0.7}
-              style={{ alignItems: "center", paddingVertical: 10 }}
-            >
-              {restoring ? (
-                <ActivityIndicator size="small" color="#9CA3AF" />
-              ) : (
-                <Text style={{ color: "#6B7280", fontSize: 13 }}>
-                  Satın alımları geri yükle
-                </Text>
-              )}
-            </TouchableOpacity>
-          </>
-        )}
-
-        <Text
-          style={{
-            color: "#4B5563",
-            fontSize: 11,
-            textAlign: "center",
-            marginTop: 16,
-            lineHeight: 16,
-          }}
-        >
-          {showTrialBadge
-            ? `İlk ${trialDays} gün ücretsiz, ardından ${selectedPriceString}/${selectedPeriodLabel} olarak otomatik yenilenir. İstediğin zaman iptal edebilirsin — deneme süresi dolmadan iptal edersen ücret alınmaz.`
-            : `Abonelik her ${selectedPeriodLabel} otomatik yenilenir. İstediğin zaman iptal edebilirsin.`}
-        </Text>
       </BottomSheetScrollView>
     </BottomSheetModal>
   );

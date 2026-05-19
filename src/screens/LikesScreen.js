@@ -1,4 +1,4 @@
-import { useEffect, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import {
   View,
   Text,
@@ -9,16 +9,16 @@ import {
 } from "react-native";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { LinearGradient } from "expo-linear-gradient";
-import MaskedView from "@react-native-masked-view/masked-view";
 import { BlurView } from "expo-blur";
 import {
   Flame,
   Heart,
   HeartCrack,
-  Menu,
+  Bell,
   Lock,
   Star,
 } from "lucide-react-native";
+import { useNavigation } from "@react-navigation/native";
 import Animated, {
   useSharedValue,
   useAnimatedStyle,
@@ -26,9 +26,16 @@ import Animated, {
   withTiming,
   Easing,
 } from "react-native-reanimated";
+import { useDispatch, useSelector } from "react-redux";
 import api from "../services/api";
 import { API_ENDPOINTS } from "../constants/api";
 import profileService from "../services/profileService";
+import AnimatedPressable from "../components/AnimatedPressable";
+import EmptyState from "../components/EmptyState";
+import PurchaseModal from "../components/PurchaseModal";
+import WaveFillLogo from "../components/WaveFillLogo";
+import { useSwipeStats } from "../queries/swipeQueries";
+import { setWhoLikedMeCount } from "../store/slices/swipeSlice";
 
 const { width } = Dimensions.get("window");
 const CARD_WIDTH = (width - 44) / 2; // 2 columns with padding
@@ -128,13 +135,13 @@ function LikeCard({ item, isPremium }) {
       activeOpacity={0.95}
       style={{
         width: CARD_WIDTH,
-        height: CARD_HEIGHT,
-        marginBottom: 12,
+        marginBottom: 20,
       }}
     >
       <View
         style={{
-          flex: 1,
+          width: CARD_WIDTH,
+          height: CARD_HEIGHT,
           borderRadius: 40,
           borderCurve: "continuous",
           overflow: "hidden",
@@ -175,42 +182,7 @@ function LikeCard({ item, isPremium }) {
           </View>
         )}
 
-        {showClear ? (
-          <>
-            <MaskedView
-              style={{
-                position: "absolute",
-                bottom: 0,
-                left: 0,
-                right: 0,
-                height: 120,
-              }}
-              maskElement={
-                <LinearGradient
-                  colors={["transparent", "rgba(0,0,0,0.85)", "rgba(0,0,0,1)"]}
-                  locations={[0, 0.5, 1]}
-                  style={{ flex: 1 }}
-                />
-              }
-            >
-              <BlurView intensity={60} tint="dark" style={{ flex: 1 }} />
-            </MaskedView>
-
-            <View className="absolute bottom-5 left-5 right-5">
-              <BlurView
-                intensity={90}
-                className="mb-1 py-1.5 px-3 overflow-hidden rounded-full self-start flex-row items-center gap-2"
-              >
-                <Text className="text-white text-[10px] font-bold">
-                  {item.isSuperLike ? "Süper beğeni" : "Seni beğendi"}
-                </Text>
-              </BlurView>
-              <Text className="text-white text-[20px] font-bold">
-                {item.name}, {item.age}
-              </Text>
-            </View>
-          </>
-        ) : (
+        {!showClear && (
           <BlurView
             intensity={70}
             tint="dark"
@@ -238,15 +210,28 @@ function LikeCard({ item, isPremium }) {
             }}
             pointerEvents="none"
           >
-            <Heart
-              size={22}
-              color="#3B82F6"
-              fill="#3B82F6"
-              strokeWidth={1.5}
-            />
+            <Heart size={28} color="#fff" fill="#fff" strokeWidth={1.5} />
           </View>
         )}
       </View>
+
+      {/* İsim — kartın altında, sola yatık */}
+      {showClear && (
+        <Text
+          numberOfLines={1}
+          style={{
+            marginTop: 8,
+            paddingLeft: 14,
+            paddingRight: 4,
+            color: "#808080",
+            fontSize: 14,
+            fontWeight: "600",
+            textAlign: "left",
+          }}
+        >
+          {item.name}, {item.age}
+        </Text>
+      )}
     </TouchableOpacity>
   );
 }
@@ -254,12 +239,31 @@ function LikeCard({ item, isPremium }) {
 export default function LikesScreen() {
   const [likes, setLikes] = useState([]);
   const [loading, setLoading] = useState(true);
-  const [totalProfiles, setTotalProfiles] = useState(0);
   const [currentPage, setCurrentPage] = useState(1);
   const [hasNextPage, setHasNextPage] = useState(false);
-  const [isPremium, setIsPremium] = useState(false);
+  const [profilePremium, setProfilePremium] = useState(false);
+  // Redux subscription state — purchase modal sonrası `setPremium` dispatch'i
+  // ile anında true olur. Profile fetch'inden gelen profilePremium ile birlikte
+  // OR'lanır ki ya başlangıçta zaten premium ise ya da yeni satın alındıysa
+  // button kaybolsun.
+  const reduxPremium = useSelector((s) => s.subscription?.isPremium);
+  const isPremium = profilePremium || reduxPremium;
   const [activeTab, setActiveTab] = useState("all");
   const insets = useSafeAreaInsets();
+  const dispatch = useDispatch();
+  const navigation = useNavigation();
+  const statsQuery = useSwipeStats();
+  const purchaseBottomSheetRef = useRef(null);
+
+  // DiscoverScreen ile aynı fill oranı: premium veya remainingSwipes===-1 → 0.
+  const DAILY_SWIPE_LIMIT = 30;
+  const swipeFillRatio = useMemo(() => {
+    if (statsQuery.data?.isPremium) return 0;
+    const rem = statsQuery.data?.remainingSwipes;
+    if (rem == null || rem < 0) return 0;
+    const used = Math.max(0, DAILY_SWIPE_LIMIT - rem);
+    return Math.min(1, used / DAILY_SWIPE_LIMIT);
+  }, [statsQuery.data?.remainingSwipes, statsQuery.data?.isPremium]);
 
   const filteredLikes =
     activeTab === "like"
@@ -285,7 +289,7 @@ export default function LikesScreen() {
         JSON.stringify(data, null, 2),
       );
 
-      if (profile?.isPremium) setIsPremium(true);
+      if (profile?.isPremium) setProfilePremium(true);
 
       if (data.isSuccess && data.result) {
         const superLikeProfiles = (data.result.superLikes?.profiles || []).map(
@@ -311,7 +315,7 @@ export default function LikesScreen() {
         setLikes([...superLikeProfiles, ...likeProfiles]);
         const slTotal = data.result.superLikes?.totalProfiles || 0;
         const lTotal = data.result.likes?.totalProfiles || 0;
-        setTotalProfiles(slTotal + lTotal);
+        dispatch(setWhoLikedMeCount(slTotal + lTotal));
         setHasNextPage(data.result.likes?.hasNextPage || false);
         setCurrentPage(data.result.likes?.currentPage || 1);
       }
@@ -326,32 +330,15 @@ export default function LikesScreen() {
     fetchWhoLikedMe();
   }, []);
 
-  return (
-    <View className="flex-1 bg-[#121212]">
-      {/* Custom Header */}
-      <View style={{ paddingTop: insets.top, backgroundColor: "#121212" }}>
-        <View
-          className="px-6 flex-row items-center justify-between"
-          style={{ height: 50 }}
-        >
-          <Text className="text-white text-[26px] font-bold tracking-wider">
-            Beğenenler{loading ? "" : ` (${totalProfiles})`}
-          </Text>
-          <View className="flex-row items-center gap-3">
-            <View className="flex-row items-center gap-1.5">
-              <Menu size={25} strokeWidth={2} color="#fff" fill="#fff" />
-            </View>
-          </View>
-        </View>
-      </View>
-      <View className="flex-row flex-wrap gap-2 px-6">
+  const tabsRow = (
+    <View className="pb-3">
+      <View className="flex-row flex-wrap gap-2">
         {[
           { key: "all", label: "Tümü", icon: null },
           { key: "like", label: "Beğeni", icon: Heart },
           { key: "superlike", label: "Superlike", icon: Star },
         ].map((tab) => {
           const isActive = activeTab === tab.key;
-          const Icon = tab.icon;
           return (
             <TouchableOpacity
               key={tab.key}
@@ -364,10 +351,9 @@ export default function LikesScreen() {
                 flexDirection: "row",
                 alignItems: "center",
                 paddingHorizontal: 14,
-                paddingVertical: 13,
-                gap: 6,
+                paddingVertical: 10,
                 backgroundColor: isActive ? "#fff" : "transparent",
-                borderWidth: isActive ? 0 : 0.5,
+                borderWidth: 1,
                 borderColor: "rgba(255,255,255,0.25)",
               }}
             >
@@ -384,9 +370,38 @@ export default function LikesScreen() {
           );
         })}
       </View>
+    </View>
+  );
+
+  return (
+    <View className="flex-1 bg-[#121212]">
+      {/* Custom Header — ortada lit logo */}
+      <View style={{ paddingTop: insets.top, backgroundColor: "#121212" }}>
+        <View
+          className="px-6 flex-row items-center justify-center relative"
+          style={{ height: 50 }}
+        >
+          <WaveFillLogo fillRatio={swipeFillRatio} />
+          <TouchableOpacity
+            onPress={() => navigation.navigate("Notifications")}
+            hitSlop={10}
+            className="absolute right-6"
+            activeOpacity={0.7}
+          >
+            <View pointerEvents="none">
+              <Bell size={25} strokeWidth={2} color="#fff" fill="#fff" />
+            </View>
+          </TouchableOpacity>
+        </View>
+      </View>
 
       {loading ? (
-        <LikesSkeletonGrid />
+        <>
+          <View style={{ paddingHorizontal: 16, paddingTop: 16 }}>
+            {tabsRow}
+          </View>
+          <LikesSkeletonGrid />
+        </>
       ) : (
         /* Likes Grid */
         <FlatList
@@ -396,21 +411,26 @@ export default function LikesScreen() {
           )}
           keyExtractor={(item) => item.id}
           numColumns={2}
+          ListHeaderComponent={tabsRow}
           ListEmptyComponent={
-            <View className="flex-1 items-center justify-center mb-20">
-              <HeartCrack size={80} color="#fff" strokeWidth={1.3} />
-              <Text className="text-gray-400 font-bold text-[14px] mt-2">
-                {activeTab === "superlike"
-                  ? "Henüz süper beğeni yok."
-                  : activeTab === "like"
-                    ? "Henüz beğeni yok."
-                    : "Henüz seni beğenen kimse yok."}
-              </Text>
+            <View className="flex-1 items-center justify-center pb-[50%]">
+              <EmptyState
+                Icon={HeartCrack}
+                iconStrokeWidth={1}
+                topOffset={0}
+                text={
+                  activeTab === "superlike"
+                    ? "Henüz süper beğeni yok."
+                    : activeTab === "like"
+                      ? "Henüz beğeni yok."
+                      : "Henüz seni beğenen kimse yok."
+                }
+              />
             </View>
           }
           contentContainerStyle={
             filteredLikes.length === 0
-              ? { flexGrow: 1, paddingBottom: 100 }
+              ? { flexGrow: 1, paddingHorizontal: 16, paddingTop: 16 }
               : {
                   paddingHorizontal: 16,
                   paddingTop: 16,
@@ -426,35 +446,42 @@ export default function LikesScreen() {
         />
       )}
 
-      {/* Sticky Bottom Button */}
-      <View
-        className="absolute bottom-[90px] left-0 right-0 px-6 bg-transparent    "
-        style={{
-          paddingBottom: 10,
-          paddingTop: 16,
-        }}
-      >
-        <TouchableOpacity
-          activeOpacity={1}
+      {/* Sticky Bottom Button — premium değilse göster, basınca purchase modal aç */}
+      {!isPremium && (
+        <View
+          className="absolute bottom-[90px] left-0 right-0 px-6 bg-transparent    "
           style={{
-            borderRadius: 999,
-            borderCurve: "continuous",
-            overflow: "hidden",
+            paddingBottom: 10,
+            paddingTop: 16,
           }}
-          className=""
         >
-          <LinearGradient
-            colors={["#ff173a", "#FF4D4D", "#fc803d"]}
-            start={{ x: 0, y: 0 }}
-            end={{ x: 1, y: 0 }}
-            className="py-3.5"
+          <AnimatedPressable
+            pressScale={0.97}
+            onPress={() => purchaseBottomSheetRef.current?.present()}
+            style={{
+              borderRadius: 999,
+              borderCurve: "continuous",
+              overflow: "hidden",
+            }}
           >
-            <Text className="text-white py-[18px] font-bold text-[14px] text-center">
-              Seni beğenenleri gör
-            </Text>
-          </LinearGradient>
-        </TouchableOpacity>
-      </View>
+            <LinearGradient
+              colors={["#ff173a", "#FF4D4D", "#fc803d"]}
+              start={{ x: 0, y: 0 }}
+              end={{ x: 1, y: 0 }}
+              className="py-3.5"
+            >
+              <Text className="text-white py-[18px] font-bold text-[14px] text-center">
+                Seni beğenenleri gör
+              </Text>
+            </LinearGradient>
+          </AnimatedPressable>
+        </View>
+      )}
+
+      <PurchaseModal
+        bottomSheetRef={purchaseBottomSheetRef}
+        onClose={() => purchaseBottomSheetRef.current?.dismiss()}
+      />
     </View>
   );
 }

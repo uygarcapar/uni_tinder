@@ -31,6 +31,8 @@ import SwipeCard from "../components/SwipeCard";
 import PreviewModal from "../components/PreviewModal";
 import SettingsModal from "../components/SettingsModal";
 import PurchaseModal from "../components/PurchaseModal";
+import WaveFillLogo from "../components/WaveFillLogo";
+import { useSwipeStats } from "../queries/swipeQueries";
 import { getOfferings } from "../services/subscriptionService";
 import {
   LogOut,
@@ -108,6 +110,22 @@ import {
   InfoIcon,
   UserRound,
 } from "lucide-react-native";
+
+function ExclamationIcon({ size = 18, color = "#fff" }) {
+  return (
+    <Text
+      style={{
+        color,
+        fontSize: size,
+        fontWeight: "900",
+        lineHeight: size,
+        includeFontPadding: false,
+      }}
+    >
+      !
+    </Text>
+  );
+}
 import { LinearGradient } from "expo-linear-gradient";
 import { BlurView } from "expo-blur";
 
@@ -367,8 +385,24 @@ function SkeletonBox({ width: w, height: h, borderRadius = 8, style }) {
 }
 
 // ─── Hero avatar — image yüklenirken skeleton overlay ────────────────────────
-function HeroAvatar({ uri, size = 80, onPress }) {
-  const [imgLoading, setImgLoading] = useState(true);
+function HeroAvatar({ uri, size = 80, onPress, loading = false }) {
+  const [imgLoading, setImgLoading] = useState(false);
+
+  // uri değiştiğinde loading state'i resetle — cached image'da onLoadStart
+  // bazen fire etmiyor, bazen onLoadEnd kaçıyor; uri varsa loading başlat.
+  useEffect(() => {
+    if (uri) setImgLoading(true);
+    else setImgLoading(false);
+  }, [uri]);
+
+  // 5sn timeout fallback — yükleme callback'leri kaçarsa skeleton kalıcı olmasın
+  useEffect(() => {
+    if (!imgLoading) return;
+    const t = setTimeout(() => setImgLoading(false), 5000);
+    return () => clearTimeout(t);
+  }, [imgLoading, uri]);
+
+  const showSkeleton = loading || (uri && imgLoading);
   return (
     <TouchableOpacity
       activeOpacity={0.85}
@@ -385,30 +419,28 @@ function HeroAvatar({ uri, size = 80, onPress }) {
       }}
     >
       {uri ? (
-        <>
-          <Image
-            source={{ uri }}
-            style={{ width: "100%", height: "100%" }}
-            resizeMode="cover"
-            onLoadStart={() => setImgLoading(true)}
-            onLoadEnd={() => setImgLoading(false)}
-          />
-          {imgLoading && (
-            <View
-              style={{
-                position: "absolute",
-                top: 0,
-                left: 0,
-                right: 0,
-                bottom: 0,
-              }}
-            >
-              <SkeletonBox width={size} height={size} borderRadius={size / 2} />
-            </View>
-          )}
-        </>
-      ) : (
+        <Image
+          source={{ uri }}
+          style={{ width: "100%", height: "100%" }}
+          resizeMode="cover"
+          onLoadEnd={() => setImgLoading(false)}
+          onError={() => setImgLoading(false)}
+        />
+      ) : loading ? null : (
         <UserRound size={40} color="#fff" strokeWidth={1.5} />
+      )}
+      {showSkeleton && (
+        <View
+          style={{
+            position: "absolute",
+            top: 0,
+            left: 0,
+            right: 0,
+            bottom: 0,
+          }}
+        >
+          <SkeletonBox width={size} height={size} borderRadius={size / 2} />
+        </View>
       )}
     </TouchableOpacity>
   );
@@ -500,7 +532,8 @@ function PhotoItem({ photo, onPress, savingPhoto }) {
         style={{
           width: "100%",
           height: "100%",
-          borderRadius: 32,
+          borderRadius: 20,
+          borderCurve: "continuous",
           overflow: "hidden",
           backgroundColor: "#1E1E1E",
         }}
@@ -540,13 +573,12 @@ function PhotoItem({ photo, onPress, savingPhoto }) {
 }
 
 // ─── Reanimated Sürükle Bırak Bileşeni ─────────────────────────────────────
-function SortablePhoto({
+const SortablePhoto = React.memo(function SortablePhoto({
   id,
   index,
   positions,
   maxIndex,
   children,
-  onDragStart,
   onDragEnd,
 }) {
   const isDragging = useSharedValue(false);
@@ -557,6 +589,13 @@ function SortablePhoto({
 
   const startX = useSharedValue(0);
   const startY = useSharedValue(0);
+
+  // İlk drag JIT compile lag'ini önlemek için worklet'leri mount'ta prewarm et.
+  // Tiny no-op withSpring çağrısı Reanimated runtime'ı sıcak tutar.
+  useEffect(() => {
+    translateX.value = withSpring(translateX.value, SPRING_CONFIG);
+    translateY.value = withSpring(translateY.value, SPRING_CONFIG);
+  }, [translateX, translateY]);
 
   useAnimatedReaction(
     () => positions.value[id],
@@ -569,40 +608,57 @@ function SortablePhoto({
     },
   );
 
-  const panGesture = Gesture.Pan()
-    .onStart(() => {
-      isDragging.value = true;
-      startX.value = translateX.value;
-      startY.value = translateY.value;
-      runOnJS(onDragStart)();
-    })
-    .onUpdate((event) => {
-      translateX.value = startX.value + event.translationX;
-      translateY.value = startY.value + event.translationY;
+  // useMemo ile gesture'ı stabil tut — parent re-render'larında yeniden
+  // yaratılmazsa GestureDetector da gereksiz init yapmaz.
+  const panGesture = useMemo(
+    () =>
+      Gesture.Pan()
+        // iOS app icon stili — kısa basılı tutma sonrası drag aktif olsun.
+        .activateAfterLongPress(220)
+        .onStart(() => {
+          isDragging.value = true;
+          startX.value = translateX.value;
+          startY.value = translateY.value;
+        })
+        .onUpdate((event) => {
+          translateX.value = startX.value + event.translationX;
+          translateY.value = startY.value + event.translationY;
 
-      const newIndex = getOrder(translateX.value, translateY.value, maxIndex);
-      const oldIndex = positions.value[id];
+          const newIndex = getOrder(
+            translateX.value,
+            translateY.value,
+            maxIndex,
+          );
+          const oldIndex = positions.value[id];
 
-      if (newIndex !== oldIndex && newIndex !== undefined) {
-        const newPositions = { ...positions.value };
-        for (const key in newPositions) {
-          if (newPositions[key] === newIndex) {
-            newPositions[key] = oldIndex;
-            break;
+          if (newIndex !== oldIndex && newIndex !== undefined) {
+            const newPositions = { ...positions.value };
+            for (const key in newPositions) {
+              if (newPositions[key] === newIndex) {
+                newPositions[key] = oldIndex;
+                break;
+              }
+            }
+            newPositions[id] = newIndex;
+            positions.value = newPositions;
           }
-        }
-        newPositions[id] = newIndex;
-        positions.value = newPositions;
-      }
-    })
-    .onEnd(() => {
-      isDragging.value = false;
-      const finalPos = getPosition(positions.value[id]);
-      translateX.value = withSpring(finalPos.x, SPRING_CONFIG);
-      translateY.value = withSpring(finalPos.y, SPRING_CONFIG, () => {
-        runOnJS(onDragEnd)(positions.value);
-      });
-    });
+        })
+        .onEnd(() => {
+          isDragging.value = false;
+          const finalPos = getPosition(positions.value[id]);
+          // Önce ref'i hemen güncelle (no re-render) — save bu pencerede
+          // tetiklenirse doğru order'ı görür. Spring başlar.
+          runOnJS(onDragEnd)(positions.value, false);
+          translateX.value = withSpring(finalPos.x, SPRING_CONFIG);
+          // State commit'i spring sonuna ertele — re-render animasyon frame'leriyle
+          // çakışmasın. Spring callback bittiğinde tetiklenir.
+          translateY.value = withSpring(finalPos.y, SPRING_CONFIG, () => {
+            runOnJS(onDragEnd)(positions.value, true);
+          });
+        }),
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+    [id, maxIndex, onDragEnd],
+  );
 
   const animatedStyle = useAnimatedStyle(() => {
     return {
@@ -614,7 +670,7 @@ function SortablePhoto({
       transform: [
         { translateX: translateX.value },
         { translateY: translateY.value },
-        { scale: withSpring(isDragging.value ? 1.1 : 1, SPRING_CONFIG) },
+        { scale: withSpring(isDragging.value ? 1.05 : 1, SPRING_CONFIG) },
       ],
       zIndex: isDragging.value ? 100 : 0,
     };
@@ -625,7 +681,7 @@ function SortablePhoto({
       <Animated.View style={animatedStyle}>{children}</Animated.View>
     </GestureDetector>
   );
-}
+});
 
 // ─── Performans Optimizasyonlu Seçim Bileşenleri (Modal İçi) ──────────────
 
@@ -668,7 +724,7 @@ const HobbyPill = React.memo(({ hobby, isSelected, onPress }) => {
       <Text
         style={{
           color: localSelected ? "#000" : "#9CA3AF",
-          fontSize: 14,
+          fontSize: 13,
           fontWeight: "500",
         }}
       >
@@ -895,11 +951,9 @@ function CompletionAccordion({
   );
 }
 
-import {
-  BottomSheetModal,
-  BottomSheetScrollView,
-  BottomSheetBackdrop,
-} from "@gorhom/bottom-sheet";
+import { BottomSheetModal, BottomSheetScrollView } from "@gorhom/bottom-sheet";
+import BlurBottomSheetBackdrop from "../components/BlurBottomSheetBackdrop";
+import AnimatedPressable from "../components/AnimatedPressable";
 
 // ─── Edit Modal sarmalayıcı ───────────────────────────────────────────────────
 function ProfileEditModal({
@@ -914,15 +968,8 @@ function ProfileEditModal({
   const snapPoints = useMemo(() => ["90%"], []);
 
   const renderBackdrop = useCallback(
-    (props) => (
-      <BottomSheetBackdrop
-        {...props}
-        appearsOnIndex={0}
-        disappearsOnIndex={-1}
-        opacity={0.5}
-      />
-    ),
-    [],
+    (props) => <BlurBottomSheetBackdrop {...props} onPress={onClose} />,
+    [onClose],
   );
 
   return (
@@ -977,22 +1024,44 @@ function ProfileEditModal({
             opacity: saveDisabled ? 0.35 : 1,
           }}
         >
-          {saving ? (
-            <ActivityIndicator className="py-[8.5px]" size={18} color="#fff" />
-          ) : (
-            <View
+          <View
+            style={{
+              borderRadius: 999,
+              borderCurve: "continuous",
+              overflow: "hidden",
+              position: "relative",
+            }}
+            className="flex row bg-[#1E1E1E] self-start justify-center text-center items-center border-[0.5px] border-white/10 px-3 py-3 gap-2 rounded-full"
+          >
+            {/* Text her zaman render — buton genişliğini sabitler. saving olunca
+                opacity 0, üstüne shimmer skeleton bindirilir. */}
+            <Text
               style={{
-                borderRadius: 999,
-                borderCurve: "continuous",
-                overflow: "hidden",
+                color: "#fff",
+                fontWeight: "700",
+                fontSize: 13,
+                opacity: saving ? 0 : 1,
               }}
-              className="flex row bg-[#1E1E1E] self-start justify-center text-center items-center border-[0.5px] border-white/10 px-3 py-3 gap-2 rounded-full"
             >
-              <Text style={{ color: "#fff", fontWeight: "700", fontSize: 13 }}>
-                Kaydet
-              </Text>
-            </View>
-          )}
+              Kaydet
+            </Text>
+            {saving && (
+              <View
+                pointerEvents="none"
+                style={{
+                  position: "absolute",
+                  top: 0,
+                  left: 0,
+                  right: 0,
+                  bottom: 0,
+                  alignItems: "center",
+                  justifyContent: "center",
+                }}
+              >
+                <SkeletonBox width={42} height={14} borderRadius={999} />
+              </View>
+            )}
+          </View>
         </TouchableOpacity>
       </View>
 
@@ -1014,6 +1083,17 @@ export default function ProfileScreen() {
   const { user } = useSelector((state) => state.auth);
   const subscriptionIsPremium = useSelector((s) => s.subscription?.isPremium);
   const insets = useSafeAreaInsets();
+  const statsQuery = useSwipeStats();
+
+  // DiscoverScreen ile aynı fill oranı: premium veya remainingSwipes===-1 → 0.
+  const DAILY_SWIPE_LIMIT = 30;
+  const swipeFillRatio = useMemo(() => {
+    if (statsQuery.data?.isPremium) return 0;
+    const rem = statsQuery.data?.remainingSwipes;
+    if (rem == null || rem < 0) return 0;
+    const used = Math.max(0, DAILY_SWIPE_LIMIT - rem);
+    return Math.min(1, used / DAILY_SWIPE_LIMIT);
+  }, [statsQuery.data?.remainingSwipes, statsQuery.data?.isPremium]);
 
   // ── Bottom Sheet Ref & Görünürlük Stateleri ────────────────────────────────
   const editBottomSheetRef = useRef(null);
@@ -1034,8 +1114,8 @@ export default function ProfileScreen() {
         if (cancelled) return;
         const monthlyPkg =
           offering?.monthly ??
-          offering?.availablePackages?.find(
-            (p) => /monthly|month/i.test(p?.product?.identifier ?? "")
+          offering?.availablePackages?.find((p) =>
+            /monthly|month/i.test(p?.product?.identifier ?? ""),
           );
         const priceString = monthlyPkg?.product?.priceString;
         if (priceString) setTeaserPrice(priceString);
@@ -1074,8 +1154,17 @@ export default function ProfileScreen() {
   // ── Fotoğraf yönetimi ─────────────────────────────────────────────────────
   const [savingPhoto, setSavingPhoto] = useState(false);
   const [draftPhotoOrder, setDraftPhotoOrder] = useState([]);
+  // Ref ile sürekli senkron — drag end'de state'i defer ediyoruz ama save
+  // o anda doğru sıralamayı bilebilsin diye ref hemen güncelleniyor.
+  const draftPhotoOrderRef = useRef([]);
+  useEffect(() => {
+    draftPhotoOrderRef.current = draftPhotoOrder;
+  }, [draftPhotoOrder]);
   const [photoOrderDirty, setPhotoOrderDirty] = useState(false);
-  const [isDraggingPhoto, setIsDraggingPhoto] = useState(false);
+  const photoOrderDirtyRef = useRef(false);
+  useEffect(() => {
+    photoOrderDirtyRef.current = photoOrderDirty;
+  }, [photoOrderDirty]);
 
   // Reanimated Shared Value (Fotoğrafların Pozisyonları için)
   const positions = useSharedValue({});
@@ -1212,16 +1301,69 @@ export default function ProfileScreen() {
   // ── Profil düzenleme ──────────────────────────────────────────────────────
   const openEditProfile = () => {
     setBioText(myProfile?.bio || "");
-    const rawIds = (myProfile?.hobbies || []).map((h) => Number(h));
+    // myProfile.hobbies; enum string ("Gym"), id (number) veya Türkçe display ("Spor")
+    // gelebiliyor. Üçünü de id'ye normalize et — UI seçim ID üzerinden çalışıyor.
+    const lookupToId = {};
+    hobbyGroups.forEach((g) => {
+      (g.hobbies || []).forEach((h) => {
+        if (h?.id == null) return;
+        if (h.enumName) lookupToId[h.enumName] = h.id;
+        if (h.name) lookupToId[h.name] = h.id;
+      });
+    });
+    const rawIds = (myProfile?.hobbies || [])
+      .map((h) => {
+        if (typeof h === "number") return h;
+        if (h && typeof h === "object" && h.id != null) return Number(h.id);
+        const n = Number(h);
+        if (Number.isFinite(n)) return n;
+        return lookupToId[h] ?? null;
+      })
+      .filter((id) => Number.isFinite(id));
     setDraftHobbies(rawIds);
+    // smoking/zodiac/usagePurpose; id (number) veya enum string ("None") veya
+    // Türkçe display ("Kullanmıyorum") olabiliyor. Hepsini option objesine map et.
+    const matchOption = (options, idValue, displayValue) => {
+      if (!options?.length) return null;
+      const byId = options.find((o) => o?.id === idValue);
+      if (byId) return byId;
+      const n = Number(idValue);
+      if (Number.isFinite(n)) {
+        const byNumId = options.find((o) => Number(o?.id) === n);
+        if (byNumId) return byNumId;
+      }
+      const tryStr = (v) =>
+        v &&
+        options.find(
+          (o) =>
+            o?.enumName === v ||
+            o?.name === v ||
+            o?.display === v ||
+            o?.displayName === v ||
+            o?.label === v,
+        );
+      return tryStr(idValue) || tryStr(displayValue) || null;
+    };
     setDraftSmoking(
-      smokingOptions.find((o) => o.id === myProfile?.smokingStatus) || null,
+      matchOption(
+        smokingOptions,
+        myProfile?.smokingStatus,
+        myProfile?.smokingStatusDisplay,
+      ),
     );
     setDraftZodiac(
-      zodiacOptions.find((o) => o.id === myProfile?.zodiacSign) || null,
+      matchOption(
+        zodiacOptions,
+        myProfile?.zodiacSign,
+        myProfile?.zodiacSignDisplay,
+      ),
     );
     setDraftUsagePurpose(
-      usagePurposeOptions.find((o) => o.id === myProfile?.usagePurpose) || null,
+      matchOption(
+        usagePurposeOptions,
+        myProfile?.usagePurpose,
+        myProfile?.usagePurposeDisplay,
+      ),
     );
 
     if (myProfile?.photosList) {
@@ -1261,48 +1403,78 @@ export default function ProfileScreen() {
   const handleSaveProfile = async () => {
     setSavingProfile(true);
     try {
+      // Backend enum constant string bekliyor (örn "Music", "Aries", "DontSmoke").
+      // option.name Türkçe display ("Müzik", "Koç") — enum field ayrı. Yaygın isimleri
+      // sırayla dene, en son name'e düş.
+      const enumOf = (opt) =>
+        opt?.enumName ??
+        opt?.enumValue ??
+        opt?.value ??
+        opt?.code ??
+        opt?.key ??
+        opt?.name;
+
+      // Hobby ID → enum string: hobbyGroups'tan objeyi bul, enumOf uygula.
+      const allHobbies = hobbyGroups.flatMap((g) => g.hobbies || []);
+      const hobbyEnums = draftHobbies
+        .map((id) => {
+          const h = allHobbies.find((x) => x.id === id);
+          return h ? enumOf(h) : null;
+        })
+        .filter(Boolean);
+
       const updates = {
         Bio: bioText,
-        ...(draftHobbies.length > 0
-          ? { Hobbies: draftHobbies }
+        ...(hobbyEnums.length > 0
+          ? { Hobbies: hobbyEnums }
           : { ClearHobbies: true }),
       };
 
-      if (draftSmoking != null) updates.SmokingStatus = draftSmoking.id;
+      if (draftSmoking != null) updates.SmokingStatus = enumOf(draftSmoking);
       else if (myProfile?.smokingStatus != null)
         updates.ClearSmokingStatus = true;
 
-      if (draftZodiac != null) updates.ZodiacSign = draftZodiac.id;
+      if (draftZodiac != null) updates.ZodiacSign = enumOf(draftZodiac);
       else if (myProfile?.zodiacSign != null) updates.ClearZodiacSign = true;
 
       if (draftUsagePurpose != null)
-        updates.UsagePurpose = draftUsagePurpose.id;
+        updates.UsagePurpose = enumOf(draftUsagePurpose);
       else if (myProfile?.usagePurpose != null)
         updates.ClearUsagePurpose = true;
 
-      if (photoOrderDirty && draftPhotoOrder.length > 0) {
-        updates.PhotoOrders = draftPhotoOrder.map((p, i) => ({
+      // Ref'leri kullan — drag end sonrası state henüz commit olmamış olabilir.
+      const orderToSave = draftPhotoOrderRef.current;
+      if (photoOrderDirtyRef.current && orderToSave.length > 0) {
+        updates.PhotoOrders = orderToSave.map((p, i) => ({
           photoId: p.photoId,
           newOrder: i + 1,
         }));
         const originalMain = myProfile?.photosList?.find((p) => p.isMainPhoto);
-        if (draftPhotoOrder[0]?.photoId !== originalMain?.photoId) {
-          updates.NewMainPhotoId = draftPhotoOrder[0].photoId;
+        if (orderToSave[0]?.photoId !== originalMain?.photoId) {
+          updates.NewMainPhotoId = orderToSave[0].photoId;
         }
       }
 
       await profileService.updateProfile(updates);
 
+      // Backend enum string döndürdüğü için cache'i de aynı formatta tut.
+      // hobbies: enumName array; smokingStatus vb: enumName. Display field'ları
+      // Türkçe option.name'i tutuyor (UI'da gösterilen).
+      const allHobbyOpts = hobbyGroups.flatMap((g) => g.hobbies || []);
+      const idToEnum = {};
+      allHobbyOpts.forEach((h) => {
+        if (h?.id != null && h?.enumName) idToEnum[h.id] = h.enumName;
+      });
       setMyProfile((p) => ({
         ...p,
         bio: bioText,
-        hobbies: draftHobbies,
-        smokingStatus: draftSmoking?.id,
-        smokingStatusDisplay: draftSmoking?.name,
-        zodiacSign: draftZodiac?.id,
-        zodiacSignDisplay: draftZodiac?.name,
-        usagePurpose: draftUsagePurpose?.id,
-        usagePurposeDisplay: draftUsagePurpose?.name,
+        hobbies: draftHobbies.map((id) => idToEnum[id]).filter(Boolean),
+        smokingStatus: enumOf(draftSmoking) ?? null,
+        smokingStatusDisplay: draftSmoking?.name ?? null,
+        zodiacSign: enumOf(draftZodiac) ?? null,
+        zodiacSignDisplay: draftZodiac?.name ?? null,
+        usagePurpose: enumOf(draftUsagePurpose) ?? null,
+        usagePurposeDisplay: draftUsagePurpose?.name ?? null,
       }));
 
       await refreshPhotos();
@@ -1416,26 +1588,26 @@ export default function ProfileScreen() {
     }
   };
 
-  const handleDragStart = useCallback(() => {
-    setIsDraggingPhoto(true);
+  // İki fazlı handler:
+  //  - commit=false (parmak kalkar kalkmaz): sadece ref'leri güncelle, no re-render
+  //  - commit=true (spring callback'i bittikten sonra): state'i commit et, UI sync
+  const handleDragEnd = useCallback((newPositions, commit) => {
+    const current = draftPhotoOrderRef.current;
+    const newOrder = [...current].sort(
+      (a, b) => newPositions[a.photoId] - newPositions[b.photoId],
+    );
+    const isChanged = newOrder.some((p, i) => p.photoId !== current[i].photoId);
+    if (!commit) {
+      if (!isChanged) return;
+      draftPhotoOrderRef.current = newOrder;
+      photoOrderDirtyRef.current = true;
+      return;
+    }
+    // commit phase — spring bitti, state'i sync et (sadece değişiklik varsa)
+    if (!isChanged && draftPhotoOrderRef.current === current) return;
+    setDraftPhotoOrder(draftPhotoOrderRef.current);
+    if (photoOrderDirtyRef.current) setPhotoOrderDirty(true);
   }, []);
-
-  const handleDragEnd = useCallback(
-    (newPositions) => {
-      setIsDraggingPhoto(false);
-      const newOrder = [...draftPhotoOrder].sort(
-        (a, b) => newPositions[a.photoId] - newPositions[b.photoId],
-      );
-      const isChanged = newOrder.some(
-        (p, i) => p.photoId !== draftPhotoOrder[i].photoId,
-      );
-      if (isChanged) {
-        setDraftPhotoOrder(newOrder);
-        setPhotoOrderDirty(true);
-      }
-    },
-    [draftPhotoOrder],
-  );
 
   // ── Hesap aksiyonları ──────────────────────────────────────────────────────
   const handleLogout = () =>
@@ -1533,11 +1705,7 @@ export default function ProfileScreen() {
             }}
           >
             <View style={{ flex: 1 }} />
-            <Image
-              source={require("../../assets/lit_name_white.png")}
-              style={{ height: 50, width: 120 }}
-              resizeMode="contain"
-            />
+            <WaveFillLogo fillRatio={swipeFillRatio} />
             <View style={{ flex: 1, alignItems: "flex-end" }}>
               <TouchableOpacity
                 activeOpacity={0.7}
@@ -1651,6 +1819,7 @@ export default function ProfileScreen() {
               <HeroAvatar
                 uri={mainPhoto}
                 size={80}
+                loading={!myProfile}
                 onPress={() => mainPhoto && setPreviewVisible(true)}
               />
 
@@ -1667,35 +1836,36 @@ export default function ProfileScreen() {
                     `${user?.firstName ?? ""} ${user?.lastName ?? ""}`.trim()}
                 </Text>
 
-                <TouchableOpacity
+                <AnimatedPressable
                   onPress={openEditProfile}
-                  activeOpacity={0.95}
-                  style={{ marginTop: 8 }}
+                  pressScale={0.97}
+                  style={{ marginTop: 8, alignSelf: "flex-start" }}
                 >
-                  <View
+                  <BlurView
+                    intensity={100}
                     style={{
                       borderRadius: 999,
                       borderCurve: "continuous",
                       overflow: "hidden",
                     }}
-                    className="flex-row bg-[#1E1E1E] self-start justify-center text-center items-center border-[0.5px] border-white/10 px-3 py-3 gap-2"
+                    className="flex-row self-start justify-center text-center items-center border-[0.5px] border-white/10 px-3 py-4 gap-2"
                   >
-                    <Pencil size={18} color="#fff" strokeWidth={1.5} />
+                    <Pencil size={15} color="#fff" strokeWidth={1.5} />
                     <Text
                       style={{ color: "#fff", fontWeight: "500", fontSize: 13 }}
                     >
                       Profili Düzenle
                     </Text>
-                  </View>
-                </TouchableOpacity>
+                  </BlurView>
+                </AnimatedPressable>
               </View>
             </View>
 
             {/* --- PREMIUM UPSELL BANNER & COMPARISON --- */}
             {!isPremium && (
               <View className="mb-10 px-4 mt-2">
-                <TouchableOpacity
-                  activeOpacity={0.9}
+                <AnimatedPressable
+                  pressScale={0.97}
                   onPress={() => purchaseBottomSheetRef.current?.present()}
                 >
                   <LinearGradient
@@ -1813,39 +1983,55 @@ export default function ProfileScreen() {
                           overflow: "hidden",
                         }}
                       >
-                        <Text className="font-medium text-[15px] text-white">
-                          {teaserPrice
-                            ? `${teaserPrice} / Ay'dan başlayan planlar`
-                            : "Planları İncele →"}
+                        <Text className="font-medium text-[14px] text-white">
+                          {teaserPrice ? (
+                            <>
+                              <Text style={{ fontWeight: "700" }}>
+                                {teaserPrice} / Ay
+                              </Text>
+                              {"'dan başlayan planlar"}
+                            </>
+                          ) : (
+                            "Planları İncele"
+                          )}
                         </Text>
                       </View>
                     </View>
                   </LinearGradient>
-                </TouchableOpacity>
+                </AnimatedPressable>
               </View>
             )}
 
             {/* ── Profil Tamamlama Göstergeleri (Accordion) ── */}
             {completionMetrics.some((m) => m.current < m.max) && (
               <View style={{ paddingHorizontal: 16, paddingBottom: 24 }}>
-                <Text
+                <View
                   style={{
-                    color: "#9CA3AF",
-                    fontSize: 13,
-                    fontWeight: "700",
+                    flexDirection: "row",
+                    alignItems: "center",
+                    gap: 6,
                     marginBottom: 12,
                     marginLeft: 4,
                   }}
                 >
-                  Profilini Tamamla
-                </Text>
+                  <ExclamationIcon size={15} color="#9CA3AF" strokeWidth={2} />
+                  <Text
+                    style={{
+                      color: "#9CA3AF",
+                      fontSize: 13,
+                      fontWeight: "700",
+                    }}
+                  >
+                    Profilini Tamamla
+                  </Text>
+                </View>
                 {completionMetrics
                   .filter((m) => m.current < m.max)
                   .map((metric) => (
                     <CompletionAccordion
                       key={metric.key}
                       title={metric.title}
-                      icon={metric.icon}
+                      icon={ExclamationIcon}
                       current={metric.current}
                       max={metric.max}
                       description={metric.desc}
@@ -1898,7 +2084,6 @@ export default function ProfileScreen() {
           onClose={closeEditProfile}
           onSave={handleSaveProfile}
           saving={savingProfile}
-          saveDisabled={isDraggingPhoto}
           bottomSheetRef={editBottomSheetRef}
         >
           {/* Kartımı Önizle Butonu */}
@@ -1949,18 +2134,28 @@ export default function ProfileScreen() {
                 marginBottom: 10,
               }}
             >
-              <Text
+              <View
                 style={{
-                  color: "#fff",
-                  fontSize: 20,
-                  fontWeight: "600",
+                  flexDirection: "row",
+                  alignItems: "center",
+                  gap: 8,
                   marginBottom: 6,
                 }}
               >
-                Fotoğraflar
-              </Text>
+                <Text
+                  style={{
+                    color: "#fff",
+                    fontSize: 20,
+                    fontWeight: "600",
+                  }}
+                >
+                  Fotoğraflar
+                </Text>
+                {savingPhoto && (
+                  <ActivityIndicator size="small" color="#9CA3AF" />
+                )}
+              </View>
               <View className="flex-row items-center gap-2 mb-3 pr-4">
-                {" "}
                 <InfoIcon size={16} color="#9CA3AF" />
                 <Text
                   style={{
@@ -1973,9 +2168,6 @@ export default function ProfileScreen() {
                   fotoğrafın olur.
                 </Text>
               </View>
-              {savingPhoto && (
-                <ActivityIndicator size="small" color="#9CA3AF" />
-              )}
             </View>
 
             {/* REANIMATED GRID Container */}
@@ -2011,7 +2203,8 @@ export default function ProfileScreen() {
                         style={{
                           width: "100%",
                           height: "100%",
-                          borderRadius: 32,
+                          borderRadius: 28,
+                          borderCurve: "continuous",
                           overflow: "hidden",
                           backgroundColor: "#1E1E1E",
                           borderWidth: 0.5,
@@ -2053,7 +2246,6 @@ export default function ProfileScreen() {
                   index={index}
                   positions={positions}
                   maxIndex={draftPhotoOrder.length - 1}
-                  onDragStart={handleDragStart}
                   onDragEnd={handleDragEnd}
                 >
                   <PhotoItem
@@ -2087,7 +2279,6 @@ export default function ProfileScreen() {
                 Biyografi
               </Text>
               <View className="flex-row items-center gap-2 mb-3 pr-4">
-                {" "}
                 <InfoIcon size={16} color="#9CA3AF" />
                 <Text
                   style={{

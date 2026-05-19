@@ -13,10 +13,10 @@ const initialState = {
   height: "",
   bio: "",
   interestedIn: [],
-  hobbies: [],
-  smokingStatus: null, // Now stores Integer ID
-  zodiacSign: null, // Now stores Integer ID
-  usagePurpose: null, // Now stores Integer ID
+  hobbies: [], // enum string array (örn ["Music", "Travel"])
+  smokingStatus: null, // enum string (örn "Sometimes")
+  zodiacSign: null, // enum string (örn "Leo")
+  usagePurpose: null, // enum string (örn "Dating")
   photos: [],
   mainPhotoIndex: 0,
   loading: false,

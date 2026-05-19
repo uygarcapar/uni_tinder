@@ -181,7 +181,7 @@ const HobbyItem = memo(({ hobby, isSelected, onPress }) => {
         activeOpacity={1}
         onPressIn={handlePressIn}
         onPressOut={handlePressOut}
-        onPress={() => onPress(hobby.id)}
+        onPress={() => onPress(hobby.enumName)}
         style={{
           borderRadius: 50,
           borderCurve: "continuous",
@@ -237,14 +237,16 @@ export default function RegisterStep13Screen({ navigation }) {
     }
   };
 
-  // useCallback ile sarmalandı, fonksiyon referansı sabitlendi
-  const toggleHobby = useCallback((hobbyId) => {
+  // Backend Hobbies'i enum constant array bekliyor (örn ["Gym", "Yoga"]).
+  // State'te hobby.enumName tutuluyor; id/Türkçe name değil.
+  const toggleHobby = useCallback((enumName) => {
+    if (!enumName) return;
     setHobbies((prev) => {
-      if (prev.includes(hobbyId)) {
-        return prev.filter((h) => h !== hobbyId);
+      if (prev.includes(enumName)) {
+        return prev.filter((h) => h !== enumName);
       } else {
         if (prev.length < 10) {
-          return [...prev, hobbyId];
+          return [...prev, enumName];
         }
         return prev;
       }
@@ -316,7 +318,7 @@ export default function RegisterStep13Screen({ navigation }) {
                   <HobbyItem
                     key={hobby.id}
                     hobby={hobby}
-                    isSelected={hobbies.includes(hobby.id)}
+                    isSelected={hobbies.includes(hobby.enumName)}
                     onPress={toggleHobby}
                   />
                 ))}

@@ -2,7 +2,7 @@ import { useEffect, useRef, useState, useCallback } from 'react';
 import { NavigationContainer, useNavigationContainerRef } from '@react-navigation/native';
 import { createNativeStackNavigator } from '@react-navigation/native-stack';
 import { useSelector, useDispatch } from 'react-redux';
-import { View, ActivityIndicator, AppState } from 'react-native';
+import { View, AppState } from 'react-native';
 import {
   registerForPushNotifications,
   unregisterPushToken,
@@ -17,6 +17,7 @@ import { setUserAndToken, clearRegistrationForm, logout } from '../store/slices/
 import { saveRefreshToken } from '../utils/tokenStorage';
 import { fetchSubscriptionStatus, setPremium } from '../store/slices/subscriptionSlice';
 import { initRevenueCat, loginRevenueCat } from '../services/subscriptionService';
+import profileService from '../services/profileService';
 import { queryClient } from '../queries/queryClient';
 import AuthNavigator from './AuthNavigator';
 import TabNavigator from './TabNavigator';
@@ -77,6 +78,7 @@ export default function AppNavigator() {
   const [tokenInitialized, setTokenInitialized] = useState(false);
   const [resumeRoute, setResumeRoute] = useState(null); // null = checking
   const [pendingMatch, setPendingMatch] = useState(null);
+  const [myPhoto, setMyPhoto] = useState(null);
   const navRef = useNavigationContainerRef();
   const settingsModalRef = useRef(null);
   const appStateRef = useRef(AppState.currentState);
@@ -288,16 +290,24 @@ export default function AppNavigator() {
   }, [isAuthenticated]);
 
   // ============ User identity change → cache reset ============
-  // user.userId değiştiğinde (logout, hesap değiştirme, yeni kayıt) per-user
-  // cache'leri temizle: React Query (swipe stats/matches/filters, profile)
-  // ve subscription Redux slice'ı. Aksi halde User A'nın stats'i User B'de
-  // dalga animasyonu ve kalan swipe sayısı olarak sızar (reload düzeltir).
+  // user.userId değiştiğinde (logout, hesap değiştirme) per-user cache'leri
+  // temizle: React Query (swipe stats/matches/filters, profile) ve subscription
+  // Redux slice'ı. Aksi halde User A'nın stats'i User B'de dalga animasyonu ve
+  // kalan swipe sayısı olarak sızar.
+  //
+  // ÖNEMLİ: null → user (ilk login/kayıt) transition'ında clear ETME — bu
+  // render cycle'da yeni mount olan ekranların (DiscoverScreen vb.) in-flight
+  // query'lerini iptal eder ve loading state'inde takılır kalırlar.
   const currentUserId = user?.userId ?? null;
   const prevUserIdRef = useRef(currentUserId);
   useEffect(() => {
     if (prevUserIdRef.current !== currentUserId) {
-      queryClient.clear();
-      dispatch(setPremium({ isPremium: false, expiresAt: null }));
+      const isFirstAuth =
+        prevUserIdRef.current === null && currentUserId !== null;
+      if (!isFirstAuth) {
+        queryClient.clear();
+        dispatch(setPremium({ isPremium: false, expiresAt: null }));
+      }
       prevUserIdRef.current = currentUserId;
     }
   }, [currentUserId, dispatch]);
@@ -344,12 +354,32 @@ export default function AppNavigator() {
       });
   }, [tokenInitialized, isAuthenticated]);
 
+  useEffect(() => {
+    const verified = user?.isMailVerified || user?.isProfileCreated;
+    if (!isAuthenticated || !verified) {
+      setMyPhoto(null);
+      return;
+    }
+    let cancelled = false;
+    profileService
+      .getMyProfile()
+      .then((p) => {
+        if (cancelled) return;
+        const url =
+          p?.photosList?.find((x) => x.isMainPhoto)?.photoImageUrl ||
+          p?.photosList?.[0]?.photoImageUrl ||
+          p?.profileImageUrl ||
+          null;
+        setMyPhoto(url);
+      })
+      .catch(() => {});
+    return () => {
+      cancelled = true;
+    };
+  }, [isAuthenticated, user?.userId, user?.isMailVerified, user?.isProfileCreated]);
+
   if (!tokenInitialized || resumeRoute === null) {
-    return (
-      <View style={{ flex: 1, justifyContent: 'center', alignItems: 'center', backgroundColor: '#000' }}>
-        <ActivityIndicator size="large" color="#f57656" />
-      </View>
-    );
+    return <View style={{ flex: 1, backgroundColor: '#000' }} />;
   }
 
   const isVerifiedUser = user?.isMailVerified || user?.isProfileCreated;
@@ -393,6 +423,7 @@ export default function AppNavigator() {
       {showMainNavigator && (
         <MatchModal
           match={pendingMatch}
+          myPhoto={myPhoto}
           onClose={() => setPendingMatch(null)}
           onSendMessage={handleOpenMatchChat}
         />

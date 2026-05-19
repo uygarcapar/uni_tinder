@@ -54,6 +54,7 @@ const ROUTE_LABELS = {
 function AnimatedTabBar({ state, navigation }) {
   const insets = useSafeAreaInsets();
   const unreadTotal = useSelector((s) => s.chat.unreadTotal);
+  const whoLikedMeCount = useSelector((s) => s.swipe.whoLikedMeCount);
   const slideDistance =
     FLOATING_BAR_HEIGHT + FLOATING_BAR_BOTTOM_GAP + insets.bottom + 20;
 
@@ -102,6 +103,9 @@ function AnimatedTabBar({ state, navigation }) {
         const color = focused ? "#fff" : "rgba(255,255,255,1)";
         const showBadge = route.name === "Messages" && unreadTotal > 0;
         const badgeText = unreadTotal > 99 ? "99+" : String(unreadTotal);
+        const showLikesPill = route.name === "Likes" && whoLikedMeCount > 0;
+        const likesPillText =
+          whoLikedMeCount > 99 ? "99+" : String(whoLikedMeCount);
 
         const onPress = () => {
           const event = navigation.emit({
@@ -169,6 +173,30 @@ function AnimatedTabBar({ state, navigation }) {
                     </Text>
                   </View>
                 )}
+                {showLikesPill && (
+                  <View
+                    style={{
+                      position: "absolute",
+                      top: -6,
+                      right: -14,
+                      minWidth: 18,
+                      height: 18,
+                      paddingHorizontal: 5,
+                      borderRadius: 9,
+                      backgroundColor: "#FF4D4D",
+                      alignItems: "center",
+                      justifyContent: "center",
+                      borderWidth: 1.5,
+                      borderColor: "rgba(20,20,20,0.9)",
+                    }}
+                  >
+                    <Text
+                      style={{ color: "#fff", fontSize: 10, fontWeight: "700" }}
+                    >
+                      {likesPillText}
+                    </Text>
+                  </View>
+                )}
               </View>
               <Text
                 numberOfLines={1}
@@ -217,6 +245,11 @@ export default function TabNavigator() {
     <Tab.Navigator
       tabBar={(props) => <AnimatedTabBar {...props} />}
       screenOptions={({ route }) => ({
+        // lazy:false → tüm tab'lar app start'ta mount edilir. Aksi takdirde
+        // WaveFillLogo'nun MaskedView mask image'i tab'a ilk girişte 1 frame
+        // geç decode olup logo flash atıyor (Discover'da görünmüyor çünkü
+        // splash arkasında mount oluyor).
+        lazy: false,
         header:
           route.name === "Likes" ||
           route.name === "Profile" ||

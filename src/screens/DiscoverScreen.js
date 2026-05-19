@@ -8,7 +8,6 @@ import React, {
 import {
   View,
   Text,
-  Image,
   TouchableOpacity,
   TextInput,
   ActivityIndicator,
@@ -21,20 +20,10 @@ import Animated, {
   useSharedValue,
   withTiming,
   withRepeat,
-  withSequence,
-  cancelAnimation,
   useAnimatedStyle,
-  useAnimatedProps,
   Easing,
 } from "react-native-reanimated";
 import { LinearGradient } from "expo-linear-gradient";
-import MaskedView from "@react-native-masked-view/masked-view";
-import Svg, {
-  Path,
-  Defs,
-  LinearGradient as SvgLinearGradient,
-  Stop,
-} from "react-native-svg";
 
 const { width: SCREEN_WIDTH } = Dimensions.get("window");
 const ENTRY_DISTANCE = SCREEN_WIDTH * 1.2;
@@ -48,15 +37,21 @@ import {
 } from "@gorhom/bottom-sheet";
 import MultiSlider from "@ptomasroos/react-native-multi-slider";
 import {
-  Flame,
   RotateCcw,
   SlidersHorizontal,
   X,
   Lock,
+  Search,
+  Flame,
+  Star,
+  Sparkles,
 } from "lucide-react-native";
+import { BlurView } from "expo-blur";
 import SwipeWrapper from "../components/SwipeWrapper";
 import SwipeOverlay from "../components/SwipeOverlay";
 import PurchaseModal from "../components/PurchaseModal";
+import SuperLikePurchaseModal from "../components/SuperLikePurchaseModal";
+import WaveFillLogo from "../components/WaveFillLogo";
 import {
   usePotentialMatches,
   useSwipeFilters,
@@ -237,117 +232,348 @@ const SkeletonCard = () => {
   );
 };
 
-// Lit logo'yu dalgalı + gradient turuncu olarak alttan yukarı doldurur.
-// fillRatio (0-1) → kullanılan swipe oranı. 1 = hak doldu.
-// MaskedView ile logo şekli mask, içeride SVG path dalgalı dolgu + animated phase.
-const LOGO_W = 120;
-const LOGO_H = 50;
-const AnimatedPath = Animated.createAnimatedComponent(Path);
+// Logo tap'te açılan stats popup — kalan swipe/superlike + reset süresi.
+// Premium ise "Sınırsız" ve premium expiry bilgisi gösterir.
+const formatResetTime = (sec) => {
+  if (!sec || sec <= 0) return "Şu anda yenilenebilir";
+  const h = Math.floor(sec / 3600);
+  const m = Math.floor((sec % 3600) / 60);
+  if (h > 0) return `${h} sa ${m} dk sonra yenilenir`;
+  if (m > 0) return `${m} dk sonra yenilenir`;
+  return `${sec} sn sonra yenilenir`;
+};
 
-const WaveFillLogo = ({ fillRatio = 0 }) => {
-  const phase = useSharedValue(0);
-  const fillSV = useSharedValue(fillRatio);
-  const shakeX = useSharedValue(0);
+const StatsRow = ({ Icon, iconColor, label, value, unlimited, subtitle }) => (
+  <View
+    style={{
+      flexDirection: "row",
+      alignItems: "center",
+      paddingVertical: 14,
+      gap: 14,
+    }}
+  >
+    <View
+      style={{
+        width: 40,
+        height: 40,
+        borderRadius: 20,
+        backgroundColor: `${iconColor}22`,
+        borderWidth: 0.5,
+        borderColor: `${iconColor}55`,
+        alignItems: "center",
+        justifyContent: "center",
+      }}
+    >
+      <Icon size={20} color={iconColor} strokeWidth={2} />
+    </View>
+    <View style={{ flex: 1 }}>
+      <Text
+        style={{
+          color: "#fff",
+          fontSize: 14,
+          fontWeight: "600",
+          marginBottom: 2,
+        }}
+      >
+        {label}
+      </Text>
+      {subtitle ? (
+        <Text style={{ color: "#9CA3AF", fontSize: 11, fontWeight: "500" }}>
+          {subtitle}
+        </Text>
+      ) : null}
+    </View>
+    {unlimited ? (
+      <View
+        style={{
+          paddingHorizontal: 10,
+          paddingVertical: 4,
+          borderRadius: 999,
+          borderCurve: "continuous",
+          backgroundColor: "rgba(252,128,61,0.15)",
+          borderWidth: 0.5,
+          borderColor: "rgba(252,128,61,0.5)",
+        }}
+      >
+        <Text style={{ color: "#fc803d", fontSize: 11, fontWeight: "700" }}>
+          ∞
+        </Text>
+      </View>
+    ) : (
+      <Text
+        style={{
+          color: "#fff",
+          fontSize: 22,
+          fontWeight: "700",
+          fontVariant: ["tabular-nums"],
+        }}
+      >
+        {value ?? "—"}
+      </Text>
+    )}
+  </View>
+);
 
+const StatsPopup = ({ stats }) => {
+  const isPremium = stats?.isPremium;
+  const swipesRem = stats?.remainingSwipes;
+  const superLikesRem = stats?.superLikesRemaining;
+  const swipeResetSec = stats?.swipeResetInSeconds;
+  const superLikeResetSec = stats?.superLikeResetInSeconds;
+
+  const swipeUnlimited = isPremium || swipesRem === -1;
+  const superLikeUnlimited = superLikesRem === -1;
+
+  return (
+    <BlurView
+      intensity={90}
+      tint="dark"
+      style={{
+        width: "100%",
+        borderRadius: 28,
+        borderCurve: "continuous",
+        overflow: "hidden",
+        borderWidth: 0.5,
+        borderColor: "rgba(255,255,255,0.12)",
+        paddingHorizontal: 18,
+        paddingTop: 6,
+        paddingBottom: 8,
+      }}
+    >
+      {isPremium && (
+        <View
+          style={{
+            flexDirection: "row",
+            alignItems: "center",
+            gap: 8,
+            paddingVertical: 12,
+            borderBottomWidth: 0.5,
+            borderBottomColor: "rgba(255,255,255,0.08)",
+          }}
+        >
+          <Sparkles size={16} color="#fc803d" strokeWidth={2} />
+          <Text
+            style={{
+              color: "#fc803d",
+              fontSize: 13,
+              fontWeight: "700",
+              letterSpacing: 0.3,
+            }}
+          >
+            PREMIUM ÜYE
+          </Text>
+        </View>
+      )}
+
+      <StatsRow
+        Icon={Flame}
+        iconColor="#fc803d"
+        label="Swipe Hakkı"
+        value={swipesRem}
+        unlimited={swipeUnlimited}
+        subtitle={
+          swipeUnlimited
+            ? "Günlük limit yok"
+            : swipesRem === 0
+              ? formatResetTime(swipeResetSec)
+              : `${formatResetTime(swipeResetSec)}`
+        }
+      />
+
+      <View
+        style={{
+          height: 0.5,
+          backgroundColor: "rgba(255,255,255,0.08)",
+        }}
+      />
+
+      <StatsRow
+        Icon={Star}
+        iconColor="#3B82F6"
+        label="Süper Beğeni"
+        value={superLikesRem}
+        unlimited={superLikeUnlimited}
+        subtitle={
+          superLikeUnlimited
+            ? "Günlük limit yok"
+            : superLikesRem === 0
+              ? formatResetTime(superLikeResetSec)
+              : `${formatResetTime(superLikeResetSec)}`
+        }
+      />
+
+    </BlurView>
+  );
+};
+
+// Boş durum kartı — SkeletonCard'la aynı dış yapı (frame + placeholder block'lar) ama
+// shimmer YOK. Ortada Search ikonu + etrafında radar pulse animasyonu (3 ring stagger).
+const RadarRing = ({ delay = 0 }) => {
+  // Initial = 1 → opacity 0, görünmez. Delay sonrası 0'a snap edip animasyona başla.
+  // Aksi halde delay süresince ring scale 0.3 + opacity 1 ile statik nokta gibi durur.
+  const progress = useSharedValue(1);
   useEffect(() => {
-    phase.value = withRepeat(
-      withTiming(2 * Math.PI, { duration: 1500, easing: Easing.linear }),
-      -1,
-      false,
-    );
-  }, [phase]);
-
-  useEffect(() => {
-    fillSV.value = withTiming(fillRatio, { duration: 600 });
-  }, [fillRatio, fillSV]);
-
-  // Swipe hakkı bittiğinde (fill=1) logo sürekli titrer — kullanıcıya görsel uyarı.
-  useEffect(() => {
-    if (fillRatio >= 1) {
-      shakeX.value = withRepeat(
-        withSequence(
-          withTiming(-2, { duration: 50 }),
-          withTiming(2, { duration: 50 }),
-          withTiming(-2, { duration: 50 }),
-          withTiming(2, { duration: 50 }),
-          withTiming(0, { duration: 50 }),
-          withTiming(0, { duration: 1200 }),
-        ),
+    const t = setTimeout(() => {
+      progress.value = 0;
+      progress.value = withRepeat(
+        withTiming(1, { duration: 2400, easing: Easing.out(Easing.quad) }),
         -1,
         false,
       );
-    } else {
-      cancelAnimation(shakeX);
-      shakeX.value = withTiming(0, { duration: 100 });
-    }
-  }, [fillRatio, shakeX]);
-
-  const shakeStyle = useAnimatedStyle(() => ({
-    transform: [{ translateX: shakeX.value }],
+    }, delay);
+    return () => clearTimeout(t);
+  }, [progress, delay]);
+  const style = useAnimatedStyle(() => ({
+    transform: [{ scale: 0.3 + progress.value * 1.7 }],
+    opacity: 1 - progress.value,
   }));
-
-  const animatedProps = useAnimatedProps(() => {
-    const f = Math.min(1, Math.max(0, fillSV.value));
-    // Minimum 6px taban → f=0 olsa bile altta ince dalga görünür ve oynar.
-    const baselineY = Math.min(LOGO_H - 6, LOGO_H - f * LOGO_H);
-    const ph = phase.value;
-    const amp = 4; // sabit amplitude → dalga her zaman görünür
-    const freq = 2; // genişlik boyunca 2 dalga
-    const segments = 40;
-    let d = `M 0 ${baselineY + amp * Math.sin(ph)}`;
-    for (let i = 1; i <= segments; i++) {
-      const x = (i / segments) * LOGO_W;
-      const y =
-        baselineY + amp * Math.sin((i / segments) * freq * 2 * Math.PI + ph);
-      d += ` L ${x} ${y}`;
-    }
-    d += ` L ${LOGO_W} ${LOGO_H} L 0 ${LOGO_H} Z`;
-    return { d };
-  });
-
   return (
-    <Animated.View style={shakeStyle}>
-    <MaskedView
-      maskElement={
-        <Image
-          source={require("../../assets/lit_name_white.png")}
-          style={{ width: LOGO_W, height: LOGO_H }}
-          resizeMode="contain"
-        />
-      }
-      style={{ width: LOGO_W, height: LOGO_H }}
+    <Animated.View
+      pointerEvents="none"
+      style={[
+        {
+          position: "absolute",
+          width: 120,
+          height: 120,
+          borderRadius: 60,
+          borderWidth: 4,
+          borderColor: "rgba(255,255,255,0.55)",
+        },
+        style,
+      ]}
+    />
+  );
+};
+
+// Magnifier + radar tek bir kapsayıcı içinde 8 (lemniscate) çizer — ring'ler magnifier'le
+// senkron hareket eder, radar her zaman icon'un tam ortasında olur.
+// Parametrik: x = sin(2θ)/2, y = cos(θ). Period 4s, sürekli loop.
+const FigureEightRadar = () => {
+  const t = useSharedValue(0);
+  useEffect(() => {
+    t.value = withRepeat(
+      withTiming(1, { duration: 4000, easing: Easing.linear }),
+      -1,
+      false,
+    );
+  }, [t]);
+  const style = useAnimatedStyle(() => {
+    const AMP = 18;
+    const theta = t.value * 2 * Math.PI;
+    const x = (Math.sin(2 * theta) * AMP) / 2;
+    const y = Math.cos(theta) * AMP;
+    return { transform: [{ translateX: x }, { translateY: y }] };
+  });
+  return (
+    <Animated.View
+      style={[{ alignItems: "center", justifyContent: "center" }, style]}
     >
-      {/* Beyaz baz (dolmamış alan) */}
+      <RadarRing delay={0} />
+      <RadarRing delay={800} />
+      <RadarRing delay={1600} />
+      <Search size={36} color="#fff" strokeWidth={2} />
+    </Animated.View>
+  );
+};
+
+const EmptyDiscoverCard = () => {
+  return (
+    <View
+      style={{
+        flex: 1,
+        borderRadius: 40,
+        borderCurve: "continuous",
+        overflow: "hidden",
+        backgroundColor: "#1E1E1E",
+      }}
+    >
+      {/* Pagination — tek pill (static) */}
       <View
-        style={{ width: LOGO_W, height: LOGO_H, backgroundColor: "#fff" }}
-      />
-      {/* Dalgalı turuncu dolgu */}
+        pointerEvents="none"
+        style={{
+          position: "absolute",
+          top: 20,
+          left: 0,
+          right: 0,
+          alignItems: "center",
+        }}
+      >
+        <View
+          style={{
+            width: 40,
+            height: 6,
+            borderRadius: 3,
+            backgroundColor: "#2A2A2A",
+          }}
+        />
+      </View>
+
+      {/* Bottom placeholder block'lar — SwipeCard overlay mirror */}
       <View
+        pointerEvents="none"
+        style={{
+          position: "absolute",
+          bottom: 70,
+          left: 24,
+          right: 24,
+        }}
+      >
+        <View
+          style={{
+            alignSelf: "flex-start",
+            marginBottom: 8,
+            width: 70,
+            height: 30,
+            borderRadius: 999,
+            backgroundColor: "#2A2A2A",
+          }}
+        />
+        <View style={{ marginBottom: 2, gap: 4 }}>
+          <View
+            style={{
+              width: 150,
+              height: 35,
+              borderRadius: 999,
+              backgroundColor: "#2A2A2A",
+            }}
+          />
+        </View>
+        <View
+          style={{
+            flexDirection: "row",
+            flexWrap: "wrap",
+            gap: 8,
+            marginTop: 4,
+            marginBottom: 16,
+          }}
+        >
+          <View
+            style={{
+              width: 180,
+              height: 28,
+              borderRadius: 999,
+              backgroundColor: "#2A2A2A",
+            }}
+          />
+        </View>
+      </View>
+
+      {/* Ortada Search ikonu + radar pulse */}
+      <View
+        pointerEvents="none"
         style={{
           position: "absolute",
           top: 0,
           left: 0,
-          width: LOGO_W,
-          height: LOGO_H,
+          right: 0,
+          bottom: 0,
+          alignItems: "center",
+          justifyContent: "center",
         }}
       >
-        <Svg width={LOGO_W} height={LOGO_H}>
-          <Defs>
-            <SvgLinearGradient id="litFillGrad" x1="0" y1="0" x2="0" y2="1">
-              <Stop offset="0" stopColor="#fa8532" />
-              <Stop offset="0.3" stopColor="#fa8532" />
-              <Stop offset="0.6" stopColor="#f7521b" />
-              <Stop offset="1" stopColor="#f51111" />
-            </SvgLinearGradient>
-          </Defs>
-          <AnimatedPath
-            animatedProps={animatedProps}
-            fill="url(#litFillGrad)"
-          />
-        </Svg>
+        <FigureEightRadar />
       </View>
-    </MaskedView>
-    </Animated.View>
+    </View>
   );
 };
 
@@ -585,7 +811,8 @@ function FilterModal({ bottomSheetRef, filters, isPremium, onSave, saving }) {
             return;
           }
           // Free user: backend 50km clamp ediyor — UI'da da clamp et + altta uyarı göster.
-          const capped = !isPremium && n > FREE_MAX_DISTANCE_KM ? FREE_MAX_DISTANCE_KM : n;
+          const capped =
+            !isPremium && n > FREE_MAX_DISTANCE_KM ? FREE_MAX_DISTANCE_KM : n;
           setLocal((p) => ({ ...p, maxDistance: capped }));
         })}
         {!isPremium && (
@@ -600,7 +827,8 @@ function FilterModal({ bottomSheetRef, filters, isPremium, onSave, saving }) {
           >
             <Lock size={12} color="#9CA3AF" />
             <Text style={{ color: "#9CA3AF", fontSize: 12 }}>
-              Free üye sınırı {FREE_MAX_DISTANCE_KM} km — daha fazlası için Premium
+              Free üye sınırı {FREE_MAX_DISTANCE_KM} km — daha fazlası için
+              Premium
             </Text>
           </View>
         )}
@@ -778,60 +1006,62 @@ export default function DiscoverScreen() {
     return Math.min(1, used / DAILY_SWIPE_LIMIT);
   }, [statsQuery.data?.remainingSwipes, statsQuery.data?.isPremium]);
 
+  // Pass/Like kota bitince true. Premium veya rem<0 (unlimited/unknown) → false.
+  // Bu durumda swipe blok edilir, kart bounce back + paywall açılır.
+  const swipeQuotaExhausted = useMemo(() => {
+    if (statsQuery.data?.isPremium) return false;
+    const rem = statsQuery.data?.remainingSwipes;
+    if (rem == null || rem < 0) return false;
+    return rem === 0;
+  }, [statsQuery.data?.remainingSwipes, statsQuery.data?.isPremium]);
+
+  // SuperLike kota bitince true. Pull-up swipe + button ikisini de blokar,
+  // ayrı superLikePaywall açılır.
+  const superLikeQuotaExhausted = useMemo(() => {
+    const rem = statsQuery.data?.superLikesRemaining;
+    if (rem == null || rem < 0) return false;
+    return rem === 0;
+  }, [statsQuery.data?.superLikesRemaining]);
+
   const [currentIndex, setCurrentIndex] = useState(0);
   const [isSwiping, setIsSwiping] = useState(false);
   const [lastSwipeWasPass, setLastSwipeWasPass] = useState(false);
   const purchaseBottomSheetRef = useRef(null);
+  const superLikePurchaseSheetRef = useRef(null);
 
   // Backend SwipeResultDto.ShowPaywall=true geldiğinde (Like/Pass kotası dolu) veya
   // GetPotentialMatches response'unda quota=0 geldiğinde useSwipeMutation uiBus'a event
   // emit eder; biz burada subscribe olup paywall'ı açıyoruz.
   useEffect(() => {
-    const unsub = uiBus.on("swipePaywall", () => {
+    const unsubSwipe = uiBus.on("swipePaywall", () => {
       purchaseBottomSheetRef.current?.present?.();
     });
-    return unsub;
+    // SuperLike kota bittiğinde SwipeWrapper bu event'i emit eder (pull-up swipe).
+    const unsubSuperLike = uiBus.on("superLikePaywall", () => {
+      superLikePurchaseSheetRef.current?.present?.();
+    });
+    return () => {
+      unsubSwipe();
+      unsubSuperLike();
+    };
   }, []);
 
-  // Logo tap bildirim mesajı (string veya null). 2s sonra kapanır.
-  const [logoNotif, setLogoNotif] = useState(null);
-  const logoNotifTimer = useRef(null);
+  // Logo tap stats popup — açık/kapalı state. 4s sonra otomatik kapanır.
+  const [statsPopupOpen, setStatsPopupOpen] = useState(false);
+  const statsPopupTimer = useRef(null);
 
-  const showLogoNotif = useCallback((text) => {
-    if (logoNotifTimer.current) clearTimeout(logoNotifTimer.current);
-    setLogoNotif(text);
-    logoNotifTimer.current = setTimeout(() => setLogoNotif(null), 2000);
+  const handleLogoPress = useCallback(() => {
+    if (statsPopupTimer.current) clearTimeout(statsPopupTimer.current);
+    setStatsPopupOpen(true);
+    statsPopupTimer.current = setTimeout(() => setStatsPopupOpen(false), 4500);
   }, []);
 
   useEffect(
     () => () => {
-      if (logoNotifTimer.current) clearTimeout(logoNotifTimer.current);
+      if (statsPopupTimer.current) clearTimeout(statsPopupTimer.current);
     },
     [],
   );
-
-  const handleLogoPress = useCallback(() => {
-    const rem = statsQuery.data?.remainingSwipes;
-    const isPremium = statsQuery.data?.isPremium;
-    // Premium veya rem === -1 (unlimited) → sınırsız mesajı
-    if (isPremium || rem === -1) {
-      showLogoNotif("Sınırsız swipe hakkın var");
-      return;
-    }
-    if (rem == null || rem > 0) {
-      showLogoNotif(`Kalan ${rem ?? "—"} swipe hakkın`);
-    } else {
-      const sec = statsQuery.data?.swipeResetInSeconds ?? 0;
-      const h = Math.floor(sec / 3600);
-      const m = Math.floor((sec % 3600) / 60);
-      showLogoNotif(`${h} saat ${m} dakika sonra yenilenir`);
-    }
-  }, [
-    statsQuery.data?.remainingSwipes,
-    statsQuery.data?.isPremium,
-    statsQuery.data?.swipeResetInSeconds,
-    showLogoNotif,
-  ]);
 
   const filterBottomSheetRef = useRef(null);
   const lastSwipePromiseRef = useRef(null);
@@ -875,15 +1105,18 @@ export default function DiscoverScreen() {
     matchesQuery.fetchNextPage,
   ]);
 
-  const handleSwipe = (direction, userId) => {
-    setCurrentIndex((i) => i + 1);
-    const isPass = direction === "left";
-    setLastSwipeWasPass(isPass);
-    lastSwipePromiseRef.current = swipeMutation.mutateAsync({
-      direction,
-      userId,
-    });
-  };
+  const handleSwipe = useCallback(
+    (direction, userId) => {
+      setCurrentIndex((i) => i + 1);
+      const isPass = direction === "left";
+      setLastSwipeWasPass(isPass);
+      lastSwipePromiseRef.current = swipeMutation.mutateAsync({
+        direction,
+        userId,
+      });
+    },
+    [swipeMutation],
+  );
 
   const handleRewind = async () => {
     if (currentIndex === 0) return;
@@ -948,34 +1181,67 @@ export default function DiscoverScreen() {
     }
   };
 
-  const handlePassButton = () => {
+  const handlePassButton = useCallback(() => {
     if (isSwiping || potentialMatches.length <= currentIndex) return;
+    if (swipeQuotaExhausted) {
+      purchaseBottomSheetRef.current?.present();
+      return;
+    }
     setIsSwiping(true);
     programmaticSwipe.value = 1;
     setTimeout(() => setIsSwiping(false), 300);
-  };
+  }, [
+    isSwiping,
+    potentialMatches.length,
+    currentIndex,
+    swipeQuotaExhausted,
+    programmaticSwipe,
+  ]);
 
-  const handleLikeButton = () => {
+  const handleLikeButton = useCallback(() => {
     if (isSwiping || potentialMatches.length <= currentIndex) return;
+    if (swipeQuotaExhausted) {
+      purchaseBottomSheetRef.current?.present();
+      return;
+    }
     setIsSwiping(true);
     programmaticSwipe.value = 2;
     setTimeout(() => setIsSwiping(false), 300);
-  };
+  }, [
+    isSwiping,
+    potentialMatches.length,
+    currentIndex,
+    swipeQuotaExhausted,
+    programmaticSwipe,
+  ]);
 
-  const handleSuperLikeButton = () => {
+  const handleSuperLikeButton = useCallback(() => {
+    if (__DEV__) {
+      console.log("[SuperLike btn]", {
+        isSwiping,
+        cardsLeft: potentialMatches.length - currentIndex,
+        superLikeQuotaExhausted,
+        superLikesRemaining: statsQuery.data?.superLikesRemaining,
+        hasModalRef: !!superLikePurchaseSheetRef.current,
+      });
+    }
     if (isSwiping || potentialMatches.length <= currentIndex) return;
-    // Kota yoksa backend 403 dönecek; UX olarak doğrudan paywall'a yönlendir.
-    // Premium kullanıcının 5/gün kotası bittiğinde de bu yol çalışır — paywall'da
-    // ileride SuperLike consumable pack satın alma akışı açılacak (FAZ 6).
-    const remaining = statsQuery.data?.superLikesRemaining;
-    if (typeof remaining === "number" && remaining <= 0) {
-      purchaseBottomSheetRef.current?.present();
+    if (superLikeQuotaExhausted) {
+      const ref = superLikePurchaseSheetRef.current;
+      requestAnimationFrame(() => ref?.present?.());
       return;
     }
     setIsSwiping(true);
     programmaticSwipe.value = 3;
     setTimeout(() => setIsSwiping(false), 300);
-  };
+  }, [
+    isSwiping,
+    potentialMatches.length,
+    currentIndex,
+    superLikeQuotaExhausted,
+    statsQuery.data?.superLikesRemaining,
+    programmaticSwipe,
+  ]);
 
   const renderStack = () => {
     return potentialMatches
@@ -997,6 +1263,8 @@ export default function DiscoverScreen() {
             onPass={handlePassButton}
             onLike={handleLikeButton}
             onSuperLike={handleSuperLikeButton}
+            swipeQuotaExhausted={swipeQuotaExhausted}
+            superLikeQuotaExhausted={superLikeQuotaExhausted}
           />
         );
       });
@@ -1076,42 +1344,35 @@ export default function DiscoverScreen() {
             </TouchableOpacity>
           </View>
         </View>
-        {/* Logo tap bildirimi — absolute overlay (header altına float), 2s sonra kapanır */}
-        {logoNotif && (
-          <View
-            pointerEvents="none"
-            style={{
-              position: "absolute",
-              top: insets.top + 50,
-              left: 0,
-              right: 0,
-              alignItems: "center",
-              zIndex: 100,
-            }}
-          >
+        {/* Logo tap stats popup — kalan swipe + super-like + reset timer'ları */}
+        {statsPopupOpen && (
+          <>
+            {/* Dışarı tıklayınca kapat */}
+            <TouchableOpacity
+              activeOpacity={1}
+              onPress={() => setStatsPopupOpen(false)}
+              style={{
+                position: "absolute",
+                top: 0,
+                left: 0,
+                right: 0,
+                bottom: -1000,
+                zIndex: 99,
+              }}
+            />
             <View
               style={{
-                borderRadius: 999,
-                borderCurve: "continuous",
-                overflow: "hidden",
-                paddingHorizontal: 14,
-                paddingVertical: 8,
-                backgroundColor: "rgba(30,30,30,0.95)",
-                borderWidth: 0.5,
-                borderColor: "rgba(255,255,255,0.12)",
+                position: "absolute",
+                top: insets.top + 56,
+                left: 16,
+                right: 16,
+                alignItems: "center",
+                zIndex: 100,
               }}
             >
-              <Text
-                style={{
-                  color: "#fff",
-                  fontSize: 12,
-                  fontWeight: "600",
-                }}
-              >
-                {logoNotif}
-              </Text>
+              <StatsPopup stats={statsQuery.data} />
             </View>
-          </View>
+          </>
         )}
       </View>
 
@@ -1127,26 +1388,7 @@ export default function DiscoverScreen() {
             <SwipeOverlay dragX={overlayDragX} opacity={overlayOpacity} />
           </Animated.View>
         ) : (
-          <View
-            style={{
-              flex: 1,
-              alignItems: "center",
-              justifyContent: "center",
-              marginBottom: 80,
-            }}
-          >
-            <Flame size={80} color="#fff" strokeWidth={1.3} />
-            <Text
-              className="text-gray-400"
-              style={{
-                fontWeight: "500",
-                fontSize: 13,
-                marginTop: 8,
-              }}
-            >
-              Yeni profiller için bekle.
-            </Text>
-          </View>
+          <EmptyDiscoverCard />
         )}
       </Animated.View>
 
@@ -1158,6 +1400,14 @@ export default function DiscoverScreen() {
         saving={saveFiltersMutation.isPending}
       />
       <PurchaseModal bottomSheetRef={purchaseBottomSheetRef} />
+      <SuperLikePurchaseModal
+        bottomSheetRef={superLikePurchaseSheetRef}
+        onClose={() => superLikePurchaseSheetRef.current?.dismiss?.()}
+        onUpgrade={() => {
+          superLikePurchaseSheetRef.current?.dismiss?.();
+          setTimeout(() => purchaseBottomSheetRef.current?.present?.(), 200);
+        }}
+      />
     </GestureHandlerRootView>
   );
 }

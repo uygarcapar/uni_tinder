@@ -28,7 +28,7 @@ class SwipeService {
   }
 
   async superLikeUser(targetUserId) {
-    const response = await api.post(API_ENDPOINTS.SWIPE_SUPER_LIKE, { targetUserId, swipeType: 'superLike' });
+    const response = await api.post(API_ENDPOINTS.SWIPE_SUPER_LIKE, { targetUserId, swipeType: 'superlike' });
     return response;
   }
 }

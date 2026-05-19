@@ -13,7 +13,6 @@ import {
 } from "react-native-safe-area-context";
 import { BottomSheetModalProvider } from "@gorhom/bottom-sheet";
 import { KeyboardProvider } from "react-native-keyboard-controller";
-import { ActivityIndicator, View } from "react-native";
 import { useFonts } from "expo-font";
 
 export default function App() {
@@ -27,20 +26,7 @@ export default function App() {
     <GestureHandlerRootView style={{ flex: 1 }}>
       <SafeAreaProvider initialMetrics={initialWindowMetrics}>
       <Provider store={store}>
-        <PersistGate
-          loading={
-            <View
-              style={{
-                flex: 1,
-                justifyContent: "center",
-                alignItems: "center",
-              }}
-            >
-              <ActivityIndicator size="large" color="#f57656" />
-            </View>
-          }
-          persistor={persistor}
-        >
+        <PersistGate loading={null} persistor={persistor}>
           <QueryClientProvider client={queryClient}>
             <KeyboardProvider>
               <BottomSheetModalProvider>

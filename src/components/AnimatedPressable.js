@@ -9,13 +9,14 @@ export default function AnimatedPressable({
   style,
   disabled,
   activeOpacity = 1,
+  pressScale = 0.97,
   children,
 }) {
   const scale = useRef(new Animated.Value(1)).current;
 
   const handlePressIn = (e) => {
     Animated.spring(scale, {
-      toValue: 0.97,
+      toValue: pressScale,
       useNativeDriver: true,
       speed: 20,
     }).start();
