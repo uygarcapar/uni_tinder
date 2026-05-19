@@ -73,6 +73,56 @@ const processQueue = (error, token = null) => {
 
 const sleep = (ms) => new Promise((resolve) => setTimeout(resolve, ms));
 
+// Single-flight refresh — eşzamanlı çağrılar tek HTTP refresh isteğine konsolide edilir.
+// realtimeService (SignalR) accessTokenFactory ve axios 401 interceptor'ı bunu paylaşır;
+// aksi halde token refresh anında her ikisi de ayrı POST atar → bir taraf eski token ile
+// 401 alır, sonsuz reconnect loop.
+let inFlightRefresh = null;
+
+/**
+ * Refresh token ile yeni access token al. Başarısızsa null döner ve onAuthLost() tetiklenir.
+ * SignalR accessTokenFactory ve axios 401 interceptor aynı promise'i paylaşır (single-flight).
+ */
+export const refreshAccessToken = async () => {
+  if (inFlightRefresh) return inFlightRefresh;
+
+  inFlightRefresh = (async () => {
+    try {
+      const rt = await getRefreshToken();
+      if (!rt) {
+        console.log('❌ Refresh token bulunamadı — Logout');
+        await clearAllTokens();
+        setCurrentAccessToken(null);
+        if (onAuthLost) onAuthLost();
+        return null;
+      }
+
+      const response = await axios.post(
+        `${API_BASE_URL}${API_ENDPOINTS.REFRESH_TOKEN}`,
+        { refreshToken: rt }
+      );
+
+      const { token: newAccessToken, refreshToken: newRefreshToken } = response.data.result;
+      setCurrentAccessToken(newAccessToken);
+      await saveAccessToken(newAccessToken);
+      await saveRefreshToken(newRefreshToken);
+      if (onTokenRefreshed) onTokenRefreshed(newAccessToken, newRefreshToken);
+      console.log('✅ Token refresh başarılı (single-flight)');
+      return newAccessToken;
+    } catch (err) {
+      console.log('❌ Token refresh başarısız:', err?.response?.status, err?.message);
+      await clearAllTokens();
+      setCurrentAccessToken(null);
+      if (onAuthLost) onAuthLost();
+      return null;
+    } finally {
+      inFlightRefresh = null;
+    }
+  })();
+
+  return inFlightRefresh;
+};
+
 api.interceptors.response.use(
   (response) => {
     return response.data;
@@ -111,51 +161,17 @@ api.interceptors.response.use(
       originalRequest._retry = true;
       isRefreshing = true;
 
-      const refreshToken = await getRefreshToken();
-      console.log('🔄 Token refresh başlatılıyor - Refresh token:', refreshToken ? 'Mevcut' : 'YOK');
-
-      if (!refreshToken) {
-        // No refresh token available - clear tokens and reject
-        console.log('❌ Refresh token bulunamadı - Logout yapılıyor');
-        isRefreshing = false;
-        await clearAllTokens();
-        setCurrentAccessToken(null);
-        if (onAuthLost) onAuthLost();
-        return Promise.reject(error);
-      }
-
       try {
-        // Request new access token using refresh token
-        console.log('🔄 Refresh token endpoint\'ine istek gönderiliyor...');
-        const response = await axios.post(
-          `${API_BASE_URL}${API_ENDPOINTS.REFRESH_TOKEN}`,
-          { refreshToken }
-        );
-
-        console.log('✅ Token refresh başarılı');
-        const { token: newAccessToken, refreshToken: newRefreshToken } = response.data.result;
-
-        // Save new tokens
-        setCurrentAccessToken(newAccessToken);
-        await saveAccessToken(newAccessToken);
-        await saveRefreshToken(newRefreshToken);
-
-        // Notify listeners (e.g. Redux store) of the new token
-        if (onTokenRefreshed) onTokenRefreshed(newAccessToken, newRefreshToken);
-
-        // Process queued requests with new token
+        const newAccessToken = await refreshAccessToken();
+        if (!newAccessToken) {
+          processQueue(error, null);
+          return Promise.reject(error);
+        }
         processQueue(null, newAccessToken);
-
-        // Retry original request with new token
         originalRequest.headers.Authorization = `Bearer ${newAccessToken}`;
         return api(originalRequest);
       } catch (refreshError) {
-        // Refresh token is invalid or expired
-        console.log('❌ Token refresh başarısız:', refreshError?.response?.status, refreshError?.response?.data || refreshError?.message);
         processQueue(refreshError, null);
-        await clearAllTokens();
-        setCurrentAccessToken(null);
-        if (onAuthLost) onAuthLost();
         return Promise.reject(refreshError);
       } finally {
         isRefreshing = false;

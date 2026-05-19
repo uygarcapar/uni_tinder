@@ -5,7 +5,8 @@ import {
   HttpTransportType,
 } from '@microsoft/signalr';
 import { HUB_URL } from '../constants/api';
-import { getCurrentAccessToken } from './api';
+import { getCurrentAccessToken, refreshAccessToken } from './api';
+import { isTokenExpiringSoon } from '../utils/jwt';
 
 /**
  * SignalR /hubs/match singleton manager.
@@ -37,11 +38,15 @@ class RealtimeService {
     // Event listener registry — UI bileşenleri subscribe eder, lifecycle'da unsubscribe.
     this.listeners = new Map(); // eventName -> Set<callback>
     this._connectingPromise = null;
+    // Logout/explicit disconnect'te onclose otomatik restart'ı bastırmak için.
+    this._intentionalDisconnect = false;
   }
 
   // ======== Connection lifecycle ========
 
   async connect() {
+    // Yeni bir bağlantı talebi — disconnect flag'ini temizle ki onclose restart'ı tekrar çalışsın.
+    this._intentionalDisconnect = false;
     // Zaten bağlanıyor / bağlı → mevcut promise'i döndür.
     if (this.connection && this.connection.state === HubConnectionState.Connected) {
       return this.connection;
@@ -50,14 +55,41 @@ class RealtimeService {
 
     const conn = new HubConnectionBuilder()
       .withUrl(HUB_URL, {
-        // Token her reconnect denemesinde fresh okunur (axios refresh ile sync).
-        accessTokenFactory: () => getCurrentAccessToken() || '',
+        // Token expiry check + single-flight refresh: reconnect anında expired
+        // token'la WS handshake yapmayı engeller (aksi halde 401 → reconnect
+        // loop → kalıcı disconnect). axios 401 interceptor ile aynı in-flight
+        // promise'i paylaşır (api.js).
+        accessTokenFactory: async () => {
+          let token = getCurrentAccessToken();
+          if (!token || isTokenExpiringSoon(token, 30)) {
+            const fresh = await refreshAccessToken();
+            if (fresh) token = fresh;
+          }
+          return token || '';
+        },
         // Mobile genelde WebSocket; LongPolling fallback için bırakıyoruz.
         transport: HttpTransportType.WebSockets | HttpTransportType.LongPolling,
         skipNegotiation: false,
       })
-      // Default reconnect aralıkları: 0, 2s, 10s, 30s. Sonra retryContext ile özelleştir.
-      .withAutomaticReconnect([0, 2000, 5000, 10000, 30000])
+      // Indefinite reconnect — array formu 5 deneme sonrası vazgeçip onclose
+      // tetikliyordu, mobil network outage'da kullanıcı geri dönse de WS dead kalıyordu.
+      // Callback formu: ilk birkaç deneme exponential, sonra 30s cap'te sürekli dener.
+      // Cihaz suspended iken network OS tarafından dondurulur, retry no-op; foreground'a
+      // dönünce bir sonraki retry tick bağlanır (token expired ise accessTokenFactory refresh'ler).
+      .withAutomaticReconnect({
+        nextRetryDelayInMilliseconds: (ctx) => {
+          const schedule = [0, 2000, 5000, 10000, 30000];
+          return ctx.previousRetryCount < schedule.length
+            ? schedule[ctx.previousRetryCount]
+            : 30000;
+        },
+      })
+      // Server-side KeepAliveInterval=15s + ClientTimeoutInterval=60s.
+      // Default client serverTimeout 30s — mobile network jitter'da tek gecikmiş ping
+      // bağlantıyı boş yere kapatıyordu. 60s'e çıkarınca server timeout'u ile aligned.
+      // KeepAliveInterval 15s — backend ile aynı, client tarafından da düzenli ping.
+      .withServerTimeout(60000)
+      .withKeepAliveInterval(15000)
       .configureLogging(LogLevel.Warning)
       .build();
 
@@ -84,6 +116,8 @@ class RealtimeService {
   }
 
   async disconnect() {
+    // Intentional flag → onclose auto-restart'ı bastır (logout / auth lost senaryoları).
+    this._intentionalDisconnect = true;
     if (!this.connection) return;
     try {
       await this.connection.stop();
@@ -159,6 +193,22 @@ class RealtimeService {
     conn.onclose((err) => {
       console.log('🔴 SignalR closed:', err?.message);
       this._emit('__connectionStateChanged', 'disconnected');
+      const wasIntentional = this._intentionalDisconnect;
+      this.connection = null;
+      this._connectingPromise = null;
+      // automaticReconnect indefinite olarak tasarlandı; buraya yine de düşersek
+      // (handshake-level fatal hata vb.) ve disconnect intentional değilse +
+      // hâlâ authenticated isek kısa bir delay sonra manuel restart dene.
+      // Token geçersizse refreshAccessToken() onAuthLost() tetikleyip token'ı
+      // boşaltır → ikinci try'da getCurrentAccessToken() null gelir, dururuz.
+      if (wasIntentional) return;
+      setTimeout(() => {
+        if (!this._intentionalDisconnect && getCurrentAccessToken()) {
+          this.connect().catch((e) =>
+            console.warn('Hub restart after close failed:', e?.message),
+          );
+        }
+      }, 5000);
     });
   }
 
