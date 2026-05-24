@@ -334,15 +334,15 @@ export default function RegisterStep9Screen({ navigation }) {
   );
 
   const getCityLabel = () => {
-    if (!city) return "Şehir Seçiniz";
+    if (!city) return "Şehir Seç";
     const selectedCity = cities.find((c) => c.enumName === city);
-    return selectedCity ? selectedCity.name : "Şehir Seçiniz";
+    return selectedCity ? selectedCity.name : "Şehir Seç";
   };
 
   const getDistrictLabel = () => {
-    if (!district) return "İlçe Seçiniz";
+    if (!district) return "İlçe Seç";
     const selectedDistrict = districts.find((d) => d.enumName === district);
-    return selectedDistrict ? selectedDistrict.name : "İlçe Seçiniz";
+    return selectedDistrict ? selectedDistrict.name : "İlçe Seç";
   };
 
   const handleNext = () => {
@@ -428,7 +428,7 @@ export default function RegisterStep9Screen({ navigation }) {
                   <Text
                     className={`${
                       city ? "text-white" : "text-gray-400"
-                    } text-[18px]`}
+                    } text-[16px] font-medium`}
                   >
                     {getCityLabel()}
                   </Text>
@@ -467,7 +467,7 @@ export default function RegisterStep9Screen({ navigation }) {
                   <Text
                     className={`${
                       district ? "text-white" : "text-gray-400"
-                    } text-[18px]`}
+                    } text-[16px] font-medium`}
                   >
                     {getDistrictLabel()}
                   </Text>
@@ -479,8 +479,8 @@ export default function RegisterStep9Screen({ navigation }) {
                   />
                 </>
               )}
-              </TouchableOpacity>
-            </View>
+            </TouchableOpacity>
+          </View>
         </>
       </View>
 
@@ -496,12 +496,13 @@ export default function RegisterStep9Screen({ navigation }) {
             }}
           >
             <LinearGradient
-              colors={["#fc2c26", "#fc1f26"]}
+              colors={["#ffffff", "#e5e7eb", "#9ca3af"]}
+              locations={[0, 0.35, 0.85]}
               start={{ x: 0, y: 0 }}
-              end={{ x: 1, y: 0 }}
+              end={{ x: 1, y: 1 }}
               className="py-3.5"
             >
-              <Text className="text-white py-[20px] font-bold text-[15px] text-center">
+              <Text className="text-black py-[20px] font-bold text-[15px] text-center">
                 {!city && !district ? "Atla" : "Devam Et"}
               </Text>
             </LinearGradient>

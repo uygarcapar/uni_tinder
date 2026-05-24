@@ -49,6 +49,9 @@ export const API_ENDPOINTS = {
   SWIPE_STATS: "/api/swipe/Stats",
   SWIPE_MATCHES: "/api/swipe/GetMatches",
   WHO_LIKED_ME: "/api/swipe/wholikedme",
+  // Premium WhoLikedMe karta tıklayınca tek liker'ın tam profili (ProfileCardDto).
+  // Discovery'deki zenginlikle aynı: distance, compatibilityScore, hobbies vb.
+  LIKER_PROFILE: "/api/swipe/LikerProfile",
   SWIPE_UNDO: "/api/swipe/Undo",
   SWIPE_FILTERS: "/api/swipe/Filters",
   SWIPE_UPDATE_FILTERS: "/api/swipe/UpdateFilters",

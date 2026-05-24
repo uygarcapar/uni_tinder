@@ -163,12 +163,13 @@ export default function RegisterStep11Screen({ navigation }) {
             }}
           >
             <LinearGradient
-              colors={["#fc2126", "#fc1626"]}
+              colors={["#ffffff", "#e5e7eb", "#9ca3af"]}
+              locations={[0, 0.35, 0.85]}
               start={{ x: 0, y: 0 }}
-              end={{ x: 1, y: 0 }}
+              end={{ x: 1, y: 1 }}
               className="py-3.5"
             >
-              <Text className="text-white py-[20px] font-bold text-[15px] text-center">
+              <Text className="text-black py-[20px] font-bold text-[15px] text-center">
                 Devam Et
               </Text>
             </LinearGradient>

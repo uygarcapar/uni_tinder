@@ -390,11 +390,12 @@ export default function RegisterStep7Screen({ navigation }) {
             }}
           >
             <LinearGradient
-              colors={["#fc3826", "#fc2926"]}
+              colors={["#ffffff", "#e5e7eb", "#9ca3af"]}
+              locations={[0, 0.35, 0.85]}
               start={{ x: 0, y: 0 }}
-              end={{ x: 1, y: 0 }}
+              end={{ x: 1, y: 1 }}
             >
-              <Text className="text-white py-[20px] font-bold text-[15px] text-center">
+              <Text className="text-black py-[20px] font-bold text-[15px] text-center">
                 Devam Et
               </Text>
             </LinearGradient>

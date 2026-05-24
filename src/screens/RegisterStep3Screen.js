@@ -12,6 +12,7 @@ import { useDispatch, useSelector } from "react-redux";
 import { updateRegistrationField } from "../store/slices/authSlice";
 import { KeyboardStickyView } from "react-native-keyboard-controller";
 import { LinearGradient } from "expo-linear-gradient";
+import { Eye, EyeOff } from "lucide-react-native";
 import RegisterProgressBar from "../components/RegisterProgressBar";
 import AnimatedPressable from "../components/AnimatedPressable";
 
@@ -23,6 +24,7 @@ export default function RegisterStep3Screen({ navigation }) {
 
   const passwordInputRef = useRef(null);
   const [error, setError] = useState("");
+  const [showPassword, setShowPassword] = useState(false);
 
   const updateField = (field, value) => {
     dispatch(updateRegistrationField({ field, value }));
@@ -114,11 +116,8 @@ export default function RegisterStep3Screen({ navigation }) {
       <TouchableWithoutFeedback onPress={Keyboard.dismiss}>
         <View className="flex-1 px-6 py-6 pt-0">
           <View className="flex flex-col gap-2">
-            <Text className="text-4xl font-bold text-white">
+            <Text className="text-4xl font-bold text-white mb-8">
               Şifreni oluştur.
-            </Text>
-            <Text className="text-[18px] font-normal text-gray-400 mb-6">
-              Güçlü bir şifre, hesabını güvende tutmana yardımcı olur.
             </Text>
           </View>
 
@@ -134,12 +133,15 @@ export default function RegisterStep3Screen({ navigation }) {
                 overflow: "hidden",
                 borderWidth: 0.5,
                 borderColor: error ? "#ef4444" : "rgba(255,255,255,0.1)",
+                flexDirection: "row",
+                alignItems: "center",
+                paddingHorizontal: 16,
               }}
             >
               <TextInput
                 ref={passwordInputRef}
                 style={{
-                  paddingHorizontal: 16,
+                  flex: 1,
                   paddingVertical: 16,
                   fontSize: 18,
                   color: "#fff",
@@ -148,8 +150,20 @@ export default function RegisterStep3Screen({ navigation }) {
                 placeholderTextColor="#9CA3AF"
                 value={password}
                 onChangeText={(v) => updateField("password", v)}
-                secureTextEntry={true}
+                secureTextEntry={!showPassword}
               />
+              <TouchableOpacity
+                activeOpacity={0.7}
+                onPress={() => setShowPassword(!showPassword)}
+              >
+                <View pointerEvents="none">
+                  {showPassword ? (
+                    <Eye size={24} strokeWidth={1.5} color="#D1D5DB" />
+                  ) : (
+                    <EyeOff size={24} strokeWidth={1.5} color="#D1D5DB" />
+                  )}
+                </View>
+              </TouchableOpacity>
             </View>
           </View>
 
@@ -178,7 +192,7 @@ export default function RegisterStep3Screen({ navigation }) {
                 placeholderTextColor="#9CA3AF"
                 value={confirmPassword}
                 onChangeText={(v) => updateField("confirmPassword", v)}
-                secureTextEntry={true}
+                secureTextEntry={!showPassword}
               />
             </View>
           </View>
@@ -204,12 +218,13 @@ export default function RegisterStep3Screen({ navigation }) {
             }}
           >
             <LinearGradient
-              colors={["#fc4f26", "#fc3c26"]}
+              colors={["#ffffff", "#e5e7eb", "#9ca3af"]}
+              locations={[0, 0.35, 0.85]}
               start={{ x: 0, y: 0 }}
-              end={{ x: 1, y: 0 }}
+              end={{ x: 1, y: 1 }}
               className=""
             >
-              <Text className="text-white py-[20px] font-bold text-[15px] text-center">
+              <Text className="text-black py-[20px] font-bold text-[15px] text-center">
                 Devam Et
               </Text>
             </LinearGradient>

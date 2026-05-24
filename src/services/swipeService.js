@@ -31,6 +31,17 @@ class SwipeService {
     const response = await api.post(API_ENDPOINTS.SWIPE_SUPER_LIKE, { targetUserId, swipeType: 'superlike' });
     return response;
   }
+
+  // WhoLikedMe ekranında bir karta tıklayınca tek liker'ın tam profilini çeker
+  // (discovery kartındaki tüm zenginliklerle aynı: distance, compatibilityScore,
+  // hobbies, smokingStatus, zodiacSign, vs.). 404 → liker silinmiş/banlanmış ya
+  // da arada like'ını geri çekmiş → UI tarafı listeyi yenilemeli.
+  async getLikerProfileDetail(likerUserId) {
+    const response = await api.get(
+      `${API_ENDPOINTS.LIKER_PROFILE}/${likerUserId}`,
+    );
+    return response;
+  }
 }
 
 export default new SwipeService();

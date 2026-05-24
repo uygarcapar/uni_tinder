@@ -3,6 +3,7 @@ import { API_ENDPOINTS } from '../constants/api';
 import axios from 'axios';
 import { API_BASE_URL } from '../constants/api';
 import { getRefreshToken, clearAllTokens } from '../utils/tokenStorage';
+import { logoutRevenueCat } from './subscriptionService';
 
 export const authService = {
   // Login
@@ -33,7 +34,10 @@ export const authService = {
     } catch (error) {
       console.error('Logout error:', error);
     } finally {
-      // Always clear tokens locally
+      // RC SDK kullanıcısını anonime düşür — aksi halde aynı cihazda yeni
+      // hesap açılınca getCustomerInfo eski kullanıcının premium entitlement'ını
+      // dönüp yeni hesabı yanlışlıkla premium gösteriyor.
+      await logoutRevenueCat().catch(() => {});
       await clearAllTokens();
     }
     return true;

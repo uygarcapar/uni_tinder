@@ -136,6 +136,8 @@ import {
 } from "../store/slices/subscriptionSlice";
 import api from "../services/api";
 import { API_ENDPOINTS } from "../constants/api";
+import { useQueryClient } from "@tanstack/react-query";
+import { swipeKeys } from "../queries/swipeQueries";
 
 const FEATURES = [
   { icon: Zap, label: "Sınırsız Beğeni" },
@@ -281,7 +283,7 @@ function renderPlanName(
           paddingRight: primarySize * 0.18,
         }}
       >
-        premium
+        lit plus
       </Text>
       {periodText ? (
         <Text
@@ -302,7 +304,29 @@ function renderPlanName(
 
 export default function PurchaseModal({ bottomSheetRef, onClose, onSuccess }) {
   const dispatch = useDispatch();
+  const queryClient = useQueryClient();
   const isPremium = useSelector((s) => s.subscription?.isPremium ?? false);
+
+  // Premium satın alma/restore sonrası swipe stats cache'ini güncelle —
+  // backend sınırsız için -1 dönüyor. Local cache eski limitli değerlerle
+  // kaldığı için UI swipe sayacını "kalan" gösteriyor. setQueryData ile
+  // anında remainingSwipes=-1, remainingUndos=-1, isPremium=true yap +
+  // arka planda invalidate et (backend sync olduktan sonra fresh data
+  // gelir).
+  const promoteSwipeStatsToPremium = () => {
+    queryClient.setQueryData(swipeKeys.stats, (prev) => {
+      if (!prev) return prev;
+      return {
+        ...prev,
+        isPremium: true,
+        remainingSwipes: -1,
+        remainingUndos: -1,
+        superLikesRemaining:
+          prev.superLikesRemaining === 0 ? -1 : prev.superLikesRemaining,
+      };
+    });
+    queryClient.invalidateQueries({ queryKey: swipeKeys.stats });
+  };
   const [offering, setOffering] = useState(null);
   const [loadingOffering, setLoadingOffering] = useState(true);
   const [backendPlans, setBackendPlans] = useState(null);
@@ -320,18 +344,35 @@ export default function PurchaseModal({ bottomSheetRef, onClose, onSuccess }) {
   }, [onClose, bottomSheetRef]);
 
   useEffect(() => {
+    let cancelled = false;
+    // RC SDK cold start'ta getOfferings null dönebiliyor (configure → network
+    // round-trip). Retry: null gelirse 600ms ara ile 3 kez daha dene.
+    const fetchOfferingWithRetry = async (attempt = 0) => {
+      const o = await getOfferings().catch(() => null);
+      if (o || attempt >= 3) return o;
+      await new Promise((r) => setTimeout(r, 600));
+      return fetchOfferingWithRetry(attempt + 1);
+    };
+
     Promise.all([
-      getOfferings().catch(() => null),
+      fetchOfferingWithRetry(),
       api
         .get(API_ENDPOINTS.SUBSCRIPTION_PLANS)
         .then((r) => r?.result?.plans ?? [])
         .catch(() => []),
     ])
       .then(([o, plans]) => {
+        if (cancelled) return;
         setOffering(o);
         setBackendPlans(plans);
       })
-      .finally(() => setLoadingOffering(false));
+      .finally(() => {
+        if (!cancelled) setLoadingOffering(false);
+      });
+
+    return () => {
+      cancelled = true;
+    };
   }, []);
 
   // RC + backend birleştirilmiş plan listesi
@@ -389,6 +430,7 @@ export default function PurchaseModal({ bottomSheetRef, onClose, onSuccess }) {
       const isPremium = await purchasePackage(pkg);
       if (isPremium) {
         dispatch(setPremium({ isPremium: true }));
+        promoteSwipeStatsToPremium();
         handleClose();
         onSuccess?.();
         dispatch(syncSubscriptionWithRetry({ maxAttempts: 4, delayMs: 1500 }));
@@ -411,6 +453,7 @@ export default function PurchaseModal({ bottomSheetRef, onClose, onSuccess }) {
       const isPremium = await restorePurchases();
       if (isPremium) {
         dispatch(setPremium({ isPremium: true }));
+        promoteSwipeStatsToPremium();
         handleClose();
         onSuccess?.();
         dispatch(fetchSubscriptionStatus());
@@ -487,7 +530,7 @@ export default function PurchaseModal({ bottomSheetRef, onClose, onSuccess }) {
                     }}
                   >
                     {isPremium
-                      ? "Hesap Zaten Premium"
+                      ? "Hesap Zaten Lit Plus"
                       : showTrialBadge
                         ? `${trialDays} Gün Ücretsiz Dene`
                         : `${selectedPriceString} / ${selectedPeriodLabel} — Abone Ol`}
@@ -527,7 +570,7 @@ export default function PurchaseModal({ bottomSheetRef, onClose, onSuccess }) {
                   lineHeight: 16,
                 }}
               >
-                Lit Gold aboneliği, App Store üzerinden otomatik olarak
+                Lit Plus aboneliği, App Store üzerinden otomatik olarak
                 yenilenen bir aboneliktir. Aboneliğiniz, satın alma işleminin
                 onaylanmasından sonra App Store hesabınızdan ücretlendirilir.
               </Text>
@@ -849,7 +892,7 @@ export default function PurchaseModal({ bottomSheetRef, onClose, onSuccess }) {
                     fontFamily: "Duckie-regular",
                   }}
                 >
-                  gold
+                  lit plus
                 </Text>
               </View>
             </View>

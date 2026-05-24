@@ -52,23 +52,20 @@ const PressableScaleButton = ({ onPress, style, className, children }) => {
 export default function WelcomeScreen({ navigation }) {
   return (
     <View className="flex-1 bg-white">
-      <StatusBar style="light" />
+      <StatusBar style="dark" />
 
-      {/* 1. style prop'u kullandık.
-         2. absolute yaptık.
-         3. width ve height'i elle verdik ki kaçarı olmasın.
-      */}
       <LinearGradient
-        colors={["#fc0335", "#FF4D4D", "#fc7126"]}
-        start={{ x: 0.1, y: 0.2 }}
-        end={{ x: 0.9, y: 0.8 }}
+        colors={["#ffffff", "#e3e3e3", "#9e9e9e", "#525252"]}
+        locations={[0, 0.3, 0.65, 1]}
+        start={{ x: -0.5, y: 0 }}
+        end={{ x: 1.5, y: 1 }}
         style={{
           position: "absolute",
           left: 0,
           right: 0,
           top: 0,
-          height: height, // Tüm ekran yüksekliği
-          width: width, // Tüm ekran genişliği
+          height: height,
+          width: width,
         }}
       />
 
@@ -78,10 +75,10 @@ export default function WelcomeScreen({ navigation }) {
         {/* Üst Kısım */}
         <View className="flex-1 justify-center items-center">
           <Image
-            source={require("../../assets/lit_name_white.png")}
+            source={require("../../assets/lit_name_black.png")}
             style={{
               width: width * 0.7,
-              height: 100,
+              height: 110,
             }}
             resizeMode="contain"
           />
@@ -92,34 +89,43 @@ export default function WelcomeScreen({ navigation }) {
           <View className="flex flex-col gap-3">
             <PressableScaleButton
               onPress={() => navigation.navigate("RegisterStep1")}
-              className="bg-white py-[20px] items-center"
               style={{
                 borderRadius: 999,
                 borderCurve: "continuous",
                 overflow: "hidden",
               }}
             >
-              <Text className="text-[#FD297B] font-bold text-[14px]">
-                Hesap Oluştur
-              </Text>
+              <LinearGradient
+                colors={["#0a0a0a", "#1a1a1a"]}
+                start={{ x: 0, y: 0 }}
+                end={{ x: 1, y: 1 }}
+                style={{
+                  paddingVertical: 20,
+                  alignItems: "center",
+                }}
+              >
+                <Text className="text-white font-bold text-[14px]">
+                  Hesap Oluştur
+                </Text>
+              </LinearGradient>
             </PressableScaleButton>
 
             <PressableScaleButton
               onPress={() => navigation.navigate("Login")}
-              className="border-[0.5px] border-white py-[20px] items-center"
+              className="border-[0.5px] border-gray-200 py-[20px] items-center"
               style={{
                 borderRadius: 999,
                 borderCurve: "continuous",
                 overflow: "hidden",
               }}
             >
-              <Text className="text-white font-bold text-[14px]">
+              <Text className="text-gray-200 font-bold text-[14px]">
                 Zaten Hesabım Var
               </Text>
             </PressableScaleButton>
           </View>
 
-          <Text className="text-white text-sm text-center mt-8">
+          <Text className="text-white opacity-70 text-sm text-center mt-8">
             Devam ederek <Text className=" underline">Kullanım Koşulları</Text>{" "}
             ve <Text className=" underline">Gizlilik Politikası</Text>
             'nı kabul etmiş olursun.

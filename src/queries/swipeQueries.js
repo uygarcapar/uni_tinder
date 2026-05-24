@@ -4,6 +4,8 @@ import {
   useMutation,
   useQueryClient,
 } from "@tanstack/react-query";
+import { useSelector } from "react-redux";
+import { useMemo } from "react";
 import api from "../services/api";
 import { API_ENDPOINTS } from "../constants/api";
 import swipeService from "../services/swipeService";
@@ -53,7 +55,7 @@ export function useSwipeFilters() {
 }
 
 export function useSwipeStats() {
-  return useQuery({
+  const result = useQuery({
     queryKey: swipeKeys.stats,
     queryFn: async () => {
       const res = await api.get(API_ENDPOINTS.SWIPE_STATS);
@@ -90,6 +92,36 @@ export function useSwipeStats() {
     refetchOnMount: false,
     refetchOnReconnect: false,
   });
+
+  // Redux subscription state overlay — backend webhook geç işlerse stats
+  // response'unda isPremium=false ve eski kotalar gelir. RC (veya manuel
+  // setPremium) premium dediyse, response'u override edip sınırsız (-1)
+  // değerleri kullan. Tüm consumer'lar (DiscoverScreen, WaveFillLogo,
+  // StatsPopup, vs.) otomatik olarak doğru gösterir.
+  const subscriptionIsPremium = useSelector(
+    (s) => s.subscription?.isPremium ?? false,
+  );
+  const data = useMemo(() => {
+    if (!result.data) return result.data;
+    const effectivePremium = result.data.isPremium || subscriptionIsPremium;
+    if (!effectivePremium) return result.data;
+    // Zaten doğru ise yeni obje yaratıp ref değiştirme.
+    if (
+      result.data.isPremium &&
+      result.data.remainingSwipes === -1 &&
+      result.data.remainingUndos === -1
+    ) {
+      return result.data;
+    }
+    return {
+      ...result.data,
+      isPremium: true,
+      remainingSwipes: -1,
+      remainingUndos: -1,
+    };
+  }, [result.data, subscriptionIsPremium]);
+
+  return { ...result, data };
 }
 
 export function useSwipeMutation() {

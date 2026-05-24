@@ -103,9 +103,7 @@ function AnimatedTabBar({ state, navigation }) {
         const color = focused ? "#fff" : "rgba(255,255,255,1)";
         const showBadge = route.name === "Messages" && unreadTotal > 0;
         const badgeText = unreadTotal > 99 ? "99+" : String(unreadTotal);
-        const showLikesPill = route.name === "Likes" && whoLikedMeCount > 0;
-        const likesPillText =
-          whoLikedMeCount > 99 ? "99+" : String(whoLikedMeCount);
+        const showLikesDot = route.name === "Likes" && whoLikedMeCount > 0;
 
         const onPress = () => {
           const event = navigation.emit({
@@ -173,29 +171,23 @@ function AnimatedTabBar({ state, navigation }) {
                     </Text>
                   </View>
                 )}
-                {showLikesPill && (
+                {showLikesDot && (
+                  // Instagram tarzı: sayı yok, sadece küçük kırmızı yuvarlak,
+                  // ikonun sağ-üstünde. Tab bar bg'sine karşı ince koyu border
+                  // ile ayırt edilir.
                   <View
                     style={{
                       position: "absolute",
-                      top: -6,
-                      right: -14,
-                      minWidth: 18,
-                      height: 18,
-                      paddingHorizontal: 5,
-                      borderRadius: 9,
+                      top: -2,
+                      right: -4,
+                      width: 12,
+                      height: 12,
+                      borderRadius: 99,
                       backgroundColor: "#FF4D4D",
-                      alignItems: "center",
-                      justifyContent: "center",
-                      borderWidth: 1.5,
-                      borderColor: "rgba(20,20,20,0.9)",
+                      borderWidth: 2,
+                      borderColor: "#121212",
                     }}
-                  >
-                    <Text
-                      style={{ color: "#fff", fontSize: 10, fontWeight: "700" }}
-                    >
-                      {likesPillText}
-                    </Text>
-                  </View>
+                  />
                 )}
               </View>
               <Text

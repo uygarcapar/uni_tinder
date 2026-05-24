@@ -73,6 +73,15 @@ export default function RegisterStep2Screen({ route, navigation }) {
     }
   };
 
+  // Hangi input'a basılırsa basılsın ilk boş slot'a yönlendir — kullanıcı sırayı
+  // bozup ortadan başlayamasın.
+  const handleFocus = (index) => {
+    const firstEmpty = code.findIndex((d) => d === "");
+    if (firstEmpty !== -1 && firstEmpty !== index) {
+      inputRefs.current[firstEmpty]?.focus();
+    }
+  };
+
   const handleVerify = async (verificationCode = null) => {
     Keyboard.dismiss();
     const finalCode = verificationCode || code.join("");
@@ -223,19 +232,12 @@ export default function RegisterStep2Screen({ route, navigation }) {
               <Text className="text-3xl font-bold text-white mb-3 text-center">
                 E-Mail'ini doğrula.
               </Text>
-              <Text className="text-white/80 text-[15px] text-center px-3">
+              <Text className="text-white/80 text-[15px] text-center">
+                {email}
                 {isPending
-                  ? "Bu adrese daha önce kod gönderildi. Mailinizi kontrol edin."
-                  : "Bu adrese gönderilen 6 haneli kodu girin"}
+                  ? " adresine daha önce kod gönderildi. Mailinizi kontrol edin."
+                  : " adresine gönderilen 6 haneli kodu girin"}
               </Text>
-              <View
-                style={{ borderCurve: "continuous" }}
-                className="border-[0.5px] border-white/15 items-center flex-row justify-center mt-5 py-3 px-4 rounded-full overflow-hidden self-center"
-              >
-                <Text className="text-white text-lg text-center px-4">
-                  {email}
-                </Text>
-              </View>
             </View>
           </View>
 
@@ -259,6 +261,7 @@ export default function RegisterStep2Screen({ route, navigation }) {
                   value={digit}
                   onChangeText={(text) => handleCodeChange(text, index)}
                   onKeyPress={(e) => handleKeyPress(e, index)}
+                  onFocus={() => handleFocus(index)}
                   keyboardType="number-pad"
                   maxLength={1}
                   editable={!loading}
@@ -305,15 +308,16 @@ export default function RegisterStep2Screen({ route, navigation }) {
               disabled={loading || code.some((d) => d === "")}
             >
               <LinearGradient
-                colors={["#fc5426", "#fc4026"]}
+                colors={["#ffffff", "#e5e7eb", "#9ca3af"]}
+                locations={[0, 0.35, 0.85]}
                 start={{ x: 0, y: 0 }}
-                end={{ x: 1, y: 0 }}
+                end={{ x: 1, y: 1 }}
                 className="items-center"
               >
                 {loading ? (
-                  <ActivityIndicator className="py-[20px]" color="#fff" />
+                  <ActivityIndicator className="py-[20px]" color="#000" />
                 ) : (
-                  <Text className="text-white py-[20px] text-center font-medium text-[15px]">
+                  <Text className="text-black py-[20px] text-center font-medium text-[15px]">
                     Doğrula
                   </Text>
                 )}

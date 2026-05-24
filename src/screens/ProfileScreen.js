@@ -19,6 +19,7 @@ import {
   StatusBar,
   Platform,
   UIManager,
+  Linking,
 } from "react-native";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 import * as ImagePicker from "expo-image-picker";
@@ -1082,6 +1083,7 @@ export default function ProfileScreen() {
   const dispatch = useDispatch();
   const { user } = useSelector((state) => state.auth);
   const subscriptionIsPremium = useSelector((s) => s.subscription?.isPremium);
+  const subscriptionExpiresAt = useSelector((s) => s.subscription?.expiresAt);
   const insets = useSafeAreaInsets();
   const statsQuery = useSwipeStats();
 
@@ -1142,6 +1144,9 @@ export default function ProfileScreen() {
   const [refreshing, setRefreshing] = useState(false);
   // Accordion State
   const [expandedSection, setExpandedSection] = useState(null);
+  // İlk render'da en üstteki incomplete metric otomatik açılsın — sadece bir kez,
+  // sonra kullanıcı kontrolü ele alır.
+  const didAutoExpandRef = useRef(false);
 
   // ── Profil düzenleme modalı ───────────────────────────────────────────────
   const [bioText, setBioText] = useState("");
@@ -1621,6 +1626,7 @@ export default function ProfileScreen() {
     ]);
 
   const handleAccordionToggle = (key) => {
+    didAutoExpandRef.current = true;
     setExpandedSection(expandedSection === key ? null : key);
   };
 
@@ -1688,6 +1694,17 @@ export default function ProfileScreen() {
 
   const resolvedHobbies = resolveHobbies(myProfile?.hobbies);
   const previewProfile = loading ? null : buildPreviewProfile();
+
+  // İlk profile load tamamlanınca en üstteki incomplete metric'i otomatik aç.
+  // Sadece bir kez — kullanıcı toggle'a basarsa bir daha override etmiyoruz.
+  useEffect(() => {
+    if (didAutoExpandRef.current || loading) return;
+    const firstIncomplete = completionMetrics.find((m) => m.current < m.max);
+    if (firstIncomplete) {
+      setExpandedSection(firstIncomplete.key);
+      didAutoExpandRef.current = true;
+    }
+  }, [loading, completionMetrics]);
 
   return (
     <GestureHandlerRootView style={{ flex: 1 }}>
@@ -1842,6 +1859,7 @@ export default function ProfileScreen() {
                   style={{ marginTop: 8, alignSelf: "flex-start" }}
                 >
                   <BlurView
+                    tint="systemMaterial"
                     intensity={100}
                     style={{
                       borderRadius: 999,
@@ -1869,14 +1887,15 @@ export default function ProfileScreen() {
                   onPress={() => purchaseBottomSheetRef.current?.present()}
                 >
                   <LinearGradient
-                    colors={["#ff173a", "#FF4D4D", "#fc803d"]}
+                    colors={["#ffffff", "#e5e7eb", "#9ca3af"]}
+                    locations={[0, 0.5, 1]}
                     start={{ x: 0, y: 0 }}
                     end={{ x: 1, y: 1 }}
                     style={{
                       borderRadius: 40,
                       borderCurve: "continuous",
                       overflow: "hidden",
-                      shadowColor: "#FFD700",
+                      shadowColor: "#000",
                       shadowOffset: { width: 0, height: 4 },
                       shadowOpacity: 0.2,
                       shadowRadius: 8,
@@ -1890,28 +1909,28 @@ export default function ProfileScreen() {
                           <Text
                             className="pr-2"
                             style={{
-                              color: "#fff",
+                              color: "#000",
                               fontSize: 50,
                               fontFamily: "Duckie-regular",
                             }}
                           >
-                            lit gold
+                            lit plus
                           </Text>
                         </View>
-                        <Text className="text-[#fff] font-medium text-[14px] leading-5 opacity-90">
-                          Lit Gold ile eşleşmelerini hızlandır, seni beğenenleri
+                        <Text className="text-black/80 font-medium text-[14px] leading-5">
+                          Lit Plus ile eşleşmelerini hızlandır, seni beğenenleri
                           gör ve daha fazlasını keşfet!
                         </Text>
                       </View>
                       <View
-                        className="border-[1px] border-white/50 px-4 py-4"
+                        className="border-[1px] border-black/40 px-4 py-4"
                         style={{
                           borderRadius: 999,
                           overflow: "hidden",
                           borderCurve: "continuous",
                         }}
                       >
-                        <Text className="text-[#fff] font-bold text-[13px]">
+                        <Text className="text-black font-bold text-[13px]">
                           Yükselt
                         </Text>
                       </View>
@@ -1921,22 +1940,22 @@ export default function ProfileScreen() {
                     <View className="pt-5 pb-2">
                       {/* Table Header */}
                       <View className="flex-row items-center justify-between mb-2 px-6">
-                        <Text className="text-white/70 font-bold text-[12px] uppercase tracking-wider flex-1">
+                        <Text className="text-black/60 font-bold text-[12px] uppercase tracking-wider flex-1">
                           Özellikler
                         </Text>
                         <View className="flex-row items-center gap-4">
-                          <Text className="text-white/70 font-bold text-[12px] uppercase w-16 text-center">
+                          <Text className="text-black/60 font-bold text-[12px] uppercase w-16 text-center">
                             Standart
                           </Text>
                           <Text
                             className="w-16 text-center mb-2"
                             style={{
-                              color: "#fff",
+                              color: "#000",
                               fontSize: 25,
                               fontFamily: "Duckie-regular",
                             }}
                           >
-                            gold
+                            lit plus
                           </Text>
                         </View>
                       </View>
@@ -1954,19 +1973,19 @@ export default function ProfileScreen() {
                             index !== arr.length - 1 ? "mb-4" : ""
                           }`}
                         >
-                          <Text className="text-white font-[500] text-[13px] flex-1 pr-2">
+                          <Text className="text-black font-[500] text-[13px] flex-1 pr-2">
                             {feature.title}
                           </Text>
                           <View className="flex-row items-center gap-4">
                             <View className="w-16 items-center">
                               <X
                                 size={18}
-                                color="rgba(255, 255, 255, 0.4)"
+                                color="rgba(0, 0, 0, 0.35)"
                                 strokeWidth={2}
                               />
                             </View>
                             <View className="w-16 items-center">
-                              <Check size={18} color="#fff" strokeWidth={2} />
+                              <Check size={18} color="#000" strokeWidth={2} />
                             </View>
                           </View>
                         </View>
@@ -1976,14 +1995,14 @@ export default function ProfileScreen() {
                     {/* Purchase Action Button */}
                     <View className="px-5 pb-6 pt-3">
                       <View
-                        className=" w-full border-[0.7px] border-white/50 py-[17px] items-center justify-center flex-row gap-2"
+                        className=" w-full border-[0.7px] border-black/40 py-[17px] items-center justify-center flex-row gap-2"
                         style={{
                           borderRadius: 999,
                           borderCurve: "continuous",
                           overflow: "hidden",
                         }}
                       >
-                        <Text className="font-medium text-[14px] text-white">
+                        <Text className="font-medium text-[14px] text-black">
                           {teaserPrice ? (
                             <>
                               <Text style={{ fontWeight: "700" }}>
@@ -2002,29 +2021,103 @@ export default function ProfileScreen() {
               </View>
             )}
 
+            {/* --- PREMIUM ACTIVE CARD --- */}
+            {isPremium && (
+              <View className="mb-10 px-4 mt-2">
+                <LinearGradient
+                  colors={["#ffffff", "#e5e7eb", "#9ca3af"]}
+                  locations={[0, 0.5, 1]}
+                  start={{ x: 0, y: 0 }}
+                  end={{ x: 1, y: 1 }}
+                  style={{
+                    borderRadius: 40,
+                    borderCurve: "continuous",
+                    overflow: "hidden",
+                    shadowColor: "#000",
+                    shadowOffset: { width: 0, height: 4 },
+                    shadowOpacity: 0.2,
+                    shadowRadius: 8,
+                    elevation: 5,
+                  }}
+                >
+                  <View className="p-5 flex-row items-center justify-between">
+                    <View className="flex-1 pr-4">
+                      <View className="flex-row items-center gap-2 mb-2">
+                        <Text
+                          className="pr-2"
+                          style={{
+                            color: "#000",
+                            fontSize: 50,
+                            fontFamily: "Duckie-regular",
+                          }}
+                        >
+                          lit plus
+                        </Text>
+                      </View>
+                      <Text className="text-black/80 font-medium text-[14px] leading-5">
+                        Üyeliğin aktif. Sınırsız beğeni, seni beğenenleri görme
+                        ve daha fazlasına erişimin var.
+                      </Text>
+                    </View>
+                    <View
+                      className="border-[1px] border-black/40 px-5 py-2.5 flex-row items-center gap-1.5"
+                      style={{
+                        borderRadius: 999,
+                        overflow: "hidden",
+                        borderCurve: "continuous",
+                      }}
+                    >
+                      <Text className="text-black font-bold text-[13px]">
+                        Aktif
+                      </Text>
+                    </View>
+                  </View>
+
+                  <View className="px-5 pb-6 pt-3">
+                    <TouchableOpacity
+                      activeOpacity={0.8}
+                      onPress={() => {
+                        const url =
+                          Platform.OS === "ios"
+                            ? "https://apps.apple.com/account/subscriptions"
+                            : "https://play.google.com/store/account/subscriptions";
+                        Linking.openURL(url).catch(() => {});
+                      }}
+                      className="w-full border-[0.7px] border-black/40 py-[17px] items-center justify-center"
+                      style={{
+                        borderRadius: 999,
+                        borderCurve: "continuous",
+                        overflow: "hidden",
+                      }}
+                    >
+                      <Text className="font-medium text-[14px] text-black">
+                        {subscriptionExpiresAt ? (
+                          <>
+                            <Text style={{ fontWeight: "700" }}>
+                              Aboneliği Yönet
+                            </Text>
+                            {" · Yenileme "}
+                            {new Date(subscriptionExpiresAt).toLocaleDateString(
+                              "tr-TR",
+                              {
+                                day: "2-digit",
+                                month: "short",
+                              },
+                            )}
+                          </>
+                        ) : (
+                          "Aboneliği Yönet"
+                        )}
+                      </Text>
+                    </TouchableOpacity>
+                  </View>
+                </LinearGradient>
+              </View>
+            )}
+
             {/* ── Profil Tamamlama Göstergeleri (Accordion) ── */}
             {completionMetrics.some((m) => m.current < m.max) && (
               <View style={{ paddingHorizontal: 16, paddingBottom: 24 }}>
-                <View
-                  style={{
-                    flexDirection: "row",
-                    alignItems: "center",
-                    gap: 6,
-                    marginBottom: 12,
-                    marginLeft: 4,
-                  }}
-                >
-                  <ExclamationIcon size={15} color="#9CA3AF" strokeWidth={2} />
-                  <Text
-                    style={{
-                      color: "#9CA3AF",
-                      fontSize: 13,
-                      fontWeight: "700",
-                    }}
-                  >
-                    Profilini Tamamla
-                  </Text>
-                </View>
                 {completionMetrics
                   .filter((m) => m.current < m.max)
                   .map((metric) => (

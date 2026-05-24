@@ -184,13 +184,14 @@ export default function RegisterStep10Screen({ navigation }) {
             style={{ borderRadius: 999, overflow: "hidden" }}
           >
             <LinearGradient
-              colors={["#fc2726", "#fc1b26"]}
+              colors={["#ffffff", "#e5e7eb", "#9ca3af"]}
+              locations={[0, 0.35, 0.85]}
               start={{ x: 0, y: 0 }}
-              end={{ x: 1, y: 0 }}
+              end={{ x: 1, y: 1 }}
             >
               <Text
                 style={{
-                  color: "#fff",
+                  color: "#000",
                   paddingVertical: 20,
                   fontWeight: "700",
                   fontSize: 15,

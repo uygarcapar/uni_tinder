@@ -432,6 +432,7 @@ export default function SwipeCard({
   expanded = false,
   previewMode = false,
   superLikeDisabled = false,
+  superLikesRemaining,
 }) {
   const [isFilled, setIsFilled] = useState(false);
   const [currentPhotoIndex, setCurrentPhotoIndex] = useState(0);
@@ -847,6 +848,33 @@ export default function SwipeCard({
                               fill="#fff"
                             />
                           </Animated.View>
+                          {typeof superLikesRemaining === "number" &&
+                            superLikesRemaining >= 0 && (
+                              <View
+                                pointerEvents="none"
+                                style={{
+                                  position: "absolute",
+                                  top: 0,
+                                  left: 0,
+                                  right: 0,
+                                  bottom: 0,
+                                  alignItems: "center",
+                                  justifyContent: "center",
+                                }}
+                              >
+                                <Text
+                                  style={{
+                                    color: "#fff",
+                                    fontSize: 12,
+                                    fontWeight: "700",
+                                    fontVariant: ["tabular-nums"],
+                                    marginTop: 2,
+                                  }}
+                                >
+                                  {superLikesRemaining}
+                                </Text>
+                              </View>
+                            )}
                         </View>
                       </View>
                     </TouchableOpacity>

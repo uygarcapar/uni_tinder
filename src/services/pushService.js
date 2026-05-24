@@ -1,7 +1,7 @@
 import { Platform } from 'react-native';
 import * as Notifications from 'expo-notifications';
 import * as Device from 'expo-device';
-import api from './api';
+import api, { getCurrentAccessToken } from './api';
 import { API_ENDPOINTS } from '../constants/api';
 
 /**
@@ -103,9 +103,13 @@ export async function registerForPushNotifications(appVersion = '1.0.0') {
 /**
  * Logout sırasında token deactivate.
  * Backend: DELETE /api/notifications/devices/{token}
+ *
+ * Auth zorunlu — access token henüz temizlenmeden çağrılmalı. Yoksa request
+ * Token YOK ile gider, 401 → refresh fail → ikinci logout dispatch zinciri.
  */
 export async function unregisterPushToken() {
   try {
+    if (!getCurrentAccessToken()) return;
     const tokenResult = await Notifications.getDevicePushTokenAsync().catch(() => null);
     const token = tokenResult?.data;
     if (!token) return;

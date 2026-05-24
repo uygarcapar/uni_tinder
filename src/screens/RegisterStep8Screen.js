@@ -16,7 +16,6 @@ import {
   BottomSheetFlatList,
 } from "@gorhom/bottom-sheet";
 import { Check, Search, SearchX, ChevronDown } from "lucide-react-native";
-import { BlurView } from "expo-blur";
 import { updateMultipleFields } from "../store/slices/profileSlice";
 import { KeyboardStickyView } from "react-native-keyboard-controller";
 import { LinearGradient } from "expo-linear-gradient";
@@ -34,12 +33,7 @@ const YEAR_OF_STUDY_OPTIONS = [
   { value: "6", label: "6. Sınıf" },
 ];
 
-const AnimatedPressable = ({
-  onPress,
-  style,
-  activeOpacity = 1,
-  children,
-}) => {
+const AnimatedPressable = ({ onPress, style, activeOpacity = 1, children }) => {
   const scale = useRef(new Animated.Value(1)).current;
 
   const handlePressIn = () => {
@@ -155,7 +149,7 @@ const DepartmentPickerContent = ({
                 zIndex: 1,
               }}
             >
-              <Search size={18} color="#9CA3AF" strokeWidth={2} />
+              <Search size={18} color="#fff" strokeWidth={2} />
             </View>
             <BottomSheetTextInput
               defaultValue=""
@@ -171,9 +165,9 @@ const DepartmentPickerContent = ({
                 backgroundColor: "transparent",
                 paddingLeft: 44,
                 paddingRight: 16,
-                paddingVertical: 20,
+                paddingVertical: 14,
                 color: "#fff",
-                fontSize: 15,
+                fontSize: 16,
               }}
             />
           </View>
@@ -269,6 +263,10 @@ export default function RegisterStep8Screen({ navigation }) {
 
   const departmentSheetRef = useRef(null);
   const snapPoints = useMemo(() => ["75%"], []);
+  // Modal slide-in animasyonu sırasında backdrop tap'i kapatma tetiklemesin —
+  // sadece tam açıldıktan (index === 0) sonra dismiss izin ver. Aksi halde
+  // kullanıcı içerik henüz yerine oturmadan tap yapınca yanlışlıkla modal kapanıyor.
+  const [isSheetFullyOpen, setIsSheetFullyOpen] = useState(false);
 
   // Fetch departments on mount
   useEffect(() => {
@@ -318,28 +316,17 @@ export default function RegisterStep8Screen({ navigation }) {
         {...props}
         disappearsOnIndex={-1}
         appearsOnIndex={0}
-        opacity={1}
-        pressBehavior="close"
+        opacity={0.55}
+        pressBehavior={isSheetFullyOpen ? "close" : "none"}
         onPress={() => {
+          if (!isSheetFullyOpen) return;
           Keyboard.dismiss();
           departmentSheetRef.current?.dismiss();
         }}
-        style={[props.style, { backgroundColor: "transparent" }]}
-      >
-        <BlurView
-          style={{
-            position: "absolute",
-            top: 0,
-            left: 0,
-            right: 0,
-            bottom: 0,
-          }}
-          intensity={30}
-          tint="dark"
-        />
-      </BottomSheetBackdrop>
+        style={[props.style, { backgroundColor: "#000" }]}
+      />
     ),
-    [],
+    [isSheetFullyOpen],
   );
 
   const getDepartmentLabel = () => {
@@ -431,7 +418,7 @@ export default function RegisterStep8Screen({ navigation }) {
                 <Text
                   className={`${
                     department ? "text-white" : "text-gray-400"
-                  } text-[18px]`}
+                  } text-[16px] font-medium`}
                 >
                   {getDepartmentLabel()}
                 </Text>
@@ -504,12 +491,13 @@ export default function RegisterStep8Screen({ navigation }) {
             }}
           >
             <LinearGradient
-              colors={["#fc3226", "#fc2426"]}
+              colors={["#ffffff", "#e5e7eb", "#9ca3af"]}
+              locations={[0, 0.35, 0.85]}
               start={{ x: 0, y: 0 }}
-              end={{ x: 1, y: 0 }}
+              end={{ x: 1, y: 1 }}
               className="py-3.5"
             >
-              <Text className="text-white py-[20px] font-bold text-[15px] text-center">
+              <Text className="text-black py-[20px] font-bold text-[15px] text-center">
                 Devam Et
               </Text>
             </LinearGradient>
@@ -531,6 +519,7 @@ export default function RegisterStep8Screen({ navigation }) {
         keyboardBehavior="interactive"
         keyboardBlurBehavior="restore"
         handleIndicatorStyle={{ backgroundColor: "#4B5563", width: 50 }}
+        onChange={(idx) => setIsSheetFullyOpen(idx === 0)}
       >
         <DepartmentPickerContent
           initialDepartment={department}

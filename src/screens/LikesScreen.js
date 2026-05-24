@@ -32,8 +32,10 @@ import { API_ENDPOINTS } from "../constants/api";
 import profileService from "../services/profileService";
 import AnimatedPressable from "../components/AnimatedPressable";
 import EmptyState from "../components/EmptyState";
+import LikerSwipeModal from "../components/LikerSwipeModal";
 import PurchaseModal from "../components/PurchaseModal";
 import WaveFillLogo from "../components/WaveFillLogo";
+import swipeService from "../services/swipeService";
 import { useSwipeStats } from "../queries/swipeQueries";
 import { setWhoLikedMeCount } from "../store/slices/swipeSlice";
 import uiBus from "../services/uiBus";
@@ -125,7 +127,7 @@ function LikesSkeletonGrid() {
 // Daha önce yüklenmiş foto URI'leri — tab değişip remount olunca skeleton'a tekrar düşmesin
 const loadedPhotoUris = new Set();
 
-function LikeCard({ item, isPremium }) {
+function LikeCard({ item, isPremium, onPress }) {
   const [imgLoading, setImgLoading] = useState(
     !!item.mainPhoto && !loadedPhotoUris.has(item.mainPhoto),
   );
@@ -134,6 +136,7 @@ function LikeCard({ item, isPremium }) {
   return (
     <TouchableOpacity
       activeOpacity={0.95}
+      onPress={onPress}
       style={{
         width: CARD_WIDTH,
         marginBottom: 20,
@@ -256,6 +259,12 @@ export default function LikesScreen() {
   const statsQuery = useSwipeStats();
   const purchaseBottomSheetRef = useRef(null);
 
+  // Detay preview state — karta tıklayınca LikerProfile detayını çekip
+  // PreviewModal'da SwipeCard layout'unu reuse ederek gösteriyoruz.
+  const [previewVisible, setPreviewVisible] = useState(false);
+  const [previewProfile, setPreviewProfile] = useState(null);
+  const [previewLoading, setPreviewLoading] = useState(false);
+
   // DiscoverScreen ile aynı fill oranı: premium veya remainingSwipes===-1 → 0.
   const DAILY_SWIPE_LIMIT = 30;
   const swipeFillRatio = useMemo(() => {
@@ -296,6 +305,7 @@ export default function LikesScreen() {
         const superLikeProfiles = (data.result.superLikes?.profiles || []).map(
           (p) => ({
             id: `sl_${p.profileId}`,
+            userId: p.userId, // LikerProfile detay endpoint'i için lazım
             name: p.displayName,
             age: p.age,
             mainPhoto: p.photos?.[0] || "",
@@ -305,6 +315,7 @@ export default function LikesScreen() {
         );
         const likeProfiles = (data.result.likes?.profiles || []).map((p) => ({
           id: `l_${p.profileId}`,
+          userId: p.userId,
           name: p.displayName,
           age: p.age,
           mainPhoto: p.photos?.[0] || "",
@@ -331,6 +342,59 @@ export default function LikesScreen() {
     fetchWhoLikedMe();
   }, []);
 
+  // Karta tıklayınca:
+  //   - Premium değil → PurchaseModal aç (upsell).
+  //   - Premium ise → LikerProfile detayını çek + interactive SwipeWrapper'lı
+  //     LikerSwipeModal'ı aç. Kullanıcı sağa/sola kaydırıp like/pass yapabilir;
+  //     mutual like ise backend match yaratır, global MatchModal açılır.
+  // 404 → liker silinmiş/banlanmış/like'ını geri çekmiş → modal'ı kapat ve
+  // listeyi yenile.
+  const openLikerProfile = async (item) => {
+    if (!isPremium) {
+      purchaseBottomSheetRef.current?.present();
+      return;
+    }
+    const likerUserId = item?.userId || item?.likerUserId;
+    if (!likerUserId) return;
+    setPreviewProfile(null);
+    setPreviewLoading(true);
+    setPreviewVisible(true);
+    try {
+      const res = await swipeService.getLikerProfileDetail(likerUserId);
+      if (res?.isSuccess && res?.result) {
+        setPreviewProfile(res.result);
+      } else {
+        setPreviewVisible(false);
+        fetchWhoLikedMe();
+      }
+    } catch (e) {
+      const status = e?.response?.status ?? e?.status;
+      setPreviewVisible(false);
+      if (status === 404) {
+        // Liker artık erişilebilir değil — listeyi tazele.
+        fetchWhoLikedMe();
+      } else if (__DEV__) {
+        console.log("[LikerProfile fetch error]", e?.message);
+      }
+    } finally {
+      setPreviewLoading(false);
+    }
+  };
+
+  const handleClosePreview = () => {
+    setPreviewVisible(false);
+    setPreviewProfile(null);
+  };
+
+  // LikerSwipeModal'dan dönen swipe sonrası — like/pass/superlike fark etmez,
+  // kullanıcı bu liker'ı handle etti → listeden anında çıkar (backend
+  // MatchNotification gelene kadar bekleme). whoLikedMe count'unu da düş.
+  const handleLikerSwiped = (likerUserId) => {
+    if (!likerUserId) return;
+    setLikes((prev) => prev.filter((it) => it.likerUserId !== likerUserId));
+    dispatch(setWhoLikedMeCount(Math.max(0, (likes?.length ?? 1) - 1)));
+  };
+
   // Realtime: socket'ten yeni IncomingLike geldiğinde listeyi reload etmeden prepend et.
   // AppNavigator IncomingLike SignalR event'ini yakalayıp uiBus.emit('incomingLike', payload)
   // çağırır; payload backend IncomingLikeDto = { likerUserId, likerDisplayName,
@@ -344,9 +408,7 @@ export default function LikesScreen() {
         const isSuper = !!payload.isSuperLike;
         const dupId = `${isSuper ? "sl" : "l"}_live_${payload.likerUserId}`;
         const existingByUser = prev.some(
-          (it) =>
-            it.id === dupId ||
-            it.likerUserId === payload.likerUserId,
+          (it) => it.id === dupId || it.likerUserId === payload.likerUserId,
         );
         if (existingByUser) return prev;
 
@@ -454,7 +516,11 @@ export default function LikesScreen() {
         <FlatList
           data={filteredLikes}
           renderItem={({ item }) => (
-            <LikeCard item={item} isPremium={isPremium} />
+            <LikeCard
+              item={item}
+              isPremium={isPremium}
+              onPress={() => openLikerProfile(item)}
+            />
           )}
           keyExtractor={(item) => item.id}
           numColumns={2}
@@ -512,12 +578,26 @@ export default function LikesScreen() {
             }}
           >
             <LinearGradient
-              colors={["#ff173a", "#FF4D4D", "#fc803d"]}
+              colors={["#ffffff", "#e5e7eb", "#9ca3af"]}
+              locations={[0, 0.35, 0.85]}
               start={{ x: 0, y: 0 }}
-              end={{ x: 1, y: 0 }}
-              className="py-3.5"
+              end={{ x: 1, y: 1 }}
+              style={{
+                paddingVertical: 18,
+                flexDirection: "row",
+                alignItems: "center",
+                justifyContent: "center",
+                gap: 6,
+              }}
             >
-              <Text className="text-white py-[18px] font-bold text-[14px] text-center">
+              <Heart size={16} color="#000" strokeWidth={2.2} />
+              <Text
+                style={{
+                  color: "#000",
+                  fontWeight: "700",
+                  fontSize: 14,
+                }}
+              >
                 Seni beğenenleri gör
               </Text>
             </LinearGradient>
@@ -528,6 +608,13 @@ export default function LikesScreen() {
       <PurchaseModal
         bottomSheetRef={purchaseBottomSheetRef}
         onClose={() => purchaseBottomSheetRef.current?.dismiss()}
+      />
+
+      <LikerSwipeModal
+        visible={previewVisible}
+        profile={previewLoading ? null : previewProfile}
+        onClose={handleClosePreview}
+        onSwipe={handleLikerSwiped}
       />
     </View>
   );

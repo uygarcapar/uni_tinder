@@ -5,7 +5,7 @@ import {
   TouchableOpacity,
   ScrollView,
   Animated,
-  ActivityIndicator,
+  Easing,
 } from "react-native";
 import { useDispatch, useSelector } from "react-redux";
 import { updateMultipleFields } from "../store/slices/profileSlice";
@@ -146,6 +146,83 @@ const getHobbyIcon = (hobbyName) => {
 
   return iconMap[hobbyName] || Heart;
 };
+
+// Hobi kartının skeleton versiyonu — yüklenirken HobbyItem ile aynı boyut/şekil,
+// içinde icon + text yerine pulse animasyonlu placeholder bloklar.
+const SkeletonHobbyCard = memo(() => {
+  const pulse = useRef(new Animated.Value(0.5)).current;
+
+  useEffect(() => {
+    const loop = Animated.loop(
+      Animated.sequence([
+        Animated.timing(pulse, {
+          toValue: 1,
+          duration: 800,
+          easing: Easing.inOut(Easing.quad),
+          useNativeDriver: true,
+        }),
+        Animated.timing(pulse, {
+          toValue: 0.5,
+          duration: 800,
+          easing: Easing.inOut(Easing.quad),
+          useNativeDriver: true,
+        }),
+      ]),
+    );
+    loop.start();
+    return () => loop.stop();
+  }, [pulse]);
+
+  return (
+    <Animated.View
+      style={{
+        flex: 1,
+        minWidth: "45%",
+        minHeight: 148,
+        borderRadius: 50,
+        borderCurve: "continuous",
+        overflow: "hidden",
+        borderWidth: 0.5,
+        borderColor: "rgba(255,255,255,0.1)",
+        backgroundColor: "#1E1E1E",
+        paddingVertical: 0,
+        opacity: pulse,
+        position: "relative",
+      }}
+    >
+      <View
+        pointerEvents="none"
+        style={{
+          position: "absolute",
+          top: 0,
+          left: 0,
+          right: 0,
+          bottom: 0,
+          alignItems: "center",
+          justifyContent: "center",
+        }}
+      >
+        <View
+          style={{
+            width: 32,
+            height: 32,
+            borderRadius: 16,
+            backgroundColor: "rgba(255,255,255,0.1)",
+          }}
+        />
+        <View
+          style={{
+            marginTop: 8,
+            width: 60,
+            height: 12,
+            borderRadius: 6,
+            backgroundColor: "rgba(255,255,255,0.1)",
+          }}
+        />
+      </View>
+    </Animated.View>
+  );
+});
 
 // Gereksiz render'ları engellemek için memo ile sarmalandı
 const HobbyItem = memo(({ hobby, isSelected, onPress }) => {
@@ -291,45 +368,61 @@ export default function RegisterStep13Screen({ navigation }) {
 
       <RegisterProgressBar step={13} />
 
-      {loadingHobbies ? (
-        <View className="flex-1 items-center justify-center">
-          <ActivityIndicator size="small" color="#fff" />
+      <ScrollView
+        className="flex-1 px-6 py-6 pt-0"
+        keyboardShouldPersistTaps="handled"
+        showsVerticalScrollIndicator={false}
+        scrollEnabled={!loadingHobbies}
+      >
+        <View className="flex flex-col gap-2 mb-3">
+          <Text className="text-[18px] font-normal text-gray-400 mb-6">
+            İlgi alanlarını seç. Seninle ortak noktası olan kişilerle eşleşmeni
+            sağlar.
+          </Text>
         </View>
-      ) : (
-        <ScrollView
-          className="flex-1 px-6 py-6 pt-0"
-          keyboardShouldPersistTaps="handled"
-          showsVerticalScrollIndicator={false}
-        >
-          <View className="flex flex-col gap-2 mb-3">
-            <Text className="text-[18px] font-normal text-gray-400 mb-6">
-              İlgi alanlarını seç. Seninle ortak noktası olan kişilerle
-              eşleşmeni sağlar.
-            </Text>
-          </View>
 
-          {hobbyCategories.map((category, categoryIndex) => (
-            <View key={categoryIndex} className="mb-10">
-              <Text className="text-[13px] text-center font-bold text-gray-300 mb-10">
-                {category.category}
-              </Text>
-              <View className="flex-row flex-wrap gap-3">
-                {category.hobbies.map((hobby) => (
-                  <HobbyItem
-                    key={hobby.id}
-                    hobby={hobby}
-                    isSelected={hobbies.includes(hobby.enumName)}
-                    onPress={toggleHobby}
-                  />
-                ))}
+        {loadingHobbies
+          ? Array.from({ length: 5 }).map((_, catIdx) => (
+              <View key={catIdx} className="mb-10">
+                {/* Kategori başlığı placeholder — gerçek text ile aynı yer/yükseklikte. */}
+                <View
+                  style={{
+                    width: 110,
+                    height: 14,
+                    borderRadius: 7,
+                    backgroundColor: "rgba(255,255,255,0.07)",
+                    alignSelf: "center",
+                    marginBottom: 34,
+                  }}
+                />
+                <View className="flex-row flex-wrap gap-3">
+                  {Array.from({ length: 8 }).map((_, i) => (
+                    <SkeletonHobbyCard key={i} />
+                  ))}
+                </View>
               </View>
-            </View>
-          ))}
+            ))
+          : hobbyCategories.map((category, categoryIndex) => (
+              <View key={categoryIndex} className="mb-10">
+                <Text className="text-[13px] text-center font-bold text-gray-300 mb-10">
+                  {category.category}
+                </Text>
+                <View className="flex-row flex-wrap gap-3">
+                  {category.hobbies.map((hobby) => (
+                    <HobbyItem
+                      key={hobby.id}
+                      hobby={hobby}
+                      isSelected={hobbies.includes(hobby.enumName)}
+                      onPress={toggleHobby}
+                    />
+                  ))}
+                </View>
+              </View>
+            ))}
 
-          {/* ScrollView sonu boşluğu */}
-          <View className="h-20" />
-        </ScrollView>
-      )}
+        {/* ScrollView sonu boşluğu */}
+        <View className="h-20" />
+      </ScrollView>
 
       {/* Sticky Button with KeyboardStickyView */}
       <View className="px-8 pb-8 pt-4 absolute bottom-0 left-0 right-0">
@@ -342,12 +435,13 @@ export default function RegisterStep13Screen({ navigation }) {
           }}
         >
           <LinearGradient
-            colors={["#fc1526", "#fc0c26"]}
+            colors={["#ffffff", "#e5e7eb", "#9ca3af"]}
+            locations={[0, 0.35, 0.85]}
             start={{ x: 0, y: 0 }}
-            end={{ x: 1, y: 0 }}
+            end={{ x: 1, y: 1 }}
             className="py-3.5"
           >
-            <Text className="text-white py-[20px] font-bold text-[15px] text-center">
+            <Text className="text-black py-[20px] font-bold text-[15px] text-center">
               Devam Et
             </Text>
           </LinearGradient>

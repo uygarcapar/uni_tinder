@@ -47,8 +47,9 @@ export const completeProfile = createAsyncThunk(
       profileData.interestedIn.forEach((val) => {
         formData.append("InterestedIn", String(val));
       });
-      formData.append("Latitude", latitude);
-      formData.append("Longitude", longitude);
+      // Locale-safe — toFixed ECMA gereği her zaman "." ondalık ayracı kullanır.
+      formData.append("Latitude", Number(latitude).toFixed(8));
+      formData.append("Longitude", Number(longitude).toFixed(8));
 
       // Add optional fields
       if (profileData.bio) {
@@ -195,8 +196,9 @@ export const registerAndComplete = createAsyncThunk(
       formData.append("Height", profile.height);
       formData.append("Department", profile.department);
       formData.append("YearOfStudy", profile.yearOfStudy);
-      formData.append("Latitude", latitude);
-      formData.append("Longitude", longitude);
+      // Locale-safe — bkz. completeProfile thunk'taki comment.
+      formData.append("Latitude", Number(latitude).toFixed(8));
+      formData.append("Longitude", Number(longitude).toFixed(8));
 
       // Arrays
       profile.interestedIn.forEach((val) => formData.append("InterestedIn", String(val)));

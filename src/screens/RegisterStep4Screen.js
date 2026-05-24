@@ -1,4 +1,4 @@
-import { useRef } from "react";
+import { useState } from "react";
 import {
   View,
   Text,
@@ -6,77 +6,53 @@ import {
   TouchableOpacity,
   TouchableWithoutFeedback,
   Keyboard,
-  Image,
 } from "react-native";
 import { useDispatch, useSelector } from "react-redux";
 import { updateRegistrationField } from "../store/slices/authSlice";
 import { KeyboardStickyView } from "react-native-keyboard-controller";
 import { LinearGradient } from "expo-linear-gradient";
-import turkey_flag from "../../assets/flags/turkey.png";
 import RegisterProgressBar from "../components/RegisterProgressBar";
 import AnimatedPressable from "../components/AnimatedPressable";
 
+const PHONE_LENGTH = 10;
+
 export default function RegisterStep4Screen({ navigation }) {
   const dispatch = useDispatch();
-  const phoneInputRef = useRef(null);
 
-  // Redux'tan gelen değer (eğer daha önce girildiyse)
   const storedPhoneNumber = useSelector(
     (state) => state.auth.registrationForm.phoneNumber,
   );
 
-  // Telefon formatı fonksiyonu
-  const formatPhoneNumber = (text) => {
-    // 1. Sadece rakamları al
-    const cleaned = text.replace(/\D/g, "");
+  // Redux'tan local 10 haneye düşür ("+90 " prefix'i ve format temizliği).
+  const rawAll = (storedPhoneNumber || "").replace(/\D/g, "");
+  const localDigits = rawAll.startsWith("90") ? rawAll.slice(2) : rawAll;
 
-    // 2. Maksimum 10 karakter (Başındaki 0'ı veya +90'ı almayacağız, sadece 5xx...)
-    const match = cleaned.substring(0, 10);
+  const [error, setError] = useState("");
+  const [hasError, setHasError] = useState(false);
 
-    // 3. Parçalara böl: XXX XXX XX XX
-    let formatted = match;
-    if (match.length > 3) {
-      formatted = `${match.slice(0, 3)} ${match.slice(3)}`;
-    }
-    if (match.length > 6) {
-      formatted = `${formatted.slice(0, 7)} ${match.slice(6)}`;
-    }
-    if (match.length > 8) {
-      formatted = `${formatted.slice(0, 10)} ${match.slice(8)}`;
-    }
-
-    return formatted;
-  };
-
-  const handleChangeText = (text) => {
-    // Kullanıcının inputunu formatla
-    const formatted = formatPhoneNumber(text);
-
-    // Redux'a kaydederken başına +90 ekleyerek tam halini kaydediyoruz
-    // Örnek Redux değeri: "+90 555 123 45 67"
-    const fullNumber = formatted ? `+90 ${formatted}` : "";
-
+  const handleChange = (text) => {
+    const clean = text.replace(/\D/g, "").slice(0, PHONE_LENGTH);
+    const fullNumber = clean ? `+90 ${clean}` : "";
     dispatch(
       updateRegistrationField({ field: "phoneNumber", value: fullNumber }),
     );
+    if (hasError) {
+      setHasError(false);
+      setError("");
+    }
   };
 
   const handleNext = () => {
     Keyboard.dismiss();
-    // Basit validasyon: +90 hariç en az 10 rakam olmalı
-    const justNumbers = storedPhoneNumber?.replace(/\D/g, "") || "";
-    // +90 (2 rakam) + 10 rakam = 12 rakam olmalı toplamda
-    if (justNumbers.length < 12) {
-      alert("Lütfen geçerli bir telefon numarası girin");
+    if (localDigits.length < PHONE_LENGTH) {
+      setHasError(true);
+      setError("Lütfen geçerli bir telefon numarası gir.");
       return;
     }
+    setError("");
+    setHasError(false);
     navigation.navigate("RegisterStep5");
   };
-
-  // Inputta gösterilecek değeri ayarla (+90 kısmını siliyoruz, çünkü onu statik gösterdik)
-  const displayValue = storedPhoneNumber
-    ? storedPhoneNumber.replace("+90 ", "").replace("+90", "")
-    : "";
 
   return (
     <View className="flex-1 bg-[#121212]">
@@ -104,7 +80,7 @@ export default function RegisterStep4Screen({ navigation }) {
           </View>
 
           {/* Telefon Input Alanı */}
-          <Text className="text-gray-300 text-[18px] font-semibold mb-2">
+          <Text className="text-gray-300 text-[14px] font-semibold mb-2">
             Telefon Numarası *
           </Text>
 
@@ -114,44 +90,41 @@ export default function RegisterStep4Screen({ navigation }) {
               borderCurve: "continuous",
               overflow: "hidden",
               borderWidth: 0.5,
-              borderColor: "rgba(255,255,255,0.1)",
+              borderColor: hasError ? "#ef4444" : "rgba(255,255,255,0.1)",
               flexDirection: "row",
               alignItems: "center",
               paddingHorizontal: 16,
-              paddingVertical: 16,
             }}
           >
-            {/* Sabit +90 Alanı */}
-            <View
+            <Text
               style={{
-                flexDirection: "row",
-                alignItems: "center",
-                borderRightWidth: 0.5,
-                borderRightColor: "rgba(255,255,255,0.15)",
-                paddingRight: 12,
-                marginRight: 12,
+                color: "#dee0ea",
+                fontSize: 18,
+                fontWeight: "500",
+                marginRight: 10,
               }}
             >
-              <Image
-                source={turkey_flag}
-                style={{ width: 20, height: 20, marginRight: 8 }}
-                resizeMode="cover"
-              />
-              <Text className="text-[18px] text-white font-medium">+90</Text>
-            </View>
-
-            {/* Dinamik Input */}
+              TR +90
+            </Text>
             <TextInput
-              ref={phoneInputRef}
-              style={{ flex: 1, fontSize: 18, color: "#fff" }}
-              placeholder="5XX XXX XX XX"
-              placeholderTextColor="#9CA3AF"
+              style={{
+                flex: 1,
+                paddingVertical: 16,
+                fontSize: 18,
+                color: "#fff",
+              }}
               keyboardType="number-pad"
-              value={displayValue}
-              onChangeText={handleChangeText}
-              maxLength={13}
+              value={localDigits}
+              onChangeText={handleChange}
+              maxLength={PHONE_LENGTH}
             />
           </View>
+
+          {error ? (
+            <Text className="text-red-500 text-center font-normal mb-3 mt-4">
+              {error}
+            </Text>
+          ) : null}
         </View>
       </TouchableWithoutFeedback>
 
@@ -167,12 +140,13 @@ export default function RegisterStep4Screen({ navigation }) {
             }}
           >
             <LinearGradient
-              colors={["#fc4926", "#fc3726"]}
+              colors={["#ffffff", "#e5e7eb", "#9ca3af"]}
+              locations={[0, 0.35, 0.85]}
               start={{ x: 0, y: 0 }}
-              end={{ x: 1, y: 0 }}
+              end={{ x: 1, y: 1 }}
               className=""
             >
-              <Text className="text-white py-[20px] font-bold text-[15px] text-center">
+              <Text className="text-black py-[20px] font-bold text-[15px] text-center">
                 Devam Et
               </Text>
             </LinearGradient>

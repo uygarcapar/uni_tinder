@@ -7,7 +7,7 @@ import {
   TouchableWithoutFeedback,
   Keyboard,
 } from "react-native";
-import { useDispatch, useSelector } from "react-redux";
+import { useDispatch } from "react-redux";
 import { updateRegistrationField } from "../store/slices/authSlice";
 import { KeyboardStickyView } from "react-native-keyboard-controller";
 import { LinearGradient } from "expo-linear-gradient";
@@ -26,26 +26,30 @@ const calculateAge = (day, month, year) => {
 
 export default function RegisterStep6Screen({ navigation }) {
   const dispatch = useDispatch();
-  const dateOfBirthString = useSelector(
-    (state) => state.auth.registrationForm.dateOfBirth,
-  );
 
-  const initial = dateOfBirthString ? new Date(dateOfBirthString) : null;
-  const [day, setDay] = useState(
-    initial ? String(initial.getDate()).padStart(2, "0") : "",
-  );
-  const [month, setMonth] = useState(
-    initial ? String(initial.getMonth() + 1).padStart(2, "0") : "",
-  );
-  const [year, setYear] = useState(
-    initial ? String(initial.getFullYear()) : "",
-  );
+  const [day, setDay] = useState("");
+  const [month, setMonth] = useState("");
+  const [year, setYear] = useState("");
 
   const [error, setError] = useState("");
   const [errorFields, setErrorFields] = useState([]);
 
+  const dayRef = useRef(null);
   const monthRef = useRef(null);
   const yearRef = useRef(null);
+
+  // Backspace boş kutuda → soldaki kutunun son karakterini silip oraya focus.
+  const handleKeyPress = (e, currentField) => {
+    if (e.nativeEvent.key !== "Backspace") return;
+    if (currentField === "month" && month === "") {
+      if (day.length > 0) setDay(day.slice(0, -1));
+      dayRef.current?.focus();
+    } else if (currentField === "year" && year === "") {
+      if (month.length > 0) setMonth(month.slice(0, -1));
+      monthRef.current?.focus();
+    }
+  };
+
 
   const clearFieldError = (field) => {
     setErrorFields((prev) => {
@@ -165,13 +169,16 @@ export default function RegisterStep6Screen({ navigation }) {
                 Gün
               </Text>
               <TextInput
+                ref={dayRef}
                 style={inputStyle("day")}
-                placeholder="GG"
-                placeholderTextColor="#4B5563"
+                placeholder="gg"
+                placeholderTextColor="#595959"
                 keyboardType="number-pad"
                 maxLength={2}
                 value={day}
+                selection={{ start: day.length, end: day.length }}
                 onChangeText={handleDayChange}
+                caretHidden
                 returnKeyType="next"
                 onSubmitEditing={() => monthRef.current?.focus()}
               />
@@ -184,12 +191,15 @@ export default function RegisterStep6Screen({ navigation }) {
               <TextInput
                 ref={monthRef}
                 style={inputStyle("month")}
-                placeholder="AA"
-                placeholderTextColor="#4B5563"
+                placeholder="aa"
+                placeholderTextColor="#595959"
                 keyboardType="number-pad"
                 maxLength={2}
                 value={month}
+                selection={{ start: month.length, end: month.length }}
                 onChangeText={handleMonthChange}
+                onKeyPress={(e) => handleKeyPress(e, "month")}
+                caretHidden
                 returnKeyType="next"
                 onSubmitEditing={() => yearRef.current?.focus()}
               />
@@ -202,12 +212,15 @@ export default function RegisterStep6Screen({ navigation }) {
               <TextInput
                 ref={yearRef}
                 style={inputStyle("year")}
-                placeholder="YYYY"
-                placeholderTextColor="#4B5563"
+                placeholder="yyyy"
+                placeholderTextColor="#595959"
                 keyboardType="number-pad"
                 maxLength={4}
                 value={year}
+                selection={{ start: year.length, end: year.length }}
                 onChangeText={handleYearChange}
+                onKeyPress={(e) => handleKeyPress(e, "year")}
+                caretHidden
                 returnKeyType="done"
                 onSubmitEditing={Keyboard.dismiss}
               />
@@ -233,11 +246,12 @@ export default function RegisterStep6Screen({ navigation }) {
             }}
           >
             <LinearGradient
-              colors={["#fc3d26", "#fc2d26"]}
+              colors={["#ffffff", "#e5e7eb", "#9ca3af"]}
+              locations={[0, 0.35, 0.85]}
               start={{ x: 0, y: 0 }}
-              end={{ x: 1, y: 0 }}
+              end={{ x: 1, y: 1 }}
             >
-              <Text className="text-white py-[20px] font-bold text-[15px] text-center">
+              <Text className="text-black py-[20px] font-bold text-[15px] text-center">
                 Devam Et
               </Text>
             </LinearGradient>

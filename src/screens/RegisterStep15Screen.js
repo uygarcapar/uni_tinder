@@ -442,24 +442,23 @@ export default function RegisterStep15Screen({ navigation }) {
             borderRadius: 999,
             borderCurve: "continuous",
             overflow: "hidden",
+            opacity:
+              loading || photos.length < 2 || isDraggingPhoto ? 0.5 : 1,
           }}
         >
           <LinearGradient
-            colors={
-              loading || photos.length < 2 || isDraggingPhoto
-                ? ["#9CA3AF", "#6B7280"]
-                : ["#fc0a26", "#fc0326"]
-            }
+            colors={["#ffffff", "#e5e7eb", "#9ca3af"]}
+            locations={[0, 0.35, 0.85]}
             start={{ x: 0, y: 0 }}
-            end={{ x: 1, y: 0 }}
+            end={{ x: 1, y: 1 }}
             className="py-3.5"
           >
             {loading ? (
               <View className="py-[18px]">
-                <ActivityIndicator color="#fff" />
+                <ActivityIndicator color="#000" />
               </View>
             ) : (
-              <Text className="text-white py-[20px] font-bold text-[15px] text-center">
+              <Text className="text-black py-[20px] font-bold text-[15px] text-center">
                 Profili Tamamla
               </Text>
             )}

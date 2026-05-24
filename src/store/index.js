@@ -8,11 +8,14 @@ import swipeReducer from './slices/swipeSlice';
 import subscriptionReducer from './slices/subscriptionSlice';
 import chatReducer from './slices/chatSlice';
 
-// Auth slice specific persist config - only persist essential auth data
+// Auth slice specific persist config - only persist essential auth data.
+// registrationForm persist EDİLİR — kayıt akışında hata olursa veya app reload
+// olursa kullanıcı girdiği bilgileri kaybetmesin (firstName, phone, dob vs).
+// Success/logout durumunda zaten clearRegistrationForm dispatch ediliyor.
 const authPersistConfig = {
   key: 'auth',
   storage: AsyncStorage,
-  blacklist: ['registrationForm', 'loading', 'error', 'needsVerification', 'pendingVerificationEmail'], // Don't persist temporary data
+  blacklist: ['loading', 'error', 'needsVerification', 'pendingVerificationEmail'],
 };
 
 // Profile slice specific persist config - persist profile data during completion flow

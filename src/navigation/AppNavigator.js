@@ -5,7 +5,6 @@ import { useSelector, useDispatch } from 'react-redux';
 import { View, AppState } from 'react-native';
 import {
   registerForPushNotifications,
-  unregisterPushToken,
   onNotificationTap,
   getInitialNotificationData,
   setActiveConversationGetter,
@@ -26,7 +25,6 @@ import ChatScreen from '../screens/ChatScreen';
 import NotificationsScreen from '../screens/NotificationsScreen';
 import DeletionBanner from '../components/DeletionBanner';
 import MatchModal from '../components/MatchModal';
-import ConnectionBanner from '../components/ConnectionBanner';
 import { API_BASE_URL, API_ENDPOINTS } from '../constants/api';
 import realtimeService from '../services/realtimeService';
 import {
@@ -116,11 +114,23 @@ export default function AppNavigator() {
   // subscriptionService kendi içinde guard yapıyor — API key yoksa configure() çağrılmaz,
   // login/getOfferings/purchase no-op olur. Yani .env doldurulmasa da app çalışmaya devam eder.
   // Backend subscription status'u (canonical) yine de fetch edilir — webhook ile flip olabilir.
+  //
+  // ÖNEMLİ: loginRevenueCat'i await et — yoksa RC appUserID henüz switch olmamışken
+  // fetchSubscriptionStatus → getCustomerInfo eski kullanıcının cached entitlement'ını
+  // dönüp yeni hesabı premium gösteriyor.
   useEffect(() => {
     if (!isAuthenticated || !user) return;
-    initRevenueCat(user.userId);
-    if (user.userId) loginRevenueCat(user.userId).catch(() => {});
-    dispatch(fetchSubscriptionStatus());
+    let cancelled = false;
+    (async () => {
+      initRevenueCat(user.userId);
+      if (user.userId) {
+        await loginRevenueCat(user.userId).catch(() => {});
+      }
+      if (!cancelled) dispatch(fetchSubscriptionStatus());
+    })();
+    return () => {
+      cancelled = true;
+    };
   }, [isAuthenticated, user?.userId, dispatch]);
 
   // ============ SignalR lifecycle + Hub → Redux bridge ============
@@ -288,16 +298,6 @@ export default function AppNavigator() {
     return () => sub.remove();
   }, [isAuthenticated, token, dispatch]);
 
-  // ============ Logout cleanup — push token deactivate ============
-  // Sadece logout transition'ında (true → false) tetiklen; app açılışta değil.
-  const prevAuthRef = useRef(isAuthenticated);
-  useEffect(() => {
-    if (prevAuthRef.current && !isAuthenticated) {
-      unregisterPushToken().catch(() => {});
-    }
-    prevAuthRef.current = isAuthenticated;
-  }, [isAuthenticated]);
-
   // ============ User identity change → cache reset ============
   // user.userId değiştiğinde (logout, hesap değiştirme) per-user cache'leri
   // temizle: React Query (swipe stats/matches/filters, profile) ve subscription
@@ -424,9 +424,6 @@ export default function AppNavigator() {
 
       {/* Soft-delete banner — floats above tab content when account is scheduled for deletion */}
       {showMainNavigator && <DeletionBanner />}
-
-      {/* SignalR connection state banner — reconnecting durumunda top'ta görünür */}
-      {showMainNavigator && <ConnectionBanner />}
 
       {/* Global "It's a Match!" overlay — herhangi bir ekranın üstünde gösterilir */}
       {showMainNavigator && (

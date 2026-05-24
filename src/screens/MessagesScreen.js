@@ -4,7 +4,6 @@ import {
   Text,
   Image,
   TouchableOpacity,
-  RefreshControl,
   TextInput,
   Alert,
 } from "react-native";
@@ -143,10 +142,6 @@ export default function MessagesScreen() {
   }, [statsQuery.data?.remainingSwipes, statsQuery.data?.isPremium]);
 
   useEffect(() => {
-    dispatch(fetchConversations());
-  }, [dispatch]);
-
-  const onRefresh = useCallback(() => {
     dispatch(fetchConversations());
   }, [dispatch]);
 
@@ -416,13 +411,6 @@ export default function MessagesScreen() {
               />
             </View>
           ) : null
-        }
-        refreshControl={
-          <RefreshControl
-            refreshing={conversationsLoading}
-            onRefresh={onRefresh}
-            tintColor="#fff"
-          />
         }
       />
     </View>

@@ -3,6 +3,7 @@ import { authService } from '../../services/authService';
 import { clearProfile } from './profileSlice';
 import { saveAccessToken, saveRefreshToken } from '../../utils/tokenStorage';
 import { setCurrentAccessToken } from '../../services/api';
+import { unregisterPushToken } from '../../services/pushService';
 
 // Async thunk to fetch user data
 export const fetchUserData = createAsyncThunk(
@@ -78,7 +79,13 @@ export const register = createAsyncThunk(
 );
 
 export const logout = createAsyncThunk('auth/logout', async (_, thunkAPI) => {
-  // Clear profile data when logging out
+  // Push token deactivate access token temizlenmeden önce çalışmalı — yoksa DELETE
+  // auth'suz gider, 401 → refresh fail zinciri RC logout'u iki kez tetikler.
+  // Yavaş sunucu logout UX'ini kilitlemesin diye 2s timeout ile race et.
+  await Promise.race([
+    unregisterPushToken().catch(() => {}),
+    new Promise((resolve) => setTimeout(resolve, 2000)),
+  ]);
   thunkAPI.dispatch(clearProfile());
   await authService.logout();
 });

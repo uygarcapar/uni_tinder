@@ -1026,6 +1026,31 @@ export default function DiscoverScreen() {
   const [currentIndex, setCurrentIndex] = useState(0);
   const [isSwiping, setIsSwiping] = useState(false);
   const [lastSwipeWasPass, setLastSwipeWasPass] = useState(false);
+
+  // Boş kart durumu (radar animasyonu) açıkken her 5sn'de bir potential
+  // matches refetch — backend'in yeni profilleri var mı diye yokla. Max 5
+  // deneme; sonrasında animasyon devam eder ama istek atmaz. Yeni profil
+  // gelirse (isEmpty=false) sayaç resetlenir.
+  const pollCountRef = useRef(0);
+  const isEmptyStack =
+    !matchesQuery.isLoading && potentialMatches.length <= currentIndex;
+  useEffect(() => {
+    if (!isEmptyStack) {
+      pollCountRef.current = 0;
+      return;
+    }
+    if (pollCountRef.current >= 5) return;
+    const intervalId = setInterval(() => {
+      if (pollCountRef.current >= 5) {
+        clearInterval(intervalId);
+        return;
+      }
+      pollCountRef.current += 1;
+      matchesQuery.refetch();
+    }, 5000);
+    return () => clearInterval(intervalId);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [isEmptyStack]);
   const purchaseBottomSheetRef = useRef(null);
   const superLikePurchaseSheetRef = useRef(null);
 

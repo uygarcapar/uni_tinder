@@ -92,6 +92,19 @@ export async function restorePurchases() {
   return customerInfo.entitlements.active[ENTITLEMENT_ID] !== undefined;
 }
 
+// RC'nin local cache'i + son customer info'sundan premium aktif mi diye sorar.
+// Backend webhook gecikmeli ise app reload'da kullanıcı yanlışlıkla non-premium
+// görünmesin diye fetchSubscriptionStatus bu değeri de OR'lar.
+export async function getRevenueCatPremiumStatus() {
+  if (!isConfigured) return false;
+  try {
+    const info = await Purchases.getCustomerInfo();
+    return info?.entitlements?.active?.[ENTITLEMENT_ID] !== undefined;
+  } catch {
+    return false;
+  }
+}
+
 // ============ FAZ 6: Chat Unlock consumable ============
 // RC dashboard convention: tek bir consumable product `chat_unlock` (NON_RENEWING).
 // Frontend bu product ID'yi offering.availablePackages içinden bulup satın alır.

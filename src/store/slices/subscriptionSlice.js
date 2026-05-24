@@ -1,6 +1,7 @@
 import { createSlice, createAsyncThunk } from "@reduxjs/toolkit";
 import api from "../../services/api";
 import { API_ENDPOINTS } from "../../constants/api";
+import { getRevenueCatPremiumStatus } from "../../services/subscriptionService";
 
 // Backend SubscriptionStatusDto: { isActivelyPremium, premiumExpiresAt, productId, status, autoRenewEnabled, ... }
 // Eski kod isPremium/expiresAt okuyordu — backend ile uyumsuzdu. İkisini de fallback olarak tutuyoruz
@@ -17,9 +18,18 @@ export const fetchSubscriptionStatus = createAsyncThunk(
   "subscription/fetchStatus",
   async (_, { rejectWithValue }) => {
     try {
-      const res = await api.get(API_ENDPOINTS.SUBSCRIPTION_STATUS);
-      return normalizeStatus(res.result);
+      // Backend canonical — başarılı dönüyorsa RC cache'ine bakma.
+      // Eskiden OR ile RC'yi de tarıyorduk; ama bu durumda aynı cihazda farklı
+      // hesaba geçen kullanıcı, önceki premium hesabın RC cache'i yüzünden
+      // yanlışlıkla premium görünüyordu. RC yalnızca backend hata verirse
+      // (webhook gecikmesi vs.) fallback olarak kullanılmalı.
+      const backendRes = await api.get(API_ENDPOINTS.SUBSCRIPTION_STATUS);
+      return normalizeStatus(backendRes.result);
     } catch (e) {
+      const rcPremium = await getRevenueCatPremiumStatus().catch(() => false);
+      if (rcPremium) {
+        return { isPremium: true, expiresAt: null };
+      }
       return rejectWithValue(e.message);
     }
   }

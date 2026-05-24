@@ -1,5 +1,5 @@
 import { useEffect, useState } from 'react';
-import { View, Text, ActivityIndicator } from 'react-native';
+import { View, Text } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import realtimeService from '../services/realtimeService';
 
@@ -26,7 +26,23 @@ export default function ConnectionBanner() {
 
   const isReconnecting = state === 'reconnecting';
   const bgColor = isReconnecting ? '#f59e0b' : '#dc2626';
-  const label = isReconnecting ? 'Yeniden bağlanılıyor…' : 'Bağlantı koptu';
+
+  // Reconnecting durumunda sadece ince sarı şerit — text yok.
+  if (isReconnecting) {
+    return (
+      <View
+        style={{
+          position: 'absolute',
+          top: insets.top,
+          left: 0,
+          right: 0,
+          backgroundColor: bgColor,
+          height: 3,
+          zIndex: 1000,
+        }}
+      />
+    );
+  }
 
   return (
     <View
@@ -44,8 +60,7 @@ export default function ConnectionBanner() {
         zIndex: 1000,
       }}
     >
-      {isReconnecting && <ActivityIndicator size="small" color="#fff" style={{ marginRight: 8 }} />}
-      <Text style={{ color: '#fff', fontSize: 12, fontWeight: '600' }}>{label}</Text>
+      <Text style={{ color: '#fff', fontSize: 12, fontWeight: '600' }}>Bağlantı koptu</Text>
     </View>
   );
 }
