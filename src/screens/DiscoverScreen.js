@@ -31,7 +31,6 @@ const ENTRY_DURATION = 180;
 const ENTRY_EASING = Easing.out(Easing.cubic);
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 import {
-  BottomSheetModal,
   BottomSheetScrollView,
   BottomSheetBackdrop,
 } from "@gorhom/bottom-sheet";
@@ -51,6 +50,7 @@ import SwipeWrapper from "../components/SwipeWrapper";
 import SwipeOverlay from "../components/SwipeOverlay";
 import PurchaseModal from "../components/PurchaseModal";
 import SuperLikePurchaseModal from "../components/SuperLikePurchaseModal";
+import AppBottomSheet from "../components/AppBottomSheet";
 import WaveFillLogo from "../components/WaveFillLogo";
 import {
   usePotentialMatches,
@@ -581,7 +581,7 @@ const EmptyDiscoverCard = () => {
 // aynı sınırı görünür hâle getir, kullanıcı 100 yazıp 50 sonuç alıp şaşırmasın.
 const FREE_MAX_DISTANCE_KM = 50;
 
-function FilterModal({ bottomSheetRef, filters, isPremium, onSave, saving }) {
+function FilterModal({ visible, onClose, filters, isPremium, onSave, saving }) {
   // Free user için maxDistance'ı initial state'te de clamp et — backend zaten yapıyor
   // ama UI bunu yansıtmazsa kullanıcı "100 km" görür, sonuç 50 km içinden gelir → şaşırır.
   const clampFiltersForFree = (f) => {
@@ -649,19 +649,12 @@ function FilterModal({ bottomSheetRef, filters, isPremium, onSave, saving }) {
   );
 
   return (
-    <BottomSheetModal
-      ref={bottomSheetRef}
+    <AppBottomSheet
+      visible={visible}
+      onClose={onClose}
       snapPoints={["90%"]}
-      enablePanDownToClose={true}
-      enableOverDrag={false}
       enableContentPanningGesture={!isDragging}
       backdropComponent={renderBackdrop}
-      backgroundStyle={{
-        backgroundColor: "#121212",
-        borderTopLeftRadius: 36,
-        borderTopRightRadius: 36,
-      }}
-      handleIndicatorStyle={{ backgroundColor: "rgba(255,255,255,0.3)" }}
     >
       {/* Header */}
       <View
@@ -675,7 +668,7 @@ function FilterModal({ bottomSheetRef, filters, isPremium, onSave, saving }) {
         }}
       >
         <TouchableOpacity
-          onPress={() => bottomSheetRef.current?.dismiss()}
+          onPress={() => onClose?.()}
           activeOpacity={0.7}
           style={{ width: 60 }}
         >
@@ -955,7 +948,7 @@ function FilterModal({ bottomSheetRef, filters, isPremium, onSave, saving }) {
           </View>
         </View>
       </BottomSheetScrollView>
-    </BottomSheetModal>
+    </AppBottomSheet>
   );
 }
 
@@ -1051,19 +1044,19 @@ export default function DiscoverScreen() {
     return () => clearInterval(intervalId);
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [isEmptyStack]);
-  const purchaseBottomSheetRef = useRef(null);
-  const superLikePurchaseSheetRef = useRef(null);
+  const [purchaseVisible, setPurchaseVisible] = useState(false);
+  const [superLikePurchaseVisible, setSuperLikePurchaseVisible] = useState(false);
 
   // Backend SwipeResultDto.ShowPaywall=true geldiğinde (Like/Pass kotası dolu) veya
   // GetPotentialMatches response'unda quota=0 geldiğinde useSwipeMutation uiBus'a event
   // emit eder; biz burada subscribe olup paywall'ı açıyoruz.
   useEffect(() => {
     const unsubSwipe = uiBus.on("swipePaywall", () => {
-      purchaseBottomSheetRef.current?.present?.();
+      setPurchaseVisible(true);
     });
     // SuperLike kota bittiğinde SwipeWrapper bu event'i emit eder (pull-up swipe).
     const unsubSuperLike = uiBus.on("superLikePaywall", () => {
-      superLikePurchaseSheetRef.current?.present?.();
+      setSuperLikePurchaseVisible(true);
     });
     return () => {
       unsubSwipe();
@@ -1088,7 +1081,7 @@ export default function DiscoverScreen() {
     [],
   );
 
-  const filterBottomSheetRef = useRef(null);
+  const [filterVisible, setFilterVisible] = useState(false);
   const lastSwipePromiseRef = useRef(null);
 
   const dragX = useSharedValue(0);
@@ -1147,7 +1140,7 @@ export default function DiscoverScreen() {
     if (currentIndex === 0) return;
     if (!lastSwipeWasPass) return;
     if (remainingUndos === 0) {
-      purchaseBottomSheetRef.current?.present();
+      setPurchaseVisible(true);
       return;
     }
 
@@ -1200,7 +1193,7 @@ export default function DiscoverScreen() {
         duration: ENTRY_DURATION,
         easing: ENTRY_EASING,
       });
-      filterBottomSheetRef.current?.dismiss();
+      setFilterVisible(false);
     } catch (err) {
       Alert.alert("", err?.message || "Filtreler kaydedilemedi");
     }
@@ -1209,7 +1202,7 @@ export default function DiscoverScreen() {
   const handlePassButton = useCallback(() => {
     if (isSwiping || potentialMatches.length <= currentIndex) return;
     if (swipeQuotaExhausted) {
-      purchaseBottomSheetRef.current?.present();
+      setPurchaseVisible(true);
       return;
     }
     setIsSwiping(true);
@@ -1221,12 +1214,13 @@ export default function DiscoverScreen() {
     currentIndex,
     swipeQuotaExhausted,
     programmaticSwipe,
+
   ]);
 
   const handleLikeButton = useCallback(() => {
     if (isSwiping || potentialMatches.length <= currentIndex) return;
     if (swipeQuotaExhausted) {
-      purchaseBottomSheetRef.current?.present();
+      setPurchaseVisible(true);
       return;
     }
     setIsSwiping(true);
@@ -1238,6 +1232,7 @@ export default function DiscoverScreen() {
     currentIndex,
     swipeQuotaExhausted,
     programmaticSwipe,
+
   ]);
 
   const handleSuperLikeButton = useCallback(() => {
@@ -1247,13 +1242,12 @@ export default function DiscoverScreen() {
         cardsLeft: potentialMatches.length - currentIndex,
         superLikeQuotaExhausted,
         superLikesRemaining: statsQuery.data?.superLikesRemaining,
-        hasModalRef: !!superLikePurchaseSheetRef.current,
+        hasModalRef: superLikePurchaseVisible,
       });
     }
     if (isSwiping || potentialMatches.length <= currentIndex) return;
     if (superLikeQuotaExhausted) {
-      const ref = superLikePurchaseSheetRef.current;
-      requestAnimationFrame(() => ref?.present?.());
+      requestAnimationFrame(() => setSuperLikePurchaseVisible(true));
       return;
     }
     setIsSwiping(true);
@@ -1266,6 +1260,7 @@ export default function DiscoverScreen() {
     superLikeQuotaExhausted,
     statsQuery.data?.superLikesRemaining,
     programmaticSwipe,
+
   ]);
 
   const renderStack = () => {
@@ -1360,7 +1355,7 @@ export default function DiscoverScreen() {
           {/* Filter */}
           <View style={{ flex: 1, alignItems: "flex-end" }}>
             <TouchableOpacity
-              onPress={() => filterBottomSheetRef.current?.present()}
+              onPress={() => setFilterVisible(true)}
               activeOpacity={0.7}
             >
               <View pointerEvents="none">
@@ -1418,19 +1413,23 @@ export default function DiscoverScreen() {
       </Animated.View>
 
       <FilterModal
-        bottomSheetRef={filterBottomSheetRef}
+        visible={filterVisible}
+        onClose={() => setFilterVisible(false)}
         filters={filters}
         isPremium={filters.isPremium}
         onSave={handleSaveFilters}
         saving={saveFiltersMutation.isPending}
       />
-      <PurchaseModal bottomSheetRef={purchaseBottomSheetRef} />
+      <PurchaseModal
+        visible={purchaseVisible}
+        onClose={() => setPurchaseVisible(false)}
+      />
       <SuperLikePurchaseModal
-        bottomSheetRef={superLikePurchaseSheetRef}
-        onClose={() => superLikePurchaseSheetRef.current?.dismiss?.()}
+        visible={superLikePurchaseVisible}
+        onClose={() => setSuperLikePurchaseVisible(false)}
         onUpgrade={() => {
-          superLikePurchaseSheetRef.current?.dismiss?.();
-          setTimeout(() => purchaseBottomSheetRef.current?.present?.(), 200);
+          setSuperLikePurchaseVisible(false);
+          setTimeout(() => setPurchaseVisible(true), 200);
         }}
       />
     </GestureHandlerRootView>

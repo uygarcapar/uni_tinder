@@ -1,19 +1,19 @@
 import React, { useCallback } from "react";
 import { View, Text, TouchableOpacity, ActivityIndicator } from "react-native";
 import {
-  BottomSheetModal,
   BottomSheetScrollView,
   BottomSheetBackdrop,
 } from "@gorhom/bottom-sheet";
 import { X } from "lucide-react-native";
+import AppBottomSheet from "./AppBottomSheet";
 
 export default function EditModal({
+  visible,
   title,
   onClose,
   onSave,
   saving,
   children,
-  bottomSheetRef,
 }) {
   const renderBackdrop = useCallback(
     (props) => (
@@ -28,19 +28,11 @@ export default function EditModal({
   );
 
   return (
-    <BottomSheetModal
-      ref={bottomSheetRef}
+    <AppBottomSheet
+      visible={visible}
+      onClose={onClose}
       snapPoints={["90%"]}
-      enablePanDownToClose={true}
-      enableOverDrag={false}
-      onDismiss={onClose}
       backdropComponent={renderBackdrop}
-      backgroundStyle={{
-        backgroundColor: "#121212",
-        borderTopLeftRadius: 36,
-        borderTopRightRadius: 36,
-      }}
-      handleIndicatorStyle={{ backgroundColor: "rgba(255,255,255,0.3)" }}
     >
       <View
         style={{
@@ -103,6 +95,6 @@ export default function EditModal({
       >
         {children}
       </BottomSheetScrollView>
-    </BottomSheetModal>
+    </AppBottomSheet>
   );
 }

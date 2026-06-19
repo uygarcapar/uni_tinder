@@ -1,0 +1,248 @@
+diff --git a/node_modules/react-native-keyboard-controller/lib/commonjs/components/KeyboardStickyView/index.js b/node_modules/react-native-keyboard-controller/lib/commonjs/components/KeyboardStickyView/index.js
+index adef158..d9a9bb4 100644
+--- a/node_modules/react-native-keyboard-controller/lib/commonjs/components/KeyboardStickyView/index.js
++++ b/node_modules/react-native-keyboard-controller/lib/commonjs/components/KeyboardStickyView/index.js
+@@ -5,23 +5,15 @@ Object.defineProperty(exports, "__esModule", {
+ });
+ exports.default = void 0;
+ var _react = _interopRequireWildcard(require("react"));
+-var _reactNativeReanimated = _interopRequireWildcard(require("react-native-reanimated"));
++var _reactNative = require("react-native");
+ var _hooks = require("../../hooks");
+ function _interopRequireWildcard(e, t) { if ("function" == typeof WeakMap) var r = new WeakMap(), n = new WeakMap(); return (_interopRequireWildcard = function (e, t) { if (!t && e && e.__esModule) return e; var o, i, f = { __proto__: null, default: e }; if (null === e || "object" != typeof e && "function" != typeof e) return f; if (o = t ? n : r) { if (o.has(e)) return o.get(e); o.set(e, f); } for (const t in e) "default" !== t && {}.hasOwnProperty.call(e, t) && ((i = (o = Object.defineProperty) && Object.getOwnPropertyDescriptor(e, t)) && (i.get || i.set) ? o(f, t, i) : f[t] = e[t]); return f; })(e, t); }
+ function _extends() { return _extends = Object.assign ? Object.assign.bind() : function (n) { for (var e = 1; e < arguments.length; e++) { var t = arguments[e]; for (var r in t) ({}).hasOwnProperty.call(t, r) && (n[r] = t[r]); } return n; }, _extends.apply(null, arguments); }
+ /**
+- * A View component that sticks to the keyboard and moves with it when it appears or disappears.
+- * The view can be configured with custom offsets for both closed and open keyboard states.
+- *
+- * @returns An animated View component that sticks to the keyboard.
+- * @see {@link https://kirillzyusko.github.io/react-native-keyboard-controller/docs/api/components/keyboard-sticky-view|Documentation} page for more details.
+- * @example
+- * ```tsx
+- * <KeyboardStickyView offset={{ closed: 0, opened: 20 }}>
+- *   <Button title="Submit" />
+- * </KeyboardStickyView>
+- * ```
++ * Patched: RN Animated.Value native driver + piecewise via single interpolate.
++ * translateY = min(0, height + opened) — view stays until keyboard rises by `opened`, then 1:1 sticky.
+  */
++const LARGE = 10000;
+ const KeyboardStickyView = /*#__PURE__*/(0, _react.forwardRef)(({
+   children,
+   offset: {
+@@ -33,19 +25,24 @@ const KeyboardStickyView = /*#__PURE__*/(0, _react.forwardRef)(({
+   ...props
+ }, ref) => {
+   const {
+-    height,
+-    progress
+-  } = (0, _hooks.useReanimatedKeyboardAnimation)();
+-  const stickyViewStyle = (0, _reactNativeReanimated.useAnimatedStyle)(() => {
+-    const offset = (0, _reactNativeReanimated.interpolate)(progress.value, [0, 1], [closed, opened]);
+-    return {
+-      transform: [{
+-        translateY: enabled ? height.value + offset : closed
+-      }]
+-    };
+-  }, [closed, opened, enabled]);
+-  const styles = (0, _react.useMemo)(() => [style, stickyViewStyle], [style, stickyViewStyle]);
+-  return /*#__PURE__*/_react.default.createElement(_reactNativeReanimated.default.View, _extends({
++    height
++  } = (0, _hooks.useKeyboardAnimation)();
++  const closedValue = (0, _react.useMemo)(() => new _reactNative.Animated.Value(closed), [closed]);
++  const piecewise = (0, _react.useMemo)(
++    () => height.interpolate({
++      inputRange: [-LARGE, -opened, 0],
++      outputRange: [-LARGE + opened, 0, 0],
++      extrapolate: "clamp"
++    }),
++    [height, opened]
++  );
++  const translateY = enabled ? piecewise : closedValue;
++  const styles = (0, _react.useMemo)(() => [{
++    transform: [{
++      translateY
++    }]
++  }, style], [style, translateY]);
++  return /*#__PURE__*/_react.default.createElement(_reactNative.Animated.View, _extends({
+     ref: ref,
+     style: styles
+   }, props), children);
+diff --git a/node_modules/react-native-keyboard-controller/lib/module/components/KeyboardStickyView/index.js b/node_modules/react-native-keyboard-controller/lib/module/components/KeyboardStickyView/index.js
+index 4655697..0d22d09 100644
+--- a/node_modules/react-native-keyboard-controller/lib/module/components/KeyboardStickyView/index.js
++++ b/node_modules/react-native-keyboard-controller/lib/module/components/KeyboardStickyView/index.js
+@@ -1,20 +1,18 @@
+ function _extends() { return _extends = Object.assign ? Object.assign.bind() : function (n) { for (var e = 1; e < arguments.length; e++) { var t = arguments[e]; for (var r in t) ({}).hasOwnProperty.call(t, r) && (n[r] = t[r]); } return n; }, _extends.apply(null, arguments); }
+ import React, { forwardRef, useMemo } from "react";
+-import Reanimated, { interpolate, useAnimatedStyle } from "react-native-reanimated";
+-import { useReanimatedKeyboardAnimation } from "../../hooks";
++import { Animated } from "react-native";
++import { useKeyboardAnimation } from "../../hooks";
+ /**
+- * A View component that sticks to the keyboard and moves with it when it appears or disappears.
+- * The view can be configured with custom offsets for both closed and open keyboard states.
++ * Patched:
++ *   1. RN Animated.Value (native driver = no JS bridge latency)
++ *   2. PIECEWISE: translateY = min(0, height + opened) via single interpolate
++ *      - keyboard rise H ≤ opened: stays (0)
++ *      - keyboard rise H > opened: 1:1 sticky → -(H - opened)
+  *
+- * @returns An animated View component that sticks to the keyboard.
+- * @see {@link https://kirillzyusko.github.io/react-native-keyboard-controller/docs/api/components/keyboard-sticky-view|Documentation} page for more details.
+- * @example
+- * ```tsx
+- * <KeyboardStickyView offset={{ closed: 0, opened: 20 }}>
+- *   <Button title="Submit" />
+- * </KeyboardStickyView>
+- * ```
++ *   `opened` semantics: threshold (keyboard rises this much before view sticks).
++ *   `closed` semantics: applied when enabled=false (or fallback).
+  */
++const LARGE = 10000;
+ const KeyboardStickyView = /*#__PURE__*/forwardRef(({
+   children,
+   offset: {
+@@ -26,19 +24,24 @@ const KeyboardStickyView = /*#__PURE__*/forwardRef(({
+   ...props
+ }, ref) => {
+   const {
+-    height,
+-    progress
+-  } = useReanimatedKeyboardAnimation();
+-  const stickyViewStyle = useAnimatedStyle(() => {
+-    const offset = interpolate(progress.value, [0, 1], [closed, opened]);
+-    return {
+-      transform: [{
+-        translateY: enabled ? height.value + offset : closed
+-      }]
+-    };
+-  }, [closed, opened, enabled]);
+-  const styles = useMemo(() => [style, stickyViewStyle], [style, stickyViewStyle]);
+-  return /*#__PURE__*/React.createElement(Reanimated.View, _extends({
++    height
++  } = useKeyboardAnimation();
++  const closedValue = useMemo(() => new Animated.Value(closed), [closed]);
++  const piecewise = useMemo(
++    () => height.interpolate({
++      inputRange: [-LARGE, -opened, 0],
++      outputRange: [-LARGE + opened, 0, 0],
++      extrapolate: "clamp"
++    }),
++    [height, opened]
++  );
++  const translateY = enabled ? piecewise : closedValue;
++  const styles = useMemo(() => [{
++    transform: [{
++      translateY
++    }]
++  }, style], [style, translateY]);
++  return /*#__PURE__*/React.createElement(Animated.View, _extends({
+     ref: ref,
+     style: styles
+   }, props), children);
+diff --git a/node_modules/react-native-keyboard-controller/src/components/KeyboardStickyView/index.tsx b/node_modules/react-native-keyboard-controller/src/components/KeyboardStickyView/index.tsx
+index 798981b..3da2675 100644
+--- a/node_modules/react-native-keyboard-controller/src/components/KeyboardStickyView/index.tsx
++++ b/node_modules/react-native-keyboard-controller/src/components/KeyboardStickyView/index.tsx
+@@ -1,45 +1,28 @@
+ import React, { forwardRef, useMemo } from "react";
+-import Reanimated, {
+-  interpolate,
+-  useAnimatedStyle,
+-} from "react-native-reanimated";
++import { Animated } from "react-native";
+ 
+-import { useReanimatedKeyboardAnimation } from "../../hooks";
++import { useKeyboardAnimation } from "../../hooks";
+ 
+ import type { View, ViewProps } from "react-native";
+ 
+ export type KeyboardStickyViewProps = {
+-  /**
+-   * Specify additional offset to the view for given keyboard state.
+-   */
+   offset?: {
+-    /**
+-     * Adds additional `translateY` when keyboard is close. By default `0`.
+-     */
+     closed?: number;
+-    /**
+-     * Adds additional `translateY` when keyboard is open. By default `0`.
+-     */
+     opened?: number;
+   };
+-
+-  /** Controls whether this `KeyboardStickyView` instance should take effect. Default is `true`. */
+   enabled?: boolean;
+ } & ViewProps;
+ 
+ /**
+- * A View component that sticks to the keyboard and moves with it when it appears or disappears.
+- * The view can be configured with custom offsets for both closed and open keyboard states.
++ * Patched: RN Animated.Value native driver + piecewise.
++ *   translateY = min(0, height + opened)
++ *   - keyboard rise H ≤ opened: stays
++ *   - keyboard rise H > opened: 1:1 sticky
+  *
+- * @returns An animated View component that sticks to the keyboard.
+- * @see {@link https://kirillzyusko.github.io/react-native-keyboard-controller/docs/api/components/keyboard-sticky-view|Documentation} page for more details.
+- * @example
+- * ```tsx
+- * <KeyboardStickyView offset={{ closed: 0, opened: 20 }}>
+- *   <Button title="Submit" />
+- * </KeyboardStickyView>
+- * ```
++ *   `opened` is now a threshold (was: linear endpoint).
+  */
++const LARGE = 10000;
++
+ const KeyboardStickyView = forwardRef<
+   View,
+   React.PropsWithChildren<KeyboardStickyViewProps>
+@@ -54,25 +37,34 @@ const KeyboardStickyView = forwardRef<
+     },
+     ref,
+   ) => {
+-    const { height, progress } = useReanimatedKeyboardAnimation();
++    const { height } = useKeyboardAnimation();
+ 
+-    const stickyViewStyle = useAnimatedStyle(() => {
+-      const offset = interpolate(progress.value, [0, 1], [closed, opened]);
++    const closedValue = useMemo(
++      () => new Animated.Value(closed),
++      [closed],
++    );
++
++    const piecewise = useMemo(
++      () =>
++        height.interpolate({
++          inputRange: [-LARGE, -opened, 0],
++          outputRange: [-LARGE + opened, 0, 0],
++          extrapolate: "clamp",
++        }),
++      [height, opened],
++    );
+ 
+-      return {
+-        transform: [{ translateY: enabled ? height.value + offset : closed }],
+-      };
+-    }, [closed, opened, enabled]);
++    const translateY = enabled ? piecewise : closedValue;
+ 
+     const styles = useMemo(
+-      () => [style, stickyViewStyle],
+-      [style, stickyViewStyle],
++      () => [{ transform: [{ translateY }] }, style],
++      [style, translateY],
+     );
+ 
+     return (
+-      <Reanimated.View ref={ref} style={styles} {...props}>
++      <Animated.View ref={ref} style={styles} {...props}>
+         {children}
+-      </Reanimated.View>
++      </Animated.View>
+     );
+   },
+ );

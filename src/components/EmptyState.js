@@ -1,14 +1,17 @@
-import { View, Text } from "react-native";
-import { BlurView } from "expo-blur";
+import { View, Text, StyleSheet, Pressable } from "react-native";
+import { LinearGradient } from "expo-linear-gradient";
 
 export default function EmptyState({
   Icon,
-  iconSize = 50,
-  iconColor = "#fff",
-  iconStrokeWidth = 1.3,
+  iconSize = 100,
+  iconColor = "#dee0ea",
+  iconStrokeWidth = 1.2,
   text,
+  subtitle,
   topOffset = 24,
   containerStyle,
+  buttonLabel,
+  onButtonPress,
 }) {
   return (
     <View
@@ -16,23 +19,17 @@ export default function EmptyState({
         {
           alignItems: "center",
           paddingTop: topOffset,
+          paddingHorizontal: 32,
         },
         containerStyle,
       ]}
     >
-      <BlurView
-        intensity={40}
-        tint="dark"
+      <View
+        className="mb-4"
         style={{
           alignItems: "center",
           justifyContent: "center",
-          paddingHorizontal: 32,
-          paddingVertical: 28,
-          borderRadius: 32,
-          borderCurve: "continuous",
           overflow: "hidden",
-          borderWidth: 0.5,
-          borderColor: "rgba(255,255,255,0.08)",
         }}
       >
         {Icon && (
@@ -42,17 +39,20 @@ export default function EmptyState({
             strokeWidth={iconStrokeWidth}
           />
         )}
-        <Text
-          className="text-gray-400"
-          style={{
-            fontWeight: "500",
-            fontSize: 13,
-            marginTop: 8,
-          }}
-        >
-          {text}
-        </Text>
-      </BlurView>
+      </View>
+
+      <Text
+        style={{
+          color: "#fff",
+          fontSize: 21,
+          fontWeight: "600",
+          textAlign: "center",
+          letterSpacing: -0.3,
+          marginBottom: subtitle ? 8 : 0,
+        }}
+      >
+        {text}
+      </Text>
     </View>
   );
 }

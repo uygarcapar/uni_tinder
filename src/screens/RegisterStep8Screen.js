@@ -10,7 +10,6 @@ import {
 } from "react-native";
 import { useDispatch, useSelector } from "react-redux";
 import {
-  BottomSheetModal,
   BottomSheetBackdrop,
   BottomSheetTextInput,
   BottomSheetFlatList,
@@ -22,6 +21,7 @@ import { LinearGradient } from "expo-linear-gradient";
 import { API_BASE_URL, API_ENDPOINTS } from "../constants/api";
 import RegisterProgressBar from "../components/RegisterProgressBar";
 import AnimatedPressableShared from "../components/AnimatedPressable";
+import AppBottomSheet from "../components/AppBottomSheet";
 
 const YEAR_OF_STUDY_OPTIONS = [
   { value: "0", label: "Hazırlık" },
@@ -261,12 +261,11 @@ export default function RegisterStep8Screen({ navigation }) {
   const [departments, setDepartments] = useState([]);
   const [loadingDepartments, setLoadingDepartments] = useState(false);
 
-  const departmentSheetRef = useRef(null);
+  const [departmentVisible, setDepartmentVisible] = useState(false);
   const snapPoints = useMemo(() => ["75%"], []);
   // Modal slide-in animasyonu sırasında backdrop tap'i kapatma tetiklemesin —
   // sadece tam açıldıktan (index === 0) sonra dismiss izin ver. Aksi halde
   // kullanıcı içerik henüz yerine oturmadan tap yapınca yanlışlıkla modal kapanıyor.
-  const [isSheetFullyOpen, setIsSheetFullyOpen] = useState(false);
 
   // Fetch departments on mount
   useEffect(() => {
@@ -297,17 +296,17 @@ export default function RegisterStep8Screen({ navigation }) {
   const handleOpenDepartmentModal = useCallback(() => {
     Keyboard.dismiss();
     setTimeout(() => {
-      departmentSheetRef.current?.present();
+      setDepartmentVisible(true);
     }, 100);
   }, []);
 
   const confirmDepartmentSelection = (selectedDepartment) => {
     setDepartment(selectedDepartment);
-    departmentSheetRef.current?.dismiss();
+    setDepartmentVisible(false);
   };
 
   const cancelDepartmentSelection = () => {
-    departmentSheetRef.current?.dismiss();
+    setDepartmentVisible(false);
   };
 
   const renderBackdrop = useCallback(
@@ -317,16 +316,15 @@ export default function RegisterStep8Screen({ navigation }) {
         disappearsOnIndex={-1}
         appearsOnIndex={0}
         opacity={0.55}
-        pressBehavior={isSheetFullyOpen ? "close" : "none"}
+        pressBehavior="close"
         onPress={() => {
-          if (!isSheetFullyOpen) return;
           Keyboard.dismiss();
-          departmentSheetRef.current?.dismiss();
+          setDepartmentVisible(false);
         }}
         style={[props.style, { backgroundColor: "#000" }]}
       />
     ),
-    [isSheetFullyOpen],
+    [],
   );
 
   const getDepartmentLabel = () => {
@@ -506,20 +504,12 @@ export default function RegisterStep8Screen({ navigation }) {
       </KeyboardStickyView>
 
       {/* Department Bottom Sheet */}
-      <BottomSheetModal
-        ref={departmentSheetRef}
-        index={0}
-        backgroundStyle={{
-          borderRadius: 44,
-          backgroundColor: "#121212",
-        }}
+      <AppBottomSheet
+        visible={departmentVisible}
+        onClose={cancelDepartmentSelection}
         snapPoints={snapPoints}
         backdropComponent={renderBackdrop}
-        enablePanDownToClose={true}
-        keyboardBehavior="interactive"
-        keyboardBlurBehavior="restore"
-        handleIndicatorStyle={{ backgroundColor: "#4B5563", width: 50 }}
-        onChange={(idx) => setIsSheetFullyOpen(idx === 0)}
+        backgroundStyle={{ borderRadius: 44 }}
       >
         <DepartmentPickerContent
           initialDepartment={department}
@@ -527,7 +517,7 @@ export default function RegisterStep8Screen({ navigation }) {
           onCancel={cancelDepartmentSelection}
           departments={departments}
         />
-      </BottomSheetModal>
+      </AppBottomSheet>
     </View>
   );
 }

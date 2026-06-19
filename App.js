@@ -23,7 +23,7 @@ export default function App() {
   if (!fontsLoaded) return null;
 
   return (
-    <GestureHandlerRootView style={{ flex: 1 }}>
+    <GestureHandlerRootView style={{ flex: 1, backgroundColor: "#121212" }}>
       <SafeAreaProvider initialMetrics={initialWindowMetrics}>
       <Provider store={store}>
         <PersistGate loading={null} persistor={persistor}>

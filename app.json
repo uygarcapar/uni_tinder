@@ -44,7 +44,9 @@
           "defaultChannel": "unitinder_notifications"
         }
       ],
-      "expo-maps"
+      "expo-maps",
+      "expo-status-bar",
+      "expo-audio"
     ],
     "web": {
       "favicon": "./assets/favicon.png"

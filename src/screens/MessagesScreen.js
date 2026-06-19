@@ -7,10 +7,7 @@ import {
   TextInput,
   Alert,
 } from "react-native";
-import {
-  SafeAreaView,
-  useSafeAreaInsets,
-} from "react-native-safe-area-context";
+import { useSafeAreaInsets } from "react-native-safe-area-context";
 import Animated, {
   ZoomIn,
   ZoomOut,
@@ -35,10 +32,11 @@ import {
 import {
   fetchConversations,
   setActiveConversation,
+  fetchHistory,
 } from "../store/slices/chatSlice";
 import chatService from "../services/chatService";
 import EmptyState from "../components/EmptyState";
-import WaveFillLogo from "../components/WaveFillLogo";
+import ScreenHeader from "../components/ScreenHeader";
 import { useSwipeStats } from "../queries/swipeQueries";
 
 export default function MessagesScreen() {
@@ -103,19 +101,6 @@ export default function MessagesScreen() {
     overflow: "hidden",
   }));
 
-  // Header (lit logo) — search aktifken opacity ile fade out + height
-  // shrink. Height de animate ediliyor ki search bar header'ın yerine
-  // smooth animasyonla kaysın (anlık layout sıçraması olmasın).
-  const HEADER_HEIGHT = 50;
-  const headerAnimStyle = useAnimatedStyle(() => {
-    const inv = 1 - chevronProgress.value; // 1 = visible, 0 = hidden
-    return {
-      height: inv * HEADER_HEIGHT,
-      opacity: inv,
-    };
-  });
-
-
   const closeSearch = useCallback(() => {
     searchInputRef.current?.blur();
     setSearchQuery("");
@@ -144,6 +129,27 @@ export default function MessagesScreen() {
   useEffect(() => {
     dispatch(fetchConversations());
   }, [dispatch]);
+
+  // WhatsApp davranışı — chat'e girince mesajlar anında gelsin.
+  // Conversations yüklenir yüklenmez ilk N sohbetin mesaj history'sini
+  // arka planda Redux'a doldur. ChatScreen mount olduğunda bucket dolu
+  // → blank ekran/spinner yok. Her conversationId için tek seferlik
+  // prefetch (ref ile dedup) — yeni mesaj geldikçe re-trigger olmasın.
+  const prefetchedHistoryRef = useRef(new Set());
+  useEffect(() => {
+    if (!conversations?.length) return;
+    conversations.slice(0, 15).forEach((conv) => {
+      if (prefetchedHistoryRef.current.has(conv.conversationId)) return;
+      prefetchedHistoryRef.current.add(conv.conversationId);
+      dispatch(
+        fetchHistory({
+          conversationId: conv.conversationId,
+          cursor: null,
+          pageSize: 30,
+        }),
+      );
+    });
+  }, [conversations, dispatch]);
 
   const openChat = useCallback(
     (conv) => {
@@ -230,17 +236,6 @@ export default function MessagesScreen() {
 
   return (
     <View className="flex-1 bg-[#121212]">
-      {/* Custom Header — ortada lit logo. Search aktifken height + opacity
-          smooth animate edilir; search bar layout shift'i ile yukarı kayar. */}
-      <SafeAreaView edges={["top"]} className="bg-[#121212]">
-        <Animated.View
-          className="px-6 flex-row items-center justify-center relative"
-          style={[{ overflow: "hidden" }, headerAnimStyle]}
-        >
-          <WaveFillLogo fillRatio={swipeFillRatio} />
-        </Animated.View>
-      </SafeAreaView>
-
       <Animated.FlatList
         data={filteredConversations}
         keyExtractor={(c) => c.conversationId}
@@ -250,7 +245,7 @@ export default function MessagesScreen() {
         ListHeaderComponent={
           // Search row + pills — scrollable content'in başında. List ile
           // birlikte yukarı kayıp kayboluyor (WhatsApp davranışı).
-          <View>
+          <View style={{ paddingTop: insets.top + 50 }}>
             <View className="px-6 pt-3 flex-row items-center">
               <Animated.View
                 style={chevronAnimStyle}
@@ -385,11 +380,10 @@ export default function MessagesScreen() {
             )}
           </View>
         }
-        contentContainerStyle={
-          filteredConversations.length === 0
-            ? { flexGrow: 1, paddingBottom: insets.bottom + 16 }
-            : { paddingBottom: insets.bottom + 16 }
-        }
+        contentContainerStyle={{
+          flexGrow: 1,
+          paddingBottom: insets.bottom + 16,
+        }}
         ListEmptyComponent={
           isSearchActive && searchQuery.trim().length > 0 ? (
             <View className="flex-1 items-center justify-center pb-[60%] px-8">
@@ -408,10 +402,18 @@ export default function MessagesScreen() {
                 iconStrokeWidth={1.3}
                 text="Henüz mesajın yok."
                 topOffset={0}
+                buttonLabel="Eşleşme bul"
+                onButtonPress={() => navigation.navigate("Discover")}
               />
             </View>
           ) : null
         }
+      />
+
+      <ScreenHeader
+        scrollY={scrollY}
+        title="Mesajlar"
+        fillRatio={swipeFillRatio}
       />
     </View>
   );

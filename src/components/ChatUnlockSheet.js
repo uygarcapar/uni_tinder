@@ -7,10 +7,10 @@ import {
   Alert,
 } from "react-native";
 import {
-  BottomSheetModal,
   BottomSheetScrollView,
   BottomSheetBackdrop,
 } from "@gorhom/bottom-sheet";
+import AppBottomSheet from "./AppBottomSheet";
 import { X, MessageSquare, Lock, Infinity as InfinityIcon } from "lucide-react-native";
 import { LinearGradient } from "expo-linear-gradient";
 import { useDispatch } from "react-redux";
@@ -38,7 +38,7 @@ import {
  *   - Hedef: spesifik bir sohbetin 50-mesaj sınırını kaldırmak.
  */
 export default function ChatUnlockSheet({
-  bottomSheetRef,
+  visible,
   conversationId,
   onClose,
   onSuccess,
@@ -49,13 +49,13 @@ export default function ChatUnlockSheet({
   const [purchasing, setPurchasing] = useState(false);
 
   useEffect(() => {
-    if (!bottomSheetRef) return;
+    if (!visible) return;
     setLoadingPkg(true);
     getChatUnlockPackage()
       .then((p) => setPkg(p))
       .catch(() => setPkg(null))
       .finally(() => setLoadingPkg(false));
-  }, [bottomSheetRef]);
+  }, [visible]);
 
   const priceString = pkg?.product?.priceString ?? "—";
 
@@ -132,19 +132,11 @@ export default function ChatUnlockSheet({
   );
 
   return (
-    <BottomSheetModal
-      ref={bottomSheetRef}
+    <AppBottomSheet
+      visible={visible}
+      onClose={onClose}
       snapPoints={["72%"]}
-      enablePanDownToClose
-      enableOverDrag={false}
-      onDismiss={onClose}
       backdropComponent={renderBackdrop}
-      backgroundStyle={{
-        backgroundColor: "#121212",
-        borderTopLeftRadius: 36,
-        borderTopRightRadius: 36,
-      }}
-      handleIndicatorStyle={{ backgroundColor: "rgba(255,255,255,0.3)" }}
     >
       {/* Header */}
       <View
@@ -299,6 +291,6 @@ export default function ChatUnlockSheet({
           İkiniz de Premium olursanız bu sohbet zaten sınırsız olur.
         </Text>
       </BottomSheetScrollView>
-    </BottomSheetModal>
+    </AppBottomSheet>
   );
 }

@@ -1,12 +1,19 @@
-import { useEffect, useMemo, useRef, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import {
   View,
   Text,
-  FlatList,
   Image,
   Dimensions,
   TouchableOpacity,
+  Platform,
 } from "react-native";
+import { Host, Button as SwiftUIButton } from "@expo/ui/swift-ui";
+import {
+  buttonStyle,
+  tint,
+  labelStyle,
+  font,
+} from "@expo/ui/swift-ui/modifiers";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { LinearGradient } from "expo-linear-gradient";
 import { BlurView } from "expo-blur";
@@ -22,6 +29,7 @@ import { useNavigation } from "@react-navigation/native";
 import Animated, {
   useSharedValue,
   useAnimatedStyle,
+  useAnimatedScrollHandler,
   withRepeat,
   withTiming,
   Easing,
@@ -34,10 +42,11 @@ import AnimatedPressable from "../components/AnimatedPressable";
 import EmptyState from "../components/EmptyState";
 import LikerSwipeModal from "../components/LikerSwipeModal";
 import PurchaseModal from "../components/PurchaseModal";
-import WaveFillLogo from "../components/WaveFillLogo";
+import ScreenHeader from "../components/ScreenHeader";
 import swipeService from "../services/swipeService";
 import { useSwipeStats } from "../queries/swipeQueries";
 import { setWhoLikedMeCount } from "../store/slices/swipeSlice";
+
 import uiBus from "../services/uiBus";
 
 const { width } = Dimensions.get("window");
@@ -257,7 +266,14 @@ export default function LikesScreen() {
   const dispatch = useDispatch();
   const navigation = useNavigation();
   const statsQuery = useSwipeStats();
-  const purchaseBottomSheetRef = useRef(null);
+  const [purchaseVisible, setPurchaseVisible] = useState(false);
+
+  const scrollY = useSharedValue(0);
+  const scrollHandler = useAnimatedScrollHandler({
+    onScroll: (e) => {
+      scrollY.value = e.contentOffset.y;
+    },
+  });
 
   // Detay preview state — karta tıklayınca LikerProfile detayını çekip
   // PreviewModal'da SwipeCard layout'unu reuse ederek gösteriyoruz.
@@ -351,7 +367,7 @@ export default function LikesScreen() {
   // listeyi yenile.
   const openLikerProfile = async (item) => {
     if (!isPremium) {
-      purchaseBottomSheetRef.current?.present();
+      setPurchaseVisible(true);
       return;
     }
     const likerUserId = item?.userId || item?.likerUserId;
@@ -484,37 +500,21 @@ export default function LikesScreen() {
 
   return (
     <View className="flex-1 bg-[#121212]">
-      {/* Custom Header — ortada lit logo */}
-      <View style={{ paddingTop: insets.top, backgroundColor: "#121212" }}>
-        <View
-          className="px-6 flex-row items-center justify-center relative"
-          style={{ height: 50 }}
-        >
-          <WaveFillLogo fillRatio={swipeFillRatio} />
-          <TouchableOpacity
-            onPress={() => navigation.navigate("Notifications")}
-            hitSlop={10}
-            className="absolute right-6"
-            activeOpacity={0.7}
-          >
-            <View pointerEvents="none">
-              <Bell size={25} strokeWidth={2} color="#fff" fill="#fff" />
-            </View>
-          </TouchableOpacity>
-        </View>
-      </View>
-
       {loading ? (
         <>
-          <View style={{ paddingHorizontal: 16, paddingTop: 16 }}>
+          <View
+            style={{ paddingHorizontal: 16, paddingTop: insets.top + 50 + 16 }}
+          >
             {tabsRow}
           </View>
           <LikesSkeletonGrid />
         </>
       ) : (
         /* Likes Grid */
-        <FlatList
+        <Animated.FlatList
           data={filteredLikes}
+          onScroll={scrollHandler}
+          scrollEventThrottle={16}
           renderItem={({ item }) => (
             <LikeCard
               item={item}
@@ -538,18 +538,34 @@ export default function LikesScreen() {
                       ? "Henüz beğeni yok."
                       : "Henüz seni beğenen kimse yok."
                 }
+                subtitle={
+                  activeTab === "superlike"
+                    ? "Seni süper beğenen birileri olduğunda burada görünecek."
+                    : activeTab === "like"
+                      ? "Yeni beğeniler geldikçe burada listelenecek."
+                      : "Profilini geliştirdikçe seni beğenenlerin sayısı artar."
+                }
+                buttonLabel={
+                  activeTab === "superlike"
+                    ? "Süper beğeni gönder"
+                    : activeTab === "like"
+                      ? "Keşfetmeye git"
+                      : "Profilimi geliştir"
+                }
+                onButtonPress={() =>
+                  navigation.navigate(
+                    activeTab === "whoLikesMe" ? "Profile" : "Discover",
+                  )
+                }
               />
             </View>
           }
-          contentContainerStyle={
-            filteredLikes.length === 0
-              ? { flexGrow: 1, paddingHorizontal: 16, paddingTop: 16 }
-              : {
-                  paddingHorizontal: 16,
-                  paddingTop: 16,
-                  paddingBottom: 120,
-                }
-          }
+          contentContainerStyle={{
+            flexGrow: 1,
+            paddingHorizontal: 16,
+            paddingTop: insets.top + 50 + 16,
+            paddingBottom: filteredLikes.length === 0 ? 0 : 120,
+          }}
           columnWrapperStyle={
             filteredLikes.length > 0
               ? { justifyContent: "space-between" }
@@ -558,6 +574,39 @@ export default function LikesScreen() {
           showsVerticalScrollIndicator={false}
         />
       )}
+
+      <ScreenHeader
+        scrollY={scrollY}
+        title="Beğeniler"
+        fillRatio={swipeFillRatio}
+        rightButton={
+          Platform.OS === "ios" ? (
+            <Host matchContents>
+              <SwiftUIButton
+                label="Bildirimler"
+                systemImage="bell.fill"
+                onPress={() => navigation.navigate("Notifications")}
+                modifiers={[
+                  buttonStyle("glass"),
+                  tint("#ffffff"),
+                  labelStyle("iconOnly"),
+                  font({ size: 22, weight: "medium" }),
+                ]}
+              />
+            </Host>
+          ) : (
+            <TouchableOpacity
+              onPress={() => navigation.navigate("Notifications")}
+              hitSlop={10}
+              activeOpacity={0.7}
+            >
+              <View pointerEvents="none">
+                <Bell size={29} strokeWidth={2} color="#fff" fill="#fff" />
+              </View>
+            </TouchableOpacity>
+          )
+        }
+      />
 
       {/* Sticky Bottom Button — premium değilse göster, basınca purchase modal aç */}
       {!isPremium && (
@@ -570,7 +619,7 @@ export default function LikesScreen() {
         >
           <AnimatedPressable
             pressScale={0.97}
-            onPress={() => purchaseBottomSheetRef.current?.present()}
+            onPress={() => setPurchaseVisible(true)}
             style={{
               borderRadius: 999,
               borderCurve: "continuous",
@@ -606,8 +655,8 @@ export default function LikesScreen() {
       )}
 
       <PurchaseModal
-        bottomSheetRef={purchaseBottomSheetRef}
-        onClose={() => purchaseBottomSheetRef.current?.dismiss()}
+        visible={purchaseVisible}
+        onClose={() => setPurchaseVisible(false)}
       />
 
       <LikerSwipeModal

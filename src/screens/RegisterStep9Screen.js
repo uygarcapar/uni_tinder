@@ -1,10 +1,4 @@
-import React, {
-  useState,
-  useRef,
-  useMemo,
-  useCallback,
-  useEffect,
-} from "react";
+import { useState, useMemo, useCallback, useEffect } from "react";
 import {
   View,
   Text,
@@ -14,181 +8,16 @@ import {
 } from "react-native";
 import { useDispatch, useSelector } from "react-redux";
 import { updateMultipleFields } from "../store/slices/profileSlice";
-import {
-  BottomSheetModal,
-  BottomSheetBackdrop,
-  BottomSheetTextInput,
-  BottomSheetFlatList,
-} from "@gorhom/bottom-sheet";
-import { Check, Search, SearchX, ChevronDown } from "lucide-react-native";
+import { BottomSheetBackdrop } from "@gorhom/bottom-sheet";
+import { ChevronDown } from "lucide-react-native";
 import { BlurView } from "expo-blur";
 import { KeyboardStickyView } from "react-native-keyboard-controller";
 import { LinearGradient } from "expo-linear-gradient";
 import { API_BASE_URL, API_ENDPOINTS } from "../constants/api";
 import RegisterProgressBar from "../components/RegisterProgressBar";
 import AnimatedPressable from "../components/AnimatedPressable";
-
-const SearchableListSheet = ({ initialValue, onConfirm, onCancel, items }) => {
-  const isValid =
-    initialValue !== null && initialValue !== undefined && initialValue !== "";
-  const localValue = isValid ? String(initialValue) : "";
-  const [search, setSearch] = useState("");
-
-  const filtered = useMemo(() => {
-    const q = search.trim().toLocaleLowerCase("tr");
-    if (!q) return items;
-    return items.filter((i) =>
-      (i.name ?? "").toLocaleLowerCase("tr").includes(q),
-    );
-  }, [search, items]);
-
-  const orderedItems = useMemo(() => {
-    if (!localValue) return filtered;
-    const selectedItem = items.find((i) => String(i.id) === localValue);
-    if (!selectedItem) return filtered;
-
-    const q = search.trim().toLocaleLowerCase("tr");
-    if (q && !(selectedItem.name ?? "").toLocaleLowerCase("tr").includes(q)) {
-      return filtered;
-    }
-
-    const rest = filtered.filter((i) => String(i.id) !== localValue);
-    return [selectedItem, ...rest];
-  }, [filtered, items, localValue, search]);
-
-  return (
-    <BottomSheetFlatList
-      data={orderedItems}
-      keyExtractor={(item) => String(item.id)}
-      keyboardShouldPersistTaps="handled"
-      showsVerticalScrollIndicator={false}
-      stickyHeaderIndices={[0]}
-      style={{ backgroundColor: "#121212" }}
-      contentContainerStyle={{
-        paddingHorizontal: 16,
-        paddingBottom: 32,
-      }}
-      ListHeaderComponent={
-        <View
-          style={{
-            backgroundColor: "#121212",
-            paddingTop: 32,
-            paddingBottom: 8,
-          }}
-        >
-          <View className="flex-row justify-between items-center py-4 px-2">
-            <TouchableOpacity onPress={onCancel}>
-              <Text className="text-gray-400 text-xl">İptal</Text>
-            </TouchableOpacity>
-            <TouchableOpacity onPress={() => onConfirm(localValue)}>
-              <Text className="text-white text-xl font-bold">Bitti</Text>
-            </TouchableOpacity>
-          </View>
-          <View style={{ position: "relative", marginBottom: 10 }}>
-            <View
-              pointerEvents="none"
-              style={{
-                position: "absolute",
-                left: 18,
-                top: 0,
-                bottom: 0,
-                justifyContent: "center",
-                zIndex: 1,
-              }}
-            >
-              <Search size={18} color="#9CA3AF" strokeWidth={2} />
-            </View>
-            <BottomSheetTextInput
-              defaultValue=""
-              onChangeText={setSearch}
-              placeholder=""
-              autoCorrect={false}
-              autoCapitalize="none"
-              style={{
-                borderRadius: 999,
-                borderCurve: "continuous",
-                borderWidth: 0.5,
-                borderColor: "rgba(255,255,255,0.1)",
-                backgroundColor: "transparent",
-                paddingLeft: 44,
-                paddingRight: 16,
-                paddingVertical: 20,
-                color: "#fff",
-                fontSize: 15,
-              }}
-            />
-          </View>
-        </View>
-      }
-      ListEmptyComponent={
-        <View style={{ paddingVertical: 32, alignItems: "center" }}>
-          <SearchX size={36} color="#fff" strokeWidth={1.75} />
-          {search.trim() !== "" && (
-            <Text
-              style={{
-                color: "#fff",
-                fontSize: 15,
-                fontWeight: "500",
-                marginTop: 12,
-                textAlign: "center",
-              }}
-            >
-              '{search.trim()}' bulunamadı
-            </Text>
-          )}
-        </View>
-      }
-      renderItem={({ item }) => {
-        const isSelected = item.enumName === localValue;
-        return (
-          <TouchableOpacity
-            activeOpacity={0.7}
-            onPress={() => onConfirm(item.enumName)}
-            style={{
-              paddingVertical: 20,
-              paddingHorizontal: 16,
-              flexDirection: "row",
-              alignItems: "center",
-              borderCurve: "continuous",
-              overflow: "hidden",
-              borderRadius: 999,
-              backgroundColor: isSelected
-                ? "rgba(255,255,255,0.1)"
-                : "transparent",
-              position: "relative",
-            }}
-          >
-            <Text
-              style={{
-                color: isSelected ? "#fff" : "#9CA3AF",
-                fontSize: 16,
-                fontWeight: "400",
-                flex: 1,
-                marginRight: 32,
-              }}
-            >
-              {item.name}
-            </Text>
-            {isSelected && (
-              <View
-                pointerEvents="none"
-                style={{
-                  position: "absolute",
-                  right: 16,
-                  top: 0,
-                  bottom: 0,
-                  justifyContent: "center",
-                }}
-              >
-                <Check size={18} color="#fff" strokeWidth={2.5} />
-              </View>
-            )}
-          </TouchableOpacity>
-        );
-      }}
-    />
-  );
-};
+import AppBottomSheet from "../components/AppBottomSheet";
+import SearchableListSheet from "../components/SearchableListSheet";
 
 export default function RegisterStep9Screen({ navigation }) {
   const dispatch = useDispatch();
@@ -208,8 +37,8 @@ export default function RegisterStep9Screen({ navigation }) {
   const [loadingCities, setLoadingCities] = useState(false);
   const [loadingDistricts, setLoadingDistricts] = useState(false);
 
-  const citySheetRef = useRef(null);
-  const districtSheetRef = useRef(null);
+  const [cityVisible, setCityVisible] = useState(false);
+  const [districtVisible, setDistrictVisible] = useState(false);
   const snapPoints = useMemo(() => ["75%"], []);
 
   // Fetch cities on mount
@@ -272,7 +101,7 @@ export default function RegisterStep9Screen({ navigation }) {
   const handleOpenCityModal = useCallback(() => {
     Keyboard.dismiss();
     setTimeout(() => {
-      citySheetRef.current?.present();
+      setCityVisible(true);
     }, 100);
   }, []);
 
@@ -283,7 +112,7 @@ export default function RegisterStep9Screen({ navigation }) {
     }
     Keyboard.dismiss();
     setTimeout(() => {
-      districtSheetRef.current?.present();
+      setDistrictVisible(true);
     }, 100);
   }, [city]);
 
@@ -291,20 +120,20 @@ export default function RegisterStep9Screen({ navigation }) {
     setCity(selectedCity);
     // Reset district when city changes
     setDistrict("");
-    citySheetRef.current?.dismiss();
+    setCityVisible(false);
   };
 
   const cancelCitySelection = () => {
-    citySheetRef.current?.dismiss();
+    setCityVisible(false);
   };
 
   const confirmDistrictSelection = (selectedDistrict) => {
     setDistrict(selectedDistrict);
-    districtSheetRef.current?.dismiss();
+    setDistrictVisible(false);
   };
 
   const cancelDistrictSelection = () => {
-    districtSheetRef.current?.dismiss();
+    setDistrictVisible(false);
   };
 
   const renderBackdrop = useCallback(
@@ -511,17 +340,13 @@ export default function RegisterStep9Screen({ navigation }) {
       </KeyboardStickyView>
 
       {/* City Bottom Sheet */}
-      <BottomSheetModal
-        ref={citySheetRef}
-        index={0}
-        backgroundStyle={{
-          borderRadius: 44,
-          backgroundColor: "#121212",
-        }}
+      <AppBottomSheet
+        visible={cityVisible}
+        onClose={cancelCitySelection}
         snapPoints={snapPoints}
         backdropComponent={renderBackdrop}
-        enablePanDownToClose={true}
-        handleIndicatorStyle={{ backgroundColor: "#4B5563", width: 50 }}
+        backgroundStyle={{ borderRadius: 44 }}
+        handleIndicatorStyle={{ backgroundColor: "#9CA3AF" }}
       >
         <SearchableListSheet
           initialValue={city}
@@ -529,20 +354,16 @@ export default function RegisterStep9Screen({ navigation }) {
           onCancel={cancelCitySelection}
           items={cities}
         />
-      </BottomSheetModal>
+      </AppBottomSheet>
 
       {/* District Bottom Sheet */}
-      <BottomSheetModal
-        ref={districtSheetRef}
-        index={0}
-        backgroundStyle={{
-          borderRadius: 44,
-          backgroundColor: "#121212",
-        }}
+      <AppBottomSheet
+        visible={districtVisible}
+        onClose={cancelDistrictSelection}
         snapPoints={snapPoints}
         backdropComponent={renderBackdrop}
-        enablePanDownToClose={true}
-        handleIndicatorStyle={{ backgroundColor: "#4B5563", width: 50 }}
+        backgroundStyle={{ borderRadius: 44 }}
+        handleIndicatorStyle={{ backgroundColor: "#9CA3AF" }}
       >
         <SearchableListSheet
           initialValue={district}
@@ -550,7 +371,7 @@ export default function RegisterStep9Screen({ navigation }) {
           onCancel={cancelDistrictSelection}
           items={districts}
         />
-      </BottomSheetModal>
+      </AppBottomSheet>
     </View>
   );
 }

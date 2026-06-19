@@ -16,7 +16,7 @@ import AnimatedPressable from "../components/AnimatedPressable";
 
 export default function RegisterStep5Screen({ navigation }) {
   const dispatch = useDispatch();
-  const { firstName, lastName } = useSelector(
+  const { firstName } = useSelector(
     (state) => state.auth.registrationForm,
   );
   const firstNameInputRef = useRef(null);
@@ -37,7 +37,6 @@ export default function RegisterStep5Screen({ navigation }) {
     Keyboard.dismiss();
     const newErrorFields = [];
     if (!firstName || firstName.trim() === "") newErrorFields.push("firstName");
-    if (!lastName || lastName.trim() === "") newErrorFields.push("lastName");
 
     if (newErrorFields.length > 0) {
       setErrorFields(newErrorFields);
@@ -76,66 +75,34 @@ export default function RegisterStep5Screen({ navigation }) {
             </Text>
           </View>
 
-          <View className="flex flex-row w-full gap-2 mb-4">
-            <View className="flex-1">
-              <Text className="text-gray-300 text-[14px] font-semibold mb-2">
-                Ad *
-              </Text>
-              <View
+          <View className="w-full mb-4">
+            <Text className="text-gray-300 text-[14px] font-semibold mb-2">
+              Ad *
+            </Text>
+            <View
+              style={{
+                borderRadius: 999,
+                borderCurve: "continuous",
+                overflow: "hidden",
+                borderWidth: 0.5,
+                borderColor: errorFields.includes("firstName")
+                  ? "#ef4444"
+                  : "rgba(255,255,255,0.1)",
+              }}
+            >
+              <TextInput
+                ref={firstNameInputRef}
                 style={{
-                  borderRadius: 999,
-                  borderCurve: "continuous",
-                  overflow: "hidden",
-                  borderWidth: 0.5,
-                  borderColor: errorFields.includes("firstName")
-                    ? "#ef4444"
-                    : "rgba(255,255,255,0.1)",
+                  paddingHorizontal: 16,
+                  paddingVertical: 16,
+                  fontSize: 18,
+                  color: "#fff",
                 }}
-              >
-                <TextInput
-                  ref={firstNameInputRef}
-                  style={{
-                    paddingHorizontal: 16,
-                    paddingVertical: 16,
-                    fontSize: 18,
-                    color: "#fff",
-                  }}
-                  placeholder="Adın"
-                  placeholderTextColor="#9CA3AF"
-                  value={firstName}
-                  onChangeText={(v) => updateField("firstName", v)}
-                />
-              </View>
-            </View>
-
-            <View className="flex-1">
-              <Text className="text-gray-300 text-[14px] font-semibold mb-2">
-                Soyad *
-              </Text>
-              <View
-                style={{
-                  borderRadius: 999,
-                  borderCurve: "continuous",
-                  overflow: "hidden",
-                  borderWidth: 0.5,
-                  borderColor: errorFields.includes("lastName")
-                    ? "#ef4444"
-                    : "rgba(255,255,255,0.1)",
-                }}
-              >
-                <TextInput
-                  style={{
-                    paddingHorizontal: 16,
-                    paddingVertical: 16,
-                    fontSize: 18,
-                    color: "#fff",
-                  }}
-                  placeholder="Soyadın"
-                  placeholderTextColor="#9CA3AF"
-                  value={lastName}
-                  onChangeText={(v) => updateField("lastName", v)}
-                />
-              </View>
+                placeholder="Adın"
+                placeholderTextColor="#9CA3AF"
+                value={firstName}
+                onChangeText={(v) => updateField("firstName", v)}
+              />
             </View>
           </View>
 

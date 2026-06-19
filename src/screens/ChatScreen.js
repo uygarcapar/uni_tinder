@@ -1,22 +1,49 @@
-import { useEffect, useState, useCallback, useRef, useMemo } from 'react';
+import { useEffect, useState, useCallback, useRef, useMemo } from "react";
 import {
   View,
   Text,
   Image,
-  FlatList,
   TouchableOpacity,
-  KeyboardAvoidingView,
-  Platform,
   ActivityIndicator,
   Alert,
   Modal,
   TextInput,
   Pressable,
-} from 'react-native';
-import { SafeAreaView, useSafeAreaInsets } from 'react-native-safe-area-context';
-import { useDispatch, useSelector } from 'react-redux';
-import { ChevronLeft, MoreVertical, X, Lock, Infinity as InfinityIcon } from 'lucide-react-native';
-import * as Haptics from 'expo-haptics';
+  Platform,
+  StyleSheet,
+} from "react-native";
+import Animated from "react-native-reanimated";
+import { BlurView } from "expo-blur";
+import MaskedView from "@react-native-masked-view/masked-view";
+import { LinearGradient } from "expo-linear-gradient";
+import { easeGradient } from "react-native-easing-gradient";
+import {
+  Host,
+  Button as SwiftUIButton,
+  Text as SwiftUIText,
+} from "@expo/ui/swift-ui";
+import {
+  buttonStyle,
+  tint,
+  labelStyle,
+  font,
+  glassEffect,
+  foregroundStyle,
+  padding,
+  frame,
+  controlSize,
+} from "@expo/ui/swift-ui/modifiers";
+import { useSafeAreaInsets } from "react-native-safe-area-context";
+import { KeyboardStickyView } from "react-native-keyboard-controller";
+import { useDispatch, useSelector } from "react-redux";
+import {
+  ChevronLeft,
+  MoreVertical,
+  X,
+  Infinity as InfinityIcon,
+} from "lucide-react-native";
+import * as Haptics from "expo-haptics";
+import * as Clipboard from "expo-clipboard";
 import {
   fetchHistory,
   setActiveConversation,
@@ -26,27 +53,36 @@ import {
   clearUnreadForConversation,
   fetchChatQuota,
   decrementQuotaLocally,
-} from '../store/slices/chatSlice';
-import chatService from '../services/chatService';
-import realtimeService from '../services/realtimeService';
-import MessageBubble from '../components/MessageBubble';
-import MessageInput from '../components/MessageInput';
-import TypingIndicator from '../components/TypingIndicator';
-import MessageActionSheet from '../components/MessageActionSheet';
-import ImageViewer from '../components/ImageViewer';
-import ConversationOptionsSheet from '../components/ConversationOptionsSheet';
-import SearchSheet from '../components/SearchSheet';
-import ReportModal from '../components/ReportModal';
-import DateSeparator, { withDateSeparators } from '../components/DateSeparator';
-import moderationService from '../services/moderationService';
-import ChatUnlockSheet from '../components/ChatUnlockSheet';
-import uiBus from '../services/uiBus';
+  reactionsChanged,
+  messageDeleted,
+  messageEdited,
+} from "../store/slices/chatSlice";
+import chatService from "../services/chatService";
+import realtimeService from "../services/realtimeService";
+import MessageBubble from "../components/MessageBubble";
+import MessageInput from "../components/MessageInput";
+import ChatScrollComponent from "../components/ChatScrollComponent";
+import TypingIndicator from "../components/TypingIndicator";
+import MessageActionSheet from "../components/MessageActionSheet";
+import ImageViewer from "../components/ImageViewer";
+import ConversationOptionsSheet from "../components/ConversationOptionsSheet";
+import SearchSheet from "../components/SearchSheet";
+import ReportModal from "../components/ReportModal";
+import DateSeparator, { withDateSeparators } from "../components/DateSeparator";
+import moderationService from "../services/moderationService";
+import ChatUnlockSheet from "../components/ChatUnlockSheet";
+import uiBus from "../services/uiBus";
 
 const ContentType = { Text: 0, Image: 1, Voice: 2, Video: 3, System: 99 };
+// Bar opak gövdesi: 16 row py + ~50 HStack (frame 38 + vpad 12) = 66.
+// paddingTop = 66 + insets.bottom (inline) → bar opak top'una hizalanır (closed AND open).
+// ChatScrollComponent offset = insets.bottom → keyboard açıkken contentInset.top = keyboard - insets.bottom.
+const INPUT_BAR_OPAQUE = 66;
+const HEADER_CONTENT = 110; // ChatHeader minHeight; fade zone (30) dahil değil — mesajlar fade'e girer
 
 const SYSTEM_MESSAGES_TR = {
-  'system.match_created': 'Yeni bir eşleşmen var! 🎉 İlk mesajı sen at.',
-  'system.conversation_deleted': 'Bu sohbet sonlandırıldı.',
+  "system.match_created": "Yeni bir eşleşmen var! 🎉 İlk mesajı sen at.",
+  "system.conversation_deleted": "Bu sohbet sonlandırıldı.",
 };
 const i18nResolver = (key, fallback) => SYSTEM_MESSAGES_TR[key] || fallback;
 
@@ -65,41 +101,54 @@ export default function ChatScreen({ route, navigation }) {
   const typingMap = useSelector((s) => s.chat.typingByConv[conversationId]);
   const partnerTyping = useMemo(
     () => Object.keys(typingMap || {}).some((uid) => uid !== myUserId),
-    [typingMap, myUserId]
+    [typingMap, myUserId],
   );
 
-  const presence = useSelector((s) => s.chat.presenceByUser[partner?.userId]);
   const conv = useSelector((s) =>
-    s.chat.conversations.find((c) => c.conversationId === conversationId)
+    s.chat.conversations.find((c) => c.conversationId === conversationId),
   );
-  const isActive = conv ? conv.isActive : routeIsActive ?? true;
+  const isActive = conv ? conv.isActive : (routeIsActive ?? true);
 
   const [replyTo, setReplyTo] = useState(null);
   const [actionTarget, setActionTarget] = useState(null);
+  const [actionLayout, setActionLayout] = useState(null);
   const [editTarget, setEditTarget] = useState(null);
-  const [editText, setEditText] = useState('');
-  const [imageViewer, setImageViewer] = useState(null); // { uri }
+  const [editText, setEditText] = useState("");
+  const [imageViewer, setImageViewer] = useState(null);
   const [optionsOpen, setOptionsOpen] = useState(false);
   const [searchOpen, setSearchOpen] = useState(false);
   const [reportOpen, setReportOpen] = useState(false);
-  const deliveredAckedRef = useRef(new Set()); // tek seferlik ack
+  const deliveredAckedRef = useRef(new Set());
   const listRef = useRef(null);
-  // FAZ 6: chat economy quota state — Redux'ta tutuluyor, hem optimistic hem authoritative refresh.
   const quota = useSelector((s) => s.chat.quotaByConv?.[conversationId]);
-  const unlockSheetRef = useRef(null);
+  const isPremium = useSelector((s) => s.subscription?.isPremium);
+  const subscriptionSyncedAt = useSelector((s) => s.subscription?.lastSyncedAt);
+  const [unlockVisible, setUnlockVisible] = useState(false);
 
-  // FAZ 6: SignalR hub "Error" → CHAT_QUOTA_EXHAUSTED — AppNavigator uiBus üzerinden
-  // bildiriyor. Aktif chat ekranındaysak paywall'ı aç + authoritative quota fetch et.
+  // isPremiumRef: closure'a takılı kalan eski değeri tüm async/effect handler'lara
+  // sızdırmadan, en güncel premium statüsünü okuyabilelim diye.
+  const isPremiumRef = useRef(isPremium);
   useEffect(() => {
-    const unsub = uiBus.on('chatQuotaExhausted', (payload) => {
+    isPremiumRef.current = isPremium;
+  }, [isPremium]);
+
+  useEffect(() => {
+    const unsub = uiBus.on("chatQuotaExhausted", (payload) => {
       if (payload?.conversationId !== conversationId) return;
       dispatch(fetchChatQuota(conversationId));
-      unlockSheetRef.current?.present?.();
+      if (!isPremiumRef.current) setUnlockVisible(true);
     });
     return unsub;
   }, [conversationId, dispatch]);
 
-  // Active conversation life-cycle.
+  // Premium statüsü değiştiğinde (PurchaseModal → syncSubscriptionWithRetry sonrası
+  // isPremium veya lastSyncedAt güncellenir) per-conversation quota cache'i bayatlıyor;
+  // backend bothPremium/limit'i artık premium-aware hesaplıyor → tekrar çek.
+  useEffect(() => {
+    if (!conversationId) return;
+    dispatch(fetchChatQuota(conversationId));
+  }, [conversationId, dispatch, isPremium, subscriptionSyncedAt]);
+
   useEffect(() => {
     dispatch(setActiveConversation(conversationId));
     return () => {
@@ -107,36 +156,41 @@ export default function ChatScreen({ route, navigation }) {
     };
   }, [conversationId, dispatch]);
 
-  // İlk yüklemede history fetch + Hub join + mark read + chat quota fetch.
+  const hadInitialMessagesRef = useRef(null);
+  if (hadInitialMessagesRef.current === null) {
+    hadInitialMessagesRef.current = (bucket?.messages?.length ?? 0) > 0;
+  }
+
   useEffect(() => {
     let mounted = true;
     (async () => {
       try {
-        await dispatch(fetchHistory({ conversationId, cursor: null, pageSize: 30 }));
+        if (!hadInitialMessagesRef.current) {
+          await dispatch(
+            fetchHistory({ conversationId, cursor: null, pageSize: 30 }),
+          );
+        }
         if (!mounted) return;
         await realtimeService.joinConversation(conversationId).catch(() => {});
         await chatService.markRead(conversationId).catch(() => {});
         dispatch(clearUnreadForConversation(conversationId));
-        // FAZ 6: per-conversation quota status (premium / unlocked / kalan mesaj).
         dispatch(fetchChatQuota(conversationId));
       } catch (err) {
-        console.warn('chat init err:', err?.message);
+        console.warn("chat init err:", err?.message);
       }
     })();
-    return () => { mounted = false; };
+    return () => (mounted = false);
   }, [conversationId, dispatch]);
 
-  // Bulk delivered ack — gelen tüm partner mesajlarına delivered ack at.
-  // Set ile dedup; her mesaj sadece bir kez ack'lanır.
   useEffect(() => {
     if (!myUserId) return;
     const undelivered = messages.filter(
       (m) =>
-        m.senderId
-        && m.senderId !== myUserId
-        && !m.deliveredAt
-        && !m.isSystemMessage
-        && !deliveredAckedRef.current.has(m.id)
+        m.senderId &&
+        m.senderId !== myUserId &&
+        !m.deliveredAt &&
+        !m.isSystemMessage &&
+        !deliveredAckedRef.current.has(m.id),
     );
     undelivered.forEach((m) => {
       deliveredAckedRef.current.add(m.id);
@@ -144,12 +198,14 @@ export default function ChatScreen({ route, navigation }) {
     });
   }, [messages, myUserId]);
 
-  // Yeni partner mesajı geldiğinde mark-read (active conv açıkken).
-  // messages length değişimine react eder; throttle gerekmez (bulk DB update zaten ucuz).
   useEffect(() => {
     if (!isActive) return;
     const hasUnreadFromPartner = messages.some(
-      (m) => m.senderId && m.senderId !== myUserId && !m.readAt && !m.isSystemMessage
+      (m) =>
+        m.senderId &&
+        m.senderId !== myUserId &&
+        !m.readAt &&
+        !m.isSystemMessage,
     );
     if (hasUnreadFromPartner) {
       chatService.markRead(conversationId).catch(() => {});
@@ -158,117 +214,180 @@ export default function ChatScreen({ route, navigation }) {
 
   const loadMoreOlder = useCallback(() => {
     if (loadingHistory || !hasMore || !nextCursor) return;
-    dispatch(fetchHistory({ conversationId, cursor: nextCursor, pageSize: 30 }));
+    dispatch(
+      fetchHistory({ conversationId, cursor: nextCursor, pageSize: 30 }),
+    );
   }, [conversationId, dispatch, hasMore, loadingHistory, nextCursor]);
 
-  const handleSend = useCallback(async ({ content, contentType, mediaUrl, replyToMessageId, clientMessageId }) => {
-    // FAZ 6: pre-send guard. Quota authoritatively yüklenmiş olmalı (initial fetch).
-    // Bilinen exhaustion → paywall aç, optimistic message bile insert etme.
-    if (quota && quota.requiresUnlock) {
-      unlockSheetRef.current?.present?.();
-      return;
-    }
-
-    const optimistic = {
-      id: `temp-${clientMessageId}`,
-      conversationId,
-      senderId: myUserId,
-      senderDisplayName: null,
-      senderProfileImageUrl: null,
+  const handleSend = useCallback(
+    async ({
       content,
-      sentAt: new Date().toISOString(),
-      readAt: null,
-      deliveredAt: null,
-      isSystemMessage: false,
-      systemMessageType: null,
+      contentType,
+      mediaUrl,
+      replyToMessageId,
       clientMessageId,
-      contentType: contentType ?? ContentType.Text,
-      mediaUrl: mediaUrl || null,
-      replyTo: replyToMessageId
-        ? buildReplyPreview(messages, replyToMessageId)
-        : null,
-      reactions: [],
-      _pending: true,
-    };
-
-    dispatch(appendOptimisticMessage({ conversationId, message: optimistic }));
-    listRef.current?.scrollToOffset({ offset: 0, animated: true });
-
-    try {
-      // Hub yolu sadece TEXT için — media/reply zorunlu olarak HTTP (Hub method imzası bu alanları taşımaz).
-      const useHub = realtimeService.isConnected()
-        && contentType === ContentType.Text
-        && !replyToMessageId
-        && !mediaUrl;
-
-      if (useHub) {
-        await realtimeService.sendMessage(conversationId, content, clientMessageId);
-      } else {
-        await chatService.sendMessage({
-          conversationId,
-          content,
-          clientMessageId,
-          replyToMessageId,
-          contentType,
-          mediaUrl,
-        });
-      }
-
-      // FAZ 6: başarılı send → quota counter'ı optimistic decrement et (unlimited ise no-op).
-      dispatch(decrementQuotaLocally({ conversationId }));
-    } catch (err) {
-      // FAZ 6: backend 402 → quota cap dolu, paywall aç. Optimistic mesajı failed olarak işaretle.
-      const status = err?.response?.status;
-      const paywallType = err?.response?.data?.result?.paywallType;
-      if (status === 402 || paywallType === 'CHAT_QUOTA_EXHAUSTED') {
-        dispatch(removeOptimisticMessage({ conversationId, clientMessageId }));
-        // Authoritative state'i yenile + paywall aç
-        dispatch(fetchChatQuota(conversationId));
-        unlockSheetRef.current?.present?.();
+    }) => {
+      if (!isPremiumRef.current && quota && quota.requiresUnlock) {
+        setUnlockVisible(true);
         return;
       }
-      console.warn('send failed:', err?.message);
-      dispatch(failOptimisticMessage({ conversationId, clientMessageId }));
-    }
-  }, [conversationId, dispatch, messages, myUserId, quota]);
 
-  const handleTypingChange = useCallback((isTyping) => {
-    if (isTyping) realtimeService.startTyping(conversationId).catch(() => {});
-    else realtimeService.stopTyping(conversationId).catch(() => {});
-  }, [conversationId]);
+      const optimistic = {
+        id: `temp-${clientMessageId}`,
+        conversationId,
+        senderId: myUserId,
+        senderDisplayName: null,
+        senderProfileImageUrl: null,
+        content,
+        sentAt: new Date().toISOString(),
+        readAt: null,
+        deliveredAt: null,
+        isSystemMessage: false,
+        systemMessageType: null,
+        clientMessageId,
+        contentType: contentType ?? ContentType.Text,
+        mediaUrl: mediaUrl || null,
+        replyTo: replyToMessageId
+          ? buildReplyPreview(messages, replyToMessageId)
+          : null,
+        reactions: [],
+        _pending: true,
+      };
 
-  const handleLongPressMessage = useCallback((message) => {
+      dispatch(
+        appendOptimisticMessage({ conversationId, message: optimistic }),
+      );
+
+      // ÇÖZÜM BURADA: Klavyenin contentInset boşluğunu aşmak için iOS'ta eksi sonsuza yolluyoruz,
+      // Native sistem onu otomatik olarak klavye sınırına (tam dibe) sabitleyecektir.
+      setTimeout(() => {
+        listRef.current?.scrollToOffset({
+          offset: Platform.OS === "ios" ? -999999 : 0,
+          animated: true,
+        });
+      }, 100);
+
+      try {
+        const useHub =
+          realtimeService.isConnected() &&
+          contentType === ContentType.Text &&
+          !replyToMessageId &&
+          !mediaUrl;
+
+        if (useHub) {
+          await realtimeService.sendMessage(
+            conversationId,
+            content,
+            clientMessageId,
+          );
+        } else {
+          await chatService.sendMessage({
+            conversationId,
+            content,
+            clientMessageId,
+            replyToMessageId,
+            contentType,
+            mediaUrl,
+          });
+        }
+
+        dispatch(decrementQuotaLocally({ conversationId }));
+      } catch (err) {
+        const status = err?.response?.status;
+        const paywallType = err?.response?.data?.result?.paywallType;
+        if (status === 402 || paywallType === "CHAT_QUOTA_EXHAUSTED") {
+          dispatch(
+            removeOptimisticMessage({ conversationId, clientMessageId }),
+          );
+          dispatch(fetchChatQuota(conversationId));
+          // Premium kullanıcıya quota paywall bottom-sheet gösterme; bayat backend
+          // state'in webhook'tan sonra düzelmesini bekle. Banner FE override'ı zaten
+          // "Sınırsız" gösteriyor → bu noktada sessizce drop.
+          if (!isPremiumRef.current) setUnlockVisible(true);
+          return;
+        }
+        dispatch(failOptimisticMessage({ conversationId, clientMessageId }));
+      }
+    },
+    [conversationId, dispatch, messages, myUserId, quota],
+  );
+
+  const handleTypingChange = useCallback(
+    (isTyping) => {
+      if (isTyping) realtimeService.startTyping(conversationId).catch(() => {});
+      else realtimeService.stopTyping(conversationId).catch(() => {});
+    },
+    [conversationId],
+  );
+
+  const handleLongPressMessage = useCallback((message, layout) => {
     if (message._pending || message._failed) return;
     Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Medium).catch(() => {});
+    setActionLayout(layout || null);
     setActionTarget(message);
   }, []);
 
-  const handlePickReaction = useCallback(async (emoji) => {
-    if (!actionTarget) return;
-    try {
-      await chatService.addReaction(actionTarget.id, emoji);
-    } catch (err) {
-      console.warn('reaction failed:', err?.message);
-    }
-  }, [actionTarget]);
+  const handlePickReaction = useCallback(
+    async (message, emoji) => {
+      if (!message) return;
+      const prev = message.reactions || [];
+      // Optimistic: aynı emoji varsa count++ (toggle ise backend reconcile eder),
+      // yoksa yeni entry ekle. SignalR `reactionsChanged` event'i hemen sonra
+      // authoritative listeyi yazar.
+      const existing = prev.find((r) => r.emoji === emoji);
+      const next = existing
+        ? prev.map((r) =>
+            r.emoji === emoji ? { ...r, count: (r.count || 1) + 1 } : r,
+          )
+        : [...prev, { emoji, count: 1 }];
+      dispatch(
+        reactionsChanged({
+          messageId: message.id,
+          conversationId: message.conversationId,
+          reactions: next,
+        }),
+      );
+      try {
+        await chatService.addReaction(message.id, emoji);
+      } catch (err) {
+        // Rollback
+        dispatch(
+          reactionsChanged({
+            messageId: message.id,
+            conversationId: message.conversationId,
+            reactions: prev,
+          }),
+        );
+      }
+    },
+    [dispatch],
+  );
 
-  const handleReply = useCallback(() => {
-    if (!actionTarget) return;
+  const handleReply = useCallback((message) => {
+    if (!message) return;
     setReplyTo({
-      id: actionTarget.id,
-      senderId: actionTarget.senderId,
-      senderDisplayName: actionTarget.senderDisplayName,
-      contentPreview: (actionTarget.content || '').slice(0, 120),
-      contentType: actionTarget.contentType,
-      isDeleted: !!actionTarget.deletedAt,
+      id: message.id,
+      senderId: message.senderId,
+      senderDisplayName: message.senderDisplayName,
+      contentPreview: (message.content || "").slice(0, 120),
+      contentType: message.contentType,
+      isDeleted: !!message.deletedAt,
     });
-  }, [actionTarget]);
+  }, []);
 
-  const handleEditStart = useCallback(() => {
-    if (!actionTarget) return;
-    setEditTarget(actionTarget);
-    setEditText(actionTarget.content || '');
-  }, [actionTarget]);
+  const handleEditStart = useCallback((message) => {
+    if (!message) return;
+    setEditTarget(message);
+    setEditText(message.content || "");
+  }, []);
+
+  const handleCopyMessage = useCallback(async (message) => {
+    if (!message?.content) return;
+    try {
+      await Clipboard.setStringAsync(message.content);
+      Haptics.selectionAsync().catch(() => {});
+    } catch {}
+  }, []);
 
   const handleEditSave = useCallback(async () => {
     if (!editTarget) return;
@@ -277,56 +396,115 @@ export default function ChatScreen({ route, navigation }) {
       setEditTarget(null);
       return;
     }
+    const prevContent = editTarget.content;
+    const prevEditedAt = editTarget.editedAt ?? null;
+    // Optimistic: yeni içeriği hemen yansıt. SignalR `messageEdited` authoritative
+    // DTO ile aynı state'i tekrar yazar — idempotent.
+    dispatch(
+      messageEdited({
+        id: editTarget.id,
+        conversationId: editTarget.conversationId,
+        content: trimmed,
+        editedAt: new Date().toISOString(),
+      }),
+    );
+    setEditTarget(null);
+    setEditText("");
     try {
       await chatService.editMessage(editTarget.id, trimmed);
     } catch (err) {
-      Alert.alert('Hata', err?.response?.data?.message || 'Mesaj düzenlenemedi.');
+      // Rollback
+      dispatch(
+        messageEdited({
+          id: editTarget.id,
+          conversationId: editTarget.conversationId,
+          content: prevContent,
+          editedAt: prevEditedAt,
+        }),
+      );
+      Alert.alert(
+        "Hata",
+        err?.response?.data?.message || "Mesaj düzenlenemedi.",
+      );
     }
-    setEditTarget(null);
-    setEditText('');
-  }, [editTarget, editText]);
+  }, [editTarget, editText, dispatch]);
 
-  const handleDelete = useCallback(async (forEveryone) => {
-    if (!actionTarget) return;
-    try {
-      await chatService.deleteMessage(actionTarget.id, forEveryone);
-    } catch (err) {
-      Alert.alert('Hata', err?.response?.data?.message || 'Silme başarısız.');
-    }
-  }, [actionTarget]);
-
-  // Failed optimistic mesaj — tap ile yeniden gönder. State'ten çıkar + handleSend tekrar çağır.
-  const handleRetrySend = useCallback((failedMsg) => {
-    if (!failedMsg?._failed) return;
-    dispatch(removeOptimisticMessage({
-      conversationId,
-      clientMessageId: failedMsg.clientMessageId,
-    }));
-    handleSend({
-      content: failedMsg.content,
-      contentType: failedMsg.contentType,
-      mediaUrl: failedMsg.mediaUrl,
-      replyToMessageId: failedMsg.replyTo?.id,
-      clientMessageId: failedMsg.clientMessageId,
-    });
-  }, [conversationId, dispatch, handleSend]);
-
-  const handleScrollToReplyTarget = useCallback((reply) => {
-    if (!reply?.id) return;
-    const idx = messages.findIndex((m) => m.id === reply.id);
-    if (idx >= 0) {
+  const handleDelete = useCallback(
+    async (message, forEveryone) => {
+      if (!message) return;
+      // Optimistic: hemen sil/redact. SignalR `messageDeleted` event'i geldiğinde
+      // aynı state'i tekrar yazacak — idempotent.
+      const snapshot = {
+        content: message.content,
+        mediaUrl: message.mediaUrl,
+        deletedAt: message.deletedAt ?? null,
+        deletedForEveryone: message.deletedForEveryone ?? false,
+      };
+      dispatch(
+        messageDeleted({
+          messageId: message.id,
+          conversationId: message.conversationId,
+          forEveryone,
+          deletedAt: new Date().toISOString(),
+        }),
+      );
       try {
-        listRef.current?.scrollToIndex({ index: idx, animated: true, viewPosition: 0.5 });
-      } catch {}
-    }
-  }, [messages]);
+        await chatService.deleteMessage(message.id, forEveryone);
+      } catch (err) {
+        // Rollback — orijinal field'ları geri yaz.
+        dispatch(
+          messageEdited({
+            id: message.id,
+            conversationId: message.conversationId,
+            ...snapshot,
+          }),
+        );
+        Alert.alert("Hata", err?.response?.data?.message || "Silme başarısız.");
+      }
+    },
+    [dispatch],
+  );
+
+  const handleRetrySend = useCallback(
+    (failedMsg) => {
+      if (!failedMsg?._failed) return;
+      dispatch(
+        removeOptimisticMessage({
+          conversationId,
+          clientMessageId: failedMsg.clientMessageId,
+        }),
+      );
+      handleSend({
+        content: failedMsg.content,
+        contentType: failedMsg.contentType,
+        mediaUrl: failedMsg.mediaUrl,
+        replyToMessageId: failedMsg.replyTo?.id,
+        clientMessageId: failedMsg.clientMessageId,
+      });
+    },
+    [conversationId, dispatch, handleSend],
+  );
+
+  const handleScrollToReplyTarget = useCallback(
+    (reply) => {
+      if (!reply?.id) return;
+      const idx = messages.findIndex((m) => m.id === reply.id);
+      if (idx >= 0) {
+        try {
+          listRef.current?.scrollToIndex({
+            index: idx,
+            animated: true,
+            viewPosition: 0.5,
+          });
+        } catch {}
+      }
+    },
+    [messages],
+  );
 
   const handleMediaTap = useCallback((url, contentType) => {
     if (!url) return;
-    if (contentType === ContentType.Image) {
-      setImageViewer({ uri: url });
-    }
-    // Video/Voice şimdilik no-op — expo-av ile playback eklenebilir.
+    if (contentType === ContentType.Image) setImageViewer({ uri: url });
   }, []);
 
   const handleUnmatch = useCallback(async () => {
@@ -334,18 +512,17 @@ export default function ChatScreen({ route, navigation }) {
       await chatService.deactivateConversation(conversationId);
       navigation.goBack();
     } catch (err) {
-      Alert.alert('Hata', 'Eşleşme kaldırılamadı.');
+      Alert.alert("Hata", "Eşleşme kaldırılamadı.");
     }
   }, [conversationId, navigation]);
 
   const handleRestore = useCallback(async () => {
     try {
       const ok = await chatService.restoreConversation(conversationId);
-      if (!ok) {
-        Alert.alert('Geri alınamadı', '24 saatlik süre dolmuş olabilir.');
-      }
+      if (!ok)
+        Alert.alert("Geri alınamadı", "24 saatlik süre dolmuş olabilir.");
     } catch (err) {
-      Alert.alert('Hata', 'Geri alma başarısız.');
+      Alert.alert("Hata", "Geri alma başarısız.");
     }
   }, [conversationId]);
 
@@ -353,103 +530,194 @@ export default function ChatScreen({ route, navigation }) {
     if (!partner?.userId) return;
     try {
       await moderationService.blockUser(partner.userId);
-      Alert.alert('Engellendi', 'Bu kişi seninle bir daha iletişim kuramayacak.');
+      Alert.alert(
+        "Engellendi",
+        "Bu kişi seninle bir daha iletişim kuramayacak.",
+      );
       navigation.goBack();
     } catch (err) {
-      Alert.alert('Hata', err?.response?.data?.message || 'Engelleme başarısız.');
+      Alert.alert(
+        "Hata",
+        err?.response?.data?.message || "Engelleme başarısız.",
+      );
     }
   }, [partner?.userId, navigation]);
 
-  const handleSearchSelect = useCallback((msg) => {
-    setSearchOpen(false);
-    // Sonuç mesajı state'te yoksa scrollToIndex çalışmayabilir;
-    // basit yaklaşım: mevcut listede ara; yoksa kullanıcı uyarılır.
-    const idx = messages.findIndex((m) => m.id === msg.id);
-    if (idx >= 0) {
-      setTimeout(() => {
-        try {
-          listRef.current?.scrollToIndex({ index: idx, animated: true, viewPosition: 0.3 });
-        } catch {}
-      }, 300);
-    }
-  }, [messages]);
-
-  // canRestore: sadece kapanmış sohbet + UnmatchedByUserId === self değilse backend
-  // false döner; ama şu an conv list'e UnmatchedByUserId yansımadığı için optimistic
-  // göstereceğiz — backend authoritative.
-  const canRestore = !isActive;
-
-  // Date separator'ları araya iliştir — gün değişimlerinde gösterilir.
-  const messagesWithSeparators = useMemo(
-    () => withDateSeparators(messages),
-    [messages]
+  const handleSearchSelect = useCallback(
+    (msg) => {
+      setSearchOpen(false);
+      const idx = messages.findIndex((m) => m.id === msg.id);
+      if (idx >= 0) {
+        setTimeout(() => {
+          try {
+            listRef.current?.scrollToIndex({
+              index: idx,
+              animated: true,
+              viewPosition: 0.3,
+            });
+          } catch {}
+        }, 300);
+      }
+    },
+    [messages],
   );
 
-  const renderItem = useCallback(({ item }) => {
-    if (item.__separator) {
-      return <DateSeparator label={item.label} />;
-    }
-    return (
-      <MessageBubble
-        message={item}
-        isOwn={item.senderId === myUserId}
-        onLongPress={() => handleLongPressMessage(item)}
-        onReplyTap={handleScrollToReplyTarget}
-        onMediaTap={handleMediaTap}
-        onRetryTap={() => handleRetrySend(item)}
-        i18nResolver={i18nResolver}
-      />
-    );
-  }, [myUserId, handleLongPressMessage, handleScrollToReplyTarget, handleMediaTap]);
+  const canRestore = !isActive;
+  const messagesWithSeparators = useMemo(
+    () => withDateSeparators(messages),
+    [messages],
+  );
+
+  const renderItem = useCallback(
+    ({ item }) => {
+      if (item.__separator) return <DateSeparator label={item.label} />;
+      return (
+        <MessageBubble
+          message={item}
+          isOwn={item.senderId === myUserId}
+          onLongPress={(layout) => handleLongPressMessage(item, layout)}
+          onReplyTap={handleScrollToReplyTarget}
+          onMediaTap={handleMediaTap}
+          onRetryTap={() => handleRetrySend(item)}
+          onReply={handleReply}
+          onEdit={handleEditStart}
+          onDelete={handleDelete}
+          onCopy={handleCopyMessage}
+          onPickReaction={handlePickReaction}
+          i18nResolver={i18nResolver}
+        />
+      );
+    },
+    [
+      myUserId,
+      handleLongPressMessage,
+      handleScrollToReplyTarget,
+      handleMediaTap,
+      handleReply,
+      handleEditStart,
+      handleDelete,
+      handleCopyMessage,
+      handlePickReaction,
+    ],
+  );
+
+  const renderScrollComponent = useCallback(
+    (scrollProps) => <ChatScrollComponent {...scrollProps} />,
+    [],
+  );
+
+  const { colors: headerMaskColors, locations: headerMaskLocations } = useMemo(
+    () =>
+      easeGradient({
+        colorStops: {
+          0: { color: "rgba(0,0,0,0.99)" },
+          0.5: { color: "black" },
+          1: { color: "transparent" },
+        },
+      }),
+    [],
+  );
 
   return (
-    <SafeAreaView edges={['top']} className="flex-1 bg-[#0a0a0a]">
-      <ChatHeader
-        partner={partner}
-        isOnline={presence?.isOnline}
-        isTyping={partnerTyping}
-        onBack={() => navigation.goBack()}
-        onMenu={() => setOptionsOpen(true)}
+    <View className="flex-1 bg-[#0a0a0a]">
+      <View
+        pointerEvents="box-none"
+        style={{
+          position: "absolute",
+          top: 0,
+          left: 0,
+          right: 0,
+          zIndex: 10,
+        }}
+      >
+        <View style={StyleSheet.absoluteFill} pointerEvents="none">
+          <MaskedView
+            maskElement={
+              <LinearGradient
+                locations={headerMaskLocations}
+                colors={headerMaskColors}
+                style={StyleSheet.absoluteFill}
+              />
+            }
+            style={StyleSheet.absoluteFill}
+          >
+            <LinearGradient
+              colors={["black", "rgba(0, 0, 0, 0.2)"]}
+              style={StyleSheet.absoluteFill}
+            />
+            <BlurView
+              intensity={15}
+              tint={
+                Platform.OS === "ios"
+                  ? "systemChromeMaterialDark"
+                  : "systemMaterialDark"
+              }
+              style={StyleSheet.absoluteFill}
+            />
+          </MaskedView>
+        </View>
+
+        <View style={{ paddingTop: insets.top, paddingBottom: 30 }}>
+          <ChatHeader
+            partner={partner}
+            onBack={() => navigation.goBack()}
+            onMenu={() => setOptionsOpen(true)}
+          />
+          <QuotaBanner quota={quota} isPremium={isPremium} />
+        </View>
+      </View>
+
+      <Animated.FlatList
+        ref={listRef}
+        data={messagesWithSeparators}
+        keyExtractor={(m) => m.id}
+        renderItem={renderItem}
+        inverted
+        renderScrollComponent={renderScrollComponent}
+        style={{ flex: 1 }}
+        contentContainerStyle={{
+          flexGrow: 1,
+          paddingBottom: insets.top + HEADER_CONTENT,
+          paddingTop: INPUT_BAR_OPAQUE + insets.bottom,
+        }}
+        keyboardShouldPersistTaps="handled"
+        showsVerticalScrollIndicator={false}
+        scrollEventThrottle={16}
+        removeClippedSubviews
+        maxToRenderPerBatch={10}
+        updateCellsBatchingPeriod={50}
+        initialNumToRender={15}
+        windowSize={10}
+        onEndReached={loadMoreOlder}
+        onEndReachedThreshold={0.5}
+        ListFooterComponent={
+          loadingHistory && messages.length > 0 ? (
+            <View style={{ paddingVertical: 12 }}>
+              <ActivityIndicator size="small" color="#f57656" />
+            </View>
+          ) : null
+        }
+        ListHeaderComponent={
+          partnerTyping ? (
+            <View style={{ paddingHorizontal: 12, paddingVertical: 4 }}>
+              <TypingIndicator />
+            </View>
+          ) : null
+        }
+        ListEmptyComponent={
+          !loadingHistory ? (
+            <ChatEmptyState
+              partnerName={partner?.displayName}
+              isActive={isActive}
+            />
+          ) : null
+        }
       />
 
-      <QuotaBanner quota={quota} onUnlockPress={() => unlockSheetRef.current?.present?.()} />
-
-      <KeyboardAvoidingView
-        style={{ flex: 1 }}
-        behavior={Platform.OS === 'ios' ? 'padding' : undefined}
-        keyboardVerticalOffset={0}
+      <KeyboardStickyView
+        offset={{ closed: 0, opened: insets.bottom }}
+        style={{ position: "absolute", bottom: 0, left: 0, right: 0 }}
       >
-        <FlatList
-          ref={listRef}
-          data={messagesWithSeparators}
-          keyExtractor={(m) => m.id}
-          renderItem={renderItem}
-          inverted
-          contentContainerStyle={{ paddingTop: 8, paddingBottom: 8 }}
-          onEndReached={loadMoreOlder}
-          onEndReachedThreshold={0.5}
-          ListFooterComponent={
-            loadingHistory && messages.length > 0 ? (
-              <View style={{ paddingVertical: 12 }}>
-                <ActivityIndicator size="small" color="#f57656" />
-              </View>
-            ) : null
-          }
-          ListHeaderComponent={
-            partnerTyping ? (
-              <View style={{ paddingHorizontal: 12, paddingVertical: 4 }}>
-                <TypingIndicator />
-              </View>
-            ) : null
-          }
-          ListEmptyComponent={
-            !loadingHistory ? (
-              <ChatEmptyState partnerName={partner?.displayName} isActive={isActive} />
-            ) : null
-          }
-          onScrollToIndexFailed={() => {}}
-        />
-
         <MessageInput
           conversationId={conversationId}
           replyTo={replyTo}
@@ -460,26 +728,34 @@ export default function ChatScreen({ route, navigation }) {
           }}
           onTypingChange={handleTypingChange}
           disabled={!isActive}
+          quotaLocked={
+            !isPremium &&
+            !quota?.bothPremium &&
+            !quota?.isUnlocked &&
+            (quota?.requiresUnlock ||
+              (quota?.remainingMessages != null &&
+                quota.remainingMessages <= 0))
+          }
+          onLockedPress={() => setUnlockVisible(true)}
         />
-      </KeyboardAvoidingView>
+      </KeyboardStickyView>
 
       <MessageActionSheet
         visible={!!actionTarget}
         message={actionTarget}
+        layout={actionLayout}
         isOwn={actionTarget?.senderId === myUserId}
         onClose={() => setActionTarget(null)}
-        onPickReaction={handlePickReaction}
-        onReply={handleReply}
-        onEdit={handleEditStart}
-        onDelete={handleDelete}
+        onPickReaction={(emoji) => handlePickReaction(actionTarget, emoji)}
+        onReply={() => handleReply(actionTarget)}
+        onEdit={() => handleEditStart(actionTarget)}
+        onDelete={(forEveryone) => handleDelete(actionTarget, forEveryone)}
       />
-
       <ImageViewer
         visible={!!imageViewer}
         uri={imageViewer?.uri}
         onClose={() => setImageViewer(null)}
       />
-
       <ConversationOptionsSheet
         visible={optionsOpen}
         onClose={() => setOptionsOpen(false)}
@@ -491,21 +767,18 @@ export default function ChatScreen({ route, navigation }) {
         onReport={() => setReportOpen(true)}
         onBlock={handleBlock}
       />
-
       <ReportModal
         visible={reportOpen}
         onClose={() => setReportOpen(false)}
         reportedUserId={partner?.userId}
         conversationId={conversationId}
       />
-
       <SearchSheet
         visible={searchOpen}
         conversationId={conversationId}
         onClose={() => setSearchOpen(false)}
         onSelect={handleSearchSelect}
       />
-
       <EditMessageModal
         target={editTarget}
         text={editText}
@@ -513,42 +786,43 @@ export default function ChatScreen({ route, navigation }) {
         onCancel={() => setEditTarget(null)}
         onSave={handleEditSave}
       />
-
-      {/* FAZ 6: chat economy paywall — consumable Chat Unlock satın alma */}
       <ChatUnlockSheet
-        bottomSheetRef={unlockSheetRef}
+        visible={unlockVisible}
         conversationId={conversationId}
-        onClose={() => unlockSheetRef.current?.dismiss?.()}
+        onClose={() => setUnlockVisible(false)}
       />
-    </SafeAreaView>
+    </View>
   );
 }
 
-// FAZ 6: chat quota status banner. Sadece bilgi-değeri olan durumlarda görünür:
-//   - exhausted → CTA tıklanabilir bar
-//   - <= 10 mesaj kaldı → uyarı banner'ı
-//   - unlocked → küçük "Sınırsız" rozeti (kullanıcı satın aldığını görsün)
-//   - Both-premium / loading / plenty-left → render etme (UI temiz kalsın)
-function QuotaBanner({ quota, onUnlockPress }) {
-  if (!quota) return null;
-  if (quota.bothPremium) return null;
+function QuotaBanner({ quota, isPremium }) {
+  if (!quota && !isPremium) return null;
+  if (quota?.bothPremium) return null;
 
-  if (quota.isUnlocked) {
+  // FE-side override: kullanıcı premium ise quota banner'ı "Sınırsız" göster, sınır
+  // banner'ını gösterme. Backend webhook gecikmesinde bayat quota cache "limit reached"
+  // gösteriyordu; isPremium /sync ile zaten doğrulanmış olduğu için güvenli.
+  if (isPremium || quota?.isUnlocked) {
     return (
       <View
         style={{
-          flexDirection: 'row',
-          alignItems: 'center',
+          flexDirection: "row",
+          alignItems: "center",
           gap: 6,
           paddingHorizontal: 16,
           paddingVertical: 8,
-          backgroundColor: 'rgba(52,211,153,0.08)',
+          backgroundColor: "rgba(52,211,153,0.08)",
           borderBottomWidth: 0.5,
-          borderBottomColor: 'rgba(255,255,255,0.05)',
+          borderBottomColor: "rgba(255,255,255,0.05)",
         }}
       >
-        <InfinityIcon size={14} color="#34d399" strokeWidth={2} pointerEvents="none" />
-        <Text style={{ color: '#34d399', fontSize: 12, fontWeight: '600' }}>
+        <InfinityIcon
+          size={14}
+          color="#34d399"
+          strokeWidth={2}
+          pointerEvents="none"
+        />
+        <Text style={{ color: "#34d399", fontSize: 12, fontWeight: "600" }}>
           Sınırsız sohbet
         </Text>
       </View>
@@ -556,35 +830,12 @@ function QuotaBanner({ quota, onUnlockPress }) {
   }
 
   const remaining = quota.remainingMessages;
-  if (remaining == null) return null; // unlimited (premium-premium / unlocked zaten yukarıda yakalandı)
+  if (remaining == null) return null;
 
+  // Limit dolduğunda banner gösterme — input içinde lock + placeholder hint'i
+  // (MessageInput.quotaLocked) artık bu durumu üstleniyor.
   if (remaining <= 0 || quota.requiresUnlock) {
-    return (
-      <TouchableOpacity
-        onPress={onUnlockPress}
-        activeOpacity={0.85}
-        style={{
-          flexDirection: 'row',
-          alignItems: 'center',
-          justifyContent: 'space-between',
-          paddingHorizontal: 16,
-          paddingVertical: 10,
-          backgroundColor: 'rgba(252,69,38,0.12)',
-          borderBottomWidth: 0.5,
-          borderBottomColor: 'rgba(252,69,38,0.3)',
-        }}
-      >
-        <View style={{ flexDirection: 'row', alignItems: 'center', gap: 8 }}>
-          <Lock size={14} color="#fc4526" strokeWidth={2} pointerEvents="none" />
-          <Text style={{ color: '#fc4526', fontSize: 13, fontWeight: '700' }}>
-            Mesaj sınırına ulaştın
-          </Text>
-        </View>
-        <Text style={{ color: '#fc4526', fontSize: 12, fontWeight: '600' }}>
-          Sohbeti Aç →
-        </Text>
-      </TouchableOpacity>
-    );
+    return null;
   }
 
   if (remaining <= 10) {
@@ -593,66 +844,161 @@ function QuotaBanner({ quota, onUnlockPress }) {
         style={{
           paddingHorizontal: 16,
           paddingVertical: 8,
-          backgroundColor: 'rgba(245,118,86,0.08)',
+          backgroundColor: "rgba(245,118,86,0.08)",
           borderBottomWidth: 0.5,
-          borderBottomColor: 'rgba(255,255,255,0.05)',
+          borderBottomColor: "rgba(255,255,255,0.05)",
         }}
       >
-        <Text style={{ color: '#f57656', fontSize: 12, fontWeight: '600' }}>
-          {remaining} mesaj hakkın kaldı — ikiniz Premium olursanız sınırsız olur
+        <Text style={{ color: "#f57656", fontSize: 12, fontWeight: "600" }}>
+          {remaining} mesaj hakkın kaldı — ikiniz Premium olursanız sınırsız
+          olur
         </Text>
       </View>
     );
   }
-
-  // Çok mesaj kaldı (10+) — UI'yı kalabalık etme.
   return null;
 }
 
-function ChatHeader({ partner, isOnline, isTyping, onBack, onMenu }) {
-  const subtitle = isTyping ? 'yazıyor…' : isOnline ? 'çevrimiçi' : 'çevrimdışı';
+function ChatHeader({ partner, onBack, onMenu }) {
+  const displayName = partner?.displayName || "Kullanıcı";
   return (
-    <View className="flex-row items-center px-3 py-2 border-b border-[#1a1a1a]">
-      <TouchableOpacity onPress={onBack} hitSlop={10} className="p-2 mr-1">
-        <ChevronLeft size={26} color="#fff" />
-      </TouchableOpacity>
-
-      {partner?.profileImageUrl ? (
-        <Image
-          source={{ uri: partner.profileImageUrl }}
-          style={{ width: 38, height: 38, borderRadius: 19 }}
-        />
-      ) : (
-        <View
-          style={{
-            width: 38,
-            height: 38,
-            borderRadius: 19,
-            backgroundColor: '#262626',
-            alignItems: 'center',
-            justifyContent: 'center',
-          }}
-        >
-          <Text className="text-white font-bold">
-            {(partner?.displayName || '?').charAt(0).toUpperCase()}
-          </Text>
-        </View>
-      )}
-
-      <View className="flex-1 ml-3">
-        <Text className="text-white text-base font-semibold" numberOfLines={1}>
-          {partner?.displayName || 'Kullanıcı'}
-        </Text>
-        <Text
-          className={`text-xs ${isTyping ? 'text-[#f57656]' : isOnline ? 'text-[#34d399]' : 'text-gray-500'}`}
-        >
-          {subtitle}
-        </Text>
+    <View
+      style={{
+        position: "relative",
+        flexDirection: "row",
+        alignItems: "center",
+        justifyContent: "center",
+        paddingHorizontal: 12,
+        paddingVertical: 8,
+        minHeight: 88,
+      }}
+    >
+      <View
+        style={{
+          position: "absolute",
+          left: 24,
+          top: 8,
+        }}
+      >
+        {Platform.OS === "ios" ? (
+          <Host matchContents>
+            <SwiftUIButton
+              label="Geri"
+              systemImage="chevron.left"
+              onPress={onBack}
+              modifiers={[
+                buttonStyle("glass"),
+                tint("#ffffff"),
+                controlSize("large"),
+                labelStyle("iconOnly"),
+                font({ size: 22, weight: "semibold" }),
+                frame({ width: 44, height: 44 }),
+              ]}
+            />
+          </Host>
+        ) : (
+          <TouchableOpacity onPress={onBack} hitSlop={10} className="p-2">
+            <ChevronLeft size={26} color="#fff" />
+          </TouchableOpacity>
+        )}
       </View>
 
-      <TouchableOpacity hitSlop={10} className="p-2" onPress={onMenu}>
-        <MoreVertical size={22} color="#9ca3af" />
-      </TouchableOpacity>
+      <View style={{ alignItems: "center", maxWidth: "60%" }}>
+        {partner?.profileImageUrl ? (
+          <Image
+            source={{ uri: partner.profileImageUrl }}
+            style={{ width: 65, height: 65, borderRadius: 999 }}
+          />
+        ) : (
+          <View
+            style={{
+              width: 65,
+              height: 65,
+              borderRadius: 22,
+              backgroundColor: "#262626",
+              alignItems: "center",
+              justifyContent: "center",
+            }}
+          >
+            <Text className="text-white font-bold">
+              {displayName.charAt(0).toUpperCase()}
+            </Text>
+          </View>
+        )}
+
+        <View style={{ marginTop: 6 }}>
+          {Platform.OS === "ios" ? (
+            <Host matchContents>
+              <SwiftUIText
+                modifiers={[
+                  padding({ horizontal: 10, vertical: 4 }),
+                  glassEffect({
+                    glass: { variant: "regular" },
+                    shape: "capsule",
+                  }),
+                  foregroundStyle("#ffffff"),
+                  font({ size: 13, weight: "semibold" }),
+                ]}
+              >
+                {displayName}
+              </SwiftUIText>
+            </Host>
+          ) : (
+            <BlurView
+              intensity={50}
+              tint="dark"
+              style={{
+                borderRadius: 999,
+                overflow: "hidden",
+                paddingHorizontal: 12,
+                paddingVertical: 4,
+              }}
+            >
+              <Text
+                numberOfLines={1}
+                style={{
+                  color: "#fff",
+                  fontSize: 13,
+                  fontWeight: "600",
+                  maxWidth: 140,
+                }}
+              >
+                {displayName}
+              </Text>
+            </BlurView>
+          )}
+        </View>
+      </View>
+
+      <View
+        style={{
+          position: "absolute",
+          right: 24,
+          top: 8,
+        }}
+      >
+        {Platform.OS === "ios" ? (
+          <Host matchContents>
+            <SwiftUIButton
+              label="Menü"
+              systemImage="ellipsis"
+              onPress={onMenu}
+              modifiers={[
+                buttonStyle("glass"),
+                controlSize("large"),
+                tint("#ffffff"),
+                labelStyle("iconOnly"),
+                font({ size: 20, weight: "semibold" }),
+                frame({ width: 44, height: 44 }),
+              ]}
+            />
+          </Host>
+        ) : (
+          <TouchableOpacity hitSlop={10} className="p-2" onPress={onMenu}>
+            <MoreVertical size={22} color="#9ca3af" />
+          </TouchableOpacity>
+        )}
+      </View>
     </View>
   );
 }
@@ -665,14 +1011,16 @@ function EditMessageModal({ target, text, onChangeText, onCancel, onSave }) {
         onPress={onCancel}
         style={{
           flex: 1,
-          backgroundColor: 'rgba(0,0,0,0.6)',
-          justifyContent: 'center',
+          backgroundColor: "rgba(0,0,0,0.6)",
+          justifyContent: "center",
           paddingHorizontal: 24,
         }}
       >
         <Pressable onPress={() => {}} className="bg-[#1f1f1f] rounded-2xl p-4">
           <View className="flex-row items-center justify-between mb-3">
-            <Text className="text-white font-semibold text-base">Mesajı düzenle</Text>
+            <Text className="text-white font-semibold text-base">
+              Mesajı düzenle
+            </Text>
             <TouchableOpacity onPress={onCancel} hitSlop={6}>
               <X size={20} color="#9ca3af" />
             </TouchableOpacity>
@@ -684,7 +1032,7 @@ function EditMessageModal({ target, text, onChangeText, onCancel, onSave }) {
             autoFocus
             maxLength={2000}
             className="text-white text-base bg-[#0a0a0a] rounded-xl p-3"
-            style={{ minHeight: 80, maxHeight: 160, textAlignVertical: 'top' }}
+            style={{ minHeight: 80, maxHeight: 160, textAlignVertical: "top" }}
             placeholderTextColor="#6b7280"
           />
           <Text className="text-gray-500 text-xs mt-2">
@@ -697,7 +1045,7 @@ function EditMessageModal({ target, text, onChangeText, onCancel, onSave }) {
             <TouchableOpacity
               onPress={onSave}
               className="px-4 py-2 rounded-full"
-              style={{ backgroundColor: '#f57656' }}
+              style={{ backgroundColor: "#f57656" }}
             >
               <Text className="text-white font-semibold">Kaydet</Text>
             </TouchableOpacity>
@@ -715,21 +1063,19 @@ function buildReplyPreview(messages, replyToId) {
     id: original.id,
     senderId: original.senderId,
     senderDisplayName: original.senderDisplayName,
-    contentPreview: (original.content || '').slice(0, 120),
+    contentPreview: (original.content || "").slice(0, 120),
     contentType: original.contentType ?? 0,
     isDeleted: !!original.deletedAt,
   };
 }
 
-// Inverted FlatList — empty state yatayda alta düşer; ortalayan wrapper.
 function ChatEmptyState({ partnerName, isActive }) {
   return (
     <View
       style={{
-        // Inverted için transform — empty state yukarı dönmesin.
         transform: [{ scaleY: -1 }],
-        alignItems: 'center',
-        justifyContent: 'center',
+        alignItems: "center",
+        justifyContent: "center",
         paddingVertical: 60,
         paddingHorizontal: 32,
       }}
@@ -737,13 +1083,13 @@ function ChatEmptyState({ partnerName, isActive }) {
       <Text style={{ fontSize: 36, marginBottom: 12 }}>👋</Text>
       <Text className="text-white text-lg font-bold text-center">
         {isActive
-          ? `${partnerName || 'Yeni eşleşmen'} ile sohbete başla`
-          : 'Bu sohbet kapalı'}
+          ? `${partnerName || "Yeni eşleşmen"} ile sohbete başla`
+          : "Bu sohbet kapalı"}
       </Text>
       <Text className="text-gray-400 text-sm text-center mt-2">
         {isActive
-          ? 'İlk mesajı sen at — gerisini doğal akışına bırak.'
-          : 'Geçmiş mesajları görüntüleyebilirsin.'}
+          ? "İlk mesajı sen at — gerisini doğal akışına bırak."
+          : "Geçmiş mesajları görüntüleyebilirsin."}
       </Text>
     </View>
   );

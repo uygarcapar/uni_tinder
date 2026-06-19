@@ -1,33 +1,24 @@
-import { useCallback, useMemo } from "react";
+import { useCallback } from "react";
 import { View, Text, TouchableOpacity } from "react-native";
-import { BottomSheetModal, BottomSheetView } from "@gorhom/bottom-sheet";
+import { BottomSheetView } from "@gorhom/bottom-sheet";
 import { LinearGradient } from "expo-linear-gradient";
-import { Heart, Star } from "lucide-react-native";
+import { Heart } from "lucide-react-native";
 import BlurBottomSheetBackdrop from "./BlurBottomSheetBackdrop";
+import AppBottomSheet from "./AppBottomSheet";
 
-export default function SuperLikePurchaseModal({
-  bottomSheetRef,
-  onClose,
-  onUpgrade,
-}) {
-  const snapPoints = useMemo(() => ["55%"], []);
+export default function SuperLikePurchaseModal({ visible, onClose, onUpgrade }) {
   const renderBackdrop = useCallback(
     (props) => <BlurBottomSheetBackdrop {...props} onPress={onClose} />,
     [onClose],
   );
 
   return (
-    <BottomSheetModal
-      ref={bottomSheetRef}
-      snapPoints={snapPoints}
-      enablePanDownToClose
+    <AppBottomSheet
+      visible={visible}
+      snapPoints={["55%"]}
+      onClose={onClose}
       backdropComponent={renderBackdrop}
-      backgroundStyle={{
-        backgroundColor: "#121212",
-        borderTopLeftRadius: 42,
-        borderTopRightRadius: 42,
-      }}
-      handleIndicatorStyle={{ backgroundColor: "rgba(255,255,255,0.3)" }}
+      backgroundStyle={{ borderTopLeftRadius: 42, borderTopRightRadius: 42 }}
     >
       <BottomSheetView
         style={{
@@ -121,6 +112,6 @@ export default function SuperLikePurchaseModal({
           </Text>
         </TouchableOpacity>
       </BottomSheetView>
-    </BottomSheetModal>
+    </AppBottomSheet>
   );
 }
