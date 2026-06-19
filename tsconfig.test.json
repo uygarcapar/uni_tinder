@@ -1,0 +1,17 @@
+{
+  "extends": "./tsconfig.json",
+  "compilerOptions": {
+    "types": ["jest"],
+    "noEmit": true
+  },
+  "include": [
+    "nativewind-env.d.ts",
+    "jest.setup.ts",
+    "src/**/*.test.ts",
+    "src/**/*.test.tsx",
+    "src/__mocks__/**/*.ts",
+    "src/__mocks__/**/*.tsx",
+    "src/shared/components/__mocks__/**/*.ts",
+    "src/shared/components/__mocks__/**/*.tsx"
+  ]
+}
