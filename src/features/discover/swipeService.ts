@@ -1,6 +1,6 @@
 import api from '@/shared/services/api';
 import { API_ENDPOINTS } from '@/shared/constants/api';
-import type { PotentialMatch } from '../types';
+import type { PotentialMatch } from '@/shared/types';
 
 interface PotentialMatchesResponse {
   profiles: PotentialMatch[];

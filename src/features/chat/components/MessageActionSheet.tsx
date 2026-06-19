@@ -68,7 +68,7 @@ export default function MessageActionSheet({
     transform: [
       { translateY: (1 - progress.value) * 12 },
       { scale: 0.85 + progress.value * 0.15 },
-    ],
+    ] as any,
   }));
 
   const actionsAnimStyle = useAnimatedStyle(() => ({
@@ -76,7 +76,7 @@ export default function MessageActionSheet({
     transform: [
       { translateY: (1 - progress.value) * -8 },
       { scale: 0.95 + progress.value * 0.05 },
-    ],
+    ] as any,
   }));
 
   if (!message) return null;

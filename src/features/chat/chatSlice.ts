@@ -6,7 +6,7 @@ import type {
   ConversationListItemDto,
   MessageBucket,
   ChatQuotaStatus,
-} from '../../types';
+} from '@/shared/types';
 
 export const fetchConversations = createAsyncThunk(
   'chat/fetchConversations',

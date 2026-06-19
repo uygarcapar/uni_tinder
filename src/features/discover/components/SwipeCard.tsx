@@ -813,13 +813,13 @@ export default function SwipeCard({
                     style={{ flex: 1 }}
                     maskElement={
                       <LinearGradient
-                        {...easeGradient({
+                        {...(easeGradient({
                           colorStops: {
                             0: { color: "transparent" },
                             0.5: { color: "black" },
                             1: { color: "rgba(0,0,0,0.99)" },
                           },
-                        })}
+                        }) as any)}
                         style={StyleSheet.absoluteFill}
                       />
                     }

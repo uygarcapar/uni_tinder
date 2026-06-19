@@ -2,7 +2,7 @@ import { createSlice, createAsyncThunk, PayloadAction } from "@reduxjs/toolkit";
 import api from "@/shared/services/api";
 import { API_ENDPOINTS } from "@/shared/constants/api";
 import { getRevenueCatPremiumStatus } from "@/features/profile/subscriptionService";
-import type { SubscriptionState } from "../../types";
+import type { SubscriptionState } from "@/shared/types";
 
 interface NormalizedStatus {
   isPremium: boolean;

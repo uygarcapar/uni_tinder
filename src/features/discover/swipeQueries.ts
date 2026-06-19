@@ -10,8 +10,8 @@ import api from "@/shared/services/api";
 import { API_ENDPOINTS } from "@/shared/constants/api";
 import swipeService from "@/features/discover/swipeService";
 import uiBus from "@/shared/services/uiBus";
-import type { RootState } from "../store";
-import type { SwipeStats } from "../types";
+import type { RootState } from "@/shared/store";
+import type { SwipeStats } from "@/shared/types";
 
 export const swipeKeys = {
   matches: ["swipe", "matches"] as const,

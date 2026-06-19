@@ -11,8 +11,8 @@ const mockPlayer = {
   playing: false,
 };
 
-const mockCreateAudioPlayer = jest.fn(() => mockPlayer);
-const mockSetAudioModeAsync = jest.fn(() => Promise.resolve());
+const mockCreateAudioPlayer = jest.fn((..._args: any[]) => mockPlayer);
+const mockSetAudioModeAsync = jest.fn((..._args: any[]) => Promise.resolve());
 
 jest.mock('expo-audio', () => ({
   createAudioPlayer: (...args: any[]) => mockCreateAudioPlayer(...args),

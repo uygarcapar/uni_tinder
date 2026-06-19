@@ -1,7 +1,7 @@
 import { createSlice, createAsyncThunk, PayloadAction } from "@reduxjs/toolkit";
 import axios from "axios";
 import { API_BASE_URL, API_ENDPOINTS } from "@/shared/constants/api";
-import type { ProfileState } from "../../types";
+import type { ProfileState } from "@/shared/types";
 
 // Expo SDK 56'nın winter fetch'i RN'in klasik {uri,name,type} FormData pattern'ini
 // desteklemiyor → "Unsupported FormDataPart implementation" fırlatıyor.

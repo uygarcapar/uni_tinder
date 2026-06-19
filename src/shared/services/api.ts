@@ -170,4 +170,18 @@ api.interceptors.response.use(
   }
 );
 
-export default api;
+// Response interceptor (yukarıda) tüm başarılı çağrılarda `response.data` döner —
+// yani çağıranlar AxiosResponse değil, doğrudan backend payload'ını alır. Default
+// axios tipleri bunu bilmediği için her call site'ta `.result` / `.isSuccess` gibi
+// alanlar TS hatası veriyordu. Burada wrapper tipiyle bu unwrap'i compile-time'a
+// taşıyoruz.
+type ApiClient = {
+  get<T = any>(url: string, config?: AxiosRequestConfig): Promise<T>;
+  post<T = any>(url: string, data?: any, config?: AxiosRequestConfig): Promise<T>;
+  put<T = any>(url: string, data?: any, config?: AxiosRequestConfig): Promise<T>;
+  patch<T = any>(url: string, data?: any, config?: AxiosRequestConfig): Promise<T>;
+  delete<T = any>(url: string, config?: AxiosRequestConfig): Promise<T>;
+  interceptors: typeof api.interceptors;
+};
+
+export default api as unknown as ApiClient;

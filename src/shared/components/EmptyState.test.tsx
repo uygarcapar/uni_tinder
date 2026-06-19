@@ -23,7 +23,7 @@ describe('EmptyState', () => {
   });
 
   it('forwards iconSize/iconColor/iconStrokeWidth to the Icon', () => {
-    const Icon = jest.fn(() => null);
+    const Icon = jest.fn((_props: any) => null);
     render(
       <EmptyState
         text="x"

@@ -1,6 +1,6 @@
 import { createSlice, createAsyncThunk, PayloadAction } from "@reduxjs/toolkit";
 import swipeService from "@/features/discover/swipeService";
-import type { SwipeState, SwipeStats } from "../../types";
+import type { SwipeState, SwipeStats } from "@/shared/types";
 
 export const fetchPotentialMatches = createAsyncThunk(
   "swipe/fetchPotentialMatches",

@@ -39,7 +39,7 @@ export default function SwipeOverlay({ dragX, opacity }: any) {
 
     return {
       opacity: baseOpacity * opacity.value,
-      transform: [{ translateX }, { scale }],
+      transform: [{ translateX }, { scale }] as any,
     };
   });
 
@@ -69,7 +69,7 @@ export default function SwipeOverlay({ dragX, opacity }: any) {
 
     return {
       opacity: baseOpacity * opacity.value,
-      transform: [{ translateX }, { scale }],
+      transform: [{ translateX }, { scale }] as any,
     };
   });
 

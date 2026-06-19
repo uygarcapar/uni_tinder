@@ -96,7 +96,7 @@ export default function ChatUnlockSheet({
 
       // Backend'e receipt redeem (idempotent, transactionId UNIQUE). Webhook race olabilir
       // → backend 402 dönerse birkaç saniye sonra retry yap.
-      const result = await dispatch(
+      const result: any = await dispatch(
         redeemChatUnlock({ conversationId, transactionId })
       );
 

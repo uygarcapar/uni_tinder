@@ -86,7 +86,7 @@ export default function ScreenHeader({
     transform: [
       { translateY: -20 * triggered.value },
       { scale: 1 + 0.12 * triggered.value },
-    ],
+    ] as any,
   }));
 
   const logoBlurProps = useAnimatedProps(() => ({
@@ -128,8 +128,8 @@ export default function ScreenHeader({
         <MaskedView
           maskElement={
             <LinearGradient
-              locations={locations}
-              colors={colors}
+              locations={locations as any}
+              colors={colors as any}
               style={StyleSheet.absoluteFill}
             />
           }

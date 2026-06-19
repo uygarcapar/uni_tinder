@@ -45,7 +45,7 @@ export function dateLabel(iso) {
     now.getDate(),
   );
   const startOfDay = new Date(d.getFullYear(), d.getMonth(), d.getDate());
-  const diffDays = Math.floor((startOfToday - startOfDay) / 86400000);
+  const diffDays = Math.floor((startOfToday.getTime() - startOfDay.getTime()) / 86400000);
 
   if (diffDays === 0) return "Bugün";
   if (diffDays === 1) return "Dün";

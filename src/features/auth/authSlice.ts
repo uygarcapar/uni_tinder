@@ -4,7 +4,7 @@ import { clearProfile } from '@/features/profile/profileSlice';
 import { saveAccessToken, saveRefreshToken } from '@/shared/utils/tokenStorage';
 import { setCurrentAccessToken } from '@/shared/services/api';
 import { unregisterPushToken } from '@/features/notifications/pushService';
-import type { AuthState, User } from '../../types';
+import type { AuthState, User } from '@/shared/types';
 
 export const fetchUserData = createAsyncThunk(
   'auth/fetchUserData',

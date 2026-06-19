@@ -314,7 +314,7 @@ export default function PurchaseModal({ visible, onClose, onSuccess }: any) {
   // arka planda invalidate et (backend sync olduktan sonra fresh data
   // gelir).
   const promoteSwipeStatsToPremium = () => {
-    queryClient.setQueryData(swipeKeys.stats, (prev) => {
+    queryClient.setQueryData(swipeKeys.stats, (prev: any) => {
       if (!prev) return prev;
       return {
         ...prev,
@@ -417,7 +417,7 @@ export default function PurchaseModal({ visible, onClose, onSuccess }: any) {
     [handleClose],
   );
 
-  const handlePurchase = async (planOverride) => {
+  const handlePurchase = async (planOverride?: any) => {
     const plan = planOverride ?? selectedPlan;
     const pkg = plan?.pkg;
     if (!pkg) {

@@ -44,7 +44,7 @@ export default function ReportModal({
     try {
       await moderationService.reportUser({
         reportedUserId,
-        reason: r,
+        reason: r as any,
         description: d?.trim() || undefined,
         conversationId,
         messageId,

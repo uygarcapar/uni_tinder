@@ -14,9 +14,8 @@ export default function DeletionBanner() {
 
   useEffect(() => {
     let cancelled = false;
-    (api.get(API_ENDPOINTS.PRIVACY_DELETION_STATUS) as unknown as Promise<{
-      result?: { isDeletionScheduled?: boolean; deletionDate?: string | null };
-    }>)
+    api
+      .get(API_ENDPOINTS.PRIVACY_DELETION_STATUS)
       .then((res) => {
         if (cancelled) return;
         if (res.result?.isDeletionScheduled) {
