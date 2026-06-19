@@ -1,5 +1,13 @@
 import React, { useEffect, useMemo, useState } from "react";
-import { View, Text, Image, Dimensions, TouchableOpacity } from "react-native";
+import {
+  View,
+  Text,
+  Image,
+  Dimensions,
+  TouchableOpacity,
+  StyleSheet,
+  Platform,
+} from "react-native";
 import { buildMapboxStaticUrl } from "../constants/mapbox";
 import Animated, {
   useAnimatedScrollHandler,
@@ -11,6 +19,7 @@ import Animated, {
   Easing,
 } from "react-native-reanimated";
 import { Gesture, GestureDetector } from "react-native-gesture-handler";
+import { useSafeAreaInsets } from "react-native-safe-area-context";
 
 // Native gesture varsa GestureDetector ile sarar (SwipeWrapper ile simultaneous için);
 // yoksa (PreviewModal gibi standalone kullanımlarda) düz render eder.
@@ -84,13 +93,15 @@ import {
   ChevronDown,
   Pen,
   ArrowDown,
+  PawPrint,
+  Wind,
 } from "lucide-react-native";
 import { LinearGradient } from "expo-linear-gradient";
 import { BlurView } from "expo-blur";
 import MaskedView from "@react-native-masked-view/masked-view";
+import { easeGradient } from "react-native-easing-gradient";
 import Svg, { Defs, RadialGradient, Stop, Rect } from "react-native-svg";
 import { getColors } from "react-native-image-colors";
-
 const { width, height } = Dimensions.get("window");
 const CARD_HEIGHT = height - 200;
 const SCREEN_HEIGHT = height - 188; // Header height (90px) çıkarıldı
@@ -419,6 +430,17 @@ const getHobbyIcon = (hobbyName) => {
   return iconMap[hobbyName] || Heart;
 };
 
+// usagePurposeDisplay → ikon eşlemesi (EditProfileForm PURPOSE_META ile aynı).
+const getPurposeIcon = (purposeName) => {
+  const map = {
+    Flört: Sparkles,
+    Arkadaşlık: Users,
+    Network: Briefcase,
+    Öylesine: Wind,
+  };
+  return map[purposeName] || Target;
+};
+
 export default function SwipeCard({
   profile,
   hideActions = false,
@@ -434,6 +456,7 @@ export default function SwipeCard({
   superLikeDisabled = false,
   superLikesRemaining,
 }) {
+  const insets = useSafeAreaInsets();
   const [isFilled, setIsFilled] = useState(false);
   const [currentPhotoIndex, setCurrentPhotoIndex] = useState(0);
   const [loadedPhotos, setLoadedPhotos] = useState(
@@ -529,9 +552,11 @@ export default function SwipeCard({
     transform: [{ rotate: `${180 * expandAnim.value}deg` }],
   }));
 
-  // Foto bottom blur — çekme oranına göre yavaşça kaybolur.
+  // Foto bottom blur — çekme oranına göre yavaşça kaybolur. Spring overshoot
+  // expandAnim'i geçici olarak >1 yapabiliyor → negatif opacity'yi engellemek
+  // için Math.max ile clamp.
   const bottomBlurAnimStyle = useAnimatedStyle(() => ({
-    opacity: 1 - expandAnim.value,
+    opacity: Math.max(0, Math.min(1, 1 - expandAnim.value)),
   }));
 
   // İlk fotodan dominant rengi çıkar — Spotify-tarzı bg gradient için.
@@ -766,13 +791,17 @@ export default function SwipeCard({
                   <BlurView intensity={90} tint="dark" style={{ flex: 1 }} />
                 </MaskedView>
 
-                {/* Bottom Blur Gradient Overlay — çekme oranıyla fade out */}
+                {/* Bottom Blur Gradient Overlay — çekme oranıyla fade out.
+                    Pozisyon `bottom:0` yerine `top: photoHeight - 330` ile
+                    sabit absolute koordinat — collapse anında parent height
+                    transient bir frame için değişse bile blur'un foto bottom'una
+                    yapışık kalır, ekran altına düşmez. */}
                 <Animated.View
                   pointerEvents="none"
                   style={[
                     {
                       position: "absolute",
-                      bottom: 0,
+                      top: Math.max(0, photoHeight - 270),
                       left: 0,
                       right: 0,
                       height: 330,
@@ -784,98 +813,104 @@ export default function SwipeCard({
                     style={{ flex: 1 }}
                     maskElement={
                       <LinearGradient
-                        colors={[
-                          "transparent",
-                          "rgba(0,0,0,0.6)",
-                          "rgba(0,0,0,1)",
-                        ]}
-                        locations={[0, 0.6, 1]}
-                        style={{ flex: 1 }}
+                        {...easeGradient({
+                          colorStops: {
+                            0: { color: "transparent" },
+                            0.5: { color: "black" },
+                            1: { color: "rgba(0,0,0,0.99)" },
+                          },
+                        })}
+                        style={StyleSheet.absoluteFill}
                       />
                     }
                   >
-                    <BlurView intensity={90} tint="dark" style={{ flex: 1 }} />
+                    <LinearGradient
+                      colors={["rgba(0,0,0,0.1)", "rgba(0,0,0,0.45)"]}
+                      style={StyleSheet.absoluteFill}
+                    />
+                    <BlurView
+                      intensity={15}
+                      tint={
+                        Platform.OS === "ios"
+                          ? "systemChromeMaterialDark"
+                          : "systemMaterialDark"
+                      }
+                      style={StyleSheet.absoluteFill}
+                    />
                   </MaskedView>
                 </Animated.View>
 
-                {/* Super Like Button (heart) - hidden in preview mode */}
+                {/* Super Like Button — sadece Lucide Heart icon (eski hali). */}
                 {!hideActions && (
                   <View className="absolute top-6 right-6">
                     <TouchableOpacity
-                      activeOpacity={0.9}
+                      activeOpacity={0.8}
                       onPress={() => {
-                        // Kota yoksa fill'leme — parent modal'ı açacak.
                         if (!superLikeDisabled) setIsFilled(true);
                         onSuperLike?.();
                       }}
+                      hitSlop={12}
                     >
-                      <View
-                        className="flex items-center justify-center"
-                        style={{
-                          borderRadius: 9999,
-                          width: 56,
-                          height: 56,
-                          overflow: "hidden",
-                        }}
-                      >
-                        <View
+                      <View style={{ width: 35, height: 35 }}>
+                        <Heart
+                          size={35}
+                          color="#fff"
+                          strokeWidth={1.5}
+                          fill={isFilled ? "#fff" : "transparent"}
+                        />
+                        {/* Pull-down progressive fill */}
+                        <Animated.View
                           pointerEvents="none"
-                          style={{ width: 35, height: 35 }}
+                          style={[
+                            {
+                              position: "absolute",
+                              top: 0,
+                              left: 0,
+                              right: 0,
+                              bottom: 0,
+                            },
+                            heartFillStyle,
+                          ]}
                         >
                           <Heart
                             size={35}
                             color="#fff"
                             strokeWidth={1.5}
-                            fill={isFilled ? "#fff" : "transparent"}
+                            fill="#fff"
                           />
-                          <Animated.View
-                            pointerEvents="none"
-                            style={[
-                              {
+                        </Animated.View>
+                        {typeof superLikesRemaining === "number" &&
+                          superLikesRemaining >= 0 && (
+                            <View
+                              pointerEvents="none"
+                              style={{
                                 position: "absolute",
-                                top: 0,
-                                left: 0,
-                                right: 0,
-                                bottom: 0,
-                              },
-                              heartFillStyle,
-                            ]}
-                          >
-                            <Heart
-                              size={35}
-                              color="#fff"
-                              strokeWidth={1.5}
-                              fill="#fff"
-                            />
-                          </Animated.View>
-                          {typeof superLikesRemaining === "number" &&
-                            superLikesRemaining >= 0 && (
-                              <View
-                                pointerEvents="none"
+                                top: -6,
+                                right: -10,
+                                minWidth: 18,
+                                height: 18,
+                                borderRadius: 9,
+                                borderCurve: "continuous",
+                                backgroundColor: "rgba(0,0,0,0.6)",
+                                borderWidth: 0.5,
+                                borderColor: "rgba(255,255,255,0.3)",
+                                alignItems: "center",
+                                justifyContent: "center",
+                                paddingHorizontal: 5,
+                              }}
+                            >
+                              <Text
                                 style={{
-                                  position: "absolute",
-                                  top: 0,
-                                  left: 0,
-                                  right: 0,
-                                  bottom: 0,
-                                  alignItems: "center",
-                                  justifyContent: "center",
+                                  color: "#fff",
+                                  fontSize: 10,
+                                  fontWeight: "700",
+                                  fontVariant: ["tabular-nums"],
                                 }}
                               >
-                                <Text
-                                  style={{
-                                    color: "#fff",
-                                    fontSize: 12,
-                                    fontWeight: "700",
-                                    fontVariant: ["tabular-nums"],
-                                    marginTop: 2,
-                                  }}
-                                >
-                                  {superLikesRemaining}
-                                </Text>
-                              </View>
-                            )}
-                        </View>
+                                {superLikesRemaining}
+                              </Text>
+                            </View>
+                          )}
                       </View>
                     </TouchableOpacity>
                   </View>
@@ -890,16 +925,19 @@ export default function SwipeCard({
                     pointerEvents="none"
                   >
                     {profile.isPremium && (
-                      <Animated.View style={nameAnimStyle}>
+                      <Animated.View className="mb-1" style={nameAnimStyle}>
                         <BlurView
+                          tint="dark"
+                          intensity={40}
                           style={{
                             borderRadius: 999,
                             borderCurve: "continuous",
                             overflow: "hidden",
+                            alignSelf: "flex-start",
                           }}
-                          className=" mb-2 py-3 px-3 self-start flex-row items-center gap-2"
+                          className=""
                         >
-                          <Text className="text-white text-[11px] font-bold">
+                          <Text className="text-white text-[11px] px-4 py-3 font-bold">
                             Premium
                           </Text>
                         </BlurView>
@@ -909,36 +947,42 @@ export default function SwipeCard({
                       style={[{ marginBottom: 2, gap: 4 }, nameAnimStyle]}
                     >
                       <Text className="text-white text-4xl font-bold">
-                        {profile.displayName}, {profile.age}
+                        {profile.displayName}
+                        {profile.age != null ? `, ${profile.age}` : ""}
                       </Text>
                     </Animated.View>
 
-                    {/* University & Usage Purpose — expand olunca fade out */}
-                    <Animated.View
-                      style={[
-                        {
-                          flexDirection: "row",
-                          flexWrap: "wrap",
-                          gap: 8,
-                          marginTop: 4,
-                          marginBottom: 16,
-                        },
-                        pillsAnimStyle,
-                      ]}
-                    >
-                      <View
-                        style={{
-                          borderRadius: 999,
-                          borderCurve: "continuous",
-                          overflow: "hidden",
-                        }}
-                        className="flex-row items-center self-start px-1 py-1 gap-1"
+                    {/* University & Usage Purpose — expand olunca fade out.
+                        universityName yoksa hiç render etme → name'in altında
+                        boşluk kalmasın, isim bottom'a otursun. */}
+                    {profile.universityName && (
+                      <Animated.View
+                        style={[
+                          {
+                            flexDirection: "row",
+                            flexWrap: "wrap",
+                            gap: 8,
+                            marginTop: 4,
+                            marginBottom: 16,
+                          },
+                          pillsAnimStyle,
+                        ]}
                       >
-                        <Text className=" text-white font-[600] text-[16px]">
-                          {profile.universityName}
-                        </Text>
-                      </View>
-                      {/* {profile.usagePurposeDisplay && (
+                        <View
+                          style={{
+                            borderRadius: 999,
+                            borderCurve: "continuous",
+                            overflow: "hidden",
+                          }}
+                          className="flex-row items-center self-start px-1 py-1 gap-1"
+                        >
+                          <Text className=" text-white font-[600] text-[16px]">
+                            {profile.universityName}
+                          </Text>
+                        </View>
+                      </Animated.View>
+                    )}
+                    {/* {profile.usagePurposeDisplay && (
                       <View
                         style={{
                           borderRadius: 999,
@@ -953,7 +997,6 @@ export default function SwipeCard({
                         </Text>
                       </View>
                     )} */}
-                    </Animated.View>
                   </View>
                 )}
 
@@ -1026,8 +1069,12 @@ export default function SwipeCard({
                 {/* University & Department */}
                 {profile.showUniversity && profile.departmentDisplay && (
                   <View
-                    style={{ borderCurve: "continuous", overflow: "hidden" }}
-                    className=" p-4 py-7 -mt-3 rounded-[45px] mb-4 border-white/10 border-[0.5px] bg-[#12121296]"
+                    style={{
+                      borderCurve: "continuous",
+                      overflow: "hidden",
+                      backgroundColor: "rgba(18,18,18,0.8)",
+                    }}
+                    className=" p-4 py-7 -mt-3 rounded-[45px] mb-4 border-white/10 border-[0.5px]"
                   >
                     <View className="flex-row flex-wrap items-center gap-3">
                       <View className=" self-start flex-row items-center">
@@ -1070,8 +1117,9 @@ export default function SwipeCard({
                       borderRadius: 40,
                       borderCurve: "continuous",
                       overflow: "hidden",
+                      backgroundColor: "rgba(18,18,18,0.8)",
                     }}
-                    className="mb-4 p-5 py-5 border-[0.5px] border-white/10 bg-[#12121296]"
+                    className="mb-4 p-5 py-5 border-[0.5px] border-white/10"
                   >
                     <View className="flex-row items-center mb-4 px-4">
                       <Text className="text-white text-[13px] font-semibold">
@@ -1120,14 +1168,15 @@ export default function SwipeCard({
                 {/* Lifestyle Info */}
                 {(profile.smokingStatusDisplay ||
                   profile.zodiacSignDisplay ||
-                  profile.usagePurposeDisplay) && (
+                  profile.hasPets != null) && (
                   <View
                     style={{
                       borderRadius: 40,
                       borderCurve: "continuous",
                       overflow: "hidden",
+                      backgroundColor: "rgba(18,18,18,0.8)",
                     }}
-                    className="mb-4 p-5 py-5 border-[0.5px] border-white/10 bg-[#12121296]"
+                    className="mb-4 p-5 py-5 border-[0.5px] border-white/10"
                   >
                     <View className="flex-row items-center mb-4 px-4">
                       <Text className="text-white text-[13px] font-semibold">
@@ -1217,7 +1266,7 @@ export default function SwipeCard({
                           </Text>
                         </View>
                       )}
-                      {profile.usagePurposeDisplay && (
+                      {profile.hasPets != null && (
                         <View
                           style={{
                             borderRadius: 40,
@@ -1238,7 +1287,11 @@ export default function SwipeCard({
                               gap: 10,
                             }}
                           >
-                            <Target size={18} color="#fff" strokeWidth={1.5} />
+                            <PawPrint
+                              size={18}
+                              color="#fff"
+                              strokeWidth={1.5}
+                            />
                             <Text
                               style={{
                                 color: "#fff",
@@ -1246,17 +1299,67 @@ export default function SwipeCard({
                                 fontWeight: "500",
                               }}
                             >
-                              Kullanım Amacı
+                              Evcil Hayvan
                             </Text>
                           </View>
                           <Text style={{ color: "#9CA3AF", fontSize: 14 }}>
-                            {profile.usagePurposeDisplay}
+                            {profile.hasPets ? "Var" : "Yok"}
                           </Text>
                         </View>
                       )}
                     </View>
                   </View>
                 )}
+
+                {/* Kullanım Amacı — başlık olarak direkt cümle */}
+                {profile.usagePurposeDisplay &&
+                  (() => {
+                    const PurposeIcon = getPurposeIcon(
+                      profile.usagePurposeDisplay,
+                    );
+                    return (
+                      <View
+                        style={{
+                          borderRadius: 40,
+                          borderCurve: "continuous",
+                          overflow: "hidden",
+                          backgroundColor: "rgba(18,18,18,0.8)",
+                        }}
+                        className="mb-4 p-5 py-7 border-[0.5px] border-white/10"
+                      >
+                        <View
+                          style={{
+                            flexDirection: "row",
+                            alignItems: "center",
+                            gap: 10,
+                            paddingHorizontal: 4,
+                          }}
+                        >
+                          <PurposeIcon
+                            size={20}
+                            color="#fff"
+                            strokeWidth={1.5}
+                          />
+                          <Text
+                            style={{
+                              color: "#fff",
+                              fontSize: 18,
+                              fontWeight: "500",
+                              flex: 1,
+                              flexShrink: 1,
+                              flexWrap: "wrap",
+                            }}
+                          >
+                            Bu uygulamayı{" "}
+                            {profile.usagePurposeDisplay.toLocaleLowerCase(
+                              "tr",
+                            )}{" "}
+                            için kullanıyorum
+                          </Text>
+                        </View>
+                      </View>
+                    );
+                  })()}
 
                 {/* Bio */}
                 {profile.bio && (
@@ -1265,8 +1368,9 @@ export default function SwipeCard({
                       borderRadius: 40,
                       borderCurve: "continuous",
                       overflow: "hidden",
+                      backgroundColor: "rgba(18,18,18,0.8)",
                     }}
-                    className="mb-4 p-5 py-5 border-[0.5px] border-white/10 bg-[#12121296]"
+                    className="mb-4 p-5 py-5 border-[0.5px] border-white/10"
                   >
                     <View className="flex-row items-center mb-2 px-4">
                       <Text className="text-white text-[13px] font-semibold">
@@ -1410,7 +1514,7 @@ export default function SwipeCard({
                       justifyContent: "center",
                       gap: 80,
                       paddingVertical: 40,
-                      paddingBottom: 40,
+                      paddingBottom: 40 + insets.bottom + 66,
                     }}
                   >
                     <TouchableOpacity

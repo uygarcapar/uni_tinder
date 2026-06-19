@@ -1,10 +1,8 @@
-import { useEffect, useMemo, useRef, useState, useCallback } from "react";
+import { useState, useCallback } from "react";
 import { View, Text, TouchableOpacity, ActivityIndicator, Alert } from "react-native";
 import {
-  BottomSheetModal,
   BottomSheetScrollView,
   BottomSheetBackdrop,
-  BottomSheetFooter,
 } from "@gorhom/bottom-sheet";
 import { BlurView } from "expo-blur";
 import { useDispatch } from "react-redux";
@@ -12,6 +10,7 @@ import { ShieldCheck } from "lucide-react-native";
 import api from "../services/api";
 import { API_ENDPOINTS } from "../constants/api";
 import { setKvkkAccepted } from "../store/slices/authSlice";
+import AppBottomSheet from "../components/AppBottomSheet";
 
 export const CURRENT_KVKK_VERSION = "1.0";
 
@@ -19,16 +18,6 @@ export default function KVKKConsentScreen({ visible }) {
   const dispatch = useDispatch();
   const [loading, setLoading] = useState(false);
   const [agreed, setAgreed] = useState(false);
-  const bottomSheetRef = useRef(null);
-  const snapPoints = useMemo(() => ["92%"], []);
-
-  useEffect(() => {
-    if (visible) {
-      bottomSheetRef.current?.present();
-    } else {
-      bottomSheetRef.current?.dismiss();
-    }
-  }, [visible]);
 
   const renderBackdrop = useCallback(
     (props) => (
@@ -61,12 +50,10 @@ export default function KVKKConsentScreen({ visible }) {
     }
   };
 
-  const renderFooter = useCallback(
-    (props) => (
-      <BottomSheetFooter {...props} bottomInset={0}>
-        <BlurView
-          intensity={40}
-          tint="dark"
+  const footer = (
+    <BlurView
+      intensity={40}
+      tint="dark"
           style={{
             paddingHorizontal: 20,
             paddingTop: 16,
@@ -146,21 +133,18 @@ export default function KVKKConsentScreen({ visible }) {
             )}
           </TouchableOpacity>
         </BlurView>
-      </BottomSheetFooter>
-    ),
-    [agreed, loading],
   );
 
   return (
-    <BottomSheetModal
-      ref={bottomSheetRef}
-      snapPoints={snapPoints}
+    <AppBottomSheet
+      visible={visible}
+      onClose={() => {}}
+      snapPoints={["92%"]}
       enablePanDownToClose={false}
-      enableOverDrag={false}
       enableContentPanningGesture={false}
       enableHandlePanningGesture={false}
       backdropComponent={renderBackdrop}
-      footerComponent={renderFooter}
+      footer={footer}
       backgroundStyle={{
         backgroundColor: "#121212",
         borderTopLeftRadius: 36,
@@ -230,7 +214,7 @@ export default function KVKKConsentScreen({ visible }) {
             </Section>
 
             <Section title="İşlenen Veriler">
-              Ad-soyad, e-posta, doğum tarihi, fotoğraf, üniversite bilgisi ve
+              Ad, e-posta, doğum tarihi, fotoğraf, üniversite bilgisi ve
               uygulama kullanım verileri işlenmektedir. Bu veriler profil
               oluşturma, eşleştirme algoritması ve iletişim için
               kullanılmaktadır.
@@ -262,7 +246,7 @@ export default function KVKKConsentScreen({ visible }) {
           </View>
         </BottomSheetScrollView>
       </View>
-    </BottomSheetModal>
+    </AppBottomSheet>
   );
 }
 

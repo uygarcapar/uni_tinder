@@ -105,9 +105,8 @@ const initialState = {
   emailVerifiedToken: null,
   registrationForm: {
     firstName: '',
-    lastName: '',
     gender: '',
-    dateOfBirth: new Date(2000, 0, 1).toISOString(),
+    dateOfBirth: null,
     password: '',
     confirmPassword: '',
     phoneNumber: '',
@@ -160,9 +159,8 @@ const authSlice = createSlice({
       state.emailVerifiedToken = null;
       state.registrationForm = {
         firstName: '',
-        lastName: '',
         gender: '',
-        dateOfBirth: new Date(2000, 0, 1).toISOString(),
+        dateOfBirth: null,
         password: '',
         confirmPassword: '',
         phoneNumber: '',

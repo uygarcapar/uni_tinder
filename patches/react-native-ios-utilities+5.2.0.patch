@@ -1,0 +1,33 @@
+diff --git a/node_modules/react-native-ios-utilities/ios/Sources/Extensions+Helpers/RCTView+Helpers.swift b/node_modules/react-native-ios-utilities/ios/Sources/Extensions+Helpers/RCTView+Helpers.swift
+index 09be306..48df63b 100644
+--- a/node_modules/react-native-ios-utilities/ios/Sources/Extensions+Helpers/RCTView+Helpers.swift
++++ b/node_modules/react-native-ios-utilities/ios/Sources/Extensions+Helpers/RCTView+Helpers.swift
+@@ -25,16 +25,10 @@ public extension RCTView {
+     return rootView.recursivelyFindSubview(whereType: targetType);
+   };
+   
+-  var closestParentReactContentView: RCTRootContentView? {
+-    let targetType = RCTRootContentView.self;
+-  
+-    if let match = self.recursivelyFindParentView(whereType: targetType) {
+-      return match;
+-    };
+-    
+-    guard let rootView = self.rootViewForCurrentWindow else { return nil };
+-    return rootView.recursivelyFindSubview(whereType: targetType);
+-  };
++  // NOTE: `RCTRootContentView` removed in RN 0.74+ (this project uses 0.85).
++  // The old fallback via closestParentReactContentView is stubbed; the
++  // recursive parent walk in `closestParentReactTouchHandler` still finds
++  // the active RCTTouchHandler via UIView.gestureRecognizers.
+ 
+   var reactTouchHandlers: [RCTTouchHandler]? {
+     self.gestureRecognizers?.compactMap {
+@@ -58,6 +52,6 @@ public extension RCTView {
+       currentView = superview;
+     };
+ 
+-    return closestParentReactContentView?.reactTouchHandlers?.first;
++    return nil;
+   };
+ };

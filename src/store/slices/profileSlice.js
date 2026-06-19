@@ -1,5 +1,17 @@
 import { createSlice, createAsyncThunk } from "@reduxjs/toolkit";
+import axios from "axios";
 import { API_BASE_URL, API_ENDPOINTS } from "../../constants/api";
+
+// Expo SDK 56'nın winter fetch'i RN'in klasik {uri,name,type} FormData pattern'ini
+// desteklemiyor → "Unsupported FormDataPart implementation" fırlatıyor.
+// axios XHR adapter kullanıyor, klasik pattern çalışıyor.
+const postFormData = (url, formData, extraHeaders = {}) =>
+  axios.post(url, formData, {
+    headers: { Accept: "application/json", ...extraHeaders },
+    transformRequest: (d) => d,
+    validateStatus: () => true,
+    timeout: 60000,
+  });
 
 const initialState = {
   yearOfStudy: "",
@@ -109,60 +121,29 @@ export const completeProfile = createAsyncThunk(
       // Add default MaxDistance
       formData.append("MaxDistance", 50);
 
-      // Make API request
-      const response = await fetch(
+      const response = await postFormData(
         `${API_BASE_URL}${API_ENDPOINTS.COMPLETE_PROFILE}`,
-        {
-          method: "POST",
-          headers: {
-            Authorization: `Bearer ${token}`,
-          },
-          body: formData,
-        }
+        formData,
+        { Authorization: `Bearer ${token}` }
       );
 
-      // Log response details
+      const data = response.data;
       console.log("📤 Response status:", response.status);
-      console.log("📤 Response content-type:", response.headers.get("content-type"));
+      console.log("📤 Parsed JSON:", JSON.stringify(data, null, 2));
 
-      // Check if response has content
-      let data = null;
-      let rawText = null;
-
-      // Try to read response body regardless of content type
-      try {
-        rawText = await response.text();
-        console.log("📤 Raw response:", rawText);
-
-        if (rawText && rawText.trim().length > 0) {
-          try {
-            data = JSON.parse(rawText);
-            console.log("📤 Parsed JSON:", JSON.stringify(data, null, 2));
-          } catch (parseError) {
-            console.error('❌ JSON Parse Error:', parseError.message);
-            console.error('❌ Raw text was:', rawText);
-          }
-        }
-      } catch (readError) {
-        console.error('❌ Error reading response:', readError.message);
-      }
-
-      // Check HTTP status
-      if (!response.ok) {
+      if (response.status < 200 || response.status >= 300) {
         console.error("❌ Profile Error (HTTP):", data?.message || data?.title || `Status ${response.status}`);
         console.error("❌ Full error data:", JSON.stringify(data, null, 2));
         return rejectWithValue(data?.message || data?.title || "Profil tamamlanırken bir hata oluştu");
       }
 
-      // Check backend's isSuccess flag (even if HTTP 200)
-      if (data && !data.isSuccess) {
+      if (data && data.isSuccess === false) {
         console.error("❌ Profile Error (Backend):", data?.message || `Status ${data.statusCode}`);
         console.error("❌ Full error data:", JSON.stringify(data, null, 2));
         return rejectWithValue(data?.message || "Profil tamamlanırken bir hata oluştu");
       }
 
       console.log('✅ Profile completed successfully!');
-      console.log('✅ Response data:', JSON.stringify(data, null, 2));
       return data || { success: true };
     } catch (error) {
       console.error("❌ Complete Profile Error:", error.message);
@@ -181,45 +162,52 @@ export const registerAndComplete = createAsyncThunk(
 
       const formData = new FormData();
 
+      // RN FormData iOS native tarafı sadece string ve {uri,name,type} kabul ediyor;
+      // boolean/number doğrudan append'lenirse "Unsupported FormDataPart implementation"
+      // hatası fırlatıyor. Tüm scalar'ları String'e çevir, null/undefined'ı skip et.
+      const put = (key, value) => {
+        if (value === null || value === undefined || value === "") return;
+        formData.append(key, String(value));
+      };
+
       // Email-verified token + account fields
-      formData.append("EmailVerifiedToken", state.auth.emailVerifiedToken);
-      formData.append("Email", state.auth.registrationEmail);
-      formData.append("FirstName", reg.firstName);
-      formData.append("LastName", reg.lastName);
-      formData.append("DisplayName", `${reg.firstName} ${reg.lastName}`);
-      formData.append("Gender", reg.gender);
-      formData.append("DateOfBirth", reg.dateOfBirth);
-      formData.append("Password", reg.password);
-      if (reg.phoneNumber) formData.append("PhoneNumber", reg.phoneNumber);
+      put("EmailVerifiedToken", state.auth.emailVerifiedToken);
+      put("Email", state.auth.registrationEmail);
+      put("FirstName", reg.firstName);
+      put("DisplayName", reg.firstName);
+      put("Gender", reg.gender);
+      put("DateOfBirth", reg.dateOfBirth);
+      put("Password", reg.password);
+      put("PhoneNumber", reg.phoneNumber);
 
       // Profile fields
-      formData.append("Height", profile.height);
-      formData.append("Department", profile.department);
-      formData.append("YearOfStudy", profile.yearOfStudy);
+      put("Height", profile.height);
+      put("Department", profile.department);
+      put("YearOfStudy", profile.yearOfStudy);
       // Locale-safe — bkz. completeProfile thunk'taki comment.
-      formData.append("Latitude", Number(latitude).toFixed(8));
-      formData.append("Longitude", Number(longitude).toFixed(8));
+      put("Latitude", Number(latitude).toFixed(8));
+      put("Longitude", Number(longitude).toFixed(8));
 
       // Arrays
-      profile.interestedIn.forEach((val) => formData.append("InterestedIn", String(val)));
-      profile.hobbies.forEach((val) => formData.append("Hobbies", String(val)));
+      profile.interestedIn.forEach((val) => put("InterestedIn", val));
+      profile.hobbies.forEach((val) => put("Hobbies", val));
 
       // Optional profile fields
-      if (profile.bio) formData.append("Bio", profile.bio);
-      if (profile.city) formData.append("City", profile.city);
-      if (profile.district) formData.append("District", profile.district);
-      if (profile.ageRangeMin) formData.append("AgeRangeMin", profile.ageRangeMin);
-      if (profile.ageRangeMax) formData.append("AgeRangeMax", profile.ageRangeMax);
-      if (profile.smokingStatus != null) formData.append("SmokingStatus", profile.smokingStatus);
-      if (profile.zodiacSign != null) formData.append("ZodiacSign", profile.zodiacSign);
-      if (profile.usagePurpose != null) formData.append("UsagePurpose", profile.usagePurpose);
+      put("Bio", profile.bio);
+      put("City", profile.city);
+      put("District", profile.district);
+      put("AgeRangeMin", profile.ageRangeMin);
+      put("AgeRangeMax", profile.ageRangeMax);
+      put("SmokingStatus", profile.smokingStatus);
+      put("ZodiacSign", profile.zodiacSign);
+      put("UsagePurpose", profile.usagePurpose);
 
       // Defaults
-      formData.append("MaxDistance", 50);
-      formData.append("ShowMyUniversity", true);
-      formData.append("ShowMeOnApp", true);
-      formData.append("ShowDistance", true);
-      formData.append("ShowAge", true);
+      put("MaxDistance", 50);
+      put("ShowMyUniversity", true);
+      put("ShowMeOnApp", true);
+      put("ShowDistance", true);
+      put("ShowAge", true);
 
       // Photos
       for (let i = 0; i < photos.length; i++) {
@@ -229,35 +217,29 @@ export const registerAndComplete = createAsyncThunk(
         const type = match ? `image/${match[1]}` : "image/jpeg";
         formData.append("Photos", { uri: photo, name: filename, type });
       }
-      formData.append("MainPhotoIndex", mainPhotoIndex);
+      put("MainPhotoIndex", mainPhotoIndex);
 
-      // Log what we're actually sending
+      // RN FormData'da .entries() yok; iç _parts dizisinden logla.
       console.log("📤 [registerAndComplete] Sending to backend:");
-      for (const [key, value] of formData.entries?.() ?? []) {
-        if (typeof value === "object" && value?.uri) {
+      for (const [key, value] of formData._parts ?? []) {
+        if (value && typeof value === "object" && value.uri) {
           console.log(`  ${key}: <photo ${value.name}>`);
         } else {
           console.log(`  ${key}:`, value);
         }
       }
 
-      const response = await fetch(`${API_BASE_URL}${API_ENDPOINTS.REGISTER_AND_COMPLETE}`, {
-        method: "POST",
-        body: formData,
-      });
+      const response = await postFormData(
+        `${API_BASE_URL}${API_ENDPOINTS.REGISTER_AND_COMPLETE}`,
+        formData
+      );
 
-      const rawText = await response.text();
+      const data = response.data;
+      const rawText = typeof data === "string" ? data : JSON.stringify(data);
       console.log("📥 [registerAndComplete] HTTP", response.status);
       console.log("📥 [registerAndComplete] Response body:", rawText);
 
-      let data = null;
-      try {
-        if (rawText?.trim()) data = JSON.parse(rawText);
-      } catch (parseErr) {
-        console.error("❌ JSON parse error:", parseErr.message);
-      }
-
-      if (!response.ok || (data && !data.isSuccess)) {
+      if (response.status < 200 || response.status >= 300 || (data && data.isSuccess === false)) {
         const errMsg =
           data?.message ||
           data?.title ||

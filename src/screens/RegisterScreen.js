@@ -22,11 +22,11 @@ import { Picker } from "@react-native-picker/picker";
 
 // --- GORHOM & BLUR IMPORTS ---
 import {
-  BottomSheetModal,
   BottomSheetView,
   BottomSheetBackdrop,
 } from "@gorhom/bottom-sheet";
 import { BlurView } from "expo-blur";
+import AppBottomSheet from "../components/AppBottomSheet";
 // -----------------------------
 
 export default function RegisterScreen({ navigation }) {
@@ -47,8 +47,7 @@ export default function RegisterScreen({ navigation }) {
   const [showDatePicker, setShowDatePicker] = useState(false);
 
   // --- BOTTOM SHEET REF & STATE ---
-  // Modal'ı kontrol etmek için ref kullanıyoruz
-  const bottomSheetModalRef = useRef(null);
+  const [genderVisible, setGenderVisible] = useState(false);
   const [tempGender, setTempGender] = useState("");
 
   // Input ref'i - picker kapanınca odaklanmak için
@@ -79,13 +78,13 @@ export default function RegisterScreen({ navigation }) {
   const handlePresentModalPress = useCallback(() => {
     Keyboard.dismiss(); // Klavyeyi kapat
     setTempGender(formData.gender || "Male"); // Mevcut değeri tempGender'a kopyala
-    bottomSheetModalRef.current?.present();
+    setGenderVisible(true);
   }, [formData.gender]);
 
   // Modalı Kapat (Kaydet)
   const confirmGenderSelection = () => {
     updateField("gender", tempGender); // Sadece Bitti'ye basınca güncelle
-    bottomSheetModalRef.current?.dismiss();
+    setGenderVisible(false);
     // Modal kapandıktan sonra input'a focus yap
     setTimeout(() => {
       firstNameInputRef.current?.focus();
@@ -94,7 +93,7 @@ export default function RegisterScreen({ navigation }) {
 
   // Modalı Kapat (İptal)
   const cancelGenderSelection = () => {
-    bottomSheetModalRef.current?.dismiss();
+    setGenderVisible(false);
     // Modal kapandıktan sonra input'a focus yap
     setTimeout(() => {
       firstNameInputRef.current?.focus();
@@ -112,7 +111,7 @@ export default function RegisterScreen({ navigation }) {
         pressBehavior="close" // Tıklayınca kapansın
         onPress={() => {
           // Backdrop'a basınca modal kapansın ve input'a focus yap
-          bottomSheetModalRef.current?.dismiss();
+          setGenderVisible(false);
           setTimeout(() => {
             firstNameInputRef.current?.focus();
           }, 300);
@@ -454,18 +453,13 @@ export default function RegisterScreen({ navigation }) {
         </View>
       </View>
 
-      {/* --- GORHOM BOTTOM SHEET MODAL --- */}
-      <BottomSheetModal
-        ref={bottomSheetModalRef}
-        index={0}
-        backgroundStyle={{
-          borderRadius: 32,
-          backgroundColor: "white",
-        }}
+      {/* --- GENDER PICKER --- */}
+      <AppBottomSheet
+        visible={genderVisible}
+        onClose={cancelGenderSelection}
         snapPoints={snapPoints}
         backdropComponent={renderBackdrop}
-        enablePanDownToClose={true} // Aşağı çekince kapansın
-        handleIndicatorStyle={{ backgroundColor: "#E5E7EB", width: 50 }} // Gri tutma çubuğu
+        backgroundStyle={{ borderRadius: 32, backgroundColor: "white" }}
       >
         <BottomSheetView className="flex-1 bg-white px-4 pb-8">
           {/* Modal Header */}
@@ -490,7 +484,7 @@ export default function RegisterScreen({ navigation }) {
             <Picker.Item label="Belirtmek İstemiyorum" value="PreferNotToSay" />
           </Picker>
         </BottomSheetView>
-      </BottomSheetModal>
+      </AppBottomSheet>
     </KeyboardAvoidingView>
   );
 }

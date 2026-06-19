@@ -106,11 +106,11 @@ function PaginationDot({ active }) {
   );
 }
 import {
-  BottomSheetModal,
   BottomSheetScrollView,
   BottomSheetFooter,
 } from "@gorhom/bottom-sheet";
 import BlurBottomSheetBackdrop from "./BlurBottomSheetBackdrop";
+import AppBottomSheet from "./AppBottomSheet";
 import {
   X,
   Check,
@@ -302,7 +302,7 @@ function renderPlanName(
   );
 }
 
-export default function PurchaseModal({ bottomSheetRef, onClose, onSuccess }) {
+export default function PurchaseModal({ visible, onClose, onSuccess }) {
   const dispatch = useDispatch();
   const queryClient = useQueryClient();
   const isPremium = useSelector((s) => s.subscription?.isPremium ?? false);
@@ -336,12 +336,11 @@ export default function PurchaseModal({ bottomSheetRef, onClose, onSuccess }) {
   const planListRef = useRef(null);
   const initialScrollDoneRef = useRef(false);
 
-  // onClose prop'u verilmezse default davranış: sheet'i ref üzerinden dismiss et.
-  // Aksi halde DiscoverScreen gibi onClose pass etmeyen yerlerde X/backdrop çalışmıyor.
+  // Tüm dismiss yollarında (X, backdrop, swipe down, purchase success) parent
+  // state'i kapatır.
   const handleClose = useCallback(() => {
-    if (onClose) onClose();
-    else bottomSheetRef?.current?.dismiss?.();
-  }, [onClose, bottomSheetRef]);
+    onClose?.();
+  }, [onClose]);
 
   useEffect(() => {
     let cancelled = false;
@@ -592,24 +591,17 @@ export default function PurchaseModal({ bottomSheetRef, onClose, onSuccess }) {
   );
 
   return (
-    <BottomSheetModal
-      ref={bottomSheetRef}
+    <AppBottomSheet
+      visible={visible}
       snapPoints={["100%"]}
-      enablePanDownToClose
-      enableOverDrag={false}
-      onDismiss={() => {
+      handleComponent={null}
+      backdropComponent={renderBackdrop}
+      footerComponent={renderFooter}
+      onClose={() => {
         setSelectedPeriod(null);
         initialScrollDoneRef.current = false;
         handleClose();
       }}
-      backdropComponent={renderBackdrop}
-      footerComponent={renderFooter}
-      backgroundStyle={{
-        backgroundColor: "#121212",
-        borderTopLeftRadius: 36,
-        borderTopRightRadius: 36,
-      }}
-      handleComponent={null}
     >
       {/* Close button — sağ üst köşede absolute, BlurView arkaplanlı */}
       <TouchableOpacity
@@ -925,6 +917,6 @@ export default function PurchaseModal({ bottomSheetRef, onClose, onSuccess }) {
           </BlurView>
         </View>
       </BottomSheetScrollView>
-    </BottomSheetModal>
+    </AppBottomSheet>
   );
 }

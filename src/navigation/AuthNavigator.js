@@ -12,7 +12,6 @@ import RegisterStep7Screen from "../screens/RegisterStep7Screen";
 import RegisterStep8Screen from "../screens/RegisterStep8Screen";
 import RegisterStep9Screen from "../screens/RegisterStep9Screen";
 import RegisterStep10Screen from "../screens/RegisterStep10Screen";
-import RegisterStep11Screen from "../screens/RegisterStep11Screen";
 import RegisterStep12Screen from "../screens/RegisterStep12Screen";
 import RegisterStep13Screen from "../screens/RegisterStep13Screen";
 import RegisterStep14Screen from "../screens/RegisterStep14Screen";
@@ -20,7 +19,12 @@ import RegisterStep15Screen from "../screens/RegisterStep15Screen";
 
 const Stack = createNativeStackNavigator();
 
-const SCREEN_OPTIONS = { headerShown: false, animation: "slide_from_right" };
+const SCREEN_OPTIONS = {
+  headerShown: false,
+  animation: "slide_from_right",
+  fullScreenGestureEnabled: false,
+  gestureEnabled: true,
+};
 
 export default function AuthNavigator({ initialRoute = "Welcome" }) {
   const { user, isAuthenticated } = useSelector((state) => state.auth);
@@ -63,10 +67,10 @@ export default function AuthNavigator({ initialRoute = "Welcome" }) {
       <Stack.Screen name="RegisterStep8" component={RegisterStep8Screen} />
       <Stack.Screen name="RegisterStep9" component={RegisterStep9Screen} />
 
-      {/* Matching prefs & profile: 10.interestedIn → 11.ageRange → 12.height/bio → 13.hobbies → 14.lifestyle → 15.photos */}
+      {/* Matching prefs & profile: 10.interestedIn → 12.height/bio → 13.hobbies → 14.lifestyle → 15.photos */}
+      {/* Note: ageRange step removed — profileSlice initial state (18-65) gönderiliyor. */}
       <Stack.Screen name="RegisterStep12" component={RegisterStep12Screen} />
       <Stack.Screen name="RegisterStep10" component={RegisterStep10Screen} />
-      <Stack.Screen name="RegisterStep11" component={RegisterStep11Screen} />
       <Stack.Screen name="RegisterStep13" component={RegisterStep13Screen} />
       <Stack.Screen name="RegisterStep14" component={RegisterStep14Screen} />
       <Stack.Screen name="RegisterStep15" component={RegisterStep15Screen} />

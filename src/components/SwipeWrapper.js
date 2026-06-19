@@ -18,7 +18,7 @@ import SwipeCard from "./SwipeCard";
 import uiBus, { cardExpandAnim, cardPullProgress } from "../services/uiBus";
 
 const { width, height } = Dimensions.get("window");
-const SWIPE_THRESHOLD = 125;
+const SWIPE_THRESHOLD = 85;
 const EXIT_HEIGHT = height * 1.2;
 const SUPER_LIKE_PULL_THRESHOLD = 50; // pull down ty.value bu px'e ulaşınca süper beğeni "ready"
 
@@ -63,7 +63,7 @@ function SwipeWrapper({
   }, [expanded, expandedSV]);
   const expandHapticFired = useSharedValue(false);
   const collapseHapticFired = useSharedValue(false);
-  const EXPAND_PULL_THRESHOLD = 45;
+  const EXPAND_PULL_THRESHOLD = 50;
 
   // Native scroll gesture — pan ile simultaneous çalışsın diye SwipeCard içindeki
   // ScrollView'a uygulanır. Aynı obje referansı pan ve ScrollView arasında paylaşılır.
@@ -215,10 +215,9 @@ function SwipeWrapper({
     .onEnd((event) => {
       hasVibrated.value = false;
 
-      // Hem displacement (160) hem velocity (3500 + min 100px) yüksek →
-      // swipe gestureı çok bilinçli olmalı.
-      const VELOCITY_THRESHOLD = 3500;
-      const VELOCITY_MIN_DISPLACEMENT = 100;
+      // Displacement (85) + velocity (2500 + min 60px) — daha kolay swipe.
+      const VELOCITY_THRESHOLD = 2500;
+      const VELOCITY_MIN_DISPLACEMENT = 60;
       const goRight =
         tx.value > SWIPE_THRESHOLD ||
         (event.velocityX > VELOCITY_THRESHOLD &&
@@ -297,10 +296,12 @@ function SwipeWrapper({
         }
         const delta = event.translationY - dragOffsetY.value;
         if (delta > 0) {
-          const max = 100;
-          const c = 0.5;
+          // Expand ile aynı rubber-band + görsel scale — collapse de aynı
+          // zorlukta hissedilsin.
+          const max = 200;
+          const c = 1.0;
           const tyAbs = (delta * max * c) / (max + c * delta);
-          ty.value = tyAbs; // kart aşağı translate (geri çekiliyor hissi)
+          ty.value = tyAbs * 0.5; // kart aşağı translate (geri çekiliyor hissi)
           const progress = Math.min(tyAbs / EXPAND_PULL_THRESHOLD, 1);
           // cardExpandAnim 1'den 0'a iner (geri sarma)
           cardExpandAnim.value = 1 - progress;
@@ -344,11 +345,15 @@ function SwipeWrapper({
       } else if (delta < 0) {
         // PULL-UP — expand. cardPullProgress da güncellenir → arkadaki kart
         // pull oranıyla öne büyür (super-like'taki gibi).
+        // Pull-down (super-like) ile aynı rubber-band'i kullanmıyoruz: expand
+        // sık erişilen bir hareket, super-like ise daha kasıtlı olmalı.
         const absDelta = -delta;
-        const max = 100;
-        const c = 0.5;
+        const max = 200;
+        const c = 1.0;
         const tyAbs = (absDelta * max * c) / (max + c * absDelta);
-        ty.value = -tyAbs;
+        // Progress/haptic tyAbs üzerinden hesaplanıyor; ty.value (görsel kart
+        // translateY) ayrı scale'leniyor → kart daha az yukarı kalksın.
+        ty.value = -tyAbs * 0.5;
         const progress = Math.min(tyAbs / EXPAND_PULL_THRESHOLD, 1);
         cardExpandAnim.value = progress;
         superLikeProgress.value = 0;

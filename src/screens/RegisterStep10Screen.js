@@ -77,7 +77,7 @@ export default function RegisterStep10Screen({ navigation }) {
       return;
     }
     dispatch(updateMultipleFields({ interestedIn: selected }));
-    navigation.navigate("RegisterStep11");
+    navigation.navigate("RegisterStep12");
   };
 
   return (

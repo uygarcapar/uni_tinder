@@ -1,4 +1,4 @@
-import { View, Text } from 'react-native';
+import { View, Text } from "react-native";
 
 /**
  * Inverted FlatList içinde mesaj grupları arasında tarih ayraç.
@@ -8,30 +8,49 @@ export default function DateSeparator({ label }) {
   if (!label) return null;
   return (
     <View className="items-center my-3">
-      <View className="px-3 py-1 rounded-full bg-[#1a1a1a] border border-[#262626]">
-        <Text className="text-gray-400 text-[11px] font-medium">{label}</Text>
+      <View className="">
+        <Text style={{ color: "#8B93A2", fontSize: 13, fontWeight: "500" }}>
+          {label}
+        </Text>
       </View>
     </View>
   );
 }
 
 // ChatScreen useMemo ile messages'a iliştirir.
-const TR_MONTHS = ['Oca', 'Şub', 'Mar', 'Nis', 'May', 'Haz', 'Tem', 'Ağu', 'Eyl', 'Eki', 'Kas', 'Ara'];
+const TR_MONTHS = [
+  "Oca",
+  "Şub",
+  "Mar",
+  "Nis",
+  "May",
+  "Haz",
+  "Tem",
+  "Ağu",
+  "Eyl",
+  "Eki",
+  "Kas",
+  "Ara",
+];
 
 export function dateLabel(iso) {
-  if (!iso) return '';
+  if (!iso) return "";
   const d = new Date(iso);
-  if (isNaN(d.getTime())) return '';
+  if (isNaN(d.getTime())) return "";
 
   const now = new Date();
-  const startOfToday = new Date(now.getFullYear(), now.getMonth(), now.getDate());
+  const startOfToday = new Date(
+    now.getFullYear(),
+    now.getMonth(),
+    now.getDate(),
+  );
   const startOfDay = new Date(d.getFullYear(), d.getMonth(), d.getDate());
   const diffDays = Math.floor((startOfToday - startOfDay) / 86400000);
 
-  if (diffDays === 0) return 'Bugün';
-  if (diffDays === 1) return 'Dün';
+  if (diffDays === 0) return "Bugün";
+  if (diffDays === 1) return "Dün";
   if (diffDays < 7) {
-    return d.toLocaleDateString('tr-TR', { weekday: 'long' });
+    return d.toLocaleDateString("tr-TR", { weekday: "long" });
   }
   if (d.getFullYear() === now.getFullYear()) {
     return `${d.getDate()} ${TR_MONTHS[d.getMonth()]}`;
@@ -69,8 +88,8 @@ export function withDateSeparators(messages) {
 }
 
 function dayKey(iso) {
-  if (!iso) return '';
+  if (!iso) return "";
   const d = new Date(iso);
-  if (isNaN(d.getTime())) return '';
+  if (isNaN(d.getTime())) return "";
   return `${d.getFullYear()}-${d.getMonth()}-${d.getDate()}`;
 }

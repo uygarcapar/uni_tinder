@@ -114,4 +114,8 @@ export const API_ENDPOINTS = {
   GET_SMOKING_STATUSES: "/api/common/smoking-statuses",
   GET_ZODIACS: "/api/common/zodiacs",
   GET_USAGE_PURPOSES: "/api/common/usage-purposes",
+  GET_INTERESTED_IN: "/api/common/interested-in",
+  GET_LANGUAGES: "/api/common/languages",
+  GET_PETS: "/api/common/pets",
+  GET_DISTRICTS_BY_CITY: (cityId) => `/api/common/cities/${cityId}/districts`,
 };

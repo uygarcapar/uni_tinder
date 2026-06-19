@@ -1,7 +1,7 @@
 import { useEffect, useRef, useState } from 'react';
 import { TouchableOpacity, Text, View, ActivityIndicator } from 'react-native';
 import { Play, Pause } from 'lucide-react-native';
-import { Audio } from 'expo-av';
+import { createAudioPlayer, setAudioModeAsync } from 'expo-audio';
 
 /**
  * Sesli mesaj inline player.
@@ -18,7 +18,7 @@ export default function VoicePlayer({ uri, isOwn }) {
   useEffect(() => {
     return () => {
       if (soundRef.current) {
-        soundRef.current.unloadAsync().catch(() => {});
+        try { soundRef.current.remove(); } catch {}
         soundRef.current = null;
       }
     };
@@ -29,31 +29,29 @@ export default function VoicePlayer({ uri, isOwn }) {
     try {
       if (!soundRef.current) {
         setLoading(true);
-        await Audio.setAudioModeAsync({ playsInSilentModeIOS: true });
-        const { sound } = await Audio.Sound.createAsync(
-          { uri },
-          { shouldPlay: true },
-          (status) => {
-            if (!status.isLoaded) return;
-            setPosition(status.positionMillis || 0);
-            setDuration(status.durationMillis || 0);
-            setPlaying(status.isPlaying);
-            if (status.didJustFinish) {
-              setPlaying(false);
-              setPosition(0);
-              soundRef.current?.setPositionAsync(0).catch(() => {});
-            }
+        await setAudioModeAsync({ playsInSilentMode: true });
+        const player = createAudioPlayer({ uri });
+        player.addListener('playbackStatusUpdate', (status) => {
+          if (!status.isLoaded) return;
+          // expo-audio currentTime/duration are seconds; UI tracks ms.
+          setPosition((status.currentTime || 0) * 1000);
+          setDuration((status.duration || 0) * 1000);
+          setPlaying(status.playing);
+          if (status.didJustFinish) {
+            setPlaying(false);
+            setPosition(0);
+            try { player.seekTo(0); } catch {}
           }
-        );
-        soundRef.current = sound;
+        });
+        soundRef.current = player;
+        player.play();
         setLoading(false);
         return;
       }
-      const status = await soundRef.current.getStatusAsync();
-      if (status.isPlaying) {
-        await soundRef.current.pauseAsync();
+      if (soundRef.current.playing) {
+        soundRef.current.pause();
       } else {
-        await soundRef.current.playAsync();
+        soundRef.current.play();
       }
     } catch (err) {
       setLoading(false);

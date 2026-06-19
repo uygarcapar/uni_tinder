@@ -8,17 +8,15 @@ import {
   Linking,
   Switch,
 } from "react-native";
-import {
-  BottomSheetModal,
-  BottomSheetScrollView,
-} from "@gorhom/bottom-sheet";
+import { BottomSheetScrollView } from "@gorhom/bottom-sheet";
 import BlurBottomSheetBackdrop from "./BlurBottomSheetBackdrop";
+import AppBottomSheet from "./AppBottomSheet";
 import { X, Download, Trash2, AlertCircle, Eye, BellOff } from "lucide-react-native";
 import api from "../services/api";
 import { API_ENDPOINTS } from "../constants/api";
 import chatService from "../services/chatService";
 
-export default function SettingsModal({ bottomSheetRef, onClose }) {
+export default function SettingsModal({ visible, onClose }) {
   const [downloadLoading, setDownloadLoading] = useState(false);
   const [deleteLoading, setDeleteLoading] = useState(false);
   const [prefs, setPrefs] = useState(null);
@@ -122,19 +120,11 @@ export default function SettingsModal({ bottomSheetRef, onClose }) {
   };
 
   return (
-    <BottomSheetModal
-      ref={bottomSheetRef}
+    <AppBottomSheet
+      visible={visible}
       snapPoints={["90%"]}
-      enablePanDownToClose={true}
-      enableOverDrag={false}
-      onDismiss={onClose}
+      onClose={onClose}
       backdropComponent={renderBackdrop}
-      backgroundStyle={{
-        backgroundColor: "#121212",
-        borderTopLeftRadius: 36,
-        borderTopRightRadius: 36,
-      }}
-      handleIndicatorStyle={{ backgroundColor: "rgba(255,255,255,0.3)" }}
     >
       {/* Header */}
       <View
@@ -319,7 +309,7 @@ export default function SettingsModal({ bottomSheetRef, onClose }) {
           </Text>
         </View>
       </BottomSheetScrollView>
-    </BottomSheetModal>
+    </AppBottomSheet>
   );
 }
 

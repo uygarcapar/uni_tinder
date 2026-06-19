@@ -1,8 +1,8 @@
 import { useEffect, useRef, useState, useCallback } from 'react';
-import { NavigationContainer, useNavigationContainerRef } from '@react-navigation/native';
+import { NavigationContainer, DarkTheme, useNavigationContainerRef } from '@react-navigation/native';
 import { createNativeStackNavigator } from '@react-navigation/native-stack';
 import { useSelector, useDispatch } from 'react-redux';
-import { View, AppState } from 'react-native';
+import { View, AppState, Image } from 'react-native';
 import {
   registerForPushNotifications,
   onNotificationTap,
@@ -10,6 +10,7 @@ import {
   setActiveConversationGetter,
 } from '../services/pushService';
 import uiBus from '../services/uiBus';
+
 import SettingsModal from '../components/SettingsModal';
 import { setCurrentAccessToken, setOnTokenRefreshed, setOnAuthLost } from '../services/api';
 import { setUserAndToken, clearRegistrationForm, logout } from '../store/slices/authSlice';
@@ -48,6 +49,14 @@ import { incrementWhoLikedMeCount } from '../store/slices/swipeSlice';
 
 const Stack = createNativeStackNavigator();
 
+// Dark theme override → NavigationContainer'ın default light theme'i (white BG)
+// iOS 26 liquid glass tab bar transparent moduna geçtiğinde sızıp icon'ları
+// siyaha flip ettiriyordu. Tüm nav view'lerin BG'sini #121212'ye lock'la.
+const NAV_THEME = {
+  ...DarkTheme,
+  colors: { ...DarkTheme.colors, background: '#121212', card: '#121212' },
+};
+
 function MainNavigator() {
   return (
     <Stack.Navigator
@@ -58,7 +67,11 @@ function MainNavigator() {
       <Stack.Screen
         name="Chat"
         component={ChatScreen}
-        options={{ animation: 'slide_from_right' }}
+        options={{
+          animation: 'slide_from_right',
+          gestureEnabled: true,
+          fullScreenGestureEnabled: false,
+        }}
       />
       <Stack.Screen
         name="Notifications"
@@ -78,8 +91,12 @@ export default function AppNavigator() {
   const [resumeRoute, setResumeRoute] = useState(null); // null = checking
   const [pendingMatch, setPendingMatch] = useState(null);
   const [myPhoto, setMyPhoto] = useState(null);
+  const myPhotoRef = useRef(null);
+  useEffect(() => {
+    myPhotoRef.current = myPhoto;
+  }, [myPhoto]);
   const navRef = useNavigationContainerRef();
-  const settingsModalRef = useRef(null);
+  const [settingsVisible, setSettingsVisible] = useState(false);
   const appStateRef = useRef(AppState.currentState);
   const activeConvRef = useRef(null);
 
@@ -180,7 +197,20 @@ export default function AppNavigator() {
         if (m.conversationId) {
           realtimeService.joinConversation(m.conversationId).catch(() => {});
         }
-        setPendingMatch(m); // global modal aç
+        // Fotolar inmeden modalı açma — gri daire flash'ı yok.
+        // 1500ms timeout fallback: bozuk/yavaş URL'de sonsuza takılmasın.
+        const prefetches = [];
+        if (m.matchedUserPhoto) {
+          prefetches.push(Image.prefetch(m.matchedUserPhoto).catch(() => {}));
+        }
+        if (myPhotoRef.current) {
+          prefetches.push(Image.prefetch(myPhotoRef.current).catch(() => {}));
+        }
+        const timeout = new Promise((r) => setTimeout(r, 1500));
+        Promise.race([Promise.all(prefetches), timeout]).then(() => {
+          if (!mounted) return;
+          setPendingMatch(m);
+        });
       }),
       // Birisi seni Like/SuperLike attı ama henüz match değil.
       // Tab badge'i +1, LikesScreen açıksa uiBus üzerinden anlık kart prepend.
@@ -324,7 +354,7 @@ export default function AppNavigator() {
   // ============ Global Settings modal — uiBus üzerinden her ekran açabilir ============
   useEffect(() => {
     const unsub = uiBus.on('openSettings', () => {
-      settingsModalRef.current?.present?.();
+      setSettingsVisible(true);
     });
     return unsub;
   }, []);
@@ -415,7 +445,7 @@ export default function AppNavigator() {
 
   return (
     <>
-      <NavigationContainer ref={navRef} key={navigationKey}>
+      <NavigationContainer ref={navRef} key={navigationKey} theme={NAV_THEME}>
         {showMainNavigator ? <MainNavigator /> : <AuthNavigator initialRoute={resumeRoute} />}
       </NavigationContainer>
 
@@ -438,8 +468,8 @@ export default function AppNavigator() {
       {/* Global Settings modal — uiBus.emit('openSettings') ile her ekrandan açılır */}
       {showMainNavigator && (
         <SettingsModal
-          bottomSheetRef={settingsModalRef}
-          onClose={() => settingsModalRef.current?.dismiss?.()}
+          visible={settingsVisible}
+          onClose={() => setSettingsVisible(false)}
         />
       )}
     </>

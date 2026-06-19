@@ -7,7 +7,7 @@ import {
   TouchableWithoutFeedback,
   Keyboard,
 } from "react-native";
-import { useDispatch } from "react-redux";
+import { useDispatch, useSelector } from "react-redux";
 import { updateRegistrationField } from "../store/slices/authSlice";
 import { KeyboardStickyView } from "react-native-keyboard-controller";
 import { LinearGradient } from "expo-linear-gradient";
@@ -26,10 +26,24 @@ const calculateAge = (day, month, year) => {
 
 export default function RegisterStep6Screen({ navigation }) {
   const dispatch = useDispatch();
+  const persistedDob = useSelector((s) => s.auth.registrationForm.dateOfBirth);
 
-  const [day, setDay] = useState("");
-  const [month, setMonth] = useState("");
-  const [year, setYear] = useState("");
+  // Persist edilmiş ISO string varsa parse et — kullanıcı uygulamayı kapatıp
+  // açtığında daha önce girdiği tarih input'lara dönsün.
+  const initialDob = (() => {
+    if (!persistedDob) return { d: "", m: "", y: "" };
+    const dt = new Date(persistedDob);
+    if (isNaN(dt.getTime())) return { d: "", m: "", y: "" };
+    return {
+      d: String(dt.getDate()).padStart(2, "0"),
+      m: String(dt.getMonth() + 1).padStart(2, "0"),
+      y: String(dt.getFullYear()),
+    };
+  })();
+
+  const [day, setDay] = useState(initialDob.d);
+  const [month, setMonth] = useState(initialDob.m);
+  const [year, setYear] = useState(initialDob.y);
 
   const [error, setError] = useState("");
   const [errorFields, setErrorFields] = useState([]);
