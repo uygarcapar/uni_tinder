@@ -1,5 +1,12 @@
-export const API_BASE_URL =
-  "https://universitytinder-production.up.railway.app";
+const envBaseUrl = process.env.EXPO_PUBLIC_API_BASE_URL;
+
+if (!envBaseUrl) {
+  throw new Error(
+    "EXPO_PUBLIC_API_BASE_URL is not set. Add it to your .env file."
+  );
+}
+
+export const API_BASE_URL = envBaseUrl.replace(/\/+$/, "");
 
 export const HUB_URL = `${API_BASE_URL}/hubs/match`;
 
