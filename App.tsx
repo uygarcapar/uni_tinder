@@ -14,7 +14,15 @@ import {
 } from "react-native-safe-area-context";
 import { BottomSheetModalProvider } from "@gorhom/bottom-sheet";
 import { KeyboardProvider } from "react-native-keyboard-controller";
+import { NotifierWrapper } from "react-native-notifier";
 import { useFonts } from "expo-font";
+
+// Modul-level — Fast Refresh ile module re-execute olduğunda yeni değer alır.
+// Production'da modul yalnız bir kez evaluate edildiği için sabit kalır.
+// BottomSheetModalProvider'a `key` olarak verildiğinde reload sonrası provider'ı
+// fresh remount eder; reanimated UI thread + gorhom queue + portal state
+// reload'dan kalan corrupt referansları temizlenir.
+const __MODAL_PROVIDER_SESSION = `${Date.now()}-${Math.random()}`;
 
 export default function App() {
   const [fontsLoaded] = useFonts({
@@ -30,9 +38,11 @@ export default function App() {
         <PersistGate loading={null} persistor={persistor}>
           <QueryClientProvider client={queryClient}>
             <KeyboardProvider>
-              <BottomSheetModalProvider>
-                <AppNavigator />
-                <StatusBar style="light" />
+              <BottomSheetModalProvider key={__MODAL_PROVIDER_SESSION}>
+                <NotifierWrapper>
+                  <AppNavigator />
+                  <StatusBar style="light" />
+                </NotifierWrapper>
               </BottomSheetModalProvider>
             </KeyboardProvider>
           </QueryClientProvider>

@@ -46,7 +46,8 @@
       ],
       "expo-maps",
       "expo-status-bar",
-      "expo-audio"
+      "expo-audio",
+      "expo-image"
     ],
     "web": {
       "favicon": "./assets/favicon.png"

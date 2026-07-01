@@ -48,10 +48,7 @@ module.exports = {
     '\\.(jpg|jpeg|png|gif|svg|ttf|woff2?)$': '<rootDir>/src/__mocks__/fileMock.js',
   },
 
-  testMatch: [
-    '<rootDir>/src/**/__tests__/**/*.[jt]s?(x)',
-    '<rootDir>/src/**/?(*.)+(spec|test).[jt]s?(x)',
-  ],
+  testMatch: ['<rootDir>/tests/**/?(*.)+(spec|test).[jt]s?(x)'],
 
   testPathIgnorePatterns: ['/node_modules/', '/ios/', '/android/'],
 };
