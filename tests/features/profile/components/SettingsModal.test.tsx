@@ -1,20 +1,7 @@
 jest.mock('lucide-react-native', () =>
   new Proxy({}, { get: () => () => null })
 );
-jest.mock('@/shared/components/AppBottomSheet');
-jest.mock('@/shared/components/BlurBottomSheetBackdrop', () => {
-  const React = require('react');
-  const { View } = require('react-native');
-  return { __esModule: true, default: () => React.createElement(View) };
-});
-jest.mock('@gorhom/bottom-sheet', () => {
-  const React = require('react');
-  const { View } = require('react-native');
-  return {
-    BottomSheetScrollView: ({ children }: any) =>
-      React.createElement(View, null, children),
-  };
-});
+jest.mock('@/shared/components/AppModal');
 
 const mockApi = { get: jest.fn(), post: jest.fn() };
 jest.mock('@/shared/services/api', () => ({
@@ -40,7 +27,7 @@ jest.mock('@/features/chat/chatService', () => ({
   },
 }));
 
-import { Alert, Linking, Switch, TouchableOpacity } from 'react-native';
+import { Alert, Linking, Switch } from 'react-native';
 import { act, fireEvent, render, waitFor } from '@testing-library/react-native';
 import SettingsModal from '@/features/profile/components/SettingsModal';
 
@@ -87,7 +74,7 @@ describe('SettingsModal — render', () => {
     const onClose = jest.fn();
     const tree = setup({ onClose });
     await act(async () => {});
-    fireEvent.press(tree.UNSAFE_getAllByType(TouchableOpacity)[0]);
+    fireEvent.press(tree.getByTestId('modal-header-close'));
     expect(onClose).toHaveBeenCalledTimes(1);
   });
 });

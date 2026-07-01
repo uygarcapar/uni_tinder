@@ -2,16 +2,7 @@ jest.mock('lucide-react-native', () =>
   new Proxy({}, { get: () => () => null })
 );
 jest.mock('expo-linear-gradient', () => ({ LinearGradient: 'LinearGradient' }));
-jest.mock('@/shared/components/AppBottomSheet');
-jest.mock('@gorhom/bottom-sheet', () => {
-  const React = require('react');
-  const { View } = require('react-native');
-  return {
-    BottomSheetScrollView: ({ children }: any) =>
-      React.createElement(View, null, children),
-    BottomSheetBackdrop: () => null,
-  };
-});
+jest.mock('@/shared/components/AppModal');
 
 const mockDispatch = jest.fn();
 jest.mock('@/shared/hooks/redux', () => ({

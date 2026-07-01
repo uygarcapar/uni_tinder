@@ -2,15 +2,7 @@ import { ActivityIndicator } from 'react-native';
 import { render } from '@testing-library/react-native';
 import PreviewModal from '@/features/profile/components/PreviewModal';
 
-jest.mock('@gorhom/bottom-sheet', () => {
-  const React = require('react');
-  const { View } = require('react-native');
-  return {
-    BottomSheetScrollView: ({ children }: any) =>
-      React.createElement(View, null, children),
-  };
-});
-jest.mock('@/shared/components/AppBottomSheet');
+jest.mock('@/shared/components/AppModal');
 jest.mock('@/features/discover/components/SwipeCard', () => {
   const React = require('react');
   const { Text } = require('react-native');
@@ -26,14 +18,14 @@ describe('PreviewModal', () => {
     const { queryByTestId } = render(
       <PreviewModal visible={false} onClose={jest.fn()} profile={{ id: '1' }} />
     );
-    expect(queryByTestId('app-bottom-sheet')).toBeNull();
+    expect(queryByTestId('app-modal')).toBeNull();
   });
 
-  it('renders the AppBottomSheet wrapper when visible', () => {
+  it('renders the AppModal wrapper when visible', () => {
     const { getByTestId } = render(
       <PreviewModal visible onClose={jest.fn()} profile={{ id: '1' }} />
     );
-    expect(getByTestId('app-bottom-sheet')).toBeTruthy();
+    expect(getByTestId('app-modal')).toBeTruthy();
   });
 
   it('renders the SwipeCard preview when a profile is provided', () => {

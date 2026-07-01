@@ -3,8 +3,7 @@ import { View, ActivityIndicator, TouchableOpacity } from 'react-native';
 import { render, fireEvent } from '@testing-library/react-native';
 import EditModal from '@/features/profile/components/EditModal';
 
-jest.mock('@gorhom/bottom-sheet');
-jest.mock('@/shared/components/AppBottomSheet');
+jest.mock('@/shared/components/AppModal');
 jest.mock('lucide-react-native');
 
 const base = {
