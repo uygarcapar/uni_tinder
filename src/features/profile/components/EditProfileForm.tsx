@@ -12,13 +12,15 @@ import {
   Text,
   TouchableOpacity,
   TextInput,
-  Alert,
   ActivityIndicator,
   InteractionManager,
-  Image,
   Dimensions,
+  Platform,
+  Switch,
+  type DimensionValue,
 } from "react-native";
-import { LinearGradient } from "expo-linear-gradient";
+import { showInfoToast } from "@/shared/services/toaster";
+import { Image } from "expo-image";
 import { GestureDetector, Gesture } from "react-native-gesture-handler";
 import Animated, {
   useSharedValue,
@@ -29,7 +31,9 @@ import Animated, {
   withRepeat,
   Easing,
   runOnJS,
+  type SharedValue,
 } from "react-native-reanimated";
+import { LinearGradient } from "expo-linear-gradient";
 import {
   ChevronDown,
   Plus,
@@ -48,6 +52,12 @@ import {
   Globe,
   Dog,
   Cat,
+  Bird,
+  Rabbit,
+  Rat,
+  Turtle,
+  PawPrint,
+  Ban,
   Briefcase,
   Wind,
   Sun,
@@ -107,9 +117,13 @@ import api from "@/shared/services/api";
 import profileService from "@/features/profile/profileService";
 import AppBottomSheet from "@/shared/components/AppBottomSheet";
 import SearchableListSheet from "@/shared/components/SearchableListSheet";
+import CityPickerModal from "@/features/discover/components/CityPickerModal";
+import LanguagePickerModal from "@/features/profile/components/LanguagePickerModal";
 import { useForm, Controller } from "react-hook-form";
 import { zodResolver } from "@hookform/resolvers/zod";
 import { editProfileFormSchema, EditProfileFormData } from "@/shared/schemas/formSchemas";
+import { matchOption } from "@/features/profile/utils/hydrateProfileForm";
+import { colors } from "../../../shared/theme/colors";
 
 // ─── Reanimated Grid Hesaplamaları ─────────────────────────────────────────
 const { width: WINDOW_WIDTH } = Dimensions.get("window");
@@ -293,11 +307,17 @@ const getHobbyCategoryIcon = (category) => {
 const PET_ICON_MAP = {
   Dog,
   Cat,
+  Bird,
+  Fish,
+  Rabbit,
+  Hamster: Rat,
+  Reptile: Turtle,
+  Turtle,
   None: X,
-  Allergic: X,
-  Other: Sparkles,
+  Allergic: Ban,
+  Other: PawPrint,
 };
-const getPetIcon = (enumName) => PET_ICON_MAP[enumName] || Heart;
+const getPetIcon = (enumName) => PET_ICON_MAP[enumName] || PawPrint;
 
 const PURPOSE_META = {
   Flört: {
@@ -316,29 +336,6 @@ const PURPOSE_META = {
     icon: Wind,
     desc: "Belirli bir beklentim yok, akışına bırakıyorum.",
   },
-};
-
-// ─── matchOption helper ────────────────────────────────────────────────────
-const matchOption = (options, idValue, displayValue) => {
-  if (!options?.length) return null;
-  const byId = options.find((o) => o?.id === idValue);
-  if (byId) return byId;
-  const n = Number(idValue);
-  if (Number.isFinite(n)) {
-    const byNumId = options.find((o) => Number(o?.id) === n);
-    if (byNumId) return byNumId;
-  }
-  const tryStr = (v) =>
-    v &&
-    options.find(
-      (o) =>
-        o?.enumName === v ||
-        o?.name === v ||
-        o?.display === v ||
-        o?.displayName === v ||
-        o?.label === v,
-    );
-  return tryStr(idValue) || tryStr(displayValue) || null;
 };
 
 // ─── Memoized pill / list-item components ──────────────────────────────────
@@ -363,18 +360,18 @@ const HobbyPill = React.memo(function HobbyPill({
         flexDirection: "row",
         alignItems: "center",
         gap: 6,
-        backgroundColor: isSelected ? "#fff" : "transparent",
-        borderColor: isSelected ? "#fff" : "rgba(255,255,255,0.1)",
+        backgroundColor: isSelected ? colors.text : "transparent",
+        borderColor: isSelected ? colors.text : "rgba(255,255,255,0.1)",
       }}
     >
       <Icon
         size={20}
-        color={isSelected ? "#000" : "#9CA3AF"}
+        color={isSelected ? "#000" : colors.textSecondary}
         strokeWidth={1.5}
       />
       <Text
         style={{
-          color: isSelected ? "#000" : "#9CA3AF",
+          color: isSelected ? "#000" : colors.textSecondary,
           fontSize: 13,
           fontWeight: "500",
         }}
@@ -385,17 +382,16 @@ const HobbyPill = React.memo(function HobbyPill({
   );
 });
 
-const OptionPill = React.memo(function OptionPill({
+function OptionPill({
   option,
   isSelected,
   onPress,
   Icon,
 }: any) {
-  const handlePress = useCallback(() => onPress(option), [onPress, option]);
   return (
     <TouchableOpacity
       activeOpacity={1}
-      onPress={handlePress}
+      onPress={() => onPress(option)}
       style={{
         borderRadius: 999,
         borderCurve: "continuous",
@@ -406,20 +402,20 @@ const OptionPill = React.memo(function OptionPill({
         flexDirection: "row",
         alignItems: "center",
         gap: 6,
-        backgroundColor: isSelected ? "#fff" : "transparent",
-        borderColor: isSelected ? "#fff" : "rgba(255,255,255,0.1)",
+        backgroundColor: isSelected ? colors.text : "transparent",
+        borderColor: isSelected ? colors.text : "rgba(255,255,255,0.1)",
       }}
     >
-      {Icon && (
+      {Icon ? (
         <Icon
           size={20}
-          color={isSelected ? "#000" : "#9CA3AF"}
+          color={isSelected ? "#000" : colors.textSecondary}
           strokeWidth={1.5}
         />
-      )}
+      ) : null}
       <Text
         style={{
-          color: isSelected ? "#000" : "#9CA3AF",
+          color: isSelected ? "#000" : colors.textSecondary,
           fontSize: 13,
           fontWeight: "500",
         }}
@@ -428,7 +424,7 @@ const OptionPill = React.memo(function OptionPill({
       </Text>
     </TouchableOpacity>
   );
-});
+}
 
 const OptionListItem = React.memo(function OptionListItem({
   option,
@@ -454,14 +450,14 @@ const OptionListItem = React.memo(function OptionListItem({
       >
         <Icon
           size={20}
-          color={isSelected ? "#fff" : "#6B7280"}
+          color={isSelected ? colors.text : colors.textMuted}
           strokeWidth={1.5}
           style={{ marginRight: 14 }}
         />
         <View style={{ flex: 1, marginRight: 12 }}>
           <Text
             style={{
-              color: isSelected ? "#fff" : "#9CA3AF",
+              color: isSelected ? colors.text : colors.textSecondary,
               fontSize: 15,
               fontWeight: "500",
             }}
@@ -482,7 +478,7 @@ const OptionListItem = React.memo(function OptionListItem({
             </Text>
           )}
         </View>
-        {isSelected && <Check size={20} color="#fff" strokeWidth={2.5} />}
+        {isSelected && <Check size={20} color={colors.text} strokeWidth={2.5} />}
       </TouchableOpacity>
     );
   }
@@ -508,13 +504,13 @@ const OptionListItem = React.memo(function OptionListItem({
         {CustomIcon && (
           <CustomIcon
             size={16}
-            color={isSelected ? "#fff" : "#9CA3AF"}
+            color={isSelected ? colors.text : colors.textSecondary}
             strokeWidth={1.5}
           />
         )}
         <Text
           style={{
-            color: isSelected ? "#fff" : "#9CA3AF",
+            color: isSelected ? colors.text : colors.textSecondary,
             fontSize: 15,
             fontWeight: "500",
           }}
@@ -522,18 +518,84 @@ const OptionListItem = React.memo(function OptionListItem({
           {option.name}
         </Text>
       </View>
-      {isSelected && <Check size={20} color="#fff" strokeWidth={2.5} />}
+      {isSelected && <Check size={20} color={colors.text} strokeWidth={2.5} />}
     </TouchableOpacity>
   );
 });
 
 // ─── Photo grid components ─────────────────────────────────────────────────
-function PhotoItem({ photo, onPress, savingPhoto }: any) {
-  const [loading, setLoading] = useState(true);
+// Photo yüklenirken absolute overlay olarak shimmer'lı SkelBox göster.
+// SkelBox h:number bekliyor; foto cell'i %100 doldurduğu için absolute fill
+// + onLayout ile genişlik/yükseklik ölçüp shimmer translate'i hesaplıyoruz.
+function PhotoShimmer({ borderRadius = 0 }: { borderRadius?: number }) {
+  const shimmer = useSharedValue(0);
+  const widthSV = useSharedValue(0);
 
   useEffect(() => {
-    setLoading(true);
-  }, [photo.photoImageUrl]);
+    shimmer.value = withRepeat(
+      withTiming(1, { duration: 1200, easing: Easing.linear }),
+      -1,
+      false,
+    );
+  }, [shimmer]);
+
+  const animStyle = useAnimatedStyle(() => ({
+    transform: [{ translateX: (shimmer.value - 1) * widthSV.value }],
+  }));
+
+  return (
+    <View
+      pointerEvents="none"
+      onLayout={(e) => {
+        widthSV.value = e.nativeEvent.layout.width;
+      }}
+      style={{
+        position: "absolute",
+        top: 0,
+        left: 0,
+        right: 0,
+        bottom: 0,
+        borderRadius,
+        backgroundColor: colors.surface,
+        overflow: "hidden",
+      }}
+    >
+      <Animated.View
+        pointerEvents="none"
+        style={[
+          {
+            position: "absolute",
+            top: 0,
+            left: 0,
+            width: "200%",
+            height: "100%",
+          },
+          animStyle,
+        ]}
+      >
+        <LinearGradient
+          colors={[
+            "transparent",
+            "rgba(255,255,255,0.07)",
+            "transparent",
+            "rgba(255,255,255,0.07)",
+            "transparent",
+          ]}
+          locations={[0, 0.25, 0.5, 0.75, 1]}
+          start={{ x: 0, y: 0 }}
+          end={{ x: 1, y: 0 }}
+          style={{ flex: 1 }}
+        />
+      </Animated.View>
+    </View>
+  );
+}
+
+// expo-image — memory+disk cache → modal her açıldığında foto cache'ten anında
+// gelir, ilk yüklemede shimmer gösterilir. Native cachePolicy reliable olduğu
+// için RN Image'daki onLoad-cached-hit problemi ve 5s safety-net gerekmez.
+function PhotoItem({ photo, onPress, savingPhoto }: any) {
+  const [loading, setLoading] = useState(true);
 
   return (
     <View style={{ width: "100%", height: "100%" }}>
@@ -544,28 +606,19 @@ function PhotoItem({ photo, onPress, savingPhoto }: any) {
           borderRadius: 20,
           borderCurve: "continuous",
           overflow: "hidden",
-          backgroundColor: "#1E1E1E",
+          backgroundColor: colors.surface,
         }}
       >
         <Image
           source={{ uri: photo.photoImageUrl }}
           style={{ width: "100%", height: "100%" }}
-          resizeMode="cover"
+          contentFit="cover"
+          cachePolicy="memory-disk"
+          transition={150}
           onLoad={() => setLoading(false)}
+          onError={() => setLoading(false)}
         />
-        {loading && (
-          <View
-            pointerEvents="none"
-            style={{
-              position: "absolute",
-              top: 0,
-              left: 0,
-              right: 0,
-              bottom: 0,
-              backgroundColor: "#1E1E1E",
-            }}
-          />
-        )}
+        {loading && <PhotoShimmer borderRadius={20} />}
       </View>
       <TouchableOpacity
         activeOpacity={1}
@@ -581,7 +634,7 @@ function PhotoItem({ photo, onPress, savingPhoto }: any) {
           alignItems: "center",
           justifyContent: "center",
           zIndex: 50,
-          backgroundColor: "#1E1E1E",
+          backgroundColor: colors.surface,
         }}
       >
         <View pointerEvents="none">
@@ -606,22 +659,35 @@ const SortablePhoto = React.memo(function SortablePhoto({
   const translateY = useSharedValue(position.y);
   const startX = useSharedValue(0);
   const startY = useSharedValue(0);
+  const scale = useSharedValue(1);
+  // zIndex'i state ile tutuyoruz, useAnimatedStyle'a sokmuyoruz. Fabric'te
+  // zIndex layout property'sidir ve animated style içinde okunduğunda her
+  // frame ShadowTree commit'i tetikler — 6 photo × her frame = saniyede
+  // yüzlerce commit → react_native_assert "attempts < 1024" SIGABRT.
+  const [dragZ, setDragZ] = useState(0);
 
-  useEffect(() => {
-    translateX.value = withSpring(translateX.value, SPRING_CONFIG);
-    translateY.value = withSpring(translateY.value, SPRING_CONFIG);
-  }, [translateX, translateY]);
+  // ÖNCEKİ: mount'ta withSpring(translateX.value) no-op spring fırlatıyordu →
+  // 12 paralel spring loop. Initial değer zaten doğru, spring'e gerek yok.
 
   useAnimatedReaction(
     () => positions.value[id],
-    (newIndex) => {
-      if (!isDragging.value && newIndex !== undefined) {
-        const pos = getPosition(newIndex);
-        translateX.value = withSpring(pos.x, SPRING_CONFIG);
-        translateY.value = withSpring(pos.y, SPRING_CONFIG);
-      }
+    (newIndex, prev) => {
+      // Initial fire'da (prev === null) ve değişiklik yoksa spring kurma —
+      // mount sırasındaki gereksiz spring cascade'ini önler.
+      if (newIndex === undefined) return;
+      if (prev === undefined && newIndex === index) return;
+      if (newIndex === prev) return;
+      if (isDragging.value) return;
+      const pos = getPosition(newIndex);
+      translateX.value = withSpring(pos.x, SPRING_CONFIG);
+      translateY.value = withSpring(pos.y, SPRING_CONFIG);
     },
   );
+
+  // ÖNCESİ: useAnimatedReaction(isDragging) mount sırasında 6 photo × 1
+  // worklet kaydı → reanimated başlangıç maliyeti. SONRASI: scale spring'i
+  // ve dragZ state'i pan gesture handler'larında doğrudan tetikleniyor.
+  // Mount'ta hiçbir worklet kayıt edilmiyor, drag feedback aynı.
 
   const panGesture = useMemo(
     () =>
@@ -631,6 +697,8 @@ const SortablePhoto = React.memo(function SortablePhoto({
           isDragging.value = true;
           startX.value = translateX.value;
           startY.value = translateY.value;
+          scale.value = withSpring(1.05, SPRING_CONFIG);
+          runOnJS(setDragZ)(100);
         })
         .onUpdate((event) => {
           translateX.value = startX.value + event.translationX;
@@ -657,6 +725,8 @@ const SortablePhoto = React.memo(function SortablePhoto({
         })
         .onEnd(() => {
           isDragging.value = false;
+          scale.value = withSpring(1, SPRING_CONFIG);
+          runOnJS(setDragZ)(0);
           const finalPos = getPosition(positions.value[id]);
           runOnJS(onDragEnd)(positions.value, false);
           translateX.value = withSpring(finalPos.x, SPRING_CONFIG);
@@ -677,51 +747,66 @@ const SortablePhoto = React.memo(function SortablePhoto({
     transform: [
       { translateX: translateX.value },
       { translateY: translateY.value },
-      { scale: withSpring(isDragging.value ? 1.05 : 1, SPRING_CONFIG) },
-    ],
-    zIndex: isDragging.value ? 100 : 0,
+      { scale: scale.value },
+    ] as any,
   }));
 
   return (
     <GestureDetector gesture={panGesture}>
-      <Animated.View style={animatedStyle}>{children}</Animated.View>
+      <Animated.View style={[animatedStyle, { zIndex: dragZ }]}>
+        {children}
+      </Animated.View>
     </GestureDetector>
   );
 });
 
-// ─── Skeleton primitives ───────────────────────────────────────────────────
-// ProfileScreen'deki SkeletonBox ile birebir aynı: Reanimated translateX +
-// LinearGradient ile shimmer. Form ilk açıldığında InteractionManager bittiğine
-// kadar bu skeleton render edilir ve gerçek form ile aynı dikey ritmi tutar.
-function SkeletonBox({ width: w, height: h, borderRadius = 8, style }: any) {
-  const animW = typeof w === "number" ? w : WINDOW_WIDTH;
-  const shimmer = useSharedValue(-animW);
-
-  useEffect(() => {
-    shimmer.value = withRepeat(
-      withTiming(animW * 2, { duration: 1200, easing: Easing.linear }),
-      -1,
-      false,
-    );
-  }, [shimmer, animW]);
-
+// ─── Lightweight skeleton ──────────────────────────────────────────────────
+// Modal açılırken parent tarafından render edilir. Heavy form mount'unu maskeler.
+// Shimmer: tek shared value parent'tan paylaştırılır → tüm box'lar aynı
+// driver'ı okur (her box ayrı shared value açmaz). Animasyon transform-only;
+// layout commit tetiklemez, mount pressure'a katkı vermez.
+//
+// Gradient seamless loop: 200% genişlik + 2 peak (gradient_local 0.25 ve 0.75)
+// → period box_width. translateX'i -box_width → 0 aralığında animate edip
+// snap'lediğimizde peak hep aynı absolute pozisyona düşüyor, görsel kopukluk
+// olmuyor. Naive tek-peak gradient cycle'ın %50'sinde görünmüyordu (band
+// ekrandan çıkıp soldan tekrar girene kadar boşluk) → kullanıcıya "geri
+// dönüş" gibi geliyordu. Şimdi her an visible area'da bir peak var, sürekli
+// L→R akış.
+function SkelBox({
+  w,
+  h,
+  r = 8,
+  mt = 0,
+  mb = 0,
+  shimmer,
+}: {
+  w?: DimensionValue;
+  h: number;
+  r?: number;
+  mt?: number;
+  mb?: number;
+  shimmer: SharedValue<number>;
+}) {
+  const widthSV = useSharedValue(0);
   const animStyle = useAnimatedStyle(() => ({
-    transform: [{ translateX: shimmer.value }],
+    transform: [{ translateX: (shimmer.value - 1) * widthSV.value }],
   }));
-
   return (
     <View
-      style={[
-        {
-          width: w ?? "100%",
-          height: h,
-          borderRadius,
-          borderCurve: "continuous",
-          backgroundColor: "#1E1E1E",
-          overflow: "hidden",
-        },
-        style,
-      ]}
+      onLayout={(e) => {
+        widthSV.value = e.nativeEvent.layout.width;
+      }}
+      style={{
+        width: w ?? "100%",
+        height: h,
+        borderRadius: r,
+        borderCurve: "continuous",
+        backgroundColor: colors.surface,
+        marginTop: mt,
+        marginBottom: mb,
+        overflow: "hidden",
+      }}
     >
       <Animated.View
         pointerEvents="none"
@@ -730,14 +815,21 @@ function SkeletonBox({ width: w, height: h, borderRadius = 8, style }: any) {
             position: "absolute",
             top: 0,
             left: 0,
-            width: animW * 2,
+            width: "200%",
             height: "100%",
           },
           animStyle,
         ]}
       >
         <LinearGradient
-          colors={["transparent", "rgba(255,255,255,0.07)", "transparent"]}
+          colors={[
+            "transparent",
+            "rgba(255,255,255,0.07)",
+            "transparent",
+            "rgba(255,255,255,0.07)",
+            "transparent",
+          ]}
+          locations={[0, 0.25, 0.5, 0.75, 1]}
           start={{ x: 0, y: 0 }}
           end={{ x: 1, y: 0 }}
           style={{ flex: 1 }}
@@ -747,181 +839,62 @@ function SkeletonBox({ width: w, height: h, borderRadius = 8, style }: any) {
   );
 }
 
-// Form skeleton — gerçek form bölümleriyle aynı dikey ritim ve genişlikler.
-// İçerik animasyonu bittikten sonra bu component sökülür, gerçek form gelir.
-function FormSkeleton() {
-  // Pill row: flex-wrap pill grubunu simüle eder (random görünmeyen tekrar).
-  const PillRow = ({ count = 6 }: any) => (
-    <View style={{ flexDirection: "row", flexWrap: "wrap", gap: 8 }}>
-      {Array.from({ length: count }).map((_, i) => (
-        <SkeletonBox
-          key={i}
-          width={70 + ((i * 23) % 60)}
-          height={42}
-          borderRadius={999}
-        />
-      ))}
-    </View>
-  );
-
-  const SectionHeader = () => (
-    <View style={{ marginTop: 28, marginBottom: 14 }}>
-      <SkeletonBox
-        width={150}
-        height={22}
-        borderRadius={6}
-        style={{ marginBottom: 10 }}
-      />
-      <SkeletonBox width={"85%"} height={14} borderRadius={4} />
-    </View>
-  );
+export function EditProfileFormSkeleton() {
+  const shimmer = useSharedValue(0);
+  useEffect(() => {
+    shimmer.value = withRepeat(
+      withTiming(1, { duration: 1200, easing: Easing.linear }),
+      -1,
+      false,
+    );
+  }, [shimmer]);
 
   return (
     <>
-      {/* Preview pill */}
-      <SkeletonBox
-        height={52}
-        borderRadius={999}
-        style={{ marginTop: 8, marginBottom: 16 }}
-      />
-
-      {/* Photos */}
-      <View style={{ marginTop: 8 }}>
-        <SkeletonBox
-          width={130}
-          height={22}
-          borderRadius={6}
-          style={{ marginBottom: 10 }}
-        />
-        <SkeletonBox
-          width={"85%"}
-          height={14}
-          borderRadius={4}
-          style={{ marginBottom: 14 }}
-        />
-        <View
-          style={{
-            position: "relative",
-            width: "100%",
-            height: 2 * ITEM_HEIGHT + ROW_GAP,
-          }}
-        >
-          {[0, 1, 2, 3, 4, 5].map((idx) => {
-            const pos = getPosition(idx);
-            return (
-              <View
-                key={idx}
-                style={{
-                  position: "absolute",
-                  left: pos.x,
-                  top: pos.y,
-                  width: ITEM_WIDTH,
-                  height: ITEM_HEIGHT,
-                }}
-              >
-                <SkeletonBox
-                  width={ITEM_WIDTH}
-                  height={ITEM_HEIGHT}
-                  borderRadius={28}
-                />
-              </View>
-            );
-          })}
-        </View>
+      <SkelBox shimmer={shimmer} h={52} r={999} mt={8} mb={16} />
+      <SkelBox shimmer={shimmer} w={130} h={22} r={6} mb={10} />
+      <SkelBox shimmer={shimmer} w={"85%"} h={14} r={4} mb={14} />
+      <View
+        style={{
+          position: "relative",
+          width: "100%",
+          height: 2 * ITEM_HEIGHT + ROW_GAP,
+        }}
+      >
+        {[0, 1, 2, 3, 4, 5].map((idx) => {
+          const pos = getPosition(idx);
+          return (
+            <View
+              key={idx}
+              style={{
+                position: "absolute",
+                left: pos.x,
+                top: pos.y,
+                width: ITEM_WIDTH,
+                height: ITEM_HEIGHT,
+                borderRadius: 28,
+                borderCurve: "continuous",
+              }}
+            >
+              <SkelBox
+                shimmer={shimmer}
+                w={ITEM_WIDTH}
+                h={ITEM_HEIGHT}
+                r={28}
+              />
+            </View>
+          );
+        })}
       </View>
-
-      {/* Bio */}
-      <SectionHeader />
-      <SkeletonBox height={100} borderRadius={30} />
-
-      {/* Usage Purpose — 4 list items */}
-      <SectionHeader />
-      {[0, 1, 2, 3].map((i) => (
-        <View
-          key={i}
-          style={{
-            paddingVertical: 14,
-            flexDirection: "row",
-            alignItems: "center",
-            gap: 14,
-          }}
-        >
-          <SkeletonBox width={20} height={20} borderRadius={6} />
-          <View style={{ flex: 1 }}>
-            <SkeletonBox
-              width={"60%"}
-              height={16}
-              borderRadius={4}
-              style={{ marginBottom: 6 }}
-            />
-            <SkeletonBox width={"85%"} height={12} borderRadius={4} />
-          </View>
-        </View>
-      ))}
-
-      {/* Hobiler — accordion kartları */}
-      <SectionHeader />
+      <SkelBox shimmer={shimmer} w={150} h={22} r={6} mt={28} mb={10} />
+      <SkelBox shimmer={shimmer} h={100} r={30} />
+      <SkelBox shimmer={shimmer} w={150} h={22} r={6} mt={28} mb={10} />
       {[0, 1, 2, 3, 4, 5].map((i) => (
-        <SkeletonBox
-          key={i}
-          height={56}
-          borderRadius={36}
-          style={{ marginTop: 8 }}
-        />
+        <SkelBox key={i} shimmer={shimmer} h={56} r={36} mt={8} />
       ))}
-
-      {/* Sigara — 4 list items */}
-      <SectionHeader />
-      {[0, 1, 2, 3].map((i) => (
-        <View
-          key={i}
-          style={{
-            paddingVertical: 18,
-            flexDirection: "row",
-            alignItems: "center",
-            gap: 10,
-          }}
-        >
-          <SkeletonBox width={16} height={16} borderRadius={4} />
-          <SkeletonBox width={140} height={16} borderRadius={4} />
-        </View>
-      ))}
-
-      {/* Burç — pill grid */}
-      <SectionHeader />
-      <PillRow count={12} />
-
-      {/* İlgi Alanı */}
-      <SectionHeader />
-      <PillRow count={5} />
-
-      {/* Şehir + İlçe */}
-      <SectionHeader />
-      <SkeletonBox
-        height={58}
-        borderRadius={999}
-        style={{ marginBottom: 16 }}
-      />
-      <SkeletonBox height={58} borderRadius={999} />
-
-      {/* Diller */}
-      <SectionHeader />
-      <SkeletonBox height={58} borderRadius={999} />
-
-      {/* Pets */}
-      <SectionHeader />
-      <PillRow count={6} />
-
-      {/* Görünürlük — 3 toggle row */}
-      <SectionHeader />
-      {[0, 1, 2].map((i) => (
-        <SkeletonBox
-          key={i}
-          height={56}
-          borderRadius={16}
-          style={{ marginBottom: 8 }}
-        />
-      ))}
+      <SkelBox shimmer={shimmer} w={150} h={22} r={6} mt={28} mb={10} />
+      <SkelBox shimmer={shimmer} h={58} r={999} mb={16} />
+      <SkelBox shimmer={shimmer} h={58} r={999} />
     </>
   );
 }
@@ -934,18 +907,14 @@ const HobbyGroupAccordion = React.memo(function HobbyGroupAccordion({
   defaultExpanded,
 }: any) {
   const [expanded, setExpanded] = useState(!!defaultExpanded);
-  const rotation = useSharedValue(defaultExpanded ? 180 : 0);
-
-  useEffect(() => {
-    rotation.value = withTiming(expanded ? 180 : 0, {
-      duration: 220,
-      easing: Easing.out(Easing.cubic),
-    });
-  }, [expanded, rotation]);
-
-  const chevStyle = useAnimatedStyle(() => ({
-    transform: [{ rotate: `${rotation.value}deg` }],
-  }));
+  // ÖNCESİ: useSharedValue + useEffect(withTiming) + useAnimatedStyle ile
+  // chevron 220ms easing'le dönüyordu. 9 accordion × 1 worklet seti = mount
+  // sırasında 9 reanimated worklet kaydı → Fabric commit pressure'a katkı.
+  // SONRASI: useState'in driven ettiği inline transform. Easing kayboldu,
+  // chevron tap'te anında dönüyor — UX'te fark edilir değil.
+  const chevStyle = {
+    transform: [{ rotate: expanded ? "180deg" : "0deg" }],
+  };
 
   const selectedCount = useMemo(
     () =>
@@ -990,10 +959,10 @@ const HobbyGroupAccordion = React.memo(function HobbyGroupAccordion({
             flex: 1,
           }}
         >
-          <CategoryIcon size={18} color="#fff" strokeWidth={1.5} />
+          <CategoryIcon size={18} color={colors.text} strokeWidth={1.5} />
           <Text
             style={{
-              color: "#fff",
+              color: colors.text,
               fontSize: 15,
               fontWeight: "600",
             }}
@@ -1006,14 +975,14 @@ const HobbyGroupAccordion = React.memo(function HobbyGroupAccordion({
                 width: 8,
                 height: 8,
                 borderRadius: 4,
-                backgroundColor: "#EF4444",
+                backgroundColor: colors.error,
               }}
             />
           )}
         </View>
-        <Animated.View style={chevStyle}>
-          <ChevronDown size={18} color="#9CA3AF" />
-        </Animated.View>
+        <View style={chevStyle}>
+          <ChevronDown size={18} color={colors.textSecondary} />
+        </View>
       </TouchableOpacity>
 
       {/* Sadece expanded ise render et — collapse'da DOM ağaçtan çıkar */}
@@ -1046,6 +1015,7 @@ const HobbyGroupAccordion = React.memo(function HobbyGroupAccordion({
 const EditProfileForm = forwardRef(function EditProfileForm(
   {
     myProfile,
+    initialValues,
     hobbyGroups,
     smokingOptions,
     zodiacOptions,
@@ -1063,20 +1033,17 @@ const EditProfileForm = forwardRef(function EditProfileForm(
   }: any,
   ref,
 ) {
-  // ── Lazy render: modal açılış animasyonu bitmeden ağır içeriği çizmiyoruz.
-  const [ready, setReady] = useState(false);
-  useEffect(() => {
-    const task = InteractionManager.runAfterInteractions(() => {
-      setReady(true);
-    });
-    return () => task.cancel?.();
-  }, []);
-
   // ── Form draft state ─────────────────────────────────────────────────────
+  // initialValues parent (ProfileScreen) tarafından useMemo ile mount öncesi
+  // hidrate edilir → form post-mount setValue/reset cascade'i olmadan dolu
+  // doğar. Önceki tasarımda mount sonrası büyük bir hydration useEffect 30+
+  // Controller'ı yeniden invalidate ediyordu; bu, Fabric ShadowTree'nin 1024
+  // commit retry limitine baskı uygulayıp account-switch sonrası SIGABRT
+  // crash'lerin asıl sebebiydi.
   const { control, getValues, setValue, trigger, watch, formState: { errors } } = useForm<EditProfileFormData>({
     resolver: zodResolver(editProfileFormSchema),
-    defaultValues: {
-      bio: myProfile?.bio || "",
+    defaultValues: initialValues ?? {
+      bio: "",
       hobbies: [],
       smoking: null,
       zodiac: null,
@@ -1115,6 +1082,17 @@ const EditProfileForm = forwardRef(function EditProfileForm(
   const [districtPickerVisible, setDistrictPickerVisible] = useState(false);
   const [languagePickerVisible, setLanguagePickerVisible] = useState(false);
 
+  // ── Progressive render ─────────────────────────────────────────────────
+  // Tüm form'u tek React commit'inde mount edersek Fabric ShadowTree retry
+  // limit'ini (1024) aşıyor → SIGABRT crash. Section'ları 4 frame'e bölüp
+  // her rAF tick'te bir grup ekliyoruz; commit pressure dağılıyor.
+  const [stage, setStage] = useState(1);
+  useEffect(() => {
+    if (stage >= 4) return;
+    const id = requestAnimationFrame(() => setStage((s) => s + 1));
+    return () => cancelAnimationFrame(id);
+  }, [stage]);
+
   // ── Photo grid (draft order) ────────────────────────────────────────────
   const [draftPhotoOrder, setDraftPhotoOrder] = useState([]);
   const draftPhotoOrderRef = useRef([]);
@@ -1129,202 +1107,48 @@ const EditProfileForm = forwardRef(function EditProfileForm(
     photoOrderDirtyRef.current = photoOrderDirty;
   }, [photoOrderDirty]);
 
-  // ── Hydrate from myProfile (mount + props change) ───────────────────────
-  // myProfile her değiştiğinde değil, ilk geldiğinde / id değişince hydrate et.
-  // Kullanıcının yaptığı değişikliği clobber etmesin diye effect içinde sadece
-  // boş/null draft'ları doldur.
-  const hydratedRef = useRef(false);
+  // ── Mount-once district fetch ───────────────────────────────────────────
+  // initialValues.city parent'ta zaten hidrate edildiği için district fetch'i
+  // izole tek bir mount-once effect'te yapıyoruz. Önceki tasarımda district
+  // fetch hydration cascade'ine bağlıydı ve effect her option arrival'da yeniden
+  // çalışabiliyordu. Şimdi: tek istek, finally'de cancel guard.
   useEffect(() => {
-    if (!myProfile || hydratedRef.current) return;
-    hydratedRef.current = true;
-
-    setValue("bio", myProfile?.bio || "");
-
-    // Hobi ID'lerini normalize et
-    const lookupToId = {};
-    hobbyGroups.forEach((g) => {
-      (g.hobbies || []).forEach((h) => {
-        if (h?.id == null) return;
-        if (h.enumName) lookupToId[h.enumName] = h.id;
-        if (h.name) lookupToId[h.name] = h.id;
-      });
-    });
-    const rawIds = (myProfile?.hobbies || [])
-      .map((h) => {
-        if (typeof h === "number") return h;
-        if (h && typeof h === "object" && h.id != null) return Number(h.id);
-        const n = Number(h);
-        if (Number.isFinite(n)) return n;
-        return lookupToId[h] ?? null;
+    const cityId = initialValues?.city?.id;
+    if (cityId == null) return;
+    let cancelled = false;
+    setDistrictsLoading(true);
+    api
+      .get(API_ENDPOINTS.GET_DISTRICTS_BY_CITY(cityId))
+      .then((res) => {
+        if (cancelled) return;
+        const list = res?.result ?? [];
+        setDistrictOptions(list);
+        setValue(
+          "district",
+          matchOption(list, myProfile?.district, myProfile?.districtDisplay),
+        );
       })
-      .filter((id) => Number.isFinite(id));
-    setValue("hobbies", rawIds);
-
-    setValue("smoking",
-      matchOption(
-        smokingOptions,
-        myProfile?.smokingStatus,
-        myProfile?.smokingStatusDisplay,
-      ),
-    );
-    setValue("zodiac",
-      matchOption(
-        zodiacOptions,
-        myProfile?.zodiacSign,
-        myProfile?.zodiacSignDisplay,
-      ),
-    );
-    setValue("usagePurpose",
-      matchOption(
-        usagePurposeOptions,
-        myProfile?.usagePurpose,
-        myProfile?.usagePurposeDisplay,
-      ),
-    );
-
-    const matchMulti = (options, raws) => {
-      if (!Array.isArray(raws) || !options?.length) return [];
-      return raws
-        .map((raw) =>
-          matchOption(
-            options,
-            typeof raw === "object" ? (raw?.id ?? raw?.enumName) : raw,
-            typeof raw === "object" ? (raw?.name ?? raw?.displayName) : raw,
-          ),
-        )
-        .filter(Boolean);
+      .catch(() => {
+        if (cancelled) return;
+        setDistrictOptions([]);
+        setValue("district", null);
+      })
+      .finally(() => {
+        if (!cancelled) setDistrictsLoading(false);
+      });
+    return () => {
+      cancelled = true;
     };
-    setValue("interestedIn",
-      matchMulti(interestedInOptions, myProfile?.interestedIn),
-    );
-    setValue("languages", matchMulti(languageOptions, myProfile?.spokenLanguages));
-    setValue("pets", matchMulti(petOptions, myProfile?.pets));
-
-    const cityOpt = matchOption(
-      cityOptions,
-      myProfile?.city,
-      myProfile?.cityDisplay,
-    );
-    setValue("city", cityOpt);
-    if (cityOpt?.id != null) {
-      setDistrictsLoading(true);
-      api
-        .get(API_ENDPOINTS.GET_DISTRICTS_BY_CITY(cityOpt.id))
-        .then((res) => {
-          const list = res?.result ?? [];
-          setDistrictOptions(list);
-          setValue("district",
-            matchOption(list, myProfile?.district, myProfile?.districtDisplay),
-          );
-        })
-        .catch(() => {
-          setDistrictOptions([]);
-          setValue("district", null);
-        })
-        .finally(() => setDistrictsLoading(false));
-    }
-
-    setValue("showMyUniversity", myProfile?.showMyUniversity !== false);
-    setValue("showMeOnApp", myProfile?.showMeOnApp !== false);
-    setValue("showAge", myProfile?.showAge !== false);
+    // mount-once: initialValues parent'ta key={myProfile.id} ile boundary'lendi
+    // → bu component instance'ı boyunca initialValues.city sabit.
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [myProfile]);
-
-  // ── Defensive late-hydration: options sonradan yüklenirse boş draft'ları doldur
-  useEffect(() => {
-    if (!myProfile) return;
-
-    if (
-      !draftCity &&
-      cityOptions.length > 0 &&
-      (myProfile.city || myProfile.cityDisplay)
-    ) {
-      const opt = matchOption(
-        cityOptions,
-        myProfile.city,
-        myProfile.cityDisplay,
-      );
-      if (opt) {
-        setValue("city", opt);
-        setDistrictsLoading(true);
-        api
-          .get(API_ENDPOINTS.GET_DISTRICTS_BY_CITY(opt.id))
-          .then((res) => {
-            const list = res?.result ?? [];
-            setDistrictOptions(list);
-            setValue("district",
-              matchOption(list, myProfile.district, myProfile.districtDisplay),
-            );
-          })
-          .catch(() => {})
-          .finally(() => setDistrictsLoading(false));
-      }
-    }
-
-    if (
-      draftInterestedIn.length === 0 &&
-      interestedInOptions.length > 0 &&
-      myProfile.interestedIn?.length > 0
-    ) {
-      const matched = myProfile.interestedIn
-        .map((raw) =>
-          matchOption(
-            interestedInOptions,
-            typeof raw === "object" ? (raw?.id ?? raw?.enumName) : raw,
-            typeof raw === "object" ? raw?.name : raw,
-          ),
-        )
-        .filter(Boolean);
-      if (matched.length > 0) setValue("interestedIn", matched);
-    }
-
-    if (
-      draftLanguages.length === 0 &&
-      languageOptions.length > 0 &&
-      myProfile.spokenLanguages?.length > 0
-    ) {
-      const matched = myProfile.spokenLanguages
-        .map((raw) =>
-          matchOption(
-            languageOptions,
-            typeof raw === "object" ? (raw?.id ?? raw?.enumName) : raw,
-            typeof raw === "object" ? raw?.name : raw,
-          ),
-        )
-        .filter(Boolean);
-      if (matched.length > 0) setValue("languages", matched);
-    }
-
-    if (
-      draftPets.length === 0 &&
-      petOptions.length > 0 &&
-      myProfile.pets?.length > 0
-    ) {
-      const matched = myProfile.pets
-        .map((raw) =>
-          matchOption(
-            petOptions,
-            typeof raw === "object" ? (raw?.id ?? raw?.enumName) : raw,
-            typeof raw === "object" ? raw?.name : raw,
-          ),
-        )
-        .filter(Boolean);
-      if (matched.length > 0) setValue("pets", matched);
-    }
-  }, [
-    myProfile,
-    cityOptions,
-    interestedInOptions,
-    languageOptions,
-    petOptions,
-    draftCity,
-    draftInterestedIn.length,
-    draftLanguages.length,
-    draftPets.length,
-  ]);
+  }, []);
 
   // ── Photo order: myProfile.photosList değişince (kullanıcı dirty değilse) sync
+  // Stage 2'ye kadar SortablePhoto'lar render olmadığı için sync etmek
+  // gereksiz; gate ekledik. İlk mount commit'i daha hafif geçer.
   useEffect(() => {
+    if (stage < 2) return;
     if (myProfile?.photosList && !photoOrderDirty) {
       const sortedPhotos = [...myProfile.photosList].sort(
         (a, b) => (a.order ?? 0) - (b.order ?? 0),
@@ -1336,7 +1160,7 @@ const EditProfileForm = forwardRef(function EditProfileForm(
       });
       positions.value = newPositions;
     }
-  }, [myProfile?.photosList, photoOrderDirty, positions]);
+  }, [stage, myProfile?.photosList, photoOrderDirty, positions]);
 
   // ── Toggle callbacks ────────────────────────────────────────────────────
   const toggleHobby = useCallback((id) => {
@@ -1345,7 +1169,7 @@ const EditProfileForm = forwardRef(function EditProfileForm(
       setValue("hobbies", prev.filter((h) => h !== id));
     } else {
       if (prev.length >= 10) {
-        Alert.alert("Sınır Aşıldı", "En fazla 10 hobi seçebilirsin.");
+        showInfoToast({ title: "Sınır Aşıldı", message: "En fazla 10 hobi seçebilirsin.", variant: "error" });
         return;
       }
       setValue("hobbies", [...prev, id]);
@@ -1369,7 +1193,7 @@ const EditProfileForm = forwardRef(function EditProfileForm(
       setValue("languages", prev.filter((p) => p?.id !== opt.id));
     } else {
       if (prev.length >= 15) {
-        Alert.alert("Sınır Aşıldı", "En fazla 15 dil seçebilirsin.");
+        showInfoToast({ title: "Sınır Aşıldı", message: "En fazla 15 dil seçebilirsin.", variant: "error" });
         return;
       }
       setValue("languages", [...prev, opt]);
@@ -1383,7 +1207,7 @@ const EditProfileForm = forwardRef(function EditProfileForm(
       setValue("pets", prev.filter((p) => p?.id !== opt.id));
     } else {
       if (prev.length >= 8) {
-        Alert.alert("Sınır Aşıldı", "En fazla 8 hayvan seçebilirsin.");
+        showInfoToast({ title: "Sınır Aşıldı", message: "En fazla 8 hayvan seçebilirsin.", variant: "error" });
         return;
       }
       setValue("pets", [...prev, opt]);
@@ -1430,7 +1254,7 @@ const EditProfileForm = forwardRef(function EditProfileForm(
     if (savingProfile) return;
     const isValid = await trigger("interestedIn");
     if (!isValid) {
-      Alert.alert("Eksik Bilgi", "En az bir ilgi alanı seçmelisin.");
+      showInfoToast({ title: "Eksik Bilgi", message: "En az bir ilgi alanı seçmelisin.", variant: "error" });
       return;
     }
     setSavingProfile(true);
@@ -1468,7 +1292,7 @@ const EditProfileForm = forwardRef(function EditProfileForm(
         })
         .filter(Boolean);
 
-      const updates = {
+      const updates: Record<string, unknown> = {
         Bio: bio,
         ...(hobbyEnums.length > 0
           ? { Hobbies: hobbyEnums }
@@ -1557,7 +1381,7 @@ const EditProfileForm = forwardRef(function EditProfileForm(
         "Profil güncelleme hatası:",
         JSON.stringify(e?.response?.data || e?.message || e),
       );
-      Alert.alert("Hata", "Profil güncellenemedi, tekrar dene.");
+      showInfoToast({ title: "Hata", message: "Profil güncellenemedi, tekrar dene.", variant: "error" });
     } finally {
       setSavingProfile(false);
       onSavingChange?.(false);
@@ -1594,43 +1418,68 @@ const EditProfileForm = forwardRef(function EditProfileForm(
     [languageOptions, setValue],
   );
 
-  // ── Lazy gate: form ile aynı yapıda skeleton shimmer. InteractionManager
-  // bittikten sonra gerçek form mount edilir.
-  if (!ready) {
-    return <FormSkeleton />;
-  }
-
   // ── Render ─────────────────────────────────────────────────────────────
+  // DEBUG: Languages section DEVRE DIŞI. Diğer her şey render ediliyor.
   return (
-    <>
-      {/* Kartımı Önizle */}
-      <TouchableOpacity
-        activeOpacity={0.85}
-        onPress={onPreview}
-        style={{ marginTop: 8, marginBottom: 16 }}
-      >
+    // position:relative wrapper — skeleton overlay'in left:0/right:0'ı bu
+    // View'a göre ölçer (scroll container'ın paddingHorizontal:20'sini
+    // saymadan dışına taşmaz).
+    <View style={{ position: "relative" }}>
+      {/* Skeleton overlay — stage 4'e kadar form section'larının üzerini
+          kapatır. Form section'ları arka planda progressive mount oluyor
+          (display:none yapmadık çünkü o crash'e neden oluyordu — Yoga layout
+          work'ü stage 4'e ertelenip tek commit'te patlıyor). Bu sefer
+          section'lar görünür şekilde mount oluyor ama üstüne opak skeleton
+          binmiş; kullanıcı pop-in görmez, modal ilk açıldığındaki gibi durur. */}
+      {stage < 4 && (
         <View
-          className="border-[0.5px] border-white/10"
+          pointerEvents="none"
           style={{
-            backgroundColor: "#1E1E1E",
-            borderRadius: 999,
-            borderCurve: "continuous",
-            overflow: "hidden",
-            padding: 16,
-            flexDirection: "row",
-            alignItems: "center",
-            justifyContent: "center",
-            gap: 12,
+            position: "absolute",
+            top: 0,
+            left: 0,
+            right: 0,
+            zIndex: 10,
+            backgroundColor: colors.bg,
           }}
         >
-          <IdCardLanyard size={20} color="#9CA3AF" strokeWidth={1.5} />
-          <Text style={{ color: "#9CA3AF", fontWeight: "500", fontSize: 14 }}>
-            İnsanlar beni nasıl görüyor?
-          </Text>
+          <EditProfileFormSkeleton />
         </View>
-      </TouchableOpacity>
+      )}
 
-      {/* Fotoğraflar GRID */}
+      {/* Kartımı Önizle — stage 1 */}
+      {stage >= 1 && (
+        <TouchableOpacity
+          activeOpacity={0.85}
+          onPress={onPreview}
+          style={{ marginTop: 8, marginBottom: 16 }}
+        >
+          <View
+            className="border-[0.5px] border-white/10"
+            style={{
+              backgroundColor: colors.surface,
+              borderRadius: 999,
+              borderCurve: "continuous",
+              overflow: "hidden",
+              padding: 16,
+              flexDirection: "row",
+              alignItems: "center",
+              justifyContent: "center",
+              gap: 12,
+            }}
+          >
+            <IdCardLanyard size={20} color={colors.textSecondary} strokeWidth={1.5} />
+            <Text
+              style={{ color: colors.textSecondary, fontWeight: "500", fontSize: 14 }}
+            >
+              İnsanlar beni nasıl görüyor?
+            </Text>
+          </View>
+        </TouchableOpacity>
+      )}
+
+      {/* Fotoğraflar GRID — stage 2 */}
+      {stage >= 2 && (
       <View style={{ marginTop: 8 }}>
         <View
           style={{
@@ -1647,14 +1496,14 @@ const EditProfileForm = forwardRef(function EditProfileForm(
               marginBottom: 6,
             }}
           >
-            <Text style={{ color: "#fff", fontSize: 20, fontWeight: "600" }}>
+            <Text style={{ color: colors.text, fontSize: 20, fontWeight: "600" }}>
               Fotoğraflar
             </Text>
-            {savingPhoto && <ActivityIndicator size="small" color="#9CA3AF" />}
+            {savingPhoto && <ActivityIndicator size="small" color={colors.textSecondary} />}
           </View>
           <View className="flex-row items-center gap-2 mb-3 pr-4">
-            <InfoIcon size={16} color="#9CA3AF" />
-            <Text style={{ color: "#9CA3AF", fontSize: 14, fontWeight: "400" }}>
+            <InfoIcon size={16} color={colors.textSecondary} />
+            <Text style={{ color: colors.textSecondary, fontSize: 14, fontWeight: "400" }}>
               Sıralamak için basılı tut ve sürükle. İlk fotoğrafın ana
               fotoğrafın olur.
             </Text>
@@ -1695,7 +1544,7 @@ const EditProfileForm = forwardRef(function EditProfileForm(
                       borderRadius: 28,
                       borderCurve: "continuous",
                       overflow: "hidden",
-                      backgroundColor: "#1E1E1E",
+                      backgroundColor: colors.surface,
                       borderWidth: 0.5,
                       borderColor: "rgba(255,255,255,0.1)",
                       alignItems: "center",
@@ -1703,7 +1552,7 @@ const EditProfileForm = forwardRef(function EditProfileForm(
                     }}
                   >
                     <View className="flex justify-center items-center pointer-events-none">
-                      <Plus size={40} strokeWidth={2} color="#6B7280" />
+                      <Plus size={40} strokeWidth={2} color={colors.textMuted} />
                     </View>
                   </TouchableOpacity>
                 </View>
@@ -1745,20 +1594,22 @@ const EditProfileForm = forwardRef(function EditProfileForm(
           ))}
         </View>
       </View>
+      )}
 
-      {/* Biyografi */}
+      {/* Biyografi — stage 1 */}
+      {stage >= 1 && (
       <View style={{ marginTop: 28 }}>
         <View
           style={{
             flexDirection: "column",
-            alignItems: "start",
+            alignItems: "flex-start",
             marginBottom: 10,
             marginTop: 12,
           }}
         >
           <Text
             style={{
-              color: "#fff",
+              color: colors.text,
               fontSize: 20,
               fontWeight: "600",
               marginBottom: 6,
@@ -1767,8 +1618,8 @@ const EditProfileForm = forwardRef(function EditProfileForm(
             Biyografi
           </Text>
           <View className="flex-row items-center gap-2 mb-3 pr-4">
-            <InfoIcon size={16} color="#9CA3AF" />
-            <Text style={{ color: "#9CA3AF", fontSize: 14, fontWeight: "400" }}>
+            <InfoIcon size={16} color={colors.textSecondary} />
+            <Text style={{ color: colors.textSecondary, fontSize: 14, fontWeight: "400" }}>
               Kendini tanıtabileceğin kısa bir biyografi yazabilirsin. Neler
               yaptığından bahset.
             </Text>
@@ -1784,11 +1635,11 @@ const EditProfileForm = forwardRef(function EditProfileForm(
               multiline
               maxLength={500}
               placeholder="Bize kendinden bahset..."
-              placeholderTextColor="#9CA3AF"
+              placeholderTextColor={colors.textSecondary}
               style={{
                 borderCurve: "continuous",
                 overflow: "hidden",
-                color: "#fff",
+                color: colors.text,
                 fontSize: 15,
                 lineHeight: 22,
                 minHeight: 100,
@@ -1797,30 +1648,35 @@ const EditProfileForm = forwardRef(function EditProfileForm(
                 padding: 12,
                 paddingLeft: 16,
                 borderWidth: 0.5,
-                borderColor: errors.bio ? "rgba(239,68,68,0.5)" : "rgba(255,255,255,0.1)",
+                borderColor: errors.bio
+                  ? "rgba(239,68,68,0.5)"
+                  : "rgba(255,255,255,0.1)",
               }}
             />
           )}
         />
         {errors.bio && (
-          <Text style={{ color: "#ef4444", fontSize: 12, marginTop: 4 }}>{errors.bio.message}</Text>
+          <Text style={{ color: colors.error, fontSize: 12, marginTop: 4 }}>
+            {errors.bio.message}
+          </Text>
         )}
       </View>
+      )}
 
-      {/* Kullanım amacı */}
-      {usagePurposeOptions.length > 0 && (
+      {/* Kullanım amacı — stage 1 */}
+      {stage >= 1 && usagePurposeOptions.length > 0 && (
         <View style={{ marginTop: 28 }}>
           <View
             style={{
               flexDirection: "column",
-              alignItems: "start",
+              alignItems: "flex-start",
               marginBottom: 10,
               marginTop: 12,
             }}
           >
             <Text
               style={{
-                color: "#fff",
+                color: colors.text,
                 fontSize: 20,
                 fontWeight: "600",
                 marginBottom: 6,
@@ -1829,9 +1685,9 @@ const EditProfileForm = forwardRef(function EditProfileForm(
               Kullanım Amacı
             </Text>
             <View className="flex-row items-center gap-2 mb-3 pr-4">
-              <InfoIcon size={16} color="#9CA3AF" />
+              <InfoIcon size={16} color={colors.textSecondary} />
               <Text
-                style={{ color: "#9CA3AF", fontSize: 14, fontWeight: "400" }}
+                style={{ color: colors.textSecondary, fontSize: 14, fontWeight: "400" }}
               >
                 Lit'i hangi amaçla kullandığını seç.
               </Text>
@@ -1844,7 +1700,8 @@ const EditProfileForm = forwardRef(function EditProfileForm(
               isSelected={draftUsagePurpose?.id === opt.id}
               purposeMap={PURPOSE_META}
               onPress={() =>
-                setValue("usagePurpose",
+                setValue(
+                  "usagePurpose",
                   draftUsagePurpose?.id === opt.id ? null : opt,
                 )
               }
@@ -1853,57 +1710,61 @@ const EditProfileForm = forwardRef(function EditProfileForm(
         </View>
       )}
 
-      {/* Hobiler — Accordion per category (sadece açıkken pill'ler render) */}
-      <View style={{ marginTop: 28 }}>
-        <View
-          style={{
-            flexDirection: "column",
-            alignItems: "start",
-            marginBottom: 4,
-            marginTop: 12,
-          }}
-        >
-          <Text
-            style={{
-              color: "#fff",
-              fontSize: 20,
-              fontWeight: "600",
-              marginBottom: 6,
-            }}
-          >
-            Hobiler ({draftHobbies.length} seçildi)
-          </Text>
-          <View className="flex-row items-center gap-2 mb-3 pr-4">
-            <InfoIcon size={16} color="#9CA3AF" />
-            <Text style={{ color: "#9CA3AF", fontSize: 14, fontWeight: "400" }}>
-              Kategoriye dokun, içindeki hobilerden seç. En fazla 10.
-            </Text>
-          </View>
-        </View>
-        {hobbyGroups.map((group, gi) => (
-          <HobbyGroupAccordion
-            key={group.category ?? gi}
-            group={group}
-            selectedIds={draftHobbies}
-            onToggle={toggleHobby}
-          />
-        ))}
-      </View>
-
-      {/* Sigara */}
-      {smokingOptions.length > 0 && (
+      {/* Hobiler — stage 3 */}
+      {stage >= 3 && (
         <View style={{ marginTop: 28 }}>
           <View
             style={{
               flexDirection: "column",
-              alignItems: "start",
+              alignItems: "flex-start",
+              marginBottom: 4,
+              marginTop: 12,
+            }}
+          >
+            <Text
+              style={{
+                color: colors.text,
+                fontSize: 20,
+                fontWeight: "600",
+                marginBottom: 6,
+              }}
+            >
+              Hobiler ({draftHobbies.length} seçildi)
+            </Text>
+            <View className="flex-row items-center gap-2 mb-3 pr-4">
+              <InfoIcon size={16} color={colors.textSecondary} />
+              <Text
+                style={{ color: colors.textSecondary, fontSize: 14, fontWeight: "400" }}
+              >
+                Kategoriye dokun, içindeki hobilerden seç. En fazla 10.
+              </Text>
+            </View>
+          </View>
+          {hobbyGroups.map((group, gi) => (
+            <HobbyGroupAccordion
+              key={group.category ?? gi}
+              group={group}
+              selectedIds={draftHobbies}
+              onToggle={toggleHobby}
+            />
+          ))}
+        </View>
+      )}
+
+      {/* Sigara — stage 2 */}
+      {stage >= 2 && smokingOptions.length > 0 && (
+        <View style={{ marginTop: 28 }}>
+          <View
+            style={{
+              flexDirection: "column",
+              alignItems: "flex-start",
               marginBottom: 10,
               marginTop: 12,
             }}
           >
             <Text
               style={{
-                color: "#fff",
+                color: colors.text,
                 fontSize: 20,
                 fontWeight: "600",
                 marginBottom: 6,
@@ -1912,12 +1773,11 @@ const EditProfileForm = forwardRef(function EditProfileForm(
               Sigara Kullanımı
             </Text>
             <View className="flex-row items-center gap-2 mb-3 pr-4">
-              <InfoIcon size={16} color="#9CA3AF" />
+              <InfoIcon size={16} color={colors.textSecondary} />
               <Text
-                style={{ color: "#9CA3AF", fontSize: 14, fontWeight: "400" }}
+                style={{ color: colors.textSecondary, fontSize: 14, fontWeight: "400" }}
               >
-                Sigara kullanım durumunu seç. Bu bilgi, sigara içen veya içmeyen
-                kullanıcıların birbirlerini daha kolay bulmasını sağlar.
+                Sigara kullanım durumunu seç.
               </Text>
             </View>
           </View>
@@ -1935,20 +1795,20 @@ const EditProfileForm = forwardRef(function EditProfileForm(
         </View>
       )}
 
-      {/* Burç */}
-      {zodiacOptions.length > 0 && (
+      {/* Burç — stage 3 */}
+      {stage >= 3 && zodiacOptions.length > 0 && (
         <View style={{ marginTop: 28 }}>
           <View
             style={{
               flexDirection: "column",
-              alignItems: "start",
+              alignItems: "flex-start",
               marginBottom: 10,
               marginTop: 12,
             }}
           >
             <Text
               style={{
-                color: "#fff",
+                color: colors.text,
                 fontSize: 20,
                 fontWeight: "600",
                 marginBottom: 6,
@@ -1957,12 +1817,11 @@ const EditProfileForm = forwardRef(function EditProfileForm(
               Burç
             </Text>
             <View className="flex-row items-center gap-2 mb-3 pr-4">
-              <InfoIcon size={16} color="#9CA3AF" />
+              <InfoIcon size={16} color={colors.textSecondary} />
               <Text
-                style={{ color: "#9CA3AF", fontSize: 14, fontWeight: "400" }}
+                style={{ color: colors.textSecondary, fontSize: 14, fontWeight: "400" }}
               >
-                Burç seçimini yap. Bazı kullanıcılar için burç bilgisi, ortak
-                ilgi alanlarını keşfetmek açısından önemli olabilir.
+                Burç seçimini yap.
               </Text>
             </View>
           </View>
@@ -1985,18 +1844,18 @@ const EditProfileForm = forwardRef(function EditProfileForm(
                     flexDirection: "row",
                     alignItems: "center",
                     gap: 6,
-                    backgroundColor: selected ? "#fff" : "transparent",
-                    borderColor: selected ? "#fff" : "rgba(255,255,255,0.1)",
+                    backgroundColor: selected ? colors.text : "transparent",
+                    borderColor: selected ? colors.text : "rgba(255,255,255,0.1)",
                   }}
                 >
                   <Icon
                     size={20}
-                    color={selected ? "#000" : "#9CA3AF"}
+                    color={selected ? "#000" : colors.textSecondary}
                     strokeWidth={1.5}
                   />
                   <Text
                     style={{
-                      color: selected ? "#000" : "#9CA3AF",
+                      color: selected ? "#000" : colors.textSecondary,
                       fontSize: 14,
                       fontWeight: "500",
                     }}
@@ -2010,20 +1869,20 @@ const EditProfileForm = forwardRef(function EditProfileForm(
         </View>
       )}
 
-      {/* İlgi Alanı */}
-      {interestedInOptions.length > 0 && (
+      {/* İlgi Alanı — stage 4 */}
+      {stage >= 4 && interestedInOptions.length > 0 && (
         <View style={{ marginTop: 28 }}>
           <View
             style={{
               flexDirection: "column",
-              alignItems: "start",
+              alignItems: "flex-start",
               marginBottom: 10,
               marginTop: 12,
             }}
           >
             <Text
               style={{
-                color: "#fff",
+                color: colors.text,
                 fontSize: 20,
                 fontWeight: "600",
                 marginBottom: 6,
@@ -2032,11 +1891,11 @@ const EditProfileForm = forwardRef(function EditProfileForm(
               İlgi Alanı ({draftInterestedIn.length} seçildi)
             </Text>
             <View className="flex-row items-center gap-2 mb-3 pr-4">
-              <InfoIcon size={16} color="#9CA3AF" />
+              <InfoIcon size={16} color={colors.textSecondary} />
               <Text
-                style={{ color: "#9CA3AF", fontSize: 14, fontWeight: "400" }}
+                style={{ color: colors.textSecondary, fontSize: 14, fontWeight: "400" }}
               >
-                Kiminle eşleşmek istediğini seç. En az bir seçenek zorunlu.
+                Kiminle eşleşmek istediğini seç.
               </Text>
             </View>
           </View>
@@ -2054,20 +1913,20 @@ const EditProfileForm = forwardRef(function EditProfileForm(
         </View>
       )}
 
-      {/* Şehir */}
-      {cityOptions.length > 0 && (
+      {/* Şehir — stage 4 */}
+      {stage >= 4 && cityOptions.length > 0 && (
         <View style={{ marginTop: 28 }}>
           <View
             style={{
               flexDirection: "column",
-              alignItems: "start",
+              alignItems: "flex-start",
               marginBottom: 10,
               marginTop: 12,
             }}
           >
             <Text
               style={{
-                color: "#fff",
+                color: colors.text,
                 fontSize: 20,
                 fontWeight: "600",
                 marginBottom: 6,
@@ -2076,12 +1935,11 @@ const EditProfileForm = forwardRef(function EditProfileForm(
               Şehir
             </Text>
             <View className="flex-row items-center gap-2 mb-3 pr-4">
-              <InfoIcon size={16} color="#9CA3AF" />
+              <InfoIcon size={16} color={colors.textSecondary} />
               <Text
-                style={{ color: "#9CA3AF", fontSize: 14, fontWeight: "400" }}
+                style={{ color: colors.textSecondary, fontSize: 14, fontWeight: "400" }}
               >
-                Bulunduğun şehri seç. İlçe seçimi şehre bağlı olarak
-                güncellenir.
+                Bulunduğun şehri seç.
               </Text>
             </View>
           </View>
@@ -2109,10 +1967,10 @@ const EditProfileForm = forwardRef(function EditProfileForm(
                 flex: 1,
               }}
             >
-              <Navigation size={18} color="#9CA3AF" strokeWidth={1.5} />
+              <Navigation size={18} color={colors.textSecondary} strokeWidth={1.5} />
               <Text
                 style={{
-                  color: draftCity ? "#fff" : "#9CA3AF",
+                  color: draftCity ? colors.text : colors.textSecondary,
                   fontSize: 15,
                   fontWeight: "500",
                 }}
@@ -2120,13 +1978,13 @@ const EditProfileForm = forwardRef(function EditProfileForm(
                 {draftCity?.name || "Şehir Seç"}
               </Text>
             </View>
-            <ChevronDown size={18} color="#9CA3AF" strokeWidth={2} />
+            <ChevronDown size={18} color={colors.textSecondary} strokeWidth={2} />
           </TouchableOpacity>
         </View>
       )}
 
-      {/* İlçe */}
-      {draftCity && (
+      {/* İlçe — stage 4 */}
+      {stage >= 4 && draftCity && (
         <View style={{ marginTop: 16 }}>
           <TouchableOpacity
             activeOpacity={0.7}
@@ -2158,10 +2016,10 @@ const EditProfileForm = forwardRef(function EditProfileForm(
                 flex: 1,
               }}
             >
-              <Navigation size={18} color="#9CA3AF" strokeWidth={1.5} />
+              <Navigation size={18} color={colors.textSecondary} strokeWidth={1.5} />
               <Text
                 style={{
-                  color: draftDistrict ? "#fff" : "#9CA3AF",
+                  color: draftDistrict ? colors.text : colors.textSecondary,
                   fontSize: 15,
                   fontWeight: "500",
                 }}
@@ -2171,28 +2029,28 @@ const EditProfileForm = forwardRef(function EditProfileForm(
               </Text>
             </View>
             {districtsLoading ? (
-              <ActivityIndicator size="small" color="#9CA3AF" />
+              <ActivityIndicator size="small" color={colors.textSecondary} />
             ) : (
-              <ChevronDown size={18} color="#9CA3AF" strokeWidth={2} />
+              <ChevronDown size={18} color={colors.textSecondary} strokeWidth={2} />
             )}
           </TouchableOpacity>
         </View>
       )}
 
-      {/* Konuşulan Diller */}
-      {languageOptions.length > 0 && (
+      {/* Konuşulan Diller — stage 4 */}
+      {stage >= 4 && languageOptions.length > 0 && (
         <View style={{ marginTop: 28 }}>
           <View
             style={{
               flexDirection: "column",
-              alignItems: "start",
+              alignItems: "flex-start",
               marginBottom: 10,
               marginTop: 12,
             }}
           >
             <Text
               style={{
-                color: "#fff",
+                color: colors.text,
                 fontSize: 20,
                 fontWeight: "600",
                 marginBottom: 6,
@@ -2201,9 +2059,9 @@ const EditProfileForm = forwardRef(function EditProfileForm(
               Konuşulan Diller ({draftLanguages.length} seçildi)
             </Text>
             <View className="flex-row items-center gap-2 mb-3 pr-4">
-              <InfoIcon size={16} color="#9CA3AF" />
+              <InfoIcon size={16} color={colors.textSecondary} />
               <Text
-                style={{ color: "#9CA3AF", fontSize: 14, fontWeight: "400" }}
+                style={{ color: colors.textSecondary, fontSize: 14, fontWeight: "400" }}
               >
                 Konuştuğun dilleri seç (en fazla 15).
               </Text>
@@ -2233,10 +2091,10 @@ const EditProfileForm = forwardRef(function EditProfileForm(
                 flex: 1,
               }}
             >
-              <Languages size={18} color="#9CA3AF" strokeWidth={1.5} />
+              <Languages size={18} color={colors.textSecondary} strokeWidth={1.5} />
               <Text
                 style={{
-                  color: draftLanguages.length > 0 ? "#fff" : "#9CA3AF",
+                  color: draftLanguages.length > 0 ? colors.text : colors.textSecondary,
                   fontSize: 15,
                   fontWeight: "500",
                 }}
@@ -2246,7 +2104,7 @@ const EditProfileForm = forwardRef(function EditProfileForm(
                   : "Dil Seç"}
               </Text>
             </View>
-            <ChevronDown size={18} color="#9CA3AF" strokeWidth={2} />
+            <ChevronDown size={18} color={colors.textSecondary} strokeWidth={2} />
           </TouchableOpacity>
           {draftLanguages.length > 0 && (
             <View
@@ -2271,20 +2129,20 @@ const EditProfileForm = forwardRef(function EditProfileForm(
         </View>
       )}
 
-      {/* Evcil Hayvanlar */}
-      {petOptions.length > 0 && (
+      {/* Evcil Hayvanlar — stage 4 */}
+      {stage >= 4 && petOptions.length > 0 && (
         <View style={{ marginTop: 28 }}>
           <View
             style={{
               flexDirection: "column",
-              alignItems: "start",
+              alignItems: "flex-start",
               marginBottom: 10,
               marginTop: 12,
             }}
           >
             <Text
               style={{
-                color: "#fff",
+                color: colors.text,
                 fontSize: 20,
                 fontWeight: "600",
                 marginBottom: 6,
@@ -2293,9 +2151,9 @@ const EditProfileForm = forwardRef(function EditProfileForm(
               Evcil Hayvanlar ({draftPets.length} seçildi)
             </Text>
             <View className="flex-row items-center gap-2 mb-3 pr-4">
-              <InfoIcon size={16} color="#9CA3AF" />
+              <InfoIcon size={16} color={colors.textSecondary} />
               <Text
-                style={{ color: "#9CA3AF", fontSize: 14, fontWeight: "400" }}
+                style={{ color: colors.textSecondary, fontSize: 14, fontWeight: "400" }}
               >
                 Birlikte yaşadığın hayvanları seç (en fazla 8).
               </Text>
@@ -2315,19 +2173,20 @@ const EditProfileForm = forwardRef(function EditProfileForm(
         </View>
       )}
 
-      {/* Görünürlük */}
+      {/* Görünürlük — stage 4 */}
+      {stage >= 4 && (
       <View style={{ marginTop: 28 }}>
         <View
           style={{
             flexDirection: "column",
-            alignItems: "start",
+            alignItems: "flex-start",
             marginBottom: 10,
             marginTop: 12,
           }}
         >
           <Text
             style={{
-              color: "#fff",
+              color: colors.text,
               fontSize: 20,
               fontWeight: "600",
               marginBottom: 6,
@@ -2336,8 +2195,8 @@ const EditProfileForm = forwardRef(function EditProfileForm(
             Görünürlük
           </Text>
           <View className="flex-row items-center gap-2 mb-3 pr-4">
-            <InfoIcon size={16} color="#9CA3AF" />
-            <Text style={{ color: "#9CA3AF", fontSize: 14, fontWeight: "400" }}>
+            <InfoIcon size={16} color={colors.textSecondary} />
+            <Text style={{ color: colors.textSecondary, fontSize: 14, fontWeight: "400" }}>
               Profilinde hangi bilgilerin başkalarına gösterileceğini sen
               belirle.
             </Text>
@@ -2363,110 +2222,123 @@ const EditProfileForm = forwardRef(function EditProfileForm(
             field: "showAge" as const,
           },
         ].map((row) => (
-          <TouchableOpacity
+          <View
             key={row.key}
-            activeOpacity={0.7}
-            onPress={() => setValue(row.field, !row.value)}
             style={{
               flexDirection: "row",
               alignItems: "center",
               justifyContent: "space-between",
               paddingVertical: 14,
               paddingHorizontal: 16,
-              borderRadius: 16,
+              borderRadius: 99,
               borderCurve: "continuous",
               borderWidth: 0.5,
               borderColor: "rgba(255,255,255,0.1)",
               marginBottom: 8,
-              backgroundColor: "#1E1E1E",
             }}
           >
-            <Text style={{ color: "#fff", fontSize: 15, fontWeight: "500" }}>
+            <Text style={{ color: colors.text, fontSize: 15, fontWeight: "500" }}>
               {row.label}
             </Text>
-            <View
-              style={{
-                width: 46,
-                height: 28,
-                borderRadius: 999,
-                backgroundColor: row.value ? "#fff" : "rgba(255,255,255,0.15)",
-                justifyContent: "center",
-                paddingHorizontal: 3,
-              }}
-            >
-              <View
-                style={{
-                  width: 22,
-                  height: 22,
-                  borderRadius: 999,
-                  backgroundColor: row.value ? "#000" : "#9CA3AF",
-                  alignSelf: row.value ? "flex-end" : "flex-start",
+            {Platform.OS === "ios" ? (
+              // RN'in built-in Switch'i = native UISwitch wrapper. SwiftUI Toggle
+              // + Host yolunu denedik: BottomSheet mount layout pass'iyle
+              // senkronize olmuyor, ilk render'da Host bounds'u yanlış ölçülüp
+              // toggle sağ-üste yapışıyor; OS bir layout invalidation tetikleyene
+              // (örn. notification center pull) kadar düzelmiyor. iOS 26+ Liquid
+              // Glass switch'lere uygulanmıyor (UISwitch design dili korunuyor),
+              // bu yüzden görsel kayıp yok.
+              <Switch
+                value={row.value}
+                onValueChange={(v) => setValue(row.field, v)}
+                trackColor={{
+                  false: "rgba(255,255,255,0.15)",
+                  true: colors.successIos,
                 }}
+                thumbColor={colors.text}
+                ios_backgroundColor="rgba(255,255,255,0.15)"
               />
-            </View>
-          </TouchableOpacity>
+            ) : (
+              <TouchableOpacity
+                activeOpacity={0.7}
+                onPress={() => setValue(row.field, !row.value)}
+                style={{
+                  width: 46,
+                  height: 28,
+                  borderRadius: 999,
+                  backgroundColor: row.value ? colors.text : "rgba(255,255,255,0.15)",
+                  justifyContent: "center",
+                  paddingHorizontal: 3,
+                }}
+              >
+                <View
+                  style={{
+                    width: 22,
+                    height: 22,
+                    borderRadius: 999,
+                    backgroundColor: row.value ? "#000" : colors.textSecondary,
+                    alignSelf: row.value ? "flex-end" : "flex-start",
+                  }}
+                />
+              </TouchableOpacity>
+            )}
+          </View>
         ))}
       </View>
+      )}
 
-      {/* ══ Picker sheets (portal-based, modal'ın üstüne stack'lenir) ══ */}
-      <AppBottomSheet
-        visible={cityPickerVisible}
-        onClose={() => setCityPickerVisible(false)}
-        snapPoints={["75%"]}
-        backdrop="blur"
-        backgroundStyle={{ borderRadius: 44 }}
-        handleIndicatorStyle={{ backgroundColor: "#9CA3AF" }}
-        stackBehavior="push"
-      >
-        <SearchableListSheet
+      {/* Picker sheets — stage 4, lazy mount (visible olunca render et) */}
+      {stage >= 4 && (
+        <>
+
+      {cityPickerVisible && (
+        <CityPickerModal
+          visible={cityPickerVisible}
+          onClose={() => setCityPickerVisible(false)}
           items={cityOptions}
           initialValue={draftCity?.enumName ?? ""}
-          title="Şehir Seç"
           onConfirm={onCityConfirm}
-          onCancel={() => setCityPickerVisible(false)}
         />
-      </AppBottomSheet>
+      )}
 
-      <AppBottomSheet
-        visible={districtPickerVisible}
-        onClose={() => setDistrictPickerVisible(false)}
-        snapPoints={["75%"]}
-        backdrop="blur"
-        backgroundStyle={{ borderRadius: 44 }}
-        handleIndicatorStyle={{ backgroundColor: "#9CA3AF" }}
-        stackBehavior="push"
-      >
-        <SearchableListSheet
-          items={districtOptions}
-          initialValue={draftDistrict?.enumName ?? ""}
-          title="İlçe Seç"
-          onConfirm={onDistrictConfirm}
-          onCancel={() => setDistrictPickerVisible(false)}
-        />
-      </AppBottomSheet>
+      {districtPickerVisible && (
+        <AppBottomSheet
+          visible={districtPickerVisible}
+          onClose={() => setDistrictPickerVisible(false)}
+          // CityPickerModal ile aynı: 75% normal, 90% klavye açıldığında
+          // (keyboardBehavior="extend") otomatik en yüksek snap'e çıkar.
+          snapPoints={["75%", "90%"]}
+          backdrop="blur"
+          backgroundStyle={{ borderRadius: 44 }}
+          handleIndicatorStyle={{ backgroundColor: colors.textSecondary }}
+          stackBehavior="push"
+        >
+          <SearchableListSheet
+            items={districtOptions}
+            initialValue={draftDistrict?.enumName ?? ""}
+            title="İlçe Seç"
+            onConfirm={onDistrictConfirm}
+            onCancel={() => setDistrictPickerVisible(false)}
+          />
+        </AppBottomSheet>
+      )}
 
-      <AppBottomSheet
-        visible={languagePickerVisible}
-        onClose={() => setLanguagePickerVisible(false)}
-        snapPoints={["75%"]}
-        backdrop="blur"
-        backgroundStyle={{ borderRadius: 44 }}
-        handleIndicatorStyle={{ backgroundColor: "#9CA3AF" }}
-        stackBehavior="push"
-      >
-        <SearchableListSheet
+      {languagePickerVisible && (
+        <LanguagePickerModal
+          visible={languagePickerVisible}
+          onClose={() => setLanguagePickerVisible(false)}
           items={languageOptions}
-          multi
           initialSelectedValues={draftLanguages.map((l) => l.enumName)}
           maxLimit={15}
           limitMsg="En fazla 15 dil seçebilirsin."
-          title="Dil Seç"
           onConfirm={onLanguageConfirm}
-          onCancel={() => setLanguagePickerVisible(false)}
         />
-      </AppBottomSheet>
-    </>
+      )}
+        </>
+      )}
+    </View>
   );
+
 });
 
 export default EditProfileForm;

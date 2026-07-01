@@ -25,9 +25,11 @@ export const fetchSubscriptionStatus = createAsyncThunk(
       const backendRes = await api.get(API_ENDPOINTS.SUBSCRIPTION_STATUS) as any;
       return normalizeStatus(backendRes.result);
     } catch (e: any) {
-      const rcPremium = await getRevenueCatPremiumStatus().catch(() => false);
-      if (rcPremium) {
-        return { isPremium: true, expiresAt: null };
+      const rcStatus = await getRevenueCatPremiumStatus().catch(
+        () => ({ isPremium: false, expiresAt: null } as const)
+      );
+      if (rcStatus.isPremium) {
+        return { isPremium: true, expiresAt: rcStatus.expiresAt };
       }
       return rejectWithValue(e.message);
     }
@@ -117,4 +119,15 @@ const subscriptionSlice = createSlice({
 });
 
 export const { setPremium } = subscriptionSlice.actions;
+
+// Backend `isPremium` flag'i webhook/cache gecikmesinde stale kalabildiği için
+// `expiresAt`'i client-side de doğrula. `expiresAt === null` ise (RC fallback
+// veya henüz hiç sync olmamış) boolean'a güveniyoruz.
+export const selectIsPremium = (state: any): boolean => {
+  const sub = state?.subscription;
+  if (!sub?.isPremium) return false;
+  if (!sub.expiresAt) return true;
+  return new Date(sub.expiresAt).getTime() > Date.now();
+};
+
 export default subscriptionSlice.reducer;

@@ -1,5 +1,6 @@
 import { Modal, View, Image, TouchableOpacity, Dimensions, StatusBar } from 'react-native';
 import { X } from 'lucide-react-native';
+import { colors } from '../../../shared/theme/colors';
 
 const { width, height } = Dimensions.get('window');
 
@@ -35,7 +36,7 @@ export default function ImageViewer({ visible, uri, onClose }: any) {
             justifyContent: 'center',
           }}
         >
-          <X size={24} color="#fff" />
+          <X size={24} color={colors.text} />
         </TouchableOpacity>
 
         {!!uri && (

@@ -183,7 +183,6 @@ export const registerAndComplete = createAsyncThunk(
       put("Gender", reg.gender);
       put("DateOfBirth", reg.dateOfBirth);
       put("Password", reg.password);
-      put("PhoneNumber", reg.phoneNumber);
 
       put("Height", profile.height);
       put("Department", profile.department);

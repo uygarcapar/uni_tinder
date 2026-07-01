@@ -1,4 +1,4 @@
-import { useCallback, useState, useRef, useEffect } from "react";
+import { useState, useRef, useEffect } from "react";
 import {
   View,
   Text,
@@ -8,13 +8,19 @@ import {
   Linking,
   Switch,
 } from "react-native";
-import { BottomSheetScrollView } from "@gorhom/bottom-sheet";
-import BlurBottomSheetBackdrop from "@/shared/components/BlurBottomSheetBackdrop";
-import AppBottomSheet from "@/shared/components/AppBottomSheet";
-import { X, Download, Trash2, AlertCircle, Eye, BellOff } from "lucide-react-native";
+import AppModal from "@/shared/components/AppModal";
+import {
+  Download,
+  Trash2,
+  AlertCircle,
+  Eye,
+  BellOff,
+  InfoIcon,
+} from "lucide-react-native";
 import api from "@/shared/services/api";
 import { API_ENDPOINTS } from "@/shared/constants/api";
 import chatService from "@/features/chat/chatService";
+import { colors } from "../../../shared/theme/colors";
 
 export default function SettingsModal({ visible, onClose }: any) {
   const [downloadLoading, setDownloadLoading] = useState(false);
@@ -42,11 +48,6 @@ export default function SettingsModal({ visible, onClose }: any) {
       Alert.alert("Hata", "Tercih güncellenemedi.");
     }
   };
-
-  const renderBackdrop = useCallback(
-    (props) => <BlurBottomSheetBackdrop {...props} onPress={onClose} />,
-    [onClose],
-  );
 
   // ── Verilerimi İndir ────────────────────────────────────────────────────────
   const handleDownloadData = async () => {
@@ -120,196 +121,172 @@ export default function SettingsModal({ visible, onClose }: any) {
   };
 
   return (
-    <AppBottomSheet
+    <AppModal
       visible={visible}
-      snapPoints={["90%"]}
       onClose={onClose}
-      backdropComponent={renderBackdrop}
+      title="Ayarlar"
+      closeButton={false}
+      contentContainerStyle={{ paddingTop: 36 }}
     >
-      {/* Header */}
-      <View
+      {/* Mesajlaşma Bölümü */}
+      <SettingsSection
+        title="Mesajlaşma"
+        subtitle="Sohbet ve bildirim davranışını kontrol et."
+        marginTop={20}
+      />
+
+      {/* Read receipt opt-out */}
+      <SettingsToggleRow
+        icon={<Eye size={18} color={colors.text} strokeWidth={1.5} />}
+        title="Okundu Bilgisi"
+        subtitle="Mesajları okuduğunda partner görsün"
+        value={prefs?.showReadReceipts ?? true}
+        disabled={!prefs}
+        onToggle={() => togglePref('showReadReceipts')}
+      />
+
+      {/* Skip push when online */}
+      <SettingsToggleRow
+        icon={<BellOff size={18} color={colors.text} strokeWidth={1.5} />}
+        title="Online'ken Bildirim Susturma"
+        subtitle="Uygulama açıkken push bildirimi alma"
+        value={prefs?.skipPushWhenOnline ?? false}
+        disabled={!prefs}
+        onToggle={() => togglePref('skipPushWhenOnline')}
+      />
+
+      {/* Gizlilik Bölümü */}
+      <SettingsSection
+        title="Gizlilik"
+        subtitle="Verilerin üzerinde tam kontrol sende."
+      />
+
+      {/* Verilerimi İndir */}
+      <TouchableOpacity
+        onPress={handleDownloadData}
+        disabled={downloadLoading}
+        activeOpacity={0.8}
         style={{
+          borderRadius: 36,
+          borderCurve: "continuous",
+          overflow: "hidden",
+          borderWidth: 0.5,
+          borderColor: "rgba(255,255,255,0.1)",
           flexDirection: "row",
           alignItems: "center",
+          justifyContent: "space-between",
+          padding: 16,
           paddingHorizontal: 20,
-          paddingTop: 32,
-          paddingBottom: 12,
-          backgroundColor: "#121212",
+          marginBottom: 8,
         }}
       >
-        <TouchableOpacity
-          onPress={onClose}
-          activeOpacity={0.7}
-          style={{ width: 60 }}
-        >
-          <X size={22} color="#9CA3AF" strokeWidth={2} pointerEvents="none" />
-        </TouchableOpacity>
-        <Text
-          style={{
-            flex: 1,
-            color: "#fff",
-            fontSize: 15,
-            fontWeight: "700",
-            textAlign: "center",
-          }}
-        >
-          Ayarlar
-        </Text>
-        <View style={{ width: 60 }} />
-      </View>
+        <View style={{ flexDirection: "row", alignItems: "center", gap: 10, flex: 1 }}>
+          <View style={{ flex: 1 }}>
+            <Text style={{ color: colors.text, fontSize: 15, fontWeight: "500" }}>
+              Verilerimi İndir
+            </Text>
+          </View>
+          {downloadLoading ? (
+            <ActivityIndicator
+              size="small"
+              color={colors.textSecondary}
+              style={{ width: 18, height: 18 }}
+            />
+          ) : (
+            <Download size={18} color={colors.text} strokeWidth={2} pointerEvents="none" />
+          )}
+        </View>
+      </TouchableOpacity>
 
-      <BottomSheetScrollView
-        style={{ flex: 1, backgroundColor: "#121212" }}
-        contentContainerStyle={{ paddingHorizontal: 20, paddingBottom: 40 }}
-        showsVerticalScrollIndicator={false}
-        nestedScrollEnabled={true}
+      {/* Hesap Bölümü */}
+      <SettingsSection
+        title="Hesap"
+        subtitle="Hesabını silersen 30 gün içinde geri dönebilirsin."
+      />
+
+      {/* Hesabı Sil */}
+      <TouchableOpacity
+        onPress={handleDeleteAccount}
+        disabled={deleteLoading}
+        activeOpacity={0.8}
+        style={{
+          borderRadius: 36,
+          borderCurve: "continuous",
+          overflow: "hidden",
+          borderWidth: 0.5,
+          borderColor: "rgba(255,255,255,0.1)",
+          flexDirection: "row",
+          alignItems: "center",
+          justifyContent: "space-between",
+          padding: 16,
+          paddingHorizontal: 20,
+        }}
       >
-        {/* Mesajlaşma Bölümü */}
-        <Text
-          style={{
-            color: "#9CA3AF",
-            fontSize: 13,
-            fontWeight: "700",
-            marginTop: 20,
-            marginBottom: 12,
-            marginLeft: 4,
-          }}
-        >
-          Mesajlaşma
-        </Text>
-
-        {/* Read receipt opt-out */}
-        <SettingsToggleRow
-          icon={<Eye size={20} color="#fff" strokeWidth={1.5} />}
-          title="Okundu Bilgisi"
-          subtitle="Mesajları okuduğunda partner görsün"
-          value={prefs?.showReadReceipts ?? true}
-          disabled={!prefs}
-          onToggle={() => togglePref('showReadReceipts')}
-        />
-
-        {/* Skip push when online */}
-        <SettingsToggleRow
-          icon={<BellOff size={20} color="#fff" strokeWidth={1.5} />}
-          title="Online'ken Bildirim Susturma"
-          subtitle="Uygulama açıkken push bildirimi alma"
-          value={prefs?.skipPushWhenOnline ?? false}
-          disabled={!prefs}
-          onToggle={() => togglePref('skipPushWhenOnline')}
-        />
-
-        {/* Gizlilik Bölümü */}
-        <Text
-          style={{
-            color: "#9CA3AF",
-            fontSize: 13,
-            fontWeight: "700",
-            marginTop: 24,
-            marginBottom: 12,
-            marginLeft: 4,
-          }}
-        >
-          Gizlilik
-        </Text>
-
-        {/* Verilerimi İndir */}
-        <TouchableOpacity
-          onPress={handleDownloadData}
-          disabled={downloadLoading}
-          activeOpacity={0.8}
-          style={{
-            borderRadius: 40,
-            borderCurve: "continuous",
-            overflow: "hidden",
-            borderWidth: 0.5,
-            borderColor: "rgba(255,255,255,0.1)",
-            flexDirection: "row",
-            alignItems: "center",
-            justifyContent: "space-between",
-            padding: 18,
-            marginBottom: 8,
-          }}
-        >
-          <View style={{ flexDirection: "row", alignItems: "center", gap: 12 }}>
-            <Download size={20} color="#fff" strokeWidth={1.5} pointerEvents="none" />
-            <View>
-              <Text style={{ color: "#fff", fontSize: 14, fontWeight: "500" }}>
-                Verilerimi İndir
-              </Text>
-              <Text style={{ color: "#9CA3AF", fontSize: 12, marginTop: 2 }}>
-                Tüm verilerinin bir kopyasını al
-              </Text>
-            </View>
+        <View style={{ flexDirection: "row", alignItems: "center", gap: 10, flex: 1 }}>
+          <View style={{ flex: 1 }}>
+            <Text style={{ color: colors.errorStrong, fontSize: 15, fontWeight: "500" }}>
+              Hesabı Sil
+            </Text>
           </View>
-          {downloadLoading && (
-            <ActivityIndicator size="small" color="#9CA3AF" />
+          {deleteLoading ? (
+            <ActivityIndicator
+              size="small"
+              color={colors.errorStrong}
+              style={{ width: 18, height: 18 }}
+            />
+          ) : (
+            <Trash2 size={18} color={colors.errorStrong} strokeWidth={1.5} pointerEvents="none" />
           )}
-        </TouchableOpacity>
+        </View>
+      </TouchableOpacity>
+    </AppModal>
+  );
+}
 
-        {/* Hesap Bölümü */}
-        <Text
-          style={{
-            color: "#9CA3AF",
-            fontSize: 13,
-            fontWeight: "700",
-            marginTop: 24,
-            marginBottom: 12,
-            marginLeft: 4,
-          }}
-        >
-          Hesap
-        </Text>
-
-        {/* Hesabı Sil */}
-        <TouchableOpacity
-          onPress={handleDeleteAccount}
-          disabled={deleteLoading}
-          activeOpacity={0.8}
-          style={{
-            borderRadius: 40,
-            borderCurve: "continuous",
-            overflow: "hidden",
-            borderWidth: 0.5,
-            borderColor: "rgba(255,255,255,0.1)",
-            flexDirection: "row",
-            alignItems: "center",
-            justifyContent: "space-between",
-            padding: 18,
-          }}
-        >
-          <View style={{ flexDirection: "row", alignItems: "center", gap: 12 }}>
-            <Trash2 size={20} color="#d10d27" strokeWidth={1.5} pointerEvents="none" />
-            <View>
-              <Text style={{ color: "#d10d27", fontSize: 14, fontWeight: "500" }}>
-                Hesabı Sil
-              </Text>
-              <Text style={{ color: "#9CA3AF", fontSize: 12, marginTop: 2 }}>
-                30 gün geri dönüş hakkın olur
-              </Text>
-            </View>
-          </View>
-          {deleteLoading && (
-            <ActivityIndicator size="small" color="#d10d27" />
-          )}
-        </TouchableOpacity>
-
-        {/* Grace Period Notu */}
+// Section header — EditModal/EditProfileForm patterniyle aynı: büyük beyaz başlık + InfoIcon + gri açıklama.
+function SettingsSection({ title, subtitle, marginTop = 28 }: any) {
+  return (
+    <View
+      style={{
+        flexDirection: "column",
+        alignItems: "flex-start",
+        marginTop,
+        marginBottom: 10,
+      }}
+    >
+      <Text
+        style={{
+          color: colors.text,
+          fontSize: 20,
+          fontWeight: "600",
+          marginBottom: subtitle ? 6 : 0,
+        }}
+      >
+        {title}
+      </Text>
+      {subtitle ? (
         <View
           style={{
             flexDirection: "row",
-            alignItems: "flex-start",
+            alignItems: "center",
             gap: 8,
-            marginTop: 12,
-            paddingHorizontal: 4,
+            paddingRight: 16,
           }}
         >
-          <AlertCircle size={14} color="#6B7280" strokeWidth={1.5} pointerEvents="none" style={{ marginTop: 1 }} />
-          <Text style={{ color: "#6B7280", fontSize: 12, lineHeight: 18, flex: 1 }}>
-            Hesabını sildikten sonra 30 gün boyunca tekrar giriş yaparak işlemi iptal edebilirsin.
+          <InfoIcon size={16} color={colors.textSecondary} />
+          <Text
+            style={{
+              color: colors.textSecondary,
+              fontSize: 14,
+              fontWeight: "400",
+              flex: 1,
+            }}
+          >
+            {subtitle}
           </Text>
         </View>
-      </BottomSheetScrollView>
-    </AppBottomSheet>
+      ) : null}
+    </View>
   );
 }
 
@@ -319,7 +296,7 @@ function SettingsToggleRow({ icon, title, subtitle, value, disabled, onToggle }:
   return (
     <View
       style={{
-        borderRadius: 40,
+        borderRadius: 36,
         borderCurve: "continuous",
         overflow: "hidden",
         borderWidth: 0.5,
@@ -327,18 +304,14 @@ function SettingsToggleRow({ icon, title, subtitle, value, disabled, onToggle }:
         flexDirection: "row",
         alignItems: "center",
         justifyContent: "space-between",
-        padding: 18,
+        padding: 16,
         marginBottom: 8,
       }}
     >
-      <View style={{ flexDirection: "row", alignItems: "center", gap: 12, flex: 1 }}>
-        {icon}
+      <View style={{ flexDirection: "row", alignItems: "center", gap: 10, flex: 1 }}>
         <View style={{ flex: 1 }}>
-          <Text style={{ color: "#fff", fontSize: 14, fontWeight: "500" }}>
+          <Text style={{ color: colors.text, fontSize: 15, fontWeight: "500" }}>
             {title}
-          </Text>
-          <Text style={{ color: "#9CA3AF", fontSize: 12, marginTop: 2 }}>
-            {subtitle}
           </Text>
         </View>
       </View>
@@ -346,9 +319,9 @@ function SettingsToggleRow({ icon, title, subtitle, value, disabled, onToggle }:
         value={value}
         onValueChange={onToggle}
         disabled={disabled}
-        trackColor={{ false: "#3a3a3a", true: "#f57656" }}
-        thumbColor="#fff"
-        ios_backgroundColor="#3a3a3a"
+        trackColor={{false: "rgba(255,255,255,0.15)",true: colors.successIos, }}
+        thumbColor={colors.text}
+        ios_backgroundColor={colors.border}
       />
     </View>
   );

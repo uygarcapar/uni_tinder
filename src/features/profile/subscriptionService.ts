@@ -86,13 +86,21 @@ export async function restorePurchases(): Promise<boolean> {
   return customerInfo.entitlements.active[ENTITLEMENT_ID] !== undefined;
 }
 
-export async function getRevenueCatPremiumStatus(): Promise<boolean> {
-  if (!isConfigured) return false;
+export async function getRevenueCatPremiumStatus(): Promise<{
+  isPremium: boolean;
+  expiresAt: string | null;
+}> {
+  if (!isConfigured) return { isPremium: false, expiresAt: null };
   try {
     const info = await Purchases.getCustomerInfo();
-    return info?.entitlements?.active?.[ENTITLEMENT_ID] !== undefined;
+    const entitlement = info?.entitlements?.active?.[ENTITLEMENT_ID];
+    if (!entitlement) return { isPremium: false, expiresAt: null };
+    return {
+      isPremium: true,
+      expiresAt: entitlement.expirationDate ?? null,
+    };
   } catch {
-    return false;
+    return { isPremium: false, expiresAt: null };
   }
 }
 

@@ -11,13 +11,15 @@ import {
   TouchableOpacity,
   Alert,
   ScrollView,
-  Image,
   Dimensions,
   StatusBar,
   Platform,
   UIManager,
   Linking,
+  StyleProp,
+  ViewStyle,
 } from "react-native";
+import { Image } from "expo-image";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 import * as ImagePicker from "expo-image-picker";
 import { useAppDispatch, useAppSelector } from "@/shared/hooks/redux";
@@ -31,6 +33,7 @@ import PurchaseModal from "@/features/discover/components/PurchaseModal";
 import ScreenHeader from "@/shared/components/ScreenHeader";
 import { useSwipeStats } from "@/features/discover/swipeQueries";
 import { getOfferings } from "@/features/profile/subscriptionService";
+import { selectIsPremium } from "@/features/profile/subscriptionSlice";
 import {
   LogOut,
   Pencil,
@@ -65,15 +68,10 @@ import Animated, {
   useSharedValue,
   useAnimatedStyle,
   useAnimatedScrollHandler,
-  useAnimatedReaction,
   withTiming,
   withRepeat,
-  interpolate,
-  Extrapolation,
   Easing,
 } from "react-native-reanimated";
-import MaskedView from "@react-native-masked-view/masked-view";
-import { easeGradient } from "react-native-easing-gradient";
 
 // Android LayoutAnimation aktivasyonu
 if (
@@ -87,7 +85,18 @@ const { width, height } = Dimensions.get("window");
 
 
 // ─── Generic skeleton box w/ shimmer ─────────────────────────────────────────
-function SkeletonBox({ width: w, height: h, borderRadius = 8, style }) {
+type SkeletonBoxProps = {
+  width?: number;
+  height: number;
+  borderRadius?: number;
+  style?: StyleProp<ViewStyle>;
+};
+function SkeletonBox({
+  width: w,
+  height: h,
+  borderRadius = 8,
+  style,
+}: SkeletonBoxProps) {
   const animW = typeof w === "number" ? w : width;
   const shimmer = useSharedValue(-animW);
 
@@ -111,7 +120,7 @@ function SkeletonBox({ width: w, height: h, borderRadius = 8, style }) {
           height: h,
           borderRadius,
           borderCurve: "continuous",
-          backgroundColor: "#1E1E1E",
+          backgroundColor: colors.surface,
           overflow: "hidden",
         },
         style,
@@ -143,21 +152,9 @@ function SkeletonBox({ width: w, height: h, borderRadius = 8, style }) {
 
 // ─── Hero avatar — image yüklenirken skeleton overlay ────────────────────────
 function HeroAvatar({ uri, size = 80, onPress, loading = false }) {
-  const [imgLoading, setImgLoading] = useState(false);
-
-  // uri değiştiğinde loading state'i resetle — cached image'da onLoadStart
-  // bazen fire etmiyor, bazen onLoadEnd kaçıyor; uri varsa loading başlat.
-  useEffect(() => {
-    if (uri) setImgLoading(true);
-    else setImgLoading(false);
-  }, [uri]);
-
-  // 5sn timeout fallback — yükleme callback'leri kaçarsa skeleton kalıcı olmasın
-  useEffect(() => {
-    if (!imgLoading) return;
-    const t = setTimeout(() => setImgLoading(false), 5000);
-    return () => clearTimeout(t);
-  }, [imgLoading, uri]);
+  // expo-image — memory+disk cache → tab değişiminde avatar anında gelir.
+  // İlk yüklemede `loading` (parent'tan) veya imgLoading ile skeleton göster.
+  const [imgLoading, setImgLoading] = useState(!!uri);
 
   const showSkeleton = loading || (uri && imgLoading);
   return (
@@ -170,7 +167,7 @@ function HeroAvatar({ uri, size = 80, onPress, loading = false }) {
         borderRadius: size / 2,
         borderCurve: "continuous",
         overflow: "hidden",
-        backgroundColor: "#1E1E1E",
+        backgroundColor: colors.surface,
         alignItems: "center",
         justifyContent: "center",
       }}
@@ -179,12 +176,14 @@ function HeroAvatar({ uri, size = 80, onPress, loading = false }) {
         <Image
           source={{ uri }}
           style={{ width: "100%", height: "100%" }}
-          resizeMode="cover"
-          onLoadEnd={() => setImgLoading(false)}
+          contentFit="cover"
+          cachePolicy="memory-disk"
+          transition={150}
+          onLoad={() => setImgLoading(false)}
           onError={() => setImgLoading(false)}
         />
       ) : loading ? null : (
-        <UserRound size={40} color="#fff" strokeWidth={1.5} />
+        <UserRound size={40} color={colors.text} strokeWidth={1.5} />
       )}
       {showSkeleton && (
         <View
@@ -326,7 +325,7 @@ function CompletionAccordion({
       }}
     >
       <TouchableOpacity
-        className="bg-[#1E1E1E]"
+        className="bg-surface"
         activeOpacity={1}
         onPress={onToggle}
         style={{
@@ -337,15 +336,15 @@ function CompletionAccordion({
         }}
       >
         <View style={{ flexDirection: "row", alignItems: "center", gap: 10 }}>
-          {Icon && <Icon size={18} color="#fff" strokeWidth={1.5} />}
-          <Text style={{ color: "#fff", fontSize: 15, fontWeight: "600" }}>
+          {Icon && <Icon size={18} color={colors.text} strokeWidth={1.5} />}
+          <Text style={{ color: colors.text, fontSize: 15, fontWeight: "600" }}>
             {title}
           </Text>
         </View>
         <View style={{ flexDirection: "row", alignItems: "center", gap: 12 }}>
           <Text
             style={{
-              color: isComplete ? "#fff" : "#9CA3AF",
+              color: isComplete ? colors.text : colors.textSecondary,
               fontSize: 14,
               fontWeight: "400",
             }}
@@ -353,15 +352,15 @@ function CompletionAccordion({
             {current}/{max}
           </Text>
           <Animated.View style={chevronStyle}>
-            <ChevronDown size={20} color="#9CA3AF" />
+            <ChevronDown size={20} color={colors.textSecondary} />
           </Animated.View>
         </View>
       </TouchableOpacity>
-      <Animated.View className="bg-[#1E1E1E]" style={contentStyle}>
+      <Animated.View className="bg-surface" style={contentStyle}>
         <View style={{ paddingHorizontal: 16, paddingBottom: 16 }}>
           <Text
             style={{
-              color: "#9CA3AF",
+              color: colors.textSecondary,
               fontSize: 14,
               lineHeight: 20,
               marginBottom: 16,
@@ -382,7 +381,7 @@ function CompletionAccordion({
               alignItems: "center",
             }}
           >
-            <Text style={{ color: "#fff", fontSize: 13, fontWeight: "500" }}>
+            <Text style={{ color: colors.text, fontSize: 13, fontWeight: "500" }}>
               Tamamla
             </Text>
           </TouchableOpacity>
@@ -392,21 +391,17 @@ function CompletionAccordion({
   );
 }
 
-import { BottomSheetScrollView } from "@gorhom/bottom-sheet";
-import AppBottomSheet from "@/shared/components/AppBottomSheet";
-import BlurBottomSheetBackdrop from "@/shared/components/BlurBottomSheetBackdrop";
+import AppModal from "@/shared/components/AppModal";
 import AnimatedPressable from "@/shared/components/AnimatedPressable";
-import EditProfileForm from "@/features/profile/components/EditProfileForm";
+import EditProfileForm, {
+  EditProfileFormSkeleton,
+} from "@/features/profile/components/EditProfileForm";
+import { hydrateProfileForm } from "@/features/profile/utils/hydrateProfileForm";
+import { colors, gradients } from "../../../shared/theme/colors";
 
 // ─── Edit Modal sarmalayıcı ───────────────────────────────────────────────────
-// BottomSheetScrollView'un reanimated handler kabul eden versiyonu — header
-// blur/title fade animasyonları için scroll değerini paylaşılan değere bağlar.
-const AnimatedBottomSheetScrollView = Animated.createAnimatedComponent(
-  BottomSheetScrollView,
-);
-
-const EDIT_HEADER_HEIGHT = 100;
-
+// AppModal'ın standart action props'unu kullanır — Save butonu glass + controlSize
+// large render edilir, X ile aynı height'da.
 function ProfileEditModal({
   visible,
   title,
@@ -414,326 +409,44 @@ function ProfileEditModal({
   onSave,
   saving,
   saveDisabled,
+  onPresented,
+  scrollEnabled = true,
   children,
 }) {
-  const renderBackdrop = useCallback(
-    (props) => <BlurBottomSheetBackdrop {...props} onPress={onClose} />,
-    [onClose],
+  // Saving sırasında "Kaydediliyor" yazısı yerine "Kaydet" text boyutunda
+  // shimmer skeleton göster. Button frame'i (pill, h46, glass-ish bg) aynı
+  // tutulur ki yer değişmesin.
+  const savingSlot = (
+    <View
+      pointerEvents="none"
+      style={{
+        height: 46,
+        paddingHorizontal: 18,
+        borderRadius: 999,
+        backgroundColor: "rgba(255,255,255,0.08)",
+        alignItems: "center",
+        justifyContent: "center",
+      }}
+    >
+      <SkeletonBox width={44} height={14} borderRadius={3} />
+    </View>
   );
-
-  // ScreenHeader pattern: scrollY shared'a aktarılır, background opacity 0→60
-  // arasında 0→1'e geçer, başlık 55'ten sonra fade-in olur.
-  const scrollY = useSharedValue(0);
-  const scrollHandler = useAnimatedScrollHandler({
-    onScroll: (e) => {
-      scrollY.value = e.contentOffset.y;
-    },
-  });
-
-  const headerBgStyle = useAnimatedStyle(() => ({
-    opacity: interpolate(scrollY.value, [0, 60], [0, 1], Extrapolation.CLAMP),
-  }));
-
-  const titleTriggered = useSharedValue(0);
-  useAnimatedReaction(
-    () => scrollY.value > 55,
-    (isPast, prev) => {
-      if (isPast !== prev) {
-        titleTriggered.value = withTiming(isPast ? 1 : 0, {
-          duration: 450,
-          easing: Easing.out(Easing.cubic),
-        });
-      }
-    },
-  );
-  const titleAnimStyle = useAnimatedStyle(() => ({
-    opacity: titleTriggered.value,
-    transform: [{ translateY: 12 * (1 - titleTriggered.value) }],
-  }));
-
-  // ScreenHeader'daki birebir easeGradient — alt kenarın yumuşak fade'i.
-  const { colors: bgColors, locations: bgLocations } = useMemo(
-    () =>
-      easeGradient({
-        colorStops: {
-          0: { color: "rgba(0,0,0,0.99)" },
-          0.5: { color: "black" },
-          1: { color: "transparent" },
-        },
-      }),
-    [],
-  );
-
-  // Visible değişince scroll'u baş haline döndür (modal kapanıp tekrar açılınca
-  // başlık/blur stale state'le gelmesin).
-  useEffect(() => {
-    if (visible) {
-      scrollY.value = 0;
-      titleTriggered.value = 0;
-    }
-  }, [visible, scrollY, titleTriggered]);
 
   return (
-    <AppBottomSheet
+    <AppModal
       visible={visible}
-      snapPoints={["90%"]}
       onClose={onClose}
-      backdropComponent={renderBackdrop}
-      handleIndicatorStyle={{ backgroundColor: "#9CA3AF" }}
+      onPresented={onPresented}
+      title={title}
+      actionLabel={saving ? undefined : "Kaydet"}
+      onAction={onSave}
+      actionDisabled={saveDisabled}
+      rightSlot={saving ? savingSlot : undefined}
+      scrollEnabled={scrollEnabled}
+      fullScreen
     >
-      {/* Scroll content — header yukarıda absolute floating; içerik header
-          arkasından geçer ve scroll'la blur tetiklenir. */}
-      <AnimatedBottomSheetScrollView
-        onScroll={scrollHandler}
-        scrollEventThrottle={16}
-        style={{ flex: 1, backgroundColor: "#121212" }}
-        contentContainerStyle={{
-          paddingTop: EDIT_HEADER_HEIGHT,
-          paddingHorizontal: 20,
-          paddingBottom: 40,
-        }}
-        showsVerticalScrollIndicator={false}
-        nestedScrollEnabled={true}
-      >
-        {children}
-      </AnimatedBottomSheetScrollView>
-
-      {/* Floating header — absolute, içerik üzerine biner. İlk açılışta
-          background ve title transparent; scroll'la belirir. */}
-      <View
-        pointerEvents="box-none"
-        style={{
-          position: "absolute",
-          top: 0,
-          left: 0,
-          right: 0,
-          height: EDIT_HEADER_HEIGHT,
-          zIndex: 10,
-        }}
-      >
-        {/* Progressive blur background — opacity scroll'a bağlı.
-            iOS: MaskedView + BlurView ile progressive blur (60 FPS, GPU pahalı değil).
-            Android: BlurView + MaskedView Skia path'ı pahalı, FPS düşürüyor —
-            basit opak background ile değiştir. Görsel olarak benzer, perf maliyeti yok. */}
-        <Animated.View
-          pointerEvents="none"
-          style={[
-            {
-              position: "absolute",
-              top: 0,
-              left: 0,
-              right: 0,
-              height: EDIT_HEADER_HEIGHT,
-            },
-            headerBgStyle,
-          ]}
-        >
-          {Platform.OS === "ios" ? (
-            <MaskedView
-              maskElement={
-                <LinearGradient
-                  locations={bgLocations}
-                  colors={bgColors}
-                  style={{
-                    position: "absolute",
-                    top: 0,
-                    left: 0,
-                    right: 0,
-                    bottom: 0,
-                  }}
-                />
-              }
-              style={{
-                position: "absolute",
-                top: 0,
-                left: 0,
-                right: 0,
-                bottom: 0,
-              }}
-            >
-              <LinearGradient
-                colors={["black", "rgba(0, 0, 0, 0.2)"]}
-                style={{
-                  position: "absolute",
-                  top: 0,
-                  left: 0,
-                  right: 0,
-                  bottom: 0,
-                }}
-              />
-              <BlurView
-                intensity={15}
-                tint="systemChromeMaterialDark"
-                style={{
-                  position: "absolute",
-                  top: 0,
-                  left: 0,
-                  right: 0,
-                  bottom: 0,
-                }}
-              />
-            </MaskedView>
-          ) : (
-            <View
-              style={{
-                position: "absolute",
-                top: 0,
-                left: 0,
-                right: 0,
-                bottom: 0,
-                backgroundColor: "rgba(18,18,18,0.95)",
-              }}
-            />
-          )}
-        </Animated.View>
-
-        {/* Centered animated title — scroll 55px'i geçince fade-in. */}
-        <Animated.View
-          pointerEvents="none"
-          style={[
-            {
-              position: "absolute",
-              top: 0,
-              left: 0,
-              right: 0,
-              height: EDIT_HEADER_HEIGHT,
-              alignItems: "center",
-              justifyContent: "center",
-            },
-            titleAnimStyle,
-          ]}
-        >
-          <Text
-            style={{ color: "#fff", fontSize: 19, fontWeight: "700" }}
-            numberOfLines={1}
-          >
-            {title}
-          </Text>
-        </Animated.View>
-
-        {/* Sol/sağ butonlar — her zaman görünür, scroll'dan bağımsız.
-            iOS Host matchContents glass button'larının görünen background'u
-            Host'un raporladığı bounds'tan biraz dışarı taşıyor; bu yüzden
-            header padding'i içerikten (20) bir tık fazla — buton kenarları
-            içerik kartlarıyla optik olarak hizalansın. */}
-        <View
-          style={{
-            position: "absolute",
-            top: 0,
-            left: 0,
-            right: 0,
-            height: EDIT_HEADER_HEIGHT,
-            flexDirection: "row",
-            alignItems: "center",
-            justifyContent: "space-between",
-            paddingHorizontal: 16,
-          }}
-        >
-          <View style={{ paddingVertical: 8 }}>
-            {Platform.OS === "ios" ? (
-              <Host matchContents>
-                <SwiftUIButton
-                  label="Kapat"
-                  systemImage="xmark"
-                  onPress={onClose}
-                  modifiers={[
-                    buttonStyle("glass"),
-                    tint("#ffffff"),
-                    labelStyle("iconOnly"),
-                    font({ size: 22, weight: "medium" }),
-                  ]}
-                />
-              </Host>
-            ) : (
-              <TouchableOpacity
-                onPress={onClose}
-                activeOpacity={0.7}
-                style={{
-                  width: 46,
-                  height: 46,
-                  borderRadius: 999,
-                  backgroundColor: "rgba(255,255,255,0.08)",
-                  alignItems: "center",
-                  justifyContent: "center",
-                }}
-              >
-                <X
-                  size={24}
-                  color="#fff"
-                  strokeWidth={2}
-                  pointerEvents="none"
-                />
-              </TouchableOpacity>
-            )}
-          </View>
-
-          {Platform.OS === "ios" ? (
-            <Host matchContents>
-              <SwiftUIButton
-                label={saving ? "Kaydediliyor" : "Kaydet"}
-                onPress={saving || saveDisabled ? () => {} : onSave}
-                modifiers={[
-                  buttonStyle("glass"),
-                  controlSize("large"),
-                  tint("#ffffff"),
-                  font({ size: 12, weight: "semibold" }),
-                ]}
-              />
-            </Host>
-          ) : (
-            <TouchableOpacity
-              onPress={onSave}
-              disabled={saving || saveDisabled}
-              activeOpacity={0.7}
-              style={{
-                opacity: saveDisabled ? 0.35 : 1,
-                position: "relative",
-              }}
-            >
-              <View
-                style={{
-                  borderRadius: 999,
-                  borderCurve: "continuous",
-                  overflow: "hidden",
-                  paddingHorizontal: 18,
-                  paddingVertical: 12,
-                  backgroundColor: "#1E1E1E",
-                  borderWidth: 0.5,
-                  borderColor: "rgba(255,255,255,0.1)",
-                }}
-              >
-                <Text
-                  style={{
-                    color: "#fff",
-                    fontWeight: "700",
-                    fontSize: 15,
-                    opacity: saving ? 0 : 1,
-                  }}
-                >
-                  Kaydet
-                </Text>
-                {saving && (
-                  <View
-                    pointerEvents="none"
-                    style={{
-                      position: "absolute",
-                      top: 0,
-                      left: 0,
-                      right: 0,
-                      bottom: 0,
-                      alignItems: "center",
-                      justifyContent: "center",
-                    }}
-                  >
-                    <SkeletonBox width={42} height={14} borderRadius={999} />
-                  </View>
-                )}
-              </View>
-            </TouchableOpacity>
-          )}
-        </View>
-      </View>
-    </AppBottomSheet>
+      {children}
+    </AppModal>
   );
 }
 
@@ -741,7 +454,7 @@ function ProfileEditModal({
 export default function ProfileScreen() {
   const dispatch = useAppDispatch();
   const { user } = useAppSelector((s) => (s as any).auth);
-  const subscriptionIsPremium = useAppSelector((s) => (s as any).subscription?.isPremium);
+  const subscriptionIsPremium = useAppSelector(selectIsPremium);
   const subscriptionExpiresAt = useAppSelector((s) => (s as any).subscription?.expiresAt);
   const insets = useSafeAreaInsets();
   const statsQuery = useSwipeStats();
@@ -765,6 +478,11 @@ export default function ProfileScreen() {
 
   // ── Modal visibility state (declarative) ───────────────────────────────────
   const [editVisible, setEditVisible] = useState(false);
+  // Skeleton modal açılır açılmaz görünür (full size, içerik dolu hissi).
+  // Heavy form mount'u rAF ile bir sonraki vsync'e ertelenir → modal slide-up
+  // animasyonu skeleton'la başlar, JS thread serbest kaldığında form mount
+  // edilip skeleton swap edilir.
+  const [editFormReady, setEditFormReady] = useState(false);
   const [settingsVisible, setSettingsVisible] = useState(false);
   const [purchaseVisible, setPurchaseVisible] = useState(false);
   const [previewVisible, setPreviewVisible] = useState(false);
@@ -826,32 +544,57 @@ export default function ProfileScreen() {
   const [savingPhoto, setSavingPhoto] = useState(false);
 
   // ── Progress bar animasyonu ───────────────────────────────────────────────
-  const [barContainerWidth, setBarContainerWidth] = useState(0);
-  const progressAnim = useSharedValue(0);
+  // Layout genişlikleri shared value olarak tutuluyor; React state'i worklet
+  // closure'undan okumak Fabric'te stale value yakalanmasına yol açıp bazen
+  // badge'in initial konumda (sol kenarda) takılı kalmasına neden oluyordu.
+  // Şimdi onLayout shared value'yu doğrudan güncelliyor → worklet her zaman
+  // güncel genişlikle çalışır.
+  const progressRatio = useSharedValue(0);
+  const barWidthSV = useSharedValue(0);
+  const badgeWidthSV = useSharedValue(30);
 
   useEffect(() => {
-    if (barContainerWidth === 0) return;
     const completionPct =
       myProfile?.profileCompletionPercentage ??
       myProfile?.profileCompletionScore ??
       0;
-    progressAnim.value = withTiming((completionPct / 100) * barContainerWidth, {
+    progressRatio.value = withTiming(completionPct / 100, {
       duration: 700,
       easing: Easing.out(Easing.cubic),
     });
   }, [
     myProfile?.profileCompletionPercentage,
     myProfile?.profileCompletionScore,
-    barContainerWidth,
   ]);
 
+  // ÖNCEKİ: useAnimatedStyle içinde `width` ve `left` animate ediliyordu. Bu
+  // iki property Fabric'te layout property'sidir; useAnimatedStyle her frame'de
+  // re-eval ediliyor → her frame ShadowTree commit'i. Modal açılışı + form mount
+  // sırasında bu commit'ler heavy mount commit'leri ile çakışıp Fabric'in
+  // "attempts < 1024" assertion'ına çarpıyordu (SIGABRT crash).
+  // Fix: transform-based animation. Bar için translateX ile clip-reveal,
+  // badge için translateX (left yerine). Transform UI-thread only, ShadowTree
+  // commit tetiklemez.
   const progressBarStyle = useAnimatedStyle(() => ({
-    width: progressAnim.value,
+    transform: [
+      { translateX: (progressRatio.value - 1) * barWidthSV.value },
+    ],
   }));
 
-  const progressBadgeStyle = useAnimatedStyle(() => ({
-    left: progressAnim.value - 15,
-  }));
+  // Badge yüksek yüzdelerde (95%, 100%) bar'ın sağ kenarından taşıp ekran
+  // dışına çıkıyordu — sağdan clamp. Badge genişliği içerik (5%, 100%) +
+  // border'la değiştiği için onLayout'tan ölçülüp shared value'da tutulur.
+  const progressBadgeStyle = useAnimatedStyle(() => {
+    const barW = barWidthSV.value;
+    const badgeW = badgeWidthSV.value;
+    const target = progressRatio.value * barW - badgeW / 2;
+    const maxX = Math.max(0, barW - badgeW);
+    const clamped = Math.min(Math.max(target, 0), maxX);
+    return {
+      opacity: barW === 0 ? 0 : 1,
+      transform: [{ translateY: -13 }, { translateX: clamped }],
+    };
+  });
 
   // ── Veri yükleme ───────────────────────────────────────────────────────────
   const loadProfile = useCallback(async () => {
@@ -963,7 +706,56 @@ export default function ProfileScreen() {
   // modal'ı açıp kapatır + save sonrası optimistic patch'i myProfile cache'ine
   // uygular.
   const openEditProfile = useCallback(() => setEditVisible(true), []);
-  const closeEditProfile = useCallback(() => setEditVisible(false), []);
+  const closeEditProfile = useCallback(() => {
+    setEditVisible(false);
+    setEditFormReady(false); // sonraki açılışta yeniden skeleton göster
+  }, []);
+
+  // Edit form'un initial değerlerini parent'ta sync hesapla. Form mount'unda
+  // post-mount setValue/reset cascade'i olmadan tüm alanlar hidrate doğar →
+  // Fabric ShadowTree commit baskısı dramatik düşer. myProfile veya option
+  // listelerinden biri değiştiğinde memo yeniden hesaplanır; ama EditProfileForm
+  // key={myProfile.id} ile bağlı olduğu için aynı kullanıcı içinde fresh
+  // value'lar form'a "yeniden enjekte edilmez" — sadece bir sonraki mount'ta
+  // (modal kapanıp açıldığında) etkili olur.
+  const editInitialValues = useMemo(() => {
+    if (!myProfile) return null;
+    return hydrateProfileForm({
+      myProfile,
+      hobbyGroups,
+      smokingOptions,
+      zodiacOptions,
+      usagePurposeOptions,
+      interestedInOptions,
+      cityOptions,
+      languageOptions,
+      petOptions,
+    });
+  }, [
+    myProfile,
+    hobbyGroups,
+    smokingOptions,
+    zodiacOptions,
+    usagePurposeOptions,
+    interestedInOptions,
+    cityOptions,
+    languageOptions,
+    petOptions,
+  ]);
+
+  // Form mount'u için tetikleyiciler:
+  //   1. onPresented (gorhom onChange ≥0) — animasyon bitince fire eder
+  //   2. Veri-hazırlık koşulu — initial values + city/hobby listeleri dolduğunda
+  // İkisi de true olduğunda skeleton swap edilir. setTimeout fallback'i artık
+  // YOK: yarım hidrate form mount etmek crash riskini geri getiriyordu.
+  const handleEditPresented = useCallback(() => setEditFormReady(true), []);
+  useEffect(() => {
+    if (!editVisible) return;
+    if (!editInitialValues) return;
+    if (cityOptions.length === 0) return;
+    if (hobbyGroups.length === 0) return;
+    setEditFormReady(true);
+  }, [editVisible, editInitialValues, cityOptions.length, hobbyGroups.length]);
 
   const handleEditSubmit = useCallback(() => {
     editFormRef.current?.submit();
@@ -1168,7 +960,7 @@ export default function ProfileScreen() {
 
   return (
     <GestureHandlerRootView style={{ flex: 1 }}>
-      <View style={{ flex: 1, backgroundColor: "#121212" }}>
+      <View style={{ flex: 1, backgroundColor: colors.bg }}>
         <StatusBar barStyle="light-content" />
 
         {loading ? (
@@ -1200,35 +992,48 @@ export default function ProfileScreen() {
                     backgroundColor: "rgba(255,255,255,0.1)",
                     overflow: "visible",
                   }}
-                  onLayout={(e) =>
-                    setBarContainerWidth(e.nativeEvent.layout.width)
-                  }
+                  onLayout={(e) => {
+                    barWidthSV.value = e.nativeEvent.layout.width;
+                  }}
                 >
-                  <Animated.View
-                    style={[
-                      {
-                        height: "100%",
-                        borderRadius: 999,
-                        backgroundColor: "#fff",
-                      },
-                      progressBarStyle,
-                    ]}
-                  />
-                  {/* Yüzde Badge */}
+                  {/* Bar: full-width strip clipped by overflow:hidden wrapper,
+                      translateX ile soldan sağa reveal edilir (transform → UI thread). */}
+                  <View
+                    style={{
+                      height: "100%",
+                      borderRadius: 999,
+                      overflow: "hidden",
+                    }}
+                  >
+                    <Animated.View
+                      style={[
+                        {
+                          width: "100%",
+                          height: "100%",
+                          backgroundColor: colors.text,
+                        },
+                        progressBarStyle,
+                      ]}
+                    />
+                  </View>
+                  {/* Yüzde Badge — left:0 base, translateX ile pozisyonlanır */}
                   <Animated.View
                     style={[
                       {
                         position: "absolute",
                         top: "50%",
-                        transform: [{ translateY: -13 }],
+                        left: 0,
                       },
                       progressBadgeStyle,
                     ]}
                   >
                     <View
-                      className="border-[3px] border-[#121212]"
+                      className="border-[3px] border-bg"
+                      onLayout={(e) => {
+                        badgeWidthSV.value = e.nativeEvent.layout.width;
+                      }}
                       style={{
-                        backgroundColor: "#fff",
+                        backgroundColor: colors.text,
                         paddingHorizontal: 6,
                         paddingVertical: 4,
                         borderRadius: 999,
@@ -1274,7 +1079,7 @@ export default function ProfileScreen() {
               <View style={{ flex: 1, justifyContent: "space-between" }}>
                 <Text
                   style={{
-                    color: "#fff",
+                    color: colors.text,
                     fontSize: 18,
                     fontWeight: "600",
                     lineHeight: 28,
@@ -1297,7 +1102,7 @@ export default function ProfileScreen() {
                       modifiers={[
                         buttonStyle("glass"),
                         controlSize("regular"),
-                        tint("#ffffff"),
+                        tint(colors.text),
                         font({ size: 13, weight: "semibold" }),
                       ]}
                     />
@@ -1319,10 +1124,10 @@ export default function ProfileScreen() {
                       }}
                       className="flex-row self-start justify-center text-center items-center border-[0.5px] border-white/10 px-4 py-5 gap-2"
                     >
-                      <Pencil size={15} color="#fff" strokeWidth={2} />
+                      <Pencil size={15} color={colors.text} strokeWidth={2} />
                       <Text
                         style={{
-                          color: "#fff",
+                          color: colors.text,
                           fontWeight: "700",
                           fontSize: 13,
                         }}
@@ -1339,7 +1144,7 @@ export default function ProfileScreen() {
             {isPremium && (
               <View className="mb-10 px-4 mt-2">
                 <LinearGradient
-                  colors={["#ffffff", "#e5e7eb", "#9ca3af"]}
+                  colors={gradients.neutralFade}
                   locations={[0, 0.5, 1]}
                   start={{ x: 0, y: 0 }}
                   end={{ x: 1, y: 1 }}
@@ -1411,13 +1216,16 @@ export default function ProfileScreen() {
                               Aboneliği Yönet
                             </Text>
                             {" · Yenileme "}
-                            {new Date(subscriptionExpiresAt).toLocaleDateString(
-                              "tr-TR",
-                              {
+                            {(() => {
+                              const d = new Date(subscriptionExpiresAt);
+                              const sameYear =
+                                d.getFullYear() === new Date().getFullYear();
+                              return d.toLocaleDateString("tr-TR", {
                                 day: "2-digit",
                                 month: "short",
-                              },
-                            )}
+                                ...(sameYear ? {} : { year: "numeric" }),
+                              });
+                            })()}
                           </>
                         ) : (
                           "Aboneliği Yönet"
@@ -1437,7 +1245,7 @@ export default function ProfileScreen() {
                   onPress={() => setPurchaseVisible(true)}
                 >
                   <LinearGradient
-                    colors={["#FF0000", "#FF6B00", "#ffa600"]}
+                    colors={gradients.premium}
                     locations={[0, 0.5, 1]}
                     start={{ x: 0, y: 0 }}
                     end={{ x: 1, y: 1 }}
@@ -1459,7 +1267,7 @@ export default function ProfileScreen() {
                           <Text
                             className="pr-2"
                             style={{
-                              color: "#fff",
+                              color: colors.text,
                               fontSize: 50,
                               fontFamily: "Duckie-regular",
                             }}
@@ -1489,7 +1297,7 @@ export default function ProfileScreen() {
                               opacity: 0.2,
                             }}
                           >
-                            <ArrowUp size={22} color="#fff" strokeWidth={4} />
+                            <ArrowUp size={22} color={colors.text} strokeWidth={4} />
                           </View>
                           <View
                             style={{
@@ -1499,9 +1307,9 @@ export default function ProfileScreen() {
                               opacity: 0.2,
                             }}
                           >
-                            <ArrowUp size={22} color="#fff" strokeWidth={4} />
+                            <ArrowUp size={22} color={colors.text} strokeWidth={4} />
                           </View>
-                          <ArrowUp size={28} color="#fff" strokeWidth={4} />
+                          <ArrowUp size={28} color={colors.text} strokeWidth={4} />
                         </View>
                         <Text className="text-white font-bold text-[12px]">
                           5x Eşleşme
@@ -1523,7 +1331,7 @@ export default function ProfileScreen() {
                           <Text
                             className="w-16 text-center mb-2"
                             style={{
-                              color: "#fff",
+                              color: colors.text,
                               fontSize: 25,
                               fontFamily: "Duckie-regular",
                             }}
@@ -1558,7 +1366,7 @@ export default function ProfileScreen() {
                               />
                             </View>
                             <View className="w-16 items-center">
-                              <Check size={18} color="#fff" strokeWidth={2} />
+                              <Check size={18} color={colors.text} strokeWidth={2} />
                             </View>
                           </View>
                         </View>
@@ -1619,7 +1427,7 @@ export default function ProfileScreen() {
             <View style={{ paddingHorizontal: 16, paddingBottom: 64 }}>
               <Text
                 style={{
-                  color: "#9CA3AF",
+                  color: colors.textSecondary,
                   fontSize: 13,
                   fontWeight: "700",
                   marginBottom: 12,
@@ -1638,9 +1446,9 @@ export default function ProfileScreen() {
                   }}
                   className="flex-row justify-center text-center items-center border-[0.5px] border-white/10 px-3 py-5 gap-2"
                 >
-                  <LogOut size={20} color="#fff" strokeWidth={1.5} />
+                  <LogOut size={20} color={colors.text} strokeWidth={1.5} />
                   <Text
-                    style={{ color: "#fff", fontWeight: "500", fontSize: 14 }}
+                    style={{ color: colors.text, fontWeight: "500", fontSize: 14 }}
                   >
                     Çıkış Yap
                   </Text>
@@ -1663,7 +1471,7 @@ export default function ProfileScreen() {
                   onPress={() => setSettingsVisible(true)}
                   modifiers={[
                     buttonStyle("glass"),
-                    tint("#ffffff"),
+                    tint(colors.text),
                     labelStyle("iconOnly"),
                     font({ size: 22, weight: "medium" }),
                   ]}
@@ -1677,7 +1485,7 @@ export default function ProfileScreen() {
                 <Settings
                   size={29}
                   strokeWidth={2}
-                  color="#fff"
+                  color={colors.text}
                   pointerEvents="none"
                 />
               </TouchableOpacity>
@@ -1686,40 +1494,47 @@ export default function ProfileScreen() {
         />
 
         {/* ══ PROFİL DÜZENLEME MODALI ══ */}
-        {/* Form sadece modal açıkken mount edilir — kapalıyken yüzlerce
-            ikon/pill mount maliyetini ödemiyoruz. Form, kendi içinde
-            InteractionManager.runAfterInteractions ile içeriği animasyon
-            bittikten sonra çizer. */}
+        {/* Skeleton modal açılır açılmaz render edilir → modal slide-up
+            animasyonu içerik dolu hissiyatıyla başlar. Heavy form mount'u
+            rAF ile bir sonraki frame'e ertelenir; mount sırasında skeleton
+            görünür kalır, hazır olunca swap edilir. */}
         <ProfileEditModal
           visible={editVisible}
           title="Profili Düzenle"
           onClose={closeEditProfile}
           onSave={handleEditSubmit}
           saving={savingProfile}
+          onPresented={handleEditPresented}
+          scrollEnabled={editFormReady}
         >
-          {editVisible && (
-            <EditProfileForm
-              ref={editFormRef}
-              myProfile={myProfile}
-              hobbyGroups={hobbyGroups}
-              smokingOptions={smokingOptions}
-              zodiacOptions={zodiacOptions}
-              usagePurposeOptions={usagePurposeOptions}
-              interestedInOptions={interestedInOptions}
-              cityOptions={cityOptions}
-              languageOptions={languageOptions}
-              petOptions={petOptions}
-              savingPhoto={savingPhoto}
-              onAddPhoto={handleAddPhoto}
-              onPhotoPress={handlePhotoPress}
-              onPreview={() => {
-                setEditVisible(false);
-                setTimeout(() => setPreviewVisible(true), 400);
-              }}
-              onSavingChange={setSavingProfile}
-              onSaved={handleFormSaved}
-            />
-          )}
+          {editVisible &&
+            (editFormReady && editInitialValues ? (
+              <EditProfileForm
+                key={myProfile?.id ?? "no-profile"}
+                ref={editFormRef}
+                myProfile={myProfile}
+                initialValues={editInitialValues}
+                hobbyGroups={hobbyGroups}
+                smokingOptions={smokingOptions}
+                zodiacOptions={zodiacOptions}
+                usagePurposeOptions={usagePurposeOptions}
+                interestedInOptions={interestedInOptions}
+                cityOptions={cityOptions}
+                languageOptions={languageOptions}
+                petOptions={petOptions}
+                savingPhoto={savingPhoto}
+                onAddPhoto={handleAddPhoto}
+                onPhotoPress={handlePhotoPress}
+                onPreview={() => {
+                  setEditVisible(false);
+                  setTimeout(() => setPreviewVisible(true), 400);
+                }}
+                onSavingChange={setSavingProfile}
+                onSaved={handleFormSaved}
+              />
+            ) : (
+              <EditProfileFormSkeleton />
+            ))}
         </ProfileEditModal>
 
         {/* ══ PURCHASE MODALI ══ */}
