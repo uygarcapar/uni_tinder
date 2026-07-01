@@ -10,8 +10,8 @@ import api from "@/shared/services/api";
 import { API_ENDPOINTS } from "@/shared/constants/api";
 import swipeService from "@/features/discover/swipeService";
 import uiBus from "@/shared/services/uiBus";
-import type { RootState } from "@/shared/store";
 import type { SwipeStats } from "@/shared/types";
+import { selectIsPremium } from "@/features/profile/subscriptionSlice";
 
 export const swipeKeys = {
   matches: ["swipe", "matches"] as const,
@@ -90,9 +90,7 @@ export function useSwipeStats() {
     refetchOnReconnect: false,
   });
 
-  const subscriptionIsPremium = useSelector(
-    (s: RootState) => (s as any).subscription?.isPremium ?? false,
-  );
+  const subscriptionIsPremium = useSelector(selectIsPremium);
   const data = useMemo(() => {
     if (!result.data) return result.data;
     const effectivePremium = result.data.isPremium || subscriptionIsPremium;
@@ -123,7 +121,7 @@ export function useSwipeMutation() {
       if (direction === "left") return swipeService.passUser(userId);
       return swipeService.likeUser(userId);
     },
-    onMutate: ({ direction }: { direction: string }) => {
+    onMutate: ({ direction }: { direction: string; userId: string }) => {
       qc.setQueryData(swipeKeys.stats, (prev: any) => {
         if (!prev) return prev;
         const next = { ...prev };
@@ -180,12 +178,14 @@ export function useSaveFilters() {
       ageRangeMax?: number;
       maxDistance?: number;
       genders?: string[];
+      preferredCity?: string | null;
     }) => {
       const payload = {
         ageRangeMin: localFilters.ageRangeMin || 18,
         ageRangeMax: localFilters.ageRangeMax || 30,
         maxDistance: localFilters.maxDistance || 50,
         genders: localFilters.genders,
+        city: localFilters.preferredCity ?? null,
       };
       const res = await api.put(API_ENDPOINTS.SWIPE_UPDATE_FILTERS, payload) as any;
       if (!res.isSuccess) throw new Error(res.message || "Filters save failed");

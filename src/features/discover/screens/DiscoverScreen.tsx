@@ -1,4 +1,4 @@
-import {
+import React, {
   useEffect,
   useState,
   useRef,
@@ -9,12 +9,10 @@ import {
   View,
   Text,
   TouchableOpacity,
-  TextInput,
-  ActivityIndicator,
   Alert,
   Dimensions,
-  Keyboard,
 } from "react-native";
+import * as Haptics from "expo-haptics";
 import { GestureHandlerRootView } from "react-native-gesture-handler";
 import Animated, {
   useSharedValue,
@@ -31,15 +29,8 @@ const ENTRY_DURATION = 180;
 const ENTRY_EASING = Easing.out(Easing.cubic);
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 import {
-  BottomSheetScrollView,
-  BottomSheetBackdrop,
-} from "@gorhom/bottom-sheet";
-import MultiSlider from "@ptomasroos/react-native-multi-slider";
-import {
   RotateCcw,
   SlidersHorizontal,
-  X,
-  Lock,
   Search,
   Flame,
   Star,
@@ -50,8 +41,9 @@ import SwipeWrapper from "@/features/discover/components/SwipeWrapper";
 import SwipeOverlay from "@/features/discover/components/SwipeOverlay";
 import PurchaseModal from "@/features/discover/components/PurchaseModal";
 import SuperLikePurchaseModal from "@/features/discover/components/SuperLikePurchaseModal";
-import AppBottomSheet from "@/shared/components/AppBottomSheet";
+import FilterModal from "@/features/discover/components/FilterModal";
 import WaveFillLogo from "@/shared/components/WaveFillLogo";
+import { colors } from "../../../shared/theme/colors";
 import {
   usePotentialMatches,
   useSwipeFilters,
@@ -60,7 +52,9 @@ import {
   useSaveFilters,
   useUndoSwipe,
   useUpdateStatsCache,
+  swipeKeys,
 } from "@/features/discover/swipeQueries";
+import { useQueryClient } from "@tanstack/react-query";
 import uiBus, { cardExpandAnim } from "@/shared/services/uiBus";
 
 // Tab bar geometry — TabNavigator ile tutarlı:
@@ -69,20 +63,13 @@ const TAB_BAR_HEIGHT = 64;
 const TAB_BAR_BOTTOM_GAP = -10;
 const CARD_BOTTOM_GAP = 12;
 
-const GENDER_OPTIONS = [
-  { label: "Erkek", value: "Male" },
-  { label: "Kadın", value: "Female" },
-  { label: "Non-Binary", value: "NonBinary" },
-  { label: "Diğer", value: "Other" },
-];
-
 // TEST FLAG — true iken SkeletonCard her zaman gösterilir (loading state'i ignore).
 // Production'da false yap.
 const SHOW_SKELETON_DEBUG = true;
 
 // Placeholder block — kendi içinde shimmer animasyonu olan dark rect.
 // borderCurve:continuous + overflow:hidden ile yumuşak köşeli kapsayıcı.
-const SkeletonBlock = ({ width, height, borderRadius = 8, style }) => {
+const SkeletonBlock = ({ width, height, borderRadius = 8, style }: any) => {
   const shimmer = useSharedValue(-width);
   useEffect(() => {
     shimmer.value = withRepeat(
@@ -103,7 +90,7 @@ const SkeletonBlock = ({ width, height, borderRadius = 8, style }) => {
           borderRadius,
           borderCurve: "continuous",
           overflow: "hidden",
-          backgroundColor: "#2A2A2A",
+          backgroundColor: colors.surface4,
         },
         style,
       ]}
@@ -153,7 +140,7 @@ const SkeletonCard = () => {
         borderRadius: 40,
         borderCurve: "continuous",
         overflow: "hidden",
-        backgroundColor: "#1E1E1E",
+        backgroundColor: colors.surface,
       }}
     >
       {/* Pagination — tek pill */}
@@ -269,7 +256,7 @@ const StatsRow = ({ Icon, iconColor, label, value, unlimited, subtitle }) => (
     <View style={{ flex: 1 }}>
       <Text
         style={{
-          color: "#fff",
+          color: colors.text,
           fontSize: 14,
           fontWeight: "600",
           marginBottom: 2,
@@ -278,7 +265,7 @@ const StatsRow = ({ Icon, iconColor, label, value, unlimited, subtitle }) => (
         {label}
       </Text>
       {subtitle ? (
-        <Text style={{ color: "#9CA3AF", fontSize: 11, fontWeight: "500" }}>
+        <Text style={{ color: colors.textSecondary, fontSize: 11, fontWeight: "500" }}>
           {subtitle}
         </Text>
       ) : null}
@@ -295,14 +282,14 @@ const StatsRow = ({ Icon, iconColor, label, value, unlimited, subtitle }) => (
           borderColor: "rgba(252,128,61,0.5)",
         }}
       >
-        <Text style={{ color: "#fc803d", fontSize: 11, fontWeight: "700" }}>
+        <Text style={{ color: colors.primaryWarm, fontSize: 11, fontWeight: "700" }}>
           ∞
         </Text>
       </View>
     ) : (
       <Text
         style={{
-          color: "#fff",
+          color: colors.text,
           fontSize: 22,
           fontWeight: "700",
           fontVariant: ["tabular-nums"],
@@ -351,10 +338,10 @@ const StatsPopup = ({ stats }) => {
             borderBottomColor: "rgba(255,255,255,0.08)",
           }}
         >
-          <Sparkles size={16} color="#fc803d" strokeWidth={2} />
+          <Sparkles size={16} color={colors.primaryWarm} strokeWidth={2} />
           <Text
             style={{
-              color: "#fc803d",
+              color: colors.primaryWarm,
               fontSize: 13,
               fontWeight: "700",
               letterSpacing: 0.3,
@@ -367,7 +354,7 @@ const StatsPopup = ({ stats }) => {
 
       <StatsRow
         Icon={Flame}
-        iconColor="#fc803d"
+        iconColor={colors.primaryWarm}
         label="Swipe Hakkı"
         value={swipesRem}
         unlimited={swipeUnlimited}
@@ -389,7 +376,7 @@ const StatsPopup = ({ stats }) => {
 
       <StatsRow
         Icon={Star}
-        iconColor="#3B82F6"
+        iconColor={colors.info}
         label="Süper Beğeni"
         value={superLikesRem}
         unlimited={superLikeUnlimited}
@@ -462,7 +449,9 @@ const FigureEightRadar = () => {
     const theta = t.value * 2 * Math.PI;
     const x = (Math.sin(2 * theta) * AMP) / 2;
     const y = Math.cos(theta) * AMP;
-    return { transform: [{ translateX: x }, { translateY: y }] };
+    return {
+      transform: [{ translateX: x }, { translateY: y }] as any,
+    };
   });
   return (
     <Animated.View
@@ -471,7 +460,7 @@ const FigureEightRadar = () => {
       <RadarRing delay={0} />
       <RadarRing delay={800} />
       <RadarRing delay={1600} />
-      <Search size={36} color="#fff" strokeWidth={2} />
+      <Search size={36} color={colors.text} strokeWidth={2} />
     </Animated.View>
   );
 };
@@ -484,7 +473,7 @@ const EmptyDiscoverCard = () => {
         borderRadius: 40,
         borderCurve: "continuous",
         overflow: "hidden",
-        backgroundColor: "#1E1E1E",
+        backgroundColor: colors.surface,
       }}
     >
       {/* Pagination — tek pill (static) */}
@@ -503,7 +492,7 @@ const EmptyDiscoverCard = () => {
             width: 40,
             height: 6,
             borderRadius: 3,
-            backgroundColor: "#2A2A2A",
+            backgroundColor: colors.surface4,
           }}
         />
       </View>
@@ -525,7 +514,7 @@ const EmptyDiscoverCard = () => {
             width: 70,
             height: 30,
             borderRadius: 999,
-            backgroundColor: "#2A2A2A",
+            backgroundColor: colors.surface4,
           }}
         />
         <View style={{ marginBottom: 2, gap: 4 }}>
@@ -534,7 +523,7 @@ const EmptyDiscoverCard = () => {
               width: 150,
               height: 35,
               borderRadius: 999,
-              backgroundColor: "#2A2A2A",
+              backgroundColor: colors.surface4,
             }}
           />
         </View>
@@ -552,7 +541,7 @@ const EmptyDiscoverCard = () => {
               width: 180,
               height: 28,
               borderRadius: 999,
-              backgroundColor: "#2A2A2A",
+              backgroundColor: colors.surface4,
             }}
           />
         </View>
@@ -577,381 +566,6 @@ const EmptyDiscoverCard = () => {
   );
 };
 
-// Backend (DiscoveryOptions.FreeMaxDistanceKm) bunu zaten 50'ye clamp ediyor — UI'da da
-// aynı sınırı görünür hâle getir, kullanıcı 100 yazıp 50 sonuç alıp şaşırmasın.
-const FREE_MAX_DISTANCE_KM = 50;
-
-function FilterModal({ visible, onClose, filters, isPremium, onSave, saving }) {
-  // Free user için maxDistance'ı initial state'te de clamp et — backend zaten yapıyor
-  // ama UI bunu yansıtmazsa kullanıcı "100 km" görür, sonuç 50 km içinden gelir → şaşırır.
-  const clampFiltersForFree = (f) => {
-    if (isPremium || !f) return f;
-    const d = parseInt(f.maxDistance);
-    if (!isNaN(d) && d > FREE_MAX_DISTANCE_KM) {
-      return { ...f, maxDistance: FREE_MAX_DISTANCE_KM };
-    }
-    return f;
-  };
-
-  const [local, setLocal] = useState(() => clampFiltersForFree(filters));
-  const [isDragging, setIsDragging] = useState(false);
-
-  useEffect(() => {
-    setLocal(clampFiltersForFree(filters));
-  }, [filters, isPremium]);
-
-  const renderBackdrop = useCallback(
-    (props) => (
-      <BottomSheetBackdrop
-        {...props}
-        appearsOnIndex={0}
-        disappearsOnIndex={-1}
-        opacity={0.5}
-      />
-    ),
-    [],
-  );
-
-  const toggleGender = (value) => {
-    const current = local.genders || [];
-    setLocal((prev) => ({
-      ...prev,
-      genders: current.includes(value)
-        ? current.filter((g) => g !== value)
-        : [...current, value],
-    }));
-  };
-
-  const pillInput = (val, onChange) => (
-    <View
-      style={{
-        borderRadius: 999,
-        borderCurve: "continuous",
-        overflow: "hidden",
-        borderWidth: 0.5,
-        borderColor: "rgba(255,255,255,0.1)",
-      }}
-    >
-      <TextInput
-        style={{
-          color: "#fff",
-          fontSize: 16,
-          paddingHorizontal: 16,
-          paddingVertical: 14,
-        }}
-        value={String(val ?? "")}
-        onChangeText={onChange}
-        keyboardType="number-pad"
-        maxLength={3}
-        placeholderTextColor="#6B7280"
-      />
-    </View>
-  );
-
-  return (
-    <AppBottomSheet
-      visible={visible}
-      onClose={onClose}
-      snapPoints={["90%"]}
-      enableContentPanningGesture={!isDragging}
-      backdropComponent={renderBackdrop}
-    >
-      {/* Header */}
-      <View
-        style={{
-          flexDirection: "row",
-          alignItems: "center",
-          paddingHorizontal: 20,
-          paddingTop: 32,
-          paddingBottom: 12,
-          backgroundColor: "#121212",
-        }}
-      >
-        <TouchableOpacity
-          onPress={() => onClose?.()}
-          activeOpacity={0.7}
-          style={{ width: 60 }}
-        >
-          <X size={22} color="#9CA3AF" strokeWidth={2} pointerEvents="none" />
-        </TouchableOpacity>
-        <Text
-          style={{
-            flex: 1,
-            color: "#fff",
-            fontSize: 15,
-            fontWeight: "700",
-            textAlign: "center",
-          }}
-        >
-          Filtreler
-        </Text>
-        <TouchableOpacity
-          onPress={() => {
-            Keyboard.dismiss();
-            onSave(local);
-          }}
-          disabled={saving}
-          activeOpacity={0.7}
-          style={{ alignItems: "flex-end" }}
-        >
-          {saving ? (
-            <ActivityIndicator size={18} color="#fff" />
-          ) : (
-            <View
-              style={{
-                borderRadius: 999,
-                borderCurve: "continuous",
-                overflow: "hidden",
-              }}
-              className="flex row bg-[#1E1E1E] self-start justify-center text-center items-center border-[0.5px] border-white/10 px-3 py-3 gap-2 rounded-full"
-            >
-              <Text style={{ color: "#fff", fontWeight: "700", fontSize: 13 }}>
-                Uygula
-              </Text>
-            </View>
-          )}
-        </TouchableOpacity>
-      </View>
-
-      <BottomSheetScrollView
-        style={{ flex: 1, backgroundColor: "#121212" }}
-        contentContainerStyle={{ paddingHorizontal: 20, paddingBottom: 40 }}
-        showsVerticalScrollIndicator={false}
-        nestedScrollEnabled={true}
-        scrollEnabled={!isDragging}
-      >
-        {/* Age Range */}
-        <Text
-          style={{
-            color: "#fff",
-            fontWeight: "700",
-            fontSize: 16,
-            marginTop: 20,
-            marginBottom: 12,
-          }}
-        >
-          Yaş Aralığı
-        </Text>
-        <View style={{ alignItems: "center", marginBottom: 4 }}>
-          <MultiSlider
-            values={[local.ageRangeMin || 18, local.ageRangeMax || 65]}
-            onValuesChangeStart={() => setIsDragging(true)}
-            onValuesChange={(values) =>
-              setLocal((p) => ({
-                ...p,
-                ageRangeMin: values[0],
-                ageRangeMax: values[1],
-              }))
-            }
-            onValuesChangeFinish={(values) => {
-              setIsDragging(false);
-              setLocal((p) => ({
-                ...p,
-                ageRangeMin: values[0],
-                ageRangeMax: values[1],
-              }));
-            }}
-            min={18}
-            max={65}
-            step={1}
-            sliderLength={320}
-            minMarkerOverlapDistance={100}
-            selectedStyle={{ backgroundColor: "#fff" }}
-            unselectedStyle={{ backgroundColor: "#374151" }}
-            markerStyle={{
-              backgroundColor: "#fff",
-              height: 28,
-              width: 28,
-              borderRadius: 100,
-              borderWidth: 0,
-              marginTop: 2,
-              shadowColor: "transparent",
-              shadowOffset: { width: 0, height: 0 },
-              shadowOpacity: 0,
-              shadowRadius: 0,
-              elevation: 0,
-            }}
-            containerStyle={{ height: 40 }}
-            trackStyle={{ height: 4, borderRadius: 3 }}
-          />
-        </View>
-        <View style={{ flexDirection: "row", justifyContent: "space-between" }}>
-          <Text style={{ color: "#fff", fontSize: 22, fontWeight: "700" }}>
-            {local.ageRangeMin || 18} yaş
-          </Text>
-          <Text style={{ color: "#fff", fontSize: 22, fontWeight: "700" }}>
-            {(local.ageRangeMax || 65) === 65 ? "65+" : local.ageRangeMax || 65}{" "}
-            yaş
-          </Text>
-        </View>
-
-        {/* Distance */}
-        <Text
-          style={{
-            color: "#fff",
-            fontWeight: "700",
-            fontSize: 16,
-            marginTop: 28,
-            marginBottom: 12,
-          }}
-        >
-          Maksimum Mesafe (km)
-        </Text>
-        {pillInput(local.maxDistance, (v) => {
-          const n = parseInt(v);
-          if (isNaN(n)) {
-            setLocal((p) => ({ ...p, maxDistance: "" }));
-            return;
-          }
-          // Free user: backend 50km clamp ediyor — UI'da da clamp et + altta uyarı göster.
-          const capped =
-            !isPremium && n > FREE_MAX_DISTANCE_KM ? FREE_MAX_DISTANCE_KM : n;
-          setLocal((p) => ({ ...p, maxDistance: capped }));
-        })}
-        {!isPremium && (
-          <View
-            style={{
-              flexDirection: "row",
-              alignItems: "center",
-              gap: 6,
-              marginTop: 8,
-              paddingHorizontal: 4,
-            }}
-          >
-            <Lock size={12} color="#9CA3AF" />
-            <Text style={{ color: "#9CA3AF", fontSize: 12 }}>
-              Free üye sınırı {FREE_MAX_DISTANCE_KM} km — daha fazlası için
-              Premium
-            </Text>
-          </View>
-        )}
-
-        {/* Gender */}
-        <Text
-          style={{
-            color: "#fff",
-            fontWeight: "700",
-            fontSize: 16,
-            marginTop: 28,
-            marginBottom: 12,
-          }}
-        >
-          Cinsiyet
-        </Text>
-        <View style={{ flexDirection: "row", flexWrap: "wrap", gap: 8 }}>
-          {GENDER_OPTIONS.map((opt) => {
-            const selected = (local.genders || []).includes(opt.value);
-            return (
-              <TouchableOpacity
-                key={opt.value}
-                onPress={() => toggleGender(opt.value)}
-                activeOpacity={0.8}
-                style={{
-                  borderRadius: 999,
-                  borderCurve: "continuous",
-                  borderWidth: 0.5,
-                  borderColor: selected ? "#fc4526" : "rgba(255,255,255,0.15)",
-                  backgroundColor: selected
-                    ? "rgba(252,69,38,0.12)"
-                    : "transparent",
-                  paddingHorizontal: 16,
-                  paddingVertical: 10,
-                }}
-              >
-                <Text
-                  style={{
-                    color: selected ? "#fc4526" : "#9CA3AF",
-                    fontWeight: "600",
-                    fontSize: 14,
-                  }}
-                >
-                  {opt.label}
-                </Text>
-              </TouchableOpacity>
-            );
-          })}
-        </View>
-
-        {/* Premium-only fields */}
-        <View
-          style={{
-            marginTop: 28,
-            opacity: 0.4,
-            pointerEvents: isPremium ? "auto" : "none",
-          }}
-        >
-          <View
-            style={{
-              flexDirection: "row",
-              alignItems: "center",
-              marginBottom: 12,
-            }}
-          >
-            <Text
-              style={{
-                color: "#fff",
-                fontWeight: "700",
-                fontSize: 16,
-                flex: 1,
-              }}
-            >
-              Şehir
-            </Text>
-            {!isPremium && <Lock size={15} color="#9CA3AF" />}
-          </View>
-          <View
-            style={{
-              borderRadius: 999,
-              borderWidth: 0.5,
-              borderColor: "rgba(255,255,255,0.1)",
-              paddingHorizontal: 16,
-              paddingVertical: 14,
-            }}
-          >
-            <Text style={{ color: "#6B7280", fontSize: 16 }}>
-              {local.preferredCity || "Seçilmedi"}
-            </Text>
-          </View>
-
-          <View
-            style={{
-              flexDirection: "row",
-              alignItems: "center",
-              marginTop: 20,
-              marginBottom: 12,
-            }}
-          >
-            <Text
-              style={{
-                color: "#fff",
-                fontWeight: "700",
-                fontSize: 16,
-                flex: 1,
-              }}
-            >
-              Üniversite
-            </Text>
-            {!isPremium && <Lock size={15} color="#9CA3AF" />}
-          </View>
-          <View
-            style={{
-              borderRadius: 999,
-              borderWidth: 0.5,
-              borderColor: "rgba(255,255,255,0.1)",
-              paddingHorizontal: 16,
-              paddingVertical: 14,
-            }}
-          >
-            <Text style={{ color: "#6B7280", fontSize: 16 }}>
-              {local.preferredUniversityDomain || "Seçilmedi"}
-            </Text>
-          </View>
-        </View>
-      </BottomSheetScrollView>
-    </AppBottomSheet>
-  );
-}
-
 const DEFAULT_FILTERS = {
   ageRangeMin: 18,
   ageRangeMax: 30,
@@ -972,6 +586,15 @@ export default function DiscoverScreen() {
   const saveFiltersMutation = useSaveFilters();
   const undoMutation = useUndoSwipe();
   const updateStatsCache = useUpdateStatsCache();
+  const qc = useQueryClient();
+
+  // Session boyunca swipe edilen userId'ler. Backend zaten geçmiş swipe'ları
+  // filtrelemeli ama (1) race condition: stack boşalıp polling refetch
+  // tetiklendiğinde swipe POST'ları henüz commit edilmemiş olabilir,
+  // (2) backend filtresinde nadir bug durumlarına karşı defensive bir
+  // safety net. Polling refetch sonrası cache'i bu set'e göre prune
+  // ediyoruz (aşağıdaki polling useEffect içinde).
+  const swipedUserIdsRef = useRef<Set<string>>(new Set());
 
   const potentialMatches = useMemo(() => {
     const all = matchesQuery.data?.pages.flatMap((p) => p.profiles) ?? [];
@@ -987,6 +610,17 @@ export default function DiscoverScreen() {
   const loading = matchesQuery.isLoading;
   const filters = filtersQuery.data ?? DEFAULT_FILTERS;
   const remainingUndos = statsQuery.data?.remainingUndos ?? null;
+
+  // Default'tan sapan filtre sayısı — header filter icon'unun sağ-altındaki
+  // rozette gösterilir. Mesafe değişikliği rozet'e dahil edilmez (slider'la sürekli
+  // oynanan bir ayar, hep "1" göstermesin) — sadece gender/şehir/üni sayılır.
+  const activeFilterCount = useMemo(() => {
+    let count = 0;
+    if ((filters.genders || []).length > 0) count++;
+    if (filters.preferredCity) count++;
+    if (filters.preferredUniversityDomain) count++;
+    return count;
+  }, [filters]);
 
   // Lit logosu için fill oranı: Premium veya remainingSwipes===-1 → sınırsız (fill=0).
   // Free → günlük 30 limit, (30 - remaining) / 30.
@@ -1033,17 +667,48 @@ export default function DiscoverScreen() {
       return;
     }
     if (pollCountRef.current >= 5) return;
-    const intervalId = setInterval(() => {
+    const intervalId = setInterval(async () => {
       if (pollCountRef.current >= 5) {
         clearInterval(intervalId);
         return;
       }
       pollCountRef.current += 1;
-      matchesQuery.refetch();
+      await matchesQuery.refetch();
+      // Backend race condition / filter bug'larına karşı safety net:
+      // refetch tüm sayfaları replace ettiği için bu noktada cache'i
+      // session boyunca swipe edilen userId'lere göre prune et. Index
+      // shift sorunu yok çünkü stack zaten boştu — yukarıdaki
+      // useEffect currentIndex'i 0'a sıfırlayacak.
+      if (swipedUserIdsRef.current.size === 0) return;
+      qc.setQueryData(swipeKeys.matches, (oldData: any) => {
+        if (!oldData?.pages) return oldData;
+        return {
+          ...oldData,
+          pages: oldData.pages.map((page: any) => ({
+            ...page,
+            profiles: (page.profiles || []).filter(
+              (p: any) =>
+                p?.userId && !swipedUserIdsRef.current.has(p.userId),
+            ),
+          })),
+        };
+      });
     }, 5000);
     return () => clearInterval(intervalId);
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [isEmptyStack]);
+
+  // Refetch (polling veya filter sonrası) backend swipe edilenleri filtrelediği
+  // için yeni page 1 daha az profil dönebilir; currentIndex eski uzunluğa göre
+  // ileri kalır → length <= currentIndex → EmptyDiscoverCard kilitlenir.
+  // Yeni profil geldiyse index'i başa al, listenin başından göstersin.
+  useEffect(() => {
+    if (potentialMatches.length > 0 && potentialMatches.length <= currentIndex) {
+      setCurrentIndex(0);
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [potentialMatches.length]);
+
   const [purchaseVisible, setPurchaseVisible] = useState(false);
   const [superLikePurchaseVisible, setSuperLikePurchaseVisible] = useState(false);
 
@@ -1125,6 +790,7 @@ export default function DiscoverScreen() {
 
   const handleSwipe = useCallback(
     (direction, userId) => {
+      if (userId) swipedUserIdsRef.current.add(userId);
       setCurrentIndex((i) => i + 1);
       const isPass = direction === "left";
       setLastSwipeWasPass(isPass);
@@ -1143,6 +809,11 @@ export default function DiscoverScreen() {
       setPurchaseVisible(true);
       return;
     }
+
+    // Undo edilen profili swipedUserIdsRef'ten çıkar — aksi halde sonraki
+    // polling refetch'inde defensive prune onu listeden silmeye devam eder.
+    const undoneUserId = potentialMatches[currentIndex - 1]?.userId;
+    if (undoneUserId) swipedUserIdsRef.current.delete(undoneUserId);
 
     // Optimistic UI: kart hemen geri gelir + animasyon
     setCurrentIndex((i) => Math.max(0, i - 1));
@@ -1179,6 +850,7 @@ export default function DiscoverScreen() {
       await undoMutation.mutateAsync();
     } catch (err) {
       setCurrentIndex((i) => i + 1);
+      if (undoneUserId) swipedUserIdsRef.current.add(undoneUserId);
       if (prevUndos !== null) updateStatsCache({ remainingUndos: prevUndos });
       Alert.alert("", err?.message || "Geri alınamadı");
     }
@@ -1291,9 +963,9 @@ export default function DiscoverScreen() {
   };
 
   return (
-    <GestureHandlerRootView style={{ flex: 1, backgroundColor: "#121212" }}>
+    <GestureHandlerRootView style={{ flex: 1, backgroundColor: colors.bg }}>
       {/* Header */}
-      <View style={{ backgroundColor: "#121212", paddingTop: insets.top }}>
+      <View style={{ backgroundColor: colors.bg, paddingTop: insets.top }}>
         <View
           style={{
             height: 50,
@@ -1310,14 +982,14 @@ export default function DiscoverScreen() {
               style={{ opacity: lastSwipeWasPass ? 1 : 0.3 }}
             >
               <View style={{ position: "relative" }} pointerEvents="none">
-                <RotateCcw size={24} color="#fff" strokeWidth={2} />
+                <RotateCcw size={24} color={colors.text} strokeWidth={2} />
                 {remainingUndos !== null && (
                   <View
                     style={{
                       position: "absolute",
                       bottom: -4,
                       right: -6,
-                      backgroundColor: "#121212",
+                      backgroundColor: colors.bg,
                       borderRadius: 999,
                       minWidth: 16,
                       height: 16,
@@ -1328,7 +1000,7 @@ export default function DiscoverScreen() {
                   >
                     <Text
                       style={{
-                        color: "#fff",
+                        color: colors.text,
                         fontSize: 15,
                         fontWeight: "700",
                       }}
@@ -1358,8 +1030,34 @@ export default function DiscoverScreen() {
               onPress={() => setFilterVisible(true)}
               activeOpacity={0.7}
             >
-              <View pointerEvents="none">
-                <SlidersHorizontal size={24} color="#fff" strokeWidth={2} />
+              <View style={{ position: "relative" }} pointerEvents="none">
+                <SlidersHorizontal size={24} color={colors.text} strokeWidth={2} />
+                {activeFilterCount > 0 && (
+                  <View
+                    style={{
+                      position: "absolute",
+                      bottom: -4,
+                      right: -6,
+                      backgroundColor: colors.bg,
+                      borderRadius: 999,
+                      minWidth: 16,
+                      height: 16,
+                      alignItems: "center",
+                      justifyContent: "center",
+                      paddingHorizontal: 3,
+                    }}
+                  >
+                    <Text
+                      style={{
+                        color: colors.text,
+                        fontSize: 15,
+                        fontWeight: "700",
+                      }}
+                    >
+                      {activeFilterCount}
+                    </Text>
+                  </View>
+                )}
               </View>
             </TouchableOpacity>
           </View>
@@ -1416,7 +1114,7 @@ export default function DiscoverScreen() {
         visible={filterVisible}
         onClose={() => setFilterVisible(false)}
         filters={filters}
-        isPremium={filters.isPremium}
+        isPremium={statsQuery.data?.isPremium ?? false}
         onSave={handleSaveFilters}
         saving={saveFiltersMutation.isPending}
       />

@@ -99,7 +99,7 @@ function PaginationDot({ active }: any) {
         width,
         height: 6,
         borderRadius: 999,
-        backgroundColor: "#fff",
+        backgroundColor: colors.text,
         opacity,
       }}
     />
@@ -131,6 +131,7 @@ import {
 } from "@/features/profile/subscriptionService";
 import {
   fetchSubscriptionStatus,
+  selectIsPremium,
   setPremium,
   syncSubscriptionWithRetry,
 } from "@/features/profile/subscriptionSlice";
@@ -138,6 +139,7 @@ import api from "@/shared/services/api";
 import { API_ENDPOINTS } from "@/shared/constants/api";
 import { useQueryClient } from "@tanstack/react-query";
 import { swipeKeys } from "@/features/discover/swipeQueries";
+import { colors, gradients } from "../../../shared/theme/colors";
 
 const FEATURES = [
   { icon: Zap, label: "Sınırsız Beğeni" },
@@ -305,7 +307,7 @@ function renderPlanName(
 export default function PurchaseModal({ visible, onClose, onSuccess }: any) {
   const dispatch = useAppDispatch();
   const queryClient = useQueryClient();
-  const isPremium = useAppSelector((s) => (s as any).subscription?.isPremium ?? false);
+  const isPremium = useAppSelector(selectIsPremium);
 
   // Premium satın alma/restore sonrası swipe stats cache'ini güncelle —
   // backend sınırsız için -1 dönüyor. Local cache eski limitli değerlerle
@@ -494,7 +496,7 @@ export default function PurchaseModal({ visible, onClose, onSuccess }: any) {
           }}
         >
           {loadingOffering ? (
-            <ActivityIndicator color="#fff" style={{ marginVertical: 20 }} />
+            <ActivityIndicator color={colors.text} style={{ marginVertical: 20 }} />
           ) : (
             <>
               <AnimatedPressable
@@ -510,7 +512,7 @@ export default function PurchaseModal({ visible, onClose, onSuccess }: any) {
                 }}
               >
                 <LinearGradient
-                  colors={["#ffffff", "#e5e7eb", "#9ca3af"]}
+                  colors={gradients.neutralFade}
                   locations={[0, 0.35, 0.85]}
                   start={{ x: 0, y: 0 }}
                   end={{ x: 1, y: 1 }}
@@ -551,9 +553,9 @@ export default function PurchaseModal({ visible, onClose, onSuccess }: any) {
                 style={{ alignItems: "center", paddingVertical: 8 }}
               >
                 {restoring ? (
-                  <ActivityIndicator size="small" color="#9CA3AF" />
+                  <ActivityIndicator size="small" color={colors.textSecondary} />
                 ) : (
-                  <Text style={{ color: "#6B7280", fontSize: 13 }}>
+                  <Text style={{ color: colors.textMuted, fontSize: 13 }}>
                     Satın alımları geri yükle
                   </Text>
                 )}
@@ -562,7 +564,7 @@ export default function PurchaseModal({ visible, onClose, onSuccess }: any) {
               <Text
                 style={{
                   marginHorizontal: 10,
-                  color: "#4B5563",
+                  color: colors.textDisabled,
                   fontSize: 11,
                   textAlign: "center",
                   marginTop: 8,
@@ -630,7 +632,7 @@ export default function PurchaseModal({ visible, onClose, onSuccess }: any) {
             justifyContent: "center",
           }}
         >
-          <X size={18} color="#fff" strokeWidth={2.5} pointerEvents="none" />
+          <X size={18} color={colors.text} strokeWidth={2.5} pointerEvents="none" />
         </BlurView>
       </TouchableOpacity>
 
@@ -639,7 +641,7 @@ export default function PurchaseModal({ visible, onClose, onSuccess }: any) {
           etkilemez. */}
       <LinearGradient
         pointerEvents="none"
-        colors={["#3a3a3e", "#121212"]}
+        colors={["#3a3a3e", colors.bg]}
         locations={[0, 1]}
         start={{ x: 0.5, y: 0 }}
         end={{ x: 0.5, y: 1 }}
@@ -677,7 +679,7 @@ export default function PurchaseModal({ visible, onClose, onSuccess }: any) {
         >
           <Text
             style={{
-              color: "#fff",
+              color: colors.text,
               fontSize: 56,
               fontFamily: "Duckie-regular",
               marginBottom: 8,
@@ -711,7 +713,7 @@ export default function PurchaseModal({ visible, onClose, onSuccess }: any) {
                 backgroundColor: "rgba(255,255,255,0.18)",
               }}
             >
-              <Text style={{ color: "#fff", fontSize: 13, fontWeight: "600" }}>
+              <Text style={{ color: colors.text, fontSize: 13, fontWeight: "600" }}>
                 İlk {trialDays} gün ücretsiz
               </Text>
             </View>
@@ -786,7 +788,7 @@ export default function PurchaseModal({ visible, onClose, onSuccess }: any) {
                       }}
                     >
                       <LinearGradient
-                        colors={["#ffffff", "#e5e7eb", "#9ca3af"]}
+                        colors={gradients.neutralFade}
                         locations={[0, 0.5, 1]}
                         start={{ x: 0, y: 0 }}
                         end={{ x: 1, y: 1 }}
@@ -814,7 +816,7 @@ export default function PurchaseModal({ visible, onClose, onSuccess }: any) {
                         {planShowTrial && (
                           <Text
                             style={{
-                              color: "#4B5563",
+                              color: colors.textDisabled,
                               fontSize: 12,
                               fontWeight: "400",
                               marginTop: 4,
@@ -879,7 +881,7 @@ export default function PurchaseModal({ visible, onClose, onSuccess }: any) {
                 <Text
                   className="w-16 text-center mb-2"
                   style={{
-                    color: "#fff",
+                    color: colors.text,
                     fontSize: 25,
                     fontFamily: "Duckie-regular",
                   }}
@@ -909,7 +911,7 @@ export default function PurchaseModal({ visible, onClose, onSuccess }: any) {
                     />
                   </View>
                   <View className="w-16 items-center">
-                    <Check size={18} color="#fff" strokeWidth={2} />
+                    <Check size={18} color={colors.text} strokeWidth={2} />
                   </View>
                 </View>
               </View>

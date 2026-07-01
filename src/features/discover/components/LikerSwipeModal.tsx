@@ -11,6 +11,7 @@ import {
   cardPullProgress,
   containerExpand,
 } from "@/shared/services/uiBus";
+import { colors } from "../../../shared/theme/colors";
 
 /**
  * Premium kullanıcının LikesScreen'de bir karta tıkladığında açılan
@@ -72,7 +73,7 @@ export default function LikerSwipeModal({ visible, profile, onClose, onSwipe }: 
       onRequestClose={onClose}
       statusBarTranslucent
     >
-      <GestureHandlerRootView style={{ flex: 1, backgroundColor: "#121212" }}>
+      <GestureHandlerRootView style={{ flex: 1, backgroundColor: colors.bg }}>
         <StatusBar barStyle="light-content" />
         <View
           style={{
@@ -115,7 +116,7 @@ export default function LikerSwipeModal({ visible, profile, onClose, onSwipe }: 
           }}
         >
           <View pointerEvents="none">
-            <X size={22} color="#fff" strokeWidth={2.2} />
+            <X size={22} color={colors.text} strokeWidth={2.2} />
           </View>
         </TouchableOpacity>
       </GestureHandlerRootView>

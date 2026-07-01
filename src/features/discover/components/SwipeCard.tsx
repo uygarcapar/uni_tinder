@@ -2,13 +2,12 @@ import { useEffect, useMemo, useState } from "react";
 import {
   View,
   Text,
-  Image,
   Dimensions,
   TouchableOpacity,
   StyleSheet,
   Platform,
 } from "react-native";
-import { buildMapboxStaticUrl } from "@/shared/constants/mapbox";
+import { Image } from "expo-image";
 import Animated, {
   useAnimatedScrollHandler,
   useAnimatedStyle,
@@ -32,7 +31,6 @@ function ScrollWrapper({ nativeScrollGesture, children }: any) {
 import * as Haptics from "expo-haptics";
 import uiBus, { cardExpandAnim, containerExpand } from "@/shared/services/uiBus";
 import {
-  MapPin,
   GraduationCap,
   BookOpen,
   Heart,
@@ -102,6 +100,7 @@ import MaskedView from "@react-native-masked-view/masked-view";
 import { easeGradient } from "react-native-easing-gradient";
 import Svg, { Defs, RadialGradient, Stop, Rect } from "react-native-svg";
 import { getColors } from "react-native-image-colors";
+import { colors as theme } from "../../../shared/theme/colors";
 const { width, height } = Dimensions.get("window");
 const CARD_HEIGHT = height - 200;
 const SCREEN_HEIGHT = height - 188; // Header height (90px) çıkarıldı
@@ -190,7 +189,7 @@ function hslToRgb(h, s, l) {
 // saturation'ı moderate aralıkta tutar. Her foto için tutarlı bir
 // "premium" his üretir, ham vibrant renkleri muted'lar.
 function spotifyColor(hex) {
-  if (!hex) return "#1a1a1a";
+  if (!hex) return theme.surface5;
   const [r, g, b] = hexToRgb(hex);
   let [h, s, l] = rgbToHsl(r, g, b);
   // Lightness cap → tüm renkler aynı derinlikte görünür
@@ -256,7 +255,7 @@ function pickSpotifyColor(result) {
   }
 
   // Hiçbir aday uygun değil → nötr koyu (mostly-white veya mostly-black foto)
-  return "#2a2a2a";
+  return theme.surface4;
 }
 
 // Foto URI'sinden dominant rengi çıkarır (Spotify-tarzı bg gradient için).
@@ -279,7 +278,7 @@ function useDominantColor(uri) {
     getColors(uri, {
       cache: true,
       key: uri,
-      fallback: "#121212",
+      fallback: theme.bg,
       quality: "high",
     })
       .then((result) => {
@@ -319,7 +318,7 @@ function SkeletonBox({ w, h, borderRadius = 8 }: any) {
         height: h,
         borderRadius,
         borderCurve: "continuous",
-        backgroundColor: "#1E1E1E",
+        backgroundColor: theme.surface,
         overflow: "hidden",
       }}
     >
@@ -653,7 +652,7 @@ export default function SwipeCard({
           overflow: "hidden",
         },
       ]}
-      className="flex-1 bg-[#121212]"
+      className="flex-1 bg-bg"
       onLayout={(e) =>
         setMeasuredCardHeight((prev) => prev || e.nativeEvent.layout.height)
       }
@@ -673,7 +672,7 @@ export default function SwipeCard({
               Profile Info'nun kendi inner gradient'i (spotify→#121212 fade)
               zaten görsel geçişi sağlıyor. Foto'nun rounded corners'ı kart
               frame'inin #121212 bg'siyle uyumlu. */}
-          <View style={{ backgroundColor: "#121212" }}>
+          <View style={{ backgroundColor: theme.bg }}>
             {/* Photo Gallery — expanded olurken borderRadius 40→0 anime */}
             {allPhotos.length > 0 ? (
               <Animated.View
@@ -705,7 +704,10 @@ export default function SwipeCard({
                             height: photoHeight,
                             opacity: currentPhotoIndex === index ? 1 : 0,
                           }}
-                          resizeMode="cover"
+                          contentFit="cover"
+                          cachePolicy="memory-disk"
+                          recyclingKey={photo}
+                          transition={150}
                           onLoadEnd={() => {
                             loadedPhotoUris.add(photo);
                             setLoadedPhotos((prev) => {
@@ -757,7 +759,7 @@ export default function SwipeCard({
                             borderRadius: 3,
                             backgroundColor:
                               index === currentPhotoIndex
-                                ? "#fff"
+                                ? theme.text
                                 : "rgba(255,255,255,0.4)",
                           }}
                         />
@@ -854,9 +856,9 @@ export default function SwipeCard({
                       <View style={{ width: 35, height: 35 }}>
                         <Heart
                           size={35}
-                          color="#fff"
+                          color={theme.text}
                           strokeWidth={1.5}
-                          fill={isFilled ? "#fff" : "transparent"}
+                          fill={isFilled ? theme.text : "transparent"}
                         />
                         {/* Pull-down progressive fill */}
                         <Animated.View
@@ -874,9 +876,9 @@ export default function SwipeCard({
                         >
                           <Heart
                             size={35}
-                            color="#fff"
+                            color={theme.text}
                             strokeWidth={1.5}
-                            fill="#fff"
+                            fill={theme.text}
                           />
                         </Animated.View>
                         {typeof superLikesRemaining === "number" &&
@@ -901,7 +903,7 @@ export default function SwipeCard({
                             >
                               <Text
                                 style={{
-                                  color: "#fff",
+                                  color: theme.text,
                                   fontSize: 10,
                                   fontWeight: "700",
                                   fontVariant: ["tabular-nums"],
@@ -991,7 +993,7 @@ export default function SwipeCard({
                         }}
                         className="flex-row items-center border-[0.5px] border-white/50 self-start px-3 py-3 gap-1"
                       >
-                        <Target size={16} color="#d1d5db" strokeWidth={1.5} />
+                        <Target size={16} color={theme.neutral200} strokeWidth={1.5} />
                         <Text className="ml-[2px] text-gray-300 font-medium text-[13px]">
                           {profile.usagePurposeDisplay}
                         </Text>
@@ -1016,7 +1018,7 @@ export default function SwipeCard({
                     pointerEvents="none"
                   >
                     <Animated.View style={chevronAnimStyle}>
-                      <ArrowDown size={28} color="#fff" strokeWidth={2} />
+                      <ArrowDown size={28} color={theme.text} strokeWidth={2} />
                     </Animated.View>
                   </View>
                 )}
@@ -1046,7 +1048,7 @@ export default function SwipeCard({
                 ]}
               >
                 <LinearGradient
-                  colors={[spotifyColor(dominantColor), "#121212", "#121212"]}
+                  colors={[spotifyColor(dominantColor), theme.bg, theme.bg]}
                   start={{ x: 0.5, y: 0 }}
                   end={{ x: 0.5, y: 1 }}
                   locations={[0, 0.75, 1]}
@@ -1088,7 +1090,7 @@ export default function SwipeCard({
                         >
                           <GraduationCap
                             size={22}
-                            color="#fff"
+                            color={theme.text}
                             strokeWidth={1.5}
                           />
                           <View className="flex-col items-start gap-2">
@@ -1151,7 +1153,7 @@ export default function SwipeCard({
                             >
                               <HobbyIcon
                                 size={18}
-                                color="#fff"
+                                color={theme.text}
                                 strokeWidth={1.5}
                               />
                               <Text className="text-white font-[500] text-[13px]">
@@ -1207,12 +1209,12 @@ export default function SwipeCard({
                           >
                             <Cigarette
                               size={18}
-                              color="#fff"
+                              color={theme.text}
                               strokeWidth={1.5}
                             />
                             <Text
                               style={{
-                                color: "#fff",
+                                color: theme.text,
                                 fontSize: 14,
                                 fontWeight: "500",
                               }}
@@ -1220,7 +1222,7 @@ export default function SwipeCard({
                               Sigara Kullanımı
                             </Text>
                           </View>
-                          <Text style={{ color: "#9CA3AF", fontSize: 14 }}>
+                          <Text style={{ color: theme.textSecondary, fontSize: 14 }}>
                             {profile.smokingStatusDisplay}
                           </Text>
                         </View>
@@ -1248,12 +1250,12 @@ export default function SwipeCard({
                           >
                             <Sparkles
                               size={18}
-                              color="#fff"
+                              color={theme.text}
                               strokeWidth={1.5}
                             />
                             <Text
                               style={{
-                                color: "#fff",
+                                color: theme.text,
                                 fontSize: 14,
                                 fontWeight: "500",
                               }}
@@ -1261,7 +1263,7 @@ export default function SwipeCard({
                               Burç
                             </Text>
                           </View>
-                          <Text style={{ color: "#9CA3AF", fontSize: 14 }}>
+                          <Text style={{ color: theme.textSecondary, fontSize: 14 }}>
                             {profile.zodiacSignDisplay}
                           </Text>
                         </View>
@@ -1289,12 +1291,12 @@ export default function SwipeCard({
                           >
                             <PawPrint
                               size={18}
-                              color="#fff"
+                              color={theme.text}
                               strokeWidth={1.5}
                             />
                             <Text
                               style={{
-                                color: "#fff",
+                                color: theme.text,
                                 fontSize: 14,
                                 fontWeight: "500",
                               }}
@@ -1302,7 +1304,7 @@ export default function SwipeCard({
                               Evcil Hayvan
                             </Text>
                           </View>
-                          <Text style={{ color: "#9CA3AF", fontSize: 14 }}>
+                          <Text style={{ color: theme.textSecondary, fontSize: 14 }}>
                             {profile.hasPets ? "Var" : "Yok"}
                           </Text>
                         </View>
@@ -1337,12 +1339,12 @@ export default function SwipeCard({
                         >
                           <PurposeIcon
                             size={20}
-                            color="#fff"
+                            color={theme.text}
                             strokeWidth={1.5}
                           />
                           <Text
                             style={{
-                              color: "#fff",
+                              color: theme.text,
                               fontSize: 18,
                               fontWeight: "500",
                               flex: 1,
@@ -1397,13 +1399,13 @@ export default function SwipeCard({
                       >
                         <Pen
                           size={18}
-                          color="#fff"
+                          color={theme.text}
                           strokeWidth={1.5}
                           style={{ marginTop: 2 }}
                         />
                         <Text
                           style={{
-                            color: "#fff",
+                            color: theme.text,
                             fontSize: 14,
                             lineHeight: 22,
                             flex: 1,
@@ -1415,95 +1417,6 @@ export default function SwipeCard({
                         </Text>
                       </View>
                     </View>
-                  </View>
-                )}
-                {/* Location Info */}
-                {(profile.cityDisplay || profile.districtDisplay) && (
-                  <View className="mb-4">
-                    {profile.cityDisplay && profile.districtDisplay && (
-                      <View style={{ gap: 10 }}>
-                        {/* Full-width dikdörtgen harita — 4 kenarına LinearGradient
-                        fade konup kart arkaplan rengi (#121212) ile karışıyor. */}
-                        <View
-                          className="rounded-[50px] border-[0.5px] border-white/10 overflow-hidden"
-                          style={{
-                            borderCurve: "continuous",
-                            width: "100%",
-                            height: 250,
-                            overflow: "hidden",
-                            backgroundColor: "#121212",
-                            alignItems: "center",
-                            justifyContent: "center",
-                            position: "relative",
-                          }}
-                          pointerEvents="none"
-                        >
-                          {profile.districtLatitude != null &&
-                          profile.districtLongitude != null ? (
-                            <Image
-                              source={{
-                                uri: buildMapboxStaticUrl({
-                                  latitude: profile.districtLatitude,
-                                  longitude: profile.districtLongitude,
-                                  zoom: 6,
-                                  width: 600,
-                                  height: 320,
-                                }),
-                              }}
-                              style={{ width: "100%", height: "100%" }}
-                              resizeMode="cover"
-                            />
-                          ) : (
-                            <MapPin
-                              size={32}
-                              color="#9CA3AF"
-                              strokeWidth={1.5}
-                            />
-                          )}
-
-                          {/* Radial (yuvarlak) vignette fade — merkez net,
-                          oval kenarlar kart arkaplan rengiyle (#121212) karışıyor.
-                          objectBoundingBox koordinat sistemi sayesinde gradient
-                          kutunun aspect ratio'suna göre oval şekil alır. */}
-
-                          {/* Ortalanmış konum pill — BlurView zemin üzerinde
-                          district + distance bilgisi */}
-                          <View
-                            style={{
-                              position: "absolute",
-                              top: 0,
-                              left: 0,
-                              right: 0,
-                              bottom: 0,
-                              alignItems: "center",
-                              justifyContent: "center",
-                            }}
-                            pointerEvents="none"
-                          >
-                            <BlurView
-                              intensity={60}
-                              tint="dark"
-                              style={{
-                                borderRadius: 999,
-                                borderCurve: "continuous",
-                                overflow: "hidden",
-                                paddingHorizontal: 18,
-                                paddingVertical: 10,
-                                alignItems: "center",
-                                gap: 2,
-                              }}
-                            >
-                              <Text className="text-white font-bold text-[15px]">
-                                {profile.districtDisplay}, {profile.cityDisplay}
-                              </Text>
-                              <Text className="text-gray-200 font-[400] text-[12px]">
-                                {profile.distance} km uzakta
-                              </Text>
-                            </BlurView>
-                          </View>
-                        </View>
-                      </View>
-                    )}
                   </View>
                 )}
                 {/* Action Buttons */}
@@ -1529,7 +1442,7 @@ export default function SwipeCard({
                       }}
                     >
                       <View pointerEvents="none">
-                        <X size={75} color="#fff" strokeWidth={5} />
+                        <X size={75} color={theme.text} strokeWidth={5} />
                       </View>
                     </TouchableOpacity>
                     <TouchableOpacity
@@ -1544,7 +1457,7 @@ export default function SwipeCard({
                       }}
                     >
                       <View pointerEvents="none">
-                        <Check size={75} color="#fff" strokeWidth={5} />
+                        <Check size={75} color={theme.text} strokeWidth={5} />
                       </View>
                     </TouchableOpacity>
                   </View>

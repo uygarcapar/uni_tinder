@@ -35,6 +35,7 @@ import Animated, {
   Easing,
 } from "react-native-reanimated";
 import { useAppDispatch, useAppSelector } from "@/shared/hooks/redux";
+import { selectIsPremium } from "@/features/profile/subscriptionSlice";
 import api from "@/shared/services/api";
 import { API_ENDPOINTS } from "@/shared/constants/api";
 import profileService from "@/features/profile/profileService";
@@ -48,6 +49,7 @@ import { useSwipeStats } from "@/features/discover/swipeQueries";
 import { setWhoLikedMeCount } from "@/features/discover/swipeSlice";
 
 import uiBus from "@/shared/services/uiBus";
+import { colors, gradients } from "../../../shared/theme/colors";
 
 const { width } = Dimensions.get("window");
 const CARD_WIDTH = (width - 44) / 2; // 2 columns with padding
@@ -78,7 +80,7 @@ function SkeletonBox({ width: w, height: h, borderRadius = 8, style }) {
           height: h,
           borderRadius,
           borderCurve: "continuous",
-          backgroundColor: "#1E1E1E",
+          backgroundColor: colors.surface,
           overflow: "hidden",
         },
         style,
@@ -158,7 +160,7 @@ function LikeCard({ item, isPremium, onPress }) {
           borderRadius: 40,
           borderCurve: "continuous",
           overflow: "hidden",
-          backgroundColor: "#1E1E1E",
+          backgroundColor: colors.surface,
         }}
       >
         {item.mainPhoto ? (
@@ -209,7 +211,7 @@ function LikeCard({ item, isPremium, onPress }) {
               justifyContent: "center",
             }}
           >
-            <Lock size={40} color="#fff" strokeWidth={2} />
+            <Lock size={40} color={colors.text} strokeWidth={2} />
           </BlurView>
         )}
 
@@ -223,7 +225,7 @@ function LikeCard({ item, isPremium, onPress }) {
             }}
             pointerEvents="none"
           >
-            <Heart size={28} color="#fff" fill="#fff" strokeWidth={1.5} />
+            <Heart size={28} color={colors.text} fill={colors.text} strokeWidth={1.5} />
           </View>
         )}
       </View>
@@ -236,7 +238,7 @@ function LikeCard({ item, isPremium, onPress }) {
             marginTop: 8,
             paddingLeft: 14,
             paddingRight: 4,
-            color: "#808080",
+            color: colors.neutral500,
             fontSize: 14,
             fontWeight: "600",
             textAlign: "left",
@@ -259,7 +261,7 @@ export default function LikesScreen() {
   // ile anında true olur. Profile fetch'inden gelen profilePremium ile birlikte
   // OR'lanır ki ya başlangıçta zaten premium ise ya da yeni satın alındıysa
   // button kaybolsun.
-  const reduxPremium = useAppSelector((s) => (s as any).subscription?.isPremium);
+  const reduxPremium = useAppSelector(selectIsPremium);
   const isPremium = profilePremium || reduxPremium;
   const [activeTab, setActiveTab] = useState("all");
   const insets = useSafeAreaInsets();
@@ -407,9 +409,33 @@ export default function LikesScreen() {
   // MatchNotification gelene kadar bekleme). whoLikedMe count'unu da düş.
   const handleLikerSwiped = (likerUserId) => {
     if (!likerUserId) return;
-    setLikes((prev) => prev.filter((it) => it.likerUserId !== likerUserId));
+    setLikes((prev) =>
+      prev.filter(
+        (it) => it.userId !== likerUserId && it.likerUserId !== likerUserId,
+      ),
+    );
     dispatch(setWhoLikedMeCount(Math.max(0, (likes?.length ?? 1) - 1)));
   };
+
+  // Match olduğunda artık o kişi "incoming like" değil — listeden çıkar.
+  // Fetch'ten gelen item'lar `userId`, realtime eklenenler `likerUserId`
+  // alanı taşıyor; iki ihtimali de kontrol et.
+  useEffect(() => {
+    const unsub = uiBus.on("match", (m) => {
+      const matchedId = m?.matchedUserId;
+      if (!matchedId) return;
+      setLikes((prev) => {
+        const next = prev.filter(
+          (it) => it.userId !== matchedId && it.likerUserId !== matchedId,
+        );
+        if (next.length !== prev.length) {
+          dispatch(setWhoLikedMeCount(Math.max(0, next.length)));
+        }
+        return next;
+      });
+    });
+    return unsub;
+  }, [dispatch]);
 
   // Realtime: socket'ten yeni IncomingLike geldiğinde listeyi reload etmeden prepend et.
   // AppNavigator IncomingLike SignalR event'ini yakalayıp uiBus.emit('incomingLike', payload)
@@ -477,14 +503,14 @@ export default function LikesScreen() {
                 alignItems: "center",
                 paddingHorizontal: 14,
                 paddingVertical: 10,
-                backgroundColor: isActive ? "#fff" : "transparent",
+                backgroundColor: isActive ? colors.text : "transparent",
                 borderWidth: 1,
                 borderColor: "rgba(255,255,255,0.25)",
               }}
             >
               <Text
                 style={{
-                  color: isActive ? "#000" : "#fff",
+                  color: isActive ? "#000" : colors.text,
                   fontWeight: "600",
                   fontSize: 12,
                 }}
@@ -499,7 +525,7 @@ export default function LikesScreen() {
   );
 
   return (
-    <View className="flex-1 bg-[#121212]">
+    <View className="flex-1 bg-bg">
       {loading ? (
         <>
           <View
@@ -588,7 +614,7 @@ export default function LikesScreen() {
                 onPress={() => navigation.navigate("Notifications")}
                 modifiers={[
                   buttonStyle("glass"),
-                  tint("#ffffff"),
+                  tint(colors.text),
                   labelStyle("iconOnly"),
                   font({ size: 22, weight: "medium" }),
                 ]}
@@ -601,7 +627,7 @@ export default function LikesScreen() {
               activeOpacity={0.7}
             >
               <View pointerEvents="none">
-                <Bell size={29} strokeWidth={2} color="#fff" fill="#fff" />
+                <Bell size={29} strokeWidth={2} color={colors.text} fill={colors.text} />
               </View>
             </TouchableOpacity>
           )
@@ -627,7 +653,7 @@ export default function LikesScreen() {
             }}
           >
             <LinearGradient
-              colors={["#ffffff", "#e5e7eb", "#9ca3af"]}
+              colors={gradients.neutralFade}
               locations={[0, 0.35, 0.85]}
               start={{ x: 0, y: 0 }}
               end={{ x: 1, y: 1 }}
