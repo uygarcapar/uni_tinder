@@ -15,6 +15,7 @@ import moderationService, { REPORT_REASON_LABELS_TR } from '@/shared/services/mo
 import { useForm, Controller } from 'react-hook-form';
 import { zodResolver } from '@hookform/resolvers/zod';
 import { reportSchema, ReportForm } from '@/shared/schemas/formSchemas';
+import { colors } from '../theme/colors';
 
 export default function ReportModal({
   visible,
@@ -68,11 +69,11 @@ export default function ReportModal({
 
   return (
     <Modal visible animationType="slide" onRequestClose={handleClose}>
-      <View style={{ flex: 1, backgroundColor: '#0a0a0a', paddingTop: insets.top }}>
+      <View style={{ flex: 1, backgroundColor: colors.bgDeep, paddingTop: insets.top }}>
         {/* Header */}
-        <View className="flex-row items-center px-4 py-3 border-b border-[#1a1a1a]">
+        <View className="flex-row items-center px-4 py-3 border-b border-surface-5">
           <TouchableOpacity onPress={handleClose} hitSlop={10} className="p-2">
-            <X size={24} color="#fff" />
+            <X size={24} color={colors.text} />
           </TouchableOpacity>
           <Text className="text-white text-base font-semibold flex-1 ml-2">
             Kullanıcıyı Şikayet Et
@@ -81,7 +82,7 @@ export default function ReportModal({
 
         <ScrollView contentContainerStyle={{ padding: 20 }}>
           <View className="flex-row items-center mb-4">
-            <Flag size={20} color="#f57656" />
+            <Flag size={20} color={colors.primary} />
             <Text className="text-white text-base font-semibold ml-2">Şikayet sebebi</Text>
           </View>
 
@@ -96,8 +97,8 @@ export default function ReportModal({
                     onPress={() => onChange(key)}
                     className={`flex-row items-center justify-between px-4 py-4 mb-2 rounded-2xl border ${
                       value === key
-                        ? 'border-[#f57656] bg-[#f57656]/10'
-                        : 'border-[#262626] bg-[#1a1a1a]'
+                        ? 'border-primary bg-primary/10'
+                        : 'border-surface-3 bg-surface-5'
                     }`}
                   >
                     <Text className={`text-base ${value === key ? 'text-white font-semibold' : 'text-gray-200'}`}>
@@ -106,12 +107,12 @@ export default function ReportModal({
                     <View
                       style={{
                         width: 20, height: 20, borderRadius: 10, borderWidth: 2,
-                        borderColor: value === key ? '#f57656' : '#3a3a3a',
+                        borderColor: value === key ? colors.primary : colors.border,
                         alignItems: 'center', justifyContent: 'center',
                       }}
                     >
                       {value === key && (
-                        <View style={{ width: 10, height: 10, borderRadius: 5, backgroundColor: '#f57656' }} />
+                        <View style={{ width: 10, height: 10, borderRadius: 5, backgroundColor: colors.primary }} />
                       )}
                     </View>
                   </Pressable>
@@ -131,11 +132,11 @@ export default function ReportModal({
                 value={value}
                 onChangeText={onChange}
                 placeholder="Olayı kısaca anlat…"
-                placeholderTextColor="#6b7280"
+                placeholderTextColor={colors.textMuted}
                 multiline
                 maxLength={1000}
-                className="text-white text-base bg-[#1a1a1a] rounded-2xl p-4"
-                style={{ minHeight: 100, textAlignVertical: 'top', borderWidth: 1, borderColor: '#262626' }}
+                className="text-white text-base bg-surface-5 rounded-2xl p-4"
+                style={{ minHeight: 100, textAlignVertical: 'top', borderWidth: 1, borderColor: colors.surface3 }}
               />
             )}
           />
@@ -151,17 +152,17 @@ export default function ReportModal({
 
         {/* Bottom action */}
         <View
-          className="px-4 pt-3 border-t border-[#1a1a1a]"
+          className="px-4 pt-3 border-t border-surface-5"
           style={{ paddingBottom: Math.max(insets.bottom, 16) }}
         >
           <TouchableOpacity
             onPress={handleSubmitForm}
             disabled={!reason || isSubmitting}
             className="rounded-full py-3.5 items-center justify-center"
-            style={{ backgroundColor: reason ? '#ef4444' : '#3a3a3a' }}
+            style={{ backgroundColor: reason ? colors.error : colors.border }}
           >
             {isSubmitting
-              ? <ActivityIndicator size="small" color="#fff" />
+              ? <ActivityIndicator size="small" color={colors.text} />
               : <Text className="text-white font-bold text-base">Şikayet Et</Text>
             }
           </TouchableOpacity>

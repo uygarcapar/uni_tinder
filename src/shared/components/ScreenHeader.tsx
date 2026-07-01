@@ -16,6 +16,7 @@ import Animated, {
 } from "react-native-reanimated";
 import { easeGradient } from "react-native-easing-gradient";
 import WaveFillLogo from "@/shared/components/WaveFillLogo";
+import { colors as themeColors } from "../theme/colors";
 
 const AnimatedBlurView = Animated.createAnimatedComponent(BlurView);
 const SCROLL_THRESHOLD = 30;
@@ -168,7 +169,7 @@ export default function ScreenHeader({
             titleAnimStyle,
           ]}
         >
-          <Text style={{ color: "#fff", fontSize: 35, fontWeight: "700" }}>
+          <Text style={{ color: themeColors.text, fontSize: 35, fontWeight: "700" }}>
             {title}
           </Text>
         </Animated.View>

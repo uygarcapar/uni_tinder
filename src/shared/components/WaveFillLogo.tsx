@@ -17,6 +17,7 @@ import Svg, {
   LinearGradient as SvgLinearGradient,
   Stop,
 } from "react-native-svg";
+import { colors } from "../theme/colors";
 
 const LOGO_W = 120;
 const LOGO_H = 50;
@@ -88,7 +89,7 @@ export default function WaveFillLogo({ fillRatio = 0 }) {
       <MaskedView
         maskElement={
           <Image
-            source={require("../../assets/lit_name_white.png")}
+            source={require("../../../assets/lit_name_white.png")}
             style={{ width: LOGO_W, height: LOGO_H }}
             resizeMode="contain"
           />
@@ -96,7 +97,7 @@ export default function WaveFillLogo({ fillRatio = 0 }) {
         style={{ width: LOGO_W, height: LOGO_H }}
       >
         <View
-          style={{ width: LOGO_W, height: LOGO_H, backgroundColor: "#fff" }}
+          style={{ width: LOGO_W, height: LOGO_H, backgroundColor: colors.text }}
         />
         <View
           style={{

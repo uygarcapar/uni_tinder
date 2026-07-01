@@ -27,6 +27,7 @@ import MaskedView from "@react-native-masked-view/masked-view";
 import { easeGradient } from "react-native-easing-gradient";
 import { BlurView } from "expo-blur";
 import { LinearGradient } from "expo-linear-gradient";
+import { colors } from "../theme/colors";
 
 // BottomSheetFlatList'in reanimated handler kabul eden versiyonu —
 // scroll değerini paylaşılan değere bağlamak için.
@@ -193,7 +194,7 @@ const SearchableListSheet = ({
         showsVerticalScrollIndicator={false}
         onScroll={scrollHandler}
         scrollEventThrottle={16}
-        style={{ backgroundColor: "#121212" }}
+        style={{ backgroundColor: colors.bg }}
         contentContainerStyle={{
           paddingTop: HEADER_HEIGHT,
           paddingHorizontal: 16,
@@ -212,7 +213,7 @@ const SearchableListSheet = ({
                 zIndex: 1,
               }}
             >
-              <Search size={18} color="#9CA3AF" strokeWidth={2} />
+              <Search size={18} color={colors.textSecondary} strokeWidth={2} />
             </View>
             <BottomSheetTextInput
               defaultValue=""
@@ -229,7 +230,7 @@ const SearchableListSheet = ({
                 paddingLeft: 44,
                 paddingRight: 16,
                 paddingVertical: 14,
-                color: "#fff",
+                color: colors.text,
                 fontSize: 15,
               }}
             />
@@ -238,11 +239,11 @@ const SearchableListSheet = ({
         ItemSeparatorComponent={() => <View style={{ height: 6 }} />}
         ListEmptyComponent={
           <View style={{ paddingVertical: 32, alignItems: "center" }}>
-            <SearchX size={36} color="#fff" strokeWidth={1.75} />
+            <SearchX size={36} color={colors.text} strokeWidth={1.75} />
             {search.trim() !== "" && (
               <Text
                 style={{
-                  color: "#fff",
+                  color: colors.text,
                   fontSize: 15,
                   fontWeight: "500",
                   marginTop: 12,
@@ -276,7 +277,7 @@ const SearchableListSheet = ({
             >
               <Text
                 style={{
-                  color: isSelected ? "#fff" : "#9CA3AF",
+                  color: isSelected ? colors.text : colors.textSecondary,
                   fontSize: 16,
                   fontWeight: "400",
                   flex: 1,
@@ -296,7 +297,7 @@ const SearchableListSheet = ({
                     justifyContent: "center",
                   }}
                 >
-                  <Check size={18} color="#fff" strokeWidth={2.5} />
+                  <Check size={18} color={colors.text} strokeWidth={2.5} />
                 </View>
               )}
             </TouchableOpacity>
@@ -399,7 +400,7 @@ const SearchableListSheet = ({
             ]}
           >
             <Text
-              style={{ color: "#fff", fontSize: 19, fontWeight: "700" }}
+              style={{ color: colors.text, fontSize: 19, fontWeight: "700" }}
               numberOfLines={1}
             >
               {title}
@@ -430,7 +431,7 @@ const SearchableListSheet = ({
                   onPress={onCancel}
                   modifiers={[
                     buttonStyle("glass"),
-                    tint("#ffffff"),
+                    tint(colors.text),
                     labelStyle("iconOnly"),
                     font({ size: 22, weight: "medium" }),
                   ]}
@@ -451,7 +452,7 @@ const SearchableListSheet = ({
               >
                 <X
                   size={24}
-                  color="#fff"
+                  color={colors.text}
                   strokeWidth={2}
                   pointerEvents="none"
                 />
@@ -467,7 +468,7 @@ const SearchableListSheet = ({
                 modifiers={[
                   buttonStyle("glass"),
                   controlSize("large"),
-                  tint("#ffffff"),
+                  tint(colors.text),
                   font({ size: 12, weight: "semibold" }),
                 ]}
               />
@@ -482,14 +483,14 @@ const SearchableListSheet = ({
                 overflow: "hidden",
                 paddingHorizontal: 18,
                 paddingVertical: 12,
-                backgroundColor: "#1E1E1E",
+                backgroundColor: colors.surface,
                 borderWidth: 0.5,
                 borderColor: "rgba(255,255,255,0.1)",
               }}
             >
               <Text
                 style={{
-                  color: "#fff",
+                  color: colors.text,
                   fontWeight: "700",
                   fontSize: 15,
                 }}

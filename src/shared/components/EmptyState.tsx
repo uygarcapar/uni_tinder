@@ -1,5 +1,6 @@
 import { View, Text, StyleSheet, Pressable } from "react-native";
 import { LinearGradient } from "expo-linear-gradient";
+import { colors } from "../theme/colors";
 
 export default function EmptyState({
   Icon,
@@ -43,7 +44,7 @@ export default function EmptyState({
 
       <Text
         style={{
-          color: "#fff",
+          color: colors.text,
           fontSize: 21,
           fontWeight: "600",
           textAlign: "center",

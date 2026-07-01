@@ -36,10 +36,6 @@ export const passwordSchema = z
     path: ["confirmPassword"],
   });
 
-export const phoneSchema = z.object({
-  phone: z.string().length(10, "Lütfen geçerli bir telefon numarası gir."),
-});
-
 export const firstNameSchema = z.object({
   firstName: z.string().min(1, "Lütfen işaretli tüm alanları doldur."),
 });
@@ -139,7 +135,6 @@ export const reportSchema = z.object({
 export type LoginForm = z.infer<typeof loginSchema>;
 export type EmailForm = z.infer<typeof emailSchema>;
 export type PasswordForm = z.infer<typeof passwordSchema>;
-export type PhoneForm = z.infer<typeof phoneSchema>;
 export type FirstNameForm = z.infer<typeof firstNameSchema>;
 export type DobForm = z.infer<typeof dobSchema>;
 export type GenderForm = z.infer<typeof genderSchema>;

@@ -12,6 +12,7 @@ import {
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { Search as SearchIcon, X } from 'lucide-react-native';
 import chatService from '@/features/chat/chatService';
+import { colors } from '../theme/colors';
 
 const DEBOUNCE_MS = 300;
 
@@ -66,18 +67,18 @@ export default function SearchSheet({ visible, conversationId, onClose, onSelect
 
   return (
     <Modal visible animationType="slide" onRequestClose={onClose}>
-      <View style={{ flex: 1, backgroundColor: '#0a0a0a', paddingTop: insets.top }}>
-        <View className="flex-row items-center px-3 py-2 border-b border-[#1a1a1a]">
+      <View style={{ flex: 1, backgroundColor: colors.bgDeep, paddingTop: insets.top }}>
+        <View className="flex-row items-center px-3 py-2 border-b border-surface-5">
           <TouchableOpacity onPress={onClose} hitSlop={10} className="p-2">
-            <X size={24} color="#fff" />
+            <X size={24} color={colors.text} />
           </TouchableOpacity>
-          <View className="flex-1 flex-row items-center bg-[#1f1f1f] rounded-full px-3 py-2 ml-2">
-            <SearchIcon size={18} color="#9ca3af" />
+          <View className="flex-1 flex-row items-center bg-surface-2 rounded-full px-3 py-2 ml-2">
+            <SearchIcon size={18} color={colors.textSecondary} />
             <TextInput
               value={query}
               onChangeText={setQuery}
               placeholder="Mesajlarda ara…"
-              placeholderTextColor="#6b7280"
+              placeholderTextColor={colors.textMuted}
               className="flex-1 text-white text-base ml-2"
               autoFocus
               autoCorrect={false}
@@ -85,7 +86,7 @@ export default function SearchSheet({ visible, conversationId, onClose, onSelect
             />
             {!!query && (
               <TouchableOpacity onPress={() => setQuery('')} hitSlop={6}>
-                <X size={16} color="#9ca3af" />
+                <X size={16} color={colors.textSecondary} />
               </TouchableOpacity>
             )}
           </View>
@@ -93,7 +94,7 @@ export default function SearchSheet({ visible, conversationId, onClose, onSelect
 
         {loading && (
           <View className="py-4 items-center">
-            <ActivityIndicator size="small" color="#f57656" />
+            <ActivityIndicator size="small" color={colors.primary} />
           </View>
         )}
 
@@ -109,7 +110,7 @@ export default function SearchSheet({ visible, conversationId, onClose, onSelect
           renderItem={({ item }) => (
             <Pressable
               onPress={() => onSelect?.(item)}
-              className="px-4 py-3 border-b border-[#1a1a1a]"
+              className="px-4 py-3 border-b border-surface-5"
               android_ripple={{ color: '#222' }}
             >
               <Text className="text-gray-400 text-xs mb-1">

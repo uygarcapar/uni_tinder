@@ -18,7 +18,6 @@ export interface RegistrationForm {
   dateOfBirth: Date | null;
   password: string;
   confirmPassword: string;
-  phoneNumber: string;
   email: string;
 }
 
@@ -81,6 +80,7 @@ export interface MessageDto {
   clientMessageId?: string;
   reactions?: ReactionDto[];
   isSystemMessage?: boolean;
+  localizationKey?: string;
   deletedAt?: string | null;
   deletedForEveryone?: boolean;
   mediaUrl?: string | null;
@@ -127,6 +127,7 @@ export interface ChatQuotaStatus {
   freeMessageLimit: number;
   remainingMessages: number | null;
   requiresUnlock: boolean;
+  _fetchedAt?: number;
 }
 
 export interface ChatState {
@@ -143,6 +144,39 @@ export interface ChatState {
 
 // ─── Swipe ─────────────────────────────────────────────────────────────────────
 
+// Backend (DiscoveryService) tek string sözlüğüyle döner. Frontend dictionary
+// (src/features/discover/responseCodes.ts) bu sabitlere göre metin/aksiyon map'ler.
+// Bilinmeyen değer → response message fallback.
+export type EmptyReason =
+  | "None"
+  | "NoCandidatesInRadius"
+  | "AllCandidatesSeen"
+  | "FiltersTooStrict"
+  | "ProfileIncomplete"
+  | "AccountRestricted"
+  | "PoolWarming"
+  | "SwipeLimitReached";
+
+// Aile prefiksleri: UT-1xxx Auth · UT-2xxx Profil/Match · UT-3xxx Limit ·
+// UT-4xxx Konum · UT-5xxx Sistem · UT-6xxx Discovery.
+export type ResponseCode =
+  | "UT-6001" // NoCandidatesInRadius
+  | "UT-6002" // AllCandidatesSeen
+  | "UT-6003" // FiltersTooStrict
+  | "UT-6004" // ProfileIncomplete
+  | "UT-6005" // AccountRestricted
+  | "UT-6006" // PoolWarming
+  | "UT-3001" // SwipeLimitReached
+  | (string & {}); // forward-compat: bilinmeyen kodlar string olarak geçer
+
+export type PaywallType =
+  | "SWIPE_LIMIT"
+  | "SUPER_LIKE_LIMIT"
+  | "UNDO_LIMIT"
+  | "MISSED_MATCH_RECOVERY_LIMIT"
+  | "PREMIUM_FILTERS"
+  | "CHAT_QUOTA_EXHAUSTED";
+
 export interface PotentialMatch {
   userId: string;
   displayName: string;
@@ -153,6 +187,30 @@ export interface PotentialMatch {
   bio?: string;
   photos?: string[];
   distance?: number;
+}
+
+// Backend PaginatedProfilesDto (GetPotentialMatches result alanı).
+// `code`/`action` (zarftaki) ve `emptyReason*` (result'taki) frontend code handler
+// için canonical alanlar. Backend boş dönerken sessiz değil — neden taşır.
+export interface PotentialMatchesResult {
+  profiles: PotentialMatch[];
+  currentPage: number;
+  pageSize: number;
+  totalProfiles: number;
+  totalPages: number;
+  hasNextPage: boolean;
+  hasPreviousPage: boolean;
+  remainingSwipes: number;
+  showPaywall: boolean;
+  paywallType: PaywallType | null;
+  paywallMessage: string | null;
+  isPremium: boolean;
+  wasRadiusExpanded: boolean;
+  appliedRadiusKm: number | null;
+  emptyReason: EmptyReason;
+  emptyReasonCode: ResponseCode | null;
+  emptyReasonMessage: string | null;
+  emptyReasonAction: string | null;
 }
 
 export interface SwipeStats {
