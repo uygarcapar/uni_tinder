@@ -66,6 +66,7 @@ jest.mock('@/features/profile/subscriptionSlice', () => ({
     type: 'sub/syncRetry',
     payload: p,
   })),
+  selectIsPremium: (state: any) => !!state?.subscription?.isPremium,
 }));
 
 const mockApi = { get: jest.fn() };

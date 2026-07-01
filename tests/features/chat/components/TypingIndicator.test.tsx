@@ -37,6 +37,6 @@ describe('TypingIndicator', () => {
       ? Object.assign({}, ...dot.props.style.filter(Boolean))
       : dot.props.style;
     expect(style.width).toBe(6);
-    expect(style.backgroundColor).toBe('#9ca3af');
+    expect(style.backgroundColor).toBe('#9CA3AF');
   });
 });

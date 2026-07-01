@@ -1,6 +1,7 @@
 jest.mock('lucide-react-native', () =>
   new Proxy({}, { get: () => () => null })
 );
+jest.mock('@/shared/components/AppModal');
 
 import { Alert } from 'react-native';
 import { fireEvent, render } from '@testing-library/react-native';

@@ -34,7 +34,7 @@ describe('MatchModal', () => {
         onSendMessage={jest.fn()}
       />
     );
-    expect(tree.getByText("It's a Match!")).toBeTruthy();
+    expect(tree.getByText("It's Lit!")).toBeTruthy();
     expect(
       tree.getByText('Ada ile eşleştin. İlk mesajı sen at.')
     ).toBeTruthy();

@@ -1,8 +1,25 @@
-import { ActivityIndicator } from 'react-native';
-import { render } from '@testing-library/react-native';
-import PreviewModal from '@/features/profile/components/PreviewModal';
-
-jest.mock('@/shared/components/AppModal');
+jest.mock('react-native-safe-area-context', () => ({
+  useSafeAreaInsets: () => ({ top: 0, bottom: 0, left: 0, right: 0 }),
+  SafeAreaProvider: ({ children }: any) => children,
+}));
+jest.mock('@gorhom/bottom-sheet', () => {
+  const React = require('react');
+  const { View } = require('react-native');
+  return {
+    BottomSheetScrollView: ({ children }: any) =>
+      React.createElement(View, null, children),
+    BottomSheetBackdrop: () => React.createElement(View),
+  };
+});
+jest.mock('@/shared/components/AppBottomSheet', () => {
+  const React = require('react');
+  const { View } = require('react-native');
+  return {
+    __esModule: true,
+    default: ({ visible, children }: any) =>
+      visible ? React.createElement(View, { testID: 'app-modal' }, children) : null,
+  };
+});
 jest.mock('@/features/discover/components/SwipeCard', () => {
   const React = require('react');
   const { Text } = require('react-native');
@@ -12,6 +29,10 @@ jest.mock('@/features/discover/components/SwipeCard', () => {
       React.createElement(Text, { testID: 'swipe-card' }, profile?.id),
   };
 });
+
+import { ActivityIndicator } from 'react-native';
+import { render } from '@testing-library/react-native';
+import PreviewModal from '@/features/profile/components/PreviewModal';
 
 describe('PreviewModal', () => {
   it('renders nothing when visible=false', () => {
