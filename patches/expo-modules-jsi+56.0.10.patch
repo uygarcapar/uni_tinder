@@ -1,204 +1,251 @@
+diff --git a/node_modules/expo-modules-jsi/apple/Sources/ExpoModulesJSI/Contexts/CleanupContext.swift b/node_modules/expo-modules-jsi/apple/Sources/ExpoModulesJSI/Contexts/CleanupContext.swift
+index 7d77492..08744f8 100644
+--- a/node_modules/expo-modules-jsi/apple/Sources/ExpoModulesJSI/Contexts/CleanupContext.swift
++++ b/node_modules/expo-modules-jsi/apple/Sources/ExpoModulesJSI/Contexts/CleanupContext.swift
+@@ -2,7 +2,7 @@
+
+ /// A box that holds a cleanup closure and invokes it on deallocation.
+ /// Used to bridge Swift closures to C++ cleanup callbacks via `Unmanaged` pointers.
+-internal final class CleanupContext: Sendable {
++internal final class CleanupContext: @unchecked Sendable {
+   let cleanup: @Sendable () -> Void
+
+   init(_ cleanup: @escaping @Sendable () -> Void) {
 diff --git a/node_modules/expo-modules-jsi/apple/Sources/ExpoModulesJSI/Contexts/HostFunctionContext.swift b/node_modules/expo-modules-jsi/apple/Sources/ExpoModulesJSI/Contexts/HostFunctionContext.swift
-index bc89b9c..51e10cb 100644
+index e7da903..721d574 100644
 --- a/node_modules/expo-modules-jsi/apple/Sources/ExpoModulesJSI/Contexts/HostFunctionContext.swift
 +++ b/node_modules/expo-modules-jsi/apple/Sources/ExpoModulesJSI/Contexts/HostFunctionContext.swift
-@@ -1,8 +1,8 @@
- /**
-  Context that captures Swift values to pass them to JSI host function as an unmanaged pointer for interoperability with C++.
-  */
+@@ -1,6 +1,6 @@
+ /// Context that captures Swift values to pass them to JSI host function as an unmanaged pointer for interoperability with C++.
 -internal final class HostFunctionContext: Sendable {
 -  weak let runtime: JavaScriptRuntime?
 +internal final class HostFunctionContext: @unchecked Sendable {
 +  weak var runtime: JavaScriptRuntime?
    let name: String?
    let call: JavaScriptRuntime.SyncFunctionClosure
- 
+
 diff --git a/node_modules/expo-modules-jsi/apple/Sources/ExpoModulesJSI/Contexts/HostObjectContext.swift b/node_modules/expo-modules-jsi/apple/Sources/ExpoModulesJSI/Contexts/HostObjectContext.swift
-index f61fcda..8b4c958 100644
+index 7bc72bc..b843f93 100644
 --- a/node_modules/expo-modules-jsi/apple/Sources/ExpoModulesJSI/Contexts/HostObjectContext.swift
 +++ b/node_modules/expo-modules-jsi/apple/Sources/ExpoModulesJSI/Contexts/HostObjectContext.swift
-@@ -1,13 +1,13 @@
- /**
-  Context that captures Swift types to pass them to JSI host object as an unmanaged pointer for interoperability with C++.
-  */
+@@ -1,11 +1,11 @@
+ /// Context that captures Swift types to pass them to JSI host object as an unmanaged pointer for interoperability with C++.
 -internal final class HostObjectContext: Sendable {
 +internal final class HostObjectContext: @unchecked Sendable {
    typealias Getter = @JavaScriptActor (_ propertyName: String) throws -> JavaScriptValue
    typealias Setter = @JavaScriptActor (_ propertyName: String, _ value: JavaScriptValue) throws -> Void
    typealias PropertyNamesGetter = @JavaScriptActor () -> [String]
    typealias Deallocator = @JavaScriptActor () -> Void
- 
+
 -  weak let runtime: JavaScriptRuntime?
 +  weak var runtime: JavaScriptRuntime?
    let get: Getter
    let set: Setter?
    let getPropertyNames: PropertyNamesGetter
+diff --git a/node_modules/expo-modules-jsi/apple/Sources/ExpoModulesJSI/Protocols/JavaScriptType.swift b/node_modules/expo-modules-jsi/apple/Sources/ExpoModulesJSI/Protocols/JavaScriptType.swift
+index d6691f3..b219496 100644
+--- a/node_modules/expo-modules-jsi/apple/Sources/ExpoModulesJSI/Protocols/JavaScriptType.swift
++++ b/node_modules/expo-modules-jsi/apple/Sources/ExpoModulesJSI/Protocols/JavaScriptType.swift
+@@ -1,5 +1,5 @@
+ /// Protocol conformed by the types that represent any JavaScript values.
+-public protocol JavaScriptType: Sendable, ~Copyable {
++public protocol JavaScriptType: ~Copyable {
+   associatedtype Ref
+
+   /// Returns a value that this instance represents as a `JavaScriptValue`.
 diff --git a/node_modules/expo-modules-jsi/apple/Sources/ExpoModulesJSI/Runtime/JavaScriptActor.swift b/node_modules/expo-modules-jsi/apple/Sources/ExpoModulesJSI/Runtime/JavaScriptActor.swift
-index 699c59a..b3be83c 100644
+index 9a0b4e0..020824b 100644
 --- a/node_modules/expo-modules-jsi/apple/Sources/ExpoModulesJSI/Runtime/JavaScriptActor.swift
 +++ b/node_modules/expo-modules-jsi/apple/Sources/ExpoModulesJSI/Runtime/JavaScriptActor.swift
-@@ -93,7 +93,7 @@ internal class JavaScriptExecutor: SerialExecutor, @unchecked Sendable {
-  An actor that is dedicated for the specific runtime.
-  */
+@@ -76,7 +76,7 @@ internal class JavaScriptExecutor: SerialExecutor, @unchecked Sendable {
+
+ /// An actor that is dedicated for the specific runtime.
  internal actor JavaScriptRuntimeActor {
 -  private weak let runtime: JavaScriptRuntime?
 +  private weak var runtime: JavaScriptRuntime?
    nonisolated private let executor: JavaScriptExecutor
- 
+
    init(runtime: JavaScriptRuntime) {
-@@ -114,7 +114,7 @@ internal actor JavaScriptRuntimeActor {
-  Serial executor dedicated for the specific runtime.
-  */
+@@ -95,7 +95,7 @@ internal actor JavaScriptRuntimeActor {
+
+ /// Serial executor dedicated for the specific runtime.
  internal final class JavaScriptRuntimeExecutor: JavaScriptExecutor, @unchecked Sendable {
 -  private weak let runtime: JavaScriptRuntime?
 +  private weak var runtime: JavaScriptRuntime?
- 
+
    init(runtime: JavaScriptRuntime) {
      self.runtime = runtime
 diff --git a/node_modules/expo-modules-jsi/apple/Sources/ExpoModulesJSI/Runtime/JavaScriptPropNameID.swift b/node_modules/expo-modules-jsi/apple/Sources/ExpoModulesJSI/Runtime/JavaScriptPropNameID.swift
-index b497d4f..82644a6 100644
+index ef4624d..81589d3 100644
 --- a/node_modules/expo-modules-jsi/apple/Sources/ExpoModulesJSI/Runtime/JavaScriptPropNameID.swift
 +++ b/node_modules/expo-modules-jsi/apple/Sources/ExpoModulesJSI/Runtime/JavaScriptPropNameID.swift
-@@ -3,8 +3,8 @@ internal import jsi
- /**
-  Represents something that can be a JS property key.
-  */
--public final class JavaScriptPropNameID: JavaScriptType {
+@@ -2,7 +2,7 @@ internal import jsi
+
+ /// Represents something that can be a JS property key.
+ public final class JavaScriptPropNameID: JavaScriptType {
 -  private weak let runtime: JavaScriptRuntime?
-+public final class JavaScriptPropNameID: JavaScriptType, @unchecked Sendable {
 +  private weak var runtime: JavaScriptRuntime?
    internal let pointee: facebook.jsi.PropNameID
- 
-   /**
+
+   /// Creates a PropNameID from existing `facebook.jsi.PropNameID`.
+diff --git a/node_modules/expo-modules-jsi/apple/Sources/ExpoModulesJSI/Runtime/JavaScriptRef.swift b/node_modules/expo-modules-jsi/apple/Sources/ExpoModulesJSI/Runtime/JavaScriptRef.swift
+index 0000000..0000000 100644
+--- a/node_modules/expo-modules-jsi/apple/Sources/ExpoModulesJSI/Runtime/JavaScriptRef.swift
++++ b/node_modules/expo-modules-jsi/apple/Sources/ExpoModulesJSI/Runtime/JavaScriptRef.swift
+@@ -23,12 +23,12 @@ public final class JavaScriptRef<T: JavaScriptType & ~Copyable>: JavaScriptType,
+   public init() {}
+
+   /// Makes a reference to the value. The value is consumed and cannot be used anymore in the calling scope.
+-  public init(_ value: consuming sending T) {
++  public init(_ value: consuming T) {
+     self.value = consume value
+   }
+
+   /// Replaces the referenced value with a new value.
+-  public func reset(_ value: consuming sending T) {
++  public func reset(_ value: consuming T) {
+     self.value = consume value
+   }
+
 diff --git a/node_modules/expo-modules-jsi/apple/Sources/ExpoModulesJSI/Runtime/Values/JavaScriptArray.swift b/node_modules/expo-modules-jsi/apple/Sources/ExpoModulesJSI/Runtime/Values/JavaScriptArray.swift
-index 12acf78..98c1fff 100644
+index 049acbb..89ea289 100644
 --- a/node_modules/expo-modules-jsi/apple/Sources/ExpoModulesJSI/Runtime/Values/JavaScriptArray.swift
 +++ b/node_modules/expo-modules-jsi/apple/Sources/ExpoModulesJSI/Runtime/Values/JavaScriptArray.swift
-@@ -7,7 +7,7 @@ internal import ExpoModulesJSI_Cxx
-  to the underlying JavaScript array and provides Swift-friendly APIs for common array operations.
-  */
+@@ -5,7 +5,7 @@ internal import jsi
+ /// and Swift, allowing you to access and manipulate JavaScript array elements from Swift code. It maintains a reference
+ /// to the underlying JavaScript array and provides Swift-friendly APIs for common array operations.
  public struct JavaScriptArray: JavaScriptType, ~Copyable {
 -  internal weak let runtime: JavaScriptRuntime?
 +  internal weak var runtime: JavaScriptRuntime?
    internal let pointee: facebook.jsi.Array
- 
-   /**
+
+   /// Creates a new JavaScript array with the specified length.
 diff --git a/node_modules/expo-modules-jsi/apple/Sources/ExpoModulesJSI/Runtime/Values/JavaScriptArrayBuffer.swift b/node_modules/expo-modules-jsi/apple/Sources/ExpoModulesJSI/Runtime/Values/JavaScriptArrayBuffer.swift
-index 7289522..e948877 100644
+index a4ec198..04d4a02 100644
 --- a/node_modules/expo-modules-jsi/apple/Sources/ExpoModulesJSI/Runtime/Values/JavaScriptArrayBuffer.swift
 +++ b/node_modules/expo-modules-jsi/apple/Sources/ExpoModulesJSI/Runtime/Values/JavaScriptArrayBuffer.swift
-@@ -8,7 +8,7 @@ internal import ExpoModulesJSI_Cxx
-  underlying raw data pointer and size of the buffer.
-  */
+@@ -6,7 +6,7 @@ internal import jsi
+ /// A Swift representation of a JavaScript array buffer. Provides access to the
+ /// underlying raw data pointer and size of the buffer.
  public struct JavaScriptArrayBuffer: ~Copyable {
 -  internal weak let runtime: JavaScriptRuntime?
 +  internal weak var runtime: JavaScriptRuntime?
    internal let pointee: facebook.jsi.ArrayBuffer
- 
+
    internal init(_ runtime: JavaScriptRuntime, _ arrayBuffer: consuming facebook.jsi.ArrayBuffer) {
 diff --git a/node_modules/expo-modules-jsi/apple/Sources/ExpoModulesJSI/Runtime/Values/JavaScriptBigInt.swift b/node_modules/expo-modules-jsi/apple/Sources/ExpoModulesJSI/Runtime/Values/JavaScriptBigInt.swift
-index c9e68e5..550c3dd 100644
+index a3a861f..78b86d8 100644
 --- a/node_modules/expo-modules-jsi/apple/Sources/ExpoModulesJSI/Runtime/Values/JavaScriptBigInt.swift
 +++ b/node_modules/expo-modules-jsi/apple/Sources/ExpoModulesJSI/Runtime/Values/JavaScriptBigInt.swift
-@@ -39,7 +39,7 @@ internal import jsi
-  You must explicitly convert between them.
-  */
+@@ -37,7 +37,7 @@ internal import jsi
+ /// - Note: BigInt values cannot be mixed with Number values in arithmetic operations in JavaScript.
+ /// You must explicitly convert between them.
  public struct JavaScriptBigInt: JavaScriptType, Sendable, ~Copyable {
 -  internal weak let runtime: JavaScriptRuntime?
 +  internal weak var runtime: JavaScriptRuntime?
    internal var pointee: facebook.jsi.BigInt
- 
-   /**
+
+   /// Creates a BigInt from an existing JSI BigInt.
 diff --git a/node_modules/expo-modules-jsi/apple/Sources/ExpoModulesJSI/Runtime/Values/JavaScriptError.swift b/node_modules/expo-modules-jsi/apple/Sources/ExpoModulesJSI/Runtime/Values/JavaScriptError.swift
-index 79a2fbb..dc6d266 100644
+index 5083ef1..e7f87ed 100644
 --- a/node_modules/expo-modules-jsi/apple/Sources/ExpoModulesJSI/Runtime/Values/JavaScriptError.swift
 +++ b/node_modules/expo-modules-jsi/apple/Sources/ExpoModulesJSI/Runtime/Values/JavaScriptError.swift
-@@ -2,7 +2,7 @@ internal import jsi
- internal import ExpoModulesJSI_Cxx
- 
+@@ -2,7 +2,7 @@ internal import ExpoModulesJSI_Cxx
+ internal import jsi
+
  public struct JavaScriptError: JavaScriptType, ~Copyable {
 -  private weak let runtime: JavaScriptRuntime?
 +  private weak var runtime: JavaScriptRuntime?
    nonisolated(unsafe) private let pointee: facebook.jsi.JSError
- 
+
    internal init(_ runtime: JavaScriptRuntime, _ error: facebook.jsi.JSError) {
 diff --git a/node_modules/expo-modules-jsi/apple/Sources/ExpoModulesJSI/Runtime/Values/JavaScriptFunction.swift b/node_modules/expo-modules-jsi/apple/Sources/ExpoModulesJSI/Runtime/Values/JavaScriptFunction.swift
-index 53c2445..9c14efd 100644
+index 3ff84b8..d65ad76 100644
 --- a/node_modules/expo-modules-jsi/apple/Sources/ExpoModulesJSI/Runtime/Values/JavaScriptFunction.swift
 +++ b/node_modules/expo-modules-jsi/apple/Sources/ExpoModulesJSI/Runtime/Values/JavaScriptFunction.swift
-@@ -4,7 +4,7 @@ internal import jsi
- internal import ExpoModulesJSI_Cxx
- 
+@@ -4,7 +4,7 @@ internal import ExpoModulesJSI_Cxx
+ internal import jsi
+
  public struct JavaScriptFunction: JavaScriptType, ~Copyable {
 -  internal weak let runtime: JavaScriptRuntime?
 +  internal weak var runtime: JavaScriptRuntime?
    internal let pointee: facebook.jsi.Function
- 
+
    internal init(_ runtime: JavaScriptRuntime, _ pointee: consuming facebook.jsi.Function) {
 diff --git a/node_modules/expo-modules-jsi/apple/Sources/ExpoModulesJSI/Runtime/Values/JavaScriptObject.swift b/node_modules/expo-modules-jsi/apple/Sources/ExpoModulesJSI/Runtime/Values/JavaScriptObject.swift
-index 57bb662..9d7d22d 100644
+index 9c972ff..db8501b 100644
 --- a/node_modules/expo-modules-jsi/apple/Sources/ExpoModulesJSI/Runtime/Values/JavaScriptObject.swift
 +++ b/node_modules/expo-modules-jsi/apple/Sources/ExpoModulesJSI/Runtime/Values/JavaScriptObject.swift
-@@ -8,7 +8,7 @@ internal import ExpoModulesJSI_Cxx
-  supporting property access, modification, enumeration, prototype manipulation, and function calling.
-  */
+@@ -6,7 +6,7 @@ internal import jsi
+ /// A Swift representation of a JavaScript object. Provides access to JavaScript object properties and methods,
+ /// supporting property access, modification, enumeration, prototype manipulation, and function calling.
  public struct JavaScriptObject: JavaScriptType, Sendable, ~Copyable {
 -  internal weak let runtime: JavaScriptRuntime?
 +  internal weak var runtime: JavaScriptRuntime?
    internal var pointee: facebook.jsi.Object
- 
-   /**
+
+   /// Creates a new object in the given runtime.
 diff --git a/node_modules/expo-modules-jsi/apple/Sources/ExpoModulesJSI/Runtime/Values/JavaScriptPromise.swift b/node_modules/expo-modules-jsi/apple/Sources/ExpoModulesJSI/Runtime/Values/JavaScriptPromise.swift
-index 94f10ed..c3b6b69 100644
+index 0858ed7..f221549 100644
 --- a/node_modules/expo-modules-jsi/apple/Sources/ExpoModulesJSI/Runtime/Values/JavaScriptPromise.swift
 +++ b/node_modules/expo-modules-jsi/apple/Sources/ExpoModulesJSI/Runtime/Values/JavaScriptPromise.swift
-@@ -12,7 +12,7 @@ internal import ExpoModulesJSI_Cxx
+@@ -10,7 +10,7 @@ internal import jsi
  public struct JavaScriptPromise: JavaScriptType, ~Copyable {
    private typealias PromiseContinuation = CheckedContinuation<JavaScriptValue.Ref, any Error>
- 
+
 -  private weak let runtime: JavaScriptRuntime?
 +  private weak var runtime: JavaScriptRuntime?
-   private let object: JavaScriptObject
+   private var object: JavaScriptObject
    private let deferredPromise = DeferredPromise()
- 
+
 diff --git a/node_modules/expo-modules-jsi/apple/Sources/ExpoModulesJSI/Runtime/Values/JavaScriptTypedArray.swift b/node_modules/expo-modules-jsi/apple/Sources/ExpoModulesJSI/Runtime/Values/JavaScriptTypedArray.swift
-index c8caee5..7b6d481 100644
+index 2f121d9..4193b24 100644
 --- a/node_modules/expo-modules-jsi/apple/Sources/ExpoModulesJSI/Runtime/Values/JavaScriptTypedArray.swift
 +++ b/node_modules/expo-modules-jsi/apple/Sources/ExpoModulesJSI/Runtime/Values/JavaScriptTypedArray.swift
-@@ -4,7 +4,7 @@ internal import jsi
- internal import ExpoModulesJSI_Cxx
- 
+@@ -8,7 +8,7 @@ internal import ExpoModulesJSI_Cxx
+ internal import jsi
+
  public struct JavaScriptTypedArray: ~Copyable {
 -  internal weak let runtime: JavaScriptRuntime?
 +  internal weak var runtime: JavaScriptRuntime?
    internal let pointee: facebook.jsi.Object
- 
-   /**
+
+   /// The underlying `ArrayBuffer` backing this typed array. Stored alongside `pointee`
 diff --git a/node_modules/expo-modules-jsi/apple/Sources/ExpoModulesJSI/Runtime/Values/JavaScriptValue.swift b/node_modules/expo-modules-jsi/apple/Sources/ExpoModulesJSI/Runtime/Values/JavaScriptValue.swift
-index ba58f9e..9ab8639 100644
+index fea456b..ae4fcea 100644
 --- a/node_modules/expo-modules-jsi/apple/Sources/ExpoModulesJSI/Runtime/Values/JavaScriptValue.swift
 +++ b/node_modules/expo-modules-jsi/apple/Sources/ExpoModulesJSI/Runtime/Values/JavaScriptValue.swift
-@@ -8,8 +8,8 @@ internal import ExpoModulesJSI_Cxx
-  this one is a reference type so can be safely captured in closures, passed to other isolation context,
-  and stored in containers that don't support non-copyable types etc.
-  */
--public final class JavaScriptValue: JavaScriptType, Equatable, Escapable, Error {
+@@ -7,7 +7,7 @@ internal import jsi
+ /// this one is a reference type so can be safely captured in closures, passed to other isolation context,
+ /// and stored in containers that don't support non-copyable types etc.
+ public final class JavaScriptValue: JavaScriptType, Equatable, Escapable, Error {
 -  internal weak let runtime: JavaScriptRuntime?
-+public final class JavaScriptValue: JavaScriptType, Equatable, Escapable, Error, @unchecked Sendable {
 +  internal weak var runtime: JavaScriptRuntime?
    internal let pointee: facebook.jsi.Value
- 
-   /**
+
+   /// Initializer from the existing JSI value.
 diff --git a/node_modules/expo-modules-jsi/apple/Sources/ExpoModulesJSI/Runtime/Values/JavaScriptWeakObject.swift b/node_modules/expo-modules-jsi/apple/Sources/ExpoModulesJSI/Runtime/Values/JavaScriptWeakObject.swift
-index 2907dad..d4f9411 100644
+index 9fffe5e..8cc1f18 100644
 --- a/node_modules/expo-modules-jsi/apple/Sources/ExpoModulesJSI/Runtime/Values/JavaScriptWeakObject.swift
 +++ b/node_modules/expo-modules-jsi/apple/Sources/ExpoModulesJSI/Runtime/Values/JavaScriptWeakObject.swift
-@@ -7,7 +7,7 @@ internal import jsi
-  the object is eligible for GC. Method names are inspired by C++ `std::weak_ptr`.
-  */
+@@ -5,7 +5,7 @@ internal import jsi
+ /// Represents a weak reference to an object. If the only references to an object are these,
+ /// the object is eligible for GC. Method names are inspired by C++ `std::weak_ptr`.
  public struct JavaScriptWeakObject: JavaScriptType, ~Copyable {
 -  internal weak let runtime: JavaScriptRuntime?
 +  internal weak var runtime: JavaScriptRuntime?
    internal let pointee: facebook.jsi.WeakObject
- 
-   /**
+
+   /// Initializes a weak object with the underlying JSI weak object.
+diff --git a/node_modules/expo-modules-jsi/apple/Sources/ExpoModulesJSI/Utilities/NonisolatedUnsafeVar.swift b/node_modules/expo-modules-jsi/apple/Sources/ExpoModulesJSI/Utilities/NonisolatedUnsafeVar.swift
+index e9c0c43..ac9e89f 100644
+--- a/node_modules/expo-modules-jsi/apple/Sources/ExpoModulesJSI/Utilities/NonisolatedUnsafeVar.swift
++++ b/node_modules/expo-modules-jsi/apple/Sources/ExpoModulesJSI/Utilities/NonisolatedUnsafeVar.swift
+@@ -1,6 +1,6 @@
+ /// Unsafe wrapper to make non-Sendable types shareable across concurrency domains without compiler enforcement.
+ /// Use with extreme caution as it bypasses Swift's concurrency safety checks.
+-internal final class NonisolatedUnsafeVar<VarType>: Sendable {
++internal final class NonisolatedUnsafeVar<VarType>: @unchecked Sendable {
+   nonisolated(unsafe) var value: VarType! = nil
+
+   init() {}
