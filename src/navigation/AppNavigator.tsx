@@ -1,7 +1,8 @@
 import { useEffect, useRef, useState, useCallback } from 'react';
-import { NavigationContainer, DarkTheme, useNavigationContainerRef } from '@react-navigation/native';
+import { NavigationContainer, DarkTheme } from '@react-navigation/native';
 import { createNativeStackNavigator } from '@react-navigation/native-stack';
-import { View, AppState, AppStateStatus, Image } from 'react-native';
+import { View, AppState, AppStateStatus } from 'react-native';
+import { Image as ExpoImage } from 'expo-image';
 import {
   registerForPushNotifications,
   onNotificationTap,
@@ -9,6 +10,9 @@ import {
   setActiveConversationGetter,
 } from '@/features/notifications/pushService';
 import uiBus from '@/shared/services/uiBus';
+import { navigationRef } from '@/shared/services/navigationRef';
+import { showMessageToast, showLikeToast } from '@/shared/services/toaster';
+import { store } from '@/shared/store';
 
 import SettingsModal from '@/features/profile/components/SettingsModal';
 import { setCurrentAccessToken, setOnTokenRefreshed, setOnAuthLost } from '@/shared/services/api';
@@ -47,6 +51,7 @@ import {
 import { incrementWhoLikedMeCount } from '@/features/discover/swipeSlice';
 import { useAppDispatch, useAppSelector } from '@/shared/hooks/redux';
 import type { RootStackParamList } from '@/shared/types/navigation';
+import { colors } from '../shared/theme/colors';
 
 const Stack = createNativeStackNavigator<RootStackParamList>();
 
@@ -55,7 +60,7 @@ const Stack = createNativeStackNavigator<RootStackParamList>();
 // siyaha flip ettiriyordu. Tüm nav view'lerin BG'sini #121212'ye lock'la.
 const NAV_THEME = {
   ...DarkTheme,
-  colors: { ...DarkTheme.colors, background: '#121212', card: '#121212' },
+  colors: { ...DarkTheme.colors, background: colors.bg, card: colors.bg },
 };
 
 function MainNavigator() {
@@ -96,7 +101,6 @@ export default function AppNavigator() {
   useEffect(() => {
     myPhotoRef.current = myPhoto;
   }, [myPhoto]);
-  const navRef = useNavigationContainerRef<RootStackParamList>();
   const [settingsVisible, setSettingsVisible] = useState(false);
   const appStateRef = useRef<AppStateStatus>(AppState.currentState);
   const activeConvRef = useRef<string | null>(null);
@@ -161,6 +165,30 @@ export default function AppNavigator() {
       realtimeService.on('ReceiveMessage', (msg) => {
         if (!mounted) return;
         dispatch(receiveMessage({ ...msg, _selfUserId: selfUserId }));
+
+        const isSelf = selfUserId && msg.senderId === selfUserId;
+        const isActiveChat = activeConvRef.current === msg.conversationId;
+        const isForeground = appStateRef.current === 'active';
+        if (isSelf || isActiveChat || !isForeground) return;
+
+        const conv = (store.getState() as any).chat?.conversations?.find(
+          (c: any) => c.conversationId === msg.conversationId,
+        );
+        if (!conv) return;
+
+        const ct = msg.contentType ?? 0;
+        const preview =
+          ct === 1 ? 'Fotoğraf' :
+          ct === 2 ? 'Sesli mesaj' :
+          ct === 3 ? 'Video' :
+          (msg.content || '').trim() || 'Yeni mesaj';
+
+        showMessageToast({
+          senderName: conv.partnerDisplayName || 'Yeni mesaj',
+          photoUrl: conv.partnerProfileImageUrl,
+          preview,
+          conversationId: msg.conversationId,
+        });
       }),
       realtimeService.on('MessageSent', (msg) => mounted && dispatch(messageSent(msg))),
       realtimeService.on('MessagesRead', (payload) => {
@@ -178,24 +206,27 @@ export default function AppNavigator() {
       realtimeService.on('MatchNotification', (m) => {
         if (!mounted) return;
         dispatch(matchNotification(m));
+        uiBus.emit('match', m);
         if (m.conversationId) {
           realtimeService.joinConversation(m.conversationId).catch(() => {});
         }
-        // Fotolar inmeden modalı açma — gri daire flash'ı yok.
-        const prefetches: Promise<any>[] = [];
-        if (m.matchedUserPhoto) prefetches.push(Image.prefetch(m.matchedUserPhoto).catch(() => {}));
-        if (myPhotoRef.current) prefetches.push(Image.prefetch(myPhotoRef.current).catch(() => {}));
-        const timeout = new Promise((r) => setTimeout(r, 1500));
-        Promise.race([Promise.all(prefetches), timeout]).then(() => {
-          if (!mounted) return;
-          setPendingMatch(m);
-        });
+        // expo-image memory cache'i ısıt (fire-and-forget). Asıl gate MatchModal içinde.
+        const urls = [m.matchedUserPhoto, myPhotoRef.current].filter(Boolean) as string[];
+        if (urls.length) ExpoImage.prefetch(urls, 'memory-disk').catch(() => {});
+        setPendingMatch(m);
       }),
       // Birisi seni Like/SuperLike attı ama henüz match değil.
       realtimeService.on('IncomingLike', (payload) => {
         if (!mounted) return;
         dispatch(incrementWhoLikedMeCount());
         uiBus.emit('incomingLike', payload);
+
+        if (appStateRef.current !== 'active') return;
+        showLikeToast({
+          kind: payload?.isSuperLike ? 'superLike' : 'like',
+          senderName: payload?.likerDisplayName,
+          photoUrl: payload?.likerPhotoUrl,
+        });
       }),
       realtimeService.on('NewNotification', (notif) => {
         if (!mounted) return;
@@ -253,18 +284,18 @@ export default function AppNavigator() {
   }, [isAuthenticated, token]);
 
   const routeFromNotification = useCallback((data: Record<string, any>) => {
-    if (!data || !navRef.isReady()) return;
+    if (!data || !navigationRef.isReady()) return;
     const convId = data.conversationId || data.relatedEntityId;
     const type = data.type;
 
     if (convId && (type === 'Message' || type === 'Match')) {
-      navRef.navigate('Chat', {
+      navigationRef.navigate('Chat', {
         conversationId: convId,
         partner: undefined,
         isActive: true,
       });
     }
-  }, [navRef]);
+  }, []);
 
   // ============ AppState lifecycle ============
   useEffect(() => {
@@ -279,6 +310,7 @@ export default function AppNavigator() {
           }
           dispatch(fetchConversations());
           dispatch(fetchUnreadCount());
+          dispatch(fetchSubscriptionStatus());
         }
       }
     });
@@ -369,8 +401,8 @@ export default function AppNavigator() {
 
   const handleOpenMatchChat = (conversationId: string) => {
     setPendingMatch(null);
-    if (!conversationId || !navRef.isReady()) return;
-    navRef.navigate('Chat', {
+    if (!conversationId || !navigationRef.isReady()) return;
+    navigationRef.navigate('Chat', {
       conversationId,
       partner: pendingMatch
         ? {
@@ -385,7 +417,7 @@ export default function AppNavigator() {
 
   return (
     <>
-      <NavigationContainer ref={navRef} key={navigationKey} theme={NAV_THEME}>
+      <NavigationContainer ref={navigationRef} key={navigationKey} theme={NAV_THEME}>
         {showMainNavigator ? <MainNavigator /> : <AuthNavigator initialRoute={resumeRoute as any} />}
       </NavigationContainer>
 

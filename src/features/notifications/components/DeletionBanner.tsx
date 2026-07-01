@@ -4,6 +4,7 @@ import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { AlertTriangle } from "lucide-react-native";
 import api from "@/shared/services/api";
 import { API_ENDPOINTS } from "@/shared/constants/api";
+import { colors } from "../../../shared/theme/colors";
 
 export default function DeletionBanner() {
   const insets = useSafeAreaInsets();
@@ -73,13 +74,13 @@ export default function DeletionBanner() {
         gap: 12,
       }}
     >
-      <AlertTriangle size={18} color="#d10d27" strokeWidth={1.5} pointerEvents="none" />
+      <AlertTriangle size={18} color={colors.errorStrong} strokeWidth={1.5} pointerEvents="none" />
       <View style={{ flex: 1 }}>
-        <Text style={{ color: "#fff", fontSize: 13, fontWeight: "600" }}>
+        <Text style={{ color: colors.text, fontSize: 13, fontWeight: "600" }}>
           Hesabın silinmek üzere
         </Text>
         {formattedDate && (
-          <Text style={{ color: "#9CA3AF", fontSize: 12, marginTop: 2 }}>
+          <Text style={{ color: colors.textSecondary, fontSize: 12, marginTop: 2 }}>
             {formattedDate} tarihinde kalıcı olarak silinecek.
           </Text>
         )}
@@ -97,9 +98,9 @@ export default function DeletionBanner() {
         }}
       >
         {cancelling ? (
-          <ActivityIndicator size="small" color="#fff" />
+          <ActivityIndicator size="small" color={colors.text} />
         ) : (
-          <Text style={{ color: "#fff", fontSize: 12, fontWeight: "600" }}>
+          <Text style={{ color: colors.text, fontSize: 12, fontWeight: "600" }}>
             İptal Et
           </Text>
         )}

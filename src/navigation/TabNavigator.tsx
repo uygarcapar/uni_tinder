@@ -6,6 +6,7 @@ import ProfileScreen from "@/features/profile/screens/ProfileScreen";
 import MessagesScreen from "@/features/chat/screens/MessagesScreen";
 import { useAppSelector } from "@/shared/hooks/redux";
 import type { TabParamList } from "@/shared/types/navigation";
+import { colors } from "../shared/theme/colors";
 
 const Tab = createNativeBottomTabNavigator<TabParamList>();
 
@@ -37,7 +38,7 @@ export default function TabNavigator() {
         // lazy:false → WaveFillLogo MaskedView mask image'i 1 frame geç decode
         // olmasın diye tüm tab'lar app start'ta mount.
         lazy: false,
-        tabBarActiveTintColor: "#ffffff",
+        tabBarActiveTintColor: colors.text,
         // Explicit white inactive tint → iOS 26 liquid glass content'a göre BG
         // adapt etse bile iconlar her zaman beyaz kalır.
         tabBarInactiveTintColor: "rgba(255,255,255,0.7)",

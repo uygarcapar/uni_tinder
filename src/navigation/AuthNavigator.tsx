@@ -5,7 +5,6 @@ import LoginScreen from "@/features/auth/screens/LoginScreen";
 import RegisterStep1Screen from "@/features/auth/screens/RegisterStep1Screen";
 import RegisterStep2Screen from "@/features/auth/screens/RegisterStep2Screen";
 import RegisterStep3Screen from "@/features/auth/screens/RegisterStep3Screen";
-import RegisterStep4Screen from "@/features/auth/screens/RegisterStep4Screen";
 import RegisterStep5Screen from "@/features/auth/screens/RegisterStep5Screen";
 import RegisterStep6Screen from "@/features/auth/screens/RegisterStep6Screen";
 import RegisterStep7Screen from "@/features/auth/screens/RegisterStep7Screen";
@@ -60,7 +59,7 @@ export default function AuthNavigator({ initialRoute = "Welcome" }: AuthNavigato
       <Stack.Screen name="Welcome" component={WelcomeScreen} />
       <Stack.Screen name="Login" component={LoginScreen} />
 
-      {/* Account security: 1.email → 2.verify → 3.password → 4.phone */}
+      {/* Account security: 1.email → 2.verify → 3.password */}
       <Stack.Screen name="RegisterStep1" component={RegisterStep1Screen} />
       <Stack.Screen name="RegisterStep2" component={RegisterStep2Screen} />
       <Stack.Screen name="RegisterStep6" component={RegisterStep6Screen} />
@@ -69,7 +68,6 @@ export default function AuthNavigator({ initialRoute = "Welcome" }: AuthNavigato
       {/* Identity: 5.name → 6.dob → 7.gender → 8.education → 9.location */}
       <Stack.Screen name="RegisterStep3" component={RegisterStep3Screen} />
       <Stack.Screen name="RegisterStep5" component={RegisterStep5Screen} />
-      <Stack.Screen name="RegisterStep4" component={RegisterStep4Screen} />
       <Stack.Screen name="RegisterStep8" component={RegisterStep8Screen} />
       <Stack.Screen name="RegisterStep9" component={RegisterStep9Screen} />
 

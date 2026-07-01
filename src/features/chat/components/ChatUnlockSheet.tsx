@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useMemo, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import {
   View,
   Text,
@@ -6,12 +6,8 @@ import {
   ActivityIndicator,
   Alert,
 } from "react-native";
-import {
-  BottomSheetScrollView,
-  BottomSheetBackdrop,
-} from "@gorhom/bottom-sheet";
-import AppBottomSheet from "@/shared/components/AppBottomSheet";
-import { X, MessageSquare, Lock, Infinity as InfinityIcon } from "lucide-react-native";
+import AppModal from "@/shared/components/AppModal";
+import { MessageSquare, Lock, Infinity as InfinityIcon } from "lucide-react-native";
 import { LinearGradient } from "expo-linear-gradient";
 import { useAppDispatch } from "@/shared/hooks/redux";
 import {
@@ -23,6 +19,7 @@ import {
   markQuotaUnlocked,
   fetchChatQuota,
 } from "@/features/chat/chatSlice";
+import { colors, gradients } from "../../../shared/theme/colors";
 
 /**
  * FAZ 6: Chat ekonomisi için consumable paywall.
@@ -58,18 +55,6 @@ export default function ChatUnlockSheet({
   }, [visible]);
 
   const priceString = pkg?.product?.priceString ?? "—";
-
-  const renderBackdrop = useCallback(
-    (props) => (
-      <BottomSheetBackdrop
-        {...props}
-        appearsOnIndex={0}
-        disappearsOnIndex={-1}
-        opacity={0.5}
-      />
-    ),
-    []
-  );
 
   const handlePurchase = async () => {
     if (!pkg) {
@@ -110,7 +95,7 @@ export default function ChatUnlockSheet({
       }
 
       // Authoritative refresh
-      dispatch(fetchChatQuota(conversationId));
+      dispatch(fetchChatQuota({ conversationId, force: true }));
       onClose?.();
       onSuccess?.();
     } catch (e) {
@@ -132,48 +117,15 @@ export default function ChatUnlockSheet({
   );
 
   return (
-    <AppBottomSheet
+    <AppModal
       visible={visible}
       onClose={onClose}
+      title="Sohbeti Aç"
       snapPoints={["72%"]}
-      backdropComponent={renderBackdrop}
     >
-      {/* Header */}
-      <View
-        style={{
-          flexDirection: "row",
-          alignItems: "center",
-          paddingHorizontal: 20,
-          paddingTop: 24,
-          paddingBottom: 8,
-          backgroundColor: "#121212",
-        }}
-      >
-        <TouchableOpacity onPress={onClose} activeOpacity={0.7} style={{ width: 60 }}>
-          <X size={22} color="#9CA3AF" strokeWidth={2} pointerEvents="none" />
-        </TouchableOpacity>
-        <Text
-          style={{
-            flex: 1,
-            color: "#fff",
-            fontSize: 15,
-            fontWeight: "700",
-            textAlign: "center",
-          }}
-        >
-          Sohbeti Aç
-        </Text>
-        <View style={{ width: 60 }} />
-      </View>
-
-      <BottomSheetScrollView
-        style={{ flex: 1, backgroundColor: "#121212" }}
-        contentContainerStyle={{ paddingHorizontal: 20, paddingBottom: 40 }}
-        showsVerticalScrollIndicator={false}
-      >
         {/* Hero */}
         <LinearGradient
-          colors={["#ff173a", "#FF4D4D", "#fc803d"]}
+          colors={gradients.premiumAlt}
           start={{ x: 0, y: 0 }}
           end={{ x: 1, y: 1 }}
           style={{
@@ -185,11 +137,11 @@ export default function ChatUnlockSheet({
             alignItems: "center",
           }}
         >
-          <MessageSquare size={48} color="#fff" strokeWidth={1.5} />
+          <MessageSquare size={48} color={colors.text} strokeWidth={1.5} />
           <Text
             style={{
               marginTop: 12,
-              color: "#fff",
+              color: colors.text,
               fontSize: 22,
               fontWeight: "800",
               textAlign: "center",
@@ -234,9 +186,9 @@ export default function ChatUnlockSheet({
                 borderBottomColor: "rgba(255,255,255,0.07)",
               }}
             >
-              <Icon size={18} color="#fff" strokeWidth={1.5} pointerEvents="none" />
+              <Icon size={18} color={colors.text} strokeWidth={1.5} pointerEvents="none" />
               <Text
-                style={{ color: "#fff", fontSize: 14, fontWeight: "500", flex: 1 }}
+                style={{ color: colors.text, fontSize: 14, fontWeight: "500", flex: 1 }}
               >
                 {label}
               </Text>
@@ -246,10 +198,10 @@ export default function ChatUnlockSheet({
 
         {/* CTA */}
         {loadingPkg ? (
-          <ActivityIndicator color="#fff" style={{ marginVertical: 20 }} />
+          <ActivityIndicator color={colors.text} style={{ marginVertical: 20 }} />
         ) : !pkg ? (
           <View style={{ alignItems: "center", paddingVertical: 16 }}>
-            <Text style={{ color: "#9CA3AF", fontSize: 13, textAlign: "center" }}>
+            <Text style={{ color: colors.textSecondary, fontSize: 13, textAlign: "center" }}>
               Şu anda paket bulunamadı. Lütfen daha sonra tekrar dene.
             </Text>
           </View>
@@ -262,7 +214,7 @@ export default function ChatUnlockSheet({
               borderRadius: 999,
               borderCurve: "continuous",
               overflow: "hidden",
-              backgroundColor: "#fff",
+              backgroundColor: colors.text,
               paddingVertical: 17,
               alignItems: "center",
               marginBottom: 12,
@@ -280,7 +232,7 @@ export default function ChatUnlockSheet({
 
         <Text
           style={{
-            color: "#4B5563",
+            color: colors.textDisabled,
             fontSize: 11,
             textAlign: "center",
             marginTop: 12,
@@ -290,7 +242,6 @@ export default function ChatUnlockSheet({
           Tek seferlik satın alma. Yenileme yok, otomatik ücret alınmaz.
           İkiniz de Premium olursanız bu sohbet zaten sınırsız olur.
         </Text>
-      </BottomSheetScrollView>
-    </AppBottomSheet>
+    </AppModal>
   );
 }

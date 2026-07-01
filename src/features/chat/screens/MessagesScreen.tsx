@@ -2,22 +2,27 @@ import { useEffect, useCallback, useMemo, useRef, useState } from "react";
 import {
   View,
   Text,
-  Image,
   TouchableOpacity,
+  TouchableHighlight,
   TextInput,
   Alert,
+  StyleSheet,
+  Platform,
 } from "react-native";
+import { Image } from "expo-image";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 import Animated, {
   ZoomIn,
   ZoomOut,
-  FadeIn,
-  FadeOut,
   useSharedValue,
   useAnimatedScrollHandler,
   useAnimatedStyle,
   withTiming,
 } from "react-native-reanimated";
+import { BlurView } from "expo-blur";
+import MaskedView from "@react-native-masked-view/masked-view";
+import { LinearGradient } from "expo-linear-gradient";
+import { easeGradient } from "react-native-easing-gradient";
 import { useAppDispatch, useAppSelector } from "@/shared/hooks/redux";
 import { useNavigation } from "@react-navigation/native";
 import {
@@ -38,6 +43,7 @@ import chatService from "@/features/chat/chatService";
 import EmptyState from "@/shared/components/EmptyState";
 import ScreenHeader from "@/shared/components/ScreenHeader";
 import { useSwipeStats } from "@/features/discover/swipeQueries";
+import { colors } from "../../../shared/theme/colors";
 
 export default function MessagesScreen() {
   const dispatch = useAppDispatch();
@@ -52,6 +58,9 @@ export default function MessagesScreen() {
   const [searchQuery, setSearchQuery] = useState("");
   const [isSearchActive, setIsSearchActive] = useState(false);
   const searchInputRef = useRef(null);
+  // scroll-to-top için FlatList ref'i — search aç/kapa anında listeyi tepeye getirip
+  // bar'ın animasyonu ile içeriği aynı yönde hareket ettiriyoruz (mismatch yok).
+  const listRef = useRef<any>(null);
 
   // Scroll-driven search bar collapse: search bar header'a yapışınca alttan
   // yukarı sıkışır (height shrink + overflow:hidden ile alt kenarı kesilir).
@@ -64,12 +73,17 @@ export default function MessagesScreen() {
       scrollY.value = e.contentOffset.y;
     },
   });
+  // searchActiveProgress'i compress style'lardan önce tanımlıyoruz çünkü
+  // bar aktifken scroll-compress disable edilecek.
+  const searchActiveProgress = useSharedValue(0);
   const searchBarCompressStyle = useAnimatedStyle(() => {
     const y = scrollY.value;
-    const progress = Math.max(
+    const scrollProgress = Math.max(
       0,
       Math.min(1, (y - COMPRESS_START) / SEARCH_BAR_HEIGHT),
     );
+    // Search aktifken bar sticky header — scroll'da incelmesin.
+    const progress = scrollProgress * (1 - searchActiveProgress.value);
     return {
       height: SEARCH_BAR_HEIGHT * (1 - progress),
       opacity: 1 - progress,
@@ -77,34 +91,100 @@ export default function MessagesScreen() {
   });
   const magnifyOpacityStyle = useAnimatedStyle(() => {
     const y = scrollY.value;
-    // Magnify hızlı fade — 20px scroll'da tamamen gider.
-    const progress = Math.max(0, Math.min(1, (y - COMPRESS_START) / 20));
+    // Magnify hızlı fade — 20px scroll'da tamamen gider. Aktifken disable.
+    const scrollProgress = Math.max(0, Math.min(1, (y - COMPRESS_START) / 20));
+    const progress = scrollProgress * (1 - searchActiveProgress.value);
     return { opacity: 1 - progress };
   });
 
-  // Chevron animasyonu — isSearchActive değişimine göre width + opacity
-  // smooth animate edilir. Search bar (flex:1) chevron width değişince
-  // doğal olarak ayarlanır (LinearTransition'a gerek kalmaz, böylece
-  // scroll-driven height compression hızlı kalır).
+  // Search aktif olunca:
+  //   • search row yukarı kayıyor (paddingTop azalıyor) — bar tepeye yapışıyor
+  //   • chevron yavaşça beliriyor (width + opacity)
+  //   • piller yumuşakça eriyor (opacity + height collapse) → chat listesi yukarı kayıyor
+  //   • header (Lit logo / "Mesajlar") opacity 0 olup gizleniyor
+  // Hepsini tek bir shared progress driver'dan besliyoruz → birlikte koreografi.
   const CHEVRON_WIDTH = 26;
   const CHEVRON_GAP = 8;
-  const chevronProgress = useSharedValue(0);
+  const PILLS_HEIGHT = 58; // pt-3 (12) + buton (~38) + pb-2 (8)
+  const SEARCH_ROW_INTRINSIC = 24 + SEARCH_BAR_HEIGHT; // pt-3 + bar
+  const HEADER_BOTTOM_PADDING_ACTIVE = 0; // aktifken bar altı nefes alanı
+  const HEADER_TOP_INACTIVE = insets.top + 50;
+  const HEADER_TOP_ACTIVE = insets.top + 8;
+  // Spacer (ListHeaderComponent) — search overlay'in işgal ettiği yer kadar boş alan
+  // bırakır, böylece ilk chat overlay'in altından başlar. Aktifken pills kaybolduğu için
+  // toplam yükseklik düşer → chat listesi otomatik yukarı kayar.
+  const INACTIVE_TOTAL = HEADER_TOP_INACTIVE + SEARCH_ROW_INTRINSIC + PILLS_HEIGHT;
+  const ACTIVE_TOTAL =
+    HEADER_TOP_ACTIVE + SEARCH_ROW_INTRINSIC + HEADER_BOTTOM_PADDING_ACTIVE;
   useEffect(() => {
-    chevronProgress.value = withTiming(isSearchActive ? 1 : 0, {
-      duration: 220,
+    searchActiveProgress.value = withTiming(isSearchActive ? 1 : 0, {
+      duration: 280,
     });
-  }, [isSearchActive, chevronProgress]);
+  }, [isSearchActive, searchActiveProgress]);
+
   const chevronAnimStyle = useAnimatedStyle(() => ({
-    width: chevronProgress.value * CHEVRON_WIDTH,
-    marginRight: chevronProgress.value * CHEVRON_GAP,
-    opacity: chevronProgress.value,
+    width: searchActiveProgress.value * CHEVRON_WIDTH,
+    marginRight: searchActiveProgress.value * CHEVRON_GAP,
+    opacity: searchActiveProgress.value,
     overflow: "hidden",
+  }));
+
+  const listHeaderPaddingStyle = useAnimatedStyle(() => ({
+    paddingTop:
+      HEADER_TOP_INACTIVE +
+      (HEADER_TOP_ACTIVE - HEADER_TOP_INACTIVE) * searchActiveProgress.value,
+    paddingBottom: HEADER_BOTTOM_PADDING_ACTIVE * searchActiveProgress.value,
+  }));
+
+  // Search inactive iken overlay scroll ile birlikte yukarı kayar (content gibi
+  // davranır). Active iken translateY = 0 → tepeye yapışır (sticky header).
+  const overlayTransformStyle = useAnimatedStyle(() => ({
+    transform: [
+      { translateY: -scrollY.value * (1 - searchActiveProgress.value) },
+    ],
+  }));
+
+  // Progressive blur backdrop — sadece search aktifken görünür. ScreenHeader'la
+  // aynı ease-gradient + BlurView yapısı; mask altta yumuşakça fade eder.
+  const blurBackdropStyle = useAnimatedStyle(() => ({
+    opacity: searchActiveProgress.value,
+  }));
+  const { colors: blurMaskColors, locations: blurMaskLocations } = useMemo(
+    () =>
+      easeGradient({
+        colorStops: {
+          0: { color: "rgba(0,0,0,0.99)" },
+          0.5: { color: "black" },
+          1: { color: "transparent" },
+        },
+      }),
+    [],
+  );
+
+  // ListHeader spacer — overlay'in işgal ettiği yükseklik kadar boş alan.
+  const listHeaderSpacerStyle = useAnimatedStyle(() => ({
+    height:
+      INACTIVE_TOTAL +
+      (ACTIVE_TOTAL - INACTIVE_TOTAL) * searchActiveProgress.value,
+  }));
+
+  const pillsAnimStyle = useAnimatedStyle(() => ({
+    opacity: 1 - searchActiveProgress.value,
+    height: PILLS_HEIGHT * (1 - searchActiveProgress.value),
+    overflow: "hidden",
+  }));
+
+  const screenHeaderAnimStyle = useAnimatedStyle(() => ({
+    opacity: 1 - searchActiveProgress.value,
   }));
 
   const closeSearch = useCallback(() => {
     searchInputRef.current?.blur();
     setSearchQuery("");
     setIsSearchActive(false);
+    // Bar tepeye dönerken içeriği de tepeye al → animasyonlar paralel ilerler,
+    // bar off-screen kayarken chat'ler yerinde kalmaz, "fark" oluşmaz.
+    listRef.current?.scrollToOffset({ offset: 0, animated: true });
   }, []);
 
   // Filtrelenmiş conversation listesi — partner display name içinde arama.
@@ -235,150 +315,20 @@ export default function MessagesScreen() {
   );
 
   return (
-    <View className="flex-1 bg-[#121212]">
+    <View className="flex-1 bg-bg">
       <Animated.FlatList
+        ref={listRef}
         data={filteredConversations}
         keyExtractor={(c) => c.conversationId}
         renderItem={renderItem}
         onScroll={onListScroll}
         scrollEventThrottle={16}
+        keyboardShouldPersistTaps="handled"
         ListHeaderComponent={
-          // Search row + pills — scrollable content'in başında. List ile
-          // birlikte yukarı kayıp kayboluyor (WhatsApp davranışı).
-          <View style={{ paddingTop: insets.top + 50 }}>
-            <View className="px-6 pt-3 flex-row items-center">
-              <Animated.View
-                style={chevronAnimStyle}
-                pointerEvents={isSearchActive ? "auto" : "none"}
-              >
-                <TouchableOpacity
-                  onPress={closeSearch}
-                  hitSlop={10}
-                  activeOpacity={0.7}
-                >
-                  <View pointerEvents="none">
-                    <ChevronLeft size={26} color="#fff" strokeWidth={2.5} />
-                  </View>
-                </TouchableOpacity>
-              </Animated.View>
-              <Animated.View
-                style={[
-                  { flex: 1, overflow: "hidden" },
-                  searchBarCompressStyle,
-                ]}
-              >
-                <TouchableOpacity
-                  activeOpacity={1}
-                  onPress={() => searchInputRef.current?.focus()}
-                  style={{
-                    flexDirection: "row",
-                    alignItems: "center",
-                    backgroundColor: "#1E1E1E",
-                    borderRadius: 999,
-                    borderCurve: "continuous",
-                    paddingHorizontal: 16,
-                    height: SEARCH_BAR_HEIGHT,
-                    gap: 8,
-                  }}
-                >
-                  <Animated.View style={magnifyOpacityStyle}>
-                    <Search size={18} color="#fff" strokeWidth={2} />
-                  </Animated.View>
-                  <TextInput
-                    ref={searchInputRef}
-                    value={searchQuery}
-                    onChangeText={setSearchQuery}
-                    onFocus={() => setIsSearchActive(true)}
-                    placeholder=""
-                    placeholderTextColor="#808080"
-                    selectionColor="#fff"
-                    cursorColor="#fff"
-                    style={{
-                      flex: 1,
-                      color: "#fff",
-                      fontSize: 18,
-                      padding: 0,
-                    }}
-                  />
-                  {searchQuery.length > 0 && (
-                    <Animated.View
-                      entering={ZoomIn.duration(180)}
-                      exiting={ZoomOut.duration(150)}
-                      style={{
-                        position: "absolute",
-                        right: 12,
-                        top: 0,
-                        bottom: 0,
-                        justifyContent: "center",
-                      }}
-                    >
-                      <TouchableOpacity
-                        onPress={() => setSearchQuery("")}
-                        hitSlop={10}
-                        activeOpacity={1}
-                        style={{
-                          width: 22,
-                          height: 22,
-                          borderRadius: 11,
-                          backgroundColor: "rgba(255,255,255,0.2)",
-                          alignItems: "center",
-                          justifyContent: "center",
-                        }}
-                      >
-                        <View pointerEvents="none">
-                          <X size={14} color="#bfbfbf" strokeWidth={2} />
-                        </View>
-                      </TouchableOpacity>
-                    </Animated.View>
-                  )}
-                </TouchableOpacity>
-              </Animated.View>
-            </View>
-
-            {!isSearchActive && (
-              <Animated.View
-                entering={FadeIn.duration(180)}
-                exiting={FadeOut.duration(150)}
-                className="px-6 pt-3 pb-2 flex-row gap-2"
-              >
-                {[
-                  { key: "all", label: "Tümü" },
-                  { key: "unread", label: "Okunmamış" },
-                ].map((tab) => {
-                  const isActive = activeTab === tab.key;
-                  return (
-                    <TouchableOpacity
-                      key={tab.key}
-                      activeOpacity={0.85}
-                      onPress={() => setActiveTab(tab.key)}
-                      style={{
-                        borderRadius: 999,
-                        borderCurve: "continuous",
-                        overflow: "hidden",
-                        flexDirection: "row",
-                        alignItems: "center",
-                        paddingHorizontal: 14,
-                        paddingVertical: 10,
-                        backgroundColor: isActive ? "#fff" : "transparent",
-                        borderWidth: 1,
-                        borderColor: "rgba(255,255,255,0.25)",
-                      }}
-                    >
-                      <Text
-                        style={{
-                          color: isActive ? "#000" : "#fff",
-                          fontWeight: "600",
-                          fontSize: 12,
-                        }}
-                      >
-                        {tab.label}
-                      </Text>
-                    </TouchableOpacity>
-                  );
-                })}
-              </Animated.View>
-            )}
-          </View>
+          // Sadece animasyonlu spacer — search row absolute overlay olarak ayrıca
+          // render ediliyor (sticky). Spacer'ın yüksekliği overlay'in işgal ettiği
+          // alana eşit, böylece ilk chat overlay'in altından başlar.
+          <Animated.View style={listHeaderSpacerStyle} />
         }
         contentContainerStyle={{
           flexGrow: 1,
@@ -387,7 +337,7 @@ export default function MessagesScreen() {
         ListEmptyComponent={
           isSearchActive && searchQuery.trim().length > 0 ? (
             <View className="flex-1 items-center justify-center pb-[60%] px-8">
-              <Search size={48} color="#fff" strokeWidth={1.3} />
+              <Search size={48} color={colors.text} strokeWidth={1.3} />
               <Text
                 className="text-white text-center mt-3"
                 style={{ fontSize: 14, fontWeight: "500" }}
@@ -410,19 +360,221 @@ export default function MessagesScreen() {
         }
       />
 
-      <ScreenHeader
-        scrollY={scrollY}
-        title="Mesajlar"
-        fillRatio={swipeFillRatio}
-      />
+      <Animated.View
+        pointerEvents={isSearchActive ? "none" : "box-none"}
+        style={[
+          // zIndex 10 → search overlay'in (zIndex 5) ÜSTÜNDE durur, böylece
+          // inactive + scroll'da piller/bar ScreenHeader'ın progressive blur'unun
+          // ARKASINA giriyormuş gibi görünür (blur onları kaplar).
+          { position: "absolute", top: 0, left: 0, right: 0, zIndex: 10 },
+          screenHeaderAnimStyle,
+        ]}
+      >
+        <ScreenHeader
+          scrollY={scrollY}
+          title="Mesajlar"
+          fillRatio={swipeFillRatio}
+        />
+      </Animated.View>
+
+      {/* Search row + pills overlay.
+          - Inactive: translateY = -scrollY → content gibi scroll'la kayar; blur backdrop
+            opacity 0 → transparan; ScreenHeader (Lit logo) page header'ı sağlar.
+          - Active: translateY = 0 → tepeye yapışır; blur backdrop opacity 1 → progressive
+            blurlu siyahlık çıkar (ScreenHeader ile aynı ease-gradient); ScreenHeader fade. */}
+      <Animated.View
+        style={[
+          { position: "absolute", top: 0, left: 0, right: 0, zIndex: 5 },
+          listHeaderPaddingStyle,
+          overlayTransformStyle,
+        ]}
+      >
+        {/* Progressive blur backdrop — opacity = searchActiveProgress. */}
+        <Animated.View
+          pointerEvents="none"
+          style={[
+            { position: "absolute", top: 0, left: 0, right: 0, bottom: 0 },
+            blurBackdropStyle,
+          ]}
+        >
+          <MaskedView
+            maskElement={
+              <LinearGradient
+                locations={blurMaskLocations as any}
+                colors={blurMaskColors as any}
+                style={StyleSheet.absoluteFill}
+              />
+            }
+            style={StyleSheet.absoluteFill}
+          >
+            <LinearGradient
+              colors={["black", "rgba(0, 0, 0, 0.2)"]}
+              style={StyleSheet.absoluteFill}
+            />
+            <BlurView
+              intensity={15}
+              tint={
+                Platform.OS === "ios"
+                  ? "systemChromeMaterialDark"
+                  : "systemMaterialDark"
+              }
+              style={StyleSheet.absoluteFill}
+            />
+          </MaskedView>
+        </Animated.View>
+
+        <View
+          className="px-6 pt-3 flex-row items-center"
+          style={{ height: SEARCH_ROW_INTRINSIC }}
+        >
+          <Animated.View
+            style={chevronAnimStyle}
+            pointerEvents={isSearchActive ? "auto" : "none"}
+          >
+            <TouchableOpacity
+              onPress={closeSearch}
+              hitSlop={10}
+              activeOpacity={0.7}
+            >
+              <View pointerEvents="none">
+                <ChevronLeft size={26} color={colors.text} strokeWidth={2.5} />
+              </View>
+            </TouchableOpacity>
+          </Animated.View>
+          <Animated.View
+            style={[
+              { flex: 1, justifyContent: "center" },
+              searchBarCompressStyle,
+            ]}
+          >
+            <TouchableOpacity
+              activeOpacity={1}
+              onPress={() => searchInputRef.current?.focus()}
+              style={{
+                flexDirection: "row",
+                alignItems: "center",
+                backgroundColor: colors.surface,
+                borderRadius: 999,
+                borderCurve: "continuous",
+                overflow: "hidden",
+                paddingHorizontal: 16,
+                height: "100%",
+                gap: 8,
+              }}
+            >
+              <Animated.View style={magnifyOpacityStyle}>
+                <Search size={18} color={colors.text} strokeWidth={2} />
+              </Animated.View>
+              <TextInput
+                ref={searchInputRef}
+                value={searchQuery}
+                onChangeText={setSearchQuery}
+                onFocus={() => {
+                  setIsSearchActive(true);
+                  // Aktivasyon anında da tepeye al — bar üst pozisyonuna giderken
+                  // chat'ler de paralel olarak tepeye scroll'lansın.
+                  listRef.current?.scrollToOffset({
+                    offset: 0,
+                    animated: true,
+                  });
+                }}
+                placeholder=""
+                placeholderTextColor={colors.neutral500}
+                selectionColor={colors.text}
+                cursorColor={colors.text}
+                style={{
+                  flex: 1,
+                  color: colors.text,
+                  fontSize: 18,
+                  padding: 0,
+                }}
+              />
+              {searchQuery.length > 0 && (
+                <Animated.View
+                  entering={ZoomIn.duration(180)}
+                  exiting={ZoomOut.duration(150)}
+                  style={{
+                    position: "absolute",
+                    right: 12,
+                    top: 0,
+                    bottom: 0,
+                    justifyContent: "center",
+                  }}
+                >
+                  <TouchableOpacity
+                    onPress={() => setSearchQuery("")}
+                    hitSlop={10}
+                    activeOpacity={1}
+                    style={{
+                      width: 22,
+                      height: 22,
+                      borderRadius: 11,
+                      backgroundColor: "rgba(255,255,255,0.2)",
+                      alignItems: "center",
+                      justifyContent: "center",
+                    }}
+                  >
+                    <View pointerEvents="none">
+                      <X size={14} color="#bfbfbf" strokeWidth={2} />
+                    </View>
+                  </TouchableOpacity>
+                </Animated.View>
+              )}
+            </TouchableOpacity>
+          </Animated.View>
+        </View>
+
+        <Animated.View
+          pointerEvents={isSearchActive ? "none" : "auto"}
+          style={pillsAnimStyle}
+          className="px-6 pt-3 pb-2 flex-row gap-2"
+        >
+          {[
+            { key: "all", label: "Tümü" },
+            { key: "unread", label: "Okunmamış" },
+          ].map((tab) => {
+            const isActive = activeTab === tab.key;
+            return (
+              <TouchableOpacity
+                key={tab.key}
+                activeOpacity={0.85}
+                onPress={() => setActiveTab(tab.key)}
+                style={{
+                  borderRadius: 999,
+                  borderCurve: "continuous",
+                  overflow: "hidden",
+                  flexDirection: "row",
+                  alignItems: "center",
+                  paddingHorizontal: 14,
+                  paddingVertical: 10,
+                  backgroundColor: isActive ? colors.text : "transparent",
+                  borderWidth: 1,
+                  borderColor: "rgba(255,255,255,0.25)",
+                }}
+              >
+                <Text
+                  style={{
+                    color: isActive ? "#000" : colors.text,
+                    fontWeight: "600",
+                    fontSize: 12,
+                  }}
+                >
+                  {tab.label}
+                </Text>
+              </TouchableOpacity>
+            );
+          })}
+        </Animated.View>
+      </Animated.View>
     </View>
   );
 }
 
 function ConversationRow({ conv, isTyping, onPress, onLongPress }) {
+  const isUnread = conv.unreadCount > 0;
   const subtitle = useMemo(() => {
     if (isTyping)
-      return { kind: "text", text: "yazıyor…", className: "text-[#f57656]" };
+      return { kind: "text", text: "yazıyor…", className: "text-primary" };
     if (!conv.isActive)
       return {
         kind: "text",
@@ -430,11 +582,14 @@ function ConversationRow({ conv, isTyping, onPress, onLongPress }) {
         className: "text-gray-400",
       };
 
+    const readClass = isUnread ? "text-white font-semibold" : "text-gray-400";
+    const iconColor = isUnread ? colors.text : colors.textSecondary;
+
     // Media (no text content) — icon + label
     const ct = conv.lastMessageContentType;
-    if (ct === 1) return { kind: "media", icon: CameraIcon, text: "Fotoğraf" };
-    if (ct === 2) return { kind: "media", icon: Mic, text: "Sesli mesaj" };
-    if (ct === 3) return { kind: "media", icon: Video, text: "Video" };
+    if (ct === 1) return { kind: "media", icon: CameraIcon, text: "Fotoğraf", className: readClass, iconColor };
+    if (ct === 2) return { kind: "media", icon: Mic, text: "Sesli mesaj", className: readClass, iconColor };
+    if (ct === 3) return { kind: "media", icon: Video, text: "Video", className: readClass, iconColor };
 
     if (!conv.lastMessagePreview) {
       return {
@@ -446,63 +601,69 @@ function ConversationRow({ conv, isTyping, onPress, onLongPress }) {
     return {
       kind: "text",
       text: conv.lastMessagePreview,
-      className: "text-gray-400",
+      className: readClass,
     };
   }, [
     isTyping,
     conv.lastMessagePreview,
     conv.lastMessageContentType,
     conv.isActive,
+    isUnread,
   ]);
 
   return (
-    <TouchableOpacity
+    <TouchableHighlight
       onPress={onPress}
       onLongPress={onLongPress}
-      activeOpacity={0.75}
-      className="flex-row items-center px-4 py-3"
+      underlayColor={colors.surface3}
+      activeOpacity={1}
+      style={{ backgroundColor: colors.bg }}
     >
-      <View>
-        {conv.partnerProfileImageUrl ? (
-          <Image
-            source={{ uri: conv.partnerProfileImageUrl }}
-            style={{ width: 56, height: 56, borderRadius: 28 }}
-          />
-        ) : (
-          <View
-            style={{
-              width: 56,
-              height: 56,
-              borderRadius: 28,
-              backgroundColor: "#262626",
-              alignItems: "center",
-              justifyContent: "center",
-            }}
-          >
-            <Text className="text-white text-[xl] font-bold">
-              {(conv.partnerDisplayName || "?").charAt(0).toUpperCase()}
-            </Text>
-          </View>
-        )}
-        {/* Online dot */}
-        {conv.partnerIsOnline && (
-          <View
-            style={{
-              position: "absolute",
-              bottom: 2,
-              right: 2,
-              width: 14,
-              height: 14,
-              borderRadius: 7,
-              backgroundColor: "#34d399",
-              borderWidth: 2,
-              borderColor: "#0a0a0a",
-            }}
-          />
-        )}
-      </View>
+      <View className="flex-row items-center px-4 py-2">
+        <View>
+          {conv.partnerProfileImageUrl ? (
+            <Image
+              source={{ uri: conv.partnerProfileImageUrl }}
+              style={{ width: 56, height: 56, borderRadius: 28 }}
+              cachePolicy="memory-disk"
+              transition={350}
+              contentFit="cover"
+            />
+          ) : (
+            <View
+              style={{
+                width: 56,
+                height: 56,
+                borderRadius: 28,
+                backgroundColor: colors.surface3,
+                alignItems: "center",
+                justifyContent: "center",
+              }}
+            >
+              <Text className="text-white text-xl font-bold">
+                {(conv.partnerDisplayName || "?").charAt(0).toUpperCase()}
+              </Text>
+            </View>
+          )}
+          {/* Online dot */}
+          {conv.partnerIsOnline && (
+            <View
+              style={{
+                position: "absolute",
+                bottom: 2,
+                right: 2,
+                width: 14,
+                height: 14,
+                borderRadius: 7,
+                backgroundColor: colors.success,
+                borderWidth: 2,
+                borderColor: colors.bgDeep,
+              }}
+            />
+          )}
+        </View>
 
-      <View className="flex-1 ml-3">
+        <View className="flex-1 ml-3">
         <View className="flex-row items-center justify-between">
           <Text
             className={`text-[16px] font-semibold ${conv.isActive ? "text-white" : "text-gray-500"}`}
@@ -520,9 +681,9 @@ function ConversationRow({ conv, isTyping, onPress, onLongPress }) {
         <View className="flex-row items-center justify-between mt-1">
           {subtitle.kind === "media" ? (
             <View className="flex-row items-center" style={{ flex: 1, gap: 4 }}>
-              <subtitle.icon size={14} color="#9CA3AF" strokeWidth={2} />
+              <subtitle.icon size={14} color={subtitle.iconColor} strokeWidth={2} />
               <Text
-                className="text-[14px] text-gray-400"
+                className={`text-[14px] ${subtitle.className}`}
                 numberOfLines={1}
                 style={{ flex: 1 }}
               >
@@ -541,21 +702,18 @@ function ConversationRow({ conv, isTyping, onPress, onLongPress }) {
 
           {conv.unreadCount > 0 && (
             <View
-              className="ml-2 px-2 py-0.5 rounded-full"
+              className="ml-2 rounded-full self-center"
               style={{
-                backgroundColor: "#f57656",
-                minWidth: 22,
-                alignItems: "center",
+                backgroundColor: colors.messageOwn,
+                width: 10,
+                height: 10,
               }}
-            >
-              <Text className="text-white text-xs font-bold">
-                {conv.unreadCount > 99 ? "99+" : conv.unreadCount}
-              </Text>
-            </View>
+            />
           )}
         </View>
       </View>
-    </TouchableOpacity>
+      </View>
+    </TouchableHighlight>
   );
 }
 

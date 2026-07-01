@@ -2,7 +2,6 @@ import { useEffect, useState, useCallback, useRef, useMemo } from "react";
 import {
   View,
   Text,
-  Image,
   TouchableOpacity,
   ActivityIndicator,
   Alert,
@@ -11,8 +10,11 @@ import {
   Pressable,
   Platform,
   StyleSheet,
+  InteractionManager,
 } from "react-native";
-import Animated from "react-native-reanimated";
+import { Image } from "expo-image";
+import type { MessageDto } from "@/shared/types";
+import Animated, { ZoomIn } from "react-native-reanimated";
 import { BlurView } from "expo-blur";
 import MaskedView from "@react-native-masked-view/masked-view";
 import { LinearGradient } from "expo-linear-gradient";
@@ -38,6 +40,7 @@ import { KeyboardStickyView } from "react-native-keyboard-controller";
 import { NativeStackScreenProps } from "@react-navigation/native-stack";
 import type { RootStackParamList } from "@/shared/types/navigation";
 import { useAppDispatch, useAppSelector } from "@/shared/hooks/redux";
+import { selectIsPremium } from "@/features/profile/subscriptionSlice";
 import {
   ChevronLeft,
   MoreVertical,
@@ -74,6 +77,7 @@ import DateSeparator, { withDateSeparators } from "@/features/chat/components/Da
 import moderationService from "@/shared/services/moderationService";
 import ChatUnlockSheet from "@/features/chat/components/ChatUnlockSheet";
 import uiBus from "@/shared/services/uiBus";
+import { colors } from "../../../shared/theme/colors";
 
 const ContentType = { Text: 0, Image: 1, Voice: 2, Video: 3, System: 99 };
 // Bar opak gövdesi: 16 row py + ~50 HStack (frame 38 + vpad 12) = 66.
@@ -88,17 +92,44 @@ const SYSTEM_MESSAGES_TR = {
 };
 const i18nResolver = (key, fallback) => SYSTEM_MESSAGES_TR[key] || fallback;
 
+// Selector bucket undefined olduğunda her render'da yeni [] üretmesin diye
+// stabil referans — useMemo ve FlatList data prop'unun gereksiz reconcile'ını engeller.
+const EMPTY_MESSAGES: MessageDto[] = [];
+
+function latestPartnerSentAt(messages: MessageDto[], myUserId: string | undefined): number {
+  if (!myUserId) return 0;
+  let latest = 0;
+  for (const m of messages) {
+    if (m.senderId && m.senderId !== myUserId && !m.isSystemMessage) {
+      const t = new Date(m.sentAt).getTime();
+      if (t > latest) latest = t;
+    }
+  }
+  return latest;
+}
+
 export default function ChatScreen({ route, navigation }: NativeStackScreenProps<RootStackParamList, 'Chat'>) {
   const { conversationId, partner, isActive: routeIsActive } = route.params;
   const dispatch = useAppDispatch();
   const insets = useSafeAreaInsets();
 
   const myUserId = useAppSelector((s) => (s as any).auth.user?.userId || (s as any).auth.user?.id);
-  const bucket = useAppSelector((s) => (s as any).chat.messagesByConv[conversationId]);
-  const messages = bucket?.messages || [];
-  const hasMore = bucket?.hasMore;
-  const nextCursor = bucket?.nextCursor;
-  const loadingHistory = bucket?.loading;
+  // Bucket'ı bütün olarak seçmek yerine alanları tek tek seçiyoruz — Redux Toolkit/Immer
+  // bucket'ın iç alanlarından biri değiştiğinde yeni bucket referansı üretir; bu da bucket'ı
+  // tüketen tüm render'ları tetikler. Alan-bazlı selector her birinin referans stabilitesini
+  // koruyarak FlatList data prop'unun gereksiz reconcile'ını engeller.
+  const messages = useAppSelector(
+    (s) => (s as any).chat.messagesByConv[conversationId]?.messages ?? EMPTY_MESSAGES
+  ) as MessageDto[];
+  const hasMore = useAppSelector(
+    (s) => (s as any).chat.messagesByConv[conversationId]?.hasMore ?? false
+  );
+  const nextCursor = useAppSelector(
+    (s) => (s as any).chat.messagesByConv[conversationId]?.nextCursor ?? null
+  );
+  const loadingHistory = useAppSelector(
+    (s) => (s as any).chat.messagesByConv[conversationId]?.loading ?? false
+  );
 
   const typingMap = useAppSelector((s) => (s as any).chat.typingByConv[conversationId]);
   const partnerTyping = useMemo(
@@ -123,7 +154,7 @@ export default function ChatScreen({ route, navigation }: NativeStackScreenProps
   const deliveredAckedRef = useRef(new Set<string>());
   const listRef = useRef<any>(null);
   const quota = useAppSelector((s) => (s as any).chat.quotaByConv?.[conversationId]);
-  const isPremium = useAppSelector((s) => (s as any).subscription?.isPremium);
+  const isPremium = useAppSelector(selectIsPremium);
   const subscriptionSyncedAt = useAppSelector((s) => (s as any).subscription?.lastSyncedAt);
   const [unlockVisible, setUnlockVisible] = useState(false);
 
@@ -137,19 +168,26 @@ export default function ChatScreen({ route, navigation }: NativeStackScreenProps
   useEffect(() => {
     const unsub = uiBus.on("chatQuotaExhausted", (payload) => {
       if (payload?.conversationId !== conversationId) return;
-      dispatch(fetchChatQuota(conversationId));
+      // Quota tükendi event'i staleTime'ı bypass etmeli — force ile çek.
+      dispatch(fetchChatQuota({ conversationId, force: true }));
       if (!isPremiumRef.current) setUnlockVisible(true);
     });
     return unsub;
   }, [conversationId, dispatch]);
 
-  // Premium statüsü değiştiğinde (PurchaseModal → syncSubscriptionWithRetry sonrası
-  // isPremium veya lastSyncedAt güncellenir) per-conversation quota cache'i bayatlıyor;
-  // backend bothPremium/limit'i artık premium-aware hesaplıyor → tekrar çek.
+  // Premium statüsü gerçekten değiştiğinde (PurchaseModal → syncSubscriptionWithRetry)
+  // quota cache'i bayatlıyor; transition anında force refetch. lastSyncedAt'i dep'e koymadık —
+  // mount'ta init effect zaten 30sn stale-time ile bir kez çekecek; sadece premium toggle'da
+  // bypass'lı bir ek çağrı yapıyoruz.
+  const prevIsPremiumRef = useRef(isPremium);
   useEffect(() => {
-    if (!conversationId) return;
-    dispatch(fetchChatQuota(conversationId));
-  }, [conversationId, dispatch, isPremium, subscriptionSyncedAt]);
+    if (prevIsPremiumRef.current !== isPremium) {
+      prevIsPremiumRef.current = isPremium;
+      if (conversationId) {
+        dispatch(fetchChatQuota({ conversationId, force: true }));
+      }
+    }
+  }, [isPremium, conversationId, dispatch]);
 
   useEffect(() => {
     dispatch(setActiveConversation(conversationId));
@@ -158,10 +196,15 @@ export default function ChatScreen({ route, navigation }: NativeStackScreenProps
     };
   }, [conversationId, dispatch]);
 
-  const hadInitialMessagesRef = useRef(null);
+  const hadInitialMessagesRef = useRef<boolean | null>(null);
   if (hadInitialMessagesRef.current === null) {
-    hadInitialMessagesRef.current = (bucket?.messages?.length ?? 0) > 0;
+    hadInitialMessagesRef.current = messages.length > 0;
   }
+
+  // markRead debounce damgası: yalnız karşı tarafın yeni bir mesajı geldiğinde
+  // (sentAt damgası ilerlediğinde) HTTP atılır; readAt/deliveredAt/reactions push'ları
+  // damgayı ilerletmediği için effect koşsa bile network çağrısı tetiklenmez.
+  const lastReadSentAtRef = useRef(0);
 
   useEffect(() => {
     let mounted = true;
@@ -175,7 +218,12 @@ export default function ChatScreen({ route, navigation }: NativeStackScreenProps
         if (!mounted) return;
         await realtimeService.joinConversation(conversationId).catch(() => {});
         await chatService.markRead(conversationId).catch(() => {});
+        // Init markRead'i kapsadığımız son partner mesajını damgala — sonradan koşan
+        // mark-read effect'i aynı durumda tekrar HTTP atmasın.
+        lastReadSentAtRef.current = latestPartnerSentAt(messages, myUserId);
         dispatch(clearUnreadForConversation(conversationId));
+        // Stale-time gate'i thunk içinde; init'te ilk çağrıyı yapar, sonraki mount'larda
+        // 30sn içinde no-op.
         dispatch(fetchChatQuota(conversationId));
       } catch (err) {
         console.warn("chat init err:", err?.message);
@@ -184,6 +232,8 @@ export default function ChatScreen({ route, navigation }: NativeStackScreenProps
     return () => (mounted = false);
   }, [conversationId, dispatch]);
 
+  // Delivered-ack burst'ünü mount anındaki JS thread baskısından koparıyoruz:
+  // ilk girişte 50 undelivered mesajı paralel fetch'lemek yerine bir sonraki idle frame'e bırak.
   useEffect(() => {
     if (!myUserId) return;
     const undelivered = messages.filter(
@@ -194,22 +244,21 @@ export default function ChatScreen({ route, navigation }: NativeStackScreenProps
         !m.isSystemMessage &&
         !deliveredAckedRef.current.has(m.id),
     );
-    undelivered.forEach((m) => {
-      deliveredAckedRef.current.add(m.id);
-      realtimeService.markMessageDelivered(m.id).catch(() => {});
+    if (undelivered.length === 0) return;
+    const handle = InteractionManager.runAfterInteractions(() => {
+      undelivered.forEach((m) => {
+        deliveredAckedRef.current.add(m.id);
+        realtimeService.markMessageDelivered(m.id).catch(() => {});
+      });
     });
+    return () => handle.cancel?.();
   }, [messages, myUserId]);
 
   useEffect(() => {
-    if (!isActive) return;
-    const hasUnreadFromPartner = messages.some(
-      (m) =>
-        m.senderId &&
-        m.senderId !== myUserId &&
-        !m.readAt &&
-        !m.isSystemMessage,
-    );
-    if (hasUnreadFromPartner) {
+    if (!isActive || !myUserId) return;
+    const latest = latestPartnerSentAt(messages, myUserId);
+    if (latest > lastReadSentAtRef.current) {
+      lastReadSentAtRef.current = latest;
       chatService.markRead(conversationId).catch(() => {});
     }
   }, [messages, conversationId, isActive, myUserId]);
@@ -301,7 +350,8 @@ export default function ChatScreen({ route, navigation }: NativeStackScreenProps
           dispatch(
             removeOptimisticMessage({ conversationId, clientMessageId }),
           );
-          dispatch(fetchChatQuota(conversationId));
+          // 402 → backend authoritative; bayat cache'i bypass et.
+          dispatch(fetchChatQuota({ conversationId, force: true }));
           // Premium kullanıcıya quota paywall bottom-sheet gösterme; bayat backend
           // state'in webhook'tan sonra düzelmesini bekle. Banner FE override'ı zaten
           // "Sınırsız" gösteriyor → bu noktada sessizce drop.
@@ -565,10 +615,15 @@ export default function ChatScreen({ route, navigation }: NativeStackScreenProps
   );
 
   const canRestore = !isActive;
-  const messagesWithSeparators = useMemo(
-    () => withDateSeparators(messages),
-    [messages],
-  );
+  const messagesWithSeparators = useMemo(() => {
+    const hasRealMessage = messages.some((m) => !m.isSystemMessage);
+    const filtered = hasRealMessage
+      ? messages.filter(
+          (m) => !(m.isSystemMessage && m.localizationKey === "system.match_created"),
+        )
+      : messages;
+    return withDateSeparators(filtered);
+  }, [messages]);
 
   const renderItem = useCallback(
     ({ item }) => {
@@ -621,7 +676,7 @@ export default function ChatScreen({ route, navigation }: NativeStackScreenProps
   );
 
   return (
-    <View className="flex-1 bg-[#0a0a0a]">
+    <View className="flex-1 bg-bg-deep">
       <View
         pointerEvents="box-none"
         style={{
@@ -695,7 +750,7 @@ export default function ChatScreen({ route, navigation }: NativeStackScreenProps
         ListFooterComponent={
           loadingHistory && messages.length > 0 ? (
             <View style={{ paddingVertical: 12 }}>
-              <ActivityIndicator size="small" color="#f57656" />
+              <ActivityIndicator size="small" color={colors.primary} />
             </View>
           ) : null
         }
@@ -820,11 +875,11 @@ function QuotaBanner({ quota, isPremium }: any) {
       >
         <InfinityIcon
           size={14}
-          color="#34d399"
+          color={colors.success}
           strokeWidth={2}
           pointerEvents="none"
         />
-        <Text style={{ color: "#34d399", fontSize: 12, fontWeight: "600" }}>
+        <Text style={{ color: colors.success, fontSize: 12, fontWeight: "600" }}>
           Sınırsız sohbet
         </Text>
       </View>
@@ -851,7 +906,7 @@ function QuotaBanner({ quota, isPremium }: any) {
           borderBottomColor: "rgba(255,255,255,0.05)",
         }}
       >
-        <Text style={{ color: "#f57656", fontSize: 12, fontWeight: "600" }}>
+        <Text style={{ color: colors.primary, fontSize: 12, fontWeight: "600" }}>
           {remaining} mesaj hakkın kaldı — ikiniz Premium olursanız sınırsız
           olur
         </Text>
@@ -890,7 +945,7 @@ function ChatHeader({ partner, onBack, onMenu }: any) {
               onPress={onBack}
               modifiers={[
                 buttonStyle("glass"),
-                tint("#ffffff"),
+                tint(colors.text),
                 controlSize("large"),
                 labelStyle("iconOnly"),
                 font({ size: 22, weight: "semibold" }),
@@ -900,33 +955,40 @@ function ChatHeader({ partner, onBack, onMenu }: any) {
           </Host>
         ) : (
           <TouchableOpacity onPress={onBack} hitSlop={10} className="p-2">
-            <ChevronLeft size={26} color="#fff" />
+            <ChevronLeft size={26} color={colors.text} />
           </TouchableOpacity>
         )}
       </View>
 
       <View style={{ alignItems: "center", maxWidth: "60%" }}>
-        {partner?.profileImageUrl ? (
-          <Image
-            source={{ uri: partner.profileImageUrl }}
-            style={{ width: 65, height: 65, borderRadius: 999 }}
-          />
-        ) : (
-          <View
-            style={{
-              width: 65,
-              height: 65,
-              borderRadius: 22,
-              backgroundColor: "#262626",
-              alignItems: "center",
-              justifyContent: "center",
-            }}
-          >
-            <Text className="text-white font-bold">
-              {displayName.charAt(0).toUpperCase()}
-            </Text>
-          </View>
-        )}
+        <Animated.View
+          entering={ZoomIn.springify().damping(11).mass(0.7).stiffness(140)}
+        >
+          {partner?.profileImageUrl ? (
+            <Image
+              source={{ uri: partner.profileImageUrl }}
+              style={{ width: 65, height: 65, borderRadius: 999 }}
+              cachePolicy="memory-disk"
+              transition={400}
+              contentFit="cover"
+            />
+          ) : (
+            <View
+              style={{
+                width: 65,
+                height: 65,
+                borderRadius: 999,
+                backgroundColor: colors.surface3,
+                alignItems: "center",
+                justifyContent: "center",
+              }}
+            >
+              <Text className="text-white font-bold">
+                {displayName.charAt(0).toUpperCase()}
+              </Text>
+            </View>
+          )}
+        </Animated.View>
 
         <View style={{ marginTop: 6 }}>
           {Platform.OS === "ios" ? (
@@ -938,7 +1000,7 @@ function ChatHeader({ partner, onBack, onMenu }: any) {
                     glass: { variant: "regular" },
                     shape: "capsule",
                   }),
-                  foregroundStyle("#ffffff"),
+                  foregroundStyle(colors.text),
                   font({ size: 13, weight: "semibold" }),
                 ]}
               >
@@ -959,7 +1021,7 @@ function ChatHeader({ partner, onBack, onMenu }: any) {
               <Text
                 numberOfLines={1}
                 style={{
-                  color: "#fff",
+                  color: colors.text,
                   fontSize: 13,
                   fontWeight: "600",
                   maxWidth: 140,
@@ -988,7 +1050,7 @@ function ChatHeader({ partner, onBack, onMenu }: any) {
               modifiers={[
                 buttonStyle("glass"),
                 controlSize("large"),
-                tint("#ffffff"),
+                tint(colors.text),
                 labelStyle("iconOnly"),
                 font({ size: 20, weight: "semibold" }),
                 frame({ width: 44, height: 44 }),
@@ -997,7 +1059,7 @@ function ChatHeader({ partner, onBack, onMenu }: any) {
           </Host>
         ) : (
           <TouchableOpacity hitSlop={10} className="p-2" onPress={onMenu}>
-            <MoreVertical size={22} color="#9ca3af" />
+            <MoreVertical size={22} color={colors.textSecondary} />
           </TouchableOpacity>
         )}
       </View>
@@ -1018,13 +1080,13 @@ function EditMessageModal({ target, text, onChangeText, onCancel, onSave }: any)
           paddingHorizontal: 24,
         }}
       >
-        <Pressable onPress={() => {}} className="bg-[#1f1f1f] rounded-2xl p-4">
+        <Pressable onPress={() => {}} className="bg-surface-2 rounded-2xl p-4">
           <View className="flex-row items-center justify-between mb-3">
             <Text className="text-white font-semibold text-base">
               Mesajı düzenle
             </Text>
             <TouchableOpacity onPress={onCancel} hitSlop={6}>
-              <X size={20} color="#9ca3af" />
+              <X size={20} color={colors.textSecondary} />
             </TouchableOpacity>
           </View>
           <TextInput
@@ -1033,9 +1095,9 @@ function EditMessageModal({ target, text, onChangeText, onCancel, onSave }: any)
             multiline
             autoFocus
             maxLength={2000}
-            className="text-white text-base bg-[#0a0a0a] rounded-xl p-3"
+            className="text-white text-base bg-bg-deep rounded-xl p-3"
             style={{ minHeight: 80, maxHeight: 160, textAlignVertical: "top" }}
-            placeholderTextColor="#6b7280"
+            placeholderTextColor={colors.textMuted}
           />
           <Text className="text-gray-500 text-xs mt-2">
             15 dakika içinde gönderilen mesajlar düzenlenebilir.
@@ -1047,7 +1109,7 @@ function EditMessageModal({ target, text, onChangeText, onCancel, onSave }: any)
             <TouchableOpacity
               onPress={onSave}
               className="px-4 py-2 rounded-full"
-              style={{ backgroundColor: "#f57656" }}
+              style={{ backgroundColor: colors.primary }}
             >
               <Text className="text-white font-semibold">Kaydet</Text>
             </TouchableOpacity>

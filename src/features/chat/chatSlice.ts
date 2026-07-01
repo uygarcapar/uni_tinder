@@ -8,6 +8,10 @@ import type {
   ChatQuotaStatus,
 } from '@/shared/types';
 
+const QUOTA_STALE_MS = 30_000;
+
+type FetchChatQuotaArg = string | { conversationId: string; force?: boolean };
+
 export const fetchConversations = createAsyncThunk(
   'chat/fetchConversations',
   async (_, { rejectWithValue }) => {
@@ -41,13 +45,26 @@ export const fetchUnreadCount = createAsyncThunk(
 
 export const fetchChatQuota = createAsyncThunk(
   'chat/fetchQuota',
-  async (conversationId: string, { rejectWithValue }) => {
+  async (arg: FetchChatQuotaArg, { rejectWithValue }) => {
+    const conversationId = typeof arg === 'string' ? arg : arg.conversationId;
     try {
       const status = await chatService.getQuota(conversationId);
       return { conversationId, status };
     } catch (e: any) {
       return rejectWithValue(e?.response?.data?.message || e?.message || 'Failed');
     }
+  },
+  {
+    condition: (arg, { getState }) => {
+      const conversationId = typeof arg === 'string' ? arg : arg.conversationId;
+      const force = typeof arg === 'object' && arg.force === true;
+      if (force) return true;
+      if (!conversationId) return false;
+      const state = getState() as any;
+      const stamp = state?.chat?.quotaByConv?.[conversationId]?._fetchedAt;
+      if (!stamp) return true;
+      return Date.now() - stamp > QUOTA_STALE_MS;
+    },
   }
 );
 
@@ -59,7 +76,7 @@ export const redeemChatUnlock = createAsyncThunk(
   ) => {
     try {
       await chatService.unlockChat(conversationId, transactionId);
-      dispatch(fetchChatQuota(conversationId));
+      dispatch(fetchChatQuota({ conversationId, force: true }));
       return { conversationId };
     } catch (e: any) {
       return rejectWithValue({
@@ -436,7 +453,10 @@ const chatSlice = createSlice({
       })
       .addCase(fetchChatQuota.fulfilled, (state, action) => {
         const { conversationId, status } = action.payload;
-        state.quotaByConv[conversationId] = status as ChatQuotaStatus;
+        state.quotaByConv[conversationId] = {
+          ...(status as ChatQuotaStatus),
+          _fetchedAt: Date.now(),
+        };
       });
   },
 });

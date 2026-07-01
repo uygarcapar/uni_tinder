@@ -12,14 +12,15 @@ import { useNavigation } from '@react-navigation/native';
 import { Bell, Heart, MessageCircle, Sparkles, ChevronLeft } from 'lucide-react-native';
 import notificationsService from '@/features/notifications/notificationsService';
 import realtimeService from '@/features/chat/realtimeService';
+import { colors } from '../../../shared/theme/colors';
 
 const ICONS = {
-  Match: { Icon: Sparkles, color: '#f57656' },
-  Like: { Icon: Heart, color: '#e0457b' },
-  SuperLike: { Icon: Heart, color: '#3b82f6' },
-  Message: { Icon: MessageCircle, color: '#34d399' },
-  System: { Icon: Bell, color: '#9ca3af' },
-  MissedMatch: { Icon: Sparkles, color: '#f59e0b' },
+  Match: { Icon: Sparkles, color: colors.primary },
+  Like: { Icon: Heart, color: colors.likePink },
+  SuperLike: { Icon: Heart, color: colors.info },
+  Message: { Icon: MessageCircle, color: colors.success },
+  System: { Icon: Bell, color: colors.textSecondary },
+  MissedMatch: { Icon: Sparkles, color: colors.warning },
 };
 
 export default function NotificationsScreen() {
@@ -86,10 +87,10 @@ export default function NotificationsScreen() {
   }, [navigation]);
 
   return (
-    <SafeAreaView edges={['top']} className="flex-1 bg-[#0a0a0a]">
-      <View className="flex-row items-center px-3 py-3 border-b border-[#1a1a1a]">
+    <SafeAreaView edges={['top']} className="flex-1 bg-bg-deep">
+      <View className="flex-row items-center px-3 py-3 border-b border-surface-5">
         <TouchableOpacity onPress={() => navigation.goBack()} hitSlop={10} className="p-2">
-          <ChevronLeft size={24} color="#fff" />
+          <ChevronLeft size={24} color={colors.text} />
         </TouchableOpacity>
         <Text className="text-white text-lg font-bold flex-1 ml-2">Bildirimler</Text>
       </View>
@@ -101,21 +102,21 @@ export default function NotificationsScreen() {
           <NotificationRow item={item} onPress={() => handleTap(item)} />
         )}
         refreshControl={
-          <RefreshControl refreshing={refreshing} onRefresh={onRefresh} tintColor="#f57656" />
+          <RefreshControl refreshing={refreshing} onRefresh={onRefresh} tintColor={colors.primary} />
         }
         onEndReached={onEndReached}
         onEndReachedThreshold={0.4}
         ListFooterComponent={
           loading && items.length > 0 ? (
             <View style={{ paddingVertical: 16 }}>
-              <ActivityIndicator size="small" color="#f57656" />
+              <ActivityIndicator size="small" color={colors.primary} />
             </View>
           ) : null
         }
         ListEmptyComponent={
           !loading ? (
             <View className="items-center justify-center py-20">
-              <Bell size={48} color="#3a3a3a" />
+              <Bell size={48} color={colors.border} />
               <Text className="text-white text-lg font-bold mt-4">Henüz bildirim yok</Text>
               <Text className="text-gray-400 text-sm mt-2 text-center px-8">
                 Eşleşme + mesajların burada görünecek.
@@ -136,8 +137,8 @@ function NotificationRow({ item, onPress }) {
     <TouchableOpacity
       onPress={onPress}
       activeOpacity={0.7}
-      className={`flex-row items-center px-4 py-3 border-b border-[#1a1a1a] ${
-        !item.isRead ? 'bg-[#f57656]/5' : ''
+      className={`flex-row items-center px-4 py-3 border-b border-surface-5 ${
+        !item.isRead ? 'bg-primary/5' : ''
       }`}
     >
       <View
@@ -174,7 +175,7 @@ function NotificationRow({ item, onPress }) {
             width: 8,
             height: 8,
             borderRadius: 4,
-            backgroundColor: '#f57656',
+            backgroundColor: colors.primary,
           }}
         />
       )}

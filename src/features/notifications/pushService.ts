@@ -3,12 +3,16 @@ import * as Notifications from 'expo-notifications';
 import * as Device from 'expo-device';
 import api, { getCurrentAccessToken } from '@/shared/services/api';
 import { API_ENDPOINTS } from '@/shared/constants/api';
+import { colors } from '../../shared/theme/colors';
 
 let getActiveConversationId: () => string | null = () => null;
 export const setActiveConversationGetter = (fn: (() => string | null) | null) => {
   getActiveConversationId = fn || (() => null);
 };
 
+// Foreground'da OS banner gösterme — in-app toaster (react-native-notifier) bunun yerini alır.
+// Background normal akar (handler sadece foreground'da çağrılır). Tray'de listeleme + badge
+// korunur ki kullanıcı bildirim tepsisinden geçmişe ulaşabilsin.
 Notifications.setNotificationHandler({
   handleNotification: async (notification) => {
     const data = notification?.request?.content?.data || {};
@@ -17,7 +21,7 @@ Notifications.setNotificationHandler({
     const inActiveChat = incomingConvId && incomingConvId === activeConv;
 
     return {
-      shouldShowBanner: !inActiveChat,
+      shouldShowBanner: false,
       shouldShowList: !inActiveChat,
       shouldPlaySound: !inActiveChat,
       shouldSetBadge: true,
@@ -47,7 +51,7 @@ export async function registerForPushNotifications(appVersion = '1.0.0'): Promis
         name: 'Mesajlar',
         importance: Notifications.AndroidImportance.HIGH,
         vibrationPattern: [0, 250, 250, 250],
-        lightColor: '#f57656',
+        lightColor: colors.primary,
         sound: 'default',
       });
     }

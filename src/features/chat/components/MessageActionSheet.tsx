@@ -21,6 +21,7 @@ import Svg, { Path } from "react-native-svg";
 import { Reply, Pencil, Trash2, Copy } from "lucide-react-native";
 import * as Haptics from "expo-haptics";
 import * as Clipboard from "expo-clipboard";
+import { colors } from "../../../shared/theme/colors";
 
 const QUICK_EMOJIS = ["❤️", "😂", "😮", "😢", "🔥", "👍"];
 const { width: SCREEN_WIDTH, height: SCREEN_HEIGHT } = Dimensions.get("window");
@@ -195,7 +196,7 @@ export default function MessageActionSheet({
             paddingVertical: 8,
             borderRadius: 999,
             borderCurve: "continuous",
-            backgroundColor: "#1f1f1f",
+            backgroundColor: colors.surface2,
             shadowColor: "#000",
             shadowOpacity: 0.35,
             shadowRadius: 14,
@@ -240,7 +241,7 @@ export default function MessageActionSheet({
           style={{
             borderRadius: 16,
             borderCurve: "continuous",
-            backgroundColor: "#1f1f1f",
+            backgroundColor: colors.surface2,
             overflow: "hidden",
             shadowColor: "#000",
             shadowOpacity: 0.35,
@@ -250,7 +251,7 @@ export default function MessageActionSheet({
           }}
         >
           <ActionRow
-            icon={<Reply size={20} color="#fff" />}
+            icon={<Reply size={20} color={colors.text} />}
             label="Yanıtla"
             onPress={() => {
               onReply?.();
@@ -259,14 +260,14 @@ export default function MessageActionSheet({
           />
           {!!message.content && (
             <ActionRow
-              icon={<Copy size={20} color="#fff" />}
+              icon={<Copy size={20} color={colors.text} />}
               label="Kopyala"
               onPress={handleCopy}
             />
           )}
           {canEdit && (
             <ActionRow
-              icon={<Pencil size={20} color="#fff" />}
+              icon={<Pencil size={20} color={colors.text} />}
               label="Düzenle"
               onPress={() => {
                 onEdit?.();
@@ -277,7 +278,7 @@ export default function MessageActionSheet({
           {canDelete && (
             <>
               <ActionRow
-                icon={<Trash2 size={20} color="#fca5a5" />}
+                icon={<Trash2 size={20} color={colors.errorLight} />}
                 label="Sadece benden sil"
                 destructive
                 onPress={() => {
@@ -286,7 +287,7 @@ export default function MessageActionSheet({
                 }}
               />
               <ActionRow
-                icon={<Trash2 size={20} color="#ef4444" />}
+                icon={<Trash2 size={20} color={colors.error} />}
                 label="Herkes için sil"
                 destructive
                 last
@@ -314,7 +315,7 @@ function ActionRow({ icon, label, destructive, last, onPress }: any) {
         paddingHorizontal: 16,
         paddingVertical: 13,
         borderBottomWidth: last ? 0 : StyleSheet.hairlineWidth,
-        borderBottomColor: "#262626",
+        borderBottomColor: colors.surface3,
       }}
     >
       <View style={{ width: 28, alignItems: "center" }}>{icon}</View>
@@ -322,7 +323,7 @@ function ActionRow({ icon, label, destructive, last, onPress }: any) {
         style={{
           fontSize: 16,
           marginLeft: 12,
-          color: destructive ? "#fca5a5" : "#fff",
+          color: destructive ? colors.errorLight : colors.text,
         }}
       >
         {label}

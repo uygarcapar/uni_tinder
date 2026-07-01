@@ -20,6 +20,7 @@ const QUICK_EMOJIS = ["❤️", "😂", "😮", "😢", "🔥", "👍"];
 import { Check, CheckCheck, Clock, AlertCircle } from "lucide-react-native";
 import ReplyPreview from "@/features/chat/components/ReplyPreview";
 import VoicePlayer from "@/features/chat/components/VoicePlayer";
+import { colors } from "../../../shared/theme/colors";
 
 /**
  * Tek mesaj baloncuğu. Tüm content type'ları render eder:
@@ -34,7 +35,7 @@ import VoicePlayer from "@/features/chat/components/VoicePlayer";
  *
  * Layout:
  *   - System: ortada gri kapsül
- *   - Own: sağa hizalı, accent renk (#f57656)
+ *   - Own: sağa hizalı, accent renk (colors.primary)
  *   - Other: sola hizalı, koyu gri
  */
 function MessageBubble({
@@ -103,10 +104,10 @@ function MessageBubble({
     return (
       <View className="items-center my-2 px-4">
         <View
-          className="px-3 py-2 rounded-full bg-[#1a1a1a] border border-[#262626]"
+          className="px-3 py-2 rounded-full bg-surface-5 border border-surface-3"
           style={{ borderCurve: "continuous" }}
         >
-          <Text className="text-[15px]" style={{ color: "#8B93A2" }}>
+          <Text className="text-[15px]" style={{ color: colors.textPlaceholder }}>
             {text}
           </Text>
         </View>
@@ -135,7 +136,7 @@ function MessageBubble({
     return renderDeletedBubble(isOwn);
   }
 
-  const bubbleBg = isOwn ? "#FF4229" : "#1f1f1f";
+  const bubbleBg = isOwn ? colors.messageOwn : colors.surface2;
   const textColorClass = isOwn ? "text-white" : "text-gray-100";
   const hasReactions = message.reactions?.length > 0;
   const canEdit =
@@ -275,8 +276,8 @@ function MessageBubble({
           key={r.emoji}
           className="px-2 py-1 flex-row items-center rounded-full"
           style={{
-            backgroundColor: "#1f1f1f",
-            borderColor: "#0a0a0a",
+            backgroundColor: colors.surface2,
+            borderColor: colors.bgDeep,
           }}
         >
           <Text style={{ fontSize: 14 }}>{r.emoji}</Text>
@@ -437,7 +438,7 @@ function renderDeletedBubble(isOwn) {
       }}
     >
       <View
-        className="bg-[#1a1a1a] rounded-full px-3 py-3.5"
+        className="bg-surface-5 rounded-full px-3 py-3.5"
         style={{ maxWidth: "78%" }}
       >
         <Text className="text-gray-500 italic text-[14px]">
@@ -449,9 +450,9 @@ function renderDeletedBubble(isOwn) {
 }
 
 function renderStatus(message, isPending, isFailed) {
-  if (isFailed) return <AlertCircle size={12} color="#fca5a5" />;
+  if (isFailed) return <AlertCircle size={12} color={colors.errorLight} />;
   if (isPending) return <Clock size={12} color="rgba(255,255,255,0.7)" />;
-  if (message.readAt) return <CheckCheck size={14} color="#34d399" />;
+  if (message.readAt) return <CheckCheck size={14} color={colors.success} />;
   if (message.deliveredAt)
     return <CheckCheck size={14} color="rgba(255,255,255,0.85)" />;
   return <Check size={14} color="rgba(255,255,255,0.7)" />;

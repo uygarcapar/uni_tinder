@@ -2,6 +2,7 @@ import { useEffect, useState } from 'react';
 import { View, Text } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import realtimeService from '@/features/chat/realtimeService';
+import { colors } from '../../../shared/theme/colors';
 
 /**
  * Hub bağlantı durumu banner'ı — 'reconnecting' state'inde top-bar olarak görünür.
@@ -25,7 +26,7 @@ export default function ConnectionBanner() {
   if (state === 'connected' || state === 'hidden') return null;
 
   const isReconnecting = state === 'reconnecting';
-  const bgColor = isReconnecting ? '#f59e0b' : '#dc2626';
+  const bgColor = isReconnecting ? colors.warning : colors.errorDeep;
 
   // Reconnecting durumunda sadece ince sarı şerit — text yok.
   if (isReconnecting) {
@@ -60,7 +61,7 @@ export default function ConnectionBanner() {
         zIndex: 1000,
       }}
     >
-      <Text style={{ color: '#fff', fontSize: 12, fontWeight: '600' }}>Bağlantı koptu</Text>
+      <Text style={{ color: colors.text, fontSize: 12, fontWeight: '600' }}>Bağlantı koptu</Text>
     </View>
   );
 }

@@ -1,4 +1,5 @@
 import { View, Text } from "react-native";
+import { colors } from "../../../shared/theme/colors";
 
 /**
  * Inverted FlatList içinde mesaj grupları arasında tarih ayraç.
@@ -9,7 +10,7 @@ export default function DateSeparator({ label }: any) {
   return (
     <View className="items-center my-3">
       <View className="">
-        <Text style={{ color: "#8B93A2", fontSize: 13, fontWeight: "500" }}>
+        <Text style={{ color: colors.textPlaceholder, fontSize: 13, fontWeight: "500" }}>
           {label}
         </Text>
       </View>

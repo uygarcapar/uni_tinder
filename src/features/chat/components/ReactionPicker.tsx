@@ -23,7 +23,7 @@ export default function ReactionPicker({ visible, onClose, onPick }: any) {
         }}
       >
         <View
-          className="flex-row items-center px-3 py-3 rounded-full bg-[#1f1f1f]"
+          className="flex-row items-center px-3 py-3 rounded-full bg-surface-2"
           style={{
             shadowColor: '#000',
             shadowOpacity: 0.5,

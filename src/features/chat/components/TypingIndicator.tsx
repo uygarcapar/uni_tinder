@@ -1,11 +1,12 @@
 import { useEffect, useRef } from 'react';
 import { View, Animated, Easing } from 'react-native';
+import { colors } from '../../../shared/theme/colors';
 
 /**
  * Üç noktalı tipik "..." typing animasyonu.
  * Her nokta sırayla scale 0.6 → 1 oluyor.
  */
-export default function TypingIndicator({ size = 6, color = '#9ca3af' }: any) {
+export default function TypingIndicator({ size = 6, color = colors.textSecondary }: any) {
   const animations = useRef([
     new Animated.Value(0.4),
     new Animated.Value(0.4),
@@ -38,7 +39,7 @@ export default function TypingIndicator({ size = 6, color = '#9ca3af' }: any) {
 
   return (
     <View
-      className="flex-row items-center px-3 py-2 rounded-2xl bg-[#1f1f1f]"
+      className="flex-row items-center px-3 py-2 rounded-2xl bg-surface-2"
       style={{ alignSelf: 'flex-start' }}
     >
       {animations.map((anim, i) => (

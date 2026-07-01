@@ -46,6 +46,7 @@ import {
 } from "expo-audio";
 import ReplyPreview from "@/features/chat/components/ReplyPreview";
 import chatService from "@/features/chat/chatService";
+import { colors } from "../../../shared/theme/colors";
 
 const TYPING_DEBOUNCE_MS = 1500;
 const MAX_VOICE_DURATION_MS = 60_000;
@@ -336,7 +337,7 @@ export default function MessageInput({
             hitSlop={10}
             className="p-2"
           >
-            <Trash2 size={22} color="#ef4444" />
+            <Trash2 size={22} color={colors.error} />
           </TouchableOpacity>
           <View className="flex-1 flex-row items-center ml-2">
             <RecordingDot />
@@ -350,9 +351,9 @@ export default function MessageInput({
           <TouchableOpacity
             onPress={() => stopRecording(false)}
             className="ml-2 w-10 h-10 rounded-full items-center justify-center"
-            style={{ backgroundColor: "#f57656" }}
+            style={{ backgroundColor: colors.primary }}
           >
-            <Send size={18} color="#fff" />
+            <Send size={18} color={colors.text} />
           </TouchableOpacity>
         </View>
       </View>
@@ -380,7 +381,7 @@ export default function MessageInput({
               systemImage="plus"
               modifiers={[
                 buttonStyle("glass"),
-                tint("#ffffff"),
+                tint(colors.text),
                 labelStyle("iconOnly"),
                 font({ size: 20, weight: "medium" }),
                 frame({ width: 36, height: 36 }),
@@ -406,9 +407,9 @@ export default function MessageInput({
             hitSlop={6}
           >
             {uploading ? (
-              <ActivityIndicator size="small" color="#f57656" />
+              <ActivityIndicator size="small" color={colors.primary} />
             ) : (
-              <Paperclip size={22} color="#9ca3af" />
+              <Paperclip size={22} color={colors.textSecondary} />
             )}
           </TouchableOpacity>
         )}
@@ -455,7 +456,7 @@ export default function MessageInput({
                   axis="vertical"
                   maxLength={2000}
                   modifiers={[
-                    foregroundStyle("#ffffff"),
+                    foregroundStyle(colors.text),
                     font({ size: 16 }),
                     frame({ maxWidth: "infinity" }),
                   ]}
@@ -505,7 +506,7 @@ export default function MessageInput({
               nativeID="chat-input"
               style={{
                 flex: 1,
-                color: "#fff",
+                color: colors.text,
                 fontSize: 16,
                 paddingTop: 0,
                 paddingBottom: 0,
@@ -532,7 +533,7 @@ export default function MessageInput({
                 onPress={handleSendText}
                 modifiers={[
                   buttonStyle("glassProminent"),
-                  tint("#f57656"),
+                  tint(colors.primary),
                   labelStyle("iconOnly"),
                   font({ size: 18, weight: "semibold" }),
                   frame({ width: 36, height: 36 }),
@@ -544,7 +545,7 @@ export default function MessageInput({
                 systemImage="mic.fill"
                 modifiers={[
                   buttonStyle("glass"),
-                  tint("#ffffff"),
+                  tint(colors.text),
                   labelStyle("iconOnly"),
                   font({ size: 18, weight: "medium" }),
                   frame({ width: 36, height: 36 }),
@@ -560,9 +561,9 @@ export default function MessageInput({
             onPress={handleSendText}
             disabled={disabled}
             className="w-10 h-10 rounded-full items-center justify-center"
-            style={{ backgroundColor: "#f57656" }}
+            style={{ backgroundColor: colors.primary }}
           >
-            <Send size={18} color="#fff" />
+            <Send size={18} color={colors.text} />
           </TouchableOpacity>
         ) : (
           <TouchableOpacity
@@ -570,9 +571,9 @@ export default function MessageInput({
             delayLongPress={250}
             disabled={disabled || uploading}
             className="w-10 h-10 rounded-full items-center justify-center"
-            style={{ backgroundColor: "#262626" }}
+            style={{ backgroundColor: colors.surface3 }}
           >
-            <Mic size={20} color="#9ca3af" />
+            <Mic size={20} color={colors.textSecondary} />
           </TouchableOpacity>
         )}
       </View>
@@ -606,7 +607,7 @@ function RecordingDot() {
         width: 10,
         height: 10,
         borderRadius: 5,
-        backgroundColor: "#ef4444",
+        backgroundColor: colors.error,
         opacity,
       }}
     />

@@ -2,6 +2,7 @@ import { useEffect, useRef, useState } from 'react';
 import { TouchableOpacity, Text, View, ActivityIndicator } from 'react-native';
 import { Play, Pause } from 'lucide-react-native';
 import { createAudioPlayer, setAudioModeAsync } from 'expo-audio';
+import { colors } from '../../../shared/theme/colors';
 
 /**
  * Sesli mesaj inline player.
@@ -71,11 +72,11 @@ export default function VoicePlayer({ uri, isOwn }: any) {
     >
       <View className="w-9 h-9 rounded-full bg-white/20 items-center justify-center mr-2">
         {loading ? (
-          <ActivityIndicator size="small" color="#fff" />
+          <ActivityIndicator size="small" color={colors.text} />
         ) : playing ? (
-          <Pause size={16} color="#fff" />
+          <Pause size={16} color={colors.text} />
         ) : (
-          <Play size={16} color="#fff" />
+          <Play size={16} color={colors.text} />
         )}
       </View>
       <View style={{ flex: 1 }}>
@@ -84,7 +85,7 @@ export default function VoicePlayer({ uri, isOwn }: any) {
             style={{
               width: `${progress * 100}%`,
               height: '100%',
-              backgroundColor: '#fff',
+              backgroundColor: colors.text,
             }}
           />
         </View>
