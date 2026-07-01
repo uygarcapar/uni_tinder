@@ -104,7 +104,6 @@ const initialState: AuthState = {
     dateOfBirth: null,
     password: '',
     confirmPassword: '',
-    phoneNumber: '',
     email: '',
   },
 };
@@ -157,7 +156,6 @@ const authSlice = createSlice({
         dateOfBirth: null,
         password: '',
         confirmPassword: '',
-        phoneNumber: '',
         email: '',
       };
     },

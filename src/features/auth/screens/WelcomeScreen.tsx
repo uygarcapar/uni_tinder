@@ -11,6 +11,7 @@ import { LinearGradient } from "expo-linear-gradient";
 import { StatusBar } from "expo-status-bar";
 import { NativeStackScreenProps } from "@react-navigation/native-stack";
 import type { AuthStackParamList } from "@/shared/types/navigation";
+import { colors } from "../../../shared/theme/colors";
 
 // Ekran boyutunu alıyoruz (Garanti olsun diye)
 const { width, height } = Dimensions.get("window");
@@ -77,7 +78,7 @@ export default function WelcomeScreen({ navigation }: NativeStackScreenProps<Aut
         {/* Üst Kısım */}
         <View className="flex-1 justify-center items-center">
           <Image
-            source={require("../../assets/lit_name_black.png")}
+            source={require("../../../../assets/lit_name_black.png")}
             style={{
               width: width * 0.7,
               height: 110,
@@ -98,7 +99,7 @@ export default function WelcomeScreen({ navigation }: NativeStackScreenProps<Aut
               }}
             >
               <LinearGradient
-                colors={["#0a0a0a", "#1a1a1a"]}
+                colors={[colors.bgDeep, colors.surface5]}
                 start={{ x: 0, y: 0 }}
                 end={{ x: 1, y: 1 }}
                 style={{

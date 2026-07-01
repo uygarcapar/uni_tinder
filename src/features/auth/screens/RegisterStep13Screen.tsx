@@ -26,6 +26,7 @@ import AnimatedPressable from "@/shared/components/AnimatedPressable";
 import { useForm } from "react-hook-form";
 import { zodResolver } from "@hookform/resolvers/zod";
 import { hobbiesSchema, HobbiesForm } from "@/shared/schemas/formSchemas";
+import { colors, gradients } from "../../../shared/theme/colors";
 
 const getHobbyIcon = (hobbyName: string) => {
   const iconMap: Record<string, any> = {
@@ -68,7 +69,7 @@ const SkeletonHobbyCard = memo<{}>(() => {
     return () => loop.stop();
   }, [pulse]);
   return (
-    <Animated.View style={{ flex: 1, minWidth: "45%", minHeight: 148, borderRadius: 50, borderCurve: "continuous", overflow: "hidden", borderWidth: 0.5, borderColor: "rgba(255,255,255,0.1)", backgroundColor: "#1E1E1E", paddingVertical: 0, opacity: pulse, position: "relative" }}>
+    <Animated.View style={{ flex: 1, minWidth: "45%", minHeight: 148, borderRadius: 50, borderCurve: "continuous", overflow: "hidden", borderWidth: 0.5, borderColor: "rgba(255,255,255,0.1)", backgroundColor: colors.surface, paddingVertical: 0, opacity: pulse, position: "relative" }}>
       <View pointerEvents="none" style={{ position: "absolute", top: 0, left: 0, right: 0, bottom: 0, alignItems: "center", justifyContent: "center" }}>
         <View style={{ width: 32, height: 32, borderRadius: 16, backgroundColor: "rgba(255,255,255,0.1)" }} />
         <View style={{ marginTop: 8, width: 60, height: 12, borderRadius: 6, backgroundColor: "rgba(255,255,255,0.1)" }} />
@@ -90,10 +91,10 @@ const HobbyItem = memo(({ hobby, isSelected, onPress }: any) => {
         onPressOut={handlePressOut}
         onPress={() => onPress(hobby.enumName)}
         style={{ borderRadius: 50, borderCurve: "continuous", overflow: "hidden" }}
-        className={` border-[0.5px] py-[45px] items-center justify-center ${isSelected ? "bg-[#3e3e3e] border-white/30" : "bg-[#1E1E1E] border-white/10"}`}
+        className={` border-[0.5px] py-[45px] items-center justify-center ${isSelected ? "bg-border-2 border-white/30" : "bg-surface border-white/10"}`}
       >
         <View pointerEvents="none" className="items-center justify-center">
-          <Icon size={32} color="#FFFFFF" strokeWidth={2} />
+          <Icon size={32} color={colors.text} strokeWidth={2} />
           <Text className="text-[14px] font-medium mt-3 text-white text-center px-2">{hobby.name}</Text>
         </View>
       </TouchableOpacity>
@@ -147,9 +148,9 @@ export default function RegisterStep13Screen({ navigation }: NativeStackScreenPr
   });
 
   return (
-    <View className="flex-1 bg-[#121212]">
+    <View className="flex-1 bg-bg">
       {/* Header */}
-      <View className="bg-[#121212] pt-16 pb-6 px-6">
+      <View className="bg-bg pt-16 pb-6 px-6">
         <View className="flex-row items-center justify-center relative">
           <TouchableOpacity activeOpacity={1} onPress={() => navigation.goBack()} className="absolute left-0">
             <Text className="text-4xl text-white">←</Text>
@@ -209,7 +210,7 @@ export default function RegisterStep13Screen({ navigation }: NativeStackScreenPr
           style={{ borderRadius: 999, borderCurve: "continuous", overflow: "hidden" }}
         >
           <LinearGradient
-            colors={["#ffffff", "#e5e7eb", "#9ca3af"]}
+            colors={gradients.neutralFade}
             locations={[0, 0.35, 0.85]}
             start={{ x: 0, y: 0 }}
             end={{ x: 1, y: 1 }}

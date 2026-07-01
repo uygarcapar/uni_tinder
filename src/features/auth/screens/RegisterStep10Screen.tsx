@@ -12,6 +12,7 @@ import AnimatedPressableShared from "@/shared/components/AnimatedPressable";
 import { useForm } from "react-hook-form";
 import { zodResolver } from "@hookform/resolvers/zod";
 import { interestedInSchema, InterestedInForm } from "@/shared/schemas/formSchemas";
+import { colors, gradients } from "../../../shared/theme/colors";
 
 // Backend InterestedIn enumName ("Men"/"Women"/"NonBinary") bekliyor.
 const OPTIONS = [
@@ -62,9 +63,9 @@ export default function RegisterStep10Screen({ navigation }: NativeStackScreenPr
   });
 
   return (
-    <View className="flex-1 bg-[#121212]">
+    <View className="flex-1 bg-bg">
       {/* Header */}
-      <View className="bg-[#121212] pt-16 pb-6 px-6">
+      <View className="bg-bg pt-16 pb-6 px-6">
         <View className="flex-row items-center justify-between">
           <TouchableOpacity activeOpacity={1} onPress={() => navigation.goBack()} className="flex-row items-center">
             <Text className="text-4xl mr-2 text-white">←</Text>
@@ -94,16 +95,16 @@ export default function RegisterStep10Screen({ navigation }: NativeStackScreenPr
                   borderCurve: "continuous",
                   borderWidth: 0.5,
                   borderColor: active ? "rgba(255,255,255,0.3)" : "rgba(255,255,255,0.1)",
-                  backgroundColor: active ? "#3e3e3e" : "#1E1E1E",
+                  backgroundColor: active ? colors.border2 : colors.surface,
                   paddingHorizontal: 20,
                   paddingVertical: 18,
                   position: "relative",
                 }}
               >
-                <Text style={{ color: "#fff", fontSize: 17, fontWeight: "600" }}>{opt.label}</Text>
+                <Text style={{ color: colors.text, fontSize: 17, fontWeight: "600" }}>{opt.label}</Text>
                 {active && (
                   <View pointerEvents="none" style={{ position: "absolute", right: 20, top: 0, bottom: 0, justifyContent: "center" }}>
-                    <Check size={20} color="#fff" strokeWidth={2.5} />
+                    <Check size={20} color={colors.text} strokeWidth={2.5} />
                   </View>
                 )}
               </AnimatedPressable>
@@ -112,24 +113,24 @@ export default function RegisterStep10Screen({ navigation }: NativeStackScreenPr
         </View>
 
         <View className="flex-row gap-2 px-2 mr-6 items-center mt-5">
-          <InfoIcon size={16} color="#9CA3AF" className="mt-3" />
+          <InfoIcon size={16} color={colors.textSecondary} className="mt-3" />
           <Text className="text-gray-400 text-[12px]">
             Seçimlerini profilinden filtreleyerek detaylandırabilirsin.
           </Text>
         </View>
 
         {errors.interestedIn ? (
-          <Text style={{ color: "#ef4444", textAlign: "center", marginTop: 20, fontSize: 14 }}>
+          <Text style={{ color: colors.error, textAlign: "center", marginTop: 20, fontSize: 14 }}>
             {errors.interestedIn.message}
           </Text>
         ) : null}
       </View>
 
       <KeyboardStickyView offset={{ closed: 0, opened: 0 }}>
-        <View style={{ paddingHorizontal: 32, paddingBottom: 32, paddingTop: 16, backgroundColor: "#121212" }}>
+        <View style={{ paddingHorizontal: 32, paddingBottom: 32, paddingTop: 16, backgroundColor: colors.bg }}>
           <AnimatedPressableShared onPress={handleNext} style={{ borderRadius: 999, overflow: "hidden" }}>
             <LinearGradient
-              colors={["#ffffff", "#e5e7eb", "#9ca3af"]}
+              colors={gradients.neutralFade}
               locations={[0, 0.35, 0.85]}
               start={{ x: 0, y: 0 }}
               end={{ x: 1, y: 1 }}

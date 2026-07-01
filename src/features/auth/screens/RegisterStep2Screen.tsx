@@ -24,6 +24,7 @@ import { API_BASE_URL, API_ENDPOINTS } from "@/shared/constants/api";
 import { useReanimatedKeyboardAnimation } from "react-native-keyboard-controller";
 import Animated, { useAnimatedStyle } from "react-native-reanimated";
 import AnimatedPressable from "@/shared/components/AnimatedPressable";
+import { colors, gradients } from "../../../shared/theme/colors";
 
 export default function RegisterStep2Screen({ route, navigation }: NativeStackScreenProps<AuthStackParamList, 'RegisterStep2'>) {
   const { user, isAuthenticated } = useAppSelector((s) => (s as any).auth);
@@ -179,7 +180,7 @@ export default function RegisterStep2Screen({ route, navigation }: NativeStackSc
   };
 
   return (
-    <View className="flex-1 bg-[#121212] -mt-[100px]">
+    <View className="flex-1 bg-bg -mt-[100px]">
       {resendSuccess && (
         <View
           pointerEvents="none"
@@ -208,7 +209,7 @@ export default function RegisterStep2Screen({ route, navigation }: NativeStackSc
               gap: 10,
             }}
           >
-            <Check size={20} color="#fff" strokeWidth={3} />
+            <Check size={20} color={colors.text} strokeWidth={3} />
             <Text className="text-white text-[15px] font-medium">
               Kod başarıyla gönderildi!
             </Text>
@@ -229,7 +230,7 @@ export default function RegisterStep2Screen({ route, navigation }: NativeStackSc
           ]}
         >
           <View className="items-center flex flex-col gap-10 p-8">
-            <Mailbox strokeWidth={1} size={100} color="#fff" />
+            <Mailbox strokeWidth={1} size={100} color={colors.text} />
             <View>
               <Text className="text-3xl font-bold text-white mb-3 text-center">
                 E-Mail'ini doğrula.
@@ -249,7 +250,7 @@ export default function RegisterStep2Screen({ route, navigation }: NativeStackSc
                 <TextInput
                   key={index}
                   ref={(ref) => { inputRefs.current[index] = ref; }}
-                  className={`w-12 h-16 bg-[#1e1e1e] text-white rounded-[15px] text-center text-2xl font-semibold p-0 ${
+                  className={`w-12 h-16 bg-surface text-white rounded-[15px] text-center text-2xl font-semibold p-0 ${
                     error ? "border border-red-600" : ""
                   }`}
                   style={{
@@ -280,17 +281,17 @@ export default function RegisterStep2Screen({ route, navigation }: NativeStackSc
                 disabled={resendLoading || countdown > 0}
               >
                 {resendLoading ? (
-                  <ActivityIndicator size="small" color="#fff" />
+                  <ActivityIndicator size="small" color={colors.text} />
                 ) : countdown > 0 ? (
                   <View className="flex-row items-center gap-2">
-                    <RotateCcw size={16} color="#d1d5db" strokeWidth={2.5} />
+                    <RotateCcw size={16} color={colors.neutral200} strokeWidth={2.5} />
                     <Text className="text-gray-300 font-medium">
                       Tekrar gönder ({countdown}s)
                     </Text>
                   </View>
                 ) : (
                   <View className="flex-row py-[2px] items-center gap-2">
-                    <RotateCcw size={16} color="#fff" strokeWidth={2.5} />
+                    <RotateCcw size={16} color={colors.text} strokeWidth={2.5} />
                     <Text className="text-white font-medium">
                       Tekrar Gönder
                     </Text>
@@ -310,7 +311,7 @@ export default function RegisterStep2Screen({ route, navigation }: NativeStackSc
               disabled={loading || code.some((d) => d === "")}
             >
               <LinearGradient
-                colors={["#ffffff", "#e5e7eb", "#9ca3af"]}
+                colors={gradients.neutralFade}
                 locations={[0, 0.35, 0.85]}
                 start={{ x: 0, y: 0 }}
                 end={{ x: 1, y: 1 }}
@@ -344,7 +345,7 @@ export default function RegisterStep2Screen({ route, navigation }: NativeStackSc
                 paddingVertical: 18,
               }}
             >
-              <ArrowLeft size={16} color="#fff" strokeWidth={2.5} />
+              <ArrowLeft size={16} color={colors.text} strokeWidth={2.5} />
               <Text className="text-white font-medium">Geri Dön</Text>
             </TouchableOpacity>
           </View>

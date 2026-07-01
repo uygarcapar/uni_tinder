@@ -18,6 +18,7 @@ import AnimatedPressable from "@/shared/components/AnimatedPressable";
 import { useForm, Controller } from "react-hook-form";
 import { zodResolver } from "@hookform/resolvers/zod";
 import { firstNameSchema, FirstNameForm } from "@/shared/schemas/formSchemas";
+import { colors, gradients } from "../../../shared/theme/colors";
 
 export default function RegisterStep5Screen({ navigation }: NativeStackScreenProps<AuthStackParamList, 'RegisterStep5'>) {
   const dispatch = useAppDispatch();
@@ -38,8 +39,8 @@ export default function RegisterStep5Screen({ navigation }: NativeStackScreenPro
   });
 
   return (
-    <View className="flex-1 bg-[#121212]">
-      <View className="bg-[#121212] pt-16 pb-6 px-6">
+    <View className="flex-1 bg-bg">
+      <View className="bg-bg pt-16 pb-6 px-6">
         <TouchableOpacity
           activeOpacity={1}
           onPress={() => navigation.goBack()}
@@ -78,7 +79,7 @@ export default function RegisterStep5Screen({ navigation }: NativeStackScreenPro
                     overflow: "hidden",
                     borderWidth: 0.5,
                     borderColor: errors.firstName
-                      ? "#ef4444"
+                      ? colors.error
                       : "rgba(255,255,255,0.1)",
                   }}
                 >
@@ -88,10 +89,10 @@ export default function RegisterStep5Screen({ navigation }: NativeStackScreenPro
                       paddingHorizontal: 16,
                       paddingVertical: 16,
                       fontSize: 18,
-                      color: "#fff",
+                      color: colors.text,
                     }}
                     placeholder="Adın"
-                    placeholderTextColor="#9CA3AF"
+                    placeholderTextColor={colors.textSecondary}
                     value={value}
                     onChangeText={onChange}
                   />
@@ -119,7 +120,7 @@ export default function RegisterStep5Screen({ navigation }: NativeStackScreenPro
             }}
           >
             <LinearGradient
-              colors={["#ffffff", "#e5e7eb", "#9ca3af"]}
+              colors={gradients.neutralFade}
               locations={[0, 0.35, 0.85]}
               start={{ x: 0, y: 0 }}
               end={{ x: 1, y: 1 }}

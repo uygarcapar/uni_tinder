@@ -37,6 +37,7 @@ import ImageCropPicker from "react-native-image-crop-picker";
 import { useForm } from "react-hook-form";
 import { zodResolver } from "@hookform/resolvers/zod";
 import { photosSchema, PhotosForm } from "@/shared/schemas/formSchemas";
+import { colors, gradients } from "../../../shared/theme/colors";
 
 const { width } = Dimensions.get("window");
 const CONTAINER_PADDING = 24;
@@ -126,13 +127,13 @@ function SortablePhoto({ id, index, positions, maxIndex, children, onDragStart, 
 function PhotoCard({ photo, onRemove }: any) {
   return (
     <View style={{ width: "100%", height: "100%" }}>
-      <View style={{ width: "100%", height: "100%", borderRadius: 32, borderCurve: "continuous", overflow: "hidden", backgroundColor: "#1E1E1E" }}>
+      <View style={{ width: "100%", height: "100%", borderRadius: 32, borderCurve: "continuous", overflow: "hidden", backgroundColor: colors.surface }}>
         <Image source={{ uri: photo }} style={{ width: "100%", height: "100%" }} resizeMode="cover" />
       </View>
       <TouchableOpacity
         activeOpacity={1}
         onPress={onRemove}
-        style={{ position: "absolute", top: -8, right: -8, borderRadius: 999, width: 32, height: 32, alignItems: "center", justifyContent: "center", zIndex: 50, backgroundColor: "#1E1E1E", borderWidth: 0.4, borderColor: "#696b70" }}
+        style={{ position: "absolute", top: -8, right: -8, borderRadius: 999, width: 32, height: 32, alignItems: "center", justifyContent: "center", zIndex: 50, backgroundColor: colors.surface, borderWidth: 0.4, borderColor: "#696b70" }}
       >
         <View pointerEvents="none"><X size={16} strokeWidth={3} color="#7a7d82" /></View>
       </TouchableOpacity>
@@ -221,9 +222,9 @@ export default function RegisterStep15Screen({ navigation }: NativeStackScreenPr
   const addPos = getPosition(photos.length);
 
   return (
-    <View className="flex-1 bg-[#121212]">
+    <View className="flex-1 bg-bg">
       {/* Header */}
-      <View className="bg-[#121212] pt-16 pb-6 px-6">
+      <View className="bg-bg pt-16 pb-6 px-6">
         <TouchableOpacity activeOpacity={1} onPress={() => navigation.goBack()} className="flex-row items-center">
           <Text className="text-4xl mr-2 text-white">←</Text>
         </TouchableOpacity>
@@ -266,9 +267,9 @@ export default function RegisterStep15Screen({ navigation }: NativeStackScreenPr
                 activeOpacity={1}
                 onPress={pickImage}
                 disabled={loading}
-                style={{ width: "100%", height: "100%", borderRadius: 32, borderCurve: "continuous", overflow: "hidden", borderWidth: 0.5, borderColor: "rgba(255,255,255,0.1)", backgroundColor: "#1E1E1E", alignItems: "center", justifyContent: "center", opacity: loading ? 0.5 : 1 }}
+                style={{ width: "100%", height: "100%", borderRadius: 32, borderCurve: "continuous", overflow: "hidden", borderWidth: 0.5, borderColor: "rgba(255,255,255,0.1)", backgroundColor: colors.surface, alignItems: "center", justifyContent: "center", opacity: loading ? 0.5 : 1 }}
               >
-                <View pointerEvents="none"><Plus size={40} strokeWidth={2} color="#6B7280" /></View>
+                <View pointerEvents="none"><Plus size={40} strokeWidth={2} color={colors.textMuted} /></View>
               </TouchableOpacity>
             </View>
           )}
@@ -282,7 +283,7 @@ export default function RegisterStep15Screen({ navigation }: NativeStackScreenPr
           disabled={loading || photos.length < 2 || isDraggingPhoto}
           style={{ borderRadius: 999, borderCurve: "continuous", overflow: "hidden", opacity: loading || photos.length < 2 || isDraggingPhoto ? 0.5 : 1 }}
         >
-          <LinearGradient colors={["#ffffff", "#e5e7eb", "#9ca3af"]} locations={[0, 0.35, 0.85]} start={{ x: 0, y: 0 }} end={{ x: 1, y: 1 }} className="py-3.5">
+          <LinearGradient colors={gradients.neutralFade} locations={[0, 0.35, 0.85]} start={{ x: 0, y: 0 }} end={{ x: 1, y: 1 }} className="py-3.5">
             {loading ? (
               <View className="py-[18px]"><ActivityIndicator color="#000" /></View>
             ) : (

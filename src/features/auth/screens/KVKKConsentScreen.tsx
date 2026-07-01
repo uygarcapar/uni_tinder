@@ -11,6 +11,7 @@ import api from "@/shared/services/api";
 import { API_ENDPOINTS } from "@/shared/constants/api";
 import { setKvkkAccepted } from "@/features/auth/authSlice";
 import AppBottomSheet from "@/shared/components/AppBottomSheet";
+import { colors } from "../../../shared/theme/colors";
 
 export const CURRENT_KVKK_VERSION = "1.0";
 
@@ -78,8 +79,8 @@ export default function KVKKConsentScreen({ visible }) {
                 height: 22,
                 borderRadius: 6,
                 borderWidth: 1.5,
-                borderColor: agreed ? "#fff" : "rgba(255,255,255,0.3)",
-                backgroundColor: agreed ? "#fff" : "transparent",
+                borderColor: agreed ? colors.text : "rgba(255,255,255,0.3)",
+                backgroundColor: agreed ? colors.text : "transparent",
                 alignItems: "center",
                 justifyContent: "center",
                 marginTop: 1,
@@ -94,7 +95,7 @@ export default function KVKKConsentScreen({ visible }) {
             </View>
             <Text
               style={{
-                color: "#9CA3AF",
+                color: colors.textSecondary,
                 fontSize: 13,
                 lineHeight: 20,
                 flex: 1,
@@ -113,13 +114,13 @@ export default function KVKKConsentScreen({ visible }) {
               borderRadius: 999,
               borderCurve: "continuous",
               overflow: "hidden",
-              backgroundColor: agreed ? "#fff" : "rgba(255,255,255,0.15)",
+              backgroundColor: agreed ? colors.text : "rgba(255,255,255,0.15)",
               paddingVertical: 16,
               alignItems: "center",
             }}
           >
             {loading ? (
-              <ActivityIndicator color={agreed ? "#000" : "#fff"} />
+              <ActivityIndicator color={agreed ? "#000" : colors.text} />
             ) : (
               <Text
                 style={{
@@ -146,7 +147,7 @@ export default function KVKKConsentScreen({ visible }) {
       backdropComponent={renderBackdrop}
       footer={footer}
       backgroundStyle={{
-        backgroundColor: "#121212",
+        backgroundColor: colors.bg,
         borderTopLeftRadius: 36,
         borderTopRightRadius: 36,
       }}
@@ -155,7 +156,7 @@ export default function KVKKConsentScreen({ visible }) {
       <View
         style={{
           flex: 1,
-          backgroundColor: "#121212",
+          backgroundColor: colors.bg,
           borderTopLeftRadius: 36,
           borderTopRightRadius: 36,
           overflow: "hidden",
@@ -171,15 +172,15 @@ export default function KVKKConsentScreen({ visible }) {
             gap: 12,
           }}
         >
-          <ShieldCheck size={28} color="#fff" strokeWidth={1.5} pointerEvents="none" />
-          <Text style={{ color: "#fff", fontSize: 22, fontWeight: "700" }}>
+          <ShieldCheck size={28} color={colors.text} strokeWidth={1.5} pointerEvents="none" />
+          <Text style={{ color: colors.text, fontSize: 22, fontWeight: "700" }}>
             Gizlilik & KVKK
           </Text>
         </View>
 
         <Text
           style={{
-            color: "#9CA3AF",
+            color: colors.textSecondary,
             fontSize: 13,
             paddingHorizontal: 24,
             marginBottom: 16,
@@ -253,10 +254,10 @@ export default function KVKKConsentScreen({ visible }) {
 function Section({ title, children }) {
   return (
     <View style={{ gap: 6 }}>
-      <Text style={{ color: "#fff", fontSize: 14, fontWeight: "600" }}>
+      <Text style={{ color: colors.text, fontSize: 14, fontWeight: "600" }}>
         {title}
       </Text>
-      <Text style={{ color: "#9CA3AF", fontSize: 13, lineHeight: 20 }}>
+      <Text style={{ color: colors.textSecondary, fontSize: 13, lineHeight: 20 }}>
         {children}
       </Text>
     </View>

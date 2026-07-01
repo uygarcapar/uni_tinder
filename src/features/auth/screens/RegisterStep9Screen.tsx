@@ -23,6 +23,7 @@ import SearchableListSheet from "@/shared/components/SearchableListSheet";
 import { useForm } from "react-hook-form";
 import { zodResolver } from "@hookform/resolvers/zod";
 import { locationSchema, LocationForm } from "@/shared/schemas/formSchemas";
+import { colors, gradients } from "../../../shared/theme/colors";
 
 export default function RegisterStep9Screen({ navigation }: NativeStackScreenProps<AuthStackParamList, 'RegisterStep9'>) {
   const dispatch = useAppDispatch();
@@ -128,9 +129,9 @@ export default function RegisterStep9Screen({ navigation }: NativeStackScreenPro
   };
 
   return (
-    <View className="flex-1 bg-[#121212]">
+    <View className="flex-1 bg-bg">
       {/* Header */}
-      <View className="bg-[#121212] pt-16 pb-6 px-6">
+      <View className="bg-bg pt-16 pb-6 px-6">
         <View className="flex-row items-center justify-between">
           <TouchableOpacity activeOpacity={1} onPress={() => navigation.goBack()} className="flex-row items-center">
             <Text className="text-4xl mr-2 text-white">←</Text>
@@ -164,11 +165,11 @@ export default function RegisterStep9Screen({ navigation }: NativeStackScreenPro
               className=" border-[0.5px] border-white/10 px-4 py-5 flex-row items-center justify-between"
             >
               {loadingCities ? (
-                <View className="flex-1 items-center justify-center"><ActivityIndicator size="small" color="#fff" /></View>
+                <View className="flex-1 items-center justify-center"><ActivityIndicator size="small" color={colors.text} /></View>
               ) : (
                 <>
                   <Text className={`${city ? "text-white" : "text-gray-400"} text-[16px] font-medium`}>{getCityLabel()}</Text>
-                  <ChevronDown size={20} color="#9CA3AF" strokeWidth={2} pointerEvents="none" />
+                  <ChevronDown size={20} color={colors.textSecondary} strokeWidth={2} pointerEvents="none" />
                 </>
               )}
             </TouchableOpacity>
@@ -184,11 +185,11 @@ export default function RegisterStep9Screen({ navigation }: NativeStackScreenPro
               className="  border-[0.5px] border-white/10 px-4 py-5 flex-row items-center justify-between"
             >
               {loadingDistricts ? (
-                <View className="flex-1 items-center justify-center"><ActivityIndicator size="small" color="#fff" /></View>
+                <View className="flex-1 items-center justify-center"><ActivityIndicator size="small" color={colors.text} /></View>
               ) : (
                 <>
                   <Text className={`${district ? "text-white" : "text-gray-400"} text-[16px] font-medium`}>{getDistrictLabel()}</Text>
-                  <ChevronDown size={20} color="#9CA3AF" strokeWidth={2} pointerEvents="none" />
+                  <ChevronDown size={20} color={colors.textSecondary} strokeWidth={2} pointerEvents="none" />
                 </>
               )}
             </TouchableOpacity>
@@ -198,13 +199,13 @@ export default function RegisterStep9Screen({ navigation }: NativeStackScreenPro
 
       {/* Sticky Button with KeyboardStickyView */}
       <KeyboardStickyView offset={{ closed: 0, opened: 0 }}>
-        <View className="px-8 pb-8 pt-4 bg-[#121212]">
+        <View className="px-8 pb-8 pt-4 bg-bg">
           <AnimatedPressable
             onPress={handleNext}
             style={{ borderRadius: 999, borderCurve: "continuous", overflow: "hidden" }}
           >
             <LinearGradient
-              colors={["#ffffff", "#e5e7eb", "#9ca3af"]}
+              colors={gradients.neutralFade}
               locations={[0, 0.35, 0.85]}
               start={{ x: 0, y: 0 }}
               end={{ x: 1, y: 1 }}
@@ -225,7 +226,7 @@ export default function RegisterStep9Screen({ navigation }: NativeStackScreenPro
         snapPoints={snapPoints}
         backdropComponent={renderBackdrop}
         backgroundStyle={{ borderRadius: 44 }}
-        handleIndicatorStyle={{ backgroundColor: "#9CA3AF" }}
+        handleIndicatorStyle={{ backgroundColor: colors.textSecondary }}
       >
         <SearchableListSheet
           initialValue={city}
@@ -242,7 +243,7 @@ export default function RegisterStep9Screen({ navigation }: NativeStackScreenPro
         snapPoints={snapPoints}
         backdropComponent={renderBackdrop}
         backgroundStyle={{ borderRadius: 44 }}
-        handleIndicatorStyle={{ backgroundColor: "#9CA3AF" }}
+        handleIndicatorStyle={{ backgroundColor: colors.textSecondary }}
       >
         <SearchableListSheet
           initialValue={district}

@@ -27,6 +27,7 @@ import {
 } from "@gorhom/bottom-sheet";
 import { BlurView } from "expo-blur";
 import AppBottomSheet from "@/shared/components/AppBottomSheet";
+import { colors } from "../../../shared/theme/colors";
 // -----------------------------
 
 export default function RegisterScreen({ navigation }) {
@@ -253,7 +254,7 @@ export default function RegisterScreen({ navigation }) {
                   ref={firstNameInputRef}
                   className="border border-gray-300 rounded-2xl px-4 py-3.5 text-[18px] text-gray-900"
                   placeholder="Adın"
-                  placeholderTextColor="#9CA3AF"
+                  placeholderTextColor={colors.textSecondary}
                   value={formData.firstName}
                   onChangeText={(value) => updateField("firstName", value)}
                   autoFocus={true}
@@ -267,7 +268,7 @@ export default function RegisterScreen({ navigation }) {
                 <TextInput
                   className="border border-gray-300  rounded-2xl px-4 py-3.5 text-[18px] text-gray-900"
                   placeholder="Soyadın"
-                  placeholderTextColor="#9CA3AF"
+                  placeholderTextColor={colors.textSecondary}
                   value={formData.lastName}
                   onChangeText={(value) => updateField("lastName", value)}
                 />
@@ -436,7 +437,7 @@ export default function RegisterScreen({ navigation }) {
               } rounded-full py-4 items-center`}
             >
               {loading ? (
-                <ActivityIndicator color="#fff" />
+                <ActivityIndicator color={colors.text} />
               ) : (
                 <Text className="text-white font-bold text-lg">Kayıt Ol</Text>
               )}
@@ -445,7 +446,7 @@ export default function RegisterScreen({ navigation }) {
             <TouchableOpacity
               activeOpacity={1}
               onPress={handleNext}
-              className="bg-[#f57656] rounded-full py-3.5 items-center"
+              className="bg-primary rounded-full py-3.5 items-center"
             >
               <Text className="text-white font-bold text-lg">Devam Et</Text>
             </TouchableOpacity>

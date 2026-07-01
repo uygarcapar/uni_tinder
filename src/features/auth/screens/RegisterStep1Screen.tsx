@@ -21,6 +21,7 @@ import { InfoIcon } from "lucide-react-native";
 import { useForm, Controller } from "react-hook-form";
 import { zodResolver } from "@hookform/resolvers/zod";
 import { emailSchema, EmailForm } from "@/shared/schemas/formSchemas";
+import { colors, gradients } from "../../../shared/theme/colors";
 
 export default function RegisterStep1Screen({ navigation }: NativeStackScreenProps<AuthStackParamList, 'RegisterStep1'>) {
   const dispatch = useAppDispatch();
@@ -116,8 +117,8 @@ export default function RegisterStep1Screen({ navigation }: NativeStackScreenPro
   const displayError = errors.email?.message || error;
 
   return (
-    <View className="flex-1 bg-[#121212]">
-      <View className="bg-[#121212] pt-16 pb-6 px-6">
+    <View className="flex-1 bg-bg">
+      <View className="bg-bg pt-16 pb-6 px-6">
         <TouchableOpacity activeOpacity={1} onPress={() => navigation.goBack()}>
           <Text className="text-4xl mr-2 text-white">←</Text>
         </TouchableOpacity>
@@ -143,7 +144,7 @@ export default function RegisterStep1Screen({ navigation }: NativeStackScreenPro
                   borderCurve: "continuous",
                   overflow: "hidden",
                   borderWidth: 0.5,
-                  borderColor: displayError ? "#ef4444" : "rgba(255,255,255,0.1)",
+                  borderColor: displayError ? colors.error : "rgba(255,255,255,0.1)",
                 }}
               >
                 <TextInput
@@ -152,10 +153,10 @@ export default function RegisterStep1Screen({ navigation }: NativeStackScreenPro
                     paddingHorizontal: 16,
                     paddingVertical: 16,
                     fontSize: 18,
-                    color: "#fff",
+                    color: colors.text,
                   }}
                   placeholder="edu.tr"
-                  placeholderTextColor="#9CA3AF"
+                  placeholderTextColor={colors.textSecondary}
                   keyboardType="email-address"
                   autoCapitalize="none"
                   value={value}
@@ -169,7 +170,7 @@ export default function RegisterStep1Screen({ navigation }: NativeStackScreenPro
             )}
           />
           <View className="flex-row gap-2 px-2 items-center mt-3">
-            <InfoIcon size={16} color="#9CA3AF" className="mt-3" />
+            <InfoIcon size={16} color={colors.textSecondary} className="mt-3" />
             <Text className="text-gray-400 text-[12px]">
               Sadece akademik e-mail adresleri kabul edilir. Örnek:
               mert@university.edu.tr
@@ -183,7 +184,7 @@ export default function RegisterStep1Screen({ navigation }: NativeStackScreenPro
       </TouchableWithoutFeedback>
 
       <KeyboardStickyView offset={{ closed: 0, opened: 15 }}>
-        <View className="px-6 pb-8 pt-4 bg-[#121212]">
+        <View className="px-6 pb-8 pt-4 bg-bg">
           <AnimatedPressable
             onPress={handleSendVerification}
             disabled={loading}
@@ -194,7 +195,7 @@ export default function RegisterStep1Screen({ navigation }: NativeStackScreenPro
             }}
           >
             <LinearGradient
-              colors={["#ffffff", "#e5e7eb", "#9ca3af"]}
+              colors={gradients.neutralFade}
               locations={[0, 0.35, 0.85]}
               start={{ x: 0, y: 0 }}
               end={{ x: 1, y: 1 }}

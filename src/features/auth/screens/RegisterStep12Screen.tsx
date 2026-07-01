@@ -21,6 +21,7 @@ import AnimatedPressable from "@/shared/components/AnimatedPressable";
 import { useForm } from "react-hook-form";
 import { zodResolver } from "@hookform/resolvers/zod";
 import { heightSchema, HeightForm } from "@/shared/schemas/formSchemas";
+import { colors, gradients } from "../../../shared/theme/colors";
 
 const MIN_HEIGHT = 140;
 const MAX_HEIGHT = 220;
@@ -109,9 +110,9 @@ export default function RegisterStep12Screen({ navigation }: NativeStackScreenPr
   });
 
   return (
-    <View className="flex-1 bg-[#121212]">
+    <View className="flex-1 bg-bg">
       {/* Header */}
-      <View className="bg-[#121212] pt-16 pb-6 px-6">
+      <View className="bg-bg pt-16 pb-6 px-6">
         <TouchableOpacity activeOpacity={1} onPress={() => navigation.goBack()} className="flex-row items-center">
           <Text className="text-4xl mr-2 text-white">←</Text>
         </TouchableOpacity>
@@ -146,7 +147,7 @@ export default function RegisterStep12Screen({ navigation }: NativeStackScreenPr
                   width: 3,
                   marginLeft: -0.75,
                   borderRadius: 2,
-                  backgroundColor: "#4B5563",
+                  backgroundColor: colors.textDisabled,
                   zIndex: 0,
                 }}
               />
@@ -156,7 +157,7 @@ export default function RegisterStep12Screen({ navigation }: NativeStackScreenPr
                   borderCurve: "continuous",
                   overflow: "hidden",
                   borderWidth: 0.5,
-                  borderColor: errors.height ? "#ef4444" : "rgba(255,255,255,0.1)",
+                  borderColor: errors.height ? colors.error : "rgba(255,255,255,0.1)",
                 }}
               >
                 <View
@@ -190,7 +191,7 @@ export default function RegisterStep12Screen({ navigation }: NativeStackScreenPr
                 <View pointerEvents="none" style={{ paddingHorizontal: 20, paddingVertical: 20, alignItems: "center", justifyContent: "center" }}>
                   <Animated.Text
                     style={{
-                      color: "#fff",
+                      color: colors.text,
                       fontSize: 22,
                       fontWeight: "700",
                       fontVariant: ["tabular-nums"],
@@ -215,13 +216,13 @@ export default function RegisterStep12Screen({ navigation }: NativeStackScreenPr
 
       {/* Sticky Button with KeyboardStickyView */}
       <KeyboardStickyView offset={{ closed: 0, opened: 0 }}>
-        <View className="px-8 pb-8 pt-4 bg-[#121212]">
+        <View className="px-8 pb-8 pt-4 bg-bg">
           <AnimatedPressable
             onPress={handleNext}
             style={{ borderRadius: 999, borderCurve: "continuous", overflow: "hidden" }}
           >
             <LinearGradient
-              colors={["#ffffff", "#e5e7eb", "#9ca3af"]}
+              colors={gradients.neutralFade}
               locations={[0, 0.35, 0.85]}
               start={{ x: 0, y: 0 }}
               end={{ x: 1, y: 1 }}

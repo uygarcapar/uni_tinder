@@ -18,6 +18,7 @@ import AnimatedPressable from "@/shared/components/AnimatedPressable";
 import { useForm, Controller } from "react-hook-form";
 import { zodResolver } from "@hookform/resolvers/zod";
 import { dobSchema, DobForm } from "@/shared/schemas/formSchemas";
+import { colors, gradients } from "../../../shared/theme/colors";
 
 export default function RegisterStep6Screen({ navigation }: NativeStackScreenProps<AuthStackParamList, 'RegisterStep6'>) {
   const dispatch = useAppDispatch();
@@ -71,18 +72,18 @@ export default function RegisterStep6Screen({ navigation }: NativeStackScreenPro
     borderCurve: "continuous",
     overflow: "hidden",
     borderWidth: 0.5,
-    borderColor: hasError ? "#ef4444" : "rgba(255,255,255,0.1)",
+    borderColor: hasError ? colors.error : "rgba(255,255,255,0.1)",
     paddingHorizontal: 16,
     paddingVertical: 16,
     fontSize: 22,
     fontWeight: "600",
-    color: "#fff",
+    color: colors.text,
     textAlign: "center" as const,
   });
 
   return (
-    <View className="flex-1 bg-[#121212]">
-      <View className="bg-[#121212] pt-16 pb-6 px-6">
+    <View className="flex-1 bg-bg">
+      <View className="bg-bg pt-16 pb-6 px-6">
         <TouchableOpacity
           activeOpacity={1}
           onPress={() => navigation.goBack()}
@@ -116,7 +117,7 @@ export default function RegisterStep6Screen({ navigation }: NativeStackScreenPro
                     ref={dayRef}
                     style={inputStyle(!!errors.day)}
                     placeholder="gg"
-                    placeholderTextColor="#595959"
+                    placeholderTextColor={colors.neutral700}
                     keyboardType="number-pad"
                     maxLength={2}
                     value={value}
@@ -146,7 +147,7 @@ export default function RegisterStep6Screen({ navigation }: NativeStackScreenPro
                     ref={monthRef}
                     style={inputStyle(!!errors.month)}
                     placeholder="aa"
-                    placeholderTextColor="#595959"
+                    placeholderTextColor={colors.neutral700}
                     keyboardType="number-pad"
                     maxLength={2}
                     value={value}
@@ -177,7 +178,7 @@ export default function RegisterStep6Screen({ navigation }: NativeStackScreenPro
                     ref={yearRef}
                     style={inputStyle(!!errors.year)}
                     placeholder="yyyy"
-                    placeholderTextColor="#595959"
+                    placeholderTextColor={colors.neutral700}
                     keyboardType="number-pad"
                     maxLength={4}
                     value={value}
@@ -215,7 +216,7 @@ export default function RegisterStep6Screen({ navigation }: NativeStackScreenPro
             }}
           >
             <LinearGradient
-              colors={["#ffffff", "#e5e7eb", "#9ca3af"]}
+              colors={gradients.neutralFade}
               locations={[0, 0.35, 0.85]}
               start={{ x: 0, y: 0 }}
               end={{ x: 1, y: 1 }}

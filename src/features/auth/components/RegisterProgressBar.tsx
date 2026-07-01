@@ -6,15 +6,18 @@ import Animated, {
   withTiming,
   Easing,
 } from "react-native-reanimated";
+import { colors } from "../../../shared/theme/colors";
 
 const FIRST_STEP = 3;
-const LAST_STEP = 15;
-const TOTAL_STEPS = LAST_STEP - FIRST_STEP + 1;
+// Step4 (phone) kayıt akışından çıkarıldı; numaralandırma korunuyor ama
+// progress 12 visible adım üzerinden hesaplanıyor.
+const TOTAL_STEPS = 12;
 
 export default function RegisterProgressBar({ step }: any) {
+  const displayStep = step > 4 ? step - 1 : step;
   const clamp = (n) => Math.max(0, Math.min(TOTAL_STEPS, n));
-  const target = clamp(step - FIRST_STEP + 1) / TOTAL_STEPS;
-  const initial = clamp(step - FIRST_STEP) / TOTAL_STEPS;
+  const target = clamp(displayStep - FIRST_STEP + 1) / TOTAL_STEPS;
+  const initial = clamp(displayStep - FIRST_STEP) / TOTAL_STEPS;
 
   const progress = useSharedValue(initial);
 
@@ -43,7 +46,7 @@ export default function RegisterProgressBar({ step }: any) {
           style={[
             {
               height: "100%",
-              backgroundColor: "#fff",
+              backgroundColor: colors.text,
               borderRadius: 999,
             },
             fillStyle,

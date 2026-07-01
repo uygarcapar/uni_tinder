@@ -12,6 +12,7 @@ import AnimatedPressableShared from "@/shared/components/AnimatedPressable";
 import { useForm } from "react-hook-form";
 import { zodResolver } from "@hookform/resolvers/zod";
 import { genderSchema, GenderForm } from "@/shared/schemas/formSchemas";
+import { colors, gradients } from "../../../shared/theme/colors";
 
 // Backend Gender'ı enumName ("Male"/"Female"/"NonBinary" vb.) bekliyor.
 const GENDER_CATEGORIES = [
@@ -140,8 +141,8 @@ export default function RegisterStep7Screen({ navigation }: NativeStackScreenPro
   });
 
   return (
-    <View className="flex-1 bg-[#121212]">
-      <View className="bg-[#121212] pt-16 pb-6 px-6">
+    <View className="flex-1 bg-bg">
+      <View className="bg-bg pt-16 pb-6 px-6">
         <TouchableOpacity
           activeOpacity={1}
           onPress={() => navigation.goBack()}
@@ -195,23 +196,23 @@ export default function RegisterStep7Screen({ navigation }: NativeStackScreenPro
                       overflow: "hidden",
                       borderWidth: 0.5,
                       borderColor: isSelected ? "rgba(255,255,255,0.3)" : "rgba(255,255,255,0.1)",
-                      backgroundColor: isSelected ? "#3e3e3e" : "#1E1E1E",
+                      backgroundColor: isSelected ? colors.border2 : colors.surface,
                       paddingHorizontal: 20,
                       paddingVertical: 18,
                     }}
                   >
-                    <Text style={{ color: "#fff", fontSize: 17, fontWeight: "600" }}>
+                    <Text style={{ color: colors.text, fontSize: 17, fontWeight: "600" }}>
                       {isSelected && selectedSubName ? selectedSubName : category.categoryName}
                     </Text>
                     {isSelected && (
                       <View style={{ flexDirection: "row", alignItems: "center", gap: 4, marginTop: 6 }}>
-                        <Text style={{ color: "#9CA3AF", fontSize: 12, fontWeight: "500" }}>
+                        <Text style={{ color: colors.textSecondary, fontSize: 12, fontWeight: "500" }}>
                           Detaylı Seç
                         </Text>
                         {isExpanded ? (
-                          <ChevronUp size={14} color="#9CA3AF" strokeWidth={2.5} />
+                          <ChevronUp size={14} color={colors.textSecondary} strokeWidth={2.5} />
                         ) : (
-                          <ChevronDown size={14} color="#9CA3AF" strokeWidth={2.5} />
+                          <ChevronDown size={14} color={colors.textSecondary} strokeWidth={2.5} />
                         )}
                       </View>
                     )}
@@ -228,7 +229,7 @@ export default function RegisterStep7Screen({ navigation }: NativeStackScreenPro
                         justifyContent: "center",
                       }}
                     >
-                      <Check size={20} color="#fff" strokeWidth={2.5} />
+                      <Check size={20} color={colors.text} strokeWidth={2.5} />
                     </View>
                   )}
                 </View>
@@ -247,12 +248,12 @@ export default function RegisterStep7Screen({ navigation }: NativeStackScreenPro
                             overflow: "hidden",
                             borderWidth: 0.5,
                             borderColor: isSubSelected ? "rgba(255,255,255,0.3)" : "rgba(255,255,255,0.1)",
-                            backgroundColor: isSubSelected ? "#3e3e3e" : "transparent",
+                            backgroundColor: isSubSelected ? colors.border2 : "transparent",
                             paddingHorizontal: 20,
                             paddingVertical: 16,
                           }}
                         >
-                          <Text style={{ color: "#fff", fontSize: 15, fontWeight: "500" }}>
+                          <Text style={{ color: colors.text, fontSize: 15, fontWeight: "500" }}>
                             {subGender.name}
                           </Text>
                           {isSubSelected && (
@@ -266,7 +267,7 @@ export default function RegisterStep7Screen({ navigation }: NativeStackScreenPro
                                 justifyContent: "center",
                               }}
                             >
-                              <Check size={18} color="#fff" strokeWidth={2.5} />
+                              <Check size={18} color={colors.text} strokeWidth={2.5} />
                             </View>
                           )}
                         </AnimatedPressable>
@@ -280,12 +281,12 @@ export default function RegisterStep7Screen({ navigation }: NativeStackScreenPro
         </View>
 
         {errors.gender ? (
-          <Text style={{ color: "#ef4444", textAlign: "center", marginTop: 20, fontSize: 14 }}>
+          <Text style={{ color: colors.error, textAlign: "center", marginTop: 20, fontSize: 14 }}>
             {errors.gender.message}
           </Text>
         ) : null}
         <View className="flex-row gap-2 px-2 mr-6 items-center mt-5">
-          <InfoIcon size={16} color="#9CA3AF" className="mt-3" />
+          <InfoIcon size={16} color={colors.textSecondary} className="mt-3" />
           <Text className="text-gray-400 text-[12px]">
             Detaylı cinsiyet seçenekleri, seni en iyi tanımlayan kimliği seçmene
             yardımcı olur.
@@ -300,7 +301,7 @@ export default function RegisterStep7Screen({ navigation }: NativeStackScreenPro
             style={{ borderRadius: 999, borderCurve: "continuous", overflow: "hidden" }}
           >
             <LinearGradient
-              colors={["#ffffff", "#e5e7eb", "#9ca3af"]}
+              colors={gradients.neutralFade}
               locations={[0, 0.35, 0.85]}
               start={{ x: 0, y: 0 }}
               end={{ x: 1, y: 1 }}

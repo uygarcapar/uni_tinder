@@ -20,6 +20,7 @@ import AnimatedPressable from "@/shared/components/AnimatedPressable";
 import { useForm, Controller } from "react-hook-form";
 import { zodResolver } from "@hookform/resolvers/zod";
 import { passwordSchema, PasswordForm } from "@/shared/schemas/formSchemas";
+import { colors, gradients } from "../../../shared/theme/colors";
 
 export default function RegisterStep3Screen({ navigation }: NativeStackScreenProps<AuthStackParamList, 'RegisterStep3'>) {
   const dispatch = useAppDispatch();
@@ -41,13 +42,13 @@ export default function RegisterStep3Screen({ navigation }: NativeStackScreenPro
     Keyboard.dismiss();
     dispatch(updateRegistrationField({ field: "password", value: pw }));
     dispatch(updateRegistrationField({ field: "confirmPassword", value: cpw }));
-    navigation.navigate("RegisterStep4");
+    navigation.navigate("RegisterStep5");
   });
 
   return (
-    <View className="flex-1 bg-[#121212]">
+    <View className="flex-1 bg-bg">
       {/* Header */}
-      <View className="bg-[#121212] pt-16 pb-6 px-6">
+      <View className="bg-bg pt-16 pb-6 px-6">
         <TouchableOpacity
           activeOpacity={1}
           onPress={() =>
@@ -91,7 +92,7 @@ export default function RegisterStep3Screen({ navigation }: NativeStackScreenPro
                 borderCurve: "continuous",
                 overflow: "hidden",
                 borderWidth: 0.5,
-                borderColor: error ? "#ef4444" : "rgba(255,255,255,0.1)",
+                borderColor: error ? colors.error : "rgba(255,255,255,0.1)",
                 flexDirection: "row",
                 alignItems: "center",
                 paddingHorizontal: 16,
@@ -107,10 +108,10 @@ export default function RegisterStep3Screen({ navigation }: NativeStackScreenPro
                       flex: 1,
                       paddingVertical: 16,
                       fontSize: 18,
-                      color: "#fff",
+                      color: colors.text,
                     }}
                     placeholder="En az 8 karakter"
-                    placeholderTextColor="#9CA3AF"
+                    placeholderTextColor={colors.textSecondary}
                     value={value}
                     onChangeText={onChange}
                     secureTextEntry={!showPassword}
@@ -123,9 +124,9 @@ export default function RegisterStep3Screen({ navigation }: NativeStackScreenPro
               >
                 <View pointerEvents="none">
                   {showPassword ? (
-                    <Eye size={24} strokeWidth={1.5} color="#D1D5DB" />
+                    <Eye size={24} strokeWidth={1.5} color={colors.neutral200} />
                   ) : (
-                    <EyeOff size={24} strokeWidth={1.5} color="#D1D5DB" />
+                    <EyeOff size={24} strokeWidth={1.5} color={colors.neutral200} />
                   )}
                 </View>
               </TouchableOpacity>
@@ -143,7 +144,7 @@ export default function RegisterStep3Screen({ navigation }: NativeStackScreenPro
                 borderCurve: "continuous",
                 overflow: "hidden",
                 borderWidth: 0.5,
-                borderColor: error ? "#ef4444" : "rgba(255,255,255,0.1)",
+                borderColor: error ? colors.error : "rgba(255,255,255,0.1)",
               }}
             >
               <Controller
@@ -155,10 +156,10 @@ export default function RegisterStep3Screen({ navigation }: NativeStackScreenPro
                       paddingHorizontal: 16,
                       paddingVertical: 16,
                       fontSize: 18,
-                      color: "#fff",
+                      color: colors.text,
                     }}
                     placeholder="Şifrenizi tekrar girin"
-                    placeholderTextColor="#9CA3AF"
+                    placeholderTextColor={colors.textSecondary}
                     value={value}
                     onChangeText={onChange}
                     secureTextEntry={!showPassword}
@@ -189,7 +190,7 @@ export default function RegisterStep3Screen({ navigation }: NativeStackScreenPro
             }}
           >
             <LinearGradient
-              colors={["#ffffff", "#e5e7eb", "#9ca3af"]}
+              colors={gradients.neutralFade}
               locations={[0, 0.35, 0.85]}
               start={{ x: 0, y: 0 }}
               end={{ x: 1, y: 1 }}

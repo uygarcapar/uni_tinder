@@ -22,6 +22,7 @@ import AnimatedPressable from "@/shared/components/AnimatedPressable";
 import { useForm } from "react-hook-form";
 import { zodResolver } from "@hookform/resolvers/zod";
 import { lifestyleSchema, LifestyleForm } from "@/shared/schemas/formSchemas";
+import { colors, gradients } from "../../../shared/theme/colors";
 
 const ZODIAC_MAP: Record<string, any> = {
   Koç: Flame, Boğa: Leaf, İkizler: Wind, Yengeç: Moon, Aslan: Sun,
@@ -43,9 +44,9 @@ const SimpleOptionItem = memo(({ option, isSelected, onToggle }: any) => (
     onPress={() => onToggle(option.enumName)}
     style={{ borderRadius: 30, borderCurve: "continuous", paddingHorizontal: 4, paddingVertical: 18, flexDirection: "row", alignItems: "center", justifyContent: "space-between" }}
   >
-    <Cigarette size={20} color={isSelected ? "#fff" : "#9CA3AF"} strokeWidth={1.5} style={{ marginRight: 14 }} />
-    <Text style={{ color: isSelected ? "#fff" : "#9CA3AF", fontSize: 14, fontWeight: "500", flex: 1, marginRight: 12 }}>{option.name}</Text>
-    {isSelected && <Check size={20} color="#fff" strokeWidth={2.5} />}
+    <Cigarette size={20} color={isSelected ? colors.text : colors.textSecondary} strokeWidth={1.5} style={{ marginRight: 14 }} />
+    <Text style={{ color: isSelected ? colors.text : colors.textSecondary, fontSize: 14, fontWeight: "500", flex: 1, marginRight: 12 }}>{option.name}</Text>
+    {isSelected && <Check size={20} color={colors.text} strokeWidth={2.5} />}
   </AnimatedPressable>
 ));
 
@@ -59,12 +60,12 @@ const PurposeOptionItem = memo(({ option, isSelected, onToggle }: any) => {
       onPress={() => onToggle(option.enumName)}
       style={{ flexDirection: "row", alignItems: "center", justifyContent: "space-between", paddingVertical: 14 }}
     >
-      <Icon size={20} color={isSelected ? "#fff" : "#6B7280"} strokeWidth={1.5} style={{ marginRight: 14 }} />
+      <Icon size={20} color={isSelected ? colors.text : colors.textMuted} strokeWidth={1.5} style={{ marginRight: 14 }} />
       <View style={{ flex: 1, marginRight: 12 }}>
-        <Text style={{ color: isSelected ? "#fff" : "#9CA3AF", fontSize: 15, fontWeight: "500" }}>{option.name}</Text>
+        <Text style={{ color: isSelected ? colors.text : colors.textSecondary, fontSize: 15, fontWeight: "500" }}>{option.name}</Text>
         {desc && <Text style={{ color: isSelected ? "rgba(255,255,255,0.5)" : "rgba(255,255,255,0.3)", fontSize: 14, marginTop: 3 }}>{desc}</Text>}
       </View>
-      {isSelected && <Check size={20} color="#fff" strokeWidth={2.5} />}
+      {isSelected && <Check size={20} color={colors.text} strokeWidth={2.5} />}
     </TouchableOpacity>
   );
 });
@@ -125,12 +126,12 @@ const ZodiacPill = memo(({ option, isSelected, onToggle }: any) => {
       style={{
         borderRadius: 999, borderCurve: "continuous", paddingHorizontal: 12, paddingVertical: 11,
         borderWidth: 0.5, flexDirection: "row", alignItems: "center", gap: 6,
-        backgroundColor: isSelected ? "#3e3e3e" : "transparent",
+        backgroundColor: isSelected ? colors.border2 : "transparent",
         borderColor: isSelected ? "rgba(255,255,255,0.3)" : "rgba(255,255,255,0.1)",
       }}
     >
-      <Icon size={20} color={isSelected ? "#fff" : "#9CA3AF"} strokeWidth={1.5} />
-      <Text style={{ color: isSelected ? "#fff" : "#9CA3AF", fontSize: 14, fontWeight: "500" }}>{option.name}</Text>
+      <Icon size={20} color={isSelected ? colors.text : colors.textSecondary} strokeWidth={1.5} />
+      <Text style={{ color: isSelected ? colors.text : colors.textSecondary, fontSize: 14, fontWeight: "500" }}>{option.name}</Text>
     </AnimatedPressable>
   );
 });
@@ -230,9 +231,9 @@ export default function RegisterStep14Screen({ navigation }: NativeStackScreenPr
   const isLoading = loadingSmokingStatuses || loadingZodiacs || loadingUsagePurposes;
 
   return (
-    <View className="flex-1 bg-[#121212]">
+    <View className="flex-1 bg-bg">
       {/* Header */}
-      <View className="bg-[#121212] pt-16 pb-6 px-6">
+      <View className="bg-bg pt-16 pb-6 px-6">
         <View className="flex-row items-center justify-between">
           <TouchableOpacity activeOpacity={1} onPress={() => navigation.goBack()} className="flex-row items-center">
             <Text className="text-4xl mr-2 text-white">←</Text>
@@ -256,19 +257,19 @@ export default function RegisterStep14Screen({ navigation }: NativeStackScreenPr
         {isLoading ? (
           <>
             <View style={{ marginTop: 8 }}>
-              <Text style={{ color: "#fff", fontSize: 14, fontWeight: "600", marginBottom: 12 }}>Sigara Kullanımı</Text>
+              <Text style={{ color: colors.text, fontSize: 14, fontWeight: "600", marginBottom: 12 }}>Sigara Kullanımı</Text>
               <View style={{ gap: 2 }}>
                 {Array.from({ length: 3 }).map((_, i) => <SkeletonSimpleOption key={i} />)}
               </View>
             </View>
             <View style={{ marginTop: 28 }}>
-              <Text style={{ color: "#fff", fontSize: 14, fontWeight: "600", marginBottom: 12 }}>Burç</Text>
+              <Text style={{ color: colors.text, fontSize: 14, fontWeight: "600", marginBottom: 12 }}>Burç</Text>
               <View style={{ flexDirection: "row", flexWrap: "wrap", gap: 8 }}>
                 {[60, 70, 80, 75, 65, 85, 70, 60, 55, 75, 65, 70].map((w, i) => <SkeletonZodiacPill key={i} width={w} />)}
               </View>
             </View>
             <View style={{ marginTop: 28, marginBottom: 32 }}>
-              <Text style={{ color: "#fff", fontSize: 14, fontWeight: "600", marginBottom: 12 }}>Kullanım Amacı</Text>
+              <Text style={{ color: colors.text, fontSize: 14, fontWeight: "600", marginBottom: 12 }}>Kullanım Amacı</Text>
               {Array.from({ length: 4 }).map((_, i) => <SkeletonPurposeOption key={i} />)}
             </View>
           </>
@@ -276,7 +277,7 @@ export default function RegisterStep14Screen({ navigation }: NativeStackScreenPr
           <>
             {(smokingStatuses as any[]).length > 0 && (
               <View style={{ marginTop: 8 }}>
-                <Text style={{ color: "#fff", fontSize: 14, fontWeight: "600", marginBottom: 12 }}>Sigara Kullanımı</Text>
+                <Text style={{ color: colors.text, fontSize: 14, fontWeight: "600", marginBottom: 12 }}>Sigara Kullanımı</Text>
                 <View style={{ gap: 2 }}>
                   {(smokingStatuses as any[]).map((opt) => (
                     <SimpleOptionItem key={opt.id} option={opt} isSelected={opt.enumName === smokingStatus} onToggle={toggleSmoking} />
@@ -286,7 +287,7 @@ export default function RegisterStep14Screen({ navigation }: NativeStackScreenPr
             )}
             {(zodiacs as any[]).length > 0 && (
               <View style={{ marginTop: 28 }}>
-                <Text style={{ color: "#fff", fontSize: 14, fontWeight: "600", marginBottom: 12 }}>Burç</Text>
+                <Text style={{ color: colors.text, fontSize: 14, fontWeight: "600", marginBottom: 12 }}>Burç</Text>
                 <View style={{ flexDirection: "row", flexWrap: "wrap", gap: 8 }}>
                   {(zodiacs as any[]).map((opt) => (
                     <ZodiacPill key={opt.id} option={opt} isSelected={opt.enumName === zodiacSign} onToggle={toggleZodiac} />
@@ -296,7 +297,7 @@ export default function RegisterStep14Screen({ navigation }: NativeStackScreenPr
             )}
             {(usagePurposes as any[]).length > 0 && (
               <View style={{ marginTop: 28, marginBottom: 32 }}>
-                <Text style={{ color: "#fff", fontSize: 14, fontWeight: "600", marginBottom: 12 }}>Kullanım Amacı</Text>
+                <Text style={{ color: colors.text, fontSize: 14, fontWeight: "600", marginBottom: 12 }}>Kullanım Amacı</Text>
                 {(usagePurposes as any[]).map((opt) => (
                   <PurposeOptionItem key={opt.id} option={opt} isSelected={opt.enumName === usagePurpose} onToggle={toggleUsagePurpose} />
                 ))}
@@ -310,7 +311,7 @@ export default function RegisterStep14Screen({ navigation }: NativeStackScreenPr
       {/* Sticky Button */}
       <View className="px-8 pb-8 pt-4 absolute bottom-0 left-0 right-0">
         <AnimatedPressable style={{ borderRadius: 999, borderCurve: "continuous", overflow: "hidden" }} onPress={handleNext}>
-          <LinearGradient colors={["#ffffff", "#e5e7eb", "#9ca3af"]} locations={[0, 0.35, 0.85]} start={{ x: 0, y: 0 }} end={{ x: 1, y: 1 }} className="py-3.5">
+          <LinearGradient colors={gradients.neutralFade} locations={[0, 0.35, 0.85]} start={{ x: 0, y: 0 }} end={{ x: 1, y: 1 }} className="py-3.5">
             <Text className="text-black py-[20px] font-bold text-[15px] text-center">
               {allFieldsEmpty ? "Atla" : "Devam Et"}
             </Text>

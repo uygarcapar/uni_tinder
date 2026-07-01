@@ -27,6 +27,7 @@ import AppBottomSheet from "@/shared/components/AppBottomSheet";
 import { useForm } from "react-hook-form";
 import { zodResolver } from "@hookform/resolvers/zod";
 import { educationSchema, EducationForm } from "@/shared/schemas/formSchemas";
+import { colors, gradients } from "../../../shared/theme/colors";
 
 const YEAR_OF_STUDY_OPTIONS = [
   { value: "0", label: "Hazırlık" },
@@ -79,10 +80,10 @@ const DepartmentPickerContent = ({ initialDepartment, onConfirm, onCancel, depar
       keyboardShouldPersistTaps="handled"
       showsVerticalScrollIndicator={false}
       stickyHeaderIndices={[0]}
-      style={{ backgroundColor: "#121212" }}
+      style={{ backgroundColor: colors.bg }}
       contentContainerStyle={{ paddingHorizontal: 16, paddingBottom: 32 }}
       ListHeaderComponent={
-        <View style={{ backgroundColor: "#121212", paddingTop: 32, paddingBottom: 8 }}>
+        <View style={{ backgroundColor: colors.bg, paddingTop: 32, paddingBottom: 8 }}>
           <View className="flex-row justify-between items-center py-4 px-2">
             <TouchableOpacity onPress={onCancel}>
               <Text className="text-gray-400 text-xl">İptal</Text>
@@ -93,7 +94,7 @@ const DepartmentPickerContent = ({ initialDepartment, onConfirm, onCancel, depar
           </View>
           <View style={{ position: "relative", marginBottom: 10 }}>
             <View pointerEvents="none" style={{ position: "absolute", left: 18, top: 0, bottom: 0, justifyContent: "center", zIndex: 1 }}>
-              <Search size={18} color="#fff" strokeWidth={2} />
+              <Search size={18} color={colors.text} strokeWidth={2} />
             </View>
             <BottomSheetTextInput
               defaultValue=""
@@ -110,7 +111,7 @@ const DepartmentPickerContent = ({ initialDepartment, onConfirm, onCancel, depar
                 paddingLeft: 44,
                 paddingRight: 16,
                 paddingVertical: 14,
-                color: "#fff",
+                color: colors.text,
                 fontSize: 16,
               }}
             />
@@ -119,9 +120,9 @@ const DepartmentPickerContent = ({ initialDepartment, onConfirm, onCancel, depar
       }
       ListEmptyComponent={
         <View style={{ paddingVertical: 32, alignItems: "center" }}>
-          <SearchX size={36} color="#fff" strokeWidth={1.75} />
+          <SearchX size={36} color={colors.text} strokeWidth={1.75} />
           {search.trim() !== "" && (
-            <Text style={{ color: "#fff", fontSize: 15, fontWeight: "500", marginTop: 12, textAlign: "center" }}>
+            <Text style={{ color: colors.text, fontSize: 15, fontWeight: "500", marginTop: 12, textAlign: "center" }}>
               '{search.trim()}' bulunamadı
             </Text>
           )}
@@ -145,12 +146,12 @@ const DepartmentPickerContent = ({ initialDepartment, onConfirm, onCancel, depar
               position: "relative",
             }}
           >
-            <Text style={{ color: isSelected ? "#fff" : "#9CA3AF", fontSize: 16, fontWeight: "400", flex: 1, marginRight: 32 }}>
+            <Text style={{ color: isSelected ? colors.text : colors.textSecondary, fontSize: 16, fontWeight: "400", flex: 1, marginRight: 32 }}>
               {item.name}
             </Text>
             {isSelected && (
               <View pointerEvents="none" style={{ position: "absolute", right: 16, top: 0, bottom: 0, justifyContent: "center" }}>
-                <Check size={18} color="#fff" strokeWidth={2.5} />
+                <Check size={18} color={colors.text} strokeWidth={2.5} />
               </View>
             )}
           </TouchableOpacity>
@@ -249,9 +250,9 @@ export default function RegisterStep8Screen({ navigation }: NativeStackScreenPro
   const errorMessage = errors.department?.message || errors.yearOfStudy?.message;
 
   return (
-    <View className="flex-1 bg-[#121212]">
+    <View className="flex-1 bg-bg">
       {/* Header */}
-      <View className="bg-[#121212] pt-16 pb-6 px-6">
+      <View className="bg-bg pt-16 pb-6 px-6">
         <TouchableOpacity
           activeOpacity={1}
           onPress={() => navigation.goBack()}
@@ -279,7 +280,7 @@ export default function RegisterStep8Screen({ navigation }: NativeStackScreenPro
                 style={{ borderRadius: 999, borderCurve: "continuous", overflow: "hidden" }}
                 className="border-[0.5px] border-white/10 px-4 py-5 flex items-center"
               >
-                <ActivityIndicator size="small" color="#fff" />
+                <ActivityIndicator size="small" color={colors.text} />
               </View>
             </View>
           ) : (
@@ -294,7 +295,7 @@ export default function RegisterStep8Screen({ navigation }: NativeStackScreenPro
                 <Text className={`${department ? "text-white" : "text-gray-400"} text-[16px] font-medium`}>
                   {getDepartmentLabel()}
                 </Text>
-                <ChevronDown size={20} color="#9CA3AF" strokeWidth={2} pointerEvents="none" />
+                <ChevronDown size={20} color={colors.textSecondary} strokeWidth={2} pointerEvents="none" />
               </TouchableOpacity>
             </View>
           )}
@@ -314,12 +315,12 @@ export default function RegisterStep8Screen({ navigation }: NativeStackScreenPro
                       overflow: "hidden",
                       borderWidth: 0.5,
                       borderColor: isSelected ? "rgba(255,255,255,0.3)" : "rgba(255,255,255,0.1)",
-                      backgroundColor: isSelected ? "#3e3e3e" : "#1E1E1E",
+                      backgroundColor: isSelected ? colors.border2 : colors.surface,
                       paddingHorizontal: 18,
                       paddingVertical: 13,
                     }}
                   >
-                    <Text style={{ color: "#fff", fontSize: 14, fontWeight: "600" }}>{opt.label}</Text>
+                    <Text style={{ color: colors.text, fontSize: 14, fontWeight: "600" }}>{opt.label}</Text>
                   </AnimatedPressable>
                 );
               })}
@@ -334,13 +335,13 @@ export default function RegisterStep8Screen({ navigation }: NativeStackScreenPro
 
       {/* Sticky Button with KeyboardStickyView */}
       <KeyboardStickyView offset={{ closed: 0, opened: 0 }}>
-        <View className="px-8 pb-8 pt-4 bg-[#121212]">
+        <View className="px-8 pb-8 pt-4 bg-bg">
           <AnimatedPressableShared
             onPress={handleNext}
             style={{ borderRadius: 999, borderCurve: "continuous", overflow: "hidden" }}
           >
             <LinearGradient
-              colors={["#ffffff", "#e5e7eb", "#9ca3af"]}
+              colors={gradients.neutralFade}
               locations={[0, 0.35, 0.85]}
               start={{ x: 0, y: 0 }}
               end={{ x: 1, y: 1 }}

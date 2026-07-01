@@ -22,6 +22,7 @@ import { useState } from "react";
 import { useForm, Controller } from "react-hook-form";
 import { zodResolver } from "@hookform/resolvers/zod";
 import { loginSchema, LoginForm } from "@/shared/schemas/formSchemas";
+import { colors, gradients } from "../../../shared/theme/colors";
 
 export default function LoginScreen({ navigation }: NativeStackScreenProps<AuthStackParamList, 'Login'>) {
   const [showPassword, setShowPassword] = useState(false);
@@ -49,10 +50,10 @@ export default function LoginScreen({ navigation }: NativeStackScreenProps<AuthS
   });
 
   return (
-    <View className="flex-1 bg-[#121212]">
+    <View className="flex-1 bg-bg">
       <Animated.View style={[{ flex: 1 }, liftStyle]}>
         {/* Header */}
-        <View className="bg-[#121212] pt-16 pb-6 px-6">
+        <View className="bg-bg pt-16 pb-6 px-6">
           <TouchableOpacity
             activeOpacity={1}
             onPress={() => navigation.goBack()}
@@ -107,7 +108,7 @@ export default function LoginScreen({ navigation }: NativeStackScreenProps<AuthS
                       error ? "border-red-500" : "border-white/10 "
                     }`}
                     placeholder="ornek@universite.edu.tr"
-                    placeholderTextColor="#9CA3AF"
+                    placeholderTextColor={colors.textSecondary}
                     value={value}
                     onChangeText={onChange}
                     keyboardType="email-address"
@@ -140,7 +141,7 @@ export default function LoginScreen({ navigation }: NativeStackScreenProps<AuthS
                     <TextInput
                       className="flex-1 text-[18px] text-white"
                       placeholder="••••••••"
-                      placeholderTextColor="#9CA3AF"
+                      placeholderTextColor={colors.textSecondary}
                       value={value}
                       onChangeText={onChange}
                       secureTextEntry={!showPassword}
@@ -155,9 +156,9 @@ export default function LoginScreen({ navigation }: NativeStackScreenProps<AuthS
                 >
                   <View pointerEvents="none">
                     {showPassword ? (
-                      <Eye size={24} strokeWidth={1.5} color="#D1D5DB" />
+                      <Eye size={24} strokeWidth={1.5} color={colors.neutral200} />
                     ) : (
-                      <EyeOff size={24} strokeWidth={1.5} color="#D1D5DB" />
+                      <EyeOff size={24} strokeWidth={1.5} color={colors.neutral200} />
                     )}
                   </View>
                 </TouchableOpacity>
@@ -179,7 +180,7 @@ export default function LoginScreen({ navigation }: NativeStackScreenProps<AuthS
 
       {/* Sticky Button with KeyboardStickyView */}
       <KeyboardStickyView offset={{ closed: 0, opened: 15 }}>
-        <View className="px-8 pb-8 pt-4 bg-[#121212]">
+        <View className="px-8 pb-8 pt-4 bg-bg">
           <TouchableOpacity
             activeOpacity={1}
             onPress={handleLogin}
@@ -192,7 +193,7 @@ export default function LoginScreen({ navigation }: NativeStackScreenProps<AuthS
             }}
           >
             <LinearGradient
-              colors={["#ffffff", "#e5e7eb", "#9ca3af"]}
+              colors={gradients.neutralFade}
               locations={[0, 0.35, 0.85]}
               start={{ x: 0, y: 0 }}
               end={{ x: 1, y: 1 }}
