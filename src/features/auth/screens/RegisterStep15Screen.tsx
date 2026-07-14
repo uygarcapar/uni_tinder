@@ -21,7 +21,6 @@ import {
   clearRegistrationForm,
 } from "@/features/auth/authSlice";
 import * as Location from "expo-location";
-import { LinearGradient } from "expo-linear-gradient";
 import { Plus, X } from "lucide-react-native";
 import RegisterProgressBar from "@/features/auth/components/RegisterProgressBar";
 import AnimatedPressable from "@/shared/components/AnimatedPressable";
@@ -37,7 +36,7 @@ import ImageCropPicker from "react-native-image-crop-picker";
 import { useForm } from "react-hook-form";
 import { zodResolver } from "@hookform/resolvers/zod";
 import { photosSchema, PhotosForm } from "@/shared/schemas/formSchemas";
-import { colors, gradients } from "../../../shared/theme/colors";
+import { colors } from "../../../shared/theme/colors";
 
 const { width } = Dimensions.get("window");
 const CONTAINER_PADDING = 24;
@@ -281,15 +280,13 @@ export default function RegisterStep15Screen({ navigation }: NativeStackScreenPr
         <AnimatedPressable
           onPress={handleCompleteProfile}
           disabled={loading || photos.length < 2 || isDraggingPhoto}
-          style={{ borderRadius: 999, borderCurve: "continuous", overflow: "hidden", opacity: loading || photos.length < 2 || isDraggingPhoto ? 0.5 : 1 }}
+          style={{ borderRadius: 999, borderCurve: "continuous", overflow: "hidden", opacity: loading || photos.length < 2 || isDraggingPhoto ? 0.5 : 1, backgroundColor: colors.messageOwn }}
         >
-          <LinearGradient colors={gradients.neutralFade} locations={[0, 0.35, 0.85]} start={{ x: 0, y: 0 }} end={{ x: 1, y: 1 }} className="py-3.5">
-            {loading ? (
-              <View className="py-[18px]"><ActivityIndicator color="#000" /></View>
-            ) : (
-              <Text className="text-black py-[20px] font-bold text-[15px] text-center">Profili Tamamla</Text>
-            )}
-          </LinearGradient>
+          {loading ? (
+            <View className="py-[18px]"><ActivityIndicator color="#fff" /></View>
+          ) : (
+            <Text className="text-white py-[20px] font-bold text-[15px] text-center">Profili Tamamla</Text>
+          )}
         </AnimatedPressable>
       </View>
     </View>

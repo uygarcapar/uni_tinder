@@ -8,13 +8,9 @@ export const fetchPotentialMatches = createAsyncThunk(
     try {
       const state = getState() as any;
       const token = state.auth.token;
-      console.log('fetchPotentialMatches - Token:', token ? 'Token mevcut' : 'Token YOK!');
-      console.log('fetchPotentialMatches - Page:', pageNumber);
       const response = await swipeService.getPotentialMatches(token, pageNumber, 10);
-      console.log('fetchPotentialMatches - Response:', JSON.stringify(response, null, 2));
       return response;
     } catch (error: any) {
-      console.log('fetchPotentialMatches - ERROR:', error);
       return rejectWithValue(error.message || "Failed to fetch matches");
     }
   },

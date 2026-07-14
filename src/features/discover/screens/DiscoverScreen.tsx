@@ -56,6 +56,7 @@ import {
 } from "@/features/discover/swipeQueries";
 import { useQueryClient } from "@tanstack/react-query";
 import uiBus, { cardExpandAnim } from "@/shared/services/uiBus";
+import { useEvent } from "@/shared/hooks/useEvent";
 
 // Tab bar geometry — TabNavigator ile tutarlı:
 // FLOATING_BAR_HEIGHT (64) + FLOATING_BAR_BOTTOM_GAP (-10) + insets.bottom + extra gap (12)
@@ -788,19 +789,16 @@ export default function DiscoverScreen() {
     matchesQuery.fetchNextPage,
   ]);
 
-  const handleSwipe = useCallback(
-    (direction, userId) => {
-      if (userId) swipedUserIdsRef.current.add(userId);
-      setCurrentIndex((i) => i + 1);
-      const isPass = direction === "left";
-      setLastSwipeWasPass(isPass);
-      lastSwipePromiseRef.current = swipeMutation.mutateAsync({
-        direction,
-        userId,
-      });
-    },
-    [swipeMutation],
-  );
+  const handleSwipe = useEvent((direction, userId) => {
+    if (userId) swipedUserIdsRef.current.add(userId);
+    setCurrentIndex((i) => i + 1);
+    const isPass = direction === "left";
+    setLastSwipeWasPass(isPass);
+    lastSwipePromiseRef.current = swipeMutation.mutateAsync({
+      direction,
+      userId,
+    });
+  });
 
   const handleRewind = async () => {
     if (currentIndex === 0) return;
@@ -871,7 +869,11 @@ export default function DiscoverScreen() {
     }
   };
 
-  const handlePassButton = useCallback(() => {
+  // useEvent: state değişse bile handler referansı sabit kalır. Aksi halde
+  // her setIsSwiping / setCurrentIndex, useCallback deps'i büyütüp SwipeWrapper
+  // React.memo compareFn'i (onPass === next.onPass) boşa çıkarır ve iki kart
+  // birden re-render olur.
+  const handlePassButton = useEvent(() => {
     if (isSwiping || potentialMatches.length <= currentIndex) return;
     if (swipeQuotaExhausted) {
       setPurchaseVisible(true);
@@ -880,16 +882,9 @@ export default function DiscoverScreen() {
     setIsSwiping(true);
     programmaticSwipe.value = 1;
     setTimeout(() => setIsSwiping(false), 300);
-  }, [
-    isSwiping,
-    potentialMatches.length,
-    currentIndex,
-    swipeQuotaExhausted,
-    programmaticSwipe,
+  });
 
-  ]);
-
-  const handleLikeButton = useCallback(() => {
+  const handleLikeButton = useEvent(() => {
     if (isSwiping || potentialMatches.length <= currentIndex) return;
     if (swipeQuotaExhausted) {
       setPurchaseVisible(true);
@@ -898,25 +893,9 @@ export default function DiscoverScreen() {
     setIsSwiping(true);
     programmaticSwipe.value = 2;
     setTimeout(() => setIsSwiping(false), 300);
-  }, [
-    isSwiping,
-    potentialMatches.length,
-    currentIndex,
-    swipeQuotaExhausted,
-    programmaticSwipe,
+  });
 
-  ]);
-
-  const handleSuperLikeButton = useCallback(() => {
-    if (__DEV__) {
-      console.log("[SuperLike btn]", {
-        isSwiping,
-        cardsLeft: potentialMatches.length - currentIndex,
-        superLikeQuotaExhausted,
-        superLikesRemaining: statsQuery.data?.superLikesRemaining,
-        hasModalRef: superLikePurchaseVisible,
-      });
-    }
+  const handleSuperLikeButton = useEvent(() => {
     if (isSwiping || potentialMatches.length <= currentIndex) return;
     if (superLikeQuotaExhausted) {
       requestAnimationFrame(() => setSuperLikePurchaseVisible(true));
@@ -925,15 +904,7 @@ export default function DiscoverScreen() {
     setIsSwiping(true);
     programmaticSwipe.value = 3;
     setTimeout(() => setIsSwiping(false), 300);
-  }, [
-    isSwiping,
-    potentialMatches.length,
-    currentIndex,
-    superLikeQuotaExhausted,
-    statsQuery.data?.superLikesRemaining,
-    programmaticSwipe,
-
-  ]);
+  });
 
   const renderStack = () => {
     return potentialMatches

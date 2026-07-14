@@ -5,14 +5,13 @@ import type { AuthStackParamList } from "@/shared/types/navigation";
 import { useAppDispatch, useAppSelector } from "@/shared/hooks/redux";
 import { updateRegistrationField } from "@/features/auth/authSlice";
 import { KeyboardStickyView } from "react-native-keyboard-controller";
-import { LinearGradient } from "expo-linear-gradient";
 import { Check, InfoIcon, ChevronUp, ChevronDown } from "lucide-react-native";
 import RegisterProgressBar from "@/features/auth/components/RegisterProgressBar";
 import AnimatedPressableShared from "@/shared/components/AnimatedPressable";
 import { useForm } from "react-hook-form";
 import { zodResolver } from "@hookform/resolvers/zod";
 import { genderSchema, GenderForm } from "@/shared/schemas/formSchemas";
-import { colors, gradients } from "../../../shared/theme/colors";
+import { colors } from "../../../shared/theme/colors";
 
 // Backend Gender'ı enumName ("Male"/"Female"/"NonBinary" vb.) bekliyor.
 const GENDER_CATEGORIES = [
@@ -298,18 +297,11 @@ export default function RegisterStep7Screen({ navigation }: NativeStackScreenPro
         <View className="px-6 pb-8 pt-4">
           <AnimatedPressableShared
             onPress={handleNext}
-            style={{ borderRadius: 999, borderCurve: "continuous", overflow: "hidden" }}
+            style={{ borderRadius: 999, borderCurve: "continuous", overflow: "hidden", backgroundColor: colors.messageOwn }}
           >
-            <LinearGradient
-              colors={gradients.neutralFade}
-              locations={[0, 0.35, 0.85]}
-              start={{ x: 0, y: 0 }}
-              end={{ x: 1, y: 1 }}
-            >
-              <Text className="text-black py-[20px] font-bold text-[15px] text-center">
-                Devam Et
-              </Text>
-            </LinearGradient>
+            <Text className="text-white py-[20px] font-bold text-[15px] text-center">
+              Devam Et
+            </Text>
           </AnimatedPressableShared>
         </View>
       </KeyboardStickyView>

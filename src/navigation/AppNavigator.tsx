@@ -11,7 +11,7 @@ import {
 } from '@/features/notifications/pushService';
 import uiBus from '@/shared/services/uiBus';
 import { navigationRef } from '@/shared/services/navigationRef';
-import { showMessageToast, showLikeToast } from '@/shared/services/toaster';
+import { showMessageToast, showLikeToast, showInfoToast } from '@/shared/services/toaster';
 import { store } from '@/shared/store';
 
 import SettingsModal from '@/features/profile/components/SettingsModal';
@@ -125,8 +125,17 @@ export default function AppNavigator() {
   }, [user, dispatch]);
 
   // Auth lost (refresh fail / missing) → Redux logout, AuthNavigator'a düş.
+  // reason 'new_login_elsewhere' ise offline'dan uyanınca kullanıcıya toast
+  // gösterilir (SignalR event'i kaçırıldı, refresh fallback path).
   useEffect(() => {
-    setOnAuthLost(() => {
+    setOnAuthLost((reason) => {
+      if (reason === 'new_login_elsewhere') {
+        showInfoToast({
+          title: 'Oturumun kapatıldı',
+          message: 'Hesabına başka bir cihazdan giriş yapıldı.',
+          variant: 'error',
+        });
+      }
       dispatch(logout());
     });
   }, [dispatch]);
@@ -241,6 +250,18 @@ export default function AppNavigator() {
           return;
         }
         console.warn('Hub error:', err);
+      }),
+      // Backend'den anlık "başka cihazdan giriş yapıldı" sinyali. Online path;
+      // offline/killed durumda refresh interceptor aynı toast'ı gösterir.
+      realtimeService.on('ForceLogout', async () => {
+        if (!mounted) return;
+        showInfoToast({
+          title: 'Oturumun kapatıldı',
+          message: 'Hesabına başka bir cihazdan giriş yapıldı.',
+          variant: 'error',
+        });
+        await realtimeService.disconnect().catch(() => {});
+        dispatch(logout());
       }),
       realtimeService.on('__connectionStateChanged', (state) => {
         if (state === 'connected') {

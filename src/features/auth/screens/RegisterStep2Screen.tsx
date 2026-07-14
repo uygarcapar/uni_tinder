@@ -19,12 +19,11 @@ import {
   setEmailVerifiedToken,
 } from "@/features/auth/authSlice";
 import { Mailbox, RotateCcw, ArrowLeft, Check } from "lucide-react-native";
-import { LinearGradient } from "expo-linear-gradient";
 import { API_BASE_URL, API_ENDPOINTS } from "@/shared/constants/api";
 import { useReanimatedKeyboardAnimation } from "react-native-keyboard-controller";
 import Animated, { useAnimatedStyle } from "react-native-reanimated";
 import AnimatedPressable from "@/shared/components/AnimatedPressable";
-import { colors, gradients } from "../../../shared/theme/colors";
+import { colors } from "../../../shared/theme/colors";
 
 export default function RegisterStep2Screen({ route, navigation }: NativeStackScreenProps<AuthStackParamList, 'RegisterStep2'>) {
   const { user, isAuthenticated } = useAppSelector((s) => (s as any).auth);
@@ -306,25 +305,18 @@ export default function RegisterStep2Screen({ route, navigation }: NativeStackSc
                 borderCurve: "continuous",
                 overflow: "hidden",
                 opacity: loading || code.some((d) => d === "") ? 0.5 : 1,
+                backgroundColor: colors.messageOwn,
               }}
               onPress={() => handleVerify()}
               disabled={loading || code.some((d) => d === "")}
             >
-              <LinearGradient
-                colors={gradients.neutralFade}
-                locations={[0, 0.35, 0.85]}
-                start={{ x: 0, y: 0 }}
-                end={{ x: 1, y: 1 }}
-                className="items-center"
-              >
-                {loading ? (
-                  <ActivityIndicator className="py-[20px]" color="#000" />
-                ) : (
-                  <Text className="text-black py-[20px] text-center font-medium text-[15px]">
-                    Doğrula
-                  </Text>
-                )}
-              </LinearGradient>
+              {loading ? (
+                <ActivityIndicator className="py-[20px]" color="#fff" />
+              ) : (
+                <Text className="text-white py-[20px] text-center font-medium text-[15px]">
+                  Doğrula
+                </Text>
+              )}
             </AnimatedPressable>
           </View>
 

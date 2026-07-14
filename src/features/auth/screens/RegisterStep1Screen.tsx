@@ -14,14 +14,13 @@ import type { AuthStackParamList } from "@/shared/types/navigation";
 import { useAppDispatch, useAppSelector } from "@/shared/hooks/redux";
 import { clearError, setRegistrationEmail } from "@/features/auth/authSlice";
 import { KeyboardStickyView } from "react-native-keyboard-controller";
-import { LinearGradient } from "expo-linear-gradient";
 import { API_BASE_URL, API_ENDPOINTS } from "@/shared/constants/api";
 import AnimatedPressable from "@/shared/components/AnimatedPressable";
 import { InfoIcon } from "lucide-react-native";
 import { useForm, Controller } from "react-hook-form";
 import { zodResolver } from "@hookform/resolvers/zod";
 import { emailSchema, EmailForm } from "@/shared/schemas/formSchemas";
-import { colors, gradients } from "../../../shared/theme/colors";
+import { colors } from "../../../shared/theme/colors";
 
 export default function RegisterStep1Screen({ navigation }: NativeStackScreenProps<AuthStackParamList, 'RegisterStep1'>) {
   const dispatch = useAppDispatch();
@@ -192,22 +191,16 @@ export default function RegisterStep1Screen({ navigation }: NativeStackScreenPro
               borderRadius: 999,
               borderCurve: "continuous",
               overflow: "hidden",
+              backgroundColor: colors.messageOwn,
             }}
           >
-            <LinearGradient
-              colors={gradients.neutralFade}
-              locations={[0, 0.35, 0.85]}
-              start={{ x: 0, y: 0 }}
-              end={{ x: 1, y: 1 }}
-            >
-              {loading ? (
-                <ActivityIndicator className="py-[17.5px]" color="#000" />
-              ) : (
-                <Text className="text-black py-[20px] font-bold text-[15px] text-center">
-                  Devam Et
-                </Text>
-              )}
-            </LinearGradient>
+            {loading ? (
+              <ActivityIndicator className="py-[17.5px]" color="#fff" />
+            ) : (
+              <Text className="text-white py-[20px] font-bold text-[15px] text-center">
+                Devam Et
+              </Text>
+            )}
           </AnimatedPressable>
         </View>
       </KeyboardStickyView>

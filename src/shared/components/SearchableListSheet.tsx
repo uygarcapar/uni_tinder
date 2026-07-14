@@ -382,6 +382,29 @@ const SearchableListSheet = ({
           </MaskedView>
         </Animated.View>
 
+        {/* Custom drag pill — AppModal ile birebir aynı. Consumer AppBottomSheet'e
+            handleComponent={null} vermeli, yoksa gorhom'un native handle'ı bunun
+            üstünde kalır. */}
+        <View
+          pointerEvents="none"
+          style={{
+            position: "absolute",
+            top: 20,
+            left: 0,
+            right: 0,
+            alignItems: "center",
+          }}
+        >
+          <View
+            style={{
+              width: 36,
+              height: 4,
+              borderRadius: 2,
+              backgroundColor: "rgba(255,255,255,0.3)",
+            }}
+          />
+        </View>
+
         {/* Centered animated title — scroll 55px'i geçince fade-in. */}
         {title ? (
           <Animated.View

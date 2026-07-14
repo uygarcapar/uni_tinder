@@ -2310,7 +2310,7 @@ const EditProfileForm = forwardRef(function EditProfileForm(
           snapPoints={["75%", "90%"]}
           backdrop="blur"
           backgroundStyle={{ borderRadius: 44 }}
-          handleIndicatorStyle={{ backgroundColor: colors.textSecondary }}
+          handleComponent={null}
           stackBehavior="push"
         >
           <SearchableListSheet

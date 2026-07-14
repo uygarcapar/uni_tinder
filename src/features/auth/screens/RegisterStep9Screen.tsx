@@ -1,4 +1,4 @@
-import { useState, useMemo, useCallback, useEffect } from "react";
+import { useState, useMemo, useCallback } from "react";
 import {
   View,
   Text,
@@ -10,32 +10,26 @@ import { NativeStackScreenProps } from "@react-navigation/native-stack";
 import type { AuthStackParamList } from "@/shared/types/navigation";
 import { useAppDispatch, useAppSelector } from "@/shared/hooks/redux";
 import { updateMultipleFields } from "@/features/profile/profileSlice";
-import { BottomSheetBackdrop } from "@gorhom/bottom-sheet";
 import { ChevronDown } from "lucide-react-native";
-import { BlurView } from "expo-blur";
 import { KeyboardStickyView } from "react-native-keyboard-controller";
-import { LinearGradient } from "expo-linear-gradient";
-import { API_BASE_URL, API_ENDPOINTS } from "@/shared/constants/api";
 import RegisterProgressBar from "@/features/auth/components/RegisterProgressBar";
 import AnimatedPressable from "@/shared/components/AnimatedPressable";
 import AppBottomSheet from "@/shared/components/AppBottomSheet";
 import SearchableListSheet from "@/shared/components/SearchableListSheet";
+import CityPickerModal from "@/features/discover/components/CityPickerModal";
+import { useCities, useDistrictsByCity } from "@/shared/queries/commonQueries";
 import { useForm } from "react-hook-form";
 import { zodResolver } from "@hookform/resolvers/zod";
 import { locationSchema, LocationForm } from "@/shared/schemas/formSchemas";
-import { colors, gradients } from "../../../shared/theme/colors";
+import { colors } from "../../../shared/theme/colors";
 
 export default function RegisterStep9Screen({ navigation }: NativeStackScreenProps<AuthStackParamList, 'RegisterStep9'>) {
   const dispatch = useAppDispatch();
   const profile = useAppSelector((s) => (s as any).profile || {});
 
-  const [cities, setCities] = useState([]);
-  const [districts, setDistricts] = useState([]);
-  const [loadingCities, setLoadingCities] = useState(false);
-  const [loadingDistricts, setLoadingDistricts] = useState(false);
   const [cityVisible, setCityVisible] = useState(false);
   const [districtVisible, setDistrictVisible] = useState(false);
-  const snapPoints = useMemo(() => ["75%"], []);
+  const districtSnapPoints = useMemo(() => ["75%", "90%"], []);
 
   const { handleSubmit, setValue, watch } = useForm<LocationForm>({
     resolver: zodResolver(locationSchema),
@@ -48,43 +42,13 @@ export default function RegisterStep9Screen({ navigation }: NativeStackScreenPro
   const city = watch("city");
   const district = watch("district");
 
-  useEffect(() => { fetchCities(); }, []);
-
-  useEffect(() => {
-    if (!city || cities.length === 0) { setDistricts([]); return; }
-    const match = (cities as any[]).find((c) => c.enumName === city);
-    if (match) fetchDistricts(match.id);
-  }, [city, cities]);
-
-  const fetchCities = async () => {
-    try {
-      setLoadingCities(true);
-      const response = await fetch(`${API_BASE_URL}${API_ENDPOINTS.GET_CITIES}`);
-      const data = await response.json();
-      if (data.isSuccess && data.result) setCities(data.result);
-      else alert("Şehirler yüklenirken bir hata oluştu");
-    } catch (error) {
-      console.error("Error fetching cities:", error);
-      alert("Şehirler yüklenirken bir hata oluştu");
-    } finally {
-      setLoadingCities(false);
-    }
-  };
-
-  const fetchDistricts = async (cityId: any) => {
-    try {
-      setLoadingDistricts(true);
-      const response = await fetch(`${API_BASE_URL}${API_ENDPOINTS.GET_DISTRICTS}/${cityId}/districts`);
-      const data = await response.json();
-      if (data.isSuccess && data.result) setDistricts(data.result);
-      else alert("İlçeler yüklenirken bir hata oluştu");
-    } catch (error) {
-      console.error("Error fetching districts:", error);
-      alert("İlçeler yüklenirken bir hata oluştu");
-    } finally {
-      setLoadingDistricts(false);
-    }
-  };
+  const { data: cities = [], isLoading: loadingCities } = useCities();
+  const cityMatch = useMemo(
+    () => (city ? cities.find((c) => c.enumName === city) : undefined),
+    [cities, city],
+  );
+  const { data: districts = [], isLoading: loadingDistricts } =
+    useDistrictsByCity(cityMatch?.id);
 
   const handleOpenCityModal = useCallback(() => {
     Keyboard.dismiss();
@@ -96,15 +60,6 @@ export default function RegisterStep9Screen({ navigation }: NativeStackScreenPro
     Keyboard.dismiss();
     setTimeout(() => setDistrictVisible(true), 100);
   }, [city]);
-
-  const renderBackdrop = useCallback(
-    (props: any) => (
-      <BottomSheetBackdrop {...props} disappearsOnIndex={-1} appearsOnIndex={0} opacity={1} pressBehavior="close" style={[props.style, { backgroundColor: "transparent" }]}>
-        <BlurView style={{ position: "absolute", top: 0, left: 0, right: 0, bottom: 0 }} intensity={30} tint="dark" />
-      </BottomSheetBackdrop>
-    ),
-    [],
-  );
 
   const getCityLabel = () => {
     if (!city) return "Şehir Seç";
@@ -202,56 +157,55 @@ export default function RegisterStep9Screen({ navigation }: NativeStackScreenPro
         <View className="px-8 pb-8 pt-4 bg-bg">
           <AnimatedPressable
             onPress={handleNext}
-            style={{ borderRadius: 999, borderCurve: "continuous", overflow: "hidden" }}
+            style={{ borderRadius: 999, borderCurve: "continuous", overflow: "hidden", backgroundColor: colors.messageOwn }}
           >
-            <LinearGradient
-              colors={gradients.neutralFade}
-              locations={[0, 0.35, 0.85]}
-              start={{ x: 0, y: 0 }}
-              end={{ x: 1, y: 1 }}
-              className="py-3.5"
-            >
-              <Text className="text-black py-[20px] font-bold text-[15px] text-center">
-                {!city && !district ? "Atla" : "Devam Et"}
-              </Text>
-            </LinearGradient>
+            <Text className="text-white py-[20px] font-bold text-[15px] text-center">
+              {!city && !district ? "Atla" : "Devam Et"}
+            </Text>
           </AnimatedPressable>
         </View>
       </KeyboardStickyView>
 
-      {/* City Bottom Sheet */}
-      <AppBottomSheet
-        visible={cityVisible}
-        onClose={() => setCityVisible(false)}
-        snapPoints={snapPoints}
-        backdropComponent={renderBackdrop}
-        backgroundStyle={{ borderRadius: 44 }}
-        handleIndicatorStyle={{ backgroundColor: colors.textSecondary }}
-      >
-        <SearchableListSheet
-          initialValue={city}
-          onConfirm={(selectedCity: string) => { setValue("city", selectedCity, { shouldValidate: true }); setValue("district", ""); setCityVisible(false); }}
-          onCancel={() => setCityVisible(false)}
+      {/* City Picker */}
+      {cityVisible && (
+        <CityPickerModal
+          visible={cityVisible}
+          onClose={() => setCityVisible(false)}
           items={cities}
+          initialValue={city ?? ""}
+          onConfirm={(selectedCity: string) => {
+            setCityVisible(false);
+            setValue("city", selectedCity, { shouldValidate: true });
+            setValue("district", "");
+            dispatch(updateMultipleFields({ city: selectedCity, district: null }));
+          }}
         />
-      </AppBottomSheet>
+      )}
 
-      {/* District Bottom Sheet */}
-      <AppBottomSheet
-        visible={districtVisible}
-        onClose={() => setDistrictVisible(false)}
-        snapPoints={snapPoints}
-        backdropComponent={renderBackdrop}
-        backgroundStyle={{ borderRadius: 44 }}
-        handleIndicatorStyle={{ backgroundColor: colors.textSecondary }}
-      >
-        <SearchableListSheet
-          initialValue={district}
-          onConfirm={(selectedDistrict: string) => { setValue("district", selectedDistrict, { shouldValidate: true }); setDistrictVisible(false); }}
-          onCancel={() => setDistrictVisible(false)}
-          items={districts}
-        />
-      </AppBottomSheet>
+      {/* District Picker */}
+      {districtVisible && (
+        <AppBottomSheet
+          visible={districtVisible}
+          onClose={() => setDistrictVisible(false)}
+          snapPoints={districtSnapPoints}
+          backdrop="blur"
+          backgroundStyle={{ borderRadius: 44 }}
+          handleComponent={null}
+          stackBehavior="push"
+        >
+          <SearchableListSheet
+            items={districts}
+            initialValue={district ?? ""}
+            title="İlçe Seç"
+            onConfirm={(selectedDistrict: string) => {
+              setDistrictVisible(false);
+              setValue("district", selectedDistrict, { shouldValidate: true });
+              dispatch(updateMultipleFields({ district: selectedDistrict }));
+            }}
+            onCancel={() => setDistrictVisible(false)}
+          />
+        </AppBottomSheet>
+      )}
     </View>
   );
 }

@@ -1,3 +1,4 @@
+import { memo } from "react";
 import { View, Text } from "react-native";
 import { colors } from "../../../shared/theme/colors";
 
@@ -5,7 +6,7 @@ import { colors } from "../../../shared/theme/colors";
  * Inverted FlatList içinde mesaj grupları arasında tarih ayraç.
  * Bugün / Dün / DD MMM YYYY formatları.
  */
-export default function DateSeparator({ label }: any) {
+const DateSeparator = memo(function DateSeparator({ label }: any) {
   if (!label) return null;
   return (
     <View className="items-center my-3">
@@ -16,7 +17,9 @@ export default function DateSeparator({ label }: any) {
       </View>
     </View>
   );
-}
+});
+
+export default DateSeparator;
 
 // ChatScreen useMemo ile messages'a iliştirir.
 const TR_MONTHS = [

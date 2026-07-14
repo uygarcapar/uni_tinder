@@ -48,7 +48,7 @@ export const colors = {
 export const gradients = {
   swipeLike: ["#009DBD", "#57FAB6", "#046602"] as const,
   swipeNope: ["#FC0341", "#FF4D4D", "#FFEF42"] as const,
-  premium: ["#FF3D3D", "#FF8F17", "#FFC259"] as const,
+  premium: ["#FF3D3D", "#FF8F17", "#ff9a17"] as const,
   premiumAlt: ["#FF173A", "#FF4D4D", "#FC803D"] as const,
   neutralFade: ["#FFFFFF", "#E5E7EB", "#9CA3AF"] as const,
 } as const;

@@ -12,13 +12,12 @@ import type { AuthStackParamList } from "@/shared/types/navigation";
 import { useAppDispatch, useAppSelector } from "@/shared/hooks/redux";
 import { updateRegistrationField } from "@/features/auth/authSlice";
 import { KeyboardStickyView } from "react-native-keyboard-controller";
-import { LinearGradient } from "expo-linear-gradient";
 import RegisterProgressBar from "@/features/auth/components/RegisterProgressBar";
 import AnimatedPressable from "@/shared/components/AnimatedPressable";
 import { useForm, Controller } from "react-hook-form";
 import { zodResolver } from "@hookform/resolvers/zod";
 import { firstNameSchema, FirstNameForm } from "@/shared/schemas/formSchemas";
-import { colors, gradients } from "../../../shared/theme/colors";
+import { colors } from "../../../shared/theme/colors";
 
 export default function RegisterStep5Screen({ navigation }: NativeStackScreenProps<AuthStackParamList, 'RegisterStep5'>) {
   const dispatch = useAppDispatch();
@@ -117,18 +116,12 @@ export default function RegisterStep5Screen({ navigation }: NativeStackScreenPro
               borderRadius: 999,
               borderCurve: "continuous",
               overflow: "hidden",
+              backgroundColor: colors.messageOwn,
             }}
           >
-            <LinearGradient
-              colors={gradients.neutralFade}
-              locations={[0, 0.35, 0.85]}
-              start={{ x: 0, y: 0 }}
-              end={{ x: 1, y: 1 }}
-            >
-              <Text className="text-black py-[20px] font-bold text-[15px] text-center">
-                Devam Et
-              </Text>
-            </LinearGradient>
+            <Text className="text-white py-[20px] font-bold text-[15px] text-center">
+              Devam Et
+            </Text>
           </AnimatedPressable>
         </View>
       </KeyboardStickyView>

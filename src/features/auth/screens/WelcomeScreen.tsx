@@ -58,7 +58,7 @@ export default function WelcomeScreen({ navigation }: NativeStackScreenProps<Aut
       <StatusBar style="dark" />
 
       <LinearGradient
-        colors={["#ffffff", "#e3e3e3", "#9e9e9e", "#525252"]}
+        colors={["#FFC259", "#FF8F17", "#FF3D3D"]}
         locations={[0, 0.3, 0.65, 1]}
         start={{ x: -0.5, y: 0 }}
         end={{ x: 1.5, y: 1 }}
@@ -78,7 +78,7 @@ export default function WelcomeScreen({ navigation }: NativeStackScreenProps<Aut
         {/* Üst Kısım */}
         <View className="flex-1 justify-center items-center">
           <Image
-            source={require("../../../../assets/lit_name_black.png")}
+            source={require("../../../../assets/lit_name_white.png")}
             style={{
               width: width * 0.7,
               height: 110,
@@ -96,21 +96,14 @@ export default function WelcomeScreen({ navigation }: NativeStackScreenProps<Aut
                 borderRadius: 999,
                 borderCurve: "continuous",
                 overflow: "hidden",
+                backgroundColor: "white",
+                paddingVertical: 20,
+                alignItems: "center",
               }}
             >
-              <LinearGradient
-                colors={[colors.bgDeep, colors.surface5]}
-                start={{ x: 0, y: 0 }}
-                end={{ x: 1, y: 1 }}
-                style={{
-                  paddingVertical: 20,
-                  alignItems: "center",
-                }}
-              >
-                <Text className="text-white font-bold text-[14px]">
-                  Hesap Oluştur
-                </Text>
-              </LinearGradient>
+              <Text style={{ color: colors.bgDeep }} className="font-bold text-[14px]">
+                Hesap Oluştur
+              </Text>
             </PressableScaleButton>
 
             <PressableScaleButton

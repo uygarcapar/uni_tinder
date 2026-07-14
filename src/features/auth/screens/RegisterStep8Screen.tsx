@@ -1,4 +1,4 @@
-import { useState, useMemo, useCallback, useEffect } from "react";
+import { useState, useMemo, useCallback } from "react";
 import {
   View,
   Text,
@@ -11,23 +11,18 @@ import {
 import { NativeStackScreenProps } from "@react-navigation/native-stack";
 import type { AuthStackParamList } from "@/shared/types/navigation";
 import { useAppDispatch, useAppSelector } from "@/shared/hooks/redux";
-import {
-  BottomSheetBackdrop,
-  BottomSheetTextInput,
-  BottomSheetFlatList,
-} from "@gorhom/bottom-sheet";
-import { Check, Search, SearchX, ChevronDown } from "lucide-react-native";
+import { ChevronDown } from "lucide-react-native";
 import { updateMultipleFields } from "@/features/profile/profileSlice";
 import { KeyboardStickyView } from "react-native-keyboard-controller";
-import { LinearGradient } from "expo-linear-gradient";
-import { API_BASE_URL, API_ENDPOINTS } from "@/shared/constants/api";
 import RegisterProgressBar from "@/features/auth/components/RegisterProgressBar";
 import AnimatedPressableShared from "@/shared/components/AnimatedPressable";
 import AppBottomSheet from "@/shared/components/AppBottomSheet";
+import SearchableListSheet from "@/shared/components/SearchableListSheet";
+import { useDepartments } from "@/shared/queries/commonQueries";
 import { useForm } from "react-hook-form";
 import { zodResolver } from "@hookform/resolvers/zod";
 import { educationSchema, EducationForm } from "@/shared/schemas/formSchemas";
-import { colors, gradients } from "../../../shared/theme/colors";
+import { colors } from "../../../shared/theme/colors";
 
 const YEAR_OF_STUDY_OPTIONS = [
   { value: "0", label: "Hazırlık" },
@@ -52,115 +47,6 @@ const AnimatedPressable = ({ onPress, style, activeOpacity = 1, children }: any)
   );
 };
 
-const DepartmentPickerContent = ({ initialDepartment, onConfirm, onCancel, departments }: any) => {
-  const isValidDepartment = initialDepartment !== null && initialDepartment !== undefined && initialDepartment !== "";
-  const localDepartment = isValidDepartment ? String(initialDepartment) : "";
-  const [search, setSearch] = useState("");
-
-  const filteredDepartments = useMemo(() => {
-    const q = search.trim().toLocaleLowerCase("tr");
-    if (!q) return departments;
-    return departments.filter((d: any) => (d.name ?? "").toLocaleLowerCase("tr").includes(q));
-  }, [search, departments]);
-
-  const orderedDepartments = useMemo(() => {
-    if (!localDepartment) return filteredDepartments;
-    const selectedItem = departments.find((d: any) => String(d.id) === localDepartment);
-    if (!selectedItem) return filteredDepartments;
-    const q = search.trim().toLocaleLowerCase("tr");
-    if (q && !(selectedItem.name ?? "").toLocaleLowerCase("tr").includes(q)) return filteredDepartments;
-    const rest = filteredDepartments.filter((d: any) => String(d.id) !== localDepartment);
-    return [selectedItem, ...rest];
-  }, [filteredDepartments, departments, localDepartment, search]);
-
-  return (
-    <BottomSheetFlatList
-      data={orderedDepartments}
-      keyExtractor={(item: any) => String(item.id)}
-      keyboardShouldPersistTaps="handled"
-      showsVerticalScrollIndicator={false}
-      stickyHeaderIndices={[0]}
-      style={{ backgroundColor: colors.bg }}
-      contentContainerStyle={{ paddingHorizontal: 16, paddingBottom: 32 }}
-      ListHeaderComponent={
-        <View style={{ backgroundColor: colors.bg, paddingTop: 32, paddingBottom: 8 }}>
-          <View className="flex-row justify-between items-center py-4 px-2">
-            <TouchableOpacity onPress={onCancel}>
-              <Text className="text-gray-400 text-xl">İptal</Text>
-            </TouchableOpacity>
-            <TouchableOpacity onPress={() => onConfirm(localDepartment)}>
-              <Text className="text-white text-xl font-bold">Bitti</Text>
-            </TouchableOpacity>
-          </View>
-          <View style={{ position: "relative", marginBottom: 10 }}>
-            <View pointerEvents="none" style={{ position: "absolute", left: 18, top: 0, bottom: 0, justifyContent: "center", zIndex: 1 }}>
-              <Search size={18} color={colors.text} strokeWidth={2} />
-            </View>
-            <BottomSheetTextInput
-              defaultValue=""
-              onChangeText={setSearch}
-              placeholder=""
-              autoCorrect={false}
-              autoCapitalize="none"
-              style={{
-                borderRadius: 999,
-                borderCurve: "continuous",
-                borderWidth: 0.5,
-                borderColor: "rgba(255,255,255,0.1)",
-                backgroundColor: "transparent",
-                paddingLeft: 44,
-                paddingRight: 16,
-                paddingVertical: 14,
-                color: colors.text,
-                fontSize: 16,
-              }}
-            />
-          </View>
-        </View>
-      }
-      ListEmptyComponent={
-        <View style={{ paddingVertical: 32, alignItems: "center" }}>
-          <SearchX size={36} color={colors.text} strokeWidth={1.75} />
-          {search.trim() !== "" && (
-            <Text style={{ color: colors.text, fontSize: 15, fontWeight: "500", marginTop: 12, textAlign: "center" }}>
-              '{search.trim()}' bulunamadı
-            </Text>
-          )}
-        </View>
-      }
-      renderItem={({ item }: any) => {
-        const isSelected = item.enumName === localDepartment;
-        return (
-          <TouchableOpacity
-            activeOpacity={0.7}
-            onPress={() => onConfirm(item.enumName)}
-            style={{
-              paddingVertical: 20,
-              paddingHorizontal: 16,
-              flexDirection: "row",
-              alignItems: "center",
-              borderCurve: "continuous",
-              overflow: "hidden",
-              borderRadius: 999,
-              backgroundColor: isSelected ? "rgba(255,255,255,0.1)" : "transparent",
-              position: "relative",
-            }}
-          >
-            <Text style={{ color: isSelected ? colors.text : colors.textSecondary, fontSize: 16, fontWeight: "400", flex: 1, marginRight: 32 }}>
-              {item.name}
-            </Text>
-            {isSelected && (
-              <View pointerEvents="none" style={{ position: "absolute", right: 16, top: 0, bottom: 0, justifyContent: "center" }}>
-                <Check size={18} color={colors.text} strokeWidth={2.5} />
-              </View>
-            )}
-          </TouchableOpacity>
-        );
-      }}
-    />
-  );
-};
-
 export default function RegisterStep8Screen({ navigation }: NativeStackScreenProps<AuthStackParamList, 'RegisterStep8'>) {
   const dispatch = useAppDispatch();
   const profile = useAppSelector((s) => (s as any).profile || {});
@@ -171,10 +57,8 @@ export default function RegisterStep8Screen({ navigation }: NativeStackScreenPro
       : "";
   const initialDepartment = typeof profile.department === "string" ? profile.department : "";
 
-  const [departments, setDepartments] = useState([]);
-  const [loadingDepartments, setLoadingDepartments] = useState(false);
   const [departmentVisible, setDepartmentVisible] = useState(false);
-  const snapPoints = useMemo(() => ["75%"], []);
+  const snapPoints = useMemo(() => ["75%", "90%"], []);
 
   const { handleSubmit, setValue, watch, formState: { errors } } = useForm<EducationForm>({
     resolver: zodResolver(educationSchema),
@@ -184,27 +68,8 @@ export default function RegisterStep8Screen({ navigation }: NativeStackScreenPro
   const department = watch("department");
   const yearOfStudy = watch("yearOfStudy");
 
-  useEffect(() => {
-    fetchDepartments();
-  }, []);
-
-  const fetchDepartments = async () => {
-    try {
-      setLoadingDepartments(true);
-      const response = await fetch(`${API_BASE_URL}${API_ENDPOINTS.GET_DEPARTMENTS}`);
-      const data = await response.json();
-      if (data.isSuccess && data.result) {
-        setDepartments(data.result);
-      } else {
-        alert("Bölümler yüklenirken bir hata oluştu");
-      }
-    } catch (error) {
-      console.error("Error fetching departments:", error);
-      alert("Bölümler yüklenirken bir hata oluştu");
-    } finally {
-      setLoadingDepartments(false);
-    }
-  };
+  const { data: departments = [], isLoading: loadingDepartments } =
+    useDepartments();
 
   const handleOpenDepartmentModal = useCallback(() => {
     Keyboard.dismiss();
@@ -212,28 +77,14 @@ export default function RegisterStep8Screen({ navigation }: NativeStackScreenPro
   }, []);
 
   const confirmDepartmentSelection = (selectedDepartment: string) => {
-    setValue("department", selectedDepartment, { shouldValidate: true });
     setDepartmentVisible(false);
+    setValue("department", selectedDepartment, { shouldValidate: true });
+    dispatch(updateMultipleFields({ department: selectedDepartment }));
   };
 
   const cancelDepartmentSelection = () => {
     setDepartmentVisible(false);
   };
-
-  const renderBackdrop = useCallback(
-    (props: any) => (
-      <BottomSheetBackdrop
-        {...props}
-        disappearsOnIndex={-1}
-        appearsOnIndex={0}
-        opacity={0.55}
-        pressBehavior="close"
-        onPress={() => { Keyboard.dismiss(); setDepartmentVisible(false); }}
-        style={[props.style, { backgroundColor: "#000" }]}
-      />
-    ),
-    [],
-  );
 
   const getDepartmentLabel = () => {
     if (!department) return "Bölüm Seçiniz";
@@ -308,7 +159,10 @@ export default function RegisterStep8Screen({ navigation }: NativeStackScreenPro
                 return (
                   <AnimatedPressable
                     key={opt.value}
-                    onPress={() => setValue("yearOfStudy", opt.value, { shouldValidate: true })}
+                    onPress={() => {
+                      setValue("yearOfStudy", opt.value, { shouldValidate: true });
+                      dispatch(updateMultipleFields({ yearOfStudy: parseInt(opt.value) }));
+                    }}
                     style={{
                       borderRadius: 999,
                       borderCurve: "continuous",
@@ -338,38 +192,35 @@ export default function RegisterStep8Screen({ navigation }: NativeStackScreenPro
         <View className="px-8 pb-8 pt-4 bg-bg">
           <AnimatedPressableShared
             onPress={handleNext}
-            style={{ borderRadius: 999, borderCurve: "continuous", overflow: "hidden" }}
+            style={{ borderRadius: 999, borderCurve: "continuous", overflow: "hidden", backgroundColor: colors.messageOwn }}
           >
-            <LinearGradient
-              colors={gradients.neutralFade}
-              locations={[0, 0.35, 0.85]}
-              start={{ x: 0, y: 0 }}
-              end={{ x: 1, y: 1 }}
-              className="py-3.5"
-            >
-              <Text className="text-black py-[20px] font-bold text-[15px] text-center">
-                Devam Et
-              </Text>
-            </LinearGradient>
+            <Text className="text-white py-[20px] font-bold text-[15px] text-center">
+              Devam Et
+            </Text>
           </AnimatedPressableShared>
         </View>
       </KeyboardStickyView>
 
-      {/* Department Bottom Sheet */}
-      <AppBottomSheet
-        visible={departmentVisible}
-        onClose={cancelDepartmentSelection}
-        snapPoints={snapPoints}
-        backdropComponent={renderBackdrop}
-        backgroundStyle={{ borderRadius: 44 }}
-      >
-        <DepartmentPickerContent
-          initialDepartment={department}
-          onConfirm={confirmDepartmentSelection}
-          onCancel={cancelDepartmentSelection}
-          departments={departments}
-        />
-      </AppBottomSheet>
+      {/* Department Picker */}
+      {departmentVisible && (
+        <AppBottomSheet
+          visible={departmentVisible}
+          onClose={cancelDepartmentSelection}
+          snapPoints={snapPoints}
+          backdrop="blur"
+          backgroundStyle={{ borderRadius: 44 }}
+          handleComponent={null}
+          stackBehavior="push"
+        >
+          <SearchableListSheet
+            items={departments}
+            initialValue={department ?? ""}
+            title="Bölüm Seç"
+            onConfirm={confirmDepartmentSelection}
+            onCancel={cancelDepartmentSelection}
+          />
+        </AppBottomSheet>
+      )}
     </View>
   );
 }

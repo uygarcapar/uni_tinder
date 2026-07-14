@@ -471,6 +471,19 @@ function formatTime(iso) {
   }
 }
 
+function reactionsEqual(a: any, b: any) {
+  if (a === b) return true;
+  const la = a?.length || 0;
+  const lb = b?.length || 0;
+  if (la !== lb) return false;
+  for (let i = 0; i < la; i++) {
+    if (a[i].emoji !== b[i].emoji || (a[i].count || 0) !== (b[i].count || 0)) {
+      return false;
+    }
+  }
+  return true;
+}
+
 export default memo(MessageBubble, (prev, next) => {
   // Sadece kritik alanlar değişince yeniden render — long list perf.
   const a = prev.message,
@@ -484,8 +497,7 @@ export default memo(MessageBubble, (prev, next) => {
     a.deletedAt === b.deletedAt &&
     a._pending === b._pending &&
     a._failed === b._failed &&
-    (a.reactions?.length || 0) === (b.reactions?.length || 0) &&
-    JSON.stringify(a.reactions) === JSON.stringify(b.reactions) &&
+    reactionsEqual(a.reactions, b.reactions) &&
     prev.isOwn === next.isOwn
   );
 });

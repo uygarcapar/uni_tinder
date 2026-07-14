@@ -446,7 +446,8 @@ export default function RegisterScreen({ navigation }) {
             <TouchableOpacity
               activeOpacity={1}
               onPress={handleNext}
-              className="bg-primary rounded-full py-3.5 items-center"
+              style={{ backgroundColor: colors.messageOwn, borderRadius: 999 }}
+              className="py-3.5 items-center"
             >
               <Text className="text-white font-bold text-lg">Devam Et</Text>
             </TouchableOpacity>

@@ -5,14 +5,13 @@ import type { AuthStackParamList } from "@/shared/types/navigation";
 import { useAppDispatch, useAppSelector } from "@/shared/hooks/redux";
 import { updateMultipleFields } from "@/features/profile/profileSlice";
 import { KeyboardStickyView } from "react-native-keyboard-controller";
-import { LinearGradient } from "expo-linear-gradient";
 import { Check, InfoIcon } from "lucide-react-native";
 import RegisterProgressBar from "@/features/auth/components/RegisterProgressBar";
 import AnimatedPressableShared from "@/shared/components/AnimatedPressable";
 import { useForm } from "react-hook-form";
 import { zodResolver } from "@hookform/resolvers/zod";
 import { interestedInSchema, InterestedInForm } from "@/shared/schemas/formSchemas";
-import { colors, gradients } from "../../../shared/theme/colors";
+import { colors } from "../../../shared/theme/colors";
 
 // Backend InterestedIn enumName ("Men"/"Women"/"NonBinary") bekliyor.
 const OPTIONS = [
@@ -128,17 +127,10 @@ export default function RegisterStep10Screen({ navigation }: NativeStackScreenPr
 
       <KeyboardStickyView offset={{ closed: 0, opened: 0 }}>
         <View style={{ paddingHorizontal: 32, paddingBottom: 32, paddingTop: 16, backgroundColor: colors.bg }}>
-          <AnimatedPressableShared onPress={handleNext} style={{ borderRadius: 999, overflow: "hidden" }}>
-            <LinearGradient
-              colors={gradients.neutralFade}
-              locations={[0, 0.35, 0.85]}
-              start={{ x: 0, y: 0 }}
-              end={{ x: 1, y: 1 }}
-            >
-              <Text style={{ color: "#000", paddingVertical: 20, fontWeight: "700", fontSize: 15, textAlign: "center" }}>
-                Devam Et
-              </Text>
-            </LinearGradient>
+          <AnimatedPressableShared onPress={handleNext} style={{ borderRadius: 999, overflow: "hidden", backgroundColor: colors.messageOwn }}>
+            <Text style={{ color: "#fff", paddingVertical: 20, fontWeight: "700", fontSize: 15, textAlign: "center" }}>
+              Devam Et
+            </Text>
           </AnimatedPressableShared>
         </View>
       </KeyboardStickyView>

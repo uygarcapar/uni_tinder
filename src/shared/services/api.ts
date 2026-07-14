@@ -13,8 +13,11 @@ export const setOnTokenRefreshed = (cb: (token: string, refreshToken: string) =>
 
 // Optional callback: called when refresh token fails / is missing → kullanıcı
 // logout edilmeli. AppNavigator dispatch(logout())'u burada tetikler.
-let onAuthLost: (() => void) | null = null;
-export const setOnAuthLost = (cb: () => void) => {
+// reason ile "başka cihazdan giriş" vs "session expired" ayrılır — birinci
+// durumda kullanıcıya toast gösterilir, ikincisinde sessiz logout.
+export type AuthLostReason = 'new_login_elsewhere' | 'session_expired';
+let onAuthLost: ((reason: AuthLostReason) => void) | null = null;
+export const setOnAuthLost = (cb: (reason: AuthLostReason) => void) => {
   onAuthLost = cb;
 };
 
@@ -85,7 +88,7 @@ export const refreshAccessToken = async (): Promise<string | null> => {
         console.log('❌ Refresh token bulunamadı — Logout');
         await clearAllTokens();
         setCurrentAccessToken(null);
-        if (onAuthLost) onAuthLost();
+        if (onAuthLost) onAuthLost('session_expired');
         return null;
       }
 
@@ -103,9 +106,17 @@ export const refreshAccessToken = async (): Promise<string | null> => {
       return newAccessToken as string;
     } catch (err: any) {
       console.log('❌ Token refresh başarısız:', err?.response?.status, err?.message);
+      // Backend revoke sinyali: başka cihazdan giriş yapıldıysa reason'ı taşı ki
+      // AppNavigator "başka cihazdan giriş" toast'ını gösterebilsin. Diğer refresh
+      // fail'leri (normal expiry, network) sessiz logout ile ilerler.
+      const data = err?.response?.data;
+      const reason: AuthLostReason =
+        data?.errorCode === 'REFRESH_TOKEN_REVOKED' && data?.reason === 'new_login_elsewhere'
+          ? 'new_login_elsewhere'
+          : 'session_expired';
       await clearAllTokens();
       setCurrentAccessToken(null);
-      if (onAuthLost) onAuthLost();
+      if (onAuthLost) onAuthLost(reason);
       return null;
     } finally {
       inFlightRefresh = null;

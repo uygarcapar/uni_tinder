@@ -1,4 +1,4 @@
-import { useState, useRef, useEffect, useMemo } from "react";
+import { memo, useState, useRef, useEffect, useMemo } from "react";
 import {
   View,
   Text,
@@ -52,7 +52,7 @@ const TYPING_DEBOUNCE_MS = 1500;
 const MAX_VOICE_DURATION_MS = 60_000;
 const IS_IOS = Platform.OS === "ios";
 
-export default function MessageInput({
+function MessageInput({
   conversationId,
   replyTo,
   onCancelReply,
@@ -533,7 +533,7 @@ export default function MessageInput({
                 onPress={handleSendText}
                 modifiers={[
                   buttonStyle("glassProminent"),
-                  tint(colors.primary),
+                  tint(colors.messageOwn),
                   labelStyle("iconOnly"),
                   font({ size: 18, weight: "semibold" }),
                   frame({ width: 36, height: 36 }),
@@ -561,7 +561,7 @@ export default function MessageInput({
             onPress={handleSendText}
             disabled={disabled}
             className="w-10 h-10 rounded-full items-center justify-center"
-            style={{ backgroundColor: colors.primary }}
+            style={{ backgroundColor: colors.messageOwn }}
           >
             <Send size={18} color={colors.text} />
           </TouchableOpacity>
@@ -580,6 +580,8 @@ export default function MessageInput({
     </View>
   );
 }
+
+export default memo(MessageInput);
 
 function RecordingDot() {
   const opacity = useRef(new Animated.Value(1)).current;

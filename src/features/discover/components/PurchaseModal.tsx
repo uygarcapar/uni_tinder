@@ -595,7 +595,7 @@ export default function PurchaseModal({ visible, onClose, onSuccess }: any) {
   return (
     <AppBottomSheet
       visible={visible}
-      snapPoints={["100%"]}
+      snapPoints={["75%", "93%"]}
       handleComponent={null}
       backdropComponent={renderBackdrop}
       footerComponent={renderFooter}

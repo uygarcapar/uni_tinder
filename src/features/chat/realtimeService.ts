@@ -25,7 +25,7 @@ type EventCallback = (...args: any[]) => void;
  *     MatchNotification, IncomingLike, ReceiveMessage, MessageSent, MessageDelivered,
  *     MessageEdited, MessageDeleted, MessagesRead, ReactionsChanged,
  *     UserStartedTyping, UserStoppedTyping, UserStatusChanged, UserStatusResponse,
- *     NewNotification, Error
+ *     NewNotification, Error, ForceLogout
  */
 class RealtimeService {
   private connection: HubConnection | null = null;
@@ -132,6 +132,7 @@ class RealtimeService {
       'MessageDelivered', 'MessageEdited', 'MessageDeleted', 'MessagesRead',
       'ReactionsChanged', 'UserStartedTyping', 'UserStoppedTyping',
       'UserStatusChanged', 'UserStatusResponse', 'NewNotification', 'Error',
+      'ForceLogout',
     ];
     events.forEach((evt) => {
       conn.on(evt, (...args) => this._emit(evt, ...args));

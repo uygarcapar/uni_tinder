@@ -312,11 +312,6 @@ export default function LikesScreen() {
         profileService.getMyProfile().catch(() => null),
       ]);
 
-      console.log(
-        `🔍 WhoLikedMe response (page ${page}):`,
-        JSON.stringify(data, null, 2),
-      );
-
       if (profile?.isPremium) setProfilePremium(true);
 
       if (data.isSuccess && data.result) {
@@ -349,8 +344,8 @@ export default function LikesScreen() {
         setHasNextPage(data.result.likes?.hasNextPage || false);
         setCurrentPage(data.result.likes?.currentPage || 1);
       }
-    } catch (error) {
-      console.error("❌ Error fetching who liked me:", error);
+    } catch {
+      // yut
     } finally {
       setLoading(false);
     }
@@ -391,8 +386,6 @@ export default function LikesScreen() {
       if (status === 404) {
         // Liker artık erişilebilir değil — listeyi tazele.
         fetchWhoLikedMe();
-      } else if (__DEV__) {
-        console.log("[LikerProfile fetch error]", e?.message);
       }
     } finally {
       setPreviewLoading(false);

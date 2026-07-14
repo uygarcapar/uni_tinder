@@ -11,7 +11,6 @@ import { NativeStackScreenProps } from "@react-navigation/native-stack";
 import type { AuthStackParamList } from "@/shared/types/navigation";
 import { useAppDispatch, useAppSelector } from "@/shared/hooks/redux";
 import { updateMultipleFields } from "@/features/profile/profileSlice";
-import { LinearGradient } from "expo-linear-gradient";
 import { API_BASE_URL, API_ENDPOINTS } from "@/shared/constants/api";
 import {
   Check, Sparkles, Users, Briefcase, Wind, Star, Flame, Leaf, Moon, Sun,
@@ -22,7 +21,7 @@ import AnimatedPressable from "@/shared/components/AnimatedPressable";
 import { useForm } from "react-hook-form";
 import { zodResolver } from "@hookform/resolvers/zod";
 import { lifestyleSchema, LifestyleForm } from "@/shared/schemas/formSchemas";
-import { colors, gradients } from "../../../shared/theme/colors";
+import { colors } from "../../../shared/theme/colors";
 
 const ZODIAC_MAP: Record<string, any> = {
   Koç: Flame, Boğa: Leaf, İkizler: Wind, Yengeç: Moon, Aslan: Sun,
@@ -310,12 +309,10 @@ export default function RegisterStep14Screen({ navigation }: NativeStackScreenPr
 
       {/* Sticky Button */}
       <View className="px-8 pb-8 pt-4 absolute bottom-0 left-0 right-0">
-        <AnimatedPressable style={{ borderRadius: 999, borderCurve: "continuous", overflow: "hidden" }} onPress={handleNext}>
-          <LinearGradient colors={gradients.neutralFade} locations={[0, 0.35, 0.85]} start={{ x: 0, y: 0 }} end={{ x: 1, y: 1 }} className="py-3.5">
-            <Text className="text-black py-[20px] font-bold text-[15px] text-center">
-              {allFieldsEmpty ? "Atla" : "Devam Et"}
-            </Text>
-          </LinearGradient>
+        <AnimatedPressable style={{ borderRadius: 999, borderCurve: "continuous", overflow: "hidden", backgroundColor: colors.messageOwn }} onPress={handleNext}>
+          <Text className="text-white py-[20px] font-bold text-[15px] text-center">
+            {allFieldsEmpty ? "Atla" : "Devam Et"}
+          </Text>
         </AnimatedPressable>
       </View>
     </View>

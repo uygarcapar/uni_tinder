@@ -76,6 +76,7 @@ import ReportModal from "@/shared/components/ReportModal";
 import DateSeparator, { withDateSeparators } from "@/features/chat/components/DateSeparator";
 import moderationService from "@/shared/services/moderationService";
 import ChatUnlockSheet from "@/features/chat/components/ChatUnlockSheet";
+import { showInfoToast } from "@/shared/services/toaster";
 import uiBus from "@/shared/services/uiBus";
 import { colors } from "../../../shared/theme/colors";
 
@@ -131,16 +132,21 @@ export default function ChatScreen({ route, navigation }: NativeStackScreenProps
     (s) => (s as any).chat.messagesByConv[conversationId]?.loading ?? false
   );
 
-  const typingMap = useAppSelector((s) => (s as any).chat.typingByConv[conversationId]);
-  const partnerTyping = useMemo(
-    () => Object.keys(typingMap || {}).some((uid: string) => uid !== myUserId),
-    [typingMap, myUserId],
-  );
-
-  const conv = useAppSelector((s) =>
-    (s as any).chat.conversations.find((c: any) => c.conversationId === conversationId),
-  );
-  const isActive = conv ? conv.isActive : (routeIsActive ?? true);
+  // Primitive selector'lar: typingByConv/conversations bucket'ları her mesaj
+  // dispatch'inde yeni referans üretiyor. Türetilmiş boolean'ları doğrudan
+  // seçince useSelector sadece boolean değeri değişince re-render eder.
+  const partnerTyping = useAppSelector((s) => {
+    const map = (s as any).chat.typingByConv[conversationId];
+    if (!map) return false;
+    for (const uid in map) if (uid !== myUserId) return true;
+    return false;
+  });
+  const isActive = useAppSelector((s) => {
+    const c = (s as any).chat.conversations.find(
+      (cc: any) => cc.conversationId === conversationId,
+    );
+    return c ? c.isActive : (routeIsActive ?? true);
+  });
 
   const [replyTo, setReplyTo] = useState<any>(null);
   const [actionTarget, setActionTarget] = useState<any>(null);
@@ -157,6 +163,22 @@ export default function ChatScreen({ route, navigation }: NativeStackScreenProps
   const isPremium = useAppSelector(selectIsPremium);
   const subscriptionSyncedAt = useAppSelector((s) => (s as any).subscription?.lastSyncedAt);
   const [unlockVisible, setUnlockVisible] = useState(false);
+
+  // Kalan mesaj hakkı düşükse (1–10) ekran ilk açıldığında bir kez toaster ile
+  // uyar — banner olarak sürekli durmasın. Ref conv-scoped ve component unmount
+  // olduğunda sıfırlanır → başka sohbete girildiğinde tekrar tetiklenir.
+  const quotaToastShownRef = useRef(false);
+  useEffect(() => {
+    if (quotaToastShownRef.current) return;
+    if (isPremium || !quota || quota.bothPremium || quota.isUnlocked) return;
+    const remaining = quota.remainingMessages;
+    if (remaining == null || remaining <= 0 || remaining > 10) return;
+    quotaToastShownRef.current = true;
+    showInfoToast({
+      title: "Mesaj hakkın azalıyor",
+      message: `${remaining} mesaj hakkın kaldı — ikiniz Premium olursanız sınırsız olur.`,
+    });
+  }, [quota, isPremium]);
 
   // isPremiumRef: closure'a takılı kalan eski değeri tüm async/effect handler'lara
   // sızdırmadan, en güncel premium statüsünü okuyabilelim diye.
@@ -217,10 +239,10 @@ export default function ChatScreen({ route, navigation }: NativeStackScreenProps
         }
         if (!mounted) return;
         await realtimeService.joinConversation(conversationId).catch(() => {});
-        await chatService.markRead(conversationId).catch(() => {});
-        // Init markRead'i kapsadığımız son partner mesajını damgala — sonradan koşan
-        // mark-read effect'i aynı durumda tekrar HTTP atmasın.
-        lastReadSentAtRef.current = latestPartnerSentAt(messages, myUserId);
+        // mark-read HTTP çağrısı aşağıdaki messages-effect'e devredildi. Burada
+        // messages closure'ı fetchHistory sonrası bile stale kaldığı için
+        // lastReadSentAtRef damgası 0'a düşüyor ve messages-effect yeni state ile
+        // çalıştığında ikinci bir HTTP atıyordu.
         dispatch(clearUnreadForConversation(conversationId));
         // Stale-time gate'i thunk içinde; init'te ilk çağrıyı yapar, sonraki mount'larda
         // 30sn içinde no-op.
@@ -663,6 +685,45 @@ export default function ChatScreen({ route, navigation }: NativeStackScreenProps
     [],
   );
 
+  // Header/Footer inline JSX'i memoize et — partnerTyping toggle'ında FlatList
+  // yeni JSX referansı görüp header'ı re-measure etmesin.
+  const listHeader = useMemo(
+    () =>
+      partnerTyping ? (
+        <View style={{ paddingHorizontal: 12, paddingVertical: 4 }}>
+          <TypingIndicator />
+        </View>
+      ) : null,
+    [partnerTyping],
+  );
+  const listFooter = useMemo(
+    () =>
+      loadingHistory && messages.length > 0 ? (
+        <View style={{ paddingVertical: 12 }}>
+          <ActivityIndicator size="small" color={colors.primary} />
+        </View>
+      ) : null,
+    [loadingHistory, messages.length],
+  );
+
+  // KeyboardStickyView offset'i memoize et — insets.bottom değişmedikçe stabil.
+  const kbOffset = useMemo(
+    () => ({ closed: 0, opened: insets.bottom }),
+    [insets.bottom],
+  );
+
+  // MessageInput.onSend inline handler'ını çıkar — MessageInput memo edilince
+  // stabil referans sayesinde her ChatScreen render'ında re-render tetiklenmez.
+  const handleInputSend = useCallback(
+    (payload: any) => {
+      handleSend(payload);
+      setReplyTo(null);
+    },
+    [handleSend],
+  );
+  const handleCancelReply = useCallback(() => setReplyTo(null), []);
+  const handleLockedPress = useCallback(() => setUnlockVisible(true), []);
+
   const { colors: headerMaskColors, locations: headerMaskLocations } = useMemo(
     () =>
       easeGradient({
@@ -738,6 +799,7 @@ export default function ChatScreen({ route, navigation }: NativeStackScreenProps
           paddingTop: INPUT_BAR_OPAQUE + insets.bottom,
         }}
         keyboardShouldPersistTaps="handled"
+        keyboardDismissMode="interactive"
         showsVerticalScrollIndicator={false}
         scrollEventThrottle={16}
         removeClippedSubviews
@@ -747,20 +809,8 @@ export default function ChatScreen({ route, navigation }: NativeStackScreenProps
         windowSize={10}
         onEndReached={loadMoreOlder}
         onEndReachedThreshold={0.5}
-        ListFooterComponent={
-          loadingHistory && messages.length > 0 ? (
-            <View style={{ paddingVertical: 12 }}>
-              <ActivityIndicator size="small" color={colors.primary} />
-            </View>
-          ) : null
-        }
-        ListHeaderComponent={
-          partnerTyping ? (
-            <View style={{ paddingHorizontal: 12, paddingVertical: 4 }}>
-              <TypingIndicator />
-            </View>
-          ) : null
-        }
+        ListFooterComponent={listFooter}
+        ListHeaderComponent={listHeader}
         ListEmptyComponent={
           !loadingHistory ? (
             <ChatEmptyState
@@ -772,17 +822,14 @@ export default function ChatScreen({ route, navigation }: NativeStackScreenProps
       />
 
       <KeyboardStickyView
-        offset={{ closed: 0, opened: insets.bottom }}
+        offset={kbOffset}
         style={{ position: "absolute", bottom: 0, left: 0, right: 0 }}
       >
         <MessageInput
           conversationId={conversationId}
           replyTo={replyTo}
-          onCancelReply={() => setReplyTo(null)}
-          onSend={(payload) => {
-            handleSend(payload);
-            setReplyTo(null);
-          }}
+          onCancelReply={handleCancelReply}
+          onSend={handleInputSend}
           onTypingChange={handleTypingChange}
           disabled={!isActive}
           quotaLocked={
@@ -793,7 +840,7 @@ export default function ChatScreen({ route, navigation }: NativeStackScreenProps
               (quota?.remainingMessages != null &&
                 quota.remainingMessages <= 0))
           }
-          onLockedPress={() => setUnlockVisible(true)}
+          onLockedPress={handleLockedPress}
         />
       </KeyboardStickyView>
 
@@ -895,24 +942,8 @@ function QuotaBanner({ quota, isPremium }: any) {
     return null;
   }
 
-  if (remaining <= 10) {
-    return (
-      <View
-        style={{
-          paddingHorizontal: 16,
-          paddingVertical: 8,
-          backgroundColor: "rgba(245,118,86,0.08)",
-          borderBottomWidth: 0.5,
-          borderBottomColor: "rgba(255,255,255,0.05)",
-        }}
-      >
-        <Text style={{ color: colors.primary, fontSize: 12, fontWeight: "600" }}>
-          {remaining} mesaj hakkın kaldı — ikiniz Premium olursanız sınırsız
-          olur
-        </Text>
-      </View>
-    );
-  }
+  // Düşük hak uyarısı artık toaster ile veriliyor (ChatScreen useEffect).
+  // Banner sadece premium/unlocked "Sınırsız" state'i için render edilir.
   return null;
 }
 

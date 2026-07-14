@@ -1,4 +1,4 @@
-import { useEffect, useCallback, useMemo, useRef, useState } from "react";
+import { memo, useEffect, useCallback, useMemo, useRef, useState } from "react";
 import {
   View,
   Text,
@@ -8,6 +8,7 @@ import {
   Alert,
   StyleSheet,
   Platform,
+  InteractionManager,
 } from "react-native";
 import { Image } from "expo-image";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
@@ -51,8 +52,22 @@ export default function MessagesScreen() {
   const insets = useSafeAreaInsets();
   const statsQuery = useSwipeStats();
 
-  const { conversations, conversationsLoading } = useAppSelector((s) => (s as any).chat);
+  // Alan-bazlı seç: chat bucket'ı olarak seçince Immer her chat dispatch'inde
+  // yeni bucket referansı üretiyor ve MessagesScreen alakasız her mesaj/typing/
+  // quota olayında rerender oluyordu.
+  const conversations = useAppSelector((s) => (s as any).chat.conversations);
+  const conversationsLoading = useAppSelector((s) => (s as any).chat.conversationsLoading);
   const typingByConv = useAppSelector((s) => (s as any).chat.typingByConv);
+  // typingByConv referansı herhangi bir konuşmada typing on/off olduğunda değişir.
+  // Bunu primitive boolean map'e indirgeyerek satırlara primitive prop geçiriyoruz
+  // → React.memo default shallowEqual, isTyping değişmemişse satırı skip eder.
+  const isTypingByConvId = useMemo(() => {
+    const m: Record<string, boolean> = {};
+    for (const cid in (typingByConv || {})) {
+      m[cid] = Object.keys(typingByConv[cid] || {}).length > 0;
+    }
+    return m;
+  }, [typingByConv]);
 
   const [activeTab, setActiveTab] = useState("all");
   const [searchQuery, setSearchQuery] = useState("");
@@ -234,14 +249,21 @@ export default function MessagesScreen() {
   const openChat = useCallback(
     (conv) => {
       dispatch(setActiveConversation(conv.conversationId));
-      navigation.navigate("Chat", {
-        conversationId: conv.conversationId,
-        partner: {
-          userId: conv.partnerUserId,
-          displayName: conv.partnerDisplayName,
-          profileImageUrl: conv.partnerProfileImageUrl,
-        },
-        isActive: conv.isActive,
+      // Bir chatten çıkıp hemen başka chate girmeye çalışınca navigate çağrısı
+      // bazen düşüyor (TouchableHighlight highlight'ı görünse de ekran açılmıyor,
+      // ikinci tap'te açılıyor). Root cause: önceki ChatScreen exit transition'ı
+      // devam ederken stack navigator busy oluyor → dispatch drop. Interaction
+      // sonuna kadar defer edip clean state'te navigate ediyoruz.
+      InteractionManager.runAfterInteractions(() => {
+        (navigation as any).navigate("Chat", {
+          conversationId: conv.conversationId,
+          partner: {
+            userId: conv.partnerUserId,
+            displayName: conv.partnerDisplayName,
+            profileImageUrl: conv.partnerProfileImageUrl,
+          },
+          isActive: conv.isActive,
+        });
       });
     },
     [dispatch, navigation],
@@ -303,15 +325,21 @@ export default function MessagesScreen() {
     [dispatch],
   );
 
-  const renderItem = ({ item }) => (
-    <ConversationRow
-      conv={item}
-      isTyping={
-        Object.keys(typingByConv?.[item.conversationId] || {}).length > 0
-      }
-      onPress={() => openChat(item)}
-      onLongPress={() => handleLongPress(item)}
-    />
+  // ConversationRow'a conv'i argüman alan STABIL callback'ler geçir — böylece
+  // renderItem içinde inline arrow'a gerek kalmaz, satır prop identity'si korunur.
+  const handleRowOpen = useCallback((c: any) => openChat(c), [openChat]);
+  const handleRowLongPress = useCallback((c: any) => handleLongPress(c), [handleLongPress]);
+
+  const renderItem = useCallback(
+    ({ item }: any) => (
+      <ConversationRow
+        conv={item}
+        isTyping={!!isTypingByConvId[item.conversationId]}
+        onOpen={handleRowOpen}
+        onLongPress={handleRowLongPress}
+      />
+    ),
+    [isTypingByConvId, handleRowOpen, handleRowLongPress],
   );
 
   return (
@@ -324,6 +352,11 @@ export default function MessagesScreen() {
         onScroll={onListScroll}
         scrollEventThrottle={16}
         keyboardShouldPersistTaps="handled"
+        removeClippedSubviews
+        maxToRenderPerBatch={8}
+        updateCellsBatchingPeriod={50}
+        initialNumToRender={10}
+        windowSize={7}
         ListHeaderComponent={
           // Sadece animasyonlu spacer — search row absolute overlay olarak ayrıca
           // render ediliyor (sticky). Spacer'ın yüksekliği overlay'in işgal ettiği
@@ -570,8 +603,17 @@ export default function MessagesScreen() {
   );
 }
 
-function ConversationRow({ conv, isTyping, onPress, onLongPress }) {
+const ConversationRow = memo(function ConversationRow({
+  conv,
+  isTyping,
+  onOpen,
+  onLongPress,
+}: any) {
   const isUnread = conv.unreadCount > 0;
+  // Stabil parent callback'lerini conv'a bind ediyoruz — memo default shallowEqual
+  // prop identity'sini onOpen/onLongPress üzerinden koruyabilsin diye.
+  const handlePress = useCallback(() => onOpen(conv), [onOpen, conv]);
+  const handleLongPress = useCallback(() => onLongPress(conv), [onLongPress, conv]);
   const subtitle = useMemo(() => {
     if (isTyping)
       return { kind: "text", text: "yazıyor…", className: "text-primary" };
@@ -613,8 +655,8 @@ function ConversationRow({ conv, isTyping, onPress, onLongPress }) {
 
   return (
     <TouchableHighlight
-      onPress={onPress}
-      onLongPress={onLongPress}
+      onPress={handlePress}
+      onLongPress={handleLongPress}
       underlayColor={colors.surface3}
       activeOpacity={1}
       style={{ backgroundColor: colors.bg }}
@@ -715,7 +757,7 @@ function ConversationRow({ conv, isTyping, onPress, onLongPress }) {
       </View>
     </TouchableHighlight>
   );
-}
+});
 
 function formatRelativeTime(iso) {
   if (!iso) return "";

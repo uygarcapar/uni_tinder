@@ -43,10 +43,6 @@ class SwipeService {
       `${API_ENDPOINTS.GET_POTENTIAL_MATCHES}?pageNumber=${pageNumber}&pageSize=${pageSize}`
     ) as any;
 
-    if (__DEV__) {
-      console.log(`API Response (Page ${pageNumber}):`, JSON.stringify(response, null, 2));
-    }
-
     const result: PotentialMatchesResult = {
       ...emptyResult,
       ...(response?.result ?? {}),

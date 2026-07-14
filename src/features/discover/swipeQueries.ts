@@ -24,11 +24,6 @@ export function usePotentialMatches(pageSize = 10) {
     queryKey: swipeKeys.matches,
     queryFn: async ({ pageParam = 1 }: { pageParam: number }) => {
       const result = await swipeService.getPotentialMatches(null, pageParam, pageSize);
-      if (__DEV__) {
-        console.log(
-          `[swipeQueries] page ${pageParam} → profiles=${result.profiles?.length ?? 0} hasNextPage=${result.hasNextPage} currentPage=${result.currentPage}`,
-        );
-      }
       return result;
     },
     initialPageParam: 1,
@@ -59,7 +54,6 @@ export function useSwipeStats() {
       const res = await api.get(API_ENDPOINTS.SWIPE_STATS) as any;
       if (!res.isSuccess || !res.result) throw new Error("Stats fetch failed");
       const r = res.result;
-      if (__DEV__) console.log("[SwipeStats response]", r);
       return {
         remainingSwipes: r.remainingSwipes ?? null,
         superLikesRemaining: r.superLikesRemaining ?? null,
@@ -146,9 +140,6 @@ export function useSwipeMutation() {
       });
     },
     onSuccess: (response: any, variables: { direction: string; userId: string }) => {
-      if (__DEV__) {
-        console.log(`[Swipe response] dir=${variables?.direction}`, response);
-      }
       const swipeResult = response?.result;
       const isSuperLike = variables?.direction === "up";
       if (swipeResult?.showPaywall) {
@@ -160,11 +151,6 @@ export function useSwipeMutation() {
           paywallType: swipeResult.paywallType,
           message: swipeResult.paywallMessage || swipeResult.message,
         });
-      }
-    },
-    onError: (err: any, variables: { direction: string; userId: string }) => {
-      if (__DEV__) {
-        console.log(`[Swipe error] dir=${variables?.direction}`, err?.response?.data ?? err?.message);
       }
     },
   });

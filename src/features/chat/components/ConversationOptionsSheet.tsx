@@ -167,11 +167,12 @@ export default function ConversationOptionsSheet({
       title="Sohbet Ayarları"
       snapPoints={["45%", "90%"]}
       closeButton={false}
+      contentContainerStyle={{ paddingTop: 36 }}
     >
       <Section
         title="Sohbet"
         description="Bu sohbete özel hızlı eylemler."
-        marginTop={20}
+        marginTop={4}
       />
       {isActive && (
         <ActionRow

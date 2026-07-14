@@ -12,7 +12,6 @@ import type { AuthStackParamList } from "@/shared/types/navigation";
 import { useAppDispatch, useAppSelector } from "@/shared/hooks/redux";
 import { login } from "@/features/auth/authSlice";
 import { Eye, EyeOff } from "lucide-react-native";
-import { LinearGradient } from "expo-linear-gradient";
 import {
   KeyboardStickyView,
   useReanimatedKeyboardAnimation,
@@ -22,7 +21,7 @@ import { useState } from "react";
 import { useForm, Controller } from "react-hook-form";
 import { zodResolver } from "@hookform/resolvers/zod";
 import { loginSchema, LoginForm } from "@/shared/schemas/formSchemas";
-import { colors, gradients } from "../../../shared/theme/colors";
+import { colors } from "../../../shared/theme/colors";
 
 export default function LoginScreen({ navigation }: NativeStackScreenProps<AuthStackParamList, 'Login'>) {
   const [showPassword, setShowPassword] = useState(false);
@@ -190,23 +189,16 @@ export default function LoginScreen({ navigation }: NativeStackScreenProps<AuthS
               borderRadius: 999,
               borderCurve: "continuous",
               overflow: "hidden",
+              backgroundColor: colors.messageOwn,
             }}
           >
-            <LinearGradient
-              colors={gradients.neutralFade}
-              locations={[0, 0.35, 0.85]}
-              start={{ x: 0, y: 0 }}
-              end={{ x: 1, y: 1 }}
-              className="py-3.5"
-            >
-              {loading ? (
-                <ActivityIndicator className="py-[17.5px]" color="#000" />
-              ) : (
-                <Text className="text-black py-[20px] font-bold text-[15px] text-center">
-                  Giriş Yap
-                </Text>
-              )}
-            </LinearGradient>
+            {loading ? (
+              <ActivityIndicator className="py-[17.5px]" color="#fff" />
+            ) : (
+              <Text className="text-white py-[20px] font-bold text-[15px] text-center">
+                Giriş Yap
+              </Text>
+            )}
           </TouchableOpacity>
         </View>
       </KeyboardStickyView>
