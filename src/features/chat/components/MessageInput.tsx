@@ -64,6 +64,7 @@ function MessageInput({
 }: any) {
   const insets = useSafeAreaInsets();
   const [text, setText] = useState("");
+  const [textFieldEpoch, setTextFieldEpoch] = useState(0);
   const [uploading, setUploading] = useState(false);
 
   const [isRecording, setIsRecording] = useState(false);
@@ -123,7 +124,9 @@ function MessageInput({
       clientMessageId: cryptoRandomUUID(),
     });
     setText("");
-    textFieldRef.current?.clear().catch(() => {});
+    if (IS_IOS) {
+      requestAnimationFrame(() => setTextFieldEpoch((n) => n + 1));
+    }
     onCancelReply?.();
   };
 
@@ -187,7 +190,9 @@ function MessageInput({
         clientMessageId: cryptoRandomUUID(),
       });
       setText("");
-      textFieldRef.current?.clear().catch(() => {});
+      if (IS_IOS) {
+        requestAnimationFrame(() => setTextFieldEpoch((n) => n + 1));
+      }
       onCancelReply?.();
     } catch (err) {
       Alert.alert(
@@ -444,6 +449,7 @@ function MessageInput({
                   />
                 )}
                 <TextField
+                  key={textFieldEpoch}
                   ref={textFieldRef}
                   placeholder={
                     quotaLocked
