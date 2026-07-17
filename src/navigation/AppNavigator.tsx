@@ -8,6 +8,9 @@ import {
   onNotificationTap,
   getInitialNotificationData,
   setActiveConversationGetter,
+  subscribeTokenRefresh,
+  subscribeForegroundMessages,
+  subscribeBackgroundOpen,
 } from '@/features/notifications/pushService';
 import uiBus from '@/shared/services/uiBus';
 import { navigationRef } from '@/shared/services/navigationRef';
@@ -289,32 +292,61 @@ export default function AppNavigator() {
     setActiveConversationGetter(() => activeConvRef.current);
     registerForPushNotifications().catch(() => {});
 
-    const tapUnsub = onNotificationTap((data) => {
+    const routeIfMounted = (data: Record<string, any>) => {
       if (!mounted) return;
       routeFromNotification(data);
-    });
+    };
 
+    const unsubs = [
+      // Foreground'da expo-notifications ile display edilen bildirime tap
+      onNotificationTap(routeIfMounted),
+      // Token rotate senaryosu (uninstall/reinstall vb.)
+      subscribeTokenRefresh(),
+      // Foreground FCM push — expo-notifications'a devret ki tray + badge güncellensin
+      subscribeForegroundMessages(),
+      // Background'dan foreground'a tap
+      subscribeBackgroundOpen(routeIfMounted),
+    ];
+
+    // Quit state'ten cold start ile açılış — FCM getInitialNotification
     getInitialNotificationData().then((data) => {
       if (mounted && data) routeFromNotification(data);
     });
 
     return () => {
       mounted = false;
-      tapUnsub();
+      unsubs.forEach((u) => u && u());
     };
   }, [isAuthenticated, token]);
 
   const routeFromNotification = useCallback((data: Record<string, any>) => {
     if (!data || !navigationRef.isReady()) return;
-    const convId = data.conversationId || data.relatedEntityId;
     const type = data.type;
+    const relatedId = data.conversationId || data.relatedEntityId;
 
-    if (convId && (type === 'Message' || type === 'Match')) {
-      navigationRef.navigate('Chat', {
-        conversationId: convId,
-        partner: undefined,
-        isActive: true,
-      });
+    switch (type) {
+      case 'Message':
+      case 'Match': {
+        if (!relatedId) return;
+        navigationRef.navigate('Chat', {
+          conversationId: relatedId,
+          partner: undefined,
+          isActive: true,
+        });
+        return;
+      }
+      case 'Like':
+      case 'SuperLike': {
+        // Likes tab HomeTabs stack'inin altında — nested navigate
+        navigationRef.navigate('HomeTabs' as never, { screen: 'Likes' } as never);
+        return;
+      }
+      case 'MissedMatch':
+      case 'System':
+      default: {
+        navigationRef.navigate('Notifications' as never);
+        return;
+      }
     }
   }, []);
 

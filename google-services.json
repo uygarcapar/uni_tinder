@@ -1,0 +1,29 @@
+{
+  "project_info": {
+    "project_number": "274949414919",
+    "project_id": "litapp-a8236",
+    "storage_bucket": "litapp-a8236.firebasestorage.app"
+  },
+  "client": [
+    {
+      "client_info": {
+        "mobilesdk_app_id": "1:274949414919:android:4e7e4c503b6911fa204aa2",
+        "android_client_info": {
+          "package_name": "com.uygarcapar.lit"
+        }
+      },
+      "oauth_client": [],
+      "api_key": [
+        {
+          "current_key": "AIzaSyC0ZgCX4EULg2R04REkdmFngUkXdrSpjdE"
+        }
+      ],
+      "services": {
+        "appinvite_service": {
+          "other_platform_oauth_client": []
+        }
+      }
+    }
+  ],
+  "configuration_version": "1"
+}

@@ -15,6 +15,7 @@
     "ios": {
       "supportsTablet": true,
       "bundleIdentifier": "com.uygarcapar.lit",
+      "googleServicesFile": "./GoogleService-Info.plist",
       "infoPlist": {
         "ITSAppUsesNonExemptEncryption": false,
         "NSMicrophoneUsageDescription": "Sesli mesaj gönderebilmen için mikrofon erişimine izin vermen gerekir.",
@@ -29,10 +30,12 @@
         "backgroundColor": "#ffffff"
       },
       "package": "com.uygarcapar.lit",
+      "googleServicesFile": "./google-services.json",
       "edgeToEdgeEnabled": true,
       "useNextNotificationsApi": true,
       "permissions": [
-        "RECORD_AUDIO"
+        "RECORD_AUDIO",
+        "POST_NOTIFICATIONS"
       ]
     },
     "plugins": [
@@ -47,7 +50,22 @@
       "expo-maps",
       "expo-status-bar",
       "expo-audio",
-      "expo-image"
+      "expo-image",
+      "@react-native-firebase/app",
+      "@react-native-firebase/messaging",
+      [
+        "expo-build-properties",
+        {
+          "ios": {
+            "extraPods": [
+              { "name": "GoogleUtilities", "modular_headers": true },
+              { "name": "FirebaseCoreInternal", "modular_headers": true },
+              { "name": "FirebaseCore", "modular_headers": true },
+              { "name": "FirebaseInstallations", "modular_headers": true }
+            ]
+          }
+        }
+      ]
     ],
     "web": {
       "favicon": "./assets/favicon.png"
