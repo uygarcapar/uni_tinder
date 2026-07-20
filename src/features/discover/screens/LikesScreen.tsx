@@ -1,4 +1,5 @@
 import { useEffect, useMemo, useState } from "react";
+import { useTranslation } from 'react-i18next';
 import {
   View,
   Text,
@@ -252,6 +253,7 @@ function LikeCard({ item, isPremium, onPress }) {
 }
 
 export default function LikesScreen() {
+  const { t } = useTranslation();
   const [likes, setLikes] = useState([]);
   const [loading, setLoading] = useState(true);
   const [currentPage, setCurrentPage] = useState(1);
@@ -371,20 +373,17 @@ export default function LikesScreen() {
     if (!likerUserId) return;
     setPreviewProfile(null);
     setPreviewLoading(true);
-    setPreviewVisible(true);
     try {
       const res = await swipeService.getLikerProfileDetail(likerUserId);
       if (res?.isSuccess && res?.result) {
         setPreviewProfile(res.result);
+        setPreviewVisible(true);
       } else {
-        setPreviewVisible(false);
         fetchWhoLikedMe();
       }
     } catch (e) {
       const status = e?.response?.status ?? e?.status;
-      setPreviewVisible(false);
       if (status === 404) {
-        // Liker artık erişilebilir değil — listeyi tazele.
         fetchWhoLikedMe();
       }
     } finally {
@@ -478,9 +477,9 @@ export default function LikesScreen() {
     <View className="pb-3">
       <View className="flex-row flex-wrap gap-2">
         {[
-          { key: "all", label: "Tümü", icon: null },
-          { key: "like", label: "Beğeni", icon: Heart },
-          { key: "superlike", label: "Superlike", icon: Star },
+          { key: "all", label: t('likes.tabAll'), icon: null },
+          { key: "like", label: t('likes.tabLike'), icon: Heart },
+          { key: "superlike", label: t('likes.tabSuperLike'), icon: Star },
         ].map((tab) => {
           const isActive = activeTab === tab.key;
           return (
@@ -552,24 +551,24 @@ export default function LikesScreen() {
                 topOffset={0}
                 text={
                   activeTab === "superlike"
-                    ? "Henüz süper beğeni yok."
+                    ? t('likes.emptySuperLike')
                     : activeTab === "like"
-                      ? "Henüz beğeni yok."
-                      : "Henüz seni beğenen kimse yok."
+                      ? t('likes.emptyLike')
+                      : t('likes.emptyAll')
                 }
                 subtitle={
                   activeTab === "superlike"
-                    ? "Seni süper beğenen birileri olduğunda burada görünecek."
+                    ? t('likes.emptySuperLikeSubtitle')
                     : activeTab === "like"
-                      ? "Yeni beğeniler geldikçe burada listelenecek."
-                      : "Profilini geliştirdikçe seni beğenenlerin sayısı artar."
+                      ? t('likes.emptyLikeSubtitle')
+                      : t('likes.emptyAllSubtitle')
                 }
                 buttonLabel={
                   activeTab === "superlike"
-                    ? "Süper beğeni gönder"
+                    ? t('likes.superLikeButton')
                     : activeTab === "like"
-                      ? "Keşfetmeye git"
-                      : "Profilimi geliştir"
+                      ? t('likes.discoverButton')
+                      : t('likes.profileButton')
                 }
                 onButtonPress={() =>
                   navigation.navigate(
@@ -596,13 +595,13 @@ export default function LikesScreen() {
 
       <ScreenHeader
         scrollY={scrollY}
-        title="Beğeniler"
+        title={t('likes.title')}
         fillRatio={swipeFillRatio}
         rightButton={
           Platform.OS === "ios" ? (
             <Host matchContents>
               <SwiftUIButton
-                label="Bildirimler"
+                label={t('common.notifications')}
                 systemImage="bell.fill"
                 onPress={() => navigation.navigate("Notifications")}
                 modifiers={[
@@ -646,8 +645,7 @@ export default function LikesScreen() {
             }}
           >
             <LinearGradient
-              colors={gradients.neutralFade}
-              locations={[0, 0.35, 0.85]}
+              colors={[colors.litPlus, colors.litPlus]}
               start={{ x: 0, y: 0 }}
               end={{ x: 1, y: 1 }}
               style={{
@@ -658,15 +656,15 @@ export default function LikesScreen() {
                 gap: 6,
               }}
             >
-              <Heart size={16} color="#000" strokeWidth={2.2} />
+              <Heart size={16} color={colors.text} strokeWidth={2.2} />
               <Text
                 style={{
-                  color: "#000",
+                  color: colors.text,
                   fontWeight: "700",
                   fontSize: 14,
                 }}
               >
-                Seni beğenenleri gör
+                {t('likes.viewButton')}
               </Text>
             </LinearGradient>
           </AnimatedPressable>
@@ -680,7 +678,7 @@ export default function LikesScreen() {
 
       <LikerSwipeModal
         visible={previewVisible}
-        profile={previewLoading ? null : previewProfile}
+        profile={previewProfile}
         onClose={handleClosePreview}
         onSwipe={handleLikerSwiped}
       />

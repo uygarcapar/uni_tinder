@@ -10,6 +10,7 @@ import AppModal from "@/shared/components/AppModal";
 import { MessageSquare, Lock, Infinity as InfinityIcon } from "lucide-react-native";
 import { LinearGradient } from "expo-linear-gradient";
 import { useAppDispatch } from "@/shared/hooks/redux";
+import { useTranslation } from "react-i18next";
 import {
   getChatUnlockPackage,
   purchaseChatUnlock,
@@ -41,6 +42,7 @@ export default function ChatUnlockSheet({
   onSuccess,
 }: any) {
   const dispatch = useAppDispatch();
+  const { t } = useTranslation();
   const [pkg, setPkg] = useState(null);
   const [loadingPkg, setLoadingPkg] = useState(true);
   const [purchasing, setPurchasing] = useState(false);
@@ -58,21 +60,18 @@ export default function ChatUnlockSheet({
 
   const handlePurchase = async () => {
     if (!pkg) {
-      Alert.alert("Hata", "Paket bulunamadı.");
+      Alert.alert(t('common.error'), t('chatUnlock.errors.packageNotFound'));
       return;
     }
     if (!conversationId) {
-      Alert.alert("Hata", "Sohbet seçili değil.");
+      Alert.alert(t('common.error'), t('chatUnlock.errors.chatNotSelected'));
       return;
     }
     setPurchasing(true);
     try {
       const { transactionId } = await purchaseChatUnlock(pkg);
       if (!transactionId) {
-        Alert.alert(
-          "Hata",
-          "Satın alma tamamlandı ama doğrulama bilgisi alınamadı. Lütfen 'Geri Yükle' butonunu dene."
-        );
+        Alert.alert(t('common.error'), t('chatUnlock.errors.verificationFailed'));
         return;
       }
 
@@ -100,7 +99,7 @@ export default function ChatUnlockSheet({
       onSuccess?.();
     } catch (e) {
       if (!e.userCancelled) {
-        Alert.alert("Satın Alma Hatası", e.message || "İşlem gerçekleştirilemedi.");
+        Alert.alert(t('chatUnlock.errors.purchaseTitle'), e.message || t('purchase.errors.operationFailed'));
       }
     } finally {
       setPurchasing(false);
@@ -109,18 +108,18 @@ export default function ChatUnlockSheet({
 
   const features = useMemo(
     () => [
-      { icon: InfinityIcon, label: "Bu sohbette sınırsız mesajlaşma" },
-      { icon: MessageSquare, label: "Tek seferlik satın alma — abonelik değil" },
-      { icon: Lock, label: "Diğer sohbetler etkilenmez" },
+      { icon: InfinityIcon, label: t('chatUnlock.feature1') },
+      { icon: MessageSquare, label: t('chatUnlock.feature2') },
+      { icon: Lock, label: t('chatUnlock.feature3') },
     ],
-    []
+    [t]
   );
 
   return (
     <AppModal
       visible={visible}
       onClose={onClose}
-      title="Sohbeti Aç"
+      title={t('chatUnlock.title')}
       snapPoints={["72%"]}
     >
         {/* Hero */}
@@ -147,7 +146,7 @@ export default function ChatUnlockSheet({
               textAlign: "center",
             }}
           >
-            50 mesaj sınırına ulaştın
+            {t('chatUnlock.heroTitle')}
           </Text>
           <Text
             style={{
@@ -158,7 +157,7 @@ export default function ChatUnlockSheet({
               lineHeight: 18,
             }}
           >
-            Bu sohbetin kilidini bir kez aç, ikiniz de sınırsız mesajlaşın.
+            {t('chatUnlock.heroSubtitle')}
           </Text>
         </LinearGradient>
 
@@ -202,7 +201,7 @@ export default function ChatUnlockSheet({
         ) : !pkg ? (
           <View style={{ alignItems: "center", paddingVertical: 16 }}>
             <Text style={{ color: colors.textSecondary, fontSize: 13, textAlign: "center" }}>
-              Şu anda paket bulunamadı. Lütfen daha sonra tekrar dene.
+              {t('chatUnlock.notAvailable')}
             </Text>
           </View>
         ) : (
@@ -224,7 +223,7 @@ export default function ChatUnlockSheet({
               <ActivityIndicator color="#000" />
             ) : (
               <Text style={{ color: "#000", fontWeight: "700", fontSize: 15 }}>
-                {priceString} — Sohbeti Aç
+                {t('chatUnlock.cta', { price: priceString })}
               </Text>
             )}
           </TouchableOpacity>
@@ -239,8 +238,7 @@ export default function ChatUnlockSheet({
             lineHeight: 16,
           }}
         >
-          Tek seferlik satın alma. Yenileme yok, otomatik ücret alınmaz.
-          İkiniz de Premium olursanız bu sohbet zaten sınırsız olur.
+          {t('chatUnlock.disclaimer')}
         </Text>
     </AppModal>
   );

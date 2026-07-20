@@ -18,8 +18,10 @@ import { useForm, Controller } from "react-hook-form";
 import { zodResolver } from "@hookform/resolvers/zod";
 import { firstNameSchema, FirstNameForm } from "@/shared/schemas/formSchemas";
 import { colors } from "../../../shared/theme/colors";
+import { useTranslation } from 'react-i18next';
 
 export default function RegisterStep5Screen({ navigation }: NativeStackScreenProps<AuthStackParamList, 'RegisterStep5'>) {
+  const { t } = useTranslation();
   const dispatch = useAppDispatch();
   const { firstName } = useAppSelector(
     (s) => (s as any).auth.registrationForm,
@@ -55,17 +57,16 @@ export default function RegisterStep5Screen({ navigation }: NativeStackScreenPro
         <View className="flex-1 px-6 py-6 pt-0">
           <View className="flex flex-col gap-2">
             <Text className="text-4xl font-bold text-white">
-              Seni tanıyalım.
+              {t('auth.step5.title')}
             </Text>
             <Text className="text-[18px] font-normal text-gray-400 mb-6">
-              Bize biraz kendinden bahset. Seni tanımamıza yardımcı olmak için
-              kutucukları doldur.
+              {t('auth.step5.description')}
             </Text>
           </View>
 
           <View className="w-full mb-4">
             <Text className="text-gray-300 text-[14px] font-semibold mb-2">
-              Ad *
+              {t('auth.step5.nameLabel')}
             </Text>
             <Controller
               control={control}
@@ -90,7 +91,7 @@ export default function RegisterStep5Screen({ navigation }: NativeStackScreenPro
                       fontSize: 18,
                       color: colors.text,
                     }}
-                    placeholder="Adın"
+                    placeholder={t('auth.step5.namePlaceholder')}
                     placeholderTextColor={colors.textSecondary}
                     value={value}
                     onChangeText={onChange}
@@ -120,7 +121,7 @@ export default function RegisterStep5Screen({ navigation }: NativeStackScreenPro
             }}
           >
             <Text className="text-white py-[20px] font-bold text-[15px] text-center">
-              Devam Et
+              {t('common.continueButton')}
             </Text>
           </AnimatedPressable>
         </View>

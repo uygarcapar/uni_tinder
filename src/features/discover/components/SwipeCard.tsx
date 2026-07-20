@@ -1,4 +1,5 @@
 import { useEffect, useMemo, useState } from "react";
+import { useTranslation } from "react-i18next";
 import {
   View,
   Text,
@@ -98,7 +99,7 @@ import { LinearGradient } from "expo-linear-gradient";
 import { BlurView } from "expo-blur";
 import MaskedView from "@react-native-masked-view/masked-view";
 import { easeGradient } from "react-native-easing-gradient";
-import Svg, { Defs, RadialGradient, Stop, Rect } from "react-native-svg";
+import Svg, { Defs, Rect, Circle, Mask } from "react-native-svg";
 import { getColors } from "react-native-image-colors";
 import { colors as theme } from "../../../shared/theme/colors";
 const { width, height } = Dimensions.get("window");
@@ -351,8 +352,82 @@ function SkeletonBox({ w, h, borderRadius = 8 }: any) {
 // çoğu hobby fallback Heart'a düşüyordu).
 const getHobbyIcon = (hobbyName) => {
   const iconMap = {
-    "Fitness & Spor": Dumbbell,
+    // Backend enumName (PascalCase)
+    Gym: Dumbbell,
     Yoga: Heart,
+    Running: Footprints,
+    Swimming: Waves,
+    Cycling: Bike,
+    Hiking: Trees,
+    Climbing: Mountain,
+    Boxing: HandMetal,
+    MartialArts: Trophy,
+    Dancing: Music2,
+    Pilates: Sparkles,
+    Cooking: Utensils,
+    Baking: Cake,
+    WineTasting: Wine,
+    Coffee: Coffee,
+    Foodie: Soup,
+    VeganCuisine: Sandwich,
+    Mixology: Wine,
+    Photography: Camera,
+    Painting: Palette,
+    Drawing: Palette,
+    Writing: BookOpenCheck,
+    Poetry: Book,
+    Crafts: Sparkles,
+    DIY: Flower2,
+    Fashion: ShoppingBag,
+    Music: Headphones,
+    Concerts: PartyPopper,
+    Guitar: Guitar,
+    Piano: Piano,
+    Singing: Mic2,
+    DJing: Music,
+    Festivals: PartyPopper,
+    Travel: Plane,
+    Camping: Tent,
+    Fishing: Fish,
+    Surfing: Waves,
+    Skiing: Mountain,
+    Snowboarding: Mountain,
+    Gardening: Flower2,
+    BeachLife: Sunrise,
+    Reading: BookOpen,
+    Museums: Theater,
+    ArtGalleries: Palette,
+    Theater: Drama,
+    Cinema: Film,
+    Documentaries: Film,
+    Learning: Lightbulb,
+    Languages: Languages,
+    VideoGames: Gamepad2,
+    BoardGames: Puzzle,
+    Chess: Puzzle,
+    Coding: Code,
+    Gaming: Gamepad2,
+    VR: Smartphone,
+    Podcasts: Headphones,
+    Volunteering: Users,
+    Pets: Dog,
+    Dogs: Dog,
+    Cats: Cat,
+    Meditation: Heart,
+    Astrology: Orbit,
+    Shopping: ShoppingBag,
+    Nightlife: Music2,
+    Brunch: Coffee,
+    SocialDrinking: Wine,
+    Networking: Briefcase,
+    Politics: Newspaper,
+    Philosophy: BookOpen,
+    Science: Lightbulb,
+    History: Book,
+    Investing: TrendingUp,
+    Entrepreneurship: Briefcase,
+    // Legacy TR display keys
+    "Fitness & Spor": Dumbbell,
     Koşu: Footprints,
     Yüzme: Waves,
     Bisiklet: Bike,
@@ -361,7 +436,6 @@ const getHobbyIcon = (hobbyName) => {
     Boks: HandMetal,
     "Dövüş Sanatları": Trophy,
     Dans: Music2,
-    Pilates: Sparkles,
     "Yemek Pişirme": Utensils,
     Fırıncılık: Cake,
     "Şarap Tadımı": Wine,
@@ -405,7 +479,6 @@ const getHobbyIcon = (hobbyName) => {
     Satranç: Puzzle,
     Yazılım: Code,
     Oyun: Gamepad2,
-    VR: Smartphone,
     "Podcast'ler": Headphones,
     Gönüllülük: Users,
     "Evcil Hayvanlar": Dog,
@@ -415,9 +488,7 @@ const getHobbyIcon = (hobbyName) => {
     Astroloji: Orbit,
     Alışveriş: ShoppingBag,
     "Gece Hayatı": Music2,
-    Brunch: Coffee,
     "Sosyal İçici": Wine,
-    Network: Briefcase,
     Siyaset: Newspaper,
     Felsefe: BookOpen,
     Bilim: Lightbulb,
@@ -432,9 +503,14 @@ const getHobbyIcon = (hobbyName) => {
 // usagePurposeDisplay → ikon eşlemesi (EditProfileForm PURPOSE_META ile aynı).
 const getPurposeIcon = (purposeName) => {
   const map = {
+    // Backend enumName (PascalCase)
+    Dating: Sparkles,
+    Friendship: Users,
+    Networking: Briefcase,
+    JustLooking: Wind,
+    // Legacy TR display fallback
     Flört: Sparkles,
     Arkadaşlık: Users,
-    Network: Briefcase,
     Öylesine: Wind,
   };
   return map[purposeName] || Target;
@@ -452,11 +528,13 @@ export default function SwipeCard({
   isTopCard = true,
   expanded = false,
   previewMode = false,
-  superLikeDisabled = false,
+  hideChevron = false,
+  hideSuperLike = false,
+  onExpandPress,
   superLikesRemaining,
 }: any) {
   const insets = useSafeAreaInsets();
-  const [isFilled, setIsFilled] = useState(false);
+  const { t } = useTranslation();
   const [currentPhotoIndex, setCurrentPhotoIndex] = useState(0);
   const [loadedPhotos, setLoadedPhotos] = useState(
     () => new Set(loadedPhotoUris),
@@ -595,12 +673,10 @@ export default function SwipeCard({
     },
   });
 
-  // Pull-down sırasında kalbin doluluk overlay'inin opacity'si
-  const heartFillStyle = useAnimatedStyle(() => {
-    return {
-      opacity: superLikeProgress ? superLikeProgress.value : 0,
-    };
-  });
+  // Pull-down progress → kalbin içi progressive fill opacity'si
+  const heartFillStyle = useAnimatedStyle(() => ({
+    opacity: superLikeProgress ? superLikeProgress.value : 0,
+  }));
 
   if (!profile) return null;
 
@@ -843,76 +919,103 @@ export default function SwipeCard({
                 </Animated.View>
 
                 {/* Super Like Button — sadece Lucide Heart icon (eski hali). */}
-                {!hideActions && (
-                  <View className="absolute top-6 right-6">
+                {!hideActions && !hideSuperLike && (
+                  <View style={{ position: "absolute", top: 28, right: 28 }}>
                     <TouchableOpacity
                       activeOpacity={0.8}
                       onPress={() => {
-                        if (!superLikeDisabled) setIsFilled(true);
                         onSuperLike?.();
                       }}
                       hitSlop={12}
                     >
-                      <View style={{ width: 35, height: 35 }}>
-                        <Heart
-                          size={35}
-                          color={theme.text}
-                          strokeWidth={1.5}
-                          fill={isFilled ? theme.text : "transparent"}
-                        />
-                        {/* Pull-down progressive fill */}
-                        <Animated.View
-                          pointerEvents="none"
-                          style={[
-                            {
-                              position: "absolute",
-                              top: 0,
-                              left: 0,
-                              right: 0,
-                              bottom: 0,
-                            },
-                            heartFillStyle,
-                          ]}
+                      <View style={{ width: 44, height: 44 }}>
+                        <MaskedView
+                          style={{ width: 44, height: 44 }}
+                          maskElement={
+                            <Svg width={44} height={44}>
+                              <Defs>
+                                <Mask
+                                  id="heartBite"
+                                  maskUnits="userSpaceOnUse"
+                                  x="0"
+                                  y="0"
+                                  width="44"
+                                  height="44"
+                                >
+                                  <Rect
+                                    width="44"
+                                    height="44"
+                                    fill="white"
+                                  />
+                                  {typeof superLikesRemaining === "number" && (
+                                    <Circle
+                                      cx="32"
+                                      cy="30"
+                                      r="12"
+                                      fill="black"
+                                    />
+                                  )}
+                                </Mask>
+                              </Defs>
+                              <Rect
+                                width="44"
+                                height="44"
+                                fill="white"
+                                mask="url(#heartBite)"
+                              />
+                            </Svg>
+                          }
                         >
-                          <Heart
-                            size={35}
-                            color={theme.text}
-                            strokeWidth={1.5}
-                            fill={theme.text}
-                          />
-                        </Animated.View>
-                        {typeof superLikesRemaining === "number" &&
-                          superLikesRemaining >= 0 && (
-                            <View
+                          <View style={{ width: 44, height: 44 }}>
+                            <Heart
+                              size={44}
+                              color={theme.text}
+                              strokeWidth={1.5}
+                              fill="transparent"
+                            />
+                            <Animated.View
                               pointerEvents="none"
+                              style={[
+                                StyleSheet.absoluteFill,
+                                heartFillStyle,
+                              ]}
+                            >
+                              <Heart
+                                size={44}
+                                color={theme.text}
+                                strokeWidth={1.5}
+                                fill={theme.text}
+                              />
+                            </Animated.View>
+                          </View>
+                        </MaskedView>
+                        {typeof superLikesRemaining === "number" && (
+                          <View
+                            pointerEvents="none"
+                            style={{
+                              position: "absolute",
+                              left: 19,
+                              top: 17,
+                              width: 26,
+                              height: 26,
+                              alignItems: "center",
+                              justifyContent: "center",
+                            }}
+                          >
+                            <Text
                               style={{
-                                position: "absolute",
-                                top: -6,
-                                right: -10,
-                                minWidth: 18,
-                                height: 18,
-                                borderRadius: 9,
-                                borderCurve: "continuous",
-                                backgroundColor: "rgba(0,0,0,0.6)",
-                                borderWidth: 0.5,
-                                borderColor: "rgba(255,255,255,0.3)",
-                                alignItems: "center",
-                                justifyContent: "center",
-                                paddingHorizontal: 5,
+                                color: theme.text,
+                                fontSize: 19,
+                                fontWeight: "700",
+                                fontVariant: ["tabular-nums"],
                               }}
                             >
-                              <Text
-                                style={{
-                                  color: theme.text,
-                                  fontSize: 10,
-                                  fontWeight: "700",
-                                  fontVariant: ["tabular-nums"],
-                                }}
-                              >
-                                {superLikesRemaining}
-                              </Text>
-                            </View>
-                          )}
+                              {superLikesRemaining === -1
+                                ? "∞"
+                                : superLikesRemaining}
+                            </Text>
+                          </View>
+                        )}
                       </View>
                     </TouchableOpacity>
                   </View>
@@ -940,7 +1043,7 @@ export default function SwipeCard({
                           className=""
                         >
                           <Text className="text-white text-[11px] px-4 py-3 font-bold">
-                            Premium
+                            {t('profile.card.premium')}
                           </Text>
                         </BlurView>
                       </Animated.View>
@@ -1005,7 +1108,7 @@ export default function SwipeCard({
                 {/* Chevron — bottom-center, expanded olunca animasyonla yukarı döner.
                     Name overlay gibi measuredCardHeight gate'li → ilk render'da
                     yanlış pozisyondan jump etmesin. */}
-                {measuredCardHeight > 0 && (
+                {!hideChevron && measuredCardHeight > 0 && (
                   <View
                     style={{
                       position: "absolute",
@@ -1015,17 +1118,34 @@ export default function SwipeCard({
                       alignItems: "center",
                       zIndex: 60,
                     }}
-                    pointerEvents="none"
+                    pointerEvents="box-none"
                   >
-                    <Animated.View style={chevronAnimStyle}>
-                      <ArrowDown size={28} color={theme.text} strokeWidth={2} />
-                    </Animated.View>
+                    <TouchableOpacity
+                      onPress={() => {
+                        if (expanded) {
+                          const sv = scrollViewRef.current as unknown as {
+                            scrollTo?: (opts: { y: number; animated: boolean }) => void;
+                          } | null;
+                          sv?.scrollTo?.({ y: 0, animated: true });
+                          setTimeout(() => onExpandPress?.(), 180);
+                        } else {
+                          onExpandPress?.();
+                        }
+                      }}
+                      hitSlop={16}
+                      activeOpacity={1}
+                      disabled={!onExpandPress}
+                    >
+                      <Animated.View style={chevronAnimStyle}>
+                        <ArrowDown size={28} color={theme.text} strokeWidth={2} />
+                      </Animated.View>
+                    </TouchableOpacity>
                   </View>
                 )}
               </Animated.View>
             ) : (
               <View className="w-full h-[500px] bg-gray-200 items-center justify-center">
-                <Text className="text-gray-400 text-lg">No photo</Text>
+                <Text className="text-gray-400 text-lg">{t('profile.card.noPhoto')}</Text>
               </View>
             )}
 
@@ -1103,8 +1223,8 @@ export default function SwipeCard({
                             <Text className="text-gray-400 font-normal text-[14px]">
                               {profile.yearOfStudyDisplay ||
                                 (profile.yearOfStudy === 0
-                                  ? "Hazırlık"
-                                  : `${profile.yearOfStudy}. Sınıf`)}
+                                  ? t('profile.card.prep')
+                                  : t('profile.card.grade', { year: profile.yearOfStudy }))}
                             </Text>
                           </View>
                         </View>
@@ -1113,211 +1233,11 @@ export default function SwipeCard({
                   </View>
                 )}
 
-                {profile.hobbies && profile.hobbies.length > 0 && (
-                  <View
-                    style={{
-                      borderRadius: 40,
-                      borderCurve: "continuous",
-                      overflow: "hidden",
-                      backgroundColor: "rgba(18,18,18,0.8)",
-                    }}
-                    className="mb-4 p-5 py-5 border-[0.5px] border-white/10"
-                  >
-                    <View className="flex-row items-center mb-4 px-4">
-                      <Text className="text-white text-[13px] font-semibold">
-                        Hobiler
-                      </Text>
-                    </View>
-                    <View className="flex-row flex-wrap gap-2">
-                      {profile.hobbies.map((hobby, index) => {
-                        const HobbyIcon = getHobbyIcon(hobby);
-                        return (
-                          <BlurView
-                            intensity={90}
-                            key={index}
-                            className="self-start border-[0.5px] border-white/10"
-                            style={{
-                              borderRadius: 999,
-                              borderCurve: "continuous",
-                              overflow: "hidden",
-                            }}
-                          >
-                            <View
-                              style={{
-                                flexDirection: "row",
-                                alignItems: "center",
-                                paddingHorizontal: 12,
-                                paddingVertical: 14,
-                                gap: 8,
-                              }}
-                            >
-                              <HobbyIcon
-                                size={18}
-                                color={theme.text}
-                                strokeWidth={1.5}
-                              />
-                              <Text className="text-white font-[500] text-[13px]">
-                                {hobby}
-                              </Text>
-                            </View>
-                          </BlurView>
-                        );
-                      })}
-                    </View>
-                  </View>
-                )}
-
-                {/* Lifestyle Info */}
-                {(profile.smokingStatusDisplay ||
-                  profile.zodiacSignDisplay ||
-                  profile.hasPets != null) && (
-                  <View
-                    style={{
-                      borderRadius: 40,
-                      borderCurve: "continuous",
-                      overflow: "hidden",
-                      backgroundColor: "rgba(18,18,18,0.8)",
-                    }}
-                    className="mb-4 p-5 py-5 border-[0.5px] border-white/10"
-                  >
-                    <View className="flex-row items-center mb-4 px-4">
-                      <Text className="text-white text-[13px] font-semibold">
-                        Yaşam Tarzı
-                      </Text>
-                    </View>
-                    <View>
-                      {profile.smokingStatusDisplay && (
-                        <View
-                          style={{
-                            borderRadius: 40,
-                            borderCurve: "continuous",
-                            overflow: "hidden",
-                            borderWidth: 0,
-                            borderColor: "rgba(255,255,255,0.1)",
-                            flexDirection: "row",
-                            alignItems: "center",
-                            justifyContent: "space-between",
-                            padding: 16,
-                          }}
-                        >
-                          <View
-                            style={{
-                              flexDirection: "row",
-                              alignItems: "center",
-                              gap: 10,
-                            }}
-                          >
-                            <Cigarette
-                              size={18}
-                              color={theme.text}
-                              strokeWidth={1.5}
-                            />
-                            <Text
-                              style={{
-                                color: theme.text,
-                                fontSize: 14,
-                                fontWeight: "500",
-                              }}
-                            >
-                              Sigara Kullanımı
-                            </Text>
-                          </View>
-                          <Text style={{ color: theme.textSecondary, fontSize: 14 }}>
-                            {profile.smokingStatusDisplay}
-                          </Text>
-                        </View>
-                      )}
-                      {profile.zodiacSignDisplay && (
-                        <View
-                          style={{
-                            borderRadius: 40,
-                            borderCurve: "continuous",
-                            overflow: "hidden",
-                            borderWidth: 0,
-                            borderColor: "rgba(255,255,255,0.1)",
-                            flexDirection: "row",
-                            alignItems: "center",
-                            justifyContent: "space-between",
-                            padding: 16,
-                          }}
-                        >
-                          <View
-                            style={{
-                              flexDirection: "row",
-                              alignItems: "center",
-                              gap: 10,
-                            }}
-                          >
-                            <Sparkles
-                              size={18}
-                              color={theme.text}
-                              strokeWidth={1.5}
-                            />
-                            <Text
-                              style={{
-                                color: theme.text,
-                                fontSize: 14,
-                                fontWeight: "500",
-                              }}
-                            >
-                              Burç
-                            </Text>
-                          </View>
-                          <Text style={{ color: theme.textSecondary, fontSize: 14 }}>
-                            {profile.zodiacSignDisplay}
-                          </Text>
-                        </View>
-                      )}
-                      {profile.hasPets != null && (
-                        <View
-                          style={{
-                            borderRadius: 40,
-                            borderCurve: "continuous",
-                            overflow: "hidden",
-                            borderWidth: 0,
-                            borderColor: "rgba(255,255,255,0.1)",
-                            flexDirection: "row",
-                            alignItems: "center",
-                            justifyContent: "space-between",
-                            padding: 16,
-                          }}
-                        >
-                          <View
-                            style={{
-                              flexDirection: "row",
-                              alignItems: "center",
-                              gap: 10,
-                            }}
-                          >
-                            <PawPrint
-                              size={18}
-                              color={theme.text}
-                              strokeWidth={1.5}
-                            />
-                            <Text
-                              style={{
-                                color: theme.text,
-                                fontSize: 14,
-                                fontWeight: "500",
-                              }}
-                            >
-                              Evcil Hayvan
-                            </Text>
-                          </View>
-                          <Text style={{ color: theme.textSecondary, fontSize: 14 }}>
-                            {profile.hasPets ? "Var" : "Yok"}
-                          </Text>
-                        </View>
-                      )}
-                    </View>
-                  </View>
-                )}
-
-                {/* Kullanım Amacı — başlık olarak direkt cümle */}
+                                {/* Kullanım Amacı — başlık olarak direkt cümle */}
                 {profile.usagePurposeDisplay &&
                   (() => {
                     const PurposeIcon = getPurposeIcon(
-                      profile.usagePurposeDisplay,
+                      profile.usagePurpose ?? profile.usagePurposeDisplay,
                     );
                     return (
                       <View
@@ -1352,16 +1272,207 @@ export default function SwipeCard({
                               flexWrap: "wrap",
                             }}
                           >
-                            Bu uygulamayı{" "}
-                            {profile.usagePurposeDisplay.toLocaleLowerCase(
-                              "tr",
-                            )}{" "}
-                            için kullanıyorum
+                            {t('profile.card.usagePurpose', { purpose: profile.usagePurposeDisplay.toLowerCase() })}
                           </Text>
                         </View>
                       </View>
                     );
                   })()}
+
+                {profile.hobbies && profile.hobbies.length > 0 && (
+                  <View
+                    style={{
+                      borderRadius: 40,
+                      borderCurve: "continuous",
+                      overflow: "hidden",
+                      backgroundColor: "rgba(18,18,18,0.8)",
+                    }}
+                    className="mb-4 p-5 py-5 border-[0.5px] border-white/10"
+                  >
+                    <View className="flex-row flex-wrap gap-2">
+                      {profile.hobbies.map((hobby, index) => {
+                        const isObj = hobby && typeof hobby === "object";
+                        const enumName = isObj ? hobby.enumName : undefined;
+                        const label = isObj ? hobby.name : hobby;
+                        const HobbyIcon = getHobbyIcon(enumName ?? label);
+                        return (
+                          <BlurView
+                            intensity={90}
+                            key={index}
+                            className="self-start border-[0.5px] border-white/10"
+                            style={{
+                              borderRadius: 999,
+                              borderCurve: "continuous",
+                              overflow: "hidden",
+                            }}
+                          >
+                            <View
+                              style={{
+                                flexDirection: "row",
+                                alignItems: "center",
+                                paddingHorizontal: 12,
+                                paddingVertical: 14,
+                                gap: 8,
+                              }}
+                            >
+                              <HobbyIcon
+                                size={18}
+                                color={theme.text}
+                                strokeWidth={1.5}
+                              />
+                              <Text className="text-white font-[500] text-[15px]">
+                                {label}
+                              </Text>
+                            </View>
+                          </BlurView>
+                        );
+                      })}
+                    </View>
+                  </View>
+                )}
+
+                {/* Lifestyle Info */}
+                {(profile.smokingStatusDisplay ||
+                  profile.zodiacSignDisplay ||
+                  profile.hasPets != null) && (
+                  <View
+                    style={{
+                      borderRadius: 40,
+                      borderCurve: "continuous",
+                      overflow: "hidden",
+                      backgroundColor: "rgba(18,18,18,0.8)",
+                    }}
+                    className="mb-4 p-5 py-5 border-[0.5px] border-white/10"
+                  >
+                    <View>
+                      {profile.smokingStatusDisplay && (
+                        <View
+                          style={{
+                            borderRadius: 40,
+                            borderCurve: "continuous",
+                            overflow: "hidden",
+                            borderWidth: 0,
+                            borderColor: "rgba(255,255,255,0.1)",
+                            flexDirection: "row",
+                            alignItems: "center",
+                            justifyContent: "space-between",
+                            padding: 16,
+                          }}
+                        >
+                          <View
+                            style={{
+                              flexDirection: "row",
+                              alignItems: "center",
+                              gap: 10,
+                            }}
+                          >
+                            <Cigarette
+                              size={18}
+                              color={theme.text}
+                              strokeWidth={1.5}
+                            />
+                            <Text
+                              style={{
+                                color: theme.text,
+                                fontSize: 15,
+                                fontWeight: "500",
+                              }}
+                            >
+                              {t('profile.card.smoking')}
+                            </Text>
+                          </View>
+                          <Text style={{ color: theme.textSecondary, fontSize: 15 }}>
+                            {profile.smokingStatusDisplay}
+                          </Text>
+                        </View>
+                      )}
+                      {profile.zodiacSignDisplay && (
+                        <View
+                          style={{
+                            borderRadius: 40,
+                            borderCurve: "continuous",
+                            overflow: "hidden",
+                            borderWidth: 0,
+                            borderColor: "rgba(255,255,255,0.1)",
+                            flexDirection: "row",
+                            alignItems: "center",
+                            justifyContent: "space-between",
+                            padding: 16,
+                          }}
+                        >
+                          <View
+                            style={{
+                              flexDirection: "row",
+                              alignItems: "center",
+                              gap: 10,
+                            }}
+                          >
+                            <Sparkles
+                              size={18}
+                              color={theme.text}
+                              strokeWidth={1.5}
+                            />
+                            <Text
+                              style={{
+                                color: theme.text,
+                                fontSize: 15,
+                                fontWeight: "500",
+                              }}
+                            >
+                              {t('profile.card.zodiac')}
+                            </Text>
+                          </View>
+                          <Text style={{ color: theme.textSecondary, fontSize: 15 }}>
+                            {profile.zodiacSignDisplay}
+                          </Text>
+                        </View>
+                      )}
+                      {profile.hasPets != null && (
+                        <View
+                          style={{
+                            borderRadius: 40,
+                            borderCurve: "continuous",
+                            overflow: "hidden",
+                            borderWidth: 0,
+                            borderColor: "rgba(255,255,255,0.1)",
+                            flexDirection: "row",
+                            alignItems: "center",
+                            justifyContent: "space-between",
+                            padding: 16,
+                          }}
+                        >
+                          <View
+                            style={{
+                              flexDirection: "row",
+                              alignItems: "center",
+                              gap: 10,
+                            }}
+                          >
+                            <PawPrint
+                              size={18}
+                              color={theme.text}
+                              strokeWidth={1.5}
+                            />
+                            <Text
+                              style={{
+                                color: theme.text,
+                                fontSize: 15,
+                                fontWeight: "500",
+                              }}
+                            >
+                              {t('profile.card.pets')}
+                            </Text>
+                          </View>
+                          <Text style={{ color: theme.textSecondary, fontSize: 15 }}>
+                            {profile.hasPets ? t('profile.card.petsYes') : t('profile.card.petsNo')}
+                          </Text>
+                        </View>
+                      )}
+                    </View>
+                  </View>
+                )}
+
+
 
                 {/* Bio */}
                 {profile.bio && (
@@ -1372,11 +1483,11 @@ export default function SwipeCard({
                       overflow: "hidden",
                       backgroundColor: "rgba(18,18,18,0.8)",
                     }}
-                    className="mb-4 p-5 py-5 border-[0.5px] border-white/10"
+                    className="mb-4 p-5 py-5 pt-8 border-[0.5px] border-white/10"
                   >
                     <View className="flex-row items-center mb-2 px-4">
-                      <Text className="text-white text-[13px] font-semibold">
-                        Biyografi
+                      <Text className="text-white text-[18px] font-semibold">
+                        {t('profile.card.knowMeAs')}
                       </Text>
                     </View>
                     <View
@@ -1406,7 +1517,7 @@ export default function SwipeCard({
                         <Text
                           style={{
                             color: theme.text,
-                            fontSize: 14,
+                            fontSize: 15,
                             lineHeight: 22,
                             flex: 1,
                             flexShrink: 1,

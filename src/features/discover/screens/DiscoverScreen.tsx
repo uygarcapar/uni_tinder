@@ -5,6 +5,7 @@ import React, {
   useCallback,
   useMemo,
 } from "react";
+import { useTranslation } from 'react-i18next';
 import {
   View,
   Text,
@@ -13,12 +14,17 @@ import {
   Dimensions,
 } from "react-native";
 import * as Haptics from "expo-haptics";
+import AsyncStorage from "@react-native-async-storage/async-storage";
 import { GestureHandlerRootView } from "react-native-gesture-handler";
 import Animated, {
   useSharedValue,
   withTiming,
   withRepeat,
+  withDelay,
+  withSequence,
+  runOnJS,
   useAnimatedStyle,
+  interpolate,
   Easing,
 } from "react-native-reanimated";
 import { LinearGradient } from "expo-linear-gradient";
@@ -35,6 +41,8 @@ import {
   Flame,
   Star,
   Sparkles,
+  ArrowLeft,
+  ArrowRight,
 } from "lucide-react-native";
 import { BlurView } from "expo-blur";
 import SwipeWrapper from "@/features/discover/components/SwipeWrapper";
@@ -222,13 +230,13 @@ const SkeletonCard = () => {
 
 // Logo tap'te açılan stats popup — kalan swipe/superlike + reset süresi.
 // Premium ise "Sınırsız" ve premium expiry bilgisi gösterir.
-const formatResetTime = (sec) => {
-  if (!sec || sec <= 0) return "Şu anda yenilenebilir";
+const formatResetTime = (sec, t) => {
+  if (!sec || sec <= 0) return t('discover.swipe.resetNow');
   const h = Math.floor(sec / 3600);
   const m = Math.floor((sec % 3600) / 60);
-  if (h > 0) return `${h} sa ${m} dk sonra yenilenir`;
-  if (m > 0) return `${m} dk sonra yenilenir`;
-  return `${sec} sn sonra yenilenir`;
+  if (h > 0) return t('discover.swipe.resetHoursMinutes', { h, m });
+  if (m > 0) return t('discover.swipe.resetMinutes', { m });
+  return t('discover.swipe.resetSeconds', { sec });
 };
 
 const StatsRow = ({ Icon, iconColor, label, value, unlimited, subtitle }) => (
@@ -303,6 +311,7 @@ const StatsRow = ({ Icon, iconColor, label, value, unlimited, subtitle }) => (
 );
 
 const StatsPopup = ({ stats }) => {
+  const { t } = useTranslation();
   const isPremium = stats?.isPremium;
   const swipesRem = stats?.remainingSwipes;
   const superLikesRem = stats?.superLikesRemaining;
@@ -348,7 +357,7 @@ const StatsPopup = ({ stats }) => {
               letterSpacing: 0.3,
             }}
           >
-            PREMIUM ÜYE
+            {t('discover.premium.badge')}
           </Text>
         </View>
       )}
@@ -356,15 +365,15 @@ const StatsPopup = ({ stats }) => {
       <StatsRow
         Icon={Flame}
         iconColor={colors.primaryWarm}
-        label="Swipe Hakkı"
+        label={t('discover.stats.swipesLabel')}
         value={swipesRem}
         unlimited={swipeUnlimited}
         subtitle={
           swipeUnlimited
-            ? "Günlük limit yok"
+            ? t('discover.stats.unlimitedDaily')
             : swipesRem === 0
-              ? formatResetTime(swipeResetSec)
-              : `${formatResetTime(swipeResetSec)}`
+              ? formatResetTime(swipeResetSec, t)
+              : formatResetTime(swipeResetSec, t)
         }
       />
 
@@ -378,15 +387,15 @@ const StatsPopup = ({ stats }) => {
       <StatsRow
         Icon={Star}
         iconColor={colors.info}
-        label="Süper Beğeni"
+        label={t('discover.stats.superLikesLabel')}
         value={superLikesRem}
         unlimited={superLikeUnlimited}
         subtitle={
           superLikeUnlimited
-            ? "Günlük limit yok"
+            ? t('discover.stats.unlimitedDaily')
             : superLikesRem === 0
-              ? formatResetTime(superLikeResetSec)
-              : `${formatResetTime(superLikeResetSec)}`
+              ? formatResetTime(superLikeResetSec, t)
+              : formatResetTime(superLikeResetSec, t)
         }
       />
 
@@ -578,6 +587,7 @@ const DEFAULT_FILTERS = {
 };
 
 export default function DiscoverScreen() {
+  const { t } = useTranslation();
   const insets = useSafeAreaInsets();
 
   const matchesQuery = usePotentialMatches();
@@ -761,6 +771,80 @@ export default function DiscoverScreen() {
     transform: [{ translateX: stackEntryX.value }],
   }));
 
+  // ─── Tutorial (ilk giriş kart swipe demo) ────────────────────────────────
+  const TUTORIAL_TX = 55; // like/pass threshold (85) altında
+  const TUTORIAL_SWING_DURATION = 550;
+  const TUTORIAL_STORAGE_KEY = "discoverSwipeTutorialShown";
+  const tutorialTx = useSharedValue(0);
+  const tutorialOpacity = useSharedValue(0);
+  const [tutorialActive, setTutorialActive] = useState(false);
+
+  useEffect(() => {
+    if (loading || potentialMatches.length === 0) return;
+    let cancelled = false;
+    AsyncStorage.getItem(TUTORIAL_STORAGE_KEY).then((shown) => {
+      if (cancelled || shown) return;
+      setTutorialActive(true);
+      tutorialTx.value = 0;
+      tutorialOpacity.value = withDelay(400, withTiming(1, { duration: 250 }));
+      tutorialTx.value = withDelay(
+        600,
+        withSequence(
+          withTiming(TUTORIAL_TX, {
+            duration: TUTORIAL_SWING_DURATION,
+            easing: Easing.inOut(Easing.cubic),
+          }),
+          withTiming(-TUTORIAL_TX, {
+            duration: TUTORIAL_SWING_DURATION * 1.4,
+            easing: Easing.inOut(Easing.cubic),
+          }),
+          withTiming(
+            0,
+            {
+              duration: TUTORIAL_SWING_DURATION,
+              easing: Easing.inOut(Easing.cubic),
+            },
+            () => {
+              tutorialOpacity.value = withTiming(0, { duration: 250 }, () => {
+                runOnJS(setTutorialActive)(false);
+              });
+            },
+          ),
+        ),
+      );
+      AsyncStorage.setItem(TUTORIAL_STORAGE_KEY, "1").catch(() => {});
+    });
+    return () => {
+      cancelled = true;
+    };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [loading, potentialMatches.length === 0]);
+
+  const tutorialCardStyle = useAnimatedStyle(() => ({
+    transform: [
+      { translateX: tutorialTx.value },
+      {
+        rotate: `${interpolate(tutorialTx.value, [-SCREEN_WIDTH, 0, SCREEN_WIDTH], [-15, 0, 15])}deg`,
+      },
+    ],
+  }));
+
+  const tutorialOverlayStyle = useAnimatedStyle(() => ({
+    opacity: tutorialOpacity.value,
+  }));
+
+  const tutorialLeftArrowStyle = useAnimatedStyle(() => ({
+    transform: [
+      { translateX: interpolate(tutorialTx.value, [-TUTORIAL_TX, 0], [-16, 0], "clamp") },
+    ],
+  }));
+
+  const tutorialRightArrowStyle = useAnimatedStyle(() => ({
+    transform: [
+      { translateX: interpolate(tutorialTx.value, [0, TUTORIAL_TX], [0, 16], "clamp") },
+    ],
+  }));
+
   // Tab bar tarafından kaplanan dikey alan — kartın bottom'unun üstünde durması için.
   // cardExpandAnim'e bağlı: pull sırasında container progressively büyür → içerik
   // pull oranıyla görünür hale gelir. photoHeight set-once olduğu için onLayout
@@ -850,7 +934,7 @@ export default function DiscoverScreen() {
       setCurrentIndex((i) => i + 1);
       if (undoneUserId) swipedUserIdsRef.current.add(undoneUserId);
       if (prevUndos !== null) updateStatsCache({ remainingUndos: prevUndos });
-      Alert.alert("", err?.message || "Geri alınamadı");
+      Alert.alert("", err?.message || t('discover.rewind.error'));
     }
   };
 
@@ -865,7 +949,7 @@ export default function DiscoverScreen() {
       });
       setFilterVisible(false);
     } catch (err) {
-      Alert.alert("", err?.message || "Filtreler kaydedilemedi");
+      Alert.alert("", err?.message || t('discover.filters.saveError'));
     }
   };
 
@@ -928,6 +1012,7 @@ export default function DiscoverScreen() {
             onSuperLike={handleSuperLikeButton}
             swipeQuotaExhausted={swipeQuotaExhausted}
             superLikeQuotaExhausted={superLikeQuotaExhausted}
+            superLikesRemaining={statsQuery.data?.superLikesRemaining ?? null}
           />
         );
       });
@@ -1071,7 +1156,12 @@ export default function DiscoverScreen() {
           <SkeletonCard />
         ) : potentialMatches.length > currentIndex ? (
           <Animated.View
-            style={[{ flex: 1, position: "relative" }, stackEntryStyle]}
+            pointerEvents={tutorialActive ? "none" : "auto"}
+            style={[
+              { flex: 1, position: "relative" },
+              stackEntryStyle,
+              tutorialCardStyle,
+            ]}
           >
             {renderStack()}
             <SwipeOverlay dragX={overlayDragX} opacity={overlayOpacity} />
@@ -1101,6 +1191,34 @@ export default function DiscoverScreen() {
           setTimeout(() => setPurchaseVisible(true), 200);
         }}
       />
+
+      {tutorialActive && (
+        <Animated.View
+          style={[
+            {
+              position: "absolute",
+              top: 0,
+              left: 0,
+              right: 0,
+              bottom: 0,
+              backgroundColor: "rgba(0,0,0,0.45)",
+              flexDirection: "row",
+              alignItems: "center",
+              justifyContent: "space-between",
+              paddingHorizontal: 24,
+              zIndex: 100,
+            },
+            tutorialOverlayStyle,
+          ]}
+        >
+          <Animated.View style={tutorialLeftArrowStyle}>
+            <ArrowLeft size={64} color={colors.text} strokeWidth={1.5} />
+          </Animated.View>
+          <Animated.View style={tutorialRightArrowStyle}>
+            <ArrowRight size={64} color={colors.text} strokeWidth={1.5} />
+          </Animated.View>
+        </Animated.View>
+      )}
     </GestureHandlerRootView>
   );
 }

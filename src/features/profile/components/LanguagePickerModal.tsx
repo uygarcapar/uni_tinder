@@ -1,4 +1,5 @@
 import React, { useEffect, useMemo, useState } from "react";
+import { useTranslation } from 'react-i18next';
 import { View, Text, TouchableOpacity, Alert } from "react-native";
 import { BottomSheetTextInput } from "@gorhom/bottom-sheet";
 import { Search, SearchX, Check } from "lucide-react-native";
@@ -29,6 +30,7 @@ export default function LanguagePickerModal({
   limitMsg,
   onConfirm,
 }: Props) {
+  const { t } = useTranslation();
   const [search, setSearch] = useState("");
   const [selected, setSelected] = useState<Set<string>>(
     () => new Set(initialSelectedValues),
@@ -80,10 +82,10 @@ export default function LanguagePickerModal({
     <AppModal
       visible={visible}
       onClose={onClose}
-      title="Dil Seç"
+      title={t('profile.languages.title')}
       snapPoints={["75%", "90%"]}
       stackBehavior="push"
-      actionLabel="Bitti"
+      actionLabel={t('common.done')}
       onAction={() => onConfirm(Array.from(selected))}
     >
       {/* Arama input — CityPickerModal ile birebir */}
@@ -104,7 +106,7 @@ export default function LanguagePickerModal({
         <BottomSheetTextInput
           value={search}
           onChangeText={setSearch}
-          placeholder="Dil ara"
+          placeholder={t('profile.languages.search')}
           placeholderTextColor={colors.textMuted}
           autoCorrect={false}
           autoCapitalize="none"
@@ -136,7 +138,7 @@ export default function LanguagePickerModal({
                 textAlign: "center",
               }}
             >
-              '{search.trim()}' bulunamadı
+              {t('profile.languages.notFound', { search: search.trim() })}
             </Text>
           )}
         </View>

@@ -23,16 +23,9 @@ import { useForm } from "react-hook-form";
 import { zodResolver } from "@hookform/resolvers/zod";
 import { educationSchema, EducationForm } from "@/shared/schemas/formSchemas";
 import { colors } from "../../../shared/theme/colors";
+import { useTranslation } from 'react-i18next';
 
-const YEAR_OF_STUDY_OPTIONS = [
-  { value: "0", label: "Hazırlık" },
-  { value: "1", label: "1. Sınıf" },
-  { value: "2", label: "2. Sınıf" },
-  { value: "3", label: "3. Sınıf" },
-  { value: "4", label: "4. Sınıf" },
-  { value: "5", label: "5. Sınıf" },
-  { value: "6", label: "6. Sınıf" },
-];
+const YEAR_OF_STUDY_VALUES = ["0", "1", "2", "3", "4", "5", "6"];
 
 const AnimatedPressable = ({ onPress, style, activeOpacity = 1, children }: any) => {
   const scale = new Animated.Value(1);
@@ -48,7 +41,12 @@ const AnimatedPressable = ({ onPress, style, activeOpacity = 1, children }: any)
 };
 
 export default function RegisterStep8Screen({ navigation }: NativeStackScreenProps<AuthStackParamList, 'RegisterStep8'>) {
+  const { t } = useTranslation();
   const dispatch = useAppDispatch();
+  const YEAR_OF_STUDY_OPTIONS = YEAR_OF_STUDY_VALUES.map((value) => ({
+    value,
+    label: t(`auth.step8.class${value}`),
+  }));
   const profile = useAppSelector((s) => (s as any).profile || {});
 
   const initialYearOfStudy =
@@ -87,9 +85,9 @@ export default function RegisterStep8Screen({ navigation }: NativeStackScreenPro
   };
 
   const getDepartmentLabel = () => {
-    if (!department) return "Bölüm Seçiniz";
+    if (!department) return t('auth.step8.departmentPlaceholder');
     const selectedDepartment = (departments as any[]).find((d) => d.enumName === department);
-    return selectedDepartment ? selectedDepartment.name : "Bölüm Seçiniz";
+    return selectedDepartment ? selectedDepartment.name : t('auth.step8.departmentPlaceholder');
   };
 
   const handleNext = handleSubmit(({ department: dept, yearOfStudy: year }) => {
@@ -118,15 +116,15 @@ export default function RegisterStep8Screen({ navigation }: NativeStackScreenPro
       <TouchableWithoutFeedback onPress={Keyboard.dismiss}>
         <View className="flex-1 px-6 py-6 pt-0">
           <View className="flex flex-col gap-2">
-            <Text className="text-4xl font-bold text-white">Eğitim Bilgilerin.</Text>
+            <Text className="text-4xl font-bold text-white">{t('auth.step8.title')}</Text>
             <Text className="text-[18px] font-normal text-gray-400 mb-6">
-              Sınıfını ve bölümünü seç.
+              {t('auth.step8.description')}
             </Text>
           </View>
 
           {loadingDepartments ? (
             <View className="mb-6">
-              <Text className="text-gray-300 text-[14px] font-semibold mb-2">Bölüm *</Text>
+              <Text className="text-gray-300 text-[14px] font-semibold mb-2">{t('auth.step8.departmentLabel')}</Text>
               <View
                 style={{ borderRadius: 999, borderCurve: "continuous", overflow: "hidden" }}
                 className="border-[0.5px] border-white/10 px-4 py-5 flex items-center"
@@ -136,7 +134,7 @@ export default function RegisterStep8Screen({ navigation }: NativeStackScreenPro
             </View>
           ) : (
             <View className="mb-6">
-              <Text className="text-gray-300 text-[14px] font-semibold mb-2">Bölüm *</Text>
+              <Text className="text-gray-300 text-[14px] font-semibold mb-2">{t('auth.step8.departmentLabel')}</Text>
               <TouchableOpacity
                 style={{ borderRadius: 999, borderCurve: "continuous", overflow: "hidden" }}
                 activeOpacity={1}
@@ -152,7 +150,7 @@ export default function RegisterStep8Screen({ navigation }: NativeStackScreenPro
           )}
 
           <View className="mb-4">
-            <Text className="text-gray-300 text-[14px] font-semibold mb-2">Sınıf *</Text>
+            <Text className="text-gray-300 text-[14px] font-semibold mb-2">{t('auth.step8.classLabel')}</Text>
             <View style={{ flexDirection: "row", flexWrap: "wrap", gap: 8 }}>
               {YEAR_OF_STUDY_OPTIONS.map((opt) => {
                 const isSelected = yearOfStudy === opt.value;
@@ -195,7 +193,7 @@ export default function RegisterStep8Screen({ navigation }: NativeStackScreenPro
             style={{ borderRadius: 999, borderCurve: "continuous", overflow: "hidden", backgroundColor: colors.messageOwn }}
           >
             <Text className="text-white py-[20px] font-bold text-[15px] text-center">
-              Devam Et
+              {t('common.continueButton')}
             </Text>
           </AnimatedPressableShared>
         </View>
@@ -215,7 +213,7 @@ export default function RegisterStep8Screen({ navigation }: NativeStackScreenPro
           <SearchableListSheet
             items={departments}
             initialValue={department ?? ""}
-            title="Bölüm Seç"
+            title={t('auth.step8.departmentPlaceholder')}
             onConfirm={confirmDepartmentSelection}
             onCancel={cancelDepartmentSelection}
           />

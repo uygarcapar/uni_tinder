@@ -12,6 +12,7 @@ import type { AuthStackParamList } from "@/shared/types/navigation";
 import { useAppDispatch, useAppSelector } from "@/shared/hooks/redux";
 import { updateMultipleFields } from "@/features/profile/profileSlice";
 import { API_BASE_URL, API_ENDPOINTS } from "@/shared/constants/api";
+import { useTranslation } from 'react-i18next';
 import {
   Music, Dumbbell, Film, BookOpen, Plane, Utensils, Camera, Gamepad2,
   Music2, Palette, Coffee, Wine, Code, Dog, Cat, Trees, Flower2, Heart,
@@ -29,28 +30,47 @@ import { colors } from "../../../shared/theme/colors";
 
 const getHobbyIcon = (hobbyName: string) => {
   const iconMap: Record<string, any> = {
-    "Fitness & Spor": Dumbbell, Yoga: Heart, Koşu: Footprints, Yüzme: Waves,
-    Bisiklet: Bike, "Doğa Yürüyüşü": Trees, "Kaya Tırmanışı": Mountain,
-    Boks: HandMetal, "Dövüş Sanatları": Trophy, Dans: Music2, Pilates: Sparkles,
-    "Yemek Pişirme": Utensils, Fırıncılık: Cake, "Şarap Tadımı": Wine,
-    "Kahve Tutkusu": Coffee, Gurme: Soup, "Vegan Mutfak": Sandwich,
-    Miksologluk: Wine, Fotoğrafçılık: Camera, Resim: Palette, Çizim: Palette,
-    Yazarlık: BookOpenCheck, Şiir: Book, "El Sanatları": Sparkles,
-    "Kendin Yap (DIY)": Flower2, Moda: ShoppingBag, Müzik: Headphones,
-    Konserler: PartyPopper, "Gitar Çalmak": Guitar, "Piyano Çalmak": Piano,
-    "Şarkı Söylemek": Mic2, "DJ'lik": Music, Festivaller: PartyPopper,
-    Seyahat: Plane, Kamp: Tent, "Balık Tutma": Fish, Sörf: Waves, Kayak: Mountain,
-    Snowboard: Mountain, Bahçıvanlık: Flower2, "Plaj Hayatı": Sunrise,
-    Okumak: BookOpen, Müzeler: Theater, "Sanat Galerileri": Palette,
-    Tiyatro: Drama, Sinema: Film, Belgesel: Film, Öğrenme: Lightbulb,
-    Diller: Languages, "Video Oyunları": Gamepad2, "Masa Oyunları": Puzzle,
-    Satranç: Puzzle, Yazılım: Code, Oyun: Gamepad2, VR: Smartphone,
+    // Backend enumName (PascalCase)
+    Gym: Dumbbell, Yoga: Heart, Running: Footprints, Swimming: Waves,
+    Cycling: Bike, Hiking: Trees, Climbing: Mountain, Boxing: HandMetal,
+    MartialArts: Trophy, Dancing: Music2, Pilates: Sparkles, Cooking: Utensils,
+    Baking: Cake, WineTasting: Wine, Coffee: Coffee, Foodie: Soup,
+    VeganCuisine: Sandwich, Mixology: Wine, Photography: Camera, Painting: Palette,
+    Drawing: Palette, Writing: BookOpenCheck, Poetry: Book, Crafts: Sparkles,
+    DIY: Flower2, Fashion: ShoppingBag, Music: Headphones, Concerts: PartyPopper,
+    Guitar: Guitar, Piano: Piano, Singing: Mic2, DJing: Music,
+    Festivals: PartyPopper, Travel: Plane, Camping: Tent, Fishing: Fish,
+    Surfing: Waves, Skiing: Mountain, Snowboarding: Mountain, Gardening: Flower2,
+    BeachLife: Sunrise, Reading: BookOpen, Museums: Theater, ArtGalleries: Palette,
+    Theater: Drama, Cinema: Film, Documentaries: Film, Learning: Lightbulb,
+    Languages: Languages, VideoGames: Gamepad2, BoardGames: Puzzle,
+    Chess: Puzzle, Coding: Code, Gaming: Gamepad2, VR: Smartphone,
+    Podcasts: Headphones, Volunteering: Users, Pets: Dog, Dogs: Dog,
+    Cats: Cat, Meditation: Heart, Astrology: Orbit, Shopping: ShoppingBag,
+    Nightlife: Music2, Brunch: Coffee, SocialDrinking: Wine,
+    Networking: Briefcase, Politics: Newspaper, Philosophy: BookOpen,
+    Science: Lightbulb, History: Book, Investing: TrendingUp, Entrepreneurship: Briefcase,
+    // Legacy TR display fallback
+    "Fitness & Spor": Dumbbell, Koşu: Footprints, Yüzme: Waves, Bisiklet: Bike,
+    "Doğa Yürüyüşü": Trees, "Kaya Tırmanışı": Mountain, Boks: HandMetal,
+    "Dövüş Sanatları": Trophy, Dans: Music2, "Yemek Pişirme": Utensils,
+    Fırıncılık: Cake, "Şarap Tadımı": Wine, "Kahve Tutkusu": Coffee, Gurme: Soup,
+    "Vegan Mutfak": Sandwich, Miksologluk: Wine, Fotoğrafçılık: Camera,
+    Resim: Palette, Çizim: Palette, Yazarlık: BookOpenCheck, Şiir: Book,
+    "El Sanatları": Sparkles, "Kendin Yap (DIY)": Flower2, Moda: ShoppingBag,
+    Müzik: Headphones, Konserler: PartyPopper, "Gitar Çalmak": Guitar,
+    "Piyano Çalmak": Piano, "Şarkı Söylemek": Mic2, "DJ'lik": Music,
+    Festivaller: PartyPopper, Seyahat: Plane, Kamp: Tent, "Balık Tutma": Fish,
+    Sörf: Waves, Kayak: Mountain, Snowboard: Mountain, Bahçıvanlık: Flower2,
+    "Plaj Hayatı": Sunrise, Okumak: BookOpen, Müzeler: Theater,
+    "Sanat Galerileri": Palette, Tiyatro: Drama, Sinema: Film, Belgesel: Film,
+    Öğrenme: Lightbulb, Diller: Languages, "Video Oyunları": Gamepad2,
+    "Masa Oyunları": Puzzle, Satranç: Puzzle, Yazılım: Code, Oyun: Gamepad2,
     "Podcast'ler": Headphones, Gönüllülük: Users, "Evcil Hayvanlar": Dog,
     Köpekler: Dog, Kediler: Cat, Meditasyon: Heart, Astroloji: Orbit,
-    Alışveriş: ShoppingBag, "Gece Hayatı": Music2, Brunch: Coffee,
-    "Sosyal İçici": Wine, Network: Briefcase, Siyaset: Newspaper,
-    Felsefe: BookOpen, Bilim: Lightbulb, Tarih: Book, Yatırım: TrendingUp,
-    Girişimcilik: Briefcase,
+    Alışveriş: ShoppingBag, "Gece Hayatı": Music2, "Sosyal İçici": Wine,
+    Siyaset: Newspaper, Felsefe: BookOpen, Bilim: Lightbulb, Tarih: Book,
+    Yatırım: TrendingUp, Girişimcilik: Briefcase,
   };
   return iconMap[hobbyName] || Heart;
 };
@@ -79,7 +99,7 @@ const SkeletonHobbyCard = memo<{}>(() => {
 
 const HobbyItem = memo(({ hobby, isSelected, onPress }: any) => {
   const scaleValue = useRef(new Animated.Value(1)).current;
-  const Icon = getHobbyIcon(hobby.name);
+  const Icon = getHobbyIcon(hobby.enumName ?? hobby.name);
   const handlePressIn = () => Animated.spring(scaleValue, { toValue: 0.95, useNativeDriver: true, speed: 20 }).start();
   const handlePressOut = () => Animated.spring(scaleValue, { toValue: 1, useNativeDriver: true, bounciness: 8, speed: 20 }).start();
   return (
@@ -102,6 +122,7 @@ const HobbyItem = memo(({ hobby, isSelected, onPress }: any) => {
 });
 
 export default function RegisterStep13Screen({ navigation }: NativeStackScreenProps<AuthStackParamList, 'RegisterStep13'>) {
+  const { t } = useTranslation();
   const dispatch = useAppDispatch();
   const profile = useAppSelector((s) => (s as any).profile || {});
 
@@ -123,10 +144,10 @@ export default function RegisterStep13Screen({ navigation }: NativeStackScreenPr
       const response = await fetch(`${API_BASE_URL}${API_ENDPOINTS.GET_HOBBIES}`);
       const data = await response.json();
       if (data.isSuccess && data.result) setHobbyCategories(data.result);
-      else alert("Hobiler yüklenirken bir hata oluştu");
+      else alert(t('auth.step13.loadError'));
     } catch (error) {
       console.error("Error fetching hobbies:", error);
-      alert("Hobiler yüklenirken bir hata oluştu");
+      alert(t('auth.step13.loadError'));
     } finally {
       setLoadingHobbies(false);
     }
@@ -155,7 +176,7 @@ export default function RegisterStep13Screen({ navigation }: NativeStackScreenPr
             <Text className="text-4xl text-white">←</Text>
           </TouchableOpacity>
           <Text className="text-white text-[26px] font-bold tracking-wider">
-            Hobiler {hobbies.length}/10
+            {t('auth.step13.titleWithCount', { count: hobbies.length })}
           </Text>
         </View>
       </View>
@@ -170,7 +191,7 @@ export default function RegisterStep13Screen({ navigation }: NativeStackScreenPr
       >
         <View className="flex flex-col gap-2 mb-3">
           <Text className="text-[18px] font-normal text-gray-400 mb-6">
-            İlgi alanlarını seç. Seninle ortak noktası olan kişilerle eşleşmeni sağlar.
+            {t('auth.step13.description')}
           </Text>
         </View>
 
@@ -209,7 +230,7 @@ export default function RegisterStep13Screen({ navigation }: NativeStackScreenPr
           style={{ borderRadius: 999, borderCurve: "continuous", overflow: "hidden", backgroundColor: colors.messageOwn }}
         >
           <Text className="text-white py-[20px] font-bold text-[15px] text-center">
-            Devam Et
+            {t('common.continueButton')}
           </Text>
         </AnimatedPressable>
       </View>

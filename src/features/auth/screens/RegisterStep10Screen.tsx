@@ -12,13 +12,9 @@ import { useForm } from "react-hook-form";
 import { zodResolver } from "@hookform/resolvers/zod";
 import { interestedInSchema, InterestedInForm } from "@/shared/schemas/formSchemas";
 import { colors } from "../../../shared/theme/colors";
+import { useTranslation } from 'react-i18next';
 
 // Backend InterestedIn enumName ("Men"/"Women"/"NonBinary") bekliyor.
-const OPTIONS = [
-  { enumName: "Men", label: "Erkek" },
-  { enumName: "Women", label: "Kadın" },
-  { enumName: "NonBinary", label: "Non-Binary" },
-];
 
 const AnimatedPressable = ({ onPress, style, activeOpacity = 1, children }: any) => {
   const scale = useRef(new Animated.Value(1)).current;
@@ -34,7 +30,13 @@ const AnimatedPressable = ({ onPress, style, activeOpacity = 1, children }: any)
 };
 
 export default function RegisterStep10Screen({ navigation }: NativeStackScreenProps<AuthStackParamList, 'RegisterStep10'>) {
+  const { t } = useTranslation();
   const dispatch = useAppDispatch();
+  const OPTIONS = [
+    { enumName: "Men", label: t('auth.step10.male') },
+    { enumName: "Women", label: t('auth.step10.female') },
+    { enumName: "NonBinary", label: t('auth.step10.nonBinary') },
+  ];
   const profile = useAppSelector((s) => (s as any).profile || {});
 
   const initial =
@@ -76,9 +78,9 @@ export default function RegisterStep10Screen({ navigation }: NativeStackScreenPr
 
       <View className="flex-1 px-6 py-6 pt-0">
         <View className="flex flex-col gap-2">
-          <Text className="text-4xl font-bold text-white">İlgi Alanın</Text>
+          <Text className="text-4xl font-bold text-white">{t('auth.step10.title')}</Text>
           <Text className="text-[18px] font-normal text-gray-400 mb-6">
-            Kiminle eşleşmek istersin? Birden fazla seçebilirsin.
+            {t('auth.step10.description')}
           </Text>
         </View>
 
@@ -114,7 +116,7 @@ export default function RegisterStep10Screen({ navigation }: NativeStackScreenPr
         <View className="flex-row gap-2 px-2 mr-6 items-center mt-5">
           <InfoIcon size={16} color={colors.textSecondary} className="mt-3" />
           <Text className="text-gray-400 text-[12px]">
-            Seçimlerini profilinden filtreleyerek detaylandırabilirsin.
+            {t('auth.step10.infoText')}
           </Text>
         </View>
 
@@ -129,7 +131,7 @@ export default function RegisterStep10Screen({ navigation }: NativeStackScreenPr
         <View style={{ paddingHorizontal: 32, paddingBottom: 32, paddingTop: 16, backgroundColor: colors.bg }}>
           <AnimatedPressableShared onPress={handleNext} style={{ borderRadius: 999, overflow: "hidden", backgroundColor: colors.messageOwn }}>
             <Text style={{ color: "#fff", paddingVertical: 20, fontWeight: "700", fontSize: 15, textAlign: "center" }}>
-              Devam Et
+              {t('common.continueButton')}
             </Text>
           </AnimatedPressableShared>
         </View>

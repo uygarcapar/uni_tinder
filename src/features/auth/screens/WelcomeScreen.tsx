@@ -12,6 +12,7 @@ import { StatusBar } from "expo-status-bar";
 import { NativeStackScreenProps } from "@react-navigation/native-stack";
 import type { AuthStackParamList } from "@/shared/types/navigation";
 import { colors } from "../../../shared/theme/colors";
+import { useTranslation } from 'react-i18next';
 
 // Ekran boyutunu alıyoruz (Garanti olsun diye)
 const { width, height } = Dimensions.get("window");
@@ -53,6 +54,7 @@ const PressableScaleButton = ({ onPress, style, className, children }: any) => {
 };
 
 export default function WelcomeScreen({ navigation }: NativeStackScreenProps<AuthStackParamList, 'Welcome'>) {
+  const { t } = useTranslation();
   return (
     <View className="flex-1 bg-white">
       <StatusBar style="dark" />
@@ -102,7 +104,7 @@ export default function WelcomeScreen({ navigation }: NativeStackScreenProps<Aut
               }}
             >
               <Text style={{ color: colors.bgDeep }} className="font-bold text-[14px]">
-                Hesap Oluştur
+                {t('auth.welcome.signupButton')}
               </Text>
             </PressableScaleButton>
 
@@ -116,15 +118,20 @@ export default function WelcomeScreen({ navigation }: NativeStackScreenProps<Aut
               }}
             >
               <Text className="text-gray-200 font-bold text-[14px]">
-                Zaten Hesabım Var
+                {t('auth.welcome.loginButton')}
               </Text>
             </PressableScaleButton>
           </View>
 
           <Text className="text-white opacity-70 text-sm text-center mt-8">
-            Devam ederek <Text className=" underline">Kullanım Koşulları</Text>{" "}
-            ve <Text className=" underline">Gizlilik Politikası</Text>
-            'nı kabul etmiş olursun.
+            {t('auth.welcome.termsAccept')
+              .split('<1>')[0]}
+            <Text className=" underline">{t('auth.welcome.termsLink')}</Text>
+            {t('auth.welcome.termsAccept')
+              .split('</1>')[1]?.split('<2>')[0]}
+            <Text className=" underline">{t('auth.welcome.privacyLink')}</Text>
+            {t('auth.welcome.termsAccept')
+              .split('</2>')[1]}
           </Text>
         </View>
       </View>

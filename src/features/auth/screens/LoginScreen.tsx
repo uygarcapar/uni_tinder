@@ -22,8 +22,10 @@ import { useForm, Controller } from "react-hook-form";
 import { zodResolver } from "@hookform/resolvers/zod";
 import { loginSchema, LoginForm } from "@/shared/schemas/formSchemas";
 import { colors } from "../../../shared/theme/colors";
+import { useTranslation } from 'react-i18next';
 
 export default function LoginScreen({ navigation }: NativeStackScreenProps<AuthStackParamList, 'Login'>) {
+  const { t } = useTranslation();
   const [showPassword, setShowPassword] = useState(false);
 
   const dispatch = useAppDispatch();
@@ -72,7 +74,7 @@ export default function LoginScreen({ navigation }: NativeStackScreenProps<AuthS
             }}
           >
             <View className="flex flex-col gap-2">
-              <Text className="text-4xl font-bold text-white">Giriş Yap.</Text>
+              <Text className="text-4xl font-bold text-white">{t('auth.login.title')}</Text>
 
               {/* Error Message */}
               {error ? (
@@ -83,7 +85,7 @@ export default function LoginScreen({ navigation }: NativeStackScreenProps<AuthS
                 </View>
               ) : (
                 <Text className="text-[18px] font-normal text-gray-400 mb-6 mt-2">
-                  Giriş yapmak için E-Mail ve şifreni kullan.
+                  {t('auth.login.description')}
                 </Text>
               )}
             </View>
@@ -91,7 +93,7 @@ export default function LoginScreen({ navigation }: NativeStackScreenProps<AuthS
             {/* Email Input */}
             <View className="mb-4">
               <Text className="text-white text-lg font-semibold mb-2">
-                E-Mail
+                {t('auth.login.emailLabel')}
               </Text>
               <Controller
                 control={control}
@@ -106,7 +108,7 @@ export default function LoginScreen({ navigation }: NativeStackScreenProps<AuthS
                     className={`border-[0.5px] px-4 py-5 text-[18px] text-white ${
                       error ? "border-red-500" : "border-white/10 "
                     }`}
-                    placeholder="ornek@universite.edu.tr"
+                    placeholder={t('auth.login.emailPlaceholder')}
                     placeholderTextColor={colors.textSecondary}
                     value={value}
                     onChangeText={onChange}
@@ -121,7 +123,7 @@ export default function LoginScreen({ navigation }: NativeStackScreenProps<AuthS
             {/* Password Input */}
             <View className="mb-6">
               <Text className="text-white text-lg font-semibold mb-2">
-                Şifre
+                {t('auth.login.passwordLabel')}
               </Text>
               <View
                 style={{
@@ -139,7 +141,7 @@ export default function LoginScreen({ navigation }: NativeStackScreenProps<AuthS
                   render={({ field: { onChange, value } }) => (
                     <TextInput
                       className="flex-1 text-[18px] text-white"
-                      placeholder="••••••••"
+                      placeholder={t('auth.login.passwordPlaceholder')}
                       placeholderTextColor={colors.textSecondary}
                       value={value}
                       onChangeText={onChange}
@@ -167,9 +169,9 @@ export default function LoginScreen({ navigation }: NativeStackScreenProps<AuthS
             {/* Forgot Password */}
             <TouchableOpacity activeOpacity={1} className="mb-4">
               <Text className="font-normal text-gray-400 text-[15px]">
-                Şifreni mi unutttun?{" "}
+                {t('auth.login.forgotPassword').split(t('auth.login.forgotPasswordLink'))[0]}
                 <Text className="font-semibold underline text-white">
-                  Buradan sıfırla
+                  {t('auth.login.forgotPasswordLink')}
                 </Text>
               </Text>
             </TouchableOpacity>
@@ -196,7 +198,7 @@ export default function LoginScreen({ navigation }: NativeStackScreenProps<AuthS
               <ActivityIndicator className="py-[17.5px]" color="#fff" />
             ) : (
               <Text className="text-white py-[20px] font-bold text-[15px] text-center">
-                Giriş Yap
+                {t('auth.login.submitButton')}
               </Text>
             )}
           </TouchableOpacity>

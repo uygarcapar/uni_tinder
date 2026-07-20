@@ -12,6 +12,7 @@ import type { AuthStackParamList } from "@/shared/types/navigation";
 import { useAppDispatch, useAppSelector } from "@/shared/hooks/redux";
 import { updateMultipleFields } from "@/features/profile/profileSlice";
 import { API_BASE_URL, API_ENDPOINTS } from "@/shared/constants/api";
+import { useTranslation } from 'react-i18next';
 import {
   Check, Sparkles, Users, Briefcase, Wind, Star, Flame, Leaf, Moon, Sun,
   Scale, Zap, Navigation, Mountain, Droplets, Fish, Cigarette,
@@ -24,16 +25,26 @@ import { lifestyleSchema, LifestyleForm } from "@/shared/schemas/formSchemas";
 import { colors } from "../../../shared/theme/colors";
 
 const ZODIAC_MAP: Record<string, any> = {
+  // Backend enumName (PascalCase)
+  Aries: Flame, Taurus: Leaf, Gemini: Wind, Cancer: Moon, Leo: Sun,
+  Virgo: Leaf, Libra: Scale, Scorpio: Zap, Sagittarius: Navigation,
+  Capricorn: Mountain, Aquarius: Droplets, Pisces: Fish,
+  // Legacy TR display fallback
   Koç: Flame, Boğa: Leaf, İkizler: Wind, Yengeç: Moon, Aslan: Sun,
   Başak: Leaf, Terazi: Scale, Akrep: Zap, Yay: Navigation,
   Oğlak: Mountain, Kova: Droplets, Balık: Fish,
 };
 
 const PURPOSE_MAP: Record<string, any> = {
-  Flört: { icon: Sparkles, desc: "Hafif, eğlenceli ve heyecanlı bir bağlantı arıyorum." },
-  Arkadaşlık: { icon: Users, desc: "Yeni insanlarla tanışmak ve sosyal çevreyi genişletmek istiyorum." },
-  Network: { icon: Briefcase, desc: "Profesyonel bağlantılar kurmak ve iş dünyasında tanışmak istiyorum." },
-  Öylesine: { icon: Wind, desc: "Belirli bir beklentim yok, akışına bırakıyorum." },
+  // Backend enumName (PascalCase)
+  Dating: { icon: Sparkles },
+  Friendship: { icon: Users },
+  Networking: { icon: Briefcase },
+  JustLooking: { icon: Wind },
+  // Legacy TR display fallback
+  Flört: { icon: Sparkles },
+  Arkadaşlık: { icon: Users },
+  Öylesine: { icon: Wind },
 };
 
 const getZodiacIcon = (name: string) => ZODIAC_MAP[name] || Star;
@@ -49,10 +60,9 @@ const SimpleOptionItem = memo(({ option, isSelected, onToggle }: any) => (
   </AnimatedPressable>
 ));
 
-const PurposeOptionItem = memo(({ option, isSelected, onToggle }: any) => {
-  const entry = PURPOSE_MAP[option.name];
+const PurposeOptionItem = memo(({ option, isSelected, onToggle, desc }: any) => {
+  const entry = PURPOSE_MAP[option.enumName ?? option.name];
   const Icon = entry?.icon ?? Star;
-  const desc = entry?.desc;
   return (
     <TouchableOpacity
       activeOpacity={1}
@@ -118,7 +128,7 @@ const SkeletonPurposeOption = memo<{}>(() => {
 });
 
 const ZodiacPill = memo(({ option, isSelected, onToggle }: any) => {
-  const Icon = getZodiacIcon(option.name);
+  const Icon = getZodiacIcon(option.enumName ?? option.name);
   return (
     <AnimatedPressable
       onPress={() => onToggle(option.enumName)}
@@ -136,7 +146,19 @@ const ZodiacPill = memo(({ option, isSelected, onToggle }: any) => {
 });
 
 export default function RegisterStep14Screen({ navigation }: NativeStackScreenProps<AuthStackParamList, 'RegisterStep14'>) {
+  const { t } = useTranslation();
   const dispatch = useAppDispatch();
+  const PURPOSE_DESC_MAP: Record<string, string> = {
+    // Backend enumName (PascalCase)
+    Dating: t('auth.step14.purposeFlirtDesc'),
+    Friendship: t('auth.step14.purposeFriendshipDesc'),
+    Networking: t('auth.step14.purposeNetworkDesc'),
+    JustLooking: t('auth.step14.purposeNeutralDesc'),
+    // Legacy TR display fallback
+    Flört: t('auth.step14.purposeFlirtDesc'),
+    Arkadaşlık: t('auth.step14.purposeFriendshipDesc'),
+    Öylesine: t('auth.step14.purposeNeutralDesc'),
+  };
   const profile = useAppSelector((s) => (s as any).profile || {});
 
   const [smokingStatuses, setSmokingStatuses] = useState([]);
@@ -171,8 +193,8 @@ export default function RegisterStep14Screen({ navigation }: NativeStackScreenPr
       const res = await fetch(`${API_BASE_URL}${API_ENDPOINTS.GET_SMOKING_STATUSES}`);
       const data = await res.json();
       if (data.isSuccess && data.result) setSmokingStatuses(data.result);
-      else alert("Sigara durumları yüklenirken bir hata oluştu");
-    } catch (e) { console.error(e); alert("Sigara durumları yüklenirken bir hata oluştu"); }
+      else alert(t('auth.step14.smokingError'));
+    } catch (e) { console.error(e); alert(t('auth.step14.smokingError')); }
     finally { setLoadingSmokingStatuses(false); }
   };
 
@@ -182,8 +204,8 @@ export default function RegisterStep14Screen({ navigation }: NativeStackScreenPr
       const res = await fetch(`${API_BASE_URL}${API_ENDPOINTS.GET_ZODIACS}`);
       const data = await res.json();
       if (data.isSuccess && data.result) setZodiacs(data.result);
-      else alert("Burçlar yüklenirken bir hata oluştu");
-    } catch (e) { console.error(e); alert("Burçlar yüklenirken bir hata oluştu"); }
+      else alert(t('auth.step14.zodiacError'));
+    } catch (e) { console.error(e); alert(t('auth.step14.zodiacError')); }
     finally { setLoadingZodiacs(false); }
   };
 
@@ -193,8 +215,8 @@ export default function RegisterStep14Screen({ navigation }: NativeStackScreenPr
       const res = await fetch(`${API_BASE_URL}${API_ENDPOINTS.GET_USAGE_PURPOSES}`);
       const data = await res.json();
       if (data.isSuccess && data.result) setUsagePurposes(data.result);
-      else alert("Kullanım amaçları yüklenirken bir hata oluştu");
-    } catch (e) { console.error(e); alert("Kullanım amaçları yüklenirken bir hata oluştu"); }
+      else alert(t('auth.step14.purposeError'));
+    } catch (e) { console.error(e); alert(t('auth.step14.purposeError')); }
     finally { setLoadingUsagePurposes(false); }
   };
 
@@ -238,7 +260,7 @@ export default function RegisterStep14Screen({ navigation }: NativeStackScreenPr
             <Text className="text-4xl mr-2 text-white">←</Text>
           </TouchableOpacity>
           <TouchableOpacity activeOpacity={0.9} onPress={handleSkip}>
-            <Text className="text-gray-400 text-[16px] font-semibold">Atla</Text>
+            <Text className="text-gray-400 text-[16px] font-semibold">{t('auth.step14.skipButton')}</Text>
           </TouchableOpacity>
         </View>
       </View>
@@ -247,28 +269,28 @@ export default function RegisterStep14Screen({ navigation }: NativeStackScreenPr
 
       <ScrollView className="flex-1 px-6 py-6 pt-0">
         <View className="flex flex-col gap-2">
-          <Text className="text-4xl font-bold text-white">Yaşam Tarzın</Text>
+          <Text className="text-4xl font-bold text-white">{t('auth.step14.title')}</Text>
           <Text className="text-[18px] font-normal text-gray-400 mb-6">
-            İsteğe bağlı bilgiler. Profil eşleşmelerini iyileştirir.
+            {t('auth.step14.description')}
           </Text>
         </View>
 
         {isLoading ? (
           <>
             <View style={{ marginTop: 8 }}>
-              <Text style={{ color: colors.text, fontSize: 14, fontWeight: "600", marginBottom: 12 }}>Sigara Kullanımı</Text>
+              <Text style={{ color: colors.text, fontSize: 14, fontWeight: "600", marginBottom: 12 }}>{t('auth.step14.smokingLabel')}</Text>
               <View style={{ gap: 2 }}>
                 {Array.from({ length: 3 }).map((_, i) => <SkeletonSimpleOption key={i} />)}
               </View>
             </View>
             <View style={{ marginTop: 28 }}>
-              <Text style={{ color: colors.text, fontSize: 14, fontWeight: "600", marginBottom: 12 }}>Burç</Text>
+              <Text style={{ color: colors.text, fontSize: 14, fontWeight: "600", marginBottom: 12 }}>{t('auth.step14.zodiacLabel')}</Text>
               <View style={{ flexDirection: "row", flexWrap: "wrap", gap: 8 }}>
                 {[60, 70, 80, 75, 65, 85, 70, 60, 55, 75, 65, 70].map((w, i) => <SkeletonZodiacPill key={i} width={w} />)}
               </View>
             </View>
             <View style={{ marginTop: 28, marginBottom: 32 }}>
-              <Text style={{ color: colors.text, fontSize: 14, fontWeight: "600", marginBottom: 12 }}>Kullanım Amacı</Text>
+              <Text style={{ color: colors.text, fontSize: 14, fontWeight: "600", marginBottom: 12 }}>{t('auth.step14.purposeLabel')}</Text>
               {Array.from({ length: 4 }).map((_, i) => <SkeletonPurposeOption key={i} />)}
             </View>
           </>
@@ -276,7 +298,7 @@ export default function RegisterStep14Screen({ navigation }: NativeStackScreenPr
           <>
             {(smokingStatuses as any[]).length > 0 && (
               <View style={{ marginTop: 8 }}>
-                <Text style={{ color: colors.text, fontSize: 14, fontWeight: "600", marginBottom: 12 }}>Sigara Kullanımı</Text>
+                <Text style={{ color: colors.text, fontSize: 14, fontWeight: "600", marginBottom: 12 }}>{t('auth.step14.smokingLabel')}</Text>
                 <View style={{ gap: 2 }}>
                   {(smokingStatuses as any[]).map((opt) => (
                     <SimpleOptionItem key={opt.id} option={opt} isSelected={opt.enumName === smokingStatus} onToggle={toggleSmoking} />
@@ -286,7 +308,7 @@ export default function RegisterStep14Screen({ navigation }: NativeStackScreenPr
             )}
             {(zodiacs as any[]).length > 0 && (
               <View style={{ marginTop: 28 }}>
-                <Text style={{ color: colors.text, fontSize: 14, fontWeight: "600", marginBottom: 12 }}>Burç</Text>
+                <Text style={{ color: colors.text, fontSize: 14, fontWeight: "600", marginBottom: 12 }}>{t('auth.step14.zodiacLabel')}</Text>
                 <View style={{ flexDirection: "row", flexWrap: "wrap", gap: 8 }}>
                   {(zodiacs as any[]).map((opt) => (
                     <ZodiacPill key={opt.id} option={opt} isSelected={opt.enumName === zodiacSign} onToggle={toggleZodiac} />
@@ -296,9 +318,9 @@ export default function RegisterStep14Screen({ navigation }: NativeStackScreenPr
             )}
             {(usagePurposes as any[]).length > 0 && (
               <View style={{ marginTop: 28, marginBottom: 32 }}>
-                <Text style={{ color: colors.text, fontSize: 14, fontWeight: "600", marginBottom: 12 }}>Kullanım Amacı</Text>
+                <Text style={{ color: colors.text, fontSize: 14, fontWeight: "600", marginBottom: 12 }}>{t('auth.step14.purposeLabel')}</Text>
                 {(usagePurposes as any[]).map((opt) => (
-                  <PurposeOptionItem key={opt.id} option={opt} isSelected={opt.enumName === usagePurpose} onToggle={toggleUsagePurpose} />
+                  <PurposeOptionItem key={opt.id} option={opt} isSelected={opt.enumName === usagePurpose} onToggle={toggleUsagePurpose} desc={PURPOSE_DESC_MAP[opt.enumName ?? opt.name]} />
                 ))}
               </View>
             )}
@@ -311,7 +333,7 @@ export default function RegisterStep14Screen({ navigation }: NativeStackScreenPr
       <View className="px-8 pb-8 pt-4 absolute bottom-0 left-0 right-0">
         <AnimatedPressable style={{ borderRadius: 999, borderCurve: "continuous", overflow: "hidden", backgroundColor: colors.messageOwn }} onPress={handleNext}>
           <Text className="text-white py-[20px] font-bold text-[15px] text-center">
-            {allFieldsEmpty ? "Atla" : "Devam Et"}
+            {allFieldsEmpty ? t('auth.step14.skipButton') : t('common.continueButton')}
           </Text>
         </AnimatedPressable>
       </View>

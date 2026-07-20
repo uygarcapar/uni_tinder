@@ -1,4 +1,5 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { useTranslation } from "react-i18next";
 import {
   View,
   Text,
@@ -18,6 +19,7 @@ const PLAN_CARD_GAP = 12;
 const PLAN_SNAP = PLAN_CARD_WIDTH + PLAN_CARD_GAP;
 
 function SelectedBadge({ active }: any) {
+  const { t } = useTranslation();
   const progress = useRef(new Animated.Value(active ? 1 : 0)).current;
 
   useEffect(() => {
@@ -43,15 +45,15 @@ function SelectedBadge({ active }: any) {
         opacity: progress,
       }}
     >
-      <ShoppingBag size={15} color="#000" strokeWidth={2} />
+      <ShoppingBag size={15} color={colors.text} strokeWidth={2} />
       <Text
         style={{
-          color: "#000",
+          color: colors.text,
           fontSize: 15,
           fontWeight: "600",
         }}
       >
-        Satın Al
+        {t('purchase.cta.buy')}
       </Text>
     </Animated.View>
   );
@@ -139,14 +141,7 @@ import api from "@/shared/services/api";
 import { API_ENDPOINTS } from "@/shared/constants/api";
 import { useQueryClient } from "@tanstack/react-query";
 import { swipeKeys } from "@/features/discover/swipeQueries";
-import { colors, gradients } from "../../../shared/theme/colors";
-
-const FEATURES = [
-  { icon: Zap, label: "Sınırsız Beğeni" },
-  { icon: Eye, label: "Seni Beğenenleri Gör" },
-  { icon: RotateCcw, label: "Geri Alma (Rewind)" },
-  { icon: Ban, label: "Reklamsız Deneyim" },
-];
+import { colors } from "../../../shared/theme/colors";
 
 // RC offering field'ları period bazında. Backend /plans endpoint'i ile bu key'leri
 // eşleştiriyoruz — RC offering bu key'leri otomatik üretmez ama RC default convention
@@ -308,6 +303,7 @@ export default function PurchaseModal({ visible, onClose, onSuccess }: any) {
   const dispatch = useAppDispatch();
   const queryClient = useQueryClient();
   const isPremium = useAppSelector(selectIsPremium);
+  const { t } = useTranslation();
 
   // Premium satın alma/restore sonrası swipe stats cache'ini güncelle —
   // backend sınırsız için -1 dönüyor. Local cache eski limitli değerlerle
@@ -414,6 +410,35 @@ export default function PurchaseModal({ visible, onClose, onSuccess }: any) {
     });
   }, [selectedPeriod, plans.length]);
 
+  // Modal açıldığında kart peek hint animasyonu: sağa 60px kayıp geri döner,
+  // "yatay kaydırılabilir" olduğunu göstersin. Threshold PLAN_SNAP/2'nin çok
+  // altında olduğu için seçim değişmez. Her açılışta çalışır — sheet slide-in
+  // animasyonu bittikten sonra tetiklenmesi için gecikme uygulanır.
+  useEffect(() => {
+    if (!visible) return;
+    if (plans.length === 0) return;
+
+    const peekTimer = setTimeout(() => {
+      const idx = Math.max(
+        0,
+        plans.findIndex((p) => p.period === selectedPeriod),
+      );
+      const baseOffset = PLAN_SNAP * idx;
+      planListRef.current?.scrollToOffset?.({
+        offset: baseOffset + 60,
+        animated: true,
+      });
+      setTimeout(() => {
+        planListRef.current?.scrollToOffset?.({
+          offset: baseOffset,
+          animated: true,
+        });
+      }, 350);
+    }, 700);
+
+    return () => clearTimeout(peekTimer);
+  }, [visible, plans.length]);
+
   const renderBackdrop = useCallback(
     (props) => <BlurBottomSheetBackdrop {...props} onPress={handleClose} />,
     [handleClose],
@@ -423,7 +448,7 @@ export default function PurchaseModal({ visible, onClose, onSuccess }: any) {
     const plan = planOverride ?? selectedPlan;
     const pkg = plan?.pkg;
     if (!pkg) {
-      Alert.alert("Hata", "Paket bulunamadı.");
+      Alert.alert(t('common.error'), t('purchase.errors.packageNotFound'));
       return;
     }
     setPurchasing(true);
@@ -438,10 +463,7 @@ export default function PurchaseModal({ visible, onClose, onSuccess }: any) {
       }
     } catch (e) {
       if (!e.userCancelled) {
-        Alert.alert(
-          "Satın Alma Hatası",
-          e.message || "İşlem gerçekleştirilemedi.",
-        );
+        Alert.alert(t('purchase.errors.purchaseTitle'), e.message || t('purchase.errors.operationFailed'));
       }
     } finally {
       setPurchasing(false);
@@ -459,10 +481,10 @@ export default function PurchaseModal({ visible, onClose, onSuccess }: any) {
         onSuccess?.();
         dispatch(fetchSubscriptionStatus());
       } else {
-        Alert.alert("Bulunamadı", "Aktif bir abonelik bulunamadı.");
+        Alert.alert(t('purchase.errors.restoreNotFoundTitle'), t('purchase.errors.restoreNoSubscription'));
       }
     } catch (e) {
-      Alert.alert("Hata", e.message || "Geri yükleme başarısız.");
+      Alert.alert(t('common.error'), e.message || t('purchase.errors.restoreFailed'));
     } finally {
       setRestoring(false);
     }
@@ -475,9 +497,15 @@ export default function PurchaseModal({ visible, onClose, onSuccess }: any) {
     typeof introUnits === "number" && introUnits > 0 ? introUnits : 3;
   const showTrialBadge = Boolean(introPrice) || (selectedPlan && trialDays > 0);
 
+  const features = useMemo(() => [
+    { icon: Zap, label: t('purchase.features.unlimited') },
+    { icon: Eye, label: t('purchase.features.seeLikes') },
+    { icon: RotateCcw, label: t('purchase.features.rewind') },
+    { icon: Ban, label: t('purchase.features.noAds') },
+  ], [t]);
+
   const selectedPriceString = selectedPlan?.priceString ?? "—";
-  const selectedPeriodLabel =
-    PERIOD_LABELS[selectedPlan?.period ?? "monthly"]?.per ?? "ay";
+  const selectedPeriodLabel = t(`purchase.periods.${selectedPlan?.period ?? "monthly"}Per`);
 
   // Sticky footer — BottomSheetFooter ile sheet'in alt kısmında sabit kalır.
   const renderFooter = useCallback(
@@ -512,8 +540,7 @@ export default function PurchaseModal({ visible, onClose, onSuccess }: any) {
                 }}
               >
                 <LinearGradient
-                  colors={gradients.neutralFade}
-                  locations={[0, 0.35, 0.85]}
+                  colors={[colors.litPlus, colors.litPlus]}
                   start={{ x: 0, y: 0 }}
                   end={{ x: 1, y: 1 }}
                   style={{
@@ -524,22 +551,22 @@ export default function PurchaseModal({ visible, onClose, onSuccess }: any) {
                 >
                   <Text
                     style={{
-                      color: "#000",
+                      color: colors.text,
                       fontWeight: "700",
                       fontSize: 14,
                       opacity: purchasing ? 0 : 1,
                     }}
                   >
                     {isPremium
-                      ? "Hesap Zaten Lit Plus"
+                      ? t('purchase.cta.alreadyPremium')
                       : showTrialBadge
-                        ? `${trialDays} Gün Ücretsiz Dene`
-                        : `${selectedPriceString} / ${selectedPeriodLabel} — Abone Ol`}
+                        ? t('purchase.cta.freeTrial', { days: trialDays })
+                        : t('purchase.cta.subscribe', { price: selectedPriceString, period: selectedPeriodLabel })}
                   </Text>
                   {purchasing && (
                     <ActivityIndicator
                       size="small"
-                      color="#000"
+                      color={colors.text}
                       style={{ position: "absolute" }}
                     />
                   )}
@@ -556,7 +583,7 @@ export default function PurchaseModal({ visible, onClose, onSuccess }: any) {
                   <ActivityIndicator size="small" color={colors.textSecondary} />
                 ) : (
                   <Text style={{ color: colors.textMuted, fontSize: 13 }}>
-                    Satın alımları geri yükle
+                    {t('purchase.cta.restore')}
                   </Text>
                 )}
               </TouchableOpacity>
@@ -571,9 +598,7 @@ export default function PurchaseModal({ visible, onClose, onSuccess }: any) {
                   lineHeight: 16,
                 }}
               >
-                Lit Plus aboneliği, App Store üzerinden otomatik olarak
-                yenilenen bir aboneliktir. Aboneliğiniz, satın alma işleminin
-                onaylanmasından sonra App Store hesabınızdan ücretlendirilir.
+                {t('purchase.cta.appStoreDisclaimer')}
               </Text>
             </>
           )}
@@ -599,6 +624,7 @@ export default function PurchaseModal({ visible, onClose, onSuccess }: any) {
       handleComponent={null}
       backdropComponent={renderBackdrop}
       footerComponent={renderFooter}
+      backgroundStyle={{ backgroundColor: "#a83220" }}
       onClose={() => {
         setSelectedPeriod(null);
         initialScrollDoneRef.current = false;
@@ -636,13 +662,11 @@ export default function PurchaseModal({ visible, onClose, onSuccess }: any) {
         </BlurView>
       </TouchableOpacity>
 
-      {/* Üstte hafif gradient accent — solid bg üzerinde sabit overlay, full-screen
-          gradient'in GPU yüküne karşı küçük bir alan kapsar, modal animasyonunu
-          etkilemez. */}
+      {/* Yukarıdan gri → aşağıda messageOwn'a fade */}
       <LinearGradient
         pointerEvents="none"
-        colors={["#3a3a3e", colors.bg]}
-        locations={[0, 1]}
+        colors={["#2e2e2e", "#2e2e2e", "#a83220"]}
+        locations={[0, 0.4, 1]}
         start={{ x: 0.5, y: 0 }}
         end={{ x: 0.5, y: 1 }}
         style={{
@@ -698,8 +722,7 @@ export default function PurchaseModal({ visible, onClose, onSuccess }: any) {
               textAlign: "center",
             }}
           >
-            Eşleşmelerini hızlandır, seni beğenenleri gör ve daha fazlasını
-            keşfet!
+            {t('discover.premium.description')}
           </Text>
 
           {!showTrialBadge && (
@@ -714,7 +737,7 @@ export default function PurchaseModal({ visible, onClose, onSuccess }: any) {
               }}
             >
               <Text style={{ color: colors.text, fontSize: 13, fontWeight: "600" }}>
-                İlk {trialDays} gün ücretsiz
+                {t('purchase.cta.freeTrialBadge', { days: trialDays })}
               </Text>
             </View>
           )}
@@ -763,8 +786,7 @@ export default function PurchaseModal({ visible, onClose, onSuccess }: any) {
                     : 3;
                 const planShowTrial =
                   Boolean(planIntro) || (plan && planTrialDays > 0);
-                const planPeriodLabel =
-                  PERIOD_LABELS[plan?.period ?? "monthly"]?.per ?? "ay";
+                const planPeriodLabel = t(`purchase.periods.${plan?.period ?? "monthly"}Per`);
                 const isSelected = plan.period === selectedPlan.period;
                 return (
                   <CardOpacityWrapper active={isSelected}>
@@ -787,11 +809,9 @@ export default function PurchaseModal({ visible, onClose, onSuccess }: any) {
                         overflow: "hidden",
                       }}
                     >
-                      <LinearGradient
-                        colors={gradients.neutralFade}
-                        locations={[0, 0.5, 1]}
-                        start={{ x: 0, y: 0 }}
-                        end={{ x: 1, y: 1 }}
+                      <BlurView
+                        intensity={70}
+                        tint="dark"
                         style={{
                           paddingHorizontal: 20,
                           paddingTop: 10,
@@ -801,12 +821,12 @@ export default function PurchaseModal({ visible, onClose, onSuccess }: any) {
                         <View style={{ marginBottom: 6 }}>
                           {renderPlanName(plan.displayName, {
                             primarySize: 55,
-                            secondaryColor: "#000",
+                            secondaryColor: colors.text,
                           })}
                         </View>
                         <Text
                           style={{
-                            color: "#000",
+                            color: colors.text,
                             fontSize: 18,
                             fontWeight: "400",
                           }}
@@ -816,20 +836,18 @@ export default function PurchaseModal({ visible, onClose, onSuccess }: any) {
                         {planShowTrial && (
                           <Text
                             style={{
-                              color: colors.textDisabled,
+                              color: "rgba(255,255,255,0.75)",
                               fontSize: 12,
                               fontWeight: "400",
                               marginTop: 4,
                               lineHeight: 15,
                             }}
                           >
-                            İlk {planTrialDays} gün ücretsiz kullanabilirsin,
-                            ardından {plan.priceString ?? "—"}/{planPeriodLabel}{" "}
-                            olarak otomatik yenilenir.
+                            {t('purchase.cta.trialDisclaimer', { days: planTrialDays, price: plan.priceString ?? "—", period: planPeriodLabel })}
                           </Text>
                         )}
                         <SelectedBadge active={isSelected} />
-                      </LinearGradient>
+                      </BlurView>
                     </AnimatedPressable>
                   </CardOpacityWrapper>
                 );
@@ -872,11 +890,11 @@ export default function PurchaseModal({ visible, onClose, onSuccess }: any) {
             {/* Header row */}
             <View className="flex-row items-center justify-between mb-2 px-6">
               <Text className="text-white/70 font-bold text-[12px] uppercase tracking-wider flex-1">
-                Özellikler
+                {t('discover.premium.featuresLabel')}
               </Text>
               <View className="flex-row items-center gap-4">
                 <Text className="text-white/70 font-bold text-[12px] uppercase w-16 text-center">
-                  Standart
+                  {t('discover.premium.standardPlan')}
                 </Text>
                 <Text
                   className="w-16 text-center mb-2"
@@ -892,11 +910,11 @@ export default function PurchaseModal({ visible, onClose, onSuccess }: any) {
             </View>
 
             {/* Feature rows */}
-            {FEATURES.map(({ label }, index) => (
+            {features.map(({ label }, index) => (
               <View
                 key={label}
                 className={`flex-row items-center justify-between px-6 ${
-                  index !== FEATURES.length - 1 ? "mb-4" : ""
+                  index !== features.length - 1 ? "mb-4" : ""
                 }`}
               >
                 <Text className="text-white font-[500] text-[13px] flex-1 pr-2">

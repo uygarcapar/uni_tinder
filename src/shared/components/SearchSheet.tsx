@@ -1,4 +1,5 @@
 import { useState, useEffect, useRef } from 'react';
+import { useTranslation } from 'react-i18next';
 import {
   Modal,
   View,
@@ -21,6 +22,7 @@ const DEBOUNCE_MS = 300;
  * Tap → sonucu seçer, parent ChatScreen scroll-to-message yapar.
  */
 export default function SearchSheet({ visible, conversationId, onClose, onSelect }: any) {
+  const { t } = useTranslation();
   const insets = useSafeAreaInsets();
   const [query, setQuery] = useState('');
   const [results, setResults] = useState([]);
@@ -77,7 +79,7 @@ export default function SearchSheet({ visible, conversationId, onClose, onSelect
             <TextInput
               value={query}
               onChangeText={setQuery}
-              placeholder="Mesajlarda ara…"
+              placeholder={t('chat.search.placeholder')}
               placeholderTextColor={colors.textMuted}
               className="flex-1 text-white text-base ml-2"
               autoFocus
@@ -100,7 +102,7 @@ export default function SearchSheet({ visible, conversationId, onClose, onSelect
 
         {!loading && query.trim().length >= 2 && (
           <Text className="text-gray-500 text-xs px-4 py-2">
-            {total} sonuç
+            {t('chat.search.resultCount', { total })}
           </Text>
         )}
 
@@ -114,7 +116,7 @@ export default function SearchSheet({ visible, conversationId, onClose, onSelect
               android_ripple={{ color: '#222' }}
             >
               <Text className="text-gray-400 text-xs mb-1">
-                {item.senderDisplayName || 'Kullanıcı'} • {formatTime(item.sentAt)}
+                {item.senderDisplayName || t('chat.search.defaultName')} • {formatTime(item.sentAt)}
               </Text>
               <Text className="text-white text-sm" numberOfLines={2}>
                 {item.content}
@@ -124,7 +126,7 @@ export default function SearchSheet({ visible, conversationId, onClose, onSelect
           ListEmptyComponent={
             !loading && query.trim().length >= 2 ? (
               <View className="items-center py-8">
-                <Text className="text-gray-500">Eşleşme yok</Text>
+                <Text className="text-gray-500">{t('chat.search.noResults')}</Text>
               </View>
             ) : null
           }

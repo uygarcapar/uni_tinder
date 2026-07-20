@@ -21,8 +21,10 @@ import { useForm, Controller } from "react-hook-form";
 import { zodResolver } from "@hookform/resolvers/zod";
 import { emailSchema, EmailForm } from "@/shared/schemas/formSchemas";
 import { colors } from "../../../shared/theme/colors";
+import { useTranslation } from 'react-i18next';
 
 export default function RegisterStep1Screen({ navigation }: NativeStackScreenProps<AuthStackParamList, 'RegisterStep1'>) {
+  const { t } = useTranslation();
   const dispatch = useAppDispatch();
   const { emailVerifiedToken, registrationEmail } = useAppSelector((s) => (s as any).auth);
   const inputRef = useRef(null);
@@ -126,11 +128,10 @@ export default function RegisterStep1Screen({ navigation }: NativeStackScreenPro
       <TouchableWithoutFeedback onPress={Keyboard.dismiss}>
         <View className="flex-1 px-6 py-6 pt-0">
           <Text className="text-4xl font-bold text-white mb-2">
-            Üniversite E-Maili
+            {t('auth.step1.title')}
           </Text>
           <Text className="text-[18px] font-normal text-gray-400 mb-6">
-            Üniversite e-mail adresin, öğrenci olduğunu doğrulamamıza yardımcı
-            olur.
+            {t('auth.step1.description')}
           </Text>
 
           <Controller
@@ -154,7 +155,7 @@ export default function RegisterStep1Screen({ navigation }: NativeStackScreenPro
                     fontSize: 18,
                     color: colors.text,
                   }}
-                  placeholder="edu.tr"
+                  placeholder={t('auth.step1.emailPlaceholder')}
                   placeholderTextColor={colors.textSecondary}
                   keyboardType="email-address"
                   autoCapitalize="none"
@@ -171,8 +172,7 @@ export default function RegisterStep1Screen({ navigation }: NativeStackScreenPro
           <View className="flex-row gap-2 px-2 items-center mt-3">
             <InfoIcon size={16} color={colors.textSecondary} className="mt-3" />
             <Text className="text-gray-400 text-[12px]">
-              Sadece akademik e-mail adresleri kabul edilir. Örnek:
-              mert@university.edu.tr
+              {t('auth.step1.infoText')}
             </Text>
           </View>
 
@@ -198,7 +198,7 @@ export default function RegisterStep1Screen({ navigation }: NativeStackScreenPro
               <ActivityIndicator className="py-[17.5px]" color="#fff" />
             ) : (
               <Text className="text-white py-[20px] font-bold text-[15px] text-center">
-                Devam Et
+                {t('common.continueButton')}
               </Text>
             )}
           </AnimatedPressable>

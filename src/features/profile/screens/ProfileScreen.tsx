@@ -5,6 +5,7 @@ import {
   useRef,
   useMemo,
 } from "react";
+import { useTranslation } from 'react-i18next';
 import {
   View,
   Text,
@@ -289,6 +290,7 @@ function CompletionAccordion({
   onEdit,
   icon: Icon,
 }) {
+  const { t } = useTranslation();
   const isComplete = current >= max;
   const maxH = useSharedValue(0);
   const rotation = useSharedValue(0);
@@ -382,7 +384,7 @@ function CompletionAccordion({
             }}
           >
             <Text style={{ color: colors.text, fontSize: 13, fontWeight: "500" }}>
-              Tamamla
+              {t('profile.completion.completeButton')}
             </Text>
           </TouchableOpacity>
         </View>
@@ -413,6 +415,7 @@ function ProfileEditModal({
   scrollEnabled = true,
   children,
 }) {
+  const { t } = useTranslation();
   // Saving sırasında "Kaydediliyor" yazısı yerine "Kaydet" text boyutunda
   // shimmer skeleton göster. Button frame'i (pill, h46, glass-ish bg) aynı
   // tutulur ki yer değişmesin.
@@ -438,7 +441,7 @@ function ProfileEditModal({
       onClose={onClose}
       onPresented={onPresented}
       title={title}
-      actionLabel={saving ? undefined : "Kaydet"}
+      actionLabel={saving ? undefined : t('common.save')}
       onAction={onSave}
       actionDisabled={saveDisabled}
       rightSlot={saving ? savingSlot : undefined}
@@ -452,6 +455,7 @@ function ProfileEditModal({
 
 // ══════════════════════════════════════════════════════════════════════════════
 export default function ProfileScreen() {
+  const { t } = useTranslation();
   const dispatch = useAppDispatch();
   const { user } = useAppSelector((s) => (s as any).auth);
   const subscriptionIsPremium = useAppSelector(selectIsPremium);
@@ -637,7 +641,7 @@ export default function ProfileScreen() {
         const map = {};
         groups.forEach((g) =>
           (g.hobbies || []).forEach((h) => {
-            map[h.id] = h.name;
+            map[h.id] = { name: h.name, enumName: h.enumName };
           }),
         );
         setHobbyMap(map);
@@ -667,8 +671,15 @@ export default function ProfileScreen() {
   const resolveHobbies = (raw) => {
     if (!raw?.length) return [];
     return raw.map((h) => {
-      if (typeof h === "string" && isNaN(Number(h))) return h;
-      return hobbyMap[Number(h)] || String(h);
+      if (h && typeof h === "object") {
+        return { name: h.name ?? String(h.id ?? ""), enumName: h.enumName };
+      }
+      if (typeof h === "string" && isNaN(Number(h))) {
+        return { name: h, enumName: undefined };
+      }
+      const entry = hobbyMap[Number(h)];
+      if (entry) return entry;
+      return { name: String(h), enumName: undefined };
     });
   };
 
@@ -788,8 +799,8 @@ export default function ProfileScreen() {
     const { status } = await ImagePicker.requestMediaLibraryPermissionsAsync();
     if (status !== "granted") {
       Alert.alert(
-        "İzin Gerekli",
-        "Fotoğraf eklemek için galeri iznine ihtiyaç var.",
+        t('profile.permissions.title'),
+        t('profile.permissions.galleryMessage'),
       );
       return;
     }
@@ -817,7 +828,7 @@ export default function ProfileScreen() {
         "Fotoğraf yükleme hatası:",
         e?.response?.data || e?.message,
       );
-      Alert.alert("Hata", "Fotoğraf yüklenemedi, tekrar dene.");
+      Alert.alert(t('common.error'), t('profile.photos.uploadError'));
     } finally {
       setSavingPhoto(false);
     }
@@ -828,16 +839,16 @@ export default function ProfileScreen() {
     const options = [];
     if (!isMain)
       options.push({
-        text: "Ana Fotoğraf Yap",
+        text: t('profile.photos.setMain'),
         onPress: () => handleSetMainPhoto(photo.photoId),
       });
     options.push({
-      text: "Sil",
+      text: t('profile.photos.delete'),
       style: "destructive",
       onPress: () => handleDeletePhoto(photo.photoId),
     });
-    options.push({ text: "İptal", style: "cancel" });
-    Alert.alert("Fotoğraf", "", options);
+    options.push({ text: t('common.cancel'), style: "cancel" });
+    Alert.alert(t('profile.photos.title'), "", options);
   };
 
   const handleSetMainPhoto = async (photoId) => {
@@ -846,7 +857,7 @@ export default function ProfileScreen() {
       await profileService.updateProfile({ NewMainPhotoId: photoId });
       await refreshPhotos();
     } catch (e) {
-      Alert.alert("Hata", "Ana fotoğraf değiştirilemedi.");
+      Alert.alert(t('common.error'), t('profile.photos.setMainError'));
     } finally {
       setSavingPhoto(false);
     }
@@ -860,7 +871,7 @@ export default function ProfileScreen() {
       });
       await refreshPhotos();
     } catch (e) {
-      Alert.alert("Hata", "Fotoğraf silinemedi.");
+      Alert.alert(t('common.error'), t('profile.photos.deleteError'));
     } finally {
       setSavingPhoto(false);
     }
@@ -868,10 +879,10 @@ export default function ProfileScreen() {
 
   // ── Hesap aksiyonları ──────────────────────────────────────────────────────
   const handleLogout = () =>
-    Alert.alert("Çıkış Yap", "Hesabından çıkmak istediğine emin misin?", [
-      { text: "İptal", style: "cancel" },
+    Alert.alert(t('profile.logout.title'), t('profile.logout.message'), [
+      { text: t('common.cancel'), style: "cancel" },
       {
-        text: "Çıkış Yap",
+        text: t('profile.logout.confirmButton'),
         style: "destructive",
         onPress: () => dispatch(logout()),
       },
@@ -896,51 +907,51 @@ export default function ProfileScreen() {
   const completionMetrics = [
     {
       key: "photos",
-      title: "Fotoğraflar",
+      title: t('profile.completion.photos'),
       icon: Camera,
       current: myProfile?.photosList?.length || 0,
       max: 6,
-      desc: "Daha fazla fotoğraf ekleyerek profilini öne çıkarabilir ve diğer kullanıcıların seni daha iyi tanımasını sağlayabilirsin.",
+      desc: t('profile.completion.photosDescription'),
     },
     {
       key: "hobbies",
-      title: "Hobiler",
+      title: t('profile.completion.hobbies'),
       icon: Heart,
       current: myProfile?.hobbies?.length || 0,
       max: 10,
-      desc: "En fazla 10 hobi ekleyerek ortak noktaların olan insanlarla daha kolay eşleş.",
+      desc: t('profile.completion.hobbiesDescription'),
     },
     {
       key: "bio",
-      title: "Biyografi",
+      title: t('profile.completion.bio'),
       icon: BookOpen,
       current: myProfile?.bio?.trim().length > 0 ? 1 : 0,
       max: 1,
-      desc: "Kendinden kısaca bahsederek dikkat çek. İlgi çekici bir biyografi eşleşme şansını artırır.",
+      desc: t('profile.completion.bioDescription'),
     },
     {
       key: "smoking",
-      title: "Sigara Kullanımı",
+      title: t('profile.completion.smoking'),
       icon: Cigarette,
       current: myProfile?.smokingStatus != null ? 1 : 0,
       max: 1,
-      desc: "Yaşam tarzını belirterek sana en uygun kişileri bul.",
+      desc: t('profile.completion.smokingDescription'),
     },
     {
       key: "zodiac",
-      title: "Burç",
+      title: t('profile.completion.zodiac'),
       icon: Star,
       current: myProfile?.zodiacSign != null ? 1 : 0,
       max: 1,
-      desc: "Burcunu ekle, astroloji uyumunu ve potansiyel eşleşmeleri keşfet.",
+      desc: t('profile.completion.zodiacDescription'),
     },
     {
       key: "purpose",
-      title: "Kullanım Amacı",
+      title: t('profile.completion.purpose'),
       icon: Target,
       current: myProfile?.usagePurpose != null ? 1 : 0,
       max: 1,
-      desc: "Burada ne aradığını belirterek, seninle aynı beklentilere sahip kişilerle tanış.",
+      desc: t('profile.completion.purposeDescription'),
     },
   ];
 
@@ -1096,7 +1107,7 @@ export default function ProfileScreen() {
                     style={{ marginTop: 8, alignSelf: "flex-start" }}
                   >
                     <SwiftUIButton
-                      label="Profili Düzenle"
+                      label={t('profile.edit.button')}
                       systemImage="pencil"
                       onPress={openEditProfile}
                       modifiers={[
@@ -1132,7 +1143,7 @@ export default function ProfileScreen() {
                           fontSize: 13,
                         }}
                       >
-                        Profili Düzenle
+                        {t('profile.edit.button')}
                       </Text>
                     </BlurView>
                   </AnimatedPressable>
@@ -1144,7 +1155,7 @@ export default function ProfileScreen() {
             {isPremium && (
               <View className="mb-10 px-4 mt-2">
                 <LinearGradient
-                  colors={gradients.neutralFade}
+                  colors={gradients.premium}
                   locations={[0, 0.5, 1]}
                   start={{ x: 0, y: 0 }}
                   end={{ x: 1, y: 1 }}
@@ -1164,8 +1175,10 @@ export default function ProfileScreen() {
                       <View className="flex-row items-center gap-2 mb-2">
                         <Text
                           className="pr-2"
+                          numberOfLines={1}
+                          adjustsFontSizeToFit
                           style={{
-                            color: "#000",
+                            color: colors.text,
                             fontSize: 50,
                             fontFamily: "Duckie-regular",
                           }}
@@ -1173,21 +1186,23 @@ export default function ProfileScreen() {
                           lit plus
                         </Text>
                       </View>
-                      <Text className="text-black/80 font-medium text-[14px] leading-5">
-                        Üyeliğin aktif. Sınırsız beğeni, seni beğenenleri görme
-                        ve daha fazlasına erişimin var.
+                      <Text
+                        numberOfLines={3}
+                        className="text-white/80 font-medium text-[14px] leading-5"
+                      >
+                        {t('profile.subscription.activeDescription')}
                       </Text>
                     </View>
                     <View
-                      className="border-[1px] border-black/40 px-5 py-2.5 flex-row items-center gap-1.5"
+                      className="border-[0.5px] border-gray-300 px-5 py-2.5 flex-row items-center gap-1.5"
                       style={{
                         borderRadius: 999,
                         overflow: "hidden",
                         borderCurve: "continuous",
                       }}
                     >
-                      <Text className="text-black font-bold text-[13px]">
-                        Aktif
+                      <Text className="text-white font-bold text-[13px]">
+                        {t('profile.subscription.status')}
                       </Text>
                     </View>
                   </View>
@@ -1202,33 +1217,35 @@ export default function ProfileScreen() {
                             : "https://play.google.com/store/account/subscriptions";
                         Linking.openURL(url).catch(() => {});
                       }}
-                      className="w-full border-[0.7px] border-black/40 py-[17px] items-center justify-center"
+                      className="w-full border-[0.5px] border-gray-300 py-[17px] items-center justify-center"
                       style={{
                         borderRadius: 999,
                         borderCurve: "continuous",
                         overflow: "hidden",
                       }}
                     >
-                      <Text className="font-medium text-[14px] text-black">
+                      <Text className="font-medium text-[14px] text-white">
                         {subscriptionExpiresAt ? (
                           <>
                             <Text style={{ fontWeight: "700" }}>
-                              Aboneliği Yönet
+                              {t('profile.subscription.manageButton')}
                             </Text>
-                            {" · Yenileme "}
-                            {(() => {
-                              const d = new Date(subscriptionExpiresAt);
-                              const sameYear =
-                                d.getFullYear() === new Date().getFullYear();
-                              return d.toLocaleDateString("tr-TR", {
-                                day: "2-digit",
-                                month: "short",
-                                ...(sameYear ? {} : { year: "numeric" }),
-                              });
-                            })()}
+                            <Text style={{ color: "rgba(255,255,255,0.55)" }}>
+                              {` · ${t('profile.subscription.renewalLabel')} `}
+                              {(() => {
+                                const d = new Date(subscriptionExpiresAt);
+                                const sameYear =
+                                  d.getFullYear() === new Date().getFullYear();
+                                return d.toLocaleDateString("tr-TR", {
+                                  day: "2-digit",
+                                  month: "short",
+                                  ...(sameYear ? {} : { year: "numeric" }),
+                                });
+                              })()}
+                            </Text>
                           </>
                         ) : (
-                          "Aboneliği Yönet"
+                          t('profile.subscription.manageAlt')
                         )}
                       </Text>
                     </TouchableOpacity>
@@ -1245,8 +1262,7 @@ export default function ProfileScreen() {
                   onPress={() => setPurchaseVisible(true)}
                 >
                   <LinearGradient
-                    colors={gradients.premium}
-                    locations={[0, 0.5, 1]}
+                    colors={[colors.litPlus, colors.litPlus]}
                     start={{ x: 0, y: 0 }}
                     end={{ x: 1, y: 1 }}
                     style={{
@@ -1266,6 +1282,8 @@ export default function ProfileScreen() {
                         <View className="flex-row items-center gap-2 mb-2">
                           <Text
                             className="pr-2"
+                            numberOfLines={1}
+                            adjustsFontSizeToFit
                             style={{
                               color: colors.text,
                               fontSize: 50,
@@ -1275,12 +1293,14 @@ export default function ProfileScreen() {
                             lit plus
                           </Text>
                         </View>
-                        <Text className="text-white/80 font-medium text-[14px] leading-5">
-                          Lit Plus ile eşleşmelerini hızlandır, seni beğenenleri
-                          gör ve daha fazlasını keşfet!
+                        <Text
+                          numberOfLines={3}
+                          className="text-white/80 font-medium text-[14px] leading-5"
+                        >
+                          {t('discover.premium.description')}
                         </Text>
                       </View>
-                      <View className="items-center gap-1">
+                      <View style={{ width: 84, alignItems: "center", gap: 4 }}>
                         <View
                           style={{
                             width: 60,
@@ -1311,8 +1331,12 @@ export default function ProfileScreen() {
                           </View>
                           <ArrowUp size={28} color={colors.text} strokeWidth={4} />
                         </View>
-                        <Text className="text-white font-bold text-[12px]">
-                          5x Eşleşme
+                        <Text
+                          numberOfLines={1}
+                          adjustsFontSizeToFit
+                          className="text-white font-bold text-[12px] text-center"
+                        >
+                          {t('discover.premium.matchBoost')}
                         </Text>
                       </View>
                     </View>
@@ -1322,11 +1346,15 @@ export default function ProfileScreen() {
                       {/* Table Header */}
                       <View className="flex-row items-center justify-between mb-2 px-6">
                         <Text className="text-white font-bold text-[12px] uppercase tracking-wider flex-1">
-                          Özellikler
+                          {t('discover.premium.featuresLabel')}
                         </Text>
                         <View className="flex-row items-center gap-4">
-                          <Text className="text-white font-bold text-[12px] uppercase w-16 text-center">
-                            Standart
+                          <Text
+                            numberOfLines={1}
+                            adjustsFontSizeToFit
+                            className="text-white font-bold text-[12px] uppercase w-16 text-center"
+                          >
+                            {t('discover.premium.standardPlan')}
                           </Text>
                           <Text
                             className="w-16 text-center mb-2"
@@ -1343,10 +1371,10 @@ export default function ProfileScreen() {
 
                       {/* Feature Rows */}
                       {[
-                        { title: "Sınırsız Beğeni" },
-                        { title: "Seni Beğenenleri Gör" },
-                        { title: "Geri Alma (Rewind)" },
-                        { title: "Reklamsız Deneyim" },
+                        { title: t('discover.premium.feature1') },
+                        { title: t('discover.premium.feature2') },
+                        { title: t('discover.premium.feature3') },
+                        { title: t('discover.premium.feature4') },
                       ].map((feature, index, arr) => (
                         <View
                           key={index}
@@ -1376,7 +1404,7 @@ export default function ProfileScreen() {
                     {/* Purchase Action Button */}
                     <View className="px-5 pb-6 pt-3">
                       <View
-                        className=" w-full border-[1px] border-white py-[17px] items-center justify-center flex-row gap-2"
+                        className=" w-full border-[0.5px] border-gray-300 py-[17px] items-center justify-center flex-row gap-2"
                         style={{
                           borderRadius: 999,
                           borderCurve: "continuous",
@@ -1386,13 +1414,18 @@ export default function ProfileScreen() {
                         <Text className="font-medium text-[14px] text-white">
                           {teaserPrice ? (
                             <>
-                              <Text style={{ fontWeight: "700" }}>
-                                {teaserPrice} / Ay
+                              <Text className="text-gray-300">
+                                {t('discover.premium.pricingPrefix')}
                               </Text>
-                              {"'dan başlayan planlar"}
+                              <Text style={{ fontWeight: "700" }}>
+                                {t('discover.premium.pricing', { price: teaserPrice })}
+                              </Text>
+                              <Text className="text-gray-300">
+                                {t('discover.premium.pricingSuffix')}
+                              </Text>
                             </>
                           ) : (
-                            "Planları İncele"
+                            t('discover.premium.cta')
                           )}
                         </Text>
                       </View>
@@ -1434,7 +1467,7 @@ export default function ProfileScreen() {
                   marginLeft: 4,
                 }}
               >
-                Hesap
+                {t('profile.account.title')}
               </Text>
               <View>
                 <TouchableOpacity
@@ -1450,7 +1483,7 @@ export default function ProfileScreen() {
                   <Text
                     style={{ color: colors.text, fontWeight: "500", fontSize: 14 }}
                   >
-                    Çıkış Yap
+                    {t('profile.logout.button')}
                   </Text>
                 </TouchableOpacity>
               </View>
@@ -1460,13 +1493,13 @@ export default function ProfileScreen() {
 
         <ScreenHeader
           scrollY={scrollY}
-          title="Profil"
+          title={t('profile.tabTitle')}
           fillRatio={swipeFillRatio}
           rightButton={
             Platform.OS === "ios" ? (
               <Host matchContents>
                 <SwiftUIButton
-                  label="Ayarlar"
+                  label={t('profile.settings.button')}
                   systemImage="gearshape.fill"
                   onPress={() => setSettingsVisible(true)}
                   modifiers={[
@@ -1500,7 +1533,7 @@ export default function ProfileScreen() {
             görünür kalır, hazır olunca swap edilir. */}
         <ProfileEditModal
           visible={editVisible}
-          title="Profili Düzenle"
+          title={t('profile.edit.title')}
           onClose={closeEditProfile}
           onSave={handleEditSubmit}
           saving={savingProfile}

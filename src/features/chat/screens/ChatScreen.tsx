@@ -1,4 +1,5 @@
 import { useEffect, useState, useCallback, useRef, useMemo } from "react";
+import { useTranslation } from 'react-i18next';
 import {
   View,
   Text,
@@ -45,7 +46,6 @@ import {
   ChevronLeft,
   MoreVertical,
   X,
-  Infinity as InfinityIcon,
 } from "lucide-react-native";
 import * as Haptics from "expo-haptics";
 import * as Clipboard from "expo-clipboard";
@@ -87,11 +87,7 @@ const ContentType = { Text: 0, Image: 1, Voice: 2, Video: 3, System: 99 };
 const INPUT_BAR_OPAQUE = 66;
 const HEADER_CONTENT = 110; // ChatHeader minHeight; fade zone (30) dahil değil — mesajlar fade'e girer
 
-const SYSTEM_MESSAGES_TR = {
-  "system.match_created": "Yeni bir eşleşmen var! 🎉 İlk mesajı sen at.",
-  "system.conversation_deleted": "Bu sohbet sonlandırıldı.",
-};
-const i18nResolver = (key, fallback) => SYSTEM_MESSAGES_TR[key] || fallback;
+// i18nResolver is built inside ChatScreen using `t` — see below.
 
 // Selector bucket undefined olduğunda her render'da yeni [] üretmesin diye
 // stabil referans — useMemo ve FlatList data prop'unun gereksiz reconcile'ını engeller.
@@ -110,6 +106,15 @@ function latestPartnerSentAt(messages: MessageDto[], myUserId: string | undefine
 }
 
 export default function ChatScreen({ route, navigation }: NativeStackScreenProps<RootStackParamList, 'Chat'>) {
+  const { t } = useTranslation();
+  const i18nResolver = useCallback(
+    (key: string, fallback: string) => {
+      if (key === 'system.match_created') return t('chat.system.matchCreated');
+      if (key === 'system.conversation_deleted') return t('chat.system.conversationDeleted');
+      return fallback;
+    },
+    [t],
+  );
   const { conversationId, partner, isActive: routeIsActive } = route.params;
   const dispatch = useAppDispatch();
   const insets = useSafeAreaInsets();
@@ -164,19 +169,35 @@ export default function ChatScreen({ route, navigation }: NativeStackScreenProps
   const subscriptionSyncedAt = useAppSelector((s) => (s as any).subscription?.lastSyncedAt);
   const [unlockVisible, setUnlockVisible] = useState(false);
 
-  // Kalan mesaj hakkı düşükse (1–10) ekran ilk açıldığında bir kez toaster ile
-  // uyar — banner olarak sürekli durmasın. Ref conv-scoped ve component unmount
-  // olduğunda sıfırlanır → başka sohbete girildiğinde tekrar tetiklenir.
-  const quotaToastShownRef = useRef(false);
+  // İlk girişte kalan mesaj hakkını bir kez göster.
+  const quotaEntryToastShownRef = useRef(false);
+  // Sohbet sırasında hak > 0 gördüysek true — bitince toast tetiklensin.
+  const quotaHadRemainingRef = useRef(false);
+  const quotaExhaustedToastShownRef = useRef(false);
+
   useEffect(() => {
-    if (quotaToastShownRef.current) return;
+    if (quotaEntryToastShownRef.current) return;
     if (isPremium || !quota || quota.bothPremium || quota.isUnlocked) return;
     const remaining = quota.remainingMessages;
-    if (remaining == null || remaining <= 0 || remaining > 10) return;
-    quotaToastShownRef.current = true;
+    if (remaining == null || remaining <= 0) return;
+    quotaEntryToastShownRef.current = true;
+    quotaHadRemainingRef.current = true;
     showInfoToast({
-      title: "Mesaj hakkın azalıyor",
-      message: `${remaining} mesaj hakkın kaldı — ikiniz Premium olursanız sınırsız olur.`,
+      title: t('chat.quota.title'),
+      message: t('chat.quota.message', { remaining }),
+    });
+  }, [quota, isPremium]);
+
+  useEffect(() => {
+    if (quotaExhaustedToastShownRef.current) return;
+    if (!quotaHadRemainingRef.current) return;
+    if (isPremium || !quota || quota.bothPremium || quota.isUnlocked) return;
+    const remaining = quota.remainingMessages;
+    if (remaining == null || remaining > 0) return;
+    quotaExhaustedToastShownRef.current = true;
+    showInfoToast({
+      title: t('chat.quota.exhausted'),
+      message: t('chat.quota.exhaustedMessage'),
     });
   }, [quota, isPremium]);
 
@@ -497,8 +518,8 @@ export default function ChatScreen({ route, navigation }: NativeStackScreenProps
         }),
       );
       Alert.alert(
-        "Hata",
-        err?.response?.data?.message || "Mesaj düzenlenemedi.",
+        t('common.error'),
+        err?.response?.data?.message || t('chat.editMessage.error'),
       );
     }
   }, [editTarget, editText, dispatch]);
@@ -533,7 +554,7 @@ export default function ChatScreen({ route, navigation }: NativeStackScreenProps
             ...snapshot,
           }),
         );
-        Alert.alert("Hata", err?.response?.data?.message || "Silme başarısız.");
+        Alert.alert(t('common.error'), err?.response?.data?.message || t('chat.deleteMessage.error'));
       }
     },
     [dispatch],
@@ -586,36 +607,36 @@ export default function ChatScreen({ route, navigation }: NativeStackScreenProps
       await chatService.deactivateConversation(conversationId);
       navigation.goBack();
     } catch (err) {
-      Alert.alert("Hata", "Eşleşme kaldırılamadı.");
+      Alert.alert(t('common.error'), t('chat.unmatch.error'));
     }
-  }, [conversationId, navigation]);
+  }, [conversationId, navigation, t]);
 
   const handleRestore = useCallback(async () => {
     try {
       const ok = await chatService.restoreConversation(conversationId);
       if (!ok)
-        Alert.alert("Geri alınamadı", "24 saatlik süre dolmuş olabilir.");
+        Alert.alert(t('chat.restore.error'), t('chat.unmatch.restoreExpiredMessage'));
     } catch (err) {
-      Alert.alert("Hata", "Geri alma başarısız.");
+      Alert.alert(t('common.error'), t('chat.unmatch.restoreFailed'));
     }
-  }, [conversationId]);
+  }, [conversationId, t]);
 
   const handleBlock = useCallback(async () => {
     if (!partner?.userId) return;
     try {
       await moderationService.blockUser(partner.userId);
       Alert.alert(
-        "Engellendi",
-        "Bu kişi seninle bir daha iletişim kuramayacak.",
+        t('chat.block.title'),
+        t('chat.block.message'),
       );
       navigation.goBack();
     } catch (err) {
       Alert.alert(
-        "Hata",
-        err?.response?.data?.message || "Engelleme başarısız.",
+        t('common.error'),
+        err?.response?.data?.message || t('chat.block.error'),
       );
     }
-  }, [partner?.userId, navigation]);
+  }, [partner?.userId, navigation, t]);
 
   const handleSearchSelect = useCallback(
     (msg) => {
@@ -669,12 +690,14 @@ export default function ChatScreen({ route, navigation }: NativeStackScreenProps
     },
     [
       myUserId,
+      i18nResolver,
       handleLongPressMessage,
       handleScrollToReplyTarget,
       handleMediaTap,
       handleReply,
       handleEditStart,
       handleDelete,
+      handleRetrySend,
       handleCopyMessage,
       handlePickReaction,
     ],
@@ -781,7 +804,6 @@ export default function ChatScreen({ route, navigation }: NativeStackScreenProps
             onBack={() => navigation.goBack()}
             onMenu={() => setOptionsOpen(true)}
           />
-          <QuotaBanner quota={quota} isPremium={isPremium} />
         </View>
       </View>
 
@@ -899,56 +921,10 @@ export default function ChatScreen({ route, navigation }: NativeStackScreenProps
   );
 }
 
-function QuotaBanner({ quota, isPremium }: any) {
-  if (!quota && !isPremium) return null;
-  if (quota?.bothPremium) return null;
-
-  // FE-side override: kullanıcı premium ise quota banner'ı "Sınırsız" göster, sınır
-  // banner'ını gösterme. Backend webhook gecikmesinde bayat quota cache "limit reached"
-  // gösteriyordu; isPremium /sync ile zaten doğrulanmış olduğu için güvenli.
-  if (isPremium || quota?.isUnlocked) {
-    return (
-      <View
-        style={{
-          flexDirection: "row",
-          alignItems: "center",
-          gap: 6,
-          paddingHorizontal: 16,
-          paddingVertical: 8,
-          backgroundColor: "rgba(52,211,153,0.08)",
-          borderBottomWidth: 0.5,
-          borderBottomColor: "rgba(255,255,255,0.05)",
-        }}
-      >
-        <InfinityIcon
-          size={14}
-          color={colors.success}
-          strokeWidth={2}
-          pointerEvents="none"
-        />
-        <Text style={{ color: colors.success, fontSize: 12, fontWeight: "600" }}>
-          Sınırsız sohbet
-        </Text>
-      </View>
-    );
-  }
-
-  const remaining = quota.remainingMessages;
-  if (remaining == null) return null;
-
-  // Limit dolduğunda banner gösterme — input içinde lock + placeholder hint'i
-  // (MessageInput.quotaLocked) artık bu durumu üstleniyor.
-  if (remaining <= 0 || quota.requiresUnlock) {
-    return null;
-  }
-
-  // Düşük hak uyarısı artık toaster ile veriliyor (ChatScreen useEffect).
-  // Banner sadece premium/unlocked "Sınırsız" state'i için render edilir.
-  return null;
-}
 
 function ChatHeader({ partner, onBack, onMenu }: any) {
-  const displayName = partner?.displayName || "Kullanıcı";
+  const { t } = useTranslation();
+  const displayName = partner?.displayName || t('chat.defaultUserName');
   return (
     <View
       style={{
@@ -971,7 +947,7 @@ function ChatHeader({ partner, onBack, onMenu }: any) {
         {Platform.OS === "ios" ? (
           <Host matchContents>
             <SwiftUIButton
-              label="Geri"
+              label={t('common.back')}
               systemImage="chevron.left"
               onPress={onBack}
               modifiers={[
@@ -1075,7 +1051,7 @@ function ChatHeader({ partner, onBack, onMenu }: any) {
         {Platform.OS === "ios" ? (
           <Host matchContents>
             <SwiftUIButton
-              label="Menü"
+              label={t('common.menu')}
               systemImage="ellipsis"
               onPress={onMenu}
               modifiers={[
@@ -1099,6 +1075,7 @@ function ChatHeader({ partner, onBack, onMenu }: any) {
 }
 
 function EditMessageModal({ target, text, onChangeText, onCancel, onSave }: any) {
+  const { t } = useTranslation();
   if (!target) return null;
   return (
     <Modal visible transparent animationType="fade" onRequestClose={onCancel}>
@@ -1114,7 +1091,7 @@ function EditMessageModal({ target, text, onChangeText, onCancel, onSave }: any)
         <Pressable onPress={() => {}} className="bg-surface-2 rounded-2xl p-4">
           <View className="flex-row items-center justify-between mb-3">
             <Text className="text-white font-semibold text-base">
-              Mesajı düzenle
+              {t('chat.editMessage.title')}
             </Text>
             <TouchableOpacity onPress={onCancel} hitSlop={6}>
               <X size={20} color={colors.textSecondary} />
@@ -1131,18 +1108,18 @@ function EditMessageModal({ target, text, onChangeText, onCancel, onSave }: any)
             placeholderTextColor={colors.textMuted}
           />
           <Text className="text-gray-500 text-xs mt-2">
-            15 dakika içinde gönderilen mesajlar düzenlenebilir.
+            {t('chat.editMessage.info')}
           </Text>
           <View className="flex-row justify-end mt-3">
             <TouchableOpacity onPress={onCancel} className="px-4 py-2 mr-2">
-              <Text className="text-gray-400">İptal</Text>
+              <Text className="text-gray-400">{t('common.cancel')}</Text>
             </TouchableOpacity>
             <TouchableOpacity
               onPress={onSave}
               className="px-4 py-2 rounded-full"
               style={{ backgroundColor: colors.primary }}
             >
-              <Text className="text-white font-semibold">Kaydet</Text>
+              <Text className="text-white font-semibold">{t('common.save')}</Text>
             </TouchableOpacity>
           </View>
         </Pressable>
@@ -1165,6 +1142,7 @@ function buildReplyPreview(messages, replyToId) {
 }
 
 function ChatEmptyState({ partnerName, isActive }: any) {
+  const { t } = useTranslation();
   return (
     <View
       style={{
@@ -1178,13 +1156,13 @@ function ChatEmptyState({ partnerName, isActive }: any) {
       <Text style={{ fontSize: 36, marginBottom: 12 }}>👋</Text>
       <Text className="text-white text-lg font-bold text-center">
         {isActive
-          ? `${partnerName || "Yeni eşleşmen"} ile sohbete başla`
-          : "Bu sohbet kapalı"}
+          ? t('chat.emptyState.activeTitle', { partnerName: partnerName || t('chat.defaultUserName') })
+          : t('chat.emptyState.closedTitle')}
       </Text>
       <Text className="text-gray-400 text-sm text-center mt-2">
         {isActive
-          ? "İlk mesajı sen at — gerisini doğal akışına bırak."
-          : "Geçmiş mesajları görüntüleyebilirsin."}
+          ? t('chat.emptyState.activeDescription')
+          : t('chat.emptyState.closedDescription')}
       </Text>
     </View>
   );

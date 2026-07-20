@@ -12,10 +12,12 @@ import { API_ENDPOINTS } from "@/shared/constants/api";
 import { setKvkkAccepted } from "@/features/auth/authSlice";
 import AppBottomSheet from "@/shared/components/AppBottomSheet";
 import { colors } from "../../../shared/theme/colors";
+import { useTranslation } from 'react-i18next';
 
 export const CURRENT_KVKK_VERSION = "1.0";
 
 export default function KVKKConsentScreen({ visible }) {
+  const { t } = useTranslation();
   const dispatch = useAppDispatch();
   const [loading, setLoading] = useState(false);
   const [agreed, setAgreed] = useState(false);
@@ -35,7 +37,7 @@ export default function KVKKConsentScreen({ visible }) {
 
   const handleAccept = async () => {
     if (!agreed) {
-      Alert.alert("Onay Gerekli", "Devam etmek için metni onaylamalısın.");
+      Alert.alert(t('auth.kvkkConsent.titleRequired'), t('auth.kvkkConsent.messageRequired'));
       return;
     }
     setLoading(true);
@@ -45,7 +47,7 @@ export default function KVKKConsentScreen({ visible }) {
       });
       dispatch(setKvkkAccepted(CURRENT_KVKK_VERSION));
     } catch (e) {
-      Alert.alert("Hata", "Onay kaydedilemedi, tekrar dene.");
+      Alert.alert(t('errors.generic'), t('auth.kvkkConsent.errorSave'));
     } finally {
       setLoading(false);
     }
@@ -101,8 +103,7 @@ export default function KVKKConsentScreen({ visible }) {
                 flex: 1,
               }}
             >
-              Gizlilik politikasını ve KVKK aydınlatma metnini okudum, anladım
-              ve kabul ediyorum.
+              {t('auth.kvkkConsent.acceptText')}
             </Text>
           </TouchableOpacity>
 
@@ -129,7 +130,7 @@ export default function KVKKConsentScreen({ visible }) {
                   fontSize: 15,
                 }}
               >
-                Kabul Et ve Devam Et
+                {t('auth.kvkkConsent.acceptButton')}
               </Text>
             )}
           </TouchableOpacity>
@@ -174,7 +175,7 @@ export default function KVKKConsentScreen({ visible }) {
         >
           <ShieldCheck size={28} color={colors.text} strokeWidth={1.5} pointerEvents="none" />
           <Text style={{ color: colors.text, fontSize: 22, fontWeight: "700" }}>
-            Gizlilik & KVKK
+            {t('auth.kvkkConsent.title')}
           </Text>
         </View>
 
@@ -187,8 +188,7 @@ export default function KVKKConsentScreen({ visible }) {
             lineHeight: 20,
           }}
         >
-          Uygulamayı kullanmaya devam etmeden önce aşağıdaki metni okumanı ve
-          onaylamanı istiyoruz.
+          {t('auth.kvkkConsent.description')}
         </Text>
 
         <BottomSheetScrollView
@@ -207,42 +207,28 @@ export default function KVKKConsentScreen({ visible }) {
               gap: 16,
             }}
           >
-            <Section title="Kişisel Verilerin Korunması (KVKK)">
-              6698 sayılı Kişisel Verilerin Korunması Kanunu kapsamında kişisel
-              verileriniz; hizmetlerimizi sunmak, geliştirmek ve güvenliğinizi
-              sağlamak amacıyla işlenmektedir. Verileriniz üçüncü taraflarla
-              yalnızca yasal zorunluluk veya açık rızanız dahilinde paylaşılır.
+            <Section title={t('auth.kvkkConsent.sectionTitle1')}>
+              {t('auth.kvkkConsent.section1Content')}
             </Section>
 
-            <Section title="İşlenen Veriler">
-              Ad, e-posta, doğum tarihi, fotoğraf, üniversite bilgisi ve
-              uygulama kullanım verileri işlenmektedir. Bu veriler profil
-              oluşturma, eşleştirme algoritması ve iletişim için
-              kullanılmaktadır.
+            <Section title={t('auth.kvkkConsent.sectionTitle2')}>
+              {t('auth.kvkkConsent.section2Content')}
             </Section>
 
-            <Section title="Haklarınız">
-              KVKK'nın 11. maddesi kapsamında verilerinize erişme, düzeltme,
-              silme ve işlemeyi kısıtlama haklarına sahipsiniz. Bu hakları
-              kullanmak için uygulama içindeki "Verilerimi İndir" özelliğini
-              ya da hesap silme seçeneğini kullanabilirsiniz.
+            <Section title={t('auth.kvkkConsent.sectionTitle3')}>
+              {t('auth.kvkkConsent.section3Content')}
             </Section>
 
-            <Section title="Çerezler ve Analitik">
-              Uygulama deneyimini iyileştirmek amacıyla anonim kullanım
-              verileri toplanmaktadır. Bu veriler kişisel kimliğinizle
-              ilişkilendirilmez.
+            <Section title={t('auth.kvkkConsent.sectionTitle4')}>
+              {t('auth.kvkkConsent.section4Content')}
             </Section>
 
-            <Section title="Veri Saklama">
-              Verileriniz hesabınız aktif olduğu sürece saklanır. Hesabınızı
-              silerseniz verileriniz 30 gün içinde kalıcı olarak silinir.
+            <Section title={t('auth.kvkkConsent.sectionTitle5')}>
+              {t('auth.kvkkConsent.section5Content')}
             </Section>
 
-            <Section title="İletişim">
-              Gizlilik politikamız veya kişisel verileriniz hakkında
-              sorularınız için uygulama üzerinden bizimle iletişime
-              geçebilirsiniz.
+            <Section title={t('auth.kvkkConsent.sectionTitle6')}>
+              {t('auth.kvkkConsent.section6Content')}
             </Section>
           </View>
         </BottomSheetScrollView>

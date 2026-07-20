@@ -1,4 +1,5 @@
 import { useEffect, useRef, useState, useCallback } from 'react';
+import { useTranslation } from 'react-i18next';
 import { NavigationContainer, DarkTheme } from '@react-navigation/native';
 import { createNativeStackNavigator } from '@react-navigation/native-stack';
 import { View, AppState, AppStateStatus } from 'react-native';
@@ -25,6 +26,7 @@ import { fetchSubscriptionStatus, setPremium } from '@/features/profile/subscrip
 import { initRevenueCat, loginRevenueCat } from '@/features/profile/subscriptionService';
 import profileService from '@/features/profile/profileService';
 import { queryClient } from '@/shared/queries/queryClient';
+import { swipeKeys } from '@/features/discover/swipeQueries';
 import AuthNavigator from './AuthNavigator';
 import TabNavigator from './TabNavigator';
 import KVKKConsentScreen, { CURRENT_KVKK_VERSION } from '@/features/auth/screens/KVKKConsentScreen';
@@ -93,6 +95,7 @@ function MainNavigator() {
 }
 
 export default function AppNavigator() {
+  const { t } = useTranslation();
   const { isAuthenticated, user, token, refreshToken, kvkkVersion, emailVerifiedToken, registrationEmail } =
     useAppSelector((state) => (state as any).auth);
   const dispatch = useAppDispatch();
@@ -134,8 +137,8 @@ export default function AppNavigator() {
     setOnAuthLost((reason) => {
       if (reason === 'new_login_elsewhere') {
         showInfoToast({
-          title: 'Oturumun kapatıldı',
-          message: 'Hesabına başka bir cihazdan giriş yapıldı.',
+          title: t('auth.session.closedTitle'),
+          message: t('auth.session.closedMessage'),
           variant: 'error',
         });
       }
@@ -190,10 +193,10 @@ export default function AppNavigator() {
 
         const ct = msg.contentType ?? 0;
         const preview =
-          ct === 1 ? 'Fotoğraf' :
-          ct === 2 ? 'Sesli mesaj' :
-          ct === 3 ? 'Video' :
-          (msg.content || '').trim() || 'Yeni mesaj';
+          ct === 1 ? t('chat.media.photo') :
+          ct === 2 ? t('chat.media.voice') :
+          ct === 3 ? t('chat.media.video') :
+          (msg.content || '').trim() || t('chat.media.newMessage');
 
         showMessageToast({
           senderName: conv.partnerDisplayName || 'Yeni mesaj',
@@ -259,8 +262,8 @@ export default function AppNavigator() {
       realtimeService.on('ForceLogout', async () => {
         if (!mounted) return;
         showInfoToast({
-          title: 'Oturumun kapatıldı',
-          message: 'Hesabına başka bir cihazdan giriş yapıldı.',
+          title: t('auth.session.closedTitle'),
+          message: t('auth.session.closedMessage'),
           variant: 'error',
         });
         await realtimeService.disconnect().catch(() => {});
@@ -364,6 +367,14 @@ export default function AppNavigator() {
           dispatch(fetchConversations());
           dispatch(fetchUnreadCount());
           dispatch(fetchSubscriptionStatus());
+          // Discover cache resume'da bayat kalıyor → foreground'a dönünce
+          // aktif mount olan matches query'sini refetch et. Aksi halde
+          // önceki oturumdaki boş sayfa görünmeye devam ediyor ve
+          // kullanıcı filtreye basıp Apply demeden veri gelmiyor.
+          queryClient.invalidateQueries({
+            queryKey: swipeKeys.matches,
+            refetchType: 'active',
+          });
         }
       }
     });

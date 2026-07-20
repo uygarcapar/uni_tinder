@@ -21,12 +21,14 @@ import { useForm } from "react-hook-form";
 import { zodResolver } from "@hookform/resolvers/zod";
 import { heightSchema, HeightForm } from "@/shared/schemas/formSchemas";
 import { colors } from "../../../shared/theme/colors";
+import { useTranslation } from 'react-i18next';
 
 const MIN_HEIGHT = 140;
 const MAX_HEIGHT = 220;
 const RANGE = MAX_HEIGHT - MIN_HEIGHT;
 
 export default function RegisterStep12Screen({ navigation }: NativeStackScreenProps<AuthStackParamList, 'RegisterStep12'>) {
+  const { t } = useTranslation();
   const dispatch = useAppDispatch();
   const profile = useAppSelector((s) => (s as any).profile || {});
 
@@ -122,14 +124,14 @@ export default function RegisterStep12Screen({ navigation }: NativeStackScreenPr
       <TouchableWithoutFeedback onPress={Keyboard.dismiss}>
         <View className="flex-1 px-6 py-6 pt-0">
           <View className="flex flex-col gap-2">
-            <Text className="text-4xl font-bold text-white">Boyun.</Text>
+            <Text className="text-4xl font-bold text-white">{t('auth.step12.title')}</Text>
             <Text className="text-[18px] font-normal text-gray-400 mb-6">
-              Boyunu gir. Sürükleyerek ayarlayabilirsin.
+              {t('auth.step12.description')}
             </Text>
           </View>
 
           <View className="mb-4">
-            <Text className="text-gray-300 text-[14px] font-semibold mb-2">Boy (cm) *</Text>
+            <Text className="text-gray-300 text-[14px] font-semibold mb-2">{t('auth.step12.heightLabel')}</Text>
             <View
               {...panResponder.panHandlers}
               onLayout={(e) => { sliderWidthRef.current = e.nativeEvent.layout.width; }}
@@ -221,7 +223,7 @@ export default function RegisterStep12Screen({ navigation }: NativeStackScreenPr
             style={{ borderRadius: 999, borderCurve: "continuous", overflow: "hidden", backgroundColor: colors.messageOwn }}
           >
             <Text className="text-white py-[20px] font-bold text-[15px] text-center">
-              Devam Et
+              {t('common.continueButton')}
             </Text>
           </AnimatedPressable>
         </View>

@@ -24,8 +24,10 @@ import { useReanimatedKeyboardAnimation } from "react-native-keyboard-controller
 import Animated, { useAnimatedStyle } from "react-native-reanimated";
 import AnimatedPressable from "@/shared/components/AnimatedPressable";
 import { colors } from "../../../shared/theme/colors";
+import { useTranslation } from 'react-i18next';
 
 export default function RegisterStep2Screen({ route, navigation }: NativeStackScreenProps<AuthStackParamList, 'RegisterStep2'>) {
+  const { t } = useTranslation();
   const { user, isAuthenticated } = useAppSelector((s) => (s as any).auth);
   const email = route?.params?.email || user?.email;
   const isRegistrationMode = route?.params?.mode === "registration";
@@ -88,7 +90,7 @@ export default function RegisterStep2Screen({ route, navigation }: NativeStackSc
     Keyboard.dismiss();
     const finalCode = verificationCode || code.join("");
     if (finalCode.length !== 6) {
-      setError("Lütfen 6 haneli kodu girin");
+      setError(t('auth.step2.validation.codeRequired'));
       return;
     }
 
@@ -210,7 +212,7 @@ export default function RegisterStep2Screen({ route, navigation }: NativeStackSc
           >
             <Check size={20} color={colors.text} strokeWidth={3} />
             <Text className="text-white text-[15px] font-medium">
-              Kod başarıyla gönderildi!
+              {t('auth.step2.resendSuccess')}
             </Text>
           </View>
         </View>
@@ -232,13 +234,13 @@ export default function RegisterStep2Screen({ route, navigation }: NativeStackSc
             <Mailbox strokeWidth={1} size={100} color={colors.text} />
             <View>
               <Text className="text-3xl font-bold text-white mb-3 text-center">
-                E-Mail'ini doğrula.
+                {t('auth.step2.title')}
               </Text>
               <Text className="text-white/80 text-[15px] text-center">
                 {email}
                 {isPending
-                  ? " adresine daha önce kod gönderildi. Mailinizi kontrol edin."
-                  : " adresine gönderilen 6 haneli kodu girin"}
+                  ? t('auth.step2.descriptionPending')
+                  : t('auth.step2.description')}
               </Text>
             </View>
           </View>
@@ -285,14 +287,14 @@ export default function RegisterStep2Screen({ route, navigation }: NativeStackSc
                   <View className="flex-row items-center gap-2">
                     <RotateCcw size={16} color={colors.neutral200} strokeWidth={2.5} />
                     <Text className="text-gray-300 font-medium">
-                      Tekrar gönder ({countdown}s)
+                      {t('auth.step2.resendCountdown', { countdown })}
                     </Text>
                   </View>
                 ) : (
                   <View className="flex-row py-[2px] items-center gap-2">
                     <RotateCcw size={16} color={colors.text} strokeWidth={2.5} />
                     <Text className="text-white font-medium">
-                      Tekrar Gönder
+                      {t('auth.step2.resendButton')}
                     </Text>
                   </View>
                 )}
@@ -314,7 +316,7 @@ export default function RegisterStep2Screen({ route, navigation }: NativeStackSc
                 <ActivityIndicator className="py-[20px]" color="#fff" />
               ) : (
                 <Text className="text-white py-[20px] text-center font-medium text-[15px]">
-                  Doğrula
+                  {t('auth.step2.verifyButton')}
                 </Text>
               )}
             </AnimatedPressable>
@@ -338,7 +340,7 @@ export default function RegisterStep2Screen({ route, navigation }: NativeStackSc
               }}
             >
               <ArrowLeft size={16} color={colors.text} strokeWidth={2.5} />
-              <Text className="text-white font-medium">Geri Dön</Text>
+              <Text className="text-white font-medium">{t('auth.step2.backButton')}</Text>
             </TouchableOpacity>
           </View>
         </Animated.View>

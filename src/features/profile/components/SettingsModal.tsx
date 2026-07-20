@@ -8,6 +8,8 @@ import {
   Linking,
   Switch,
 } from "react-native";
+import { useDispatch, useSelector } from "react-redux";
+import { useTranslation } from "react-i18next";
 import AppModal from "@/shared/components/AppModal";
 import {
   Download,
@@ -16,13 +18,22 @@ import {
   Eye,
   BellOff,
   InfoIcon,
+  Globe,
 } from "lucide-react-native";
 import api from "@/shared/services/api";
 import { API_ENDPOINTS } from "@/shared/constants/api";
 import chatService from "@/features/chat/chatService";
+import profileService from "@/features/profile/profileService";
 import { colors } from "../../../shared/theme/colors";
+import { setLanguage } from "@/shared/store/settingsSlice";
+import i18n from "@/shared/i18n";
+import type { RootState } from "@/shared/store";
 
 export default function SettingsModal({ visible, onClose }: any) {
+  const { t } = useTranslation();
+  const dispatch = useDispatch();
+  const language = useSelector((s: RootState) => s.settings?.language ?? 'tr');
+
   const [downloadLoading, setDownloadLoading] = useState(false);
   const [deleteLoading, setDeleteLoading] = useState(false);
   const [prefs, setPrefs] = useState(null);
@@ -45,8 +56,14 @@ export default function SettingsModal({ visible, onClose }: any) {
       await chatService.updateNotificationPreferences(next);
     } catch (e) {
       setPrefs(prefs);
-      Alert.alert("Hata", "Tercih güncellenemedi.");
+      Alert.alert(t('errors.generic'), t('errors.prefUpdate'));
     }
+  };
+
+  const handleLanguageSelect = (lang: 'tr' | 'en') => {
+    dispatch(setLanguage(lang));
+    i18n.changeLanguage(lang);
+    profileService.updateProfile({ Language: lang }).catch(() => {});
   };
 
   // ── Verilerimi İndir ────────────────────────────────────────────────────────
@@ -74,7 +91,7 @@ export default function SettingsModal({ visible, onClose }: any) {
           } else if (statusRes.result?.status === "failed" || attempts >= 20) {
             clearInterval(pollingRef.current);
             setDownloadLoading(false);
-            Alert.alert("Hata", "Veri hazırlanamadı, tekrar dene.");
+            Alert.alert(t('errors.generic'), t('errors.dataNotReady'));
           }
         } catch {
           clearInterval(pollingRef.current);
@@ -83,19 +100,19 @@ export default function SettingsModal({ visible, onClose }: any) {
       }, 3000);
     } catch (e) {
       setDownloadLoading(false);
-      Alert.alert("Hata", e.message || "İstek gönderilemedi.");
+      Alert.alert(t('errors.generic'), e.message || t('errors.requestFailed'));
     }
   };
 
   // ── Hesabı Sil ──────────────────────────────────────────────────────────────
   const handleDeleteAccount = () => {
     Alert.alert(
-      "Hesabı Sil",
-      "Hesabın 30 gün boyunca askıya alınır. Bu süre içinde giriş yaparak geri dönebilirsin. 30 gün sonra kalıcı olarak silinir.",
+      t('deleteAccount.alertTitle'),
+      t('deleteAccount.alertMsg'),
       [
-        { text: "İptal", style: "cancel" },
+        { text: t('deleteAccount.cancel'), style: "cancel" },
         {
-          text: "Devam Et",
+          text: t('deleteAccount.confirm'),
           style: "destructive",
           onPress: confirmDelete,
         },
@@ -109,12 +126,12 @@ export default function SettingsModal({ visible, onClose }: any) {
       const res = await api.post(API_ENDPOINTS.PRIVACY_DELETE_ACCOUNT, {});
       if (!res.isSuccess) throw new Error(res.message);
       Alert.alert(
-        "Hesap Silme Başlatıldı",
-        "Hesabın 30 gün içinde silinecek. Bu süre içinde giriş yaparak iptal edebilirsin.",
-        [{ text: "Tamam", onPress: onClose }],
+        t('deleteAccount.successTitle'),
+        t('deleteAccount.successMsg'),
+        [{ text: t('common.ok'), onPress: onClose }],
       );
     } catch (e) {
-      Alert.alert("Hata", e.message || "İşlem gerçekleştirilemedi.");
+      Alert.alert(t('errors.generic'), e.message || t('errors.operationFailed'));
     } finally {
       setDeleteLoading(false);
     }
@@ -124,22 +141,22 @@ export default function SettingsModal({ visible, onClose }: any) {
     <AppModal
       visible={visible}
       onClose={onClose}
-      title="Ayarlar"
+      title={t('settings.title')}
       closeButton={false}
       contentContainerStyle={{ paddingTop: 36 }}
     >
       {/* Mesajlaşma Bölümü */}
       <SettingsSection
-        title="Mesajlaşma"
-        subtitle="Sohbet ve bildirim davranışını kontrol et."
+        title={t('settings.messaging.title')}
+        subtitle={t('settings.messaging.subtitle')}
         marginTop={20}
       />
 
       {/* Read receipt opt-out */}
       <SettingsToggleRow
         icon={<Eye size={18} color={colors.text} strokeWidth={1.5} />}
-        title="Okundu Bilgisi"
-        subtitle="Mesajları okuduğunda partner görsün"
+        title={t('settings.readReceipts.title')}
+        subtitle={t('settings.readReceipts.subtitle')}
         value={prefs?.showReadReceipts ?? true}
         disabled={!prefs}
         onToggle={() => togglePref('showReadReceipts')}
@@ -148,8 +165,8 @@ export default function SettingsModal({ visible, onClose }: any) {
       {/* Skip push when online */}
       <SettingsToggleRow
         icon={<BellOff size={18} color={colors.text} strokeWidth={1.5} />}
-        title="Online'ken Bildirim Susturma"
-        subtitle="Uygulama açıkken push bildirimi alma"
+        title={t('settings.muteOnline.title')}
+        subtitle={t('settings.muteOnline.subtitle')}
         value={prefs?.skipPushWhenOnline ?? false}
         disabled={!prefs}
         onToggle={() => togglePref('skipPushWhenOnline')}
@@ -157,8 +174,8 @@ export default function SettingsModal({ visible, onClose }: any) {
 
       {/* Gizlilik Bölümü */}
       <SettingsSection
-        title="Gizlilik"
-        subtitle="Verilerin üzerinde tam kontrol sende."
+        title={t('settings.privacy.title')}
+        subtitle={t('settings.privacy.subtitle')}
       />
 
       {/* Verilerimi İndir */}
@@ -183,7 +200,7 @@ export default function SettingsModal({ visible, onClose }: any) {
         <View style={{ flexDirection: "row", alignItems: "center", gap: 10, flex: 1 }}>
           <View style={{ flex: 1 }}>
             <Text style={{ color: colors.text, fontSize: 15, fontWeight: "500" }}>
-              Verilerimi İndir
+              {t('settings.downloadData')}
             </Text>
           </View>
           {downloadLoading ? (
@@ -200,8 +217,8 @@ export default function SettingsModal({ visible, onClose }: any) {
 
       {/* Hesap Bölümü */}
       <SettingsSection
-        title="Hesap"
-        subtitle="Hesabını silersen 30 gün içinde geri dönebilirsin."
+        title={t('settings.account.title')}
+        subtitle={t('settings.account.subtitle')}
       />
 
       {/* Hesabı Sil */}
@@ -225,7 +242,7 @@ export default function SettingsModal({ visible, onClose }: any) {
         <View style={{ flexDirection: "row", alignItems: "center", gap: 10, flex: 1 }}>
           <View style={{ flex: 1 }}>
             <Text style={{ color: colors.errorStrong, fontSize: 15, fontWeight: "500" }}>
-              Hesabı Sil
+              {t('settings.deleteAccount')}
             </Text>
           </View>
           {deleteLoading ? (
@@ -239,6 +256,13 @@ export default function SettingsModal({ visible, onClose }: any) {
           )}
         </View>
       </TouchableOpacity>
+
+      {/* Dil Bölümü */}
+      <SettingsSection title={t('settings.language')} marginTop={28} />
+      <SettingsLanguageRow
+        language={language}
+        onSelect={handleLanguageSelect}
+      />
     </AppModal>
   );
 }
@@ -323,6 +347,65 @@ function SettingsToggleRow({ icon, title, subtitle, value, disabled, onToggle }:
         thumbColor={colors.text}
         ios_backgroundColor={colors.border}
       />
+    </View>
+  );
+}
+
+function SettingsLanguageRow({ language, onSelect }: { language: 'tr' | 'en'; onSelect: (lang: 'tr' | 'en') => void }) {
+  return (
+    <View
+      style={{
+        borderRadius: 36,
+        borderCurve: "continuous",
+        overflow: "hidden",
+        borderWidth: 0.5,
+        borderColor: "rgba(255,255,255,0.1)",
+        flexDirection: "row",
+        alignItems: "center",
+        justifyContent: "space-between",
+        padding: 16,
+        paddingHorizontal: 20,
+        marginBottom: 8,
+      }}
+    >
+      <View style={{ flexDirection: "row", alignItems: "center", gap: 10 }}>
+        <Globe size={18} color={colors.text} strokeWidth={1.5} />
+      </View>
+      <View
+        style={{
+          flexDirection: "row",
+          borderRadius: 20,
+          borderWidth: 0.5,
+          borderColor: "rgba(255,255,255,0.15)",
+          overflow: "hidden",
+        }}
+      >
+        {(['tr', 'en'] as const).map((lang, idx) => (
+          <TouchableOpacity
+            key={lang}
+            onPress={() => onSelect(lang)}
+            activeOpacity={0.7}
+            style={{
+              paddingVertical: 6,
+              paddingHorizontal: 16,
+              backgroundColor:
+                language === lang ? colors.text : "transparent",
+              borderRightWidth: idx === 0 ? 0.5 : 0,
+              borderRightColor: "rgba(255,255,255,0.15)",
+            }}
+          >
+            <Text
+              style={{
+                fontSize: 13,
+                fontWeight: "600",
+                color: language === lang ? "#121212" : colors.textSecondary,
+              }}
+            >
+              {lang === 'tr' ? 'Türkçe' : 'English'}
+            </Text>
+          </TouchableOpacity>
+        ))}
+      </View>
     </View>
   );
 }

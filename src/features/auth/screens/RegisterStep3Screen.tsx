@@ -20,8 +20,10 @@ import { useForm, Controller } from "react-hook-form";
 import { zodResolver } from "@hookform/resolvers/zod";
 import { passwordSchema, PasswordForm } from "@/shared/schemas/formSchemas";
 import { colors } from "../../../shared/theme/colors";
+import { useTranslation } from 'react-i18next';
 
 export default function RegisterStep3Screen({ navigation }: NativeStackScreenProps<AuthStackParamList, 'RegisterStep3'>) {
+  const { t } = useTranslation();
   const dispatch = useAppDispatch();
   const { password, confirmPassword } = useAppSelector(
     (s) => (s as any).auth.registrationForm,
@@ -52,12 +54,12 @@ export default function RegisterStep3Screen({ navigation }: NativeStackScreenPro
           activeOpacity={1}
           onPress={() =>
             Alert.alert(
-              "Kaydı Bırak",
-              "Kayıt işlemini yarıda bırakmak istediğinden emin misin?",
+              t('auth.step3.confirmCancel.title'),
+              t('auth.step3.confirmCancel.message'),
               [
-                { text: "Hayır", style: "cancel" },
+                { text: t('common.no'), style: "cancel" },
                 {
-                  text: "Evet",
+                  text: t('common.yes'),
                   style: "destructive",
                   onPress: () => navigation.navigate("Welcome"),
                 },
@@ -76,14 +78,14 @@ export default function RegisterStep3Screen({ navigation }: NativeStackScreenPro
         <View className="flex-1 px-6 py-6 pt-0">
           <View className="flex flex-col gap-2">
             <Text className="text-4xl font-bold text-white mb-8">
-              Şifreni oluştur.
+              {t('auth.step3.title')}
             </Text>
           </View>
 
           {/* Şifre Input */}
           <View className="mb-4">
             <Text className="text-gray-300 text-[14px] font-semibold mb-2">
-              Şifre *
+              {t('auth.step3.passwordLabel')}
             </Text>
             <View
               style={{
@@ -109,7 +111,7 @@ export default function RegisterStep3Screen({ navigation }: NativeStackScreenPro
                       fontSize: 18,
                       color: colors.text,
                     }}
-                    placeholder="En az 8 karakter"
+                    placeholder={t('auth.step3.passwordPlaceholder')}
                     placeholderTextColor={colors.textSecondary}
                     value={value}
                     onChangeText={onChange}
@@ -135,7 +137,7 @@ export default function RegisterStep3Screen({ navigation }: NativeStackScreenPro
           {/* Şifre Tekrar Input */}
           <View className="mb-4">
             <Text className="text-gray-300 text-[14px] font-semibold mb-2">
-              Şifre Tekrar *
+              {t('auth.step3.confirmLabel')}
             </Text>
             <View
               style={{
@@ -157,7 +159,7 @@ export default function RegisterStep3Screen({ navigation }: NativeStackScreenPro
                       fontSize: 18,
                       color: colors.text,
                     }}
-                    placeholder="Şifrenizi tekrar girin"
+                    placeholder={t('auth.step3.confirmPlaceholder')}
                     placeholderTextColor={colors.textSecondary}
                     value={value}
                     onChangeText={onChange}
@@ -190,7 +192,7 @@ export default function RegisterStep3Screen({ navigation }: NativeStackScreenPro
             }}
           >
             <Text className="text-white py-[20px] font-bold text-[15px] text-center">
-              Devam Et
+              {t('common.continueButton')}
             </Text>
           </AnimatedPressable>
         </View>

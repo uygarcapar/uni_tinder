@@ -42,6 +42,7 @@ function SwipeWrapper({
   onSuperLike,
   swipeQuotaExhausted = false,
   superLikeQuotaExhausted = false,
+  superLikesRemaining,
 }: any) {
   const tx = useSharedValue(0);
   const ty = useSharedValue(0);
@@ -450,6 +451,23 @@ function SwipeWrapper({
 
   const composedGesture = Gesture.Simultaneous(horizontalPan, verticalPan);
 
+  // Chevron (SwipeCard alt ok) tap ile expand/collapse toggle — pull-up ve
+  // pull-down gesture'larıyla aynı spring config'i.
+  const handleExpandPress = React.useCallback(() => {
+    const cfg = { damping: 16, stiffness: 380, mass: 1 };
+    if (expandedSV.value) {
+      setExpanded(false);
+      cardExpandAnim.value = withSpring(0, cfg);
+      ty.value = withSpring(0, cfg);
+    } else {
+      ty.value = withSpring(0, cfg);
+      cardExpandAnim.value = withSpring(1, cfg);
+      cardPullProgress.value = withSpring(0, cfg);
+      setExpanded(true);
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
+
   const animatedStyle = useAnimatedStyle(() => {
     const rotate = interpolate(tx.value, [-width, 0, width], [-15, 0, 15]);
 
@@ -491,12 +509,13 @@ function SwipeWrapper({
           onPass={onPass}
           onLike={onLike}
           onSuperLike={onSuperLike}
+          onExpandPress={handleExpandPress}
           scrollY={scrollY}
           nativeScrollGesture={nativeScrollGesture}
           superLikeProgress={superLikeProgress}
           isTopCard={isTopCard}
           expanded={expanded}
-          superLikeDisabled={superLikeQuotaExhausted}
+          superLikesRemaining={superLikesRemaining}
         />
       </Animated.View>
     </GestureDetector>
@@ -513,6 +532,7 @@ export default React.memo(SwipeWrapper, (prev, next) => {
     prev.isTopCard === next.isTopCard &&
     prev.swipeQuotaExhausted === next.swipeQuotaExhausted &&
     prev.superLikeQuotaExhausted === next.superLikeQuotaExhausted &&
+    prev.superLikesRemaining === next.superLikesRemaining &&
     prev.onSwipe === next.onSwipe &&
     prev.onPass === next.onPass &&
     prev.onLike === next.onLike &&

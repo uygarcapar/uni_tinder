@@ -123,6 +123,7 @@ import { useForm, Controller } from "react-hook-form";
 import { zodResolver } from "@hookform/resolvers/zod";
 import { editProfileFormSchema, EditProfileFormData } from "@/shared/schemas/formSchemas";
 import { matchOption } from "@/features/profile/utils/hydrateProfileForm";
+import { useTranslation } from "react-i18next";
 import { colors } from "../../../shared/theme/colors";
 
 // ─── Reanimated Grid Hesaplamaları ─────────────────────────────────────────
@@ -155,8 +156,82 @@ const getOrder = (tx, ty, maxIndex) => {
 
 // ─── Icon haritaları ───────────────────────────────────────────────────────
 const HOBBY_ICON_MAP = {
-  "Fitness & Spor": Dumbbell,
+  // Backend enumName (PascalCase)
+  Gym: Dumbbell,
   Yoga: Heart,
+  Running: Footprints,
+  Swimming: Waves,
+  Cycling: Bike,
+  Hiking: Trees,
+  Climbing: Mountain,
+  Boxing: HandMetal,
+  MartialArts: Trophy,
+  Dancing: Music2,
+  Pilates: Sparkles,
+  Cooking: Utensils,
+  Baking: Cake,
+  WineTasting: Wine,
+  Coffee: Coffee,
+  Foodie: Soup,
+  VeganCuisine: Sandwich,
+  Mixology: Wine,
+  Photography: Camera,
+  Painting: Palette,
+  Drawing: Palette,
+  Writing: BookOpenCheck,
+  Poetry: Book,
+  Crafts: Sparkles,
+  DIY: Flower2,
+  Fashion: ShoppingBag,
+  Music: Headphones,
+  Concerts: PartyPopper,
+  Guitar: Guitar,
+  Piano: Piano,
+  Singing: Mic2,
+  DJing: Music,
+  Festivals: PartyPopper,
+  Travel: Plane,
+  Camping: Tent,
+  Fishing: Fish,
+  Surfing: Waves,
+  Skiing: Mountain,
+  Snowboarding: Mountain,
+  Gardening: Flower2,
+  BeachLife: Sunrise,
+  Reading: BookOpen,
+  Museums: Theater,
+  ArtGalleries: Palette,
+  Theater: Drama,
+  Cinema: Film,
+  Documentaries: Film,
+  Learning: Lightbulb,
+  Languages: Languages,
+  VideoGames: Gamepad2,
+  BoardGames: Puzzle,
+  Chess: Puzzle,
+  Coding: Code,
+  Gaming: Gamepad2,
+  VR: Smartphone,
+  Podcasts: Headphones,
+  Volunteering: Users,
+  Pets: Dog,
+  Dogs: Dog,
+  Cats: Cat,
+  Meditation: Heart,
+  Astrology: Orbit,
+  Shopping: ShoppingBag,
+  Nightlife: Music2,
+  Brunch: Coffee,
+  SocialDrinking: Wine,
+  Networking: Briefcase,
+  Politics: Newspaper,
+  Philosophy: BookOpen,
+  Science: Lightbulb,
+  History: Book,
+  Investing: TrendingUp,
+  Entrepreneurship: Briefcase,
+  // Legacy TR display keys
+  "Fitness & Spor": Dumbbell,
   Koşu: Footprints,
   Yüzme: Waves,
   Bisiklet: Bike,
@@ -165,7 +240,6 @@ const HOBBY_ICON_MAP = {
   Boks: HandMetal,
   "Dövüş Sanatları": Trophy,
   Dans: Music2,
-  Pilates: Sparkles,
   "Yemek Pişirme": Utensils,
   Fırıncılık: Cake,
   "Şarap Tadımı": Wine,
@@ -209,7 +283,6 @@ const HOBBY_ICON_MAP = {
   Satranç: Puzzle,
   Yazılım: Code,
   Oyun: Gamepad2,
-  VR: Smartphone,
   "Podcast'ler": Headphones,
   Gönüllülük: Users,
   "Evcil Hayvanlar": Dog,
@@ -219,9 +292,7 @@ const HOBBY_ICON_MAP = {
   Astroloji: Orbit,
   Alışveriş: ShoppingBag,
   "Gece Hayatı": Music2,
-  Brunch: Coffee,
   "Sosyal İçici": Wine,
-  Network: Briefcase,
   Siyaset: Newspaper,
   Felsefe: BookOpen,
   Bilim: Lightbulb,
@@ -232,6 +303,20 @@ const HOBBY_ICON_MAP = {
 const getHobbyIcon = (name) => HOBBY_ICON_MAP[name] || Heart;
 
 const ZODIAC_ICON_MAP = {
+  // Backend enumName (PascalCase)
+  Aries: Flame,
+  Taurus: Leaf,
+  Gemini: Wind,
+  Cancer: Moon,
+  Leo: Sun,
+  Virgo: Leaf,
+  Libra: Scale,
+  Scorpio: Zap,
+  Sagittarius: Navigation,
+  Capricorn: Mountain,
+  Aquarius: Droplets,
+  Pisces: Fish,
+  // Legacy TR display fallback
   Koç: Flame,
   Boğa: Leaf,
   İkizler: Wind,
@@ -261,6 +346,17 @@ const getLanguageIcon = (enumName) =>
 // Hobi kategorisi → ikon. Backend kategori isimlerini Türkçe döndüğü için
 // önce exact match, sonra keyword fallback. Tanınmayan kategori için Heart.
 const HOBBY_CATEGORY_ICON_MAP = {
+  // Backend categoryEnumName (9 confirmed slugs)
+  SportsFitness: Dumbbell,
+  FoodDrink: Utensils,
+  ArtCreativity: Palette,
+  MusicConcerts: Music,
+  NatureAdventure: Trees,
+  CultureLearning: BookOpen,
+  GamingTech: Gamepad2,
+  SocialLifestyle: Users,
+  Intellectual: Lightbulb,
+  // Legacy TR display keys
   "Spor & Fitness": Dumbbell,
   Spor: Dumbbell,
   Fitness: Dumbbell,
@@ -289,7 +385,6 @@ const HOBBY_CATEGORY_ICON_MAP = {
   "Evcil Hayvanlar": Dog,
   "Bilim & Kariyer": Briefcase,
   Kariyer: Briefcase,
-  Network: Briefcase,
   Teknoloji: Code,
 };
 const getHobbyCategoryIcon = (category) => {
@@ -312,7 +407,8 @@ const PET_ICON_MAP = {
   Rabbit,
   Hamster: Rat,
   Reptile: Turtle,
-  Turtle,
+  Horse: PawPrint,
+  Exotic: Sparkles,
   None: X,
   Allergic: Ban,
   Other: PawPrint,
@@ -320,21 +416,35 @@ const PET_ICON_MAP = {
 const getPetIcon = (enumName) => PET_ICON_MAP[enumName] || PawPrint;
 
 const PURPOSE_META = {
+  // Backend enumName (PascalCase)
+  Dating: {
+    icon: Sparkles,
+    purposeDescKey: 'profile.edit.purposeDesc.flort',
+  },
+  Friendship: {
+    icon: Users,
+    purposeDescKey: 'profile.edit.purposeDesc.arkadashlik',
+  },
+  Networking: {
+    icon: Briefcase,
+    purposeDescKey: 'profile.edit.purposeDesc.network',
+  },
+  JustLooking: {
+    icon: Wind,
+    purposeDescKey: 'profile.edit.purposeDesc.oylesine',
+  },
+  // Legacy TR display fallback
   Flört: {
     icon: Sparkles,
-    desc: "Hafif, eğlenceli ve heyecanlı bir bağlantı arıyorum.",
+    purposeDescKey: 'profile.edit.purposeDesc.flort',
   },
   Arkadaşlık: {
     icon: Users,
-    desc: "Yeni insanlarla tanışmak ve sosyal çevreyi genişletmek istiyorum.",
-  },
-  Network: {
-    icon: Briefcase,
-    desc: "Profesyonel bağlantılar kurmak ve iş dünyasında tanışmak istiyorum.",
+    purposeDescKey: 'profile.edit.purposeDesc.arkadashlik',
   },
   Öylesine: {
     icon: Wind,
-    desc: "Belirli bir beklentim yok, akışına bırakıyorum.",
+    purposeDescKey: 'profile.edit.purposeDesc.oylesine',
   },
 };
 
@@ -344,7 +454,7 @@ const HobbyPill = React.memo(function HobbyPill({
   isSelected,
   onPress,
 }: any) {
-  const Icon = getHobbyIcon(hobby.name);
+  const Icon = getHobbyIcon(hobby.enumName ?? hobby.name);
   const handlePress = useCallback(() => onPress(hobby.id), [onPress, hobby.id]);
   return (
     <TouchableOpacity
@@ -433,10 +543,11 @@ const OptionListItem = React.memo(function OptionListItem({
   icon: CustomIcon,
   purposeMap,
 }: any) {
+  const { t } = useTranslation();
   if (purposeMap) {
     const entry = purposeMap[option.name];
     const Icon = entry?.icon ?? Star;
-    const desc = entry?.desc;
+    const desc = entry?.purposeDescKey ? t(entry.purposeDescKey) : undefined;
     return (
       <TouchableOpacity
         activeOpacity={1}
@@ -925,8 +1036,8 @@ const HobbyGroupAccordion = React.memo(function HobbyGroupAccordion({
   const handleToggle = useCallback(() => setExpanded((e) => !e), []);
 
   const CategoryIcon = useMemo(
-    () => getHobbyCategoryIcon(group.category),
-    [group.category],
+    () => getHobbyCategoryIcon(group.categoryEnumName ?? group.category),
+    [group.categoryEnumName, group.category],
   );
 
   return (
@@ -1040,6 +1151,7 @@ const EditProfileForm = forwardRef(function EditProfileForm(
   // Controller'ı yeniden invalidate ediyordu; bu, Fabric ShadowTree'nin 1024
   // commit retry limitine baskı uygulayıp account-switch sonrası SIGABRT
   // crash'lerin asıl sebebiydi.
+  const { t } = useTranslation();
   const { control, getValues, setValue, trigger, watch, formState: { errors } } = useForm<EditProfileFormData>({
     resolver: zodResolver(editProfileFormSchema),
     defaultValues: initialValues ?? {
@@ -1169,7 +1281,7 @@ const EditProfileForm = forwardRef(function EditProfileForm(
       setValue("hobbies", prev.filter((h) => h !== id));
     } else {
       if (prev.length >= 10) {
-        showInfoToast({ title: "Sınır Aşıldı", message: "En fazla 10 hobi seçebilirsin.", variant: "error" });
+        showInfoToast({ title: t('profile.edit.limitTitle'), message: t('profile.edit.limitHobbies'), variant: "error" });
         return;
       }
       setValue("hobbies", [...prev, id]);
@@ -1193,7 +1305,7 @@ const EditProfileForm = forwardRef(function EditProfileForm(
       setValue("languages", prev.filter((p) => p?.id !== opt.id));
     } else {
       if (prev.length >= 15) {
-        showInfoToast({ title: "Sınır Aşıldı", message: "En fazla 15 dil seçebilirsin.", variant: "error" });
+        showInfoToast({ title: t('profile.edit.limitTitle'), message: t('profile.edit.limitLanguages'), variant: "error" });
         return;
       }
       setValue("languages", [...prev, opt]);
@@ -1207,7 +1319,7 @@ const EditProfileForm = forwardRef(function EditProfileForm(
       setValue("pets", prev.filter((p) => p?.id !== opt.id));
     } else {
       if (prev.length >= 8) {
-        showInfoToast({ title: "Sınır Aşıldı", message: "En fazla 8 hayvan seçebilirsin.", variant: "error" });
+        showInfoToast({ title: t('profile.edit.limitTitle'), message: t('profile.edit.limitPets'), variant: "error" });
         return;
       }
       setValue("pets", [...prev, opt]);
@@ -1254,7 +1366,7 @@ const EditProfileForm = forwardRef(function EditProfileForm(
     if (savingProfile) return;
     const isValid = await trigger("interestedIn");
     if (!isValid) {
-      showInfoToast({ title: "Eksik Bilgi", message: "En az bir ilgi alanı seçmelisin.", variant: "error" });
+      showInfoToast({ title: t('profile.edit.missingInfoTitle'), message: t('profile.edit.missingInterests'), variant: "error" });
       return;
     }
     setSavingProfile(true);
@@ -1381,7 +1493,7 @@ const EditProfileForm = forwardRef(function EditProfileForm(
         "Profil güncelleme hatası:",
         JSON.stringify(e?.response?.data || e?.message || e),
       );
-      showInfoToast({ title: "Hata", message: "Profil güncellenemedi, tekrar dene.", variant: "error" });
+      showInfoToast({ title: t('common.error'), message: t('profile.edit.updateError'), variant: "error" });
     } finally {
       setSavingProfile(false);
       onSavingChange?.(false);
@@ -1615,7 +1727,7 @@ const EditProfileForm = forwardRef(function EditProfileForm(
               marginBottom: 6,
             }}
           >
-            Biyografi
+            {t('profile.edit.bioTitle')}
           </Text>
           <View className="flex-row items-center gap-2 mb-3 pr-4">
             <InfoIcon size={16} color={colors.textSecondary} />
@@ -1634,7 +1746,7 @@ const EditProfileForm = forwardRef(function EditProfileForm(
               onChangeText={onChange}
               multiline
               maxLength={500}
-              placeholder="Bize kendinden bahset..."
+              placeholder={t('profile.edit.bioPlaceholder')}
               placeholderTextColor={colors.textSecondary}
               style={{
                 borderCurve: "continuous",
@@ -1742,7 +1854,7 @@ const EditProfileForm = forwardRef(function EditProfileForm(
           </View>
           {hobbyGroups.map((group, gi) => (
             <HobbyGroupAccordion
-              key={group.category ?? gi}
+              key={group.categoryEnumName ?? group.category ?? gi}
               group={group}
               selectedIds={draftHobbies}
               onToggle={toggleHobby}
@@ -1770,14 +1882,14 @@ const EditProfileForm = forwardRef(function EditProfileForm(
                 marginBottom: 6,
               }}
             >
-              Sigara Kullanımı
+              {t('profile.edit.smokingTitle')}
             </Text>
             <View className="flex-row items-center gap-2 mb-3 pr-4">
               <InfoIcon size={16} color={colors.textSecondary} />
               <Text
                 style={{ color: colors.textSecondary, fontSize: 14, fontWeight: "400" }}
               >
-                Sigara kullanım durumunu seç.
+                {t('profile.edit.smokingDesc')}
               </Text>
             </View>
           </View>
@@ -1814,21 +1926,21 @@ const EditProfileForm = forwardRef(function EditProfileForm(
                 marginBottom: 6,
               }}
             >
-              Burç
+              {t('profile.edit.zodiacTitle')}
             </Text>
             <View className="flex-row items-center gap-2 mb-3 pr-4">
               <InfoIcon size={16} color={colors.textSecondary} />
               <Text
                 style={{ color: colors.textSecondary, fontSize: 14, fontWeight: "400" }}
               >
-                Burç seçimini yap.
+                {t('profile.edit.zodiacDesc')}
               </Text>
             </View>
           </View>
           <View style={{ flexDirection: "row", flexWrap: "wrap", gap: 8 }}>
             {zodiacOptions.map((opt) => {
               const selected = draftZodiac?.id === opt.id;
-              const Icon = getZodiacIcon(opt.name);
+              const Icon = getZodiacIcon(opt.enumName ?? opt.name);
               return (
                 <TouchableOpacity
                   key={opt.id}
@@ -1975,7 +2087,7 @@ const EditProfileForm = forwardRef(function EditProfileForm(
                   fontWeight: "500",
                 }}
               >
-                {draftCity?.name || "Şehir Seç"}
+                {draftCity?.name || t('profile.edit.selectCity')}
               </Text>
             </View>
             <ChevronDown size={18} color={colors.textSecondary} strokeWidth={2} />
@@ -2025,7 +2137,7 @@ const EditProfileForm = forwardRef(function EditProfileForm(
                 }}
               >
                 {draftDistrict?.name ||
-                  (districtsLoading ? "Yükleniyor..." : "İlçe Seç")}
+                  (districtsLoading ? t('profile.edit.loading') : t('profile.edit.selectDistrict'))}
               </Text>
             </View>
             {districtsLoading ? (
@@ -2063,7 +2175,7 @@ const EditProfileForm = forwardRef(function EditProfileForm(
               <Text
                 style={{ color: colors.textSecondary, fontSize: 14, fontWeight: "400" }}
               >
-                Konuştuğun dilleri seç (en fazla 15).
+                {t('profile.edit.languagesDesc')}
               </Text>
             </View>
           </View>
@@ -2100,8 +2212,8 @@ const EditProfileForm = forwardRef(function EditProfileForm(
                 }}
               >
                 {draftLanguages.length > 0
-                  ? `${draftLanguages.length} dil seçildi`
-                  : "Dil Seç"}
+                  ? t('profile.edit.languagesSelected', { count: draftLanguages.length })
+                  : t('profile.edit.selectLanguage')}
               </Text>
             </View>
             <ChevronDown size={18} color={colors.textSecondary} strokeWidth={2} />
@@ -2148,7 +2260,7 @@ const EditProfileForm = forwardRef(function EditProfileForm(
                 marginBottom: 6,
               }}
             >
-              Evcil Hayvanlar ({draftPets.length} seçildi)
+              {t('profile.edit.petsTitle', { count: draftPets.length })}
             </Text>
             <View className="flex-row items-center gap-2 mb-3 pr-4">
               <InfoIcon size={16} color={colors.textSecondary} />
@@ -2192,32 +2304,31 @@ const EditProfileForm = forwardRef(function EditProfileForm(
               marginBottom: 6,
             }}
           >
-            Görünürlük
+            {t('profile.edit.visibility.title')}
           </Text>
           <View className="flex-row items-center gap-2 mb-3 pr-4">
             <InfoIcon size={16} color={colors.textSecondary} />
             <Text style={{ color: colors.textSecondary, fontSize: 14, fontWeight: "400" }}>
-              Profilinde hangi bilgilerin başkalarına gösterileceğini sen
-              belirle.
+              {t('profile.edit.visibility.description')}
             </Text>
           </View>
         </View>
         {[
           {
             key: "uni",
-            label: "Üniversitemi göster",
+            label: t('profile.edit.visibility.showUniversity'),
             value: draftShowMyUniversity,
             field: "showMyUniversity" as const,
           },
           {
             key: "app",
-            label: "Beni uygulamada göster",
+            label: t('profile.edit.visibility.showOnApp'),
             value: draftShowMeOnApp,
             field: "showMeOnApp" as const,
           },
           {
             key: "age",
-            label: "Yaşımı göster",
+            label: t('profile.edit.visibility.showAge'),
             value: draftShowAge,
             field: "showAge" as const,
           },
@@ -2316,7 +2427,7 @@ const EditProfileForm = forwardRef(function EditProfileForm(
           <SearchableListSheet
             items={districtOptions}
             initialValue={draftDistrict?.enumName ?? ""}
-            title="İlçe Seç"
+            title={t('profile.edit.selectDistrict')}
             onConfirm={onDistrictConfirm}
             onCancel={() => setDistrictPickerVisible(false)}
           />
@@ -2330,7 +2441,7 @@ const EditProfileForm = forwardRef(function EditProfileForm(
           items={languageOptions}
           initialSelectedValues={draftLanguages.map((l) => l.enumName)}
           maxLimit={15}
-          limitMsg="En fazla 15 dil seçebilirsin."
+          limitMsg={t('profile.edit.limitLanguages')}
           onConfirm={onLanguageConfirm}
         />
       )}

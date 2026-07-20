@@ -37,6 +37,7 @@ import { useForm } from "react-hook-form";
 import { zodResolver } from "@hookform/resolvers/zod";
 import { photosSchema, PhotosForm } from "@/shared/schemas/formSchemas";
 import { colors } from "../../../shared/theme/colors";
+import { useTranslation } from 'react-i18next';
 
 const { width } = Dimensions.get("window");
 const CONTAINER_PADDING = 24;
@@ -141,6 +142,7 @@ function PhotoCard({ photo, onRemove }: any) {
 }
 
 export default function RegisterStep15Screen({ navigation }: NativeStackScreenProps<AuthStackParamList, 'RegisterStep15'>) {
+  const { t } = useTranslation();
   const dispatch = useAppDispatch();
   const profile = useAppSelector((s) => (s as any).profile || {});
   const loading = useAppSelector((s) => (s as any).profile.loading);
@@ -167,7 +169,7 @@ export default function RegisterStep15Screen({ navigation }: NativeStackScreenPr
 
   const pickImage = async () => {
     const remainingSlots = 6 - photos.length;
-    if (remainingSlots <= 0) { Alert.alert("Hata", "En fazla 6 fotoğraf ekleyebilirsiniz"); return; }
+    if (remainingSlots <= 0) { Alert.alert(t('common.error'), t('auth.step15.maxPhotosError')); return; }
     try {
       const selectedImages = await ImageCropPicker.openPicker({ multiple: true, maxFiles: remainingSlots, mediaType: "photo" });
       const newCroppedPhotos: string[] = [];
@@ -175,7 +177,7 @@ export default function RegisterStep15Screen({ navigation }: NativeStackScreenPr
         try {
           const croppedImage = await ImageCropPicker.openCropper({
             path: image.path, width: 900, height: 1200,
-            cropperToolbarTitle: "Fotoğrafı Düzenle", cropperChooseText: "Seç", cropperCancelText: "İptal",
+            cropperToolbarTitle: t('auth.step15.cropperTitle'), cropperChooseText: t('auth.step15.cropperChoose'), cropperCancelText: t('common.cancel'),
           });
           newCroppedPhotos.push(croppedImage.path);
         } catch (cropError) { console.log("Bu fotoğrafın kırpılması iptal edildi."); }
@@ -233,10 +235,9 @@ export default function RegisterStep15Screen({ navigation }: NativeStackScreenPr
 
       <ScrollView className="flex-1 px-6 py-6 pt-0" keyboardShouldPersistTaps="handled">
         <View className="flex flex-col gap-2 mb-6">
-          <Text className="text-4xl font-bold text-white">Fotoğrafların {photos.length}/6</Text>
+          <Text className="text-4xl font-bold text-white">{t('auth.step15.titleWithCount', { count: photos.length })}</Text>
           <Text className="text-[18px] font-normal text-gray-400">
-            Sıralamayı değiştirmek için fotoğrafları birbirinin üzerine sürükle.
-            İlk sıradaki ana profil fotoğrafındır.
+            {t('auth.step15.description')}
           </Text>
           {errors.photos ? (
             <Text className="text-red-500 text-[14px] font-normal mt-2">{errors.photos.message}</Text>
@@ -285,7 +286,7 @@ export default function RegisterStep15Screen({ navigation }: NativeStackScreenPr
           {loading ? (
             <View className="py-[18px]"><ActivityIndicator color="#fff" /></View>
           ) : (
-            <Text className="text-white py-[20px] font-bold text-[15px] text-center">Profili Tamamla</Text>
+            <Text className="text-white py-[20px] font-bold text-[15px] text-center">{t('auth.step15.submitButton')}</Text>
           )}
         </AnimatedPressable>
       </View>

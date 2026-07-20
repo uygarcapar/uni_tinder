@@ -12,6 +12,7 @@ import { useForm } from "react-hook-form";
 import { zodResolver } from "@hookform/resolvers/zod";
 import { genderSchema, GenderForm } from "@/shared/schemas/formSchemas";
 import { colors } from "../../../shared/theme/colors";
+import { useTranslation } from 'react-i18next';
 
 // Backend Gender'ı enumName ("Male"/"Female"/"NonBinary" vb.) bekliyor.
 const GENDER_CATEGORIES = [
@@ -96,6 +97,7 @@ const AnimatedPressable = ({ onPress, onLayout, style, activeOpacity = 1, childr
 };
 
 export default function RegisterStep7Screen({ navigation }: NativeStackScreenProps<AuthStackParamList, 'RegisterStep7'>) {
+  const { t } = useTranslation();
   const dispatch = useAppDispatch();
   const { gender } = useAppSelector((s) => (s as any).auth.registrationForm);
 
@@ -155,9 +157,9 @@ export default function RegisterStep7Screen({ navigation }: NativeStackScreenPro
 
       <View className="flex-1 px-6 py-6 pt-0">
         <View className="flex flex-col gap-2">
-          <Text className="text-4xl font-bold text-white">Cinsiyetin</Text>
+          <Text className="text-4xl font-bold text-white">{t('auth.step7.title')}</Text>
           <Text className="text-[18px] font-normal text-gray-400 mb-6">
-            Kendini en iyi tanımlayan seçeneği seç.
+            {t('auth.step7.description')}
           </Text>
         </View>
 
@@ -206,7 +208,7 @@ export default function RegisterStep7Screen({ navigation }: NativeStackScreenPro
                     {isSelected && (
                       <View style={{ flexDirection: "row", alignItems: "center", gap: 4, marginTop: 6 }}>
                         <Text style={{ color: colors.textSecondary, fontSize: 12, fontWeight: "500" }}>
-                          Detaylı Seç
+                          {t('auth.step7.detailedSelect')}
                         </Text>
                         {isExpanded ? (
                           <ChevronUp size={14} color={colors.textSecondary} strokeWidth={2.5} />
@@ -287,8 +289,7 @@ export default function RegisterStep7Screen({ navigation }: NativeStackScreenPro
         <View className="flex-row gap-2 px-2 mr-6 items-center mt-5">
           <InfoIcon size={16} color={colors.textSecondary} className="mt-3" />
           <Text className="text-gray-400 text-[12px]">
-            Detaylı cinsiyet seçenekleri, seni en iyi tanımlayan kimliği seçmene
-            yardımcı olur.
+            {t('auth.step7.infoText')}
           </Text>
         </View>
       </View>
@@ -300,7 +301,7 @@ export default function RegisterStep7Screen({ navigation }: NativeStackScreenPro
             style={{ borderRadius: 999, borderCurve: "continuous", overflow: "hidden", backgroundColor: colors.messageOwn }}
           >
             <Text className="text-white py-[20px] font-bold text-[15px] text-center">
-              Devam Et
+              {t('common.continueButton')}
             </Text>
           </AnimatedPressableShared>
         </View>

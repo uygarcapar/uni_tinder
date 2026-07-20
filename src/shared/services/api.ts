@@ -3,6 +3,11 @@ import { API_BASE_URL, API_ENDPOINTS } from '@/shared/constants/api';
 import { getRefreshToken, saveRefreshToken, saveAccessToken, clearAllTokens } from '@/shared/utils/tokenStorage';
 
 let currentAccessToken: string | null = null;
+let currentLanguage: 'tr' | 'en' = 'tr';
+
+export const setCurrentLanguage = (lang: 'tr' | 'en') => {
+  currentLanguage = lang;
+};
 
 // Optional callback: called after a successful background token refresh
 // Register from AppNavigator to keep Redux in sync without circular imports
@@ -46,6 +51,7 @@ api.interceptors.request.use(
     } else {
       console.log(`⚠️ Request: ${config.method?.toUpperCase()} ${config.url} - Token YOK!`);
     }
+    config.headers['Accept-Language'] = currentLanguage;
     // FormData gönderilirken Content-Type'ı sil —
     // React Native'in native kodu doğru multipart/form-data boundary'yi otomatik ekler.
     if (config.data instanceof FormData) {

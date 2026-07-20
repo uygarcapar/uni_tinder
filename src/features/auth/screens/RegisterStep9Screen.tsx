@@ -22,8 +22,10 @@ import { useForm } from "react-hook-form";
 import { zodResolver } from "@hookform/resolvers/zod";
 import { locationSchema, LocationForm } from "@/shared/schemas/formSchemas";
 import { colors } from "../../../shared/theme/colors";
+import { useTranslation } from 'react-i18next';
 
 export default function RegisterStep9Screen({ navigation }: NativeStackScreenProps<AuthStackParamList, 'RegisterStep9'>) {
+  const { t } = useTranslation();
   const dispatch = useAppDispatch();
   const profile = useAppSelector((s) => (s as any).profile || {});
 
@@ -56,21 +58,21 @@ export default function RegisterStep9Screen({ navigation }: NativeStackScreenPro
   }, []);
 
   const handleOpenDistrictModal = useCallback(() => {
-    if (!city) { alert("Lütfen önce şehir seçin"); return; }
+    if (!city) { alert(t('auth.step9.validation.cityFirst')); return; }
     Keyboard.dismiss();
     setTimeout(() => setDistrictVisible(true), 100);
-  }, [city]);
+  }, [city, t]);
 
   const getCityLabel = () => {
-    if (!city) return "Şehir Seç";
+    if (!city) return t('auth.step9.cityPlaceholder');
     const selectedCity = (cities as any[]).find((c) => c.enumName === city);
-    return selectedCity ? selectedCity.name : "Şehir Seç";
+    return selectedCity ? selectedCity.name : t('auth.step9.cityPlaceholder');
   };
 
   const getDistrictLabel = () => {
-    if (!district) return "İlçe Seç";
+    if (!district) return t('auth.step9.districtPlaceholder');
     const selectedDistrict = (districts as any[]).find((d) => d.enumName === district);
-    return selectedDistrict ? selectedDistrict.name : "İlçe Seç";
+    return selectedDistrict ? selectedDistrict.name : t('auth.step9.districtPlaceholder');
   };
 
   const handleNext = handleSubmit(({ city: c, district: d }) => {
@@ -93,7 +95,7 @@ export default function RegisterStep9Screen({ navigation }: NativeStackScreenPro
           </TouchableOpacity>
           {!city && !district && (
             <TouchableOpacity activeOpacity={0.9} onPress={handleSkip}>
-              <Text className="text-gray-400 text-[16px] font-semibold">Atla</Text>
+              <Text className="text-gray-400 text-[16px] font-semibold">{t('auth.step9.skipButton')}</Text>
             </TouchableOpacity>
           )}
         </View>
@@ -103,15 +105,15 @@ export default function RegisterStep9Screen({ navigation }: NativeStackScreenPro
 
       <View className="flex-1 px-6 py-6 pt-0">
         <View className="flex flex-col gap-2">
-          <Text className="text-4xl font-bold text-white">Konum Bilgilerin</Text>
+          <Text className="text-4xl font-bold text-white">{t('auth.step9.title')}</Text>
           <Text className="text-[18px] font-normal text-gray-400 mb-6">
-            Yaşadığın şehri ve ilçeni seç.
+            {t('auth.step9.description')}
           </Text>
         </View>
 
         <>
           <View className="mb-4">
-            <Text className="text-gray-300 text-[14px] font-semibold mb-2">Şehir</Text>
+            <Text className="text-gray-300 text-[14px] font-semibold mb-2">{t('auth.step9.cityLabel')}</Text>
             <TouchableOpacity
               style={{ borderRadius: 999, borderCurve: "continuous", overflow: "hidden" }}
               activeOpacity={1}
@@ -131,7 +133,7 @@ export default function RegisterStep9Screen({ navigation }: NativeStackScreenPro
           </View>
 
           <View className="mb-4">
-            <Text className="text-gray-300 text-[14px] font-semibold mb-2">İlçe</Text>
+            <Text className="text-gray-300 text-[14px] font-semibold mb-2">{t('auth.step9.districtLabel')}</Text>
             <TouchableOpacity
               style={{ borderRadius: 999, borderCurve: "continuous", overflow: "hidden" }}
               activeOpacity={1}
@@ -160,7 +162,7 @@ export default function RegisterStep9Screen({ navigation }: NativeStackScreenPro
             style={{ borderRadius: 999, borderCurve: "continuous", overflow: "hidden", backgroundColor: colors.messageOwn }}
           >
             <Text className="text-white py-[20px] font-bold text-[15px] text-center">
-              {!city && !district ? "Atla" : "Devam Et"}
+              {!city && !district ? t('auth.step9.skipButton') : t('common.continueButton')}
             </Text>
           </AnimatedPressable>
         </View>
@@ -196,7 +198,7 @@ export default function RegisterStep9Screen({ navigation }: NativeStackScreenPro
           <SearchableListSheet
             items={districts}
             initialValue={district ?? ""}
-            title="İlçe Seç"
+            title={t('auth.step9.districtPlaceholder')}
             onConfirm={(selectedDistrict: string) => {
               setDistrictVisible(false);
               setValue("district", selectedDistrict, { shouldValidate: true });

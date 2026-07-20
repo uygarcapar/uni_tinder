@@ -7,6 +7,7 @@ import profileReducer from '@/features/profile/profileSlice';
 import swipeReducer from '@/features/discover/swipeSlice';
 import subscriptionReducer from '@/features/profile/subscriptionSlice';
 import chatReducer from '@/features/chat/chatSlice';
+import settingsReducer from './settingsSlice';
 
 // Auth slice specific persist config - only persist essential auth data.
 // registrationForm persist EDİLİR — kayıt akışında hata olursa veya app reload
@@ -25,6 +26,11 @@ const profilePersistConfig = {
   blacklist: ['loading', 'error'],
 };
 
+const settingsPersistConfig = {
+  key: 'settings',
+  storage: AsyncStorage,
+};
+
 // Chat: persist EDILMEZ — mesaj geçmişi büyük + AsyncStorage rehydrate latency yaratır.
 // App açılışta SignalR + REST ile fresh state çekilir.
 const rootReducer = combineReducers({
@@ -33,6 +39,7 @@ const rootReducer = combineReducers({
   swipe: swipeReducer,
   subscription: subscriptionReducer,
   chat: chatReducer,
+  settings: persistReducer(settingsPersistConfig, settingsReducer),
 });
 
 const persistConfig = {

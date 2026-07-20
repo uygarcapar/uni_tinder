@@ -64,7 +64,6 @@ function MessageInput({
 }: any) {
   const insets = useSafeAreaInsets();
   const [text, setText] = useState("");
-  const [textFieldEpoch, setTextFieldEpoch] = useState(0);
   const [uploading, setUploading] = useState(false);
 
   const [isRecording, setIsRecording] = useState(false);
@@ -125,7 +124,14 @@ function MessageInput({
     });
     setText("");
     if (IS_IOS) {
-      requestAnimationFrame(() => setTextFieldEpoch((n) => n + 1));
+      // iOS 18: StatefulSelectableTextField keeps localSelection in SwiftUI state.
+      // clear() sets text="" but localSelection still points to old cursor offset →
+      // PlatformTextFieldCoordinator.update() tries to apply stale NSRange to empty
+      // buffer → String.UTF16View._offsetRange assertion crash (crashlog.crash).
+      // Fix: reset selection to (0,0) first so SwiftUI's onChange fires and updates
+      // localSelection before the coordinator runs updateUIView with empty text.
+      textFieldRef.current?.setSelection(0, 0);
+      textFieldRef.current?.clear();
     }
     onCancelReply?.();
   };
@@ -191,7 +197,8 @@ function MessageInput({
       });
       setText("");
       if (IS_IOS) {
-        requestAnimationFrame(() => setTextFieldEpoch((n) => n + 1));
+        textFieldRef.current?.setSelection(0, 0);
+        textFieldRef.current?.clear();
       }
       onCancelReply?.();
     } catch (err) {
@@ -449,7 +456,6 @@ function MessageInput({
                   />
                 )}
                 <TextField
-                  key={textFieldEpoch}
                   ref={textFieldRef}
                   placeholder={
                     quotaLocked

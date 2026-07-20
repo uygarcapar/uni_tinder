@@ -1,4 +1,5 @@
 import { Platform } from "react-native";
+import { useTranslation } from 'react-i18next';
 import { createNativeBottomTabNavigator } from "@react-navigation/bottom-tabs/unstable";
 import DiscoverScreen from "@/features/discover/screens/DiscoverScreen";
 import LikesScreen from "@/features/discover/screens/LikesScreen";
@@ -24,6 +25,7 @@ const tabIcon = (sfBase: string, materialFilled: string, materialOutlined: strin
     });
 
 export default function TabNavigator() {
+  const { t } = useTranslation();
   const unreadTotal = useAppSelector((s) => (s as any).chat.unreadTotal as number);
   const whoLikedMeCount = useAppSelector((s) => (s as any).swipe.whoLikedMeCount as number);
 
@@ -52,7 +54,7 @@ export default function TabNavigator() {
         name="Discover"
         component={DiscoverScreen}
         options={{
-          title: "Keşfet",
+          title: t('discover.tabTitle'),
           tabBarIcon: tabIcon("flame", "local_fire_department", "local_fire_department") as any,
         }}
       />
@@ -60,7 +62,7 @@ export default function TabNavigator() {
         name="Likes"
         component={LikesScreen}
         options={{
-          title: "Beğeniler",
+          title: t('likes.tabTitle'),
           tabBarIcon: tabIcon("heart", "favorite", "favorite_border") as any,
           tabBarBadge: likesBadge,
         }}
@@ -69,7 +71,7 @@ export default function TabNavigator() {
         name="Messages"
         component={MessagesScreen}
         options={{
-          title: "Mesajlar",
+          title: t('chat.tabTitle'),
           tabBarIcon: tabIcon("message", "chat_bubble", "chat_bubble_outline") as any,
           tabBarBadge: messagesBadge,
         }}
@@ -78,7 +80,7 @@ export default function TabNavigator() {
         name="Profile"
         component={ProfileScreen}
         options={{
-          title: "Profil",
+          title: t('profile.tabTitle'),
           tabBarIcon: tabIcon("person", "person", "person_outline") as any,
         }}
       />

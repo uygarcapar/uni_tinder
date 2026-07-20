@@ -2,7 +2,8 @@ export const colors = {
   primary: "#F57656",
   primaryWarm: "#FC803D",
   primaryHot: "#FF6B35",
-  messageOwn: "#FF4229",
+  messageOwn: "#ff543d",
+  litPlus: "#ff5d3d",
 
   success: "#34D399",
   error: "#EF4444",

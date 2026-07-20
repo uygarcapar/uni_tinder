@@ -1,4 +1,5 @@
 import { memo, useEffect, useCallback, useMemo, useRef, useState } from "react";
+import { useTranslation } from 'react-i18next';
 import {
   View,
   Text,
@@ -47,6 +48,7 @@ import { useSwipeStats } from "@/features/discover/swipeQueries";
 import { colors } from "../../../shared/theme/colors";
 
 export default function MessagesScreen() {
+  const { t } = useTranslation();
   const dispatch = useAppDispatch();
   const navigation = useNavigation();
   const insets = useSafeAreaInsets();
@@ -202,14 +204,21 @@ export default function MessagesScreen() {
     listRef.current?.scrollToOffset({ offset: 0, animated: true });
   }, []);
 
-  // Filtrelenmiş conversation listesi — partner display name içinde arama.
+  // Filtrelenmiş conversation listesi — önce "Okunmamış" tab filtresi, sonra
+  // partner display name içinde arama.
   const filteredConversations = useMemo(() => {
-    if (!searchQuery.trim()) return conversations;
-    const q = searchQuery.toLowerCase().trim();
-    return conversations.filter((c) =>
-      (c.partnerDisplayName || "").toLowerCase().includes(q),
-    );
-  }, [conversations, searchQuery]);
+    let list = conversations;
+    if (activeTab === "unread") {
+      list = list.filter((c) => c.unreadCount > 0);
+    }
+    const q = searchQuery.trim().toLowerCase();
+    if (q) {
+      list = list.filter((c) =>
+        (c.partnerDisplayName || "").toLowerCase().includes(q),
+      );
+    }
+    return list;
+  }, [conversations, searchQuery, activeTab]);
 
   // DiscoverScreen ile aynı fill oranı: premium veya remainingSwipes===-1 → 0.
   const DAILY_SWIPE_LIMIT = 30;
@@ -274,12 +283,12 @@ export default function MessagesScreen() {
       if (!conv.isActive) {
         // Kapanmış sohbet — restore offer (24h grace).
         Alert.alert(
-          "Eşleşmeyi geri al",
-          "Bu sohbet sonlandırıldı. 24 saat içinde geri alabilirsin.",
+          t('chat.unmatch.restoreTitle'),
+          t('chat.unmatch.restoreMessage'),
           [
-            { text: "İptal", style: "cancel" },
+            { text: t('common.cancel'), style: "cancel" },
             {
-              text: "Geri Al",
+              text: t('chat.unmatch.restoreButton'),
               onPress: async () => {
                 try {
                   const ok = await chatService.restoreConversation(
@@ -287,13 +296,13 @@ export default function MessagesScreen() {
                   );
                   if (!ok) {
                     Alert.alert(
-                      "Geri alınamadı",
-                      "24 saatlik süre dolmuş olabilir.",
+                      t('chat.unmatch.restoreError'),
+                      t('chat.unmatch.restoreExpiredMessage'),
                     );
                   }
                   dispatch(fetchConversations());
                 } catch (err) {
-                  Alert.alert("Hata", "İşlem başarısız.");
+                  Alert.alert(t('common.error'), t('chat.unmatch.restoreFailed'));
                 }
               },
             },
@@ -303,26 +312,26 @@ export default function MessagesScreen() {
       }
       // Aktif sohbet — unmatch confirm.
       Alert.alert(
-        "Eşleşmeyi kaldır",
-        `${conv.partnerDisplayName || "Kullanıcı"} ile sohbeti sonlandır. 24 saat içinde geri alabilirsin.`,
+        t('chat.unmatch.title'),
+        t('chat.unmatch.message', { partnerName: conv.partnerDisplayName || t('chat.defaultUserName') }),
         [
-          { text: "İptal", style: "cancel" },
+          { text: t('common.cancel'), style: "cancel" },
           {
-            text: "Kaldır",
+            text: t('chat.unmatch.confirmButton'),
             style: "destructive",
             onPress: async () => {
               try {
                 await chatService.deactivateConversation(conv.conversationId);
                 dispatch(fetchConversations());
               } catch (err) {
-                Alert.alert("Hata", "Eşleşme kaldırılamadı.");
+                Alert.alert(t('common.error'), t('chat.unmatch.error'));
               }
             },
           },
         ],
       );
     },
-    [dispatch],
+    [dispatch, t],
   );
 
   // ConversationRow'a conv'i argüman alan STABIL callback'ler geçir — böylece
@@ -375,20 +384,31 @@ export default function MessagesScreen() {
                 className="text-white text-center mt-3"
                 style={{ fontSize: 14, fontWeight: "500" }}
               >
-                "{searchQuery}" bulunamadı
+                {t('chat.messages.notFound', { query: searchQuery })}
               </Text>
             </View>
           ) : !isSearchActive && !conversationsLoading ? (
-            <View className="flex-1 items-center justify-center pb-[40%]">
-              <EmptyState
-                Icon={MessageCircle}
-                iconStrokeWidth={1.3}
-                text="Henüz mesajın yok."
-                topOffset={0}
-                buttonLabel="Eşleşme bul"
-                onButtonPress={() => navigation.navigate("Discover")}
-              />
-            </View>
+            activeTab === "unread" ? (
+              <View className="flex-1 items-center justify-center pb-[40%]">
+                <EmptyState
+                  Icon={MessageCircle}
+                  iconStrokeWidth={1.3}
+                  text={t('chat.messages.noUnread')}
+                  topOffset={0}
+                />
+              </View>
+            ) : (
+              <View className="flex-1 items-center justify-center pb-[40%]">
+                <EmptyState
+                  Icon={MessageCircle}
+                  iconStrokeWidth={1.3}
+                  text={t('chat.messages.empty')}
+                  topOffset={0}
+                  buttonLabel={t('chat.messages.findMatch')}
+                  onButtonPress={() => navigation.navigate("Discover")}
+                />
+              </View>
+            )
           ) : null
         }
       />
@@ -405,7 +425,7 @@ export default function MessagesScreen() {
       >
         <ScreenHeader
           scrollY={scrollY}
-          title="Mesajlar"
+          title={t('chat.messages.title')}
           fillRatio={swipeFillRatio}
         />
       </Animated.View>
@@ -563,8 +583,8 @@ export default function MessagesScreen() {
           className="px-6 pt-3 pb-2 flex-row gap-2"
         >
           {[
-            { key: "all", label: "Tümü" },
-            { key: "unread", label: "Okunmamış" },
+            { key: "all", label: t('chat.messages.tabAll') },
+            { key: "unread", label: t('chat.messages.tabUnread') },
           ].map((tab) => {
             const isActive = activeTab === tab.key;
             return (
@@ -609,6 +629,7 @@ const ConversationRow = memo(function ConversationRow({
   onOpen,
   onLongPress,
 }: any) {
+  const { t } = useTranslation();
   const isUnread = conv.unreadCount > 0;
   // Stabil parent callback'lerini conv'a bind ediyoruz — memo default shallowEqual
   // prop identity'sini onOpen/onLongPress üzerinden koruyabilsin diye.
@@ -616,11 +637,11 @@ const ConversationRow = memo(function ConversationRow({
   const handleLongPress = useCallback(() => onLongPress(conv), [onLongPress, conv]);
   const subtitle = useMemo(() => {
     if (isTyping)
-      return { kind: "text", text: "yazıyor…", className: "text-primary" };
+      return { kind: "text", text: t('chat.messages.typing'), className: "text-primary" };
     if (!conv.isActive)
       return {
         kind: "text",
-        text: "Sohbet kapatıldı",
+        text: t('chat.messages.closedChat'),
         className: "text-gray-400",
       };
 
@@ -629,14 +650,14 @@ const ConversationRow = memo(function ConversationRow({
 
     // Media (no text content) — icon + label
     const ct = conv.lastMessageContentType;
-    if (ct === 1) return { kind: "media", icon: CameraIcon, text: "Fotoğraf", className: readClass, iconColor };
-    if (ct === 2) return { kind: "media", icon: Mic, text: "Sesli mesaj", className: readClass, iconColor };
-    if (ct === 3) return { kind: "media", icon: Video, text: "Video", className: readClass, iconColor };
+    if (ct === 1) return { kind: "media", icon: CameraIcon, text: t('chat.messages.mediaPhoto'), className: readClass, iconColor };
+    if (ct === 2) return { kind: "media", icon: Mic, text: t('chat.messages.mediaVoice'), className: readClass, iconColor };
+    if (ct === 3) return { kind: "media", icon: Video, text: t('chat.messages.mediaVideo'), className: readClass, iconColor };
 
     if (!conv.lastMessagePreview) {
       return {
         kind: "text",
-        text: "Konuşmaya başla 👋",
+        text: t('chat.messages.startConversation'),
         className: "text-gray-400",
       };
     }
@@ -646,6 +667,7 @@ const ConversationRow = memo(function ConversationRow({
       className: readClass,
     };
   }, [
+    t,
     isTyping,
     conv.lastMessagePreview,
     conv.lastMessageContentType,
@@ -711,11 +733,11 @@ const ConversationRow = memo(function ConversationRow({
             className={`text-[16px] font-semibold ${conv.isActive ? "text-white" : "text-gray-500"}`}
             numberOfLines={1}
           >
-            {conv.partnerDisplayName || "Kullanıcı"}
+            {conv.partnerDisplayName || t('chat.defaultUserName')}
           </Text>
           {conv.lastMessageAt && (
             <Text className="text-gray-500 text-[16px] font-normal ml-2">
-              {formatRelativeTime(conv.lastMessageAt)}
+              {formatRelativeTime(conv.lastMessageAt, t)}
             </Text>
           )}
         </View>
@@ -759,7 +781,7 @@ const ConversationRow = memo(function ConversationRow({
   );
 });
 
-function formatRelativeTime(iso) {
+function formatRelativeTime(iso, t) {
   if (!iso) return "";
   const d = new Date(iso);
   const now = new Date();
@@ -776,7 +798,7 @@ function formatRelativeTime(iso) {
       minute: "2-digit",
     });
   }
-  if (dayDiff === 1) return "Dün";
+  if (dayDiff === 1) return t('chat.messages.yesterday');
   if (dayDiff < 7) {
     return d.toLocaleDateString("tr-TR", { weekday: "long" });
   }

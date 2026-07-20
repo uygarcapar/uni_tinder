@@ -11,12 +11,7 @@ import Animated, {
   Easing,
 } from "react-native-reanimated";
 import MaskedView from "@react-native-masked-view/masked-view";
-import Svg, {
-  Path,
-  Defs,
-  LinearGradient as SvgLinearGradient,
-  Stop,
-} from "react-native-svg";
+import Svg, { Path } from "react-native-svg";
 import { colors } from "../theme/colors";
 
 const LOGO_W = 120;
@@ -109,17 +104,9 @@ export default function WaveFillLogo({ fillRatio = 0 }) {
           }}
         >
           <Svg width={LOGO_W} height={LOGO_H}>
-            <Defs>
-              <SvgLinearGradient id="litFillGrad" x1="0" y1="0" x2="0" y2="1">
-                <Stop offset="0" stopColor="#fa8532" />
-                <Stop offset="0.3" stopColor="#fa8532" />
-                <Stop offset="0.6" stopColor="#f7521b" />
-                <Stop offset="1" stopColor="#f51111" />
-              </SvgLinearGradient>
-            </Defs>
             <AnimatedPath
               animatedProps={animatedProps}
-              fill="url(#litFillGrad)"
+              fill={colors.litPlus}
             />
           </Svg>
         </View>

@@ -1,4 +1,5 @@
 import React, { useEffect, useMemo, useRef, useState } from "react";
+import { useTranslation } from "react-i18next";
 import {
   View,
   Text,
@@ -32,13 +33,6 @@ import AppModal from "@/shared/components/AppModal";
 import CityPickerModal from "@/features/discover/components/CityPickerModal";
 import { useCities } from "@/shared/queries/commonQueries";
 import { colors } from "../../../shared/theme/colors";
-
-const GENDER_OPTIONS = [
-  { label: "Erkek", value: "Male", icon: Mars },
-  { label: "Kadın", value: "Female", icon: Venus },
-  { label: "Non-Binary", value: "NonBinary", icon: Transgender },
-  { label: "Diğer", value: "Other", icon: VenusAndMars },
-];
 
 // Backend (DiscoveryOptions.FreeMaxDistanceKm) bunu zaten 50'ye clamp ediyor — UI'da da
 // aynı sınırı görünür hâle getir, kullanıcı 100 yazıp 50 sonuç alıp şaşırmasın.
@@ -376,6 +370,15 @@ export default function FilterModal({
   onSave,
   saving,
 }: any) {
+  const { t } = useTranslation();
+
+  const genderOptions = useMemo(() => [
+    { label: t('discover.filters.gender.male'), value: "Male", icon: Mars },
+    { label: t('discover.filters.gender.female'), value: "Female", icon: Venus },
+    { label: t('discover.filters.gender.nonBinary'), value: "NonBinary", icon: Transgender },
+    { label: t('discover.filters.gender.other'), value: "Other", icon: VenusAndMars },
+  ], [t]);
+
   // Free user için maxDistance'ı initial state'te de clamp et — backend zaten yapıyor
   // ama UI bunu yansıtmazsa kullanıcı "100 km" görür, sonuç 50 km içinden gelir → şaşırır.
   const clampFiltersForFree = (f: any) => {
@@ -433,8 +436,8 @@ export default function FilterModal({
     <AppModal
       visible={visible}
       onClose={onClose}
-      title="Filtreler"
-      actionLabel="Uygula"
+      title={t('discover.filters.title')}
+      actionLabel={t('discover.filters.apply')}
       onAction={() => {
         Keyboard.dismiss();
         // Yaş filtresi UI'dan kaldırıldı — backend'e her zaman tüm yaşları
@@ -449,11 +452,11 @@ export default function FilterModal({
     >
       {/* Maksimum Mesafe */}
       <FilterSection
-        title="Maksimum Mesafe"
+        title={t('discover.filters.maxDistance.title')}
         description={
           isPremium
-            ? "Eşleşmek istediğin kullanıcıların maksimum uzaklığını belirle. Daireyi parmağınla sürükleyerek ayarlayabilirsin."
-            : `Eşleşmek istediğin kullanıcıların maksimum uzaklığını belirle. Ücretsiz üyelikte bu mesafe ${FREE_MAX_DISTANCE_KM} km ile sınırlıdır; daha geniş bir aralık için Premium üyelik gerekir.`
+            ? t('discover.filters.maxDistance.descPremium')
+            : t('discover.filters.maxDistance.descFree', { limit: FREE_MAX_DISTANCE_KM })
         }
         marginTop={20}
       />
@@ -467,11 +470,11 @@ export default function FilterModal({
 
       {/* Cinsiyet */}
       <FilterSection
-        title="Cinsiyet"
-        description="Hangi cinsiyetteki kullanıcıları görmek istediğini seç."
+        title={t('discover.filters.gender.title')}
+        description={t('discover.filters.gender.description')}
       />
       <View style={{ flexDirection: "row", flexWrap: "wrap", gap: 8 }}>
-        {GENDER_OPTIONS.map((opt) => {
+        {genderOptions.map((opt) => {
           const selected = (local.genders || []).includes(opt.value);
           const Icon = opt.icon;
           return (
@@ -520,8 +523,8 @@ export default function FilterModal({
         }}
       >
         <FilterSection
-          title="Şehir"
-          description="Belirli bir şehirden kullanıcıları gör."
+          title={t('discover.filters.city.title')}
+          description={t('discover.filters.city.description')}
           locked={!isPremium}
         />
         <TouchableOpacity
@@ -558,7 +561,7 @@ export default function FilterModal({
                 fontWeight: "500",
               }}
             >
-              {selectedCityName || "Şehir Seç"}
+              {selectedCityName || t('profile.edit.selectCity')}
             </Text>
           </View>
           {selectedCityName ? (
@@ -578,8 +581,8 @@ export default function FilterModal({
       {/* Üniversite — backend endpoint'i (uni listesi) hazır olana kadar disabled.
           Premium ya da değil fark etmez; "Yakında" olarak göster. */}
       <FilterSection
-        title="Üniversite"
-        description="Yakında: belirli bir üniversiteden kullanıcıları görebileceksin."
+        title={t('discover.filters.university.title')}
+        description={t('discover.filters.university.description')}
       />
       <View
         style={{
@@ -599,7 +602,7 @@ export default function FilterModal({
       >
         <Lock size={16} color={colors.textSecondary} />
         <Text style={{ color: colors.textSecondary, fontSize: 15, fontWeight: "500" }}>
-          Yakında
+          {t('discover.filters.university.comingSoon')}
         </Text>
       </View>
 

@@ -18,8 +18,10 @@ import { useForm, Controller } from "react-hook-form";
 import { zodResolver } from "@hookform/resolvers/zod";
 import { dobSchema, DobForm } from "@/shared/schemas/formSchemas";
 import { colors } from "../../../shared/theme/colors";
+import { useTranslation } from 'react-i18next';
 
 export default function RegisterStep6Screen({ navigation }: NativeStackScreenProps<AuthStackParamList, 'RegisterStep6'>) {
+  const { t } = useTranslation();
   const dispatch = useAppDispatch();
   const persistedDob = useAppSelector((s) => (s as any).auth.registrationForm.dateOfBirth);
 
@@ -97,16 +99,16 @@ export default function RegisterStep6Screen({ navigation }: NativeStackScreenPro
       <TouchableWithoutFeedback onPress={Keyboard.dismiss}>
         <View className="flex-1 px-6 py-6 pt-0">
           <View className="flex flex-col gap-2">
-            <Text className="text-4xl font-bold text-white">Yaşını gir.</Text>
+            <Text className="text-4xl font-bold text-white">{t('auth.step6.title')}</Text>
             <Text className="text-[18px] font-normal text-gray-400 mb-6">
-              Doğum tarihin, doğru eşleşmeler bulmamıza yardımcı olur.
+              {t('auth.step6.description')}
             </Text>
           </View>
 
           <View style={{ flexDirection: "row", alignItems: "center", gap: 8 }}>
             <View style={{ flex: 1 }}>
               <Text className="text-gray-300 text-[14px] font-semibold mb-2 text-center">
-                Gün
+                {t('auth.step6.dayLabel')}
               </Text>
               <Controller
                 control={control}
@@ -115,7 +117,7 @@ export default function RegisterStep6Screen({ navigation }: NativeStackScreenPro
                   <TextInput
                     ref={dayRef}
                     style={inputStyle(!!errors.day)}
-                    placeholder="gg"
+                    placeholder={t('auth.step6.dayPlaceholder')}
                     placeholderTextColor={colors.neutral700}
                     keyboardType="number-pad"
                     maxLength={2}
@@ -136,7 +138,7 @@ export default function RegisterStep6Screen({ navigation }: NativeStackScreenPro
 
             <View style={{ flex: 1 }}>
               <Text className="text-gray-300 text-[14px] font-semibold mb-2 text-center">
-                Ay
+                {t('auth.step6.monthLabel')}
               </Text>
               <Controller
                 control={control}
@@ -145,7 +147,7 @@ export default function RegisterStep6Screen({ navigation }: NativeStackScreenPro
                   <TextInput
                     ref={monthRef}
                     style={inputStyle(!!errors.month)}
-                    placeholder="aa"
+                    placeholder={t('auth.step6.monthPlaceholder')}
                     placeholderTextColor={colors.neutral700}
                     keyboardType="number-pad"
                     maxLength={2}
@@ -167,7 +169,7 @@ export default function RegisterStep6Screen({ navigation }: NativeStackScreenPro
 
             <View style={{ flex: 2 }}>
               <Text className="text-gray-300 text-[14px] font-semibold mb-2 text-center">
-                Yıl
+                {t('auth.step6.yearLabel')}
               </Text>
               <Controller
                 control={control}
@@ -176,7 +178,7 @@ export default function RegisterStep6Screen({ navigation }: NativeStackScreenPro
                   <TextInput
                     ref={yearRef}
                     style={inputStyle(!!errors.year)}
-                    placeholder="yyyy"
+                    placeholder={t('auth.step6.yearPlaceholder')}
                     placeholderTextColor={colors.neutral700}
                     keyboardType="number-pad"
                     maxLength={4}
@@ -216,7 +218,7 @@ export default function RegisterStep6Screen({ navigation }: NativeStackScreenPro
             }}
           >
             <Text className="text-white py-[20px] font-bold text-[15px] text-center">
-              Devam Et
+              {t('common.continueButton')}
             </Text>
           </AnimatedPressable>
         </View>

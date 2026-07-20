@@ -9,6 +9,7 @@ import {
   Pressable,
   ScrollView,
 } from 'react-native';
+import { useTranslation } from 'react-i18next';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { X, Flag } from 'lucide-react-native';
 import moderationService, { REPORT_REASON_LABELS_TR } from '@/shared/services/moderationService';
@@ -25,6 +26,7 @@ export default function ReportModal({
   messageId,
   onSuccess,
 }: any) {
+  const { t } = useTranslation();
   const insets = useSafeAreaInsets();
 
   const { control, handleSubmit, reset, watch, formState: { isSubmitting } } = useForm<ReportForm>({
@@ -51,16 +53,16 @@ export default function ReportModal({
         messageId,
       });
       Alert.alert(
-        'Şikayet alındı',
-        'Ekibimiz en kısa sürede inceleyecek. Güvende kalman önemli.',
-        [{ text: 'Tamam', onPress: () => { reset(); onClose?.(); onSuccess?.(); } }],
+        t('moderation.report.successTitle'),
+        t('moderation.report.successMessage'),
+        [{ text: t('common.ok'), onPress: () => { reset(); onClose?.(); onSuccess?.(); } }],
       );
     } catch (err: any) {
       const status = err?.response?.status;
       if (status === 409) {
-        Alert.alert('Bilgi', 'Bu kullanıcıyı son 24 saatte zaten şikayet ettin.');
+        Alert.alert(t('common.info'), t('moderation.report.alreadyReported'));
       } else {
-        Alert.alert('Hata', err?.response?.data?.message || 'Şikayet gönderilemedi.');
+        Alert.alert(t('common.error'), err?.response?.data?.message || t('moderation.report.error'));
       }
     }
   });
@@ -76,14 +78,14 @@ export default function ReportModal({
             <X size={24} color={colors.text} />
           </TouchableOpacity>
           <Text className="text-white text-base font-semibold flex-1 ml-2">
-            Kullanıcıyı Şikayet Et
+            {t('moderation.report.title')}
           </Text>
         </View>
 
         <ScrollView contentContainerStyle={{ padding: 20 }}>
           <View className="flex-row items-center mb-4">
             <Flag size={20} color={colors.primary} />
-            <Text className="text-white text-base font-semibold ml-2">Şikayet sebebi</Text>
+            <Text className="text-white text-base font-semibold ml-2">{t('moderation.report.reasonLabel')}</Text>
           </View>
 
           <Controller
@@ -122,7 +124,7 @@ export default function ReportModal({
           />
 
           <Text className="text-white text-base font-semibold mt-6 mb-2">
-            Detay (opsiyonel)
+            {t('moderation.report.detailLabel')}
           </Text>
           <Controller
             control={control}
@@ -131,7 +133,7 @@ export default function ReportModal({
               <TextInput
                 value={value}
                 onChangeText={onChange}
-                placeholder="Olayı kısaca anlat…"
+                placeholder={t('moderation.report.detailPlaceholder')}
                 placeholderTextColor={colors.textMuted}
                 multiline
                 maxLength={1000}
@@ -141,12 +143,11 @@ export default function ReportModal({
             )}
           />
           <Text className="text-gray-500 text-xs mt-2 text-right">
-            {description.length}/1000
+            {t('moderation.report.characterCount', { count: description.length })}
           </Text>
 
           <Text className="text-gray-500 text-xs mt-6 leading-5">
-            Şikayetler ekibimiz tarafından incelenir. Kasıtlı yanlış şikayetler hesabının
-            kısıtlanmasına neden olabilir.
+            {t('moderation.report.disclaimer')}
           </Text>
         </ScrollView>
 
