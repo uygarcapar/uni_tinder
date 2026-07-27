@@ -1,5 +1,6 @@
 import { createSlice, createAsyncThunk, PayloadAction } from '@reduxjs/toolkit';
 import chatService from '@/features/chat/chatService';
+import { messageContentEqual } from '@/features/chat/messageEquality';
 import type {
   ChatState,
   MessageDto,
@@ -9,17 +10,31 @@ import type {
 } from '@/shared/types';
 
 const QUOTA_STALE_MS = 30_000;
+const CONVERSATIONS_STALE_MS = 15_000;
 
 type FetchChatQuotaArg = string | { conversationId: string; force?: boolean };
 
+// force:true → staleness bypass (reconnect, unmatch/restore gibi mutasyon-sonrası
+// tazelemeler). Force'suz çağrılar 15sn staleness + in-flight guard'ına takılır —
+// boot'taki AppNavigator+MessagesScreen çifte fetch'i teke iner.
 export const fetchConversations = createAsyncThunk(
   'chat/fetchConversations',
-  async (_, { rejectWithValue }) => {
+  // `| void`: çıplak fetchConversations() çağrıları (0 argüman) tip-geçerli kalsın.
+  async (_arg: { force?: boolean } | void, { rejectWithValue }) => {
     try {
       return await chatService.getConversations() as ConversationListItemDto[];
     } catch (e: any) {
       return rejectWithValue(e?.response?.data?.message || e?.message || 'Failed');
     }
+  },
+  {
+    condition: (arg, { getState }) => {
+      if (arg && (arg as { force?: boolean }).force) return true;
+      const chat = (getState() as any).chat;
+      if (chat?.conversationsLoading) return false; // in-flight dedupe
+      const stamp = chat?._conversationsFetchedAt;
+      return !stamp || Date.now() - stamp > CONVERSATIONS_STALE_MS;
+    },
   }
 );
 
@@ -35,6 +50,18 @@ export const fetchHistory = createAsyncThunk(
     } catch (e: any) {
       return rejectWithValue(e?.response?.data?.message || e?.message || 'Failed');
     }
+  },
+  {
+    // In-flight dedupe: aynı konuşma için bir history fetch'i uçuştayken
+    // ikincisini atma. MessagesScreen'in prefetch'i ile ChatScreen'in giriş
+    // reconcile'ı aynı saniyede yarışıp AYNI history-cursor isteğini iki kez
+    // atıyordu (Sentry trace kanıtlı). Bucket loading'i tek olduğu için farklı
+    // cursor'lu (pagination) eşzamanlı istek de zaten yarış üretirdi — o da
+    // bekler; ChatScreen pagination'ı loadingHistory ile ayrıca gate'li.
+    condition: ({ conversationId }, { getState }) => {
+      const bucket = (getState() as any).chat?.messagesByConv?.[conversationId];
+      return !bucket?.loading;
+    },
   }
 );
 
@@ -230,6 +257,29 @@ const chatSlice = createSlice({
       if (m && !m.deliveredAt) m.deliveredAt = deliveredAt;
     },
 
+    // AppNavigator, ardışık MessageDelivered push'larını ~50ms tamponlayıp tek
+    // dispatch'e indiriyor (mount anındaki delivered-ack fırtınasında N array-rebuild
+    // yerine 1). Her batch item'ı idempotent uygulanır.
+    messagesDeliveredBatch: (
+      state,
+      action: PayloadAction<{ messageId: string; conversationId: string; deliveredAt: string }[]>
+    ) => {
+      // Bucket başına tek geçişte id→mesaj indeksi kur — item başına find
+      // (O(n·m)) yerine O(n+m). Mount fırtınasında batch yüzlerce ack taşıyabilir.
+      const indexByConv = new Map<string, Map<string, MessageDto>>();
+      for (const { messageId, conversationId, deliveredAt } of action.payload) {
+        const bucket = state.messagesByConv[conversationId];
+        if (!bucket) continue;
+        let byId = indexByConv.get(conversationId);
+        if (!byId) {
+          byId = new Map(bucket.messages.map((x) => [x.id, x]));
+          indexByConv.set(conversationId, byId);
+        }
+        const m = byId.get(messageId);
+        if (m && !m.deliveredAt) m.deliveredAt = deliveredAt;
+      }
+    },
+
     messageEdited: (state, action: PayloadAction<MessageDto>) => {
       const msg = action.payload;
       const bucket = state.messagesByConv[msg.conversationId];
@@ -393,6 +443,10 @@ const chatSlice = createSlice({
       })
       .addCase(fetchConversations.fulfilled, (state, action) => {
         state.conversationsLoading = false;
+        // Staleness gate + AppNavigator whenBootSettled bu damgayı okur.
+        // (Tip'te öteden beri vardı ama hiç yazılmıyordu — boot-settle hep
+        // 3.5s timeout'a düşüyordu.)
+        state._conversationsFetchedAt = Date.now();
         const merged = action.payload.map((serverConv) => {
           const localConv = state.conversations.find(
             (c) => c.conversationId === serverConv.conversationId,
@@ -434,12 +488,86 @@ const chatSlice = createSlice({
         if (append) {
           const existing = new Set(bucket.messages.map((m) => m.id));
           bucket.messages = [...bucket.messages, ...messages.filter((m: MessageDto) => !existing.has(m.id))];
+          bucket.nextCursor = nextCursor;
+          bucket.hasMore = hasMore;
         } else {
-          const pendingTop = bucket.messages.filter((m) => m._pending);
-          bucket.messages = [...pendingTop, ...messages];
+          // Reconcile MERGE — körlemesine REPLACE değil. REPLACE her chat girişinde
+          // tüm mesaj referanslarını yenileyip (LegendList "structural data change"
+          // → tam container reset) yüklenmiş 2.+ sayfaları atıyordu; kullanıcı o
+          // sırada eski mesajlara bakıyorsa balonlar silinip geri geliyordu.
+          const old = bucket.messages;
+          const oldById = new Map<string, MessageDto>();
+          const oldByClientId = new Map<string, MessageDto>();
+          for (const m of old) {
+            if (m.id) oldById.set(m.id, m);
+            if (m.clientMessageId) oldByClientId.set(m.clientMessageId, m);
+          }
+
+          // Server penceresi server-authoritative: alan farkı varsa server kopyası
+          // kazanır (kaçan edit/delete/receipt düzelir); alanlar eşitse ESKİ referans
+          // korunur. clientMessageId'yi kaybetme — keyExtractor ona bakıyor; düşerse
+          // item key'i değişir, MVCP çapası ve container'ı gider.
+          const merged = (messages as MessageDto[]).map((sm) => {
+            const om =
+              oldById.get(sm.id) ??
+              (sm.clientMessageId ? oldByClientId.get(sm.clientMessageId) : undefined);
+            if (!om) return sm;
+            const withClientId =
+              om.clientMessageId && !sm.clientMessageId
+                ? { ...sm, clientMessageId: om.clientMessageId }
+                : sm;
+            return messageContentEqual(om, withClientId) ? om : withClientId;
+          });
+
+          // Kuyruk (önceden yüklenmiş 2.+ sayfalar) yalnız pencereler ÇAKIŞIYORSA
+          // korunur: server sayfasının en eski mesajı bucket'ta yoksa arada cursor'ın
+          // dolduramayacağı delik oluşur — o durumda eski REPLACE davranışına düş.
+          const serverIds = new Set(merged.map((m) => m.id));
+          const oldestServer = messages.length
+            ? (messages[messages.length - 1] as MessageDto)
+            : null;
+          const windowsOverlap = !!oldestServer && oldById.has(oldestServer.id);
+          let tail: MessageDto[] = [];
+          if (windowsOverlap) {
+            const oldestT = new Date(oldestServer!.sentAt).getTime();
+            tail = old.filter(
+              (m) =>
+                !m._pending &&
+                !serverIds.has(m.id) &&
+                new Date(m.sentAt).getTime() < oldestT,
+            );
+          }
+
+          // Optimistic'ler: server cevabında karşılığı olanlar merge'e girdi; henüz
+          // dönmemiş olanlar en başta (en yeni uç) kalır.
+          const serverClientIds = new Set(
+            (messages as MessageDto[]).map((m) => m.clientMessageId).filter(Boolean),
+          );
+          const pendingTop = old.filter(
+            (m) =>
+              m._pending &&
+              !serverIds.has(m.id) &&
+              !(m.clientMessageId && serverClientIds.has(m.clientMessageId)),
+          );
+
+          const next = [...pendingTop, ...merged, ...tail];
+          // Hiçbir şey değişmediyse array identity'yi de koru: selector aynı referansı
+          // döner → messagesWithSeparators useMemo hiç çalışmaz → LegendList uyanmaz.
+          // (Tekrar girişteki reconcile'ın en yaygın sonucu tam da budur.)
+          const unchanged =
+            next.length === old.length && next.every((m, i) => m === old[i]);
+          if (!unchanged) bucket.messages = next;
+
+          if (tail.length > 0 && bucket.nextCursor) {
+            // Derin sayfalama durumu: kuyruk + geçerli derin cursor aynen kalır;
+            // server'ın sayfa-1 cursor'ını yazmak kuyruğu yeniden indirtirdi.
+          } else {
+            // Kuyruk yok ya da cursor null (persist transform null'lar) — server'ın
+            // cursor'ı ile onar; kuyrukla overlap zararsız, append dalı id-dedupe'lu.
+            bucket.nextCursor = nextCursor;
+            bucket.hasMore = hasMore;
+          }
         }
-        bucket.nextCursor = nextCursor;
-        bucket.hasMore = hasMore;
         bucket.loading = false;
         state.messagesByConv[conversationId] = bucket;
       })
@@ -468,6 +596,7 @@ export const {
   messagesRead,
   clearUnreadForConversation,
   messageDelivered,
+  messagesDeliveredBatch,
   messageEdited,
   messageDeleted,
   reactionsChanged,

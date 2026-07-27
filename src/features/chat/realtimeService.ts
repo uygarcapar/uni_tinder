@@ -8,6 +8,7 @@ import {
 import { HUB_URL } from '@/shared/constants/api';
 import { getCurrentAccessToken, refreshAccessToken } from '@/shared/services/api';
 import { isTokenExpiringSoon } from '@/shared/utils/jwt';
+import { reportError } from '@/shared/services/sentry';
 
 type EventCallback = (...args: any[]) => void;
 
@@ -148,6 +149,9 @@ class RealtimeService {
     });
     conn.onclose((err) => {
       console.log('🔴 SignalR closed:', err?.message);
+      // Hatalı (err'li) kapanışları raporla — sessiz realtime kopmaları görünür
+      // olsun. Normal kapanışlarda (err yok) raporlama yapılmaz. DSN yoksa no-op.
+      if (err) reportError(err, { source: 'signalr-onclose' });
       this._emit('__connectionStateChanged', 'disconnected');
       const wasIntentional = this._intentionalDisconnect;
       this.connection = null;

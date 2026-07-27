@@ -27,38 +27,39 @@ describe('ReplyPreview', () => {
     expect(tree.getByText('Selam!')).toBeTruthy();
   });
 
-  it('falls back to "Kullanıcı" when senderDisplayName is missing', () => {
+  // i18n dönüşümü sonrası: test ortamında t() KEY döndürür (repo konvansiyonu).
+  it('falls back to default user name key when senderDisplayName is missing', () => {
     const tree = render(
       <ReplyPreview reply={{ contentPreview: 'x', contentType: 0 }} />
     );
-    expect(tree.getByText('Kullanıcı')).toBeTruthy();
+    expect(tree.getByText('chat.defaultUserName')).toBeTruthy();
   });
 
-  it('shows "Silinmiş" sender and "Bu mesaj silindi" preview when isDeleted', () => {
+  it('shows deleted sender + deleted message keys when isDeleted', () => {
     const tree = render(<ReplyPreview reply={{ isDeleted: true }} />);
-    expect(tree.getByText('Silinmiş')).toBeTruthy();
-    expect(tree.getByText('Bu mesaj silindi')).toBeTruthy();
+    expect(tree.getByText('chat.replyPreview.deletedSender')).toBeTruthy();
+    expect(tree.getByText('chat.replyPreview.deletedMessage')).toBeTruthy();
   });
 
   it('shows the media label for image content', () => {
     const tree = render(
       <ReplyPreview reply={{ senderDisplayName: 'A', contentType: 1 }} />
     );
-    expect(tree.getByText('📷 Fotoğraf')).toBeTruthy();
+    expect(tree.getByText('📷 chat.messages.mediaPhoto')).toBeTruthy();
   });
 
   it('shows the media label for voice content', () => {
     const tree = render(
       <ReplyPreview reply={{ senderDisplayName: 'A', contentType: 2 }} />
     );
-    expect(tree.getByText('🎙️ Sesli mesaj')).toBeTruthy();
+    expect(tree.getByText('🎙️ chat.messages.mediaVoice')).toBeTruthy();
   });
 
   it('shows the media label for video content', () => {
     const tree = render(
       <ReplyPreview reply={{ senderDisplayName: 'A', contentType: 3 }} />
     );
-    expect(tree.getByText('🎬 Video')).toBeTruthy();
+    expect(tree.getByText('🎬 chat.messages.mediaVideo')).toBeTruthy();
   });
 
   it('shows "..." when text preview is empty', () => {

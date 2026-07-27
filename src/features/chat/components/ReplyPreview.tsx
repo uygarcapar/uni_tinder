@@ -1,5 +1,7 @@
-import { View, Text, TouchableOpacity, Image } from 'react-native';
-import { X, Image as ImageIcon, Mic, Video as VideoIcon, MessageSquareReply } from 'lucide-react-native';
+import { View, Text, TouchableOpacity } from 'react-native';
+import { X, MessageSquareReply } from 'lucide-react-native';
+import SFIcon from '@/shared/components/SFIcon';
+import { useTranslation } from 'react-i18next';
 import { colors } from '../../../shared/theme/colors';
 
 /**
@@ -8,13 +10,16 @@ import { colors } from '../../../shared/theme/colors';
  *  2) `mode="bubble"` — bir mesajın bubble'ı içindeki gömülü "şuna yanıt" kapsülü
  */
 export default function ReplyPreview({ reply, mode = 'composing', onCancel, isOwn }: any) {
+  const { t } = useTranslation();
   if (!reply) return null;
 
-  const senderName = reply.senderDisplayName || (reply.isDeleted ? 'Silinmiş' : 'Kullanıcı');
+  const senderName =
+    reply.senderDisplayName ||
+    (reply.isDeleted ? t('chat.replyPreview.deletedSender') : t('chat.defaultUserName'));
   const preview = reply.isDeleted
-    ? 'Bu mesaj silindi'
+    ? t('chat.replyPreview.deletedMessage')
     : reply.contentType !== 0 && reply.contentType !== undefined
-      ? mediaLabel(reply.contentType)
+      ? mediaLabel(reply.contentType, t)
       : (reply.contentPreview || '...');
 
   const containerCls = mode === 'composing'
@@ -24,7 +29,7 @@ export default function ReplyPreview({ reply, mode = 'composing', onCancel, isOw
   return (
     <View className={containerCls}>
       {mode === 'composing' && (
-        <MessageSquareReply size={16} color={colors.primary} style={{ marginRight: 8 }} />
+        <SFIcon name="arrowshape.turn.up.left.fill" fallback={MessageSquareReply} size={16} color={colors.primary} style={{ marginRight: 8 }} />
       )}
       <View style={{ flex: 1 }}>
         <Text className="text-primary text-xs font-semibold" numberOfLines={1}>
@@ -36,19 +41,20 @@ export default function ReplyPreview({ reply, mode = 'composing', onCancel, isOw
       </View>
       {mode === 'composing' && (
         <TouchableOpacity onPress={onCancel} hitSlop={8}>
-          <X size={18} color={colors.textSecondary} />
+          <SFIcon name="xmark" fallback={X} size={18} color={colors.textSecondary} />
         </TouchableOpacity>
       )}
     </View>
   );
 }
 
-function mediaLabel(contentType) {
+// Eski (media'lı) mesajlara yanıt verilmiş olabilir — etiketler locale'den.
+function mediaLabel(contentType: number, t: (key: string) => string) {
   // MessageContentType: 0 Text, 1 Image, 2 Voice, 3 Video, 99 System
   switch (contentType) {
-    case 1: return '📷 Fotoğraf';
-    case 2: return '🎙️ Sesli mesaj';
-    case 3: return '🎬 Video';
+    case 1: return `📷 ${t('chat.messages.mediaPhoto')}`;
+    case 2: return `🎙️ ${t('chat.messages.mediaVoice')}`;
+    case 3: return `🎬 ${t('chat.messages.mediaVideo')}`;
     default: return '...';
   }
 }

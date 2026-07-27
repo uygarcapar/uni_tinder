@@ -1,0 +1,298 @@
+import { memo, useCallback, useMemo, useRef, useState } from "react";
+import {
+  View,
+  Text,
+  TextInput,
+  TouchableOpacity,
+  StyleSheet,
+  Platform,
+} from "react-native";
+import type { LayoutChangeEvent } from "react-native";
+import { BlurView } from "expo-blur";
+import MaskedView from "@react-native-masked-view/masked-view";
+import { LinearGradient } from "expo-linear-gradient";
+import { easeGradient } from "react-native-easing-gradient";
+import { Lock, ArrowUp, Plus } from "lucide-react-native";
+import SFIcon from "@/shared/components/SFIcon";
+import * as Haptics from "expo-haptics";
+import { useSafeAreaInsets } from "react-native-safe-area-context";
+import { useTranslation } from "react-i18next";
+import ReplyPreview from "@/features/chat/components/ReplyPreview";
+import { newClientMessageId } from "@/features/chat/clientMessageId";
+import { colors } from "../../../shared/theme/colors";
+import { withProfiler } from "@sentry/react-native";
+
+const IS_IOS = Platform.OS === "ios";
+const TYPING_DEBOUNCE_MS = 1500;
+
+const styles = StyleSheet.create({
+  // Ayna Text'ler: TextInput ile aynı doğal font metriği, görünmez, dokunmaz.
+  mirror: {
+    position: "absolute",
+    left: 0,
+    right: 0,
+    opacity: 0,
+    fontSize: 17,
+  },
+});
+
+type Props = {
+  // Opak composer gövdesinin ölçümü (LegendList composer inset hook'una gider).
+  // ÖNEMLİ: 30pt'lik gradient üst boşluğu ölçüme DAHİL DEĞİL — inset yalnız opak
+  // kısmı rezerve eder; mesajlar fade'in altına doğal kayar (eski build görünümü),
+  // ve mount'taki 66→~124 inset zıplaması olmaz.
+  composerRef?: any;
+  onComposerLayout?: (e: LayoutChangeEvent) => void;
+  replyTo?: any;
+  onCancelReply?: () => void;
+  onSend: (payload: {
+    content: string;
+    replyToMessageId?: string;
+    clientMessageId: string;
+  }) => void;
+  onTypingChange?: (isTyping: boolean) => void;
+  disabled?: boolean;
+  quotaLocked?: boolean;
+  onLockedPress?: () => void;
+};
+
+/**
+ * Mesaj yazma çubuğu — RN TextInput + BlurView (SwiftUI YOK, media YOK).
+ *
+ * TextInput UNCONTROLLED: `value` geri basılmaz (New Arch'ta her tuşta
+ * JS→native round-trip yazma akıcılığını bozuyor). State yalnız showSend/typing
+ * için tutulur; temizleme ref.clear() ile.
+ */
+function MessageComposer({
+  composerRef,
+  onComposerLayout,
+  replyTo,
+  onCancelReply,
+  onSend,
+  onTypingChange,
+  disabled,
+  quotaLocked,
+  onLockedPress,
+}: Props) {
+  const insets = useSafeAreaInsets();
+  const { t } = useTranslation();
+  const [text, setText] = useState("");
+  // New Arch'ta multiline auto-grow / onContentSizeChange güvenilmez; yükseklik
+  // görünmez ayna Text'lerden ölçülür. Satır yüksekliği de ölçülür (lineH) —
+  // sabit lineHeight vermek olmuyor, iOS TextInput lineHeight stilini Text gibi
+  // uygulamıyor ve satır ortadan kesiliyordu.
+  const [lineH, setLineH] = useState(0);
+  const [contentH, setContentH] = useState(0);
+  const inputRef = useRef<TextInput>(null);
+  const isTypingRef = useRef(false);
+  const typingTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
+
+  // Alt-fade progressive blur (ChatHeader blur'unun ters yönü).
+  const { colors: maskColors, locations: maskLocations } = useMemo(
+    () =>
+      easeGradient({
+        colorStops: {
+          0: { color: "transparent" },
+          0.5: { color: "black" },
+          1: { color: "rgba(0,0,0,0.99)" },
+        },
+      }),
+    [],
+  );
+
+  const emitTyping = useCallback(
+    (value: string) => {
+      if (!onTypingChange) return;
+      if (value.length > 0 && !isTypingRef.current) {
+        isTypingRef.current = true;
+        onTypingChange(true);
+      }
+      if (typingTimer.current) clearTimeout(typingTimer.current);
+      typingTimer.current = setTimeout(() => {
+        if (isTypingRef.current) {
+          isTypingRef.current = false;
+          onTypingChange(false);
+        }
+      }, TYPING_DEBOUNCE_MS);
+    },
+    [onTypingChange],
+  );
+
+  const handleChangeText = useCallback(
+    (value: string) => {
+      setText(value);
+      emitTyping(value);
+    },
+    [emitTyping],
+  );
+
+  const handleSend = useCallback(() => {
+    const trimmed = text.trim();
+    if (!trimmed || disabled || quotaLocked) return;
+    if (isTypingRef.current && onTypingChange) {
+      isTypingRef.current = false;
+      onTypingChange(false);
+    }
+    if (typingTimer.current) clearTimeout(typingTimer.current);
+    Haptics.selectionAsync().catch(() => {});
+    onSend({
+      content: trimmed,
+      replyToMessageId: replyTo?.id,
+      clientMessageId: newClientMessageId(),
+    });
+    inputRef.current?.clear();
+    setText("");
+    setContentH(0);
+  }, [text, disabled, quotaLocked, onTypingChange, onSend, replyTo?.id]);
+
+  const placeholder = !disabled
+    ? quotaLocked
+      ? t("chat.input.quotaReached")
+      : t("chat.input.placeholder")
+    : t("chat.input.closed");
+
+  const canSend = !!text.trim() && !quotaLocked && !disabled;
+
+  // Yükseklik = satır sayısı × ölçülen gerçek satır yüksekliği — hep tam satıra
+  // oturur, satır ortadan kesilmez. 3 satır tavanı, sonrası input içinde kayar.
+  const lineCount =
+    lineH > 0 ? Math.max(1, Math.min(3, Math.round(contentH / lineH))) : 1;
+  const inputHeight = lineH > 0 ? lineCount * lineH : 22;
+
+  return (
+    <View style={{ paddingTop: 30 }}>
+      <View style={StyleSheet.absoluteFill} pointerEvents="none">
+        <MaskedView
+          maskElement={
+            <LinearGradient
+              locations={maskLocations as any}
+              colors={maskColors as any}
+              style={StyleSheet.absoluteFill}
+            />
+          }
+          style={StyleSheet.absoluteFill}
+        >
+          <LinearGradient
+            colors={["rgba(0, 0, 0, 0.2)", "black"]}
+            style={StyleSheet.absoluteFill}
+          />
+          <BlurView
+            intensity={15}
+            tint={IS_IOS ? "systemChromeMaterialDark" : "systemMaterialDark"}
+            style={StyleSheet.absoluteFill}
+          />
+        </MaskedView>
+      </View>
+
+      {/* Opak gövde — inset ölçümü BU düğümde (gradient hariç). */}
+      <View
+        ref={composerRef}
+        onLayout={onComposerLayout}
+        style={{ paddingBottom: insets.bottom }}
+      >
+        {replyTo && (
+          <ReplyPreview reply={replyTo} mode="composing" onCancel={onCancelReply} />
+        )}
+
+        <View className="px-3 py-2">
+          <BlurView
+            intensity={80}
+            tint={IS_IOS ? "systemChromeMaterialDark" : "systemMaterialDark"}
+            style={{
+              minHeight: 44,
+              // Güvenlik tavanı — gerçek sınır inputHeight (3 satır × ölçülen lineH).
+              maxHeight: 82,
+              borderRadius: 22,
+              // BlurView'da köşe yuvarlatma ancak overflow hidden ile çalışır.
+              overflow: "hidden",
+              paddingLeft: 8,
+              paddingRight: 8,
+              paddingVertical: 8,
+              backgroundColor: "rgba(255,255,255,0.04)",
+              flexDirection: "row",
+              alignItems: "center",
+              gap: 8,
+            }}
+          >
+            {/* Şimdilik işlevsiz — gönder butonuyla aynı yeri kaplar (medya eki için rezerve). */}
+            <View
+              style={{
+                width: 33,
+                height: 32,
+                marginVertical: -2,
+                alignSelf: "flex-end",
+                alignItems: "center",
+                justifyContent: "center",
+              }}
+            >
+              <SFIcon name="plus" fallback={Plus} size={30} strokeWidth={2} weight="semibold" color="#fff" />
+            </View>
+
+            <View style={{ flex: 1 }}>
+              {/* Görünmez aynalar: TextInput ile aynı font, lineHeight stili YOK
+                  (iOS TextInput ona uymuyor — doğal metrik ikisinde de aynı).
+                  İlki tek satır yüksekliğini, ikincisi içerik yüksekliğini ölçer.
+                  ZWSP, sondaki \n'in de satır sayması için. */}
+              <Text
+                style={styles.mirror}
+                onLayout={(e) => setLineH(e.nativeEvent.layout.height)}
+              >
+                {" "}
+              </Text>
+              <Text
+                style={styles.mirror}
+                onLayout={(e) => setContentH(e.nativeEvent.layout.height)}
+              >
+                {(text || " ") + "​"}
+              </Text>
+              <TextInput
+                ref={inputRef}
+                nativeID="chat-input"
+                onChangeText={handleChangeText}
+                editable={!disabled && !quotaLocked}
+                placeholder={placeholder}
+                placeholderTextColor={colors.textMuted}
+                multiline
+                maxLength={2000}
+                onPressIn={quotaLocked ? onLockedPress : undefined}
+                style={{
+                  color: colors.text,
+                  fontSize: 17,
+                  padding: 0,
+                  height: inputHeight,
+                }}
+              />
+            </View>
+            {quotaLocked && <SFIcon name="lock.fill" fallback={Lock} size={16} color={colors.textMuted} />}
+
+            {/* Sabit mount: koşullu mount/unmount her tuşta layout zıplatıyordu. */}
+            <TouchableOpacity
+              onPress={handleSend}
+              disabled={!canSend}
+              activeOpacity={0.9}
+              style={{
+                width: 33,
+                height: 32,
+                borderRadius: 16,
+                // 32pt buton, 28pt'lik içerik alanına negatif margin ile sığar —
+                // kutu 44pt'te kalır, input büyümez.
+                marginVertical: -2,
+                alignSelf: "flex-end",
+                alignItems: "center",
+                justifyContent: "center",
+                backgroundColor: colors.messageOwn,
+                opacity: canSend ? 1 : 0.35,
+              }}
+            >
+              <SFIcon name="arrow.up" fallback={ArrowUp} size={20} strokeWidth={2} weight="semibold" color={colors.text} />
+            </TouchableOpacity>
+          </BlurView>
+        </View>
+      </View>
+    </View>
+  );
+}
+
+// Sentry performance: composer mount/update span'leri. memo İÇERİDE kalır —
+// profiler sarmalayıcı prop'ları aynen geçirir, memo karşılaştırması bozulmaz.
+export default withProfiler(memo(MessageComposer), { name: "MessageComposer" });

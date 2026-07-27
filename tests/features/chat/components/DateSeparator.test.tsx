@@ -72,33 +72,34 @@ describe('withDateSeparators', () => {
       { id: 'm1', sentAt: '2026-06-20T10:00:00Z' },
     ]);
     expect(result).toHaveLength(2);
-    expect(result[0].id).toBe('m1');
-    expect(result[1].__separator).toBe(true);
-    expect(result[1].label).toBe('Bugün');
+    expect(result[0].__separator).toBe(true);
+    expect(result[0].label).toBe('Bugün');
+    expect(result[1].id).toBe('m1');
   });
 
-  it('inserts a separator at day boundary (inverted list)', () => {
-    // Inverted: index 0 yenisi, index 1 dünki — aralarına "Bugün" separator gelir.
-    // Mid-UTC saatleri seçildi ki yerel TZ'lerde gün ofseti yaşanmasın.
+  it('inserts a separator at day boundary (chronological list)', () => {
+    // Kronolojik: index 0 dünki, index 1 bugünkü — her günün ilk mesajının
+    // ÖNÜNE separator gelir. Mid-UTC saatleri seçildi ki yerel TZ'lerde gün
+    // ofseti yaşanmasın.
     const result = withDateSeparators([
-      { id: 'today', sentAt: '2026-06-20T12:00:00Z' },
       { id: 'yesterday', sentAt: '2026-06-19T12:00:00Z' },
+      { id: 'today', sentAt: '2026-06-20T12:00:00Z' },
     ]);
     expect(
       result.map((r: any) => (r.__separator ? '__sep' : r.id))
-    ).toEqual(['today', '__sep', 'yesterday', '__sep']);
-    expect(result[1].label).toBe('Bugün');
-    expect(result[3].label).toBe('Dün');
+    ).toEqual(['__sep', 'yesterday', '__sep', 'today']);
+    expect(result[0].label).toBe('Dün');
+    expect(result[2].label).toBe('Bugün');
   });
 
   it('does not insert a separator between messages on the same day', () => {
     const result = withDateSeparators([
-      { id: 'a', sentAt: '2026-06-20T12:00:00Z' },
-      { id: 'b', sentAt: '2026-06-20T08:00:00Z' },
+      { id: 'a', sentAt: '2026-06-20T08:00:00Z' },
+      { id: 'b', sentAt: '2026-06-20T12:00:00Z' },
     ]);
     expect(result).toHaveLength(3);
-    expect(result[0].id).toBe('a');
-    expect(result[1].id).toBe('b');
-    expect(result[2].__separator).toBe(true);
+    expect(result[0].__separator).toBe(true);
+    expect(result[1].id).toBe('a');
+    expect(result[2].id).toBe('b');
   });
 });

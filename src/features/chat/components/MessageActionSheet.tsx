@@ -1,4 +1,4 @@
-import { useEffect } from "react";
+import { useEffect, useRef, useState } from "react";
 import {
   Modal,
   View,
@@ -13,14 +13,17 @@ import Animated, {
   useSharedValue,
   useAnimatedStyle,
   withTiming,
+  interpolate,
+  runOnJS,
   Easing,
 } from "react-native-reanimated";
 import { BlurView } from "expo-blur";
-import MaskedView from "@react-native-masked-view/masked-view";
-import Svg, { Path } from "react-native-svg";
 import { Reply, Pencil, Trash2, Copy } from "lucide-react-native";
+import SFIcon from "@/shared/components/SFIcon";
+import { useTranslation } from "react-i18next";
 import * as Haptics from "expo-haptics";
 import * as Clipboard from "expo-clipboard";
+import ReplyPreview from "@/features/chat/components/ReplyPreview";
 import { colors } from "../../../shared/theme/colors";
 
 const QUICK_EMOJIS = ["❤️", "😂", "😮", "😢", "🔥", "👍"];
@@ -29,13 +32,23 @@ const REACTIONS_HEIGHT = 56;
 const GAP = 10;
 const SAFE_TOP = 60;
 const SAFE_BOTTOM = 40;
-const ACTIONS_ESTIMATED_H = 220;
+const SIDE_MARGIN = 12;
+const ACTION_ROW_H = 47;
+const BUBBLE_RADIUS = 24;
+// Balonun altındaki reaction chip'leri balon dışına bu kadar taşar (MessageBubble bottom:-15).
+const REACTION_CHIP_OVERHANG = 15;
+// Panel (emoji satırı + aksiyon menüsü) arkaplanı: iOS'ta BlurView üstüne yarı
+// saydam surface2 (native UIVisualEffectView — maliyeti ihmal edilebilir);
+// Android'de expo-blur deneysel/pahalı olduğundan solid kalır.
+const PANEL_USE_BLUR = Platform.OS === "ios";
+const PANEL_BG = PANEL_USE_BLUR ? "rgba(31,31,31,0.55)" : colors.surface2;
 
 /**
  * WhatsApp-style mesaj uzun-bas context menu.
- * - 4 BlurView stripi (üst/alt/sol/sağ) ile pill'in rect'ini cut-out yapar →
- *   gerçek bubble olduğu gibi açıkta kalır (clone yok).
- * - Reactions pill'in üstünde, actions altında — bubble'ın kendi tarafına hizalı.
+ * - Gerçek balon yerinde blur altında kalır; modal içinde birebir KLON render edilir.
+ * - Klon, basıldığı konumdan ekranda SABİT bir hedefe animasyonla taşınır —
+ *   emoji satırı ve aksiyon menüsü her zaman bu hedefin üstünde/altında açılır,
+ *   balon ekranın neresinde olursa olsun menü asla boşluğa düşmez.
  * - Tap dışarı (Pressable absoluteFill alttaki katman) → kapatır.
  */
 export default function MessageActionSheet({
@@ -49,36 +62,73 @@ export default function MessageActionSheet({
   onEdit,
   onDelete,
 }: any) {
+  const { t } = useTranslation();
   const progress = useSharedValue(0);
+  const closingRef = useRef(false);
+  // Emoji pill'inin GERÇEK yüksekliği (onLayout) — tahmin yerine ölçüm, yoksa
+  // balonla arasındaki boşluk menü boşluğuyla birebir aynı olmuyor.
+  const [reactionsH, setReactionsH] = useState(REACTIONS_HEIGHT);
+  // Kapanışta klonun döneceği TAZE konum: menü açılırken klavye kapandığından
+  // liste ~klavye yüksekliği kayıyor — basış anındaki rect bayatlıyor. Kapanış
+  // başlamadan layout.remeasure ile güncellenir; null'sa basış rect'i kullanılır.
+  const [returnRect, setReturnRect] = useState<any>(null);
 
   useEffect(() => {
     if (visible) {
+      closingRef.current = false;
+      setReturnRect(null);
+      // Gerçek balonu gizle — görünen artık aşağıdaki klon. Kapanışta
+      // (visible=false) klon yerine oturduğu anda geri gösterilir.
+      layout?.setHidden?.(true);
       progress.value = withTiming(1, {
-        duration: 220,
+        duration: 260,
         easing: Easing.out(Easing.cubic),
       });
     } else {
-      progress.value = withTiming(0, { duration: 150 });
+      layout?.setHidden?.(false);
     }
-  }, [visible, progress]);
+  }, [visible, layout, progress]);
+
+  // Kapanış: önce klon geldiği yoldan geriye kayar (progress → 0), blur ve
+  // paneller söner; animasyon BİTİNCE parent state'i temizlenir. onClose'u
+  // direkt çağırmak modal'ı anında yok edip animasyonu yutar.
+  const finalizeClose = () => {
+    closingRef.current = false;
+    onClose();
+  };
+  const handleClose = () => {
+    if (closingRef.current) return;
+    closingRef.current = true;
+    const startExit = () => {
+      progress.value = withTiming(
+        0,
+        { duration: 220, easing: Easing.in(Easing.cubic) },
+        (finished) => {
+          if (finished) runOnJS(finalizeClose)();
+        },
+      );
+    };
+    // Gerçek balon menü açıkken kaymış olabilir (klavye kapanışı listeyi
+    // kaydırır, yeni mesaj gelebilir) — klon bayat konuma değil, balonun
+    // ŞU ANKİ konumuna dönsün diye kapanıştan önce taze ölçüm alınır.
+    if (layout?.remeasure) {
+      layout.remeasure((rect: any) => {
+        if (isValidRect(rect)) setReturnRect(rect);
+        startExit();
+      });
+    } else {
+      startExit();
+    }
+  };
+  // Kapanış animasyonu oynarken paneller hâlâ tıklanabilir — aksiyonların çift
+  // tetiklenmemesi için tümü bu guard'dan geçer.
+  const runAction = (fn?: () => void) => {
+    if (closingRef.current) return;
+    fn?.();
+    handleClose();
+  };
 
   const overlayStyle = useAnimatedStyle(() => ({ opacity: progress.value }));
-
-  const reactionsAnimStyle = useAnimatedStyle(() => ({
-    opacity: progress.value,
-    transform: [
-      { translateY: (1 - progress.value) * 12 },
-      { scale: 0.85 + progress.value * 0.15 },
-    ] as any,
-  }));
-
-  const actionsAnimStyle = useAnimatedStyle(() => ({
-    opacity: progress.value,
-    transform: [
-      { translateY: (1 - progress.value) * -8 },
-      { scale: 0.95 + progress.value * 0.05 },
-    ] as any,
-  }));
 
   if (!message) return null;
 
@@ -91,41 +141,49 @@ export default function MessageActionSheet({
   const canDelete = isOwn && !message.isSystemMessage && !message.deletedAt;
 
   // Fallback (layout null): ekran ortası
-  const pill = layout || {
-    x: SCREEN_WIDTH * 0.1,
-    y: SCREEN_HEIGHT / 2 - 40,
-    width: SCREEN_WIDTH * 0.8,
-    height: 80,
-  };
-  const pillRight = pill.x + pill.width;
-  // pillBottom = en aşağıdaki shape'in alt kenarı (reactions varsa onun altı)
-  const pillBottom = Math.max(
-    pill.y + pill.height,
-    pill.reactions ? pill.reactions.y + pill.reactions.height : 0,
-  );
+  const pill = isValidRect(layout)
+    ? layout
+    : {
+        x: SCREEN_WIDTH * 0.1,
+        y: SCREEN_HEIGHT / 2 - 40,
+        width: SCREEN_WIDTH * 0.8,
+        height: 80,
+      };
 
-  // Cutout SVG path için yalnızca geçerli rect'leri kullan — NaN/0 değerler
-  // native SVG renderer'ı crash ettirebilir.
-  const validShapes = [];
-  if (isValidRect(pill)) validShapes.push(pill);
-  if (pill.reactions && isValidRect(pill.reactions))
-    validShapes.push(pill.reactions);
+  const hasReactionChips = message.reactions?.length > 0;
+  const chipOverhang = hasReactionChips ? REACTION_CHIP_OVERHANG : 0;
 
-  // Reactions konumu: pill'in üst-üstüne, side-aligned
-  const reactionsY = Math.max(SAFE_TOP, pill.y - REACTIONS_HEIGHT - GAP);
-  const actionsY = Math.min(
-    SCREEN_HEIGHT - ACTIONS_ESTIMATED_H - SAFE_BOTTOM,
-    pillBottom + GAP,
-  );
+  // Aksiyon menüsü yüksekliği satır sayısından hesaplanır (measure beklemeden
+  // hedef konumu bilmemiz gerekiyor).
+  const actionRows =
+    1 + (message.content ? 1 : 0) + (canEdit ? 1 : 0) + (canDelete ? 2 : 0);
+  const actionsH = actionRows * ACTION_ROW_H;
+
+  // ── Sabit hedef konum: tüm stack (emoji + balon + menü) güvenli alanda dikey
+  // ortalanır. Balon her uzun basışta ekranın AYNI bölgesine gelir.
+  const stackH =
+    reactionsH + GAP + pill.height + chipOverhang + GAP + actionsH;
+  const available = SCREEN_HEIGHT - SAFE_TOP - SAFE_BOTTOM;
+  const targetY =
+    SAFE_TOP +
+    reactionsH +
+    GAP +
+    Math.max(0, (available - stackH) / 2);
+  const targetX = isOwn
+    ? SCREEN_WIDTH - SIDE_MARGIN - pill.width
+    : SIDE_MARGIN;
+
+  const reactionsY = targetY - GAP - reactionsH;
+  const actionsY = targetY + pill.height + chipOverhang + GAP;
 
   const blurTint = Platform.OS === "ios" ? "systemThinMaterialDark" : "dark";
+  const bubbleBg = isOwn ? colors.messageOwn : colors.surface2;
 
-  const handleCopy = async () => {
-    try {
-      if (message.content) await Clipboard.setStringAsync(message.content);
+  const handleCopy = () => {
+    runAction(() => {
+      Clipboard.setStringAsync(message.content ?? "").catch(() => {});
       Haptics.selectionAsync().catch(() => {});
-    } catch {}
-    onClose();
+    });
   };
 
   return (
@@ -134,69 +192,60 @@ export default function MessageActionSheet({
       transparent
       animationType="none"
       statusBarTranslucent
-      onRequestClose={onClose}
+      onRequestClose={handleClose}
     >
       {/* Dismiss layer — full screen şeffaf */}
-      <Pressable onPress={onClose} style={StyleSheet.absoluteFill} />
+      <Pressable onPress={handleClose} style={StyleSheet.absoluteFill} />
 
-      {/* Pill-shaped cutout: SVG mask path = ekran rect MINUS rounded pill (evenodd).
-          BlurView pill dışında her yeri sarar, pill'in rounded şekli net görünür. */}
+      {/* Arka plan: tam ekran blur + dim. Gerçek balon bunun altında kalır;
+          görünür olan aşağıdaki klondur. */}
       <Animated.View
         pointerEvents="none"
         style={[StyleSheet.absoluteFill, overlayStyle]}
       >
-        <MaskedView
+        <BlurView
+          intensity={50}
+          tint={blurTint}
           style={StyleSheet.absoluteFill}
-          maskElement={
-            <Svg
-              width={SCREEN_WIDTH}
-              height={SCREEN_HEIGHT}
-              style={{ backgroundColor: "transparent" }}
-            >
-              <Path
-                d={buildCutoutPath(SCREEN_WIDTH, SCREEN_HEIGHT, validShapes)}
-                fill="white"
-                fillRule="evenodd"
-              />
-            </Svg>
-          }
-        >
-          <BlurView
-            intensity={50}
-            tint={blurTint}
-            style={StyleSheet.absoluteFill}
-          />
-          <View
-            style={[
-              StyleSheet.absoluteFill,
-              { backgroundColor: "rgba(0,0,0,0.25)" },
-            ]}
-          />
-        </MaskedView>
+        />
+        <View
+          style={[
+            StyleSheet.absoluteFill,
+            { backgroundColor: "rgba(0,0,0,0.25)" },
+          ]}
+        />
       </Animated.View>
 
-      {/* Reactions row — pill'in üstünde */}
-      <Animated.View
-        style={[
-          {
-            position: "absolute",
-            top: reactionsY,
-            left: isOwn ? undefined : Math.max(16, pill.x),
-            right: isOwn ? Math.max(16, SCREEN_WIDTH - pillRight) : undefined,
-            maxWidth: SCREEN_WIDTH - 32,
-          },
-          reactionsAnimStyle,
-        ]}
+      {/* Balon klonu — basıldığı konumdan sabit hedefe kayar */}
+      <BubbleClone
+        message={message}
+        isOwn={isOwn}
+        pill={pill}
+        returnRect={returnRect}
+        targetX={targetX}
+        targetY={targetY}
+        bubbleBg={bubbleBg}
+        progress={progress}
+        t={t}
+      />
+
+      {/* Reactions row — hedef konumun üstünde, gerçek yüksekliği ölçülerek
+          balonla arasındaki boşluk menü boşluğuyla (GAP) birebir eşitlenir */}
+      <FloatingPanel
+        progress={progress}
+        top={reactionsY}
+        isOwn={isOwn}
+        enterOffset={12}
+        enterScale={0.85}
       >
         <View
+          onLayout={(e: any) => {
+            const h = Math.round(e.nativeEvent.layout.height);
+            if (h > 0 && h !== reactionsH) setReactionsH(h);
+          }}
           style={{
-            flexDirection: "row",
-            alignItems: "center",
-            paddingHorizontal: 8,
-            paddingVertical: 8,
             borderRadius: 999,
             borderCurve: "continuous",
-            backgroundColor: colors.surface2,
             shadowColor: "#000",
             shadowOpacity: 0.35,
             shadowRadius: 14,
@@ -204,45 +253,50 @@ export default function MessageActionSheet({
             elevation: 10,
           }}
         >
-          {QUICK_EMOJIS.map((emoji) => (
+          <PanelSurface radius={999} blurTint={blurTint}>
+            <View
+              style={{
+                flexDirection: "row",
+                alignItems: "center",
+                paddingHorizontal: 8,
+                paddingVertical: 8,
+              }}
+            >
+              {QUICK_EMOJIS.map((emoji) => (
             <TouchableOpacity
               key={emoji}
-              onPress={() => {
-                Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light).catch(
-                  () => {},
-                );
-                onPickReaction?.(emoji);
-                onClose();
-              }}
+              onPress={() =>
+                runAction(() => {
+                  Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light).catch(
+                    () => {},
+                  );
+                  onPickReaction?.(emoji);
+                })
+              }
               hitSlop={6}
               style={{ paddingHorizontal: 6, paddingVertical: 2 }}
             >
               <Text style={{ fontSize: 26 }}>{emoji}</Text>
             </TouchableOpacity>
           ))}
+            </View>
+          </PanelSurface>
         </View>
-      </Animated.View>
+      </FloatingPanel>
 
-      {/* Actions list — pill'in altında, kendi tarafına hizalı */}
-      <Animated.View
-        style={[
-          {
-            position: "absolute",
-            top: actionsY,
-            left: isOwn ? undefined : Math.max(16, pill.x),
-            right: isOwn ? Math.max(16, SCREEN_WIDTH - pillRight) : undefined,
-            minWidth: 200,
-            maxWidth: SCREEN_WIDTH - 32,
-          },
-          actionsAnimStyle,
-        ]}
+      {/* Actions list — hedef konumun altında, kendi tarafına hizalı */}
+      <FloatingPanel
+        progress={progress}
+        top={actionsY}
+        isOwn={isOwn}
+        enterOffset={-8}
+        enterScale={0.95}
+        minWidth={200}
       >
         <View
           style={{
             borderRadius: 16,
             borderCurve: "continuous",
-            backgroundColor: colors.surface2,
-            overflow: "hidden",
             shadowColor: "#000",
             shadowOpacity: 0.35,
             shadowRadius: 14,
@@ -250,57 +304,244 @@ export default function MessageActionSheet({
             elevation: 10,
           }}
         >
+          <PanelSurface radius={16} blurTint={blurTint}>
           <ActionRow
-            icon={<Reply size={20} color={colors.text} />}
-            label="Yanıtla"
-            onPress={() => {
-              onReply?.();
-              onClose();
-            }}
+            icon={<SFIcon name="arrowshape.turn.up.left.fill" fallback={Reply} size={20} color={colors.text} />}
+            label={t("chat.actions.reply")}
+            onPress={() => runAction(onReply)}
           />
           {!!message.content && (
             <ActionRow
-              icon={<Copy size={20} color={colors.text} />}
-              label="Kopyala"
+              icon={<SFIcon name="doc.on.doc" fallback={Copy} size={20} color={colors.text} />}
+              label={t("chat.actions.copy")}
               onPress={handleCopy}
             />
           )}
           {canEdit && (
             <ActionRow
-              icon={<Pencil size={20} color={colors.text} />}
-              label="Düzenle"
-              onPress={() => {
-                onEdit?.();
-                onClose();
-              }}
+              icon={<SFIcon name="pencil" fallback={Pencil} size={20} color={colors.text} />}
+              label={t("chat.actions.edit")}
+              onPress={() => runAction(onEdit)}
             />
           )}
           {canDelete && (
             <>
               <ActionRow
-                icon={<Trash2 size={20} color={colors.errorLight} />}
-                label="Sadece benden sil"
+                icon={<SFIcon name="trash.fill" fallback={Trash2} size={20} color={colors.errorLight} />}
+                label={t("chat.actions.deleteForMe")}
                 destructive
-                onPress={() => {
-                  onDelete?.(false);
-                  onClose();
-                }}
+                onPress={() => runAction(() => onDelete?.(false))}
               />
               <ActionRow
-                icon={<Trash2 size={20} color={colors.error} />}
-                label="Herkes için sil"
+                icon={<SFIcon name="trash.fill" fallback={Trash2} size={20} color={colors.errorLight} />}
+                label={t("chat.actions.deleteForEveryone")}
                 destructive
                 last
-                onPress={() => {
-                  onDelete?.(true);
-                  onClose();
-                }}
+                onPress={() => runAction(() => onDelete?.(true))}
               />
             </>
           )}
+          </PanelSurface>
         </View>
-      </Animated.View>
+      </FloatingPanel>
     </Modal>
+  );
+}
+
+/**
+ * Panel arkaplanı: iOS'ta BlurView + yarı saydam surface2 (arkadaki tam ekran
+ * blur'un üstünde ikinci bir native effect view — maliyeti ihmal edilebilir);
+ * Android'de solid surface2 (expo-blur Android'de deneysel/pahalı).
+ * Gölge, overflow:hidden ile kırpılmasın diye DIŞ sarmalayıcıda kalır.
+ */
+function PanelSurface({ radius, blurTint, children }: any) {
+  return (
+    <View
+      style={{
+        borderRadius: radius,
+        borderCurve: "continuous",
+        overflow: "hidden",
+        backgroundColor: PANEL_BG,
+      }}
+    >
+      {PANEL_USE_BLUR && (
+        <BlurView
+          intensity={40}
+          tint={blurTint}
+          style={StyleSheet.absoluteFill}
+        />
+      )}
+      {children}
+    </View>
+  );
+}
+
+/**
+ * Gerçek balonun modal içi klonu. Ölçülen rect boyutunda render edilir ve
+ * progress ile (pill.x, pill.y) → (targetX, targetY) arası kayar.
+ * Stil MessageBubble ile birebir aynı tutulmalı (bg, radius, padding, font).
+ */
+function BubbleClone({
+  message,
+  isOwn,
+  pill,
+  returnRect,
+  targetX,
+  targetY,
+  bubbleBg,
+  progress,
+  t,
+}: any) {
+  // Giriş basış anındaki rect'ten başlar; kapanışta returnRect set edilmişse
+  // (taze ölçüm) klon oraya döner. progress=1'deyken from değişimi görsel
+  // sıçratmaz — çıkış hedefi sadece 1→0 yolunda devreye girer.
+  const from = returnRect ?? pill;
+  const moveStyle = useAnimatedStyle(() => ({
+    transform: [
+      {
+        translateX: interpolate(progress.value, [0, 1], [from.x, targetX]),
+      },
+      {
+        translateY: interpolate(progress.value, [0, 1], [from.y, targetY]),
+      },
+    ] as any,
+  }));
+
+  return (
+    <Animated.View
+      pointerEvents="none"
+      style={[
+        {
+          position: "absolute",
+          top: 0,
+          left: 0,
+          width: pill.width,
+        },
+        moveStyle,
+      ]}
+    >
+      <View
+        style={{
+          width: pill.width,
+          height: pill.height,
+          backgroundColor: bubbleBg,
+          borderRadius: BUBBLE_RADIUS,
+          borderCurve: "continuous",
+          paddingHorizontal: 14,
+          paddingVertical: 12,
+          minWidth: 48,
+          alignItems: "center",
+          justifyContent: "center",
+          shadowColor: "#000",
+          shadowOpacity: 0.3,
+          shadowRadius: 12,
+          shadowOffset: { width: 0, height: 4 },
+          elevation: 8,
+        }}
+      >
+        {message.replyTo && (
+          <View style={{ alignSelf: "stretch" }}>
+            <ReplyPreview reply={message.replyTo} mode="bubble" isOwn={isOwn} />
+          </View>
+        )}
+        {!!message.content && (
+          <Text
+            style={{
+              fontSize: 17,
+              color: isOwn ? "#fff" : "#f3f4f6",
+            }}
+          >
+            {message.content}
+            {message.editedAt && (
+              <Text
+                style={{
+                  fontSize: 12,
+                  color: isOwn ? "rgba(255,255,255,0.7)" : "#9ca3af",
+                }}
+              >
+                {"  "}
+                {t("chat.bubble.edited")}
+              </Text>
+            )}
+          </Text>
+        )}
+      </View>
+
+      {message.reactions?.length > 0 && (
+        <View
+          style={{
+            position: "absolute",
+            bottom: -REACTION_CHIP_OVERHANG,
+            right: 6,
+            flexDirection: "row",
+            flexWrap: "wrap",
+            gap: 4,
+          }}
+        >
+          {message.reactions.map((r: any) => (
+            <View
+              key={r.emoji}
+              style={{
+                paddingHorizontal: 8,
+                paddingVertical: 4,
+                flexDirection: "row",
+                alignItems: "center",
+                borderRadius: 999,
+                backgroundColor: colors.surface2,
+              }}
+            >
+              <Text style={{ fontSize: 14 }}>{r.emoji}</Text>
+              {r.count > 1 && (
+                <Text
+                  style={{ fontSize: 10, marginLeft: 4, color: "#d1d5db" }}
+                >
+                  {r.count}
+                </Text>
+              )}
+            </View>
+          ))}
+        </View>
+      )}
+    </Animated.View>
+  );
+}
+
+/** Sabit hedefe hizalı, giriş animasyonlu panel (emoji satırı / aksiyon menüsü). */
+function FloatingPanel({
+  progress,
+  top,
+  bottom,
+  isOwn,
+  enterOffset,
+  enterScale,
+  minWidth,
+  children,
+}: any) {
+  const animStyle = useAnimatedStyle(() => ({
+    opacity: progress.value,
+    transform: [
+      { translateY: (1 - progress.value) * enterOffset },
+      { scale: enterScale + progress.value * (1 - enterScale) },
+    ] as any,
+  }));
+
+  return (
+    <Animated.View
+      style={[
+        {
+          position: "absolute",
+          top,
+          bottom,
+          left: isOwn ? undefined : SIDE_MARGIN,
+          right: isOwn ? SIDE_MARGIN : undefined,
+          minWidth,
+          maxWidth: SCREEN_WIDTH - 32,
+        },
+        animStyle,
+      ]}
+    >
+      {children}
+    </Animated.View>
   );
 }
 
@@ -350,34 +591,3 @@ function isValidRect(r) {
     r.height > 0
   );
 }
-
-function buildCutoutPath(screenW, screenH, shapes) {
-  const outer = `M0 0 H${screenW} V${screenH} H0 Z`;
-  const holes = shapes
-    .map((s) =>
-      buildRoundedRectSubpath(s.x, s.y, s.width, s.height, s.radius),
-    )
-    .join(" ");
-  return `${outer} ${holes}`;
-}
-
-function buildRoundedRectSubpath(x, y, w, h, customRadius) {
-  const maxR = Math.min(h / 2, w / 2);
-  const r = Number.isFinite(customRadius)
-    ? Math.max(0, Math.min(customRadius, maxR))
-    : maxR;
-  const right = x + w;
-  const bottom = y + h;
-  return (
-    `M${x + r} ${y} ` +
-    `H${right - r} ` +
-    `A${r} ${r} 0 0 1 ${right} ${y + r} ` +
-    `V${bottom - r} ` +
-    `A${r} ${r} 0 0 1 ${right - r} ${bottom} ` +
-    `H${x + r} ` +
-    `A${r} ${r} 0 0 1 ${x} ${bottom - r} ` +
-    `V${y + r} ` +
-    `A${r} ${r} 0 0 1 ${x + r} ${y} Z`
-  );
-}
-

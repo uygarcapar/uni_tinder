@@ -29,9 +29,8 @@ afterEach(() => {
 });
 
 describe('ConversationOptionsSheet — active conversation', () => {
-  it('shows Search and Unmatch actions when isActive', () => {
+  it('shows Unmatch action when isActive', () => {
     const tree = setup({ isActive: true });
-    expect(tree.getByText('Sohbette Ara')).toBeTruthy();
     expect(tree.getByText('Eşleşmeyi Kaldır')).toBeTruthy();
   });
 
@@ -39,15 +38,6 @@ describe('ConversationOptionsSheet — active conversation', () => {
     const tree = setup({ isActive: true });
     expect(tree.getByText('Şikayet Et')).toBeTruthy();
     expect(tree.getByText('Kullanıcıyı Engelle')).toBeTruthy();
-  });
-
-  it('calls onClose then onSearch when "Sohbette Ara" is pressed', () => {
-    const onClose = jest.fn();
-    const onSearch = jest.fn();
-    const tree = setup({ onClose, onSearch });
-    fireEvent.press(tree.getByText('Sohbette Ara'));
-    expect(onClose).toHaveBeenCalledTimes(1);
-    expect(onSearch).toHaveBeenCalledTimes(1);
   });
 
   it('calls onClose then onReport when "Şikayet Et" is pressed', () => {
@@ -93,9 +83,8 @@ describe('ConversationOptionsSheet — destructive confirmations', () => {
 });
 
 describe('ConversationOptionsSheet — inactive variants', () => {
-  it('hides Search/Unmatch when isActive=false', () => {
+  it('hides Unmatch when isActive=false', () => {
     const tree = setup({ isActive: false });
-    expect(tree.queryByText('Sohbette Ara')).toBeNull();
     expect(tree.queryByText('Eşleşmeyi Kaldır')).toBeNull();
   });
 

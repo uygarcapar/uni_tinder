@@ -35,13 +35,18 @@ import {
   Search,
   X,
   ChevronLeft,
+  HeartOff,
+  RotateCcw,
 } from "lucide-react-native";
+import SFIcon, { type SFSymbol } from "@/shared/components/SFIcon";
+import ReanimatedSwipeable from "react-native-gesture-handler/ReanimatedSwipeable";
 import {
   fetchConversations,
   setActiveConversation,
   fetchHistory,
 } from "@/features/chat/chatSlice";
 import chatService from "@/features/chat/chatService";
+import { store } from "@/shared/store";
 import EmptyState from "@/shared/components/EmptyState";
 import ScreenHeader from "@/shared/components/ScreenHeader";
 import { useSwipeStats } from "@/features/discover/swipeQueries";
@@ -244,6 +249,18 @@ export default function MessagesScreen() {
     if (!conversations?.length) return;
     conversations.slice(0, 15).forEach((conv) => {
       if (prefetchedHistoryRef.current.has(conv.conversationId)) return;
+      // MMKV hydrate sonrası bucket zaten doluysa network'e GEREK YOK —
+      // ChatScreen açılışta kendi arka plan reconcile fetch'ini yapıyor.
+      // store.getState() ile oku (subscribe etme → messagesByConv değişimleri
+      // bu effect'i re-trigger etmesin). Net: boot fan-out 15 istekten yalnız
+      // gerçekten boş sohbetlere (tipik: yeni match) düşer.
+      const bucket = (store.getState() as any).chat.messagesByConv[
+        conv.conversationId
+      ];
+      if (bucket?.messages?.length) {
+        prefetchedHistoryRef.current.add(conv.conversationId);
+        return;
+      }
       prefetchedHistoryRef.current.add(conv.conversationId);
       dispatch(
         fetchHistory({
@@ -300,7 +317,8 @@ export default function MessagesScreen() {
                       t('chat.unmatch.restoreExpiredMessage'),
                     );
                   }
-                  dispatch(fetchConversations());
+                  // Mutasyon-sonrası tazeleme — staleness gate'ini bypass et.
+                  dispatch(fetchConversations({ force: true }));
                 } catch (err) {
                   Alert.alert(t('common.error'), t('chat.unmatch.restoreFailed'));
                 }
@@ -322,7 +340,8 @@ export default function MessagesScreen() {
             onPress: async () => {
               try {
                 await chatService.deactivateConversation(conv.conversationId);
-                dispatch(fetchConversations());
+                // Mutasyon-sonrası tazeleme — staleness gate'ini bypass et.
+                dispatch(fetchConversations({ force: true }));
               } catch (err) {
                 Alert.alert(t('common.error'), t('chat.unmatch.error'));
               }
@@ -379,7 +398,7 @@ export default function MessagesScreen() {
         ListEmptyComponent={
           isSearchActive && searchQuery.trim().length > 0 ? (
             <View className="flex-1 items-center justify-center pb-[60%] px-8">
-              <Search size={48} color={colors.text} strokeWidth={1.3} />
+              <SFIcon name="magnifyingglass" fallback={Search} size={48} color={colors.text} strokeWidth={1.3} />
               <Text
                 className="text-white text-center mt-3"
                 style={{ fontSize: 14, fontWeight: "500" }}
@@ -392,6 +411,7 @@ export default function MessagesScreen() {
               <View className="flex-1 items-center justify-center pb-[40%]">
                 <EmptyState
                   Icon={MessageCircle}
+                  sf="message"
                   iconStrokeWidth={1.3}
                   text={t('chat.messages.noUnread')}
                   topOffset={0}
@@ -401,6 +421,7 @@ export default function MessagesScreen() {
               <View className="flex-1 items-center justify-center pb-[40%]">
                 <EmptyState
                   Icon={MessageCircle}
+                  sf="message"
                   iconStrokeWidth={1.3}
                   text={t('chat.messages.empty')}
                   topOffset={0}
@@ -490,7 +511,7 @@ export default function MessagesScreen() {
               activeOpacity={0.7}
             >
               <View pointerEvents="none">
-                <ChevronLeft size={26} color={colors.text} strokeWidth={2.5} />
+                <SFIcon name="chevron.left" fallback={ChevronLeft} size={26} color={colors.text} strokeWidth={2.5} weight="bold" />
               </View>
             </TouchableOpacity>
           </Animated.View>
@@ -516,7 +537,7 @@ export default function MessagesScreen() {
               }}
             >
               <Animated.View style={magnifyOpacityStyle}>
-                <Search size={18} color={colors.text} strokeWidth={2} />
+                <SFIcon name="magnifyingglass" fallback={Search} size={18} color={colors.text} strokeWidth={2} weight="semibold" />
               </Animated.View>
               <TextInput
                 ref={searchInputRef}
@@ -568,7 +589,7 @@ export default function MessagesScreen() {
                     }}
                   >
                     <View pointerEvents="none">
-                      <X size={14} color="#bfbfbf" strokeWidth={2} />
+                      <SFIcon name="xmark" fallback={X} size={14} color="#bfbfbf" strokeWidth={2} weight="semibold" />
                     </View>
                   </TouchableOpacity>
                 </Animated.View>
@@ -635,9 +656,46 @@ const ConversationRow = memo(function ConversationRow({
   // prop identity'sini onOpen/onLongPress üzerinden koruyabilsin diye.
   const handlePress = useCallback(() => onOpen(conv), [onOpen, conv]);
   const handleLongPress = useCallback(() => onLongPress(conv), [onLongPress, conv]);
+
+  // Sola kaydırınca çıkan aksiyon (WhatsApp/iMessage deseni): aktif sohbette
+  // unmatch, kapalı sohbette restore. Long-press ikincil yol olarak kalır;
+  // aksiyon aynı onLongPress akışını (confirm Alert'li) tetikler, buton onayı
+  // atlamaz. ReanimatedSwipeable RNGH 2.x'te yerleşik — yeni bağımlılık yok.
+  const renderRightActions = useCallback(
+    (_progress: any, _translation: any, methods: any) => {
+      const actionSf: SFSymbol = conv.isActive
+        ? "heart.slash.fill"
+        : "arrow.counterclockwise";
+      const ActionIcon = conv.isActive ? HeartOff : RotateCcw;
+      return (
+        <TouchableOpacity
+          activeOpacity={0.85}
+          onPress={() => {
+            methods.close();
+            onLongPress(conv);
+          }}
+          style={{
+            width: 92,
+            backgroundColor: conv.isActive ? "#DC2626" : colors.primary,
+            alignItems: "center",
+            justifyContent: "center",
+            gap: 4,
+          }}
+        >
+          <SFIcon name={actionSf} fallback={ActionIcon} size={22} color="#fff" strokeWidth={2} weight="semibold" />
+          <Text style={{ color: "#fff", fontSize: 12, fontWeight: "600" }}>
+            {conv.isActive
+              ? t('chat.unmatch.confirmButton')
+              : t('chat.unmatch.restoreButton')}
+          </Text>
+        </TouchableOpacity>
+      );
+    },
+    [conv, onLongPress, t],
+  );
   const subtitle = useMemo(() => {
     if (isTyping)
-      return { kind: "text", text: t('chat.messages.typing'), className: "text-primary" };
+      return { kind: "text", text: t('chat.messages.typing'), className: "text-white font-semibold" };
     if (!conv.isActive)
       return {
         kind: "text",
@@ -650,9 +708,9 @@ const ConversationRow = memo(function ConversationRow({
 
     // Media (no text content) — icon + label
     const ct = conv.lastMessageContentType;
-    if (ct === 1) return { kind: "media", icon: CameraIcon, text: t('chat.messages.mediaPhoto'), className: readClass, iconColor };
-    if (ct === 2) return { kind: "media", icon: Mic, text: t('chat.messages.mediaVoice'), className: readClass, iconColor };
-    if (ct === 3) return { kind: "media", icon: Video, text: t('chat.messages.mediaVideo'), className: readClass, iconColor };
+    if (ct === 1) return { kind: "media", sf: "camera.fill" as SFSymbol, icon: CameraIcon, text: t('chat.messages.mediaPhoto'), className: readClass, iconColor };
+    if (ct === 2) return { kind: "media", sf: "mic.fill" as SFSymbol, icon: Mic, text: t('chat.messages.mediaVoice'), className: readClass, iconColor };
+    if (ct === 3) return { kind: "media", sf: "video.fill" as SFSymbol, icon: Video, text: t('chat.messages.mediaVideo'), className: readClass, iconColor };
 
     if (!conv.lastMessagePreview) {
       return {
@@ -676,6 +734,12 @@ const ConversationRow = memo(function ConversationRow({
   ]);
 
   return (
+    <ReanimatedSwipeable
+      friction={2}
+      rightThreshold={40}
+      overshootRight={false}
+      renderRightActions={renderRightActions}
+    >
     <TouchableHighlight
       onPress={handlePress}
       onLongPress={handleLongPress}
@@ -745,7 +809,7 @@ const ConversationRow = memo(function ConversationRow({
         <View className="flex-row items-center justify-between mt-1">
           {subtitle.kind === "media" ? (
             <View className="flex-row items-center" style={{ flex: 1, gap: 4 }}>
-              <subtitle.icon size={14} color={subtitle.iconColor} strokeWidth={2} />
+              <SFIcon name={subtitle.sf} fallback={subtitle.icon} size={14} color={subtitle.iconColor} strokeWidth={2} weight="semibold" />
               <Text
                 className={`text-[14px] ${subtitle.className}`}
                 numberOfLines={1}
@@ -778,6 +842,7 @@ const ConversationRow = memo(function ConversationRow({
       </View>
       </View>
     </TouchableHighlight>
+    </ReanimatedSwipeable>
   );
 });
 

@@ -8,6 +8,7 @@ import {
 } from "react-native";
 import AppModal from "@/shared/components/AppModal";
 import { MessageSquare, Lock, Infinity as InfinityIcon } from "lucide-react-native";
+import SFIcon, { type SFSymbol } from "@/shared/components/SFIcon";
 import { LinearGradient } from "expo-linear-gradient";
 import { useAppDispatch } from "@/shared/hooks/redux";
 import { useTranslation } from "react-i18next";
@@ -108,9 +109,9 @@ export default function ChatUnlockSheet({
 
   const features = useMemo(
     () => [
-      { icon: InfinityIcon, label: t('chatUnlock.feature1') },
-      { icon: MessageSquare, label: t('chatUnlock.feature2') },
-      { icon: Lock, label: t('chatUnlock.feature3') },
+      { sf: "infinity" as SFSymbol, lucide: InfinityIcon, label: t('chatUnlock.feature1') },
+      { sf: "bubble.left.fill" as SFSymbol, lucide: MessageSquare, label: t('chatUnlock.feature2') },
+      { sf: "lock.fill" as SFSymbol, lucide: Lock, label: t('chatUnlock.feature3') },
     ],
     [t]
   );
@@ -136,7 +137,7 @@ export default function ChatUnlockSheet({
             alignItems: "center",
           }}
         >
-          <MessageSquare size={48} color={colors.text} strokeWidth={1.5} />
+          <SFIcon name="bubble.left.fill" fallback={MessageSquare} size={48} color={colors.text} strokeWidth={1.5} />
           <Text
             style={{
               marginTop: 12,
@@ -172,7 +173,7 @@ export default function ChatUnlockSheet({
             marginBottom: 24,
           }}
         >
-          {features.map(({ icon: Icon, label }, i) => (
+          {features.map(({ sf, lucide, label }, i) => (
             <View
               key={label}
               style={{
@@ -185,7 +186,7 @@ export default function ChatUnlockSheet({
                 borderBottomColor: "rgba(255,255,255,0.07)",
               }}
             >
-              <Icon size={18} color={colors.text} strokeWidth={1.5} pointerEvents="none" />
+              <SFIcon name={sf} fallback={lucide} size={18} color={colors.text} strokeWidth={1.5} style={{ pointerEvents: "none" }} />
               <Text
                 style={{ color: colors.text, fontSize: 14, fontWeight: "500", flex: 1 }}
               >
