@@ -1,9 +1,11 @@
 import { View, Text, StyleSheet, Pressable } from "react-native";
 import { LinearGradient } from "expo-linear-gradient";
 import { colors } from "../theme/colors";
+import SFIcon from "./SFIcon";
 
 export default function EmptyState({
   Icon,
+  sf,
   iconSize = 100,
   iconColor = "#dee0ea",
   iconStrokeWidth = 1.2,
@@ -33,13 +35,21 @@ export default function EmptyState({
           overflow: "hidden",
         }}
       >
-        {Icon && (
+        {Icon && sf ? (
+          <SFIcon
+            name={sf}
+            fallback={Icon}
+            size={iconSize}
+            color={iconColor}
+            strokeWidth={iconStrokeWidth}
+          />
+        ) : Icon ? (
           <Icon
             size={iconSize}
             color={iconColor}
             strokeWidth={iconStrokeWidth}
           />
-        )}
+        ) : null}
       </View>
 
       <Text

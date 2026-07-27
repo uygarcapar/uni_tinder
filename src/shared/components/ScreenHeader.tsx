@@ -25,10 +25,18 @@ const TITLE_SCROLL_THRESHOLD = 55;
 export default function ScreenHeader({
   scrollY,
   title,
+  leftButton,
   rightButton,
   fillRatio = 0,
+  titleAlign = "left",
+  titleSize = 35,
+  showLogo = true,
 }: any) {
   const insets = useSafeAreaInsets();
+
+  const isCenterTitle = titleAlign === "center";
+  // Sol buton varsa büyük başlık butonun altına girmesin — 44pt buton + nefes payı.
+  const titleLeft = leftButton ? 72 : 21;
 
   // Header Yüksekliği: Bulanıklığın yavaşça erimesi için yeterli mesafe (örneğindeki gibi)
   const headerH = insets.top + 90;
@@ -159,76 +167,111 @@ export default function ScreenHeader({
         <Animated.View
           pointerEvents="none"
           style={[
-            {
-              position: "absolute",
-              top: insets.top,
-              left: 21,
-              height: 50,
-              justifyContent: "center",
-            },
-            titleAnimStyle,
+            isCenterTitle
+              ? {
+                  // Tam x ekseni ortası — sol/sağ butonlardan bağımsız, logo ile aynı hizada.
+                  position: "absolute",
+                  top: insets.top,
+                  left: 0,
+                  right: 0,
+                  height: 50,
+                  alignItems: "center",
+                  justifyContent: "center",
+                }
+              : {
+                  position: "absolute",
+                  top: insets.top,
+                  left: titleLeft,
+                  height: 50,
+                  justifyContent: "center",
+                },
+            // Logo yoksa başlık page header'ın kendisi — scroll'u beklemeden hep görünür.
+            showLogo ? titleAnimStyle : null,
           ]}
         >
-          <Text style={{ color: themeColors.text, fontSize: 35, fontWeight: "700" }}>
+          <Text
+            style={{
+              color: themeColors.text,
+              fontSize: titleSize,
+              fontWeight: "700",
+              textAlign: isCenterTitle ? "center" : "left",
+            }}
+          >
             {title}
           </Text>
         </Animated.View>
       ) : null}
 
-      <Animated.View
-        pointerEvents="box-none"
-        style={[
-          {
-            position: "absolute",
-            top: insets.top,
-            left: 0,
-            right: 0,
-            height: 50,
-            alignItems: "center",
-            justifyContent: "center",
-          },
-          logoAnimStyle,
-        ]}
-      >
-        <View>
-          <WaveFillLogo fillRatio={fillRatio} />
-          {/* Logonun üstüne binen lokal blur */}
-          <MaskedView
-            pointerEvents="none"
-            style={{
+      {showLogo ? (
+        <Animated.View
+          pointerEvents="box-none"
+          style={[
+            {
               position: "absolute",
-              top: -30,
-              left: -160,
-              right: -160,
-              bottom: -30,
-            }}
-            maskElement={
-              <LinearGradient
-                colors={[
-                  "transparent",
-                  "rgba(0,0,0,0.15)",
-                  "rgba(0,0,0,0.55)",
-                  "rgba(0,0,0,1)",
-                  "rgba(0,0,0,0.55)",
-                  "rgba(0,0,0,0.15)",
-                  "transparent",
-                ]}
-                locations={[0, 0.18, 0.35, 0.5, 0.65, 0.82, 1]}
-                start={{ x: 0, y: 0.5 }}
-                end={{ x: 1, y: 0.5 }}
+              top: insets.top,
+              left: 0,
+              right: 0,
+              height: 50,
+              alignItems: "center",
+              justifyContent: "center",
+            },
+            logoAnimStyle,
+          ]}
+        >
+          <View>
+            <WaveFillLogo fillRatio={fillRatio} />
+            {/* Logonun üstüne binen lokal blur */}
+            <MaskedView
+              pointerEvents="none"
+              style={{
+                position: "absolute",
+                top: -30,
+                left: -160,
+                right: -160,
+                bottom: -30,
+              }}
+              maskElement={
+                <LinearGradient
+                  colors={[
+                    "transparent",
+                    "rgba(0,0,0,0.15)",
+                    "rgba(0,0,0,0.55)",
+                    "rgba(0,0,0,1)",
+                    "rgba(0,0,0,0.55)",
+                    "rgba(0,0,0,0.15)",
+                    "transparent",
+                  ]}
+                  locations={[0, 0.18, 0.35, 0.5, 0.65, 0.82, 1]}
+                  start={{ x: 0, y: 0.5 }}
+                  end={{ x: 1, y: 0.5 }}
+                  style={{ flex: 1 }}
+                />
+              }
+            >
+              <AnimatedBlurView
+                pointerEvents="none"
+                tint="dark"
+                animatedProps={logoBlurProps}
                 style={{ flex: 1 }}
               />
-            }
-          >
-            <AnimatedBlurView
-              pointerEvents="none"
-              tint="dark"
-              animatedProps={logoBlurProps}
-              style={{ flex: 1 }}
-            />
-          </MaskedView>
+            </MaskedView>
+          </View>
+        </Animated.View>
+      ) : null}
+
+      {leftButton ? (
+        <View
+          style={{
+            position: "absolute",
+            top: insets.top,
+            left: 16,
+            height: 50,
+            justifyContent: "center",
+          }}
+        >
+          {leftButton}
         </View>
-      </Animated.View>
+      ) : null}
 
       {rightButton ? (
         <View

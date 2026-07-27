@@ -48,6 +48,10 @@ export default function AppBottomSheet({
   enableOverDrag = false,
   enableContentPanningGesture,
   enableHandlePanningGesture,
+  activeOffsetX,
+  activeOffsetY,
+  failOffsetX,
+  failOffsetY,
   handleComponent,
   handleIndicatorStyle,
   backgroundStyle,
@@ -157,6 +161,13 @@ export default function AppBottomSheet({
       enableOverDrag={enableOverDrag}
       enableContentPanningGesture={enableContentPanningGesture}
       enableHandlePanningGesture={enableHandlePanningGesture}
+      // Sheet'in kendi pan gesture'ının aktivasyon eşikleri. İçeriğinde yatay
+      // swipe olan sheet'ler (LikerSwipeModal) failOffsetX vererek yatay
+      // sürüklemeyi sheet'e kaptırmaz, karta bırakır.
+      activeOffsetX={activeOffsetX}
+      activeOffsetY={activeOffsetY}
+      failOffsetX={failOffsetX}
+      failOffsetY={failOffsetY}
       onDismiss={handleDismiss}
       onChange={(index: number) => {
         // index >= 0: modal slide-up animasyonu tamamlandı, snap'lendi.

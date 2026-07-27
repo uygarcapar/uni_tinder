@@ -37,9 +37,13 @@ export default function TabNavigator() {
     <Tab.Navigator
       id="MainTabs"
       screenOptions={{
-        // lazy:false → WaveFillLogo MaskedView mask image'i 1 frame geç decode
-        // olmasın diye tüm tab'lar app start'ta mount.
-        lazy: false,
+        // lazy:true → açılışta sadece Discover mount olur; Messages/Profile (ve
+        // onların fetch'leri: 10× history prefetch, tüm common/* option listeleri,
+        // GetMyProfile) ilk kez sekmeye girilince mount olur. ÖNCESİ lazy:false idi
+        // (WaveFillLogo'nun mask decode timing'i için); WaveFillLogo statiğe
+        // çevrildiği için o kısıt kalktı. Bu, cold-boot istek selini ve eşzamanlı
+        // ağır-mount fırtınasını (Fabric commit-storm / crash penceresi) keser.
+        lazy: true,
         tabBarActiveTintColor: colors.text,
         // Explicit white inactive tint → iOS 26 liquid glass content'a göre BG
         // adapt etse bile iconlar her zaman beyaz kalır.

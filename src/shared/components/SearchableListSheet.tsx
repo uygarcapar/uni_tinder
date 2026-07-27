@@ -1,10 +1,12 @@
 import React, { useState, useMemo, useEffect } from "react";
+import { useTranslation } from "react-i18next";
 import { View, Text, TouchableOpacity, Platform, Alert } from "react-native";
 import {
   BottomSheetTextInput,
   BottomSheetFlatList,
 } from "@gorhom/bottom-sheet";
 import { Search, SearchX, Check, X } from "lucide-react-native";
+import SFIcon from "./SFIcon";
 import { Host, Button as SwiftUIButton } from "@expo/ui/swift-ui";
 import {
   buttonStyle,
@@ -63,6 +65,7 @@ const SearchableListSheet = ({
   maxLimit,
   limitMsg,
 }: any) => {
+  const { t } = useTranslation();
   const isValid =
     initialValue !== null && initialValue !== undefined && initialValue !== "";
   const localValue = isValid ? String(initialValue) : "";
@@ -118,7 +121,7 @@ const SearchableListSheet = ({
           next.delete(item.enumName);
         } else {
           if (maxLimit && next.size >= maxLimit) {
-            Alert.alert("Sınır Aşıldı", limitMsg || "Sınır aşıldı.");
+            Alert.alert(t("common.limitReached"), limitMsg || t("common.limitReached"));
             return prev;
           }
           next.add(item.enumName);
@@ -213,7 +216,14 @@ const SearchableListSheet = ({
                 zIndex: 1,
               }}
             >
-              <Search size={18} color={colors.textSecondary} strokeWidth={2} />
+              <SFIcon
+                name="magnifyingglass"
+                fallback={Search}
+                size={18}
+                color={colors.textSecondary}
+                strokeWidth={2}
+                weight="semibold"
+              />
             </View>
             <BottomSheetTextInput
               defaultValue=""
@@ -239,7 +249,14 @@ const SearchableListSheet = ({
         ItemSeparatorComponent={() => <View style={{ height: 6 }} />}
         ListEmptyComponent={
           <View style={{ paddingVertical: 32, alignItems: "center" }}>
-            <SearchX size={36} color={colors.text} strokeWidth={1.75} />
+            <SFIcon
+              name="magnifyingglass"
+              fallback={SearchX}
+              size={36}
+              color={colors.text}
+              strokeWidth={1.75}
+              weight="medium"
+            />
             {search.trim() !== "" && (
               <Text
                 style={{
@@ -250,7 +267,7 @@ const SearchableListSheet = ({
                   textAlign: "center",
                 }}
               >
-                '{search.trim()}' bulunamadı
+                {t("common.notFound", { query: search.trim() })}
               </Text>
             )}
           </View>
@@ -297,7 +314,14 @@ const SearchableListSheet = ({
                     justifyContent: "center",
                   }}
                 >
-                  <Check size={18} color={colors.text} strokeWidth={2.5} />
+                  <SFIcon
+                    name="checkmark"
+                    fallback={Check}
+                    size={18}
+                    color={colors.text}
+                    strokeWidth={2.5}
+                    weight="bold"
+                  />
                 </View>
               )}
             </TouchableOpacity>
@@ -473,11 +497,14 @@ const SearchableListSheet = ({
                   justifyContent: "center",
                 }}
               >
-                <X
+                <SFIcon
+                  name="xmark"
+                  fallback={X}
                   size={24}
                   color={colors.text}
                   strokeWidth={2}
-                  pointerEvents="none"
+                  weight="semibold"
+                  style={{ pointerEvents: "none" }}
                 />
               </TouchableOpacity>
             )}
@@ -486,7 +513,7 @@ const SearchableListSheet = ({
           {Platform.OS === "ios" ? (
             <Host matchContents>
               <SwiftUIButton
-                label="Bitti"
+                label={t("common.done")}
                 onPress={handleDonePress}
                 modifiers={[
                   buttonStyle("glass"),
@@ -518,7 +545,7 @@ const SearchableListSheet = ({
                   fontSize: 15,
                 }}
               >
-                Bitti
+                {t("common.done")}
               </Text>
             </TouchableOpacity>
           )}

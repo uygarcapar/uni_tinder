@@ -39,6 +39,7 @@ import {
   shapes,
 } from "@expo/ui/swift-ui/modifiers";
 import { X } from "lucide-react-native";
+import SFIcon from "./SFIcon";
 import AppBottomSheet from "@/shared/components/AppBottomSheet";
 import { colors } from "../theme/colors";
 
@@ -232,7 +233,15 @@ export default function AppModal({
           justifyContent: "center",
         }}
       >
-        <X size={20} color={colors.text} strokeWidth={2} pointerEvents="none" />
+        <SFIcon
+          name="xmark"
+          fallback={X}
+          size={20}
+          color={colors.text}
+          strokeWidth={2}
+          weight="semibold"
+          style={{ pointerEvents: "none" }}
+        />
       </TouchableOpacity>
     )
   ) : null;

@@ -2,6 +2,7 @@ import { View, Text, Pressable } from 'react-native';
 import { Image as ExpoImage } from 'expo-image';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { Heart, Star } from 'lucide-react-native';
+import SFIcon from '../SFIcon';
 import { colors } from '../../theme/colors';
 
 export type LikeToastProps = {
@@ -17,7 +18,8 @@ export default function LikeToast({ kind, senderName, photoUrl, onPress }: LikeT
   const accent = isSuper ? colors.info : '#ec4899';
   const title = isSuper ? 'Sana Super Like attı!' : 'Birisi seni beğendi';
   const subtitle = senderName || 'Likes ekranına git ve kim olduğunu gör';
-  const Icon = isSuper ? Star : Heart;
+  const iconName = isSuper ? 'star.fill' : 'heart.fill';
+  const IconFallback = isSuper ? Star : Heart;
 
   return (
     <Pressable
@@ -56,7 +58,7 @@ export default function LikeToast({ kind, senderName, photoUrl, onPress }: LikeT
             justifyContent: 'center',
           }}
         >
-          <Icon size={22} color={colors.text} fill={colors.text} />
+          <SFIcon name={iconName} fallback={IconFallback} size={22} color={colors.text} strokeWidth={2} />
         </View>
       )}
       <View style={{ flex: 1, marginLeft: 12 }}>
@@ -67,7 +69,7 @@ export default function LikeToast({ kind, senderName, photoUrl, onPress }: LikeT
           {subtitle}
         </Text>
       </View>
-      <Icon size={18} color={accent} fill={accent} style={{ marginLeft: 8 }} />
+      <SFIcon name={iconName} fallback={IconFallback} size={18} color={accent} strokeWidth={2} style={{ marginLeft: 8 }} />
     </Pressable>
   );
 }

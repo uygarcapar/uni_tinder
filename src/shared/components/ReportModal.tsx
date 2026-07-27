@@ -12,6 +12,7 @@ import {
 import { useTranslation } from 'react-i18next';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { X, Flag } from 'lucide-react-native';
+import SFIcon from './SFIcon';
 import moderationService, { REPORT_REASON_LABELS_TR } from '@/shared/services/moderationService';
 import { useForm, Controller } from 'react-hook-form';
 import { zodResolver } from '@hookform/resolvers/zod';
@@ -75,7 +76,7 @@ export default function ReportModal({
         {/* Header */}
         <View className="flex-row items-center px-4 py-3 border-b border-surface-5">
           <TouchableOpacity onPress={handleClose} hitSlop={10} className="p-2">
-            <X size={24} color={colors.text} />
+            <SFIcon name="xmark" fallback={X} size={24} color={colors.text} strokeWidth={2} weight="semibold" />
           </TouchableOpacity>
           <Text className="text-white text-base font-semibold flex-1 ml-2">
             {t('moderation.report.title')}
@@ -84,7 +85,7 @@ export default function ReportModal({
 
         <ScrollView contentContainerStyle={{ padding: 20 }}>
           <View className="flex-row items-center mb-4">
-            <Flag size={20} color={colors.primary} />
+            <SFIcon name="flag.fill" fallback={Flag} size={20} color={colors.primary} strokeWidth={2} weight="semibold" />
             <Text className="text-white text-base font-semibold ml-2">{t('moderation.report.reasonLabel')}</Text>
           </View>
 

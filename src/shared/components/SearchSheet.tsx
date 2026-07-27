@@ -12,6 +12,7 @@ import {
 } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { Search as SearchIcon, X } from 'lucide-react-native';
+import SFIcon from './SFIcon';
 import chatService from '@/features/chat/chatService';
 import { colors } from '../theme/colors';
 
@@ -72,10 +73,10 @@ export default function SearchSheet({ visible, conversationId, onClose, onSelect
       <View style={{ flex: 1, backgroundColor: colors.bgDeep, paddingTop: insets.top }}>
         <View className="flex-row items-center px-3 py-2 border-b border-surface-5">
           <TouchableOpacity onPress={onClose} hitSlop={10} className="p-2">
-            <X size={24} color={colors.text} />
+            <SFIcon name="xmark" fallback={X} size={24} color={colors.text} strokeWidth={2} weight="semibold" />
           </TouchableOpacity>
           <View className="flex-1 flex-row items-center bg-surface-2 rounded-full px-3 py-2 ml-2">
-            <SearchIcon size={18} color={colors.textSecondary} />
+            <SFIcon name="magnifyingglass" fallback={SearchIcon} size={18} color={colors.textSecondary} strokeWidth={2} weight="semibold" />
             <TextInput
               value={query}
               onChangeText={setQuery}
@@ -88,7 +89,7 @@ export default function SearchSheet({ visible, conversationId, onClose, onSelect
             />
             {!!query && (
               <TouchableOpacity onPress={() => setQuery('')} hitSlop={6}>
-                <X size={16} color={colors.textSecondary} />
+                <SFIcon name="xmark" fallback={X} size={16} color={colors.textSecondary} strokeWidth={2} weight="semibold" />
               </TouchableOpacity>
             )}
           </View>
