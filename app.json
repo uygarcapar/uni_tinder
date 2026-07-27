@@ -2,11 +2,11 @@
   "expo": {
     "name": "Lit",
     "slug": "lit",
+    "scheme": "lit",
     "version": "1.0.0",
     "orientation": "portrait",
     "icon": "./assets/icon.png",
     "userInterfaceStyle": "dark",
-    "newArchEnabled": true,
     "ios": {
       "supportsTablet": true,
       "bundleIdentifier": "com.uygarcapar.lit",
@@ -14,6 +14,7 @@
       "infoPlist": {
         "ITSAppUsesNonExemptEncryption": false,
         "NSMicrophoneUsageDescription": "Sesli mesaj gönderebilmen için mikrofon erişimine izin vermen gerekir.",
+        "NSPhotoLibraryUsageDescription": "Profil fotoğraflarını seçebilmen için galeri erişimine izin vermen gerekir.",
         "UIBackgroundModes": [
           "remote-notification"
         ]
@@ -26,8 +27,6 @@
       },
       "package": "com.uygarcapar.lit",
       "googleServicesFile": "./google-services.json",
-      "edgeToEdgeEnabled": true,
-      "useNextNotificationsApi": true,
       "permissions": [
         "RECORD_AUDIO",
         "POST_NOTIFICATIONS"
@@ -81,10 +80,26 @@
           "backgroundColor": "#ffffff"
         }
       ],
-      "expo-localization"
+      "expo-localization",
+      "expo-secure-store",
+      [
+        "@sentry/react-native",
+        {
+          "organization": "fourstack-wk",
+          "project": "react-native",
+          "url": "https://sentry.io/"
+        }
+      ],
+      "expo-asset"
     ],
     "web": {
       "favicon": "./assets/favicon.png"
+    },
+    "updates": {
+      "url": "https://u.expo.dev/6ba3a4c5-832e-4996-8c40-bf0a66b678ec"
+    },
+    "runtimeVersion": {
+      "policy": "fingerprint"
     },
     "extra": {
       "eas": {
