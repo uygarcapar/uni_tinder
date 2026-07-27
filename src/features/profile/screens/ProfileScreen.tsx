@@ -17,26 +17,31 @@ import {
   Platform,
   UIManager,
   Linking,
+  ActivityIndicator,
   StyleProp,
   ViewStyle,
 } from "react-native";
 import { Image } from "expo-image";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
-import * as ImagePicker from "expo-image-picker";
+import { pickAndCropPhotos, type PickedPhoto } from "../../../shared/utils/photoPicker";
 import { useAppDispatch, useAppSelector } from "@/shared/hooks/redux";
-import { logout } from "@/features/auth/authSlice";
 import { API_ENDPOINTS } from "@/shared/constants/api";
 import profileService from "@/features/profile/profileService";
-import api from "@/shared/services/api";
+import { staticGet } from "@/shared/services/staticCache";
 import PreviewModal from "@/features/profile/components/PreviewModal";
 import SettingsModal from "@/features/profile/components/SettingsModal";
 import PurchaseModal from "@/features/discover/components/PurchaseModal";
 import ScreenHeader from "@/shared/components/ScreenHeader";
 import { useSwipeStats } from "@/features/discover/swipeQueries";
 import { getOfferings } from "@/features/profile/subscriptionService";
-import { selectIsPremium } from "@/features/profile/subscriptionSlice";
 import {
-  LogOut,
+  clearSyncPending,
+  fetchSubscriptionStatus,
+  selectIsPremium,
+  selectSyncPending,
+  syncSubscriptionWithRetry,
+} from "@/features/profile/subscriptionSlice";
+import {
   Pencil,
   Check,
   X,
@@ -51,6 +56,7 @@ import {
   UserRound,
   ArrowUp,
 } from "lucide-react-native";
+import SFIcon, { type SFSymbol } from "@/shared/components/SFIcon";
 
 import { LinearGradient } from "expo-linear-gradient";
 import { BlurView } from "expo-blur";
@@ -184,7 +190,7 @@ function HeroAvatar({ uri, size = 80, onPress, loading = false }) {
           onError={() => setImgLoading(false)}
         />
       ) : loading ? null : (
-        <UserRound size={40} color={colors.text} strokeWidth={1.5} />
+        <SFIcon name="person.fill" fallback={UserRound} size={40} color={colors.text} strokeWidth={1.5} />
       )}
       {showSkeleton && (
         <View
@@ -288,7 +294,7 @@ function CompletionAccordion({
   isExpanded,
   onToggle,
   onEdit,
-  icon: Icon,
+  icon,
 }) {
   const { t } = useTranslation();
   const isComplete = current >= max;
@@ -338,7 +344,15 @@ function CompletionAccordion({
         }}
       >
         <View style={{ flexDirection: "row", alignItems: "center", gap: 10 }}>
-          {Icon && <Icon size={18} color={colors.text} strokeWidth={1.5} />}
+          {icon && (
+            <SFIcon
+              name={icon.sf}
+              fallback={icon.lucide}
+              size={18}
+              color={colors.text}
+              strokeWidth={1.5}
+            />
+          )}
           <Text style={{ color: colors.text, fontSize: 15, fontWeight: "600" }}>
             {title}
           </Text>
@@ -354,7 +368,7 @@ function CompletionAccordion({
             {current}/{max}
           </Text>
           <Animated.View style={chevronStyle}>
-            <ChevronDown size={20} color={colors.textSecondary} />
+            <SFIcon name="chevron.down" fallback={ChevronDown} size={20} color={colors.textSecondary} strokeWidth={2} weight="semibold" />
           </Animated.View>
         </View>
       </TouchableOpacity>
@@ -399,7 +413,10 @@ import EditProfileForm, {
   EditProfileFormSkeleton,
 } from "@/features/profile/components/EditProfileForm";
 import { hydrateProfileForm } from "@/features/profile/utils/hydrateProfileForm";
-import { colors, gradients } from "../../../shared/theme/colors";
+import { useQueryClient } from "@tanstack/react-query";
+import { swipeKeys } from "@/features/discover/swipeQueries";
+import { colors } from "../../../shared/theme/colors";
+import { useRenderCount } from "@/shared/debug/useRenderCount";
 
 // ─── Edit Modal sarmalayıcı ───────────────────────────────────────────────────
 // AppModal'ın standart action props'unu kullanır — Save butonu glass + controlSize
@@ -453,25 +470,131 @@ function ProfileEditModal({
   );
 }
 
+// Abonelik tarihleri (yenileme / iptal geçerlilik / trial bitişi / grace).
+// Aynı yıl içindeyse yıl gösterilmiyor. Geçersiz tarihte "" döner ki metin
+// "undefined tarihine kadar" gibi bozulmasın.
+const formatSubscriptionDate = (iso: string | null | undefined): string => {
+  if (!iso) return "";
+  const d = new Date(iso);
+  if (Number.isNaN(d.getTime())) return "";
+  const sameYear = d.getFullYear() === new Date().getFullYear();
+  return d.toLocaleDateString("tr-TR", {
+    day: "2-digit",
+    month: "short",
+    ...(sameYear ? {} : { year: "numeric" }),
+  });
+};
+
 // ══════════════════════════════════════════════════════════════════════════════
 export default function ProfileScreen() {
+  useRenderCount("ProfileScreen");
   const { t } = useTranslation();
   const dispatch = useAppDispatch();
   const { user } = useAppSelector((s) => (s as any).auth);
   const subscriptionIsPremium = useAppSelector(selectIsPremium);
   const subscriptionExpiresAt = useAppSelector((s) => (s as any).subscription?.expiresAt);
+  const subscriptionStatus = useAppSelector((s) => (s as any).subscription?.status);
+  const subscriptionIsTrial = useAppSelector((s) => (s as any).subscription?.isTrial);
+  const subscriptionTrialEndsAt = useAppSelector((s) => (s as any).subscription?.trialEndsAt);
+  const subscriptionGraceEndsAt = useAppSelector(
+    (s) => (s as any).subscription?.gracePeriodEndsAt,
+  );
+  const syncPending = useAppSelector(selectSyncPending);
+  const syncing = useAppSelector((s) => (s as any).subscription?.syncing);
   const insets = useSafeAreaInsets();
   const statsQuery = useSwipeStats();
 
-  // DiscoverScreen ile aynı fill oranı: premium veya remainingSwipes===-1 → 0.
-  const DAILY_SWIPE_LIMIT = 30;
+  // DiscoverScreen ile aynı fill oranı: (limit - kalan) / limit.
+  // Tavan backend'den (dailySwipeLimit) geliyor — SwipeLimitsOptions değişince
+  // FE otomatik uysun diye hard-code edilmiyor. Premium / -1 / limit yok → 0.
   const swipeFillRatio = useMemo(() => {
     if (statsQuery.data?.isPremium) return 0;
     const rem = statsQuery.data?.remainingSwipes;
+    const limit = statsQuery.data?.dailySwipeLimit;
     if (rem == null || rem < 0) return 0;
-    const used = Math.max(0, DAILY_SWIPE_LIMIT - rem);
-    return Math.min(1, used / DAILY_SWIPE_LIMIT);
-  }, [statsQuery.data?.remainingSwipes, statsQuery.data?.isPremium]);
+    if (limit == null || limit <= 0) return 0;
+    const used = Math.max(0, limit - rem);
+    return Math.min(1, used / limit);
+  }, [
+    statsQuery.data?.remainingSwipes,
+    statsQuery.data?.dailySwipeLimit,
+    statsQuery.data?.isPremium,
+  ]);
+
+  // Abonelik durum makinesi (backend `/status`.status + isActivelyPremium).
+  // `Cancelled` / `BillingIssue`'da backend premium erişimi AÇIK tutuyor
+  // (dönem sonu / grace bitişine kadar) — burada da kapatmıyoruz, sadece
+  // rozet + CTA değişiyor.
+  const subscriptionView = useMemo(() => {
+    if (syncPending) {
+      return {
+        kind: "pending" as const,
+        badge: t("profile.subscription.pendingBadge"),
+        description: t("profile.subscription.pendingDescription"),
+      };
+    }
+    if (subscriptionStatus === "BillingIssue") {
+      return {
+        kind: "billingIssue" as const,
+        badge: t("profile.subscription.billingIssueBadge"),
+        description: subscriptionGraceEndsAt
+          ? t("profile.subscription.billingIssueDescription", {
+              date: formatSubscriptionDate(subscriptionGraceEndsAt),
+            })
+          : t("profile.subscription.billingIssueDescriptionNoDate"),
+      };
+    }
+    if (subscriptionStatus === "Cancelled") {
+      return {
+        kind: "cancelled" as const,
+        badge: t("profile.subscription.cancelledBadge"),
+        description: subscriptionExpiresAt
+          ? t("profile.subscription.cancelledDescription", {
+              date: formatSubscriptionDate(subscriptionExpiresAt),
+            })
+          : t("profile.subscription.cancelledDescriptionNoDate"),
+      };
+    }
+    if (subscriptionIsTrial) {
+      return {
+        kind: "trial" as const,
+        badge: t("profile.subscription.trialBadge"),
+        description: subscriptionTrialEndsAt
+          ? t("profile.subscription.trialDescription", {
+              date: formatSubscriptionDate(subscriptionTrialEndsAt),
+            })
+          : t("profile.subscription.trialDescriptionNoDate"),
+      };
+    }
+    return {
+      kind: "active" as const,
+      badge: t("profile.subscription.status"),
+      description: t("profile.subscription.activeDescription"),
+    };
+  }, [
+    syncPending,
+    subscriptionStatus,
+    subscriptionIsTrial,
+    subscriptionTrialEndsAt,
+    subscriptionGraceEndsAt,
+    subscriptionExpiresAt,
+    t,
+  ]);
+
+  // "Aktivasyon sürüyor" kartındaki manuel yenile: önce canonical `/status`,
+  // hâlâ premium görünmüyorsa tek bir `/sync` denemesi (backoff'lu tam tur
+  // satın alma anında zaten atıldı; burada kullanıcı tetikliyor).
+  const handleRetrySync = useCallback(() => {
+    dispatch(fetchSubscriptionStatus())
+      .unwrap()
+      .then((res: any) => {
+        if (!res?.isPremium) dispatch(syncSubscriptionWithRetry({ maxAttempts: 1 }));
+        else dispatch(clearSyncPending());
+      })
+      .catch(() => {
+        dispatch(syncSubscriptionWithRetry({ maxAttempts: 1 }));
+      });
+  }, [dispatch]);
 
   const scrollY = useSharedValue(0);
   const scrollHandler = useAnimatedScrollHandler({
@@ -526,10 +649,11 @@ export default function ProfileScreen() {
   const [smokingOptions, setSmokingOptions] = useState([]);
   const [zodiacOptions, setZodiacOptions] = useState([]);
   const [usagePurposeOptions, setUsagePurposeOptions] = useState([]);
-  const [interestedInOptions, setInterestedInOptions] = useState([]);
   const [cityOptions, setCityOptions] = useState([]);
   const [languageOptions, setLanguageOptions] = useState([]);
   const [petOptions, setPetOptions] = useState([]);
+  const [genderCategories, setGenderCategories] = useState([]);
+  const qc = useQueryClient();
 
   // ── Genel UI ───────────────────────────────────────────────────────────────
   const [loading, setLoading] = useState(true);
@@ -616,20 +740,25 @@ export default function ProfileScreen() {
         smokingRes,
         zodiacRes,
         usageRes,
-        interestedInRes,
         citiesRes,
         languagesRes,
         petsRes,
+        gendersRes,
       ] = await Promise.all([
         profileService.getMyProfile(),
-        safe("hobbies", api.get(API_ENDPOINTS.GET_HOBBIES)),
-        safe("smoking", api.get(API_ENDPOINTS.GET_SMOKING_STATUSES)),
-        safe("zodiacs", api.get(API_ENDPOINTS.GET_ZODIACS)),
-        safe("usage", api.get(API_ENDPOINTS.GET_USAGE_PURPOSES)),
-        safe("interested-in", api.get(API_ENDPOINTS.GET_INTERESTED_IN)),
-        safe("cities", api.get(API_ENDPOINTS.GET_CITIES)),
-        safe("languages", api.get(API_ENDPOINTS.GET_LANGUAGES)),
-        safe("pets", api.get(API_ENDPOINTS.GET_PETS)),
+        // Statik enum listeleri → staticGet (oturum-boyu tek fetch, ekranlar-arası
+        // paylaşımlı). cities Discover filtresiyle (useCities → staticGet) aynı
+        // isteği paylaşır → cities ×2 tek isteğe iner.
+        safe("hobbies", staticGet(API_ENDPOINTS.GET_HOBBIES)),
+        safe("smoking", staticGet(API_ENDPOINTS.GET_SMOKING_STATUSES)),
+        safe("zodiacs", staticGet(API_ENDPOINTS.GET_ZODIACS)),
+        safe("usage", staticGet(API_ENDPOINTS.GET_USAGE_PURPOSES)),
+        safe("cities", staticGet(API_ENDPOINTS.GET_CITIES)),
+        safe("languages", staticGet(API_ENDPOINTS.GET_LANGUAGES)),
+        safe("pets", staticGet(API_ENDPOINTS.GET_PETS)),
+        // Cinsiyet kategorileri — EditProfileForm'daki cinsiyet picker'ı için.
+        // RegisterStep7 aynı endpoint'i useGenders ile çekiyor; liste tek kaynak.
+        safe("genders", staticGet(API_ENDPOINTS.GET_GENDERS)),
       ]);
 
       setMyProfile(profile);
@@ -651,11 +780,10 @@ export default function ProfileScreen() {
       if (smokingRes?.result) setSmokingOptions(smokingRes.result);
       if (zodiacRes?.result) setZodiacOptions(zodiacRes.result);
       if (usageRes?.result) setUsagePurposeOptions(usageRes.result);
-      if (interestedInRes?.result)
-        setInterestedInOptions(interestedInRes.result);
       if (citiesRes?.result) setCityOptions(citiesRes.result);
       if (languagesRes?.result) setLanguageOptions(languagesRes.result);
       if (petsRes?.result) setPetOptions(petsRes.result);
+      if (gendersRes?.result) setGenderCategories(gendersRes.result);
     } catch (e) {
       console.error("Profile load error:", e);
     } finally {
@@ -666,6 +794,17 @@ export default function ProfileScreen() {
   useEffect(() => {
     loadProfile();
   }, [loadProfile]);
+
+  // Premium false→true geçişinde profili tazele. Doküman §9: aktivasyon sonrası
+  // `GetMyProfile` de invalidate edilmeli — rozet + premium-scoped alanlar free
+  // scope'ta çekilmiş kalıyordu. myProfile react-query'de değil local state'te,
+  // bu yüzden PurchaseModal'ın refetchPremiumScoped'u buraya ulaşmıyor.
+  const prevPremiumRef = useRef(subscriptionIsPremium);
+  useEffect(() => {
+    if (prevPremiumRef.current === subscriptionIsPremium) return;
+    prevPremiumRef.current = subscriptionIsPremium;
+    if (subscriptionIsPremium) loadProfile();
+  }, [subscriptionIsPremium, loadProfile]);
 
   // ── Helpers ────────────────────────────────────────────────────────────────
   const resolveHobbies = (raw) => {
@@ -716,10 +855,20 @@ export default function ProfileScreen() {
   // Tüm form state ve toggle/save logic'i EditProfileForm'da. Parent yalnızca
   // modal'ı açıp kapatır + save sonrası optimistic patch'i myProfile cache'ine
   // uygular.
-  const openEditProfile = useCallback(() => setEditVisible(true), []);
+  // İlk açılış: skeleton → onPresented/data-ready ile form. Sonraki açılışlar:
+  // veriler cache'li (districtCache, initialValues) + form "ısınmış" olduğu için
+  // skeleton'ı atla, editFormReady'yi anında aç → reopen anında tam form gelir.
+  const hasOpenedEditOnceRef = useRef(false);
+  const openEditProfile = useCallback(() => {
+    setEditVisible(true);
+    if (hasOpenedEditOnceRef.current) setEditFormReady(true);
+    hasOpenedEditOnceRef.current = true;
+  }, []);
   const closeEditProfile = useCallback(() => {
     setEditVisible(false);
-    setEditFormReady(false); // sonraki açılışta yeniden skeleton göster
+    // editFormReady'yi ilk açılıştan sonra false'a çekmiyoruz — reopen'da skeleton
+    // flash'ı olmasın. İlk kez henüz açılmadıysa (edge) skeleton mantığı korunur.
+    if (!hasOpenedEditOnceRef.current) setEditFormReady(false);
   }, []);
 
   // Edit form'un initial değerlerini parent'ta sync hesapla. Form mount'unda
@@ -737,7 +886,6 @@ export default function ProfileScreen() {
       smokingOptions,
       zodiacOptions,
       usagePurposeOptions,
-      interestedInOptions,
       cityOptions,
       languageOptions,
       petOptions,
@@ -748,7 +896,6 @@ export default function ProfileScreen() {
     smokingOptions,
     zodiacOptions,
     usagePurposeOptions,
-    interestedInOptions,
     cityOptions,
     languageOptions,
     petOptions,
@@ -777,18 +924,24 @@ export default function ProfileScreen() {
       setMyProfile((p) => ({ ...p, ...optimisticPatch }));
       // Fotoğraf order değişmiş olabilir; backend'den taze veriyi çek.
       refreshPhotos();
+      // Cinsiyet değişimi Discover destesini etkiliyor: HardFilterStage
+      // reciprocity kontrolü (p.InterestedInFlags & viewer'ın kategorisi) benim
+      // cinsiyetime bakıyor, yani kimlerin karşıma çıkacağı değişiyor. Backend
+      // aday havuzunu invalidate ediyor ama react-query kendi cache'ini tutuyor
+      // (staleTime 60sn + infinite query sayfaları) → deste elle tazelenmezse
+      // eski hâliyle kalıyor.
+      qc.invalidateQueries({ queryKey: swipeKeys.matches });
       closeEditProfile();
     },
-    // refreshPhotos aşağıda tanımlı; deps boş — closure stale olmaz çünkü
+    // refreshPhotos aşağıda tanımlı; deps'te yok — closure stale olmaz çünkü
     // refreshPhotos hep aynı module-bound fn.
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-    [closeEditProfile],
+    [closeEditProfile, qc],
   );
 
   // ── Fotoğraf aksiyonları ───────────────────────────────────────────────────
   const refreshPhotos = async () => {
     try {
-      const profile = await profileService.getMyProfile();
+      const profile = await profileService.getMyProfile(true); // foto sonrası taze
       setMyProfile(profile);
     } catch (e) {
       console.error("Profil yenileme hatası:", e?.message);
@@ -796,27 +949,25 @@ export default function ProfileScreen() {
   };
 
   const handleAddPhoto = async () => {
-    const { status } = await ImagePicker.requestMediaLibraryPermissionsAsync();
-    if (status !== "granted") {
-      Alert.alert(
-        t('profile.permissions.title'),
-        t('profile.permissions.galleryMessage'),
-      );
+    // Kayıt akışıyla aynı 3:4 crop'lu seçim; crop-picker izni kendisi ister.
+    let picked: PickedPhoto[];
+    try {
+      picked = await pickAndCropPhotos(1);
+    } catch (e: any) {
+      if (e?.code === "E_NO_LIBRARY_PERMISSION") {
+        Alert.alert(
+          t('profile.permissions.title'),
+          t('profile.permissions.galleryMessage'),
+        );
+      }
       return;
     }
-    const result = await ImagePicker.launchImageLibraryAsync({
-      mediaTypes: ["images"],
-      allowsEditing: true,
-      aspect: [3, 4],
-      quality: 0.85,
-    });
-    if (result.canceled) return;
+    if (picked.length === 0) return;
 
-    const asset = result.assets[0];
     const file = {
-      uri: asset.uri,
-      type: asset.mimeType || "image/jpeg",
-      name: asset.fileName || `photo_${Date.now()}.jpg`,
+      uri: picked[0].uri,
+      type: picked[0].mime,
+      name: picked[0].fileName,
     };
 
     setSavingPhoto(true);
@@ -877,17 +1028,6 @@ export default function ProfileScreen() {
     }
   };
 
-  // ── Hesap aksiyonları ──────────────────────────────────────────────────────
-  const handleLogout = () =>
-    Alert.alert(t('profile.logout.title'), t('profile.logout.message'), [
-      { text: t('common.cancel'), style: "cancel" },
-      {
-        text: t('profile.logout.confirmButton'),
-        style: "destructive",
-        onPress: () => dispatch(logout()),
-      },
-    ]);
-
   const handleAccordionToggle = (key) => {
     didAutoExpandRef.current = true;
     setExpandedSection(expandedSection === key ? null : key);
@@ -908,7 +1048,7 @@ export default function ProfileScreen() {
     {
       key: "photos",
       title: t('profile.completion.photos'),
-      icon: Camera,
+      icon: { sf: "camera.fill" as SFSymbol, lucide: Camera },
       current: myProfile?.photosList?.length || 0,
       max: 6,
       desc: t('profile.completion.photosDescription'),
@@ -916,7 +1056,7 @@ export default function ProfileScreen() {
     {
       key: "hobbies",
       title: t('profile.completion.hobbies'),
-      icon: Heart,
+      icon: { sf: "heart" as SFSymbol, lucide: Heart },
       current: myProfile?.hobbies?.length || 0,
       max: 10,
       desc: t('profile.completion.hobbiesDescription'),
@@ -924,7 +1064,7 @@ export default function ProfileScreen() {
     {
       key: "bio",
       title: t('profile.completion.bio'),
-      icon: BookOpen,
+      icon: { sf: "book.fill" as SFSymbol, lucide: BookOpen },
       current: myProfile?.bio?.trim().length > 0 ? 1 : 0,
       max: 1,
       desc: t('profile.completion.bioDescription'),
@@ -932,7 +1072,7 @@ export default function ProfileScreen() {
     {
       key: "smoking",
       title: t('profile.completion.smoking'),
-      icon: Cigarette,
+      icon: { sf: "smoke.fill" as SFSymbol, lucide: Cigarette },
       current: myProfile?.smokingStatus != null ? 1 : 0,
       max: 1,
       desc: t('profile.completion.smokingDescription'),
@@ -940,7 +1080,7 @@ export default function ProfileScreen() {
     {
       key: "zodiac",
       title: t('profile.completion.zodiac'),
-      icon: Star,
+      icon: { sf: "star.fill" as SFSymbol, lucide: Star },
       current: myProfile?.zodiacSign != null ? 1 : 0,
       max: 1,
       desc: t('profile.completion.zodiacDescription'),
@@ -948,7 +1088,7 @@ export default function ProfileScreen() {
     {
       key: "purpose",
       title: t('profile.completion.purpose'),
-      icon: Target,
+      icon: { sf: "target" as SFSymbol, lucide: Target },
       current: myProfile?.usagePurpose != null ? 1 : 0,
       max: 1,
       desc: t('profile.completion.purposeDescription'),
@@ -1135,7 +1275,7 @@ export default function ProfileScreen() {
                       }}
                       className="flex-row self-start justify-center text-center items-center border-[0.5px] border-white/10 px-4 py-5 gap-2"
                     >
-                      <Pencil size={15} color={colors.text} strokeWidth={2} />
+                      <SFIcon name="pencil" fallback={Pencil} size={15} color={colors.text} strokeWidth={2} weight="semibold" />
                       <Text
                         style={{
                           color: colors.text,
@@ -1155,8 +1295,7 @@ export default function ProfileScreen() {
             {isPremium && (
               <View className="mb-10 px-4 mt-2">
                 <LinearGradient
-                  colors={gradients.premium}
-                  locations={[0, 0.5, 1]}
+                  colors={[colors.litPlus, colors.litPlus]}
                   start={{ x: 0, y: 0 }}
                   end={{ x: 1, y: 1 }}
                   style={{
@@ -1190,7 +1329,7 @@ export default function ProfileScreen() {
                         numberOfLines={3}
                         className="text-white/80 font-medium text-[14px] leading-5"
                       >
-                        {t('profile.subscription.activeDescription')}
+                        {subscriptionView.description}
                       </Text>
                     </View>
                     <View
@@ -1202,53 +1341,87 @@ export default function ProfileScreen() {
                       }}
                     >
                       <Text className="text-white font-bold text-[13px]">
-                        {t('profile.subscription.status')}
+                        {subscriptionView.badge}
                       </Text>
                     </View>
                   </View>
 
                   <View className="px-5 pb-6 pt-3">
-                    <TouchableOpacity
-                      activeOpacity={0.8}
-                      onPress={() => {
-                        const url =
-                          Platform.OS === "ios"
-                            ? "https://apps.apple.com/account/subscriptions"
-                            : "https://play.google.com/store/account/subscriptions";
-                        Linking.openURL(url).catch(() => {});
-                      }}
-                      className="w-full border-[0.5px] border-gray-300 py-[17px] items-center justify-center"
-                      style={{
-                        borderRadius: 999,
-                        borderCurve: "continuous",
-                        overflow: "hidden",
-                      }}
-                    >
-                      <Text className="font-medium text-[14px] text-white">
-                        {subscriptionExpiresAt ? (
-                          <>
-                            <Text style={{ fontWeight: "700" }}>
-                              {t('profile.subscription.manageButton')}
-                            </Text>
-                            <Text style={{ color: "rgba(255,255,255,0.55)" }}>
-                              {` · ${t('profile.subscription.renewalLabel')} `}
-                              {(() => {
-                                const d = new Date(subscriptionExpiresAt);
-                                const sameYear =
-                                  d.getFullYear() === new Date().getFullYear();
-                                return d.toLocaleDateString("tr-TR", {
-                                  day: "2-digit",
-                                  month: "short",
-                                  ...(sameYear ? {} : { year: "numeric" }),
-                                });
-                              })()}
-                            </Text>
-                          </>
+                    {/* Aktivasyon bekliyorsa (satın alma alındı, backend henüz
+                        premium görmüyor) store'a değil manuel yenilemeye
+                        yönlendiriyoruz. İptal/ödeme sorununda ise store'daki
+                        abonelik ekranı doğru hedef. */}
+                    {subscriptionView.kind === "pending" ? (
+                      <TouchableOpacity
+                        activeOpacity={0.8}
+                        onPress={handleRetrySync}
+                        disabled={syncing}
+                        className="w-full border-[0.5px] border-gray-300 py-[17px] items-center justify-center"
+                        style={{
+                          borderRadius: 999,
+                          borderCurve: "continuous",
+                          overflow: "hidden",
+                          opacity: syncing ? 0.6 : 1,
+                        }}
+                      >
+                        {syncing ? (
+                          <ActivityIndicator size="small" color={colors.text} />
                         ) : (
-                          t('profile.subscription.manageAlt')
+                          <Text className="font-bold text-[14px] text-white">
+                            {t('profile.subscription.retryButton')}
+                          </Text>
                         )}
-                      </Text>
-                    </TouchableOpacity>
+                      </TouchableOpacity>
+                    ) : (
+                      <TouchableOpacity
+                        activeOpacity={0.8}
+                        onPress={() => {
+                          const url =
+                            Platform.OS === "ios"
+                              ? "https://apps.apple.com/account/subscriptions"
+                              : "https://play.google.com/store/account/subscriptions";
+                          Linking.openURL(url).catch(() => {});
+                        }}
+                        className="w-full border-[0.5px] border-gray-300 py-[17px] items-center justify-center"
+                        style={{
+                          borderRadius: 999,
+                          borderCurve: "continuous",
+                          overflow: "hidden",
+                        }}
+                      >
+                        <Text className="font-medium text-[14px] text-white">
+                          {subscriptionView.kind === "billingIssue" ? (
+                            <Text style={{ fontWeight: "700" }}>
+                              {t('profile.subscription.fixPaymentButton')}
+                            </Text>
+                          ) : subscriptionView.kind === "cancelled" ? (
+                            <Text style={{ fontWeight: "700" }}>
+                              {t('profile.subscription.resubscribeButton')}
+                            </Text>
+                          ) : subscriptionExpiresAt ? (
+                            <>
+                              <Text style={{ fontWeight: "700" }}>
+                                {t('profile.subscription.manageButton')}
+                              </Text>
+                              <Text style={{ color: "rgba(255,255,255,0.55)" }}>
+                                {` · ${t(
+                                  subscriptionView.kind === "trial"
+                                    ? 'profile.subscription.trialEndsLabel'
+                                    : 'profile.subscription.renewalLabel',
+                                )} `}
+                                {formatSubscriptionDate(
+                                  subscriptionView.kind === "trial" && subscriptionTrialEndsAt
+                                    ? subscriptionTrialEndsAt
+                                    : subscriptionExpiresAt,
+                                )}
+                              </Text>
+                            </>
+                          ) : (
+                            t('profile.subscription.manageAlt')
+                          )}
+                        </Text>
+                      </TouchableOpacity>
+                    )}
                   </View>
                 </LinearGradient>
               </View>
@@ -1317,7 +1490,7 @@ export default function ProfileScreen() {
                               opacity: 0.2,
                             }}
                           >
-                            <ArrowUp size={22} color={colors.text} strokeWidth={4} />
+                            <SFIcon name="arrow.up" fallback={ArrowUp} size={22} color={colors.text} strokeWidth={4} weight="heavy" />
                           </View>
                           <View
                             style={{
@@ -1327,9 +1500,9 @@ export default function ProfileScreen() {
                               opacity: 0.2,
                             }}
                           >
-                            <ArrowUp size={22} color={colors.text} strokeWidth={4} />
+                            <SFIcon name="arrow.up" fallback={ArrowUp} size={22} color={colors.text} strokeWidth={4} weight="heavy" />
                           </View>
-                          <ArrowUp size={28} color={colors.text} strokeWidth={4} />
+                          <SFIcon name="arrow.up" fallback={ArrowUp} size={28} color={colors.text} strokeWidth={4} weight="heavy" />
                         </View>
                         <Text
                           numberOfLines={1}
@@ -1387,14 +1560,17 @@ export default function ProfileScreen() {
                           </Text>
                           <View className="flex-row items-center gap-4">
                             <View className="w-16 items-center">
-                              <X
+                              <SFIcon
+                                name="xmark"
+                                fallback={X}
                                 size={18}
                                 color="rgba(255,255,255,0.4)"
                                 strokeWidth={2}
+                                weight="semibold"
                               />
                             </View>
                             <View className="w-16 items-center">
-                              <Check size={18} color={colors.text} strokeWidth={2} />
+                              <SFIcon name="checkmark" fallback={Check} size={18} color={colors.text} strokeWidth={2} weight="semibold" />
                             </View>
                           </View>
                         </View>
@@ -1456,38 +1632,6 @@ export default function ProfileScreen() {
               </View>
             )}
 
-            {/* ── Hesap Sil / Çıkış Yap ── */}
-            <View style={{ paddingHorizontal: 16, paddingBottom: 64 }}>
-              <Text
-                style={{
-                  color: colors.textSecondary,
-                  fontSize: 13,
-                  fontWeight: "700",
-                  marginBottom: 12,
-                  marginLeft: 4,
-                }}
-              >
-                {t('profile.account.title')}
-              </Text>
-              <View>
-                <TouchableOpacity
-                  onPress={handleLogout}
-                  style={{
-                    borderRadius: 999,
-                    borderCurve: "continuous",
-                    overflow: "hidden",
-                  }}
-                  className="flex-row justify-center text-center items-center border-[0.5px] border-white/10 px-3 py-5 gap-2"
-                >
-                  <LogOut size={20} color={colors.text} strokeWidth={1.5} />
-                  <Text
-                    style={{ color: colors.text, fontWeight: "500", fontSize: 14 }}
-                  >
-                    {t('profile.logout.button')}
-                  </Text>
-                </TouchableOpacity>
-              </View>
-            </View>
           </Animated.ScrollView>
         )}
 
@@ -1515,11 +1659,14 @@ export default function ProfileScreen() {
                 activeOpacity={0.7}
                 onPress={() => setSettingsVisible(true)}
               >
-                <Settings
+                <SFIcon
+                  name="gearshape.fill"
+                  fallback={Settings}
                   size={29}
                   strokeWidth={2}
+                  weight="semibold"
                   color={colors.text}
-                  pointerEvents="none"
+                  style={{ pointerEvents: "none" }}
                 />
               </TouchableOpacity>
             )
@@ -1551,10 +1698,10 @@ export default function ProfileScreen() {
                 smokingOptions={smokingOptions}
                 zodiacOptions={zodiacOptions}
                 usagePurposeOptions={usagePurposeOptions}
-                interestedInOptions={interestedInOptions}
                 cityOptions={cityOptions}
                 languageOptions={languageOptions}
                 petOptions={petOptions}
+                genderCategories={genderCategories}
                 savingPhoto={savingPhoto}
                 onAddPhoto={handleAddPhoto}
                 onPhotoPress={handlePhotoPress}

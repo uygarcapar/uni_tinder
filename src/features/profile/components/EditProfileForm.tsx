@@ -18,6 +18,8 @@ import {
   Platform,
   Switch,
   type DimensionValue,
+  type StyleProp,
+  type ViewStyle,
 } from "react-native";
 import { showInfoToast } from "@/shared/services/toaster";
 import { Image } from "expo-image";
@@ -46,8 +48,6 @@ import {
   Star,
   Navigation,
   Languages,
-  User,
-  UserRound,
   Users,
   Globe,
   Dog,
@@ -71,47 +71,21 @@ import {
   Fish,
   IdCardLanyard,
   Dumbbell,
-  Footprints,
-  Waves,
-  Bike,
   Trees,
-  HandMetal,
-  Trophy,
-  Music2,
   Utensils,
-  Cake,
-  Wine,
-  Coffee,
-  Soup,
-  Sandwich,
-  Camera,
   Palette,
-  BookOpenCheck,
-  Book,
-  Flower2,
-  ShoppingBag,
-  Headphones,
   PartyPopper,
-  Guitar,
-  Piano,
-  Mic2,
   Music,
   Plane,
-  Tent,
-  Sunrise,
   BookOpen,
   Theater,
-  Drama,
   Film,
   Lightbulb,
   Gamepad2,
-  Puzzle,
   Code,
-  Smartphone,
-  Newspaper,
-  TrendingUp,
-  Orbit,
+  type LucideIcon,
 } from "lucide-react-native";
+import SFIcon, { type SFSymbol } from "@/shared/components/SFIcon";
 import { API_ENDPOINTS } from "@/shared/constants/api";
 import api from "@/shared/services/api";
 import profileService from "@/features/profile/profileService";
@@ -119,12 +93,15 @@ import AppBottomSheet from "@/shared/components/AppBottomSheet";
 import SearchableListSheet from "@/shared/components/SearchableListSheet";
 import CityPickerModal from "@/features/discover/components/CityPickerModal";
 import LanguagePickerModal from "@/features/profile/components/LanguagePickerModal";
+import GenderCategoryPicker from "@/shared/components/GenderCategoryPicker";
+import { resolveLocalized } from "@/shared/queries/commonQueries";
 import { useForm, Controller } from "react-hook-form";
 import { zodResolver } from "@hookform/resolvers/zod";
 import { editProfileFormSchema, EditProfileFormData } from "@/shared/schemas/formSchemas";
 import { matchOption } from "@/features/profile/utils/hydrateProfileForm";
 import { useTranslation } from "react-i18next";
 import { colors } from "../../../shared/theme/colors";
+import HobbyIcon from "@/shared/components/HobbyIcon";
 
 // ─── Reanimated Grid Hesaplamaları ─────────────────────────────────────────
 const { width: WINDOW_WIDTH } = Dimensions.get("window");
@@ -135,6 +112,18 @@ const GAP = (AVAILABLE_WIDTH - 3 * ITEM_WIDTH) / 2;
 const ITEM_HEIGHT = ITEM_WIDTH * (4 / 3);
 const ROW_GAP = 20;
 const SPRING_CONFIG = { damping: 22, stiffness: 140, mass: 1.4 };
+
+// cityId → districts cache. Edit modalı bottom-sheet olduğu için kapanışta
+// content unmount oluyor; form her açılışta remount → "mount-once" district
+// fetch'i her açılışta tekrar atıyordu (GET /cities/:id/districts). Modül
+// seviyesindeki bu Map remount'lar arası yaşar → aynı şehir için tek istek,
+// sonraki açılışlarda ilçeler cache'ten anında gelir.
+const districtCache = new Map<number, any[]>();
+
+// Edit formu ilk kez mount edildi mi? İlk mount progressive (stage 1→4, skeleton);
+// sonraki her mount doğrudan stage 4 → anında tam form (skeleton/pop-in yok).
+// Modül seviyesi olduğu için remount'lar arası yaşar.
+let editFormWarmedUp = false;
 
 const getContainerHeight = (photoCount) =>
   photoCount <= 2 ? ITEM_HEIGHT : 2 * ITEM_HEIGHT + ROW_GAP;
@@ -155,295 +144,211 @@ const getOrder = (tx, ty, maxIndex) => {
 };
 
 // ─── Icon haritaları ───────────────────────────────────────────────────────
-const HOBBY_ICON_MAP = {
-  // Backend enumName (PascalCase)
-  Gym: Dumbbell,
-  Yoga: Heart,
-  Running: Footprints,
-  Swimming: Waves,
-  Cycling: Bike,
-  Hiking: Trees,
-  Climbing: Mountain,
-  Boxing: HandMetal,
-  MartialArts: Trophy,
-  Dancing: Music2,
-  Pilates: Sparkles,
-  Cooking: Utensils,
-  Baking: Cake,
-  WineTasting: Wine,
-  Coffee: Coffee,
-  Foodie: Soup,
-  VeganCuisine: Sandwich,
-  Mixology: Wine,
-  Photography: Camera,
-  Painting: Palette,
-  Drawing: Palette,
-  Writing: BookOpenCheck,
-  Poetry: Book,
-  Crafts: Sparkles,
-  DIY: Flower2,
-  Fashion: ShoppingBag,
-  Music: Headphones,
-  Concerts: PartyPopper,
-  Guitar: Guitar,
-  Piano: Piano,
-  Singing: Mic2,
-  DJing: Music,
-  Festivals: PartyPopper,
-  Travel: Plane,
-  Camping: Tent,
-  Fishing: Fish,
-  Surfing: Waves,
-  Skiing: Mountain,
-  Snowboarding: Mountain,
-  Gardening: Flower2,
-  BeachLife: Sunrise,
-  Reading: BookOpen,
-  Museums: Theater,
-  ArtGalleries: Palette,
-  Theater: Drama,
-  Cinema: Film,
-  Documentaries: Film,
-  Learning: Lightbulb,
-  Languages: Languages,
-  VideoGames: Gamepad2,
-  BoardGames: Puzzle,
-  Chess: Puzzle,
-  Coding: Code,
-  Gaming: Gamepad2,
-  VR: Smartphone,
-  Podcasts: Headphones,
-  Volunteering: Users,
-  Pets: Dog,
-  Dogs: Dog,
-  Cats: Cat,
-  Meditation: Heart,
-  Astrology: Orbit,
-  Shopping: ShoppingBag,
-  Nightlife: Music2,
-  Brunch: Coffee,
-  SocialDrinking: Wine,
-  Networking: Briefcase,
-  Politics: Newspaper,
-  Philosophy: BookOpen,
-  Science: Lightbulb,
-  History: Book,
-  Investing: TrendingUp,
-  Entrepreneurship: Briefcase,
-  // Legacy TR display keys
-  "Fitness & Spor": Dumbbell,
-  Koşu: Footprints,
-  Yüzme: Waves,
-  Bisiklet: Bike,
-  "Doğa Yürüyüşü": Trees,
-  "Kaya Tırmanışı": Mountain,
-  Boks: HandMetal,
-  "Dövüş Sanatları": Trophy,
-  Dans: Music2,
-  "Yemek Pişirme": Utensils,
-  Fırıncılık: Cake,
-  "Şarap Tadımı": Wine,
-  "Kahve Tutkusu": Coffee,
-  Gurme: Soup,
-  "Vegan Mutfak": Sandwich,
-  Miksologluk: Wine,
-  Fotoğrafçılık: Camera,
-  Resim: Palette,
-  Çizim: Palette,
-  Yazarlık: BookOpenCheck,
-  Şiir: Book,
-  "El Sanatları": Sparkles,
-  "Kendin Yap (DIY)": Flower2,
-  Moda: ShoppingBag,
-  Müzik: Headphones,
-  Konserler: PartyPopper,
-  "Gitar Çalmak": Guitar,
-  "Piyano Çalmak": Piano,
-  "Şarkı Söylemek": Mic2,
-  "DJ'lik": Music,
-  Festivaller: PartyPopper,
-  Seyahat: Plane,
-  Kamp: Tent,
-  "Balık Tutma": Fish,
-  Sörf: Waves,
-  Kayak: Mountain,
-  Snowboard: Mountain,
-  Bahçıvanlık: Flower2,
-  "Plaj Hayatı": Sunrise,
-  Okumak: BookOpen,
-  Müzeler: Theater,
-  "Sanat Galerileri": Palette,
-  Tiyatro: Drama,
-  Sinema: Film,
-  Belgesel: Film,
-  Öğrenme: Lightbulb,
-  Diller: Languages,
-  "Video Oyunları": Gamepad2,
-  "Masa Oyunları": Puzzle,
-  Satranç: Puzzle,
-  Yazılım: Code,
-  Oyun: Gamepad2,
-  "Podcast'ler": Headphones,
-  Gönüllülük: Users,
-  "Evcil Hayvanlar": Dog,
-  Köpekler: Dog,
-  Kediler: Cat,
-  Meditasyon: Heart,
-  Astroloji: Orbit,
-  Alışveriş: ShoppingBag,
-  "Gece Hayatı": Music2,
-  "Sosyal İçici": Wine,
-  Siyaset: Newspaper,
-  Felsefe: BookOpen,
-  Bilim: Lightbulb,
-  Tarih: Book,
-  Yatırım: TrendingUp,
-  Girişimcilik: Briefcase,
-};
-const getHobbyIcon = (name) => HOBBY_ICON_MAP[name] || Heart;
+// iOS'ta SF Symbol, Android'de lucide fallback. `sf` opsiyonel — SF karşılığı
+// olmayan ikonlar (ör. Rat) her iki platformda da lucide render edilir.
+type IconEntry = { sf?: SFSymbol; lucide: LucideIcon };
 
-const ZODIAC_ICON_MAP = {
+function EntryIcon({
+  entry,
+  size,
+  color,
+  strokeWidth = 1.5,
+  style,
+}: {
+  entry: IconEntry;
+  size: number;
+  color: string;
+  strokeWidth?: number;
+  style?: StyleProp<ViewStyle>;
+}) {
+  if (!entry.sf) {
+    const Lucide = entry.lucide;
+    return (
+      <Lucide size={size} color={color} strokeWidth={strokeWidth} style={style} />
+    );
+  }
+  return (
+    <SFIcon
+      name={entry.sf}
+      fallback={entry.lucide}
+      size={size}
+      color={color}
+      strokeWidth={strokeWidth}
+      style={style}
+    />
+  );
+}
+
+const ZODIAC_ICON_MAP: Record<string, IconEntry> = {
   // Backend enumName (PascalCase)
-  Aries: Flame,
-  Taurus: Leaf,
-  Gemini: Wind,
-  Cancer: Moon,
-  Leo: Sun,
-  Virgo: Leaf,
-  Libra: Scale,
-  Scorpio: Zap,
-  Sagittarius: Navigation,
-  Capricorn: Mountain,
-  Aquarius: Droplets,
-  Pisces: Fish,
+  Aries: { sf: "flame.fill", lucide: Flame },
+  Taurus: { sf: "leaf.fill", lucide: Leaf },
+  Gemini: { sf: "wind", lucide: Wind },
+  Cancer: { sf: "moon.fill", lucide: Moon },
+  Leo: { sf: "sun.max.fill", lucide: Sun },
+  Virgo: { sf: "leaf.fill", lucide: Leaf },
+  Libra: { sf: "scalemass.fill", lucide: Scale },
+  Scorpio: { sf: "bolt.fill", lucide: Zap },
+  Sagittarius: { sf: "location.fill", lucide: Navigation },
+  Capricorn: { sf: "mountain.2.fill", lucide: Mountain },
+  Aquarius: { sf: "drop.fill", lucide: Droplets },
+  Pisces: { sf: "fish.fill", lucide: Fish },
   // Legacy TR display fallback
-  Koç: Flame,
-  Boğa: Leaf,
-  İkizler: Wind,
-  Yengeç: Moon,
-  Aslan: Sun,
-  Başak: Leaf,
-  Terazi: Scale,
-  Akrep: Zap,
-  Yay: Navigation,
-  Oğlak: Mountain,
-  Kova: Droplets,
-  Balık: Fish,
+  Koç: { sf: "flame.fill", lucide: Flame },
+  Boğa: { sf: "leaf.fill", lucide: Leaf },
+  İkizler: { sf: "wind", lucide: Wind },
+  Yengeç: { sf: "moon.fill", lucide: Moon },
+  Aslan: { sf: "sun.max.fill", lucide: Sun },
+  Başak: { sf: "leaf.fill", lucide: Leaf },
+  Terazi: { sf: "scalemass.fill", lucide: Scale },
+  Akrep: { sf: "bolt.fill", lucide: Zap },
+  Yay: { sf: "location.fill", lucide: Navigation },
+  Oğlak: { sf: "mountain.2.fill", lucide: Mountain },
+  Kova: { sf: "drop.fill", lucide: Droplets },
+  Balık: { sf: "fish.fill", lucide: Fish },
 };
-const getZodiacIcon = (name) => ZODIAC_ICON_MAP[name] || Star;
+const STAR_ICON: IconEntry = { sf: "star.fill", lucide: Star };
+const getZodiacIcon = (name): IconEntry => ZODIAC_ICON_MAP[name] || STAR_ICON;
 
-const INTERESTED_IN_ICON_MAP = {
-  Men: User,
-  Women: UserRound,
-  NonBinary: Users,
-};
-const getInterestedInIcon = (enumName) =>
-  INTERESTED_IN_ICON_MAP[enumName] || Heart;
-
-const getLanguageIcon = (enumName) =>
-  enumName === "Other" ? Globe : Languages;
+const GLOBE_ICON: IconEntry = { sf: "globe", lucide: Globe };
+const LANGUAGES_ICON: IconEntry = { sf: "character.bubble", lucide: Languages };
+const getLanguageIcon = (enumName): IconEntry =>
+  enumName === "Other" ? GLOBE_ICON : LANGUAGES_ICON;
 
 // Hobi kategorisi → ikon. Backend kategori isimlerini Türkçe döndüğü için
 // önce exact match, sonra keyword fallback. Tanınmayan kategori için Heart.
-const HOBBY_CATEGORY_ICON_MAP = {
+const DUMBBELL_ICON: IconEntry = { sf: "dumbbell.fill", lucide: Dumbbell };
+const UTENSILS_ICON: IconEntry = { sf: "fork.knife", lucide: Utensils };
+const PALETTE_ICON: IconEntry = { sf: "paintpalette.fill", lucide: Palette };
+const MUSIC_ICON: IconEntry = { sf: "music.note", lucide: Music };
+const TREES_ICON: IconEntry = { sf: "tree.fill", lucide: Trees };
+const BOOK_ICON: IconEntry = { sf: "book.fill", lucide: BookOpen };
+const GAMEPAD_ICON: IconEntry = { sf: "gamecontroller.fill", lucide: Gamepad2 };
+const USERS_ICON: IconEntry = { sf: "person.2.fill", lucide: Users };
+const PLANE_ICON: IconEntry = { sf: "airplane", lucide: Plane };
+const SPARKLES_ICON: IconEntry = { sf: "sparkles", lucide: Sparkles };
+const DOG_ICON: IconEntry = { sf: "dog.fill", lucide: Dog };
+const BRIEFCASE_ICON: IconEntry = { sf: "briefcase.fill", lucide: Briefcase };
+const HEART_ICON: IconEntry = { sf: "heart", lucide: Heart };
+const CIGARETTE_ICON: IconEntry = { sf: "smoke.fill", lucide: Cigarette };
+const HOBBY_CATEGORY_ICON_MAP: Record<string, IconEntry> = {
   // Backend categoryEnumName (9 confirmed slugs)
-  SportsFitness: Dumbbell,
-  FoodDrink: Utensils,
-  ArtCreativity: Palette,
-  MusicConcerts: Music,
-  NatureAdventure: Trees,
-  CultureLearning: BookOpen,
-  GamingTech: Gamepad2,
-  SocialLifestyle: Users,
-  Intellectual: Lightbulb,
+  SportsFitness: DUMBBELL_ICON,
+  FoodDrink: UTENSILS_ICON,
+  ArtCreativity: PALETTE_ICON,
+  MusicConcerts: MUSIC_ICON,
+  NatureAdventure: TREES_ICON,
+  CultureLearning: BOOK_ICON,
+  GamingTech: GAMEPAD_ICON,
+  SocialLifestyle: USERS_ICON,
+  Intellectual: { sf: "lightbulb.fill", lucide: Lightbulb },
   // Legacy TR display keys
-  "Spor & Fitness": Dumbbell,
-  Spor: Dumbbell,
-  Fitness: Dumbbell,
-  "Yemek & İçecek": Utensils,
-  Yemek: Utensils,
-  Mutfak: Utensils,
-  "Sanat & Yaratıcılık": Palette,
-  Sanat: Palette,
-  Müzik: Music,
-  "Müzik & Konser": Music,
-  "Seyahat & Doğa": Plane,
-  Seyahat: Plane,
-  Doğa: Trees,
-  "Doğa & Açık Hava": Trees,
-  "Okuma & Kültür": BookOpen,
-  Kültür: Theater,
-  "Sinema & Tiyatro": Film,
-  "Oyun & Eğlence": Gamepad2,
-  Oyun: Gamepad2,
-  Eğlence: PartyPopper,
-  "Yaşam Tarzı": Sparkles,
-  Sosyal: Users,
-  Topluluk: Users,
-  Gönüllülük: Users,
-  Hayvanlar: Dog,
-  "Evcil Hayvanlar": Dog,
-  "Bilim & Kariyer": Briefcase,
-  Kariyer: Briefcase,
-  Teknoloji: Code,
+  "Spor & Fitness": DUMBBELL_ICON,
+  Spor: DUMBBELL_ICON,
+  Fitness: DUMBBELL_ICON,
+  "Yemek & İçecek": UTENSILS_ICON,
+  Yemek: UTENSILS_ICON,
+  Mutfak: UTENSILS_ICON,
+  "Sanat & Yaratıcılık": PALETTE_ICON,
+  Sanat: PALETTE_ICON,
+  Müzik: MUSIC_ICON,
+  "Müzik & Konser": MUSIC_ICON,
+  "Seyahat & Doğa": PLANE_ICON,
+  Seyahat: PLANE_ICON,
+  Doğa: TREES_ICON,
+  "Doğa & Açık Hava": TREES_ICON,
+  "Okuma & Kültür": BOOK_ICON,
+  Kültür: { sf: "theatermasks.fill", lucide: Theater },
+  "Sinema & Tiyatro": { sf: "film.fill", lucide: Film },
+  "Oyun & Eğlence": GAMEPAD_ICON,
+  Oyun: GAMEPAD_ICON,
+  Eğlence: { sf: "party.popper.fill", lucide: PartyPopper },
+  "Yaşam Tarzı": SPARKLES_ICON,
+  Sosyal: USERS_ICON,
+  Topluluk: USERS_ICON,
+  Gönüllülük: USERS_ICON,
+  Hayvanlar: DOG_ICON,
+  "Evcil Hayvanlar": DOG_ICON,
+  "Bilim & Kariyer": BRIEFCASE_ICON,
+  Kariyer: BRIEFCASE_ICON,
+  Teknoloji: {
+    sf: "chevron.left.forwardslash.chevron.right",
+    lucide: Code,
+  },
 };
-const getHobbyCategoryIcon = (category) => {
-  if (!category) return Heart;
+const getHobbyCategoryIcon = (category): IconEntry => {
+  if (!category) return HEART_ICON;
   const exact = HOBBY_CATEGORY_ICON_MAP[category];
   if (exact) return exact;
   // Keyword fallback — kategori string'i map key'lerinden birini içeriyor mu?
   const lower = category.toLowerCase();
-  for (const [key, Icon] of Object.entries(HOBBY_CATEGORY_ICON_MAP)) {
-    if (lower.includes(key.toLowerCase())) return Icon;
+  for (const [key, entry] of Object.entries(HOBBY_CATEGORY_ICON_MAP)) {
+    if (lower.includes(key.toLowerCase())) return entry;
   }
-  return Heart;
+  return HEART_ICON;
 };
 
-const PET_ICON_MAP = {
-  Dog,
-  Cat,
-  Bird,
-  Fish,
-  Rabbit,
-  Hamster: Rat,
-  Reptile: Turtle,
-  Horse: PawPrint,
-  Exotic: Sparkles,
-  None: X,
-  Allergic: Ban,
-  Other: PawPrint,
+const PAWPRINT_ICON: IconEntry = { sf: "pawprint.fill", lucide: PawPrint };
+const PET_ICON_MAP: Record<string, IconEntry> = {
+  Dog: DOG_ICON,
+  Cat: { sf: "cat.fill", lucide: Cat },
+  Bird: { sf: "bird.fill", lucide: Bird },
+  Fish: { sf: "fish.fill", lucide: Fish },
+  Rabbit: { sf: "hare.fill", lucide: Rabbit },
+  // Rat/hamster'ın SF karşılığı yok — her iki platformda lucide render edilir.
+  Hamster: { lucide: Rat },
+  Reptile: { sf: "tortoise.fill", lucide: Turtle },
+  Horse: PAWPRINT_ICON,
+  Exotic: SPARKLES_ICON,
+  None: { sf: "xmark", lucide: X },
+  Allergic: { sf: "nosign", lucide: Ban },
+  Other: PAWPRINT_ICON,
 };
-const getPetIcon = (enumName) => PET_ICON_MAP[enumName] || PawPrint;
+const getPetIcon = (enumName): IconEntry =>
+  PET_ICON_MAP[enumName] || PAWPRINT_ICON;
 
-const PURPOSE_META = {
+const WIND_ICON: IconEntry = { sf: "wind", lucide: Wind };
+const PURPOSE_META: Record<
+  string,
+  { icon: IconEntry; purposeDescKey: string }
+> = {
   // Backend enumName (PascalCase)
   Dating: {
-    icon: Sparkles,
+    icon: SPARKLES_ICON,
     purposeDescKey: 'profile.edit.purposeDesc.flort',
   },
   Friendship: {
-    icon: Users,
+    icon: USERS_ICON,
     purposeDescKey: 'profile.edit.purposeDesc.arkadashlik',
   },
   Networking: {
-    icon: Briefcase,
+    icon: BRIEFCASE_ICON,
     purposeDescKey: 'profile.edit.purposeDesc.network',
   },
   JustLooking: {
-    icon: Wind,
+    icon: WIND_ICON,
     purposeDescKey: 'profile.edit.purposeDesc.oylesine',
   },
-  // Legacy TR display fallback
+  // enumName gelmezse display metnine düşen fallback — her iki dil de dolu
+  // olmalı, yoksa eksik dilde ikon/açıklama kayboluyor.
   Flört: {
-    icon: Sparkles,
+    icon: SPARKLES_ICON,
     purposeDescKey: 'profile.edit.purposeDesc.flort',
   },
   Arkadaşlık: {
-    icon: Users,
+    icon: USERS_ICON,
     purposeDescKey: 'profile.edit.purposeDesc.arkadashlik',
   },
+  Network: {
+    icon: BRIEFCASE_ICON,
+    purposeDescKey: 'profile.edit.purposeDesc.network',
+  },
   Öylesine: {
-    icon: Wind,
+    icon: WIND_ICON,
+    purposeDescKey: 'profile.edit.purposeDesc.oylesine',
+  },
+  'Just Looking': {
+    icon: WIND_ICON,
     purposeDescKey: 'profile.edit.purposeDesc.oylesine',
   },
 };
@@ -454,7 +359,7 @@ const HobbyPill = React.memo(function HobbyPill({
   isSelected,
   onPress,
 }: any) {
-  const Icon = getHobbyIcon(hobby.enumName ?? hobby.name);
+  const { i18n } = useTranslation();
   const handlePress = useCallback(() => onPress(hobby.id), [onPress, hobby.id]);
   return (
     <TouchableOpacity
@@ -465,7 +370,7 @@ const HobbyPill = React.memo(function HobbyPill({
         borderCurve: "continuous",
         overflow: "hidden",
         paddingHorizontal: 12,
-        paddingVertical: 11,
+        paddingVertical: 9,
         borderWidth: 0.5,
         flexDirection: "row",
         alignItems: "center",
@@ -474,7 +379,8 @@ const HobbyPill = React.memo(function HobbyPill({
         borderColor: isSelected ? colors.text : "rgba(255,255,255,0.1)",
       }}
     >
-      <Icon
+      <HobbyIcon
+        hobby={hobby.enumName ?? hobby.name}
         size={20}
         color={isSelected ? "#000" : colors.textSecondary}
         strokeWidth={1.5}
@@ -486,7 +392,7 @@ const HobbyPill = React.memo(function HobbyPill({
           fontWeight: "500",
         }}
       >
-        {hobby.name}
+        {resolveLocalized(hobby.display, i18n.language, hobby.name)}
       </Text>
     </TouchableOpacity>
   );
@@ -496,8 +402,9 @@ function OptionPill({
   option,
   isSelected,
   onPress,
-  Icon,
+  icon,
 }: any) {
+  const { i18n } = useTranslation();
   return (
     <TouchableOpacity
       activeOpacity={1}
@@ -516,8 +423,9 @@ function OptionPill({
         borderColor: isSelected ? colors.text : "rgba(255,255,255,0.1)",
       }}
     >
-      {Icon ? (
-        <Icon
+      {icon ? (
+        <EntryIcon
+          entry={icon}
           size={20}
           color={isSelected ? "#000" : colors.textSecondary}
           strokeWidth={1.5}
@@ -530,7 +438,7 @@ function OptionPill({
           fontWeight: "500",
         }}
       >
-        {option.name}
+        {resolveLocalized(option.display, i18n.language, option.name)}
       </Text>
     </TouchableOpacity>
   );
@@ -543,10 +451,14 @@ const OptionListItem = React.memo(function OptionListItem({
   icon: CustomIcon,
   purposeMap,
 }: any) {
-  const { t } = useTranslation();
+  const { t, i18n } = useTranslation();
   if (purposeMap) {
-    const entry = purposeMap[option.name];
-    const Icon = entry?.icon ?? Star;
+    // enumName ile anahtarla — `name` enum lookup'larında backend'in GetDisplay()
+    // çıktısı, yani Accept-Language'e göre değişiyor. name ile anahtarlarsak
+    // eşleşme dile bağlı kalıyordu (TR'de "Network", EN'de "Just Looking"
+    // map'te yok → ikonsuz/açıklamasız satır). enumName stabil sözleşme.
+    const entry = purposeMap[option.enumName ?? option.name];
+    const iconEntry = entry?.icon ?? STAR_ICON;
     const desc = entry?.purposeDescKey ? t(entry.purposeDescKey) : undefined;
     return (
       <TouchableOpacity
@@ -559,7 +471,8 @@ const OptionListItem = React.memo(function OptionListItem({
           paddingVertical: 14,
         }}
       >
-        <Icon
+        <EntryIcon
+          entry={iconEntry}
           size={20}
           color={isSelected ? colors.text : colors.textMuted}
           strokeWidth={1.5}
@@ -573,7 +486,7 @@ const OptionListItem = React.memo(function OptionListItem({
               fontWeight: "500",
             }}
           >
-            {option.name}
+            {resolveLocalized(option.display, i18n.language, option.name)}
           </Text>
           {desc && (
             <Text
@@ -589,7 +502,16 @@ const OptionListItem = React.memo(function OptionListItem({
             </Text>
           )}
         </View>
-        {isSelected && <Check size={20} color={colors.text} strokeWidth={2.5} />}
+        {isSelected && (
+        <SFIcon
+          name="checkmark"
+          fallback={Check}
+          size={20}
+          color={colors.text}
+          strokeWidth={2.5}
+          weight="bold"
+        />
+      )}
       </TouchableOpacity>
     );
   }
@@ -613,7 +535,8 @@ const OptionListItem = React.memo(function OptionListItem({
         }}
       >
         {CustomIcon && (
-          <CustomIcon
+          <EntryIcon
+            entry={CustomIcon}
             size={16}
             color={isSelected ? colors.text : colors.textSecondary}
             strokeWidth={1.5}
@@ -626,10 +549,19 @@ const OptionListItem = React.memo(function OptionListItem({
             fontWeight: "500",
           }}
         >
-          {option.name}
+          {resolveLocalized(option.display, i18n.language, option.name)}
         </Text>
       </View>
-      {isSelected && <Check size={20} color={colors.text} strokeWidth={2.5} />}
+      {isSelected && (
+        <SFIcon
+          name="checkmark"
+          fallback={Check}
+          size={20}
+          color={colors.text}
+          strokeWidth={2.5}
+          weight="bold"
+        />
+      )}
     </TouchableOpacity>
   );
 });
@@ -749,7 +681,14 @@ function PhotoItem({ photo, onPress, savingPhoto }: any) {
         }}
       >
         <View pointerEvents="none">
-          <X size={16} strokeWidth={3} color="#7a7d82" />
+          <SFIcon
+            name="xmark"
+            fallback={X}
+            size={16}
+            strokeWidth={3}
+            color="#7a7d82"
+            weight="bold"
+          />
         </View>
       </TouchableOpacity>
     </View>
@@ -1017,6 +956,7 @@ const HobbyGroupAccordion = React.memo(function HobbyGroupAccordion({
   onToggle,
   defaultExpanded,
 }: any) {
+  const { i18n } = useTranslation();
   const [expanded, setExpanded] = useState(!!defaultExpanded);
   // ÖNCESİ: useSharedValue + useEffect(withTiming) + useAnimatedStyle ile
   // chevron 220ms easing'le dönüyordu. 9 accordion × 1 worklet seti = mount
@@ -1035,7 +975,7 @@ const HobbyGroupAccordion = React.memo(function HobbyGroupAccordion({
 
   const handleToggle = useCallback(() => setExpanded((e) => !e), []);
 
-  const CategoryIcon = useMemo(
+  const categoryIcon = useMemo(
     () => getHobbyCategoryIcon(group.categoryEnumName ?? group.category),
     [group.categoryEnumName, group.category],
   );
@@ -1044,19 +984,16 @@ const HobbyGroupAccordion = React.memo(function HobbyGroupAccordion({
     <View
       style={{
         marginTop: 8,
-        borderRadius: 36,
-        borderCurve: "continuous",
-        borderWidth: 0.5,
-        borderColor: "rgba(255,255,255,0.1)",
-        overflow: "hidden",
         backgroundColor: "transparent",
+        borderBottomWidth: 0.5,
+        borderBottomColor: "rgba(255,255,255,0.08)",
       }}
     >
       <TouchableOpacity
         onPress={handleToggle}
         activeOpacity={0.7}
         style={{
-          padding: 16,
+          paddingVertical: 16,
           flexDirection: "row",
           justifyContent: "space-between",
           alignItems: "center",
@@ -1070,7 +1007,12 @@ const HobbyGroupAccordion = React.memo(function HobbyGroupAccordion({
             flex: 1,
           }}
         >
-          <CategoryIcon size={18} color={colors.text} strokeWidth={1.5} />
+          <EntryIcon
+            entry={categoryIcon}
+            size={18}
+            color={colors.text}
+            strokeWidth={1.5}
+          />
           <Text
             style={{
               color: colors.text,
@@ -1078,7 +1020,7 @@ const HobbyGroupAccordion = React.memo(function HobbyGroupAccordion({
               fontWeight: "600",
             }}
           >
-            {group.category}
+            {resolveLocalized(group.categoryDisplay, i18n.language, group.category)}
           </Text>
           {selectedCount > 0 && (
             <View
@@ -1092,7 +1034,14 @@ const HobbyGroupAccordion = React.memo(function HobbyGroupAccordion({
           )}
         </View>
         <View style={chevStyle}>
-          <ChevronDown size={18} color={colors.textSecondary} />
+          <SFIcon
+            name="chevron.down"
+            fallback={ChevronDown}
+            size={18}
+            color={colors.textSecondary}
+            strokeWidth={2}
+            weight="semibold"
+          />
         </View>
       </TouchableOpacity>
 
@@ -1100,7 +1049,6 @@ const HobbyGroupAccordion = React.memo(function HobbyGroupAccordion({
       {expanded && (
         <View
           style={{
-            paddingHorizontal: 16,
             paddingBottom: 16,
             paddingTop: 4,
             flexDirection: "row",
@@ -1131,10 +1079,10 @@ const EditProfileForm = forwardRef(function EditProfileForm(
     smokingOptions,
     zodiacOptions,
     usagePurposeOptions,
-    interestedInOptions,
     cityOptions,
     languageOptions,
     petOptions,
+    genderCategories = [],
     savingPhoto,
     onAddPhoto,
     onPhotoPress,
@@ -1151,8 +1099,8 @@ const EditProfileForm = forwardRef(function EditProfileForm(
   // Controller'ı yeniden invalidate ediyordu; bu, Fabric ShadowTree'nin 1024
   // commit retry limitine baskı uygulayıp account-switch sonrası SIGABRT
   // crash'lerin asıl sebebiydi.
-  const { t } = useTranslation();
-  const { control, getValues, setValue, trigger, watch, formState: { errors } } = useForm<EditProfileFormData>({
+  const { t, i18n } = useTranslation();
+  const { control, getValues, setValue, watch, formState: { errors } } = useForm<EditProfileFormData>({
     resolver: zodResolver(editProfileFormSchema),
     defaultValues: initialValues ?? {
       bio: "",
@@ -1160,7 +1108,6 @@ const EditProfileForm = forwardRef(function EditProfileForm(
       smoking: null,
       zodiac: null,
       usagePurpose: null,
-      interestedIn: [],
       city: null,
       district: null,
       languages: [],
@@ -1175,7 +1122,6 @@ const EditProfileForm = forwardRef(function EditProfileForm(
   const draftSmoking = watch("smoking");
   const draftZodiac = watch("zodiac");
   const draftUsagePurpose = watch("usagePurpose");
-  const draftInterestedIn = watch("interestedIn");
   const draftCity = watch("city");
   const draftDistrict = watch("district");
   const draftLanguages = watch("languages");
@@ -1184,6 +1130,15 @@ const EditProfileForm = forwardRef(function EditProfileForm(
   const draftShowMeOnApp = watch("showMeOnApp");
   const draftShowAge = watch("showAge");
   const [savingProfile, setSavingProfile] = useState(false);
+
+  // ── Cinsiyet ────────────────────────────────────────────────────────────
+  // Kayıtta (RegisterStep7) seçilen kimlik alanı; artık buradan da değiştirilebiliyor.
+  // Form şemasına değil ayrı state'e bağlı: tek bir enumName string'i, hydration
+  // gerektirmiyor. Parent formu key={myProfile.id} ile mount ettiği için
+  // myProfile ilk render'da hazır.
+  const [draftGender, setDraftGender] = useState<string>(
+    () => myProfile?.gender ?? "",
+  );
 
   // ── District (city'ye bağlı) ────────────────────────────────────────────
   const [districtOptions, setDistrictOptions] = useState([]);
@@ -1195,10 +1150,19 @@ const EditProfileForm = forwardRef(function EditProfileForm(
   const [languagePickerVisible, setLanguagePickerVisible] = useState(false);
 
   // ── Progressive render ─────────────────────────────────────────────────
-  // Tüm form'u tek React commit'inde mount edersek Fabric ShadowTree retry
-  // limit'ini (1024) aşıyor → SIGABRT crash. Section'ları 4 frame'e bölüp
-  // her rAF tick'te bir grup ekliyoruz; commit pressure dağılıyor.
-  const [stage, setStage] = useState(1);
+  // İLK açılışta tüm form'u tek React commit'inde mount edersek Fabric
+  // ShadowTree retry limit'ini (1024) aşıyor → SIGABRT. O yüzden section'ları
+  // 4 frame'e bölüp her rAF tick'te bir grup ekliyoruz; commit pressure dağılır.
+  // SONRAKİ açılışlar (edit modalı bottom-sheet olduğu için remount olur) doğrudan
+  // stage 4'ten başlar → skeleton yok, staged pop-in yok, form anında tam mount
+  // olur. Bu, "1 kere açtım, tekrar açınca baştan renderlanıyor + skeleton'da
+  // kilitleniyor" şikayetini çözer. İlk mount app'i "ısıttığı" ve o ana kadar
+  // veriler cache'lendiği (districtCache, initialValues) için reopen tek-commit
+  // mount'u güvenle kaldırır.
+  const [stage, setStage] = useState(editFormWarmedUp ? 4 : 1);
+  useEffect(() => {
+    editFormWarmedUp = true;
+  }, []);
   useEffect(() => {
     if (stage >= 4) return;
     const id = requestAnimationFrame(() => setStage((s) => s + 1));
@@ -1227,13 +1191,26 @@ const EditProfileForm = forwardRef(function EditProfileForm(
   useEffect(() => {
     const cityId = initialValues?.city?.id;
     if (cityId == null) return;
+
+    // Cache hit → istek atma, ilçeleri anında set et.
+    const cached = districtCache.get(cityId);
+    if (cached) {
+      setDistrictOptions(cached);
+      setValue(
+        "district",
+        matchOption(cached, myProfile?.district, myProfile?.districtDisplay),
+      );
+      return;
+    }
+
     let cancelled = false;
     setDistrictsLoading(true);
     api
       .get(API_ENDPOINTS.GET_DISTRICTS_BY_CITY(cityId))
       .then((res) => {
-        if (cancelled) return;
         const list = res?.result ?? [];
+        districtCache.set(cityId, list);
+        if (cancelled) return;
         setDistrictOptions(list);
         setValue(
           "district",
@@ -1288,16 +1265,6 @@ const EditProfileForm = forwardRef(function EditProfileForm(
     }
   }, [getValues, setValue]);
 
-  const toggleInterestedIn = useCallback((opt) => {
-    if (!opt) return;
-    const prev = getValues("interestedIn");
-    if (prev.some((p) => p?.id === opt.id)) {
-      setValue("interestedIn", prev.filter((p) => p?.id !== opt.id));
-    } else {
-      setValue("interestedIn", [...prev, opt]);
-    }
-  }, [getValues, setValue]);
-
   const toggleLanguage = useCallback((opt) => {
     if (!opt) return;
     const prev = getValues("languages");
@@ -1332,11 +1299,20 @@ const EditProfileForm = forwardRef(function EditProfileForm(
       if (!opt || opt.id === currentCity?.id) return;
       setValue("city", opt);
       setValue("district", null);
+      const cached = districtCache.get(opt.id);
+      if (cached) {
+        setDistrictOptions(cached);
+        return;
+      }
       setDistrictOptions([]);
       setDistrictsLoading(true);
       api
         .get(API_ENDPOINTS.GET_DISTRICTS_BY_CITY(opt.id))
-        .then((res) => setDistrictOptions(res?.result ?? []))
+        .then((res) => {
+          const list = res?.result ?? [];
+          districtCache.set(opt.id, list);
+          setDistrictOptions(list);
+        })
         .catch(() => setDistrictOptions([]))
         .finally(() => setDistrictsLoading(false));
     },
@@ -1364,21 +1340,16 @@ const EditProfileForm = forwardRef(function EditProfileForm(
   // ── Submit ─────────────────────────────────────────────────────────────
   const submit = useCallback(async () => {
     if (savingProfile) return;
-    const isValid = await trigger("interestedIn");
-    if (!isValid) {
-      showInfoToast({ title: t('profile.edit.missingInfoTitle'), message: t('profile.edit.missingInterests'), variant: "error" });
-      return;
-    }
     setSavingProfile(true);
     onSavingChange?.(true);
     try {
+      // `name`e ASLA düşme: UpdateProfile [FromForm] olduğu için JsonStringEnum-
+      // Converter devrede değil, form binder yalnızca enum ÜYE ADINI veya ordinal
+      // int'i tanıyor. `name` ise backend'in GetDisplay() çıktısı (lokalize metin)
+      // → binder parse edemez, alanı sessizce düşürür (200 döner, kaydolmaz).
+      // Şehir bug'ının sınıfı buydu; enumName yoksa alan hiç gitmesin.
       const enumOf = (opt) =>
-        opt?.enumName ??
-        opt?.enumValue ??
-        opt?.value ??
-        opt?.code ??
-        opt?.key ??
-        opt?.name;
+        opt?.enumName ?? opt?.enumValue ?? opt?.value ?? opt?.code ?? opt?.key;
 
       const {
         bio,
@@ -1386,7 +1357,6 @@ const EditProfileForm = forwardRef(function EditProfileForm(
         smoking: draftSmoking,
         zodiac: draftZodiac,
         usagePurpose: draftUsagePurpose,
-        interestedIn: draftInterestedIn,
         city: draftCity,
         district: draftDistrict,
         languages: draftLanguages,
@@ -1423,8 +1393,23 @@ const EditProfileForm = forwardRef(function EditProfileForm(
       else if (myProfile?.usagePurpose != null)
         updates.ClearUsagePurpose = true;
 
-      updates.InterestedIn = draftInterestedIn.map(enumOf).filter(Boolean);
+      // InterestedIn artık gönderilmiyor — swipe filtresine taşındı; backend
+      // UpdateProfile'da bu alanı yok sayıyor.
 
+      // Cinsiyet: yalnızca değiştiyse gönder (null/alan yok = değiştirme).
+      // Backend değişince InvalidatePoolAsync çağırıyor — cinsiyet reciprocity'yi
+      // etkilediği için (HardFilterStage viewer'ın kategorisine bakıyor) aday
+      // havuzu yenilenmeli.
+      if (draftGender && draftGender !== myProfile?.gender) {
+        updates.Gender = draftGender;
+      }
+
+      // City/District: backend [FromForm] enum binding'i hem integer hem enum-name
+      // string kabul ediyor. enumName kullanıyoruz çünkü (a) response'lar da enumName
+      // string dönüyor (city: "Istanbul") → yazma/okuma aynı format, (b) option
+      // listesindeki `id`nin TurkeyCity enum değerine eşit olduğu varsayımına
+      // dayanmıyor. NOT: Bu alanların eskiden kaydolmaması format değil, backend
+      // bug'ıydı (yalnızca Latitude+Longitude ile birlikte yazıyordu) — düzeltildi.
       if (draftCity != null) updates.City = enumOf(draftCity);
       else if (myProfile?.city != null) updates.ClearCity = true;
 
@@ -1468,12 +1453,19 @@ const EditProfileForm = forwardRef(function EditProfileForm(
         bio,
         hobbies: hobbyIds.map((id) => idToEnum[id]).filter(Boolean),
         smokingStatus: enumOf(draftSmoking) ?? null,
-        smokingStatusDisplay: draftSmoking?.name ?? null,
+        smokingStatusDisplay: draftSmoking
+          ? resolveLocalized(draftSmoking.display, i18n.language, draftSmoking.name)
+          : null,
         zodiacSign: enumOf(draftZodiac) ?? null,
-        zodiacSignDisplay: draftZodiac?.name ?? null,
+        zodiacSignDisplay: draftZodiac
+          ? resolveLocalized(draftZodiac.display, i18n.language, draftZodiac.name)
+          : null,
         usagePurpose: enumOf(draftUsagePurpose) ?? null,
-        usagePurposeDisplay: draftUsagePurpose?.name ?? null,
-        interestedIn: draftInterestedIn.map(enumOf).filter(Boolean),
+        usagePurposeDisplay: draftUsagePurpose
+          ? resolveLocalized(draftUsagePurpose.display, i18n.language, draftUsagePurpose.name)
+          : null,
+        // Sunucu city/district'i enumName string dönüyor ("Istanbul") → optimistic
+        // patch de aynı şekli kullansın ki refetch'ten önce/sonra tip değişmesin.
         city: enumOf(draftCity) ?? null,
         cityDisplay: draftCity?.name ?? null,
         district: enumOf(draftDistrict) ?? null,
@@ -1483,6 +1475,18 @@ const EditProfileForm = forwardRef(function EditProfileForm(
         showMyUniversity: draftShowMyUniversity,
         showMeOnApp: draftShowMeOnApp,
         showAge: draftShowAge,
+        // Cinsiyet enumName + görünen ad; ProfileScreen refetch'ten önce doğru
+        // etiketi göstersin diye display'i kategori listesinden çözüyoruz.
+        // NOT: `display` çift dilli { tr, en } objesi — resolveLocalized ile
+        // string'e çevrilmeden patch'lenirse ekranda React child hatası olur.
+        gender: draftGender || myProfile?.gender || null,
+        genderDisplay: (() => {
+          const sub = genderCategories
+            .flatMap((c: any) => c.subGenders ?? [])
+            .find((sg: any) => sg.enumName === draftGender);
+          if (!sub) return myProfile?.genderDisplay ?? null;
+          return resolveLocalized(sub.display, i18n.language, sub.name);
+        })(),
       };
 
       setPhotoOrderDirty(false);
@@ -1498,7 +1502,17 @@ const EditProfileForm = forwardRef(function EditProfileForm(
       setSavingProfile(false);
       onSavingChange?.(false);
     }
-  }, [savingProfile, trigger, getValues, hobbyGroups, myProfile, onSavingChange, onSaved]);
+  }, [
+    savingProfile,
+    getValues,
+    hobbyGroups,
+    myProfile,
+    draftGender,
+    genderCategories,
+    i18n.language,
+    onSavingChange,
+    onSaved,
+  ]);
 
   useImperativeHandle(ref, () => ({ submit }), [submit]);
 
@@ -1580,11 +1594,17 @@ const EditProfileForm = forwardRef(function EditProfileForm(
               gap: 12,
             }}
           >
-            <IdCardLanyard size={20} color={colors.textSecondary} strokeWidth={1.5} />
+            <SFIcon
+              name="lanyardcard.fill"
+              fallback={IdCardLanyard}
+              size={20}
+              color={colors.textSecondary}
+              strokeWidth={1.5}
+            />
             <Text
               style={{ color: colors.textSecondary, fontWeight: "500", fontSize: 14 }}
             >
-              İnsanlar beni nasıl görüyor?
+              {t('profile.edit.previewButton')}
             </Text>
           </View>
         </TouchableOpacity>
@@ -1609,15 +1629,14 @@ const EditProfileForm = forwardRef(function EditProfileForm(
             }}
           >
             <Text style={{ color: colors.text, fontSize: 20, fontWeight: "600" }}>
-              Fotoğraflar
+              {t('profile.edit.photosTitle')}
             </Text>
             {savingPhoto && <ActivityIndicator size="small" color={colors.textSecondary} />}
           </View>
           <View className="flex-row items-center gap-2 mb-3 pr-4">
-            <InfoIcon size={16} color={colors.textSecondary} />
+            <SFIcon name="info.circle" fallback={InfoIcon} size={18} color={colors.textSecondary} strokeWidth={2} weight="semibold" />
             <Text style={{ color: colors.textSecondary, fontSize: 14, fontWeight: "400" }}>
-              Sıralamak için basılı tut ve sürükle. İlk fotoğrafın ana
-              fotoğrafın olur.
+              {t('profile.edit.photosHint')}
             </Text>
           </View>
         </View>
@@ -1664,7 +1683,14 @@ const EditProfileForm = forwardRef(function EditProfileForm(
                     }}
                   >
                     <View className="flex justify-center items-center pointer-events-none">
-                      <Plus size={40} strokeWidth={2} color={colors.textMuted} />
+                      <SFIcon
+                        name="plus"
+                        fallback={Plus}
+                        size={40}
+                        strokeWidth={2}
+                        color={colors.textMuted}
+                        weight="semibold"
+                      />
                     </View>
                   </TouchableOpacity>
                 </View>
@@ -1730,10 +1756,9 @@ const EditProfileForm = forwardRef(function EditProfileForm(
             {t('profile.edit.bioTitle')}
           </Text>
           <View className="flex-row items-center gap-2 mb-3 pr-4">
-            <InfoIcon size={16} color={colors.textSecondary} />
+            <SFIcon name="info.circle" fallback={InfoIcon} size={18} color={colors.textSecondary} strokeWidth={2} weight="semibold" />
             <Text style={{ color: colors.textSecondary, fontSize: 14, fontWeight: "400" }}>
-              Kendini tanıtabileceğin kısa bir biyografi yazabilirsin. Neler
-              yaptığından bahset.
+              {t('profile.edit.bioDesc')}
             </Text>
           </View>
         </View>
@@ -1794,14 +1819,14 @@ const EditProfileForm = forwardRef(function EditProfileForm(
                 marginBottom: 6,
               }}
             >
-              Kullanım Amacı
+              {t('profile.edit.usagePurposeTitle')}
             </Text>
             <View className="flex-row items-center gap-2 mb-3 pr-4">
-              <InfoIcon size={16} color={colors.textSecondary} />
+              <SFIcon name="info.circle" fallback={InfoIcon} size={18} color={colors.textSecondary} strokeWidth={2} weight="semibold" />
               <Text
                 style={{ color: colors.textSecondary, fontSize: 14, fontWeight: "400" }}
               >
-                Lit'i hangi amaçla kullandığını seç.
+                {t('profile.edit.usagePurposeDesc')}
               </Text>
             </View>
           </View>
@@ -1841,14 +1866,14 @@ const EditProfileForm = forwardRef(function EditProfileForm(
                 marginBottom: 6,
               }}
             >
-              Hobiler ({draftHobbies.length} seçildi)
+              {t('profile.edit.hobbiesTitle', { count: draftHobbies.length })}
             </Text>
             <View className="flex-row items-center gap-2 mb-3 pr-4">
-              <InfoIcon size={16} color={colors.textSecondary} />
+              <SFIcon name="info.circle" fallback={InfoIcon} size={18} color={colors.textSecondary} strokeWidth={2} weight="semibold" />
               <Text
                 style={{ color: colors.textSecondary, fontSize: 14, fontWeight: "400" }}
               >
-                Kategoriye dokun, içindeki hobilerden seç. En fazla 10.
+                {t('profile.edit.hobbiesHint')}
               </Text>
             </View>
           </View>
@@ -1885,7 +1910,7 @@ const EditProfileForm = forwardRef(function EditProfileForm(
               {t('profile.edit.smokingTitle')}
             </Text>
             <View className="flex-row items-center gap-2 mb-3 pr-4">
-              <InfoIcon size={16} color={colors.textSecondary} />
+              <SFIcon name="info.circle" fallback={InfoIcon} size={18} color={colors.textSecondary} strokeWidth={2} weight="semibold" />
               <Text
                 style={{ color: colors.textSecondary, fontSize: 14, fontWeight: "400" }}
               >
@@ -1898,7 +1923,7 @@ const EditProfileForm = forwardRef(function EditProfileForm(
               key={opt.id}
               option={opt}
               isSelected={draftSmoking?.id === opt.id}
-              icon={Cigarette}
+              icon={CIGARETTE_ICON}
               onPress={() =>
                 setValue("smoking", draftSmoking?.id === opt.id ? null : opt)
               }
@@ -1929,7 +1954,7 @@ const EditProfileForm = forwardRef(function EditProfileForm(
               {t('profile.edit.zodiacTitle')}
             </Text>
             <View className="flex-row items-center gap-2 mb-3 pr-4">
-              <InfoIcon size={16} color={colors.textSecondary} />
+              <SFIcon name="info.circle" fallback={InfoIcon} size={18} color={colors.textSecondary} strokeWidth={2} weight="semibold" />
               <Text
                 style={{ color: colors.textSecondary, fontSize: 14, fontWeight: "400" }}
               >
@@ -1940,7 +1965,7 @@ const EditProfileForm = forwardRef(function EditProfileForm(
           <View style={{ flexDirection: "row", flexWrap: "wrap", gap: 8 }}>
             {zodiacOptions.map((opt) => {
               const selected = draftZodiac?.id === opt.id;
-              const Icon = getZodiacIcon(opt.enumName ?? opt.name);
+              const zodiacIcon = getZodiacIcon(opt.enumName ?? opt.name);
               return (
                 <TouchableOpacity
                   key={opt.id}
@@ -1960,7 +1985,8 @@ const EditProfileForm = forwardRef(function EditProfileForm(
                     borderColor: selected ? colors.text : "rgba(255,255,255,0.1)",
                   }}
                 >
-                  <Icon
+                  <EntryIcon
+                    entry={zodiacIcon}
                     size={20}
                     color={selected ? "#000" : colors.textSecondary}
                     strokeWidth={1.5}
@@ -1972,7 +1998,7 @@ const EditProfileForm = forwardRef(function EditProfileForm(
                       fontWeight: "500",
                     }}
                   >
-                    {opt.name}
+                    {resolveLocalized(opt.display, i18n.language, opt.name)}
                   </Text>
                 </TouchableOpacity>
               );
@@ -1981,8 +2007,12 @@ const EditProfileForm = forwardRef(function EditProfileForm(
         </View>
       )}
 
-      {/* İlgi Alanı — stage 4 */}
-      {stage >= 4 && interestedInOptions.length > 0 && (
+      {/* İlgi Alanı (InterestedIn) buradan kaldırıldı — artık profil alanı değil,
+          Discover > Filtreler altında bir swipe filtresi (bkz. FilterModal).
+          Cinsiyet ise tam tersi: kimlik alanı olduğu için burada. */}
+
+      {/* Cinsiyet — stage 4. Picker RegisterStep7 ile paylaşılan component. */}
+      {stage >= 4 && genderCategories.length > 0 && (
         <View style={{ marginTop: 28 }}>
           <View
             style={{
@@ -2000,28 +2030,22 @@ const EditProfileForm = forwardRef(function EditProfileForm(
                 marginBottom: 6,
               }}
             >
-              İlgi Alanı ({draftInterestedIn.length} seçildi)
+              {t('profile.edit.genderTitle')}
             </Text>
             <View className="flex-row items-center gap-2 mb-3 pr-4">
-              <InfoIcon size={16} color={colors.textSecondary} />
+              <SFIcon name="info.circle" fallback={InfoIcon} size={18} color={colors.textSecondary} strokeWidth={2} weight="semibold" />
               <Text
                 style={{ color: colors.textSecondary, fontSize: 14, fontWeight: "400" }}
               >
-                Kiminle eşleşmek istediğini seç.
+                {t('profile.edit.genderDesc')}
               </Text>
             </View>
           </View>
-          <View style={{ flexDirection: "row", flexWrap: "wrap", gap: 8 }}>
-            {interestedInOptions.map((opt) => (
-              <OptionPill
-                key={opt.id}
-                option={opt}
-                isSelected={draftInterestedIn.some((p) => p?.id === opt.id)}
-                onPress={toggleInterestedIn}
-                Icon={getInterestedInIcon(opt.enumName)}
-              />
-            ))}
-          </View>
+          <GenderCategoryPicker
+            categories={genderCategories}
+            value={draftGender}
+            onChange={setDraftGender}
+          />
         </View>
       )}
 
@@ -2044,14 +2068,14 @@ const EditProfileForm = forwardRef(function EditProfileForm(
                 marginBottom: 6,
               }}
             >
-              Şehir
+              {t('profile.edit.cityTitle')}
             </Text>
             <View className="flex-row items-center gap-2 mb-3 pr-4">
-              <InfoIcon size={16} color={colors.textSecondary} />
+              <SFIcon name="info.circle" fallback={InfoIcon} size={18} color={colors.textSecondary} strokeWidth={2} weight="semibold" />
               <Text
                 style={{ color: colors.textSecondary, fontSize: 14, fontWeight: "400" }}
               >
-                Bulunduğun şehri seç.
+                {t('profile.edit.cityDesc')}
               </Text>
             </View>
           </View>
@@ -2090,7 +2114,7 @@ const EditProfileForm = forwardRef(function EditProfileForm(
                 {draftCity?.name || t('profile.edit.selectCity')}
               </Text>
             </View>
-            <ChevronDown size={18} color={colors.textSecondary} strokeWidth={2} />
+            <SFIcon name="chevron.down" fallback={ChevronDown} size={18} color={colors.textSecondary} strokeWidth={2} weight="semibold" />
           </TouchableOpacity>
         </View>
       )}
@@ -2143,7 +2167,7 @@ const EditProfileForm = forwardRef(function EditProfileForm(
             {districtsLoading ? (
               <ActivityIndicator size="small" color={colors.textSecondary} />
             ) : (
-              <ChevronDown size={18} color={colors.textSecondary} strokeWidth={2} />
+              <SFIcon name="chevron.down" fallback={ChevronDown} size={18} color={colors.textSecondary} strokeWidth={2} weight="semibold" />
             )}
           </TouchableOpacity>
         </View>
@@ -2168,10 +2192,10 @@ const EditProfileForm = forwardRef(function EditProfileForm(
                 marginBottom: 6,
               }}
             >
-              Konuşulan Diller ({draftLanguages.length} seçildi)
+              {t('profile.edit.languagesTitle', { count: draftLanguages.length })}
             </Text>
             <View className="flex-row items-center gap-2 mb-3 pr-4">
-              <InfoIcon size={16} color={colors.textSecondary} />
+              <SFIcon name="info.circle" fallback={InfoIcon} size={18} color={colors.textSecondary} strokeWidth={2} weight="semibold" />
               <Text
                 style={{ color: colors.textSecondary, fontSize: 14, fontWeight: "400" }}
               >
@@ -2216,7 +2240,7 @@ const EditProfileForm = forwardRef(function EditProfileForm(
                   : t('profile.edit.selectLanguage')}
               </Text>
             </View>
-            <ChevronDown size={18} color={colors.textSecondary} strokeWidth={2} />
+            <SFIcon name="chevron.down" fallback={ChevronDown} size={18} color={colors.textSecondary} strokeWidth={2} weight="semibold" />
           </TouchableOpacity>
           {draftLanguages.length > 0 && (
             <View
@@ -2233,7 +2257,7 @@ const EditProfileForm = forwardRef(function EditProfileForm(
                   option={opt}
                   isSelected
                   onPress={toggleLanguage}
-                  Icon={getLanguageIcon(opt.enumName)}
+                  icon={getLanguageIcon(opt.enumName)}
                 />
               ))}
             </View>
@@ -2263,11 +2287,11 @@ const EditProfileForm = forwardRef(function EditProfileForm(
               {t('profile.edit.petsTitle', { count: draftPets.length })}
             </Text>
             <View className="flex-row items-center gap-2 mb-3 pr-4">
-              <InfoIcon size={16} color={colors.textSecondary} />
+              <SFIcon name="info.circle" fallback={InfoIcon} size={18} color={colors.textSecondary} strokeWidth={2} weight="semibold" />
               <Text
                 style={{ color: colors.textSecondary, fontSize: 14, fontWeight: "400" }}
               >
-                Birlikte yaşadığın hayvanları seç (en fazla 8).
+                {t('profile.edit.petsDesc')}
               </Text>
             </View>
           </View>
@@ -2278,7 +2302,7 @@ const EditProfileForm = forwardRef(function EditProfileForm(
                 option={opt}
                 isSelected={draftPets.some((p) => p?.id === opt.id)}
                 onPress={togglePet}
-                Icon={getPetIcon(opt.enumName)}
+                icon={getPetIcon(opt.enumName)}
               />
             ))}
           </View>
@@ -2307,7 +2331,7 @@ const EditProfileForm = forwardRef(function EditProfileForm(
             {t('profile.edit.visibility.title')}
           </Text>
           <View className="flex-row items-center gap-2 mb-3 pr-4">
-            <InfoIcon size={16} color={colors.textSecondary} />
+            <SFIcon name="info.circle" fallback={InfoIcon} size={18} color={colors.textSecondary} strokeWidth={2} weight="semibold" />
             <Text style={{ color: colors.textSecondary, fontSize: 14, fontWeight: "400" }}>
               {t('profile.edit.visibility.description')}
             </Text>

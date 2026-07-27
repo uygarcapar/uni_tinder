@@ -3,6 +3,7 @@ import { useTranslation } from 'react-i18next';
 import { View, Text, TouchableOpacity, Alert } from "react-native";
 import { BottomSheetTextInput } from "@gorhom/bottom-sheet";
 import { Search, SearchX, Check } from "lucide-react-native";
+import SFIcon from "@/shared/components/SFIcon";
 import AppModal from "@/shared/components/AppModal";
 import { colors } from "../../../shared/theme/colors";
 
@@ -69,7 +70,7 @@ export default function LanguagePickerModal({
         next.delete(enumName);
       } else {
         if (maxLimit && next.size >= maxLimit) {
-          Alert.alert("Sınır Aşıldı", limitMsg || "Sınır aşıldı.");
+          Alert.alert(t('common.limitReached'), limitMsg || t('common.limitReached'));
           return prev;
         }
         next.add(enumName);
@@ -101,7 +102,7 @@ export default function LanguagePickerModal({
             zIndex: 1,
           }}
         >
-          <Search size={18} color={colors.textSecondary} strokeWidth={2} />
+          <SFIcon name="magnifyingglass" fallback={Search} size={18} color={colors.textSecondary} strokeWidth={2} weight="semibold" />
         </View>
         <BottomSheetTextInput
           value={search}
@@ -127,7 +128,7 @@ export default function LanguagePickerModal({
 
       {ordered.length === 0 ? (
         <View style={{ paddingVertical: 32, alignItems: "center" }}>
-          <SearchX size={36} color={colors.text} strokeWidth={1.75} />
+          <SFIcon name="magnifyingglass" fallback={SearchX} size={36} color={colors.text} strokeWidth={1.75} weight="medium" />
           {search.trim() !== "" && (
             <Text
               style={{
@@ -187,7 +188,7 @@ export default function LanguagePickerModal({
                     justifyContent: "center",
                   }}
                 >
-                  <Check size={18} color={colors.text} strokeWidth={2.5} />
+                  <SFIcon name="checkmark" fallback={Check} size={18} color={colors.text} strokeWidth={2.5} weight="bold" />
                 </View>
               )}
             </TouchableOpacity>

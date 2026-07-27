@@ -11,8 +11,23 @@ jest.mock('@/shared/services/api', () => ({
 jest.mock('@/shared/constants/api', () => ({
   API_ENDPOINTS: {
     PRIVACY_MY_DATA: '/privacy/my-data',
+    PRIVACY_MY_DATA_STATUS: (id: string) => `/privacy/my-data/${id}`,
     PRIVACY_DELETE_ACCOUNT: '/privacy/delete',
+    MODERATION_BLOCKED_USERS: '/moderation/blocked-users',
+    MODERATION_BLOCK: (id: string) => `/moderation/block/${id}`,
   },
+}));
+
+// react-redux/@reduxjs/toolkit ESM-only build ile geliyor ve transformIgnorePatterns
+// dışında kaldığı için import edilirse suite hiç koşmuyor. SettingsModal store'dan
+// sadece dil tercihini okuyor — o kadarını burada sahtele.
+const mockDispatch = jest.fn();
+jest.mock('react-redux', () => ({
+  useDispatch: () => mockDispatch,
+  useSelector: (fn: any) => fn({ settings: { language: 'tr' } }),
+}));
+jest.mock('@/shared/store/settingsSlice', () => ({
+  setLanguage: (lang: string) => ({ type: 'settings/setLanguage', payload: lang }),
 }));
 
 const mockGetNotificationPreferences = jest.fn();
@@ -147,11 +162,13 @@ describe('SettingsModal — data download', () => {
     expect(mockApi.get).not.toHaveBeenCalled();
   });
 
-  it('opens the file URL when polling reports "completed"', async () => {
+  // Backend status'ü PascalCase döner ("Completed"/"Failed") — karşılaştırma
+  // case-insensitive olmalı, aksi halde hazır export hiç yakalanmıyor.
+  it('opens the file URL when polling reports "Completed"', async () => {
     jest.useFakeTimers();
     mockApi.post.mockResolvedValue({ isSuccess: true, result: { requestId: 'req-1' } });
     mockApi.get.mockResolvedValue({
-      result: { status: 'completed', fileUrl: 'https://x/file.zip' },
+      result: { status: 'Completed', fileUrl: 'https://x/file.zip' },
     });
 
     const tree = setup();
@@ -162,7 +179,7 @@ describe('SettingsModal — data download', () => {
     });
 
     await act(async () => {
-      jest.advanceTimersByTime(3000);
+      jest.advanceTimersByTime(5000);
     });
     // Flush the polling promise chain.
     await act(async () => {});
@@ -171,10 +188,10 @@ describe('SettingsModal — data download', () => {
     expect(Linking.openURL).toHaveBeenCalledWith('https://x/file.zip');
   });
 
-  it('Alerts when polling reports "failed"', async () => {
+  it('Alerts when polling reports "Failed"', async () => {
     jest.useFakeTimers();
     mockApi.post.mockResolvedValue({ isSuccess: true, result: { requestId: 'req-1' } });
-    mockApi.get.mockResolvedValue({ result: { status: 'failed' } });
+    mockApi.get.mockResolvedValue({ result: { status: 'Failed' } });
 
     const tree = setup();
     await waitFor(() => tree.getByText('Verilerimi İndir'));
@@ -183,7 +200,7 @@ describe('SettingsModal — data download', () => {
       fireEvent.press(tree.getByText('Verilerimi İndir'));
     });
     await act(async () => {
-      jest.advanceTimersByTime(3000);
+      jest.advanceTimersByTime(5000);
     });
     await act(async () => {});
 

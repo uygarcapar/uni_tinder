@@ -44,7 +44,6 @@ export type HydrateProfileFormArgs = {
   smokingOptions: any[];
   zodiacOptions: any[];
   usagePurposeOptions: any[];
-  interestedInOptions: any[];
   cityOptions: any[];
   languageOptions: any[];
   petOptions: any[];
@@ -56,7 +55,6 @@ export const hydrateProfileForm = ({
   smokingOptions,
   zodiacOptions,
   usagePurposeOptions,
-  interestedInOptions,
   cityOptions,
   languageOptions,
   petOptions,
@@ -98,7 +96,6 @@ export const hydrateProfileForm = ({
       myProfile?.usagePurpose,
       myProfile?.usagePurposeDisplay,
     ),
-    interestedIn: matchMulti(interestedInOptions, myProfile?.interestedIn),
     city: matchOption(cityOptions, myProfile?.city, myProfile?.cityDisplay),
     district: null,
     languages: matchMulti(languageOptions, myProfile?.spokenLanguages),

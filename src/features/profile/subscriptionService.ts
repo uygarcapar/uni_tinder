@@ -104,6 +104,68 @@ export async function getRevenueCatPremiumStatus(): Promise<{
   }
 }
 
+export interface RevenueCatSnapshot {
+  /** RC SDK'ya göre entitlement aktif mi. Client-side — AUTHORITATIVE DEĞİL,
+   *  yalnızca backend ile çelişki tespiti (reconcile) için sinyaldir. */
+  isPremium: boolean;
+  expiresAt: string | null;
+  /** Backend `/reconcile` audit payload'ı için aktif entitlement key'leri. */
+  entitlements: string[];
+  productId: string | null;
+  originalPurchaseDate: string | null;
+  latestPurchaseDate: string | null;
+}
+
+/**
+ * `/api/subscription/reconcile` payload'ı + mismatch tespiti için RC snapshot'ı.
+ *
+ * NOT: RC `CustomerInfo` transaction id'yi doğrudan expose etmiyor (yalnızca
+ * `nonSubscriptionTransactions` consumable'lar için taşıyor). Backend bu alanları
+ * audit amaçlı ve opsiyonel istediği için elimizdeki purchase date'leri
+ * gönderiyoruz; eşleştirmeyi backend `app_user_id` üzerinden yapıyor.
+ */
+export async function getRevenueCatSnapshot(): Promise<RevenueCatSnapshot | null> {
+  if (!isConfigured) return null;
+  try {
+    const info = await Purchases.getCustomerInfo();
+    const active = info?.entitlements?.active ?? {};
+    const entitlement = active[ENTITLEMENT_ID];
+    return {
+      isPremium: !!entitlement,
+      expiresAt: entitlement?.expirationDate ?? null,
+      entitlements: Object.keys(active),
+      productId: entitlement?.productIdentifier ?? null,
+      originalPurchaseDate: (entitlement as any)?.originalPurchaseDate ?? info?.originalPurchaseDate ?? null,
+      latestPurchaseDate: (entitlement as any)?.latestPurchaseDate ?? null,
+    };
+  } catch {
+    return null;
+  }
+}
+
+/**
+ * RC SDK abonelik değişimlerini (yenileme, iptal, billing issue, expire) push
+ * eder. Bu listener olmadan bu değişiklikleri ancak bir sonraki foreground
+ * `/status` çağrısında öğreniyorduk. Callback'te backend'i canonical kabul edip
+ * `/status` tazeliyoruz — RC değerini doğrudan state'e YAZMIYORUZ.
+ * Dönen fonksiyon listener'ı kaldırır.
+ */
+export function addCustomerInfoListener(cb: () => void): () => void {
+  if (!isConfigured) return () => {};
+  try {
+    Purchases.addCustomerInfoUpdateListener(cb);
+    return () => {
+      try {
+        (Purchases as any).removeCustomerInfoUpdateListener?.(cb);
+      } catch {
+        // RC SDK sürümünde remove yoksa yut — listener app ömrü boyunca kalır.
+      }
+    };
+  } catch {
+    return () => {};
+  }
+}
+
 export const CHAT_UNLOCK_PRODUCT_ID = "chat_unlock";
 
 export async function getChatUnlockPackage(): Promise<PurchasesPackage | null> {

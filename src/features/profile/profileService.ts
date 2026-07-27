@@ -12,10 +12,39 @@ interface ProfileUpdate {
   [key: string]: any;
 }
 
+// Cold-boot'ta GetMyProfile 3 ayrı yerden çekiliyordu (AppNavigator header foto +
+// ProfileScreen + LikesScreen preload). Hepsi aynı profili istiyor. Kısa TTL +
+// in-flight dedup → eşzamanlı/yakın çağrılar tek isteğe iner. updateProfile
+// cache'i bust eder, ForceRefresh (pull-to-refresh / edit sonrası) taze çeker.
+const PROFILE_TTL_MS = 10_000;
+
 class ProfileService {
-  async getMyProfile() {
-    const response = await api.get(API_ENDPOINTS.GET_MY_PROFILE);
-    return (response as any).result;
+  private _profileCache: { at: number; data: any } | null = null;
+  private _profileInFlight: Promise<any> | null = null;
+
+  async getMyProfile(force = false) {
+    if (!force) {
+      const c = this._profileCache;
+      if (c && Date.now() - c.at < PROFILE_TTL_MS) return c.data;
+      if (this._profileInFlight) return this._profileInFlight;
+    }
+    const p = (async () => {
+      const response = await api.get(API_ENDPOINTS.GET_MY_PROFILE);
+      const result = (response as any).result;
+      this._profileCache = { at: Date.now(), data: result };
+      return result;
+    })();
+    this._profileInFlight = p;
+    try {
+      return await p;
+    } finally {
+      if (this._profileInFlight === p) this._profileInFlight = null;
+    }
+  }
+
+  bustProfileCache() {
+    this._profileCache = null;
+    this._profileInFlight = null;
   }
 
   async updateProfile(updates: ProfileUpdate) {
@@ -38,6 +67,7 @@ class ProfileService {
     });
 
     const response = await api.put(API_ENDPOINTS.UPDATE_PROFILE, formData);
+    this.bustProfileCache(); // sonraki getMyProfile taze veri çeksin
     return (response as any).result;
   }
 
