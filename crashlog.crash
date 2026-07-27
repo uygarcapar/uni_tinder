@@ -1,0 +1,289 @@
+Incident Identifier: CBD2C148-48BB-493C-B4D3-2E0BE1F255EE
+Distributor ID:      com.apple.TestFlight
+Hardware Model:      iPhone17,1
+Process:             Lit [34651]
+Path:                /private/var/containers/Bundle/Application/A915AE98-3019-40EC-B3D4-087799134904/Lit.app/Lit
+Identifier:          com.uygarcapar.lit
+Version:             1.0.0 (12)
+AppStoreTools:       17F106
+AppVariant:          1:iPhone17,1:18
+Beta:                YES
+Code Type:           ARM-64 (Native)
+Role:                Foreground
+Parent Process:      launchd [1]
+Coalition:           com.uygarcapar.lit [13636]
+
+Date/Time:           2026-07-26 11:53:14.3588 +0300
+Launch Time:         2026-07-26 11:53:05.8749 +0300
+OS Version:          iPhone OS 18.6.2 (22G100)
+Release Type:        User
+Baseband Version:    1.70.02
+Report Version:      104
+
+Exception Type:  EXC_BREAKPOINT (SIGTRAP)
+Exception Codes: 0x0000000000000001, 0x0000000193dd12a0
+Termination Reason: SIGNAL 5 Trace/BPT trap: 5
+Terminating Process: exc handler [34651]
+
+Triggered by Thread:  0
+
+
+Thread 0 name:
+Thread 0 Crashed:
+0   libswiftCore.dylib            	0x0000000193dd12a0 closure #1 in closure #1 in closure #1 in _assertionFailure(_:_:file:line:flags:) + 228 (AssertCommon.swift:114)
+1   libswiftCore.dylib            	0x0000000193dd1178 closure #1 in closure #1 in _assertionFailure(_:_:file:line:flags:) + 328 (AssertCommon.swift:107)
+2   libswiftCore.dylib            	0x0000000193dd0b4c _assertionFailure(_:_:file:line:flags:) + 184 (AssertCommon.swift:103)
+3   libswiftCore.dylib            	0x0000000193f98c64 String.UTF16View._offsetRange(for:from:) + 636 (StringUTF16View.swift:0)
+4   libswiftCore.dylib            	0x0000000193f98974 StringProtocol._toUTF16Offsets(_:) + 196 (StringBridge.swift:0)
+5   Foundation                    	0x0000000194527b94 _NSRange.init<A, B>(_:in:) + 100 (NSRange.swift:164)
+6   SwiftUI                       	0x000000019adab3e0 protocol witness for UIKitTextInput.uiSelectedRange.setter in conformance VerticalTextView + 184 (<compiler-generated>:401)
+7   SwiftUI                       	0x000000019a7c9b6c UIKitTextInput.setSelection(_:) + 492 (SystemTextFieldStyle_PhoneTVWatch.swift:1042)
+8   SwiftUI                       	0x000000019a7bfe60 PlatformTextFieldCoordinator.update() + 2120 (SystemTextFieldStyle_PhoneTVWatch.swift:1142)
+9   SwiftUI                       	0x000000019a7c25d8 TextViewAdaptor.updateUIView(_:context:) + 844 (SystemTextFieldStyle_PhoneTVWatch.swift:487)
+10  SwiftUI                       	0x000000019a419dd4 specialized closure #1 in closure #1 in closure #1 in closure #5 in closure #1 in PlatformViewChild.updateValue() + 264 (<compiler-generated>:0)
+11  SwiftUI                       	0x000000019a419434 specialized closure #1 in closure #1 in closure #5 in closure #1 in PlatformViewChild.updateValue() + 248
+12  SwiftUI                       	0x000000019a42d748 partial apply for specialized closure #1 in closure #1 in closure #5 in closure #1 in PlatformViewChild.updateValue() + 56
+13  SwiftUICore                   	0x00000002561048f0 ViewRendererHost.performExternalUpdate(_:) + 308 (ViewRendererHost.swift:395)
+14  SwiftUI                       	0x000000019a0d0e88 closure #1 in perform #1 <A>(work:) in closure #1 in closure #5 in closure #1 in PlatformViewChild.updateValue() + 72 (PlatformViewRepresentable.swift:583)
+15  SwiftUI                       	0x0000000199ff8ee4 partial apply for closure #1 in perform #1 <A>(work:) in closure #1 in closure #5 in closure #1 in PlatformViewChild.updateValue() + 24 (<compiler-generated>:0)
+16  SwiftUI                       	0x000000019a081dfc <deduplicated_symbol> + 16
+17  SwiftUICore                   	0x000000025606b6c0 closure #1 in static Update.ensure<A>(_:) + 56 (Update.swift:205)
+18  SwiftUICore                   	0x000000025606af28 static Update.ensure<A>(_:) + 96 (Update.swift:202)
+19  SwiftUI                       	0x000000019a416964 specialized closure #1 in closure #5 in closure #1 in PlatformViewChild.updateValue() + 252
+20  SwiftUI                       	0x000000019a436ffc partial apply for specialized closure #5 in closure #1 in PlatformViewChild.updateValue() + 128
+21  SwiftUI                       	0x000000019a4367b8 partial apply for specialized closure #5 in closure #1 in PlatformViewChild.updateValue() + 76
+22  SwiftUICore                   	0x00000002560a1588 partial apply for closure #1 in _withObservation<A>(do:) + 48
+23  SwiftUICore                   	0x00000002560ba388 partial apply for closure #1 in _withObservation<A>(do:) + 16
+24  SwiftUICore                   	0x00000002560738e8 withUnsafeMutablePointer<A, B, C>(to:_:) + 160 (<compiler-generated>:0)
+25  SwiftUICore                   	0x00000002560a10e8 StatefulRule.withObservation<A>(do:) + 860
+26  SwiftUICore                   	0x00000002560a1530 StatefulRule.withObservation<A>(do:) + 72 (:-1)
+27  SwiftUI                       	0x000000019a3fd07c specialized closure #1 in PlatformViewChild.updateValue() + 3044 (PlatformViewRepresentable.swift:578)
+28  SwiftUICore                   	0x0000000256103b88 Signpost.traceInterval<A>(object:_:_:closure:) + 452 (<compiler-generated>:0)
+29  SwiftUI                       	0x000000019a22c910 specialized implicit closure #1 in closure #1 in closure #1 in Attribute.init<A>(_:) + 144
+30  AttributeGraph                	0x00000001c284c418 AG::Graph::UpdateStack::update() + 524 (ag-graph-update.cc:583)
+31  AttributeGraph                	0x00000001c284bfec AG::Graph::update_attribute(AG::data::ptr<AG::Node>, unsigned int) + 420 (ag-graph-update.cc:712)
+32  AttributeGraph                	0x00000001c2851368 AG::Subgraph::update(unsigned int) + 848 (ag-subgraph.cc:759)
+33  SwiftUICore                   	0x0000000256792cdc specialized GraphHost.runTransaction(_:do:id:) + 328 (:-1)
+34  SwiftUICore                   	0x00000002560829f4 GraphHost.flushTransactions() + 180 (GraphHost.swift:664)
+35  SwiftUI                       	0x0000000199ff3eb8 <deduplicated_symbol> + 24
+36  SwiftUICore                   	0x000000025608d884 partial apply for closure #1 in ViewGraphDelegate.updateGraph<A>(body:) + 28 (<compiler-generated>:0)
+37  SwiftUICore                   	0x000000025607ac44 ViewRendererHost.updateViewGraph<A>(body:) + 120 (ViewRendererHost.swift:92)
+38  SwiftUICore                   	0x000000025608d85c ViewGraphDelegate.updateGraph<A>(body:) + 84 (ViewGraph.swift:28)
+39  SwiftUI                       	0x0000000199ff3e64 closure #1 in closure #1 in closure #1 in _UIHostingView.beginTransaction() + 172 (_UIHostingView.swift:476)
+40  SwiftUI                       	0x0000000199ff3e98 partial apply for closure #1 in closure #1 in closure #1 in _UIHostingView.beginTransaction() + 24 (<compiler-generated>:0)
+41  SwiftUICore                   	0x000000025606b6c0 closure #1 in static Update.ensure<A>(_:) + 56 (Update.swift:205)
+42  SwiftUICore                   	0x000000025606af28 static Update.ensure<A>(_:) + 96 (Update.swift:202)
+43  SwiftUI                       	0x0000000199ff3da8 partial apply for closure #1 in closure #1 in _UIHostingView.beginTransaction() + 80 (<compiler-generated>:0)
+44  SwiftUICore                   	0x00000002561625c0 <deduplicated_symbol> + 28 (:-1)
+45  SwiftUICore                   	0x000000025616cf0c specialized closure #1 in static NSRunLoop.addObserver(_:) + 120 (RunLoopUtils.swift:21)
+46  CoreFoundation                	0x00000001956fc140 __CFRUNLOOP_IS_CALLING_OUT_TO_AN_OBSERVER_CALLBACK_FUNCTION__ + 36 (CFRunLoop.c:1802)
+47  CoreFoundation                	0x00000001956fc7bc __CFRunLoopDoObservers + 536 (CFRunLoop.c:1915)
+48  CoreFoundation                	0x00000001956f9f88 __CFRunLoopRun + 944 (CFRunLoop.c:2997)
+49  CoreFoundation                	0x00000001956fbadc CFRunLoopRunSpecific + 572 (CFRunLoop.c:3434)
+50  GraphicsServices              	0x00000001e2521454 GSEventRunModal + 168 (GSEvent.c:2196)
+51  UIKitCore                     	0x000000019811d274 -[UIApplication _run] + 816 (UIApplication.m:3845)
+52  UIKitCore                     	0x00000001980e8a28 UIApplicationMain + 336 (UIApplication.m:5540)
+53  UIKitCore                     	0x00000001981ca168 UIApplicationMain(_:_:_:_:) + 104 (UIKit.swift:565)
+54  Lit                           	0x0000000104b65578 specialized static UIApplicationDelegate.main() + 28 (AppDelegate.swift:0)
+55  Lit                           	0x0000000104b65578 static AppDelegate.$main() + 28
+56  Lit                           	0x0000000104b65578 main + 116
+57  dyld                          	0x00000001bc18df08 start + 6040 (dyldMain.cpp:1450)
+
+Thread 1:
+0   libsystem_pthread.dylib       	0x000000021fba4aa4 start_wqthread + 0 (:-1)
+
+Thread 2:
+0   libsystem_pthread.dylib       	0x000000021fba4aa4 start_wqthread + 0 (:-1)
+
+Thread 3:
+0   libsystem_pthread.dylib       	0x000000021fba4aa4 start_wqthread + 0 (:-1)
+
+Thread 4:
+0   libsystem_pthread.dylib       	0x000000021fba4aa4 start_wqthread + 0 (:-1)
+
+Thread 5:
+0   libsystem_pthread.dylib       	0x000000021fba4aa4 start_wqthread + 0 (:-1)
+
+Thread 6:
+0   libsystem_pthread.dylib       	0x000000021fba4aa4 start_wqthread + 0 (:-1)
+
+Thread 7:
+0   libsystem_pthread.dylib       	0x000000021fba4aa4 start_wqthread + 0 (:-1)
+
+Thread 8:
+0   libsystem_pthread.dylib       	0x000000021fba4aa4 start_wqthread + 0 (:-1)
+
+Thread 9 name:
+Thread 9:
+0   libsystem_kernel.dylib        	0x00000001e6555ce4 mach_msg2_trap + 8 (:-1)
+1   libsystem_kernel.dylib        	0x00000001e655939c mach_msg2_internal + 76 (mach_msg.c:201)
+2   libsystem_kernel.dylib        	0x00000001e65592b8 mach_msg_overwrite + 428 (mach_msg.c:0)
+3   libsystem_kernel.dylib        	0x00000001e6559100 mach_msg + 24 (mach_msg.c:323)
+4   CoreFoundation                	0x00000001956fb7a0 __CFRunLoopServiceMachPort + 160 (CFRunLoop.c:2637)
+5   CoreFoundation                	0x00000001956fa090 __CFRunLoopRun + 1208 (CFRunLoop.c:3021)
+6   CoreFoundation                	0x00000001956fbadc CFRunLoopRunSpecific + 572 (CFRunLoop.c:3434)
+7   Foundation                    	0x000000019437279c -[NSRunLoop(NSRunLoop) runMode:beforeDate:] + 212 (NSRunLoop.m:375)
+8   Foundation                    	0x0000000194378020 -[NSRunLoop(NSRunLoop) runUntilDate:] + 64 (NSRunLoop.m:422)
+9   UIKitCore                     	0x000000019810756c -[UIEventFetcher threadMain] + 424 (UIEventFetcher.m:1351)
+10  Foundation                    	0x00000001943d8804 __NSThread__start__ + 732 (NSThread.m:991)
+11  libsystem_pthread.dylib       	0x000000021fba7344 _pthread_start + 136 (pthread.c:931)
+12  libsystem_pthread.dylib       	0x000000021fba4ab8 thread_start + 8 (:-1)
+
+Thread 10 name:
+Thread 10:
+0   hermesvm                      	0x00000001081b5188 hermes::vm::CallResult<hermes::vm::HermesValue, (hermes::vm::detail::CallResultSpecialize)2> hermes::vm::Interpreter::interpretFunction<false, false>(hermes::vm::Runtime&, hermes::vm::InterpreterSt... + 416 (:-1)
+1   hermesvm                      	0x0000000108254574 hermes::vm::Runtime::interpretFunctionImpl(hermes::vm::CodeBlock*) + 52 (:-1)
+2   hermesvm                      	0x00000001081aa750 hermes::vm::JSFunction::_callImpl(hermes::vm::Handle<hermes::vm::Callable>, hermes::vm::Runtime&) + 32 (:-1)
+3   hermesvm                      	0x00000001081a95f0 hermes::vm::Callable::executeCall0(hermes::vm::Handle<hermes::vm::Callable>, hermes::vm::Runtime&, hermes::vm::Handle<hermes::vm::HermesValue>, bool) + 112 (:-1)
+4   hermesvm                      	0x00000001081d9050 hermes::vm::Runtime::drainJobs() + 248 (:-1)
+5   hermesvm                      	0x000000010807f8cc facebook::hermes::(anonymous namespace)::HermesRuntimeImpl::drainMicrotasks(int) + 40 (:-1)
+6   React                         	0x0000000107464160 facebook::react::RuntimeScheduler_Modern::performMicrotaskCheckpoint(facebook::jsi::Runtime&) + 124 (:-1)
+7   React                         	0x0000000107463fb4 facebook::react::RuntimeScheduler_Modern::runEventLoopTick(facebook::jsi::Runtime&, facebook::react::Task&) + 188 (:-1)
+8   React                         	0x0000000107463cec facebook::react::RuntimeScheduler_Modern::runEventLoop(facebook::jsi::Runtime&) + 112 (:-1)
+9   React                         	0x0000000107482ce0 _ZNSt3__110__function6__funcIZZN8facebook5react13ReactInstanceC1ENS_10unique_ptrINS3_9JSRuntimeENS_14default_deleteIS6_EEEENS_10shared_ptrINS3_18MessageQueueThreadEEENSA_INS3_12TimerManagerEEENS_8f... + 140 (:-1)
+10  React                         	0x000000010728a8ac facebook::react::tryAndReturnError(std::__1::function<void ()> const&) + 32 (:-1)
+11  React                         	0x0000000107287a0c facebook::react::RCTMessageThread::tryFunc(std::__1::function<void ()> const&) + 24 (:-1)
+12  React                         	0x00000001072877dc invocation function for block in facebook::react::RCTMessageThread::runAsync(std::__1::function<void ()>) + 44 (:-1)
+13  CoreFoundation                	0x0000000195756850 __CFRUNLOOP_IS_CALLING_OUT_TO_A_BLOCK__ + 28 (CFRunLoop.c:1818)
+14  CoreFoundation                	0x00000001956f9028 __CFRunLoopDoBlocks + 352 (CFRunLoop.c:1860)
+15  CoreFoundation                	0x00000001956fa528 __CFRunLoopRun + 2384 (CFRunLoop.c:3217)
+16  CoreFoundation                	0x00000001956fbadc CFRunLoopRunSpecific + 572 (CFRunLoop.c:3434)
+17  React                         	0x0000000107497ee0 +[RCTJSThreadManager runRunLoop] + 252 (:-1)
+18  Foundation                    	0x00000001943d8804 __NSThread__start__ + 732 (NSThread.m:991)
+19  libsystem_pthread.dylib       	0x000000021fba7344 _pthread_start + 136 (pthread.c:931)
+20  libsystem_pthread.dylib       	0x000000021fba4ab8 thread_start + 8 (:-1)
+
+Thread 11 name:
+Thread 11:
+0   libsystem_kernel.dylib        	0x00000001e655b438 __psynch_cvwait + 8 (:-1)
+1   libsystem_pthread.dylib       	0x000000021fba5e50 _pthread_cond_wait + 984 (pthread_cond.c:862)
+2   libc++.1.dylib                	0x00000001a6072294 std::__1::condition_variable::wait(std::__1::unique_lock<std::__1::mutex>&) + 32 (condition_variable.cpp:30)
+3   hermesvm                      	0x000000010822f628 hermes::vm::HadesGC::Executor::worker() + 104 (:-1)
+4   hermesvm                      	0x000000010822f59c void* std::__1::__thread_proxy[abi:nn190102]<std::__1::tuple<std::__1::unique_ptr<std::__1::__thread_struct, std::__1::default_delete<std::__1::__thread_struct>>, hermes::vm::HadesGC::Executor::Exe... + 44 (:-1)
+5   libsystem_pthread.dylib       	0x000000021fba7344 _pthread_start + 136 (pthread.c:931)
+6   libsystem_pthread.dylib       	0x000000021fba4ab8 thread_start + 8 (:-1)
+
+Thread 12 name:
+Thread 12:
+0   libsystem_kernel.dylib        	0x00000001e655b438 __psynch_cvwait + 8 (:-1)
+1   libsystem_pthread.dylib       	0x000000021fba5e50 _pthread_cond_wait + 984 (pthread_cond.c:862)
+2   libc++.1.dylib                	0x00000001a6072294 std::__1::condition_variable::wait(std::__1::unique_lock<std::__1::mutex>&) + 32 (condition_variable.cpp:30)
+3   hermesvm                      	0x000000010822f628 hermes::vm::HadesGC::Executor::worker() + 104 (:-1)
+4   hermesvm                      	0x000000010822f59c void* std::__1::__thread_proxy[abi:nn190102]<std::__1::tuple<std::__1::unique_ptr<std::__1::__thread_struct, std::__1::default_delete<std::__1::__thread_struct>>, hermes::vm::HadesGC::Executor::Exe... + 44 (:-1)
+5   libsystem_pthread.dylib       	0x000000021fba7344 _pthread_start + 136 (pthread.c:931)
+6   libsystem_pthread.dylib       	0x000000021fba4ab8 thread_start + 8 (:-1)
+
+Thread 13 name:
+Thread 13:
+0   libsystem_kernel.dylib        	0x00000001e6555ce4 mach_msg2_trap + 8 (:-1)
+1   libsystem_kernel.dylib        	0x00000001e655939c mach_msg2_internal + 76 (mach_msg.c:201)
+2   libsystem_kernel.dylib        	0x00000001e65592b8 mach_msg_overwrite + 428 (mach_msg.c:0)
+3   libsystem_kernel.dylib        	0x00000001e6559100 mach_msg + 24 (mach_msg.c:323)
+4   CoreFoundation                	0x00000001956fb7a0 __CFRunLoopServiceMachPort + 160 (CFRunLoop.c:2637)
+5   CoreFoundation                	0x00000001956fa090 __CFRunLoopRun + 1208 (CFRunLoop.c:3021)
+6   CoreFoundation                	0x00000001956fbadc CFRunLoopRunSpecific + 572 (CFRunLoop.c:3434)
+7   CFNetwork                     	0x0000000196d29db8 +[__CFN_CoreSchedulingSetRunnable _run:] + 416 (CoreSchedulingSet.mm:1473)
+8   Foundation                    	0x00000001943d8804 __NSThread__start__ + 732 (NSThread.m:991)
+9   libsystem_pthread.dylib       	0x000000021fba7344 _pthread_start + 136 (pthread.c:931)
+10  libsystem_pthread.dylib       	0x000000021fba4ab8 thread_start + 8 (:-1)
+
+Thread 14 name:
+Thread 14:
+0   libsystem_kernel.dylib        	0x00000001e6555ce4 mach_msg2_trap + 8 (:-1)
+1   libsystem_kernel.dylib        	0x00000001e655939c mach_msg2_internal + 76 (mach_msg.c:201)
+2   libsystem_kernel.dylib        	0x00000001e65592b8 mach_msg_overwrite + 428 (mach_msg.c:0)
+3   libsystem_kernel.dylib        	0x00000001e6559100 mach_msg + 24 (mach_msg.c:323)
+4   CoreFoundation                	0x00000001956fb7a0 __CFRunLoopServiceMachPort + 160 (CFRunLoop.c:2637)
+5   CoreFoundation                	0x00000001956fa090 __CFRunLoopRun + 1208 (CFRunLoop.c:3021)
+6   CoreFoundation                	0x00000001956fbadc CFRunLoopRunSpecific + 572 (CFRunLoop.c:3434)
+7   Foundation                    	0x000000019437279c -[NSRunLoop(NSRunLoop) runMode:beforeDate:] + 212 (NSRunLoop.m:375)
+8   ReactNativeDependencies       	0x0000000107d96894 -[SRRunLoopThread main] + 216 (:-1)
+9   Foundation                    	0x00000001943d8804 __NSThread__start__ + 732 (NSThread.m:991)
+10  libsystem_pthread.dylib       	0x000000021fba7344 _pthread_start + 136 (pthread.c:931)
+11  libsystem_pthread.dylib       	0x000000021fba4ab8 thread_start + 8 (:-1)
+
+Thread 15 name:
+Thread 15:
+0   libsystem_kernel.dylib        	0x00000001e655d32c __select + 8 (:-1)
+1   CoreFoundation                	0x00000001957818e4 __CFSocketManager + 704 (CFSocket.c:1341)
+2   libsystem_pthread.dylib       	0x000000021fba7344 _pthread_start + 136 (pthread.c:931)
+3   libsystem_pthread.dylib       	0x000000021fba4ab8 thread_start + 8 (:-1)
+
+Thread 16 name:
+Thread 16:
+0   libsystem_kernel.dylib        	0x00000001e6555c60 semaphore_wait_trap + 8 (:-1)
+1   caulk                         	0x00000002230319e4 caulk::semaphore::timed_wait(double) + 224 (semaphore.cpp:98)
+2   caulk                         	0x0000000223030020 caulk::concurrent::details::worker_thread::run() + 32 (messenger.cpp:236)
+3   caulk                         	0x0000000223046ee0 void* caulk::thread_proxy<std::__1::tuple<caulk::thread::attributes, void (caulk::concurrent::details::worker_thread::*)(), std::__1::tuple<caulk::concurrent::details::worker_thread*>>>(void*) + 96 (thread.h:197)
+4   libsystem_pthread.dylib       	0x000000021fba7344 _pthread_start + 136 (pthread.c:931)
+5   libsystem_pthread.dylib       	0x000000021fba4ab8 thread_start + 8 (:-1)
+
+Thread 17 name:
+Thread 17:
+0   libsystem_kernel.dylib        	0x00000001e6555c60 semaphore_wait_trap + 8 (:-1)
+1   caulk                         	0x00000002230319e4 caulk::semaphore::timed_wait(double) + 224 (semaphore.cpp:98)
+2   caulk                         	0x0000000223030020 caulk::concurrent::details::worker_thread::run() + 32 (messenger.cpp:236)
+3   caulk                         	0x0000000223046ee0 void* caulk::thread_proxy<std::__1::tuple<caulk::thread::attributes, void (caulk::concurrent::details::worker_thread::*)(), std::__1::tuple<caulk::concurrent::details::worker_thread*>>>(void*) + 96 (thread.h:197)
+4   libsystem_pthread.dylib       	0x000000021fba7344 _pthread_start + 136 (pthread.c:931)
+5   libsystem_pthread.dylib       	0x000000021fba4ab8 thread_start + 8 (:-1)
+
+Thread 18 name:
+Thread 18:
+0   libsystem_kernel.dylib        	0x00000001e6555c78 semaphore_timedwait_trap + 8 (:-1)
+1   libdispatch.dylib             	0x000000019d6bb1c0 _dispatch_sema4_timedwait + 64 (lock.c:154)
+2   libdispatch.dylib             	0x000000019d688e58 _dispatch_semaphore_wait_slow + 76 (semaphore.c:116)
+3   libdispatch.dylib             	0x000000019d698ba8 _dispatch_worker_thread + 324 (queue.c:7520)
+4   libsystem_pthread.dylib       	0x000000021fba7344 _pthread_start + 136 (pthread.c:931)
+5   libsystem_pthread.dylib       	0x000000021fba4ab8 thread_start + 8 (:-1)
+
+
+Thread 0 crashed with ARM Thread State (64-bit):
+    x0: 0x0000000194205960   x1: 0xffffffffb0000000   x2: 0x0000000000000058   x3: 0xfffff0007fc00000
+    x4: 0x0000000000000000   x5: 0x000000016b29b360   x6: 0x0000000000000073   x7: 0x7ee4232ed874eafd
+    x8: 0x0000000000000000   x9: 0x000000007fb96e76  x10: 0x0000000000000000  x11: 0x0000000000000000
+   x12: 0x002f217880469189  x13: 0x002f116900468986  x14: 0x0000000000069000  x15: 0x0000000000000009
+   x16: 0x952d000109c4d890  x17: 0x00000002f1169186  x18: 0x0000000000000000  x19: 0xe000000000000000
+   x20: 0x0000000000000000  x21: 0x00000000002c000f  x22: 0x00000000002c000f  x23: 0x000000000000000f
+   x24: 0x000000000000002c  x25: 0x0000000000000000  x26: 0x0000000000000000  x27: 0x0000000124451908
+   x28: 0x00000001099b0000   fp: 0x000000016b29b410   lr: 0x0000000193dd12a0
+    sp: 0x000000016b29b3f0   pc: 0x0000000193dd12a0        cpsr: 0x0
+   esr: 0xf2000001 (Breakpoint) brk 1
+
+
+Binary Images:
+        0x104b60000 -         0x106233fff Lit arm64  <b1d5be98eb1e3bfcb21fbb4300889cff> /var/containers/Bundle/Application/A915AE98-3019-40EC-B3D4-087799134904/Lit.app/Lit
+        0x1067c0000 -         0x1067cbfff ExpoModulesWorklets arm64  <1435b2dd1b923e3ea7b14dedc5b855c0> /private/var/containers/Bundle/Application/A915AE98-3019-40EC-B3D4-087799134904/Lit.app/Frameworks/ExpoModulesWorklets.framework/ExpoModulesWorklets
+        0x106a08000 -         0x106a5bfff ExpoFileSystem arm64  <4c34a367c3543806b9e92d571b0e392e> /private/var/containers/Bundle/Application/A915AE98-3019-40EC-B3D4-087799134904/Lit.app/Frameworks/ExpoFileSystem.framework/ExpoFileSystem
+        0x106b10000 -         0x106b1ffff ExpoFont arm64  <72953748a9de3e73b16186c6fa974f69> /private/var/containers/Bundle/Application/A915AE98-3019-40EC-B3D4-087799134904/Lit.app/Frameworks/ExpoFont.framework/ExpoFont
+        0x106b48000 -         0x106b83fff ExpoImage arm64  <0b9d3d8fe64736eb914e90bd95f3bced> /private/var/containers/Bundle/Application/A915AE98-3019-40EC-B3D4-087799134904/Lit.app/Frameworks/ExpoImage.framework/ExpoImage
+        0x106bf0000 -         0x106c13fff ExpoLocation arm64  <fa957fb2fc573224bcd49e2e49a8afbe> /private/var/containers/Bundle/Application/A915AE98-3019-40EC-B3D4-087799134904/Lit.app/Frameworks/ExpoLocation.framework/ExpoLocation
+        0x106c64000 -         0x106c93fff ExpoMaps arm64  <4d046f9684eb3652985372d9449cb493> /private/var/containers/Bundle/Application/A915AE98-3019-40EC-B3D4-087799134904/Lit.app/Frameworks/ExpoMaps.framework/ExpoMaps
+        0x106d3c000 -         0x106e63fff ExpoModulesCore arm64  <b77ed7a0b8c63dd1a8ae240abea7df1a> /private/var/containers/Bundle/Application/A915AE98-3019-40EC-B3D4-087799134904/Lit.app/Frameworks/ExpoModulesCore.framework/ExpoModulesCore
+        0x1070cc000 -         0x107117fff ExpoModulesJSI arm64  <9e22ceaa5a0e36fc9153dbb9c784cc3f> /private/var/containers/Bundle/Application/A915AE98-3019-40EC-B3D4-087799134904/Lit.app/Frameworks/ExpoModulesJSI.framework/ExpoModulesJSI
+        0x1071f0000 -         0x10762bfff React arm64  <5e46674d97353a33af93e73a13d82d74> /private/var/containers/Bundle/Application/A915AE98-3019-40EC-B3D4-087799134904/Lit.app/Frameworks/React.framework/React
+        0x107d6c000 -         0x107deffff ReactNativeDependencies arm64  <db4e121670c636f08a46fdd48fcae1f2> /private/var/containers/Bundle/Application/A915AE98-3019-40EC-B3D4-087799134904/Lit.app/Frameworks/ReactNativeDependencies.framework/ReactNativeDependencies
+        0x107ec0000 -         0x107f13fff SDWebImage arm64  <37ea7633e47b3f98bd856c33fbe3d881> /private/var/containers/Bundle/Application/A915AE98-3019-40EC-B3D4-087799134904/Lit.app/Frameworks/SDWebImage.framework/SDWebImage
+        0x107f9c000 -         0x107fa7fff SDWebImageAVIFCoder arm64  <e336c17ceef73764a583a66debc78683> /private/var/containers/Bundle/Application/A915AE98-3019-40EC-B3D4-087799134904/Lit.app/Frameworks/SDWebImageAVIFCoder.framework/SDWebImageAVIFCoder
+        0x107fb8000 -         0x107fbffff SDWebImageSVGCoder arm64  <38517298ad2d3fcc8241b248ff5d2be8> /private/var/containers/Bundle/Application/A915AE98-3019-40EC-B3D4-087799134904/Lit.app/Frameworks/SDWebImageSVGCoder.framework/SDWebImageSVGCoder
+        0x107fd0000 -         0x10801bfff SDWebImageWebPCoder arm64  <82b67c863fb7323099be2b33d307f8a6> /private/var/containers/Bundle/Application/A915AE98-3019-40EC-B3D4-087799134904/Lit.app/Frameworks/SDWebImageWebPCoder.framework/SDWebImageWebPCoder
+        0x108054000 -         0x1082cbfff hermesvm arm64  <cfba4be469803b0fb2d0ab67e21eda99> /private/var/containers/Bundle/Application/A915AE98-3019-40EC-B3D4-087799134904/Lit.app/Frameworks/hermesvm.framework/hermesvm
+        0x10862c000 -         0x1088a3fff libavif arm64  <d792a9bccfa83d259312c1ba62a97f07> /private/var/containers/Bundle/Application/A915AE98-3019-40EC-B3D4-087799134904/Lit.app/Frameworks/libavif.framework/libavif
+        0x1093d8000 -         0x1093e3fff libobjc-trampolines.dylib arm64e  <def9fca06da1332796903b879ffc755c> /private/preboot/Cryptexes/OS/usr/lib/libobjc-trampolines.dylib
+        0x193d9d000 -         0x19430629f libswiftCore.dylib arm64e  <4a7bace5ee57375ab860cd7f1ca9e6af> /usr/lib/swift/libswiftCore.dylib
+        0x194363000 -         0x194fd705f Foundation arm64e  <c031896b2ef13d89966a0b52d54bceee> /System/Library/Frameworks/Foundation.framework/Foundation
+        0x1956ea000 -         0x195c66fff CoreFoundation arm64e  <ae3c93380166397a9643356b14f6ee58> /System/Library/Frameworks/CoreFoundation.framework/CoreFoundation
+        0x196c8a000 -         0x19704f35f CFNetwork arm64e  <271cab2fd622384c8a7f2b5857119e0d> /System/Library/Frameworks/CFNetwork.framework/CFNetwork
+        0x197fe8000 -         0x199f2a55f UIKitCore arm64e  <5e794caa41623ff6861e45f29f6b8ac0> /System/Library/PrivateFrameworks/UIKitCore.framework/UIKitCore
+        0x199f2b000 -         0x19b1ae7bf SwiftUI arm64e  <431499857d90345d8c31b764e66e9c4e> /System/Library/Frameworks/SwiftUI.framework/SwiftUI
+        0x19d685000 -         0x19d6cab3f libdispatch.dylib arm64e  <b62778f758273a7ba96da24f7be95416> /usr/lib/system/libdispatch.dylib
+        0x1a6051000 -         0x1a60e0ff7 libc++.1.dylib arm64e  <2fbf38d8e5a53ffe9f8736a797ea4cdb> /usr/lib/libc++.1.dylib
+        0x1bc14f000 -         0x1bc1e987b dyld arm64e  <cd2e758de1a23b92aae775d38f66ec54> /usr/lib/dyld
+        0x1c2843000 -         0x1c288609f AttributeGraph arm64e  <89147895efa7331a83d52a50fae5880f> /System/Library/PrivateFrameworks/AttributeGraph.framework/AttributeGraph
+        0x1e2520000 -         0x1e2528c7f GraphicsServices arm64e  <d372e13f75053addae13062656f0b1f6> /System/Library/PrivateFrameworks/GraphicsServices.framework/GraphicsServices
+        0x1e6555000 -         0x1e658eebf libsystem_kernel.dylib arm64e  <a9a7ecbd24dd37e6bb23ecbfd9a87e33> /usr/lib/system/libsystem_kernel.dylib
+        0x21faf9000 -         0x21fb008cf libsystem_platform.dylib arm64e  <b6bbe54e920d32e6b271281a8e395551> /usr/lib/system/libsystem_platform.dylib
+        0x21fba4000 -         0x21fbb03f3 libsystem_pthread.dylib arm64e  <1ee1922008593cbcbdebdf37ca2e8e4f> /usr/lib/system/libsystem_pthread.dylib
+        0x22302e000 -         0x223055e7f caulk arm64e  <2d837b5b6b9737afb448acf71af422f6> /System/Library/PrivateFrameworks/caulk.framework/caulk
+        0x256065000 -         0x256be5adf SwiftUICore arm64e  <7f33a4b0fb5c36b09c41d098c435b84d> /System/Library/Frameworks/SwiftUICore.framework/SwiftUICore
+
+EOF
