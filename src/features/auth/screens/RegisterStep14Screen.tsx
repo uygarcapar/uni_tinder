@@ -11,57 +11,70 @@ import { NativeStackScreenProps } from "@react-navigation/native-stack";
 import type { AuthStackParamList } from "@/shared/types/navigation";
 import { useAppDispatch, useAppSelector } from "@/shared/hooks/redux";
 import { updateMultipleFields } from "@/features/profile/profileSlice";
-import { API_BASE_URL, API_ENDPOINTS } from "@/shared/constants/api";
+import { API_ENDPOINTS } from "@/shared/constants/api";
+import { staticGet } from "@/shared/services/staticCache";
 import { useTranslation } from 'react-i18next';
 import {
   Check, Sparkles, Users, Briefcase, Wind, Star, Flame, Leaf, Moon, Sun,
   Scale, Zap, Navigation, Mountain, Droplets, Fish, Cigarette,
 } from "lucide-react-native";
+import SFIcon, { type SFSymbol } from "@/shared/components/SFIcon";
 import RegisterProgressBar from "@/features/auth/components/RegisterProgressBar";
+import RegisterBackButton from "@/features/auth/components/RegisterBackButton";
 import AnimatedPressable from "@/shared/components/AnimatedPressable";
 import { useForm } from "react-hook-form";
 import { zodResolver } from "@hookform/resolvers/zod";
 import { lifestyleSchema, LifestyleForm } from "@/shared/schemas/formSchemas";
 import { colors } from "../../../shared/theme/colors";
 
-const ZODIAC_MAP: Record<string, any> = {
+const ZODIAC_MAP: Record<string, { sf: SFSymbol; lucide: any }> = {
   // Backend enumName (PascalCase)
-  Aries: Flame, Taurus: Leaf, Gemini: Wind, Cancer: Moon, Leo: Sun,
-  Virgo: Leaf, Libra: Scale, Scorpio: Zap, Sagittarius: Navigation,
-  Capricorn: Mountain, Aquarius: Droplets, Pisces: Fish,
+  Aries: { sf: "flame.fill", lucide: Flame }, Taurus: { sf: "leaf.fill", lucide: Leaf },
+  Gemini: { sf: "wind", lucide: Wind }, Cancer: { sf: "moon.fill", lucide: Moon },
+  Leo: { sf: "sun.max.fill", lucide: Sun }, Virgo: { sf: "leaf.fill", lucide: Leaf },
+  Libra: { sf: "scalemass.fill", lucide: Scale }, Scorpio: { sf: "bolt.fill", lucide: Zap },
+  Sagittarius: { sf: "location.fill", lucide: Navigation },
+  Capricorn: { sf: "mountain.2.fill", lucide: Mountain },
+  Aquarius: { sf: "drop.fill", lucide: Droplets }, Pisces: { sf: "fish.fill", lucide: Fish },
   // Legacy TR display fallback
-  Koç: Flame, Boğa: Leaf, İkizler: Wind, Yengeç: Moon, Aslan: Sun,
-  Başak: Leaf, Terazi: Scale, Akrep: Zap, Yay: Navigation,
-  Oğlak: Mountain, Kova: Droplets, Balık: Fish,
+  Koç: { sf: "flame.fill", lucide: Flame }, Boğa: { sf: "leaf.fill", lucide: Leaf },
+  İkizler: { sf: "wind", lucide: Wind }, Yengeç: { sf: "moon.fill", lucide: Moon },
+  Aslan: { sf: "sun.max.fill", lucide: Sun }, Başak: { sf: "leaf.fill", lucide: Leaf },
+  Terazi: { sf: "scalemass.fill", lucide: Scale }, Akrep: { sf: "bolt.fill", lucide: Zap },
+  Yay: { sf: "location.fill", lucide: Navigation },
+  Oğlak: { sf: "mountain.2.fill", lucide: Mountain },
+  Kova: { sf: "drop.fill", lucide: Droplets }, Balık: { sf: "fish.fill", lucide: Fish },
 };
 
-const PURPOSE_MAP: Record<string, any> = {
+const PURPOSE_MAP: Record<string, { sf: SFSymbol; icon: any }> = {
   // Backend enumName (PascalCase)
-  Dating: { icon: Sparkles },
-  Friendship: { icon: Users },
-  Networking: { icon: Briefcase },
-  JustLooking: { icon: Wind },
+  Dating: { sf: "sparkles", icon: Sparkles },
+  Friendship: { sf: "person.2.fill", icon: Users },
+  Networking: { sf: "briefcase.fill", icon: Briefcase },
+  JustLooking: { sf: "wind", icon: Wind },
   // Legacy TR display fallback
-  Flört: { icon: Sparkles },
-  Arkadaşlık: { icon: Users },
-  Öylesine: { icon: Wind },
+  Flört: { sf: "sparkles", icon: Sparkles },
+  Arkadaşlık: { sf: "person.2.fill", icon: Users },
+  Öylesine: { sf: "wind", icon: Wind },
 };
 
-const getZodiacIcon = (name: string) => ZODIAC_MAP[name] || Star;
+const getZodiacIcon = (name: string): { sf: SFSymbol; lucide: any } =>
+  ZODIAC_MAP[name] || { sf: "star", lucide: Star };
 
 const SimpleOptionItem = memo(({ option, isSelected, onToggle }: any) => (
   <AnimatedPressable
     onPress={() => onToggle(option.enumName)}
     style={{ borderRadius: 30, borderCurve: "continuous", paddingHorizontal: 4, paddingVertical: 18, flexDirection: "row", alignItems: "center", justifyContent: "space-between" }}
   >
-    <Cigarette size={20} color={isSelected ? colors.text : colors.textSecondary} strokeWidth={1.5} style={{ marginRight: 14 }} />
+    <SFIcon name="smoke.fill" fallback={Cigarette} size={20} color={isSelected ? colors.text : colors.textSecondary} strokeWidth={1.5} style={{ marginRight: 14 }} />
     <Text style={{ color: isSelected ? colors.text : colors.textSecondary, fontSize: 14, fontWeight: "500", flex: 1, marginRight: 12 }}>{option.name}</Text>
-    {isSelected && <Check size={20} color={colors.text} strokeWidth={2.5} />}
+    {isSelected && <SFIcon name="checkmark" fallback={Check} size={20} color={colors.text} strokeWidth={2.5} weight="bold" />}
   </AnimatedPressable>
 ));
 
 const PurposeOptionItem = memo(({ option, isSelected, onToggle, desc }: any) => {
   const entry = PURPOSE_MAP[option.enumName ?? option.name];
+  const sf: SFSymbol = entry?.sf ?? "star";
   const Icon = entry?.icon ?? Star;
   return (
     <TouchableOpacity
@@ -69,15 +82,24 @@ const PurposeOptionItem = memo(({ option, isSelected, onToggle, desc }: any) => 
       onPress={() => onToggle(option.enumName)}
       style={{ flexDirection: "row", alignItems: "center", justifyContent: "space-between", paddingVertical: 14 }}
     >
-      <Icon size={20} color={isSelected ? colors.text : colors.textMuted} strokeWidth={1.5} style={{ marginRight: 14 }} />
+      <SFIcon name={sf} fallback={Icon} size={20} color={isSelected ? colors.text : colors.textMuted} strokeWidth={1.5} style={{ marginRight: 14 }} />
       <View style={{ flex: 1, marginRight: 12 }}>
         <Text style={{ color: isSelected ? colors.text : colors.textSecondary, fontSize: 15, fontWeight: "500" }}>{option.name}</Text>
         {desc && <Text style={{ color: isSelected ? "rgba(255,255,255,0.5)" : "rgba(255,255,255,0.3)", fontSize: 14, marginTop: 3 }}>{desc}</Text>}
       </View>
-      {isSelected && <Check size={20} color={colors.text} strokeWidth={2.5} />}
+      {isSelected && <SFIcon name="checkmark" fallback={Check} size={20} color={colors.text} strokeWidth={2.5} weight="bold" />}
     </TouchableOpacity>
   );
 });
+
+// Bölüm başlıkları (sigara / burç / kullanım amacı) — skeleton ve gerçek
+// içerikte aynı ölçüyü kullanıyor.
+const SECTION_TITLE = {
+  color: colors.text,
+  fontSize: 18,
+  fontWeight: "700",
+  marginBottom: 12,
+} as const;
 
 const usePulse = () => {
   const pulse = useRef(new Animated.Value(0.5)).current;
@@ -128,19 +150,19 @@ const SkeletonPurposeOption = memo<{}>(() => {
 });
 
 const ZodiacPill = memo(({ option, isSelected, onToggle }: any) => {
-  const Icon = getZodiacIcon(option.enumName ?? option.name);
+  const icon = getZodiacIcon(option.enumName ?? option.name);
   return (
     <AnimatedPressable
       onPress={() => onToggle(option.enumName)}
       style={{
         borderRadius: 999, borderCurve: "continuous", paddingHorizontal: 12, paddingVertical: 11,
         borderWidth: 0.5, flexDirection: "row", alignItems: "center", gap: 6,
-        backgroundColor: isSelected ? colors.border2 : "transparent",
-        borderColor: isSelected ? "rgba(255,255,255,0.3)" : "rgba(255,255,255,0.1)",
+        backgroundColor: isSelected ? colors.text : "transparent",
+        borderColor: isSelected ? colors.text : "rgba(255,255,255,0.1)",
       }}
     >
-      <Icon size={20} color={isSelected ? colors.text : colors.textSecondary} strokeWidth={1.5} />
-      <Text style={{ color: isSelected ? colors.text : colors.textSecondary, fontSize: 14, fontWeight: "500" }}>{option.name}</Text>
+      <SFIcon name={icon.sf} fallback={icon.lucide} size={20} color={isSelected ? colors.bg : colors.textSecondary} strokeWidth={1.5} />
+      <Text style={{ color: isSelected ? colors.bg : colors.textSecondary, fontSize: 14, fontWeight: "500" }}>{option.name}</Text>
     </AnimatedPressable>
   );
 });
@@ -187,12 +209,17 @@ export default function RegisterStep14Screen({ navigation }: NativeStackScreenPr
     fetchUsagePurposes();
   }, []);
 
+  // staticGet (axios) kullan, ham fetch değil: bu listelerin `name`/`display`
+  // alanları backend'de Accept-Language'e göre render ediliyor ve header'ı sadece
+  // axios interceptor'ı ekliyor. Kayıt akışında henüz JWT (dolayısıyla language
+  // claim'i) yok → header tek dil sinyali. Ham fetch ile header gitmediği için
+  // backend default culture'a (tr) düşüyor, EN kullanıcı bu adımda TR seçenek
+  // görüyordu. Ayrıca staticGet oturum boyunca tek istek garantisi veriyor.
   const fetchSmokingStatuses = async () => {
     try {
       setLoadingSmokingStatuses(true);
-      const res = await fetch(`${API_BASE_URL}${API_ENDPOINTS.GET_SMOKING_STATUSES}`);
-      const data = await res.json();
-      if (data.isSuccess && data.result) setSmokingStatuses(data.result);
+      const data = await staticGet(API_ENDPOINTS.GET_SMOKING_STATUSES);
+      if (data?.isSuccess && data.result) setSmokingStatuses(data.result);
       else alert(t('auth.step14.smokingError'));
     } catch (e) { console.error(e); alert(t('auth.step14.smokingError')); }
     finally { setLoadingSmokingStatuses(false); }
@@ -201,9 +228,8 @@ export default function RegisterStep14Screen({ navigation }: NativeStackScreenPr
   const fetchZodiacs = async () => {
     try {
       setLoadingZodiacs(true);
-      const res = await fetch(`${API_BASE_URL}${API_ENDPOINTS.GET_ZODIACS}`);
-      const data = await res.json();
-      if (data.isSuccess && data.result) setZodiacs(data.result);
+      const data = await staticGet(API_ENDPOINTS.GET_ZODIACS);
+      if (data?.isSuccess && data.result) setZodiacs(data.result);
       else alert(t('auth.step14.zodiacError'));
     } catch (e) { console.error(e); alert(t('auth.step14.zodiacError')); }
     finally { setLoadingZodiacs(false); }
@@ -212,9 +238,8 @@ export default function RegisterStep14Screen({ navigation }: NativeStackScreenPr
   const fetchUsagePurposes = async () => {
     try {
       setLoadingUsagePurposes(true);
-      const res = await fetch(`${API_BASE_URL}${API_ENDPOINTS.GET_USAGE_PURPOSES}`);
-      const data = await res.json();
-      if (data.isSuccess && data.result) setUsagePurposes(data.result);
+      const data = await staticGet(API_ENDPOINTS.GET_USAGE_PURPOSES);
+      if (data?.isSuccess && data.result) setUsagePurposes(data.result);
       else alert(t('auth.step14.purposeError'));
     } catch (e) { console.error(e); alert(t('auth.step14.purposeError')); }
     finally { setLoadingUsagePurposes(false); }
@@ -256,9 +281,7 @@ export default function RegisterStep14Screen({ navigation }: NativeStackScreenPr
       {/* Header */}
       <View className="bg-bg pt-16 pb-6 px-6">
         <View className="flex-row items-center justify-between">
-          <TouchableOpacity activeOpacity={1} onPress={() => navigation.goBack()} className="flex-row items-center">
-            <Text className="text-4xl mr-2 text-white">←</Text>
-          </TouchableOpacity>
+          <RegisterBackButton onPress={() => navigation.goBack()} />
           <TouchableOpacity activeOpacity={0.9} onPress={handleSkip}>
             <Text className="text-gray-400 text-[16px] font-semibold">{t('auth.step14.skipButton')}</Text>
           </TouchableOpacity>
@@ -278,27 +301,35 @@ export default function RegisterStep14Screen({ navigation }: NativeStackScreenPr
         {isLoading ? (
           <>
             <View style={{ marginTop: 8 }}>
-              <Text style={{ color: colors.text, fontSize: 14, fontWeight: "600", marginBottom: 12 }}>{t('auth.step14.smokingLabel')}</Text>
+              <Text style={SECTION_TITLE}>{t('auth.step14.purposeLabel')}</Text>
+              {Array.from({ length: 4 }).map((_, i) => <SkeletonPurposeOption key={i} />)}
+            </View>
+            <View style={{ marginTop: 28 }}>
+              <Text style={SECTION_TITLE}>{t('auth.step14.smokingLabel')}</Text>
               <View style={{ gap: 2 }}>
                 {Array.from({ length: 3 }).map((_, i) => <SkeletonSimpleOption key={i} />)}
               </View>
             </View>
-            <View style={{ marginTop: 28 }}>
-              <Text style={{ color: colors.text, fontSize: 14, fontWeight: "600", marginBottom: 12 }}>{t('auth.step14.zodiacLabel')}</Text>
+            <View style={{ marginTop: 28, marginBottom: 32 }}>
+              <Text style={[SECTION_TITLE, { marginBottom: 24 }]}>{t('auth.step14.zodiacLabel')}</Text>
               <View style={{ flexDirection: "row", flexWrap: "wrap", gap: 8 }}>
                 {[60, 70, 80, 75, 65, 85, 70, 60, 55, 75, 65, 70].map((w, i) => <SkeletonZodiacPill key={i} width={w} />)}
               </View>
             </View>
-            <View style={{ marginTop: 28, marginBottom: 32 }}>
-              <Text style={{ color: colors.text, fontSize: 14, fontWeight: "600", marginBottom: 12 }}>{t('auth.step14.purposeLabel')}</Text>
-              {Array.from({ length: 4 }).map((_, i) => <SkeletonPurposeOption key={i} />)}
-            </View>
           </>
         ) : (
           <>
-            {(smokingStatuses as any[]).length > 0 && (
+            {(usagePurposes as any[]).length > 0 && (
               <View style={{ marginTop: 8 }}>
-                <Text style={{ color: colors.text, fontSize: 14, fontWeight: "600", marginBottom: 12 }}>{t('auth.step14.smokingLabel')}</Text>
+                <Text style={SECTION_TITLE}>{t('auth.step14.purposeLabel')}</Text>
+                {(usagePurposes as any[]).map((opt) => (
+                  <PurposeOptionItem key={opt.id} option={opt} isSelected={opt.enumName === usagePurpose} onToggle={toggleUsagePurpose} desc={PURPOSE_DESC_MAP[opt.enumName ?? opt.name]} />
+                ))}
+              </View>
+            )}
+            {(smokingStatuses as any[]).length > 0 && (
+              <View style={{ marginTop: 28 }}>
+                <Text style={SECTION_TITLE}>{t('auth.step14.smokingLabel')}</Text>
                 <View style={{ gap: 2 }}>
                   {(smokingStatuses as any[]).map((opt) => (
                     <SimpleOptionItem key={opt.id} option={opt} isSelected={opt.enumName === smokingStatus} onToggle={toggleSmoking} />
@@ -307,21 +338,13 @@ export default function RegisterStep14Screen({ navigation }: NativeStackScreenPr
               </View>
             )}
             {(zodiacs as any[]).length > 0 && (
-              <View style={{ marginTop: 28 }}>
-                <Text style={{ color: colors.text, fontSize: 14, fontWeight: "600", marginBottom: 12 }}>{t('auth.step14.zodiacLabel')}</Text>
+              <View style={{ marginTop: 28, marginBottom: 32 }}>
+                <Text style={[SECTION_TITLE, { marginBottom: 24 }]}>{t('auth.step14.zodiacLabel')}</Text>
                 <View style={{ flexDirection: "row", flexWrap: "wrap", gap: 8 }}>
                   {(zodiacs as any[]).map((opt) => (
                     <ZodiacPill key={opt.id} option={opt} isSelected={opt.enumName === zodiacSign} onToggle={toggleZodiac} />
                   ))}
                 </View>
-              </View>
-            )}
-            {(usagePurposes as any[]).length > 0 && (
-              <View style={{ marginTop: 28, marginBottom: 32 }}>
-                <Text style={{ color: colors.text, fontSize: 14, fontWeight: "600", marginBottom: 12 }}>{t('auth.step14.purposeLabel')}</Text>
-                {(usagePurposes as any[]).map((opt) => (
-                  <PurposeOptionItem key={opt.id} option={opt} isSelected={opt.enumName === usagePurpose} onToggle={toggleUsagePurpose} desc={PURPOSE_DESC_MAP[opt.enumName ?? opt.name]} />
-                ))}
               </View>
             )}
           </>

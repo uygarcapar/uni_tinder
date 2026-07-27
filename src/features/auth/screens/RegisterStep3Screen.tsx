@@ -14,7 +14,9 @@ import { useAppDispatch, useAppSelector } from "@/shared/hooks/redux";
 import { updateRegistrationField } from "@/features/auth/authSlice";
 import { KeyboardStickyView } from "react-native-keyboard-controller";
 import { Eye, EyeOff } from "lucide-react-native";
+import SFIcon from "@/shared/components/SFIcon";
 import RegisterProgressBar from "@/features/auth/components/RegisterProgressBar";
+import RegisterBackButton from "@/features/auth/components/RegisterBackButton";
 import AnimatedPressable from "@/shared/components/AnimatedPressable";
 import { useForm, Controller } from "react-hook-form";
 import { zodResolver } from "@hookform/resolvers/zod";
@@ -50,8 +52,7 @@ export default function RegisterStep3Screen({ navigation }: NativeStackScreenPro
     <View className="flex-1 bg-bg">
       {/* Header */}
       <View className="bg-bg pt-16 pb-6 px-6">
-        <TouchableOpacity
-          activeOpacity={1}
+        <RegisterBackButton
           onPress={() =>
             Alert.alert(
               t('auth.step3.confirmCancel.title'),
@@ -66,10 +67,7 @@ export default function RegisterStep3Screen({ navigation }: NativeStackScreenPro
               ],
             )
           }
-          className="flex-row items-center"
-        >
-          <Text className="text-4xl mr-2 text-white">←</Text>
-        </TouchableOpacity>
+        />
       </View>
 
       <RegisterProgressBar step={3} />
@@ -125,9 +123,9 @@ export default function RegisterStep3Screen({ navigation }: NativeStackScreenPro
               >
                 <View pointerEvents="none">
                   {showPassword ? (
-                    <Eye size={24} strokeWidth={1.5} color={colors.neutral200} />
+                    <SFIcon name="eye.fill" fallback={Eye} size={24} strokeWidth={1.5} color={colors.neutral200} />
                   ) : (
-                    <EyeOff size={24} strokeWidth={1.5} color={colors.neutral200} />
+                    <SFIcon name="eye.slash.fill" fallback={EyeOff} size={24} strokeWidth={1.5} color={colors.neutral200} />
                   )}
                 </View>
               </TouchableOpacity>

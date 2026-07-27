@@ -12,9 +12,11 @@ import { NativeStackScreenProps } from "@react-navigation/native-stack";
 import type { AuthStackParamList } from "@/shared/types/navigation";
 import { useAppDispatch, useAppSelector } from "@/shared/hooks/redux";
 import { ChevronDown } from "lucide-react-native";
+import SFIcon from "@/shared/components/SFIcon";
 import { updateMultipleFields } from "@/features/profile/profileSlice";
 import { KeyboardStickyView } from "react-native-keyboard-controller";
 import RegisterProgressBar from "@/features/auth/components/RegisterProgressBar";
+import RegisterBackButton from "@/features/auth/components/RegisterBackButton";
 import AnimatedPressableShared from "@/shared/components/AnimatedPressable";
 import AppBottomSheet from "@/shared/components/AppBottomSheet";
 import SearchableListSheet from "@/shared/components/SearchableListSheet";
@@ -102,13 +104,7 @@ export default function RegisterStep8Screen({ navigation }: NativeStackScreenPro
     <View className="flex-1 bg-bg">
       {/* Header */}
       <View className="bg-bg pt-16 pb-6 px-6">
-        <TouchableOpacity
-          activeOpacity={1}
-          onPress={() => navigation.goBack()}
-          className="flex-row items-center"
-        >
-          <Text className="text-4xl mr-2 text-white">←</Text>
-        </TouchableOpacity>
+        <RegisterBackButton onPress={() => navigation.goBack()} />
       </View>
 
       <RegisterProgressBar step={8} />
@@ -144,7 +140,7 @@ export default function RegisterStep8Screen({ navigation }: NativeStackScreenPro
                 <Text className={`${department ? "text-white" : "text-gray-400"} text-[16px] font-medium`}>
                   {getDepartmentLabel()}
                 </Text>
-                <ChevronDown size={20} color={colors.textSecondary} strokeWidth={2} pointerEvents="none" />
+                <SFIcon name="chevron.down" fallback={ChevronDown} size={20} color={colors.textSecondary} strokeWidth={2} weight="semibold" style={{ pointerEvents: "none" }} />
               </TouchableOpacity>
             </View>
           )}
@@ -166,13 +162,13 @@ export default function RegisterStep8Screen({ navigation }: NativeStackScreenPro
                       borderCurve: "continuous",
                       overflow: "hidden",
                       borderWidth: 0.5,
-                      borderColor: isSelected ? "rgba(255,255,255,0.3)" : "rgba(255,255,255,0.1)",
-                      backgroundColor: isSelected ? colors.border2 : colors.surface,
+                      borderColor: isSelected ? colors.text : "rgba(255,255,255,0.1)",
+                      backgroundColor: isSelected ? colors.text : "transparent",
                       paddingHorizontal: 18,
                       paddingVertical: 13,
                     }}
                   >
-                    <Text style={{ color: colors.text, fontSize: 14, fontWeight: "600" }}>{opt.label}</Text>
+                    <Text style={{ color: isSelected ? colors.bg : colors.text, fontSize: 14, fontWeight: "600" }}>{opt.label}</Text>
                   </AnimatedPressable>
                 );
               })}

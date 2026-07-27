@@ -11,7 +11,7 @@ import { LinearGradient } from "expo-linear-gradient";
 import { StatusBar } from "expo-status-bar";
 import { NativeStackScreenProps } from "@react-navigation/native-stack";
 import type { AuthStackParamList } from "@/shared/types/navigation";
-import { colors } from "../../../shared/theme/colors";
+import { colors, gradients } from "../../../shared/theme/colors";
 import { useTranslation } from 'react-i18next';
 
 // Ekran boyutunu alıyoruz (Garanti olsun diye)
@@ -60,10 +60,10 @@ export default function WelcomeScreen({ navigation }: NativeStackScreenProps<Aut
       <StatusBar style="dark" />
 
       <LinearGradient
-        colors={["#FFC259", "#FF8F17", "#FF3D3D"]}
-        locations={[0, 0.3, 0.65, 1]}
-        start={{ x: -0.5, y: 0 }}
-        end={{ x: 1.5, y: 1 }}
+        colors={gradients.welcomeBackdrop}
+        locations={[0, 0.55, 1]}
+        start={{ x: 0.1, y: 0 }}
+        end={{ x: 0.9, y: 1 }}
         style={{
           position: "absolute",
           left: 0,

@@ -22,7 +22,9 @@ import {
 } from "@/features/auth/authSlice";
 import * as Location from "expo-location";
 import { Plus, X } from "lucide-react-native";
+import SFIcon from "@/shared/components/SFIcon";
 import RegisterProgressBar from "@/features/auth/components/RegisterProgressBar";
+import RegisterBackButton from "@/features/auth/components/RegisterBackButton";
 import AnimatedPressable from "@/shared/components/AnimatedPressable";
 import { Gesture, GestureDetector } from "react-native-gesture-handler";
 import Animated, {
@@ -32,7 +34,7 @@ import Animated, {
   withSpring,
   runOnJS,
 } from "react-native-reanimated";
-import ImageCropPicker from "react-native-image-crop-picker";
+import { pickAndCropPhotos } from "../../../shared/utils/photoPicker";
 import { useForm } from "react-hook-form";
 import { zodResolver } from "@hookform/resolvers/zod";
 import { photosSchema, PhotosForm } from "@/shared/schemas/formSchemas";
@@ -135,7 +137,7 @@ function PhotoCard({ photo, onRemove }: any) {
         onPress={onRemove}
         style={{ position: "absolute", top: -8, right: -8, borderRadius: 999, width: 32, height: 32, alignItems: "center", justifyContent: "center", zIndex: 50, backgroundColor: colors.surface, borderWidth: 0.4, borderColor: "#696b70" }}
       >
-        <View pointerEvents="none"><X size={16} strokeWidth={3} color="#7a7d82" /></View>
+        <View pointerEvents="none"><SFIcon name="xmark" fallback={X} size={16} strokeWidth={3} color="#7a7d82" weight="bold" /></View>
       </TouchableOpacity>
     </View>
   );
@@ -171,21 +173,11 @@ export default function RegisterStep15Screen({ navigation }: NativeStackScreenPr
     const remainingSlots = 6 - photos.length;
     if (remainingSlots <= 0) { Alert.alert(t('common.error'), t('auth.step15.maxPhotosError')); return; }
     try {
-      const selectedImages = await ImageCropPicker.openPicker({ multiple: true, maxFiles: remainingSlots, mediaType: "photo" });
-      const newCroppedPhotos: string[] = [];
-      for (const image of selectedImages) {
-        try {
-          const croppedImage = await ImageCropPicker.openCropper({
-            path: image.path, width: 900, height: 1200,
-            cropperToolbarTitle: t('auth.step15.cropperTitle'), cropperChooseText: t('auth.step15.cropperChoose'), cropperCancelText: t('common.cancel'),
-          });
-          newCroppedPhotos.push(croppedImage.path);
-        } catch (cropError) { console.log("Bu fotoğrafın kırpılması iptal edildi."); }
-      }
+      const newCroppedPhotos = await pickAndCropPhotos(remainingSlots);
       if (newCroppedPhotos.length > 0) {
-        setValue("photos", [...photos, ...newCroppedPhotos], { shouldValidate: true });
+        setValue("photos", [...photos, ...newCroppedPhotos.map((p) => p.uri)], { shouldValidate: true });
       }
-    } catch (error) { console.log("Galeri seçimi iptal edildi:", error); }
+    } catch (error) { console.log("Galeri seçimi hatası:", error); }
   };
 
   const removePhoto = (photoToRemove: string) => {
@@ -226,9 +218,7 @@ export default function RegisterStep15Screen({ navigation }: NativeStackScreenPr
     <View className="flex-1 bg-bg">
       {/* Header */}
       <View className="bg-bg pt-16 pb-6 px-6">
-        <TouchableOpacity activeOpacity={1} onPress={() => navigation.goBack()} className="flex-row items-center">
-          <Text className="text-4xl mr-2 text-white">←</Text>
-        </TouchableOpacity>
+        <RegisterBackButton onPress={() => navigation.goBack()} />
       </View>
 
       <RegisterProgressBar step={15} />
@@ -269,7 +259,7 @@ export default function RegisterStep15Screen({ navigation }: NativeStackScreenPr
                 disabled={loading}
                 style={{ width: "100%", height: "100%", borderRadius: 32, borderCurve: "continuous", overflow: "hidden", borderWidth: 0.5, borderColor: "rgba(255,255,255,0.1)", backgroundColor: colors.surface, alignItems: "center", justifyContent: "center", opacity: loading ? 0.5 : 1 }}
               >
-                <View pointerEvents="none"><Plus size={40} strokeWidth={2} color={colors.textMuted} /></View>
+                <View pointerEvents="none"><SFIcon name="plus" fallback={Plus} size={40} strokeWidth={2} color={colors.textMuted} weight="semibold" /></View>
               </TouchableOpacity>
             </View>
           )}

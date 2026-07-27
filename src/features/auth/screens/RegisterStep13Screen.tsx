@@ -13,67 +13,14 @@ import { useAppDispatch, useAppSelector } from "@/shared/hooks/redux";
 import { updateMultipleFields } from "@/features/profile/profileSlice";
 import { API_BASE_URL, API_ENDPOINTS } from "@/shared/constants/api";
 import { useTranslation } from 'react-i18next';
-import {
-  Music, Dumbbell, Film, BookOpen, Plane, Utensils, Camera, Gamepad2,
-  Music2, Palette, Coffee, Wine, Code, Dog, Cat, Trees, Flower2, Heart,
-  Drama, Mic2, Guitar, Piano, Mountain, Waves, BookOpenCheck, Lightbulb,
-  Briefcase, Users, Trophy, Footprints, Fish, Smartphone, Bike, HandMetal,
-  Sparkles, PartyPopper, Tent, Sandwich, Cake, Sunrise, Book, Languages,
-  Puzzle, Headphones, Newspaper, TrendingUp, Theater, Soup, ShoppingBag, Orbit,
-} from "lucide-react-native";
 import RegisterProgressBar from "@/features/auth/components/RegisterProgressBar";
+import RegisterBackButton from "@/features/auth/components/RegisterBackButton";
 import AnimatedPressable from "@/shared/components/AnimatedPressable";
 import { useForm } from "react-hook-form";
 import { zodResolver } from "@hookform/resolvers/zod";
 import { hobbiesSchema, HobbiesForm } from "@/shared/schemas/formSchemas";
 import { colors } from "../../../shared/theme/colors";
-
-const getHobbyIcon = (hobbyName: string) => {
-  const iconMap: Record<string, any> = {
-    // Backend enumName (PascalCase)
-    Gym: Dumbbell, Yoga: Heart, Running: Footprints, Swimming: Waves,
-    Cycling: Bike, Hiking: Trees, Climbing: Mountain, Boxing: HandMetal,
-    MartialArts: Trophy, Dancing: Music2, Pilates: Sparkles, Cooking: Utensils,
-    Baking: Cake, WineTasting: Wine, Coffee: Coffee, Foodie: Soup,
-    VeganCuisine: Sandwich, Mixology: Wine, Photography: Camera, Painting: Palette,
-    Drawing: Palette, Writing: BookOpenCheck, Poetry: Book, Crafts: Sparkles,
-    DIY: Flower2, Fashion: ShoppingBag, Music: Headphones, Concerts: PartyPopper,
-    Guitar: Guitar, Piano: Piano, Singing: Mic2, DJing: Music,
-    Festivals: PartyPopper, Travel: Plane, Camping: Tent, Fishing: Fish,
-    Surfing: Waves, Skiing: Mountain, Snowboarding: Mountain, Gardening: Flower2,
-    BeachLife: Sunrise, Reading: BookOpen, Museums: Theater, ArtGalleries: Palette,
-    Theater: Drama, Cinema: Film, Documentaries: Film, Learning: Lightbulb,
-    Languages: Languages, VideoGames: Gamepad2, BoardGames: Puzzle,
-    Chess: Puzzle, Coding: Code, Gaming: Gamepad2, VR: Smartphone,
-    Podcasts: Headphones, Volunteering: Users, Pets: Dog, Dogs: Dog,
-    Cats: Cat, Meditation: Heart, Astrology: Orbit, Shopping: ShoppingBag,
-    Nightlife: Music2, Brunch: Coffee, SocialDrinking: Wine,
-    Networking: Briefcase, Politics: Newspaper, Philosophy: BookOpen,
-    Science: Lightbulb, History: Book, Investing: TrendingUp, Entrepreneurship: Briefcase,
-    // Legacy TR display fallback
-    "Fitness & Spor": Dumbbell, Koşu: Footprints, Yüzme: Waves, Bisiklet: Bike,
-    "Doğa Yürüyüşü": Trees, "Kaya Tırmanışı": Mountain, Boks: HandMetal,
-    "Dövüş Sanatları": Trophy, Dans: Music2, "Yemek Pişirme": Utensils,
-    Fırıncılık: Cake, "Şarap Tadımı": Wine, "Kahve Tutkusu": Coffee, Gurme: Soup,
-    "Vegan Mutfak": Sandwich, Miksologluk: Wine, Fotoğrafçılık: Camera,
-    Resim: Palette, Çizim: Palette, Yazarlık: BookOpenCheck, Şiir: Book,
-    "El Sanatları": Sparkles, "Kendin Yap (DIY)": Flower2, Moda: ShoppingBag,
-    Müzik: Headphones, Konserler: PartyPopper, "Gitar Çalmak": Guitar,
-    "Piyano Çalmak": Piano, "Şarkı Söylemek": Mic2, "DJ'lik": Music,
-    Festivaller: PartyPopper, Seyahat: Plane, Kamp: Tent, "Balık Tutma": Fish,
-    Sörf: Waves, Kayak: Mountain, Snowboard: Mountain, Bahçıvanlık: Flower2,
-    "Plaj Hayatı": Sunrise, Okumak: BookOpen, Müzeler: Theater,
-    "Sanat Galerileri": Palette, Tiyatro: Drama, Sinema: Film, Belgesel: Film,
-    Öğrenme: Lightbulb, Diller: Languages, "Video Oyunları": Gamepad2,
-    "Masa Oyunları": Puzzle, Satranç: Puzzle, Yazılım: Code, Oyun: Gamepad2,
-    "Podcast'ler": Headphones, Gönüllülük: Users, "Evcil Hayvanlar": Dog,
-    Köpekler: Dog, Kediler: Cat, Meditasyon: Heart, Astroloji: Orbit,
-    Alışveriş: ShoppingBag, "Gece Hayatı": Music2, "Sosyal İçici": Wine,
-    Siyaset: Newspaper, Felsefe: BookOpen, Bilim: Lightbulb, Tarih: Book,
-    Yatırım: TrendingUp, Girişimcilik: Briefcase,
-  };
-  return iconMap[hobbyName] || Heart;
-};
+import HobbyIcon from "@/shared/components/HobbyIcon";
 
 const SkeletonHobbyCard = memo<{}>(() => {
   const pulse = useRef(new Animated.Value(0.5)).current;
@@ -99,7 +46,6 @@ const SkeletonHobbyCard = memo<{}>(() => {
 
 const HobbyItem = memo(({ hobby, isSelected, onPress }: any) => {
   const scaleValue = useRef(new Animated.Value(1)).current;
-  const Icon = getHobbyIcon(hobby.enumName ?? hobby.name);
   const handlePressIn = () => Animated.spring(scaleValue, { toValue: 0.95, useNativeDriver: true, speed: 20 }).start();
   const handlePressOut = () => Animated.spring(scaleValue, { toValue: 1, useNativeDriver: true, bounciness: 8, speed: 20 }).start();
   return (
@@ -109,12 +55,24 @@ const HobbyItem = memo(({ hobby, isSelected, onPress }: any) => {
         onPressIn={handlePressIn}
         onPressOut={handlePressOut}
         onPress={() => onPress(hobby.enumName)}
-        style={{ borderRadius: 50, borderCurve: "continuous", overflow: "hidden" }}
-        className={` border-[0.5px] py-[45px] items-center justify-center ${isSelected ? "bg-border-2 border-white/30" : "bg-surface border-white/10"}`}
+        style={{
+          borderRadius: 50,
+          borderCurve: "continuous",
+          overflow: "hidden",
+          borderWidth: 0.5,
+          borderColor: isSelected ? colors.text : "rgba(255,255,255,0.1)",
+          backgroundColor: isSelected ? colors.text : "transparent",
+        }}
+        className="py-[45px] items-center justify-center"
       >
         <View pointerEvents="none" className="items-center justify-center">
-          <Icon size={32} color={colors.text} strokeWidth={2} />
-          <Text className="text-[14px] font-medium mt-3 text-white text-center px-2">{hobby.name}</Text>
+          <HobbyIcon hobby={hobby.enumName ?? hobby.name} size={32} color={isSelected ? colors.bg : colors.text} strokeWidth={2} />
+          <Text
+            className="text-[14px] font-medium mt-3 text-center px-2"
+            style={{ color: isSelected ? colors.bg : colors.text }}
+          >
+            {hobby.name}
+          </Text>
         </View>
       </TouchableOpacity>
     </Animated.View>
@@ -153,14 +111,18 @@ export default function RegisterStep13Screen({ navigation }: NativeStackScreenPr
     }
   };
 
+  // Seçim anında store'a da yazılıyor: kullanıcı "Devam"a basmadan geri döner
+  // ve ekrana tekrar girerse (screen unmount olur) seçimleri kaybolmasın.
   const toggleHobby = useCallback((enumName: string) => {
     if (!enumName) return;
     const current = hobbies;
     const next = current.includes(enumName)
       ? current.filter((h) => h !== enumName)
       : current.length < 10 ? [...current, enumName] : current;
+    if (next === current) return;
     setValue("hobbies", next, { shouldValidate: false });
-  }, [hobbies, setValue]);
+    dispatch(updateMultipleFields({ hobbies: next }));
+  }, [hobbies, setValue, dispatch]);
 
   const handleNext = handleSubmit(({ hobbies: h }) => {
     dispatch(updateMultipleFields({ hobbies: h }));
@@ -172,9 +134,9 @@ export default function RegisterStep13Screen({ navigation }: NativeStackScreenPr
       {/* Header */}
       <View className="bg-bg pt-16 pb-6 px-6">
         <View className="flex-row items-center justify-center relative">
-          <TouchableOpacity activeOpacity={1} onPress={() => navigation.goBack()} className="absolute left-0">
-            <Text className="text-4xl text-white">←</Text>
-          </TouchableOpacity>
+          <View className="absolute left-0">
+            <RegisterBackButton onPress={() => navigation.goBack()} />
+          </View>
           <Text className="text-white text-[26px] font-bold tracking-wider">
             {t('auth.step13.titleWithCount', { count: hobbies.length })}
           </Text>

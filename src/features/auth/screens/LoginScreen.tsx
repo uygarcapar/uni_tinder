@@ -12,6 +12,7 @@ import type { AuthStackParamList } from "@/shared/types/navigation";
 import { useAppDispatch, useAppSelector } from "@/shared/hooks/redux";
 import { login } from "@/features/auth/authSlice";
 import { Eye, EyeOff } from "lucide-react-native";
+import SFIcon from "@/shared/components/SFIcon";
 import {
   KeyboardStickyView,
   useReanimatedKeyboardAnimation,
@@ -157,9 +158,9 @@ export default function LoginScreen({ navigation }: NativeStackScreenProps<AuthS
                 >
                   <View pointerEvents="none">
                     {showPassword ? (
-                      <Eye size={24} strokeWidth={1.5} color={colors.neutral200} />
+                      <SFIcon name="eye.fill" fallback={Eye} size={24} strokeWidth={1.5} color={colors.neutral200} />
                     ) : (
-                      <EyeOff size={24} strokeWidth={1.5} color={colors.neutral200} />
+                      <SFIcon name="eye.slash.fill" fallback={EyeOff} size={24} strokeWidth={1.5} color={colors.neutral200} />
                     )}
                   </View>
                 </TouchableOpacity>

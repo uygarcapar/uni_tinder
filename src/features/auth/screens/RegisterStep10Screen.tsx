@@ -6,7 +6,9 @@ import { useAppDispatch, useAppSelector } from "@/shared/hooks/redux";
 import { updateMultipleFields } from "@/features/profile/profileSlice";
 import { KeyboardStickyView } from "react-native-keyboard-controller";
 import { Check, InfoIcon } from "lucide-react-native";
+import SFIcon from "@/shared/components/SFIcon";
 import RegisterProgressBar from "@/features/auth/components/RegisterProgressBar";
+import RegisterBackButton from "@/features/auth/components/RegisterBackButton";
 import AnimatedPressableShared from "@/shared/components/AnimatedPressable";
 import { useForm } from "react-hook-form";
 import { zodResolver } from "@hookform/resolvers/zod";
@@ -68,9 +70,7 @@ export default function RegisterStep10Screen({ navigation }: NativeStackScreenPr
       {/* Header */}
       <View className="bg-bg pt-16 pb-6 px-6">
         <View className="flex-row items-center justify-between">
-          <TouchableOpacity activeOpacity={1} onPress={() => navigation.goBack()} className="flex-row items-center">
-            <Text className="text-4xl mr-2 text-white">←</Text>
-          </TouchableOpacity>
+          <RegisterBackButton onPress={() => navigation.goBack()} />
         </View>
       </View>
 
@@ -95,17 +95,17 @@ export default function RegisterStep10Screen({ navigation }: NativeStackScreenPr
                   borderRadius: 30,
                   borderCurve: "continuous",
                   borderWidth: 0.5,
-                  borderColor: active ? "rgba(255,255,255,0.3)" : "rgba(255,255,255,0.1)",
-                  backgroundColor: active ? colors.border2 : colors.surface,
+                  borderColor: active ? colors.text : "rgba(255,255,255,0.1)",
+                  backgroundColor: active ? colors.text : "transparent",
                   paddingHorizontal: 20,
                   paddingVertical: 18,
                   position: "relative",
                 }}
               >
-                <Text style={{ color: colors.text, fontSize: 17, fontWeight: "600" }}>{opt.label}</Text>
+                <Text style={{ color: active ? colors.bg : colors.text, fontSize: 17, fontWeight: "600" }}>{opt.label}</Text>
                 {active && (
                   <View pointerEvents="none" style={{ position: "absolute", right: 20, top: 0, bottom: 0, justifyContent: "center" }}>
-                    <Check size={20} color={colors.text} strokeWidth={2.5} />
+                    <SFIcon name="checkmark" fallback={Check} size={20} color={colors.bg} strokeWidth={2.5} weight="bold" />
                   </View>
                 )}
               </AnimatedPressable>
@@ -114,7 +114,7 @@ export default function RegisterStep10Screen({ navigation }: NativeStackScreenPr
         </View>
 
         <View className="flex-row gap-2 px-2 mr-6 items-center mt-5">
-          <InfoIcon size={16} color={colors.textSecondary} className="mt-3" />
+          <SFIcon name="info.circle" fallback={InfoIcon} size={16} color={colors.textSecondary} />
           <Text className="text-gray-400 text-[12px]">
             {t('auth.step10.infoText')}
           </Text>

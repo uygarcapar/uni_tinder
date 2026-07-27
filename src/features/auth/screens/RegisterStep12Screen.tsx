@@ -2,7 +2,6 @@ import { useRef } from "react";
 import {
   View,
   Text,
-  TouchableOpacity,
   TouchableWithoutFeedback,
   Keyboard,
   PanResponder,
@@ -16,6 +15,7 @@ import { updateMultipleFields } from "@/features/profile/profileSlice";
 import { KeyboardStickyView } from "react-native-keyboard-controller";
 import * as Haptics from "expo-haptics";
 import RegisterProgressBar from "@/features/auth/components/RegisterProgressBar";
+import RegisterBackButton from "@/features/auth/components/RegisterBackButton";
 import AnimatedPressable from "@/shared/components/AnimatedPressable";
 import { useForm } from "react-hook-form";
 import { zodResolver } from "@hookform/resolvers/zod";
@@ -114,9 +114,7 @@ export default function RegisterStep12Screen({ navigation }: NativeStackScreenPr
     <View className="flex-1 bg-bg">
       {/* Header */}
       <View className="bg-bg pt-16 pb-6 px-6">
-        <TouchableOpacity activeOpacity={1} onPress={() => navigation.goBack()} className="flex-row items-center">
-          <Text className="text-4xl mr-2 text-white">←</Text>
-        </TouchableOpacity>
+        <RegisterBackButton onPress={() => navigation.goBack()} />
       </View>
 
       <RegisterProgressBar step={12} />

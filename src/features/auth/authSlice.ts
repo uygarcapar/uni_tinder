@@ -2,6 +2,8 @@ import { createSlice, createAsyncThunk, PayloadAction } from '@reduxjs/toolkit';
 import { authService } from '@/features/auth/authService';
 import { clearProfile } from '@/features/profile/profileSlice';
 import { saveAccessToken, saveRefreshToken } from '@/shared/utils/tokenStorage';
+import { markSelfLogin, clearSelfLoginMark } from '@/shared/utils/sessionGuard';
+import realtimeService from '@/features/chat/realtimeService';
 import { setCurrentAccessToken } from '@/shared/services/api';
 import { unregisterPushToken } from '@/features/notifications/pushService';
 import type { AuthState, User } from '@/shared/types';
@@ -25,6 +27,13 @@ export const login = createAsyncThunk(
   'auth/login',
   async ({ email, password }: { email: string; password: string }, { rejectWithValue }) => {
     try {
+      // Backend login'de kullanıcının eski refresh token'larını
+      // `new_login_elsewhere` ile revoke edip TÜM hub bağlantılarına ForceLogout
+      // atıyor — bu cihazın önceki oturumdan kalan bağlantısı dahil. Önce kendi
+      // soketimizi kapatıp login'i damgalıyoruz ki kendi sinyalimizle
+      // "başka cihazdan giriş" toast'ı yiyip yeni oturumdan atılmayalım.
+      markSelfLogin();
+      await realtimeService.disconnect().catch(() => {});
       const response = await authService.login(email, password);
       console.log("🔑 Login response keys:", Object.keys(response || {}));
       console.log("🔑 Login refreshToken received:", response?.refreshToken ? "YES" : "NO");
@@ -75,6 +84,9 @@ export const register = createAsyncThunk(
 );
 
 export const logout = createAsyncThunk('auth/logout', async (_, thunkAPI) => {
+  // Login damgası oturuma özel — logout'ta sıfırla, yoksa login'den hemen sonra
+  // yapılan bir logout+login zincirinde eski damga pencereyi uzatır.
+  clearSelfLoginMark();
   // Push token deactivate access token temizlenmeden önce çalışmalı — yoksa DELETE
   // auth'suz gider, 401 → refresh fail zinciri RC logout'u iki kez tetikler.
   // Yavaş sunucu logout UX'ini kilitlemesin diye 2s timeout ile race et.

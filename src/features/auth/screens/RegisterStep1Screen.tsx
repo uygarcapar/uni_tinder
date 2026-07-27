@@ -3,7 +3,6 @@ import {
   View,
   Text,
   TextInput,
-  TouchableOpacity,
   ActivityIndicator,
   TouchableWithoutFeedback,
   Keyboard,
@@ -16,7 +15,9 @@ import { clearError, setRegistrationEmail } from "@/features/auth/authSlice";
 import { KeyboardStickyView } from "react-native-keyboard-controller";
 import { API_BASE_URL, API_ENDPOINTS } from "@/shared/constants/api";
 import AnimatedPressable from "@/shared/components/AnimatedPressable";
+import RegisterBackButton from "@/features/auth/components/RegisterBackButton";
 import { InfoIcon } from "lucide-react-native";
+import SFIcon from "@/shared/components/SFIcon";
 import { useForm, Controller } from "react-hook-form";
 import { zodResolver } from "@hookform/resolvers/zod";
 import { emailSchema, EmailForm } from "@/shared/schemas/formSchemas";
@@ -120,9 +121,7 @@ export default function RegisterStep1Screen({ navigation }: NativeStackScreenPro
   return (
     <View className="flex-1 bg-bg">
       <View className="bg-bg pt-16 pb-6 px-6">
-        <TouchableOpacity activeOpacity={1} onPress={() => navigation.goBack()}>
-          <Text className="text-4xl mr-2 text-white">←</Text>
-        </TouchableOpacity>
+        <RegisterBackButton onPress={() => navigation.goBack()} />
       </View>
 
       <TouchableWithoutFeedback onPress={Keyboard.dismiss}>
@@ -170,7 +169,7 @@ export default function RegisterStep1Screen({ navigation }: NativeStackScreenPro
             )}
           />
           <View className="flex-row gap-2 px-2 items-center mt-3">
-            <InfoIcon size={16} color={colors.textSecondary} className="mt-3" />
+            <SFIcon name="info.circle" fallback={InfoIcon} size={16} color={colors.textSecondary} />
             <Text className="text-gray-400 text-[12px]">
               {t('auth.step1.infoText')}
             </Text>

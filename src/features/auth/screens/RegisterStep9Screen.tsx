@@ -11,8 +11,10 @@ import type { AuthStackParamList } from "@/shared/types/navigation";
 import { useAppDispatch, useAppSelector } from "@/shared/hooks/redux";
 import { updateMultipleFields } from "@/features/profile/profileSlice";
 import { ChevronDown } from "lucide-react-native";
+import SFIcon from "@/shared/components/SFIcon";
 import { KeyboardStickyView } from "react-native-keyboard-controller";
 import RegisterProgressBar from "@/features/auth/components/RegisterProgressBar";
+import RegisterBackButton from "@/features/auth/components/RegisterBackButton";
 import AnimatedPressable from "@/shared/components/AnimatedPressable";
 import AppBottomSheet from "@/shared/components/AppBottomSheet";
 import SearchableListSheet from "@/shared/components/SearchableListSheet";
@@ -90,9 +92,7 @@ export default function RegisterStep9Screen({ navigation }: NativeStackScreenPro
       {/* Header */}
       <View className="bg-bg pt-16 pb-6 px-6">
         <View className="flex-row items-center justify-between">
-          <TouchableOpacity activeOpacity={1} onPress={() => navigation.goBack()} className="flex-row items-center">
-            <Text className="text-4xl mr-2 text-white">←</Text>
-          </TouchableOpacity>
+          <RegisterBackButton onPress={() => navigation.goBack()} />
           {!city && !district && (
             <TouchableOpacity activeOpacity={0.9} onPress={handleSkip}>
               <Text className="text-gray-400 text-[16px] font-semibold">{t('auth.step9.skipButton')}</Text>
@@ -126,7 +126,7 @@ export default function RegisterStep9Screen({ navigation }: NativeStackScreenPro
               ) : (
                 <>
                   <Text className={`${city ? "text-white" : "text-gray-400"} text-[16px] font-medium`}>{getCityLabel()}</Text>
-                  <ChevronDown size={20} color={colors.textSecondary} strokeWidth={2} pointerEvents="none" />
+                  <SFIcon name="chevron.down" fallback={ChevronDown} size={20} color={colors.textSecondary} strokeWidth={2} weight="semibold" style={{ pointerEvents: "none" }} />
                 </>
               )}
             </TouchableOpacity>
@@ -146,7 +146,7 @@ export default function RegisterStep9Screen({ navigation }: NativeStackScreenPro
               ) : (
                 <>
                   <Text className={`${district ? "text-white" : "text-gray-400"} text-[16px] font-medium`}>{getDistrictLabel()}</Text>
-                  <ChevronDown size={20} color={colors.textSecondary} strokeWidth={2} pointerEvents="none" />
+                  <SFIcon name="chevron.down" fallback={ChevronDown} size={20} color={colors.textSecondary} strokeWidth={2} weight="semibold" style={{ pointerEvents: "none" }} />
                 </>
               )}
             </TouchableOpacity>

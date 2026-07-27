@@ -7,6 +7,7 @@ import {
 import { BlurView } from "expo-blur";
 import { useAppDispatch } from "@/shared/hooks/redux";
 import { ShieldCheck } from "lucide-react-native";
+import SFIcon from "@/shared/components/SFIcon";
 import api from "@/shared/services/api";
 import { API_ENDPOINTS } from "@/shared/constants/api";
 import { setKvkkAccepted } from "@/features/auth/authSlice";
@@ -173,7 +174,14 @@ export default function KVKKConsentScreen({ visible }) {
             gap: 12,
           }}
         >
-          <ShieldCheck size={28} color={colors.text} strokeWidth={1.5} pointerEvents="none" />
+          <SFIcon
+            name="checkmark.shield.fill"
+            fallback={ShieldCheck}
+            size={28}
+            color={colors.text}
+            strokeWidth={1.5}
+            style={{ pointerEvents: "none" }}
+          />
           <Text style={{ color: colors.text, fontSize: 22, fontWeight: "700" }}>
             {t('auth.kvkkConsent.title')}
           </Text>
@@ -182,9 +190,9 @@ export default function KVKKConsentScreen({ visible }) {
         <Text
           style={{
             color: colors.textSecondary,
-            fontSize: 13,
+            fontSize: 14,
             paddingHorizontal: 24,
-            marginBottom: 16,
+            marginBottom: 8,
             lineHeight: 20,
           }}
         >
@@ -201,9 +209,7 @@ export default function KVKKConsentScreen({ visible }) {
               borderRadius: 24,
               borderCurve: "continuous",
               overflow: "hidden",
-              borderWidth: 0.5,
-              borderColor: "rgba(255,255,255,0.1)",
-              padding: 20,
+              padding: 8,
               gap: 16,
             }}
           >
@@ -240,10 +246,10 @@ export default function KVKKConsentScreen({ visible }) {
 function Section({ title, children }) {
   return (
     <View style={{ gap: 6 }}>
-      <Text style={{ color: colors.text, fontSize: 14, fontWeight: "600" }}>
+      <Text style={{ color: colors.text, fontSize: 20, fontWeight: "600",marginBottom: 12 }}>
         {title}
       </Text>
-      <Text style={{ color: colors.textSecondary, fontSize: 13, lineHeight: 20 }}>
+      <Text style={{ color: colors.textSecondary, fontSize: 14, lineHeight: 20 }}>
         {children}
       </Text>
     </View>

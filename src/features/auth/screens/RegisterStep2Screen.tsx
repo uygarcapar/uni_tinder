@@ -1,13 +1,13 @@
-import { useState, useRef, useEffect } from "react";
+import { useState, useEffect } from "react";
 import {
   View,
   Text,
-  TextInput,
   TouchableOpacity,
   ActivityIndicator,
   TouchableWithoutFeedback,
   Keyboard,
 } from "react-native";
+import { OtpInput } from "react-native-otp-entry";
 import { NativeStackScreenProps } from "@react-navigation/native-stack";
 import type { AuthStackParamList } from "@/shared/types/navigation";
 import { useAppDispatch, useAppSelector } from "@/shared/hooks/redux";
@@ -19,6 +19,7 @@ import {
   setEmailVerifiedToken,
 } from "@/features/auth/authSlice";
 import { Mailbox, RotateCcw, ArrowLeft, Check } from "lucide-react-native";
+import SFIcon from "@/shared/components/SFIcon";
 import { API_BASE_URL, API_ENDPOINTS } from "@/shared/constants/api";
 import { useReanimatedKeyboardAnimation } from "react-native-keyboard-controller";
 import Animated, { useAnimatedStyle } from "react-native-reanimated";
@@ -33,7 +34,7 @@ export default function RegisterStep2Screen({ route, navigation }: NativeStackSc
   const isRegistrationMode = route?.params?.mode === "registration";
   const isPending = route?.params?.pending === true;
 
-  const [code, setCode] = useState(["", "", "", "", "", ""]);
+  const [code, setCode] = useState("");
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState("");
   const [resendLoading, setResendLoading] = useState(false);
@@ -41,7 +42,6 @@ export default function RegisterStep2Screen({ route, navigation }: NativeStackSc
   const [countdown, setCountdown] = useState(0);
   const [isLoggingOut, setIsLoggingOut] = useState(false);
 
-  const inputRefs = useRef<any[]>([]);
   const dispatch = useAppDispatch();
 
   const { height: keyboardHeight } = useReanimatedKeyboardAnimation();
@@ -56,39 +56,9 @@ export default function RegisterStep2Screen({ route, navigation }: NativeStackSc
     }
   }, [countdown]);
 
-  const handleCodeChange = (text, index) => {
-    if (text && !/^\d+$/.test(text)) return;
-    const newCode = [...code];
-    newCode[index] = text;
-    setCode(newCode);
-    setError("");
-    if (text && index < 5) inputRefs.current[index + 1]?.focus();
-    if (text && index === 5 && newCode.every((d) => d !== "")) {
-      handleVerify(newCode.join(""));
-    }
-  };
-
-  const handleKeyPress = (e, index) => {
-    if (e.nativeEvent.key === "Backspace" && code[index] === "" && index > 0) {
-      const newCode = [...code];
-      newCode[index - 1] = "";
-      setCode(newCode);
-      inputRefs.current[index - 1]?.focus();
-    }
-  };
-
-  // Hangi input'a basılırsa basılsın ilk boş slot'a yönlendir — kullanıcı sırayı
-  // bozup ortadan başlayamasın.
-  const handleFocus = (index) => {
-    const firstEmpty = code.findIndex((d) => d === "");
-    if (firstEmpty !== -1 && firstEmpty !== index) {
-      inputRefs.current[firstEmpty]?.focus();
-    }
-  };
-
-  const handleVerify = async (verificationCode = null) => {
+  const handleVerify = async (verificationCode: string | null = null) => {
     Keyboard.dismiss();
-    const finalCode = verificationCode || code.join("");
+    const finalCode = verificationCode || code;
     if (finalCode.length !== 6) {
       setError(t('auth.step2.validation.codeRequired'));
       return;
@@ -210,7 +180,7 @@ export default function RegisterStep2Screen({ route, navigation }: NativeStackSc
               gap: 10,
             }}
           >
-            <Check size={20} color={colors.text} strokeWidth={3} />
+            <SFIcon name="checkmark" fallback={Check} size={20} color={colors.text} strokeWidth={3} weight="bold" />
             <Text className="text-white text-[15px] font-medium">
               {t('auth.step2.resendSuccess')}
             </Text>
@@ -231,7 +201,7 @@ export default function RegisterStep2Screen({ route, navigation }: NativeStackSc
           ]}
         >
           <View className="items-center flex flex-col gap-10 p-8">
-            <Mailbox strokeWidth={1} size={100} color={colors.text} />
+            <SFIcon name="envelope.fill" fallback={Mailbox} strokeWidth={1} size={100} color={colors.text} />
             <View>
               <Text className="text-3xl font-bold text-white mb-3 text-center">
                 {t('auth.step2.title')}
@@ -246,33 +216,47 @@ export default function RegisterStep2Screen({ route, navigation }: NativeStackSc
           </View>
 
           <View>
-            <View className="flex-row justify-between mb-8 p-8 py-4">
-              {code.map((digit, index) => (
-                <TextInput
-                  key={index}
-                  ref={(ref) => { inputRefs.current[index] = ref; }}
-                  className={`w-12 h-16 bg-surface text-white rounded-[15px] text-center text-2xl font-semibold p-0 ${
-                    error ? "border border-red-600" : ""
-                  }`}
-                  style={{
+            {/* react-native-otp-entry: tek gizli input + stilli kutular — eski el
+                yapımı 6-TextInput'un eksiklerini kapatır: iOS Mail'den oneTimeCode
+                autofill, panoya kopyalanan kodu yapıştırma, güvenilir backspace
+                (onKeyPress Android soft keyboard'da güvenilmezdi). */}
+            <View className="mb-8 p-8 py-4">
+              <OtpInput
+                numberOfDigits={6}
+                type="numeric"
+                disabled={loading}
+                onTextChange={(text) => {
+                  setCode(text);
+                  setError("");
+                }}
+                onFilled={(text) => handleVerify(text)}
+                textInputProps={{
+                  textContentType: "oneTimeCode",
+                  autoComplete: "one-time-code",
+                }}
+                theme={{
+                  containerStyle: { justifyContent: "center", gap: 2 },
+                  pinCodeContainerStyle: {
+                    width: 48,
+                    height: 64,
+                    borderRadius: 15,
                     borderCurve: "continuous",
-                    overflow: "hidden",
-                    textAlignVertical: "center",
-                    includeFontPadding: false,
-                    paddingVertical: 0,
-                    lineHeight: 25,
-                  }}
-                  value={digit}
-                  onChangeText={(text) => handleCodeChange(text, index)}
-                  onKeyPress={(e) => handleKeyPress(e, index)}
-                  onFocus={() => handleFocus(index)}
-                  keyboardType="number-pad"
-                  maxLength={1}
-                  editable={!loading}
-                  allowFontScaling={false}
-                  caretHidden={true}
-                />
-              ))}
+                    backgroundColor: colors.surface,
+                    borderWidth: error ? 1 : 0,
+                    borderColor: error ? "#dc2626" : "transparent",
+                  },
+                  focusedPinCodeContainerStyle: {
+                    borderWidth: error ? 1 : 0,
+                    borderColor: error ? "#dc2626" : "transparent",
+                  },
+                  pinCodeTextStyle: {
+                    color: "#fff",
+                    fontSize: 24,
+                    fontWeight: "600",
+                  },
+                  focusStickStyle: { backgroundColor: colors.primary },
+                }}
+              />
             </View>
 
             <View className="flex-row mb-3 justify-center items-center py-[15px] pt-0 rounded-full overflow-hidden">
@@ -285,14 +269,14 @@ export default function RegisterStep2Screen({ route, navigation }: NativeStackSc
                   <ActivityIndicator size="small" color={colors.text} />
                 ) : countdown > 0 ? (
                   <View className="flex-row items-center gap-2">
-                    <RotateCcw size={16} color={colors.neutral200} strokeWidth={2.5} />
+                    <SFIcon name="arrow.counterclockwise" fallback={RotateCcw} size={16} color={colors.neutral200} strokeWidth={2.5} weight="bold" />
                     <Text className="text-gray-300 font-medium">
                       {t('auth.step2.resendCountdown', { countdown })}
                     </Text>
                   </View>
                 ) : (
                   <View className="flex-row py-[2px] items-center gap-2">
-                    <RotateCcw size={16} color={colors.text} strokeWidth={2.5} />
+                    <SFIcon name="arrow.counterclockwise" fallback={RotateCcw} size={16} color={colors.text} strokeWidth={2.5} weight="bold" />
                     <Text className="text-white font-medium">
                       {t('auth.step2.resendButton')}
                     </Text>
@@ -306,11 +290,11 @@ export default function RegisterStep2Screen({ route, navigation }: NativeStackSc
                 borderRadius: 999,
                 borderCurve: "continuous",
                 overflow: "hidden",
-                opacity: loading || code.some((d) => d === "") ? 0.5 : 1,
+                opacity: loading || code.length < 6 ? 0.5 : 1,
                 backgroundColor: colors.messageOwn,
               }}
               onPress={() => handleVerify()}
-              disabled={loading || code.some((d) => d === "")}
+              disabled={loading || code.length < 6}
             >
               {loading ? (
                 <ActivityIndicator className="py-[20px]" color="#fff" />
@@ -339,7 +323,7 @@ export default function RegisterStep2Screen({ route, navigation }: NativeStackSc
                 paddingVertical: 18,
               }}
             >
-              <ArrowLeft size={16} color={colors.text} strokeWidth={2.5} />
+              <SFIcon name="arrow.left" fallback={ArrowLeft} size={16} color={colors.text} strokeWidth={2.5} weight="bold" />
               <Text className="text-white font-medium">{t('auth.step2.backButton')}</Text>
             </TouchableOpacity>
           </View>
