@@ -1,15 +1,20 @@
 import { useEffect, useState } from "react";
 import { View, Text, TouchableOpacity, ActivityIndicator } from "react-native";
+import { useTranslation } from "react-i18next";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { AlertTriangle } from "lucide-react-native";
+import SFIcon from "@/shared/components/SFIcon";
 import api from "@/shared/services/api";
 import { API_ENDPOINTS } from "@/shared/constants/api";
+import { getDateLocale } from "@/shared/i18n/dateLocale";
 import { colors } from "../../../shared/theme/colors";
 
 export default function DeletionBanner() {
+  const { t } = useTranslation();
   const insets = useSafeAreaInsets();
   const [scheduled, setScheduled] = useState(false);
   const [deletionDate, setDeletionDate] = useState(null);
+  const [daysRemaining, setDaysRemaining] = useState<number | null>(null);
   const [cancelling, setCancelling] = useState(false);
   const [dismissed, setDismissed] = useState(false);
 
@@ -19,10 +24,17 @@ export default function DeletionBanner() {
       .get(API_ENDPOINTS.PRIVACY_DELETION_STATUS)
       .then((res) => {
         if (cancelled) return;
-        if (res.result?.isDeletionScheduled) {
-          setScheduled(true);
-          setDeletionDate(res.result.deletionDate ?? null);
-        }
+        // GET /api/privacy/deletion-status →
+        //   { deletionScheduled, requestedAt, scheduledDeletionAt, daysRemaining }
+        // Banner eskiden `isDeletionScheduled` / `deletionDate` okuyordu; ikisi de
+        // backend'de yok → her zaman undefined → banner hiç render olmuyordu,
+        // kullanıcı 30 günlük geri alma penceresini göremiyordu.
+        if (!res.result?.deletionScheduled) return;
+        setScheduled(true);
+        setDeletionDate(res.result.scheduledDeletionAt ?? null);
+        setDaysRemaining(
+          typeof res.result.daysRemaining === "number" ? res.result.daysRemaining : null,
+        );
       })
       .catch(() => {});
     return () => { cancelled = true; };
@@ -44,7 +56,7 @@ export default function DeletionBanner() {
   if (!scheduled || dismissed) return null;
 
   const formattedDate = deletionDate
-    ? new Date(deletionDate).toLocaleDateString("tr-TR", {
+    ? new Date(deletionDate).toLocaleDateString(getDateLocale(), {
         day: "numeric",
         month: "long",
         year: "numeric",
@@ -74,14 +86,16 @@ export default function DeletionBanner() {
         gap: 12,
       }}
     >
-      <AlertTriangle size={18} color={colors.errorStrong} strokeWidth={1.5} pointerEvents="none" />
+      <SFIcon name="exclamationmark.triangle.fill" fallback={AlertTriangle} size={18} color={colors.errorStrong} strokeWidth={1.5} style={{ pointerEvents: "none" }} />
       <View style={{ flex: 1 }}>
         <Text style={{ color: colors.text, fontSize: 13, fontWeight: "600" }}>
-          Hesabın silinmek üzere
+          {t('deleteAccount.bannerTitle')}
         </Text>
         {formattedDate && (
           <Text style={{ color: colors.textSecondary, fontSize: 12, marginTop: 2 }}>
-            {formattedDate} tarihinde kalıcı olarak silinecek.
+            {daysRemaining != null
+              ? t('deleteAccount.bannerDatedWithDays', { date: formattedDate, days: daysRemaining })
+              : t('deleteAccount.bannerDated', { date: formattedDate })}
           </Text>
         )}
       </View>
@@ -101,7 +115,7 @@ export default function DeletionBanner() {
           <ActivityIndicator size="small" color={colors.text} />
         ) : (
           <Text style={{ color: colors.text, fontSize: 12, fontWeight: "600" }}>
-            İptal Et
+            {t('deleteAccount.bannerUndo')}
           </Text>
         )}
       </TouchableOpacity>

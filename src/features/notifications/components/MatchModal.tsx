@@ -11,8 +11,11 @@ import {
 import { Image } from "expo-image";
 import { LinearGradient } from "expo-linear-gradient";
 import { BlurView } from "expo-blur";
-import { MessageCircle, X } from "lucide-react-native";
+import { MessageCircle } from "lucide-react-native";
+import SFIcon from "@/shared/components/SFIcon";
 import * as Haptics from "expo-haptics";
+import { CannonConfetti } from "react-native-fast-confetti";
+import { useTranslation } from "react-i18next";
 import { colors } from "../../../shared/theme/colors";
 
 const { width: SCREEN_W, height: SCREEN_H } = Dimensions.get("window");
@@ -32,111 +35,11 @@ const CONFETTI_COLORS = [
   colors.text,
 ];
 
-function ConfettiPiece({ side }: { side: "left" | "right" }) {
-  const translateX = useRef(new Animated.Value(0)).current;
-  const translateY = useRef(new Animated.Value(0)).current;
-  const rotate = useRef(new Animated.Value(0)).current;
-  const opacity = useRef(new Animated.Value(1)).current;
-
-  const params = useMemo(() => {
-    const dirX = side === "left" ? 1 : -1;
-    const spreadX = (40 + Math.random() * SCREEN_W * 0.8) * dirX;
-    const burstUp = -(30 + Math.random() * 70);
-    const fallDown = SCREEN_H * (0.7 + Math.random() * 0.4);
-    const burstDuration = 320 + Math.random() * 160;
-    const fallDuration = 1300 + Math.random() * 700;
-    const w = 5 + Math.random() * 4;
-    const h = 9 + Math.random() * 6;
-    const startDelay = Math.random() * 120;
-    const rotEnd = (Math.random() * 6 - 3) * 360;
-    const startTop = 60 + Math.random() * SCREEN_H * 0.45;
-    const startSide = -60 - Math.random() * 60;
-    const color = CONFETTI_COLORS[Math.floor(Math.random() * CONFETTI_COLORS.length)];
-    return {
-      spreadX,
-      burstUp,
-      fallDown,
-      burstDuration,
-      fallDuration,
-      w,
-      h,
-      startDelay,
-      rotEnd,
-      startTop,
-      startSide,
-      color,
-    };
-  }, [side]);
-
-  useEffect(() => {
-    const total = params.burstDuration + params.fallDuration;
-    Animated.parallel([
-      Animated.timing(translateX, {
-        toValue: params.spreadX,
-        duration: total,
-        delay: params.startDelay,
-        easing: Easing.out(Easing.quad),
-        useNativeDriver: true,
-      }),
-      Animated.sequence([
-        Animated.timing(translateY, {
-          toValue: params.burstUp,
-          duration: params.burstDuration,
-          delay: params.startDelay,
-          easing: Easing.out(Easing.quad),
-          useNativeDriver: true,
-        }),
-        Animated.timing(translateY, {
-          toValue: params.fallDown,
-          duration: params.fallDuration,
-          easing: Easing.in(Easing.quad),
-          useNativeDriver: true,
-        }),
-      ]),
-      Animated.timing(rotate, {
-        toValue: 1,
-        duration: total,
-        delay: params.startDelay,
-        easing: Easing.linear,
-        useNativeDriver: true,
-      }),
-      Animated.timing(opacity, {
-        toValue: 0,
-        duration: params.fallDuration * 0.9,
-        delay: params.startDelay + params.burstDuration + params.fallDuration * 0.1,
-        easing: Easing.in(Easing.ease),
-        useNativeDriver: true,
-      }),
-    ]).start();
-  }, []);
-
-  return (
-    <Animated.View
-      pointerEvents="none"
-      style={{
-        position: "absolute",
-        top: params.startTop,
-        [side]: params.startSide,
-        width: params.w,
-        height: params.h,
-        backgroundColor: params.color,
-        borderRadius: 2,
-        opacity,
-        transform: [
-          { translateX },
-          { translateY },
-          {
-            rotate: rotate.interpolate({
-              inputRange: [0, 1],
-              outputRange: ["0deg", `${params.rotEnd}deg`],
-            }),
-          },
-        ],
-      }}
-    />
-  );
-}
-
+// Konfeti: react-native-fast-confetti (Skia Atlas API) — eski implementasyon
+// her match'te 110 ayrı Animated.View mount edip 110 ShadowTree node'u tek
+// seferde commit ediyordu; commit-storm geçmişi olan bir app'te gereksiz risk.
+// Artık tüm parçalar TEK Skia canvas node'unda, fizik UI thread'de. İki yan
+// "cannon" origin eski sol/sağ patlama tasarımını korur.
 function ConfettiBurst() {
   return (
     <View
@@ -149,17 +52,24 @@ function ConfettiBurst() {
         bottom: 0,
       }}
     >
-      {Array.from({ length: CONFETTI_PER_SIDE }).map((_, i) => (
-        <ConfettiPiece key={`l-${i}`} side="left" />
-      ))}
-      {Array.from({ length: CONFETTI_PER_SIDE }).map((_, i) => (
-        <ConfettiPiece key={`r-${i}`} side="right" />
-      ))}
+      <CannonConfetti colors={CONFETTI_COLORS} fadeOutOnEnd sprayDuration={150}>
+        <CannonConfetti.Origin
+          position={{ x: -50, y: SCREEN_H * 0.4 }}
+          target={{ x: SCREEN_W * 0.55, y: 40 }}
+          count={CONFETTI_PER_SIDE}
+        />
+        <CannonConfetti.Origin
+          position={{ x: SCREEN_W + 50, y: SCREEN_H * 0.4 }}
+          target={{ x: SCREEN_W * 0.45, y: 40 }}
+          count={CONFETTI_PER_SIDE}
+        />
+      </CannonConfetti>
     </View>
   );
 }
 
 export default function MatchModal({ match, myPhoto, onClose, onSendMessage }: any) {
+  const { t } = useTranslation();
   const scale = useRef(new Animated.Value(0.6)).current;
   const opacity = useRef(new Animated.Value(0)).current;
   // PERF: Önceden Animated.Value(0..60) blur intensity'yi useNativeDriver:false
@@ -173,6 +83,8 @@ export default function MatchModal({ match, myPhoto, onClose, onSendMessage }: a
   const sendScale = useRef(new Animated.Value(1)).current;
   const backScale = useRef(new Animated.Value(1)).current;
   const titleShake = useRef(new Animated.Value(0)).current;
+  const sendShake = useRef(new Animated.Value(0)).current;
+  const sendLoopRef = useRef<Animated.CompositeAnimation | null>(null);
 
   const [myLoaded, setMyLoaded] = useState(!myPhoto);
   const [matchLoaded, setMatchLoaded] = useState(!match?.matchedUserPhoto);
@@ -257,13 +169,56 @@ export default function MatchModal({ match, myPhoto, onClose, onSendMessage }: a
       Animated.timing(titleShake, { toValue: 0, duration: 60, useNativeDriver: true }),
     ]).start();
 
+    // "Mesaj Gönder" butonu dikkat titremesi: açılışta daha uzun süren bir burst,
+    // sonrasında sonsuz tekrar eden nabız. Genlik ve hız ikisinde de aynı — açılış
+    // yalnızca daha çok salınım yapıyor, daha sert değil.
+    const wig = (toValue: number, duration: number) =>
+      Animated.timing(sendShake, { toValue, duration, useNativeDriver: true });
+
+    const AMP = 0.7;
+
+    const intro = Animated.sequence([
+      Animated.delay(650),
+      wig(AMP, 70),
+      wig(-AMP, 70),
+      wig(AMP, 70),
+      wig(-AMP, 70),
+      wig(AMP * 0.7, 65),
+      wig(-AMP * 0.7, 65),
+      wig(AMP * 0.7, 65),
+      wig(-AMP * 0.7, 65),
+      wig(AMP * 0.4, 60),
+      wig(-AMP * 0.4, 60),
+      wig(0, 60),
+    ]);
+
+    intro.start(({ finished }) => {
+      if (!finished) return;
+      sendLoopRef.current = Animated.loop(
+        Animated.sequence([
+          Animated.delay(1600),
+          wig(AMP, 70),
+          wig(-AMP, 70),
+          wig(AMP * 0.7, 65),
+          wig(-AMP * 0.7, 65),
+          wig(AMP * 0.4, 60),
+          wig(0, 60),
+        ]),
+      );
+      sendLoopRef.current.start();
+    });
+
     return () => {
+      intro.stop();
+      sendLoopRef.current?.stop();
+      sendLoopRef.current = null;
       scale.setValue(0.6);
       opacity.setValue(0);
       blurOpacity.setValue(0);
       leftAnim.setValue(-60);
       rightAnim.setValue(60);
       titleShake.setValue(0);
+      sendShake.setValue(0);
     };
   }, [match, imagesReady]);
 
@@ -334,7 +289,7 @@ export default function MatchModal({ match, myPhoto, onClose, onSendMessage }: a
             }}
           >
             <Text className="text-white font-bold text-[35px]">
-              It's Lit!
+              {t('match.title')}
             </Text>
           </Animated.View>
 
@@ -410,11 +365,28 @@ export default function MatchModal({ match, myPhoto, onClose, onSendMessage }: a
           </View>
 
           <Text className="text-white text-[15px] text-center font-semibold mt-8">
-            {match.matchedUserName} ile eşleştin. İlk mesajı sen at.
+            {t('match.subtitle', { name: match.matchedUserName })}
           </Text>
 
           <Animated.View
-            style={{ width: "100%", transform: [{ scale: sendScale }] }}
+            style={{
+              width: "100%",
+              transform: [
+                { scale: sendScale },
+                {
+                  translateX: sendShake.interpolate({
+                    inputRange: [-1, 0, 1],
+                    outputRange: [-5, 0, 5],
+                  }),
+                },
+                {
+                  rotate: sendShake.interpolate({
+                    inputRange: [-1, 0, 1],
+                    outputRange: ["-1.2deg", "0deg", "1.2deg"],
+                  }),
+                },
+              ],
+            }}
             className="mt-8"
           >
             <TouchableOpacity
@@ -423,11 +395,11 @@ export default function MatchModal({ match, myPhoto, onClose, onSendMessage }: a
               onPressIn={() => handlePressIn(sendScale)}
               onPressOut={() => handlePressOut(sendScale)}
               className="w-full flex-row items-center justify-center py-[16px] rounded-full"
-              style={{ backgroundColor: colors.text, borderCurve: "continuous" }}
+              style={{ backgroundColor: colors.litPlus, borderCurve: "continuous" }}
             >
-              <MessageCircle size={18} color="#000" />
-              <Text className="text-black font-semibold text-[14px] ml-2">
-                Mesaj Gönder
+              <SFIcon name="message.fill" fallback={MessageCircle} size={18} color="#fff" strokeWidth={2} weight="semibold" />
+              <Text className="text-white font-semibold text-[14px] ml-2">
+                {t('match.sendMessage')}
               </Text>
             </TouchableOpacity>
           </Animated.View>
@@ -447,7 +419,7 @@ export default function MatchModal({ match, myPhoto, onClose, onSendMessage }: a
               }}
             >
               <Text className="text-gray-300 font-medium text-[14px]">
-                Geri Dön
+                {t('match.back')}
               </Text>
             </TouchableOpacity>
           </Animated.View>

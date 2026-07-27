@@ -1,8 +1,15 @@
 import { Platform } from 'react-native';
 import * as Notifications from 'expo-notifications';
 import * as Device from 'expo-device';
-import messaging, {
-  FirebaseMessagingTypes,
+// Modular API (v22+): namespaced messaging() v25'te deprecated, v26'da kalkıyor.
+import {
+  getMessaging,
+  getToken,
+  onTokenRefresh,
+  onMessage,
+  onNotificationOpenedApp,
+  getInitialNotification,
+  type FirebaseMessagingTypes,
 } from '@react-native-firebase/messaging';
 import api, { getCurrentAccessToken } from '@/shared/services/api';
 import { API_ENDPOINTS } from '@/shared/constants/api';
@@ -15,7 +22,10 @@ export const setActiveConversationGetter = (fn: (() => string | null) | null) =>
 
 // POST /devices rate limit 5/60s — aynı token'ı tekrar tekrar göndermeyi engelle.
 // Fast Refresh, tekrarlı mount ve token refresh senaryolarında idempotency sağlar.
+// lastRegisteredToken await SONRASI yazıldığı için eşzamanlı iki çağrı guard'ı
+// deliyordu (Sentry trace'te devices POST ×2) — inFlightToken uçuş anını kapatır.
 let lastRegisteredToken: string | null = null;
+let inFlightToken: string | null = null;
 
 // Foreground'da OS banner gösterme — in-app toaster (react-native-notifier) bunun yerini alır.
 // Background normal akar. Tray'de listeleme + badge korunur ki kullanıcı bildirim tepsisinden
@@ -41,13 +51,18 @@ function currentPlatform(): 'iOS' | 'Android' {
 }
 
 async function postDeviceToken(token: string, appVersion: string): Promise<void> {
-  if (!token || token === lastRegisteredToken) return;
-  await api.post(API_ENDPOINTS.NOTIFICATIONS_DEVICES, {
-    token,
-    platform: currentPlatform(),
-    appVersion,
-  });
-  lastRegisteredToken = token;
+  if (!token || token === lastRegisteredToken || token === inFlightToken) return;
+  inFlightToken = token;
+  try {
+    await api.post(API_ENDPOINTS.NOTIFICATIONS_DEVICES, {
+      token,
+      platform: currentPlatform(),
+      appVersion,
+    });
+    lastRegisteredToken = token;
+  } finally {
+    inFlightToken = null;
+  }
 }
 
 export async function registerForPushNotifications(appVersion = '1.0.0'): Promise<string | null> {
@@ -77,14 +92,11 @@ export async function registerForPushNotifications(appVersion = '1.0.0'): Promis
       });
     }
 
-    // iOS: FCM izni + APNs register. RN Firebase v22+ auto-register açık; explicit
-    // registerDeviceForRemoteMessages çağrısı gereksiz (firebase.json'da
+    // iOS izni yukarıdaki expo-notifications requestPermissionsAsync ile alındı;
+    // v25'te deprecated olan messaging().requestPermission() çağrısı kaldırıldı.
+    // APNs register otomatik (firebase.json'da
     // messaging_ios_auto_register_for_remote_messages=false değilse).
-    if (Platform.OS === 'ios') {
-      await messaging().requestPermission();
-    }
-
-    const token = await messaging().getToken();
+    const token = await getToken(getMessaging());
     if (!token) return null;
 
     await postDeviceToken(token, appVersion);
@@ -99,7 +111,7 @@ export async function registerForPushNotifications(appVersion = '1.0.0'): Promis
 export async function unregisterPushToken(): Promise<void> {
   try {
     if (!getCurrentAccessToken()) return;
-    const token = lastRegisteredToken ?? (await messaging().getToken().catch(() => null));
+    const token = lastRegisteredToken ?? (await getToken(getMessaging()).catch(() => null));
     if (!token) return;
     await api.delete(API_ENDPOINTS.NOTIFICATIONS_DEVICE_BY_TOKEN(token)).catch(() => {});
   } catch {
@@ -112,7 +124,7 @@ export async function unregisterPushToken(): Promise<void> {
 // Token rotate senaryosu (uninstall/reinstall, corrupt install, Firebase rotation) — yeni token
 // backend'e otomatik kaydedilsin.
 export function subscribeTokenRefresh(appVersion = '1.0.0'): () => void {
-  return messaging().onTokenRefresh(async (newToken) => {
+  return onTokenRefresh(getMessaging(), async (newToken) => {
     try {
       lastRegisteredToken = null; // eski token'ı invalid et → postDeviceToken yeniden POST'lasın
       await postDeviceToken(newToken, appVersion);
@@ -126,7 +138,7 @@ export function subscribeTokenRefresh(appVersion = '1.0.0'): () => void {
 // dispatch etmezsek sessizce düşer. Tray + badge güncellensin diye expo-notifications'a devret;
 // setNotificationHandler zaten banner'ı hide ediyor, in-app toaster'ı bozmaz.
 export function subscribeForegroundMessages(): () => void {
-  return messaging().onMessage(async (msg: FirebaseMessagingTypes.RemoteMessage) => {
+  return onMessage(getMessaging(), async (msg: FirebaseMessagingTypes.RemoteMessage) => {
     await Notifications.scheduleNotificationAsync({
       content: {
         title: msg.notification?.title ?? '',
@@ -144,17 +156,46 @@ export function subscribeForegroundMessages(): () => void {
 export function subscribeBackgroundOpen(
   handler: (data: Record<string, any>) => void,
 ): () => void {
-  return messaging().onNotificationOpenedApp((msg) => {
+  return onNotificationOpenedApp(getMessaging(), (msg) => {
     if (msg?.data) handler(msg.data as Record<string, any>);
   });
 }
 
+// expo-notifications tap event'inden data payload'ını çıkarır.
+//
+// Lokal (scheduleNotificationAsync) bildirimlerde content.data doğru gelir. Ama OS'in
+// gösterdiği remote FCM bildiriminde iOS tarafı content.data'yı userInfo["body"]
+// altından okuyor (Expo push servisinin formatı). Bizim FCM data payload'ımız
+// userInfo'da top-level durduğu için content.data boş {} dönüyor → routing
+// "type" göremeyip default branch'e düşüyor ve Chat yerine Notifications'a atıyordu.
+// Remote trigger'da gerçek payload'a trigger üzerinden ulaşıyoruz:
+//   iOS    → trigger.payload  (tüm userInfo, data key'leri top-level)
+//   Android→ trigger.remoteMessage.data
+function extractNotificationData(response: Notifications.NotificationResponse): Record<string, any> {
+  const request: any = response?.notification?.request;
+  const content = request?.content?.data;
+  if (content && Object.keys(content).length > 0) return content as Record<string, any>;
+
+  const trigger: any = request?.trigger;
+  if (trigger?.type === 'push') {
+    const remoteData = trigger.remoteMessage?.data;
+    if (remoteData && Object.keys(remoteData).length > 0) return remoteData as Record<string, any>;
+    if (trigger.payload && Object.keys(trigger.payload).length > 0) {
+      return trigger.payload as Record<string, any>;
+    }
+  }
+  return {};
+}
+
 // Foreground'da expo-notifications ile gösterilen bildirime tap (subscribeForegroundMessages
-// tarafından scheduleNotificationAsync ile atılanları yakalar).
+// tarafından scheduleNotificationAsync ile atılanları yakalar). Remote bildirimlerde de
+// tetiklenebiliyor — bu durumda payload'ı trigger'dan alıyoruz, aksi halde yutuyoruz ki
+// FCM'in onNotificationOpenedApp handler'ının doğru routing'ini boş data ile ezmesin.
 export function onNotificationTap(handler: (data: Record<string, any>) => void): () => void {
   const sub = Notifications.addNotificationResponseReceivedListener((response) => {
-    const data = response?.notification?.request?.content?.data || {};
-    handler(data as Record<string, any>);
+    const data = extractNotificationData(response);
+    if (!data.type) return;
+    handler(data);
   });
   return () => sub.remove();
 }
@@ -163,7 +204,7 @@ export function onNotificationTap(handler: (data: Record<string, any>) => void):
 // FCM getInitialNotification, native OS'nin app'i cold start ettiği FCM mesajını döner.
 export async function getInitialNotificationData(): Promise<Record<string, any> | null> {
   try {
-    const initial = await messaging().getInitialNotification();
+    const initial = await getInitialNotification(getMessaging());
     if (initial?.data) return initial.data as Record<string, any>;
     return null;
   } catch {

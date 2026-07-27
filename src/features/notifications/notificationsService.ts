@@ -1,8 +1,33 @@
 import api from '@/shared/services/api';
 import { API_ENDPOINTS } from '@/shared/constants/api';
 
+export type NotificationType =
+  | 'Match'
+  | 'Like'
+  | 'SuperLike'
+  | 'MissedMatch'
+  | 'Message'
+  | 'System'
+  | 'TrialEndingSoon'
+  | 'PremiumExpiringSoon';
+
+export interface NotificationItem {
+  id: string;
+  title: string;
+  body?: string | null;
+  type: NotificationType | string;
+  relatedEntityId?: string | null;
+  /** Bildirimi tetikleyen kullanıcı — System/Trial/Premium tiplerinde null. */
+  senderUserId?: string | null;
+  /** Tetikleyenin profil fotoğrafı. Kullanıcının fotoğrafı yoksa da null gelebilir. */
+  senderPhotoUrl?: string | null;
+  isRead: boolean;
+  readAt?: string | null;
+  createdAt: string;
+}
+
 interface NotificationFeedResult {
-  items: any[];
+  items: NotificationItem[];
   totalCount: number;
   page: number;
   pageSize: number;
