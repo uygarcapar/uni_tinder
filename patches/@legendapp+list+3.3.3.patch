@@ -1,0 +1,52 @@
+diff --git a/node_modules/@legendapp/list/react-native.js b/node_modules/@legendapp/list/react-native.js
+index 229f09a..2f82c9b 100644
+--- a/node_modules/@legendapp/list/react-native.js
++++ b/node_modules/@legendapp/list/react-native.js
+@@ -4693,7 +4693,21 @@ function runOrScheduleMVCPRecalculate(ctx) {
+       });
+     }
+   } else {
++    // PATCH (commit-storm fix, patches/@legendapp+list): native tarafta MVCP recalc'ı
++    // frame başına coalesce et. Orijinal kod her ölçüm≠tahmin olayında senkron
++    // calculateItemsInView({doMVCP:true}) çağırıyordu; prepend'de mount olan N item
++    // N senkron recalc doğurup native minIndexForVisible + reanimated inset ile
++    // yarışan JS commit'ini 1024× rebase edip Fabric ShadowTree::commit assert'ine
++    // (SIGABRT) sokuyordu. Çözüm: ilk recalc senkron (anchor anında düzelsin), aynı
++    // frame'deki ek talepleri yut, frame sonunda TEK recalc son ölçümleri yansıtsın.
++    if (state.queuedMVCPRecalculate !== void 0) {
++      return;
++    }
+     calculateItemsInView(ctx, { doMVCP: true });
++    state.queuedMVCPRecalculate = requestAnimationFrame(() => {
++      state.queuedMVCPRecalculate = void 0;
++      calculateItemsInView(ctx, { doMVCP: true });
++    });
+   }
+ }
+ function updateOtherAxisSizeIfNeeded(ctx, sizeObj, horizontal) {
+diff --git a/node_modules/@legendapp/list/react-native.mjs b/node_modules/@legendapp/list/react-native.mjs
+index c2e0f38..244b762 100644
+--- a/node_modules/@legendapp/list/react-native.mjs
++++ b/node_modules/@legendapp/list/react-native.mjs
+@@ -4672,7 +4672,21 @@ function runOrScheduleMVCPRecalculate(ctx) {
+       });
+     }
+   } else {
++    // PATCH (commit-storm fix, patches/@legendapp+list): native tarafta MVCP recalc'ı
++    // frame başına coalesce et. Orijinal kod her ölçüm≠tahmin olayında senkron
++    // calculateItemsInView({doMVCP:true}) çağırıyordu; prepend'de mount olan N item
++    // N senkron recalc doğurup native minIndexForVisible + reanimated inset ile
++    // yarışan JS commit'ini 1024× rebase edip Fabric ShadowTree::commit assert'ine
++    // (SIGABRT) sokuyordu. Çözüm: ilk recalc senkron (anchor anında düzelsin), aynı
++    // frame'deki ek talepleri yut, frame sonunda TEK recalc son ölçümleri yansıtsın.
++    if (state.queuedMVCPRecalculate !== void 0) {
++      return;
++    }
+     calculateItemsInView(ctx, { doMVCP: true });
++    state.queuedMVCPRecalculate = requestAnimationFrame(() => {
++      state.queuedMVCPRecalculate = void 0;
++      calculateItemsInView(ctx, { doMVCP: true });
++    });
+   }
+ }
+ function updateOtherAxisSizeIfNeeded(ctx, sizeObj, horizontal) {
