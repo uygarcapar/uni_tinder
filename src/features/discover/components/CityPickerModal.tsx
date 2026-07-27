@@ -1,7 +1,9 @@
 import React, { useEffect, useMemo, useState } from "react";
+import { useTranslation } from "react-i18next";
 import { View, Text, TouchableOpacity } from "react-native";
 import { BottomSheetTextInput } from "@gorhom/bottom-sheet";
 import { Search, SearchX, Check } from "lucide-react-native";
+import SFIcon from "@/shared/components/SFIcon";
 import AppModal from "@/shared/components/AppModal";
 import type { CityOption } from "@/shared/queries/commonQueries";
 import { colors } from "../../../shared/theme/colors";
@@ -25,6 +27,7 @@ export default function CityPickerModal({
   initialValue,
   onConfirm,
 }: Props) {
+  const { t } = useTranslation();
   const [search, setSearch] = useState("");
 
   // Modal kapanınca arama state'ini sıfırla — yoksa tekrar açıldığında
@@ -52,7 +55,7 @@ export default function CityPickerModal({
     <AppModal
       visible={visible}
       onClose={onClose}
-      title="Şehir Seç"
+      title={t('discover.cityPicker.title')}
       // İlk snap %75 — normal durum. İkinci snap %90 — keyboardBehavior="extend"
       // klavye açıldığında otomatik en yüksek snap'e çıkar → modal yukarı kayar,
       // input klavyenin üstünde rahat dururken liste daha fazla görünür kalır.
@@ -73,12 +76,19 @@ export default function CityPickerModal({
             zIndex: 1,
           }}
         >
-          <Search size={18} color={colors.textSecondary} strokeWidth={2} />
+          <SFIcon
+            name="magnifyingglass"
+            fallback={Search}
+            size={18}
+            color={colors.textSecondary}
+            strokeWidth={2}
+            weight="semibold"
+          />
         </View>
         <BottomSheetTextInput
           value={search}
           onChangeText={setSearch}
-          placeholder="Şehir ara"
+          placeholder={t('discover.cityPicker.search')}
           placeholderTextColor={colors.textMuted}
           autoCorrect={false}
           autoCapitalize="none"
@@ -99,7 +109,14 @@ export default function CityPickerModal({
 
       {ordered.length === 0 ? (
         <View style={{ paddingVertical: 32, alignItems: "center" }}>
-          <SearchX size={36} color={colors.text} strokeWidth={1.75} />
+          <SFIcon
+            name="magnifyingglass"
+            fallback={SearchX}
+            size={36}
+            color={colors.text}
+            strokeWidth={1.75}
+            weight="medium"
+          />
           {search.trim() !== "" && (
             <Text
               style={{
@@ -110,7 +127,7 @@ export default function CityPickerModal({
                 textAlign: "center",
               }}
             >
-              '{search.trim()}' bulunamadı
+              {t('common.notFound', { query: search.trim() })}
             </Text>
           )}
         </View>
@@ -159,7 +176,14 @@ export default function CityPickerModal({
                     justifyContent: "center",
                   }}
                 >
-                  <Check size={18} color={colors.text} strokeWidth={2.5} />
+                  <SFIcon
+                    name="checkmark"
+                    fallback={Check}
+                    size={18}
+                    color={colors.text}
+                    strokeWidth={2.5}
+                    weight="bold"
+                  />
                 </View>
               )}
             </TouchableOpacity>

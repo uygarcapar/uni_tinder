@@ -20,29 +20,63 @@ import Animated, {
 import {
   Lock,
   InfoIcon,
-  Mars,
-  Venus,
-  Transgender,
-  VenusAndMars,
   Navigation,
   ChevronDown,
   X as XIcon,
+  User,
+  UserRound,
+  Users,
 } from "lucide-react-native";
 import Svg, { Circle } from "react-native-svg";
+import SFIcon, { type SFSymbol } from "@/shared/components/SFIcon";
 import AppModal from "@/shared/components/AppModal";
 import CityPickerModal from "@/features/discover/components/CityPickerModal";
 import { useCities } from "@/shared/queries/commonQueries";
+import { DEFAULT_AGE_RANGE, DISTANCE_RANGE_KM } from "@/shared/constants/limits";
 import { colors } from "../../../shared/theme/colors";
 
-// Backend (DiscoveryOptions.FreeMaxDistanceKm) bunu zaten 50'ye clamp ediyor — UI'da da
-// aynı sınırı görünür hâle getir, kullanıcı 100 yazıp 50 sonuç alıp şaşırmasın.
+const MIN_DISTANCE_KM = DISTANCE_RANGE_KM.min;
+const MAX_DISTANCE_KM = DISTANCE_RANGE_KM.max;
+
+// Backend (DiscoveryOptions.FreeMaxDistanceKm) free hesabı 50 km'ye clamp
+// ediyor — UI'da da aynı sınırı uygula, kullanıcı 100 seçip 50 km içinden
+// sonuç alıp şaşırmasın.
 const FREE_MAX_DISTANCE_KM = 50;
-const MIN_DISTANCE_KM = 5;
-const MAX_DISTANCE_KM = 100;
+
+// Backend Filters, hiç filtre kaydetmemiş kullanıcıda "sınırsız" sentinel'i
+// (ör. 20000) dönebiliyor. Clamp'siz girerse gri dolgu dairesi pct>1 ile
+// binlerce px'e büyüyüp tüm modalı kaplıyor — okurken tier'ın aralığına sabitle.
+const clampKm = (raw: any, maxKm: number) => {
+  const n = parseInt(raw, 10);
+  if (!Number.isFinite(n)) return MIN_DISTANCE_KM;
+  return Math.min(maxKm, Math.max(MIN_DISTANCE_KM, n));
+};
+
+// InterestedIn profil düzenlemeden buraya taşındı: artık kalıcı bir profil alanı
+// değil, swipe filtresi. Backend InterestedInType int bekliyor (Men=0, Women=1,
+// NonBinary=2); GET /api/swipe/Filters ise enumName string dönebiliyor, o yüzden
+// okurken normalize ediyoruz. Free alan — premium gate'e takılmaz.
+const INTERESTED_IN_ENUM: Record<string, number> = {
+  Men: 0,
+  Women: 1,
+  NonBinary: 2,
+};
+
+const normalizeInterestedIn = (raw: any): number[] => {
+  if (!Array.isArray(raw)) return [];
+  const out: number[] = [];
+  raw.forEach((v) => {
+    const n =
+      typeof v === "number"
+        ? v
+        : INTERESTED_IN_ENUM[typeof v === "object" ? v?.enumName : v];
+    if (typeof n === "number" && !out.includes(n)) out.push(n);
+  });
+  return out;
+};
 
 // Radial slider — merkez nokta + concentric ring marks. Kullanıcı parmağıyla
 // merkeze göre dışa doğru çekerek yarıçapı (= mesafeyi) ayarlıyor.
-// Free zone: merkez → 50 km, Premium zone: 50 → 100 km (dashed, kilitli).
 const CIRCLE_SIZE = 280;
 const CIRCLE_CENTER = CIRCLE_SIZE / 2;
 const MIN_RADIUS = 30;
@@ -55,8 +89,7 @@ const kmToRadius = (km: number) => {
   return MIN_RADIUS + pct * (MAX_RADIUS - MIN_RADIUS);
 };
 
-// 10/20/30...100 km'de concentric gri yuvarlaklar. Free üyede 50 km üstündeki
-// halkalar daha solgun renkte → premium zone'u görsel olarak ayırır.
+// RING_KM_STEP aralıklarla concentric gri yuvarlaklar (tier'dan bağımsız).
 // SVG kullanılıyor çünkü RN'in `borderStyle:"dotted"` dot boyutunu/aralığını
 // kontrol etmiyor; burada strokeLinecap:"round" + sıfıra yakın dash ile gerçek
 // yuvarlak noktalar elde ediyoruz (dot çapı = strokeWidth).
@@ -64,9 +97,9 @@ const DOT_SIZE = 2.5;
 const DOT_GAP = 6;
 
 const RingMarks = React.memo(function RingMarks({
-  isPremium,
+  userMaxKm,
 }: {
-  isPremium: boolean;
+  userMaxKm: number;
 }) {
   const rings: number[] = [];
   for (let km = RING_KM_STEP; km <= MAX_DISTANCE_KM; km += RING_KM_STEP) {
@@ -82,18 +115,19 @@ const RingMarks = React.memo(function RingMarks({
     >
       {rings.map((km) => {
         const r = kmToRadius(km);
-        const isPremiumRing = km > FREE_MAX_DISTANCE_KM;
-        const color =
-          isPremiumRing && !isPremium
-            ? "rgba(255,255,255,0.15)"
-            : "rgba(255,255,255,0.5)";
         return (
           <Circle
             key={km}
             cx={CIRCLE_CENTER}
             cy={CIRCLE_CENTER}
             r={r}
-            stroke={color}
+            // Cap üstündeki halkalar (free'de 50+) soluk — erişilemeyen premium
+            // aralığı görsel olarak ayırır.
+            stroke={
+              km > userMaxKm
+                ? "rgba(255,255,255,0.18)"
+                : "rgba(255,255,255,0.5)"
+            }
             strokeWidth={DOT_SIZE}
             fill="none"
             strokeDasharray={`0.1 ${DOT_GAP}`}
@@ -105,8 +139,7 @@ const RingMarks = React.memo(function RingMarks({
   );
 });
 
-function DistanceCircle({ value, onChange, isPremium }: any) {
-  const userMaxKm = isPremium ? MAX_DISTANCE_KM : FREE_MAX_DISTANCE_KM;
+function DistanceCircle({ value, onChange, userMaxKm }: any) {
   const visualRange = MAX_DISTANCE_KM - MIN_DISTANCE_KM;
 
   const valueSV = useSharedValue(value || MIN_DISTANCE_KM);
@@ -198,7 +231,7 @@ function DistanceCircle({ value, onChange, isPremium }: any) {
           );
 
           if (rawKm > userMaxKm) {
-            // Premium zone'a girmeye çalışıyor — cap'le ve shake tetikle.
+            // Slider'ın üst sınırını aşmaya çalışıyor — cap'le ve shake tetikle.
             if (valueSV.value !== userMaxKm) {
               valueSV.value = userMaxKm;
               runOnJS(onTickChange)(userMaxKm);
@@ -257,8 +290,8 @@ function DistanceCircle({ value, onChange, isPremium }: any) {
             position: "relative",
           }}
         >
-          {/* Concentric ring marks (10, 20 ... 100 km) */}
-          <RingMarks isPremium={!!isPremium} />
+          {/* Concentric ring marks (25, 50 ... 100 km) */}
+          <RingMarks userMaxKm={userMaxKm} />
 
           {/* Aktif (dolu) yarıçap */}
           <Animated.View
@@ -333,7 +366,16 @@ function FilterSection({
         <Text style={{ color: colors.text, fontSize: 20, fontWeight: "600" }}>
           {title}
         </Text>
-        {locked && <Lock size={15} color={colors.textSecondary} />}
+        {locked && (
+          <SFIcon
+            name="lock.fill"
+            fallback={Lock}
+            size={15}
+            color={colors.textSecondary}
+            strokeWidth={2}
+            weight="semibold"
+          />
+        )}
       </View>
       {description ? (
         <View
@@ -345,7 +387,14 @@ function FilterSection({
             marginBottom: 12,
           }}
         >
-          <InfoIcon size={16} color={colors.textSecondary} />
+          <SFIcon
+            name="info.circle"
+            fallback={InfoIcon}
+            size={16}
+            color={colors.textSecondary}
+            strokeWidth={2}
+            weight="semibold"
+          />
           <Text
             style={{
               color: colors.textSecondary,
@@ -372,25 +421,41 @@ export default function FilterModal({
 }: any) {
   const { t } = useTranslation();
 
-  const genderOptions = useMemo(() => [
-    { label: t('discover.filters.gender.male'), value: "Male", icon: Mars },
-    { label: t('discover.filters.gender.female'), value: "Female", icon: Venus },
-    { label: t('discover.filters.gender.nonBinary'), value: "NonBinary", icon: Transgender },
-    { label: t('discover.filters.gender.other'), value: "Other", icon: VenusAndMars },
+  const interestedInOptions = useMemo(() => [
+    { label: t('discover.filters.interestedIn.men'), value: 0, sf: "person.fill" as SFSymbol, lucide: User },
+    { label: t('discover.filters.interestedIn.women'), value: 1, sf: "person.fill" as SFSymbol, lucide: UserRound },
+    { label: t('discover.filters.interestedIn.nonBinary'), value: 2, sf: "person.2.fill" as SFSymbol, lucide: Users },
   ], [t]);
 
-  // Free user için maxDistance'ı initial state'te de clamp et — backend zaten yapıyor
-  // ama UI bunu yansıtmazsa kullanıcı "100 km" görür, sonuç 50 km içinden gelir → şaşırır.
-  const clampFiltersForFree = (f: any) => {
+  // Premium-only filtre alanlarını free kullanıcıda temizle. Backend bu
+  // alanlardan HERHANGİ biri dolu gelirse isteğin TAMAMINI 403 + PREMIUM_FILTERS
+  // ile reddediyor — premium'dan düşen kullanıcının kayıtlı şehri payload'da
+  // kalırsa mesafe/cinsiyet güncellemesi bile kaydedilemiyordu.
+  const sanitizeForTier = (f: any) => {
     if (isPremium || !f) return f;
-    const d = parseInt(f.maxDistance);
-    if (!isNaN(d) && d > FREE_MAX_DISTANCE_KM) {
-      return { ...f, maxDistance: FREE_MAX_DISTANCE_KM };
-    }
-    return f;
+    if (f.preferredCity == null) return f;
+    return { ...f, preferredCity: null };
   };
 
-  const [local, setLocal] = useState(() => clampFiltersForFree(filters));
+  // Server'dan gelen filtreyi local state'e alırken interestedIn'i int listesine
+  // normalize et — UI ve PUT payload'ı hep int üzerinden çalışsın.
+  const toLocalState = (f: any) => {
+    const s = sanitizeForTier(f);
+    if (!s) return s;
+    return {
+      ...s,
+      interestedIn: normalizeInterestedIn(s.interestedIn),
+      // Clamp'lenmiş değer Apply payload'ına da gider — kullanıcı slider'a hiç
+      // dokunmadan kaydetse bile backend'e 20000 geri yazılmaz; free'de premium
+      // döneminden kalan 50+ değer de cap'e çekilir.
+      maxDistance: clampKm(
+        s.maxDistance,
+        isPremium ? MAX_DISTANCE_KM : FREE_MAX_DISTANCE_KM,
+      ),
+    };
+  };
+
+  const [local, setLocal] = useState(() => toLocalState(filters));
   const [cityPickerVisible, setCityPickerVisible] = useState(false);
 
   const citiesQuery = useCities();
@@ -408,18 +473,20 @@ export default function FilterModal({
   // Modal her açıldığında local state'i server state'inden (filters) sıfırla.
   // Apply'a basmadan kapatıp tekrar açan kullanıcı stale değer görmesin.
   useEffect(() => {
-    if (visible) setLocal(clampFiltersForFree(filters));
+    if (visible) setLocal(toLocalState(filters));
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [visible, filters, isPremium]);
 
-  const toggleGender = (value: string) => {
-    const current = local.genders || [];
-    setLocal((prev: any) => ({
-      ...prev,
-      genders: current.includes(value)
-        ? current.filter((g: string) => g !== value)
-        : [...current, value],
-    }));
+  const toggleInterestedIn = (value: number) => {
+    setLocal((prev: any) => {
+      const current = prev?.interestedIn || [];
+      return {
+        ...prev,
+        interestedIn: current.includes(value)
+          ? current.filter((v: number) => v !== value)
+          : [...current, value],
+      };
+    });
   };
 
   const onCityConfirm = (enumName: string) => {
@@ -432,6 +499,12 @@ export default function FilterModal({
     setLocal((prev: any) => ({ ...prev, preferredCity: null }));
   };
 
+  // Register (interestedInSchema) en az 1 seçim şart koşuyor; filtre ekranı da
+  // aynı kuralı uyguluyor. Backend boş listeyi artık 7 (herkes) olarak yazıyor,
+  // yani hesabı karartmıyor — ama "hiçbiri seçili değil" ile "hepsi seçili"
+  // aynı sonucu veren belirsiz bir durum olurdu, o yüzden Apply kilitli kalıyor.
+  const interestedInEmpty = (local?.interestedIn || []).length === 0;
+
   return (
     <AppModal
       visible={visible}
@@ -441,46 +514,55 @@ export default function FilterModal({
       onAction={() => {
         Keyboard.dismiss();
         // Yaş filtresi UI'dan kaldırıldı — backend'e her zaman tüm yaşları
-        // kapsayan default (18-65) gönder.
-        onSave({ ...local, ageRangeMin: 18, ageRangeMax: 65 });
+        // kapsayan default'u gönder.
+        onSave({
+          ...sanitizeForTier(local),
+          // Alanı hiç göndermemek "değiştirme", dolu dizi ise "bu değere ayarla"
+          // demek. Boş dizi gönderilmiyor — interestedInEmpty guard'ı Apply'ı
+          // kilitliyor (bkz. yukarıdaki not: flags 0 = hesap görünmez olur).
+          interestedIn: local.interestedIn || [],
+          ageRangeMin: DEFAULT_AGE_RANGE.min,
+          ageRangeMax: DEFAULT_AGE_RANGE.max,
+        });
       }}
+      actionDisabled={interestedInEmpty}
       actionLoading={saving}
       snapPoints={["90%"]}
       // Varsayılan paddingBottom 40'a ek bir tık daha — uzun içerik alt kenarda
       // sıkışmasın, sonraki section'lar nefes alsın.
       contentContainerStyle={{ paddingBottom: 80 }}
     >
-      {/* Maksimum Mesafe */}
+      {/* Maksimum Mesafe — tier'dan bağımsız, free'de de tam aralık açık. */}
       <FilterSection
         title={t('discover.filters.maxDistance.title')}
-        description={
-          isPremium
-            ? t('discover.filters.maxDistance.descPremium')
-            : t('discover.filters.maxDistance.descFree', { limit: FREE_MAX_DISTANCE_KM })
-        }
+        description={t('discover.filters.maxDistance.desc')}
         marginTop={20}
       />
       <DistanceCircle
-        value={parseInt(local.maxDistance) || MIN_DISTANCE_KM}
-        isPremium={isPremium}
+        value={clampKm(
+          local.maxDistance,
+          isPremium ? MAX_DISTANCE_KM : FREE_MAX_DISTANCE_KM,
+        )}
+        userMaxKm={isPremium ? MAX_DISTANCE_KM : FREE_MAX_DISTANCE_KM}
         onChange={(v: number) =>
           setLocal((p: any) => ({ ...p, maxDistance: v }))
         }
       />
 
-      {/* Cinsiyet */}
+      {/* İlgilendiğim cinsiyet — eskiden profil düzenlemedeydi, artık filtre.
+          Free alan: premium gate yok. Cinsiyet tercihinin TEK kaynağı burası;
+          eski "Cinsiyet" bölümü (genders/PreferredGendersFlags) kaldırıldı. */}
       <FilterSection
-        title={t('discover.filters.gender.title')}
-        description={t('discover.filters.gender.description')}
+        title={t('discover.filters.interestedIn.title')}
+        description={t('discover.filters.interestedIn.description')}
       />
       <View style={{ flexDirection: "row", flexWrap: "wrap", gap: 8 }}>
-        {genderOptions.map((opt) => {
-          const selected = (local.genders || []).includes(opt.value);
-          const Icon = opt.icon;
+        {interestedInOptions.map((opt) => {
+          const selected = (local.interestedIn || []).includes(opt.value);
           return (
             <TouchableOpacity
               key={opt.value}
-              onPress={() => toggleGender(opt.value)}
+              onPress={() => toggleInterestedIn(opt.value)}
               activeOpacity={1}
               style={{
                 borderRadius: 999,
@@ -496,7 +578,9 @@ export default function FilterModal({
                 borderColor: selected ? colors.text : "rgba(255,255,255,0.1)",
               }}
             >
-              <Icon
+              <SFIcon
+                name={opt.sf}
+                fallback={opt.lucide}
                 size={20}
                 color={selected ? "#000" : colors.textSecondary}
                 strokeWidth={1.5}
@@ -514,6 +598,18 @@ export default function FilterModal({
           );
         })}
       </View>
+      {interestedInEmpty ? (
+        <Text
+          style={{
+            color: colors.error,
+            fontSize: 13,
+            fontWeight: "500",
+            marginTop: 10,
+          }}
+        >
+          {t('discover.filters.interestedIn.required')}
+        </Text>
+      ) : null}
 
       {/* Şehir — premium-only. Free üyede locked görünüm + tıklama kapalı. */}
       <View
@@ -553,7 +649,13 @@ export default function FilterModal({
               flex: 1,
             }}
           >
-            <Navigation size={18} color={colors.textSecondary} strokeWidth={1.5} />
+            <SFIcon
+              name="location.fill"
+              fallback={Navigation}
+              size={18}
+              color={colors.textSecondary}
+              strokeWidth={1.5}
+            />
             <Text
               style={{
                 color: selectedCityName ? colors.text : colors.textSecondary,
@@ -570,10 +672,24 @@ export default function FilterModal({
               hitSlop={12}
               activeOpacity={0.7}
             >
-              <XIcon size={18} color={colors.textSecondary} strokeWidth={2} />
+              <SFIcon
+                name="xmark"
+                fallback={XIcon}
+                size={18}
+                color={colors.textSecondary}
+                strokeWidth={2}
+                weight="semibold"
+              />
             </TouchableOpacity>
           ) : (
-            <ChevronDown size={18} color={colors.textSecondary} strokeWidth={2} />
+            <SFIcon
+              name="chevron.down"
+              fallback={ChevronDown}
+              size={18}
+              color={colors.textSecondary}
+              strokeWidth={2}
+              weight="semibold"
+            />
           )}
         </TouchableOpacity>
       </View>
@@ -600,7 +716,14 @@ export default function FilterModal({
         }}
         pointerEvents="none"
       >
-        <Lock size={16} color={colors.textSecondary} />
+        <SFIcon
+          name="lock.fill"
+          fallback={Lock}
+          size={16}
+          color={colors.textSecondary}
+          strokeWidth={2}
+          weight="semibold"
+        />
         <Text style={{ color: colors.textSecondary, fontSize: 15, fontWeight: "500" }}>
           {t('discover.filters.university.comingSoon')}
         </Text>

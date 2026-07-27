@@ -2,7 +2,6 @@ import React, {
   useEffect,
   useState,
   useRef,
-  useCallback,
   useMemo,
 } from "react";
 import { useTranslation } from 'react-i18next';
@@ -12,9 +11,11 @@ import {
   TouchableOpacity,
   Alert,
   Dimensions,
+  AppState,
+  Modal,
 } from "react-native";
 import * as Haptics from "expo-haptics";
-import AsyncStorage from "@react-native-async-storage/async-storage";
+import { appPrefs } from "../../../shared/utils/appPrefs";
 import { GestureHandlerRootView } from "react-native-gesture-handler";
 import Animated, {
   useSharedValue,
@@ -24,7 +25,9 @@ import Animated, {
   withSequence,
   runOnJS,
   useAnimatedStyle,
+  useAnimatedReaction,
   interpolate,
+  cancelAnimation,
   Easing,
 } from "react-native-reanimated";
 import { LinearGradient } from "expo-linear-gradient";
@@ -38,18 +41,17 @@ import {
   RotateCcw,
   SlidersHorizontal,
   Search,
-  Flame,
-  Star,
-  Sparkles,
   ArrowLeft,
   ArrowRight,
 } from "lucide-react-native";
-import { BlurView } from "expo-blur";
+import SFIcon from "@/shared/components/SFIcon";
 import SwipeWrapper from "@/features/discover/components/SwipeWrapper";
 import SwipeOverlay from "@/features/discover/components/SwipeOverlay";
+import SuperLikeBurst from "@/features/discover/components/SuperLikeBurst";
 import PurchaseModal from "@/features/discover/components/PurchaseModal";
 import SuperLikePurchaseModal from "@/features/discover/components/SuperLikePurchaseModal";
 import FilterModal from "@/features/discover/components/FilterModal";
+import { CURRENT_KVKK_VERSION } from "@/features/auth/screens/KVKKConsentScreen";
 import WaveFillLogo from "@/shared/components/WaveFillLogo";
 import { colors } from "../../../shared/theme/colors";
 import {
@@ -60,21 +62,25 @@ import {
   useSaveFilters,
   useUndoSwipe,
   useUpdateStatsCache,
-  swipeKeys,
 } from "@/features/discover/swipeQueries";
-import { useQueryClient } from "@tanstack/react-query";
+import { UNLIMITED } from "@/shared/constants/limits";
+import { showInfoToast } from "@/shared/services/toaster";
 import uiBus, { cardExpandAnim } from "@/shared/services/uiBus";
 import { useEvent } from "@/shared/hooks/useEvent";
+import { mark } from "@/shared/debug/startupTiming";
+import { hideSplash } from "@/shared/splash";
+import { markAppShellReady } from "@/shared/bootPhase";
+import { useNavigation, useIsFocused } from "@react-navigation/native";
+import { useRenderCount } from "@/shared/debug/useRenderCount";
+import { useAppSelector } from "@/shared/hooks/redux";
+import { analytics } from "@/shared/services/analytics";
+import { navigationRef } from "@/shared/services/navigationRef";
 
 // Tab bar geometry — TabNavigator ile tutarlı:
 // FLOATING_BAR_HEIGHT (64) + FLOATING_BAR_BOTTOM_GAP (-10) + insets.bottom + extra gap (12)
 const TAB_BAR_HEIGHT = 64;
 const TAB_BAR_BOTTOM_GAP = -10;
 const CARD_BOTTOM_GAP = 12;
-
-// TEST FLAG — true iken SkeletonCard her zaman gösterilir (loading state'i ignore).
-// Production'da false yap.
-const SHOW_SKELETON_DEBUG = true;
 
 // Placeholder block — kendi içinde shimmer animasyonu olan dark rect.
 // borderCurve:continuous + overflow:hidden ile yumuşak köşeli kapsayıcı.
@@ -228,9 +234,13 @@ const SkeletonCard = () => {
   );
 };
 
-// Logo tap'te açılan stats popup — kalan swipe/superlike + reset süresi.
-// Premium ise "Sınırsız" ve premium expiry bilgisi gösterir.
+// Kalan hak sıfırlanana kadar geçecek süreyi okunur metne çevirir
+// (super-like limit toast'ında kullanılıyor).
+// UNLIMITED (-1) = "asla resetlenmez" (free kullanıcının lifetime SuperLike
+// hakkı bitti) — geri sayım GÖSTERİLMEZ, null döner ve çağıran taraf premium
+// mesajına düşer. `sec <= 0` dalı bunu "şu anda yenilenebilir" sanıyordu.
 const formatResetTime = (sec, t) => {
+  if (sec === UNLIMITED) return null;
   if (!sec || sec <= 0) return t('discover.swipe.resetNow');
   const h = Math.floor(sec / 3600);
   const m = Math.floor((sec % 3600) / 60);
@@ -239,177 +249,37 @@ const formatResetTime = (sec, t) => {
   return t('discover.swipe.resetSeconds', { sec });
 };
 
-const StatsRow = ({ Icon, iconColor, label, value, unlimited, subtitle }) => (
-  <View
-    style={{
-      flexDirection: "row",
-      alignItems: "center",
-      paddingVertical: 14,
-      gap: 14,
-    }}
-  >
-    <View
-      style={{
-        width: 40,
-        height: 40,
-        borderRadius: 20,
-        backgroundColor: `${iconColor}22`,
-        borderWidth: 0.5,
-        borderColor: `${iconColor}55`,
-        alignItems: "center",
-        justifyContent: "center",
-      }}
-    >
-      <Icon size={20} color={iconColor} strokeWidth={2} />
-    </View>
-    <View style={{ flex: 1 }}>
-      <Text
-        style={{
-          color: colors.text,
-          fontSize: 14,
-          fontWeight: "600",
-          marginBottom: 2,
-        }}
-      >
-        {label}
-      </Text>
-      {subtitle ? (
-        <Text style={{ color: colors.textSecondary, fontSize: 11, fontWeight: "500" }}>
-          {subtitle}
-        </Text>
-      ) : null}
-    </View>
-    {unlimited ? (
-      <View
-        style={{
-          paddingHorizontal: 10,
-          paddingVertical: 4,
-          borderRadius: 999,
-          borderCurve: "continuous",
-          backgroundColor: "rgba(252,128,61,0.15)",
-          borderWidth: 0.5,
-          borderColor: "rgba(252,128,61,0.5)",
-        }}
-      >
-        <Text style={{ color: colors.primaryWarm, fontSize: 11, fontWeight: "700" }}>
-          ∞
-        </Text>
-      </View>
-    ) : (
-      <Text
-        style={{
-          color: colors.text,
-          fontSize: 22,
-          fontWeight: "700",
-          fontVariant: ["tabular-nums"],
-        }}
-      >
-        {value ?? "—"}
-      </Text>
-    )}
-  </View>
-);
-
-const StatsPopup = ({ stats }) => {
-  const { t } = useTranslation();
-  const isPremium = stats?.isPremium;
-  const swipesRem = stats?.remainingSwipes;
-  const superLikesRem = stats?.superLikesRemaining;
-  const swipeResetSec = stats?.swipeResetInSeconds;
-  const superLikeResetSec = stats?.superLikeResetInSeconds;
-
-  const swipeUnlimited = isPremium || swipesRem === -1;
-  const superLikeUnlimited = superLikesRem === -1;
-
-  return (
-    <BlurView
-      intensity={90}
-      tint="dark"
-      style={{
-        width: "100%",
-        borderRadius: 28,
-        borderCurve: "continuous",
-        overflow: "hidden",
-        borderWidth: 0.5,
-        borderColor: "rgba(255,255,255,0.12)",
-        paddingHorizontal: 18,
-        paddingTop: 6,
-        paddingBottom: 8,
-      }}
-    >
-      {isPremium && (
-        <View
-          style={{
-            flexDirection: "row",
-            alignItems: "center",
-            gap: 8,
-            paddingVertical: 12,
-            borderBottomWidth: 0.5,
-            borderBottomColor: "rgba(255,255,255,0.08)",
-          }}
-        >
-          <Sparkles size={16} color={colors.primaryWarm} strokeWidth={2} />
-          <Text
-            style={{
-              color: colors.primaryWarm,
-              fontSize: 13,
-              fontWeight: "700",
-              letterSpacing: 0.3,
-            }}
-          >
-            {t('discover.premium.badge')}
-          </Text>
-        </View>
-      )}
-
-      <StatsRow
-        Icon={Flame}
-        iconColor={colors.primaryWarm}
-        label={t('discover.stats.swipesLabel')}
-        value={swipesRem}
-        unlimited={swipeUnlimited}
-        subtitle={
-          swipeUnlimited
-            ? t('discover.stats.unlimitedDaily')
-            : swipesRem === 0
-              ? formatResetTime(swipeResetSec, t)
-              : formatResetTime(swipeResetSec, t)
-        }
-      />
-
-      <View
-        style={{
-          height: 0.5,
-          backgroundColor: "rgba(255,255,255,0.08)",
-        }}
-      />
-
-      <StatsRow
-        Icon={Star}
-        iconColor={colors.info}
-        label={t('discover.stats.superLikesLabel')}
-        value={superLikesRem}
-        unlimited={superLikeUnlimited}
-        subtitle={
-          superLikeUnlimited
-            ? t('discover.stats.unlimitedDaily')
-            : superLikesRem === 0
-              ? formatResetTime(superLikeResetSec, t)
-              : formatResetTime(superLikeResetSec, t)
-        }
-      />
-
-    </BlurView>
-  );
-};
-
 // Boş durum kartı — SkeletonCard'la aynı dış yapı (frame + placeholder block'lar) ama
 // shimmer YOK. Ortada Search ikonu + etrafında radar pulse animasyonu (3 ring stagger).
-const RadarRing = ({ delay = 0 }) => {
+// Ekran görünür VE app foreground'da mı. Radar `withRepeat(-1)` ile sonsuz
+// döner; Discover tab'ı preload/lazy sonrası mount kalıyor, dolayısıyla gate
+// olmadan başka sekmedeyken ve app arka plandayken de her frame commit atıyor.
+// Boş deste + polling refetch'in render'larıyla üst üste binince commit storm
+// besliyor (bkz. ShadowTree::commit assert).
+const useRadarActive = () => {
+  const isFocused = useIsFocused();
+  const [appActive, setAppActive] = useState(
+    () => AppState.currentState === "active",
+  );
+  useEffect(() => {
+    const sub = AppState.addEventListener("change", (s) =>
+      setAppActive(s === "active"),
+    );
+    return () => sub.remove();
+  }, []);
+  return isFocused && appActive;
+};
+
+const RadarRing = ({ delay = 0, active = true }) => {
   // Initial = 1 → opacity 0, görünmez. Delay sonrası 0'a snap edip animasyona başla.
   // Aksi halde delay süresince ring scale 0.3 + opacity 1 ile statik nokta gibi durur.
   const progress = useSharedValue(1);
   useEffect(() => {
+    if (!active) {
+      cancelAnimation(progress);
+      progress.value = 1; // görünmez konuma park et
+      return;
+    }
     const t = setTimeout(() => {
       progress.value = 0;
       progress.value = withRepeat(
@@ -418,8 +288,11 @@ const RadarRing = ({ delay = 0 }) => {
         false,
       );
     }, delay);
-    return () => clearTimeout(t);
-  }, [progress, delay]);
+    return () => {
+      clearTimeout(t);
+      cancelAnimation(progress);
+    };
+  }, [progress, delay, active]);
   const style = useAnimatedStyle(() => ({
     transform: [{ scale: 0.3 + progress.value * 1.7 }],
     opacity: 1 - progress.value,
@@ -446,14 +319,21 @@ const RadarRing = ({ delay = 0 }) => {
 // senkron hareket eder, radar her zaman icon'un tam ortasında olur.
 // Parametrik: x = sin(2θ)/2, y = cos(θ). Period 4s, sürekli loop.
 const FigureEightRadar = () => {
+  const active = useRadarActive();
   const t = useSharedValue(0);
   useEffect(() => {
+    if (!active) {
+      cancelAnimation(t);
+      return;
+    }
+    t.value = 0;
     t.value = withRepeat(
       withTiming(1, { duration: 4000, easing: Easing.linear }),
       -1,
       false,
     );
-  }, [t]);
+    return () => cancelAnimation(t);
+  }, [t, active]);
   const style = useAnimatedStyle(() => {
     const AMP = 18;
     const theta = t.value * 2 * Math.PI;
@@ -467,10 +347,10 @@ const FigureEightRadar = () => {
     <Animated.View
       style={[{ alignItems: "center", justifyContent: "center" }, style]}
     >
-      <RadarRing delay={0} />
-      <RadarRing delay={800} />
-      <RadarRing delay={1600} />
-      <Search size={36} color={colors.text} strokeWidth={2} />
+      <RadarRing delay={0} active={active} />
+      <RadarRing delay={800} active={active} />
+      <RadarRing delay={1600} active={active} />
+      <SFIcon name="magnifyingglass" fallback={Search} size={36} color={colors.text} strokeWidth={2} weight="semibold" />
     </Animated.View>
   );
 };
@@ -581,12 +461,14 @@ const DEFAULT_FILTERS = {
   ageRangeMax: 30,
   maxDistance: 50,
   genders: [],
+  interestedIn: [],
   preferredCity: null,
   preferredUniversityDomain: null,
   isPremium: false,
 };
 
 export default function DiscoverScreen() {
+  useRenderCount("DiscoverScreen");
   const { t } = useTranslation();
   const insets = useSafeAreaInsets();
 
@@ -597,55 +479,169 @@ export default function DiscoverScreen() {
   const saveFiltersMutation = useSaveFilters();
   const undoMutation = useUndoSwipe();
   const updateStatsCache = useUpdateStatsCache();
-  const qc = useQueryClient();
 
   // Session boyunca swipe edilen userId'ler. Backend zaten geçmiş swipe'ları
   // filtrelemeli ama (1) race condition: stack boşalıp polling refetch
   // tetiklendiğinde swipe POST'ları henüz commit edilmemiş olabilir,
   // (2) backend filtresinde nadir bug durumlarına karşı defensive bir
-  // safety net. Polling refetch sonrası cache'i bu set'e göre prune
-  // ediyoruz (aşağıdaki polling useEffect içinde).
+  // safety net. Prune aşağıdaki potentialMatches memo'sunda yapılıyor —
+  // veri hangi yoldan gelirse gelsin (ilk fetch / fetchNextPage / polling
+  // refetch) aynı süzgeçten geçsin diye.
   const swipedUserIdsRef = useRef<Set<string>>(new Set());
+
+  // currentIndex burada tanımlı çünkü potentialMatches memo'su ona bağımlı
+  // (aşağıdaki index-güvenli prune). Kardeş swipe state'leri render bölümünün
+  // yanında kaldı.
+  const [currentIndex, setCurrentIndex] = useState(0);
 
   const potentialMatches = useMemo(() => {
     const all = matchesQuery.data?.pages.flatMap((p) => p.profiles) ?? [];
     // Dedupe by userId — backend bazen sayfa kenarlarında aynı user'ı tekrar
     // dönebiliyor; duplicate key error'unu engeller.
+    //
+    // Aynı geçişte swipe edilmişleri de eliyoruz. DİKKAT — sadece HENÜZ
+    // GÖSTERİLMEMİŞ kısımdan (out.length >= currentIndex) atıyoruz:
+    // currentIndex bu diziye bir index, baştan eleman çıkarmak tüm desteyi
+    // kaydırır ve handleRewind'in okuduğu potentialMatches[currentIndex - 1]
+    // yanlış profili gösterirdi. Geçmiş olduğu gibi duruyor, sadece kuyruk
+    // süzülüyor → index kaymaz.
+    //
+    // handleSwipe önce ref'e ekleyip sonra currentIndex'i artırdığı için
+    // yeni swipe edilen kart hep geçmişte kalır, anlık atlama olmaz.
     const seen = new Set();
-    return all.filter((p) => {
-      if (!p?.userId || seen.has(p.userId)) return false;
+    const out: any[] = [];
+    for (const p of all) {
+      if (!p?.userId || seen.has(p.userId)) continue;
       seen.add(p.userId);
-      return true;
-    });
-  }, [matchesQuery.data]);
+      if (
+        out.length >= currentIndex &&
+        swipedUserIdsRef.current.has(p.userId)
+      ) {
+        continue;
+      }
+      out.push(p);
+    }
+    return out;
+  }, [matchesQuery.data, currentIndex]);
   const loading = matchesQuery.isLoading;
   const filters = filtersQuery.data ?? DEFAULT_FILTERS;
   const remainingUndos = statsQuery.data?.remainingUndos ?? null;
+
+  // Startup teşhis mark'ları — first-launch profilini ölçmek ve startup crash'inin
+  // yerini pinlemek için. Çökmeden önceki son [startup] satırı nerede öldüğünü söyler.
+  useEffect(() => {
+    mark("discover-mounted");
+    // Authed landing: splash'i mount'un ilk paint'i geçince gizle. 2×rAF ile
+    // ilk commit boyandıktan sonra açılır — InteractionManager kullanmıyoruz,
+    // bu kod tabanında runAfterInteractions handle'ı stuck kalıp callback'i hiç
+    // çağırmayabiliyor (bkz. MessagesScreen.openChat notu). Safety timeout (App)
+    // yine de her ihtimale karşı 4.5sn'de gizler.
+    let r2: number | undefined;
+    const r1 = requestAnimationFrame(() => {
+      r2 = requestAnimationFrame(() => hideSplash("discover-mount"));
+    });
+    // Deste boşsa / matches fetch'i hata verirse preload zinciri hiç başlamaz ve
+    // kabuk "hazır" işaretlenmez → ertelenmiş overlay'ler sonsuza kilitlenir.
+    // Emniyet kemeri: preload zincirinin normal bitişinden (4.4sn) sonra aç.
+    const shellSafety = setTimeout(
+      () => markAppShellReady("discover-safety"),
+      6500,
+    );
+    return () => {
+      cancelAnimationFrame(r1);
+      if (r2) cancelAnimationFrame(r2);
+      clearTimeout(shellSafety);
+    };
+  }, []);
+  const firstCardsMarked = useRef(false);
+  useEffect(() => {
+    if (!firstCardsMarked.current && potentialMatches.length > 0) {
+      firstCardsMarked.current = true;
+      mark("discover-first-cards");
+    }
+  }, [potentialMatches.length]);
+
+  // ── Hibrit warm-up: Discover hazır olduktan SONRA kardeş sekmeleri arka
+  // planda preload et. lazy:true olduğu için sekmeler boot'ta mount olmaz
+  // (storm yok); ama ilk kez o sekmeye basınca "kararıp gelme" (lazy mount
+  // flash) oluyordu. Discover ilk kartlarını gösterince (settle) Messages/
+  // Profile/Likes'ı staggered preload ediyoruz → görünmeden mount olurlar,
+  // sekmeye basınca hazır gelirler. Stagger: hepsini aynı anda mount edip
+  // mini-storm yaratmamak için aralıklı. Native bottom tabs preload'u destekler
+  // (NativeBottomTabView preloadedRouteKeys). Bir kez.
+  const navigation = useNavigation<any>();
+  const preloadedRef = useRef(false);
+  useEffect(() => {
+    if (preloadedRef.current) return;
+    if (potentialMatches.length === 0) return; // Discover hazır değil
+    if (typeof navigation.preload !== "function") {
+      // Preload API yok → sekmeler hiç mount olmayacak; kabuk bu kadar oturuyor.
+      markAppShellReady("no-preload-api");
+      return;
+    }
+    preloadedRef.current = true;
+    // SIRALI stagger: her tab kendi sessiz penceresinde tek başına mount olsun
+    // (aynı anda mount = mini commit-storm = crash riski). Messages en olası
+    // sonraki hedef + kendi history-prefetch'i olduğu için önce; sonra Likes
+    // (swipe akışının doğal devamı), Profile en sonda — en geç ziyaret edilen.
+    // Aralıklar ~1.4sn: Messages'ın prefetch burst'ü (4×300ms) sönecek kadar var.
+    //
+    // KULLANICIYA YOL VER: kullanıcı stagger bitmeden Chat'e girerse sıradaki
+    // preload ATLANIR — Chat'in ağır mount'u (LegendList bootstrap + MVCP +
+    // klavye) üzerine arka planda tab mount'u bindirmek ShadowTree::commit
+    // (attempts<1024) SIGABRT'ının tetikleyicisiydi (Sentry breadcrumb kanıtlı:
+    // boot'tan hemen sonra Chat'e giriş + preload çakışması). Preload yalnız
+    // optimizasyon: atlanan sekme ilk ziyarette mount olur, işlev kaybı yok.
+    const preloadUnlessInChat = (screen: string) => {
+      if (navigationRef.isReady() && navigationRef.getCurrentRoute()?.name === "Chat") return;
+      navigation.preload(screen);
+    };
+    const timers = [
+      setTimeout(() => preloadUnlessInChat("Messages"), 600),
+      setTimeout(() => preloadUnlessInChat("Likes"), 2000),
+      setTimeout(() => preloadUnlessInChat("Profile"), 3400),
+      // Son sekme de mount olup commit'leri söndükten sonra kabuğu "hazır"
+      // işaretle → ertelenmiş ağır overlay'ler (match modal) ancak buradan
+      // sonra mount olur.
+      setTimeout(() => markAppShellReady("tab-preload-done"), 4400),
+    ];
+    return () => timers.forEach(clearTimeout);
+  }, [potentialMatches.length, navigation]);
 
   // Default'tan sapan filtre sayısı — header filter icon'unun sağ-altındaki
   // rozette gösterilir. Mesafe değişikliği rozet'e dahil edilmez (slider'la sürekli
   // oynanan bir ayar, hep "1" göstermesin) — sadece gender/şehir/üni sayılır.
   const activeFilterCount = useMemo(() => {
     let count = 0;
-    if ((filters.genders || []).length > 0) count++;
+    // interestedIn default'u üç kategori birden (backend Profile.InterestedInFlags
+    // = 7); daraltılmışsa aktif filtre sayılır. Boş liste UI'da engelleniyor.
+    const interestedIn = filters.interestedIn || [];
+    if (interestedIn.length > 0 && interestedIn.length < 3) count++;
     if (filters.preferredCity) count++;
     if (filters.preferredUniversityDomain) count++;
     return count;
   }, [filters]);
 
-  // Lit logosu için fill oranı: Premium veya remainingSwipes===-1 → sınırsız (fill=0).
-  // Free → günlük 30 limit, (30 - remaining) / 30.
-  const DAILY_SWIPE_LIMIT = 30;
+  // Lit logosu için fill oranı: (limit - kalan) / limit.
+  // Premium, limit -1 (sınırsız), kalan -1 veya limit henüz bilinmiyor (null,
+  // eski backend) → oran hesaplamıyoruz, boş göster.
   const swipeFillRatio = useMemo(() => {
     if (statsQuery.data?.isPremium) return 0;
     const rem = statsQuery.data?.remainingSwipes;
+    const limit = statsQuery.data?.dailySwipeLimit;
     if (rem == null || rem < 0) return 0;
-    const used = Math.max(0, DAILY_SWIPE_LIMIT - rem);
-    return Math.min(1, used / DAILY_SWIPE_LIMIT);
-  }, [statsQuery.data?.remainingSwipes, statsQuery.data?.isPremium]);
+    if (limit == null || limit <= 0) return 0;
+    const used = Math.max(0, limit - rem);
+    return Math.min(1, used / limit);
+  }, [
+    statsQuery.data?.remainingSwipes,
+    statsQuery.data?.dailySwipeLimit,
+    statsQuery.data?.isPremium,
+  ]);
 
-  // Pass/Like kota bitince true. Premium veya rem<0 (unlimited/unknown) → false.
-  // Bu durumda swipe blok edilir, kart bounce back + paywall açılır.
+  // Like kotası bitince true. Premium veya rem<0 (unlimited/unknown) → false.
+  // Bu durumda like blok edilir, kart bounce back + paywall açılır.
+  // Pass'i KAPSAMAZ — backend pass'i kotaya saymıyor.
   const swipeQuotaExhausted = useMemo(() => {
     if (statsQuery.data?.isPremium) return false;
     const rem = statsQuery.data?.remainingSwipes;
@@ -653,15 +649,14 @@ export default function DiscoverScreen() {
     return rem === 0;
   }, [statsQuery.data?.remainingSwipes, statsQuery.data?.isPremium]);
 
-  // SuperLike kota bitince true. Pull-up swipe + button ikisini de blokar,
-  // ayrı superLikePaywall açılır.
+  // SuperLike kota bitince true. Pull-up swipe + button ikisini de blokar.
   const superLikeQuotaExhausted = useMemo(() => {
     const rem = statsQuery.data?.superLikesRemaining;
     if (rem == null || rem < 0) return false;
     return rem === 0;
   }, [statsQuery.data?.superLikesRemaining]);
 
-  const [currentIndex, setCurrentIndex] = useState(0);
+  // currentIndex yukarıda, potentialMatches memo'sundan önce tanımlı.
   const [isSwiping, setIsSwiping] = useState(false);
   const [lastSwipeWasPass, setLastSwipeWasPass] = useState(false);
 
@@ -684,26 +679,13 @@ export default function DiscoverScreen() {
         return;
       }
       pollCountRef.current += 1;
+      // Prune burada YAPILMIYOR. Eskiden refetch sonrası cache'i
+      // swipedUserIdsRef'e göre setQueryData ile yeniden yazıyorduk; iki
+      // sorunu vardı: (1) fetchNextPage ile gelen sayfalar bu yoldan hiç
+      // geçmediği için swipe edilmiş kullanıcı tekrar kart olarak çıkabiliyordu,
+      // (2) her tick cache'i yeniden yazıp gereksiz re-render üretiyordu.
+      // Süzgeç artık potentialMatches memo'sunda, tüm veri yollarını kapsıyor.
       await matchesQuery.refetch();
-      // Backend race condition / filter bug'larına karşı safety net:
-      // refetch tüm sayfaları replace ettiği için bu noktada cache'i
-      // session boyunca swipe edilen userId'lere göre prune et. Index
-      // shift sorunu yok çünkü stack zaten boştu — yukarıdaki
-      // useEffect currentIndex'i 0'a sıfırlayacak.
-      if (swipedUserIdsRef.current.size === 0) return;
-      qc.setQueryData(swipeKeys.matches, (oldData: any) => {
-        if (!oldData?.pages) return oldData;
-        return {
-          ...oldData,
-          pages: oldData.pages.map((page: any) => ({
-            ...page,
-            profiles: (page.profiles || []).filter(
-              (p: any) =>
-                p?.userId && !swipedUserIdsRef.current.has(p.userId),
-            ),
-          })),
-        };
-      });
     }, 5000);
     return () => clearInterval(intervalId);
     // eslint-disable-next-line react-hooks/exhaustive-deps
@@ -723,39 +705,53 @@ export default function DiscoverScreen() {
   const [purchaseVisible, setPurchaseVisible] = useState(false);
   const [superLikePurchaseVisible, setSuperLikePurchaseVisible] = useState(false);
 
+  // SuperLike kotası bitti → sheet + durumu açıklayan toast birlikte.
+  // Toast metni tier'a göre değişiyor: premium'da kota rolling 7-gün cycle ile
+  // yenileniyor (satacak bir şey yok, backend de showPaywall:false dönüyor),
+  // free'de lifetime hak bitmiş ve kendiliğinden yenilenmiyor.
+  const showSuperLikeLimitUi = useEvent(() => {
+    const resetText = statsQuery.data?.isPremium
+      ? formatResetTime(statsQuery.data?.superLikeResetInSeconds, t)
+      : null;
+    // resetText null → backend "asla resetlenmez" (-1) dedi; cooldown metni
+    // yerine tükendi metnine düşüyoruz, yoksa yanlış vaat veriyoruz.
+    if (resetText) {
+      showInfoToast({
+        title: t('discover.swipe.superLikeCooldownTitle'),
+        message: t('discover.swipe.superLikeCooldownMessage', {
+          time: resetText,
+        }),
+      });
+    } else {
+      showInfoToast({
+        title: t('discover.swipe.superLikeExhaustedTitle'),
+        message: t('discover.swipe.superLikeExhaustedMessage'),
+      });
+    }
+    setSuperLikePurchaseVisible(true);
+  });
+
   // Backend SwipeResultDto.ShowPaywall=true geldiğinde (Like/Pass kotası dolu) veya
   // GetPotentialMatches response'unda quota=0 geldiğinde useSwipeMutation uiBus'a event
   // emit eder; biz burada subscribe olup paywall'ı açıyoruz.
   useEffect(() => {
-    const unsubSwipe = uiBus.on("swipePaywall", () => {
+    const unsubSwipe = uiBus.on("swipePaywall", (payload) => {
+      // `showPaywall:false` + dolu paywallType = premium kullanıcının cycle'ı
+      // doldu (satacak bir şey yok) → sheet AÇILMAZ, sadece bilgi. Eski
+      // event'lerde alan yoktu, `=== false` ile geriye dönük uyumlu.
+      if (payload?.showPaywall === false) return;
       setPurchaseVisible(true);
     });
     // SuperLike kota bittiğinde SwipeWrapper bu event'i emit eder (pull-up swipe).
     const unsubSuperLike = uiBus.on("superLikePaywall", () => {
-      setSuperLikePurchaseVisible(true);
+      showSuperLikeLimitUi();
     });
     return () => {
       unsubSwipe();
       unsubSuperLike();
     };
-  }, []);
-
-  // Logo tap stats popup — açık/kapalı state. 4s sonra otomatik kapanır.
-  const [statsPopupOpen, setStatsPopupOpen] = useState(false);
-  const statsPopupTimer = useRef(null);
-
-  const handleLogoPress = useCallback(() => {
-    if (statsPopupTimer.current) clearTimeout(statsPopupTimer.current);
-    setStatsPopupOpen(true);
-    statsPopupTimer.current = setTimeout(() => setStatsPopupOpen(false), 4500);
-  }, []);
-
-  useEffect(
-    () => () => {
-      if (statsPopupTimer.current) clearTimeout(statsPopupTimer.current);
-    },
-    [],
-  );
+    // showSuperLikeLimitUi useEvent — referansı stabil, resubscribe gerekmez.
+  }, [showSuperLikeLimitUi]);
 
   const [filterVisible, setFilterVisible] = useState(false);
   const lastSwipePromiseRef = useRef(null);
@@ -767,62 +763,92 @@ export default function DiscoverScreen() {
   const programmaticSwipe = useSharedValue(0);
   const stackEntryX = useSharedValue(0);
 
-  const stackEntryStyle = useAnimatedStyle(() => ({
-    transform: [{ translateX: stackEntryX.value }],
-  }));
-
   // ─── Tutorial (ilk giriş kart swipe demo) ────────────────────────────────
+  // Flag hesap bazlı: aynı cihazda açılan yeni hesap jesti hiç görmemiş bir
+  // kullanıcıdır, tekrar göstermek gerekir.
   const TUTORIAL_TX = 55; // like/pass threshold (85) altında
   const TUTORIAL_SWING_DURATION = 550;
   const TUTORIAL_STORAGE_KEY = "discoverSwipeTutorialShown";
+  const currentUserId = useAppSelector((s) => s.auth.user?.id);
+  // KVKK onay sheet'i navigator'ın üstünde açılıyor; onaylanana kadar Discover
+  // odaklı sayılsa da kart modalın arkasında kalıyor. Tutorial'ı onay sonrasına ertele.
+  const kvkkAccepted = useAppSelector(
+    (s) => s.auth.kvkkVersion === CURRENT_KVKK_VERSION,
+  );
   const tutorialTx = useSharedValue(0);
   const tutorialOpacity = useSharedValue(0);
   const [tutorialActive, setTutorialActive] = useState(false);
+  // "Oynuyor mu" guard'ı + aynı mount'ta tekrar oynamasın diye tek seferlik gate.
+  const tutorialLiveRef = useRef(false);
+  const tutorialDoneRef = useRef(false);
+  const screenFocused = useIsFocused();
 
+  // markSeen=true → demo sonuna kadar oynadı, flag yazılır. Ekran erkenden
+  // arkaplana düşerse yazılmaz; bir sonraki açılışta tekrar oynar.
+  const stopTutorial = useEvent((markSeen: boolean) => {
+    if (!tutorialLiveRef.current) return;
+    tutorialLiveRef.current = false;
+    cancelAnimation(tutorialTx);
+    cancelAnimation(tutorialOpacity);
+    tutorialTx.value = withTiming(0, { duration: 150 });
+    tutorialOpacity.value = withTiming(0, { duration: 150 }, () => {
+      runOnJS(setTutorialActive)(false);
+    });
+    if (markSeen && currentUserId) {
+      appPrefs.set(`${TUTORIAL_STORAGE_KEY}:${currentUserId}`, true);
+    }
+  });
+
+  // Ekran arkaplana/başka route'a düşerse demoyu boşluğa oynatma.
   useEffect(() => {
-    if (loading || potentialMatches.length === 0) return;
-    let cancelled = false;
-    AsyncStorage.getItem(TUTORIAL_STORAGE_KEY).then((shown) => {
-      if (cancelled || shown) return;
-      setTutorialActive(true);
-      tutorialTx.value = 0;
-      tutorialOpacity.value = withDelay(400, withTiming(1, { duration: 250 }));
-      tutorialTx.value = withDelay(
-        600,
-        withSequence(
-          withTiming(TUTORIAL_TX, {
+    if (!screenFocused) stopTutorial(false);
+  }, [screenFocused, stopTutorial]);
+
+  const hasCardToDemo = potentialMatches.length > 0;
+  useEffect(() => {
+    if (loading || !hasCardToDemo || !currentUserId) return;
+    if (!screenFocused || tutorialDoneRef.current) return;
+    // KVKK onay sheet'i kapanmadan tutorial oynatma (kart modalın arkasında kalır).
+    if (!kvkkAccepted) return;
+    // MMKV senkron — eski AsyncStorage.then() + cancelled-guard yarışı kalktı.
+    if (appPrefs.getBoolean(`${TUTORIAL_STORAGE_KEY}:${currentUserId}`)) return;
+    tutorialDoneRef.current = true;
+    tutorialLiveRef.current = true;
+    setTutorialActive(true);
+    tutorialTx.value = 0;
+    tutorialOpacity.value = withDelay(400, withTiming(1, { duration: 250 }));
+    tutorialTx.value = withDelay(
+      600,
+      withSequence(
+        withTiming(TUTORIAL_TX, {
+          duration: TUTORIAL_SWING_DURATION,
+          easing: Easing.inOut(Easing.cubic),
+        }),
+        withTiming(-TUTORIAL_TX, {
+          duration: TUTORIAL_SWING_DURATION * 1.4,
+          easing: Easing.inOut(Easing.cubic),
+        }),
+        withTiming(
+          0,
+          {
             duration: TUTORIAL_SWING_DURATION,
             easing: Easing.inOut(Easing.cubic),
-          }),
-          withTiming(-TUTORIAL_TX, {
-            duration: TUTORIAL_SWING_DURATION * 1.4,
-            easing: Easing.inOut(Easing.cubic),
-          }),
-          withTiming(
-            0,
-            {
-              duration: TUTORIAL_SWING_DURATION,
-              easing: Easing.inOut(Easing.cubic),
-            },
-            () => {
-              tutorialOpacity.value = withTiming(0, { duration: 250 }, () => {
-                runOnJS(setTutorialActive)(false);
-              });
-            },
-          ),
+          },
+          () => {
+            runOnJS(stopTutorial)(true);
+          },
         ),
-      );
-      AsyncStorage.setItem(TUTORIAL_STORAGE_KEY, "1").catch(() => {});
-    });
-    return () => {
-      cancelled = true;
-    };
+      ),
+    );
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [loading, potentialMatches.length === 0]);
+  }, [loading, hasCardToDemo, currentUserId, screenFocused, kvkkAccepted]);
 
-  const tutorialCardStyle = useAnimatedStyle(() => ({
+  // Stack entry (undo / filtre sonrası yandan giriş) + tutorial salınımı tek
+  // animated style'da: iki ayrı style'ın `transform` key'i flatten'da birbirini
+  // ezer, sonuncusu kazanırdı → entry animasyonu hiç görünmezdi.
+  const cardStackStyle = useAnimatedStyle(() => ({
     transform: [
-      { translateX: tutorialTx.value },
+      { translateX: stackEntryX.value + tutorialTx.value },
       {
         rotate: `${interpolate(tutorialTx.value, [-SCREEN_WIDTH, 0, SCREEN_WIDTH], [-15, 0, 15])}deg`,
       },
@@ -855,27 +881,62 @@ export default function DiscoverScreen() {
     paddingBottom: tabBarOccupied * (1 - cardExpandAnim.value),
   }));
 
+  // Expand ederken header içeriği (ikonlar/logo) çekme oranıyla soluklaşır →
+  // header geri çekilip kart öne çıkmış hissi. bg #121212 zaten koyu olduğu
+  // için karartma görünmez; asıl görünür efekt içeriğin fade'i. cardExpandAnim 0→1.
+  const headerFadeStyle = useAnimatedStyle(() => ({
+    opacity: 1 - cardExpandAnim.value * 0.6,
+  }));
+
+  // Expanded'ken header ikonları (rewind/filtre) çalışmasın — sadece kart mode'da
+  // aktif. cardExpandAnim'i JS boolean'a çevirip ikon satırının touch'unu kapatırız.
+  const [headerLocked, setHeaderLocked] = useState(false);
+  useAnimatedReaction(
+    () => cardExpandAnim.value > 0.5,
+    (v, prev) => {
+      if (v !== prev) runOnJS(setHeaderLocked)(v);
+    },
+  );
+
   // Pre-fetch sonraki sayfa: kart stack 5'in altına düşünce.
+  //
+  // DİKKAT — bu effect kendi kendini tetikleyebiliyor: fetchNextPage çağırınca
+  // isFetching false→true→false gidiyor, effect iki kez daha çalışıyor. Deste
+  // boşken `remainingCards <= 5` kalıcı olarak true olduğu için, gelen sayfa
+  // yeni profil eklemezse (boş sayfa ya da dedupe'a takılan tekrar profiller)
+  // sonsuz fetch döngüsü oluşuyordu → pages dizisi şişer, her yanıtta
+  // flatMap+dedupe tüm birikmiş sayfaları baştan tarar, ekran kilitlenir.
+  //
+  // Guard: son denememizi hangi uzunlukta yaptığımızı tutuyoruz. Liste o
+  // denemeden beri hiç büyümediyse backend bize verecek yeni profil yok
+  // demektir; tekrar istemiyoruz. Liste değişince (polling refetch yeni
+  // profil getirdiğinde) guard kendiliğinden açılıyor.
+  const lastPrefetchLenRef = useRef(-1);
   useEffect(() => {
     const remainingCards = potentialMatches.length - currentIndex;
-    if (
-      remainingCards <= 5 &&
-      matchesQuery.hasNextPage &&
-      !matchesQuery.isFetchingNextPage
-    ) {
-      matchesQuery.fetchNextPage();
+    if (remainingCards > 5) {
+      lastPrefetchLenRef.current = -1;
+      return;
     }
+    // isFetchingNextPage değil isFetching: polling refetch uçarken araya
+    // fetchNextPage sokmak sayfaları çakıştırıyor.
+    if (matchesQuery.isFetching) return;
+    if (!matchesQuery.hasNextPage) return;
+    if (lastPrefetchLenRef.current === potentialMatches.length) return;
+    lastPrefetchLenRef.current = potentialMatches.length;
+    matchesQuery.fetchNextPage();
   }, [
     currentIndex,
     potentialMatches.length,
     matchesQuery.hasNextPage,
-    matchesQuery.isFetchingNextPage,
+    matchesQuery.isFetching,
     matchesQuery.fetchNextPage,
   ]);
 
   const handleSwipe = useEvent((direction, userId) => {
     if (userId) swipedUserIdsRef.current.add(userId);
     setCurrentIndex((i) => i + 1);
+    analytics.capture('swipe', { direction });
     const isPass = direction === "left";
     setLastSwipeWasPass(isPass);
     lastSwipePromiseRef.current = swipeMutation.mutateAsync({
@@ -957,12 +1018,10 @@ export default function DiscoverScreen() {
   // her setIsSwiping / setCurrentIndex, useCallback deps'i büyütüp SwipeWrapper
   // React.memo compareFn'i (onPass === next.onPass) boşa çıkarır ve iki kart
   // birden re-render olur.
+  // Pass günlük kotaya dahil değil (backend DailyLimitBehavior yalnız
+  // Like/SuperLike sayıyor) — kota dolsa bile blok yok, paywall yok.
   const handlePassButton = useEvent(() => {
     if (isSwiping || potentialMatches.length <= currentIndex) return;
-    if (swipeQuotaExhausted) {
-      setPurchaseVisible(true);
-      return;
-    }
     setIsSwiping(true);
     programmaticSwipe.value = 1;
     setTimeout(() => setIsSwiping(false), 300);
@@ -982,7 +1041,7 @@ export default function DiscoverScreen() {
   const handleSuperLikeButton = useEvent(() => {
     if (isSwiping || potentialMatches.length <= currentIndex) return;
     if (superLikeQuotaExhausted) {
-      requestAnimationFrame(() => setSuperLikePurchaseVisible(true));
+      requestAnimationFrame(showSuperLikeLimitUi);
       return;
     }
     setIsSwiping(true);
@@ -1021,14 +1080,20 @@ export default function DiscoverScreen() {
   return (
     <GestureHandlerRootView style={{ flex: 1, backgroundColor: colors.bg }}>
       {/* Header */}
-      <View style={{ backgroundColor: colors.bg, paddingTop: insets.top }}>
-        <View
-          style={{
-            height: 50,
-            paddingHorizontal: 21,
-            flexDirection: "row",
-            alignItems: "center",
-          }}
+      <View
+        style={{ backgroundColor: colors.bg, paddingTop: insets.top }}
+      >
+        <Animated.View
+          pointerEvents={headerLocked ? "none" : "auto"}
+          style={[
+            {
+              height: 50,
+              paddingHorizontal: 21,
+              flexDirection: "row",
+              alignItems: "center",
+            },
+            headerFadeStyle,
+          ]}
         >
           {/* Rewind */}
           <View style={{ flex: 1, alignItems: "flex-start" }}>
@@ -1038,7 +1103,7 @@ export default function DiscoverScreen() {
               style={{ opacity: lastSwipeWasPass ? 1 : 0.3 }}
             >
               <View style={{ position: "relative" }} pointerEvents="none">
-                <RotateCcw size={24} color={colors.text} strokeWidth={2} />
+                <SFIcon name="arrow.counterclockwise" fallback={RotateCcw} size={24} color={colors.text} strokeWidth={2} weight="semibold" />
                 {remainingUndos !== null && (
                   <View
                     style={{
@@ -1059,6 +1124,9 @@ export default function DiscoverScreen() {
                         color: colors.text,
                         fontSize: 15,
                         fontWeight: "700",
+                        lineHeight: 16,
+                        textAlign: "center",
+                        includeFontPadding: false,
                       }}
                     >
                       {remainingUndos === -1 ? "∞" : remainingUndos}
@@ -1069,16 +1137,10 @@ export default function DiscoverScreen() {
             </TouchableOpacity>
           </View>
 
-          {/* Logo — tap: hak varsa refresh + bildirim, yoksa reset süresi bildirimi */}
-          <TouchableOpacity
-            onPress={handleLogoPress}
-            activeOpacity={0.7}
-            hitSlop={10}
-          >
-            <View pointerEvents="none">
-              <WaveFillLogo fillRatio={swipeFillRatio} />
-            </View>
-          </TouchableOpacity>
+          {/* Logo — dekoratif, tap davranışı yok */}
+          <View pointerEvents="none">
+            <WaveFillLogo fillRatio={swipeFillRatio} />
+          </View>
 
           {/* Filter */}
           <View style={{ flex: 1, alignItems: "flex-end" }}>
@@ -1087,7 +1149,7 @@ export default function DiscoverScreen() {
               activeOpacity={0.7}
             >
               <View style={{ position: "relative" }} pointerEvents="none">
-                <SlidersHorizontal size={24} color={colors.text} strokeWidth={2} />
+                <SFIcon name="slider.horizontal.3" fallback={SlidersHorizontal} size={24} color={colors.text} strokeWidth={2} weight="semibold" />
                 {activeFilterCount > 0 && (
                   <View
                     style={{
@@ -1108,6 +1170,9 @@ export default function DiscoverScreen() {
                         color: colors.text,
                         fontSize: 15,
                         fontWeight: "700",
+                        lineHeight: 16,
+                        textAlign: "center",
+                        includeFontPadding: false,
                       }}
                     >
                       {activeFilterCount}
@@ -1117,37 +1182,7 @@ export default function DiscoverScreen() {
               </View>
             </TouchableOpacity>
           </View>
-        </View>
-        {/* Logo tap stats popup — kalan swipe + super-like + reset timer'ları */}
-        {statsPopupOpen && (
-          <>
-            {/* Dışarı tıklayınca kapat */}
-            <TouchableOpacity
-              activeOpacity={1}
-              onPress={() => setStatsPopupOpen(false)}
-              style={{
-                position: "absolute",
-                top: 0,
-                left: 0,
-                right: 0,
-                bottom: -1000,
-                zIndex: 99,
-              }}
-            />
-            <View
-              style={{
-                position: "absolute",
-                top: insets.top + 56,
-                left: 16,
-                right: 16,
-                alignItems: "center",
-                zIndex: 100,
-              }}
-            >
-              <StatsPopup stats={statsQuery.data} />
-            </View>
-          </>
-        )}
+        </Animated.View>
       </View>
 
       {/* Cards */}
@@ -1157,11 +1192,7 @@ export default function DiscoverScreen() {
         ) : potentialMatches.length > currentIndex ? (
           <Animated.View
             pointerEvents={tutorialActive ? "none" : "auto"}
-            style={[
-              { flex: 1, position: "relative" },
-              stackEntryStyle,
-              tutorialCardStyle,
-            ]}
+            style={[{ flex: 1, position: "relative" }, cardStackStyle]}
           >
             {renderStack()}
             <SwipeOverlay dragX={overlayDragX} opacity={overlayOpacity} />
@@ -1170,6 +1201,11 @@ export default function DiscoverScreen() {
           <EmptyDiscoverCard />
         )}
       </Animated.View>
+
+      {/* Super-like kalp patlaması — header ve kartın ÜSTÜnde, tüm ekranı
+          kaplayan overlay; kalpler kartın üstünden header'ı geçip telefonun
+          tepesinden çıkarak kaybolur. */}
+      <SuperLikeBurst />
 
       <FilterModal
         visible={filterVisible}
@@ -1192,33 +1228,37 @@ export default function DiscoverScreen() {
         }}
       />
 
-      {tutorialActive && (
+      {/* Ekran içi absolute overlay tab bar'ı kapatamıyor — floating bar
+          navigator tarafında, ekranın üstünde ayrı render ediliyor. Kendi
+          penceresi olan RN Modal demo bitene kadar tab dokunuşlarını da yutar. */}
+      <Modal
+        visible={tutorialActive}
+        transparent
+        statusBarTranslucent
+        animationType="none"
+        onRequestClose={() => {}}
+      >
         <Animated.View
           style={[
             {
-              position: "absolute",
-              top: 0,
-              left: 0,
-              right: 0,
-              bottom: 0,
+              flex: 1,
               backgroundColor: "rgba(0,0,0,0.45)",
               flexDirection: "row",
               alignItems: "center",
               justifyContent: "space-between",
               paddingHorizontal: 24,
-              zIndex: 100,
             },
             tutorialOverlayStyle,
           ]}
         >
           <Animated.View style={tutorialLeftArrowStyle}>
-            <ArrowLeft size={64} color={colors.text} strokeWidth={1.5} />
+            <SFIcon name="arrow.left" fallback={ArrowLeft} size={64} color={colors.text} strokeWidth={1.5} />
           </Animated.View>
           <Animated.View style={tutorialRightArrowStyle}>
-            <ArrowRight size={64} color={colors.text} strokeWidth={1.5} />
+            <SFIcon name="arrow.right" fallback={ArrowRight} size={64} color={colors.text} strokeWidth={1.5} />
           </Animated.View>
         </Animated.View>
-      )}
+      </Modal>
     </GestureHandlerRootView>
   );
 }

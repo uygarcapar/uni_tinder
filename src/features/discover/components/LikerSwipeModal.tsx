@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 import { View, Modal, Dimensions } from "react-native";
 import {
   BottomSheetBackdrop,
@@ -15,15 +15,19 @@ import Animated, {
   withDelay,
   runOnJS,
   interpolate,
+  cancelAnimation,
   Easing,
 } from "react-native-reanimated";
 import * as Haptics from "expo-haptics";
-import AsyncStorage from "@react-native-async-storage/async-storage";
+import { appPrefs } from "../../../shared/utils/appPrefs";
 import { ArrowLeft, ArrowRight } from "lucide-react-native";
+import SFIcon from "@/shared/components/SFIcon";
 import AppBottomSheet from "@/shared/components/AppBottomSheet";
 import SwipeCard from "@/features/discover/components/SwipeCard";
 import SwipeOverlay from "@/features/discover/components/SwipeOverlay";
 import { useSwipeMutation } from "@/features/discover/swipeQueries";
+import { useAppSelector } from "@/shared/hooks/redux";
+import { useEvent } from "@/shared/hooks/useEvent";
 import { colors } from "../../../shared/theme/colors";
 
 const { width, height: SCREEN_HEIGHT } = Dimensions.get("window");
@@ -53,11 +57,30 @@ export default function LikerSwipeModal({ visible, profile, onClose, onSwipe }: 
   const overlayOpacity = useSharedValue(1);
   const hasVibrated = useSharedValue(false);
 
+  // Tutorial flag'i hesap bazlı: aynı cihazda açılan yeni hesap jesti hiç
+  // görmemiş bir kullanıcıdır, tekrar göstermek gerekir.
+  const currentUserId = useAppSelector((s) => s.auth.user?.id);
   const tutorialOpacity = useSharedValue(0);
   const [tutorialActive, setTutorialActive] = useState(false);
+  const tutorialLiveRef = useRef(false);
+
+  // markSeen=true → demo sonuna kadar oynadı, flag yazılır. Sheet erkenden
+  // kapanırsa yazılmaz; kullanıcı jesti görmemiş sayılır, tekrar oynar.
+  const stopTutorial = useEvent((markSeen: boolean) => {
+    if (!tutorialLiveRef.current) return;
+    tutorialLiveRef.current = false;
+    cancelAnimation(tutorialOpacity);
+    tutorialOpacity.value = withTiming(0, { duration: 150 }, () => {
+      runOnJS(setTutorialActive)(false);
+    });
+    if (markSeen && currentUserId) {
+      appPrefs.set(`${TUTORIAL_STORAGE_KEY}:${currentUserId}`, true);
+    }
+  });
 
   useEffect(() => {
     if (!visible) {
+      stopTutorial(false);
       tx.value = 0;
       overlayDragX.value = 0;
       overlayOpacity.value = 1;
@@ -67,40 +90,43 @@ export default function LikerSwipeModal({ visible, profile, onClose, onSwipe }: 
       return;
     }
 
-    let cancelled = false;
-    AsyncStorage.getItem(TUTORIAL_STORAGE_KEY).then((shown) => {
-      if (cancelled || shown) return;
-      setTutorialActive(true);
-      // Sheet slide-up animasyonu bitince başlat.
-      tutorialOpacity.value = withDelay(400, withTiming(1, { duration: 250 }));
-      tx.value = withDelay(
-        600,
-        withSequence(
-          withTiming(TUTORIAL_TX, {
-            duration: TUTORIAL_SWING_DURATION,
-            easing: Easing.inOut(Easing.cubic),
-          }),
-          withTiming(-TUTORIAL_TX, {
-            duration: TUTORIAL_SWING_DURATION * 1.4,
-            easing: Easing.inOut(Easing.cubic),
-          }),
-          withTiming(
-            0,
-            { duration: TUTORIAL_SWING_DURATION, easing: Easing.inOut(Easing.cubic) },
-            () => {
-              tutorialOpacity.value = withTiming(0, { duration: 250 }, () => {
-                runOnJS(setTutorialActive)(false);
-              });
-            },
-          ),
+    if (!currentUserId) return;
+    // MMKV senkron — eski AsyncStorage.then() + cancelled-guard yarışı kalktı.
+    if (appPrefs.getBoolean(`${TUTORIAL_STORAGE_KEY}:${currentUserId}`)) return;
+    tutorialLiveRef.current = true;
+    setTutorialActive(true);
+    // Sheet slide-up animasyonu bitince başlat.
+    tutorialOpacity.value = withDelay(400, withTiming(1, { duration: 250 }));
+    tx.value = withDelay(
+      600,
+      withSequence(
+        withTiming(TUTORIAL_TX, {
+          duration: TUTORIAL_SWING_DURATION,
+          easing: Easing.inOut(Easing.cubic),
+        }),
+        withTiming(-TUTORIAL_TX, {
+          duration: TUTORIAL_SWING_DURATION * 1.4,
+          easing: Easing.inOut(Easing.cubic),
+        }),
+        withTiming(
+          0,
+          { duration: TUTORIAL_SWING_DURATION, easing: Easing.inOut(Easing.cubic) },
+          () => {
+            runOnJS(stopTutorial)(true);
+          },
         ),
-      );
-      AsyncStorage.setItem(TUTORIAL_STORAGE_KEY, "1").catch(() => {});
-    });
-    return () => {
-      cancelled = true;
-    };
-  }, [visible, tx, overlayDragX, overlayOpacity, hasVibrated, tutorialOpacity]);
+      ),
+    );
+  }, [
+    visible,
+    currentUserId,
+    tx,
+    overlayDragX,
+    overlayOpacity,
+    hasVibrated,
+    tutorialOpacity,
+    stopTutorial,
+  ]);
 
   const handleSwipe = (direction: "left" | "right") => {
     const userId = profile?.userId;
@@ -123,6 +149,7 @@ export default function LikerSwipeModal({ visible, profile, onClose, onSwipe }: 
   };
 
   const horizontalPan = Gesture.Pan()
+    // Demo `tx`'i sürüyor; aynı anda kullanıcı da sürükleyemesin.
     .enabled(!tutorialActive)
     .activeOffsetX([-10, 10])
     .failOffsetY([-15, 15])
@@ -182,7 +209,7 @@ export default function LikerSwipeModal({ visible, profile, onClose, onSwipe }: 
   const animatedStyle = useAnimatedStyle(() => {
     const rotate = interpolate(tx.value, [-width, 0, width], [-15, 0, 15]);
     return {
-      transform: [{ translateX: tx.value }, { rotate: `${rotate}deg` }],
+      transform: [{ translateX: tx.value }, { rotate: `${rotate}deg` }] as any,
     };
   });
 
@@ -228,6 +255,11 @@ export default function LikerSwipeModal({ visible, profile, onClose, onSwipe }: 
         enablePanDownToClose={!tutorialActive}
         enableContentPanningGesture={!tutorialActive}
         enableHandlePanningGesture={!tutorialActive}
+        // Sheet'in kendi pan'i yatay hareketi kapmasın: 10px yatay geçince
+        // fail eder, kartın horizontalPan'i aktive olur. Dikeyde ise 10px'ten
+        // sonra sheet devralır → pan-down-to-close korunur.
+        activeOffsetY={[-10, 10]}
+        failOffsetX={[-10, 10]}
       >
         <View style={{ flex: 1, position: "relative" }}>
           {profile && (
@@ -236,6 +268,11 @@ export default function LikerSwipeModal({ visible, profile, onClose, onSwipe }: 
                 pointerEvents={tutorialActive ? "none" : "auto"}
                 style={[{ flex: 1 }, animatedStyle]}
               >
+                {/* Scroll'u BottomSheetScrollView yapar — sheet'in scrollable
+                    koordinasyonu buna bağlı: içerik en üstteyken aşağı çekince
+                    sheet sürüklenip kapanır. SwipeCard'ın kendi ScrollView'ı
+                    (expanded={false}) kapalı; ikisi birden açık olsa içteki
+                    native scroll dikey jesti yutup kapatmayı bloke ediyordu. */}
                 <BottomSheetScrollView
                   style={{ flex: 1 }}
                   contentContainerStyle={{ paddingBottom: 0 }}
@@ -247,25 +284,32 @@ export default function LikerSwipeModal({ visible, profile, onClose, onSwipe }: 
                   <SwipeCard
                     profile={profile}
                     previewMode
-                    expanded
+                    expanded={false}
                     hideChevron
                     hideSuperLike
                     onPass={() => triggerAction("left")}
                     onLike={() => triggerAction("right")}
                   />
                 </BottomSheetScrollView>
-                <SwipeOverlay dragX={overlayDragX} opacity={overlayOpacity} />
               </Animated.View>
             </GestureDetector>
           )}
+
+          {/* Overlay kartın DIŞINDA — DiscoverScreen'deki gibi. İçeride olsaydı
+              kart translate'i ile overlay'in kendi translate'i toplanıp tik/çarpı
+              ekran dışına çıkıyordu. */}
+          <SwipeOverlay dragX={overlayDragX} opacity={overlayOpacity} />
         </View>
       </AppBottomSheet>
 
+      {/* Ayrı bir RN Modal: sheet'in de üstünde kendi penceresi olduğu için
+          demo bitene kadar tüm dokunmaları yutar. */}
       <Modal
         visible={visible && tutorialActive}
         transparent
         statusBarTranslucent
         animationType="none"
+        onRequestClose={() => {}}
       >
         <Animated.View
           style={[
@@ -281,10 +325,22 @@ export default function LikerSwipeModal({ visible, profile, onClose, onSwipe }: 
           ]}
         >
           <Animated.View style={leftArrowStyle}>
-            <ArrowLeft size={64} color={colors.text} strokeWidth={1.5} />
+            <SFIcon
+              name="arrow.left"
+              fallback={ArrowLeft}
+              size={64}
+              color={colors.text}
+              strokeWidth={1.5}
+            />
           </Animated.View>
           <Animated.View style={rightArrowStyle}>
-            <ArrowRight size={64} color={colors.text} strokeWidth={1.5} />
+            <SFIcon
+              name="arrow.right"
+              fallback={ArrowRight}
+              size={64}
+              color={colors.text}
+              strokeWidth={1.5}
+            />
           </Animated.View>
         </Animated.View>
       </Modal>

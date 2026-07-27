@@ -45,7 +45,14 @@ function SelectedBadge({ active }: any) {
         opacity: progress,
       }}
     >
-      <ShoppingBag size={15} color={colors.text} strokeWidth={2} />
+      <SFIcon
+        name="bag.fill"
+        fallback={ShoppingBag}
+        size={15}
+        color={colors.text}
+        strokeWidth={2}
+        weight="semibold"
+      />
       <Text
         style={{
           color: colors.text,
@@ -124,6 +131,7 @@ import {
 } from "lucide-react-native";
 import { LinearGradient } from "expo-linear-gradient";
 import { BlurView } from "expo-blur";
+import SFIcon from "@/shared/components/SFIcon";
 import AnimatedPressable from "@/shared/components/AnimatedPressable";
 import { useAppDispatch, useAppSelector } from "@/shared/hooks/redux";
 import {
@@ -132,7 +140,6 @@ import {
   restorePurchases,
 } from "@/features/profile/subscriptionService";
 import {
-  fetchSubscriptionStatus,
   selectIsPremium,
   setPremium,
   syncSubscriptionWithRetry,
@@ -141,17 +148,9 @@ import api from "@/shared/services/api";
 import { API_ENDPOINTS } from "@/shared/constants/api";
 import { useQueryClient } from "@tanstack/react-query";
 import { swipeKeys } from "@/features/discover/swipeQueries";
-import { colors } from "../../../shared/theme/colors";
-
-// RC offering field'ları period bazında. Backend /plans endpoint'i ile bu key'leri
-// eşleştiriyoruz — RC offering bu key'leri otomatik üretmez ama RC default convention
-// monthly/annual/weekly. availablePackages içinde de bulunabilir, fallback olarak
-// productId pattern üzerinden eşleştiriyoruz.
-const PERIOD_LABELS = {
-  weekly: { short: "Haftalık", per: "hafta" },
-  monthly: { short: "Aylık", per: "ay" },
-  yearly: { short: "Yıllık", per: "yıl" },
-};
+import { UNLIMITED } from "@/shared/constants/limits";
+import { colors, gradients } from "../../../shared/theme/colors";
+import { analytics } from "@/shared/services/analytics";
 
 // productId convention (backend SubscriptionProductOptions ile eşleşmeli).
 const PRODUCT_ID_PERIOD_HINTS = [
@@ -204,19 +203,34 @@ function extractPlansFromOffering(offering) {
 // Backend metadata (displayName / highlight / sortOrder) ile RC paketlerini birleştir.
 // Sabit sıralama: yearly → monthly → weekly.
 const PERIOD_ORDER = { yearly: 0, monthly: 1, weekly: 2 };
-function mergePlansWithBackend(rcPlans, backendPlans) {
+function mergePlansWithBackend(rcPlans, backendPlans, t) {
   const backendByPeriod = new Map();
+  const backendProductIds = new Set();
   for (const b of backendPlans ?? []) {
     if (b.period) backendByPeriod.set(b.period, b);
+    if (b.productId) backendProductIds.add(b.productId);
   }
 
   return rcPlans
+    // Server katalog dışı ürünü GÖSTERME: RC offering'de olup `/plans`'ta
+    // olmayan bir product satın alınabilir görünüyordu (ör. RC'de test/eski
+    // ürün açık kaldığında). Backend katalog boş dönerse (endpoint hatası)
+    // filtreyi uygulamıyoruz — aksi halde paywall tamamen boşalırdı.
+    .filter((rc) =>
+      backendProductIds.size === 0 ||
+      !rc.productId ||
+      backendProductIds.has(rc.productId),
+    )
     .map((rc) => {
       const meta = backendByPeriod.get(rc.period);
+      // Backend displayName vermezse i18n'e düş — eskiden burada gömülü
+      // Türkçe label'lar vardı, dil değişse bile TR sızıyordu.
+      const fallbackName = t(`purchase.periods.${rc.period}Short`, {
+        defaultValue: rc.period,
+      });
       return {
         ...rc,
-        displayName:
-          meta?.displayName ?? PERIOD_LABELS[rc.period]?.short ?? rc.period,
+        displayName: meta?.displayName ?? fallbackName,
         highlight: meta?.highlight ?? null,
         sortOrder: meta?.sortOrder ?? 99,
       };
@@ -249,11 +263,24 @@ function computeSavings(plan, plans) {
 // "Aylık Premium" — period word ile premium'u ayır.
 function renderPlanName(
   name,
-  { primarySize = 44, secondaryColor = "#000" } = {},
+  {
+    primarySize = 44,
+    secondaryColor = "#000",
+    periodLabel,
+  }: { primarySize?: number; secondaryColor?: string; periodLabel?: string } = {},
 ) {
-  if (!name) return null;
-  const m = name.match(/premium/i);
-  if (!m) {
+  // Görünen periyot kelimesi: önce i18n'den gelen periodLabel (dil-güvenli).
+  // Backend displayName'i tek dilli geldiği için ondan ayrıştırma yapmıyoruz —
+  // aksi halde "Aylık Premium" gibi bir label İngilizce'de bile TR sızdırıyordu.
+  const m = name?.match(/premium/i);
+  const parsed = m
+    ? name.slice(0, m.index).trim() || name.slice(m.index + m[0].length).trim()
+    : "";
+  const periodText = periodLabel ?? parsed;
+  // periodLabel yoksa ve "premium" da eşleşmiyorsa: elimizde yalnızca ham
+  // backend adı var → onu göster (legacy fallback).
+  if (!periodLabel && !m) {
+    if (!name) return null;
     return (
       <Text
         style={{
@@ -266,9 +293,6 @@ function renderPlanName(
       </Text>
     );
   }
-  const before = name.slice(0, m.index).trim();
-  const after = name.slice(m.index + m[0].length).trim();
-  const periodText = before || after;
   return (
     <View style={{ flexDirection: "row", alignItems: "flex-end" }}>
       <Text
@@ -307,24 +331,62 @@ export default function PurchaseModal({ visible, onClose, onSuccess }: any) {
 
   // Premium satın alma/restore sonrası swipe stats cache'ini güncelle —
   // backend sınırsız için -1 dönüyor. Local cache eski limitli değerlerle
-  // kaldığı için UI swipe sayacını "kalan" gösteriyor. setQueryData ile
-  // anında remainingSwipes=-1, remainingUndos=-1, isPremium=true yap +
-  // arka planda invalidate et (backend sync olduktan sonra fresh data
-  // gelir).
+  // kaldığı için UI swipe sayacını "kalan" gösteriyor.
+  //
+  // Burada invalidate YOK: RC purchase bittiğinde webhook henüz inmemiş
+  // oluyor, hemen atılan refetch backend'den free stats çekip bu patch'i
+  // eziyordu (stats staleTime: Infinity olduğu için de bir daha düzelmiyordu).
+  // Gerçek refetch `sync` başarılı döndüğünde yapılıyor → refetchPremiumScoped.
   const promoteSwipeStatsToPremium = () => {
     queryClient.setQueryData(swipeKeys.stats, (prev: any) => {
       if (!prev) return prev;
       return {
         ...prev,
         isPremium: true,
-        remainingSwipes: -1,
-        remainingUndos: -1,
-        superLikesRemaining:
-          prev.superLikesRemaining === 0 ? -1 : prev.superLikesRemaining,
+        remainingSwipes: UNLIMITED,
+        remainingUndos: UNLIMITED,
+        dailySwipeLimit: UNLIMITED,
+        dailyUndoLimit: UNLIMITED,
+        // SuperLike premium'da SINIRSIZ DEĞİL (weeklySuperLikeLimit / 7-gün
+        // rolling), ama premium tavanını burada BİLMİYORUZ: cache'deki
+        // weeklySuperLikeLimit free tier'ın değeri (lifetime kota), premium
+        // değeri ancak sync sonrası fetch'te geliyor.
+        //
+        // Bu yüzden uydurmak yerine "henüz bilinmiyor" diyoruz: null.
+        // superLikeQuotaExhausted null'da false dönüyor → premium alan
+        // kullanıcıya yanlışlıkla "hakkın bitti" sheet'i açılmıyor; SwipeCard
+        // rozeti de sayı gelene kadar gizleniyor. Doğru değer sync'ten
+        // saniyeler sonra refetchPremiumScoped ile geliyor.
+        superLikesRemaining: null,
+        weeklySuperLikeLimit: null,
       };
     });
-    queryClient.invalidateQueries({ queryKey: swipeKeys.stats });
   };
+
+  // Sync gerçekten oturduktan sonra premium'a bağlı tüm server state'i tazele.
+  // Backend premium flip'inde deck cache'ini invalidate ediyor; filtreler de
+  // artık premium kurallarıyla dönüyor.
+  const refetchPremiumScoped = useCallback(() => {
+    queryClient.invalidateQueries({ queryKey: swipeKeys.stats });
+    queryClient.invalidateQueries({ queryKey: swipeKeys.filters });
+    queryClient.invalidateQueries({ queryKey: swipeKeys.matches });
+  }, [queryClient]);
+
+  // syncSubscriptionWithRetry fulfilled olsa bile `synced: false` dönebilir
+  // (webhook hâlâ inmedi ve RC REST fallback da bulamadı). O durumda invalidate
+  // etmiyoruz — optimistic patch korunsun, bir sonraki foreground/mount fetch'i
+  // düzeltir. Slice `syncPending`i set eder, ProfileScreen "aktivasyon sürüyor"
+  // kartını gösterir.
+  //
+  // Backoff ve `reason` yorumu slice'ta (RC negative cache 10sn + 60/dk limit).
+  const syncThenRefetch = useCallback(() => {
+    dispatch(syncSubscriptionWithRetry())
+      .unwrap()
+      .then((res: any) => {
+        if (res?.synced) refetchPremiumScoped();
+      })
+      .catch(() => {});
+  }, [dispatch, refetchPremiumScoped]);
   const [offering, setOffering] = useState(null);
   const [loadingOffering, setLoadingOffering] = useState(true);
   const [backendPlans, setBackendPlans] = useState(null);
@@ -340,7 +402,15 @@ export default function PurchaseModal({ visible, onClose, onSuccess }: any) {
     onClose?.();
   }, [onClose]);
 
+  // Offerings + /plans YALNIZ modal ilk açıldığında çekilir (bir kez). ÖNCESİ:
+  // mount'ta koşulsuz çekiyordu → her ekranda gömülü gizli PurchaseModal (Discover,
+  // Likes, Profile) cold-boot'ta plans + RC getOfferings-retry ateşliyordu
+  // (subscription/plans ×3 selinin kaynağı). visible gate + fetchedRef ile boot'ta
+  // hiç atmaz, açılınca tek sefer çeker.
+  const offeringsFetchedRef = useRef(false);
   useEffect(() => {
+    if (!visible || offeringsFetchedRef.current) return;
+    offeringsFetchedRef.current = true;
     let cancelled = false;
     // RC SDK cold start'ta getOfferings null dönebiliyor (configure → network
     // round-trip). Retry: null gelirse 600ms ara ile 3 kez daha dene.
@@ -370,7 +440,7 @@ export default function PurchaseModal({ visible, onClose, onSuccess }: any) {
     return () => {
       cancelled = true;
     };
-  }, []);
+  }, [visible]);
 
   // RC + backend birleştirilmiş plan listesi
   const plans = useMemo(
@@ -378,8 +448,9 @@ export default function PurchaseModal({ visible, onClose, onSuccess }: any) {
       mergePlansWithBackend(
         extractPlansFromOffering(offering),
         backendPlans ?? [],
+        t,
       ),
-    [offering, backendPlans],
+    [offering, backendPlans, t],
   );
 
   // İlk render'da default seçim — highlight'lı plan (varsa) yoksa ilk plan
@@ -452,14 +523,16 @@ export default function PurchaseModal({ visible, onClose, onSuccess }: any) {
       return;
     }
     setPurchasing(true);
+    analytics.capture('purchase_initiated', { productId: pkg?.product?.identifier });
     try {
-      const isPremium = await purchasePackage(pkg);
-      if (isPremium) {
-        dispatch(setPremium({ isPremium: true }));
+      const purchased = await purchasePackage(pkg);
+      if (purchased) {
+        analytics.capture('purchase_completed', { productId: pkg?.product?.identifier });
+        dispatch(setPremium({ isPremium: true, optimistic: true }));
         promoteSwipeStatsToPremium();
         handleClose();
         onSuccess?.();
-        dispatch(syncSubscriptionWithRetry({ maxAttempts: 4, delayMs: 1500 }));
+        syncThenRefetch();
       }
     } catch (e) {
       if (!e.userCancelled) {
@@ -473,13 +546,15 @@ export default function PurchaseModal({ visible, onClose, onSuccess }: any) {
   const handleRestore = async () => {
     setRestoring(true);
     try {
-      const isPremium = await restorePurchases();
-      if (isPremium) {
-        dispatch(setPremium({ isPremium: true }));
+      const restored = await restorePurchases();
+      if (restored) {
+        dispatch(setPremium({ isPremium: true, optimistic: true }));
         promoteSwipeStatsToPremium();
         handleClose();
         onSuccess?.();
-        dispatch(fetchSubscriptionStatus());
+        // Restore'da da webhook gecikmesi var (RC receipt → backend). Düz
+        // status fetch'i stale okuyabiliyordu; retry'lı sync + refetch.
+        syncThenRefetch();
       } else {
         Alert.alert(t('purchase.errors.restoreNotFoundTitle'), t('purchase.errors.restoreNoSubscription'));
       }
@@ -491,11 +566,14 @@ export default function PurchaseModal({ visible, onClose, onSuccess }: any) {
   };
 
   // Trial bilgisi seçili plana göre — RC her plan için ayrı intro price tanımlayabilir.
+  // Gün sayısı YALNIZCA RC introPrice'tan gelir; yoksa deneme vaat etmiyoruz
+  // (eskiden 3 gün'e fallback ediyordu ve RC'de trial tanımlı olmasa bile
+  // "3 gün ücretsiz" yazıyordu).
   const introPrice = selectedPlan?.introPrice;
   const introUnits = introPrice?.periodNumberOfUnits;
   const trialDays =
-    typeof introUnits === "number" && introUnits > 0 ? introUnits : 3;
-  const showTrialBadge = Boolean(introPrice) || (selectedPlan && trialDays > 0);
+    typeof introUnits === "number" && introUnits > 0 ? introUnits : null;
+  const showTrialBadge = Boolean(introPrice) && trialDays !== null;
 
   const features = useMemo(() => [
     { icon: Zap, label: t('purchase.features.unlimited') },
@@ -614,6 +692,11 @@ export default function PurchaseModal({ visible, onClose, onSuccess }: any) {
       trialDays,
       selectedPriceString,
       selectedPeriodLabel,
+      // isPremium dep listesinde YOKTU: satın alma sonrası redux premium'a
+      // dönse bile footer eski closure ile render kalıyor, CTA hâlâ "abone ol"
+      // (ve basılabilir) görünüyordu. `t` de dil değişiminde bayat kalıyordu.
+      isPremium,
+      t,
     ],
   );
 
@@ -624,7 +707,7 @@ export default function PurchaseModal({ visible, onClose, onSuccess }: any) {
       handleComponent={null}
       backdropComponent={renderBackdrop}
       footerComponent={renderFooter}
-      backgroundStyle={{ backgroundColor: "#a83220" }}
+      backgroundStyle={{ backgroundColor: colors.shopSurface }}
       onClose={() => {
         setSelectedPeriod(null);
         initialScrollDoneRef.current = false;
@@ -658,14 +741,23 @@ export default function PurchaseModal({ visible, onClose, onSuccess }: any) {
             justifyContent: "center",
           }}
         >
-          <X size={18} color={colors.text} strokeWidth={2.5} pointerEvents="none" />
+          <View pointerEvents="none">
+            <SFIcon
+              name="xmark"
+              fallback={X}
+              size={18}
+              color={colors.text}
+              strokeWidth={2.5}
+              weight="bold"
+            />
+          </View>
         </BlurView>
       </TouchableOpacity>
 
       {/* Yukarıdan gri → aşağıda messageOwn'a fade */}
       <LinearGradient
         pointerEvents="none"
-        colors={["#2e2e2e", "#2e2e2e", "#a83220"]}
+        colors={gradients.shopBackdrop}
         locations={[0, 0.4, 1]}
         start={{ x: 0.5, y: 0 }}
         end={{ x: 0.5, y: 1 }}
@@ -686,7 +778,7 @@ export default function PurchaseModal({ visible, onClose, onSuccess }: any) {
         contentContainerStyle={{
           paddingHorizontal: 20,
           paddingTop: 24,
-          paddingBottom: 40,
+          paddingBottom: 300,
         }}
         showsVerticalScrollIndicator={false}
       >
@@ -724,23 +816,6 @@ export default function PurchaseModal({ visible, onClose, onSuccess }: any) {
           >
             {t('discover.premium.description')}
           </Text>
-
-          {!showTrialBadge && (
-            <View
-              style={{
-                marginTop: 14,
-                paddingHorizontal: 14,
-                paddingVertical: 10,
-                borderRadius: 999,
-                borderCurve: "continuous",
-                backgroundColor: "rgba(255,255,255,0.18)",
-              }}
-            >
-              <Text style={{ color: colors.text, fontSize: 13, fontWeight: "600" }}>
-                {t('purchase.cta.freeTrialBadge', { days: trialDays })}
-              </Text>
-            </View>
-          )}
         </View>
 
         {/* Plan Selector — yatay paging carousel: kaydırınca o plan seçili. */}
@@ -783,9 +858,9 @@ export default function PurchaseModal({ visible, onClose, onSuccess }: any) {
                 const planTrialDays =
                   typeof planTrialUnits === "number" && planTrialUnits > 0
                     ? planTrialUnits
-                    : 3;
+                    : null;
                 const planShowTrial =
-                  Boolean(planIntro) || (plan && planTrialDays > 0);
+                  Boolean(planIntro) && planTrialDays !== null;
                 const planPeriodLabel = t(`purchase.periods.${plan?.period ?? "monthly"}Per`);
                 const isSelected = plan.period === selectedPlan.period;
                 return (
@@ -822,6 +897,7 @@ export default function PurchaseModal({ visible, onClose, onSuccess }: any) {
                           {renderPlanName(plan.displayName, {
                             primarySize: 55,
                             secondaryColor: colors.text,
+                            periodLabel: t(`purchase.periods.${plan?.period ?? "monthly"}Short`),
                           })}
                         </View>
                         <Text
@@ -922,14 +998,24 @@ export default function PurchaseModal({ visible, onClose, onSuccess }: any) {
                 </Text>
                 <View className="flex-row items-center gap-4">
                   <View className="w-16 items-center">
-                    <X
+                    <SFIcon
+                      name="xmark"
+                      fallback={X}
                       size={18}
                       color="rgba(255, 255, 255, 0.4)"
                       strokeWidth={2}
+                      weight="semibold"
                     />
                   </View>
                   <View className="w-16 items-center">
-                    <Check size={18} color={colors.text} strokeWidth={2} />
+                    <SFIcon
+                      name="checkmark"
+                      fallback={Check}
+                      size={18}
+                      color={colors.text}
+                      strokeWidth={2}
+                      weight="semibold"
+                    />
                   </View>
                 </View>
               </View>

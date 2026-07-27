@@ -1,13 +1,14 @@
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import { useTranslation } from 'react-i18next';
 import {
   View,
   Text,
-  Image,
   Dimensions,
   TouchableOpacity,
   Platform,
+  StyleSheet,
 } from "react-native";
+import { Image } from "expo-image";
 import { Host, Button as SwiftUIButton } from "@expo/ui/swift-ui";
 import {
   buttonStyle,
@@ -18,22 +19,18 @@ import {
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { LinearGradient } from "expo-linear-gradient";
 import { BlurView } from "expo-blur";
+import MaskedView from "@react-native-masked-view/masked-view";
+import { easeGradient } from "react-native-easing-gradient";
 import {
-  Flame,
   Heart,
   HeartCrack,
   Bell,
-  Lock,
-  Star,
 } from "lucide-react-native";
+import SFIcon from "@/shared/components/SFIcon";
 import { useNavigation } from "@react-navigation/native";
 import Animated, {
   useSharedValue,
-  useAnimatedStyle,
   useAnimatedScrollHandler,
-  withRepeat,
-  withTiming,
-  Easing,
 } from "react-native-reanimated";
 import { useAppDispatch, useAppSelector } from "@/shared/hooks/redux";
 import { selectIsPremium } from "@/features/profile/subscriptionSlice";
@@ -45,71 +42,20 @@ import EmptyState from "@/shared/components/EmptyState";
 import LikerSwipeModal from "@/features/discover/components/LikerSwipeModal";
 import PurchaseModal from "@/features/discover/components/PurchaseModal";
 import ScreenHeader from "@/shared/components/ScreenHeader";
+import SkeletonBox from "@/shared/components/SkeletonBox";
+import FilterPills from "@/shared/components/FilterPills";
+import SuperLikeHeart from "@/shared/components/SuperLikeHeart";
 import swipeService from "@/features/discover/swipeService";
 import { useSwipeStats } from "@/features/discover/swipeQueries";
 import { setWhoLikedMeCount } from "@/features/discover/swipeSlice";
 
 import uiBus from "@/shared/services/uiBus";
 import { colors, gradients } from "../../../shared/theme/colors";
+import { useRenderCount } from "@/shared/debug/useRenderCount";
 
 const { width } = Dimensions.get("window");
 const CARD_WIDTH = (width - 44) / 2; // 2 columns with padding
-const CARD_HEIGHT = CARD_WIDTH * 1.2; // Aspect ratio
-
-// ─── Generic skeleton box w/ shimmer ─────────────────────────────────────────
-function SkeletonBox({ width: w, height: h, borderRadius = 8, style }) {
-  const animW = typeof w === "number" ? w : width;
-  const shimmer = useSharedValue(-animW);
-
-  useEffect(() => {
-    shimmer.value = withRepeat(
-      withTiming(animW * 2, { duration: 1200, easing: Easing.linear }),
-      -1,
-      false,
-    );
-  }, [shimmer, animW]);
-
-  const animStyle = useAnimatedStyle(() => ({
-    transform: [{ translateX: shimmer.value }],
-  }));
-
-  return (
-    <View
-      style={[
-        {
-          width: w ?? "100%",
-          height: h,
-          borderRadius,
-          borderCurve: "continuous",
-          backgroundColor: colors.surface,
-          overflow: "hidden",
-        },
-        style,
-      ]}
-    >
-      <Animated.View
-        pointerEvents="none"
-        style={[
-          {
-            position: "absolute",
-            top: 0,
-            left: 0,
-            width: animW * 2,
-            height: "100%",
-          },
-          animStyle,
-        ]}
-      >
-        <LinearGradient
-          colors={["transparent", "rgba(255,255,255,0.07)", "transparent"]}
-          start={{ x: 0, y: 0 }}
-          end={{ x: 1, y: 0 }}
-          style={{ flex: 1 }}
-        />
-      </Animated.View>
-    </View>
-  );
-}
+const CARD_HEIGHT = CARD_WIDTH * 1.3; // Aspect ratio
 
 function LikesSkeletonGrid() {
   const placeholders = Array.from({ length: 6 });
@@ -151,7 +97,7 @@ function LikeCard({ item, isPremium, onPress }) {
       onPress={onPress}
       style={{
         width: CARD_WIDTH,
-        marginBottom: 20,
+        marginBottom: 12,
       }}
     >
       <View
@@ -159,6 +105,8 @@ function LikeCard({ item, isPremium, onPress }) {
           width: CARD_WIDTH,
           height: CARD_HEIGHT,
           borderRadius: 40,
+          borderWidth:0.3,
+          borderColor:"#2b2b2b",
           borderCurve: "continuous",
           overflow: "hidden",
           backgroundColor: colors.surface,
@@ -168,7 +116,9 @@ function LikeCard({ item, isPremium, onPress }) {
           <Image
             source={{ uri: item.mainPhoto }}
             style={{ width: "100%", height: "100%" }}
-            resizeMode="cover"
+            contentFit="cover"
+            cachePolicy="memory-disk"
+            transition={200}
             onLoadStart={() => {
               if (!loadedPhotoUris.has(item.mainPhoto)) setImgLoading(true);
             }}
@@ -208,15 +158,11 @@ function LikeCard({ item, isPremium, onPress }) {
               left: 0,
               right: 0,
               bottom: 0,
-              alignItems: "center",
-              justifyContent: "center",
             }}
-          >
-            <Lock size={40} color={colors.text} strokeWidth={2} />
-          </BlurView>
+          />
         )}
 
-        {/* Sağ üst: sadece superlike için dolu kalp (mavi) */}
+        {/* Sağ üst: sadece superlike için LitPlus tonlu gradient kalp */}
         {item.isSuperLike && (
           <View
             style={{
@@ -226,35 +172,166 @@ function LikeCard({ item, isPremium, onPress }) {
             }}
             pointerEvents="none"
           >
-            <Heart size={28} color={colors.text} fill={colors.text} strokeWidth={1.5} />
+            <SuperLikeHeart size={28} />
           </View>
         )}
-      </View>
 
-      {/* İsim — kartın altında, sola yatık */}
-      {showClear && (
-        <Text
-          numberOfLines={1}
-          style={{
-            marginTop: 8,
-            paddingLeft: 14,
-            paddingRight: 4,
-            color: colors.neutral500,
-            fontSize: 14,
-            fontWeight: "600",
-            textAlign: "left",
-          }}
-        >
-          {item.age != null ? `${item.name}, ${item.age}` : item.name}
-        </Text>
-      )}
+        {/* İsim & yaş — kartın sol altında, beyaz. Okunabilirlik için alt gradient scrim. */}
+        {showClear && (
+          <>
+            {/* Alt progressive blur — SwipeCard'ın collapsed bottom blur'u gibi.
+                Karartma yerine maskeli hafif blur (üstten transparan → alta doğru). */}
+            <View
+              pointerEvents="none"
+              style={{
+                position: "absolute",
+                left: 0,
+                right: 0,
+                bottom: 0,
+                height: CARD_HEIGHT * 0.33,
+              }}
+            >
+              <MaskedView
+                style={{ flex: 1 }}
+                maskElement={
+                  <LinearGradient
+                    {...(easeGradient({
+                      colorStops: {
+                        0: { color: "transparent" },
+                        0.5: { color: "black" },
+                        1: { color: "rgba(0,0,0,0.99)" },
+                      },
+                    }) as any)}
+                    style={StyleSheet.absoluteFill}
+                  />
+                }
+              >
+                <LinearGradient
+                  colors={["rgba(0,0,0,0.1)", "rgba(0,0,0,0.45)"]}
+                  style={StyleSheet.absoluteFill}
+                />
+                <BlurView
+                  intensity={15}
+                  tint={
+                    Platform.OS === "ios"
+                      ? "systemChromeMaterialDark"
+                      : "systemMaterialDark"
+                  }
+                  style={StyleSheet.absoluteFill}
+                />
+              </MaskedView>
+            </View>
+            <View
+              style={{
+                position: "absolute",
+                left: 16,
+                right: 12,
+                bottom: 24,
+              }}
+            >
+              <View
+                style={{
+                  flexDirection: "row",
+                  alignItems: "baseline",
+                  maxWidth: "90%",
+                }}
+              >
+                <Text
+                  numberOfLines={1}
+                  style={{
+                    flexShrink: 1,
+                    color: "#ffffff",
+                    fontSize: 18,
+                    fontWeight: "700",
+                  }}
+                >
+                  {item.name}
+                </Text>
+                {item.age != null && (
+                  <Text
+                    style={{
+                      flexShrink: 0,
+                      color: "#ffffff",
+                      fontSize: 18,
+                      fontWeight: "700",
+                    }}
+                  >
+                    {`, ${item.age}`}
+                  </Text>
+                )}
+              </View>
+              {!!item.universityName && (
+                <Text
+                  numberOfLines={1}
+                  style={{
+                    marginTop: 2,
+                    maxWidth: "90%",
+                    color: "#ffffff",
+                    fontSize: 14,
+                    fontWeight: "600",
+                  }}
+                >
+                  {item.universityName}
+                </Text>
+              )}
+            </View>
+          </>
+        )}
+
+        {/* Blurlu (kilitli) kartlar — isim/yaş/üni yerine beyaz kutu placeholder.
+            Genişlikler gerçek metin uzunluğuna göre dinamik (karakter ≈ px). */}
+        {!showClear && (() => {
+          const maxW = CARD_WIDTH - 32;
+          const nameText =
+            item.age != null ? `${item.name || ""}, ${item.age}` : item.name || "";
+          const nameW = Math.min(
+            maxW,
+            Math.max(28, Math.round(nameText.length * 9.5)),
+          );
+          return (
+            <View
+              style={{
+                position: "absolute",
+                left: 16,
+                right: 16,
+                bottom: 20,
+              }}
+              pointerEvents="none"
+            >
+              <View
+                style={{
+                  width: nameW,
+                  height: 16,
+                  borderRadius: 6,
+                  backgroundColor: "rgba(255,255,255,0.9)",
+                }}
+              />
+              <View
+                style={{
+                  marginTop: 8,
+                  width: "80%",
+                  height: 12,
+                  borderRadius: 5,
+                  backgroundColor: "rgba(255,255,255,0.6)",
+                }}
+              />
+            </View>
+          );
+        })()}
+      </View>
     </TouchableOpacity>
   );
 }
 
 export default function LikesScreen() {
+  useRenderCount("LikesScreen");
   const { t } = useTranslation();
   const [likes, setLikes] = useState([]);
+  // Event handler'larda güncel listeye erişmek için — setLikes updater'ının
+  // içinde dispatch etmek render sırasında TabNavigator'ı güncelliyordu.
+  const likesRef = useRef([]);
+  const whoLikedMeInFlightRef = useRef(false);
+  likesRef.current = likes;
   const [loading, setLoading] = useState(true);
   const [currentPage, setCurrentPage] = useState(1);
   const [hasNextPage, setHasNextPage] = useState(false);
@@ -285,15 +362,21 @@ export default function LikesScreen() {
   const [previewProfile, setPreviewProfile] = useState(null);
   const [previewLoading, setPreviewLoading] = useState(false);
 
-  // DiscoverScreen ile aynı fill oranı: premium veya remainingSwipes===-1 → 0.
-  const DAILY_SWIPE_LIMIT = 30;
+  // DiscoverScreen ile aynı fill oranı: (limit - kalan) / limit.
+  // Premium / -1 / limit bilinmiyor → 0.
   const swipeFillRatio = useMemo(() => {
     if (statsQuery.data?.isPremium) return 0;
     const rem = statsQuery.data?.remainingSwipes;
+    const limit = statsQuery.data?.dailySwipeLimit;
     if (rem == null || rem < 0) return 0;
-    const used = Math.max(0, DAILY_SWIPE_LIMIT - rem);
-    return Math.min(1, used / DAILY_SWIPE_LIMIT);
-  }, [statsQuery.data?.remainingSwipes, statsQuery.data?.isPremium]);
+    if (limit == null || limit <= 0) return 0;
+    const used = Math.max(0, limit - rem);
+    return Math.min(1, used / limit);
+  }, [
+    statsQuery.data?.remainingSwipes,
+    statsQuery.data?.dailySwipeLimit,
+    statsQuery.data?.isPremium,
+  ]);
 
   const filteredLikes =
     activeTab === "like"
@@ -303,6 +386,11 @@ export default function LikesScreen() {
         : likes;
 
   const fetchWhoLikedMe = async (page = 1) => {
+    // In-flight dedupe: preload mount'u + kullanıcı navigasyonu/premium-transition
+    // aynı anda tetikleyince istek çiftleniyordu (Sentry trace kanıtlı). State
+    // (loading) async güncellendiği için guard ref ile senkron tutulur.
+    if (whoLikedMeInFlightRef.current) return;
+    whoLikedMeInFlightRef.current = true;
     try {
       setLoading(true);
       // Yeni API: superLikes ve likes ayrı paginated bölümler.
@@ -323,6 +411,7 @@ export default function LikesScreen() {
             userId: p.userId, // LikerProfile detay endpoint'i için lazım
             name: p.displayName,
             age: p.age,
+            universityName: p.universityName || "",
             mainPhoto: p.photos?.[0] || "",
             likedAt: p.likedMeAt,
             isSuperLike: true,
@@ -333,6 +422,7 @@ export default function LikesScreen() {
           userId: p.userId,
           name: p.displayName,
           age: p.age,
+          universityName: p.universityName || "",
           mainPhoto: p.photos?.[0] || "",
           likedAt: p.likedMeAt,
           isSuperLike: false,
@@ -350,12 +440,26 @@ export default function LikesScreen() {
       // yut
     } finally {
       setLoading(false);
+      whoLikedMeInFlightRef.current = false;
     }
   };
 
   useEffect(() => {
     fetchWhoLikedMe();
   }, []);
+
+  // Premium false→true geçişinde listeyi tazele. Bu ekran react-query
+  // kullanmadığı için PurchaseModal'ın refetchPremiumScoped'u buraya dokunmuyor;
+  // liste free scope'ta çekilmiş olabiliyor (backend free kullanıcıya kısıtlı
+  // alan dönerse foto/isim eksik kalırdı). Transition'ı dinlemek PurchaseModal'ın
+  // onSuccess callback'inin yerini tutar ve premium'un başka bir ekrandan
+  // (Discover/Profile) veya restore ile alındığı durumu da kapsar.
+  const prevIsPremiumRef = useRef(isPremium);
+  useEffect(() => {
+    if (prevIsPremiumRef.current === isPremium) return;
+    prevIsPremiumRef.current = isPremium;
+    if (isPremium) fetchWhoLikedMe();
+  }, [isPremium]);
 
   // Karta tıklayınca:
   //   - Premium değil → PurchaseModal aç (upsell).
@@ -401,12 +505,12 @@ export default function LikesScreen() {
   // MatchNotification gelene kadar bekleme). whoLikedMe count'unu da düş.
   const handleLikerSwiped = (likerUserId) => {
     if (!likerUserId) return;
-    setLikes((prev) =>
-      prev.filter(
-        (it) => it.userId !== likerUserId && it.likerUserId !== likerUserId,
-      ),
+    const next = likesRef.current.filter(
+      (it) => it.userId !== likerUserId && it.likerUserId !== likerUserId,
     );
-    dispatch(setWhoLikedMeCount(Math.max(0, (likes?.length ?? 1) - 1)));
+    likesRef.current = next;
+    setLikes(next);
+    dispatch(setWhoLikedMeCount(Math.max(0, next.length)));
   };
 
   // Match olduğunda artık o kişi "incoming like" değil — listeden çıkar.
@@ -416,15 +520,14 @@ export default function LikesScreen() {
     const unsub = uiBus.on("match", (m) => {
       const matchedId = m?.matchedUserId;
       if (!matchedId) return;
-      setLikes((prev) => {
-        const next = prev.filter(
-          (it) => it.userId !== matchedId && it.likerUserId !== matchedId,
-        );
-        if (next.length !== prev.length) {
-          dispatch(setWhoLikedMeCount(Math.max(0, next.length)));
-        }
-        return next;
-      });
+      const prev = likesRef.current;
+      const next = prev.filter(
+        (it) => it.userId !== matchedId && it.likerUserId !== matchedId,
+      );
+      if (next.length === prev.length) return;
+      likesRef.current = next;
+      setLikes(next);
+      dispatch(setWhoLikedMeCount(Math.max(0, next.length)));
     });
     return unsub;
   }, [dispatch]);
@@ -474,46 +577,16 @@ export default function LikesScreen() {
   }, []);
 
   const tabsRow = (
-    <View className="pb-3">
-      <View className="flex-row flex-wrap gap-2">
-        {[
-          { key: "all", label: t('likes.tabAll'), icon: null },
-          { key: "like", label: t('likes.tabLike'), icon: Heart },
-          { key: "superlike", label: t('likes.tabSuperLike'), icon: Star },
-        ].map((tab) => {
-          const isActive = activeTab === tab.key;
-          return (
-            <TouchableOpacity
-              key={tab.key}
-              activeOpacity={0.85}
-              onPress={() => setActiveTab(tab.key)}
-              style={{
-                borderRadius: 999,
-                borderCurve: "continuous",
-                overflow: "hidden",
-                flexDirection: "row",
-                alignItems: "center",
-                paddingHorizontal: 14,
-                paddingVertical: 10,
-                backgroundColor: isActive ? colors.text : "transparent",
-                borderWidth: 1,
-                borderColor: "rgba(255,255,255,0.25)",
-              }}
-            >
-              <Text
-                style={{
-                  color: isActive ? "#000" : colors.text,
-                  fontWeight: "600",
-                  fontSize: 12,
-                }}
-              >
-                {tab.label}
-              </Text>
-            </TouchableOpacity>
-          );
-        })}
-      </View>
-    </View>
+    <FilterPills
+      style={{ marginBottom: 12 }}
+      activeTab={activeTab}
+      onChange={setActiveTab}
+      tabs={[
+        { key: "all", label: t('likes.tabAll') },
+        { key: "like", label: t('likes.tabLike') },
+        { key: "superlike", label: t('likes.tabSuperLike') },
+      ]}
+    />
   );
 
   return (
@@ -547,6 +620,7 @@ export default function LikesScreen() {
             <View className="flex-1 items-center justify-center pb-[50%]">
               <EmptyState
                 Icon={HeartCrack}
+                sf="heart.slash"
                 iconStrokeWidth={1}
                 topOffset={0}
                 text={
@@ -582,7 +656,7 @@ export default function LikesScreen() {
             flexGrow: 1,
             paddingHorizontal: 16,
             paddingTop: insets.top + 50 + 16,
-            paddingBottom: filteredLikes.length === 0 ? 0 : 120,
+            paddingBottom: filteredLikes.length === 0 ? 0 : 200,
           }}
           columnWrapperStyle={
             filteredLikes.length > 0
@@ -619,7 +693,7 @@ export default function LikesScreen() {
               activeOpacity={0.7}
             >
               <View pointerEvents="none">
-                <Bell size={29} strokeWidth={2} color={colors.text} fill={colors.text} />
+                <SFIcon name="bell.fill" fallback={Bell} size={29} strokeWidth={2} color={colors.text} weight="semibold" />
               </View>
             </TouchableOpacity>
           )
@@ -656,7 +730,7 @@ export default function LikesScreen() {
                 gap: 6,
               }}
             >
-              <Heart size={16} color={colors.text} strokeWidth={2.2} />
+              <SFIcon name="heart" fallback={Heart} size={16} color={colors.text} strokeWidth={2.2} weight="semibold" />
               <Text
                 style={{
                   color: colors.text,
@@ -671,6 +745,8 @@ export default function LikesScreen() {
         </View>
       )}
 
+      {/* Satın alma sonrası liste tazelemesi onSuccess'te değil, isPremium
+          false→true transition effect'inde (yukarıda) yapılıyor. */}
       <PurchaseModal
         visible={purchaseVisible}
         onClose={() => setPurchaseVisible(false)}

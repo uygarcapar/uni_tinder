@@ -9,11 +9,13 @@ import { Check, X } from "lucide-react-native";
 import { LinearGradient } from "expo-linear-gradient";
 import MaskedView from "@react-native-masked-view/masked-view";
 import { gradients } from "../../../shared/theme/colors";
+import { useRenderCount } from "@/shared/debug/useRenderCount";
 
 const { width } = Dimensions.get("window");
 const SWIPE_THRESHOLD = 120;
 
 export default function SwipeOverlay({ dragX, opacity }: any) {
+  useRenderCount("SwipeOverlay");
   // ✅ TİK (LIKE) ANIMASYONU: Sağa kaydırdıkça merkeze daha fazla girer
   const likeOpacityStyle = useAnimatedStyle(() => {
     const baseOpacity = interpolate(

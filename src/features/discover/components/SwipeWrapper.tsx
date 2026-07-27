@@ -16,6 +16,7 @@ import Animated, {
 import * as Haptics from "expo-haptics";
 import SwipeCard from "@/features/discover/components/SwipeCard";
 import uiBus, { cardExpandAnim, cardPullProgress } from "@/shared/services/uiBus";
+import { useRenderCount } from "@/shared/debug/useRenderCount";
 
 const { width, height } = Dimensions.get("window");
 const SWIPE_THRESHOLD = 85;
@@ -44,6 +45,12 @@ function SwipeWrapper({
   superLikeQuotaExhausted = false,
   superLikesRemaining,
 }: any) {
+  useRenderCount("SwipeWrapper");
+  // Expanded'ken kart header'ın üstüne binip orada kalsın (kapatılana kadar).
+  // Header bar 50px → yarısı (~25px) kadar hafifçe biner; status bar (insets.top)
+  // hesaba katılmaz. cardExpandAnim'e bağlı: expand oranıyla yukarı biner,
+  // collapse'de (gesture/chevron) senkron geri iner.
+  const HEADER_COVER = 25;
   const tx = useSharedValue(0);
   const ty = useSharedValue(0);
   const scrollY = useSharedValue(0);
@@ -78,6 +85,39 @@ function SwipeWrapper({
     Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Heavy);
   };
 
+  // Pull-down sırasında threshold'a kadar artan sıklıkta haptic. Kendini
+  // yeniden zamanlayan JS loop'u; interval progress arttıkça kısalır → titreşim
+  // hızlanır. progress ref'ten okunur (worklet her frame runOnJS ile günceller).
+  const superProgressRef = React.useRef(0);
+  const superHapticTimer = React.useRef<ReturnType<typeof setTimeout> | null>(
+    null,
+  );
+  const runSuperLikeHapticTick = () => {
+    const p = superProgressRef.current;
+    // Yalnızca pull sürerken (0<p<1) çalışır; threshold'da Heavy haptic devralır.
+    if (p <= 0.05 || p >= 1) {
+      superHapticTimer.current = null;
+      return;
+    }
+    Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
+    const interval = 260 - p * 190; // ~260ms → ~70ms
+    superHapticTimer.current = setTimeout(runSuperLikeHapticTick, interval);
+  };
+  const updateSuperHaptics = (p: number) => {
+    superProgressRef.current = p;
+    if (p > 0.05 && p < 1 && superHapticTimer.current == null) {
+      runSuperLikeHapticTick();
+    }
+  };
+  const resetSuperHaptics = () => {
+    superProgressRef.current = 0;
+    if (superHapticTimer.current != null) {
+      clearTimeout(superHapticTimer.current);
+      superHapticTimer.current = null;
+    }
+  };
+  useEffect(() => resetSuperHaptics, []);
+
   const triggerExpandHaptic = () => {
     Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
   };
@@ -88,6 +128,11 @@ function SwipeWrapper({
 
   const openSuperLikePaywall = () => {
     uiBus.emit("superLikePaywall", {});
+  };
+
+  // Super-like onaylanınca kalp ikonundan yukarı süzülen kalp patlaması.
+  const emitSuperLikeBurst = () => {
+    uiBus.emit("superLikeBurst");
   };
 
   // Worklet'ten okumak için mirror — runOnJS'siz quota check.
@@ -157,6 +202,7 @@ function SwipeWrapper({
         programmaticSwipe.value = 0;
       } else if (value === 3) {
         // Süper beğeni — kart yukarı doğru ucar (biraz daha yavaş)
+        runOnJS(emitSuperLikeBurst)();
         if (cardExpandAnim.value > 0)
           cardExpandAnim.value = withTiming(0, { duration: 300 });
         ty.value = withTiming(
@@ -228,9 +274,10 @@ function SwipeWrapper({
         (event.velocityX < -VELOCITY_THRESHOLD &&
           tx.value < -VELOCITY_MIN_DISPLACEMENT);
 
-      // Kota bittiyse: swipe yönü gerçekleşmiş olsa bile karta geri dönsün,
-      // istek atılmasın, paywall açılsın.
-      if ((goRight || goLeft) && quotaExhaustedSV.value) {
+      // Like kotası bittiyse: sağa swipe gerçekleşmiş olsa bile karta geri
+      // dönsün, istek atılmasın, paywall açılsın. Sola swipe (Pass) backend'de
+      // kotaya sayılmadığı için burada da bloklanmıyor.
+      if (goRight && quotaExhaustedSV.value) {
         const cfg = { damping: 16, stiffness: 380, mass: 1 };
         tx.value = withSpring(0, cfg);
         dragX.value = withSpring(0, cfg);
@@ -325,6 +372,7 @@ function SwipeWrapper({
         ty.value = 0;
         superLikeProgress.value = 0;
         cardPullProgress.value = 0;
+        runOnJS(resetSuperHaptics)();
         return;
       }
       const delta = event.translationY - dragOffsetY.value;
@@ -339,9 +387,12 @@ function SwipeWrapper({
         cardExpandAnim.value = 0;
         if (progress >= 1 && !superLikeReady.value) {
           superLikeReady.value = true;
+          runOnJS(resetSuperHaptics)();
           runOnJS(triggerSuperLikeHaptic)();
-        } else if (progress < 1 && superLikeReady.value) {
-          superLikeReady.value = false;
+        } else if (progress < 1) {
+          if (superLikeReady.value) superLikeReady.value = false;
+          // Threshold'a kadar artan sıklıkta haptic (JS loop'u kendini zamanlar).
+          runOnJS(updateSuperHaptics)(progress);
         }
       } else if (delta < 0) {
         // PULL-UP — expand. cardPullProgress da güncellenir → arkadaki kart
@@ -359,6 +410,7 @@ function SwipeWrapper({
         cardExpandAnim.value = progress;
         superLikeProgress.value = 0;
         cardPullProgress.value = progress;
+        runOnJS(resetSuperHaptics)();
         if (progress >= 1 && !expandHapticFired.value) {
           expandHapticFired.value = true;
           runOnJS(triggerExpandHaptic)();
@@ -369,6 +421,7 @@ function SwipeWrapper({
         ty.value = 0;
         superLikeProgress.value = 0;
         cardPullProgress.value = 0;
+        runOnJS(resetSuperHaptics)();
       }
     })
     .onEnd(() => {
@@ -405,6 +458,7 @@ function SwipeWrapper({
       const wasExpandReady = expandHapticFired.value;
       superLikeReady.value = false;
       expandHapticFired.value = false;
+      runOnJS(resetSuperHaptics)();
 
       if (wasReady && superLikeExhaustedSV.value) {
         // SuperLike kotası bitti — kart geri yerine spring ile dönsün, istek yok,
@@ -415,6 +469,7 @@ function SwipeWrapper({
         cardPullProgress.value = withSpring(0);
         runOnJS(openSuperLikePaywall)();
       } else if (wasReady) {
+        runOnJS(emitSuperLikeBurst)();
         ty.value = withTiming(
           -EXIT_HEIGHT,
           { duration: 320, easing: Easing.out(Easing.cubic) },
@@ -474,7 +529,13 @@ function SwipeWrapper({
     return {
       transform: [
         { translateX: tx.value },
-        { translateY: ty.value },
+        // ty.value: geçici drag peek/rubber-band. -HEADER_COVER*cardExpandAnim:
+        // expanded'ken kalıcı olarak header'ın üstüne binen lift (kapatana kadar).
+        // cardExpandAnim global → sadece top karta uygula, arkadaki kart kaymasın.
+        {
+          translateY:
+            ty.value - (isTopCard ? HEADER_COVER * cardExpandAnim.value : 0),
+        },
         { rotate: isTopCard ? `${rotate}deg` : "0deg" },
         { scale: scale.value },
       ],

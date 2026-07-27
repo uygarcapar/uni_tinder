@@ -1,10 +1,12 @@
 import { useEffect, useState } from "react";
+import { useTranslation } from "react-i18next";
 import { View, Text, TouchableOpacity } from "react-native";
 import { LinearGradient } from "expo-linear-gradient";
 import { BlurView } from "expo-blur";
 import { Heart } from "lucide-react-native";
+import SFIcon from "@/shared/components/SFIcon";
 import AppBottomSheet from "@/shared/components/AppBottomSheet";
-import { colors } from "../../../shared/theme/colors";
+import { colors, gradients } from "../../../shared/theme/colors";
 
 const PACKS = [
   { id: 5, count: 5, price: "₺49,99" },
@@ -17,6 +19,7 @@ export default function SuperLikePurchaseModal({
   onClose,
   onUpgrade,
 }: any) {
+  const { t } = useTranslation();
   const [selectedId, setSelectedId] = useState<number | null>(null);
 
   useEffect(() => {
@@ -62,7 +65,7 @@ export default function SuperLikePurchaseModal({
             fontWeight: "700",
           }}
         >
-          Satın Al
+          {t('superLikePurchase.cta')}
         </Text>
       </TouchableOpacity>
       <Text
@@ -75,9 +78,7 @@ export default function SuperLikePurchaseModal({
           lineHeight: 15,
         }}
       >
-        Süper beğeniler satın alma tamamlandığında hesabına anında eklenir ve
-        süresi dolmaz. Ödemeler App Store hesabından tahsil edilir, satın alma
-        sonrası iade yapılmaz.
+        {t('superLikePurchase.disclaimer')}
       </Text>
     </BlurView>
   );
@@ -87,14 +88,14 @@ export default function SuperLikePurchaseModal({
       visible={visible}
       onClose={onClose}
       snapPoints={["55%", "70%"]}
-      backgroundStyle={{ backgroundColor: "#a83220" }}
+      backgroundStyle={{ backgroundColor: colors.shopSurface }}
       handleComponent={null}
       footer={footer}
     >
       {/* Yukarıdan gri → aşağıda messageOwn'a fade — PurchaseModal ile aynı */}
       <LinearGradient
         pointerEvents="none"
-        colors={["#2e2e2e", "#2e2e2e", "#a83220"]}
+        colors={gradients.shopBackdrop}
         locations={[0, 0.4, 1]}
         start={{ x: 0.5, y: 0 }}
         end={{ x: 0.5, y: 1 }}
@@ -129,7 +130,7 @@ export default function SuperLikePurchaseModal({
             marginTop: 8,
           }}
         >
-          Süper Beğeni Al
+          {t('superLikePurchase.title')}
         </Text>
         <Text
           style={{
@@ -141,8 +142,7 @@ export default function SuperLikePurchaseModal({
             paddingHorizontal: 8,
           }}
         >
-          Süper beğeniler 3x daha fazla eşleşme sağlar. Paketini seç ve fark
-          yarat.
+          {t('superLikePurchase.description')}
         </Text>
 
         <View
@@ -164,7 +164,7 @@ export default function SuperLikePurchaseModal({
                 style={{
                   width: "48%",
                   aspectRatio: 1.25,
-                  borderRadius: 24,
+                  borderRadius: 36,
                   borderCurve: "continuous",
                   borderWidth: 0.5,
                   borderColor: isSelected
@@ -184,10 +184,11 @@ export default function SuperLikePurchaseModal({
                     paddingVertical: 22,
                   }}
                 >
-                  <Heart
-                    size={40}
+                  <SFIcon
+                    name="heart.fill"
+                    fallback={Heart}
+                    size={50}
                     color={colors.text}
-                    fill={colors.text}
                     strokeWidth={1.5}
                   />
                   <Text
@@ -199,7 +200,7 @@ export default function SuperLikePurchaseModal({
                     }}
                     numberOfLines={1}
                   >
-                    {pack.count}x Superlike
+                    {t('superLikePurchase.packLabel', { count: pack.count })}
                   </Text>
                   <Text
                     style={{

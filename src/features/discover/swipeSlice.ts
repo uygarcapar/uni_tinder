@@ -14,6 +14,11 @@ export const fetchPotentialMatches = createAsyncThunk(
       return rejectWithValue(error.message || "Failed to fetch matches");
     }
   },
+  {
+    // In-flight dedupe: boot/preload/focus tetikleyicileri aynı anda yarışınca
+    // GetPotentialMatches iki kez atılıyordu (Sentry trace kanıtlı).
+    condition: (_, { getState }) => !(getState() as any).swipe?.loading,
+  },
 );
 
 export const loadMoreProfiles = createAsyncThunk(
@@ -28,6 +33,13 @@ export const loadMoreProfiles = createAsyncThunk(
     } catch (error: any) {
       return rejectWithValue(error.message || "Failed to load more matches");
     }
+  },
+  {
+    // Eşzamanlı loadMore çiftlerini düşür (deck sonu tetikleyicileri yarışabilir).
+    condition: (_, { getState }) => {
+      const s = (getState() as any).swipe;
+      return !s?.loadingMore && !s?.loading;
+    },
   },
 );
 
@@ -78,6 +90,9 @@ const initialState: SwipeState = {
   undoCountResetAt: null,
   remainingMissedMatchRecovery: null,
   missedMatchRecoveryResetAt: null,
+  dailySwipeLimit: null,
+  weeklySuperLikeLimit: null,
+  dailyUndoLimit: null,
   whoLikedMeCount: 0,
 };
 
@@ -118,6 +133,9 @@ const swipeSlice = createSlice({
       if (p.undoCountResetAt !== undefined) state.undoCountResetAt = p.undoCountResetAt;
       if (p.remainingMissedMatchRecovery !== undefined) state.remainingMissedMatchRecovery = p.remainingMissedMatchRecovery;
       if (p.missedMatchRecoveryResetAt !== undefined) state.missedMatchRecoveryResetAt = p.missedMatchRecoveryResetAt;
+      if (p.dailySwipeLimit !== undefined) state.dailySwipeLimit = p.dailySwipeLimit;
+      if (p.weeklySuperLikeLimit !== undefined) state.weeklySuperLikeLimit = p.weeklySuperLikeLimit;
+      if (p.dailyUndoLimit !== undefined) state.dailyUndoLimit = p.dailyUndoLimit;
     },
   },
   extraReducers: (builder) => {

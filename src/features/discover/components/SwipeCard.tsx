@@ -14,7 +14,9 @@ import Animated, {
   useAnimatedStyle,
   useAnimatedRef,
   useSharedValue,
+  useFrameCallback,
   withRepeat,
+  withSequence,
   withTiming,
   Easing,
 } from "react-native-reanimated";
@@ -33,75 +35,33 @@ import * as Haptics from "expo-haptics";
 import uiBus, { cardExpandAnim, containerExpand } from "@/shared/services/uiBus";
 import {
   GraduationCap,
-  BookOpen,
   Heart,
   X,
   Check,
   Cigarette,
   Sparkles,
   Target,
-  // Hobby icons
-  Music,
-  Dumbbell,
-  Film,
-  Plane,
-  Utensils,
-  Camera,
-  Gamepad2,
-  Music2,
   Palette,
-  Coffee,
-  Wine,
-  Code,
-  Dog,
-  Cat,
-  Trees,
-  Flower2,
-  Drama,
-  Mic2,
-  Guitar,
-  Piano,
-  Mountain,
-  Waves,
-  BookOpenCheck,
-  Lightbulb,
   Briefcase,
   Users,
-  Trophy,
-  Footprints,
-  Fish,
-  Smartphone,
-  Bike,
-  HandMetal,
-  PartyPopper,
-  Tent,
-  Sandwich,
-  Cake,
-  Sunrise,
-  Book,
-  Languages,
-  Puzzle,
-  Headphones,
-  Newspaper,
-  TrendingUp,
-  Theater,
-  Soup,
-  ShoppingBag,
-  Orbit,
-  ChevronRight,
-  ChevronDown,
   Pen,
   ArrowDown,
   PawPrint,
   Wind,
+  MapPin,
+  type LucideIcon,
 } from "lucide-react-native";
 import { LinearGradient } from "expo-linear-gradient";
 import { BlurView } from "expo-blur";
 import MaskedView from "@react-native-masked-view/masked-view";
 import { easeGradient } from "react-native-easing-gradient";
-import Svg, { Defs, Rect, Circle, Mask } from "react-native-svg";
 import { getColors } from "react-native-image-colors";
-import { colors as theme } from "../../../shared/theme/colors";
+import { colors as theme, gradients } from "../../../shared/theme/colors";
+import HobbyIcon from "@/shared/components/HobbyIcon";
+import SFIcon, { type SFSymbol } from "@/shared/components/SFIcon";
+
+import { useRenderCount } from "@/shared/debug/useRenderCount";
+
 const { width, height } = Dimensions.get("window");
 const CARD_HEIGHT = height - 200;
 const SCREEN_HEIGHT = height - 188; // Header height (90px) çıkarıldı
@@ -347,173 +307,22 @@ function SkeletonBox({ w, h, borderRadius = 8 }: any) {
   );
 }
 
-// Icon mapping for hobbies — RegisterStep13Screen ile birebir aynı
-// (backend bu isimleri döndürüyor; eskisi farklı key'ler kullandığı için
-// çoğu hobby fallback Heart'a düşüyordu).
-const getHobbyIcon = (hobbyName) => {
-  const iconMap = {
-    // Backend enumName (PascalCase)
-    Gym: Dumbbell,
-    Yoga: Heart,
-    Running: Footprints,
-    Swimming: Waves,
-    Cycling: Bike,
-    Hiking: Trees,
-    Climbing: Mountain,
-    Boxing: HandMetal,
-    MartialArts: Trophy,
-    Dancing: Music2,
-    Pilates: Sparkles,
-    Cooking: Utensils,
-    Baking: Cake,
-    WineTasting: Wine,
-    Coffee: Coffee,
-    Foodie: Soup,
-    VeganCuisine: Sandwich,
-    Mixology: Wine,
-    Photography: Camera,
-    Painting: Palette,
-    Drawing: Palette,
-    Writing: BookOpenCheck,
-    Poetry: Book,
-    Crafts: Sparkles,
-    DIY: Flower2,
-    Fashion: ShoppingBag,
-    Music: Headphones,
-    Concerts: PartyPopper,
-    Guitar: Guitar,
-    Piano: Piano,
-    Singing: Mic2,
-    DJing: Music,
-    Festivals: PartyPopper,
-    Travel: Plane,
-    Camping: Tent,
-    Fishing: Fish,
-    Surfing: Waves,
-    Skiing: Mountain,
-    Snowboarding: Mountain,
-    Gardening: Flower2,
-    BeachLife: Sunrise,
-    Reading: BookOpen,
-    Museums: Theater,
-    ArtGalleries: Palette,
-    Theater: Drama,
-    Cinema: Film,
-    Documentaries: Film,
-    Learning: Lightbulb,
-    Languages: Languages,
-    VideoGames: Gamepad2,
-    BoardGames: Puzzle,
-    Chess: Puzzle,
-    Coding: Code,
-    Gaming: Gamepad2,
-    VR: Smartphone,
-    Podcasts: Headphones,
-    Volunteering: Users,
-    Pets: Dog,
-    Dogs: Dog,
-    Cats: Cat,
-    Meditation: Heart,
-    Astrology: Orbit,
-    Shopping: ShoppingBag,
-    Nightlife: Music2,
-    Brunch: Coffee,
-    SocialDrinking: Wine,
-    Networking: Briefcase,
-    Politics: Newspaper,
-    Philosophy: BookOpen,
-    Science: Lightbulb,
-    History: Book,
-    Investing: TrendingUp,
-    Entrepreneurship: Briefcase,
-    // Legacy TR display keys
-    "Fitness & Spor": Dumbbell,
-    Koşu: Footprints,
-    Yüzme: Waves,
-    Bisiklet: Bike,
-    "Doğa Yürüyüşü": Trees,
-    "Kaya Tırmanışı": Mountain,
-    Boks: HandMetal,
-    "Dövüş Sanatları": Trophy,
-    Dans: Music2,
-    "Yemek Pişirme": Utensils,
-    Fırıncılık: Cake,
-    "Şarap Tadımı": Wine,
-    "Kahve Tutkusu": Coffee,
-    Gurme: Soup,
-    "Vegan Mutfak": Sandwich,
-    Miksologluk: Wine,
-    Fotoğrafçılık: Camera,
-    Resim: Palette,
-    Çizim: Palette,
-    Yazarlık: BookOpenCheck,
-    Şiir: Book,
-    "El Sanatları": Sparkles,
-    "Kendin Yap (DIY)": Flower2,
-    Moda: ShoppingBag,
-    Müzik: Headphones,
-    Konserler: PartyPopper,
-    "Gitar Çalmak": Guitar,
-    "Piyano Çalmak": Piano,
-    "Şarkı Söylemek": Mic2,
-    "DJ'lik": Music,
-    Festivaller: PartyPopper,
-    Seyahat: Plane,
-    Kamp: Tent,
-    "Balık Tutma": Fish,
-    Sörf: Waves,
-    Kayak: Mountain,
-    Snowboard: Mountain,
-    Bahçıvanlık: Flower2,
-    "Plaj Hayatı": Sunrise,
-    Okumak: BookOpen,
-    Müzeler: Theater,
-    "Sanat Galerileri": Palette,
-    Tiyatro: Drama,
-    Sinema: Film,
-    Belgesel: Film,
-    Öğrenme: Lightbulb,
-    Diller: Languages,
-    "Video Oyunları": Gamepad2,
-    "Masa Oyunları": Puzzle,
-    Satranç: Puzzle,
-    Yazılım: Code,
-    Oyun: Gamepad2,
-    "Podcast'ler": Headphones,
-    Gönüllülük: Users,
-    "Evcil Hayvanlar": Dog,
-    Köpekler: Dog,
-    Kediler: Cat,
-    Meditasyon: Heart,
-    Astroloji: Orbit,
-    Alışveriş: ShoppingBag,
-    "Gece Hayatı": Music2,
-    "Sosyal İçici": Wine,
-    Siyaset: Newspaper,
-    Felsefe: BookOpen,
-    Bilim: Lightbulb,
-    Tarih: Book,
-    Yatırım: TrendingUp,
-    Girişimcilik: Briefcase,
-  };
-
-  return iconMap[hobbyName] || Heart;
-};
-
 // usagePurposeDisplay → ikon eşlemesi (EditProfileForm PURPOSE_META ile aynı).
-const getPurposeIcon = (purposeName) => {
-  const map = {
+const getPurposeIcon = (
+  purposeName: string,
+): { sf: SFSymbol; lucide: LucideIcon } => {
+  const map: Record<string, { sf: SFSymbol; lucide: LucideIcon }> = {
     // Backend enumName (PascalCase)
-    Dating: Sparkles,
-    Friendship: Users,
-    Networking: Briefcase,
-    JustLooking: Wind,
+    Dating: { sf: "sparkles", lucide: Sparkles },
+    Friendship: { sf: "person.2.fill", lucide: Users },
+    Networking: { sf: "briefcase.fill", lucide: Briefcase },
+    JustLooking: { sf: "wind", lucide: Wind },
     // Legacy TR display fallback
-    Flört: Sparkles,
-    Arkadaşlık: Users,
-    Öylesine: Wind,
+    Flört: { sf: "sparkles", lucide: Sparkles },
+    Arkadaşlık: { sf: "person.2.fill", lucide: Users },
+    Öylesine: { sf: "wind", lucide: Wind },
   };
-  return map[purposeName] || Target;
+  return map[purposeName] || { sf: "target", lucide: Target };
 };
 
 export default function SwipeCard({
@@ -531,8 +340,8 @@ export default function SwipeCard({
   hideChevron = false,
   hideSuperLike = false,
   onExpandPress,
-  superLikesRemaining,
 }: any) {
+  useRenderCount("SwipeCard");
   const insets = useSafeAreaInsets();
   const { t } = useTranslation();
   const [currentPhotoIndex, setCurrentPhotoIndex] = useState(0);
@@ -673,9 +482,57 @@ export default function SwipeCard({
     },
   });
 
-  // Pull-down progress → kalbin içi progressive fill opacity'si
-  const heartFillStyle = useAnimatedStyle(() => ({
-    opacity: superLikeProgress ? superLikeProgress.value : 0,
+  // Pull-down (super-like) sırasında kalp: fill rengi DEĞİŞMEZ, sadece büyür
+  // ve threshold'a doğru artan hızda titreşir.
+  // shakePhase her frame'de progress'e bağlı bir frekansla ilerler → titreşim
+  // hızı pull arttıkça artar (useFrameCallback ile UI thread'de).
+  // heartPressAnim: kalbe basılı tutunca da aynı animasyon threshold'u geçmiş
+  // (p=1) haliyle oynar — pull ile press'ten hangisi büyükse o sürer.
+  const heartPressAnim = useSharedValue(0);
+  const shakePhase = useSharedValue(0);
+  useFrameCallback((frame) => {
+    "worklet";
+    const pull = superLikeProgress ? superLikeProgress.value : 0;
+    const p = Math.max(pull, heartPressAnim.value);
+    if (p <= 0.001) {
+      shakePhase.value = 0;
+      return;
+    }
+    const dt = frame.timeSincePreviousFrame ?? 16;
+    // p: 0→1 iken frekans ~4→16 döngü/sn → threshold'a yaklaştıkça hızlanır.
+    const freq = 4 + p * 12;
+    shakePhase.value += (dt / 1000) * freq;
+  });
+  const heartPullStyle = useAnimatedStyle(() => {
+    const pull = superLikeProgress ? superLikeProgress.value : 0;
+    const p = Math.max(pull, heartPressAnim.value);
+    const scale = 1 + p * 0.35; // threshold'a doğru büyür
+    const amp = p * 8; // titreşim genliği (derece), pull arttıkça artar
+    const angle = Math.sin(shakePhase.value * Math.PI * 2) * amp;
+    return {
+      transform: [{ scale }, { rotate: `${angle}deg` }] as const,
+    };
+  });
+
+  // Premium vurgusu — super-like kalbi üzerinde 6sn'de bir soldan sağa geçen
+  // shimmer parıltısı. Sweep ~1.7sn sürer, ardından 4.3sn bekler (toplam 6sn döngü).
+  const heartShimmer = useSharedValue(0);
+  useEffect(() => {
+    heartShimmer.value = 0;
+    heartShimmer.value = withRepeat(
+      withSequence(
+        withTiming(1, { duration: 1700, easing: Easing.inOut(Easing.ease) }),
+        withTiming(0, { duration: 0 }),
+        withTiming(0, { duration: 4300 }),
+      ),
+      -1,
+      false,
+    );
+  }, [heartShimmer]);
+  // Band kalpten çok geniş (150px) → parıltının falloff'u daha da uzun bir
+  // mesafeye yayılır = iyice yumuşak, göz almayan geçiş. Peak -150→+55 arası.
+  const heartShimmerStyle = useAnimatedStyle(() => ({
+    transform: [{ translateX: -150 + heartShimmer.value * 205 }],
   }));
 
   if (!profile) return null;
@@ -729,9 +586,13 @@ export default function SwipeCard({
         },
       ]}
       className="flex-1 bg-bg"
-      onLayout={(e) =>
-        setMeasuredCardHeight((prev) => prev || e.nativeEvent.layout.height)
-      }
+      onLayout={(e) => {
+        // nativeEvent'i SENKRON oku: synthetic event handler dönünce geri
+        // havuza alınıp null'lanıyor. Değeri updater closure'ında okumak
+        // ("released synthetic event" → nativeEvent null) crash veriyordu.
+        const h = e.nativeEvent.layout.height;
+        setMeasuredCardHeight((prev) => prev || h);
+      }}
     >
       <ScrollWrapper nativeScrollGesture={nativeScrollGesture}>
         <Animated.ScrollView
@@ -783,6 +644,9 @@ export default function SwipeCard({
                           contentFit="cover"
                           cachePolicy="memory-disk"
                           recyclingKey={photo}
+                          // Üst kart decode kuyruğunda önceliklidir; alttaki kart
+                          // düşük öncelikle arkada yüklenir (algılanan hız).
+                          priority={isTopCard ? "high" : "low"}
                           transition={150}
                           onLoadEnd={() => {
                             loadedPhotoUris.add(photo);
@@ -926,97 +790,92 @@ export default function SwipeCard({
                       onPress={() => {
                         onSuperLike?.();
                       }}
+                      onPressIn={() => {
+                        heartPressAnim.value = withTiming(1, {
+                          duration: 180,
+                          easing: Easing.out(Easing.quad),
+                        });
+                      }}
+                      onPressOut={() => {
+                        heartPressAnim.value = withTiming(0, {
+                          duration: 180,
+                          easing: Easing.out(Easing.quad),
+                        });
+                      }}
                       hitSlop={12}
                     >
-                      <View style={{ width: 44, height: 44 }}>
-                        <MaskedView
-                          style={{ width: 44, height: 44 }}
-                          maskElement={
-                            <Svg width={44} height={44}>
-                              <Defs>
-                                <Mask
-                                  id="heartBite"
-                                  maskUnits="userSpaceOnUse"
-                                  x="0"
-                                  y="0"
-                                  width="44"
-                                  height="44"
-                                >
-                                  <Rect
-                                    width="44"
-                                    height="44"
-                                    fill="white"
-                                  />
-                                  {typeof superLikesRemaining === "number" && (
-                                    <Circle
-                                      cx="32"
-                                      cy="30"
-                                      r="12"
-                                      fill="black"
-                                    />
-                                  )}
-                                </Mask>
-                              </Defs>
-                              <Rect
-                                width="44"
-                                height="44"
-                                fill="white"
-                                mask="url(#heartBite)"
+                      <Animated.View
+                        style={[{ width: 55, height: 55 }, heartPullStyle]}
+                      >
+                          {/* LitPlus tonlu gradient dolgu — Heart şeklinde
+                              maskelenir (lucide fill tek renk aldığı için
+                              gradyanı MaskedView ile veriyoruz). */}
+                          <MaskedView
+                            style={StyleSheet.absoluteFill}
+                            maskElement={
+                              <Heart
+                                size={55}
+                                color="black"
+                                strokeWidth={0}
+                                fill="black"
                               />
-                            </Svg>
-                          }
-                        >
-                          <View style={{ width: 44, height: 44 }}>
-                            <Heart
-                              size={44}
-                              color={theme.text}
-                              strokeWidth={1.5}
-                              fill="transparent"
+                            }
+                          >
+                            <LinearGradient
+                              colors={gradients.swipeHeart}
+                              start={{ x: 0, y: 0 }}
+                              end={{ x: 1, y: 1 }}
+                              style={{ flex: 1 }}
                             />
+                          </MaskedView>
+                          {/* Premium shimmer — kalp şekline maskeli, 4sn'de bir
+                              soldan sağa geçen parıltı. */}
+                          <MaskedView
+                            style={StyleSheet.absoluteFill}
+                            pointerEvents="none"
+                            maskElement={
+                              <Heart
+                                size={55}
+                                color="black"
+                                strokeWidth={0}
+                                fill="black"
+                              />
+                            }
+                          >
                             <Animated.View
-                              pointerEvents="none"
                               style={[
-                                StyleSheet.absoluteFill,
-                                heartFillStyle,
+                                {
+                                  position: "absolute",
+                                  top: 0,
+                                  bottom: 0,
+                                  left: 0,
+                                  width: 150,
+                                },
+                                heartShimmerStyle,
                               ]}
                             >
-                              <Heart
-                                size={44}
-                                color={theme.text}
-                                strokeWidth={1.5}
-                                fill={theme.text}
+                              <LinearGradient
+                                {...(easeGradient({
+                                  colorStops: {
+                                    0: { color: "transparent" },
+                                    0.5: { color: "rgba(255,255,255,0.22)" },
+                                    1: { color: "transparent" },
+                                  },
+                                }) as any)}
+                                start={{ x: 0, y: 0.35 }}
+                                end={{ x: 1, y: 0.65 }}
+                                style={StyleSheet.absoluteFill}
                               />
                             </Animated.View>
-                          </View>
-                        </MaskedView>
-                        {typeof superLikesRemaining === "number" && (
-                          <View
-                            pointerEvents="none"
-                            style={{
-                              position: "absolute",
-                              left: 19,
-                              top: 17,
-                              width: 26,
-                              height: 26,
-                              alignItems: "center",
-                              justifyContent: "center",
-                            }}
-                          >
-                            <Text
-                              style={{
-                                color: theme.text,
-                                fontSize: 19,
-                                fontWeight: "700",
-                                fontVariant: ["tabular-nums"],
-                              }}
-                            >
-                              {superLikesRemaining === -1
-                                ? "∞"
-                                : superLikesRemaining}
-                            </Text>
-                          </View>
-                        )}
-                      </View>
+                          </MaskedView>
+                          {/* İnce açık border */}
+                          <Heart
+                            size={55}
+                            color={theme.swipeHeartBorder}
+                            strokeWidth={0.1}
+                            fill="transparent"
+                          />
+                      </Animated.View>
                     </TouchableOpacity>
                   </View>
                 )}
@@ -1079,7 +938,7 @@ export default function SwipeCard({
                             borderCurve: "continuous",
                             overflow: "hidden",
                           }}
-                          className="flex-row items-center self-start px-1 py-1 gap-1"
+                          className="flex-row items-center self-start py-1 gap-1"
                         >
                           <Text className=" text-white font-[600] text-[16px]">
                             {profile.universityName}
@@ -1137,7 +996,14 @@ export default function SwipeCard({
                       disabled={!onExpandPress}
                     >
                       <Animated.View style={chevronAnimStyle}>
-                        <ArrowDown size={28} color={theme.text} strokeWidth={2} />
+                        <SFIcon
+                          name="arrow.down"
+                          fallback={ArrowDown}
+                          size={28}
+                          color={theme.text}
+                          strokeWidth={2}
+                          weight="semibold"
+                        />
                       </Animated.View>
                     </TouchableOpacity>
                   </View>
@@ -1208,10 +1074,11 @@ export default function SwipeCard({
                             gap: 8,
                           }}
                         >
-                          <GraduationCap
+                          <SFIcon
+                            name="graduationcap.fill"
+                            fallback={GraduationCap}
                             size={22}
                             color={theme.text}
-                            strokeWidth={1.5}
                           />
                           <View className="flex-col items-start gap-2">
                             <Text className="text-white font-medium text-[18px]">
@@ -1236,7 +1103,7 @@ export default function SwipeCard({
                                 {/* Kullanım Amacı — başlık olarak direkt cümle */}
                 {profile.usagePurposeDisplay &&
                   (() => {
-                    const PurposeIcon = getPurposeIcon(
+                    const purposeIcon = getPurposeIcon(
                       profile.usagePurpose ?? profile.usagePurposeDisplay,
                     );
                     return (
@@ -1257,10 +1124,11 @@ export default function SwipeCard({
                             paddingHorizontal: 4,
                           }}
                         >
-                          <PurposeIcon
+                          <SFIcon
+                            name={purposeIcon.sf}
+                            fallback={purposeIcon.lucide}
                             size={20}
                             color={theme.text}
-                            strokeWidth={1.5}
                           />
                           <Text
                             style={{
@@ -1287,14 +1155,18 @@ export default function SwipeCard({
                       overflow: "hidden",
                       backgroundColor: "rgba(18,18,18,0.8)",
                     }}
-                    className="mb-4 p-5 py-5 border-[0.5px] border-white/10"
+                    className="mb-4 p-5 py-8 border-[0.5px] border-white/10"
                   >
+                    <View className="flex-row items-center mb-6 px-4">
+                      <Text className="text-white text-[18px] font-semibold">
+                        {t('profile.card.myInterests')}
+                      </Text>
+                    </View>
                     <View className="flex-row flex-wrap gap-2">
                       {profile.hobbies.map((hobby, index) => {
                         const isObj = hobby && typeof hobby === "object";
                         const enumName = isObj ? hobby.enumName : undefined;
                         const label = isObj ? hobby.name : hobby;
-                        const HobbyIcon = getHobbyIcon(enumName ?? label);
                         return (
                           <BlurView
                             intensity={90}
@@ -1316,6 +1188,7 @@ export default function SwipeCard({
                               }}
                             >
                               <HobbyIcon
+                                hobby={enumName ?? label}
                                 size={18}
                                 color={theme.text}
                                 strokeWidth={1.5}
@@ -1342,132 +1215,69 @@ export default function SwipeCard({
                       overflow: "hidden",
                       backgroundColor: "rgba(18,18,18,0.8)",
                     }}
-                    className="mb-4 p-5 py-5 border-[0.5px] border-white/10"
+                    className="mb-4 p-5 py-8 border-[0.5px] border-white/10"
                   >
-                    <View>
-                      {profile.smokingStatusDisplay && (
-                        <View
-                          style={{
-                            borderRadius: 40,
-                            borderCurve: "continuous",
-                            overflow: "hidden",
-                            borderWidth: 0,
-                            borderColor: "rgba(255,255,255,0.1)",
-                            flexDirection: "row",
-                            alignItems: "center",
-                            justifyContent: "space-between",
-                            padding: 16,
-                          }}
-                        >
-                          <View
+                    <View className="flex-row items-center mb-6 px-4">
+                      <Text className="text-white text-[18px] font-semibold">
+                        {t('profile.card.myLifestyle')}
+                      </Text>
+                    </View>
+                    <View className="flex-row flex-wrap gap-2">
+                      {[
+                        profile.smokingStatusDisplay && {
+                          key: "smoking",
+                          sf: "smoke.fill" as SFSymbol,
+                          lucide: Cigarette,
+                          label: profile.smokingStatusDisplay,
+                        },
+                        profile.zodiacSignDisplay && {
+                          key: "zodiac",
+                          sf: "sparkles" as SFSymbol,
+                          lucide: Sparkles,
+                          label: profile.zodiacSignDisplay,
+                        },
+                        profile.hasPets != null && {
+                          key: "pets",
+                          sf: "pawprint.fill" as SFSymbol,
+                          lucide: PawPrint,
+                          label: profile.hasPets
+                            ? t('profile.card.petsYes')
+                            : t('profile.card.petsNo'),
+                        },
+                      ]
+                        .filter(Boolean)
+                        .map(({ key, sf, lucide, label }) => (
+                          <BlurView
+                            intensity={90}
+                            key={key}
+                            className="self-start border-[0.5px] border-white/10"
                             style={{
-                              flexDirection: "row",
-                              alignItems: "center",
-                              gap: 10,
+                              borderRadius: 999,
+                              borderCurve: "continuous",
+                              overflow: "hidden",
                             }}
                           >
-                            <Cigarette
-                              size={18}
-                              color={theme.text}
-                              strokeWidth={1.5}
-                            />
-                            <Text
+                            <View
                               style={{
-                                color: theme.text,
-                                fontSize: 15,
-                                fontWeight: "500",
+                                flexDirection: "row",
+                                alignItems: "center",
+                                paddingHorizontal: 12,
+                                paddingVertical: 14,
+                                gap: 8,
                               }}
                             >
-                              {t('profile.card.smoking')}
-                            </Text>
-                          </View>
-                          <Text style={{ color: theme.textSecondary, fontSize: 15 }}>
-                            {profile.smokingStatusDisplay}
-                          </Text>
-                        </View>
-                      )}
-                      {profile.zodiacSignDisplay && (
-                        <View
-                          style={{
-                            borderRadius: 40,
-                            borderCurve: "continuous",
-                            overflow: "hidden",
-                            borderWidth: 0,
-                            borderColor: "rgba(255,255,255,0.1)",
-                            flexDirection: "row",
-                            alignItems: "center",
-                            justifyContent: "space-between",
-                            padding: 16,
-                          }}
-                        >
-                          <View
-                            style={{
-                              flexDirection: "row",
-                              alignItems: "center",
-                              gap: 10,
-                            }}
-                          >
-                            <Sparkles
-                              size={18}
-                              color={theme.text}
-                              strokeWidth={1.5}
-                            />
-                            <Text
-                              style={{
-                                color: theme.text,
-                                fontSize: 15,
-                                fontWeight: "500",
-                              }}
-                            >
-                              {t('profile.card.zodiac')}
-                            </Text>
-                          </View>
-                          <Text style={{ color: theme.textSecondary, fontSize: 15 }}>
-                            {profile.zodiacSignDisplay}
-                          </Text>
-                        </View>
-                      )}
-                      {profile.hasPets != null && (
-                        <View
-                          style={{
-                            borderRadius: 40,
-                            borderCurve: "continuous",
-                            overflow: "hidden",
-                            borderWidth: 0,
-                            borderColor: "rgba(255,255,255,0.1)",
-                            flexDirection: "row",
-                            alignItems: "center",
-                            justifyContent: "space-between",
-                            padding: 16,
-                          }}
-                        >
-                          <View
-                            style={{
-                              flexDirection: "row",
-                              alignItems: "center",
-                              gap: 10,
-                            }}
-                          >
-                            <PawPrint
-                              size={18}
-                              color={theme.text}
-                              strokeWidth={1.5}
-                            />
-                            <Text
-                              style={{
-                                color: theme.text,
-                                fontSize: 15,
-                                fontWeight: "500",
-                              }}
-                            >
-                              {t('profile.card.pets')}
-                            </Text>
-                          </View>
-                          <Text style={{ color: theme.textSecondary, fontSize: 15 }}>
-                            {profile.hasPets ? t('profile.card.petsYes') : t('profile.card.petsNo')}
-                          </Text>
-                        </View>
-                      )}
+                              <SFIcon
+                                name={sf}
+                                fallback={lucide}
+                                size={18}
+                                color={theme.text}
+                              />
+                              <Text className="text-white font-[500] text-[15px]">
+                                {label}
+                              </Text>
+                            </View>
+                          </BlurView>
+                        ))}
                     </View>
                   </View>
                 )}
@@ -1508,10 +1318,11 @@ export default function SwipeCard({
                           gap: 8,
                         }}
                       >
-                        <Pen
+                        <SFIcon
+                          name="pencil"
+                          fallback={Pen}
                           size={18}
                           color={theme.text}
-                          strokeWidth={1.5}
                           style={{ marginTop: 2 }}
                         />
                         <Text
@@ -1525,6 +1336,66 @@ export default function SwipeCard({
                           }}
                         >
                           {profile.bio}
+                        </Text>
+                      </View>
+                    </View>
+                  </View>
+                )}
+
+                {/* Konum */}
+                {(profile.cityDisplay || profile.districtDisplay) && (
+                  <View
+                    style={{
+                      borderRadius: 40,
+                      borderCurve: "continuous",
+                      overflow: "hidden",
+                      backgroundColor: "rgba(18,18,18,0.8)",
+                    }}
+                    className="mb-4 p-5 py-5 pt-8 border-[0.5px] border-white/10"
+                  >
+                    <View className="flex-row items-center mb-2 px-4">
+                      <Text className="text-white text-[18px] font-semibold">
+                        {t('profile.card.location')}
+                      </Text>
+                    </View>
+                    <View
+                      style={{
+                        borderRadius: 40,
+                        borderCurve: "continuous",
+                        overflow: "hidden",
+                        borderWidth: 0,
+                        borderColor: "rgba(255,255,255,0.1)",
+                      }}
+                    >
+                      <View
+                        style={{
+                          flexDirection: "row",
+                          alignItems: "flex-start",
+                          paddingHorizontal: 14,
+                          paddingVertical: 14,
+                          gap: 8,
+                        }}
+                      >
+                        <SFIcon
+                          name="mappin"
+                          fallback={MapPin}
+                          size={18}
+                          color={theme.text}
+                          style={{ marginTop: 2 }}
+                        />
+                        <Text
+                          style={{
+                            color: theme.text,
+                            fontSize: 15,
+                            lineHeight: 22,
+                            flex: 1,
+                            flexShrink: 1,
+                            flexWrap: "wrap",
+                          }}
+                        >
+                          {[profile.districtDisplay, profile.cityDisplay]
+                            .filter(Boolean)
+                            .join(", ")}
                         </Text>
                       </View>
                     </View>
@@ -1553,7 +1424,14 @@ export default function SwipeCard({
                       }}
                     >
                       <View pointerEvents="none">
-                        <X size={75} color={theme.text} strokeWidth={5} />
+                        <SFIcon
+                          name="xmark"
+                          fallback={X}
+                          size={75}
+                          color={theme.text}
+                          strokeWidth={5}
+                          weight="heavy"
+                        />
                       </View>
                     </TouchableOpacity>
                     <TouchableOpacity
@@ -1568,7 +1446,14 @@ export default function SwipeCard({
                       }}
                     >
                       <View pointerEvents="none">
-                        <Check size={75} color={theme.text} strokeWidth={5} />
+                        <SFIcon
+                          name="checkmark"
+                          fallback={Check}
+                          size={75}
+                          color={theme.text}
+                          strokeWidth={5}
+                          weight="heavy"
+                        />
                       </View>
                     </TouchableOpacity>
                   </View>
