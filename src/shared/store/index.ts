@@ -1,6 +1,5 @@
 import { configureStore } from '@reduxjs/toolkit';
 import { persistStore, persistReducer } from 'redux-persist';
-import AsyncStorage from '@react-native-async-storage/async-storage';
 import { combineReducers } from '@reduxjs/toolkit';
 import authReducer from '@/features/auth/authSlice';
 import profileReducer from '@/features/profile/profileSlice';
@@ -8,43 +7,72 @@ import swipeReducer from '@/features/discover/swipeSlice';
 import subscriptionReducer from '@/features/profile/subscriptionSlice';
 import chatReducer from '@/features/chat/chatSlice';
 import settingsReducer from './settingsSlice';
+import { reduxMmkvChatStorage, reduxMmkvAppStorage } from './mmkvStorage';
+import { chatCacheTransform } from './chatPersistTransform';
 
 // Auth slice specific persist config - only persist essential auth data.
 // registrationForm persist EDİLİR — kayıt akışında hata olursa veya app reload
 // olursa kullanıcı girdiği bilgileri kaybetmesin (firstName, phone, dob vs).
 // Success/logout durumunda zaten clearRegistrationForm dispatch ediliyor.
+//
+// refreshToken persist EDİLMEZ — tek kaynak tokenStorage'daki (MMKV) `ut_refresh_token`.
+// Backend her refresh'te token'ı rotate ediyor; api.ts rotasyondan hemen sonra
+// `ut_refresh_token`'ı yazıyor ama redux-persist'in flush'ı asenkron. İki kopya
+// tutulduğunda app rotasyon ile flush arasında öldürülürse soğuk açılışta bayat
+// kopya rehydrate olup taze token'ı eziyor, sonraki refresh kullanılmış token
+// gönderiyor ve backend bunu revoke/reuse sayıp oturumu kapatıyordu.
 const authPersistConfig = {
   key: 'auth',
-  storage: AsyncStorage,
-  blacklist: ['loading', 'error', 'needsVerification', 'pendingVerificationEmail'],
+  storage: reduxMmkvAppStorage,
+  blacklist: ['loading', 'error', 'needsVerification', 'pendingVerificationEmail', 'refreshToken'],
 };
 
 // Profile slice specific persist config - persist profile data during completion flow
 const profilePersistConfig = {
   key: 'profile',
-  storage: AsyncStorage,
+  storage: reduxMmkvAppStorage,
   blacklist: ['loading', 'error'],
 };
 
 const settingsPersistConfig = {
   key: 'settings',
-  storage: AsyncStorage,
+  storage: reduxMmkvAppStorage,
 };
 
-// Chat: persist EDILMEZ — mesaj geçmişi büyük + AsyncStorage rehydrate latency yaratır.
-// App açılışta SignalR + REST ile fresh state çekilir.
+// Chat: MMKV'ye KISMİ persist (local-first cache) — cold-start'ta Messages +
+// son mesajlar anında, offline okuma, boot'taki 15× history prefetch'in yerini
+// disk alır. MMKV senkron olduğu için eski "AsyncStorage rehydrate latency"
+// itirazı geçerli değil. Yalnız conversations + cap'li messagesByConv +
+// unreadTotal yazılır; typing/presence/quota/activeConversationId BİLEREK
+// persist edilmez (realtime/monetizasyon-hassas — restart'ta taze çekilir).
+// Server authoritative kalır: sohbet açılışında reconcile fetch bucket'ı tazeler.
+// Kill-switch: false → chat eski (volatile in-memory) davranışa döner.
+export const CHAT_PERSIST_ENABLED = true;
+
+const chatPersistConfig = {
+  key: 'chat',
+  storage: reduxMmkvChatStorage,
+  version: 1, // şema değişiminde bump + migrate=drop (cache server'dan yeniden kurulur)
+  whitelist: ['conversations', 'messagesByConv', 'unreadTotal'],
+  transforms: [chatCacheTransform],
+  // Sıcak yazımları (her mesaj/receipt) coalesce et — JS-thread stringify'ı boğmasın.
+  throttle: 1500,
+};
+
 const rootReducer = combineReducers({
   auth: persistReducer(authPersistConfig, authReducer),
   profile: persistReducer(profilePersistConfig, profileReducer),
   swipe: swipeReducer,
   subscription: subscriptionReducer,
-  chat: chatReducer,
+  chat: CHAT_PERSIST_ENABLED
+    ? persistReducer(chatPersistConfig, chatReducer)
+    : chatReducer,
   settings: persistReducer(settingsPersistConfig, settingsReducer),
 });
 
 const persistConfig = {
   key: 'root',
-  storage: AsyncStorage,
+  storage: reduxMmkvAppStorage,
   whitelist: ['profile'],
 };
 

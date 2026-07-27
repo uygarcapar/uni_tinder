@@ -1,5 +1,8 @@
 import { registerRootComponent } from "expo";
-import messaging from "@react-native-firebase/messaging";
+import {
+  getMessaging,
+  setBackgroundMessageHandler,
+} from "@react-native-firebase/messaging";
 
 import App from "./App";
 
@@ -7,7 +10,7 @@ import App from "./App";
 // olmak zorunda. Headless context; UI navigasyonu buradan yapılmaz. Tap sonrası routing
 // AppNavigator'daki subscribeBackgroundOpen ve getInitialNotificationData tarafından
 // handle edilir.
-messaging().setBackgroundMessageHandler(async () => {
+setBackgroundMessageHandler(getMessaging(), async () => {
   // sessiz — OS bildirimi zaten notification bloğuyla otomatik gösterilir
 });
 

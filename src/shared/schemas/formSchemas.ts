@@ -153,7 +153,6 @@ export const editProfileFormSchema = z.object({
   smoking: z.any().nullable(),
   zodiac: z.any().nullable(),
   usagePurpose: z.any().nullable(),
-  interestedIn: z.array(z.any()).min(1, "En az bir ilgi alanı seçmelisin."),
   city: z.any().nullable(),
   district: z.any().nullable(),
   languages: z.array(z.any()),

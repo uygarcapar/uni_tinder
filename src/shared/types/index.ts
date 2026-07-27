@@ -127,19 +127,30 @@ export interface ChatQuotaStatus {
   freeMessageLimit: number;
   remainingMessages: number | null;
   requiresUnlock: boolean;
-  _fetchedAt?: number;
+}
+
+// Fetch metadata quota içeriğinden ayrı tutuluyor: _fetchedAt: Date.now()
+// spread'i her .fulfilled'de quotaByConv[id] referansını değiştiriyordu,
+// downstream cascade yaratıyordu. Meta ayrı map'te → quotaByConv[id]
+// referansı sadece anlamlı içerik değişiminde güncellenir.
+export interface ChatQuotaMeta {
+  fetchedAt: number;
+  inFlight: boolean;
 }
 
 export interface ChatState {
   conversations: ConversationListItemDto[];
   conversationsLoading: boolean;
   conversationsError: string | null;
+  /** Son başarılı fetchConversations zamanı — staleness guard için (bkz. chatSlice). */
+  _conversationsFetchedAt?: number;
   messagesByConv: Record<string, MessageBucket>;
   typingByConv: Record<string, TypingEntry>;
   presenceByUser: Record<string, PresenceEntry>;
   unreadTotal: number;
   activeConversationId: string | null;
   quotaByConv: Record<string, ChatQuotaStatus>;
+  quotaMetaByConv: Record<string, ChatQuotaMeta>;
 }
 
 // ─── Swipe ─────────────────────────────────────────────────────────────────────
@@ -229,6 +240,12 @@ export interface SwipeStats {
   undoCountResetAt: string | null;
   remainingMissedMatchRecovery: number | null;
   missedMatchRecoveryResetAt: string | null;
+  // Tavanlar (backend SwipeLimitsOptions). -1 = sınırsız, null = backend
+  // henüz göndermiyor. Free'de weeklySuperLikeLimit lifetime kotayı ifade
+  // eder — yenilenmez.
+  dailySwipeLimit: number | null;
+  weeklySuperLikeLimit: number | null;
+  dailyUndoLimit: number | null;
 }
 
 export interface SwipeState extends SwipeStats {
@@ -244,10 +261,50 @@ export interface SwipeState extends SwipeStats {
 
 // ─── Subscription ──────────────────────────────────────────────────────────────
 
-export interface SubscriptionState {
+// Backend SubscriptionStatusDto.status
+export type SubscriptionStatusState =
+  | "Active"
+  | "Cancelled"
+  | "Expired"
+  | "BillingIssue"
+  | "Paused";
+
+export type SubscriptionProvider = "AppStore" | "PlayStore" | "RevenueCat";
+
+// POST /api/subscription/sync → { synced, source, reason, status }
+export type SyncSource = "db" | "rc_rest" | "none";
+export type SyncReason =
+  | "WEBHOOK_LANDED"
+  | "RC_REST_CONFIRMED"
+  | "NOT_FOUND_IN_RC"
+  | "RC_REST_UNAVAILABLE"
+  | "RC_REST_ERROR";
+
+// `/status` ve `/sync`'in `status` alanının normalize edilmiş hâli.
+export interface SubscriptionStatusSnapshot {
+  /** Backend `isActivelyPremium` — TEK gating alanı. */
   isPremium: boolean;
   expiresAt: string | null;
+  status: SubscriptionStatusState | null;
+  productId: string | null;
+  autoRenewEnabled: boolean;
+  isTrial: boolean;
+  trialEndsAt: string | null;
+  gracePeriodEndsAt: string | null;
+  cancelledAt: string | null;
+  provider: SubscriptionProvider | null;
+}
+
+export interface SubscriptionState extends SubscriptionStatusSnapshot {
   loading: boolean;
   syncing: boolean;
   lastSyncedAt: number | null;
+  /** Son `/sync` (veya `/reconcile`) çağrısının backend gerekçesi. */
+  lastSyncReason: SyncReason | null;
+  /** Satın alma alındı ama backend hâlâ premium görmüyor → "aktivasyon sürüyor". */
+  syncPending: boolean;
+  // Satın alma anında yazılan optimistic premium'un zaman damgası. Backend
+  // henüz webhook'u görmediği için dönen `false` bu pencerede downgrade
+  // sayılmaz. Bkz. subscriptionSlice OPTIMISTIC_PREMIUM_GRACE_MS.
+  optimisticPremiumAt: number | null;
 }

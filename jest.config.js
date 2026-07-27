@@ -31,6 +31,12 @@ module.exports = {
       'expo',
       'expo-blur',
       '@react-native',
+      // RN "exports" koşulundan TS kaynağına çözülen paketler — babel'den geçmeli.
+      '@reduxjs/toolkit',
+      'immer',
+      'redux',
+      '@react-native-async-storage/async-storage',
+      'react-native-mmkv',
     ].join('|') + ')/)',
   ],
 

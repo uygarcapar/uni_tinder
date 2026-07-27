@@ -23,6 +23,16 @@ export const REPORT_REASON_LABELS_TR: Record<ReportReasonType, string> = {
   Other: 'Diğer',
 };
 
+/** GET /api/moderation/blocked-users item'ı. */
+export interface BlockedUser {
+  userId: string;
+  displayName: string;
+  age?: number | null;
+  university?: string | null;
+  photoUrl?: string | null;
+  blockedAt: string;
+}
+
 interface ReportArgs {
   reportedUserId: string;
   reason: ReportReasonType;
@@ -40,6 +50,11 @@ const moderationService = {
   },
   async getBlockedUserIds(): Promise<string[]> {
     const res = await api.get(API_ENDPOINTS.MODERATION_BLOCKS);
+    return (res as any).result || [];
+  },
+  /** Kart bilgileriyle engellenenler listesi (isim/yaş/üniversite/foto). */
+  async getBlockedUsers(): Promise<BlockedUser[]> {
+    const res = await api.get(API_ENDPOINTS.MODERATION_BLOCKED_USERS);
     return (res as any).result || [];
   },
   async reportUser({ reportedUserId, reason, description, messageId, conversationId }: ReportArgs): Promise<string | undefined> {

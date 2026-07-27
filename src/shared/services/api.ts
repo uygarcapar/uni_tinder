@@ -1,6 +1,9 @@
 import axios, { AxiosRequestConfig } from 'axios';
 import { API_BASE_URL, API_ENDPOINTS } from '@/shared/constants/api';
 import { getRefreshToken, saveRefreshToken, saveAccessToken, clearAllTokens } from '@/shared/utils/tokenStorage';
+import { recordRequest } from '@/shared/debug/netTally';
+import { isSelfInflictedForceLogout } from '@/shared/utils/sessionGuard';
+import { reportError } from '@/shared/services/sentry';
 
 let currentAccessToken: string | null = null;
 let currentLanguage: 'tr' | 'en' = 'tr';
@@ -44,6 +47,7 @@ const api = axios.create({
 
 api.interceptors.request.use(
   (config) => {
+    recordRequest(config.method || 'GET', config.url || '');
     if (currentAccessToken) {
       config.headers.Authorization = `Bearer ${currentAccessToken}`;
       const tokenPreview = currentAccessToken.substring(0, 20) + '...';
@@ -114,12 +118,24 @@ export const refreshAccessToken = async (): Promise<string | null> => {
       console.log('❌ Token refresh başarısız:', err?.response?.status, err?.message);
       // Backend revoke sinyali: başka cihazdan giriş yapıldıysa reason'ı taşı ki
       // AppNavigator "başka cihazdan giriş" toast'ını gösterebilsin. Diğer refresh
-      // fail'leri (normal expiry, network) sessiz logout ile ilerler.
+      // fail'leri (normal expiry, network, rotate edilmiş token'ın tekrar
+      // gönderilmesi → REFRESH_TOKEN_INVALID + reason:null) sessiz logout ile
+      // ilerler. Ayrım errorCode'a değil doğrudan reason'a bakıyor — backend
+      // revoke edilmiş token için errorCode'u değiştirse de sınıflandırma tutar.
       const data = err?.response?.data;
       const reason: AuthLostReason =
-        data?.errorCode === 'REFRESH_TOKEN_REVOKED' && data?.reason === 'new_login_elsewhere'
-          ? 'new_login_elsewhere'
-          : 'session_expired';
+        data?.reason === 'new_login_elsewhere' ? 'new_login_elsewhere' : 'session_expired';
+
+      // Kendi login'imizin penceresindeysek bu, önceki oturumdan kalmış bir
+      // isteğin revoke edilmiş eski refresh token'la denemesi. Token'ları
+      // temizlemek login'in az önce yazdığı TAZE refresh token'ı silerdi;
+      // logout dispatch etmek de yeni oturumu düşürürdü. İsteği başarısız
+      // bırakıp çık.
+      if (isSelfInflictedForceLogout()) {
+        console.log('↩️ Refresh fail yok sayıldı — kendi login penceremiz, eski token');
+        return null;
+      }
+
       await clearAllTokens();
       setCurrentAccessToken(null);
       if (onAuthLost) onAuthLost(reason);
@@ -181,6 +197,17 @@ api.interceptors.response.use(
       } finally {
         isRefreshing = false;
       }
+    }
+
+    // Sunucu hatalarını (5xx) raporla; 4xx beklenen akış (validasyon, quota,
+    // 401-refresh) olduğu için gürültü yaratmasın. Ağ hataları (response yok)
+    // offline'da çok sık — onlar da raporlanmaz. DSN yoksa no-op.
+    if (error.response?.status >= 500) {
+      reportError(error, {
+        url: originalRequest?.url,
+        method: originalRequest?.method,
+        status: error.response.status,
+      });
     }
 
     return Promise.reject(error);

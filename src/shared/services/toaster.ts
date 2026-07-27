@@ -8,15 +8,24 @@ const DEFAULT_DURATION = 4000;
 
 type ShowMessageToastArg = Omit<MessageToastProps, 'onPress'> & {
   conversationId: string;
+  partnerUserId?: string;
 };
 
-export function showMessageToast({ senderName, photoUrl, preview, conversationId }: ShowMessageToastArg) {
+export function showMessageToast({
+  senderName,
+  photoUrl,
+  preview,
+  conversationId,
+  partnerUserId,
+}: ShowMessageToastArg) {
   const goToChat = () => {
     if (!navigationRef.isReady()) return;
     Notifier.hideNotification();
     navigationRef.navigate('Chat' as never, {
       conversationId,
-      partner: undefined,
+      partner: partnerUserId
+        ? { userId: partnerUserId, displayName: senderName, profileImageUrl: photoUrl ?? undefined }
+        : undefined,
       isActive: true,
     } as never);
   };

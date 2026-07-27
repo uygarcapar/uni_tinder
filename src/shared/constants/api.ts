@@ -26,8 +26,8 @@ export const API_ENDPOINTS = {
   CHANGE_PASSWORD: "/api/user/ChangePassword",
   FORGOT_PASSWORD: "/api/user/ForgotPassword",
   RESET_PASSWORD: "/api/user/ResetPasswordWithCode",
-  DELETE_USER: "/api/user/DeleteUser",
-  DELETE_ACCOUNT: "/api/user/DeleteUser",
+  // NOT: DELETE /api/user/DeleteUser deprecated (orphan kayıt bırakıyor).
+  // Hesap silme için PRIVACY_DELETE_ACCOUNT kullan — KVKK akışı, 30 gün geri alınabilir.
   VALIDATE_TOKEN: "/api/user/validate-token",
   REFRESH_TOKEN: "/api/user/refresh-token",
   REVOKE_TOKEN: "/api/user/revoke-token",
@@ -56,11 +56,15 @@ export const API_ENDPOINTS = {
   PRIVACY_CANCEL_DELETION: "/api/privacy/cancel-deletion",
   PRIVACY_DELETION_STATUS: "/api/privacy/deletion-status",
   PRIVACY_MY_DATA: "/api/privacy/my-data",
+  PRIVACY_MY_DATA_STATUS: (requestId: number | string) => `/api/privacy/my-data/${requestId}`,
   PRIVACY_ACCEPT_CONSENT: "/api/privacy/accept-consent",
 
   SUBSCRIPTION_STATUS: "/api/subscription/status",
   SUBSCRIPTION_SYNC: "/api/subscription/sync",
   SUBSCRIPTION_PLANS: "/api/subscription/plans",
+  // RC SDK customerInfo ile backend /status çeliştiğinde. Aynı flow'u /sync ile
+  // paylaşır, ek olarak gönderilen RC bilgilerini audit log'a yazar.
+  SUBSCRIPTION_RECONCILE: "/api/subscription/reconcile",
 
   MESSAGES_CONVERSATIONS: "/api/messages/conversations",
   MESSAGES_HISTORY_CURSOR: (convId: string) => `/api/messages/conversations/${convId}/history-cursor`,
@@ -81,7 +85,9 @@ export const API_ENDPOINTS = {
   MESSAGES_UNLOCK: (convId: string) => `/api/messages/conversations/${convId}/unlock`,
 
   MODERATION_BLOCK: (userId: string) => `/api/moderation/block/${userId}`,
+  // /blocks sadece id listesi döner; kart göstermek için /blocked-users kullan.
   MODERATION_BLOCKS: "/api/moderation/blocks",
+  MODERATION_BLOCKED_USERS: "/api/moderation/blocked-users",
   MODERATION_REPORT: "/api/moderation/report",
 
   NOTIFICATIONS_PREFERENCES: "/api/notifications/preferences",
