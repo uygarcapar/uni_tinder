@@ -32,34 +32,34 @@ describe('ReplyPreview', () => {
     const tree = render(
       <ReplyPreview reply={{ contentPreview: 'x', contentType: 0 }} />
     );
-    expect(tree.getByText('chat.defaultUserName')).toBeTruthy();
+    expect(tree.getByText('Kullanıcı')).toBeTruthy();
   });
 
   it('shows deleted sender + deleted message keys when isDeleted', () => {
     const tree = render(<ReplyPreview reply={{ isDeleted: true }} />);
-    expect(tree.getByText('chat.replyPreview.deletedSender')).toBeTruthy();
-    expect(tree.getByText('chat.replyPreview.deletedMessage')).toBeTruthy();
+    expect(tree.getByText('Silinmiş')).toBeTruthy();
+    expect(tree.getByText('Bu mesaj silindi')).toBeTruthy();
   });
 
   it('shows the media label for image content', () => {
     const tree = render(
       <ReplyPreview reply={{ senderDisplayName: 'A', contentType: 1 }} />
     );
-    expect(tree.getByText('📷 chat.messages.mediaPhoto')).toBeTruthy();
+    expect(tree.getByText('📷 Fotoğraf')).toBeTruthy();
   });
 
   it('shows the media label for voice content', () => {
     const tree = render(
       <ReplyPreview reply={{ senderDisplayName: 'A', contentType: 2 }} />
     );
-    expect(tree.getByText('🎙️ chat.messages.mediaVoice')).toBeTruthy();
+    expect(tree.getByText('🎙️ Sesli mesaj')).toBeTruthy();
   });
 
   it('shows the media label for video content', () => {
     const tree = render(
       <ReplyPreview reply={{ senderDisplayName: 'A', contentType: 3 }} />
     );
-    expect(tree.getByText('🎬 chat.messages.mediaVideo')).toBeTruthy();
+    expect(tree.getByText('🎬 Video')).toBeTruthy();
   });
 
   it('shows "..." when text preview is empty', () => {

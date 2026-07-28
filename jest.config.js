@@ -28,8 +28,7 @@ module.exports = {
       'react-native-css-interop',
       'lucide-react-native',
       '@expo',
-      'expo',
-      'expo-blur',
+      'expo[a-z-]*',
       '@react-native',
       // RN "exports" koşulundan TS kaynağına çözülen paketler — babel'den geçmeli.
       '@reduxjs/toolkit',

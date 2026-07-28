@@ -100,8 +100,8 @@ describe('MessageActionSheet — action visibility', () => {
         isOwn={false}
       />
     );
-    expect(tree.getByText('chat.actions.reply')).toBeTruthy();
-    expect(tree.getByText('chat.actions.copy')).toBeTruthy();
+    expect(tree.getByText('Yanıtla')).toBeTruthy();
+    expect(tree.getByText('Kopyala')).toBeTruthy();
   });
 
   it('hides Kopyala when message has no text content', () => {
@@ -112,7 +112,7 @@ describe('MessageActionSheet — action visibility', () => {
         isOwn={false}
       />
     );
-    expect(tree.queryByText('chat.actions.copy')).toBeNull();
+    expect(tree.queryByText('Kopyala')).toBeNull();
   });
 
   it('shows Düzenle only when own + recent text message', () => {
@@ -123,7 +123,7 @@ describe('MessageActionSheet — action visibility', () => {
         isOwn
       />
     );
-    expect(tree.getByText('chat.actions.edit')).toBeTruthy();
+    expect(tree.getByText('Düzenle')).toBeTruthy();
   });
 
   it('hides Düzenle when message is older than the edit window', () => {
@@ -134,7 +134,7 @@ describe('MessageActionSheet — action visibility', () => {
         isOwn
       />
     );
-    expect(tree.queryByText('chat.actions.edit')).toBeNull();
+    expect(tree.queryByText('Düzenle')).toBeNull();
   });
 
   it('hides Düzenle for non-text content types', () => {
@@ -145,7 +145,7 @@ describe('MessageActionSheet — action visibility', () => {
         isOwn
       />
     );
-    expect(tree.queryByText('chat.actions.edit')).toBeNull();
+    expect(tree.queryByText('Düzenle')).toBeNull();
   });
 
   it('shows both delete options when own message', () => {
@@ -156,8 +156,8 @@ describe('MessageActionSheet — action visibility', () => {
         isOwn
       />
     );
-    expect(tree.getByText('chat.actions.deleteForMe')).toBeTruthy();
-    expect(tree.getByText('chat.actions.deleteForEveryone')).toBeTruthy();
+    expect(tree.getByText('Sadece benden sil')).toBeTruthy();
+    expect(tree.getByText('Herkes için sil')).toBeTruthy();
   });
 
   it('hides delete options for someone else’s message', () => {
@@ -168,8 +168,8 @@ describe('MessageActionSheet — action visibility', () => {
         isOwn={false}
       />
     );
-    expect(tree.queryByText('chat.actions.deleteForMe')).toBeNull();
-    expect(tree.queryByText('chat.actions.deleteForEveryone')).toBeNull();
+    expect(tree.queryByText('Sadece benden sil')).toBeNull();
+    expect(tree.queryByText('Herkes için sil')).toBeNull();
   });
 });
 
@@ -203,7 +203,7 @@ describe('MessageActionSheet — callbacks', () => {
         isOwn={false}
       />
     );
-    fireEvent.press(tree.getByText('chat.actions.reply'));
+    fireEvent.press(tree.getByText('Yanıtla'));
     expect(onReply).toHaveBeenCalledTimes(1);
     expect(onClose).toHaveBeenCalledTimes(1);
   });
@@ -218,7 +218,7 @@ describe('MessageActionSheet — callbacks', () => {
         isOwn
       />
     );
-    fireEvent.press(tree.getByText('chat.actions.deleteForMe'));
+    fireEvent.press(tree.getByText('Sadece benden sil'));
     expect(onDelete).toHaveBeenCalledWith(false);
   });
 
@@ -232,7 +232,7 @@ describe('MessageActionSheet — callbacks', () => {
         isOwn
       />
     );
-    fireEvent.press(tree.getByText('chat.actions.deleteForEveryone'));
+    fireEvent.press(tree.getByText('Herkes için sil'));
     expect(onDelete).toHaveBeenCalledWith(true);
   });
 
@@ -246,7 +246,7 @@ describe('MessageActionSheet — callbacks', () => {
         isOwn={false}
       />
     );
-    fireEvent.press(tree.getByText('chat.actions.copy'));
+    fireEvent.press(tree.getByText('Kopyala'));
     // handleCopy is async — flush microtasks.
     await Promise.resolve();
     await Promise.resolve();

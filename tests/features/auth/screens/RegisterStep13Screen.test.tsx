@@ -47,7 +47,7 @@ beforeEach(() => {
       mockProfileState = { ...mockProfileState, ...action.payload };
     }
   });
-  (global.fetch as jest.Mock).mockResolvedValue({ json: async () => HOBBIES });
+  (globalThis.fetch as jest.Mock).mockResolvedValue({ json: async () => HOBBIES });
 });
 
 const nav: any = { navigate: jest.fn(), goBack: jest.fn() };

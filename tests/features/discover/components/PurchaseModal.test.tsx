@@ -87,7 +87,11 @@ jest.mock('@tanstack/react-query', () => ({
   }),
 }));
 jest.mock('@/features/discover/swipeQueries', () => ({
-  swipeKeys: { stats: ['swipe', 'stats'] },
+  swipeKeys: {
+    stats: ['swipe', 'stats'],
+    filters: ['swipe', 'filters'],
+    matches: ['swipe', 'matches'],
+  },
 }));
 
 import { ActivityIndicator, Alert } from 'react-native';
@@ -101,6 +105,8 @@ const monthlyOffering = {
       priceString: '₺49.99',
       price: 49.99,
       currencyCode: 'TRY',
+      // Trial CTA'sı yalnızca RC introPrice tanımlıysa gösterilir (fallback yok).
+      introPrice: { periodNumberOfUnits: 3, periodUnit: 'DAY', price: 0 },
     },
   },
 };
@@ -117,6 +123,8 @@ const setup = (overrides: any = {}) =>
 
 beforeEach(() => {
   mockDispatch.mockReset();
+  // syncSubscriptionWithRetry dispatch'i thunk gibi .unwrap() edilir.
+  mockDispatch.mockReturnValue({ unwrap: () => Promise.resolve({ synced: false }) });
   mockIsPremium = false;
   mockGetOfferings.mockReset();
   mockPurchasePackage.mockReset();
@@ -181,6 +189,8 @@ describe('PurchaseModal — purchase flow', () => {
   it('runs the success flow: purchase → setPremium → onSuccess → close → syncRetry', async () => {
     mockGetOfferings.mockResolvedValue(monthlyOffering);
     mockPurchasePackage.mockResolvedValue(true);
+    // Sync başarılı → premium-scoped query'ler invalidate edilir.
+    mockDispatch.mockReturnValue({ unwrap: () => Promise.resolve({ synced: true }) });
     const onClose = jest.fn();
     const onSuccess = jest.fn();
     const tree = setup({ onClose, onSuccess });
@@ -198,11 +208,29 @@ describe('PurchaseModal — purchase flow', () => {
       expect.objectContaining({ type: 'sub/syncRetry' })
     );
     expect(mockSetQueryData).toHaveBeenCalled();
-    expect(mockInvalidateQueries).toHaveBeenCalledWith({
-      queryKey: ['swipe', 'stats'],
+    await waitFor(() => {
+      expect(mockInvalidateQueries).toHaveBeenCalledWith({
+        queryKey: ['swipe', 'stats'],
+      });
     });
     expect(onClose).toHaveBeenCalledTimes(1);
     expect(onSuccess).toHaveBeenCalledTimes(1);
+  });
+
+  it('does NOT invalidate premium-scoped queries while sync is still pending', async () => {
+    // synced:false → optimistic patch korunur; invalidate hemen ÇALIŞMAZ
+    // (refetch free stats çekip patch'i ezerdi — bkz. refetchPremiumScoped).
+    mockGetOfferings.mockResolvedValue(monthlyOffering);
+    mockPurchasePackage.mockResolvedValue(true);
+    const tree = setup();
+    await waitFor(() => tree.getByText(/Ücretsiz Dene/));
+
+    await act(async () => {
+      fireEvent.press(tree.getByText(/Ücretsiz Dene/));
+    });
+
+    expect(mockSetQueryData).toHaveBeenCalled();
+    expect(mockInvalidateQueries).not.toHaveBeenCalled();
   });
 
   it('does NOT setPremium or close when purchasePackage returns false', async () => {
@@ -267,8 +295,9 @@ describe('PurchaseModal — restore flow', () => {
     expect(mockDispatch).toHaveBeenCalledWith(
       expect.objectContaining({ type: 'sub/setPremium' })
     );
+    // Restore da webhook gecikmesine karşı retry'lı sync kullanır (düz fetch değil).
     expect(mockDispatch).toHaveBeenCalledWith(
-      expect.objectContaining({ type: 'sub/fetch' })
+      expect.objectContaining({ type: 'sub/syncRetry' })
     );
     expect(onClose).toHaveBeenCalledTimes(1);
     expect(onSuccess).toHaveBeenCalledTimes(1);
