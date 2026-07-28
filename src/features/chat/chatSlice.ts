@@ -88,7 +88,7 @@ export const fetchChatQuota = createAsyncThunk(
       if (force) return true;
       if (!conversationId) return false;
       const state = getState() as any;
-      const stamp = state?.chat?.quotaByConv?.[conversationId]?._fetchedAt;
+      const stamp = state?.chat?.quotaMetaByConv?.[conversationId]?.fetchedAt;
       if (!stamp) return true;
       return Date.now() - stamp > QUOTA_STALE_MS;
     },
@@ -131,6 +131,7 @@ const initialState: ChatState = {
   unreadTotal: 0,
   activeConversationId: null,
   quotaByConv: {},
+  quotaMetaByConv: {},
 };
 
 function updateConversationLastMessage(state: ChatState, msg: MessageDto) {
@@ -581,9 +582,22 @@ const chatSlice = createSlice({
       })
       .addCase(fetchChatQuota.fulfilled, (state, action) => {
         const { conversationId, status } = action.payload;
-        state.quotaByConv[conversationId] = {
-          ...(status as ChatQuotaStatus),
-          _fetchedAt: Date.now(),
+        const next = status as ChatQuotaStatus;
+        const prev = state.quotaByConv[conversationId];
+        // İçerik değişmediyse quotaByConv referansı korunur; fetch damgası
+        // ayrı map'te tutulur (bkz. ChatQuotaMeta — cascade önlemi).
+        const changed =
+          !prev ||
+          prev.bothPremium !== next.bothPremium ||
+          prev.isUnlocked !== next.isUnlocked ||
+          prev.messageCount !== next.messageCount ||
+          prev.freeMessageLimit !== next.freeMessageLimit ||
+          prev.remainingMessages !== next.remainingMessages ||
+          prev.requiresUnlock !== next.requiresUnlock;
+        if (changed) state.quotaByConv[conversationId] = next;
+        state.quotaMetaByConv[conversationId] = {
+          fetchedAt: Date.now(),
+          inFlight: false,
         };
       });
   },
