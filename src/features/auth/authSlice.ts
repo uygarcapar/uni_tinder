@@ -7,17 +7,18 @@ import realtimeService from '@/features/chat/realtimeService';
 import { setCurrentAccessToken } from '@/shared/services/api';
 import { unregisterPushToken } from '@/features/notifications/pushService';
 import type { AuthState, User } from '@/shared/types';
+import { devLog } from '@/shared/utils/devLog';
 
 export const fetchUserData = createAsyncThunk(
   'auth/fetchUserData',
   async ({ userId, token }: { userId: string; token: string }, { rejectWithValue }) => {
     try {
-      console.log('🔍 Fetching user data from /api/user/GetUser/' + userId);
+      devLog('🔍 Fetching user data from /api/user/GetUser/' + userId);
       const response = await authService.getUserById(userId, token);
-      console.log('📦 GetUser Response:', JSON.stringify(response, null, 2));
+      devLog('📦 GetUser Response:', JSON.stringify(response, null, 2));
       return response;
     } catch (error: any) {
-      console.log('❌ GetUser Error:', error.message);
+      devLog('❌ GetUser Error:', error.message);
       return rejectWithValue(error.message || 'Failed to fetch user data');
     }
   }
@@ -35,8 +36,8 @@ export const login = createAsyncThunk(
       markSelfLogin();
       await realtimeService.disconnect().catch(() => {});
       const response = await authService.login(email, password);
-      console.log("🔑 Login response keys:", Object.keys(response || {}));
-      console.log("🔑 Login refreshToken received:", response?.refreshToken ? "YES" : "NO");
+      devLog("🔑 Login response keys:", Object.keys(response || {}));
+      devLog("🔑 Login refreshToken received:", response?.refreshToken ? "YES" : "NO");
       if (response?.token) {
         setCurrentAccessToken(response.token);
         await saveAccessToken(response.token);
@@ -46,8 +47,8 @@ export const login = createAsyncThunk(
       }
       return response;
     } catch (error: any) {
-      console.log('❌ Login error — status:', error.response?.status);
-      console.log('❌ Login error — data:', JSON.stringify(error.response?.data, null, 2));
+      devLog('❌ Login error — status:', error.response?.status);
+      devLog('❌ Login error — data:', JSON.stringify(error.response?.data, null, 2));
       const data = error.response?.data;
       const nestedError = data?.error;
       const message =
@@ -138,8 +139,8 @@ const authSlice = createSlice({
         state.refreshToken = action.payload.refreshToken;
       }
       state.isAuthenticated = true;
-      console.log('🔑 Redux: User and token set');
-      console.log('🔑 Token exists:', !!state.token);
+      devLog('🔑 Redux: User and token set');
+      devLog('🔑 Token exists:', !!state.token);
     },
     setNeedsVerification: (state, action: PayloadAction<string>) => {
       state.needsVerification = true;
@@ -193,9 +194,9 @@ const authSlice = createSlice({
         state.token = action.payload.token;
         state.refreshToken = action.payload.refreshToken;
         state.error = null;
-        console.log('✅ Login successful - User data:', JSON.stringify(action.payload.user, null, 2));
-        console.log('✅ isMailVerified:', action.payload.user?.isMailVerified);
-        console.log('✅ isProfileCreated:', action.payload.user?.isProfileCreated);
+        devLog('✅ Login successful - User data:', JSON.stringify(action.payload.user, null, 2));
+        devLog('✅ isMailVerified:', action.payload.user?.isMailVerified);
+        devLog('✅ isProfileCreated:', action.payload.user?.isProfileCreated);
       })
       .addCase(login.rejected, (state, action) => {
         state.loading = false;
@@ -214,7 +215,7 @@ const authSlice = createSlice({
         state.token = action.payload.token;
         state.refreshToken = action.payload.refreshToken;
         state.error = null;
-        console.log('🔑 Register: Token saved to Redux:', !!state.token);
+        devLog('🔑 Register: Token saved to Redux:', !!state.token);
       })
       .addCase(register.rejected, (state, action) => {
         state.loading = false;
@@ -230,13 +231,13 @@ const authSlice = createSlice({
       .addCase(fetchUserData.fulfilled, (state, action) => {
         const payload = action.payload as any;
         if (payload.isSuccess && payload.result) {
-          console.log('✅ fetchUserData successful - Updated user data');
-          console.log('✅ Updated isProfileCreated:', payload.result.isProfileCreated);
+          devLog('✅ fetchUserData successful - Updated user data');
+          devLog('✅ Updated isProfileCreated:', payload.result.isProfileCreated);
           state.user = payload.result;
         }
       })
       .addCase(fetchUserData.rejected, (state, action) => {
-        console.log('❌ fetchUserData failed:', action.payload);
+        devLog('❌ fetchUserData failed:', action.payload);
       });
   },
 });

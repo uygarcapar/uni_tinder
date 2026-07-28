@@ -1,4 +1,5 @@
 import * as SplashScreen from "expo-splash-screen";
+import { devLog } from '@/shared/utils/devLog';
 
 // Native splash'i biz gizleyene kadar açık tut. Bu modül App.tsx'in EN başında
 // import edilir → native splash'in ilk-frame'de otomatik gizlenmesinden önce
@@ -11,10 +12,10 @@ import * as SplashScreen from "expo-splash-screen";
 // (orada ağır mount/crash yok) — AppNavigator hemen hideSplash() çağırır.
 SplashScreen.preventAutoHideAsync()
   .then((ok) => {
-    if (__DEV__) console.log(`[splash] preventAutoHide → ${ok}`);
+    if (__DEV__) devLog(`[splash] preventAutoHide → ${ok}`);
   })
   .catch((e) => {
-    if (__DEV__) console.log(`[splash] preventAutoHide FAIL: ${e?.message ?? e}`);
+    if (__DEV__) devLog(`[splash] preventAutoHide FAIL: ${e?.message ?? e}`);
   });
 
 let hidden = false;
@@ -24,6 +25,6 @@ let hidden = false;
 export function hideSplash(source = "?") {
   if (hidden) return;
   hidden = true;
-  if (__DEV__) console.log(`[splash] hideSplash ← ${source}`);
+  if (__DEV__) devLog(`[splash] hideSplash ← ${source}`);
   SplashScreen.hideAsync().catch(() => {});
 }

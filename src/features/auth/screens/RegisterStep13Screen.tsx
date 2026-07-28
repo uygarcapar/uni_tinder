@@ -22,7 +22,7 @@ import { hobbiesSchema, HobbiesForm } from "@/shared/schemas/formSchemas";
 import { colors } from "../../../shared/theme/colors";
 import HobbyIcon from "@/shared/components/HobbyIcon";
 
-const SkeletonHobbyCard = memo<{}>(() => {
+const SkeletonHobbyCard = memo(() => {
   const pulse = useRef(new Animated.Value(0.5)).current;
   useEffect(() => {
     const loop = Animated.loop(
@@ -87,7 +87,7 @@ export default function RegisterStep13Screen({ navigation }: NativeStackScreenPr
   const [hobbyCategories, setHobbyCategories] = useState([]);
   const [loadingHobbies, setLoadingHobbies] = useState(false);
 
-  const { handleSubmit, setValue, watch, formState: { errors } } = useForm<HobbiesForm>({
+  const { handleSubmit, setValue, watch } = useForm<HobbiesForm>({
     resolver: zodResolver(hobbiesSchema),
     defaultValues: { hobbies: profile.hobbies || [] },
   });

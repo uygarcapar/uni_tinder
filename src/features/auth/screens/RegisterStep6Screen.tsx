@@ -40,7 +40,7 @@ export default function RegisterStep6Screen({ navigation }: NativeStackScreenPro
   const monthRef = useRef<any>(null);
   const yearRef = useRef<any>(null);
 
-  const { control, handleSubmit, setValue, formState: { errors } } = useForm<DobForm>({
+  const { control, handleSubmit, formState: { errors } } = useForm<DobForm>({
     resolver: zodResolver(dobSchema),
     defaultValues: initialDob,
   });

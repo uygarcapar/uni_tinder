@@ -9,6 +9,7 @@ import { HUB_URL } from '@/shared/constants/api';
 import { getCurrentAccessToken, refreshAccessToken } from '@/shared/services/api';
 import { isTokenExpiringSoon } from '@/shared/utils/jwt';
 import { reportError } from '@/shared/services/sentry';
+import { devLog } from '@/shared/utils/devLog';
 
 type EventCallback = (...args: any[]) => void;
 
@@ -75,7 +76,7 @@ class RealtimeService {
     this._connectingPromise = (async () => {
       try {
         await conn.start();
-        console.log('🟢 SignalR connected');
+        devLog('🟢 SignalR connected');
         return conn;
       } catch (err: any) {
         console.warn('⚠️ SignalR connect failed:', err?.message);
@@ -94,7 +95,7 @@ class RealtimeService {
     if (!this.connection) return;
     try {
       await this.connection.stop();
-      console.log('🔴 SignalR disconnected');
+      devLog('🔴 SignalR disconnected');
     } catch (err: any) {
       console.warn('disconnect err:', err?.message);
     } finally {
@@ -140,15 +141,15 @@ class RealtimeService {
     });
 
     conn.onreconnecting((err) => {
-      console.log('🟡 SignalR reconnecting:', err?.message);
+      devLog('🟡 SignalR reconnecting:', err?.message);
       this._emit('__connectionStateChanged', 'reconnecting');
     });
     conn.onreconnected((connId) => {
-      console.log('🟢 SignalR reconnected, connId:', connId);
+      devLog('🟢 SignalR reconnected, connId:', connId);
       this._emit('__connectionStateChanged', 'connected');
     });
     conn.onclose((err) => {
-      console.log('🔴 SignalR closed:', err?.message);
+      devLog('🔴 SignalR closed:', err?.message);
       // Hatalı (err'li) kapanışları raporla — sessiz realtime kopmaları görünür
       // olsun. Normal kapanışlarda (err yok) raporlama yapılmaz. DSN yoksa no-op.
       if (err) reportError(err, { source: 'signalr-onclose' });

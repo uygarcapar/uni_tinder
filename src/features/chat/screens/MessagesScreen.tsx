@@ -319,7 +319,7 @@ export default function MessagesScreen() {
                   }
                   // Mutasyon-sonrası tazeleme — staleness gate'ini bypass et.
                   dispatch(fetchConversations({ force: true }));
-                } catch (err) {
+                } catch {
                   Alert.alert(t('common.error'), t('chat.unmatch.restoreFailed'));
                 }
               },
@@ -342,7 +342,7 @@ export default function MessagesScreen() {
                 await chatService.deactivateConversation(conv.conversationId);
                 // Mutasyon-sonrası tazeleme — staleness gate'ini bypass et.
                 dispatch(fetchConversations({ force: true }));
-              } catch (err) {
+              } catch {
                 Alert.alert(t('common.error'), t('chat.unmatch.error'));
               }
             },

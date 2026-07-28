@@ -88,7 +88,7 @@ if (
   UIManager.setLayoutAnimationEnabledExperimental(true);
 }
 
-const { width, height } = Dimensions.get("window");
+const { width } = Dimensions.get("window");
 
 
 // ─── Generic skeleton box w/ shimmer ─────────────────────────────────────────
@@ -1007,7 +1007,7 @@ export default function ProfileScreen() {
     try {
       await profileService.updateProfile({ NewMainPhotoId: photoId });
       await refreshPhotos();
-    } catch (e) {
+    } catch {
       Alert.alert(t('common.error'), t('profile.photos.setMainError'));
     } finally {
       setSavingPhoto(false);
@@ -1021,7 +1021,7 @@ export default function ProfileScreen() {
         PhotoIdsToDelete: [photoId],
       });
       await refreshPhotos();
-    } catch (e) {
+    } catch {
       Alert.alert(t('common.error'), t('profile.photos.deleteError'));
     } finally {
       setSavingPhoto(false);
@@ -1095,7 +1095,6 @@ export default function ProfileScreen() {
     },
   ];
 
-  const resolvedHobbies = resolveHobbies(myProfile?.hobbies);
   const previewProfile = loading ? null : buildPreviewProfile();
 
   // İlk profile load tamamlanınca en üstteki incomplete metric'i otomatik aç.

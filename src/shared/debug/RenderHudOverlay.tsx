@@ -16,7 +16,10 @@ const TOP_N = 10;
 
 export default function RenderHudOverlay() {
   if (!PERF_HUD) return null;
+  return <RenderHud />;
+}
 
+function RenderHud() {
   const [rows, setRows] = useState<Row[]>([]);
   const [collapsed, setCollapsed] = useState(false);
   const pos = useRef(new Animated.ValueXY({ x: 0, y: 0 })).current;

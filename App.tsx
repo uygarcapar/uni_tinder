@@ -1,4 +1,3 @@
-// @ts-nocheck
 import "./src/shared/debug/crashLogger";
 import "./src/shared/debug/wdyr";
 // Sentry mümkün olduğunca erken init edilmeli ki boot hataları da yakalansın.

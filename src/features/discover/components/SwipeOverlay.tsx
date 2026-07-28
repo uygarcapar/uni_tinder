@@ -1,5 +1,5 @@
 import React from "react";
-import { View, Dimensions } from "react-native";
+import { View } from "react-native";
 import Animated, {
   useAnimatedStyle,
   interpolate,
@@ -11,7 +11,6 @@ import MaskedView from "@react-native-masked-view/masked-view";
 import { gradients } from "../../../shared/theme/colors";
 import { useRenderCount } from "@/shared/debug/useRenderCount";
 
-const { width } = Dimensions.get("window");
 const SWIPE_THRESHOLD = 120;
 
 export default function SwipeOverlay({ dragX, opacity }: any) {

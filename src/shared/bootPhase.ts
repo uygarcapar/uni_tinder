@@ -1,3 +1,4 @@
+import { devLog } from '@/shared/utils/devLog';
 // Cold start'ta "uygulama kabuğu tamamen oturdu" latch'i.
 //
 // Boot penceresi tek bir olay değil, bir zincir: NavigationContainer mount →
@@ -27,7 +28,7 @@ export function isAppShellReady() {
 export function markAppShellReady(source = "?") {
   if (ready) return;
   ready = true;
-  if (__DEV__) console.log(`[boot] appShellReady ← ${source}`);
+  if (__DEV__) devLog(`[boot] appShellReady ← ${source}`);
   const queued = waiters;
   waiters = [];
   queued.forEach((fn) => {

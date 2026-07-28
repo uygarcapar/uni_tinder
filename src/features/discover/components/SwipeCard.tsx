@@ -41,7 +41,6 @@ import {
   Cigarette,
   Sparkles,
   Target,
-  Palette,
   Briefcase,
   Users,
   Pen,
@@ -63,7 +62,6 @@ import SFIcon, { type SFSymbol } from "@/shared/components/SFIcon";
 import { useRenderCount } from "@/shared/debug/useRenderCount";
 
 const { width, height } = Dimensions.get("window");
-const CARD_HEIGHT = height - 200;
 const SCREEN_HEIGHT = height - 188; // Header height (90px) çıkarıldı
 
 // Daha önce yüklenmiş foto URI'leri — kart remount olunca skeleton tekrar açılmasın
@@ -152,7 +150,10 @@ function hslToRgb(h, s, l) {
 function spotifyColor(hex) {
   if (!hex) return theme.surface5;
   const [r, g, b] = hexToRgb(hex);
-  let [h, s, l] = rgbToHsl(r, g, b);
+  const hsl = rgbToHsl(r, g, b);
+  const h = hsl[0];
+  let s = hsl[1];
+  let l = hsl[2];
   // Lightness cap → tüm renkler aynı derinlikte görünür
   l = Math.min(l, 0.28);
   l = Math.max(l, 0.18);

@@ -41,7 +41,6 @@ import {
   receiveMessage,
   messageSent,
   messagesRead,
-  messageDelivered,
   messagesDeliveredBatch,
   messageEdited,
   messageDeleted,
@@ -65,6 +64,7 @@ import { analytics } from '@/shared/services/analytics';
 import { navigationIntegration, setSentryUser, addSentryBreadcrumb } from '@/shared/services/sentry';
 import { hideSplash } from '@/shared/splash';
 import { whenAppShellReady } from '@/shared/bootPhase';
+import { devLog } from '@/shared/utils/devLog';
 
 const Stack = createNativeStackNavigator<RootStackParamList>();
 
@@ -258,7 +258,7 @@ export default function AppNavigator() {
   const prevNavKeyRef = useRef(diagNavKey);
   useEffect(() => {
     if (prevNavKeyRef.current !== diagNavKey) {
-      console.log(`[nav] navigationKey flip: ${prevNavKeyRef.current} → ${diagNavKey} (full navigator remount)`);
+      devLog(`[nav] navigationKey flip: ${prevNavKeyRef.current} → ${diagNavKey} (full navigator remount)`);
       addSentryBreadcrumb('navigation', `navigationKey flip: ${prevNavKeyRef.current} → ${diagNavKey}`);
       prevNavKeyRef.current = diagNavKey;
     }

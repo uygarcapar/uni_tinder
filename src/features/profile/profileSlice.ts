@@ -2,6 +2,7 @@ import { createSlice, createAsyncThunk, PayloadAction } from "@reduxjs/toolkit";
 import axios from "axios";
 import { API_BASE_URL, API_ENDPOINTS } from "@/shared/constants/api";
 import type { ProfileState } from "@/shared/types";
+import { devLog } from '@/shared/utils/devLog';
 
 // Expo SDK 56'nın winter fetch'i RN'in klasik {uri,name,type} FormData pattern'ini
 // desteklemiyor → "Unsupported FormDataPart implementation" fırlatıyor.
@@ -134,8 +135,8 @@ export const completeProfile = createAsyncThunk(
       );
 
       const data = response.data;
-      console.log("📤 Response status:", response.status);
-      console.log("📤 Parsed JSON:", JSON.stringify(data, null, 2));
+      devLog("📤 Response status:", response.status);
+      devLog("📤 Parsed JSON:", JSON.stringify(data, null, 2));
 
       if (response.status < 200 || response.status >= 300) {
         return rejectWithValue(data?.message || data?.title || "Profil tamamlanırken bir hata oluştu");
@@ -145,7 +146,7 @@ export const completeProfile = createAsyncThunk(
         return rejectWithValue(data?.message || "Profil tamamlanırken bir hata oluştu");
       }
 
-      console.log('✅ Profile completed successfully!');
+      devLog('✅ Profile completed successfully!');
       return data || { success: true };
     } catch (error: any) {
       console.error("❌ Complete Profile Error:", error.message);
@@ -217,12 +218,12 @@ export const registerAndComplete = createAsyncThunk(
       }
       put("MainPhotoIndex", mainPhotoIndex);
 
-      console.log("📤 [registerAndComplete] Sending to backend:");
+      devLog("📤 [registerAndComplete] Sending to backend:");
       for (const [key, value] of (formData as any)._parts ?? []) {
         if (value && typeof value === "object" && value.uri) {
-          console.log(`  ${key}: <photo ${value.name}>`);
+          devLog(`  ${key}: <photo ${value.name}>`);
         } else {
-          console.log(`  ${key}:`, value);
+          devLog(`  ${key}:`, value);
         }
       }
 
@@ -233,8 +234,8 @@ export const registerAndComplete = createAsyncThunk(
 
       const data = response.data;
       const rawText = typeof data === "string" ? data : JSON.stringify(data);
-      console.log("📥 [registerAndComplete] HTTP", response.status);
-      console.log("📥 [registerAndComplete] Response body:", rawText);
+      devLog("📥 [registerAndComplete] HTTP", response.status);
+      devLog("📥 [registerAndComplete] Response body:", rawText);
 
       if (response.status < 200 || response.status >= 300 || (data && data.isSuccess === false)) {
         const errMsg =
@@ -278,11 +279,11 @@ const profileSlice = createSlice({
         state.error = null;
       })
       .addCase(completeProfile.fulfilled, () => {
-        console.log('✅ Profile completed successfully - clearing profile state');
+        devLog('✅ Profile completed successfully - clearing profile state');
         return initialState;
       })
       .addCase(completeProfile.rejected, (state, action) => {
-        console.log('❌ Profile completion rejected - keeping profile data for retry');
+        devLog('❌ Profile completion rejected - keeping profile data for retry');
         state.loading = false;
         state.error = action.payload as string;
       })

@@ -240,24 +240,6 @@ function mergePlansWithBackend(rcPlans, backendPlans, t) {
     );
 }
 
-// "Aylığa kıyasla %X tasarruf" hesaplaması. Monthly price referans alınır.
-function computeSavings(plan, plans) {
-  if (!plan?.price || plan.period === "monthly") return null;
-  const monthly = plans.find((p) => p.period === "monthly");
-  if (!monthly?.price) return null;
-
-  const months =
-    plan.period === "yearly" ? 12 : plan.period === "weekly" ? 1 / 4.345 : null;
-  if (!months) return null;
-
-  const equivalentMonthlyTotal = monthly.price * months;
-  if (equivalentMonthlyTotal <= 0) return null;
-
-  const savingsRatio = 1 - plan.price / equivalentMonthlyTotal;
-  if (savingsRatio <= 0.02) return null; // %2'nin altını gösterme — round-off gürültüsü
-  return Math.round(savingsRatio * 100);
-}
-
 // displayName render: solda büyük "premium" (Duckie-regular), sağında küçük
 // "/ Aylık" (veya hangi periyot ise). Backend displayName format'ı genelde
 // "Aylık Premium" — period word ile premium'u ayır.

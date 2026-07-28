@@ -4,6 +4,7 @@ import { getRefreshToken, saveRefreshToken, saveAccessToken, clearAllTokens } fr
 import { recordRequest } from '@/shared/debug/netTally';
 import { isSelfInflictedForceLogout } from '@/shared/utils/sessionGuard';
 import { reportError } from '@/shared/services/sentry';
+import { devLog } from '@/shared/utils/devLog';
 
 let currentAccessToken: string | null = null;
 let currentLanguage: 'tr' | 'en' = 'tr';
@@ -51,9 +52,9 @@ api.interceptors.request.use(
     if (currentAccessToken) {
       config.headers.Authorization = `Bearer ${currentAccessToken}`;
       const tokenPreview = currentAccessToken.substring(0, 20) + '...';
-      console.log(`🔐 Request: ${config.method?.toUpperCase()} ${config.url} - Token: ${tokenPreview}`);
+      devLog(`🔐 Request: ${config.method?.toUpperCase()} ${config.url} - Token: ${tokenPreview}`);
     } else {
-      console.log(`⚠️ Request: ${config.method?.toUpperCase()} ${config.url} - Token YOK!`);
+      devLog(`⚠️ Request: ${config.method?.toUpperCase()} ${config.url} - Token YOK!`);
     }
     config.headers['Accept-Language'] = currentLanguage;
     // FormData gönderilirken Content-Type'ı sil —
@@ -95,7 +96,7 @@ export const refreshAccessToken = async (): Promise<string | null> => {
     try {
       const rt = await getRefreshToken();
       if (!rt) {
-        console.log('❌ Refresh token bulunamadı — Logout');
+        devLog('❌ Refresh token bulunamadı — Logout');
         await clearAllTokens();
         setCurrentAccessToken(null);
         if (onAuthLost) onAuthLost('session_expired');
@@ -112,10 +113,10 @@ export const refreshAccessToken = async (): Promise<string | null> => {
       await saveAccessToken(newAccessToken);
       await saveRefreshToken(newRefreshToken);
       if (onTokenRefreshed) onTokenRefreshed(newAccessToken, newRefreshToken);
-      console.log('✅ Token refresh başarılı (single-flight)');
+      devLog('✅ Token refresh başarılı (single-flight)');
       return newAccessToken as string;
     } catch (err: any) {
-      console.log('❌ Token refresh başarısız:', err?.response?.status, err?.message);
+      devLog('❌ Token refresh başarısız:', err?.response?.status, err?.message);
       // Backend revoke sinyali: başka cihazdan giriş yapıldıysa reason'ı taşı ki
       // AppNavigator "başka cihazdan giriş" toast'ını gösterebilsin. Diğer refresh
       // fail'leri (normal expiry, network, rotate edilmiş token'ın tekrar
@@ -132,7 +133,7 @@ export const refreshAccessToken = async (): Promise<string | null> => {
       // logout dispatch etmek de yeni oturumu düşürürdü. İsteği başarısız
       // bırakıp çık.
       if (isSelfInflictedForceLogout()) {
-        console.log('↩️ Refresh fail yok sayıldı — kendi login penceremiz, eski token');
+        devLog('↩️ Refresh fail yok sayıldı — kendi login penceremiz, eski token');
         return null;
       }
 
@@ -161,7 +162,7 @@ api.interceptors.response.use(
         const delay = retryAfter
           ? parseInt(retryAfter, 10) * 1000
           : 1000 * Math.pow(2, originalRequest._retryCount - 1);
-        console.log(`⏳ 429 alındı, ${delay}ms bekleyip tekrar denenecek (deneme ${originalRequest._retryCount}/3)`);
+        devLog(`⏳ 429 alındı, ${delay}ms bekleyip tekrar denenecek (deneme ${originalRequest._retryCount}/3)`);
         await sleep(delay);
         return api(originalRequest);
       }

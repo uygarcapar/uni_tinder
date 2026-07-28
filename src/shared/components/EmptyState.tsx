@@ -1,5 +1,4 @@
-import { View, Text, StyleSheet, Pressable } from "react-native";
-import { LinearGradient } from "expo-linear-gradient";
+import { View, Text } from "react-native";
 import { colors } from "../theme/colors";
 import SFIcon from "./SFIcon";
 
@@ -13,8 +12,6 @@ export default function EmptyState({
   subtitle,
   topOffset = 24,
   containerStyle,
-  buttonLabel,
-  onButtonPress,
 }: any) {
   return (
     <View

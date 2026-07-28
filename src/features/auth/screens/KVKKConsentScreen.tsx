@@ -47,7 +47,7 @@ export default function KVKKConsentScreen({ visible }) {
         version: CURRENT_KVKK_VERSION,
       });
       dispatch(setKvkkAccepted(CURRENT_KVKK_VERSION));
-    } catch (e) {
+    } catch {
       Alert.alert(t('errors.generic'), t('auth.kvkkConsent.errorSave'));
     } finally {
       setLoading(false);

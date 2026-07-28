@@ -139,11 +139,3 @@ export default function WelcomeScreen({ navigation }: NativeStackScreenProps<Aut
   );
 }
 
-const FeatureItem = ({ icon, text }: any) => (
-  <View className="flex-row items-center bg-white/10 p-3 rounded-2xl border border-white/5">
-    <View className="bg-white/20 w-10 h-10 rounded-full items-center justify-center mr-4">
-      <Text className="text-xl">{icon}</Text>
-    </View>
-    <Text className="text-white text-base font-semibold flex-1">{text}</Text>
-  </View>
-);

@@ -40,6 +40,7 @@ import { zodResolver } from "@hookform/resolvers/zod";
 import { photosSchema, PhotosForm } from "@/shared/schemas/formSchemas";
 import { colors } from "../../../shared/theme/colors";
 import { useTranslation } from 'react-i18next';
+import { devLog } from '@/shared/utils/devLog';
 
 const { width } = Dimensions.get("window");
 const CONTAINER_PADDING = 24;
@@ -177,7 +178,7 @@ export default function RegisterStep15Screen({ navigation }: NativeStackScreenPr
       if (newCroppedPhotos.length > 0) {
         setValue("photos", [...photos, ...newCroppedPhotos.map((p) => p.uri)], { shouldValidate: true });
       }
-    } catch (error) { console.log("Galeri seçimi hatası:", error); }
+    } catch (error) { devLog("Galeri seçimi hatası:", error); }
   };
 
   const removePhoto = (photoToRemove: string) => {
@@ -205,7 +206,7 @@ export default function RegisterStep15Screen({ navigation }: NativeStackScreenPr
       dispatch(setUserAndToken({ user: response.result.user, token: response.result.token, refreshToken: response.result.refreshToken }));
       dispatch(clearRegistrationForm());
     } catch (err) {
-      console.log("❌ CompleteProfile error:", err);
+      devLog("❌ CompleteProfile error:", err);
     }
   });
 

@@ -24,6 +24,7 @@ import { zodResolver } from "@hookform/resolvers/zod";
 import { loginSchema, LoginForm } from "@/shared/schemas/formSchemas";
 import { colors } from "../../../shared/theme/colors";
 import { useTranslation } from 'react-i18next';
+import { devLog } from '@/shared/utils/devLog';
 
 export default function LoginScreen({ navigation }: NativeStackScreenProps<AuthStackParamList, 'Login'>) {
   const { t } = useTranslation();
@@ -47,7 +48,7 @@ export default function LoginScreen({ navigation }: NativeStackScreenProps<AuthS
     try {
       await (dispatch(login({ email, password })) as any).unwrap();
     } catch (e) {
-      console.log("Login error:", e);
+      devLog("Login error:", e);
     }
   });
 

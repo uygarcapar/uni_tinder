@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useRef, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import {
   Modal,
   View,
@@ -9,7 +9,6 @@ import {
   Dimensions,
 } from "react-native";
 import { Image } from "expo-image";
-import { LinearGradient } from "expo-linear-gradient";
 import { BlurView } from "expo-blur";
 import { MessageCircle } from "lucide-react-native";
 import SFIcon from "@/shared/components/SFIcon";

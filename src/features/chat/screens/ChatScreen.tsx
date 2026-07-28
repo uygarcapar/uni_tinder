@@ -81,6 +81,7 @@ import { showInfoToast } from "@/shared/services/toaster";
 import uiBus from "@/shared/services/uiBus";
 import { colors } from "../../../shared/theme/colors";
 import { withProfiler, TimeToFullDisplay } from "@sentry/react-native";
+import { devLog } from '@/shared/utils/devLog';
 
 const ContentType = { Text: 0, System: 99 };
 const INPUT_BAR_OPAQUE = 66; // composer opak gövde tahmini (inset başlangıç değeri)
@@ -492,7 +493,7 @@ function ChatScreen({
     const timer = setTimeout(() => {
       try {
         const avgs = listRef.current?.getState?.()?.getAverageItemSizes?.();
-        if (avgs) console.log("[chat] avg item sizes:", JSON.stringify(avgs));
+        if (avgs) devLog("[chat] avg item sizes:", JSON.stringify(avgs));
       } catch {}
     }, 4000);
     return () => clearTimeout(timer);

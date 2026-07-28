@@ -14,6 +14,7 @@ import {
 import api, { getCurrentAccessToken } from '@/shared/services/api';
 import { API_ENDPOINTS } from '@/shared/constants/api';
 import { colors } from '../../shared/theme/colors';
+import { devLog } from '@/shared/utils/devLog';
 
 let getActiveConversationId: () => string | null = () => null;
 export const setActiveConversationGetter = (fn: (() => string | null) | null) => {
@@ -77,7 +78,7 @@ export async function registerForPushNotifications(appVersion = '1.0.0'): Promis
       finalStatus = status;
     }
     if (finalStatus !== 'granted') {
-      console.log('🔕 Push permission denied');
+      devLog('🔕 Push permission denied');
       return null;
     }
 
@@ -100,7 +101,7 @@ export async function registerForPushNotifications(appVersion = '1.0.0'): Promis
     if (!token) return null;
 
     await postDeviceToken(token, appVersion);
-    console.log('🔔 Push token registered:', currentPlatform(), token);
+    devLog('🔔 Push token registered:', currentPlatform(), token);
     return token;
   } catch (err: any) {
     console.warn('Push registration failed:', err?.message);

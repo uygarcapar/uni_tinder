@@ -50,7 +50,7 @@ import { useSwipeStats } from "@/features/discover/swipeQueries";
 import { setWhoLikedMeCount } from "@/features/discover/swipeSlice";
 
 import uiBus from "@/shared/services/uiBus";
-import { colors, gradients } from "../../../shared/theme/colors";
+import { colors } from "../../../shared/theme/colors";
 import { useRenderCount } from "@/shared/debug/useRenderCount";
 
 const { width } = Dimensions.get("window");
@@ -333,8 +333,8 @@ export default function LikesScreen() {
   const whoLikedMeInFlightRef = useRef(false);
   likesRef.current = likes;
   const [loading, setLoading] = useState(true);
-  const [currentPage, setCurrentPage] = useState(1);
-  const [hasNextPage, setHasNextPage] = useState(false);
+  const [_currentPage, setCurrentPage] = useState(1);
+  const [_hasNextPage, setHasNextPage] = useState(false);
   const [profilePremium, setProfilePremium] = useState(false);
   // Redux subscription state — purchase modal sonrası `setPremium` dispatch'i
   // ile anında true olur. Profile fetch'inden gelen profilePremium ile birlikte
@@ -360,7 +360,7 @@ export default function LikesScreen() {
   // PreviewModal'da SwipeCard layout'unu reuse ederek gösteriyoruz.
   const [previewVisible, setPreviewVisible] = useState(false);
   const [previewProfile, setPreviewProfile] = useState(null);
-  const [previewLoading, setPreviewLoading] = useState(false);
+  const [_previewLoading, setPreviewLoading] = useState(false);
 
   // DiscoverScreen ile aynı fill oranı: (limit - kalan) / limit.
   // Premium / -1 / limit bilinmiyor → 0.

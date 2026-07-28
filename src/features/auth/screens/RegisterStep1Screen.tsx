@@ -23,6 +23,7 @@ import { zodResolver } from "@hookform/resolvers/zod";
 import { emailSchema, EmailForm } from "@/shared/schemas/formSchemas";
 import { colors } from "../../../shared/theme/colors";
 import { useTranslation } from 'react-i18next';
+import { devLog } from '@/shared/utils/devLog';
 
 export default function RegisterStep1Screen({ navigation }: NativeStackScreenProps<AuthStackParamList, 'RegisterStep1'>) {
   const { t } = useTranslation();
@@ -46,7 +47,7 @@ export default function RegisterStep1Screen({ navigation }: NativeStackScreenPro
 
     // If user already has a valid token for this exact email, skip re-verification
     if (emailVerifiedToken && registrationEmail === trimmed) {
-      console.log("⚡ [RegisterStep1] Token already exists for this email — validating before skip");
+      devLog("⚡ [RegisterStep1] Token already exists for this email — validating before skip");
       try {
         const check = await fetch(`${API_BASE_URL}${API_ENDPOINTS.CHECK_REGISTRATION_TOKEN}`, {
           method: "POST",
@@ -55,19 +56,19 @@ export default function RegisterStep1Screen({ navigation }: NativeStackScreenPro
         });
         const checkData = await check.json();
         if (checkData.isSuccess) {
-          console.log("✅ [RegisterStep1] Token valid — skipping to Step3");
+          devLog("✅ [RegisterStep1] Token valid — skipping to Step3");
           setLoading(false);
           navigation.reset({ index: 0, routes: [{ name: "RegisterStep3" }] });
           return;
         }
-        console.log("⚠️ [RegisterStep1] Stored token expired — proceeding with new verification");
+        devLog("⚠️ [RegisterStep1] Stored token expired — proceeding with new verification");
       } catch {
         // fall through to normal send-verification
       }
     }
 
     try {
-      console.log("📤 [RegisterStep1] Calling send-verification for:", trimmed);
+      devLog("📤 [RegisterStep1] Calling send-verification for:", trimmed);
       const response = await fetch(
         `${API_BASE_URL}${API_ENDPOINTS.SEND_VERIFICATION}`,
         {
@@ -78,7 +79,7 @@ export default function RegisterStep1Screen({ navigation }: NativeStackScreenPro
       );
       const data = await response.json();
       const status = data?.result?.status;
-      console.log("📥 [RegisterStep1] send-verification status:", status);
+      devLog("📥 [RegisterStep1] send-verification status:", status);
 
       switch (status) {
         case "CODE_SENT":

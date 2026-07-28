@@ -116,7 +116,7 @@ const usePulse = () => {
   return pulse;
 };
 
-const SkeletonSimpleOption = memo<{}>(() => {
+const SkeletonSimpleOption = memo(() => {
   const pulse = usePulse();
   return (
     <Animated.View style={{ borderRadius: 30, borderCurve: "continuous", paddingHorizontal: 4, paddingVertical: 18, flexDirection: "row", alignItems: "center", opacity: pulse }}>
@@ -136,7 +136,7 @@ const SkeletonZodiacPill = memo(({ width: w = 90 }: { width?: number }) => {
   );
 });
 
-const SkeletonPurposeOption = memo<{}>(() => {
+const SkeletonPurposeOption = memo(() => {
   const pulse = usePulse();
   return (
     <Animated.View style={{ flexDirection: "row", alignItems: "center", paddingVertical: 14, opacity: pulse }}>

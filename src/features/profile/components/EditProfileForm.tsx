@@ -13,7 +13,6 @@ import {
   TouchableOpacity,
   TextInput,
   ActivityIndicator,
-  InteractionManager,
   Dimensions,
   Platform,
   Switch,

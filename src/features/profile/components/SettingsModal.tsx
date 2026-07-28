@@ -73,7 +73,7 @@ export default function SettingsModal({ visible, onClose }: any) {
     setPrefs(next); // optimistic
     try {
       await chatService.updateNotificationPreferences(next);
-    } catch (e) {
+    } catch {
       setPrefs(prefs);
       Alert.alert(t('errors.generic'), t('errors.prefUpdate'));
     }
@@ -434,7 +434,7 @@ function SettingsSection({ title, subtitle, marginTop = 28 }: any) {
 
 // Reusable toggle row — icon + title + subtitle + Switch.
 // Optimistic toggle pattern: parent state'i hemen değişir, fail durumunda rollback.
-function SettingsToggleRow({ icon, title, subtitle, value, disabled, onToggle }: any) {
+function SettingsToggleRow({ icon: _icon, title, subtitle: _subtitle, value, disabled, onToggle }: any) {
   return (
     <View
       style={{

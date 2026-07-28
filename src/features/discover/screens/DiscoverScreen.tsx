@@ -14,7 +14,6 @@ import {
   AppState,
   Modal,
 } from "react-native";
-import * as Haptics from "expo-haptics";
 import { appPrefs } from "../../../shared/utils/appPrefs";
 import { GestureHandlerRootView } from "react-native-gesture-handler";
 import Animated, {

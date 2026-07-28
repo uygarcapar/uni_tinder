@@ -28,18 +28,27 @@ module.exports = tseslint.config(
       'react-hooks/rules-of-hooks': 'error',
       'react-hooks/exhaustive-deps': 'warn',
       '@typescript-eslint/no-explicit-any': 'warn',
-      '@typescript-eslint/no-unused-vars': ['warn', { argsIgnorePattern: '^_' }],
+      '@typescript-eslint/no-unused-vars': [
+        'warn',
+        { argsIgnorePattern: '^_', varsIgnorePattern: '^_', caughtErrorsIgnorePattern: '^_' },
+      ],
       '@typescript-eslint/explicit-module-boundary-types': 'off',
-      '@typescript-eslint/no-require-imports': 'warn',
+      // require() is idiomatic in RN for static assets and jest mocks
+      '@typescript-eslint/no-require-imports': 'off',
       '@typescript-eslint/no-empty-object-type': 'warn',
-      'no-empty': 'warn',
+      'no-empty': ['warn', { allowEmptyCatch: true }],
       'prefer-const': 'warn',
-      'no-console': 'warn',
+      'no-console': ['warn', { allow: ['warn', 'error'] }],
     },
   },
   {
     files: ['**/__tests__/**', '**/*.test.ts', '**/*.test.tsx'],
     rules: { '@typescript-eslint/no-explicit-any': 'off' },
+  },
+  {
+    // dev-only tooling logs to the console by design
+    files: ['src/shared/debug/**'],
+    rules: { 'no-console': 'off' },
   },
   {
     ignores: [
@@ -52,6 +61,11 @@ module.exports = tseslint.config(
       'jest.config.js',
       'tailwind.config.js',
       'eslint.config.js',
+      'jest.setup.pre.js',
+      // legacy JS reference snapshots kept for comparison only
+      'src/screens/**',
+      'src/queries/**',
+      'src/navigation/AppNavigator.js',
     ],
   }
 );
