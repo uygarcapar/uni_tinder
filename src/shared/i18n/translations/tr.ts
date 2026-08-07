@@ -345,7 +345,7 @@ const tr = {
       title: 'Mesaj hakkı',
       message: '{{remaining}} mesaj hakkın var.',
       exhausted: 'Mesaj hakkın bitti',
-      exhaustedMessage: 'Bu sohbette mesaj limitine ulaştın.',
+      exhaustedMessage: "Bu sohbette mesaj sınırına ulaştın. Premium'a geç, sınırsız mesajlaş.",
     },
     defaultUserName: 'Kullanıcı',
     bubble: {
@@ -363,7 +363,7 @@ const tr = {
     input: {
       placeholder: 'Mesaj...',
       closed: 'Bu sohbet kapatıldı',
-      quotaReached: 'Mesaj sınırına ulaştın',
+      quotaReached: "Mesaj hakkın bitti — Premium'a geç",
     },
     replyPreview: {
       deletedSender: 'Silinmiş',

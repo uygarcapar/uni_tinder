@@ -144,11 +144,6 @@ export const chatService = {
     const res = await api.get(API_ENDPOINTS.MESSAGES_QUOTA(conversationId));
     return (res as any).result;
   },
-
-  async unlockChat(conversationId: string, transactionId: string) {
-    const res = await api.post(API_ENDPOINTS.MESSAGES_UNLOCK(conversationId), { transactionId });
-    return (res as any).result;
-  },
 };
 
 export default chatService;

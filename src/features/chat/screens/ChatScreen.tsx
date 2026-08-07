@@ -76,11 +76,11 @@ import DateSeparator, {
   withDateSeparators,
 } from "@/features/chat/components/DateSeparator";
 import moderationService from "@/shared/services/moderationService";
-import ChatUnlockSheet from "@/features/chat/components/ChatUnlockSheet";
+import PurchaseModal from "@/features/discover/components/PurchaseModal";
 import { showInfoToast } from "@/shared/services/toaster";
 import uiBus from "@/shared/services/uiBus";
+import { analytics } from "@/shared/services/analytics";
 import { colors } from "../../../shared/theme/colors";
-import { withProfiler, TimeToFullDisplay } from "@sentry/react-native";
 import { devLog } from '@/shared/utils/devLog';
 
 const ContentType = { Text: 0, System: 99 };
@@ -213,10 +213,24 @@ function ChatScreen({
   const [editText, setEditText] = useState("");
   const [optionsOpen, setOptionsOpen] = useState(false);
   const [reportOpen, setReportOpen] = useState(false);
-  const [unlockVisible, setUnlockVisible] = useState(false);
+  const [purchaseVisible, setPurchaseVisible] = useState(false);
+
+  // Kota dolduğunda TEK çıkış: Premium modalı (consumable "sohbeti aç" akışı
+  // 2026-08-02'de kaldırıldı). Huni: chat_quota_exhausted →
+  // chat_quota_paywall_viewed → subscription_initial_purchase.
+  const openQuotaPaywall = useCallback(
+    (source: string) => {
+      analytics.capture("chat_quota_paywall_viewed", { conversationId, source });
+      setPurchaseVisible(true);
+    },
+    [conversationId],
+  );
 
   const listRef = useRef<any>(null);
   const composerRef = useRef<any>(null);
+  // Composer TextInput'unun kendisi — uzun-bas menüsü kapanınca klavyeyi geri
+  // açmak için odak buraya verilir (composerRef dış kapsayıcı, ölçüm içindir).
+  const composerInputRef = useRef<any>(null);
   const deliveredAckedRef = useRef(new Set<string>());
   const renderedDataRef = useRef<any[]>([]);
   const messagesRef = useRef<MessageDto[]>(messages);
@@ -257,7 +271,7 @@ function ChatScreen({
   const quotaExhaustedToastShownRef = useRef(false);
   useEffect(() => {
     if (quotaEntryToastShownRef.current || !isActive) return;
-    if (!quota || quota.bothPremium || quota.isUnlocked) return;
+    if (!quota || quota.isUnlimited) return;
     const remaining = quota.remainingMessages;
     if (remaining == null || remaining <= 0) return;
     quotaEntryToastShownRef.current = true;
@@ -269,23 +283,25 @@ function ChatScreen({
   }, [quota, isActive, t]);
   useEffect(() => {
     if (quotaExhaustedToastShownRef.current || !quotaHadRemainingRef.current) return;
-    if (!isActive || !quota || quota.bothPremium || quota.isUnlocked) return;
+    if (!isActive || !quota || quota.isUnlimited) return;
     if (quota.remainingMessages == null || quota.remainingMessages > 0) return;
     quotaExhaustedToastShownRef.current = true;
+    analytics.capture("chat_quota_exhausted", { conversationId });
     showInfoToast({
       title: t("chat.quota.exhausted"),
       message: t("chat.quota.exhaustedMessage"),
     });
-  }, [quota, isActive, t]);
+  }, [quota, isActive, t, conversationId]);
 
   useEffect(() => {
     const unsub = uiBus.on("chatQuotaExhausted", (payload: any) => {
       if (payload?.conversationId !== conversationId) return;
+      analytics.capture("chat_quota_exhausted", { conversationId });
       dispatch(fetchChatQuota({ conversationId, force: true }));
-      setUnlockVisible(true);
+      openQuotaPaywall("hub_error");
     });
     return unsub;
-  }, [conversationId, dispatch]);
+  }, [conversationId, dispatch, openQuotaPaywall]);
 
   // ── Aktif sohbet + init (history, join, mark-read, quota) ───────────────
   useEffect(() => {
@@ -503,8 +519,8 @@ function ChatScreen({
   const handleSend = useCallback(
     async ({ content, replyToMessageId, clientMessageId }: any) => {
       const q = quotaRef.current;
-      if (q && q.requiresUnlock) {
-        setUnlockVisible(true);
+      if (q && !q.isUnlimited && q.requiresPremium) {
+        openQuotaPaywall("composer_send");
         return;
       }
       const optimistic: any = {
@@ -559,14 +575,16 @@ function ChatScreen({
         const paywallType = err?.response?.data?.result?.paywallType;
         if (status === 402 || paywallType === "CHAT_QUOTA_EXHAUSTED") {
           dispatch(removeOptimisticMessage({ conversationId, clientMessageId }));
+          analytics.capture("chat_quota_exhausted", { conversationId });
+          // isUnlimited her mesajda değil, girişte ve 402'de tazelenir.
           dispatch(fetchChatQuota({ conversationId, force: true }));
-          setUnlockVisible(true);
+          openQuotaPaywall("send_402");
           return;
         }
         dispatch(failOptimisticMessage({ conversationId, clientMessageId }));
       }
     },
-    [conversationId, dispatch, myUserId],
+    [conversationId, dispatch, myUserId, openQuotaPaywall],
   );
 
   const handleInputSend = useCallback(
@@ -577,7 +595,10 @@ function ChatScreen({
     [handleSend],
   );
   const handleCancelReply = useCallback(() => setReplyTo(null), []);
-  const handleLockedPress = useCallback(() => setUnlockVisible(true), []);
+  const handleLockedPress = useCallback(
+    () => openQuotaPaywall("composer_locked"),
+    [openQuotaPaywall],
+  );
   const handleTypingChange = useCallback(
     (isTyping: boolean) => {
       if (isTyping) realtimeService.startTyping(conversationId).catch(() => {});
@@ -855,9 +876,8 @@ function ChatScreen({
   );
 
   const quotaLocked =
-    !quota?.bothPremium &&
-    !quota?.isUnlocked &&
-    (quota?.requiresUnlock ||
+    !quota?.isUnlimited &&
+    (quota?.requiresPremium ||
       (quota?.remainingMessages != null && quota.remainingMessages <= 0));
 
   const { colors: headerMaskColors, locations: headerMaskLocations } = useMemo(
@@ -873,11 +893,7 @@ function ChatScreen({
   );
 
   return (
-    <View className="flex-1 bg-bg-deep">
-      {/* Sentry TTFD: nav transaction'ına "chat tam göründü" anını yazar —
-          listSettled, listenin onLoad "oturdum" sinyali. Görünmez, tek statik
-          view; liste/inset düzenine dokunmaz. DSN yoksa inert. */}
-      <TimeToFullDisplay record={listSettled} />
+    <View className="flex-1 bg-bg">
       {/* Header overlay (progressive blur) */}
       <View
         pointerEvents="box-none"
@@ -1014,7 +1030,7 @@ function ChatScreen({
       {showEntrySkeleton && (
         <View
           pointerEvents="none"
-          className="bg-bg-deep"
+          className="bg-bg"
           style={{
             position: "absolute",
             top: 0,
@@ -1065,10 +1081,13 @@ function ChatScreen({
         onCancel={() => setEditTarget(null)}
         onSave={handleEditSave}
       />
-      <ChatUnlockSheet
-        visible={unlockVisible}
-        conversationId={conversationId}
-        onClose={() => setUnlockVisible(false)}
+      <PurchaseModal
+        visible={purchaseVisible}
+        onClose={() => {
+          setPurchaseVisible(false);
+          // Premium alınmış olabilir — kota durumunu authoritative tazele.
+          dispatch(fetchChatQuota({ conversationId, force: true }));
+        }}
       />
     </View>
   );
@@ -1304,6 +1323,4 @@ function ChatEmptyState({ partnerName, isActive }: any) {
   );
 }
 
-// Sentry performance: mount/update render span'leri nav transaction'ına
-// bağlanır (tracesSampleRate oranında). Tek instance — satır başına maliyet yok.
-export default withProfiler(ChatScreen, { name: "ChatScreen" });
+export default ChatScreen;

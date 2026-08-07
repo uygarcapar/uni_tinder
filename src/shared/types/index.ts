@@ -121,13 +121,22 @@ export interface PresenceEntry {
   lastSeen: string | null;
 }
 
+// Kural (2026-08-02): taraflardan EN AZ BİRİ aktif premium ise sohbet sınırsız.
+// Kanonik bayrak `isUnlimited`; `bothPremium`/`requiresUnlock` backend'de
+// deprecated (aynı değerle doldurulmaya devam ediyor) — normalizeQuota bunları
+// yeni alanlar gelmediğinde fallback olarak okur, bkz. chatSlice.
 export interface ChatQuotaStatus {
-  bothPremium: boolean;
+  /** Taraflardan biri aktif premium mi. */
+  hasPremiumParticipant: boolean;
+  /** Kanonik: sohbet sınırsız mı (premium taraf VEYA manuel unlock). */
+  isUnlimited: boolean;
+  /** Legacy/destek grant'i ile açılmış sohbet. */
   isUnlocked: boolean;
   messageCount: number;
   freeMessageLimit: number;
   remainingMessages: number | null;
-  requiresUnlock: boolean;
+  /** Cap doldu — Premium modalı açılmalı (consumable satışı YOK). */
+  requiresPremium: boolean;
 }
 
 // Fetch metadata quota içeriğinden ayrı tutuluyor: _fetchedAt: Date.now()

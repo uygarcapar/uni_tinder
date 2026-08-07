@@ -343,7 +343,7 @@ const en = {
       title: 'Message allowance',
       message: 'You have {{remaining}} messages left.',
       exhausted: 'Message allowance used up',
-      exhaustedMessage: 'You have reached the message limit in this chat.',
+      exhaustedMessage: 'You have reached the message limit in this chat. Go Premium to message without limits.',
     },
     defaultUserName: 'User',
     bubble: {
@@ -361,7 +361,7 @@ const en = {
     input: {
       placeholder: 'Message...',
       closed: 'This chat is closed',
-      quotaReached: 'Message limit reached',
+      quotaReached: 'Out of messages — go Premium',
     },
     replyPreview: {
       deletedSender: 'Deleted',

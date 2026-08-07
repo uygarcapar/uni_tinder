@@ -95,24 +95,27 @@ export const fetchChatQuota = createAsyncThunk(
   }
 );
 
-export const redeemChatUnlock = createAsyncThunk(
-  'chat/redeemUnlock',
-  async (
-    { conversationId, transactionId }: { conversationId: string; transactionId: string },
-    { rejectWithValue, dispatch }
-  ) => {
-    try {
-      await chatService.unlockChat(conversationId, transactionId);
-      dispatch(fetchChatQuota({ conversationId, force: true }));
-      return { conversationId };
-    } catch (e: any) {
-      return rejectWithValue({
-        status: e?.response?.status,
-        message: e?.response?.data?.message || e?.message || 'Failed',
-      });
-    }
-  }
-);
+// Backend kontratı 2026-08-02'de değişti: kanonik alanlar isUnlimited /
+// requiresPremium / hasPremiumParticipant. Eski alanlar (bothPremium,
+// requiresUnlock) bir sonraki major'a kadar aynı değerle doldurulmaya devam
+// ediyor — backend deploy'u inene kadar SADECE onlar gelebilir, o yüzden
+// fallback zinciri iki yönde de tutuluyor.
+function normalizeQuota(raw: any): ChatQuotaStatus {
+  const isUnlocked = !!raw?.isUnlocked;
+  const hasPremiumParticipant = !!(raw?.hasPremiumParticipant ?? raw?.bothPremium);
+  const isUnlimited = !!(raw?.isUnlimited ?? raw?.bothPremium) || isUnlocked;
+  const remainingMessages = isUnlimited ? null : raw?.remainingMessages ?? null;
+  return {
+    hasPremiumParticipant,
+    isUnlimited,
+    isUnlocked,
+    messageCount: raw?.messageCount ?? 0,
+    freeMessageLimit: raw?.freeMessageLimit ?? 0,
+    remainingMessages,
+    requiresPremium:
+      !isUnlimited && !!(raw?.requiresPremium ?? raw?.requiresUnlock),
+  };
+}
 
 const emptyBucket = (): MessageBucket => ({
   messages: [],
@@ -383,22 +386,15 @@ const chatSlice = createSlice({
       const convId = action.payload?.conversationId;
       if (!convId) return;
       const q = state.quotaByConv[convId];
-      if (!q || q.remainingMessages == null) return;
-      q.messageCount = (q.messageCount ?? 0) + 1;
-      q.remainingMessages = Math.max(0, q.remainingMessages - 1);
-      if (q.remainingMessages === 0 && !q.isUnlocked && !q.bothPremium) {
-        q.requiresUnlock = true;
-      }
-    },
-
-    markQuotaUnlocked: (state, action: PayloadAction<{ conversationId: string }>) => {
-      const convId = action.payload?.conversationId;
-      if (!convId) return;
-      const q = state.quotaByConv[convId];
       if (!q) return;
-      q.isUnlocked = true;
-      q.requiresUnlock = false;
-      q.remainingMessages = null;
+      // Sayaç sınırsız sohbetlerde de artmaya devam eder (backend de öyle
+      // sayıyor) — premium taraf abonelikten çıkarsa sohbet anında cap'e düşsün.
+      q.messageCount = (q.messageCount ?? 0) + 1;
+      if (q.remainingMessages == null) return;
+      q.remainingMessages = Math.max(0, q.remainingMessages - 1);
+      if (q.remainingMessages === 0 && !q.isUnlimited) {
+        q.requiresPremium = true;
+      }
     },
 
     appendOptimisticMessage: (
@@ -582,18 +578,19 @@ const chatSlice = createSlice({
       })
       .addCase(fetchChatQuota.fulfilled, (state, action) => {
         const { conversationId, status } = action.payload;
-        const next = status as ChatQuotaStatus;
+        const next = normalizeQuota(status);
         const prev = state.quotaByConv[conversationId];
         // İçerik değişmediyse quotaByConv referansı korunur; fetch damgası
         // ayrı map'te tutulur (bkz. ChatQuotaMeta — cascade önlemi).
         const changed =
           !prev ||
-          prev.bothPremium !== next.bothPremium ||
+          prev.isUnlimited !== next.isUnlimited ||
+          prev.hasPremiumParticipant !== next.hasPremiumParticipant ||
           prev.isUnlocked !== next.isUnlocked ||
           prev.messageCount !== next.messageCount ||
           prev.freeMessageLimit !== next.freeMessageLimit ||
           prev.remainingMessages !== next.remainingMessages ||
-          prev.requiresUnlock !== next.requiresUnlock;
+          prev.requiresPremium !== next.requiresPremium;
         if (changed) state.quotaByConv[conversationId] = next;
         state.quotaMetaByConv[conversationId] = {
           fetchedAt: Date.now(),
@@ -624,7 +621,6 @@ export const {
   removeOptimisticMessage,
   resetChat,
   decrementQuotaLocally,
-  markQuotaUnlocked,
 } = chatSlice.actions;
 
 export default chatSlice.reducer;

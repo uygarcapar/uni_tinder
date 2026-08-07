@@ -85,7 +85,8 @@ export const API_ENDPOINTS = {
   MESSAGES_SEARCH: (convId: string) => `/api/messages/conversations/${convId}/search`,
   MESSAGES_UPLOAD_URL: "/api/messages/upload-url",
   MESSAGES_QUOTA: (convId: string) => `/api/messages/conversations/${convId}/quota`,
-  MESSAGES_UNLOCK: (convId: string) => `/api/messages/conversations/${convId}/unlock`,
+  // NOT: .../unlock endpoint'i 2026-08-02'de kaldırıldı (consumable satışı yok);
+  // kota dolduğunda Premium modalı açılır.
 
   MODERATION_BLOCK: (userId: string) => `/api/moderation/block/${userId}`,
   // /blocks sadece id listesi döner; kart göstermek için /blocked-users kullan.
