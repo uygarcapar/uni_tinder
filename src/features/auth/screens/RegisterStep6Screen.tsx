@@ -208,10 +208,10 @@ export default function RegisterStep6Screen({ navigation }: NativeStackScreenPro
               borderRadius: 999,
               borderCurve: "continuous",
               overflow: "hidden",
-              backgroundColor: colors.messageOwn,
+              backgroundColor: colors.text,
             }}
           >
-            <Text className="text-white py-[20px] font-bold text-[15px] text-center">
+            <Text className="text-black py-[20px] font-bold text-[15px] text-center">
               {t('common.continueButton')}
             </Text>
           </AnimatedPressable>

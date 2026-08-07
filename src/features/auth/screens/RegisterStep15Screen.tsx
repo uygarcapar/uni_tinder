@@ -283,12 +283,12 @@ export default function RegisterStep15Screen({ navigation }: NativeStackScreenPr
         <AnimatedPressable
           onPress={handleCompleteProfile}
           disabled={loading || photos.length < 2 || isDraggingPhoto}
-          style={{ borderRadius: 999, borderCurve: "continuous", overflow: "hidden", opacity: loading || photos.length < 2 || isDraggingPhoto ? 0.5 : 1, backgroundColor: colors.messageOwn }}
+          style={{ borderRadius: 999, borderCurve: "continuous", overflow: "hidden", opacity: loading || photos.length < 2 || isDraggingPhoto ? 0.5 : 1, backgroundColor: colors.text }}
         >
           {loading ? (
-            <View className="py-[18px]"><ActivityIndicator color="#fff" /></View>
+            <View className="py-[18px]"><ActivityIndicator color="#000" /></View>
           ) : (
-            <Text className="text-white py-[20px] font-bold text-[15px] text-center">{t('auth.step15.submitButton')}</Text>
+            <Text className="text-black py-[20px] font-bold text-[15px] text-center">{t('auth.step15.submitButton')}</Text>
           )}
         </AnimatedPressable>
       </View>

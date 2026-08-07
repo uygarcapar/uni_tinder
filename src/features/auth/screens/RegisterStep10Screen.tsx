@@ -129,8 +129,8 @@ export default function RegisterStep10Screen({ navigation }: NativeStackScreenPr
 
       <KeyboardStickyView offset={{ closed: 0, opened: 0 }}>
         <View style={{ paddingHorizontal: 32, paddingBottom: 32, paddingTop: 16, backgroundColor: colors.bg }}>
-          <AnimatedPressableShared onPress={handleNext} style={{ borderRadius: 999, overflow: "hidden", backgroundColor: colors.messageOwn }}>
-            <Text style={{ color: "#fff", paddingVertical: 20, fontWeight: "700", fontSize: 15, textAlign: "center" }}>
+          <AnimatedPressableShared onPress={handleNext} style={{ borderRadius: 999, overflow: "hidden", backgroundColor: colors.text }}>
+            <Text style={{ color: "#000", paddingVertical: 20, fontWeight: "700", fontSize: 15, textAlign: "center" }}>
               {t('common.continueButton')}
             </Text>
           </AnimatedPressableShared>

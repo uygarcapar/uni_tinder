@@ -94,24 +94,31 @@ export default function RegisterStep1Screen({ navigation }: NativeStackScreenPro
 
         case "ACCOUNT_EXISTS":
           Alert.alert(
-            "Hesap Mevcut",
-            data.message || "Bu maile ait bir hesap var, lütfen giriş yapın.",
+            t('auth.step1.errors.accountExistsTitle'),
+            data.message || t('auth.step1.errors.accountExists'),
             [
-              { text: "İptal", style: "cancel" },
-              { text: "Giriş Yap", onPress: () => navigation.navigate("Login") },
+              { text: t('common.cancel'), style: "cancel" },
+              { text: t('auth.step1.errors.loginAction'), onPress: () => navigation.navigate("Login") },
             ],
           );
           break;
 
         case "INVALID_DOMAIN":
-          setError(data.message || "Sadece üniversite e-postası kabul edilir.");
+          setError(data.message || t('auth.step1.errors.invalidDomain'));
+          break;
+
+        // Domain .edu(.tr) ama üniversite backend registry'sinde yok → akış
+        // burada biter, kod ekranına geçilmez. Seçim adımı olmadığı için
+        // fallback picker da yok.
+        case "UNSUPPORTED_UNIVERSITY":
+          setError(data.message || t('auth.step1.errors.unsupportedUniversity'));
           break;
 
         default:
-          setError(data.message || "Kod gönderilemedi");
+          setError(data.message || t('auth.step1.errors.sendFailed'));
       }
     } catch {
-      setError("Bağlantı hatası, tekrar dene");
+      setError(t('auth.step1.errors.network'));
     } finally {
       setLoading(false);
     }
@@ -191,13 +198,13 @@ export default function RegisterStep1Screen({ navigation }: NativeStackScreenPro
               borderRadius: 999,
               borderCurve: "continuous",
               overflow: "hidden",
-              backgroundColor: colors.messageOwn,
+              backgroundColor: colors.text,
             }}
           >
             {loading ? (
-              <ActivityIndicator className="py-[17.5px]" color="#fff" />
+              <ActivityIndicator className="py-[17.5px]" color="#000" />
             ) : (
-              <Text className="text-white py-[20px] font-bold text-[15px] text-center">
+              <Text className="text-black py-[20px] font-bold text-[15px] text-center">
                 {t('common.continueButton')}
               </Text>
             )}

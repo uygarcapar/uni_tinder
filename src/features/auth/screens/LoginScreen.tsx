@@ -13,6 +13,7 @@ import { useAppDispatch, useAppSelector } from "@/shared/hooks/redux";
 import { login } from "@/features/auth/authSlice";
 import { Eye, EyeOff } from "lucide-react-native";
 import SFIcon from "@/shared/components/SFIcon";
+import RegisterBackButton from "@/features/auth/components/RegisterBackButton";
 import {
   KeyboardStickyView,
   useReanimatedKeyboardAnimation,
@@ -57,13 +58,7 @@ export default function LoginScreen({ navigation }: NativeStackScreenProps<AuthS
       <Animated.View style={[{ flex: 1 }, liftStyle]}>
         {/* Header */}
         <View className="bg-bg pt-16 pb-6 px-6">
-          <TouchableOpacity
-            activeOpacity={1}
-            onPress={() => navigation.goBack()}
-            className="flex-row items-center"
-          >
-            <Text className="text-4xl mr-2 text-white">←</Text>
-          </TouchableOpacity>
+          <RegisterBackButton onPress={() => navigation.goBack()} />
         </View>
 
         <TouchableWithoutFeedback onPress={Keyboard.dismiss}>
@@ -167,16 +162,6 @@ export default function LoginScreen({ navigation }: NativeStackScreenProps<AuthS
                 </TouchableOpacity>
               </View>
             </View>
-
-            {/* Forgot Password */}
-            <TouchableOpacity activeOpacity={1} className="mb-4">
-              <Text className="font-normal text-gray-400 text-[15px]">
-                {t('auth.login.forgotPassword').split(t('auth.login.forgotPasswordLink'))[0]}
-                <Text className="font-semibold underline text-white">
-                  {t('auth.login.forgotPasswordLink')}
-                </Text>
-              </Text>
-            </TouchableOpacity>
           </View>
         </TouchableWithoutFeedback>
       </Animated.View>

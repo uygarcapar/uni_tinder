@@ -18,11 +18,9 @@ import {
   logout,
   setEmailVerifiedToken,
 } from "@/features/auth/authSlice";
-import { Mailbox, RotateCcw, ArrowLeft, Check } from "lucide-react-native";
+import { Mail, RotateCcw, ArrowLeft, Check } from "lucide-react-native";
 import SFIcon from "@/shared/components/SFIcon";
 import { API_BASE_URL, API_ENDPOINTS } from "@/shared/constants/api";
-import { useReanimatedKeyboardAnimation } from "react-native-keyboard-controller";
-import Animated, { useAnimatedStyle } from "react-native-reanimated";
 import AnimatedPressable from "@/shared/components/AnimatedPressable";
 import { colors } from "../../../shared/theme/colors";
 import { useTranslation } from 'react-i18next';
@@ -43,11 +41,6 @@ export default function RegisterStep2Screen({ route, navigation }: NativeStackSc
   const [isLoggingOut, setIsLoggingOut] = useState(false);
 
   const dispatch = useAppDispatch();
-
-  const { height: keyboardHeight } = useReanimatedKeyboardAnimation();
-  const liftStyle = useAnimatedStyle(() => ({
-    transform: [{ translateY: keyboardHeight.value / 2 }],
-  }));
 
   useEffect(() => {
     if (countdown > 0) {
@@ -189,24 +182,21 @@ export default function RegisterStep2Screen({ route, navigation }: NativeStackSc
       )}
 
       <TouchableWithoutFeedback onPress={Keyboard.dismiss}>
-        <Animated.View
-          style={[
-            {
-              flex: 1,
-              justifyContent: "center",
-              paddingHorizontal: 24,
-              paddingVertical: 48,
-            },
-            liftStyle,
-          ]}
+        <View
+          style={{
+            flex: 1,
+            justifyContent: "center",
+            paddingHorizontal: 24,
+            paddingVertical: 48,
+          }}
         >
           <View className="items-center flex flex-col gap-10 p-8">
-            <SFIcon name="envelope.fill" fallback={Mailbox} strokeWidth={1} size={100} color={colors.text} />
+            <SFIcon name="envelope" fallback={Mail} strokeWidth={1} size={140} color={colors.text} />
             <View>
               <Text className="text-3xl font-bold text-white mb-3 text-center">
                 {t('auth.step2.title')}
               </Text>
-              <Text className="text-white/80 text-[15px] text-center">
+              <Text className="text-white/80 text-[18px] text-center">
                 {email}
                 {isPending
                   ? t('auth.step2.descriptionPending')
@@ -235,7 +225,7 @@ export default function RegisterStep2Screen({ route, navigation }: NativeStackSc
                   autoComplete: "one-time-code",
                 }}
                 theme={{
-                  containerStyle: { justifyContent: "center", gap: 2 },
+                  containerStyle: { justifyContent: "center", gap: 4 },
                   pinCodeContainerStyle: {
                     width: 48,
                     height: 64,
@@ -251,10 +241,10 @@ export default function RegisterStep2Screen({ route, navigation }: NativeStackSc
                   },
                   pinCodeTextStyle: {
                     color: "#fff",
-                    fontSize: 24,
+                    fontSize: 30,
                     fontWeight: "600",
                   },
-                  focusStickStyle: { backgroundColor: colors.primary },
+                  focusStickStyle: { backgroundColor: colors.text },
                 }}
               />
             </View>
@@ -291,15 +281,15 @@ export default function RegisterStep2Screen({ route, navigation }: NativeStackSc
                 borderCurve: "continuous",
                 overflow: "hidden",
                 opacity: loading || code.length < 6 ? 0.5 : 1,
-                backgroundColor: colors.messageOwn,
+                backgroundColor: colors.text,
               }}
               onPress={() => handleVerify()}
               disabled={loading || code.length < 6}
             >
               {loading ? (
-                <ActivityIndicator className="py-[20px]" color="#fff" />
+                <ActivityIndicator className="py-[20px]" color="#000" />
               ) : (
-                <Text className="text-white py-[20px] text-center font-medium text-[15px]">
+                <Text className="text-black py-[20px] text-center font-medium text-[15px]">
                   {t('auth.step2.verifyButton')}
                 </Text>
               )}
@@ -327,7 +317,7 @@ export default function RegisterStep2Screen({ route, navigation }: NativeStackSc
               <Text className="text-white font-medium">{t('auth.step2.backButton')}</Text>
             </TouchableOpacity>
           </View>
-        </Animated.View>
+        </View>
       </TouchableWithoutFeedback>
     </View>
   );

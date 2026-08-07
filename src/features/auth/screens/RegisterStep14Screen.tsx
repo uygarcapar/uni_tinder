@@ -413,8 +413,8 @@ export default function RegisterStep14Screen({ navigation }: NativeStackScreenPr
 
       {/* Sticky Button */}
       <View className="px-8 pb-8 pt-4 absolute bottom-0 left-0 right-0">
-        <AnimatedPressable style={{ borderRadius: 999, borderCurve: "continuous", overflow: "hidden", backgroundColor: colors.messageOwn }} onPress={handleNext}>
-          <Text className="text-white py-[20px] font-bold text-[15px] text-center">
+        <AnimatedPressable style={{ borderRadius: 999, borderCurve: "continuous", overflow: "hidden", backgroundColor: colors.text }} onPress={handleNext}>
+          <Text className="text-black py-[20px] font-bold text-[15px] text-center">
             {allFieldsEmpty ? t('auth.step14.skipButton') : t('common.continueButton')}
           </Text>
         </AnimatedPressable>

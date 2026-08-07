@@ -186,9 +186,9 @@ export default function RegisterStep8Screen({ navigation }: NativeStackScreenPro
         <View className="px-8 pb-8 pt-4 bg-bg">
           <AnimatedPressableShared
             onPress={handleNext}
-            style={{ borderRadius: 999, borderCurve: "continuous", overflow: "hidden", backgroundColor: colors.messageOwn }}
+            style={{ borderRadius: 999, borderCurve: "continuous", overflow: "hidden", backgroundColor: colors.text }}
           >
-            <Text className="text-white py-[20px] font-bold text-[15px] text-center">
+            <Text className="text-black py-[20px] font-bold text-[15px] text-center">
               {t('common.continueButton')}
             </Text>
           </AnimatedPressableShared>

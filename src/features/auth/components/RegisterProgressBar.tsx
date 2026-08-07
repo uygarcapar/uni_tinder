@@ -8,16 +8,19 @@ import Animated, {
 } from "react-native-reanimated";
 import { colors } from "../../../shared/theme/colors";
 
-const FIRST_STEP = 3;
-// Step4 (phone) kayıt akışından çıkarıldı; numaralandırma korunuyor ama
-// progress 12 visible adım üzerinden hesaplanıyor.
-const TOTAL_STEPS = 12;
+// Ekran numaralandırması seyrek: Step4 (telefon) ve Step11 (yaş aralığı) kayıt
+// akışından çıkarıldı, kalan ekranların adları korundu. Progress'i aritmetikle
+// türetmek yerine gerçekten render edilen adımları listeliyoruz — ileride bir
+// adım daha düşerse tek yapılacak iş bu diziden silmek.
+const VISIBLE_STEPS = [3, 5, 6, 7, 8, 9, 10, 12, 13, 14, 15];
+const TOTAL_STEPS = VISIBLE_STEPS.length;
 
-export default function RegisterProgressBar({ step }: any) {
-  const displayStep = step > 4 ? step - 1 : step;
-  const clamp = (n) => Math.max(0, Math.min(TOTAL_STEPS, n));
-  const target = clamp(displayStep - FIRST_STEP + 1) / TOTAL_STEPS;
-  const initial = clamp(displayStep - FIRST_STEP) / TOTAL_STEPS;
+export default function RegisterProgressBar({ step }: { step: number }) {
+  // Listede olmayan bir step gelirse (yeni ekran, dizi güncellenmemiş) bar'ı
+  // boş bırakmak yerine en yakın alt adıma yaslıyoruz.
+  const index = VISIBLE_STEPS.filter((s) => s <= step).length;
+  const target = index / TOTAL_STEPS;
+  const initial = Math.max(0, index - 1) / TOTAL_STEPS;
 
   const progress = useSharedValue(initial);
 
