@@ -39,6 +39,10 @@ export const colors = {
   swipeHeartBorder: "#ff8e7a",
   errorLight: "#FCA5A5",
   errorDeep: "#ff2b2b",
+  // Context menü'deki yıkıcı aksiyonlar (sil / herkesten sil). errorLight'tan
+  // ayrı bir token: o soluk pembe (#FCA5A5) hâlâ MessageBubble'ın "gönderilemedi"
+  // ikonunda kullanılıyor ve orada kalması gerekiyor.
+  destructive: "#FF5C5C",
   successIos: "#34C759",
 
   overlay: {

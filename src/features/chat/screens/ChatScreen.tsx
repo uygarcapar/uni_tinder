@@ -35,6 +35,7 @@ import {
   controlSize,
 } from "@expo/ui/swift-ui/modifiers";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
+import { useSharedValue } from "react-native-reanimated";
 import {
   KeyboardStickyView,
   KeyboardGestureArea,
@@ -242,19 +243,42 @@ function ChatScreen({
   useEffect(() => {
     quotaRef.current = quota;
   }, [quota]);
+  // Menü kapanış callback'i "düzenle mi seçildi" bilgisini state'e bakmadan
+  // okuyabilsin diye (callback stabil kalsın).
+  const editTargetRef = useRef<any>(null);
+  useEffect(() => {
+    editTargetRef.current = editTarget;
+  }, [editTarget]);
 
   // ── Reveal + keyboard (LegendList chat hooks) ──────────────────────────
   const { revealX, listGesture } = useRevealGesture();
   // Composer inset: opak composer + safe-area başlangıç değeri (ölçüm gelince
-  // gerçek yükseklik yazılır). NOT: useKeyboardScrollToEnd/freeze BİLEREK YOK —
-  // freeze, animated scrollToEnd promise'i resolve olmayınca TRUE'da kilitlenip
-  // tüm klavye handler'larını susturuyordu ("parmağımla donuyor" bug'ı).
+  // gerçek yükseklik yazılır). Fade bandı BİLEREK dahil değil — dahil edilirse
+  // son balon bandın tamamı kadar yukarı kalkıyor ve aşağıda fazla boşluk
+  // kalıyor. Balon bandın altına girmesin diye bandın kendisi kısaltıldı
+  // (MessageComposer'daki COMPOSER_FADE_BAND).
+  // NOT: useKeyboardScrollToEnd'in OTOMATİK freeze'i BİLEREK YOK — o freeze,
+  // animated scrollToEnd promise'i resolve olmayınca TRUE'da kilitlenip tüm
+  // klavye handler'larını susturuyordu ("parmağımla donuyor" bug'ı). Aşağıdaki
+  // kbFreeze bambaşka: yalnız uzun-bas menüsü açıkken elle set edilen, menü
+  // kapanınca (ve unmount'ta) kesin çözülen kısa ömürlü bir kilit.
   const { contentInsetEndAdjustment, onComposerLayout } =
     useKeyboardChatComposerInset(
       listRef,
       composerRef,
       INPUT_BAR_OPAQUE + insets.bottom,
     );
+
+  // Uzun-bas menüsü açılırken klavye kapanıyor, kapanınca geri açılıyor. Bu iki
+  // klavye hareketi listeye YANSIMAMALI: yansırsa liste ~klavye yüksekliği kadar
+  // aşağı/yukarı kayıyor, menü klonu da bayat konuma uçuyordu. freeze=true iken
+  // KeyboardChatScrollView tüm klavye kaynaklı padding/contentOffset işlerini
+  // atlar → liste tek piksel oynamaz. Klavye geri açıldığında (aynı yükseklik)
+  // geometri zaten tutarlı olduğu için freeze çözülür.
+  const kbFreeze = useSharedValue(false);
+  // Menü kapanınca klavye geri açılsın mı (uzun basışta açıktı ise).
+  const restoreKbRef = useRef(false);
+  const kbUnfreezeRef = useRef<(() => void) | null>(null);
 
   const inputKbOffset = useMemo(
     () => ({ closed: 0, opened: insets.bottom }),
@@ -608,17 +632,82 @@ function ChatScreen({
   );
 
   // ── Mesaj aksiyonları ────────────────────────────────────────────────────
-  const handleLongPressMessage = useCallback((message: any, layout: any) => {
-    if (message._pending || message._failed) return;
-    Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Medium).catch(() => {});
-    // Modal klavyeyi zaten kapatıyor ama input odaklı kaldığından modal
-    // kapanınca iOS odağı geri verip klavyeyi TEKRAR açıyordu — liste inset
-    // telafisi bu beklenmedik açılışta oturmayıp mesajlar klavye altında
-    // kalıyordu. Açıkça dismiss → input blur → geri açılacak odak kalmaz.
-    Keyboard.dismiss();
-    setActionLayout(layout || null);
-    setActionTarget(message);
-  }, []);
+  const handleLongPressMessage = useCallback(
+    (message: any, layout: any) => {
+      if (message._pending || message._failed) return;
+      Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Medium).catch(() => {});
+
+      // Klavye açıkken: listeyi klavye telafisine karşı DONDUR, sonra klavyeyi
+      // kapat ve menüyü BEKLETMEDEN aç. Modal klavyeyi zaten kapatıyor ama
+      // odak inputta kalırsa iOS modal kapanınca klavyeyi kendi kafasına göre
+      // geri açıyor — açıkça dismiss ediyoruz, geri açmayı biz yönetiyoruz.
+      // freeze sayesinde ne bu kapanış ne de menü kapanınca yapacağımız geri
+      // açılış listeyi oynatır; balon yerinde kalır, klon da doğru konuma döner.
+      if (Keyboard.isVisible()) {
+        // Askıda kalmış bir çözülme varsa (art arda uzun basış) önce onu kapat.
+        kbUnfreezeRef.current?.();
+        kbFreeze.value = true;
+        restoreKbRef.current = true;
+        // dismiss BİR TİK GECİKMELİ: freeze JS'te yazılıp UI thread'e geçiyor
+        // (üstüne kütüphane onu bir useDerivedValue ile tüketiyor). Hemen
+        // dismiss edersek klavye "will hide" worklet'i freeze daha inmeden
+        // çalışıp listeyi klavye boyu AŞAĞI kaydırıyor; sonra geri açılış
+        // (artık donuk) o kaymayı geri almadığı için liste klavyenin altında
+        // kalıyordu. Bir-iki frame beklemek gözle görülmüyor.
+        setTimeout(() => Keyboard.dismiss(), 50);
+      } else {
+        restoreKbRef.current = false;
+      }
+      setActionLayout(layout || null);
+      setActionTarget(message);
+    },
+    [kbFreeze],
+  );
+
+  // Menü kapandı: klavye uzun basış anında açıksa geri getir. Liste hâlâ donuk
+  // olduğu için klavye yükselirken mesajlar oynamaz; klavye tamamen açılınca
+  // (didShow) freeze çözülür — geometri o an zaten "klavye açık" haliyle
+  // tutarlıdır. Emniyet: olay gelmezse süre sonunda yine çözülür.
+  const handleActionSheetClose = useCallback(() => {
+    setActionTarget(null);
+    if (!restoreKbRef.current) return;
+    restoreKbRef.current = false;
+
+    let done = false;
+    const release = () => {
+      if (done) return;
+      done = true;
+      sub.remove();
+      clearTimeout(timer);
+      clearTimeout(retry);
+      kbUnfreezeRef.current = null;
+      kbFreeze.value = false;
+    };
+    kbUnfreezeRef.current = release;
+    const sub = Keyboard.addListener("keyboardDidShow", release);
+    const timer = setTimeout(release, 900);
+
+    const focusComposer = () => {
+      // "Düzenle" seçildiyse edit modalının kendi input'u autoFocus ile klavyeyi
+      // açıyor — composer'a odak vermek onunla çakışır, sadece didShow'u bekleriz.
+      if (done || editTargetRef.current) return;
+      composerInputRef.current?.focus();
+    };
+    // Modal native tarafta kapanmadan verilen odak düşebiliyor → bir frame sonra
+    // dene, klavye hâlâ gelmediyse bir kez daha.
+    requestAnimationFrame(focusComposer);
+    const retry = setTimeout(() => {
+      if (!Keyboard.isVisible()) focusComposer();
+    }, 250);
+  }, [kbFreeze]);
+
+  // Ekrandan çıkılırsa kilit askıda kalmasın.
+  useEffect(
+    () => () => {
+      kbUnfreezeRef.current?.();
+    },
+    [],
+  );
 
   const handlePickReaction = useCallback(
     async (message: any, emoji: string) => {
@@ -958,6 +1047,7 @@ function ChatScreen({
             revealX={revealX}
             listGesture={listGesture}
             contentInsetEndAdjustment={contentInsetEndAdjustment}
+            freeze={kbFreeze}
             keyboardOffset={insets.bottom}
             contentContainerStyle={listContentContainerStyle}
             onScrollBeginDrag={handleScrollBeginDrag}
@@ -968,12 +1058,16 @@ function ChatScreen({
             ListEmptyComponent={listEmpty}
             ListFooterComponent={listTyping}
           />
+          {/* box-none: composer'ın şeffaf gradient bandı dokunuşu yutmasın —
+              altındaki son balon basılı-tutmayı alsın (MessageComposer'da eş çift). */}
           <KeyboardStickyView
             offset={inputKbOffset}
+            pointerEvents="box-none"
             style={{ position: "absolute", bottom: 0, left: 0, right: 0 }}
           >
             <MessageComposer
               composerRef={composerRef}
+              inputRef={composerInputRef}
               onComposerLayout={onComposerLayout}
               replyTo={replyTo}
               onCancelReply={handleCancelReply}
@@ -995,6 +1089,7 @@ function ChatScreen({
             revealX={revealX}
             listGesture={listGesture}
             contentInsetEndAdjustment={contentInsetEndAdjustment}
+            freeze={kbFreeze}
             keyboardOffset={insets.bottom}
             contentContainerStyle={listContentContainerStyle}
             onScrollBeginDrag={handleScrollBeginDrag}
@@ -1005,12 +1100,15 @@ function ChatScreen({
             ListEmptyComponent={listEmpty}
             ListFooterComponent={listTyping}
           />
+          {/* box-none: bkz. Android dalı — şeffaf gradient bandı dokunuşu geçirir. */}
           <KeyboardStickyView
             offset={inputKbOffset}
+            pointerEvents="box-none"
             style={{ position: "absolute", bottom: 0, left: 0, right: 0 }}
           >
             <MessageComposer
               composerRef={composerRef}
+              inputRef={composerInputRef}
               onComposerLayout={onComposerLayout}
               replyTo={replyTo}
               onCancelReply={handleCancelReply}
@@ -1052,7 +1150,7 @@ function ChatScreen({
         message={actionTarget}
         layout={actionLayout}
         isOwn={actionTarget?.senderId === myUserId}
-        onClose={() => setActionTarget(null)}
+        onClose={handleActionSheetClose}
         onPickReaction={(emoji: string) => handlePickReaction(actionTarget, emoji)}
         onReply={() => handleReply(actionTarget)}
         onEdit={() => handleEditStart(actionTarget)}

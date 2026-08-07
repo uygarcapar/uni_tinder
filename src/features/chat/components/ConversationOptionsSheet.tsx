@@ -52,7 +52,7 @@ function Section({
             marginBottom: 4,
           }}
         >
-          <SFIcon name="info.circle" fallback={InfoIcon} size={16} color={colors.textSecondary} />
+          <SFIcon name="info.circle" fallback={InfoIcon} size={16} color={colors.textSecondary} strokeWidth={2} weight="semibold" />
           <Text
             style={{
               color: colors.textSecondary,
@@ -99,13 +99,13 @@ function ActionRow({
         borderBottomColor: "rgba(255,255,255,0.08)",
       }}
     >
-      <View style={{ width: 28, alignItems: "center" }}>{icon}</View>
+      <View style={{ width: 24, alignItems: "center" }}>{icon}</View>
       <Text
         style={{
           color: textColor,
-          fontSize: 16,
+          fontSize: 15,
           fontWeight: "500",
-          marginLeft: 12,
+          marginLeft: 10,
         }}
       >
         {label}
@@ -177,7 +177,7 @@ export default function ConversationOptionsSheet({
       />
       {isActive && (
         <ActionRow
-          icon={<SFIcon name="magnifyingglass" fallback={Search} size={22} color={colors.text} />}
+          icon={<SFIcon name="magnifyingglass" fallback={Search} size={18} color={colors.text} strokeWidth={1.5} />}
           label="Sohbette Ara"
           onPress={() => {
             onClose();
@@ -187,7 +187,7 @@ export default function ConversationOptionsSheet({
       )}
       {isActive && (
         <ActionRow
-          icon={<SFIcon name="person.fill.badge.minus" fallback={UserMinus} size={22} color={colors.error} />}
+          icon={<SFIcon name="person.fill.badge.minus" fallback={UserMinus} size={18} color={colors.error} strokeWidth={1.5} />}
           label="Eşleşmeyi Kaldır"
           onPress={handleUnmatch}
           destructive
@@ -195,7 +195,7 @@ export default function ConversationOptionsSheet({
       )}
       {!isActive && canRestore && (
         <ActionRow
-          icon={<SFIcon name="arrow.counterclockwise" fallback={RotateCcw} size={22} color={colors.success} />}
+          icon={<SFIcon name="arrow.counterclockwise" fallback={RotateCcw} size={18} color={colors.success} strokeWidth={1.5} />}
           label="Eşleşmeyi Geri Al"
           onPress={() => {
             onClose();
@@ -217,8 +217,10 @@ export default function ConversationOptionsSheet({
           <SFIcon
             name="exclamationmark.triangle.fill"
             fallback={AlertTriangle}
-            size={18}
+            size={16}
             color={colors.textSecondary}
+            strokeWidth={2}
+            weight="semibold"
             style={{ marginTop: 2 }}
           />
           <Text
@@ -239,7 +241,7 @@ export default function ConversationOptionsSheet({
         description="Kullanıcıyı şikayet edebilir veya engelleyebilirsin."
       />
       <ActionRow
-        icon={<SFIcon name="flag.fill" fallback={Flag} size={22} color={colors.warning} />}
+        icon={<SFIcon name="flag.fill" fallback={Flag} size={18} color={colors.text} strokeWidth={1.5} />}
         label="Şikayet Et"
         onPress={() => {
           onClose();
@@ -247,7 +249,7 @@ export default function ConversationOptionsSheet({
         }}
       />
       <ActionRow
-        icon={<SFIcon name="nosign" fallback={Ban} size={22} color={colors.error} />}
+        icon={<SFIcon name="nosign" fallback={Ban} size={18} color={colors.error} strokeWidth={1.5} />}
         label="Kullanıcıyı Engelle"
         onPress={handleBlock}
         destructive

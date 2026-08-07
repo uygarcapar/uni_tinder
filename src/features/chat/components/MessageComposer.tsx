@@ -12,7 +12,7 @@ import { BlurView } from "expo-blur";
 import MaskedView from "@react-native-masked-view/masked-view";
 import { LinearGradient } from "expo-linear-gradient";
 import { easeGradient } from "react-native-easing-gradient";
-import { Lock, ArrowUp, Plus } from "lucide-react-native";
+import { Lock, ArrowUp, CirclePlus } from "lucide-react-native";
 import SFIcon from "@/shared/components/SFIcon";
 import * as Haptics from "expo-haptics";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
@@ -20,10 +20,16 @@ import { useTranslation } from "react-i18next";
 import ReplyPreview from "@/features/chat/components/ReplyPreview";
 import { newClientMessageId } from "@/features/chat/clientMessageId";
 import { colors } from "../../../shared/theme/colors";
-import { withProfiler } from "@sentry/react-native";
 
 const IS_IOS = Platform.OS === "ios";
 const TYPING_DEBOUNCE_MS = 1500;
+
+// Opak gövdenin ÜSTÜNDEKİ fade bandının yüksekliği — overlay'in nerede bittiği
+// (üst kenarı) bu sabitle belirlenir. Liste inset'i bandı SAYMIYOR, yani son
+// balon bandın altına kayıyor; bandı büyütmek balonu örter, küçültmek overlay'i
+// aşağı çeker. Balonun konumunu DEĞİŞTİRMEZ — onu değiştirmek için ChatScreen'in
+// inset'ine dokunmak gerekir ki bu da altta fazladan boşluk bırakır.
+const COMPOSER_FADE_BAND = 14;
 
 const styles = StyleSheet.create({
   // Ayna Text'ler: TextInput ile aynı doğal font metriği, görünmez, dokunmaz.
@@ -38,10 +44,13 @@ const styles = StyleSheet.create({
 
 type Props = {
   // Opak composer gövdesinin ölçümü (LegendList composer inset hook'una gider).
-  // ÖNEMLİ: 30pt'lik gradient üst boşluğu ölçüme DAHİL DEĞİL — inset yalnız opak
-  // kısmı rezerve eder; mesajlar fade'in altına doğal kayar (eski build görünümü),
-  // ve mount'taki 66→~124 inset zıplaması olmaz.
+  // ÖNEMLİ: fade bandı ölçüme DAHİL DEĞİL — inset yalnız opak kısmı rezerve
+  // eder; mesajlar fade'in altına doğal kayar (eski build görünümü), ve
+  // mount'ta inset zıplaması olmaz.
   composerRef?: any;
+  // TextInput'un kendisi — ChatScreen uzun-bas menüsü kapanınca klavyeyi geri
+  // açmak için odağı buraya verir.
+  inputRef?: React.RefObject<TextInput | null>;
   onComposerLayout?: (e: LayoutChangeEvent) => void;
   replyTo?: any;
   onCancelReply?: () => void;
@@ -65,6 +74,7 @@ type Props = {
  */
 function MessageComposer({
   composerRef,
+  inputRef: externalInputRef,
   onComposerLayout,
   replyTo,
   onCancelReply,
@@ -84,6 +94,15 @@ function MessageComposer({
   const [lineH, setLineH] = useState(0);
   const [contentH, setContentH] = useState(0);
   const inputRef = useRef<TextInput>(null);
+  // Dışarıdan ref verildiyse aynı node'a bağla. useCallback şart: her render'da
+  // yeni callback ref, native tarafta detach/attach (null→node) demek.
+  const setInputRef = useCallback(
+    (node: TextInput | null) => {
+      inputRef.current = node;
+      if (externalInputRef) externalInputRef.current = node;
+    },
+    [externalInputRef],
+  );
   const isTypingRef = useRef(false);
   const typingTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
 
@@ -151,7 +170,7 @@ function MessageComposer({
       : t("chat.input.placeholder")
     : t("chat.input.closed");
 
-  const canSend = !!text.trim() && !quotaLocked && !disabled;
+  const canSend = !!text.trim() && !disabled && !quotaLocked;
 
   // Yükseklik = satır sayısı × ölçülen gerçek satır yüksekliği — hep tam satıra
   // oturur, satır ortadan kesilmez. 3 satır tavanı, sonrası input içinde kayar.
@@ -160,7 +179,11 @@ function MessageComposer({
   const inputHeight = lineH > 0 ? lineCount * lineH : 22;
 
   return (
-    <View style={{ paddingTop: 30 }}>
+    // box-none: fade bandı SADECE görsel — RN'de dokunuşlar altındaki kardeş
+    // görünüme "düşmez", en derin hit-test edilen View'de kalır; band auto
+    // kalırsa son balonun altına gelen kısmı basılı-tutmayı yutuyordu (inset
+    // yalnız opak gövdeyi rezerve ettiği için balon bandın altına doğal kayıyor).
+    <View pointerEvents="box-none" style={{ paddingTop: COMPOSER_FADE_BAND }}>
       <View style={StyleSheet.absoluteFill} pointerEvents="none">
         <MaskedView
           maskElement={
@@ -184,7 +207,7 @@ function MessageComposer({
         </MaskedView>
       </View>
 
-      {/* Opak gövde — inset ölçümü BU düğümde (gradient hariç). */}
+      {/* Opak gövde — inset ölçümü BU düğümde (fade bandı hariç). */}
       <View
         ref={composerRef}
         onLayout={onComposerLayout}
@@ -214,8 +237,12 @@ function MessageComposer({
               gap: 8,
             }}
           >
-            {/* Şimdilik işlevsiz — gönder butonuyla aynı yeri kaplar (medya eki için rezerve). */}
-            <View
+            {/* Şimdilik işlevsiz — gönder butonuyla aynı yeri kaplar (medya eki için rezerve).
+                Kota bitmişse + yerine kilit; dokununca premium paywall açılır. */}
+            <TouchableOpacity
+              onPress={quotaLocked ? onLockedPress : undefined}
+              disabled={!quotaLocked}
+              activeOpacity={0.7}
               style={{
                 width: 33,
                 height: 32,
@@ -225,8 +252,12 @@ function MessageComposer({
                 justifyContent: "center",
               }}
             >
-              <SFIcon name="plus" fallback={Plus} size={30} strokeWidth={2} weight="semibold" color="#fff" />
-            </View>
+              {quotaLocked ? (
+                <SFIcon name="lock.fill" fallback={Lock} size={22} strokeWidth={2} weight="semibold" color="#fff" />
+              ) : (
+                <SFIcon name="plus.circle" fallback={CirclePlus} size={28} strokeWidth={2} weight="semibold" color="#fff" />
+              )}
+            </TouchableOpacity>
 
             <View style={{ flex: 1 }}>
               {/* Görünmez aynalar: TextInput ile aynı font, lineHeight stili YOK
@@ -246,7 +277,7 @@ function MessageComposer({
                 {(text || " ") + "​"}
               </Text>
               <TextInput
-                ref={inputRef}
+                ref={setInputRef}
                 nativeID="chat-input"
                 onChangeText={handleChangeText}
                 editable={!disabled && !quotaLocked}
@@ -263,8 +294,6 @@ function MessageComposer({
                 }}
               />
             </View>
-            {quotaLocked && <SFIcon name="lock.fill" fallback={Lock} size={16} color={colors.textMuted} />}
-
             {/* Sabit mount: koşullu mount/unmount her tuşta layout zıplatıyordu. */}
             <TouchableOpacity
               onPress={handleSend}
@@ -293,6 +322,4 @@ function MessageComposer({
   );
 }
 
-// Sentry performance: composer mount/update span'leri. memo İÇERİDE kalır —
-// profiler sarmalayıcı prop'ları aynen geçirir, memo karşılaştırması bozulmaz.
-export default withProfiler(memo(MessageComposer), { name: "MessageComposer" });
+export default memo(MessageComposer);

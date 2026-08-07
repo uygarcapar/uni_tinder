@@ -28,12 +28,27 @@ import { colors } from "../../../shared/theme/colors";
 
 const QUICK_EMOJIS = ["❤️", "😂", "😮", "😢", "🔥", "👍"];
 const { width: SCREEN_WIDTH, height: SCREEN_HEIGHT } = Dimensions.get("window");
-const REACTIONS_HEIGHT = 56;
+// Emoji satırının yükseklik TAHMİNİ (onLayout gelene kadar). EMOJI_SIZE ile
+// birlikte güncellenmeli, yoksa ilk frame'de panel konumu zıplar.
+// Kaba hesap: EMOJI_SIZE × 1.2 (glyph) + 4 (satır padding) + 16 (pill padding).
+const REACTIONS_HEIGHT = 64;
+// Referans ekran görüntüsünden ölçüldü: pill 357pt genişlik / 7 slot ≈ 51pt slot
+// adımı, ≈58pt pill yüksekliği. Apple Color Emoji'nin genişliği ≈ 1.2 × fontSize
+// olduğundan slot ≈ 1.2 × EMOJI_SIZE + 2 × EMOJI_PAD_H.
+// PAD_H'yi 6'dan 5'e çektim: 36pt emoji ile satır 375pt'lik SE ekranına da sığsın
+// (6 emoji × 53.2 + 16 pill padding + 24 kenar boşluğu ≈ 359pt).
+const EMOJI_SIZE = 36;
+const EMOJI_PAD_H = 5;
 const GAP = 10;
 const SAFE_TOP = 60;
 const SAFE_BOTTOM = 40;
 const SIDE_MARGIN = 12;
 const ACTION_ROW_H = 47;
+// Aksiyon menüsünün köşe yarıçapı ve ilk/son satırın panel kenarına olan boşluğu.
+// Menü yüksekliği ölçülmüyor, satır sayısından HESAPLANIYOR (bkz. actionsH) —
+// bu yüzden padding'i buradaki sabitten beslemek zorunlu.
+const ACTIONS_RADIUS = 22;
+const ACTIONS_PAD_V = 6;
 const BUBBLE_RADIUS = 24;
 // Balonun altındaki reaction chip'leri balon dışına bu kadar taşar (MessageBubble bottom:-15).
 const REACTION_CHIP_OVERHANG = 15;
@@ -68,15 +83,25 @@ export default function MessageActionSheet({
   // Emoji pill'inin GERÇEK yüksekliği (onLayout) — tahmin yerine ölçüm, yoksa
   // balonla arasındaki boşluk menü boşluğuyla birebir aynı olmuyor.
   const [reactionsH, setReactionsH] = useState(REACTIONS_HEIGHT);
-  // Kapanışta klonun döneceği TAZE konum: menü açılırken klavye kapandığından
-  // liste ~klavye yüksekliği kayıyor — basış anındaki rect bayatlıyor. Kapanış
-  // başlamadan layout.remeasure ile güncellenir; null'sa basış rect'i kullanılır.
-  const [returnRect, setReturnRect] = useState<any>(null);
+  // Kapanışta klonun döneceği TAZE konum: sohbet menü açıkken kayabilir (yeni
+  // mesaj, klavye telafisi) — basış anındaki rect bayatlayabilir. React state
+  // DEĞİL shared value: state güncellemesi asenkron, çıkış animasyonu ise aynı
+  // tick'te başlıyor; ikisi yarışınca klon ilk kareleri bayat hedefe doğru
+  // uçup sonra sıçrıyordu. Shared value UI thread'de anında geçerli olur.
+  // -1 = "taze ölçüm yok, basış rect'ini kullan".
+  const exitX = useSharedValue(-1);
+  const exitY = useSharedValue(-1);
+  // Klonun GERÇEK render yüksekliği (onLayout). Ölçülen rect ile klonun sardığı
+  // satır sayısı birebir tutmayabiliyor; menü konumu tahmine değil bu ölçüme
+  // dayansın ki büyüyen balon aksiyon menüsünün üstüne binmesin.
+  const [cloneH, setCloneH] = useState(0);
 
   useEffect(() => {
     if (visible) {
       closingRef.current = false;
-      setReturnRect(null);
+      exitX.value = -1;
+      exitY.value = -1;
+      setCloneH(0);
       // Gerçek balonu gizle — görünen artık aşağıdaki klon. Kapanışta
       // (visible=false) klon yerine oturduğu anda geri gösterilir.
       layout?.setHidden?.(true);
@@ -87,7 +112,7 @@ export default function MessageActionSheet({
     } else {
       layout?.setHidden?.(false);
     }
-  }, [visible, layout, progress]);
+  }, [visible, layout, progress, exitX, exitY]);
 
   // Kapanış: önce klon geldiği yoldan geriye kayar (progress → 0), blur ve
   // paneller söner; animasyon BİTİNCE parent state'i temizlenir. onClose'u
@@ -113,7 +138,10 @@ export default function MessageActionSheet({
     // ŞU ANKİ konumuna dönsün diye kapanıştan önce taze ölçüm alınır.
     if (layout?.remeasure) {
       layout.remeasure((rect: any) => {
-        if (isValidRect(rect)) setReturnRect(rect);
+        if (isValidRect(rect)) {
+          exitX.value = rect.x;
+          exitY.value = rect.y;
+        }
         startExit();
       });
     } else {
@@ -157,12 +185,13 @@ export default function MessageActionSheet({
   // hedef konumu bilmemiz gerekiyor).
   const actionRows =
     1 + (message.content ? 1 : 0) + (canEdit ? 1 : 0) + (canDelete ? 2 : 0);
-  const actionsH = actionRows * ACTION_ROW_H;
+  const actionsH = actionRows * ACTION_ROW_H + ACTIONS_PAD_V * 2;
 
   // ── Sabit hedef konum: tüm stack (emoji + balon + menü) güvenli alanda dikey
   // ortalanır. Balon her uzun basışta ekranın AYNI bölgesine gelir.
-  const stackH =
-    reactionsH + GAP + pill.height + chipOverhang + GAP + actionsH;
+  // Klon ölçülene kadar rect yüksekliği; ölçüldüyse gerçek (>= rect) yükseklik.
+  const bubbleH = Math.max(pill.height, cloneH);
+  const stackH = reactionsH + GAP + bubbleH + chipOverhang + GAP + actionsH;
   const available = SCREEN_HEIGHT - SAFE_TOP - SAFE_BOTTOM;
   const targetY =
     SAFE_TOP +
@@ -174,7 +203,7 @@ export default function MessageActionSheet({
     : SIDE_MARGIN;
 
   const reactionsY = targetY - GAP - reactionsH;
-  const actionsY = targetY + pill.height + chipOverhang + GAP;
+  const actionsY = targetY + bubbleH + chipOverhang + GAP;
 
   const blurTint = Platform.OS === "ios" ? "systemThinMaterialDark" : "dark";
   const bubbleBg = isOwn ? colors.messageOwn : colors.surface2;
@@ -221,11 +250,13 @@ export default function MessageActionSheet({
         message={message}
         isOwn={isOwn}
         pill={pill}
-        returnRect={returnRect}
+        exitX={exitX}
+        exitY={exitY}
         targetX={targetX}
         targetY={targetY}
         bubbleBg={bubbleBg}
         progress={progress}
+        onMeasured={setCloneH}
         t={t}
       />
 
@@ -274,9 +305,9 @@ export default function MessageActionSheet({
                 })
               }
               hitSlop={6}
-              style={{ paddingHorizontal: 6, paddingVertical: 2 }}
+              style={{ paddingHorizontal: EMOJI_PAD_H, paddingVertical: 2 }}
             >
-              <Text style={{ fontSize: 26 }}>{emoji}</Text>
+              <Text style={{ fontSize: EMOJI_SIZE }}>{emoji}</Text>
             </TouchableOpacity>
           ))}
             </View>
@@ -295,7 +326,7 @@ export default function MessageActionSheet({
       >
         <View
           style={{
-            borderRadius: 16,
+            borderRadius: ACTIONS_RADIUS,
             borderCurve: "continuous",
             shadowColor: "#000",
             shadowOpacity: 0.35,
@@ -304,7 +335,13 @@ export default function MessageActionSheet({
             elevation: 10,
           }}
         >
-          <PanelSurface radius={16} blurTint={blurTint}>
+          {/* paddingVertical: ilk/son satır panel kenarına yapışmasın — köşe
+              yarıçapı büyüdükçe yapışıklık daha çok göze batıyor. */}
+          <PanelSurface
+            radius={ACTIONS_RADIUS}
+            blurTint={blurTint}
+            paddingVertical={ACTIONS_PAD_V}
+          >
           <ActionRow
             icon={<SFIcon name="arrowshape.turn.up.left.fill" fallback={Reply} size={20} color={colors.text} />}
             label={t("chat.actions.reply")}
@@ -327,13 +364,13 @@ export default function MessageActionSheet({
           {canDelete && (
             <>
               <ActionRow
-                icon={<SFIcon name="trash.fill" fallback={Trash2} size={20} color={colors.errorLight} />}
+                icon={<SFIcon name="trash.fill" fallback={Trash2} size={20} color={colors.destructive} />}
                 label={t("chat.actions.deleteForMe")}
                 destructive
                 onPress={() => runAction(() => onDelete?.(false))}
               />
               <ActionRow
-                icon={<SFIcon name="trash.fill" fallback={Trash2} size={20} color={colors.errorLight} />}
+                icon={<SFIcon name="trash.fill" fallback={Trash2} size={20} color={colors.destructive} />}
                 label={t("chat.actions.deleteForEveryone")}
                 destructive
                 last
@@ -354,7 +391,7 @@ export default function MessageActionSheet({
  * Android'de solid surface2 (expo-blur Android'de deneysel/pahalı).
  * Gölge, overflow:hidden ile kırpılmasın diye DIŞ sarmalayıcıda kalır.
  */
-function PanelSurface({ radius, blurTint, children }: any) {
+function PanelSurface({ radius, blurTint, paddingVertical = 0, children }: any) {
   return (
     <View
       style={{
@@ -362,6 +399,7 @@ function PanelSurface({ radius, blurTint, children }: any) {
         borderCurve: "continuous",
         overflow: "hidden",
         backgroundColor: PANEL_BG,
+        paddingVertical,
       }}
     >
       {PANEL_USE_BLUR && (
@@ -385,27 +423,37 @@ function BubbleClone({
   message,
   isOwn,
   pill,
-  returnRect,
+  exitX,
+  exitY,
   targetX,
   targetY,
   bubbleBg,
   progress,
+  onMeasured,
   t,
 }: any) {
-  // Giriş basış anındaki rect'ten başlar; kapanışta returnRect set edilmişse
-  // (taze ölçüm) klon oraya döner. progress=1'deyken from değişimi görsel
-  // sıçratmaz — çıkış hedefi sadece 1→0 yolunda devreye girer.
-  const from = returnRect ?? pill;
-  const moveStyle = useAnimatedStyle(() => ({
-    transform: [
-      {
-        translateX: interpolate(progress.value, [0, 1], [from.x, targetX]),
-      },
-      {
-        translateY: interpolate(progress.value, [0, 1], [from.y, targetY]),
-      },
-    ] as any,
-  }));
+  // measureInWindow kesirli genişlik döndürüyor (ör. 289.67); klona AYNI kesirli
+  // değeri verince metin gerçek balondan bir satır fazla sarabiliyor ve sabit
+  // height'ı taşıp alttan kesik görünüyordu. Genişliği yukarı yuvarla (fazla
+  // sarma yok) + height yerine minHeight kullan (taşarsa balon büyüsün, kesmesin).
+  const cloneWidth = Math.ceil(pill.width);
+  // Klon basış anındaki rect'ten çıkar; kapanışta taze ölçüm (exitX/exitY ≥ 0)
+  // varsa oraya döner. Değerler shared value olduğu için çıkış animasyonu
+  // başladığı KAREDE geçerli — React state'in bir tick gecikmesi yok.
+  const moveStyle = useAnimatedStyle(() => {
+    const fromX = exitX.value >= 0 ? exitX.value : pill.x;
+    const fromY = exitY.value >= 0 ? exitY.value : pill.y;
+    return {
+      transform: [
+        {
+          translateX: interpolate(progress.value, [0, 1], [fromX, targetX]),
+        },
+        {
+          translateY: interpolate(progress.value, [0, 1], [fromY, targetY]),
+        },
+      ] as any,
+    };
+  });
 
   return (
     <Animated.View
@@ -415,15 +463,19 @@ function BubbleClone({
           position: "absolute",
           top: 0,
           left: 0,
-          width: pill.width,
+          width: cloneWidth,
         },
         moveStyle,
       ]}
     >
       <View
+        onLayout={(e: any) => {
+          const h = Math.round(e.nativeEvent.layout.height);
+          if (h > 0) onMeasured?.(h);
+        }}
         style={{
-          width: pill.width,
-          height: pill.height,
+          width: cloneWidth,
+          minHeight: pill.height,
           backgroundColor: bubbleBg,
           borderRadius: BUBBLE_RADIUS,
           borderCurve: "continuous",
@@ -564,7 +616,7 @@ function ActionRow({ icon, label, destructive, last, onPress }: any) {
         style={{
           fontSize: 16,
           marginLeft: 12,
-          color: destructive ? colors.errorLight : colors.text,
+          color: destructive ? colors.destructive : colors.text,
         }}
       >
         {label}

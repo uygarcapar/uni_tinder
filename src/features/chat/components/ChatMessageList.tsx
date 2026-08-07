@@ -9,7 +9,6 @@ import { KeyboardAwareLegendList } from "@legendapp/list/keyboard";
 import { REVEAL_MAX } from "@/features/chat/components/RevealContext";
 import { DATE_SEPARATOR_HEIGHT } from "@/features/chat/components/DateSeparator";
 import { chatListItemsEqual } from "@/features/chat/messageEquality";
-import { withProfiler } from "@sentry/react-native";
 
 const LIST_STYLE = { flex: 1 } as const;
 
@@ -39,6 +38,10 @@ type Props = {
   revealX: SharedValue<number>;
   listGesture: any;
   contentInsetEndAdjustment: SharedValue<number>;
+  // true iken KeyboardChatScrollView klavye kaynaklı padding/contentOffset
+  // işlerini atlar → liste klavye inip binerken hiç oynamaz. ChatScreen bunu
+  // yalnız uzun-bas menüsü açıkken elle set eder (otomatik freeze KULLANILMIYOR).
+  freeze?: SharedValue<boolean>;
   keyboardOffset: number;
   contentContainerStyle: any;
   onScrollBeginDrag: () => void;
@@ -81,6 +84,7 @@ function ChatMessageList({
   revealX,
   listGesture,
   contentInsetEndAdjustment,
+  freeze,
   keyboardOffset,
   contentContainerStyle,
   onScrollBeginDrag,
@@ -154,6 +158,7 @@ function ChatMessageList({
         keyboardDismissMode="interactive"
         keyboardOffset={keyboardOffset}
         contentInsetEndAdjustment={contentInsetEndAdjustment}
+        freeze={freeze}
         // RN 0.81+ contentInset hit-test regresyonu (facebook/react-native#54123):
         // klavye/composer inset şeridi dokunmaya ÖLÜ kalıyor — composer üstünden
         // scroll/interactive-dismiss başlatılamıyordu. Kütüphanenin workaround'u:
@@ -187,6 +192,7 @@ function ChatMessageList({
       estimatedListSize,
       keyboardOffset,
       contentInsetEndAdjustment,
+      freeze,
       onScrollBeginDrag,
       onMomentumScrollBegin,
       onMomentumScrollEnd,
@@ -204,7 +210,4 @@ function ChatMessageList({
   );
 }
 
-// Sentry performance: liste mount/update span'leri. Tek instance — satır
-// (MessageBubble) sarılmaz: recycle edilen her balona Profiler eklemek per-render
-// maliyet bindirir, commit-storm disiplinine aykırı.
-export default withProfiler(ChatMessageList, { name: "ChatMessageList" });
+export default ChatMessageList;

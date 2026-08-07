@@ -52,6 +52,11 @@ import ScreenHeader from "@/shared/components/ScreenHeader";
 import { useSwipeStats } from "@/features/discover/swipeQueries";
 import { colors } from "../../../shared/theme/colors";
 
+// Native bottom tab bar ölçüleri — DiscoverScreen ile aynı değerler.
+const TAB_BAR_HEIGHT = 64;
+const TAB_BAR_BOTTOM_GAP = -10;
+const LIST_BOTTOM_GAP = 16;
+
 export default function MessagesScreen() {
   const { t } = useTranslation();
   const dispatch = useAppDispatch();
@@ -209,12 +214,17 @@ export default function MessagesScreen() {
     listRef.current?.scrollToOffset({ offset: 0, animated: true });
   }, []);
 
-  // Filtrelenmiş conversation listesi — önce "Okunmamış" tab filtresi, sonra
-  // partner display name içinde arama.
+  // Filtrelenmiş conversation listesi — önce tab filtresi, sonra partner display
+  // name içinde arama. Kapanmış (isActive=false) sohbetler SADECE "Kapalı"
+  // tabında görünür; "Tümü" ve "Okunmamış" yalnız aktif sohbetleri listeler.
   const filteredConversations = useMemo(() => {
     let list = conversations;
-    if (activeTab === "unread") {
-      list = list.filter((c) => c.unreadCount > 0);
+    if (activeTab === "closed") {
+      list = list.filter((c) => !c.isActive);
+    } else if (activeTab === "unread") {
+      list = list.filter((c) => c.isActive && c.unreadCount > 0);
+    } else {
+      list = list.filter((c) => c.isActive);
     }
     const q = searchQuery.trim().toLowerCase();
     if (q) {
@@ -393,7 +403,11 @@ export default function MessagesScreen() {
         }
         contentContainerStyle={{
           flexGrow: 1,
-          paddingBottom: insets.bottom + 16,
+          // Native tab bar (liquid glass) listenin ÜSTÜNE biniyor — insets.bottom
+          // sadece home indicator'ı kapsıyor. DiscoverScreen ile aynı ölçüleri
+          // kullanıp son sohbetin bar altında kalmasını engelliyoruz.
+          paddingBottom:
+            insets.bottom + TAB_BAR_HEIGHT + TAB_BAR_BOTTOM_GAP + LIST_BOTTOM_GAP,
         }}
         ListEmptyComponent={
           isSearchActive && searchQuery.trim().length > 0 ? (
@@ -407,13 +421,17 @@ export default function MessagesScreen() {
               </Text>
             </View>
           ) : !isSearchActive && !conversationsLoading ? (
-            activeTab === "unread" ? (
+            activeTab === "unread" || activeTab === "closed" ? (
               <View className="flex-1 items-center justify-center pb-[40%]">
                 <EmptyState
                   Icon={MessageCircle}
                   sf="message"
                   iconStrokeWidth={1.3}
-                  text={t('chat.messages.noUnread')}
+                  text={
+                    activeTab === "closed"
+                      ? t('chat.messages.noClosed')
+                      : t('chat.messages.noUnread')
+                  }
                   topOffset={0}
                 />
               </View>
@@ -606,6 +624,7 @@ export default function MessagesScreen() {
           {[
             { key: "all", label: t('chat.messages.tabAll') },
             { key: "unread", label: t('chat.messages.tabUnread') },
+            { key: "closed", label: t('chat.messages.tabClosed') },
           ].map((tab) => {
             const isActive = activeTab === tab.key;
             return (
@@ -794,7 +813,8 @@ const ConversationRow = memo(function ConversationRow({
         <View className="flex-1 ml-3">
         <View className="flex-row items-center justify-between">
           <Text
-            className={`text-[16px] font-semibold ${conv.isActive ? "text-white" : "text-gray-500"}`}
+            // Kapalı sohbette isim, "Sohbet kapatıldı" alt metniyle aynı tonda.
+            className={`text-[16px] font-semibold ${conv.isActive ? "text-white" : "text-gray-400"}`}
             numberOfLines={1}
           >
             {conv.partnerDisplayName || t('chat.defaultUserName')}
