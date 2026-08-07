@@ -16,6 +16,7 @@ import { selectIsPremium } from "@/features/profile/subscriptionSlice";
 import {
   DEFAULT_AGE_RANGE,
   DISTANCE_RANGE_KM,
+  MAX_PREFERRED_HOBBIES,
   UNLIMITED,
 } from "@/shared/constants/limits";
 
@@ -246,6 +247,19 @@ export function useSaveFilters() {
       maxDistance?: number;
       interestedIn?: number[];
       preferredCity?: string | null;
+      preferredUniversityDomain?: string | null;
+      visibleOnlyToUniversityDomains?: string[];
+      hiddenFromUniversityDomains?: string[];
+      preferredHobbies?: string[];
+      relationshipIntents?: string[];
+      // Dealbreaker'lı premium filtreler (boy/sınıf/burç/sigara/evcil hayvan/
+      // kullanım amacı) API adlarıyla ANAHTARLANMIŞ halde geliyor. Adlar
+      // FilterModal'daki FILTER_FIELD map'inde tanımlı; burada tek blok olarak
+      // geçiriliyor ki ad bilgisi iki yere dağılmasın.
+      premiumFilters?: Record<string, unknown>;
+      // Hangi filtreler "olmazsa olmaz". Semantiği diğerlerinden FARKLI:
+      // alan yok/null = değiştirme, [] = hepsini esnet, [...] = tam liste.
+      dealbreakers?: string[];
     }) => {
       // `city` premium-only alan: doluyken free kullanıcıda backend TÜM isteği
       // 403 + PREMIUM_FILTERS ile reddediyor (yaş/mesafe güncellemesi de gider).
@@ -258,7 +272,53 @@ export function useSaveFilters() {
         // (interestedIn) yürüyor; backend HardFilterStage'deki hasGenderFilter
         // dalını kaldırdı, PreferredGendersFlags hiçbir yerde okunmuyor.
         city: localFilters.preferredCity ?? null,
+        // GET ↔ PUT ad uyuşmazlığı (backend'in bilinen tuzağı): yanıt
+        // `preferredUniversityDomain` döner ama PUT `universityDomain` bekler.
+        // GET'ten geleni doğrudan geri gönderirsen alan SESSİZCE düşer.
+        // Şehir/bölümde de aynı sapma var (preferredCity → city).
+        universityDomain: localFilters.preferredUniversityDomain ?? null,
+        // Görünürlük listeleri ("beni kim görsün/görmesin") — premium-only,
+        // ikisi de domain string listesi. Backend bu alanları OVERWRITE
+        // ediyor: gönderilmeyen ya da boş dizi gelen liste temizlenir, o
+        // yüzden FilterModal her kaydetmede güncel state'in tamamını yolluyor
+        // ve burada alanı koşullu bırakmıyoruz. Boş dizi = kısıtlama yok,
+        // free kullanıcıda da 403 tetiklemez.
+        visibleOnlyToUniversityDomains:
+          localFilters.visibleOnlyToUniversityDomains ?? [],
+        hiddenFromUniversityDomains:
+          localFilters.hiddenFromUniversityDomains ?? [],
+        // "Karşımda görmek istediğim hobiler" (PreferredHobbies) — enumName
+        // string dizisi, premium-only, HARD FİLTRE DEĞİL: backend skor boost'u
+        // olarak kullanıyor. Görünürlük listeleri gibi overwrite semantiği →
+        // boş dizi tercihi temizler, o yüzden koşulsuz gönderiliyor.
+        // Backend max 10 kabul ediyor (fazlası 400); FilterModal seçimi zaten
+        // sınırlıyor, burada ikinci savunma hattı olarak kırpıyoruz.
+        preferredHobbies: (localFilters.preferredHobbies ?? []).slice(
+          0,
+          MAX_PREFERRED_HOBBIES,
+        ),
+        // "Karşımda hangi ilişki niyetleri olsun" (RelationshipIntents) —
+        // enumName string dizisi, premium-only, preferredHobbies ile aynı
+        // sınıf: HARD FİLTRE DEĞİL, skor boost'u (max +12). Niyetini
+        // doldurmamış adaylar destede kalır. Overwrite semantiği → boş dizi
+        // tercihi temizler, o yüzden koşulsuz gönderiliyor.
+        relationshipIntents: localFilters.relationshipIntents ?? [],
+        // Boy/sınıf/burç/sigara/evcil hayvan/kullanım amacı — API adlarıyla
+        // anahtarlanmış halde geliyor, olduğu gibi payload'a giriyor. Bunlar da
+        // OVERWRITE: boş dizi / null = tercihi temizle.
+        ...(localFilters.premiumFilters ?? {}),
       };
+      // `dealbreakers` KOŞULLU: alan yok/null = "değiştirme", boş dizi =
+      // "hepsini esnet". Yani listeyi her PUT'ta göndermek zorunlu değil, ama
+      // gönderilirse TAM liste olmalı (kısmi güncelleme yok). Toggle'ları hiç
+      // çizmeyen bir durumda (backend dealbreakerCapableFields döndürmezse)
+      // alan gelmez ve kullanıcının kayıtlı ayarı korunur — boş dizi
+      // göndermek onu sessizce sıfırlardı.
+      // Geçersiz ad 400 ("Geçersiz dealbreaker alanı: X"), free kullanıcı
+      // 403 + ShowPaywall döner; ikisi de aşağıdaki catch'te ele alınıyor.
+      if (Array.isArray(localFilters.dealbreakers)) {
+        payload.dealbreakers = localFilters.dealbreakers;
+      }
       // interestedIn (InterestedInType[]: Men=0, Women=1, NonBinary=2) free alan.
       // Backend semantiği: alan yok/null = değiştirme, boş dizi = 7 (herkes),
       // dolu dizi = o değere ayarla. Boş diziyi yine de göndermiyoruz: FilterModal
@@ -283,6 +343,14 @@ export function useSaveFilters() {
         // FilterModal bunu göndermemeye çalışıyor ama tek savunma hattı
         // olmamalı (downgrade sonrası kayıtlı değerler, yeni alan eklenmesi).
         emitPaywall(e?.response?.data?.result ?? e?.response?.data, "swipePaywall");
+        // 400 = validation (ör. 10'dan fazla hobi). Axios'un jenerik
+        // "Request failed with status code 400" mesajı yerine backend'in
+        // açıklamasını yükselt — DiscoverScreen bunu Alert'te gösteriyor.
+        const validationMessage =
+          e?.response?.status === 400
+            ? e?.response?.data?.message ?? e?.response?.data?.title
+            : null;
+        if (validationMessage) throw new Error(validationMessage);
         throw e;
       }
     },

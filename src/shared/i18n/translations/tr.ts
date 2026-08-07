@@ -461,8 +461,77 @@ const tr = {
       },
       university: {
         title: 'Üniversite',
-        description: 'Yakında: belirli bir üniversiteden kullanıcıları görebileceksin.',
-        comingSoon: 'Yakında',
+        description: 'Yalnızca seçtiğin üniversiteden kişileri gör. Bu filtre her zaman katıdır; aday tükense bile gevşemez.',
+        select: 'Üniversite seç',
+      },
+      premiumFilters: {
+        title: 'Premium Filtreler',
+        description: 'Aradığın kişiyi daralt. Bir filtrenin anahtarını açarsan aday tükense bile o filtre gevşemez.',
+      },
+      dealbreaker: {
+        on: 'Bu filtreye uymayanları hiç gösterme',
+        off: 'Kişiler tükenirse bu filtre dışındakileri de göster',
+      },
+      enumLoading: 'Seçenekler yükleniyor…',
+      enumUnavailable: 'Liste şu an yüklenemedi.',
+      height: {
+        title: 'Boy',
+        description: 'Aradığın boy aralığını seç; iki ucu da serbest bırakabilirsin. Filtre açıkken boyunu girmemiş profiller gösterilmez.',
+        atLeast: '{{cm}} cm ve üzeri',
+        atMost: '{{cm}} cm ve altı',
+        between: '{{min}} – {{max}} cm',
+        any: 'Farketmez',
+        clear: 'Temizle',
+      },
+      yearOfStudy: {
+        title: 'Sınıf',
+        description: 'Yalnızca seçtiğin sınıflardaki kişileri gör.',
+        prep: 'Hazırlık',
+        year: '{{year}}. sınıf',
+      },
+      zodiac: {
+        title: 'Burç',
+        description: 'Yalnızca seçtiğin burçlardaki kişileri gör.',
+      },
+      smoking: {
+        title: 'Sigara',
+        description: 'Yalnızca seçtiğin sigara alışkanlığına sahip kişileri gör.',
+      },
+      pets: {
+        title: 'Evcil Hayvan',
+        description: 'Karşındaki kişinin evcil hayvanı olsun mu?',
+        any: 'Farketmez',
+        has: 'Evcil hayvanı var',
+        hasNot: 'Evcil hayvanı yok',
+      },
+      usagePurpose: {
+        title: 'Kullanım Amacı',
+        description: 'Yalnızca seçtiğin amaçla uygulamayı kullanan kişileri gör.',
+      },
+      preferredHobbies: {
+        title: 'Karşımda görmek istediğim hobiler',
+        description: 'Bu hobilere sahip kişiler keşfette öne çıkar. Diğerleri listenden çıkmaz; boş bırakabilirsin.',
+        selected: '{{selected}}/{{max}} seçildi',
+        clear: 'Temizle',
+        limitTitle: 'Sınır Aşıldı',
+        limitMsg: 'En fazla {{max}} hobi seçebilirsin.',
+        loading: 'Hobiler yükleniyor…',
+        unavailable: 'Hobi listesi şu an yüklenemedi.',
+      },
+      relationshipIntents: {
+        title: 'Karşımda görmek istediğim niyetler',
+        description: 'Bu niyetlere sahip kişiler keşifte önce gösterilir. Diğerleri listenden çıkmaz; boş bırakabilirsin.',
+        clear: 'Temizle',
+        loading: 'İlişki niyetleri yükleniyor…',
+        unavailable: 'İlişki niyeti listesi şu an yüklenemedi.',
+      },
+      visibility: {
+        title: 'Görünürlük',
+        description: 'Keşfette seni kimlerin görebileceğini seç. Yukarıdaki filtrelerden farklı olarak bu listeler senin değil, karşı tarafın destesini etkiler.',
+        visibleOnlyLabel: 'Beni sadece şu üniversiteler görsün',
+        hiddenFromLabel: 'Beni şu üniversiteler görmesin',
+        selectUniversities: 'Üniversite seç',
+        overlapWarning: 'İki listede birden olan üniversite seni göremez — engelleme önceliklidir.',
       },
     },
     rewind: {
@@ -471,6 +540,13 @@ const tr = {
     cityPicker: {
       title: 'Şehir Seç',
       search: 'Şehir ara',
+    },
+    universityPicker: {
+      preferredTitle: 'Üniversite Seç',
+      visibleOnlyTitle: 'Beni Görebilecekler',
+      hiddenFromTitle: 'Beni Göremeyecekler',
+      search: 'Üniversite ara',
+      limitMsg: 'En fazla {{max}} üniversite seçebilirsin.',
     },
   },
   likes: {

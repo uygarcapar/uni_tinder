@@ -117,6 +117,7 @@ export const API_ENDPOINTS = {
   GET_USAGE_PURPOSES: "/api/common/usage-purposes",
   GET_INTERESTED_IN: "/api/common/interested-in",
   GET_LANGUAGES: "/api/common/languages",
+  GET_UNIVERSITIES: "/api/common/universities",
   GET_PETS: "/api/common/pets",
   GET_RELATIONSHIP_INTENTS: "/api/common/relationship-intents",
   GET_DISTRICTS_BY_CITY: (cityId: number | string) => `/api/common/cities/${cityId}/districts`,

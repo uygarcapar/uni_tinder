@@ -14,3 +14,8 @@ export const DISTANCE_RANGE_KM = { min: 5, max: 100 };
 // bu aralığı gönderiyor. Tek kaynak — FilterModal ve useSaveFilters aynı değeri
 // kullansın diye burada.
 export const DEFAULT_AGE_RANGE = { min: 18, max: 65 };
+
+// "Karşımda görmek istediğim hobiler" (FilterUpdateDto.PreferredHobbies) —
+// backend 10'dan fazlasında 400 dönüyor. FilterModal seçimi bu sayıda durdurur,
+// useSaveFilters payload'ı ikinci kez kırpar.
+export const MAX_PREFERRED_HOBBIES = 10;

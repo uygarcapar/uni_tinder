@@ -459,8 +459,77 @@ const en = {
       },
       university: {
         title: 'University',
-        description: 'Coming soon: you will be able to see users from a specific university.',
-        comingSoon: 'Coming Soon',
+        description: 'Only see people from the university you pick. This filter is always strict — it never relaxes, even when candidates run out.',
+        select: 'Select university',
+      },
+      premiumFilters: {
+        title: 'Premium Filters',
+        description: 'Narrow down who you are looking for. Turn on a filter\'s switch and it will not relax even when candidates run out.',
+      },
+      dealbreaker: {
+        on: 'Never show people who do not match this filter',
+        off: 'Show people outside this filter when candidates run out',
+      },
+      enumLoading: 'Loading options…',
+      enumUnavailable: 'List could not be loaded right now.',
+      height: {
+        title: 'Height',
+        description: 'Pick the height range you are looking for; you can leave either end open. While the filter is on, profiles without a height are not shown.',
+        atLeast: '{{cm}} cm and above',
+        atMost: '{{cm}} cm and below',
+        between: '{{min}} – {{max}} cm',
+        any: 'Any',
+        clear: 'Clear',
+      },
+      yearOfStudy: {
+        title: 'Year of Study',
+        description: 'Only see people in the years you pick.',
+        prep: 'Prep',
+        year: 'Year {{year}}',
+      },
+      zodiac: {
+        title: 'Zodiac',
+        description: 'Only see people with the signs you pick.',
+      },
+      smoking: {
+        title: 'Smoking',
+        description: 'Only see people with the smoking habits you pick.',
+      },
+      pets: {
+        title: 'Pets',
+        description: 'Should the other person have a pet?',
+        any: 'Any',
+        has: 'Has a pet',
+        hasNot: 'No pets',
+      },
+      usagePurpose: {
+        title: 'Looking For',
+        description: 'Only see people using the app for the purpose you pick.',
+      },
+      preferredHobbies: {
+        title: 'Hobbies I look for',
+        description: 'People with these hobbies get boosted in Discover. Others stay in your deck; you can leave this empty.',
+        selected: '{{selected}}/{{max}} selected',
+        clear: 'Clear',
+        limitTitle: 'Limit Reached',
+        limitMsg: 'You can select up to {{max}} hobbies.',
+        loading: 'Loading hobbies…',
+        unavailable: 'Hobby list could not be loaded right now.',
+      },
+      relationshipIntents: {
+        title: 'Intentions I look for',
+        description: 'People with these intentions are shown first in Discover. Others stay in your deck; you can leave this empty.',
+        clear: 'Clear',
+        loading: 'Loading relationship intents…',
+        unavailable: 'Relationship intent list could not be loaded right now.',
+      },
+      visibility: {
+        title: 'Visibility',
+        description: 'Choose who can see you in Discover. Unlike the filters above, these lists change other people\'s decks, not yours.',
+        visibleOnlyLabel: 'Only these universities can see me',
+        hiddenFromLabel: 'These universities cannot see me',
+        selectUniversities: 'Select universities',
+        overlapWarning: 'A university on both lists will not see you — blocking takes priority.',
       },
     },
     rewind: {
@@ -469,6 +538,13 @@ const en = {
     cityPicker: {
       title: 'Select City',
       search: 'Search city',
+    },
+    universityPicker: {
+      preferredTitle: 'Select University',
+      visibleOnlyTitle: 'Who Can See Me',
+      hiddenFromTitle: 'Who Cannot See Me',
+      search: 'Search university',
+      limitMsg: 'You can pick up to {{max}} universities.',
     },
   },
   likes: {

@@ -463,6 +463,9 @@ const DEFAULT_FILTERS = {
   interestedIn: [],
   preferredCity: null,
   preferredUniversityDomain: null,
+  // "Beni kim görsün / görmesin" listeleri — backend boş dizi döner (null değil).
+  visibleOnlyToUniversityDomains: [],
+  hiddenFromUniversityDomains: [],
   isPremium: false,
 };
 
@@ -618,6 +621,9 @@ export default function DiscoverScreen() {
     if (interestedIn.length > 0 && interestedIn.length < 3) count++;
     if (filters.preferredCity) count++;
     if (filters.preferredUniversityDomain) count++;
+    // Görünürlük listeleri: kaç domain seçildiğinden bağımsız, liste başına 1.
+    if ((filters.visibleOnlyToUniversityDomains || []).length > 0) count++;
+    if ((filters.hiddenFromUniversityDomains || []).length > 0) count++;
     return count;
   }, [filters]);
 
