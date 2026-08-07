@@ -350,7 +350,8 @@ export default function SettingsModal({ visible, onClose }: any) {
           borderCurve: "continuous",
           overflow: "hidden",
           borderWidth: 0.5,
-          borderColor: "rgba(255,255,255,0.1)",
+          borderColor: colors.errorStrong,
+          backgroundColor: colors.errorStrong,
           flexDirection: "row",
           alignItems: "center",
           justifyContent: "space-between",
@@ -360,18 +361,18 @@ export default function SettingsModal({ visible, onClose }: any) {
       >
         <View style={{ flexDirection: "row", alignItems: "center", gap: 10, flex: 1 }}>
           <View style={{ flex: 1 }}>
-            <Text style={{ color: colors.errorStrong, fontSize: 15, fontWeight: "500" }}>
+            <Text style={{ color: "#000", fontSize: 15, fontWeight: "500" }}>
               {t('settings.deleteAccount')}
             </Text>
           </View>
           {deleteLoading ? (
             <ActivityIndicator
               size="small"
-              color={colors.errorStrong}
+              color="#000"
               style={{ width: 18, height: 18 }}
             />
           ) : (
-            <SFIcon name="trash.fill" fallback={Trash2} size={18} color={colors.errorStrong} strokeWidth={1.5} style={{ pointerEvents: "none" }} />
+            <SFIcon name="trash.fill" fallback={Trash2} size={18} color="#000" strokeWidth={1.5} style={{ pointerEvents: "none" }} />
           )}
         </View>
       </TouchableOpacity>

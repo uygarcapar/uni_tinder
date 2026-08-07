@@ -453,6 +453,17 @@ export default function SwipeCard({
     profile?.photos && profile.photos.length > 0 ? profile.photos[0] : null;
   const dominantColor = useDominantColor(firstPhotoUri);
 
+  // Sınıf etiketi — backend `yearOfStudyDisplay` göndermezse sayıdan üret.
+  // yearOfStudy null/undefined ise boş string: aksi halde "null. sınıf" gibi
+  // metin çıkıyor ve bölümün yanındaki ayraç noktası boşa asılı kalıyordu.
+  const yearOfStudyLabel = useMemo(() => {
+    if (profile?.yearOfStudyDisplay) return profile.yearOfStudyDisplay;
+    if (profile?.yearOfStudy === 0) return t("profile.card.prep");
+    if (profile?.yearOfStudy != null)
+      return t("profile.card.grade", { year: profile.yearOfStudy });
+    return "";
+  }, [profile?.yearOfStudyDisplay, profile?.yearOfStudy, t]);
+
   // Eski kullanım için (TabNavigator listener'ı yok artık ama emit zararsız).
   const photoBottomGradColor = useMemo(
     () => spotifyColor(dominantColor),
@@ -620,10 +631,11 @@ export default function SwipeCard({
                     borderCurve: "continuous",
                     overflow: "hidden",
                     height: photoHeight,
+                    backgroundColor: theme.surface,
                   },
                   photoBorderStyle,
                 ]}
-                className="relative bg-gray-500"
+                className="relative"
               >
                 {/* Tüm fotoları mount edip opacity ile gizliyoruz — bir kez yüklenince
                     geçişler instant, photo 0'a dönünce remount yok = skeleton flash yok.
@@ -1012,7 +1024,10 @@ export default function SwipeCard({
                 )}
               </Animated.View>
             ) : (
-              <View className="w-full h-[500px] bg-gray-200 items-center justify-center">
+              <View
+                className="w-full h-[500px] items-center justify-center"
+                style={{ backgroundColor: theme.surface }}
+              >
                 <Text className="text-gray-400 text-lg">{t('profile.card.noPhoto')}</Text>
               </View>
             )}
@@ -1067,12 +1082,15 @@ export default function SwipeCard({
                     className=" p-4 py-7 -mt-3 rounded-[45px] mb-4 border-white/10 border-[0.5px]"
                   >
                     <View className="flex-row flex-wrap items-center gap-3">
-                      <View className=" self-start flex-row items-center">
+                      {/* Bölüm + sınıf artık tek satır → uzun bölüm adları
+                          taşmasın diye zincir boyunca flex-1 veriliyor;
+                          metin sütunu kalan genişliğe sarılır. */}
+                      <View className="flex-1 self-start flex-row items-center">
                         <View
                           style={{
+                            flex: 1,
                             flexDirection: "row",
                             alignItems: "center",
-
                             gap: 8,
                           }}
                         >
@@ -1082,18 +1100,16 @@ export default function SwipeCard({
                             size={22}
                             color={theme.text}
                           />
-                          <View className="flex-col items-start gap-2">
+                          <View className="flex-col items-start gap-1 flex-1">
                             <Text className="text-white font-medium text-[18px]">
                               {profile.universityName}
                             </Text>
-                            <Text className="text-gray-300 font-medium text-[14px]">
+                            {/* Bölüm · Sınıf tek satırda — beyaz, medium,
+                                aralarında nokta ayraç. Sınıf bilinmiyorsa
+                                nokta da render edilmez. */}
+                            <Text className="text-white font-medium text-[16px]">
                               {profile.departmentDisplay}
-                            </Text>
-                            <Text className="text-gray-400 font-normal text-[14px]">
-                              {profile.yearOfStudyDisplay ||
-                                (profile.yearOfStudy === 0
-                                  ? t('profile.card.prep')
-                                  : t('profile.card.grade', { year: profile.yearOfStudy }))}
+                              {yearOfStudyLabel ? ` · ${yearOfStudyLabel}` : ""}
                             </Text>
                           </View>
                         </View>
@@ -1170,14 +1186,16 @@ export default function SwipeCard({
                         const enumName = isObj ? hobby.enumName : undefined;
                         const label = isObj ? hobby.name : hobby;
                         return (
-                          <BlurView
-                            intensity={90}
+                          <View
                             key={index}
-                            className="self-start border-[0.5px] border-white/10"
+                            className="self-start"
                             style={{
                               borderRadius: 999,
                               borderCurve: "continuous",
                               overflow: "hidden",
+                              backgroundColor: "transparent",
+                              borderWidth: 0.5,
+                              borderColor: theme.border,
                             }}
                           >
                             <View
@@ -1199,7 +1217,7 @@ export default function SwipeCard({
                                 {label}
                               </Text>
                             </View>
-                          </BlurView>
+                          </View>
                         );
                       })}
                     </View>
@@ -1259,14 +1277,16 @@ export default function SwipeCard({
                       ]
                         .filter(Boolean)
                         .map(({ key, sf, lucide, label }) => (
-                          <BlurView
-                            intensity={90}
+                          <View
                             key={key}
-                            className="self-start border-[0.5px] border-white/10"
+                            className="self-start"
                             style={{
                               borderRadius: 999,
                               borderCurve: "continuous",
                               overflow: "hidden",
+                              backgroundColor: "transparent",
+                              borderWidth: 0.5,
+                              borderColor: theme.border,
                             }}
                           >
                             <View
@@ -1288,7 +1308,7 @@ export default function SwipeCard({
                                 {label}
                               </Text>
                             </View>
-                          </BlurView>
+                          </View>
                         ))}
                     </View>
                   </View>

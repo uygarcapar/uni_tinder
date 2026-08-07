@@ -255,7 +255,7 @@ export default function NotificationsScreen() {
         ListFooterComponent={
           loading && items.length > 0 ? (
             <View style={{ paddingVertical: 16 }}>
-              <ActivityIndicator size="small" color={colors.primary} />
+              <ActivityIndicator size="small" color={colors.text} />
             </View>
           ) : null
         }

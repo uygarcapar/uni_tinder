@@ -6,9 +6,6 @@ import Animated, {
   Extrapolate,
 } from "react-native-reanimated";
 import { Check, X } from "lucide-react-native";
-import { LinearGradient } from "expo-linear-gradient";
-import MaskedView from "@react-native-masked-view/masked-view";
-import { gradients } from "../../../shared/theme/colors";
 import { useRenderCount } from "@/shared/debug/useRenderCount";
 
 const SWIPE_THRESHOLD = 120;
@@ -87,17 +84,9 @@ export default function SwipeOverlay({ dragX, opacity }: any) {
           { position: "absolute", right: 20, top: "30%" },
         ]}
       >
-        <MaskedView
-          style={{ width: 140, height: 140 }}
-          maskElement={<Check size={120} strokeWidth={7} color="black" />}
-        >
-          <LinearGradient
-            colors={gradients.swipeLike}
-            start={{ x: 0, y: 0 }}
-            end={{ x: 1, y: 1 }}
-            style={{ flex: 1 }}
-          />
-        </MaskedView>
+        <View style={{ width: 140, height: 140 }}>
+          <Check size={120} strokeWidth={7} color="#FFFFFF" />
+        </View>
       </Animated.View>
 
       {/* NOPE (X) */}
@@ -107,17 +96,9 @@ export default function SwipeOverlay({ dragX, opacity }: any) {
           { position: "absolute", left: 20, top: "30%" },
         ]}
       >
-        <MaskedView
-          style={{ width: 140, height: 140 }}
-          maskElement={<X size={120} strokeWidth={7} color="black" />}
-        >
-          <LinearGradient
-            colors={gradients.swipeNope}
-            start={{ x: 0, y: 0 }}
-            end={{ x: 1, y: 1 }}
-            style={{ flex: 1 }}
-          />
-        </MaskedView>
+        <View style={{ width: 140, height: 140 }}>
+          <X size={120} strokeWidth={7} color="#FFFFFF" />
+        </View>
       </Animated.View>
     </View>
   );

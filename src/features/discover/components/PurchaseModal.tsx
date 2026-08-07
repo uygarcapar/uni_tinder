@@ -651,7 +651,8 @@ export default function PurchaseModal({ visible, onClose, onSuccess }: any) {
               <Text
                 style={{
                   marginHorizontal: 10,
-                  color: colors.textDisabled,
+                  // SuperLikePurchaseModal disclaimer'ı ile aynı ton
+                  color: "rgba(255,255,255,0.5)",
                   fontSize: 11,
                   textAlign: "center",
                   marginTop: 8,
