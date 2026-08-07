@@ -8,8 +8,8 @@ import {
 import { HUB_URL } from '@/shared/constants/api';
 import { getCurrentAccessToken, refreshAccessToken } from '@/shared/services/api';
 import { isTokenExpiringSoon } from '@/shared/utils/jwt';
-import { reportError } from '@/shared/services/sentry';
 import { devLog } from '@/shared/utils/devLog';
+import { shortNetError } from '@/shared/utils/netError';
 
 type EventCallback = (...args: any[]) => void;
 
@@ -79,7 +79,7 @@ class RealtimeService {
         devLog('🟢 SignalR connected');
         return conn;
       } catch (err: any) {
-        console.warn('⚠️ SignalR connect failed:', err?.message);
+        console.warn('⚠️ SignalR connect failed:', shortNetError(err));
         this.connection = null;
         throw err;
       } finally {
@@ -150,9 +150,6 @@ class RealtimeService {
     });
     conn.onclose((err) => {
       devLog('🔴 SignalR closed:', err?.message);
-      // Hatalı (err'li) kapanışları raporla — sessiz realtime kopmaları görünür
-      // olsun. Normal kapanışlarda (err yok) raporlama yapılmaz. DSN yoksa no-op.
-      if (err) reportError(err, { source: 'signalr-onclose' });
       this._emit('__connectionStateChanged', 'disconnected');
       const wasIntentional = this._intentionalDisconnect;
       this.connection = null;

@@ -15,6 +15,8 @@ import {
 } from '@/features/notifications/pushService';
 import uiBus from '@/shared/services/uiBus';
 import { navigationRef } from '@/shared/services/navigationRef';
+import { setCurrentRouteName } from '@/shared/services/currentRoute';
+import { shortNetError } from '@/shared/utils/netError';
 import { showMessageToast, showLikeToast, showInfoToast } from '@/shared/services/toaster';
 import { store } from '@/shared/store';
 import { clearChatCache } from '@/shared/store/mmkvStorage';
@@ -61,7 +63,7 @@ import { colors } from '../shared/theme/colors';
 import { mark, summary } from '@/shared/debug/startupTiming';
 import { maybeRequestReviewAfterMatch, recordMatchForReview } from '@/shared/services/appReview';
 import { analytics } from '@/shared/services/analytics';
-import { navigationIntegration, setSentryUser, addSentryBreadcrumb } from '@/shared/services/sentry';
+import { navigationIntegration } from '@/shared/services/sentry';
 import { hideSplash } from '@/shared/splash';
 import { whenAppShellReady } from '@/shared/bootPhase';
 import { devLog } from '@/shared/utils/devLog';
@@ -250,8 +252,8 @@ export default function AppNavigator() {
 
   // TEŞHİS: navigationKey değişimi TÜM navigator ağacını remount eder → her
   // ekranın mount-effect'leri (fetch'ler dahil) yeniden koşar. "Boot'ta her
-  // istek ×2" şüphesinin kanıtı/aklanması için her flip'i logla + breadcrumb
-  // düş. Login/logout geçişindeki flip normaldir; oturum ORTASINDA görülen
+  // istek ×2" şüphesinin kanıtı/aklanması için her flip'i logla.
+  // Login/logout geçişindeki flip normaldir; oturum ORTASINDA görülen
   // flip bug'dır. DİKKAT: bu blok koşulsuz hook bölgesinde durmalı — aşağıdaki
   // erken-return'lerin altına inerse Rules of Hooks patlar (yaşandı).
   const diagNavKey = `nav-${isAuthenticated ? 'auth' : 'guest'}-${(user?.isMailVerified || user?.isProfileCreated) ? 'verified' : 'unverified'}`;
@@ -259,21 +261,18 @@ export default function AppNavigator() {
   useEffect(() => {
     if (prevNavKeyRef.current !== diagNavKey) {
       devLog(`[nav] navigationKey flip: ${prevNavKeyRef.current} → ${diagNavKey} (full navigator remount)`);
-      addSentryBreadcrumb('navigation', `navigationKey flip: ${prevNavKeyRef.current} → ${diagNavKey}`);
       prevNavKeyRef.current = diagNavKey;
     }
   }, [diagNavKey]);
 
-  // Analytics + Sentry kimliği — login'de bağla, logout'ta temizle (bir sonraki
-  // kullanıcı önceki kimliğe yazılmasın). Key/DSN yoksa hepsi no-op.
+  // Analytics kimliği — login'de bağla, logout'ta temizle (bir sonraki
+  // kullanıcı önceki kimliğe yazılmasın). Key yoksa no-op.
   useEffect(() => {
     const uid = user?.userId || user?.id;
     if (isAuthenticated && uid) {
       analytics.identify(String(uid));
-      setSentryUser(String(uid));
     } else if (!isAuthenticated) {
       analytics.reset();
-      setSentryUser(null);
     }
   }, [isAuthenticated, user?.userId, user?.id]);
 
@@ -329,7 +328,7 @@ export default function AppNavigator() {
         if (__DEV__) mark('signalr-connected');
       })
       .catch((err) => {
-        console.warn('SignalR initial connect failed:', err?.message);
+        console.warn('SignalR initial connect failed:', shortNetError(err));
       });
 
     const selfUserId = user?.userId || user?.id;
@@ -811,14 +810,19 @@ export default function AppNavigator() {
         theme={NAV_THEME}
         linking={LINKING}
         onReady={() => {
-          // Sentry ekran breadcrumb'ları + screen-load span'leri (DSN yoksa inert).
           navigationIntegration.registerNavigationContainer(navigationRef);
+          const route = navigationRef.getCurrentRoute?.();
+          if (route?.name) setCurrentRouteName(route.name);
         }}
         onStateChange={() => {
           // PostHog ekran funnel'ı — RegisterStep1-15 adları sayesinde kayıt
           // sihirbazı drop-off'u otomatik çıkar (key yoksa no-op).
           const route = navigationRef.getCurrentRoute?.();
-          if (route?.name) analytics.screen(route.name);
+          if (route?.name) {
+            analytics.screen(route.name);
+            // Network timeout log'u "hangi ekrandan atıldı" bilgisini buradan alır.
+            setCurrentRouteName(route.name);
+          }
         }}
       >
         {showMainNavigator ? <MainNavigator /> : <AuthNavigator initialRoute={resumeRoute as any} />}

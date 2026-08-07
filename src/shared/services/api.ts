@@ -3,8 +3,9 @@ import { API_BASE_URL, API_ENDPOINTS } from '@/shared/constants/api';
 import { getRefreshToken, saveRefreshToken, saveAccessToken, clearAllTokens } from '@/shared/utils/tokenStorage';
 import { recordRequest } from '@/shared/debug/netTally';
 import { isSelfInflictedForceLogout } from '@/shared/utils/sessionGuard';
-import { reportError } from '@/shared/services/sentry';
 import { devLog } from '@/shared/utils/devLog';
+import { getCurrentRouteName } from '@/shared/services/currentRoute';
+import { shortNetError } from '@/shared/utils/netError';
 
 let currentAccessToken: string | null = null;
 let currentLanguage: 'tr' | 'en' = 'tr';
@@ -38,17 +39,29 @@ export const getCurrentAccessToken = (): string | null => {
   return currentAccessToken;
 };
 
+const REQUEST_TIMEOUT_MS = 30000;
+
 const api = axios.create({
   baseURL: API_BASE_URL,
   headers: {
     'Content-Type': 'application/json',
   },
-  timeout: 30000,
+  timeout: REQUEST_TIMEOUT_MS,
 });
+
+// Timeout'lar hangi EKRANDA yaşandığı bilinmeden teşhis edilemiyor (aynı
+// endpoint Discover'da sorunsuz, Chat'te patlıyor olabilir). İstek anındaki
+// aktif route'u config'e mühürleriz — cevap geldiğinde kullanıcı başka ekrana
+// geçmiş olabilir, o yüzden "şu an neredeyiz" değil "istek nereden atıldı"
+// kaydedilir.
+type TimedConfig = AxiosRequestConfig & { __startedAt?: number; __route?: string };
 
 api.interceptors.request.use(
   (config) => {
     recordRequest(config.method || 'GET', config.url || '');
+    // Retry'larda (429/401) interceptor tekrar koşar → süre son denemeyi ölçer.
+    (config as TimedConfig).__startedAt = Date.now();
+    (config as TimedConfig).__route = getCurrentRouteName();
     if (currentAccessToken) {
       config.headers.Authorization = `Bearer ${currentAccessToken}`;
       const tokenPreview = currentAccessToken.substring(0, 20) + '...';
@@ -103,9 +116,13 @@ export const refreshAccessToken = async (): Promise<string | null> => {
         return null;
       }
 
+      // Bu çağrı `api` instance'ını KULLANMAZ (401 interceptor'ına düşerse
+      // sonsuz döngü olur) — bu yüzden timeout'u ve log'u elle veriyoruz;
+      // aksi halde refresh takılırsa tüm kuyruk sessizce donar.
       const response = await axios.post(
         `${API_BASE_URL}${API_ENDPOINTS.REFRESH_TOKEN}`,
-        { refreshToken: rt }
+        { refreshToken: rt },
+        { timeout: REQUEST_TIMEOUT_MS }
       );
 
       const { token: newAccessToken, refreshToken: newRefreshToken } = response.data.result;
@@ -117,6 +134,13 @@ export const refreshAccessToken = async (): Promise<string | null> => {
       return newAccessToken as string;
     } catch (err: any) {
       devLog('❌ Token refresh başarısız:', err?.response?.status, err?.message);
+      if (isTimeoutError(err)) {
+        logNetworkFailure(
+          'TIMEOUT',
+          { method: 'POST', url: API_ENDPOINTS.REFRESH_TOKEN, __route: getCurrentRouteName() },
+          `${REQUEST_TIMEOUT_MS}ms limiti aşıldı (token refresh)`,
+        );
+      }
       // Backend revoke sinyali: başka cihazdan giriş yapıldıysa reason'ı taşı ki
       // AppNavigator "başka cihazdan giriş" toast'ını gösterebilsin. Diğer refresh
       // fail'leri (normal expiry, network, rotate edilmiş token'ın tekrar
@@ -149,10 +173,49 @@ export const refreshAccessToken = async (): Promise<string | null> => {
   return inFlightRefresh;
 };
 
+// axios timeout'u ECONNABORTED (bazı RN/iOS yollarında ETIMEDOUT) ile döner;
+// mesaj kontrolü ikisini de kaçıran sürümler için emniyet.
+const isTimeoutError = (error: any): boolean =>
+  error?.code === 'ECONNABORTED' ||
+  error?.code === 'ETIMEDOUT' ||
+  /timeout/i.test(error?.message || '');
+
+const logNetworkFailure = (kind: 'TIMEOUT' | 'NETWORK' | 'SERVER', config: TimedConfig | undefined, detail: string) => {
+  const method = (config?.method || 'GET').toUpperCase();
+  const url = config?.url || '?';
+  const elapsed = config?.__startedAt ? Date.now() - config.__startedAt : undefined;
+  const route = config?.__route || 'unknown';
+  console.warn(
+    `[net] ⏱ ${kind} — ${method} ${url} | ekran: ${route}` +
+      (elapsed !== undefined ? ` | ${elapsed}ms` : '') +
+      ` | ${detail}`,
+  );
+};
+
 api.interceptors.response.use(
   (response) => response.data,
   async (error) => {
-    const originalRequest: AxiosRequestConfig & { _retry?: boolean; _retryCount?: number } = error.config;
+    const originalRequest: TimedConfig & { _retry?: boolean; _retryCount?: number } = error.config;
+
+    // Timeout teşhisi: hangi istek, hangi ekrandan atıldı, kaç ms sonra düştü.
+    // console.warn (devLog değil) — release/TestFlight build'de de görünsün,
+    // timeout'lar cihazda tekrar üretiliyor. Ağ tamamen kopuksa ayrı satır:
+    // "timeout" ile "network yok" karışırsa yanlış yerde bug aranıyor.
+    if (isTimeoutError(error)) {
+      logNetworkFailure('TIMEOUT', originalRequest, `${REQUEST_TIMEOUT_MS}ms limiti aşıldı`);
+    } else if (!error.response) {
+      logNetworkFailure('NETWORK', originalRequest, error?.message || 'yanıt yok');
+    } else if (error.response.status >= 500) {
+      // 5xx sunucu tarafı — hangi endpoint hangi ekranda patlıyor görünsün.
+      // Gövde HTML hata sayfasıysa (IIS 500.34 vb.) tek satıra indirilir.
+      const body = error.response.data;
+      logNetworkFailure(
+        'SERVER',
+        originalRequest,
+        `status ${error.response.status}` +
+          (typeof body === 'string' ? ` — ${shortNetError(body)}` : ''),
+      );
+    }
 
     // 429 Too Many Requests — exponential backoff (max 3 deneme)
     if (error.response?.status === 429) {
@@ -198,17 +261,6 @@ api.interceptors.response.use(
       } finally {
         isRefreshing = false;
       }
-    }
-
-    // Sunucu hatalarını (5xx) raporla; 4xx beklenen akış (validasyon, quota,
-    // 401-refresh) olduğu için gürültü yaratmasın. Ağ hataları (response yok)
-    // offline'da çok sık — onlar da raporlanmaz. DSN yoksa no-op.
-    if (error.response?.status >= 500) {
-      reportError(error, {
-        url: originalRequest?.url,
-        method: originalRequest?.method,
-        status: error.response.status,
-      });
     }
 
     return Promise.reject(error);

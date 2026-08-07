@@ -30,9 +30,11 @@ export const initSentry = (): void => {
     // Dev verisi production metriklerine karışmasın — Sentry UI'da
     // environment:development filtresiyle ayrışır.
     environment: __DEV__ ? 'development' : 'production',
-    // Dev-telemetri açıkken metro terminaline "Sentry Logger" satırları düşer —
-    // SDK'nın gerçekten init olup event/transaction gönderdiğinin canlı kanıtı.
-    debug: DEV_TELEMETRY,
+    // KAPALI: açıkken metro terminaline satır satır "Sentry Logger [log]:
+    // [Tracing] Finishing http.client span ..." düşüyor ve gerçek network/
+    // uygulama log'larını boğuyor. SDK'nın çalıştığını doğrulaman gerekirse
+    // geçici olarak DEV_TELEMETRY'ye çevir, sonra geri al.
+    debug: false,
     // Frozen-frame/ANR telemetrisi = commit-storm regresyonunun erken uyarısı.
     tracesSampleRate: DEV_TELEMETRY ? 1.0 : 0.15,
     profilesSampleRate: DEV_TELEMETRY ? 1.0 : 0.15,
