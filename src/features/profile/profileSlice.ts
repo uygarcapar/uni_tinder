@@ -18,8 +18,6 @@ const postFormData = (url: string, formData: FormData, extraHeaders: Record<stri
 const initialState: ProfileState = {
   yearOfStudy: "",
   department: null,
-  city: null,
-  district: null,
   latitude: null,
   longitude: null,
   ageRangeMin: 18,
@@ -31,6 +29,7 @@ const initialState: ProfileState = {
   smokingStatus: null,
   zodiacSign: null,
   usagePurpose: null,
+  relationshipIntent: null,
   photos: [],
   mainPhotoIndex: 0,
   loading: false,
@@ -44,14 +43,13 @@ interface CompleteProfileArgs {
     height: string;
     interestedIn: number[];
     bio?: string;
-    city?: number;
-    district?: number;
     ageRangeMin?: number;
     ageRangeMax?: number;
     hobbies: string[];
     smokingStatus?: string;
     zodiacSign?: string;
     usagePurpose?: string;
+    relationshipIntent?: string;
   };
   photos: string[];
   mainPhotoIndex: number;
@@ -79,17 +77,14 @@ export const completeProfile = createAsyncThunk(
       profileData.interestedIn.forEach((val) => {
         formData.append("InterestedIn", String(val));
       });
+      // Şehir/ilçe artık client'tan GİTMİYOR: backend bunları Latitude/Longitude'dan
+      // türetiyor ve şema City/District alanlarını kabul etmiyor (gönderilse
+      // sessizce düşürülür).
       formData.append("Latitude", Number(latitude).toFixed(8));
       formData.append("Longitude", Number(longitude).toFixed(8));
 
       if (profileData.bio) {
         formData.append("Bio", profileData.bio);
-      }
-      if (profileData.city) {
-        formData.append("City", String(profileData.city));
-      }
-      if (profileData.district) {
-        formData.append("District", String(profileData.district));
       }
       if (profileData.ageRangeMin) {
         formData.append("AgeRangeMin", String(profileData.ageRangeMin));
@@ -110,6 +105,9 @@ export const completeProfile = createAsyncThunk(
       }
       if (profileData.usagePurpose != null) {
         formData.append("UsagePurpose", profileData.usagePurpose);
+      }
+      if (profileData.relationshipIntent != null) {
+        formData.append("RelationshipIntent", profileData.relationshipIntent);
       }
 
       for (let i = 0; i < photos.length; i++) {
@@ -194,14 +192,15 @@ export const registerAndComplete = createAsyncThunk(
       profile.interestedIn.forEach((val: any) => put("InterestedIn", val));
       profile.hobbies.forEach((val: any) => put("Hobbies", val));
 
+      // City/District YOK — backend Latitude/Longitude'dan türetiyor (bkz.
+      // completeProfile'daki aynı not).
       put("Bio", profile.bio);
-      put("City", profile.city);
-      put("District", profile.district);
       put("AgeRangeMin", profile.ageRangeMin);
       put("AgeRangeMax", profile.ageRangeMax);
       put("SmokingStatus", profile.smokingStatus);
       put("ZodiacSign", profile.zodiacSign);
       put("UsagePurpose", profile.usagePurpose);
+      put("RelationshipIntent", profile.relationshipIntent);
 
       put("MaxDistance", 50);
       put("ShowMyUniversity", true);

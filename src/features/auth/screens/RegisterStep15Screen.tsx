@@ -196,11 +196,22 @@ export default function RegisterStep15Screen({ navigation }: NativeStackScreenPr
 
   const handleCompleteProfile = handleSubmit(async ({ photos: finalPhotos }) => {
     try {
-      const { status } = await Location.requestForegroundPermissionsAsync();
-      if (status !== "granted") { return; }
-      const location = await Location.getCurrentPositionAsync({ accuracy: Location.Accuracy.Balanced });
+      // Koordinat normalde Step9'da (zorunlu izin adımı) alınıp redux'a yazılır.
+      // Burada yalnızca fallback okuma var: kullanıcı Step9'dan sonra izni
+      // kapattıysa veya persist edilmiş yarım kayıt akışıyla doğrudan buraya
+      // düştüyse. İzin yoksa Step9'a geri gönderiyoruz — backend
+      // Latitude/Longitude'u [Required] bekliyor.
+      let latitude = profile.latitude;
+      let longitude = profile.longitude;
+      if (latitude == null || longitude == null) {
+        const { status } = await Location.requestForegroundPermissionsAsync();
+        if (status !== "granted") { navigation.navigate("RegisterStep9"); return; }
+        const location = await Location.getCurrentPositionAsync({ accuracy: Location.Accuracy.Balanced });
+        latitude = location.coords.latitude;
+        longitude = location.coords.longitude;
+      }
       const response = await (dispatch(
-        registerAndComplete({ photos: finalPhotos, mainPhotoIndex: 0, latitude: location.coords.latitude, longitude: location.coords.longitude }),
+        registerAndComplete({ photos: finalPhotos, mainPhotoIndex: 0, latitude, longitude }),
       ) as any).unwrap();
       if (!response?.isSuccess) { return; }
       dispatch(setUserAndToken({ user: response.result.user, token: response.result.token, refreshToken: response.result.refreshToken }));

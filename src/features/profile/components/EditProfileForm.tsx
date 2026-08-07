@@ -85,19 +85,14 @@ import {
   type LucideIcon,
 } from "lucide-react-native";
 import SFIcon, { type SFSymbol } from "@/shared/components/SFIcon";
-import { API_ENDPOINTS } from "@/shared/constants/api";
-import api from "@/shared/services/api";
+import { getRelationshipIntentIcon } from "@/shared/constants/relationshipIntent";
 import profileService from "@/features/profile/profileService";
-import AppBottomSheet from "@/shared/components/AppBottomSheet";
-import SearchableListSheet from "@/shared/components/SearchableListSheet";
-import CityPickerModal from "@/features/discover/components/CityPickerModal";
 import LanguagePickerModal from "@/features/profile/components/LanguagePickerModal";
 import GenderCategoryPicker from "@/shared/components/GenderCategoryPicker";
 import { resolveLocalized } from "@/shared/queries/commonQueries";
 import { useForm, Controller } from "react-hook-form";
 import { zodResolver } from "@hookform/resolvers/zod";
 import { editProfileFormSchema, EditProfileFormData } from "@/shared/schemas/formSchemas";
-import { matchOption } from "@/features/profile/utils/hydrateProfileForm";
 import { useTranslation } from "react-i18next";
 import { colors } from "../../../shared/theme/colors";
 import HobbyIcon from "@/shared/components/HobbyIcon";
@@ -111,13 +106,6 @@ const GAP = (AVAILABLE_WIDTH - 3 * ITEM_WIDTH) / 2;
 const ITEM_HEIGHT = ITEM_WIDTH * (4 / 3);
 const ROW_GAP = 20;
 const SPRING_CONFIG = { damping: 22, stiffness: 140, mass: 1.4 };
-
-// cityId → districts cache. Edit modalı bottom-sheet olduğu için kapanışta
-// content unmount oluyor; form her açılışta remount → "mount-once" district
-// fetch'i her açılışta tekrar atıyordu (GET /cities/:id/districts). Modül
-// seviyesindeki bu Map remount'lar arası yaşar → aynı şehir için tek istek,
-// sonraki açılışlarda ilçeler cache'ten anında gelir.
-const districtCache = new Map<number, any[]>();
 
 // Edit formu ilk kez mount edildi mi? İlk mount progressive (stage 1→4, skeleton);
 // sonraki her mount doğrudan stage 4 → anında tam form (skeleton/pop-in yok).
@@ -1078,7 +1066,7 @@ const EditProfileForm = forwardRef(function EditProfileForm(
     smokingOptions,
     zodiacOptions,
     usagePurposeOptions,
-    cityOptions,
+    relationshipIntentOptions = [],
     languageOptions,
     petOptions,
     genderCategories = [],
@@ -1107,6 +1095,7 @@ const EditProfileForm = forwardRef(function EditProfileForm(
       smoking: null,
       zodiac: null,
       usagePurpose: null,
+      relationshipIntent: null,
       city: null,
       district: null,
       languages: [],
@@ -1121,8 +1110,7 @@ const EditProfileForm = forwardRef(function EditProfileForm(
   const draftSmoking = watch("smoking");
   const draftZodiac = watch("zodiac");
   const draftUsagePurpose = watch("usagePurpose");
-  const draftCity = watch("city");
-  const draftDistrict = watch("district");
+  const draftRelationshipIntent = watch("relationshipIntent");
   const draftLanguages = watch("languages");
   const draftPets = watch("pets");
   const draftShowMyUniversity = watch("showMyUniversity");
@@ -1139,13 +1127,10 @@ const EditProfileForm = forwardRef(function EditProfileForm(
     () => myProfile?.gender ?? "",
   );
 
-  // ── District (city'ye bağlı) ────────────────────────────────────────────
-  const [districtOptions, setDistrictOptions] = useState([]);
-  const [districtsLoading, setDistrictsLoading] = useState(false);
-
   // ── Picker sheet visibility ─────────────────────────────────────────────
-  const [cityPickerVisible, setCityPickerVisible] = useState(false);
-  const [districtPickerVisible, setDistrictPickerVisible] = useState(false);
+  // Şehir/ilçe picker'ları KALDIRILDI: konum artık kullanıcı seçimi değil,
+  // backend'in app-open heartbeat'inden (POST /api/profile/location) türettiği
+  // sonuç. UpdateProfile bu alanları hiç kabul etmiyor.
   const [languagePickerVisible, setLanguagePickerVisible] = useState(false);
 
   // ── Progressive render ─────────────────────────────────────────────────
@@ -1181,56 +1166,6 @@ const EditProfileForm = forwardRef(function EditProfileForm(
   useEffect(() => {
     photoOrderDirtyRef.current = photoOrderDirty;
   }, [photoOrderDirty]);
-
-  // ── Mount-once district fetch ───────────────────────────────────────────
-  // initialValues.city parent'ta zaten hidrate edildiği için district fetch'i
-  // izole tek bir mount-once effect'te yapıyoruz. Önceki tasarımda district
-  // fetch hydration cascade'ine bağlıydı ve effect her option arrival'da yeniden
-  // çalışabiliyordu. Şimdi: tek istek, finally'de cancel guard.
-  useEffect(() => {
-    const cityId = initialValues?.city?.id;
-    if (cityId == null) return;
-
-    // Cache hit → istek atma, ilçeleri anında set et.
-    const cached = districtCache.get(cityId);
-    if (cached) {
-      setDistrictOptions(cached);
-      setValue(
-        "district",
-        matchOption(cached, myProfile?.district, myProfile?.districtDisplay),
-      );
-      return;
-    }
-
-    let cancelled = false;
-    setDistrictsLoading(true);
-    api
-      .get(API_ENDPOINTS.GET_DISTRICTS_BY_CITY(cityId))
-      .then((res) => {
-        const list = res?.result ?? [];
-        districtCache.set(cityId, list);
-        if (cancelled) return;
-        setDistrictOptions(list);
-        setValue(
-          "district",
-          matchOption(list, myProfile?.district, myProfile?.districtDisplay),
-        );
-      })
-      .catch(() => {
-        if (cancelled) return;
-        setDistrictOptions([]);
-        setValue("district", null);
-      })
-      .finally(() => {
-        if (!cancelled) setDistrictsLoading(false);
-      });
-    return () => {
-      cancelled = true;
-    };
-    // mount-once: initialValues parent'ta key={myProfile.id} ile boundary'lendi
-    // → bu component instance'ı boyunca initialValues.city sabit.
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, []);
 
   // ── Photo order: myProfile.photosList değişince (kullanıcı dirty değilse) sync
   // Stage 2'ye kadar SortablePhoto'lar render olmadığı için sync etmek
@@ -1292,32 +1227,6 @@ const EditProfileForm = forwardRef(function EditProfileForm(
     }
   }, [getValues, setValue]);
 
-  const applyCity = useCallback(
-    (opt) => {
-      const currentCity = getValues("city");
-      if (!opt || opt.id === currentCity?.id) return;
-      setValue("city", opt);
-      setValue("district", null);
-      const cached = districtCache.get(opt.id);
-      if (cached) {
-        setDistrictOptions(cached);
-        return;
-      }
-      setDistrictOptions([]);
-      setDistrictsLoading(true);
-      api
-        .get(API_ENDPOINTS.GET_DISTRICTS_BY_CITY(opt.id))
-        .then((res) => {
-          const list = res?.result ?? [];
-          districtCache.set(opt.id, list);
-          setDistrictOptions(list);
-        })
-        .catch(() => setDistrictOptions([]))
-        .finally(() => setDistrictsLoading(false));
-    },
-    [getValues, setValue],
-  );
-
   // ── Photo drag end ──────────────────────────────────────────────────────
   const handleDragEnd = useCallback((newPositions, commit) => {
     const current = draftPhotoOrderRef.current;
@@ -1356,8 +1265,7 @@ const EditProfileForm = forwardRef(function EditProfileForm(
         smoking: draftSmoking,
         zodiac: draftZodiac,
         usagePurpose: draftUsagePurpose,
-        city: draftCity,
-        district: draftDistrict,
+        relationshipIntent: draftRelationshipIntent,
         languages: draftLanguages,
         pets: draftPets,
         showMyUniversity: draftShowMyUniversity,
@@ -1392,6 +1300,14 @@ const EditProfileForm = forwardRef(function EditProfileForm(
       else if (myProfile?.usagePurpose != null)
         updates.ClearUsagePurpose = true;
 
+      // İlişki niyeti — partial-update semantiği diğer enum alanlarla aynı:
+      // alanı hiç göndermemek "değiştirme" demek, o yüzden seçim kaldırıldığında
+      // ClearRelationshipIntent=true gitmeli (null göndermek yetmez).
+      if (draftRelationshipIntent != null)
+        updates.RelationshipIntent = enumOf(draftRelationshipIntent);
+      else if (myProfile?.relationshipIntent != null)
+        updates.ClearRelationshipIntent = true;
+
       // InterestedIn artık gönderilmiyor — swipe filtresine taşındı; backend
       // UpdateProfile'da bu alanı yok sayıyor.
 
@@ -1403,18 +1319,10 @@ const EditProfileForm = forwardRef(function EditProfileForm(
         updates.Gender = draftGender;
       }
 
-      // City/District: backend [FromForm] enum binding'i hem integer hem enum-name
-      // string kabul ediyor. enumName kullanıyoruz çünkü (a) response'lar da enumName
-      // string dönüyor (city: "Istanbul") → yazma/okuma aynı format, (b) option
-      // listesindeki `id`nin TurkeyCity enum değerine eşit olduğu varsayımına
-      // dayanmıyor. NOT: Bu alanların eskiden kaydolmaması format değil, backend
-      // bug'ıydı (yalnızca Latitude+Longitude ile birlikte yazıyordu) — düzeltildi.
-      if (draftCity != null) updates.City = enumOf(draftCity);
-      else if (myProfile?.city != null) updates.ClearCity = true;
-
-      if (draftDistrict != null && draftCity != null)
-        updates.District = enumOf(draftDistrict);
-      else if (myProfile?.district != null) updates.ClearDistrict = true;
+      // City/District/Latitude/Longitude UpdateProfile'dan KALDIRILDI. Konum
+      // artık yalnızca app-open heartbeat'iyle (POST /api/profile/location)
+      // güncelleniyor ve şehir/ilçe backend'de koordinattan türetiliyor —
+      // buradan göndermenin hiçbir etkisi yok.
 
       if (draftLanguages.length > 0)
         updates.SpokenLanguages = draftLanguages.map(enumOf).filter(Boolean);
@@ -1463,12 +1371,16 @@ const EditProfileForm = forwardRef(function EditProfileForm(
         usagePurposeDisplay: draftUsagePurpose
           ? resolveLocalized(draftUsagePurpose.display, i18n.language, draftUsagePurpose.name)
           : null,
-        // Sunucu city/district'i enumName string dönüyor ("Istanbul") → optimistic
-        // patch de aynı şekli kullansın ki refetch'ten önce/sonra tip değişmesin.
-        city: enumOf(draftCity) ?? null,
-        cityDisplay: draftCity?.name ?? null,
-        district: enumOf(draftDistrict) ?? null,
-        districtDisplay: draftDistrict?.name ?? null,
+        relationshipIntent: enumOf(draftRelationshipIntent) ?? null,
+        relationshipIntentDisplay: draftRelationshipIntent
+          ? resolveLocalized(
+              draftRelationshipIntent.display,
+              i18n.language,
+              draftRelationshipIntent.name,
+            )
+          : null,
+        // city/cityDisplay/district/districtDisplay patch'lenmiyor: bu form artık
+        // konumu değiştirmiyor, myProfile'daki mevcut değerler olduğu gibi kalmalı.
         spokenLanguages: draftLanguages.map(enumOf).filter(Boolean),
         pets: draftPets.map(enumOf).filter(Boolean),
         showMyUniversity: draftShowMyUniversity,
@@ -1516,24 +1428,6 @@ const EditProfileForm = forwardRef(function EditProfileForm(
   useImperativeHandle(ref, () => ({ submit }), [submit]);
 
   // ── Picker callbacks ────────────────────────────────────────────────────
-  const onCityConfirm = useCallback(
-    (enumName) => {
-      setCityPickerVisible(false);
-      if (!enumName) return;
-      const item = cityOptions.find((c) => c.enumName === enumName);
-      if (item) applyCity(item);
-    },
-    [cityOptions, applyCity],
-  );
-  const onDistrictConfirm = useCallback(
-    (enumName) => {
-      setDistrictPickerVisible(false);
-      if (!enumName) return;
-      const item = districtOptions.find((d) => d.enumName === enumName);
-      if (item) setValue("district", item);
-    },
-    [districtOptions, setValue],
-  );
   const onLanguageConfirm = useCallback(
     (enumNames) => {
       setLanguagePickerVisible(false);
@@ -1846,6 +1740,54 @@ const EditProfileForm = forwardRef(function EditProfileForm(
         </View>
       )}
 
+      {/* İlişki niyeti — stage 1. Tek seçim; seçili satıra tekrar basmak
+          temizler (submit'te ClearRelationshipIntent=true gider). */}
+      {stage >= 1 && relationshipIntentOptions.length > 0 && (
+        <View style={{ marginTop: 28 }}>
+          <View
+            style={{
+              flexDirection: "column",
+              alignItems: "flex-start",
+              marginBottom: 10,
+              marginTop: 12,
+            }}
+          >
+            <Text
+              style={{
+                color: colors.text,
+                fontSize: 20,
+                fontWeight: "600",
+                marginBottom: 6,
+              }}
+            >
+              {t('profile.edit.relationshipIntentTitle')}
+            </Text>
+            <View className="flex-row items-center gap-2 mb-3 pr-4">
+              <SFIcon name="info.circle" fallback={InfoIcon} size={18} color={colors.textSecondary} strokeWidth={2} weight="semibold" />
+              <Text
+                style={{ color: colors.textSecondary, fontSize: 14, fontWeight: "400" }}
+              >
+                {t('profile.edit.relationshipIntentDesc')}
+              </Text>
+            </View>
+          </View>
+          {relationshipIntentOptions.map((opt) => (
+            <OptionListItem
+              key={opt.id}
+              option={opt}
+              isSelected={draftRelationshipIntent?.id === opt.id}
+              icon={getRelationshipIntentIcon(opt.enumName)}
+              onPress={() =>
+                setValue(
+                  "relationshipIntent",
+                  draftRelationshipIntent?.id === opt.id ? null : opt,
+                )
+              }
+            />
+          ))}
+        </View>
+      )}
+
       {/* Hobiler — stage 3 */}
       {stage >= 3 && (
         <View style={{ marginTop: 28 }}>
@@ -2048,8 +1990,9 @@ const EditProfileForm = forwardRef(function EditProfileForm(
         </View>
       )}
 
-      {/* Şehir — stage 4 */}
-      {stage >= 4 && cityOptions.length > 0 && (
+      {/* Konum — stage 4. Salt-okunur: şehir/ilçe kullanıcı seçimi değil,
+          backend'in app-open heartbeat'indeki koordinattan türettiği sonuç. */}
+      {stage >= 4 && (
         <View style={{ marginTop: 28 }}>
           <View
             style={{
@@ -2067,20 +2010,18 @@ const EditProfileForm = forwardRef(function EditProfileForm(
                 marginBottom: 6,
               }}
             >
-              {t('profile.edit.cityTitle')}
+              {t('profile.edit.locationTitle')}
             </Text>
             <View className="flex-row items-center gap-2 mb-3 pr-4">
               <SFIcon name="info.circle" fallback={InfoIcon} size={18} color={colors.textSecondary} strokeWidth={2} weight="semibold" />
               <Text
                 style={{ color: colors.textSecondary, fontSize: 14, fontWeight: "400" }}
               >
-                {t('profile.edit.cityDesc')}
+                {t('profile.edit.locationDesc')}
               </Text>
             </View>
           </View>
-          <TouchableOpacity
-            activeOpacity={0.7}
-            onPress={() => setCityPickerVisible(true)}
+          <View
             style={{
               borderRadius: 999,
               borderCurve: "continuous",
@@ -2091,84 +2032,22 @@ const EditProfileForm = forwardRef(function EditProfileForm(
               paddingVertical: 18,
               flexDirection: "row",
               alignItems: "center",
-              justifyContent: "space-between",
+              gap: 8,
             }}
           >
-            <View
+            <Navigation size={18} color={colors.textSecondary} strokeWidth={1.5} />
+            <Text
               style={{
-                flexDirection: "row",
-                alignItems: "center",
-                gap: 8,
-                flex: 1,
+                color: myProfile?.cityDisplay ? colors.text : colors.textSecondary,
+                fontSize: 15,
+                fontWeight: "500",
               }}
             >
-              <Navigation size={18} color={colors.textSecondary} strokeWidth={1.5} />
-              <Text
-                style={{
-                  color: draftCity ? colors.text : colors.textSecondary,
-                  fontSize: 15,
-                  fontWeight: "500",
-                }}
-              >
-                {draftCity?.name || t('profile.edit.selectCity')}
-              </Text>
-            </View>
-            <SFIcon name="chevron.down" fallback={ChevronDown} size={18} color={colors.textSecondary} strokeWidth={2} weight="semibold" />
-          </TouchableOpacity>
-        </View>
-      )}
-
-      {/* İlçe — stage 4 */}
-      {stage >= 4 && draftCity && (
-        <View style={{ marginTop: 16 }}>
-          <TouchableOpacity
-            activeOpacity={0.7}
-            onPress={() => {
-              if (districtOptions.length === 0) return;
-              setDistrictPickerVisible(true);
-            }}
-            disabled={districtsLoading || districtOptions.length === 0}
-            style={{
-              borderRadius: 999,
-              borderCurve: "continuous",
-              overflow: "hidden",
-              borderWidth: 0.5,
-              borderColor: "rgba(255,255,255,0.1)",
-              paddingHorizontal: 16,
-              paddingVertical: 18,
-              flexDirection: "row",
-              alignItems: "center",
-              justifyContent: "space-between",
-              opacity:
-                districtsLoading || districtOptions.length === 0 ? 0.5 : 1,
-            }}
-          >
-            <View
-              style={{
-                flexDirection: "row",
-                alignItems: "center",
-                gap: 8,
-                flex: 1,
-              }}
-            >
-              <Navigation size={18} color={colors.textSecondary} strokeWidth={1.5} />
-              <Text
-                style={{
-                  color: draftDistrict ? colors.text : colors.textSecondary,
-                  fontSize: 15,
-                  fontWeight: "500",
-                }}
-              >
-                {draftDistrict?.name ||
-                  (districtsLoading ? t('profile.edit.loading') : t('profile.edit.selectDistrict'))}
-              </Text>
-            </View>
-            {districtsLoading ? (
-              <ActivityIndicator size="small" color={colors.textSecondary} />
-            ) : (
-              <SFIcon name="chevron.down" fallback={ChevronDown} size={18} color={colors.textSecondary} strokeWidth={2} weight="semibold" />
-            )}
-          </TouchableOpacity>
+              {myProfile?.cityDisplay
+                ? [myProfile?.districtDisplay, myProfile?.cityDisplay].filter(Boolean).join(", ")
+                : t('profile.edit.locationPending')}
+            </Text>
+          </View>
         </View>
       )}
 
@@ -2424,38 +2303,6 @@ const EditProfileForm = forwardRef(function EditProfileForm(
       {/* Picker sheets — stage 4, lazy mount (visible olunca render et) */}
       {stage >= 4 && (
         <>
-
-      {cityPickerVisible && (
-        <CityPickerModal
-          visible={cityPickerVisible}
-          onClose={() => setCityPickerVisible(false)}
-          items={cityOptions}
-          initialValue={draftCity?.enumName ?? ""}
-          onConfirm={onCityConfirm}
-        />
-      )}
-
-      {districtPickerVisible && (
-        <AppBottomSheet
-          visible={districtPickerVisible}
-          onClose={() => setDistrictPickerVisible(false)}
-          // CityPickerModal ile aynı: 75% normal, 90% klavye açıldığında
-          // (keyboardBehavior="extend") otomatik en yüksek snap'e çıkar.
-          snapPoints={["75%", "90%"]}
-          backdrop="blur"
-          backgroundStyle={{ borderRadius: 44 }}
-          handleComponent={null}
-          stackBehavior="push"
-        >
-          <SearchableListSheet
-            items={districtOptions}
-            initialValue={draftDistrict?.enumName ?? ""}
-            title={t('profile.edit.selectDistrict')}
-            onConfirm={onDistrictConfirm}
-            onCancel={() => setDistrictPickerVisible(false)}
-          />
-        </AppBottomSheet>
-      )}
 
       {languagePickerVisible && (
         <LanguagePickerModal

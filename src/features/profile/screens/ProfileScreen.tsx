@@ -649,7 +649,7 @@ export default function ProfileScreen() {
   const [smokingOptions, setSmokingOptions] = useState([]);
   const [zodiacOptions, setZodiacOptions] = useState([]);
   const [usagePurposeOptions, setUsagePurposeOptions] = useState([]);
-  const [cityOptions, setCityOptions] = useState([]);
+  const [relationshipIntentOptions, setRelationshipIntentOptions] = useState([]);
   const [languageOptions, setLanguageOptions] = useState([]);
   const [petOptions, setPetOptions] = useState([]);
   const [genderCategories, setGenderCategories] = useState([]);
@@ -740,20 +740,25 @@ export default function ProfileScreen() {
         smokingRes,
         zodiacRes,
         usageRes,
-        citiesRes,
+        relationshipIntentRes,
         languagesRes,
         petsRes,
         gendersRes,
       ] = await Promise.all([
         profileService.getMyProfile(),
         // Statik enum listeleri → staticGet (oturum-boyu tek fetch, ekranlar-arası
-        // paylaşımlı). cities Discover filtresiyle (useCities → staticGet) aynı
-        // isteği paylaşır → cities ×2 tek isteğe iner.
+        // paylaşımlı). cities BURADA ÇEKİLMİYOR: edit formunda şehir/ilçe seçici
+        // kalmadı (konum backend'de koordinattan türetiliyor); şehir listesi
+        // yalnızca Discover filtresinin premium "şehir tercihi" seçicisinde
+        // kullanılıyor ve orada useCities ile ayrıca çekiliyor.
         safe("hobbies", staticGet(API_ENDPOINTS.GET_HOBBIES)),
         safe("smoking", staticGet(API_ENDPOINTS.GET_SMOKING_STATUSES)),
         safe("zodiacs", staticGet(API_ENDPOINTS.GET_ZODIACS)),
         safe("usage", staticGet(API_ENDPOINTS.GET_USAGE_PURPOSES)),
-        safe("cities", staticGet(API_ENDPOINTS.GET_CITIES)),
+        safe(
+          "relationshipIntents",
+          staticGet(API_ENDPOINTS.GET_RELATIONSHIP_INTENTS),
+        ),
         safe("languages", staticGet(API_ENDPOINTS.GET_LANGUAGES)),
         safe("pets", staticGet(API_ENDPOINTS.GET_PETS)),
         // Cinsiyet kategorileri — EditProfileForm'daki cinsiyet picker'ı için.
@@ -780,7 +785,8 @@ export default function ProfileScreen() {
       if (smokingRes?.result) setSmokingOptions(smokingRes.result);
       if (zodiacRes?.result) setZodiacOptions(zodiacRes.result);
       if (usageRes?.result) setUsagePurposeOptions(usageRes.result);
-      if (citiesRes?.result) setCityOptions(citiesRes.result);
+      if (relationshipIntentRes?.result)
+        setRelationshipIntentOptions(relationshipIntentRes.result);
       if (languagesRes?.result) setLanguageOptions(languagesRes.result);
       if (petsRes?.result) setPetOptions(petsRes.result);
       if (gendersRes?.result) setGenderCategories(gendersRes.result);
@@ -845,6 +851,7 @@ export default function ProfileScreen() {
       smokingStatusDisplay: myProfile.smokingStatusDisplay,
       zodiacSignDisplay: myProfile.zodiacSignDisplay,
       usagePurposeDisplay: myProfile.usagePurposeDisplay,
+      relationshipIntentDisplay: myProfile.relationshipIntentDisplay,
       cityDisplay: myProfile.cityDisplay,
       districtDisplay: myProfile.districtDisplay,
       distance: null,
@@ -886,7 +893,7 @@ export default function ProfileScreen() {
       smokingOptions,
       zodiacOptions,
       usagePurposeOptions,
-      cityOptions,
+      relationshipIntentOptions,
       languageOptions,
       petOptions,
     });
@@ -896,24 +903,23 @@ export default function ProfileScreen() {
     smokingOptions,
     zodiacOptions,
     usagePurposeOptions,
-    cityOptions,
+    relationshipIntentOptions,
     languageOptions,
     petOptions,
   ]);
 
   // Form mount'u için tetikleyiciler:
   //   1. onPresented (gorhom onChange ≥0) — animasyon bitince fire eder
-  //   2. Veri-hazırlık koşulu — initial values + city/hobby listeleri dolduğunda
+  //   2. Veri-hazırlık koşulu — initial values + hobby listesi dolduğunda
   // İkisi de true olduğunda skeleton swap edilir. setTimeout fallback'i artık
   // YOK: yarım hidrate form mount etmek crash riskini geri getiriyordu.
   const handleEditPresented = useCallback(() => setEditFormReady(true), []);
   useEffect(() => {
     if (!editVisible) return;
     if (!editInitialValues) return;
-    if (cityOptions.length === 0) return;
     if (hobbyGroups.length === 0) return;
     setEditFormReady(true);
-  }, [editVisible, editInitialValues, cityOptions.length, hobbyGroups.length]);
+  }, [editVisible, editInitialValues, hobbyGroups.length]);
 
   const handleEditSubmit = useCallback(() => {
     editFormRef.current?.submit();
@@ -1697,7 +1703,7 @@ export default function ProfileScreen() {
                 smokingOptions={smokingOptions}
                 zodiacOptions={zodiacOptions}
                 usagePurposeOptions={usagePurposeOptions}
-                cityOptions={cityOptions}
+                relationshipIntentOptions={relationshipIntentOptions}
                 languageOptions={languageOptions}
                 petOptions={petOptions}
                 genderCategories={genderCategories}

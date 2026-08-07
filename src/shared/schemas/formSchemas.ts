@@ -89,11 +89,6 @@ export const educationSchema = z.object({
   yearOfStudy: z.string().min(1, "Lütfen sınıf ve bölüm alanlarını doldurun"),
 });
 
-export const locationSchema = z.object({
-  city: z.string().optional(),
-  district: z.string().optional(),
-});
-
 export const interestedInSchema = z.object({
   interestedIn: z
     .array(z.string())
@@ -118,6 +113,7 @@ export const lifestyleSchema = z.object({
   smokingStatus: z.string().optional(),
   zodiacSign: z.string().optional(),
   usagePurpose: z.string().optional(),
+  relationshipIntent: z.string().optional(),
 });
 
 export const photosSchema = z.object({
@@ -139,7 +135,6 @@ export type FirstNameForm = z.infer<typeof firstNameSchema>;
 export type DobForm = z.infer<typeof dobSchema>;
 export type GenderForm = z.infer<typeof genderSchema>;
 export type EducationForm = z.infer<typeof educationSchema>;
-export type LocationForm = z.infer<typeof locationSchema>;
 export type InterestedInForm = z.infer<typeof interestedInSchema>;
 export type HeightForm = z.infer<typeof heightSchema>;
 export type HobbiesForm = z.infer<typeof hobbiesSchema>;
@@ -153,8 +148,9 @@ export const editProfileFormSchema = z.object({
   smoking: z.any().nullable(),
   zodiac: z.any().nullable(),
   usagePurpose: z.any().nullable(),
-  city: z.any().nullable(),
-  district: z.any().nullable(),
+  relationshipIntent: z.any().nullable(),
+  // city/district YOK: konum artık düzenlenebilir bir alan değil, backend
+  // koordinattan türetiyor (bkz. POST /api/profile/location).
   languages: z.array(z.any()),
   pets: z.array(z.any()),
   showMyUniversity: z.boolean(),

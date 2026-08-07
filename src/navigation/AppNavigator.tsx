@@ -28,6 +28,7 @@ import { setUserAndToken, clearRegistrationForm, logout } from '@/features/auth/
 import { fetchSubscriptionStatus, reconcileIfMismatched, setPremium } from '@/features/profile/subscriptionSlice';
 import { addCustomerInfoListener, initRevenueCat, loginRevenueCat } from '@/features/profile/subscriptionService';
 import profileService from '@/features/profile/profileService';
+import { sendLocationHeartbeat, clearLocationHeartbeatState } from '@/features/profile/locationHeartbeat';
 import { queryClient } from '@/shared/queries/queryClient';
 import { swipeKeys } from '@/features/discover/swipeQueries';
 import AuthNavigator from './AuthNavigator';
@@ -317,6 +318,9 @@ export default function AppNavigator() {
       // 1.5sn throttle penceresinde app kill edilirse önceki kullanıcının mesajları
       // diskte kalabilirdi; geç flush olan pending write de artık boş state yazar.
       clearChatCache();
+      // Konum debounce damgası kullanıcıya özgü — sonraki hesap ilk açılışta
+      // kendi koordinatını göndersin.
+      clearLocationHeartbeatState();
       return;
     }
 
@@ -638,11 +642,22 @@ export default function AppNavigator() {
             queryKey: swipeKeys.stats,
             refetchType: 'active',
           });
+          // Şehir/ilçe backend'de konumdan türetiliyor → her foreground'da tek
+          // atımlık koordinat. İzin yoksa/GPS yoksa sessizce no-op.
+          sendLocationHeartbeat();
         }
       }
     });
     return () => sub.remove();
   }, [isAuthenticated, hasToken, dispatch]);
+
+  // ============ Konum heartbeat — cold start ============
+  // Token oturduktan SONRA: api.ts Authorization'ı currentAccessToken'dan
+  // okuyor, bu yüzden hasToken guard'ı şart.
+  useEffect(() => {
+    if (!isAuthenticated || !hasToken) return;
+    sendLocationHeartbeat();
+  }, [isAuthenticated, hasToken]);
 
   // ============ User identity change → cache reset ============
   const currentUserId = user?.userId ?? null;

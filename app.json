@@ -83,6 +83,14 @@
       "expo-localization",
       "expo-secure-store",
       [
+        "expo-location",
+        {
+          "locationWhenInUsePermission": "Şehrini ve yakınındaki kişileri gösterebilmemiz için konumuna ihtiyacımız var.",
+          "isIosBackgroundLocationEnabled": false,
+          "isAndroidBackgroundLocationEnabled": false
+        }
+      ],
+      [
         "@sentry/react-native",
         {
           "organization": "fourstack-wk",

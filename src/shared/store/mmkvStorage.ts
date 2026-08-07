@@ -47,6 +47,13 @@ export const clearChatCache = () => chatCacheStorage.clearAll();
  */
 const appStorage = createMMKV({ id: 'redux-app' });
 
+/**
+ * redux-persist dışındaki küçük, senkron app-level KV ihtiyaçları için aynı
+ * instance (konum heartbeat debounce'u gibi). Anahtarlarını 'persist:' önekiyle
+ * ÇAKIŞTIRMA — rehydrate her 'persist:*' anahtarını okumaya çalışır.
+ */
+export const appKv = appStorage;
+
 export const reduxMmkvAppStorage: Storage = {
   setItem: (key, value) => {
     appStorage.set(key, value);

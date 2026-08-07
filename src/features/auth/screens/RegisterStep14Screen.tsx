@@ -19,6 +19,7 @@ import {
   Scale, Zap, Navigation, Mountain, Droplets, Fish, Cigarette,
 } from "lucide-react-native";
 import SFIcon, { type SFSymbol } from "@/shared/components/SFIcon";
+import { getRelationshipIntentIcon } from "@/shared/constants/relationshipIntent";
 import RegisterProgressBar from "@/features/auth/components/RegisterProgressBar";
 import RegisterBackButton from "@/features/auth/components/RegisterBackButton";
 import AnimatedPressable from "@/shared/components/AnimatedPressable";
@@ -71,6 +72,21 @@ const SimpleOptionItem = memo(({ option, isSelected, onToggle }: any) => (
     {isSelected && <SFIcon name="checkmark" fallback={Check} size={20} color={colors.text} strokeWidth={2.5} weight="bold" />}
   </AnimatedPressable>
 ));
+
+// İlişki niyeti satırı — tek seçim. İkon enumName'e bağlı (ortak harita).
+const IntentOptionItem = memo(({ option, isSelected, onToggle }: any) => {
+  const icon = getRelationshipIntentIcon(option.enumName);
+  return (
+    <AnimatedPressable
+      onPress={() => onToggle(option.enumName)}
+      style={{ borderRadius: 30, borderCurve: "continuous", paddingHorizontal: 4, paddingVertical: 18, flexDirection: "row", alignItems: "center", justifyContent: "space-between" }}
+    >
+      <SFIcon name={icon.sf} fallback={icon.lucide} size={20} color={isSelected ? colors.text : colors.textSecondary} strokeWidth={1.5} style={{ marginRight: 14 }} />
+      <Text style={{ color: isSelected ? colors.text : colors.textSecondary, fontSize: 14, fontWeight: "500", flex: 1, marginRight: 12 }}>{option.name}</Text>
+      {isSelected && <SFIcon name="checkmark" fallback={Check} size={20} color={colors.text} strokeWidth={2.5} weight="bold" />}
+    </AnimatedPressable>
+  );
+});
 
 const PurposeOptionItem = memo(({ option, isSelected, onToggle, desc }: any) => {
   const entry = PURPOSE_MAP[option.enumName ?? option.name];
@@ -186,9 +202,11 @@ export default function RegisterStep14Screen({ navigation }: NativeStackScreenPr
   const [smokingStatuses, setSmokingStatuses] = useState([]);
   const [zodiacs, setZodiacs] = useState([]);
   const [usagePurposes, setUsagePurposes] = useState([]);
+  const [relationshipIntents, setRelationshipIntents] = useState([]);
   const [loadingSmokingStatuses, setLoadingSmokingStatuses] = useState(false);
   const [loadingZodiacs, setLoadingZodiacs] = useState(false);
   const [loadingUsagePurposes, setLoadingUsagePurposes] = useState(false);
+  const [loadingRelationshipIntents, setLoadingRelationshipIntents] = useState(false);
 
   const { setValue, watch } = useForm<LifestyleForm>({
     resolver: zodResolver(lifestyleSchema),
@@ -196,17 +214,21 @@ export default function RegisterStep14Screen({ navigation }: NativeStackScreenPr
       smokingStatus: typeof profile.smokingStatus === "string" ? profile.smokingStatus : "",
       zodiacSign: typeof profile.zodiacSign === "string" ? profile.zodiacSign : "",
       usagePurpose: typeof profile.usagePurpose === "string" ? profile.usagePurpose : "",
+      relationshipIntent:
+        typeof profile.relationshipIntent === "string" ? profile.relationshipIntent : "",
     },
   });
 
   const smokingStatus = watch("smokingStatus");
   const zodiacSign = watch("zodiacSign");
   const usagePurpose = watch("usagePurpose");
+  const relationshipIntent = watch("relationshipIntent");
 
   useEffect(() => {
     fetchSmokingStatuses();
     fetchZodiacs();
     fetchUsagePurposes();
+    fetchRelationshipIntents();
   }, []);
 
   // staticGet (axios) kullan, ham fetch değil: bu listelerin `name`/`display`
@@ -245,6 +267,23 @@ export default function RegisterStep14Screen({ navigation }: NativeStackScreenPr
     finally { setLoadingUsagePurposes(false); }
   };
 
+  const fetchRelationshipIntents = async () => {
+    try {
+      setLoadingRelationshipIntents(true);
+      const data = await staticGet(API_ENDPOINTS.GET_RELATIONSHIP_INTENTS);
+      if (data?.isSuccess && data.result) setRelationshipIntents(data.result);
+      else alert(t('auth.step14.relationshipIntentError'));
+    } catch (e) { console.error(e); alert(t('auth.step14.relationshipIntentError')); }
+    finally { setLoadingRelationshipIntents(false); }
+  };
+
+  const toggleRelationshipIntent = useCallback((enumName: string) => {
+    if (!enumName) return;
+    const next = relationshipIntent === enumName ? "" : enumName;
+    setValue("relationshipIntent", next);
+    dispatch(updateMultipleFields({ relationshipIntent: next === "" ? null : next }));
+  }, [relationshipIntent, dispatch, setValue]);
+
   const toggleSmoking = useCallback((enumName: string) => {
     if (!enumName) return;
     const next = smokingStatus === enumName ? "" : enumName;
@@ -269,12 +308,16 @@ export default function RegisterStep14Screen({ navigation }: NativeStackScreenPr
   const handleNext = () => { navigation.navigate("RegisterStep15"); };
 
   const handleSkip = () => {
-    dispatch(updateMultipleFields({ smokingStatus: null, zodiacSign: null, usagePurpose: null }));
+    dispatch(updateMultipleFields({ smokingStatus: null, zodiacSign: null, usagePurpose: null, relationshipIntent: null }));
     navigation.navigate("RegisterStep15");
   };
 
-  const allFieldsEmpty = !smokingStatus && !zodiacSign && !usagePurpose;
-  const isLoading = loadingSmokingStatuses || loadingZodiacs || loadingUsagePurposes;
+  const allFieldsEmpty = !smokingStatus && !zodiacSign && !usagePurpose && !relationshipIntent;
+  const isLoading =
+    loadingSmokingStatuses ||
+    loadingZodiacs ||
+    loadingUsagePurposes ||
+    loadingRelationshipIntents;
 
   return (
     <View className="flex-1 bg-bg">
@@ -305,6 +348,12 @@ export default function RegisterStep14Screen({ navigation }: NativeStackScreenPr
               {Array.from({ length: 4 }).map((_, i) => <SkeletonPurposeOption key={i} />)}
             </View>
             <View style={{ marginTop: 28 }}>
+              <Text style={SECTION_TITLE}>{t('auth.step14.relationshipIntentLabel')}</Text>
+              <View style={{ gap: 2 }}>
+                {Array.from({ length: 5 }).map((_, i) => <SkeletonSimpleOption key={i} />)}
+              </View>
+            </View>
+            <View style={{ marginTop: 28 }}>
               <Text style={SECTION_TITLE}>{t('auth.step14.smokingLabel')}</Text>
               <View style={{ gap: 2 }}>
                 {Array.from({ length: 3 }).map((_, i) => <SkeletonSimpleOption key={i} />)}
@@ -325,6 +374,16 @@ export default function RegisterStep14Screen({ navigation }: NativeStackScreenPr
                 {(usagePurposes as any[]).map((opt) => (
                   <PurposeOptionItem key={opt.id} option={opt} isSelected={opt.enumName === usagePurpose} onToggle={toggleUsagePurpose} desc={PURPOSE_DESC_MAP[opt.enumName ?? opt.name]} />
                 ))}
+              </View>
+            )}
+            {(relationshipIntents as any[]).length > 0 && (
+              <View style={{ marginTop: 28 }}>
+                <Text style={SECTION_TITLE}>{t('auth.step14.relationshipIntentLabel')}</Text>
+                <View style={{ gap: 2 }}>
+                  {(relationshipIntents as any[]).map((opt) => (
+                    <IntentOptionItem key={opt.id} option={opt} isSelected={opt.enumName === relationshipIntent} onToggle={toggleRelationshipIntent} />
+                  ))}
+                </View>
               </View>
             )}
             {(smokingStatuses as any[]).length > 0 && (

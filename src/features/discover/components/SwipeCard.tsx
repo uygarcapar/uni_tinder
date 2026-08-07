@@ -58,6 +58,7 @@ import { getColors } from "react-native-image-colors";
 import { colors as theme, gradients } from "../../../shared/theme/colors";
 import HobbyIcon from "@/shared/components/HobbyIcon";
 import SFIcon, { type SFSymbol } from "@/shared/components/SFIcon";
+import { getRelationshipIntentIcon } from "@/shared/constants/relationshipIntent";
 
 import { useRenderCount } from "@/shared/debug/useRenderCount";
 
@@ -1208,6 +1209,7 @@ export default function SwipeCard({
                 {/* Lifestyle Info */}
                 {(profile.smokingStatusDisplay ||
                   profile.zodiacSignDisplay ||
+                  profile.relationshipIntentDisplay ||
                   profile.hasPets != null) && (
                   <View
                     style={{
@@ -1225,6 +1227,15 @@ export default function SwipeCard({
                     </View>
                     <View className="flex-row flex-wrap gap-2">
                       {[
+                        // İlişki niyeti — ikon enumName'e bağlı; enumName
+                        // gelmezse ortak harita default kalbe düşer.
+                        profile.relationshipIntentDisplay && {
+                          key: "relationshipIntent",
+                          ...getRelationshipIntentIcon(
+                            profile.relationshipIntent,
+                          ),
+                          label: profile.relationshipIntentDisplay,
+                        },
                         profile.smokingStatusDisplay && {
                           key: "smoking",
                           sf: "smoke.fill" as SFSymbol,

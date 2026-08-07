@@ -37,6 +37,9 @@ export const API_ENDPOINTS = {
   GET_MY_PROFILE: "/api/profile/GetMyProfile",
   GET_MY_PHOTOS: "/api/profile/GetMyPhotos",
   UPDATE_PREFERENCES: "/api/profile/update-preferences",
+  // App-open heartbeat: şehir/ilçe artık kullanıcı seçimi değil, backend'in bu
+  // koordinattan türettiği sonuç. UpdateProfile'da konum alanları kaldırıldı.
+  UPDATE_LOCATION: "/api/profile/location",
 
   GET_PHOTO: "/api/photo/GetPhoto",
 
@@ -110,5 +113,6 @@ export const API_ENDPOINTS = {
   GET_INTERESTED_IN: "/api/common/interested-in",
   GET_LANGUAGES: "/api/common/languages",
   GET_PETS: "/api/common/pets",
+  GET_RELATIONSHIP_INTENTS: "/api/common/relationship-intents",
   GET_DISTRICTS_BY_CITY: (cityId: number | string) => `/api/common/cities/${cityId}/districts`,
 };

@@ -41,8 +41,8 @@ export interface AuthState {
 export interface ProfileState {
   yearOfStudy: string;
   department: number | null;
-  city: number | null;
-  district: number | null;
+  // city/district YOK: backend bunları latitude/longitude'dan türetiyor,
+  // onboarding payload'ı artık sadece koordinat taşıyor.
   latitude: number | null;
   longitude: number | null;
   ageRangeMin: number;
@@ -54,6 +54,7 @@ export interface ProfileState {
   smokingStatus: string | null;
   zodiacSign: string | null;
   usagePurpose: string | null;
+  relationshipIntent: string | null;
   photos: string[];
   mainPhotoIndex: number;
   loading: boolean;

@@ -1,104 +1,72 @@
-import { useState, useMemo, useCallback } from "react";
-import {
-  View,
-  Text,
-  TouchableOpacity,
-  Keyboard,
-  ActivityIndicator,
-} from "react-native";
+import { useCallback, useState } from "react";
+import { View, Text } from "react-native";
 import { NativeStackScreenProps } from "@react-navigation/native-stack";
+import { useFocusEffect } from "@react-navigation/native";
 import type { AuthStackParamList } from "@/shared/types/navigation";
-import { useAppDispatch, useAppSelector } from "@/shared/hooks/redux";
+import { useAppDispatch } from "@/shared/hooks/redux";
 import { updateMultipleFields } from "@/features/profile/profileSlice";
-import { ChevronDown } from "lucide-react-native";
+import { Navigation } from "lucide-react-native";
 import SFIcon from "@/shared/components/SFIcon";
-import { KeyboardStickyView } from "react-native-keyboard-controller";
 import RegisterProgressBar from "@/features/auth/components/RegisterProgressBar";
 import RegisterBackButton from "@/features/auth/components/RegisterBackButton";
 import AnimatedPressable from "@/shared/components/AnimatedPressable";
-import AppBottomSheet from "@/shared/components/AppBottomSheet";
-import SearchableListSheet from "@/shared/components/SearchableListSheet";
-import CityPickerModal from "@/features/discover/components/CityPickerModal";
-import { useCities, useDistrictsByCity } from "@/shared/queries/commonQueries";
-import { useForm } from "react-hook-form";
-import { zodResolver } from "@hookform/resolvers/zod";
-import { locationSchema, LocationForm } from "@/shared/schemas/formSchemas";
+import LocationPermissionSheet from "@/features/auth/components/LocationPermissionSheet";
+import { readCurrentPosition } from "@/features/profile/locationHeartbeat";
 import { colors } from "../../../shared/theme/colors";
-import { useTranslation } from 'react-i18next';
+import { devLog } from "@/shared/utils/devLog";
+import { useTranslation } from "react-i18next";
 
+/**
+ * Şehir/ilçe artık kullanıcı seçimi DEĞİL — backend `Latitude`/`Longitude`'dan
+ * kendisi türetiyor ve CompleteProfile/register-and-complete şeması City/District
+ * kabul etmiyor. Bu yüzden eski şehir+ilçe dropdown'ları kaldırıldı, yerine
+ * ZORUNLU konum izni adımı geldi: koordinat alınmadan bir sonraki adıma
+ * geçilmiyor ve manuel şehir seçimi fallback'i bilinçli olarak YOK (backend'de
+ * karşılığı bulunmuyor).
+ *
+ * İzin isteği ekrandan DEĞİL, ekran odaklanınca otomatik açılan bottom sheet'ten
+ * yürütülüyor (LocationPermissionSheet). Sheet swipe ile kapatılırsa ekrandaki
+ * sticky buton geri açar.
+ */
 export default function RegisterStep9Screen({ navigation }: NativeStackScreenProps<AuthStackParamList, 'RegisterStep9'>) {
   const { t } = useTranslation();
   const dispatch = useAppDispatch();
-  const profile = useAppSelector((s) => (s as any).profile || {});
 
-  const [cityVisible, setCityVisible] = useState(false);
-  const [districtVisible, setDistrictVisible] = useState(false);
-  const districtSnapPoints = useMemo(() => ["75%", "90%"], []);
+  const [sheetVisible, setSheetVisible] = useState(false);
 
-  const { handleSubmit, setValue, watch } = useForm<LocationForm>({
-    resolver: zodResolver(locationSchema),
-    defaultValues: {
-      city: typeof profile.city === "string" ? profile.city : "",
-      district: typeof profile.district === "string" ? profile.district : "",
-    },
-  });
-
-  const city = watch("city");
-  const district = watch("district");
-
-  const { data: cities = [], isLoading: loadingCities } = useCities();
-  const cityMatch = useMemo(
-    () => (city ? cities.find((c) => c.enumName === city) : undefined),
-    [cities, city],
+  // Ekran odaklanınca sheet açılır; Step10'a geçerken (blur) kendiliğinden kapanır.
+  useFocusEffect(
+    useCallback(() => {
+      setSheetVisible(true);
+      return () => setSheetVisible(false);
+    }, []),
   );
-  const { data: districts = [], isLoading: loadingDistricts } =
-    useDistrictsByCity(cityMatch?.id);
 
-  const handleOpenCityModal = useCallback(() => {
-    Keyboard.dismiss();
-    setTimeout(() => setCityVisible(true), 100);
-  }, []);
-
-  const handleOpenDistrictModal = useCallback(() => {
-    if (!city) { alert(t('auth.step9.validation.cityFirst')); return; }
-    Keyboard.dismiss();
-    setTimeout(() => setDistrictVisible(true), 100);
-  }, [city, t]);
-
-  const getCityLabel = () => {
-    if (!city) return t('auth.step9.cityPlaceholder');
-    const selectedCity = (cities as any[]).find((c) => c.enumName === city);
-    return selectedCity ? selectedCity.name : t('auth.step9.cityPlaceholder');
-  };
-
-  const getDistrictLabel = () => {
-    if (!district) return t('auth.step9.districtPlaceholder');
-    const selectedDistrict = (districts as any[]).find((d) => d.enumName === district);
-    return selectedDistrict ? selectedDistrict.name : t('auth.step9.districtPlaceholder');
-  };
-
-  const handleNext = handleSubmit(({ city: c, district: d }) => {
-    dispatch(updateMultipleFields({ city: c || null, district: d || null }));
-    navigation.navigate("RegisterStep10");
-  });
-
-  const handleSkip = () => {
-    dispatch(updateMultipleFields({ city: null, district: null }));
-    navigation.navigate("RegisterStep10");
-  };
+  // Sheet izni aldıktan sonra çağırır. Hata fırlatırsa sheet spinner'dan çıkıp
+  // idle'a döner (kullanıcı tekrar deneyebilir) — denied ekranı gösterilmez.
+  const captureAndContinue = useCallback(async () => {
+    try {
+      const position = await readCurrentPosition();
+      dispatch(
+        updateMultipleFields({
+          latitude: position.coords.latitude,
+          longitude: position.coords.longitude,
+        }),
+      );
+      setSheetVisible(false);
+      navigation.navigate("RegisterStep10");
+    } catch (err) {
+      // İzin var ama fix alınamadı (kapalı alan / GPS kapalı).
+      devLog("[step9] position read failed:", err);
+      throw err;
+    }
+  }, [dispatch, navigation]);
 
   return (
     <View className="flex-1 bg-bg">
       {/* Header */}
       <View className="bg-bg pt-16 pb-6 px-6">
-        <View className="flex-row items-center justify-between">
-          <RegisterBackButton onPress={() => navigation.goBack()} />
-          {!city && !district && (
-            <TouchableOpacity activeOpacity={0.9} onPress={handleSkip}>
-              <Text className="text-gray-400 text-[16px] font-semibold">{t('auth.step9.skipButton')}</Text>
-            </TouchableOpacity>
-          )}
-        </View>
+        <RegisterBackButton onPress={() => navigation.goBack()} />
       </View>
 
       <RegisterProgressBar step={9} />
@@ -106,108 +74,50 @@ export default function RegisterStep9Screen({ navigation }: NativeStackScreenPro
       <View className="flex-1 px-6 py-6 pt-0">
         <View className="flex flex-col gap-2">
           <Text className="text-4xl font-bold text-white">{t('auth.step9.title')}</Text>
-          <Text className="text-[18px] font-normal text-gray-400 mb-6">
+          <Text className="text-[18px] font-normal text-gray-400 mb-8">
             {t('auth.step9.description')}
           </Text>
         </View>
 
-        <>
-          <View className="mb-4">
-            <Text className="text-gray-300 text-[14px] font-semibold mb-2">{t('auth.step9.cityLabel')}</Text>
-            <TouchableOpacity
-              style={{ borderRadius: 999, borderCurve: "continuous", overflow: "hidden" }}
-              activeOpacity={1}
-              onPress={handleOpenCityModal}
-              disabled={loadingCities}
-              className=" border-[0.5px] border-white/10 px-4 py-5 flex-row items-center justify-between"
-            >
-              {loadingCities ? (
-                <View className="flex-1 items-center justify-center"><ActivityIndicator size="small" color={colors.text} /></View>
-              ) : (
-                <>
-                  <Text className={`${city ? "text-white" : "text-gray-400"} text-[16px] font-medium`}>{getCityLabel()}</Text>
-                  <SFIcon name="chevron.down" fallback={ChevronDown} size={20} color={colors.textSecondary} strokeWidth={2} weight="semibold" style={{ pointerEvents: "none" }} />
-                </>
-              )}
-            </TouchableOpacity>
+        <View className="items-center justify-center mt-4">
+          <View
+            style={{
+              width: 108,
+              height: 108,
+              borderRadius: 54,
+              borderCurve: "continuous",
+              alignItems: "center",
+              justifyContent: "center",
+              borderWidth: 4,
+              borderColor: colors.text,
+            }}
+          >
+            <SFIcon name="location.fill" fallback={Navigation} size={44} color={colors.text} strokeWidth={1.5} weight="semibold" />
           </View>
+        </View>
 
-          <View className="mb-4">
-            <Text className="text-gray-300 text-[14px] font-semibold mb-2">{t('auth.step9.districtLabel')}</Text>
-            <TouchableOpacity
-              style={{ borderRadius: 999, borderCurve: "continuous", overflow: "hidden" }}
-              activeOpacity={1}
-              onPress={handleOpenDistrictModal}
-              disabled={!city || loadingDistricts}
-              className="  border-[0.5px] border-white/10 px-4 py-5 flex-row items-center justify-between"
-            >
-              {loadingDistricts ? (
-                <View className="flex-1 items-center justify-center"><ActivityIndicator size="small" color={colors.text} /></View>
-              ) : (
-                <>
-                  <Text className={`${district ? "text-white" : "text-gray-400"} text-[16px] font-medium`}>{getDistrictLabel()}</Text>
-                  <SFIcon name="chevron.down" fallback={ChevronDown} size={20} color={colors.textSecondary} strokeWidth={2} weight="semibold" style={{ pointerEvents: "none" }} />
-                </>
-              )}
-            </TouchableOpacity>
-          </View>
-        </>
+        <Text className="text-gray-500 text-[14px] font-normal text-center mt-8 px-2">
+          {t('auth.step9.privacyNote')}
+        </Text>
       </View>
 
-      {/* Sticky Button with KeyboardStickyView */}
-      <KeyboardStickyView offset={{ closed: 0, opened: 0 }}>
-        <View className="px-8 pb-8 pt-4 bg-bg">
-          <AnimatedPressable
-            onPress={handleNext}
-            style={{ borderRadius: 999, borderCurve: "continuous", overflow: "hidden", backgroundColor: colors.messageOwn }}
-          >
-            <Text className="text-white py-[20px] font-bold text-[15px] text-center">
-              {!city && !district ? t('auth.step9.skipButton') : t('common.continueButton')}
-            </Text>
-          </AnimatedPressable>
-        </View>
-      </KeyboardStickyView>
-
-      {/* City Picker */}
-      {cityVisible && (
-        <CityPickerModal
-          visible={cityVisible}
-          onClose={() => setCityVisible(false)}
-          items={cities}
-          initialValue={city ?? ""}
-          onConfirm={(selectedCity: string) => {
-            setCityVisible(false);
-            setValue("city", selectedCity, { shouldValidate: true });
-            setValue("district", "");
-            dispatch(updateMultipleFields({ city: selectedCity, district: null }));
-          }}
-        />
-      )}
-
-      {/* District Picker */}
-      {districtVisible && (
-        <AppBottomSheet
-          visible={districtVisible}
-          onClose={() => setDistrictVisible(false)}
-          snapPoints={districtSnapPoints}
-          backdrop="blur"
-          backgroundStyle={{ borderRadius: 44 }}
-          handleComponent={null}
-          stackBehavior="push"
+      {/* Sticky Button — sheet swipe ile kapatıldıysa geri açar */}
+      <View className="px-8 pb-8 pt-4">
+        <AnimatedPressable
+          onPress={() => setSheetVisible(true)}
+          style={{ borderRadius: 999, borderCurve: "continuous", overflow: "hidden", backgroundColor: colors.text }}
         >
-          <SearchableListSheet
-            items={districts}
-            initialValue={district ?? ""}
-            title={t('auth.step9.districtPlaceholder')}
-            onConfirm={(selectedDistrict: string) => {
-              setDistrictVisible(false);
-              setValue("district", selectedDistrict, { shouldValidate: true });
-              dispatch(updateMultipleFields({ district: selectedDistrict }));
-            }}
-            onCancel={() => setDistrictVisible(false)}
-          />
-        </AppBottomSheet>
-      )}
+          <Text className="text-black py-[20px] font-bold text-[15px] text-center">
+            {t('auth.step9.allowButton')}
+          </Text>
+        </AnimatedPressable>
+      </View>
+
+      <LocationPermissionSheet
+        visible={sheetVisible}
+        onClose={() => setSheetVisible(false)}
+        onGranted={captureAndContinue}
+      />
     </View>
   );
 }
