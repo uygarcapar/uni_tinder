@@ -47,6 +47,10 @@ export const API_ENDPOINTS = {
   SWIPE_LIKE: "/api/swipe/Like",
   SWIPE_PASS: "/api/swipe/Pass",
   SWIPE_SUPER_LIKE: "/api/swipe/SuperLike",
+  // Consumable superlike paketinin krediye çevrilmesi. Diğer swipe endpoint'leri
+  // hep 200 + ResponseDto dönerken bu action GERÇEK HTTP status kullanıyor:
+  // 402 = RC webhook'u henüz inmedi (retry), 400 = kalıcı hata.
+  SWIPE_SUPER_LIKE_REDEEM: "/api/swipe/SuperLike/Redeem",
   SWIPE_STATS: "/api/swipe/Stats",
   SWIPE_MATCHES: "/api/swipe/GetMatches",
   WHO_LIKED_ME: "/api/swipe/wholikedme",

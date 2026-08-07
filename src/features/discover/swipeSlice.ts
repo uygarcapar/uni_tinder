@@ -77,6 +77,8 @@ const initialState: SwipeState = {
   error: null,
   remainingSwipes: null,
   superLikesRemaining: null,
+  purchasedSuperLikes: null,
+  quotaSuperLikesRemaining: null,
   swipeCountResetAt: null,
   superLikeCountResetAt: null,
   premiumExpiresAt: null,
@@ -120,6 +122,8 @@ const swipeSlice = createSlice({
       const p = action.payload;
       if (p.remainingSwipes !== undefined) state.remainingSwipes = p.remainingSwipes;
       if (p.superLikesRemaining !== undefined) state.superLikesRemaining = p.superLikesRemaining;
+      if (p.purchasedSuperLikes !== undefined) state.purchasedSuperLikes = p.purchasedSuperLikes;
+      if (p.quotaSuperLikesRemaining !== undefined) state.quotaSuperLikesRemaining = p.quotaSuperLikesRemaining;
       if (p.swipeCountResetAt !== undefined) state.swipeCountResetAt = p.swipeCountResetAt;
       if (p.superLikeCountResetAt !== undefined) state.superLikeCountResetAt = p.superLikeCountResetAt;
       if (p.premiumExpiresAt !== undefined) state.premiumExpiresAt = p.premiumExpiresAt;

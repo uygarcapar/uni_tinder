@@ -31,6 +31,7 @@ import profileService from '@/features/profile/profileService';
 import { sendLocationHeartbeat, clearLocationHeartbeatState } from '@/features/profile/locationHeartbeat';
 import { queryClient } from '@/shared/queries/queryClient';
 import { swipeKeys } from '@/features/discover/swipeQueries';
+import { flushPendingSuperlikeRedeems, redeemUserKey } from '@/features/discover/superlikeRedeem';
 import AuthNavigator from './AuthNavigator';
 import TabNavigator from './TabNavigator';
 import KVKKConsentScreen, { CURRENT_KVKK_VERSION } from '@/features/auth/screens/KVKKConsentScreen';
@@ -296,6 +297,21 @@ export default function AppNavigator() {
     })();
     return () => { cancelled = true; };
   }, [isAuthenticated, user?.userId, dispatch]);
+
+  // Parası alınmış ama krediye çevrilememiş superlike paketleri — açılışta
+  // tekrar redeem et. Satın alma anında RC webhook'u backend'e inmemişse redeem
+  // 402 döner ve transaction MMKV kuyruğuna yazılır; tek kurtarma noktası bu.
+  // Endpoint idempotent, kuyruk boşsa hiç istek atılmaz.
+  useEffect(() => {
+    if (!isAuthenticated || !hasToken) return;
+    const uid = redeemUserKey(user);
+    if (!uid) return;
+    // Boot'un ağır fazına istek eklemesin — kullanıcı bu akışta beklemiyor.
+    const task = InteractionManager.runAfterInteractions(() => {
+      flushPendingSuperlikeRedeems(uid).catch(() => {});
+    });
+    return () => task.cancel?.();
+  }, [isAuthenticated, hasToken, user?.userId, user?.id]);
 
   // RC SDK abonelik değişimlerini (yenileme, iptal, billing issue, expire) push
   // eder. Bu listener olmadan bunları ancak bir sonraki foreground `/status`

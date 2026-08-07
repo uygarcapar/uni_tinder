@@ -1,5 +1,6 @@
 import Purchases, { LOG_LEVEL, PurchasesPackage } from "react-native-purchases";
 import { Platform } from "react-native";
+import { devLog } from "@/shared/utils/devLog";
 
 const IOS_API_KEY = process.env.EXPO_PUBLIC_REVENUECAT_IOS_API_KEY;
 const ANDROID_API_KEY = process.env.EXPO_PUBLIC_REVENUECAT_ANDROID_API_KEY;
@@ -166,23 +167,129 @@ export function addCustomerInfoListener(cb: () => void): () => void {
   }
 }
 
-export const CHAT_UNLOCK_PRODUCT_ID = "chat_unlock";
+// chat_unlock consumable'ı 2026-08-02'de kaldırıldı: sohbet kotası dolduğunda
+// artık ürün satılmıyor, Premium aboneliği (PurchaseModal) açılıyor.
 
-export async function getChatUnlockPackage(): Promise<PurchasesPackage | null> {
-  const offerings = await Purchases.getOfferings();
-  const dedicated = (offerings.all as any)?.chat_unlock?.availablePackages?.[0];
-  if (dedicated) return dedicated;
-  const current = offerings.current;
-  const pkg = current?.availablePackages?.find(
-    (p: PurchasesPackage) => p?.product?.identifier === CHAT_UNLOCK_PRODUCT_ID
-  );
-  return pkg ?? null;
+// ─── SuperLike paketleri (consumable) ────────────────────────────────────────
+//
+// Abonelikten AYRI bir RC offering'de duruyorlar: `getOfferings()` yalnızca
+// `offerings.current`i (premium) döndürüyor, paketler `offerings.all[...]`
+// altında. Consumable oldukları için entitlement üretmezler — satın alma
+// "olmuş" sayılır sayılmaz backend'e `transactionId` ile redeem edilmeleri
+// gerekir (bkz. superlikeRedeem.ts).
+
+export const SUPERLIKE_OFFERING_ID =
+  process.env.EXPO_PUBLIC_REVENUECAT_SUPERLIKE_OFFERING_ID || "superlikes";
+
+/** ASC/RC ürün id kuralı: `superlike_5` / `_10` / `_15` / `_20`. */
+const SUPERLIKE_PRODUCT_RE = /^superlike/i;
+
+export interface SuperlikeStoreTransaction {
+  transactionId: string;
+  productId: string;
+  purchaseDate: string | null;
 }
 
-export async function purchaseChatUnlock(pkg: PurchasesPackage): Promise<{ transactionId: string | null; productId: string }> {
-  const { customerInfo, productIdentifier } = await Purchases.purchasePackage(pkg);
-  const transactions = customerInfo?.nonSubscriptionTransactions ?? [];
-  const latest = transactions[transactions.length - 1];
-  const transactionId = (latest as any)?.transactionIdentifier ?? (latest as any)?.transactionId ?? null;
-  return { transactionId, productId: productIdentifier ?? CHAT_UNLOCK_PRODUCT_ID };
+export async function getSuperlikeOffering(): Promise<any | null> {
+  if (!isConfigured) {
+    devLog("[RevenueCat] superlike offering: SDK not configured (API key?)");
+    return null;
+  }
+  const offerings = await Purchases.getOfferings();
+  const found = (offerings as any)?.all?.[SUPERLIKE_OFFERING_ID] ?? null;
+  if (!found || (found.availablePackages?.length ?? 0) === 0) {
+    // Paket listesi boş kaldığında sheet "yüklenemedi" gösteriyor ve nedeni
+    // cihazda görünmüyordu. RC'nin gerçekten döndüğü offering id'lerini yaz:
+    // eksik offering (dashboard'da tanımlı değil) ile ürünlerin StoreKit'ten
+    // gelmemesi (ASC'de hazır değil / RC ürün eşleşmesi yok) ayırt edilebilsin.
+    devLog(
+      `[RevenueCat] "${SUPERLIKE_OFFERING_ID}" offering'i boş/yok.`,
+      "mevcut offering'ler:",
+      Object.keys((offerings as any)?.all ?? {}),
+      "paket sayısı:",
+      found?.availablePackages?.length ?? 0,
+    );
+  }
+  return found;
+}
+
+/**
+ * Consumable'da satın almanın kendisi bakiyeyi ARTIRMAZ; backend'e redeem
+ * edilecek `transactionId` burada çıkarılıyor.
+ *
+ * RC 10'da `purchasePackage` sonucu `transaction` taşıyor, ama native shim'in
+ * onu boş bıraktığı sürümler görüldü — o durumda `customerInfo`daki
+ * non-subscription geçmişinden aynı ürünün EN YENİ kaydına düşüyoruz.
+ */
+export async function purchaseSuperlikePack(
+  pkg: PurchasesPackage,
+): Promise<{ transactionId: string | null; productId: string | null }> {
+  if (!isConfigured) {
+    throw new Error("RevenueCat henüz yapılandırılmamış (API key eksik).");
+  }
+  const res: any = await Purchases.purchasePackage(pkg);
+  const productId =
+    res?.productIdentifier ?? (pkg as any)?.product?.identifier ?? null;
+  const transactionId =
+    res?.transaction?.transactionIdentifier ??
+    latestTransactionId(res?.customerInfo, productId);
+  return { transactionId, productId };
+}
+
+function transactionTime(tx: any): number {
+  const ts = Date.parse(tx?.purchaseDate ?? "");
+  return Number.isFinite(ts) ? ts : 0;
+}
+
+function latestTransactionId(
+  customerInfo: any,
+  productId: string | null,
+): string | null {
+  const all: any[] = customerInfo?.nonSubscriptionTransactions ?? [];
+  const scoped = productId
+    ? all.filter((t) => t?.productIdentifier === productId)
+    : all;
+  // Ürüne göre eşleşen yoksa (RC ürünü farklı adlandırmışsa) tüm geçmişe düş —
+  // yanlış transaction göndermek zararsız: backend receipt'i kendi doğruluyor,
+  // uyuşmazlıkta 400/402 döner, kredi uydurulmaz.
+  const pool = scoped.length > 0 ? scoped : all;
+  let best: any = null;
+  for (const tx of pool) {
+    if (!tx?.transactionIdentifier) continue;
+    if (!best || transactionTime(tx) > transactionTime(best)) best = tx;
+  }
+  return best?.transactionIdentifier ?? null;
+}
+
+/**
+ * Cihazda duran superlike satın almaları — "parayı aldık, krediyi vermedik"
+ * kurtarma yolu. Uygulama satın alma ile kendi kuyruğuna yazma arasında
+ * öldürülürse elimizde YALNIZCA bu kayıt kalır.
+ *
+ * `withinMs` penceresi bilinçli: RC bu listeyi süresiz taşıyor, pencere olmadan
+ * her yeniden kurulumda tüm geçmiş tekrar redeem edilirdi (idempotent olduğu
+ * için zararsız ama gereksiz onlarca istek).
+ */
+export async function getRecentSuperlikeTransactions(
+  withinMs = 24 * 60 * 60 * 1000,
+): Promise<SuperlikeStoreTransaction[]> {
+  if (!isConfigured) return [];
+  try {
+    const info = await Purchases.getCustomerInfo();
+    const now = Date.now();
+    return ((info as any)?.nonSubscriptionTransactions ?? [])
+      .filter(
+        (tx: any) =>
+          tx?.transactionIdentifier &&
+          SUPERLIKE_PRODUCT_RE.test(tx?.productIdentifier ?? ""),
+      )
+      .filter((tx: any) => now - transactionTime(tx) <= withinMs)
+      .map((tx: any) => ({
+        transactionId: String(tx.transactionIdentifier),
+        productId: String(tx.productIdentifier),
+        purchaseDate: tx.purchaseDate ?? null,
+      }));
+  } catch {
+    return [];
+  }
 }

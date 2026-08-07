@@ -1218,12 +1218,16 @@ export default function DiscoverScreen() {
         visible={purchaseVisible}
         onClose={() => setPurchaseVisible(false)}
       />
+      {/* SuperLike kotası bitti → premium paywall DEĞİL, consumable paket sheet'i.
+          Premium kullanıcının da satın alabileceği bir ürün olduğu için backend
+          artık iki tier'da da showPaywall:true dönüyor. Bakiye redeem yanıtından
+          cache'e yazılıyor; buradaki refetch server-truth'u teyit eder. */}
       <SuperLikePurchaseModal
         visible={superLikePurchaseVisible}
         onClose={() => setSuperLikePurchaseVisible(false)}
-        onUpgrade={() => {
+        onPurchased={() => {
           setSuperLikePurchaseVisible(false);
-          setTimeout(() => setPurchaseVisible(true), 200);
+          statsQuery.refetch();
         }}
       />
 

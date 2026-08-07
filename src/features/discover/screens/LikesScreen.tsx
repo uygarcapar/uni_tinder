@@ -462,14 +462,19 @@ export default function LikesScreen() {
   }, [isPremium]);
 
   // Karta tıklayınca:
-  //   - Premium değil → PurchaseModal aç (upsell).
-  //   - Premium ise → LikerProfile detayını çek + interactive SwipeWrapper'lı
-  //     LikerSwipeModal'ı aç. Kullanıcı sağa/sola kaydırıp like/pass yapabilir;
-  //     mutual like ise backend match yaratır, global MatchModal açılır.
+  //   - Premium DEĞİL ve normal like → PurchaseModal aç (upsell).
+  //   - Premium ise VEYA gelen bir SuperLike ise → LikerProfile detayını çek +
+  //     interactive SwipeWrapper'lı LikerSwipeModal'ı aç. Kullanıcı sağa/sola
+  //     kaydırıp like/pass yapabilir; mutual like ise backend match yaratır,
+  //     global MatchModal açılır.
+  // SuperLike istisnası kartın görselindekiyle aynı kural (bkz. LikeCard
+  // `showClear`): SuperLike zaten blur'suz gösteriliyor, dolayısıyla ona
+  // dokununca paywall açmak görsel sözleşmeyi bozuyordu — SuperLike'ın
+  // karşılığı, free kullanıcının da o kişiyi görüp yanıtlayabilmesi.
   // 404 → liker silinmiş/banlanmış/like'ını geri çekmiş → modal'ı kapat ve
   // listeyi yenile.
   const openLikerProfile = async (item) => {
-    if (!isPremium) {
+    if (!isPremium && !item?.isSuperLike) {
       setPurchaseVisible(true);
       return;
     }
@@ -489,6 +494,12 @@ export default function LikesScreen() {
       const status = e?.response?.status ?? e?.status;
       if (status === 404) {
         fetchWhoLikedMe();
+      } else if (status === 401 || status === 403) {
+        // Backend LikerProfile'ı premium'a kilitliyorsa free kullanıcının
+        // SuperLike dokunuşu sessizce ölmesin: paywall'a düş. Bu dal ancak
+        // backend SuperLike istisnasını tanımıyorsa çalışır — kalıcı çözüm
+        // orada, burası sadece ölü dokunuşa karşı emniyet.
+        setPurchaseVisible(true);
       }
     } finally {
       setPreviewLoading(false);

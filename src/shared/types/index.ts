@@ -236,7 +236,12 @@ export interface PotentialMatchesResult {
 
 export interface SwipeStats {
   remainingSwipes: number | null;
+  /** Tier kotası + satın alınan kredi TOPLAMI. Backend tabanı 0 garanti eder. */
   superLikesRemaining: number | null;
+  /** Satın alınmış, süresiz kredi. Haftalık reset'te sıfırlanmaz. */
+  purchasedSuperLikes: number | null;
+  /** Yalnız tier kotasından kalan (krediyi kapsamaz). */
+  quotaSuperLikesRemaining: number | null;
   swipeCountResetAt: string | null;
   superLikeCountResetAt: string | null;
   premiumExpiresAt: string | null;
@@ -254,6 +259,11 @@ export interface SwipeStats {
   // henüz göndermiyor. Free'de weeklySuperLikeLimit lifetime kotayı ifade
   // eder — yenilenmez.
   dailySwipeLimit: number | null;
+  /**
+   * YALNIZ tier tavanı — satın alınan krediyi KAPSAMAZ, backend clamp yapmıyor,
+   * yani `superLikesRemaining` bu değeri aşabilir (3 kota + 12 kredi = 15 > 5).
+   * Oran gösterirken payda `weeklySuperLikeLimit + purchasedSuperLikes` olmalı.
+   */
   weeklySuperLikeLimit: number | null;
   dailyUndoLimit: number | null;
 }

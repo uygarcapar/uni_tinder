@@ -9,6 +9,7 @@ import { useMemo } from "react";
 import api from "@/shared/services/api";
 import { API_ENDPOINTS } from "@/shared/constants/api";
 import swipeService from "@/features/discover/swipeService";
+import { swipeKeys } from "@/features/discover/swipeKeys";
 import uiBus from "@/shared/services/uiBus";
 import type { SwipeStats } from "@/shared/types";
 import { selectIsPremium } from "@/features/profile/subscriptionSlice";
@@ -18,11 +19,9 @@ import {
   UNLIMITED,
 } from "@/shared/constants/limits";
 
-export const swipeKeys = {
-  matches: ["swipe", "matches"] as const,
-  filters: ["swipe", "filters"] as const,
-  stats: ["swipe", "stats"] as const,
-};
+// Anahtarlar ayrı modülde (swipeKeys.ts); buradan re-export ediliyor ki mevcut
+// `from "@/features/discover/swipeQueries"` import'ları değişmesin.
+export { swipeKeys };
 
 /**
  * Paywall sinyalini tek noktadan yorumla ve uiBus'a emit et.
@@ -91,7 +90,13 @@ export function useSwipeStats() {
       const r = res.result;
       return {
         remainingSwipes: r.remainingSwipes ?? null,
+        // Tier kotası + satın alınan kredi TOPLAMI, tabanı 0 (backend garantisi).
+        // `purchasedSuperLikes` süresiz krediyi, `quotaSuperLikesRemaining`
+        // yalnız tier kotasından kalanı ayrıştırır — toplam FE'de yeniden
+        // hesaplanmaz.
         superLikesRemaining: r.superLikesRemaining ?? null,
+        purchasedSuperLikes: r.purchasedSuperLikes ?? null,
+        quotaSuperLikesRemaining: r.quotaSuperLikesRemaining ?? null,
         swipeCountResetAt: r.swipeCountResetAt ?? null,
         superLikeCountResetAt: r.superLikeCountResetAt ?? null,
         premiumExpiresAt: r.premiumExpiresAt ?? null,
@@ -195,6 +200,29 @@ export function useSwipeMutation() {
     onSuccess: (response: any, variables: { direction: string; userId: string }) => {
       const swipeResult = response?.result;
       const isSuperLike = variables?.direction === "up";
+
+      // SuperLike yanıtı bakiyenin server-truth'unu taşıyor: `remainingSuperLikes`
+      // toplam (kota + kredi), `remainingPurchasedSuperLikes` kredinin kalanı.
+      // onMutate'teki optimistic decrement yalnızca toplamı düşürüyor; kota mı
+      // kredi mi harcandığını backend biliyor, o yüzden gelen değerlerle
+      // hizalıyoruz (aksi halde satın alınan kredi göstergesi kayıyor).
+      if (isSuperLike) {
+        qc.setQueryData(swipeKeys.stats, (prev: any) => {
+          if (!prev) return prev;
+          const next = { ...prev };
+          if (typeof swipeResult?.remainingSuperLikes === "number") {
+            next.superLikesRemaining = swipeResult.remainingSuperLikes;
+          }
+          if (typeof swipeResult?.remainingPurchasedSuperLikes === "number") {
+            next.purchasedSuperLikes = swipeResult.remainingPurchasedSuperLikes;
+          }
+          return next;
+        });
+      }
+
+      // NOT: SuperLike kotası bittiğinde `showPaywall` artık PREMIUM'da da true
+      // dönüyor (premium kullanıcı da paket satın alabiliyor). Bu event'i
+      // DiscoverScreen premium paywall'ına değil SuperLikePurchaseModal'a bağlı.
       if (swipeResult?.showPaywall) {
         const isSuperLikePaywall =
           isSuperLike ||
