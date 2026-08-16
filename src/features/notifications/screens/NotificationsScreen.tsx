@@ -7,8 +7,10 @@ import {
   ActivityIndicator,
   RefreshControl,
   Platform,
+  StyleSheet,
 } from 'react-native';
 import { Image } from 'expo-image';
+import { BlurView } from 'expo-blur';
 import { Host, Button as SwiftUIButton } from '@expo/ui/swift-ui';
 import {
   buttonStyle,
@@ -38,13 +40,20 @@ import SFIcon, { type SFSymbol } from '@/shared/components/SFIcon';
 import notificationsService from '@/features/notifications/notificationsService';
 import realtimeService from '@/features/chat/realtimeService';
 import { fetchConversations } from '@/features/chat/chatSlice';
-import { fetchSubscriptionStatus } from '@/features/profile/subscriptionSlice';
+import {
+  fetchSubscriptionStatus,
+  selectIsPremium,
+} from '@/features/profile/subscriptionSlice';
 import { useAppDispatch, useAppSelector } from '@/shared/hooks/redux';
-import ScreenHeader from '@/shared/components/ScreenHeader';
+import ScreenHeader, {
+  SCREEN_HEADER_ACTION_SIZE,
+} from '@/shared/components/ScreenHeader';
 import EmptyState from '@/shared/components/EmptyState';
 import SkeletonBox from '@/shared/components/SkeletonBox';
 import { formatRelativeTime } from '@/shared/utils/formatRelativeTime';
+import { parseUtc } from '@/shared/utils/dateUtc';
 import { colors } from '../../../shared/theme/colors';
+import { glassFallback } from '../../../shared/theme/glass';
 import { useRenderCount } from '@/shared/debug/useRenderCount';
 
 // Fotoğrafın sağ altına oturan tip rozeti. Burada olmayan tipler (System,
@@ -62,6 +71,11 @@ const TYPE_BADGES = {
 const GOES_TO_CHAT = { Match: true, Message: true };
 const GOES_TO_LIKES = { Like: true, SuperLike: true, MissedMatch: true };
 
+// Premium olmayan kullanıcı düz beğenilerde beğenenin kimliğini göremez —
+// LikesScreen'deki kilitle aynı kural. SuperLike orada da açık gösterildiği
+// için burada da açık kalıyor; Match/MissedMatch'te kimlik zaten serbest.
+const IDENTITY_GATED = { Like: true };
+
 const keyExtractor = (n) => n.id;
 
 // Zaman kovaları — feed createdAt'e göre azalan sırada geldiği için tek geçişte
@@ -75,7 +89,9 @@ const SECTION_LABEL_KEYS = {
 
 function sectionOf(iso) {
   if (!iso) return 'older';
-  const d = new Date(iso);
+  // Chat'teki gün ayracıyla aynı hata sınıfı: Z'siz damga yerel sayılınca
+  // gece yarısı sonrası bildirimler "Bugün" yerine dünkü kovaya düşüyordu.
+  const d = parseUtc(iso);
   const now = new Date();
   const startOfDay = (date) =>
     new Date(date.getFullYear(), date.getMonth(), date.getDate());
@@ -111,6 +127,7 @@ export default function NotificationsScreen() {
   // Chat'e giderken partner adı/fotoğrafı buradan çözülüyor — bildirim payload'ında
   // sadece senderUserId + senderPhotoUrl var, displayName yok.
   const conversations = useAppSelector((s) => s.chat.conversations);
+  const isPremium = useAppSelector(selectIsPremium);
   const [items, setItems] = useState([]);
   const [page, setPage] = useState(1);
   const [hasMore, setHasMore] = useState(false);
@@ -218,9 +235,13 @@ export default function NotificationsScreen() {
       item.__section ? (
         <SectionHeader title={t(SECTION_LABEL_KEYS[item.__section])} />
       ) : (
-        <NotificationRow item={item} onPress={handleTap} />
+        <NotificationRow
+          item={item}
+          locked={!isPremium && !!IDENTITY_GATED[item.type]}
+          onPress={handleTap}
+        />
       ),
-    [handleTap, t],
+    [handleTap, t, isPremium],
   );
 
   const contentContainerStyle = useMemo(
@@ -286,7 +307,15 @@ export default function NotificationsScreen() {
         showLogo={false}
         leftButton={
           Platform.OS === 'ios' ? (
-            <Host matchContents>
+            /* matchContents YOK — bkz. SCREEN_HEADER_ACTION_SIZE: frame() zaten
+               44x44 diyor, Host'un da aynı boyutu İLK commit'te bilmesi gerek;
+               yoksa buton sol kenardan içeri ışınlanıyor. */
+            <Host
+              style={{
+                width: SCREEN_HEADER_ACTION_SIZE,
+                height: SCREEN_HEADER_ACTION_SIZE,
+              }}
+            >
               <SwiftUIButton
                 label={t('common.back')}
                 systemImage="chevron.left"
@@ -297,7 +326,11 @@ export default function NotificationsScreen() {
                   controlSize('large'),
                   labelStyle('iconOnly'),
                   font({ size: 22, weight: 'semibold' }),
-                  frame({ width: 44, height: 44 }),
+                  frame({
+                    width: SCREEN_HEADER_ACTION_SIZE,
+                    height: SCREEN_HEADER_ACTION_SIZE,
+                  }),
+                  ...glassFallback({ shape: 'circle' }),
                 ]}
               />
             </Host>
@@ -320,12 +353,26 @@ const BADGE_RING = 3; // rozetin arkasındaki ekran zemini halkası — "boşluk
 const DOT_SIZE = 10;
 const AVATAR_BORDER = { borderWidth: 0.1, borderColor: '#dee0ea' };
 
+// Kilitli avatarda İKİ katman birden gerekiyor, ikisi de tek başına yetmiyor:
+//
+// - iOS: expo-image'in `blurRadius`'ü SDWebImage transformer'ı olarak TAM
+//   çözünürlükteki fotoğrafa uygulanıyor (ImageView.swift: reload → transformer,
+//   sonra processImage → downscale). 1000px'lik fotoya 6px blur atıp 58pt'ye
+//   küçültünce blur pratikte kayboluyor. Üste BlurView koyuyoruz — o, ekrana
+//   çizilen piksellere uygulanıyor, kaynak çözünürlüğünden bağımsız.
+// - Android: expo-blur'da `blurMethod` varsayılanı 'none', yani BlurView orada
+//   sadece yarı saydam bir katman. Buna karşılık Glide blur'u view boyutunda
+//   çalıştığı için `blurRadius` Android'de gerçekten bulanıklaştırıyor.
+const LOCKED_BLUR_RADIUS = 12;
+const LOCKED_BLUR_INTENSITY = 55;
+
 /**
  * Solda tetikleyen kişinin fotoğrafı, sağ altında tip rozeti. Fotoğraf yoksa
  * nötr placeholder: gönderen varsa kişi silueti, göndereni olmayan sistem
  * bildirimlerinde zil (o tiplerde rozet de yok).
+ * `locked` → premium olmayan kullanıcıya beğenenin yüzü blur'lu gösteriliyor.
  */
-function NotificationAvatar({ item }) {
+function NotificationAvatar({ item, locked = false }) {
   const badge = TYPE_BADGES[item.type] || null;
   const placeholder = item.senderUserId
     ? { sf: 'person.fill' as SFSymbol, lucide: User }
@@ -333,35 +380,57 @@ function NotificationAvatar({ item }) {
 
   return (
     <View style={{ width: AVATAR_SIZE, height: AVATAR_SIZE }}>
-      {item.senderPhotoUrl ? (
-        <Image
-          source={{ uri: item.senderPhotoUrl }}
-          style={{
-            width: AVATAR_SIZE,
-            height: AVATAR_SIZE,
-            borderRadius: AVATAR_SIZE / 2,
-            backgroundColor: colors.surface3,
-            ...AVATAR_BORDER,
-          }}
-          cachePolicy="memory-disk"
-          transition={350}
-          contentFit="cover"
-        />
-      ) : (
-        <View
-          style={{
-            width: AVATAR_SIZE,
-            height: AVATAR_SIZE,
-            borderRadius: AVATAR_SIZE / 2,
-            backgroundColor: colors.surface3,
-            alignItems: 'center',
-            justifyContent: 'center',
-            ...AVATAR_BORDER,
-          }}
-        >
-          <SFIcon name={placeholder.sf} fallback={placeholder.lucide} size={28} color={colors.text} strokeWidth={2} weight="semibold" />
-        </View>
-      )}
+      {/* Kırpma katmanı: BlurView'a doğrudan borderRadius vermek yerine daireye
+          maskeleyen bir kap — rozet bu kabın DIŞINDA kalmalı, o yüzden
+          overflow:'hidden' en dıştaki View'a konmuyor. */}
+      <View
+        style={{
+          width: AVATAR_SIZE,
+          height: AVATAR_SIZE,
+          borderRadius: AVATAR_SIZE / 2,
+          overflow: 'hidden',
+        }}
+      >
+        {item.senderPhotoUrl ? (
+          <Image
+            source={{ uri: item.senderPhotoUrl }}
+            style={{
+              width: AVATAR_SIZE,
+              height: AVATAR_SIZE,
+              borderRadius: AVATAR_SIZE / 2,
+              backgroundColor: colors.surface3,
+              ...AVATAR_BORDER,
+            }}
+            cachePolicy="memory-disk"
+            transition={350}
+            contentFit="cover"
+            blurRadius={locked ? LOCKED_BLUR_RADIUS : 0}
+          />
+        ) : (
+          <View
+            style={{
+              width: AVATAR_SIZE,
+              height: AVATAR_SIZE,
+              borderRadius: AVATAR_SIZE / 2,
+              backgroundColor: colors.surface3,
+              alignItems: 'center',
+              justifyContent: 'center',
+              ...AVATAR_BORDER,
+            }}
+          >
+            <SFIcon name={placeholder.sf} fallback={placeholder.lucide} size={28} color={colors.text} strokeWidth={2} weight="semibold" />
+          </View>
+        )}
+
+        {locked && !!item.senderPhotoUrl && (
+          <BlurView
+            intensity={LOCKED_BLUR_INTENSITY}
+            tint="dark"
+            style={StyleSheet.absoluteFill}
+            pointerEvents="none"
+          />
+        )}
+      </View>
 
       {badge && (
         // Halka border değil ayrı bir katman: border kullanınca altındaki renkli
@@ -463,10 +532,16 @@ function NotificationRowRight({ unread, chevron }) {
 
 // memo: liste yeniden render olduğunda (yeni sayfa, refresh, loading flag)
 // item referansı değişmeyen satırlar yeniden çizilmesin.
-const NotificationRow = memo(function NotificationRow({ item, onPress }: any) {
+const NotificationRow = memo(function NotificationRow({ item, locked, onPress }: any) {
   const { t } = useTranslation();
   const time = formatRelativeTime(item.createdAt, t, { longDate: true });
   const handlePress = useCallback(() => onPress(item), [onPress, item]);
+
+  // Kilitliyken sunucudan gelen metni HİÇ basmıyoruz: beğenenin adı title/body
+  // içine gömülü geliyor, tek tek maskelemek mümkün değil. Yerine jenerik
+  // cümle + Lit Plus yönlendirmesi.
+  const title = locked ? t('notifications.hiddenLike.title') : item.title;
+  const body = locked ? t('notifications.hiddenLike.body') : item.body;
 
   // Cümle tek satıra sığıyorsa tarih alt satıra iner; zaten alt satıra taşan
   // cümlelerde ayrıca kırmaya gerek yok, tarih metnin peşinden akar.
@@ -482,7 +557,7 @@ const NotificationRow = memo(function NotificationRow({ item, onPress }: any) {
       activeOpacity={0.7}
       className="flex-row items-center px-4 py-3"
     >
-      <NotificationAvatar item={item} />
+      <NotificationAvatar item={item} locked={locked} />
       {/* Başlık + body tek paragraf — nested Text ile aynı satırda akıyor,
           satır atlarsa da araya boşluk girmeden bitişik devam ediyor. */}
       <View className="flex-1 ml-3">
@@ -492,8 +567,8 @@ const NotificationRow = memo(function NotificationRow({ item, onPress }: any) {
           numberOfLines={3}
           onTextLayout={onTextLayout}
         >
-          <Text className="text-white font-medium">{item.title}</Text>
-          {!!item.body && <Text className="text-white font-normal"> {item.body}</Text>}
+          <Text className="text-white font-medium">{title}</Text>
+          {!!body && <Text className="text-white font-normal"> {body}</Text>}
           {wraps && <Text className="text-gray-400"> {time}</Text>}
         </Text>
         {!wraps && (

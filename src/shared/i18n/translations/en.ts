@@ -551,20 +551,26 @@ const en = {
     tabAll: 'All',
     tabLike: 'Like',
     tabSuperLike: 'Superlike',
+    infoDescription:
+      'Everyone who liked or super liked you shows up here. Tap a card and like them back to match instantly.',
+    startSwipingButton: 'Start swiping',
     emptySuperLike: 'No super likes yet.',
     emptySuperLikeSubtitle: 'When someone super likes you, they will appear here.',
     emptyLike: 'No likes yet.',
     emptyLikeSubtitle: 'New likes will be listed here as they come in.',
     emptyAll: 'No one has liked you yet.',
     emptyAllSubtitle: 'As you improve your profile, the number of people who like you will increase.',
-    superLikeButton: 'Send super like',
-    discoverButton: 'Go to Discover',
-    profileButton: 'Improve my profile',
     viewButton: 'See who likes you',
   },
   notifications: {
     empty: 'No notifications yet.',
     emptySubtitle: 'Your matches and messages will show up here.',
+    // Shown instead of the server text when a like notification's name/photo is
+    // hidden from a non-premium user.
+    hiddenLike: {
+      title: 'Someone liked you.',
+      body: 'Get Lit Plus to see who it is.',
+    },
     sections: {
       today: 'Today',
       last7Days: 'Last 7 days',

@@ -554,20 +554,26 @@ const tr = {
     tabAll: 'Tümü',
     tabLike: 'Beğeni',
     tabSuperLike: 'Superlike',
+    infoDescription:
+      'Seni beğenen ve süper beğenen kişiler burada toplanır. Bir karta dokunup sen de beğenirsen anında eşleşirsiniz.',
+    startSwipingButton: 'Kaydırmaya başla',
     emptySuperLike: 'Henüz süper beğeni yok.',
     emptySuperLikeSubtitle: 'Seni süper beğenen birileri olduğunda burada görünecek.',
     emptyLike: 'Henüz beğeni yok.',
     emptyLikeSubtitle: 'Yeni beğeniler geldikçe burada listelenecek.',
     emptyAll: 'Henüz seni beğenen kimse yok.',
     emptyAllSubtitle: 'Profilini geliştirdikçe seni beğenenlerin sayısı artar.',
-    superLikeButton: 'Süper beğeni gönder',
-    discoverButton: 'Keşfetmeye git',
-    profileButton: 'Profilimi geliştir',
     viewButton: 'Seni beğenenleri gör',
   },
   notifications: {
     empty: 'Henüz bildirim yok.',
     emptySubtitle: 'Eşleşme ve mesajların burada görünecek.',
+    // Premium olmayan kullanıcıda beğeni bildiriminin adı/fotoğrafı gizlenince
+    // sunucudan gelen metnin yerine bunlar basılıyor.
+    hiddenLike: {
+      title: 'Birisi seni beğendi.',
+      body: 'Kim olduğunu görmek için Lit Plus edin.',
+    },
     sections: {
       today: 'Bugün',
       last7Days: 'Son 7 gün',

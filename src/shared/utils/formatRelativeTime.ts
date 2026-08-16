@@ -1,4 +1,5 @@
 import { getDateLocale } from "@/shared/i18n/dateLocale";
+import { parseUtc } from "@/shared/utils/dateUtc";
 
 /**
  * Liste satırlarındaki zaman etiketi (MessagesScreen / NotificationsScreen).
@@ -13,7 +14,9 @@ export function formatRelativeTime(
   { longDate = false }: { longDate?: boolean } = {},
 ) {
   if (!iso) return "";
-  const d = new Date(iso);
+  // Server damgaları Z'siz gelebiliyor → parseUtc olmadan TR'de 3 saat geri kayar
+  // ve "Dün"/gün etiketleri yanlış çıkar (bkz. shared/utils/dateUtc.ts).
+  const d = parseUtc(iso);
   const now = new Date();
 
   const startOfDay = (date: Date) =>

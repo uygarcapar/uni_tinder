@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useRef, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { useTranslation } from 'react-i18next';
 import {
   View,
@@ -7,15 +7,9 @@ import {
   TouchableOpacity,
   Platform,
   StyleSheet,
+  AppState,
 } from "react-native";
 import { Image } from "expo-image";
-import { Host, Button as SwiftUIButton } from "@expo/ui/swift-ui";
-import {
-  buttonStyle,
-  tint,
-  labelStyle,
-  font,
-} from "@expo/ui/swift-ui/modifiers";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { LinearGradient } from "expo-linear-gradient";
 import { BlurView } from "expo-blur";
@@ -24,7 +18,7 @@ import { easeGradient } from "react-native-easing-gradient";
 import {
   Heart,
   HeartCrack,
-  Bell,
+  X,
 } from "lucide-react-native";
 import SFIcon from "@/shared/components/SFIcon";
 import { useNavigation } from "@react-navigation/native";
@@ -33,9 +27,10 @@ import Animated, {
   useAnimatedScrollHandler,
 } from "react-native-reanimated";
 import { useAppDispatch, useAppSelector } from "@/shared/hooks/redux";
-import { selectIsPremium } from "@/features/profile/subscriptionSlice";
-import api from "@/shared/services/api";
-import { API_ENDPOINTS } from "@/shared/constants/api";
+import {
+  refreshEntitlementsForPaywall,
+  selectIsPremium,
+} from "@/features/profile/subscriptionSlice";
 import profileService from "@/features/profile/profileService";
 import AnimatedPressable from "@/shared/components/AnimatedPressable";
 import EmptyState from "@/shared/components/EmptyState";
@@ -43,27 +38,52 @@ import LikerSwipeModal from "@/features/discover/components/LikerSwipeModal";
 import PurchaseModal from "@/features/discover/components/PurchaseModal";
 import ScreenHeader from "@/shared/components/ScreenHeader";
 import SkeletonBox from "@/shared/components/SkeletonBox";
+import PremiumFlame from "@/shared/components/PremiumFlame";
 import FilterPills from "@/shared/components/FilterPills";
 import SuperLikeHeart from "@/shared/components/SuperLikeHeart";
 import swipeService from "@/features/discover/swipeService";
 import { useSwipeStats } from "@/features/discover/swipeQueries";
-import { setWhoLikedMeCount } from "@/features/discover/swipeSlice";
+import { setWhoLikedMe, removeWhoLikedMe } from "@/features/discover/swipeSlice";
+import { showMissedMatchToast } from "@/shared/services/toaster";
 
 import uiBus from "@/shared/services/uiBus";
+import { appPrefs } from "@/shared/utils/appPrefs";
 import { colors } from "../../../shared/theme/colors";
 import { useRenderCount } from "@/shared/debug/useRenderCount";
 
 const { width } = Dimensions.get("window");
 const CARD_WIDTH = (width - 44) / 2; // 2 columns with padding
 const CARD_HEIGHT = CARD_WIDTH * 1.3; // Aspect ratio
+// Kart başlığı 18px — SwipeCard'ın 36px isim / 26px ateş oranını korur.
+const LIKE_CARD_FLAME_SIZE = 16;
 
+// Ekran görünür olduğunda listenin bu yaştan eskiyse tazelenmesi. Tab'lar arası
+// gidip gelmeyi her seferinde isteğe çevirmeyecek kadar uzun, "bildirime basıp
+// girdim, beğeni orada olsun" beklentisini karşılayacak kadar kısa.
+const LIKES_STALE_MS = 30 * 1000;
+
+// Skeleton yalnız istek gerçekten "bekleniyor" hissi verecek kadar sürerse
+// görünür. Boş liste cevabı tipik olarak 200ms'nin altında dönüyor ve grid'i
+// gösterip hemen boş duruma atlamak ekranda yanıp sönme olarak okunuyordu:
+// önce gecikme (bu süre içinde biterse shimmer hiç çizilmez), bir kez çizildiyse
+// de minimum süre ekranda kalır (30ms'lik shimmer yerine kasıtlı bir bekleme).
+const SKELETON_DELAY_MS = 220;
+const SKELETON_MIN_VISIBLE_MS = 450;
+
+// Açıklama kartının "kapatıldı" bayrağı — DiscoverScreen tutorial'ı gibi userId
+// ile scope'lanır ve logout'ta silinmez (bkz. appPrefs): kart ilk açılıştan
+// itibaren HER girişte durur, X'e basılana kadar; basıldıktan sonra bir daha
+// hiç gelmez.
+const LIKES_INFO_DISMISSED_KEY = "likesInfoDismissed";
+
+// Yatay padding + üst boşluk YOK: bu grid FlatList'in ListEmptyComponent'i
+// olarak contentContainer'ın içinde çiziliyor, hizayı oradan alır. Böylece
+// skeleton kartları gerçek kartlarla birebir aynı yerde durur.
 function LikesSkeletonGrid() {
   const placeholders = Array.from({ length: 6 });
   return (
     <View
       style={{
-        paddingHorizontal: 16,
-        paddingTop: 16,
         flexDirection: "row",
         flexWrap: "wrap",
         justifyContent: "space-between",
@@ -78,6 +98,57 @@ function LikesSkeletonGrid() {
           style={{ marginBottom: 12 }}
         />
       ))}
+    </View>
+  );
+}
+
+// Sayfa açıklaması — ProfileScreen'in CompletionAccordion'ıyla aynı kabuk
+// (0.5px beyaz kenar, surface zemin) ama açılır/kapanır DEĞİL: başlık ve
+// chevron yok, içerik hep görünür. Tek işi "bu sayfa ne" demek. Sağdaki X
+// kalıcı kapatır (bkz. LIKES_INFO_DISMISSED_KEY).
+function LikesInfoCard({ description, onDismiss }) {
+  return (
+    <View
+      className="bg-surface"
+      style={{
+        marginBottom: 16,
+        paddingVertical: 16,
+        paddingLeft: 16,
+        paddingRight: 12,
+        borderRadius: 24,
+        borderCurve: "continuous",
+        borderWidth: 0.5,
+        borderColor: "rgba(255,255,255,0.1)",
+        overflow: "hidden",
+        flexDirection: "row",
+        alignItems: "center",
+        gap: 8,
+      }}
+    >
+      <Text
+        style={{
+          flex: 1,
+          color: colors.textSecondary,
+          fontSize: 14,
+          lineHeight: 20,
+        }}
+      >
+        {description}
+      </Text>
+      <TouchableOpacity
+        onPress={onDismiss}
+        activeOpacity={0.6}
+        hitSlop={{ top: 12, bottom: 12, left: 12, right: 12 }}
+      >
+        <SFIcon
+          name="xmark"
+          fallback={X}
+          size={16}
+          color={colors.textSecondary}
+          strokeWidth={2}
+          weight="semibold"
+        />
+      </TouchableOpacity>
     </View>
   );
 }
@@ -259,6 +330,15 @@ function LikeCard({ item, isPremium, onPress }) {
                     {`, ${item.age}`}
                   </Text>
                 )}
+                {/* Premium rozeti — SwipeCard'daki ateşin aynısı, yaşın sağında.
+                    Satır baseline hizalı olduğu için ikon kendi ekseninde
+                    ortalanır (View'ın baseline'ı alt kenarıdır). */}
+                {item.isPremium && (
+                  <PremiumFlame
+                    size={LIKE_CARD_FLAME_SIZE}
+                    style={{ flexShrink: 0, marginLeft: 4, alignSelf: "center" }}
+                  />
+                )}
               </View>
               {!!item.universityName && (
                 <Text
@@ -331,6 +411,13 @@ export default function LikesScreen() {
   // içinde dispatch etmek render sırasında TabNavigator'ı güncelliyordu.
   const likesRef = useRef([]);
   const whoLikedMeInFlightRef = useRef(false);
+  // İlk çekim tamamlandı mı — skeleton'ın tek yetkisi bu. Sonraki hiçbir çekim
+  // (premium geçişi, 404 sonrası reload, görünürlük tazelemesi) ekranı skeleton'a
+  // geri döndüremez; oturmuş bir ekranı shimmer'a çevirmek yanıp sönme demekti.
+  const hasLoadedOnceRef = useRef(false);
+  // Son BAŞARILI çekimin damgası + AppState geçişini ayırt etmek için önceki durum.
+  const lastLikesFetchRef = useRef(0);
+  const appStateRef = useRef(AppState.currentState);
   likesRef.current = likes;
   const [loading, setLoading] = useState(true);
   const [_currentPage, setCurrentPage] = useState(1);
@@ -343,6 +430,25 @@ export default function LikesScreen() {
   const reduxPremium = useAppSelector(selectIsPremium);
   const isPremium = profilePremium || reduxPremium;
   const [activeTab, setActiveTab] = useState("all");
+  // Açıklama kartı — MMKV senkron okunur, dolayısıyla kapatılmış kart bir kare
+  // bile çizilmez. userId henüz yoksa (preload mount) kartı göstermiyoruz:
+  // hangi hesaba yazılacağı belli olmadan X'e basılırsa bayrak boşluğa giderdi.
+  const currentUserId = useAppSelector((s) => s.auth.user?.id);
+  const infoSeen = useMemo(
+    () =>
+      currentUserId
+        ? !!appPrefs.getBoolean(`${LIKES_INFO_DISMISSED_KEY}:${currentUserId}`)
+        : true,
+    [currentUserId],
+  );
+  const [infoClosed, setInfoClosed] = useState(false);
+  const showInfoCard = !infoSeen && !infoClosed;
+  const dismissInfoCard = useCallback(() => {
+    setInfoClosed(true);
+    if (currentUserId) {
+      appPrefs.set(`${LIKES_INFO_DISMISSED_KEY}:${currentUserId}`, true);
+    }
+  }, [currentUserId]);
   const insets = useSafeAreaInsets();
   const dispatch = useAppDispatch();
   const navigation = useNavigation();
@@ -385,21 +491,28 @@ export default function LikesScreen() {
         ? likes.filter((l) => l.isSuperLike)
         : likes;
 
-  const fetchWhoLikedMe = async (page = 1) => {
+  // `silent`: listeyi ekranda tutarak tazele. Görünürlük tazelemesinde (focus /
+  // foreground) setLoading(true) tüm grid'i skeleton'a çeviriyordu — kullanıcı
+  // zaten dolu bir listeye bakarken ekranın yanıp sönmesi anlamsız.
+  const fetchWhoLikedMe = useCallback(async (page = 1, { silent = false } = {}) => {
     // In-flight dedupe: preload mount'u + kullanıcı navigasyonu/premium-transition
     // aynı anda tetikleyince istek çiftleniyordu (Sentry trace kanıtlı). State
     // (loading) async güncellendiği için guard ref ile senkron tutulur.
     if (whoLikedMeInFlightRef.current) return;
     whoLikedMeInFlightRef.current = true;
     try {
-      setLoading(true);
+      // `hasLoadedOnceRef` ikinci bir kilit: çağıran `silent` demeyi unutsa bile
+      // ilk yüklemeden sonrası asla skeleton'a düşmez.
+      if (!silent && !hasLoadedOnceRef.current) setLoading(true);
       // Yeni API: superLikes ve likes ayrı paginated bölümler.
       // Şimdilik ikisini de tek sayfa olarak çekiyoruz, ileride ayrı paginate edebiliriz.
+      // getMyProfile YALNIZ ilk yüklemede: tek işi `profilePremium`'u kurmak ve o
+      // bayrak hiç false'a çekilmiyor (premium'a geçiş redux'tan + transition
+      // effect'inden geliyor). Sessiz tazeleme her focus/foreground'da bunu da
+      // çekseydi görünürlük tazelemesinin istek maliyeti iki katına çıkardı.
       const [data, profile] = await Promise.all([
-        api.get(
-          `${API_ENDPOINTS.WHO_LIKED_ME}?likePageNumber=${page}&likePageSize=10&superLikePageNumber=1&superLikePageSize=10`,
-        ),
-        profileService.getMyProfile().catch(() => null),
+        swipeService.getWhoLikedMe(page),
+        silent ? Promise.resolve(null) : profileService.getMyProfile().catch(() => null),
       ]);
 
       if (profile?.isPremium) setProfilePremium(true);
@@ -415,6 +528,7 @@ export default function LikesScreen() {
             mainPhoto: p.photos?.[0] || "",
             likedAt: p.likedMeAt,
             isSuperLike: true,
+            isPremium: p.isPremium ?? false,
           }),
         );
         const likeProfiles = (data.result.likes?.profiles || []).map((p) => ({
@@ -426,27 +540,110 @@ export default function LikesScreen() {
           mainPhoto: p.photos?.[0] || "",
           likedAt: p.likedMeAt,
           isSuperLike: false,
+          isPremium: p.isPremium ?? false,
         }));
 
         // SuperLike'lar her zaman üstte (vurgulu bölüm).
-        setLikes([...superLikeProfiles, ...likeProfiles]);
+        const merged = [...superLikeProfiles, ...likeProfiles];
+        setLikes(merged);
         const slTotal = data.result.superLikes?.totalProfiles || 0;
         const lTotal = data.result.likes?.totalProfiles || 0;
-        dispatch(setWhoLikedMeCount(slTotal + lTotal));
+        // Sayaç TOPLAM'dan, id kümesi yüklenen sayfadan — ikisi kasten ayrı
+        // (bkz. SwipeState.whoLikedMeIds).
+        dispatch(
+          setWhoLikedMe({
+            count: slTotal + lTotal,
+            ids: merged.map((it) => it.userId),
+          }),
+        );
         setHasNextPage(data.result.likes?.hasNextPage || false);
         setCurrentPage(data.result.likes?.currentPage || 1);
+        // Tazelik damgası YALNIZ başarıda. Hata yutulduğu için (aşağıdaki boş
+        // catch) başarısız bir çekim ekranı "hiç beğenin yok" boş durumuna
+        // düşürüyordu; damga 0'da kaldığı sürece bir sonraki görünürlükte
+        // koşulsuz yeniden denenir.
+        lastLikesFetchRef.current = Date.now();
       }
     } catch {
       // yut
     } finally {
+      // Hata da olsa "ilk yükleme bitti": başarısız çekim ekranı boş duruma
+      // düşürür, bir sonraki tazeleme onu sessizce doldurur (bkz.
+      // lastLikesFetchRef damgası — hatada 0'da kalır, koşulsuz yeniden denenir).
+      hasLoadedOnceRef.current = true;
       setLoading(false);
       whoLikedMeInFlightRef.current = false;
     }
-  };
+  }, [dispatch]);
+
+  // Skeleton görünürlüğü — `loading`'in kendisi değil, geciktirilmiş/asgari
+  // süreli türevi. Hızlı cevapta hiç açılmaz, açıldıysa da yanıp sönmeyecek
+  // kadar kalır.
+  const [showSkeleton, setShowSkeleton] = useState(false);
+  const skeletonShownAtRef = useRef(0);
+  useEffect(() => {
+    if (loading) {
+      const id = setTimeout(() => {
+        skeletonShownAtRef.current = Date.now();
+        setShowSkeleton(true);
+      }, SKELETON_DELAY_MS);
+      return () => clearTimeout(id);
+    }
+    if (!showSkeleton) return;
+    const rest =
+      SKELETON_MIN_VISIBLE_MS - (Date.now() - skeletonShownAtRef.current);
+    if (rest <= 0) {
+      setShowSkeleton(false);
+      return;
+    }
+    const id = setTimeout(() => setShowSkeleton(false), rest);
+    return () => clearTimeout(id);
+  }, [loading, showSkeleton]);
 
   useEffect(() => {
     fetchWhoLikedMe();
-  }, []);
+  }, [fetchWhoLikedMe]);
+
+  // ============ Görünürlük tazelemesi ============
+  // Bu ekran DiscoverScreen'in `navigation.preload("Likes")` çağrısıyla boot'ta
+  // mount olup uygulama ömrü boyunca mount kalıyor → mount effect'i bir kez
+  // çalışıyor ve liste `useState`'te donuyor. Sonuç: arka planda gelen beğeniyi
+  // bildirimden açtığında rozet (redux, AppNavigator foreground turundan) artıyor
+  // ama grid bayat/boş kalıyordu — ekranın local state'ine kimse dokunmuyor.
+  // İki tetikleyici birlikte tüm vakaları kapsıyor:
+  //   focus     → başka bir tab'dan (veya bildirim tap'iyle) Likes'a girildi
+  //   foreground→ Likes ZATEN odaktayken arka plana atılıp geri dönüldü; bu
+  //               durumda ekran hiç blur olmadığı için 'focus' event'i çıkmıyor
+  const refreshLikesIfStale = useCallback(() => {
+    if (Date.now() - lastLikesFetchRef.current < LIKES_STALE_MS) return;
+    fetchWhoLikedMe(1, { silent: true });
+  }, [fetchWhoLikedMe]);
+
+  // Beğeni bildirimine basılarak girildi → eşiğe bakma, koşulsuz tazele
+  // (bkz. AppNavigator routeFromNotification 'Like'/'SuperLike').
+  useEffect(() => {
+    return uiBus.on("likesDirty", () => {
+      lastLikesFetchRef.current = 0;
+      fetchWhoLikedMe(1, { silent: true });
+    });
+  }, [fetchWhoLikedMe]);
+
+  useEffect(() => {
+    const unsubFocus = navigation.addListener("focus", refreshLikesIfStale);
+    const sub = AppState.addEventListener("change", (next) => {
+      const prev = appStateRef.current;
+      appStateRef.current = next;
+      if (!prev.match(/inactive|background/) || next !== "active") return;
+      // Odakta değilsek boşuna istek atma — Likes'a geçildiğinde 'focus' zaten
+      // aynı kontrolü yapacak.
+      if (!navigation.isFocused()) return;
+      refreshLikesIfStale();
+    });
+    return () => {
+      unsubFocus();
+      sub.remove();
+    };
+  }, [navigation, refreshLikesIfStale]);
 
   // Premium false→true geçişinde listeyi tazele. Bu ekran react-query
   // kullanmadığı için PurchaseModal'ın refetchPremiumScoped'u buraya dokunmuyor;
@@ -459,7 +656,7 @@ export default function LikesScreen() {
     if (prevIsPremiumRef.current === isPremium) return;
     prevIsPremiumRef.current = isPremium;
     if (isPremium) fetchWhoLikedMe();
-  }, [isPremium]);
+  }, [isPremium, fetchWhoLikedMe]);
 
   // Karta tıklayınca:
   //   - Premium DEĞİL ve normal like → PurchaseModal aç (upsell).
@@ -475,8 +672,16 @@ export default function LikesScreen() {
   // listeyi yenile.
   const openLikerProfile = async (item) => {
     if (!isPremium && !item?.isSuperLike) {
-      setPurchaseVisible(true);
-      return;
+      // §11: paywall'dan önce canonical tazeleme — başka cihazda premium
+      // olunmuşsa kullanıcıyı satış ekranına düşürmek yerine doğrudan profili
+      // açıyoruz (bu ekranın premium transition effect'i listeyi de tazeler).
+      const premium = await dispatch(refreshEntitlementsForPaywall())
+        .unwrap()
+        .catch(() => false);
+      if (!premium) {
+        setPurchaseVisible(true);
+        return;
+      }
     }
     const likerUserId = item?.userId || item?.likerUserId;
     if (!likerUserId) return;
@@ -513,35 +718,54 @@ export default function LikesScreen() {
 
   // LikerSwipeModal'dan dönen swipe sonrası — like/pass/superlike fark etmez,
   // kullanıcı bu liker'ı handle etti → listeden anında çıkar (backend
-  // MatchNotification gelene kadar bekleme). whoLikedMe count'unu da düş.
-  const handleLikerSwiped = (likerUserId) => {
+  // MatchNotification gelene kadar bekleme). Rozet de aynı karede düşer:
+  // sayacı `next.length`e eşitlemiyoruz, o yalnızca YÜKLENEN sayfanın boyutu —
+  // toplam daha büyükse rozeti sessizce yanlışa çekerdi.
+  const handleLikerSwiped = (likerUserId, direction) => {
     if (!likerUserId) return;
+    const passed = likesRef.current.find(
+      (it) => it.userId === likerUserId || it.likerUserId === likerUserId,
+    );
     const next = likesRef.current.filter(
       (it) => it.userId !== likerUserId && it.likerUserId !== likerUserId,
     );
     likesRef.current = next;
     setLikes(next);
-    dispatch(setWhoLikedMeCount(Math.max(0, next.length)));
+    dispatch(removeWhoLikedMe(likerUserId));
+    // Pass = kesin kaçırılmış eşleşme; bu kişi zaten seni beğenmişti.
+    if (direction === "left") {
+      showMissedMatchToast({
+        name: passed?.name,
+        photoUrl: passed?.mainPhoto,
+      });
+    }
   };
 
-  // Match olduğunda artık o kişi "incoming like" değil — listeden çıkar.
+  // Bu ekran dışında handle edilen liker'lar (match, ya da Discover destesinde
+  // pass'lenmiş bir liker) listeden düşsün. Ekran lazy mount olup açık kaldığı
+  // için kendi kendine tazelenmiyor; bu olmadan liste bayat kalıyordu.
+  // Rozet sayacı iki olayda da kaynağında düşürülüyor (AppNavigator /
+  // DiscoverScreen) — burada TEKRAR dispatch etmiyoruz, çift düşerdi.
   // Fetch'ten gelen item'lar `userId`, realtime eklenenler `likerUserId`
   // alanı taşıyor; iki ihtimali de kontrol et.
   useEffect(() => {
-    const unsub = uiBus.on("match", (m) => {
-      const matchedId = m?.matchedUserId;
-      if (!matchedId) return;
+    const prune = (userId) => {
+      if (!userId) return;
       const prev = likesRef.current;
       const next = prev.filter(
-        (it) => it.userId !== matchedId && it.likerUserId !== matchedId,
+        (it) => it.userId !== userId && it.likerUserId !== userId,
       );
       if (next.length === prev.length) return;
       likesRef.current = next;
       setLikes(next);
-      dispatch(setWhoLikedMeCount(Math.max(0, next.length)));
-    });
-    return unsub;
-  }, [dispatch]);
+    };
+    const unsubMatch = uiBus.on("match", (m) => prune(m?.matchedUserId));
+    const unsubHandled = uiBus.on("likerHandled", (p) => prune(p?.userId));
+    return () => {
+      unsubMatch();
+      unsubHandled();
+    };
+  }, []);
 
   // Realtime: socket'ten yeni IncomingLike geldiğinde listeyi reload etmeden prepend et.
   // AppNavigator IncomingLike SignalR event'ini yakalayıp uiBus.emit('incomingLike', payload)
@@ -587,128 +811,107 @@ export default function LikesScreen() {
     return unsub;
   }, []);
 
-  const tabsRow = (
-    <FilterPills
-      style={{ marginBottom: 12 }}
-      activeTab={activeTab}
-      onChange={setActiveTab}
-      tabs={[
-        { key: "all", label: t('likes.tabAll') },
-        { key: "like", label: t('likes.tabLike') },
-        { key: "superlike", label: t('likes.tabSuperLike') },
-      ]}
-    />
+  const listHeader = (
+    <>
+      <FilterPills
+        style={{ marginBottom: 12 }}
+        activeTab={activeTab}
+        onChange={setActiveTab}
+        tabs={[
+          { key: "all", label: t('likes.tabAll') },
+          { key: "like", label: t('likes.tabLike') },
+          { key: "superlike", label: t('likes.tabSuperLike') },
+        ]}
+      />
+      {showInfoCard && (
+        <LikesInfoCard
+          description={t('likes.infoDescription')}
+          onDismiss={dismissInfoCard}
+        />
+      )}
+    </>
+  );
+
+  // Liste HER ZAMAN mount — yükleme/boş/dolu üç durumu da aynı FlatList'in
+  // içinde geçiyor. Önce ayrı bir `loading ?` dalı vardı: skeleton kendi
+  // container'ında, boş durum listenin içinde çiziliyordu; aradaki geçiş
+  // ağaç değişimi olduğu için sekmeler bile yeniden mount oluyordu.
+  const listEmpty = showSkeleton ? (
+    <LikesSkeletonGrid />
+  ) : loading ? (
+    // Skeleton gecikmesi penceresi: boş durumu ERKEN göstermek de bir flash —
+    // istek daha sürüyorken "hiç beğenin yok" yazıp sonra geri almak yerine
+    // sadece sekmeler dursun.
+    null
+  ) : (
+    <View className="flex-1 items-center justify-center pb-[50%]">
+      <EmptyState
+        Icon={HeartCrack}
+        sf="heart.slash"
+        iconStrokeWidth={1}
+        topOffset={0}
+        text={
+          activeTab === "superlike"
+            ? t('likes.emptySuperLike')
+            : activeTab === "like"
+              ? t('likes.emptyLike')
+              : t('likes.emptyAll')
+        }
+        subtitle={
+          activeTab === "superlike"
+            ? t('likes.emptySuperLikeSubtitle')
+            : activeTab === "like"
+              ? t('likes.emptyLikeSubtitle')
+              : t('likes.emptyAllSubtitle')
+        }
+        // Üç filtrenin boş durumu da aynı yere çıkar: beğeni beklemek yerine
+        // kaydırmaya dön. Sekmeye göre değişen etiketler (süper beğeni gönder /
+        // profilimi geliştir) tek bir "kaydırmaya başla" aksiyonuna indi.
+        buttonLabel={t('likes.startSwipingButton')}
+        onButtonPress={() => navigation.navigate("Discover")}
+      />
+    </View>
   );
 
   return (
     <View className="flex-1 bg-bg">
-      {loading ? (
-        <>
-          <View
-            style={{ paddingHorizontal: 16, paddingTop: insets.top + 50 + 16 }}
-          >
-            {tabsRow}
-          </View>
-          <LikesSkeletonGrid />
-        </>
-      ) : (
-        /* Likes Grid */
-        <Animated.FlatList
-          data={filteredLikes}
-          onScroll={scrollHandler}
-          scrollEventThrottle={16}
-          renderItem={({ item }) => (
-            <LikeCard
-              item={item}
-              isPremium={isPremium}
-              onPress={() => openLikerProfile(item)}
-            />
-          )}
-          keyExtractor={(item) => item.id}
-          numColumns={2}
-          ListHeaderComponent={tabsRow}
-          ListEmptyComponent={
-            <View className="flex-1 items-center justify-center pb-[50%]">
-              <EmptyState
-                Icon={HeartCrack}
-                sf="heart.slash"
-                iconStrokeWidth={1}
-                topOffset={0}
-                text={
-                  activeTab === "superlike"
-                    ? t('likes.emptySuperLike')
-                    : activeTab === "like"
-                      ? t('likes.emptyLike')
-                      : t('likes.emptyAll')
-                }
-                subtitle={
-                  activeTab === "superlike"
-                    ? t('likes.emptySuperLikeSubtitle')
-                    : activeTab === "like"
-                      ? t('likes.emptyLikeSubtitle')
-                      : t('likes.emptyAllSubtitle')
-                }
-                buttonLabel={
-                  activeTab === "superlike"
-                    ? t('likes.superLikeButton')
-                    : activeTab === "like"
-                      ? t('likes.discoverButton')
-                      : t('likes.profileButton')
-                }
-                onButtonPress={() =>
-                  navigation.navigate(
-                    activeTab === "whoLikesMe" ? "Profile" : "Discover",
-                  )
-                }
-              />
-            </View>
-          }
-          contentContainerStyle={{
-            flexGrow: 1,
-            paddingHorizontal: 16,
-            paddingTop: insets.top + 50 + 16,
-            paddingBottom: filteredLikes.length === 0 ? 0 : 200,
-          }}
-          columnWrapperStyle={
-            filteredLikes.length > 0
-              ? { justifyContent: "space-between" }
-              : undefined
-          }
-          showsVerticalScrollIndicator={false}
-        />
-      )}
+      {/* Likes Grid */}
+      <Animated.FlatList
+        data={filteredLikes}
+        onScroll={scrollHandler}
+        scrollEventThrottle={16}
+        renderItem={({ item }) => (
+          <LikeCard
+            item={item}
+            isPremium={isPremium}
+            onPress={() => openLikerProfile(item)}
+          />
+        )}
+        keyExtractor={(item) => item.id}
+        numColumns={2}
+        ListHeaderComponent={listHeader}
+        ListEmptyComponent={listEmpty}
+        contentContainerStyle={{
+          flexGrow: 1,
+          paddingHorizontal: 16,
+          paddingTop: insets.top + 50 + 16,
+          // Skeleton da 6 kart yüksekliğinde — boş durum gibi 0 padding
+          // verirsek son sıra tab bar'ın altında kalıyor.
+          paddingBottom:
+            filteredLikes.length === 0 && !showSkeleton ? 0 : 200,
+        }}
+        columnWrapperStyle={
+          filteredLikes.length > 0
+            ? { justifyContent: "space-between" }
+            : undefined
+        }
+        showsVerticalScrollIndicator={false}
+      />
 
       <ScreenHeader
         scrollY={scrollY}
         title={t('likes.title')}
         fillRatio={swipeFillRatio}
-        rightButton={
-          Platform.OS === "ios" ? (
-            <Host matchContents>
-              <SwiftUIButton
-                label={t('common.notifications')}
-                systemImage="bell.fill"
-                onPress={() => navigation.navigate("Notifications")}
-                modifiers={[
-                  buttonStyle("glass"),
-                  tint(colors.text),
-                  labelStyle("iconOnly"),
-                  font({ size: 22, weight: "medium" }),
-                ]}
-              />
-            </Host>
-          ) : (
-            <TouchableOpacity
-              onPress={() => navigation.navigate("Notifications")}
-              hitSlop={10}
-              activeOpacity={0.7}
-            >
-              <View pointerEvents="none">
-                <SFIcon name="bell.fill" fallback={Bell} size={29} strokeWidth={2} color={colors.text} weight="semibold" />
-              </View>
-            </TouchableOpacity>
-          )
-        }
       />
 
       {/* Sticky Bottom Button — premium değilse göster, basınca purchase modal aç */}
