@@ -281,6 +281,41 @@ describe('FilterModal — premium filtreler', () => {
     expect(onSave.mock.calls[0][0].premiumFilters.zodiacSigns).toEqual([]);
   });
 
+  it('sınıf filtresini enumName olarak gelse de seçili gösterir', () => {
+    // Sınıf ASİMETRİK: PUT'a int gönderiyoruz ama yanıt enumName döndürüyor
+    // (wire: [4,2] gitti → ["Second","Fourth"] geldi). Ham parseInt bunu NaN
+    // yapıp seçimi düşürüyordu — kullanıcıya "kaydolmadı" gibi görünüyordu.
+    const { onSave } = renderModal({
+      ...baseFilters,
+      yearsOfStudy: ['Second', 'Fourth'],
+    });
+
+    fireEvent.press(screen.getByTestId('apply'));
+
+    // Ekranda ne varsa o geri gitmeli: seçim kaybolmadan, int'e indirgenmiş.
+    expect(onSave.mock.calls[0][0].premiumFilters.yearsOfStudy).toEqual([2, 4]);
+  });
+
+  it('sınıf seçimini enumName gelen listeden kaldırabilir', () => {
+    const { onSave } = renderModal({
+      ...baseFilters,
+      yearsOfStudy: ['Preparatory', 'First'],
+    });
+
+    fireEvent.press(screen.getByText('Hazırlık')); // seçiliyi kaldır
+    fireEvent.press(screen.getByTestId('apply'));
+
+    expect(onSave.mock.calls[0][0].premiumFilters.yearsOfStudy).toEqual([1]);
+  });
+
+  it('sınıf int olarak gelirse de okur (biçim değişirse kırılmasın)', () => {
+    const { onSave } = renderModal({ ...baseFilters, yearsOfStudy: [0, 3] });
+
+    fireEvent.press(screen.getByTestId('apply'));
+
+    expect(onSave.mock.calls[0][0].premiumFilters.yearsOfStudy).toEqual([0, 3]);
+  });
+
   it('filters.isPremium true ise prop false olsa da kilit göstermez', () => {
     // isPremium prop'u swipe Stats'tan geliyor ve o sorgu oturumda bir kez
     // çekiliyor (staleTime:Infinity); açılışta patlarsa ya da premium sonradan
@@ -341,6 +376,38 @@ describe('FilterModal — premium filtreler', () => {
     ['Maksimum Mesafe', 'İlgi Alanı'].forEach((title) =>
       expect(at(title)).toBeLessThan(header),
     );
+  });
+
+  it('premium bölümleri önem sırasına göre çizer', () => {
+    // Sıra ürün kararı, kaza değil: eleme yapan (hard) filtreler önem sırasında,
+    // sonra eleme YAPMAYAN boost bölümleri ard arda, en sonda görünürlük —
+    // görünürlük metni "yukarıdaki filtrelerden farklı olarak" dediği için
+    // konumu kopyaya bağlı. Bölüm eklerken sıra sessizce bozulmasın.
+    renderModal(baseFilters);
+
+    const order = screen.root.findAll(() => true);
+    const at = (text: string) => order.indexOf(screen.getByText(text));
+
+    const expected = [
+      // hard filtreler — en önemliden en önemsize
+      'Üniversite',
+      'Kullanım Amacı',
+      'Şehir',
+      'Boy',
+      'Sınıf',
+      'Sigara',
+      'Evcil Hayvan',
+      'Burç',
+      // eleme yapmayanlar (skor boost'u) — ard arda, hard filtrelerden sonra
+      'Karşımda görmek istediğim hobiler',
+      'Karşımda görmek istediğim niyetler',
+      // "beni kim görsün" — kavramsal olarak ayrı, en sonda
+      'Görünürlük',
+    ];
+
+    const positions = expected.map(at);
+    expect(positions).toEqual([...positions].sort((a, b) => a - b));
+    expect(positions).not.toContain(-1);
   });
 
   it('görünürlük listelerini üniversite adıyla özetler ve sayacı gösterir', () => {

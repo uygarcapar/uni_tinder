@@ -13,10 +13,12 @@ import Animated, {
   useAnimatedReaction,
   Easing,
 } from "react-native-reanimated";
+import type { SharedValue } from "react-native-reanimated";
 import * as Haptics from "expo-haptics";
 import SwipeCard from "@/features/discover/components/SwipeCard";
 import uiBus, { cardExpandAnim, cardPullProgress } from "@/shared/services/uiBus";
 import { useRenderCount } from "@/shared/debug/useRenderCount";
+import type { PotentialMatch } from "@/shared/types";
 
 const { width, height } = Dimensions.get("window");
 const SWIPE_THRESHOLD = 85;
@@ -28,6 +30,28 @@ const EXIT_DURATION = 180;
 const FADE_IN_DURATION = 100;
 const FADE_OUT_DURATION = 350;
 const EXIT_DISTANCE = width * 1.2;
+
+export type SwipeDirection = "left" | "right" | "up";
+
+interface SwipeWrapperProps {
+  profile: PotentialMatch;
+  onSwipe: (direction: SwipeDirection, userId: string) => void;
+  isTopCard: boolean;
+  // DiscoverScreen'de yaşayan, kartlar arasında PAYLAŞILAN shared value'lar:
+  // üst kart yazar, overlay ve alttaki kart okur.
+  dragX: SharedValue<number>;
+  overlayDragX: SharedValue<number>;
+  overlayOpacity: SharedValue<number>;
+  buttonDragX: SharedValue<number>;
+  /** 0 = yok, 1 = pass, 2 = like, 3 = super like (buton tetiklemesi). */
+  programmaticSwipe: SharedValue<number>;
+  onPass: () => void;
+  onLike: () => void;
+  onSuperLike: () => void;
+  swipeQuotaExhausted?: boolean;
+  superLikeQuotaExhausted?: boolean;
+  superLikesRemaining: number | null;
+}
 
 function SwipeWrapper({
   profile,
@@ -44,7 +68,7 @@ function SwipeWrapper({
   swipeQuotaExhausted = false,
   superLikeQuotaExhausted = false,
   superLikesRemaining,
-}: any) {
+}: SwipeWrapperProps) {
   useRenderCount("SwipeWrapper");
   // Expanded'ken kart header'ın üstüne binip orada kalsın (kapatılana kadar).
   // Header bar 50px → yarısı (~25px) kadar hafifçe biner; status bar (insets.top)
@@ -538,7 +562,12 @@ function SwipeWrapper({
         },
         { rotate: isTopCard ? `${rotate}deg` : "0deg" },
         { scale: scale.value },
-      ],
+        // `as any`: RN'in transform tipi her elemanın TEK anahtarlı olmasını
+        // istiyor, TS ise heterojen diziyi `{translateX; translateY?: undefined}`
+        // birleşimi olarak çıkarıyor (undefined ≠ never). Ekranın kendi
+        // FigureEightRadar'ında da aynı kaçış kullanılıyor. Props `any` iken
+        // hata görünmüyordu, tipleme onu ortaya çıkardı — davranış aynı.
+      ] as any,
       opacity: isTopCard
         ? 1
         : interpolate(

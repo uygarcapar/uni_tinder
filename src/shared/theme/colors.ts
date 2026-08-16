@@ -51,6 +51,9 @@ export const colors = {
     whiteMedium: "rgba(255,255,255,0.5)",
     black: "rgba(0,0,0,0.99)",
     bgSoft: "rgba(18,18,18,0.8)",
+    // bgSoft'un bir ton açığı (surface #1E1E1E tabanlı) — foto üstündeki
+    // rozetlerde bgSoft zeminle fazla kaynaşıyor.
+    surfaceSoft: "rgba(30,30,30,0.8)",
   },
 } as const;
 

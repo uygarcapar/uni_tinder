@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useState } from "react";
 import { useTranslation } from "react-i18next";
 import {
   View,
@@ -15,11 +15,14 @@ import Animated, {
   useAnimatedRef,
   useSharedValue,
   useFrameCallback,
+  runOnJS,
   withRepeat,
   withSequence,
+  withSpring,
   withTiming,
   Easing,
 } from "react-native-reanimated";
+import type { AnimatedRef, SharedValue } from "react-native-reanimated";
 import { Gesture, GestureDetector } from "react-native-gesture-handler";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 
@@ -29,6 +32,167 @@ function ScrollWrapper({ nativeScrollGesture, children }: any) {
   if (!nativeScrollGesture) return children;
   return (
     <GestureDetector gesture={nativeScrollGesture}>{children}</GestureDetector>
+  );
+}
+
+// Expanded karttaki scroll davranışı:
+//
+//  1) ALT UÇ — içeriğin son BOUNCE_ZONE px'inde native bounce açık (parmak
+//     basılıyken de). Alt uçta çakışan bir jest yok.
+//  2) TOP — native bounce HİÇ açılmaz, scroll sert durur. Sebep: scrollY=0'da
+//     pull-down = collapse jesti (SwipeWrapper.verticalPan, native scroll ile
+//     simultaneous); bounce açık olsa rubber-band + collapse aynı anda çalışıp
+//     kart iki kere oynuyor. Ayrıca bounce, kartın üstünde kart zeminini
+//     (siyah) açığa çıkarıp "kart değil içerik kayıyor" hissi veriyordu.
+//     Bunun yerine momentum top'a çarptığında fotoğrafa çarpma şiddetiyle
+//     orantılı bir zoom-in veriyoruz (zoomImpact) — kart yerinde durur, geri
+//     bildirim fotoğraftan gelir.
+//  TOP_SAFE_GAP: içerik kısa olup alt-uç zone'u top'a taşarsa bile kural (1)
+//  top'un bu kadar yakınında bounce açmaz.
+//
+// State bu ayrı component'te tutuluyor ve kartın gövdesi `children` prop'u
+// olarak geçiyor → toggle sırasında ağır alt ağaç yeniden render edilmiyor.
+const BOUNCE_ZONE = 800;
+const TOP_SAFE_GAP = 160;
+// Top'a varış sayılan eşik (px).
+const TOP_HIT_EPS = 0.5;
+// Çarpma şiddeti: event başına (≈1 frame) kat edilen px. Bu değerin altı
+// zoom tetiklemez, IMPACT_MAX'te zoom tam güçtedir.
+const IMPACT_MIN = 8;
+const IMPACT_MAX = 55;
+// Tam güçte zoom oranı (foto %8 yakınlaşır).
+const PHOTO_ZOOM_MAX = 0.08;
+function BounceScrollView({
+  scrollRef,
+  scrollY,
+  zoomImpact,
+  expanded,
+  children,
+}: {
+  scrollRef: AnimatedRef<Animated.ScrollView>;
+  scrollY?: SharedValue<number>;
+  // Momentum top'a çarptığında 0→şiddet→0 sürülen zoom sinyali.
+  zoomImpact: SharedValue<number>;
+  expanded: boolean;
+  children: React.ReactNode;
+}) {
+  const [bounces, setBounces] = useState(false);
+  // Worklet tarafındaki ayna — her event'te değil, sadece durum değişince
+  // runOnJS/setState yapalım.
+  const bouncesSV = useSharedValue(false);
+  const nearBottomSV = useSharedValue(false);
+  const momentumSV = useSharedValue(false);
+  // Top'a çarpma tespiti için önceki frame'in pozisyonu ve hızı (px/event).
+  const prevY = useSharedValue(0);
+  const prevSpeed = useSharedValue(0);
+  // Tek momentum döngüsünde zoom bir kez tetiklensin (0 civarında salınan
+  // event'ler ikinci kez ateşlemesin).
+  const justHitSV = useSharedValue(false);
+
+  const applyBounces = useCallback((next: boolean) => {
+    setBounces(next);
+  }, []);
+
+  const syncBounces = useCallback(
+    (next: boolean) => {
+      "worklet";
+      if (next === bouncesSV.value) return;
+      bouncesSV.value = next;
+      runOnJS(applyBounces)(next);
+    },
+    [applyBounces, bouncesSV],
+  );
+
+  const scrollHandler = useAnimatedScrollHandler({
+    onScroll: (e) => {
+      const y = e.contentOffset.y;
+      if (scrollY) scrollY.value = y;
+
+      // maxY: içeriğin gerçek scroll menzili. y > maxY = alt uçta bounce
+      // halindeyiz → nearBottom doğal olarak true kalır, animasyon ortasında
+      // bounces kapanıp snap etmez.
+      const maxY = e.contentSize.height - e.layoutMeasurement.height;
+      const threshold = Math.max(TOP_SAFE_GAP, maxY - BOUNCE_ZONE);
+      nearBottomSV.value = maxY > TOP_SAFE_GAP && y > threshold;
+      syncBounces(nearBottomSV.value);
+
+      // Top'a çarpma: bu event'te 0'a indik, öncekinde inmemiştik ve momentum
+      // sürüyordu (parmak ekranda değil). Şiddet = son iki frame'in en hızlısı;
+      // clamp event'i hızı kırpabildiği için önceki frame de dikkate alınır.
+      const speed = prevY.value - y;
+      if (
+        momentumSV.value &&
+        y <= TOP_HIT_EPS &&
+        prevY.value > TOP_HIT_EPS &&
+        !justHitSV.value
+      ) {
+        const impact = Math.max(speed, prevSpeed.value);
+        const p = (impact - IMPACT_MIN) / (IMPACT_MAX - IMPACT_MIN);
+        const intensity = p < 0 ? 0 : p > 1 ? 1 : p;
+        if (intensity > 0) {
+          justHitSV.value = true;
+          // Hızlı büyü, yaylanarak geri dön — bounce'un yerini alan geri bildirim.
+          zoomImpact.value = withSequence(
+            withTiming(intensity, {
+              duration: 110,
+              easing: Easing.out(Easing.quad),
+            }),
+            withSpring(0, { damping: 15, stiffness: 130, mass: 0.7 }),
+          );
+        }
+      }
+      prevSpeed.value = speed;
+      prevY.value = y;
+    },
+    // Parmak indi — momentum yok; top'ta pull-down = collapse jesti.
+    onBeginDrag: () => {
+      momentumSV.value = false;
+      justHitSV.value = false;
+    },
+    onMomentumBegin: () => {
+      momentumSV.value = true;
+      justHitSV.value = false;
+    },
+    onMomentumEnd: () => {
+      momentumSV.value = false;
+    },
+  });
+
+  // Collapse olunca sıfırla — bir sonraki expand temiz başlasın.
+  useEffect(() => {
+    if (expanded) return;
+    bouncesSV.value = false;
+    nearBottomSV.value = false;
+    momentumSV.value = false;
+    justHitSV.value = false;
+    prevY.value = 0;
+    prevSpeed.value = 0;
+    zoomImpact.value = 0;
+    setBounces(false);
+  }, [
+    expanded,
+    bouncesSV,
+    nearBottomSV,
+    momentumSV,
+    justHitSV,
+    prevY,
+    prevSpeed,
+    zoomImpact,
+  ]);
+
+  return (
+    <Animated.ScrollView
+      ref={scrollRef}
+      showsVerticalScrollIndicator={false}
+      bounces={bounces}
+      alwaysBounceVertical={false}
+      scrollEnabled={expanded}
+      style={{ flex: 1 }}
+      onScroll={scrollHandler}
+      scrollEventThrottle={16}
+    >
+      {children}
+    </Animated.ScrollView>
   );
 }
 import * as Haptics from "expo-haptics";
@@ -48,6 +212,11 @@ import {
   PawPrint,
   Wind,
   MapPin,
+  BookOpen,
+  Building2,
+  CalendarDays,
+  Languages,
+  Moon,
   type LucideIcon,
 } from "lucide-react-native";
 import { LinearGradient } from "expo-linear-gradient";
@@ -58,12 +227,19 @@ import { getColors } from "react-native-image-colors";
 import { colors as theme, gradients } from "../../../shared/theme/colors";
 import HobbyIcon from "@/shared/components/HobbyIcon";
 import SFIcon, { type SFSymbol } from "@/shared/components/SFIcon";
+import PremiumFlame from "@/shared/components/PremiumFlame";
 import { getRelationshipIntentIcon } from "@/shared/constants/relationshipIntent";
 
 import { useRenderCount } from "@/shared/debug/useRenderCount";
+import type { PotentialMatch } from "@/shared/types";
 
 const { width, height } = Dimensions.get("window");
 const SCREEN_HEIGHT = height - 188; // Header height (90px) çıkarıldı
+
+// İsmin yanındaki premium ateş ikonunun kutu boyutu (collapsed: text-4xl isim).
+// Expanded başlık daha küçük (text-3xl) → ikon da oranlı küçülür.
+const PREMIUM_FLAME_SIZE = 26;
+const PREMIUM_FLAME_SIZE_EXPANDED = 22;
 
 // Daha önce yüklenmiş foto URI'leri — kart remount olunca skeleton tekrar açılmasın
 const loadedPhotoUris = new Set();
@@ -327,6 +503,61 @@ const getPurposeIcon = (
   return map[purposeName] || { sf: "target", lucide: Target };
 };
 
+// GetPotentialMatches → her kartın `thingsInCommon` rozetleri. Eşleme
+// `kindName` ile yapılıyor: dil değişse de sabit kalan anahtar o. Kardeşi
+// `kind` şu an aynı string'i taşıyor ama ileride numaraya dönebilir — ona
+// GÜVENME.
+const THING_IN_COMMON_ICONS: Record<string, { sf: SFSymbol; lucide: LucideIcon }> =
+  {
+    Hobby: { sf: "sparkles", lucide: Sparkles },
+    University: { sf: "graduationcap.fill", lucide: GraduationCap },
+    Department: { sf: "book.fill", lucide: BookOpen },
+    City: { sf: "building.2.fill", lucide: Building2 },
+    District: { sf: "mappin.and.ellipse", lucide: MapPin },
+    YearOfStudy: { sf: "calendar", lucide: CalendarDays },
+    SpokenLanguage: { sf: "globe", lucide: Languages },
+    RelationshipIntent: { sf: "heart.fill", lucide: Heart },
+    UsagePurpose: { sf: "target", lucide: Target },
+    Pet: { sf: "pawprint.fill", lucide: PawPrint },
+    ZodiacSign: { sf: "moon.stars.fill", lucide: Moon },
+  };
+
+// Backend ileride yeni tür ekleyebilir; bilinmeyen `kindName` ÇÖKMEMELİ,
+// varsayılan ikonla görünmeli.
+const DEFAULT_THING_IN_COMMON_ICON: { sf: SFSymbol; lucide: LucideIcon } = {
+  sf: "checkmark.circle.fill",
+  lucide: Check,
+};
+
+interface SwipeCardProps {
+  /**
+   * Backend ProfileCardDto. Tipli olması bilinçli: alan adları burada
+   * okunuyor, backend birini yeniden adlandırdığında sessizce `undefined`
+   * render etmek yerine derleme hatası alınsın (kart eskiden `any` idi ve
+   * `universityName`, `*Display`, `hobbies` gibi alanların hiçbiri sözleşmede
+   * tanımlı değildi).
+   */
+  profile: PotentialMatch;
+  hideActions?: boolean;
+  onPass?: () => void;
+  onLike?: () => void;
+  onSuperLike?: () => void;
+  /** Expand sonrası native scroll konumu — SwipeWrapper'ın pan'i okuyor. */
+  scrollY?: SharedValue<number>;
+  /** Pan ile simultaneous çalışan Gesture.Native() örneği. */
+  nativeScrollGesture?: ReturnType<typeof Gesture.Native>;
+  /** Pull-down süper beğeni doluluk oranı (0-1). */
+  superLikeProgress?: SharedValue<number>;
+  isTopCard?: boolean;
+  expanded?: boolean;
+  /** Profil önizleme / liker modal'ı: jest ve aksiyonlar devre dışı. */
+  previewMode?: boolean;
+  hideChevron?: boolean;
+  hideSuperLike?: boolean;
+  onExpandPress?: () => void;
+  superLikesRemaining?: number | null;
+}
+
 export default function SwipeCard({
   profile,
   hideActions = false,
@@ -342,7 +573,7 @@ export default function SwipeCard({
   hideChevron = false,
   hideSuperLike = false,
   onExpandPress,
-}: any) {
+}: SwipeCardProps) {
   useRenderCount("SwipeCard");
   const insets = useSafeAreaInsets();
   const { t } = useTranslation();
@@ -409,6 +640,18 @@ export default function SwipeCard({
     borderRadius: 40,
   }));
 
+  // Momentum top'a çarpınca fotoğraf zoom-in yapıp yaylanarak geri döner —
+  // native top bounce'un yerini alan geri bildirim. Kart/scroll yerinde durur,
+  // dolayısıyla fotonun üstünde kart zemini (siyah boşluk) açılmaz ve
+  // scrollY=0'daki pull-down collapse jestiyle çakışma olmaz.
+  // Zoom SADECE foto katmanına uygulanır (bullets/blur/kalp/isim/chevron ayrı
+  // kardeş katmanlar) → overlay'ler ölçeklenmez, foto clipping kutusu ve
+  // köşe yuvarlaklığı sabit kalır.
+  const photoZoom = useSharedValue(0);
+  const photoZoomStyle = useAnimatedStyle(() => ({
+    transform: [{ scale: 1 + PHOTO_ZOOM_MAX * photoZoom.value }] as const,
+  }));
+
   // Stagger: pills ilk %55'te tamamen kaybolur (önce gider)
   const pillsAnimStyle = useAnimatedStyle(() => {
     const p = Math.min(1, expandAnim.value / 0.55);
@@ -464,7 +707,35 @@ export default function SwipeCard({
     return "";
   }, [profile?.yearOfStudyDisplay, profile?.yearOfStudy, t]);
 
-  // Eski kullanım için (TabNavigator listener'ı yok artık ama emit zararsız).
+  // "Ortak noktalar" rozetleri. DİKKAT: ortak nokta yoksa backend boş dizi
+  // DEĞİL `null` gönderiyor — `.length` yerine Array.isArray ile kontrol et.
+  // Kart başına en fazla 4 rozet dönüyor, ayrıca kırpmıyoruz.
+  const thingsInCommon = useMemo(() => {
+    const raw = profile?.thingsInCommon;
+    if (!Array.isArray(raw)) return [];
+    return raw.flatMap((item: any) => {
+      // `label` sunucuda aktif dile göre çözülmüş halde geliyor — ÇEVİRME,
+      // doğrudan bas.
+      const label = typeof item?.label === "string" ? item.label.trim() : "";
+      if (!label) return [];
+      const kindName = typeof item?.kindName === "string" ? item.kindName : "";
+      return [
+        {
+          // Tek istisna: University rozetinde backend üniversite ADINI
+          // gönderiyor; pilde okul adı yerine "Aynı Üniversite" yazıyoruz —
+          // isim zaten hemen üstteki universityName satırında duruyor.
+          label:
+            kindName === "University"
+              ? t('profile.card.sameUniversity')
+              : label,
+          icon:
+            THING_IN_COMMON_ICONS[kindName] ?? DEFAULT_THING_IN_COMMON_ICON,
+        },
+      ];
+    });
+  }, [profile?.thingsInCommon, t]);
+
+  // Expanded karttaki gradient'in en üst rengi (spotify → theme.bg fade).
   const photoBottomGradColor = useMemo(
     () => spotifyColor(dominantColor),
     [dominantColor],
@@ -482,18 +753,13 @@ export default function SwipeCard({
   // Linear yerine ease-in-out cubic curve uygulanıyor: start ve end yumuşak,
   // ortada hızlı — daha "premium" hissi (Spotify/Apple Music modal tarzı).
   // ScrollView ref — expand sonrası native scroll için.
-  const scrollViewRef = useAnimatedRef();
+  const scrollViewRef = useAnimatedRef<Animated.ScrollView>();
 
   // Pan-driven expand: cardExpandAnim SwipeWrapper.verticalPan tarafından
   // sürülüyor (rubber-band). Scroll sadece scrollY tracking için (super-like
   // detection); cardExpandAnim'i yazmaz çünkü ScrollView ancak expand sonrası
   // aktif olur ve expand state'inde cardExpandAnim 1'de sabit kalır.
-  const scrollHandler = useAnimatedScrollHandler({
-    onScroll: (e) => {
-      const y = e.contentOffset.y;
-      if (scrollY) scrollY.value = y;
-    },
-  });
+  // Scroll handler + alt-uç bounce mantığı BounceScrollView içinde.
 
   // Pull-down (super-like) sırasında kalp: fill rengi DEĞİŞMEZ, sadece büyür
   // ve threshold'a doğru artan hızda titreşir.
@@ -608,14 +874,11 @@ export default function SwipeCard({
       }}
     >
       <ScrollWrapper nativeScrollGesture={nativeScrollGesture}>
-        <Animated.ScrollView
-          ref={scrollViewRef}
-          showsVerticalScrollIndicator={false}
-          bounces={false}
-          scrollEnabled={expanded}
-          style={{ flex: 1 }}
-          onScroll={scrollHandler}
-          scrollEventThrottle={16}
+        <BounceScrollView
+          scrollRef={scrollViewRef}
+          scrollY={scrollY}
+          zoomImpact={photoZoom}
+          expanded={expanded}
         >
           {/* Outer wrapper — solid #121212 bg. Eskiden 4-stop LinearGradient'di
               ama multi-stop shader compile mount sırasında ciddi lag yaratıyordu.
@@ -641,7 +904,10 @@ export default function SwipeCard({
                     geçişler instant, photo 0'a dönünce remount yok = skeleton flash yok.
                     Bottom card için sadece ilk foto mount (gereksiz network yükü). */}
                 <GestureDetector gesture={photoTap}>
-                  <View style={{ flex: 1 }}>
+                  {/* Zoom katmanı — top'a çarpma geri bildirimi (photoZoomStyle).
+                      Parent clipping kutusu ve borderRadius sabit kaldığı için
+                      foto kartın içinde yakınlaşır, kart kıpırdamaz. */}
+                  <Animated.View style={[{ flex: 1 }, photoZoomStyle]}>
                     {allPhotos
                       .map((photo, index) => ({ photo, index }))
                       .filter(({ index }) => (isTopCard ? true : index === 0))
@@ -673,7 +939,7 @@ export default function SwipeCard({
                           }}
                         />
                       ))}
-                  </View>
+                  </Animated.View>
                 </GestureDetector>
 
                 {/* Skeleton overlay — current foto henüz yüklenmediyse */}
@@ -748,7 +1014,7 @@ export default function SwipeCard({
                 </MaskedView>
 
                 {/* Bottom Blur Gradient Overlay — çekme oranıyla fade out.
-                    Pozisyon `bottom:0` yerine `top: photoHeight - 330` ile
+                    Pozisyon `bottom:0` yerine `top: photoHeight - 310` ile
                     sabit absolute koordinat — collapse anında parent height
                     transient bir frame için değişse bile blur'un foto bottom'una
                     yapışık kalır, ekran altına düşmez. */}
@@ -757,10 +1023,10 @@ export default function SwipeCard({
                   style={[
                     {
                       position: "absolute",
-                      top: Math.max(0, photoHeight - 270),
+                      top: Math.max(0, photoHeight - 310),
                       left: 0,
                       right: 0,
-                      height: 330,
+                      height: 370,
                     },
                     bottomBlurAnimStyle,
                   ]}
@@ -902,32 +1168,31 @@ export default function SwipeCard({
                     className="absolute bottom-[70px] left-6 right-6"
                     pointerEvents="none"
                   >
-                    {profile.isPremium && (
-                      <Animated.View className="mb-1" style={nameAnimStyle}>
-                        <BlurView
-                          tint="dark"
-                          intensity={40}
-                          style={{
-                            borderRadius: 999,
-                            borderCurve: "continuous",
-                            overflow: "hidden",
-                            alignSelf: "flex-start",
-                          }}
-                          className=""
-                        >
-                          <Text className="text-white text-[11px] px-4 py-3 font-bold">
-                            {t('profile.card.premium')}
-                          </Text>
-                        </BlurView>
-                      </Animated.View>
-                    )}
                     <Animated.View
                       style={[{ marginBottom: 2, gap: 4 }, nameAnimStyle]}
                     >
-                      <Text className="text-white text-4xl font-bold">
-                        {profile.displayName}
-                        {profile.age != null ? `, ${profile.age}` : ""}
-                      </Text>
+                      {/* Premium rozeti artık ayrı pill değil — yaşın sağında
+                          Discover sekmesinin ateş ikonu. Dolgu super-like
+                          kalbiyle birebir aynı: ikon şekline maskelenmiş
+                          gradients.swipeHeart (bkz. kalp / SuperLikeBurst). */}
+                      <View
+                        style={{
+                          flexDirection: "row",
+                          alignItems: "center",
+                          gap: 6,
+                        }}
+                      >
+                        <Text
+                          className="text-white text-4xl font-bold"
+                          style={{ flexShrink: 1 }}
+                        >
+                          {profile.displayName}
+                          {profile.age != null ? `, ${profile.age}` : ""}
+                        </Text>
+                        {profile.isPremium && (
+                          <PremiumFlame size={PREMIUM_FLAME_SIZE} />
+                        )}
+                      </View>
                     </Animated.View>
 
                     {/* University & Usage Purpose — expand olunca fade out.
@@ -941,7 +1206,9 @@ export default function SwipeCard({
                             flexWrap: "wrap",
                             gap: 8,
                             marginTop: 4,
-                            marginBottom: 16,
+                            // Altına rozet sırası geliyorsa aradaki boşluğu
+                            // rozetler taşısın, ikisi üst üste binmesin.
+                            marginBottom: thingsInCommon.length > 0 ? 8 : 16,
                           },
                           pillsAnimStyle,
                         ]}
@@ -958,6 +1225,66 @@ export default function SwipeCard({
                             {profile.universityName}
                           </Text>
                         </View>
+                      </Animated.View>
+                    )}
+
+                    {/* Ortak noktalar — swipe kararının verildiği an burası,
+                        o yüzden kartı açmadan görünen overlay'de duruyor.
+                        Üniversite satırıyla aynı fade grubunda: expand olunca
+                        detay kartındaki bölümlerle çakışmasın diye kaybolur. */}
+                    {thingsInCommon.length > 0 && (
+                      <Animated.View
+                        style={[
+                          {
+                            flexDirection: "row",
+                            flexWrap: "wrap",
+                            gap: 6,
+                            marginTop: profile.universityName ? 0 : 6,
+                            marginBottom: 16,
+                          },
+                          pillsAnimStyle,
+                        ]}
+                      >
+                        {thingsInCommon.map((thing, index) => (
+                          <View
+                            key={`${thing.label}-${index}`}
+                            style={{
+                              borderRadius: 999,
+                              borderCurve: "continuous",
+                              overflow: "hidden",
+                              // Expanded section'larla aynı kenar; zemin ise
+                              // onların bgSoft'undan bir tık açık.
+                              backgroundColor: theme.overlay.surfaceSoft,
+                              borderWidth: 0.5,
+                              borderColor: theme.overlay.whiteFaint,
+                            }}
+                          >
+                            <View
+                              style={{
+                                flexDirection: "row",
+                                alignItems: "center",
+                                gap: 6,
+                                // Premium pill ile aynı padding (px-4 py-3).
+                                // Text'in kendisine değil satıra veriyoruz,
+                                // yoksa ikon padding dışında kalıyor.
+                                paddingHorizontal: 16,
+                                paddingVertical: 12,
+                              }}
+                            >
+                              <SFIcon
+                                name={thing.icon.sf}
+                                fallback={thing.icon.lucide}
+                                size={13}
+                                color={theme.text}
+                                strokeWidth={2}
+                                weight="semibold"
+                              />
+                              <Text className="text-white font-[600] text-[13px]">
+                                {thing.label}
+                              </Text>
+                            </View>
+                          </View>
+                        ))}
                       </Animated.View>
                     )}
                     {/* {profile.usagePurposeDisplay && (
@@ -1065,11 +1392,29 @@ export default function SwipeCard({
                   pointerEvents="none"
                 />
                 {/* Name + Age — expanded'ken kartın üst tarafında görünür
-                    (photo overlay'deki name'i replace eder; o fade-out olur). */}
-                <View className="mb-10 ml-4" style={{ paddingHorizontal: 4 }}>
-                  <Text className="text-white text-3xl font-bold">
-                    {profile.displayName}, {profile.age}
+                    (photo overlay'deki name'i replace eder; o fade-out olur).
+                    Premium ateşi collapsed başlıktakiyle aynı — PreviewModal /
+                    LikerSwipeModal kartı SADECE bu satırı gösterdiği için rozet
+                    burada da olmalı. */}
+                <View
+                  className="mb-10 ml-4"
+                  style={{
+                    paddingHorizontal: 4,
+                    flexDirection: "row",
+                    alignItems: "center",
+                    gap: 6,
+                  }}
+                >
+                  <Text
+                    className="text-white text-3xl font-bold"
+                    style={{ flexShrink: 1 }}
+                  >
+                    {profile.displayName}
+                    {profile.age != null ? `, ${profile.age}` : ""}
                   </Text>
+                  {profile.isPremium && (
+                    <PremiumFlame size={PREMIUM_FLAME_SIZE_EXPANDED} />
+                  )}
                 </View>
                 {/* University & Department */}
                 {profile.showUniversity && profile.departmentDisplay && (
@@ -1182,9 +1527,13 @@ export default function SwipeCard({
                     </View>
                     <View className="flex-row flex-wrap gap-2">
                       {profile.hobbies.map((hobby, index) => {
-                        const isObj = hobby && typeof hobby === "object";
-                        const enumName = isObj ? hobby.enumName : undefined;
-                        const label = isObj ? hobby.name : hobby;
+                        // Hobi ya düz etiket ya da {enumName, name} çifti gelir.
+                        // Daralma doğrudan typeof üzerinden: ara bir `isObj`
+                        // değişkeni TS'e `label`ın string olduğunu anlatmıyor.
+                        const enumName =
+                          typeof hobby === "object" ? hobby?.enumName : undefined;
+                        const label =
+                          typeof hobby === "object" ? hobby?.name : hobby;
                         return (
                           <View
                             key={index}
@@ -1207,12 +1556,27 @@ export default function SwipeCard({
                                 gap: 8,
                               }}
                             >
-                              <HobbyIcon
-                                hobby={enumName ?? label}
-                                size={18}
-                                color={theme.text}
-                                strokeWidth={1.5}
-                              />
+                              {/* Emoji lineHeight (size*1.25) pili lifestyle
+                                  pilinden yüksek yapıyordu; ikon kutusunu
+                                  SFIcon ile aynı 18px'e sabitliyoruz. Emoji
+                                  bu kutudan taşar (HobbyIcon açık height
+                                  verdiği için kırpılmaz), pilin 14px dikey
+                                  padding'i taşmayı rahatça karşılıyor. */}
+                              <View
+                                style={{
+                                  height: 18,
+                                  justifyContent: "center",
+                                  alignItems: "center",
+                                  overflow: "visible",
+                                }}
+                              >
+                                <HobbyIcon
+                                  hobby={enumName ?? label}
+                                  size={18}
+                                  color={theme.text}
+                                  strokeWidth={1.5}
+                                />
+                              </View>
                               <Text className="text-white font-[500] text-[15px]">
                                 {label}
                               </Text>
@@ -1493,7 +1857,7 @@ export default function SwipeCard({
               </Animated.View>
             )}
           </View>
-        </Animated.ScrollView>
+        </BounceScrollView>
       </ScrollWrapper>
     </Animated.View>
   );

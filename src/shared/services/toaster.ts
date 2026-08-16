@@ -1,8 +1,12 @@
 import { Notifier } from 'react-native-notifier';
+import i18n from '@/shared/i18n';
 import { navigationRef } from '@/shared/services/navigationRef';
 import MessageToast, { MessageToastProps } from '@/shared/components/toaster/MessageToast';
 import LikeToast, { LikeToastProps } from '@/shared/components/toaster/LikeToast';
 import InfoToast, { InfoToastProps } from '@/shared/components/toaster/InfoToast';
+import MissedMatchToast, {
+  MissedMatchToastProps,
+} from '@/shared/components/toaster/MissedMatchToast';
 
 const DEFAULT_DURATION = 4000;
 
@@ -50,6 +54,30 @@ export function showLikeToast(arg: ShowLikeToastArg) {
   Notifier.showNotification({
     Component: LikeToast,
     componentProps: { ...arg, onPress: goToLikes } as LikeToastProps,
+    duration: DEFAULT_DURATION,
+    swipeEnabled: true,
+  });
+}
+
+/**
+ * Seni beğenmiş birini pass'ledin → "bir eşleşmeyi kaçırdın".
+ * Metin burada çözülüyor: çağıranlar (swipe handler'ları) hook context'inde
+ * olmayabiliyor, `t` yerine i18n instance'ı kullanılıyor.
+ */
+export function showMissedMatchToast({
+  name,
+  photoUrl,
+}: Pick<MissedMatchToastProps, 'name' | 'photoUrl'>) {
+  Notifier.showNotification({
+    Component: MissedMatchToast,
+    componentProps: {
+      name,
+      photoUrl,
+      title: i18n.t('missedMatch.title'),
+      body: name
+        ? i18n.t('missedMatch.body', { name })
+        : i18n.t('missedMatch.bodyNoName'),
+    } as MissedMatchToastProps,
     duration: DEFAULT_DURATION,
     swipeEnabled: true,
   });

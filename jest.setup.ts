@@ -65,6 +65,12 @@ jest.mock('expo-network', () => ({
 jest.mock('expo-blur', () => ({ BlurView: 'BlurView' }));
 jest.mock('expo-symbols', () => ({ SymbolView: 'SymbolView' }));
 jest.mock('expo-linear-gradient', () => ({ LinearGradient: 'LinearGradient' }));
+// transform allowlist dışında; host component olarak mock'lanınca maskeli
+// gradient kullanan bileşenler (SwipeCard kalbi) render edilebilir.
+jest.mock('@react-native-masked-view/masked-view', () => ({
+  __esModule: true,
+  default: 'MaskedView',
+}));
 jest.mock('expo-image', () => {
   const RN = require('react-native');
   return { Image: RN.Image };

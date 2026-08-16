@@ -364,6 +364,7 @@ const en = {
     tabTitle: 'Discover',
     swipe: {
       resetNow: 'Can reset now',
+      resetDays: 'Resets in {{d}}d',
       resetHoursMinutes: 'Resets in {{h}}h {{m}}m',
       resetMinutes: 'Resets in {{m}}m',
       resetSeconds: 'Resets in {{sec}}s',
@@ -397,6 +398,7 @@ const en = {
       saveError: 'Filters could not be saved',
       title: 'Filters',
       apply: 'Apply',
+      reset: 'Reset',
       maxDistance: {
         title: 'Maximum Distance',
         desc: 'Set the maximum distance for users you want to match with. Drag the circle with your finger to adjust.',
@@ -415,7 +417,7 @@ const en = {
       },
       university: {
         title: 'University',
-        description: 'Only see people from the university you pick. This filter is always strict — it never relaxes, even when candidates run out.',
+        description: 'Only see people from the universities you pick. You can choose up to 3.',
         select: 'Select university',
       },
       premiumFilters: {
@@ -430,7 +432,7 @@ const en = {
       enumUnavailable: 'List could not be loaded right now.',
       height: {
         title: 'Height',
-        description: 'Pick the height range you are looking for; you can leave either end open. While the filter is on, profiles without a height are not shown.',
+        description: 'Pick the height range you are looking for; either end can stay open.',
         atLeast: '{{cm}} cm and above',
         atMost: '{{cm}} cm and below',
         between: '{{min}} – {{max}} cm',
@@ -475,7 +477,13 @@ const en = {
       relationshipIntents: {
         title: 'Intentions I look for',
         description: 'People with these intentions are shown first in Discover. Others stay in your deck; you can leave this empty.',
-        clear: 'Clear',
+        // Short pill labels, keyed by enumName. Missing key → backend display.
+        short: {
+          LongTerm: 'Long-term',
+          ShortTerm: 'Short-term',
+          LongTermOpenToShort: 'Long-term, open to short',
+          ShortTermOpenToLong: 'Short-term, open to long',
+        },
         loading: 'Loading relationship intents…',
         unavailable: 'Relationship intent list could not be loaded right now.',
       },
@@ -486,6 +494,7 @@ const en = {
         hiddenFromLabel: 'These universities cannot see me',
         selectUniversities: 'Select universities',
         overlapWarning: 'A university on both lists will not see you — blocking takes priority.',
+        premiumExpiryNote: 'These rules stop when your Premium ends — universities you blocked will start seeing you again.',
       },
     },
     rewind: {
@@ -501,6 +510,39 @@ const en = {
       hiddenFromTitle: 'Who Cannot See Me',
       search: 'Search university',
       limitMsg: 'You can pick up to {{max}} universities.',
+    },
+    // Empty-deck reasons — sent by the backend as `emptyReason` /
+    // `emptyReasonCode` (UT-6xxx); mapping lives in responseCodes.ts. Reasons
+    // whose action is `dismiss` (allCandidatesSeen) have no button label.
+    empty: {
+      noCandidatesInRadius: {
+        title: 'Nobody to show near you right now',
+        action: 'Widen distance',
+      },
+      allCandidatesSeen: {
+        title: "You've seen everyone available",
+      },
+      filtersTooStrict: {
+        title: 'Your filters are too narrow',
+        action: 'Edit filters',
+      },
+      profileIncomplete: {
+        title: 'Complete your profile first',
+        action: 'Go to profile',
+      },
+      accountRestricted: {
+        title: 'Your account is temporarily restricted',
+        action: 'Contact support',
+      },
+      poolWarming: {
+        title: 'Getting your deck ready',
+        action: 'Try again',
+      },
+      swipeLimitReached: {
+        title: "You're out of swipes for today",
+        action: 'See Premium',
+      },
+      supportSubject: 'Discover issue ({{code}})',
     },
   },
   likes: {
@@ -535,6 +577,12 @@ const en = {
     subtitle: 'You matched with {{name}}. Send the first message.',
     sendMessage: 'Send Message',
     back: 'Go Back',
+  },
+  // Toast shown when you pass on someone who had already liked you.
+  missedMatch: {
+    title: 'You missed a match',
+    body: '{{name}} had liked you.',
+    bodyNoName: 'You passed on someone who liked you.',
   },
   profile: {
     tabTitle: 'Profile',
@@ -686,6 +734,7 @@ const en = {
       knowMeAs: "This is how you'll know me:",
       myInterests: 'My interests are:',
       myLifestyle: 'My lifestyle is:',
+      sameUniversity: 'Same University',
       location: 'Location',
     },
     languages: {

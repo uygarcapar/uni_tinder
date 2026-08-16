@@ -1,5 +1,7 @@
 import React, {
+  useCallback,
   useEffect,
+  useLayoutEffect,
   useState,
   useRef,
   useMemo,
@@ -13,6 +15,7 @@ import {
   Dimensions,
   AppState,
   Modal,
+  Linking,
 } from "react-native";
 import { appPrefs } from "../../../shared/utils/appPrefs";
 import { GestureHandlerRootView } from "react-native-gesture-handler";
@@ -62,8 +65,16 @@ import {
   useUndoSwipe,
   useUpdateStatsCache,
 } from "@/features/discover/swipeQueries";
-import { UNLIMITED } from "@/shared/constants/limits";
-import { showInfoToast } from "@/shared/services/toaster";
+import { formatResetTime } from "@/features/discover/quotaFormat";
+import {
+  loadDeckProgress,
+  saveDeckProgress,
+  SWIPE_GUARD_MS,
+} from "@/features/discover/deckProgress";
+import { decideTopUp } from "@/features/discover/deckTopUp";
+import { resolveCode, type CodeEntry } from "@/shared/constants/responseCodes";
+import { SUPPORT_EMAIL } from "@/shared/constants/support";
+import { showInfoToast, showMissedMatchToast } from "@/shared/services/toaster";
 import uiBus, { cardExpandAnim } from "@/shared/services/uiBus";
 import { useEvent } from "@/shared/hooks/useEvent";
 import { mark } from "@/shared/debug/startupTiming";
@@ -71,7 +82,10 @@ import { hideSplash } from "@/shared/splash";
 import { markAppShellReady } from "@/shared/bootPhase";
 import { useNavigation, useIsFocused } from "@react-navigation/native";
 import { useRenderCount } from "@/shared/debug/useRenderCount";
-import { useAppSelector } from "@/shared/hooks/redux";
+import { useAppDispatch, useAppSelector } from "@/shared/hooks/redux";
+import { store } from "@/shared/store";
+import { hasLikedMe, removeWhoLikedMe } from "@/features/discover/swipeSlice";
+import { refreshEntitlementsForPaywall } from "@/features/profile/subscriptionSlice";
 import { analytics } from "@/shared/services/analytics";
 import { navigationRef } from "@/shared/services/navigationRef";
 
@@ -233,21 +247,6 @@ const SkeletonCard = () => {
   );
 };
 
-// Kalan hak sıfırlanana kadar geçecek süreyi okunur metne çevirir
-// (super-like limit toast'ında kullanılıyor).
-// UNLIMITED (-1) = "asla resetlenmez" (free kullanıcının lifetime SuperLike
-// hakkı bitti) — geri sayım GÖSTERİLMEZ, null döner ve çağıran taraf premium
-// mesajına düşer. `sec <= 0` dalı bunu "şu anda yenilenebilir" sanıyordu.
-const formatResetTime = (sec, t) => {
-  if (sec === UNLIMITED) return null;
-  if (!sec || sec <= 0) return t('discover.swipe.resetNow');
-  const h = Math.floor(sec / 3600);
-  const m = Math.floor((sec % 3600) / 60);
-  if (h > 0) return t('discover.swipe.resetHoursMinutes', { h, m });
-  if (m > 0) return t('discover.swipe.resetMinutes', { m });
-  return t('discover.swipe.resetSeconds', { sec });
-};
-
 // Boş durum kartı — SkeletonCard'la aynı dış yapı (frame + placeholder block'lar) ama
 // shimmer YOK. Ortada Search ikonu + etrafında radar pulse animasyonu (3 ring stagger).
 // Ekran görünür VE app foreground'da mı. Radar `withRepeat(-1)` ile sonsuz
@@ -354,7 +353,18 @@ const FigureEightRadar = () => {
   );
 };
 
-const EmptyDiscoverCard = () => {
+// Boş deste kartı. `title`/`actionLabel` verilirse backend'in yapısal boşluk
+// sebebi (emptyReason) gösterilir; verilmezse eski davranış (yalnız radar).
+const EmptyDiscoverCard = ({
+  title = null,
+  actionLabel = null,
+  onAction = null,
+}: {
+  title?: string | null;
+  actionLabel?: string | null;
+  onAction?: (() => void) | null;
+}) => {
+  const hasReason = !!title;
   return (
     <View
       style={{
@@ -386,55 +396,98 @@ const EmptyDiscoverCard = () => {
         />
       </View>
 
-      {/* Bottom placeholder block'lar — SwipeCard overlay mirror */}
-      <View
-        pointerEvents="none"
-        style={{
-          position: "absolute",
-          bottom: 70,
-          left: 24,
-          right: 24,
-        }}
-      >
+      {/* Bottom bölge: sebep biliniyorsa metin + aksiyon, bilinmiyorsa
+          SwipeCard overlay'ini taklit eden placeholder block'lar. */}
+      {hasReason ? (
         <View
           style={{
-            alignSelf: "flex-start",
-            marginBottom: 8,
-            width: 70,
-            height: 30,
-            borderRadius: 999,
-            backgroundColor: colors.surface4,
+            position: "absolute",
+            bottom: 70,
+            left: 24,
+            right: 24,
           }}
-        />
-        <View style={{ marginBottom: 2, gap: 4 }}>
-          <View
+        >
+          <Text
             style={{
-              width: 150,
-              height: 35,
-              borderRadius: 999,
-              backgroundColor: colors.surface4,
+              color: colors.text,
+              fontSize: 22,
+              fontWeight: "700",
+              marginBottom: actionLabel ? 16 : 0,
             }}
-          />
+          >
+            {title}
+          </Text>
+          {actionLabel && onAction && (
+            <TouchableOpacity
+              onPress={onAction}
+              activeOpacity={0.8}
+              style={{
+                alignSelf: "flex-start",
+                borderRadius: 999,
+                borderCurve: "continuous",
+                paddingHorizontal: 20,
+                paddingVertical: 12,
+                backgroundColor: colors.litPlus,
+              }}
+            >
+              <Text
+                style={{ color: colors.text, fontSize: 15, fontWeight: "600" }}
+              >
+                {actionLabel}
+              </Text>
+            </TouchableOpacity>
+          )}
         </View>
+      ) : (
         <View
+          pointerEvents="none"
           style={{
-            flexDirection: "row",
-            flexWrap: "wrap",
-            gap: 8,
-            marginTop: 4,
-            marginBottom: 16,
+            position: "absolute",
+            bottom: 70,
+            left: 24,
+            right: 24,
           }}
         >
           <View
             style={{
-              width: 180,
-              height: 28,
+              alignSelf: "flex-start",
+              marginBottom: 8,
+              width: 70,
+              height: 30,
               borderRadius: 999,
               backgroundColor: colors.surface4,
             }}
           />
+          <View style={{ marginBottom: 2, gap: 4 }}>
+            <View
+              style={{
+                width: 150,
+                height: 35,
+                borderRadius: 999,
+                backgroundColor: colors.surface4,
+              }}
+            />
+          </View>
+          <View
+            style={{
+              flexDirection: "row",
+              flexWrap: "wrap",
+              gap: 8,
+              marginTop: 4,
+              marginBottom: 16,
+            }}
+          >
+            <View
+              style={{
+                width: 180,
+                height: 28,
+                borderRadius: 999,
+                backgroundColor: colors.surface4,
+              }}
+            />
+          </View>
         </View>
-      </View>
+      )}
 
       {/* Ortada Search ikonu + radar pulse */}
       <View
@@ -462,7 +515,9 @@ const DEFAULT_FILTERS = {
   genders: [],
   interestedIn: [],
   preferredCity: null,
-  preferredUniversityDomain: null,
+  // "Ben kimi göreyim" üniversite tercihi — çoklu (max 3). Tekil
+  // `preferredUniversityDomain` deprecated.
+  preferredUniversityDomains: [],
   // "Beni kim görsün / görmesin" listeleri — backend boş dizi döner (null değil).
   visibleOnlyToUniversityDomains: [],
   hiddenFromUniversityDomains: [],
@@ -473,6 +528,7 @@ export default function DiscoverScreen() {
   useRenderCount("DiscoverScreen");
   const { t } = useTranslation();
   const insets = useSafeAreaInsets();
+  const dispatch = useAppDispatch();
 
   const matchesQuery = usePotentialMatches();
   const filtersQuery = useSwipeFilters();
@@ -482,14 +538,31 @@ export default function DiscoverScreen() {
   const undoMutation = useUndoSwipe();
   const updateStatsCache = useUpdateStatsCache();
 
-  // Session boyunca swipe edilen userId'ler. Backend zaten geçmiş swipe'ları
-  // filtrelemeli ama (1) race condition: stack boşalıp polling refetch
-  // tetiklendiğinde swipe POST'ları henüz commit edilmemiş olabilir,
-  // (2) backend filtresinde nadir bug durumlarına karşı defensive bir
-  // safety net. Prune aşağıdaki potentialMatches memo'sunda yapılıyor —
-  // veri hangi yoldan gelirse gelsin (ilk fetch / fetchNextPage / polling
-  // refetch) aynı süzgeçten geçsin diye.
-  const swipedUserIdsRef = useRef<Set<string>>(new Set());
+  // Deste ilerlemesi hesap bazlı saklanıyor (bkz. deckProgress.ts). Selector
+  // burada, ref'lerden ÖNCE okunuyor: aşağıdaki lazy initializer'lar userId'ye
+  // ihtiyaç duyuyor. Tutorial bayrağı da aynı değeri kullanır.
+  const currentUserId = useAppSelector((s) => s.auth.user?.id);
+  const [restoredDeck] = useState(() => loadDeckProgress(currentUserId));
+
+  // Swipe edilen userId → swipe ANI. Backend geçmiş swipe'ları zaten filtreliyor;
+  // bu küme yalnızca commit yarışını kapatıyor: stack boşalıp polling refetch
+  // tetiklendiğinde swipe POST'ları henüz işlenmemiş olabiliyor (ZREM
+  // fire-and-forget) ve az önce kaydırılan kart yanıtta hâlâ duruyor.
+  // Prune aşağıdaki potentialMatches memo'sunda — veri hangi yoldan gelirse
+  // gelsin (ilk fetch / fetchNextPage / polling refetch) aynı süzgeçten geçsin.
+  //
+  // ZAMAN DAMGASI ŞART: eleme yalnız SWIPE_GUARD_MS içindeki kayıtlara
+  // uygulanıyor. Süresiz elerken tek bir uyuşmazlık desteyi gün boyu
+  // öldürüyordu — backend profili bilerek yeniden sunsa bile (test verisi,
+  // havuz tazeleme, swipe POST'unun düşmesi) istemci sessizce eliyor, aday
+  // kalmayınca radar ekranı kilitleniyordu. Pencere dışında backend'e güven.
+  const swipedAtRef = useRef<Map<string, number>>(
+    new Map(restoredDeck.swipes),
+  );
+  const isGuarded = useCallback((userId: string) => {
+    const at = swipedAtRef.current.get(userId);
+    return at != null && Date.now() - at < SWIPE_GUARD_MS;
+  }, []);
 
   // currentIndex burada tanımlı çünkü potentialMatches memo'su ona bağımlı
   // (aşağıdaki index-güvenli prune). Kardeş swipe state'leri render bölümünün
@@ -511,20 +584,118 @@ export default function DiscoverScreen() {
     // handleSwipe önce ref'e ekleyip sonra currentIndex'i artırdığı için
     // yeni swipe edilen kart hep geçmişte kalır, anlık atlama olmaz.
     const seen = new Set();
-    const out: any[] = [];
+    const deduped: any[] = [];
     for (const p of all) {
       if (!p?.userId || seen.has(p.userId)) continue;
       seen.add(p.userId);
-      if (
-        out.length >= currentIndex &&
-        swipedUserIdsRef.current.has(p.userId)
-      ) {
-        continue;
+      deduped.push(p);
+    }
+    // "Geçmiş" ancak dizi currentIndex'e KADAR uzanıyorsa vardır. Refetch
+    // 1. sayfayı eklemiyor DEĞİŞTİRİYOR: gelen dizi eski index'ten kısaysa
+    // ortada korunacak geçmiş yok, o dizinin tamamı kuyruktur. Eski koşul
+    // (out.length >= currentIndex) bu durumda HİÇBİR ŞEYİ elemiyordu ve
+    // backend'in ZREM'i fire-and-forget olduğu için tam da o anda gelen
+    // yanıtta az önce swipe edilen profiller duruyor olabiliyor → deste
+    // boşalınca yapılan takviyede pass'lanan kart yeniden kartın üstüne
+    // düşüyordu. Yarışı biz kapatıyoruz, backend'in commit'ini beklemeden.
+    const historyLimit = deduped.length > currentIndex ? currentIndex : 0;
+    const out = deduped.filter(
+      (p, i) => i < historyLimit || !isGuarded(p.userId),
+    );
+    if (__DEV__) {
+      // GEÇİCİ TEŞHİS LOGU — desteyi hangi adımın boşalttığını gösterir.
+      const pruned = deduped.filter(
+        (p, i) => !(i < historyLimit || !isGuarded(p.userId)),
+      );
+      // eslint-disable-next-line no-console
+      console.log(
+        `[deck] api=${all.length} dedupe=${deduped.length} → deste=${out.length} | ` +
+          `currentIndex=${currentIndex} historyLimit=${historyLimit} ` +
+          `swipeKaydı=${swipedAtRef.current.size} elenen=${pruned.length}`,
+      );
+      if (pruned.length) {
+        // eslint-disable-next-line no-console
+        console.log(
+          `[deck] swipe koruması elemiş (<${SWIPE_GUARD_MS / 1000}sn):`,
+          pruned.map((p) => `${p?.displayName}(${p?.userId})`).join(", "),
+        );
       }
-      out.push(p);
+      // eslint-disable-next-line no-console
+      console.log(
+        "[deck] gösterilecek:",
+        out
+          .map(
+            (p, i) =>
+              `${i === currentIndex ? "▶" : " "}${i}. ${p?.displayName ?? "?"} ` +
+              `${p?.age ?? "-"}y ${p?.distance ?? "-"}km ${p?.universityName ?? "-"}`,
+          )
+          .join("\n") || "(BOŞ → EmptyDiscoverCard/radar gösterilir)",
+      );
     }
     return out;
-  }, [matchesQuery.data, currentIndex]);
+  }, [matchesQuery.data, currentIndex, isGuarded]);
+
+  // ── Üst kartın KİMLİK demiri ────────────────────────────────────────────
+  // currentIndex bu diziye bir POZİSYON. Infinite query refetch edilince
+  // (foreground invalidate, profil/dil/satın alma invalidate'i, boş deste
+  // yoklaması) React Query TÜM sayfaları baştan çekiyor ve backend swipe
+  // edilenleri elediği için dizi başından kayıyor → aynı index'te bambaşka
+  // biri oturuyordu, kart kullanıcı hiçbir şey yapmadan değişiyordu.
+  //
+  // Çözüm: üstte duran kullanıcının id'sini tut, veri altımızdan değişince
+  // index'i o kişiyi gösterecek şekilde taşı. Realign YALNIZ `data` referansı
+  // değiştiğinde yapılıyor — kullanıcının kendi ilerlemesinde (swipe/undo)
+  // demir sadece tazeleniyor, yoksa her swipe geri alınırdı.
+  //
+  // Hizalama ve demir tazeleme TEK effect'te: iki ayrı effect'e bölününce
+  // doğruluk tanımlanma sıralarına bağlı hale geliyor (önce hizala, sonra
+  // tazele; ters sırada demir yanlış kartla eziliyor ve düzeltme hiç olmuyor).
+  // useLayoutEffect: düzeltme aynı commit'te, boyanmadan önce uygulansın —
+  // aksi halde yanlış kart bir kare görünürdü. Ortak yolda O(1), state
+  // güncellemesi yok; findIndex sadece veri değiştiğinde çalışır.
+  // setCurrentIndex sonrası memo yeniden hesaplanır ama demir yerinde kalır
+  // (kuyruk budaması yalnız index'ten SONRAsını atar) → tek adımda oturur.
+  //
+  // Demir MMKV'den hidre ediliyor (deckProgress.ts): backend sırası artık
+  // deterministik olduğu için önceki oturumun üst kartı yeni destede de aynı
+  // yerde duruyor; ilk veri indiğinde aşağıdaki hizalama kullanıcıyı kaldığı
+  // karta götürüyor. Kart destede yoksa (son swipe backend'e inmiş) index 0'da
+  // kalır — doğrusu da o, çünkü backend swipe edilenleri havuzdan eliyor.
+  const anchorUserIdRef = useRef<string | null>(restoredDeck.anchorUserId);
+  const lastMatchesDataRef = useRef<unknown>(null);
+  const persistedDeckSigRef = useRef<string | null>(null);
+  useLayoutEffect(() => {
+    const dataChanged = lastMatchesDataRef.current !== matchesQuery.data;
+    lastMatchesDataRef.current = matchesQuery.data;
+    const anchor = anchorUserIdRef.current;
+    if (dataChanged && anchor) {
+      const idx = potentialMatches.findIndex((p) => p?.userId === anchor);
+      // idx === -1: kart destede yok (backend düşürmüş) → yapacak bir şey yok,
+      // index olduğu yerde kalır. Demir bir sonraki commit'te tazelenir.
+      if (idx !== -1 && idx !== currentIndex) {
+        setCurrentIndex(idx);
+        return;
+      }
+    }
+    // Deste boşken demiri SIFIRLAMA. İlk render'da (veri henüz inmemişken)
+    // potentialMatches boş; koşulsuz atama MMKV'den gelen demiri daha
+    // kullanılmadan siler ve "kaldığı yerden devam" hiç çalışmazdı.
+    const topUserId = potentialMatches[currentIndex]?.userId ?? null;
+    if (topUserId) anchorUserIdRef.current = topUserId;
+
+    // Kalıcılaştırma: demir ya da swipe kümesi değiştiyse yaz. MMKV senkron ve
+    // ucuz, ama her commit'te JSON.stringify etmenin anlamı yok — imza guard'ı
+    // yalnız gerçek değişimde yazdırıyor.
+    const sig = `${anchorUserIdRef.current ?? ""}|${swipedAtRef.current.size}`;
+    if (sig !== persistedDeckSigRef.current) {
+      persistedDeckSigRef.current = sig;
+      saveDeckProgress(currentUserId, {
+        anchorUserId: anchorUserIdRef.current,
+        swipes: [...swipedAtRef.current],
+      });
+    }
+  }, [matchesQuery.data, potentialMatches, currentIndex, currentUserId]);
+
   const loading = matchesQuery.isLoading;
   const filters = filtersQuery.data ?? DEFAULT_FILTERS;
   const remainingUndos = statsQuery.data?.remainingUndos ?? null;
@@ -620,7 +791,8 @@ export default function DiscoverScreen() {
     const interestedIn = filters.interestedIn || [];
     if (interestedIn.length > 0 && interestedIn.length < 3) count++;
     if (filters.preferredCity) count++;
-    if (filters.preferredUniversityDomain) count++;
+    // Üniversite tercihi de artık liste: kaç domain seçildiğinden bağımsız 1.
+    if ((filters.preferredUniversityDomains || []).length > 0) count++;
     // Görünürlük listeleri: kaç domain seçildiğinden bağımsız, liste başına 1.
     if ((filters.visibleOnlyToUniversityDomains || []).length > 0) count++;
     if ((filters.hiddenFromUniversityDomains || []).length > 0) count++;
@@ -657,8 +829,13 @@ export default function DiscoverScreen() {
   // SuperLike kota bitince true. Pull-up swipe + button ikisini de blokar.
   const superLikeQuotaExhausted = useMemo(() => {
     const rem = statsQuery.data?.superLikesRemaining;
-    if (rem == null || rem < 0) return false;
-    return rem === 0;
+    // `null` = değer henüz bilinmiyor (satın alma sonrası optimistic pencere) →
+    // bloklama. Negatif ise TÜKENMİŞ sayılır: SuperLike'ın "sınırsız" hâli yok
+    // (doküman tuzak #2). Eskiden `rem < 0` sınırsız gibi ele alınıyordu ve
+    // backend refund'da claw-back yapmama kararını tam bu yanlış yoruma
+    // dayandırıyor — v2'de gerçek revoke gelirse bedava SuperLike dağıtırdık.
+    if (rem == null) return false;
+    return rem <= 0;
   }, [statsQuery.data?.superLikesRemaining]);
 
   // currentIndex yukarıda, potentialMatches memo'sundan önce tanımlı.
@@ -670,13 +847,68 @@ export default function DiscoverScreen() {
   // deneme; sonrasında animasyon devam eder ama istek atmaz. Yeni profil
   // gelirse (isEmpty=false) sayaç resetlenir.
   const pollCountRef = useRef(0);
+  const [pollEpoch, setPollEpoch] = useState(0);
   const isEmptyStack =
     !matchesQuery.isLoading && potentialMatches.length <= currentIndex;
+
+  // ── Boş destenin YAPISAL sebebi ─────────────────────────────────────────
+  // Backend boş dönerken sessiz değil: `emptyReasonCode` (UT-6xxx) + kardeşi
+  // `emptyReason` enum'u ile nedeni taşıyor. Bunlar okunmadığı sürece
+  // kullanıcı filtresi çok darken de, profili eksikken de aynı radar
+  // animasyonunu izliyordu.
+  //
+  // Sebep SON sayfadan okunuyor: dolu sayfaların ardından gelen boş sayfa
+  // güncel durumu taşır (ilk sayfa dolu geldiyse `emptyReason: "None"`dur).
+  const lastPage = matchesQuery.data?.pages?.[matchesQuery.data.pages.length - 1];
+  const emptyEntry: CodeEntry | null = useMemo(() => {
+    if (!lastPage) return null;
+    // Zarftaki `code` ile result'taki `emptyReasonCode` semantik olarak aynı;
+    // backend ikisini de doldurabiliyor, hangisi doluysa o kullanılır.
+    return resolveCode(
+      lastPage.emptyReasonCode ?? lastPage.code,
+      lastPage.emptyReason,
+    );
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [lastPage?.emptyReasonCode, lastPage?.code, lastPage?.emptyReason]);
+
+  // Yapısal sebep VARSA ve o sebep geçici değilse (autoRetry yok) kör yoklama
+  // yapma: "filtrelerin çok dar" durumunda 5 kez 5 saniyede bir istek atmanın
+  // hiçbir karşılığı yok, sadece kotayı ve pili yiyor. Sebep çözülemediğinde
+  // (bilinmeyen kod / alan hiç gelmiyor) eski davranış korunuyor.
+  const pollBlocked = emptyEntry != null && !emptyEntry.autoRetry;
+
+  // Foreground'a dönüşte desteyi tazeleme kararı BURADA veriliyor (eskiden
+  // AppNavigator koşulsuz invalidate ediyordu). Deste doluysa dokunmuyoruz:
+  // kullanıcı destenin ortasındayken tüm sayfaları yeniden çekmek hem 4 ağ
+  // isteği + render churn, hem de sırayı kaydırıp kartı altından değiştiriyor.
+  // Boşsa tazeliyoruz — AppNavigator'daki asıl gerekçe buydu: önceki oturumdan
+  // kalan boş sayfa, kullanıcı filtreye dokunmadan hiç yenilenmiyordu.
+  const isEmptyStackRef = useRef(isEmptyStack);
+  useEffect(() => {
+    isEmptyStackRef.current = isEmptyStack;
+  }, [isEmptyStack]);
+  const refetchMatches = useEvent(() => {
+    matchesQuery.refetch();
+  });
+  useEffect(() => {
+    const sub = AppState.addEventListener("change", (s) => {
+      if (s !== "active" || !isEmptyStackRef.current) return;
+      // Yeni bir "boş deste" periyodu: 5'lik yoklama hakkı da yenilensin,
+      // interval yeniden kurulsun (sayaç dolmuşsa effect kendiliğinden
+      // çalışmaz, epoch bump'ı olmadan bir daha hiç yoklamaz).
+      pollCountRef.current = 0;
+      setPollEpoch((e) => e + 1);
+      refetchMatches();
+    });
+    return () => sub.remove();
+  }, [refetchMatches]);
+
   useEffect(() => {
     if (!isEmptyStack) {
       pollCountRef.current = 0;
       return;
     }
+    if (pollBlocked) return;
     if (pollCountRef.current >= 5) return;
     const intervalId = setInterval(async () => {
       if (pollCountRef.current >= 5) {
@@ -685,7 +917,7 @@ export default function DiscoverScreen() {
       }
       pollCountRef.current += 1;
       // Prune burada YAPILMIYOR. Eskiden refetch sonrası cache'i
-      // swipedUserIdsRef'e göre setQueryData ile yeniden yazıyorduk; iki
+      // swipe kümesine göre setQueryData ile yeniden yazıyorduk; iki
       // sorunu vardı: (1) fetchNextPage ile gelen sayfalar bu yoldan hiç
       // geçmediği için swipe edilmiş kullanıcı tekrar kart olarak çıkabiliyordu,
       // (2) her tick cache'i yeniden yazıp gereksiz re-render üretiyordu.
@@ -694,7 +926,7 @@ export default function DiscoverScreen() {
     }, 5000);
     return () => clearInterval(intervalId);
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [isEmptyStack]);
+  }, [isEmptyStack, pollEpoch, pollBlocked]);
 
   // Refetch (polling veya filter sonrası) backend swipe edilenleri filtrelediği
   // için yeni page 1 daha az profil dönebilir; currentIndex eski uzunluğa göre
@@ -736,6 +968,29 @@ export default function DiscoverScreen() {
     setSuperLikePurchaseVisible(true);
   });
 
+  // Premium modalını açmadan önce canonical state'i tazele (doküman §11):
+  // kullanıcı başka bir cihazda premium olmuş olabilir ve ona tekrar satış
+  // ekranı göstermek "zaten aldım, hâlâ para istiyor" şikâyetinin kaynağı.
+  // Premium çıkarsa modal yerine kotaları tazeliyoruz — bu ekranda "hakkın
+  // bitti" sayacı ile premium durumu aynı anda duramaz.
+  //
+  // NOT: SuperLike paket sheet'i bu kontrolden GEÇMEZ; o premium'da da açılıyor
+  // (backend `showPaywall:true` dönüyor, satılacak paket var — §10).
+  const openPremiumPaywall = useEvent(() => {
+    dispatch(refreshEntitlementsForPaywall())
+      .unwrap()
+      .then((premium) => {
+        if (premium) {
+          statsQuery.refetch?.();
+          return;
+        }
+        setPurchaseVisible(true);
+      })
+      // Tazeleme başarısızsa paywall'ı YİNE aç: kullanıcıyı satın alma yolundan
+      // ağ hatası yüzünden koparmak, gereksiz modaldan daha kötü.
+      .catch(() => setPurchaseVisible(true));
+  });
+
   // Backend SwipeResultDto.ShowPaywall=true geldiğinde (Like/Pass kotası dolu) veya
   // GetPotentialMatches response'unda quota=0 geldiğinde useSwipeMutation uiBus'a event
   // emit eder; biz burada subscribe olup paywall'ı açıyoruz.
@@ -745,7 +1000,7 @@ export default function DiscoverScreen() {
       // doldu (satacak bir şey yok) → sheet AÇILMAZ, sadece bilgi. Eski
       // event'lerde alan yoktu, `=== false` ile geriye dönük uyumlu.
       if (payload?.showPaywall === false) return;
-      setPurchaseVisible(true);
+      openPremiumPaywall();
     });
     // SuperLike kota bittiğinde SwipeWrapper bu event'i emit eder (pull-up swipe).
     const unsubSuperLike = uiBus.on("superLikePaywall", () => {
@@ -755,11 +1010,74 @@ export default function DiscoverScreen() {
       unsubSwipe();
       unsubSuperLike();
     };
-    // showSuperLikeLimitUi useEvent — referansı stabil, resubscribe gerekmez.
-  }, [showSuperLikeLimitUi]);
+    // showSuperLikeLimitUi / openPremiumPaywall useEvent — referansları stabil,
+    // resubscribe gerekmez.
+  }, [showSuperLikeLimitUi, openPremiumPaywall]);
 
   const [filterVisible, setFilterVisible] = useState(false);
   const lastSwipePromiseRef = useRef(null);
+
+  // ── Boş durum metni + aksiyonu ──────────────────────────────────────────
+  // Metin sırası: uygulama dilindeki i18n karşılığı → backend'in lokalize
+  // `emptyReasonMessage`'ı → sözlükteki TR fallback. i18n önce geliyor çünkü
+  // kullanıcının uygulama içi dil tercihi tek doğru kaynak; backend metni
+  // yalnız FE'nin tanımadığı yeni bir kod geldiğinde devreye girer.
+  const emptyCopy = useMemo(() => {
+    if (!emptyEntry?.emptyReason) return null;
+    const reasonKey =
+      emptyEntry.emptyReason.charAt(0).toLowerCase() +
+      emptyEntry.emptyReason.slice(1);
+    return {
+      title: t(`discover.empty.${reasonKey}.title`, {
+        defaultValue: lastPage?.emptyReasonMessage || emptyEntry.title,
+      }),
+      actionLabel:
+        emptyEntry.action.kind === "dismiss"
+          ? null
+          : t(`discover.empty.${reasonKey}.action`, {
+              defaultValue: emptyEntry.actionLabel,
+            }),
+    };
+  }, [emptyEntry, lastPage?.emptyReasonMessage, t]);
+
+  // `expandRadius` da filtre ekranını açıyor: yarıçapı istemcide sessizce
+  // büyütmüyoruz, mesafe kullanıcının kaydettiği bir tercih — arkasından
+  // değiştirmek yerine slider'ı önüne koyuyoruz.
+  const handleEmptyAction = useEvent(() => {
+    switch (emptyEntry?.action.kind) {
+      case "openFilters":
+      case "expandRadius":
+        setFilterVisible(true);
+        return;
+      case "completeProfile":
+        navigation.navigate("Profile");
+        return;
+      case "openPaywall":
+        openPremiumPaywall();
+        return;
+      case "retry":
+        // Yoklama hakkını da yenile: PoolWarming'de kullanıcı butona basınca
+        // yalnız tek istek değil, yeni bir 5'lik tur başlasın.
+        pollCountRef.current = 0;
+        setPollEpoch((e) => e + 1);
+        refetchMatches();
+        return;
+      case "contactSupport": {
+        const subject = encodeURIComponent(
+          t("discover.empty.supportSubject", {
+            code: emptyEntry.code,
+            defaultValue: emptyEntry.code,
+          }),
+        );
+        Linking.openURL(`mailto:${SUPPORT_EMAIL}?subject=${subject}`).catch(
+          () => {},
+        );
+        return;
+      }
+      default:
+        return;
+    }
+  });
 
   const dragX = useSharedValue(0);
   const overlayDragX = useSharedValue(0);
@@ -774,7 +1092,7 @@ export default function DiscoverScreen() {
   const TUTORIAL_TX = 55; // like/pass threshold (85) altında
   const TUTORIAL_SWING_DURATION = 550;
   const TUTORIAL_STORAGE_KEY = "discoverSwipeTutorialShown";
-  const currentUserId = useAppSelector((s) => s.auth.user?.id);
+  // currentUserId yukarıda, deste hidrasyonundan önce okunuyor.
   // KVKK onay sheet'i navigator'ın üstünde açılıyor; onaylanana kadar Discover
   // odaklı sayılsa da kart modalın arkasında kalıyor. Tutorial'ı onay sonrasına ertele.
   const kvkkAccepted = useAppSelector(
@@ -903,47 +1221,79 @@ export default function DiscoverScreen() {
     },
   );
 
-  // Pre-fetch sonraki sayfa: kart stack 5'in altına düşünce.
+  // ── Deste takviyesi: kuyruk 5'in altına düşünce ─────────────────────────
+  // Karar mantığı deckTopUp.ts'te (sonsuz döngü guard'ı + neden refetch'in yeni
+  // profil getirdiği orada anlatılıyor). Buradaki tek iş kararı uygulamak.
   //
-  // DİKKAT — bu effect kendi kendini tetikleyebiliyor: fetchNextPage çağırınca
-  // isFetching false→true→false gidiyor, effect iki kez daha çalışıyor. Deste
-  // boşken `remainingCards <= 5` kalıcı olarak true olduğu için, gelen sayfa
-  // yeni profil eklemezse (boş sayfa ya da dedupe'a takılan tekrar profiller)
-  // sonsuz fetch döngüsü oluşuyordu → pages dizisi şişer, her yanıtta
-  // flatMap+dedupe tüm birikmiş sayfaları baştan tarar, ekran kilitlenir.
-  //
-  // Guard: son denememizi hangi uzunlukta yaptığımızı tutuyoruz. Liste o
-  // denemeden beri hiç büyümediyse backend bize verecek yeni profil yok
-  // demektir; tekrar istemiyoruz. Liste değişince (polling refetch yeni
-  // profil getirdiğinde) guard kendiliğinden açılıyor.
-  const lastPrefetchLenRef = useRef(-1);
+  // Eskiden yalnız fetchNextPage vardı: `hasNextPage` false dönen destede
+  // takviye HİÇ olmuyordu, kullanıcı 10 kartı bitirip radar ekranına düşüyor ve
+  // yeni profilleri boş-deste yoklamasının ilk tick'inde (≥5sn sonra) görüyordu.
+  const lastTopUpSigRef = useRef<string | null>(null);
+  const lastTopUpRefetchAtRef = useRef(0);
   useEffect(() => {
-    const remainingCards = potentialMatches.length - currentIndex;
-    if (remainingCards > 5) {
-      lastPrefetchLenRef.current = -1;
+    // Kuyruk = henüz gösterilmemiş kartlar. Slice yalnız eşiğin altındayken
+    // anlamlı ama ölçüsü zaten küçük; dizi kimliği üzerinden karar veriyoruz
+    // çünkü refetch sayfayı ekleme değil DEĞİŞTİRME yapıyor (uzunluk yanıltır).
+    const tailIds = potentialMatches
+      .slice(currentIndex)
+      .map((p: any) => p?.userId)
+      .filter(Boolean) as string[];
+    const { action, signature } = decideTopUp({
+      tailIds,
+      // isFetchingNextPage değil isFetching: polling refetch uçarken araya
+      // fetchNextPage sokmak sayfaları çakıştırıyor.
+      isFetching: matchesQuery.isFetching,
+      hasNextPage: !!matchesQuery.hasNextPage,
+      refetchBlocked: pollBlocked,
+      lastSignature: lastTopUpSigRef.current,
+      msSinceLastRefetch: Date.now() - lastTopUpRefetchAtRef.current,
+    });
+    if (action === "reset") {
+      lastTopUpSigRef.current = null;
       return;
     }
-    // isFetchingNextPage değil isFetching: polling refetch uçarken araya
-    // fetchNextPage sokmak sayfaları çakıştırıyor.
-    if (matchesQuery.isFetching) return;
-    if (!matchesQuery.hasNextPage) return;
-    if (lastPrefetchLenRef.current === potentialMatches.length) return;
-    lastPrefetchLenRef.current = potentialMatches.length;
-    matchesQuery.fetchNextPage();
+    if (action === "none") return;
+    lastTopUpSigRef.current = signature;
+    if (action === "next-page") {
+      matchesQuery.fetchNextPage();
+      return;
+    }
+    lastTopUpRefetchAtRef.current = Date.now();
+    refetchMatches();
   }, [
     currentIndex,
-    potentialMatches.length,
+    potentialMatches,
+    pollBlocked,
     matchesQuery.hasNextPage,
     matchesQuery.isFetching,
     matchesQuery.fetchNextPage,
+    refetchMatches,
   ]);
 
   const handleSwipe = useEvent((direction, userId) => {
-    if (userId) swipedUserIdsRef.current.add(userId);
+    if (userId) swipedAtRef.current.set(userId, Date.now());
     setCurrentIndex((i) => i + 1);
     analytics.capture('swipe', { direction });
     const isPass = direction === "left";
     setLastSwipeWasPass(isPass);
+    // Destedeki bu kart beni beğenmiş biri miydi? Öyleyse yön ne olursa olsun
+    // artık "bekleyen beğeni" değil: sağa kaydırma match yaratır, sola kaydırma
+    // eşleşmeyi kaçırır. Rozet iki durumda da ANINDA düşer — MatchNotification'ı
+    // ya da bir sonraki WhoLikedMe fetch'ini beklemeden.
+    // store.getState(): selector'la abone olmak her gelen beğenide desteyi
+    // yeniden render ederdi (render churn = commit-storm riski).
+    if (hasLikedMe(store.getState(), userId)) {
+      const swiped = potentialMatches.find((p) => p?.userId === userId);
+      dispatch(removeWhoLikedMe(userId));
+      // Likes ekranı mount'sa listesinden düşürsün — sayacı O dispatch etmez.
+      uiBus.emit("likerHandled", { userId });
+      if (isPass) {
+        showMissedMatchToast({
+          name: swiped?.displayName,
+          photoUrl: swiped?.photos?.[0] || swiped?.profileImageUrl,
+        });
+      }
+    }
     lastSwipePromiseRef.current = swipeMutation.mutateAsync({
       direction,
       userId,
@@ -958,10 +1308,10 @@ export default function DiscoverScreen() {
       return;
     }
 
-    // Undo edilen profili swipedUserIdsRef'ten çıkar — aksi halde sonraki
-    // polling refetch'inde defensive prune onu listeden silmeye devam eder.
+    // Undo edilen profili swipedAtRef'ten çıkar — aksi halde sonraki polling
+    // refetch'inde koruma penceresi onu listeden silmeye devam eder.
     const undoneUserId = potentialMatches[currentIndex - 1]?.userId;
-    if (undoneUserId) swipedUserIdsRef.current.delete(undoneUserId);
+    if (undoneUserId) swipedAtRef.current.delete(undoneUserId);
 
     // Optimistic UI: kart hemen geri gelir + animasyon
     setCurrentIndex((i) => Math.max(0, i - 1));
@@ -998,7 +1348,7 @@ export default function DiscoverScreen() {
       await undoMutation.mutateAsync();
     } catch (err) {
       setCurrentIndex((i) => i + 1);
-      if (undoneUserId) swipedUserIdsRef.current.add(undoneUserId);
+      if (undoneUserId) swipedAtRef.current.set(undoneUserId, Date.now());
       if (prevUndos !== null) updateStatsCache({ remainingUndos: prevUndos });
       Alert.alert("", err?.message || t('discover.rewind.error'));
     }
@@ -1203,7 +1553,11 @@ export default function DiscoverScreen() {
             <SwipeOverlay dragX={overlayDragX} opacity={overlayOpacity} />
           </Animated.View>
         ) : (
-          <EmptyDiscoverCard />
+          <EmptyDiscoverCard
+            title={emptyCopy?.title ?? null}
+            actionLabel={emptyCopy?.actionLabel ?? null}
+            onAction={handleEmptyAction}
+          />
         )}
       </Animated.View>
 

@@ -1,184 +1,111 @@
 import { createSlice, createAsyncThunk, PayloadAction } from "@reduxjs/toolkit";
 import swipeService from "@/features/discover/swipeService";
-import type { SwipeState, SwipeStats } from "@/shared/types";
+import type { SwipeState } from "@/shared/types";
 
-export const fetchPotentialMatches = createAsyncThunk(
-  "swipe/fetchPotentialMatches",
-  async (pageNumber: number = 1, { getState, rejectWithValue }) => {
-    try {
-      const state = getState() as any;
-      const token = state.auth.token;
-      const response = await swipeService.getPotentialMatches(token, pageNumber, 10);
-      return response;
-    } catch (error: any) {
-      return rejectWithValue(error.message || "Failed to fetch matches");
-    }
-  },
-  {
-    // In-flight dedupe: boot/preload/focus tetikleyicileri aynı anda yarışınca
-    // GetPotentialMatches iki kez atılıyordu (Sentry trace kanıtlı).
-    condition: (_, { getState }) => !(getState() as any).swipe?.loading,
-  },
-);
+/**
+ * NOT: Deste (potentialMatches / currentIndex / sayfalama) ve kota sayaçları
+ * artık BU SLICE'TA DEĞİL. Deste React Query'de (`usePotentialMatches`),
+ * kotalar `swipeKeys.stats` cache'inde yaşıyor. Redux → React Query geçişinden
+ * kalan `fetchPotentialMatches`, `loadMoreProfiles`, `performLike/Pass/
+ * SuperLike`, `nextCard`, `rewindCard`, `updateSwipeStats` thunk/reducer'ları
+ * ve karşılık gelen state alanları hiçbir yerden okunmuyordu; kaldırıldı.
+ * Geriye yalnız "beni beğenenler" rozeti kaldı — o gerçekten global, çünkü
+ * Discover, Likes ekranı ve tab rozeti aynı kümeyi paylaşıyor.
+ */
 
-export const loadMoreProfiles = createAsyncThunk(
-  "swipe/loadMoreProfiles",
-  async (_, { getState, rejectWithValue }) => {
-    try {
-      const state = getState() as any;
-      const token = state.auth.token;
-      const nextPage = state.swipe.currentPage + 1;
-      const response = await swipeService.getPotentialMatches(token, nextPage, 10);
-      return response;
-    } catch (error: any) {
-      return rejectWithValue(error.message || "Failed to load more matches");
-    }
-  },
-  {
-    // Eşzamanlı loadMore çiftlerini düşür (deck sonu tetikleyicileri yarışabilir).
-    condition: (_, { getState }) => {
-      const s = (getState() as any).swipe;
-      return !s?.loadingMore && !s?.loading;
-    },
-  },
-);
-
-export const performLike = createAsyncThunk(
-  "swipe/performLike",
-  async (targetUserId: string, { getState }) => {
-    const state = getState() as any;
-    return await swipeService.likeUser(targetUserId, state.auth.token);
-  },
-);
-
-export const performPass = createAsyncThunk(
-  "swipe/performPass",
-  async (targetUserId: string, { getState }) => {
-    const state = getState() as any;
-    return await swipeService.passUser(targetUserId, state.auth.token);
-  },
-);
-
-export const performSuperLike = createAsyncThunk(
-  "swipe/performSuperLike",
-  async (targetUserId: string, { getState }) => {
-    const state = getState() as any;
-    return await swipeService.superLikeUser(targetUserId, state.auth.token);
+/**
+ * Rozet sayısı + liker id kümesini Likes sekmesi MOUNT OLMADAN doldurur.
+ * Tab'lar lazy: kullanıcı Beğeniler'e hiç girmediyse ne rozet doğruydu ne de
+ * Discover'da "bu kişi beni beğenmişti" bilinebiliyordu.
+ * Hata sessiz — rozet kozmetik, boot'u bloklamaz.
+ */
+export const fetchWhoLikedMe = createAsyncThunk(
+  "swipe/fetchWhoLikedMe",
+  async (_: void, { rejectWithValue }) => {
+    const res = (await swipeService.getWhoLikedMe()) as any;
+    if (!res?.isSuccess || !res?.result) return rejectWithValue(null);
+    const r = res.result;
+    return {
+      count: (r.superLikes?.totalProfiles || 0) + (r.likes?.totalProfiles || 0),
+      ids: [
+        ...(r.superLikes?.profiles ?? []),
+        ...(r.likes?.profiles ?? []),
+      ].map((p: any) => p?.userId),
+    };
   },
 );
 
 const initialState: SwipeState = {
-  potentialMatches: [],
-  currentIndex: 0,
-  currentPage: 1,
-  hasNextPage: false,
-  loading: false,
-  loadingMore: false,
-  error: null,
-  remainingSwipes: null,
-  superLikesRemaining: null,
-  purchasedSuperLikes: null,
-  quotaSuperLikesRemaining: null,
-  swipeCountResetAt: null,
-  superLikeCountResetAt: null,
-  premiumExpiresAt: null,
-  isPremium: false,
-  totalSwipesToday: 0,
-  likesToday: 0,
-  passesToday: 0,
-  superLikesToday: 0,
-  matchesToday: 0,
-  remainingUndos: null,
-  undoCountResetAt: null,
-  remainingMissedMatchRecovery: null,
-  missedMatchRecoveryResetAt: null,
-  dailySwipeLimit: null,
-  weeklySuperLikeLimit: null,
-  dailyUndoLimit: null,
   whoLikedMeCount: 0,
+  whoLikedMeIds: [],
 };
+
+// GUID'ler endpoint'e göre farklı case gelebiliyor — küme karşılaştırması
+// bunun üzerinden yapıldığı için tek normalize noktası.
+const normalizeId = (id: unknown): string | null =>
+  typeof id === "string" && id.length > 0 ? id.toLowerCase() : null;
+
+// Sayaç TOPLAM'dan (sayfalanmamış), id kümesi yalnız çekilen sayfadan gelir —
+// setWhoLikedMe reducer'ı ile fetchWhoLikedMe thunk'ı aynı yazımı paylaşsın.
+function applyWhoLikedMe(
+  state: SwipeState,
+  payload: { count: number; ids: (string | null | undefined)[] },
+) {
+  state.whoLikedMeCount = Math.max(0, payload.count || 0);
+  state.whoLikedMeIds = Array.from(
+    new Set(payload.ids.map(normalizeId).filter(Boolean) as string[]),
+  );
+}
 
 const swipeSlice = createSlice({
   name: "swipe",
   initialState,
   reducers: {
-    setWhoLikedMeCount: (state, action: PayloadAction<number>) => {
-      state.whoLikedMeCount = action.payload || 0;
+    /** WhoLikedMe fetch'i — sayaç toplam (sayfalanmamış), id'ler yüklenen sayfa. */
+    setWhoLikedMe: (
+      state,
+      action: PayloadAction<{ count: number; ids: (string | null | undefined)[] }>,
+    ) => {
+      applyWhoLikedMe(state, action.payload);
     },
-    incrementWhoLikedMeCount: (state) => {
+    /** Canlı IncomingLike — id zaten kümedeyse (reconnect tekrarı) sayacı şişirme. */
+    addWhoLikedMe: (state, action: PayloadAction<string>) => {
+      const id = normalizeId(action.payload);
+      if (!id || state.whoLikedMeIds.includes(id)) return;
+      state.whoLikedMeIds.push(id);
       state.whoLikedMeCount = (state.whoLikedMeCount || 0) + 1;
     },
-    nextCard: (state) => {
-      if (state.currentIndex < state.potentialMatches.length) {
-        state.currentIndex += 1;
-      }
-    },
-    rewindCard: (state) => {
-      if (state.currentIndex > 0) {
-        state.currentIndex -= 1;
-      }
-    },
-    updateSwipeStats: (state, action: PayloadAction<Partial<SwipeStats>>) => {
-      const p = action.payload;
-      if (p.remainingSwipes !== undefined) state.remainingSwipes = p.remainingSwipes;
-      if (p.superLikesRemaining !== undefined) state.superLikesRemaining = p.superLikesRemaining;
-      if (p.purchasedSuperLikes !== undefined) state.purchasedSuperLikes = p.purchasedSuperLikes;
-      if (p.quotaSuperLikesRemaining !== undefined) state.quotaSuperLikesRemaining = p.quotaSuperLikesRemaining;
-      if (p.swipeCountResetAt !== undefined) state.swipeCountResetAt = p.swipeCountResetAt;
-      if (p.superLikeCountResetAt !== undefined) state.superLikeCountResetAt = p.superLikeCountResetAt;
-      if (p.premiumExpiresAt !== undefined) state.premiumExpiresAt = p.premiumExpiresAt;
-      if (p.isPremium !== undefined) state.isPremium = p.isPremium;
-      if (p.totalSwipesToday !== undefined) state.totalSwipesToday = p.totalSwipesToday;
-      if (p.likesToday !== undefined) state.likesToday = p.likesToday;
-      if (p.passesToday !== undefined) state.passesToday = p.passesToday;
-      if (p.superLikesToday !== undefined) state.superLikesToday = p.superLikesToday;
-      if (p.matchesToday !== undefined) state.matchesToday = p.matchesToday;
-      if (p.remainingUndos !== undefined) state.remainingUndos = p.remainingUndos;
-      if (p.undoCountResetAt !== undefined) state.undoCountResetAt = p.undoCountResetAt;
-      if (p.remainingMissedMatchRecovery !== undefined) state.remainingMissedMatchRecovery = p.remainingMissedMatchRecovery;
-      if (p.missedMatchRecoveryResetAt !== undefined) state.missedMatchRecoveryResetAt = p.missedMatchRecoveryResetAt;
-      if (p.dailySwipeLimit !== undefined) state.dailySwipeLimit = p.dailySwipeLimit;
-      if (p.weeklySuperLikeLimit !== undefined) state.weeklySuperLikeLimit = p.weeklySuperLikeLimit;
-      if (p.dailyUndoLimit !== undefined) state.dailyUndoLimit = p.dailyUndoLimit;
+    /**
+     * Bu liker handle edildi (pass/like/match) → rozet ANINDA düşsün.
+     * Id kümede yoksa sayaca dokunulmaz: kaynağı bilinmeyen bir düşüş,
+     * sayfalanmamış toplamı sessizce bozardı.
+     */
+    removeWhoLikedMe: (state, action: PayloadAction<string>) => {
+      const id = normalizeId(action.payload);
+      if (!id) return;
+      const idx = state.whoLikedMeIds.indexOf(id);
+      if (idx === -1) return;
+      state.whoLikedMeIds.splice(idx, 1);
+      state.whoLikedMeCount = Math.max(0, (state.whoLikedMeCount || 0) - 1);
     },
   },
   extraReducers: (builder) => {
-    builder
-      .addCase(fetchPotentialMatches.pending, (state) => {
-        state.loading = true;
-      })
-      .addCase(fetchPotentialMatches.fulfilled, (state, action) => {
-        state.potentialMatches = action.payload.profiles;
-        state.currentIndex = 0;
-        state.currentPage = action.payload.currentPage;
-        state.hasNextPage = action.payload.hasNextPage;
-        state.loading = false;
-      })
-      .addCase(fetchPotentialMatches.rejected, (state, action) => {
-        state.loading = false;
-        state.error = action.payload as string;
-      })
-      .addCase(loadMoreProfiles.pending, (state) => {
-        state.loadingMore = true;
-      })
-      .addCase(loadMoreProfiles.fulfilled, (state, action) => {
-        state.potentialMatches = [...state.potentialMatches, ...action.payload.profiles];
-        state.currentPage = action.payload.currentPage;
-        state.hasNextPage = action.payload.hasNextPage;
-        state.loadingMore = false;
-      })
-      .addCase(loadMoreProfiles.rejected, (state, action) => {
-        state.loadingMore = false;
-        state.error = action.payload as string;
-      });
+    builder.addCase(fetchWhoLikedMe.fulfilled, (state, action) => {
+      applyWhoLikedMe(state, action.payload);
+    });
   },
 });
 
-export const {
-  nextCard,
-  rewindCard,
-  updateSwipeStats,
-  setWhoLikedMeCount,
-  incrementWhoLikedMeCount,
-} = swipeSlice.actions;
+/**
+ * "Bu kullanıcı beni beğenmiş miydi?" — abone OLMADAN okunmalı (store.getState()).
+ * Discover'ın swipe handler'ı bu bilgiyi selector'la alsaydı her yeni beğenide
+ * deste yeniden render olurdu; render churn'ü artırmanın bedeli biliniyor.
+ */
+export const hasLikedMe = (state: any, userId?: string | null): boolean => {
+  if (!userId) return false;
+  return (state?.swipe?.whoLikedMeIds ?? []).includes(userId.toLowerCase());
+};
+
+export const { setWhoLikedMe, addWhoLikedMe, removeWhoLikedMe } =
+  swipeSlice.actions;
 export default swipeSlice.reducer;

@@ -18,7 +18,11 @@ export interface PotentialMatchesResponse extends PotentialMatchesResult {
 // Code handler bu boş şekli "veri yok ama empty reason yok" olarak ele alır.
 const emptyResult: PotentialMatchesResult = {
   profiles: [],
-  currentPage: 1,
+  // `null` = backend göndermedi. Eskiden `1` idi ve response'a spread edildiği
+  // için alan eksik gelen HER sayfa `currentPage: 1` görünüyordu. Sayfalama
+  // buna bakmıyor (cursor lastPageParam'dan geliyor) ama yanıltıcı bir
+  // defaulttu — dürüst olanı "bilmiyorum".
+  currentPage: null,
   pageSize: 0,
   totalProfiles: 0,
   totalPages: 0,
@@ -71,6 +75,15 @@ class SwipeService {
 
   async getLikerProfileDetail(likerUserId: string) {
     return api.get(`${API_ENDPOINTS.LIKER_PROFILE}/${likerUserId}`);
+  }
+
+  // SuperLike'lar ve normal beğeniler AYRI paginate ediliyor; ikisi de tek
+  // sayfa çekiliyor. Zarf ham dönüyor — çağıranlar (LikesScreen listesi,
+  // fetchWhoLikedMe thunk'ı) farklı alanlarını kullanıyor.
+  async getWhoLikedMe(likePage = 1, likePageSize = 10, superLikePageSize = 10) {
+    return api.get(
+      `${API_ENDPOINTS.WHO_LIKED_ME}?likePageNumber=${likePage}&likePageSize=${likePageSize}&superLikePageNumber=1&superLikePageSize=${superLikePageSize}`,
+    );
   }
 }
 

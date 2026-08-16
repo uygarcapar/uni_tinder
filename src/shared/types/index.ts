@@ -201,16 +201,72 @@ export type PaywallType =
   | "PREMIUM_FILTERS"
   | "CHAT_QUOTA_EXHAUSTED";
 
+/**
+ * Kart üzerinde ortak nokta rozeti. `kindName` dil değişse de sabit kalan
+ * anahtar (ikon eşlemesi buna bakar); `label` sunucuda aktif dile göre
+ * ÇÖZÜLMÜŞ gelir, istemcide tekrar çevrilmez.
+ */
+export interface ThingInCommon {
+  kind?: string;
+  kindName?: string;
+  label?: string;
+}
+
+/** Hobi ya düz etiket ya da `{ enumName, name }` çifti olarak gelir. */
+export type ProfileHobby = string | { enumName?: string; name?: string };
+
+/**
+ * Backend ProfileCardDto (GetPotentialMatches → profiles[]).
+ *
+ * `*Display` alanları backend tarafından KULLANICININ DİLİNE göre çözülmüş
+ * düz string'lerdir — `/api/common/*` enum'larındaki `{tr,en}` sözlüğüyle
+ * karıştırma, kartta resolveLocalized'a ihtiyaç yok.
+ */
 export interface PotentialMatch {
   userId: string;
   displayName: string;
   profileImageUrl?: string;
   age?: number;
-  department?: string;
-  yearOfStudy?: string;
   bio?: string;
   photos?: string[];
   distance?: number;
+  isPremium?: boolean;
+
+  // Üniversite — `showUniversity` false ise kartta hiç gösterilmez.
+  universityName?: string;
+  showUniversity?: boolean;
+  department?: string;
+  departmentDisplay?: string;
+  /**
+   * Sınıf — SAYI (0 = hazırlık). Eskiden `string?` tanımlıydı ama kart
+   * `t('profile.card.grade', { year })` ile sayı gibi kullanıyor.
+   */
+  yearOfStudy?: number;
+  yearOfStudyDisplay?: string;
+
+  // Enum tabanlı alanlar: `*Display` gösterim, çıplak ad ikon eşlemesi için.
+  usagePurpose?: string;
+  usagePurposeDisplay?: string;
+  relationshipIntent?: string;
+  relationshipIntentDisplay?: string;
+  smokingStatusDisplay?: string;
+  zodiacSignDisplay?: string;
+  hasPets?: boolean | null;
+
+  hobbies?: ProfileHobby[];
+  /** Ortak nokta YOKSA backend boş dizi değil `null` gönderir. */
+  thingsInCommon?: ThingInCommon[] | null;
+
+  cityDisplay?: string;
+  districtDisplay?: string;
+
+  /**
+   * Bu kullanıcı beni beğenmiş mi. Free üyede normal beğeni için HER ZAMAN
+   * `false` döner (yalnız karşı taraf SuperLike attıysa gerçek değer gelir);
+   * premium'da gerçek değer.
+   */
+  hasLikedMe?: boolean;
+  likedMeAt?: string | null;
 }
 
 // Backend PaginatedProfilesDto (GetPotentialMatches result alanı).
@@ -218,7 +274,13 @@ export interface PotentialMatch {
 // için canonical alanlar. Backend boş dönerken sessiz değil — neden taşır.
 export interface PotentialMatchesResult {
   profiles: PotentialMatch[];
-  currentPage: number;
+  /**
+   * Backend alanı göndermezse `null`. Sayfalama OTORİTESİ bu değil —
+   * usePotentialMatches cursor'ı `lastPageParam`'dan türetiyor (bkz. oradaki
+   * not). Eskiden default `1` idi; alan hiç gelmediğinde her sayfa "1" gibi
+   * görünüyor ve okuyanı yanıltıyordu.
+   */
+  currentPage: number | null;
   pageSize: number;
   totalProfiles: number;
   totalPages: number;
@@ -271,15 +333,21 @@ export interface SwipeStats {
   dailyUndoLimit: number | null;
 }
 
-export interface SwipeState extends SwipeStats {
-  potentialMatches: PotentialMatch[];
-  currentIndex: number;
-  currentPage: number;
-  hasNextPage: boolean;
-  loading: boolean;
-  loadingMore: boolean;
-  error: string | null;
+/**
+ * Redux'ta kalan TEK swipe state'i: "beni beğenenler" rozeti. Deste ve kota
+ * sayaçları React Query'de yaşıyor (bkz. swipeSlice.ts başındaki not) — bu
+ * arayüz eskiden `SwipeStats`i de kapsıyordu, o alanlar hiçbir yerden
+ * okunmadığı için kaldırıldı.
+ */
+export interface SwipeState {
   whoLikedMeCount: number;
+  /**
+   * Beni beğenmiş kullanıcıların id'leri (lowercase). Rozet sayısının aksine
+   * KISMİ bir küme: yalnızca WhoLikedMe'nin çekilmiş sayfası + oturum içinde
+   * gelen canlı IncomingLike'lar. "Bu kişi beni beğenmiş miydi?" sorusunu
+   * Discover'da ağ turu atmadan cevaplamak için var (kaçırılan eşleşme).
+   */
+  whoLikedMeIds: string[];
 }
 
 // ─── Subscription ──────────────────────────────────────────────────────────────

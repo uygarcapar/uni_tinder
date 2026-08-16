@@ -17,6 +17,8 @@ import {
   DEFAULT_AGE_RANGE,
   DISTANCE_RANGE_KM,
   MAX_PREFERRED_HOBBIES,
+  MAX_SWIPE_PAGE_SIZE,
+  MAX_UNIVERSITY_DOMAINS,
   UNLIMITED,
 } from "@/shared/constants/limits";
 
@@ -46,11 +48,18 @@ function emitPaywall(node: any, event: string): boolean {
   return true;
 }
 
-export function usePotentialMatches(pageSize = 10) {
+// Sayfa boyu = havuzun TAMAMI (50). Backend sayfalaması bellek içi: her istek
+// aday havuzunun tümünü çekip Skip/Take yapıyor, dolayısıyla 10'ar 10'ar
+// istemek beş kat istek demek ama beşte bir maliyet DEĞİL. Havuzun kendisi de
+// en fazla 50 (TargetPoolSize) → tek istekte deste biter, `hasNextPage` pratikte
+// hep false olur ve sayfa sınırında kullanıcıyı bekleten ikinci tur kalkar.
+// (Tavanın üstü 50'ye kırpılmaz, 10'a düşer — bkz. MAX_SWIPE_PAGE_SIZE.)
+export function usePotentialMatches(pageSize = MAX_SWIPE_PAGE_SIZE) {
+  const size = Math.min(Math.max(1, pageSize), MAX_SWIPE_PAGE_SIZE);
   return useInfiniteQuery({
     queryKey: swipeKeys.matches,
     queryFn: async ({ pageParam = 1 }: { pageParam: number }) => {
-      const result = await swipeService.getPotentialMatches(null, pageParam, pageSize);
+      const result = await swipeService.getPotentialMatches(null, pageParam, size);
       return result;
     },
     initialPageParam: 1,
@@ -67,6 +76,13 @@ export function usePotentialMatches(pageSize = 10) {
       return (lastPageParam ?? lastPage.currentPage ?? 0) + 1;
     },
     staleTime: 60 * 1000,
+    // Kendiliğinden refetch YOK. Infinite query'de refetch = TÜM sayfaların
+    // baştan çekilmesi; backend swipe edilenleri elediği için dizi başından
+    // kayıyor ve DiscoverScreen'in üst kartı değişiyor. Deste bilinçli olarak
+    // tazeleniyor: filtre kaydetme / profil-dil-satın alma invalidate'i /
+    // deste boşken 5sn'lik yoklama. İlk mount'ta cache boş olduğu için ilk
+    // fetch bundan etkilenmez.
+    refetchOnMount: false,
   });
 }
 
@@ -134,14 +150,20 @@ export function useSwipeStats() {
   const subscriptionIsPremium = useSelector(selectIsPremium);
   const data = useMemo(() => {
     if (!result.data) return result.data;
-    const effectivePremium = result.data.isPremium || subscriptionIsPremium;
-    if (!effectivePremium) return result.data;
+    // `serverIsPremium` = /Stats'ın DOKUNULMAMIŞ cevabı. Aşağıdaki overlay
+    // `isPremium`i redux'a göre true'ya çekebildiği için, "backend premium'u
+    // gördü mü" sorusunun tek dürüst cevabı bu alan. Satın alma ile webhook
+    // arasındaki pencerede false kalır → o pencerede kota SAYILARI hâlâ free
+    // tier'ın, tüketiciler sayı göstermek yerine "güncelleniyor" diyebilsin.
+    const serverIsPremium = result.data.isPremium;
+    const effectivePremium = serverIsPremium || subscriptionIsPremium;
+    if (!effectivePremium) return { ...result.data, serverIsPremium };
     if (
-      result.data.isPremium &&
+      serverIsPremium &&
       result.data.remainingSwipes === UNLIMITED &&
       result.data.remainingUndos === UNLIMITED
     ) {
-      return result.data;
+      return { ...result.data, serverIsPremium };
     }
     // superLikesRemaining'e BİLEREK dokunmuyoruz: premium'da SuperLike
     // sınırsız değil (weeklySuperLikeLimit / 7-gün rolling), doğru bakiye
@@ -149,6 +171,7 @@ export function useSwipeStats() {
     // PurchaseModal yazıyor.
     return {
       ...result.data,
+      serverIsPremium,
       isPremium: true,
       remainingSwipes: UNLIMITED,
       remainingUndos: UNLIMITED,
@@ -247,7 +270,7 @@ export function useSaveFilters() {
       maxDistance?: number;
       interestedIn?: number[];
       preferredCity?: string | null;
-      preferredUniversityDomain?: string | null;
+      preferredUniversityDomains?: string[];
       visibleOnlyToUniversityDomains?: string[];
       hiddenFromUniversityDomains?: string[];
       preferredHobbies?: string[];
@@ -273,10 +296,20 @@ export function useSaveFilters() {
         // dalını kaldırdı, PreferredGendersFlags hiçbir yerde okunmuyor.
         city: localFilters.preferredCity ?? null,
         // GET ↔ PUT ad uyuşmazlığı (backend'in bilinen tuzağı): yanıt
-        // `preferredUniversityDomain` döner ama PUT `universityDomain` bekler.
+        // `preferredUniversityDomains` döner ama PUT `universityDomains` bekler.
         // GET'ten geleni doğrudan geri gönderirsen alan SESSİZCE düşer.
         // Şehir/bölümde de aynı sapma var (preferredCity → city).
-        universityDomain: localFilters.preferredUniversityDomain ?? null,
+        //
+        // Tekil `universityDomain` hâlâ kabul ediliyor ama DEPRECATED; ikisi
+        // birden gönderilirse çoğul kazanır. Yeni kodda sadece çoğulu yolluyoruz.
+        // Görünürlük listeleriyle aynı OVERWRITE semantiği: boş dizi =
+        // "filtreyi temizle", "değiştirme" değil. Backend 3'ten fazlasını 400
+        // ile reddediyor — FilterModal seçimi zaten sınırlıyor, burada ikinci
+        // savunma hattı olarak kırpıyoruz.
+        universityDomains: (localFilters.preferredUniversityDomains ?? []).slice(
+          0,
+          MAX_UNIVERSITY_DOMAINS,
+        ),
         // Görünürlük listeleri ("beni kim görsün/görmesin") — premium-only,
         // ikisi de domain string listesi. Backend bu alanları OVERWRITE
         // ediyor: gönderilmeyen ya da boş dizi gelen liste temizlenir, o

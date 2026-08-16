@@ -137,7 +137,9 @@ export default function CityPickerModal({
           return (
             <TouchableOpacity
               key={item.id}
-              activeOpacity={0.7}
+              // activeOpacity 1 — basılı tutarken solma yok. Tek geri bildirim
+              // seçimin kendisi (dolgu + tik), FilterModal'daki pill'lerle aynı.
+              activeOpacity={1}
               onPress={() => onConfirm(item.enumName)}
               style={{
                 marginTop: idx === 0 ? 0 : 6,

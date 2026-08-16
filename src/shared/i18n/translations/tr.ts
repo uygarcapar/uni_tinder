@@ -366,6 +366,7 @@ const tr = {
     tabTitle: 'Keşfet',
     swipe: {
       resetNow: 'Şu anda yenilenebilir',
+      resetDays: '{{d}} gün sonra yenilenir',
       resetHoursMinutes: '{{h}} sa {{m}} dk sonra yenilenir',
       resetMinutes: '{{m}} dk sonra yenilenir',
       resetSeconds: '{{sec}} sn sonra yenilenir',
@@ -399,6 +400,7 @@ const tr = {
       saveError: 'Filtreler kaydedilemedi',
       title: 'Filtreler',
       apply: 'Uygula',
+      reset: 'Sıfırla',
       maxDistance: {
         title: 'Maksimum Mesafe',
         desc: 'Eşleşmek istediğin kullanıcıların maksimum uzaklığını belirle. Daireyi parmağınla sürükleyerek ayarlayabilirsin.',
@@ -417,7 +419,7 @@ const tr = {
       },
       university: {
         title: 'Üniversite',
-        description: 'Yalnızca seçtiğin üniversiteden kişileri gör. Bu filtre her zaman katıdır; aday tükense bile gevşemez.',
+        description: 'Yalnızca seçtiğin üniversitelerden kişileri gör. En fazla 3 üniversite seçebilirsin.',
         select: 'Üniversite seç',
       },
       premiumFilters: {
@@ -432,7 +434,7 @@ const tr = {
       enumUnavailable: 'Liste şu an yüklenemedi.',
       height: {
         title: 'Boy',
-        description: 'Aradığın boy aralığını seç; iki ucu da serbest bırakabilirsin. Filtre açıkken boyunu girmemiş profiller gösterilmez.',
+        description: 'Aradığın boy aralığını seç; iki ucu da serbest bırakabilirsin.',
         atLeast: '{{cm}} cm ve üzeri',
         atMost: '{{cm}} cm ve altı',
         between: '{{min}} – {{max}} cm',
@@ -477,7 +479,14 @@ const tr = {
       relationshipIntents: {
         title: 'Karşımda görmek istediğim niyetler',
         description: 'Bu niyetlere sahip kişiler keşifte önce gösterilir. Diğerleri listenden çıkmaz; boş bırakabilirsin.',
-        clear: 'Temizle',
+        // enumName ile anahtarlanmış kısa pill etiketleri. Anahtar yoksa
+        // backend display'i kullanılır.
+        short: {
+          LongTerm: 'Uzun süreli',
+          ShortTerm: 'Kısa süreli',
+          LongTermOpenToShort: 'Uzun süreli, kısaya açık',
+          ShortTermOpenToLong: 'Kısa süreli, uzuna açık',
+        },
         loading: 'İlişki niyetleri yükleniyor…',
         unavailable: 'İlişki niyeti listesi şu an yüklenemedi.',
       },
@@ -488,6 +497,7 @@ const tr = {
         hiddenFromLabel: 'Beni şu üniversiteler görmesin',
         selectUniversities: 'Üniversite seç',
         overlapWarning: 'İki listede birden olan üniversite seni göremez — engelleme önceliklidir.',
+        premiumExpiryNote: 'Premium\'un bittiğinde bu kurallar durur; engellediğin üniversiteler seni yeniden görmeye başlar.',
       },
     },
     rewind: {
@@ -503,6 +513,39 @@ const tr = {
       hiddenFromTitle: 'Beni Göremeyecekler',
       search: 'Üniversite ara',
       limitMsg: 'En fazla {{max}} üniversite seçebilirsin.',
+    },
+    // Boş deste sebepleri — backend `emptyReason` / `emptyReasonCode`
+    // (UT-6xxx) ile geliyor, eşleme responseCodes.ts'te. `dismiss` aksiyonlu
+    // sebeplerin (allCandidatesSeen) buton etiketi yok.
+    empty: {
+      noCandidatesInRadius: {
+        title: 'Yakınında şu an gösterecek kimse yok',
+        action: 'Mesafeyi genişlet',
+      },
+      allCandidatesSeen: {
+        title: 'Görebileceklerinin hepsini gördün',
+      },
+      filtersTooStrict: {
+        title: 'Filtrelerin çok dar',
+        action: 'Filtreleri düzenle',
+      },
+      profileIncomplete: {
+        title: 'Önce profilini tamamla',
+        action: 'Profile git',
+      },
+      accountRestricted: {
+        title: 'Hesabın geçici olarak kısıtlı',
+        action: "Destek'e yaz",
+      },
+      poolWarming: {
+        title: 'Aday havuzu hazırlanıyor',
+        action: 'Tekrar dene',
+      },
+      swipeLimitReached: {
+        title: 'Günlük swipe hakkın doldu',
+        action: "Premium'u incele",
+      },
+      supportSubject: 'Keşfet sorunu ({{code}})',
     },
   },
   likes: {
@@ -537,6 +580,12 @@ const tr = {
     subtitle: '{{name}} ile eşleştin. İlk mesajı sen at.',
     sendMessage: 'Mesaj Gönder',
     back: 'Geri Dön',
+  },
+  // Seni beğenmiş birini geçince üstten düşen toast.
+  missedMatch: {
+    title: 'Bir eşleşmeyi kaçırdın',
+    body: '{{name}} seni beğenmişti.',
+    bodyNoName: 'Seni beğenmiş birini geçtin.',
   },
   profile: {
     tabTitle: 'Profil',
@@ -688,6 +737,7 @@ const tr = {
       knowMeAs: 'Beni bu şekilde tanırsın:',
       myInterests: 'İlgi alanlarım:',
       myLifestyle: 'Yaşam tarzım:',
+      sameUniversity: 'Aynı Üniversite',
       location: 'Konum',
     },
     languages: {

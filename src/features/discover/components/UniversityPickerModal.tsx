@@ -34,6 +34,7 @@ import SFIcon from "@/shared/components/SFIcon";
 import AppBottomSheet from "@/shared/components/AppBottomSheet";
 import type { UniversityOption } from "@/shared/queries/commonQueries";
 import { colors } from "../../../shared/theme/colors";
+import { glassFallback } from "../../../shared/theme/glass";
 
 // BottomSheetFlatList'in reanimated scroll handler kabul eden hali. `any`:
 // gorhom'un generic prop tipleri Animated wrapper'dan geçince çözülemiyor
@@ -52,13 +53,6 @@ type Props = {
   initialSelectedValues: string[];
   maxLimit?: number;
   limitMsg?: string;
-  /**
-   * Tek seçim modu ("ben kimi göreyim" üniversite filtresi). Satıra dokunmak
-   * seçimi onaylayıp sheet'i kapatır — CityPickerModal ile aynı davranış.
-   * Varsayılan çoklu seçim (görünürlük listeleri): dokunuş toggle eder,
-   * onay ayrı butonla verilir.
-   */
-  singleSelect?: boolean;
   onConfirm: (domains: string[]) => void;
 };
 
@@ -78,7 +72,6 @@ export default function UniversityPickerModal({
   initialSelectedValues,
   maxLimit,
   limitMsg,
-  singleSelect = false,
   onConfirm,
 }: Props) {
   const { t } = useTranslation();
@@ -114,8 +107,8 @@ export default function UniversityPickerModal({
       if (next.has(domain)) {
         next.delete(domain);
       } else {
-        // Backend her listeyi 100 domain'de SESSİZCE kırpıyor — kullanıcı
-        // kaydettiğini sanmasın diye sınırı burada görünür kılıyoruz.
+        // Backend limiti aşan listeyi 400 ile reddediyor (eskiden sessizce
+        // kırpıyordu) — sınıra burada takılıp kullanıcıyı hatadan önce uyarıyoruz.
         if (maxLimit && next.size >= maxLimit) {
           Alert.alert(
             t("common.limitReached"),
@@ -287,12 +280,10 @@ export default function UniversityPickerModal({
             const isSelected = selected.has(item.domain);
             return (
               <TouchableOpacity
-                activeOpacity={0.7}
-                onPress={() =>
-                  singleSelect
-                    ? onConfirm([item.domain])
-                    : toggle(item.domain)
-                }
+                // activeOpacity 1 — basılı tutarken solma yok. Tek geri bildirim
+                // seçimin kendisi (dolgu + tik), FilterModal'daki pill'lerle aynı.
+                activeOpacity={1}
+                onPress={() => toggle(item.domain)}
                 style={{
                   paddingVertical: 16,
                   paddingHorizontal: 16,
@@ -506,6 +497,10 @@ export default function UniversityPickerModal({
                       labelStyle("iconOnly"),
                       font({ size: 17, weight: "medium" }),
                       containerShape(shapes.circle()),
+                      ...glassFallback({
+                        shape: "circle",
+                        frame: { width: 46, height: 46 },
+                      }),
                     ]}
                   />
                 </Host>
@@ -545,6 +540,10 @@ export default function UniversityPickerModal({
                     controlSize("large"),
                     tint(colors.text),
                     font({ size: 12, weight: "semibold" }),
+                    ...glassFallback({
+                      shape: "capsule",
+                      padding: { horizontal: 18, vertical: 12 },
+                    }),
                   ]}
                 />
               </Host>
