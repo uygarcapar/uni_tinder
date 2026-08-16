@@ -36,7 +36,6 @@ import {
 import { BottomSheetModalProvider } from "@gorhom/bottom-sheet";
 import { KeyboardProvider } from "react-native-keyboard-controller";
 import { NotifierWrapper } from "react-native-notifier";
-import { useFonts } from "expo-font";
 import { I18nextProvider } from "react-i18next";
 import i18n from "./src/shared/i18n";
 import { setCurrentLanguage } from "./src/shared/services/api";
@@ -92,13 +91,11 @@ function CrashFallback({ resetError }: { resetError: () => void }) {
 }
 
 function App() {
-  const [fontsLoaded] = useFonts({
-    "Duckie-regular": require("./assets/fonts/Duckie-regular.ttf"),
-  });
-
-  if (!fontsLoaded) return null;
-  if (__DEV__) mark("fonts-loaded");
-
+  // Duckie-regular RUNTIME'DA YÜKLENMEZ: expo-font config plugin'i (app.json)
+  // fontu build sırasında binary'e gömüyor, yani ilk frame'de hazır. Önceki
+  // `useFonts` + `if (!fontsLoaded) return null` yolu splash kalktıktan sonra
+  // TÜM ağacı bir tick bloke ediyordu — cold start zincirinin (bkz. bootPhase)
+  // en başında bedava kaybedilen zamandı.
   return (
     <GestureHandlerRootView style={{ flex: 1, backgroundColor: "#121212" }}>
       <SafeAreaProvider initialMetrics={initialWindowMetrics}>

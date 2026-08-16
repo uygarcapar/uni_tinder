@@ -1,7 +1,7 @@
 {
   "expo": {
     "name": "Lit",
-    "slug": "lit",
+    "slug": "uni_tinder",
     "scheme": "lit",
     "version": "1.0.0",
     "orientation": "portrait",
@@ -41,7 +41,6 @@
           "defaultChannel": "unitinder_notifications"
         }
       ],
-      "expo-maps",
       "expo-status-bar",
       "expo-audio",
       "expo-image",
@@ -98,7 +97,15 @@
           "url": "https://sentry.io/"
         }
       ],
-      "expo-asset"
+      "expo-asset",
+      [
+        "expo-font",
+        {
+          "fonts": [
+            "./assets/fonts/Duckie-regular.ttf"
+          ]
+        }
+      ]
     ],
     "web": {
       "favicon": "./assets/favicon.png"
