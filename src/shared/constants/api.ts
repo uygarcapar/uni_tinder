@@ -120,4 +120,9 @@ export const API_ENDPOINTS = {
   GET_PETS: "/api/common/pets",
   GET_RELATIONSHIP_INTENTS: "/api/common/relationship-intents",
   GET_DISTRICTS_BY_CITY: (cityId: number | string) => `/api/common/cities/${cityId}/districts`,
+
+  // Anonim — login ekranından önce de çağrılır. Backend client'ın sürümünü
+  // KARŞILAŞTIRIP karar döner (ok/soft/force/maintenance); istemci kendi
+  // semver karşılaştırmasını yapmaz.
+  APP_VERSION_CHECK: "/api/app/version-check",
 };

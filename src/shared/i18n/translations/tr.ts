@@ -828,6 +828,24 @@ const tr = {
       blockedAt: '{{date}} tarihinde engellendi',
     },
   },
+  // Zorunlu / önerilen güncelleme kapısı. Gövde metni normalde backend'den
+  // gelir (Accept-Language'e göre çözülmüş); `fallback.*` yalnız boş geldiğinde
+  // kullanılır.
+  appUpdate: {
+    title: {
+      soft: 'Güncelleme mevcut',
+      force: 'Güncelleme gerekli',
+      maintenance: 'Kısa bir bakım',
+    },
+    fallback: {
+      soft: "Lit'in yeni sürümü hazır — iyileştirmeler ve hata düzeltmeleri var.",
+      force: 'Bu sürüm artık desteklenmiyor. Devam etmek için uygulamayı güncelle.',
+      maintenance: 'Kısa bir bakım yapıyoruz. Birkaç dakika sonra tekrar dene.',
+    },
+    update: 'Güncelle',
+    later: 'Sonra',
+    retry: 'Tekrar dene',
+  },
 } as const;
 
 export default tr;

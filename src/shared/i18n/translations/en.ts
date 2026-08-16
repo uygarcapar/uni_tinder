@@ -825,6 +825,24 @@ const en = {
       blockedAt: 'Blocked on {{date}}',
     },
   },
+  // Force / soft update gate. The body text normally comes from the backend
+  // (already localized via Accept-Language); `fallback.*` is only used when it
+  // arrives empty.
+  appUpdate: {
+    title: {
+      soft: 'Update available',
+      force: 'Update required',
+      maintenance: 'Quick maintenance',
+    },
+    fallback: {
+      soft: "There's a new version of Lit with improvements and fixes.",
+      force: 'This version is no longer supported. Update the app to continue.',
+      maintenance: "We're doing a short maintenance. Please try again in a few minutes.",
+    },
+    update: 'Update',
+    later: 'Later',
+    retry: 'Try again',
+  },
 } as const;
 
 export default en;
