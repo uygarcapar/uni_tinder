@@ -286,7 +286,7 @@ const tr = {
       mediaVideo: 'Video',
       today: 'Bugün',
       yesterday: 'Dün',
-      notFound: '{{query}} bulunamadı',
+      notFound: "'{{query}}' bulunamadı",
     },
     unmatch: {
       restoreTitle: 'Eşleşmeyi geri al',
@@ -353,13 +353,6 @@ const tr = {
       closedTitle: 'Bu sohbet kapalı',
       activeDescription: 'İlk mesajı sen at — gerisini doğal akışına bırak.',
       closedDescription: 'Geçmiş mesajları görüntüleyebilirsin.',
-    },
-    search: {
-      placeholder: 'Mesajlarda ara…',
-      resultCount: '{{total}} sonuç',
-      defaultName: 'Kullanıcı',
-      noResults: 'Eşleşme yok',
-      notFound: '{{query}} bulunamadı',
     },
     media: {
       photo: 'Fotoğraf',

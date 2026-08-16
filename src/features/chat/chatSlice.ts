@@ -1,6 +1,7 @@
 import { createSlice, createAsyncThunk, PayloadAction } from '@reduxjs/toolkit';
 import chatService from '@/features/chat/chatService';
 import { messageContentEqual } from '@/features/chat/messageEquality';
+import { utcTime } from '@/shared/utils/dateUtc';
 import type {
   ChatState,
   MessageDto,
@@ -137,6 +138,18 @@ const initialState: ChatState = {
   quotaMetaByConv: {},
 };
 
+// Kendi mesajını gönderen kullanıcı o sohbeti okumuş sayılır. Rozet gönderim
+// anında yerelde düşer; server tarafını ChatScreen'in markRead'i + MessagesRead
+// event'i kapatır. Bu olmadan "son mesajı ben attım ama okunmamış görünüyor"
+// hali, sohbete girerken uçuşa çıkan /conversations yanıtı bayat unreadCount
+// getirdiğinde bir sonraki tazelemeye kadar asılı kalıyordu.
+function markConversationReadLocally(state: ChatState, conversationId: string) {
+  const conv = state.conversations.find((c) => c.conversationId === conversationId);
+  if (!conv || !conv.unreadCount) return;
+  state.unreadTotal = Math.max(0, state.unreadTotal - conv.unreadCount);
+  conv.unreadCount = 0;
+}
+
 function updateConversationLastMessage(state: ChatState, msg: MessageDto) {
   const conv = state.conversations.find((c) => c.conversationId === msg.conversationId);
   if (!conv) return;
@@ -163,12 +176,15 @@ const chatSlice = createSlice({
       const selfUserId = msg._selfUserId;
       const bucket = state.messagesByConv[msg.conversationId] ?? emptyBucket();
 
+      const isOwn = !!selfUserId && msg.senderId === selfUserId;
+
       if (msg.clientMessageId) {
         const idx = bucket.messages.findIndex((m) => m.clientMessageId === msg.clientMessageId);
         if (idx >= 0) {
           bucket.messages[idx] = { ...bucket.messages[idx], ...msg, _pending: false };
           state.messagesByConv[msg.conversationId] = bucket;
           updateConversationLastMessage(state, msg);
+          if (isOwn) markConversationReadLocally(state, msg.conversationId);
           return;
         }
       }
@@ -179,9 +195,12 @@ const chatSlice = createSlice({
       state.messagesByConv[msg.conversationId] = bucket;
       updateConversationLastMessage(state, msg);
 
-      const isOwn = selfUserId && msg.senderId === selfUserId;
+      if (isOwn) {
+        markConversationReadLocally(state, msg.conversationId);
+        return;
+      }
       const conv = state.conversations.find((c) => c.conversationId === msg.conversationId);
-      if (conv && !isOwn && !msg.isSystemMessage && state.activeConversationId !== msg.conversationId) {
+      if (conv && !msg.isSystemMessage && state.activeConversationId !== msg.conversationId) {
         conv.unreadCount = (conv.unreadCount || 0) + 1;
         state.unreadTotal += 1;
       }
@@ -191,6 +210,9 @@ const chatSlice = createSlice({
       const msg = action.payload;
       const bucket = state.messagesByConv[msg.conversationId];
       if (!bucket) return;
+
+      // MessageSent yalnız KENDİ gönderimimizin ack'i — sohbet okunmuş sayılır.
+      markConversationReadLocally(state, msg.conversationId);
 
       if (msg.clientMessageId) {
         const idx = bucket.messages.findIndex((m) => m.clientMessageId === msg.clientMessageId);
@@ -225,7 +247,10 @@ const chatSlice = createSlice({
           m.senderId !== readByUserId &&
           m.senderId != null &&
           !m.readAt &&
-          (!lastReadSentAt || new Date(m.sentAt) <= new Date(lastReadSentAt))
+          // utcTime: persist'ten rehydrate olan ESKİ kayıtlar Z'siz olabilir;
+          // taze payload Z'li gelir — çıplak karşılaştırma 3 saatlik yanlış
+          // pencere üretip mesajları hatalı okundu işaretlerdi.
+          (!lastReadSentAt || utcTime(m.sentAt) <= utcTime(lastReadSentAt))
         ) {
           return { ...m, readAt: readAt || new Date().toISOString() };
         }
@@ -382,6 +407,23 @@ const chatSlice = createSlice({
       });
     },
 
+    // Karşı taraf unmatch ettiğinde backend HİÇBİR hub event'i yayınlamıyor
+    // (kontrat §14: sohbet sessizce isActive=false oluyor). Tek anlık sinyal,
+    // kapalı sohbete gönderim denemesinde gelen Error{CONVERSATION_ERROR}.
+    // O sinyalde listeyi ve asılı kalan balonları YEREL olarak düzeltiyoruz;
+    // force refetch ayrıca atılır ama cevabı düşene kadar UI yalan söylemesin.
+    conversationDeactivated: (state, action: PayloadAction<{ conversationId: string }>) => {
+      const { conversationId } = action.payload;
+      const conv = state.conversations.find((c) => c.conversationId === conversationId);
+      if (conv) conv.isActive = false;
+      const bucket = state.messagesByConv[conversationId];
+      if (!bucket) return;
+      // "Gönderiliyor"da asılı balonlar: ack asla gelmeyecek → başarısıza çevir.
+      bucket.messages = bucket.messages.map((m) =>
+        m._pending ? { ...m, _pending: false, _failed: true } : m,
+      );
+    },
+
     decrementQuotaLocally: (state, action: PayloadAction<{ conversationId: string }>) => {
       const convId = action.payload?.conversationId;
       if (!convId) return;
@@ -406,6 +448,7 @@ const chatSlice = createSlice({
       bucket.messages = [message, ...bucket.messages];
       state.messagesByConv[conversationId] = bucket;
       updateConversationLastMessage(state, message);
+      markConversationReadLocally(state, conversationId);
     },
 
     failOptimisticMessage: (
@@ -449,17 +492,31 @@ const chatSlice = createSlice({
             (c) => c.conversationId === serverConv.conversationId,
           );
           if (!localConv) return serverConv;
-          const localTime = localConv.lastMessageAt ? new Date(localConv.lastMessageAt).getTime() : 0;
-          const serverTime = serverConv.lastMessageAt ? new Date(serverConv.lastMessageAt).getTime() : 0;
+          const localTime = localConv.lastMessageAt ? utcTime(localConv.lastMessageAt) : 0;
+          const serverTime = serverConv.lastMessageAt ? utcTime(serverConv.lastMessageAt) : 0;
+          let next = serverConv;
           if (localTime > serverTime) {
-            return {
+            next = {
               ...serverConv,
               lastMessagePreview: localConv.lastMessagePreview,
               lastMessageAt: localConv.lastMessageAt,
               lastMessageContentType: localConv.lastMessageContentType,
             };
           }
-          return serverConv;
+          // Okundu bilgisinde YEREL kazanabilir. Sohbete girerken markRead ile
+          // /conversations aynı anda uçuyor: yanıt bizden ÖNCEKİ (bayat) sayacı
+          // taşıyorsa körlemesine yazmak, az önce okunan — hatta cevap yazdığımız —
+          // sohbeti tekrar "okunmamış" gösteriyordu. Yerel 0'a ancak server BİZİM
+          // BİLMEDİĞİMİZ daha yeni bir mesaj taşıyorsa dokunuyoruz; açık olan
+          // sohbet ise her hâlükârda okunmuş sayılır.
+          if (
+            (next.unreadCount || 0) > 0 &&
+            (state.activeConversationId === next.conversationId ||
+              ((localConv.unreadCount || 0) === 0 && serverTime <= localTime))
+          ) {
+            next = { ...next, unreadCount: 0 };
+          }
+          return next;
         });
         state.conversations = merged;
         state.unreadTotal = merged.reduce((sum, c) => sum + (c.unreadCount || 0), 0);
@@ -526,12 +583,12 @@ const chatSlice = createSlice({
           const windowsOverlap = !!oldestServer && oldById.has(oldestServer.id);
           let tail: MessageDto[] = [];
           if (windowsOverlap) {
-            const oldestT = new Date(oldestServer!.sentAt).getTime();
+            const oldestT = utcTime(oldestServer!.sentAt);
             tail = old.filter(
               (m) =>
                 !m._pending &&
                 !serverIds.has(m.id) &&
-                new Date(m.sentAt).getTime() < oldestT,
+                utcTime(m.sentAt) < oldestT,
             );
           }
 
@@ -616,6 +673,7 @@ export const {
   userStatusChanged,
   userStatusResponse,
   matchNotification,
+  conversationDeactivated,
   appendOptimisticMessage,
   failOptimisticMessage,
   removeOptimisticMessage,

@@ -1,13 +1,73 @@
-import { View, Text, TouchableOpacity } from 'react-native';
+import { View, Text, TouchableOpacity, Platform, StyleSheet } from 'react-native';
+import { BlurView } from 'expo-blur';
 import { X, MessageSquareReply } from 'lucide-react-native';
 import SFIcon from '@/shared/components/SFIcon';
 import { useTranslation } from 'react-i18next';
 import { colors } from '../../../shared/theme/colors';
+import {
+  BUBBLE_PAD_H,
+  BUBBLE_PAD_V,
+  BUBBLE_RADIUS,
+  BUBBLE_TIGHT_RADIUS,
+} from '@/features/chat/components/bubbleStyle';
+import {
+  COMPOSER_ACTION_W,
+  COMPOSER_BAR_BG,
+  COMPOSER_BAR_GAP,
+  COMPOSER_BAR_PAD_H,
+  COMPOSER_BAR_PAD_V,
+  COMPOSER_BLUR_INTENSITY,
+  COMPOSER_BLUR_TINT,
+  COMPOSER_GAP,
+} from '@/features/chat/components/composerStyle';
+
+/**
+ * Alıntı kartı ile balon arasındaki boşluk. Kart balonun İÇİNDE değil ÜSTÜNDE
+ * durur (bkz. mode="bubble" notu) ve balona BİNMEZ — bindirme denendi, kart
+ * balonun içine gömülmüş gibi görünüyordu. Çağıran taraf (MessageBubble ve
+ * MessageActionSheet klonu) AYNI sabitten beslenir.
+ */
+export const REPLY_CARD_GAP = 4;
+// Kartın kesimi balonunkiyle AYNI: aynı köşe yarıçapı, aynı iç boşluk
+// (bubbleStyle tek kaynak). TEK fark ALT köşe: balonda gönderen tarafın ÜST
+// köşesi daralırken kartta bunun ayna görüntüsü olan ALT köşe daralır — kendi
+// mesajımda sağ alt, karşı tarafınkinde sol alt. İkisi karşılıklı daralınca
+// kart ile balon aynı konuşma yönünü gösteren tek bir yığın gibi okunur.
+function replyCardCorners(isOwn: boolean) {
+  return isOwn
+    ? { borderRadius: BUBBLE_RADIUS, borderBottomRightRadius: BUBBLE_TIGHT_RADIUS }
+    : { borderRadius: BUBBLE_RADIUS, borderBottomLeftRadius: BUBBLE_TIGHT_RADIUS };
+}
+// Kart zemini: koyu gri + yarı saydam (blur'un üstünde durur, MessageActionSheet
+// panel zemini PANEL_BG ile aynı aile). İki taraf için de aynı — kartın kimin
+// mesajına ait olduğunu daralan alt köşe zaten söylüyor.
+const REPLY_CARD_BG = 'rgba(28,28,28,0.72)';
+// Kartın iki satırı (isim + içerik önizlemesi) AYNI punto.
+const REPLY_CARD_FONT_SIZE = 14;
+// Kartın DIŞINDAKİ dikey çizgi — gönderen tarafın kenarında (kendi mesajımda
+// sağda, karşı tarafınkinde solda). Kart bu kadar (INSET) ortaya kaçar.
+// Çizginin GÖRÜNEN kalınlığı min(W, INSET): INSET çizgiden genişse aradaki fark
+// boşluk olarak kalır, darsa çizginin fazlası kartın arkasına girer.
+// Renk sohbet zemininin üstünde durduğundan kart üstündeki eski tona göre bir
+// tık daha opak (aynı silik his).
+const REPLY_LINE_W = 5;
+const REPLY_CARD_INSET = 15;
+const REPLY_LINE_COLOR = 'rgba(255,255,255,0.08)';
+// Çizgi kartın tam boyu değil: iki ucundan bu kadar kısalır (dikey ortalı kalır).
+const REPLY_LINE_INSET_V = 5;
+// expo-blur Android'de deneysel/pahalı (MessageActionSheet panelleriyle AYNI
+// kural) — orada kart yalnız yarı saydam zeminle çizilir, altındaki balon
+// rengi alfadan sızar.
+const REPLY_USE_BLUR = Platform.OS === 'ios';
+const REPLY_BLUR_INTENSITY = 28;
 
 /**
  * 2 modda kullanılır:
  *  1) `mode="composing"` — input üstünde "yanıtla" preview'i + iptal X butonu
- *  2) `mode="bubble"` — bir mesajın bubble'ı içindeki gömülü "şuna yanıt" kapsülü
+ *  2) `mode="bubble"` — mesajın ÜSTÜNDE duran, arkası blur'lu alıntı kartı.
+ *     Kart balonun içinde DEĞİL: ana balon yanıtsız haliyle birebir aynı kalır
+ *     (aynı padding, aynı ortalama, içeriği kadar genişlik), kart onun üstünde
+ *     REPLY_CARD_GAP boşlukla ayrı bir kutu olarak durur.
  */
 export default function ReplyPreview({ reply, mode = 'composing', onCancel, isOwn }: any) {
   const { t } = useTranslation();
@@ -16,45 +76,171 @@ export default function ReplyPreview({ reply, mode = 'composing', onCancel, isOw
   const senderName =
     reply.senderDisplayName ||
     (reply.isDeleted ? t('chat.replyPreview.deletedSender') : t('chat.defaultUserName'));
+  // mediaLabel SADECE tanınan media tipinde etiket döner; text/bilinmeyen tipte
+  // null → metin önizlemesi gösterilir. Eskiden "contentType !== 0" ile karar
+  // veriliyordu; backend enum'u isim olarak ("Text") yollayınca metin mesajları
+  // media sayılıp "..." görünüyordu.
+  const mediaText = mediaLabel(reply.contentType, t);
   const preview = reply.isDeleted
     ? t('chat.replyPreview.deletedMessage')
-    : reply.contentType !== 0 && reply.contentType !== undefined
-      ? mediaLabel(reply.contentType, t)
-      : (reply.contentPreview || '...');
+    : (mediaText ?? ((reply.contentPreview ?? reply.content ?? '').trim() || '...'));
 
-  const containerCls = mode === 'composing'
-    ? 'mx-3 mb-1 px-3 py-2 rounded-2xl bg-surface-2 flex-row items-center'
-    : `mb-1 px-2 py-1.5 rounded-lg ${isOwn ? 'bg-[#ffffff20]' : 'bg-[#00000040]'} border-l-2 border-primary`;
-
-  return (
-    <View className={containerCls}>
-      {mode === 'composing' && (
-        <SFIcon name="arrowshape.turn.up.left.fill" fallback={MessageSquareReply} size={16} color={colors.primary} style={{ marginRight: 8 }} />
+  const isComposing = mode === 'composing';
+  // composing modunda kap TAM GENİŞLİK (composer çubuğu) → flex:1 doğru.
+  // bubble modunda kap İÇERİĞE göre genişler; orada flex:1 (= flexBasis 0)
+  // metin sütununu sıfır genişlikte ölçtürüp kartı içerik göstermeyen bir
+  // şeride çeviriyordu. flexShrink: metin kendi genişliğinde ölçülür, kart
+  // maxWidth'e dayanınca kısalıp "…" ile kesilir.
+  const texts = (
+    <View style={isComposing ? { flex: 1 } : { flexShrink: 1 }}>
+      <Text
+        style={{
+          // bubble modunda isim, içerik önizlemesiyle AYNI punto (ayırt edici
+          // olan kalınlık + tam beyaz renk). composing modunda başlık bir tık
+          // büyük kalır — orada kapsül tek başına, hiyerarşiyi o taşıyor.
+          fontSize: isComposing ? 15 : REPLY_CARD_FONT_SIZE,
+          fontWeight: '600',
+          color: colors.text,
+        }}
+        numberOfLines={1}
+      >
+        {senderName}
+      </Text>
+      <Text
+        style={{
+          fontSize: REPLY_CARD_FONT_SIZE,
+          color: isComposing ? colors.text : 'rgba(255,255,255,0.78)',
+        }}
+        numberOfLines={1}
+      >
+        {preview}
+      </Text>
+    </View>
+  );
+  // İkonlar input'un + / gönder butonlarıyla AYNI genişlikteki kutulara oturur:
+  // dördü de aynı iki dikey eksende hizalanır (kutu genişliği ve aradaki boşluk
+  // composerStyle'dan; ayrışırsa hizalama bozulur).
+  const body = (
+    <>
+      {isComposing && (
+        <View style={{ width: COMPOSER_ACTION_W, alignItems: 'center' }}>
+          <SFIcon
+            name="arrowshape.turn.up.left.fill"
+            fallback={MessageSquareReply}
+            size={16}
+            color={colors.text}
+          />
+        </View>
       )}
-      <View style={{ flex: 1 }}>
-        <Text className="text-primary text-xs font-semibold" numberOfLines={1}>
-          {senderName}
-        </Text>
-        <Text className="text-gray-300 text-xs" numberOfLines={1}>
-          {preview}
-        </Text>
-      </View>
-      {mode === 'composing' && (
-        <TouchableOpacity onPress={onCancel} hitSlop={8}>
-          <SFIcon name="xmark" fallback={X} size={18} color={colors.textSecondary} />
+      {texts}
+      {isComposing && (
+        <TouchableOpacity
+          onPress={onCancel}
+          hitSlop={8}
+          style={{ width: COMPOSER_ACTION_W, alignItems: 'center' }}
+        >
+          <SFIcon
+            name="xmark"
+            fallback={X}
+            size={18}
+            strokeWidth={2}
+            weight="semibold"
+            color={colors.textSecondary}
+          />
         </TouchableOpacity>
       )}
-    </View>
+    </>
+  );
+
+  // bubble modu: BAĞIMSIZ kart — balonun içinde değil üstünde durur, kendi köşe
+  // yarıçapı ve zemini vardır. Zemin blur (iOS) + yarı saydam tint.
+  // Dikey çizgi kartın DIŞINDA: gönderen tarafın kenarında durur, kart ondan
+  // REPLY_CARD_INSET kadar ortaya kaçar ve çizginin bir kısmını örter (çizgi
+  // kartın ARKASINDA kalır). Çizgi de kart da AYNI sarmalayıcıda olduğu için
+  // MessageBubble ve MessageActionSheet klonu ikisini de otomatik alır.
+  if (!isComposing) {
+    return (
+      <View style={{ position: 'relative' }}>
+        <View
+          pointerEvents="none"
+          style={{
+            position: 'absolute',
+            top: REPLY_LINE_INSET_V,
+            bottom: REPLY_LINE_INSET_V,
+            left: isOwn ? undefined : 0,
+            right: isOwn ? 0 : undefined,
+            width: REPLY_LINE_W,
+            borderRadius: REPLY_LINE_W / 2,
+            backgroundColor: REPLY_LINE_COLOR,
+          }}
+        />
+        <View
+          style={{
+            marginLeft: isOwn ? 0 : REPLY_CARD_INSET,
+            marginRight: isOwn ? REPLY_CARD_INSET : 0,
+            ...replyCardCorners(isOwn),
+            borderCurve: 'continuous',
+            // BlurView'da köşe yuvarlatma ancak overflow:hidden ile çalışır.
+            overflow: 'hidden',
+            backgroundColor: REPLY_CARD_BG,
+            flexDirection: 'row',
+            paddingHorizontal: BUBBLE_PAD_H,
+            paddingVertical: BUBBLE_PAD_V,
+          }}
+        >
+          {REPLY_USE_BLUR && (
+            <BlurView
+              intensity={REPLY_BLUR_INTENSITY}
+              tint="systemThinMaterialDark"
+              style={StyleSheet.absoluteFill}
+            />
+          )}
+          {texts}
+        </View>
+      </View>
+    );
+  }
+
+  // composing modu: mesaj yazma çubuğunun İKİZİ — aynı blur/zemin/padding, tam
+  // yuvarlak köşe (rounded-full). Tüm değerler composerStyle'dan; input ile
+  // arasındaki boşluk (COMPOSER_GAP) inputun klavyeyle arasındaki boşlukla aynı.
+  // Yatay inset YOK: input ile AYNI padding'li sarmalayıcının içinde durur
+  // (MessageComposer), böylece iki kapsülün kenarları birebir hizalı.
+  return (
+    <BlurView
+      intensity={COMPOSER_BLUR_INTENSITY}
+      tint={COMPOSER_BLUR_TINT}
+      style={{
+        marginBottom: COMPOSER_GAP,
+        paddingHorizontal: COMPOSER_BAR_PAD_H,
+        paddingVertical: COMPOSER_BAR_PAD_V,
+        // Tam yuvarlak: kapsül yüksekliği içerikle değişse de pill kalsın.
+        borderRadius: 999,
+        borderCurve: 'continuous',
+        // BlurView'da köşe yuvarlatma ancak overflow hidden ile çalışır
+        // (MessageComposer'daki input kapsülüyle aynı kural).
+        overflow: 'hidden',
+        backgroundColor: COMPOSER_BAR_BG,
+        flexDirection: 'row',
+        alignItems: 'center',
+        gap: COMPOSER_BAR_GAP,
+      }}
+    >
+      {body}
+    </BlurView>
   );
 }
 
 // Eski (media'lı) mesajlara yanıt verilmiş olabilir — etiketler locale'den.
-function mediaLabel(contentType: number, t: (key: string) => string) {
+// Backend enum'u hem sayı (0/1/2/3) hem isim ("Text"/"Image"/…) olarak yollayabildiği
+// için ikisi de kabul edilir; media DEĞİLSE null döner → çağıran metni gösterir.
+function mediaLabel(contentType: any, t: (key: string) => string): string | null {
   // MessageContentType: 0 Text, 1 Image, 2 Voice, 3 Video, 99 System
-  switch (contentType) {
-    case 1: return `📷 ${t('chat.messages.mediaPhoto')}`;
-    case 2: return `🎙️ ${t('chat.messages.mediaVoice')}`;
-    case 3: return `🎬 ${t('chat.messages.mediaVideo')}`;
-    default: return '...';
+  const key = typeof contentType === 'string' ? contentType.toLowerCase() : contentType;
+  switch (key) {
+    case 1: case '1': case 'image': return `📷 ${t('chat.messages.mediaPhoto')}`;
+    case 2: case '2': case 'voice': return `🎙️ ${t('chat.messages.mediaVoice')}`;
+    case 3: case '3': case 'video': return `🎬 ${t('chat.messages.mediaVideo')}`;
+    default: return null;
   }
 }

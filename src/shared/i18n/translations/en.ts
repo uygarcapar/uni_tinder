@@ -284,7 +284,7 @@ const en = {
       mediaVideo: 'Video',
       today: 'Today',
       yesterday: 'Yesterday',
-      notFound: '{{query}} not found',
+      notFound: "'{{query}}' not found",
     },
     unmatch: {
       restoreTitle: 'Restore match',
@@ -351,13 +351,6 @@ const en = {
       closedTitle: 'This chat is closed',
       activeDescription: 'Send the first message — let the conversation flow naturally.',
       closedDescription: 'You can view past messages.',
-    },
-    search: {
-      placeholder: 'Search messages…',
-      resultCount: '{{total}} results',
-      defaultName: 'User',
-      noResults: 'No matches',
-      notFound: '{{query}} not found',
     },
     media: {
       photo: 'Photo',

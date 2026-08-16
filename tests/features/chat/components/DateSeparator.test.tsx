@@ -54,6 +54,15 @@ describe('dateLabel', () => {
   it('includes the year for dates in a previous year', () => {
     expect(dateLabel('2024-12-31T08:00:00Z')).toBe('31 Ara 2024');
   });
+
+  // Regresyon: backend damgaları Z soneki olmadan gelebiliyor (kontrat §8.3).
+  // Çıplak `new Date` bunları YEREL saat sayıp TR'de 3 saat geriye kaydırıyordu →
+  // gece yarısından sonraki mesajlar "Bugün" yerine "Dün" ayracına düşüyordu.
+  it('Z soneki olmayan damgayı Z\'li ile AYNI şekilde etiketler', () => {
+    expect(dateLabel('2026-06-20T12:00:00')).toBe(dateLabel('2026-06-20T12:00:00Z'));
+    expect(dateLabel('2026-06-19T12:00:00')).toBe(dateLabel('2026-06-19T12:00:00Z'));
+    expect(dateLabel('2026-06-20T12:00:00')).toBe('Bugün');
+  });
 });
 
 describe('withDateSeparators', () => {
@@ -90,6 +99,21 @@ describe('withDateSeparators', () => {
     ).toEqual(['__sep', 'yesterday', '__sep', 'today']);
     expect(result[0].label).toBe('Dün');
     expect(result[2].label).toBe('Bugün');
+  });
+
+  // Regresyon: optimistic mesaj yerel `toISOString()` (Z'li), server kopyası
+  // Z'siz geliyordu — aynı gündeki iki mesaj farklı günlere düşüp listede iki
+  // ayrı ayraç grubu üretiyordu.
+  it('Z\'li ve Z\'siz damgalar aynı gündeyse tek separator üretir', () => {
+    const result = withDateSeparators([
+      { id: 'server', sentAt: '2026-06-20T11:00:00' },
+      { id: 'optimistic', sentAt: '2026-06-20T12:00:00Z' },
+    ]);
+    expect(result.map((r: any) => (r.__separator ? '__sep' : r.id))).toEqual([
+      '__sep',
+      'server',
+      'optimistic',
+    ]);
   });
 
   it('does not insert a separator between messages on the same day', () => {

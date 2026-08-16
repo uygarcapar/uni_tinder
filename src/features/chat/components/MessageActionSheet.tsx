@@ -23,7 +23,16 @@ import SFIcon from "@/shared/components/SFIcon";
 import { useTranslation } from "react-i18next";
 import * as Haptics from "expo-haptics";
 import * as Clipboard from "expo-clipboard";
-import ReplyPreview from "@/features/chat/components/ReplyPreview";
+import ReplyPreview, {
+  REPLY_CARD_GAP,
+} from "@/features/chat/components/ReplyPreview";
+import { utcTime } from "@/shared/utils/dateUtc";
+import {
+  REACTION_CHIP_BORDER,
+  BUBBLE_PAD_H,
+  BUBBLE_PAD_V,
+  bubbleCorners,
+} from "@/features/chat/components/bubbleStyle";
 import { colors } from "../../../shared/theme/colors";
 
 const QUICK_EMOJIS = ["❤️", "😂", "😮", "😢", "🔥", "👍"];
@@ -49,7 +58,6 @@ const ACTION_ROW_H = 47;
 // bu yüzden padding'i buradaki sabitten beslemek zorunlu.
 const ACTIONS_RADIUS = 22;
 const ACTIONS_PAD_V = 6;
-const BUBBLE_RADIUS = 24;
 // Balonun altındaki reaction chip'leri balon dışına bu kadar taşar (MessageBubble bottom:-15).
 const REACTION_CHIP_OVERHANG = 15;
 // Panel (emoji satırı + aksiyon menüsü) arkaplanı: iOS'ta BlurView üstüne yarı
@@ -468,6 +476,10 @@ function BubbleClone({
         moveStyle,
       ]}
     >
+      {/* Yığın: yanıt kartı (varsa) + balon — MessageBubble'daki sütunun birebir
+          kopyası. Ölçülen rect kartı da kapsadığı için genişlik yığının
+          genişliğidir; balon ona GERİLMEZ (maxWidth), yoksa kart balondan
+          genişken balon menüde şişerdi. */}
       <View
         onLayout={(e: any) => {
           const h = Math.round(e.nativeEvent.layout.height);
@@ -476,84 +488,109 @@ function BubbleClone({
         style={{
           width: cloneWidth,
           minHeight: pill.height,
-          backgroundColor: bubbleBg,
-          borderRadius: BUBBLE_RADIUS,
-          borderCurve: "continuous",
-          paddingHorizontal: 14,
-          paddingVertical: 12,
-          minWidth: 48,
-          alignItems: "center",
-          justifyContent: "center",
-          shadowColor: "#000",
-          shadowOpacity: 0.3,
-          shadowRadius: 12,
-          shadowOffset: { width: 0, height: 4 },
-          elevation: 8,
+          alignItems: isOwn ? "flex-end" : "flex-start",
         }}
       >
         {message.replyTo && (
-          <View style={{ alignSelf: "stretch" }}>
+          // MessageBubble'daki sarmalayıcının birebir kopyası (aynı boşluk
+          // sabiti); ayrışırsa menü açılışında kart zıplar.
+          <View
+            style={{
+              marginBottom: REPLY_CARD_GAP,
+              maxWidth: cloneWidth,
+              shadowColor: "#000",
+              shadowOpacity: 0.3,
+              shadowRadius: 12,
+              shadowOffset: { width: 0, height: 4 },
+              elevation: 8,
+            }}
+          >
             <ReplyPreview reply={message.replyTo} mode="bubble" isOwn={isOwn} />
           </View>
         )}
-        {!!message.content && (
-          <Text
+
+        <View style={{ position: "relative", maxWidth: cloneWidth }}>
+          <View
             style={{
-              fontSize: 17,
-              color: isOwn ? "#fff" : "#f3f4f6",
+              backgroundColor: bubbleBg,
+              // Köşeler MessageBubble ile TEK kaynaktan: gönderen tarafın üst köşesi
+              // dar. Ayrışırsa uzun basışta balonun köşesi zıplar.
+              ...bubbleCorners(isOwn),
+              borderCurve: "continuous",
+              paddingHorizontal: BUBBLE_PAD_H,
+              paddingVertical: BUBBLE_PAD_V,
+              minWidth: 48,
+              // MessageBubble ile AYNI: kısa metin (örn. "?") minWidth artığının
+              // ortasında durur. Yanıt kartı balonun dışında olduğu için burada
+              // da yanıta özel bir durum YOK.
+              alignItems: "center",
+              shadowColor: "#000",
+              shadowOpacity: 0.3,
+              shadowRadius: 12,
+              shadowOffset: { width: 0, height: 4 },
+              elevation: 8,
             }}
           >
-            {message.content}
-            {message.editedAt && (
+            {!!message.content && (
               <Text
                 style={{
-                  fontSize: 12,
-                  color: isOwn ? "rgba(255,255,255,0.7)" : "#9ca3af",
+                  fontSize: 17,
+                  color: isOwn ? "#fff" : "#f3f4f6",
                 }}
               >
-                {"  "}
-                {t("chat.bubble.edited")}
+                {message.content}
+                {message.editedAt && (
+                  <Text
+                    style={{
+                      fontSize: 12,
+                      color: isOwn ? "rgba(255,255,255,0.7)" : "#9ca3af",
+                    }}
+                  >
+                    {"  "}
+                    {t("chat.bubble.edited")}
+                  </Text>
+                )}
               </Text>
             )}
-          </Text>
-        )}
-      </View>
+          </View>
 
-      {message.reactions?.length > 0 && (
-        <View
-          style={{
-            position: "absolute",
-            bottom: -REACTION_CHIP_OVERHANG,
-            right: 6,
-            flexDirection: "row",
-            flexWrap: "wrap",
-            gap: 4,
-          }}
-        >
-          {message.reactions.map((r: any) => (
+          {/* TEK kapsül — MessageBubble'daki reaction kapsülünün birebir kopyası;
+              klon ile gerçek balon ayrışırsa menü açılışında chip'ler zıplar. */}
+          {message.reactions?.length > 0 && (
             <View
-              key={r.emoji}
               style={{
-                paddingHorizontal: 8,
-                paddingVertical: 4,
+                position: "absolute",
+                bottom: -REACTION_CHIP_OVERHANG,
+                right: 6,
                 flexDirection: "row",
                 alignItems: "center",
+                paddingHorizontal: 8,
+                paddingVertical: 4,
                 borderRadius: 999,
                 backgroundColor: colors.surface2,
+                ...REACTION_CHIP_BORDER,
+                gap: 6,
               }}
             >
-              <Text style={{ fontSize: 14 }}>{r.emoji}</Text>
-              {r.count > 1 && (
-                <Text
-                  style={{ fontSize: 10, marginLeft: 4, color: "#d1d5db" }}
+              {message.reactions.map((r: any) => (
+                <View
+                  key={r.emoji}
+                  style={{ flexDirection: "row", alignItems: "center" }}
                 >
-                  {r.count}
-                </Text>
-              )}
+                  <Text style={{ fontSize: 14 }}>{r.emoji}</Text>
+                  {r.count > 1 && (
+                    <Text
+                      style={{ fontSize: 10, marginLeft: 4, color: "#d1d5db" }}
+                    >
+                      {r.count}
+                    </Text>
+                  )}
+                </View>
+              ))}
             </View>
-          ))}
+          )}
         </View>
-      )}
+      </View>
     </Animated.View>
   );
 }
@@ -627,7 +664,9 @@ function ActionRow({ icon, label, destructive, last, onPress }: any) {
 
 function isWithinEditWindow(sentAtIso) {
   if (!sentAtIso) return false;
-  const sent = new Date(sentAtIso).getTime();
+  // utcTime: Z'siz damga yerel sayıldığında mesaj TR'de doğduğu anda 3 saat
+  // yaşlı görünüyordu → 15 dk'lık düzenleme penceresi hiç açılmıyordu.
+  const sent = utcTime(sentAtIso);
   if (isNaN(sent)) return false;
   return Date.now() - sent < 15 * 60 * 1000;
 }

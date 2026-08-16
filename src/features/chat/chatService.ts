@@ -1,5 +1,6 @@
 import api from '@/shared/services/api';
 import { API_ENDPOINTS } from '@/shared/constants/api';
+import { normalizeUtcFields } from '@/shared/utils/dateUtc';
 
 interface SendMessageArgs {
   conversationId: string;
@@ -20,11 +21,15 @@ interface CreateUploadUrlArgs {
  * Backend ChatDtos.cs ile birebir uyumlu REST wrapper.
  * Real-time (SignalR) yolu için realtimeService.ts — HTTP burada offline-tolerant fallback +
  * geçmiş çekme + idempotent action'lar (edit/delete/search vb.) için kullanılır.
+ *
+ * Zaman damgaları: server `Z` soneki olmadan gönderebiliyor (kontrat §8.3) — HER
+ * dönüş normalizeUtcFields'tan geçer, böylece store'a giren tek format Z'li UTC olur.
+ * Optimistic mesajlar zaten `toISOString()` (Z'li) ürettiği için karışım bitiyor.
  */
 export const chatService = {
   async getConversations() {
     const res = await api.get(API_ENDPOINTS.MESSAGES_CONVERSATIONS);
-    return (res as any).result || [];
+    return normalizeUtcFields((res as any).result || []);
   },
 
   async getMessageHistory(
@@ -36,7 +41,9 @@ export const chatService = {
     params.append('pageSize', String(pageSize));
     const url = `${API_ENDPOINTS.MESSAGES_HISTORY_CURSOR(conversationId)}?${params.toString()}`;
     const res = await api.get(url);
-    return (res as any).result || { conversationId, messages: [], nextCursor: null, hasMore: false };
+    return normalizeUtcFields(
+      (res as any).result || { conversationId, messages: [], nextCursor: null, hasMore: false }
+    );
   },
 
   async sendMessage({ conversationId, content, clientMessageId, replyToMessageId, contentType, mediaUrl }: SendMessageArgs) {
@@ -45,12 +52,12 @@ export const chatService = {
     if (contentType !== undefined && contentType !== null) body.contentType = contentType;
     if (mediaUrl) body.mediaUrl = mediaUrl;
     const res = await api.post(API_ENDPOINTS.MESSAGES_SEND, body);
-    return (res as any).result;
+    return normalizeUtcFields((res as any).result);
   },
 
   async markRead(conversationId: string) {
     const res = await api.post(API_ENDPOINTS.MESSAGES_MARK_READ(conversationId));
-    return (res as any).result;
+    return normalizeUtcFields((res as any).result);
   },
 
   async markDelivered(messageId: string) {
@@ -73,7 +80,7 @@ export const chatService = {
 
   async deactivateConversation(conversationId: string) {
     const res = await api.delete(API_ENDPOINTS.MESSAGES_DEACTIVATE_CONV(conversationId));
-    return (res as any).result;
+    return normalizeUtcFields((res as any).result);
   },
 
   async restoreConversation(conversationId: string): Promise<boolean> {
@@ -83,33 +90,26 @@ export const chatService = {
 
   async editMessage(messageId: string, content: string) {
     const res = await api.patch(API_ENDPOINTS.MESSAGES_EDIT(messageId), { content });
-    return (res as any).result;
+    return normalizeUtcFields((res as any).result);
   },
 
   async deleteMessage(messageId: string, forEveryone = false) {
     const res = await api.delete(
       `${API_ENDPOINTS.MESSAGES_DELETE(messageId)}?forEveryone=${forEveryone ? 'true' : 'false'}`
     );
-    return (res as any).result;
+    return normalizeUtcFields((res as any).result);
   },
 
   async addReaction(messageId: string, emoji: string) {
     const res = await api.post(API_ENDPOINTS.MESSAGES_REACTIONS(messageId), { emoji });
-    return (res as any).result;
+    return normalizeUtcFields((res as any).result);
   },
 
   async removeReaction(messageId: string, emoji: string) {
     const res = await api.delete(
       `${API_ENDPOINTS.MESSAGES_REACTIONS(messageId)}?emoji=${encodeURIComponent(emoji)}`
     );
-    return (res as any).result;
-  },
-
-  async searchMessages(conversationId: string, query: string, limit = 50) {
-    const params = new URLSearchParams({ q: query, limit: String(limit) });
-    const url = `${API_ENDPOINTS.MESSAGES_SEARCH(conversationId)}?${params.toString()}`;
-    const res = await api.get(url);
-    return (res as any).result;
+    return normalizeUtcFields((res as any).result);
   },
 
   async createUploadUrl({ conversationId, contentType, sizeBytes }: CreateUploadUrlArgs) {

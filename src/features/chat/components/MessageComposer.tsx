@@ -18,6 +18,17 @@ import * as Haptics from "expo-haptics";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { useTranslation } from "react-i18next";
 import ReplyPreview from "@/features/chat/components/ReplyPreview";
+import {
+  COMPOSER_ACTION_W,
+  COMPOSER_BAR_BG,
+  COMPOSER_BAR_GAP,
+  COMPOSER_BAR_PAD_H,
+  COMPOSER_BAR_PAD_V,
+  COMPOSER_BLUR_INTENSITY,
+  COMPOSER_BLUR_TINT,
+  COMPOSER_GAP,
+  COMPOSER_INSET_H,
+} from "@/features/chat/components/composerStyle";
 import { newClientMessageId } from "@/features/chat/clientMessageId";
 import { colors } from "../../../shared/theme/colors";
 
@@ -213,14 +224,22 @@ function MessageComposer({
         onLayout={onComposerLayout}
         style={{ paddingBottom: insets.bottom }}
       >
-        {replyTo && (
-          <ReplyPreview reply={replyTo} mode="composing" onCancel={onCancelReply} />
-        )}
-
-        <View className="px-3 py-2">
+        {/* Yanıt önizlemesi input ile AYNI sarmalayıcının içinde: yatay inset'i
+            (px) ondan alır, arasındaki boşluk kendi marginBottom'ı = COMPOSER_GAP
+            — yani sarmalayıcının py'si kadar, ki bu da klavye açıkken input ile
+            klavye arasında kalan boşluğun ta kendisi. */}
+        <View
+          style={{
+            paddingHorizontal: COMPOSER_INSET_H,
+            paddingVertical: COMPOSER_GAP,
+          }}
+        >
+          {replyTo && (
+            <ReplyPreview reply={replyTo} mode="composing" onCancel={onCancelReply} />
+          )}
           <BlurView
-            intensity={80}
-            tint={IS_IOS ? "systemChromeMaterialDark" : "systemMaterialDark"}
+            intensity={COMPOSER_BLUR_INTENSITY}
+            tint={COMPOSER_BLUR_TINT}
             style={{
               minHeight: 44,
               // Güvenlik tavanı — gerçek sınır inputHeight (3 satır × ölçülen lineH).
@@ -228,13 +247,13 @@ function MessageComposer({
               borderRadius: 22,
               // BlurView'da köşe yuvarlatma ancak overflow hidden ile çalışır.
               overflow: "hidden",
-              paddingLeft: 8,
-              paddingRight: 8,
-              paddingVertical: 8,
-              backgroundColor: "rgba(255,255,255,0.04)",
+              paddingLeft: COMPOSER_BAR_PAD_H,
+              paddingRight: COMPOSER_BAR_PAD_H,
+              paddingVertical: COMPOSER_BAR_PAD_V,
+              backgroundColor: COMPOSER_BAR_BG,
               flexDirection: "row",
               alignItems: "center",
-              gap: 8,
+              gap: COMPOSER_BAR_GAP,
             }}
           >
             {/* Şimdilik işlevsiz — gönder butonuyla aynı yeri kaplar (medya eki için rezerve).
@@ -244,7 +263,7 @@ function MessageComposer({
               disabled={!quotaLocked}
               activeOpacity={0.7}
               style={{
-                width: 33,
+                width: COMPOSER_ACTION_W,
                 height: 32,
                 marginVertical: -2,
                 alignSelf: "flex-end",
@@ -300,7 +319,7 @@ function MessageComposer({
               disabled={!canSend}
               activeOpacity={0.9}
               style={{
-                width: 33,
+                width: COMPOSER_ACTION_W,
                 height: 32,
                 borderRadius: 16,
                 // 32pt buton, 28pt'lik içerik alanına negatif margin ile sığar —

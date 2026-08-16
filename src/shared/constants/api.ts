@@ -86,7 +86,6 @@ export const API_ENDPOINTS = {
   MESSAGES_DELETE: (msgId: string) => `/api/messages/${msgId}`,
   MESSAGES_REACTIONS: (msgId: string) => `/api/messages/${msgId}/reactions`,
   MESSAGES_DELIVERED: (msgId: string) => `/api/messages/${msgId}/delivered`,
-  MESSAGES_SEARCH: (convId: string) => `/api/messages/conversations/${convId}/search`,
   MESSAGES_UPLOAD_URL: "/api/messages/upload-url",
   MESSAGES_QUOTA: (convId: string) => `/api/messages/conversations/${convId}/quota`,
   // NOT: .../unlock endpoint'i 2026-08-02'de kaldırıldı (consumable satışı yok);

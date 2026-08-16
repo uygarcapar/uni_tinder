@@ -26,7 +26,7 @@ import MaskedView from "@react-native-masked-view/masked-view";
 import { LinearGradient } from "expo-linear-gradient";
 import { easeGradient } from "react-native-easing-gradient";
 import { useAppDispatch, useAppSelector } from "@/shared/hooks/redux";
-import { useNavigation } from "@react-navigation/native";
+import { useNavigation, useFocusEffect } from "@react-navigation/native";
 import {
   MessageCircle,
   Camera as CameraIcon,
@@ -46,6 +46,7 @@ import {
   fetchHistory,
 } from "@/features/chat/chatSlice";
 import chatService from "@/features/chat/chatService";
+import { parseUtc } from "@/shared/utils/dateUtc";
 import { store } from "@/shared/store";
 import EmptyState from "@/shared/components/EmptyState";
 import ScreenHeader from "@/shared/components/ScreenHeader";
@@ -245,9 +246,15 @@ export default function MessagesScreen() {
     return Math.min(1, used / DAILY_SWIPE_LIMIT);
   }, [statsQuery.data?.remainingSwipes, statsQuery.data?.isPremium]);
 
-  useEffect(() => {
-    dispatch(fetchConversations());
-  }, [dispatch]);
+  // Her odaklanışta tazele — SADECE mount'ta çekmek listeyi bayat bırakıyordu:
+  // karşı taraf unmatch ettiğinde backend hiçbir event yayınlamadığı için sohbet
+  // (uygulama arka plana atılıp geri gelene kadar) aktif görünmeye devam ediyordu.
+  // Thunk'ın 15sn staleness + in-flight guard'ı sekme gidip gelmelerini yutar.
+  useFocusEffect(
+    useCallback(() => {
+      dispatch(fetchConversations());
+    }, [dispatch]),
+  );
 
   // WhatsApp davranışı — chat'e girince mesajlar anında gelsin.
   // Conversations yüklenir yüklenmez ilk N sohbetin mesaj history'sini
@@ -868,13 +875,14 @@ const ConversationRow = memo(function ConversationRow({
 
 function formatRelativeTime(iso, t) {
   if (!iso) return "";
-  const d = new Date(iso);
+  // Server damgası Z'siz gelebiliyor (kontrat §8.3) — bkz. shared/utils/dateUtc.ts.
+  const d = parseUtc(iso);
   const now = new Date();
 
   const startOfDay = (date) =>
     new Date(date.getFullYear(), date.getMonth(), date.getDate());
   const dayDiff = Math.floor(
-    (startOfDay(now) - startOfDay(d)) / (1000 * 60 * 60 * 24),
+    (startOfDay(now).getTime() - startOfDay(d).getTime()) / (1000 * 60 * 60 * 24),
   );
 
   if (dayDiff <= 0) {

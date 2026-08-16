@@ -62,6 +62,47 @@ describe('ReplyPreview', () => {
     expect(tree.getByText('🎬 Video')).toBeTruthy();
   });
 
+  // Backend enum'u isim olarak yollayabiliyor ("Text") — sayı beklentisi yüzünden
+  // metin mesajları media sayılıp "..." görünüyordu.
+  it('renders the text preview when contentType arrives as an enum name', () => {
+    const tree = render(
+      <ReplyPreview
+        reply={{ senderDisplayName: 'Ada', contentPreview: 'Selam!', contentType: 'Text' }}
+      />
+    );
+    expect(tree.getByText('Selam!')).toBeTruthy();
+  });
+
+  it('renders the text preview when contentType is missing', () => {
+    const tree = render(
+      <ReplyPreview reply={{ senderDisplayName: 'Ada', contentPreview: 'Selam!' }} />
+    );
+    expect(tree.getByText('Selam!')).toBeTruthy();
+  });
+
+  it('shows the media label when contentType arrives as an enum name', () => {
+    const tree = render(
+      <ReplyPreview reply={{ senderDisplayName: 'A', contentType: 'Image' }} />
+    );
+    expect(tree.getByText('📷 Fotoğraf')).toBeTruthy();
+  });
+
+  it('renders sender at 15px and preview at 14px in white', () => {
+    const tree = render(
+      <ReplyPreview
+        reply={{ senderDisplayName: 'Ada', contentPreview: 'Selam!', contentType: 0 }}
+      />
+    );
+    expect(tree.getByText('Ada').props.style).toMatchObject({
+      fontSize: 15,
+      color: '#FFFFFF',
+    });
+    expect(tree.getByText('Selam!').props.style).toMatchObject({
+      fontSize: 14,
+      color: '#FFFFFF',
+    });
+  });
+
   it('shows "..." when text preview is empty', () => {
     const tree = render(
       <ReplyPreview reply={{ senderDisplayName: 'A', contentType: 0 }} />

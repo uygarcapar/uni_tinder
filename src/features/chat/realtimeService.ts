@@ -10,6 +10,7 @@ import { getCurrentAccessToken, refreshAccessToken } from '@/shared/services/api
 import { isTokenExpiringSoon } from '@/shared/utils/jwt';
 import { devLog } from '@/shared/utils/devLog';
 import { shortNetError } from '@/shared/utils/netError';
+import { normalizeUtcFields } from '@/shared/utils/dateUtc';
 
 type EventCallback = (...args: any[]) => void;
 
@@ -137,7 +138,10 @@ class RealtimeService {
       'ForceLogout',
     ];
     events.forEach((evt) => {
-      conn.on(evt, (...args) => this._emit(evt, ...args));
+      // Hub payload'ları da REST gibi Z'siz UTC gönderebiliyor (kontrat §8.3).
+      // Normalizasyon BURADA yapılır: tüm dinleyiciler (AppNavigator dispatch'leri,
+      // ChatScreen, NotificationsScreen) tek ve doğru formatı görür.
+      conn.on(evt, (...args) => this._emit(evt, ...args.map((a) => normalizeUtcFields(a))));
     });
 
     conn.onreconnecting((err) => {

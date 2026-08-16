@@ -1,6 +1,5 @@
 import { View, Text, TouchableOpacity, Alert } from "react-native";
 import {
-  Search,
   UserMinus,
   RotateCcw,
   AlertTriangle,
@@ -69,47 +68,54 @@ function Section({
   );
 }
 
+// SettingsModal'daki satır patterni: pill (radius 36), 0.5 border, solda etiket
+// sağda ikon. Destructive olanlar divider yerine dolu kırmızı zemin + siyah
+// metin/ikon alır (SettingsModal "Hesabı Sil" ile birebir aynı).
 function ActionRow({
   icon,
   label,
   onPress,
   destructive,
   accent,
+  marginBottom = 0,
 }: {
   icon: React.ReactNode;
   label: string;
   onPress: () => void;
   destructive?: boolean;
   accent?: boolean;
+  marginBottom?: number;
 }) {
-  const textColor = destructive
-    ? colors.error
-    : accent
-    ? colors.success
-    : colors.text;
+  const textColor = destructive ? "#000" : accent ? colors.success : colors.text;
   return (
     <TouchableOpacity
       onPress={onPress}
-      activeOpacity={0.7}
+      activeOpacity={0.8}
       style={{
+        borderRadius: 36,
+        borderCurve: "continuous",
+        overflow: "hidden",
+        borderWidth: 0.5,
+        borderColor: destructive ? colors.errorStrong : "rgba(255,255,255,0.1)",
+        backgroundColor: destructive ? colors.errorStrong : undefined,
         flexDirection: "row",
         alignItems: "center",
-        paddingVertical: 14,
-        borderBottomWidth: 0.5,
-        borderBottomColor: "rgba(255,255,255,0.08)",
+        justifyContent: "space-between",
+        padding: 16,
+        paddingHorizontal: 20,
+        marginBottom,
       }}
     >
-      <View style={{ width: 24, alignItems: "center" }}>{icon}</View>
-      <Text
-        style={{
-          color: textColor,
-          fontSize: 15,
-          fontWeight: "500",
-          marginLeft: 10,
-        }}
+      <View
+        style={{ flexDirection: "row", alignItems: "center", gap: 10, flex: 1 }}
       >
-        {label}
-      </Text>
+        <View style={{ flex: 1 }}>
+          <Text style={{ color: textColor, fontSize: 15, fontWeight: "500" }}>
+            {label}
+          </Text>
+        </View>
+        {icon}
+      </View>
     </TouchableOpacity>
   );
 }
@@ -119,7 +125,6 @@ export default function ConversationOptionsSheet({
   onClose,
   isActive = true,
   canRestore = false,
-  onSearch,
   onUnmatch,
   onRestore,
   onReport,
@@ -177,17 +182,7 @@ export default function ConversationOptionsSheet({
       />
       {isActive && (
         <ActionRow
-          icon={<SFIcon name="magnifyingglass" fallback={Search} size={18} color={colors.text} strokeWidth={1.5} />}
-          label="Sohbette Ara"
-          onPress={() => {
-            onClose();
-            onSearch?.();
-          }}
-        />
-      )}
-      {isActive && (
-        <ActionRow
-          icon={<SFIcon name="person.fill.badge.minus" fallback={UserMinus} size={18} color={colors.error} strokeWidth={1.5} />}
+          icon={<SFIcon name="person.fill.badge.minus" fallback={UserMinus} size={18} color="#000" strokeWidth={1.5} style={{ pointerEvents: "none" }} />}
           label="Eşleşmeyi Kaldır"
           onPress={handleUnmatch}
           destructive
@@ -195,7 +190,7 @@ export default function ConversationOptionsSheet({
       )}
       {!isActive && canRestore && (
         <ActionRow
-          icon={<SFIcon name="arrow.counterclockwise" fallback={RotateCcw} size={18} color={colors.success} strokeWidth={1.5} />}
+          icon={<SFIcon name="arrow.counterclockwise" fallback={RotateCcw} size={18} color={colors.success} strokeWidth={1.5} style={{ pointerEvents: "none" }} />}
           label="Eşleşmeyi Geri Al"
           onPress={() => {
             onClose();
@@ -241,15 +236,16 @@ export default function ConversationOptionsSheet({
         description="Kullanıcıyı şikayet edebilir veya engelleyebilirsin."
       />
       <ActionRow
-        icon={<SFIcon name="flag.fill" fallback={Flag} size={18} color={colors.text} strokeWidth={1.5} />}
+        icon={<SFIcon name="flag.fill" fallback={Flag} size={18} color={colors.text} strokeWidth={1.5} style={{ pointerEvents: "none" }} />}
         label="Şikayet Et"
         onPress={() => {
           onClose();
           onReport?.();
         }}
+        marginBottom={8}
       />
       <ActionRow
-        icon={<SFIcon name="nosign" fallback={Ban} size={18} color={colors.error} strokeWidth={1.5} />}
+        icon={<SFIcon name="nosign" fallback={Ban} size={18} color="#000" strokeWidth={1.5} style={{ pointerEvents: "none" }} />}
         label="Kullanıcıyı Engelle"
         onPress={handleBlock}
         destructive

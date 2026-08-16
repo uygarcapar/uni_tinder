@@ -16,6 +16,10 @@ export function reactionsEqual(a: any, b: any) {
   if (la !== lb) return false;
   for (let i = 0; i < la; i++) {
     if (a[i].emoji !== b[i].emoji || (a[i].count || 0) !== (b[i].count || 0)) return false;
+    // userIds balonda GÖSTERİLMEZ ama "hangi reaction benim" kararını besler
+    // (kullanıcı başına tek reaction → yeni emoji eskisini değiştirir). Karşılaştırmaya
+    // girmezse reconcile eşit sayıp eski/bayat userIds'li kopyayı koruyabilir.
+    if ((a[i].userIds || []).join(",") !== (b[i].userIds || []).join(",")) return false;
   }
   return true;
 }

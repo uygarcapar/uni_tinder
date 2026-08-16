@@ -3,6 +3,7 @@ import { View, Text } from "react-native";
 import { colors } from "../../../shared/theme/colors";
 import i18n from "../../../shared/i18n";
 import { getDateLocale } from "../../../shared/i18n/dateLocale";
+import { parseUtc } from "../../../shared/utils/dateUtc";
 
 /**
  * Mesaj grupları arasında tarih ayracı.
@@ -41,7 +42,10 @@ export default DateSeparator;
 // "tr-TR"/TR_MONTHS İngilizce'de de Türkçe basıyordu.
 export function dateLabel(iso) {
   if (!iso) return "";
-  const d = new Date(iso);
+  // parseUtc: server Z'siz gönderdiğinde `new Date` bunu yerel saat sayıyordu →
+  // TR'de 3 saat geri kayma → gece yarısından sonraki mesajlar "Bugün" yerine
+  // "Dün" grubuna düşüyordu (bkz. shared/utils/dateUtc.ts).
+  const d = parseUtc(iso);
   if (isNaN(d.getTime())) return "";
 
   const now = new Date();
@@ -107,7 +111,7 @@ export function withDateSeparators(messages: any) {
 
 function dayKey(iso) {
   if (!iso) return "";
-  const d = new Date(iso);
+  const d = parseUtc(iso);
   if (isNaN(d.getTime())) return "";
   return `${d.getFullYear()}-${d.getMonth()}-${d.getDate()}`;
 }

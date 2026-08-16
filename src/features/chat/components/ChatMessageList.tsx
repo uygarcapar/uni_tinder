@@ -17,9 +17,20 @@ const LIST_STYLE = { flex: 1 } as const;
 // edilen mesajlar ölçüldükçe itemLayout olayları "dibe pin'le"yi tetikleyip
 // maintainVisibleContentPosition düzeltmesiyle geri-besleme döngüsü kuruyor →
 // render storm + Fabric ShadowTree::commit assert (SIGABRT, .ips ile kanıtlı).
-// Yalnız dataChange: yeni mesaj dipteyken hâlâ dibe pin'ler, prepend churn'ü pin
-// tetiklemez.
-const MAINTAIN_SCROLL_AT_END = { on: { dataChange: true } } as const;
+// AÇIK olanlar:
+//   • dataChange — yeni mesaj dipteyken dibe pin'ler (prepend churn pin tetiklemez).
+//   • footerLayout — footer YALNIZ typing satırı belirip kaybolunca boy değiştirir
+//     (sabit yükseklik, bkz. ChatTypingRow) → olay sayısı 2; itemLayout'taki
+//     ölçüm-başına-tetik davranışı yok. Bu olmadan gösterge klavye/composer
+//     inset'inin altında kalıyordu.
+// animated: native scroller.scrollToEnd({animated:true}) — gönderilen mesaj
+// alttan yerine SÜZÜLÜR, liste onunla birlikte yumuşakça kayar (WhatsApp hissi).
+// JS hedef hesabı DEĞİL native scroll olduğu için klavye contentInset'ini bilir
+// (bkz. ChatScreen.handleSend'deki manuel scroll notu).
+const MAINTAIN_SCROLL_AT_END = {
+  on: { dataChange: true, footerLayout: true },
+  animated: true,
+} as const;
 
 // Balon/separator ayrı container tipi + ayrı boyut ortalaması alır — karışık
 // tipli pool tek tipe göre tahmin yapıp blank hücre üretmesin.

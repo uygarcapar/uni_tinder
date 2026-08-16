@@ -1,61 +1,35 @@
-import { useEffect, useRef } from 'react';
-import { View, Animated, Easing } from 'react-native';
+import { View, Text } from 'react-native';
+import { useTranslation } from 'react-i18next';
 import { colors } from '../../../shared/theme/colors';
 
+// Balonun TAM yüksekliği: lineHeight 16 + paddingVertical 6×2. ChatTypingRow'un
+// sabit satır yüksekliği bu sabitten beslenir — ikisi ayrışırsa gösterge kendi
+// satırında kayar ya da kırpılır.
+export const TYPING_BUBBLE_HEIGHT = 28;
+
 /**
- * Üç noktalı tipik "..." typing animasyonu.
- * Her nokta sırayla scale 0.6 → 1 oluyor.
+ * "yazıyor…" göstergesi.
+ *
+ * Üç noktalı animasyon 2026-08-14'te kaldırıldı: sürekli dönen üç Animated.Value
+ * loop'u sohbet açık kaldığı sürece hiç durmuyordu (chat ekranı zaten commit
+ * hassas) ve durumu okumak için metin yerine ikon çözmek gerekiyordu. Metin
+ * MessagesScreen'deki satır alt başlığıyla da AYNI i18n anahtarından geliyor.
  */
-export default function TypingIndicator({ size = 6, color = colors.textSecondary }: any) {
-  const animations = useRef([
-    new Animated.Value(0.4),
-    new Animated.Value(0.4),
-    new Animated.Value(0.4),
-  ]).current;
-
-  useEffect(() => {
-    const loops = animations.map((anim, i) =>
-      Animated.loop(
-        Animated.sequence([
-          Animated.delay(i * 150),
-          Animated.timing(anim, {
-            toValue: 1,
-            duration: 300,
-            easing: Easing.inOut(Easing.ease),
-            useNativeDriver: true,
-          }),
-          Animated.timing(anim, {
-            toValue: 0.4,
-            duration: 300,
-            easing: Easing.inOut(Easing.ease),
-            useNativeDriver: true,
-          }),
-        ])
-      )
-    );
-    loops.forEach((l) => l.start());
-    return () => loops.forEach((l) => l.stop());
-  }, [animations]);
-
+export default function TypingIndicator({ color = colors.text }: { color?: string }) {
+  const { t } = useTranslation();
   return (
     <View
-      className="flex-row items-center px-3 py-2 rounded-2xl bg-surface-2"
-      style={{ alignSelf: 'flex-start' }}
+      className="rounded-2xl bg-surface-2"
+      style={{
+        alignSelf: 'flex-start',
+        height: TYPING_BUBBLE_HEIGHT,
+        justifyContent: 'center',
+        paddingHorizontal: 12,
+      }}
     >
-      {animations.map((anim, i) => (
-        <Animated.View
-          key={i}
-          style={{
-            width: size,
-            height: size,
-            borderRadius: size / 2,
-            backgroundColor: color,
-            marginHorizontal: 2,
-            opacity: anim,
-            transform: [{ scale: anim }],
-          }}
-        />
-      ))}
+      <Text style={{ color, fontSize: 13, lineHeight: 16, fontWeight: '500' }}>
+        {t('chat.messages.typing')}
+      </Text>
     </View>
   );
 }

@@ -9,6 +9,10 @@ import { REVEAL_MAX } from "./RevealContext";
  * açılır), bırakınca yerine yaylandıran jest + klavye açıkken listeye dokununca
  * klavyeyi kapatan tap jesti. İkisi Gesture.Simultaneous ile birleşir.
  *
+ * SAĞA çekiş bu jeste AİT DEĞİL: failOffsetX(15) ile bırakılır → satır başına
+ * duran "sağa çekip yanıtla" jesti (ReplySwipeRow) veya ekran kenarındaki native
+ * swipe-back onu alır.
+ *
  * `revealX` UI-thread'de sürülür; balonlar RevealContext'ten worklet içinde okur →
  * per-frame React render YOK.
  */
@@ -20,7 +24,7 @@ export function useRevealGesture() {
       Gesture.Pan()
         // Sadece SOL çekişi sahiplen (saat kolonunu aç).
         .activeOffsetX(-15)
-        // Sağa çekişte fail → native swipe-back (geri git) çalışsın.
+        // Sağa çekişte fail → yanıtla jesti / native swipe-back çalışsın.
         .failOffsetX(15)
         // Dikey harekette fail → liste scroll'una bırak.
         .failOffsetY([-12, 12])
@@ -49,11 +53,19 @@ export function useRevealGesture() {
 
   // Klavye açıkken listeye dokununca klavyeyi kapat. KeyboardController.dismiss()
   // klavye kapalıyken no-op → balon etkileşimlerine karışmaz.
+  //
+  // maxDistance ŞART: RNGH'nin tap mesafe sınırı VARSAYILAN OLARAK YOK
+  // (RNTapHandler.m → maxDistSq = NAN). Sınırsızken 250ms'nin altında biten hızlı
+  // bir yanıt/reveal çekişi de "tap" sayılıp klavyeyi kapatıyor; hemen ardından
+  // yanıt akışı klavyeyi geri açınca kapat-aç çakışması oluşuyor ve
+  // keyboard-controller'ın animasyon değerleri şaşıyordu (klavye geliyor ama
+  // KeyboardStickyView yükselmiyor → composer klavyenin altında kalıyor).
   const dismissTap = useMemo(
     () =>
       Gesture.Tap()
         .runOnJS(true)
         .maxDuration(250)
+        .maxDistance(12)
         .onEnd(() => {
           KeyboardController.dismiss();
         }),

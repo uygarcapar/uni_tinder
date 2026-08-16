@@ -39,9 +39,11 @@ import { useSharedValue } from "react-native-reanimated";
 import {
   KeyboardStickyView,
   KeyboardGestureArea,
+  KeyboardEvents,
 } from "react-native-keyboard-controller";
 import { useKeyboardChatComposerInset } from "@legendapp/list/keyboard";
 import { NativeStackScreenProps } from "@react-navigation/native-stack";
+import { useFocusEffect } from "@react-navigation/native";
 import type { RootStackParamList } from "@/shared/types/navigation";
 import { useAppDispatch, useAppSelector } from "@/shared/hooks/redux";
 import { ChevronLeft, MoreVertical, X } from "lucide-react-native";
@@ -49,11 +51,13 @@ import SFIcon from "@/shared/components/SFIcon";
 import * as Haptics from "expo-haptics";
 import {
   fetchHistory,
+  fetchConversations,
   setActiveConversation,
   appendOptimisticMessage,
   failOptimisticMessage,
   removeOptimisticMessage,
   clearUnreadForConversation,
+  conversationDeactivated,
   fetchChatQuota,
   decrementQuotaLocally,
   reactionsChanged,
@@ -61,13 +65,17 @@ import {
   messageEdited,
   messageSent,
 } from "@/features/chat/chatSlice";
+import { refreshEntitlementsForPaywall } from "@/features/profile/subscriptionSlice";
 import chatService from "@/features/chat/chatService";
+import { applyReactionPick } from "@/features/chat/reactionPick";
 import realtimeService from "@/features/chat/realtimeService";
 import MessageBubble from "@/features/chat/components/MessageBubble";
+import ReplySwipeRow from "@/features/chat/components/ReplySwipeRow";
 import MessageComposer from "@/features/chat/components/MessageComposer";
 import ChatMessageList from "@/features/chat/components/ChatMessageList";
 import { useRevealGesture } from "@/features/chat/components/useRevealGesture";
 import { REVEAL_MAX } from "@/features/chat/components/RevealContext";
+import { highlightMessage } from "@/features/chat/components/messageHighlight";
 import { ChatTypingRow } from "@/features/chat/components/ChatBottomSpacer";
 import MessageSkeleton from "@/features/chat/components/MessageSkeleton";
 import MessageActionSheet from "@/features/chat/components/MessageActionSheet";
@@ -77,15 +85,23 @@ import DateSeparator, {
   withDateSeparators,
 } from "@/features/chat/components/DateSeparator";
 import moderationService from "@/shared/services/moderationService";
+import { utcTime } from "@/shared/utils/dateUtc";
 import PurchaseModal from "@/features/discover/components/PurchaseModal";
+import PreviewModal from "@/features/profile/components/PreviewModal";
+import swipeService from "@/features/discover/swipeService";
 import { showInfoToast } from "@/shared/services/toaster";
 import uiBus from "@/shared/services/uiBus";
 import { analytics } from "@/shared/services/analytics";
 import { colors } from "../../../shared/theme/colors";
+import { glassFallback } from "../../../shared/theme/glass";
 import { devLog } from '@/shared/utils/devLog';
 
 const ContentType = { Text: 0, System: 99 };
 const INPUT_BAR_OPAQUE = 66; // composer opak gövde tahmini (inset başlangıç değeri)
+// Hub `SendMessage` hata durumunda invoke'u REDDETMİYOR — ayrı bir `Error`
+// event'i yayınlıyor (kontrat §17). O event kaçarsa balon sonsuza dek
+// "gönderiliyor"da asılı kalıyordu; bu pencere dolunca başarısıza çeviriyoruz.
+const SEND_ACK_TIMEOUT_MS = 12_000;
 // İsim pill'inin sabit yüksekliği: SwiftUI ölçümünü beklemeden header'ın dikey
 // geometrisi İLK frame'de kesinleşsin (13pt metin + 4pt dikey padding ≈ 24, +2 pay).
 const PILL_H = 26;
@@ -146,7 +162,7 @@ function latestPartnerSentAt(messages: MessageDto[], myUserId?: string): number 
   let latest = 0;
   for (const m of messages) {
     if (m.senderId && m.senderId !== myUserId && !m.isSystemMessage) {
-      const t = new Date(m.sentAt).getTime();
+      const t = utcTime(m.sentAt);
       if (t > latest) latest = t;
     }
   }
@@ -166,6 +182,19 @@ function buildReplyPreview(messages: MessageDto[], replyToId: string) {
   };
 }
 
+// Composer'ın yanıt şeridine (replyTo state) yazılan taslak. Hem uzun-bas
+// menüsündeki "Yanıtla" hem sola-çekme jesti AYNI kaynaktan beslenir.
+function buildReplyDraft(message: any) {
+  return {
+    id: message.id,
+    senderId: message.senderId,
+    senderDisplayName: message.senderDisplayName,
+    contentPreview: (message.content || "").slice(0, 120),
+    contentType: message.contentType,
+    isDeleted: !!message.deletedAt,
+  };
+}
+
 function ChatScreen({
   route,
   navigation,
@@ -180,9 +209,74 @@ function ChatScreen({
     },
     [t],
   );
-  const { conversationId, partner, isActive: routeIsActive } = route.params;
+  const {
+    conversationId,
+    partner: routePartner,
+    isActive: routeIsActive,
+  } = route.params;
   const dispatch = useAppDispatch();
   const insets = useSafeAreaInsets();
+
+  // Partner bilgisi SADECE route param'ından okunursa, param'ın eksik geldiği
+  // girişlerde (push tap → AppNavigator.routeFromNotification) header kalıcı
+  // olarak "Kullanıcı" + boş avatar kalıyordu: cold start'ta boot gate ~120ms'de
+  // açılıp navigate ediliyor, /conversations yanıtı ise saniyeler sonra düşüyor;
+  // param bir kez yazıldığı için liste gelince de güncellenmiyordu. Store'dan
+  // türetip route param'ı yalnızca fallback olarak kullanıyoruz — liste ne zaman
+  // gelirse header o an doluyor.
+  const convPartnerUserId = useAppSelector((s: any) =>
+    s.chat.conversations.find(
+      (c: any) => c.conversationId === conversationId,
+    )?.partnerUserId,
+  );
+  const convPartnerName = useAppSelector((s: any) =>
+    s.chat.conversations.find(
+      (c: any) => c.conversationId === conversationId,
+    )?.partnerDisplayName,
+  );
+  const convPartnerPhoto = useAppSelector((s: any) =>
+    s.chat.conversations.find(
+      (c: any) => c.conversationId === conversationId,
+    )?.partnerProfileImageUrl,
+  );
+
+  // Alan bazında birleştiriyoruz: NotificationsScreen gibi bazı çağrılar partner
+  // nesnesini kısmi gönderiyor (foto var, isim yok) — nesneyi komple seçmek o
+  // boşlukları taşırdı.
+  const partner = useMemo(() => {
+    const userId = convPartnerUserId ?? routePartner?.userId;
+    const displayName = convPartnerName ?? routePartner?.displayName;
+    const profileImageUrl = convPartnerPhoto ?? routePartner?.profileImageUrl;
+    if (!userId && !displayName && !profileImageUrl) return undefined;
+    return { userId, displayName, profileImageUrl };
+  }, [
+    convPartnerUserId,
+    convPartnerName,
+    convPartnerPhoto,
+    routePartner?.userId,
+    routePartner?.displayName,
+    routePartner?.profileImageUrl,
+  ]);
+
+  // Konuşma listede yoksa (push ile doğrudan bu ekrana düşüldü) bir kez çek.
+  // Thunk'ın kendi in-flight + 15sn staleness guard'ı var; boot'taki fetch
+  // uçuşuyorsa bu çağrı ikinci istek atmadan düşüyor.
+  const convFetchRequestedRef = useRef(false);
+  useEffect(() => {
+    if (convPartnerUserId || convFetchRequestedRef.current) return;
+    convFetchRequestedRef.current = true;
+    dispatch(fetchConversations({}));
+  }, [convPartnerUserId, dispatch]);
+
+  // Odaklanışta sohbet listesini doğrula: `isActive` bu listeden türüyor ve
+  // karşı taraf unmatch ettiğinde backend event yayınlamıyor — tazelemezsek
+  // kapanmış sohbet açık görünür, composer yazılabilir kalır. Thunk'ın 15sn
+  // staleness gate'i, listeden gelip giden girişlerde ek istek attırmaz.
+  useFocusEffect(
+    useCallback(() => {
+      dispatch(fetchConversations({}));
+    }, [dispatch]),
+  );
 
   const myUserId = useAppSelector(
     (s: any) => s.auth.user?.userId || s.auth.user?.id,
@@ -215,16 +309,35 @@ function ChatScreen({
   const [optionsOpen, setOptionsOpen] = useState(false);
   const [reportOpen, setReportOpen] = useState(false);
   const [purchaseVisible, setPurchaseVisible] = useState(false);
+  const [profileVisible, setProfileVisible] = useState(false);
+  const [profileDetail, setProfileDetail] = useState<any>(null);
 
   // Kota dolduğunda TEK çıkış: Premium modalı (consumable "sohbeti aç" akışı
   // 2026-08-02'de kaldırıldı). Huni: chat_quota_exhausted →
   // chat_quota_paywall_viewed → subscription_initial_purchase.
   const openQuotaPaywall = useCallback(
     (source: string) => {
-      analytics.capture("chat_quota_paywall_viewed", { conversationId, source });
-      setPurchaseVisible(true);
+      // §11: modalı açmadan önce canonical premium state'i tazele — kullanıcı
+      // başka bir cihazdan premium olmuş olabilir. Premium çıkarsa kotayı
+      // yeniliyoruz (sohbet zaten sınırsıza dönmüştür) ve paywall açılmıyor;
+      // huni eventi de o durumda yazılmıyor, "görüntülendi" sayısı şişmesin.
+      dispatch(refreshEntitlementsForPaywall())
+        .unwrap()
+        .then((premium: boolean) => {
+          if (premium) {
+            dispatch(fetchChatQuota({ conversationId, force: true }));
+            return;
+          }
+          analytics.capture("chat_quota_paywall_viewed", { conversationId, source });
+          setPurchaseVisible(true);
+        })
+        .catch(() => {
+          // Tazeleme başarısız → eski davranış: paywall'ı yine aç.
+          analytics.capture("chat_quota_paywall_viewed", { conversationId, source });
+          setPurchaseVisible(true);
+        });
     },
-    [conversationId],
+    [conversationId, dispatch],
   );
 
   const listRef = useRef<any>(null);
@@ -268,6 +381,143 @@ function ChatScreen({
       composerRef,
       INPUT_BAR_OPAQUE + insets.bottom,
     );
+
+  // Liste oturur oturmaz 1px'lik SAHTE SCROLL at — görünmez ama şart.
+  //
+  // NEDEN: KeyboardChatScrollView'in tüm klavye/inset matematiği scroll offset'ini
+  // (useScrollState) YALNIZCA native scroll olaylarından öğreniyor; başlangıç
+  // değeri 0. LegendList ise girişte listeyi dibe ScrollView'in `contentOffset`
+  // PROP'uyla konumlandırıyor — prop'la gelen konum scroll olayı ÜRETMEZ. Sonuç:
+  // sohbete girip hiç kaydırmadan yanıt verirsen kütüphane "offset 0'dayız" sanıp
+  // klavye/şerit telafisini sıfırdan hesaplıyor ve listeyi yukarı fırlatıyor.
+  // Kullanıcı bir kez (nerede olursa olsun) kaydırınca sorun kayboluyordu —
+  // çünkü ilk gerçek olay değeri tohumluyor. Teşhis bizzat bu gözlemden çıktı.
+  //
+  // 1px gidip geri dönmek iki gerçek onScroll olayı üretir; konum değişmez, gözle
+  // görülmez. Sürükleme olayı (onScrollBeginDrag) ÜRETMEZ → sayfalama kapısı
+  // (userScrolledRef) etkilenmez.
+  // Jest biterken verilen odak DÜŞEBİLİYOR: RNGH dokunuşu native tarafta hâlâ
+  // kapatırken first-responder değişimi iOS'ta yutulabiliyor ya da klavye,
+  // keyboard-controller'ın "will show" gözlemi dışında açılıyor — klavye geliyor
+  // ama KeyboardStickyView yükselmiyor, composer klavyenin ALTINDA kalıyor.
+  // Çözüm, uzun-bas menüsü kapanışında zaten kanıtlanmış desen: bir frame sonra
+  // odakla, klavye hâlâ gelmediyse 250ms'de bir kez daha dene.
+  const focusRetryRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const focusComposerSoon = useCallback(() => {
+    const focus = () => composerInputRef.current?.focus();
+    requestAnimationFrame(focus);
+    if (focusRetryRef.current) clearTimeout(focusRetryRef.current);
+    focusRetryRef.current = setTimeout(() => {
+      focusRetryRef.current = null;
+      if (!Keyboard.isVisible()) focus();
+    }, 250);
+  }, []);
+
+  // KISA SOHBET DÜZELTMESİ (içerik ekranı doldurmuyorsa).
+  //
+  // Yanıt şeridi composer'ı ~59px uzatınca bu değişim İKİ KERE telafi ediliyor:
+  //   1) LegendList: alignItemsAtEnd dolgusu = scrollLength − içerik − contentInset
+  //      formülünden geliyor; inset büyüyünce dolgu 59 küçülüyor ve içerik
+  //      LAYOUT olarak 59 yukarı kayıyor (react-native.js → getAlignItemsAtEndPadding).
+  //   2) keyboard-controller: useExtraContentPadding aynı 59 için ayrıca SCROLL atıyor.
+  // Uzun sohbette dolgu 0 olduğu için tek telafi var, doğru çalışıyor; kısa
+  // sohbette çift sayılıyor → şerit kapanınca içerik ~bir balon boyu aşağı kalıp
+  // son balonu input'un/klavyenin altına sokuyor.
+  //
+  // Düzeltme MUTLAK ve fikir bağımsız: native scrollToEnd. Hedefi gerçek
+  // contentInset'ten hesapladığı için (klavye + composer) kısa listede tam
+  // "içeriğin dibi composer'ın üstünde" konumuna oturur; iki kez çağrılsa da
+  // aynı yere gider. JS tabanlı göreli kaydırma KULLANILMAZ — kütüphanenin scroll
+  // değeri kendi yazdığı contentOffset'lerde bayat kalabiliyor.
+  const shortPinSubRef = useRef<{ remove: () => void } | null>(null);
+  const shortPinTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const pinShortListToEnd = useCallback((waitForKeyboard: boolean) => {
+    const clear = () => {
+      shortPinSubRef.current?.remove();
+      shortPinSubRef.current = null;
+      if (shortPinTimerRef.current) clearTimeout(shortPinTimerRef.current);
+      shortPinTimerRef.current = null;
+    };
+    clear();
+    const run = () => {
+      clear();
+      const st = listRef.current?.getState?.();
+      // contentLength composer inset'ini de içerir; kısa sohbette dolgu sayesinde
+      // scrollLength'e eşitlenir. Uzun sohbette büyüktür → dokunma (orada zaten
+      // doğru ve elle kaydırmak listeyi bozuyor).
+      if (!st || st.contentLength > st.scrollLength + 1) return;
+      const native = listRef.current?.getNativeScrollRef?.();
+      if (typeof native?.scrollToEnd === "function") {
+        native.scrollToEnd({ animated: true });
+        return;
+      }
+      listRef.current
+        ?.getScrollResponder?.()
+        ?.scrollResponderScrollToEnd?.({ animated: true });
+    };
+    if (waitForKeyboard) {
+      shortPinSubRef.current = KeyboardEvents.addListener("keyboardDidShow", run);
+      shortPinTimerRef.current = setTimeout(run, 700);
+    } else {
+      shortPinTimerRef.current = setTimeout(run, 120);
+    }
+  }, []);
+
+  const seedScrollStateRef = useRef(false);
+  const seedTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const seedNativeScrollState = useCallback(() => {
+    if (seedScrollStateRef.current) return;
+    const native = listRef.current?.getNativeScrollRef?.();
+    if (typeof native?.scrollTo !== "function") return;
+    const y = listRef.current?.getState?.()?.scroll ?? 0;
+    seedScrollStateRef.current = true;
+    native.scrollTo({ y: y + 1, animated: false });
+    // İkinci adım BİR FRAME SONRA: aynı tick'te üst üste iki contentOffset
+    // yazarsak scrollEventThrottle (16ms) ikinciyi yutabiliyor ve tohum 1px
+    // şaşık kalıyordu. Bir frame arayla ikisi de gerçek olay üretir, konum da
+    // tam yerine döner.
+    requestAnimationFrame(() => {
+      listRef.current?.getNativeScrollRef?.()?.scrollTo?.({ y, animated: false });
+    });
+  }, []);
+
+  // Soldan sağa çekip bırakınca yanıtla: jest satırın kendisinde (ReplySwipeRow),
+  // UI-thread'de yalnız mesaj id'si taşınır; mesaj nesnesi burada, EKRANDA RENDER
+  // EDİLEN listeden çözülür. Callback STABİL kalmalı — jest kimliği ona bağlı.
+  //
+  // BURADA LİSTEYİ ELLE KAYDIRMIYORUZ. Şerit açılıp kapanınca composer boyu
+  // değişiyor ve bunun telafisini KeyboardChatScrollView'in useExtraContentPadding
+  // reaksiyonu ZATEN yapıyor (keyboardLiftBehavior varsayılanı "always"): UI
+  // thread'de, gerçek scroll offset'iyle. JS'ten scrollToEnd/scrollToOffset ile
+  // yardım etmeye çalışmak listeyi BOZUYOR — LegendList'in getState().scroll'u
+  // klavye/inset animasyonu sırasında bayat kalıyor ve liste bir anda ~klavye
+  // boyu YUKARI zıplıyor (14:00 videosunda kare 25→26 tam olarak bu).
+  const handleReplyBySwipe = useCallback(
+    (messageId: string) => {
+      const target = renderedDataRef.current.find(
+        (m: any) => !m.__separator && m.id === messageId,
+      );
+      if (!target || target.deletedAt || target.isSystemMessage) return;
+      // Sunucu id'si yoksa yanıt referansı kurulamaz (uzun-bas menüsündeki kural).
+      if (target._pending || target._failed) return;
+      // onLoad hiç gelmediyse tohumlama burada garantiye alınır (bkz.
+      // seedNativeScrollState); zaten tohumlandıysa no-op. Şeridi açmadan ÖNCE
+      // olmalı — kütüphane inset değişimini gerçek offset'le hesaplasın.
+      seedNativeScrollState();
+      setReplyTo(buildReplyDraft(target));
+      // Klavye kapalıysa doğrudan aç (WhatsApp): yanıt şeridi belirir belirmez
+      // yazmaya başlanabilsin. Sohbet pasif/kota kilitliyken input editable
+      // olmadığı için focus() no-op'tur — ayrı bir koşula gerek yok (koşul
+      // eklenirse callback kimliği kotayla değişip tüm satır jestlerini yeniden
+      // kurdurur).
+      const kbClosed = !Keyboard.isVisible();
+      if (kbClosed) focusComposerSoon();
+      // Kısa sohbette şeridin çift telafisini düzelt (bkz. pinShortListToEnd).
+      // Klavye de açılacaksa oturmasını bekler.
+      pinShortListToEnd(kbClosed);
+    },
+    [seedNativeScrollState, focusComposerSoon, pinShortListToEnd],
+  );
 
   // Uzun-bas menüsü açılırken klavye kapanıyor, kapanınca geri açılıyor. Bu iki
   // klavye hareketi listeye YANSIMAMALI: yansırsa liste ~klavye yüksekliği kadar
@@ -348,7 +598,24 @@ function ChatScreen({
   // listeyi skeleton örter. Boş bucket girişinde overlay YOK — orada skeleton
   // zaten ListEmptyComponent'ten geliyor.
   const [listSettled, setListSettled] = useState(false);
-  const handleListLoad = useCallback(() => setListSettled(true), []);
+  const handleListLoad = useCallback(() => {
+    setListSettled(true);
+    // Tohumlama giriş yerleşiminin BİR TIK SONRASINA bırakılır: LegendList
+    // initialScrollAtEnd hedefini item'lar ölçüldükçe hâlâ düzeltiyor olabilir ve
+    // erken bir scroll olayı "kullanıcı kaydırdı" sayılıp o düzeltmeyi kesebilir.
+    // Bu gecikmeden önce yanıt verilirse handleReplyBySwipe zaten kendisi tohumlar.
+    if (seedTimerRef.current) clearTimeout(seedTimerRef.current);
+    seedTimerRef.current = setTimeout(seedNativeScrollState, 400);
+  }, [seedNativeScrollState]);
+  useEffect(
+    () => () => {
+      if (seedTimerRef.current) clearTimeout(seedTimerRef.current);
+      if (focusRetryRef.current) clearTimeout(focusRetryRef.current);
+      shortPinSubRef.current?.remove();
+      if (shortPinTimerRef.current) clearTimeout(shortPinTimerRef.current);
+    },
+    [],
+  );
   useEffect(() => {
     if (listSettled) return;
     // Güvenlik: onLoad hiç gelmezse (edge-case) overlay takılı kalmasın.
@@ -540,6 +807,16 @@ function ChatScreen({
   }, [conversationId]);
 
   // ── Send ───────────────────────────────────────────────────────────────
+  // Ack bekleyen hub gönderimlerinin sayaçları; unmount'ta temizlenir.
+  const ackTimersRef = useRef<Set<ReturnType<typeof setTimeout>>>(new Set());
+  useEffect(
+    () => () => {
+      ackTimersRef.current.forEach(clearTimeout);
+      ackTimersRef.current.clear();
+    },
+    [],
+  );
+
   const handleSend = useCallback(
     async ({ content, replyToMessageId, clientMessageId }: any) => {
       const q = quotaRef.current;
@@ -584,6 +861,18 @@ function ChatScreen({
         let httpResult: MessageDto | null = null;
         if (useHub) {
           await realtimeService.sendMessage(conversationId, content, clientMessageId);
+          // invoke resolve olsa bile mesajın gittiği garanti değil (hata ayrı
+          // `Error` event'iyle gelir, sohbet kapandıysa ack hiç gelmez).
+          const timer = setTimeout(() => {
+            ackTimersRef.current.delete(timer);
+            const msg = messagesRef.current.find(
+              (m: any) => m.clientMessageId === clientMessageId,
+            ) as any;
+            if (msg?._pending) {
+              dispatch(failOptimisticMessage({ conversationId, clientMessageId }));
+            }
+          }, SEND_ACK_TIMEOUT_MS);
+          ackTimersRef.current.add(timer);
         } else {
           httpResult = await chatService.sendMessage({
             conversationId,
@@ -606,6 +895,16 @@ function ChatScreen({
           return;
         }
         dispatch(failOptimisticMessage({ conversationId, clientMessageId }));
+        // Sohbet kapanmış olabilir (karşı taraf unmatch etti / engelledi):
+        // REST yolunda 403/404 kesin, 400 CONVERSATION_ERROR olabilir ama
+        // validasyon da olabilir — 400'de yerel bayrağı çevirmeyip listeyi
+        // sunucudan doğrulatıyoruz, isActive oradan düzeliyor.
+        if (status === 403 || status === 404) {
+          dispatch(conversationDeactivated({ conversationId }));
+        }
+        if (status === 400 || status === 403 || status === 404) {
+          dispatch(fetchConversations({ force: true }));
+        }
       }
     },
     [conversationId, dispatch, myUserId, openQuotaPaywall],
@@ -618,7 +917,13 @@ function ChatScreen({
     },
     [handleSend],
   );
-  const handleCancelReply = useCallback(() => setReplyTo(null), []);
+  // Uzun sohbette kapanış telafisi KeyboardChatScrollView'in işi (elle kaydırma
+  // orayı bozuyor). Kısa sohbette ise telafi çift sayıldığı için son balon
+  // input'un altında kalıyor — pinShortListToEnd yalnız o durumda devreye girer.
+  const handleCancelReply = useCallback(() => {
+    setReplyTo(null);
+    pinShortListToEnd(false);
+  }, [pinShortListToEnd]);
   const handleLockedPress = useCallback(
     () => openQuotaPaywall("composer_locked"),
     [openQuotaPaywall],
@@ -709,16 +1014,23 @@ function ChatScreen({
     [],
   );
 
+  // Bir mesaja kullanıcı başına TEK reaction: yeni emoji seçilirse eskisi
+  // DEĞİŞTİRİLİR (önce remove, sonra add), aynı emoji tekrar seçilirse kaldırılır.
+  // "Benim" reaction'ım userIds ile bulunur (MessageReactionDto: emoji/count/userIds).
   const handlePickReaction = useCallback(
-    async (message: any, emoji: string) => {
-      if (!message) return;
+    async (target: any, emoji: string) => {
+      if (!target) return;
+      // actionTarget uzun-basış anındaki kopya — o sırada gelen hub event'i
+      // reaction'ları değiştirmiş olabilir, taze kaydı store'dan al.
+      const message =
+        messagesRef.current.find((m) => m.id === target.id) || target;
       const prev = message.reactions || [];
-      const existing = prev.find((r: any) => r.emoji === emoji);
-      const next = existing
-        ? prev.map((r: any) =>
-            r.emoji === emoji ? { ...r, count: (r.count || 1) + 1 } : r,
-          )
-        : [...prev, { emoji, count: 1 }];
+      const { next, removeEmoji, addEmoji } = applyReactionPick(
+        prev,
+        emoji,
+        myUserId,
+      );
+
       dispatch(
         reactionsChanged({
           messageId: message.id,
@@ -727,7 +1039,23 @@ function ChatScreen({
         }),
       );
       try {
-        await chatService.addReaction(message.id, emoji);
+        let server: any;
+        if (removeEmoji) {
+          server = await chatService.removeReaction(message.id, removeEmoji);
+        }
+        if (addEmoji) {
+          server = await chatService.addReaction(message.id, addEmoji);
+        }
+        // Server tüm listeyi döner — count/userIds kanonik hale gelsin.
+        if (Array.isArray(server)) {
+          dispatch(
+            reactionsChanged({
+              messageId: message.id,
+              conversationId: message.conversationId,
+              reactions: server,
+            }),
+          );
+        }
       } catch {
         dispatch(
           reactionsChanged({
@@ -738,19 +1066,12 @@ function ChatScreen({
         );
       }
     },
-    [dispatch],
+    [dispatch, myUserId],
   );
 
   const handleReply = useCallback((message: any) => {
     if (!message) return;
-    setReplyTo({
-      id: message.id,
-      senderId: message.senderId,
-      senderDisplayName: message.senderDisplayName,
-      contentPreview: (message.content || "").slice(0, 120),
-      contentType: message.contentType,
-      isDeleted: !!message.deletedAt,
-    });
+    setReplyTo(buildReplyDraft(message));
   }, []);
 
   const handleEditStart = useCallback((message: any) => {
@@ -854,27 +1175,38 @@ function ChatScreen({
       try {
         listRef.current?.scrollToIndex({ index: idx, animated: true, viewPosition: 0.5 });
       } catch {}
+      // Hedef balon yerine otururken kısa süre yanıp söner — hangi mesaja
+      // gelindiği belli olsun. Vurgu dışsal store'dan yürür (bkz.
+      // messageHighlight): burada state tutmak renderItem'ı değiştirip tüm
+      // listeyi yeniden render ettirirdi.
+      highlightMessage(reply.id);
     }
   }, []);
 
   const handleUnmatch = useCallback(async () => {
     try {
       await chatService.deactivateConversation(conversationId);
+      // Yerel bayrak + mutasyon-sonrası tazeleme: aksi halde geri dönülen
+      // sohbet listesi (15sn staleness gate'i yüzünden) sohbeti hâlâ aktif
+      // gösteriyordu. MessagesScreen'deki unmatch akışı ile aynı desen.
+      dispatch(conversationDeactivated({ conversationId }));
+      dispatch(fetchConversations({ force: true }));
       navigation.goBack();
     } catch {
       Alert.alert(t("common.error"), t("chat.unmatch.error"));
     }
-  }, [conversationId, navigation, t]);
+  }, [conversationId, dispatch, navigation, t]);
 
   const handleRestore = useCallback(async () => {
     try {
       const ok = await chatService.restoreConversation(conversationId);
       if (!ok)
         Alert.alert(t("chat.restore.error"), t("chat.unmatch.restoreExpiredMessage"));
+      else dispatch(fetchConversations({ force: true }));
     } catch {
       Alert.alert(t("common.error"), t("chat.unmatch.restoreFailed"));
     }
-  }, [conversationId, t]);
+  }, [conversationId, dispatch, t]);
 
   const handleBlock = useCallback(async () => {
     if (!partner?.userId) return;
@@ -890,15 +1222,47 @@ function ChatScreen({
     }
   }, [partner?.userId, navigation, t]);
 
+  // Header avatarına dokunuş → ProfileScreen'deki PreviewModal'ın aynısı
+  // (SwipeCard'ın expanded hali). Sheet ÖNCE açılır (profile=null iken spinner
+  // gösterir), detay arkadan dolar — tap ile açılış arasında beklemesin.
+  //
+  // Endpoint: LikerProfile. Eşleşme = karşılıklı like olduğu için satır hâlâ
+  // duruyor; yine de gate'e takılırsa (403/404) route param'lardan minimal bir
+  // profil kurup kartı isim+fotoğrafla açıyoruz — dokunuş ölü kalmasın.
+  const openPartnerProfile = useCallback(async () => {
+    if (!partner?.userId) return;
+    Keyboard.dismiss();
+    setProfileDetail(null);
+    setProfileVisible(true);
+    const fallback = {
+      userId: partner.userId,
+      displayName: partner.displayName,
+      photos: partner.profileImageUrl ? [partner.profileImageUrl] : [],
+    };
+    try {
+      const res: any = await swipeService.getLikerProfileDetail(partner.userId);
+      setProfileDetail(res?.isSuccess && res?.result ? res.result : fallback);
+    } catch {
+      setProfileDetail(fallback);
+    }
+  }, [partner?.userId, partner?.displayName, partner?.profileImageUrl]);
+
   // ── Data (kronolojik + separator) ────────────────────────────────────────
   const messagesWithSeparators = useMemo(() => {
-    const hasRealMessage = messages.some((m) => !m.isSystemMessage);
+    // "Sadece benden sil" mesajı state'ten SİLMİYOR, deletedAt + deletedForEveryone:false
+    // işaretliyor (MessageBubble onu null render eder). Listede tutulursa gün
+    // separator'ı o mesaj yüzünden üretilmeye devam eder ve ekranda hiç balon
+    // olmadığı halde "Bugün"/"Dün" yazısı asılı kalır — o yüzden BURADA eliyoruz.
+    const visible = messages.filter(
+      (m) => !(m.deletedAt && !m.deletedForEveryone),
+    );
+    const hasRealMessage = visible.some((m) => !m.isSystemMessage);
     const filtered = hasRealMessage
-      ? messages.filter(
+      ? visible.filter(
           (m) =>
             !(m.isSystemMessage && (m as any).localizationKey === "system.match_created"),
         )
-      : messages;
+      : visible;
     const chronological = filtered.slice().reverse();
     const withSeparators = withDateSeparators(chronological);
     renderedDataRef.current = withSeparators;
@@ -906,7 +1270,7 @@ function ChatScreen({
   }, [messages]);
 
   const renderItem = useCallback(
-    ({ item }: any) => {
+    ({ item, index, data: rows }: any) => {
       // Satırlar liste genişliğinde (ekran + REVEAL_MAX) — separator EKRANDA
       // ortalansın diye sağdaki reveal şeridini marginle düş.
       if (item.__separator)
@@ -919,20 +1283,42 @@ function ChatScreen({
         return (
           <DiagMinimalBubble message={item} isOwn={item.senderId === myUserId} />
         );
+      // Konuşmacı değişiminde balonun üstüne fazladan boşluk (bkz. GROUP_GAP).
+      // Üstteki satır LegendList'in kendi render prop'undan (data) okunur —
+      // veriyi useCallback deps'ine koymak callback kimliğini her mesajda
+      // değiştirip tüm görünür satırları yeniden render ettirirdi.
+      const prevRow = index > 0 ? rows?.[index - 1] : null;
+      const isGroupStart =
+        !prevRow || !!prevRow.__separator || prevRow.senderId !== item.senderId;
+      // ReplySwipeRow: soldan-sağa çekip-yanıtla jesti + satırın kaydırma stili.
+      // Satırın TÜM genişliğini kaplar → çekiş balonun dışından da başlatılabilir.
+      // Yanıtlanamaz satırlarda (sistem / silinmiş / henüz sunucuya gitmemiş) id
+      // yerine "" geçilir: jest atıl kalır, balon kımıldamaz. Sarmalayıcı HER
+      // durumda var — gönderim onaylanınca (_pending düşünce) ağaç yapısı değişip
+      // balonu remount ETMESİN diye (key aynı kalıyor, bkz. keyExtractor).
+      const replyable =
+        !item.isSystemMessage && !item.deletedAt && !item._pending && !item._failed;
       return (
-        <MessageBubble
-          message={item}
-          isOwn={item.senderId === myUserId}
-          onLongPress={(layout: any) => handleLongPressMessage(item, layout)}
-          onReplyTap={handleScrollToReplyTarget}
-          onRetryTap={() => handleRetrySend(item)}
-          i18nResolver={i18nResolver}
-        />
+        <ReplySwipeRow
+          messageId={replyable ? item.id : ""}
+          onReply={handleReplyBySwipe}
+        >
+          <MessageBubble
+            message={item}
+            isOwn={item.senderId === myUserId}
+            isGroupStart={isGroupStart}
+            onLongPress={(layout: any) => handleLongPressMessage(item, layout)}
+            onReplyTap={handleScrollToReplyTarget}
+            onRetryTap={() => handleRetrySend(item)}
+            i18nResolver={i18nResolver}
+          />
+        </ReplySwipeRow>
       );
     },
     [
       myUserId,
       i18nResolver,
+      handleReplyBySwipe,
       handleLongPressMessage,
       handleScrollToReplyTarget,
       handleRetrySend,
@@ -1018,6 +1404,7 @@ function ChatScreen({
         <View style={{ paddingTop: insets.top, paddingBottom: 30 }}>
           <ChatHeader
             partner={partner}
+            onAvatarPress={openPartnerProfile}
             onBack={() => navigation.goBack()}
             onMenu={() => {
               Keyboard.dismiss();
@@ -1179,6 +1566,14 @@ function ChatScreen({
         onCancel={() => setEditTarget(null)}
         onSave={handleEditSave}
       />
+      <PreviewModal
+        visible={profileVisible}
+        onClose={() => {
+          setProfileVisible(false);
+          setProfileDetail(null);
+        }}
+        profile={profileDetail}
+      />
       <PurchaseModal
         visible={purchaseVisible}
         onClose={() => {
@@ -1191,7 +1586,7 @@ function ChatScreen({
   );
 }
 
-function ChatHeader({ partner, onBack, onMenu }: any) {
+function ChatHeader({ partner, onBack, onMenu, onAvatarPress }: any) {
   const { t } = useTranslation();
   const displayName = partner?.displayName || t("chat.defaultUserName");
   return (
@@ -1226,6 +1621,7 @@ function ChatHeader({ partner, onBack, onMenu }: any) {
                 labelStyle("iconOnly"),
                 font({ size: 22, weight: "semibold" }),
                 frame({ width: 44, height: 44 }),
+                ...glassFallback({ shape: "circle" }),
               ]}
             />
           </Host>
@@ -1240,7 +1636,13 @@ function ChatHeader({ partner, onBack, onMenu }: any) {
         {/* entering animasyonu YOK: ZoomIn spring her girişte ~450ms boyunca
             "elemanlar sonradan yerine oturuyor" algısını besliyordu; header ilk
             frame'den nihai geometrisinde durmalı. */}
-        <View>
+        <TouchableOpacity
+          activeOpacity={0.85}
+          onPress={onAvatarPress}
+          disabled={!onAvatarPress}
+          accessibilityRole="button"
+          accessibilityLabel={displayName}
+        >
           {partner?.profileImageUrl ? (
             <Image
               source={{ uri: partner.profileImageUrl }}
@@ -1265,7 +1667,7 @@ function ChatHeader({ partner, onBack, onMenu }: any) {
               </Text>
             </View>
           )}
-        </View>
+        </TouchableOpacity>
 
         <View style={{ marginTop: 6 }}>
           {Platform.OS === "ios" ? (
@@ -1326,6 +1728,7 @@ function ChatHeader({ partner, onBack, onMenu }: any) {
                 labelStyle("iconOnly"),
                 font({ size: 20, weight: "semibold" }),
                 frame({ width: 44, height: 44 }),
+                ...glassFallback({ shape: "circle" }),
               ]}
             />
           </Host>
