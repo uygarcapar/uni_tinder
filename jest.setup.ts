@@ -53,6 +53,15 @@ jest.mock('react-native-purchases', () => ({
   },
   LOG_LEVEL: { VERBOSE: 'VERBOSE', WARN: 'WARN', ERROR: 'ERROR' },
 }));
+// Ağ durumu göstergesinin kaynağı; native modül jest'te yok. Varsayılan
+// "bağlı" — offline'a özel testler bu mock'u kendi dosyasında ezer.
+jest.mock('expo-network', () => ({
+  getNetworkStateAsync: jest.fn(async () => ({
+    isConnected: true,
+    isInternetReachable: true,
+  })),
+  addNetworkStateListener: jest.fn(() => ({ remove: jest.fn() })),
+}));
 jest.mock('expo-blur', () => ({ BlurView: 'BlurView' }));
 jest.mock('expo-symbols', () => ({ SymbolView: 'SymbolView' }));
 jest.mock('expo-linear-gradient', () => ({ LinearGradient: 'LinearGradient' }));

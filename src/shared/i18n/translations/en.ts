@@ -8,6 +8,7 @@ const en = {
     crashTitle: 'Something went wrong',
     crashMessage: 'An unexpected error occurred. Tap the button to try again.',
     crashRetry: 'Try Again',
+    offline: 'No internet connection',
     back: 'Back',
     save: 'Save',
     error: 'Error',

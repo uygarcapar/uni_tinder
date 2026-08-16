@@ -8,6 +8,7 @@ const tr = {
     crashTitle: 'Bir şeyler ters gitti',
     crashMessage: 'Beklenmeyen bir hata oluştu. Tekrar denemek için butona dokun.',
     crashRetry: 'Tekrar Dene',
+    offline: 'İnternet bağlantısı yok',
     back: 'Geri',
     save: 'Kaydet',
     error: 'Hata',
