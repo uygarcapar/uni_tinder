@@ -24,6 +24,30 @@ const tabIcon = (sfBase: string, materialFilled: string, materialOutlined: strin
       },
     });
 
+// Discover sekmesi uygulamaya özel alev glyph'ini kullanır (premium rozetiyle
+// aynı şekil, bkz. shared/components/icons/FlameGlyph). Native tab bar ikon
+// olarak yalnız SF Symbol veya yerel resim kabul ediyor — React component /
+// SVG geçilemiyor — o yüzden glyph @1x/@2x/@3x PNG'ye rasterize edildi.
+// PNG'ler beyaz+alpha: iOS'ta `tinted` varsayılanı true olduğu için template
+// olarak aktif/pasif tint'i alır, Android'de tint uygulanmasa bile koyu tab
+// bar üzerinde görünür kalır.
+//
+// Diğer sekmelerdeki `name` / `name.fill` davranışının karşılığı: idle →
+// outline, focused → dolu. Outline elle çizilmedi, dolu siluetten mesafe
+// alanıyla türetildi (inner stroke, 1.7pt) — dış siluet ikisinde de aynı,
+// yani sekme değişince ikon zıplamaz.
+//
+// Boyutu/kalınlığı değiştirmek istersen PNG'leri üreten script'ten yeniden
+// bas; asset'leri elle ölçekleme, hinting bozulur.
+const FLAME_TAB_FILLED = {
+  type: "image" as const,
+  source: require("../../assets/icons/flame-tab.png"),
+};
+const FLAME_TAB_OUTLINE = {
+  type: "image" as const,
+  source: require("../../assets/icons/flame-tab-outline.png"),
+};
+
 export default function TabNavigator() {
   const { t } = useTranslation();
   const unreadTotal = useAppSelector((s) => (s as any).chat.unreadTotal as number);
@@ -59,7 +83,8 @@ export default function TabNavigator() {
         component={DiscoverScreen}
         options={{
           title: t('discover.tabTitle'),
-          tabBarIcon: tabIcon("flame", "local_fire_department", "local_fire_department") as any,
+          tabBarIcon: ({ focused }: TabIconArgs) =>
+            focused ? FLAME_TAB_FILLED : FLAME_TAB_OUTLINE,
         }}
       />
       <Tab.Screen
