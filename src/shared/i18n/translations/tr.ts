@@ -380,7 +380,7 @@ const tr = {
       feature2: 'Seni Beğenenleri Gör',
       feature3: 'Geri Alma (Rewind)',
       feature4: 'Reklamsız Deneyim',
-      standardPlan: 'Standart',
+      standardPlan: 'Free',
       matchBoost: '5x Eşleşme',
       featuresLabel: 'Özellikler',
       planName: 'lit plus',
@@ -556,6 +556,17 @@ const tr = {
       purpose: 'Kullanım Amacı',
       purposeDescription: 'Burada ne aradığını belirterek, seninle aynı beklentilere sahip kişilerle tanış.',
       completeButton: 'Tamamla',
+    },
+    // Hero'nun altındaki SuperLike kartı. Kart ekranın yarısı kadar — alt satır
+    // metinleri kısa tutulmak ZORUNDA, uzun cümle tek satıra sığmıyor.
+    // subtitleUnknown bilerek sayısız: bakiyeyi bilmediğimiz durumda (stats
+    // gelmedi / premium aktivasyonu sürüyor) uydurma sayı yerine ürünün değer
+    // önerisi yazılır.
+    superLikeCard: {
+      title: 'Superlike Al',
+      subtitleCount: '{{count}} hakkın kaldı',
+      subtitleEmpty: 'Hakkın bitti',
+      subtitleUnknown: 'Öne çık',
     },
     account: {
       title: 'Hesap',

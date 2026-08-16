@@ -188,6 +188,9 @@ export type ResponseCode =
   | "UT-6005" // AccountRestricted
   | "UT-6006" // PoolWarming
   | "UT-3001" // SwipeLimitReached
+  | "UT-6101" // SuperLike/Redeem — webhook henüz inmedi (GEÇİCİ, tek retry'lık durum)
+  | "UT-6102" // SuperLike/Redeem — ürün backend map'inde tanımlı değil (KALICI)
+  | "UT-6103" // SuperLike/Redeem — transaction başka hesaba ait (KALICI)
   | (string & {}); // forward-compat: bilinmeyen kodlar string olarak geçer
 
 export type PaywallType =

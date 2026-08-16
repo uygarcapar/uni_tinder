@@ -6,8 +6,10 @@ import {
   ActivityIndicator,
   Alert,
   Linking,
+  Share,
   Switch,
 } from "react-native";
+import * as Clipboard from "expo-clipboard";
 import { useSelector } from "react-redux";
 import { useAppDispatch } from "@/shared/hooks/redux";
 import { useTranslation } from "react-i18next";
@@ -18,17 +20,27 @@ import {
   Eye,
   BellOff,
   InfoIcon,
-  UserX,
   ChevronRight,
   LogOut,
 } from "lucide-react-native";
 import SFIcon from "@/shared/components/SFIcon";
 import BlockedUsersModal from "@/features/profile/components/BlockedUsersModal";
-import api from "@/shared/services/api";
+import { useQueryClient } from "@tanstack/react-query";
+import api, { refreshAccessToken } from "@/shared/services/api";
 import { API_ENDPOINTS } from "@/shared/constants/api";
+import { swipeKeys } from "@/features/discover/swipeKeys";
 import chatService from "@/features/chat/chatService";
 import profileService from "@/features/profile/profileService";
 import { logout } from "@/features/auth/authSlice";
+import {
+  buildIapReport,
+  clearIapDiagnostics,
+} from "@/features/profile/purchaseDiagnostics";
+import {
+  premiumSyncUserKey,
+  readPendingPremiumSync,
+} from "@/features/profile/pendingPremiumSync";
+import { readPendingRedeems } from "@/features/discover/superlikeRedeem";
 import { colors } from "../../../shared/theme/colors";
 import { setLanguage } from "@/shared/store/settingsSlice";
 import i18n from "@/shared/i18n";
@@ -38,7 +50,10 @@ import type { RootState } from "@/shared/store";
 export default function SettingsModal({ visible, onClose }: any) {
   const { t } = useTranslation();
   const dispatch = useAppDispatch();
+  const qc = useQueryClient();
   const language = useSelector((s: RootState) => s.settings?.language ?? 'tr');
+  const authUser = useSelector((s: RootState) => s.auth?.user);
+  const subscription = useSelector((s: RootState) => s.subscription);
 
   const [downloadLoading, setDownloadLoading] = useState(false);
   const [deleteLoading, setDeleteLoading] = useState(false);
@@ -79,10 +94,69 @@ export default function SettingsModal({ visible, onClose }: any) {
     }
   };
 
+  // Arayüz dili i18n ile ANINDA değişiyor. Sunucudan gelen metinler (keşif
+  // kartlarındaki hobiler, konuşulan diller, evcil hayvan vb.) ise JWT'deki
+  // `language` claim'ine bakıyor ve claim token yenilenene kadar — yani 2 saate
+  // kadar — eski dilde kalıyor. Profil güncellendikten SONRA token'ı tazeleyip
+  // desteyi invalidate ediyoruz ki kartlar da yeni dile geçsin.
+  //
+  // Zincir await EDİLMİYOR: dil seçimi UI'da beklemesin, ağ hatası da seçimi
+  // geri almasın. Token tazelenemezse tek kayıp, kartların bir sonraki doğal
+  // yenilenmeye kadar eski dilde kalması.
   const handleLanguageSelect = (lang: 'tr' | 'en') => {
     dispatch(setLanguage(lang));
     i18n.changeLanguage(lang);
-    profileService.updateProfile({ Language: lang }).catch(() => {});
+    profileService
+      .updateProfile({ Language: lang })
+      .then(() => refreshAccessToken())
+      .then((token) => {
+        if (token) qc.invalidateQueries({ queryKey: swipeKeys.matches });
+      })
+      .catch(() => {});
+  };
+
+  // ── Satın alma teşhis raporu (gizli) ───────────────────────────────────────
+  //
+  // Alttaki ortam satırına UZUN BASINCA açılır. Ürün özelliği değil, teşhis
+  // aracı: "premium aldım gitti / superlike hiç gelmiyor" akışında cihazdan
+  // kanıt çıkarmanın tek pratik yolu. TestFlight'ta Metro konsolu yok ve
+  // Console.app için kablo gerekiyor; rapor panoya kopyalanıp doğrudan
+  // yapıştırılabiliyor.
+  //
+  // Metinler i18n'e taşınmadı (bilinçli): buradan yalnız geliştirici geçiyor,
+  // çıktının tamamı zaten TR teşhis metni.
+  const handleDiagnostics = async () => {
+    const uid = premiumSyncUserKey(authUser);
+    const pending = readPendingPremiumSync(uid);
+    const queue = uid ? readPendingRedeems(uid) : [];
+    const report = buildIapReport({
+      backendUserId: uid,
+      reduxPremium: subscription?.isPremium ?? null,
+      reduxSyncPending: subscription?.syncPending ?? null,
+      sonSyncReason: subscription?.lastSyncReason ?? null,
+      bekleyenPremium: pending
+        ? `${pending.productId ?? "?"} · ${pending.attempts} deneme · ${Math.round(
+            (Date.now() - pending.at) / 60000,
+          )}dk`
+        : "yok",
+      bekleyenRedeem: queue.length
+        ? queue.map((q) => `${q.productId}#${q.transactionId}@${q.attempts ?? 0}`).join(", ")
+        : "yok",
+    });
+    await Clipboard.setStringAsync(report).catch(() => {});
+    Alert.alert(
+      "Satın alma teşhis raporu",
+      "Rapor panoya kopyalandı.\n\n" + report.slice(0, 500) + "\n…",
+      [
+        { text: "Paylaş", onPress: () => { Share.share({ message: report }).catch(() => {}); } },
+        {
+          text: "Kaydı sıfırla",
+          style: "destructive",
+          onPress: () => clearIapDiagnostics(),
+        },
+        { text: "Kapat", style: "cancel" },
+      ],
+    );
   };
 
   // ── Çıkış Yap ─────────────────────────────────────────────────────────────
@@ -291,7 +365,6 @@ export default function SettingsModal({ visible, onClose }: any) {
               {t('settings.blockedUsers')}
             </Text>
           </View>
-          <SFIcon name="person.fill.xmark" fallback={UserX} size={18} color={colors.text} strokeWidth={1.5} style={{ pointerEvents: "none" }} />
           <SFIcon name="chevron.right" fallback={ChevronRight} size={18} color={colors.textSecondary} strokeWidth={1.5} style={{ pointerEvents: "none" }} />
         </View>
       </TouchableOpacity>
@@ -376,6 +449,19 @@ export default function SettingsModal({ visible, onClose }: any) {
           )}
         </View>
       </TouchableOpacity>
+
+      {/* Ortam satırı — normal basışta hiçbir şey yapmaz, UZUN BASINCA satın
+          alma teşhis raporunu panoya kopyalar (bkz. handleDiagnostics). */}
+      <TouchableOpacity
+        activeOpacity={1}
+        onLongPress={handleDiagnostics}
+        delayLongPress={1200}
+        style={{ marginTop: 24, paddingVertical: 8, alignItems: "center" }}
+      >
+        <Text style={{ color: "rgba(255,255,255,0.25)", fontSize: 11 }}>
+          {`LIT · ${__DEV__ ? "dev" : "release"}`}
+        </Text>
+      </TouchableOpacity>
     </AppModal>
 
     <BlockedUsersModal
@@ -387,7 +473,10 @@ export default function SettingsModal({ visible, onClose }: any) {
 }
 
 // Section header — EditModal/EditProfileForm patterniyle aynı: büyük beyaz başlık + InfoIcon + gri açıklama.
-function SettingsSection({ title, subtitle, marginTop = 28 }: any) {
+// Bölümler arası boşluk da oradan geliyor: EditProfileForm'da dış sarmalayıcının
+// marginTop'u (28) ile başlık bloğunun marginTop'u (12) toplanıp 40 ediyor.
+// Burada tek View olduğu için toplam doğrudan yazılı (FilterSection'la aynı).
+function SettingsSection({ title, subtitle, marginTop = 40 }: any) {
   return (
     <View
       style={{

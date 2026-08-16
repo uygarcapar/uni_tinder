@@ -44,10 +44,21 @@ jest.mock('@/features/chat/chatService', () => ({
 
 import { Alert, Linking, Switch } from 'react-native';
 import { act, fireEvent, render, waitFor } from '@testing-library/react-native';
+import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
 import SettingsModal from '@/features/profile/components/SettingsModal';
 
-const setup = (overrides: any = {}) =>
-  render(<SettingsModal visible onClose={jest.fn()} {...overrides} />);
+// SettingsModal dil değişiminde desteyi invalidate ediyor (useQueryClient) —
+// provider olmadan hook fırlatıyor ve suite'in tamamı render'da düşüyordu.
+const setup = (overrides: any = {}) => {
+  const client = new QueryClient({
+    defaultOptions: { queries: { retry: false } },
+  });
+  return render(
+    <QueryClientProvider client={client}>
+      <SettingsModal visible onClose={jest.fn()} {...overrides} />
+    </QueryClientProvider>,
+  );
+};
 
 beforeEach(() => {
   mockApi.get.mockReset();

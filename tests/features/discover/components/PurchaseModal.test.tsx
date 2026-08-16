@@ -62,6 +62,10 @@ jest.mock('@/features/profile/subscriptionService', () => ({
 jest.mock('@/features/profile/subscriptionSlice', () => ({
   fetchSubscriptionStatus: jest.fn(() => ({ type: 'sub/fetch' })),
   setPremium: jest.fn((p: any) => ({ type: 'sub/setPremium', payload: p })),
+  markPremiumPurchasePending: jest.fn((p: any) => ({
+    type: 'sub/markPending',
+    payload: p,
+  })),
   syncSubscriptionWithRetry: jest.fn((p: any) => ({
     type: 'sub/syncRetry',
     payload: p,
@@ -163,6 +167,31 @@ describe('PurchaseModal — render & loading', () => {
     expect(tree.getByText('lit shop')).toBeTruthy();
   });
 
+  // Regresyon: sheet fetch bitmeden kapanırsa (yavaş ağ + kullanıcı kapatır)
+  // eskiden sonuç atılıyor, loading true'da kilitleniyor ve tek-atışlık latch
+  // yüzünden bir daha hiç denenmiyordu → o ekran mount'u boyunca sonsuz spinner.
+  it('stays usable when the first fetch resolves after the sheet was closed', async () => {
+    let resolveOffering: (v: any) => void = () => {};
+    mockGetOfferings.mockReturnValueOnce(
+      new Promise((res) => {
+        resolveOffering = res;
+      })
+    );
+    const onClose = jest.fn();
+    const tree = render(<PurchaseModal visible onClose={onClose} />);
+    await act(async () => {});
+
+    tree.rerender(<PurchaseModal visible={false} onClose={onClose} />);
+    await act(async () => {
+      resolveOffering(monthlyOffering);
+    });
+
+    tree.rerender(<PurchaseModal visible onClose={onClose} />);
+    await waitFor(() => {
+      expect(tree.getByText(/Ücretsiz Dene/)).toBeTruthy();
+    });
+  });
+
   it('shows "Hesap Zaten Lit Plus" when user is already premium', async () => {
     mockIsPremium = true;
     mockGetOfferings.mockResolvedValue(monthlyOffering);
@@ -188,7 +217,7 @@ describe('PurchaseModal — purchase flow', () => {
 
   it('runs the success flow: purchase → setPremium → onSuccess → close → syncRetry', async () => {
     mockGetOfferings.mockResolvedValue(monthlyOffering);
-    mockPurchasePackage.mockResolvedValue(true);
+    mockPurchasePackage.mockResolvedValue({ hasEntitlement: true });
     // Sync başarılı → premium-scoped query'ler invalidate edilir.
     mockDispatch.mockReturnValue({ unwrap: () => Promise.resolve({ synced: true }) });
     const onClose = jest.fn();
@@ -221,7 +250,7 @@ describe('PurchaseModal — purchase flow', () => {
     // synced:false → optimistic patch korunur; invalidate hemen ÇALIŞMAZ
     // (refetch free stats çekip patch'i ezerdi — bkz. refetchPremiumScoped).
     mockGetOfferings.mockResolvedValue(monthlyOffering);
-    mockPurchasePackage.mockResolvedValue(true);
+    mockPurchasePackage.mockResolvedValue({ hasEntitlement: true });
     const tree = setup();
     await waitFor(() => tree.getByText(/Ücretsiz Dene/));
 
@@ -233,9 +262,13 @@ describe('PurchaseModal — purchase flow', () => {
     expect(mockInvalidateQueries).not.toHaveBeenCalled();
   });
 
-  it('does NOT setPremium or close when purchasePackage returns false', async () => {
+  it('completes the flow even when the entitlement has not propagated yet', async () => {
+    // RC satın almayı kabul etti ama `customerInfo` entitlement'ı henüz
+    // taşımıyor (sandbox'ta olağan). Para ALINDI: akış eskiden burada sessizce
+    // ölüyordu — ne sync, ne uyarı, ne kurtarma kaydı. Artık normal başarı
+    // yolundan devam ediyor, doğruluk kaynağı backend `/sync`.
     mockGetOfferings.mockResolvedValue(monthlyOffering);
-    mockPurchasePackage.mockResolvedValue(false);
+    mockPurchasePackage.mockResolvedValue({ hasEntitlement: false });
     const onClose = jest.fn();
     const onSuccess = jest.fn();
     const tree = setup({ onClose, onSuccess });
@@ -245,11 +278,33 @@ describe('PurchaseModal — purchase flow', () => {
       fireEvent.press(tree.getByText(/Ücretsiz Dene/));
     });
 
-    expect(mockDispatch).not.toHaveBeenCalledWith(
+    expect(mockDispatch).toHaveBeenCalledWith(
       expect.objectContaining({ type: 'sub/setPremium' })
     );
-    expect(onClose).not.toHaveBeenCalled();
-    expect(onSuccess).not.toHaveBeenCalled();
+    expect(mockDispatch).toHaveBeenCalledWith(
+      expect.objectContaining({ type: 'sub/syncRetry' })
+    );
+    expect(onClose).toHaveBeenCalledTimes(1);
+    expect(onSuccess).toHaveBeenCalledTimes(1);
+  });
+
+  it('writes the persistent recovery record before syncing', async () => {
+    // Kayıt sync'ten ÖNCE yazılmalı: app arada öldürülürse satın alma yalnızca
+    // bu kayıtla kurtarılabiliyor (reload optimistic bayrağı siliyor).
+    mockGetOfferings.mockResolvedValue(monthlyOffering);
+    mockPurchasePackage.mockResolvedValue({ hasEntitlement: true });
+    const tree = setup();
+    await waitFor(() => tree.getByText(/Ücretsiz Dene/));
+
+    await act(async () => {
+      fireEvent.press(tree.getByText(/Ücretsiz Dene/));
+    });
+
+    const types = mockDispatch.mock.calls.map((c: any[]) => c[0]?.type);
+    expect(types).toContain('sub/markPending');
+    expect(types.indexOf('sub/markPending')).toBeLessThan(
+      types.indexOf('sub/syncRetry')
+    );
   });
 
   it('Alerts on purchase error', async () => {

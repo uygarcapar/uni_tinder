@@ -65,8 +65,16 @@ export const gradients = {
   shopBackdrop: ["#2e2e2e", "#2e2e2e", "#a83220"] as const,
   // WelcomeScreen zemini: upsell kartının litPlus tonundan shopSurface koyusuna geçiş.
   welcomeBackdrop: ["#ff4d3d", "#ff5d3d", "#ff7e3d"] as const,
+  // ProfileScreen premium kartları (aktif üyelik + upsell): litPlus'tan
+  // çapraz olarak biraz daha turuncu bir tona geçiş.
+  litPlusCard: ["#ff4d3d", "#ff6038"] as const,
   // SwipeCard super-like kalbi dolgusu — buradan ayarla.
   swipeHeart: ["#fc1919", "#fc1e1e", "#ff5c33"] as const,
+  // ProfileScreen SuperLike kartı: beyazdan griye. Kartın dolgusu YOK — bu
+  // gradyan yalnız 2px'lik çerçevede ve kalbin yuvarlak rozetinde görünür.
+  // Kart zemini sayfanınkiyle aynı (colors.bg) olduğu için metin AÇIK
+  // (colors.text), rozetin içindeki kalp ise KOYU (colors.bg) çizilir.
+  superLikeCard: ["#fff", "#9c9c9c"] as const,
 } as const;
 
 export type ColorToken = keyof typeof colors;

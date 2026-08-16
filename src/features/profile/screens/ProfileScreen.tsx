@@ -23,7 +23,13 @@ import {
 } from "react-native";
 import { Image } from "expo-image";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
-import { pickAndCropPhotos, type PickedPhoto } from "../../../shared/utils/photoPicker";
+import { useNavigation } from "@react-navigation/native";
+import {
+  pickAndCropPhotos,
+  captureAndCropPhoto,
+  type PickedPhoto,
+} from "../../../shared/utils/photoPicker";
+import { resolveMainPhotoUri, resolvePhotoUri } from "@/shared/utils/photoUri";
 import { useAppDispatch, useAppSelector } from "@/shared/hooks/redux";
 import { API_ENDPOINTS } from "@/shared/constants/api";
 import profileService from "@/features/profile/profileService";
@@ -31,7 +37,10 @@ import { staticGet } from "@/shared/services/staticCache";
 import PreviewModal from "@/features/profile/components/PreviewModal";
 import SettingsModal from "@/features/profile/components/SettingsModal";
 import PurchaseModal from "@/features/discover/components/PurchaseModal";
-import ScreenHeader from "@/shared/components/ScreenHeader";
+import SuperLikeCard from "@/features/profile/components/SuperLikeCard";
+import ScreenHeader, {
+  SCREEN_HEADER_ACTION_SIZE,
+} from "@/shared/components/ScreenHeader";
 import { useSwipeStats } from "@/features/discover/swipeQueries";
 import { getOfferings } from "@/features/profile/subscriptionService";
 import {
@@ -50,6 +59,7 @@ import {
   Target,
   BookOpen,
   Settings,
+  Bell,
   Camera,
   Star,
   ChevronDown,
@@ -57,6 +67,7 @@ import {
   ArrowUp,
 } from "lucide-react-native";
 import SFIcon, { type SFSymbol } from "@/shared/components/SFIcon";
+import PremiumFlame from "@/shared/components/PremiumFlame";
 
 import { LinearGradient } from "expo-linear-gradient";
 import { BlurView } from "expo-blur";
@@ -67,6 +78,8 @@ import {
   labelStyle,
   controlSize,
   font,
+  frame,
+  fixedSize,
 } from "@expo/ui/swift-ui/modifiers";
 
 // REANIMATED & GESTURE HANDLER IMPORTLARI
@@ -89,6 +102,21 @@ if (
 }
 
 const { width } = Dimensions.get("window");
+
+// ─── Hero Section ölçüleri ───────────────────────────────────────────────────
+// "Profili Düzenle" butonunun SwiftUI Host'u HİÇBİR eksende matchContents
+// kullanamaz (ölçüm ikinci Fabric commit'inde gelir, ilk frame yanlış çizilir),
+// bu yüzden kutusunun boyutu buradan deterministik olarak türetilir.
+const HERO_PAD_H = 20;
+const HERO_AVATAR = 80;
+const HERO_GAP = 16;
+const EDIT_BUTTON_H = 34;
+// Avatarın sağındaki metin kolonunun tam genişliği. Host bu genişlikte sabitlenir;
+// glass kapsül fixedSize ile metne göre daralıp kutunun soluna yaslanır, kalan
+// alan şeffaf kalır.
+const EDIT_BUTTON_BOX_W = width - HERO_PAD_H * 2 - HERO_AVATAR - HERO_GAP;
+// Hero ismi 18px — SwipeCard'ın 36px isim / 26px ateş oranını korur.
+const HERO_FLAME_SIZE = 16;
 
 
 // ─── Generic skeleton box w/ shimmer ─────────────────────────────────────────
@@ -247,8 +275,13 @@ function SkeletonBody() {
         </View>
       </View>
 
+      {/* SuperLike kartı — ekranın yarısı kadar, sol gutter'a yaslı */}
+      <View style={{ paddingHorizontal: 16, paddingBottom: 16 }}>
+        <SkeletonBox width={width * 0.5} height={76} borderRadius={28} />
+      </View>
+
       {/* Premium banner */}
-      <View style={{ paddingHorizontal: 16, marginTop: 8, marginBottom: 40 }}>
+      <View style={{ paddingHorizontal: 16, marginBottom: 40 }}>
         <SkeletonBox height={340} borderRadius={40} />
       </View>
 
@@ -271,7 +304,7 @@ function SkeletonBody() {
       </View>
 
       {/* Account */}
-      <View style={{ paddingHorizontal: 16, paddingBottom: 64 }}>
+      <View style={{ paddingHorizontal: 16, paddingBottom: 40 }}>
         <SkeletonBox
           width={50}
           height={13}
@@ -415,7 +448,8 @@ import EditProfileForm, {
 import { hydrateProfileForm } from "@/features/profile/utils/hydrateProfileForm";
 import { useQueryClient } from "@tanstack/react-query";
 import { swipeKeys } from "@/features/discover/swipeQueries";
-import { colors } from "../../../shared/theme/colors";
+import { colors, gradients } from "../../../shared/theme/colors";
+import { glassFallback } from "../../../shared/theme/glass";
 import { useRenderCount } from "@/shared/debug/useRenderCount";
 
 // ─── Edit Modal sarmalayıcı ───────────────────────────────────────────────────
@@ -489,6 +523,7 @@ const formatSubscriptionDate = (iso: string | null | undefined): string => {
 export default function ProfileScreen() {
   useRenderCount("ProfileScreen");
   const { t } = useTranslation();
+  const navigation = useNavigation<any>();
   const dispatch = useAppDispatch();
   const { user } = useAppSelector((s) => (s as any).auth);
   const subscriptionIsPremium = useAppSelector(selectIsPremium);
@@ -501,6 +536,10 @@ export default function ProfileScreen() {
   );
   const syncPending = useAppSelector(selectSyncPending);
   const syncing = useAppSelector((s) => (s as any).subscription?.syncing);
+  // Yalnız dev teşhisi için — "aktivasyon sürüyor" kartında gösteriliyor.
+  const lastSyncReason = useAppSelector(
+    (s) => (s as any).subscription?.lastSyncReason as string | null,
+  );
   const insets = useSafeAreaInsets();
   const statsQuery = useSwipeStats();
 
@@ -530,7 +569,16 @@ export default function ProfileScreen() {
       return {
         kind: "pending" as const,
         badge: t("profile.subscription.pendingBadge"),
-        description: t("profile.subscription.pendingDescription"),
+        // Dev build'de `/sync`'in son `reason`'ı da yazılıyor: "aktivasyon
+        // sürüyor" tek başına sorunun hangi tarafta olduğunu söylemiyor ve
+        // cevabı cihaz logunda aramak gerekiyordu.
+        //   NOT_FOUND_IN_RC     → RC'de bu kullanıcıda aktif abonelik yok
+        //                         (prod backend + sandbox satın alma buraya düşer)
+        //   RC_REST_UNAVAILABLE → backend'de RC REST anahtarı konfigüre değil
+        //   RC_REST_ERROR       → backend RC'ye ulaşamadı
+        description: __DEV__ && lastSyncReason
+          ? `${t("profile.subscription.pendingDescription")}\n[dev] sync reason: ${lastSyncReason}`
+          : t("profile.subscription.pendingDescription"),
       };
     }
     if (subscriptionStatus === "BillingIssue") {
@@ -573,6 +621,7 @@ export default function ProfileScreen() {
     };
   }, [
     syncPending,
+    lastSyncReason,
     subscriptionStatus,
     subscriptionIsTrial,
     subscriptionTrialEndsAt,
@@ -610,6 +659,10 @@ export default function ProfileScreen() {
   // animasyonu skeleton'la başlar, JS thread serbest kaldığında form mount
   // edilip skeleton swap edilir.
   const [editFormReady, setEditFormReady] = useState(false);
+  // Tamamlama accordion'ından açıldıysa formun hangi bölüme kaydırılacağı
+  // (metric.key ↔ EditProfileForm'daki bölüm anahtarı). Normal "Düzenle"
+  // butonundan açılışta null → scroll yok.
+  const [editFocusSection, setEditFocusSection] = useState<string | null>(null);
   const [settingsVisible, setSettingsVisible] = useState(false);
   const [purchaseVisible, setPurchaseVisible] = useState(false);
   const [previewVisible, setPreviewVisible] = useState(false);
@@ -830,16 +883,18 @@ export default function ProfileScreen() {
 
   const buildPreviewProfile = () => {
     if (!myProfile) return null;
-    const photos = (myProfile.photosList || [])
+    const photos = [...(myProfile.photosList || [])]
       .sort((a, b) => (a.order ?? 0) - (b.order ?? 0))
-      .map((p) => p.photoImageUrl)
+      .map(resolvePhotoUri)
       .filter(Boolean);
     return {
       userId: user?.userId,
       displayName: myProfile.displayName || user?.displayName,
       age: myProfile.user?.age || user?.age,
       photos,
-      isPremium: myProfile.isPremium,
+      // Hero rozetiyle aynı kaynak: backend flag'i webhook gecikmesinde stale
+      // kalabiliyor, redux entitlement'ı öne alıyoruz (bkz. selectIsPremium).
+      isPremium,
       universityName: myProfile.user?.universityName || user?.universityName,
       showUniversity: myProfile.showMyUniversity !== false,
       departmentDisplay:
@@ -866,13 +921,27 @@ export default function ProfileScreen() {
   // veriler cache'li (districtCache, initialValues) + form "ısınmış" olduğu için
   // skeleton'ı atla, editFormReady'yi anında aç → reopen anında tam form gelir.
   const hasOpenedEditOnceRef = useRef(false);
-  const openEditProfile = useCallback(() => {
+  // Hedef bölüm, sheet present animasyonu bitene kadar beklemede tutulur; forma
+  // ancak onPresented'da prop olarak verilir. Sebep: gorhom sheet snap'lenene
+  // kadar içerideki scrollable'ı LOCKED tutup offset'ini 0'a resetliyor, yani
+  // animasyon sırasında yapılan scrollTo yutuluyor. İlk açılışta form ağır
+  // mount olduğu için gecikme kendiliğinden animasyonu aşıyordu ve scroll
+  // çalışıyordu; ısınmış (stage 4) reopen'larda form anında mount olduğu için
+  // scroll animasyonun ortasına düşüp kayboluyordu.
+  const pendingFocusSectionRef = useRef<string | null>(null);
+  const openEditProfile = useCallback((section = null) => {
+    // onPress handler'ı olarak da bağlı → argüman press event'i olabilir.
+    pendingFocusSectionRef.current =
+      typeof section === "string" ? section : null;
+    setEditFocusSection(null);
     setEditVisible(true);
     if (hasOpenedEditOnceRef.current) setEditFormReady(true);
     hasOpenedEditOnceRef.current = true;
   }, []);
   const closeEditProfile = useCallback(() => {
     setEditVisible(false);
+    pendingFocusSectionRef.current = null;
+    setEditFocusSection(null);
     // editFormReady'yi ilk açılıştan sonra false'a çekmiyoruz — reopen'da skeleton
     // flash'ı olmasın. İlk kez henüz açılmadıysa (edge) skeleton mantığı korunur.
     if (!hasOpenedEditOnceRef.current) setEditFormReady(false);
@@ -913,7 +982,16 @@ export default function ProfileScreen() {
   //   2. Veri-hazırlık koşulu — initial values + hobby listesi dolduğunda
   // İkisi de true olduğunda skeleton swap edilir. setTimeout fallback'i artık
   // YOK: yarım hidrate form mount etmek crash riskini geri getiriyordu.
-  const handleEditPresented = useCallback(() => setEditFormReady(true), []);
+  // onChange(index>=0) → sheet snap'lendi. Form mount'unu serbest bırakmanın
+  // yanında bekleyen bölüm scroll'unu da burada tetikliyoruz: forma focusSection
+  // ancak şimdi düşer, EditProfileForm'daki scroll effect'i de bu prop değişimiyle
+  // (her açılışta yeniden) çalışır.
+  const handleEditPresented = useCallback(() => {
+    setEditFormReady(true);
+    if (pendingFocusSectionRef.current) {
+      setEditFocusSection(pendingFocusSectionRef.current);
+    }
+  }, []);
   useEffect(() => {
     if (!editVisible) return;
     if (!editInitialValues) return;
@@ -954,26 +1032,11 @@ export default function ProfileScreen() {
     }
   };
 
-  const handleAddPhoto = async () => {
-    // Kayıt akışıyla aynı 3:4 crop'lu seçim; crop-picker izni kendisi ister.
-    let picked: PickedPhoto[];
-    try {
-      picked = await pickAndCropPhotos(1);
-    } catch (e: any) {
-      if (e?.code === "E_NO_LIBRARY_PERMISSION") {
-        Alert.alert(
-          t('profile.permissions.title'),
-          t('profile.permissions.galleryMessage'),
-        );
-      }
-      return;
-    }
-    if (picked.length === 0) return;
-
+  const uploadPickedPhoto = async (picked: PickedPhoto) => {
     const file = {
-      uri: picked[0].uri,
-      type: picked[0].mime,
-      name: picked[0].fileName,
+      uri: picked.uri,
+      type: picked.mime,
+      name: picked.fileName,
     };
 
     setSavingPhoto(true);
@@ -989,6 +1052,54 @@ export default function ProfileScreen() {
     } finally {
       setSavingPhoto(false);
     }
+  };
+
+  const addPhotoFromGallery = async () => {
+    // Kayıt akışıyla aynı 3:4 crop'lu seçim; crop-picker izni kendisi ister.
+    let picked: PickedPhoto[];
+    try {
+      picked = await pickAndCropPhotos(1);
+    } catch (e: any) {
+      if (e?.code === "E_NO_LIBRARY_PERMISSION") {
+        Alert.alert(
+          t('profile.permissions.title'),
+          t('profile.permissions.galleryMessage'),
+        );
+      }
+      return;
+    }
+    if (picked.length === 0) return;
+    await uploadPickedPhoto(picked[0]);
+  };
+
+  const addPhotoFromCamera = async () => {
+    let picked: PickedPhoto | null;
+    try {
+      picked = await captureAndCropPhoto();
+    } catch (e: any) {
+      if (e?.code === "E_NO_CAMERA_PERMISSION") {
+        Alert.alert(
+          t('profile.permissions.title'),
+          t('profile.permissions.cameraMessage'),
+        );
+      }
+      return;
+    }
+    if (!picked) return;
+    await uploadPickedPhoto(picked);
+  };
+
+  // Kaynak seçimi — handlePhotoPress ile aynı Alert tabanlı desen.
+  const handleAddPhoto = () => {
+    Alert.alert(
+      t('profile.photos.addTitle'),
+      t('profile.photos.addMessage'),
+      [
+        { text: t('profile.photos.sourceCamera'), onPress: addPhotoFromCamera },
+        { text: t('profile.photos.sourceGallery'), onPress: addPhotoFromGallery },
+        { text: t('common.cancel'), style: "cancel" },
+      ],
+    );
   };
 
   const handlePhotoPress = (photo) => {
@@ -1040,10 +1151,7 @@ export default function ProfileScreen() {
   };
 
   // ── Render ─────────────────────────────────────────────────────────────────
-  const mainPhoto =
-    myProfile?.photosList?.find((p) => p.isMainPhoto)?.photoImageUrl ||
-    myProfile?.photosList?.[0]?.photoImageUrl ||
-    myProfile?.profileImageUrl;
+  const mainPhoto = resolveMainPhotoUri(myProfile);
 
   const completionPct =
     myProfile?.profileCompletionPercentage ??
@@ -1127,7 +1235,9 @@ export default function ProfileScreen() {
             contentInsetAdjustmentBehavior="never"
             contentContainerStyle={{
               paddingTop: insets.top + 60,
-              paddingBottom: insets.bottom + 60,
+              // Floating tab bar (64) + altındaki nefes payı — son kart bar'ın
+              // hemen dibinde bitmesin.
+              paddingBottom: insets.bottom + 120,
             }}
             onScroll={scrollHandler}
             scrollEventThrottle={16}
@@ -1215,41 +1325,73 @@ export default function ProfileScreen() {
             )}
 
             {/* ── Hero Section ── */}
+            {/* Ölçüler EDIT_BUTTON_BOX_W'yi besliyor — birini değiştirirsen
+                sabitleri de güncelle. */}
             <View
               style={{
-                paddingHorizontal: 20,
+                paddingHorizontal: HERO_PAD_H,
                 paddingTop: 20,
                 paddingBottom: 24,
                 flexDirection: "row",
                 alignItems: "center",
-                gap: 16,
+                gap: HERO_GAP,
               }}
             >
               <HeroAvatar
                 uri={mainPhoto}
-                size={80}
+                size={HERO_AVATAR}
                 loading={!myProfile}
                 onPress={() => mainPhoto && setPreviewVisible(true)}
               />
 
               <View style={{ flex: 1, justifyContent: "space-between" }}>
-                <Text
+                {/* İsim + premium ateşi — SwipeCard'daki rozetin aynısı.
+                    Hero'da yaş gösterilmiyor, rozet ismin sağına gelir. */}
+                <View
                   style={{
-                    color: colors.text,
-                    fontSize: 18,
-                    fontWeight: "600",
-                    lineHeight: 28,
+                    flexDirection: "row",
+                    alignItems: "center",
+                    gap: 6,
                   }}
                 >
-                  {myProfile?.displayName || user?.firstName || ""}
-                </Text>
+                  <Text
+                    numberOfLines={1}
+                    style={{
+                      flexShrink: 1,
+                      color: colors.text,
+                      fontSize: 18,
+                      fontWeight: "600",
+                      lineHeight: 28,
+                    }}
+                  >
+                    {myProfile?.displayName || user?.firstName || ""}
+                  </Text>
+                  {isPremium && <PremiumFlame size={HERO_FLAME_SIZE} />}
+                </View>
 
                 {Platform.OS === "ios" ? (
                   // iOS 26+ liquid glass — SwiftUI native Button. iOS 18'de
                   // default bordered style'a düşer (graceful degradation).
+                  //
+                  // matchContents HİÇBİR eksende YOK: SwiftUI ölçümü ikinci
+                  // Fabric commit'inde geldiği için Host ilk frame'de 0x0 kalıyor
+                  // ve hosting view içeriği bu boş çerçeveye ORTALAYARAK çiziyor —
+                  // buton yarı yarıya sola, avatarın üstüne taşıyor, ölçüm gelince
+                  // yerine zıplıyordu. Kutu artık iki eksende de sabit:
+                  //   • Host + dıştaki frame() = EDIT_BUTTON_BOX_W x EDIT_BUTTON_H
+                  //     → Yoga da SwiftUI da geometriyi İLK commit'te biliyor.
+                  //   • fixedSize(horizontal) dış frame'in önerdiği genişliği
+                  //     butona geçirmiyor → glass kapsül etikete göre daralıyor
+                  //     (dile göre uzunluk değişebilir, sabit genişlik gerekmiyor).
+                  //   • alignment "leading" → kapsül kutunun soluna yaslı, sağdaki
+                  //     artık alan şeffaf ve boş.
                   <Host
-                    matchContents
-                    style={{ marginTop: 8, alignSelf: "flex-start" }}
+                    style={{
+                      marginTop: 8,
+                      alignSelf: "flex-start",
+                      width: EDIT_BUTTON_BOX_W,
+                      height: EDIT_BUTTON_H,
+                    }}
                   >
                     <SwiftUIButton
                       label={t('profile.edit.button')}
@@ -1260,6 +1402,19 @@ export default function ProfileScreen() {
                         controlSize("regular"),
                         tint(colors.text),
                         font({ size: 13, weight: "semibold" }),
+                        frame({ height: EDIT_BUTTON_H }),
+                        fixedSize({ horizontal: true }),
+                        // Border son frame'den ÖNCE: maxWidth kutusu butonu
+                        // leading'e yaslayıp kalanı şeffaf bırakıyor, sonrasına
+                        // konsa çerçeve o boş alanı da sarardı.
+                        ...glassFallback({
+                          shape: "capsule",
+                          padding: { horizontal: 14 },
+                        }),
+                        frame({
+                          maxWidth: EDIT_BUTTON_BOX_W,
+                          alignment: "leading",
+                        }),
                       ]}
                     />
                   </Host>
@@ -1296,11 +1451,17 @@ export default function ProfileScreen() {
               </View>
             </View>
 
+            {/* ── SuperLike kartı ── */}
+            {/* Hero'nun altı, upsell'in üstü: sayfanın tek "mağaza" şeridi.
+                Eskiden sayfanın en altındaki QuotaSection'da duran SuperLike
+                bakiyesi de bu kartın içinde. */}
+            <SuperLikeCard />
+
             {/* --- PREMIUM ACTIVE CARD --- */}
             {isPremium && (
-              <View className="mb-10 px-4 mt-2">
+              <View className="mb-10 px-4">
                 <LinearGradient
-                  colors={[colors.litPlus, colors.litPlus]}
+                  colors={gradients.litPlusCard}
                   start={{ x: 0, y: 0 }}
                   end={{ x: 1, y: 1 }}
                   style={{
@@ -1327,7 +1488,7 @@ export default function ProfileScreen() {
                             fontFamily: "Duckie-regular",
                           }}
                         >
-                          lit plus
+                          plus
                         </Text>
                       </View>
                       <Text
@@ -1434,13 +1595,13 @@ export default function ProfileScreen() {
 
             {/* --- PREMIUM UPSELL BANNER & COMPARISON --- */}
             {!isPremium && (
-              <View className="mb-10 px-4 mt-2">
+              <View className="mb-10 px-4">
                 <AnimatedPressable
                   pressScale={0.97}
                   onPress={() => setPurchaseVisible(true)}
                 >
                   <LinearGradient
-                    colors={[colors.litPlus, colors.litPlus]}
+                    colors={gradients.litPlusCard}
                     start={{ x: 0, y: 0 }}
                     end={{ x: 1, y: 1 }}
                     style={{
@@ -1468,7 +1629,7 @@ export default function ProfileScreen() {
                               fontFamily: "Duckie-regular",
                             }}
                           >
-                            lit plus
+                            plus
                           </Text>
                         </View>
                         <Text
@@ -1542,7 +1703,7 @@ export default function ProfileScreen() {
                               fontFamily: "Duckie-regular",
                             }}
                           >
-                            lit plus
+                            plus
                           </Text>
                         </View>
                       </View>
@@ -1595,13 +1756,13 @@ export default function ProfileScreen() {
                         <Text className="font-medium text-[14px] text-white">
                           {teaserPrice ? (
                             <>
-                              <Text className="text-gray-300">
+                              <Text className="text-white/80">
                                 {t('discover.premium.pricingPrefix')}
                               </Text>
                               <Text style={{ fontWeight: "700" }}>
                                 {t('discover.premium.pricing', { price: teaserPrice })}
                               </Text>
-                              <Text className="text-gray-300">
+                              <Text className="text-white/80">
                                 {t('discover.premium.pricingSuffix')}
                               </Text>
                             </>
@@ -1631,7 +1792,8 @@ export default function ProfileScreen() {
                       description={metric.desc}
                       isExpanded={expandedSection === metric.key}
                       onToggle={() => handleAccordionToggle(metric.key)}
-                      onEdit={openEditProfile}
+                      // Modal açılınca form doğrudan bu bölüme kaydırılır.
+                      onEdit={() => openEditProfile(metric.key)}
                     />
                   ))}
               </View>
@@ -1643,10 +1805,68 @@ export default function ProfileScreen() {
         <ScreenHeader
           scrollY={scrollY}
           title={t('profile.tabTitle')}
+          // Başlık scroll'la belirirken logonun yerine geçiyor; iki yanda da
+          // buton olduğu için sola yaslı değil ortada duruyor (sadece bu ekran).
+          titleAlign="center"
           fillRatio={swipeFillRatio}
+          leftButton={
+            Platform.OS === "ios" ? (
+              /* matchContents YOK — bkz. SCREEN_HEADER_ACTION_SIZE: sabit boyut
+                 Yoga'ya ilk commit'te bildirilmezse buton kenardan içeri
+                 ışınlanıyor. */
+              <Host
+                style={{
+                  width: SCREEN_HEADER_ACTION_SIZE,
+                  height: SCREEN_HEADER_ACTION_SIZE,
+                }}
+              >
+                <SwiftUIButton
+                  label={t('common.notifications')}
+                  systemImage="bell.fill"
+                  onPress={() => navigation.navigate("Notifications")}
+                  modifiers={[
+                    buttonStyle("glass"),
+                    tint(colors.text),
+                    labelStyle("iconOnly"),
+                    font({ size: 22, weight: "medium" }),
+                    frame({
+                      width: SCREEN_HEADER_ACTION_SIZE,
+                      height: SCREEN_HEADER_ACTION_SIZE,
+                    }),
+                    ...glassFallback({ shape: "circle" }),
+                  ]}
+                />
+              </Host>
+            ) : (
+              <TouchableOpacity
+                onPress={() => navigation.navigate("Notifications")}
+                hitSlop={10}
+                activeOpacity={0.7}
+              >
+                <View pointerEvents="none">
+                  <SFIcon
+                    name="bell.fill"
+                    fallback={Bell}
+                    size={29}
+                    strokeWidth={2}
+                    color={colors.text}
+                    weight="semibold"
+                  />
+                </View>
+              </TouchableOpacity>
+            )
+          }
           rightButton={
             Platform.OS === "ios" ? (
-              <Host matchContents>
+              /* matchContents YOK — bkz. SCREEN_HEADER_ACTION_SIZE: sabit boyut
+                 Yoga'ya ilk commit'te bildirilmezse buton sağ kenardan içeri
+                 ışınlanıyor. */
+              <Host
+                style={{
+                  width: SCREEN_HEADER_ACTION_SIZE,
+                  height: SCREEN_HEADER_ACTION_SIZE,
+                }}
+              >
                 <SwiftUIButton
                   label={t('profile.settings.button')}
                   systemImage="gearshape.fill"
@@ -1656,6 +1876,11 @@ export default function ProfileScreen() {
                     tint(colors.text),
                     labelStyle("iconOnly"),
                     font({ size: 22, weight: "medium" }),
+                    frame({
+                      width: SCREEN_HEADER_ACTION_SIZE,
+                      height: SCREEN_HEADER_ACTION_SIZE,
+                    }),
+                    ...glassFallback({ shape: "circle" }),
                   ]}
                 />
               </Host>
@@ -1708,6 +1933,7 @@ export default function ProfileScreen() {
                 petOptions={petOptions}
                 genderCategories={genderCategories}
                 savingPhoto={savingPhoto}
+                focusSection={editFocusSection}
                 onAddPhoto={handleAddPhoto}
                 onPhotoPress={handlePhotoPress}
                 onPreview={() => {

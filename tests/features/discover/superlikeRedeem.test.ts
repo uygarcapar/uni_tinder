@@ -41,9 +41,12 @@ const USER = 'user-1';
 const TX = 'tx-1';
 
 /** Backend gerçek HTTP status kullanıyor → axios reject, `response.status`. */
-const httpError = (status: number, message?: string) => {
+const httpError = (status: number, message?: string, code?: string) => {
   const err: any = new Error(`status ${status}`);
-  err.response = { status, data: message ? { message } : {} };
+  err.response = {
+    status,
+    data: { ...(message ? { message } : {}), ...(code ? { code } : {}) },
+  };
   return err;
 };
 
@@ -104,7 +107,13 @@ describe('redeemSuperlikePack', () => {
 
     expect(isPendingRedeemError(error)).toBe(true);
     expect(readPendingRedeems(USER)).toEqual([
-      { transactionId: TX, productId: 'superlike_10', attempts: 0 },
+      {
+        transactionId: TX,
+        productId: 'superlike_10',
+        attempts: 0,
+        // Yaş sınırı bu damgadan işliyor (bkz. MAX_AGE_MS).
+        firstSeenAt: expect.any(Number),
+      },
     ]);
     jest.useRealTimers();
   });
@@ -185,7 +194,8 @@ describe('flushPendingSuperlikeRedeems', () => {
   });
 
   it('402 devam ederse kayıt kalır, deneme sayacı artar (açılışta beklemez)', async () => {
-    queue([{ transactionId: TX, productId: 'superlike_10', attempts: 1 }]);
+    const firstSeenAt = Date.now() - 60_000;
+    queue([{ transactionId: TX, productId: 'superlike_10', attempts: 1, firstSeenAt }]);
     mockPost.mockRejectedValue(httpError(402));
 
     await flushPendingSuperlikeRedeems(USER);
@@ -193,17 +203,53 @@ describe('flushPendingSuperlikeRedeems', () => {
     // Satın alma anındaki 3 sn'lik retry burada YOK — tek deneme.
     expect(mockPost).toHaveBeenCalledTimes(1);
     expect(readPendingRedeems(USER)).toEqual([
-      { transactionId: TX, productId: 'superlike_10', attempts: 2 },
+      { transactionId: TX, productId: 'superlike_10', attempts: 2, firstSeenAt },
     ]);
   });
 
-  it('deneme sınırına gelen kayıt düşürülür (sonsuz 402 açılışları yormasın)', async () => {
-    queue([{ transactionId: TX, productId: 'superlike_10', attempts: 7 }]);
+  // Sözleşmenin kalbi: sınır AÇILIŞ SAYISI değil SÜRE. Backend arızasında
+  // kullanıcı uygulamayı 50 kez açsa da parası alınmış satın alma düşmez.
+  it('çok denenmiş ama taze kayıt düşürülmez', async () => {
+    queue([
+      {
+        transactionId: TX,
+        productId: 'superlike_10',
+        attempts: 40,
+        firstSeenAt: Date.now() - 6 * 24 * 60 * 60 * 1000,
+      },
+    ]);
+    mockPost.mockRejectedValue(httpError(402));
+
+    await flushPendingSuperlikeRedeems(USER);
+
+    expect(readPendingRedeems(USER)).toHaveLength(1);
+  });
+
+  it('bir haftayı geçen kayıt düşürülür (retry artık çözmüyor)', async () => {
+    queue([
+      {
+        transactionId: TX,
+        productId: 'superlike_10',
+        attempts: 2,
+        firstSeenAt: Date.now() - 8 * 24 * 60 * 60 * 1000,
+      },
+    ]);
     mockPost.mockRejectedValue(httpError(402));
 
     await flushPendingSuperlikeRedeems(USER);
 
     expect(readPendingRedeems(USER)).toHaveLength(0);
+  });
+
+  it('damgasız eski kayıt düşürülmez, o turda damgalanır', async () => {
+    queue([{ transactionId: TX, productId: 'superlike_10', attempts: 7 }]);
+    mockPost.mockRejectedValue(httpError(402));
+
+    await flushPendingSuperlikeRedeems(USER);
+
+    const [entry] = readPendingRedeems(USER);
+    expect(entry).toBeDefined();
+    expect(entry.firstSeenAt).toEqual(expect.any(Number));
   });
 
   it('kuyruk boşken ve RC geçmişi boşken hiç istek atmaz', async () => {
@@ -242,6 +288,66 @@ describe('flushPendingSuperlikeRedeems', () => {
   it('userId yoksa hiçbir şey yapmaz', async () => {
     await flushPendingSuperlikeRedeems(null);
     expect(mockPost).not.toHaveBeenCalled();
+  });
+});
+
+// Backend 2026-08-11'de "başka hesaba ait" durumunu 402'den 400 + UT-6103'e
+// taşıdı. Karar artık `code`'dan veriliyor; status yalnız kod gelmediğinde
+// (eski backend sürümü) fallback.
+describe('redeem hata kodları (UT-61xx)', () => {
+  it('UT-6103 (başka hesaba ait) kalıcıdır — kuyruğa alınmaz', async () => {
+    mockPost.mockRejectedValue(
+      httpError(400, 'Bu satın alma bu hesaba ait değil.', 'UT-6103'),
+    );
+
+    await expect(
+      redeemSuperlikePack({ userId: USER, transactionId: TX, productId: 'superlike_10' }),
+    ).rejects.toMatchObject({ redeemCode: 'PERMANENT' });
+
+    expect(mockPost).toHaveBeenCalledTimes(1);
+    expect(readPendingRedeems(USER)).toHaveLength(0);
+  });
+
+  it('UT-6102 (ürün tanımsız) kalıcıdır ve mesajı koddan gelir', async () => {
+    mockPost.mockRejectedValue(httpError(400, undefined, 'UT-6102'));
+
+    await expect(
+      redeemSuperlikePack({ userId: USER, transactionId: TX, productId: 'superlike_99' }),
+    ).rejects.toMatchObject({
+      redeemCode: 'PERMANENT',
+      message: 'Bu paket şu an tanımlı değil',
+    });
+    expect(readPendingRedeems(USER)).toHaveLength(0);
+  });
+
+  it('UT-6101 tek geçici durumdur — kuyrukta kalır', async () => {
+    jest.useFakeTimers();
+    mockPost.mockRejectedValue(
+      httpError(402, 'Satın alma henüz doğrulanmadı.', 'UT-6101'),
+    );
+
+    const promise = redeemSuperlikePack({
+      userId: USER,
+      transactionId: TX,
+      productId: 'superlike_10',
+    });
+    const assertion = expect(promise).rejects.toMatchObject({
+      redeemCode: 'PENDING_WEBHOOK',
+    });
+    await jest.advanceTimersByTimeAsync(3000);
+    await assertion;
+
+    expect(readPendingRedeems(USER)).toHaveLength(1);
+    jest.useRealTimers();
+  });
+
+  it('kod göndermeyen eski backend sürümünde status ile karar verilir', async () => {
+    mockPost.mockRejectedValue(httpError(400));
+
+    await expect(
+      redeemSuperlikePack({ userId: USER, transactionId: TX, productId: null }),
+    ).rejects.toMatchObject({ redeemCode: 'PERMANENT' });
+    expect(mockPost).toHaveBeenCalledTimes(1);
   });
 });
 

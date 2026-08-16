@@ -18,6 +18,10 @@ const PLAN_CARD_WIDTH = SCREEN_WIDTH - 40;
 const PLAN_CARD_GAP = 12;
 const PLAN_SNAP = PLAN_CARD_WIDTH + PLAN_CARD_GAP;
 
+// Offering + /plans fetch'i için tavan. api'nin kendi timeout'u 30sn ama RC'nin
+// native promise'inin bir garantisi yok; spinner'ı süresiz asılı bırakmamak için.
+const OFFERING_FETCH_TIMEOUT_MS = 20000;
+
 function SelectedBadge({ active }: any) {
   const { t } = useTranslation();
   const progress = useRef(new Animated.Value(active ? 1 : 0)).current;
@@ -140,6 +144,7 @@ import {
   restorePurchases,
 } from "@/features/profile/subscriptionService";
 import {
+  markPremiumPurchasePending,
   selectIsPremium,
   setPremium,
   syncSubscriptionWithRetry,
@@ -286,7 +291,7 @@ function renderPlanName(
           paddingRight: primarySize * 0.18,
         }}
       >
-        lit plus
+        plus
       </Text>
       {periodText ? (
         <Text
@@ -384,16 +389,30 @@ export default function PurchaseModal({ visible, onClose, onSuccess }: any) {
     onClose?.();
   }, [onClose]);
 
-  // Offerings + /plans YALNIZ modal ilk açıldığında çekilir (bir kez). ÖNCESİ:
-  // mount'ta koşulsuz çekiyordu → her ekranda gömülü gizli PurchaseModal (Discover,
-  // Likes, Profile) cold-boot'ta plans + RC getOfferings-retry ateşliyordu
-  // (subscription/plans ×3 selinin kaynağı). visible gate + fetchedRef ile boot'ta
-  // hiç atmaz, açılınca tek sefer çeker.
-  const offeringsFetchedRef = useRef(false);
+  // Offerings + /plans YALNIZ modal açıldığında çekilir. Boot'ta atılmaz: bu
+  // bileşen her ekranda (Discover, Likes, Profile, Chat) gömülü duruyor,
+  // mount'ta koşulsuz çekmek cold-boot'ta plans + RC getOfferings-retry seli
+  // demekti (subscription/plans ×3'ün kaynağı).
+  //
+  // Latch "bir kez çektik" DEĞİL "elimizde veri var" kuralına bağlı. Öncesi
+  // tek-atışlık ref + kapanışta cancel idi; sheet fetch bitmeden kapanırsa
+  // (yavaş ağ + sabırsız kullanıcı) `loadingOffering` true'da kilitleniyor ve
+  // ref yandığı için o ekran mount'u boyunca bir daha HİÇ denenmiyordu →
+  // paywall sonsuza kadar spinner. Şimdi veri gelmediyse her açılış yeniden
+  // dener; gelen veri cache'lenir, ikinci açılışta anında görünür.
+  const offeringsInFlightRef = useRef(false);
+  const mountedRef = useRef(true);
+  useEffect(
+    () => () => {
+      mountedRef.current = false;
+    },
+    [],
+  );
+  const hasOfferingData = offering !== null || (backendPlans?.length ?? 0) > 0;
   useEffect(() => {
-    if (!visible || offeringsFetchedRef.current) return;
-    offeringsFetchedRef.current = true;
-    let cancelled = false;
+    if (!visible || hasOfferingData || offeringsInFlightRef.current) return;
+    offeringsInFlightRef.current = true;
+    setLoadingOffering(true);
     // RC SDK cold start'ta getOfferings null dönebiliyor (configure → network
     // round-trip). Retry: null gelirse 600ms ara ile 3 kez daha dene.
     const fetchOfferingWithRetry = async (attempt = 0) => {
@@ -403,26 +422,37 @@ export default function PurchaseModal({ visible, onClose, onSuccess }: any) {
       return fetchOfferingWithRetry(attempt + 1);
     };
 
-    Promise.all([
-      fetchOfferingWithRetry(),
-      api
-        .get(API_ENDPOINTS.SUBSCRIPTION_PLANS)
-        .then((r) => r?.result?.plans ?? [])
-        .catch(() => []),
+    // Native RC promise'i takılırsa (SDK cold start + kötü ağ) spinner'ın
+    // süresiz asılı kalmaması için tavan. Timeout'ta boş sonuca düşeriz →
+    // hasOfferingData false kalır, bir sonraki açılış tekrar dener.
+    let timeoutId: ReturnType<typeof setTimeout>;
+    const timeoutFallback = new Promise<[null, never[]]>((resolve) => {
+      timeoutId = setTimeout(() => resolve([null, []]), OFFERING_FETCH_TIMEOUT_MS);
+    });
+
+    Promise.race([
+      Promise.all([
+        fetchOfferingWithRetry(),
+        api
+          .get(API_ENDPOINTS.SUBSCRIPTION_PLANS)
+          .then((r) => r?.result?.plans ?? [])
+          .catch(() => []),
+      ]),
+      timeoutFallback,
     ])
       .then(([o, plans]) => {
-        if (cancelled) return;
+        // Kapanmış sheet'te de yazıyoruz (yalnız unmount'ta durur): bir sonraki
+        // açılışın anında dolu gelmesi için sonucu atmıyoruz.
+        if (!mountedRef.current) return;
         setOffering(o);
         setBackendPlans(plans);
       })
       .finally(() => {
-        if (!cancelled) setLoadingOffering(false);
+        clearTimeout(timeoutId);
+        offeringsInFlightRef.current = false;
+        if (mountedRef.current) setLoadingOffering(false);
       });
-
-    return () => {
-      cancelled = true;
-    };
-  }, [visible]);
+  }, [visible, hasOfferingData]);
 
   // RC + backend birleştirilmiş plan listesi
   const plans = useMemo(
@@ -505,17 +535,22 @@ export default function PurchaseModal({ visible, onClose, onSuccess }: any) {
       return;
     }
     setPurchasing(true);
-    analytics.capture('purchase_initiated', { productId: pkg?.product?.identifier });
+    const productId = pkg?.product?.identifier ?? null;
+    analytics.capture('purchase_initiated', { productId });
     try {
-      const purchased = await purchasePackage(pkg);
-      if (purchased) {
-        analytics.capture('purchase_completed', { productId: pkg?.product?.identifier });
-        dispatch(setPremium({ isPremium: true, optimistic: true }));
-        promoteSwipeStatsToPremium();
-        handleClose();
-        onSuccess?.();
-        syncThenRefetch();
-      }
+      // throw etmediyse mağaza ödemeyi ALDI. `hasEntitlement` yalnız teşhis:
+      // RC customerInfo'yu geç güncellediğinde eskiden bu dal hiç çalışmıyor,
+      // kullanıcı parayı ödeyip hiçbir geri bildirim alamıyordu.
+      const { hasEntitlement } = await purchasePackage(pkg);
+      analytics.capture('purchase_completed', { productId, hasEntitlement });
+      // Kurtarma kaydı ÖNCE yazılır: sync'ten önce app öldürülse bile satın alma
+      // kaybolmasın, bir sonraki açılış tekrar denesin.
+      dispatch(markPremiumPurchasePending({ productId }));
+      dispatch(setPremium({ isPremium: true, optimistic: true }));
+      promoteSwipeStatsToPremium();
+      handleClose();
+      onSuccess?.();
+      syncThenRefetch();
     } catch (e) {
       if (!e.userCancelled) {
         Alert.alert(t('purchase.errors.purchaseTitle'), e.message || t('purchase.errors.operationFailed'));
@@ -530,6 +565,10 @@ export default function PurchaseModal({ visible, onClose, onSuccess }: any) {
     try {
       const restored = await restorePurchases();
       if (restored) {
+        // Restore'da `false` gerçekten "geri yüklenecek bir şey yok" demek
+        // (entitlement geçmişten okunuyor, satın alma anındaki propagasyon
+        // yarışı yok) — bu yüzden burada boolean sözleşmesi korunuyor.
+        dispatch(markPremiumPurchasePending({ productId: null }));
         dispatch(setPremium({ isPremium: true, optimistic: true }));
         promoteSwipeStatsToPremium();
         handleClose();
@@ -963,7 +1002,7 @@ export default function PurchaseModal({ visible, onClose, onSuccess }: any) {
                     fontFamily: "Duckie-regular",
                   }}
                 >
-                  lit plus
+                  plus
                 </Text>
               </View>
             </View>

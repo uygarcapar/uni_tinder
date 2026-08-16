@@ -94,7 +94,50 @@ const CODE_ENTRIES: CodeEntry[] = [
     actionLabel: "Premium'u İncele",
     action: { kind: "openPaywall", paywallType: "SWIPE_LIMIT" },
   },
+  // ── SuperLike paketi redeem'i ────────────────────────────────────────────
+  // Bu üçü empty-state değil, satın alma sonucu. Buraya alınmalarının sebebi:
+  // redeem'de karar HTTP status'tan değil `code`'dan verilmeli (backend
+  // 2026-08-11'de "başka hesaba ait" durumunu 402'den 400'e taşıdı; status'a
+  // bakan eski FE bunu webhook yarışı sanıp sonuçsuz retry döngüsüne giriyordu).
+  {
+    code: "UT-6101",
+    title: "Satın alman doğrulanıyor",
+    actionLabel: "Tamam",
+    action: { kind: "dismiss" },
+    autoRetry: true, // tek geçici durum — 3 sn sonra tekrar, sonra kuyruk
+  },
+  {
+    code: "UT-6102",
+    title: "Bu paket şu an tanımlı değil",
+    actionLabel: "Destek'e Yaz",
+    action: { kind: "contactSupport" },
+  },
+  {
+    code: "UT-6103",
+    title: "Bu satın alma bu hesaba ait değil",
+    actionLabel: "Tamam",
+    action: { kind: "dismiss" },
+  },
 ];
+
+/**
+ * Redeem yanıtının `code` alanı → kalıcı mı, retry edilebilir mi.
+ *
+ * `null`/bilinmeyen kod geldiğinde HTTP status'a düşülür (eski backend
+ * sürümleri `code` göndermiyor olabilir).
+ */
+export const REDEEM_CODES = {
+  PENDING_WEBHOOK: "UT-6101",
+  UNKNOWN_PRODUCT: "UT-6102",
+  BELONGS_TO_ANOTHER_USER: "UT-6103",
+} as const;
+
+export function isPermanentRedeemCode(code: string | null | undefined): boolean {
+  return (
+    code === REDEEM_CODES.UNKNOWN_PRODUCT ||
+    code === REDEEM_CODES.BELONGS_TO_ANOTHER_USER
+  );
+}
 
 const CODE_MAP: Record<string, CodeEntry> = Object.fromEntries(
   CODE_ENTRIES.map((e) => [e.code, e]),

@@ -43,6 +43,9 @@ import { colors, gradients } from "../../../shared/theme/colors";
  * için krediyi backend'e redeem ettirmek zorundayız (superlikeRedeem.ts).
  */
 
+// RC offering fetch'i için tavan — native promise takılırsa spinner asılı kalmasın.
+const OFFERING_FETCH_TIMEOUT_MS = 20000;
+
 interface SuperlikePack {
   pkg: PurchasesPackage;
   productId: string;
@@ -98,14 +101,28 @@ export default function SuperLikePurchaseModal({
   );
   const [purchasing, setPurchasing] = useState(false);
 
-  // Offering YALNIZ sheet ilk açıldığında çekilir — PurchaseModal'daki desenin
-  // aynısı: bu bileşen Discover'da gömülü duruyor, mount'ta koşulsuz çekmek
+  // Offering sheet açıldığında çekilir — PurchaseModal'daki desenin aynısı: bu
+  // bileşen Discover/Profile'da gömülü duruyor, mount'ta koşulsuz çekmek
   // cold-boot'ta gereksiz RC round-trip'i demekti.
-  const fetchedRef = useRef(false);
+  //
+  // Latch "elimizde paket var" kuralına bağlı. Tek-atışlık ref + kapanışta
+  // cancel ikilisi, sheet fetch bitmeden kapandığında `loading`i true'da
+  // kilitliyor ve ref yandığı için bir daha hiç denemiyordu → o ekran mount'u
+  // boyunca sonsuz spinner. Boş/başarısız sonuç bir sonraki açılışta yeniden
+  // denenir, dolu sonuç cache'lenir.
+  const inFlightRef = useRef(false);
+  const mountedRef = useRef(true);
+  useEffect(
+    () => () => {
+      mountedRef.current = false;
+    },
+    [],
+  );
+  const hasPacks = (offering?.availablePackages?.length ?? 0) > 0;
   useEffect(() => {
-    if (!visible || fetchedRef.current) return;
-    fetchedRef.current = true;
-    let cancelled = false;
+    if (!visible || hasPacks || inFlightRef.current) return;
+    inFlightRef.current = true;
+    setLoading(true);
     // RC SDK cold start'ta offering'i null dönebiliyor (configure → network).
     const fetchWithRetry = async (
       attempt = 0,
@@ -115,23 +132,24 @@ export default function SuperLikePurchaseModal({
       await new Promise((r) => setTimeout(r, 600));
       return fetchWithRetry(attempt + 1);
     };
-    fetchWithRetry()
+    // Native RC promise'i takılırsa spinner süresiz asılı kalmasın.
+    let timeoutId: ReturnType<typeof setTimeout>;
+    const timeoutFallback = new Promise<null>((resolve) => {
+      timeoutId = setTimeout(() => resolve(null), OFFERING_FETCH_TIMEOUT_MS);
+    });
+    Promise.race([fetchWithRetry(), timeoutFallback])
       .then((o) => {
-        if (cancelled) return;
+        // Kapanmış sheet'te de yazarız (yalnız unmount'ta durur) — bir sonraki
+        // açılış hazır veriyle gelsin.
+        if (!mountedRef.current) return;
         setOffering(o);
-        // Boş döndüyse latch'i AÇ: fetchedRef kalıcı olduğu için ilk deneme
-        // ağ/SDK-cold-start yüzünden boş dönünce sheet'i kapatıp açmak bir daha
-        // hiç denemiyordu — "paketler yüklenemedi" app yeniden başlayana kadar
-        // yapışıp kalıyordu. Bir sonraki açılış tekrar denesin.
-        if ((o?.availablePackages?.length ?? 0) === 0) fetchedRef.current = false;
       })
       .finally(() => {
-        if (!cancelled) setLoading(false);
+        clearTimeout(timeoutId);
+        inFlightRef.current = false;
+        if (mountedRef.current) setLoading(false);
       });
-    return () => {
-      cancelled = true;
-    };
-  }, [visible]);
+  }, [visible, hasPacks]);
 
   const packs = useMemo(() => extractPacks(offering), [offering]);
 

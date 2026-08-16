@@ -378,7 +378,7 @@ const en = {
       feature2: 'See Who Likes You',
       feature3: 'Rewind',
       feature4: 'Ad-Free Experience',
-      standardPlan: 'Standard',
+      standardPlan: 'Free',
       matchBoost: '5x Matches',
       featuresLabel: 'Features',
       planName: 'lit plus',
@@ -554,6 +554,17 @@ const en = {
       purpose: 'Purpose',
       purposeDescription: 'By specifying what you are looking for here, meet people with the same expectations as you.',
       completeButton: 'Complete',
+    },
+    // SuperLike card under the hero. The card is half the screen wide, so the
+    // subtitles have to stay short — a long line will not fit on one row.
+    // subtitleUnknown is deliberately number-free: when the balance is unknown
+    // (stats missing / premium activation pending) we show the value prop
+    // instead of a made-up count.
+    superLikeCard: {
+      title: 'Get Superlikes',
+      subtitleCount: '{{count}} left',
+      subtitleEmpty: 'None left',
+      subtitleUnknown: 'Stand out',
     },
     account: {
       title: 'Account',
