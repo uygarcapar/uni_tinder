@@ -83,6 +83,10 @@ export default function BlockedUsersModal({ visible, onClose }: any) {
       visible={visible}
       onClose={onClose}
       title={t('moderation.blocked.title')}
+      // "push" → SettingsModal altta mount'lu kalır, bu sheet üstüne biner.
+      // Default ("replace") altındaki sheet'i dismiss ediyordu: X'e basınca
+      // veya aşağı sürükleyince ayarlara dönmek yerine her şey kapanıyordu.
+      stackBehavior="push"
       contentContainerStyle={{ paddingTop: 24, paddingBottom: 32 }}
     >
       {loading && users === null ? (

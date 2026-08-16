@@ -569,9 +569,14 @@ const tr = {
     permissions: {
       title: 'İzin Gerekli',
       galleryMessage: 'Fotoğraf eklemek için galeri iznine ihtiyaç var.',
+      cameraMessage: 'Fotoğraf çekmek için kamera iznine ihtiyaç var.',
     },
     photos: {
       title: 'Fotoğraf',
+      addTitle: 'Fotoğraf Ekle',
+      addMessage: 'Fotoğrafı nereden eklemek istersin?',
+      sourceCamera: 'Kamera',
+      sourceGallery: 'Galeri',
       uploadError: 'Fotoğraf yüklenemedi, tekrar dene.',
       setMain: 'Ana Fotoğraf Yap',
       delete: 'Sil',

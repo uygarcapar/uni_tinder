@@ -34,7 +34,10 @@ import Animated, {
   withSpring,
   runOnJS,
 } from "react-native-reanimated";
-import { pickAndCropPhotos } from "../../../shared/utils/photoPicker";
+import {
+  pickAndCropPhotos,
+  captureAndCropPhoto,
+} from "../../../shared/utils/photoPicker";
 import { useForm } from "react-hook-form";
 import { zodResolver } from "@hookform/resolvers/zod";
 import { photosSchema, PhotosForm } from "@/shared/schemas/formSchemas";
@@ -170,15 +173,50 @@ export default function RegisterStep15Screen({ navigation }: NativeStackScreenPr
     dispatch(updateMultipleFields({ photos }));
   }, [photos, dispatch]);
 
-  const pickImage = async () => {
-    const remainingSlots = 6 - photos.length;
-    if (remainingSlots <= 0) { Alert.alert(t('common.error'), t('auth.step15.maxPhotosError')); return; }
+  const appendPhotos = (uris: string[]) => {
+    if (uris.length === 0) return;
+    setValue("photos", [...photos, ...uris], { shouldValidate: true });
+  };
+
+  const addFromGallery = async (remainingSlots: number) => {
     try {
       const newCroppedPhotos = await pickAndCropPhotos(remainingSlots);
-      if (newCroppedPhotos.length > 0) {
-        setValue("photos", [...photos, ...newCroppedPhotos.map((p) => p.uri)], { shouldValidate: true });
+      appendPhotos(newCroppedPhotos.map((p) => p.uri));
+    } catch (error: any) {
+      if (error?.code === "E_NO_LIBRARY_PERMISSION") {
+        Alert.alert(t('profile.permissions.title'), t('profile.permissions.galleryMessage'));
+        return;
       }
-    } catch (error) { devLog("Galeri seçimi hatası:", error); }
+      devLog("Galeri seçimi hatası:", error);
+    }
+  };
+
+  const addFromCamera = async () => {
+    try {
+      const taken = await captureAndCropPhoto();
+      if (taken) appendPhotos([taken.uri]);
+    } catch (error: any) {
+      if (error?.code === "E_NO_CAMERA_PERMISSION") {
+        Alert.alert(t('profile.permissions.title'), t('profile.permissions.cameraMessage'));
+        return;
+      }
+      devLog("Kamera çekimi hatası:", error);
+    }
+  };
+
+  // Kaynak seçimi — ProfileScreen'deki Alert tabanlı desenle aynı.
+  const pickImage = () => {
+    const remainingSlots = 6 - photos.length;
+    if (remainingSlots <= 0) { Alert.alert(t('common.error'), t('auth.step15.maxPhotosError')); return; }
+    Alert.alert(
+      t('profile.photos.addTitle'),
+      t('profile.photos.addMessage'),
+      [
+        { text: t('profile.photos.sourceCamera'), onPress: addFromCamera },
+        { text: t('profile.photos.sourceGallery'), onPress: () => addFromGallery(remainingSlots) },
+        { text: t('common.cancel'), style: "cancel" },
+      ],
+    );
   };
 
   const removePhoto = (photoToRemove: string) => {

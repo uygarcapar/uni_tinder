@@ -567,9 +567,14 @@ const en = {
     permissions: {
       title: 'Permission Required',
       galleryMessage: 'Gallery permission is required to add photos.',
+      cameraMessage: 'Camera permission is required to take photos.',
     },
     photos: {
       title: 'Photo',
+      addTitle: 'Add Photo',
+      addMessage: 'Where would you like to add the photo from?',
+      sourceCamera: 'Camera',
+      sourceGallery: 'Gallery',
       uploadError: 'Photo could not be uploaded, please try again.',
       setMain: 'Set as Main Photo',
       delete: 'Delete',

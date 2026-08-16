@@ -11,7 +11,6 @@ import {
   View,
   Text,
   TouchableOpacity,
-  TextInput,
   ActivityIndicator,
   Dimensions,
   Platform,
@@ -21,6 +20,7 @@ import {
   type ViewStyle,
 } from "react-native";
 import { showInfoToast } from "@/shared/services/toaster";
+import { resolvePhotoUri } from "@/shared/utils/photoUri";
 import { Image } from "expo-image";
 import { GestureDetector, Gesture } from "react-native-gesture-handler";
 import Animated, {
@@ -84,7 +84,10 @@ import {
   Code,
   type LucideIcon,
 } from "lucide-react-native";
+import { BottomSheetTextInput } from "@gorhom/bottom-sheet";
 import SFIcon, { type SFSymbol } from "@/shared/components/SFIcon";
+import { useKeyboardAwareField } from "@/shared/hooks/useKeyboardAwareField";
+import { useAppModalScroll } from "@/shared/hooks/useAppModalScroll";
 import { getRelationshipIntentIcon } from "@/shared/constants/relationshipIntent";
 import profileService from "@/features/profile/profileService";
 import LanguagePickerModal from "@/features/profile/components/LanguagePickerModal";
@@ -385,11 +388,14 @@ const HobbyPill = React.memo(function HobbyPill({
   );
 });
 
+// `label` verilmezse etiket her zamanki gibi option.display'den çözülür; yalnızca
+// uzun enum adlarını pill'e sığdırmak için (ilişki niyeti) dışarıdan geçiliyor.
 function OptionPill({
   option,
   isSelected,
   onPress,
   icon,
+  label,
 }: any) {
   const { i18n } = useTranslation();
   return (
@@ -425,7 +431,7 @@ function OptionPill({
           fontWeight: "500",
         }}
       >
-        {resolveLocalized(option.display, i18n.language, option.name)}
+        {label ?? resolveLocalized(option.display, i18n.language, option.name)}
       </Text>
     </TouchableOpacity>
   );
@@ -626,6 +632,9 @@ function PhotoShimmer({ borderRadius = 0 }: { borderRadius?: number }) {
 // için RN Image'daki onLoad-cached-hit problemi ve 5s safety-net gerekmez.
 function PhotoItem({ photo, onPress, savingPhoto }: any) {
   const [loading, setLoading] = useState(true);
+  // photoId'li sürüm parametresi: silinip yeniden yüklenen foto backend'de aynı
+  // slot URL'ine düşse bile cache anahtarı değişir (bkz. photoUri.ts).
+  const uri = resolvePhotoUri(photo);
 
   return (
     <View style={{ width: "100%", height: "100%" }}>
@@ -640,7 +649,11 @@ function PhotoItem({ photo, onPress, savingPhoto }: any) {
         }}
       >
         <Image
-          source={{ uri: photo.photoImageUrl }}
+          source={uri ? { uri } : null}
+          // recyclingKey: view yeniden kullanıldığında expo-image önceki
+          // görüntüyü ekranda tutar; anahtar değişince temizler. Foto ekleme /
+          // silme sonrası bir sonraki foto "eski foto" olarak çizilmesin.
+          recyclingKey={photo.photoId != null ? String(photo.photoId) : null}
           style={{ width: "100%", height: "100%" }}
           contentFit="cover"
           cachePolicy="memory-disk"
@@ -1057,6 +1070,16 @@ const HobbyGroupAccordion = React.memo(function HobbyGroupAccordion({
   );
 });
 
+// ─── Bölüm scroll'u (ProfileScreen tamamlama accordion'ları) ───────────────
+// Hedef bölümün üst kenarı modal header'ının hemen altına gelsin diye bırakılan
+// nefes payı; bölümlerin kendi marginTop'u da üstüne bindiği için küçük tutuldu.
+const SECTION_SCROLL_GAP = 12;
+// Sheet present animasyonunu artık ProfileScreen bekliyor (focusSection prop'u
+// onPresented'da düşüyor); burada kalan tek bekleme stage 4 commit'inin layout
+// pass'i. Ölçüm henüz gelmediyse birkaç kez tekrar deneniyor.
+const SECTION_SCROLL_DELAY = 160;
+const SECTION_SCROLL_RETRIES = 3;
+
 // ─── Form ──────────────────────────────────────────────────────────────────
 const EditProfileForm = forwardRef(function EditProfileForm(
   {
@@ -1071,6 +1094,7 @@ const EditProfileForm = forwardRef(function EditProfileForm(
     petOptions,
     genderCategories = [],
     savingPhoto,
+    focusSection = null,
     onAddPhoto,
     onPhotoPress,
     onPreview,
@@ -1105,6 +1129,14 @@ const EditProfileForm = forwardRef(function EditProfileForm(
       showAge: true,
     },
   });
+
+  // Bio çok satırlı ve formun ortasında — klavye açılınca altında kalıyordu.
+  // Anchor View ölçülüp modal scroll'u klavyenin üstüne taşınıyor.
+  const {
+    anchorRef: bioAnchorRef,
+    onFocus: onBioFocus,
+    onBlur: onBioBlur,
+  } = useKeyboardAwareField();
 
   const draftHobbies = watch("hobbies");
   const draftSmoking = watch("smoking");
@@ -1153,6 +1185,53 @@ const EditProfileForm = forwardRef(function EditProfileForm(
     return () => cancelAnimationFrame(id);
   }, [stage]);
 
+  // ── Bölüme scroll (accordion "Tamamla") ─────────────────────────────────
+  // ProfileScreen'in tamamlama accordion'ı modalı hangi eksik alan için açtığını
+  // focusSection ile bildirir; o bölümü header'ın hemen altına kaydırıyoruz.
+  //
+  // Ölçüm onLayout ile yapılıyor: bölümler root View'ın doğrudan çocukları,
+  // yani layout.y = bölümün form içindeki y'si. Scroll hedefi de aynı eksende:
+  // content'te bölüm 88(paddingTop)+y'de, onu 88+gap'e getirmek istediğimiz için
+  // offset = y - gap. Progressive mount (stage 1→4) sırasında konumlar kaydıkça
+  // onLayout tekrar fire eder; stage 4'te değerler nihaidir.
+  //
+  // focusSection'ı ProfileScreen sheet present animasyonu bittikten sonra
+  // veriyor (bkz. handleEditPresented): gorhom, sheet snap'lenene kadar
+  // scrollable'ı kilitleyip offset'ini 0'a resetlediği için animasyon
+  // sırasındaki scrollTo yok sayılıyor.
+  const { scrollToOffset } = useAppModalScroll();
+  const sectionOffsets = useRef<Record<string, number>>({});
+  const sectionLayout = useMemo(() => {
+    const make = (key: string) => (e: any) => {
+      sectionOffsets.current[key] = e.nativeEvent.layout.y;
+    };
+    return {
+      photos: make("photos"),
+      bio: make("bio"),
+      purpose: make("purpose"),
+      hobbies: make("hobbies"),
+      smoking: make("smoking"),
+      zodiac: make("zodiac"),
+    };
+  }, []);
+
+  useEffect(() => {
+    if (!focusSection || stage < 4) return;
+    let id: ReturnType<typeof setTimeout>;
+    let attempt = 0;
+    const tick = () => {
+      const y = sectionOffsets.current[focusSection];
+      // Ölçüm veya scroll view henüz hazır değilse birkaç tick daha bekle —
+      // sessizce vazgeçmek "bazen scroll etmiyor" hissi yaratıyordu.
+      const done = y != null && scrollToOffset(y - SECTION_SCROLL_GAP);
+      if (!done && ++attempt < SECTION_SCROLL_RETRIES) {
+        id = setTimeout(tick, SECTION_SCROLL_DELAY);
+      }
+    };
+    id = setTimeout(tick, SECTION_SCROLL_DELAY);
+    return () => clearTimeout(id);
+  }, [focusSection, stage, scrollToOffset]);
+
   // ── Photo grid (draft order) ────────────────────────────────────────────
   const [draftPhotoOrder, setDraftPhotoOrder] = useState([]);
   const draftPhotoOrderRef = useRef([]);
@@ -1167,22 +1246,54 @@ const EditProfileForm = forwardRef(function EditProfileForm(
     photoOrderDirtyRef.current = photoOrderDirty;
   }, [photoOrderDirty]);
 
-  // ── Photo order: myProfile.photosList değişince (kullanıcı dirty değilse) sync
+  // ── Photo order: myProfile.photosList değişince grid'i sync et ─────────────
   // Stage 2'ye kadar SortablePhoto'lar render olmadığı için sync etmek
   // gereksiz; gate ekledik. İlk mount commit'i daha hafif geçer.
+  //
+  // Kullanıcı sürükleyerek sırayı değiştirdiyse (dirty) sunucu sırasını
+  // DAYATMIYORUZ ama ekleme/silmeyi yine de yansıtıyoruz: eskiden dirty iken
+  // effect komple atlandığı için modal açıkken yüklenen yeni foto grid'e hiç
+  // düşmüyor, silinen foto ekranda kalıyordu. Kalan kayıtlar da taze sunucu
+  // objesiyle değiştirilir — URL değişmişse eski URL ekranda kalmasın.
   useEffect(() => {
     if (stage < 2) return;
-    if (myProfile?.photosList && !photoOrderDirty) {
-      const sortedPhotos = [...myProfile.photosList].sort(
-        (a, b) => (a.order ?? 0) - (b.order ?? 0),
-      );
-      setDraftPhotoOrder(sortedPhotos);
-      const newPositions = {};
-      sortedPhotos.forEach((photo, i) => {
-        newPositions[photo.photoId] = i;
-      });
-      positions.value = newPositions;
+    const serverPhotos = myProfile?.photosList;
+    if (!serverPhotos) return;
+
+    const sortedPhotos = [...serverPhotos].sort(
+      (a, b) => (a.order ?? 0) - (b.order ?? 0),
+    );
+
+    let nextOrder = sortedPhotos;
+    if (photoOrderDirty) {
+      const byId = new Map(sortedPhotos.map((p) => [p.photoId, p]));
+      const kept = draftPhotoOrderRef.current
+        .map((p) => byId.get(p.photoId))
+        .filter(Boolean);
+      const keptIds = new Set(kept.map((p) => p.photoId));
+      nextOrder = [
+        ...kept,
+        ...sortedPhotos.filter((p) => !keptIds.has(p.photoId)),
+      ];
     }
+
+    const current = draftPhotoOrderRef.current;
+    const unchanged =
+      current.length === nextOrder.length &&
+      nextOrder.every(
+        (p, i) =>
+          p.photoId === current[i].photoId &&
+          p.photoImageUrl === current[i].photoImageUrl,
+      );
+    if (unchanged) return;
+
+    draftPhotoOrderRef.current = nextOrder;
+    setDraftPhotoOrder(nextOrder);
+    const newPositions = {};
+    nextOrder.forEach((photo, i) => {
+      newPositions[photo.photoId] = i;
+    });
+    positions.value = newPositions;
   }, [stage, myProfile?.photosList, photoOrderDirty, positions]);
 
   // ── Toggle callbacks ────────────────────────────────────────────────────
@@ -1226,6 +1337,22 @@ const EditProfileForm = forwardRef(function EditProfileForm(
       setValue("pets", [...prev, opt]);
     }
   }, [getValues, setValue]);
+
+  // İlişki niyeti pill etiketi — backend'in `display` metni satır için yazılmış,
+  // pill'e sığmıyor. FilterModal'daki intentPillLabel'ın aynısı: kısaltma varsa
+  // onu kullan, yoksa display'e düş (ör. StillFiguringOut'un kısası yok).
+  // Anahtarlar discover ad alanında duruyor; iki ekran aynı metni göstersin diye
+  // burada da oradan okunuyor, kopyalanmıyor.
+  const intentPillLabel = useCallback(
+    (opt) => {
+      const short = t(
+        `discover.filters.relationshipIntents.short.${opt?.enumName}`,
+        { defaultValue: "" },
+      );
+      return short || resolveLocalized(opt?.display, i18n.language, opt?.name);
+    },
+    [t, i18n.language],
+  );
 
   // ── Photo drag end ──────────────────────────────────────────────────────
   const handleDragEnd = useCallback((newPositions, commit) => {
@@ -1505,7 +1632,7 @@ const EditProfileForm = forwardRef(function EditProfileForm(
 
       {/* Fotoğraflar GRID — stage 2 */}
       {stage >= 2 && (
-      <View style={{ marginTop: 8 }}>
+      <View style={{ marginTop: 8 }} onLayout={sectionLayout.photos}>
         <View
           style={{
             flexDirection: "column",
@@ -1629,7 +1756,7 @@ const EditProfileForm = forwardRef(function EditProfileForm(
 
       {/* Biyografi — stage 1 */}
       {stage >= 1 && (
-      <View style={{ marginTop: 28 }}>
+      <View style={{ marginTop: 28 }} onLayout={sectionLayout.bio}>
         <View
           style={{
             flexDirection: "column",
@@ -1655,36 +1782,44 @@ const EditProfileForm = forwardRef(function EditProfileForm(
             </Text>
           </View>
         </View>
-        <Controller
-          control={control}
-          name="bio"
-          render={({ field: { onChange, value } }) => (
-            <TextInput
-              value={value}
-              onChangeText={onChange}
-              multiline
-              maxLength={500}
-              placeholder={t('profile.edit.bioPlaceholder')}
-              placeholderTextColor={colors.textSecondary}
-              style={{
-                borderCurve: "continuous",
-                overflow: "hidden",
-                color: colors.text,
-                fontSize: 15,
-                lineHeight: 22,
-                minHeight: 100,
-                textAlignVertical: "top",
-                borderRadius: 30,
-                padding: 12,
-                paddingLeft: 16,
-                borderWidth: 0.5,
-                borderColor: errors.bio
-                  ? "rgba(239,68,68,0.5)"
-                  : "rgba(255,255,255,0.1)",
-              }}
-            />
-          )}
-        />
+        {/* collapsable={false}: Fabric bu View'ı optimize edip kaldırırsa
+            measureInWindow ölçemez, scroll hesabı çalışmaz. */}
+        <View ref={bioAnchorRef} collapsable={false}>
+          <Controller
+            control={control}
+            name="bio"
+            render={({ field: { onChange, value } }) => (
+              // BottomSheetTextInput şart: düz TextInput'ta gorhom klavye
+              // target'ını set etmiyor ve sheet klavye davranışını atlıyor.
+              <BottomSheetTextInput
+                value={value}
+                onChangeText={onChange}
+                onFocus={onBioFocus}
+                onBlur={onBioBlur}
+                multiline
+                maxLength={500}
+                placeholder={t('profile.edit.bioPlaceholder')}
+                placeholderTextColor={colors.textSecondary}
+                style={{
+                  borderCurve: "continuous",
+                  overflow: "hidden",
+                  color: colors.text,
+                  fontSize: 15,
+                  lineHeight: 22,
+                  minHeight: 100,
+                  textAlignVertical: "top",
+                  borderRadius: 30,
+                  padding: 12,
+                  paddingLeft: 16,
+                  borderWidth: 0.5,
+                  borderColor: errors.bio
+                    ? "rgba(239,68,68,0.5)"
+                    : "rgba(255,255,255,0.1)",
+                }}
+              />
+            )}
+          />
+        </View>
         {errors.bio && (
           <Text style={{ color: colors.error, fontSize: 12, marginTop: 4 }}>
             {errors.bio.message}
@@ -1695,7 +1830,7 @@ const EditProfileForm = forwardRef(function EditProfileForm(
 
       {/* Kullanım amacı — stage 1 */}
       {stage >= 1 && usagePurposeOptions.length > 0 && (
-        <View style={{ marginTop: 28 }}>
+        <View style={{ marginTop: 28 }} onLayout={sectionLayout.purpose}>
           <View
             style={{
               flexDirection: "column",
@@ -1740,7 +1875,7 @@ const EditProfileForm = forwardRef(function EditProfileForm(
         </View>
       )}
 
-      {/* İlişki niyeti — stage 1. Tek seçim; seçili satıra tekrar basmak
+      {/* İlişki niyeti — stage 1. Tek seçim; seçili pill'e tekrar basmak
           temizler (submit'te ClearRelationshipIntent=true gider). */}
       {stage >= 1 && relationshipIntentOptions.length > 0 && (
         <View style={{ marginTop: 28 }}>
@@ -1771,26 +1906,33 @@ const EditProfileForm = forwardRef(function EditProfileForm(
               </Text>
             </View>
           </View>
-          {relationshipIntentOptions.map((opt) => (
-            <OptionListItem
-              key={opt.id}
-              option={opt}
-              isSelected={draftRelationshipIntent?.id === opt.id}
-              icon={getRelationshipIntentIcon(opt.enumName)}
-              onPress={() =>
-                setValue(
-                  "relationshipIntent",
-                  draftRelationshipIntent?.id === opt.id ? null : opt,
-                )
-              }
-            />
-          ))}
+          {/* Pill grubu — keşif filtresindeki ilişki niyeti bölümüyle aynı
+              görünüm (bkz. FilterModal). Tikli liste satırı yerine pill:
+              beş seçenek iki satıra sığıyor, bölüm ekranı daha az kaplıyor.
+              Seçim yine TEK: seçili pill'e tekrar dokunmak temizliyor. */}
+          <View style={{ flexDirection: "row", flexWrap: "wrap", gap: 8 }}>
+            {relationshipIntentOptions.map((opt) => (
+              <OptionPill
+                key={opt.id}
+                option={opt}
+                isSelected={draftRelationshipIntent?.id === opt.id}
+                icon={getRelationshipIntentIcon(opt.enumName)}
+                label={intentPillLabel(opt)}
+                onPress={() =>
+                  setValue(
+                    "relationshipIntent",
+                    draftRelationshipIntent?.id === opt.id ? null : opt,
+                  )
+                }
+              />
+            ))}
+          </View>
         </View>
       )}
 
       {/* Hobiler — stage 3 */}
       {stage >= 3 && (
-        <View style={{ marginTop: 28 }}>
+        <View style={{ marginTop: 28 }} onLayout={sectionLayout.hobbies}>
           <View
             style={{
               flexDirection: "column",
@@ -1831,7 +1973,7 @@ const EditProfileForm = forwardRef(function EditProfileForm(
 
       {/* Sigara — stage 2 */}
       {stage >= 2 && smokingOptions.length > 0 && (
-        <View style={{ marginTop: 28 }}>
+        <View style={{ marginTop: 28 }} onLayout={sectionLayout.smoking}>
           <View
             style={{
               flexDirection: "column",
@@ -1875,7 +2017,7 @@ const EditProfileForm = forwardRef(function EditProfileForm(
 
       {/* Burç — stage 3 */}
       {stage >= 3 && zodiacOptions.length > 0 && (
-        <View style={{ marginTop: 28 }}>
+        <View style={{ marginTop: 28 }} onLayout={sectionLayout.zodiac}>
           <View
             style={{
               flexDirection: "column",

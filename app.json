@@ -15,6 +15,7 @@
         "ITSAppUsesNonExemptEncryption": false,
         "NSMicrophoneUsageDescription": "Sesli mesaj gönderebilmen için mikrofon erişimine izin vermen gerekir.",
         "NSPhotoLibraryUsageDescription": "Profil fotoğraflarını seçebilmen için galeri erişimine izin vermen gerekir.",
+        "NSCameraUsageDescription": "Profil fotoğrafını anında çekebilmen için kamera erişimine izin vermen gerekir.",
         "UIBackgroundModes": [
           "remote-notification"
         ]
@@ -29,7 +30,8 @@
       "googleServicesFile": "./google-services.json",
       "permissions": [
         "RECORD_AUDIO",
-        "POST_NOTIFICATIONS"
+        "POST_NOTIFICATIONS",
+        "CAMERA"
       ]
     },
     "plugins": [
