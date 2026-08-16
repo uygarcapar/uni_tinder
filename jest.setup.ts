@@ -83,6 +83,21 @@ jest.mock('expo-store-review', () => ({
   isAvailableAsync: jest.fn(async () => false),
   requestReview: jest.fn(async () => {}),
 }));
+// Sürüm kapısının okuduğu native alanlar — testte native modül yok.
+jest.mock('expo-application', () => ({
+  nativeApplicationVersion: '1.0.0',
+  nativeBuildVersion: '1',
+}));
+jest.mock('expo-constants', () => ({
+  __esModule: true,
+  default: { expoConfig: { version: '1.0.0' } },
+}));
+// expo-modules-core'un native EventEmitter'ı jest'te yok — gerçek modül import
+// edilir edilmez patlıyor (SettingsModal teşhis raporu, MessageActionSheet kopyala).
+jest.mock('expo-clipboard', () => ({
+  setStringAsync: jest.fn(async () => true),
+  getStringAsync: jest.fn(async () => ''),
+}));
 jest.mock('posthog-react-native', () => ({
   __esModule: true,
   default: jest.fn().mockImplementation(() => ({

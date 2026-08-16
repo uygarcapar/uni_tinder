@@ -13,6 +13,7 @@ import { ChevronLeft } from "lucide-react-native";
 import { useTranslation } from "react-i18next";
 import SFIcon from "@/shared/components/SFIcon";
 import { colors } from "@/shared/theme/colors";
+import { glassFallback } from "@/shared/theme/glass";
 
 type Props = {
   onPress: () => void;
@@ -39,6 +40,7 @@ function RegisterBackButton({ onPress, color = colors.text }: Props) {
             labelStyle("iconOnly"),
             font({ size: 22, weight: "semibold" }),
             frame({ width: 44, height: 44 }),
+            ...glassFallback({ shape: "circle", color }),
           ]}
         />
       </Host>

@@ -1,4 +1,4 @@
-import { useState, useEffect } from "react";
+import { useState, useEffect, useRef, useCallback } from "react";
 import {
   View,
   Text,
@@ -6,8 +6,11 @@ import {
   ActivityIndicator,
   TouchableWithoutFeedback,
   Keyboard,
+  AppState,
+  Platform,
 } from "react-native";
-import { OtpInput } from "react-native-otp-entry";
+import { OtpInput, type OtpInputRef } from "react-native-otp-entry";
+import * as Clipboard from "expo-clipboard";
 import { NativeStackScreenProps } from "@react-navigation/native-stack";
 import type { AuthStackParamList } from "@/shared/types/navigation";
 import { useAppDispatch, useAppSelector } from "@/shared/hooks/redux";
@@ -18,12 +21,17 @@ import {
   logout,
   setEmailVerifiedToken,
 } from "@/features/auth/authSlice";
-import { Mail, RotateCcw, ArrowLeft, Check } from "lucide-react-native";
+import { Mail, RotateCcw, ArrowLeft, Check, ClipboardPaste } from "lucide-react-native";
 import SFIcon from "@/shared/components/SFIcon";
 import { API_BASE_URL, API_ENDPOINTS } from "@/shared/constants/api";
 import AnimatedPressable from "@/shared/components/AnimatedPressable";
 import { colors } from "../../../shared/theme/colors";
 import { useTranslation } from 'react-i18next';
+import { parseRetryAfterSeconds } from '@/features/auth/verificationRetry';
+import { extractOtp, OTP_LENGTH } from '@/features/auth/otpCode';
+
+/** Backend retryAfterSeconds döndürmezse kullanılan yerel bekleme süresi. */
+const RESEND_COOLDOWN_SECONDS = 60;
 
 export default function RegisterStep2Screen({ route, navigation }: NativeStackScreenProps<AuthStackParamList, 'RegisterStep2'>) {
   const { t } = useTranslation();
@@ -37,10 +45,39 @@ export default function RegisterStep2Screen({ route, navigation }: NativeStackSc
   const [error, setError] = useState("");
   const [resendLoading, setResendLoading] = useState(false);
   const [resendSuccess, setResendSuccess] = useState(false);
-  const [countdown, setCountdown] = useState(0);
+  // Backend "şu kadar saniye sonra tekrar iste" diyorsa (CODE_PENDING'de kod
+  // hâlâ geçerli olduğu için) geri sayım oradan başlar; söylemiyorsa 0.
+  const [countdown, setCountdown] = useState(route?.params?.retryAfterSeconds ?? 0);
   const [isLoggingOut, setIsLoggingOut] = useState(false);
+  const [clipboardHasText, setClipboardHasText] = useState(false);
+
+  const otpRef = useRef<OtpInputRef>(null);
+  // onFilled + "Doğrula" butonu aynı anda tetiklenebildiği için (yapıştırma
+  // otomatik istek atıyor) setLoading'in async'liğine güvenmiyoruz.
+  const submittingRef = useRef(false);
 
   const dispatch = useAppDispatch();
+
+  // Panoda metin var mı? (içeriği okumaz → iOS'ta izin uyarısı çıkmaz)
+  useEffect(() => {
+    let cancelled = false;
+    const check = () => {
+      Clipboard.hasStringAsync()
+        .then((has) => {
+          if (!cancelled) setClipboardHasText(has);
+        })
+        .catch(() => {});
+    };
+    check();
+    // Kullanıcı kodu mail uygulamasından kopyalayıp geri döndüğünde yakala.
+    const sub = AppState.addEventListener("change", (state) => {
+      if (state === "active") check();
+    });
+    return () => {
+      cancelled = true;
+      sub.remove();
+    };
+  }, []);
 
   useEffect(() => {
     if (countdown > 0) {
@@ -52,11 +89,13 @@ export default function RegisterStep2Screen({ route, navigation }: NativeStackSc
   const handleVerify = async (verificationCode: string | null = null) => {
     Keyboard.dismiss();
     const finalCode = verificationCode || code;
-    if (finalCode.length !== 6) {
+    if (finalCode.length !== OTP_LENGTH) {
       setError(t('auth.step2.validation.codeRequired'));
       return;
     }
+    if (submittingRef.current) return;
 
+    submittingRef.current = true;
     setLoading(true);
     setError("");
 
@@ -92,7 +131,34 @@ export default function RegisterStep2Screen({ route, navigation }: NativeStackSc
     } catch (err) {
       setError(err.response?.data?.message || "Kod doğrulanamadı");
     } finally {
+      submittingRef.current = false;
       setLoading(false);
+    }
+  };
+
+  /**
+   * Native input'tan gelen ham metni temizleyip kütüphaneye ref üzerinden
+   * yazar. setValue → kütüphanenin handleTextChange'i → onTextChange +
+   * onFilled zinciri çalıştığı için 6 hane dolduğunda doğrulama isteği
+   * kendiliğinden gider.
+   */
+  const handleOtpChange = useCallback((raw: string) => {
+    otpRef.current?.setValue(extractOtp(raw));
+  }, []);
+
+  /** Uzun basma menüsü çıkmadığında da çalışan garantili yapıştırma yolu. */
+  const handlePasteFromClipboard = async () => {
+    if (loading) return;
+    try {
+      const pasted = extractOtp((await Clipboard.getStringAsync()) ?? "");
+      if (pasted.length !== OTP_LENGTH) {
+        setError(t('auth.step2.validation.clipboardEmpty'));
+        return;
+      }
+      setError("");
+      otpRef.current?.setValue(pasted); // onFilled → handleVerify
+    } catch {
+      setError(t('auth.step2.validation.clipboardEmpty'));
     }
   };
 
@@ -120,7 +186,7 @@ export default function RegisterStep2Screen({ route, navigation }: NativeStackSc
 
       if (response.isSuccess) {
         setResendSuccess(true);
-        setCountdown(60);
+        setCountdown(parseRetryAfterSeconds(response) ?? RESEND_COOLDOWN_SECONDS);
         setTimeout(() => setResendSuccess(false), 1500);
       } else {
         setError(response.message || "Kod gönderilemedi");
@@ -212,7 +278,8 @@ export default function RegisterStep2Screen({ route, navigation }: NativeStackSc
                 (onKeyPress Android soft keyboard'da güvenilmezdi). */}
             <View className="mb-8 p-8 py-4">
               <OtpInput
-                numberOfDigits={6}
+                ref={otpRef}
+                numberOfDigits={OTP_LENGTH}
                 type="numeric"
                 disabled={loading}
                 onTextChange={(text) => {
@@ -222,7 +289,18 @@ export default function RegisterStep2Screen({ route, navigation }: NativeStackSc
                 onFilled={(text) => handleVerify(text)}
                 textInputProps={{
                   textContentType: "oneTimeCode",
-                  autoComplete: "one-time-code",
+                  autoComplete:
+                    Platform.OS === "android" ? "sms-otp" : "one-time-code",
+                  // Kütüphanenin maxLength'i ve numeric filtresi yapıştırmayı
+                  // yiyordu; ham metni alıp extractOtp'tan geçiriyoruz.
+                  maxLength: undefined,
+                  onChangeText: handleOtpChange,
+                  // caretHidden caret dikdörtgenini CGRectZero yapıyor, uzun
+                  // basınca çıkan Yapıştır menüsü de ona göre konumlandığı için
+                  // görünmez oluyordu. Caret'i açık bırakıp rengini şeffaf
+                  // yapıyoruz — menü doğru yerde çıkıyor, imleç görünmüyor.
+                  caretHidden: false,
+                  selectionColor: "transparent",
                 }}
                 theme={{
                   containerStyle: { justifyContent: "center", gap: 4 },
@@ -249,7 +327,7 @@ export default function RegisterStep2Screen({ route, navigation }: NativeStackSc
               />
             </View>
 
-            <View className="flex-row mb-3 justify-center items-center py-[15px] pt-0 rounded-full overflow-hidden">
+            <View className="flex-row mb-3 justify-center items-center gap-4 py-[15px] pt-0 rounded-full overflow-hidden">
               <TouchableOpacity
                 activeOpacity={0.8}
                 onPress={handleResend}
@@ -273,6 +351,37 @@ export default function RegisterStep2Screen({ route, navigation }: NativeStackSc
                   </View>
                 )}
               </TouchableOpacity>
+
+              {clipboardHasText && (
+                <>
+                  <View
+                    style={{
+                      width: 1,
+                      height: 14,
+                      backgroundColor: "rgba(255,255,255,0.2)",
+                    }}
+                  />
+                  <TouchableOpacity
+                    activeOpacity={0.8}
+                    onPress={handlePasteFromClipboard}
+                    disabled={loading}
+                  >
+                    <View className="flex-row py-[2px] items-center gap-2">
+                      <SFIcon
+                        name="doc.on.clipboard"
+                        fallback={ClipboardPaste}
+                        size={16}
+                        color={colors.text}
+                        strokeWidth={2.5}
+                        weight="bold"
+                      />
+                      <Text className="text-white font-medium">
+                        {t('auth.step2.pasteButton')}
+                      </Text>
+                    </View>
+                  </TouchableOpacity>
+                </>
+              )}
             </View>
 
             <AnimatedPressable
@@ -280,11 +389,11 @@ export default function RegisterStep2Screen({ route, navigation }: NativeStackSc
                 borderRadius: 999,
                 borderCurve: "continuous",
                 overflow: "hidden",
-                opacity: loading || code.length < 6 ? 0.5 : 1,
+                opacity: loading || code.length < OTP_LENGTH ? 0.5 : 1,
                 backgroundColor: colors.text,
               }}
               onPress={() => handleVerify()}
-              disabled={loading || code.length < 6}
+              disabled={loading || code.length < OTP_LENGTH}
             >
               {loading ? (
                 <ActivityIndicator className="py-[20px]" color="#000" />

@@ -14,12 +14,8 @@ import { login } from "@/features/auth/authSlice";
 import { Eye, EyeOff } from "lucide-react-native";
 import SFIcon from "@/shared/components/SFIcon";
 import RegisterBackButton from "@/features/auth/components/RegisterBackButton";
-import {
-  KeyboardStickyView,
-  useReanimatedKeyboardAnimation,
-} from "react-native-keyboard-controller";
-import Animated, { useAnimatedStyle } from "react-native-reanimated";
-import { useState } from "react";
+import { KeyboardStickyView } from "react-native-keyboard-controller";
+import { useRef, useState } from "react";
 import { useForm, Controller } from "react-hook-form";
 import { zodResolver } from "@hookform/resolvers/zod";
 import { loginSchema, LoginForm } from "@/shared/schemas/formSchemas";
@@ -30,14 +26,10 @@ import { devLog } from '@/shared/utils/devLog';
 export default function LoginScreen({ navigation }: NativeStackScreenProps<AuthStackParamList, 'Login'>) {
   const { t } = useTranslation();
   const [showPassword, setShowPassword] = useState(false);
+  const passwordRef = useRef<TextInput>(null);
 
   const dispatch = useAppDispatch();
   const { loading, error } = useAppSelector((s) => (s as any).auth);
-
-  const { height: keyboardHeight } = useReanimatedKeyboardAnimation();
-  const liftStyle = useAnimatedStyle(() => ({
-    transform: [{ translateY: keyboardHeight.value / 10 }],
-  }));
 
   const { control, handleSubmit } = useForm<LoginForm>({
     resolver: zodResolver(loginSchema),
@@ -55,7 +47,7 @@ export default function LoginScreen({ navigation }: NativeStackScreenProps<AuthS
 
   return (
     <View className="flex-1 bg-bg">
-      <Animated.View style={[{ flex: 1 }, liftStyle]}>
+      <View style={{ flex: 1 }}>
         {/* Header */}
         <View className="bg-bg pt-16 pb-6 px-6">
           <RegisterBackButton onPress={() => navigation.goBack()} />
@@ -112,6 +104,9 @@ export default function LoginScreen({ navigation }: NativeStackScreenProps<AuthS
                     keyboardType="email-address"
                     autoCapitalize="none"
                     editable={!loading}
+                    returnKeyType="next"
+                    submitBehavior="submit"
+                    onSubmitEditing={() => passwordRef.current?.focus()}
                   />
                 )}
               />
@@ -137,6 +132,7 @@ export default function LoginScreen({ navigation }: NativeStackScreenProps<AuthS
                   name="password"
                   render={({ field: { onChange, value } }) => (
                     <TextInput
+                      ref={passwordRef}
                       className="flex-1 text-[18px] text-white"
                       placeholder={t('auth.login.passwordPlaceholder')}
                       placeholderTextColor={colors.textSecondary}
@@ -144,6 +140,8 @@ export default function LoginScreen({ navigation }: NativeStackScreenProps<AuthS
                       onChangeText={onChange}
                       secureTextEntry={!showPassword}
                       editable={!loading}
+                      returnKeyType="go"
+                      onSubmitEditing={handleLogin}
                     />
                   )}
                 />
@@ -164,7 +162,7 @@ export default function LoginScreen({ navigation }: NativeStackScreenProps<AuthS
             </View>
           </View>
         </TouchableWithoutFeedback>
-      </Animated.View>
+      </View>
 
       {/* Sticky Button with KeyboardStickyView */}
       <KeyboardStickyView offset={{ closed: 0, opened: 15 }}>

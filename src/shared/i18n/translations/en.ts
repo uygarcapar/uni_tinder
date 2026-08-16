@@ -146,10 +146,12 @@ const en = {
       resendSuccess: 'Code sent successfully!',
       resendButton: 'Resend',
       resendCountdown: 'Resend ({{countdown}}s)',
+      pasteButton: 'Paste',
       verifyButton: 'Verify',
       backButton: 'Go Back',
       validation: {
         codeRequired: 'Please enter the 6-digit code',
+        clipboardEmpty: 'No 6-digit code found on the clipboard',
       },
     },
     step3: {

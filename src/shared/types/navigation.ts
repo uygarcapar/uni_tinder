@@ -16,7 +16,7 @@ export type AuthStackParamList = {
   Welcome: undefined;
   Login: undefined;
   RegisterStep1: undefined;
-  RegisterStep2: { email?: string; mode?: string; pending?: boolean } | undefined;
+  RegisterStep2: { email?: string; mode?: string; pending?: boolean; retryAfterSeconds?: number } | undefined;
   RegisterStep3: undefined;
   RegisterStep5: undefined;
   RegisterStep6: undefined;

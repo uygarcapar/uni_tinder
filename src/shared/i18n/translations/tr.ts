@@ -146,10 +146,12 @@ const tr = {
       resendSuccess: 'Kod başarıyla gönderildi!',
       resendButton: 'Tekrar Gönder',
       resendCountdown: 'Tekrar gönder ({{countdown}}s)',
+      pasteButton: 'Yapıştır',
       verifyButton: 'Doğrula',
       backButton: 'Geri Dön',
       validation: {
         codeRequired: 'Lütfen 6 haneli kodu girin',
+        clipboardEmpty: 'Panoda 6 haneli bir kod bulunamadı',
       },
     },
     step3: {

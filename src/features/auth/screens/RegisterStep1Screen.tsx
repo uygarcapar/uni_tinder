@@ -24,6 +24,7 @@ import { emailSchema, EmailForm } from "@/shared/schemas/formSchemas";
 import { colors } from "../../../shared/theme/colors";
 import { useTranslation } from 'react-i18next';
 import { devLog } from '@/shared/utils/devLog';
+import { parseRetryAfterSeconds } from '@/features/auth/verificationRetry';
 
 export default function RegisterStep1Screen({ navigation }: NativeStackScreenProps<AuthStackParamList, 'RegisterStep1'>) {
   const { t } = useTranslation();
@@ -79,17 +80,21 @@ export default function RegisterStep1Screen({ navigation }: NativeStackScreenPro
       );
       const data = await response.json();
       const status = data?.result?.status;
-      devLog("📥 [RegisterStep1] send-verification status:", status);
+      // Backend, yeniden gönderime kaç saniye kaldığını döndürüyor; Step2'deki
+      // "tekrar gönder" geri sayımı bu değerle başlıyor. Alan yoksa akış eskisi
+      // gibi çalışır (geri sayım 0).
+      const retryAfterSeconds = parseRetryAfterSeconds(data);
+      devLog("📥 [RegisterStep1] send-verification status:", status, "retryAfter:", retryAfterSeconds);
 
       switch (status) {
         case "CODE_SENT":
           dispatch(setRegistrationEmail(trimmed));
-          navigation.navigate("RegisterStep2", { email: trimmed, mode: "registration" });
+          navigation.navigate("RegisterStep2", { email: trimmed, mode: "registration", retryAfterSeconds });
           break;
 
         case "CODE_PENDING":
           dispatch(setRegistrationEmail(trimmed));
-          navigation.navigate("RegisterStep2", { email: trimmed, mode: "registration", pending: true });
+          navigation.navigate("RegisterStep2", { email: trimmed, mode: "registration", pending: true, retryAfterSeconds });
           break;
 
         case "ACCOUNT_EXISTS":
