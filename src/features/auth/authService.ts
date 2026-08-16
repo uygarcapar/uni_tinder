@@ -49,6 +49,16 @@ export const authService = {
     return response.data.result;
   },
 
+  /**
+   * SignalR `ForceLogout` yaptırım sinyali geldiğinde çağrılır. Hub payload'ında
+   * yalnız `reason` var — gerekçe metni ve bitiş tarihi yok. Bu uç aynı bilgiyi
+   * 403 + dolu gövde ile döndürüyor; çıplak axios değil `api` üzerinden gider ki
+   * interceptor yakalayıp ban ekranını açsın. Dönen değer kullanılmaz.
+   */
+  probeAccountStatus: async (): Promise<void> => {
+    await api.get(API_ENDPOINTS.VALIDATE_TOKEN);
+  },
+
   verifyEmailCode: async (email: string, verificationCode: string): Promise<any> => {
     return api.post(API_ENDPOINTS.VERIFY_EMAIL_CODE, { email, verificationCode });
   },

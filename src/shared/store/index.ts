@@ -21,10 +21,23 @@ import { chatCacheTransform } from './chatPersistTransform';
 // tutulduğunda app rotasyon ile flush arasında öldürülürse soğuk açılışta bayat
 // kopya rehydrate olup taze token'ı eziyor, sonraki refresh kullanılmış token
 // gönderiyor ve backend bunu revoke/reuse sayıp oturumu kapatıyordu.
+//
+// accountBlock persist EDİLMEZ — kalıcı ban ekranının çıkışı yok (bilinçli:
+// kullanıcı tekrar deneyip yine 403 yemesin). Persist edilseydi hesap unban
+// edildikten sonra bile ekran diskten geri gelir, kullanıcı login'e hiç
+// ulaşamazdı. Restart'ta login'e düşülür; hesap hâlâ yaptırımlıysa ilk 403
+// ekranı yeniden açar (sunucu otoritesi, istemci hafızası değil).
 const authPersistConfig = {
   key: 'auth',
   storage: reduxMmkvAppStorage,
-  blacklist: ['loading', 'error', 'needsVerification', 'pendingVerificationEmail', 'refreshToken'],
+  blacklist: [
+    'loading',
+    'error',
+    'needsVerification',
+    'pendingVerificationEmail',
+    'refreshToken',
+    'accountBlock',
+  ],
 };
 
 // Profile slice specific persist config - persist profile data during completion flow

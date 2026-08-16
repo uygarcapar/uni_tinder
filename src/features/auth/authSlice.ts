@@ -7,6 +7,7 @@ import realtimeService from '@/features/chat/realtimeService';
 import { setCurrentAccessToken } from '@/shared/services/api';
 import { unregisterPushToken } from '@/features/notifications/pushService';
 import type { AuthState, User } from '@/shared/types';
+import type { AccountBlockPayload } from '@/shared/utils/accountBlock';
 import { devLog } from '@/shared/utils/devLog';
 
 export const fetchUserData = createAsyncThunk(
@@ -111,6 +112,7 @@ const initialState: AuthState = {
   error: null,
   registrationEmail: null,
   emailVerifiedToken: null,
+  accountBlock: null,
   registrationForm: {
     firstName: '',
     gender: '',
@@ -179,6 +181,28 @@ const authSlice = createSlice({
     },
     setKvkkAccepted: (state, action: PayloadAction<string>) => {
       state.kvkkVersion = action.payload;
+    },
+    /**
+     * Hesap yaptırımı (403 UT-1007/1008/1009) → oturumu düşür ve gerekçeyi sakla.
+     *
+     * `logout` thunk'ı yerine ayrı bir reducer: o thunk `revoke-token` ve push
+     * token deactivate çağırıyor, ikisi de yaptırımlı hesapta 403 döner. Token
+     * temizliği zaten api.ts tarafında yapıldı; burada yalnız Redux durumu.
+     */
+    accountBlocked: (state, action: PayloadAction<AccountBlockPayload>) => {
+      state.user = null;
+      state.token = null;
+      state.refreshToken = null;
+      state.isAuthenticated = false;
+      state.loading = false;
+      // Gerekçe ban ekranında gösteriliyor; login ekranındaki kırmızı hata
+      // satırında ikinci kez tekrarlanmasın.
+      state.error = null;
+      state.accountBlock = action.payload;
+    },
+    /** Askı ekranından "giriş ekranına dön" — yaptırım durumunu kapat. */
+    clearAccountBlock: (state) => {
+      state.accountBlock = null;
     },
   },
   extraReducers: (builder) => {
@@ -254,5 +278,7 @@ export const {
   clearRegistrationForm,
   setProfileCompleted,
   setKvkkAccepted,
+  accountBlocked,
+  clearAccountBlock,
 } = authSlice.actions;
 export default authSlice.reducer;

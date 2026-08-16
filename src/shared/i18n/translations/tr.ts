@@ -78,6 +78,27 @@ const tr = {
     session: {
       closedTitle: 'Oturumun kapatıldı',
       closedMessage: 'Hesabına başka bir cihazdan giriş yapıldı.',
+      reverifyTitle: 'E-posta doğrulaması gerekli',
+      reverifyMessage: 'Devam etmek için e-posta adresini yeniden doğrulaman gerekiyor. Tekrar giriş yap.',
+    },
+    // Ban / askı / silme ekranı. Gövde metni backend'den (`message`) gelir —
+    // buradaki fallback'ler yalnız gövde boş dönerse kullanılır.
+    accountBlocked: {
+      title: {
+        banned: 'Hesabın Kapatıldı',
+        suspended: 'Hesabın Askıda',
+        account_deleted: 'Hesap Silme Sürecinde',
+      },
+      fallback: {
+        banned: 'Hesabın kurallarımızı ihlal ettiği için kalıcı olarak kapatıldı.',
+        suspended: 'Hesabın geçici olarak askıya alındı. Süre dolduğunda tekrar giriş yapabilirsin.',
+        account_deleted: 'Hesabın silinme sürecinde. Bu süre içinde destek ekibiyle iletişime geçerek işlemi durdurabilirsin.',
+      },
+      suspensionEnds: 'Askı bitişi: {{date}}',
+      deletionDate: 'Kalıcı silinme: {{date}}',
+      contactSupport: "Destek'e Yaz",
+      backToLogin: 'Giriş ekranına dön',
+      supportSubject: 'Hesap itirazı ({{code}})',
     },
     welcome: {
       signupButton: 'Hesap Oluştur',

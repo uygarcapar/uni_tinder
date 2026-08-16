@@ -1,3 +1,5 @@
+import type { AccountBlockPayload } from "@/shared/utils/accountBlock";
+
 // ─── Auth / User ───────────────────────────────────────────────────────────────
 
 export interface User {
@@ -34,6 +36,8 @@ export interface AuthState {
   registrationEmail: string | null;
   emailVerifiedToken: string | null;
   registrationForm: RegistrationForm;
+  /** Ban/askı/silme yaptırımı — doluysa kapatılamaz AccountBlockedScreen açılır. */
+  accountBlock: AccountBlockPayload | null;
 }
 
 // ─── Profile ───────────────────────────────────────────────────────────────────

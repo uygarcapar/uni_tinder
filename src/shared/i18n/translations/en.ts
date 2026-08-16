@@ -78,6 +78,27 @@ const en = {
     session: {
       closedTitle: 'Session Ended',
       closedMessage: 'Your account was accessed from another device.',
+      reverifyTitle: 'Email verification required',
+      reverifyMessage: 'You need to verify your email address again to continue. Please sign in once more.',
+    },
+    // Ban / suspension / deletion screen. The body text comes from the backend
+    // (`message`); these fallbacks are only used when that body is empty.
+    accountBlocked: {
+      title: {
+        banned: 'Your Account Was Closed',
+        suspended: 'Your Account Is Suspended',
+        account_deleted: 'Account Pending Deletion',
+      },
+      fallback: {
+        banned: 'Your account was permanently closed for violating our rules.',
+        suspended: 'Your account is temporarily suspended. You can sign in again once it expires.',
+        account_deleted: 'Your account is being deleted. You can stop the process by contacting support before the deadline.',
+      },
+      suspensionEnds: 'Suspension ends: {{date}}',
+      deletionDate: 'Permanent deletion: {{date}}',
+      contactSupport: 'Contact Support',
+      backToLogin: 'Back to sign in',
+      supportSubject: 'Account appeal ({{code}})',
     },
     welcome: {
       signupButton: 'Create Account',

@@ -3,6 +3,7 @@ import { API_BASE_URL, API_ENDPOINTS } from '@/shared/constants/api';
 import { getRefreshToken, saveRefreshToken, saveAccessToken, clearAllTokens } from '@/shared/utils/tokenStorage';
 import { recordRequest } from '@/shared/debug/netTally';
 import { isSelfInflictedForceLogout } from '@/shared/utils/sessionGuard';
+import { extractAccountBlock, emitAccountBlocked } from '@/shared/utils/accountBlock';
 import { devLog } from '@/shared/utils/devLog';
 import { getCurrentRouteName } from '@/shared/services/currentRoute';
 import { shortNetError } from '@/shared/utils/netError';
@@ -102,6 +103,21 @@ const sleep = (ms: number) => new Promise<void>((resolve) => setTimeout(resolve,
 // 401 alır, sonsuz reconnect loop.
 let inFlightRefresh: Promise<string | null> | null = null;
 
+/**
+ * Yaptırımlı hesap (ban/askı/silme) tespit edildiğinde ortak kapanış: oturumu
+ * yerelde tamamen düşür ve UI'ı bilgilendir. `revoke-token` ÇAĞRILMAZ — token
+ * backend'de zaten iptal edildi ve o uç da 403 döner.
+ */
+const handleBlockedResponse = async (error: any): Promise<boolean> => {
+  const blocked = extractAccountBlock(error);
+  if (!blocked) return false;
+  devLog(`⛔ Hesap yaptırımı: ${blocked.errorCode} (${blocked.reason})`);
+  await clearAllTokens();
+  setCurrentAccessToken(null);
+  emitAccountBlocked(blocked);
+  return true;
+};
+
 export const refreshAccessToken = async (): Promise<string | null> => {
   if (inFlightRefresh) return inFlightRefresh;
 
@@ -141,6 +157,11 @@ export const refreshAccessToken = async (): Promise<string | null> => {
           `${REQUEST_TIMEOUT_MS}ms limiti aşıldı (token refresh)`,
         );
       }
+      // Yaptırım kontrolü hem self-login penceresinden hem de onAuthLost
+      // sınıflandırmasından ÖNCE: gerçek bir ban kendi login penceremize denk
+      // gelirse "yok say" dalına düşüp sessizce kaybolurdu.
+      if (await handleBlockedResponse(err)) return null;
+
       // Backend revoke sinyali: başka cihazdan giriş yapıldıysa reason'ı taşı ki
       // AppNavigator "başka cihazdan giriş" toast'ını gösterebilsin. Diğer refresh
       // fail'leri (normal expiry, network, rotate edilmiş token'ın tekrar
@@ -215,6 +236,14 @@ api.interceptors.response.use(
         `status ${error.response.status}` +
           (typeof body === 'string' ? ` — ${shortNetError(body)}` : ''),
       );
+    }
+
+    // ── Hesap yaptırımı (ban / askı / silme) — 401 refresh dalından ÖNCE ──
+    // Yaptırımlı hesapta refresh de 403 döner; sıra ters olsa sonsuz döngü.
+    // Login 403'ü de buradan geçer: henüz oturum yok, temizlik no-op kalır ama
+    // ekranı açan tek yol yine bu — ayrı bir karşılama koduna gerek kalmıyor.
+    if (await handleBlockedResponse(error)) {
+      return Promise.reject(error);
     }
 
     // 429 Too Many Requests — exponential backoff (max 3 deneme)
