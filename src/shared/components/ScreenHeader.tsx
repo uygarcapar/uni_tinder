@@ -291,3 +291,12 @@ export default function ScreenHeader({
 }
 
 export const SCREEN_HEADER_LOGO_HEIGHT = 50;
+
+/**
+ * Header'daki ikon butonlarının sabit kenar uzunluğu. SwiftUI `Host`'ları
+ * `matchContents` ile DEĞİL bu ölçüyle kurulmalı: ölçüm ikinci Fabric
+ * commit'inde geldiği için buton ilk frame'de 0 genişlikli, sağa yaslı
+ * anchor'dan taşıp ekran kenarından içeri "ışınlanıyor". Host style'ı ile
+ * SwiftUI `frame()` modifier'ı birebir aynı olmalı.
+ */
+export const SCREEN_HEADER_ACTION_SIZE = 44;

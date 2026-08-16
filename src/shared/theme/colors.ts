@@ -1,9 +1,9 @@
 export const colors = {
-  primary: "#F57656",
-  primaryWarm: "#FC803D",
-  primaryHot: "#FF6B35",
-  messageOwn: "#ff4938",
-  litPlus: "#ff5d3d",
+  primary: "#ff4d3d",
+  primaryWarm: "#ff4d3d",
+  primaryHot: "#ff4d3d",
+  messageOwn: "#ff3d3d",
+  litPlus: "#ff3d3d",
   // lit shop / SuperLike sheet'lerinin zemini (gradients.shopBackdrop ile eşleşir).
   shopSurface: "#a83220",
 

@@ -1,4 +1,4 @@
-import { View, Text } from "react-native";
+import { View, Text, TouchableOpacity } from "react-native";
 import { colors } from "../theme/colors";
 import SFIcon from "./SFIcon";
 
@@ -12,6 +12,8 @@ export default function EmptyState({
   subtitle,
   topOffset = 24,
   containerStyle,
+  buttonLabel,
+  onButtonPress,
 }: any) {
   return (
     <View
@@ -61,6 +63,28 @@ export default function EmptyState({
       >
         {text}
       </Text>
+
+      {/* Aksiyon butonu — DiscoverScreen'in boş deste kartındaki pill'in aynısı
+          (litPlus zemin, 999 radius, 15/600 metin). Orada sola yaslı duruyor,
+          burada boş durumun geri kalanı gibi ortalanır. */}
+      {!!buttonLabel && !!onButtonPress && (
+        <TouchableOpacity
+          onPress={onButtonPress}
+          activeOpacity={0.8}
+          style={{
+            marginTop: 20,
+            borderRadius: 999,
+            borderCurve: "continuous",
+            paddingHorizontal: 20,
+            paddingVertical: 12,
+            backgroundColor: colors.litPlus,
+          }}
+        >
+          <Text style={{ color: colors.text, fontSize: 15, fontWeight: "600" }}>
+            {buttonLabel}
+          </Text>
+        </TouchableOpacity>
+      )}
     </View>
   );
 }

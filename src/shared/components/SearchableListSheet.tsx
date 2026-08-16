@@ -30,6 +30,7 @@ import { easeGradient } from "react-native-easing-gradient";
 import { BlurView } from "expo-blur";
 import { LinearGradient } from "expo-linear-gradient";
 import { colors } from "../theme/colors";
+import { glassFallback } from "../theme/glass";
 
 // BottomSheetFlatList'in reanimated handler kabul eden versiyonu —
 // scroll değerini paylaşılan değere bağlamak için.
@@ -481,6 +482,10 @@ const SearchableListSheet = ({
                     tint(colors.text),
                     labelStyle("iconOnly"),
                     font({ size: 22, weight: "medium" }),
+                    ...glassFallback({
+                      shape: "circle",
+                      frame: { width: 46, height: 46 },
+                    }),
                   ]}
                 />
               </Host>
@@ -520,6 +525,10 @@ const SearchableListSheet = ({
                   controlSize("large"),
                   tint(colors.text),
                   font({ size: 12, weight: "semibold" }),
+                  ...glassFallback({
+                    shape: "capsule",
+                    padding: { horizontal: 18, vertical: 12 },
+                  }),
                 ]}
               />
             </Host>

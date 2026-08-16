@@ -10,6 +10,7 @@ export default function AnimatedPressable({
   disabled,
   activeOpacity = 1,
   pressScale = 0.97,
+  testID,
   children,
 }: any) {
   const scale = useRef(new Animated.Value(1)).current;
@@ -43,6 +44,7 @@ export default function AnimatedPressable({
         onLayout={onLayout}
         disabled={disabled}
         style={style}
+        testID={testID}
       >
         {children}
       </TouchableOpacity>

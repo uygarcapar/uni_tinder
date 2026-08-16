@@ -1,4 +1,11 @@
-import { ReactNode, useCallback, useEffect, useMemo } from "react";
+import {
+  ReactNode,
+  createContext,
+  useCallback,
+  useEffect,
+  useMemo,
+  useRef,
+} from "react";
 import {
   View,
   Text,
@@ -42,6 +49,7 @@ import { X } from "lucide-react-native";
 import SFIcon from "./SFIcon";
 import AppBottomSheet from "@/shared/components/AppBottomSheet";
 import { colors } from "../theme/colors";
+import { glassFallback } from "../theme/glass";
 
 // Header dikey breakdown:
 //   top:20 — drag indicator pill (4px tall), iPhone üstten nefes payı için
@@ -53,6 +61,14 @@ const SHEET_TOP_RADIUS = 36;
 const AnimatedBottomSheetScrollView: any = Animated.createAnimatedComponent(
   BottomSheetScrollView,
 );
+
+// İçerideki input'ların (bkz. useKeyboardAwareField) modal scroll view'ına
+// erişebilmesi için. scrollY zaten header animasyonu için tutuluyor; aynı
+// değer "şu an neredeyiz" bilgisi olarak scroll hesabında da kullanılıyor.
+export const AppModalScrollContext = createContext<{
+  scrollRef: React.MutableRefObject<any>;
+  scrollY: { value: number };
+} | null>(null);
 
 type AppModalProps = {
   visible: boolean;
@@ -74,6 +90,11 @@ type AppModalProps = {
   actionLoading?: boolean;
   // Custom rightSlot — actionLabel'ı override eder; tamamen özel buton için.
   rightSlot?: ReactNode;
+  // Header'ın soluna X yerine metin butonu koyar (örn. FilterModal'ın
+  // "Sıfırla"sı). Verildiğinde X HİÇ render edilmez — sheet swipe-down ve
+  // backdrop ile kapanmaya devam eder. Action butonuyla birebir aynı stil.
+  leftLabel?: string;
+  onLeftPress?: () => void;
   // X'in tarafı: actionLabel/rightSlot varsa default "left", yoksa "right".
   closeSide?: "left" | "right";
   // false ise içerik scroll edilmez; header background opacity sabit kalır.
@@ -125,6 +146,8 @@ export default function AppModal({
   actionDisabled,
   actionLoading,
   rightSlot,
+  leftLabel,
+  onLeftPress,
   closeSide,
   scrollable = true,
   scrollEnabled = true,
@@ -147,6 +170,7 @@ export default function AppModal({
   const effectiveTopInset = fullScreen ? insets.top : undefined;
 
   // ── Scroll plumbing ──────────────────────────────────────────────────────
+  const scrollRef = useRef<any>(null);
   const scrollY = useSharedValue(0);
   const scrollHandler = useAnimatedScrollHandler({
     onScroll: (e) => {
@@ -217,6 +241,13 @@ export default function AppModal({
             font({ size: 17, weight: "medium" }),
             // Default capsule yerine tam circle — iconOnly buton kare/yuvarlak görünsün.
             containerShape(shapes.circle()),
+            // iOS 26 altında .automatic'e düşüyor: ne zemin ne intrinsic
+            // boyut geliyor. Kare frame veriyoruz ki border tam daire olsun ve
+            // Android fallback'iyle (ACTION_HEIGHT) aynı ölçüde dursun.
+            ...glassFallback({
+              shape: "circle",
+              frame: { width: ACTION_HEIGHT, height: ACTION_HEIGHT },
+            }),
           ]}
         />
       </Host>
@@ -246,26 +277,35 @@ export default function AppModal({
     )
   ) : null;
 
-  const actionBtn = actionLabel ? (
-    Platform.OS === "ios" ? (
+  // Header'ın metin butonu. Sağdaki action (Uygula/Kaydet) ve soldaki leftLabel
+  // (Sıfırla) aynı fonksiyondan çıkıyor ki iki taraf birebir aynı ölçüde dursun.
+  const renderTextButton = (
+    label: string,
+    onPress?: () => void,
+    opts?: { loading?: boolean; disabled?: boolean },
+  ) => {
+    const inert = !!opts?.loading || !!opts?.disabled;
+    return Platform.OS === "ios" ? (
       <Host matchContents>
         <SwiftUIButton
-          label={actionLabel}
-          onPress={
-            actionLoading || actionDisabled ? () => {} : onAction ?? (() => {})
-          }
+          label={label}
+          onPress={inert ? () => {} : onPress ?? (() => {})}
           modifiers={[
             buttonStyle("glass"),
             controlSize("large"),
             tint(colors.text),
             font({ size: 13, weight: "semibold" }),
+            ...glassFallback({
+              shape: "capsule",
+              padding: { horizontal: 18, vertical: 15 },
+            }),
           ]}
         />
       </Host>
     ) : (
       <TouchableOpacity
-        onPress={onAction}
-        disabled={actionLoading || actionDisabled}
+        onPress={onPress}
+        disabled={inert}
         activeOpacity={0.7}
         style={{
           height: ACTION_HEIGHT,
@@ -274,23 +314,33 @@ export default function AppModal({
           backgroundColor: "rgba(255,255,255,0.08)",
           alignItems: "center",
           justifyContent: "center",
-          opacity: actionDisabled ? 0.35 : 1,
+          opacity: opts?.disabled ? 0.35 : 1,
         }}
       >
-        {actionLoading ? (
+        {opts?.loading ? (
           <ActivityIndicator size="small" color={colors.text} />
         ) : (
           <Text style={{ color: colors.text, fontWeight: "700", fontSize: 13 }}>
-            {actionLabel}
+            {label}
           </Text>
         )}
       </TouchableOpacity>
-    )
-  ) : null;
+    );
+  };
+
+  const actionBtn = actionLabel
+    ? renderTextButton(actionLabel, onAction, {
+        loading: actionLoading,
+        disabled: actionDisabled,
+      })
+    : null;
+
+  const leftBtn = leftLabel ? renderTextButton(leftLabel, onLeftPress) : null;
 
   // actionBtn rightSlot'tan önceliklidir; ikisi de yoksa null.
   const rightContent = actionBtn ?? rightSlot;
-  const leftElement = effectiveCloseSide === "left" ? closeBtn : null;
+  // leftLabel verildiyse X'in yerini o alır (bkz. prop notu).
+  const leftElement = leftBtn ?? (effectiveCloseSide === "left" ? closeBtn : null);
   const rightElement = effectiveCloseSide === "right" ? closeBtn : rightContent;
 
   // ── Backdrop ─────────────────────────────────────────────────────────────
@@ -304,6 +354,11 @@ export default function AppModal({
       />
     ),
     [],
+  );
+
+  const scrollContext = useMemo(
+    () => ({ scrollRef, scrollY }),
+    [scrollY],
   );
 
   return (
@@ -320,8 +375,10 @@ export default function AppModal({
       footer={footer}
     >
       {/* ─── Content ─── */}
+      <AppModalScrollContext.Provider value={scrollContext}>
       {scrollable ? (
         <AnimatedBottomSheetScrollView
+          ref={scrollRef}
           onScroll={scrollHandler}
           scrollEventThrottle={16}
           scrollEnabled={scrollEnabled}
@@ -353,6 +410,7 @@ export default function AppModal({
           {children}
         </View>
       )}
+      </AppModalScrollContext.Provider>
 
       {/* ─── Header ─── */}
       <View
