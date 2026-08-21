@@ -7,6 +7,7 @@ import realtimeService from '@/features/chat/realtimeService';
 import { setCurrentAccessToken } from '@/shared/services/api';
 import { unregisterPushToken } from '@/features/notifications/pushService';
 import type { AuthState, User } from '@/shared/types';
+import type { RegistrationStepRoute } from '@/features/auth/registrationFlow';
 import type { AccountBlockPayload } from '@/shared/utils/accountBlock';
 import { devLog } from '@/shared/utils/devLog';
 
@@ -112,6 +113,7 @@ const initialState: AuthState = {
   error: null,
   registrationEmail: null,
   emailVerifiedToken: null,
+  registrationStep: null,
   accountBlock: null,
   registrationForm: {
     firstName: '',
@@ -158,21 +160,54 @@ const authSlice = createSlice({
     },
     setEmailVerifiedToken: (state, action: PayloadAction<string>) => {
       state.emailVerifiedToken = action.payload;
+      // Taze doğrulama = taze sihirbaz turu. Aynı cihazda yarım bırakılmış eski
+      // bir kaydın imleci kalırsa (kullanıcı Step13'te bırakmış, sonra başka bir
+      // e-postayla baştan başlamış) ve uygulama Step2 ile Step3 arasında
+      // öldürülürse, açılışta yanlış adıma düşerdi.
+      state.registrationStep = null;
     },
     setRegistrationEmail: (state, action: PayloadAction<string>) => {
       state.registrationEmail = action.payload;
     },
-    clearRegistrationForm: (state) => {
-      state.registrationEmail = null;
-      state.emailVerifiedToken = null;
-      state.registrationForm = {
-        firstName: '',
-        gender: '',
-        dateOfBirth: null,
-        password: '',
-        confirmPassword: '',
-        email: '',
-      };
+    /**
+     * Sihirbazda bulunulan adımı işaretler — AppNavigator'ın onStateChange'i
+     * her rota değişiminde çağırıyor, ekranların kendisi bilmek zorunda değil.
+     * Aynı değerde no-op (Immer değişiklik üretmez → render/persist yazımı yok).
+     */
+    setRegistrationStep: (state, action: PayloadAction<RegistrationStepRoute>) => {
+      if (state.registrationStep !== action.payload) {
+        state.registrationStep = action.payload;
+      }
+    },
+    /**
+     * `keepEmail`: token süresi dolduğu için taslağı iptal ederken
+     * `registrationEmail` KALIR — çünkü profil slice'ındaki (hobiler, bio,
+     * fotoğraflar) taslağın "kime ait olduğunu" gösteren tek işaret o.
+     * Kullanıcı aynı e-postayla devam ederse 9 adımlık cevabını korur; BAŞKA
+     * bir e-posta girerse Step1 farkı görüp profili de temizler. E-posta da
+     * silinseydi karşılaştırılacak bir şey kalmaz, önceki kişinin cevapları
+     * yeni kayda sızardı.
+     */
+    clearRegistrationForm: {
+      reducer: (state, action: PayloadAction<{ keepEmail: boolean }>) => {
+        if (!action.payload.keepEmail) {
+          state.registrationEmail = null;
+        }
+        state.emailVerifiedToken = null;
+        state.registrationStep = null;
+        state.registrationForm = {
+          firstName: '',
+          gender: '',
+          dateOfBirth: null,
+          password: '',
+          confirmPassword: '',
+          email: '',
+        };
+      },
+      // prepare: argümansız çağrı (kayıt başarıyla bittiğinde) tam temizlik.
+      prepare: (options?: { keepEmail?: boolean }) => ({
+        payload: { keepEmail: options?.keepEmail === true },
+      }),
     },
     setProfileCompleted: (state) => {
       if (state.user) {
@@ -275,6 +310,7 @@ export const {
   updateRegistrationField,
   setEmailVerifiedToken,
   setRegistrationEmail,
+  setRegistrationStep,
   clearRegistrationForm,
   setProfileCompleted,
   setKvkkAccepted,

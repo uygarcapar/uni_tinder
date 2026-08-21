@@ -32,3 +32,36 @@ export const clearSelfLoginMark = (): void => {
 
 export const isSelfInflictedForceLogout = (): boolean =>
   lastSelfLoginAt > 0 && Date.now() - lastSelfLoginAt < SELF_LOGIN_WINDOW_MS;
+
+/**
+ * Şifre değiştirme/sıfırlamayı BU cihazın başlattığını damgalar.
+ *
+ * Backend her iki akışta da tüm refresh token'ları iptal edip
+ * `Clients.User(userId)` üzerinden ForceLogout yolluyor — işlemi yapan cihaz
+ * dahil. Bu cihaz sinyali yok saymalı:
+ *   • Şifre DEĞİŞTİRME (A2) cevapta yeni token seti veriyor, oturum devam eder.
+ *   • Ayarlar'dan şifre SIFIRLAMA (C) token vermiyor ama kapanışı ekran
+ *     yönetiyor ("şifren sıfırlandı" → login), araya jenerik bir toast girmesin.
+ *
+ * Damga ForceLogout dışında refresh hatasını da kapsıyor: pencerede uçan bir
+ * istek 401 alıp ESKİ (artık revoke) refresh token'la yenilemeye kalkarsa,
+ * o hata kullanıcıyı dışarı atmamalı — yeni token birazdan yazılacak.
+ *
+ * Pencere login damgasıyla aynı: yakalanmayan bir sinyal kaybolmaz, cihaz ilk
+ * refresh denemesinde `password_changed` gerekçesiyle zaten düşer.
+ */
+const SELF_PASSWORD_CHANGE_WINDOW_MS = 20_000;
+
+let lastSelfPasswordChangeAt = 0;
+
+export const markSelfPasswordChange = (): void => {
+  lastSelfPasswordChangeAt = Date.now();
+};
+
+export const clearSelfPasswordChangeMark = (): void => {
+  lastSelfPasswordChangeAt = 0;
+};
+
+export const isSelfInflictedPasswordChange = (): boolean =>
+  lastSelfPasswordChangeAt > 0 &&
+  Date.now() - lastSelfPasswordChangeAt < SELF_PASSWORD_CHANGE_WINDOW_MS;
