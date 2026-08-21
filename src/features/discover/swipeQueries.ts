@@ -12,10 +12,14 @@ import swipeService from "@/features/discover/swipeService";
 import { swipeKeys } from "@/features/discover/swipeKeys";
 import uiBus from "@/shared/services/uiBus";
 import type { SwipeStats } from "@/shared/types";
-import { selectIsPremium } from "@/features/profile/subscriptionSlice";
+import {
+  selectIsPremium,
+  selectPremiumResolved,
+} from "@/features/profile/subscriptionSlice";
 import {
   DEFAULT_AGE_RANGE,
   DISTANCE_RANGE_KM,
+  FREE_MAX_DISTANCE_KM,
   MAX_PREFERRED_HOBBIES,
   MAX_SWIPE_PAGE_SIZE,
   MAX_UNIVERSITY_DOMAINS,
@@ -125,8 +129,26 @@ export function useSwipeStats() {
         matchesToday: r.matchesToday ?? 0,
         remainingUndos: r.remainingUndos ?? null,
         undoCountResetAt: r.undoCountResetAt ?? null,
+        // Kaçırılan eşleşme kurtarma — GÜNLÜK kota (free 2 / premium 5).
+        // `-1` ve sentinel tarih konvansiyonları burada GEÇERLİ DEĞİL: reset
+        // saniyesi her zaman 0…86400, `nextMissedMatchRecoveryResetAt` her zaman
+        // bir sonraki UTC gün dönümü. Premium'da da gerçek sayı gelir (undo'daki
+        // "sınırsız = -1" mantığı yok).
         remainingMissedMatchRecovery: r.remainingMissedMatchRecovery ?? null,
+        // ⚠️ Tavan alanı ama `-1` DÖNMEZ: premium de sonlu kotaya tabi (5/gün).
+        // `dailySwipeLimit`/`dailyUndoLimit` için yazılan "-1 ise sınırsız"
+        // dalını buraya kopyalamayın — "5/5" yerine "∞" yazardı.
+        dailyMissedMatchRecoveryLimit: r.dailyMissedMatchRecoveryLimit ?? null,
+        // Kaçırılan eşleşme penceresi (gün). Backend config'inden geliyor, FE'de
+        // sabit tutulmuyor — metinler bu değerle kuruluyor.
+        missedMatchLookbackDays: r.missedMatchLookbackDays ?? null,
+        // DİKKAT: bu ikisi farklı yönlere bakıyor — `missedMatchRecoveryResetAt`
+        // kotanın en son ne zaman sıfırlandığı (GEÇMİŞ), ileri sayaç için
+        // `nextMissedMatchRecoveryResetAt` kullanılmalı.
         missedMatchRecoveryResetAt: r.missedMatchRecoveryResetAt ?? null,
+        nextMissedMatchRecoveryResetAt: r.nextMissedMatchRecoveryResetAt ?? null,
+        missedMatchRecoveryResetInSeconds:
+          r.missedMatchRecoveryResetInSeconds ?? null,
         swipeResetInSeconds: r.swipeResetInSeconds ?? null,
         superLikeResetInSeconds: r.superLikeResetInSeconds ?? null,
         undoResetInSeconds: r.undoResetInSeconds ?? null,
@@ -148,16 +170,28 @@ export function useSwipeStats() {
   });
 
   const subscriptionIsPremium = useSelector(selectIsPremium);
+  const premiumResolved = useSelector(selectPremiumResolved);
   const data = useMemo(() => {
     if (!result.data) return result.data;
     // `serverIsPremium` = /Stats'ın DOKUNULMAMIŞ cevabı. Aşağıdaki overlay
-    // `isPremium`i redux'a göre true'ya çekebildiği için, "backend premium'u
-    // gördü mü" sorusunun tek dürüst cevabı bu alan. Satın alma ile webhook
-    // arasındaki pencerede false kalır → o pencerede kota SAYILARI hâlâ free
-    // tier'ın, tüketiciler sayı göstermek yerine "güncelleniyor" diyebilsin.
+    // `isPremium`i redux'a göre değiştirdiği için, "backend premium'u gördü mü"
+    // sorusunun tek dürüst cevabı bu alan. Satın alma ile webhook arasındaki
+    // pencerede false kalır → o pencerede kota SAYILARI hâlâ free tier'ın,
+    // tüketiciler sayı göstermek yerine "güncelleniyor" diyebilsin.
     const serverIsPremium = result.data.isPremium;
-    const effectivePremium = serverIsPremium || subscriptionIsPremium;
-    if (!effectivePremium) return { ...result.data, serverIsPremium };
+    // Bayrak İKİ YÖNLÜ overlay ediliyor. Öncesi `serverIsPremium || redux` idi,
+    // yani yalnız yükseltiyordu: bu sorgu oturumda BİR KEZ çekildiği için
+    // (`staleTime: Infinity`) premium bitince `/stats` cevabı sonsuza kadar
+    // "premium" kalıyor, backtrack hakkı ve filtre kilitleri reload'a kadar
+    // açık kalıyordu. Tier'ın kanonik kaynağı abonelik slice'ı (bkz.
+    // features/profile/premiumTier); backend henüz konuşmadıysa (`resolved`
+    // false — reload'ın ilk anı) elimizdeki son sunucu cevabına düşüyoruz.
+    const effectivePremium = premiumResolved
+      ? subscriptionIsPremium
+      : serverIsPremium || subscriptionIsPremium;
+    if (!effectivePremium) {
+      return { ...result.data, serverIsPremium, isPremium: false };
+    }
     if (
       serverIsPremium &&
       result.data.remainingSwipes === UNLIMITED &&
@@ -178,7 +212,7 @@ export function useSwipeStats() {
       dailySwipeLimit: UNLIMITED,
       dailyUndoLimit: UNLIMITED,
     };
-  }, [result.data, subscriptionIsPremium]);
+  }, [result.data, subscriptionIsPremium, premiumResolved]);
 
   return { ...result, data };
 }
@@ -275,8 +309,9 @@ export function useSaveFilters() {
       hiddenFromUniversityDomains?: string[];
       preferredHobbies?: string[];
       relationshipIntents?: string[];
-      // Dealbreaker'lı premium filtreler (boy/sınıf/burç/sigara/evcil hayvan/
-      // kullanım amacı) API adlarıyla ANAHTARLANMIŞ halde geliyor. Adlar
+      // Dealbreaker'lı premium filtreler (boy/sınıf/burç/sigara/alkol/dil/
+      // dini görüş/evcil hayvan/kullanım amacı) API adlarıyla ANAHTARLANMIŞ
+      // halde geliyor. Adlar
       // FilterModal'daki FILTER_FIELD map'inde tanımlı; burada tek blok olarak
       // geçiriliyor ki ad bilgisi iki yere dağılmasın.
       premiumFilters?: Record<string, unknown>;
@@ -290,7 +325,22 @@ export function useSaveFilters() {
       const payload: Record<string, unknown> = {
         ageRangeMin: localFilters.ageRangeMin ?? DEFAULT_AGE_RANGE.min,
         ageRangeMax: localFilters.ageRangeMax ?? DEFAULT_AGE_RANGE.max,
-        maxDistance: localFilters.maxDistance ?? DISTANCE_RANGE_KM.min,
+        // Backend doğrulaması artık Range(1, 100) — eski Range(0, 20000) yok.
+        // Aralık dışı bir değer (bayat cache'ten gelen 300 km, eski "sınırsız"
+        // sentinel'i 20000) İSTEĞİN TAMAMINI 400'e düşürür, yani cinsiyet/şehir
+        // güncellemesi de kaybolur. FilterModal zaten tier tavanına clamp'liyor;
+        // bu ikinci savunma hattı (universityDomains/preferredHobbies'teki
+        // desenle aynı). Tier tavanını burada UYGULAMIYORUZ — premium bilgisi
+        // bu katmanda yok, tier clamp'ini backend zaten sessizce yapıyor.
+        maxDistance: Math.min(
+          DISTANCE_RANGE_KM.max,
+          Math.max(
+            DISTANCE_RANGE_KM.min,
+            // Alan hiç gelmezse free tavanı: DISTANCE_RANGE_KM.min (1 km)
+            // fiilen "kimseyi gösterme" demek olurdu.
+            localFilters.maxDistance ?? FREE_MAX_DISTANCE_KM,
+          ),
+        ),
         // NOT: `genders` artık gönderilmiyor. Cinsiyet tercihi tek kaynaktan
         // (interestedIn) yürüyor; backend HardFilterStage'deki hasGenderFilter
         // dalını kaldırdı, PreferredGendersFlags hiçbir yerde okunmuyor.
@@ -336,9 +386,13 @@ export function useSaveFilters() {
         // doldurmamış adaylar destede kalır. Overwrite semantiği → boş dizi
         // tercihi temizler, o yüzden koşulsuz gönderiliyor.
         relationshipIntents: localFilters.relationshipIntents ?? [],
-        // Boy/sınıf/burç/sigara/evcil hayvan/kullanım amacı — API adlarıyla
-        // anahtarlanmış halde geliyor, olduğu gibi payload'a giriyor. Bunlar da
-        // OVERWRITE: boş dizi / null = tercihi temizle.
+        // Boy/sınıf/burç/sigara/alkol/dil/dini görüş/evcil hayvan/kullanım
+        // amacı — API adlarıyla anahtarlanmış halde geliyor, olduğu gibi
+        // payload'a giriyor.
+        // Bunlar da OVERWRITE: boş dizi / null = tercihi temizle.
+        // Evcil hayvan İKİ alan gönderiyor (`pets` tür listesi + legacy
+        // `hasPets`); ikisinin birbirini ezme kuralı FilterModal'da çözülüyor,
+        // buraya çelişkili çift hiç gelmiyor.
         ...(localFilters.premiumFilters ?? {}),
       };
       // `dealbreakers` KOŞULLU: alan yok/null = "değiştirme", boş dizi =

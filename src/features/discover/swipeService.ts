@@ -33,8 +33,6 @@ const emptyResult: PotentialMatchesResult = {
   paywallType: null,
   paywallMessage: null,
   isPremium: false,
-  wasRadiusExpanded: false,
-  appliedRadiusKm: null,
   emptyReason: "None",
   emptyReasonCode: null,
   emptyReasonMessage: null,
