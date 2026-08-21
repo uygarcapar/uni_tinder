@@ -111,9 +111,9 @@ export default function RegisterStep12Screen({ navigation }: NativeStackScreenPr
   });
 
   return (
-    <View className="flex-1 bg-bg">
+    <View className="flex-1" style={{ backgroundColor: colors.bg }}>
       {/* Header */}
-      <View className="bg-bg pt-16 pb-6 px-6">
+      <View className="pt-16 pb-6 px-6" style={{ backgroundColor: colors.bg }}>
         <RegisterBackButton onPress={() => navigation.goBack()} />
       </View>
 
@@ -122,14 +122,14 @@ export default function RegisterStep12Screen({ navigation }: NativeStackScreenPr
       <TouchableWithoutFeedback onPress={Keyboard.dismiss}>
         <View className="flex-1 px-6 py-6 pt-0">
           <View className="flex flex-col gap-2">
-            <Text className="text-4xl font-bold text-white">{t('auth.step12.title')}</Text>
-            <Text className="text-[18px] font-normal text-gray-400 mb-6">
+            <Text className="text-4xl font-bold" style={{ color: colors.text }}>{t('auth.step12.title')}</Text>
+            <Text className="text-[18px] font-normal mb-6" style={{ color: colors.textSecondary }}>
               {t('auth.step12.description')}
             </Text>
           </View>
 
           <View className="mb-4">
-            <Text className="text-gray-300 text-[14px] font-semibold mb-2">{t('auth.step12.heightLabel')}</Text>
+            <Text className="text-[14px] font-semibold mb-2" style={{ color: colors.neutral200 }}>{t('auth.step12.heightLabel')}</Text>
             <View
               {...panResponder.panHandlers}
               onLayout={(e) => { sliderWidthRef.current = e.nativeEvent.layout.width; }}
@@ -156,7 +156,7 @@ export default function RegisterStep12Screen({ navigation }: NativeStackScreenPr
                   borderCurve: "continuous",
                   overflow: "hidden",
                   borderWidth: 0.5,
-                  borderColor: errors.height ? colors.error : "rgba(255,255,255,0.1)",
+                  borderColor: errors.height ? colors.error : colors.hairline,
                 }}
               >
                 <View
@@ -167,7 +167,7 @@ export default function RegisterStep12Screen({ navigation }: NativeStackScreenPr
                     top: 0,
                     bottom: 0,
                     width: `${((height - MIN_HEIGHT) / RANGE) * 100}%`,
-                    backgroundColor: "rgba(255,255,255,0.07)",
+                    backgroundColor: colors.shimmer,
                   }}
                 />
                 {/* Cetvel */}
@@ -181,7 +181,7 @@ export default function RegisterStep12Screen({ navigation }: NativeStackScreenPr
                       style={{
                         width: 1,
                         height: i % 10 === 0 ? 8 : 5,
-                        backgroundColor: i % 10 === 0 ? "rgba(255,255,255,0.3)" : "rgba(255,255,255,0.15)",
+                        backgroundColor: i % 10 === 0 ? colors.hairlineMuted : colors.hairlineStrong,
                         alignSelf: "flex-end",
                       }}
                     />
@@ -206,7 +206,7 @@ export default function RegisterStep12Screen({ navigation }: NativeStackScreenPr
           </View>
           {/* Error Message */}
           {errors.height ? (
-            <Text className="text-red-500 text-center font-normal mb-3 mt-4">
+            <Text className="text-center font-normal mb-3 mt-4" style={{ color: colors.error }}>
               {errors.height.message}
             </Text>
           ) : null}
@@ -215,12 +215,12 @@ export default function RegisterStep12Screen({ navigation }: NativeStackScreenPr
 
       {/* Sticky Button with KeyboardStickyView */}
       <KeyboardStickyView offset={{ closed: 0, opened: 0 }}>
-        <View className="px-8 pb-8 pt-4 bg-bg">
+        <View className="px-8 pb-8 pt-4" style={{ backgroundColor: colors.bg }}>
           <AnimatedPressable
             onPress={handleNext}
-            style={{ borderRadius: 999, borderCurve: "continuous", overflow: "hidden", backgroundColor: colors.text }}
+            style={{ borderRadius: 999, borderCurve: "continuous", overflow: "hidden", backgroundColor: colors.inverseSurface }}
           >
-            <Text className="text-black py-[20px] font-bold text-[15px] text-center">
+            <Text className="py-[20px] font-bold text-[15px] text-center" style={{ color: colors.onInverseSurface }}>
               {t('common.continueButton')}
             </Text>
           </AnimatedPressable>

@@ -1,5 +1,6 @@
 import { View, Text, TouchableOpacity, Modal, Pressable } from 'react-native';
 import * as Haptics from 'expo-haptics';
+import { colors } from '@/shared/theme/colors';
 
 const QUICK_EMOJIS = ['❤️', '😂', '😮', '😢', '🔥', '👍'];
 
@@ -17,15 +18,16 @@ export default function ReactionPicker({ visible, onClose, onPick }: any) {
         onPress={onClose}
         style={{
           flex: 1,
-          backgroundColor: 'rgba(0,0,0,0.5)',
+          backgroundColor: colors.scrim,
           justifyContent: 'center',
           alignItems: 'center',
         }}
       >
         <View
-          className="flex-row items-center px-3 py-3 rounded-full bg-surface-2"
+          className="flex-row items-center px-3 py-3 rounded-full"
           style={{
-            shadowColor: '#000',
+            backgroundColor: colors.surface2,
+            shadowColor: colors.shadow,
             shadowOpacity: 0.5,
             shadowRadius: 12,
             elevation: 12,

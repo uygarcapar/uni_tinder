@@ -34,6 +34,7 @@ export default function SFIcon({
   strokeWidth = 1.5,
   weight = "regular",
   fill,
+  forceFallback = false,
   style,
 }: {
   name: SFSymbol;
@@ -45,9 +46,17 @@ export default function SFIcon({
   // Android/lucide fallback'in dolgusu — .fill SF varyantı kullanan call-site'lar
   // Android'de de dolgulu görünsün diye geçirilir (örn. fill={color}).
   fill?: string;
+  /**
+   * iOS'ta da lucide'ı kullan. SF Symbols'ta karşılığı OLMAYAN kavramlar için:
+   * en yakın sembol anlamı taşımıyorsa iki platformda aynı lucide glifini
+   * göstermek, iOS'ta yanlış bir sembol çizmekten iyi. Örnek: sigara — SF'te
+   * cigarette YOK, en yakını `smoke.fill` ve o bir duman bulutu.
+   * `name` yine zorunlu: SF ileride sembolü eklerse bayrağı kaldırmak yetsin.
+   */
+  forceFallback?: boolean;
   style?: StyleProp<ViewStyle>;
 }) {
-  if (SymbolView) {
+  if (SymbolView && !forceFallback) {
     return (
       <SymbolView
         name={name}

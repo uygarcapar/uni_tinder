@@ -11,7 +11,7 @@ import { LinearGradient } from "expo-linear-gradient";
 import { StatusBar } from "expo-status-bar";
 import { NativeStackScreenProps } from "@react-navigation/native-stack";
 import type { AuthStackParamList } from "@/shared/types/navigation";
-import { colors, gradients } from "../../../shared/theme/colors";
+import { colors, gradients, onMediaAt } from "../../../shared/theme/colors";
 import { useTranslation } from 'react-i18next';
 
 // Ekran boyutunu alıyoruz (Garanti olsun diye)
@@ -56,7 +56,7 @@ const PressableScaleButton = ({ onPress, style, className, children }: any) => {
 export default function WelcomeScreen({ navigation }: NativeStackScreenProps<AuthStackParamList, 'Welcome'>) {
   const { t } = useTranslation();
   return (
-    <View className="flex-1 bg-white">
+    <View className="flex-1" style={{ backgroundColor: colors.primary }}>
       <StatusBar style="dark" />
 
       <LinearGradient
@@ -98,32 +98,33 @@ export default function WelcomeScreen({ navigation }: NativeStackScreenProps<Aut
                 borderRadius: 999,
                 borderCurve: "continuous",
                 overflow: "hidden",
-                backgroundColor: "white",
+                backgroundColor: colors.onMedia,
                 paddingVertical: 20,
                 alignItems: "center",
               }}
             >
-              <Text style={{ color: colors.bgDeep }} className="font-bold text-[14px]">
+              <Text style={{ color: colors.onMediaInverse }} className="font-bold text-[14px]">
                 {t('auth.welcome.signupButton')}
               </Text>
             </PressableScaleButton>
 
             <PressableScaleButton
               onPress={() => navigation.navigate("Login")}
-              className="border-[0.5px] border-gray-200 py-[20px] items-center"
+              className="border-[0.5px] py-[20px] items-center"
               style={{
+                borderColor: onMediaAt(0.9),
                 borderRadius: 999,
                 borderCurve: "continuous",
                 overflow: "hidden",
               }}
             >
-              <Text className="text-gray-200 font-bold text-[14px]">
+              <Text className="font-bold text-[14px]" style={{ color: onMediaAt(0.9) }}>
                 {t('auth.welcome.loginButton')}
               </Text>
             </PressableScaleButton>
           </View>
 
-          <Text className="text-white opacity-70 text-sm text-center mt-8">
+          <Text className="opacity-70 text-sm text-center mt-8" style={{ color: colors.onMedia }}>
             {t('auth.welcome.termsAccept')
               .split('<1>')[0]}
             <Text className=" underline">{t('auth.welcome.termsLink')}</Text>

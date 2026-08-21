@@ -5,7 +5,7 @@ import { Ban, Clock, Trash2, type LucideIcon } from "lucide-react-native";
 import SFIcon, { type SFSymbol } from "@/shared/components/SFIcon";
 import { getDateLocale } from "@/shared/i18n/dateLocale";
 import type { AccountBlockPayload, AccountBlockReason } from "@/shared/utils/accountBlock";
-import { colors } from "../../../shared/theme/colors";
+import { colors, ink } from "../../../shared/theme/colors";
 import { SUPPORT_EMAIL } from "@/shared/constants/support";
 
 // Yaptırım tipine göre yalnız BAŞLIK ve ikon değişir. Gövde metni her zaman
@@ -149,7 +149,7 @@ export default function AccountBlockedScreen({ block, onDismiss }: Props) {
                 borderCurve: "continuous",
                 overflow: "hidden",
                 borderWidth: 0.5,
-                borderColor: "rgba(255,255,255,0.2)",
+                borderColor: ink(0.2),
                 paddingVertical: 18,
                 alignItems: "center",
               }}

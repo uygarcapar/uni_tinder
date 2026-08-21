@@ -10,6 +10,8 @@
  * (+ TDZ'de undefined sabit) demek olurdu.
  */
 
+import { colors } from "@/shared/theme/colors";
+
 // Balon köşe yarıçapı.
 export const BUBBLE_RADIUS = 24;
 // GÖNDEREN tarafın köşesi daralır: balonda ÜST köşe (kendi mesajımda sağ üst,
@@ -27,8 +29,14 @@ export function bubbleCorners(isOwn: boolean) {
 export const BUBBLE_PAD_H = 14;
 export const BUBBLE_PAD_V = 12;
 
-// Reaction kapsülünün ince siyah çerçevesi.
-export const REACTION_CHIP_BORDER = {
+/**
+ * Reaction kapsülünün balondan "kesilmiş" görünmesini sağlayan ince çerçeve:
+ * rengi balonun ARKASINDAKİ zemin, yani sayfa zemini.
+ *
+ * FONKSIYON, sabit DEĞİL — modül seviyesinde değerlenirse tema değişince bayat
+ * kalır (bkz. shared/theme/colors.ts mutasyon sözleşmesi).
+ */
+export const reactionChipBorder = () => ({
   borderWidth: 0.5,
-  borderColor: "#000000",
-} as const;
+  borderColor: colors.bg,
+});

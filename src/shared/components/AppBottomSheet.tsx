@@ -6,6 +6,7 @@ import {
 } from "@gorhom/bottom-sheet";
 import { BlurView } from "expo-blur";
 import { colors } from "../theme/colors";
+import { plainBlurTint } from "@/shared/theme/blur";
 
 /**
  * Genel amaçlı bottom sheet wrapper'ı. Tüm modal'larda ortak gorhom config'i,
@@ -112,7 +113,7 @@ export default function AppBottomSheet({
           >
             <BlurView
               intensity={30}
-              tint="dark"
+              tint={plainBlurTint()}
               style={{
                 position: "absolute",
                 top: 0,

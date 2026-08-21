@@ -8,7 +8,7 @@ import {
   type ModifierConfig,
   type Shape,
 } from "@expo/ui/swift-ui/modifiers";
-import { colors } from "@/shared/theme/colors";
+import { colors, withAlpha } from "@/shared/theme/colors";
 
 /**
  * Liquid Glass yalnızca iOS 26+'da var. @expo/ui altındaki sürümlerde
@@ -19,25 +19,6 @@ import { colors } from "@/shared/theme/colors";
  */
 export const HAS_LIQUID_GLASS =
   Platform.OS === "ios" && parseInt(String(Platform.Version), 10) >= 26;
-
-/** "#RRGGBB" | "#RGB" → "rgba(r,g,b,a)". Zaten rgb/rgba ise olduğu gibi döner. */
-function withAlpha(color: string, alpha: number): string {
-  const hex = color.trim();
-  if (!hex.startsWith("#")) return hex;
-
-  const body = hex.slice(1);
-  const full =
-    body.length === 3
-      ? body
-          .split("")
-          .map((c) => c + c)
-          .join("")
-      : body.slice(0, 6);
-  if (full.length !== 6) return hex;
-
-  const n = parseInt(full, 16);
-  return `rgba(${(n >> 16) & 255},${(n >> 8) & 255},${n & 255},${alpha})`;
-}
 
 type GlassFallbackShape = "capsule" | "circle" | "roundedRectangle";
 

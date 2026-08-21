@@ -12,8 +12,9 @@ import api from "@/shared/services/api";
 import { API_ENDPOINTS } from "@/shared/constants/api";
 import { setKvkkAccepted } from "@/features/auth/authSlice";
 import AppBottomSheet from "@/shared/components/AppBottomSheet";
-import { colors } from "../../../shared/theme/colors";
+import { colors, ink } from "../../../shared/theme/colors";
 import { useTranslation } from 'react-i18next';
+import { plainBlurTint } from "@/shared/theme/blur";
 
 export const CURRENT_KVKK_VERSION = "1.0";
 
@@ -57,14 +58,14 @@ export default function KVKKConsentScreen({ visible }) {
   const footer = (
     <BlurView
       intensity={40}
-      tint="dark"
+      tint={plainBlurTint()}
           style={{
             paddingHorizontal: 20,
             paddingTop: 16,
             paddingBottom: 28,
             gap: 12,
             borderTopWidth: 0.5,
-            borderTopColor: "rgba(255,255,255,0.08)",
+            borderTopColor: colors.hairlineSoft,
           }}
         >
           <TouchableOpacity
@@ -82,8 +83,8 @@ export default function KVKKConsentScreen({ visible }) {
                 height: 22,
                 borderRadius: 6,
                 borderWidth: 1.5,
-                borderColor: agreed ? colors.text : "rgba(255,255,255,0.3)",
-                backgroundColor: agreed ? colors.text : "transparent",
+                borderColor: agreed ? colors.inverseSurface : colors.hairlineMuted,
+                backgroundColor: agreed ? colors.inverseSurface : "transparent",
                 alignItems: "center",
                 justifyContent: "center",
                 marginTop: 1,
@@ -91,7 +92,7 @@ export default function KVKKConsentScreen({ visible }) {
               }}
             >
               {agreed && (
-                <Text style={{ color: "#000", fontSize: 13, fontWeight: "700" }}>
+                <Text style={{ color: colors.onInverseSurface, fontSize: 13, fontWeight: "700" }}>
                   ✓
                 </Text>
               )}
@@ -116,17 +117,17 @@ export default function KVKKConsentScreen({ visible }) {
               borderRadius: 999,
               borderCurve: "continuous",
               overflow: "hidden",
-              backgroundColor: agreed ? colors.text : "rgba(255,255,255,0.15)",
+              backgroundColor: agreed ? colors.inverseSurface : colors.hairlineStrong,
               paddingVertical: 16,
               alignItems: "center",
             }}
           >
             {loading ? (
-              <ActivityIndicator color={agreed ? "#000" : colors.text} />
+              <ActivityIndicator color={agreed ? colors.onInverseSurface : colors.text} />
             ) : (
               <Text
                 style={{
-                  color: agreed ? "#000" : "rgba(255,255,255,0.4)",
+                  color: agreed ? colors.onInverseSurface : ink(0.4),
                   fontWeight: "700",
                   fontSize: 15,
                 }}

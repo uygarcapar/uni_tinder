@@ -1,10 +1,11 @@
 import { View, Text } from 'react-native';
 import { Image as ExpoImage } from 'expo-image';
 import { BlurView } from 'expo-blur';
-import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { HeartCrack } from 'lucide-react-native';
 import SFIcon from '../SFIcon';
-import { colors } from '../../theme/colors';
+import { colors, ink } from "../../theme/colors";
+import { plainBlurTint } from "@/shared/theme/blur";
+import ToastShell, { toastFill, TOAST_BLUR_INTENSITY } from "./ToastShell";
 
 export type MissedMatchToastProps = {
   /** Geçilen kişinin adı — yoksa gövde metni isimsiz varyanta düşer. */
@@ -20,29 +21,15 @@ export type MissedMatchToastProps = {
  * Kabuk InfoToast ile aynı cam kart; solda geçilen kişinin avatarı var.
  */
 export default function MissedMatchToast({ photoUrl, title, body }: MissedMatchToastProps) {
-  const insets = useSafeAreaInsets();
-
   return (
-    <View
-      style={{
-        marginTop: insets.top,
-        marginHorizontal: 12,
-        borderRadius: 24,
-        overflow: 'hidden',
-        shadowColor: '#000',
-        shadowOpacity: 0.35,
-        shadowRadius: 12,
-        shadowOffset: { width: 0, height: 4 },
-        elevation: 6,
-      }}
-    >
+    <ToastShell>
       <BlurView
-        intensity={60}
-        tint="dark"
+        intensity={TOAST_BLUR_INTENSITY}
+        tint={plainBlurTint()}
         style={{
           paddingVertical: 14,
           paddingHorizontal: 16,
-          backgroundColor: 'rgba(20,20,20,0.35)',
+          backgroundColor: toastFill(),
           flexDirection: 'row',
           alignItems: 'center',
         }}
@@ -60,7 +47,7 @@ export default function MissedMatchToast({ photoUrl, title, body }: MissedMatchT
               width: 40,
               height: 40,
               borderRadius: 20,
-              backgroundColor: 'rgba(255,255,255,0.12)',
+              backgroundColor: ink(0.12),
               alignItems: 'center',
               justifyContent: 'center',
             }}
@@ -83,13 +70,13 @@ export default function MissedMatchToast({ photoUrl, title, body }: MissedMatchT
             {title}
           </Text>
           <Text
-            style={{ color: '#fff', fontSize: 13, fontWeight: '500', marginTop: 2 }}
+            style={{ color: colors.text, fontSize: 13, fontWeight: '500', marginTop: 1 }}
             numberOfLines={2}
           >
             {body}
           </Text>
         </View>
       </BlurView>
-    </View>
+    </ToastShell>
   );
 }

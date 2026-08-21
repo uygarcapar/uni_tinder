@@ -48,8 +48,9 @@ import {
 import { X } from "lucide-react-native";
 import SFIcon from "./SFIcon";
 import AppBottomSheet from "@/shared/components/AppBottomSheet";
-import { colors } from "../theme/colors";
+import { colors, veil, withAlpha } from "../theme/colors";
 import { glassFallback } from "../theme/glass";
+import { chromeBlurTint } from "@/shared/theme/blur";
 
 // Header dikey breakdown:
 //   top:20 — drag indicator pill (4px tall), iPhone üstten nefes payı için
@@ -259,7 +260,7 @@ export default function AppModal({
           width: ACTION_HEIGHT,
           height: ACTION_HEIGHT,
           borderRadius: 999,
-          backgroundColor: "rgba(255,255,255,0.08)",
+          backgroundColor: colors.hairlineSoft,
           alignItems: "center",
           justifyContent: "center",
         }}
@@ -311,7 +312,7 @@ export default function AppModal({
           height: ACTION_HEIGHT,
           paddingHorizontal: 18,
           borderRadius: 999,
-          backgroundColor: "rgba(255,255,255,0.08)",
+          backgroundColor: colors.hairlineSoft,
           alignItems: "center",
           justifyContent: "center",
           opacity: opts?.disabled ? 0.35 : 1,
@@ -453,13 +454,15 @@ export default function AppModal({
                 />
               }
             >
+              {/* Derinlik perdesi — koyuda karartır, açıkta AYNI oranlarla
+                  beyazlatır (veil). Maske siyah/şeffaf kalır: alfa maskesi. */}
               <LinearGradient
-                colors={["black", "rgba(0, 0, 0, 0.2)"]}
+                colors={[veil(1), veil(0.2)]}
                 style={StyleSheet.absoluteFill}
               />
               <BlurView
                 intensity={15}
-                tint="systemChromeMaterialDark"
+                tint={chromeBlurTint()}
                 style={StyleSheet.absoluteFill}
               />
             </MaskedView>
@@ -467,7 +470,9 @@ export default function AppModal({
             <View
               style={[
                 StyleSheet.absoluteFill,
-                { backgroundColor: "rgba(18,18,18,0.95)" },
+                // Android'de blur yok → düz zemin. Sabit #121212 yerine tema
+                // zemini: açık modda beyaz header.
+                { backgroundColor: withAlpha(colors.bg, 0.95) },
               ]}
             />
           )}
@@ -490,7 +495,7 @@ export default function AppModal({
               width: 36,
               height: 4,
               borderRadius: 2,
-              backgroundColor: "rgba(255,255,255,0.3)",
+              backgroundColor: colors.hairlineMuted,
             }}
           />
         </View>

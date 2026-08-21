@@ -7,7 +7,7 @@ import SFIcon from "@/shared/components/SFIcon";
 import api from "@/shared/services/api";
 import { API_ENDPOINTS } from "@/shared/constants/api";
 import { getDateLocale } from "@/shared/i18n/dateLocale";
-import { colors } from "../../../shared/theme/colors";
+import { colors, ink } from "../../../shared/theme/colors";
 
 export default function DeletionBanner() {
   const { t } = useTranslation();
@@ -73,7 +73,7 @@ export default function DeletionBanner() {
         zIndex: 999,
         marginHorizontal: 12,
         marginTop: 8,
-        backgroundColor: "#1a0608",
+        backgroundColor: colors.dangerSurface,
         borderRadius: 20,
         borderCurve: "continuous",
         overflow: "hidden",
@@ -106,7 +106,7 @@ export default function DeletionBanner() {
         style={{
           borderRadius: 999,
           borderWidth: 0.5,
-          borderColor: "rgba(255,255,255,0.2)",
+          borderColor: ink(0.2),
           paddingHorizontal: 12,
           paddingVertical: 7,
         }}

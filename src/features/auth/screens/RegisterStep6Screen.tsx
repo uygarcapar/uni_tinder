@@ -73,7 +73,7 @@ export default function RegisterStep6Screen({ navigation }: NativeStackScreenPro
     borderCurve: "continuous",
     overflow: "hidden",
     borderWidth: 0.5,
-    borderColor: hasError ? colors.error : "rgba(255,255,255,0.1)",
+    borderColor: hasError ? colors.error : colors.hairline,
     paddingHorizontal: 16,
     paddingVertical: 16,
     fontSize: 22,
@@ -83,8 +83,8 @@ export default function RegisterStep6Screen({ navigation }: NativeStackScreenPro
   });
 
   return (
-    <View className="flex-1 bg-bg">
-      <View className="bg-bg pt-16 pb-6 px-6">
+    <View className="flex-1" style={{ backgroundColor: colors.bg }}>
+      <View className="pt-16 pb-6 px-6" style={{ backgroundColor: colors.bg }}>
         <RegisterBackButton onPress={() => navigation.goBack()} />
       </View>
 
@@ -93,15 +93,15 @@ export default function RegisterStep6Screen({ navigation }: NativeStackScreenPro
       <TouchableWithoutFeedback onPress={Keyboard.dismiss}>
         <View className="flex-1 px-6 py-6 pt-0">
           <View className="flex flex-col gap-2">
-            <Text className="text-4xl font-bold text-white">{t('auth.step6.title')}</Text>
-            <Text className="text-[18px] font-normal text-gray-400 mb-6">
+            <Text className="text-4xl font-bold" style={{ color: colors.text }}>{t('auth.step6.title')}</Text>
+            <Text className="text-[18px] font-normal mb-6" style={{ color: colors.textSecondary }}>
               {t('auth.step6.description')}
             </Text>
           </View>
 
           <View style={{ flexDirection: "row", alignItems: "center", gap: 8 }}>
             <View style={{ flex: 1 }}>
-              <Text className="text-gray-300 text-[14px] font-semibold mb-2 text-center">
+              <Text className="text-[14px] font-semibold mb-2 text-center" style={{ color: colors.neutral200 }}>
                 {t('auth.step6.dayLabel')}
               </Text>
               <Controller
@@ -131,7 +131,7 @@ export default function RegisterStep6Screen({ navigation }: NativeStackScreenPro
             </View>
 
             <View style={{ flex: 1 }}>
-              <Text className="text-gray-300 text-[14px] font-semibold mb-2 text-center">
+              <Text className="text-[14px] font-semibold mb-2 text-center" style={{ color: colors.neutral200 }}>
                 {t('auth.step6.monthLabel')}
               </Text>
               <Controller
@@ -162,7 +162,7 @@ export default function RegisterStep6Screen({ navigation }: NativeStackScreenPro
             </View>
 
             <View style={{ flex: 2 }}>
-              <Text className="text-gray-300 text-[14px] font-semibold mb-2 text-center">
+              <Text className="text-[14px] font-semibold mb-2 text-center" style={{ color: colors.neutral200 }}>
                 {t('auth.step6.yearLabel')}
               </Text>
               <Controller
@@ -193,7 +193,7 @@ export default function RegisterStep6Screen({ navigation }: NativeStackScreenPro
           </View>
 
           {firstError ? (
-            <Text className="text-red-500 text-center font-normal mb-3 mt-4">
+            <Text className="text-center font-normal mb-3 mt-4" style={{ color: colors.error }}>
               {firstError}
             </Text>
           ) : null}
@@ -208,10 +208,10 @@ export default function RegisterStep6Screen({ navigation }: NativeStackScreenPro
               borderRadius: 999,
               borderCurve: "continuous",
               overflow: "hidden",
-              backgroundColor: colors.text,
+              backgroundColor: colors.inverseSurface,
             }}
           >
-            <Text className="text-black py-[20px] font-bold text-[15px] text-center">
+            <Text className="py-[20px] font-bold text-[15px] text-center" style={{ color: colors.onInverseSurface }}>
               {t('common.continueButton')}
             </Text>
           </AnimatedPressable>

@@ -6,7 +6,7 @@ export default function EmptyState({
   Icon,
   sf,
   iconSize = 100,
-  iconColor = "#dee0ea",
+  iconColor = colors.neutral100,
   iconStrokeWidth = 1.2,
   text,
   subtitle,
@@ -63,6 +63,22 @@ export default function EmptyState({
       >
         {text}
       </Text>
+
+      {/* `subtitle` prop'u baştan beri vardı ama yalnız başlığın marginBottom'unu
+          belirliyordu — çağıranların geçtiği açıklama metinleri (bildirimler,
+          mesajlar, beğeniler) hiç çizilmiyordu. */}
+      {!!subtitle && (
+        <Text
+          style={{
+            color: colors.textSecondary,
+            fontSize: 15,
+            lineHeight: 21,
+            textAlign: "center",
+          }}
+        >
+          {subtitle}
+        </Text>
+      )}
 
       {/* Aksiyon butonu — DiscoverScreen'in boş deste kartındaki pill'in aynısı
           (litPlus zemin, 999 radius, 15/600 metin). Orada sola yaslı duruyor,

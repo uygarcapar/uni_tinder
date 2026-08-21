@@ -12,13 +12,19 @@ import { gradients } from "../theme/colors";
 // Gradyan MaskedView + expo-linear-gradient yerine SVG <Defs> ile veriliyor:
 // 3 native view (MaskedView + SymbolView maskesi + LinearGradient, offscreen
 // compose) → tek Svg. Ayrıca iOS/Android'de birebir aynı şekil.
+//
+// `color` verilirse gradyan yerine düz dolgu: lit plus kartı gibi zemini zaten
+// kırmızı-turuncu gradyan olan yüzeylerde (gradients.litPlusCard) rozetin
+// gradyanı zemine gömülüyor, orada onMedia ile düz çiziliyor.
 export const PREMIUM_FLAME_SIZE = 26;
 
 export default function PremiumFlame({
   size = PREMIUM_FLAME_SIZE,
+  color,
   style,
 }: {
   size?: number;
+  color?: string;
   style?: StyleProp<ViewStyle>;
 }) {
   // Aynı ekranda birden fazla rozet olabiliyor (LikesScreen listesi). SVG
@@ -27,25 +33,27 @@ export default function PremiumFlame({
 
   return (
     <Svg width={size} height={size} viewBox={FLAME_VIEWBOX} style={style}>
-      <Defs>
-        <LinearGradient
-          id={gradientId}
-          gradientUnits="userSpaceOnUse"
-          x1={0}
-          y1={0}
-          x2={24}
-          y2={24}
-        >
-          {gradients.swipeHeart.map((color, i) => (
-            <Stop
-              key={color + i}
-              offset={i / (gradients.swipeHeart.length - 1)}
-              stopColor={color}
-            />
-          ))}
-        </LinearGradient>
-      </Defs>
-      <Path d={FLAME_PATH} fill={`url(#${gradientId})`} />
+      {color ? null : (
+        <Defs>
+          <LinearGradient
+            id={gradientId}
+            gradientUnits="userSpaceOnUse"
+            x1={0}
+            y1={0}
+            x2={24}
+            y2={24}
+          >
+            {gradients.swipeHeart.map((stopColor, i) => (
+              <Stop
+                key={stopColor + i}
+                offset={i / (gradients.swipeHeart.length - 1)}
+                stopColor={stopColor}
+              />
+            ))}
+          </LinearGradient>
+        </Defs>
+      )}
+      <Path d={FLAME_PATH} fill={color ?? `url(#${gradientId})`} />
     </Svg>
   );
 }

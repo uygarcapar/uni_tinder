@@ -66,9 +66,9 @@ export default function RegisterStep10Screen({ navigation }: NativeStackScreenPr
   });
 
   return (
-    <View className="flex-1 bg-bg">
+    <View className="flex-1" style={{ backgroundColor: colors.bg }}>
       {/* Header */}
-      <View className="bg-bg pt-16 pb-6 px-6">
+      <View className="pt-16 pb-6 px-6" style={{ backgroundColor: colors.bg }}>
         <View className="flex-row items-center justify-between">
           <RegisterBackButton onPress={() => navigation.goBack()} />
         </View>
@@ -78,8 +78,8 @@ export default function RegisterStep10Screen({ navigation }: NativeStackScreenPr
 
       <View className="flex-1 px-6 py-6 pt-0">
         <View className="flex flex-col gap-2">
-          <Text className="text-4xl font-bold text-white">{t('auth.step10.title')}</Text>
-          <Text className="text-[18px] font-normal text-gray-400 mb-6">
+          <Text className="text-4xl font-bold" style={{ color: colors.text }}>{t('auth.step10.title')}</Text>
+          <Text className="text-[18px] font-normal mb-6" style={{ color: colors.textSecondary }}>
             {t('auth.step10.description')}
           </Text>
         </View>
@@ -95,8 +95,8 @@ export default function RegisterStep10Screen({ navigation }: NativeStackScreenPr
                   borderRadius: 30,
                   borderCurve: "continuous",
                   borderWidth: 0.5,
-                  borderColor: active ? colors.text : "rgba(255,255,255,0.1)",
-                  backgroundColor: active ? colors.text : "transparent",
+                  borderColor: active ? colors.inverseSurface : colors.hairline,
+                  backgroundColor: active ? colors.inverseSurface : "transparent",
                   paddingHorizontal: 20,
                   paddingVertical: 18,
                   position: "relative",
@@ -115,7 +115,7 @@ export default function RegisterStep10Screen({ navigation }: NativeStackScreenPr
 
         <View className="flex-row gap-2 px-2 mr-6 items-center mt-5">
           <SFIcon name="info.circle" fallback={InfoIcon} size={16} color={colors.textSecondary} />
-          <Text className="text-gray-400 text-[12px]">
+          <Text className="text-[12px]" style={{ color: colors.textSecondary }}>
             {t('auth.step10.infoText')}
           </Text>
         </View>
@@ -129,8 +129,8 @@ export default function RegisterStep10Screen({ navigation }: NativeStackScreenPr
 
       <KeyboardStickyView offset={{ closed: 0, opened: 0 }}>
         <View style={{ paddingHorizontal: 32, paddingBottom: 32, paddingTop: 16, backgroundColor: colors.bg }}>
-          <AnimatedPressableShared onPress={handleNext} style={{ borderRadius: 999, overflow: "hidden", backgroundColor: colors.text }}>
-            <Text style={{ color: "#000", paddingVertical: 20, fontWeight: "700", fontSize: 15, textAlign: "center" }}>
+          <AnimatedPressableShared onPress={handleNext} style={{ borderRadius: 999, overflow: "hidden", backgroundColor: colors.inverseSurface }}>
+            <Text style={{ color: colors.onInverseSurface, paddingVertical: 20, fontWeight: "700", fontSize: 15, textAlign: "center" }}>
               {t('common.continueButton')}
             </Text>
           </AnimatedPressableShared>

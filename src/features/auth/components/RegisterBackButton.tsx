@@ -58,7 +58,7 @@ function RegisterBackButton({ onPress, color = colors.text }: Props) {
           borderCurve: "continuous",
           alignItems: "center",
           justifyContent: "center",
-          backgroundColor: "rgba(255,255,255,0.08)",
+          backgroundColor: colors.hairlineSoft,
         }}
       >
         <SFIcon

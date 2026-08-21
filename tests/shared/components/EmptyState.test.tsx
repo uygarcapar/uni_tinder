@@ -1,6 +1,6 @@
 import React from 'react';
 import { Text } from 'react-native';
-import { render } from '@testing-library/react-native';
+import { render, fireEvent } from '@testing-library/react-native';
 import EmptyState from '@/shared/components/EmptyState';
 
 jest.mock('expo-linear-gradient', () => ({ LinearGradient: 'LinearGradient' }));
@@ -20,6 +20,24 @@ describe('EmptyState', () => {
   it('does not render an Icon when none is provided', () => {
     const { queryByText } = render(<EmptyState text="x" />);
     expect(queryByText('icon')).toBeNull();
+  });
+
+  // Regresyon: `subtitle` uzun süre yalnız başlığın marginBottom'unu
+  // belirliyordu, metnin kendisi hiç çizilmiyordu.
+  it('renders the subtitle when provided', () => {
+    const { getByText } = render(
+      <EmptyState text="x" subtitle="Bağlantını kontrol et" />
+    );
+    expect(getByText('Bağlantını kontrol et')).toBeTruthy();
+  });
+
+  it('renders the action button and calls onButtonPress', () => {
+    const onButtonPress = jest.fn();
+    const { getByText } = render(
+      <EmptyState text="x" buttonLabel="Tekrar dene" onButtonPress={onButtonPress} />
+    );
+    fireEvent.press(getByText('Tekrar dene'));
+    expect(onButtonPress).toHaveBeenCalled();
   });
 
   it('forwards iconSize/iconColor/iconStrokeWidth to the Icon', () => {

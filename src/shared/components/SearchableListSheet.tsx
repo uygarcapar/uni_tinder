@@ -29,8 +29,9 @@ import MaskedView from "@react-native-masked-view/masked-view";
 import { easeGradient } from "react-native-easing-gradient";
 import { BlurView } from "expo-blur";
 import { LinearGradient } from "expo-linear-gradient";
-import { colors } from "../theme/colors";
+import { colors, veil } from "../theme/colors";
 import { glassFallback } from "../theme/glass";
+import { chromeBlurTint } from "@/shared/theme/blur";
 
 // BottomSheetFlatList'in reanimated handler kabul eden versiyonu —
 // scroll değerini paylaşılan değere bağlamak için.
@@ -236,7 +237,7 @@ const SearchableListSheet = ({
                 borderRadius: 999,
                 borderCurve: "continuous",
                 borderWidth: 0.5,
-                borderColor: "rgba(255,255,255,0.1)",
+                borderColor: colors.hairline,
                 backgroundColor: "transparent",
                 paddingLeft: 44,
                 paddingRight: 16,
@@ -288,7 +289,7 @@ const SearchableListSheet = ({
                 overflow: "hidden",
                 borderRadius: 999,
                 backgroundColor: isSelected
-                  ? "rgba(255,255,255,0.1)"
+                  ? colors.hairline
                   : "transparent",
                 position: "relative",
               }}
@@ -379,8 +380,10 @@ const SearchableListSheet = ({
               bottom: 0,
             }}
           >
+            {/* Derinlik perdesi — koyuda karartır, açıkta AYNI oranlarla
+                beyazlatır (veil). Maske siyah/şeffaf kalır: alfa maskesi. */}
             <LinearGradient
-              colors={["black", "rgba(0, 0, 0, 0.2)"]}
+              colors={[veil(1), veil(0.2)]}
               style={{
                 position: "absolute",
                 top: 0,
@@ -391,11 +394,7 @@ const SearchableListSheet = ({
             />
             <BlurView
               intensity={15}
-              tint={
-                Platform.OS === "ios"
-                  ? "systemChromeMaterialDark"
-                  : "systemMaterialDark"
-              }
+              tint={chromeBlurTint()}
               style={{
                 position: "absolute",
                 top: 0,
@@ -425,7 +424,7 @@ const SearchableListSheet = ({
               width: 36,
               height: 4,
               borderRadius: 2,
-              backgroundColor: "rgba(255,255,255,0.3)",
+              backgroundColor: colors.hairlineMuted,
             }}
           />
         </View>
@@ -497,7 +496,7 @@ const SearchableListSheet = ({
                   width: 46,
                   height: 46,
                   borderRadius: 999,
-                  backgroundColor: "rgba(255,255,255,0.08)",
+                  backgroundColor: colors.hairlineSoft,
                   alignItems: "center",
                   justifyContent: "center",
                 }}
@@ -544,7 +543,7 @@ const SearchableListSheet = ({
                 paddingVertical: 12,
                 backgroundColor: colors.surface,
                 borderWidth: 0.5,
-                borderColor: "rgba(255,255,255,0.1)",
+                borderColor: colors.hairline,
               }}
             >
               <Text

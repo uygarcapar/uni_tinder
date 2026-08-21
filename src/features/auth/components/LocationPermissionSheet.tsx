@@ -13,7 +13,7 @@ import { Navigation, Settings as SettingsIcon } from "lucide-react-native";
 import AppBottomSheet from "@/shared/components/AppBottomSheet";
 import SFIcon from "@/shared/components/SFIcon";
 import AnimatedPressable from "@/shared/components/AnimatedPressable";
-import { colors } from "@/shared/theme/colors";
+import { colors, ink } from "@/shared/theme/colors";
 import { devLog } from "@/shared/utils/devLog";
 
 /**
@@ -115,7 +115,7 @@ export default function LocationPermissionSheet({
       visible={visible}
       onClose={onClose}
       snapPoints={["58%"]}
-      handleIndicatorStyle={{ backgroundColor: "rgba(255,255,255,0.25)" }}
+      handleIndicatorStyle={{ backgroundColor: ink(0.25) }}
       backdrop="blur"
     >
       <View
@@ -190,13 +190,13 @@ export default function LocationPermissionSheet({
               borderRadius: 999,
               borderCurve: "continuous",
               overflow: "hidden",
-              backgroundColor: colors.text,
+              backgroundColor: colors.inverseSurface,
               opacity: busy ? 0.5 : 1,
             }}
           >
             {busy ? (
               <View style={{ paddingVertical: 18 }}>
-                <ActivityIndicator color="#000000" />
+                <ActivityIndicator color={colors.onInverseSurface} />
               </View>
             ) : (
               <View
@@ -214,14 +214,14 @@ export default function LocationPermissionSheet({
                     name="gearshape.fill"
                     fallback={SettingsIcon}
                     size={17}
-                    color="#000000"
+                    color={colors.onInverseSurface}
                     strokeWidth={2}
                     weight="semibold"
                   />
                 )}
                 <Text
                   style={{
-                    color: "#000000",
+                    color: colors.onInverseSurface,
                     fontSize: 15,
                     fontWeight: "700",
                     textAlign: "center",

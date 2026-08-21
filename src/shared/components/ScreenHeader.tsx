@@ -1,5 +1,5 @@
 import React from "react";
-import { View, Text, StyleSheet, Platform } from "react-native";
+import { View, Text, StyleSheet } from "react-native";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { LinearGradient } from "expo-linear-gradient";
 import { BlurView } from "expo-blur";
@@ -16,7 +16,9 @@ import Animated, {
 } from "react-native-reanimated";
 import { easeGradient } from "react-native-easing-gradient";
 import WaveFillLogo from "@/shared/components/WaveFillLogo";
-import { colors as themeColors } from "../theme/colors";
+import { colors as themeColors, veil } from "../theme/colors";
+import { chromeBlurTint } from "@/shared/theme/blur";
+import { plainBlurTint } from "@/shared/theme/blur";
 
 const AnimatedBlurView = Animated.createAnimatedComponent(BlurView);
 const SCROLL_THRESHOLD = 30;
@@ -144,19 +146,18 @@ export default function ScreenHeader({
           }
           style={StyleSheet.absoluteFill}
         >
-          {/* Ekstra derinlik için karanlık gradient */}
+          {/* Ekstra derinlik için perde — koyuda karartır, açıkta AYNI
+              oranlarla beyazlatır (veil). Yukarıdaki maske siyah/şeffaf kalır:
+              o alfa maskesi, renk değil. */}
           <LinearGradient
-            colors={["black", "rgba(0, 0, 0, 0.2)"]}
+            colors={[veil(1), veil(0.2)]}
             style={StyleSheet.absoluteFill}
           />
           {/* Native iOS hissiyatı veren materyal blur */}
           <BlurView
             intensity={15} // Senin örneğindeki gibi hafif ve şık
-            tint={
-              Platform.OS === "ios"
-                ? "systemChromeMaterialDark" // iOS'teki en kaliteli karanlık cam
-                : "systemMaterialDark"
-            }
+            // Platform ayrimi chromeBlurTint()'in icinde.
+            tint={chromeBlurTint()}
             style={StyleSheet.absoluteFill}
           />
         </MaskedView>
@@ -250,7 +251,7 @@ export default function ScreenHeader({
             >
               <AnimatedBlurView
                 pointerEvents="none"
-                tint="dark"
+                tint={plainBlurTint()}
                 animatedProps={logoBlurProps}
                 style={{ flex: 1 }}
               />

@@ -74,7 +74,7 @@ function SkeletonBubble({
           ]}
         >
           <LinearGradient
-            colors={["transparent", "rgba(255,255,255,0.07)", "transparent"]}
+            colors={["transparent", colors.shimmer, "transparent"]}
             start={{ x: 0, y: 0 }}
             end={{ x: 1, y: 0 }}
             style={{ flex: 1 }}

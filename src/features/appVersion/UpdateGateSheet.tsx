@@ -13,7 +13,7 @@ import { ArrowDownCircle, RefreshCw, Wrench } from "lucide-react-native";
 import AppBottomSheet from "@/shared/components/AppBottomSheet";
 import SFIcon, { type SFSymbol } from "@/shared/components/SFIcon";
 import AnimatedPressable from "@/shared/components/AnimatedPressable";
-import { colors } from "@/shared/theme/colors";
+import { colors, ink } from "@/shared/theme/colors";
 import type { VersionCheckResult } from "./versionService";
 
 /**
@@ -93,7 +93,7 @@ export default function UpdateGateSheet({
       backdrop="blur"
       enablePanDownToClose={!blocking}
       handleComponent={blocking ? null : undefined}
-      handleIndicatorStyle={{ backgroundColor: "rgba(255,255,255,0.25)" }}
+      handleIndicatorStyle={{ backgroundColor: ink(0.25) }}
     >
       <View
         style={{
@@ -170,13 +170,13 @@ export default function UpdateGateSheet({
                 borderRadius: 999,
                 borderCurve: "continuous",
                 overflow: "hidden",
-                backgroundColor: colors.text,
+                backgroundColor: colors.inverseSurface,
                 opacity: rechecking ? 0.5 : 1,
               }}
             >
               {rechecking ? (
                 <View style={{ paddingVertical: 20 }}>
-                  <ActivityIndicator color="#000000" />
+                  <ActivityIndicator color={colors.onInverseSurface} />
                 </View>
               ) : (
                 <View
@@ -197,13 +197,13 @@ export default function UpdateGateSheet({
                     }
                     fallback={isMaintenance ? RefreshCw : ArrowDownCircle}
                     size={17}
-                    color="#000000"
+                    color={colors.onInverseSurface}
                     strokeWidth={2}
                     weight="semibold"
                   />
                   <Text
                     style={{
-                      color: "#000000",
+                      color: colors.onInverseSurface,
                       fontSize: 15,
                       fontWeight: "700",
                       textAlign: "center",

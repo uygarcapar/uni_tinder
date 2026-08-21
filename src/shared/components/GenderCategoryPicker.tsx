@@ -160,8 +160,8 @@ export default function GenderCategoryPicker({
                   borderWidth: 0.5,
                   borderColor: isSelected
                     ? colors.text
-                    : "rgba(255,255,255,0.1)",
-                  backgroundColor: isSelected ? colors.text : "transparent",
+                    : colors.hairline,
+                  backgroundColor: isSelected ? colors.inverseSurface : "transparent",
                   paddingHorizontal: 20,
                   paddingVertical: 18,
                 }}
@@ -264,10 +264,10 @@ export default function GenderCategoryPicker({
                         borderWidth: 0.5,
                         borderColor: isSubSelected
                           ? colors.text
-                          : "rgba(255,255,255,0.1)",
+                          : colors.hairline,
                         backgroundColor: isSubSelected
                           ? colors.text
-                          : "rgba(255,255,255,0.08)",
+                          : colors.hairlineSoft,
                         paddingHorizontal: 20,
                         paddingVertical: 16,
                       }}

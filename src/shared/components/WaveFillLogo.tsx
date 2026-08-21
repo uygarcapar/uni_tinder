@@ -1,6 +1,13 @@
 import { Image, View } from "react-native";
 import OfflineIndicator from "@/shared/components/OfflineIndicator";
 import { LOGO_H, LOGO_W } from "@/shared/components/logoMetrics";
+import { isLight } from "@/shared/theme/colors";
+
+// require() Metro'da statik olmak zorunda → iki varlık da modül seviyesinde
+// çözülür, seçim render'da yapılır. tintColor yerine ayrı varlık: logonun
+// kenar yumuşatması tint'te bozuluyor ve siyah sürüm zaten mevcut.
+const LOGO_DARK_BG = require("../../../assets/lit_name_white.png");
+const LOGO_LIGHT_BG = require("../../../assets/lit_name_black.png");
 
 // Statik beyaz Lit logosu. ÖNCESİ: dalgalı gradient dolgu — SVG Path'in `d`'sini
 // her frame `useAnimatedProps` ile değiştiren sonsuz reanimated animasyonuydu.
@@ -19,7 +26,7 @@ export default function WaveFillLogo(_props: { fillRatio?: number }) {
   return (
     <View style={{ width: LOGO_W, height: LOGO_H }}>
       <Image
-        source={require("../../../assets/lit_name_white.png")}
+        source={isLight() ? LOGO_LIGHT_BG : LOGO_DARK_BG}
         style={{ width: LOGO_W, height: LOGO_H }}
         resizeMode="contain"
       />

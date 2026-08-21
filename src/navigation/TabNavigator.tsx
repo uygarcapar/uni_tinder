@@ -69,13 +69,13 @@ export default function TabNavigator() {
         // ağır-mount fırtınasını (Fabric commit-storm / crash penceresi) keser.
         lazy: true,
         tabBarActiveTintColor: colors.text,
-        // Explicit white inactive tint → iOS 26 liquid glass content'a göre BG
-        // adapt etse bile iconlar her zaman beyaz kalır.
-        tabBarInactiveTintColor: "rgba(255,255,255,0.7)",
-        // 'dark' = legacy UIBlurEffectStyle.dark, fixed-tone. iOS 26 liquid
-        // glass'ın content-adaptation davranışını override etmeye en yakın değer.
-        tabBarBlurEffect: "dark",
-        tabBarStyle: { backgroundColor: "rgba(18,18,18,0.92)" },
+        // Explicit tint → iOS 26 liquid glass content'a göre BG adapt etse bile
+        // ikonlar tema modunun tersinde kalmaz (koyuda beyaz, açıkta siyah).
+        tabBarInactiveTintColor: colors.tabBarInactive,
+        // Legacy fixed-tone UIBlurEffectStyle: iOS 26 liquid glass'ın
+        // content-adaptation davranışını override etmeye en yakın değer.
+        tabBarBlurEffect: colors.blurTint,
+        tabBarStyle: { backgroundColor: colors.tabBarBg },
       } as any}
     >
       <Tab.Screen

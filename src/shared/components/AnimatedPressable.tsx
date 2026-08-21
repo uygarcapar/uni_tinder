@@ -11,6 +11,11 @@ export default function AnimatedPressable({
   activeOpacity = 1,
   pressScale = 0.97,
   testID,
+  // İkon-only butonlarda ekran okuyucunun okuyacağı tek şey bu — verilmezse
+  // (mevcut çağıranların çoğu) TouchableOpacity'nin davranışı değişmez.
+  accessibilityLabel,
+  accessibilityRole,
+  hitSlop,
   children,
 }: any) {
   const scale = useRef(new Animated.Value(1)).current;
@@ -45,6 +50,9 @@ export default function AnimatedPressable({
         disabled={disabled}
         style={style}
         testID={testID}
+        accessibilityLabel={accessibilityLabel}
+        accessibilityRole={accessibilityRole}
+        hitSlop={hitSlop}
       >
         {children}
       </TouchableOpacity>

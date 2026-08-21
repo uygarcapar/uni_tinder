@@ -5,6 +5,8 @@ import Animated, {
   Extrapolate,
 } from "react-native-reanimated";
 import { BlurView } from "expo-blur";
+import { scrimAt } from "@/shared/theme/colors";
+import { plainBlurTint } from "@/shared/theme/blur";
 
 const AnimatedBlurView = Animated.createAnimatedComponent(BlurView);
 
@@ -15,7 +17,7 @@ export default function BlurBottomSheetBackdrop({
   style,
   onPress,
   intensity = 30,
-  dimColor = "rgba(0,0,0,0.35)",
+  dimColor = scrimAt(0.35),
 }: any) {
   const animatedStyle = useAnimatedStyle(() => ({
     opacity: interpolate(
@@ -34,7 +36,7 @@ export default function BlurBottomSheetBackdrop({
       >
         <AnimatedBlurView
           intensity={intensity}
-          tint="dark"
+          tint={plainBlurTint()}
           style={{ flex: 1, backgroundColor: dimColor }}
         />
       </TouchableOpacity>

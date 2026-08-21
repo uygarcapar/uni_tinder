@@ -12,7 +12,7 @@ import Animated, {
   withTiming,
   Easing,
 } from "react-native-reanimated";
-import { colors as theme, gradients } from "@/shared/theme/colors";
+import { colors as theme, gradients, ink } from "@/shared/theme/colors";
 
 type SuperLikeHeartProps = {
   size?: number;
@@ -96,7 +96,7 @@ export default function SuperLikeHeart({
               {...(easeGradient({
                 colorStops: {
                   0: { color: "transparent" },
-                  0.5: { color: "rgba(255,255,255,0.22)" },
+                  0.5: { color: ink(0.22) },
                   1: { color: "transparent" },
                 },
               }) as any)}

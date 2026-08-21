@@ -63,9 +63,9 @@ export default function RegisterStep9Screen({ navigation }: NativeStackScreenPro
   }, [dispatch, navigation]);
 
   return (
-    <View className="flex-1 bg-bg">
+    <View className="flex-1" style={{ backgroundColor: colors.bg }}>
       {/* Header */}
-      <View className="bg-bg pt-16 pb-6 px-6">
+      <View className="pt-16 pb-6 px-6" style={{ backgroundColor: colors.bg }}>
         <RegisterBackButton onPress={() => navigation.goBack()} />
       </View>
 
@@ -73,8 +73,8 @@ export default function RegisterStep9Screen({ navigation }: NativeStackScreenPro
 
       <View className="flex-1 px-6 py-6 pt-0">
         <View className="flex flex-col gap-2">
-          <Text className="text-4xl font-bold text-white">{t('auth.step9.title')}</Text>
-          <Text className="text-[18px] font-normal text-gray-400 mb-8">
+          <Text className="text-4xl font-bold" style={{ color: colors.text }}>{t('auth.step9.title')}</Text>
+          <Text className="text-[18px] font-normal mb-8" style={{ color: colors.textSecondary }}>
             {t('auth.step9.description')}
           </Text>
         </View>
@@ -96,7 +96,7 @@ export default function RegisterStep9Screen({ navigation }: NativeStackScreenPro
           </View>
         </View>
 
-        <Text className="text-gray-500 text-[14px] font-normal text-center mt-8 px-2">
+        <Text className="text-[14px] font-normal text-center mt-8 px-2" style={{ color: colors.textMuted }}>
           {t('auth.step9.privacyNote')}
         </Text>
       </View>
@@ -105,9 +105,9 @@ export default function RegisterStep9Screen({ navigation }: NativeStackScreenPro
       <View className="px-8 pb-8 pt-4">
         <AnimatedPressable
           onPress={() => setSheetVisible(true)}
-          style={{ borderRadius: 999, borderCurve: "continuous", overflow: "hidden", backgroundColor: colors.text }}
+          style={{ borderRadius: 999, borderCurve: "continuous", overflow: "hidden", backgroundColor: colors.inverseSurface }}
         >
-          <Text className="text-black py-[20px] font-bold text-[15px] text-center">
+          <Text className="py-[20px] font-bold text-[15px] text-center" style={{ color: colors.onInverseSurface }}>
             {t('auth.step9.allowButton')}
           </Text>
         </AnimatedPressable>

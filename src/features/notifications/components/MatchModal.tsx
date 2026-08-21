@@ -15,7 +15,7 @@ import SFIcon from "@/shared/components/SFIcon";
 import * as Haptics from "expo-haptics";
 import { CannonConfetti } from "react-native-fast-confetti";
 import { useTranslation } from "react-i18next";
-import { colors } from "../../../shared/theme/colors";
+import { colors, onMediaAt, scrimAt } from "../../../shared/theme/colors";
 
 const { width: SCREEN_W, height: SCREEN_H } = Dimensions.get("window");
 const CONFETTI_PER_SIDE = 55;
@@ -31,7 +31,7 @@ const CONFETTI_COLORS = [
   "#9B5DE5",
   "#F15BB5",
   colors.primaryHot,
-  colors.text,
+  colors.onMedia,
 ];
 
 // Konfeti: react-native-fast-confetti (Skia Atlas API) — eski implementasyon
@@ -248,7 +248,7 @@ export default function MatchModal({ match, myPhoto, onClose, onSendMessage }: a
       <Animated.View
         style={{
           flex: 1,
-          backgroundColor: "rgba(0,0,0,0.55)",
+          backgroundColor: scrimAt(0.55),
           justifyContent: "center",
           alignItems: "center",
           opacity,
@@ -287,7 +287,7 @@ export default function MatchModal({ match, myPhoto, onClose, onSendMessage }: a
               ],
             }}
           >
-            <Text className="text-white font-bold text-[35px]">
+            <Text className="font-bold text-[35px]" style={{ color: colors.onMedia }}>
               {t('match.title')}
             </Text>
           </Animated.View>
@@ -312,7 +312,7 @@ export default function MatchModal({ match, myPhoto, onClose, onSendMessage }: a
                   height: AVATAR,
                   borderRadius: AVATAR / 2,
                   borderWidth: 0.5,
-                  borderColor: "#828282",
+                  borderColor: onMediaAt(0.5),
                   overflow: "hidden",
                   backgroundColor: colors.surface2,
                 }}
@@ -343,7 +343,7 @@ export default function MatchModal({ match, myPhoto, onClose, onSendMessage }: a
                   height: AVATAR,
                   borderRadius: AVATAR / 2,
                   borderWidth: 0.5,
-                  borderColor: "#828282",
+                  borderColor: onMediaAt(0.5),
                   overflow: "hidden",
                   backgroundColor: colors.surface2,
                 }}
@@ -363,7 +363,7 @@ export default function MatchModal({ match, myPhoto, onClose, onSendMessage }: a
             </Animated.View>
           </View>
 
-          <Text className="text-white text-[15px] text-center font-semibold mt-8">
+          <Text className="text-[15px] text-center font-semibold mt-8" style={{ color: colors.onMedia }}>
             {t('match.subtitle', { name: match.matchedUserName })}
           </Text>
 
@@ -396,8 +396,8 @@ export default function MatchModal({ match, myPhoto, onClose, onSendMessage }: a
               className="w-full flex-row items-center justify-center py-[16px] rounded-full"
               style={{ backgroundColor: colors.litPlus, borderCurve: "continuous" }}
             >
-              <SFIcon name="message.fill" fallback={MessageCircle} size={18} color="#fff" strokeWidth={2} weight="semibold" />
-              <Text className="text-white font-semibold text-[14px] ml-2">
+              <SFIcon name="message.fill" fallback={MessageCircle} size={18} color={colors.onMedia} strokeWidth={2} weight="semibold" />
+              <Text className="font-semibold text-[14px] ml-2" style={{ color: colors.onMedia }}>
                 {t('match.sendMessage')}
               </Text>
             </TouchableOpacity>
@@ -413,11 +413,11 @@ export default function MatchModal({ match, myPhoto, onClose, onSendMessage }: a
               onPressOut={() => handlePressOut(backScale)}
               className="w-full flex-row items-center justify-center py-5 rounded-full"
               style={{
-                backgroundColor: "rgba(255,255,255,0.15)",
+                backgroundColor: onMediaAt(0.15),
                 borderCurve: "continuous",
               }}
             >
-              <Text className="text-gray-300 font-medium text-[14px]">
+              <Text className="font-medium text-[14px]" style={{ color: onMediaAt(0.85) }}>
                 {t('match.back')}
               </Text>
             </TouchableOpacity>

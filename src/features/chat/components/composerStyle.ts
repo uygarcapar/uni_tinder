@@ -1,4 +1,5 @@
-import { Platform } from "react-native";
+import { ink } from "@/shared/theme/colors";
+import { chromeBlurTint } from "@/shared/theme/blur";
 
 /**
  * Mesaj yazma çubuğunun görsel sabitleri — TEK KAYNAK.
@@ -9,10 +10,13 @@ import { Platform } from "react-native";
  * ayrışırlarsa iki kapsül farklı görünür.
  */
 export const COMPOSER_BLUR_INTENSITY = 80;
-export const COMPOSER_BLUR_TINT = (
-  Platform.OS === "ios" ? "systemChromeMaterialDark" : "systemMaterialDark"
-) as "systemChromeMaterialDark" | "systemMaterialDark";
-export const COMPOSER_BAR_BG = "rgba(255,255,255,0.04)";
+/**
+ * FONKSIYON, sabit DEĞİL: temaya bağlılar ve modül seviyesinde değerlenirlerse
+ * tema değişince bayat kalırlar (bkz. theme/colors.ts mutasyon sözleşmesi).
+ * Render içinde çağır.
+ */
+export const composerBlurTint = chromeBlurTint;
+export const composerBarBg = () => ink(0.04);
 // Kapsülün İÇ boşluğu (input'ta paddingLeft/Right 8 + paddingVertical 8).
 export const COMPOSER_BAR_PAD_H = 8;
 export const COMPOSER_BAR_PAD_V = 8;

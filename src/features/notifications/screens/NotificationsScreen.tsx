@@ -4,8 +4,6 @@ import {
   View,
   Text,
   TouchableOpacity,
-  ActivityIndicator,
-  RefreshControl,
   Platform,
   StyleSheet,
 } from 'react-native';
@@ -55,6 +53,7 @@ import { parseUtc } from '@/shared/utils/dateUtc';
 import { colors } from '../../../shared/theme/colors';
 import { glassFallback } from '../../../shared/theme/glass';
 import { useRenderCount } from '@/shared/debug/useRenderCount';
+import { plainBlurTint } from "@/shared/theme/blur";
 
 // Fotoğrafın sağ altına oturan tip rozeti. Burada olmayan tipler (System,
 // TrialEndingSoon, PremiumExpiringSoon …) sistem bildirimi sayılır, rozet almaz.
@@ -132,8 +131,7 @@ export default function NotificationsScreen() {
   const [page, setPage] = useState(1);
   const [hasMore, setHasMore] = useState(false);
   const [loading, setLoading] = useState(false);
-  const [refreshing, setRefreshing] = useState(false);
-  // Sadece ilk açılışta iskelet göster — pull-to-refresh / pagination'da değil.
+  // Sadece ilk açılışta iskelet göster — pagination'da / realtime yenilemede değil.
   const [firstLoad, setFirstLoad] = useState(true);
 
   const scrollY = useSharedValue(0);
@@ -157,7 +155,6 @@ export default function NotificationsScreen() {
       }
     } finally {
       setLoading(false);
-      setRefreshing(false);
       setFirstLoad(false);
     }
   }, [loading]);
@@ -173,11 +170,6 @@ export default function NotificationsScreen() {
     });
     return unsub;
   }, []);
-
-  const onRefresh = useCallback(() => {
-    setRefreshing(true);
-    fetchPage(1);
-  }, [fetchPage]);
 
   const onEndReached = useCallback(() => {
     if (!hasMore || loading) return;
@@ -254,7 +246,7 @@ export default function NotificationsScreen() {
   );
 
   return (
-    <View className="flex-1 bg-bg">
+    <View className="flex-1" style={{ backgroundColor: colors.bg }}>
       <Animated.FlatList
         data={data}
         onScroll={scrollHandler}
@@ -262,24 +254,8 @@ export default function NotificationsScreen() {
         showsVerticalScrollIndicator={false}
         keyExtractor={keyExtractor}
         renderItem={renderItem}
-        refreshControl={
-          <RefreshControl
-            refreshing={refreshing}
-            onRefresh={onRefresh}
-            tintColor={colors.primary}
-            // Spinner header blur'unun altında kaybolmasın — içeriğin başladığı yerde dönsün.
-            progressViewOffset={insets.top + 50 + 16}
-          />
-        }
         onEndReached={onEndReached}
         onEndReachedThreshold={0.4}
-        ListFooterComponent={
-          loading && items.length > 0 ? (
-            <View style={{ paddingVertical: 16 }}>
-              <ActivityIndicator size="small" color={colors.text} />
-            </View>
-          ) : null
-        }
         ListEmptyComponent={
           firstLoad ? (
             <NotificationsSkeleton />
@@ -351,7 +327,8 @@ const AVATAR_SIZE = 58;
 const BADGE_SIZE = 18;
 const BADGE_RING = 3; // rozetin arkasındaki ekran zemini halkası — "boşluk" hissi
 const DOT_SIZE = 10;
-const AVATAR_BORDER = { borderWidth: 0.1, borderColor: '#dee0ea' };
+// Fonksiyon: modul seviyesinde sabitlenirse tema degisince bayat kalir.
+const avatarBorder = () => ({ borderWidth: 0.1, borderColor: colors.hairline });
 
 // Kilitli avatarda İKİ katman birden gerekiyor, ikisi de tek başına yetmiyor:
 //
@@ -399,7 +376,7 @@ function NotificationAvatar({ item, locked = false }) {
               height: AVATAR_SIZE,
               borderRadius: AVATAR_SIZE / 2,
               backgroundColor: colors.surface3,
-              ...AVATAR_BORDER,
+              ...avatarBorder(),
             }}
             cachePolicy="memory-disk"
             transition={350}
@@ -415,7 +392,7 @@ function NotificationAvatar({ item, locked = false }) {
               backgroundColor: colors.surface3,
               alignItems: 'center',
               justifyContent: 'center',
-              ...AVATAR_BORDER,
+              ...avatarBorder(),
             }}
           >
             <SFIcon name={placeholder.sf} fallback={placeholder.lucide} size={28} color={colors.text} strokeWidth={2} weight="semibold" />
@@ -425,7 +402,7 @@ function NotificationAvatar({ item, locked = false }) {
         {locked && !!item.senderPhotoUrl && (
           <BlurView
             intensity={LOCKED_BLUR_INTENSITY}
-            tint="dark"
+            tint={plainBlurTint()}
             style={StyleSheet.absoluteFill}
             pointerEvents="none"
           />
@@ -470,8 +447,8 @@ const SKELETON_WIDTHS = ['88%', '64%', '76%', '92%', '58%', '80%'];
 function SectionHeader({ title }) {
   return (
     <Text
-      className="text-white text-xl font-bold px-5 pt-4 pb-4"
-      style={{ letterSpacing: 0.2 }}
+      className="text-xl font-bold px-5 pt-4 pb-4"
+      style={{ color: colors.text, letterSpacing: 0.2 }}
     >
       {title}
     </Text>
@@ -567,12 +544,12 @@ const NotificationRow = memo(function NotificationRow({ item, locked, onPress }:
           numberOfLines={3}
           onTextLayout={onTextLayout}
         >
-          <Text className="text-white font-medium">{title}</Text>
-          {!!body && <Text className="text-white font-normal"> {body}</Text>}
-          {wraps && <Text className="text-gray-400"> {time}</Text>}
+          <Text className="font-medium" style={{ color: colors.text }}>{title}</Text>
+          {!!body && <Text className="font-normal" style={{ color: colors.text }}> {body}</Text>}
+          {wraps && <Text style={{ color: colors.textSecondary }}> {time}</Text>}
         </Text>
         {!wraps && (
-          <Text className="text-gray-400 text-[15px]" style={{ lineHeight: 21 }}>
+          <Text className="text-[15px]" style={{ color: colors.textSecondary, lineHeight: 21 }}>
             {time}
           </Text>
         )}

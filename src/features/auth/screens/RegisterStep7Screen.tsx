@@ -41,8 +41,8 @@ export default function RegisterStep7Screen({ navigation }: NativeStackScreenPro
   });
 
   return (
-    <View className="flex-1 bg-bg">
-      <View className="bg-bg pt-16 pb-6 px-6">
+    <View className="flex-1" style={{ backgroundColor: colors.bg }}>
+      <View className="pt-16 pb-6 px-6" style={{ backgroundColor: colors.bg }}>
         <RegisterBackButton onPress={() => navigation.goBack()} />
       </View>
 
@@ -50,8 +50,8 @@ export default function RegisterStep7Screen({ navigation }: NativeStackScreenPro
 
       <View className="flex-1 px-6 py-6 pt-0">
         <View className="flex flex-col gap-2">
-          <Text className="text-4xl font-bold text-white">{t('auth.step7.title')}</Text>
-          <Text className="text-[18px] font-normal text-gray-400 mb-6">
+          <Text className="text-4xl font-bold" style={{ color: colors.text }}>{t('auth.step7.title')}</Text>
+          <Text className="text-[18px] font-normal mb-6" style={{ color: colors.textSecondary }}>
             {t('auth.step7.description')}
           </Text>
         </View>
@@ -77,7 +77,7 @@ export default function RegisterStep7Screen({ navigation }: NativeStackScreenPro
         ) : null}
         <View className="flex-row gap-2 px-2 mr-6 items-center mt-5">
           <SFIcon name="info.circle" fallback={InfoIcon} size={16} color={colors.textSecondary} />
-          <Text className="text-gray-400 text-[12px]">
+          <Text className="text-[12px]" style={{ color: colors.textSecondary }}>
             {t('auth.step7.infoText')}
           </Text>
         </View>
@@ -87,9 +87,9 @@ export default function RegisterStep7Screen({ navigation }: NativeStackScreenPro
         <View className="px-6 pb-8 pt-4">
           <AnimatedPressableShared
             onPress={handleNext}
-            style={{ borderRadius: 999, borderCurve: "continuous", overflow: "hidden", backgroundColor: colors.text }}
+            style={{ borderRadius: 999, borderCurve: "continuous", overflow: "hidden", backgroundColor: colors.inverseSurface }}
           >
-            <Text className="text-black py-[20px] font-bold text-[15px] text-center">
+            <Text className="py-[20px] font-bold text-[15px] text-center" style={{ color: colors.onInverseSurface }}>
               {t('common.continueButton')}
             </Text>
           </AnimatedPressableShared>

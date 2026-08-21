@@ -35,10 +35,10 @@ const SkeletonHobbyCard = memo(() => {
     return () => loop.stop();
   }, [pulse]);
   return (
-    <Animated.View style={{ flex: 1, minWidth: "45%", minHeight: 148, borderRadius: 50, borderCurve: "continuous", overflow: "hidden", borderWidth: 0.5, borderColor: "rgba(255,255,255,0.1)", backgroundColor: colors.surface, paddingVertical: 0, opacity: pulse, position: "relative" }}>
+    <Animated.View style={{ flex: 1, minWidth: "30%", minHeight: 104, borderRadius: 32, borderCurve: "continuous", overflow: "hidden", borderWidth: 0.5, borderColor: colors.hairline, backgroundColor: colors.surface, paddingVertical: 0, opacity: pulse, position: "relative" }}>
       <View pointerEvents="none" style={{ position: "absolute", top: 0, left: 0, right: 0, bottom: 0, alignItems: "center", justifyContent: "center" }}>
-        <View style={{ width: 32, height: 32, borderRadius: 16, backgroundColor: "rgba(255,255,255,0.1)" }} />
-        <View style={{ marginTop: 8, width: 60, height: 12, borderRadius: 6, backgroundColor: "rgba(255,255,255,0.1)" }} />
+        <View style={{ width: 28, height: 28, borderRadius: 14, backgroundColor: colors.hairline }} />
+        <View style={{ marginTop: 8, width: 48, height: 10, borderRadius: 5, backgroundColor: colors.hairline }} />
       </View>
     </Animated.View>
   );
@@ -49,26 +49,26 @@ const HobbyItem = memo(({ hobby, isSelected, onPress }: any) => {
   const handlePressIn = () => Animated.spring(scaleValue, { toValue: 0.95, useNativeDriver: true, speed: 20 }).start();
   const handlePressOut = () => Animated.spring(scaleValue, { toValue: 1, useNativeDriver: true, bounciness: 8, speed: 20 }).start();
   return (
-    <Animated.View style={{ flex: 1, minWidth: "45%", transform: [{ scale: scaleValue }] }}>
+    <Animated.View style={{ flex: 1, minWidth: "30%", transform: [{ scale: scaleValue }] }}>
       <TouchableOpacity
         activeOpacity={1}
         onPressIn={handlePressIn}
         onPressOut={handlePressOut}
         onPress={() => onPress(hobby.enumName)}
         style={{
-          borderRadius: 50,
+          borderRadius: 32,
           borderCurve: "continuous",
           overflow: "hidden",
           borderWidth: 0.5,
-          borderColor: isSelected ? colors.text : "rgba(255,255,255,0.1)",
-          backgroundColor: isSelected ? colors.text : "transparent",
+          borderColor: isSelected ? colors.inverseSurface : colors.hairline,
+          backgroundColor: isSelected ? colors.inverseSurface : "transparent",
         }}
-        className="py-[45px] items-center justify-center"
+        className="py-[26px] items-center justify-center"
       >
         <View pointerEvents="none" className="items-center justify-center">
-          <HobbyIcon hobby={hobby.enumName ?? hobby.name} size={32} color={isSelected ? colors.bg : colors.text} strokeWidth={2} />
+          <HobbyIcon hobby={hobby.enumName ?? hobby.name} size={28} color={isSelected ? colors.bg : colors.text} strokeWidth={2} />
           <Text
-            className="text-[14px] font-medium mt-3 text-center px-2"
+            className="text-[12px] font-medium mt-2 text-center px-1"
             style={{ color: isSelected ? colors.bg : colors.text }}
           >
             {hobby.name}
@@ -130,14 +130,14 @@ export default function RegisterStep13Screen({ navigation }: NativeStackScreenPr
   });
 
   return (
-    <View className="flex-1 bg-bg">
+    <View className="flex-1" style={{ backgroundColor: colors.bg }}>
       {/* Header */}
-      <View className="bg-bg pt-16 pb-6 px-6">
+      <View className="pt-16 pb-6 px-6" style={{ backgroundColor: colors.bg }}>
         <View className="flex-row items-center justify-center relative">
           <View className="absolute left-0">
             <RegisterBackButton onPress={() => navigation.goBack()} />
           </View>
-          <Text className="text-white text-[26px] font-bold tracking-wider">
+          <Text className="text-[26px] font-bold tracking-wider" style={{ color: colors.text }}>
             {t('auth.step13.titleWithCount', { count: hobbies.length })}
           </Text>
         </View>
@@ -152,7 +152,7 @@ export default function RegisterStep13Screen({ navigation }: NativeStackScreenPr
         scrollEnabled={!loadingHobbies}
       >
         <View className="flex flex-col gap-2 mb-3">
-          <Text className="text-[18px] font-normal text-gray-400 mb-6">
+          <Text className="text-[18px] font-normal mb-6" style={{ color: colors.textSecondary }}>
             {t('auth.step13.description')}
           </Text>
         </View>
@@ -160,7 +160,7 @@ export default function RegisterStep13Screen({ navigation }: NativeStackScreenPr
         {loadingHobbies
           ? Array.from({ length: 5 }).map((_, catIdx) => (
               <View key={catIdx} className="mb-10">
-                <View style={{ width: 110, height: 14, borderRadius: 7, backgroundColor: "rgba(255,255,255,0.07)", alignSelf: "center", marginBottom: 34 }} />
+                <View style={{ width: 110, height: 14, borderRadius: 7, backgroundColor: colors.shimmer, alignSelf: "center", marginBottom: 34 }} />
                 <View className="flex-row flex-wrap gap-3">
                   {Array.from({ length: 8 }).map((_, i) => <SkeletonHobbyCard key={i} />)}
                 </View>
@@ -168,7 +168,7 @@ export default function RegisterStep13Screen({ navigation }: NativeStackScreenPr
             ))
           : (hobbyCategories as any[]).map((category, categoryIndex) => (
               <View key={categoryIndex} className="mb-10">
-                <Text className="text-[13px] text-center font-bold text-gray-300 mb-10">{category.category}</Text>
+                <Text className="text-[13px] text-center font-bold mb-10" style={{ color: colors.neutral200 }}>{category.category}</Text>
                 <View className="flex-row flex-wrap gap-3">
                   {category.hobbies.map((hobby: any) => (
                     <HobbyItem
@@ -189,9 +189,9 @@ export default function RegisterStep13Screen({ navigation }: NativeStackScreenPr
       <View className="px-8 pb-8 pt-4 absolute bottom-0 left-0 right-0">
         <AnimatedPressable
           onPress={handleNext}
-          style={{ borderRadius: 999, borderCurve: "continuous", overflow: "hidden", backgroundColor: colors.text }}
+          style={{ borderRadius: 999, borderCurve: "continuous", overflow: "hidden", backgroundColor: colors.inverseSurface }}
         >
-          <Text className="text-black py-[20px] font-bold text-[15px] text-center">
+          <Text className="py-[20px] font-bold text-[15px] text-center" style={{ color: colors.onInverseSurface }}>
             {t('common.continueButton')}
           </Text>
         </AnimatedPressable>

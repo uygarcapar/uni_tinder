@@ -1,6 +1,10 @@
 import React from 'react';
 import { View, Text, TouchableOpacity, ActivityIndicator } from 'react-native';
 
+// Gerçek AppModal'ın scroll context'i — useKeyboardAwareField gibi tüketiciler
+// bu modülden import ediyor. Mock'ta da var olmalı, yoksa useContext patlar.
+export const AppModalScrollContext = React.createContext<any>(null);
+
 const AppModal = ({
   visible,
   title,

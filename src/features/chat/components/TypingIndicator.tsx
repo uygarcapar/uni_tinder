@@ -19,8 +19,9 @@ export default function TypingIndicator({ color = colors.text }: { color?: strin
   const { t } = useTranslation();
   return (
     <View
-      className="rounded-2xl bg-surface-2"
+      className="rounded-2xl"
       style={{
+        backgroundColor: colors.surface2,
         alignSelf: 'flex-start',
         height: TYPING_BUBBLE_HEIGHT,
         justifyContent: 'center',
