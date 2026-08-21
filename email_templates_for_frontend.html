@@ -1,0 +1,705 @@
+<!DOCTYPE html>
+<html lang="tr">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<meta name="color-scheme" content="light dark">
+<meta name="supported-color-schemes" content="light dark">
+<title>Lit — E-posta Şablonları</title>
+
+<!-- ══════════════════════════════════════════════════════════════════════════
+     BLOK A — ŞABLON STİLLERİ  ·  C#'A TAŞINACAK
+     Bu <style> bloğu 3 şablonun ORTAK head stili. EmailService.cs'e taşırken
+     her şablonun kendi <head>'ine aynen bu blok giriyor.
+     Kritik stiller zaten inline; buradakiler yalnız Outlook'un zaten yok
+     saydığı iyileştirmeler: karanlık mod + mobil.
+     ══════════════════════════════════════════════════════════════════════════ -->
+<style>
+  /* ── Mobil ──────────────────────────────────────────────────────────────── */
+  @media only screen and (max-width: 620px) {
+    .e-card   { width: 100% !important; border-radius: 18px !important; }
+    .e-pad    { padding-left: 24px !important; padding-right: 24px !important; }
+    .e-h1     { font-size: 23px !important; line-height: 31px !important; }
+    .e-code   { font-size: 30px !important; letter-spacing: 7px !important; text-indent: 7px !important; }
+    .e-btn    { display: block !important; text-align: center !important; }
+    /* Footer satırlarını alt alta indir */
+    .e-stack  { display: block !important; width: 100% !important; text-align: left !important; padding: 0 0 10px !important; }
+  }
+
+  /* ── Karanlık mod ───────────────────────────────────────────────────────── */
+  @media (prefers-color-scheme: dark) {
+    .e-body     { background-color: #0A0A0A !important; }
+    .e-card     { background-color: #161618 !important; border-color: rgba(255,255,255,0.08) !important; }
+    .e-topbar   { background-color: #161618 !important; border-color: rgba(255,255,255,0.08) !important; }
+    .e-h1,
+    .e-h2,
+    .e-strong   { color: #FFFFFF !important; }
+    .e-text     { color: #A8ADB5 !important; }
+    .e-muted    { color: #7E838B !important; }
+    .e-panel    { background-color: #1E1E20 !important; border-color: rgba(255,255,255,0.07) !important; }
+    .e-codebox  { background-color: #2A1512 !important; border-color: rgba(255,109,90,0.38) !important; }
+    .e-code     { color: #FF8A72 !important; }
+    .e-linkbox  { background-color: #1C1C1E !important; border-color: rgba(255,255,255,0.07) !important; color: #9CA3AF !important; }
+    .e-linkbox a{ color: #FF8A72 !important; }
+    .e-rule     { border-color: rgba(255,255,255,0.08) !important; }
+    .e-wordmark { color: #FFFFFF !important; }
+    .e-step-n   { background-color: #2A1512 !important; color: #FF8A72 !important; }
+  }
+</style>
+
+<!-- ══════════════════════════════════════════════════════════════════════════
+     BLOK B — ÖNİZLEME KABUĞU  ·  C#'A TAŞINMAYACAK
+     Sadece bu dosyayı tarayıcıda okurken güzel görünsün + açık/koyu mod
+     düğmesi çalışsın diye. Şablonların kendisiyle ilgisi yok.
+     ══════════════════════════════════════════════════════════════════════════ -->
+<style>
+  :root { color-scheme: dark; }
+  body {
+    margin: 0; padding: 40px 20px 80px;
+    background: #0B0B0C;
+    font-family: -apple-system, BlinkMacSystemFont, "SF Pro Text", "Segoe UI", Inter, Arial, sans-serif;
+    color: #EDEDEF;
+    -webkit-font-smoothing: antialiased;
+  }
+  .pv-wrap { max-width: 760px; margin: 0 auto; }
+  .pv-title {
+    font-size: 30px; font-weight: 800; letter-spacing: -0.6px; margin: 0 0 8px;
+    background: linear-gradient(120deg, #ff4d3d, #ff7e3d);
+    -webkit-background-clip: text; background-clip: text; color: transparent;
+  }
+  .pv-sub { color: #8A8F98; font-size: 14px; line-height: 22px; margin: 0 0 28px; }
+  .pv-note {
+    background: #141416; border: 1px solid rgba(255,255,255,0.08);
+    border-radius: 18px; padding: 24px 26px; margin-bottom: 14px;
+  }
+  .pv-note h3 { margin: 0 0 12px; font-size: 15px; letter-spacing: 0.2px; }
+  .pv-note p, .pv-note li { font-size: 13.5px; line-height: 22px; color: #B4B8BF; }
+  .pv-note ul { margin: 8px 0 0; padding-left: 18px; }
+  .pv-note li { margin-bottom: 6px; }
+  code {
+    background: rgba(255,77,61,0.12); color: #FF8A72; padding: 2px 7px;
+    border-radius: 6px; font-size: 12.5px;
+    font-family: ui-monospace, "SF Mono", Menlo, Consolas, monospace;
+  }
+  table.pv-tbl { border-collapse: collapse; width: 100%; margin-top: 14px; font-size: 13px; }
+  table.pv-tbl th, table.pv-tbl td { border-bottom: 1px solid rgba(255,255,255,0.07); padding: 9px 10px; text-align: left; }
+  table.pv-tbl th { color: #8A8F98; font-weight: 600; font-size: 11.5px; text-transform: uppercase; letter-spacing: 0.7px; }
+  .pv-label {
+    display: flex; align-items: baseline; gap: 10px; flex-wrap: wrap;
+    margin: 46px 0 12px; font-size: 13px; color: #8A8F98;
+  }
+  .pv-chip {
+    background: linear-gradient(120deg, #ff4d3d, #ff7e3d); color: #fff;
+    font-size: 11px; font-weight: 700; letter-spacing: 0.6px;
+    padding: 5px 11px; border-radius: 999px; text-transform: uppercase;
+  }
+  .pv-frame {
+    border: 1px solid rgba(255,255,255,0.08); border-radius: 20px; overflow: hidden;
+    box-shadow: 0 18px 50px rgba(0,0,0,0.45);
+  }
+  .pv-toggle {
+    display: inline-flex; align-items: center; gap: 8px; cursor: pointer;
+    background: #1A1A1D; border: 1px solid rgba(255,255,255,0.1); color: #EDEDEF;
+    border-radius: 999px; padding: 9px 16px; font-size: 13px; font-weight: 600;
+    margin-bottom: 26px;
+  }
+  .pv-toggle:hover { border-color: rgba(255,77,61,0.5); }
+
+  /* Önizleme zorlamalı karanlık mod — @media (prefers-color-scheme) kuralının
+     düğmeyle test edilebilen kopyası. Şablona AİT DEĞİL, C#'a gitmez. */
+  body.pv-dark .e-body     { background-color: #0A0A0A !important; }
+  body.pv-dark .e-card     { background-color: #161618 !important; border-color: rgba(255,255,255,0.08) !important; }
+  body.pv-dark .e-topbar   { background-color: #161618 !important; border-color: rgba(255,255,255,0.08) !important; }
+  body.pv-dark .e-h1,
+  body.pv-dark .e-h2,
+  body.pv-dark .e-strong   { color: #FFFFFF !important; }
+  body.pv-dark .e-text     { color: #A8ADB5 !important; }
+  body.pv-dark .e-muted    { color: #7E838B !important; }
+  body.pv-dark .e-panel    { background-color: #1E1E20 !important; border-color: rgba(255,255,255,0.07) !important; }
+  body.pv-dark .e-codebox  { background-color: #2A1512 !important; border-color: rgba(255,109,90,0.38) !important; }
+  body.pv-dark .e-code     { color: #FF8A72 !important; }
+  body.pv-dark .e-linkbox  { background-color: #1C1C1E !important; border-color: rgba(255,255,255,0.07) !important; color: #9CA3AF !important; }
+  body.pv-dark .e-linkbox a{ color: #FF8A72 !important; }
+  body.pv-dark .e-rule     { border-color: rgba(255,255,255,0.08) !important; }
+  body.pv-dark .e-wordmark { color: #FFFFFF !important; }
+  body.pv-dark .e-step-n   { background-color: #2A1512 !important; color: #FF8A72 !important; }
+</style>
+</head>
+
+<body>
+<div class="pv-wrap">
+
+  <h1 class="pv-title">Lit — E-posta Şablonları</h1>
+  <p class="pv-sub">
+    Backend'de <code>Services/EmailService.cs</code> içinde gömülü olan 3 HTML şablonun yeniden tasarlanmış hâli.
+    Serbestçe düzenle; düzenlenmiş hâlini C#'a ben taşırım.
+  </p>
+
+  <button class="pv-toggle" onclick="document.body.classList.toggle('pv-dark')">
+    Açık / karanlık modu değiştir
+  </button>
+
+  <div class="pv-note">
+    <h3>Placeholder'lar — isimlerine dokunma</h3>
+    <p>Aşağıdaki <code>{{...}}</code> ifadeleri backend'in çalışma anında doldurduğu değişkenler.
+       İsimlerini <strong>değiştirme ve silme</strong>, sadece etraflarındaki tasarımı değiştir.</p>
+    <table class="pv-tbl">
+      <tr><th>Placeholder</th><th>Anlamı</th><th>Şablon</th></tr>
+      <tr><td><code>{{appName}}</code></td><td>Uygulama adı</td><td>1 · 2 · 3</td></tr>
+      <tr><td><code>{{resetCode}}</code></td><td>6 haneli şifre sıfırlama kodu</td><td>1</td></tr>
+      <tr><td><code>{{verificationLink}}</code></td><td>Doğrulama linki (tam URL)</td><td>2</td></tr>
+      <tr><td><code>{{verificationCode}}</code></td><td>6 haneli e-posta doğrulama kodu</td><td>3</td></tr>
+      <tr><td><code>{{userName}}</code></td><td>Kullanıcının adı</td><td>3</td></tr>
+    </table>
+  </div>
+
+  <div class="pv-note">
+    <h3>Site linkleri — kullanılan gerçek adresler</h3>
+    <ul>
+      <li><code>https://lit.4ourstack.com</code> — footer'daki marka linki + "Lit'i keşfet" bölümünün butonu</li>
+      <li><code>https://lit.4ourstack.com/gizlilik</code> — footer "Gizlilik &amp; KVKK"</li>
+      <li><code>https://lit.4ourstack.com/#waitlist</code> — kullanılmadı; ön kayıt bölümü zaten kayıtlı kullanıcıya gitmiyor</li>
+    </ul>
+    <p><strong>Bilerek eklenmedi:</strong> "Unsubscribe" linki (bunlar işlemsel/transactional e-posta, abonelikten çıkma
+       uç noktası yok) ve sosyal medya ikonları (sitede sosyal hesap linki yok, üstelik ikon görselleri bir yerde
+       barındırılmadan e-postada görünmez). Hesap açılırsa satır hazır, ekleriz.</p>
+  </div>
+
+  <div class="pv-note">
+    <h3>Bu sürümde ne değişti</h3>
+    <ul>
+      <li><strong>Referans tasarıma göre düzen</strong> — beyaz üst bant + ortada wordmark, altında dekoratif renk bandı,
+          sol hizalı büyük başlık, küçük dolu buton, rozet ikonlu madde bölümü, koyu footer.</li>
+      <li><strong>Uygulamanın paleti</strong> — coral gradyan <code>#ff4d3d → #ff7e3d</code> (WelcomeScreen'in gradyanı).
+          Şablon 1'in yeşil başlığı markaya çevrildi.</li>
+      <li><strong>Tablo tabanlı layout</strong> — <code>role="presentation"</code> tablolar; Outlook'ta da dağılmaz.</li>
+      <li><strong>Kritik stiller inline</strong> — <code>&lt;style&gt;</code> yok sayılsa bile doğru görünür. Blok A'da yalnız karanlık mod + mobil kaldı.</li>
+      <li><strong>Karanlık mod + mobil</strong> — <code>prefers-color-scheme</code> ile koyu palete döner; 620px altında kart/buton tam genişlik, footer satırları alt alta iner.</li>
+      <li><strong>Outlook butonu</strong> — Şablon 2 ve "Lit'i keşfet" CTA'ları VML <code>roundrect</code> ile Outlook'ta da düzgün.</li>
+      <li><strong>Preheader</strong> — gelen kutusunda konu satırının yanında görünen gizli özet metni.</li>
+      <li>Emoji temizlendi, telif <strong>2026</strong>.</li>
+      <li><strong>Logo:</strong> wordmark şu an metin (<code>{{appName}}</code> + coral nokta). Görsel logo istiyorsan
+          <code>assets/lit_name_black.png</code>'nin bir yerde barındırılması gerekir; <code>&lt;img&gt;</code> satırı her şablonda yorum içinde hazır.</li>
+    </ul>
+  </div>
+
+
+<!-- ════════════════════════════════════════════════════════════════════════ -->
+<!-- ŞABLON 1 — Şifre Sıfırlama Kodu                                          -->
+<!-- Konu satırı: "Şifre Sıfırlama Kodu - {{appName}}"                        -->
+<!-- ════════════════════════════════════════════════════════════════════════ -->
+<div class="pv-label"><span class="pv-chip">Şablon 1</span> Şifre Sıfırlama Kodu · Konu: <code>Şifre Sıfırlama Kodu - {{appName}}</code></div>
+<div class="pv-frame">
+
+<table role="presentation" class="e-body" width="100%" cellpadding="0" cellspacing="0" border="0" style="width:100%;background-color:#F2F2F7;margin:0;padding:0;">
+  <tr>
+    <td align="center" style="padding:36px 16px;">
+
+      <!-- Preheader: gelen kutusu önizleme metni, e-postada görünmez -->
+      <div style="display:none;max-height:0;overflow:hidden;mso-hide:all;opacity:0;font-size:1px;line-height:1px;color:#F2F2F7;">
+        Şifre sıfırlama kodun hazır — 15 dakika geçerli.
+      </div>
+
+      <table role="presentation" class="e-card" width="600" cellpadding="0" cellspacing="0" border="0" style="width:600px;max-width:600px;background-color:#FFFFFF;border:1px solid #E6E6EA;border-radius:20px;overflow:hidden;">
+
+        <!-- Üst bant: ortada wordmark -->
+        <tr>
+          <td class="e-topbar" align="center" style="background-color:#FFFFFF;border-bottom:1px solid #EFEFF3;padding:26px 40px 24px;">
+            <!-- Barındırılan logo hazır olunca bu satırı aç, üstteki <div>'i sil:
+                 <img src="LOGO_URL_BURAYA" width="104" alt="{{appName}}" style="display:block;border:0;outline:none;text-decoration:none;"> -->
+            <div class="e-wordmark" style="font-family:-apple-system,'Segoe UI',Arial,sans-serif;font-size:26px;font-weight:800;letter-spacing:-0.5px;color:#0B0B0C;line-height:32px;">{{appName}}<span style="color:#ff4d3d;">.</span></div>
+          </td>
+        </tr>
+
+        <!-- Dekoratif renk bandı -->
+        <tr>
+          <td height="88" style="height:88px;line-height:88px;font-size:0;background-color:#ff4d3d;background-image:linear-gradient(115deg,#ff4d3d 0%,#ff5d3d 48%,#ff7e3d 100%);">&nbsp;</td>
+        </tr>
+
+        <!-- Gövde -->
+        <tr>
+          <td class="e-pad" style="padding:36px 40px 0;font-family:-apple-system,'Segoe UI',Arial,sans-serif;">
+            <h1 class="e-h1" style="margin:0 0 18px;font-size:27px;line-height:35px;font-weight:800;color:#0B0B0C;letter-spacing:-0.5px;">Şifreni Sıfırla</h1>
+            <p class="e-text" style="margin:0 0 16px;font-size:14.5px;line-height:24px;color:#565E6B;">Merhaba,</p>
+            <p class="e-text" style="margin:0;font-size:14.5px;line-height:24px;color:#565E6B;">
+              {{appName}} hesabın için şifre sıfırlama talebinde bulundun. Şifreni yenilemek için aşağıdaki
+              6 haneli kodu uygulamaya gir.
+            </p>
+          </td>
+        </tr>
+
+        <!-- Kod -->
+        <tr>
+          <td class="e-pad" style="padding:24px 40px 0;">
+            <table role="presentation" width="100%" cellpadding="0" cellspacing="0" border="0">
+              <tr>
+                <td class="e-codebox" align="center" style="background-color:#FFF2F0;border:1px solid #FFD5CE;border-radius:14px;padding:26px 16px 20px;">
+                  <div class="e-code" style="font-family:ui-monospace,'SF Mono',Menlo,Consolas,monospace;font-size:36px;line-height:42px;font-weight:700;color:#D93A28;letter-spacing:10px;text-indent:10px;">{{resetCode}}</div>
+                  <div class="e-muted" style="font-family:-apple-system,'Segoe UI',Arial,sans-serif;font-size:12px;line-height:18px;color:#8E8E93;padding-top:10px;">15 dakika geçerli</div>
+                </td>
+              </tr>
+            </table>
+          </td>
+        </tr>
+
+        <!-- Rozetli bölüm: güvenlik -->
+        <tr>
+          <td class="e-pad" style="padding:34px 40px 0;font-family:-apple-system,'Segoe UI',Arial,sans-serif;">
+            <table role="presentation" cellpadding="0" cellspacing="0" border="0">
+              <tr>
+                <td width="42" valign="middle">
+                  <div style="width:32px;height:32px;border-radius:16px;background-color:#ff4d3d;color:#FFFFFF;font-size:16px;line-height:32px;text-align:center;font-weight:700;">&#10003;</div>
+                </td>
+                <td valign="middle">
+                  <h2 class="e-h2" style="margin:0;font-size:19px;line-height:26px;font-weight:800;color:#0B0B0C;letter-spacing:-0.3px;">Kodun Güvenliği</h2>
+                </td>
+              </tr>
+            </table>
+
+            <ul style="margin:16px 0 0;padding-left:20px;">
+              <li class="e-text" style="font-size:14.5px;line-height:23px;color:#565E6B;padding-bottom:10px;">
+                <strong class="e-strong" style="color:#0B0B0C;font-weight:700;">15 dakika geçerli:</strong>
+                Süre dolarsa uygulamadan yeni kod isteyebilirsin.
+              </li>
+              <li class="e-text" style="font-size:14.5px;line-height:23px;color:#565E6B;padding-bottom:10px;">
+                <strong class="e-strong" style="color:#0B0B0C;font-weight:700;">Tek kullanımlık:</strong>
+                Kod bir kez kullanıldıktan sonra geçersiz olur.
+              </li>
+              <li class="e-text" style="font-size:14.5px;line-height:23px;color:#565E6B;">
+                <strong class="e-strong" style="color:#0B0B0C;font-weight:700;">Kimseyle paylaşma:</strong>
+                {{appName}} ekibi senden hiçbir zaman kod istemez.
+              </li>
+            </ul>
+          </td>
+        </tr>
+
+        <!-- Adımlar -->
+        <tr>
+          <td class="e-pad" style="padding:30px 40px 0;font-family:-apple-system,'Segoe UI',Arial,sans-serif;">
+            <div class="e-strong" style="font-size:13px;font-weight:700;color:#0B0B0C;padding-bottom:14px;letter-spacing:0.3px;text-transform:uppercase;">Nasıl kullanılır</div>
+
+            <table role="presentation" width="100%" cellpadding="0" cellspacing="0" border="0">
+              <tr>
+                <td width="34" valign="top"><div class="e-step-n" style="width:24px;height:24px;border-radius:12px;background-color:#FFF2F0;color:#D93A28;font-size:12px;font-weight:700;line-height:24px;text-align:center;">1</div></td>
+                <td class="e-text" style="font-size:14px;line-height:24px;color:#565E6B;padding-bottom:10px;">Uygulamada <strong class="e-strong" style="color:#0B0B0C;font-weight:600;">Şifremi Unuttum</strong> sayfasına git</td>
+              </tr>
+              <tr>
+                <td width="34" valign="top"><div class="e-step-n" style="width:24px;height:24px;border-radius:12px;background-color:#FFF2F0;color:#D93A28;font-size:12px;font-weight:700;line-height:24px;text-align:center;">2</div></td>
+                <td class="e-text" style="font-size:14px;line-height:24px;color:#565E6B;padding-bottom:10px;">E-posta adresini gir</td>
+              </tr>
+              <tr>
+                <td width="34" valign="top"><div class="e-step-n" style="width:24px;height:24px;border-radius:12px;background-color:#FFF2F0;color:#D93A28;font-size:12px;font-weight:700;line-height:24px;text-align:center;">3</div></td>
+                <td class="e-text" style="font-size:14px;line-height:24px;color:#565E6B;padding-bottom:10px;">Kodu gir: <strong class="e-strong" style="color:#0B0B0C;font-weight:600;">{{resetCode}}</strong></td>
+              </tr>
+              <tr>
+                <td width="34" valign="top"><div class="e-step-n" style="width:24px;height:24px;border-radius:12px;background-color:#FFF2F0;color:#D93A28;font-size:12px;font-weight:700;line-height:24px;text-align:center;">4</div></td>
+                <td class="e-text" style="font-size:14px;line-height:24px;color:#565E6B;">Yeni şifreni belirle</td>
+              </tr>
+            </table>
+          </td>
+        </tr>
+
+        <tr>
+          <td class="e-pad" style="padding:28px 40px 0;">
+            <div class="e-rule" style="border-top:1px solid #EFEFF3;font-size:0;line-height:0;">&nbsp;</div>
+          </td>
+        </tr>
+        <tr>
+          <td class="e-pad" style="padding:18px 40px 0;font-family:-apple-system,'Segoe UI',Arial,sans-serif;">
+            <p class="e-muted" style="margin:0;font-size:13px;line-height:21px;color:#8E8E93;">
+              Bu talebi sen yapmadıysan bu e-postayı yok sayabilirsin; şifren değişmez.
+            </p>
+          </td>
+        </tr>
+
+        <!-- ── Lit'i keşfet — siteye yönlendirme ─────────────────────────── -->
+        <tr>
+          <td class="e-pad" style="padding:26px 40px 34px;">
+            <table role="presentation" class="e-panel" width="100%" cellpadding="0" cellspacing="0" border="0" style="background-color:#F7F7F9;border:1px solid #EDEDF1;border-radius:14px;">
+              <tr>
+                <td style="padding:22px 24px;font-family:-apple-system,'Segoe UI',Arial,sans-serif;">
+                  <div class="e-strong" style="font-size:16px;font-weight:800;color:#0B0B0C;letter-spacing:-0.2px;padding-bottom:6px;">Lit'i keşfet</div>
+                  <p class="e-text" style="margin:0 0 16px;font-size:14px;line-height:22px;color:#565E6B;">
+                    Kampüsündeki herkes burada. Özellikler, Lit Plus ve gizlilik hakkında her şey sitede.
+                  </p>
+                  <!--[if mso]>
+                  <v:roundrect xmlns:v="urn:schemas-microsoft-com:vml" xmlns:w="urn:schemas-microsoft-com:office:word" href="https://lit.4ourstack.com" style="height:44px;v-text-anchor:middle;width:200px;" arcsize="24%" stroke="f" fillcolor="#ff4d3d">
+                    <w:anchorlock/>
+                    <center style="color:#ffffff;font-family:Arial,sans-serif;font-size:14px;font-weight:bold;">lit.4ourstack.com</center>
+                  </v:roundrect>
+                  <![endif]-->
+                  <!--[if !mso]><!-->
+                  <a class="e-btn" href="https://lit.4ourstack.com" style="display:inline-block;background-color:#ff4d3d;color:#FFFFFF !important;font-family:-apple-system,'Segoe UI',Arial,sans-serif;font-size:14px;font-weight:700;line-height:18px;text-decoration:none;padding:13px 24px;border-radius:10px;">lit.4ourstack.com</a>
+                  <!--<![endif]-->
+                </td>
+              </tr>
+            </table>
+          </td>
+        </tr>
+
+        <!-- ── Koyu footer ───────────────────────────────────────────────── -->
+        <tr>
+          <td style="background-color:#17171A;padding:28px 40px 26px;font-family:-apple-system,'Segoe UI',Arial,sans-serif;">
+            <div style="font-size:22px;font-weight:800;letter-spacing:-0.4px;color:#FFFFFF;line-height:28px;">{{appName}}<span style="color:#ff7e3d;">.</span></div>
+
+            <table role="presentation" width="100%" cellpadding="0" cellspacing="0" border="0" style="padding-top:14px;">
+              <tr>
+                <td class="e-stack" align="left" style="font-size:14px;line-height:22px;">
+                  <a href="https://lit.4ourstack.com" style="color:#FF8A72;text-decoration:none;font-weight:700;">lit.4ourstack.com</a>
+                </td>
+                <td class="e-stack" align="right" style="font-size:13px;line-height:22px;">
+                  <a href="https://lit.4ourstack.com/gizlilik" style="color:#9AA0AB;text-decoration:none;">Gizlilik &amp; KVKK</a>
+                </td>
+              </tr>
+            </table>
+
+            <div style="border-top:1px solid rgba(255,255,255,0.09);margin-top:18px;padding-top:16px;">
+              <p style="margin:0 0 4px;font-size:12px;line-height:19px;color:#7A7F87;">Bu otomatik bir e-postadır, lütfen yanıtlama.</p>
+              <p style="margin:0;font-size:12px;line-height:19px;color:#7A7F87;">© 2026 {{appName}}. Tüm hakları saklıdır.</p>
+            </div>
+          </td>
+        </tr>
+
+      </table>
+    </td>
+  </tr>
+</table>
+
+</div>
+
+
+<!-- ════════════════════════════════════════════════════════════════════════ -->
+<!-- ŞABLON 2 — Email Doğrulama (link'li)                                     -->
+<!-- Konu satırı: "Email Doğrulama - {{appName}}"                             -->
+<!-- ════════════════════════════════════════════════════════════════════════ -->
+<div class="pv-label"><span class="pv-chip">Şablon 2</span> Email Doğrulama (link'li) · Konu: <code>Email Doğrulama - {{appName}}</code></div>
+<div class="pv-frame">
+
+<table role="presentation" class="e-body" width="100%" cellpadding="0" cellspacing="0" border="0" style="width:100%;background-color:#F2F2F7;margin:0;padding:0;">
+  <tr>
+    <td align="center" style="padding:36px 16px;">
+
+      <div style="display:none;max-height:0;overflow:hidden;mso-hide:all;opacity:0;font-size:1px;line-height:1px;color:#F2F2F7;">
+        Hesabını aktif etmek için tek adım kaldı — link 24 saat geçerli.
+      </div>
+
+      <table role="presentation" class="e-card" width="600" cellpadding="0" cellspacing="0" border="0" style="width:600px;max-width:600px;background-color:#FFFFFF;border:1px solid #E6E6EA;border-radius:20px;overflow:hidden;">
+
+        <tr>
+          <td class="e-topbar" align="center" style="background-color:#FFFFFF;border-bottom:1px solid #EFEFF3;padding:26px 40px 24px;">
+            <!-- <img src="LOGO_URL_BURAYA" width="104" alt="{{appName}}" style="display:block;border:0;outline:none;text-decoration:none;"> -->
+            <div class="e-wordmark" style="font-family:-apple-system,'Segoe UI',Arial,sans-serif;font-size:26px;font-weight:800;letter-spacing:-0.5px;color:#0B0B0C;line-height:32px;">{{appName}}<span style="color:#ff4d3d;">.</span></div>
+          </td>
+        </tr>
+
+        <tr>
+          <td height="88" style="height:88px;line-height:88px;font-size:0;background-color:#ff4d3d;background-image:linear-gradient(115deg,#ff4d3d 0%,#ff5d3d 48%,#ff7e3d 100%);">&nbsp;</td>
+        </tr>
+
+        <tr>
+          <td class="e-pad" style="padding:36px 40px 0;font-family:-apple-system,'Segoe UI',Arial,sans-serif;">
+            <h1 class="e-h1" style="margin:0 0 18px;font-size:27px;line-height:35px;font-weight:800;color:#0B0B0C;letter-spacing:-0.5px;">Hesabını Doğrula</h1>
+            <p class="e-text" style="margin:0 0 16px;font-size:14.5px;line-height:24px;color:#565E6B;">Hoş geldin,</p>
+            <p class="e-text" style="margin:0;font-size:14.5px;line-height:24px;color:#565E6B;">
+              {{appName}}'a kayıt olduğun için teşekkürler. Hesabını aktif etmek ve üniversite öğrencisi olduğunu
+              doğrulamak için aşağıdaki butona tıkla.
+            </p>
+          </td>
+        </tr>
+
+        <!-- CTA -->
+        <tr>
+          <td class="e-pad" align="left" style="padding:24px 40px 0;">
+            <!--[if mso]>
+            <v:roundrect xmlns:v="urn:schemas-microsoft-com:vml" xmlns:w="urn:schemas-microsoft-com:office:word" href="{{verificationLink}}" style="height:48px;v-text-anchor:middle;width:210px;" arcsize="22%" stroke="f" fillcolor="#ff4d3d">
+              <w:anchorlock/>
+              <center style="color:#ffffff;font-family:Arial,sans-serif;font-size:14px;font-weight:bold;">Email adresimi doğrula</center>
+            </v:roundrect>
+            <![endif]-->
+            <!--[if !mso]><!-->
+            <a class="e-btn" href="{{verificationLink}}" style="display:inline-block;background-color:#ff4d3d;color:#FFFFFF !important;font-family:-apple-system,'Segoe UI',Arial,sans-serif;font-size:14px;font-weight:700;line-height:18px;text-decoration:none;padding:15px 28px;border-radius:10px;letter-spacing:0.2px;">Email adresimi doğrula</a>
+            <!--<![endif]-->
+            <div class="e-muted" style="font-family:-apple-system,'Segoe UI',Arial,sans-serif;font-size:12px;line-height:18px;color:#8E8E93;padding-top:12px;">Link 24 saat geçerli</div>
+          </td>
+        </tr>
+
+        <!-- Rozetli bölüm -->
+        <tr>
+          <td class="e-pad" style="padding:34px 40px 0;font-family:-apple-system,'Segoe UI',Arial,sans-serif;">
+            <table role="presentation" cellpadding="0" cellspacing="0" border="0">
+              <tr>
+                <td width="42" valign="middle">
+                  <div style="width:32px;height:32px;border-radius:16px;background-color:#ff4d3d;color:#FFFFFF;font-size:16px;line-height:32px;text-align:center;font-weight:700;">&#10003;</div>
+                </td>
+                <td valign="middle">
+                  <h2 class="e-h2" style="margin:0;font-size:19px;line-height:26px;font-weight:800;color:#0B0B0C;letter-spacing:-0.3px;">Doğrulama Neden Gerekli</h2>
+                </td>
+              </tr>
+            </table>
+
+            <ul style="margin:16px 0 0;padding-left:20px;">
+              <li class="e-text" style="font-size:14.5px;line-height:23px;color:#565E6B;padding-bottom:10px;">
+                <strong class="e-strong" style="color:#0B0B0C;font-weight:700;">Sadece öğrenciler:</strong>
+                Doğrulama, kampüsün dışından kimsenin içeri girmemesini sağlar.
+              </li>
+              <li class="e-text" style="font-size:14.5px;line-height:23px;color:#565E6B;padding-bottom:10px;">
+                <strong class="e-strong" style="color:#0B0B0C;font-weight:700;">Eşleşme özellikleri:</strong>
+                Doğrulama tamamlanmadan eşleşme ve mesajlaşmayı kullanamazsın.
+              </li>
+              <li class="e-text" style="font-size:14.5px;line-height:23px;color:#565E6B;">
+                <strong class="e-strong" style="color:#0B0B0C;font-weight:700;">Tek kullanımlık link:</strong>
+                Link 24 saat geçerlidir ve yalnızca bir kez açılabilir.
+              </li>
+            </ul>
+          </td>
+        </tr>
+
+        <!-- Link fallback -->
+        <tr>
+          <td class="e-pad" style="padding:26px 40px 0;font-family:-apple-system,'Segoe UI',Arial,sans-serif;">
+            <p class="e-muted" style="margin:0 0 10px;font-size:12.5px;line-height:20px;color:#8E8E93;">Buton çalışmıyorsa bu adresi tarayıcına kopyala:</p>
+            <div class="e-linkbox" style="background-color:#F7F7F9;border:1px solid #EDEDF1;border-radius:12px;padding:14px 16px;word-break:break-all;font-family:ui-monospace,'SF Mono',Menlo,Consolas,monospace;font-size:12px;line-height:19px;color:#6B7280;">
+              <a href="{{verificationLink}}" style="color:#D93A28;text-decoration:none;">{{verificationLink}}</a>
+            </div>
+          </td>
+        </tr>
+
+        <tr>
+          <td class="e-pad" style="padding:28px 40px 0;">
+            <div class="e-rule" style="border-top:1px solid #EFEFF3;font-size:0;line-height:0;">&nbsp;</div>
+          </td>
+        </tr>
+        <tr>
+          <td class="e-pad" style="padding:18px 40px 0;font-family:-apple-system,'Segoe UI',Arial,sans-serif;">
+            <p class="e-muted" style="margin:0;font-size:13px;line-height:21px;color:#8E8E93;">
+              Bu hesabı sen oluşturmadıysan bu e-postayı yok sayabilirsin.
+            </p>
+          </td>
+        </tr>
+
+        <tr>
+          <td class="e-pad" style="padding:26px 40px 34px;">
+            <table role="presentation" class="e-panel" width="100%" cellpadding="0" cellspacing="0" border="0" style="background-color:#F7F7F9;border:1px solid #EDEDF1;border-radius:14px;">
+              <tr>
+                <td style="padding:22px 24px;font-family:-apple-system,'Segoe UI',Arial,sans-serif;">
+                  <div class="e-strong" style="font-size:16px;font-weight:800;color:#0B0B0C;letter-spacing:-0.2px;padding-bottom:6px;">Lit'i keşfet</div>
+                  <p class="e-text" style="margin:0 0 16px;font-size:14px;line-height:22px;color:#565E6B;">
+                    Kampüsündeki herkes burada. Özellikler, Lit Plus ve gizlilik hakkında her şey sitede.
+                  </p>
+                  <!--[if mso]>
+                  <v:roundrect xmlns:v="urn:schemas-microsoft-com:vml" xmlns:w="urn:schemas-microsoft-com:office:word" href="https://lit.4ourstack.com" style="height:44px;v-text-anchor:middle;width:200px;" arcsize="24%" stroke="f" fillcolor="#ff4d3d">
+                    <w:anchorlock/>
+                    <center style="color:#ffffff;font-family:Arial,sans-serif;font-size:14px;font-weight:bold;">lit.4ourstack.com</center>
+                  </v:roundrect>
+                  <![endif]-->
+                  <!--[if !mso]><!-->
+                  <a class="e-btn" href="https://lit.4ourstack.com" style="display:inline-block;background-color:#ff4d3d;color:#FFFFFF !important;font-family:-apple-system,'Segoe UI',Arial,sans-serif;font-size:14px;font-weight:700;line-height:18px;text-decoration:none;padding:13px 24px;border-radius:10px;">lit.4ourstack.com</a>
+                  <!--<![endif]-->
+                </td>
+              </tr>
+            </table>
+          </td>
+        </tr>
+
+        <tr>
+          <td style="background-color:#17171A;padding:28px 40px 26px;font-family:-apple-system,'Segoe UI',Arial,sans-serif;">
+            <div style="font-size:22px;font-weight:800;letter-spacing:-0.4px;color:#FFFFFF;line-height:28px;">{{appName}}<span style="color:#ff7e3d;">.</span></div>
+
+            <table role="presentation" width="100%" cellpadding="0" cellspacing="0" border="0" style="padding-top:14px;">
+              <tr>
+                <td class="e-stack" align="left" style="font-size:14px;line-height:22px;">
+                  <a href="https://lit.4ourstack.com" style="color:#FF8A72;text-decoration:none;font-weight:700;">lit.4ourstack.com</a>
+                </td>
+                <td class="e-stack" align="right" style="font-size:13px;line-height:22px;">
+                  <a href="https://lit.4ourstack.com/gizlilik" style="color:#9AA0AB;text-decoration:none;">Gizlilik &amp; KVKK</a>
+                </td>
+              </tr>
+            </table>
+
+            <div style="border-top:1px solid rgba(255,255,255,0.09);margin-top:18px;padding-top:16px;">
+              <p style="margin:0 0 4px;font-size:12px;line-height:19px;color:#7A7F87;">Bu otomatik bir e-postadır, lütfen yanıtlama.</p>
+              <p style="margin:0;font-size:12px;line-height:19px;color:#7A7F87;">© 2026 {{appName}}. Tüm hakları saklıdır.</p>
+            </div>
+          </td>
+        </tr>
+
+      </table>
+    </td>
+  </tr>
+</table>
+
+</div>
+
+
+<!-- ════════════════════════════════════════════════════════════════════════ -->
+<!-- ŞABLON 3 — Email Doğrulama Kodu (6 haneli)                               -->
+<!-- Konu satırı: "Email Doğrulama Kodu - {{appName}}"                        -->
+<!-- ════════════════════════════════════════════════════════════════════════ -->
+<div class="pv-label"><span class="pv-chip">Şablon 3</span> Email Doğrulama Kodu · Konu: <code>Email Doğrulama Kodu - {{appName}}</code></div>
+<div class="pv-frame">
+
+<table role="presentation" class="e-body" width="100%" cellpadding="0" cellspacing="0" border="0" style="width:100%;background-color:#F2F2F7;margin:0;padding:0;">
+  <tr>
+    <td align="center" style="padding:36px 16px;">
+
+      <div style="display:none;max-height:0;overflow:hidden;mso-hide:all;opacity:0;font-size:1px;line-height:1px;color:#F2F2F7;">
+        Doğrulama kodun hazır — 15 dakika geçerli.
+      </div>
+
+      <table role="presentation" class="e-card" width="600" cellpadding="0" cellspacing="0" border="0" style="width:600px;max-width:600px;background-color:#FFFFFF;border:1px solid #E6E6EA;border-radius:20px;overflow:hidden;">
+
+        <tr>
+          <td class="e-topbar" align="center" style="background-color:#FFFFFF;border-bottom:1px solid #EFEFF3;padding:26px 40px 24px;">
+            <!-- <img src="LOGO_URL_BURAYA" width="104" alt="{{appName}}" style="display:block;border:0;outline:none;text-decoration:none;"> -->
+            <div class="e-wordmark" style="font-family:-apple-system,'Segoe UI',Arial,sans-serif;font-size:26px;font-weight:800;letter-spacing:-0.5px;color:#0B0B0C;line-height:32px;">{{appName}}<span style="color:#ff4d3d;">.</span></div>
+          </td>
+        </tr>
+
+        <tr>
+          <td height="88" style="height:88px;line-height:88px;font-size:0;background-color:#ff4d3d;background-image:linear-gradient(115deg,#ff4d3d 0%,#ff5d3d 48%,#ff7e3d 100%);">&nbsp;</td>
+        </tr>
+
+        <tr>
+          <td class="e-pad" style="padding:36px 40px 0;font-family:-apple-system,'Segoe UI',Arial,sans-serif;">
+            <h1 class="e-h1" style="margin:0 0 18px;font-size:27px;line-height:35px;font-weight:800;color:#0B0B0C;letter-spacing:-0.5px;">Hesabını Doğrula</h1>
+            <p class="e-text" style="margin:0 0 16px;font-size:14.5px;line-height:24px;color:#565E6B;">Hoş geldin {{userName}},</p>
+            <p class="e-text" style="margin:0;font-size:14.5px;line-height:24px;color:#565E6B;">
+              {{appName}}'a kayıt olduğun için teşekkürler. Hesabını aktif etmek için aşağıdaki 6 haneli
+              doğrulama kodunu uygulamaya gir.
+            </p>
+          </td>
+        </tr>
+
+        <tr>
+          <td class="e-pad" style="padding:24px 40px 0;">
+            <table role="presentation" width="100%" cellpadding="0" cellspacing="0" border="0">
+              <tr>
+                <td class="e-codebox" align="center" style="background-color:#FFF2F0;border:1px solid #FFD5CE;border-radius:14px;padding:26px 16px 20px;">
+                  <div class="e-code" style="font-family:ui-monospace,'SF Mono',Menlo,Consolas,monospace;font-size:36px;line-height:42px;font-weight:700;color:#D93A28;letter-spacing:10px;text-indent:10px;">{{verificationCode}}</div>
+                  <div class="e-muted" style="font-family:-apple-system,'Segoe UI',Arial,sans-serif;font-size:12px;line-height:18px;color:#8E8E93;padding-top:10px;">15 dakika geçerli</div>
+                </td>
+              </tr>
+            </table>
+          </td>
+        </tr>
+
+        <tr>
+          <td class="e-pad" style="padding:34px 40px 0;font-family:-apple-system,'Segoe UI',Arial,sans-serif;">
+            <table role="presentation" cellpadding="0" cellspacing="0" border="0">
+              <tr>
+                <td width="42" valign="middle">
+                  <div style="width:32px;height:32px;border-radius:16px;background-color:#ff4d3d;color:#FFFFFF;font-size:16px;line-height:32px;text-align:center;font-weight:700;">&#10003;</div>
+                </td>
+                <td valign="middle">
+                  <h2 class="e-h2" style="margin:0;font-size:19px;line-height:26px;font-weight:800;color:#0B0B0C;letter-spacing:-0.3px;">Kodun Güvenliği</h2>
+                </td>
+              </tr>
+            </table>
+
+            <ul style="margin:16px 0 0;padding-left:20px;">
+              <li class="e-text" style="font-size:14.5px;line-height:23px;color:#565E6B;padding-bottom:10px;">
+                <strong class="e-strong" style="color:#0B0B0C;font-weight:700;">15 dakika geçerli:</strong>
+                Süre dolarsa uygulamadan yeni kod isteyebilirsin.
+              </li>
+              <li class="e-text" style="font-size:14.5px;line-height:23px;color:#565E6B;padding-bottom:10px;">
+                <strong class="e-strong" style="color:#0B0B0C;font-weight:700;">Tek kullanımlık:</strong>
+                Kod bir kez kullanıldıktan sonra geçersiz olur.
+              </li>
+              <li class="e-text" style="font-size:14.5px;line-height:23px;color:#565E6B;">
+                <strong class="e-strong" style="color:#0B0B0C;font-weight:700;">Kimseyle paylaşma:</strong>
+                {{appName}} ekibi senden hiçbir zaman kod istemez.
+              </li>
+            </ul>
+          </td>
+        </tr>
+
+        <tr>
+          <td class="e-pad" style="padding:30px 40px 0;font-family:-apple-system,'Segoe UI',Arial,sans-serif;">
+            <div class="e-strong" style="font-size:13px;font-weight:700;color:#0B0B0C;padding-bottom:14px;letter-spacing:0.3px;text-transform:uppercase;">Nasıl kullanılır</div>
+
+            <table role="presentation" width="100%" cellpadding="0" cellspacing="0" border="0">
+              <tr>
+                <td width="34" valign="top"><div class="e-step-n" style="width:24px;height:24px;border-radius:12px;background-color:#FFF2F0;color:#D93A28;font-size:12px;font-weight:700;line-height:24px;text-align:center;">1</div></td>
+                <td class="e-text" style="font-size:14px;line-height:24px;color:#565E6B;padding-bottom:10px;">Uygulamada <strong class="e-strong" style="color:#0B0B0C;font-weight:600;">Email Doğrulama</strong> sayfasına git</td>
+              </tr>
+              <tr>
+                <td width="34" valign="top"><div class="e-step-n" style="width:24px;height:24px;border-radius:12px;background-color:#FFF2F0;color:#D93A28;font-size:12px;font-weight:700;line-height:24px;text-align:center;">2</div></td>
+                <td class="e-text" style="font-size:14px;line-height:24px;color:#565E6B;padding-bottom:10px;">Kodu gir: <strong class="e-strong" style="color:#0B0B0C;font-weight:600;">{{verificationCode}}</strong></td>
+              </tr>
+              <tr>
+                <td width="34" valign="top"><div class="e-step-n" style="width:24px;height:24px;border-radius:12px;background-color:#FFF2F0;color:#D93A28;font-size:12px;font-weight:700;line-height:24px;text-align:center;">3</div></td>
+                <td class="e-text" style="font-size:14px;line-height:24px;color:#565E6B;">Hesabın aktif olsun, eşleşmeye başla</td>
+              </tr>
+            </table>
+          </td>
+        </tr>
+
+        <tr>
+          <td class="e-pad" style="padding:28px 40px 0;">
+            <div class="e-rule" style="border-top:1px solid #EFEFF3;font-size:0;line-height:0;">&nbsp;</div>
+          </td>
+        </tr>
+        <tr>
+          <td class="e-pad" style="padding:18px 40px 0;font-family:-apple-system,'Segoe UI',Arial,sans-serif;">
+            <p class="e-muted" style="margin:0;font-size:13px;line-height:21px;color:#8E8E93;">
+              Bu hesabı sen oluşturmadıysan bu e-postayı yok sayabilirsin.
+            </p>
+          </td>
+        </tr>
+
+        <tr>
+          <td class="e-pad" style="padding:26px 40px 34px;">
+            <table role="presentation" class="e-panel" width="100%" cellpadding="0" cellspacing="0" border="0" style="background-color:#F7F7F9;border:1px solid #EDEDF1;border-radius:14px;">
+              <tr>
+                <td style="padding:22px 24px;font-family:-apple-system,'Segoe UI',Arial,sans-serif;">
+                  <div class="e-strong" style="font-size:16px;font-weight:800;color:#0B0B0C;letter-spacing:-0.2px;padding-bottom:6px;">Lit'i keşfet</div>
+                  <p class="e-text" style="margin:0 0 16px;font-size:14px;line-height:22px;color:#565E6B;">
+                    Kampüsündeki herkes burada. Özellikler, Lit Plus ve gizlilik hakkında her şey sitede.
+                  </p>
+                  <!--[if mso]>
+                  <v:roundrect xmlns:v="urn:schemas-microsoft-com:vml" xmlns:w="urn:schemas-microsoft-com:office:word" href="https://lit.4ourstack.com" style="height:44px;v-text-anchor:middle;width:200px;" arcsize="24%" stroke="f" fillcolor="#ff4d3d">
+                    <w:anchorlock/>
+                    <center style="color:#ffffff;font-family:Arial,sans-serif;font-size:14px;font-weight:bold;">lit.4ourstack.com</center>
+                  </v:roundrect>
+                  <![endif]-->
+                  <!--[if !mso]><!-->
+                  <a class="e-btn" href="https://lit.4ourstack.com" style="display:inline-block;background-color:#ff4d3d;color:#FFFFFF !important;font-family:-apple-system,'Segoe UI',Arial,sans-serif;font-size:14px;font-weight:700;line-height:18px;text-decoration:none;padding:13px 24px;border-radius:10px;">lit.4ourstack.com</a>
+                  <!--<![endif]-->
+                </td>
+              </tr>
+            </table>
+          </td>
+        </tr>
+
+        <tr>
+          <td style="background-color:#17171A;padding:28px 40px 26px;font-family:-apple-system,'Segoe UI',Arial,sans-serif;">
+            <div style="font-size:22px;font-weight:800;letter-spacing:-0.4px;color:#FFFFFF;line-height:28px;">{{appName}}<span style="color:#ff7e3d;">.</span></div>
+
+            <table role="presentation" width="100%" cellpadding="0" cellspacing="0" border="0" style="padding-top:14px;">
+              <tr>
+                <td class="e-stack" align="left" style="font-size:14px;line-height:22px;">
+                  <a href="https://lit.4ourstack.com" style="color:#FF8A72;text-decoration:none;font-weight:700;">lit.4ourstack.com</a>
+                </td>
+                <td class="e-stack" align="right" style="font-size:13px;line-height:22px;">
+                  <a href="https://lit.4ourstack.com/gizlilik" style="color:#9AA0AB;text-decoration:none;">Gizlilik &amp; KVKK</a>
+                </td>
+              </tr>
+            </table>
+
+            <div style="border-top:1px solid rgba(255,255,255,0.09);margin-top:18px;padding-top:16px;">
+              <p style="margin:0 0 4px;font-size:12px;line-height:19px;color:#7A7F87;">Bu otomatik bir e-postadır, lütfen yanıtlama.</p>
+              <p style="margin:0;font-size:12px;line-height:19px;color:#7A7F87;">© 2026 {{appName}}. Tüm hakları saklıdır.</p>
+            </div>
+          </td>
+        </tr>
+
+      </table>
+    </td>
+  </tr>
+</table>
+
+</div>
+
+</div>
+</body>
+</html>
