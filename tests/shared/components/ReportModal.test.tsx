@@ -4,23 +4,39 @@ jest.mock('lucide-react-native', () =>
 jest.mock('react-native-safe-area-context', () => ({
   useSafeAreaInsets: () => ({ top: 20, bottom: 0, left: 0, right: 0 }),
 }));
+// Sheet gövdesi (blur header, gorhom portal) burada test edilmiyor — modal
+// artık AppModal üstünde, wrapper mock'lanıp içerik doğrulanıyor.
+jest.mock('@/shared/components/AppModal');
+jest.mock('@gorhom/bottom-sheet', () => {
+  const RN = require('react-native');
+  return { BottomSheetTextInput: RN.TextInput };
+});
+// Klavye takibi bu testin konusu değil; hook reanimated + keyboard-controller
+// çekiyor, ikisi de bu suite'te gereksiz.
+jest.mock('@/shared/hooks/useKeyboardAwareField', () => ({
+  useKeyboardAwareField: () => ({
+    anchorRef: { current: null },
+    onFocus: jest.fn(),
+    onBlur: jest.fn(),
+  }),
+}));
 
 const mockReportUser = jest.fn();
 jest.mock('@/shared/services/moderationService', () => ({
   __esModule: true,
   default: { reportUser: (...args: any[]) => mockReportUser(...args) },
-  REPORT_REASON_LABELS_TR: {
-    Spam: 'Spam / Reklam',
-    Harassment: 'Taciz / Hakaret',
-    InappropriateContent: 'Müstehcen içerik',
-    FakeProfile: 'Sahte profil',
-    Underage: 'Yaş altı',
-    Scam: 'Dolandırıcılık',
-    Other: 'Diğer',
+  ReportReason: {
+    Spam: 'Spam',
+    Harassment: 'Harassment',
+    InappropriateContent: 'InappropriateContent',
+    FakeProfile: 'FakeProfile',
+    Underage: 'Underage',
+    Scam: 'Scam',
+    Other: 'Other',
   },
 }));
 
-import { Alert, TouchableOpacity } from 'react-native';
+import { Alert } from 'react-native';
 import { act, fireEvent, render, waitFor } from '@testing-library/react-native';
 import ReportModal from '@/shared/components/ReportModal';
 
@@ -53,6 +69,7 @@ describe('ReportModal — render', () => {
   it('renders the title and submit button text when visible', () => {
     const tree = setup();
     expect(tree.getByText('Kullanıcıyı Şikayet Et')).toBeTruthy();
+    expect(tree.getByTestId('report-submit')).toBeTruthy();
     expect(tree.getByText('Şikayet Et')).toBeTruthy();
   });
 
@@ -73,21 +90,23 @@ describe('ReportModal — render', () => {
 describe('ReportModal — submit gating', () => {
   it('keeps the submit button disabled until a reason is selected', () => {
     const tree = setup();
-    const submitBtn = tree.getByText('Şikayet Et').parent?.parent;
-    expect(submitBtn?.props.accessibilityState?.disabled || submitBtn?.props.disabled).toBeTruthy();
+    const submitBtn = tree.getByTestId('report-submit');
+    expect(
+      submitBtn.props.accessibilityState?.disabled || submitBtn.props.disabled,
+    ).toBeTruthy();
 
     fireEvent.press(tree.getByText('Spam / Reklam'));
     // After selection, the button should be enabled.
-    const submitAfter = tree.getByText('Şikayet Et').parent?.parent;
+    const submitAfter = tree.getByTestId('report-submit');
     const disabledAfter =
-      submitAfter?.props.accessibilityState?.disabled ??
-      submitAfter?.props.disabled;
+      submitAfter.props.accessibilityState?.disabled ??
+      submitAfter.props.disabled;
     expect(disabledAfter).toBeFalsy();
   });
 
   it('does not call moderationService when submitting without a reason', async () => {
     const tree = setup();
-    fireEvent.press(tree.getByText('Şikayet Et'));
+    fireEvent.press(tree.getByTestId('report-submit'));
     await act(async () => {});
     expect(mockReportUser).not.toHaveBeenCalled();
   });
@@ -100,7 +119,7 @@ describe('ReportModal — submit flow', () => {
 
     fireEvent.press(tree.getByText('Taciz / Hakaret'));
     await act(async () => {
-      fireEvent.press(tree.getByText('Şikayet Et'));
+      fireEvent.press(tree.getByTestId('report-submit'));
     });
 
     await waitFor(() => expect(mockReportUser).toHaveBeenCalledTimes(1));
@@ -121,7 +140,7 @@ describe('ReportModal — submit flow', () => {
 
     fireEvent.press(tree.getByText('Spam / Reklam'));
     await act(async () => {
-      fireEvent.press(tree.getByText('Şikayet Et'));
+      fireEvent.press(tree.getByTestId('report-submit'));
     });
 
     await waitFor(() => expect(Alert.alert).toHaveBeenCalled());
@@ -141,7 +160,7 @@ describe('ReportModal — submit flow', () => {
 
     fireEvent.press(tree.getByText('Spam / Reklam'));
     await act(async () => {
-      fireEvent.press(tree.getByText('Şikayet Et'));
+      fireEvent.press(tree.getByTestId('report-submit'));
     });
 
     await waitFor(() => expect(Alert.alert).toHaveBeenCalled());
@@ -156,7 +175,7 @@ describe('ReportModal — submit flow', () => {
 
     fireEvent.press(tree.getByText('Spam / Reklam'));
     await act(async () => {
-      fireEvent.press(tree.getByText('Şikayet Et'));
+      fireEvent.press(tree.getByTestId('report-submit'));
     });
 
     await waitFor(() => expect(Alert.alert).toHaveBeenCalled());
@@ -166,11 +185,13 @@ describe('ReportModal — submit flow', () => {
 });
 
 describe('ReportModal — close', () => {
-  it('calls onClose when the X header button is pressed', () => {
+  // Header'da X YOK: sheet swipe-down/backdrop ile kapanıyor. gorhom o noktada
+  // dismiss'i zaten yapmış oluyor, wrapper'ın onClose'u parent'a İLETİLMELİ —
+  // iletilmezse parent'ın `visible`ı true kalır ve sheet bir daha açılmaz.
+  it('propagates the sheet dismiss to the parent onClose', () => {
     const onClose = jest.fn();
     const tree = setup({ onClose });
-    // İlk TouchableOpacity = header X butonu.
-    fireEvent.press(tree.UNSAFE_getAllByType(TouchableOpacity)[0]);
+    fireEvent.press(tree.getByTestId('modal-header-close'));
     expect(onClose).toHaveBeenCalledTimes(1);
   });
 });

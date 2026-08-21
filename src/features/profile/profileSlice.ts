@@ -3,6 +3,43 @@ import axios from "axios";
 import { API_BASE_URL, API_ENDPOINTS } from "@/shared/constants/api";
 import type { ProfileState } from "@/shared/types";
 import { devLog } from '@/shared/utils/devLog';
+import {
+  extractModerationPhotos,
+  isFatalReasonCode,
+  moderationReasonText,
+  type PhotoModeration,
+} from "./photoModeration";
+
+/**
+ * Kayıt/profil gönderiminin reddi. Ekranın doğru Alert'i kurabilmesi için ham
+ * mesaj yerine yapılandırılmış veri taşır: `main_photo_multiple_faces` gibi
+ * fatal kodlarda kullanıcıya "başka fotoğrafı ana yap" önerilebilsin diye.
+ */
+export interface ProfileSubmitError {
+  message: string;
+  reasonCode: string | null;
+  photos: PhotoModeration[];
+}
+
+// Rehber §7: fotoğraf kaynaklı 400'lerde gövde `result.photos` ile hangi
+// fotoğrafın neden düştüğünü söylüyor. UI metni HER ZAMAN reasonCode'dan
+// üretilir — `reasonText` backend'de Türkçe sabit, yalnızca gösterim/log için.
+const buildSubmitError = (data: any, fallback: string): ProfileSubmitError => {
+  const photos = extractModerationPhotos(data?.result);
+  const fatal = photos.find((p) => isFatalReasonCode(p.reasonCode));
+  const reasonCode =
+    fatal?.reasonCode ??
+    photos.find((p) => p.reasonCode)?.reasonCode ??
+    data?.reasonCode ??
+    data?.result?.reasonCode ??
+    null;
+
+  const message = reasonCode
+    ? moderationReasonText(fatal?.status ?? 'Rejected', reasonCode)
+    : data?.message || data?.title || fallback;
+
+  return { message, reasonCode, photos };
+};
 
 // Expo SDK 56'nın winter fetch'i RN'in klasik {uri,name,type} FormData pattern'ini
 // desteklemiyor → "Unsupported FormDataPart implementation" fırlatıyor.
@@ -28,8 +65,9 @@ const initialState: ProfileState = {
   hobbies: [],
   smokingStatus: null,
   zodiacSign: null,
-  usagePurpose: null,
   relationshipIntent: null,
+  alcoholUsage: null,
+  religiousView: null,
   photos: [],
   mainPhotoIndex: 0,
   loading: false,
@@ -48,7 +86,6 @@ interface CompleteProfileArgs {
     hobbies: string[];
     smokingStatus?: string;
     zodiacSign?: string;
-    usagePurpose?: string;
     relationshipIntent?: string;
   };
   photos: string[];
@@ -103,9 +140,6 @@ export const completeProfile = createAsyncThunk(
       if (profileData.zodiacSign != null) {
         formData.append("ZodiacSign", profileData.zodiacSign);
       }
-      if (profileData.usagePurpose != null) {
-        formData.append("UsagePurpose", profileData.usagePurpose);
-      }
       if (profileData.relationshipIntent != null) {
         formData.append("RelationshipIntent", profileData.relationshipIntent);
       }
@@ -136,19 +170,25 @@ export const completeProfile = createAsyncThunk(
       devLog("📤 Response status:", response.status);
       devLog("📤 Parsed JSON:", JSON.stringify(data, null, 2));
 
-      if (response.status < 200 || response.status >= 300) {
-        return rejectWithValue(data?.message || data?.title || "Profil tamamlanırken bir hata oluştu");
-      }
-
-      if (data && data.isSuccess === false) {
-        return rejectWithValue(data?.message || "Profil tamamlanırken bir hata oluştu");
+      if (
+        response.status < 200 ||
+        response.status >= 300 ||
+        (data && data.isSuccess === false)
+      ) {
+        return rejectWithValue(
+          buildSubmitError(data, "Profil tamamlanırken bir hata oluştu"),
+        );
       }
 
       devLog('✅ Profile completed successfully!');
+      // KIRICI DEĞİŞİKLİK: result artık { profile, photos }. Zarfı olduğu gibi
+      // döndürüyoruz, çözümü çağıran taraf unwrapProfileResult ile yapıyor.
       return data || { success: true };
     } catch (error: any) {
       console.error("❌ Complete Profile Error:", error.message);
-      return rejectWithValue(error.message || "Profil tamamlanırken bir hata oluştu");
+      return rejectWithValue(
+        buildSubmitError(null, error.message || "Profil tamamlanırken bir hata oluştu"),
+      );
     }
   }
 );
@@ -199,8 +239,12 @@ export const registerAndComplete = createAsyncThunk(
       put("AgeRangeMax", profile.ageRangeMax);
       put("SmokingStatus", profile.smokingStatus);
       put("ZodiacSign", profile.zodiacSign);
-      put("UsagePurpose", profile.usagePurpose);
       put("RelationshipIntent", profile.relationshipIntent);
+      // Alan adları profil PUT'undakiyle aynı (bkz. EditProfileForm:
+      // updates.AlcoholUsage / updates.ReligiousView). Kullanıcı Step16'yı
+      // atlarsa değerler null kalır ve put() bunları hiç eklemez.
+      put("AlcoholUsage", profile.alcoholUsage);
+      put("ReligiousView", profile.religiousView);
 
       put("MaxDistance", 50);
       put("ShowMyUniversity", true);
@@ -237,23 +281,24 @@ export const registerAndComplete = createAsyncThunk(
       devLog("📥 [registerAndComplete] Response body:", rawText);
 
       if (response.status < 200 || response.status >= 300 || (data && data.isSuccess === false)) {
-        const errMsg =
-          data?.message ||
-          data?.title ||
-          data?.errors ||
-          rawText ||
-          `HTTP ${response.status}`;
-        console.error("❌ Backend error detail:", errMsg);
+        const rawErr = data?.message || data?.title || data?.errors || rawText;
+        console.error("❌ Backend error detail:", rawErr);
         if (data?.errors) {
           console.error("❌ Field errors:", JSON.stringify(data.errors, null, 2));
         }
-        return rejectWithValue(typeof errMsg === "string" ? errMsg : JSON.stringify(errMsg));
+        const fallback =
+          typeof rawErr === "string" && rawErr
+            ? rawErr
+            : `HTTP ${response.status}`;
+        return rejectWithValue(buildSubmitError(data, fallback));
       }
 
       return data;
     } catch (error: any) {
       console.error("❌ registerAndComplete exception:", error);
-      return rejectWithValue(error.message || "Kayıt tamamlanamadı");
+      return rejectWithValue(
+        buildSubmitError(null, error.message || "Kayıt tamamlanamadı"),
+      );
     }
   }
 );
@@ -284,7 +329,9 @@ const profileSlice = createSlice({
       .addCase(completeProfile.rejected, (state, action) => {
         devLog('❌ Profile completion rejected - keeping profile data for retry');
         state.loading = false;
-        state.error = action.payload as string;
+        // payload artık ProfileSubmitError; state yalnızca gösterilebilir
+        // mesajı tutar, reasonCode'u ekran .unwrap() catch'inden alıyor.
+        state.error = (action.payload as ProfileSubmitError)?.message ?? null;
       })
       .addCase(registerAndComplete.pending, (state) => {
         state.loading = true;
@@ -295,7 +342,9 @@ const profileSlice = createSlice({
       })
       .addCase(registerAndComplete.rejected, (state, action) => {
         state.loading = false;
-        state.error = action.payload as string;
+        // payload artık ProfileSubmitError; state yalnızca gösterilebilir
+        // mesajı tutar, reasonCode'u ekran .unwrap() catch'inden alıyor.
+        state.error = (action.payload as ProfileSubmitError)?.message ?? null;
       });
   },
 });

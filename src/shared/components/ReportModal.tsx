@@ -1,23 +1,161 @@
 import {
-  Modal,
   View,
   Text,
-  TextInput,
   TouchableOpacity,
   ActivityIndicator,
   Alert,
-  Pressable,
-  ScrollView,
-} from 'react-native';
-import { useTranslation } from 'react-i18next';
-import { useSafeAreaInsets } from 'react-native-safe-area-context';
-import { X, Flag } from 'lucide-react-native';
-import SFIcon from './SFIcon';
-import moderationService, { REPORT_REASON_LABELS_TR } from '@/shared/services/moderationService';
-import { useForm, Controller } from 'react-hook-form';
-import { zodResolver } from '@hookform/resolvers/zod';
-import { reportSchema, ReportForm } from '@/shared/schemas/formSchemas';
-import { colors } from '../theme/colors';
+  Switch,
+} from "react-native";
+import { BottomSheetTextInput } from "@gorhom/bottom-sheet";
+import { useTranslation } from "react-i18next";
+import { useState } from "react";
+import { Flag, Check, InfoIcon } from "lucide-react-native";
+import SFIcon from "./SFIcon";
+import AppModal from "./AppModal";
+import { useKeyboardAwareField } from "@/shared/hooks/useKeyboardAwareField";
+import moderationService, {
+  ReportReason,
+  ReportReasonType,
+} from "@/shared/services/moderationService";
+import { useForm, Controller } from "react-hook-form";
+import { zodResolver } from "@hookform/resolvers/zod";
+import { reportSchema, ReportForm } from "@/shared/schemas/formSchemas";
+import { colors } from "../theme/colors";
+
+// Sebepler enum sırasında sabit: "Diğer" en sonda kalsın, listenin sırası
+// sunucu enum'undan bağımsız olmasın. Etiketler i18n'den (bkz. moderation.report.reasons).
+const REASON_ORDER: ReportReasonType[] = [
+  ReportReason.Spam,
+  ReportReason.Harassment,
+  ReportReason.InappropriateContent,
+  ReportReason.FakeProfile,
+  ReportReason.Underage,
+  ReportReason.Scam,
+  ReportReason.Other,
+];
+
+// ConversationOptionsSheet ile birebir aynı başlık deseni: 20/600 başlık,
+// altında info ikonu + açıklama. Şikayet akışı o sheet'ten açılıyor, iki ekran
+// aynı görünmeli.
+function Section({
+  title,
+  description,
+  marginTop = 28,
+}: {
+  title: string;
+  description?: string;
+  marginTop?: number;
+}) {
+  return (
+    <View
+      style={{
+        flexDirection: "column",
+        alignItems: "flex-start",
+        marginTop,
+        marginBottom: 10,
+      }}
+    >
+      <Text
+        style={{
+          color: colors.text,
+          fontSize: 20,
+          fontWeight: "600",
+          marginBottom: description ? 9 : 0,
+        }}
+      >
+        {title}
+      </Text>
+      {description ? (
+        <View
+          style={{
+            flexDirection: "row",
+            alignItems: "center",
+            gap: 8,
+            paddingRight: 16,
+            marginBottom: 4,
+          }}
+        >
+          <SFIcon
+            name="info.circle"
+            fallback={InfoIcon}
+            size={16}
+            color={colors.textSecondary}
+            strokeWidth={2}
+            weight="semibold"
+          />
+          <Text
+            style={{
+              color: colors.textSecondary,
+              fontSize: 14,
+              fontWeight: "400",
+              flex: 1,
+            }}
+          >
+            {description}
+          </Text>
+        </View>
+      ) : null}
+    </View>
+  );
+}
+
+// Sebep satırı — SettingsModal/ConversationOptionsSheet pill'i (radius 36,
+// 0.5 border). Seçili hali FilterModal'ın seçim pill'iyle aynı: dolu
+// inverseSurface + onInverseSurface metin/ikon.
+function ReasonRow({
+  label,
+  selected,
+  onPress,
+}: {
+  label: string;
+  selected: boolean;
+  onPress: () => void;
+}) {
+  return (
+    <TouchableOpacity
+      onPress={onPress}
+      activeOpacity={0.8}
+      accessibilityRole="radio"
+      accessibilityState={{ selected }}
+      style={{
+        borderRadius: 36,
+        borderCurve: "continuous",
+        overflow: "hidden",
+        borderWidth: 0.5,
+        borderColor: selected ? colors.inverseSurface : colors.hairline,
+        backgroundColor: selected ? colors.inverseSurface : undefined,
+        flexDirection: "row",
+        alignItems: "center",
+        justifyContent: "space-between",
+        padding: 16,
+        paddingHorizontal: 20,
+        marginBottom: 8,
+      }}
+    >
+      <Text
+        style={{
+          color: selected ? colors.onInverseSurface : colors.text,
+          fontSize: 15,
+          fontWeight: "500",
+          flex: 1,
+        }}
+      >
+        {label}
+      </Text>
+      {selected ? (
+        <SFIcon
+          name="checkmark"
+          fallback={Check}
+          size={18}
+          color={colors.onInverseSurface}
+          strokeWidth={2}
+          weight="semibold"
+          style={{ pointerEvents: "none" }}
+        />
+      ) : null}
+    </TouchableOpacity>
+  );
+}
 
 export default function ReportModal({
   visible,
@@ -28,7 +166,14 @@ export default function ReportModal({
   onSuccess,
 }: any) {
   const { t } = useTranslation();
-  const insets = useSafeAreaInsets();
+  // "Bildirmek istiyorum ama iletişimi kesmek istemiyorum" senaryosu için
+  // kaldırılabilir; varsayılan İŞARETLİ. Alan sunucuya HER ZAMAN açıkça gider —
+  // varsayılanı uca göre değişiyor (bkz. moderationService.ReportArgs).
+  const [alsoBlock, setAlsoBlock] = useState(true);
+
+  // Detay alanı içeriğin sonuna yakın; klavye açılınca altında kalıyordu.
+  // Anchor View ölçülüp modal scroll'u klavyenin üstüne taşınıyor.
+  const { anchorRef, onFocus, onBlur } = useKeyboardAwareField();
 
   const { control, handleSubmit, reset, watch, formState: { isSubmitting } } = useForm<ReportForm>({
     resolver: zodResolver(reportSchema),
@@ -38,25 +183,65 @@ export default function ReportModal({
   const reason = watch('reason');
   const description = watch('description') || '';
 
+  // X butonu YOK: sheet swipe-down/backdrop ile kapanıyor ve o noktada gorhom
+  // dismiss'i zaten yapmış oluyor. Gönderim sürerken erken çıkıp parent'ın
+  // `visible`ını true bırakırsak sheet bir daha present edilemez — bu yüzden
+  // kapanış her koşulda parent'a iletilir.
   const handleClose = () => {
-    if (isSubmitting) return;
     reset();
+    setAlsoBlock(true);
     onClose?.();
   };
 
   const handleSubmitForm = handleSubmit(async ({ reason: r, description: d }) => {
     try {
-      await moderationService.reportUser({
+      const result = await moderationService.reportUser({
         reportedUserId,
         reason: r as any,
         description: d?.trim() || undefined,
         conversationId,
         messageId,
+        alsoBlock,
       });
+      const finish = () => {
+        reset();
+        setAlsoBlock(true);
+        onClose?.();
+        onSuccess?.(result);
+      };
+      // Şikayet kaydedildiği halde engelleme düşmüş olabilir. "Engellendi" deyip
+      // engellememek en kötü hata — kullanıcıya tekrar deneme imkânı sunuyoruz.
+      if (alsoBlock && result && !result.blocked) {
+        Alert.alert(
+          t('moderation.report.successTitle'),
+          t('moderation.report.blockFailed'),
+          [
+            { text: t('common.ok'), onPress: finish },
+            {
+              text: t('moderation.report.blockRetry'),
+              onPress: async () => {
+                try {
+                  await moderationService.blockUser(reportedUserId);
+                  onSuccess?.({ ...result, blocked: true });
+                } catch {
+                  Alert.alert(t('common.error'), t('moderation.report.blockRetryFailed'));
+                  onSuccess?.(result);
+                }
+                reset();
+                setAlsoBlock(true);
+                onClose?.();
+              },
+            },
+          ],
+        );
+        return;
+      }
       Alert.alert(
         t('moderation.report.successTitle'),
-        t('moderation.report.successMessage'),
-        [{ text: t('common.ok'), onPress: () => { reset(); onClose?.(); onSuccess?.(); } }],
+        alsoBlock
+          ? t('moderation.report.successBlockedMessage')
+          : t('moderation.report.successMessage'),
+        [{ text: t('common.ok'), onPress: finish }],
       );
     } catch (err: any) {
       const status = err?.response?.status;
@@ -68,108 +253,212 @@ export default function ReportModal({
     }
   });
 
-  if (!visible) return null;
+  const canSubmit = !!reason && !isSubmitting;
+  const submitFg = reason ? colors.onInverseSurface : colors.textSecondary;
 
   return (
-    <Modal visible animationType="slide" onRequestClose={handleClose}>
-      <View style={{ flex: 1, backgroundColor: colors.bgDeep, paddingTop: insets.top }}>
-        {/* Header */}
-        <View className="flex-row items-center px-4 py-3 border-b border-surface-5">
-          <TouchableOpacity onPress={handleClose} hitSlop={10} className="p-2">
-            <SFIcon name="xmark" fallback={X} size={24} color={colors.text} strokeWidth={2} weight="semibold" />
-          </TouchableOpacity>
-          <Text className="text-white text-base font-semibold flex-1 ml-2">
-            {t('moderation.report.title')}
-          </Text>
-        </View>
-
-        <ScrollView contentContainerStyle={{ padding: 20 }}>
-          <View className="flex-row items-center mb-4">
-            <SFIcon name="flag.fill" fallback={Flag} size={20} color={colors.primary} strokeWidth={2} weight="semibold" />
-            <Text className="text-white text-base font-semibold ml-2">{t('moderation.report.reasonLabel')}</Text>
-          </View>
-
-          <Controller
-            control={control}
-            name="reason"
-            render={({ field: { onChange, value } }) => (
-              <>
-                {Object.entries(REPORT_REASON_LABELS_TR).map(([key, label]) => (
-                  <Pressable
-                    key={key}
-                    onPress={() => onChange(key)}
-                    className={`flex-row items-center justify-between px-4 py-4 mb-2 rounded-2xl border ${
-                      value === key
-                        ? 'border-primary bg-primary/10'
-                        : 'border-surface-3 bg-surface-5'
-                    }`}
-                  >
-                    <Text className={`text-base ${value === key ? 'text-white font-semibold' : 'text-gray-200'}`}>
-                      {label as string}
-                    </Text>
-                    <View
-                      style={{
-                        width: 20, height: 20, borderRadius: 10, borderWidth: 2,
-                        borderColor: value === key ? colors.primary : colors.border,
-                        alignItems: 'center', justifyContent: 'center',
-                      }}
-                    >
-                      {value === key && (
-                        <View style={{ width: 10, height: 10, borderRadius: 5, backgroundColor: colors.primary }} />
-                      )}
-                    </View>
-                  </Pressable>
-                ))}
-              </>
-            )}
-          />
-
-          <Text className="text-white text-base font-semibold mt-6 mb-2">
-            {t('moderation.report.detailLabel')}
-          </Text>
-          <Controller
-            control={control}
-            name="description"
-            render={({ field: { onChange, value } }) => (
-              <TextInput
-                value={value}
-                onChangeText={onChange}
-                placeholder={t('moderation.report.detailPlaceholder')}
-                placeholderTextColor={colors.textMuted}
-                multiline
-                maxLength={1000}
-                className="text-white text-base bg-surface-5 rounded-2xl p-4"
-                style={{ minHeight: 100, textAlignVertical: 'top', borderWidth: 1, borderColor: colors.surface3 }}
+    <AppModal
+      visible={visible}
+      onClose={handleClose}
+      title={t('moderation.report.title')}
+      // Header'da X yok — sheet swipe-down/backdrop ile kapanır, başlık scroll
+      // ile belirir. İlk ekranda büyük başlığı ilk Section üstleniyor.
+      closeButton={false}
+      contentContainerStyle={{ paddingTop: 36 }}
+    >
+      <Section
+        title={t('moderation.report.reasonLabel')}
+        description={t('moderation.report.reasonDescription')}
+        marginTop={4}
+      />
+      <Controller
+        control={control}
+        name="reason"
+        render={({ field: { onChange, value } }) => (
+          <>
+            {REASON_ORDER.map((key) => (
+              <ReasonRow
+                key={key}
+                label={t(`moderation.report.reasons.${key}`)}
+                selected={value === key}
+                onPress={() => onChange(key)}
               />
-            )}
-          />
-          <Text className="text-gray-500 text-xs mt-2 text-right">
-            {t('moderation.report.characterCount', { count: description.length })}
-          </Text>
+            ))}
+          </>
+        )}
+      />
 
-          <Text className="text-gray-500 text-xs mt-6 leading-5">
-            {t('moderation.report.disclaimer')}
-          </Text>
-        </ScrollView>
-
-        {/* Bottom action */}
-        <View
-          className="px-4 pt-3 border-t border-surface-5"
-          style={{ paddingBottom: Math.max(insets.bottom, 16) }}
-        >
-          <TouchableOpacity
-            onPress={handleSubmitForm}
-            disabled={!reason || isSubmitting}
-            className="rounded-full py-3.5 items-center justify-center"
-            style={{ backgroundColor: reason ? colors.error : colors.border }}
-          >
-            {isSubmitting
-              ? <ActivityIndicator size="small" color={colors.text} />
-              : <Text className="text-white font-bold text-base">Şikayet Et</Text>
-            }
-          </TouchableOpacity>
-        </View>
+      <Section
+        title={t('moderation.report.detailLabel')}
+        description={t('moderation.report.detailDescription')}
+      />
+      <View ref={anchorRef} collapsable={false}>
+        <Controller
+          control={control}
+          name="description"
+          render={({ field: { onChange, value } }) => (
+            // BottomSheetTextInput şart: düz TextInput'ta gorhom klavye
+            // target'ını set etmiyor ve sheet klavye davranışını atlıyor.
+            <BottomSheetTextInput
+              value={value}
+              onChangeText={onChange}
+              onFocus={onFocus}
+              onBlur={onBlur}
+              placeholder={t('moderation.report.detailPlaceholder')}
+              placeholderTextColor={colors.textSecondary}
+              multiline
+              maxLength={1000}
+              style={{
+                borderRadius: 30,
+                borderCurve: "continuous",
+                overflow: "hidden",
+                borderWidth: 0.5,
+                borderColor: colors.hairline,
+                color: colors.text,
+                fontSize: 15,
+                lineHeight: 22,
+                minHeight: 110,
+                textAlignVertical: "top",
+                padding: 12,
+                paddingLeft: 16,
+              }}
+            />
+          )}
+        />
       </View>
-    </Modal>
+      <Text
+        style={{
+          color: colors.textSecondary,
+          fontSize: 12,
+          marginTop: 8,
+          paddingHorizontal: 4,
+          textAlign: "right",
+        }}
+      >
+        {t('moderation.report.characterCount', { count: description.length })}
+      </Text>
+
+      {/* Şikayet ARTIK zorunlu engelleme yapmıyor (v1.5): işaretli gelir,
+          kullanıcı kaldırabilir. Engelleme KALICIDIR — ne "engeli kaldır"
+          ne de geri alma penceresi eşleşmeyi geri getirir. */}
+      <Section
+        title={t('moderation.report.blockSectionTitle')}
+        description={t('moderation.report.alsoBlockHint')}
+      />
+      <TouchableOpacity
+        onPress={() => setAlsoBlock((v) => !v)}
+        activeOpacity={0.8}
+        accessibilityRole="switch"
+        accessibilityState={{ checked: alsoBlock }}
+        style={{
+          borderRadius: 36,
+          borderCurve: "continuous",
+          overflow: "hidden",
+          borderWidth: 0.5,
+          borderColor: colors.hairline,
+          flexDirection: "row",
+          alignItems: "center",
+          justifyContent: "space-between",
+          padding: 16,
+          paddingHorizontal: 20,
+        }}
+      >
+        <Text
+          style={{
+            color: colors.text,
+            fontSize: 15,
+            fontWeight: "500",
+            flex: 1,
+            marginRight: 12,
+          }}
+        >
+          {t('moderation.report.alsoBlock')}
+        </Text>
+        {/* Dokunuş her zaman satıra gitsin — Switch salt gösterge. */}
+        <View pointerEvents="none">
+          <Switch
+            value={alsoBlock}
+            trackColor={{ false: colors.hairlineStrong, true: colors.errorStrong }}
+            thumbColor={colors.text}
+            ios_backgroundColor={colors.border}
+          />
+        </View>
+      </TouchableOpacity>
+
+      <View
+        style={{
+          flexDirection: "row",
+          alignItems: "flex-start",
+          gap: 8,
+          marginTop: 24,
+          paddingHorizontal: 4,
+        }}
+      >
+        <SFIcon
+          name="info.circle"
+          fallback={InfoIcon}
+          size={16}
+          color={colors.textSecondary}
+          strokeWidth={2}
+          weight="semibold"
+          style={{ marginTop: 2 }}
+        />
+        <Text
+          style={{
+            color: colors.textSecondary,
+            fontSize: 13,
+            lineHeight: 19,
+            flex: 1,
+          }}
+        >
+          {t('moderation.report.disclaimer')}
+        </Text>
+      </View>
+
+      {/* Ana aksiyon içeriğin EN SONUNDA (sticky footer yok): kullanıcı sebebi,
+          detayı, engelleme kararını ve uyarıyı görüp en altta onaylıyor. */}
+      <TouchableOpacity
+        testID="report-submit"
+        onPress={handleSubmitForm}
+        disabled={!canSubmit}
+        activeOpacity={0.8}
+        style={{
+          borderRadius: 36,
+          borderCurve: "continuous",
+          overflow: "hidden",
+          borderWidth: 0.5,
+          borderColor: reason ? colors.errorStrong : colors.hairline,
+          backgroundColor: reason ? colors.errorStrong : undefined,
+          flexDirection: "row",
+          alignItems: "center",
+          justifyContent: "space-between",
+          padding: 16,
+          paddingHorizontal: 20,
+          marginTop: 28,
+        }}
+      >
+        <Text
+          style={{ color: submitFg, fontSize: 15, fontWeight: "500", flex: 1 }}
+        >
+          {t('moderation.report.submit')}
+        </Text>
+        {isSubmitting ? (
+          <ActivityIndicator
+            size="small"
+            color={submitFg}
+            style={{ width: 18, height: 18 }}
+          />
+        ) : (
+          <SFIcon
+            name="flag.fill"
+            fallback={Flag}
+            size={18}
+            color={submitFg}
+            strokeWidth={1.5}
+            style={{ pointerEvents: "none" }}
+          />
+        )}
+      </TouchableOpacity>
+    </AppModal>
   );
 }

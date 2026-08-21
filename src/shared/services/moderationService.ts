@@ -13,15 +13,8 @@ export const ReportReason = {
 
 export type ReportReasonType = typeof ReportReason[keyof typeof ReportReason];
 
-export const REPORT_REASON_LABELS_TR: Record<ReportReasonType, string> = {
-  Spam: 'Spam / Reklam',
-  Harassment: 'Taciz / Hakaret',
-  InappropriateContent: 'Müstehcen içerik',
-  FakeProfile: 'Sahte profil',
-  Underage: 'Yaş altı',
-  Scam: 'Dolandırıcılık',
-  Other: 'Diğer',
-};
+// Sebep etiketleri i18n'de: `moderation.report.reasons.<enum>` (tr.ts/en.ts).
+// Burada sabit Türkçe map tutmak açık dil desteğini sessizce deliyordu.
 
 /** GET /api/moderation/blocked-users item'ı. */
 export interface BlockedUser {
@@ -39,6 +32,21 @@ interface ReportArgs {
   description?: string;
   messageId?: string;
   conversationId?: string;
+  /**
+   * Şikayetle birlikte engelleme yapılsın mı. AÇIKÇA gönderilir — varsayılan
+   * uca göre değişiyor (`/api/swipe/Report` true, `/api/moderation/report`
+   * false), aynı gövde iki uçta farklı sonuç verir.
+   */
+  alsoBlock: boolean;
+}
+
+export interface ReportResult {
+  reportId?: string;
+  /**
+   * Şikayet kaydedildi ama engelleme başarısız olmuş olabilir. `false` görünce
+   * "engellendi" DEME — kullanıcıya tekrar deneme imkânı sun.
+   */
+  blocked: boolean;
 }
 
 const moderationService = {
@@ -57,13 +65,27 @@ const moderationService = {
     const res = await api.get(API_ENDPOINTS.MODERATION_BLOCKED_USERS);
     return (res as any).result || [];
   },
-  async reportUser({ reportedUserId, reason, description, messageId, conversationId }: ReportArgs): Promise<string | undefined> {
-    const body: Record<string, any> = { reportedUserId, reason };
+  async reportUser({
+    reportedUserId,
+    reason,
+    description,
+    messageId,
+    conversationId,
+    alsoBlock,
+  }: ReportArgs): Promise<ReportResult> {
+    const body: Record<string, any> = { reportedUserId, reason, alsoBlock: !!alsoBlock };
     if (description) body.description = description;
     if (messageId) body.messageId = messageId;
     if (conversationId) body.conversationId = conversationId;
     const res = await api.post(API_ENDPOINTS.MODERATION_REPORT, body);
-    return (res as any).result?.reportId;
+    const result = (res as any).result;
+    return {
+      reportId: result?.reportId,
+      // Alan hiç gelmiyorsa (eski backend) engelleme talebimizi doğrulanmış
+      // saymıyoruz: alsoBlock istenmişse "başarısız" muamelesi görür ve kullanıcı
+      // engellemeyi elle tetikleyebilir. Sessizce "engellendi" demek en kötü hata.
+      blocked: !!result?.blocked,
+    };
   },
 };
 
