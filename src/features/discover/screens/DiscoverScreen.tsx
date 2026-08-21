@@ -45,6 +45,7 @@ import {
   Search,
   ArrowLeft,
   ArrowRight,
+  Lock,
 } from "lucide-react-native";
 import SFIcon from "@/shared/components/SFIcon";
 import SwipeWrapper from "@/features/discover/components/SwipeWrapper";
@@ -53,9 +54,11 @@ import SuperLikeBurst from "@/features/discover/components/SuperLikeBurst";
 import PurchaseModal from "@/features/discover/components/PurchaseModal";
 import SuperLikePurchaseModal from "@/features/discover/components/SuperLikePurchaseModal";
 import FilterModal from "@/features/discover/components/FilterModal";
+import ReportModal from "@/shared/components/ReportModal";
+import moderationService from "@/shared/services/moderationService";
 import { CURRENT_KVKK_VERSION } from "@/features/auth/screens/KVKKConsentScreen";
 import WaveFillLogo from "@/shared/components/WaveFillLogo";
-import { colors } from "../../../shared/theme/colors";
+import { colors, ink, scrimAt } from "../../../shared/theme/colors";
 import {
   usePotentialMatches,
   useSwipeFilters,
@@ -75,7 +78,10 @@ import { decideTopUp } from "@/features/discover/deckTopUp";
 import { resolveCode, type CodeEntry } from "@/shared/constants/responseCodes";
 import { SUPPORT_EMAIL } from "@/shared/constants/support";
 import { showInfoToast, showMissedMatchToast } from "@/shared/services/toaster";
-import uiBus, { cardExpandAnim } from "@/shared/services/uiBus";
+import uiBus, {
+  cardExpandAnim,
+  resetCardExpandState,
+} from "@/shared/services/uiBus";
 import { useEvent } from "@/shared/hooks/useEvent";
 import { mark } from "@/shared/debug/startupTiming";
 import { hideSplash } from "@/shared/splash";
@@ -86,14 +92,19 @@ import { useAppDispatch, useAppSelector } from "@/shared/hooks/redux";
 import { store } from "@/shared/store";
 import { hasLikedMe, removeWhoLikedMe } from "@/features/discover/swipeSlice";
 import { refreshEntitlementsForPaywall } from "@/features/profile/subscriptionSlice";
+import { usePremiumTier } from "@/features/profile/premiumTier";
 import { analytics } from "@/shared/services/analytics";
 import { navigationRef } from "@/shared/services/navigationRef";
+import type { PotentialMatch } from "@/shared/types";
 
 // Tab bar geometry — TabNavigator ile tutarlı:
 // FLOATING_BAR_HEIGHT (64) + FLOATING_BAR_BOTTOM_GAP (-10) + insets.bottom + extra gap (12)
 const TAB_BAR_HEIGHT = 64;
 const TAB_BAR_BOTTOM_GAP = -10;
-const CARD_BOTTOM_GAP = 12;
+// Kart alt kenarı ile yüzen tab bar arasındaki nefes payı. 12 → 4: kart tab
+// bar'a bir tık daha yaklaşsın istendi; 0 yapılmıyor, kartın yuvarlak köşesi
+// bar'a değmiş gibi durmasın.
+const CARD_BOTTOM_GAP = 4;
 
 // Placeholder block — kendi içinde shimmer animasyonu olan dark rect.
 // borderCurve:continuous + overflow:hidden ile yumuşak köşeli kapsayıcı.
@@ -137,7 +148,7 @@ const SkeletonBlock = ({ width, height, borderRadius = 8, style }: any) => {
         ]}
       >
         <LinearGradient
-          colors={["transparent", "rgba(255,255,255,0.12)", "transparent"]}
+          colors={["transparent", ink(0.12), "transparent"]}
           start={{ x: 0, y: 0 }}
           end={{ x: 1, y: 0 }}
           style={{ flex: 1 }}
@@ -237,7 +248,7 @@ const SkeletonCard = () => {
         ]}
       >
         <LinearGradient
-          colors={["transparent", "rgba(255,255,255,0.07)", "transparent"]}
+          colors={["transparent", colors.shimmer, "transparent"]}
           start={{ x: 0, y: 0 }}
           end={{ x: 1, y: 0 }}
           style={{ flex: 1 }}
@@ -305,7 +316,7 @@ const RadarRing = ({ delay = 0, active = true }) => {
           height: 120,
           borderRadius: 60,
           borderWidth: 4,
-          borderColor: "rgba(255,255,255,0.55)",
+          borderColor: ink(0.55),
         },
         style,
       ]}
@@ -700,6 +711,42 @@ export default function DiscoverScreen() {
   const filters = filtersQuery.data ?? DEFAULT_FILTERS;
   const remainingUndos = statsQuery.data?.remainingUndos ?? null;
 
+  // ── Expand baseline: her taze destede collapsed başla ────────────────────
+  // Expand durumu modül seviyesinde yaşıyor (uiBus), yani bu ekran unmount olsa
+  // da değer kalıyor. Ekran yeniden mount olduğunda (tema değişimi ağacı
+  // remount ediyor) veya top kart değiştiğinde (deste tazelenmesi, rewind,
+  // engelleme) kart 1'de donmuş expand'le doğmasın diye baseline'ı burada
+  // sıfırlıyoruz. Kartın kendi mount reset'i (SwipeCard) tek başına yetmiyor:
+  // deste o an boşsa resetleyecek kart yok.
+  //
+  // EFFECT DEĞİL RENDER: hem cardContainerStyle'ın ilk paddingBottom değeri bu
+  // render'da hesaplanıyor, hem de SwipeCard yüksekliğini ilk layout'ta ölçüyor.
+  // Effect'e bırakılsaydı ilk ölçüm expanded geometride yapılırdı.
+  const topProfileId: string | undefined =
+    potentialMatches[currentIndex]?.userId;
+  const expandBaselineRef = useRef<{ id?: string } | null>(null);
+  if (
+    !expandBaselineRef.current ||
+    expandBaselineRef.current.id !== topProfileId
+  ) {
+    expandBaselineRef.current = { id: topProfileId };
+    resetCardExpandState();
+  }
+  // Ekran kapanırken de temizle — expanded'ken çıkılıp geri gelindiğinde ilk
+  // frame collapsed olsun (deste henüz yüklenmemişse bile header/padding doğru).
+  useEffect(() => resetCardExpandState, []);
+
+  // Tier'ın ekrandaki tek kaynağı: abonelik slice'ı (bkz.
+  // features/profile/premiumTier). ÖNCESİ `statsQuery.data?.isPremium ?? redux`
+  // idi — `/stats` oturumda bir kez çekildiği için premium bitince o cevap
+  // "premium" kalıyor ve backtrack/filtre kilitleri açık kalmaya devam
+  // ediyordu. `/stats` artık yalnız kota SAYILARININ kaynağı.
+  const { isPremium: subscriptionIsPremium, resolved: premiumResolved } =
+    usePremiumTier();
+  const isPremium = premiumResolved
+    ? subscriptionIsPremium
+    : (statsQuery.data?.isPremium ?? subscriptionIsPremium);
+
   // Startup teşhis mark'ları — first-launch profilini ölçmek ve startup crash'inin
   // yerini pinlemek için. Çökmeden önceki son [startup] satırı nerede öldüğünü söyler.
   useEffect(() => {
@@ -837,6 +884,16 @@ export default function DiscoverScreen() {
     if (rem == null) return false;
     return rem <= 0;
   }, [statsQuery.data?.superLikesRemaining]);
+
+  // Rewind free kullanıcıda artık bir premium özelliği (backend dailyUndoLimit=0
+  // dönüyor) — "günlük hakkı tükendi" değil. Rozette "0" göstermek yanlış hikâye
+  // anlatıyordu ("hakkım bitti, yarın gelir"); kilit ikonu doğru olanı söylüyor.
+  // remainingUndos null = değer bilinmiyor (eski backend / ilk yükleme) → kilit
+  // YOK, eski davranış korunur.
+  const undoLocked = useMemo(() => {
+    if (statsQuery.data?.isPremium) return false;
+    return remainingUndos === 0;
+  }, [statsQuery.data?.isPremium, remainingUndos]);
 
   // currentIndex yukarıda, potentialMatches memo'sundan önce tanımlı.
   const [isSwiping, setIsSwiping] = useState(false);
@@ -982,6 +1039,10 @@ export default function DiscoverScreen() {
       .then((premium) => {
         if (premium) {
           statsQuery.refetch?.();
+          // Filtreler de premium'a bağlı dönüyor (premiumOnlyFields + kayıtlı
+          // premium alanlar); stats'ı tazeleyip onu bayat bırakmak modalı
+          // yarım güncel bırakırdı.
+          filtersQuery.refetch?.();
           return;
         }
         setPurchaseVisible(true);
@@ -1015,7 +1076,45 @@ export default function DiscoverScreen() {
   }, [showSuperLikeLimitUi, openPremiumPaywall]);
 
   const [filterVisible, setFilterVisible] = useState(false);
+
+  // Filtre modalı açılırken tier'ı canonical kaynaktan teyit et. İki cache de
+  // kendi başına bayat kalabiliyor: /Stats oturumda BİR KEZ çekiliyor
+  // (staleTime: Infinity + refetchOnMount:false), /Filters 5 dk stale duruyor.
+  // Premium satın almadan SONRA aktifleşiyorsa — sandbox'ta webhook dakikalar
+  // sonra iniyor, RC `purchasePackage` throw edip optimistic patch'i hiç
+  // çalıştırmayabiliyor — modal kilitleri ve 50 km tavanı app reload edilene
+  // kadar duruyordu.
+  //
+  // Paywall yolundaki refresh'in aynısı: premium'sa hiç istek atmıyor, 30 sn
+  // throttle + 1.5 sn tavan süresi var. Premium çıkarsa redux flip'i UI'ı
+  // ANINDA açıyor (useSwipeStats redux'ı /Stats üzerine overlay ediyor);
+  // refetch'ler arkadan server-truth kotaları ve premium alan listesini
+  // getiriyor.
+  const verifyTierForFilters = useEvent(() => {
+    dispatch(refreshEntitlementsForPaywall())
+      .unwrap()
+      .then((premium) => {
+        if (!premium) return;
+        statsQuery.refetch?.();
+        filtersQuery.refetch?.();
+      })
+      // Teyit başarısızsa elimizdeki değerle devam — modalı bekletmiyoruz.
+      .catch(() => {});
+  });
+
+  useEffect(() => {
+    if (!filterVisible || isPremium) return;
+    verifyTierForFilters();
+  }, [filterVisible, isPremium, verifyTierForFilters]);
+
   const lastSwipePromiseRef = useRef(null);
+
+  // ── "Aramanı genişlettik" şeridi KALDIRILDI ─────────────────────────────
+  // Backend aday tükendiğinde yarıçapı hâlâ kademeli genişletiyor (100 → 250
+  // km) ama bunu artık BİLDİRMİYOR: `wasRadiusExpanded` her zaman false,
+  // `appliedRadiusKm` her zaman null (sözleşme 2026-08-17 §3.3-3.4). Ürün
+  // kararı genişletmenin sessiz kalması yönünde; alanlar yalnız eski
+  // istemciler kırılmasın diye response'ta duruyor, sonraki major'da silinecek.
 
   // ── Boş durum metni + aksiyonu ──────────────────────────────────────────
   // Metin sırası: uygulama dilindeki i18n karşılığı → backend'in lokalize
@@ -1301,10 +1400,21 @@ export default function DiscoverScreen() {
   });
 
   const handleRewind = async () => {
+    // Premium kapısı EN ÖNDE. Aşağıdaki guard'lar önce çalışırsa free kullanıcı
+    // like attıktan sonra rewind'e bastığında sessiz no-op oluyor — ne paywall
+    // ne geri bildirim. Kilitli kullanıcı için son swipe'ın ne olduğu alâkasız:
+    // buton "premium özelliği" diyor, tap her hâlükârda paywall açmalı.
+    if (undoLocked) {
+      openPremiumPaywall();
+      return;
+    }
     if (currentIndex === 0) return;
     if (!lastSwipeWasPass) return;
     if (remainingUndos === 0) {
-      setPurchaseVisible(true);
+      // Buraya yalnız premium + kalan hak 0 düşer (free zaten undoLocked'ta
+      // yakalandı). openPremiumPaywall entitlement'ı tazeleyip premium çıkarsa
+      // modal yerine kotayı refetch ediyor — premium'a "satın al" göstermeyiz.
+      openPremiumPaywall();
       return;
     }
 
@@ -1404,6 +1514,69 @@ export default function DiscoverScreen() {
     setTimeout(() => setIsSwiping(false), 300);
   });
 
+  // ── Moderasyon (expanded kartın altındaki ikonlar) ───────────────────────
+  // Kartı desteden düşür. Swipe DEĞİL: swipeMutation atılmaz, analytics'e
+  // swipe yazılmaz, rewind hedefi olmaz (lastSwipeWasPass'e dokunmuyoruz).
+  // swipedAtRef kaydı şart — polling refetch'i engellenen profili geri
+  // getirirse guard penceresi onu eler. Kart top değilse (teorik) sadece
+  // guard'a yazıp indeksi oynatmıyoruz.
+  const dropProfileFromDeck = useEvent((userId: string) => {
+    if (!userId) return;
+    swipedAtRef.current.set(userId, Date.now());
+    // Beni beğenmiş biriyse rozet ANINDA düşsün — handleSwipe'daki temizlikle
+    // aynı, tek farkı "kaçırdın" toast'ı YOK: engelleme kaçırılmış bir eşleşme
+    // değil, kasıtlı bir kapatma.
+    if (hasLikedMe(store.getState(), userId)) {
+      dispatch(removeWhoLikedMe(userId));
+      uiBus.emit("likerHandled", { userId });
+    }
+    if (potentialMatches[currentIndex]?.userId !== userId) return;
+    // Kart expanded'ken düşüyor: expand shared value'ları sıfırlanmazsa deste
+    // biterse (arkada kart yok) boş durum expanded ölçülerde kalır. Yeni bir
+    // top kart varsa baseline reset'i zaten aynı işi yapıyor, burada ikinci kez
+    // sıfırlamak zararsız — index değişmeden ÖNCE olması boş desteyi kurtarır.
+    resetCardExpandState();
+    setCurrentIndex((i) => i + 1);
+  });
+
+  // ReportModal bir bottom sheet; kart expanded'ken üstüne açılıyor. Şikayet
+  // sonucu "blocked" gelirse kartı da düşürüyoruz (ReportModal'ın engelle
+  // switch'i işaretlenmişse).
+  const [reportTarget, setReportTarget] = useState<string | null>(null);
+
+  const handleReportProfile = useEvent((profile: PotentialMatch) => {
+    if (!profile?.userId) return;
+    setReportTarget(profile.userId);
+  });
+
+  const handleBlockProfile = useEvent((profile: PotentialMatch) => {
+    const userId = profile?.userId;
+    if (!userId) return;
+    Alert.alert(
+      t('moderation.block.confirmTitle'),
+      t('moderation.block.confirmMessage'),
+      [
+        { text: t('common.cancel'), style: "cancel" },
+        {
+          text: t('moderation.block.confirmButton'),
+          style: "destructive",
+          onPress: async () => {
+            try {
+              await moderationService.blockUser(userId);
+              dropProfileFromDeck(userId);
+              Alert.alert(
+                t('moderation.block.successTitle'),
+                t('moderation.block.successMessage'),
+              );
+            } catch {
+              Alert.alert(t('common.error'), t('moderation.block.error'));
+            }
+          },
+        },
+      ],
+    );
+  });
+
   const renderStack = () => {
     return potentialMatches
       .slice(currentIndex, currentIndex + 2)
@@ -1427,6 +1600,8 @@ export default function DiscoverScreen() {
             swipeQuotaExhausted={swipeQuotaExhausted}
             superLikeQuotaExhausted={superLikeQuotaExhausted}
             superLikesRemaining={statsQuery.data?.superLikesRemaining ?? null}
+            onReport={handleReportProfile}
+            onBlock={handleBlockProfile}
           />
         );
       });
@@ -1455,11 +1630,14 @@ export default function DiscoverScreen() {
             <TouchableOpacity
               onPress={handleRewind}
               activeOpacity={0.7}
-              style={{ opacity: lastSwipeWasPass ? 1 : 0.3 }}
+              // Kilitliyken sönük göstermiyoruz: 0.3 opacity "şu an kullanılamaz"
+              // demek, oysa kilitli buton her zaman tıklanabilir (paywall açar).
+              // Sönüklük yalnız premium'un "geri alacak pass yok" hâline kalıyor.
+              style={{ opacity: undoLocked || lastSwipeWasPass ? 1 : 0.3 }}
             >
               <View style={{ position: "relative" }} pointerEvents="none">
                 <SFIcon name="arrow.counterclockwise" fallback={RotateCcw} size={24} color={colors.text} strokeWidth={2} weight="semibold" />
-                {remainingUndos !== null && (
+                {(undoLocked || remainingUndos !== null) && (
                   <View
                     style={{
                       position: "absolute",
@@ -1471,21 +1649,32 @@ export default function DiscoverScreen() {
                       height: 16,
                       alignItems: "center",
                       justifyContent: "center",
-                      paddingHorizontal: 3,
+                      paddingHorizontal: undoLocked ? 0 : 3,
                     }}
                   >
-                    <Text
-                      style={{
-                        color: colors.text,
-                        fontSize: 15,
-                        fontWeight: "700",
-                        lineHeight: 16,
-                        textAlign: "center",
-                        includeFontPadding: false,
-                      }}
-                    >
-                      {remainingUndos === -1 ? "∞" : remainingUndos}
-                    </Text>
+                    {undoLocked ? (
+                      <SFIcon
+                        name="lock.fill"
+                        fallback={Lock}
+                        size={12}
+                        color={colors.text}
+                        strokeWidth={2.5}
+                        weight="semibold"
+                      />
+                    ) : (
+                      <Text
+                        style={{
+                          color: colors.text,
+                          fontSize: 15,
+                          fontWeight: "700",
+                          lineHeight: 16,
+                          textAlign: "center",
+                          includeFontPadding: false,
+                        }}
+                      >
+                        {remainingUndos === -1 ? "∞" : remainingUndos}
+                      </Text>
+                    )}
                   </View>
                 )}
               </View>
@@ -1570,7 +1759,7 @@ export default function DiscoverScreen() {
         visible={filterVisible}
         onClose={() => setFilterVisible(false)}
         filters={filters}
-        isPremium={statsQuery.data?.isPremium ?? false}
+        isPremium={isPremium}
         onSave={handleSaveFilters}
         saving={saveFiltersMutation.isPending}
       />
@@ -1591,6 +1780,19 @@ export default function DiscoverScreen() {
         }}
       />
 
+      {/* Şikayet akışı — expanded kartın bayrak ikonundan açılır. Kart bir
+          sheet değil (destenin kendisi), o yüzden LikerSwipeModal'daki gibi
+          önce kapatmaya gerek yok. */}
+      <ReportModal
+        visible={!!reportTarget}
+        onClose={() => setReportTarget(null)}
+        reportedUserId={reportTarget}
+        onSuccess={(result: any) => {
+          // Şikayetle birlikte engellediyse kart destede kalmasın.
+          if (result?.blocked && reportTarget) dropProfileFromDeck(reportTarget);
+        }}
+      />
+
       {/* Ekran içi absolute overlay tab bar'ı kapatamıyor — floating bar
           navigator tarafında, ekranın üstünde ayrı render ediliyor. Kendi
           penceresi olan RN Modal demo bitene kadar tab dokunuşlarını da yutar. */}
@@ -1605,7 +1807,7 @@ export default function DiscoverScreen() {
           style={[
             {
               flex: 1,
-              backgroundColor: "rgba(0,0,0,0.45)",
+              backgroundColor: scrimAt(0.45),
               flexDirection: "row",
               alignItems: "center",
               justifyContent: "space-between",
@@ -1614,11 +1816,14 @@ export default function DiscoverScreen() {
             tutorialOverlayStyle,
           ]}
         >
+          {/* Oklar `onMedia` (sabit beyaz), `text` DEĞİL: perde iki modda da
+              siyah (scrimAt) — moda dönen mürekkep açık temada siyah oku siyah
+              perdeye çiziyordu. */}
           <Animated.View style={tutorialLeftArrowStyle}>
-            <SFIcon name="arrow.left" fallback={ArrowLeft} size={64} color={colors.text} strokeWidth={1.5} />
+            <SFIcon name="arrow.left" fallback={ArrowLeft} size={64} color={colors.onMedia} strokeWidth={1.5} />
           </Animated.View>
           <Animated.View style={tutorialRightArrowStyle}>
-            <SFIcon name="arrow.right" fallback={ArrowRight} size={64} color={colors.text} strokeWidth={1.5} />
+            <SFIcon name="arrow.right" fallback={ArrowRight} size={64} color={colors.onMedia} strokeWidth={1.5} />
           </Animated.View>
         </Animated.View>
       </Modal>

@@ -7,6 +7,7 @@ import Animated, {
 } from "react-native-reanimated";
 import { Check, X } from "lucide-react-native";
 import { useRenderCount } from "@/shared/debug/useRenderCount";
+import { colors } from "@/shared/theme/colors";
 
 const SWIPE_THRESHOLD = 120;
 
@@ -85,7 +86,7 @@ export default function SwipeOverlay({ dragX, opacity }: any) {
         ]}
       >
         <View style={{ width: 140, height: 140 }}>
-          <Check size={120} strokeWidth={7} color="#FFFFFF" />
+          <Check size={120} strokeWidth={7} color={colors.onMedia} />
         </View>
       </Animated.View>
 
@@ -97,7 +98,7 @@ export default function SwipeOverlay({ dragX, opacity }: any) {
         ]}
       >
         <View style={{ width: 140, height: 140 }}>
-          <X size={120} strokeWidth={7} color="#FFFFFF" />
+          <X size={120} strokeWidth={7} color={colors.onMedia} />
         </View>
       </Animated.View>
     </View>

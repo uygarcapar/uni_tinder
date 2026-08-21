@@ -8,11 +8,11 @@ import Animated, {
   Easing,
 } from "react-native-reanimated";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
-import { Heart } from "lucide-react-native";
 import { LinearGradient } from "expo-linear-gradient";
 import MaskedView from "@react-native-masked-view/masked-view";
+import SuperLikeGlyph from "@/shared/components/SuperLikeGlyph";
 import uiBus from "@/shared/services/uiBus";
-import { gradients } from "@/shared/theme/colors";
+import { superLikeBurst, type Gradient } from "@/shared/theme/colors";
 
 const { width } = Dimensions.get("window");
 
@@ -30,9 +30,29 @@ const PARTICLE_COUNT = 7;
 
 const rand = (a: number, b: number) => a + Math.random() * (b - a);
 
+// Renk paletinin karıştırılmış kopyası (Fisher-Yates). Parçacıklara indeksle
+// dağıtılıyor: her patlamada sıra değişir ama aynı patlamadaki 7 kalbin RENGİ
+// hep farklı olur — rastgele seçseydik aynı renk iki kez düşerdi.
+const shuffledPalette = () => {
+  const out = superLikeBurst.slice();
+  for (let i = out.length - 1; i > 0; i--) {
+    const j = Math.floor(Math.random() * (i + 1));
+    [out[i], out[j]] = [out[j], out[i]];
+  }
+  return out;
+};
+
 // Tek bir uçan kalp — mount olunca yavaşça yukarı süzülüp telefonun üstünden
 // çıkarak kaybolur. Parametreler mount başına rastgele → organik görünür.
-function Particle({ index, originY }: { index: number; originY: number }) {
+function Particle({
+  index,
+  originY,
+  gradient,
+}: {
+  index: number;
+  originY: number;
+  gradient: Gradient;
+}) {
   const progress = useSharedValue(0);
   const p = useRef({
     size: rand(30, 50),
@@ -83,12 +103,10 @@ function Particle({ index, originY }: { index: number; originY: number }) {
     >
       <MaskedView
         style={StyleSheet.absoluteFill}
-        maskElement={
-          <Heart size={p.size} color="black" strokeWidth={0} fill="black" />
-        }
+        maskElement={<SuperLikeGlyph size={p.size} color="black" />}
       >
         <LinearGradient
-          colors={gradients.swipeHeart}
+          colors={gradient}
           start={{ x: 0, y: 0 }}
           end={{ x: 1, y: 1 }}
           style={{ flex: 1 }}
@@ -102,7 +120,12 @@ function Particle({ index, originY }: { index: number; originY: number }) {
 // event'i gelince bir grup uçan kalp mount eder, animasyon bitince temizler.
 export default function SuperLikeBurst() {
   const insets = useSafeAreaInsets();
-  const [bursts, setBursts] = useState<number[]>([]);
+  // Palet patlama BAŞINA bir kez karıştırılıp state'te tutuluyor: render
+  // sırasında karıştırsaydık, ikinci patlama mount olurken parent yeniden
+  // render olur ve havadaki ilk grubun kalpleri renk değiştirirdi.
+  const [bursts, setBursts] = useState<
+    { id: number; palette: readonly Gradient[] }[]
+  >([]);
   const counter = useRef(0);
 
   // Kalp ikonunun ekran koordinatındaki merkezi (header + card offset).
@@ -112,9 +135,9 @@ export default function SuperLikeBurst() {
   useEffect(() => {
     const unsub = uiBus.on("superLikeBurst", () => {
       const id = counter.current++;
-      setBursts((prev) => [...prev, id]);
+      setBursts((prev) => [...prev, { id, palette: shuffledPalette() }]);
       setTimeout(
-        () => setBursts((prev) => prev.filter((b) => b !== id)),
+        () => setBursts((prev) => prev.filter((b) => b.id !== id)),
         5000,
       );
     });
@@ -125,10 +148,15 @@ export default function SuperLikeBurst() {
 
   return (
     <View pointerEvents="none" style={StyleSheet.absoluteFill}>
-      {bursts.map((id) => (
-        <View key={id} style={StyleSheet.absoluteFill}>
+      {bursts.map((burst) => (
+        <View key={burst.id} style={StyleSheet.absoluteFill}>
           {Array.from({ length: PARTICLE_COUNT }).map((_, i) => (
-            <Particle key={i} index={i} originY={originY} />
+            <Particle
+              key={i}
+              index={i}
+              originY={originY}
+              gradient={burst.palette[i % burst.palette.length]}
+            />
           ))}
         </View>
       ))}

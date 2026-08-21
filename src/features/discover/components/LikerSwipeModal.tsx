@@ -1,9 +1,7 @@
 import { useCallback, useEffect, useRef, useState } from "react";
-import { View, Modal, Dimensions } from "react-native";
-import {
-  BottomSheetBackdrop,
-  BottomSheetScrollView,
-} from "@gorhom/bottom-sheet";
+import { View, Modal, Dimensions, Alert } from "react-native";
+import { useTranslation } from "react-i18next";
+import { BottomSheetBackdrop } from "@gorhom/bottom-sheet";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { Gesture, GestureDetector } from "react-native-gesture-handler";
 import Animated, {
@@ -24,7 +22,10 @@ import { ArrowLeft, ArrowRight } from "lucide-react-native";
 import SFIcon from "@/shared/components/SFIcon";
 import AppBottomSheet from "@/shared/components/AppBottomSheet";
 import SwipeCard from "@/features/discover/components/SwipeCard";
+import CardSheetScrollView from "@/features/discover/components/CardSheetScrollView";
 import SwipeOverlay from "@/features/discover/components/SwipeOverlay";
+import ReportModal from "@/shared/components/ReportModal";
+import moderationService from "@/shared/services/moderationService";
 import { useSwipeMutation } from "@/features/discover/swipeQueries";
 import { useAppSelector } from "@/shared/hooks/redux";
 import { useEvent } from "@/shared/hooks/useEvent";
@@ -51,8 +52,14 @@ function triggerHaptic() {
 export default function LikerSwipeModal({ visible, profile, onClose, onSwipe }: any) {
   const swipeMutation = useSwipeMutation();
   const insets = useSafeAreaInsets();
+  const { t } = useTranslation();
+  // Şikayet edilen kullanıcı — sheet kapandıktan SONRA açılan ReportModal'ın
+  // hedefi. Sheet'in `profile`'ı o an null'lanabildiği için ayrı tutulur.
+  const [reportTarget, setReportTarget] = useState<string | null>(null);
 
   const tx = useSharedValue(0);
+  // Top'a çarpma zoom'u — scroll CardSheetScrollView'da, foto katmanı SwipeCard'da.
+  const photoZoom = useSharedValue(0);
   const overlayDragX = useSharedValue(0);
   const overlayOpacity = useSharedValue(1);
   const hasVibrated = useSharedValue(false);
@@ -136,6 +143,45 @@ export default function LikerSwipeModal({ visible, profile, onClose, onSwipe }: 
     }
     onClose?.();
   };
+
+  // ── Moderasyon (kart altındaki kırmızı satırlar) ─────────────────────────
+  // Şikayet için sheet'i ÖNCE kapatıyoruz: ReportModal da bir bottom sheet,
+  // ikisi üst üste binince alttaki jestleri yakalıyor.
+  const handleReportPress = useCallback(() => {
+    setReportTarget(profile?.userId ?? null);
+    onClose?.();
+  }, [profile?.userId, onClose]);
+
+  const handleBlockPress = useCallback(() => {
+    const userId = profile?.userId;
+    if (!userId) return;
+    Alert.alert(
+      t('moderation.block.confirmTitle'),
+      t('moderation.block.confirmMessage'),
+      [
+        { text: t('common.cancel'), style: "cancel" },
+        {
+          text: t('moderation.block.confirmButton'),
+          style: "destructive",
+          onPress: async () => {
+            try {
+              await moderationService.blockUser(userId);
+              // direction "block": LikesScreen bunu listeden düşürmek için
+              // kullanır ama "kaçırdın" toast'ını ATMAZ — o yalnız pass'e özel.
+              onSwipe?.(userId, "block");
+              onClose?.();
+              Alert.alert(
+                t('moderation.block.successTitle'),
+                t('moderation.block.successMessage'),
+              );
+            } catch {
+              Alert.alert(t('common.error'), t('moderation.block.error'));
+            }
+          },
+        },
+      ],
+    );
+  }, [profile?.userId, onClose, onSwipe, t]);
 
   const triggerAction = (direction: "left" | "right") => {
     const to = direction === "right" ? EXIT_DISTANCE : -EXIT_DISTANCE;
@@ -268,18 +314,17 @@ export default function LikerSwipeModal({ visible, profile, onClose, onSwipe }: 
                 pointerEvents={tutorialActive ? "none" : "auto"}
                 style={[{ flex: 1 }, animatedStyle]}
               >
-                {/* Scroll'u BottomSheetScrollView yapar — sheet'in scrollable
+                {/* Scroll'u CardSheetScrollView yapar — sheet'in scrollable
                     koordinasyonu buna bağlı: içerik en üstteyken aşağı çekince
                     sheet sürüklenip kapanır. SwipeCard'ın kendi ScrollView'ı
                     (expanded={false}) kapalı; ikisi birden açık olsa içteki
-                    native scroll dikey jesti yutup kapatmayı bloke ediyordu. */}
-                <BottomSheetScrollView
+                    native scroll dikey jesti yutup kapatmayı bloke ediyordu.
+                    Bounce/zoom davranışı Discover'daki kartla aynı. */}
+                <CardSheetScrollView
                   style={{ flex: 1 }}
                   contentContainerStyle={{ paddingBottom: 0 }}
-                  showsVerticalScrollIndicator={false}
-                  bounces={false}
-                  nestedScrollEnabled
                   scrollEnabled={!tutorialActive}
+                  zoomImpact={photoZoom}
                 >
                   <SwipeCard
                     profile={profile}
@@ -287,10 +332,13 @@ export default function LikerSwipeModal({ visible, profile, onClose, onSwipe }: 
                     expanded={false}
                     hideChevron
                     hideSuperLike
+                    zoomImpact={photoZoom}
                     onPass={() => triggerAction("left")}
                     onLike={() => triggerAction("right")}
+                    onReport={handleReportPress}
+                    onBlock={handleBlockPress}
                   />
-                </BottomSheetScrollView>
+                </CardSheetScrollView>
               </Animated.View>
             </GestureDetector>
           )}
@@ -301,6 +349,20 @@ export default function LikerSwipeModal({ visible, profile, onClose, onSwipe }: 
           <SwipeOverlay dragX={overlayDragX} opacity={overlayOpacity} />
         </View>
       </AppBottomSheet>
+
+      {/* Şikayet akışı sheet'in KARDEŞİ — kart sheet'i kapandıktan sonra
+          açılır, iki bottom sheet üst üste binmez. */}
+      <ReportModal
+        visible={!!reportTarget}
+        onClose={() => setReportTarget(null)}
+        reportedUserId={reportTarget}
+        onSuccess={(result: any) => {
+          // Şikayetle birlikte engellediyse bu kişi listede kalmasın.
+          if (result?.blocked && reportTarget) {
+            onSwipe?.(reportTarget, "block");
+          }
+        }}
+      />
 
       {/* Ayrı bir RN Modal: sheet'in de üstünde kendi penceresi olduğu için
           demo bitene kadar tüm dokunmaları yutar. */}
@@ -315,7 +377,7 @@ export default function LikerSwipeModal({ visible, profile, onClose, onSwipe }: 
           style={[
             {
               flex: 1,
-              backgroundColor: "rgba(0,0,0,0.45)",
+              backgroundColor: colors.mediaScrimSoft,
               flexDirection: "row",
               alignItems: "center",
               justifyContent: "space-between",
@@ -324,12 +386,15 @@ export default function LikerSwipeModal({ visible, profile, onClose, onSwipe }: 
             tutorialOverlayStyle,
           ]}
         >
+          {/* Oklar `onMedia` (sabit beyaz), `text` DEĞİL: perde iki modda da
+              siyah (mediaScrimSoft) — moda dönen mürekkep açık temada siyah
+              oku siyah perdeye çiziyordu. */}
           <Animated.View style={leftArrowStyle}>
             <SFIcon
               name="arrow.left"
               fallback={ArrowLeft}
               size={64}
-              color={colors.text}
+              color={colors.onMedia}
               strokeWidth={1.5}
             />
           </Animated.View>
@@ -338,7 +403,7 @@ export default function LikerSwipeModal({ visible, profile, onClose, onSwipe }: 
               name="arrow.right"
               fallback={ArrowRight}
               size={64}
-              color={colors.text}
+              color={colors.onMedia}
               strokeWidth={1.5}
             />
           </Animated.View>

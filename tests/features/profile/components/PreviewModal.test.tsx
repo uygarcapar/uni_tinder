@@ -1,3 +1,16 @@
+// jest.setup.ts'teki global reanimated mock'u ('react-native-reanimated/src/mock')
+// gerçek index'i yükleyip worklets'in native tarafını istiyor → jest'te patlar.
+// Diğer suite'lerdeki gibi (bkz. SwipeOverlay.test) kullanılan yüzeyi lokal
+// mock'luyoruz: PreviewModal zoom sinyali için shared value üretiyor,
+// CardSheetScrollView de animasyon yardımcılarını kullanıyor.
+jest.mock('react-native-reanimated', () => ({
+  __esModule: true,
+  useSharedValue: (initial: number) => ({ value: initial }),
+  withTiming: (v: number) => v,
+  withSpring: (v: number) => v,
+  withSequence: (...values: number[]) => values[values.length - 1],
+  Easing: { out: () => () => 0, quad: () => 0 },
+}));
 jest.mock('react-native-safe-area-context', () => ({
   useSafeAreaInsets: () => ({ top: 0, bottom: 0, left: 0, right: 0 }),
   SafeAreaProvider: ({ children }: any) => children,

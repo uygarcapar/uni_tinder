@@ -51,6 +51,9 @@ interface SwipeWrapperProps {
   swipeQuotaExhausted?: boolean;
   superLikeQuotaExhausted?: boolean;
   superLikesRemaining: number | null;
+  /** Kart altındaki moderasyon ikonları — VERİLMEZSE hiç çizilmez. */
+  onReport?: (profile: PotentialMatch) => void;
+  onBlock?: (profile: PotentialMatch) => void;
 }
 
 function SwipeWrapper({
@@ -68,6 +71,8 @@ function SwipeWrapper({
   swipeQuotaExhausted = false,
   superLikeQuotaExhausted = false,
   superLikesRemaining,
+  onReport,
+  onBlock,
 }: SwipeWrapperProps) {
   useRenderCount("SwipeWrapper");
   // Expanded'ken kart header'ın üstüne binip orada kalsın (kapatılana kadar).
@@ -88,11 +93,34 @@ function SwipeWrapper({
   const superLikeReady = useSharedValue(false);
   // Expand state — sadece top kart için. Pan threshold geçince true olur, ScrollView
   // SwipeCard içinde scrollEnabled={expanded} ile native scroll'a açılır.
+  //
+  // expandedSV KANONİK, React `expanded` onun aynası — tersi değil. Eskiden SV
+  // bir useEffect ile React state'inden besleniyordu: runOnJS → render → effect
+  // zinciri en az bir frame (ağır kartta birkaç frame) sürüyor ve o pencerede
+  // başlayan yeni bir pan ESKİ değeri okuyup yanlış moda giriyordu:
+  //   expand → hemen pull-down  ⇒ CARD MODE dalı, cardExpandAnim anında 0,
+  //   ama React `expanded` true kaldığı için ScrollView açık kalıyor:
+  //   görsel collapsed + kart scroll'lanabilir + scrollY>0 olunca dikey pan
+  //   tamamen ölüyor = kilitlenmiş bug durumu.
+  // Bu yüzden SV artık karar anında, worklet'in İÇİNDE yazılıyor.
   const [expanded, setExpanded] = useState(false);
-  const expandedSV = useSharedValue(false); // worklet için mirror
-  useEffect(() => {
-    expandedSV.value = expanded;
-  }, [expanded, expandedSV]);
+  const expandedSV = useSharedValue(false);
+  const applyExpanded = React.useCallback((next: boolean) => {
+    setExpanded(next);
+  }, []);
+  const commitExpanded = React.useCallback(
+    (next: boolean) => {
+      "worklet";
+      if (expandedSV.value === next) return;
+      expandedSV.value = next;
+      // Collapse'de scroll gate'ini de temizle: scrollY>0 kalırsa card mode'daki
+      // pull-up expand kalıcı olarak early-return'e düşüyor (BounceScrollView de
+      // native offset'i 0'a çeker, iki taraf tutarlı olsun).
+      if (!next) scrollY.value = 0;
+      runOnJS(applyExpanded)(next);
+    },
+    [applyExpanded, expandedSV, scrollY],
+  );
   const expandHapticFired = useSharedValue(false);
   const collapseHapticFired = useSharedValue(false);
   const EXPAND_PULL_THRESHOLD = 50;
@@ -176,8 +204,25 @@ function SwipeWrapper({
       overlayOpacity.value = 1;
       buttonDragX.value = 0;
       hasVibrated.value = false;
+      return;
     }
-  }, [isTopCard, dragX, overlayDragX, overlayOpacity, buttonDragX]);
+    // Kart tepeden düştü. Deste yalnız ileri gitmiyor: rewind currentIndex'i
+    // geri alıp o anki top kartı ALT kart yapıyor. Expand state'i üstünde
+    // kalırsa tekrar top olduğunda cardExpandAnim (global) 0'a resetlenmiş
+    // olur ama `expanded` true kalır → görsel collapsed, ScrollView açık,
+    // dikey pan EXPANDED MODE'a girer = aynı desync.
+    expandedSV.value = false;
+    scrollY.value = 0;
+    setExpanded(false);
+  }, [
+    isTopCard,
+    dragX,
+    overlayDragX,
+    overlayOpacity,
+    buttonDragX,
+    expandedSV,
+    scrollY,
+  ]);
 
   const exitConfig = {
     duration: EXIT_DURATION,
@@ -384,8 +429,15 @@ function SwipeWrapper({
             collapseHapticFired.value = false;
           }
         } else {
-          // Pull-up expanded'da: scroll handle etmeli
+          // Pull-up expanded'da: scroll handle etmeli. Collapse'i yarıda bırakıp
+          // geri yukarı çekildiyse görseli de expanded'a geri al — yoksa
+          // cardExpandAnim son (kısmi/0) değerinde donuyor: kart collapsed
+          // görünürken mod hâlâ expanded kalıyordu.
           ty.value = 0;
+          if (collapseHapticFired.value || cardExpandAnim.value < 1) {
+            collapseHapticFired.value = false;
+            cardExpandAnim.value = 1;
+          }
         }
         return;
       }
@@ -409,6 +461,10 @@ function SwipeWrapper({
         superLikeProgress.value = progress;
         cardPullProgress.value = progress;
         cardExpandAnim.value = 0;
+        // Yön değişti: aynı jest içinde önce yukarı çekip expand eşiğini geçmiş
+        // olabilir. Bayrağı temizlemezsek bırakışta hem super-like iptal olur
+        // hem de wasExpandReady hâlâ true olduğu için kart expand ediyordu.
+        expandHapticFired.value = false;
         if (progress >= 1 && !superLikeReady.value) {
           superLikeReady.value = true;
           runOnJS(resetSuperHaptics)();
@@ -434,6 +490,10 @@ function SwipeWrapper({
         cardExpandAnim.value = progress;
         superLikeProgress.value = 0;
         cardPullProgress.value = progress;
+        // Simetrik temizlik: önce aşağı çekip super-like eşiğini geçtiyse,
+        // yukarı dönüşte o niyet iptal olmalı — yoksa expand'e bırakırken kart
+        // super-like olarak uçuyordu.
+        superLikeReady.value = false;
         runOnJS(resetSuperHaptics)();
         if (progress >= 1 && !expandHapticFired.value) {
           expandHapticFired.value = true;
@@ -458,7 +518,7 @@ function SwipeWrapper({
         if (wasCollapseReady) {
           // Threshold geçildi → collapse. paddingBottom cardExpandAnim'e bağlı,
           // spring 1→0 boyunca senkron küçülür.
-          runOnJS(setExpanded)(false);
+          commitExpanded(false);
           cardExpandAnim.value = withSpring(0, {
             damping: 16,
             stiffness: 380,
@@ -515,7 +575,7 @@ function SwipeWrapper({
           stiffness: 380,
           mass: 1,
         });
-        runOnJS(setExpanded)(true);
+        commitExpanded(true);
       } else {
         ty.value = withSpring(0, { damping: 16, stiffness: 380, mass: 1 });
         superLikeProgress.value = withSpring(0);
@@ -530,27 +590,48 @@ function SwipeWrapper({
 
   const composedGesture = Gesture.Simultaneous(horizontalPan, verticalPan);
 
+  // Moderasyon köprüleri — SwipeCard argümansız handler bekliyor, DiscoverScreen
+  // ise hangi profilin şikayet/engel edildiğini bilmek zorunda. Prop verilmezse
+  // undefined kalır: SwipeCard o zaman ikonları hiç çizmez.
+  const handleReport = React.useCallback(
+    () => onReport?.(profile),
+    [onReport, profile],
+  );
+  const handleBlock = React.useCallback(
+    () => onBlock?.(profile),
+    [onBlock, profile],
+  );
+
   // Chevron (SwipeCard alt ok) tap ile expand/collapse toggle — pull-up ve
   // pull-down gesture'larıyla aynı spring config'i.
   const handleExpandPress = React.useCallback(() => {
     const cfg = { damping: 16, stiffness: 380, mass: 1 };
     if (expandedSV.value) {
-      setExpanded(false);
+      commitExpanded(false);
       cardExpandAnim.value = withSpring(0, cfg);
       ty.value = withSpring(0, cfg);
     } else {
       ty.value = withSpring(0, cfg);
       cardExpandAnim.value = withSpring(1, cfg);
       cardPullProgress.value = withSpring(0, cfg);
-      setExpanded(true);
+      commitExpanded(true);
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, []);
+  }, [commitExpanded]);
 
   const animatedStyle = useAnimatedStyle(() => {
     const rotate = interpolate(tx.value, [-width, 0, width], [-15, 0, 15]);
 
     return {
+      // Expanded lift'in bedeli: kart HEADER_COVER kadar yukarı binince,
+      // kutusu `inset:0` olduğu için aynı miktar kartın ALTINDA boşluk olarak
+      // kalıyordu (tab bar'ın altındaki şerit). Kutuyu aşağı doğru aynı
+      // miktarda büyütüyoruz → alt kenar container'ın dibinde kalır ve o şeridi
+      // expanded içeriğin devamı doldurur. Kartın iç yapısı değişmiyor.
+      // Spring overshoot expandAnim'i 1'in üstüne çıkarabiliyor → clamp.
+      bottom: isTopCard
+        ? -HEADER_COVER * Math.max(0, Math.min(1, cardExpandAnim.value))
+        : 0,
       transform: [
         { translateX: tx.value },
         // ty.value: geçici drag peek/rubber-band. -HEADER_COVER*cardExpandAnim:
@@ -592,7 +673,12 @@ function SwipeWrapper({
   return (
     <GestureDetector gesture={composedGesture}>
       <Animated.View
-        style={[animatedStyle, { position: "absolute", inset: 0 }]}
+        // `inset: 0` kısayolu yerine açık kenarlar: animatedStyle'daki `bottom`
+        // (expanded'da negatife inen) statik değerle ezilmesin.
+        style={[
+          { position: "absolute", top: 0, left: 0, right: 0, bottom: 0 },
+          animatedStyle,
+        ]}
       >
         <SwipeCard
           profile={profile}
@@ -606,6 +692,8 @@ function SwipeWrapper({
           isTopCard={isTopCard}
           expanded={expanded}
           superLikesRemaining={superLikesRemaining}
+          onReport={onReport ? handleReport : undefined}
+          onBlock={onBlock ? handleBlock : undefined}
         />
       </Animated.View>
     </GestureDetector>
@@ -626,6 +714,8 @@ export default React.memo(SwipeWrapper, (prev, next) => {
     prev.onSwipe === next.onSwipe &&
     prev.onPass === next.onPass &&
     prev.onLike === next.onLike &&
-    prev.onSuperLike === next.onSuperLike
+    prev.onSuperLike === next.onSuperLike &&
+    prev.onReport === next.onReport &&
+    prev.onBlock === next.onBlock
   );
 });
