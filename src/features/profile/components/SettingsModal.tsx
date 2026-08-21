@@ -21,9 +21,18 @@ import {
   BellOff,
   InfoIcon,
   ChevronRight,
+  KeyRound,
   LogOut,
+  Sun,
+  Moon,
+  SunMoon,
 } from "lucide-react-native";
 import SFIcon from "@/shared/components/SFIcon";
+import {
+  useThemePreference,
+  setThemePreference,
+  type ThemePreference,
+} from "@/shared/theme/themeMode";
 import BlockedUsersModal from "@/features/profile/components/BlockedUsersModal";
 import { useQueryClient } from "@tanstack/react-query";
 import api, { refreshAccessToken } from "@/shared/services/api";
@@ -32,6 +41,7 @@ import { swipeKeys } from "@/features/discover/swipeKeys";
 import chatService from "@/features/chat/chatService";
 import profileService from "@/features/profile/profileService";
 import { logout } from "@/features/auth/authSlice";
+import { navigationRef } from "@/shared/services/navigationRef";
 import {
   buildIapReport,
   clearIapDiagnostics,
@@ -41,8 +51,12 @@ import {
   readPendingPremiumSync,
 } from "@/features/profile/pendingPremiumSync";
 import { readPendingRedeems } from "@/features/discover/superlikeRedeem";
-import { colors } from "../../../shared/theme/colors";
-import { setLanguage } from "@/shared/store/settingsSlice";
+import { colors, ink } from "../../../shared/theme/colors";
+import {
+  setLanguage,
+  resolveLanguage,
+  type LanguagePreference,
+} from "@/shared/store/settingsSlice";
 import i18n from "@/shared/i18n";
 import { getDateLocale } from "@/shared/i18n/dateLocale";
 import type { RootState } from "@/shared/store";
@@ -51,7 +65,13 @@ export default function SettingsModal({ visible, onClose }: any) {
   const { t } = useTranslation();
   const dispatch = useAppDispatch();
   const qc = useQueryClient();
-  const language = useSelector((s: RootState) => s.settings?.language ?? 'tr');
+  // `languagePreference` yeni bir alan: persist'te bu anahtarı taşımayan eski
+  // kullanıcılarda undefined gelir. O durumda çözülmüş dile düşüyoruz — daha
+  // önce Türkçe/English seçmiş kullanıcı chip'i "Sistem" işaretli görmesin.
+  const languagePreference = useSelector(
+    (s: RootState) =>
+      s.settings?.languagePreference ?? s.settings?.language ?? 'tr',
+  );
   const authUser = useSelector((s: RootState) => s.auth?.user);
   const subscription = useSelector((s: RootState) => s.subscription);
 
@@ -103,8 +123,11 @@ export default function SettingsModal({ visible, onClose }: any) {
   // Zincir await EDİLMİYOR: dil seçimi UI'da beklemesin, ağ hatası da seçimi
   // geri almasın. Token tazelenemezse tek kayıp, kartların bir sonraki doğal
   // yenilenmeye kadar eski dilde kalması.
-  const handleLanguageSelect = (lang: 'tr' | 'en') => {
-    dispatch(setLanguage(lang));
+  // "system" yalnız bir TERCİH — i18n'e ve backend'e her zaman çözülmüş dil
+  // ("tr"/"en") gidiyor, aksi halde Language alanı binder'da düşerdi.
+  const handleLanguageSelect = (pref: LanguagePreference) => {
+    const lang = resolveLanguage(pref);
+    dispatch(setLanguage(pref));
     i18n.changeLanguage(lang);
     profileService
       .updateProfile({ Language: lang })
@@ -134,6 +157,15 @@ export default function SettingsModal({ visible, onClose }: any) {
       reduxPremium: subscription?.isPremium ?? null,
       reduxSyncPending: subscription?.syncPending ?? null,
       sonSyncReason: subscription?.lastSyncReason ?? null,
+      // "`/status` HİÇ cevap verdi mi" — `reduxPremium:false` iki tamamen farklı
+      // şeyi anlatabiliyor: backend "premium değil" dedi ya da cevap hiç
+      // ulaşmadı (401/429/ağ). Ayırt eden tek satır bu.
+      statusCevabı: subscription?.statusResolvedAt
+        ? `${Math.round((Date.now() - subscription.statusResolvedAt) / 1000)}sn önce`
+        : "HİÇ GELMEDİ",
+      // Hub'dan gelen son değişim gerekçesi. "Premium bir anda gitti"
+      // şikâyetinde `admin_revoke` ile `store_expired`i ayıran tek satır.
+      sonHubOlayı: subscription?.lastChangeReason ?? null,
       bekleyenPremium: pending
         ? `${pending.productId ?? "?"} · ${pending.attempts} deneme · ${Math.round(
             (Date.now() - pending.at) / 60000,
@@ -157,6 +189,16 @@ export default function SettingsModal({ visible, onClose }: any) {
         { text: "Kapat", style: "cancel" },
       ],
     );
+  };
+
+  // ── Şifre Değiştir ────────────────────────────────────────────────────────
+  //
+  // Bu modal NavigationContainer'ın DIŞINDA da mount ediliyor (AppNavigator'daki
+  // global kopya), o yüzden useNavigation() değil navigationRef. Sheet önce
+  // kapanır: açık kalırsa ekranın üstünde durur ve klavye onun altında açılır.
+  const handleChangePassword = () => {
+    onClose?.();
+    if (navigationRef.isReady()) navigationRef.navigate('ChangePassword');
   };
 
   // ── Çıkış Yap ─────────────────────────────────────────────────────────────
@@ -315,7 +357,7 @@ export default function SettingsModal({ visible, onClose }: any) {
           borderCurve: "continuous",
           overflow: "hidden",
           borderWidth: 0.5,
-          borderColor: "rgba(255,255,255,0.1)",
+          borderColor: colors.hairline,
           flexDirection: "row",
           alignItems: "center",
           justifyContent: "space-between",
@@ -351,7 +393,7 @@ export default function SettingsModal({ visible, onClose }: any) {
           borderCurve: "continuous",
           overflow: "hidden",
           borderWidth: 0.5,
-          borderColor: "rgba(255,255,255,0.1)",
+          borderColor: colors.hairline,
           flexDirection: "row",
           alignItems: "center",
           justifyContent: "space-between",
@@ -369,13 +411,20 @@ export default function SettingsModal({ visible, onClose }: any) {
         </View>
       </TouchableOpacity>
 
+      {/* Tema Bölümü */}
+      <SettingsSection
+        title={t('settings.theme.title')}
+        subtitle={t('settings.theme.subtitle')}
+      />
+      <SettingsThemeRow />
+
       {/* Dil Bölümü */}
       <SettingsSection
         title={t('settings.language.title')}
         subtitle={t('settings.language.subtitle')}
       />
       <SettingsLanguageRow
-        language={language}
+        preference={languagePreference}
         onSelect={handleLanguageSelect}
       />
 
@@ -384,6 +433,34 @@ export default function SettingsModal({ visible, onClose }: any) {
         title={t('settings.account.title')}
         subtitle={t('settings.account.subtitle')}
       />
+
+      {/* Şifre Değiştir */}
+      <TouchableOpacity
+        onPress={handleChangePassword}
+        activeOpacity={0.8}
+        style={{
+          borderRadius: 36,
+          borderCurve: "continuous",
+          overflow: "hidden",
+          borderWidth: 0.5,
+          borderColor: colors.hairline,
+          flexDirection: "row",
+          alignItems: "center",
+          justifyContent: "space-between",
+          padding: 16,
+          paddingHorizontal: 20,
+          marginBottom: 8,
+        }}
+      >
+        <View style={{ flexDirection: "row", alignItems: "center", gap: 10, flex: 1 }}>
+          <View style={{ flex: 1 }}>
+            <Text style={{ color: colors.text, fontSize: 15, fontWeight: "500" }}>
+              {t('settings.changePassword')}
+            </Text>
+          </View>
+          <SFIcon name="lock.rotation" fallback={KeyRound} size={18} color={colors.text} strokeWidth={1.5} style={{ pointerEvents: "none" }} />
+        </View>
+      </TouchableOpacity>
 
       {/* Çıkış Yap */}
       <TouchableOpacity
@@ -394,7 +471,7 @@ export default function SettingsModal({ visible, onClose }: any) {
           borderCurve: "continuous",
           overflow: "hidden",
           borderWidth: 0.5,
-          borderColor: "rgba(255,255,255,0.1)",
+          borderColor: colors.hairline,
           flexDirection: "row",
           alignItems: "center",
           justifyContent: "space-between",
@@ -434,18 +511,18 @@ export default function SettingsModal({ visible, onClose }: any) {
       >
         <View style={{ flexDirection: "row", alignItems: "center", gap: 10, flex: 1 }}>
           <View style={{ flex: 1 }}>
-            <Text style={{ color: "#000", fontSize: 15, fontWeight: "500" }}>
+            <Text style={{ color: colors.onInverseSurface, fontSize: 15, fontWeight: "500" }}>
               {t('settings.deleteAccount')}
             </Text>
           </View>
           {deleteLoading ? (
             <ActivityIndicator
               size="small"
-              color="#000"
+              color={colors.onInverseSurface}
               style={{ width: 18, height: 18 }}
             />
           ) : (
-            <SFIcon name="trash.fill" fallback={Trash2} size={18} color="#000" strokeWidth={1.5} style={{ pointerEvents: "none" }} />
+            <SFIcon name="trash.fill" fallback={Trash2} size={18} color={colors.onInverseSurface} strokeWidth={1.5} style={{ pointerEvents: "none" }} />
           )}
         </View>
       </TouchableOpacity>
@@ -458,7 +535,7 @@ export default function SettingsModal({ visible, onClose }: any) {
         delayLongPress={1200}
         style={{ marginTop: 24, paddingVertical: 8, alignItems: "center" }}
       >
-        <Text style={{ color: "rgba(255,255,255,0.25)", fontSize: 11 }}>
+        <Text style={{ color: ink(0.25), fontSize: 11 }}>
           {`LIT · ${__DEV__ ? "dev" : "release"}`}
         </Text>
       </TouchableOpacity>
@@ -532,7 +609,7 @@ function SettingsToggleRow({ icon: _icon, title, subtitle: _subtitle, value, dis
         borderCurve: "continuous",
         overflow: "hidden",
         borderWidth: 0.5,
-        borderColor: "rgba(255,255,255,0.1)",
+        borderColor: colors.hairline,
         flexDirection: "row",
         alignItems: "center",
         justifyContent: "space-between",
@@ -551,7 +628,7 @@ function SettingsToggleRow({ icon: _icon, title, subtitle: _subtitle, value, dis
         value={value}
         onValueChange={onToggle}
         disabled={disabled}
-        trackColor={{false: "rgba(255,255,255,0.15)",true: colors.successIos, }}
+        trackColor={{ false: colors.hairlineStrong, true: colors.errorStrong }}
         thumbColor={colors.text}
         ios_backgroundColor={colors.border}
       />
@@ -559,11 +636,93 @@ function SettingsToggleRow({ icon: _icon, title, subtitle: _subtitle, value, dis
   );
 }
 
-function SettingsLanguageRow({ language, onSelect }: { language: 'tr' | 'en'; onSelect: (lang: 'tr' | 'en') => void }) {
+const THEME_OPTIONS: {
+  value: ThemePreference;
+  sf: React.ComponentProps<typeof SFIcon>["name"];
+  lucide: typeof Sun;
+}[] = [
+  { value: "system", sf: "circle.lefthalf.filled", lucide: SunMoon },
+  { value: "light", sf: "sun.max.fill", lucide: Sun },
+  { value: "dark", sf: "moon.fill", lucide: Moon },
+];
+
+/**
+ * Tema seçici — SettingsLanguageRow ile BİREBİR aynı chip deseni.
+ *
+ * Değer redux'ta değil MMKV'de (bkz. shared/theme/themeMode.ts): paletin ilk
+ * frame'den önce basılması gerekiyor, PersistGate bunun için çok geç kalıyor.
+ * setThemePreference paleti değiştirip abonelere haber veriyor; App.tsx'teki
+ * `key={mode}` de ağacı bir kez taze mount ediyor.
+ *
+ * Seçili chip TERCİHİ gösteriyor (çözülen modu değil): "Sistem" seçiliyken
+ * palet koyu olsa bile işaretli olan Sistem'dir.
+ */
+function SettingsThemeRow() {
+  const { t } = useTranslation();
+  const preference = useThemePreference();
   return (
     <View style={{ flexDirection: "row", flexWrap: "wrap", gap: 8 }}>
-      {(['tr', 'en'] as const).map((lang) => {
-        const isSelected = language === lang;
+      {THEME_OPTIONS.map(({ value: option, sf, lucide }) => {
+        const isSelected = preference === option;
+        return (
+          <TouchableOpacity
+            key={option}
+            onPress={() => setThemePreference(option)}
+            activeOpacity={1}
+            style={{
+              borderRadius: 999,
+              borderCurve: "continuous",
+              overflow: "hidden",
+              paddingHorizontal: 12,
+              paddingVertical: 11,
+              borderWidth: 0.5,
+              flexDirection: "row",
+              alignItems: "center",
+              gap: 6,
+              backgroundColor: isSelected ? colors.inverseSurface : "transparent",
+              borderColor: isSelected ? colors.inverseSurface : colors.hairline,
+            }}
+          >
+            <SFIcon
+              name={sf}
+              fallback={lucide}
+              size={14}
+              color={isSelected ? colors.onInverseSurface : colors.textSecondary}
+              strokeWidth={1.5}
+              style={{ pointerEvents: "none" }}
+            />
+            <Text
+              style={{
+                color: isSelected ? colors.onInverseSurface : colors.textSecondary,
+                fontSize: 13,
+                fontWeight: "500",
+              }}
+            >
+              {t(`settings.theme.${option}`)}
+            </Text>
+          </TouchableOpacity>
+        );
+      })}
+    </View>
+  );
+}
+
+/**
+ * Dil seçici — SettingsThemeRow ile aynı desen: seçili chip TERCİHİ gösterir,
+ * "Sistem" seçiliyken cihaz dili çözülür ama işaretli olan Sistem'dir.
+ */
+function SettingsLanguageRow({
+  preference,
+  onSelect,
+}: {
+  preference: LanguagePreference;
+  onSelect: (pref: LanguagePreference) => void;
+}) {
+  const { t } = useTranslation();
+  return (
+    <View style={{ flexDirection: "row", flexWrap: "wrap", gap: 8 }}>
+      {(['system', 'tr', 'en'] as const).map((lang) => {
+        const isSelected = preference === lang;
         return (
           <TouchableOpacity
             key={lang}
@@ -579,18 +738,22 @@ function SettingsLanguageRow({ language, onSelect }: { language: 'tr' | 'en'; on
               flexDirection: "row",
               alignItems: "center",
               gap: 6,
-              backgroundColor: isSelected ? colors.text : "transparent",
-              borderColor: isSelected ? colors.text : "rgba(255,255,255,0.1)",
+              backgroundColor: isSelected ? colors.inverseSurface : "transparent",
+              borderColor: isSelected ? colors.inverseSurface : colors.hairline,
             }}
           >
             <Text
               style={{
-                color: isSelected ? "#000" : colors.textSecondary,
+                color: isSelected ? colors.onInverseSurface : colors.textSecondary,
                 fontSize: 13,
                 fontWeight: "500",
               }}
             >
-              {lang === 'tr' ? 'Türkçe' : 'English'}
+              {lang === 'system'
+                ? t('settings.language.system')
+                : lang === 'tr'
+                  ? 'Türkçe'
+                  : 'English'}
             </Text>
           </TouchableOpacity>
         );

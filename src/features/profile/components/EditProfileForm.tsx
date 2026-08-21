@@ -44,6 +44,7 @@ import {
   Heart,
   Sparkles,
   Cigarette,
+  HandHeart,
   Star,
   Navigation,
   Languages,
@@ -86,11 +87,27 @@ import {
 } from "lucide-react-native";
 import { BottomSheetTextInput } from "@gorhom/bottom-sheet";
 import SFIcon, { type SFSymbol } from "@/shared/components/SFIcon";
+// Pill grupları flexWrap yerine PillFlow + fillWidth ile diziliyor: satır
+// başına en geniş pill, yanına kalan boşluğu en çok dolduran pill. DİKKAT:
+// PillFlow'un ölçüm önbelleği modül genelinde `id` ile anahtarlanıyor, o
+// yüzden buradaki id'ler hem liste adıyla ad-alanlanıyor hem de genişliği
+// belirleyen şeyi (etiket metni / dil) taşıyor.
+import PillFlow from "@/shared/components/PillFlow";
 import { useKeyboardAwareField } from "@/shared/hooks/useKeyboardAwareField";
 import { useAppModalScroll } from "@/shared/hooks/useAppModalScroll";
 import { getRelationshipIntentIcon } from "@/shared/constants/relationshipIntent";
+// Alkol ikonu keşif filtresiyle ORTAK: aynı seçeneği iki ekranda da aynı
+// sembolle görmek gerekiyor (filterEnumIcons'ın başındaki nota bak).
+import {
+  getAlcoholIcon,
+  sortZodiacOptions,
+} from "@/shared/constants/filterEnumIcons";
 import profileService from "@/features/profile/profileService";
-import LanguagePickerModal from "@/features/profile/components/LanguagePickerModal";
+import { normalizePhotoModeration } from "@/features/profile/photoModeration";
+import PhotoModerationBadge, {
+  PhotoModerationScrim,
+} from "@/features/profile/components/PhotoModerationBadge";
+import LanguagePickerModal from "@/shared/components/LanguagePickerModal";
 import GenderCategoryPicker from "@/shared/components/GenderCategoryPicker";
 import { resolveLocalized } from "@/shared/queries/commonQueries";
 import { useForm, Controller } from "react-hook-form";
@@ -220,7 +237,18 @@ const SPARKLES_ICON: IconEntry = { sf: "sparkles", lucide: Sparkles };
 const DOG_ICON: IconEntry = { sf: "dog.fill", lucide: Dog };
 const BRIEFCASE_ICON: IconEntry = { sf: "briefcase.fill", lucide: Briefcase };
 const HEART_ICON: IconEntry = { sf: "heart", lucide: Heart };
-const CIGARETTE_ICON: IconEntry = { sf: "smoke.fill", lucide: Cigarette };
+// sf BİLEREK yok: SF Symbols'ta cigarette karşılığı yok, tek yakın aday
+// `smoke.fill` ve o bir duman bulutu — sigarayı okutmuyor. sf'siz entry'de
+// EntryIcon iki platformda da lucide çiziyor (bkz. IconEntry.sf opsiyonel).
+const CIGARETTE_ICON: IconEntry = { lucide: Cigarette };
+
+// Dini görüş — sigaradaki desen: tek sembol, ayırt eden şey satır metni.
+// Seçenek enumName'lerini bilmediğimiz için (backend listesi runtime'da geliyor)
+// enum başına ikon haritası uydurmak yanlış eşleşme riski taşıyordu.
+const RELIGIOUS_VIEW_ICON: IconEntry = {
+  sf: "hands.and.sparkles.fill",
+  lucide: HandHeart,
+};
 const HOBBY_CATEGORY_ICON_MAP: Record<string, IconEntry> = {
   // Backend categoryEnumName (9 confirmed slugs)
   SportsFitness: DUMBBELL_ICON,
@@ -297,51 +325,8 @@ const PET_ICON_MAP: Record<string, IconEntry> = {
 const getPetIcon = (enumName): IconEntry =>
   PET_ICON_MAP[enumName] || PAWPRINT_ICON;
 
-const WIND_ICON: IconEntry = { sf: "wind", lucide: Wind };
-const PURPOSE_META: Record<
-  string,
-  { icon: IconEntry; purposeDescKey: string }
-> = {
-  // Backend enumName (PascalCase)
-  Dating: {
-    icon: SPARKLES_ICON,
-    purposeDescKey: 'profile.edit.purposeDesc.flort',
-  },
-  Friendship: {
-    icon: USERS_ICON,
-    purposeDescKey: 'profile.edit.purposeDesc.arkadashlik',
-  },
-  Networking: {
-    icon: BRIEFCASE_ICON,
-    purposeDescKey: 'profile.edit.purposeDesc.network',
-  },
-  JustLooking: {
-    icon: WIND_ICON,
-    purposeDescKey: 'profile.edit.purposeDesc.oylesine',
-  },
-  // enumName gelmezse display metnine düşen fallback — her iki dil de dolu
-  // olmalı, yoksa eksik dilde ikon/açıklama kayboluyor.
-  Flört: {
-    icon: SPARKLES_ICON,
-    purposeDescKey: 'profile.edit.purposeDesc.flort',
-  },
-  Arkadaşlık: {
-    icon: USERS_ICON,
-    purposeDescKey: 'profile.edit.purposeDesc.arkadashlik',
-  },
-  Network: {
-    icon: BRIEFCASE_ICON,
-    purposeDescKey: 'profile.edit.purposeDesc.network',
-  },
-  Öylesine: {
-    icon: WIND_ICON,
-    purposeDescKey: 'profile.edit.purposeDesc.oylesine',
-  },
-  'Just Looking': {
-    icon: WIND_ICON,
-    purposeDescKey: 'profile.edit.purposeDesc.oylesine',
-  },
-};
+// PURPOSE_META KALDIRILDI: "kullanım amacı" alanı üründen çıktı; profil
+// düzenlemede de bölümü kalmadı (ilişki niyeti bölümü aynı soruyu soruyor).
 
 // ─── Memoized pill / list-item components ──────────────────────────────────
 const HobbyPill = React.memo(function HobbyPill({
@@ -365,19 +350,19 @@ const HobbyPill = React.memo(function HobbyPill({
         flexDirection: "row",
         alignItems: "center",
         gap: 6,
-        backgroundColor: isSelected ? colors.text : "transparent",
-        borderColor: isSelected ? colors.text : "rgba(255,255,255,0.1)",
+        backgroundColor: isSelected ? colors.inverseSurface : "transparent",
+        borderColor: isSelected ? colors.inverseSurface : colors.hairline,
       }}
     >
       <HobbyIcon
         hobby={hobby.enumName ?? hobby.name}
         size={20}
-        color={isSelected ? "#000" : colors.textSecondary}
+        color={isSelected ? colors.onInverseSurface : colors.textSecondary}
         strokeWidth={1.5}
       />
       <Text
         style={{
-          color: isSelected ? "#000" : colors.textSecondary,
+          color: isSelected ? colors.onInverseSurface : colors.textSecondary,
           fontSize: 13,
           fontWeight: "500",
         }}
@@ -412,21 +397,21 @@ function OptionPill({
         flexDirection: "row",
         alignItems: "center",
         gap: 6,
-        backgroundColor: isSelected ? colors.text : "transparent",
-        borderColor: isSelected ? colors.text : "rgba(255,255,255,0.1)",
+        backgroundColor: isSelected ? colors.inverseSurface : "transparent",
+        borderColor: isSelected ? colors.inverseSurface : colors.hairline,
       }}
     >
       {icon ? (
         <EntryIcon
           entry={icon}
           size={20}
-          color={isSelected ? "#000" : colors.textSecondary}
+          color={isSelected ? colors.onInverseSurface : colors.textSecondary}
           strokeWidth={1.5}
         />
       ) : null}
       <Text
         style={{
-          color: isSelected ? "#000" : colors.textSecondary,
+          color: isSelected ? colors.onInverseSurface : colors.textSecondary,
           fontSize: 13,
           fontWeight: "500",
         }}
@@ -442,72 +427,10 @@ const OptionListItem = React.memo(function OptionListItem({
   isSelected,
   onPress,
   icon: CustomIcon,
-  purposeMap,
 }: any) {
-  const { t, i18n } = useTranslation();
-  if (purposeMap) {
-    // enumName ile anahtarla — `name` enum lookup'larında backend'in GetDisplay()
-    // çıktısı, yani Accept-Language'e göre değişiyor. name ile anahtarlarsak
-    // eşleşme dile bağlı kalıyordu (TR'de "Network", EN'de "Just Looking"
-    // map'te yok → ikonsuz/açıklamasız satır). enumName stabil sözleşme.
-    const entry = purposeMap[option.enumName ?? option.name];
-    const iconEntry = entry?.icon ?? STAR_ICON;
-    const desc = entry?.purposeDescKey ? t(entry.purposeDescKey) : undefined;
-    return (
-      <TouchableOpacity
-        activeOpacity={1}
-        onPress={onPress}
-        style={{
-          flexDirection: "row",
-          alignItems: "center",
-          justifyContent: "space-between",
-          paddingVertical: 14,
-        }}
-      >
-        <EntryIcon
-          entry={iconEntry}
-          size={20}
-          color={isSelected ? colors.text : colors.textMuted}
-          strokeWidth={1.5}
-          style={{ marginRight: 14 }}
-        />
-        <View style={{ flex: 1, marginRight: 12 }}>
-          <Text
-            style={{
-              color: isSelected ? colors.text : colors.textSecondary,
-              fontSize: 15,
-              fontWeight: "500",
-            }}
-          >
-            {resolveLocalized(option.display, i18n.language, option.name)}
-          </Text>
-          {desc && (
-            <Text
-              style={{
-                color: isSelected
-                  ? "rgba(255,255,255,0.5)"
-                  : "rgba(255,255,255,0.3)",
-                fontSize: 14,
-                marginTop: 3,
-              }}
-            >
-              {desc}
-            </Text>
-          )}
-        </View>
-        {isSelected && (
-        <SFIcon
-          name="checkmark"
-          fallback={Check}
-          size={20}
-          color={colors.text}
-          strokeWidth={2.5}
-          weight="bold"
-        />
-      )}
-      </TouchableOpacity>
-    );
-  }
+  const { i18n } = useTranslation();
+  // NOT: `purposeMap` dalı KALDIRILDI — ikon + açıklama taşıyan bu varyantı
+  // yalnızca "kullanım amacı" bölümü kullanıyordu, o da üründen çıktı.
 
   return (
     <TouchableOpacity
@@ -612,9 +535,9 @@ function PhotoShimmer({ borderRadius = 0 }: { borderRadius?: number }) {
         <LinearGradient
           colors={[
             "transparent",
-            "rgba(255,255,255,0.07)",
+            colors.shimmer,
             "transparent",
-            "rgba(255,255,255,0.07)",
+            colors.shimmer,
             "transparent",
           ]}
           locations={[0, 0.25, 0.5, 0.75, 1]}
@@ -635,6 +558,7 @@ function PhotoItem({ photo, onPress, savingPhoto }: any) {
   // photoId'li sürüm parametresi: silinip yeniden yüklenen foto backend'de aynı
   // slot URL'ine düşse bile cache anahtarı değişir (bkz. photoUri.ts).
   const uri = resolvePhotoUri(photo);
+  const { status } = normalizePhotoModeration(photo);
 
   return (
     <View style={{ width: "100%", height: "100%" }}>
@@ -661,6 +585,10 @@ function PhotoItem({ photo, onPress, savingPhoto }: any) {
           onLoad={() => setLoading(false)}
           onError={() => setLoading(false)}
         />
+        {/* Kullanıcı KENDİ fotoğrafını her durumda görür; yayında olmayanı
+            gizlemek yerine soluklaştırıp rozetle sebebini belirtiyoruz. */}
+        <PhotoModerationScrim status={status} borderRadius={20} />
+        <PhotoModerationBadge status={status} />
         {loading && <PhotoShimmer borderRadius={20} />}
       </View>
       <TouchableOpacity
@@ -686,7 +614,7 @@ function PhotoItem({ photo, onPress, savingPhoto }: any) {
             fallback={X}
             size={16}
             strokeWidth={3}
-            color="#7a7d82"
+            color={colors.textSecondary}
             weight="bold"
           />
         </View>
@@ -874,9 +802,9 @@ function SkelBox({
         <LinearGradient
           colors={[
             "transparent",
-            "rgba(255,255,255,0.07)",
+            colors.shimmer,
             "transparent",
-            "rgba(255,255,255,0.07)",
+            colors.shimmer,
             "transparent",
           ]}
           locations={[0, 0.25, 0.5, 0.75, 1]}
@@ -986,7 +914,7 @@ const HobbyGroupAccordion = React.memo(function HobbyGroupAccordion({
         marginTop: 8,
         backgroundColor: "transparent",
         borderBottomWidth: 0.5,
-        borderBottomColor: "rgba(255,255,255,0.08)",
+        borderBottomColor: colors.hairlineSoft,
       }}
     >
       <TouchableOpacity
@@ -1047,24 +975,23 @@ const HobbyGroupAccordion = React.memo(function HobbyGroupAccordion({
 
       {/* Sadece expanded ise render et — collapse'da DOM ağaçtan çıkar */}
       {expanded && (
-        <View
-          style={{
-            paddingBottom: 16,
-            paddingTop: 4,
-            flexDirection: "row",
-            flexWrap: "wrap",
-            gap: 8,
-          }}
-        >
-          {(group.hobbies || []).map((h) => (
-            <HobbyPill
-              key={h.id}
-              hobby={h}
-              isSelected={selectedIds.includes(h.id)}
-              onPress={onToggle}
-            />
-          ))}
-        </View>
+        <PillFlow
+          gap={8}
+          fillWidth
+          style={{ paddingBottom: 16, paddingTop: 4 }}
+          items={(group.hobbies || []).map((h) => ({
+            // enumName emojiyi ve (dille birlikte) etiketi belirliyor →
+            // genişliği belirleyen her şey anahtarda.
+            id: `hobby:${i18n.language}:${h.enumName ?? h.name}`,
+            element: (
+              <HobbyPill
+                hobby={h}
+                isSelected={selectedIds.includes(h.id)}
+                onPress={onToggle}
+              />
+            ),
+          }))}
+        />
       )}
     </View>
   );
@@ -1080,6 +1007,17 @@ const SECTION_SCROLL_GAP = 12;
 const SECTION_SCROLL_DELAY = 160;
 const SECTION_SCROLL_RETRIES = 3;
 
+// Görünürlük bölümündeki switch satırı. `field` form şemasına bağlı olduğu için
+// setValue tip güvenli kalıyor; `hint` yalnızca ek açıklama gereken satırlarda
+// dolu (şimdilik premium rozeti).
+type VisibilityRow = {
+  key: string;
+  label: string;
+  hint?: string;
+  value: boolean;
+  field: "showMyUniversity" | "showMeOnApp" | "showAge" | "showPremiumBadge";
+};
+
 // ─── Form ──────────────────────────────────────────────────────────────────
 const EditProfileForm = forwardRef(function EditProfileForm(
   {
@@ -1088,11 +1026,16 @@ const EditProfileForm = forwardRef(function EditProfileForm(
     hobbyGroups,
     smokingOptions,
     zodiacOptions,
-    usagePurposeOptions,
     relationshipIntentOptions = [],
     languageOptions,
     petOptions,
+    alcoholOptions = [],
+    religiousViewOptions = [],
     genderCategories = [],
+    // Premium rozeti satırının görünürlüğü buna bağlı. Parent'tan geliyor çünkü
+    // kanonik kaynak redux entitlement'ı (myProfile.isPremium webhook
+    // gecikmesinde stale kalabiliyor — bkz. ProfileScreen'deki isPremium).
+    isPremium = false,
     savingPhoto,
     focusSection = null,
     onAddPhoto,
@@ -1118,8 +1061,9 @@ const EditProfileForm = forwardRef(function EditProfileForm(
       hobbies: [],
       smoking: null,
       zodiac: null,
-      usagePurpose: null,
       relationshipIntent: null,
+      alcohol: null,
+      religiousView: null,
       city: null,
       district: null,
       languages: [],
@@ -1127,6 +1071,7 @@ const EditProfileForm = forwardRef(function EditProfileForm(
       showMyUniversity: true,
       showMeOnApp: true,
       showAge: true,
+      showPremiumBadge: true,
     },
   });
 
@@ -1141,13 +1086,15 @@ const EditProfileForm = forwardRef(function EditProfileForm(
   const draftHobbies = watch("hobbies");
   const draftSmoking = watch("smoking");
   const draftZodiac = watch("zodiac");
-  const draftUsagePurpose = watch("usagePurpose");
   const draftRelationshipIntent = watch("relationshipIntent");
+  const draftAlcohol = watch("alcohol");
+  const draftReligiousView = watch("religiousView");
   const draftLanguages = watch("languages");
   const draftPets = watch("pets");
   const draftShowMyUniversity = watch("showMyUniversity");
   const draftShowMeOnApp = watch("showMeOnApp");
   const draftShowAge = watch("showAge");
+  const draftShowPremiumBadge = watch("showPremiumBadge");
   const [savingProfile, setSavingProfile] = useState(false);
 
   // ── Cinsiyet ────────────────────────────────────────────────────────────
@@ -1208,7 +1155,9 @@ const EditProfileForm = forwardRef(function EditProfileForm(
     return {
       photos: make("photos"),
       bio: make("bio"),
-      purpose: make("purpose"),
+      // "purpose" → "relationshipIntent": kullanım amacı bölümü kalktı, doluluk
+      // accordion'ının o satırı artık ilişki niyetine işaret ediyor.
+      relationshipIntent: make("relationshipIntent"),
       hobbies: make("hobbies"),
       smoking: make("smoking"),
       zodiac: make("zodiac"),
@@ -1391,13 +1340,15 @@ const EditProfileForm = forwardRef(function EditProfileForm(
         hobbies: hobbyIds,
         smoking: draftSmoking,
         zodiac: draftZodiac,
-        usagePurpose: draftUsagePurpose,
         relationshipIntent: draftRelationshipIntent,
+        alcohol: draftAlcohol,
+        religiousView: draftReligiousView,
         languages: draftLanguages,
         pets: draftPets,
         showMyUniversity: draftShowMyUniversity,
         showMeOnApp: draftShowMeOnApp,
         showAge: draftShowAge,
+        showPremiumBadge: draftShowPremiumBadge,
       } = getValues();
 
       const allHobbies = hobbyGroups.flatMap((g) => g.hobbies || []);
@@ -1422,10 +1373,8 @@ const EditProfileForm = forwardRef(function EditProfileForm(
       if (draftZodiac != null) updates.ZodiacSign = enumOf(draftZodiac);
       else if (myProfile?.zodiacSign != null) updates.ClearZodiacSign = true;
 
-      if (draftUsagePurpose != null)
-        updates.UsagePurpose = enumOf(draftUsagePurpose);
-      else if (myProfile?.usagePurpose != null)
-        updates.ClearUsagePurpose = true;
+      // UsagePurpose/ClearUsagePurpose ARTIK GÖNDERİLMİYOR: alan UpdateProfile
+      // DTO'sundan silindi (gönderilse sessizce yok sayılırdı).
 
       // İlişki niyeti — partial-update semantiği diğer enum alanlarla aynı:
       // alanı hiç göndermemek "değiştirme" demek, o yüzden seçim kaldırıldığında
@@ -1434,6 +1383,18 @@ const EditProfileForm = forwardRef(function EditProfileForm(
         updates.RelationshipIntent = enumOf(draftRelationshipIntent);
       else if (myProfile?.relationshipIntent != null)
         updates.ClearRelationshipIntent = true;
+
+      // Alkol — keşif filtresinin (alcoholUsages) okuduğu alan. Filtre açıkken
+      // bu tercihi BOŞ olan adaylar eleniyor, yani buradan girilmediği sürece
+      // kullanıcı kimsenin destesinde çıkmıyor: alanın profil tarafı filtrenin
+      // ön koşulu.
+      if (draftAlcohol != null) updates.AlcoholUsage = enumOf(draftAlcohol);
+      else if (myProfile?.alcoholUsage != null) updates.ClearAlcoholUsage = true;
+
+      if (draftReligiousView != null)
+        updates.ReligiousView = enumOf(draftReligiousView);
+      else if (myProfile?.religiousView != null)
+        updates.ClearReligiousView = true;
 
       // InterestedIn artık gönderilmiyor — swipe filtresine taşındı; backend
       // UpdateProfile'da bu alanı yok sayıyor.
@@ -1456,6 +1417,10 @@ const EditProfileForm = forwardRef(function EditProfileForm(
       else if (myProfile?.spokenLanguages?.length > 0)
         updates.ClearSpokenLanguages = true;
 
+      // SADECE `Pets` gönderiliyor, `HasPets`e HİÇ dokunulmuyor. Backend önce
+      // `Pets`ten `HasPets`i türetiyor, SONRA `HasPets`/`ClearHasPets` bloğunu
+      // işleyip türettiğini eziyor — ikisi aynı istekte giderse profil
+      // "Pets=[Dog] ama HasPets=null" gibi tutarsız bir hâle düşüyor.
       if (draftPets.length > 0)
         updates.Pets = draftPets.map(enumOf).filter(Boolean);
       else if (myProfile?.pets?.length > 0) updates.ClearPets = true;
@@ -1463,6 +1428,10 @@ const EditProfileForm = forwardRef(function EditProfileForm(
       updates.ShowMyUniversity = draftShowMyUniversity;
       updates.ShowMeOnApp = draftShowMeOnApp;
       updates.ShowAge = draftShowAge;
+      // Free kullanıcıda satır basılmıyor ama değer yine gönderiliyor: hidrate
+      // edilen mevcut tercih olduğu gibi geri yazılır (premium bittiğinde
+      // kullanıcının kapattığı rozet ayarı sessizce true'ya dönmesin).
+      updates.ShowPremiumBadge = draftShowPremiumBadge;
 
       const orderToSave = draftPhotoOrderRef.current;
       if (photoOrderDirtyRef.current && orderToSave.length > 0) {
@@ -1472,6 +1441,18 @@ const EditProfileForm = forwardRef(function EditProfileForm(
         }));
         const originalMain = myProfile?.photosList?.find((p) => p.isMainPhoto);
         if (orderToSave[0]?.photoId !== originalMain?.photoId) {
+          // İlk sıradaki foto ana foto olur. Yayında OLMAYAN bir fotoğraf ana
+          // yapılırsa profil kartı boş görünür — sıralamayı kaydetmeyi kesip
+          // kullanıcıyı uyarıyoruz (rehber §3c).
+          const nextMain = normalizePhotoModeration(orderToSave[0]);
+          if (nextMain.status !== "Approved") {
+            showInfoToast({
+              title: t("profile.photoModeration.reorderMainBlockedTitle"),
+              message: t("profile.photoModeration.reorderMainBlockedMessage"),
+              variant: "error",
+            });
+            return; // finally bloğu setSavingProfile(false) yapıyor
+          }
           updates.NewMainPhotoId = orderToSave[0].photoId;
         }
       }
@@ -1494,16 +1475,24 @@ const EditProfileForm = forwardRef(function EditProfileForm(
         zodiacSignDisplay: draftZodiac
           ? resolveLocalized(draftZodiac.display, i18n.language, draftZodiac.name)
           : null,
-        usagePurpose: enumOf(draftUsagePurpose) ?? null,
-        usagePurposeDisplay: draftUsagePurpose
-          ? resolveLocalized(draftUsagePurpose.display, i18n.language, draftUsagePurpose.name)
-          : null,
         relationshipIntent: enumOf(draftRelationshipIntent) ?? null,
         relationshipIntentDisplay: draftRelationshipIntent
           ? resolveLocalized(
               draftRelationshipIntent.display,
               i18n.language,
               draftRelationshipIntent.name,
+            )
+          : null,
+        alcoholUsage: enumOf(draftAlcohol) ?? null,
+        alcoholUsageDisplay: draftAlcohol
+          ? resolveLocalized(draftAlcohol.display, i18n.language, draftAlcohol.name)
+          : null,
+        religiousView: enumOf(draftReligiousView) ?? null,
+        religiousViewDisplay: draftReligiousView
+          ? resolveLocalized(
+              draftReligiousView.display,
+              i18n.language,
+              draftReligiousView.name,
             )
           : null,
         // city/cityDisplay/district/districtDisplay patch'lenmiyor: bu form artık
@@ -1513,6 +1502,7 @@ const EditProfileForm = forwardRef(function EditProfileForm(
         showMyUniversity: draftShowMyUniversity,
         showMeOnApp: draftShowMeOnApp,
         showAge: draftShowAge,
+        showPremiumBadge: draftShowPremiumBadge,
         // Cinsiyet enumName + görünen ad; ProfileScreen refetch'ten önce doğru
         // etiketi göstersin diye display'i kategori listesinden çözüyoruz.
         // NOT: `display` çift dilli { tr, en } objesi — resolveLocalized ile
@@ -1601,8 +1591,9 @@ const EditProfileForm = forwardRef(function EditProfileForm(
           style={{ marginTop: 8, marginBottom: 16 }}
         >
           <View
-            className="border-[0.5px] border-white/10"
+            className="border-[0.5px]"
             style={{
+              borderColor: colors.hairline,
               backgroundColor: colors.surface,
               borderRadius: 999,
               borderCurve: "continuous",
@@ -1697,7 +1688,7 @@ const EditProfileForm = forwardRef(function EditProfileForm(
                       overflow: "hidden",
                       backgroundColor: colors.surface,
                       borderWidth: 0.5,
-                      borderColor: "rgba(255,255,255,0.1)",
+                      borderColor: colors.hairline,
                       alignItems: "center",
                       justifyContent: "center",
                     }}
@@ -1814,7 +1805,7 @@ const EditProfileForm = forwardRef(function EditProfileForm(
                   borderWidth: 0.5,
                   borderColor: errors.bio
                     ? "rgba(239,68,68,0.5)"
-                    : "rgba(255,255,255,0.1)",
+                    : colors.hairline,
                 }}
               />
             )}
@@ -1828,57 +1819,17 @@ const EditProfileForm = forwardRef(function EditProfileForm(
       </View>
       )}
 
-      {/* Kullanım amacı — stage 1 */}
-      {stage >= 1 && usagePurposeOptions.length > 0 && (
-        <View style={{ marginTop: 28 }} onLayout={sectionLayout.purpose}>
-          <View
-            style={{
-              flexDirection: "column",
-              alignItems: "flex-start",
-              marginBottom: 10,
-              marginTop: 12,
-            }}
-          >
-            <Text
-              style={{
-                color: colors.text,
-                fontSize: 20,
-                fontWeight: "600",
-                marginBottom: 6,
-              }}
-            >
-              {t('profile.edit.usagePurposeTitle')}
-            </Text>
-            <View className="flex-row items-center gap-2 mb-3 pr-4">
-              <SFIcon name="info.circle" fallback={InfoIcon} size={18} color={colors.textSecondary} strokeWidth={2} weight="semibold" />
-              <Text
-                style={{ color: colors.textSecondary, fontSize: 14, fontWeight: "400" }}
-              >
-                {t('profile.edit.usagePurposeDesc')}
-              </Text>
-            </View>
-          </View>
-          {usagePurposeOptions.map((opt) => (
-            <OptionListItem
-              key={opt.id}
-              option={opt}
-              isSelected={draftUsagePurpose?.id === opt.id}
-              purposeMap={PURPOSE_META}
-              onPress={() =>
-                setValue(
-                  "usagePurpose",
-                  draftUsagePurpose?.id === opt.id ? null : opt,
-                )
-              }
-            />
-          ))}
-        </View>
-      )}
+      {/* Kullanım amacı bölümü KALDIRILDI: alan üründen çıktı. Aşağıdaki
+          "ilişki niyeti" bölümü aynı soruyu soruyordu; profil doluluk
+          formülündeki 5 puan da ona devredildi. */}
 
       {/* İlişki niyeti — stage 1. Tek seçim; seçili pill'e tekrar basmak
           temizler (submit'te ClearRelationshipIntent=true gider). */}
       {stage >= 1 && relationshipIntentOptions.length > 0 && (
-        <View style={{ marginTop: 28 }}>
+        <View
+          style={{ marginTop: 28 }}
+          onLayout={sectionLayout.relationshipIntent}
+        >
           <View
             style={{
               flexDirection: "column",
@@ -1910,23 +1861,31 @@ const EditProfileForm = forwardRef(function EditProfileForm(
               görünüm (bkz. FilterModal). Tikli liste satırı yerine pill:
               beş seçenek iki satıra sığıyor, bölüm ekranı daha az kaplıyor.
               Seçim yine TEK: seçili pill'e tekrar dokunmak temizliyor. */}
-          <View style={{ flexDirection: "row", flexWrap: "wrap", gap: 8 }}>
-            {relationshipIntentOptions.map((opt) => (
-              <OptionPill
-                key={opt.id}
-                option={opt}
-                isSelected={draftRelationshipIntent?.id === opt.id}
-                icon={getRelationshipIntentIcon(opt.enumName)}
-                label={intentPillLabel(opt)}
-                onPress={() =>
-                  setValue(
-                    "relationshipIntent",
-                    draftRelationshipIntent?.id === opt.id ? null : opt,
-                  )
-                }
-              />
-            ))}
-          </View>
+          <PillFlow
+            gap={8}
+            fillWidth
+            items={relationshipIntentOptions.map((opt) => {
+              const label = intentPillLabel(opt);
+              return {
+                // Etiket zaten dile çözülmüş geliyor → ayrıca dil eki gerekmez.
+                id: `intent:${label}`,
+                element: (
+                  <OptionPill
+                    option={opt}
+                    isSelected={draftRelationshipIntent?.id === opt.id}
+                    icon={getRelationshipIntentIcon(opt.enumName)}
+                    label={label}
+                    onPress={() =>
+                      setValue(
+                        "relationshipIntent",
+                        draftRelationshipIntent?.id === opt.id ? null : opt,
+                      )
+                    }
+                  />
+                ),
+              };
+            })}
+          />
         </View>
       )}
 
@@ -2015,6 +1974,55 @@ const EditProfileForm = forwardRef(function EditProfileForm(
         </View>
       )}
 
+      {/* Alkol — stage 2, sigaranın hemen altında: aynı sınıf (yaşam tarzı),
+          aynı görünüm (üç seçenek, tek seçim, OptionListItem).
+          Bu alan keşif filtresinin ön koşulu: alkol filtresi açık olan
+          kullanıcılar tercihini girmemiş profilleri GÖRMÜYOR (backend semantiği
+          sigarayla aynı), yani boş bırakan kullanıcı o destelerden düşüyor —
+          açıklama metni bunu söylüyor. */}
+      {stage >= 2 && alcoholOptions.length > 0 && (
+        <View style={{ marginTop: 28 }}>
+          <View
+            style={{
+              flexDirection: "column",
+              alignItems: "flex-start",
+              marginBottom: 10,
+              marginTop: 12,
+            }}
+          >
+            <Text
+              style={{
+                color: colors.text,
+                fontSize: 20,
+                fontWeight: "600",
+                marginBottom: 6,
+              }}
+            >
+              {t('profile.edit.alcoholTitle')}
+            </Text>
+            <View className="flex-row items-center gap-2 mb-3 pr-4">
+              <SFIcon name="info.circle" fallback={InfoIcon} size={18} color={colors.textSecondary} strokeWidth={2} weight="semibold" />
+              <Text
+                style={{ color: colors.textSecondary, fontSize: 14, fontWeight: "400" }}
+              >
+                {t('profile.edit.alcoholDesc')}
+              </Text>
+            </View>
+          </View>
+          {alcoholOptions.map((opt) => (
+            <OptionListItem
+              key={opt.id}
+              option={opt}
+              isSelected={draftAlcohol?.id === opt.id}
+              icon={getAlcoholIcon()}
+              onPress={() =>
+                setValue("alcohol", draftAlcohol?.id === opt.id ? null : opt)
+              }
+            />
+          ))}
+        </View>
+      )}
+
       {/* Burç — stage 3 */}
       {stage >= 3 && zodiacOptions.length > 0 && (
         <View style={{ marginTop: 28 }} onLayout={sectionLayout.zodiac}>
@@ -2045,8 +2053,13 @@ const EditProfileForm = forwardRef(function EditProfileForm(
               </Text>
             </View>
           </View>
+          {/* Burçlar TEK İSTİSNA: diğer pill grupları PillFlow(fillWidth) ile
+              satır doluluğuna göre diziliyor, burçlar burç sırasında kalıyor
+              (bkz. sortZodiacOptions). Düz flexWrap kullanılıyor çünkü
+              fillWidth'siz PillFlow bile sığmayan pili atlayıp arkadakini öne
+              çekerek sırayı bozuyor. */}
           <View style={{ flexDirection: "row", flexWrap: "wrap", gap: 8 }}>
-            {zodiacOptions.map((opt) => {
+            {sortZodiacOptions(zodiacOptions).map((opt: any) => {
               const selected = draftZodiac?.id === opt.id;
               const zodiacIcon = getZodiacIcon(opt.enumName ?? opt.name);
               return (
@@ -2064,19 +2077,19 @@ const EditProfileForm = forwardRef(function EditProfileForm(
                     flexDirection: "row",
                     alignItems: "center",
                     gap: 6,
-                    backgroundColor: selected ? colors.text : "transparent",
-                    borderColor: selected ? colors.text : "rgba(255,255,255,0.1)",
+                    backgroundColor: selected ? colors.inverseSurface : "transparent",
+                    borderColor: selected ? colors.inverseSurface : colors.hairline,
                   }}
                 >
                   <EntryIcon
                     entry={zodiacIcon}
                     size={20}
-                    color={selected ? "#000" : colors.textSecondary}
+                    color={selected ? colors.onInverseSurface : colors.textSecondary}
                     strokeWidth={1.5}
                   />
                   <Text
                     style={{
-                      color: selected ? "#000" : colors.textSecondary,
+                      color: selected ? colors.onInverseSurface : colors.textSecondary,
                       fontSize: 14,
                       fontWeight: "500",
                     }}
@@ -2087,6 +2100,66 @@ const EditProfileForm = forwardRef(function EditProfileForm(
               );
             })}
           </View>
+        </View>
+      )}
+
+      {/* Dini görüş — stage 3, burcun altında: ikisi de "kişisel bakış"
+          grubundan ve ikisi de opsiyonel. Pill grubu (liste satırı değil):
+          seçenek sayısı burçtakine yakın, satır listesi bölümü gereksiz
+          uzatıyordu. Seçili pill'e tekrar dokunmak temizler → submit'te
+          ClearReligiousView=true gider.
+          NOT: Profil doluluk skoruna KATKISI YOK (backend formülünde bu alan
+          sayılmıyor), o yüzden "profilini tamamla" akışında adım olarak
+          gösterilmiyor. */}
+      {stage >= 3 && religiousViewOptions.length > 0 && (
+        <View style={{ marginTop: 28 }}>
+          <View
+            style={{
+              flexDirection: "column",
+              alignItems: "flex-start",
+              marginBottom: 10,
+              marginTop: 12,
+            }}
+          >
+            <Text
+              style={{
+                color: colors.text,
+                fontSize: 20,
+                fontWeight: "600",
+                marginBottom: 6,
+              }}
+            >
+              {t('profile.edit.religiousViewTitle')}
+            </Text>
+            <View className="flex-row items-center gap-2 mb-3 pr-4">
+              <SFIcon name="info.circle" fallback={InfoIcon} size={18} color={colors.textSecondary} strokeWidth={2} weight="semibold" />
+              <Text
+                style={{ color: colors.textSecondary, fontSize: 14, fontWeight: "400" }}
+              >
+                {t('profile.edit.religiousViewDesc')}
+              </Text>
+            </View>
+          </View>
+          <PillFlow
+            gap={8}
+            fillWidth
+            items={religiousViewOptions.map((opt) => ({
+              id: `religion:${resolveLocalized(opt.display, i18n.language, opt.name)}`,
+              element: (
+                <OptionPill
+                  option={opt}
+                  isSelected={draftReligiousView?.id === opt.id}
+                  icon={RELIGIOUS_VIEW_ICON}
+                  onPress={() =>
+                    setValue(
+                      "religiousView",
+                      draftReligiousView?.id === opt.id ? null : opt,
+                    )
+                  }
+                />
+              ),
+            }))}
+          />
         </View>
       )}
 
@@ -2169,7 +2242,7 @@ const EditProfileForm = forwardRef(function EditProfileForm(
               borderCurve: "continuous",
               overflow: "hidden",
               borderWidth: 0.5,
-              borderColor: "rgba(255,255,255,0.1)",
+              borderColor: colors.hairline,
               paddingHorizontal: 16,
               paddingVertical: 18,
               flexDirection: "row",
@@ -2231,7 +2304,7 @@ const EditProfileForm = forwardRef(function EditProfileForm(
               borderCurve: "continuous",
               overflow: "hidden",
               borderWidth: 0.5,
-              borderColor: "rgba(255,255,255,0.1)",
+              borderColor: colors.hairline,
               paddingHorizontal: 16,
               paddingVertical: 18,
               flexDirection: "row",
@@ -2263,24 +2336,22 @@ const EditProfileForm = forwardRef(function EditProfileForm(
             <SFIcon name="chevron.down" fallback={ChevronDown} size={18} color={colors.textSecondary} strokeWidth={2} weight="semibold" />
           </TouchableOpacity>
           {draftLanguages.length > 0 && (
-            <View
-              style={{
-                flexDirection: "row",
-                flexWrap: "wrap",
-                gap: 8,
-                marginTop: 12,
-              }}
-            >
-              {draftLanguages.map((opt) => (
-                <OptionPill
-                  key={opt.id}
-                  option={opt}
-                  isSelected
-                  onPress={toggleLanguage}
-                  icon={getLanguageIcon(opt.enumName)}
-                />
-              ))}
-            </View>
+            <PillFlow
+              gap={8}
+              fillWidth
+              style={{ marginTop: 12 }}
+              items={draftLanguages.map((opt) => ({
+                id: `lang:${resolveLocalized(opt.display, i18n.language, opt.name)}`,
+                element: (
+                  <OptionPill
+                    option={opt}
+                    isSelected
+                    onPress={toggleLanguage}
+                    icon={getLanguageIcon(opt.enumName)}
+                  />
+                ),
+              }))}
+            />
           )}
         </View>
       )}
@@ -2315,17 +2386,21 @@ const EditProfileForm = forwardRef(function EditProfileForm(
               </Text>
             </View>
           </View>
-          <View style={{ flexDirection: "row", flexWrap: "wrap", gap: 8 }}>
-            {petOptions.map((opt) => (
-              <OptionPill
-                key={opt.id}
-                option={opt}
-                isSelected={draftPets.some((p) => p?.id === opt.id)}
-                onPress={togglePet}
-                icon={getPetIcon(opt.enumName)}
-              />
-            ))}
-          </View>
+          <PillFlow
+            gap={8}
+            fillWidth
+            items={petOptions.map((opt) => ({
+              id: `pet:${resolveLocalized(opt.display, i18n.language, opt.name)}`,
+              element: (
+                <OptionPill
+                  option={opt}
+                  isSelected={draftPets.some((p) => p?.id === opt.id)}
+                  onPress={togglePet}
+                  icon={getPetIcon(opt.enumName)}
+                />
+              ),
+            }))}
+          />
         </View>
       )}
 
@@ -2357,26 +2432,51 @@ const EditProfileForm = forwardRef(function EditProfileForm(
             </Text>
           </View>
         </View>
-        {[
+        {([
           {
             key: "uni",
             label: t('profile.edit.visibility.showUniversity'),
             value: draftShowMyUniversity,
-            field: "showMyUniversity" as const,
+            field: "showMyUniversity",
           },
           {
             key: "app",
             label: t('profile.edit.visibility.showOnApp'),
             value: draftShowMeOnApp,
-            field: "showMeOnApp" as const,
+            field: "showMeOnApp",
           },
           {
             key: "age",
             label: t('profile.edit.visibility.showAge'),
             value: draftShowAge,
-            field: "showAge" as const,
+            field: "showAge",
           },
-        ].map((row) => (
+          // Premium rozeti — yalnızca premium kullanıcıda anlamlı (free'de
+          // gizlenecek rozet zaten yok). Backend free'den gelen değeri reddetmez,
+          // sessizce saklar; satırı basmamak tamamen UI kararı.
+          //
+          // Kapalıyken SADECE rozet gider: kotalar, filtreler, mesafe tavanı ve
+          // keşif sıralamasındaki premium sinyali aynen çalışır. Hint satırı bu
+          // yüzden var — desteğe en çok gelecek soru bu.
+          //
+          // `|| draftShowPremiumBadge === false`: satırı yalnız `isPremium`e
+          // bağlamak kilitlenme üretiyordu — kullanıcı rozeti kapatıp premium'u
+          // bir an için false görünürse (abonelik yenilenirken, /status
+          // gecikirken) ayar ekrandan kayboluyor ve GERİ AÇILAMIYOR; kapalı
+          // değer her kayıtta geri yazıldığı için premium dönse bile rozet
+          // sönük kalıyor. Kapalıysa satır her zaman görünür.
+          ...(isPremium || draftShowPremiumBadge === false
+            ? [
+                {
+                  key: "premiumBadge",
+                  label: t('profile.edit.visibility.showPremiumBadge'),
+                  hint: t('profile.edit.visibility.showPremiumBadgeHint'),
+                  value: draftShowPremiumBadge,
+                  field: "showPremiumBadge",
+                },
+              ]
+            : []),
+        ] as VisibilityRow[]).map((row) => (
           <View
             key={row.key}
             style={{
@@ -2388,13 +2488,27 @@ const EditProfileForm = forwardRef(function EditProfileForm(
               borderRadius: 99,
               borderCurve: "continuous",
               borderWidth: 0.5,
-              borderColor: "rgba(255,255,255,0.1)",
+              borderColor: colors.hairline,
               marginBottom: 8,
             }}
           >
-            <Text style={{ color: colors.text, fontSize: 15, fontWeight: "500" }}>
-              {row.label}
-            </Text>
+            <View style={{ flex: 1, paddingRight: 12 }}>
+              <Text style={{ color: colors.text, fontSize: 15, fontWeight: "500" }}>
+                {row.label}
+              </Text>
+              {row.hint ? (
+                <Text
+                  style={{
+                    color: colors.textSecondary,
+                    fontSize: 12,
+                    fontWeight: "400",
+                    marginTop: 2,
+                  }}
+                >
+                  {row.hint}
+                </Text>
+              ) : null}
+            </View>
             {Platform.OS === "ios" ? (
               // RN'in built-in Switch'i = native UISwitch wrapper. SwiftUI Toggle
               // + Host yolunu denedik: BottomSheet mount layout pass'iyle
@@ -2407,11 +2521,11 @@ const EditProfileForm = forwardRef(function EditProfileForm(
                 value={row.value}
                 onValueChange={(v) => setValue(row.field, v)}
                 trackColor={{
-                  false: "rgba(255,255,255,0.15)",
-                  true: colors.successIos,
+                  false: colors.hairlineStrong,
+                  true: colors.errorStrong,
                 }}
                 thumbColor={colors.text}
-                ios_backgroundColor="rgba(255,255,255,0.15)"
+                ios_backgroundColor={colors.border}
               />
             ) : (
               <TouchableOpacity
@@ -2421,7 +2535,7 @@ const EditProfileForm = forwardRef(function EditProfileForm(
                   width: 46,
                   height: 28,
                   borderRadius: 999,
-                  backgroundColor: row.value ? colors.text : "rgba(255,255,255,0.15)",
+                  backgroundColor: row.value ? colors.errorStrong : colors.hairlineStrong,
                   justifyContent: "center",
                   paddingHorizontal: 3,
                 }}
@@ -2431,7 +2545,7 @@ const EditProfileForm = forwardRef(function EditProfileForm(
                     width: 22,
                     height: 22,
                     borderRadius: 999,
-                    backgroundColor: row.value ? "#000" : colors.textSecondary,
+                    backgroundColor: row.value ? colors.text : colors.textSecondary,
                     alignSelf: row.value ? "flex-end" : "flex-start",
                   }}
                 />

@@ -43,10 +43,11 @@ export type HydrateProfileFormArgs = {
   hobbyGroups: any[];
   smokingOptions: any[];
   zodiacOptions: any[];
-  usagePurposeOptions: any[];
   relationshipIntentOptions: any[];
   languageOptions: any[];
   petOptions: any[];
+  alcoholOptions: any[];
+  religiousViewOptions: any[];
 };
 
 export const hydrateProfileForm = ({
@@ -54,10 +55,11 @@ export const hydrateProfileForm = ({
   hobbyGroups,
   smokingOptions,
   zodiacOptions,
-  usagePurposeOptions,
   relationshipIntentOptions,
   languageOptions,
   petOptions,
+  alcoholOptions,
+  religiousViewOptions,
 }: HydrateProfileFormArgs) => {
   const lookupToId: Record<string, number> = {};
   hobbyGroups.forEach((g) => {
@@ -91,20 +93,28 @@ export const hydrateProfileForm = ({
       myProfile?.zodiacSign,
       myProfile?.zodiacSignDisplay,
     ),
-    usagePurpose: matchOption(
-      usagePurposeOptions,
-      myProfile?.usagePurpose,
-      myProfile?.usagePurposeDisplay,
-    ),
     relationshipIntent: matchOption(
       relationshipIntentOptions,
       myProfile?.relationshipIntent,
       myProfile?.relationshipIntentDisplay,
+    ),
+    // GetMyProfile `alcoholUsage` + `alcoholUsageDisplay` döndürüyor; matchOption
+    // ikisini de deniyor (liste henüz gelmemişse null kalır, form boş açılır).
+    alcohol: matchOption(
+      alcoholOptions,
+      myProfile?.alcoholUsage,
+      myProfile?.alcoholUsageDisplay,
+    ),
+    religiousView: matchOption(
+      religiousViewOptions,
+      myProfile?.religiousView,
+      myProfile?.religiousViewDisplay,
     ),
     languages: matchMulti(languageOptions, myProfile?.spokenLanguages),
     pets: matchMulti(petOptions, myProfile?.pets),
     showMyUniversity: myProfile?.showMyUniversity !== false,
     showMeOnApp: myProfile?.showMeOnApp !== false,
     showAge: myProfile?.showAge !== false,
+    showPremiumBadge: myProfile?.showPremiumBadge !== false,
   };
 };

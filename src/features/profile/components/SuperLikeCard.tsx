@@ -2,14 +2,13 @@ import { useEffect, useMemo, useRef, useState } from "react";
 import { useTranslation } from "react-i18next";
 import { View, Text, Dimensions } from "react-native";
 import { useIsFocused } from "@react-navigation/native";
-import { Heart } from "lucide-react-native";
-import SFIcon from "@/shared/components/SFIcon";
+import SuperLikeGlyph from "@/shared/components/SuperLikeGlyph";
 import AnimatedPressable from "@/shared/components/AnimatedPressable";
 import SuperLikePurchaseModal from "@/features/discover/components/SuperLikePurchaseModal";
 import { useSwipeStats } from "@/features/discover/swipeQueries";
 import { useAppSelector } from "@/shared/hooks/redux";
 import { selectIsPremium } from "@/features/profile/subscriptionSlice";
-import { colors } from "@/shared/theme/colors";
+import { colors, ink } from "@/shared/theme/colors";
 
 /**
  * ProfileScreen'in üst şeridindeki tek aksiyon kartı: SuperLike paketi satın
@@ -135,7 +134,7 @@ export default function SuperLikeCard() {
           // surface zemin. Kart eskiden 2px'lik gradyan halkayla çerçeveliydi,
           // sayfadaki tek "çerçeveli" öğe oydu ve şeritten fırlıyordu.
           borderWidth: 0.5,
-          borderColor: "rgba(255,255,255,0.1)",
+          borderColor: colors.hairline,
           backgroundColor: colors.surface,
           overflow: "hidden",
         }}
@@ -149,18 +148,11 @@ export default function SuperLikeCard() {
             borderRadius: HEART_BADGE / 2,
             alignItems: "center",
             justifyContent: "center",
-            backgroundColor: colors.text,
+            backgroundColor: colors.inverseSurface,
             overflow: "hidden",
           }}
         >
-          <SFIcon
-            name="heart.fill"
-            fallback={Heart}
-            size={HEART_SIZE}
-            color={colors.bg}
-            fill={colors.bg}
-            strokeWidth={1.5}
-          />
+          <SuperLikeGlyph size={HEART_SIZE} color={colors.bg} />
         </View>
 
         <View style={{ flex: 1 }}>
@@ -173,7 +165,7 @@ export default function SuperLikeCard() {
           <Text
             numberOfLines={1}
             style={{
-              color: "rgba(255,255,255,0.55)",
+              color: ink(0.55),
               fontSize: 12,
               fontWeight: "500",
               marginTop: 2,

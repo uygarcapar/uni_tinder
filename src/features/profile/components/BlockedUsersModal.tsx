@@ -14,7 +14,7 @@ import AppModal from "@/shared/components/AppModal";
 import EmptyState from "@/shared/components/EmptyState";
 import moderationService, { BlockedUser } from "@/shared/services/moderationService";
 import { getDateLocale } from "@/shared/i18n/dateLocale";
-import { colors } from "../../../shared/theme/colors";
+import { colors, ink } from "../../../shared/theme/colors";
 
 /**
  * GET /api/moderation/blocked-users — kart bilgileriyle (isim/yaş/üniversite/foto)
@@ -137,7 +137,7 @@ function BlockedUserRow({ user, pending, onUnblock, t }: any) {
         borderCurve: "continuous",
         overflow: "hidden",
         borderWidth: 0.5,
-        borderColor: "rgba(255,255,255,0.1)",
+        borderColor: colors.hairline,
         flexDirection: "row",
         alignItems: "center",
         gap: 12,
@@ -198,7 +198,7 @@ function BlockedUserRow({ user, pending, onUnblock, t }: any) {
           borderRadius: 999,
           borderCurve: "continuous",
           borderWidth: 0.5,
-          borderColor: "rgba(255,255,255,0.2)",
+          borderColor: ink(0.2),
           paddingHorizontal: 14,
           paddingVertical: 8,
           minWidth: 72,
