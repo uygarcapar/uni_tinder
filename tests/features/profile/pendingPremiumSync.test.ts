@@ -24,6 +24,7 @@ import {
   bumpPendingPremiumSyncAttempt,
   clearPendingPremiumSync,
   hasPendingPremiumSync,
+  hasWitnessedPurchase,
   markPendingPremiumSync,
   premiumSyncUserKey,
   readPendingPremiumSync,
@@ -47,7 +48,7 @@ describe('premiumSyncUserKey', () => {
 
 describe('pendingPremiumSync', () => {
   it('survives a reload: the record is readable from storage after the write', () => {
-    markPendingPremiumSync(USER, { productId: 'premium_monthly' });
+    markPendingPremiumSync(USER, { productId: 'premium_monthly', source: 'purchase' });
 
     // Aynı MMKV içeriğinden okuyoruz — modül state'i değil, disk sözleşmesi.
     const restored = readPendingPremiumSync(USER);
@@ -57,7 +58,7 @@ describe('pendingPremiumSync', () => {
   });
 
   it('scopes the record per account so B never inherits A’s purchase', () => {
-    markPendingPremiumSync('user-a', { productId: 'premium_yearly' });
+    markPendingPremiumSync('user-a', { productId: 'premium_yearly', source: 'purchase' });
     expect(hasPendingPremiumSync('user-b')).toBe(false);
     expect(hasPendingPremiumSync('user-a')).toBe(true);
   });
@@ -65,22 +66,22 @@ describe('pendingPremiumSync', () => {
   it('keeps the original timestamp when re-marked, so the age guard cannot be reset forever', () => {
     const t0 = 1_000_000;
     jest.spyOn(Date, 'now').mockReturnValue(t0);
-    markPendingPremiumSync(USER, { productId: 'premium_monthly' });
+    markPendingPremiumSync(USER, { productId: 'premium_monthly', source: 'purchase' });
 
     jest.spyOn(Date, 'now').mockReturnValue(t0 + 60_000);
-    markPendingPremiumSync(USER, { productId: 'premium_monthly' });
+    markPendingPremiumSync(USER, { productId: 'premium_monthly', source: 'purchase' });
 
     expect(readPendingPremiumSync(USER)?.at).toBe(t0);
   });
 
   it('carries the productId over when a later mark has none', () => {
-    markPendingPremiumSync(USER, { productId: 'premium_weekly' });
-    markPendingPremiumSync(USER, { productId: null });
+    markPendingPremiumSync(USER, { productId: 'premium_weekly', source: 'purchase' });
+    markPendingPremiumSync(USER, { productId: null, source: 'purchase' });
     expect(readPendingPremiumSync(USER)?.productId).toBe('premium_weekly');
   });
 
   it('counts attempts for telemetry without dropping the record', () => {
-    markPendingPremiumSync(USER, { productId: null });
+    markPendingPremiumSync(USER, { productId: null, source: 'purchase' });
     bumpPendingPremiumSyncAttempt(USER);
     bumpPendingPremiumSyncAttempt(USER);
 
@@ -96,7 +97,7 @@ describe('pendingPremiumSync', () => {
   it('drops the record once it is older than the age guard', () => {
     const t0 = 1_000_000;
     jest.spyOn(Date, 'now').mockReturnValue(t0);
-    markPendingPremiumSync(USER, { productId: 'premium_monthly' });
+    markPendingPremiumSync(USER, { productId: 'premium_monthly', source: 'purchase' });
 
     // 7 gün + 1 sn: webhook bu kadar gecikmez, retry çözmez. Kayıt düşer ki
     // kullanıcıya sonsuza kadar "aktivasyon sürüyor" gösterilmesin.
@@ -106,7 +107,7 @@ describe('pendingPremiumSync', () => {
   });
 
   it('clears the record when premium is confirmed', () => {
-    markPendingPremiumSync(USER, { productId: 'premium_monthly' });
+    markPendingPremiumSync(USER, { productId: 'premium_monthly', source: 'purchase' });
     clearPendingPremiumSync(USER);
     expect(hasPendingPremiumSync(USER)).toBe(false);
   });
@@ -117,9 +118,67 @@ describe('pendingPremiumSync', () => {
   });
 
   it('ignores a missing user key on every entry point', () => {
-    expect(() => markPendingPremiumSync(null)).not.toThrow();
+    expect(() =>
+      markPendingPremiumSync(null, { source: 'purchase' }),
+    ).not.toThrow();
     expect(() => bumpPendingPremiumSyncAttempt(undefined)).not.toThrow();
     expect(() => clearPendingPremiumSync(null)).not.toThrow();
     expect(hasPendingPremiumSync(null)).toBe(false);
+  });
+});
+
+/**
+ * Kayıt iki farklı şeyden doğuyor ve ikisi aynı şeyi söylemiyor. "Aktivasyon
+ * sürüyor" kartı bir SÖZ: paranı aldık, hakkını vereceğiz. Bu sözü yalnız satın
+ * almayı gördüğümüzde verebiliriz.
+ *
+ * Semptom: hiç satın alma yapmamış kullanıcı, RC'nin cache'lediği bitmiş
+ * entitlement yüzünden yazılan kayıtla günlerce "aktivasyon sürüyor" + "Yenile"
+ * görüyordu. Kart tema değişiminde bile geri geliyordu, çünkü AppNavigator
+ * `key={mode}` ile remount olup kaydı diskten yeniden okuyor.
+ */
+describe('kaydın delil değeri', () => {
+  it('separates a witnessed purchase from an RC-inferred mismatch', () => {
+    markPendingPremiumSync(USER, {
+      productId: 'premium_weekly',
+      source: 'reconcile',
+    });
+
+    // Kurtarma turu yine koşar…
+    expect(hasPendingPremiumSync(USER)).toBe(true);
+    // …ama kullanıcıya söz vermeye yetmez.
+    expect(hasWitnessedPurchase(USER)).toBe(false);
+  });
+
+  it('upgrades to witnessed when a real purchase lands on top', () => {
+    markPendingPremiumSync(USER, { productId: null, source: 'reconcile' });
+    markPendingPremiumSync(USER, {
+      productId: 'premium_weekly',
+      source: 'purchase',
+    });
+
+    expect(hasWitnessedPurchase(USER)).toBe(true);
+  });
+
+  it('never downgrades a witnessed purchase back to an inference', () => {
+    markPendingPremiumSync(USER, {
+      productId: 'premium_weekly',
+      source: 'purchase',
+    });
+    markPendingPremiumSync(USER, { productId: null, source: 'reconcile' });
+
+    expect(hasWitnessedPurchase(USER)).toBe(true);
+  });
+
+  it('treats a record with no provenance as an inference', () => {
+    // Bu sürümden önce yazılmış kayıtlar. Kanıt olduğunu söyleyemediğimiz bir
+    // kayda dayanıp kullanıcıya "aktivasyon sürüyor" diyemeyiz.
+    mockMemoryStore.set(
+      `pendingPremiumSync:${USER}`,
+      JSON.stringify({ at: Date.now(), productId: 'premium_weekly', attempts: 3 }),
+    );
+
+    expect(hasPendingPremiumSync(USER)).toBe(true);
+    expect(hasWitnessedPurchase(USER)).toBe(false);
   });
 });

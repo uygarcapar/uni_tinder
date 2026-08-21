@@ -154,7 +154,8 @@ import { API_ENDPOINTS } from "@/shared/constants/api";
 import { useQueryClient } from "@tanstack/react-query";
 import { swipeKeys } from "@/features/discover/swipeQueries";
 import { UNLIMITED } from "@/shared/constants/limits";
-import { colors, gradients } from "../../../shared/theme/colors";
+import { colors, gradients, ink, withAlpha } from "../../../shared/theme/colors";
+import { plainBlurTint } from "@/shared/theme/blur";
 import { analytics } from "@/shared/services/analytics";
 
 // productId convention (backend SubscriptionProductOptions ile eşleşmeli).
@@ -206,8 +207,16 @@ function extractPlansFromOffering(offering) {
 }
 
 // Backend metadata (displayName / highlight / sortOrder) ile RC paketlerini birleştir.
-// Sabit sıralama: yearly → monthly → weekly.
-const PERIOD_ORDER = { yearly: 0, monthly: 1, weekly: 2 };
+//
+// SIRALAMA OTORİTESİ backend `sortOrder`ı: katalog server-controlled, yani plan
+// sırası build almadan değiştirilebilmeli. Önceden burada sabit bir period
+// sıralaması vardı ve `sortOrder` okunup atılıyordu — backend'in sırayı
+// değiştirmesinin hiçbir etkisi olmuyordu.
+//
+// PERIOD_ORDER yalnız TIE-BREAKER: `/plans` hiç dönmediğinde (endpoint hatası)
+// ya da bir plan katalogda eşleşmediğinde tüm sortOrder'lar 99 fallback'ine
+// düşer, o zaman değeri en yüksek plandan başlayan makul bir sıra kalsın.
+const PERIOD_ORDER = { lifetime: 0, yearly: 1, monthly: 2, weekly: 3 };
 function mergePlansWithBackend(rcPlans, backendPlans, t) {
   const backendByPeriod = new Map();
   const backendProductIds = new Set();
@@ -240,9 +249,19 @@ function mergePlansWithBackend(rcPlans, backendPlans, t) {
         sortOrder: meta?.sortOrder ?? 99,
       };
     })
-    .sort(
-      (a, b) => (PERIOD_ORDER[a.period] ?? 99) - (PERIOD_ORDER[b.period] ?? 99),
-    );
+    .sort((a, b) => {
+      if (a.sortOrder !== b.sortOrder) return a.sortOrder - b.sortOrder;
+      return (PERIOD_ORDER[a.period] ?? 99) - (PERIOD_ORDER[b.period] ?? 99);
+    });
+}
+
+// Varsayılan seçim HER AÇILIŞTA `weekly`: paywall haftalıkla açılsın istiyoruz,
+// backend `highlight`ı ya da `sortOrder` sırası ne olursa olsun. Katalogda
+// haftalık yoksa eski davranışa düşeriz (highlight → ilk plan).
+function resolveDefaultPeriod(list) {
+  if (!list || list.length === 0) return null;
+  if (list.some((p) => p.period === "weekly")) return "weekly";
+  return list.find((p) => p.highlight)?.period ?? list[0].period;
 }
 
 // displayName render: solda büyük "premium" (Duckie-regular), sağında küçük
@@ -252,7 +271,7 @@ function renderPlanName(
   name,
   {
     primarySize = 44,
-    secondaryColor = "#000",
+    secondaryColor = colors.text,
     periodLabel,
   }: { primarySize?: number; secondaryColor?: string; periodLabel?: string } = {},
 ) {
@@ -465,29 +484,50 @@ export default function PurchaseModal({ visible, onClose, onSuccess }: any) {
     [offering, backendPlans, t],
   );
 
-  // İlk render'da default seçim — highlight'lı plan (varsa) yoksa ilk plan
+  // Seçim boşsa default'a düş (plan listesi geç geldiğinde de burası doldurur).
   useEffect(() => {
     if (selectedPeriod || plans.length === 0) return;
-    const highlighted = plans.find((p) => p.highlight);
-    setSelectedPeriod(highlighted?.period ?? plans[0].period);
+    setSelectedPeriod(resolveDefaultPeriod(plans));
   }, [plans, selectedPeriod]);
+
+  // HER AÇILIŞTA seçimi default'a (weekly) çek. `onClose` de sıfırlıyor ama tek
+  // başına yetmiyor: sheet parent state'iyle kapatıldığında (ör. başka bir
+  // ekrana geçiş) gorhom dismiss callback'i gelmeyebiliyor ve modal bir önceki
+  // seçimle açılıyordu. Kaydırmayı da yeniden çalıştırmak için latch'i düşür.
+  useEffect(() => {
+    if (!visible) return;
+    initialScrollDoneRef.current = false;
+    setSelectedPeriod(resolveDefaultPeriod(plans));
+    // `plans` bilerek dep DEĞİL: liste sonradan gelirse yukarıdaki effect
+    // dolduruyor, burada dinlemek kullanıcının seçimini ezme riski taşır.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [visible]);
 
   const selectedPlan =
     plans.find((p) => p.period === selectedPeriod) ?? plans[0];
 
-  // İlk açılışta default plan'ın pozisyonuna kaydır (sadece bir kez).
-  // idx 0 ise FlatList zaten 0'da, scrollToIndex çağırmıyoruz — initial render'ı
-  // bozmasın ve ilk swipe snap'ini etkilemesin.
+  // Seçili index'in CANLI değeri — peek animasyonu closure'dan okuduğunda bayat
+  // kalıyordu (açılışta selectedPeriod henüz null, baseOffset 0 hesaplanıyor ve
+  // 700ms sonra listeyi ilk karta geri sarıyordu; weekly ilk sırada değilse
+  // seçim görsel olarak kayıyordu).
+  const selectedIndexRef = useRef(0);
+  useEffect(() => {
+    const idx = plans.findIndex((p) => p.period === selectedPeriod);
+    if (idx >= 0) selectedIndexRef.current = idx;
+  }, [plans, selectedPeriod]);
+
+  // Açılışta default plan'ın pozisyonuna kaydır. idx 0 için de çağırıyoruz:
+  // sheet içeriği mount'ta kalırsa liste bir önceki açılışın offset'inde
+  // duruyor, sıfırlanması gerek.
   useEffect(() => {
     if (initialScrollDoneRef.current) return;
     if (!selectedPeriod || plans.length === 0) return;
     const idx = plans.findIndex((p) => p.period === selectedPeriod);
     if (idx < 0) return;
     initialScrollDoneRef.current = true;
-    if (idx === 0) return;
     requestAnimationFrame(() => {
-      planListRef.current?.scrollToIndex?.({
-        index: idx,
+      planListRef.current?.scrollToOffset?.({
+        offset: PLAN_SNAP * idx,
         animated: false,
       });
     });
@@ -502,11 +542,9 @@ export default function PurchaseModal({ visible, onClose, onSuccess }: any) {
     if (plans.length === 0) return;
 
     const peekTimer = setTimeout(() => {
-      const idx = Math.max(
-        0,
-        plans.findIndex((p) => p.period === selectedPeriod),
-      );
-      const baseOffset = PLAN_SNAP * idx;
+      // Closure'daki `selectedPeriod` değil ref: timer kurulduğunda seçim henüz
+      // oturmamış olabiliyor.
+      const baseOffset = PLAN_SNAP * selectedIndexRef.current;
       planListRef.current?.scrollToOffset?.({
         offset: baseOffset + 60,
         animated: true,
@@ -612,13 +650,13 @@ export default function PurchaseModal({ visible, onClose, onSuccess }: any) {
       <BottomSheetFooter {...props}>
         <BlurView
           intensity={70}
-          tint="dark"
+          tint={plainBlurTint()}
           style={{
             paddingHorizontal: 20,
             paddingTop: 12,
             paddingBottom: 24,
             borderTopWidth: 0.5,
-            borderTopColor: "rgba(255,255,255,0.08)",
+            borderTopColor: colors.hairlineSoft,
             overflow: "hidden",
           }}
         >
@@ -650,7 +688,9 @@ export default function PurchaseModal({ visible, onClose, onSuccess }: any) {
                 >
                   <Text
                     style={{
-                      color: colors.text,
+                      // litPlus DOLGUSUNUN üstü: `text` DEĞİL — açık modda
+                      // siyaha dönüp kırmızı butonda okunmaz olurdu.
+                      color: colors.onMedia,
                       fontWeight: "700",
                       fontSize: 14,
                       opacity: purchasing ? 0 : 1,
@@ -665,7 +705,7 @@ export default function PurchaseModal({ visible, onClose, onSuccess }: any) {
                   {purchasing && (
                     <ActivityIndicator
                       size="small"
-                      color={colors.text}
+                      color={colors.onMedia}
                       style={{ position: "absolute" }}
                     />
                   )}
@@ -691,7 +731,7 @@ export default function PurchaseModal({ visible, onClose, onSuccess }: any) {
                 style={{
                   marginHorizontal: 10,
                   // SuperLikePurchaseModal disclaimer'ı ile aynı ton
-                  color: "rgba(255,255,255,0.5)",
+                  color: colors.textMuted,
                   fontSize: 11,
                   textAlign: "center",
                   marginTop: 8,
@@ -751,12 +791,12 @@ export default function PurchaseModal({ visible, onClose, onSuccess }: any) {
           borderRadius: 999,
           overflow: "hidden",
           borderWidth: 0.5,
-          borderColor: "rgba(255,255,255,0.1)",
+          borderColor: colors.hairline,
         }}
       >
         <BlurView
           intensity={60}
-          tint="dark"
+          tint={plainBlurTint()}
           style={{
             flex: 1,
             alignItems: "center",
@@ -830,7 +870,7 @@ export default function PurchaseModal({ visible, onClose, onSuccess }: any) {
           </Text>
           <Text
             style={{
-              color: "rgba(255,255,255,0.85)",
+              color: colors.textSecondary,
               fontSize: 14,
               fontWeight: "400",
               textAlign: "center",
@@ -902,17 +942,23 @@ export default function PurchaseModal({ visible, onClose, onSuccess }: any) {
                         borderRadius: 32,
                         borderCurve: "continuous",
                         borderWidth: 0.5,
-                        borderColor: "rgba(255,255,255,0.2)",
+                        borderColor: ink(0.2),
                         overflow: "hidden",
                       }}
                     >
                       <BlurView
-                        intensity={70}
-                        tint="dark"
+                        intensity={85}
+                        tint={plainBlurTint()}
                         style={{
                           paddingHorizontal: 20,
                           paddingTop: 10,
                           paddingBottom: 22,
+                          // Blur tek başına shopSurface'in sıcak kırmızısından
+                          // yeterince ayrışmıyordu. ink() yerine NÖTR gri:
+                          // beyaz/siyah mürekkep kartı sadece açıp kapatıyor,
+                          // altındaki kırmızı sızmaya devam ediyordu — gri hem
+                          // bir tık öne çıkarıyor hem tonu doygunluktan alıyor.
+                          backgroundColor: withAlpha(colors.neutral500, 0.18),
                         }}
                       >
                         <View style={{ marginBottom: 6 }}>
@@ -934,7 +980,7 @@ export default function PurchaseModal({ visible, onClose, onSuccess }: any) {
                         {planShowTrial && (
                           <Text
                             style={{
-                              color: "rgba(255,255,255,0.75)",
+                              color: colors.textSecondary,
                               fontSize: 12,
                               fontWeight: "400",
                               marginTop: 4,
@@ -979,19 +1025,23 @@ export default function PurchaseModal({ visible, onClose, onSuccess }: any) {
             borderRadius: 28,
             borderCurve: "continuous",
             borderWidth: 0.5,
-            borderColor: "rgba(255,255,255,0.3)",
+            borderColor: colors.hairlineMuted,
             overflow: "hidden",
             marginBottom: 24,
           }}
         >
-          <BlurView intensity={60} tint="dark" style={{ paddingVertical: 20 }}>
+          <BlurView
+            intensity={60}
+            tint={plainBlurTint()}
+            style={{ paddingVertical: 20 }}
+          >
             {/* Header row */}
             <View className="flex-row items-center justify-between mb-2 px-6">
-              <Text className="text-white/70 font-bold text-[12px] uppercase tracking-wider flex-1">
+              <Text className="font-bold text-[12px] uppercase tracking-wider flex-1" style={{ color: colors.textMuted }}>
                 {t('discover.premium.featuresLabel')}
               </Text>
               <View className="flex-row items-center gap-4">
-                <Text className="text-white/70 font-bold text-[12px] uppercase w-16 text-center">
+                <Text className="font-bold text-[12px] uppercase w-16 text-center" style={{ color: colors.textMuted }}>
                   {t('discover.premium.standardPlan')}
                 </Text>
                 <Text
@@ -1015,7 +1065,7 @@ export default function PurchaseModal({ visible, onClose, onSuccess }: any) {
                   index !== features.length - 1 ? "mb-4" : ""
                 }`}
               >
-                <Text className="text-white font-[500] text-[13px] flex-1 pr-2">
+                <Text className="font-[500] text-[13px] flex-1 pr-2" style={{ color: colors.text }}>
                   {label}
                 </Text>
                 <View className="flex-row items-center gap-4">
@@ -1024,7 +1074,7 @@ export default function PurchaseModal({ visible, onClose, onSuccess }: any) {
                       name="xmark"
                       fallback={X}
                       size={18}
-                      color="rgba(255, 255, 255, 0.4)"
+                      color={ink(0.4)}
                       strokeWidth={2}
                       weight="semibold"
                     />

@@ -242,6 +242,27 @@ export async function logRevenueCatIdentity(backendUserId: string | null): Promi
   }
 }
 
+/**
+ * `entitlements.active` BAYAT OLABİLİR. RC SDK `getCustomerInfo()`'yu
+ * cache'liyor ve entitlement'ı kendi son bildiği duruma göre "aktif" listesinde
+ * tutmaya devam ediyor; abonelik bu arada bitmiş olabilir (sandbox'ta
+ * `premium_weekly` 3 dakikada bir bitiyor, cache pratikte sürekli geride).
+ *
+ * Bitiş tarihi GEÇMİŞTE ise bu bir "aktif hak" değil, cache artığıdır. Ayrımı
+ * yapmamak pahalıya patladı: `reconcileIfMismatched` bunu "kullanıcı ödedi ama
+ * backend görmedi" sanıp KALICI kurtarma kaydı yazıyor, sonra premium'u hiç
+ * olmayan kullanıcıya günlerce "aktivasyon sürüyor" kartı gösteriliyordu.
+ */
+const entitlementIsLive = (entitlement: any): boolean => {
+  if (!entitlement) return false;
+  const raw = entitlement.expirationDate;
+  // Süresiz (lifetime) haklarda `expirationDate` null gelir — bu geçerli.
+  if (!raw) return true;
+  const t = new Date(raw).getTime();
+  if (Number.isNaN(t)) return true; // okuyamıyorsak hakkı geri alma
+  return t > Date.now();
+};
+
 export async function getRevenueCatPremiumStatus(): Promise<{
   isPremium: boolean;
   expiresAt: string | null;
@@ -250,7 +271,7 @@ export async function getRevenueCatPremiumStatus(): Promise<{
   try {
     const info = await Purchases.getCustomerInfo();
     const entitlement = info?.entitlements?.active?.[ENTITLEMENT_ID];
-    if (!entitlement) return { isPremium: false, expiresAt: null };
+    if (!entitlementIsLive(entitlement)) return { isPremium: false, expiresAt: null };
     return {
       isPremium: true,
       expiresAt: entitlement.expirationDate ?? null,
@@ -287,7 +308,9 @@ export async function getRevenueCatSnapshot(): Promise<RevenueCatSnapshot | null
     const active = info?.entitlements?.active ?? {};
     const entitlement = active[ENTITLEMENT_ID];
     return {
-      isPremium: !!entitlement,
+      // Bitmiş bir entitlement'ın cache'te durması "hak var" demek DEĞİL —
+      // bkz. entitlementIsLive.
+      isPremium: entitlementIsLive(entitlement),
       expiresAt: entitlement?.expirationDate ?? null,
       entitlements: Object.keys(active),
       productId: entitlement?.productIdentifier ?? null,

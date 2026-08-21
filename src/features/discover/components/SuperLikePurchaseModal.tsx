@@ -13,8 +13,7 @@ import type {
 } from "react-native-purchases";
 import { LinearGradient } from "expo-linear-gradient";
 import { BlurView } from "expo-blur";
-import { Heart } from "lucide-react-native";
-import SFIcon from "@/shared/components/SFIcon";
+import SuperLikeGlyph from "@/shared/components/SuperLikeGlyph";
 import AppBottomSheet from "@/shared/components/AppBottomSheet";
 import { useAppSelector } from "@/shared/hooks/redux";
 import {
@@ -29,7 +28,8 @@ import {
 } from "@/features/discover/superlikeRedeem";
 import { showInfoToast } from "@/shared/services/toaster";
 import { analytics } from "@/shared/services/analytics";
-import { colors, gradients } from "../../../shared/theme/colors";
+import { colors, gradients, ink } from "../../../shared/theme/colors";
+import { plainBlurTint } from "@/shared/theme/blur";
 
 /**
  * SuperLike paketi (consumable) satın alma sheet'i.
@@ -240,13 +240,13 @@ export default function SuperLikePurchaseModal({
   const footer = (
     <BlurView
       intensity={70}
-      tint="dark"
+      tint={plainBlurTint()}
       style={{
         paddingHorizontal: 20,
         paddingTop: 12,
         paddingBottom: 24,
         borderTopWidth: 0.5,
-        borderTopColor: "rgba(255,255,255,0.08)",
+        borderTopColor: colors.hairlineSoft,
         overflow: "hidden",
       }}
     >
@@ -260,9 +260,7 @@ export default function SuperLikePurchaseModal({
           borderCurve: "continuous",
           overflow: "hidden",
           backgroundColor:
-            hasSelection && !purchasing
-              ? colors.litPlus
-              : "rgba(255,255,255,0.15)",
+            hasSelection && !purchasing ? colors.litPlus : ink(0.15),
           paddingVertical: 18,
           alignItems: "center",
           justifyContent: "center",
@@ -270,7 +268,9 @@ export default function SuperLikePurchaseModal({
       >
         <Text
           style={{
-            color: hasSelection ? colors.text : "rgba(255,255,255,0.5)",
+            // Seçim varken zemin litPlus dolgusu → yazı `onMedia` (açık modda
+            // da beyaz). Seçim yokken zemin nötr → moda uyan soluk mürekkep.
+            color: hasSelection ? colors.onMedia : ink(0.5),
             fontSize: 15,
             fontWeight: "700",
           }}
@@ -280,7 +280,7 @@ export default function SuperLikePurchaseModal({
         {purchasing && (
           <ActivityIndicator
             size="small"
-            color={colors.text}
+            color={colors.onMedia}
             style={{ position: "absolute" }}
           />
         )}
@@ -289,7 +289,7 @@ export default function SuperLikePurchaseModal({
         style={{
           marginTop: 10,
           marginHorizontal: 10,
-          color: "rgba(255,255,255,0.5)",
+          color: colors.textMuted,
           fontSize: 11,
           textAlign: "center",
           lineHeight: 15,
@@ -351,7 +351,7 @@ export default function SuperLikePurchaseModal({
         </Text>
         <Text
           style={{
-            color: "rgba(255,255,255,0.75)",
+            color: colors.textSecondary,
             fontSize: 14,
             textAlign: "center",
             lineHeight: 20,
@@ -369,7 +369,7 @@ export default function SuperLikePurchaseModal({
           // DÜŞMÜYORUZ: fiyatı ve ürünü uyduramayız, satın alma da yapılamaz.
           <Text
             style={{
-              color: "rgba(255,255,255,0.6)",
+              color: colors.textMuted,
               fontSize: 13,
               textAlign: "center",
               lineHeight: 19,
@@ -403,16 +403,14 @@ export default function SuperLikePurchaseModal({
                     borderRadius: 36,
                     borderCurve: "continuous",
                     borderWidth: 0.5,
-                    borderColor: isSelected
-                      ? colors.text
-                      : "rgba(255,255,255,0.2)",
+                    borderColor: isSelected ? colors.text : ink(0.2),
                     overflow: "hidden",
                     opacity: !hasSelection || isSelected ? 1 : 0.45,
                   }}
                 >
                   <BlurView
                     intensity={70}
-                    tint="dark"
+                    tint={plainBlurTint()}
                     style={{
                       flex: 1,
                       alignItems: "center",
@@ -420,16 +418,10 @@ export default function SuperLikePurchaseModal({
                       paddingVertical: 22,
                     }}
                   >
-                    <SFIcon
-                      name="heart.fill"
-                      fallback={Heart}
-                      size={50}
-                      color={colors.text}
-                      strokeWidth={1.5}
-                    />
+                    <SuperLikeGlyph size={50} color={colors.text} />
                     <Text
                       style={{
-                        color: "rgba(255,255,255,0.9)",
+                        color: colors.text,
                         fontSize: 14,
                         fontWeight: "700",
                         marginTop: 8,
@@ -444,7 +436,7 @@ export default function SuperLikePurchaseModal({
                     </Text>
                     <Text
                       style={{
-                        color: "rgba(255,255,255,0.75)",
+                        color: colors.textSecondary,
                         fontSize: 15,
                         fontWeight: "300",
                         marginTop: 4,
