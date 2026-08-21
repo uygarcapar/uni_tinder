@@ -2,6 +2,9 @@ import { createNativeStackNavigator } from "@react-navigation/native-stack";
 import { useAppSelector } from "@/shared/hooks/redux";
 import WelcomeScreen from "@/features/auth/screens/WelcomeScreen";
 import LoginScreen from "@/features/auth/screens/LoginScreen";
+import ForgotPasswordScreen from "@/features/auth/screens/ForgotPasswordScreen";
+import ForgotPasswordCodeScreen from "@/features/auth/screens/ForgotPasswordCodeScreen";
+import ResetPasswordScreen from "@/features/auth/screens/ResetPasswordScreen";
 import RegisterStep1Screen from "@/features/auth/screens/RegisterStep1Screen";
 import RegisterStep2Screen from "@/features/auth/screens/RegisterStep2Screen";
 import RegisterStep3Screen from "@/features/auth/screens/RegisterStep3Screen";
@@ -14,6 +17,7 @@ import RegisterStep10Screen from "@/features/auth/screens/RegisterStep10Screen";
 import RegisterStep12Screen from "@/features/auth/screens/RegisterStep12Screen";
 import RegisterStep13Screen from "@/features/auth/screens/RegisterStep13Screen";
 import RegisterStep14Screen from "@/features/auth/screens/RegisterStep14Screen";
+import RegisterStep16Screen from "@/features/auth/screens/RegisterStep16Screen";
 import RegisterStep15Screen from "@/features/auth/screens/RegisterStep15Screen";
 import type { AuthStackParamList } from "@/shared/types/navigation";
 
@@ -44,6 +48,11 @@ export default function AuthNavigator({ initialRoute = "Welcome" }: AuthNavigato
       >
         <Stack.Screen name="RegisterStep2" component={RegisterStep2Screen} />
         <Stack.Screen name="Login" component={LoginScreen} />
+        {/* Login bu yığında da açılabildiği için şifre sıfırlama üçlüsü
+            burada da kayıtlı — aksi halde linke basınca "route bulunamadı". */}
+        <Stack.Screen name="ForgotPassword" component={ForgotPasswordScreen} />
+        <Stack.Screen name="ForgotPasswordCode" component={ForgotPasswordCodeScreen} />
+        <Stack.Screen name="ResetPassword" component={ResetPasswordScreen} />
       </Stack.Navigator>
     );
   }
@@ -58,6 +67,11 @@ export default function AuthNavigator({ initialRoute = "Welcome" }: AuthNavigato
       {/* Auth entry */}
       <Stack.Screen name="Welcome" component={WelcomeScreen} />
       <Stack.Screen name="Login" component={LoginScreen} />
+
+      {/* Şifre sıfırlama: e-posta → kod → yeni şifre */}
+      <Stack.Screen name="ForgotPassword" component={ForgotPasswordScreen} />
+      <Stack.Screen name="ForgotPasswordCode" component={ForgotPasswordCodeScreen} />
+      <Stack.Screen name="ResetPassword" component={ResetPasswordScreen} />
 
       {/* Account security: 1.email → 2.verify → 3.password */}
       <Stack.Screen name="RegisterStep1" component={RegisterStep1Screen} />
@@ -76,6 +90,8 @@ export default function AuthNavigator({ initialRoute = "Welcome" }: AuthNavigato
       <Stack.Screen name="RegisterStep10" component={RegisterStep10Screen} />
       <Stack.Screen name="RegisterStep13" component={RegisterStep13Screen} />
       <Stack.Screen name="RegisterStep14" component={RegisterStep14Screen} />
+      {/* Akış sırası: 14 → 16 (alkol/dini görüş) → 15 (fotoğraflar, son). */}
+      <Stack.Screen name="RegisterStep16" component={RegisterStep16Screen} />
       <Stack.Screen name="RegisterStep15" component={RegisterStep15Screen} />
     </Stack.Navigator>
   );

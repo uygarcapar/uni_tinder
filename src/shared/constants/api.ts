@@ -23,6 +23,11 @@ export const API_ENDPOINTS = {
   RESEND_VERIFICATION: "/api/user/resendverificationcode",
   GET_USER: "/api/user/GetUser",
   UPDATE_USER: "/api/user/UpdateUser",
+  // Şifre değiştirme İKİ ADIMLI: önce bu uç mevcut şifreyi doğrulayıp maile
+  // 6 haneli onay kodu yollar, sonra ChangePassword kodu + yeni şifreyi alır.
+  // Mevcut şifre 1. adımda doğrulandığı için yanlış şifreyle kod hiç gitmez.
+  REQUEST_PASSWORD_CHANGE_CODE: "/api/user/RequestPasswordChangeCode",
+  // DİKKAT: tek PUT ucu — diğer üç şifre ucu POST. Yanlış method 405 döner.
   CHANGE_PASSWORD: "/api/user/ChangePassword",
   FORGOT_PASSWORD: "/api/user/ForgotPassword",
   RESET_PASSWORD: "/api/user/ResetPasswordWithCode",
@@ -35,7 +40,10 @@ export const API_ENDPOINTS = {
   COMPLETE_PROFILE: "/api/profile/CompleteProfile",
   UPDATE_PROFILE: "/api/profile/UpdateProfile",
   GET_MY_PROFILE: "/api/profile/GetMyProfile",
-  GET_MY_PHOTOS: "/api/profile/GetMyPhotos",
+  // DİKKAT: /api/photo/ altında, /api/profile/ altında DEĞİL (sabit önceden
+  // yanlıştı ama hiç çağrılmadığı için fark edilmemişti). Yalnızca fotoğraf
+  // moderasyon alanları için kullanılıyor — bkz. profileService.getMyPhotos.
+  GET_MY_PHOTOS: "/api/photo/GetMyPhotos",
   UPDATE_PREFERENCES: "/api/profile/update-preferences",
   // App-open heartbeat: şehir/ilçe artık kullanıcı seçimi değil, backend'in bu
   // koordinattan türettiği sonuç. UpdateProfile'da konum alanları kaldırıldı.
@@ -56,6 +64,13 @@ export const API_ENDPOINTS = {
   WHO_LIKED_ME: "/api/swipe/wholikedme",
   LIKER_PROFILE: "/api/swipe/LikerProfile",
   SWIPE_UNDO: "/api/swipe/Undo",
+  // Kaçırılan eşleşme = beni beğenmiş ama benim pass'ladığım kullanıcı
+  // (30 günlük pencere, SwipeLimits:MissedMatchLookbackDays). Liste ucu premium
+  // gating'e TABİ DEĞİL — kota yalnız Recover aksiyonunda (free 2/gün, premium
+  // 5/gün). Recover gerçek HTTP status kullanıyor: 200 / 403 (kota+paywall) /
+  // 400 (diğer tüm retler). Bkz. missedMatchRecovery.ts.
+  SWIPE_MISSED_MATCHES: "/api/swipe/MissedMatches",
+  SWIPE_RECOVER_MISSED_MATCH: "/api/swipe/RecoverMissedMatch",
   SWIPE_FILTERS: "/api/swipe/Filters",
   SWIPE_UPDATE_FILTERS: "/api/swipe/UpdateFilters",
 
@@ -82,7 +97,10 @@ export const API_ENDPOINTS = {
   MESSAGES_UNREAD_PER_CONV: "/api/messages/unread-per-conversation",
   MESSAGES_DEACTIVATE_CONV: (convId: string) => `/api/messages/conversations/${convId}`,
   MESSAGES_RESTORE_CONV: (convId: string) => `/api/messages/conversations/${convId}/restore`,
-  MESSAGES_EDIT: (msgId: string) => `/api/messages/${msgId}`,
+  // Rematch ("anılar canlanır"): aynı çift tekrar eşleşince eski mesajlar GİZLİ
+  // gelir (hasHiddenHistory). Bu uç geçmişi ÇİFT İÇİN açar — karşı tarafa
+  // ConversationHistoryRevealed event'i düşer.
+  MESSAGES_REVEAL_HISTORY: (convId: string) => `/api/messages/conversations/${convId}/reveal-history`,
   MESSAGES_DELETE: (msgId: string) => `/api/messages/${msgId}`,
   MESSAGES_REACTIONS: (msgId: string) => `/api/messages/${msgId}/reactions`,
   MESSAGES_DELIVERED: (msgId: string) => `/api/messages/${msgId}/delivered`,
@@ -113,11 +131,16 @@ export const API_ENDPOINTS = {
   GET_HOBBIES: "/api/common/hobbies",
   GET_SMOKING_STATUSES: "/api/common/smoking-statuses",
   GET_ZODIACS: "/api/common/zodiacs",
-  GET_USAGE_PURPOSES: "/api/common/usage-purposes",
+  // GET_USAGE_PURPOSES KALDIRILDI: "kullanım amacı" alanı üründen çıktı.
+  // Endpoint backend'de duruyor ama artık HER ZAMAN boş liste dönüyor (sahadaki
+  // eski sürümler 404 alıp onboarding'de kilitlenmesin diye); force-update
+  // eşiği bu sürümün üstüne çıkınca backend'den de silinecek.
   GET_INTERESTED_IN: "/api/common/interested-in",
   GET_LANGUAGES: "/api/common/languages",
   GET_UNIVERSITIES: "/api/common/universities",
   GET_PETS: "/api/common/pets",
+  GET_ALCOHOL_USAGES: "/api/common/alcohol-usages",
+  GET_RELIGIOUS_VIEWS: "/api/common/religious-views",
   GET_RELATIONSHIP_INTENTS: "/api/common/relationship-intents",
   GET_DISTRICTS_BY_CITY: (cityId: number | string) => `/api/common/cities/${cityId}/districts`,
 

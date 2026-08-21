@@ -31,10 +31,17 @@ export default function LoginScreen({ navigation }: NativeStackScreenProps<AuthS
   const dispatch = useAppDispatch();
   const { loading, error } = useAppSelector((s) => (s as any).auth);
 
-  const { control, handleSubmit } = useForm<LoginForm>({
+  const { control, handleSubmit, getValues } = useForm<LoginForm>({
     resolver: zodResolver(loginSchema),
     defaultValues: { email: "", password: "" },
   });
+
+  const handleForgotPassword = () => {
+    Keyboard.dismiss();
+    // Yazılmış e-posta varsa taşınır — sıfırlama ekranında tekrar yazdırmayalım.
+    const typedEmail = getValues('email')?.trim();
+    navigation.navigate('ForgotPassword', typedEmail ? { email: typedEmail } : undefined);
+  };
 
   const handleLogin = handleSubmit(async ({ email, password }) => {
     Keyboard.dismiss();
@@ -46,10 +53,10 @@ export default function LoginScreen({ navigation }: NativeStackScreenProps<AuthS
   });
 
   return (
-    <View className="flex-1 bg-bg">
+    <View className="flex-1" style={{ backgroundColor: colors.bg }}>
       <View style={{ flex: 1 }}>
         {/* Header */}
-        <View className="bg-bg pt-16 pb-6 px-6">
+        <View className="pt-16 pb-6 px-6" style={{ backgroundColor: colors.bg }}>
           <RegisterBackButton onPress={() => navigation.goBack()} />
         </View>
 
@@ -63,17 +70,17 @@ export default function LoginScreen({ navigation }: NativeStackScreenProps<AuthS
             }}
           >
             <View className="flex flex-col gap-2">
-              <Text className="text-4xl font-bold text-white">{t('auth.login.title')}</Text>
+              <Text className="text-4xl font-bold" style={{ color: colors.text }}>{t('auth.login.title')}</Text>
 
               {/* Error Message */}
               {error ? (
                 <View className="mt-2">
-                  <Text className="text-[18px] font-normal text-red-500 mb-6">
+                  <Text className="text-[18px] font-normal mb-6" style={{ color: colors.error }}>
                     {error}.
                   </Text>
                 </View>
               ) : (
-                <Text className="text-[18px] font-normal text-gray-400 mb-6 mt-2">
+                <Text className="text-[18px] font-normal mb-6 mt-2" style={{ color: colors.textSecondary }}>
                   {t('auth.login.description')}
                 </Text>
               )}
@@ -81,7 +88,7 @@ export default function LoginScreen({ navigation }: NativeStackScreenProps<AuthS
 
             {/* Email Input */}
             <View className="mb-4">
-              <Text className="text-white text-lg font-semibold mb-2">
+              <Text className="text-lg font-semibold mb-2" style={{ color: colors.text }}>
                 {t('auth.login.emailLabel')}
               </Text>
               <Controller
@@ -89,14 +96,18 @@ export default function LoginScreen({ navigation }: NativeStackScreenProps<AuthS
                 name="email"
                 render={({ field: { onChange, value } }) => (
                   <TextInput
+                    // Kenarlık ve metin rengi tema üzerinden — sabit
+                    // `border-white/10` + `text-white` açık modda beyaz
+                    // üstüne beyaz kalıyordu (Register ekranlarıyla aynı desen).
                     style={{
                       borderRadius: 999,
                       borderCurve: "continuous",
                       overflow: "hidden",
+                      borderWidth: 0.5,
+                      borderColor: error ? colors.error : colors.hairline,
+                      color: colors.text,
                     }}
-                    className={`border-[0.5px] px-4 py-5 text-[18px] text-white ${
-                      error ? "border-red-500" : "border-white/10 "
-                    }`}
+                    className="px-4 py-5 text-[18px]"
                     placeholder={t('auth.login.emailPlaceholder')}
                     placeholderTextColor={colors.textSecondary}
                     value={value}
@@ -114,7 +125,7 @@ export default function LoginScreen({ navigation }: NativeStackScreenProps<AuthS
 
             {/* Password Input */}
             <View className="mb-6">
-              <Text className="text-white text-lg font-semibold mb-2">
+              <Text className="text-lg font-semibold mb-2" style={{ color: colors.text }}>
                 {t('auth.login.passwordLabel')}
               </Text>
               <View
@@ -122,10 +133,10 @@ export default function LoginScreen({ navigation }: NativeStackScreenProps<AuthS
                   borderRadius: 999,
                   borderCurve: "continuous",
                   overflow: "hidden",
+                  borderWidth: 0.5,
+                  borderColor: error ? colors.error : colors.hairline,
                 }}
-                className={`border-[0.5px] px-4 py-[14.5px] flex-row items-center ${
-                  error ? "border-red-500" : "border-white/10"
-                }`}
+                className="px-4 py-[14.5px] flex-row items-center"
               >
                 <Controller
                   control={control}
@@ -133,7 +144,7 @@ export default function LoginScreen({ navigation }: NativeStackScreenProps<AuthS
                   render={({ field: { onChange, value } }) => (
                     <TextInput
                       ref={passwordRef}
-                      className="flex-1 text-[18px] text-white"
+                      className="flex-1 text-[18px]" style={{ color: colors.text }}
                       placeholder={t('auth.login.passwordPlaceholder')}
                       placeholderTextColor={colors.textSecondary}
                       value={value}
@@ -159,6 +170,17 @@ export default function LoginScreen({ navigation }: NativeStackScreenProps<AuthS
                   </View>
                 </TouchableOpacity>
               </View>
+
+              <TouchableOpacity
+                activeOpacity={0.7}
+                onPress={handleForgotPassword}
+                disabled={loading}
+                className="self-center mt-3 py-1"
+              >
+                <Text className="text-[14px] font-semibold text-center" style={{ color: colors.primary }}>
+                  {t('auth.login.forgotPassword')}
+                </Text>
+              </TouchableOpacity>
             </View>
           </View>
         </TouchableWithoutFeedback>
@@ -166,7 +188,7 @@ export default function LoginScreen({ navigation }: NativeStackScreenProps<AuthS
 
       {/* Sticky Button with KeyboardStickyView */}
       <KeyboardStickyView offset={{ closed: 0, opened: 15 }}>
-        <View className="px-8 pb-8 pt-4 bg-bg">
+        <View className="px-8 pb-8 pt-4" style={{ backgroundColor: colors.bg }}>
           <TouchableOpacity
             activeOpacity={1}
             onPress={handleLogin}
@@ -180,9 +202,9 @@ export default function LoginScreen({ navigation }: NativeStackScreenProps<AuthS
             }}
           >
             {loading ? (
-              <ActivityIndicator className="py-[17.5px]" color="#fff" />
+              <ActivityIndicator className="py-[17.5px]" color={colors.onMedia} />
             ) : (
-              <Text className="text-white py-[20px] font-bold text-[15px] text-center">
+              <Text className="py-[20px] font-bold text-[15px] text-center" style={{ color: colors.onMedia }}>
                 {t('auth.login.submitButton')}
               </Text>
             )}

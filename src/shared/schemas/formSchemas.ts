@@ -18,17 +18,60 @@ export const emailSchema = z.object({
   email: z.string().min(1, "Lütfen üniversite email adresinizi girin"),
 });
 
+/**
+ * Şifre politikası — TEK KAYNAK.
+ *
+ * Hem `passwordSchema` hem de şifre ekranlarındaki canlı kural listesi buradan
+ * besleniyor; ayrı tanımlanırlarsa checklist yeşilken form hata verir.
+ *
+ * Backend (ASP.NET Identity) minimum 6 karakter istiyor, uygulama 8'de kalıyor —
+ * kayıt akışının mevcut kuralı, backend'den katı olması sorun değil. Küçük harf
+ * şartı ise BACKEND'den geliyor (RequireLowercase): burada denenmezse "ABC123!"
+ * gibi bir şifre client'ı geçip sunucudan UT-1010 ile geri döner.
+ */
+export const PASSWORD_RULES = [
+  {
+    key: "length",
+    test: (p: string) => p.length >= 8,
+    message: "Şifreniz en az 8 karakter olmalıdır.",
+  },
+  {
+    key: "uppercase",
+    test: (p: string) => /[A-Z]/.test(p),
+    message: "Şifreniz en az 1 büyük harf içermelidir.",
+  },
+  {
+    key: "lowercase",
+    test: (p: string) => /[a-z]/.test(p),
+    message: "Şifreniz en az 1 küçük harf içermelidir.",
+  },
+  {
+    key: "digit",
+    test: (p: string) => /[0-9]/.test(p),
+    message: "Şifreniz en az 1 rakam (0-9) içermelidir.",
+  },
+  {
+    key: "special",
+    test: (p: string) => /[!@#$%^&*(),.?":{}|<>]/.test(p),
+    message: "Şifreniz en az 1 özel karakter içermelidir.",
+  },
+] as const;
+
+export type PasswordRuleKey = (typeof PASSWORD_RULES)[number]["key"];
+
+/** Sağlanmayan kuralların anahtarları — canlı checklist için. */
+export const unmetPasswordRules = (password: string): PasswordRuleKey[] =>
+  PASSWORD_RULES.filter((rule) => !rule.test(password)).map((rule) => rule.key);
+
 export const passwordSchema = z
   .object({
-    password: z
-      .string()
-      .min(8, "Şifreniz en az 8 karakter olmalıdır.")
-      .regex(/[A-Z]/, "Şifreniz en az 1 büyük harf içermelidir.")
-      .regex(/[0-9]/, "Şifreniz en az 1 rakam (0-9) içermelidir.")
-      .regex(
-        /[!@#$%^&*(),.?":{}|<>]/,
-        'Şifreniz en az 1 özel karakter içermelidir.',
-      ),
+    password: z.string().superRefine((value, ctx) => {
+      for (const rule of PASSWORD_RULES) {
+        if (!rule.test(value)) {
+          ctx.addIssue({ code: "custom", message: rule.message });
+        }
+      }
+    }),
     confirmPassword: z.string().min(1, "Lütfen tüm şifre alanlarını doldurun."),
   })
   .refine((d) => d.password === d.confirmPassword, {
@@ -112,8 +155,15 @@ export const hobbiesSchema = z.object({
 export const lifestyleSchema = z.object({
   smokingStatus: z.string().optional(),
   zodiacSign: z.string().optional(),
-  usagePurpose: z.string().optional(),
   relationshipIntent: z.string().optional(),
+});
+
+// RegisterStep16 (alkol + dini görüş). lifestyleSchema'dan ayrı: iki alan
+// da tamamen opsiyonel ve adım atlanabilir, Step14'ün alanlarıyla birlikte
+// doğrulanmalarını gerektiren bir kural yok.
+export const beliefsSchema = z.object({
+  alcoholUsage: z.string().optional(),
+  religiousView: z.string().optional(),
 });
 
 export const photosSchema = z.object({
@@ -139,6 +189,7 @@ export type InterestedInForm = z.infer<typeof interestedInSchema>;
 export type HeightForm = z.infer<typeof heightSchema>;
 export type HobbiesForm = z.infer<typeof hobbiesSchema>;
 export type LifestyleForm = z.infer<typeof lifestyleSchema>;
+export type BeliefsForm = z.infer<typeof beliefsSchema>;
 export type PhotosForm = z.infer<typeof photosSchema>;
 export type ReportForm = z.infer<typeof reportSchema>;
 
@@ -147,8 +198,12 @@ export const editProfileFormSchema = z.object({
   hobbies: z.array(z.number()),
   smoking: z.any().nullable(),
   zodiac: z.any().nullable(),
-  usagePurpose: z.any().nullable(),
   relationshipIntent: z.any().nullable(),
+  // Alkol ve dini görüş — diğer tek-seçim enum alanlarıyla aynı sınıf:
+  // null = seçim yok, submit'te ClearXxx=true gider (değer null göndermek
+  // backend'de "değiştirme" demek, temizlemez).
+  alcohol: z.any().nullable(),
+  religiousView: z.any().nullable(),
   // city/district YOK: konum artık düzenlenebilir bir alan değil, backend
   // koordinattan türetiyor (bkz. POST /api/profile/location).
   languages: z.array(z.any()),
@@ -156,5 +211,8 @@ export const editProfileFormSchema = z.object({
   showMyUniversity: z.boolean(),
   showMeOnApp: z.boolean(),
   showAge: z.boolean(),
+  // Premium rozeti — opt-out: backend varsayılanı true, kapatınca yalnızca
+  // ROZET gizlenir (kotalar/filtreler/sıralama avantajı aynen sürer).
+  showPremiumBadge: z.boolean(),
 });
 export type EditProfileFormData = z.infer<typeof editProfileFormSchema>;

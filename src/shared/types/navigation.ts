@@ -10,11 +10,20 @@ export type RootStackParamList = {
     isActive?: boolean;
   };
   Notifications: undefined;
+  // Ayarlar → Şifre Değiştir. İki adım (mevcut şifre → kod + yeni şifre) tek
+  // ekranın iç durumu: mevcut şifreyi route param'ıyla taşımak onu Sentry'nin
+  // navigation breadcrumb'larına düşürürdü.
+  ChangePassword: undefined;
 };
 
 export type AuthStackParamList = {
   Welcome: undefined;
   Login: undefined;
+  // Şifre sıfırlama: e-posta → kod → yeni şifre. Kod backend'de ayrıca
+  // doğrulanamadığı için ResetPassword'e parametre olarak taşınır.
+  ForgotPassword: { email?: string } | undefined;
+  ForgotPasswordCode: { email: string };
+  ResetPassword: { email: string; resetCode: string };
   RegisterStep1: undefined;
   RegisterStep2: { email?: string; mode?: string; pending?: boolean; retryAfterSeconds?: number } | undefined;
   RegisterStep3: undefined;
@@ -27,6 +36,9 @@ export type AuthStackParamList = {
   RegisterStep12: undefined;
   RegisterStep13: undefined;
   RegisterStep14: undefined;
+  // Step16 akışta 15'ten ÖNCE geliyor (alkol/dini görüş → fotoğraflar);
+  // numara ekranın eklenme sırasını gösteriyor.
+  RegisterStep16: undefined;
   RegisterStep15: undefined;
 };
 
