@@ -92,7 +92,7 @@ export type RelationshipIntentOption = {
   enumName: string;
 };
 
-// GET /api/common/{zodiacs,smoking-statuses,pets,usage-purposes} — hepsi aynı
+// GET /api/common/{zodiacs,smoking-statuses,pets,...} — hepsi aynı
 // düz enum şeklinde dönüyor: `enumName` backend'e gönderilen değer ("Aries"),
 // `display` çift dilli obje (resolveLocalized ile çöz), `name` sunucuda
 // Accept-Language'e göre çözülmüş İngilizce sabit.
@@ -115,7 +115,9 @@ export const commonKeys = {
   zodiacs: ["common", "zodiacs"] as const,
   smokingStatuses: ["common", "smokingStatuses"] as const,
   pets: ["common", "pets"] as const,
-  usagePurposes: ["common", "usagePurposes"] as const,
+  alcoholUsages: ["common", "alcoholUsages"] as const,
+  religiousViews: ["common", "religiousViews"] as const,
+  languages: ["common", "languages"] as const,
 };
 
 /** Domain karşılaştırmalarının tek kuralı — backend de trim + lowercase yapıyor. */
@@ -242,15 +244,48 @@ export function useSmokingStatuses() {
   );
 }
 
-// NOT: /api/common/pets bilinçli olarak hook'lanmadı — keşif filtresindeki
-// evcil hayvan tercihi enum listesi değil, `hasPets: bool?` (3 durumlu).
-// O endpoint profilin KENDİ hayvanları için; ProfileScreen staticGet ile çekiyor.
+// Evcil hayvan türleri — artık keşif filtresi de kullanıyor (`pets` alanı,
+// tür bazlı çoklu seçim). Legacy `hasPets: bool?` filtresi duruyor ama spesifik
+// seçim onu eziyor (bkz. FilterModal pet bölümü).
+//
+// Sıralama backend'den geldiği gibi korunuyor: önce gerçek türler, sonra
+// None / Allergic / Other. Bu üçü profil ekranı için anlamlı ("benim hayvanım
+// yok"), filtre için değil — eleme FilterModal'da (FILTER_HIDDEN_PETS), burada
+// değil: aynı hook'u profil tarafı da tüketebilsin.
+export function usePets() {
+  return useEnumOptions(commonKeys.pets, API_ENDPOINTS.GET_PETS);
+}
 
-export function useUsagePurposes() {
+// Alkol tercihi (None / Socially / Regularly) — premium filtre.
+export function useAlcoholUsages() {
   return useEnumOptions(
-    commonKeys.usagePurposes,
-    API_ENDPOINTS.GET_USAGE_PURPOSES,
+    commonKeys.alcoholUsages,
+    API_ENDPOINTS.GET_ALCOHOL_USAGES,
   );
+}
+
+// useUsagePurposes KALDIRILDI: "kullanım amacı" alanı üründen çıktı
+// (endpoint boş liste dönüyor, filtre bölümü de kaldırıldı).
+
+// Dini görüş (ReligiousViewType) — 2026-08-17 sözleşmesiyle keşif filtresine de
+// girdi (`religiousViews`, premium hard filtre). ProfileScreen aynı endpoint'i
+// staticGet ile çekiyor, yani iki ekran tek isteği paylaşıyor.
+// `PreferNotToSay` listede DÖNÜYOR ama filtrede gösterilmiyor — eleme
+// FilterModal'da (FILTER_HIDDEN_RELIGIOUS_VIEWS), burada değil: profil tarafı
+// aynı hook'u tüketebilsin (pets'teki desenle aynı).
+export function useReligiousViews() {
+  return useEnumOptions(
+    commonKeys.religiousViews,
+    API_ENDPOINTS.GET_RELIGIOUS_VIEWS,
+  );
+}
+
+// Konuşulan diller (LanguageType, 34 değer) — profilde kullanıcının kendi
+// dilleri, filtrede "en az birini konuşsun" (OR) tercihi. Liste uzun olduğu
+// için filtre tarafı pill yerine aranabilir picker kullanıyor
+// (LanguagePickerModal).
+export function useLanguages() {
+  return useEnumOptions(commonKeys.languages, API_ENDPOINTS.GET_LANGUAGES);
 }
 
 export function useDepartments() {

@@ -33,8 +33,9 @@ import { LinearGradient } from "expo-linear-gradient";
 import SFIcon from "@/shared/components/SFIcon";
 import AppBottomSheet from "@/shared/components/AppBottomSheet";
 import type { UniversityOption } from "@/shared/queries/commonQueries";
-import { colors } from "../../../shared/theme/colors";
+import { colors, veil } from "../../../shared/theme/colors";
 import { glassFallback } from "../../../shared/theme/glass";
+import { chromeBlurTint } from "@/shared/theme/blur";
 
 // BottomSheetFlatList'in reanimated scroll handler kabul eden hali. `any`:
 // gorhom'un generic prop tipleri Animated wrapper'dan geçince çözülemiyor
@@ -239,7 +240,7 @@ export default function UniversityPickerModal({
                   borderRadius: 999,
                   borderCurve: "continuous",
                   borderWidth: 0.5,
-                  borderColor: "rgba(255,255,255,0.1)",
+                  borderColor: colors.hairline,
                   backgroundColor: "transparent",
                   paddingLeft: 44,
                   paddingRight: 16,
@@ -293,7 +294,7 @@ export default function UniversityPickerModal({
                   overflow: "hidden",
                   borderRadius: 999,
                   backgroundColor: isSelected
-                    ? "rgba(255,255,255,0.1)"
+                    ? colors.hairline
                     : "transparent",
                   position: "relative",
                 }}
@@ -389,8 +390,10 @@ export default function UniversityPickerModal({
                 bottom: 0,
               }}
             >
+              {/* Derinlik perdesi — koyuda karartır, açıkta AYNI oranlarla
+                  beyazlatır (veil). Maske siyah/şeffaf kalır: alfa maskesi. */}
               <LinearGradient
-                colors={["black", "rgba(0, 0, 0, 0.2)"]}
+                colors={[veil(1), veil(0.2)]}
                 style={{
                   position: "absolute",
                   top: 0,
@@ -401,11 +404,7 @@ export default function UniversityPickerModal({
               />
               <BlurView
                 intensity={15}
-                tint={
-                  Platform.OS === "ios"
-                    ? "systemChromeMaterialDark"
-                    : "systemMaterialDark"
-                }
+                tint={chromeBlurTint()}
                 style={{
                   position: "absolute",
                   top: 0,
@@ -433,7 +432,7 @@ export default function UniversityPickerModal({
                 width: 36,
                 height: 4,
                 borderRadius: 2,
-                backgroundColor: "rgba(255,255,255,0.3)",
+                backgroundColor: colors.hairlineMuted,
               }}
             />
           </View>
@@ -512,7 +511,7 @@ export default function UniversityPickerModal({
                     width: 46,
                     height: 46,
                     borderRadius: 999,
-                    backgroundColor: "rgba(255,255,255,0.08)",
+                    backgroundColor: colors.hairlineSoft,
                     alignItems: "center",
                     justifyContent: "center",
                   }}
@@ -559,7 +558,7 @@ export default function UniversityPickerModal({
                   paddingVertical: 12,
                   backgroundColor: colors.surface,
                   borderWidth: 0.5,
-                  borderColor: "rgba(255,255,255,0.1)",
+                  borderColor: colors.hairline,
                 }}
               >
                 <Text

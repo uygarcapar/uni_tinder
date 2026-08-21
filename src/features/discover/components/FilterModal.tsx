@@ -47,6 +47,8 @@ import {
   Film,
   PartyPopper,
   Code,
+  PauseCircle,
+  Languages,
   type LucideIcon,
 } from "lucide-react-native";
 import Svg, { Circle } from "react-native-svg";
@@ -55,6 +57,7 @@ import HobbyIcon from "@/shared/components/HobbyIcon";
 import AppModal from "@/shared/components/AppModal";
 import CityPickerModal from "@/features/discover/components/CityPickerModal";
 import UniversityPickerModal from "@/features/discover/components/UniversityPickerModal";
+import LanguagePickerModal from "@/shared/components/LanguagePickerModal";
 import {
   useCities,
   useUniversities,
@@ -62,7 +65,10 @@ import {
   useRelationshipIntents,
   useZodiacs,
   useSmokingStatuses,
-  useUsagePurposes,
+  usePets,
+  useAlcoholUsages,
+  useReligiousViews,
+  useLanguages,
   normalizeDomain,
   resolveLocalized,
 } from "@/shared/queries/commonQueries";
@@ -70,28 +76,39 @@ import { getRelationshipIntentIcon } from "@/shared/constants/relationshipIntent
 import {
   getZodiacIcon,
   getSmokingIcon,
-  getUsagePurposeIcon,
   getHasPetsIcon,
+  getPetIcon,
+  getAlcoholIcon,
   getYearOfStudyIcon,
+  getReligiousViewIcon,
+  getLanguageIcon,
+  sortZodiacOptions,
 } from "@/shared/constants/filterEnumIcons";
 import { showInfoToast } from "@/shared/services/toaster";
 import uiBus from "@/shared/services/uiBus";
 import {
   DEFAULT_AGE_RANGE,
   DISTANCE_RANGE_KM,
+  FREE_MAX_DISTANCE_KM,
   MAX_PREFERRED_HOBBIES,
   MAX_UNIVERSITY_DOMAINS,
+  PREMIUM_MAX_DISTANCE_KM,
+  maxDistanceKmForTier,
 } from "@/shared/constants/limits";
-import { colors } from "../../../shared/theme/colors";
+import { colors, ink } from "../../../shared/theme/colors";
 
+// Slider'ın GÖRSEL aralığı — halkalar her iki tier'da da 100 km'ye kadar
+// çiziliyor. Seçilebilir tavan ayrı ve tier'a bağlı (tierMaxKm); cap üstündeki
+// halkalar soluk çizilerek erişilemeyen premium aralığı gösteriliyor.
 const MIN_DISTANCE_KM = DISTANCE_RANGE_KM.min;
 const MAX_DISTANCE_KM = DISTANCE_RANGE_KM.max;
 
-// NOT: Free hesaba uygulanan 50 km cap'i KALDIRILDI (backend sözleşmesi
-// 2026-08-11). Mesafe artık her iki tier'da da tam aralık; kilit ikonu da yok.
-// Cap FE'de kaldığı sürece iki zarar veriyordu: free kullanıcı 50 km'nin
-// ötesini hiç seçemiyor, premium'dan free'ye düşen kullanıcının 100 km'lik
-// ayarı ise slider'a hiç dokunmadan kaydettiğinde sessizce 50'ye yazılıyordu.
+// NOT: 2026-08-11'de kaldırılan free cap'i GERİ GELDİ (backend sözleşmesi
+// 2026-08-17): free 50 km, premium 100 km. Backend tavanın üstünü 400 ile
+// reddetmiyor, sessizce kırpıyor — cap'i FE zorlamazsa kullanıcı 100 km
+// seçtiğini sanıp 50 km'lik deste görür. Premium'dan free'ye düşen kullanıcının
+// kayıtlı 100 km'si de okurken 50'ye clamp'leniyor; bu artık doğru davranış,
+// çünkü backend zaten 50 uyguluyor (bkz. sözleşme §5).
 
 // Picker hedefi → local state alanı. Üç üniversite listesi de aynı bileşenden
 // besleniyor; hangi alana yazılacağı tek yerde tanımlı olsun.
@@ -104,11 +121,13 @@ const DOMAIN_FIELD_BY_TARGET = {
 type DomainTarget = keyof typeof DOMAIN_FIELD_BY_TARGET;
 type DomainField = (typeof DOMAIN_FIELD_BY_TARGET)[DomainTarget];
 
-// DomainSelectRow props'u any olduğu için isimler orada denetlenmiyor; SFSymbol
+// SelectRow props'u any olduğu için isimler orada denetlenmiyor; SFSymbol
 // olarak burada sabitleyip yazım hatasını compile-time'da yakalıyoruz.
 const VISIBLE_ONLY_ICON: SFSymbol = "eye.fill";
 const HIDDEN_FROM_ICON: SFSymbol = "eye.slash.fill";
 const UNIVERSITY_ICON: SFSymbol = "graduationcap.fill";
+// Dil satırının ikonu — pill'lerdekiyle (getLanguageIcon) aynı sembol.
+const LANGUAGE_ICON: SFSymbol = "character.bubble";
 
 // Üniversite listeleri backend'de trim + lowercase + tekilleştirme görüyor.
 // Aynı kuralı okurken de uygula: seçili gösterimi ve overlap kontrolü
@@ -198,13 +217,25 @@ const isUniversityPremiumGated = (f: any) =>
 //
 // Şehir/bölüm/üniversite bu listede YOK: onlar her zaman katı, toggle'ları yok.
 // Hobiler ve ilişki niyetleri de yok: onlar hard filtre değil, skor boost'u.
+//
+// `Pets` biti TEK: hem legacy `hasPets` hem spesifik `pets` tür listesi onun
+// altında. Kullanıcı açısından ikisi de "evcil hayvan tercihi" — ayrı iki
+// anahtar kafa karıştırırdı (backend de tek bit tutuyor).
 const DEALBREAKER_FIELDS = {
   height: "Height",
   yearOfStudy: "YearOfStudy",
   zodiac: "Zodiac",
   smoking: "Smoking",
+  alcohol: "Alcohol",
   pets: "Pets",
-  usagePurpose: "UsagePurpose",
+  // `UsagePurpose` KALDIRILDI: alan üründen çıktı ve dealbreakerCapableFields
+  // artık onu bildirmiyor. Backend listede gelirse sessizce yok sayıyor (400
+  // dönmüyor), ama göndermenin de bir karşılığı yok.
+  // 2026-08-17 sözleşmesiyle geldi. Alan adları GET/PUT'takinden farklı
+  // (`spokenLanguages` → "Language", `religiousViews` → "Religion") —
+  // dealbreaker listesi kendi ad uzayını kullanıyor.
+  language: "Language",
+  religion: "Religion",
 } as const;
 
 type DealbreakerKey = keyof typeof DEALBREAKER_FIELDS;
@@ -238,10 +269,11 @@ const hasDealbreakerValue = (f: any, key: DealbreakerKey) => {
     // İki uçtan biri bile serbestse filtre uygulanıyor demektir.
     case "height":
       return f.heightMin != null || f.heightMax != null;
-    // bool? — null = farketmez.
+    // Tek bit, iki alan: tür listesi (yeni) ya da legacy `hasPets` bool?.
+    // İkisinden biri doluysa filtre uygulanıyor.
     case "pets":
-      return typeof f.pets === "boolean";
-    // Kalanların hepsi local state'te dizi (sınıf/burç/sigara/kullanım amacı).
+      return (f.pets?.length ?? 0) > 0 || typeof f.hasPets === "boolean";
+    // Kalanların hepsi local state'te dizi (sınıf/burç/sigara/alkol).
     default:
       return (f[key]?.length ?? 0) > 0;
   }
@@ -255,11 +287,35 @@ const FILTER_FIELD = {
   heightMax: "heightMax",
   zodiac: "zodiacSigns",
   smoking: "smokingStatuses",
-  // DİKKAT: enum listesi DEĞİL — `bool?`. 3 durumlu: null/true/false.
-  pets: "hasPets",
-  usagePurpose: "usagePurposes",
+  alcohol: "alcoholUsages",
+  // Tür bazlı evcil hayvan tercihi (PetType enum listesi) — OR semantiği:
+  // ["Cat","Dog"] = "kedisi VEYA köpeği olan".
+  pets: "pets",
+  // Legacy 3 durumlu bool (null/true/false). KALDIRILMADI ama spesifik seçim
+  // onu eziyor: `pets` doluyken backend `hasPets`i null'a çekip yok sayıyor
+  // (aksi halde "kedisi olsun" + "hayvanı olmasın" çelişkisi desteyi sessizce
+  // boşaltırdı). UI zaten tek seçim grubu kullanıyor, ikisi aynı anda dolamaz.
+  hasPets: "hasPets",
   yearOfStudy: "yearsOfStudy",
+  // Dil — OR semantiği: ["English","German"] = "İngilizce VEYA Almanca bilen".
+  // Adayın listesinden EN AZ BİRİ eşleşiyorsa geçer; dilini hiç belirtmemiş
+  // aday elenir (alkol/sigara ile aynı sınıf).
+  language: "spokenLanguages",
+  // Dini görüş — seçilen görüşlerdeki adaylar gelir, belirtmemişler elenir.
+  religion: "religiousViews",
 } as const;
+
+// Filtre listesinde GÖSTERİLMEYEN pet türleri. Bunlar profil ekranı için
+// anlamlı ("benim hayvanım yok" / "alerjim var"), filtre için değil:
+// "hayvanı olmayanları göster" zaten legacy `hasPets: false` moduyla yapılıyor.
+const FILTER_HIDDEN_PETS = new Set(["None", "Allergic", "Other"]);
+
+// Filtrede GÖSTERİLMEYEN dini görüş. `PreferNotToSay` profil için anlamlı bir
+// cevap ("belirtmek istemiyorum") ama filtre olarak anlamsız: backend bu filtre
+// açıkken görüşünü paylaşmayan adayları zaten eliyor, yani "belirtmek
+// istemeyenleri göster" seçeneği hiçbir zaman sonuç üretmezdi.
+// FILTER_HIDDEN_PETS ile aynı desen.
+const FILTER_HIDDEN_RELIGIOUS_VIEWS = new Set(["PreferNotToSay"]);
 
 // Backend HeightMin/HeightMax'i 120–230 cm aralığında doğruluyor; dışına çıkan
 // değer 400 döndürür. UI aynı aralığı uyguluyor.
@@ -476,8 +532,8 @@ const RingMarks = React.memo(function RingMarks({
             // aralığı görsel olarak ayırır.
             stroke={
               km > userMaxKm
-                ? "rgba(255,255,255,0.18)"
-                : "rgba(255,255,255,0.5)"
+                ? ink(0.18)
+                : ink(0.5)
             }
             strokeWidth={DOT_SIZE}
             fill="none"
@@ -650,9 +706,9 @@ function DistanceCircle({ value, onChange, userMaxKm }: any) {
             style={[
               {
                 position: "absolute",
-                backgroundColor: "rgba(255,255,255,0.3)",
+                backgroundColor: colors.hairlineMuted,
                 borderWidth: 1,
-                borderColor: "rgba(255,255,255,0.4)",
+                borderColor: ink(0.4),
                 borderCurve: "continuous",
               },
               innerCircleStyle,
@@ -838,7 +894,7 @@ const HobbyGroupAccordion = React.memo(function HobbyGroupAccordion({
       style={{
         marginTop: 8,
         borderBottomWidth: 0.5,
-        borderBottomColor: "rgba(255,255,255,0.08)",
+        borderBottomColor: colors.hairlineSoft,
       }}
     >
       <TouchableOpacity
@@ -1007,7 +1063,7 @@ function PremiumGroupHeader({ title, description, locked }: any) {
       <View
         style={{
           height: 0.5,
-          backgroundColor: "rgba(255,255,255,0.08)",
+          backgroundColor: colors.hairlineSoft,
           marginBottom: 20,
         }}
       />
@@ -1094,7 +1150,7 @@ function DealbreakerToggle({ value, onToggle, disabled, testID }: any) {
         borderCurve: "continuous",
         overflow: "hidden",
         borderWidth: 0.5,
-        borderColor: "rgba(255,255,255,0.1)",
+        borderColor: colors.hairline,
         flexDirection: "row",
         alignItems: "center",
         justifyContent: "space-between",
@@ -1120,7 +1176,7 @@ function DealbreakerToggle({ value, onToggle, disabled, testID }: any) {
         value={value}
         onValueChange={onToggle}
         disabled={disabled}
-        trackColor={{ false: "rgba(255,255,255,0.15)", true: colors.successIos }}
+        trackColor={{ false: colors.hairlineStrong, true: colors.errorStrong }}
         thumbColor={colors.text}
         ios_backgroundColor={colors.border}
       />
@@ -1155,9 +1211,9 @@ const PILL_EMOJI_SIZE = Math.round(PILL_ICON_SIZE / 1.25);
 
 // Pill'in seçili/seçilmemiş rengi — ikon ve metin aynı rengi alır.
 const pillColors = (selected: boolean) => ({
-  backgroundColor: selected ? colors.text : "transparent",
-  borderColor: selected ? colors.text : "rgba(255,255,255,0.1)",
-  fg: selected ? "#000" : colors.textSecondary,
+  backgroundColor: selected ? colors.inverseSurface : "transparent",
+  borderColor: selected ? colors.inverseSurface : colors.hairline,
+  fg: selected ? colors.onInverseSurface : colors.textSecondary,
 });
 
 function PillIcon({ icon, selected }: any) {
@@ -1387,7 +1443,7 @@ function HeightRangeSlider({ min, max, onChange }: any) {
             style={{
               height: HEIGHT_TRACK,
               borderRadius: HEIGHT_TRACK / 2,
-              backgroundColor: "rgba(255,255,255,0.12)",
+              backgroundColor: ink(0.12),
             }}
           />
           {/* Tutamaklar bu daraltılmış katmanda konumlanıyor: yüzdeler
@@ -1411,7 +1467,7 @@ function HeightRangeSlider({ min, max, onChange }: any) {
                 width: `${(maxPct - minPct) * 100}%`,
                 height: HEIGHT_TRACK,
                 borderRadius: HEIGHT_TRACK / 2,
-                backgroundColor: "rgba(255,255,255,0.45)",
+                backgroundColor: ink(0.45),
               }}
             />
             {[minPct, maxPct].map((pct, i) => (
@@ -1424,7 +1480,7 @@ function HeightRangeSlider({ min, max, onChange }: any) {
                   width: HEIGHT_THUMB,
                   height: HEIGHT_THUMB,
                   borderRadius: HEIGHT_THUMB / 2,
-                  backgroundColor: colors.text,
+                  backgroundColor: colors.inverseSurface,
                 }}
               />
             ))}
@@ -1515,9 +1571,10 @@ function VisibilityListLabel({ label, count, marginTop = 0 }: any) {
   );
 }
 
-// Görünürlük listelerinin seçim satırı. Şehir satırıyla aynı pill görünümü;
-// farkı çoklu seçimi özetlemesi ("İTÜ +2") ve X'in listeyi tamamen temizlemesi.
-function DomainSelectRow({
+// Çoklu seçim picker'ını açan satır. Şehir satırıyla aynı pill görünümü; farkı
+// seçimi özetlemesi ("İTÜ +2", "3 dil seçildi") ve X'in listeyi tamamen
+// temizlemesi. Üç üniversite listesi ve dil filtresi bunu paylaşıyor.
+function SelectRow({
   sfIcon,
   lucideIcon,
   value,
@@ -1536,7 +1593,7 @@ function DomainSelectRow({
         borderCurve: "continuous",
         overflow: "hidden",
         borderWidth: 0.5,
-        borderColor: "rgba(255,255,255,0.1)",
+        borderColor: colors.hairline,
         paddingHorizontal: 16,
         paddingVertical: 18,
         flexDirection: "row",
@@ -1602,18 +1659,24 @@ export default function FilterModal({
 }: any) {
   const { t, i18n } = useTranslation();
 
-  // Tier kararının BİRİNCİL kaynağı filtre yanıtının kendi `isPremium` alanı.
-  // Prop, swipe Stats sorgusundan geliyor: o sorgu staleTime:Infinity +
-  // refetchOnMount:false ile oturumda BİR KEZ çekiliyor, yani açılışta
-  // başarısız olur ya da premium sonradan aktifleşirse `false`ta çakılı kalıyor
-  // ve premium kullanıcı kilit ikonu görüyordu. GET /Filters ise modal her
-  // açıldığında tazeleniyor ve backend gating'i zaten bu alandan bildiriyor.
+  // Tier kararı prop'tan gelir; prop'un kaynağı DiscoverScreen'deki kanonik
+  // premium (bkz. features/profile/premiumTier). Bu bileşen bilerek "saf":
+  // redux'a kendisi bağlanmıyor, testlerde tek başına render edilebiliyor.
   //
-  // OR ile birleştiriliyor (useSwipeStats'ın kendi içindeki desenle aynı):
-  // satın alma sonrası optimistic premium penceresinde Stats önce doğruyu
-  // söyleyebiliyor. Ters yönde yanılırsak (premium bitmiş ama prop bayat)
-  // kaydetme 403 + paywall ile zaten yakalanıyor.
-  const isPremium = isPremiumProp === true || filters?.isPremium === true;
+  // ÖNCESİ `prop === true || filters?.isPremium === true` idi. O OR, prop'un
+  // kaynağı bayat `/stats` cevabıyken yazılmıştı; kaynak düzeldiği için artık
+  // gereksiz ve ZARARLI: tek yönlü olduğundan premium bitince `/filters`
+  // yanıtındaki eski `isPremium:true` kilitleri açık tutuyordu.
+  //
+  // `??` bilinçli: prop VERİLMEMİŞSE (bileşen tek başına kullanılırsa) yanıtın
+  // kendi alanına düşülür, ama açıkça `false` gelen prop artık kazanır.
+  const isPremium = isPremiumProp ?? filters?.isPremium === true;
+
+  // Mesafe slider'ının seçilebilir tavanı: free 50, premium 100. isPremium'la
+  // birlikte değişiyor — satın alma sonrası PurchaseModal filtre cache'ini
+  // invalidate ediyor, aşağıdaki useEffect local state'i tazeliyor ve tavan
+  // aynı oturumda 50 → 100'e çıkıyor (sözleşme §2.3).
+  const tierMaxKm = maxDistanceKmForTier(isPremium);
 
   const interestedInOptions = useMemo(() => [
     { label: t('discover.filters.interestedIn.men'), value: 0, sf: "person.fill" as SFSymbol, lucide: User },
@@ -1625,8 +1688,18 @@ export default function FilterModal({
   // alanlardan HERHANGİ biri dolu gelirse isteğin TAMAMINI 403 + PREMIUM_FILTERS
   // ile reddediyor — premium'dan düşen kullanıcının kayıtlı şehri payload'da
   // kalırsa mesafe/cinsiyet güncellemesi bile kaydedilemiyordu.
-  const sanitizeForTier = (f: any) => {
-    if (isPremium || !f) return f;
+  //
+  // YALNIZ PAYLOAD İÇİN. Okuma tarafında (toLocalState) ÇALIŞTIRMA: premium'dan
+  // düşen kullanıcı kayıtlı seçimlerini ekranda görmeye devam etmeli
+  // ("duraklatıldı" durumu). Backend bu alanları free kullanıcıda zaten yazmıyor,
+  // yani sunucudaki kayıt korunuyor ve premium dönünce aynen geri geliyor —
+  // ekranda boş göstermek "filtrelerim silinmiş" yanılgısı üretiyordu.
+  // Local shape'te dolu premium filtre var mı? İki yerde okunuyor: payload
+  // temizliği (aşağıda) ve "duraklatıldı" şeridi (pausedPremiumFilters). Tek
+  // tanım, çünkü ikisi aynı soruyu soruyor — "bu kullanıcının kaybettiği bir
+  // şey var mı".
+  const hasPremiumValue = (f: any) => {
+    if (!f) return false;
     // Hobiler gate'i backend'in premiumOnlyFields listesine bağlı; karar hep
     // server state'inden (filters) okunuyor ki local kopyada alan eksikse de
     // aynı sonucu versin.
@@ -1635,7 +1708,7 @@ export default function FilterModal({
     const universityGated = isUniversityPremiumGated(filters);
     const visibleOnlyGated = isVisibleOnlyPremiumGated(filters);
     const hiddenFromGated = isHiddenFromPremiumGated(filters);
-    const hasPremiumValue =
+    return (
       f.preferredCity != null ||
       (universityGated && (f.preferredUniversityDomains?.length ?? 0) > 0) ||
       (visibleOnlyGated &&
@@ -1651,11 +1724,25 @@ export default function FilterModal({
       f.heightMax != null ||
       (f.zodiac?.length ?? 0) > 0 ||
       (f.smoking?.length ?? 0) > 0 ||
-      f.pets != null ||
-      (f.usagePurpose?.length ?? 0) > 0 ||
+      (f.alcohol?.length ?? 0) > 0 ||
+      (f.pets?.length ?? 0) > 0 ||
+      f.hasPets != null ||
       (f.yearOfStudy?.length ?? 0) > 0 ||
-      (f.dealbreakers?.length ?? 0) > 0;
-    if (!hasPremiumValue) return f;
+      (f.language?.length ?? 0) > 0 ||
+      (f.religion?.length ?? 0) > 0 ||
+      (f.dealbreakers?.length ?? 0) > 0
+    );
+  };
+
+  // Payload temizliği: free kullanıcının gövdesinde dolu premium alan kalmasın.
+  // Yalnız Apply'da çalışır (bkz. yukarıdaki not) — ekranda gösterilen state'e
+  // dokunmaz.
+  const sanitizeForTier = (f: any) => {
+    if (isPremium || !f) return f;
+    if (!hasPremiumValue(f)) return f;
+    const universityGated = isUniversityPremiumGated(filters);
+    const visibleOnlyGated = isVisibleOnlyPremiumGated(filters);
+    const hiddenFromGated = isHiddenFromPremiumGated(filters);
     // Görünürlük listeleri overwrite semantiğiyle yazılıyor: free kullanıcıda boş
     // dizi göndermek premium döneminden kalan kısıtlamayı da temizler — istenen
     // davranış bu, aksi halde kullanıcı düşürdüğü premium'un gizlilik kuralına
@@ -1672,10 +1759,13 @@ export default function FilterModal({
       heightMax: null,
       zodiac: [],
       smoking: [],
-      // `hasPets` bool? — enum listesi değil, temizlenmiş hali null.
-      pets: null,
-      usagePurpose: [],
+      alcohol: [],
+      // Evcil hayvan iki alan: tür listesi boşalır, legacy bool null'a döner.
+      pets: [],
+      hasPets: null,
       yearOfStudy: [],
+      language: [],
+      religion: [],
       // Free kullanıcıda dealbreaker listesi de boşaltılır; onSave zaten
       // premium değilse alanı hiç göndermiyor (bkz. Apply).
       dealbreakers: [],
@@ -1719,31 +1809,57 @@ export default function FilterModal({
       heightMax: clampHeight(f[FILTER_FIELD.heightMax]),
       zodiac: toEnumList(f[FILTER_FIELD.zodiac]),
       smoking: toEnumList(f[FILTER_FIELD.smoking]),
-      // 3 durumlu bool: null = farketmez, true = sahip olanlar, false = olmayanlar.
-      pets: typeof f[FILTER_FIELD.pets] === "boolean" ? f[FILTER_FIELD.pets] : null,
-      usagePurpose: toEnumList(f[FILTER_FIELD.usagePurpose]),
+      alcohol: toEnumList(f[FILTER_FIELD.alcohol]),
+      // Tür bazlı seçim (PetType listesi). Doluysa legacy `hasPets` yok
+      // sayılıyor — backend de öyle yapıyor, aşağıda tekrar düşürülüyor.
+      pets: toEnumList(f[FILTER_FIELD.pets]),
+      // Legacy 3 durumlu bool: null = farketmez, true = sahip olanlar,
+      // false = olmayanlar. Tür seçimi varken null'a çekiliyor ki iki mod
+      // aynı anda görünmesin (bkz. petMode).
+      hasPets:
+        typeof f[FILTER_FIELD.hasPets] === "boolean"
+          ? f[FILTER_FIELD.hasPets]
+          : null,
       // enumName ("Second") ya da int (2) — ikisi de kabul (bkz. toYearList).
       yearOfStudy: toYearList(f[FILTER_FIELD.yearOfStudy]),
+      // Dil ve dini görüş — diğer enum çoklu seçimleriyle aynı biçim
+      // belirsizliği (string / { enumName } / int), aynı normalize.
+      language: toEnumList(f[FILTER_FIELD.language]),
+      religion: toEnumList(f[FILTER_FIELD.religion]),
       // Hangi filtreler "olmazsa olmaz" işaretli. Mevcut kullanıcılarda
       // migration altısını da işaretlemiş — dolu filtrede bu bilinçli (eski
       // davranış "hepsi katı" idi), boş filtrede ise aşağıda eleniyor.
       dealbreakers: toDealbreakerList(f.dealbreakers),
       // Clamp'lenmiş değer Apply payload'ına da gider — kullanıcı slider'a hiç
-      // dokunmadan kaydetse bile backend'e "sınırsız" sentinel'i (20000) geri
-      // yazılmaz. Tavan artık tier'dan BAĞIMSIZ: free'de de tam aralık.
-      maxDistance: clampKm(f.maxDistance, MAX_DISTANCE_KM),
+      // dokunmadan kaydetse bile backend'e eski "sınırsız" sentinel'i (20000)
+      // geri yazılmaz; o değer artık 400 alıyor (Range(1,100)).
+      //
+      // Tavan TIER'A BAĞLI: DB'de 100 (ya da migration öncesi 300) km taşıyan
+      // free kullanıcı slider'da ham değeri değil, backend'in fiilen uyguladığı
+      // clamp'lenmiş değeri görmeli (sözleşme §5).
+      maxDistance: clampKm(f.maxDistance, tierMaxKm),
     };
-    return sanitizeForTier({
+    // NOT: sanitizeForTier BURADA çağrılmıyor — free kullanıcı da kayıtlı
+    // premium seçimlerini görsün (bkz. pausedPremiumFilters). Temizlik yalnız
+    // Apply'da, payload üretilirken yapılıyor.
+    return {
       ...normalized,
+      // Çelişkiyi okurken kes: backend `pets` doluyken `hasPets`i zaten yok
+      // sayıyor, ama ikisi de dolu gelirse (eski kayıt + yeni seçim) ekranda
+      // iki mod birden seçili görünürdü. Tür listesi kazanır.
+      hasPets: normalized.pets.length > 0 ? null : normalized.hasPets,
       // Anahtar kapalı başlasın: değeri olmayan filtrenin işareti düşürülüyor.
       // activeDealbreakers normalize EDİLMİŞ shape'i okuyor (local anahtarlar),
       // o yüzden burada — spread'in içinde değil.
       dealbreakers: activeDealbreakers(normalized),
-    });
+    };
   };
 
   const [local, setLocal] = useState(() => toLocalState(filters));
   const [cityPickerVisible, setCityPickerVisible] = useState(false);
+  // Dil listesi 34 değer — pill ızgarası yerine aranabilir picker (profil
+  // düzenlemedeki dil seçiciyle aynı bileşen, farklı başlık).
+  const [languagePickerVisible, setLanguagePickerVisible] = useState(false);
   // Tek picker instance'ı iki listeye de hizmet ediyor. Açık/kapalı ile hedef
   // liste AYRI tutuluyor: gorhom dismiss animasyonlu (~300ms) ve hedefi tek bir
   // nullable state'te tutarsak kapanış sırasında null'a düşüp başlık diğer
@@ -1772,7 +1888,41 @@ export default function FilterModal({
   // tekrarlanmıyor.
   const zodiacsQuery = useZodiacs();
   const smokingQuery = useSmokingStatuses();
-  const usagePurposesQuery = useUsagePurposes();
+  const alcoholQuery = useAlcoholUsages();
+  const petsQuery = usePets();
+  const religiousViewsQuery = useReligiousViews();
+  const languagesQuery = useLanguages();
+
+  // Filtre listesinden None/Allergic/Other düşürülüyor; kalanların SIRASI
+  // backend'den geldiği gibi korunuyor (gerçek türler zaten başta geliyor).
+  const petOptions = useMemo(
+    () =>
+      (petsQuery.data ?? []).filter(
+        (opt: any) => !FILTER_HIDDEN_PETS.has(opt?.enumName),
+      ),
+    [petsQuery.data],
+  );
+
+  // Burçlar backend sırasında DEĞİL, burç sırasında (Koç→Balık) listeleniyor.
+  const zodiacOptions = useMemo(
+    () => sortZodiacOptions(zodiacsQuery.data ?? []),
+    [zodiacsQuery.data],
+  );
+
+  // "Belirtmek istemiyorum" filtre seçeneği olarak listelenmiyor
+  // (bkz. FILTER_HIDDEN_RELIGIOUS_VIEWS).
+  const religiousViewOptions = useMemo(
+    () =>
+      (religiousViewsQuery.data ?? []).filter(
+        (opt: any) => !FILTER_HIDDEN_RELIGIOUS_VIEWS.has(opt?.enumName),
+      ),
+    [religiousViewsQuery.data],
+  );
+
+  const languageOptions = useMemo(
+    () => languagesQuery.data ?? [],
+    [languagesQuery.data],
+  );
 
   const universitiesQuery = useUniversities();
   const universityOptions = useMemo(
@@ -1948,6 +2098,17 @@ export default function FilterModal({
   // gidiyor (Görünürlük/hobi bölümleriyle aynı davranış).
   const premiumFiltersLocked = !isPremium;
 
+  // Premium'u biten kullanıcının kayıtlı premium filtreleri: sunucuda duruyor
+  // ama deste onlara göre süzülmüyor. Ekranda seçimler görünmeye devam ediyor
+  // (toLocalState artık temizlemiyor), bu şerit de aradaki farkı söylüyor —
+  // "aktifmiş gibi" göstermek sessiz bir yalan olurdu.
+  const premiumFiltersPaused = useMemo(
+    () => !isPremium && hasPremiumValue(local),
+    // hasPremiumValue `filters`ı okuyor (gate listeleri); ikisi de bağımlılıkta.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+    [isPremium, local, filters],
+  );
+
   const dealbreakers: string[] = useMemo(
     () => local?.dealbreakers ?? [],
     [local?.dealbreakers],
@@ -2011,12 +2172,101 @@ export default function FilterModal({
     }));
   };
 
-  // `hasPets` 3 durumlu bool: aynı seçeneğe tekrar basmak "farketmez"e döner.
-  const setHasPets = (next: boolean | null) => {
+  // ─── Evcil hayvan: tek seçim grubu, dört mod ──────────────────────────────
+  // Legacy `hasPets` ile spesifik `pets` YAN YANA BAĞIMSIZ gösterilmiyor:
+  // kullanıcı "kedisi olsun" + "hayvanı olmasın" gibi çelişkili bir çift
+  // kurabilir ve backend `hasPets`i sessizce düşürdüğü için neden istediği
+  // sonucu almadığını anlayamazdı. Tek grup → çelişki UI seviyesinde imkânsız.
+  //
+  //   any      → pets: [],        hasPets: null
+  //   has      → pets: [],        hasPets: true
+  //   hasNot   → pets: [],        hasPets: false
+  //   specific → pets: [...],     hasPets: null
+  type PetMode = "any" | "has" | "hasNot" | "specific";
+
+  // "Belirli türler" henüz hiç tür seçilmeden de seçili durabilmeli (chip'ler
+  // açılsın diye), o yüzden mod state'ten türetilemiyor — ayrı bayrak.
+  // Ham `filters` yerine normalize edilmiş `local`den okunuyor: free kullanıcıda
+  // tür listesi sanitize'da temizleniyor, ham yanıttan bakılsa mod boş chip
+  // listesiyle "Belirli türler"de açılırdı.
+  const [petSpecificOpen, setPetSpecificOpen] = useState(
+    () => (local?.pets?.length ?? 0) > 0,
+  );
+
+  const petTypes: EnumValue[] = useMemo(() => local?.pets ?? [], [local?.pets]);
+
+  const petMode: PetMode =
+    petSpecificOpen || petTypes.length > 0
+      ? "specific"
+      : local?.hasPets === true
+        ? "has"
+        : local?.hasPets === false
+          ? "hasNot"
+          : "any";
+
+  const setPetMode = (mode: PetMode) => {
+    setPetSpecificOpen(mode === "specific");
     setLocal((prev: any) => ({
       ...prev,
-      pets: prev?.pets === next ? null : next,
+      // Mod değişince diğer alan HER ZAMAN temizleniyor; ikisi bir arada
+      // dolu kalırsa backend `hasPets`i yok sayar ve UI yalan söylemiş olur.
+      pets: mode === "specific" ? (prev?.pets ?? []) : [],
+      hasPets: mode === "has" ? true : mode === "hasNot" ? false : null,
     }));
+  };
+
+  // Tür chip'leri: çoklu seçim, OR semantiği ("kedisi VEYA köpeği olan").
+  // Sayı sınırı yok — backend listeyi olduğu gibi kabul ediyor.
+  const togglePetType = (opt: any) => {
+    setLocal((prev: any) => {
+      const current: EnumValue[] = prev?.pets ?? [];
+      return {
+        ...prev,
+        pets: isEnumSelected(current, opt)
+          ? current.filter((v) => v !== opt.enumName && v !== opt.id)
+          : [...current, opt.enumName],
+      };
+    });
+  };
+
+  // ─── Dil ("en az birini konuşsun") ────────────────────────────────────────
+  // Diğer premium enum filtreleriyle aynı state şekli (EnumValue[]) ama seçim
+  // pill ızgarasından değil aranabilir picker'dan geliyor: 34 seçenek modalı
+  // gereksiz uzatıyordu ve kullanıcı kendi dillerini de aynı picker'dan seçti.
+  const selectedLanguages: EnumValue[] = useMemo(
+    () => local?.language ?? [],
+    [local?.language],
+  );
+
+  // Picker enumName ile çalışıyor; local state int de taşıyabiliyor (bkz.
+  // toEnumList), o yüzden seçili değerler option listesi üzerinden eşleniyor.
+  // Referans sabitliği önemli: LanguagePickerModal bu diziyi effect
+  // bağımlılığında okuyor, her render'da yenisi üretilirse açık picker'daki
+  // seçim sıfırlanır.
+  const selectedLanguageEnums: string[] = useMemo(
+    () =>
+      languageOptions
+        .filter((opt: any) => isEnumSelected(selectedLanguages, opt))
+        .map((opt: any) => opt.enumName),
+    [languageOptions, selectedLanguages],
+  );
+
+  // Satırda gösterilen seçili dil pill'leri. Sayaç ham local listeden (option
+  // listesi henüz gelmemişken de doğru sayıyı söylesin), pill'ler eşleşen
+  // option'lardan geliyor.
+  const selectedLanguageOptions = useMemo(
+    () =>
+      languageOptions.filter((opt: any) =>
+        isEnumSelected(selectedLanguages, opt),
+      ),
+    [languageOptions, selectedLanguages],
+  );
+
+  // Overwrite semantiği: picker'ın döndürdüğü liste tercihin TAMAMI, boş dizi
+  // de geçerli bir sonuç ("filtreyi kaldır").
+  const onLanguageConfirm = (enumNames: string[]) => {
+    setLanguagePickerVisible(false);
+    setLocal((prev: any) => ({ ...prev, language: enumNames }));
   };
 
   // Boş dizi = "temizle" (overwrite semantiği), "değiştirme" değil — üç
@@ -2037,7 +2287,20 @@ export default function FilterModal({
   // Modal her açıldığında local state'i server state'inden (filters) sıfırla.
   // Apply'a basmadan kapatıp tekrar açan kullanıcı stale değer görmesin.
   useEffect(() => {
-    if (visible) setLocal(toLocalState(filters));
+    if (!visible) return;
+    const next = toLocalState(filters);
+    setLocal(next);
+    // Pet modu local state'ten TAM türetilemiyor (tür seçmeden "Belirli
+    // türler"de durulabiliyor); server'dan gelen seçime göre sıfırlanıyor.
+    setPetSpecificOpen((next?.pets?.length ?? 0) > 0);
+    // `isPremium` bağımlılıkta: tier oturum içinde değişirse (satın alma) ekran
+    // server state'iyle yeniden hizalansın — mesafe tavanı da (tierMaxKm) ondan
+    // türüyor, satın alma sonrası 50 → 100 burada yeniden clamp'leniyor.
+    //
+    // toLocalState bilerek listede YOK: her render'da yeniden yaratılan bir
+    // fonksiyon, effect'i her render'da çalıştırıp kullanıcının kaydetmediği
+    // seçimlerini silerdi. Okuduğu reaktif değerlerin (filters, tierMaxKm←
+    // isPremium) hepsi zaten listede.
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [visible, filters, isPremium]);
 
@@ -2063,9 +2326,95 @@ export default function FilterModal({
     setLocal((prev: any) => ({ ...prev, preferredCity: null }));
   };
 
-  // Header'ın solundaki "Sıfırla" — tüm keşif filtrelerini varsayılana döndürür.
-  // Yalnızca LOCAL state'e yazıyor: Uygula'ya basmadan kapatan kullanıcı hiçbir
-  // şey kaybetmez, mevcut düzenle-sonra-uygula modeliyle tutarlı.
+  // Kaydetme payload'ı TEK yerde kuruluyor: hem "Uygula" hem "Sıfırla" buradan
+  // geçiyor. State parametre olarak alınıyor çünkü sıfırlama setLocal'ın bir
+  // sonraki render'ını bekleyemez — yeni state doğrudan veriliyor.
+  const applyFilters = (state: any) => {
+    Keyboard.dismiss();
+    // `dealbreakers` spread'in DIŞINDA tutuluyor: local state onu taşıyor ve
+    // koşulsuz yayılırsa free kullanıcıda boş dizi olarak gider — backend
+    // semantiğinde bu "hepsini esnet" demek, yani kullanıcının kayıtlı
+    // katılık ayarını habersiz sıfırlar. Aşağıda yalnızca premium'da,
+    // kanonik adlara indirgenmiş halde ekleniyor.
+    const { dealbreakers: dealbreakersFromState, ...sanitized } =
+      sanitizeForTier(state) ?? {};
+    // Tür listesi iki alanı birden belirliyor (dolu → legacy `hasPets`
+    // null'a düşer), o yüzden payload'dan önce bir kez hesaplanıyor.
+    const petTypesOut = toEnumList(sanitized?.pets);
+    // Yaş filtresi UI'dan kaldırıldı — backend'e her zaman tüm yaşları
+    // kapsayan default'u gönder.
+    onSave({
+      ...sanitized,
+      // Alanı hiç göndermemek "değiştirme", dolu dizi ise "bu değere ayarla"
+      // demek. Boş dizi gönderilmiyor — interestedInEmpty guard'ı Apply'ı
+      // kilitliyor (bkz. yukarıdaki not: flags 0 = hesap görünmez olur).
+      interestedIn: state.interestedIn || [],
+      ageRangeMin: DEFAULT_AGE_RANGE.min,
+      ageRangeMax: DEFAULT_AGE_RANGE.max,
+      // Üniversite listeleri OVERWRITE semantiğiyle yazılıyor: backend her
+      // UpdateFilters'ta premium alanların tamamını gönderilen state'e göre
+      // yeniden kuruyor. Bu yüzden ekrandaki güncel state'in TAMAMI her
+      // kaydetmede gitmeli — alanı atlamak listeyi silmekle aynı şey.
+      // PUT adı `universityDomains`; eşleme useSaveFilters'ta (şehirle aynı).
+      preferredUniversityDomains: toDomainList(
+        sanitized?.preferredUniversityDomains,
+      ),
+      visibleOnlyToUniversityDomains: toDomainList(
+        sanitized?.visibleOnlyToUniversityDomains,
+      ),
+      hiddenFromUniversityDomains: toDomainList(
+        sanitized?.hiddenFromUniversityDomains,
+      ),
+      // Hobiler de OVERWRITE: boş dizi = tercihi temizle. Bu yüzden koşulsuz
+      // gönderiliyor, aksi halde kullanıcı seçimini silemezdi.
+      preferredHobbies: toHobbyList(sanitized?.preferredHobbies),
+      // İlişki niyetleri de OVERWRITE: boş dizi = tercihi temizle.
+      relationshipIntents: toIntentList(sanitized?.relationshipIntents),
+      // Dealbreaker'lı premium filtreler. Local anahtarlar → API adları
+      // SADECE burada eşleniyor (FILTER_FIELD); backend adı değiştirirse
+      // düzeltilecek tek yer orası. Hepsi OVERWRITE: boş dizi / null =
+      // tercihi temizle.
+      premiumFilters: {
+        [FILTER_FIELD.heightMin]: sanitized?.heightMin ?? null,
+        [FILTER_FIELD.heightMax]: sanitized?.heightMax ?? null,
+        [FILTER_FIELD.zodiac]: toEnumList(sanitized?.zodiac),
+        [FILTER_FIELD.smoking]: toEnumList(sanitized?.smoking),
+        // Alkol tercihini BELİRTMEMİŞ adaylar filtre açıkken eleniyor
+        // (sigarayla birebir aynı semantik) — bölüm açıklaması bunu söylüyor.
+        [FILTER_FIELD.alcohol]: toEnumList(sanitized?.alcohol),
+        // Tür bazlı seçim; boş dizi = tercihi temizle.
+        [FILTER_FIELD.pets]: petTypesOut,
+        // Legacy bool? — spesifik seçim varken KESİNLİKLE null gidiyor.
+        // Backend zaten `pets` kazandırıp bunu düşürüyor; çelişkili çifti
+        // hiç göndermemek, "gönderdim ama yok sayıldı" belirsizliğini de
+        // ortadan kaldırıyor.
+        [FILTER_FIELD.hasPets]:
+          petTypesOut.length > 0 || typeof sanitized?.hasPets !== "boolean"
+            ? null
+            : sanitized.hasPets,
+        // Yazarken int gidiyor (backend kabul ediyor); yanıtta enumName
+        // döndüğü için OKUMA tarafı ayrı parse ediyor (bkz. toYearList).
+        [FILTER_FIELD.yearOfStudy]: toIntList(sanitized?.yearOfStudy),
+        // Dil (OR: en az biri) ve dini görüş — ikisi de hard filtre ve
+        // OVERWRITE: boş dizi = tercihi temizle.
+        [FILTER_FIELD.language]: toEnumList(sanitized?.language),
+        [FILTER_FIELD.religion]: toEnumList(sanitized?.religion),
+      },
+      // `dealbreakers` semantiği DİĞER premium alanlardan FARKLI:
+      //   yok/null → değiştirme, [] → hepsini esnet, [...] → tam liste.
+      // Free kullanıcıda hiç gönderilmiyor (premium alan, 403 döner);
+      // premium'da TAM liste gidiyor — kısmi güncelleme yok. Ekranda ne
+      // görünüyorsa o kaydediliyor: boş filtrenin işareti okurken zaten
+      // düşürüldü, burada kalan tek şey kullanıcının kendi tercihi.
+      ...(isPremium
+        ? { dealbreakers: toDealbreakerList(dealbreakersFromState) }
+        : {}),
+    });
+  };
+
+  // Header'ın solundaki "Sıfırla" — tüm keşif filtrelerini varsayılana döndürür
+  // VE hemen kaydedip modalı kapatır (kapatma onSave başarılı olunca parent'ta
+  // oluyor, hata durumunda modal açık kalıp uyarı gösteriliyor).
   // İki şeye bilerek dokunulmuyor:
   //  - interestedIn: boş dizi Apply'ı kilitliyor (bkz. interestedInEmpty) ve
   //    backend semantiğinde flags 0 = hesap görünmez.
@@ -2073,9 +2422,10 @@ export default function FilterModal({
   //    değil karşı tarafınkini etkiliyor), sessizce kaldırılmamalı.
   const resetAllFilters = () => {
     Keyboard.dismiss();
-    setLocal((prev: any) => ({
-      ...prev,
-      maxDistance: MAX_DISTANCE_KM,
+    setPetSpecificOpen(false);
+    const reset = {
+      ...local,
+      maxDistance: tierMaxKm,
       preferredCity: null,
       preferredUniversityDomains: [],
       preferredHobbies: [],
@@ -2084,12 +2434,21 @@ export default function FilterModal({
       heightMax: null,
       zodiac: [],
       smoking: [],
-      pets: null,
-      usagePurpose: [],
+      alcohol: [],
+      pets: [],
+      hasPets: null,
       yearOfStudy: [],
+      language: [],
+      religion: [],
       // Değeri olmayan filtrenin katılık işareti de anlamsız kalır.
       dealbreakers: [],
-    }));
+    };
+    setLocal(reset);
+    // Kayıt sürerken ikinci istek atma; interestedIn boşken payload geçersiz
+    // (Apply de o durumda kilitli) — o iki halde yalnızca local sıfırlama olur,
+    // modal açık kalır.
+    if (saving || (reset.interestedIn || []).length === 0) return;
+    applyFilters(reset);
   };
 
   // Register (interestedInSchema) en az 1 seçim şart koşuyor; filtre ekranı da
@@ -2246,21 +2605,28 @@ export default function FilterModal({
     </View>
   );
 
-  // Burç / Sigara / Kullanım amacı — üçü de düz enum çoklu seçimi, aynı pill
-  // grubundan geçiyor, o yüzden tek gövde. Ama tek bir `.map()` ile ARD ARDA
-  // çizilmiyorlar: premium grubu artık önem sırasına dizili (kullanım amacı
-  // üniversitenin hemen altında, burç hard filtrelerin en altında), yani
-  // aralarına başka bölümler giriyor. Sıra değişecekse çağrı yerlerini oynat,
-  // burayı değil. Evcil hayvan bu gruba DAHİL DEĞİL — o enum listesi değil,
-  // `hasPets: bool?` üçlü durumu, kendi bölümünde.
+  // Burç / Sigara / Alkol / Dini görüş — hepsi düz enum çoklu seçimi, aynı
+  // pill grubundan geçiyor, o yüzden tek gövde. Ama tek bir `.map()` ile ARD
+  // ARDA çizilmiyorlar: premium grubu önem sırasına dizili (burç hard
+  // filtrelerin en altında), yani aralarına başka bölümler giriyor. Sıra
+  // değişecekse çağrı yerlerini oynat, burayı değil. Evcil hayvan bu gruba DAHİL DEĞİL: tür listesi enum çoklu
+  // seçimi ama önce legacy `hasPets` moduna karar verilmesi gerekiyor, o yüzden
+  // kendi bölümünde (bkz. setPetMode).
+  //
+  // `extra.options` — backend listesinden bazı değerleri düşüren bölümler için
+  // (dini görüşte PreferNotToSay). `extra.note` — pill'lerin ALTINDA, yalnız
+  // seçim varken çıkan uyarı satırı (evcil hayvandaki orNote deseni): filtrenin
+  // sonuç üzerindeki yan etkisini seçim yapıldığı anda söylüyor.
   const renderEnumFilter = (
     key: DealbreakerKey,
     query: any,
     titleKey: string,
     descKey: string,
     getIcon: (opt: any) => any,
+    extra?: { options?: any[]; note?: string },
   ) => {
-    const options = query.data ?? [];
+    const options = extra?.options ?? query.data ?? [];
+    const selected: EnumValue[] = local?.[key] ?? [];
     return (
       <PremiumFilterSection
         title={t(titleKey)}
@@ -2285,12 +2651,26 @@ export default function FilterModal({
               : t("discover.filters.enumUnavailable")}
           </Text>
         ) : (
-          <EnumPillGroup
-            options={options}
-            selected={local?.[key] ?? []}
-            onToggle={(opt: any) => toggleEnumValue(key, opt)}
-            getIcon={getIcon}
-          />
+          <>
+            <EnumPillGroup
+              options={options}
+              selected={selected}
+              onToggle={(opt: any) => toggleEnumValue(key, opt)}
+              getIcon={getIcon}
+            />
+            {extra?.note && selected.length > 0 ? (
+              <Text
+                style={{
+                  color: colors.textMuted,
+                  fontSize: 13,
+                  fontWeight: "500",
+                  marginTop: 10,
+                }}
+              >
+                {extra.note}
+              </Text>
+            ) : null}
+          </>
         )}
       </PremiumFilterSection>
     );
@@ -2306,72 +2686,7 @@ export default function FilterModal({
       leftLabel={t('discover.filters.reset')}
       onLeftPress={resetAllFilters}
       actionLabel={t('discover.filters.apply')}
-      onAction={() => {
-        Keyboard.dismiss();
-        // `dealbreakers` spread'in DIŞINDA tutuluyor: local state onu taşıyor ve
-        // koşulsuz yayılırsa free kullanıcıda boş dizi olarak gider — backend
-        // semantiğinde bu "hepsini esnet" demek, yani kullanıcının kayıtlı
-        // katılık ayarını habersiz sıfırlar. Aşağıda yalnızca premium'da,
-        // kanonik adlara indirgenmiş halde ekleniyor.
-        const { dealbreakers: dealbreakersFromState, ...sanitized } =
-          sanitizeForTier(local) ?? {};
-        // Yaş filtresi UI'dan kaldırıldı — backend'e her zaman tüm yaşları
-        // kapsayan default'u gönder.
-        onSave({
-          ...sanitized,
-          // Alanı hiç göndermemek "değiştirme", dolu dizi ise "bu değere ayarla"
-          // demek. Boş dizi gönderilmiyor — interestedInEmpty guard'ı Apply'ı
-          // kilitliyor (bkz. yukarıdaki not: flags 0 = hesap görünmez olur).
-          interestedIn: local.interestedIn || [],
-          ageRangeMin: DEFAULT_AGE_RANGE.min,
-          ageRangeMax: DEFAULT_AGE_RANGE.max,
-          // Üniversite listeleri OVERWRITE semantiğiyle yazılıyor: backend her
-          // UpdateFilters'ta premium alanların tamamını gönderilen state'e göre
-          // yeniden kuruyor. Bu yüzden ekrandaki güncel state'in TAMAMI her
-          // kaydetmede gitmeli — alanı atlamak listeyi silmekle aynı şey.
-          // PUT adı `universityDomains`; eşleme useSaveFilters'ta (şehirle aynı).
-          preferredUniversityDomains: toDomainList(
-            sanitized?.preferredUniversityDomains,
-          ),
-          visibleOnlyToUniversityDomains: toDomainList(
-            sanitized?.visibleOnlyToUniversityDomains,
-          ),
-          hiddenFromUniversityDomains: toDomainList(
-            sanitized?.hiddenFromUniversityDomains,
-          ),
-          // Hobiler de OVERWRITE: boş dizi = tercihi temizle. Bu yüzden koşulsuz
-          // gönderiliyor, aksi halde kullanıcı seçimini silemezdi.
-          preferredHobbies: toHobbyList(sanitized?.preferredHobbies),
-          // İlişki niyetleri de OVERWRITE: boş dizi = tercihi temizle.
-          relationshipIntents: toIntentList(sanitized?.relationshipIntents),
-          // Dealbreaker'lı premium filtreler. Local anahtarlar → API adları
-          // SADECE burada eşleniyor (FILTER_FIELD); backend adı değiştirirse
-          // düzeltilecek tek yer orası. Hepsi OVERWRITE: boş dizi / null =
-          // tercihi temizle.
-          premiumFilters: {
-            [FILTER_FIELD.heightMin]: sanitized?.heightMin ?? null,
-            [FILTER_FIELD.heightMax]: sanitized?.heightMax ?? null,
-            [FILTER_FIELD.zodiac]: toEnumList(sanitized?.zodiac),
-            [FILTER_FIELD.smoking]: toEnumList(sanitized?.smoking),
-            // bool? — enum listesi değil; null = farketmez.
-            [FILTER_FIELD.pets]:
-              typeof sanitized?.pets === "boolean" ? sanitized.pets : null,
-            [FILTER_FIELD.usagePurpose]: toEnumList(sanitized?.usagePurpose),
-            // Yazarken int gidiyor (backend kabul ediyor); yanıtta enumName
-            // döndüğü için OKUMA tarafı ayrı parse ediyor (bkz. toYearList).
-            [FILTER_FIELD.yearOfStudy]: toIntList(sanitized?.yearOfStudy),
-          },
-          // `dealbreakers` semantiği DİĞER premium alanlardan FARKLI:
-          //   yok/null → değiştirme, [] → hepsini esnet, [...] → tam liste.
-          // Free kullanıcıda hiç gönderilmiyor (premium alan, 403 döner);
-          // premium'da TAM liste gidiyor — kısmi güncelleme yok. Ekranda ne
-          // görünüyorsa o kaydediliyor: boş filtrenin işareti okurken zaten
-          // düşürüldü, burada kalan tek şey kullanıcının kendi tercihi.
-          ...(isPremium
-            ? { dealbreakers: toDealbreakerList(dealbreakersFromState) }
-            : {}),
-        });
-      }}
+      onAction={() => applyFilters(local)}
       actionDisabled={interestedInEmpty}
       actionLoading={saving}
       snapPoints={["90%"]}
@@ -2379,19 +2694,61 @@ export default function FilterModal({
       // sıkışmasın, sonraki section'lar nefes alsın.
       contentContainerStyle={{ paddingBottom: 80 }}
     >
-      {/* Maksimum Mesafe — tier'dan bağımsız, free'de de tam aralık açık. */}
+      {/* Maksimum Mesafe — tavan tier'a bağlı (free 50 / premium 100).
+          Bölüm KİLİTLİ DEĞİL: free kullanıcı da mesafe seçiyor, yalnız üst
+          sınırı düşük. O yüzden başlıkta kilit ikonu yok; sınır slider'ın
+          kendi cap'i (shake) + altındaki şeritle anlatılıyor. */}
       <FilterSection
         title={t('discover.filters.maxDistance.title')}
         description={t('discover.filters.maxDistance.desc')}
         marginTop={20}
       />
       <DistanceCircle
-        value={clampKm(local.maxDistance, MAX_DISTANCE_KM)}
-        userMaxKm={MAX_DISTANCE_KM}
+        value={clampKm(local.maxDistance, tierMaxKm)}
+        userMaxKm={tierMaxKm}
         onChange={(v: number) =>
           setLocal((p: any) => ({ ...p, maxDistance: v }))
         }
       />
+
+      {/* Free kullanıcı 50 km'de shake yiyor; sebebini söylemezsek slider bozuk
+          sanılıyor. Dokunuş paywall'a gidiyor (premiumFiltersPaused şeridiyle
+          aynı desen). */}
+      {!isPremium && (
+        <TouchableOpacity
+          activeOpacity={0.7}
+          onPress={openPremiumPaywall}
+          hitSlop={10}
+          style={{
+            marginTop: 12,
+            flexDirection: "row",
+            alignItems: "center",
+            gap: 8,
+          }}
+        >
+          <SFIcon
+            name="lock.fill"
+            fallback={Lock}
+            size={16}
+            color={colors.textSecondary}
+            strokeWidth={2}
+            weight="semibold"
+          />
+          <Text
+            style={{
+              flex: 1,
+              color: colors.textSecondary,
+              fontSize: 13,
+              fontWeight: "400",
+            }}
+          >
+            {t("discover.filters.maxDistance.freeCap", {
+              km: FREE_MAX_DISTANCE_KM,
+              premiumKm: PREMIUM_MAX_DISTANCE_KM,
+            })}
+          </Text>
+        </TouchableOpacity>
+      )}
 
       {/* İlgilendiğim cinsiyet — eskiden profil düzenlemedeydi, artık filtre.
           Free alan: premium gate yok. Cinsiyet tercihinin TEK kaynağı burası;
@@ -2449,18 +2806,67 @@ export default function FilterModal({
 
 
       {/* Premium Filtreler — buradan aşağısı tamamen premium ve ÖNEM SIRASINA
-          dizili: üniversite → kullanım amacı → şehir → boy → sınıf → sigara →
-          evcil hayvan → burç. Bölüm eklerken/oynatırken bu sırayı koru.
-          Toggle'lı olanlar hard filtre; hobiler ve ilişki niyetleri toggle'sız
-          çünkü onlar eleme yapmıyor, skor boost'u — kendi açıklamaları bunu
-          söylüyor, o yüzden hard filtrelerin tamamından SONRA geliyorlar.
+          dizili: üniversite → ilişki niyeti → şehir → sınıf → boy → hobiler →
+          dil → sigara → alkol → dini görüş → evcil hayvan → burç.
+          Sıra kullanıcının eş seçerken en çok umursadığı alanlara göre; eleme
+          yapan hard filtreler ile skor boost'u olan iki bölüm (ilişki niyeti,
+          hobiler) bilinçli olarak İÇ İÇE — "kimi arıyorum" sorusuna en doğrudan
+          cevap veren bölümler yukarıda dursun diye. Dini görüş yine
+          sigara/alkolün devamında, çünkü aynı sınıfta (yaşam tarzı / değerler)
+          ve aynı "belirtmemişleri eler" yan etkisini taşıyor.
+          Toggle'lı olanlar hard filtre; ilişki niyeti ve hobiler toggle'sız
+          çünkü onlar eleme yapmıyor — kendi açıklamaları bunu söylüyor.
           Görünürlük ise en sonda: metni "yukarıdaki filtrelerden farklı
-          olarak" diyor, yani konumu kopyaya bağlı. */}
+          olarak" diyor, yani konumu kopyaya bağlı.
+          Bölüm eklerken/oynatırken bu sırayı koru. */}
       <PremiumGroupHeader
         title={t("discover.filters.premiumFilters.title")}
         description={t("discover.filters.premiumFilters.description")}
         locked={premiumFiltersLocked}
       />
+
+      {/* Premium bitmiş ama kayıtlı filtreler duruyor: aşağıdaki seçimler
+          ekranda görünür (silinmediler, backend free kullanıcıda premium
+          bloğunu yazmıyor) ama desteye UYGULANMIYOR. Şerit bunu söylüyor;
+          dokunuş paywall'a gidiyor. */}
+      {premiumFiltersPaused && (
+        <TouchableOpacity
+          activeOpacity={0.7}
+          onPress={openPremiumPaywall}
+          style={{
+            marginTop: 16,
+            flexDirection: "row",
+            alignItems: "center",
+            gap: 10,
+            paddingVertical: 12,
+            paddingHorizontal: 14,
+            borderRadius: 16,
+            borderCurve: "continuous",
+            backgroundColor: colors.surface,
+            borderWidth: 0.5,
+            borderColor: colors.hairline,
+          }}
+        >
+          <SFIcon
+            name="pause.circle"
+            fallback={PauseCircle}
+            size={18}
+            color={colors.textSecondary}
+            strokeWidth={2}
+            weight="semibold"
+          />
+          <Text
+            style={{
+              flex: 1,
+              color: colors.textSecondary,
+              fontSize: 13,
+              fontWeight: "400",
+            }}
+          >
+            {t("discover.filters.premiumFilters.paused")}
+          </Text>
+        </TouchableOpacity>
+      )}
 
       {/* Üniversite ("ben kimi göreyim") — premium-only, ÇOKLU seçim (max 3),
           HER ZAMAN katı: aday tükense bile gevşemez, o yüzden dealbreaker
@@ -2477,7 +2883,7 @@ export default function FilterModal({
             locked={universityLocked}
           />
           <VisibilityListLabel count={preferredUniversityDomains.length} />
-          <DomainSelectRow
+          <SelectRow
             sfIcon={UNIVERSITY_ICON}
             lucideIcon={GraduationCap}
             value={summarizeDomains(preferredUniversityDomains)}
@@ -2489,16 +2895,14 @@ export default function FilterModal({
         </View>
       </PremiumGate>
 
-      {/* Kullanım amacı — hard filtrelerin en üstünde, çünkü "karşındaki neden
-          burada" uyumu en çok belirleyen sinyal; boy/burç gibi alanlardan önce
-          gelmeli. */}
-      {renderEnumFilter(
-        "usagePurpose",
-        usagePurposesQuery,
-        "discover.filters.usagePurpose.title",
-        "discover.filters.usagePurpose.description",
-        getUsagePurposeIcon,
-      )}
+      {/* Kullanım amacı filtresi KALDIRILDI: alan üründen çıktı, endpoint boş
+          liste dönüyor ve backend `usagePurposes` payload'ını yok sayıyor.
+          Aynı soruyu soran "İlişki Niyeti" filtresi hemen aşağıda. */}
+
+      {/* İlişki niyeti — hard filtre DEĞİL (skor boost'u) ama "kimi arıyorum"
+          sorusunun en doğrudan cevabı, o yüzden üniversitenin hemen altında.
+          Gövdesi yukarıda tanımlı (intentsSection); burada yalnızca konumu var. */}
+      {intentsSection}
 
       {/* Şehir — premium-only, HER ZAMAN katı (aday tükense bile gevşemez,
           o yüzden dealbreaker toggle'ı yok). Grubun geri kalanıyla aynı kilit
@@ -2519,7 +2923,7 @@ export default function FilterModal({
               borderCurve: "continuous",
               overflow: "hidden",
               borderWidth: 0.5,
-              borderColor: "rgba(255,255,255,0.1)",
+              borderColor: colors.hairline,
               paddingHorizontal: 16,
               paddingVertical: 18,
               flexDirection: "row",
@@ -2582,26 +2986,9 @@ export default function FilterModal({
         </View>
       </PremiumGate>
 
-      {/* Boy — alt sınır. "Farketmez" ayrı bir durum: filtre hiç uygulanmaz. */}
-      <PremiumFilterSection
-        title={t("discover.filters.height.title")}
-        description={t("discover.filters.height.description")}
-        locked={premiumFiltersLocked}
-        onLockedPress={openPremiumPaywall}
-        capable={dealbreakerCapable("height")}
-        dealbreakerOn={dealbreakers.includes(DEALBREAKER_FIELDS.height)}
-        onToggleDealbreaker={() => toggleDealbreaker("height")}
-        testID={`dealbreaker-${DEALBREAKER_FIELDS.height}`}
-      >
-        <HeightRangeSlider
-          min={local?.heightMin ?? null}
-          max={local?.heightMax ?? null}
-          onChange={setHeightRange}
-        />
-      </PremiumFilterSection>
-
       {/* Sınıf — int (0 = hazırlık, 1..6). Enum endpoint'i yok, kayıt
-          ekranıyla (RegisterStep8) aynı aralık. */}
+          ekranıyla (RegisterStep8) aynı aralık. Üniversite/şehirle aynı
+          "kim, nerede" sorusunun devamı olduğu için boydan önce. */}
       <PremiumFilterSection
         title={t("discover.filters.yearOfStudy.title")}
         description={t("discover.filters.yearOfStudy.description")}
@@ -2644,6 +3031,83 @@ export default function FilterModal({
         </View>
       </PremiumFilterSection>
 
+      {/* Boy — alt sınır. "Farketmez" ayrı bir durum: filtre hiç uygulanmaz. */}
+      <PremiumFilterSection
+        title={t("discover.filters.height.title")}
+        description={t("discover.filters.height.description")}
+        locked={premiumFiltersLocked}
+        onLockedPress={openPremiumPaywall}
+        capable={dealbreakerCapable("height")}
+        dealbreakerOn={dealbreakers.includes(DEALBREAKER_FIELDS.height)}
+        onToggleDealbreaker={() => toggleDealbreaker("height")}
+        testID={`dealbreaker-${DEALBREAKER_FIELDS.height}`}
+      >
+        <HeightRangeSlider
+          min={local?.heightMin ?? null}
+          max={local?.heightMax ?? null}
+          onChange={setHeightRange}
+        />
+      </PremiumFilterSection>
+
+      {/* Hobiler — ilişki niyeti gibi eleme YAPMAYAN bir bölüm (skor boost'u),
+          ama kullanıcı açısından "kimi arıyorum"un bir parçası, o yüzden kalan
+          hard filtrelerin ÜSTÜNDE. Gövdesi yukarıda (hobbiesSection). */}
+      {hobbiesSection}
+
+      {/* Dil — premium-only HARD filtre, OR semantiği: aday seçilenlerden EN AZ
+          BİRİNİ konuşuyorsa geçer ("hepsini bilsin" DEĞİL). Dilini hiç
+          belirtmemiş aday eleniyor, o yüzden uyarı seçim yapılır yapılmaz
+          çıkıyor. Seçim 34 değerlik aranabilir picker'dan; ekranda kalan
+          pill'ler tek dokunuşla kaldırılabiliyor. */}
+      <PremiumFilterSection
+        title={t("discover.filters.language.title")}
+        description={t("discover.filters.language.description")}
+        locked={premiumFiltersLocked}
+        onLockedPress={openPremiumPaywall}
+        capable={dealbreakerCapable("language")}
+        dealbreakerOn={dealbreakers.includes(DEALBREAKER_FIELDS.language)}
+        onToggleDealbreaker={() => toggleDealbreaker("language")}
+        testID={`dealbreaker-${DEALBREAKER_FIELDS.language}`}
+      >
+        <SelectRow
+          sfIcon={LANGUAGE_ICON}
+          lucideIcon={Languages}
+          value={
+            selectedLanguages.length > 0
+              ? t("discover.filters.language.selected", {
+                  // `count` DEĞİL: i18next'te çoğul çözümlemesini tetikler.
+                  selected: selectedLanguages.length,
+                })
+              : null
+          }
+          placeholder={t("discover.filters.language.select")}
+          disabled={languageOptions.length === 0}
+          onPress={() => setLanguagePickerVisible(true)}
+          onClear={() => setLocal((p: any) => ({ ...p, language: [] }))}
+        />
+
+        {selectedLanguageOptions.length > 0 ? (
+          <View style={{ marginTop: 12 }}>
+            <EnumPillGroup
+              options={selectedLanguageOptions}
+              selected={selectedLanguages}
+              onToggle={(opt: any) => toggleEnumValue("language", opt)}
+              getIcon={getLanguageIcon}
+            />
+            <Text
+              style={{
+                color: colors.textMuted,
+                fontSize: 13,
+                fontWeight: "500",
+                marginTop: 10,
+              }}
+            >
+              {t("discover.filters.language.orNote")}
+            </Text>
+          </View>
+        ) : null}
+      </PremiumFilterSection>
+
       {/* Sigara — yaşam tarzı dealbreaker'ı, ölçülebilir alanlardan (boy/sınıf)
           sonra ama evcil hayvan/burç gibi daha yumuşak tercihlerden önce. */}
       {renderEnumFilter(
@@ -2654,9 +3118,44 @@ export default function FilterModal({
         getSmokingIcon,
       )}
 
-      {/* Evcil hayvan — enum listesi DEĞİL, `hasPets: bool?`. Üç durum tek
-          satırda: farketmez (null) / var (true) / yok (false). /api/common/pets
-          bu filtrede kullanılmıyor, o liste profilin kendi hayvanları için. */}
+      {/* Alkol — sigarayla aynı sınıf (yaşam tarzı) ve aynı semantik: filtre
+          açıkken tercihini BELİRTMEMİŞ adaylar eleniyor. Alan profilde zorunlu
+          olmadığı için deste beklenenden çok daralabilir; uyarı bölüm
+          açıklamasında, o yüzden seçim yokken de görünüyor. */}
+      {renderEnumFilter(
+        "alcohol",
+        alcoholQuery,
+        "discover.filters.alcohol.title",
+        "discover.filters.alcohol.description",
+        getAlcoholIcon,
+      )}
+
+      {/* Dini görüş — alkol/sigarayla aynı sınıf ve aynı semantik: filtre
+          açıkken tercihini BELİRTMEMİŞ adaylar eleniyor. Farkı, eleme oranının
+          çok daha yüksek olabilmesi (alan profilde zorunlu değil ve
+          "Belirtmek istemiyorum" seçenler de düşüyor) — o yüzden seçim
+          yapıldığı anda pill'lerin altında ayrıca uyarı çıkıyor, dealbreaker
+          anahtarının kapalı kalmasının ne işe yaradığını da söylüyor.
+          Seçenek listesinden PreferNotToSay düşürülüyor
+          (bkz. FILTER_HIDDEN_RELIGIOUS_VIEWS). */}
+      {renderEnumFilter(
+        "religion",
+        religiousViewsQuery,
+        "discover.filters.religion.title",
+        "discover.filters.religion.description",
+        getReligiousViewIcon,
+        {
+          options: religiousViewOptions,
+          note: t("discover.filters.religion.hiddenNote"),
+        },
+      )}
+
+      {/* Evcil hayvan — TEK seçim grubu, dört mod. İlk üçü legacy `hasPets:
+          bool?` (farketmez/var/yok), dördüncüsü tür bazlı `pets` listesi.
+          İkisi ayrı kontrol olarak yan yana durmuyor: backend spesifik seçim
+          varken `hasPets`i yok saydığı için çelişkili bir çift sessizce yanlış
+          sonuç verirdi (bkz. setPetMode). Tek dealbreaker anahtarı ikisini de
+          yönetiyor — kullanıcı açısından ikisi de "evcil hayvan tercihi". */}
       <PremiumFilterSection
         title={t("discover.filters.pets.title")}
         description={t("discover.filters.pets.description")}
@@ -2668,24 +3167,27 @@ export default function FilterModal({
         testID={`dealbreaker-${DEALBREAKER_FIELDS.pets}`}
       >
         <View style={{ flexDirection: "row", flexWrap: "wrap", gap: 8 }}>
-          {[
-            { value: null, labelKey: "discover.filters.pets.any" },
-            { value: true, labelKey: "discover.filters.pets.has" },
-            { value: false, labelKey: "discover.filters.pets.hasNot" },
-          ].map((opt) => {
-            const selected = (local?.pets ?? null) === opt.value;
+          {([
+            { mode: "any", labelKey: "discover.filters.pets.any", icon: getHasPetsIcon(null) },
+            { mode: "has", labelKey: "discover.filters.pets.has", icon: getHasPetsIcon(true) },
+            { mode: "hasNot", labelKey: "discover.filters.pets.hasNot", icon: getHasPetsIcon(false) },
+            // Tür ikonu (pawprint DEĞİL): "var" pill'i zaten pawprint kullanıyor,
+            // aynı satırda iki özdeş sembol modları ayırt edilemez kılıyordu.
+            { mode: "specific", labelKey: "discover.filters.pets.specific", icon: getPetIcon("Cat") },
+          ] as const).map((opt) => {
+            const selected = petMode === opt.mode;
             return (
               <TouchableOpacity
-                key={String(opt.value)}
+                key={opt.mode}
                 activeOpacity={1}
-                onPress={() => setHasPets(opt.value)}
+                onPress={() => setPetMode(opt.mode)}
                 style={{
                   ...PILL_STYLE,
                   backgroundColor: pillColors(selected).backgroundColor,
                   borderColor: pillColors(selected).borderColor,
                 }}
               >
-                <PillIcon icon={getHasPetsIcon(opt.value)} selected={selected} />
+                <PillIcon icon={opt.icon} selected={selected} />
                 <Text
                   style={{
                     color: pillColors(selected).fg,
@@ -2699,22 +3201,64 @@ export default function FilterModal({
             );
           })}
         </View>
+
+        {/* Tür chip'leri yalnızca "Belirli türler" modunda. None/Allergic/Other
+            listede yok (bkz. FILTER_HIDDEN_PETS): "hayvanı olmayanlar" zaten
+            yukarıdaki mod. */}
+        {petMode === "specific" ? (
+          <View style={{ marginTop: 14 }}>
+            {petOptions.length === 0 ? (
+              <Text
+                style={{
+                  color: colors.textSecondary,
+                  fontSize: 14,
+                  fontWeight: "400",
+                }}
+              >
+                {petsQuery.isLoading
+                  ? t("discover.filters.enumLoading")
+                  : t("discover.filters.enumUnavailable")}
+              </Text>
+            ) : (
+              <>
+                <EnumPillGroup
+                  options={petOptions}
+                  selected={petTypes}
+                  onToggle={togglePetType}
+                  getIcon={getPetIcon}
+                />
+                {/* OR semantiği: birden fazla tür seçmek şartı DEĞİL, ihtimali
+                    çoğaltıyor. Yazmazsak kullanıcı "kedi+köpek seçtim ama
+                    sadece kedisi olanlar geliyor" diye bug sanıyor. */}
+                <Text
+                  style={{
+                    color: colors.textMuted,
+                    fontSize: 13,
+                    fontWeight: "500",
+                    marginTop: 10,
+                  }}
+                >
+                  {t("discover.filters.pets.orNote")}
+                </Text>
+              </>
+            )}
+          </View>
+        ) : null}
       </PremiumFilterSection>
 
       {/* Burç — hard filtrelerin en altı. Eleme gücü diğerleri kadar yüksek
-          ama uyum sinyali en zayıf olan alan, o yüzden en sona bırakıldı. */}
+          ama uyum sinyali en zayıf olan alan, o yüzden en sona bırakıldı.
+          Diğer enum filtrelerinden farkı: sıra backend'den geldiği gibi
+          bırakılmıyor, burç sırasına (Koç→Balık) diziliyor — kullanıcı kendi
+          burcunu bilinen bir konumda arıyor. */}
       {renderEnumFilter(
         "zodiac",
         zodiacsQuery,
         "discover.filters.zodiac.title",
         "discover.filters.zodiac.description",
         getZodiacIcon,
+        { options: zodiacOptions },
       )}
-
-      {/* Buradan sonrası eleme YAPMAYAN iki bölüm (skor boost'u); ard arda
-          durmaları kasıtlı, aralarına hard filtre sokma. */}
-      {hobbiesSection}
-      {intentsSection}
 
       {/* Görünürlük — premium-only, iki ayrı liste. Yukarıdaki filtrelerden
           KAVRAM OLARAK ayrı: onlar "ben kimi göreyim", bu "beni kim görsün".
@@ -2732,7 +3276,7 @@ export default function FilterModal({
           label={t('discover.filters.visibility.visibleOnlyLabel')}
           count={visibleOnlyDomains.length}
         />
-        <DomainSelectRow
+        <SelectRow
           sfIcon={VISIBLE_ONLY_ICON}
           lucideIcon={Eye}
           value={summarizeDomains(visibleOnlyDomains)}
@@ -2747,7 +3291,7 @@ export default function FilterModal({
           count={hiddenFromDomains.length}
           marginTop={18}
         />
-        <DomainSelectRow
+        <SelectRow
           sfIcon={HIDDEN_FROM_ICON}
           lucideIcon={EyeOff}
           value={summarizeDomains(hiddenFromDomains)}
@@ -2796,6 +3340,19 @@ export default function FilterModal({
         items={cityOptions}
         initialValue={local?.preferredCity ?? ""}
         onConfirm={onCityConfirm}
+      />
+
+      {/* Dil picker'ı — profil düzenlemedekiyle AYNI bileşen (34 değerlik
+          aranabilir liste), farkı başlığı: burada seçilen "karşımdakinin
+          konuştuğu diller". Sayı sınırı yok; backend filtrede bir tavan
+          uygulamıyor (profildeki 15 sınırı kullanıcının KENDİ dilleri için). */}
+      <LanguagePickerModal
+        visible={languagePickerVisible}
+        onClose={() => setLanguagePickerVisible(false)}
+        title={t("discover.filters.language.pickerTitle")}
+        items={languageOptions}
+        initialSelectedValues={selectedLanguageEnums}
+        onConfirm={onLanguageConfirm}
       />
 
       {/* Tek üniversite picker'ı iki listeye de hizmet ediyor; hangi listenin

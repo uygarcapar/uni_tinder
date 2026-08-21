@@ -5,6 +5,11 @@
 //
 // Anahtar DAİMA enumName (PascalCase). `name`/`display` backend'de
 // Accept-Language'e göre değişiyor — onunla anahtarlamak eşleşmeyi dile bağlar.
+//
+// İKİNCİ HARİTA: swipe kartındaki "Burada ne arıyorum" gradyanı da niyete göre
+// değişiyor ama renk olduğu için colors.ts'te duruyor (`intentAccents` +
+// `intentTintsLight`). Yeni enum değeri eklerken ORAYI DA güncelle — eksikse
+// kart sessizce `intentCard` fallback'ine (kırmızı) düşer.
 import type { SFSymbol } from "@/shared/components/SFIcon";
 import {
   Infinity as InfinityIcon,

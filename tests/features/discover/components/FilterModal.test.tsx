@@ -124,8 +124,43 @@ jest.mock('@/shared/queries/commonQueries', () => {
       data: [opt(0, 'None', 'Kullanmıyorum')],
       isLoading: false,
     }),
-    useUsagePurposes: () => ({
-      data: [opt(1, 'Friendship', 'Arkadaşlık')],
+    useAlcoholUsages: () => ({
+      data: [
+        opt(0, 'None', 'İçmiyorum'),
+        opt(1, 'Socially', 'Sosyal İçici'),
+        opt(2, 'Regularly', 'Düzenli'),
+      ],
+      isLoading: false,
+    }),
+    // Backend'in gerçek sırası: önce türler, sonra None → Allergic → Other.
+    // Filtre listesi bu üçünü elemeli, sırayı ise korumalı.
+    usePets: () => ({
+      data: [
+        opt(0, 'Dog', 'Köpek'),
+        opt(1, 'Cat', 'Kedi'),
+        opt(2, 'Bird', 'Kuş'),
+        opt(9, 'None', 'Yok'),
+        opt(10, 'Allergic', 'Hayvan sevmiyorum'),
+        opt(11, 'Other', 'Diğer'),
+      ],
+      isLoading: false,
+    }),
+    // PreferNotToSay backend listesinde DÖNÜYOR; filtre onu elemeli
+    // (bkz. FILTER_HIDDEN_RELIGIOUS_VIEWS).
+    useReligiousViews: () => ({
+      data: [
+        opt(0, 'Muslim', 'Müslüman'),
+        opt(5, 'Agnostic', 'Agnostik'),
+        opt(8, 'PreferNotToSay', 'Belirtmek istemiyorum'),
+      ],
+      isLoading: false,
+    }),
+    useLanguages: () => ({
+      data: [
+        opt(0, 'Turkish', 'Türkçe'),
+        opt(1, 'English', 'İngilizce'),
+        opt(2, 'German', 'Almanca'),
+      ],
       isLoading: false,
     }),
     normalizeDomain: (v: any) => String(v ?? '').trim().toLowerCase(),
@@ -138,8 +173,12 @@ import React from 'react';
 import { render, screen, fireEvent } from '@testing-library/react-native';
 import FilterModal from '@/features/discover/components/FilterModal';
 
+// Backend'in dealbreakerCapableFields listesi (2026-08-17 sözleşmesi).
+// Dil ve dini görüş bu sürümle eklendi; `UsagePurpose` ise "kullanım amacı"
+// alanı üründen çıkınca listeden düştü.
 const ALL_CAPABLE = [
-  'YearOfStudy', 'Height', 'Zodiac', 'Smoking', 'Pets', 'UsagePurpose',
+  'YearOfStudy', 'Height', 'Zodiac', 'Smoking', 'Pets',
+  'Alcohol', 'Language', 'Religion',
 ];
 
 // Backend GET /api/swipe/Filters yanıtının bu ekranı ilgilendiren iskeleti.
@@ -158,12 +197,17 @@ const baseFilters = {
     'UniversityDomain', 'VisibleOnlyToUniversityDomains',
     'HiddenFromUniversityDomains', 'City', 'Department', 'YearsOfStudy',
     'HeightMin', 'HeightMax', 'ZodiacSigns', 'SmokingStatuses', 'HasPets',
-    'UsagePurposes', 'RelationshipIntents', 'HairColors', 'HairStyles',
+    'RelationshipIntents', 'HairColors', 'HairStyles',
     'EyeColors', 'FacialHairs', 'HasGlasses', 'PreferredHobbies',
+    'AlcoholUsages', 'Pets', 'SpokenLanguages', 'ReligiousViews',
   ],
   heightMin: 175,
   heightMax: 190,
   hasPets: true,
+  pets: [],
+  alcoholUsages: [],
+  spokenLanguages: [],
+  religiousViews: [],
   zodiacSigns: ['Aries'],
   dealbreakers: ['Height'],
   dealbreakerCapableFields: ALL_CAPABLE,
@@ -195,27 +239,32 @@ const toggleCount = () =>
   screen.queryAllByText(DB_ON).length + screen.queryAllByText(DB_OFF).length;
 
 describe('FilterModal — premium filtreler', () => {
-  it('grup başlığını ve altı filtreyi render eder', () => {
+  it('grup başlığını ve sekiz filtreyi render eder', () => {
     renderModal(baseFilters);
 
     expect(screen.getByText('Premium Filtreler')).toBeTruthy();
-    ['Boy', 'Sınıf', 'Burç', 'Sigara', 'Evcil Hayvan', 'Kullanım Amacı'].forEach(
-      (title) => expect(screen.getByText(title)).toBeTruthy(),
-    );
+    // "Kullanım Amacı" listede YOK: alan üründen çıktı.
+    [
+      'Boy', 'Sınıf', 'Burç', 'Sigara', 'Alkol', 'Evcil Hayvan',
+      'Konuştuğu diller', 'Dini görüş',
+    ].forEach((title) => expect(screen.getByText(title)).toBeTruthy());
+    expect(screen.queryByText('Kullanım Amacı')).toBeNull();
     // Enum seçenekleri aktif dile çözülmüş gelmeli (resolveLocalized).
     expect(screen.getByText('Koç')).toBeTruthy();
     expect(screen.getByText('Kullanmıyorum')).toBeTruthy();
+    expect(screen.getByText('Sosyal İçici')).toBeTruthy();
   });
 
   it('pill ikonları Register/EditProfileForm ile aynı sembolleri kullanır', () => {
-    // Aynı burcu/amacı üç ekranda da aynı ikonla görmek gerekiyor; semboller
-    // RegisterStep14Screen ZODIAC_MAP ve EditProfileForm PURPOSE_META'dan.
+    // Aynı burcu üç ekranda da aynı ikonla görmek gerekiyor; semboller
+    // RegisterStep14Screen ZODIAC_MAP'ten.
     renderModal(baseFilters);
     expect(screen.getByTestId('sficon-flame.fill')).toBeTruthy(); // Koç
     expect(screen.getByTestId('sficon-sun.max.fill')).toBeTruthy(); // Aslan
     expect(screen.getByTestId('sficon-smoke.fill')).toBeTruthy(); // sigara
-    // person.2.fill "İlgi Alanı"ndaki Non-Binary pill'inde de geçiyor.
-    expect(screen.getAllByTestId('sficon-person.2.fill').length).toBe(2); // + Arkadaşlık
+    // person.2.fill artık yalnız "İlgi Alanı"ndaki Non-Binary pill'inde:
+    // "Arkadaşlık" amaç pill'i kalktı.
+    expect(screen.getAllByTestId('sficon-person.2.fill').length).toBe(1);
     expect(screen.getByTestId('sficon-pawprint.fill')).toBeTruthy(); // hayvanı var
   });
 
@@ -254,20 +303,200 @@ describe('FilterModal — premium filtreler', () => {
     expect(screen.queryByText('230 cm')).toBeNull();
   });
 
-  it('hasPets 3 durumlu bool olarak render edilir (enum listesi değil)', () => {
+  it('evcil hayvanı tek seçim grubunda dört modla render eder', () => {
     renderModal(baseFilters);
-    // /api/common/pets bu filtrede kullanılmıyor.
+    // Legacy üç mod + tür bazlı seçim; hepsi TEK grup, ayrı iki kontrol değil.
     expect(screen.getByText('Evcil hayvanı var')).toBeTruthy();
     expect(screen.getByText('Evcil hayvanı yok')).toBeTruthy();
+    expect(screen.getByText('Belirli türler')).toBeTruthy();
+    // Mod "var" olduğu için tür chip'leri kapalı.
+    expect(screen.queryByText('Kedi')).toBeNull();
   });
 
-  it('aynı evcil hayvan seçeneğine tekrar basınca "farketmez"e döner', () => {
+  it('"Farketmez" moduna geçince hasPets temizlenir', () => {
     const { onSave } = renderModal(baseFilters);
 
-    fireEvent.press(screen.getByText('Evcil hayvanı var')); // zaten seçili
+    fireEvent.press(screen.getAllByText('Farketmez')[0]);
     fireEvent.press(screen.getByTestId('apply'));
 
     expect(onSave.mock.calls[0][0].premiumFilters.hasPets).toBeNull();
+  });
+
+  it('"Belirli türler" modunda tür chip\'lerini açar ve None/Allergic/Other\'ı gizler', () => {
+    renderModal(baseFilters);
+
+    fireEvent.press(screen.getByText('Belirli türler'));
+
+    // Gerçek türler geldiği sırada; profil ekranına özgü üç seçenek yok.
+    expect(screen.getByText('Köpek')).toBeTruthy();
+    expect(screen.getByText('Kedi')).toBeTruthy();
+    expect(screen.getByText('Kuş')).toBeTruthy();
+    expect(screen.queryByText('Yok')).toBeNull();
+    expect(screen.queryByText('Hayvan sevmiyorum')).toBeNull();
+    expect(screen.queryByText('Diğer')).toBeNull();
+    // OR semantiği yazılı olmalı — yoksa "kedi+köpek seçtim" bug sanılıyor.
+    expect(
+      screen.getByText(
+        'Seçtiğin türlerden en az birine sahip olan profiller gösterilir.',
+      ),
+    ).toBeTruthy();
+  });
+
+  it('tür seçimi legacy hasPets\'i ezer (çelişkili çift gönderilmez)', () => {
+    // Backend `pets` doluyken `hasPets`i zaten yok sayıyor; ikisini birden
+    // göndermek "gönderdim ama uygulanmadı" belirsizliği yaratırdı.
+    const { onSave } = renderModal(baseFilters); // hasPets: true
+
+    fireEvent.press(screen.getByText('Belirli türler'));
+    fireEvent.press(screen.getByText('Kedi'));
+    fireEvent.press(screen.getByText('Kuş'));
+    fireEvent.press(screen.getByTestId('apply'));
+
+    const { pets, hasPets } = onSave.mock.calls[0][0].premiumFilters;
+    expect(pets).toEqual(['Cat', 'Bird']);
+    expect(hasPets).toBeNull();
+  });
+
+  it('kayıtlı tür seçimiyle açılır ve legacy modu göstermez', () => {
+    renderModal({ ...baseFilters, pets: ['Cat'], hasPets: true });
+
+    // `pets` dolu → mod "Belirli türler", chip'ler açık, hasPets yok sayılmış.
+    expect(screen.getByText('Kedi')).toBeTruthy();
+  });
+
+  it('tür seçiminden legacy moda dönünce tür listesi temizlenir', () => {
+    const { onSave } = renderModal({ ...baseFilters, pets: ['Cat'] });
+
+    fireEvent.press(screen.getByText('Evcil hayvanı yok'));
+    fireEvent.press(screen.getByTestId('apply'));
+
+    const { pets, hasPets } = onSave.mock.calls[0][0].premiumFilters;
+    expect(pets).toEqual([]);
+    expect(hasPets).toBe(false);
+  });
+
+  it('alkol seçimini enumName listesi olarak gönderir', () => {
+    const { onSave } = renderModal(baseFilters);
+
+    fireEvent.press(screen.getByText('İçmiyorum'));
+    fireEvent.press(screen.getByText('Sosyal İçici'));
+    fireEvent.press(screen.getByTestId('apply'));
+
+    expect(onSave.mock.calls[0][0].premiumFilters.alcoholUsages).toEqual([
+      'None', 'Socially',
+    ]);
+  });
+
+  it('alkol filtresinin daraltma uyarısını bölüm açıklamasında tutar', () => {
+    // Alan profilde zorunlu değil: filtre açıkken boş bırakanlar eleniyor.
+    // Uyarı seçim yokken de görünmeli, o yüzden açıklamada.
+    renderModal(baseFilters);
+    expect(
+      screen.getByText(
+        'Yalnızca seçtiğin alkol tercihine sahip kişileri gör. Filtre açıkken bu tercihi belirtmemiş profiller gösterilmez.',
+      ),
+    ).toBeTruthy();
+  });
+
+  it('boş alkol filtresinde dealbreaker anahtarı KAPALI başlar', () => {
+    // Migration mevcut kullanıcılarda `Alcohol` bitini açıyor ama herkesin
+    // alkol tercihi boş — anahtar açık görünürse kullanıcı ilk pill'e
+    // dokunduğunda filtre habersizce katı hale gelirdi.
+    const { onSave } = renderModal({
+      ...baseFilters,
+      dealbreakers: ['Height', 'Alcohol'],
+    });
+
+    fireEvent.press(screen.getByTestId('apply'));
+
+    expect(onSave.mock.calls[0][0].dealbreakers).toEqual(['Height']);
+  });
+
+  // ─── Dini görüş (2026-08-17 sözleşmesi) ───────────────────────────────────
+
+  it('dini görüş seçimini enumName listesi olarak gönderir', () => {
+    const { onSave } = renderModal(baseFilters);
+
+    fireEvent.press(screen.getByText('Müslüman'));
+    fireEvent.press(screen.getByText('Agnostik'));
+    fireEvent.press(screen.getByTestId('apply'));
+
+    expect(onSave.mock.calls[0][0].premiumFilters.religiousViews).toEqual([
+      'Muslim', 'Agnostic',
+    ]);
+  });
+
+  it('dini görüş listesinden "Belirtmek istemiyorum" seçeneğini eler', () => {
+    // Backend enum listesinde dönüyor ama filtre olarak anlamsız: bu filtre
+    // açıkken görüşünü paylaşmayanlar zaten eleniyor, yani seçenek hiçbir
+    // zaman sonuç üretmezdi.
+    renderModal(baseFilters);
+
+    expect(screen.getByText('Müslüman')).toBeTruthy();
+    expect(screen.queryByText('Belirtmek istemiyorum')).toBeNull();
+  });
+
+  it('dini görüş uyarısını yalnızca seçim varken gösterir', () => {
+    const HIDDEN_NOTE =
+      'Bu filtre açıkken dini görüşünü belirtmemiş ve "Belirtmek istemiyorum" seçmiş profiller gösterilmez. Anahtarı kapalı bırakırsan kişiler tükendiğinde filtre otomatik gevşer.';
+
+    renderModal(baseFilters);
+    // Seçim yokken filtrenin yan etkisi de yok — uyarı gürültü olurdu.
+    expect(screen.queryByText(HIDDEN_NOTE)).toBeNull();
+
+    fireEvent.press(screen.getByText('Müslüman'));
+    expect(screen.getByText(HIDDEN_NOTE)).toBeTruthy();
+  });
+
+  it('dini görüşü int olarak gelse de seçili okur', () => {
+    const { onSave } = renderModal({ ...baseFilters, religiousViews: [0] });
+
+    fireEvent.press(screen.getByText('Müslüman')); // seçiliyi kaldır
+    fireEvent.press(screen.getByTestId('apply'));
+
+    expect(onSave.mock.calls[0][0].premiumFilters.religiousViews).toEqual([]);
+  });
+
+  // ─── Dil (2026-08-17 sözleşmesi) ──────────────────────────────────────────
+
+  it('kayıtlı dilleri sayaç satırı ve pill olarak gösterir', () => {
+    renderModal({ ...baseFilters, spokenLanguages: ['English', 'German'] });
+
+    expect(screen.getByText('2 dil seçildi')).toBeTruthy();
+    expect(screen.getByText('İngilizce')).toBeTruthy();
+    expect(screen.getByText('Almanca')).toBeTruthy();
+    // OR semantiği yazılı olmazsa "ikisini birden bilen" sanılıyor.
+    expect(
+      screen.getByText(
+        'En az biri yeterli, hepsini birden konuşması gerekmez. Filtre açıkken dilini belirtmemiş profiller gösterilmez.',
+      ),
+    ).toBeTruthy();
+  });
+
+  it('dil pill\'ine dokununca seçimden düşürür', () => {
+    const { onSave } = renderModal({
+      ...baseFilters,
+      spokenLanguages: ['English', 'German'],
+    });
+
+    fireEvent.press(screen.getByText('Almanca'));
+    fireEvent.press(screen.getByTestId('apply'));
+
+    expect(onSave.mock.calls[0][0].premiumFilters.spokenLanguages).toEqual([
+      'English',
+    ]);
+  });
+
+  it('dili int olarak gelse de seçili okur', () => {
+    // Diğer enum alanlarıyla aynı biçim belirsizliği (bkz. toEnumList).
+    renderModal({ ...baseFilters, spokenLanguages: [1] });
+    expect(screen.getByText('İngilizce')).toBeTruthy();
+  });
+
+  it('dil seçimi yokken pill ve uyarı çizilmez', () => {
+    renderModal(baseFilters);
+    expect(screen.getByText('Dil seç')).toBeTruthy();
+    expect(screen.queryByText('İngilizce')).toBeNull();
   });
 
   it('enum değerini int olarak gelse de seçili gösterir ve kaldırabilir', () => {
@@ -316,14 +545,28 @@ describe('FilterModal — premium filtreler', () => {
     expect(onSave.mock.calls[0][0].premiumFilters.yearsOfStudy).toEqual([0, 3]);
   });
 
-  it('filters.isPremium true ise prop false olsa da kilit göstermez', () => {
-    // isPremium prop'u swipe Stats'tan geliyor ve o sorgu oturumda bir kez
-    // çekiliyor (staleTime:Infinity); açılışta patlarsa ya da premium sonradan
-    // aktifleşirse false'ta çakılı kalıyordu. Filtre yanıtının kendi alanı
-    // tazedir ve backend gating'i oradan bildiriyor.
+  it('prop tier kararını verir — filtre yanıtındaki bayat isPremium kilidi açmaz', () => {
+    // Prop'un kaynağı artık kanonik premium (abonelik slice'ı), `/stats` değil.
+    // Filtre yanıtı ise modal açılışında dondurulmuş bir kopya: premium bitince
+    // içindeki `isPremium:true` bir süre daha duruyor. Eskiden ikisi OR'lanıyordu
+    // ve o bayat alan kilitleri açık tutuyordu.
     renderModal(
       { ...baseFilters, isPremium: true },
       { isPremium: false },
+    );
+    expect(screen.queryAllByTestId('sficon-lock.fill').length).toBeGreaterThan(0);
+  });
+
+  it('prop verilmemişse filtre yanıtının kendi alanına düşer', () => {
+    // Bileşen tek başına (prop'suz) kullanılırsa elde kalan tek bilgi bu.
+    render(
+      <FilterModal
+        visible
+        onClose={jest.fn()}
+        filters={{ ...baseFilters, isPremium: true }}
+        onSave={jest.fn()}
+        saving={false}
+      />,
     );
     expect(screen.queryAllByTestId('sficon-lock.fill')).toHaveLength(0);
   });
@@ -391,11 +634,16 @@ describe('FilterModal — premium filtreler', () => {
     const expected = [
       // hard filtreler — en önemliden en önemsize
       'Üniversite',
-      'Kullanım Amacı',
+      // Dil en üstte: ortak dil diğer her uyumun ön koşulu. (Eskiden burada
+      // "Kullanım Amacı" vardı; alan üründen çıktı.)
+      'Konuştuğu diller',
       'Şehir',
       'Boy',
       'Sınıf',
       'Sigara',
+      'Alkol',
+      // Dini görüş sigara/alkolün devamında — aynı sınıf, aynı yan etki.
+      'Dini görüş',
       'Evcil Hayvan',
       'Burç',
       // eleme yapmayanlar (skor boost'u) — ard arda, hard filtrelerden sonra
@@ -463,10 +711,11 @@ describe('FilterModal — premium filtreler', () => {
   it('toggle durumunu dealbreakers listesinden türetir', () => {
     renderModal(baseFilters);
 
-    // Altı capable alan → altı toggle. Sadece Height işaretli.
-    expect(toggleCount()).toBe(6);
+    // Sekiz capable alan → sekiz toggle. Sadece Height işaretli.
+    // Evcil hayvan TEK toggle: legacy `hasPets` ve tür listesi aynı bit.
+    expect(toggleCount()).toBe(8);
     expect(screen.queryAllByText(DB_ON)).toHaveLength(1);
-    expect(screen.queryAllByText(DB_OFF)).toHaveLength(5);
+    expect(screen.queryAllByText(DB_OFF)).toHaveLength(7);
   });
 
   it("toggle'ı yalnızca dealbreakerCapableFields'taki alanlara çizer", () => {
@@ -493,9 +742,12 @@ describe('FilterModal — premium filtreler', () => {
       heightMax: 190,
       zodiacSigns: ['Aries'],
       smokingStatuses: [],
+      alcoholUsages: [],
+      pets: [],
       hasPets: true,
-      usagePurposes: [],
       yearsOfStudy: [],
+      spokenLanguages: [],
+      religiousViews: [],
     });
     // Kısmi güncelleme yok: liste her zaman tam gider.
     expect(payload.dealbreakers).toEqual(['Height']);
@@ -524,10 +776,53 @@ describe('FilterModal — premium filtreler', () => {
       heightMax: null,
       zodiacSigns: [],
       smokingStatuses: [],
+      alcoholUsages: [],
+      pets: [],
       hasPets: null,
-      usagePurposes: [],
       yearsOfStudy: [],
+      spokenLanguages: [],
+      religiousViews: [],
     });
+  });
+
+  // Premium biten kullanıcı: backend seçimleri SİLMİYOR, yalnız uygulamıyor
+  // (free kullanıcıda premium bloğu hiç yazılmıyor). Ekranda boş göstermek
+  // "filtrelerim uçmuş" yanılgısı üretiyordu — değerler durur, şerit durumu
+  // söyler, payload yine temiz gider.
+  it('premium bitince kayıtlı seçimleri gösterir ve "duraklatıldı" şeridini çizer', () => {
+    renderModal(baseFilters, { isPremium: false });
+
+    // Kayıtlı boy aralığı ekranda duruyor (temizlenmiş değil).
+    expect(screen.getByText('175 – 190 cm')).toBeTruthy();
+    expect(
+      screen.getByText(
+        'Premium filtrelerin duraklatıldı. Seçimlerin duruyor ama desteye uygulanmıyor — Premium\'a dönersen kaldığı yerden devam eder.',
+      ),
+    ).toBeTruthy();
+  });
+
+  it('premium kullanıcıda "duraklatıldı" şeridi çizilmez', () => {
+    renderModal(baseFilters);
+    expect(screen.queryByText(/duraklatıldı/)).toBeNull();
+  });
+
+  it('dolu premium filtresi olmayan free kullanıcıda şerit çizilmez', () => {
+    // Şerit "kaybettiğin bir şey var" diyor; hiç seçim yoksa söyleyecek şey yok.
+    renderModal(
+      {
+        ...baseFilters,
+        heightMin: null,
+        heightMax: null,
+        hasPets: null,
+        zodiacSigns: [],
+        dealbreakers: [],
+        preferredUniversityDomain: null,
+        visibleOnlyToUniversityDomains: [],
+        hiddenFromUniversityDomains: [],
+      },
+      { isPremium: false },
+    );
+    expect(screen.queryByText(/duraklatıldı/)).toBeNull();
   });
 
   it("bilinmeyen dealbreaker adını payload'a geçirmez", () => {

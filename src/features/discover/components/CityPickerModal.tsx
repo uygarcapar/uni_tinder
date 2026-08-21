@@ -96,7 +96,7 @@ export default function CityPickerModal({
             borderRadius: 999,
             borderCurve: "continuous",
             borderWidth: 0.5,
-            borderColor: "rgba(255,255,255,0.1)",
+            borderColor: colors.hairline,
             backgroundColor: "transparent",
             paddingLeft: 44,
             paddingRight: 16,
@@ -151,7 +151,7 @@ export default function CityPickerModal({
                 overflow: "hidden",
                 borderRadius: 999,
                 backgroundColor: isSelected
-                  ? "rgba(255,255,255,0.1)"
+                  ? colors.hairline
                   : "transparent",
                 position: "relative",
               }}
