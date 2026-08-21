@@ -18,7 +18,7 @@ import Animated, {
   Easing,
 } from "react-native-reanimated";
 import { BlurView } from "expo-blur";
-import { Reply, Pencil, Trash2, Copy } from "lucide-react-native";
+import { Reply, Trash2, Copy } from "lucide-react-native";
 import SFIcon from "@/shared/components/SFIcon";
 import { useTranslation } from "react-i18next";
 import * as Haptics from "expo-haptics";
@@ -26,14 +26,14 @@ import * as Clipboard from "expo-clipboard";
 import ReplyPreview, {
   REPLY_CARD_GAP,
 } from "@/features/chat/components/ReplyPreview";
-import { utcTime } from "@/shared/utils/dateUtc";
 import {
-  REACTION_CHIP_BORDER,
+  reactionChipBorder,
   BUBBLE_PAD_H,
   BUBBLE_PAD_V,
   bubbleCorners,
 } from "@/features/chat/components/bubbleStyle";
-import { colors } from "../../../shared/theme/colors";
+import { colors, withAlpha, scrimAt } from "../../../shared/theme/colors";
+import { thinBlurTint } from "@/shared/theme/blur";
 
 const QUICK_EMOJIS = ["❤️", "😂", "😮", "😢", "🔥", "👍"];
 const { width: SCREEN_WIDTH, height: SCREEN_HEIGHT } = Dimensions.get("window");
@@ -64,7 +64,20 @@ const REACTION_CHIP_OVERHANG = 15;
 // saydam surface2 (native UIVisualEffectView — maliyeti ihmal edilebilir);
 // Android'de expo-blur deneysel/pahalı olduğundan solid kalır.
 const PANEL_USE_BLUR = Platform.OS === "ios";
-const PANEL_BG = PANEL_USE_BLUR ? "rgba(31,31,31,0.55)" : colors.surface2;
+// Fonksiyon: modul seviyesinde sabitlenirse tema degisince bayat kalir.
+const panelBg = () =>
+  PANEL_USE_BLUR ? withAlpha(colors.surface2, 0.55) : colors.surface2;
+// Panellerin (emoji satırı + aksiyon menüsü) gölgesi — kasten HAFİF: arkadaki
+// tam ekran blur + scrim panelleri zaten zeminden ayırıyor, gölge yalnızca
+// ince bir kalkıklık ipucu versin. Fonksiyon: colors.shadow modül seviyesinde
+// okunursa tema değişince bayat kalır.
+const panelShadow = () => ({
+  shadowColor: colors.shadow,
+  shadowOpacity: 0.12,
+  shadowRadius: 8,
+  shadowOffset: { width: 0, height: 2 },
+  elevation: 3,
+});
 
 /**
  * WhatsApp-style mesaj uzun-bas context menu.
@@ -82,7 +95,6 @@ export default function MessageActionSheet({
   onClose,
   onPickReaction,
   onReply,
-  onEdit,
   onDelete,
 }: any) {
   const { t } = useTranslation();
@@ -168,12 +180,6 @@ export default function MessageActionSheet({
 
   if (!message) return null;
 
-  const canEdit =
-    isOwn &&
-    !message.isSystemMessage &&
-    !message.deletedAt &&
-    message.contentType === 0 &&
-    isWithinEditWindow(message.sentAt);
   const canDelete = isOwn && !message.isSystemMessage && !message.deletedAt;
 
   // Fallback (layout null): ekran ortası
@@ -191,8 +197,7 @@ export default function MessageActionSheet({
 
   // Aksiyon menüsü yüksekliği satır sayısından hesaplanır (measure beklemeden
   // hedef konumu bilmemiz gerekiyor).
-  const actionRows =
-    1 + (message.content ? 1 : 0) + (canEdit ? 1 : 0) + (canDelete ? 2 : 0);
+  const actionRows = 1 + (message.content ? 1 : 0) + (canDelete ? 2 : 0);
   const actionsH = actionRows * ACTION_ROW_H + ACTIONS_PAD_V * 2;
 
   // ── Sabit hedef konum: tüm stack (emoji + balon + menü) güvenli alanda dikey
@@ -213,7 +218,7 @@ export default function MessageActionSheet({
   const reactionsY = targetY - GAP - reactionsH;
   const actionsY = targetY + bubbleH + chipOverhang + GAP;
 
-  const blurTint = Platform.OS === "ios" ? "systemThinMaterialDark" : "dark";
+  const blurTint = thinBlurTint();
   const bubbleBg = isOwn ? colors.messageOwn : colors.surface2;
 
   const handleCopy = () => {
@@ -248,7 +253,7 @@ export default function MessageActionSheet({
         <View
           style={[
             StyleSheet.absoluteFill,
-            { backgroundColor: "rgba(0,0,0,0.25)" },
+            { backgroundColor: scrimAt(0.25) },
           ]}
         />
       </Animated.View>
@@ -285,11 +290,7 @@ export default function MessageActionSheet({
           style={{
             borderRadius: 999,
             borderCurve: "continuous",
-            shadowColor: "#000",
-            shadowOpacity: 0.35,
-            shadowRadius: 14,
-            shadowOffset: { width: 0, height: 6 },
-            elevation: 10,
+            ...panelShadow(),
           }}
         >
           <PanelSurface radius={999} blurTint={blurTint}>
@@ -336,11 +337,7 @@ export default function MessageActionSheet({
           style={{
             borderRadius: ACTIONS_RADIUS,
             borderCurve: "continuous",
-            shadowColor: "#000",
-            shadowOpacity: 0.35,
-            shadowRadius: 14,
-            shadowOffset: { width: 0, height: 6 },
-            elevation: 10,
+            ...panelShadow(),
           }}
         >
           {/* paddingVertical: ilk/son satır panel kenarına yapışmasın — köşe
@@ -360,13 +357,6 @@ export default function MessageActionSheet({
               icon={<SFIcon name="doc.on.doc" fallback={Copy} size={20} color={colors.text} />}
               label={t("chat.actions.copy")}
               onPress={handleCopy}
-            />
-          )}
-          {canEdit && (
-            <ActionRow
-              icon={<SFIcon name="pencil" fallback={Pencil} size={20} color={colors.text} />}
-              label={t("chat.actions.edit")}
-              onPress={() => runAction(onEdit)}
             />
           )}
           {canDelete && (
@@ -406,7 +396,7 @@ function PanelSurface({ radius, blurTint, paddingVertical = 0, children }: any) 
         borderRadius: radius,
         borderCurve: "continuous",
         overflow: "hidden",
-        backgroundColor: PANEL_BG,
+        backgroundColor: panelBg(),
         paddingVertical,
       }}
     >
@@ -498,11 +488,9 @@ function BubbleClone({
             style={{
               marginBottom: REPLY_CARD_GAP,
               maxWidth: cloneWidth,
-              shadowColor: "#000",
-              shadowOpacity: 0.3,
-              shadowRadius: 12,
-              shadowOffset: { width: 0, height: 4 },
-              elevation: 8,
+              // Klon da menüdeki panellerle AYNI hafif gölgeyi kullanır; ayrışırsa
+              // menüde balon panellerden daha "kalkık" görünür.
+              ...panelShadow(),
             }}
           >
             <ReplyPreview reply={message.replyTo} mode="bubble" isOwn={isOwn} />
@@ -524,18 +512,14 @@ function BubbleClone({
               // ortasında durur. Yanıt kartı balonun dışında olduğu için burada
               // da yanıta özel bir durum YOK.
               alignItems: "center",
-              shadowColor: "#000",
-              shadowOpacity: 0.3,
-              shadowRadius: 12,
-              shadowOffset: { width: 0, height: 4 },
-              elevation: 8,
+              ...panelShadow(),
             }}
           >
             {!!message.content && (
               <Text
                 style={{
                   fontSize: 17,
-                  color: isOwn ? "#fff" : "#f3f4f6",
+                  color: isOwn ? colors.onMedia : colors.text,
                 }}
               >
                 {message.content}
@@ -543,7 +527,7 @@ function BubbleClone({
                   <Text
                     style={{
                       fontSize: 12,
-                      color: isOwn ? "rgba(255,255,255,0.7)" : "#9ca3af",
+                      color: isOwn ? colors.onMediaMuted : colors.textSecondary,
                     }}
                   >
                     {"  "}
@@ -568,7 +552,7 @@ function BubbleClone({
                 paddingVertical: 4,
                 borderRadius: 999,
                 backgroundColor: colors.surface2,
-                ...REACTION_CHIP_BORDER,
+                ...reactionChipBorder(),
                 gap: 6,
               }}
             >
@@ -580,7 +564,7 @@ function BubbleClone({
                   <Text style={{ fontSize: 14 }}>{r.emoji}</Text>
                   {r.count > 1 && (
                     <Text
-                      style={{ fontSize: 10, marginLeft: 4, color: "#d1d5db" }}
+                      style={{ fontSize: 10, marginLeft: 4, color: colors.neutral200 }}
                     >
                       {r.count}
                     </Text>
@@ -660,15 +644,6 @@ function ActionRow({ icon, label, destructive, last, onPress }: any) {
       </Text>
     </TouchableOpacity>
   );
-}
-
-function isWithinEditWindow(sentAtIso) {
-  if (!sentAtIso) return false;
-  // utcTime: Z'siz damga yerel sayıldığında mesaj TR'de doğduğu anda 3 saat
-  // yaşlı görünüyordu → 15 dk'lık düzenleme penceresi hiç açılmıyordu.
-  const sent = utcTime(sentAtIso);
-  if (isNaN(sent)) return false;
-  return Date.now() - sent < 15 * 60 * 1000;
 }
 
 function isValidRect(r) {

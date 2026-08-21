@@ -1,3 +1,81 @@
+diff --git a/node_modules/@legendapp/list/keyboard.js b/node_modules/@legendapp/list/keyboard.js
+index 736286a..309d28f 100644
+--- a/node_modules/@legendapp/list/keyboard.js
++++ b/node_modules/@legendapp/list/keyboard.js
+@@ -114,10 +114,30 @@ var KeyboardAwareLegendList = typedForwardRef(function KeyboardAwareLegendList2(
+       }
+     };
+   }, [anchoredEndSpace, blankSpace]);
+-  const onContentInsetChange = React.useCallback((insets) => {
+-    var _a;
+-    (_a = refLegendList.current) == null ? void 0 : _a.reportContentInset(insets);
+-  }, []);
++  const onContentInsetChange = React.useCallback(
++    (insets) => {
++      var _a, _b;
++      // PATCH (klavye senkron fix, patches/@legendapp+list): LegendList'e YALNIZ
++      // STATİK inset (composer = extraContentPadding) raporlanır, klavye payı DEĞİL.
++      // Orijinal kod toplam inset'i (klavye + composer) raporluyordu; alignItemsAtEnd
++      // kullanan KISA sohbette bu, spacer'ı (getAlignItemsAtEndPadding = scrollLength
++      // - içerik - contentInsetEnd) klavye yüksekliği kadar ANINDA küçültüyordu.
++      // iOS'ta padding tek adımda (keyboardWillShow) yazıldığı için rapor da tek
++      // adım: runOnJS bir-iki frame sonra düşüyor, JS layout içeriği son konumuna
++      // ışınlıyor ve KeyboardChatScrollView'in klavyeyle senkron animasyonlu
++      // contentOffset'i (scroll aralığı çöktüğü için) kırpılıyordu → "input'a
++      // basınca liste yukarı ışınlanıyor". Statik raporla layout hiç oynamaz,
++      // yükselmeyi tamamen native animasyonlu scroll yapar (klavyeyle senkron).
++      // Math.min: composer büyüdüğünde (yanıt şeridi) gerçek değişim raporlanır,
++      // klavye payı asla eklenmez. Bedeli: klavye açıkken LegendList'in JS
++      // scrollToEnd hedefi klavye kadar kısa kalır — dibe pin'leme zaten native
++      // scroller.scrollToEnd ile yapılıyor (doMaintainScrollAtEnd), etkilenmez.
++      const staticBottom = (_a = contentInsetEndAdjustment == null ? void 0 : contentInsetEndAdjustment.value) != null ? _a : void 0;
++      const reported = typeof staticBottom === "number" ? { ...insets, bottom: Math.min(insets.bottom, staticBottom) } : insets;
++      (_b = refLegendList.current) == null ? void 0 : _b.reportContentInset(reported);
++    },
++    [contentInsetEndAdjustment]
++  );
+   const memoList = React.useCallback(
+     (scrollProps) => {
+       return /* @__PURE__ */ React__namespace.createElement(
+diff --git a/node_modules/@legendapp/list/keyboard.mjs b/node_modules/@legendapp/list/keyboard.mjs
+index c1dd270..1e1e5e6 100644
+--- a/node_modules/@legendapp/list/keyboard.mjs
++++ b/node_modules/@legendapp/list/keyboard.mjs
+@@ -93,10 +93,30 @@ var KeyboardAwareLegendList = typedForwardRef(function KeyboardAwareLegendList2(
+       }
+     };
+   }, [anchoredEndSpace, blankSpace]);
+-  const onContentInsetChange = useCallback((insets) => {
+-    var _a;
+-    (_a = refLegendList.current) == null ? void 0 : _a.reportContentInset(insets);
+-  }, []);
++  const onContentInsetChange = useCallback(
++    (insets) => {
++      var _a, _b;
++      // PATCH (klavye senkron fix, patches/@legendapp+list): LegendList'e YALNIZ
++      // STATİK inset (composer = extraContentPadding) raporlanır, klavye payı DEĞİL.
++      // Orijinal kod toplam inset'i (klavye + composer) raporluyordu; alignItemsAtEnd
++      // kullanan KISA sohbette bu, spacer'ı (getAlignItemsAtEndPadding = scrollLength
++      // - içerik - contentInsetEnd) klavye yüksekliği kadar ANINDA küçültüyordu.
++      // iOS'ta padding tek adımda (keyboardWillShow) yazıldığı için rapor da tek
++      // adım: runOnJS bir-iki frame sonra düşüyor, JS layout içeriği son konumuna
++      // ışınlıyor ve KeyboardChatScrollView'in klavyeyle senkron animasyonlu
++      // contentOffset'i (scroll aralığı çöktüğü için) kırpılıyordu → "input'a
++      // basınca liste yukarı ışınlanıyor". Statik raporla layout hiç oynamaz,
++      // yükselmeyi tamamen native animasyonlu scroll yapar (klavyeyle senkron).
++      // Math.min: composer büyüdüğünde (yanıt şeridi) gerçek değişim raporlanır,
++      // klavye payı asla eklenmez. Bedeli: klavye açıkken LegendList'in JS
++      // scrollToEnd hedefi klavye kadar kısa kalır — dibe pin'leme zaten native
++      // scroller.scrollToEnd ile yapılıyor (doMaintainScrollAtEnd), etkilenmez.
++      const staticBottom = (_a = contentInsetEndAdjustment == null ? void 0 : contentInsetEndAdjustment.value) != null ? _a : void 0;
++      const reported = typeof staticBottom === "number" ? { ...insets, bottom: Math.min(insets.bottom, staticBottom) } : insets;
++      (_b = refLegendList.current) == null ? void 0 : _b.reportContentInset(reported);
++    },
++    [contentInsetEndAdjustment]
++  );
+   const memoList = useCallback(
+     (scrollProps) => {
+       return /* @__PURE__ */ React.createElement(
 diff --git a/node_modules/@legendapp/list/react-native.js b/node_modules/@legendapp/list/react-native.js
 index 229f09a..2f82c9b 100644
 --- a/node_modules/@legendapp/list/react-native.js

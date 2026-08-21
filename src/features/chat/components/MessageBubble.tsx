@@ -19,7 +19,7 @@ import {
   BUBBLE_PAD_H,
   BUBBLE_PAD_V,
   BUBBLE_RADIUS,
-  REACTION_CHIP_BORDER,
+  reactionChipBorder,
   bubbleCorners,
 } from "@/features/chat/components/bubbleStyle";
 import {
@@ -27,10 +27,12 @@ import {
   useMessageHighlight,
 } from "@/features/chat/components/messageHighlight";
 import { messageContentEqual } from "@/features/chat/messageEquality";
+import { consumeMessageEntering } from "@/features/chat/enterAnimation";
 import { parseUtc } from "@/shared/utils/dateUtc";
 import { colors } from "../../../shared/theme/colors";
 
-const STATUS_GRAY = "#9ca3af";
+// Fonksiyon: modul seviyesinde sabitlenirse tema degisince bayat kalir.
+const statusGray = () => colors.textSecondary;
 // Satırlar liste genişliğinde (ekran + REVEAL_MAX) — balon max genişliği EKRANA
 // göre hesaplanır, yoksa oran reveal şeridini de sayıp fazla geniş olurdu.
 // Yanıt kartı da bu genişlikle sınırlıdır (kart balonun üstünde ayrı bir kutu).
@@ -59,6 +61,18 @@ const HIGHLIGHT_PEAK_OWN = 0.5;
 const HIGHLIGHT_PEAK_OTHER = 0.35;
 const REACTION_SPACE = 20;
 const REACTION_SPACE_DURATION = 220;
+// GÖNDERİM GİRİŞİ (yalnız bu cihazdan az önce gönderilen balon): balon kendi
+// yerinin ENTER_RISE kadar altında, saydam doğar ve süzülerek yerine oturur —
+// composer'ın arkasından çıkıyormuş gibi (WhatsApp hissi). 220ms: hareket
+// görünür ama gönderimi geciktirmiyor; out-cubic sonunda yumuşak durur.
+// SADECE transform + opacity: ikisi de LAYOUT'a dokunmaz, yani satır yüksekliği
+// hiç değişmez → listede ölçüm/MVCP zinciri tetiklenmez (yükseklik animasyonu
+// olsaydı her frame yeniden ölçüm = commit churn).
+const ENTER_DURATION = 220;
+const ENTER_RISE = 30;
+// Opaklık yükselişten HIZLI biter: balon yolun yarısında tam görünür olur,
+// kalan yol sadece yerine oturma hareketidir (yarı saydam sürüklenme olmaz).
+const ENTER_FADE_END = 0.55;
 
 /**
  * Tek mesaj baloncuğu — TEXT-ONLY ve TAMAMEN STATİK (reanimated YOK).
@@ -191,6 +205,62 @@ function MessageBubble({
     }).start();
   }, [message.id, spaceTarget, spaceAnim]);
 
+  // ── Gönderim girişi ────────────────────────────────────────────────────
+  // Kayıt handleSend'de bırakılır, burada satır başına TEK KEZ tüketilir (bkz.
+  // enterAnimation.ts). Kimlik olarak clientMessageId kullanılır: hub echo'da id
+  // temp-x → sunucu id'sine dönerken satır aynı satırdır, yeniden animasyona
+  // GİRMEMELİ. Recycle'da (container başka mesaja geçince) anahtar değişir,
+  // yeni mesajın kaydı yoksa anim null olur → hiçbir şey oynamaz.
+  //
+  // Reanimated DEĞİL, RN Animated (JS-driven): balon başına reanimated hook'u
+  // commit-storm teşhisinde suçlu çıkmıştı (bkz. component başlığı). Buradaki
+  // tek değer ömür boyu bir kez, ~300ms çalışıp biter.
+  const rowKey = message.clientMessageId || message.id;
+  const enterRef = useRef<{ key: string; anim: Animated.Value | null } | null>(null);
+  if (enterRef.current?.key !== rowKey) {
+    enterRef.current = {
+      key: rowKey,
+      anim: consumeMessageEntering(message.clientMessageId)
+        ? new Animated.Value(0)
+        : null,
+    };
+  }
+  const enterAnim = enterRef.current.anim;
+  // useLayoutEffect: animasyon ilk boyamadan ÖNCE başlasın — useEffect ile bir
+  // frame boyunca balon yerinde ve tam opak çizilip sonra aşağı zıplardı.
+  useLayoutEffect(() => {
+    if (!enterAnim) return;
+    const anim = Animated.timing(enterAnim, {
+      toValue: 1,
+      duration: ENTER_DURATION,
+      easing: Easing.out(Easing.cubic),
+      // marginBottom (spaceAnim) aynı görünümde JS-driven bir düğüm: native
+      // driver'a geçilirse RN o görünümün TÜM animated prop'larını native'e
+      // taşımaya kalkar ve layout prop'unda patlar.
+      useNativeDriver: false,
+    });
+    anim.start();
+    return () => anim.stop();
+  }, [enterAnim]);
+  const enterStyle = useMemo(() => {
+    if (!enterAnim) return null;
+    return {
+      opacity: enterAnim.interpolate({
+        inputRange: [0, ENTER_FADE_END],
+        outputRange: [0, 1],
+        extrapolate: "clamp" as const,
+      }),
+      transform: [
+        {
+          translateY: enterAnim.interpolate({
+            inputRange: [0, 1],
+            outputRange: [ENTER_RISE, 0],
+          }),
+        },
+      ],
+    };
+  }, [enterAnim]);
+
   const handleLongPress = () => {
     if (!onLongPress) return;
     // Scale feedback SADECE uzun basışta — normal dokunuşta değil.
@@ -241,8 +311,13 @@ function MessageBubble({
         style={{ marginRight: REVEAL_MAX }}
       >
         <View
-          className="px-3 py-2 bg-surface-5 border border-surface-3"
-          style={{ borderRadius: 24, borderCurve: "continuous" }}
+          className="px-3 py-2 border"
+          style={{
+            backgroundColor: colors.surface5,
+            borderColor: colors.surface3,
+            borderRadius: 24,
+            borderCurve: "continuous",
+          }}
         >
           <Text className="text-[15px]" style={{ color: colors.textPlaceholder }}>
             {text}
@@ -261,7 +336,10 @@ function MessageBubble({
   if (isDeletedForEveryone) return renderDeletedBubble(isOwn, t);
 
   const bubbleBg = isOwn ? colors.messageOwn : colors.surface2;
-  const textColorClass = isOwn ? "text-white" : "text-gray-100";
+  // Kendi balonum marka kırmızısı — iki modda da aynı, o yüzden üstündeki yazı
+  // her zaman beyaz (onMedia). Karşı tarafınki surface2, yani modla dönüyor.
+  const textColor = isOwn ? colors.onMedia : colors.text;
+  const metaColor = isOwn ? colors.onMediaMuted : colors.textSecondary;
 
   return (
     <Animated.View
@@ -270,6 +348,10 @@ function MessageBubble({
           (isGroupStart ? ROW_SPACE + GROUP_GAP : ROW_SPACE) +
           (message.replyTo ? REPLY_ROW_TOP_GAP : 0),
         marginBottom: spaceAnim,
+        // Yalnız az önce gönderilen balonda dolu (bkz. ENTER_*): satır kendi
+        // yerinin altından süzülerek gelir. Diğer tüm satırlarda null → stil
+        // birebir eski haliyle kalır.
+        ...enterStyle,
       }}
     >
       <View
@@ -339,12 +421,10 @@ function MessageBubble({
               }}
             >
               {!!message.content && (
-                <Text className={textColorClass} style={{ fontSize: 17 }}>
+                <Text style={{ color: textColor, fontSize: 17 }}>
                   {message.content}
                   {message.editedAt && (
-                    <Text
-                      className={`${isOwn ? "text-white/70" : "text-gray-400"} text-xs`}
-                    >
+                    <Text className="text-xs" style={{ color: metaColor }}>
                       {"  "}
                       {t("chat.bubble.edited")}
                     </Text>
@@ -353,7 +433,7 @@ function MessageBubble({
               )}
 
               {isFailed && (
-                <Text className="text-red-300 text-[10px] mt-1">
+                <Text className="text-[10px] mt-1" style={{ color: colors.errorLight }}>
                   {t("chat.bubble.tapToRetry")}
                 </Text>
               )}
@@ -372,7 +452,7 @@ function MessageBubble({
                     bottom: 0,
                     ...bubbleCorners(isOwn),
                     borderCurve: "continuous",
-                    backgroundColor: "#ffffff",
+                    backgroundColor: colors.inverseSurface,
                     opacity: highlightAnim.interpolate({
                       inputRange: [0, 1],
                       outputRange: [
@@ -400,7 +480,7 @@ function MessageBubble({
                   paddingVertical: 4,
                   borderRadius: 999,
                   backgroundColor: colors.surface2,
-                  ...REACTION_CHIP_BORDER,
+                  ...reactionChipBorder(),
                   gap: 6,
                   opacity: chipReveal.opacity,
                   transform: chipReveal.transform,
@@ -410,7 +490,7 @@ function MessageBubble({
                   <View key={r.emoji} className="flex-row items-center">
                     <Text style={{ fontSize: 14 }}>{r.emoji}</Text>
                     {r.count > 1 && (
-                      <Text className="text-gray-300 text-[10px] ml-1">
+                      <Text className="text-[10px] ml-1" style={{ color: colors.neutral200 }}>
                         {r.count}
                       </Text>
                     )}
@@ -439,7 +519,7 @@ function MessageBubble({
           alignItems: "center",
         }}
       >
-        <Text className="text-gray-400 text-[13px] font-normal">
+        <Text className="text-[13px] font-normal" style={{ color: colors.textSecondary }}>
           {formatTime(message.sentAt)}
         </Text>
         {isOwn && (
@@ -464,15 +544,18 @@ function renderDeletedBubble(isOwn: boolean, t: (key: string) => string) {
       }}
     >
       <View
-        className="bg-surface-5 px-3 py-3.5"
+        className="px-3 py-3.5"
         style={{
+          // Silinmiş balon iki tarafta da KARŞI TARAF balonunun rengini alır:
+          // silinen içerik artık kimseye ait değil, kendi kırmızımla vurgulanmaz.
+          backgroundColor: colors.surface2,
           maxWidth: BUBBLE_MAX_WIDTH,
           // Silinmiş balon da bir balondur: aynı köşe kuralı (bkz. bubbleCorners).
           ...bubbleCorners(isOwn),
           borderCurve: "continuous",
         }}
       >
-        <Text className="text-gray-500 italic text-[14px]">
+        <Text className="italic text-[14px]" style={{ color: colors.textMuted }}>
           {t("chat.bubble.deleted")}
         </Text>
       </View>
@@ -482,10 +565,10 @@ function renderDeletedBubble(isOwn: boolean, t: (key: string) => string) {
 
 function renderStatus(message: any, isPending: boolean, isFailed: boolean) {
   if (isFailed) return <SFIcon name="exclamationmark.circle.fill" fallback={AlertCircle} size={12} color={colors.errorLight} />;
-  if (isPending) return <SFIcon name="clock.fill" fallback={Clock} size={12} color={STATUS_GRAY} />;
-  if (message.readAt) return <CheckCheck size={14} color={STATUS_GRAY} />;
-  if (message.deliveredAt) return <CheckCheck size={14} color={STATUS_GRAY} />;
-  return <SFIcon name="checkmark" fallback={Check} size={14} color={STATUS_GRAY} />;
+  if (isPending) return <SFIcon name="clock.fill" fallback={Clock} size={12} color={statusGray()} />;
+  if (message.readAt) return <CheckCheck size={14} color={statusGray()} />;
+  if (message.deliveredAt) return <CheckCheck size={14} color={statusGray()} />;
+  return <SFIcon name="checkmark" fallback={Check} size={14} color={statusGray()} />;
 }
 
 function formatTime(iso: string) {

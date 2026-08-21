@@ -1,11 +1,11 @@
-import { memo, useCallback, useMemo, useRef, useState } from "react";
+import { memo, useCallback, useEffect, useMemo, useRef, useState } from "react";
 import {
   View,
   Text,
   TextInput,
   TouchableOpacity,
+  Pressable,
   StyleSheet,
-  Platform,
 } from "react-native";
 import type { LayoutChangeEvent } from "react-native";
 import { BlurView } from "expo-blur";
@@ -20,20 +20,26 @@ import { useTranslation } from "react-i18next";
 import ReplyPreview from "@/features/chat/components/ReplyPreview";
 import {
   COMPOSER_ACTION_W,
-  COMPOSER_BAR_BG,
+  composerBarBg,
   COMPOSER_BAR_GAP,
   COMPOSER_BAR_PAD_H,
   COMPOSER_BAR_PAD_V,
   COMPOSER_BLUR_INTENSITY,
-  COMPOSER_BLUR_TINT,
+  composerBlurTint,
   COMPOSER_GAP,
   COMPOSER_INSET_H,
 } from "@/features/chat/components/composerStyle";
 import { newClientMessageId } from "@/features/chat/clientMessageId";
-import { colors } from "../../../shared/theme/colors";
+import { colors, scrimAt, veil } from "../../../shared/theme/colors";
+import { chromeBlurTint } from "@/shared/theme/blur";
 
-const IS_IOS = Platform.OS === "ios";
 const TYPING_DEBOUNCE_MS = 1500;
+
+// Taslak diske bu kadar sessizlikten sonra yazılır. Her tuşta yazmak MMKV için
+// ucuz ama abone ekranları (MessagesScreen'in "Taslak: …" satırı) her karakterde
+// rerender ederdi — yazarken render churn'ü bu ekranda özellikle pahalı.
+// Unmount ve gönderim anında zaten anında flush ediliyor.
+const DRAFT_SAVE_DEBOUNCE_MS = 600;
 
 // Opak gövdenin ÜSTÜNDEKİ fade bandının yüksekliği — overlay'in nerede bittiği
 // (üst kenarı) bu sabitle belirlenir. Liste inset'i bandı SAYMIYOR, yani son
@@ -71,6 +77,11 @@ type Props = {
     clientMessageId: string;
   }) => void;
   onTypingChange?: (isTyping: boolean) => void;
+  // Gönderilmemiş taslak. `initialText` yalnız MOUNT'ta okunur (TextInput
+  // uncontrolled — defaultValue); ekran sohbet başına bir kez mount olduğu için
+  // yeterli. `onDraftChange` debounce'lu + unmount/gönderim anında flush'lı.
+  initialText?: string;
+  onDraftChange?: (text: string) => void;
   disabled?: boolean;
   quotaLocked?: boolean;
   onLockedPress?: () => void;
@@ -91,13 +102,17 @@ function MessageComposer({
   onCancelReply,
   onSend,
   onTypingChange,
+  initialText,
+  onDraftChange,
   disabled,
   quotaLocked,
   onLockedPress,
 }: Props) {
   const insets = useSafeAreaInsets();
   const { t } = useTranslation();
-  const [text, setText] = useState("");
+  // Taslak varsa metin ilk render'da dolu başlar: gönder butonu aktif, ayna
+  // Text'ler doğru yüksekliği ölçer (çok satırlı taslak input'u büyütür).
+  const [text, setText] = useState(initialText ?? "");
   // New Arch'ta multiline auto-grow / onContentSizeChange güvenilmez; yükseklik
   // görünmez ayna Text'lerden ölçülür. Satır yüksekliği de ölçülür (lineH) —
   // sabit lineHeight vermek olmuyor, iOS TextInput lineHeight stilini Text gibi
@@ -116,6 +131,26 @@ function MessageComposer({
   );
   const isTypingRef = useRef(false);
   const typingTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
+  // Taslak: son metin + bekleyen yazım. Callback'i ref'te tutuyoruz ki unmount
+  // cleanup'ı ([] bağımlılıklı) bayat closure'a takılmasın.
+  const draftRef = useRef(initialText ?? "");
+  const draftTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const onDraftChangeRef = useRef(onDraftChange);
+  useEffect(() => {
+    onDraftChangeRef.current = onDraftChange;
+  }, [onDraftChange]);
+
+  const flushDraft = useCallback(() => {
+    if (draftTimer.current) {
+      clearTimeout(draftTimer.current);
+      draftTimer.current = null;
+    }
+    onDraftChangeRef.current?.(draftRef.current);
+  }, []);
+
+  // Ekrandan çıkarken (unmount) bekleyen taslağı diske indir — kullanıcı yazıp
+  // hemen geri bastığında debounce penceresi henüz dolmamış olur.
+  useEffect(() => flushDraft, [flushDraft]);
 
   // Alt-fade progressive blur (ChatHeader blur'unun ters yönü).
   const { colors: maskColors, locations: maskLocations } = useMemo(
@@ -152,6 +187,12 @@ function MessageComposer({
     (value: string) => {
       setText(value);
       emitTyping(value);
+      draftRef.current = value;
+      if (draftTimer.current) clearTimeout(draftTimer.current);
+      draftTimer.current = setTimeout(() => {
+        draftTimer.current = null;
+        onDraftChangeRef.current?.(draftRef.current);
+      }, DRAFT_SAVE_DEBOUNCE_MS);
     },
     [emitTyping],
   );
@@ -173,7 +214,11 @@ function MessageComposer({
     inputRef.current?.clear();
     setText("");
     setContentH(0);
-  }, [text, disabled, quotaLocked, onTypingChange, onSend, replyTo?.id]);
+    // Taslak gönderildi — bekleyen debounce'u iptal edip kaydı ANINDA sil,
+    // yoksa liste "Taslak: …" göstermeye devam ederdi.
+    draftRef.current = "";
+    flushDraft();
+  }, [text, disabled, quotaLocked, onTypingChange, onSend, replyTo?.id, flushDraft]);
 
   const placeholder = !disabled
     ? quotaLocked
@@ -206,13 +251,15 @@ function MessageComposer({
           }
           style={StyleSheet.absoluteFill}
         >
+          {/* Derinlik perdesi — koyuda karartır, açıkta beyazlatır (veil).
+              Üstteki maske siyah/şeffaf kalır: o alfa maskesi, renk değil. */}
           <LinearGradient
-            colors={["rgba(0, 0, 0, 0.2)", "black"]}
+            colors={[veil(0.2), veil(1)]}
             style={StyleSheet.absoluteFill}
           />
           <BlurView
             intensity={15}
-            tint={IS_IOS ? "systemChromeMaterialDark" : "systemMaterialDark"}
+            tint={chromeBlurTint()}
             style={StyleSheet.absoluteFill}
           />
         </MaskedView>
@@ -239,7 +286,7 @@ function MessageComposer({
           )}
           <BlurView
             intensity={COMPOSER_BLUR_INTENSITY}
-            tint={COMPOSER_BLUR_TINT}
+            tint={composerBlurTint()}
             style={{
               minHeight: 44,
               // Güvenlik tavanı — gerçek sınır inputHeight (3 satır × ölçülen lineH).
@@ -250,7 +297,7 @@ function MessageComposer({
               paddingLeft: COMPOSER_BAR_PAD_H,
               paddingRight: COMPOSER_BAR_PAD_H,
               paddingVertical: COMPOSER_BAR_PAD_V,
-              backgroundColor: COMPOSER_BAR_BG,
+              backgroundColor: composerBarBg(),
               flexDirection: "row",
               alignItems: "center",
               gap: COMPOSER_BAR_GAP,
@@ -272,9 +319,9 @@ function MessageComposer({
               }}
             >
               {quotaLocked ? (
-                <SFIcon name="lock.fill" fallback={Lock} size={22} strokeWidth={2} weight="semibold" color="#fff" />
+                <SFIcon name="lock.fill" fallback={Lock} size={22} strokeWidth={2} weight="semibold" color={colors.text} />
               ) : (
-                <SFIcon name="plus.circle" fallback={CirclePlus} size={28} strokeWidth={2} weight="semibold" color="#fff" />
+                <SFIcon name="plus.circle" fallback={CirclePlus} size={28} strokeWidth={2} weight="semibold" color={colors.text} />
               )}
             </TouchableOpacity>
 
@@ -298,6 +345,8 @@ function MessageComposer({
               <TextInput
                 ref={setInputRef}
                 nativeID="chat-input"
+                // Uncontrolled: taslak yalnız mount'ta basılır (bkz. Props).
+                defaultValue={initialText}
                 onChangeText={handleChangeText}
                 editable={!disabled && !quotaLocked}
                 placeholder={placeholder}
@@ -314,10 +363,11 @@ function MessageComposer({
               />
             </View>
             {/* Sabit mount: koşullu mount/unmount her tuşta layout zıplatıyordu. */}
-            <TouchableOpacity
+            {/* Basışta opacity DÜŞÜRMÜYORUZ — açık modda solmak butonu açıyor.
+                Yerine siyah scrim bindiriyoruz, iki modda da koyulaşıyor. */}
+            <Pressable
               onPress={handleSend}
               disabled={!canSend}
-              activeOpacity={0.9}
               style={{
                 width: COMPOSER_ACTION_W,
                 height: 32,
@@ -330,10 +380,24 @@ function MessageComposer({
                 justifyContent: "center",
                 backgroundColor: colors.messageOwn,
                 opacity: canSend ? 1 : 0.35,
+                overflow: "hidden",
               }}
             >
-              <SFIcon name="arrow.up" fallback={ArrowUp} size={20} strokeWidth={2} weight="semibold" color={colors.text} />
-            </TouchableOpacity>
+              {({ pressed }) => (
+                <>
+                  {pressed && (
+                    <View
+                      style={[
+                        StyleSheet.absoluteFill,
+                        { backgroundColor: scrimAt(0.18) },
+                      ]}
+                    />
+                  )}
+                  {/* Dolgulu kırmızı buton medya yüzeyi sayılır — ok iki modda da beyaz kalıyor. */}
+                  <SFIcon name="arrow.up" fallback={ArrowUp} size={20} strokeWidth={2} weight="semibold" color={colors.onMedia} />
+                </>
+              )}
+            </Pressable>
           </BlurView>
         </View>
       </View>

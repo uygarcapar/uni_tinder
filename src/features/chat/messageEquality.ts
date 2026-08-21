@@ -52,5 +52,11 @@ export function chatListItemsEqual(a: any, b: any) {
   if (a.__separator || b.__separator) {
     return !!a.__separator && !!b.__separator && a.id === b.id && a.label === b.label;
   }
+  // Rematch kapısı (gizli geçmiş satırı): separator gibi her useMemo'da yeniden
+  // yaratılan sanal satır — içeriği id'sinden ibaret, "yükleniyor" state'i
+  // bileşenin İÇİNDE (bkz. HiddenHistoryBanner).
+  if (a.__hiddenHistory || b.__hiddenHistory) {
+    return !!a.__hiddenHistory && !!b.__hiddenHistory;
+  }
   return messageContentEqual(a, b);
 }

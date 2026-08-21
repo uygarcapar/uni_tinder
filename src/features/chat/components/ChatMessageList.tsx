@@ -32,9 +32,11 @@ const MAINTAIN_SCROLL_AT_END = {
   animated: true,
 } as const;
 
-// Balon/separator ayrı container tipi + ayrı boyut ortalaması alır — karışık
-// tipli pool tek tipe göre tahmin yapıp blank hücre üretmesin.
-const getItemType = (item: any) => (item.__separator ? "sep" : "msg");
+// Balon/separator/rematch kapısı ayrı container tipi + ayrı boyut ortalaması
+// alır — karışık tipli pool tek tipe göre tahmin yapıp blank hücre üretmesin.
+// Kapı satırı balonlardan belirgin şekilde yüksek (ikon + buton).
+const getItemType = (item: any) =>
+  item.__separator ? "sep" : item.__hiddenHistory ? "gate" : "msg";
 // Separator yüksekliği YAPISAL olarak sabit (DateSeparator height:42) — fixed-size
 // item'lar LegendList'te hiç ölçülmediği için buradaki değer gerçek render'dan
 // saparsa fark kalıcıdır (prepend'de px kayması). İkisi tek sabitten beslenir.

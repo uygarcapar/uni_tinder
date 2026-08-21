@@ -1,9 +1,9 @@
-import { View, Text, TouchableOpacity, Platform, StyleSheet } from 'react-native';
+import { View, Text, TouchableOpacity } from 'react-native';
 import { BlurView } from 'expo-blur';
 import { X, MessageSquareReply } from 'lucide-react-native';
 import SFIcon from '@/shared/components/SFIcon';
 import { useTranslation } from 'react-i18next';
-import { colors } from '../../../shared/theme/colors';
+import { colors, ink } from "../../../shared/theme/colors";
 import {
   BUBBLE_PAD_H,
   BUBBLE_PAD_V,
@@ -12,12 +12,12 @@ import {
 } from '@/features/chat/components/bubbleStyle';
 import {
   COMPOSER_ACTION_W,
-  COMPOSER_BAR_BG,
+  composerBarBg,
   COMPOSER_BAR_GAP,
   COMPOSER_BAR_PAD_H,
   COMPOSER_BAR_PAD_V,
   COMPOSER_BLUR_INTENSITY,
-  COMPOSER_BLUR_TINT,
+  composerBlurTint,
   COMPOSER_GAP,
 } from '@/features/chat/components/composerStyle';
 
@@ -38,10 +38,16 @@ function replyCardCorners(isOwn: boolean) {
     ? { borderRadius: BUBBLE_RADIUS, borderBottomRightRadius: BUBBLE_TIGHT_RADIUS }
     : { borderRadius: BUBBLE_RADIUS, borderBottomLeftRadius: BUBBLE_TIGHT_RADIUS };
 }
-// Kart zemini: koyu gri + yarı saydam (blur'un üstünde durur, MessageActionSheet
-// panel zemini PANEL_BG ile aynı aile). İki taraf için de aynı — kartın kimin
+// Kart zemini: BALONUN grisi (colors.surface2) — karşı taraf balonuyla aynı
+// token, o yüzden kart + balon tek bir yığın gibi okunur ve aradaki 4px'lik
+// sayfa zemini şeridi ikisini ayırır. İki taraf için de aynı: kartın kimin
 // mesajına ait olduğunu daralan alt köşe zaten söylüyor.
-const REPLY_CARD_BG = 'rgba(28,28,28,0.72)';
+//
+// ESKİDEN yarı saydam koyu gri (rgba(28,28,28,0.72)) + blur vardı; koyu modda
+// sayfa zemininin üstünde neredeyse siyaha düşüyordu (açık modda ise koyu kart
+// olarak kalıyordu — tema hiç dönmüyordu). Fonksiyon, sabit DEĞİL: modül
+// seviyesinde değerlenirse tema değişince bayat kalır.
+const replyCardBg = () => colors.surface2;
 // Kartın iki satırı (isim + içerik önizlemesi) AYNI punto.
 const REPLY_CARD_FONT_SIZE = 14;
 // Kartın DIŞINDAKİ dikey çizgi — gönderen tarafın kenarında (kendi mesajımda
@@ -52,14 +58,10 @@ const REPLY_CARD_FONT_SIZE = 14;
 // tık daha opak (aynı silik his).
 const REPLY_LINE_W = 5;
 const REPLY_CARD_INSET = 15;
-const REPLY_LINE_COLOR = 'rgba(255,255,255,0.08)';
+// Fonksiyon: modul seviyesinde sabitlenirse tema degisince bayat kalir.
+const replyLineColor = () => colors.hairlineSoft;
 // Çizgi kartın tam boyu değil: iki ucundan bu kadar kısalır (dikey ortalı kalır).
 const REPLY_LINE_INSET_V = 5;
-// expo-blur Android'de deneysel/pahalı (MessageActionSheet panelleriyle AYNI
-// kural) — orada kart yalnız yarı saydam zeminle çizilir, altındaki balon
-// rengi alfadan sızar.
-const REPLY_USE_BLUR = Platform.OS === 'ios';
-const REPLY_BLUR_INTENSITY = 28;
 
 /**
  * 2 modda kullanılır:
@@ -109,7 +111,7 @@ export default function ReplyPreview({ reply, mode = 'composing', onCancel, isOw
       <Text
         style={{
           fontSize: REPLY_CARD_FONT_SIZE,
-          color: isComposing ? colors.text : 'rgba(255,255,255,0.78)',
+          color: isComposing ? colors.text : ink(0.78),
         }}
         numberOfLines={1}
       >
@@ -153,7 +155,8 @@ export default function ReplyPreview({ reply, mode = 'composing', onCancel, isOw
   );
 
   // bubble modu: BAĞIMSIZ kart — balonun içinde değil üstünde durur, kendi köşe
-  // yarıçapı ve zemini vardır. Zemin blur (iOS) + yarı saydam tint.
+  // yarıçapı ve zemini vardır. Zemin OPAK balon grisi (blur YOK: opak zeminin
+  // üstündeki blur sadece tint'iyle kartı yeniden koyulaştırıyordu).
   // Dikey çizgi kartın DIŞINDA: gönderen tarafın kenarında durur, kart ondan
   // REPLY_CARD_INSET kadar ortaya kaçar ve çizginin bir kısmını örter (çizgi
   // kartın ARKASINDA kalır). Çizgi de kart da AYNI sarmalayıcıda olduğu için
@@ -171,7 +174,7 @@ export default function ReplyPreview({ reply, mode = 'composing', onCancel, isOw
             right: isOwn ? 0 : undefined,
             width: REPLY_LINE_W,
             borderRadius: REPLY_LINE_W / 2,
-            backgroundColor: REPLY_LINE_COLOR,
+            backgroundColor: replyLineColor(),
           }}
         />
         <View
@@ -180,21 +183,13 @@ export default function ReplyPreview({ reply, mode = 'composing', onCancel, isOw
             marginRight: isOwn ? REPLY_CARD_INSET : 0,
             ...replyCardCorners(isOwn),
             borderCurve: 'continuous',
-            // BlurView'da köşe yuvarlatma ancak overflow:hidden ile çalışır.
             overflow: 'hidden',
-            backgroundColor: REPLY_CARD_BG,
+            backgroundColor: replyCardBg(),
             flexDirection: 'row',
             paddingHorizontal: BUBBLE_PAD_H,
             paddingVertical: BUBBLE_PAD_V,
           }}
         >
-          {REPLY_USE_BLUR && (
-            <BlurView
-              intensity={REPLY_BLUR_INTENSITY}
-              tint="systemThinMaterialDark"
-              style={StyleSheet.absoluteFill}
-            />
-          )}
           {texts}
         </View>
       </View>
@@ -209,7 +204,7 @@ export default function ReplyPreview({ reply, mode = 'composing', onCancel, isOw
   return (
     <BlurView
       intensity={COMPOSER_BLUR_INTENSITY}
-      tint={COMPOSER_BLUR_TINT}
+      tint={composerBlurTint()}
       style={{
         marginBottom: COMPOSER_GAP,
         paddingHorizontal: COMPOSER_BAR_PAD_H,
@@ -220,7 +215,7 @@ export default function ReplyPreview({ reply, mode = 'composing', onCancel, isOw
         // BlurView'da köşe yuvarlatma ancak overflow hidden ile çalışır
         // (MessageComposer'daki input kapsülüyle aynı kural).
         overflow: 'hidden',
-        backgroundColor: COMPOSER_BAR_BG,
+        backgroundColor: composerBarBg(),
         flexDirection: 'row',
         alignItems: 'center',
         gap: COMPOSER_BAR_GAP,
