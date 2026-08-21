@@ -1,4 +1,5 @@
 import type { AccountBlockPayload } from "@/shared/utils/accountBlock";
+import type { RegistrationStepRoute } from "@/features/auth/registrationFlow";
 
 // ─── Auth / User ───────────────────────────────────────────────────────────────
 
@@ -36,6 +37,12 @@ export interface AuthState {
   registrationEmail: string | null;
   emailVerifiedToken: string | null;
   registrationForm: RegistrationForm;
+  /**
+   * Kayıt sihirbazında en son bulunulan ekranın rota adı ("RegisterStep13").
+   * Persist edilir; soğuk açılışta akış baştan değil buradan devam eder.
+   * (bkz. features/auth/registrationFlow.ts)
+   */
+  registrationStep: RegistrationStepRoute | null;
   /** Ban/askı/silme yaptırımı — doluysa kapatılamaz AccountBlockedScreen açılır. */
   accountBlock: AccountBlockPayload | null;
 }
@@ -57,8 +64,12 @@ export interface ProfileState {
   hobbies: string[];
   smokingStatus: string | null;
   zodiacSign: string | null;
-  usagePurpose: string | null;
   relationshipIntent: string | null;
+  // Alkol + dini görüş — kayıt akışında RegisterStep16'da toplanıyor
+  // (fotoğraflardan bir önceki adım). Diğer yaşam tarzı alanları gibi
+  // opsiyonel: atlanırsa null kalır ve payload'a hiç eklenmez.
+  alcoholUsage: string | null;
+  religiousView: string | null;
   photos: string[];
   mainPhotoIndex: number;
   loading: boolean;
@@ -107,6 +118,12 @@ export interface ConversationListItemDto {
   unreadCount: number;
   isActive: boolean;
   partnerIsOnline: boolean;
+  /**
+   * Unmatch sonrası geri alma penceresinin bitişi. `null` = geri alma YOK
+   * (rematch limiti dolmuş, çift engellenmiş ya da hiç mesajlaşılmamış) —
+   * bu durumda "geri al" gösterilmez, restore çağrısı reddedilir.
+   */
+  restorableUntil?: string | null;
 }
 
 export interface MessageBucket {
@@ -114,6 +131,12 @@ export interface MessageBucket {
   nextCursor: string | null;
   hasMore: boolean;
   loading: boolean;
+  /**
+   * Rematch sonrası eski sohbetin gizli mesajları var. Liste tepesindeki
+   * "eski sohbeti göster" kapısını besler; reveal edilince (ya da karşı taraf
+   * açınca) false'a döner.
+   */
+  hasHiddenHistory?: boolean;
 }
 
 export interface TypingEntry {
@@ -249,13 +272,45 @@ export interface PotentialMatch {
   yearOfStudyDisplay?: string;
 
   // Enum tabanlı alanlar: `*Display` gösterim, çıplak ad ikon eşlemesi için.
-  usagePurpose?: string;
-  usagePurposeDisplay?: string;
+  // `usagePurpose` KALDIRILDI: alan üründen çıktı, response'ta artık dönmüyor.
   relationshipIntent?: string;
   relationshipIntentDisplay?: string;
   smokingStatusDisplay?: string;
   zodiacSignDisplay?: string;
+  /**
+   * Alkol tercihi — kartın yaşam tarzı pill'lerinde gösteriliyor. Keşif
+   * filtresinin (`alcoholUsages`) karşılığı: filtre eleme yapıyorsa kullanıcı
+   * bunu kartta da görebilmeli. Alan opsiyonel — eski sürüm backend'de
+   * gelmezse pill hiç çizilmiyor.
+   */
+  alcoholUsage?: string;
+  alcoholUsageDisplay?: string;
+  /**
+   * Boy — CM cinsinden SAYI (backend `Height`, profil tarafında 140–220
+   * doğrulamalı). Kartın yaşam tarzı pill'lerinde gösteriliyor: keşif
+   * filtresinin (`heightMin`/`heightMax`) karşılığı — filtre bu alana göre
+   * eleme yapıyorsa kullanıcı değeri kartta da görebilmeli.
+   *
+   * `*Display` kardeşi YOK: birim her dilde "cm", metin istemcide kuruluyor
+   * (`profile.card.heightCm`). Alan opsiyonel — göndermeyen sürümde pill hiç
+   * çizilmez (bkz. SwipeCard heightLabel).
+   */
+  height?: number | null;
+  /**
+   * Evcil hayvan — üç alan birlikte geliyor ve HEPSİ opsiyonel:
+   * `hasPets` legacy 3 durumlu bool (var/yok/belirtmemiş), `pets` spesifik
+   * PetType enum listesi (`["Dog","Cat"]`), `petsDisplay` onun request diline
+   * göre lokalize karşılığı (`["Köpek","Kedi"]`). Kartta GÖSTERİLEN
+   * `petsDisplay`; `pets` yalnız ikon eşlemesi için.
+   *
+   * `hasPets = true` ama `pets` boş olan profiller var (eski kayıtlar + yalnız
+   * `hasPets` yazan tercih akışı, ayrıca seed profiller) — hangi hayvan olduğu
+   * bilinmiyor, backfill edilemiyor. O yüzden legacy alan silinmedi: spesifik
+   * liste boşsa kart "var/yok" pill'ine düşüyor.
+   */
   hasPets?: boolean | null;
+  pets?: string[];
+  petsDisplay?: string[];
 
   hobbies?: ProfileHobby[];
   /** Ortak nokta YOKSA backend boş dizi değil `null` gönderir. */
@@ -271,6 +326,25 @@ export interface PotentialMatch {
    */
   hasLikedMe?: boolean;
   likedMeAt?: string | null;
+
+  /**
+   * Hesap son 7 gün içinde açıldı (backend `UserProfile.CreatedAt`, kalıcı
+   * kolon). Kartta ismin sağındaki "Yeni" rozeti.
+   */
+  isNewMember?: boolean;
+  /**
+   * Son 24 SAAT içinde aktifti — canlı presence VEYA `lastActiveAt` (OR'lanmış).
+   *
+   * "ŞU ANDA ONLINE" DEĞİLDİR: 24 saatlik penceredir, o yüzden arayüzde
+   * "Çevrimiçi" dili kullanılmaz, "Bugün aktif" yazılır. Anlık online bilgisi
+   * yalnız sohbette var (`partnerIsOnline` + hub event'i).
+   *
+   * `false` "kesin pasif" DEMEK DEĞİL: Redis/DB okunamadığında da false döner
+   * (deste yine normal gelir). Rozetin yokluğunu negatif bilgi olarak sunma.
+   */
+  isOnlineToday?: boolean;
+  /** @deprecated `isNewMember` ile aynı değer; backend ileride kaldıracak. */
+  isNewAccount?: boolean;
 }
 
 // Backend PaginatedProfilesDto (GetPotentialMatches result alanı).
@@ -295,8 +369,10 @@ export interface PotentialMatchesResult {
   paywallType: PaywallType | null;
   paywallMessage: string | null;
   isPremium: boolean;
-  wasRadiusExpanded: boolean;
-  appliedRadiusKm: number | null;
+  // NOT: `wasRadiusExpanded` / `appliedRadiusKm` BİLEREK YOK. Backend hâlâ
+  // döndürüyor ama 2026-08-17 sözleşmesinden beri ölü alanlar (her zaman
+  // false / null) ve sonraki major'da silinecekler. Sessiz yarıçap
+  // genişletmesi kullanıcıya gösterilmiyor — yeniden bağlama.
   emptyReason: EmptyReason;
   emptyReasonCode: ResponseCode | null;
   emptyReasonMessage: string | null;
@@ -322,16 +398,39 @@ export interface SwipeStats {
   matchesToday: number;
   remainingUndos: number | null;
   undoCountResetAt: string | null;
+  /**
+   * Kaçırılan eşleşme kurtarma hakkı — GÜNLÜK (free 2 / premium 5, backend
+   * `SwipeLimits:*`'ten). Premium'da da gerçek sayı gelir; `-1` (sınırsız)
+   * konvansiyonu bu alanda YOK.
+   */
   remainingMissedMatchRecovery: number | null;
+  /**
+   * Günlük tavan (free 2 / premium 5). Diğer tavanlardan FARKLI: `-1`
+   * (sınırsız) ASLA dönmez, premium de sonlu kotaya tabi.
+   */
+  dailyMissedMatchRecoveryLimit: number | null;
+  /** Kaçırılan eşleşme penceresi (gün, backend config'i — varsayılan 30). */
+  missedMatchLookbackDays: number | null;
+  /** Kotanın en son sıfırlandığı an (GEÇMİŞ). İleri sayaç için değil. */
   missedMatchRecoveryResetAt: string | null;
+  /** Bir sonraki UTC gün dönümü — sentinel (`9999-12-31`) dönmez. */
+  nextMissedMatchRecoveryResetAt: string | null;
+  /** 0…86400 arası; `-1` ("asla yenilenmez") dönmez. */
+  missedMatchRecoveryResetInSeconds: number | null;
   // Tavanlar (backend SwipeLimitsOptions). -1 = sınırsız, null = backend
   // henüz göndermiyor. Free'de weeklySuperLikeLimit lifetime kotayı ifade
   // eder — yenilenmez.
   dailySwipeLimit: number | null;
   /**
-   * YALNIZ tier tavanı — satın alınan krediyi KAPSAMAZ, backend clamp yapmıyor,
-   * yani `superLikesRemaining` bu değeri aşabilir (3 kota + 12 kredi = 15 > 5).
-   * Oran gösterirken payda `weeklySuperLikeLimit + purchasedSuperLikes` olmalı.
+   * Tier kotasının REFERANS değeri — bakiye tavanı DEĞİL. `superLikesRemaining`
+   * bunu iki ayrı sebeple aşabilir:
+   *   1. Satın alınan kredi kapsam dışı (3 kota + 12 kredi = 15 > 5),
+   *   2. Premium ilk kez verilirken harcanmamış free lifetime hakkı kotanın
+   *      ÜSTÜNE ekleniyor (2026-08-17 backend fix'i): tavan `5 + 1 = 6`, yani
+   *      kredi hiç yokken bile `quotaSuperLikesRemaining` 6 > limit 5 olabilir.
+   * Bu yüzden `weeklySuperLikeLimit + purchasedSuperLikes` de güvenli bir payda
+   * değil; oran/progress gösterilecekse `Math.min(1, ...)` ile clamp'lenmeli,
+   * "x/5" formatı kullanılmamalı (6/5 çıkar).
    */
   weeklySuperLikeLimit: number | null;
   dailyUndoLimit: number | null;
@@ -375,6 +474,41 @@ export type SyncReason =
   | "RC_REST_UNAVAILABLE"
   | "RC_REST_ERROR";
 
+// Hub `SubscriptionChanged` → payload.reason. Liste UÇ DEĞİL: backend yeni
+// gerekçe ekleyebiliyor, bu yüzden `(string & {})` ile açık bırakıldı — bilinmeyen
+// bir `reason` event'i düşürmemeli, durum bilgisi her hâlükârda doğru.
+export type SubscriptionChangeReason =
+  | "admin_revoke"
+  | "admin_grant"
+  | "store_purchase"
+  | "store_expired"
+  | "sync_upgrade"
+  | "sync_downgrade"
+  | (string & Record<never, never>);
+
+/**
+ * Hub `SubscriptionChanged` payload'ı. Gövde `/api/subscription/status` ile
+ * BİREBİR aynı (backend ikisini de aynı projeksiyondan üretiyor) + `reason`/`at`
+ * — bu yüzden event'i almak ek bir `/status` turu gerektirmiyor.
+ */
+export interface SubscriptionChangedEvent {
+  isActivelyPremium?: boolean;
+  premiumExpiresAt?: string | null;
+  productId?: string | null;
+  status?: SubscriptionStatusState | null;
+  autoRenewEnabled?: boolean;
+  purchasedAt?: string | null;
+  cancelledAt?: string | null;
+  isTrial?: boolean;
+  trialEndsAt?: string | null;
+  gracePeriodEndsAt?: string | null;
+  provider?: SubscriptionProvider | null;
+  originalTransactionId?: string | null;
+  latestTransactionId?: string | null;
+  reason?: SubscriptionChangeReason | null;
+  at?: string | null;
+}
+
 // `/status` ve `/sync`'in `status` alanının normalize edilmiş hâli.
 export interface SubscriptionStatusSnapshot {
   /** Backend `isActivelyPremium` — TEK gating alanı. */
@@ -402,4 +536,31 @@ export interface SubscriptionState extends SubscriptionStatusSnapshot {
   // henüz webhook'u görmediği için dönen `false` bu pencerede downgrade
   // sayılmaz. Bkz. subscriptionSlice OPTIMISTIC_PREMIUM_GRACE_MS.
   optimisticPremiumAt: number | null;
+  /** Son hub `SubscriptionChanged` gerekçesi — teşhis raporunda görünür. */
+  lastChangeReason: SubscriptionChangeReason | null;
+  /** Son hub event'inin UYGULANDIĞI an (istemci saati) — teşhis. */
+  lastEventAt: number | null;
+  /** Uçuştaki `/status` isteğinin BAŞLADIĞI an — teşhis. */
+  statusRequestAt: number | null;
+  /**
+   * Kanonik her yazımda (status / hub / sync / reconcile / optimistic) artan
+   * sayaç. Uçuştaki bir cevabın bayat olup olmadığı SAATLE DEĞİL bununla
+   * ölçülür: iki tur aynı milisaniyeye düşebiliyor ve `Date.now()`
+   * karşılaştırması o durumda taze cevapları da eliyordu.
+   */
+  writeSeq: number;
+  /**
+   * `/status` isteği yola çıkarken görülen `writeSeq`. Cevap indiğinde sayaç
+   * değişmişse arada kanonik bir yazım olmuş demektir → cevap bayat, uygulamak
+   * o yazımı geri alır.
+   */
+  statusRequestSeq: number | null;
+  /**
+   * Backend kanonik bir cevap ÜRETTİĞİ ilk an (`/status`, hub event'i veya
+   * `/sync` — hepsi `applyStatus`'tan geçer). `null` = "henüz bilmiyoruz",
+   * `isPremium:false` ile AYNI ŞEY DEĞİL. Ekranlar premium'u bir profil
+   * bayrağıyla OR'lamak zorunda kalmasın diye var: cevap geldikten sonra
+   * kanonik kaynak yalnız bu slice'tır, o OR'lar downgrade'i yutuyordu.
+   */
+  statusResolvedAt: number | null;
 }

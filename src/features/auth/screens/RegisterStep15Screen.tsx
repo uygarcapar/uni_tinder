@@ -1,4 +1,4 @@
-import { useState, useEffect } from "react";
+import { useState, useEffect, useRef } from "react";
 import {
   View,
   Text,
@@ -7,21 +7,31 @@ import {
   Image,
   ActivityIndicator,
   Alert,
+  AppState,
   Dimensions,
 } from "react-native";
+import { File } from "expo-file-system";
 import { NativeStackScreenProps } from "@react-navigation/native-stack";
 import type { AuthStackParamList } from "@/shared/types/navigation";
 import { useAppDispatch, useAppSelector } from "@/shared/hooks/redux";
 import {
   updateMultipleFields,
   registerAndComplete,
+  type ProfileSubmitError,
 } from "@/features/profile/profileSlice";
+import {
+  extractModerationPhotos,
+  isFatalReasonCode,
+  moderationReasonText,
+  moderationReasonTitle,
+  summarizeModeration,
+} from "@/features/profile/photoModeration";
 import {
   setUserAndToken,
   clearRegistrationForm,
 } from "@/features/auth/authSlice";
 import * as Location from "expo-location";
-import { Plus, X } from "lucide-react-native";
+import { Plus, X, Star } from "lucide-react-native";
 import SFIcon from "@/shared/components/SFIcon";
 import RegisterProgressBar from "@/features/auth/components/RegisterProgressBar";
 import RegisterBackButton from "@/features/auth/components/RegisterBackButton";
@@ -44,6 +54,7 @@ import { photosSchema, PhotosForm } from "@/shared/schemas/formSchemas";
 import { colors } from "../../../shared/theme/colors";
 import { useTranslation } from 'react-i18next';
 import { devLog } from '@/shared/utils/devLog';
+import { checkRegistrationToken } from '@/features/auth/registrationToken';
 
 const { width } = Dimensions.get("window");
 const CONTAINER_PADDING = 24;
@@ -53,6 +64,21 @@ const ITEM_HEIGHT = ITEM_WIDTH * (4 / 3);
 const HORIZONTAL_GAP = AVAILABLE_WIDTH - ITEM_WIDTH * 2;
 const ROW_GAP = 20;
 const SPRING_CONFIG = { damping: 22, stiffness: 140, mass: 1.4 };
+
+/**
+ * Yerel dosya hâlâ diskte mi? EMİN OLAMADIĞIMIZDA `true` döner (fail-open):
+ * yanlış negatif, kullanıcının duran fotoğrafını silmek demek olurdu.
+ * file:// dışı şemalar (ph://, content://) burada doğrulanamaz, dokunulmaz.
+ */
+const fileStillExists = (uri: string) => {
+  const normalized = uri.startsWith("/") ? `file://${uri}` : uri;
+  if (!normalized.startsWith("file://")) return true;
+  try {
+    return new File(normalized).exists;
+  } catch {
+    return true;
+  }
+};
 
 const getPosition = (index: number) => {
   "worklet";
@@ -130,18 +156,30 @@ function SortablePhoto({ id, index, positions, maxIndex, children, onDragStart, 
   );
 }
 
-function PhotoCard({ photo, onRemove }: any) {
+function PhotoCard({ photo, onRemove, isMain, pickMode, onPickMain, mainLabel }: any) {
   return (
     <View style={{ width: "100%", height: "100%" }}>
-      <View style={{ width: "100%", height: "100%", borderRadius: 32, borderCurve: "continuous", overflow: "hidden", backgroundColor: colors.surface }}>
+      <View style={{ width: "100%", height: "100%", borderRadius: 32, borderCurve: "continuous", overflow: "hidden", backgroundColor: colors.surface, borderWidth: pickMode ? 2 : 0, borderColor: colors.primary }}>
         <Image source={{ uri: photo }} style={{ width: "100%", height: "100%" }} resizeMode="cover" />
+        {/* Ana fotoğraf ilk sıradaki. Kural (tam 1 kişi) yalnızca buna
+            uygulandığı için hangisi olduğu görünür olmalı. */}
+        {isMain && !pickMode ? (
+          <View style={{ position: "absolute", left: 10, bottom: 10, flexDirection: "row", alignItems: "center", gap: 5, paddingVertical: 5, paddingHorizontal: 10, borderRadius: 999, borderCurve: "continuous", backgroundColor: colors.mediaChipBg, borderWidth: 0.5, borderColor: colors.mediaHairline }}>
+            <SFIcon name="star.fill" fallback={Star} size={11} strokeWidth={2.5} color={colors.onMedia} weight="semibold" fill={colors.onMedia} />
+            <Text style={{ fontSize: 11, fontWeight: "600", color: colors.onMedia }}>{mainLabel}</Text>
+          </View>
+        ) : null}
+        {/* Seçim modu: dokunulan foto ilk sıraya (ana fotoğrafa) taşınır. */}
+        {pickMode ? (
+          <TouchableOpacity activeOpacity={0.7} onPress={onPickMain} style={{ position: "absolute", top: 0, left: 0, right: 0, bottom: 0 }} />
+        ) : null}
       </View>
       <TouchableOpacity
         activeOpacity={1}
         onPress={onRemove}
-        style={{ position: "absolute", top: -8, right: -8, borderRadius: 999, width: 32, height: 32, alignItems: "center", justifyContent: "center", zIndex: 50, backgroundColor: colors.surface, borderWidth: 0.4, borderColor: "#696b70" }}
+        style={{ position: "absolute", top: -8, right: -8, borderRadius: 999, width: 32, height: 32, alignItems: "center", justifyContent: "center", zIndex: 50, backgroundColor: colors.surface, borderWidth: 0.4, borderColor: colors.border }}
       >
-        <View pointerEvents="none"><SFIcon name="xmark" fallback={X} size={16} strokeWidth={3} color="#7a7d82" weight="bold" /></View>
+        <View pointerEvents="none"><SFIcon name="xmark" fallback={X} size={16} strokeWidth={3} color={colors.textSecondary} weight="bold" /></View>
       </TouchableOpacity>
     </View>
   );
@@ -152,8 +190,13 @@ export default function RegisterStep15Screen({ navigation }: NativeStackScreenPr
   const dispatch = useAppDispatch();
   const profile = useAppSelector((s) => (s as any).profile || {});
   const loading = useAppSelector((s) => (s as any).profile.loading);
+  const registrationEmail = useAppSelector((s) => (s as any).auth.registrationEmail);
+  const emailVerifiedToken = useAppSelector((s) => (s as any).auth.emailVerifiedToken);
 
   const [isDraggingPhoto, setIsDraggingPhoto] = useState(false);
+  // Ana fotoğraf hatası aldıktan sonra açılan seçim modu: fotoğrafı silmek
+  // yerine BAŞKA birini ana yapmak çoğu durumda doğru çözüm (rehber §4).
+  const [mainPickMode, setMainPickMode] = useState(false);
   const positions = useSharedValue({});
 
   const { handleSubmit, setValue, watch, formState: { errors } } = useForm<PhotosForm>({
@@ -172,6 +215,74 @@ export default function RegisterStep15Screen({ navigation }: NativeStackScreenPr
   useEffect(() => {
     dispatch(updateMultipleFields({ photos }));
   }, [photos, dispatch]);
+
+  /**
+   * Yarım kayıttan dönüşte ÖLÜ fotoğraf yollarını ayıkla.
+   *
+   * crop-picker çıktıyı iOS'ta tmp/, Android'de cache/ altına yazıyor; persist
+   * edilen yalnızca yol. OS bu dizinleri uygulama kapalıyken temizleyebiliyor
+   * (depolama baskısı, sürüm güncellemesi, "önbelleği temizle"). Yol ölmüşse
+   * tile boş görünüyor ve gönderim native tarafta patlayıp kullanıcıya sebebi
+   * anlaşılmayan bir hata veriyordu — burada sessizce düşürüp haber veriyoruz.
+   *
+   * Yalnız MOUNT'ta: oturum içinde seçilen fotoğraflar zaten taze.
+   */
+  const prunedRef = useRef(false);
+  useEffect(() => {
+    if (prunedRef.current) return;
+    prunedRef.current = true;
+    const initial = photos;
+    if (initial.length === 0) return;
+    const alive = initial.filter(fileStillExists);
+    if (alive.length === initial.length) return;
+    devLog(`🧹 [RegisterStep15] ${initial.length - alive.length} photo(s) vanished from cache`);
+    setValue("photos", alive, { shouldValidate: true });
+    Alert.alert(
+      t('auth.step15.photosMissingTitle'),
+      t('auth.step15.photosMissing'),
+    );
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
+
+  /**
+   * `emailVerifiedToken` yalnız soğuk açılışta doğrulanıyordu; uygulama arka
+   * planda günlerce bekleyip öne alındığında süresi dolmuş token'la POST atılıp
+   * generic hata alınıyordu. Son adımda (ve her foreground'a dönüşte) bir kez
+   * daha soruyoruz — geçersizse kullanıcıyı boş yere fotoğraf yüklettirmeden
+   * doğrulamaya gönderiyoruz. Kayıt başarıyla bitince token null olur ve efekt
+   * hiç çalışmaz (aksi halde uygulamaya girerken Step1'e atardı).
+   */
+  useEffect(() => {
+    if (!registrationEmail || !emailVerifiedToken) return;
+    let cancelled = false;
+
+    const verify = () => {
+      checkRegistrationToken(registrationEmail, emailVerifiedToken).then((result) => {
+        // 'unknown' (ağ hatası) akışı KESMEZ — gönderim zaten kendi hatasını verir.
+        if (cancelled || result !== 'invalid') return;
+        Alert.alert(
+          t('auth.step15.sessionExpiredTitle'),
+          t('auth.step15.sessionExpired'),
+          [
+            {
+              text: t('common.ok'),
+              onPress: () =>
+                navigation.reset({ index: 0, routes: [{ name: "RegisterStep1" }] }),
+            },
+          ],
+        );
+      });
+    };
+
+    verify();
+    const sub = AppState.addEventListener('change', (next) => {
+      if (next === 'active') verify();
+    });
+    return () => {
+      cancelled = true;
+      sub.remove();
+    };
+  }, [registrationEmail, emailVerifiedToken, navigation, t]);
 
   const appendPhotos = (uris: string[]) => {
     if (uris.length === 0) return;
@@ -223,6 +334,16 @@ export default function RegisterStep15Screen({ navigation }: NativeStackScreenPr
     setValue("photos", photos.filter((p) => p !== photoToRemove), { shouldValidate: true });
   };
 
+  // Ana fotoğraf = ilk sıradaki (MainPhotoIndex hep 0 gönderiliyor), yani
+  // "ana yap" işlemi listeyi yeniden sıralamaktan ibaret.
+  const promoteToMain = (photo: string) => {
+    setMainPickMode(false);
+    if (photos[0] === photo) return;
+    setValue("photos", [photo, ...photos.filter((p) => p !== photo)], {
+      shouldValidate: true,
+    });
+  };
+
   const handleDragStart = () => { setIsDraggingPhoto(true); };
 
   const handleDragEnd = (newPositions: Record<string, number>) => {
@@ -252,10 +373,53 @@ export default function RegisterStep15Screen({ navigation }: NativeStackScreenPr
         registerAndComplete({ photos: finalPhotos, mainPhotoIndex: 0, latitude, longitude }),
       ) as any).unwrap();
       if (!response?.isSuccess) { return; }
-      dispatch(setUserAndToken({ user: response.result.user, token: response.result.token, refreshToken: response.result.refreshToken }));
-      dispatch(clearRegistrationForm());
+
+      const enterApp = () => {
+        dispatch(setUserAndToken({ user: response.result.user, token: response.result.token, refreshToken: response.result.refreshToken }));
+        dispatch(clearRegistrationForm());
+      };
+
+      // register-and-complete'in LoginResponseDto'suna opsiyonel `photos` alanı
+      // eklendi. Review/Pending fotoğraf kaydı ENGELLEMEZ — profil oluşur, foto
+      // gizli kalır. Kullanıcıya "beklemen yeterli, yeniden yükleme" demek için
+      // uygulamaya girmeden önce bir kez bilgilendiriyoruz.
+      const summary = summarizeModeration(extractModerationPhotos(response.result));
+      if (summary) {
+        Alert.alert(summary.title, summary.message, [
+          { text: t('common.ok'), onPress: enterApp },
+        ]);
+        return;
+      }
+      enterApp();
     } catch (err) {
-      devLog("❌ CompleteProfile error:", err);
+      // Eskiden burada yalnızca devLog vardı: ana fotoğraf reddedildiğinde
+      // spinner duruyor ve kullanıcıya HİÇBİR ŞEY gösterilmiyordu.
+      devLog("❌ registerAndComplete error:", err);
+      const submitError = err as ProfileSubmitError;
+      if (!submitError?.message) {
+        Alert.alert(t('common.error'), t('auth.step15.submitError'));
+        return;
+      }
+
+      const fatal = submitError.photos?.find((p) => isFatalReasonCode(p.reasonCode));
+      const reasonCode = submitError.reasonCode;
+      const title = reasonCode
+        ? moderationReasonTitle(fatal?.status ?? 'Rejected', reasonCode)
+        : t('common.error');
+
+      // Ana fotoğraf hatasında fotoğrafı SİLMEK gerekmiyor — başka birini ana
+      // yapmak yetiyor. Doğrudan o aksiyonu sunuyoruz.
+      if (isFatalReasonCode(reasonCode) && photos.length > 1) {
+        Alert.alert(title, submitError.message, [
+          {
+            text: t('profile.photoModeration.chooseAnotherMain'),
+            onPress: () => setMainPickMode(true),
+          },
+          { text: t('common.cancel'), style: "cancel" },
+        ]);
+        return;
+      }
+      Alert.alert(title, submitError.message);
     }
   });
 
@@ -265,9 +429,9 @@ export default function RegisterStep15Screen({ navigation }: NativeStackScreenPr
   const addPos = getPosition(photos.length);
 
   return (
-    <View className="flex-1 bg-bg">
+    <View className="flex-1" style={{ backgroundColor: colors.bg }}>
       {/* Header */}
-      <View className="bg-bg pt-16 pb-6 px-6">
+      <View className="pt-16 pb-6 px-6" style={{ backgroundColor: colors.bg }}>
         <RegisterBackButton onPress={() => navigation.goBack()} />
       </View>
 
@@ -275,12 +439,25 @@ export default function RegisterStep15Screen({ navigation }: NativeStackScreenPr
 
       <ScrollView className="flex-1 px-6 py-6 pt-0" keyboardShouldPersistTaps="handled">
         <View className="flex flex-col gap-2 mb-6">
-          <Text className="text-4xl font-bold text-white">{t('auth.step15.titleWithCount', { count: photos.length })}</Text>
-          <Text className="text-[18px] font-normal text-gray-400">
-            {t('auth.step15.description')}
+          <Text className="text-4xl font-bold" style={{ color: colors.text }}>{t('auth.step15.titleWithCount', { count: photos.length })}</Text>
+          <Text className="text-[18px] font-normal" style={{ color: colors.textSecondary }}>
+            {mainPickMode ? t('auth.step15.pickMainHint') : t('auth.step15.description')}
           </Text>
+          {/* Ana fotoğraf / diğerleri ayrımı AÇIKÇA yazılmalı: kullanıcı "her
+              fotoğrafta yalnız olmalıyım" sanarsa grup fotoğraflarını hiç
+              yüklemez. Kural yalnızca ana fotoğrafa uygulanıyor. */}
+          {!mainPickMode ? (
+            <View className="mt-2 flex flex-col gap-1">
+              <Text className="text-[14px] font-normal" style={{ color: colors.textSecondary }}>
+                ⭐  {t('profile.photoModeration.mainHint')}
+              </Text>
+              <Text className="text-[14px] font-normal" style={{ color: colors.textMuted }}>
+                {t('profile.photoModeration.otherHint')}
+              </Text>
+            </View>
+          ) : null}
           {errors.photos ? (
-            <Text className="text-red-500 text-[14px] font-normal mt-2">{errors.photos.message}</Text>
+            <Text className="text-[14px] font-normal mt-2" style={{ color: colors.error }}>{errors.photos.message}</Text>
           ) : null}
         </View>
 
@@ -295,9 +472,16 @@ export default function RegisterStep15Screen({ navigation }: NativeStackScreenPr
               maxIndex={photos.length - 1}
               onDragStart={handleDragStart}
               onDragEnd={handleDragEnd}
-              disabled={loading}
+              disabled={loading || mainPickMode}
             >
-              <PhotoCard photo={photo} onRemove={loading ? undefined : () => removePhoto(photo)} />
+              <PhotoCard
+                photo={photo}
+                onRemove={loading || mainPickMode ? undefined : () => removePhoto(photo)}
+                isMain={index === 0}
+                pickMode={mainPickMode}
+                onPickMain={() => promoteToMain(photo)}
+                mainLabel={t('auth.step15.mainPhotoLabel')}
+              />
             </SortablePhoto>
           ))}
 
@@ -307,7 +491,7 @@ export default function RegisterStep15Screen({ navigation }: NativeStackScreenPr
                 activeOpacity={1}
                 onPress={pickImage}
                 disabled={loading}
-                style={{ width: "100%", height: "100%", borderRadius: 32, borderCurve: "continuous", overflow: "hidden", borderWidth: 0.5, borderColor: "rgba(255,255,255,0.1)", backgroundColor: colors.surface, alignItems: "center", justifyContent: "center", opacity: loading ? 0.5 : 1 }}
+                style={{ width: "100%", height: "100%", borderRadius: 32, borderCurve: "continuous", overflow: "hidden", borderWidth: 0.5, borderColor: colors.hairline, backgroundColor: colors.surface, alignItems: "center", justifyContent: "center", opacity: loading ? 0.5 : 1 }}
               >
                 <View pointerEvents="none"><SFIcon name="plus" fallback={Plus} size={40} strokeWidth={2} color={colors.textMuted} weight="semibold" /></View>
               </TouchableOpacity>
@@ -320,13 +504,13 @@ export default function RegisterStep15Screen({ navigation }: NativeStackScreenPr
       <View className="px-8 pb-8 pt-4 absolute bottom-0 left-0 right-0">
         <AnimatedPressable
           onPress={handleCompleteProfile}
-          disabled={loading || photos.length < 2 || isDraggingPhoto}
-          style={{ borderRadius: 999, borderCurve: "continuous", overflow: "hidden", opacity: loading || photos.length < 2 || isDraggingPhoto ? 0.5 : 1, backgroundColor: colors.text }}
+          disabled={loading || photos.length < 2 || isDraggingPhoto || mainPickMode}
+          style={{ borderRadius: 999, borderCurve: "continuous", overflow: "hidden", opacity: loading || photos.length < 2 || isDraggingPhoto || mainPickMode ? 0.5 : 1, backgroundColor: colors.inverseSurface }}
         >
           {loading ? (
-            <View className="py-[18px]"><ActivityIndicator color="#000" /></View>
+            <View className="py-[18px]"><ActivityIndicator color={colors.onInverseSurface} /></View>
           ) : (
-            <Text className="text-black py-[20px] font-bold text-[15px] text-center">{t('auth.step15.submitButton')}</Text>
+            <Text className="py-[20px] font-bold text-[15px] text-center" style={{ color: colors.onInverseSurface }}>{t('auth.step15.submitButton')}</Text>
           )}
         </AnimatedPressable>
       </View>

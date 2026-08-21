@@ -21,11 +21,11 @@ import {
   logout,
   setEmailVerifiedToken,
 } from "@/features/auth/authSlice";
-import { Mail, RotateCcw, ArrowLeft, Check, ClipboardPaste } from "lucide-react-native";
+import { Mail, RotateCcw, ArrowLeft, Check, ClipboardPaste, Clock } from "lucide-react-native";
 import SFIcon from "@/shared/components/SFIcon";
 import { API_BASE_URL, API_ENDPOINTS } from "@/shared/constants/api";
 import AnimatedPressable from "@/shared/components/AnimatedPressable";
-import { colors } from "../../../shared/theme/colors";
+import { colors, ink } from "../../../shared/theme/colors";
 import { useTranslation } from 'react-i18next';
 import { parseRetryAfterSeconds } from '@/features/auth/verificationRetry';
 import { extractOtp, OTP_LENGTH } from '@/features/auth/otpCode';
@@ -44,7 +44,11 @@ export default function RegisterStep2Screen({ route, navigation }: NativeStackSc
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState("");
   const [resendLoading, setResendLoading] = useState(false);
-  const [resendSuccess, setResendSuccess] = useState(false);
+  // "sent" = mail gerçekten yeniden gitti (CODE_SENT), "pending" = cooldown
+  // içindeyiz, backend maili tekrar YOLLAMADI (CODE_PENDING). İkisi de
+  // isSuccess:true döndüğü için ayrımı `result.status`'tan yapıyoruz — aksi
+  // halde kullanıcıya gitmemiş bir maili beklettiriyoruz.
+  const [resendToast, setResendToast] = useState<null | "sent" | "pending">(null);
   // Backend "şu kadar saniye sonra tekrar iste" diyorsa (CODE_PENDING'de kod
   // hâlâ geçerli olduğu için) geri sayım oradan başlar; söylemiyorsa 0.
   const [countdown, setCountdown] = useState(route?.params?.retryAfterSeconds ?? 0);
@@ -165,7 +169,7 @@ export default function RegisterStep2Screen({ route, navigation }: NativeStackSc
   const handleResend = async () => {
     if (countdown > 0) return;
     setResendLoading(true);
-    setResendSuccess(false);
+    setResendToast(null);
     setError("");
 
     try {
@@ -185,9 +189,9 @@ export default function RegisterStep2Screen({ route, navigation }: NativeStackSc
       }
 
       if (response.isSuccess) {
-        setResendSuccess(true);
+        setResendToast(response?.result?.status === "CODE_PENDING" ? "pending" : "sent");
         setCountdown(parseRetryAfterSeconds(response) ?? RESEND_COOLDOWN_SECONDS);
-        setTimeout(() => setResendSuccess(false), 1500);
+        setTimeout(() => setResendToast(null), 1500);
       } else {
         setError(response.message || "Kod gönderilemedi");
       }
@@ -210,8 +214,8 @@ export default function RegisterStep2Screen({ route, navigation }: NativeStackSc
   };
 
   return (
-    <View className="flex-1 bg-bg -mt-[100px]">
-      {resendSuccess && (
+    <View className="flex-1 -mt-[100px]" style={{ backgroundColor: colors.bg }}>
+      {resendToast && (
         <View
           pointerEvents="none"
           style={{
@@ -231,7 +235,7 @@ export default function RegisterStep2Screen({ route, navigation }: NativeStackSc
               borderCurve: "continuous",
               backgroundColor: "rgba(30,30,30,0.95)",
               borderWidth: 0.3,
-              borderColor: "rgba(255,255,255,0.15)",
+              borderColor: colors.hairlineStrong,
               paddingHorizontal: 20,
               paddingVertical: 14,
               flexDirection: "row",
@@ -239,9 +243,15 @@ export default function RegisterStep2Screen({ route, navigation }: NativeStackSc
               gap: 10,
             }}
           >
-            <SFIcon name="checkmark" fallback={Check} size={20} color={colors.text} strokeWidth={3} weight="bold" />
-            <Text className="text-white text-[15px] font-medium">
-              {t('auth.step2.resendSuccess')}
+            {resendToast === "pending" ? (
+              <SFIcon name="clock" fallback={Clock} size={20} color={colors.text} strokeWidth={2} weight="bold" />
+            ) : (
+              <SFIcon name="checkmark" fallback={Check} size={20} color={colors.text} strokeWidth={3} weight="bold" />
+            )}
+            <Text className="text-[15px] font-medium" style={{ color: colors.text }}>
+              {resendToast === "pending"
+                ? t('auth.step2.resendPending', { seconds: countdown })
+                : t('auth.step2.resendSuccess')}
             </Text>
           </View>
         </View>
@@ -259,10 +269,10 @@ export default function RegisterStep2Screen({ route, navigation }: NativeStackSc
           <View className="items-center flex flex-col gap-10 p-8">
             <SFIcon name="envelope" fallback={Mail} strokeWidth={1} size={140} color={colors.text} />
             <View>
-              <Text className="text-3xl font-bold text-white mb-3 text-center">
+              <Text className="text-3xl font-bold mb-3 text-center" style={{ color: colors.text }}>
                 {t('auth.step2.title')}
               </Text>
-              <Text className="text-white/80 text-[18px] text-center">
+              <Text className="text-[18px] text-center" style={{ color: ink(0.8) }}>
                 {email}
                 {isPending
                   ? t('auth.step2.descriptionPending')
@@ -311,18 +321,21 @@ export default function RegisterStep2Screen({ route, navigation }: NativeStackSc
                     borderCurve: "continuous",
                     backgroundColor: colors.surface,
                     borderWidth: error ? 1 : 0,
-                    borderColor: error ? "#dc2626" : "transparent",
+                    borderColor: error ? colors.error : "transparent",
                   },
                   focusedPinCodeContainerStyle: {
                     borderWidth: error ? 1 : 0,
-                    borderColor: error ? "#dc2626" : "transparent",
+                    borderColor: error ? colors.error : "transparent",
                   },
                   pinCodeTextStyle: {
-                    color: "#fff",
+                    // Kutunun zemini colors.surface (medya değil) → metin de
+                    // tema metin rengi olmalı. onMedia her modda beyaz olduğu
+                    // için açık modda gri kutuda görünmüyordu.
+                    color: colors.text,
                     fontSize: 30,
                     fontWeight: "600",
                   },
-                  focusStickStyle: { backgroundColor: colors.text },
+                  focusStickStyle: { backgroundColor: colors.inverseSurface },
                 }}
               />
             </View>
@@ -338,14 +351,14 @@ export default function RegisterStep2Screen({ route, navigation }: NativeStackSc
                 ) : countdown > 0 ? (
                   <View className="flex-row items-center gap-2">
                     <SFIcon name="arrow.counterclockwise" fallback={RotateCcw} size={16} color={colors.neutral200} strokeWidth={2.5} weight="bold" />
-                    <Text className="text-gray-300 font-medium">
+                    <Text className="font-medium" style={{ color: colors.neutral200 }}>
                       {t('auth.step2.resendCountdown', { countdown })}
                     </Text>
                   </View>
                 ) : (
                   <View className="flex-row py-[2px] items-center gap-2">
                     <SFIcon name="arrow.counterclockwise" fallback={RotateCcw} size={16} color={colors.text} strokeWidth={2.5} weight="bold" />
-                    <Text className="text-white font-medium">
+                    <Text className="font-medium" style={{ color: colors.text }}>
                       {t('auth.step2.resendButton')}
                     </Text>
                   </View>
@@ -358,7 +371,7 @@ export default function RegisterStep2Screen({ route, navigation }: NativeStackSc
                     style={{
                       width: 1,
                       height: 14,
-                      backgroundColor: "rgba(255,255,255,0.2)",
+                      backgroundColor: ink(0.2),
                     }}
                   />
                   <TouchableOpacity
@@ -375,7 +388,7 @@ export default function RegisterStep2Screen({ route, navigation }: NativeStackSc
                         strokeWidth={2.5}
                         weight="bold"
                       />
-                      <Text className="text-white font-medium">
+                      <Text className="font-medium" style={{ color: colors.text }}>
                         {t('auth.step2.pasteButton')}
                       </Text>
                     </View>
@@ -390,15 +403,15 @@ export default function RegisterStep2Screen({ route, navigation }: NativeStackSc
                 borderCurve: "continuous",
                 overflow: "hidden",
                 opacity: loading || code.length < OTP_LENGTH ? 0.5 : 1,
-                backgroundColor: colors.text,
+                backgroundColor: colors.inverseSurface,
               }}
               onPress={() => handleVerify()}
               disabled={loading || code.length < OTP_LENGTH}
             >
               {loading ? (
-                <ActivityIndicator className="py-[20px]" color="#000" />
+                <ActivityIndicator className="py-[20px]" color={colors.onInverseSurface} />
               ) : (
-                <Text className="text-black py-[20px] text-center font-medium text-[15px]">
+                <Text className="py-[20px] text-center font-medium text-[15px]" style={{ color: colors.onInverseSurface }}>
                   {t('auth.step2.verifyButton')}
                 </Text>
               )}
@@ -415,7 +428,7 @@ export default function RegisterStep2Screen({ route, navigation }: NativeStackSc
                 alignSelf: "center",
                 gap: 6,
                 borderWidth: 0,
-                borderColor: "rgba(255,255,255,0.15)",
+                borderColor: colors.hairlineStrong,
                 borderRadius: 999,
                 borderCurve: "continuous",
                 paddingHorizontal: 18,
@@ -423,7 +436,7 @@ export default function RegisterStep2Screen({ route, navigation }: NativeStackSc
               }}
             >
               <SFIcon name="arrow.left" fallback={ArrowLeft} size={16} color={colors.text} strokeWidth={2.5} weight="bold" />
-              <Text className="text-white font-medium">{t('auth.step2.backButton')}</Text>
+              <Text className="font-medium" style={{ color: colors.text }}>{t('auth.step2.backButton')}</Text>
             </TouchableOpacity>
           </View>
         </View>

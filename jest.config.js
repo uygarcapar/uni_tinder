@@ -30,6 +30,9 @@ module.exports = {
       '@expo',
       'expo[a-z-]*',
       '@react-native',
+      // ESM-only build; navigationRef'i (ve dolaylı olarak onu import eden
+      // her component'i) test edebilmek için babel'den geçmeli.
+      '@react-navigation',
       // RN "exports" koşulundan TS kaynağına çözülen paketler — babel'den geçmeli.
       '@reduxjs/toolkit',
       'immer',

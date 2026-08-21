@@ -1,6 +1,6 @@
 import { useEffect, useRef, useState, useCallback } from 'react';
 import { useTranslation } from 'react-i18next';
-import { NavigationContainer, DarkTheme, type LinkingOptions } from '@react-navigation/native';
+import { NavigationContainer, DarkTheme, DefaultTheme, type LinkingOptions } from '@react-navigation/native';
 import { createNativeStackNavigator } from '@react-navigation/native-stack';
 import { View, AppState, AppStateStatus, InteractionManager } from 'react-native';
 import { Image as ExpoImage } from 'expo-image';
@@ -23,8 +23,19 @@ import { store } from '@/shared/store';
 import { clearChatCache } from '@/shared/store/mmkvStorage';
 
 import SettingsModal from '@/features/profile/components/SettingsModal';
-import { setCurrentAccessToken, setOnTokenRefreshed, setOnAuthLost } from '@/shared/services/api';
-import { isSelfInflictedForceLogout, clearSelfLoginMark } from '@/shared/utils/sessionGuard';
+import {
+  setCurrentAccessToken,
+  setOnTokenRefreshed,
+  setOnAuthLost,
+  getCurrentAccessToken,
+  refreshAccessToken,
+} from '@/shared/services/api';
+import { isTokenExpiringSoon } from '@/shared/utils/jwt';
+import {
+  isSelfInflictedForceLogout,
+  isSelfInflictedPasswordChange,
+  clearSelfLoginMark,
+} from '@/shared/utils/sessionGuard';
 import {
   setOnAccountBlocked,
   resetAccountBlockLatch,
@@ -37,11 +48,19 @@ import { authService } from '@/features/auth/authService';
 import {
   setUserAndToken,
   clearRegistrationForm,
+  setRegistrationStep,
   logout,
   accountBlocked,
   clearAccountBlock,
 } from '@/features/auth/authSlice';
 import {
+  FIRST_REGISTRATION_STEP,
+  isRegistrationStep,
+  registrationResumeStack,
+} from '@/features/auth/registrationFlow';
+import { checkRegistrationToken } from '@/features/auth/registrationToken';
+import {
+  applySubscriptionChanged,
   fetchSubscriptionStatus,
   hydrateSyncPending,
   reconcileIfMismatched,
@@ -49,7 +68,7 @@ import {
   selectIsPremium,
   setPremium,
 } from '@/features/profile/subscriptionSlice';
-import { hasPendingPremiumSync, premiumSyncUserKey } from '@/features/profile/pendingPremiumSync';
+import { hasWitnessedPurchase, premiumSyncUserKey } from '@/features/profile/pendingPremiumSync';
 import { addCustomerInfoListener, getRevenueCatAppUserId, initRevenueCat, logRevenueCatIdentity, loginRevenueCat, logoutRevenueCat } from '@/features/profile/subscriptionService';
 import profileService from '@/features/profile/profileService';
 import { sendLocationHeartbeat, clearLocationHeartbeatState } from '@/features/profile/locationHeartbeat';
@@ -61,10 +80,11 @@ import TabNavigator from './TabNavigator';
 import KVKKConsentScreen, { CURRENT_KVKK_VERSION } from '@/features/auth/screens/KVKKConsentScreen';
 import ChatScreen from '@/features/chat/screens/ChatScreen';
 import NotificationsScreen from '@/features/notifications/screens/NotificationsScreen';
+import ChangePasswordScreen from '@/features/auth/screens/ChangePasswordScreen';
 import DeletionBanner from '@/features/notifications/components/DeletionBanner';
 import MatchModal from '@/features/notifications/components/MatchModal';
-import { API_BASE_URL, API_ENDPOINTS } from '@/shared/constants/api';
 import realtimeService from '@/features/chat/realtimeService';
+import { clearAllDrafts } from '@/features/chat/draftStore';
 import {
   receiveMessage,
   messageSent,
@@ -79,7 +99,10 @@ import {
   userStatusResponse,
   matchNotification,
   conversationDeactivated,
+  conversationRestored,
+  historyRevealed,
   fetchConversations,
+  fetchHistory,
   fetchUnreadCount,
   resetChat,
 } from '@/features/chat/chatSlice';
@@ -90,7 +113,8 @@ import {
 } from '@/features/discover/swipeSlice';
 import { useAppDispatch, useAppSelector } from '@/shared/hooks/redux';
 import type { RootStackParamList } from '@/shared/types/navigation';
-import { colors } from '../shared/theme/colors';
+import { colors, isLight } from '../shared/theme/colors';
+import { onBeforeThemeSwap } from '../shared/theme/themeMode';
 import { mark, summary } from '@/shared/debug/startupTiming';
 import { maybeRequestReviewAfterMatch, recordMatchForReview } from '@/shared/services/appReview';
 import { analytics } from '@/shared/services/analytics';
@@ -124,13 +148,53 @@ const LINKING: LinkingOptions<RootStackParamList> = {
   },
 };
 
-// Dark theme override → NavigationContainer'ın default light theme'i (white BG)
-// iOS 26 liquid glass tab bar transparent moduna geçtiğinde sızıp icon'ları
-// siyaha flip ettiriyordu. Tüm nav view'lerin BG'sini #121212'ye lock'la.
-const NAV_THEME = {
-  ...DarkTheme,
-  colors: { ...DarkTheme.colors, background: colors.bg, card: colors.bg },
+/**
+ * NavigationContainer'ın default light theme'i (white BG) iOS 26 liquid glass
+ * tab bar transparent moduna geçtiğinde sızıp icon'ları siyaha flip ettiriyordu;
+ * o yüzden tüm nav view'lerinin BG'si açıkça colors.bg'ye kilitleniyor.
+ *
+ * FONKSIYON, sabit DEĞİL: hem taban tema (Dark/Default) hem colors.bg temaya
+ * bağlı — modül seviyesinde değerlenirse tema değişince bayat kalır
+ * (bkz. shared/theme/colors.ts mutasyon sözleşmesi).
+ */
+const navTheme = () => {
+  const base = isLight() ? DefaultTheme : DarkTheme;
+  return {
+    ...base,
+    colors: { ...base.colors, background: colors.bg, card: colors.bg },
+  };
 };
+
+/**
+ * Tema değişiminde App.tsx AppNavigator'ı `key` ile remount ediyor. Remount
+ * navigasyon yığınını sıfırlardı — kullanıcı Ayarlar'dayken tema değiştirip
+ * Discover'a düşerdi. Unmount'ta mevcut state'i buraya alıp yeni container'a
+ * initialState olarak veriyoruz.
+ *
+ * Yalnız tema takası için: auth geçişlerindeki remount (navigationKey) BİLEREK
+ * yığını sıfırlıyor, oraya karışmıyoruz — bu yüzden snapshot tek kullanımlık.
+ */
+let themeSwapNavState: any = null;
+
+/**
+ * "Kaldığın yerden devam et" yığını. Yarım kalmış kayıt sihirbazı soğuk
+ * açılışta baştan değil, en son bulunulan adımdan sürüyor.
+ *
+ * `initialRouteName` tek başına yetmiyor: yığında tek ekran olur, geri butonu
+ * ölü kalırdı. Buraya adım-öncesi tüm rotaları dizip container'a initialState
+ * olarak veriyoruz — ilk kare doğru ekranı çiziyor (reset/flash yok) ve geri
+ * akışı da çalışıyor.
+ *
+ * themeSwapNavState gibi TEK KULLANIMLIK: container `key={navigationKey}` ile
+ * remount olduğunda (kayıt bitip authed'e geçiş) eski yığın geri gelmesin.
+ */
+let resumeNavState: any = null;
+
+onBeforeThemeSwap(() => {
+  themeSwapNavState = navigationRef.isReady()
+    ? navigationRef.getRootState()
+    : null;
+});
 
 // NavigationContainer hazır olana kadar bekleyip callback'i çalıştırır. Cold start'ta
 // push tap routing'i container mount'tan önce tetiklenebiliyor; ~8sn içinde hazır
@@ -200,6 +264,11 @@ function MainNavigator() {
         component={NotificationsScreen}
         options={{ animation: 'slide_from_right' }}
       />
+      <Stack.Screen
+        name="ChangePassword"
+        component={ChangePasswordScreen}
+        options={{ animation: 'slide_from_right' }}
+      />
     </Stack.Navigator>
   );
 }
@@ -218,6 +287,13 @@ const DEV_PREVIEW_MY_PHOTO = 'https://randomuser.me/api/portraits/men/32.jpg';
 
 /** `subscription/*` rate limit'i 60 istek/60 sn — foreground turu bu aralıkla. */
 const SUBSCRIPTION_REFRESH_THROTTLE_MS = 60_000;
+
+/**
+ * Canlı beğeniden sonra rozeti sunucuyla hizalama gecikmesi. Toast'ın ekranda
+ * kaldığı süreden uzun (kullanıcı bakarken sayı oynamasın), kullanıcının
+ * Beğeniler'e geçmesinden kısa (oraya vardığında rozet çoktan doğru olsun).
+ */
+const LIKES_RECONCILE_DEBOUNCE_MS = 6_000;
 
 /**
  * Aynı bildirim tap'i için FCM ve expo-notifications listener'larının ikisi de
@@ -239,7 +315,7 @@ const EXPIRY_TIMER_SKEW_MS = 5_000;
 
 export default function AppNavigator() {
   const { t } = useTranslation();
-  const { isAuthenticated, user, token, kvkkVersion, emailVerifiedToken, registrationEmail, accountBlock } =
+  const { isAuthenticated, user, token, kvkkVersion, emailVerifiedToken, registrationEmail, registrationStep, accountBlock } =
     useAppSelector((state) => (state as any).auth);
   // Sessiz refresh her rotasyonda `token`'ı değiştiriyor. SignalR/AppState
   // efektleri buna değil, "token var mı" boolean'ına bağlanır — aksi halde her
@@ -317,10 +393,46 @@ export default function AppNavigator() {
           message: t('auth.session.closedMessage'),
           variant: 'error',
         });
+      } else if (reason === 'password_changed') {
+        // Başka bir cihazda şifre değişti/sıfırlandı. Hub sinyali kaçtıysa
+        // (uygulama kapalıydı) kullanıcı buraya düşer — "oturum düştü" demek
+        // yerine gerçek sebebi söyle.
+        showInfoToast({
+          title: t('auth.session.passwordChangedTitle'),
+          message: t('auth.session.passwordChangedMessage'),
+          variant: 'error',
+        });
+      } else if (reason === 'refresh_expired') {
+        // 30 günlük refresh ömrü doldu. Sıradan bir olay — metin de öyle
+        // olmalı; "güvenlik" dili kullanıcıyı hesabı ele geçirilmiş sanıp
+        // şifre değiştirmeye koşturuyor.
+        showInfoToast({
+          title: t('auth.session.expiredTitle'),
+          message: t('auth.session.expiredMessage'),
+          variant: 'error',
+        });
+      } else if (reason === 'session_logout') {
+        showInfoToast({
+          title: t('auth.session.loggedOutTitle'),
+          message: t('auth.session.loggedOutMessage'),
+          variant: 'error',
+        });
+      } else if (reason === 'token_reuse') {
+        // Ölü token grace penceresi DIŞINDA kullanıldı. Sakin ton: vakaların
+        // çoğu saldırı değil, kaybolmuş bir refresh cevabı ya da geç uyanan
+        // ikinci bir cihaz.
+        showInfoToast({
+          title: t('auth.session.endedTitle'),
+          message: t('auth.session.endedMessage'),
+          variant: 'error',
+        });
       }
+      // `session_expired` BİLEREK sessiz: gerekçesi bilinmeyen 401 (eski
+      // backend, çıplak 401) ve istemci tarafı `token_missing` buraya düşüyor;
+      // ikisinde de kullanıcıya söylenecek doğru bir şey yok.
       dispatch(logout());
     });
-  }, [dispatch]);
+  }, [dispatch, t]);
 
   // Hesap yaptırımı (ban / askı / silme süreci) → oturumu düşür, kapatılamaz
   // ekranı aç. Tetikleyici her zaman sunucunun 403'ü; api.ts token'ları çoktan
@@ -376,7 +488,12 @@ export default function AppNavigator() {
     // görmüyor" bilgisi RAM'le birlikte gidiyordu. MMKV'deki kalıcı kaydı
     // ilk render'da senkron oku: ağ turu beklenmeden "aktivasyon sürüyor"
     // kartı görünsün, kullanıcı free'ye düşmüş sanmasın.
-    dispatch(hydrateSyncPending(hasPendingPremiumSync(premiumSyncUserKey(user))));
+    // NOT: bu efekt her AÇILIŞTA DEĞİL, her MOUNT'ta koşuyor — AppNavigator
+    // tema değişiminde `key={mode}` ile remount ediliyor (bkz. App.tsx). Yani
+    // buradaki okuma kartın hayatta kalma yolu: kayıt diskte durduğu sürece
+    // kart her tema değişiminde geri gelir. Bu yüzden yalnız GÖRDÜĞÜMÜZ satın
+    // almalar okunuyor — RC cache'inden türetilmiş kayıtlar kartı diriltmesin.
+    dispatch(hydrateSyncPending(hasWitnessedPurchase(premiumSyncUserKey(user))));
     (async () => {
       // Kimlik anahtarı `userId ?? id` — backend bazı yanıtlarda `userId`,
       // bazılarında `id` döndürüyor (superlike redeem kuyruğu da bu yüzden tek
@@ -431,6 +548,23 @@ export default function AppNavigator() {
     // şekilde de döndürüyor), yalnız `userId`e bağlanınca `id`li hesapta efekt
     // yeniden koşmuyordu — superlike redeem efektindeki dep listesiyle aynı.
   }, [isAuthenticated, user?.userId, user?.id, dispatch]);
+
+  // ── Tier değişti → premium'a göre şekillenen TÜM cache'leri tazele ────────
+  // Tier kararını artık her yer tek kaynaktan okuyor (features/profile/
+  // premiumTier), ama backend payload'larının İÇİNDEKİ premium'a bağlı veriler
+  // (kota sayıları, filtre kilitleri, premium-scoped profil alanları) kendi
+  // cache'lerinde donmuş kalıyor: `/swipe/stats` oturumda bir kez çekiliyor,
+  // `/filters` modal açılışında. Bayrak anında düşse de SAYILAR eski kalırdı
+  // (premium bitti ama "sınırsız swipe" yazıyor gibi). Geçişi tek yerden
+  // duyurmak, her ekranın kendi tazeleme yamasını yazmasından daha güvenli —
+  // eski hâlde her ekran bunu ayrı ayrı ve eksik yapıyordu.
+  const prevPremiumTierRef = useRef(isPremiumNow);
+  useEffect(() => {
+    if (prevPremiumTierRef.current === isPremiumNow) return;
+    prevPremiumTierRef.current = isPremiumNow;
+    queryClient.invalidateQueries({ queryKey: swipeKeys.stats });
+    queryClient.invalidateQueries({ queryKey: swipeKeys.filters });
+  }, [isPremiumNow, queryClient]);
 
   // Abonelik bitiş anında tek atımlık tazeleme (§6-6). Kullanıcı uygulamayı
   // açık bırakırsa premium UI'ı bitişten sonra da göstermeye devam ediyordu;
@@ -493,6 +627,10 @@ export default function AppNavigator() {
       // 1.5sn throttle penceresinde app kill edilirse önceki kullanıcının mesajları
       // diskte kalabilirdi; geç flush olan pending write de artık boş state yazar.
       clearChatCache();
+      // Taslaklar clearChatCache ile aynı MMKV dosyasında — disk zaten silindi;
+      // bu çağrı bellek içi snapshot'ı da sıfırlar ki aynı process'te başka
+      // hesaba girilirse önceki kullanıcının taslakları listede görünmesin.
+      clearAllDrafts();
       // Konum debounce damgası kullanıcıya özgü — sonraki hesap ilk açılışta
       // kendi koordinatını göndersin.
       clearLocationHeartbeatState();
@@ -529,6 +667,31 @@ export default function AppNavigator() {
       const batch = deliveredBuffer;
       deliveredBuffer = [];
       dispatch(messagesDeliveredBatch(batch));
+    };
+
+    // Canlı IncomingLike rozeti iyimser artırıyor (addWhoLikedMe) — ama o
+    // beğenenin WhoLikedMe cevabına GİRECEĞİ garanti değil: backend listeyi
+    // deaktif / shadow-ban'li / silme sürecindeki kullanıcıları eleyerek
+    // döndürürken IncomingLike event'i bu filtreden geçmiyor. Fark rozette
+    // birikir ve "rozet 3, kart 2" olarak görünür. Bu yüzden iyimser yazım
+    // kısa bir pencerede kanonik cevapla kapatılıyor: tek doğruluk kaynağı
+    // sunucu, iyimser sayaç yalnızca o pencereyi dolduran bir tahmin.
+    //
+    // Debounce: beğeni burst'ünde tek tazeleme yeter. Tazelemeyi tercihen
+    // Likes ekranı yapar (likesDirty) — o tek istekle hem rozeti hem kart
+    // listesini aynı cevaptan yazar; ekran mount değilse (preload atlanmış
+    // olabilir, bkz. DiscoverScreen preloadUnlessInChat) rozet için thunk'a
+    // düşeriz. Arka planda hiç tetiklenmez: foreground turu zaten çekiyor.
+    let likesReconcileTimer: ReturnType<typeof setTimeout> | null = null;
+    const scheduleLikesReconcile = () => {
+      if (appStateRef.current !== 'active') return;
+      if (likesReconcileTimer) clearTimeout(likesReconcileTimer);
+      likesReconcileTimer = setTimeout(() => {
+        likesReconcileTimer = null;
+        if (!mounted || appStateRef.current !== 'active') return;
+        if (uiBus.hasListeners('likesDirty')) uiBus.emit('likesDirty');
+        else dispatch(fetchWhoLikedMe());
+      }, LIKES_RECONCILE_DEBOUNCE_MS);
     };
 
     const unsubscribers = [
@@ -599,6 +762,7 @@ export default function AppNavigator() {
         if (!mounted) return;
         dispatch(addWhoLikedMe(payload?.likerUserId));
         uiBus.emit('incomingLike', payload);
+        scheduleLikesReconcile();
 
         if (appStateRef.current !== 'active') return;
         // Düz beğenide kimlik premium'a kilitli (bkz. LikesScreen / bildirim
@@ -611,6 +775,36 @@ export default function AppNavigator() {
           senderName: identityLocked ? null : payload?.likerDisplayName,
           photoUrl: identityLocked ? null : payload?.likerPhotoUrl,
         });
+      }),
+      // Karşı taraf eşleşmeyi kaldırdı. BİLDİRİM GÖSTERİLMEZ (ürün kararı:
+      // unmatch simetrik ve sessizdir) — sohbet yalnızca kapalıya düşer.
+      realtimeService.on('ConversationDeactivated', (payload) => {
+        if (!mounted) return;
+        const convId = payload?.conversationId;
+        // restorableUntil = null: geri alma yalnız unmatch EDENE açık, bu event
+        // karşı tarafa gidiyor — "geri al" butonu bizde çıkmamalı.
+        if (convId) {
+          dispatch(
+            conversationDeactivated({ conversationId: convId, restorableUntil: null }),
+          );
+        }
+        dispatch(fetchConversations({ force: true }));
+      }),
+      realtimeService.on('ConversationRestored', (payload) => {
+        if (!mounted) return;
+        const convId = payload?.conversationId;
+        if (convId) dispatch(conversationRestored({ conversationId: convId }));
+        dispatch(fetchConversations({ force: true }));
+      }),
+      // Geçmiş ORTAK: karşı taraf "eski sohbeti göster"e bastıysa bizim de
+      // ekranımız güncellenir. Kapıyı kapat + ilk sayfayı yeniden çek (gizli
+      // mesajlar artık cevaba dahil).
+      realtimeService.on('ConversationHistoryRevealed', (payload) => {
+        if (!mounted) return;
+        const convId = payload?.conversationId;
+        if (!convId) return;
+        dispatch(historyRevealed({ conversationId: convId }));
+        dispatch(fetchHistory({ conversationId: convId, cursor: null, pageSize: 30 }));
       }),
       realtimeService.on('NewNotification', (notif) => {
         if (!mounted) return;
@@ -642,7 +836,13 @@ export default function AppNavigator() {
         // yalnız açık sohbetten çıkabileceği için aktif sohbet doğru hedef.
         if (err?.code === 'CONVERSATION_ERROR' || err?.code === 'FORBIDDEN') {
           const convId = activeConvRef.current;
-          if (convId) dispatch(conversationDeactivated({ conversationId: convId }));
+          // Kapatan taraf BİZ değiliz (kendi unmatch'imizde gönderim denemiyoruz)
+          // → geri alma penceresi yok, "geri al" butonu çıkmamalı.
+          if (convId) {
+            dispatch(
+              conversationDeactivated({ conversationId: convId, restorableUntil: null }),
+            );
+          }
           dispatch(fetchConversations({ force: true }));
           return;
         }
@@ -679,6 +879,26 @@ export default function AppNavigator() {
           return;
         }
 
+        // Şifre değişikliği/sıfırlaması tüm oturumları düşürüyor ve sinyal
+        // işlemi YAPAN cihaza da gidiyor. O cihazda damga var: şifre değiştirme
+        // cevabındaki yeni token setiyle oturum devam ediyor, sıfırlamada da
+        // kapanışı ekran yönetiyor. Diğer cihazlarda damga yok → normal çıkış,
+        // istenen davranış bu.
+        if (reason === 'password_changed' || reason === 'password_reset') {
+          if (isSelfInflictedPasswordChange()) {
+            console.warn('[auth] ForceLogout yok sayıldı — şifreyi bu cihaz değiştirdi');
+            return;
+          }
+          showInfoToast({
+            title: t('auth.session.passwordChangedTitle'),
+            message: t('auth.session.passwordChangedMessage'),
+            variant: 'error',
+          });
+          await realtimeService.disconnect().catch(() => {});
+          dispatch(logout());
+          return;
+        }
+
         // Yaptırım değil: e-posta yeniden doğrulaması isteniyor. Ayrı bir ekran
         // yok — çıkış yaptırıyoruz, tekrar giriş yapıldığında backend kullanıcıyı
         // isMailVerified=false döneceği için AuthNavigator zaten doğrulama
@@ -694,18 +914,80 @@ export default function AppNavigator() {
           return;
         }
 
-        // "Başka cihazdan giriş" toast'ı yalnız o senaryoda — moderation_action
-        // gibi yeni reason'larda yanlış metin gösterilmesin. reason yoksa eski
-        // davranış korunur (backend bu alanı her zaman göndermiyordu).
-        if (reason === undefined || reason === null || reason === 'new_login_elsewhere') {
+        // "Başka cihazdan giriş" toast'ı YALNIZ backend bunu açıkça söylediğinde.
+        //
+        // HUB'DA reason HİÇBİR ZAMAN NULL DEĞİL — üç emit noktasının üçü de
+        // literal gönderiyor (login → new_login_elsewhere, RevokeAllSessions →
+        // password_changed/password_reset, ModerationActionService → yaptırım
+        // kodları veya moderation_action). Buradaki null kontrolü savunma
+        // amaçlı; asıl null REST tarafında, /refresh-token 401 gövdesinde.
+        //
+        // Asıl kazanç `moderation_action`: yukarıdaki dalların hiçbirine
+        // uymuyor, eskiden buradan TOAST'SIZ geçip kullanıcıyı hiçbir açıklama
+        // olmadan login'e atıyordu. Artık nötr metin görüyor. Aynı metin,
+        // ileride eklenecek reason'lar için de doğru varsayılan — bilmediğimiz
+        // bir gerekçeyi "hesabına başka biri girdi" diye sunmak, kullanıcıyı
+        // hesabı ele geçirilmiş sanıp şifre değiştirmeye koşturuyordu.
+        if (reason === 'new_login_elsewhere') {
           showInfoToast({
             title: t('auth.session.closedTitle'),
             message: t('auth.session.closedMessage'),
             variant: 'error',
           });
+        } else {
+          console.warn(`[auth] ForceLogout — ele alınmayan reason: ${String(reason)}`);
+          showInfoToast({
+            title: t('auth.session.endedTitle'),
+            message: t('auth.session.endedMessage'),
+            variant: 'error',
+          });
         }
         await realtimeService.disconnect().catch(() => {});
         dispatch(logout());
+      }),
+      // Premium durumu ANLIK değişti: admin grant/revoke, mağaza webhook'u ya da
+      // backend `/sync` upgrade/downgrade'i. Payload `/api/subscription/status`
+      // ile birebir aynı gövdeyi taşıyor, bu yüzden EK FETCH YOK — thunk doğrudan
+      // uyguluyor (bir HTTP turu ve 60/dk paylaşımlı limitten bir ısırık daha az).
+      //
+      // "Premium ekranlarından çıkar" ayrıca yapılmıyor: gating tek bir redux
+      // alanından (`selectIsPremium`) okunuyor, state yazıldığı an kilitli
+      // özellikler (Likes blur'u, filtre tavanları, sınırsız swipe) kendiliğinden
+      // kapanıyor. Açık bir paywall'ın CTA'sı da aynı selector'a bağlı.
+      realtimeService.on('SubscriptionChanged', (payload) => {
+        if (!mounted) return;
+        dispatch(applySubscriptionChanged(payload))
+          .unwrap()
+          .then((res) => {
+            if (!mounted || !res?.applied) return;
+            // Premium'a bağlı SERVER state'i de bayat: swipe kotaları ve filtre
+            // tavanları tier'e göre dönüyor. Deste (`matches`) BİLEREK yalnız
+            // işaretleniyor: aktif refetch, kullanıcı swipe ederken üstteki kartı
+            // altından değiştirir (foreground turundaki aynı gerekçe).
+            queryClient.invalidateQueries({ queryKey: swipeKeys.stats });
+            queryClient.invalidateQueries({ queryKey: swipeKeys.filters });
+            queryClient.invalidateQueries({
+              queryKey: swipeKeys.matches,
+              refetchType: 'none',
+            });
+            // Toast YALNIZ admin işlemlerinde. Mağaza kaynaklı değişimi
+            // (`store_expired`, `store_purchase`, `sync_*`) kullanıcı zaten
+            // kendisi tetikledi ya da bekliyordu; orada bildirim gürültü olur.
+            if (res.reason === 'admin_revoke' && !res.isPremium) {
+              showInfoToast({
+                title: t('purchase.revokedTitle'),
+                message: t('purchase.revokedMessage'),
+                variant: 'error',
+              });
+            } else if (res.reason === 'admin_grant' && res.isPremium) {
+              showInfoToast({
+                title: t('purchase.grantedTitle'),
+                message: t('purchase.grantedMessage'),
+                variant: 'success',
+              });
+            }
+          })
+          .catch(() => {});
       }),
       realtimeService.on('__connectionStateChanged', (state) => {
         // Force-refetch yalnız RE-connect'te (kopukluk penceresinde kaçan mesaj
@@ -718,6 +1000,20 @@ export default function AppNavigator() {
           hadConnectionDropRef.current = false;
           dispatch(fetchConversations({ force: true }));
           dispatch(fetchUnreadCount());
+          // Kopukluk penceresinde atılan `SubscriptionChanged` KAYBOLDU — hub
+          // event'leri kalıcı değil, kimse yeniden göndermiyor. Bu olmadan
+          // "metroda premium iptal edildi, yüzeye çıkınca uygulama hâlâ premium
+          // gösteriyor" senaryosu bir sonraki foreground turuna kadar kırık
+          // kalırdı (uygulama önde kaldığı sürece o tur hiç gelmiyor).
+          // Foreground turuyla aynı throttle'ı paylaşıyor: reconnect ile
+          // background→active peş peşe gelebiliyor, iki tur da aynı cevabı çeker.
+          if (
+            Date.now() - lastSubscriptionRefreshRef.current >
+            SUBSCRIPTION_REFRESH_THROTTLE_MS
+          ) {
+            lastSubscriptionRefreshRef.current = Date.now();
+            dispatch(fetchSubscriptionStatus());
+          }
         }
       }),
     ];
@@ -732,6 +1028,7 @@ export default function AppNavigator() {
     return () => {
       mounted = false;
       if (deliveredFlushTimer) clearTimeout(deliveredFlushTimer);
+      if (likesReconcileTimer) clearTimeout(likesReconcileTimer);
       unsubscribers.forEach((u) => u && u());
     };
   }, [isAuthenticated, hasToken, dispatch]);
@@ -858,6 +1155,68 @@ export default function AppNavigator() {
   }, []);
 
   // ============ AppState lifecycle ============
+  // Foreground turu, AppState handler'ından AYRI bir callback: aşağıdaki efekt
+  // onu token tazeliğine göre KOŞULLU olarak öne alabilsin.
+  const runForegroundSync = useCallback(() => {
+    // connect() Connecting/Reconnecting durumunda mevcut bağlantıyı
+    // döndürüyor; isConnected() reconnect penceresinde false döndüğü için
+    // burada guard'lamak ikinci bir soket açılmasına yol açıyordu.
+    realtimeService.connect().catch(() => {});
+    dispatch(fetchConversations({ force: true }));
+    dispatch(fetchUnreadCount());
+    // Arka plandayken gelen beğeniler için IncomingLike event'i kaçmış
+    // olabilir (hub replay yapmıyor) → rozet/küme tazelensin.
+    dispatch(fetchWhoLikedMe());
+    // RC SDK ile backend çelişirse (webhook düşmedi / TRANSFER edilmemiş
+    // anonim satın alma) `/reconcile`. Çelişki yoksa istek atılmıyor, bu
+    // yüzden 60/dk paylaşımlı limite pratikte yük bindirmiyor. Status'un
+    // OTURMASINI bekliyoruz — aksi halde karşılaştırma bayat redux
+    // değeriyle yapılır ve gereksiz reconcile tetiklenir.
+    //
+    // Throttle: `subscription/*` class-level 60 istek/60 sn. Kullanıcı
+    // uygulamayı hızlı açıp kapatırsa (bildirim → geri → bildirim) bu blok
+    // her seferinde 2-3 istek atıp limiti yiyordu.
+    if (Date.now() - lastSubscriptionRefreshRef.current > SUBSCRIPTION_REFRESH_THROTTLE_MS) {
+      lastSubscriptionRefreshRef.current = Date.now();
+      dispatch(fetchSubscriptionStatus()).finally(() => {
+        // Bekleyen satın alma varsa `/sync` turu, yoksa yalnız çelişki
+        // kontrolü. İkisi de kayıt/çelişki yoksa istek atmıyor.
+        dispatch(resolvePendingPremiumSync());
+        dispatch(reconcileIfMismatched());
+      });
+    }
+    // Discover cache resume'da bayat kalıyor → bayat İŞARETLE, çekme.
+    // Eskiden burası `refetchType:'active'` idi: infinite query'de refetch
+    // tüm sayfaları baştan çekiyor, backend swipe edilenleri elediği için
+    // dizi kayıyor ve kullanıcı destenin ortasındayken üstteki kart
+    // altından değişiyordu (bildirime bakıp geri dönmek yetiyordu).
+    // Tazeleme kararını artık DiscoverScreen veriyor: deste boşsa
+    // foreground'da hemen refetch + yoklama sayacı sıfırlanır, doluysa
+    // desteye dokunulmaz. Orijinal gerekçe (önceki oturumdan kalan boş
+    // sayfa) aynen karşılanıyor.
+    queryClient.invalidateQueries({
+      queryKey: swipeKeys.matches,
+      refetchType: 'none',
+    });
+    // Stats staleTime:Infinity + refetchOnMount:false — kendiliğinden
+    // hiç tazelenmiyor. Satın alma sırasında yazılan optimistic premium
+    // patch'i (webhook geç indiyse sync `synced:false` dönmüş olabilir)
+    // burada gerçek backend değeriyle değiştiriyoruz.
+    queryClient.invalidateQueries({
+      queryKey: swipeKeys.stats,
+      refetchType: 'active',
+    });
+    // Parası alınmış ama krediye çevrilememiş superlike paketleri.
+    // Eskiden YALNIZ cold start'ta deneniyordu: kullanıcı paketi alıp iki
+    // kez 402 yedikten sonra uygulamayı arka plana atıp geri gelirse
+    // kredi, tam bir restart olana kadar hesabına geçmiyordu. Webhook'un
+    // geciktiği durumda en çok işleyecek boşaltma noktası tam da burası.
+    flushPendingSuperlikeRedeems(redeemUserKeyRef.current).catch(() => {});
+    // Şehir/ilçe backend'de konumdan türetiliyor → her foreground'da tek
+    // atımlık koordinat. İzin yoksa/GPS yoksa sessizce no-op.
+    sendLocationHeartbeat();
+  }, [dispatch]);
+
   useEffect(() => {
     const sub = AppState.addEventListener('change', (next: AppStateStatus) => {
       const prev = appStateRef.current;
@@ -865,68 +1224,36 @@ export default function AppNavigator() {
 
       if (prev.match(/inactive|background/) && next === 'active') {
         if (isAuthenticated && hasToken) {
-          // connect() zaten Connecting/Reconnecting durumunda mevcut bağlantıyı
-          // döndürüyor; isConnected() reconnect penceresinde false döndüğü için
-          // burada guard'lamak ikinci bir soket açılmasına yol açıyordu.
-          realtimeService.connect().catch(() => {});
-          dispatch(fetchConversations({ force: true }));
-          dispatch(fetchUnreadCount());
-          // Arka plandayken gelen beğeniler için IncomingLike event'i kaçmış
-          // olabilir (hub replay yapmıyor) → rozet/küme tazelensin.
-          dispatch(fetchWhoLikedMe());
-          // RC SDK ile backend çelişirse (webhook düşmedi / TRANSFER edilmemiş
-          // anonim satın alma) `/reconcile`. Çelişki yoksa istek atılmıyor, bu
-          // yüzden 60/dk paylaşımlı limite pratikte yük bindirmiyor. Status'un
-          // OTURMASINI bekliyoruz — aksi halde karşılaştırma bayat redux
-          // değeriyle yapılır ve gereksiz reconcile tetiklenir.
+          // ÖNCE TOKEN, SONRA FIRTINA. Access token 2 saat yaşıyor; birkaç
+          // saatlik arka plandan dönüşte kesinlikle ölmüş oluyor. Yukarıdaki tur
+          // bir anda ~7 istek atıyordu; hepsi 401 yiyip single-flight refresh'i
+          // bekliyor, sonra yeniden deneniyordu — 14+ istek ve rotasyonun tam
+          // uyanma anına denk gelmesi.
           //
-          // Throttle: `subscription/*` class-level 60 istek/60 sn. Kullanıcı
-          // uygulamayı hızlı açıp kapatırsa (bildirim → geri → bildirim) bu blok
-          // her seferinde 2-3 istek atıp limiti yiyordu.
-          if (Date.now() - lastSubscriptionRefreshRef.current > SUBSCRIPTION_REFRESH_THROTTLE_MS) {
-            lastSubscriptionRefreshRef.current = Date.now();
-            dispatch(fetchSubscriptionStatus()).finally(() => {
-              // Bekleyen satın alma varsa `/sync` turu, yoksa yalnız çelişki
-              // kontrolü. İkisi de kayıt/çelişki yoksa istek atmıyor.
-              dispatch(resolvePendingPremiumSync());
-              dispatch(reconcileIfMismatched());
-            });
-          }
-          // Discover cache resume'da bayat kalıyor → bayat İŞARETLE, çekme.
-          // Eskiden burası `refetchType:'active'` idi: infinite query'de refetch
-          // tüm sayfaları baştan çekiyor, backend swipe edilenleri elediği için
-          // dizi kayıyor ve kullanıcı destenin ortasındayken üstteki kart
-          // altından değişiyordu (bildirime bakıp geri dönmek yetiyordu).
-          // Tazeleme kararını artık DiscoverScreen veriyor: deste boşsa
-          // foreground'da hemen refetch + yoklama sayacı sıfırlanır, doluysa
-          // desteye dokunulmaz. Orijinal gerekçe (önceki oturumdan kalan boş
-          // sayfa) aynen karşılanıyor.
-          queryClient.invalidateQueries({
-            queryKey: swipeKeys.matches,
-            refetchType: 'none',
-          });
-          // Stats staleTime:Infinity + refetchOnMount:false — kendiliğinden
-          // hiç tazelenmiyor. Satın alma sırasında yazılan optimistic premium
-          // patch'i (webhook geç indiyse sync `synced:false` dönmüş olabilir)
-          // burada gerçek backend değeriyle değiştiriyoruz.
-          queryClient.invalidateQueries({
-            queryKey: swipeKeys.stats,
-            refetchType: 'active',
-          });
-          // Parası alınmış ama krediye çevrilememiş superlike paketleri.
-          // Eskiden YALNIZ cold start'ta deneniyordu: kullanıcı paketi alıp iki
-          // kez 402 yedikten sonra uygulamayı arka plana atıp geri gelirse
-          // kredi, tam bir restart olana kadar hesabına geçmiyordu. Webhook'un
-          // geciktiği durumda en çok işleyecek boşaltma noktası tam da burası.
-          flushPendingSuperlikeRedeems(redeemUserKeyRef.current).catch(() => {});
-          // Şehir/ilçe backend'de konumdan türetiliyor → her foreground'da tek
-          // atımlık koordinat. İzin yoksa/GPS yoksa sessizce no-op.
-          sendLocationHeartbeat();
+          // Rotasyon tek kullanımlık; refresh cevabının kaybolduğu (uygulama
+          // tam o anda askıya alındı) senaryo eskiden oturumu kurtarılamaz
+          // yapıyordu. Backend 2026-08-19'da 60 sn'lik grace penceresi açtı ve
+          // api.ts artık aynı token'la sınırlı retry yapıyor — pencere içinde
+          // uyanırsak oturum kurtuluyor. Fanout'u yine de TEK refresh'in
+          // arkasına diziyoruz: pencere sonsuz değil ve ~7 paralel 401'i
+          // tetiklemenin başka bir faydası yok.
+          //
+          // Refresh geçici bir hatayla düşerse (uyanma anında radyo henüz
+          // oturmamış olabilir) turu tamamen atlıyoruz: api.ts artık oturumu
+          // düşürmüyor, bir sonraki foreground ya da kullanıcı etkileşimi aynı
+          // işi yapacak. Token tazeyse hiç ek istek çıkmıyor.
+          void (async () => {
+            if (isTokenExpiringSoon(getCurrentAccessToken(), 60)) {
+              const fresh = await refreshAccessToken();
+              if (!fresh) return;
+            }
+            runForegroundSync();
+          })();
         }
       }
     });
     return () => sub.remove();
-  }, [isAuthenticated, hasToken, dispatch]);
+  }, [isAuthenticated, hasToken, runForegroundSync]);
 
   // ============ Konum heartbeat — cold start ============
   // Token oturduktan SONRA: api.ts Authorization'ı currentAccessToken'dan
@@ -961,30 +1288,44 @@ export default function AppNavigator() {
     if (!tokenInitialized) return;
 
     if (isAuthenticated) {
+      resumeNavState = null;
       setResumeRoute('Welcome');
       return;
     }
 
     if (!emailVerifiedToken || !registrationEmail) {
+      resumeNavState = null;
       setResumeRoute('Welcome');
       return;
     }
 
-    fetch(`${API_BASE_URL}${API_ENDPOINTS.CHECK_REGISTRATION_TOKEN}`, {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ email: registrationEmail, emailVerifiedToken }),
-    })
-      .then((r) => r.json())
-      .then((data) => {
-        if (data.isSuccess) {
-          setResumeRoute('RegisterStep3');
-        } else {
-          dispatch(clearRegistrationForm());
-          setResumeRoute('Welcome');
-        }
-      })
-      .catch(() => setResumeRoute('Welcome'));
+    checkRegistrationToken(registrationEmail, emailVerifiedToken).then((result) => {
+      if (result === 'valid') {
+        // Alan verileri (auth.registrationForm + profile) zaten persist
+        // ediliyordu; eksik olan tek şey kullanıcının HANGİ ADIMDA olduğuydu
+        // — o yüzden akış her açılışta ilk adımdan başlıyordu. Kaydedilmiş
+        // adım geçersizse (eski sürümden kalan state, akıştan çıkarılmış
+        // ekran) başa düşülür.
+        const step = isRegistrationStep(registrationStep)
+          ? registrationStep
+          : FIRST_REGISTRATION_STEP;
+        const stack = registrationResumeStack(step);
+        resumeNavState =
+          stack.length > 1
+            ? { index: stack.length - 1, routes: stack.map((name) => ({ name })) }
+            : null;
+        setResumeRoute(step);
+        return;
+      }
+
+      resumeNavState = null;
+      // 'unknown' (ağ hatası) veriye DOKUNMAZ — çevrimdışı açılışta yarım kayıt
+      // silinmesin; kullanıcı bağlantı gelince kaldığı yerden devam eder.
+      if (result === 'invalid') {
+        dispatch(clearRegistrationForm({ keepEmail: true }));
+      }
+      setResumeRoute('Welcome');
+    });
   }, [tokenInitialized, isAuthenticated]);
 
   useEffect(() => {
@@ -1076,7 +1417,7 @@ export default function AppNavigator() {
     // token'ı temizlenmiş ama ekransız bir siyah karede kalırdı.
     return (
       <>
-        <View style={{ flex: 1, backgroundColor: '#000' }} />
+        <View style={{ flex: 1, backgroundColor: colors.bgDeep }} />
         <AccountBlockedScreen block={accountBlock} onDismiss={dismissAccountBlock} />
       </>
     );
@@ -1109,9 +1450,18 @@ export default function AppNavigator() {
       <NavigationContainer
         ref={navigationRef}
         key={navigationKey}
-        theme={NAV_THEME}
+        theme={navTheme()}
+        initialState={
+          (showMainNavigator ? themeSwapNavState : (themeSwapNavState ?? resumeNavState)) ??
+          undefined
+        }
         linking={LINKING}
         onReady={() => {
+          // Snapshot'lar TEK KULLANIMLIK: temizlenmezse sonraki auth
+          // geçişindeki remount da eski yığını geri yükler — orası bilerek
+          // sıfırlanıyor (kayıt bitince Discover'a düşülmeli, Step15'e değil).
+          themeSwapNavState = null;
+          resumeNavState = null;
           navigationIntegration.registerNavigationContainer(navigationRef);
           const route = navigationRef.getCurrentRoute?.();
           if (route?.name) setCurrentRouteName(route.name);
@@ -1124,6 +1474,12 @@ export default function AppNavigator() {
             analytics.screen(route.name);
             // Network timeout log'u "hangi ekrandan atıldı" bilgisini buradan alır.
             setCurrentRouteName(route.name);
+            // "Kaldığın yerden devam et" imleci. Ekranların kendisi bilmiyor;
+            // tek yerden işaretlemek 12 ekrana efekt serpmekten hem ucuz hem de
+            // ileri/geri ayrımı gerektirmiyor (geri gidilirse imleç de geriler).
+            if (isRegistrationStep(route.name)) {
+              dispatch(setRegistrationStep(route.name));
+            }
           }
         }}
       >

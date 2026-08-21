@@ -11,7 +11,18 @@ import {
 import { NativeStackScreenProps } from "@react-navigation/native-stack";
 import type { AuthStackParamList } from "@/shared/types/navigation";
 import { useAppDispatch, useAppSelector } from "@/shared/hooks/redux";
-import { clearError, setRegistrationEmail } from "@/features/auth/authSlice";
+import {
+  clearError,
+  clearRegistrationForm,
+  setRegistrationEmail,
+} from "@/features/auth/authSlice";
+import { clearProfile } from "@/features/profile/profileSlice";
+import {
+  FIRST_REGISTRATION_STEP,
+  isRegistrationStep,
+  registrationResumeStack,
+} from "@/features/auth/registrationFlow";
+import { checkRegistrationToken } from "@/features/auth/registrationToken";
 import { KeyboardStickyView } from "react-native-keyboard-controller";
 import { API_BASE_URL, API_ENDPOINTS } from "@/shared/constants/api";
 import AnimatedPressable from "@/shared/components/AnimatedPressable";
@@ -29,7 +40,9 @@ import { parseRetryAfterSeconds } from '@/features/auth/verificationRetry';
 export default function RegisterStep1Screen({ navigation }: NativeStackScreenProps<AuthStackParamList, 'RegisterStep1'>) {
   const { t } = useTranslation();
   const dispatch = useAppDispatch();
-  const { emailVerifiedToken, registrationEmail } = useAppSelector((s) => (s as any).auth);
+  const { emailVerifiedToken, registrationEmail, registrationStep } = useAppSelector(
+    (s) => (s as any).auth,
+  );
   const inputRef = useRef(null);
 
   const [loading, setLoading] = useState(false);
@@ -40,6 +53,23 @@ export default function RegisterStep1Screen({ navigation }: NativeStackScreenPro
     defaultValues: { email: "" },
   });
 
+  /**
+   * Cihazda yarım kalmış BAŞKA bir kaydın taslağı varsa yeni e-postaya sızmasın.
+   *
+   * `clearRegistrationForm` yalnız auth tarafını temizliyor; 12 adımlık cevaplar
+   * (hobiler, bio, boy, fotoğraflar) profile slice'ında duruyordu ve aynı
+   * telefonda kayıt olan ikinci kişinin formu bunlarla dolu açılıyordu.
+   * E-posta AYNIYSA temizlemiyoruz — token'ı süresi dolduğu için baştan
+   * doğrulayan kullanıcı cevaplarını korusun.
+   */
+  const startFreshIfEmailChanged = (email: string) => {
+    if (registrationEmail && registrationEmail !== email) {
+      devLog("🧹 [RegisterStep1] Different email — dropping previous draft");
+      dispatch(clearProfile());
+      dispatch(clearRegistrationForm());
+    }
+  };
+
   const handleSendVerification = handleSubmit(async ({ email }) => {
     Keyboard.dismiss();
     const trimmed = email.trim();
@@ -49,23 +79,24 @@ export default function RegisterStep1Screen({ navigation }: NativeStackScreenPro
     // If user already has a valid token for this exact email, skip re-verification
     if (emailVerifiedToken && registrationEmail === trimmed) {
       devLog("⚡ [RegisterStep1] Token already exists for this email — validating before skip");
-      try {
-        const check = await fetch(`${API_BASE_URL}${API_ENDPOINTS.CHECK_REGISTRATION_TOKEN}`, {
-          method: "POST",
-          headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({ email: trimmed, emailVerifiedToken }),
+      const check = await checkRegistrationToken(trimmed, emailVerifiedToken);
+      if (check === "valid") {
+        // Soğuk açılış resume'siyle AYNI yığın: eskiden burada Step3'e reset
+        // ediliyordu, kullanıcı verisi dolu 12 adımı yeniden tıklıyordu.
+        const step = isRegistrationStep(registrationStep)
+          ? registrationStep
+          : FIRST_REGISTRATION_STEP;
+        const stack = registrationResumeStack(step);
+        devLog("✅ [RegisterStep1] Token valid — resuming at", step);
+        setLoading(false);
+        navigation.reset({
+          index: stack.length - 1,
+          routes: stack.map((name) => ({ name })),
         });
-        const checkData = await check.json();
-        if (checkData.isSuccess) {
-          devLog("✅ [RegisterStep1] Token valid — skipping to Step3");
-          setLoading(false);
-          navigation.reset({ index: 0, routes: [{ name: "RegisterStep3" }] });
-          return;
-        }
-        devLog("⚠️ [RegisterStep1] Stored token expired — proceeding with new verification");
-      } catch {
-        // fall through to normal send-verification
+        return;
       }
+      // 'invalid' → yeni doğrulama; 'unknown' (ağ) → yine normal akış denenir.
+      devLog("⚠️ [RegisterStep1] Stored token not usable — proceeding with new verification");
     }
 
     try {
@@ -88,11 +119,13 @@ export default function RegisterStep1Screen({ navigation }: NativeStackScreenPro
 
       switch (status) {
         case "CODE_SENT":
+          startFreshIfEmailChanged(trimmed);
           dispatch(setRegistrationEmail(trimmed));
           navigation.navigate("RegisterStep2", { email: trimmed, mode: "registration", retryAfterSeconds });
           break;
 
         case "CODE_PENDING":
+          startFreshIfEmailChanged(trimmed);
           dispatch(setRegistrationEmail(trimmed));
           navigation.navigate("RegisterStep2", { email: trimmed, mode: "registration", pending: true, retryAfterSeconds });
           break;
@@ -132,17 +165,17 @@ export default function RegisterStep1Screen({ navigation }: NativeStackScreenPro
   const displayError = errors.email?.message || error;
 
   return (
-    <View className="flex-1 bg-bg">
-      <View className="bg-bg pt-16 pb-6 px-6">
+    <View className="flex-1" style={{ backgroundColor: colors.bg }}>
+      <View className="pt-16 pb-6 px-6" style={{ backgroundColor: colors.bg }}>
         <RegisterBackButton onPress={() => navigation.goBack()} />
       </View>
 
       <TouchableWithoutFeedback onPress={Keyboard.dismiss}>
         <View className="flex-1 px-6 py-6 pt-0">
-          <Text className="text-4xl font-bold text-white mb-2">
+          <Text className="text-4xl font-bold mb-2" style={{ color: colors.text }}>
             {t('auth.step1.title')}
           </Text>
-          <Text className="text-[18px] font-normal text-gray-400 mb-6">
+          <Text className="text-[18px] font-normal mb-6" style={{ color: colors.textSecondary }}>
             {t('auth.step1.description')}
           </Text>
 
@@ -156,7 +189,7 @@ export default function RegisterStep1Screen({ navigation }: NativeStackScreenPro
                   borderCurve: "continuous",
                   overflow: "hidden",
                   borderWidth: 0.5,
-                  borderColor: displayError ? colors.error : "rgba(255,255,255,0.1)",
+                  borderColor: displayError ? colors.error : colors.hairline,
                 }}
               >
                 <TextInput
@@ -183,19 +216,19 @@ export default function RegisterStep1Screen({ navigation }: NativeStackScreenPro
           />
           <View className="flex-row gap-2 px-2 items-center mt-3">
             <SFIcon name="info.circle" fallback={InfoIcon} size={16} color={colors.textSecondary} />
-            <Text className="text-gray-400 text-[12px]">
+            <Text className="text-[12px]" style={{ color: colors.textSecondary }}>
               {t('auth.step1.infoText')}
             </Text>
           </View>
 
           {displayError ? (
-            <Text className="text-red-500 mt-3 px-2">{displayError}</Text>
+            <Text className="mt-3 px-2" style={{ color: colors.error }}>{displayError}</Text>
           ) : null}
         </View>
       </TouchableWithoutFeedback>
 
       <KeyboardStickyView offset={{ closed: 0, opened: 15 }}>
-        <View className="px-6 pb-8 pt-4 bg-bg">
+        <View className="px-6 pb-8 pt-4" style={{ backgroundColor: colors.bg }}>
           <AnimatedPressable
             onPress={handleSendVerification}
             disabled={loading}
@@ -203,13 +236,13 @@ export default function RegisterStep1Screen({ navigation }: NativeStackScreenPro
               borderRadius: 999,
               borderCurve: "continuous",
               overflow: "hidden",
-              backgroundColor: colors.text,
+              backgroundColor: colors.inverseSurface,
             }}
           >
             {loading ? (
-              <ActivityIndicator className="py-[17.5px]" color="#000" />
+              <ActivityIndicator className="py-[17.5px]" color={colors.onInverseSurface} />
             ) : (
-              <Text className="text-black py-[20px] font-bold text-[15px] text-center">
+              <Text className="py-[20px] font-bold text-[15px] text-center" style={{ color: colors.onInverseSurface }}>
                 {t('common.continueButton')}
               </Text>
             )}

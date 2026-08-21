@@ -7,18 +7,28 @@ import Animated, {
   Easing,
 } from "react-native-reanimated";
 import { colors } from "../../../shared/theme/colors";
+import { REGISTRATION_STEP_NUMBERS } from "@/features/auth/registrationFlow";
 
 // Ekran numaralandırması seyrek: Step4 (telefon) ve Step11 (yaş aralığı) kayıt
 // akışından çıkarıldı, kalan ekranların adları korundu. Progress'i aritmetikle
-// türetmek yerine gerçekten render edilen adımları listeliyoruz — ileride bir
-// adım daha düşerse tek yapılacak iş bu diziden silmek.
-const VISIBLE_STEPS = [3, 5, 6, 7, 8, 9, 10, 12, 13, 14, 15];
+// türetmek yerine gerçekten render edilen adımları listeliyoruz.
+//
+// Sıra registrationFlow.ts'ten geliyor — "kaldığın yerden devam et" de aynı
+// diziyi okuyor, ikisi ayrışmasın. DİKKAT: dizi AKIŞ SIRASINDA, sayısal sırada
+// DEĞİL (Step16, fotoğraf adımından önce).
+const VISIBLE_STEPS = REGISTRATION_STEP_NUMBERS;
 const TOTAL_STEPS = VISIBLE_STEPS.length;
 
-export default function RegisterProgressBar({ step }: { step: number }) {
+function progressIndex(step: number): number {
+  const at = VISIBLE_STEPS.indexOf(step);
+  if (at >= 0) return at + 1;
   // Listede olmayan bir step gelirse (yeni ekran, dizi güncellenmemiş) bar'ı
-  // boş bırakmak yerine en yakın alt adıma yaslıyoruz.
-  const index = VISIBLE_STEPS.filter((s) => s <= step).length;
+  // boş bırakmak yerine sayıca kendinden küçük adımların sayısına yaslıyoruz.
+  return VISIBLE_STEPS.filter((s) => s < step).length;
+}
+
+export default function RegisterProgressBar({ step }: { step: number }) {
+  const index = progressIndex(step);
   const target = index / TOTAL_STEPS;
   const initial = Math.max(0, index - 1) / TOTAL_STEPS;
 
@@ -41,7 +51,7 @@ export default function RegisterProgressBar({ step }: { step: number }) {
         style={{
           height: 4,
           borderRadius: 999,
-          backgroundColor: "rgba(255,255,255,0.1)",
+          backgroundColor: colors.hairline,
           overflow: "hidden",
         }}
       >
@@ -49,7 +59,7 @@ export default function RegisterProgressBar({ step }: { step: number }) {
           style={[
             {
               height: "100%",
-              backgroundColor: colors.text,
+              backgroundColor: colors.inverseSurface,
               borderRadius: 999,
             },
             fillStyle,

@@ -101,9 +101,9 @@ export default function RegisterStep8Screen({ navigation }: NativeStackScreenPro
   const errorMessage = errors.department?.message || errors.yearOfStudy?.message;
 
   return (
-    <View className="flex-1 bg-bg">
+    <View className="flex-1" style={{ backgroundColor: colors.bg }}>
       {/* Header */}
-      <View className="bg-bg pt-16 pb-6 px-6">
+      <View className="pt-16 pb-6 px-6" style={{ backgroundColor: colors.bg }}>
         <RegisterBackButton onPress={() => navigation.goBack()} />
       </View>
 
@@ -112,32 +112,45 @@ export default function RegisterStep8Screen({ navigation }: NativeStackScreenPro
       <TouchableWithoutFeedback onPress={Keyboard.dismiss}>
         <View className="flex-1 px-6 py-6 pt-0">
           <View className="flex flex-col gap-2">
-            <Text className="text-4xl font-bold text-white">{t('auth.step8.title')}</Text>
-            <Text className="text-[18px] font-normal text-gray-400 mb-6">
+            <Text className="text-4xl font-bold" style={{ color: colors.text }}>{t('auth.step8.title')}</Text>
+            <Text className="text-[18px] font-normal mb-6" style={{ color: colors.textSecondary }}>
               {t('auth.step8.description')}
             </Text>
           </View>
 
           {loadingDepartments ? (
             <View className="mb-6">
-              <Text className="text-gray-300 text-[14px] font-semibold mb-2">{t('auth.step8.departmentLabel')}</Text>
+              <Text className="text-[14px] font-semibold mb-2" style={{ color: colors.neutral200 }}>{t('auth.step8.departmentLabel')}</Text>
               <View
-                style={{ borderRadius: 999, borderCurve: "continuous", overflow: "hidden" }}
-                className="border-[0.5px] border-white/10 px-4 py-5 flex items-center"
+                style={{
+                  borderRadius: 999,
+                  borderCurve: "continuous",
+                  overflow: "hidden",
+                  borderColor: colors.hairline,
+                }}
+                className="border-[0.5px] px-4 py-5 flex items-center"
               >
                 <ActivityIndicator size="small" color={colors.text} />
               </View>
             </View>
           ) : (
             <View className="mb-6">
-              <Text className="text-gray-300 text-[14px] font-semibold mb-2">{t('auth.step8.departmentLabel')}</Text>
+              <Text className="text-[14px] font-semibold mb-2" style={{ color: colors.neutral200 }}>{t('auth.step8.departmentLabel')}</Text>
               <TouchableOpacity
-                style={{ borderRadius: 999, borderCurve: "continuous", overflow: "hidden" }}
+                style={{
+                  borderRadius: 999,
+                  borderCurve: "continuous",
+                  overflow: "hidden",
+                  borderColor: colors.hairline,
+                }}
                 activeOpacity={1}
                 onPress={handleOpenDepartmentModal}
-                className="border-[0.5px] border-white/10 px-4 py-5 flex-row items-center justify-between"
+                className="border-[0.5px] px-4 py-5 flex-row items-center justify-between"
               >
-                <Text className={`${department ? "text-white" : "text-gray-400"} text-[16px] font-medium`}>
+                <Text
+                  className="text-[16px] font-medium"
+                  style={{ color: department ? colors.text : colors.textSecondary }}
+                >
                   {getDepartmentLabel()}
                 </Text>
                 <SFIcon name="chevron.down" fallback={ChevronDown} size={20} color={colors.textSecondary} strokeWidth={2} weight="semibold" style={{ pointerEvents: "none" }} />
@@ -146,7 +159,7 @@ export default function RegisterStep8Screen({ navigation }: NativeStackScreenPro
           )}
 
           <View className="mb-4">
-            <Text className="text-gray-300 text-[14px] font-semibold mb-2">{t('auth.step8.classLabel')}</Text>
+            <Text className="text-[14px] font-semibold mb-2" style={{ color: colors.neutral200 }}>{t('auth.step8.classLabel')}</Text>
             <View style={{ flexDirection: "row", flexWrap: "wrap", gap: 8 }}>
               {YEAR_OF_STUDY_OPTIONS.map((opt) => {
                 const isSelected = yearOfStudy === opt.value;
@@ -162,8 +175,8 @@ export default function RegisterStep8Screen({ navigation }: NativeStackScreenPro
                       borderCurve: "continuous",
                       overflow: "hidden",
                       borderWidth: 0.5,
-                      borderColor: isSelected ? colors.text : "rgba(255,255,255,0.1)",
-                      backgroundColor: isSelected ? colors.text : "transparent",
+                      borderColor: isSelected ? colors.inverseSurface : colors.hairline,
+                      backgroundColor: isSelected ? colors.inverseSurface : "transparent",
                       paddingHorizontal: 18,
                       paddingVertical: 13,
                     }}
@@ -176,19 +189,19 @@ export default function RegisterStep8Screen({ navigation }: NativeStackScreenPro
           </View>
 
           {hasError ? (
-            <Text className="text-red-500 text-center font-normal mb-3 mt-4">{errorMessage}</Text>
+            <Text className="text-center font-normal mb-3 mt-4" style={{ color: colors.error }}>{errorMessage}</Text>
           ) : null}
         </View>
       </TouchableWithoutFeedback>
 
       {/* Sticky Button with KeyboardStickyView */}
       <KeyboardStickyView offset={{ closed: 0, opened: 0 }}>
-        <View className="px-8 pb-8 pt-4 bg-bg">
+        <View className="px-8 pb-8 pt-4" style={{ backgroundColor: colors.bg }}>
           <AnimatedPressableShared
             onPress={handleNext}
-            style={{ borderRadius: 999, borderCurve: "continuous", overflow: "hidden", backgroundColor: colors.text }}
+            style={{ borderRadius: 999, borderCurve: "continuous", overflow: "hidden", backgroundColor: colors.inverseSurface }}
           >
-            <Text className="text-black py-[20px] font-bold text-[15px] text-center">
+            <Text className="py-[20px] font-bold text-[15px] text-center" style={{ color: colors.onInverseSurface }}>
               {t('common.continueButton')}
             </Text>
           </AnimatedPressableShared>
