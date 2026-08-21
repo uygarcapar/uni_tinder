@@ -23,9 +23,17 @@ const en = {
   },
   settings: {
     title: 'Settings',
+    theme: {
+      title: 'Theme',
+      subtitle: 'Choose how the app looks.',
+      system: 'System',
+      light: 'Light',
+      dark: 'Dark',
+    },
     language: {
       title: 'Language',
       subtitle: 'Choose the language the app is shown in.',
+      system: 'System',
     },
     messaging: {
       title: 'Messaging',
@@ -45,6 +53,7 @@ const en = {
     },
     downloadData: 'Download My Data',
     blockedUsers: 'Blocked Users',
+    changePassword: 'Change Password',
     account: {
       title: 'Account',
       subtitle: 'If you delete your account, you can return within 30 days.',
@@ -78,8 +87,22 @@ const en = {
     session: {
       closedTitle: 'Session Ended',
       closedMessage: 'Your account was accessed from another device.',
+      // Session close with no reason from the server — deliberately does NOT
+      // claim another device signed in; we don't know that, and guessing scares
+      // users into thinking their account was taken over.
+      endedTitle: 'Session Ended',
+      endedMessage: 'Your session was ended for security reasons. Please sign in again.',
+      // Refresh token hit its 30-day lifetime (UT-1014). Routine — deliberately
+      // avoids "security" wording so users don't assume a breach.
+      expiredTitle: 'Your session expired',
+      expiredMessage: "You haven't signed in for a while, so your session ended. Please sign in again.",
+      // Signed out on this or another device (UT-1016).
+      loggedOutTitle: 'You were signed out',
+      loggedOutMessage: 'This account was signed out. Please sign in again to continue.',
       reverifyTitle: 'Email verification required',
       reverifyMessage: 'You need to verify your email address again to continue. Please sign in once more.',
+      passwordChangedTitle: 'Your password was changed',
+      passwordChangedMessage: 'All sessions were closed for your security. Sign in again with your new password.',
     },
     // Ban / suspension / deletion screen. The body text comes from the backend
     // (`message`); these fallbacks are only used when that body is empty.
@@ -114,9 +137,108 @@ const en = {
       emailPlaceholder: 'example@university.edu.tr',
       passwordLabel: 'Password',
       passwordPlaceholder: '••••••••',
-      forgotPassword: 'Forgot your password? Reset it here',
-      forgotPasswordLink: 'Reset it here',
+      forgotPassword: 'Forgot your password?',
       submitButton: 'Log In',
+    },
+    forgotPassword: {
+      title: 'Reset your password.',
+      description: "Enter your account's e-mail address and we'll send you a 6-digit reset code.",
+      emailLabel: 'E-Mail',
+      emailPlaceholder: 'example@university.edu.tr',
+      // The backend returns the same response for unregistered addresses too;
+      // the wording deliberately preserves that ambiguity.
+      infoText: 'If the address is registered, the code arrives within a few minutes.',
+      submitButton: 'Send Code',
+      errors: {
+        sendFailed: 'Code could not be sent',
+        network: 'Connection error, try again',
+      },
+      code: {
+        title: 'Enter the reset code.',
+        description: ' Enter the 6-digit code sent to',
+        resendSuccess: 'Code sent successfully!',
+        resendButton: 'Resend',
+        resendCountdown: 'Resend ({{countdown}}s)',
+        pasteButton: 'Paste',
+        backButton: 'Go Back',
+        validation: {
+          codeRequired: 'Please enter the 6-digit code',
+          clipboardEmpty: 'No 6-digit code found on the clipboard',
+        },
+      },
+      reset: {
+        title: 'Set your new password.',
+        description: 'Your new password must be at least 8 characters and include an uppercase letter, a number and a special character.',
+        passwordLabel: 'New Password *',
+        passwordPlaceholder: 'At least 8 characters',
+        confirmLabel: 'Confirm New Password *',
+        confirmPlaceholder: 'Re-enter your password',
+        submitButton: 'Update Password',
+        successTitle: 'Password updated',
+        successMessage: 'You can now log in with your new password.',
+        retryCodeButton: 'Re-enter the code',
+        errors: {
+          failed: 'Password could not be updated, try again',
+          network: 'Connection error, try again',
+        },
+      },
+    },
+    // Shared copy for the password endpoints. Error lines are resolved from the
+    // backend's `code` field (see passwordErrors.ts): the server only writes
+    // Turkish, so for known codes these strings win.
+    password: {
+      rules: {
+        length: 'At least 8 characters',
+        uppercase: 'At least 1 uppercase letter',
+        lowercase: 'At least 1 lowercase letter',
+        digit: 'At least 1 number',
+        special: 'At least 1 special character',
+      },
+      errors: {
+        currentPasswordWrong: 'That password is incorrect, please try again.',
+        codeInvalid: 'That code is wrong or has expired. Request a new one.',
+        codeBurned: 'You entered the code incorrectly too many times. It has been cancelled for your security — request a new one.',
+        policy: 'Your new password does not meet the password rules.',
+        sameAsCurrent: 'Your new password must be different from your current one.',
+        rateLimited: 'Too many attempts. Try again in {{seconds}} seconds.',
+        sessionLost: 'Your session has expired. Please sign in again.',
+        generic: 'That did not go through, please try again.',
+      },
+      change: {
+        title: 'Change your password.',
+        description: 'For your security, let us verify your current password first.',
+        currentLabel: 'Current Password',
+        currentPlaceholder: 'Enter your current password',
+        codeTitle: 'Enter the confirmation code.',
+        codeDescription: 'We sent a 6-digit code to {{email}}. Enter it along with your new password.',
+        newLabel: 'New Password',
+        newPlaceholder: 'At least 8 characters',
+        confirmLabel: 'Confirm New Password',
+        confirmPlaceholder: 'Re-enter your new password',
+        submitButton: 'Update Password',
+        expiresIn: 'Code expires in {{time}}',
+        expired: 'Your code has expired',
+        resendButton: 'Resend',
+        resendCountdown: 'Resend ({{countdown}}s)',
+        resendSuccess: 'New code sent',
+        attemptsLeft: '{{count}} attempts left',
+        successTitle: 'Password updated',
+        successMessage: 'Your sessions on other devices were closed.',
+        validation: {
+          currentRequired: 'Please enter your current password.',
+          codeRequired: 'Please enter the 6-digit code.',
+        },
+        forgotCurrent: {
+          link: "I don't remember my current password",
+          title: 'Reset your password',
+          message:
+            'We will email you a reset code. After resetting your password you will need to sign in again for security.',
+        },
+      },
+      reset: {
+        successTitle: 'Password reset',
+        successMessage: 'Your session was closed for security. Sign in with your new password.',
+      },
     },
     kvkkConsent: {
       title: 'Privacy & KVKK',
@@ -165,6 +287,7 @@ const en = {
       description: ' Enter the 6-digit code sent to',
       descriptionPending: ' A code was previously sent to your address. Check your email.',
       resendSuccess: 'Code sent successfully!',
+      resendPending: 'We just sent the code — try again in {{seconds}}s.',
       resendButton: 'Resend',
       resendCountdown: 'Resend ({{countdown}}s)',
       pasteButton: 'Paste',
@@ -257,20 +380,21 @@ const en = {
       description: 'Optional information. Improves profile matches.',
       smokingLabel: 'Smoking',
       zodiacLabel: 'Zodiac Sign',
-      purposeLabel: 'Purpose',
-      purposeFlirt: 'Flirting',
-      purposeFlirtDesc: "I'm looking for a light, fun, and exciting connection.",
-      purposeFriendship: 'Friendship',
-      purposeFriendshipDesc: 'I want to meet new people and expand my social circle.',
-      purposeNetwork: 'Network',
-      purposeNetworkDesc: 'I want to build professional connections and meet people in the business world.',
-      purposeNeutral: 'Just Browsing',
-      purposeNeutralDesc: "I don't have specific expectations, I'm going with the flow.",
       relationshipIntentLabel: 'What You Are Looking For',
       relationshipIntentError: 'An error occurred while loading relationship intents',
       smokingError: 'An error occurred while loading smoking statuses',
       zodiacError: 'An error occurred while loading zodiac signs',
-      purposeError: 'An error occurred while loading purposes',
+      skipButton: 'Skip',
+    },
+    // Step16 comes BEFORE photos (15) — the number reflects when the screen
+    // was added, not its position in the flow (see RegisterProgressBar).
+    step16: {
+      title: 'Your Habits and Beliefs',
+      description: 'Optional information. You can change both later from your profile.',
+      alcoholLabel: 'Drinking',
+      religiousViewLabel: 'Religious Views',
+      alcoholError: 'An error occurred while loading drinking options',
+      religiousViewError: 'An error occurred while loading religious views',
       skipButton: 'Skip',
     },
     step15: {
@@ -284,6 +408,16 @@ const en = {
       cropCancelled: 'Cropping of this photo was cancelled.',
       pickerCancelled: 'Gallery selection cancelled:',
       submitButton: 'Complete Profile',
+      submitError: 'Registration could not be completed. Please try again.',
+      mainPhotoLabel: 'Main photo',
+      pickMainTitle: 'Pick your main photo',
+      pickMainHint: 'Tap the photo you want as your main photo.',
+      photosMissingTitle: 'Some photos are missing',
+      photosMissing:
+        'Your phone cleared its temporary files, so some of your photos are gone. Add them again to continue.',
+      sessionExpiredTitle: 'Verification expired',
+      sessionExpired:
+        'Your email verification has expired. Verify the same email again and everything you entered will be kept.',
     },
   },
   chat: {
@@ -297,6 +431,8 @@ const en = {
       empty: 'No messages yet.',
       findMatch: 'Find a match',
       typing: 'typing…',
+      // Prefix for unsent composer text ("Draft: hello").
+      draft: 'Draft:',
       closedChat: 'Chat closed',
       newMessages: '{{n}} new messages',
       startConversation: 'Start a conversation 👋',
@@ -307,21 +443,59 @@ const en = {
       yesterday: 'Yesterday',
       notFound: "'{{query}}' not found",
     },
+    // The restore window length lives in BACKEND config — never hardcode "24
+    // hours" here; the remaining time is derived from the `restorableUntil`
+    // timestamp and printed as {{time}} (see features/chat/restoreWindow.ts).
     unmatch: {
       restoreTitle: 'Restore match',
-      restoreMessage: 'This chat has ended. You can restore it within 24 hours.',
+      restoreMessage: 'This chat was closed. You can restore it within {{time}}.',
+      // When the window timestamp is not available (list DTO omits it / app
+      // relaunched): offer the attempt without promising a duration.
+      restoreMessageUnknown: 'This chat was closed. You can try to restore it.',
+      restoreUnavailable: 'This match is permanently closed — there is no restore window.',
+      restoreWindowHint: '{{time}} left to restore.',
       restoreButton: 'Restore',
       restoreError: 'Could not restore',
-      restoreExpiredMessage: 'The 24-hour window may have expired.',
+      restoreExpiredMessage: 'The restore window may have expired.',
       restoreFailed: 'Operation failed.',
       title: 'Remove match',
-      message: 'End the chat with {{partnerName}}. You can restore it within 24 hours.',
+      message:
+        'Close the chat with {{partnerName}}. Your messages are kept, and you can match again later.',
+      confirmMessage:
+        'The chat closes but your messages are kept, and you can match again later. If this person is bothering you, block them instead.',
       confirmButton: 'Remove',
       error: 'Could not remove match.',
+      removedTitle: 'Match removed',
+      removedRestorable: 'You can undo this within {{time}}.',
+      removedPermanent: 'This match is now permanently closed.',
+      windowHours: '{{h}} hours',
+      windowMinutes: '{{m}} minutes',
+    },
+    // Rematch: when the same pair matches again the old chat is still there,
+    // but its messages stay HIDDEN until this gate is opened.
+    hiddenHistory: {
+      title: 'You matched before',
+      action: 'Show the old chat',
+      tooOld: 'This chat history is too old to be shown.',
+      error: 'Could not open the old chat. Please try again.',
+    },
+    options: {
+      title: 'Chat Settings',
+      sectionChat: 'Chat',
+      sectionChatDescription: 'Quick actions for this chat.',
+      unmatch: 'Remove Match',
+      restore: 'Restore Match',
+      restoreExpired: 'This chat has ended. The restore window has expired.',
+      sectionSafety: 'Safety',
+      sectionSafetyDescription:
+        'Reporting and blocking are permanent: you will never match again and the old chat stays closed.',
+      report: 'Report',
+      block: 'Block User',
     },
     system: {
       matchCreated: "You have a new match! 🎉 Send the first message.",
       conversationDeleted: 'This chat has ended.',
+      rematched: 'You matched again! You had talked here before.',
     },
     quota: {
       title: 'Message allowance',
@@ -338,7 +512,6 @@ const en = {
     actions: {
       reply: 'Reply',
       copy: 'Copy',
-      edit: 'Edit',
       deleteForMe: 'Delete for me',
       deleteForEveryone: 'Delete for everyone',
     },
@@ -351,11 +524,6 @@ const en = {
       deletedSender: 'Deleted',
       deletedMessage: 'This message was deleted',
     },
-    editMessage: {
-      title: 'Edit message',
-      info: 'Messages sent within 15 minutes can be edited.',
-      error: 'Message could not be edited.',
-    },
     deleteMessage: {
       error: 'Deletion failed.',
     },
@@ -366,12 +534,20 @@ const en = {
       title: 'Blocked',
       message: 'This person will no longer be able to contact you.',
       error: 'Blocking failed.',
+      confirmTitle: 'Block user',
+      confirmMessage:
+        'They will not be able to message you and their profile will be hidden from you. Your match closes PERMANENTLY: you will never match again and the old chat can never be reopened.',
+      confirmButton: 'Block',
     },
     emptyState: {
       activeTitle: 'Start chatting with {{partnerName}}',
       closedTitle: 'This chat is closed',
-      activeDescription: 'Send the first message — let the conversation flow naturally.',
       closedDescription: 'You can view past messages.',
+      // One-tap opener suggestions shown as pills in an empty chat.
+      suggestion1: 'Hey',
+      suggestion2: 'How’s it going?',
+      suggestion3: 'Love your profile',
+      suggestion4: 'What did you get up to today?',
     },
     media: {
       photo: 'Photo',
@@ -401,7 +577,6 @@ const en = {
       feature3: 'Rewind',
       feature4: 'Ad-Free Experience',
       standardPlan: 'Free',
-      matchBoost: '5x Matches',
       featuresLabel: 'Features',
       planName: 'lit plus',
       description: 'Speed up your matches with Lit Plus, see who likes you, and discover more!',
@@ -423,6 +598,9 @@ const en = {
       maxDistance: {
         title: 'Maximum Distance',
         desc: 'Set the maximum distance for users you want to match with. Drag the circle with your finger to adjust.',
+        // Free accounts cap lower (50 km) and the slider stops there. The strip
+        // explains why; tapping it opens the paywall.
+        freeCap: 'Free accounts can go up to {{km}} km. Premium raises it to {{premiumKm}} km.',
       },
       interestedIn: {
         title: 'Interested In',
@@ -444,6 +622,9 @@ const en = {
       premiumFilters: {
         title: 'Premium Filters',
         description: 'Narrow down who you are looking for. Turn on a filter\'s switch and it will not relax even when candidates run out.',
+        // Premium filters are not deleted when the subscription lapses, just not
+        // applied — say so, otherwise it reads as "my filters are gone".
+        paused: 'Your Premium filters are paused. Your selections are kept but not applied to the deck — go Premium again and they pick up where they left off.',
       },
       dealbreaker: {
         on: 'Never show people who do not match this filter',
@@ -474,16 +655,40 @@ const en = {
         title: 'Smoking',
         description: 'Only see people with the smoking habits you pick.',
       },
+      alcohol: {
+        title: 'Alcohol',
+        // Warning lives in the description (same pattern as height): the field
+        // is optional on profiles, so this filter narrows the deck a lot.
+        description: 'Only see people with the drinking habits you pick. While this filter is on, profiles that have not set this are hidden.',
+      },
+      language: {
+        title: 'Languages spoken',
+        description: 'See people who speak at least one of the languages you pick.',
+        select: 'Select language',
+        // Not `count`: that triggers i18next plural resolution.
+        selected: '{{selected}} selected',
+        pickerTitle: 'Languages spoken',
+        // OR semantics — not "speaks all of them". Second sentence is the same
+        // warning as alcohol/smoking: the field is optional on profiles.
+        orNote: 'One is enough, they do not have to speak all of them. While this filter is on, profiles that have not set their languages are hidden.',
+      },
+      religion: {
+        title: 'Religious views',
+        description: 'Only see people with the religious views you pick.',
+        // This filter cuts deeper than the others: the field is optional and
+        // people who picked "Prefer not to say" drop out too. The second
+        // sentence points at the way out — with the switch off it self-relaxes.
+        hiddenNote: 'While this filter is on, profiles that have not set their religious views — and those who picked "Prefer not to say" — are hidden. Leave the switch off and the filter relaxes automatically when candidates run out.',
+      },
       pets: {
         title: 'Pets',
         description: 'Should the other person have a pet?',
         any: 'Any',
         has: 'Has a pet',
         hasNot: 'No pets',
-      },
-      usagePurpose: {
-        title: 'Looking For',
-        description: 'Only see people using the app for the purpose you pick.',
+        specific: 'Specific types',
+        // OR semantics — not "has all of them".
+        orNote: 'Profiles with at least one of the types you pick are shown.',
       },
       preferredHobbies: {
         title: 'Hobbies I look for',
@@ -532,6 +737,10 @@ const en = {
       search: 'Search university',
       limitMsg: 'You can pick up to {{max}} universities.',
     },
+    // NOTE: the `radiusExpanded` strip was REMOVED (backend contract
+    // 2026-08-17). The backend still widens the radius silently when
+    // candidates run thin, but no longer reports it (`wasRadiusExpanded` is
+    // always false) — product decided the expansion stays invisible.
     // Empty-deck reasons — sent by the backend as `emptyReason` /
     // `emptyReasonCode` (UT-6xxx); mapping lives in responseCodes.ts. Reasons
     // whose action is `dismiss` (allCandidatesSeen) have no button label.
@@ -573,8 +782,11 @@ const en = {
     tabLike: 'Like',
     tabSuperLike: 'Superlike',
     infoDescription:
-      'Everyone who liked or super liked you shows up here. Tap a card and like them back to match instantly.',
+      'Everyone who liked or super liked you shows up here. Use the buttons next to a card to pass, or like them back to match instantly.',
     startSwipingButton: 'Start swiping',
+    // Accessibility labels for the round buttons beside each card.
+    passButton: 'Pass',
+    likeButton: 'Like',
     emptySuperLike: 'No super likes yet.',
     emptySuperLikeSubtitle: 'When someone super likes you, they will appear here.',
     emptyLike: 'No likes yet.',
@@ -582,6 +794,24 @@ const en = {
     emptyAll: 'No one has liked you yet.',
     emptyAllSubtitle: 'As you improve your profile, the number of people who like you will increase.',
     viewButton: 'See who likes you',
+    // Missed matches: people who liked you but you passed on. The list is open
+    // to everyone; recovering costs a daily quota.
+    tabMissed: 'Missed',
+    emptyMissed: 'You have not missed anyone.',
+    // The window length comes from the backend — see the Turkish file.
+    emptyMissedSubtitle:
+      'If you pass on someone who liked you, they stay here for a while so you can take it back.',
+    emptyMissedSubtitleDays:
+      'If you pass on someone who liked you, they stay here for {{days}} days so you can take it back.',
+    recoverButton: 'Recover',
+    // Deliberately not pluralized — see the Turkish file for why.
+    recoverQuota: 'Recoveries left today: {{count}}',
+    // No "-1 means unlimited" branch here — premium is capped too (5/day).
+    recoverQuotaWithLimit: 'Recoveries left today: {{count}}/{{limit}}',
+    recoverQuotaEmpty: 'You are out of recoveries for today.',
+    recoverSuccessTitle: 'Match recovered 💞',
+    recoverSuccessMessage: 'They already liked you — the chat will open shortly.',
+    recoverFailed: 'Could not recover.',
   },
   notifications: {
     empty: 'No notifications yet.',
@@ -614,6 +844,11 @@ const en = {
   profile: {
     tabTitle: 'Profile',
     loadError: 'Profile refresh error:',
+    loadFailed: {
+      title: "Couldn't load your profile",
+      subtitle: 'Your connection looks slow or dropped. Check it and try again.',
+      retry: 'Try again',
+    },
     completion: {
       title: 'Profile Completion',
       photos: 'Photos',
@@ -626,8 +861,8 @@ const en = {
       smokingDescription: 'Find people most suited to you by specifying your lifestyle.',
       zodiac: 'Zodiac Sign',
       zodiacDescription: 'Add your zodiac sign and discover astrological compatibility and potential matches.',
-      purpose: 'Purpose',
-      purposeDescription: 'By specifying what you are looking for here, meet people with the same expectations as you.',
+      relationshipIntent: 'What You Are Looking For',
+      relationshipIntentDescription: 'By specifying what you are looking for, meet people with the same expectations as you.',
       completeButton: 'Complete',
     },
     // SuperLike card under the hero. The card is half the screen wide, so the
@@ -666,6 +901,75 @@ const en = {
       delete: 'Delete',
       setMainError: 'Main photo could not be changed.',
       deleteError: 'Photo could not be deleted.',
+      limitTitle: 'Photo Limit',
+      limitMessage: 'You can add up to {{max}} photos. Delete one before adding another.',
+      minTitle: 'Last Photos',
+      minMessage: 'Your profile must keep at least {{min}} photos. Add a new one before deleting this.',
+    },
+    // Photo moderation. Text is ALWAYS derived from reasonCode — the backend's
+    // reasonText is a hardcoded Turkish string and may change; never key off it.
+    photoModeration: {
+      status: {
+        Approved: 'Live',
+        Rejected: 'Not live',
+        Review: 'Under review',
+        Pending: 'Checking',
+      },
+      reason: {
+        main_photo_multiple_faces:
+          'There is more than one person in your main photo. You need to be alone in your main photo — your other photos can include your friends.',
+        main_photo_no_face:
+          'We can\'t see your face in your main photo. Please pick a photo where your face is clearly visible.',
+        explicit_content:
+          'This photo doesn\'t meet our community guidelines. Please try a different photo.',
+        violence:
+          'This photo can\'t be published because it contains violent content. Please try a different photo.',
+        hate_symbols:
+          'This photo contains a symbol that doesn\'t meet our community guidelines. Please try a different photo.',
+        // face_mismatch and face_compare_unavailable show the SAME neutral text
+        // to the user (one means "looks like someone else", the other "we
+        // couldn't compare") but stay separate codes for support and analytics.
+        face_mismatch: 'We\'re reviewing this photo. It will appear on your profile shortly.',
+        face_compare_unavailable:
+          'We\'re reviewing this photo. It will appear on your profile shortly.',
+        under_review: 'We\'re reviewing this photo. It will appear on your profile shortly.',
+        provider_error: 'We\'re checking this photo. It will appear on your profile shortly.',
+        fallback: {
+          Approved: 'This photo is live.',
+          Rejected: 'This photo can\'t be published. Please try a different photo.',
+          Review: 'We\'re reviewing this photo. It will appear on your profile shortly.',
+          Pending: 'We\'re checking this photo. It will appear on your profile shortly.',
+        },
+      },
+      title: {
+        main_photo_multiple_faces: 'You need to be alone in your main photo',
+        main_photo_no_face: 'Your face must be visible in your main photo',
+        fallback: {
+          Approved: 'Photo is live',
+          Rejected: 'Photo couldn\'t be published',
+          Review: 'Your photo is under review',
+          Pending: 'Your photo is being checked',
+        },
+      },
+      summary: {
+        titleRejected: 'Some of your photos couldn\'t be published',
+        titlePending: 'Your photos are under review',
+        rejected:
+          '{{count}} of your photos couldn\'t be published because they don\'t meet our community guidelines. You can add different photos instead.',
+        pending:
+          '{{count}} of your photos are under review. They\'ll appear on your profile automatically once approved — no need to upload them again.',
+      },
+      mainHint: 'You need to be alone in your main photo.',
+      otherHint: 'Your other photos can include friends, scenery or your hobbies.',
+      replace: 'Replace',
+      chooseAnotherMain: 'Set another photo as main',
+      // Making a hidden photo the main one leaves the profile card blank.
+      setMainBlockedTitle: 'This photo isn\'t live yet',
+      setMainBlockedMessage:
+        'You can only set a photo that is live as your main photo.',
+      reorderMainBlockedTitle: 'The first photo must be live',
+      reorderMainBlockedMessage:
+        'The first photo becomes your main photo. If you move a photo that isn\'t live to the first slot, your profile card will look empty.',
     },
     edit: {
       button: 'Edit Profile',
@@ -684,13 +988,17 @@ const en = {
       bioTitle: 'Bio',
       bioDesc: "Write a short bio to introduce yourself. Share what you're up to.",
       photosTitle: 'Photos',
-      photosHint: 'Long-press and drag to reorder. Your first photo becomes your main photo.',
+      photosHint: 'Long-press and drag to reorder. Your first photo becomes your main photo — you need to be alone in it, but your other photos can include your friends.',
       smokingTitle: 'Smoking',
       smokingDesc: 'Select your smoking status.',
+      alcoholTitle: 'Drinking',
+      // The warning is deliberate: leaving this empty hides you from anyone
+      // using the alcohol filter (same backend semantics as smoking).
+      alcoholDesc: 'Select your drinking habits. If you leave this empty, people using the alcohol filter will not see you.',
+      religiousViewTitle: 'Religious Views',
+      religiousViewDesc: 'Share your religious views if you want. Tap the selected option again to remove it.',
       zodiacTitle: 'Zodiac Sign',
       zodiacDesc: 'Select your zodiac sign.',
-      usagePurposeTitle: 'Usage Purpose',
-      usagePurposeDesc: 'Choose what you use Lit for.',
       relationshipIntentTitle: 'What You Are Looking For',
       relationshipIntentDesc: 'Pick what you are after. Tap the selected option again to remove it.',
       hobbiesTitle: 'Hobbies ({{count}} selected)',
@@ -711,12 +1019,8 @@ const en = {
         showUniversity: 'Show my university',
         showOnApp: 'Show me on the app',
         showAge: 'Show my age',
-      },
-      purposeDesc: {
-        flort: "I'm looking for a light, fun and exciting connection.",
-        arkadashlik: 'I want to meet new people and expand my social circle.',
-        network: 'I want to build professional connections and meet in the business world.',
-        oylesine: "I don't have specific expectations, I'm going with the flow.",
+        showPremiumBadge: 'Show my premium badge',
+        showPremiumBadgeHint: 'Turning this off keeps all your premium features.',
       },
     },
     subscription: {
@@ -750,19 +1054,30 @@ const en = {
       smoking: 'Smoking Status',
       zodiac: 'Zodiac Sign',
       pets: 'Pets',
+      // Lifestyle pill. Backend sends `height` as a number with no `*Display`
+      // sibling — the unit is "cm" in both languages, set tight against the
+      // number ("180cm") so the narrow pill reads as one token.
+      heightCm: '{{cm}}cm',
       petsYes: 'Has pets',
       petsNo: 'No pets',
       bio: 'Bio',
-      usagePurpose: 'I use this app for {{purpose}}',
       prep: 'Prep',
       grade: 'Year {{year}}',
-      noPhoto: 'No photo',
       premium: 'Premium',
       knowMeAs: "This is how you'll know me:",
+      myIntent: "What I'm looking for:",
+      // Appended to the intent label: "Long-term" → "Long-term relationship".
+      intentSuffix: 'relationship',
       myInterests: 'My interests are:',
       myLifestyle: 'My lifestyle is:',
       sameUniversity: 'Same University',
       location: 'Location',
+      distanceAway: '{{km}} km away',
+      distanceNear: 'Less than 1 km',
+      reportAccount: 'Report this account',
+      blockAccount: 'Block this account',
+      activeToday: 'Active today',
+      newMember: 'New here',
     },
     languages: {
       title: 'Select Language',
@@ -771,6 +1086,12 @@ const en = {
     },
   },
   purchase: {
+    // Hub `SubscriptionChanged` toasts — admin actions only; store-driven
+    // changes are already expected by the user.
+    revokedTitle: 'Your premium subscription has ended',
+    revokedMessage: 'Premium features are now off. If you did not expect this, please contact support.',
+    grantedTitle: 'Premium is now active',
+    grantedMessage: 'Your premium features are unlocked. Enjoy!',
     features: {
       unlimited: 'Unlimited Likes',
       seeLikes: 'See Who Likes You',
@@ -824,14 +1145,49 @@ const en = {
     report: {
       title: 'Report User',
       reasonLabel: 'Reason for report',
+      reasonDescription: 'Pick the closest reason so our team can review it properly.',
+      // Enum labels — keys are moderationService.ReportReason values.
+      reasons: {
+        Spam: 'Spam / Advertising',
+        Harassment: 'Harassment / Insults',
+        InappropriateContent: 'Explicit content',
+        FakeProfile: 'Fake profile',
+        Underage: 'Underage',
+        Scam: 'Scam',
+        Other: 'Other',
+      },
       detailLabel: 'Detail (optional)',
+      detailDescription: 'A couple of sentences about what happened speeds up the review.',
       detailPlaceholder: 'Briefly describe the incident…',
       characterCount: '{{count}}/1000',
+      blockSectionTitle: 'Blocking',
+      submit: 'Report',
       disclaimer: 'Reports are reviewed by our team. Intentionally false reports may result in your account being restricted.',
       successTitle: 'Report received',
       successMessage: 'Our team will review it as soon as possible. Staying safe is important.',
+      successBlockedMessage:
+        'Our team will review it as soon as possible. We blocked this person — you will never match again.',
       alreadyReported: 'You have already reported this user in the last 24 hours.',
       error: 'Report could not be sent.',
+      // Reporting no longer forces a block: the box is checked by default and
+      // can be unchecked ("I want to report but keep the conversation").
+      alsoBlock: 'Block this person',
+      alsoBlockHint:
+        'Blocking is permanent: you will never match again and the old chat can never be reopened.',
+      blockFailed:
+        'Your report was received but the block could not be completed. Do you want to try again?',
+      blockRetry: 'Try blocking',
+      blockRetryFailed:
+        'Blocking failed again. You can retry from Settings → Blocked Users.',
+    },
+    block: {
+      confirmTitle: 'Block this account',
+      confirmMessage:
+        "This person won't show up for you again and can't message you. Blocking is permanent: you will never match.",
+      confirmButton: 'Block',
+      successTitle: 'Blocked',
+      successMessage: "You won't see this person again.",
+      error: 'Blocking failed.',
     },
     blocked: {
       title: 'Blocked Users',

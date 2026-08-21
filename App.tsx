@@ -14,6 +14,10 @@ mark("js-boot");
 // hata olursa vb.) — 4.5sn sonra zorla gizle.
 setTimeout(() => hideSplash("safety-4500"), 4500);
 import "./global.css";
+// TEMA: paleti ve native görünüm stilini İLK RENDER'DAN ÖNCE bastırır. Modül
+// gövdesi MMKV'yi senkron okuyor — bu satır aşağı kayarsa açık modda soğuk
+// açılışta bir kare koyu flash eder.
+import { useThemeMode } from "./src/shared/theme/themeMode";
 import { useEffect } from "react";
 import { View, Text, Pressable } from "react-native";
 import { TriangleAlert } from "lucide-react-native";
@@ -22,7 +26,7 @@ import { colors } from "./src/shared/theme/colors";
 import RenderHudOverlay from "./src/shared/debug/RenderHudOverlay";
 import { PERF_HUD } from "./src/shared/debug/flags";
 import { StatusBar } from "expo-status-bar";
-import { Provider, useSelector } from "react-redux";
+import { Provider, useSelector, useDispatch } from "react-redux";
 import { PersistGate } from "redux-persist/integration/react";
 import { QueryClientProvider } from "@tanstack/react-query";
 import { store, persistor } from "./src/shared/store";
@@ -39,6 +43,7 @@ import { NotifierWrapper } from "react-native-notifier";
 import { I18nextProvider } from "react-i18next";
 import i18n from "./src/shared/i18n";
 import { setCurrentLanguage } from "./src/shared/services/api";
+import { setLanguage } from "./src/shared/store/settingsSlice";
 import { bustStaticCache } from "./src/shared/services/staticCache";
 
 // Modul-level — Fast Refresh ile module re-execute olduğunda yeni değer alır.
@@ -49,7 +54,19 @@ import { bustStaticCache } from "./src/shared/services/staticCache";
 const __MODAL_PROVIDER_SESSION = `${Date.now()}-${Math.random()}`;
 
 function LanguageSyncer() {
+  const dispatch = useDispatch();
   const language = useSelector((s: any) => s.settings?.language);
+  const languagePreference = useSelector(
+    (s: any) => s.settings?.languagePreference,
+  );
+
+  // Persist edilen `language` ÇÖZÜLMÜŞ değer; "system" tercihinde cihaz dili
+  // değişmişse (iOS dil değişiminde uygulamayı yeniden başlatıyor) diskteki
+  // çözüm bayat kalır. Rehydrate'ten sonra bir kez yeniden çözüyoruz.
+  useEffect(() => {
+    if (languagePreference === "system") dispatch(setLanguage("system"));
+  }, [languagePreference, dispatch]);
+
   useEffect(() => {
     if (!language) return;
     if (i18n.language !== language) {
@@ -90,14 +107,33 @@ function CrashFallback({ resetError }: { resetError: () => void }) {
   );
 }
 
+/**
+ * Tema değişince ağacı BİR KEZ remount eder.
+ *
+ * NEDEN REMOUNT: palet yerinde mutasyona uğruyor (bkz. theme/colors.ts), yani
+ * inline style'lar bir sonraki render'da doğru rengi okuyor — ama React.memo'lu
+ * ağaçlar (chat balonları, LegendList satırları, SwipeCard) prop'ları
+ * değişmediği için hiç render olmuyor ve eski renkte kalıyorlardı. `key` ile
+ * tek seferlik taze mount bunu bir hamlede çözüyor; alternatifi 73 dosyayı
+ * context aboneliğine çevirmekti ki bu chat'in render dengesini bozup kayıtlı
+ * commit-storm sorununu geri getirebilirdi.
+ *
+ * Navigasyon durumu KORUNUR: remount'tan önce mevcut nav state snapshot'lanıp
+ * NavigationContainer'a initialState olarak geri veriliyor (bkz. AppNavigator
+ * captureNavStateForThemeSwap). Aksi halde Ayarlar'dan tema değiştiren
+ * kullanıcı Discover'a düşerdi.
+ */
 function App() {
   // Duckie-regular RUNTIME'DA YÜKLENMEZ: expo-font config plugin'i (app.json)
   // fontu build sırasında binary'e gömüyor, yani ilk frame'de hazır. Önceki
   // `useFonts` + `if (!fontsLoaded) return null` yolu splash kalktıktan sonra
   // TÜM ağacı bir tick bloke ediyordu — cold start zincirinin (bkz. bootPhase)
   // en başında bedava kaybedilen zamandı.
+
+  // Abonelik EN TEPEDE: kök zemin ve status bar da tema değişiminde güncellensin.
+  const mode = useThemeMode();
   return (
-    <GestureHandlerRootView style={{ flex: 1, backgroundColor: "#121212" }}>
+    <GestureHandlerRootView style={{ flex: 1, backgroundColor: colors.bg }}>
       <SafeAreaProvider initialMetrics={initialWindowMetrics}>
       <Provider store={store}>
         <PersistGate loading={null} persistor={persistor}>
@@ -108,9 +144,23 @@ function App() {
                 <BottomSheetModalProvider key={__MODAL_PROVIDER_SESSION}>
                   <NotifierWrapper>
                     <Sentry.ErrorBoundary fallback={({ resetError }) => <CrashFallback resetError={resetError} />}>
-                      <AppNavigator />
+                      {/*
+                        key={mode} → tema değişince ağaç BİR KEZ taze mount olur.
+                        Palet yerinde mutasyona uğruyor (bkz. theme/colors.ts), yani
+                        inline style'lar bir sonraki render'da doğru rengi okuyor —
+                        ama React.memo'lu ağaçlar (chat balonları, LegendList
+                        satırları, SwipeCard) prop'ları değişmediği için hiç render
+                        olmuyor ve eski renkte kalıyorlardı. Alternatifi 73 dosyayı
+                        context aboneliğine çevirmekti; bu da chat'in render
+                        dengesini bozup kayıtlı commit-storm sorununu geri
+                        getirebilirdi.
+
+                        Navigasyon durumu KAYBOLMAZ: AppNavigator remount'ta
+                        snapshot'ladığı state'i initialState olarak geri veriyor.
+                      */}
+                      <AppNavigator key={mode} />
                     </Sentry.ErrorBoundary>
-                    <StatusBar style="light" />
+                    <StatusBar style={mode === "light" ? "dark" : "light"} />
                     {PERF_HUD && <RenderHudOverlay />}
                   </NotifierWrapper>
                 </BottomSheetModalProvider>

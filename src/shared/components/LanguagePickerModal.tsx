@@ -1,13 +1,22 @@
-import React, { useEffect, useMemo, useState } from "react";
+import React, { useCallback, useEffect, useMemo, useState } from "react";
 import { useTranslation } from 'react-i18next';
 import { View, Text, TouchableOpacity, Alert } from "react-native";
 import { BottomSheetTextInput } from "@gorhom/bottom-sheet";
 import { Search, SearchX, Check } from "lucide-react-native";
 import SFIcon from "@/shared/components/SFIcon";
 import AppModal from "@/shared/components/AppModal";
-import { colors } from "../../../shared/theme/colors";
+import {
+  resolveLocalized,
+  type LocalizedText,
+} from "@/shared/queries/commonQueries";
+import { colors } from "../theme/colors";
 
-type Option = { id: number; name: string; enumName: string };
+type Option = {
+  id: number;
+  name: string;
+  enumName: string;
+  display?: string | LocalizedText;
+};
 
 type Props = {
   visible: boolean;
@@ -17,11 +26,17 @@ type Props = {
   maxLimit?: number;
   limitMsg?: string;
   onConfirm: (enumNames: string[]) => void;
+  // Başlık çağırana bırakıldı: profil düzenlemede "kendi dillerim", keşif
+  // filtresinde "karşımdakinin dilleri" seçiliyor — aynı liste, farklı soru.
+  title?: string;
 };
 
 // CityPickerModal'ın multi-select kardeşi. AppModal chrome, snap points
 // (75%/92% — keyboard extend), arama input ve liste yapısı CityPickerModal
 // ile birebir aynı; tek fark çoklu seçim toggle ve sağda "Bitti" action.
+//
+// İki ekran kullanıyor (EditProfileForm ve FilterModal), o yüzden shared/'ta:
+// profil özel hiçbir mantığı yok, `items` dışarıdan geliyor.
 export default function LanguagePickerModal({
   visible,
   onClose,
@@ -30,8 +45,9 @@ export default function LanguagePickerModal({
   maxLimit,
   limitMsg,
   onConfirm,
+  title,
 }: Props) {
-  const { t } = useTranslation();
+  const { t, i18n } = useTranslation();
   const [search, setSearch] = useState("");
   const [selected, setSelected] = useState<Set<string>>(
     () => new Set(initialSelectedValues),
@@ -47,10 +63,19 @@ export default function LanguagePickerModal({
     }
   }, [visible, initialSelectedValues]);
 
+  // Satır etiketi `display`ten çözülüyor, `name`den DEĞİL: /api/common/*
+  // yanıtlarında `name` sabit İngilizce, çift dilli karşılık `display`
+  // ({ tr, en }) alanında. Arama da aynı metin üzerinde yapılıyor — kullanıcı
+  // ekranda ne okuyorsa onu yazabilmeli ("Almanca" → German).
+  const label = useCallback(
+    (item: Option) => resolveLocalized(item.display, i18n.language, item.name),
+    [i18n.language],
+  );
+
   const ordered = useMemo(() => {
     const q = search.trim().toLocaleLowerCase("tr");
     const filtered = q
-      ? items.filter((i) => (i.name ?? "").toLocaleLowerCase("tr").includes(q))
+      ? items.filter((i) => label(i).toLocaleLowerCase("tr").includes(q))
       : items;
     if (selected.size === 0) return filtered;
     // Seçili olanlar listenin başında — görsel referans.
@@ -61,7 +86,7 @@ export default function LanguagePickerModal({
       else rest.push(it);
     }
     return [...selectedItems, ...rest];
-  }, [items, search, selected]);
+  }, [items, search, selected, label]);
 
   const toggle = (enumName: string) => {
     setSelected((prev) => {
@@ -83,7 +108,7 @@ export default function LanguagePickerModal({
     <AppModal
       visible={visible}
       onClose={onClose}
-      title={t('profile.languages.title')}
+      title={title ?? t('profile.languages.title')}
       snapPoints={["75%", "90%"]}
       stackBehavior="push"
       actionLabel={t('common.done')}
@@ -115,7 +140,7 @@ export default function LanguagePickerModal({
             borderRadius: 999,
             borderCurve: "continuous",
             borderWidth: 0.5,
-            borderColor: "rgba(255,255,255,0.1)",
+            borderColor: colors.hairline,
             backgroundColor: "transparent",
             paddingLeft: 44,
             paddingRight: 16,
@@ -161,7 +186,7 @@ export default function LanguagePickerModal({
                 overflow: "hidden",
                 borderRadius: 999,
                 backgroundColor: isSelected
-                  ? "rgba(255,255,255,0.1)"
+                  ? colors.hairline
                   : "transparent",
                 position: "relative",
               }}
@@ -175,7 +200,7 @@ export default function LanguagePickerModal({
                   marginRight: 32,
                 }}
               >
-                {item.name}
+                {label(item)}
               </Text>
               {isSelected && (
                 <View

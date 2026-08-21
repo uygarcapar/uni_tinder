@@ -23,9 +23,17 @@ const tr = {
   },
   settings: {
     title: 'Ayarlar',
+    theme: {
+      title: 'Tema',
+      subtitle: 'Uygulamanın görünümünü seç.',
+      system: 'Sistem',
+      light: 'Açık',
+      dark: 'Koyu',
+    },
     language: {
       title: 'Dil',
       subtitle: 'Uygulamanın gösterileceği dili seç.',
+      system: 'Sistem',
     },
     messaging: {
       title: 'Mesajlaşma',
@@ -45,6 +53,7 @@ const tr = {
     },
     downloadData: 'Verilerimi İndir',
     blockedUsers: 'Engellenenler',
+    changePassword: 'Şifre Değiştir',
     account: {
       title: 'Hesap',
       subtitle: 'Hesabını silersen 30 gün içinde geri dönebilirsin.',
@@ -78,8 +87,22 @@ const tr = {
     session: {
       closedTitle: 'Oturumun kapatıldı',
       closedMessage: 'Hesabına başka bir cihazdan giriş yapıldı.',
+      // Gerekçesi bilinmeyen oturum kapanışı. "Başka cihazdan giriş" DEMEZ:
+      // sunucu gerekçe göndermediğinde sebebi bilmiyoruz ve kullanıcıyı boş
+      // yere hesabı ele geçirilmiş sanmaya itmemeliyiz.
+      endedTitle: 'Oturumun kapatıldı',
+      endedMessage: 'Güvenlik için oturumun sonlandırıldı. Tekrar giriş yap.',
+      // Refresh token'ın 30 günü doldu (UT-1014). Sıradan bir olay, "güvenlik"
+      // dili KULLANILMIYOR — kullanıcı hesabı ele geçirilmiş sanmasın.
+      expiredTitle: 'Oturumunun süresi doldu',
+      expiredMessage: 'Uzun süre giriş yapmadığın için oturumun kapandı. Tekrar giriş yap.',
+      // Bu ya da başka bir cihazda çıkış yapılmış (UT-1016).
+      loggedOutTitle: 'Oturumun kapatılmış',
+      loggedOutMessage: 'Bu hesaptan çıkış yapılmış. Devam etmek için tekrar giriş yap.',
       reverifyTitle: 'E-posta doğrulaması gerekli',
       reverifyMessage: 'Devam etmek için e-posta adresini yeniden doğrulaman gerekiyor. Tekrar giriş yap.',
+      passwordChangedTitle: 'Şifren değiştirildi',
+      passwordChangedMessage: 'Güvenliğin için tüm oturumlar kapatıldı. Yeni şifrenle tekrar giriş yap.',
     },
     // Ban / askı / silme ekranı. Gövde metni backend'den (`message`) gelir —
     // buradaki fallback'ler yalnız gövde boş dönerse kullanılır.
@@ -114,9 +137,108 @@ const tr = {
       emailPlaceholder: 'ornek@universite.edu.tr',
       passwordLabel: 'Şifre',
       passwordPlaceholder: '••••••••',
-      forgotPassword: 'Şifreni mi unuttun? Buradan sıfırla',
-      forgotPasswordLink: 'Buradan sıfırla',
+      forgotPassword: 'Şifreni mi unuttun?',
       submitButton: 'Giriş Yap',
+    },
+    forgotPassword: {
+      title: 'Şifreni sıfırla.',
+      description: 'Hesabının e-mail adresini gir, sana 6 haneli bir sıfırlama kodu gönderelim.',
+      emailLabel: 'E-Mail',
+      emailPlaceholder: 'ornek@universite.edu.tr',
+      // Backend kayıtlı olmayan adres için de aynı yanıtı döndürüyor; metin
+      // bu belirsizliği koruyacak şekilde yazıldı.
+      infoText: 'Adres sistemde kayıtlıysa kod birkaç dakika içinde ulaşır.',
+      submitButton: 'Kodu Gönder',
+      errors: {
+        sendFailed: 'Kod gönderilemedi',
+        network: 'Bağlantı hatası, tekrar dene',
+      },
+      code: {
+        title: 'Sıfırlama kodunu gir.',
+        description: ' adresine gönderilen 6 haneli kodu gir',
+        resendSuccess: 'Kod başarıyla gönderildi!',
+        resendButton: 'Tekrar Gönder',
+        resendCountdown: 'Tekrar gönder ({{countdown}}s)',
+        pasteButton: 'Yapıştır',
+        backButton: 'Geri Dön',
+        validation: {
+          codeRequired: 'Lütfen 6 haneli kodu girin',
+          clipboardEmpty: 'Panoda 6 haneli bir kod bulunamadı',
+        },
+      },
+      reset: {
+        title: 'Yeni şifreni belirle.',
+        description: 'Yeni şifren en az 8 karakter olmalı; bir büyük harf, bir rakam ve bir özel karakter içermeli.',
+        passwordLabel: 'Yeni Şifre *',
+        passwordPlaceholder: 'En az 8 karakter',
+        confirmLabel: 'Yeni Şifre Tekrar *',
+        confirmPlaceholder: 'Şifreni tekrar gir',
+        submitButton: 'Şifreyi Güncelle',
+        successTitle: 'Şifren güncellendi',
+        successMessage: 'Yeni şifrenle giriş yapabilirsin.',
+        retryCodeButton: 'Kodu tekrar gir',
+        errors: {
+          failed: 'Şifre güncellenemedi, tekrar dene',
+          network: 'Bağlantı hatası, tekrar dene',
+        },
+      },
+    },
+    // Şifre uçlarının ORTAK metinleri. Hata satırları backend'in `code`
+    // alanından çözülüyor (bkz. passwordErrors.ts): backend metinleri yalnız
+    // Türkçe, uygulama iki dilli — bilinen kodlarda buradaki karşılık kazanır.
+    password: {
+      rules: {
+        length: 'En az 8 karakter',
+        uppercase: 'En az 1 büyük harf',
+        lowercase: 'En az 1 küçük harf',
+        digit: 'En az 1 rakam',
+        special: 'En az 1 özel karakter',
+      },
+      errors: {
+        currentPasswordWrong: 'Girdiğin şifre yanlış, lütfen tekrar dene.',
+        codeInvalid: 'Girdiğin kod hatalı veya süresi dolmuş olabilir. Yeni bir kod iste.',
+        codeBurned: 'Kodu çok kez hatalı girdin. Güvenliğin için bu kod iptal edildi, yeni bir kod iste.',
+        policy: 'Yeni şifren şifre kurallarını karşılamıyor.',
+        sameAsCurrent: 'Yeni şifren mevcut şifrenden farklı olmalı.',
+        rateLimited: 'Çok fazla deneme yaptın. {{seconds}} saniye sonra tekrar dene.',
+        sessionLost: 'Oturumun sona erdi. Lütfen tekrar giriş yap.',
+        generic: 'İşlem tamamlanamadı, tekrar dene.',
+      },
+      change: {
+        title: 'Şifreni değiştir.',
+        description: 'Güvenliğin için önce mevcut şifreni doğrulayalım.',
+        currentLabel: 'Mevcut Şifre',
+        currentPlaceholder: 'Mevcut şifreni gir',
+        codeTitle: 'Onay kodunu gir.',
+        codeDescription: '{{email}} adresine 6 haneli bir kod gönderdik. Kodu ve yeni şifreni gir.',
+        newLabel: 'Yeni Şifre',
+        newPlaceholder: 'En az 8 karakter',
+        confirmLabel: 'Yeni Şifre Tekrar',
+        confirmPlaceholder: 'Yeni şifreni tekrar gir',
+        submitButton: 'Şifreyi Güncelle',
+        expiresIn: 'Kodun geçerlilik süresi {{time}}',
+        expired: 'Kodun süresi doldu',
+        resendButton: 'Tekrar gönder',
+        resendCountdown: 'Tekrar gönder ({{countdown}}s)',
+        resendSuccess: 'Yeni kod gönderildi',
+        attemptsLeft: '{{count}} deneme hakkın kaldı',
+        successTitle: 'Şifren güncellendi',
+        successMessage: 'Diğer cihazlardaki oturumların kapatıldı.',
+        validation: {
+          currentRequired: 'Lütfen mevcut şifreni gir.',
+          codeRequired: 'Lütfen 6 haneli kodu gir.',
+        },
+        forgotCurrent: {
+          link: 'Mevcut şifremi hatırlamıyorum',
+          title: 'Şifreni sıfırla',
+          message:
+            'E-posta adresine bir sıfırlama kodu göndereceğiz. Şifreni sıfırladıktan sonra güvenlik için tekrar giriş yapman gerekecek.',
+        },
+      },
+      reset: {
+        successTitle: 'Şifren sıfırlandı',
+        successMessage: 'Güvenliğin için oturumun kapatıldı. Yeni şifrenle giriş yap.',
+      },
     },
     kvkkConsent: {
       title: 'Gizlilik & KVKK',
@@ -165,6 +287,7 @@ const tr = {
       description: ' adresine gönderilen 6 haneli kodu girin',
       descriptionPending: ' adresine daha önce kod gönderildi. Mailinizi kontrol edin.',
       resendSuccess: 'Kod başarıyla gönderildi!',
+      resendPending: 'Kodu az önce gönderdik, {{seconds}} sn sonra tekrar dene.',
       resendButton: 'Tekrar Gönder',
       resendCountdown: 'Tekrar gönder ({{countdown}}s)',
       pasteButton: 'Yapıştır',
@@ -259,20 +382,21 @@ const tr = {
       description: 'İsteğe bağlı bilgiler. Profil eşleşmelerini iyileştirir.',
       smokingLabel: 'Sigara Kullanımı',
       zodiacLabel: 'Burç',
-      purposeLabel: 'Kullanım Amacı',
-      purposeFlirt: 'Flört',
-      purposeFlirtDesc: 'Hafif, eğlenceli ve heyecanlı bir bağlantı arıyorum.',
-      purposeFriendship: 'Arkadaşlık',
-      purposeFriendshipDesc: 'Yeni insanlarla tanışmak ve sosyal çevreyi genişletmek istiyorum.',
-      purposeNetwork: 'Network',
-      purposeNetworkDesc: 'Profesyonel bağlantılar kurmak ve iş dünyasında tanışmak istiyorum.',
-      purposeNeutral: 'Öylesine',
-      purposeNeutralDesc: 'Belirli bir beklentim yok, akışına bırakıyorum.',
       relationshipIntentLabel: 'İlişki Niyetin',
       relationshipIntentError: 'İlişki niyetleri yüklenirken bir hata oluştu',
       smokingError: 'Sigara durumları yüklenirken bir hata oluştu',
       zodiacError: 'Burçlar yüklenirken bir hata oluştu',
-      purposeError: 'Kullanım amaçları yüklenirken bir hata oluştu',
+      skipButton: 'Atla',
+    },
+    // Step16 fotoğraflardan (15) ÖNCE geliyor — numarası akış sırasını
+    // değil, ekranın eklenme sırasını gösteriyor (bkz. RegisterProgressBar).
+    step16: {
+      title: 'Alışkanlıkların ve İnancın',
+      description: 'İsteğe bağlı bilgiler. İkisini de sonradan profilinden değiştirebilirsin.',
+      alcoholLabel: 'Alkol Kullanımı',
+      religiousViewLabel: 'Dini Görüşün',
+      alcoholError: 'Alkol kullanım seçenekleri yüklenirken bir hata oluştu',
+      religiousViewError: 'Dini görüş seçenekleri yüklenirken bir hata oluştu',
       skipButton: 'Atla',
     },
     step15: {
@@ -286,6 +410,16 @@ const tr = {
       cropCancelled: 'Bu fotoğrafın kırpılması iptal edildi.',
       pickerCancelled: 'Galeri seçimi iptal edildi:',
       submitButton: 'Profili Tamamla',
+      submitError: 'Kayıt tamamlanamadı. Lütfen tekrar dene.',
+      mainPhotoLabel: 'Ana fotoğraf',
+      pickMainTitle: 'Ana fotoğrafını seç',
+      pickMainHint: 'Ana yapmak istediğin fotoğrafa dokun.',
+      photosMissingTitle: 'Bazı fotoğraflar bulunamadı',
+      photosMissing:
+        'Telefonun geçici dosyaları temizlediği için bazı fotoğrafların silinmiş. Devam etmek için yeniden ekleyebilirsin.',
+      sessionExpiredTitle: 'Doğrulama süresi doldu',
+      sessionExpired:
+        'E-posta doğrulamanın süresi dolmuş. Aynı e-postayı tekrar doğrularsan girdiğin bilgiler korunur.',
     },
   },
   chat: {
@@ -299,6 +433,8 @@ const tr = {
       empty: 'Henüz mesajın yok.',
       findMatch: 'Eşleşme bul',
       typing: 'yazıyor…',
+      // Gönderilmemiş composer metninin önüne gelen etiket ("Taslak: merhaba").
+      draft: 'Taslak:',
       closedChat: 'Sohbet kapatıldı',
       newMessages: '{{n}} yeni mesaj',
       startConversation: 'Konuşmaya başla 👋',
@@ -309,21 +445,59 @@ const tr = {
       yesterday: 'Dün',
       notFound: "'{{query}}' bulunamadı",
     },
+    // Geri alma penceresinin uzunluğu BACKEND config'inden geliyor — metinlerde
+    // "24 saat" HARDCODE EDİLMEZ, süre `restorableUntil` damgasından hesaplanıp
+    // {{time}} olarak basılır (bkz. features/chat/restoreWindow.ts).
     unmatch: {
       restoreTitle: 'Eşleşmeyi geri al',
-      restoreMessage: 'Bu sohbet sonlandırıldı. 24 saat içinde geri alabilirsin.',
+      restoreMessage: 'Bu sohbet kapatıldı. {{time}} içinde geri alabilirsin.',
+      // Pencere damgası elimizde yokken (liste DTO'su taşımıyor / uygulama yeniden
+      // açıldı): süre vaat etmeden denemeyi sunuyoruz.
+      restoreMessageUnknown: 'Bu sohbet kapatıldı. Geri almayı deneyebilirsin.',
+      restoreUnavailable: 'Bu eşleşme kalıcı olarak kapandı — geri alma penceresi yok.',
+      restoreWindowHint: 'Geri almak için {{time}} kaldı.',
       restoreButton: 'Geri Al',
       restoreError: 'Geri alınamadı',
-      restoreExpiredMessage: '24 saatlik süre dolmuş olabilir.',
+      restoreExpiredMessage: 'Geri alma süresi dolmuş olabilir.',
       restoreFailed: 'İşlem başarısız.',
       title: 'Eşleşmeyi kaldır',
-      message: '{{partnerName}} ile sohbeti sonlandır. 24 saat içinde geri alabilirsin.',
+      message:
+        '{{partnerName}} ile sohbeti kapat. Mesajların silinmez; bir süre sonra tekrar eşleşebilirsiniz.',
+      confirmMessage:
+        'Sohbet kapanır, mesajların silinmez. Bir süre sonra tekrar eşleşebilirsiniz. Bu kişi seni rahatsız ediyorsa engellemeyi seç.',
       confirmButton: 'Kaldır',
       error: 'Eşleşme kaldırılamadı.',
+      removedTitle: 'Eşleşme kaldırıldı',
+      removedRestorable: '{{time}} içinde geri alabilirsin.',
+      removedPermanent: 'Bu eşleşme kalıcı olarak kapandı.',
+      windowHours: '{{h}} saat',
+      windowMinutes: '{{m}} dakika',
+    },
+    // Rematch: aynı çift tekrar eşleşince eski sohbet yerinde durur ama
+    // mesajlar GİZLİDİR — bu kapıya basılmadan geçmişten iz sızmaz.
+    hiddenHistory: {
+      title: 'Daha önce eşleşmiştiniz',
+      action: 'Eski sohbeti göster',
+      tooOld: 'Bu sohbet geçmişi görüntülenemeyecek kadar eski.',
+      error: 'Eski sohbet açılamadı. Lütfen tekrar dene.',
+    },
+    options: {
+      title: 'Sohbet Ayarları',
+      sectionChat: 'Sohbet',
+      sectionChatDescription: 'Bu sohbete özel hızlı eylemler.',
+      unmatch: 'Eşleşmeyi Kaldır',
+      restore: 'Eşleşmeyi Geri Al',
+      restoreExpired: 'Bu sohbet sonlandırıldı. Geri alma süresi doldu.',
+      sectionSafety: 'Güvenlik',
+      sectionSafetyDescription:
+        'Şikayet ve engelleme kalıcıdır: bir daha eşleşmezsiniz, eski sohbet açılmaz.',
+      report: 'Şikayet Et',
+      block: 'Kullanıcıyı Engelle',
     },
     system: {
       matchCreated: 'Yeni bir eşleşmen var! 🎉 İlk mesajı sen at.',
       conversationDeleted: 'Bu sohbet sonlandırıldı.',
+      rematched: 'Tekrar eşleştiniz! Daha önce burada konuşmuştunuz.',
     },
     quota: {
       title: 'Mesaj hakkı',
@@ -340,7 +514,6 @@ const tr = {
     actions: {
       reply: 'Yanıtla',
       copy: 'Kopyala',
-      edit: 'Düzenle',
       deleteForMe: 'Sadece benden sil',
       deleteForEveryone: 'Herkes için sil',
     },
@@ -353,11 +526,6 @@ const tr = {
       deletedSender: 'Silinmiş',
       deletedMessage: 'Bu mesaj silindi',
     },
-    editMessage: {
-      title: 'Mesajı düzenle',
-      info: '15 dakika içinde gönderilen mesajlar düzenlenebilir.',
-      error: 'Mesaj düzenlenemedi.',
-    },
     deleteMessage: {
       error: 'Silme başarısız.',
     },
@@ -368,12 +536,20 @@ const tr = {
       title: 'Engellendi',
       message: 'Bu kişi seninle bir daha iletişim kuramayacak.',
       error: 'Engelleme başarısız.',
+      confirmTitle: 'Kullanıcıyı engelle',
+      confirmMessage:
+        'Bu kişi sana mesaj atamayacak ve profili sana gösterilmeyecek. Eşleşmeniz KALICI olarak kapanır: bir daha eşleşmezsiniz, eski sohbet bir daha açılmaz.',
+      confirmButton: 'Engelle',
     },
     emptyState: {
       activeTitle: '{{partnerName}} ile sohbete başla',
       closedTitle: 'Bu sohbet kapalı',
-      activeDescription: 'İlk mesajı sen at — gerisini doğal akışına bırak.',
       closedDescription: 'Geçmiş mesajları görüntüleyebilirsin.',
+      // Boş sohbette tek dokunuşla gönderilen açılış önerileri (pill).
+      suggestion1: 'Selam',
+      suggestion2: 'Nasıl gidiyor?',
+      suggestion3: 'Profilin çok iyi',
+      suggestion4: 'Bugün ne yaptın?',
     },
     media: {
       photo: 'Fotoğraf',
@@ -403,7 +579,6 @@ const tr = {
       feature3: 'Geri Alma (Rewind)',
       feature4: 'Reklamsız Deneyim',
       standardPlan: 'Free',
-      matchBoost: '5x Eşleşme',
       featuresLabel: 'Özellikler',
       planName: 'lit plus',
       description: 'Lit Plus ile eşleşmelerini hızlandır, seni beğenenleri gör ve daha fazlasını keşfet!',
@@ -425,6 +600,9 @@ const tr = {
       maxDistance: {
         title: 'Maksimum Mesafe',
         desc: 'Eşleşmek istediğin kullanıcıların maksimum uzaklığını belirle. Daireyi parmağınla sürükleyerek ayarlayabilirsin.',
+        // Free hesabın tavanı düşük (50 km); slider orada duruyor. Şerit sebebi
+        // söylüyor, dokunuş paywall'ı açıyor.
+        freeCap: 'Ücretsiz hesapta en fazla {{km}} km seçebilirsin. Premium ile {{premiumKm}} km\'ye kadar çıkar.',
       },
       interestedIn: {
         title: 'İlgi Alanı',
@@ -446,6 +624,9 @@ const tr = {
       premiumFilters: {
         title: 'Premium Filtreler',
         description: 'Aradığın kişiyi daralt. Bir filtrenin anahtarını açarsan aday tükense bile o filtre gevşemez.',
+        // Premium bitince filtreler silinmiyor, yalnız uygulanmıyor — şerit bunu
+        // söylüyor ki kullanıcı "filtrelerim uçmuş" sanmasın.
+        paused: 'Premium filtrelerin duraklatıldı. Seçimlerin duruyor ama desteye uygulanmıyor — Premium\'a dönersen kaldığı yerden devam eder.',
       },
       dealbreaker: {
         on: 'Bu filtreye uymayanları hiç gösterme',
@@ -476,16 +657,40 @@ const tr = {
         title: 'Sigara',
         description: 'Yalnızca seçtiğin sigara alışkanlığına sahip kişileri gör.',
       },
+      alcohol: {
+        title: 'Alkol',
+        // Uyarı açıklamaya gömülü (boy filtresindeki desen): alan profilde
+        // zorunlu olmadığı için filtre açıkken deste beklenenden çok daralıyor.
+        description: 'Yalnızca seçtiğin alkol tercihine sahip kişileri gör. Filtre açıkken bu tercihi belirtmemiş profiller gösterilmez.',
+      },
+      language: {
+        title: 'Konuştuğu diller',
+        description: 'Seçtiğin dillerden en az birini konuşan kişileri gör.',
+        select: 'Dil seç',
+        // `count` DEĞİL: i18next'te çoğul çözümlemesini tetikler.
+        selected: '{{selected}} dil seçildi',
+        pickerTitle: 'Konuştuğu diller',
+        // OR semantiği — "hepsini birden konuşsun" DEĞİL. İkinci cümle
+        // alkol/sigaradaki uyarının aynısı: alan profilde zorunlu değil.
+        orNote: 'En az biri yeterli, hepsini birden konuşması gerekmez. Filtre açıkken dilini belirtmemiş profiller gösterilmez.',
+      },
+      religion: {
+        title: 'Dini görüş',
+        description: 'Yalnızca seçtiğin dini görüşe sahip kişileri gör.',
+        // Eleme oranı bu filtrede diğerlerinden yüksek: alan profilde zorunlu
+        // değil ve "Belirtmek istemiyorum" seçenler de düşüyor. İkinci cümle
+        // çıkışı gösteriyor — anahtar kapalıyken filtre kendiliğinden gevşer.
+        hiddenNote: 'Bu filtre açıkken dini görüşünü belirtmemiş ve "Belirtmek istemiyorum" seçmiş profiller gösterilmez. Anahtarı kapalı bırakırsan kişiler tükendiğinde filtre otomatik gevşer.',
+      },
       pets: {
         title: 'Evcil Hayvan',
         description: 'Karşındaki kişinin evcil hayvanı olsun mu?',
         any: 'Farketmez',
         has: 'Evcil hayvanı var',
         hasNot: 'Evcil hayvanı yok',
-      },
-      usagePurpose: {
-        title: 'Kullanım Amacı',
-        description: 'Yalnızca seçtiğin amaçla uygulamayı kullanan kişileri gör.',
+        specific: 'Belirli türler',
+        // OR semantiği — "hepsine birden sahip" DEĞİL.
+        orNote: 'Seçtiğin türlerden en az birine sahip olan profiller gösterilir.',
       },
       preferredHobbies: {
         title: 'Karşımda görmek istediğim hobiler',
@@ -535,6 +740,10 @@ const tr = {
       search: 'Üniversite ara',
       limitMsg: 'En fazla {{max}} üniversite seçebilirsin.',
     },
+    // NOT: `radiusExpanded` şeridi KALDIRILDI (backend sözleşmesi 2026-08-17).
+    // Backend aday tükendiğinde yarıçapı hâlâ sessizce genişletiyor ama artık
+    // bunu bildirmiyor (`wasRadiusExpanded` her zaman false); ürün kararı
+    // genişletmenin kullanıcıya gösterilmemesi yönünde.
     // Boş deste sebepleri — backend `emptyReason` / `emptyReasonCode`
     // (UT-6xxx) ile geliyor, eşleme responseCodes.ts'te. `dismiss` aksiyonlu
     // sebeplerin (allCandidatesSeen) buton etiketi yok.
@@ -576,8 +785,11 @@ const tr = {
     tabLike: 'Beğeni',
     tabSuperLike: 'Superlike',
     infoDescription:
-      'Seni beğenen ve süper beğenen kişiler burada toplanır. Bir karta dokunup sen de beğenirsen anında eşleşirsiniz.',
+      'Seni beğenen ve süper beğenen kişiler burada toplanır. Kartın sağındaki butonlarla geçebilir ya da beğenip anında eşleşebilirsin.',
     startSwipingButton: 'Kaydırmaya başla',
+    // Kartın sağındaki yuvarlak butonların ekran okuyucu etiketleri.
+    passButton: 'Geç',
+    likeButton: 'Beğen',
     emptySuperLike: 'Henüz süper beğeni yok.',
     emptySuperLikeSubtitle: 'Seni süper beğenen birileri olduğunda burada görünecek.',
     emptyLike: 'Henüz beğeni yok.',
@@ -585,6 +797,29 @@ const tr = {
     emptyAll: 'Henüz seni beğenen kimse yok.',
     emptyAllSubtitle: 'Profilini geliştirdikçe seni beğenenlerin sayısı artar.',
     viewButton: 'Seni beğenenleri gör',
+    // Kaçırılan eşleşmeler: seni beğenmiş ama senin pas geçtiğin kişiler.
+    // Liste herkese açık, kurtarma günlük kotaya bağlı.
+    tabMissed: 'Kaçırdıkların',
+    emptyMissed: 'Kaçırdığın kimse yok.',
+    // Pencere uzunluğu backend'den geliyor (`/Stats` → missedMatchLookbackDays).
+    // Değer henüz gelmediyse (eski sürüm / ilk yükleme) sayısız varyant
+    // kullanılıyor — gömülü bir "30 gün" değiştiği gün yalan söylerdi.
+    emptyMissedSubtitle:
+      'Seni beğenmiş birini pas geçersen bir süre burada durur, geri alabilirsin.',
+    emptyMissedSubtitleDays:
+      'Seni beğenmiş birini pas geçersen {{days}} gün boyunca burada durur, geri alabilirsin.',
+    recoverButton: 'Kurtar',
+    // Çoğul eki (`_one`/`_other`) BİLEREK kullanılmıyor: projede başka hiçbir
+    // anahtar çoğullamıyor, yani Intl.PluralRules yolu hiç denenmemiş. Sayıyı
+    // sonda tutan bu kalıp her adette doğru okunuyor.
+    recoverQuota: 'Bugün kalan kurtarma hakkın: {{count}}',
+    // Tavan biliniyorsa oranlı gösterim. `-1` dalı YOK: bu kotada "sınırsız"
+    // diye bir durum yok, premium de 5/gün ile sınırlı.
+    recoverQuotaWithLimit: 'Bugün kalan kurtarma hakkın: {{count}}/{{limit}}',
+    recoverQuotaEmpty: 'Bugünlük kurtarma hakkın doldu.',
+    recoverSuccessTitle: 'Eşleşme kurtarıldı 💞',
+    recoverSuccessMessage: 'Zaten seni beğenmişti — sohbet birazdan açılacak.',
+    recoverFailed: 'Kurtarılamadı.',
   },
   notifications: {
     empty: 'Henüz bildirim yok.',
@@ -617,6 +852,13 @@ const tr = {
   profile: {
     tabTitle: 'Profil',
     loadError: 'Profil yenileme hatası:',
+    // Profil çekimi düştüğünde (yavaş ağ / 30 sn timeout) boş profil yerine
+    // gösterilen hata durumu.
+    loadFailed: {
+      title: 'Profilin yüklenemedi',
+      subtitle: 'Bağlantın yavaş ya da kopmuş görünüyor. Kontrol edip tekrar dene.',
+      retry: 'Tekrar dene',
+    },
     completion: {
       title: 'Profil Tamamlama',
       photos: 'Fotoğraflar',
@@ -629,8 +871,8 @@ const tr = {
       smokingDescription: 'Yaşam tarzını belirterek sana en uygun kişileri bul.',
       zodiac: 'Burç',
       zodiacDescription: 'Burcunu ekle, astroloji uyumunu ve potansiyel eşleşmeleri keşfet.',
-      purpose: 'Kullanım Amacı',
-      purposeDescription: 'Burada ne aradığını belirterek, seninle aynı beklentilere sahip kişilerle tanış.',
+      relationshipIntent: 'İlişki Niyetin',
+      relationshipIntentDescription: 'Ne aradığını belirterek, seninle aynı beklentilere sahip kişilerle tanış.',
       completeButton: 'Tamamla',
     },
     // Hero'nun altındaki SuperLike kartı. Kart ekranın yarısı kadar — alt satır
@@ -669,6 +911,75 @@ const tr = {
       delete: 'Sil',
       setMainError: 'Ana fotoğraf değiştirilemedi.',
       deleteError: 'Fotoğraf silinemedi.',
+      limitTitle: 'Fotoğraf Sınırı',
+      limitMessage: 'En fazla {{max}} fotoğraf ekleyebilirsin. Yeni bir tane eklemek için önce birini sil.',
+      minTitle: 'Son Fotoğraflar',
+      minMessage: 'Profilinde en az {{min}} fotoğraf kalmalı. Silmek için önce yeni bir fotoğraf ekle.',
+    },
+    // Fotoğraf moderasyonu. Metinler HER ZAMAN reasonCode'dan üretilir —
+    // backend'in reasonText'i Türkçe sabit ve değişebilir, ona bağlanma.
+    photoModeration: {
+      status: {
+        Approved: 'Yayında',
+        Rejected: 'Yayında değil',
+        Review: 'İnceleniyor',
+        Pending: 'Kontrol ediliyor',
+      },
+      reason: {
+        main_photo_multiple_faces:
+          'Ana fotoğrafında birden fazla kişi var. Ana fotoğrafta yalnız olmalısın — diğer fotoğraflarında arkadaşlarınla olabilirsin.',
+        main_photo_no_face:
+          'Ana fotoğrafında yüzün görünmüyor. Yüzünün net göründüğü bir fotoğraf seç.',
+        explicit_content:
+          'Bu fotoğraf topluluk kurallarımıza uymuyor. Lütfen başka bir fotoğraf dene.',
+        violence:
+          'Bu fotoğraf şiddet içerdiği için yayınlanamıyor. Lütfen başka bir fotoğraf dene.',
+        hate_symbols:
+          'Bu fotoğraf topluluk kurallarımıza uymayan bir sembol içeriyor. Lütfen başka bir fotoğraf dene.',
+        // face_mismatch ve face_compare_unavailable kullanıcıya AYNI nötr metni
+        // gösterir (ilki "başka biri gibi görünüyor", ikincisi "karşılaştıramadık")
+        // ama destek/analitik tarafında ayırt edilebilsin diye kodları ayrı.
+        face_mismatch: 'Bu fotoğrafı inceliyoruz. Kısa süre içinde profilinde görünecek.',
+        face_compare_unavailable:
+          'Bu fotoğrafı inceliyoruz. Kısa süre içinde profilinde görünecek.',
+        under_review: 'Bu fotoğrafı inceliyoruz. Kısa süre içinde profilinde görünecek.',
+        provider_error: 'Bu fotoğrafı kontrol ediyoruz. Birazdan profilinde görünecek.',
+        fallback: {
+          Approved: 'Bu fotoğraf yayında.',
+          Rejected: 'Bu fotoğraf yayınlanamıyor. Lütfen başka bir fotoğraf dene.',
+          Review: 'Bu fotoğrafı inceliyoruz. Kısa süre içinde profilinde görünecek.',
+          Pending: 'Bu fotoğrafı kontrol ediyoruz. Birazdan profilinde görünecek.',
+        },
+      },
+      title: {
+        main_photo_multiple_faces: 'Ana fotoğrafta yalnız olmalısın',
+        main_photo_no_face: 'Ana fotoğrafta yüzün görünmeli',
+        fallback: {
+          Approved: 'Fotoğraf yayında',
+          Rejected: 'Fotoğraf yayınlanamadı',
+          Review: 'Fotoğrafın inceleniyor',
+          Pending: 'Fotoğrafın kontrol ediliyor',
+        },
+      },
+      summary: {
+        titleRejected: 'Bazı fotoğrafların yayınlanamadı',
+        titlePending: 'Fotoğrafların inceleniyor',
+        rejected:
+          '{{count}} fotoğrafın topluluk kurallarımıza uymadığı için yayınlanamadı. Yerine başka bir fotoğraf ekleyebilirsin.',
+        pending:
+          '{{count}} fotoğrafın inceleniyor. Onaylandığında profilinde kendiliğinden görünecek — yeniden yüklemene gerek yok.',
+      },
+      mainHint: 'Ana fotoğrafta yalnız olmalısın.',
+      otherHint: 'Diğer fotoğraflarında arkadaşların, manzara ya da hobilerin olabilir.',
+      replace: 'Değiştir',
+      chooseAnotherMain: 'Başka fotoğrafı ana yap',
+      // Gizli bir fotoğraf ana fotoğraf yapılırsa profil kartı boş görünür.
+      setMainBlockedTitle: 'Bu fotoğraf henüz yayında değil',
+      setMainBlockedMessage:
+        'Ana fotoğraf olarak yalnızca yayında olan bir fotoğrafı seçebilirsin.',
+      reorderMainBlockedTitle: 'İlk sıradaki fotoğraf yayında olmalı',
+      reorderMainBlockedMessage:
+        'İlk sıradaki fotoğraf ana fotoğrafın olur. Yayında olmayan bir fotoğrafı ilk sıraya alırsan profil kartın boş görünür.',
     },
     edit: {
       button: 'Profili Düzenle',
@@ -687,13 +998,17 @@ const tr = {
       bioTitle: 'Biyografi',
       bioDesc: 'Kendini tanıtabileceğin kısa bir biyografi yazabilirsin. Neler yaptığından bahset.',
       photosTitle: 'Fotoğraflar',
-      photosHint: 'Sıralamak için basılı tut ve sürükle. İlk fotoğrafın ana fotoğrafın olur.',
+      photosHint: 'Sıralamak için basılı tut ve sürükle. İlk fotoğrafın ana fotoğrafın olur — ana fotoğrafta yalnız olmalısın, diğerlerinde arkadaşlarınla olabilirsin.',
       smokingTitle: 'Sigara Kullanımı',
       smokingDesc: 'Sigara kullanım durumunu seç.',
+      alcoholTitle: 'Alkol Kullanımı',
+      // Uyarı bilinçli: bu alanı boş bırakan kullanıcı, alkol filtresi kullanan
+      // kişilerin destesinde hiç çıkmıyor (backend semantiği sigarayla aynı).
+      alcoholDesc: 'Alkol kullanım durumunu seç. Boş bırakırsan alkol filtresi kullanan kişilerin karşısına çıkmazsın.',
+      religiousViewTitle: 'Dini Görüş',
+      religiousViewDesc: 'İstersen dini görüşünü paylaş. Seçili seçeneğe tekrar dokunarak kaldırabilirsin.',
       zodiacTitle: 'Burç',
       zodiacDesc: 'Burç seçimini yap.',
-      usagePurposeTitle: 'Kullanım Amacı',
-      usagePurposeDesc: "Lit'i hangi amaçla kullandığını seç.",
       relationshipIntentTitle: 'İlişki Niyetin',
       relationshipIntentDesc: 'Ne aradığını seç. Seçili seçeneğe tekrar dokunarak kaldırabilirsin.',
       hobbiesTitle: 'Hobiler ({{count}} seçildi)',
@@ -714,12 +1029,8 @@ const tr = {
         showUniversity: 'Üniversitemi göster',
         showOnApp: 'Beni uygulamada göster',
         showAge: 'Yaşımı göster',
-      },
-      purposeDesc: {
-        flort: 'Hafif, eğlenceli ve heyecanlı bir bağlantı arıyorum.',
-        arkadashlik: 'Yeni insanlarla tanışmak ve sosyal çevreyi genişletmek istiyorum.',
-        network: 'Profesyonel bağlantılar kurmak ve iş dünyasında tanışmak istiyorum.',
-        oylesine: 'Belirli bir beklentim yok, akışına bırakıyorum.',
+        showPremiumBadge: 'Premium rozetimi göster',
+        showPremiumBadgeHint: 'Kapatsan da premium özelliklerin aynen devam eder.',
       },
     },
     subscription: {
@@ -753,19 +1064,36 @@ const tr = {
       smoking: 'Sigara Kullanımı',
       zodiac: 'Burç',
       pets: 'Evcil Hayvan',
+      // Yaşam tarzı pili. Backend `height`i sayı gönderiyor, `*Display`
+      // karşılığı yok — birim iki dilde de "cm". Birim sayıya BİTİŞİK
+      // ("180cm"): pill dar, araya boşluk girince rakamla birim iki ayrı
+      // parça gibi okunuyordu.
+      heightCm: '{{cm}}cm',
       petsYes: 'Evcil hayvan var',
       petsNo: 'Evcil hayvan yok',
       bio: 'Biyografi',
-      usagePurpose: 'Bu uygulamayı {{purpose}} için kullanıyorum',
       prep: 'Hazırlık',
       grade: '{{year}}. Sınıf',
-      noPhoto: 'Fotoğraf yok',
       premium: 'Premium',
       knowMeAs: 'Beni bu şekilde tanırsın:',
+      myIntent: 'Burada ne arıyorum:',
+      // Niyet etiketinin sonuna eklenir: "Uzun süreli" → "Uzun süreli ilişki".
+      intentSuffix: 'ilişki',
       myInterests: 'İlgi alanlarım:',
       myLifestyle: 'Yaşam tarzım:',
       sameUniversity: 'Aynı Üniversite',
       location: 'Konum',
+      // Konum satırının sağındaki pill. Mesafe yaklaşık: backend'in verdiği km
+      // yuvarlanır, 1 km altı ayrı metinle verilir ("2.5 km uzakta" gibi bir
+      // hassasiyet iddiası olmasın).
+      distanceAway: '{{km}} km uzakta',
+      distanceNear: '1 km\'den yakın',
+      reportAccount: 'Bu hesabı şikayet et',
+      blockAccount: 'Bu hesabı blokla',
+      // "Çevrimiçi" BİLEREK yok: alan (isOnlineToday) 24 saatlik penceredir,
+      // anlık presence değil — bkz. PotentialMatch.isOnlineToday.
+      activeToday: 'Bugün aktif',
+      newMember: 'Burada yeni',
     },
     languages: {
       title: 'Dil Seç',
@@ -774,6 +1102,14 @@ const tr = {
     },
   },
   purchase: {
+    // Hub `SubscriptionChanged` toast'ları. YALNIZ admin işlemleri için: mağaza
+    // kaynaklı değişimi (satın alma, süre bitişi) kullanıcı zaten biliyor.
+    // "Ne oldu" kadar "ne yapmalı"yı da söylüyorlar — gerekçesiz kapanan bir
+    // premium, destek kanalına "hesabım hacklendi" olarak dönüyor.
+    revokedTitle: 'Premium aboneliğin sonlandırıldı',
+    revokedMessage: 'Premium özelliklerin kapatıldı. Beklemediğin bir durumsa destek ekibiyle iletişime geç.',
+    grantedTitle: 'Premium hesabına tanımlandı',
+    grantedMessage: 'Premium özelliklerin şu andan itibaren açık. İyi eğlenceler!',
     features: {
       unlimited: 'Sınırsız Beğeni',
       seeLikes: 'Seni Beğenenleri Gör',
@@ -827,14 +1163,52 @@ const tr = {
     report: {
       title: 'Kullanıcıyı Şikayet Et',
       reasonLabel: 'Şikayet sebebi',
+      reasonDescription: 'Ekibimizin doğru değerlendirebilmesi için en yakın sebebi seç.',
+      // Enum etiketleri — anahtarlar moderationService.ReportReason değerleri.
+      reasons: {
+        Spam: 'Spam / Reklam',
+        Harassment: 'Taciz / Hakaret',
+        InappropriateContent: 'Müstehcen içerik',
+        FakeProfile: 'Sahte profil',
+        Underage: 'Yaş altı',
+        Scam: 'Dolandırıcılık',
+        Other: 'Diğer',
+      },
       detailLabel: 'Detay (opsiyonel)',
+      detailDescription: 'Olayı birkaç cümleyle anlatırsan inceleme hızlanır.',
       detailPlaceholder: 'Olayı kısaca anlat…',
       characterCount: '{{count}}/1000',
+      blockSectionTitle: 'Engelleme',
+      submit: 'Şikayet Et',
       disclaimer: 'Şikayetler ekibimiz tarafından incelenir. Kasıtlı yanlış şikayetler hesabının kısıtlanmasına neden olabilir.',
       successTitle: 'Şikayet alındı',
       successMessage: 'Ekibimiz en kısa sürede inceleyecek. Güvende kalman önemli.',
+      successBlockedMessage:
+        'Ekibimiz en kısa sürede inceleyecek. Bu kişiyi engelledik — bir daha eşleşmezsiniz.',
       alreadyReported: 'Bu kullanıcıyı son 24 saatte zaten şikayet ettin.',
       error: 'Şikayet gönderilemedi.',
+      // Şikayet artık zorunlu engelleme yapmıyor: kutu işaretli gelir, kullanıcı
+      // kaldırabilir ("bildirmek istiyorum ama iletişimi kesmek istemiyorum").
+      alsoBlock: 'Bu kişiyi engelle',
+      alsoBlockHint:
+        'Engelleme kalıcıdır: bir daha eşleşmezsiniz ve eski sohbet bir daha açılmaz.',
+      blockFailed:
+        'Şikayetin alındı ama engelleme tamamlanamadı. Tekrar denemek ister misin?',
+      blockRetry: 'Engellemeyi dene',
+      blockRetryFailed:
+        'Engelleme yine başarısız oldu. Ayarlar → Engellenenler üzerinden tekrar deneyebilirsin.',
+    },
+    // Profil kartındaki "Bu hesabı blokla" akışı. chat.block.* ile ayrı
+    // tutuluyor: oradaki metin açıkça sohbet/eşleşme dilinde konuşuyor, burada
+    // henüz bir eşleşme olmayabilir (keşif ya da beğeni kartı).
+    block: {
+      confirmTitle: 'Bu hesabı blokla',
+      confirmMessage:
+        'Bu kişi bir daha karşına çıkmaz ve sana mesaj atamaz. Engelleme kalıcıdır: bir daha eşleşmezsiniz.',
+      confirmButton: 'Blokla',
+      successTitle: 'Engellendi',
+      successMessage: 'Bu kişi bir daha karşına çıkmayacak.',
+      error: 'Engelleme başarısız.',
     },
     blocked: {
       title: 'Engellenenler',
