@@ -8,7 +8,6 @@ import {
   TextInput,
   Alert,
   StyleSheet,
-  Platform,
   InteractionManager,
 } from "react-native";
 import { Image } from "expo-image";
@@ -44,14 +43,23 @@ import {
   fetchConversations,
   setActiveConversation,
   fetchHistory,
+  conversationDeactivated,
+  conversationRestored,
 } from "@/features/chat/chatSlice";
 import chatService from "@/features/chat/chatService";
+import { useDrafts } from "@/features/chat/draftStore";
+import {
+  formatRestoreWindow,
+  shouldOfferRestore,
+} from "@/features/chat/restoreWindow";
+import { showInfoToast } from "@/shared/services/toaster";
 import { parseUtc } from "@/shared/utils/dateUtc";
 import { store } from "@/shared/store";
 import EmptyState from "@/shared/components/EmptyState";
 import ScreenHeader from "@/shared/components/ScreenHeader";
 import { useSwipeStats } from "@/features/discover/swipeQueries";
-import { colors } from "../../../shared/theme/colors";
+import { colors, ink, veil } from "../../../shared/theme/colors";
+import { chromeBlurTint } from "@/shared/theme/blur";
 
 // Native bottom tab bar ölçüleri — DiscoverScreen ile aynı değerler.
 const TAB_BAR_HEIGHT = 64;
@@ -82,10 +90,21 @@ export default function MessagesScreen() {
     return m;
   }, [typingByConv]);
 
+  // Gönderilmemiş composer metinleri (conversationId → taslak). Redux dışı küçük
+  // store'dan geliyor; referansı YALNIZ taslak değişince değişir, satırlara
+  // primitive string olarak indiği için memo'lu ConversationRow'lar etkilenmez.
+  const drafts = useDrafts();
+
   const [activeTab, setActiveTab] = useState("all");
   const [searchQuery, setSearchQuery] = useState("");
   const [isSearchActive, setIsSearchActive] = useState(false);
-  const searchInputRef = useRef(null);
+  // UNCONTROLLED input — value prop'u BİLEREK bağlamıyoruz. Kontrollü TextInput'ta
+  // native metin her render'da JS'teki value ile geri yazılır; search açılışında
+  // isSearchActive re-render'ı + 280ms açılış animasyonu + scrollToOffset aynı
+  // frame'e denk geldiğinde ilk tuş vuruşu bayat value ile eziliyordu ("1 karakter
+  // kayıyor"). Native metin tek kaynak; searchQuery yalnız filtre/UI için tutulur,
+  // programatik temizleme ref.clear() ile yapılır.
+  const searchInputRef = useRef<TextInput>(null);
   // scroll-to-top için FlatList ref'i — search aç/kapa anında listeyi tepeye getirip
   // bar'ın animasyonu ile içeriği aynı yönde hareket ettiriyoruz (mismatch yok).
   const listRef = useRef<any>(null);
@@ -208,6 +227,7 @@ export default function MessagesScreen() {
 
   const closeSearch = useCallback(() => {
     searchInputRef.current?.blur();
+    searchInputRef.current?.clear();
     setSearchQuery("");
     setIsSearchActive(false);
     // Bar tepeye dönerken içeriği de tepeye al → animasyonlar paralel ilerler,
@@ -236,15 +256,24 @@ export default function MessagesScreen() {
     return list;
   }, [conversations, searchQuery, activeTab]);
 
-  // DiscoverScreen ile aynı fill oranı: premium veya remainingSwipes===-1 → 0.
-  const DAILY_SWIPE_LIMIT = 30;
+  // DiscoverScreen ile aynı fill oranı: (limit - kalan) / limit.
+  // Tavan backend'den (dailySwipeLimit) geliyor — burada 30 gömülüydü ve
+  // diğer üç ekran (Discover/Likes/Profile) Stats'tan okuduğu için backend
+  // SwipeLimitsOptions'ı değiştirdiğinde yalnız bu logo yanlış doluyordu.
+  // Premium / -1 / limit bilinmiyor → 0.
   const swipeFillRatio = useMemo(() => {
     if (statsQuery.data?.isPremium) return 0;
     const rem = statsQuery.data?.remainingSwipes;
+    const limit = statsQuery.data?.dailySwipeLimit;
     if (rem == null || rem < 0) return 0;
-    const used = Math.max(0, DAILY_SWIPE_LIMIT - rem);
-    return Math.min(1, used / DAILY_SWIPE_LIMIT);
-  }, [statsQuery.data?.remainingSwipes, statsQuery.data?.isPremium]);
+    if (limit == null || limit <= 0) return 0;
+    const used = Math.max(0, limit - rem);
+    return Math.min(1, used / limit);
+  }, [
+    statsQuery.data?.remainingSwipes,
+    statsQuery.data?.dailySwipeLimit,
+    statsQuery.data?.isPremium,
+  ]);
 
   // Her odaklanışta tazele — SADECE mount'ta çekmek listeyi bayat bırakıyordu:
   // karşı taraf unmatch ettiğinde backend hiçbir event yayınlamadığı için sohbet
@@ -315,10 +344,22 @@ export default function MessagesScreen() {
   const handleLongPress = useCallback(
     (conv) => {
       if (!conv.isActive) {
-        // Kapanmış sohbet — restore offer (24h grace).
+        // Kapanmış sohbet. Geri alma penceresi SUNUCUDAN gelir (restorableUntil);
+        // KESİN yoksa restore çağrısı reddedilir — teklif bile etmiyoruz.
+        // Alan hiç gelmediyse (bilinmiyor) eski davranış: denemeyi sun.
+        if (!shouldOfferRestore(conv.restorableUntil)) {
+          Alert.alert(
+            t('chat.unmatch.restoreTitle'),
+            t('chat.unmatch.restoreUnavailable'),
+          );
+          return;
+        }
+        const restoreWindow = formatRestoreWindow(conv.restorableUntil, t);
         Alert.alert(
           t('chat.unmatch.restoreTitle'),
-          t('chat.unmatch.restoreMessage'),
+          restoreWindow
+            ? t('chat.unmatch.restoreMessage', { time: restoreWindow })
+            : t('chat.unmatch.restoreMessageUnknown'),
           [
             { text: t('common.cancel'), style: "cancel" },
             {
@@ -328,10 +369,19 @@ export default function MessagesScreen() {
                   const ok = await chatService.restoreConversation(
                     conv.conversationId,
                   );
-                  if (!ok) {
+                  if (ok) {
+                    dispatch(conversationRestored({ conversationId: conv.conversationId }));
+                  } else {
                     Alert.alert(
                       t('chat.unmatch.restoreError'),
                       t('chat.unmatch.restoreExpiredMessage'),
+                    );
+                    // Pencere kapanmış — yerel bayrağı düzelt, buton kaybolsun.
+                    dispatch(
+                      conversationDeactivated({
+                        conversationId: conv.conversationId,
+                        restorableUntil: null,
+                      }),
                     );
                   }
                   // Mutasyon-sonrası tazeleme — staleness gate'ini bypass et.
@@ -345,7 +395,8 @@ export default function MessagesScreen() {
         );
         return;
       }
-      // Aktif sohbet — unmatch confirm.
+      // Aktif sohbet — unmatch confirm. Mesajlar SİLİNMEZ, sohbet kapalıya düşer;
+      // geri alma penceresi olup olmadığı ancak sunucu yanıtında belli olur.
       Alert.alert(
         t('chat.unmatch.title'),
         t('chat.unmatch.message', { partnerName: conv.partnerDisplayName || t('chat.defaultUserName') }),
@@ -356,9 +407,22 @@ export default function MessagesScreen() {
             style: "destructive",
             onPress: async () => {
               try {
-                await chatService.deactivateConversation(conv.conversationId);
+                const res = await chatService.deactivateConversation(conv.conversationId);
+                dispatch(
+                  conversationDeactivated({
+                    conversationId: conv.conversationId,
+                    restorableUntil: res?.restorableUntil ?? null,
+                  }),
+                );
                 // Mutasyon-sonrası tazeleme — staleness gate'ini bypass et.
                 dispatch(fetchConversations({ force: true }));
+                const removedWindow = formatRestoreWindow(res?.restorableUntil, t);
+                showInfoToast({
+                  title: t('chat.unmatch.removedTitle'),
+                  message: removedWindow
+                    ? t('chat.unmatch.removedRestorable', { time: removedWindow })
+                    : t('chat.unmatch.removedPermanent'),
+                });
               } catch {
                 Alert.alert(t('common.error'), t('chat.unmatch.error'));
               }
@@ -380,15 +444,16 @@ export default function MessagesScreen() {
       <ConversationRow
         conv={item}
         isTyping={!!isTypingByConvId[item.conversationId]}
+        draft={drafts[item.conversationId]}
         onOpen={handleRowOpen}
         onLongPress={handleRowLongPress}
       />
     ),
-    [isTypingByConvId, handleRowOpen, handleRowLongPress],
+    [isTypingByConvId, drafts, handleRowOpen, handleRowLongPress],
   );
 
   return (
-    <View className="flex-1 bg-bg">
+    <View className="flex-1" style={{ backgroundColor: colors.bg }}>
       <Animated.FlatList
         ref={listRef}
         data={filteredConversations}
@@ -421,8 +486,8 @@ export default function MessagesScreen() {
             <View className="flex-1 items-center justify-center pb-[60%] px-8">
               <SFIcon name="magnifyingglass" fallback={Search} size={48} color={colors.text} strokeWidth={1.3} />
               <Text
-                className="text-white text-center mt-3"
-                style={{ fontSize: 14, fontWeight: "500" }}
+                className="text-center mt-3"
+                style={{ color: colors.text, fontSize: 14, fontWeight: "500" }}
               >
                 {t('chat.messages.notFound', { query: searchQuery })}
               </Text>
@@ -506,17 +571,15 @@ export default function MessagesScreen() {
             }
             style={StyleSheet.absoluteFill}
           >
+            {/* Derinlik perdesi — koyuda karartır, açıkta AYNI oranlarla
+                beyazlatır (veil). Maske siyah/şeffaf kalır: alfa maskesi. */}
             <LinearGradient
-              colors={["black", "rgba(0, 0, 0, 0.2)"]}
+              colors={[veil(1), veil(0.2)]}
               style={StyleSheet.absoluteFill}
             />
             <BlurView
               intensity={15}
-              tint={
-                Platform.OS === "ios"
-                  ? "systemChromeMaterialDark"
-                  : "systemMaterialDark"
-              }
+              tint={chromeBlurTint()}
               style={StyleSheet.absoluteFill}
             />
           </MaskedView>
@@ -566,7 +629,7 @@ export default function MessagesScreen() {
               </Animated.View>
               <TextInput
                 ref={searchInputRef}
-                value={searchQuery}
+                defaultValue=""
                 onChangeText={setSearchQuery}
                 onFocus={() => {
                   setIsSearchActive(true);
@@ -601,20 +664,23 @@ export default function MessagesScreen() {
                   }}
                 >
                   <TouchableOpacity
-                    onPress={() => setSearchQuery("")}
+                    onPress={() => {
+                      searchInputRef.current?.clear();
+                      setSearchQuery("");
+                    }}
                     hitSlop={10}
                     activeOpacity={1}
                     style={{
                       width: 22,
                       height: 22,
                       borderRadius: 11,
-                      backgroundColor: "rgba(255,255,255,0.2)",
+                      backgroundColor: ink(0.2),
                       alignItems: "center",
                       justifyContent: "center",
                     }}
                   >
                     <View pointerEvents="none">
-                      <SFIcon name="xmark" fallback={X} size={14} color="#bfbfbf" strokeWidth={2} weight="semibold" />
+                      <SFIcon name="xmark" fallback={X} size={14} color={colors.textSecondary} strokeWidth={2} weight="semibold" />
                     </View>
                   </TouchableOpacity>
                 </Animated.View>
@@ -647,14 +713,14 @@ export default function MessagesScreen() {
                   alignItems: "center",
                   paddingHorizontal: 14,
                   paddingVertical: 10,
-                  backgroundColor: isActive ? colors.text : "transparent",
+                  backgroundColor: isActive ? colors.inverseSurface : "transparent",
                   borderWidth: 1,
-                  borderColor: "rgba(255,255,255,0.25)",
+                  borderColor: ink(0.25),
                 }}
               >
                 <Text
                   style={{
-                    color: isActive ? "#000" : colors.text,
+                    color: isActive ? colors.onInverseSurface : colors.text,
                     fontWeight: "600",
                     fontSize: 12,
                   }}
@@ -673,6 +739,7 @@ export default function MessagesScreen() {
 const ConversationRow = memo(function ConversationRow({
   conv,
   isTyping,
+  draft,
   onOpen,
   onLongPress,
 }: any) {
@@ -689,6 +756,9 @@ const ConversationRow = memo(function ConversationRow({
   // atlamaz. ReanimatedSwipeable RNGH 2.x'te yerleşik — yeni bağımlılık yok.
   const renderRightActions = useCallback(
     (_progress: any, _translation: any, methods: any) => {
+      // Kapalı ve geri alma penceresi KESİN yoksa sunulacak aksiyon kalmıyor
+      // (restore çağrısı reddedilirdi) — şerit boş geçilir.
+      if (!conv.isActive && !shouldOfferRestore(conv.restorableUntil)) return null;
       const actionSf: SFSymbol = conv.isActive
         ? "heart.slash.fill"
         : "arrow.counterclockwise";
@@ -702,14 +772,14 @@ const ConversationRow = memo(function ConversationRow({
           }}
           style={{
             width: 92,
-            backgroundColor: conv.isActive ? "#DC2626" : colors.primary,
+            backgroundColor: conv.isActive ? colors.error : colors.primary,
             alignItems: "center",
             justifyContent: "center",
             gap: 4,
           }}
         >
-          <SFIcon name={actionSf} fallback={ActionIcon} size={22} color="#fff" strokeWidth={2} weight="semibold" />
-          <Text style={{ color: "#fff", fontSize: 12, fontWeight: "600" }}>
+          <SFIcon name={actionSf} fallback={ActionIcon} size={22} color={colors.onMedia} strokeWidth={2} weight="semibold" />
+          <Text style={{ color: colors.onMedia, fontSize: 12, fontWeight: "600" }}>
             {conv.isActive
               ? t('chat.unmatch.confirmButton')
               : t('chat.unmatch.restoreButton')}
@@ -720,39 +790,57 @@ const ConversationRow = memo(function ConversationRow({
     [conv, onLongPress, t],
   );
   const subtitle = useMemo(() => {
+    // className artık YALNIZ ağırlık taşıyor; renk `color` alanından geliyor
+    // (tema ile döndüğü için className'de sabitlenemez).
     if (isTyping)
-      return { kind: "text", text: t('chat.messages.typing'), className: "text-white font-semibold" };
+      return { kind: "text", text: t('chat.messages.typing'), className: "font-semibold", color: colors.text };
     if (!conv.isActive)
       return {
         kind: "text",
         text: t('chat.messages.closedChat'),
-        className: "text-gray-400",
+        className: "",
+        color: colors.textSecondary,
       };
 
-    const readClass = isUnread ? "text-white font-semibold" : "text-gray-400";
+    // Yazılıp gönderilmemiş metin son mesajın ÖNÜNE geçer (WhatsApp deseni):
+    // kullanıcının bıraktığı iş, gelen mesajdan daha güncel bir bilgi.
+    // Karşı taraf yazıyorsa (yukarıdaki dal) typing öncelikli kalır.
+    if (draft)
+      return {
+        kind: "draft",
+        text: draft.replace(/\s+/g, " ").trim(),
+        className: "",
+        color: colors.textSecondary,
+      };
+
+    const readClass = isUnread ? "font-semibold" : "";
+    const readColor = isUnread ? colors.text : colors.textSecondary;
     const iconColor = isUnread ? colors.text : colors.textSecondary;
 
     // Media (no text content) — icon + label
     const ct = conv.lastMessageContentType;
-    if (ct === 1) return { kind: "media", sf: "camera.fill" as SFSymbol, icon: CameraIcon, text: t('chat.messages.mediaPhoto'), className: readClass, iconColor };
-    if (ct === 2) return { kind: "media", sf: "mic.fill" as SFSymbol, icon: Mic, text: t('chat.messages.mediaVoice'), className: readClass, iconColor };
-    if (ct === 3) return { kind: "media", sf: "video.fill" as SFSymbol, icon: Video, text: t('chat.messages.mediaVideo'), className: readClass, iconColor };
+    if (ct === 1) return { kind: "media", sf: "camera.fill" as SFSymbol, icon: CameraIcon, text: t('chat.messages.mediaPhoto'), className: readClass, color: readColor, iconColor };
+    if (ct === 2) return { kind: "media", sf: "mic.fill" as SFSymbol, icon: Mic, text: t('chat.messages.mediaVoice'), className: readClass, color: readColor, iconColor };
+    if (ct === 3) return { kind: "media", sf: "video.fill" as SFSymbol, icon: Video, text: t('chat.messages.mediaVideo'), className: readClass, color: readColor, iconColor };
 
     if (!conv.lastMessagePreview) {
       return {
         kind: "text",
         text: t('chat.messages.startConversation'),
-        className: "text-gray-400",
+        className: "",
+        color: colors.textSecondary,
       };
     }
     return {
       kind: "text",
       text: conv.lastMessagePreview,
       className: readClass,
+      color: readColor,
     };
   }, [
     t,
     isTyping,
+    draft,
     conv.lastMessagePreview,
     conv.lastMessageContentType,
     conv.isActive,
@@ -794,26 +882,37 @@ const ConversationRow = memo(function ConversationRow({
                 justifyContent: "center",
               }}
             >
-              <Text className="text-white text-xl font-bold">
+              <Text className="text-xl font-bold" style={{ color: colors.text }}>
                 {(conv.partnerDisplayName || "?").charAt(0).toUpperCase()}
               </Text>
             </View>
           )}
-          {/* Online dot */}
+          {/* Online dot — yeşil noktanın altında sayfa arkaplanı renginde bir tık
+              daha büyük ikinci bir daire: avatarla nokta arasında boşluk hissi
+              verir (satır zemini de colors.bg olduğu için oyulmuş gibi durur). */}
           {conv.partnerIsOnline && (
             <View
               style={{
                 position: "absolute",
-                bottom: 2,
-                right: 2,
-                width: 14,
-                height: 14,
-                borderRadius: 7,
-                backgroundColor: colors.success,
-                borderWidth: 2,
-                borderColor: colors.bgDeep,
+                bottom: -2,
+                right: -2,
+                width: 18,
+                height: 18,
+                borderRadius: 9,
+                backgroundColor: colors.bg,
+                alignItems: "center",
+                justifyContent: "center",
               }}
-            />
+            >
+              <View
+                style={{
+                  width: 12,
+                  height: 12,
+                  borderRadius: 6,
+                  backgroundColor: colors.success,
+                }}
+              />
+            </View>
           )}
         </View>
 
@@ -821,13 +920,14 @@ const ConversationRow = memo(function ConversationRow({
         <View className="flex-row items-center justify-between">
           <Text
             // Kapalı sohbette isim, "Sohbet kapatıldı" alt metniyle aynı tonda.
-            className={`text-[16px] font-semibold ${conv.isActive ? "text-white" : "text-gray-400"}`}
+            className="text-[16px] font-semibold"
+            style={{ color: conv.isActive ? colors.text : colors.textSecondary }}
             numberOfLines={1}
           >
             {conv.partnerDisplayName || t('chat.defaultUserName')}
           </Text>
           {conv.lastMessageAt && (
-            <Text className="text-gray-500 text-[16px] font-normal ml-2">
+            <Text className="text-[16px] font-normal ml-2" style={{ color: colors.textMuted }}>
               {formatRelativeTime(conv.lastMessageAt, t)}
             </Text>
           )}
@@ -840,16 +940,32 @@ const ConversationRow = memo(function ConversationRow({
               <Text
                 className={`text-[14px] ${subtitle.className}`}
                 numberOfLines={1}
-                style={{ flex: 1 }}
+                style={{ flex: 1, color: subtitle.color }}
               >
                 {subtitle.text}
               </Text>
             </View>
+          ) : subtitle.kind === "draft" ? (
+            // "Taslak:" etiketi accent renkte, metin normal tonda — iç içe Text,
+            // tek satırda kesilme (numberOfLines) etikete de uygulanır.
+            // Renk primary (#ff4d3d) DEĞİL messageOwn (#ff3d3d): bir tık daha
+            // kırmızı ve satırın sağındaki okunmamış noktasıyla aynı ton.
+            <Text
+              className="text-[14px]"
+              numberOfLines={1}
+              style={{ flex: 1, color: subtitle.color }}
+            >
+              <Text style={{ color: colors.messageOwn, fontWeight: "600" }}>
+                {t('chat.messages.draft')}
+              </Text>
+              {" "}
+              {subtitle.text}
+            </Text>
           ) : (
             <Text
               className={`text-[14px] ${subtitle.className}`}
               numberOfLines={1}
-              style={{ flex: 1 }}
+              style={{ flex: 1, color: subtitle.color }}
             >
               {subtitle.text}
             </Text>

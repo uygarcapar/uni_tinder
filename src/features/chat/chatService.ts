@@ -42,7 +42,13 @@ export const chatService = {
     const url = `${API_ENDPOINTS.MESSAGES_HISTORY_CURSOR(conversationId)}?${params.toString()}`;
     const res = await api.get(url);
     return normalizeUtcFields(
-      (res as any).result || { conversationId, messages: [], nextCursor: null, hasMore: false }
+      (res as any).result || {
+        conversationId,
+        messages: [],
+        nextCursor: null,
+        hasMore: false,
+        hasHiddenHistory: false,
+      }
     );
   },
 
@@ -78,9 +84,24 @@ export const chatService = {
     return (res as any).result || [];
   },
 
+  /**
+   * "Eşleşmeyi kaldır" (yumuşak ayrılık). Sohbet iki tarafta da kapanır ama
+   * MESAJLAR SİLİNMEZ; 30 gün sonra çift tekrar eşleşebilir ve aynı sohbete
+   * döner. Kalıcı ayrılık için engelleme/şikayet yolu vardır (moderationService).
+   *
+   * `restorableUntil` null dönebilir → geri alma penceresi YOK (rematch limiti
+   * dolmuş, çift engellenmiş ya da hiç mesajlaşılmamış). Çağıran taraf "geri al"
+   * butonunu bu alana göre gösterir; hardcode 24 saat varsaymaz.
+   */
   async deactivateConversation(conversationId: string) {
     const res = await api.delete(API_ENDPOINTS.MESSAGES_DEACTIVATE_CONV(conversationId));
-    return normalizeUtcFields((res as any).result);
+    const result = normalizeUtcFields((res as any).result) as any;
+    return {
+      ...(result || {}),
+      restorableUntil: result?.restorableUntil ?? null,
+      // Limit dolduğunda backend mesajı farklılaşıyor ("geri alabilirsin" yok).
+      message: result?.message ?? (res as any).message ?? null,
+    };
   },
 
   async restoreConversation(conversationId: string): Promise<boolean> {
@@ -88,9 +109,32 @@ export const chatService = {
     return (res as any).isSuccess;
   },
 
-  async editMessage(messageId: string, content: string) {
-    const res = await api.patch(API_ENDPOINTS.MESSAGES_EDIT(messageId), { content });
-    return normalizeUtcFields((res as any).result);
+  /**
+   * Rematch sonrası gizli kalan eski mesajları açar. Geçmiş ORTAKTIR — bir taraf
+   * açınca karşı tarafa da ConversationHistoryRevealed event'i gider.
+   *
+   * Ret gerekçeleri (`reason`): too_old (180 günden eski), no_history (açılacak
+   * mesaj yok), not_found. Reddi ayırt edebilmek için HTTP hatası da yakalanır:
+   * backend bunu 200+isSuccess:false ya da 4xx olarak dönebiliyor.
+   */
+  async revealHistory(
+    conversationId: string
+  ): Promise<{ isSuccess: boolean; revealedAt: string | null; reason: string | null }> {
+    const read = (payload: any) => ({
+      isSuccess: !!payload?.isSuccess,
+      revealedAt: payload?.result?.revealedAt ?? null,
+      reason: payload?.reason ?? payload?.result?.reason ?? payload?.errorCode ?? null,
+    });
+    try {
+      const res = normalizeUtcFields(
+        await api.post(API_ENDPOINTS.MESSAGES_REVEAL_HISTORY(conversationId))
+      );
+      return read(res);
+    } catch (err: any) {
+      const body = err?.response?.data;
+      if (!body) throw err;
+      return { ...read(body), isSuccess: false };
+    }
   },
 
   async deleteMessage(messageId: string, forEveryone = false) {

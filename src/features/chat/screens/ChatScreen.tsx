@@ -5,9 +5,6 @@ import {
   Text,
   TouchableOpacity,
   Alert,
-  Modal,
-  TextInput,
-  Pressable,
   Platform,
   StyleSheet,
   Keyboard,
@@ -35,18 +32,22 @@ import {
   controlSize,
 } from "@expo/ui/swift-ui/modifiers";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
-import { useSharedValue } from "react-native-reanimated";
+import Animated, {
+  useSharedValue,
+  useAnimatedStyle,
+} from "react-native-reanimated";
 import {
   KeyboardStickyView,
   KeyboardGestureArea,
   KeyboardEvents,
+  useGenericKeyboardHandler,
 } from "react-native-keyboard-controller";
 import { useKeyboardChatComposerInset } from "@legendapp/list/keyboard";
 import { NativeStackScreenProps } from "@react-navigation/native-stack";
 import { useFocusEffect } from "@react-navigation/native";
 import type { RootStackParamList } from "@/shared/types/navigation";
 import { useAppDispatch, useAppSelector } from "@/shared/hooks/redux";
-import { ChevronLeft, MoreVertical, X } from "lucide-react-native";
+import { ChevronLeft, MoreVertical } from "lucide-react-native";
 import SFIcon from "@/shared/components/SFIcon";
 import * as Haptics from "expo-haptics";
 import {
@@ -58,6 +59,8 @@ import {
   removeOptimisticMessage,
   clearUnreadForConversation,
   conversationDeactivated,
+  conversationRestored,
+  historyRevealed,
   fetchChatQuota,
   decrementQuotaLocally,
   reactionsChanged,
@@ -67,7 +70,10 @@ import {
 } from "@/features/chat/chatSlice";
 import { refreshEntitlementsForPaywall } from "@/features/profile/subscriptionSlice";
 import chatService from "@/features/chat/chatService";
+import { newClientMessageId } from "@/features/chat/clientMessageId";
+import { markMessageEntering } from "@/features/chat/enterAnimation";
 import { applyReactionPick } from "@/features/chat/reactionPick";
+import { getDraft, setDraft } from "@/features/chat/draftStore";
 import realtimeService from "@/features/chat/realtimeService";
 import MessageBubble from "@/features/chat/components/MessageBubble";
 import ReplySwipeRow from "@/features/chat/components/ReplySwipeRow";
@@ -80,6 +86,13 @@ import { ChatTypingRow } from "@/features/chat/components/ChatBottomSpacer";
 import MessageSkeleton from "@/features/chat/components/MessageSkeleton";
 import MessageActionSheet from "@/features/chat/components/MessageActionSheet";
 import ConversationOptionsSheet from "@/features/chat/components/ConversationOptionsSheet";
+import HiddenHistoryBanner, {
+  HIDDEN_HISTORY_ROW_ID,
+} from "@/features/chat/components/HiddenHistoryBanner";
+import {
+  formatRestoreWindow,
+  shouldOfferRestore,
+} from "@/features/chat/restoreWindow";
 import ReportModal from "@/shared/components/ReportModal";
 import DateSeparator, {
   withDateSeparators,
@@ -92,9 +105,11 @@ import swipeService from "@/features/discover/swipeService";
 import { showInfoToast } from "@/shared/services/toaster";
 import uiBus from "@/shared/services/uiBus";
 import { analytics } from "@/shared/services/analytics";
-import { colors } from "../../../shared/theme/colors";
+import { colors, veil } from "../../../shared/theme/colors";
 import { glassFallback } from "../../../shared/theme/glass";
 import { devLog } from '@/shared/utils/devLog';
+import { chromeBlurTint } from "@/shared/theme/blur";
+import { plainBlurTint } from "@/shared/theme/blur";
 
 const ContentType = { Text: 0, System: 99 };
 const INPUT_BAR_OPAQUE = 66; // composer opak gövde tahmini (inset başlangıç değeri)
@@ -125,7 +140,7 @@ function DiagMinimalBubble({ message, isOwn }: any) {
   if (message.isSystemMessage) {
     return (
       <View style={{ alignItems: "center", marginVertical: 8 }}>
-        <Text style={{ color: "#8B93A2", fontSize: 13 }}>{message.content}</Text>
+        <Text style={{ color: colors.textPlaceholder, fontSize: 13 }}>{message.content}</Text>
       </View>
     );
   }
@@ -147,7 +162,7 @@ function DiagMinimalBubble({ message, isOwn }: any) {
           paddingVertical: 12,
         }}
       >
-        <Text style={{ color: "#fff", fontSize: 17 }}>{message.content}</Text>
+        <Text style={{ color: isOwn ? colors.onMedia : colors.text, fontSize: 17 }}>{message.content}</Text>
       </View>
     </View>
   );
@@ -205,6 +220,8 @@ function ChatScreen({
       if (key === "system.match_created") return t("chat.system.matchCreated");
       if (key === "system.conversation_deleted")
         return t("chat.system.conversationDeleted");
+      // Rematch: aynı çift tekrar eşleşti, sohbet (ve gizli geçmişi) yerinde.
+      if (key === "system.rematched") return t("chat.system.rematched");
       return fallback;
     },
     [t],
@@ -299,13 +316,23 @@ function ChatScreen({
     );
     return c ? c.isActive : routeIsActive ?? true;
   });
+  // Geri alma penceresinin bitişi — SUNUCUDAN gelir (unmatch yanıtı). `?? null`
+  // YAPILMAZ: undefined (alan hiç gelmedi = bilinmiyor) ile null (pencere kesin
+  // yok) farklı kararlar üretiyor — bkz. shouldOfferRestore.
+  const restorableUntil = useAppSelector(
+    (s: any) =>
+      s.chat.conversations.find(
+        (cc: any) => cc.conversationId === conversationId,
+      )?.restorableUntil,
+  );
+  const hasHiddenHistory = useAppSelector(
+    (s: any) => s.chat.messagesByConv[conversationId]?.hasHiddenHistory ?? false,
+  );
   const quota = useAppSelector((s: any) => s.chat.quotaByConv?.[conversationId]);
 
   const [replyTo, setReplyTo] = useState<any>(null);
   const [actionTarget, setActionTarget] = useState<any>(null);
   const [actionLayout, setActionLayout] = useState<any>(null);
-  const [editTarget, setEditTarget] = useState<any>(null);
-  const [editText, setEditText] = useState("");
   const [optionsOpen, setOptionsOpen] = useState(false);
   const [reportOpen, setReportOpen] = useState(false);
   const [purchaseVisible, setPurchaseVisible] = useState(false);
@@ -356,13 +383,6 @@ function ChatScreen({
   useEffect(() => {
     quotaRef.current = quota;
   }, [quota]);
-  // Menü kapanış callback'i "düzenle mi seçildi" bilgisini state'e bakmadan
-  // okuyabilsin diye (callback stabil kalsın).
-  const editTargetRef = useRef<any>(null);
-  useEffect(() => {
-    editTargetRef.current = editTarget;
-  }, [editTarget]);
-
   // ── Reveal + keyboard (LegendList chat hooks) ──────────────────────────
   const { revealX, listGesture } = useRevealGesture();
   // Composer inset: opak composer + safe-area başlangıç değeri (ölçüm gelince
@@ -430,38 +450,67 @@ function ChatScreen({
   // aynı yere gider. JS tabanlı göreli kaydırma KULLANILMAZ — kütüphanenin scroll
   // değeri kendi yazdığı contentOffset'lerde bayat kalabiliyor.
   const shortPinSubRef = useRef<{ remove: () => void } | null>(null);
-  const shortPinTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
-  const pinShortListToEnd = useCallback((waitForKeyboard: boolean) => {
-    const clear = () => {
-      shortPinSubRef.current?.remove();
-      shortPinSubRef.current = null;
-      if (shortPinTimerRef.current) clearTimeout(shortPinTimerRef.current);
-      shortPinTimerRef.current = null;
-    };
-    clear();
-    const run = () => {
+  const shortPinTimersRef = useRef<Set<ReturnType<typeof setTimeout>>>(new Set());
+  const pinShortListToEnd = useCallback(
+    (waitForKeyboard: boolean, allowNearEnd = false) => {
+      const clear = () => {
+        shortPinSubRef.current?.remove();
+        shortPinSubRef.current = null;
+        shortPinTimersRef.current.forEach(clearTimeout);
+        shortPinTimersRef.current.clear();
+      };
+      const pin = () => {
+        const st = listRef.current?.getState?.();
+        if (!st) return;
+        // contentLength composer inset'ini de içerir; kısa sohbette dolgu sayesinde
+        // scrollLength'e eşitlenir. Uzun sohbette büyüktür → dokunma (orada zaten
+        // doğru ve elle kaydırmak listeyi bozuyor). allowNearEnd (yalnız gönderim
+        // yolu): ölçüm sırasında içerik ekranı aşmışsa (boş sohbete uzun mesaj)
+        // dipteysek yine de pin'le — az önce biz gönderdik, yer orası.
+        const isShort = st.contentLength <= st.scrollLength + 1;
+        if (!isShort && !(allowNearEnd && st.isWithinMaintainScrollAtEndThreshold)) {
+          return;
+        }
+        const native = listRef.current?.getNativeScrollRef?.();
+        if (typeof native?.scrollToEnd === "function") {
+          native.scrollToEnd({ animated: true });
+          return;
+        }
+        listRef.current
+          ?.getScrollResponder?.()
+          ?.scrollResponderScrollToEnd?.({ animated: true });
+      };
+      const schedule = (ms: number, fn: () => void) => {
+        const timer = setTimeout(() => {
+          shortPinTimersRef.current.delete(timer);
+          fn();
+        }, ms);
+        shortPinTimersRef.current.add(timer);
+      };
+      // İKİ ATIŞ: ölçüm zinciri (item layout → alignItemsAtEnd dolgusunun yeniden
+      // hesabı → native commit) genelde ~2 frame sürer, ama BOŞ sohbetten ilk
+      // gönderimde (0→1 item) daha uzun sürebiliyor — o an içerik hâlâ eski/boş
+      // ölçüde olduğu için erken atılan scroll hedefi 0 çıkıp hiçbir şey yapmıyor.
+      // İkinci atış geç yerleşimi yakalar; konum zaten doğruysa aynı offset'e
+      // gidildiği için görünür bir hareket olmaz (native scrollToEnd idempotent).
+      const start = () => {
+        clear();
+        schedule(120, pin);
+        schedule(420, pin);
+      };
       clear();
-      const st = listRef.current?.getState?.();
-      // contentLength composer inset'ini de içerir; kısa sohbette dolgu sayesinde
-      // scrollLength'e eşitlenir. Uzun sohbette büyüktür → dokunma (orada zaten
-      // doğru ve elle kaydırmak listeyi bozuyor).
-      if (!st || st.contentLength > st.scrollLength + 1) return;
-      const native = listRef.current?.getNativeScrollRef?.();
-      if (typeof native?.scrollToEnd === "function") {
-        native.scrollToEnd({ animated: true });
-        return;
+      if (waitForKeyboard) {
+        shortPinSubRef.current = KeyboardEvents.addListener(
+          "keyboardDidShow",
+          start,
+        );
+        schedule(700, start); // klavye hiç açılmazsa da takılı kalma
+      } else {
+        start();
       }
-      listRef.current
-        ?.getScrollResponder?.()
-        ?.scrollResponderScrollToEnd?.({ animated: true });
-    };
-    if (waitForKeyboard) {
-      shortPinSubRef.current = KeyboardEvents.addListener("keyboardDidShow", run);
-      shortPinTimerRef.current = setTimeout(run, 700);
-    } else {
-      shortPinTimerRef.current = setTimeout(run, 120);
-    }
-  }, []);
+    },
+    [],
+  );
 
   const seedScrollStateRef = useRef(false);
   const seedTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
@@ -530,6 +579,26 @@ function ChatScreen({
   const restoreKbRef = useRef(false);
   const kbUnfreezeRef = useRef<(() => void) | null>(null);
 
+  // Canlı klavye yüksekliği — YALNIZ boş-sohbet katmanını (emptyOverlay) klavyeyle
+  // birlikte kaydırmak için. useKeyboardAnimation/useKeyboardHandler DEĞİL:
+  // ikisi de mount'ta Android soft-input mode'unu adjustResize'a çeviriyor ve
+  // buradaki KeyboardGestureArea + KeyboardStickyView düzenini bozardı.
+  // useGenericKeyboardHandler aynı olayları verir, mode'a hiç dokunmaz.
+  const keyboardHeight = useSharedValue(0);
+  useGenericKeyboardHandler(
+    {
+      onMove: (e) => {
+        "worklet";
+        keyboardHeight.value = e.height;
+      },
+      onEnd: (e) => {
+        "worklet";
+        keyboardHeight.value = e.height;
+      },
+    },
+    [],
+  );
+
   const inputKbOffset = useMemo(
     () => ({ closed: 0, opened: insets.bottom }),
     [insets.bottom],
@@ -590,6 +659,21 @@ function ChatScreen({
     hadInitialMessagesRef.current = messages.length > 0;
   }
 
+  // BOŞ AÇILAN SOHBETİN İLK MESAJI (bizden ya da karşıdan) — klavye açıksa
+  // kaydırılabilir aralık 0 olduğu için mesaj klavyenin altında doğuyor
+  // (ayrıntılı neden: handleSend'deki kısa/boş sohbet notu). Gönderim yolunu
+  // handleSend zaten pin'liyor; bu efekt karşıdan gelen ilk mesajı da kapsar.
+  // KAPSAM DAR: yalnız boş açılmış sohbet (hadInitialMessages=false) + klavye
+  // açık — dolu girişteki initialScrollAtEnd yerleşimine hiç dokunmaz.
+  const sawFirstMessageRef = useRef(false);
+  useEffect(() => {
+    if (hadInitialMessagesRef.current || sawFirstMessageRef.current) return;
+    if (messages.length === 0) return;
+    sawFirstMessageRef.current = true;
+    if (!Keyboard.isVisible()) return;
+    pinShortListToEnd(false, true);
+  }, [messages.length, pinShortListToEnd]);
+
   // ── Giriş skeleton'ı ───────────────────────────────────────────────────
   // LegendList ilk yerleşim oturana kadar içeriği KENDİ İÇİNDE gizliyor
   // (readyToRender opacity gate) — bucket dolu girişte ListEmptyComponent
@@ -612,7 +696,8 @@ function ChatScreen({
       if (seedTimerRef.current) clearTimeout(seedTimerRef.current);
       if (focusRetryRef.current) clearTimeout(focusRetryRef.current);
       shortPinSubRef.current?.remove();
-      if (shortPinTimerRef.current) clearTimeout(shortPinTimerRef.current);
+      shortPinTimersRef.current.forEach(clearTimeout);
+      shortPinTimersRef.current.clear();
     },
     [],
   );
@@ -841,20 +926,51 @@ function ChatScreen({
         reactions: [],
         _pending: true,
       };
+      // Gönderim ÖNCESİ ölçü: içerik ekranı doldurmuyor mu? (boş sohbet dahil)
+      // wasAtEnd de BURADA okunur — gönderimden SONRA bakılamaz, gerekçe aşağıda.
+      const stBeforeSend = listRef.current?.getState?.();
+      const isShortContent =
+        !!stBeforeSend && stBeforeSend.contentLength <= stBeforeSend.scrollLength + 1;
+      const wasAtEnd = !!stBeforeSend?.isWithinMaintainScrollAtEndThreshold;
+      // Balon listeye girerken alttan süzülsün (bkz. enterAnimation.ts) — kayıt
+      // dispatch'ten ÖNCE bırakılmalı, ilk render hemen ardından geliyor.
+      markMessageEntering(clientMessageId);
       dispatch(appendOptimisticMessage({ conversationId, message: optimistic }));
-      // Dipteyken scroll işini maintainScrollAtEnd(dataChange) yapar: o yol NATIVE
-      // scrollToEnd kullanır ve klavyenin contentInset'ini bilir. Buradaki manuel
-      // scrollToEnd ise LegendList'in JS hedef hesabına düşer; keyboard-controller
-      // 1.21.6 klavye inset'ini listeye raporlamadığından (onContentInsetChange
-      // 1.21.7+) hedef klavye açıkken ~klavye yüksekliği kadar KISA kalıyor →
-      // "gönderince yukarı zıpla, hub echo'da dibe dön" glitch'i. Bu yüzden manuel
-      // scroll yalnız YEDEK: kullanıcı dip eşiğinin dışındayken (yukarı scroll
-      // edilmiş halde gönderim) çalışır; eşikteyse hiç dokunma.
-      setTimeout(() => {
-        const listState = listRef.current?.getState?.();
-        if (listState?.isWithinMaintainScrollAtEndThreshold) return;
-        listRef.current?.scrollToEnd({ animated: true });
-      }, 100);
+
+      // KISA/BOŞ SOHBET: maintainScrollAtEnd tek başına YETMİYOR.
+      // Boş sohbette LegendList alignItemsAtEnd dolgusunu HİÇ uygulamıyor
+      // (getAlignItemsAtEndPadding → data.length > 0 şartı), dolayısıyla klavye
+      // açılırken kaydırılabilir aralık 0: keyboard-controller'ın kaldırma
+      // scroll'u maxScroll'a (=0) kırpılıyor, offset 0'da kalıyor. İlk mesaj
+      // gelince dolgu birden ekranı dolduruyor ve içerik ekranın DİBİNE, yani
+      // klavyenin ALTINA oturuyor. maintainScrollAtEnd(dataChange) bir rAF sonra
+      // native scrollToEnd atıyor ama o an içerik hâlâ eski (boş) ölçüde →
+      // hedef 0, hareket yok. Elle scroll edince düzelmesinin sebebi de bu:
+      // aralık artık var, parmak listeyi geçerli offset'e (=klavye payı) taşıyor.
+      // pinShortListToEnd gecikmeli + NATIVE scrollToEnd atar (klavye
+      // contentInset'ini bilir) ve içerik ekranı doldurmuyorsa no-op'tur.
+      if (isShortContent) {
+        pinShortListToEnd(false, true);
+      } else if (!wasAtEnd) {
+        // Dipteyken scroll işini maintainScrollAtEnd(dataChange) yapar: o yol NATIVE
+        // scrollToEnd kullanır ve klavyenin contentInset'ini bilir. Buradaki manuel
+        // scrollToEnd ise LegendList'in JS hedef hesabına düşer; keyboard-controller
+        // 1.21.6 klavye inset'ini listeye raporlamadığından (onContentInsetChange
+        // 1.21.7+) hedef klavye açıkken ~klavye yüksekliği kadar KISA kalıyor →
+        // "gönderince yukarı zıpla, hub echo'da dibe dön" glitch'i. Bu yüzden manuel
+        // scroll yalnız YEDEK: kullanıcı dip eşiğinin dışındayken (yukarı scroll
+        // edilmiş halde gönderim) çalışır.
+        //
+        // KOŞUL GÖNDERİM ÖNCESİ ÖLÇÜMDEN (wasAtEnd), 100ms sonraki state'ten DEĞİL:
+        // eşik "dibe uzaklık ≤ ekranın %10'u" demek ve o uzaklığa yeni balonun KENDİ
+        // yüksekliği de giriyor. 2-3 satırlık bir mesaj (~%10'u aşar) gönderildiğinde
+        // kullanıcı tam diptEYKEN bile eşiğin dışında görünüyor, bu yedek yol
+        // tetikleniyor ve pin'in native scroll'uyla üst üste biniyordu → gönderimde
+        // listenin "ufak oynaması" tam olarak buydu.
+        setTimeout(() => {
+          listRef.current?.scrollToEnd({ animated: true });
+        }, 100);
+      }
 
       try {
         const useHub = realtimeService.isConnected() && !replyToMessageId;
@@ -900,14 +1016,15 @@ function ChatScreen({
         // validasyon da olabilir — 400'de yerel bayrağı çevirmeyip listeyi
         // sunucudan doğrulatıyoruz, isActive oradan düzeliyor.
         if (status === 403 || status === 404) {
-          dispatch(conversationDeactivated({ conversationId }));
+          // Kapatan taraf karşı taraf — geri alma bize açık değil.
+          dispatch(conversationDeactivated({ conversationId, restorableUntil: null }));
         }
         if (status === 400 || status === 403 || status === 404) {
           dispatch(fetchConversations({ force: true }));
         }
       }
     },
-    [conversationId, dispatch, myUserId, openQuotaPaywall],
+    [conversationId, dispatch, myUserId, openQuotaPaywall, pinShortListToEnd],
   );
 
   const handleInputSend = useCallback(
@@ -916,6 +1033,30 @@ function ChatScreen({
       setReplyTo(null);
     },
     [handleSend],
+  );
+  // Boş sohbetteki açılış önerisi chip'i — dokunuş = mesajı olduğu gibi gönder.
+  // Kota kilidini composer ile AYNI kuralla okuyoruz (quotaRef, render state'i
+  // değil): handleSend yalnız requiresPremium'u yakalıyor, hak bitmişse (
+  // remainingMessages<=0) sunucuya boşuna gitmeyip paywall'ı burada açıyoruz.
+  const handleSuggestionSend = useCallback(
+    (content: string) => {
+      const q = quotaRef.current;
+      const locked =
+        !q?.isUnlimited &&
+        (q?.requiresPremium ||
+          (q?.remainingMessages != null && q.remainingMessages <= 0));
+      if (locked) {
+        openQuotaPaywall("empty_suggestion");
+        return;
+      }
+      Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light).catch(() => {});
+      handleSend({
+        content,
+        replyToMessageId: null,
+        clientMessageId: newClientMessageId(),
+      });
+    },
+    [handleSend, openQuotaPaywall],
   );
   // Uzun sohbette kapanış telafisi KeyboardChatScrollView'in işi (elle kaydırma
   // orayı bozuyor). Kısa sohbette ise telafi çift sayıldığı için son balon
@@ -933,6 +1074,16 @@ function ChatScreen({
       if (isTyping) realtimeService.startTyping(conversationId).catch(() => {});
       else realtimeService.stopTyping(conversationId).catch(() => {});
     },
+    [conversationId],
+  );
+
+  // Gönderilmemiş metin: mount'ta diskten okunur, composer'ın debounce'lu
+  // callback'i ile geri yazılır (MessagesScreen "Taslak: …" olarak gösterir).
+  // useMemo, useState değil — ekran sohbet başına bir kez mount olur, sonradan
+  // değişse bile TextInput uncontrolled olduğu için basılmazdı.
+  const initialDraft = useMemo(() => getDraft(conversationId), [conversationId]);
+  const handleDraftChange = useCallback(
+    (text: string) => setDraft(conversationId, text),
     [conversationId],
   );
 
@@ -993,9 +1144,7 @@ function ChatScreen({
     const timer = setTimeout(release, 900);
 
     const focusComposer = () => {
-      // "Düzenle" seçildiyse edit modalının kendi input'u autoFocus ile klavyeyi
-      // açıyor — composer'a odak vermek onunla çakışır, sadece didShow'u bekleriz.
-      if (done || editTargetRef.current) return;
+      if (done) return;
       composerInputRef.current?.focus();
     };
     // Modal native tarafta kapanmadan verilen odak düşebiliyor → bir frame sonra
@@ -1074,47 +1223,6 @@ function ChatScreen({
     setReplyTo(buildReplyDraft(message));
   }, []);
 
-  const handleEditStart = useCallback((message: any) => {
-    if (!message) return;
-    setEditTarget(message);
-    setEditText(message.content || "");
-  }, []);
-
-  const handleEditSave = useCallback(async () => {
-    if (!editTarget) return;
-    const trimmed = editText.trim();
-    if (!trimmed || trimmed === editTarget.content) {
-      setEditTarget(null);
-      return;
-    }
-    const prevContent = editTarget.content;
-    dispatch(
-      messageEdited({
-        id: editTarget.id,
-        conversationId: editTarget.conversationId,
-        content: trimmed,
-        editedAt: new Date().toISOString(),
-      } as any),
-    );
-    setEditTarget(null);
-    setEditText("");
-    try {
-      await chatService.editMessage(editTarget.id, trimmed);
-    } catch (err: any) {
-      dispatch(
-        messageEdited({
-          id: editTarget.id,
-          conversationId: editTarget.conversationId,
-          content: prevContent,
-        } as any),
-      );
-      Alert.alert(
-        t("common.error"),
-        err?.response?.data?.message || t("chat.editMessage.error"),
-      );
-    }
-  }, [editTarget, editText, dispatch, t]);
-
   const handleDelete = useCallback(
     async (message: any, forEveryone: boolean) => {
       if (!message) return;
@@ -1185,13 +1293,27 @@ function ChatScreen({
 
   const handleUnmatch = useCallback(async () => {
     try {
-      await chatService.deactivateConversation(conversationId);
+      const res = await chatService.deactivateConversation(conversationId);
       // Yerel bayrak + mutasyon-sonrası tazeleme: aksi halde geri dönülen
       // sohbet listesi (15sn staleness gate'i yüzünden) sohbeti hâlâ aktif
       // gösteriyordu. MessagesScreen'deki unmatch akışı ile aynı desen.
-      dispatch(conversationDeactivated({ conversationId }));
+      dispatch(
+        conversationDeactivated({
+          conversationId,
+          restorableUntil: res?.restorableUntil ?? null,
+        }),
+      );
       dispatch(fetchConversations({ force: true }));
       navigation.goBack();
+      // Sonuç metni PENCEREYE göre: restorableUntil null ise geri alma yok
+      // (rematch limiti dolmuş / çift engellenmiş) — "geri alabilirsin" DEME.
+      const restoreWindow = formatRestoreWindow(res?.restorableUntil, t);
+      showInfoToast({
+        title: t("chat.unmatch.removedTitle"),
+        message: restoreWindow
+          ? t("chat.unmatch.removedRestorable", { time: restoreWindow })
+          : t("chat.unmatch.removedPermanent"),
+      });
     } catch {
       Alert.alert(t("common.error"), t("chat.unmatch.error"));
     }
@@ -1200,11 +1322,52 @@ function ChatScreen({
   const handleRestore = useCallback(async () => {
     try {
       const ok = await chatService.restoreConversation(conversationId);
-      if (!ok)
+      if (!ok) {
         Alert.alert(t("chat.restore.error"), t("chat.unmatch.restoreExpiredMessage"));
-      else dispatch(fetchConversations({ force: true }));
+        // Pencere kapanmış — yerel bayrağı da düzelt ki buton kaybolsun.
+        dispatch(conversationDeactivated({ conversationId, restorableUntil: null }));
+      } else {
+        // Restore edilen sohbet KESİNTİYE UĞRAMAMIŞ gibi döner: geçmiş kapısı
+        // yok, mesajlar yerinde. Yerel bayrak + authoritative tazeleme.
+        dispatch(conversationRestored({ conversationId }));
+      }
+      dispatch(fetchConversations({ force: true }));
     } catch {
       Alert.alert(t("common.error"), t("chat.unmatch.restoreFailed"));
+    }
+  }, [conversationId, dispatch, t]);
+
+  // Rematch kapısı: eski mesajları ÇİFT İÇİN açar (karşı tarafa
+  // ConversationHistoryRevealed düşer). Ret gerekçeleri kalıcıdır — o durumda
+  // kapıyı bu oturum için kaldırıyoruz, ölü buton kalmasın.
+  const [revealBlocked, setRevealBlocked] = useState(false);
+  useEffect(() => {
+    setRevealBlocked(false);
+  }, [conversationId]);
+
+  const handleRevealHistory = useCallback(async () => {
+    try {
+      const res = await chatService.revealHistory(conversationId);
+      if (res.isSuccess) {
+        dispatch(historyRevealed({ conversationId }));
+        // Gizli mesajlar artık cevaba dahil — ilk sayfayı yeniden çek.
+        dispatch(fetchHistory({ conversationId, cursor: null, pageSize: 30 }));
+        analytics.capture("chat_history_revealed", { conversationId });
+        return;
+      }
+      if (res.reason === "no_history") {
+        // Açılacak eski mesaj yok → kapıyı sessizce kaldır.
+        setRevealBlocked(true);
+        return;
+      }
+      if (res.reason === "too_old") {
+        setRevealBlocked(true);
+        Alert.alert(t("chat.hiddenHistory.title"), t("chat.hiddenHistory.tooOld"));
+        return;
+      }
+      Alert.alert(t("common.error"), t("chat.hiddenHistory.error"));
+    } catch {
+      Alert.alert(t("common.error"), t("chat.hiddenHistory.error"));
     }
   }, [conversationId, dispatch, t]);
 
@@ -1221,6 +1384,25 @@ function ChatScreen({
       );
     }
   }, [partner?.userId, navigation, t]);
+
+  // Profil önizlemesindeki "Bu hesabı blokla" — onay ConversationOptionsSheet
+  // ile aynı metinlerle burada soruluyor (handleBlock'un kendisi onay sormaz,
+  // sheet soruyordu). Önizleme önce kapanır: blok başarılıysa handleBlock
+  // ekrandan çıkıyor, üstünde açık bir sheet bırakmayalım.
+  const handleBlockConfirm = useCallback(() => {
+    Alert.alert(t("chat.block.confirmTitle"), t("chat.block.confirmMessage"), [
+      { text: t("common.cancel"), style: "cancel" },
+      {
+        text: t("chat.block.confirmButton"),
+        style: "destructive",
+        onPress: () => {
+          setProfileVisible(false);
+          setProfileDetail(null);
+          handleBlock();
+        },
+      },
+    ]);
+  }, [handleBlock, t]);
 
   // Header avatarına dokunuş → ProfileScreen'deki PreviewModal'ın aynısı
   // (SwipeCard'ın expanded hali). Sheet ÖNCE açılır (profile=null iken spinner
@@ -1248,6 +1430,7 @@ function ChatScreen({
   }, [partner?.userId, partner?.displayName, partner?.profileImageUrl]);
 
   // ── Data (kronolojik + separator) ────────────────────────────────────────
+  const showHiddenHistoryGate = hasHiddenHistory && !revealBlocked;
   const messagesWithSeparators = useMemo(() => {
     // "Sadece benden sil" mesajı state'ten SİLMİYOR, deletedAt + deletedForEveryone:false
     // işaretliyor (MessageBubble onu null render eder). Listede tutulursa gün
@@ -1256,18 +1439,24 @@ function ChatScreen({
     const visible = messages.filter(
       (m) => !(m.deletedAt && !m.deletedForEveryone),
     );
-    const hasRealMessage = visible.some((m) => !m.isSystemMessage);
-    const filtered = hasRealMessage
-      ? visible.filter(
-          (m) =>
-            !(m.isSystemMessage && (m as any).localizationKey === "system.match_created"),
-        )
-      : visible;
+    // "Yeni eşleşme" sistem mesajı HER ZAMAN elenir: eşleşme bilgisi zaten bu
+    // ekrana gelişin kendisi. Boş sohbette listeyi tek satırla doldurup
+    // ListEmptyComponent'i (açılış önerileri) bastırıyordu — o yüzden koşulsuz.
+    const filtered = visible.filter(
+      (m) =>
+        !(m.isSystemMessage && (m as any).localizationKey === "system.match_created"),
+    );
     const chronological = filtered.slice().reverse();
     const withSeparators = withDateSeparators(chronological);
-    renderedDataRef.current = withSeparators;
-    return withSeparators;
-  }, [messages]);
+    // Rematch kapısı EN ÜSTTE (liste kronolojik): yukarı sayfalama eski mesajları
+    // kapının ALTINA ekler, kapı hep listenin tepesinde kalır. Sabit id → MVCP
+    // çapası ve boyut cache'i sayfalar arasında korunur.
+    const rows = showHiddenHistoryGate
+      ? [{ id: HIDDEN_HISTORY_ROW_ID, __hiddenHistory: true }, ...withSeparators]
+      : withSeparators;
+    renderedDataRef.current = rows;
+    return rows;
+  }, [messages, showHiddenHistoryGate]);
 
   const renderItem = useCallback(
     ({ item, index, data: rows }: any) => {
@@ -1279,6 +1468,9 @@ function ChatScreen({
             <DateSeparator label={item.label} />
           </View>
         );
+      // Rematch kapısı — kendi genişlik telafisi içinde (bkz. bileşen).
+      if (item.__hiddenHistory)
+        return <HiddenHistoryBanner onReveal={handleRevealHistory} />;
       if (CHAT_DIAG_MINIMAL_BUBBLES)
         return (
           <DiagMinimalBubble message={item} isOwn={item.senderId === myUserId} />
@@ -1318,6 +1510,7 @@ function ChatScreen({
     [
       myUserId,
       i18nResolver,
+      handleRevealHistory,
       handleReplyBySwipe,
       handleLongPressMessage,
       handleScrollToReplyTarget,
@@ -1337,18 +1530,53 @@ function ChatScreen({
       ),
     [isEmptyList, conversationId, myUserId],
   );
+  // Listenin İÇİNE yalnız yükleme skeleton'ı giriyor. Boş durum metni + öneri
+  // pill'leri ListEmptyComponent'ten ÇIKARILDI: alignItemsAtEnd, empty içeriğin
+  // yüksekliğine göre üst dolguyu ölçümden SONRA yeniden hesaplıyor; pill satırı
+  // sarmalanınca (ölçüm iki fazlı) bu dolgu değişip içerik görünür şekilde
+  // kayıyordu. Aynı içerik artık liste dışında mutlak katman (emptyOverlay).
   const listEmpty = useMemo(
-    () => (
-      <View style={{ marginRight: REVEAL_MAX }}>
-        {loadingHistory ? (
+    () =>
+      loadingHistory ? (
+        <View style={{ marginRight: REVEAL_MAX }}>
           <MessageSkeleton />
-        ) : (
-          <ChatEmptyState partnerName={partner?.displayName} isActive={isActive} />
-        )}
-      </View>
-    ),
-    [loadingHistory, partner?.displayName, isActive],
+        </View>
+      ) : null,
+    [loadingHistory],
   );
+  // Header ile composer arasındaki boşlukta ORTALANIR ve klavyeyle birlikte
+  // yukarı kayar: klavye açılınca görünür alan kısalır, blok o alanın yeni
+  // merkezine (kapanan yüksekliğin yarısı kadar yukarı) taşınır. Kaydırma
+  // transform ile — layout'a dokunmadığı için ölçüm/dolgu zinciri tetiklenmez.
+  const emptyOverlayStyle = useAnimatedStyle(() => ({
+    transform: [
+      { translateY: -Math.max(0, keyboardHeight.value - insets.bottom) / 2 },
+    ],
+  }));
+  const emptyOverlay =
+    isEmptyList && !loadingHistory ? (
+      <Animated.View
+        pointerEvents="box-none"
+        style={[
+          {
+            position: "absolute" as const,
+            top: insets.top + HEADER_CONTENT,
+            left: 0,
+            right: 0,
+            bottom: INPUT_BAR_OPAQUE + insets.bottom,
+            alignItems: "center" as const,
+            justifyContent: "center" as const,
+          },
+          emptyOverlayStyle,
+        ]}
+      >
+        <ChatEmptyState
+          partnerName={partner?.displayName}
+          isActive={isActive}
+          onSuggestionPress={handleSuggestionSend}
+        />
+      </Animated.View>
+    ) : null;
 
   const quotaLocked =
     !quota?.isUnlimited &&
@@ -1368,7 +1596,7 @@ function ChatScreen({
   );
 
   return (
-    <View className="flex-1 bg-bg">
+    <View className="flex-1" style={{ backgroundColor: colors.bg }}>
       {/* Header overlay (progressive blur) */}
       <View
         pointerEvents="box-none"
@@ -1385,17 +1613,16 @@ function ChatScreen({
             }
             style={StyleSheet.absoluteFill}
           >
+            {/* Derinlik perdesi — koyuda karartır, açıkta AYNI oranlarla
+                beyazlatır (veil). Maske siyah/şeffaf kalır: o alfa maskesi,
+                renk değil. */}
             <LinearGradient
-              colors={["black", "rgba(0, 0, 0, 0.2)"]}
+              colors={[veil(1), veil(0.2)]}
               style={StyleSheet.absoluteFill}
             />
             <BlurView
               intensity={15}
-              tint={
-                Platform.OS === "ios"
-                  ? "systemChromeMaterialDark"
-                  : "systemMaterialDark"
-              }
+              tint={chromeBlurTint()}
               style={StyleSheet.absoluteFill}
             />
           </MaskedView>
@@ -1445,6 +1672,7 @@ function ChatScreen({
             ListEmptyComponent={listEmpty}
             ListFooterComponent={listTyping}
           />
+          {emptyOverlay}
           {/* box-none: composer'ın şeffaf gradient bandı dokunuşu yutmasın —
               altındaki son balon basılı-tutmayı alsın (MessageComposer'da eş çift). */}
           <KeyboardStickyView
@@ -1460,6 +1688,8 @@ function ChatScreen({
               onCancelReply={handleCancelReply}
               onSend={handleInputSend}
               onTypingChange={handleTypingChange}
+              initialText={initialDraft}
+              onDraftChange={handleDraftChange}
               disabled={!isActive}
               quotaLocked={quotaLocked}
               onLockedPress={handleLockedPress}
@@ -1487,6 +1717,7 @@ function ChatScreen({
             ListEmptyComponent={listEmpty}
             ListFooterComponent={listTyping}
           />
+          {emptyOverlay}
           {/* box-none: bkz. Android dalı — şeffaf gradient bandı dokunuşu geçirir. */}
           <KeyboardStickyView
             offset={inputKbOffset}
@@ -1501,6 +1732,8 @@ function ChatScreen({
               onCancelReply={handleCancelReply}
               onSend={handleInputSend}
               onTypingChange={handleTypingChange}
+              initialText={initialDraft}
+              onDraftChange={handleDraftChange}
               disabled={!isActive}
               quotaLocked={quotaLocked}
               onLockedPress={handleLockedPress}
@@ -1515,8 +1748,8 @@ function ChatScreen({
       {showEntrySkeleton && (
         <View
           pointerEvents="none"
-          className="bg-bg"
           style={{
+            backgroundColor: colors.bg,
             position: "absolute",
             top: 0,
             left: 0,
@@ -1540,14 +1773,16 @@ function ChatScreen({
         onClose={handleActionSheetClose}
         onPickReaction={(emoji: string) => handlePickReaction(actionTarget, emoji)}
         onReply={() => handleReply(actionTarget)}
-        onEdit={() => handleEditStart(actionTarget)}
         onDelete={(forEveryone: boolean) => handleDelete(actionTarget, forEveryone)}
       />
       <ConversationOptionsSheet
         visible={optionsOpen}
         onClose={() => setOptionsOpen(false)}
         isActive={isActive}
-        canRestore={!isActive}
+        // Pencere KESİN yoksa (limit dolmuş / engellenmiş / karşı taraf unmatch
+        // etti) restore çağrısı reddedilirdi — ölü buton göstermiyoruz.
+        canRestore={!isActive && shouldOfferRestore(restorableUntil)}
+        restorableUntil={restorableUntil}
         onUnmatch={handleUnmatch}
         onRestore={handleRestore}
         onReport={() => setReportOpen(true)}
@@ -1558,13 +1793,14 @@ function ChatScreen({
         onClose={() => setReportOpen(false)}
         reportedUserId={partner?.userId}
         conversationId={conversationId}
-      />
-      <EditMessageModal
-        target={editTarget}
-        text={editText}
-        onChangeText={setEditText}
-        onCancel={() => setEditTarget(null)}
-        onSave={handleEditSave}
+        // Şikayet + engelleme aynı akışta yapıldıysa eşleşme KALICI kapanır —
+        // sohbette kalmanın anlamı yok, listeye dön.
+        onSuccess={(result: any) => {
+          if (!result?.blocked) return;
+          dispatch(conversationDeactivated({ conversationId, restorableUntil: null }));
+          dispatch(fetchConversations({ force: true }));
+          navigation.goBack();
+        }}
       />
       <PreviewModal
         visible={profileVisible}
@@ -1573,6 +1809,15 @@ function ChatScreen({
           setProfileDetail(null);
         }}
         profile={profileDetail}
+        // Kart altındaki kırmızı satırlar, ConversationOptionsSheet'teki
+        // aksiyonların aynısını açar. Şikayet için önizlemeyi ÖNCE kapatıyoruz:
+        // ReportModal da bir bottom sheet, ikisi üst üste binmesin.
+        onReport={() => {
+          setProfileVisible(false);
+          setProfileDetail(null);
+          setReportOpen(true);
+        }}
+        onBlock={handleBlockConfirm}
       />
       <PurchaseModal
         visible={purchaseVisible}
@@ -1662,7 +1907,7 @@ function ChatHeader({ partner, onBack, onMenu, onAvatarPress }: any) {
                 justifyContent: "center",
               }}
             >
-              <Text className="text-white font-bold">
+              <Text className="font-bold" style={{ color: colors.text }}>
                 {displayName.charAt(0).toUpperCase()}
               </Text>
             </View>
@@ -1690,7 +1935,7 @@ function ChatHeader({ partner, onBack, onMenu, onAvatarPress }: any) {
           ) : (
             <BlurView
               intensity={50}
-              tint="dark"
+              tint={plainBlurTint()}
               style={{
                 borderRadius: 999,
                 overflow: "hidden",
@@ -1742,84 +1987,89 @@ function ChatHeader({ partner, onBack, onMenu, onAvatarPress }: any) {
   );
 }
 
-function EditMessageModal({ target, text, onChangeText, onCancel, onSave }: any) {
-  const { t } = useTranslation();
-  if (!target) return null;
-  return (
-    <Modal visible transparent animationType="fade" onRequestClose={onCancel}>
-      <Pressable
-        onPress={onCancel}
-        style={{
-          flex: 1,
-          backgroundColor: "rgba(0,0,0,0.6)",
-          justifyContent: "center",
-          paddingHorizontal: 24,
-        }}
-      >
-        <Pressable onPress={() => {}} className="bg-surface-2 rounded-2xl p-4">
-          <View className="flex-row items-center justify-between mb-3">
-            <Text className="text-white font-semibold text-base">
-              {t("chat.editMessage.title")}
-            </Text>
-            <TouchableOpacity onPress={onCancel} hitSlop={6}>
-              <SFIcon name="xmark" fallback={X} size={20} color={colors.textSecondary} />
-            </TouchableOpacity>
-          </View>
-          <TextInput
-            value={text}
-            onChangeText={onChangeText}
-            multiline
-            autoFocus
-            maxLength={2000}
-            className="text-white text-base bg-bg-deep rounded-xl p-3"
-            style={{ minHeight: 80, maxHeight: 160, textAlignVertical: "top" }}
-            placeholderTextColor={colors.textMuted}
-          />
-          <Text className="text-gray-500 text-xs mt-2">
-            {t("chat.editMessage.info")}
-          </Text>
-          <View className="flex-row justify-end mt-3">
-            <TouchableOpacity onPress={onCancel} className="px-4 py-2 mr-2">
-              <Text className="text-gray-400">{t("common.cancel")}</Text>
-            </TouchableOpacity>
-            <TouchableOpacity
-              onPress={onSave}
-              className="px-4 py-2 rounded-full"
-              style={{ backgroundColor: colors.primary }}
-            >
-              <Text className="text-white font-semibold">{t("common.save")}</Text>
-            </TouchableOpacity>
-          </View>
-        </Pressable>
-      </Pressable>
-    </Modal>
-  );
-}
+// Açılış önerisi anahtarları — sohbet boşken pill olarak basılır, dokunuşta
+// metin olduğu gibi gönderilir. i18n'de dizi yerine düz anahtar: projede
+// returnObjects hiç kullanılmıyor, t() burada da string döner.
+const EMPTY_SUGGESTION_KEYS = [
+  "chat.emptyState.suggestion1",
+  "chat.emptyState.suggestion2",
+  "chat.emptyState.suggestion3",
+  "chat.emptyState.suggestion4",
+] as const;
 
-function ChatEmptyState({ partnerName, isActive }: any) {
+// EditProfileForm'daki OptionPill'in seçili-olmayan hali birebir: 999 radius +
+// continuous curve, 0.5 hairline kenar, saydam zemin, 13/500 textSecondary.
+const SUGGESTION_PILL_STYLE = {
+  borderRadius: 999,
+  borderCurve: "continuous",
+  overflow: "hidden",
+  paddingHorizontal: 16,
+  paddingVertical: 13,
+  borderWidth: 0.5,
+} as const;
+
+/**
+ * Boş sohbet durumu. Liste İÇİNDE değil, ChatScreen'de mutlak konumlu bir
+ * katman olarak basılır (bkz. emptyOverlay): ListEmptyComponent olarak
+ * verildiğinde alignItemsAtEnd dolgusu ölçümden sonra yeniden hesaplanıp
+ * içeriği pill satırı sarmalandığı anda zıplatıyordu. Katman ekranın
+ * ortasında durur, klavye açılınca kalan alanın merkezine transform ile
+ * kayar — layout'a hiç dokunmadan.
+ */
+function ChatEmptyState({ partnerName, isActive, onSuggestionPress }: any) {
   const { t } = useTranslation();
   return (
-    <View
-      style={{
-        alignItems: "center",
-        justifyContent: "center",
-        paddingVertical: 60,
-        paddingHorizontal: 32,
-      }}
-    >
-      <Text style={{ fontSize: 36, marginBottom: 12 }}>👋</Text>
-      <Text className="text-white text-lg font-bold text-center">
+    <View style={{ alignItems: "center", paddingHorizontal: 28 }}>
+      <Text className="text-2xl font-bold text-center" style={{ color: colors.text }}>
         {isActive
           ? t("chat.emptyState.activeTitle", {
               partnerName: partnerName || t("chat.defaultUserName"),
             })
           : t("chat.emptyState.closedTitle")}
       </Text>
-      <Text className="text-gray-400 text-sm text-center mt-2">
-        {isActive
-          ? t("chat.emptyState.activeDescription")
-          : t("chat.emptyState.closedDescription")}
-      </Text>
+      {!isActive && (
+        <Text className="text-sm text-center mt-2" style={{ color: colors.textSecondary }}>
+          {t("chat.emptyState.closedDescription")}
+        </Text>
+      )}
+      {/* Kapalı sohbette gönderim yok — pill'leri hiç basmıyoruz. */}
+      {isActive && !!onSuggestionPress && (
+        <View
+          style={{
+            flexDirection: "row",
+            flexWrap: "wrap",
+            justifyContent: "center",
+            gap: 10,
+            marginTop: 24,
+          }}
+        >
+          {EMPTY_SUGGESTION_KEYS.map((key) => {
+            const label = t(key);
+            return (
+              <TouchableOpacity
+                key={key}
+                activeOpacity={1}
+                onPress={() => onSuggestionPress(label)}
+                style={{
+                  ...SUGGESTION_PILL_STYLE,
+                  backgroundColor: "transparent",
+                  borderColor: colors.hairline,
+                }}
+              >
+                <Text
+                  style={{
+                    color: colors.textSecondary,
+                    fontSize: 15,
+                    fontWeight: "500",
+                  }}
+                >
+                  {label}
+                </Text>
+              </TouchableOpacity>
+            );
+          })}
+        </View>
+      )}
     </View>
   );
 }

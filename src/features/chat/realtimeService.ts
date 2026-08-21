@@ -28,7 +28,8 @@ type EventCallback = (...args: any[]) => void;
  *     MatchNotification, IncomingLike, ReceiveMessage, MessageSent, MessageDelivered,
  *     MessageEdited, MessageDeleted, MessagesRead, ReactionsChanged,
  *     UserStartedTyping, UserStoppedTyping, UserStatusChanged, UserStatusResponse,
- *     NewNotification, Error, ForceLogout
+ *     ConversationDeactivated, ConversationRestored, ConversationHistoryRevealed,
+ *     NewNotification, Error, ForceLogout, SubscriptionChanged
  */
 class RealtimeService {
   private connection: HubConnection | null = null;
@@ -38,8 +39,26 @@ class RealtimeService {
 
   async connect(): Promise<HubConnection> {
     this._intentionalDisconnect = false;
-    if (this.connection && this.connection.state === HubConnectionState.Connected) {
-      return this.connection;
+    // Canlı YA DA kendini toparlamakta olan bir bağlantı varsa yenisini KURMA.
+    //
+    // Eskiden guard yalnız `Connected`'ı kapsıyordu. Arka plandan dönüşte soket
+    // tipik olarak `Reconnecting` durumunda oluyor ve `_connectingPromise` ilk
+    // start'tan sonra null'a çekildiği için AppState 'active' bloğundaki
+    // connect() çağrısı İKİNCİ bir HubConnection kuruyordu. Terk edilen
+    // bağlantı stop() edilmediği gibi, aşağıdaki retry programı hiç null
+    // dönmediğinden (sonsuz otomatik reconnect) kendiliğinden de ölmüyordu:
+    // her foreground bir bağlantı daha sızdırıyor, hepsi aynı listener
+    // haritasına yazdığı için ForceLogout dahil her event birden çok kez
+    // işleniyordu.
+    if (this.connection) {
+      const state = this.connection.state;
+      if (
+        state === HubConnectionState.Connected ||
+        state === HubConnectionState.Connecting ||
+        state === HubConnectionState.Reconnecting
+      ) {
+        return this.connection;
+      }
     }
     if (this._connectingPromise) return this._connectingPromise;
 
@@ -78,6 +97,16 @@ class RealtimeService {
       try {
         await conn.start();
         devLog('🟢 SignalR connected');
+        // Otomatik reconnect tükenip bağlantı KAPANDIYSA (onclose → 5 sn sonra
+        // yeni bir HubConnection) `onreconnected` bir daha hiç çalışmıyor: o
+        // callback yalnız aynı bağlantının kendini toparlamasında ateşleniyor.
+        // Bu durumda kopukluk penceresinde kaçan her şey (mesaj, okundu bilgisi,
+        // SubscriptionChanged) sessizce kayıp kalıyordu. Durum yayını burada da
+        // yapılıyor; ilk açılışta zararsız — dinleyici yalnız ÖNCESİNDE bir
+        // kopukluk gördüyse telafi turunu çalıştırıyor.
+        if (this.connection === conn) {
+          this._emit('__connectionStateChanged', 'connected');
+        }
         return conn;
       } catch (err: any) {
         console.warn('⚠️ SignalR connect failed:', shortNetError(err));
@@ -134,26 +163,50 @@ class RealtimeService {
       'MatchNotification', 'IncomingLike', 'ReceiveMessage', 'MessageSent',
       'MessageDelivered', 'MessageEdited', 'MessageDeleted', 'MessagesRead',
       'ReactionsChanged', 'UserStartedTyping', 'UserStoppedTyping',
-      'UserStatusChanged', 'UserStatusResponse', 'NewNotification', 'Error',
+      'UserStatusChanged', 'UserStatusResponse',
+      // Unmatch/rematch kapıları: sohbet kapandı / geri alma penceresinde geri
+      // alındı / rematch sonrası eski mesajlar çift için açıldı.
+      'ConversationDeactivated', 'ConversationRestored', 'ConversationHistoryRevealed',
+      'NewNotification', 'Error',
       'ForceLogout',
+      // Premium durumu değişti (admin grant/revoke, mağaza webhook'u, /sync
+      // upgrade/downgrade). Gövde `/api/subscription/status` ile birebir aynı,
+      // ek olarak `reason` + `at` taşıyor — ek fetch gerektirmiyor.
+      // Kullanıcının TÜM cihazlarına gidiyor (Clients.User).
+      'SubscriptionChanged',
     ];
+    // Bu handler'lar `conn`'u closure'da tutuyor; `this.connection` ise zamanla
+    // BAŞKA bir bağlantıya işaret edebiliyor. Aktif olmayan bir bağlantıdan
+    // gelen hiçbir şey dışarı sızmamalı — yoksa geçmişte sızmış bir soket
+    // event'leri ikinci kez yayınlar, durum değişimini yanlış raporlar veya
+    // (en kötüsü) kapanırken CANLI bağlantının referansını null'lar.
+    const isActive = () => this.connection === conn;
+
     events.forEach((evt) => {
       // Hub payload'ları da REST gibi Z'siz UTC gönderebiliyor (kontrat §8.3).
       // Normalizasyon BURADA yapılır: tüm dinleyiciler (AppNavigator dispatch'leri,
       // ChatScreen, NotificationsScreen) tek ve doğru formatı görür.
-      conn.on(evt, (...args) => this._emit(evt, ...args.map((a) => normalizeUtcFields(a))));
+      conn.on(evt, (...args) => {
+        if (!isActive()) return;
+        this._emit(evt, ...args.map((a) => normalizeUtcFields(a)));
+      });
     });
 
     conn.onreconnecting((err) => {
       devLog('🟡 SignalR reconnecting:', err?.message);
+      if (!isActive()) return;
       this._emit('__connectionStateChanged', 'reconnecting');
     });
     conn.onreconnected((connId) => {
       devLog('🟢 SignalR reconnected, connId:', connId);
+      if (!isActive()) return;
       this._emit('__connectionStateChanged', 'connected');
     });
     conn.onclose((err) => {
       devLog('🔴 SignalR closed:', err?.message);
+      // Bayat bağlantının kapanışı aktif oturumu etkilemez: ne durum yayınlar,
+      // ne `this.connection`'ı siler, ne de yeniden bağlanma tetikler.
+      if (!isActive()) return;
       this._emit('__connectionStateChanged', 'disconnected');
       const wasIntentional = this._intentionalDisconnect;
       this.connection = null;

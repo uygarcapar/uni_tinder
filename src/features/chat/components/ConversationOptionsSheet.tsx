@@ -1,4 +1,5 @@
 import { View, Text, TouchableOpacity, Alert } from "react-native";
+import { useTranslation } from "react-i18next";
 import {
   UserMinus,
   RotateCcw,
@@ -9,6 +10,7 @@ import {
 } from "lucide-react-native";
 import SFIcon from "@/shared/components/SFIcon";
 import AppModal from "@/shared/components/AppModal";
+import { formatRestoreWindow } from "@/features/chat/restoreWindow";
 import { colors } from "../../../shared/theme/colors";
 
 function Section({
@@ -86,7 +88,7 @@ function ActionRow({
   accent?: boolean;
   marginBottom?: number;
 }) {
-  const textColor = destructive ? "#000" : accent ? colors.success : colors.text;
+  const textColor = destructive ? colors.onInverseSurface : accent ? colors.success : colors.text;
   return (
     <TouchableOpacity
       onPress={onPress}
@@ -96,7 +98,7 @@ function ActionRow({
         borderCurve: "continuous",
         overflow: "hidden",
         borderWidth: 0.5,
-        borderColor: destructive ? colors.errorStrong : "rgba(255,255,255,0.1)",
+        borderColor: destructive ? colors.errorStrong : colors.hairline,
         backgroundColor: destructive ? colors.errorStrong : undefined,
         flexDirection: "row",
         alignItems: "center",
@@ -120,24 +122,40 @@ function ActionRow({
   );
 }
 
+/**
+ * İki ayrı niyet, İKİ AYRI AKSİYON (ürün kararı):
+ *   • "Eşleşmeyi Kaldır" — yumuşak: sohbet kapanır, MESAJLAR SİLİNMEZ, bir süre
+ *     sonra çift tekrar eşleşebilir ("anılar canlanır").
+ *   • "Şikayet Et / Engelle" — kalıcı: bir daha asla eşleşilmez, geçmiş açılmaz.
+ * Tek bir "unmatch" butonu bırakmak taciz senaryosunda kullanıcıyı korumazdı —
+ * o kişi cooldown bitince deck'te yeniden görünürdü.
+ */
 export default function ConversationOptionsSheet({
   visible,
   onClose,
   isActive = true,
   canRestore = false,
+  restorableUntil,
   onUnmatch,
   onRestore,
   onReport,
   onBlock,
 }: any) {
+  const { t } = useTranslation();
+  // Kalan süre SUNUCU damgasından — pencere uzunluğu backend config'inde,
+  // istemci "24 saat" varsaymaz (bkz. restoreWindow.ts).
+  const restoreWindow = canRestore ? formatRestoreWindow(restorableUntil, t) : null;
+
   const handleUnmatch = () => {
     Alert.alert(
-      "Eşleşmeyi kaldır",
-      "Sohbet 24 saat içinde geri alınabilir. Sonra kalıcı olarak kapanır.",
+      t("chat.unmatch.title"),
+      // Geri alma penceresinin VAR olup olmadığı ancak sunucu yanıtında belli
+      // olur (rematch limiti dolmuş olabilir) — burada vaat etmiyoruz.
+      t("chat.unmatch.confirmMessage"),
       [
-        { text: "İptal", style: "cancel" },
+        { text: t("common.cancel"), style: "cancel" },
         {
-          text: "Kaldır",
+          text: t("chat.unmatch.confirmButton"),
           style: "destructive",
           onPress: () => {
             onClose();
@@ -150,12 +168,12 @@ export default function ConversationOptionsSheet({
 
   const handleBlock = () => {
     Alert.alert(
-      "Kullanıcıyı engelle",
-      "Bu kişi sana mesaj atamayacak ve profili sana gösterilmeyecek. Eşleşmeniz kaldırılır.",
+      t("chat.block.confirmTitle"),
+      t("chat.block.confirmMessage"),
       [
-        { text: "İptal", style: "cancel" },
+        { text: t("common.cancel"), style: "cancel" },
         {
-          text: "Engelle",
+          text: t("chat.block.confirmButton"),
           style: "destructive",
           onPress: () => {
             onClose();
@@ -170,34 +188,48 @@ export default function ConversationOptionsSheet({
     <AppModal
       visible={visible}
       onClose={onClose}
-      title="Sohbet Ayarları"
+      title={t("chat.options.title")}
       snapPoints={["45%", "90%"]}
       closeButton={false}
       contentContainerStyle={{ paddingTop: 36 }}
     >
       <Section
-        title="Sohbet"
-        description="Bu sohbete özel hızlı eylemler."
+        title={t("chat.options.sectionChat")}
+        description={t("chat.options.sectionChatDescription")}
         marginTop={4}
       />
       {isActive && (
         <ActionRow
-          icon={<SFIcon name="person.fill.badge.minus" fallback={UserMinus} size={18} color="#000" strokeWidth={1.5} style={{ pointerEvents: "none" }} />}
-          label="Eşleşmeyi Kaldır"
+          icon={<SFIcon name="person.fill.badge.minus" fallback={UserMinus} size={18} color={colors.onInverseSurface} strokeWidth={1.5} style={{ pointerEvents: "none" }} />}
+          label={t("chat.options.unmatch")}
           onPress={handleUnmatch}
           destructive
         />
       )}
       {!isActive && canRestore && (
-        <ActionRow
-          icon={<SFIcon name="arrow.counterclockwise" fallback={RotateCcw} size={18} color={colors.success} strokeWidth={1.5} style={{ pointerEvents: "none" }} />}
-          label="Eşleşmeyi Geri Al"
-          onPress={() => {
-            onClose();
-            onRestore?.();
-          }}
-          accent
-        />
+        <>
+          <ActionRow
+            icon={<SFIcon name="arrow.counterclockwise" fallback={RotateCcw} size={18} color={colors.success} strokeWidth={1.5} style={{ pointerEvents: "none" }} />}
+            label={t("chat.options.restore")}
+            onPress={() => {
+              onClose();
+              onRestore?.();
+            }}
+            accent
+          />
+          {restoreWindow ? (
+            <Text
+              style={{
+                color: colors.textSecondary,
+                fontSize: 13,
+                marginTop: 10,
+                paddingHorizontal: 4,
+              }}
+            >
+              {t("chat.unmatch.restoreWindowHint", { time: restoreWindow })}
+            </Text>
+          ) : null}
+        </>
       )}
       {!isActive && !canRestore && (
         <View
@@ -226,18 +258,18 @@ export default function ConversationOptionsSheet({
               flex: 1,
             }}
           >
-            Bu sohbet sonlandırıldı. Geri alma süresi doldu.
+            {t("chat.options.restoreExpired")}
           </Text>
         </View>
       )}
 
       <Section
-        title="Güvenlik"
-        description="Kullanıcıyı şikayet edebilir veya engelleyebilirsin."
+        title={t("chat.options.sectionSafety")}
+        description={t("chat.options.sectionSafetyDescription")}
       />
       <ActionRow
         icon={<SFIcon name="flag.fill" fallback={Flag} size={18} color={colors.text} strokeWidth={1.5} style={{ pointerEvents: "none" }} />}
-        label="Şikayet Et"
+        label={t("chat.options.report")}
         onPress={() => {
           onClose();
           onReport?.();
@@ -245,8 +277,8 @@ export default function ConversationOptionsSheet({
         marginBottom={8}
       />
       <ActionRow
-        icon={<SFIcon name="nosign" fallback={Ban} size={18} color="#000" strokeWidth={1.5} style={{ pointerEvents: "none" }} />}
-        label="Kullanıcıyı Engelle"
+        icon={<SFIcon name="nosign" fallback={Ban} size={18} color={colors.onInverseSurface} strokeWidth={1.5} style={{ pointerEvents: "none" }} />}
+        label={t("chat.options.block")}
         onPress={handleBlock}
         destructive
       />

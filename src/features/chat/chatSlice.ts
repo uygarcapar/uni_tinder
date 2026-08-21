@@ -407,21 +407,51 @@ const chatSlice = createSlice({
       });
     },
 
-    // Karşı taraf unmatch ettiğinde backend HİÇBİR hub event'i yayınlamıyor
-    // (kontrat §14: sohbet sessizce isActive=false oluyor). Tek anlık sinyal,
-    // kapalı sohbete gönderim denemesinde gelen Error{CONVERSATION_ERROR}.
-    // O sinyalde listeyi ve asılı kalan balonları YEREL olarak düzeltiyoruz;
-    // force refetch ayrıca atılır ama cevabı düşene kadar UI yalan söylemesin.
-    conversationDeactivated: (state, action: PayloadAction<{ conversationId: string }>) => {
-      const { conversationId } = action.payload;
+    // Sohbet kapandı. İki kaynaktan gelir:
+    //   • ConversationDeactivated hub event'i (karşı taraf unmatch etti),
+    //   • kapalı sohbete gönderim denemesinde düşen Error{CONVERSATION_ERROR}
+    //     (event kaçarsa / offline'dan dönüşte tek anlık sinyal budur).
+    // Her iki halde listeyi ve asılı kalan balonları YEREL düzeltiyoruz; force
+    // refetch ayrıca atılır ama cevabı düşene kadar UI yalan söylemesin.
+    //
+    // restorableUntil: unmatch YANITINDAN gelir (kendi unmatch'imiz). Karşı
+    // tarafın unmatch'inde gelmez — geri alma zaten yalnız unmatch edene açık.
+    conversationDeactivated: (
+      state,
+      action: PayloadAction<{ conversationId: string; restorableUntil?: string | null }>
+    ) => {
+      const { conversationId, restorableUntil } = action.payload;
       const conv = state.conversations.find((c) => c.conversationId === conversationId);
-      if (conv) conv.isActive = false;
+      if (conv) {
+        conv.isActive = false;
+        if (restorableUntil !== undefined) conv.restorableUntil = restorableUntil;
+      }
       const bucket = state.messagesByConv[conversationId];
       if (!bucket) return;
       // "Gönderiliyor"da asılı balonlar: ack asla gelmeyecek → başarısıza çevir.
       bucket.messages = bucket.messages.map((m) =>
         m._pending ? { ...m, _pending: false, _failed: true } : m,
       );
+    },
+
+    // Geri alma penceresi kullanıldı (kendi restore'umuz ya da karşı
+    // tarafın ConversationRestored event'i). Sohbet hiç kesintiye uğramamış gibi
+    // döner — geçmiş kapısı YOK, restorableUntil tüketilmiştir.
+    conversationRestored: (state, action: PayloadAction<{ conversationId: string }>) => {
+      const conv = state.conversations.find(
+        (c) => c.conversationId === action.payload.conversationId,
+      );
+      if (!conv) return;
+      conv.isActive = true;
+      conv.restorableUntil = null;
+    },
+
+    // "Eski sohbeti göster" açıldı — kendi reveal'imiz ya da karşı tarafın
+    // ConversationHistoryRevealed event'i. Kapıyı ANINDA kapatıyoruz; gizli
+    // mesajlar history refetch'iyle gelir (ChatScreen/AppNavigator tetikler).
+    historyRevealed: (state, action: PayloadAction<{ conversationId: string }>) => {
+      const bucket = state.messagesByConv[action.payload.conversationId];
+      if (bucket) bucket.hasHiddenHistory = false;
     },
 
     decrementQuotaLocally: (state, action: PayloadAction<{ conversationId: string }>) => {
@@ -516,6 +546,14 @@ const chatSlice = createSlice({
           ) {
             next = { ...next, unreadCount: 0 };
           }
+          // Geri alma penceresi unmatch YANITINDAN geliyor; liste DTO'su bu alanı
+          // taşımayabiliyor. Alan gelmiyorsa (undefined) yereli koru — yoksa
+          // unmatch'in hemen ardından attığımız force refetch pencereyi silip
+          // "geri al" butonunu daha ilk saniyede kaybettiriyordu. Server AÇIKÇA
+          // null derse (pencere kapandı) server kazanır.
+          if (next.restorableUntil === undefined && localConv.restorableUntil != null) {
+            next = { ...next, restorableUntil: localConv.restorableUntil };
+          }
           return next;
         });
         state.conversations = merged;
@@ -537,8 +575,12 @@ const chatSlice = createSlice({
         state.messagesByConv[conversationId] = bucket;
       })
       .addCase(fetchHistory.fulfilled, (state, action) => {
-        const { conversationId, messages, nextCursor, hasMore, append } = action.payload as any;
+        const { conversationId, messages, nextCursor, hasMore, append, hasHiddenHistory } =
+          action.payload as any;
         const bucket = state.messagesByConv[conversationId] ?? emptyBucket();
+        // Server-authoritative: rematch kapısı her sayfada aynı cevabı taşır.
+        // Alanı hiç göndermeyen (eski) backend'de false kalır → kapı çıkmaz.
+        bucket.hasHiddenHistory = !!hasHiddenHistory;
         if (append) {
           const existing = new Set(bucket.messages.map((m) => m.id));
           bucket.messages = [...bucket.messages, ...messages.filter((m: MessageDto) => !existing.has(m.id))];
@@ -674,6 +716,8 @@ export const {
   userStatusResponse,
   matchNotification,
   conversationDeactivated,
+  conversationRestored,
+  historyRevealed,
   appendOptimisticMessage,
   failOptimisticMessage,
   removeOptimisticMessage,

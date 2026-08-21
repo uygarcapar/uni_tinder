@@ -100,6 +100,20 @@ describe('ConversationOptionsSheet — inactive variants', () => {
     ).toBeTruthy();
   });
 
+  // Pencere uzunluğu backend config'inde — kalan süre `restorableUntil`
+  // damgasından hesaplanır, "24 saat" hardcode EDİLMEZ.
+  it('shows the remaining restore window from restorableUntil', () => {
+    const until = new Date(Date.now() + 3 * 3600_000 + 60_000).toISOString();
+    const tree = setup({ isActive: false, canRestore: true, restorableUntil: until });
+    expect(tree.getByText('Geri almak için 3 saat kaldı.')).toBeTruthy();
+  });
+
+  it('omits the window hint when no timestamp is available', () => {
+    const tree = setup({ isActive: false, canRestore: true, restorableUntil: null });
+    expect(tree.getByText('Eşleşmeyi Geri Al')).toBeTruthy();
+    expect(tree.queryByText(/Geri almak için/)).toBeNull();
+  });
+
   it('calls onClose then onRestore when "Eşleşmeyi Geri Al" is pressed', () => {
     const onClose = jest.fn();
     const onRestore = jest.fn();
