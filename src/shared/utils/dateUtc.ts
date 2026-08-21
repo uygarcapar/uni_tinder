@@ -63,6 +63,7 @@ const TIMESTAMP_KEYS = new Set([
   'likedAt',
   'createdAt',
   'restorableUntil',
+  'revealedAt',
   'expiresAt',
 ]);
 
