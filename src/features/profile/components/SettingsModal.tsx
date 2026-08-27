@@ -62,10 +62,43 @@ import i18n from "@/shared/i18n";
 import { getDateLocale } from "@/shared/i18n/dateLocale";
 import type { RootState } from "@/shared/store";
 
+// ── Veri export'u: gövde okuma yardımcıları ─────────────────────────────────
+//
+// Export uçları ResponseDto sarmalayıcısını ve alan isimlerini tutarlı
+// kullanmıyor: status değeri PascalCase ("Completed"), dosya bağlantısı
+// sürüme göre fileUrl/downloadUrl/url olabiliyor, gövde bazen `result`
+// altında bazen düz geliyor. Sabit `result.status` + `result.fileUrl` okuması
+// bunlardan biri kaydığında HİÇBİR turu "tamamlandı" saymıyordu: dosya hazır
+// olup bildirim merkezine düşmesine rağmen modal 5 dakika dönüp
+// "veri hazırlanamadı" hatasıyla kapanıyordu. Bu yüzden okuma esnek.
+
+/** Alanı kasadan bağımsız oku — camelCase ↔ PascalCase ikisi de tutar. */
+const readField = (obj: any, ...names: string[]) => {
+  if (!obj || typeof obj !== "object") return undefined;
+  const byLower = new Map(Object.keys(obj).map((k) => [k.toLowerCase(), k]));
+  for (const name of names) {
+    const key = byLower.get(name.toLowerCase());
+    if (key !== undefined && obj[key] !== undefined && obj[key] !== null) {
+      return obj[key];
+    }
+  }
+  return undefined;
+};
+
+/** ResponseDto sarmalayıcısını soy; düz gövde gelirse olduğu gibi bırak. */
+const exportBody = (res: any) => readField(res, "result", "data") ?? res ?? {};
+
+const EXPORT_DONE = ["completed", "complete", "ready", "done", "success", "succeeded", "finished"];
+const EXPORT_FAILED = ["failed", "failure", "error", "cancelled", "canceled", "expired"];
+
+const exportFileUrl = (body: any): string | null => {
+  const raw = readField(body, "fileUrl", "downloadUrl", "url", "fileUri", "exportUrl", "link");
+  return typeof raw === "string" && /^https?:\/\//i.test(raw) ? raw : null;
+};
+
 export default function SettingsModal({ visible, onClose }: any) {
   const { t } = useTranslation();
   const dispatch = useAppDispatch();
-  const qc = useQueryClient();
   // `languagePreference` yeni bir alan: persist'te bu anahtarı taşımayan eski
   // kullanıcılarda undefined gelir. O durumda çözülmüş dile düşüyoruz — daha
   // önce Türkçe/English seçmiş kullanıcı chip'i "Sistem" işaretli görmesin.
@@ -81,6 +114,8 @@ export default function SettingsModal({ visible, onClose }: any) {
   const [blockedVisible, setBlockedVisible] = useState(false);
   const [prefs, setPrefs] = useState(null);
   const pollingRef = useRef(null);
+  /** Her yeni export turu nesli ilerletir; eski tur cevabı dönerse yok sayılır. */
+  const pollGenRef = useRef(0);
 
   // Notification preferences — YALNIZ modal açılınca çek (bir kez). ÖNCESİ mount'ta
   // koşulsuz çekiyordu; SettingsModal iki yerde (ProfileScreen + AppNavigator)
@@ -97,11 +132,31 @@ export default function SettingsModal({ visible, onClose }: any) {
     return () => { cancelled = true; };
   }, [visible]);
 
+  // Poll'u durdurmanın TEK yolu: timer'ı temizle + nesli ilerlet. Nesil sayacı
+  // olmadan uçuşta olan bir status isteği durdurulduktan sonra geri dönüp
+  // spinner'ı yeniden kapatabiliyor ya da yeni turu iptal edebiliyordu.
+  const stopExportPolling = () => {
+    pollGenRef.current++;
+    if (pollingRef.current) {
+      clearTimeout(pollingRef.current);
+      pollingRef.current = null;
+    }
+  };
+
   // Export polling'i unmount'ta durdur — modal kapanıp component düşerse
-  // interval arkada dönmeye devam ediyordu.
-  useEffect(() => () => {
-    if (pollingRef.current) clearInterval(pollingRef.current);
-  }, []);
+  // timer arkada dönmeye devam ediyordu.
+  useEffect(() => () => stopExportPolling(), []);
+
+  // Modal KAPANINCA da durdur ve spinner'ı sıfırla. Bu modal ekran ağacında
+  // kalıcı mount (ProfileScreen + AppNavigator kopyası) — kapanmak unmount
+  // DEĞİL, yani takılı kalan spinner modal tekrar açıldığında hâlâ dönüyor ve
+  // butonu kilitli tutuyordu. Poll'u bırakmak veri kaybettirmiyor: export
+  // hazır olduğunda bildirim merkezine zaten düşüyor.
+  useEffect(() => {
+    if (visible) return;
+    stopExportPolling();
+    setDownloadLoading(false);
+  }, [visible]);
 
   const togglePref = async (field) => {
     if (!prefs) return;
@@ -231,45 +286,145 @@ export default function SettingsModal({ visible, onClose }: any) {
     ]);
 
   // ── Verilerimi İndir ────────────────────────────────────────────────────────
+  //
+  // Backend export'u ASENKRON hazırlıyor: POST talebi kuyruğa atıyor, dosya
+  // bitince hem status ucu "tamamlandı" diyor hem de bildirim merkezine
+  // düşüyor. Poll yalnız o bittiği anı yakalayıp dosyayı hemen açmak için —
+  // yakalayamazsa da veri KAYBOLMUYOR, bildirimden ulaşılıyor. Bu yüzden
+  // vazgeçme mesajı "hata" değil "hazırlanıyor, bildirimlere düşecek".
   const handleDownloadData = async () => {
+    if (downloadLoading) return;
+    // Yeni tur eskisini devralır: önceki timer temizlenmezse ortada sahipsiz
+    // bir poll kalıyor ve kendi turunu bitirirken YENİ turun timer'ını
+    // temizliyordu.
+    stopExportPolling();
+    const generation = pollGenRef.current;
     setDownloadLoading(true);
+
     try {
       const res = await api.post(API_ENDPOINTS.PRIVACY_MY_DATA);
-      if (!res.isSuccess) throw new Error(res.message);
+      // İstek uçarken modal kapandıysa (veya yeni bir tur başladıysa) burada
+      // dur: talep backend'e ulaştı, sonucu bildirim merkezinden gelecek.
+      if (pollGenRef.current !== generation) return;
+      if (res?.isSuccess === false) throw new Error(res?.message);
 
-      const requestId = res.result?.requestId;
-      if (!requestId) throw new Error("requestId alınamadı");
+      const body = exportBody(res);
+      const requestId = readField(body, "requestId", "id", "exportId");
+      if (requestId === undefined) {
+        console.warn(`[export] requestId yok — gövde: ${JSON.stringify(res)?.slice(0, 300)}`);
+        throw new Error(t('errors.requestFailed'));
+      }
 
-      // Polling: 5 saniyede bir, max 60 deneme (~5 dk). Backend export'u async
-      // hazırlıyor ve "birkaç dakika" sürebiliyor — eski 1 dk'lık pencere hazır
-      // olan export'ta bile timeout'a düşüyordu.
+      // Talep anında hazır dönmüş olabilir (yeniden istenen, hâlâ geçerli bir
+      // export) — poll'u beklemeden aç.
+      const readyNow = exportFileUrl(body);
+      if (readyNow) {
+        setDownloadLoading(false);
+        Linking.openURL(readyNow).catch(() => {});
+        return;
+      }
+
+      // Poll: 5 sn arayla max 60 tur (~5 dk). setInterval DEĞİL, zincirlenmiş
+      // setTimeout — yavaş bir status isteği bir sonrakinin üstüne binmesin.
+      const POLL_INTERVAL_MS = 5000;
+      const POLL_MAX_ATTEMPTS = 60;
+      /** Ard arda bu kadar hata = pes et. Tek bir 404/ağ hıçkırığı turu bitirmesin. */
+      const POLL_MAX_CONSECUTIVE_ERRORS = 3;
+
       let attempts = 0;
-      pollingRef.current = setInterval(async () => {
+      let consecutiveErrors = 0;
+
+      const alive = () => pollGenRef.current === generation;
+
+      const finish = (title?: string, message?: string) => {
+        stopExportPolling();
+        setDownloadLoading(false);
+        if (title && message) Alert.alert(title, message);
+      };
+
+      // Beklenmedik bir hata turu düşürürse spinner sonsuza kilitlenmesin:
+      // her tur kendi catch'iyle zamanlanır.
+      const schedule = (delayMs: number) => {
+        pollingRef.current = setTimeout(() => {
+          tick().catch((err: any) => {
+            console.warn(`[export] poll turu beklenmedik hatayla düştü: ${err?.message}`);
+            finish(t('common.info'), t('errors.dataStillPreparing'));
+          });
+        }, delayMs);
+      };
+
+      const tick = async () => {
+        if (!alive()) return;
         attempts++;
+        let statusRes: any;
         try {
-          const statusRes = await api.get(
-            API_ENDPOINTS.PRIVACY_MY_DATA_STATUS(requestId),
-          );
-          // Backend status'ü PascalCase döner ("Completed"/"Failed"/"Pending").
-          // Küçük harfle karşılaştırmak hazır export'u hiç yakalamıyordu.
-          const status = String(statusRes.result?.status ?? "").toLowerCase();
-          if (status === "completed" && statusRes.result?.fileUrl) {
-            clearInterval(pollingRef.current);
-            setDownloadLoading(false);
-            Linking.openURL(statusRes.result.fileUrl);
-          } else if (status === "failed" || attempts >= 60) {
-            clearInterval(pollingRef.current);
-            setDownloadLoading(false);
-            Alert.alert(t('errors.generic'), t('errors.dataNotReady'));
+          statusRes = await api.get(API_ENDPOINTS.PRIVACY_MY_DATA_STATUS(requestId));
+          consecutiveErrors = 0;
+        } catch (err: any) {
+          if (!alive()) return;
+          consecutiveErrors++;
+          if (consecutiveErrors >= POLL_MAX_CONSECUTIVE_ERRORS || attempts >= POLL_MAX_ATTEMPTS) {
+            console.warn(`[export] status ucu ${consecutiveErrors} kez düştü: ${shortNetError(err)}`);
+            finish(t('common.info'), t('errors.dataStillPreparing'));
+            return;
           }
-        } catch {
-          clearInterval(pollingRef.current);
-          setDownloadLoading(false);
+          schedule(POLL_INTERVAL_MS);
+          return;
         }
-      }, 5000);
-    } catch (e) {
+        if (!alive()) return;
+
+        const statusBody = exportBody(statusRes);
+        const status = String(readField(statusBody, "status", "state", "exportStatus") ?? "").toLowerCase();
+        const fileUrl = exportFileUrl(statusBody);
+
+        // Bağlantı geldiyse tamam — status kelimesinin ne olduğuna bakma.
+        // Sözleşme tarafında asıl kırılgan olan status sözlüğüydü.
+        if (fileUrl && !EXPORT_FAILED.includes(status)) {
+          finish();
+          Linking.openURL(fileUrl).catch(() => {
+            Alert.alert(t('errors.generic'), t('errors.dataLinkFailed'));
+          });
+          return;
+        }
+
+        if (EXPORT_FAILED.includes(status)) {
+          finish(t('errors.generic'), t('errors.dataNotReady'));
+          return;
+        }
+
+        // "Tamamlandı" ama bağlantı yok: bekleyerek düzelmez, gövdeyi logla ve
+        // kullanıcıyı bildirim merkezine yolla.
+        if (EXPORT_DONE.includes(status)) {
+          console.warn(
+            `[export] status "${status}" ama dosya bağlantısı yok — gövde: ${JSON.stringify(statusRes)?.slice(0, 300)}`,
+          );
+          finish(t('common.info'), t('errors.dataLinkMissing'));
+          return;
+        }
+
+        if (attempts >= POLL_MAX_ATTEMPTS) {
+          // Alan isimleri kaymışsa teşhis edilebilsin: son gövdeyi yaz.
+          console.warn(
+            `[export] ${attempts} turda tamamlanmadı (son status "${status}") — gövde: ${JSON.stringify(statusRes)?.slice(0, 300)}`,
+          );
+          finish(t('common.info'), t('errors.dataStillPreparing'));
+          return;
+        }
+
+        schedule(POLL_INTERVAL_MS);
+      };
+
+      // İlk turu hemen at: hazır bir export'ta 5 sn boşuna beklenmesin.
+      schedule(0);
+    } catch (e: any) {
+      if (pollGenRef.current !== generation) return;
+      stopExportPolling();
       setDownloadLoading(false);
-      Alert.alert(t('errors.generic'), e.message || t('errors.requestFailed'));
+      // Axios hatasında `e.message` "Request failed with status code 400" gibi
+      // teknik bir metin — backend'in kendi mesajı varsa o gösterilir.
+      const backendMessage =
+        readField(e?.response?.data, "message", "errorMessage") ?? e?.message;
+      Alert.alert(t('errors.generic'), backendMessage || t('errors.requestFailed'));
     }
   };
 
@@ -354,6 +509,18 @@ export default function SettingsModal({ visible, onClose }: any) {
         value={prefs?.skipPushWhenOnline ?? false}
         disabled={!prefs}
         onToggle={() => togglePref('skipPushWhenOnline')}
+      />
+
+      {/* Fotoğraf moderasyonu bildirimleri. `ProfileHiddenInsufficientPhotos`
+          bu anahtardan MUAF (hesap durumu bildirimi, pazarlama değil) — metin
+          bunu söylüyor ki kullanıcı kapatınca yanlış beklentiye girmesin. */}
+      <SettingsToggleRow
+        icon={<SFIcon name="camera.fill" fallback={Camera} size={18} color={colors.text} strokeWidth={1.5} />}
+        title={t('settings.photoModerationAlerts.title')}
+        subtitle={t('settings.photoModerationAlerts.subtitle')}
+        value={prefs?.photoModerationAlerts ?? true}
+        disabled={!prefs}
+        onToggle={() => togglePref('photoModerationAlerts')}
       />
 
       {/* Gizlilik Bölümü */}

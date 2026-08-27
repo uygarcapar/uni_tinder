@@ -220,6 +220,151 @@ describe('SettingsModal — data download', () => {
       'Veri hazırlanamadı, tekrar dene.'
     );
   });
+
+  // Asıl saha hatası: dosya hazır (bildirim merkezine düşüyor) ama gövde
+  // beklenenden farklı isimlendiği için hiçbir tur "tamamlandı" saymıyor,
+  // spinner 5 dakika dönüp "veri hazırlanamadı" ile bitiyordu.
+  it.each([
+    ['PascalCase alan adları', { Result: { Status: 'Completed', FileUrl: 'https://x/a.zip' } }],
+    ['downloadUrl ismi', { result: { status: 'Ready', downloadUrl: 'https://x/a.zip' } }],
+    ['sarmalayıcısız düz gövde', { status: 'completed', fileUrl: 'https://x/a.zip' }],
+    ['tanınmayan status, bağlantı dolu', { result: { status: 'Hazir', fileUrl: 'https://x/a.zip' } }],
+  ])('opens the file URL despite %s', async (_label, statusBody) => {
+    jest.useFakeTimers();
+    mockApi.post.mockResolvedValue({ isSuccess: true, result: { requestId: 7 } });
+    mockApi.get.mockResolvedValue(statusBody);
+
+    const tree = setup();
+    await waitFor(() => tree.getByText('Verilerimi İndir'));
+
+    await act(async () => {
+      fireEvent.press(tree.getByText('Verilerimi İndir'));
+    });
+    await act(async () => {
+      jest.advanceTimersByTime(0);
+    });
+    await act(async () => {});
+
+    expect(Linking.openURL).toHaveBeenCalledWith('https://x/a.zip');
+  });
+
+  // İlk tur hemen atılıyor: hazır bir export için 5 saniye boşuna beklenmiyordu.
+  it('polls immediately instead of waiting a full interval', async () => {
+    jest.useFakeTimers();
+    mockApi.post.mockResolvedValue({ isSuccess: true, result: { requestId: 7 } });
+    mockApi.get.mockResolvedValue({ result: { status: 'Pending' } });
+
+    const tree = setup();
+    await waitFor(() => tree.getByText('Verilerimi İndir'));
+
+    await act(async () => {
+      fireEvent.press(tree.getByText('Verilerimi İndir'));
+    });
+    await act(async () => {
+      jest.advanceTimersByTime(0);
+    });
+
+    expect(mockApi.get).toHaveBeenCalledWith('/privacy/my-data/7');
+  });
+
+  // Tek bir 404/ağ hıçkırığı turu bitirmemeli — eskiden ilk hata poll'u sessizce
+  // öldürüyor, kullanıcı hiçbir geri bildirim almadan kalıyordu.
+  it('survives a transient status error and keeps polling', async () => {
+    jest.useFakeTimers();
+    mockApi.post.mockResolvedValue({ isSuccess: true, result: { requestId: 7 } });
+    mockApi.get
+      .mockRejectedValueOnce(new Error('network'))
+      .mockResolvedValue({ result: { status: 'Completed', fileUrl: 'https://x/a.zip' } });
+
+    const tree = setup();
+    await waitFor(() => tree.getByText('Verilerimi İndir'));
+
+    await act(async () => {
+      fireEvent.press(tree.getByText('Verilerimi İndir'));
+    });
+    await act(async () => {
+      jest.advanceTimersByTime(0);
+    });
+    await act(async () => {
+      jest.advanceTimersByTime(5000);
+    });
+    await act(async () => {});
+
+    expect(mockApi.get).toHaveBeenCalledTimes(2);
+    expect(Linking.openURL).toHaveBeenCalledWith('https://x/a.zip');
+  });
+
+  // Status "tamamlandı" ama bağlantı yok: beklemekle düzelmez, spinner'ı
+  // sonsuza kilitlemek yerine kullanıcıyı bildirim merkezine yolla.
+  it('stops with a notification hint when completed without a file URL', async () => {
+    jest.useFakeTimers();
+    mockApi.post.mockResolvedValue({ isSuccess: true, result: { requestId: 7 } });
+    mockApi.get.mockResolvedValue({ result: { status: 'Completed' } });
+
+    const tree = setup();
+    await waitFor(() => tree.getByText('Verilerimi İndir'));
+
+    await act(async () => {
+      fireEvent.press(tree.getByText('Verilerimi İndir'));
+    });
+    await act(async () => {
+      jest.advanceTimersByTime(0);
+    });
+    await act(async () => {});
+
+    expect(Alert.alert).toHaveBeenCalledWith(
+      'Bilgi',
+      'Verilerin hazır ama indirme bağlantısı gelmedi. Bildirimlerinden tekrar dene.',
+    );
+    expect(Linking.openURL).not.toHaveBeenCalled();
+  });
+
+  // Modal kapanınca poll bırakılır — bu modal kalıcı mount olduğu için takılı
+  // spinner tekrar açıldığında da dönmeye devam ediyordu.
+  it('stops polling when the modal is closed', async () => {
+    jest.useFakeTimers();
+    mockApi.post.mockResolvedValue({ isSuccess: true, result: { requestId: 7 } });
+    mockApi.get.mockResolvedValue({ result: { status: 'Pending' } });
+
+    const tree = setup();
+    await waitFor(() => tree.getByText('Verilerimi İndir'));
+
+    await act(async () => {
+      fireEvent.press(tree.getByText('Verilerimi İndir'));
+    });
+    await act(async () => {
+      jest.advanceTimersByTime(0);
+    });
+    const callsWhileOpen = mockApi.get.mock.calls.length;
+
+    tree.rerender(
+      <QueryClientProvider client={new QueryClient()}>
+        <SettingsModal visible={false} onClose={jest.fn()} />
+      </QueryClientProvider>,
+    );
+    await act(async () => {
+      jest.advanceTimersByTime(60000);
+    });
+
+    expect(mockApi.get).toHaveBeenCalledTimes(callsWhileOpen);
+  });
+
+  // Axios hatasında ham "Request failed with status code 400" yerine backend'in
+  // kendi mesajı gösterilmeli.
+  it('surfaces the backend message from a rejected request', async () => {
+    const err: any = new Error('Request failed with status code 429');
+    err.response = { data: { message: 'Günde bir kez talep edebilirsin.' } };
+    mockApi.post.mockRejectedValue(err);
+
+    const tree = setup();
+    await waitFor(() => tree.getByText('Verilerimi İndir'));
+
+    await act(async () => {
+      fireEvent.press(tree.getByText('Verilerimi İndir'));
+    });
+
+    expect(Alert.alert).toHaveBeenCalledWith('Hata', 'Günde bir kez talep edebilirsin.');
+  });
 });
 
 describe('SettingsModal — account deletion', () => {
