@@ -24,21 +24,23 @@ const tabIcon = (sfBase: string, materialFilled: string, materialOutlined: strin
       },
     });
 
-// Discover sekmesi uygulamaya özel alev glyph'ini kullanır (premium rozetiyle
-// aynı şekil, bkz. shared/components/icons/FlameGlyph). Native tab bar ikon
+// Discover ve Likes sekmeleri uygulamaya özel glyph kullanır: alev (premium
+// rozetiyle aynı şekil, bkz. shared/components/icons/FlameGlyph) ve super-like
+// kalbi (SuperLikeGlyph ile aynı, bkz. icons/HeartGlyph). Native tab bar ikon
 // olarak yalnız SF Symbol veya yerel resim kabul ediyor — React component /
-// SVG geçilemiyor — o yüzden glyph @1x/@2x/@3x PNG'ye rasterize edildi.
+// SVG geçilemiyor — o yüzden glyph'ler @1x/@2x/@3x PNG'ye rasterize edildi.
 // PNG'ler beyaz+alpha: iOS'ta `tinted` varsayılanı true olduğu için template
 // olarak aktif/pasif tint'i alır, Android'de tint uygulanmasa bile koyu tab
 // bar üzerinde görünür kalır.
 //
 // Diğer sekmelerdeki `name` / `name.fill` davranışının karşılığı: idle →
 // outline, focused → dolu. Outline elle çizilmedi, dolu siluetten mesafe
-// alanıyla türetildi (inner stroke, 1.7pt) — dış siluet ikisinde de aynı,
+// alanıyla türetildi (inner stroke, 2pt) — dış siluet ikisinde de aynı,
 // yani sekme değişince ikon zıplamaz.
 //
 // Boyutu/kalınlığı değiştirmek istersen PNG'leri üreten script'ten yeniden
-// bas; asset'leri elle ölçekleme, hinting bozulur.
+// bas (`node scripts/gen-tab-icons.js`); asset'leri elle ölçekleme, hinting
+// bozulur.
 const FLAME_TAB_FILLED = {
   type: "image" as const,
   source: require("../../assets/icons/flame-tab.png"),
@@ -46,6 +48,14 @@ const FLAME_TAB_FILLED = {
 const FLAME_TAB_OUTLINE = {
   type: "image" as const,
   source: require("../../assets/icons/flame-tab-outline.png"),
+};
+const HEART_TAB_FILLED = {
+  type: "image" as const,
+  source: require("../../assets/icons/heart-tab.png"),
+};
+const HEART_TAB_OUTLINE = {
+  type: "image" as const,
+  source: require("../../assets/icons/heart-tab-outline.png"),
 };
 
 export default function TabNavigator() {
@@ -72,6 +82,19 @@ export default function TabNavigator() {
         // Explicit tint → iOS 26 liquid glass content'a göre BG adapt etse bile
         // ikonlar tema modunun tersinde kalmaz (koyuda beyaz, açıkta siyah).
         tabBarInactiveTintColor: colors.tabBarInactive,
+        // Etiket puntosu ELLE veriliyor — boş bırakılırsa 14pt'ye kaçıyor.
+        // Zincir: tabBarLabelStyle boşken navigator fontFamily'yi tema
+        // fontundan ("System") dolduruyor, fontSize'ı undefined bırakıyor;
+        // screens'in RNSTabBarAppearanceCoordinator'ı "fontFamily geldi" diye
+        // RCTFont'a gidiyor ve size nil olduğu için RCT'nin 14pt varsayılanını
+        // basıyor — UIKit'in 10pt tab etiketinin yerine.
+        // Üstelik bu appearance iOS'ta yalnız `normal` duruma uygulanıyor
+        // (`selected` hiç set edilmiyor, seçili tint Tabs.Host'tan geliyor):
+        // seçili sekme 10pt kalıp diğer üçü 14pt oluyordu → yazılar alta
+        // kayıyor, "Mesajlar" kırpılıyordu.
+        // Android'e dokunmuyoruz: orada aynı değer small/large label size'a
+        // gidiyor ve Material varsayılanı (12sp) doğru olan.
+        tabBarLabelStyle: Platform.select({ ios: { fontSize: 10 } }),
         // Legacy fixed-tone UIBlurEffectStyle: iOS 26 liquid glass'ın
         // content-adaptation davranışını override etmeye en yakın değer.
         tabBarBlurEffect: colors.blurTint,
@@ -92,7 +115,12 @@ export default function TabNavigator() {
         component={LikesScreen}
         options={{
           title: t('likes.tabTitle'),
-          tabBarIcon: tabIcon("heart", "favorite", "favorite_border") as any,
+          // SF `heart`/`heart.fill` DEĞİL: beğeniler sekmesi de ürünün kendi
+          // kalbini taşıyor (SwipeCard'ın super-like butonu, Likes kartları,
+          // paket sheet'i hep aynı glyph). Discover'ın alevi gibi rasterize
+          // PNG çifti — idle outline, focused dolu.
+          tabBarIcon: ({ focused }: TabIconArgs) =>
+            focused ? HEART_TAB_FILLED : HEART_TAB_OUTLINE,
           tabBarBadge: likesBadge,
         }}
       />
