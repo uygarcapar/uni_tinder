@@ -177,7 +177,7 @@ export default function LoginScreen({ navigation }: NativeStackScreenProps<AuthS
                 disabled={loading}
                 className="self-center mt-3 py-1"
               >
-                <Text className="text-[14px] font-semibold text-center" style={{ color: colors.primary }}>
+                <Text className="text-[16px] font-semibold text-center" style={{ color: colors.text }}>
                   {t('auth.login.forgotPassword')}
                 </Text>
               </TouchableOpacity>

@@ -14,14 +14,12 @@ import {
 import { NativeStackScreenProps } from "@react-navigation/native-stack";
 import { OtpInput, type OtpInputRef } from "react-native-otp-entry";
 import { KeyboardStickyView } from "react-native-keyboard-controller";
-import { useForm, Controller } from "react-hook-form";
-import { zodResolver } from "@hookform/resolvers/zod";
-import { Eye, EyeOff, RotateCcw, Check, Circle } from "lucide-react-native";
+import { Eye, EyeOff, RotateCcw, InfoIcon } from "lucide-react-native";
 import { useTranslation } from "react-i18next";
 import type { RootStackParamList } from "@/shared/types/navigation";
 import { useAppDispatch, useAppSelector } from "@/shared/hooks/redux";
 import { authService } from "@/features/auth/authService";
-import { logout, setUserAndToken } from "@/features/auth/authSlice";
+import { logout } from "@/features/auth/authSlice";
 import {
   parsePasswordError,
   passwordErrorMessage,
@@ -31,16 +29,6 @@ import {
   RESEND_COOLDOWN_SECONDS,
 } from "@/features/auth/passwordErrors";
 import { OTP_LENGTH, extractOtp } from "@/features/auth/otpCode";
-import {
-  passwordSchema,
-  PasswordForm,
-  PASSWORD_RULES,
-  unmetPasswordRules,
-} from "@/shared/schemas/formSchemas";
-import {
-  markSelfPasswordChange,
-  clearSelfPasswordChangeMark,
-} from "@/shared/utils/sessionGuard";
 import SFIcon from "@/shared/components/SFIcon";
 import AnimatedPressable from "@/shared/components/AnimatedPressable";
 import RegisterBackButton from "@/features/auth/components/RegisterBackButton";
@@ -49,71 +37,54 @@ import { colors, ink } from "@/shared/theme/colors";
 import { devLog } from "@/shared/utils/devLog";
 
 /**
- * Ayarlar → Şifre Değiştir. İki akış, tek ekran:
+ * Ayarlar → E-posta Değiştir. İki adım, tek ekran — ChangePasswordScreen ile
+ * bilinçli olarak aynı iskelet (aynı sözleşme: mevcut şifre → 6 haneli kod).
  *
- *   A (change) : mevcut şifre → onay kodu → yeni şifre. Oturum DEVAM EDER,
- *                cevaptaki yeni token seti diske yazılır.
- *   B+C (reset): "mevcut şifremi hatırlamıyorum" kaçış yolu. Kimliği yalnız
- *                e-posta kodu kanıtlar; sonunda kullanıcı ÇIKIŞ YAPAR çünkü
- *                ResetPasswordWithCode yeni token döndürmüyor.
+ *   1 (verify) : mevcut şifre + yeni adres → kod YENİ adrese gider
+ *   2 (code)   : kod → adres değişir
  *
- * İki adım ayrı route değil aynı ekranın iki durumu: mevcut şifreyi navigation
- * param'ıyla taşımak onu Sentry'nin route breadcrumb'larına düşürürdü.
+ * ŞİFRE AKIŞINDAN AYRILDIĞI YER — ve bu ekranın var oluş sebebi: başarıda
+ * backend YENİ TOKEN SETİ VERMİYOR. Tüm refresh token'lar iptal ediliyor, yani
+ * kullanıcı MUTLAKA çıkış yapıp yeni adresiyle tekrar giriyor. "Kaydedildi"
+ * deyip ekranı kapatmak bir sonraki isteğin 401'iyle kullanıcıyı hiçbir
+ * açıklama olmadan login'e atardı.
  *
- * Kaçış yolunda e-posta KULLANICIYA SORULMAZ — oturumdaki adres kullanılır;
- * `ForgotPassword`/`ResetPasswordWithCode` uçlarında `[Authorize]` yok, giriş
- * yapmış kullanıcı da çağırabiliyor.
+ * Mevcut şifre navigation param'ıyla taşınmıyor (Sentry route breadcrumb'ları);
+ * iki adım aynı ekranın iç durumu.
  */
-export default function ChangePasswordScreen({
+export default function ChangeEmailScreen({
   navigation,
-}: NativeStackScreenProps<RootStackParamList, "ChangePassword">) {
+}: NativeStackScreenProps<RootStackParamList, "ChangeEmail">) {
   const { t } = useTranslation();
   const dispatch = useAppDispatch();
   const authUser = useAppSelector((s: any) => s.auth?.user);
-  const email = authUser?.email as string | undefined;
+  const currentEmail = authUser?.email as string | undefined;
 
-  const [mode, setMode] = useState<"change" | "reset">("change");
   const [step, setStep] = useState<"verify" | "code">("verify");
   const [currentPassword, setCurrentPassword] = useState("");
+  const [newEmail, setNewEmail] = useState("");
   const [code, setCode] = useState("");
   const [showPassword, setShowPassword] = useState(false);
   const [loading, setLoading] = useState(false);
   const [apiError, setApiError] = useState("");
-  // `PasswordErrorField` e-posta değiştirme akışının `newEmail`ini de taşıyor
-  // (aynı hata çözümleyici iki akışa da bakıyor). Bu ekranda o değer hiç
-  // üretilmiyor; tipi daraltmak yerine ortak tipi kullanıyoruz ki parser'a yeni
-  // bir alan eklendiğinde burası sessizce değil derleme zamanında konuşsun.
+  // Ortak tip: bu akışta `newPassword` hiç üretilmiyor ama parser'ın alan
+  // kümesini daraltmak, oraya yeni bir alan eklendiğinde burayı sessizce
+  // uyumsuz bırakırdı (bkz. ChangePasswordScreen'deki aynı not).
   const [errorField, setErrorField] = useState<PasswordErrorField | null>(null);
 
-  // Kod durumu. `codeBurned` UT-1012 sonrası: doğru kod bile artık çalışmaz,
-  // yeni kod istenene kadar gönderim kapalı.
+  // Kod durumu — şifre ekranıyla aynı sözleşme: 15 dakika ömür, 5 hatalı
+  // denemede kod yanıyor (UT-1012), sonrasında doğrusu bile çalışmıyor.
   const [attemptsLeft, setAttemptsLeft] = useState(CODE_MAX_ATTEMPTS);
   const [codeBurned, setCodeBurned] = useState(false);
   const [expiresIn, setExpiresIn] = useState(CODE_TTL_SECONDS);
-  // Aynı geri sayım iki işi görüyor: "tekrar gönder" kilidi ve 429 sonrası
-  // bekleme. `rateLimited` ikisini ayırır — sunucu reddettiyse yalnız tekrar
-  // gönderme değil ANA AKSİYON da kilitlenmeli (uçlar dakikada 5 istek).
   const [resendIn, setResendIn] = useState(0);
   const [rateLimited, setRateLimited] = useState(false);
 
   const otpRef = useRef<OtpInputRef>(null);
-  const confirmRef = useRef<TextInput>(null);
+  const emailRef = useRef<TextInput>(null);
 
-  const {
-    control,
-    handleSubmit,
-    watch,
-    formState: { errors },
-  } = useForm<PasswordForm>({
-    resolver: zodResolver(passwordSchema),
-    defaultValues: { password: "", confirmPassword: "" },
-  });
-
-  const newPassword = watch("password") ?? "";
-
-  // Tek saniyelik tick iki geri sayımı birden yürütüyor: kodun 15 dakikalık
-  // ömrü ve bekleme kilidi. Adımdan bağımsız çalışır — 429 ilk adımda da
-  // yenebilir, orada duran bir sayaç kullanıcıyı kilitli bırakırdı.
+  // Tek saniyelik tick iki geri sayımı birden yürütüyor: kodun ömrü ve bekleme
+  // kilidi. Adımdan bağımsız — 429 ilk adımda da yenebilir.
   useEffect(() => {
     const id = setInterval(() => {
       setExpiresIn((s) => (s > 0 ? s - 1 : 0));
@@ -125,12 +96,19 @@ export default function ChangePasswordScreen({
     return () => clearInterval(id);
   }, []);
 
+  // Damga BİLEREK unmount'ta temizlenmiyor. Başarı yolunda ekran tam da
+  // unmount olurken (Alert → logout → AuthNavigator) korumaya hâlâ ihtiyaç var:
+  // ForceLogout o anda yolda olabilir. Yarım kalan denemeler zaten risk
+  // değil — damgayı yalnız BAŞARILI onay bırakıyor, hata yolunda
+  // confirmEmailChange kendi catch'inde geri alıyor — ve pencere 20 sn'de
+  // kendiliğinden kapanıyor.
+
   const clearError = useCallback(() => {
     setApiError("");
     setErrorField(null);
   }, []);
 
-  /** Yeni kod geldi → sayaçlar sıfırdan başlar (backend de deneme sayacını sıfırlıyor). */
+  /** Yeni kod geldi → sayaçlar sıfırdan (backend de deneme sayacını sıfırlıyor). */
   const startCodeWindow = useCallback(() => {
     setAttemptsLeft(CODE_MAX_ATTEMPTS);
     setCodeBurned(false);
@@ -142,9 +120,9 @@ export default function ChangePasswordScreen({
   }, []);
 
   /**
-   * Hata gövdesini ekrana bağlar. `keepCode` gelen kodlarda (UT-1003/1010/1011)
-   * kod alanı TEMİZLENMEZ: reddedilen şifreydi, kod hâlâ geçerli — sıfırlamak
-   * kullanıcıyı boşuna yeni kod istemeye zorlardı.
+   * Hata gövdesini ekrana bağlar. Adres redleri (UT-1017/1018/1019) `newEmail`
+   * alanını işaret ediyor ve kodu TEMİZLEMİYOR — ikinci adımda dönerlerse
+   * kullanıcı yazdığı kodu kaybetmesin.
    */
   const applyFailure = useCallback(
     (err: unknown) => {
@@ -179,7 +157,7 @@ export default function ChangePasswordScreen({
     [navigation, t],
   );
 
-  // ── Adım A1 — mevcut şifreyi doğrula, kodu iste ──────────────────────────
+  // ── Adım 1 — şifreyi doğrula, kodu YENİ adrese iste ─────────────────────
   const handleRequestCode = async () => {
     Keyboard.dismiss();
     if (!currentPassword) {
@@ -187,77 +165,66 @@ export default function ChangePasswordScreen({
       setApiError(t("auth.password.change.validation.currentRequired"));
       return;
     }
+    const trimmed = newEmail.trim().toLowerCase();
+    if (!trimmed) {
+      setErrorField("newEmail");
+      setApiError(t("auth.email.change.validation.emailRequired"));
+      return;
+    }
+    // Şekil kontrolü yalnızca "@ var mı" seviyesinde: domain'in DESTEKLENEN bir
+    // üniversiteye ait olup olmadığına backend karar veriyor (UT-1019) ve
+    // kayıt defteri orada. Burada tahmin yürütmek, listeye yeni üniversite
+    // eklendiğinde istemciyi yanlış yere reddeden konuma sokardı.
+    if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(trimmed)) {
+      setErrorField("newEmail");
+      setApiError(t("auth.email.change.validation.emailInvalid"));
+      return;
+    }
+    // Backend de UT-1018 ile reddediyor; önden kesmek 5/dk'lık kotadan
+    // boşuna istek harcamamak için.
+    if (currentEmail && trimmed === currentEmail.trim().toLowerCase()) {
+      setErrorField("newEmail");
+      setApiError(t("auth.email.errors.sameAsCurrent"));
+      return;
+    }
+
     setLoading(true);
     clearError();
     try {
-      await authService.requestPasswordChangeCode(currentPassword);
+      await authService.requestEmailChangeCode(currentPassword, trimmed);
+      setNewEmail(trimmed);
       startCodeWindow();
-      setMode("change");
       setStep("code");
     } catch (err) {
-      devLog("RequestPasswordChangeCode error:", err);
+      devLog("RequestEmailChangeCode error:", err);
       applyFailure(err);
     } finally {
       setLoading(false);
     }
   };
 
-  // ── Kaçış yolu — mevcut şifre bilinmiyorsa B+C akışına aktar ─────────────
-  const startResetFlow = async () => {
-    if (!email) return;
-    setLoading(true);
-    clearError();
-    try {
-      // Kayıtsız adreste bile 200 döner (user enumeration koruması); oturumdaki
-      // adresi gönderdiğimiz için burada belirsizlik yok.
-      await authService.forgotPassword(email);
-      startCodeWindow();
-      setMode("reset");
-      setStep("code");
-    } catch (err) {
-      devLog("ForgotPassword (settings) error:", err);
-      applyFailure(err);
-    } finally {
-      setLoading(false);
-    }
-  };
-
-  const confirmResetFlow = () =>
-    Alert.alert(
-      t("auth.password.change.forgotCurrent.title"),
-      t("auth.password.change.forgotCurrent.message"),
-      [
-        { text: t("common.cancel"), style: "cancel" },
-        { text: t("common.continueButton"), onPress: startResetFlow },
-      ],
-    );
-
-  // ── Kod tekrar gönder ────────────────────────────────────────────────────
+  // ── Kod tekrar gönder ───────────────────────────────────────────────────
   const handleResend = async () => {
     if (resendIn > 0 || loading) return;
     setLoading(true);
     clearError();
     try {
-      if (mode === "change") {
-        await authService.requestPasswordChangeCode(currentPassword);
-      } else if (email) {
-        await authService.forgotPassword(email);
-      }
+      await authService.requestEmailChangeCode(currentPassword, newEmail);
       startCodeWindow();
       showInfoToast({
         message: t("auth.password.change.resendSuccess"),
         variant: "success",
       });
     } catch (err) {
-      devLog("Password code resend error:", err);
+      devLog("Email change code resend error:", err);
       applyFailure(err);
     } finally {
       setLoading(false);
     }
   };
 
-  // ── Adım A2 / C — kod + yeni şifre ───────────────────────────────────────
-  const handleSubmitNewPassword = handleSubmit(async ({ password }) => {
+  // ── Adım 2 — kodu onayla, sonra ÇIKIŞ ───────────────────────────────────
+  const handleConfirm = async () => {
     Keyboard.dismiss();
     if (codeBurned) {
       setErrorField("code");
@@ -273,62 +240,40 @@ export default function ChangePasswordScreen({
     setLoading(true);
     clearError();
     try {
-      if (mode === "change") {
-        const response: any = await authService.changePassword(
-          currentPassword,
-          password,
-          code,
-        );
-        // Token'ları authService diske yazdı; Redux'ı da hizala, yoksa bir
-        // sonraki refresh eski token'ı geri yazar. `result.user` şifre
-        // değişiminden etkilenmiyor — gelmezse mevcut kullanıcı korunur,
-        // undefined yazmak oturumu kullanıcısız bırakırdı.
-        const result = response?.result;
-        if (result?.accessToken) {
-          dispatch(
-            setUserAndToken({
-              user: result.user ?? authUser,
-              token: result.accessToken,
-              refreshToken: result.refreshToken,
-            }),
-          );
-        }
-        showInfoToast({
-          title: t("auth.password.change.successTitle"),
-          message: t("auth.password.change.successMessage"),
-          variant: "success",
-        });
-        navigation.goBack();
-        return;
-      }
+      const result = await authService.confirmEmailChange(newEmail, code);
 
-      // Sıfırlama akışı: backend tüm oturumları iptal ediyor ve YENİ TOKEN
-      // VERMİYOR. Damga, hub'dan gelecek ForceLogout'un araya jenerik bir
-      // toast sokmasını engelliyor — kapanışı bu ekran yönetiyor.
-      markSelfPasswordChange();
-      try {
-        await authService.resetPassword(email!, code, password);
-      } catch (err) {
-        clearSelfPasswordChangeMark();
-        throw err;
-      }
-      Alert.alert(
-        t("auth.password.reset.successTitle"),
-        t("auth.password.reset.successMessage"),
-        [{ text: t("common.ok"), onPress: () => dispatch(logout()) }],
-      );
+      // Üniversite değiştiyse bunu SÖYLEMEK gerekiyor: kullanıcının keşif
+      // havuzu komple değişti (aday havuzu düşürüldü). Sessizce yapılırsa
+      // kullanıcı ertesi gün "kimse çıkmıyor, uygulama bozuldu" diye döner.
+      const universityName = result?.universityName;
+      const message =
+        result?.universityChanged && universityName
+          ? t("auth.email.change.successWithUniversity", {
+              email: result?.newEmail ?? newEmail,
+              university: universityName,
+            })
+          : t("auth.email.change.successMessage", {
+              email: result?.newEmail ?? newEmail,
+            });
+
+      // Yeni token seti YOK — oturum bitti. Kapanışı bu ekran yönetiyor
+      // (damga sayesinde araya hub'ın jenerik toast'ı girmiyor); kullanıcı
+      // "Tamam"a basınca login'e düşüyor.
+      Alert.alert(t("auth.email.change.successTitle"), message, [
+        { text: t("common.ok"), onPress: () => dispatch(logout()) },
+      ]);
     } catch (err) {
-      devLog("Password submit error:", err);
+      devLog("ConfirmEmailChange error:", err);
       applyFailure(err);
     } finally {
       setLoading(false);
     }
-  });
+  };
 
   const handleBack = () => {
-    // Kod adımından geri = akışı baştan al. Kod sunucuda geçerli kalmaya devam
-    // eder, kullanıcı mevcut şifreyi düzeltip tekrar gelirse yeni kod ister.
-    if (step === "code" && mode === "change") {
+    // Kod adımından geri = adresi/şifreyi düzeltmeye dön. Kod sunucuda geçerli
+    // kalmaya devam eder; kullanıcı tekrar gelirse yeni kod ister.
+    if (step === "code") {
       setStep("verify");
       clearError();
       return;
@@ -336,13 +281,11 @@ export default function ChangePasswordScreen({
     navigation.goBack();
   };
 
-  const formError = errors.password?.message || errors.confirmPassword?.message;
   // Rate limit satırı canlı: donmuş bir "60 saniye sonra dene" metni,
   // kullanıcının ne zaman tekrar deneyebileceğini söylemiyor.
   const displayError = rateLimited
     ? t("auth.password.errors.rateLimited", { seconds: resendIn })
-    : formError || apiError;
-  const missingRules = unmetPasswordRules(newPassword);
+    : apiError;
   const submitDisabled = loading || rateLimited;
 
   return (
@@ -355,16 +298,18 @@ export default function ChangePasswordScreen({
         <TouchableWithoutFeedback onPress={Keyboard.dismiss}>
           <View className="flex-1 px-6 py-6 pt-0">
             <Text className="text-4xl font-bold mb-2" style={{ color: colors.text }}>
-              {t("auth.password.change.title")}
+              {t("auth.email.change.title")}
             </Text>
             <Text
               className="text-[18px] font-normal mb-8"
               style={{ color: colors.textSecondary }}
             >
-              {t("auth.password.change.description")}
+              {currentEmail
+                ? t("auth.email.change.description", { email: currentEmail })
+                : t("auth.email.change.descriptionNoEmail")}
             </Text>
 
-            <PasswordField
+            <Field
               label={t("auth.password.change.currentLabel")}
               placeholder={t("auth.password.change.currentPlaceholder")}
               value={currentPassword}
@@ -374,31 +319,68 @@ export default function ChangePasswordScreen({
               }}
               secure={!showPassword}
               onToggleSecure={() => setShowPassword((v) => !v)}
-              invalid={!!apiError}
+              invalid={errorField === "currentPassword"}
               editable={!loading}
+              returnKeyType="next"
+              onSubmitEditing={() => emailRef.current?.focus()}
+            />
+
+            <Field
+              inputRef={emailRef}
+              label={t("auth.email.change.newLabel")}
+              placeholder={t("auth.email.change.newPlaceholder")}
+              value={newEmail}
+              onChangeText={(v) => {
+                setNewEmail(v);
+                clearError();
+              }}
+              invalid={errorField === "newEmail"}
+              editable={!loading}
+              keyboardType="email-address"
               returnKeyType="go"
               onSubmitEditing={handleRequestCode}
             />
+
+            {/* Uyarı, işlem YAPILMADAN önce: kullanıcı çıkış yapacağını ve
+                üniversitesinin değişebileceğini kodu istemeden bilmeli. */}
+            <View
+              style={{
+                borderRadius: 24,
+                borderCurve: "continuous",
+                overflow: "hidden",
+                borderWidth: 0.5,
+                borderColor: colors.hairline,
+                padding: 16,
+                marginTop: 8,
+                flexDirection: "row",
+                alignItems: "flex-start",
+                gap: 10,
+              }}
+            >
+              <SFIcon
+                name="info.circle"
+                fallback={InfoIcon}
+                size={18}
+                color={colors.textSecondary}
+                strokeWidth={2}
+                weight="semibold"
+              />
+              <Text
+                style={{
+                  flex: 1,
+                  color: colors.textSecondary,
+                  fontSize: 13,
+                  lineHeight: 19,
+                }}
+              >
+                {t("auth.email.change.notice")}
+              </Text>
+            </View>
 
             {displayError ? (
               <Text className="text-center font-normal mt-4" style={{ color: colors.error }}>
                 {displayError}
               </Text>
-            ) : null}
-
-            {/* Kaçış yolu: mevcut şifre bu akıştaki kimlik kanıtının kendisi,
-                atlanamaz — kullanıcı sıfırlama akışına aktarılır. */}
-            {email ? (
-              <TouchableOpacity
-                activeOpacity={0.7}
-                onPress={confirmResetFlow}
-                disabled={loading}
-                className="mt-6 self-center"
-              >
-                <Text className="font-semibold" style={{ color: colors.primary }}>
-                  {t("auth.password.change.forgotCurrent.link")}
-                </Text>
-              </TouchableOpacity>
             ) : null}
           </View>
         </TouchableWithoutFeedback>
@@ -410,13 +392,16 @@ export default function ChangePasswordScreen({
           contentContainerStyle={{ paddingBottom: 24 }}
         >
           <Text className="text-4xl font-bold mb-2" style={{ color: colors.text }}>
-            {t("auth.password.change.codeTitle")}
+            {t("auth.email.change.codeTitle")}
           </Text>
+          {/* Kodun YENİ adrese gittiğini açıkça yazıyoruz: kullanıcı eski
+              gelen kutusunu bekleyip "kod gelmedi" diye döndüğünde akış
+              tıkanıyor. */}
           <Text
             className="text-[18px] font-normal mb-6"
             style={{ color: colors.textSecondary }}
           >
-            {t("auth.password.change.codeDescription", { email })}
+            {t("auth.email.change.codeDescription", { email: newEmail })}
           </Text>
 
           <View className="mb-3">
@@ -459,7 +444,7 @@ export default function ChangePasswordScreen({
             />
           </View>
 
-          {/* Kod ömrü + kalan deneme + tekrar gönder */}
+          {/* Kod ömrü + tekrar gönder */}
           <View className="flex-row items-center justify-center gap-3 mb-6">
             <Text className="text-[13px]" style={{ color: ink(0.6) }}>
               {expiresIn > 0
@@ -501,36 +486,6 @@ export default function ChangePasswordScreen({
             </Text>
           ) : null}
 
-          <PasswordField
-            label={t("auth.password.change.newLabel")}
-            placeholder={t("auth.password.change.newPlaceholder")}
-            control={control}
-            name="password"
-            secure={!showPassword}
-            onToggleSecure={() => setShowPassword((v) => !v)}
-            invalid={!!formError || errorField === "newPassword"}
-            editable={!loading}
-            onChanged={clearError}
-            returnKeyType="next"
-            onSubmitEditing={() => confirmRef.current?.focus()}
-          />
-
-          <PasswordField
-            inputRef={confirmRef}
-            label={t("auth.password.change.confirmLabel")}
-            placeholder={t("auth.password.change.confirmPlaceholder")}
-            control={control}
-            name="confirmPassword"
-            secure={!showPassword}
-            invalid={!!formError}
-            editable={!loading}
-            onChanged={clearError}
-            returnKeyType="go"
-            onSubmitEditing={handleSubmitNewPassword}
-          />
-
-          <PasswordRuleChecklist password={newPassword} missing={missingRules} />
-
           {displayError ? (
             <Text className="text-center font-normal mt-4" style={{ color: colors.error }}>
               {displayError}
@@ -542,7 +497,7 @@ export default function ChangePasswordScreen({
       <KeyboardStickyView offset={{ closed: 0, opened: 0 }}>
         <View className="px-6 pb-8 pt-4" style={{ backgroundColor: colors.bg }}>
           <AnimatedPressable
-            onPress={step === "verify" ? handleRequestCode : handleSubmitNewPassword}
+            onPress={step === "verify" ? handleRequestCode : handleConfirm}
             disabled={submitDisabled}
             style={{
               borderRadius: 999,
@@ -561,7 +516,7 @@ export default function ChangePasswordScreen({
               >
                 {step === "verify"
                   ? t("common.continueButton")
-                  : t("auth.password.change.submitButton")}
+                  : t("auth.email.change.submitButton")}
               </Text>
             )}
           </AnimatedPressable>
@@ -578,63 +533,37 @@ const formatMmSs = (totalSeconds: number) => {
 };
 
 /**
- * Şifre alanı — RegisterStep3'teki pill input'un yeniden kullanılabilir hâli.
- * `control` verilirse react-hook-form'a bağlanır, verilmezse kontrollü çalışır
- * (mevcut şifre alanı forma dahil değil: şeması yok, gizli tutulması gereken
- * tek değer o).
+ * Pill input — ChangePasswordScreen'deki PasswordField'ın react-hook-form'suz
+ * hâli. Bu ekranda form yok: iki alan da (şifre, adres) tek seferlik değerler,
+ * şemaya bağlanmaları bir şey kazandırmazdı.
  */
-function PasswordField({
+function Field({
   label,
   placeholder,
   value,
   onChangeText,
-  control,
-  name,
   secure,
   onToggleSecure,
   invalid,
   editable = true,
-  onChanged,
   inputRef,
+  keyboardType,
   returnKeyType,
   onSubmitEditing,
 }: {
   label: string;
   placeholder: string;
-  value?: string;
-  onChangeText?: (v: string) => void;
-  control?: any;
-  name?: "password" | "confirmPassword";
-  secure: boolean;
+  value: string;
+  onChangeText: (v: string) => void;
+  secure?: boolean;
   onToggleSecure?: () => void;
   invalid?: boolean;
   editable?: boolean;
-  onChanged?: () => void;
   inputRef?: React.RefObject<TextInput | null>;
+  keyboardType?: "email-address";
   returnKeyType?: "next" | "go";
   onSubmitEditing?: () => void;
 }) {
-  const renderInput = (v: string, onChange: (next: string) => void) => (
-    <TextInput
-      ref={inputRef as any}
-      style={{ flex: 1, paddingVertical: 16, fontSize: 18, color: colors.text }}
-      placeholder={placeholder}
-      placeholderTextColor={colors.textSecondary}
-      value={v}
-      onChangeText={(next) => {
-        onChange(next);
-        onChanged?.();
-      }}
-      secureTextEntry={secure}
-      autoCapitalize="none"
-      autoCorrect={false}
-      editable={editable}
-      returnKeyType={returnKeyType}
-      submitBehavior={returnKeyType === "next" ? "submit" : undefined}
-      onSubmitEditing={onSubmitEditing}
-    />
-  );
-
   return (
     <View className="mb-4">
       <Text
@@ -655,15 +584,22 @@ function PasswordField({
           paddingHorizontal: 16,
         }}
       >
-        {control && name ? (
-          <Controller
-            control={control}
-            name={name}
-            render={({ field }) => renderInput(field.value ?? "", field.onChange)}
-          />
-        ) : (
-          renderInput(value ?? "", onChangeText ?? (() => {}))
-        )}
+        <TextInput
+          ref={inputRef as any}
+          style={{ flex: 1, paddingVertical: 16, fontSize: 18, color: colors.text }}
+          placeholder={placeholder}
+          placeholderTextColor={colors.textSecondary}
+          value={value}
+          onChangeText={onChangeText}
+          secureTextEntry={secure}
+          autoCapitalize="none"
+          autoCorrect={false}
+          keyboardType={keyboardType}
+          editable={editable}
+          returnKeyType={returnKeyType}
+          submitBehavior={returnKeyType === "next" ? "submit" : undefined}
+          onSubmitEditing={onSubmitEditing}
+        />
         {onToggleSecure ? (
           <TouchableOpacity activeOpacity={0.7} onPress={onToggleSecure}>
             <View pointerEvents="none">
@@ -678,48 +614,6 @@ function PasswordField({
           </TouchableOpacity>
         ) : null}
       </View>
-    </View>
-  );
-}
-
-/**
- * Canlı kural listesi. Backend zayıf şifreyi UT-1010 ile ayrı raporluyor, yani
- * bu olmadan da doğru mesaj görünür — ama kullanıcı submit'e basmadan neyi
- * eksik yaptığını görsün ve 5/dk'lık kotadan boşuna istek harcanmasın.
- */
-function PasswordRuleChecklist({
-  password,
-  missing,
-}: {
-  password: string;
-  missing: readonly string[];
-}) {
-  const { t } = useTranslation();
-  if (!password) return null;
-
-  return (
-    <View className="mt-1 mb-2 gap-1.5">
-      {PASSWORD_RULES.map((rule) => {
-        const met = !missing.includes(rule.key);
-        return (
-          <View key={rule.key} className="flex-row items-center gap-2">
-            <SFIcon
-              name={met ? "checkmark.circle.fill" : "circle"}
-              fallback={met ? Check : Circle}
-              size={14}
-              color={met ? colors.success : ink(0.35)}
-              strokeWidth={2.5}
-              weight="bold"
-            />
-            <Text
-              className="text-[13px]"
-              style={{ color: met ? colors.success : ink(0.5) }}
-            >
-              {t(`auth.password.rules.${rule.key}`)}
-            </Text>
-          </View>
-        );
-      })}
     </View>
   );
 }

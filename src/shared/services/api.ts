@@ -1,8 +1,18 @@
 import axios, { AxiosRequestConfig } from 'axios';
 import { API_BASE_URL, API_ENDPOINTS } from '@/shared/constants/api';
-import { getRefreshToken, saveRefreshToken, saveAccessToken, clearAllTokens } from '@/shared/utils/tokenStorage';
+import {
+  getRefreshToken,
+  saveRefreshToken,
+  saveAccessToken,
+  clearAllTokens,
+  isTokenStoreDegraded,
+} from '@/shared/utils/tokenStorage';
 import { recordRequest } from '@/shared/debug/netTally';
-import { isSelfInflictedForceLogout, isSelfInflictedPasswordChange } from '@/shared/utils/sessionGuard';
+import {
+  isSelfInflictedForceLogout,
+  isSelfInflictedPasswordChange,
+  isSelfInflictedEmailChange,
+} from '@/shared/utils/sessionGuard';
 import { extractAccountBlock, emitAccountBlocked } from '@/shared/utils/accountBlock';
 import { devLog } from '@/shared/utils/devLog';
 import { getCurrentRouteName } from '@/shared/services/currentRoute';
@@ -294,8 +304,16 @@ const handleRefreshFailure = async (err: any, attempts: number): Promise<null> =
   // Aynısı kendi şifre değişikliğimiz için de geçerli: backend eski refresh
   // token'ı iptal etti, ChangePassword cevabındaki yeni set daha yazılmadı.
   // Pencerede uçan istekler düşer ama oturum ayakta kalır.
-  if (isSelfInflictedForceLogout() || isSelfInflictedPasswordChange()) {
-    devLog('↩️ Refresh fail yok sayıldı — kendi login/şifre penceremiz, eski token');
+  //
+  // E-posta değişikliğinde oturum ayakta KALMIYOR (o uç yeni token vermiyor) —
+  // ama çıkışı ChangeEmail ekranı yönetiyor. Buradan jenerik bir gerekçeyle
+  // düşürmek kullanıcıya yanlış mesajı gösterirdi.
+  if (
+    isSelfInflictedForceLogout() ||
+    isSelfInflictedPasswordChange() ||
+    isSelfInflictedEmailChange()
+  ) {
+    devLog('↩️ Refresh fail yok sayıldı — kendi login/şifre/e-posta penceremiz, eski token');
     return null;
   }
 

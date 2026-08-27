@@ -11,6 +11,8 @@ import {
 import {
   markSelfPasswordChange,
   clearSelfPasswordChangeMark,
+  markSelfEmailChange,
+  clearSelfEmailChangeMark,
 } from '@/shared/utils/sessionGuard';
 import { logoutRevenueCat } from '@/features/profile/subscriptionService';
 
@@ -170,6 +172,65 @@ export const authService = {
       return response;
     } catch (error) {
       clearSelfPasswordChangeMark();
+      throw error;
+    }
+  },
+
+  /**
+   * ADIM B1 — mevcut şifreyi doğrular ve onay kodunu YENİ adrese yollar.
+   *
+   * Kodun yeni adrese gitmesi tesadüf değil, akışın tamamının dayandığı nokta:
+   * kullanıcının o adrese gerçekten erişebildiğini kanıtlayan tek şey bu.
+   * (Eskiden e-posta `UpdateUser` gövdesinden doğrulamasız değiştirilebiliyordu;
+   * kullanıcı sahibi olmadığı bir adrese geçebiliyordu.)
+   *
+   * Mevcut şifre BURADA doğrulanıyor — yanlışsa (UT-1003) kod hiç gönderilmez,
+   * yani token'ı ele geçiren biri şifreyi bilmeden bu ucu mail yollatma aracı
+   * olarak kullanamaz. Adres kontrolleri de (UT-1017 kullanımda / UT-1018 aynı
+   * adres / UT-1019 desteklenmeyen üniversite domain'i) kod gönderilmeden önce
+   * yapılıyor, yani bu adımı geçmek "adres uygun" demek.
+   */
+  requestEmailChangeCode: async (currentPassword: string, newEmail: string) => {
+    return api.post(
+      API_ENDPOINTS.REQUEST_EMAIL_CHANGE_CODE,
+      { currentPassword, newEmail },
+      SKIP_429_RETRY,
+    );
+  },
+
+  /**
+   * ADIM B2 — kod + hedef adres.
+   *
+   * `newEmail` TEKRAR gönderiliyor çünkü kod {userId, hedef adres} çiftine
+   * bağlı: A adresi için alınan kod B adresine taşınmak için kullanılamaz.
+   * Adım 1'de geçen kontroller burada TEKRAR dönebilir (UT-1017/1018/1019) —
+   * kod 15 dakika geçerli, arada adresi başkası kapmış olabilir.
+   *
+   * ChangePassword'den kritik farkı: YENİ TOKEN SETİ DÖNMEZ. Backend tüm
+   * refresh token'ları iptal edip `ForceLogout` (reason: `email_changed`)
+   * yolluyor; çağıran taraf kullanıcıyı login'e götürmek ZORUNDA.
+   *
+   * Damga isteğin ÖNCESİNDE atılıyor: ForceLogout push'u sunucu tarafında
+   * cevap bize ulaşmadan çıkıyor, sonradan damgalamak yarışı kaybederdi.
+   *
+   * Dönen `result`: { newEmail, universityChanged, universityName }.
+   * `universityChanged` true ise kullanıcının üniversitesi — ve dolayısıyla
+   * keşif havuzu — komple değişti; çağıran bunu kullanıcıya söylemeli.
+   */
+  confirmEmailChange: async (newEmail: string, confirmationCode: string) => {
+    markSelfEmailChange();
+    try {
+      const response = await api.post(
+        API_ENDPOINTS.CONFIRM_EMAIL_CHANGE,
+        { newEmail, confirmationCode },
+        SKIP_429_RETRY,
+      );
+      // Pencereyi cevap anından yeniden başlat: istek 30sn'ye kadar sürebilir,
+      // ForceLogout ise cevaptan sonra da gecikmeli gelebilir.
+      markSelfEmailChange();
+      return (response as any)?.result ?? null;
+    } catch (error) {
+      clearSelfEmailChangeMark();
       throw error;
     }
   },

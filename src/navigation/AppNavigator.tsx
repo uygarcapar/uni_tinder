@@ -35,6 +35,7 @@ import { isTokenExpiringSoon } from '@/shared/utils/jwt';
 import {
   isSelfInflictedForceLogout,
   isSelfInflictedPasswordChange,
+  isSelfInflictedEmailChange,
   clearSelfLoginMark,
 } from '@/shared/utils/sessionGuard';
 import {
@@ -279,6 +280,11 @@ function MainNavigator() {
       <Stack.Screen
         name="ChangePassword"
         component={ChangePasswordScreen}
+        options={{ animation: 'slide_from_right' }}
+      />
+      <Stack.Screen
+        name="ChangeEmail"
+        component={ChangeEmailScreen}
         options={{ animation: 'slide_from_right' }}
       />
     </Stack.Navigator>
@@ -930,6 +936,29 @@ export default function AppNavigator() {
           return;
         }
 
+        // E-posta değişikliği tüm oturumları düşürüyor. Şifre değişikliğinden
+        // farkı: o cevapta yeni token seti veriyordu, bu VERMİYOR — yani işlemi
+        // yapan cihaz da mutlaka çıkıyor. Damganın işi çıkışı engellemek değil,
+        // sahibini belirlemek: ChangeEmail ekranı kendi mesajını (yeni adres +
+        // üniversite değiştiyse onun bilgisi) gösterip logout'u kendisi
+        // dispatch ediyor, araya jenerik bir toast girmemeli.
+        //
+        // Diğer cihazlarda damga yok → aşağıdaki metinle normal çıkış.
+        if (reason === 'email_changed') {
+          if (isSelfInflictedEmailChange()) {
+            console.warn('[auth] ForceLogout yok sayıldı — e-postayı bu cihaz değiştirdi');
+            return;
+          }
+          showInfoToast({
+            title: t('auth.session.emailChangedTitle'),
+            message: t('auth.session.emailChangedMessage'),
+            variant: 'error',
+          });
+          await realtimeService.disconnect().catch(() => {});
+          dispatch(logout());
+          return;
+        }
+
         // Yaptırım değil: e-posta yeniden doğrulaması isteniyor. Ayrı bir ekran
         // yok — çıkış yaptırıyoruz, tekrar giriş yapıldığında backend kullanıcıyı
         // isMailVerified=false döneceği için AuthNavigator zaten doğrulama
@@ -1195,7 +1224,10 @@ export default function AppNavigator() {
         return;
       }
       case 'Like':
-      case 'SuperLike': {
+      case 'SuperLike':
+      // Not da bir beğeni — hedefi Likes ekranı. Ayrı bir kart açmıyor:
+      // yorum zaten liker kartının içinde duruyor.
+      case 'Note': {
         // Bildirimden gelen kullanıcı o beğeniyi listede görmeyi bekliyor →
         // LikesScreen'in tazelik eşiğini ATLAT. Ekranın kendi focus/foreground
         // tazelemesi "30 sn'den eskiyse çek" diyor; kısa bir arka plan turundan

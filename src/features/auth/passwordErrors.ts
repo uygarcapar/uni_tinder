@@ -1,8 +1,15 @@
 /**
- * Şifre uçlarının hata gövdelerini tek bir şekle indirger.
+ * Kod onaylı hesap uçlarının hata gövdelerini tek bir şekle indirger.
  *
- * Dört uç (RequestPasswordChangeCode / ChangePassword / ForgotPassword /
- * ResetPasswordWithCode) hatayı ÜÇ FARKLI gövde şekliyle bildiriyor:
+ * Dört şifre ucu (RequestPasswordChangeCode / ChangePassword / ForgotPassword /
+ * ResetPasswordWithCode) ve iki e-posta değiştirme ucu (RequestEmailChangeCode /
+ * ConfirmEmailChange) buradan geçiyor. E-posta akışı ayrı bir modüle
+ * bölünmedi çünkü sözleşmenin tamamını paylaşıyor: aynı iki adımlı desen, aynı
+ * UT-1003 (mevcut şifre) / UT-1006 (kod) / UT-1012 (kod yandı) kodları, aynı
+ * 429/401/403 gövde şekilleri. Yalnızca adrese özgü üç kod (UT-1017/1018/1019)
+ * fazladan.
+ *
+ * Bu uçlar hatayı ÜÇ FARKLI gövde şekliyle bildiriyor:
  *
  *   400  → ResponseDto: { code: "UT-1006", message, action }
  *   403  → yaptırım gövdesi: `code` YOK, `errorCode` var (ban/askı/silme)
@@ -15,7 +22,11 @@
  */
 
 /** Hatanın hangi input'u işaret ettiği; null → forma değil genel satıra yaz. */
-export type PasswordErrorField = "currentPassword" | "newPassword" | "code";
+export type PasswordErrorField =
+  | "currentPassword"
+  | "newPassword"
+  | "code"
+  | "newEmail";
 
 export type PasswordFailure = {
   /** `UT-1006` gibi yapılandırılmış kod; bilinmiyorsa null. */
@@ -106,6 +117,15 @@ export function parsePasswordError(error: any): PasswordFailure {
     case "UT-1010":
     case "UT-1011":
       return { ...BASE, code, field: "newPassword", keepCode: true, serverMessage };
+    // E-posta değiştirme akışının adres redleri: kullanımda / mevcutla aynı /
+    // desteklenmeyen üniversite domain'i. Üçü de ADRESİ işaret ediyor, kodu
+    // değil — `keepCode` bu yüzden true: 2. adımda dönerlerse (kod 15 dakika
+    // geçerli, arada adresi başkası kapmış olabilir) girilmiş kodu silmek
+    // kullanıcıya hiçbir şey kazandırmaz, sadece yazdığını kaybettirir.
+    case "UT-1017":
+    case "UT-1018":
+    case "UT-1019":
+      return { ...BASE, code, field: "newEmail", keepCode: true, serverMessage };
     default:
       return { ...BASE, code, serverMessage };
   }
@@ -137,6 +157,9 @@ const MESSAGE_KEYS: Record<string, string> = {
   "UT-1011": "auth.password.errors.sameAsCurrent",
   "UT-1012": "auth.password.errors.codeBurned",
   "UT-1005": "auth.password.errors.sessionLost",
+  "UT-1017": "auth.email.errors.inUse",
+  "UT-1018": "auth.email.errors.sameAsCurrent",
+  "UT-1019": "auth.email.errors.unsupportedDomain",
 };
 
 /** Kod ekranındaki geri sayımların kaynağı — backend sözleşmesiyle aynı. */

@@ -14,6 +14,10 @@ export type RootStackParamList = {
   // ekranın iç durumu: mevcut şifreyi route param'ıyla taşımak onu Sentry'nin
   // navigation breadcrumb'larına düşürürdü.
   ChangePassword: undefined;
+  // Ayarlar → E-posta Değiştir. Şifre ekranıyla aynı gerekçe: mevcut şifre
+  // route param'ı olmuyor. Başarıda oturum kapanıyor (yeni token DÖNMÜYOR),
+  // yani bu ekrandan çıkış login'e — geri döndüğü yere değil.
+  ChangeEmail: undefined;
 };
 
 export type AuthStackParamList = {

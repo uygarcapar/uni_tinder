@@ -22,10 +22,12 @@ import {
   InfoIcon,
   ChevronRight,
   KeyRound,
+  Mail,
   LogOut,
   Sun,
   Moon,
   SunMoon,
+  Camera,
 } from "lucide-react-native";
 import SFIcon from "@/shared/components/SFIcon";
 import {
@@ -199,6 +201,16 @@ export default function SettingsModal({ visible, onClose }: any) {
   const handleChangePassword = () => {
     onClose?.();
     if (navigationRef.isReady()) navigationRef.navigate('ChangePassword');
+  };
+
+  // ── E-posta Değiştir ──────────────────────────────────────────────────────
+  //
+  // Şifre değiştirmeyle aynı gerekçe (sheet önce kapanır, navigationRef).
+  // Satırın altında mevcut adres gösteriliyor: kullanıcı hangi adresten
+  // hangisine geçtiğini görmeden bu akışa girmemeli.
+  const handleChangeEmail = () => {
+    onClose?.();
+    if (navigationRef.isReady()) navigationRef.navigate('ChangeEmail');
   };
 
   // ── Çıkış Yap ─────────────────────────────────────────────────────────────
@@ -433,6 +445,34 @@ export default function SettingsModal({ visible, onClose }: any) {
         title={t('settings.account.title')}
         subtitle={t('settings.account.subtitle')}
       />
+
+      {/* E-posta Değiştir */}
+      <TouchableOpacity
+        onPress={handleChangeEmail}
+        activeOpacity={0.8}
+        style={{
+          borderRadius: 36,
+          borderCurve: "continuous",
+          overflow: "hidden",
+          borderWidth: 0.5,
+          borderColor: colors.hairline,
+          flexDirection: "row",
+          alignItems: "center",
+          justifyContent: "space-between",
+          padding: 16,
+          paddingHorizontal: 20,
+          marginBottom: 8,
+        }}
+      >
+        <View style={{ flexDirection: "row", alignItems: "center", gap: 10, flex: 1 }}>
+          <View style={{ flex: 1 }}>
+            <Text style={{ color: colors.text, fontSize: 15, fontWeight: "500" }}>
+              {t('settings.changeEmail')}
+            </Text>
+          </View>
+          <SFIcon name="envelope" fallback={Mail} size={18} color={colors.text} strokeWidth={1.5} style={{ pointerEvents: "none" }} />
+        </View>
+      </TouchableOpacity>
 
       {/* Şifre Değiştir */}
       <TouchableOpacity

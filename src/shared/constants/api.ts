@@ -22,7 +22,21 @@ export const API_ENDPOINTS = {
   VERIFY_EMAIL_CODE: "/api/user/verifyemailwithcode",
   RESEND_VERIFICATION: "/api/user/resendverificationcode",
   GET_USER: "/api/user/GetUser",
+  // KULLANMAYIN — isim değiştirmenin doğru yolu UpdateProfile (`DisplayName`).
+  // Bu uç `Name`i yalnız Identity'deki FirstName'e yazıyor, KARTTA GÖRÜNEN isim
+  // (UserProfile.DisplayName) değişmiyor. Gövdedeki `Email` ise 2026-08-22'den
+  // beri sessizce YOK SAYILIYOR (400 dönmez) — e-posta artık kod onaylı iki
+  // adımlı akışla değişiyor, bkz. REQUEST_EMAIL_CHANGE_CODE.
+  // Yalnızca Gender / PhoneNumber gibi Identity alanları için düşünülebilir.
   UPDATE_USER: "/api/user/UpdateUser",
+  // E-posta değiştirme İKİ ADIMLI — şifre değiştirmeyle aynı desen: önce bu uç
+  // mevcut şifreyi doğrulayıp kodu YENİ adrese yollar (adresin sahipliğini
+  // kanıtlayan tek şey bu), sonra ConfirmEmailChange kodu alır.
+  //
+  // ŞİFRE DEĞİŞTİRMEDEN AYRILDIĞI YER: başarıda YENİ TOKEN SETİ DÖNMEZ. Tüm
+  // refresh token'lar iptal edilir ve çağıran taraf login'e gitmek zorundadır.
+  REQUEST_EMAIL_CHANGE_CODE: "/api/user/RequestEmailChangeCode",
+  CONFIRM_EMAIL_CHANGE: "/api/user/ConfirmEmailChange",
   // Şifre değiştirme İKİ ADIMLI: önce bu uç mevcut şifreyi doğrulayıp maile
   // 6 haneli onay kodu yollar, sonra ChangePassword kodu + yeni şifreyi alır.
   // Mevcut şifre 1. adımda doğrulandığı için yanlış şifreyle kod hiç gitmez.
