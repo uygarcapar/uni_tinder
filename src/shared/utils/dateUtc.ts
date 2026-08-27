@@ -14,8 +14,13 @@
  *
  * (Backend kontratı: frontend_chat_full_flow.md §8.3)
  *
- * Tüm yardımcılar IDEMPOTENT'tir: Z/offset taşıyan string'e dokunmazlar. Backend
- * ileride `Z` eklemeye başlarsa bu katman sessizce no-op'a döner.
+ * Tüm yardımcılar IDEMPOTENT'tir: Z/offset taşıyan string'e dokunmazlar.
+ *
+ * DURUM (2026-08-22): backend `Z` eklemeye BAŞLADI (tüm `DateTime` alanları),
+ * yani bu katman artık no-op — öngörüldüğü gibi sessizce devre dışı kaldı.
+ * Silmedik: sözleşme dışı/eski damgalara karşı ucuz bir emniyet. Koşulsuz hâle
+ * getirmek (her string'e `Z` eklemek) kaymayı ters yöne çevirir — yapma.
+ * Kardeşi: shared/utils/backendDate.ts (aynı iş, abonelik/kota tarafı).
  */
 
 const HAS_OFFSET = /(?:[Zz]|[+-]\d{2}:?\d{2})$/;

@@ -1,8 +1,15 @@
 /**
  * Backend zaman damgalarını GÜVENLE ayrıştırılabilir hâle getirir.
  *
- * Sorun: backend (.NET) tarih alanlarını çoğu yerde offset'siz yolluyor —
- * `"2026-08-21T12:06:16"`. Değer UTC ama bunu string söylemiyor ve JS
+ * DURUM (2026-08-22): backend artık TÜM `DateTime` alanlarını `Z` ekiyle
+ * yolluyor (EF `DateTimeKind` normalizasyonu). Yani bu katman bugün pratikte
+ * NO-OP — ama silinmedi: girdi ağır ve sözleşme dışı damgalar (üçüncü parti
+ * payload, cache'ten okunan eski kayıt, yeni endpoint) hâlâ offset'siz
+ * gelebiliyor ve maliyeti sessiz.
+ *
+ * Neden vardı: .NET tarafında SQL Server `datetime2` `Kind` saklamıyor, EF
+ * `Unspecified` materialize ediyor, System.Text.Json da `Z` basmıyordu —
+ * `"2026-08-21T12:06:16"`. Değer UTC ama string bunu söylemiyor ve JS
  * spesifikasyonu offset TAŞIMAYAN date-time formlarını YEREL SAAT sayıyor
  * (offset'siz TARİH formu — `"2026-08-21"` — ise UTC sayılır; tutarsızlık
  * dilin kendisinde). UTC+3'te sonuç 3 saatlik sessiz kayma.
@@ -13,7 +20,8 @@
  * `status isPremium=true` satırının hemen altındaki `reconcile-uyuşmazlık
  * rc=true · backend=false` satırı buydu (ve her turda gereksiz `/reconcile`).
  *
- * Kural: offset yoksa UTC kabul et ve `Z` ekle. Offset varsa dokunma.
+ * Kural: offset yoksa UTC kabul et ve `Z` ekle. Offset varsa DOKUNMA — bu
+ * koşul kalkarsa (koşulsuz `x + "Z"`, elle `+3 saat`) kayma ters yöne döner.
  */
 
 /** `Z`, `+03:00` veya `+0300` ile biten damgalar zaten kesin. */
