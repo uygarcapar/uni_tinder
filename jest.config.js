@@ -2,6 +2,12 @@
 module.exports = {
   preset: '@react-native/jest-preset',
 
+  // worklets'in kendi resolver'ı: `.native` uzantılarını eleyip NativeWorklets
+  // yerine JS implementasyonunu çözüyor. Olmazsa reanimated'ın jest mock'u
+  // (jest.setup.ts) native köprüyü başlatmaya çalışıp "Native part of Worklets
+  // doesn't seem to be initialized" ile patlıyor.
+  resolver: require.resolve('react-native-worklets/jest/resolver.js'),
+
   transform: {
     '^.+\\.[jt]sx?$': [
       'babel-jest',
@@ -22,6 +28,10 @@ module.exports = {
       '@gorhom/bottom-sheet',
       'react-native',
       'react-native-reanimated',
+      // reanimated'ın jest mock'u (src/mock.ts) worklets'i import ediyor ve o
+      // paket ESM-only. Listede olmazsa reanimated'a DOĞRUDAN dokunan her
+      // test suite'i "Cannot use import statement outside a module" ile düşer.
+      'react-native-worklets',
       'react-native-gesture-handler',
       'react-native-safe-area-context',
       'nativewind',

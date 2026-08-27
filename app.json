@@ -44,8 +44,21 @@
         }
       ],
       "expo-status-bar",
-      "expo-audio",
+      [
+        "expo-audio",
+        {
+          "microphonePermission": "Sesli mesaj gönderebilmen için mikrofon erişimine izin vermen gerekir."
+        }
+      ],
       "expo-image",
+      [
+        "expo-image-picker",
+        {
+          "photosPermission": "Profil fotoğraflarını seçebilmen için galeri erişimine izin vermen gerekir.",
+          "cameraPermission": "Profil fotoğrafını anında çekebilmen için kamera erişimine izin vermen gerekir.",
+          "microphonePermission": false
+        }
+      ],
       "@react-native-firebase/app",
       "@react-native-firebase/messaging",
       [
@@ -107,7 +120,8 @@
             "./assets/fonts/Duckie-regular.ttf"
           ]
         }
-      ]
+      ],
+      "expo-video"
     ],
     "web": {
       "favicon": "./assets/favicon.png"

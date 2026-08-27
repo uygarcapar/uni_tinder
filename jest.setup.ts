@@ -17,6 +17,8 @@ jest.mock('expo-notifications', () => ({
   getPermissionsAsync: jest.fn(async () => ({ status: 'denied' })),
   requestPermissionsAsync: jest.fn(async () => ({ status: 'denied' })),
   scheduleNotificationAsync: jest.fn(async () => 'id'),
+  dismissAllNotificationsAsync: jest.fn(async () => {}),
+  setBadgeCountAsync: jest.fn(async () => true),
   addNotificationResponseReceivedListener: jest.fn(() => ({ remove: jest.fn() })),
   AndroidImportance: { HIGH: 4 },
 }));
@@ -63,6 +65,20 @@ jest.mock('expo-network', () => ({
   addNetworkStateListener: jest.fn(() => ({ remove: jest.fn() })),
 }));
 jest.mock('expo-blur', () => ({ BlurView: 'BlurView' }));
+// WelcomeScreen arka plan videosu — native player jest'te yok, hook sahte bir
+// player döndürüp VideoView host component olarak render edilir.
+jest.mock('expo-video', () => ({
+  VideoView: 'VideoView',
+  useVideoPlayer: jest.fn(() => ({
+    play: jest.fn(),
+    pause: jest.fn(),
+    replay: jest.fn(),
+    release: jest.fn(),
+    loop: false,
+    muted: false,
+    audioMixingMode: 'auto',
+  })),
+}));
 jest.mock('expo-symbols', () => ({ SymbolView: 'SymbolView' }));
 jest.mock('expo-linear-gradient', () => ({ LinearGradient: 'LinearGradient' }));
 // transform allowlist dışında; host component olarak mock'lanınca maskeli
@@ -74,6 +90,57 @@ jest.mock('@react-native-masked-view/masked-view', () => ({
 jest.mock('expo-image', () => {
   const RN = require('react-native');
   return { Image: RN.Image };
+});
+// Foto seçimi/kırpması native modül gerektiriyor. Varsayılan "iptal edildi":
+// bir suite gerçekten seçim akışını test ediyorsa mock'u kendi başında ezer.
+jest.mock('expo-image-picker', () => ({
+  launchImageLibraryAsync: jest.fn(async () => ({ canceled: true, assets: null })),
+  launchCameraAsync: jest.fn(async () => ({ canceled: true, assets: null })),
+  getCameraPermissionsAsync: jest.fn(async () => ({ granted: true, canAskAgain: true, status: 'granted' })),
+  requestCameraPermissionsAsync: jest.fn(async () => ({ granted: true, canAskAgain: true, status: 'granted' })),
+}));
+jest.mock('expo-image-manipulator', () => ({
+  ImageManipulator: {
+    manipulate: jest.fn(() => ({
+      crop: jest.fn().mockReturnThis(),
+      resize: jest.fn().mockReturnThis(),
+      renderAsync: jest.fn(async () => ({
+        saveAsync: jest.fn(async () => ({ uri: 'file:///cropped.jpg', width: 900, height: 1200 })),
+        release: jest.fn(),
+      })),
+      release: jest.fn(),
+    })),
+  },
+  SaveFormat: { JPEG: 'jpeg', PNG: 'png', WEBP: 'webp' },
+}));
+jest.mock('expo-file-system', () => {
+  class MockFile {
+    // Varsayılan: indirme başarılı ve hedef dosyanın kendisini döner (gerçek
+    // API de indirilen File'ı döndürüyor). Hata yolunu test eden suite'ler
+    // `File.downloadFileAsync.mockRejectedValueOnce` ile eziyor.
+    static downloadFileAsync = jest.fn(async (_url: string, destination: any) => destination);
+    uri: string;
+    exists = true;
+    constructor(...parts: any[]) {
+      this.uri = parts.map((p) => (typeof p === 'string' ? p : p?.uri ?? '')).join('/');
+    }
+    move = jest.fn(async () => {});
+    delete = jest.fn();
+  }
+  class MockDirectory {
+    uri: string;
+    exists = true;
+    constructor(...parts: any[]) {
+      this.uri = parts.map((p) => (typeof p === 'string' ? p : p?.uri ?? '')).join('/');
+    }
+    create = jest.fn();
+    list = jest.fn(() => []);
+  }
+  return {
+    File: MockFile,
+    Directory: MockDirectory,
+    Paths: { document: { uri: 'file:///documents' }, cache: { uri: 'file:///caches' } },
+  };
 });
 jest.mock('expo-secure-store', () => ({
   getItem: jest.fn(() => null),
