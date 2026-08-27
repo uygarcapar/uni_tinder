@@ -1,5 +1,6 @@
 import api from "@/shared/services/api";
 import { API_ENDPOINTS } from "@/shared/constants/api";
+import { resolveCardAge } from "./cardPrivacy";
 import type { PaywallType } from "@/shared/types";
 
 /**
@@ -67,7 +68,9 @@ export async function fetchMissedMatches(
       id: `mm_${p.profileId ?? p.userId}`,
       userId: p.userId,
       name: p.displayName ?? "",
-      age: p.age ?? null,
+      // Gizli yaş `0` olarak geliyor, `?? null` onu yakalamıyor — bkz.
+      // cardPrivacy.resolveCardAge.
+      age: resolveCardAge(p),
       universityName: p.universityName || "",
       mainPhoto: p.photos?.[0] || "",
       likedAt: p.likedMeAt ?? null,
@@ -83,13 +86,21 @@ export async function fetchMissedMatches(
 export type RecoverOutcome =
   /** 200 — Pass → Like dönüştü, eşleşme oluşuyor. */
   | { kind: "recovered"; message: string | null; isMatch: boolean }
-  /** 403 — günlük kota doldu, `showPaywall: true`. */
+  /**
+   * 403 — kurtarma hakkı bitti, `showPaywall: true`.
+   *
+   * 2026-08-22'den beri PREMIUM'da da bu dala düşüyor: kurtarma satın
+   * alınabilir bir ürün olduğu için premium'un "satacak bir şey yok" istisnası
+   * kalktı (eskiden 400 + `showPaywall:false` dönüyordu). Yani bu dal artık
+   * "abonelik sat" değil "paket sat" anlamına geliyor; ayrım `stats.isPremium`
+   * ile yapılır (bkz. LikesScreen).
+   */
   | { kind: "paywall"; message: string | null; paywallType: PaywallType | null }
   /**
-   * 400 — kota HARCANMADAN reddedildi: bu kişiyi pas geçmemişsin (zaten
-   * kurtarılmış), pas 30 günden eski, kullanıcı yok, ya da premium kullanıcının
-   * kotası doldu (`showPaywall:false` → paywall değil düz mesaj). Hepsinde
-   * yapılacak şey aynı: mesajı göster + listeyi tazele.
+   * 400 — hak HARCANMADAN reddedildi: bu kişiyi pas geçmemişsin (zaten
+   * kurtarılmış), pas 30 günden eski, kullanıcı yok, ya da çift artık uygun
+   * değil (engelleme). Premium'un tükenmiş kotası bu listeden ÇIKTI — o durum
+   * artık 403. Hepsinde yapılacak şey aynı: mesajı göster + listeyi tazele.
    */
   | { kind: "rejected"; message: string | null }
   /** 401 / 5xx / ağ — geçici, kullanıcı tekrar deneyebilir. */

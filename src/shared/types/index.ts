@@ -256,6 +256,25 @@ export type ResponseCode =
   | "UT-6101" // SuperLike/Redeem — webhook henüz inmedi (GEÇİCİ, tek retry'lık durum)
   | "UT-6102" // SuperLike/Redeem — ürün backend map'inde tanımlı değil (KALICI)
   | "UT-6103" // SuperLike/Redeem — transaction başka hesaba ait (KALICI)
+  // Recovery/Redeem — UT-61xx'in birebir aynısı, AYRI aile. Backend çakışmayı
+  // testle koruyor: iki ürünün webhook'u aynı boruyu kullandığı için hangi
+  // paketin beklendiği ancak koddan ayırt edilebiliyor.
+  | "UT-6201" // Recovery/Redeem — webhook henüz inmedi (GEÇİCİ)
+  | "UT-6202" // Recovery/Redeem — ürün tanımlı değil (KALICI)
+  | "UT-6203" // Recovery/Redeem — transaction başka hesaba ait (KALICI)
+  // Not (yorumlu beğeni) — UT-64xx. UT-63xx İSTENMİŞTİ ama o aile 2026-08-25'te
+  // foto moderasyonuna verilmişti; backend not ailesini 2026-08-26'da UT-64xx'e
+  // taşıdı (`9874f4d`). 640x gönderim, 641x redeem.
+  | "UT-6401" // Note — bakiye yok (402, satın alma sheet'i açılır)
+  | "UT-6402" // Note — yorum boş ya da sınırı aşıyor
+  | "UT-6403" // Note — hedef geçersiz (foto index'i / promptKey)
+  | "UT-6404" // Note — bu kullanıcıya zaten swipe atılmış (kredi HARCANMAZ)
+  | "UT-6405" // Note — hedef kullanıcı erişilemez (kredi HARCANMAZ)
+  | "UT-6406" // Note — yorum moderasyondan geçmedi
+  | "UT-6407" // Note — suistimal freni, 429 (kredi HARCANMAZ)
+  | "UT-6411" // Note/Redeem — webhook henüz inmedi (GEÇİCİ)
+  | "UT-6412" // Note/Redeem — ürün tanımlı değil (KALICI)
+  | "UT-6413" // Note/Redeem — transaction başka hesaba ait (KALICI)
   | (string & {}); // forward-compat: bilinmeyen kodlar string olarak geçer
 
 export type PaywallType =
@@ -437,23 +456,41 @@ export interface SwipeStats {
   remainingUndos: number | null;
   undoCountResetAt: string | null;
   /**
-   * Kaçırılan eşleşme kurtarma hakkı — GÜNLÜK (free 2 / premium 5, backend
-   * `SwipeLimits:*`'ten). Premium'da da gerçek sayı gelir; `-1` (sınırsız)
-   * konvansiyonu bu alanda YOK.
+   * Kaçırılan eşleşme kurtarma bakiyesi — tier kotası + satın alınan kredi
+   * TOPLAMI (SuperLike'ın `superLikesRemaining`i ile aynı desen).
+   *
+   * 2026-08-22'de GÜNLÜK olmaktan çıktı: free'de kota 0 (yalnız satın alınan
+   * kredi), premium'da tier başına 1/2/5 ve abonelik döngüsüyle (7/30/365 gün)
+   * yenileniyor. Alan adı ve tipi korunuyor — güncellememiş istemciler doğru
+   * toplamı okumaya devam ediyor.
    */
   remainingMissedMatchRecovery: number | null;
+  /** Yalnız tier kotasından kalan (krediyi kapsamaz). */
+  quotaRecoveryRemaining: number | null;
+  /** Satın alınmış, SÜRESİZ kredi. Döngü yenilenmesinde sıfırlanmaz. */
+  purchasedRecoveries: number | null;
   /**
-   * Günlük tavan (free 2 / premium 5). Diğer tavanlardan FARKLI: `-1`
-   * (sınırsız) ASLA dönmez, premium de sonlu kotaya tabi.
+   * Tier tavanı — free 0, premium 1/2/5. `-1` (sınırsız) ASLA dönmez.
+   *
+   * ⚠️ Bakiye tavanı DEĞİL: `remainingMissedMatchRecovery > bu değer` artık
+   * NORMAL (satın alınan kredi, ya da yıllıktan aylığa düşen kullanıcının eski
+   * kotası). Payda tek yerden çözülüyor — bkz. discover/recoveryQuota.ts.
    */
   dailyMissedMatchRecoveryLimit: number | null;
   /** Kaçırılan eşleşme penceresi (gün, backend config'i — varsayılan 30). */
   missedMatchLookbackDays: number | null;
-  /** Kotanın en son sıfırlandığı an (GEÇMİŞ). İleri sayaç için değil. */
+  /** Döngünün en son başladığı an (GEÇMİŞ). İleri sayaç için değil. */
   missedMatchRecoveryResetAt: string | null;
-  /** Bir sonraki UTC gün dönümü — sentinel (`9999-12-31`) dönmez. */
+  /**
+   * Döngü bitişi. Free'de artık SENTİNEL (`9999-12-31`) — "asla yenilenmez";
+   * quotaFormat.resolveResetSeconds sentinel'i UNLIMITED'a çeviriyor.
+   */
   nextMissedMatchRecoveryResetAt: string | null;
-  /** 0…86400 arası; `-1` ("asla yenilenmez") dönmez. */
+  /**
+   * Döngü bitişine kalan saniye. Free'de `-1` = UNLIMITED sentinel'i ("asla
+   * yenilenmez"), premium'da gerçek geri sayım. Günlük kota kalktığı için üst
+   * sınır artık 86400 DEĞİL — yıllık aboneye 365 güne kadar çıkabiliyor.
+   */
   missedMatchRecoveryResetInSeconds: number | null;
   // Tavanlar (backend SwipeLimitsOptions). -1 = sınırsız, null = backend
   // henüz göndermiyor. Free'de weeklySuperLikeLimit lifetime kotayı ifade

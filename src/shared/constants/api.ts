@@ -83,11 +83,18 @@ export const API_ENDPOINTS = {
   SWIPE_UNDO: "/api/swipe/Undo",
   // Kaçırılan eşleşme = beni beğenmiş ama benim pass'ladığım kullanıcı
   // (30 günlük pencere, SwipeLimits:MissedMatchLookbackDays). Liste ucu premium
-  // gating'e TABİ DEĞİL — kota yalnız Recover aksiyonunda (free 2/gün, premium
-  // 5/gün). Recover gerçek HTTP status kullanıyor: 200 / 403 (kota+paywall) /
-  // 400 (diğer tüm retler). Bkz. missedMatchRecovery.ts.
+  // gating'e TABİ DEĞİL — kota yalnız Recover aksiyonunda. 2026-08-22'den beri
+  // kota GÜNLÜK DEĞİL: free'de 0 (yalnız satın alınan kredi), premium'da tier
+  // başına 1/2/5 ve abonelik döngüsüyle yenileniyor. Recover gerçek HTTP status
+  // kullanıyor: 200 / 403 (kota+paywall, artık PREMIUM'da da) / 400 (diğer tüm
+  // retler). Bkz. missedMatchRecovery.ts.
   SWIPE_MISSED_MATCHES: "/api/swipe/MissedMatches",
   SWIPE_RECOVER_MISSED_MATCH: "/api/swipe/RecoverMissedMatch",
+  // Consumable kurtarma paketinin krediye çevrilmesi — SuperLike/Redeem ile
+  // birebir aynı sözleşme, AYRI hata kodu ailesi (UT-62xx). Kuyruk anahtarı da
+  // ayrı olmak zorunda: aynı MMKV anahtarını paylaşan iki kuyruk birbirinin
+  // isteğini flush eder (bkz. consumableRedeem.ts).
+  SWIPE_RECOVERY_REDEEM: "/api/swipe/Recovery/Redeem",
   SWIPE_FILTERS: "/api/swipe/Filters",
   SWIPE_UPDATE_FILTERS: "/api/swipe/UpdateFilters",
 

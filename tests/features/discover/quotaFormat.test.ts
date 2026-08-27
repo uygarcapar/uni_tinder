@@ -6,7 +6,11 @@
  *      parse edilip ekrana basılmamalı.
  */
 
-import { resolveResetSeconds, formatResetTime } from '@/features/discover/quotaFormat';
+import {
+  resolveResetSeconds,
+  formatResetTime,
+  formatResetDuration,
+} from '@/features/discover/quotaFormat';
 import { UNLIMITED } from '@/shared/constants/limits';
 
 const NOW = Date.parse('2026-08-11T12:00:00Z');
@@ -90,6 +94,40 @@ describe('formatResetTime', () => {
     );
     expect(formatResetTime(23 * 3600, t)).toBe(
       'discover.swipe.resetHoursMinutes:{"h":23,"m":0}',
+    );
+  });
+});
+
+/**
+ * Aynı eşikler, ama fiilsiz metinlerle: bunlar "{{time}} sonra yenilenir"
+ * kalıbının içine giriyor. Hazır cümle dönen anahtarlardan (reset*) birine
+ * kaymak, ekrana "Renews in Resets in 30d" yazan hatayı geri getirir.
+ */
+describe('formatResetDuration', () => {
+  it('renders nothing for "never resets" or a lapsed countdown', () => {
+    expect(formatResetDuration(UNLIMITED, t)).toBeNull();
+    expect(formatResetDuration(0, t)).toBeNull();
+    expect(formatResetDuration(null, t)).toBeNull();
+  });
+
+  it('uses verb-free keys so the wrapper supplies the verb', () => {
+    expect(formatResetDuration(30 * 24 * 3600, t)).toBe(
+      'discover.swipe.durationDays:{"d":30}',
+    );
+    expect(formatResetDuration(7320, t)).toBe(
+      'discover.swipe.durationHoursMinutes:{"h":2,"m":2}',
+    );
+    expect(formatResetDuration(120, t)).toBe(
+      'discover.swipe.durationMinutes:{"m":2}',
+    );
+    expect(formatResetDuration(30, t)).toBe(
+      'discover.swipe.durationSeconds:{"sec":30}',
+    );
+  });
+
+  it('rounds days up like formatResetTime so the promise is never early', () => {
+    expect(formatResetDuration(25 * 3600, t)).toBe(
+      'discover.swipe.durationDays:{"d":2}',
     );
   });
 });
