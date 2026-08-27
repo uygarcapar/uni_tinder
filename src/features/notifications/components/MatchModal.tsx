@@ -1,4 +1,4 @@
-import { useEffect, useRef, useState } from "react";
+import { Suspense, lazy, useEffect, useMemo, useRef, useState } from "react";
 import {
   Modal,
   View,
@@ -6,77 +6,48 @@ import {
   TouchableOpacity,
   Animated,
   Easing,
-  Dimensions,
+  StyleSheet,
+  useWindowDimensions,
 } from "react-native";
 import { Image } from "expo-image";
-import { BlurView } from "expo-blur";
 import { MessageCircle } from "lucide-react-native";
 import SFIcon from "@/shared/components/SFIcon";
 import * as Haptics from "expo-haptics";
-import { CannonConfetti } from "react-native-fast-confetti";
 import { useTranslation } from "react-i18next";
+import { flameCurtainGeometry } from "@/features/discover/components/flameWavePath";
 import { colors, onMediaAt, scrimAt } from "../../../shared/theme/colors";
 
-const { width: SCREEN_W, height: SCREEN_H } = Dimensions.get("window");
-const CONFETTI_PER_SIDE = 55;
-const CONFETTI_COLORS = [
-  "#FF4D6D",
-  "#FF8FA3",
-  "#FFB703",
-  "#FFD60A",
-  "#06D6A0",
-  "#3DDC97",
-  "#4CC9F0",
-  "#4895EF",
-  "#9B5DE5",
-  "#F15BB5",
-  colors.primaryHot,
-  colors.onMedia,
-];
+/**
+ * Kutlama zemini: süper beğenideki alev dalgasının PERDE hâli (bkz.
+ * flameCurtainGeometry). Eskiden burada tam ekran blur + iki yandan konfeti
+ * patlaması vardı; süper beğeniyle aynı ateşten okunsun diye ikisi de kalktı.
+ *
+ * Skia ağır ve bu bileşen kökte SÜREKLİ mount (bkz. AppNavigator) — canvas
+ * ayrı chunk'ta, ilk eşleşmeye kadar hiç yüklenmiyor. Aynı gerekçe
+ * SuperLikeFlame'de de yazılı.
+ */
+const FlameCurtain = lazy(() =>
+  import("@/features/discover/components/SuperLikeFlameCanvas").then((m) => ({
+    default: m.FlameCurtainCanvas,
+  })),
+);
 
-// Konfeti: react-native-fast-confetti (Skia Atlas API) — eski implementasyon
-// her match'te 110 ayrı Animated.View mount edip 110 ShadowTree node'u tek
-// seferde commit ediyordu; commit-storm geçmişi olan bir app'te gereksiz risk.
-// Artık tüm parçalar TEK Skia canvas node'unda, fizik UI thread'de. İki yan
-// "cannon" origin eski sol/sağ patlama tasarımını korur.
-function ConfettiBurst() {
-  return (
-    <View
-      pointerEvents="none"
-      style={{
-        position: "absolute",
-        top: 0,
-        left: 0,
-        right: 0,
-        bottom: 0,
-      }}
-    >
-      <CannonConfetti colors={CONFETTI_COLORS} fadeOutOnEnd sprayDuration={150}>
-        <CannonConfetti.Origin
-          position={{ x: -50, y: SCREEN_H * 0.4 }}
-          target={{ x: SCREEN_W * 0.55, y: 40 }}
-          count={CONFETTI_PER_SIDE}
-        />
-        <CannonConfetti.Origin
-          position={{ x: SCREEN_W + 50, y: SCREEN_H * 0.4 }}
-          target={{ x: SCREEN_W * 0.45, y: 40 }}
-          count={CONFETTI_PER_SIDE}
-        />
-      </CannonConfetti>
-    </View>
-  );
-}
+/** İçerik perdeden ÖNDE sönsün: perde yukarı süpürülürken altı boş kalmasın. */
+const CONTENT_FADE_OUT_MS = 180;
 
 export default function MatchModal({ match, myPhoto, onClose, onSendMessage }: any) {
   const { t } = useTranslation();
+  const { width, height } = useWindowDimensions();
+  // Perdenin süreleri Skia'sız hesaplanıyor: canvas chunk'ı hiç yüklenemese de
+  // modal aynı ritimde açılıp kapanmalı (kutlama atlanır, akış durmaz).
+  const curtain = useMemo(
+    () => flameCurtainGeometry(width, height),
+    [width, height],
+  );
+
   const scale = useRef(new Animated.Value(0.6)).current;
   const opacity = useRef(new Animated.Value(0)).current;
-  // PERF: Önceden Animated.Value(0..60) blur intensity'yi useNativeDriver:false
-  // ile tween'liyorduk — her frame JS thread'e mesaj gidiyordu. Swipe sonrası
-  // match'te JS thread zaten yüklü olduğu için modal kasıyordu. Şimdi BlurView
-  // fixed intensity (60), fade-in için sarmalayan Animated.View opacity'si
-  // (native driver) kullanılıyor.
-  const blurOpacity = useRef(new Animated.Value(0)).current;
+  const scrimOpacity = useRef(new Animated.Value(0)).current;
   const leftAnim = useRef(new Animated.Value(-60)).current;
   const rightAnim = useRef(new Animated.Value(60)).current;
   const sendScale = useRef(new Animated.Value(1)).current;
@@ -89,10 +60,25 @@ export default function MatchModal({ match, myPhoto, onClose, onSendMessage }: a
   const [matchLoaded, setMatchLoaded] = useState(!match?.matchedUserPhoto);
   const imagesReady = myLoaded && matchLoaded;
 
+  // Kapanış perdenin ÇIKIŞ süpürmesini bekliyor; asıl aksiyon (kapat / sohbete
+  // git) süpürme bitince çalışıyor. Ref de var çünkü çift dokunuş `closing`
+  // state'i güncellenmeden ikinci kez gelebiliyor.
+  const [closing, setClosing] = useState(false);
+  const closingRef = useRef(false);
+  const closeActionRef = useRef<(() => void) | null>(null);
+
   useEffect(() => {
     setMyLoaded(!myPhoto);
     setMatchLoaded(!match?.matchedUserPhoto);
   }, [match?.conversationId, myPhoto, match?.matchedUserPhoto]);
+
+  // Yeni eşleşme aynı mount'ta gelebilir (arka arkaya iki match): kapanış
+  // durumu devredilirse ikinci kutlama daha açılmadan kapanmış sayılırdı.
+  useEffect(() => {
+    setClosing(false);
+    closingRef.current = false;
+    closeActionRef.current = null;
+  }, [match?.conversationId]);
 
   useEffect(() => {
     if (!match) return;
@@ -102,6 +88,13 @@ export default function MatchModal({ match, myPhoto, onClose, onSendMessage }: a
     }, 3000);
     return () => clearTimeout(t);
   }, [match?.conversationId]);
+
+  const startClose = (action: () => void) => {
+    if (closingRef.current) return;
+    closingRef.current = true;
+    closeActionRef.current = action;
+    setClosing(true);
+  };
 
   const handlePressIn = (val) => {
     Animated.spring(val, {
@@ -124,41 +117,49 @@ export default function MatchModal({ match, myPhoto, onClose, onSendMessage }: a
       () => {},
     );
 
-    Animated.parallel([
-      Animated.spring(scale, {
-        toValue: 1,
-        friction: 6,
-        tension: 80,
-        useNativeDriver: true,
-      }),
-      Animated.timing(opacity, {
-        toValue: 1,
-        duration: 220,
-        easing: Easing.out(Easing.ease),
-        useNativeDriver: true,
-      }),
-      Animated.timing(blurOpacity, {
-        toValue: 1,
-        duration: 500,
-        easing: Easing.out(Easing.ease),
-        useNativeDriver: true,
-      }),
-      Animated.spring(leftAnim, {
-        toValue: 0,
-        friction: 7,
-        tension: 60,
-        useNativeDriver: true,
-      }),
-      Animated.spring(rightAnim, {
-        toValue: 0,
-        friction: 7,
-        tension: 60,
-        useNativeDriver: true,
-      }),
-    ]).start();
+    // Zemin, perde daha alttayken kararıyor: alev karanlığa karşı yükselsin.
+    Animated.timing(scrimOpacity, {
+      toValue: 1,
+      duration: 220,
+      easing: Easing.out(Easing.ease),
+      useNativeDriver: true,
+    }).start();
 
-    Animated.sequence([
-      Animated.delay(120),
+    // İçerik perde YERİNE OTURDUKTAN sonra açılıyor: önce ateş, sonra kutlama.
+    // Üst üste binseydi fotoğraflar hâlâ yükselen alevin altında belirirdi.
+    const reveal = Animated.sequence([
+      Animated.delay(curtain.enterMs),
+      Animated.parallel([
+        Animated.spring(scale, {
+          toValue: 1,
+          friction: 6,
+          tension: 80,
+          useNativeDriver: true,
+        }),
+        Animated.timing(opacity, {
+          toValue: 1,
+          duration: 220,
+          easing: Easing.out(Easing.ease),
+          useNativeDriver: true,
+        }),
+        Animated.spring(leftAnim, {
+          toValue: 0,
+          friction: 7,
+          tension: 60,
+          useNativeDriver: true,
+        }),
+        Animated.spring(rightAnim, {
+          toValue: 0,
+          friction: 7,
+          tension: 60,
+          useNativeDriver: true,
+        }),
+      ]),
+    ]);
+    reveal.start();
+
+    const shake = Animated.sequence([
+      Animated.delay(curtain.enterMs + 120),
       Animated.timing(titleShake, { toValue: 1, duration: 55, useNativeDriver: true }),
       Animated.timing(titleShake, { toValue: -1, duration: 55, useNativeDriver: true }),
       Animated.timing(titleShake, { toValue: 1, duration: 55, useNativeDriver: true }),
@@ -166,7 +167,8 @@ export default function MatchModal({ match, myPhoto, onClose, onSendMessage }: a
       Animated.timing(titleShake, { toValue: 0.6, duration: 50, useNativeDriver: true }),
       Animated.timing(titleShake, { toValue: -0.6, duration: 50, useNativeDriver: true }),
       Animated.timing(titleShake, { toValue: 0, duration: 60, useNativeDriver: true }),
-    ]).start();
+    ]);
+    shake.start();
 
     // "Mesaj Gönder" butonu dikkat titremesi: açılışta daha uzun süren bir burst,
     // sonrasında sonsuz tekrar eden nabız. Genlik ve hız ikisinde de aynı — açılış
@@ -177,7 +179,7 @@ export default function MatchModal({ match, myPhoto, onClose, onSendMessage }: a
     const AMP = 0.7;
 
     const intro = Animated.sequence([
-      Animated.delay(650),
+      Animated.delay(curtain.enterMs + 650),
       wig(AMP, 70),
       wig(-AMP, 70),
       wig(AMP, 70),
@@ -208,18 +210,45 @@ export default function MatchModal({ match, myPhoto, onClose, onSendMessage }: a
     });
 
     return () => {
+      reveal.stop();
+      shake.stop();
       intro.stop();
       sendLoopRef.current?.stop();
       sendLoopRef.current = null;
       scale.setValue(0.6);
       opacity.setValue(0);
-      blurOpacity.setValue(0);
+      scrimOpacity.setValue(0);
       leftAnim.setValue(-60);
       rightAnim.setValue(60);
       titleShake.setValue(0);
       sendShake.setValue(0);
     };
-  }, [match, imagesReady]);
+  }, [match, imagesReady, curtain.enterMs]);
+
+  // Çıkış: perde yukarı süpürülürken içerik önden sönüyor, zemin de perdeyle
+  // birlikte açılıyor. Zamanlayıcı CANVAS'a bağlı değil — Skia chunk'ı hiç
+  // yüklenemese de modal kapanmak zorunda.
+  useEffect(() => {
+    if (!closing) return;
+    Animated.timing(opacity, {
+      toValue: 0,
+      duration: CONTENT_FADE_OUT_MS,
+      easing: Easing.in(Easing.ease),
+      useNativeDriver: true,
+    }).start();
+    Animated.timing(scrimOpacity, {
+      toValue: 0,
+      duration: curtain.exitMs,
+      easing: Easing.in(Easing.ease),
+      useNativeDriver: true,
+    }).start();
+    const done = setTimeout(() => {
+      const run = closeActionRef.current;
+      closeActionRef.current = null;
+      run?.();
+    }, curtain.exitMs);
+    return () => clearTimeout(done);
+  }, [closing, curtain.exitMs]);
 
   if (!match) return null;
 
@@ -227,203 +256,231 @@ export default function MatchModal({ match, myPhoto, onClose, onSendMessage }: a
   const OVERLAP = 28;
 
   return (
-    <Modal visible transparent animationType="fade" onRequestClose={onClose}>
-      <Animated.View
-        pointerEvents="none"
-        style={{
-          position: "absolute",
-          top: 0,
-          left: 0,
-          right: 0,
-          bottom: 0,
-          opacity: blurOpacity,
-        }}
-      >
-        <BlurView
-          tint="dark"
-          intensity={60}
-          style={{ flex: 1 }}
+    <Modal
+      visible
+      transparent
+      // Perdenin kendi giriş/çıkış süpürmesi var; Modal'ın fade'i onu bir de
+      // opaklıktan geçirirdi (alev yükselmek yerine belirirdi).
+      animationType="none"
+      onRequestClose={() => startClose(onClose)}
+    >
+      <View style={{ flex: 1 }}>
+        <Animated.View
+          pointerEvents="none"
+          style={[
+            StyleSheet.absoluteFill,
+            { backgroundColor: scrimAt(0.72), opacity: scrimOpacity },
+          ]}
         />
-      </Animated.View>
-      <Animated.View
-        style={{
-          flex: 1,
-          backgroundColor: scrimAt(0.55),
-          justifyContent: "center",
-          alignItems: "center",
-          opacity,
-        }}
-      >
         {imagesReady && (
-          <ConfettiBurst key={`confetti-${match.conversationId}`} />
+          <Suspense fallback={null}>
+            <FlameCurtain key={match.conversationId} closing={closing} />
+          </Suspense>
         )}
         <Animated.View
+          pointerEvents={closing ? "none" : "auto"}
           style={{
-            transform: [{ scale }],
+            flex: 1,
+            justifyContent: "center",
             alignItems: "center",
-            paddingHorizontal: 60,
-            alignSelf: "stretch",
+            // Perdenin alt kenarı delikli: içerik alevlerin arasına düşmesin.
+            paddingBottom: curtain.hemHeight,
+            opacity,
           }}
         >
           <Animated.View
             style={{
-              paddingHorizontal: 24,
-              paddingVertical: 12,
-              borderRadius: 999,
-              marginBottom: 36,
-              transform: [
-                {
-                  translateX: titleShake.interpolate({
-                    inputRange: [-1, 0, 1],
-                    outputRange: [-10, 0, 10],
-                  }),
-                },
-                {
-                  rotate: titleShake.interpolate({
-                    inputRange: [-1, 0, 1],
-                    outputRange: ["-6deg", "0deg", "6deg"],
-                  }),
-                },
-              ],
-            }}
-          >
-            <Text className="font-bold text-[35px]" style={{ color: colors.onMedia }}>
-              {t('match.title')}
-            </Text>
-          </Animated.View>
-
-          <View
-            style={{
-              flexDirection: "row",
+              transform: [{ scale }],
               alignItems: "center",
-              justifyContent: "center",
-              height: AVATAR,
+              paddingHorizontal: 60,
+              alignSelf: "stretch",
             }}
           >
             <Animated.View
               style={{
-                transform: [{ translateX: leftAnim }, { rotate: "-6deg" }],
-                marginRight: -OVERLAP,
+                // Negatif marj BİLEREK: başlık, butonları saran 60px'lik
+                // paddingHorizontal'ın dışına taşıyor. Punto otomatik küçüldüğü
+                // için (aşağıya bkz.) dar kutu doğrudan küçük yazı demekti —
+                // kutu genişleyince başlık ekranın izin verdiği kadar büyük
+                // kalıyor. Butonların genişliği bundan etkilenmiyor.
+                marginHorizontal: -44,
+                paddingVertical: 12,
+                marginBottom: 36,
+                transform: [
+                  {
+                    translateX: titleShake.interpolate({
+                      inputRange: [-1, 0, 1],
+                      outputRange: [-10, 0, 10],
+                    }),
+                  },
+                  {
+                    rotate: titleShake.interpolate({
+                      inputRange: [-1, 0, 1],
+                      outputRange: ["-6deg", "0deg", "6deg"],
+                    }),
+                  },
+                ],
               }}
             >
-              <View
+              {/* Tek satırda kalsın: 44px kısa başlığın (EN "It's Lit!") tam
+                  boyu, uzun olanı (TR "Biriyle Eşleştin!") satıra sığacak
+                  kadar küçülüyor. Sarmaya izin verilseydi iki satırlık başlık
+                  küçük ekranlarda içeriği alevlerin şeridine taşıyordu. */}
+              <Text
+                className="font-bold text-[44px]"
+                numberOfLines={1}
+                adjustsFontSizeToFit
+                minimumFontScale={0.6}
+                style={{ color: colors.onMedia, textAlign: "center" }}
+              >
+                {t('match.title')}
+              </Text>
+            </Animated.View>
+
+            <View
+              style={{
+                flexDirection: "row",
+                alignItems: "center",
+                justifyContent: "center",
+                height: AVATAR,
+              }}
+            >
+              <Animated.View
                 style={{
-                  width: AVATAR,
-                  height: AVATAR,
-                  borderRadius: AVATAR / 2,
-                  borderWidth: 0.5,
-                  borderColor: onMediaAt(0.5),
-                  overflow: "hidden",
-                  backgroundColor: colors.surface2,
+                  transform: [{ translateX: leftAnim }, { rotate: "-6deg" }],
+                  marginRight: -OVERLAP,
                 }}
               >
-                {myPhoto && (
-                  <Image
-                    source={{ uri: myPhoto }}
-                    style={{ width: "100%", height: "100%" }}
-                    cachePolicy="memory-disk"
-                    transition={0}
-                    contentFit="cover"
-                    onLoad={() => setMyLoaded(true)}
-                    onError={() => setMyLoaded(true)}
-                  />
-                )}
-              </View>
-            </Animated.View>
+                <View
+                  style={{
+                    width: AVATAR,
+                    height: AVATAR,
+                    borderRadius: AVATAR / 2,
+                    // Kalın beyaz halka: fotoğraflar alev perdesinin üstünde
+                    // kesilip çıkarılmış gibi dursun. `onMedia` iki modda da
+                    // beyaz — zemin sabit marka gradyanı, modla dönmüyor.
+                    borderWidth: 4,
+                    borderColor: colors.onMedia,
+                    overflow: "hidden",
+                    backgroundColor: colors.surface2,
+                  }}
+                >
+                  {myPhoto && (
+                    <Image
+                      source={{ uri: myPhoto }}
+                      style={{ width: "100%", height: "100%" }}
+                      cachePolicy="memory-disk"
+                      transition={0}
+                      contentFit="cover"
+                      onLoad={() => setMyLoaded(true)}
+                      onError={() => setMyLoaded(true)}
+                    />
+                  )}
+                </View>
+              </Animated.View>
+
+              <Animated.View
+                style={{
+                  transform: [{ translateX: rightAnim }, { rotate: "6deg" }],
+                  marginLeft: -OVERLAP,
+                }}
+              >
+                <View
+                  style={{
+                    width: AVATAR,
+                    height: AVATAR,
+                    borderRadius: AVATAR / 2,
+                    // Kalın beyaz halka: fotoğraflar alev perdesinin üstünde
+                    // kesilip çıkarılmış gibi dursun. `onMedia` iki modda da
+                    // beyaz — zemin sabit marka gradyanı, modla dönmüyor.
+                    borderWidth: 4,
+                    borderColor: colors.onMedia,
+                    overflow: "hidden",
+                    backgroundColor: colors.surface2,
+                  }}
+                >
+                  {!!match.matchedUserPhoto && (
+                    <Image
+                      source={{ uri: match.matchedUserPhoto }}
+                      style={{ width: "100%", height: "100%" }}
+                      cachePolicy="memory-disk"
+                      transition={0}
+                      contentFit="cover"
+                      onLoad={() => setMatchLoaded(true)}
+                      onError={() => setMatchLoaded(true)}
+                    />
+                  )}
+                </View>
+              </Animated.View>
+            </View>
+
+            <Text className="text-[15px] text-center font-semibold mt-8" style={{ color: colors.onMedia }}>
+              {t('match.subtitle', { name: match.matchedUserName })}
+            </Text>
 
             <Animated.View
               style={{
-                transform: [{ translateX: rightAnim }, { rotate: "6deg" }],
-                marginLeft: -OVERLAP,
+                width: "100%",
+                transform: [
+                  { scale: sendScale },
+                  {
+                    translateX: sendShake.interpolate({
+                      inputRange: [-1, 0, 1],
+                      outputRange: [-5, 0, 5],
+                    }),
+                  },
+                  {
+                    rotate: sendShake.interpolate({
+                      inputRange: [-1, 0, 1],
+                      outputRange: ["-1.2deg", "0deg", "1.2deg"],
+                    }),
+                  },
+                ],
               }}
+              className="mt-8"
             >
-              <View
+              {/* CTA artık litPlus DOLGULU DEĞİL: zemin alev perdesi olduğundan
+                  (gradients.swipeHeart) kırmızı buton kırmızı üstünde kayboluyordu.
+                  Ters çevrildi — beyaz dolgu, koyu mürekkep. Mürekkep `text`
+                  DEĞİL `onMediaInverse`: dolgu iki modda da beyaz (onMedia),
+                  `text` koyu modda beyaza dönüp butonda kaybolurdu. */}
+              <TouchableOpacity
+                activeOpacity={1}
+                onPress={() => startClose(() => onSendMessage?.(match.conversationId))}
+                onPressIn={() => handlePressIn(sendScale)}
+                onPressOut={() => handlePressOut(sendScale)}
+                className="w-full flex-row items-center justify-center py-[16px] rounded-full"
+                style={{ backgroundColor: colors.onMedia, borderCurve: "continuous" }}
+              >
+                <SFIcon name="message.fill" fallback={MessageCircle} size={18} color={colors.onMediaInverse} strokeWidth={2} weight="semibold" />
+                <Text className="font-semibold text-[14px] ml-2" style={{ color: colors.onMediaInverse }}>
+                  {t('match.sendMessage')}
+                </Text>
+              </TouchableOpacity>
+            </Animated.View>
+            <Animated.View
+              style={{ width: "100%", transform: [{ scale: backScale }] }}
+              className="mt-3"
+            >
+              <TouchableOpacity
+                activeOpacity={1}
+                onPress={() => startClose(onClose)}
+                onPressIn={() => handlePressIn(backScale)}
+                onPressOut={() => handlePressOut(backScale)}
+                className="w-full flex-row items-center justify-center py-5 rounded-full"
                 style={{
-                  width: AVATAR,
-                  height: AVATAR,
-                  borderRadius: AVATAR / 2,
-                  borderWidth: 0.5,
-                  borderColor: onMediaAt(0.5),
-                  overflow: "hidden",
-                  backgroundColor: colors.surface2,
+                  backgroundColor: onMediaAt(0.15),
+                  borderCurve: "continuous",
                 }}
               >
-                {!!match.matchedUserPhoto && (
-                  <Image
-                    source={{ uri: match.matchedUserPhoto }}
-                    style={{ width: "100%", height: "100%" }}
-                    cachePolicy="memory-disk"
-                    transition={0}
-                    contentFit="cover"
-                    onLoad={() => setMatchLoaded(true)}
-                    onError={() => setMatchLoaded(true)}
-                  />
-                )}
-              </View>
+                <Text className="font-medium text-[14px]" style={{ color: onMediaAt(0.85) }}>
+                  {t('match.back')}
+                </Text>
+              </TouchableOpacity>
             </Animated.View>
-          </View>
-
-          <Text className="text-[15px] text-center font-semibold mt-8" style={{ color: colors.onMedia }}>
-            {t('match.subtitle', { name: match.matchedUserName })}
-          </Text>
-
-          <Animated.View
-            style={{
-              width: "100%",
-              transform: [
-                { scale: sendScale },
-                {
-                  translateX: sendShake.interpolate({
-                    inputRange: [-1, 0, 1],
-                    outputRange: [-5, 0, 5],
-                  }),
-                },
-                {
-                  rotate: sendShake.interpolate({
-                    inputRange: [-1, 0, 1],
-                    outputRange: ["-1.2deg", "0deg", "1.2deg"],
-                  }),
-                },
-              ],
-            }}
-            className="mt-8"
-          >
-            <TouchableOpacity
-              activeOpacity={1}
-              onPress={() => onSendMessage?.(match.conversationId)}
-              onPressIn={() => handlePressIn(sendScale)}
-              onPressOut={() => handlePressOut(sendScale)}
-              className="w-full flex-row items-center justify-center py-[16px] rounded-full"
-              style={{ backgroundColor: colors.litPlus, borderCurve: "continuous" }}
-            >
-              <SFIcon name="message.fill" fallback={MessageCircle} size={18} color={colors.onMedia} strokeWidth={2} weight="semibold" />
-              <Text className="font-semibold text-[14px] ml-2" style={{ color: colors.onMedia }}>
-                {t('match.sendMessage')}
-              </Text>
-            </TouchableOpacity>
-          </Animated.View>
-          <Animated.View
-            style={{ width: "100%", transform: [{ scale: backScale }] }}
-            className="mt-3"
-          >
-            <TouchableOpacity
-              activeOpacity={1}
-              onPress={onClose}
-              onPressIn={() => handlePressIn(backScale)}
-              onPressOut={() => handlePressOut(backScale)}
-              className="w-full flex-row items-center justify-center py-5 rounded-full"
-              style={{
-                backgroundColor: onMediaAt(0.15),
-                borderCurve: "continuous",
-              }}
-            >
-              <Text className="font-medium text-[14px]" style={{ color: onMediaAt(0.85) }}>
-                {t('match.back')}
-              </Text>
-            </TouchableOpacity>
           </Animated.View>
         </Animated.View>
-      </Animated.View>
+      </View>
     </Modal>
   );
 }

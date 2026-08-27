@@ -8,8 +8,18 @@ jest.mock('expo-haptics', () => ({
 jest.mock('expo-linear-gradient', () => ({ LinearGradient: 'LinearGradient' }));
 
 import { Image } from 'react-native';
-import { fireEvent, render } from '@testing-library/react-native';
+import { act, fireEvent, render } from '@testing-library/react-native';
 import MatchModal from '@/features/notifications/components/MatchModal';
+
+// Aksiyonlar alev PERDESİNİN çıkış süpürmesini bekliyor (bkz. MatchModal /
+// flameCurtainGeometry): basış anında değil, süpürme bitince çalışıyorlar.
+// Süre ekran ölçüsüne bağlı — testte üst sınırı geçecek kadar ilerletiyoruz.
+const CURTAIN_EXIT_MAX_MS = 2000;
+const runCurtainExit = () => {
+  act(() => {
+    jest.advanceTimersByTime(CURTAIN_EXIT_MAX_MS);
+  });
+};
 
 const baseMatch = {
   conversationId: 'conv-1',
@@ -18,6 +28,13 @@ const baseMatch = {
 };
 
 describe('MatchModal', () => {
+  beforeEach(() => {
+    jest.useFakeTimers();
+  });
+  afterEach(() => {
+    jest.useRealTimers();
+  });
+
   it('renders nothing when match is null', () => {
     const { toJSON } = render(
       <MatchModal match={null} onClose={jest.fn()} onSendMessage={jest.fn()} />
@@ -34,7 +51,7 @@ describe('MatchModal', () => {
         onSendMessage={jest.fn()}
       />
     );
-    expect(tree.getByText("It's Lit!")).toBeTruthy();
+    expect(tree.getByText('Biriyle Eşleştin!')).toBeTruthy();
     expect(
       tree.getByText('Ada ile eşleştin. İlk mesajı sen at.')
     ).toBeTruthy();
@@ -80,8 +97,25 @@ describe('MatchModal', () => {
       />
     );
     fireEvent.press(tree.getByText('Mesaj Gönder'));
+    expect(onSendMessage).not.toHaveBeenCalled();
+    runCurtainExit();
     expect(onSendMessage).toHaveBeenCalledTimes(1);
     expect(onSendMessage).toHaveBeenCalledWith('conv-1');
+  });
+
+  it('ignores repeat presses while the curtain is sweeping out', () => {
+    const onClose = jest.fn();
+    const tree = render(
+      <MatchModal
+        match={baseMatch}
+        onClose={onClose}
+        onSendMessage={jest.fn()}
+      />
+    );
+    fireEvent.press(tree.getByText('Geri Dön'));
+    fireEvent.press(tree.getByText('Geri Dön'));
+    runCurtainExit();
+    expect(onClose).toHaveBeenCalledTimes(1);
   });
 
   it('calls onClose when "Geri Dön" is pressed', () => {
@@ -94,6 +128,8 @@ describe('MatchModal', () => {
       />
     );
     fireEvent.press(tree.getByText('Geri Dön'));
+    expect(onClose).not.toHaveBeenCalled();
+    runCurtainExit();
     expect(onClose).toHaveBeenCalledTimes(1);
   });
 });

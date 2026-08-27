@@ -1638,6 +1638,11 @@ export default function AppNavigator() {
       {/* Soft-delete banner */}
       {showMainNavigator && <DeletionBanner />}
 
+      {/* Süper beğeni alevi — tüm ekranı (tab bar ve safe area dahil) kaplaması
+          gerektiği için navigator'ın DIŞINDA. MatchModal'ın ALTINDA duruyor:
+          süper beğeni eşleşmeyle sonuçlanırsa kutlama alevin üstünde açılır. */}
+      {showMainNavigator && <SuperLikeFlame />}
+
       {/* Global "It's a Match!" overlay — boot oturmadan mount edilmez */}
       {showMainNavigator && matchGateOpen && (
         <MatchModal

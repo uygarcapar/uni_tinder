@@ -408,25 +408,10 @@ const fixedGradients = {
   swipeHeart: ["#fc1919", "#fc1e1e", "#ff5c33"] as Gradient,
 };
 
-/**
- * SuperLike sonrası süzülen kalpler (SuperLikeBurst). Butonun kendisi tek renk
- * (gradients.swipeHeart), patlayan kalpler ise konfeti: her parçacık BAŞKA bir
- * gradyan alır. Dizi uzunluğu SuperLikeBurst'ün PARTICLE_COUNT'undan küçük
- * OLMAMALI — orada karıştırılıp parçacıklara birebir dağıtılıyor, kısa kalırsa
- * renk tekrar eder.
- *
- * Fotoğrafın üstünde çiziliyor → modla DÖNMEZ (fixedGradients gibi). İlk durak
- * bilerek doygun: açık fotoğraflarda da parçacığın kenarı okunsun.
- */
-export const superLikeBurst: readonly Gradient[] = [
-  ["#fc1919", "#ff5c33"], // kırmızı — butonun kendi tonu
-  ["#ff7a18", "#ffb347"], // turuncu
-  ["#e0a800", "#ffe066"], // sarı
-  ["#ec4899", "#ff9ad1"], // pembe
-  ["#8b5cf6", "#c4b5fd"], // mor
-  ["#2563eb", "#60c8ff"], // mavi
-  ["#10b981", "#7ef0c0"], // yeşil
-];
+// SuperLike kutlaması artık renkli kalp konfetisi değil, tüm ekranı kaplayan
+// prosedürel alev — renkleri shader'ın ısı rampasında (SuperLikeFlameCanvas),
+// burada bir palet yok. Rampanın kırmızı durağı bilerek gradients.swipeHeart'ın
+// ilk durağıyla (#fc1919) aynı: buton ve kutlama aynı ateşten okunsun.
 
 const darkGradients: GradientSet = {
   ...fixedGradients,
