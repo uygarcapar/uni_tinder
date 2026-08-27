@@ -124,21 +124,14 @@ import {
 } from "@gorhom/bottom-sheet";
 import BlurBottomSheetBackdrop from "@/shared/components/BlurBottomSheetBackdrop";
 import AppBottomSheet from "@/shared/components/AppBottomSheet";
-import {
-  X,
-  Check,
-  Zap,
-  Eye,
-  RotateCcw,
-  Ban,
-  ShoppingBag,
-} from "lucide-react-native";
+import { X, Check, Info, ShoppingBag } from "lucide-react-native";
 import { LinearGradient } from "expo-linear-gradient";
 import { BlurView } from "expo-blur";
 import SFIcon from "@/shared/components/SFIcon";
 import AnimatedPressable from "@/shared/components/AnimatedPressable";
 import { useAppDispatch, useAppSelector } from "@/shared/hooks/redux";
 import {
+  checkIntroEligibility,
   getOfferings,
   purchasePackage,
   restorePurchases,
@@ -149,12 +142,18 @@ import {
   setPremium,
   syncSubscriptionWithRetry,
 } from "@/features/profile/subscriptionSlice";
+import {
+  PREMIUM_BENEFIT_KEYS,
+  premiumBenefitLabelKey,
+  type PremiumBenefitKey,
+} from "@/features/profile/premiumBenefits";
+import PremiumBenefitInfoSheet from "@/features/discover/components/PremiumBenefitInfoSheet";
 import api from "@/shared/services/api";
 import { API_ENDPOINTS } from "@/shared/constants/api";
 import { useQueryClient } from "@tanstack/react-query";
 import { swipeKeys } from "@/features/discover/swipeQueries";
 import { UNLIMITED } from "@/shared/constants/limits";
-import { colors, gradients, ink, withAlpha } from "../../../shared/theme/colors";
+import { colors, gradients, ink, isLight, withAlpha } from "../../../shared/theme/colors";
 import { plainBlurTint } from "@/shared/theme/blur";
 import { analytics } from "@/shared/services/analytics";
 
@@ -255,6 +254,29 @@ function mergePlansWithBackend(rcPlans, backendPlans, t) {
     });
 }
 
+// Plana özel tasarruf yüzdesi — AYLIK plan taban alınır. Backend fiyat
+// dönmediği için (bkz. /plans sözleşmesi) hesap RC'nin sayısal `price`ı ile
+// yapılıyor; para birimleri aynı offering içinde ortak olduğu için oran güvenli.
+//
+// Kart tasarımı yenilenirken bu satır düşmüştü ve fonksiyon ölü kod diye
+// budanmıştı; plana özel tek ayırt edici metin oydu.
+function computeSavings(plan, plans) {
+  if (!plan?.price || plan.period === "monthly") return null;
+  const monthly = plans.find((p) => p.period === "monthly");
+  if (!monthly?.price) return null;
+
+  const months =
+    plan.period === "yearly" ? 12 : plan.period === "weekly" ? 1 / 4.345 : null;
+  if (!months) return null;
+
+  const equivalentMonthlyTotal = monthly.price * months;
+  if (equivalentMonthlyTotal <= 0) return null;
+
+  const savingsRatio = 1 - plan.price / equivalentMonthlyTotal;
+  if (savingsRatio <= 0.02) return null; // %2'nin altını gösterme — round-off gürültüsü
+  return Math.round(savingsRatio * 100);
+}
+
 // Varsayılan seçim HER AÇILIŞTA `weekly`: paywall haftalıkla açılsın istiyoruz,
 // backend `highlight`ı ya da `sortOrder` sırası ne olursa olsun. Katalogda
 // haftalık yoksa eski davranışa düşeriz (highlight → ilk plan).
@@ -353,10 +375,11 @@ export default function PurchaseModal({ visible, onClose, onSuccess }: any) {
         remainingUndos: UNLIMITED,
         dailySwipeLimit: UNLIMITED,
         dailyUndoLimit: UNLIMITED,
-        // SuperLike premium'da SINIRSIZ DEĞİL (weeklySuperLikeLimit / 7-gün
-        // rolling), ama premium tavanını burada BİLMİYORUZ: cache'deki
+        // SuperLike premium'da SINIRSIZ DEĞİL (weeklySuperLikeLimit, tier'a
+        // bağlı 1/2/5), ama premium tavanını burada BİLMİYORUZ: cache'deki
         // weeklySuperLikeLimit free tier'ın değeri (lifetime kota), premium
-        // değeri ancak sync sonrası fetch'te geliyor.
+        // değeri ancak sync sonrası fetch'te geliyor — üstelik hangi tier
+        // alındığına göre değişiyor.
         //
         // Bu yüzden uydurmak yerine "henüz bilinmiyor" diyoruz: null.
         // superLikeQuotaExhausted null'da false dönüyor → premium alan
@@ -365,6 +388,15 @@ export default function PurchaseModal({ visible, onClose, onSuccess }: any) {
         // saniyeler sonra refetchPremiumScoped ile geliyor.
         superLikesRemaining: null,
         weeklySuperLikeLimit: null,
+        // Kurtarma hakkı aynı durumda ve dahası: free tavanı 0, yani cache'teki
+        // değerleri bırakırsak abone olan kullanıcı "Kurtarma hakkın kalmadı"
+        // yazısına bakmaya devam ederdi. Üçlüyü birlikte null'lıyoruz —
+        // recoveryQuota.resolveRecoveryBalance bunu "bilinmiyor" sayıp sayıyı
+        // hiç yazmıyor.
+        remainingMissedMatchRecovery: null,
+        quotaRecoveryRemaining: null,
+        purchasedRecoveries: null,
+        dailyMissedMatchRecoveryLimit: null,
       };
     });
   };
@@ -399,8 +431,30 @@ export default function PurchaseModal({ visible, onClose, onSuccess }: any) {
   const [purchasing, setPurchasing] = useState(false);
   const [restoring, setRestoring] = useState(false);
   const [selectedPeriod, setSelectedPeriod] = useState(null);
+  // productId → kullanıcı bu ürünün denemesine hak kazanıyor mu.
+  // null = henüz sorulmadı; {} = sorulamadı/hiçbiri uygun değil.
+  const [introEligibility, setIntroEligibility] = useState<Record<
+    string,
+    boolean
+  > | null>(null);
+  // Açıklaması okunmakta olan özellik satırı (null = sheet kapalı).
+  const [infoBenefit, setInfoBenefit] = useState<PremiumBenefitKey | null>(
+    null,
+  );
   const planListRef = useRef(null);
   const initialScrollDoneRef = useRef(false);
+
+  const openBenefitInfo = useCallback((key: PremiumBenefitKey) => {
+    Haptics.selectionAsync().catch(() => {});
+    setInfoBenefit(key);
+  }, []);
+
+  // Özellik satırının tonu — info ikonu ve başlık TEK dokunma hedefi, ikisi de
+  // bunu kullanır. Açık modda siyah %45 beyaz sheet zemininde fazla soluk
+  // kalıyordu; koyu modda beyaz %45 zaten okunuyor, oraya dokunulmuyor.
+  // Palet mutable + tema değişiminde kök remount olduğu için render'da okumak
+  // güvenli (bkz. shared/theme/colors.ts).
+  const featureInk = isLight() ? ink(0.62) : ink(0.45);
 
   // Tüm dismiss yollarında (X, backdrop, swipe down, purchase success) parent
   // state'i kapatır.
@@ -484,6 +538,30 @@ export default function PurchaseModal({ visible, onClose, onSuccess }: any) {
     [offering, backendPlans, t],
   );
 
+  // Deneme HAK KAZANMAYA bağlı: `introPrice` ürünün statik alanı olduğu için
+  // tek başına "bu kullanıcı deneme alacak" anlamına gelmiyor (ayrıntı:
+  // subscriptionService.checkIntroEligibility). Cevap gelene kadar deneme
+  // metnini göstermiyoruz — aksi halde ineligible kullanıcıda bir an "3 gün
+  // ücretsiz" yanıp sönerdi.
+  const introProductKey = useMemo(
+    () => plans.map((p) => p.productId).filter(Boolean).join("|"),
+    [plans],
+  );
+  useEffect(() => {
+    if (!visible || !introProductKey) return;
+    let cancelled = false;
+    checkIntroEligibility(introProductKey.split("|")).then((map) => {
+      if (!cancelled && mountedRef.current) setIntroEligibility(map);
+    });
+    return () => {
+      cancelled = true;
+    };
+  }, [visible, introProductKey]);
+  const isTrialEligible = useCallback(
+    (productId) => Boolean(productId && introEligibility?.[productId]),
+    [introEligibility],
+  );
+
   // Seçim boşsa default'a düş (plan listesi geç geldiğinde de burası doldurur).
   useEffect(() => {
     if (selectedPeriod || plans.length === 0) return;
@@ -506,16 +584,6 @@ export default function PurchaseModal({ visible, onClose, onSuccess }: any) {
   const selectedPlan =
     plans.find((p) => p.period === selectedPeriod) ?? plans[0];
 
-  // Seçili index'in CANLI değeri — peek animasyonu closure'dan okuduğunda bayat
-  // kalıyordu (açılışta selectedPeriod henüz null, baseOffset 0 hesaplanıyor ve
-  // 700ms sonra listeyi ilk karta geri sarıyordu; weekly ilk sırada değilse
-  // seçim görsel olarak kayıyordu).
-  const selectedIndexRef = useRef(0);
-  useEffect(() => {
-    const idx = plans.findIndex((p) => p.period === selectedPeriod);
-    if (idx >= 0) selectedIndexRef.current = idx;
-  }, [plans, selectedPeriod]);
-
   // Açılışta default plan'ın pozisyonuna kaydır. idx 0 için de çağırıyoruz:
   // sheet içeriği mount'ta kalırsa liste bir önceki açılışın offset'inde
   // duruyor, sıfırlanması gerek.
@@ -533,32 +601,9 @@ export default function PurchaseModal({ visible, onClose, onSuccess }: any) {
     });
   }, [selectedPeriod, plans.length]);
 
-  // Modal açıldığında kart peek hint animasyonu: sağa 60px kayıp geri döner,
-  // "yatay kaydırılabilir" olduğunu göstersin. Threshold PLAN_SNAP/2'nin çok
-  // altında olduğu için seçim değişmez. Her açılışta çalışır — sheet slide-in
-  // animasyonu bittikten sonra tetiklenmesi için gecikme uygulanır.
-  useEffect(() => {
-    if (!visible) return;
-    if (plans.length === 0) return;
-
-    const peekTimer = setTimeout(() => {
-      // Closure'daki `selectedPeriod` değil ref: timer kurulduğunda seçim henüz
-      // oturmamış olabiliyor.
-      const baseOffset = PLAN_SNAP * selectedIndexRef.current;
-      planListRef.current?.scrollToOffset?.({
-        offset: baseOffset + 60,
-        animated: true,
-      });
-      setTimeout(() => {
-        planListRef.current?.scrollToOffset?.({
-          offset: baseOffset,
-          animated: true,
-        });
-      }, 350);
-    }, 700);
-
-    return () => clearTimeout(peekTimer);
-  }, [visible, plans.length]);
+  // NOT: açılışta "sağa 60px kayıp geri dön" peek hint'i vardı, kaldırıldı —
+  // liste serbest sürüklendiği için kart zaten sabit hizaya oturmuyor ve kendi
+  // kendine kayan bir liste yanlışlıkla dokunulmuş gibi duruyordu.
 
   const renderBackdrop = useCallback(
     (props) => <BlurBottomSheetBackdrop {...props} onPress={handleClose} />,
@@ -627,19 +672,28 @@ export default function PurchaseModal({ visible, onClose, onSuccess }: any) {
   // Trial bilgisi seçili plana göre — RC her plan için ayrı intro price tanımlayabilir.
   // Gün sayısı YALNIZCA RC introPrice'tan gelir; yoksa deneme vaat etmiyoruz
   // (eskiden 3 gün'e fallback ediyordu ve RC'de trial tanımlı olmasa bile
-  // "3 gün ücretsiz" yazıyordu).
+  // "3 gün ücretsiz" yazıyordu). İKİNCİ koşul eligibility: deneme Apple ID +
+  // subscription group başına bir kez, ürün alanı ise herkeste dolu.
   const introPrice = selectedPlan?.introPrice;
   const introUnits = introPrice?.periodNumberOfUnits;
   const trialDays =
     typeof introUnits === "number" && introUnits > 0 ? introUnits : null;
-  const showTrialBadge = Boolean(introPrice) && trialDays !== null;
+  const showTrialBadge =
+    Boolean(introPrice) &&
+    trialDays !== null &&
+    isTrialEligible(selectedPlan?.productId);
 
-  const features = useMemo(() => [
-    { icon: Zap, label: t('purchase.features.unlimited') },
-    { icon: Eye, label: t('purchase.features.seeLikes') },
-    { icon: RotateCcw, label: t('purchase.features.rewind') },
-    { icon: Ban, label: t('purchase.features.noAds') },
-  ], [t]);
+  // Paywall listenin TAMAMINI gösterir; upsell kartı ilk dördünü gösterip
+  // "+N özellik daha" der. Kullanıcı bu ekrana o satır için geliyor — burada
+  // kırpmak, kartın vaat ettiği "daha fazlası"nı hiç göstermemek olurdu.
+  const features = useMemo(
+    () =>
+      PREMIUM_BENEFIT_KEYS.map((key) => ({
+        key,
+        label: t(premiumBenefitLabelKey(key)),
+      })),
+    [t],
+  );
 
   const selectedPriceString = selectedPlan?.priceString ?? "—";
   const selectedPeriodLabel = t(`purchase.periods.${selectedPlan?.period ?? "monthly"}Per`);
@@ -880,7 +934,7 @@ export default function PurchaseModal({ visible, onClose, onSuccess }: any) {
           </Text>
         </View>
 
-        {/* Plan Selector — yatay paging carousel: kaydırınca o plan seçili. */}
+        {/* Plan Selector — serbest sürüklenen yatay liste: en yakın kart seçili. */}
         {!loadingOffering && plans.length > 0 && selectedPlan && (
           <View style={{ marginBottom: 20, marginHorizontal: -20 }}>
             <FlatList
@@ -889,10 +943,10 @@ export default function PurchaseModal({ visible, onClose, onSuccess }: any) {
               keyExtractor={(p) => p.period}
               horizontal
               showsHorizontalScrollIndicator={false}
-              snapToInterval={PLAN_SNAP}
-              snapToAlignment="start"
-              decelerationRate="fast"
-              disableIntervalMomentum
+              // Serbest sürükleme: snap YOK. Kart karta oturmuyor, kullanıcı
+              // listeyi istediği yerde bırakabiliyor; seçim aşağıdaki onScroll'da
+              // "o an en yakın kart" olarak hesaplanıyor.
+              decelerationRate="normal"
               initialNumToRender={plans.length}
               windowSize={plans.length + 1}
               removeClippedSubviews={false}
@@ -922,9 +976,21 @@ export default function PurchaseModal({ visible, onClose, onSuccess }: any) {
                     ? planTrialUnits
                     : null;
                 const planShowTrial =
-                  Boolean(planIntro) && planTrialDays !== null;
+                  Boolean(planIntro) &&
+                  planTrialDays !== null &&
+                  isTrialEligible(plan.productId);
                 const planPeriodLabel = t(`purchase.periods.${plan?.period ?? "monthly"}Per`);
                 const isSelected = plan.period === selectedPlan.period;
+                // Plana özel açıklama: sabit copy + (varsa) tasarruf cümlesi.
+                // Katalogda tanımadığımız bir periyot gelirse (ör. lifetime)
+                // defaultValue boş → ham anahtar basılmaz, satır hiç çizilmez.
+                const planSavings = computeSavings(plan, plans);
+                const planDescParts = [
+                  t(`purchase.planDesc.${plan.period}`, { defaultValue: "" }),
+                  planSavings
+                    ? t("purchase.savings", { percent: planSavings })
+                    : "",
+                ].filter(Boolean);
                 return (
                   <CardOpacityWrapper active={isSelected}>
                     <AnimatedPressable
@@ -958,7 +1024,16 @@ export default function PurchaseModal({ visible, onClose, onSuccess }: any) {
                           // beyaz/siyah mürekkep kartı sadece açıp kapatıyor,
                           // altındaki kırmızı sızmaya devam ediyordu — gri hem
                           // bir tık öne çıkarıyor hem tonu doygunluktan alıyor.
-                          backgroundColor: withAlpha(colors.neutral500, 0.18),
+                          //
+                          // Açık modda seçili kart bir tık KOYU: opaklık farkı
+                          // (1 / 0.45) açık zeminde neredeyse görünmüyordu, iki
+                          // kart da açık gri kalıyordu. Koyu modda bırakıyoruz —
+                          // orada gri alfasını artırmak kartı AÇAR, seçiliyi
+                          // vurgulamak yerine zıtlığı bozardı.
+                          backgroundColor: withAlpha(
+                            colors.neutral500,
+                            isSelected && isLight() ? 0.34 : 0.18,
+                          ),
                         }}
                       >
                         <View style={{ marginBottom: 6 }}>
@@ -977,6 +1052,19 @@ export default function PurchaseModal({ visible, onClose, onSuccess }: any) {
                         >
                           {plan.priceString ?? "—"}
                         </Text>
+                        {planDescParts.length > 0 && (
+                          <Text
+                            style={{
+                              color: colors.textSecondary,
+                              fontSize: 12,
+                              fontWeight: "400",
+                              marginTop: 6,
+                              lineHeight: 16,
+                            }}
+                          >
+                            {planDescParts.join(" ")}
+                          </Text>
+                        )}
                         {planShowTrial && (
                           <Text
                             style={{
@@ -1019,13 +1107,13 @@ export default function PurchaseModal({ visible, onClose, onSuccess }: any) {
           </View>
         )}
 
-        {/* Features — BlurView arkaplan (üstteki plan kartı ile aynı stil) */}
+        {/* Features — BlurView arkaplan (üstteki plan kartı ile aynı stil).
+            Hairline çerçeve YOK: tablo zaten blur zeminiyle ayrışıyor, çerçeve
+            kart hissi verip satırları içeri sıkıştırıyordu. */}
         <View
           style={{
             borderRadius: 28,
             borderCurve: "continuous",
-            borderWidth: 0.5,
-            borderColor: colors.hairlineMuted,
             overflow: "hidden",
             marginBottom: 24,
           }}
@@ -1036,7 +1124,7 @@ export default function PurchaseModal({ visible, onClose, onSuccess }: any) {
             style={{ paddingVertical: 20 }}
           >
             {/* Header row */}
-            <View className="flex-row items-center justify-between mb-2 px-6">
+            <View className="flex-row items-center justify-between mb-2 px-4">
               <Text className="font-bold text-[12px] uppercase tracking-wider flex-1" style={{ color: colors.textMuted }}>
                 {t('discover.premium.featuresLabel')}
               </Text>
@@ -1057,17 +1145,55 @@ export default function PurchaseModal({ visible, onClose, onSuccess }: any) {
               </View>
             </View>
 
-            {/* Feature rows */}
-            {features.map(({ label }, index) => (
+            {/* Feature rows — başlık üç kelime, "bu ne demek" cevabı info
+                ikonunun açtığı sheet'te. Dokunma hedefi ikon + başlık; ✗/✓
+                sütunları dışarıda kalıyor ki tablo hâlâ tablo gibi dursun. */}
+            {features.map(({ key, label }, index) => (
               <View
-                key={label}
-                className={`flex-row items-center justify-between px-6 ${
+                key={key}
+                className={`flex-row items-center justify-between px-4 ${
                   index !== features.length - 1 ? "mb-4" : ""
                 }`}
               >
-                <Text className="font-[500] text-[13px] flex-1 pr-2" style={{ color: colors.text }}>
-                  {label}
-                </Text>
+                {/* `flex: 1` DIŞ View'da: AnimatedPressable içeride bir
+                    Animated.View'a sarıyor ve o sarmalayıcı style almıyor —
+                    pressable'a flex vermek satırı genişletmiyor, başlık sıfır
+                    genişliğe iniyordu (isim hiç görünmüyordu). */}
+                <View style={{ flex: 1 }}>
+                  <AnimatedPressable
+                    onPress={() => openBenefitInfo(key)}
+                    pressScale={0.98}
+                    pressBounciness={0}
+                    activeOpacity={0.6}
+                    accessibilityRole="button"
+                    accessibilityLabel={label}
+                    hitSlop={{ top: 8, bottom: 8 }}
+                    style={{
+                      flexDirection: "row",
+                      alignItems: "center",
+                      gap: 6,
+                      paddingRight: 8,
+                    }}
+                  >
+                    <SFIcon
+                      name="info.circle"
+                      fallback={Info}
+                      size={15}
+                      color={featureInk}
+                      strokeWidth={2}
+                      weight="semibold"
+                    />
+                    <Text
+                      className="font-[500] text-[15px] flex-1"
+                      // İkonla AYNI ton: tam kontrastlı başlık, yanındaki soluk
+                      // info ikonunu ayrı bir öge gibi gösteriyordu — ikisi tek
+                      // dokunma hedefi, tek tonda okunmalı.
+                      style={{ color: featureInk }}
+                    >
+                      {label}
+                    </Text>
+                  </AnimatedPressable>
+                </View>
                 <View className="flex-row items-center gap-4">
                   <View className="w-16 items-center">
                     <SFIcon
@@ -1094,6 +1220,14 @@ export default function PurchaseModal({ visible, onClose, onSuccess }: any) {
             ))}
           </BlurView>
         </View>
+
+        {/* Özellik açıklaması — `stackBehavior="push"` ile bu sheet'in üstüne
+            biner, paywall geride açık kalır. Portal'a render olduğu için
+            buradaki konumu scroll içeriğinin yüksekliğine karışmıyor. */}
+        <PremiumBenefitInfoSheet
+          benefitKey={infoBenefit}
+          onClose={() => setInfoBenefit(null)}
+        />
       </BottomSheetScrollView>
     </AppBottomSheet>
   );

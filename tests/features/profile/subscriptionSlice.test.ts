@@ -333,6 +333,125 @@ describe('bekleyen kayıt — çıkış yolu', () => {
 });
 
 /**
+ * Abonelik AKTİVE OLDU ve BİTTİ — kart hâlâ "aktivasyon sürüyor" diyordu.
+ *
+ * Sandbox'ta `premium_weekly`nin tüm ömrü 3 dakika, yani kurtarma kaydının
+ * koruma pencerelerinden (10 dk grace, 10 dk reconcile yaş eşiği) kısa. Kayıt
+ * yalnız `isPremium === true` ile kapandığı için, abonelik o pencerenin içinde
+ * biterse kaydı kapatacak kimse kalmıyordu: backend `Expired`, RC'de aktif
+ * entitlement yok → `/sync` sonsuza kadar `NOT_FOUND_IN_RC`. Kullanıcı,
+ * çözebileceği hiçbir şeyi olmayan bir "Yenile" butonuna basıp duruyordu.
+ *
+ * Ayırt edici, backend kaydının BİTİŞİNİN beklediğimiz satın almadan sonra
+ * olması: sonraysa o kayıt bizim satın almamız (görüldü, bitti), öncesindeyse
+ * bir önceki aboneliğin kalıntısı ve yeni satın almanın webhook'u hâlâ yolda.
+ */
+describe('aktive olup biten abonelik', () => {
+  /** Cihaz logundaki gerçek durum: satın almadan sonra dolan bir bitiş damgası. */
+  const expiredAfterPurchase = () => ({
+    isActivelyPremium: false,
+    premiumExpiresAt: new Date(Date.now() + 60_000).toISOString(),
+    status: 'Expired',
+    productId: 'premium_weekly',
+    provider: 'AppStore',
+    autoRenewEnabled: false,
+  });
+
+  it('closes the card when /status shows the purchase landed and then expired', async () => {
+    const store = makeStore();
+    await store.dispatch(markPremiumPurchasePending({ productId: 'premium_weekly' }) as any);
+    store.dispatch(setPremium({ isPremium: true, optimistic: true }));
+    store.dispatch(hydrateSyncPending(true));
+    mockGet.mockResolvedValue({ result: expiredAfterPurchase() });
+
+    await store.dispatch(fetchSubscriptionStatus() as any);
+
+    expect(hasPendingPremiumSync('user-1')).toBe(false);
+    expect(store.getState().subscription.syncPending).toBe(false);
+    // Grace penceresi de kapanmalı, yoksa bitmiş abonelik 10 dk premium görünür.
+    expect(selectIsPremium(store.getState())).toBe(false);
+    expect(store.getState().subscription.optimisticPremiumAt).toBeNull();
+    expect(mockCapture).toHaveBeenCalledWith(
+      'premium_sync_settled',
+      expect.objectContaining({ source: 'status', status: 'Expired' }),
+    );
+  });
+
+  it('closes the card on the /sync round that keeps answering NOT_FOUND_IN_RC', async () => {
+    // Cihaz logundaki tam dizi: status=Expired → sync NOT_FOUND_IN_RC → kart.
+    const store = makeStore();
+    await store.dispatch(markPremiumPurchasePending({ productId: 'premium_weekly' }) as any);
+    mockPost.mockResolvedValue({
+      result: {
+        synced: false,
+        source: 'rc_rest',
+        reason: 'NOT_FOUND_IN_RC',
+        retryAfterSeconds: 10,
+        status: expiredAfterPurchase(),
+      },
+    });
+
+    await store.dispatch(syncSubscriptionWithRetry({ maxAttempts: 1 }) as any);
+
+    expect(hasPendingPremiumSync('user-1')).toBe(false);
+    expect(store.getState().subscription.syncPending).toBe(false);
+    expect(store.getState().subscription.status).toBe('Expired');
+  });
+
+  it('closes the card when the hub reports the subscription expired', async () => {
+    const store = makeStore();
+    await store.dispatch(markPremiumPurchasePending({ productId: 'premium_weekly' }) as any);
+    store.dispatch(hydrateSyncPending(true));
+
+    await store.dispatch(
+      applySubscriptionChanged({
+        ...expiredAfterPurchase(),
+        reason: 'store_expired',
+      } as any) as any,
+    );
+
+    expect(hasPendingPremiumSync('user-1')).toBe(false);
+    expect(store.getState().subscription.syncPending).toBe(false);
+  });
+
+  it('keeps the record when the expiry predates the purchase — that is the old subscription', async () => {
+    // Kullanıcı bitmiş bir aboneliğin ardından YENİ bir paket alıyor; webhook
+    // inene kadar `/status` hâlâ ESKİ kaydı döndürüyor. Bunu "görüldü, bitti"
+    // saymak, parası yeni alınmış kullanıcının kurtarma turunu iptal ederdi.
+    const store = makeStore();
+    await store.dispatch(markPremiumPurchasePending({ productId: 'premium_monthly' }) as any);
+    store.dispatch(hydrateSyncPending(true));
+    mockGet.mockResolvedValue({
+      result: {
+        isActivelyPremium: false,
+        premiumExpiresAt: new Date(Date.now() - 86_400_000).toISOString(),
+        status: 'Expired',
+        productId: 'premium_weekly',
+      },
+    });
+
+    await store.dispatch(fetchSubscriptionStatus() as any);
+
+    expect(hasPendingPremiumSync('user-1')).toBe(true);
+    expect(store.getState().subscription.syncPending).toBe(true);
+  });
+
+  it('keeps the record when the backend sends Expired with no expiry to compare', async () => {
+    // Tarihsiz `Expired`, "hangi aboneliğin bittiği" sorusunu cevaplamıyor —
+    // hüküm vermek yerine kaydı koruyoruz.
+    const store = makeStore();
+    await store.dispatch(markPremiumPurchasePending({ productId: 'premium_weekly' }) as any);
+    store.dispatch(hydrateSyncPending(true));
+    mockGet.mockResolvedValue({ result: cancelledStatus });
+
+    await store.dispatch(fetchSubscriptionStatus() as any);
+
+    expect(hasPendingPremiumSync('user-1')).toBe(true);
+    expect(store.getState().subscription.syncPending).toBe(true);
+  });
+});
+
+/**
  * Sahadan gelen teşhis raporunun kanıtladığı hata: `/status` "isPremium: true"
  * derken uygulamanın premium'a bakan her yeri "hayır" diyordu. Tek fark
  * `expiresAt` karşılaştırmasıydı — backend damgayı offset'siz yolluyor

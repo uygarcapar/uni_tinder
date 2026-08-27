@@ -1,4 +1,8 @@
-import Purchases, { LOG_LEVEL, PurchasesPackage } from "react-native-purchases";
+import Purchases, {
+  INTRO_ELIGIBILITY_STATUS,
+  LOG_LEVEL,
+  PurchasesPackage,
+} from "react-native-purchases";
 import { Platform } from "react-native";
 import { iapLog, setIapFacts } from "@/features/profile/purchaseDiagnostics";
 
@@ -111,6 +115,44 @@ export async function getOfferings(): Promise<any | null> {
   if (!isConfigured) return null;
   const offerings = await Purchases.getOfferings();
   return offerings.current;
+}
+
+/**
+ * Kullanıcı bu ürünlerin DENEME/tanıtım fiyatına hak kazanıyor mu?
+ *
+ * `product.introPrice` ÜRÜNE ait statik bir alan: App Store Connect'te deneme
+ * tanımlıysa HERKESE dolu gelir — kullanıcı denemesini çoktan yakmış olsa bile.
+ * Apple denemeyi zaten Apple ID + subscription group başına bir kez veriyor,
+ * yani hak kazanmayan kullanıcı ödeme sayfasında tam fiyatı görüp anında
+ * ücretlendiriliyor; eligibility sormazsak paywall ona olmayan bir "3 gün
+ * ücretsiz"i vaat etmiş oluyor (App Review + iade şikâyeti riski).
+ *
+ * UNKNOWN → deneme GÖSTERME (RC'nin de tavsiyesi: yanıltıcı durum yaratma).
+ * Bu API iOS-only; Android her zaman UNKNOWN döner, orada Google zaten
+ * eligibility'ye göre süzülmüş `subscriptionOptions` gönderiyor.
+ *
+ * Dönen map YALNIZ sorulan productId'leri içerir; sorgulanamayan ürün map'te
+ * bulunmaz → çağıran taraf "deneme yok" saymalı.
+ */
+export async function checkIntroEligibility(
+  productIds: string[],
+): Promise<Record<string, boolean>> {
+  if (!isConfigured || productIds.length === 0) return {};
+  try {
+    const map =
+      await Purchases.checkTrialOrIntroductoryPriceEligibility(productIds);
+    const out: Record<string, boolean> = {};
+    for (const [productId, info] of Object.entries(map ?? {})) {
+      out[productId] =
+        info?.status ===
+        INTRO_ELIGIBILITY_STATUS.INTRO_ELIGIBILITY_STATUS_ELIGIBLE;
+    }
+    return out;
+  } catch (e: any) {
+    // Eligibility sorgusu paywall'u bloklamamalı: boş map = deneme gösterme.
+    iapLog("introEligibility.failed", { message: e?.message });
+    return {};
+  }
 }
 
 /**
@@ -348,19 +390,45 @@ export function addCustomerInfoListener(cb: () => void): () => void {
 // chat_unlock consumable'ı 2026-08-02'de kaldırıldı: sohbet kotası dolduğunda
 // artık ürün satılmıyor, Premium aboneliği (PurchaseModal) açılıyor.
 
-// ─── SuperLike paketleri (consumable) ────────────────────────────────────────
+// ─── Consumable paketler (SuperLike + kurtarma) ──────────────────────────────
 //
-// Abonelikten AYRI bir RC offering'de duruyorlar: `getOfferings()` yalnızca
+// Abonelikten AYRI RC offering'lerde duruyorlar: `getOfferings()` yalnızca
 // `offerings.current`i (premium) döndürüyor, paketler `offerings.all[...]`
 // altında. Consumable oldukları için entitlement üretmezler — satın alma
 // "olmuş" sayılır sayılmaz backend'e `transactionId` ile redeem edilmeleri
-// gerekir (bkz. superlikeRedeem.ts).
+// gerekir (bkz. consumableRedeem.ts).
+//
+// İki ürün de aynı RC mekaniğini kullanıyor; ayrıştıkları tek yer offering id'si
+// ve ürün id deseni.
 
 export const SUPERLIKE_OFFERING_ID =
   process.env.EXPO_PUBLIC_REVENUECAT_SUPERLIKE_OFFERING_ID || "superlikes";
 
+/**
+ * Kurtarma paketi offering'i. Backend sözleşmesinde `recovery` olarak
+ * SABİTLENDİ; env yalnız test/staging'de başka bir id'ye kaydırmak için var.
+ */
+export const RECOVERY_OFFERING_ID =
+  process.env.EXPO_PUBLIC_REVENUECAT_RECOVERY_OFFERING_ID || "recovery";
+
+/**
+ * Not paketi offering'i. RC'de **`notes`** olarak açıldı (2026-08-27) —
+ * `superlikes` ile aynı çoğul kural. Öneri dokümanında tekil `note` yazıyordu;
+ * RC offering id'si oluşturulduktan sonra DEĞİŞTİRİLEMİYOR, o yüzden kaynak
+ * burası. Env yalnız test/staging kaydırması için.
+ *
+ * ⚠️ Ürünler MAĞAZADA HENÜZ AÇILMADI — offering bulunamadığında sheet
+ * "yüklenemedi" gösterir, akışın geri kalanı sağlam.
+ */
+export const NOTE_OFFERING_ID =
+  process.env.EXPO_PUBLIC_REVENUECAT_NOTE_OFFERING_ID || "notes";
+
 /** ASC/RC ürün id kuralı: `superlike_5` / `_10` / `_15` / `_20`. */
 const SUPERLIKE_PRODUCT_RE = /^superlike/i;
+/** ASC/RC ürün id kuralı: `recovery_1` / `_3` / `_10`. */
+const RECOVERY_PRODUCT_RE = /^recovery/i;
+/** ASC/RC ürün id kuralı: `note_1` / `_3` / `_10`. */
+const NOTE_PRODUCT_RE = /^note/i;
 
 export interface SuperlikeStoreTransaction {
   transactionId: string;
@@ -368,26 +436,29 @@ export interface SuperlikeStoreTransaction {
   purchaseDate: string | null;
 }
 
-export async function getSuperlikeOffering(): Promise<any | null> {
+async function getConsumableOffering(
+  offeringId: string,
+  tag: string,
+): Promise<any | null> {
   if (!isConfigured) {
-    iapLog("sl-offering", { hata: "SDK configure değil (API key?)" });
+    iapLog(`${tag}-offering`, { hata: "SDK configure değil (API key?)" });
     return null;
   }
   const offerings = await Purchases.getOfferings();
-  const found = (offerings as any)?.all?.[SUPERLIKE_OFFERING_ID] ?? null;
+  const found = (offerings as any)?.all?.[offeringId] ?? null;
   if (!found || (found.availablePackages?.length ?? 0) === 0) {
     // Paket listesi boş kaldığında sheet "yüklenemedi" gösteriyor ve nedeni
     // cihazda görünmüyordu. RC'nin gerçekten döndüğü offering id'lerini yaz:
     // eksik offering (dashboard'da tanımlı değil) ile ürünlerin StoreKit'ten
     // gelmemesi (ASC'de hazır değil / RC ürün eşleşmesi yok) ayırt edilebilsin.
-    iapLog("sl-offering-boş", {
-      aranan: SUPERLIKE_OFFERING_ID,
+    iapLog(`${tag}-offering-boş`, {
+      aranan: offeringId,
       mevcutOfferinglar: Object.keys((offerings as any)?.all ?? {}),
       paketSayısı: found?.availablePackages?.length ?? 0,
     });
   } else {
-    iapLog("sl-offering", {
-      aranan: SUPERLIKE_OFFERING_ID,
+    iapLog(`${tag}-offering`, {
+      aranan: offeringId,
       ürünler: (found.availablePackages ?? []).map(
         (p: any) => p?.product?.identifier ?? "?",
       ),
@@ -395,6 +466,15 @@ export async function getSuperlikeOffering(): Promise<any | null> {
   }
   return found;
 }
+
+export const getSuperlikeOffering = () =>
+  getConsumableOffering(SUPERLIKE_OFFERING_ID, "sl");
+
+export const getRecoveryOffering = () =>
+  getConsumableOffering(RECOVERY_OFFERING_ID, "rec");
+
+export const getNoteOffering = () =>
+  getConsumableOffering(NOTE_OFFERING_ID, "note");
 
 /**
  * Consumable'da satın almanın kendisi bakiyeyi ARTIRMAZ; backend'e redeem
@@ -404,19 +484,20 @@ export async function getSuperlikeOffering(): Promise<any | null> {
  * onu boş bıraktığı sürümler görüldü — o durumda `customerInfo`daki
  * non-subscription geçmişinden aynı ürünün EN YENİ kaydına düşüyoruz.
  */
-export async function purchaseSuperlikePack(
+async function purchaseConsumablePack(
   pkg: PurchasesPackage,
+  tag: string,
 ): Promise<{ transactionId: string | null; productId: string | null }> {
   if (!isConfigured) {
     throw new Error("RevenueCat henüz yapılandırılmamış (API key eksik).");
   }
   const wantedProductId = (pkg as any)?.product?.identifier ?? null;
-  iapLog("sl-satın-alma-başladı", { productId: wantedProductId });
+  iapLog(`${tag}-satın-alma-başladı`, { productId: wantedProductId });
   let res: any;
   try {
     res = await Purchases.purchasePackage(pkg);
   } catch (e: any) {
-    iapLog("sl-satın-alma-hata", {
+    iapLog(`${tag}-satın-alma-hata`, {
       productId: wantedProductId,
       iptal: e?.userCancelled === true,
       code: e?.code ?? null,
@@ -430,7 +511,7 @@ export async function purchaseSuperlikePack(
   // `kaynak` teşhis için belirleyici: `customerInfo` fallback'i YANLIŞ bir
   // transaction seçmiş olabilir (ürün eşleşmesi tutmazsa tüm geçmişe düşüyor)
   // ve backend'in 400/402'si o zaman ürün/webhook değil bizim seçimimizdir.
-  iapLog("sl-satın-alma-bitti", {
+  iapLog(`${tag}-satın-alma-bitti`, {
     productId,
     transactionId,
     kaynak: fromResult ? "purchase-result" : transactionId ? "customerInfo-fallback" : "YOK",
@@ -440,6 +521,15 @@ export async function purchaseSuperlikePack(
   });
   return { transactionId, productId };
 }
+
+export const purchaseSuperlikePack = (pkg: PurchasesPackage) =>
+  purchaseConsumablePack(pkg, "sl");
+
+export const purchaseRecoveryPack = (pkg: PurchasesPackage) =>
+  purchaseConsumablePack(pkg, "rec");
+
+export const purchaseNotePack = (pkg: PurchasesPackage) =>
+  purchaseConsumablePack(pkg, "note");
 
 function transactionTime(tx: any): number {
   const ts = Date.parse(tx?.purchaseDate ?? "");
@@ -467,16 +557,22 @@ function latestTransactionId(
 }
 
 /**
- * Cihazda duran superlike satın almaları — "parayı aldık, krediyi vermedik"
+ * Cihazda duran consumable satın almaları — "parayı aldık, krediyi vermedik"
  * kurtarma yolu. Uygulama satın alma ile kendi kuyruğuna yazma arasında
  * öldürülürse elimizde YALNIZCA bu kayıt kalır.
  *
  * `withinMs` penceresi bilinçli: RC bu listeyi süresiz taşıyor, pencere olmadan
  * her yeniden kurulumda tüm geçmiş tekrar redeem edilirdi (idempotent olduğu
  * için zararsız ama gereksiz onlarca istek).
+ *
+ * Ürün deseni ZORUNLU bir ayraç: iki akışın kuyruğu ayrı olduğu için SuperLike
+ * taraması bir `recovery_3` satın almasını kendi ucuna yollarsa backend onu
+ * kalıcı hatayla ("ürün tanımsız") düşürür ve kredi kaybolur.
  */
-export async function getRecentSuperlikeTransactions(
-  withinMs = 24 * 60 * 60 * 1000,
+async function getRecentConsumableTransactions(
+  productRe: RegExp,
+  withinMs: number,
+  tag: string,
 ): Promise<SuperlikeStoreTransaction[]> {
   if (!isConfigured) return [];
   try {
@@ -487,7 +583,7 @@ export async function getRecentSuperlikeTransactions(
       .filter(
         (tx: any) =>
           tx?.transactionIdentifier &&
-          SUPERLIKE_PRODUCT_RE.test(tx?.productIdentifier ?? ""),
+          productRe.test(tx?.productIdentifier ?? ""),
       )
       .filter((tx: any) => now - transactionTime(tx) <= withinMs)
       .map((tx: any) => ({
@@ -495,11 +591,11 @@ export async function getRecentSuperlikeTransactions(
         productId: String(tx.productIdentifier),
         purchaseDate: tx.purchaseDate ?? null,
       }));
-    // Sadece eşleşenleri değil TOPLAMI da yaz: ürün adı `superlike` ile
+    // Sadece eşleşenleri değil TOPLAMI da yaz: ürün adı beklenen önekle
     // başlamıyorsa (ASC'de farklı adlandırılmışsa) kurtarma taraması sessizce
     // boş dönüyordu ve "RC'de hiç satın alma yok" ile ayırt edilemiyordu.
     if (all.length || found.length) {
-      iapLog("sl-cihaz-geçmişi", {
+      iapLog(`${tag}-cihaz-geçmişi`, {
         toplam: all.length,
         eşleşen: found.length,
         pencereSaat: Math.round(withinMs / 3_600_000),
@@ -508,7 +604,18 @@ export async function getRecentSuperlikeTransactions(
     }
     return found;
   } catch (e: any) {
-    iapLog("sl-cihaz-geçmişi-hata", { hata: e?.message ?? String(e) });
+    iapLog(`${tag}-cihaz-geçmişi-hata`, { hata: e?.message ?? String(e) });
     return [];
   }
 }
+
+export const getRecentSuperlikeTransactions = (
+  withinMs = 24 * 60 * 60 * 1000,
+) => getRecentConsumableTransactions(SUPERLIKE_PRODUCT_RE, withinMs, "sl");
+
+export const getRecentRecoveryTransactions = (
+  withinMs = 24 * 60 * 60 * 1000,
+) => getRecentConsumableTransactions(RECOVERY_PRODUCT_RE, withinMs, "rec");
+
+export const getRecentNoteTransactions = (withinMs = 24 * 60 * 60 * 1000) =>
+  getRecentConsumableTransactions(NOTE_PRODUCT_RE, withinMs, "note");

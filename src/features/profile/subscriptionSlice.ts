@@ -86,6 +86,80 @@ const resolvePendingRecord = (state: any, source: string) => {
   });
 };
 
+/**
+ * Aktivasyonunu beklediğimiz satın almanın ÇIPASI — elimizdeki EN GEÇ satın alma
+ * sinyali. İki kaynak var ve ikisi de aynı soruyu farklı ömürle cevaplıyor:
+ * kalıcı kurtarma kaydı (`at`, reload'u atlatır ama re-mark'ta TAZELENMEZ) ve
+ * optimistic damga (her satın almada yenilenir, reload'da kaybolur).
+ *
+ * `Math.max` bilinçli: kayıt eski bir satın almadan kalmış olabilir, elimizde
+ * daha yeni bir satın alma varsa "backend bunu gördü mü" sorusu YENİ olana
+ * sorulmalı. `min` alsaydık, bir önceki aboneliğin bitmiş kaydı yeni satın
+ * almayı kapatılmış sayardı.
+ */
+const purchaseAnchorOf = (
+  rootState: any,
+  pendingAt: number | null,
+): number | null => {
+  const stamps = [
+    rootState?.subscription?.optimisticPremiumAt ?? null,
+    pendingAt,
+  ].filter((v): v is number => typeof v === "number");
+  return stamps.length ? Math.max(...stamps) : null;
+};
+
+/**
+ * "Backend bu satın almayı GÖRDÜ ve abonelik BİTTİ" mi?
+ *
+ * `syncPending` kartının ("aktivasyon sürüyor" + Yenile) tek gerekçesi
+ * *backend henüz satın almamı görmedi*. Bu varsayımı yanlışlayan tek yol
+ * buraya kadar yoktu: kaydı yalnız `isPremium === true` kapatıyordu. Abonelik
+ * aktive olup SONRA bitmişse (sandbox'ta `premium_weekly` 3 dakika, prod'da
+ * iade/hızlı iptal) backend `Expired` diyor, RC'de aktif entitlement olmadığı
+ * için `/sync` sonsuza kadar `NOT_FOUND_IN_RC` dönüyor ve kart hiç kapanmıyordu
+ * — kullanıcı çözülemeyecek bir şeyi tekrar tekrar deniyor.
+ *
+ * Ayırt edici: backend'in bildiği kaydın BİTİŞİ, beklediğimiz satın almadan
+ * SONRA mı. Sonraysa o kayıt bizim satın almamızı kapsıyor → görüldü, bitti.
+ * Öncesindeyse bu bir ÖNCEKİ aboneliğin kalıntısıdır ve yeni satın almanın
+ * webhook'u hâlâ yolda olabilir → kayıt yerinde kalmalı.
+ *
+ * `expiresAt` yoksa hüküm YOK (`Expired` + boş tarih ayırt edilemez) — temkinli
+ * taraf kaydı korumak.
+ */
+const settlePendingPurchase = (
+  rootState: any,
+  s: SubscriptionStatusSnapshot,
+  source: string,
+): boolean => {
+  if (s.isPremium || !s.status) return false;
+  const expiry = parseBackendDate(s.expiresAt);
+  if (!expiry) return false;
+  const uid = userKeyOf(rootState);
+  const pending = readPendingPremiumSync(uid);
+  const anchor = purchaseAnchorOf(rootState, pending?.at ?? null);
+  if (anchor == null) return false;
+  if (expiry.getTime() <= anchor) return false;
+  iapLog("bekleyen-kayıt-kapandı", {
+    kaynak: source,
+    durum: s.status,
+    ürün: s.productId,
+    bitiş: s.expiresAt,
+    kayıtYaşDk: pending ? Math.round((Date.now() - pending.at) / 60000) : null,
+  });
+  if (pending) {
+    clearPendingPremiumSync(uid);
+    analytics.capture("premium_sync_settled", {
+      source,
+      productId: pending.productId ?? s.productId,
+      status: s.status,
+      attempts: pending.attempts,
+      waitedMs: Date.now() - pending.at,
+    });
+  }
+  return true;
+};
+
 export const fetchSubscriptionStatus = createAsyncThunk(
   "subscription/fetchStatus",
   async (_, { getState, rejectWithValue }) => {
@@ -104,8 +178,14 @@ export const fetchSubscriptionStatus = createAsyncThunk(
         bitiş: status.expiresAt,
         provider: status.provider,
       });
-      if (status.isPremium) resolvePendingRecord(getState(), "status");
-      return status;
+      if (status.isPremium) {
+        resolvePendingRecord(getState(), "status");
+        return { ...status, settled: false };
+      }
+      // Backend "bu aboneliği biliyorum, bitti" diyorsa bekleyen kurtarma kaydı
+      // dayanaksız kalır — `settled` aşağı akışta hem kartı hem grace
+      // penceresini kapatıyor (bkz. settlePendingPurchase).
+      return { ...status, settled: settlePendingPurchase(getState(), status, "status") };
     } catch (e: any) {
       iapLog("status-hata", {
         http: e?.response?.status ?? null,
@@ -119,7 +199,12 @@ export const fetchSubscriptionStatus = createAsyncThunk(
       );
       if (rcStatus.isPremium) {
         iapLog("status-rc-fallback", { isPremium: true, bitiş: rcStatus.expiresAt });
-        return { ...normalizeStatus(null), isPremium: true, expiresAt: rcStatus.expiresAt };
+        return {
+          ...normalizeStatus(null),
+          isPremium: true,
+          expiresAt: rcStatus.expiresAt,
+          settled: false,
+        };
       }
       return rejectWithValue(e.message);
     }
@@ -179,7 +264,13 @@ export const applySubscriptionChanged = createAsyncThunk(
       bitiş: status.expiresAt,
       at: raw.at ?? null,
     });
-    dispatch(subscriptionChanged({ ...status, reason }));
+    // `store_expired` bu daldan geliyor: event'in kendisi "backend gördü ve
+    // bitti" demek. Kaydı BURADA da kapatmazsak kullanıcı, biten aboneliğinin
+    // hemen ardından "aktivasyon sürüyor" kartıyla karşılaşırdı.
+    const settled = status.isPremium
+      ? false
+      : settlePendingPurchase(getState(), status, "hub");
+    dispatch(subscriptionChanged({ ...status, reason, settled }));
     if (status.isPremium) resolvePendingRecord(getState(), "hub");
     return { applied: true as const, isPremium: status.isPremium, reason };
   },
@@ -282,6 +373,13 @@ interface SyncThunkResult extends SubscriptionStatusSnapshot {
    * premium'u kapatırdık.
    */
   statusReceived: boolean;
+  /**
+   * Backend beklediğimiz satın almayı görmüş ve abonelik bitmiş mi
+   * (bkz. `settlePendingPurchase`). `pending`/grace korumalarını DELER: ikisi de
+   * "backend henüz görmedi" varsayımına dayanıyor, bu alan o varsayımı
+   * yanlışlıyor.
+   */
+  settled: boolean;
 }
 
 export const syncSubscriptionWithRetry = createAsyncThunk<
@@ -305,6 +403,10 @@ export const syncSubscriptionWithRetry = createAsyncThunk<
     // GERÇEKTEN atılan istek sayısı — teşhis satırında tavanı yazmak yanıltıcı
     // olurdu (tur `synced` gelince erken dönüyor, ağ hatasında reject ediyor).
     let usedAttempts = 0;
+    // Kayıt tur içinde kapandıysa turun SONUNDAKİ dönüş de bunu taşımalı;
+    // `settlePendingPurchase`i orada yeniden çağırmak (kayıt çoktan silindiği
+    // için `false` dönerdi) ikinci bir log satırı yazıp kararı geri alırdı.
+    let lastSettled = false;
 
     for (let attempt = 1; attempt <= maxAttempts; attempt++) {
       usedAttempts = attempt;
@@ -344,28 +446,37 @@ export const syncSubscriptionWithRetry = createAsyncThunk<
         // 'sadece true ise güncelle' yapmayın" — turun sonunu beklemiyoruz.
         // Aynı korumalardan geçiyor (bkz. applySyncOutcome): downgrade
         // uygulanır, parası alınmış ama backend'e ulaşmamış satın alma korunur.
+        const snapshot = normalizeStatus(result.status);
+        // Kaydı ÖNCE kapat, `pending`i SONRA oku: ikisi aynı kayda bakıyor ve
+        // ters sırada, az önce dayanaksız kaldığını tespit ettiğimiz kayıt
+        // yüzünden kart bir tur daha ayakta kalırdı.
+        if (!synced) {
+          lastSettled = settlePendingPurchase(getState(), snapshot, "sync");
+        }
         dispatch(
           syncStatusReceived({
-            ...normalizeStatus(result.status),
+            ...snapshot,
             synced,
             reason: lastReason,
             source: lastSource,
             attempts: attempt,
             pending: hasWitnessedPurchase(uid),
             statusReceived: result.status != null,
+            settled: lastSettled,
           }),
         );
 
         if (synced) {
           resolvePendingRecord(getState(), "sync");
           return {
-            ...normalizeStatus(result.status),
+            ...snapshot,
             synced: true,
             reason: lastReason,
             source: lastSource,
             attempts: attempt,
             pending: false,
             statusReceived: result.status != null,
+            settled: false,
           };
         }
 
@@ -414,6 +525,11 @@ export const syncSubscriptionWithRetry = createAsyncThunk<
       reason: lastReason,
       source: lastSource,
       deneme: usedAttempts,
+      // Kartı ayakta tutan şeyin ne olduğu log'dan okunamıyordu: aynı üç satır
+      // hem "kurtarma kaydı var" hem "kayıt yok, kart da yok" durumunda
+      // yazılıyor ve fark yalnız state'te görünüyordu.
+      bekleyenKayıt: hasWitnessedPurchase(uid),
+      kapandı: lastSettled,
       anlam:
         lastReason === "NOT_FOUND_IN_RC"
           ? "RC'de bu app_user_id için aktif abonelik yok (kimlik uyuşmazlığı ya da sandbox filtresi)"
@@ -432,6 +548,7 @@ export const syncSubscriptionWithRetry = createAsyncThunk<
       attempts: usedAttempts,
       pending: hasWitnessedPurchase(uid),
       statusReceived: lastStatus != null,
+      settled: lastSettled,
     };
   }
 );
@@ -710,7 +827,12 @@ const applySyncOutcome = (state: SubscriptionState, o: SyncThunkResult) => {
     applyStatus(state, o);
     return;
   }
-  if (o.pending === true || isWithinOptimisticGrace(state)) {
+  // `settled` iki korumayı da deler — ikisi de "backend satın almayı henüz
+  // görmedi" varsayımına dayanıyor, `settled` tam olarak onu yanlışlıyor:
+  // backend gördü, abonelik bitti. Delmezsek (a) kart, çözebileceği bir şey
+  // olmayan bir "Yenile" butonuyla ayakta kalır, (b) grace penceresi boyunca
+  // gerçekten bitmiş abonelik premium görünmeye devam eder.
+  if (!o.settled && (o.pending === true || isWithinOptimisticGrace(state))) {
     state.syncPending = true;
     return;
   }
@@ -720,6 +842,7 @@ const applySyncOutcome = (state: SubscriptionState, o: SyncThunkResult) => {
     state.syncPending = state.isPremium;
     return;
   }
+  if (o.settled) state.optimisticPremiumAt = null;
   applyStatus(state, o);
   state.syncPending = false;
 };
@@ -818,10 +941,13 @@ const subscriptionSlice = createSlice({
     subscriptionChanged: (
       state,
       action: PayloadAction<
-        SubscriptionStatusSnapshot & { reason: SubscriptionChangeReason | null }
+        SubscriptionStatusSnapshot & {
+          reason: SubscriptionChangeReason | null;
+          settled?: boolean;
+        }
       >,
     ) => {
-      const { reason, ...status } = action.payload;
+      const { reason, settled, ...status } = action.payload;
       state.lastChangeReason = reason;
       // Uçuştaki `/status` bu event'ten ÖNCE yola çıktıysa cevabı bayat kalır.
       // Sayaç event UYGULANMASA BİLE artıyor: bir sonraki adımda premium'u aynı
@@ -831,6 +957,7 @@ const subscriptionSlice = createSlice({
       if (
         !status.isPremium &&
         reason !== "admin_revoke" &&
+        !settled &&
         isWithinOptimisticGrace(state)
       ) {
         return;
@@ -839,8 +966,9 @@ const subscriptionSlice = createSlice({
       applyStatus(state, status);
       // Backend premium'u onayladı → "aktivasyon sürüyor" kartı kapansın.
       // Downgrade'de karta DOKUNMUYORUZ (`/status` ile aynı davranış): kalıcı
-      // "ödedi ama görünmüyor" kaydı varsa kurtarma turu onu sürdürmeli.
-      if (status.isPremium) state.syncPending = false;
+      // "ödedi ama görünmüyor" kaydı varsa kurtarma turu onu sürdürmeli —
+      // TEK istisna `settled`, çünkü orada sürdürülecek bir kayıt kalmıyor.
+      if (status.isPremium || settled) state.syncPending = false;
     },
   },
   extraReducers: (builder) => {
@@ -875,10 +1003,16 @@ const subscriptionSlice = createSlice({
         }
         // Satın alma penceresi içindeki `false` = "backend webhook'u henüz
         // görmedi", downgrade değil. Bkz. OPTIMISTIC_PREMIUM_GRACE_MS.
-        if (!action.payload.isPremium && isWithinOptimisticGrace(state)) return;
+        // `settled` bunun istisnası: backend satın almayı görmüş ve abonelik
+        // bitmiş, yani beklenecek bir webhook yok (bkz. settlePendingPurchase).
+        const settled = (action.payload as any).settled === true;
+        if (!action.payload.isPremium && !settled && isWithinOptimisticGrace(state)) {
+          return;
+        }
+        if (settled) state.optimisticPremiumAt = null;
         applyStatus(state, action.payload);
         // Backend premium'u onayladı → "aktivasyon sürüyor" kartı kapansın.
-        if (action.payload.isPremium) state.syncPending = false;
+        if (action.payload.isPremium || settled) state.syncPending = false;
       })
       .addCase(fetchSubscriptionStatus.rejected, (state) => {
         state.loading = false;

@@ -4,8 +4,16 @@ jest.mock('lucide-react-native', () =>
 jest.mock('expo-linear-gradient', () => ({ LinearGradient: 'LinearGradient' }));
 jest.mock('expo-haptics', () => ({
   impactAsync: jest.fn(() => Promise.resolve()),
+  selectionAsync: jest.fn(() => Promise.resolve()),
   ImpactFeedbackStyle: { Light: 'light' },
 }));
+// Özellik satırının info sheet'i AppModal üzerinden `@expo/ui/swift-ui`ye
+// zincirleniyor; o modül jest ortamında native EventEmitter arıyor. Davranışı
+// bu suite'in konusu değil (satırın açtığı sheet, satın alma akışı değil).
+jest.mock('@/features/discover/components/PremiumBenefitInfoSheet', () => {
+  const React = require('react');
+  return { __esModule: true, default: () => React.createElement('View') };
+});
 jest.mock('@/shared/components/AppBottomSheet', () => {
   const React = require('react');
   const { View } = require('react-native');
@@ -53,10 +61,12 @@ jest.mock('@/shared/hooks/redux', () => ({
 const mockGetOfferings = jest.fn();
 const mockPurchasePackage = jest.fn();
 const mockRestorePurchases = jest.fn();
+const mockCheckIntroEligibility = jest.fn();
 jest.mock('@/features/profile/subscriptionService', () => ({
   getOfferings: (...a: any[]) => mockGetOfferings(...a),
   purchasePackage: (...a: any[]) => mockPurchasePackage(...a),
   restorePurchases: (...a: any[]) => mockRestorePurchases(...a),
+  checkIntroEligibility: (...a: any[]) => mockCheckIntroEligibility(...a),
 }));
 
 jest.mock('@/features/profile/subscriptionSlice', () => ({
@@ -101,6 +111,11 @@ jest.mock('@/features/discover/swipeQueries', () => ({
 import { ActivityIndicator, Alert } from 'react-native';
 import { act, fireEvent, render, waitFor } from '@testing-library/react-native';
 import PurchaseModal from '@/features/discover/components/PurchaseModal';
+import i18n from '@/shared/i18n';
+import {
+  PREMIUM_BENEFIT_KEYS,
+  premiumBenefitLabelKey,
+} from '@/features/profile/premiumBenefits';
 
 const monthlyOffering = {
   monthly: {
@@ -133,6 +148,10 @@ beforeEach(() => {
   mockGetOfferings.mockReset();
   mockPurchasePackage.mockReset();
   mockRestorePurchases.mockReset();
+  // Varsayılan: kullanıcı denemeye hak kazanıyor. Deneme metni artık ürünün
+  // introPrice'ına DEĞİL, bu sorguya bağlı.
+  mockCheckIntroEligibility.mockReset();
+  mockCheckIntroEligibility.mockResolvedValue({ monthly_sub: true });
   mockApi.get.mockReset();
   mockSetQueryData.mockClear();
   mockInvalidateQueries.mockClear();
@@ -157,6 +176,21 @@ describe('PurchaseModal — render & loading', () => {
     await waitFor(() => {
       expect(tree.getByText(/Ücretsiz Dene/)).toBeTruthy();
     });
+  });
+
+  // Regresyon: özellik satırları başlıksız çıkmıştı. Liste tek kaynaktan
+  // (`PREMIUM_BENEFIT_KEYS`) geliyor ve paywall TAMAMINI göstermeli — upsell
+  // kartı ilk dördünü gösterip "daha fazlası" dediği için burada eksik madde
+  // doğrudan karşılanmayan bir vaat demek.
+  it('lists every premium benefit by name', async () => {
+    mockGetOfferings.mockResolvedValue(monthlyOffering);
+    const tree = setup();
+    await waitFor(() => tree.getByText(/Ücretsiz Dene/));
+    for (const key of PREMIUM_BENEFIT_KEYS) {
+      const label = i18n.t(premiumBenefitLabelKey(key));
+      expect(label).not.toContain('premium.benefits');
+      expect(tree.getByText(label)).toBeTruthy();
+    }
   });
 
   it('renders the standard headline and restore link', async () => {
@@ -190,6 +224,31 @@ describe('PurchaseModal — render & loading', () => {
     await waitFor(() => {
       expect(tree.getByText(/Ücretsiz Dene/)).toBeTruthy();
     });
+  });
+
+  // Regresyon: `introPrice` ÜRÜNE ait statik alan — App Store Connect'te deneme
+  // tanımlıysa denemesini yakmış kullanıcıda da dolu geliyor. Eskiden paywall
+  // yalnız ona bakıyordu ve herkese "3 Gün Ücretsiz Dene" vaat ediyordu; Apple
+  // ise ineligible kullanıcıdan ilk gün tam ücreti çekiyor.
+  it('falls back to the price CTA when the user is not trial-eligible', async () => {
+    mockGetOfferings.mockResolvedValue(monthlyOffering);
+    mockCheckIntroEligibility.mockResolvedValue({ monthly_sub: false });
+    const tree = setup();
+    await waitFor(() => tree.getByText(/Abone Ol/));
+    expect(mockCheckIntroEligibility).toHaveBeenCalledWith(['monthly_sub']);
+    expect(tree.queryByText(/Ücretsiz Dene/)).toBeNull();
+    // Kart üzerindeki deneme açıklaması da düşmeli.
+    expect(tree.queryByText(/gün ücretsiz kullanabilirsin/)).toBeNull();
+  });
+
+  // Eligibility cevabı gelmeden deneme metni GÖSTERİLMEZ: aksi halde ineligible
+  // kullanıcıda bir kare "ücretsiz" yanıp sönerdi.
+  it('does not promise a trial while eligibility is still pending', async () => {
+    mockGetOfferings.mockResolvedValue(monthlyOffering);
+    mockCheckIntroEligibility.mockReturnValue(new Promise(() => {}));
+    const tree = setup();
+    await waitFor(() => tree.getByText(/Abone Ol/));
+    expect(tree.queryByText(/Ücretsiz Dene/)).toBeNull();
   });
 
   it('shows "Hesap Zaten Lit Plus" when user is already premium', async () => {

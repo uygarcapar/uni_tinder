@@ -138,6 +138,23 @@ import { devLog } from '@/shared/utils/devLog';
 
 const Stack = createNativeStackNavigator<RootStackParamList>();
 
+/**
+ * Parası alınmış ama krediye çevrilememiş consumable satın almaları boşalt.
+ *
+ * Üç ürünün kuyruğu AYRI (aynı MMKV anahtarını paylaşsalardı biri diğerinin
+ * transaction'ını yanlış uca yollardı), ama boşaltma noktaları aynı — bu yüzden
+ * tek yerden çağrılıyorlar: yeni bir consumable eklendiğinde üç ayrı call
+ * site'ın birini unutmak, o ürünün kredisinin hiç yazılmaması demek.
+ *
+ * Kuyruk boşsa hiç istek atılmaz; endpoint'ler `transactionId` bazında
+ * idempotent.
+ */
+function flushConsumableRedeems(userId: string | null | undefined) {
+  flushPendingSuperlikeRedeems(userId).catch(() => {});
+  flushPendingRecoveryRedeems(userId).catch(() => {});
+  flushPendingNoteRedeems(userId).catch(() => {});
+}
+
 // Deep link haritası — app.json'daki "lit" şemasıyla eşleşir (lit://chat/abc123).
 // Push-tap routing'e DOKUNMAZ: o akış bilinçli olarak imperative navigationRef
 // üzerinden yürür (cold-start dedupe + boot gate). Bu config yalnız URL ile
@@ -618,17 +635,18 @@ export default function AppNavigator() {
     return () => clearTimeout(id);
   }, [isAuthenticated, hasToken, isPremiumNow, premiumExpiresAt, dispatch]);
 
-  // Parası alınmış ama krediye çevrilememiş superlike paketleri — açılışta
-  // tekrar redeem et. Satın alma anında RC webhook'u backend'e inmemişse redeem
-  // 402 döner ve transaction MMKV kuyruğuna yazılır; tek kurtarma noktası bu.
-  // Endpoint idempotent, kuyruk boşsa hiç istek atılmaz.
+  // Parası alınmış ama krediye çevrilememiş consumable paketleri (superlike +
+  // kurtarma) — açılışta tekrar redeem et. Satın alma anında RC webhook'u
+  // backend'e inmemişse redeem 402 döner ve transaction MMKV kuyruğuna yazılır;
+  // tek kurtarma noktası bu. Endpoint idempotent, kuyruk boşsa hiç istek
+  // atılmaz.
   useEffect(() => {
     const uid = isAuthenticated && hasToken ? redeemUserKey(user) : null;
     redeemUserKeyRef.current = uid;
     if (!uid) return;
     // Boot'un ağır fazına istek eklemesin — kullanıcı bu akışta beklemiyor.
     const task = InteractionManager.runAfterInteractions(() => {
-      flushPendingSuperlikeRedeems(uid).catch(() => {});
+      flushConsumableRedeems(uid);
     });
     return () => task.cancel?.();
   }, [isAuthenticated, hasToken, user?.userId, user?.id]);
@@ -650,7 +668,7 @@ export default function AppNavigator() {
       });
       // Consumable satın alma da bu listener'ı tetikliyor (doküman §6.3'ün üç
       // boşaltma noktasından biri). Kuyruk boşsa istek atılmaz.
-      flushPendingSuperlikeRedeems(redeemUserKeyRef.current).catch(() => {});
+      flushConsumableRedeems(redeemUserKeyRef.current);
     });
   }, [isAuthenticated, hasToken, dispatch]);
 
@@ -1319,12 +1337,12 @@ export default function AppNavigator() {
       queryKey: swipeKeys.stats,
       refetchType: 'active',
     });
-    // Parası alınmış ama krediye çevrilememiş superlike paketleri.
+    // Parası alınmış ama krediye çevrilememiş consumable paketleri.
     // Eskiden YALNIZ cold start'ta deneniyordu: kullanıcı paketi alıp iki
     // kez 402 yedikten sonra uygulamayı arka plana atıp geri gelirse
     // kredi, tam bir restart olana kadar hesabına geçmiyordu. Webhook'un
     // geciktiği durumda en çok işleyecek boşaltma noktası tam da burası.
-    flushPendingSuperlikeRedeems(redeemUserKeyRef.current).catch(() => {});
+    flushConsumableRedeems(redeemUserKeyRef.current);
     // Şehir/ilçe backend'de konumdan türetiliyor → her foreground'da tek
     // atımlık koordinat. İzin yoksa/GPS yoksa sessizce no-op.
     sendLocationHeartbeat();
