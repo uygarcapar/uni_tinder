@@ -310,9 +310,43 @@ export interface PotentialMatch {
   userId: string;
   displayName: string;
   profileImageUrl?: string;
+  /**
+   * Yaş. **`0` = GİZLENMİŞ** (karşı taraf `showAge`'i kapatmış), gerçek bir yaş
+   * değil: alan DTO'da non-nullable int olduğu için backend null gönderemiyor —
+   * `distance` ile birebir aynı desen. Doğrudan basarsan kartta ", 0" yazar;
+   * `resolveCardAge` ile çöz.
+   */
   age?: number;
+  /**
+   * Yaş gizlilik bayrağı — `age: 0` ile birlikte gelir, ikisi de aynı ayarı
+   * anlatır. `age > 0` tek başına yeterli görünse de bayrağa bakmak sözleşmeyi
+   * açık kılıyor: göndermeyen sürümlerde `undefined` gelir (bkz.
+   * `resolveCardAge`).
+   */
+  showAge?: boolean;
+  /**
+   * Prompt cevapları — bio'nun yerini alan bölüm. En fazla 3, sunucudan gelen
+   * SIRAYLA çizilir (backend `OrderBy(DisplayOrder)` garantisi veriyor).
+   *
+   * **Boş/null kalıcı olarak geçerli bir durum:** migration'dan gelen tüm
+   * kullanıcılar 0 prompt'la başlıyor. Bölüm o zaman hiç çizilmiyor ve kart
+   * `bio`ya düşüyor (bkz. aşağıdaki not).
+   */
+  prompts?: ProfilePromptCard[] | null;
+  /**
+   * @deprecated Bio üründen kaldırıldı. Kart bunu artık YALNIZCA `prompts` boşken
+   * çiziyor — geçiş fazında (backend Faz 1–3) bio'su dolu ama henüz prompt
+   * doldurmamış kullanıcıların kartı boşalmasın diye. Backend Faz 4'te alanı
+   * düşürünce guard kendiliğinden sönüyor ve bu alan silinecek.
+   */
   bio?: string;
   photos?: string[];
+  /**
+   * Km cinsinden mesafe. **`0` = GİZLENMİŞ**, "çok yakın" değil: karşı taraf
+   * `showDistance`'ı kapattığında backend bu alanı null yapamıyor (DTO'da
+   * non-nullable int) ve 0 gönderiyor — `showAge` → `age: 0` ile aynı desen.
+   * Karta "0 km" / "hemen yanında" basma.
+   */
   distance?: number;
   isPremium?: boolean;
 
@@ -373,6 +407,14 @@ export interface PotentialMatch {
   /** Ortak nokta YOKSA backend boş dizi değil `null` gönderir. */
   thingsInCommon?: ThingInCommon[] | null;
 
+  /**
+   * Şehir/ilçe — karşı taraf `showLocation`'ı kapattıysa İKİSİ DE null gelir
+   * (koordinatlar da silinir, yani harita da çizilemez). Dolu geleceklerini
+   * varsayıp doğrudan join'leme; `filter(Boolean)`'dan geçir.
+   *
+   * Gizlemek yalnızca KARTI etkiler: o kullanıcı keşifte çıkmaya, mesafe ve
+   * şehir filtrelerine takılmaya devam eder.
+   */
   cityDisplay?: string;
   districtDisplay?: string;
 
@@ -426,10 +468,26 @@ export interface PotentialMatchesResult {
   paywallType: PaywallType | null;
   paywallMessage: string | null;
   isPremium: boolean;
-  // NOT: `wasRadiusExpanded` / `appliedRadiusKm` BİLEREK YOK. Backend hâlâ
-  // döndürüyor ama 2026-08-17 sözleşmesinden beri ölü alanlar (her zaman
-  // false / null) ve sonraki major'da silinecekler. Sessiz yarıçap
-  // genişletmesi kullanıcıya gösterilmiyor — yeniden bağlama.
+  /**
+   * Bu deste mesafe filtresi UYGULANMADAN dolduruldu mu — yani kullanıcının
+   * kalıcı "Mesafe sınırı olmasın" anahtarı açık mı (bkz. filtrelerdeki
+   * `ignoreDistanceFilter`).
+   *
+   * DİKKAT: "uzaktakiler öne çıktı" DEMEK DEĞİL. Yakınlık skorda korunuyor
+   * (yakındakiler yine destenin başında), kalkan yalnızca ELEME. Kullanıcıya
+   * gösterilen metin de bunu söylemeli.
+   *
+   * 2026-08-22'de `wasRadiusExpanded`ın yerini aldı; tek seferlik genişletme
+   * akışı tamamen kaldırıldı.
+   */
+  distanceFilterIgnored: boolean;
+  /**
+   * Bu destede fiilen uygulanan yarıçap (km). Anahtar AÇIKKEN `null` (sınırsız).
+   *
+   * `null` iki anlama gelebiliyor — "sınırsız" ya da "backend alanı
+   * göndermedi" — o yüzden tek başına okuma: nöbetçi `distanceFilterIgnored`.
+   */
+  appliedRadiusKm: number | null;
   emptyReason: EmptyReason;
   emptyReasonCode: ResponseCode | null;
   emptyReasonMessage: string | null;

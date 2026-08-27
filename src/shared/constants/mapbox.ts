@@ -14,18 +14,13 @@ export const MAPBOX_TOKEN =
 /** Koyu tema haritası — Studio'daki özel stil (kart zeminiyle uyumlu). */
 export const MAPBOX_STYLE_DARK = "uygarcapar/cmoydix5b000501sh01nchpmh";
 
-/**
- * Açık tema haritası. Özel stilin koyu zemini açık kartın içinde delik gibi
- * duruyordu; şimdilik Mapbox'ın hazır açık stili kullanılıyor. Studio'da açık
- * bir kardeş stil yayınlanınca burayı "uygarcapar/<styleId>" ile değiştir —
- * başka hiçbir yeri değiştirmen gerekmiyor.
- */
-export const MAPBOX_STYLE_LIGHT = "mapbox/light-v11";
+/** Açık tema haritası — Studio'daki açık kardeş stil. */
+export const MAPBOX_STYLE_LIGHT = "uygarcapar/cmt75ib0000as01sgh2auhnfd";
 
 // Style'ı her güncelleyip Publish ettiğinde bu sayıyı +1 yap: URL cache
 // anahtarı olduğu için (expo-image disk cache + Mapbox CDN) sürüm artmadan
 // eski görsel dönmeye devam eder.
-export const MAPBOX_STYLE_VERSION = 1;
+export const MAPBOX_STYLE_VERSION = 2;
 
 interface BuildMapboxStaticUrlArgs {
   latitude: number;

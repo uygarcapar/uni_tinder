@@ -322,6 +322,11 @@ export const editProfileFormSchema = z.object({
   showMyUniversity: z.boolean(),
   showMeOnApp: z.boolean(),
   showAge: z.boolean(),
+  // Şehir/ilçe görünürlüğü — opt-out: backend varsayılanı true. Kapalıyken
+  // KARTTA şehir/ilçe (ve harita) gizlenir; keşifte çıkmaya, mesafe ve şehir
+  // filtrelerine takılmaya, konum heartbeat'i göndermeye devam eder.
+  // Mesafe ayrı bir bayrak (`showDistance`) — ikisi bağımsız.
+  showLocation: z.boolean(),
   // Premium rozeti — opt-out: backend varsayılanı true, kapatınca yalnızca
   // ROZET gizlenir (kotalar/filtreler/sıralama avantajı aynen sürer).
   showPremiumBadge: z.boolean(),

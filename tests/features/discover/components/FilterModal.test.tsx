@@ -9,9 +9,17 @@ jest.mock('react-native-reanimated', () => {
     default: { View, Text },
     useSharedValue: (v: any) => ({ value: v }),
     useAnimatedStyle: (fn: any) => fn(),
-    withTiming: (v: any) => v,
+    // Callback'i ÇAĞIRMASI şart: bazı geçişler bitince stili durağan hale
+    // döndürüyor (free tavan şeridi `auto` yüksekliğe dönüyor). Yutulursa
+    // bileşen testte kalıcı "animasyonda" sanılır.
+    withTiming: (v: any, _cfg?: any, cb?: any) => {
+      cb?.(true);
+      return v;
+    },
     withSequence: (...v: any[]) => v[v.length - 1],
     runOnJS: (fn: any) => fn,
+    // withTiming hedef değeri döndürüyor; easing yalnız çağrılabilir olmalı.
+    Easing: { out: (fn: any) => fn, quad: (t: any) => t },
   };
 });
 // GestureDetector reanimated'ın worklet API'sini (useEvent) istiyor; yukarıdaki
@@ -59,16 +67,28 @@ jest.mock('@/shared/components/HobbyIcon', () => ({
   __esModule: true,
   default: () => null,
 }));
-// Apply butonu AppModal'ın header'ında — kaydetme payload'ını doğrulayabilmek
-// için mock'ta da bir tetikleyici olarak render ediliyor.
+// Apply ve Sıfırla butonları AppModal'ın header'ında — kaydetme payload'ını
+// doğrulayabilmek için mock'ta da birer tetikleyici olarak render ediliyorlar.
 jest.mock('@/shared/components/AppModal', () => {
   const React = require('react');
   const { View, Text, TouchableOpacity } = require('react-native');
   return {
     __esModule: true,
-    default: ({ visible, children, actionLabel, onAction }: any) =>
+    default: ({
+      visible,
+      children,
+      actionLabel,
+      onAction,
+      leftLabel,
+      onLeftPress,
+    }: any) =>
       visible
         ? React.createElement(View, { testID: 'app-modal' }, [
+            React.createElement(
+              TouchableOpacity,
+              { key: 'left', testID: 'reset', onPress: onLeftPress },
+              React.createElement(Text, null, leftLabel),
+            ),
             React.createElement(
               TouchableOpacity,
               { key: 'action', testID: 'apply', onPress: onAction },
@@ -184,6 +204,11 @@ const ALL_CAPABLE = [
 // Backend GET /api/swipe/Filters yanıtının bu ekranı ilgilendiren iskeleti.
 const baseFilters = {
   maxDistance: 50,
+  // Slider sınırları 2026-08-21'den beri yanıttan geliyor (free 75 / premium
+  // 150). Fixture'da olmaları önemli: eksikse bileşen tier sabitlerine düşer
+  // ve test, üretimde ARTIK KULLANILMAYAN yolu doğrulamış olur.
+  minSelectableDistanceKm: 5,
+  maxSelectableDistanceKm: 75,
   interestedIn: ['Women'],
   preferredCity: null,
   preferredUniversityDomain: 'boun.edu.tr',
@@ -835,5 +860,126 @@ describe('FilterModal — premium filtreler', () => {
     fireEvent.press(screen.getByTestId('apply'));
 
     expect(onSave.mock.calls[0][0].dealbreakers).toEqual(['Height']);
+  });
+});
+
+// "Mesafe sınırı olmasın" anahtarı (2026-08-22). Az kullanıcılı şehirlerde
+// desteyi boşaltan katı mesafe filtresinin kaçış yolu.
+describe('FilterModal — mesafe sınırı anahtarı', () => {
+  const SWITCH = 'ignore-distance-switch';
+
+  it('kayıtlı durumu okur ve kaydettiğinde geri yollar', () => {
+    const { onSave } = renderModal({
+      ...baseFilters,
+      ignoreDistanceFilter: true,
+    });
+
+    expect(screen.getByTestId(SWITCH).props.value).toBe(true);
+
+    fireEvent.press(screen.getByTestId('apply'));
+    const payload = onSave.mock.calls[0][0];
+    expect(payload.ignoreDistanceFilter).toBe(true);
+    // Anahtar açıkken de kullanıcının seçtiği yarıçap SAKLANIYOR — iki alan
+    // bağımsız, kapatınca eski değere dönülmeli.
+    expect(payload.maxDistance).toBe(50);
+  });
+
+  it('alan hiç gelmediğinde KAPALI başlar (varsayılan)', () => {
+    // Tercih belirtilmemişken kullanıcının seçtiği yarıçap uygulanır; sınırı
+    // kaldırmak bilinçli bir tercih (boş destede ekranın kendi butonu var).
+    renderModal(baseFilters);
+    expect(screen.getByTestId(SWITCH).props.value).toBe(false);
+  });
+
+  it('açıkça true gelen kayıtta AÇIK başlar', () => {
+    // Varsayılan kapalı olsa da kullanıcının kendi "sınır olmasın" tercihi
+    // ezilmemeli — yoksa açıp çıkan kullanıcı ekranı her açtığında anahtarı
+    // yeniden kapalı bulurdu.
+    renderModal({ ...baseFilters, ignoreDistanceFilter: true });
+    expect(screen.getByTestId(SWITCH).props.value).toBe(true);
+  });
+
+  it('anahtar açılınca payload’a true gider', () => {
+    const { onSave } = renderModal({
+      ...baseFilters,
+      ignoreDistanceFilter: false,
+    });
+
+    fireEvent(screen.getByTestId(SWITCH), 'valueChange', true);
+    fireEvent.press(screen.getByTestId('apply'));
+
+    expect(onSave.mock.calls[0][0].ignoreDistanceFilter).toBe(true);
+  });
+
+  it('free kullanıcıda kilit/paywall YOK', () => {
+    // Şikâyet free kullanıcıdan geliyor ve backend free'den de kabul ediyor;
+    // premium'a bağlanması ürün kararının tersi olurdu.
+    const { onSave } = renderModal(
+      { ...baseFilters, ignoreDistanceFilter: false },
+      { isPremium: false },
+    );
+
+    const toggle = screen.getByTestId(SWITCH);
+    expect(toggle.props.disabled).toBeFalsy();
+
+    fireEvent(toggle, 'valueChange', true);
+    fireEvent.press(screen.getByTestId('apply'));
+
+    expect(onSave.mock.calls[0][0].ignoreDistanceFilter).toBe(true);
+  });
+
+  it('free kullanıcıda tavanı bölüm açıklamasının sonuna ekler', () => {
+    // Tavan artık ayrı şerit DEĞİL — "Maksimum Mesafe" açıklamasının devamı.
+    // Aynı Text içinde olmalı: ayrı bir satır/kutu olsaydı anahtar açılınca
+    // yine unmount olup altındaki bölümü zıplatırdı.
+    renderModal(
+      { ...baseFilters, ignoreDistanceFilter: false },
+      { isPremium: false },
+    );
+
+    // Sayılar SABİT DEĞİL: free tavanı backend'den, premium tavanı görsel
+    // tavan — ikisi de metne o an geçerli değerlerle giriyor.
+    expect(
+      screen.getByText(/daireyi sürükle\. Ücretsiz hesapta sınır 75 km/i),
+    ).toBeTruthy();
+  });
+
+  it('anahtar açıkken tavan cümlesini açıklamadan çıkarır', () => {
+    // "Sınır 75 km" o an fiilen uygulanmıyor — yazmak yanlış bilgi olurdu.
+    // Açıklamanın kendisi duruyor, yalnız son cümle düşüyor.
+    renderModal(
+      { ...baseFilters, ignoreDistanceFilter: true },
+      { isPremium: false },
+    );
+
+    expect(screen.queryByText(/Ücretsiz hesapta sınır/)).toBeNull();
+    expect(screen.getByText(/daireyi sürükle/i)).toBeTruthy();
+  });
+
+  it('premium kullanıcıda tavan cümlesi hiç geçmez', () => {
+    renderModal(
+      { ...baseFilters, ignoreDistanceFilter: false },
+      { isPremium: true },
+    );
+
+    expect(screen.queryByText(/Ücretsiz hesapta sınır/)).toBeNull();
+    expect(screen.getByText(/daireyi sürükle/i)).toBeTruthy();
+  });
+
+  it('"Sıfırla" anahtarı KAPATIR (varsayılan)', () => {
+    // Sıfırla varsayılana döndürür; varsayılan artık kapalı, yani sıfırlanan
+    // filtre tier tavanındaki yarıçapla çalışır. AÇIK kayıttan başlayıp test
+    // ediyoruz — kapalı kayıtta "korunuyor mu" ile ayırt edilemez.
+    const { onSave } = renderModal({
+      ...baseFilters,
+      ignoreDistanceFilter: true,
+    });
+
+    fireEvent.press(screen.getByTestId('reset'));
+
+    expect(onSave.mock.calls[0][0].ignoreDistanceFilter).toBe(false);
+    // Ekran da anında güncellenmeli: sıfırlama başarısız olursa modal açık
+    // kalıyor ve kullanıcı anahtarı yeni haliyle görmeli.
+    expect(screen.getByTestId(SWITCH).props.value).toBe(false);
   });
 });

@@ -18,7 +18,11 @@ import type {
 // ile farklı navigasyon yapabilsin).
 export type CodeAction =
   | { kind: "openFilters" }
-  | { kind: "expandRadius" }
+  // Kalıcı "mesafe sınırı olmasın" anahtarını AÇAR (tek seferlik genişletme
+  // değil — o akış 2026-08-22'de kaldırıldı). Filtre ekranına atmak yerine
+  // doğrudan uygulanıyor: tek dokunuşla çözülen bir sorun için ekran
+  // değiştirmek gereksiz sürtünme.
+  | { kind: "removeDistanceLimit" }
   | { kind: "completeProfile" }
   | { kind: "openPaywall"; paywallType?: PaywallType }
   | { kind: "contactSupport" }
@@ -44,12 +48,17 @@ export interface CodeEntry {
 // Object literal yerine sıralı array: yeni kod sonuna eklenir, lookup map
 // aşağıda türetilir.
 const CODE_ENTRIES: CodeEntry[] = [
+  // Mesafe 2026-08-21'den beri KATI filtre → bu kod artık çok daha sık
+  // görülüyor (dar yarıçap seçen kullanıcı gerçekten boş deste alıyor).
+  // Aksiyon kalıcı anahtarı açıyor; kod DEĞİŞMEDİ, yalnız metin ve davranış
+  // değişti (2026-08-22). Anahtar zaten açıkken buton çizilmez — o durumda
+  // yapılacak tek şey filtreleri gevşetmek (bkz. DiscoverScreen emptyCopy).
   {
     code: "UT-6001",
     emptyReason: "NoCandidatesInRadius",
     title: "Yakınında şu an gösterecek kimse yok",
-    actionLabel: "Mesafeyi Genişlet",
-    action: { kind: "expandRadius" },
+    actionLabel: "Mesafe Sınırını Kaldır",
+    action: { kind: "removeDistanceLimit" },
   },
   {
     code: "UT-6002",

@@ -6,29 +6,68 @@
 // remainingUndos / dailySwipeLimit / dailyUndoLimit aynı konvansiyonu kullanır.
 export const UNLIMITED = -1;
 
-// Mesafe filtresi yeniden TIER'A BAĞLI (backend sözleşmesi 2026-08-17):
-// free 50 km, premium 100 km. Eski "sınırsız" semantiği (maxDistance: 0)
-// KALDIRILDI — 0 gönderilirse backend tavanı uygular.
+// Mesafe artık KATI BİR FİLTRE (backend sözleşmesi 2026-08-21). Öncesinde
+// yalnızca bir SIRALAMA kriteriydi: 20 km seçen kullanıcıya deste bitince
+// 200 km'den profil geliyor, yani filtre fiilen çalışmıyordu. Artık yarıçap
+// dışındaki profiller HİÇ gösterilmiyor; aday kalmazsa deste boş döner.
+// Otomatik + sessiz genişletme KALDIRILDI.
+//
+// Kaçış yolu (2026-08-22): filtrelerdeki KALICI `ignoreDistanceFilter` anahtarı
+// elemeyi tamamen kapatıyor — free kullanıcıda da, paywall yok. Anahtar açıkken
+// buradaki tavanlar seçilebilir aralık olarak kalmaya devam ediyor (değer
+// saklanıyor, kapatınca geri yükleniyor) ama fiilen UYGULANMIYOR. Sıralama
+// değişmiyor: yakındakiler yine destenin başında, kalkan yalnızca eleme.
+// Tek seferlik "daha uzağı göster" akışı (canExpandRadius/useExpandRadius) bu
+// anahtarla birlikte tamamen kaldırıldı.
 //
 // Bu aralık slider'ın GÖRSEL sınırları ve aynı zamanda backend'in validasyon
-// aralığı: FilterUpdateDto.MaxDistance artık Range(1, 100), 100'ün üstü 400
-// döner (eski Range(0, 20000) kaldırıldı). Seçilebilir tavan bundan AYRI —
-// bkz. maxDistanceKmForTier: halkalar 100'e kadar çizilir, tier tavanının
-// üstündekiler soluk görünür.
-export const DISTANCE_RANGE_KM = { min: 1, max: 100 };
+// aralığı: FilterUpdateDto.MaxDistance artık Range(5, 150) (eski Range(1, 100)).
+// Seçilebilir tavan bundan AYRI ve tier'a bağlı — halkalar 150'ye kadar
+// çizilir, tier tavanının üstündekiler soluk görünür.
+export const DISTANCE_RANGE_KM = { min: 5, max: 150 };
 
-// Tier tavanları sunucu config'inden geliyor (Discovery:FreeMaxDistanceKm /
-// Discovery:PremiumMaxDistanceKm) ve şu an hiçbir uçtan DÖNMÜYOR — backend
-// değerleri değiştirirse burası elle güncellenmeli.
+// Tier tavanları — ARTIK YALNIZCA FALLBACK. Kanonik kaynak
+// `GET /api/swipe/Filters` → `minSelectableDistanceKm` / `maxSelectableDistanceKm`;
+// bunlar kullanıcının KENDİ tier'ına göre gelir (free 75 / premium 150) ve
+// sunucu config'i (Discovery:FreeMaxDistanceKm / :PremiumMaxDistanceKm)
+// değiştiğinde FE güncellemesi GEREKMEZ. Bu sabitler yalnız yanıt henüz
+// inmemişken ya da alanları göndermeyen eski bir backend'de devreye girer —
+// bkz. resolveDistanceBounds.
 //
 // Tavanın üstü gönderilirse backend hata değil SESSİZ CLAMP uyguluyor (eski
 // istemciler filtre kaydedemez hale gelmesin diye). Yani sınırı FE zorlamazsa
-// kullanıcı 100 km seçtiğini sanır, backend 50 yazar ve arayüz yalan söyler.
-export const FREE_MAX_DISTANCE_KM = 50;
-export const PREMIUM_MAX_DISTANCE_KM = 100;
+// kullanıcı 150 km seçtiğini sanır, backend 75 yazar ve arayüz yalan söyler.
+export const FREE_MAX_DISTANCE_KM = 75;
+export const PREMIUM_MAX_DISTANCE_KM = 150;
 
 export const maxDistanceKmForTier = (isPremium: boolean) =>
   isPremium ? PREMIUM_MAX_DISTANCE_KM : FREE_MAX_DISTANCE_KM;
+
+/**
+ * Slider'ın seçilebilir aralığı — ÖNCE backend, sonra tier sabitleri.
+ *
+ * `GET /api/swipe/Filters` yanıtı sınırları taşıyor; hard-code etmemek için
+ * tek çözümleme noktası burası. Alanlar gelmezse (eski backend, yanıt henüz
+ * inmemiş) tier sabitlerine düşülür.
+ *
+ * Taban/tavan tutarsız gelirse (config hatası, kısmi yanıt) `max` tabanın
+ * altına DÜŞÜRÜLMEZ: aralık tersine dönerse slider hiçbir değeri kabul
+ * edemez ve kullanıcı mesafesini hiç değiştiremez hale gelir.
+ */
+export function resolveDistanceBounds(
+  filters: any,
+  isPremium: boolean,
+): { minKm: number; maxKm: number } {
+  const rawMin = Number(filters?.minSelectableDistanceKm);
+  const rawMax = Number(filters?.maxSelectableDistanceKm);
+  const minKm = Number.isFinite(rawMin) && rawMin > 0
+    ? rawMin
+    : DISTANCE_RANGE_KM.min;
+  const maxKm = Number.isFinite(rawMax) && rawMax > 0
+    ? rawMax
+    : maxDistanceKmForTier(isPremium);
+  return { minKm, maxKm: Math.max(minKm, maxKm) };
+}
 
 // Yaş filtresi UI'dan kaldırıldı; UpdateFilters payload'ı tüm yaşları kapsayan
 // bu aralığı gönderiyor. Tek kaynak — FilterModal ve useSaveFilters aynı değeri

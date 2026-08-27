@@ -17,9 +17,9 @@ import Animated, {
   withSequence,
   useAnimatedStyle,
   runOnJS,
+  Easing,
 } from "react-native-reanimated";
 import {
-  Lock,
   GraduationCap,
   InfoIcon,
   Navigation,
@@ -89,26 +89,24 @@ import uiBus from "@/shared/services/uiBus";
 import {
   DEFAULT_AGE_RANGE,
   DISTANCE_RANGE_KM,
-  FREE_MAX_DISTANCE_KM,
   MAX_PREFERRED_HOBBIES,
   MAX_UNIVERSITY_DOMAINS,
-  PREMIUM_MAX_DISTANCE_KM,
-  maxDistanceKmForTier,
+  resolveDistanceBounds,
 } from "@/shared/constants/limits";
-import { colors, ink } from "../../../shared/theme/colors";
+import { colors, ink, isLight } from "../../../shared/theme/colors";
 
-// Slider'ın GÖRSEL aralığı — halkalar her iki tier'da da 100 km'ye kadar
-// çiziliyor. Seçilebilir tavan ayrı ve tier'a bağlı (tierMaxKm); cap üstündeki
-// halkalar soluk çizilerek erişilemeyen premium aralığı gösteriliyor.
-const MIN_DISTANCE_KM = DISTANCE_RANGE_KM.min;
-const MAX_DISTANCE_KM = DISTANCE_RANGE_KM.max;
-
-// NOT: 2026-08-11'de kaldırılan free cap'i GERİ GELDİ (backend sözleşmesi
-// 2026-08-17): free 50 km, premium 100 km. Backend tavanın üstünü 400 ile
-// reddetmiyor, sessizce kırpıyor — cap'i FE zorlamazsa kullanıcı 100 km
-// seçtiğini sanıp 50 km'lik deste görür. Premium'dan free'ye düşen kullanıcının
-// kayıtlı 100 km'si de okurken 50'ye clamp'leniyor; bu artık doğru davranış,
-// çünkü backend zaten 50 uyguluyor (bkz. sözleşme §5).
+// NOT: slider'ın sınırları ARTIK SABİT DEĞİL. Taban ve seçilebilir tavan
+// `GET /api/swipe/Filters` yanıtından geliyor (minSelectableDistanceKm /
+// maxSelectableDistanceKm — free 75, premium 150) ve aşağıda prop olarak
+// aktarılıyor; DISTANCE_RANGE_KM yalnız yanıt gelmediğinde fallback.
+// Sunucu config'i değişirse FE güncellemesi gerekmiyor (sözleşme §9).
+//
+// Görsel aralık ile seçilebilir aralık AYRI: halkalar premium tavanına kadar
+// çiziliyor, tier tavanının üstündekiler soluk — free kullanıcı erişemediği
+// aralığı görüyor. Backend tavanın üstünü 400 ile reddetmiyor, sessizce
+// kırpıyor; cap'i FE zorlamazsa kullanıcı 150 km seçtiğini sanıp 75 km'lik
+// deste görür. Mesafe artık KATI filtre olduğu için bu yalan eskisinden
+// pahalı: yarıçap dışı profiller hiç gösterilmiyor.
 
 // Picker hedefi → local state alanı. Üç üniversite listesi de aynı bileşenden
 // besleniyor; hangi alana yazılacağı tek yerde tanımlı olsun.
@@ -453,10 +451,10 @@ const activeDealbreakers = (f: any): string[] =>
 // Backend Filters, hiç filtre kaydetmemiş kullanıcıda "sınırsız" sentinel'i
 // (ör. 20000) dönebiliyor. Clamp'siz girerse gri dolgu dairesi pct>1 ile
 // binlerce px'e büyüyüp tüm modalı kaplıyor — okurken tier'ın aralığına sabitle.
-const clampKm = (raw: any, maxKm: number) => {
+const clampKm = (raw: any, minKm: number, maxKm: number) => {
   const n = parseInt(raw, 10);
-  if (!Number.isFinite(n)) return MIN_DISTANCE_KM;
-  return Math.min(maxKm, Math.max(MIN_DISTANCE_KM, n));
+  if (!Number.isFinite(n)) return minKm;
+  return Math.min(maxKm, Math.max(minKm, n));
 };
 
 // InterestedIn profil düzenlemeden buraya taşındı: artık kalıcı bir profil alanı
@@ -490,9 +488,11 @@ const MIN_RADIUS = 30;
 const MAX_RADIUS = 128;
 const RING_KM_STEP = 25;
 
-const kmToRadius = (km: number) => {
-  const visualRange = MAX_DISTANCE_KM - MIN_DISTANCE_KM;
-  const pct = (km - MIN_DISTANCE_KM) / visualRange;
+const kmToRadius = (km: number, minKm: number, visualMaxKm: number) => {
+  // Sınırlar backend'den geliyor; bozuk/eksik yanıtta aralık sıfıra düşerse
+  // bölme NaN üretip daireyi yok ederdi.
+  const visualRange = Math.max(1, visualMaxKm - minKm);
+  const pct = (km - minKm) / visualRange;
   return MIN_RADIUS + pct * (MAX_RADIUS - MIN_RADIUS);
 };
 
@@ -505,12 +505,16 @@ const DOT_GAP = 6;
 
 const RingMarks = React.memo(function RingMarks({
   userMaxKm,
+  minKm,
+  visualMaxKm,
 }: {
   userMaxKm: number;
+  minKm: number;
+  visualMaxKm: number;
 }) {
   const rings: number[] = [];
-  for (let km = RING_KM_STEP; km <= MAX_DISTANCE_KM; km += RING_KM_STEP) {
-    rings.push(km);
+  for (let km = RING_KM_STEP; km <= visualMaxKm; km += RING_KM_STEP) {
+    if (km > minKm) rings.push(km);
   }
 
   return (
@@ -521,20 +525,16 @@ const RingMarks = React.memo(function RingMarks({
       style={{ position: "absolute", left: 0, top: 0 }}
     >
       {rings.map((km) => {
-        const r = kmToRadius(km);
+        const r = kmToRadius(km, minKm, visualMaxKm);
         return (
           <Circle
             key={km}
             cx={CIRCLE_CENTER}
             cy={CIRCLE_CENTER}
             r={r}
-            // Cap üstündeki halkalar (free'de 50+) soluk — erişilemeyen premium
+            // Cap üstündeki halkalar (free'de 75+) soluk — erişilemeyen premium
             // aralığı görsel olarak ayırır.
-            stroke={
-              km > userMaxKm
-                ? ink(0.18)
-                : ink(0.5)
-            }
+            stroke={km > userMaxKm ? ink(0.18) : ink(0.5)}
             strokeWidth={DOT_SIZE}
             fill="none"
             strokeDasharray={`0.1 ${DOT_GAP}`}
@@ -546,13 +546,20 @@ const RingMarks = React.memo(function RingMarks({
   );
 });
 
-function DistanceCircle({ value, onChange, userMaxKm }: any) {
-  const visualRange = MAX_DISTANCE_KM - MIN_DISTANCE_KM;
+function DistanceCircle({
+  value,
+  onChange,
+  userMaxKm,
+  minKm,
+  visualMaxKm,
+  disabled,
+}: any) {
+  const visualRange = Math.max(1, visualMaxKm - minKm);
 
-  const valueSV = useSharedValue(value || MIN_DISTANCE_KM);
+  const valueSV = useSharedValue(value || minKm);
   const shakeSV = useSharedValue(0);
-  const [displayValue, setDisplayValue] = useState(value || MIN_DISTANCE_KM);
-  const lastTickRef = useRef(value || MIN_DISTANCE_KM);
+  const [displayValue, setDisplayValue] = useState(value || minKm);
+  const lastTickRef = useRef(value || minKm);
   const shakeFiredRef = useRef(false);
 
   const valueScale = useRef(new RNAnimated.Value(1)).current;
@@ -560,12 +567,12 @@ function DistanceCircle({ value, onChange, userMaxKm }: any) {
   const isScaledUpRef = useRef(false);
 
   useEffect(() => {
-    const v = value || MIN_DISTANCE_KM;
+    const v = value || minKm;
     valueSV.value = v;
     setDisplayValue(v);
     lastTickRef.current = v;
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [value]);
+  }, [value, minKm]);
 
   const triggerScaleUp = () => {
     Haptics.selectionAsync().catch(() => {});
@@ -622,6 +629,12 @@ function DistanceCircle({ value, onChange, userMaxKm }: any) {
   const gesture = useMemo(
     () =>
       Gesture.Pan()
+        // "Mesafe sınırı olmasın" açıkken dial PASİF ama GÖRÜNÜR: değer
+        // saklanıyor ve anahtar kapatılınca ona dönülecek — gizlersek kullanıcı
+        // neye döneceğini bilmez. Kapatma sarmalayıcı View'ın pointerEvents'ine
+        // BIRAKILMIYOR: gesture-handler onu her platformda tutarlı okumuyor,
+        // tek güvenilir yer jestin kendisi.
+        .enabled(!disabled)
         .minDistance(0)
         .onUpdate((e) => {
           const dx = e.x - CIRCLE_CENTER;
@@ -632,7 +645,7 @@ function DistanceCircle({ value, onChange, userMaxKm }: any) {
             Math.min(MAX_RADIUS, dist),
           );
           const rawKm = Math.round(
-            MIN_DISTANCE_KM +
+            minKm +
               ((clampedDist - MIN_RADIUS) / (MAX_RADIUS - MIN_RADIUS)) *
                 visualRange,
           );
@@ -660,7 +673,7 @@ function DistanceCircle({ value, onChange, userMaxKm }: any) {
           runOnJS(resetOverLimitFlag)();
         }),
     // eslint-disable-next-line react-hooks/exhaustive-deps
-    [userMaxKm, visualRange],
+    [userMaxKm, minKm, visualRange, disabled],
   );
 
   function handleOverLimit() {
@@ -675,7 +688,7 @@ function DistanceCircle({ value, onChange, userMaxKm }: any) {
   }
 
   const innerCircleStyle = useAnimatedStyle(() => {
-    const pct = (valueSV.value - MIN_DISTANCE_KM) / visualRange;
+    const pct = (valueSV.value - minKm) / visualRange;
     const r = MIN_RADIUS + pct * (MAX_RADIUS - MIN_RADIUS);
     return {
       width: r * 2,
@@ -687,8 +700,31 @@ function DistanceCircle({ value, onChange, userMaxKm }: any) {
     };
   });
 
+  // "Mesafe sınırı olmasın" anahtarı dial'ı soluklaştırıyor; geçiş ANİ OLMAMALI
+  // — anahtarın kendi thumb animasyonu ~200ms sürüyor, dial bir anda zıplarsa
+  // iki hareket birbirini tutmuyor. `disabled` deps'te: değişince worklet
+  // yeniden koşuyor ve withTiming o anki opaklıktan devam ediyor.
+  const dimStyle = useAnimatedStyle(
+    () => ({
+      opacity: withTiming(disabled ? 0.4 : 1, {
+        duration: 220,
+        easing: Easing.out(Easing.quad),
+      }),
+    }),
+    [disabled],
+  );
+
   return (
-    <View style={{ alignItems: "center", marginTop: -4, marginBottom: -4 }}>
+    <Animated.View
+      style={[
+        {
+          alignItems: "center",
+          marginTop: -4,
+          marginBottom: -4,
+        },
+        dimStyle,
+      ]}
+    >
       <GestureDetector gesture={gesture}>
         <View
           style={{
@@ -697,18 +733,25 @@ function DistanceCircle({ value, onChange, userMaxKm }: any) {
             position: "relative",
           }}
         >
-          {/* Concentric ring marks (25, 50 ... 100 km) */}
-          <RingMarks userMaxKm={userMaxKm} />
+          {/* Concentric ring marks (25, 50 ... visualMaxKm) */}
+          <RingMarks
+            userMaxKm={userMaxKm}
+            minKm={minKm}
+            visualMaxKm={visualMaxKm}
+          />
 
           {/* Aktif (dolu) yarıçap */}
           <Animated.View
             pointerEvents="none"
             style={[
               {
+                // Açık modda hairlineMuted (siyah %26) + %40 kenar bu boyutta
+                // ağır bir disk oluşturuyor; açıkta bir tık soluklaştırıyoruz.
+                // Koyu mod token'ın kendisinde kalıyor.
                 position: "absolute",
-                backgroundColor: colors.hairlineMuted,
+                backgroundColor: isLight() ? ink(0.17) : colors.hairlineMuted,
                 borderWidth: 1,
-                borderColor: ink(0.4),
+                borderColor: isLight() ? ink(0.28) : ink(0.4),
                 borderCurve: "continuous",
               },
               innerCircleStyle,
@@ -742,7 +785,7 @@ function DistanceCircle({ value, onChange, userMaxKm }: any) {
           </View>
         </View>
       </GestureDetector>
-    </View>
+    </Animated.View>
   );
 }
 
@@ -981,12 +1024,11 @@ const HobbyGroupAccordion = React.memo(function HobbyGroupAccordion({
 // marginTop'u (28) ile başlık bloğunun marginTop'u (12) toplanıp 40 ediyor.
 // Burada tek bir View olduğu için o toplam doğrudan yazılı — iki ekranın
 // ritmi birebir aynı olsun.
-function FilterSection({
-  title,
-  description,
-  marginTop = 40,
-  locked = false,
-}: any) {
+// Başlıkta kilit ikonu YOK (kasıtlı): kilitli bölüm zaten soluk (opacity 0.4)
+// + dokunuşu paywall'a gidiyor, başlıktaki ikon aynı şeyi üçüncü kez söylüyor
+// ve premium grubunda başlık başına bir kilit sıralanınca ekran kilit ikonu
+// tarlasına dönüyordu. Kilit sinyali görsel katmanda kalsın.
+function FilterSection({ title, description, marginTop = 40 }: any) {
   return (
     <View
       style={{
@@ -1007,16 +1049,6 @@ function FilterSection({
         <Text style={{ color: colors.text, fontSize: 20, fontWeight: "600" }}>
           {title}
         </Text>
-        {locked && (
-          <SFIcon
-            name="lock.fill"
-            fallback={Lock}
-            size={15}
-            color={colors.textSecondary}
-            strokeWidth={2}
-            weight="semibold"
-          />
-        )}
       </View>
       {description ? (
         <View
@@ -1055,7 +1087,9 @@ function FilterSection({
 // "Premium Filtreler" grup başlığı — altındaki tüm bölümleri çerçeveler.
 // FilterSection'la aynı tipografi (20px başlık + info.circle'lı açıklama), farkı
 // üstteki ayırıcı çizgi: tek bir filtreyi değil, bir grubu açıyor.
-function PremiumGroupHeader({ title, description, locked }: any) {
+// Kilit ikonu FilterSection'la aynı gerekçeyle YOK: kilit hâli soluk bölüm +
+// paywall dokunuşuyla zaten anlatılıyor.
+function PremiumGroupHeader({ title, description }: any) {
   return (
     // Üstündeki boşluk FilterSection'ın varsayılanıyla aynı (40): grup başlığı
     // bir bölümden daha zayıf ayrılıyormuş gibi görünmesin.
@@ -1075,21 +1109,13 @@ function PremiumGroupHeader({ title, description, locked }: any) {
           marginBottom: 9,
         }}
       >
+        {/* Başlıkta İKON YOK: ne kilit ne premium ateşi. İkisi de denendi,
+            ikisi de kaldırıldı — başlık yalın kalsın. */}
         {/* Grup başlığı tek tek filtre başlıklarından (FilterSection, 20px)
             bir kademe büyük — hiyerarşi göz ile ayrılabilsin. */}
         <Text style={{ color: colors.text, fontSize: 26, fontWeight: "700" }}>
           {title}
         </Text>
-        {locked && (
-          <SFIcon
-            name="lock.fill"
-            fallback={Lock}
-            size={17}
-            color={colors.textSecondary}
-            strokeWidth={2}
-            weight="semibold"
-          />
-        )}
       </View>
       <View
         style={{
@@ -1283,6 +1309,13 @@ const EnumPillGroup = React.memo(function EnumPillGroup({
 // commit parmak kalkınca.
 const HEIGHT_THUMB = 26;
 const HEIGHT_TRACK = 3;
+// Tutamakların track uçlarından içeri çekildiği pay. Serbest uç (null) kendi
+// ucunda park ettiği için "Farketmez"de iki tutamak da tam kenara yapışıyordu;
+// bu payla ikisi de şeridin biraz daha ortasında duruyor, uçları da nefes
+// alıyor. Değer eşlemesi DEĞİŞMİYOR (0% hâlâ 120cm, 100% hâlâ 230cm) — sadece
+// piksel yolu daralıyor. Gesture ve render AYNI payı kullanmak ZORUNDA, yoksa
+// tutamak parmağın altından kayar.
+const HEIGHT_EDGE_INSET = 16;
 
 function HeightRangeSlider({ min, max, onChange }: any) {
   const { t } = useTranslation();
@@ -1339,13 +1372,18 @@ function HeightRangeSlider({ min, max, onChange }: any) {
         // yakın olan. Sonrasında pan boyunca sabit kalır ki tutamaklar
         // birbirine yaklaşınca kontrol el değiştirmesin.
         .onBegin((e) => {
-          // Tutamak merkezleri track'in THUMB/2 içinden başlıyor (uçlarda
-          // taşmasınlar diye) — dokunma da aynı daraltılmış eksene göre.
-          const usable = widthSV.value - HEIGHT_THUMB;
+          // Tutamak merkezleri track'in THUMB/2 + kenar payı içinden başlıyor
+          // (uçlarda taşmasınlar + kenara yapışmasınlar diye) — dokunma da aynı
+          // daraltılmış eksene göre.
+          const usable =
+            widthSV.value - HEIGHT_THUMB - HEIGHT_EDGE_INSET * 2;
           if (usable <= 0) return;
           const pct = Math.max(
             0,
-            Math.min(1, (e.x - HEIGHT_THUMB / 2) / usable),
+            Math.min(
+              1,
+              (e.x - HEIGHT_THUMB / 2 - HEIGHT_EDGE_INSET) / usable,
+            ),
           );
           const cm = HEIGHT_RANGE_CM.min + pct * span;
           activeSV.value =
@@ -1354,11 +1392,15 @@ function HeightRangeSlider({ min, max, onChange }: any) {
               : "max";
         })
         .onUpdate((e) => {
-          const usable = widthSV.value - HEIGHT_THUMB;
+          const usable =
+            widthSV.value - HEIGHT_THUMB - HEIGHT_EDGE_INSET * 2;
           if (usable <= 0) return;
           const pct = Math.max(
             0,
-            Math.min(1, (e.x - HEIGHT_THUMB / 2) / usable),
+            Math.min(
+              1,
+              (e.x - HEIGHT_THUMB / 2 - HEIGHT_EDGE_INSET) / usable,
+            ),
           );
           const raw = Math.round(HEIGHT_RANGE_CM.min + pct * span);
           if (activeSV.value === "min") {
@@ -1446,15 +1488,16 @@ function HeightRangeSlider({ min, max, onChange }: any) {
               backgroundColor: ink(0.12),
             }}
           />
-          {/* Tutamaklar bu daraltılmış katmanda konumlanıyor: yüzdeler
-              track genişliği - THUMB üzerinden hesaplandığı için uçlardaki
-              tutamağın dış kenarı tam track kenarına oturuyor, taşmıyor. */}
+          {/* Tutamaklar bu daraltılmış katmanda konumlanıyor: yüzdeler track
+              genişliği - THUMB - 2*kenar payı üzerinden hesaplandığı için
+              uçtaki tutamak taşmıyor VE track kenarına yapışmıyor. Dolu aralık
+              çubuğu da aynı katmanda, yüzdeleri kendiliğinden uyuyor. */}
           <View
             pointerEvents="none"
             style={{
               position: "absolute",
-              left: HEIGHT_THUMB / 2,
-              right: HEIGHT_THUMB / 2,
+              left: HEIGHT_THUMB / 2 + HEIGHT_EDGE_INSET,
+              right: HEIGHT_THUMB / 2 + HEIGHT_EDGE_INSET,
               top: 0,
               bottom: 0,
               justifyContent: "center",
@@ -1672,11 +1715,22 @@ export default function FilterModal({
   // kendi alanına düşülür, ama açıkça `false` gelen prop artık kazanır.
   const isPremium = isPremiumProp ?? filters?.isPremium === true;
 
-  // Mesafe slider'ının seçilebilir tavanı: free 50, premium 100. isPremium'la
-  // birlikte değişiyor — satın alma sonrası PurchaseModal filtre cache'ini
-  // invalidate ediyor, aşağıdaki useEffect local state'i tazeliyor ve tavan
-  // aynı oturumda 50 → 100'e çıkıyor (sözleşme §2.3).
-  const tierMaxKm = maxDistanceKmForTier(isPremium);
+  // Mesafe slider'ının sınırları — KAYNAK BACKEND (`/api/swipe/Filters` →
+  // minSelectableDistanceKm / maxSelectableDistanceKm; free 75, premium 150).
+  // Hard-code YOK: sunucu config'i değişirse FE'ye dokunmadan yeni sınır gelir.
+  // Alanlar yoksa tier sabitlerine düşülür (bkz. resolveDistanceBounds).
+  //
+  // `filters` premium satın alma sonrası invalidate ediliyor; aşağıdaki
+  // useEffect local state'i tazeliyor ve tavan aynı oturumda 75 → 150'ye
+  // çıkıyor.
+  const { minKm: minSelectableKm, maxKm: tierMaxKm } = resolveDistanceBounds(
+    filters,
+    isPremium,
+  );
+  // Halkaların GÖRSEL tavanı: free kullanıcı da erişemediği premium aralığı
+  // (soluk halkalar) görsün diye tier tavanından bağımsız. Premium tavanını
+  // free kullanıcıya backend söylemiyor — o yüzden burada sabit fallback.
+  const visualMaxKm = Math.max(tierMaxKm, DISTANCE_RANGE_KM.max);
 
   const interestedInOptions = useMemo(() => [
     { label: t('discover.filters.interestedIn.men'), value: 0, sf: "person.fill" as SFSymbol, lucide: User },
@@ -1831,13 +1885,26 @@ export default function FilterModal({
       // davranış "hepsi katı" idi), boş filtrede ise aşağıda eleniyor.
       dealbreakers: toDealbreakerList(f.dealbreakers),
       // Clamp'lenmiş değer Apply payload'ına da gider — kullanıcı slider'a hiç
-      // dokunmadan kaydetse bile backend'e eski "sınırsız" sentinel'i (20000)
-      // geri yazılmaz; o değer artık 400 alıyor (Range(1,100)).
+      // dokunmadan kaydetse bile backend'e aralık dışı bir değer geri yazılmaz
+      // (Range(5,150) dışı 400 alır).
       //
-      // Tavan TIER'A BAĞLI: DB'de 100 (ya da migration öncesi 300) km taşıyan
-      // free kullanıcı slider'da ham değeri değil, backend'in fiilen uyguladığı
-      // clamp'lenmiş değeri görmeli (sözleşme §5).
-      maxDistance: clampKm(f.maxDistance, tierMaxKm),
+      // Aralık BACKEND'DEN: mevcut kullanıcıların DB değerleri migrate
+      // EDİLMEDİ, okuma sırasında aralığa çekiliyor (1-4 km → 5, 300 km free →
+      // 75). `/Filters` zaten düzeltilmiş `maxDistance` döndürüyor; buradaki
+      // clamp bayat cache'e karşı ikinci hat.
+      maxDistance: clampKm(f.maxDistance, minSelectableKm, tierMaxKm),
+      // "Mesafe sınırı olmasın" — kalıcı anahtar, `maxDistance`tan BAĞIMSIZ.
+      // Yukarıdaki clamp anahtar açıkken de çalışıyor: değer saklanıyor ve
+      // anahtar kapatılınca aynen geri yükleniyor (sözleşme §1).
+      //
+      // VARSAYILAN KAPALI: alan hiç gelmemişse (anahtarı taşımayan yanıt ya da
+      // kullanıcının hiç dokunmadığı kayıt) anahtar KAPALI başlıyor — yani
+      // seçilen yarıçap uygulanır. Açık varsayılan, mesafeyi hiç umursamayan
+      // bir desteyi kullanıcının haberi olmadan norm yapıyordu; sınırı kaldırma
+      // artık bilinçli bir tercih (boş destede DiscoverScreen'deki "Mesafe
+      // sınırını kaldır" butonu da aynı anahtarı açıyor).
+      // AÇIKÇA `true` gelen kayıt elbette açık kalır.
+      ignoreDistanceFilter: f.ignoreDistanceFilter === true,
     };
     // NOT: sanitizeForTier BURADA çağrılmıyor — free kullanıcı da kayıtlı
     // premium seçimlerini görsün (bkz. pausedPremiumFilters). Temizlik yalnız
@@ -2294,13 +2361,17 @@ export default function FilterModal({
     // türler"de durulabiliyor); server'dan gelen seçime göre sıfırlanıyor.
     setPetSpecificOpen((next?.pets?.length ?? 0) > 0);
     // `isPremium` bağımlılıkta: tier oturum içinde değişirse (satın alma) ekran
-    // server state'iyle yeniden hizalansın — mesafe tavanı da (tierMaxKm) ondan
-    // türüyor, satın alma sonrası 50 → 100 burada yeniden clamp'leniyor.
+    // server state'iyle yeniden hizalansın. Mesafe sınırları artık ÖNCE
+    // `filters`tan türüyor (minSelectableDistanceKm/maxSelectableDistanceKm) —
+    // satın alma sonrası PurchaseModal filtre cache'ini invalidate ediyor, yeni
+    // yanıtla tavan 75 → 150'ye çıkıyor ve burada yeniden clamp'leniyor.
+    // `isPremium` yine de listede: alanları göndermeyen backend'de tier
+    // fallback'i o bayrağa bakıyor.
     //
     // toLocalState bilerek listede YOK: her render'da yeniden yaratılan bir
     // fonksiyon, effect'i her render'da çalıştırıp kullanıcının kaydetmediği
-    // seçimlerini silerdi. Okuduğu reaktif değerlerin (filters, tierMaxKm←
-    // isPremium) hepsi zaten listede.
+    // seçimlerini silerdi. Okuduğu reaktif değerlerin (filters, ondan türeyen
+    // sınırlar, isPremium) hepsi zaten listede.
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [visible, filters, isPremium]);
 
@@ -2351,6 +2422,11 @@ export default function FilterModal({
       interestedIn: state.interestedIn || [],
       ageRangeMin: DEFAULT_AGE_RANGE.min,
       ageRangeMax: DEFAULT_AGE_RANGE.max,
+      // Anahtar HER kaydetmede açıkça gidiyor (`sanitizeForTier` spread'ine
+      // güvenilmiyor): alan düşerse backend "değiştirme" der ve kullanıcı
+      // anahtarı kapattığını sanarken açık kalır. Free'de de gönderiliyor —
+      // premium alanı DEĞİL, 403 üretmez.
+      ignoreDistanceFilter: state.ignoreDistanceFilter === true,
       // Üniversite listeleri OVERWRITE semantiğiyle yazılıyor: backend her
       // UpdateFilters'ta premium alanların tamamını gönderilen state'e göre
       // yeniden kuruyor. Bu yüzden ekrandaki güncel state'in TAMAMI her
@@ -2425,7 +2501,16 @@ export default function FilterModal({
     setPetSpecificOpen(false);
     const reset = {
       ...local,
+      // Varsayılan = tier'ın TAVANI, tabanı değil. Mesafe artık katı filtre:
+      // "sıfırla"nın kullanıcıyı en dar yarıçapa çekmesi desteyi boşaltırdı.
       maxDistance: tierMaxKm,
+      // "Mesafe sınırı olmasın" VARSAYILAN KAPALI — sıfırlama da onu kapatıyor
+      // (`toLocalState`teki varsayılanla aynı yön; ikisi ayrışırsa "sıfırla"
+      // varsayılana değil başka bir yere döndürürdü). Havuzun daralması burada
+      // kabul: sıfırlanan filtre yine tier tavanındaki yarıçapla çalışıyor ve
+      // deste boşalırsa boş-durum ekranı zaten "Mesafe sınırını kaldır"
+      // butonunu gösteriyor. Sınırsız isteyen anahtarı kendisi açar.
+      ignoreDistanceFilter: false,
       preferredCity: null,
       preferredUniversityDomains: [],
       preferredHobbies: [],
@@ -2451,6 +2536,30 @@ export default function FilterModal({
     applyFilters(reset);
   };
 
+  // "Mesafe sınırı olmasın" açık mı — dial'ı pasifleştiriyor ve tier tavanı
+  // şeridini gizliyor. Anahtar açıkken `maxDistance` state'te DURUYOR
+  // (gönderiliyor da): kapatınca kullanıcı kendi yarıçapına döner.
+  const distanceLimitOff = local?.ignoreDistanceFilter === true;
+
+  // Tier tavanı ("ücretsiz hesapta sınır X km") artık AYRI ŞERİT DEĞİL: bölüm
+  // açıklamasının sonuna ekleniyor. Ayrı şerit olarak dururken anahtar açılınca
+  // unmount oluyordu ve altındaki bölüm zıplıyordu; açıklamaya girince zaten
+  // var olan bir satırın uzunluğu değişiyor, gizlenecek/kaydırılacak bir kutu
+  // kalmıyor.
+  // Cümle "mesafe sınırı olmasın" anahtarından BAĞIMSIZ: anahtara bağlıyken
+  // her açma/kapamada açıklama uzayıp kısalıyor, altındaki dial zıplıyordu.
+  // Tavan bilgisi anahtar açıkken de doğru (kapatınca yine geçerli olacak),
+  // o yüzden sabit duruyor.
+  // Sayılar sabitten DEĞİL, o an geçerli sınırlardan: free tavanı backend'in
+  // söylediği değer, Lit Plus tavanı da halkaların çizildiği görsel tavan —
+  // metin ile dial aynı şeyi söylesin.
+  const maxDistanceDesc = !isPremium
+    ? `${t('discover.filters.maxDistance.desc')} ${t(
+        'discover.filters.maxDistance.freeCap',
+        { km: tierMaxKm, premiumKm: visualMaxKm },
+      )}`
+    : t('discover.filters.maxDistance.desc');
+
   // Register (interestedInSchema) en az 1 seçim şart koşuyor; filtre ekranı da
   // aynı kuralı uyguluyor. Backend boş listeyi artık 7 (herkes) olarak yazıyor,
   // yani hesabı karartmıyor — ama "hiçbiri seçili değil" ile "hepsi seçili"
@@ -2468,7 +2577,6 @@ export default function FilterModal({
       <FilterSection
         title={t("discover.filters.preferredHobbies.title")}
         description={t("discover.filters.preferredHobbies.description")}
-        locked={hobbiesLocked}
       />
 
       <View
@@ -2552,7 +2660,6 @@ export default function FilterModal({
       <FilterSection
         title={t("discover.filters.relationshipIntents.title")}
         description={t("discover.filters.relationshipIntents.description")}
-        locked={intentsLocked}
       />
 
       {relationshipIntentOptions.length === 0 ? (
@@ -2694,61 +2801,73 @@ export default function FilterModal({
       // sıkışmasın, sonraki section'lar nefes alsın.
       contentContainerStyle={{ paddingBottom: 80 }}
     >
-      {/* Maksimum Mesafe — tavan tier'a bağlı (free 50 / premium 100).
+      {/* Maksimum Mesafe — sınırlar backend'den (free 75 / premium 150).
           Bölüm KİLİTLİ DEĞİL: free kullanıcı da mesafe seçiyor, yalnız üst
-          sınırı düşük. O yüzden başlıkta kilit ikonu yok; sınır slider'ın
-          kendi cap'i (shake) + altındaki şeritle anlatılıyor. */}
+          sınırı düşük. O yüzden başlıkta kilit ikonu yok; sınır dial'ın kendi
+          cap'i (shake) + açıklamanın sonundaki cümleyle anlatılıyor. */}
       <FilterSection
         title={t('discover.filters.maxDistance.title')}
-        description={t('discover.filters.maxDistance.desc')}
+        description={maxDistanceDesc}
         marginTop={20}
       />
       <DistanceCircle
-        value={clampKm(local.maxDistance, tierMaxKm)}
+        value={clampKm(local.maxDistance, minSelectableKm, tierMaxKm)}
         userMaxKm={tierMaxKm}
+        minKm={minSelectableKm}
+        visualMaxKm={visualMaxKm}
+        disabled={distanceLimitOff}
         onChange={(v: number) =>
           setLocal((p: any) => ({ ...p, maxDistance: v }))
         }
       />
 
-      {/* Free kullanıcı 50 km'de shake yiyor; sebebini söylemezsek slider bozuk
-          sanılıyor. Dokunuş paywall'a gidiyor (premiumFiltersPaused şeridiyle
-          aynı desen). */}
-      {!isPremium && (
-        <TouchableOpacity
-          activeOpacity={0.7}
-          onPress={openPremiumPaywall}
-          hitSlop={10}
-          style={{
-            marginTop: 12,
-            flexDirection: "row",
-            alignItems: "center",
-            gap: 8,
-          }}
-        >
-          <SFIcon
-            name="lock.fill"
-            fallback={Lock}
-            size={16}
-            color={colors.textSecondary}
-            strokeWidth={2}
-            weight="semibold"
-          />
+      {/* "Mesafe sınırı olmasın" — dial'ın HEMEN ALTINDA, bilerek: aynı ayarın
+          iki hali, ayrı bir bölüme/ekrana koymak keşfedilmez yapar.
+          PREMIUM DEĞİL: şikâyet free kullanıcıdan geliyor, backend free'den de
+          kabul ediyor — buraya kilit/paywall EKLENMEZ. */}
+      <View
+        style={{
+          marginTop: 16,
+          borderRadius: 24,
+          borderCurve: "continuous",
+          overflow: "hidden",
+          borderWidth: 0.5,
+          borderColor: colors.hairline,
+          flexDirection: "row",
+          alignItems: "center",
+          justifyContent: "space-between",
+          gap: 12,
+          paddingVertical: 12,
+          paddingHorizontal: 16,
+        }}
+      >
+        <View style={{ flex: 1, gap: 2 }}>
+          <Text style={{ color: colors.text, fontSize: 15, fontWeight: "500" }}>
+            {t("discover.filters.ignoreDistance.title")}
+          </Text>
+          {/* Alt metin TEK CÜMLE (bkz. i18n ignoreDistance.description):
+              sıralamanın değişmediğini söyleyen ikinci cümle kaldırıldı. */}
           <Text
             style={{
-              flex: 1,
               color: colors.textSecondary,
               fontSize: 13,
               fontWeight: "400",
             }}
           >
-            {t("discover.filters.maxDistance.freeCap", {
-              km: FREE_MAX_DISTANCE_KM,
-              premiumKm: PREMIUM_MAX_DISTANCE_KM,
-            })}
+            {t("discover.filters.ignoreDistance.description")}
           </Text>
-        </TouchableOpacity>
-      )}
+        </View>
+        <Switch
+          testID="ignore-distance-switch"
+          value={distanceLimitOff}
+          onValueChange={(next: boolean) =>
+            setLocal((p: any) => ({ ...p, ignoreDistanceFilter: next }))
+          }
+          trackColor={{ false: colors.hairlineStrong, true: colors.errorStrong }}
+          thumbColor={colors.text}
+          ios_backgroundColor={colors.border}
+        />
+      </View>
 
       {/* İlgilendiğim cinsiyet — eskiden profil düzenlemedeydi, artık filtre.
           Free alan: premium gate yok. Cinsiyet tercihinin TEK kaynağı burası;
@@ -2822,7 +2941,6 @@ export default function FilterModal({
       <PremiumGroupHeader
         title={t("discover.filters.premiumFilters.title")}
         description={t("discover.filters.premiumFilters.description")}
-        locked={premiumFiltersLocked}
       />
 
       {/* Premium bitmiş ama kayıtlı filtreler duruyor: aşağıdaki seçimler
@@ -2880,7 +2998,6 @@ export default function FilterModal({
           <FilterSection
             title={t("discover.filters.university.title")}
             description={t("discover.filters.university.description")}
-            locked={universityLocked}
           />
           <VisibilityListLabel count={preferredUniversityDomains.length} />
           <SelectRow
@@ -2912,7 +3029,6 @@ export default function FilterModal({
           <FilterSection
             title={t('discover.filters.city.title')}
             description={t('discover.filters.city.description')}
-            locked={!isPremium}
           />
           <TouchableOpacity
             activeOpacity={0.7}
@@ -3269,7 +3385,6 @@ export default function FilterModal({
         <FilterSection
           title={t('discover.filters.visibility.title')}
           description={t('discover.filters.visibility.description')}
-          locked={visibilityLocked}
         />
 
         <VisibilityListLabel
