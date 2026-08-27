@@ -5,11 +5,23 @@ export type NotificationType =
   | 'Match'
   | 'Like'
   | 'SuperLike'
+  // Yorumlu, hedefli beğeni (2026-08-26). Push da atılıyor; `extraData.isNote`
+  // = "true" geliyor. Kimlik gizleme kuralı Not'ta GEÇERSİZ — gönderenin adı
+  // free alıcıya da açık.
+  | 'Note'
   | 'MissedMatch'
   | 'Message'
   | 'System'
   | 'TrialEndingSoon'
-  | 'PremiumExpiringSoon';
+  | 'PremiumExpiringSoon'
+  // ── Fotoğraf moderasyonu (2026-08-24) ─────────────────────────────────────
+  // Push davranışı backend'de sabit: PhotoApproved push ATMAZ (iyi haber için
+  // push gürültü), diğer üçü atar. `relatedEntityId` = photoId.
+  | 'PhotoRejected'
+  | 'PhotoApproved'
+  // `photoModerationAlerts` tercihinden MUAF — hesap durumu bildirimi.
+  | 'ProfileHiddenInsufficientPhotos'
+  | 'PhotoAppealResolved';
 
 export interface NotificationItem {
   id: string;

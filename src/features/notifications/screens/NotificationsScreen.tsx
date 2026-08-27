@@ -33,9 +33,15 @@ import {
   ChevronLeft,
   ChevronRight,
   User,
+  Camera,
+  EyeOff,
+  Check,
+  AlertTriangle,
 } from 'lucide-react-native';
 import SFIcon, { type SFSymbol } from '@/shared/components/SFIcon';
 import notificationsService from '@/features/notifications/notificationsService';
+import profileService from '@/features/profile/profileService';
+import { requestPhotoHighlight } from '@/shared/services/uiBus';
 import realtimeService from '@/features/chat/realtimeService';
 import { fetchConversations } from '@/features/chat/chatSlice';
 import {
@@ -61,18 +67,33 @@ const TYPE_BADGES = {
   Match: { Icon: Sparkles, sf: 'sparkles' as SFSymbol, color: colors.litPlus },
   Like: { Icon: Heart, sf: 'heart' as SFSymbol, color: colors.errorStrong },
   SuperLike: { Icon: Heart, sf: 'heart' as SFSymbol, color: colors.info },
+  Note: { Icon: MessageCircle, sf: 'bubble.left.fill' as SFSymbol, color: colors.litPlus },
   Message: { Icon: MessageCircle, sf: 'message.fill' as SFSymbol, color: colors.success },
   MissedMatch: { Icon: Sparkles, sf: 'sparkles' as SFSymbol, color: colors.warning },
+  // Fotoğraf moderasyonu. Red/gizlenme kullanıcıdan aksiyon istiyor → uyarı
+  // tonu; onay yalnızca iyi haber → nötr yeşil.
+  PhotoRejected: { Icon: AlertTriangle, sf: 'exclamationmark.triangle.fill' as SFSymbol, color: colors.errorStrong },
+  PhotoApproved: { Icon: Check, sf: 'checkmark' as SFSymbol, color: colors.success },
+  ProfileHiddenInsufficientPhotos: { Icon: EyeOff, sf: 'eye.slash.fill' as SFSymbol, color: colors.errorStrong },
+  PhotoAppealResolved: { Icon: Camera, sf: 'camera.fill' as SFSymbol, color: colors.info },
 };
 
 // Tap hedefleri. Chat'e gidenler ayrıca sağda chevron gösteriyor; buradaki
 // hiçbir listede olmayan tipler (System vb.) tıklanınca bir yere gitmiyor.
 const GOES_TO_CHAT = { Match: true, Message: true };
-const GOES_TO_LIKES = { Like: true, SuperLike: true, MissedMatch: true };
+const GOES_TO_LIKES = { Like: true, SuperLike: true, Note: true, MissedMatch: true };
+// Fotoğraf moderasyonu → Profil sekmesi (foto ızgarası orada).
+const GOES_TO_PROFILE = {
+  PhotoRejected: true,
+  PhotoApproved: true,
+  ProfileHiddenInsufficientPhotos: true,
+  PhotoAppealResolved: true,
+};
 
 // Premium olmayan kullanıcı düz beğenilerde beğenenin kimliğini göremez —
 // LikesScreen'deki kilitle aynı kural. SuperLike orada da açık gösterildiği
 // için burada da açık kalıyor; Match/MissedMatch'te kimlik zaten serbest.
+// Not da MUAF (sözleşme §6): gönderenin adı free alıcıya da açık.
 const IDENTITY_GATED = { Like: true };
 
 const keyExtractor = (n) => n.id;
@@ -202,6 +223,25 @@ export default function NotificationsScreen() {
 
     if (GOES_TO_LIKES[item.type]) {
       (navigation as any).navigate('HomeTabs', { screen: 'Likes' });
+      return;
+    }
+
+    // Moderasyon kararı değişti → Profil. Cache bust ediliyor ki ekran 10 sn'lik
+    // TTL yüzünden bildirimden ÖNCEKİ hâli göstermesin.
+    if (GOES_TO_PROFILE[item.type]) {
+      profileService.bustProfileCache();
+      (navigation as any).navigate('HomeTabs', { screen: 'Profile' });
+      // Tek bir fotoğrafın kararıysa (`relatedEntityId` = photoId) düzenleme
+      // modalı fotoğraflar bölümüne açılıp O foto vurgulanıyor — kullanıcı
+      // hangisi olduğunu altı kutu arasında aramasın.
+      // ProfileHiddenInsufficientPhotos hariç: o, tek bir fotoğrafa değil
+      // profilin bütününe dair, vurgulanacak hedefi yok.
+      if (
+        item.relatedEntityId &&
+        item.type !== 'ProfileHiddenInsufficientPhotos'
+      ) {
+        requestPhotoHighlight(item.relatedEntityId);
+      }
       return;
     }
 

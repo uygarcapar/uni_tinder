@@ -477,6 +477,9 @@ export default function AppNavigator() {
       // banlanan kullanıcının entitlement'ı sızmasın.
       logoutRevenueCat().catch(() => {});
       clearSelfLoginMark();
+      // Bu yol `logout()` thunk'ından geçmiyor (bkz. yukarıdaki not) → tepsi
+      // temizliğini ayrıca burada yapıyoruz.
+      clearDeliveredNotifications();
       dispatch(accountBlocked(payload));
     });
   }, [dispatch]);
@@ -1127,6 +1130,16 @@ export default function AppNavigator() {
     };
   }, [isAuthenticated, token]);
 
+  // Cold start temizliği — push lifecycle efektinden AYRI duruyor: o efekt
+  // `token`'a bağlı ve sessiz refresh her rotasyonda onu değiştiriyor; oraya
+  // konsaydı uygulama arka plandayken tetiklenen bir rotasyon kullanıcının
+  // tepsisini süpürüyordu. Burada `hasToken` boolean'ı + 'active' guard'ı var.
+  useEffect(() => {
+    if (!isAuthenticated || !hasToken) return;
+    if (AppState.currentState !== 'active') return;
+    clearDeliveredNotifications();
+  }, [isAuthenticated, hasToken]);
+
   const routeFromNotification = useCallback((data: Record<string, any>) => {
     // type yoksa payload'ı çözemedik demektir — bilinmeyen bildirimi Notifications'a
     // yönlendirip doğru routing'i ezmektense hiç navigate etmiyoruz.
@@ -1291,6 +1304,11 @@ export default function AppNavigator() {
       appStateRef.current = next;
 
       if (prev.match(/inactive|background/) && next === 'active') {
+        // Tepsi temizliği token'a bağlı DEĞİL — aşağıdaki refresh gate'inin
+        // içine girerse, refresh geçici bir hatayla düştüğünde (erken return)
+        // bildirimler merkezde kalmaya devam ederdi. Ağ da gerektirmiyor.
+        clearDeliveredNotifications();
+
         if (isAuthenticated && hasToken) {
           // ÖNCE TOKEN, SONRA FIRTINA. Access token 2 saat yaşıyor; birkaç
           // saatlik arka plandan dönüşte kesinlikle ölmüş oluyor. Yukarıdaki tur

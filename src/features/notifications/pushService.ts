@@ -51,6 +51,27 @@ function currentPlatform(): 'iOS' | 'Android' {
   return Platform.OS === 'ios' ? 'iOS' : 'Android';
 }
 
+// Uygulama açıldığında tepside biriken bildirimleri düşür + rozeti sıfırla.
+// setNotificationHandler `shouldShowList: true` diyor (kullanıcı tepsiden geçmişe
+// ulaşabilsin) ama kimse temizlemiyordu: kullanıcı uygulamaya girip içeriği
+// gördükten sonra bile bildirimler merkezde kalıyor, rozet birikiyordu.
+//
+// iOS  → removeAllDeliveredNotifications: APNs'in gösterdiği remote bildirimler dahil.
+// Android → NotificationManager.cancelAll: FCM'in kendi post ettikleri dahil.
+// Çağrı yerleri await etmiyor → ASLA reject etmemeli (unhandled rejection).
+export async function clearDeliveredNotifications(): Promise<void> {
+  try {
+    await Promise.all([
+      Notifications.dismissAllNotificationsAsync(),
+      // Android'de launcher desteğine bağlı, iOS'ta kesin. Rozet bir sonraki
+      // push'ta sunucunun gönderdiği sayıyla yeniden dolacak.
+      Notifications.setBadgeCountAsync(0),
+    ]);
+  } catch {
+    // izin yok / native yüzey eksik — sessiz geç
+  }
+}
+
 async function postDeviceToken(token: string, appVersion: string): Promise<void> {
   if (!token || token === lastRegisteredToken || token === inFlightToken) return;
   inFlightToken = token;

@@ -5,7 +5,7 @@ import { saveAccessToken, saveRefreshToken } from '@/shared/utils/tokenStorage';
 import { markSelfLogin, clearSelfLoginMark } from '@/shared/utils/sessionGuard';
 import realtimeService from '@/features/chat/realtimeService';
 import { setCurrentAccessToken } from '@/shared/services/api';
-import { unregisterPushToken } from '@/features/notifications/pushService';
+import { unregisterPushToken, clearDeliveredNotifications } from '@/features/notifications/pushService';
 import type { AuthState, User } from '@/shared/types';
 import type { RegistrationStepRoute } from '@/features/auth/registrationFlow';
 import type { AccountBlockPayload } from '@/shared/utils/accountBlock';
@@ -97,6 +97,10 @@ export const logout = createAsyncThunk('auth/logout', async (_, thunkAPI) => {
     unregisterPushToken().catch(() => {}),
     new Promise((resolve) => setTimeout(resolve, 2000)),
   ]);
+  // Önceki hesabın tepside bekleyen bildirimleri + rozeti kalmasın: token
+  // deactivate edildi, o bildirimlere basmanın artık gideceği bir yer yok
+  // (aynı cihazda başka hesap açılırsa yabancı içerik görünürdü).
+  clearDeliveredNotifications();
   thunkAPI.dispatch(clearProfile());
   await authService.logout();
 });
