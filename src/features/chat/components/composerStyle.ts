@@ -1,4 +1,4 @@
-import { ink } from "@/shared/theme/colors";
+import { veil } from "@/shared/theme/colors";
 import { chromeBlurTint } from "@/shared/theme/blur";
 
 /**
@@ -16,7 +16,14 @@ export const COMPOSER_BLUR_INTENSITY = 80;
  * Render içinde çağır.
  */
 export const composerBlurTint = chromeBlurTint;
-export const composerBarBg = () => ink(0.04);
+/**
+ * Kapsül zemini: cam'ın üstüne çekilen perde. `ink()` DEĞİL `veil()` —
+ * mürekkep modun TERSİ (koyuda beyaz) olduğu için kapsülü açıyordu; perde moda
+ * UYAR, yani koyu temada blur'u karartır (açık temada beyazlatır, o modun
+ * karşılığı bu). Kapsülün kenarı bu koyulaşmayla belli olur; ayrı bir border
+ * DENENDİ ve kaldırıldı.
+ */
+export const composerBarBg = () => veil(0.18);
 // Kapsülün İÇ boşluğu (input'ta paddingLeft/Right 8 + paddingVertical 8).
 export const COMPOSER_BAR_PAD_H = 8;
 export const COMPOSER_BAR_PAD_V = 8;
