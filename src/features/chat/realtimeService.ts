@@ -29,7 +29,8 @@ type EventCallback = (...args: any[]) => void;
  *     MessageEdited, MessageDeleted, MessagesRead, ReactionsChanged,
  *     UserStartedTyping, UserStoppedTyping, UserStatusChanged, UserStatusResponse,
  *     ConversationDeactivated, ConversationRestored, ConversationHistoryRevealed,
- *     NewNotification, Error, ForceLogout, SubscriptionChanged
+ *     NewNotification, Error, ForceLogout, SubscriptionChanged,
+ *     PhotoModerationChanged
  */
 class RealtimeService {
   private connection: HubConnection | null = null;
@@ -174,6 +175,12 @@ class RealtimeService {
       // ek olarak `reason` + `at` taşıyor — ek fetch gerektirmiyor.
       // Kullanıcının TÜM cihazlarına gidiyor (Clients.User).
       'SubscriptionChanged',
+      // Bir fotoğrafın moderasyon kararı değişti (admin onay/red, rescan,
+      // itiraz sonucu). Gövde GET'in döndürdüğü kanonik `moderation` +
+      // `profileVisibility` bloklarıyla BİREBİR aynı → ek fetch gerekmiyor.
+      // Öncesinde bu kanal hiç yoktu: admin bir fotoğrafı reddettiğinde audit
+      // log yazılıyor ama kullanıcıya hiçbir şey ulaşmıyordu.
+      'PhotoModerationChanged',
     ];
     // Bu handler'lar `conn`'u closure'da tutuyor; `this.connection` ise zamanla
     // BAŞKA bir bağlantıya işaret edebiliyor. Aktif olmayan bir bağlantıdan

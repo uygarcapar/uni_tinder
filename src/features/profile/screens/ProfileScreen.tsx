@@ -28,28 +28,39 @@ import { useNavigation } from "@react-navigation/native";
 import {
   pickAndCropPhotos,
   captureAndCropPhoto,
+  recropExistingPhoto,
   type PickedPhoto,
 } from "../../../shared/utils/photoPicker";
+import { forgetPhoto } from "@/shared/utils/photoStore";
+import PhotoSourceSheet from "@/shared/components/PhotoSourceSheet";
+import { devLog } from "@/shared/utils/devLog";
 import { resolveMainPhotoUri, resolvePhotoUri } from "@/shared/utils/photoUri";
 import { useAppDispatch, useAppSelector } from "@/shared/hooks/redux";
 import { API_ENDPOINTS } from "@/shared/constants/api";
 import {
   MAX_PROFILE_PHOTOS,
-  MIN_PROFILE_PHOTOS,
+  MAX_PROFILE_PROMPTS,
 } from "@/shared/constants/limits";
+import uiBus, { consumePhotoHighlight } from "@/shared/services/uiBus";
 import profileService from "@/features/profile/profileService";
 import {
   moderationReasonText,
   moderationReasonTitle,
   normalizePhotoModeration,
+  normalizeProfileVisibility,
   requiresUserAction,
+  resolveRequiredPhotoCount,
   summarizeModeration,
 } from "@/features/profile/photoModeration";
+import {
+  isPhotoAppealConflict,
+  photoModerationCodeKey,
+} from "@/shared/constants/responseCodes";
 import { staticGet } from "@/shared/services/staticCache";
 import PreviewModal from "@/features/profile/components/PreviewModal";
 import SettingsModal from "@/features/profile/components/SettingsModal";
 import PurchaseModal from "@/features/discover/components/PurchaseModal";
-import SuperLikeCard from "@/features/profile/components/SuperLikeCard";
+import ShopCardsRow from "@/features/profile/components/ShopCardsRow";
 import ScreenHeader, {
   SCREEN_HEADER_ACTION_SIZE,
 } from "@/shared/components/ScreenHeader";
@@ -64,6 +75,11 @@ import {
   syncSubscriptionWithRetry,
 } from "@/features/profile/subscriptionSlice";
 import { usePremiumTier } from "@/features/profile/premiumTier";
+import {
+  UPSELL_BENEFIT_KEYS,
+  UPSELL_HIDDEN_BENEFIT_COUNT,
+  premiumBenefitLabelKey,
+} from "@/features/profile/premiumBenefits";
 import {
   Pencil,
   Check,
@@ -207,7 +223,9 @@ function HeroAvatar({ uri, size = 80, onPress, loading = false }) {
   const showSkeleton = loading || (uri && imgLoading);
   return (
     <TouchableOpacity
-      activeOpacity={0.85}
+      // Basılıyken sönme YOK: avatar zaten önizlemeye açılıyor, araya giren
+      // opacity düşüşü fotoyu bir an soluklaştırıyordu.
+      activeOpacity={1}
       onPress={onPress}
       style={{
         width: size,
@@ -336,7 +354,7 @@ function SkeletonBody() {
 // kullanıcıya kendi profilini BOŞALMIŞ gösteriyor (isim yok, %0 doluluk,
 // "0/6 fotoğraf") — yani veri kaybı gibi okunan bir ağ hatası. Hata kendi
 // durumu: ne olduğu yazıyor ve tek dokunuşla yeniden deniyor.
-function ProfileLoadError({ onRetry }) {
+function ProfileLoadError({ onRetry, retrying }) {
   const { t } = useTranslation();
   const insets = useSafeAreaInsets();
   return (
@@ -359,6 +377,7 @@ function ProfileLoadError({ onRetry }) {
         subtitle={t("profile.loadFailed.subtitle")}
         buttonLabel={t("profile.loadFailed.retry")}
         onButtonPress={onRetry}
+        buttonBusy={retrying}
       />
     </View>
   );
@@ -696,10 +715,15 @@ export default function ProfileScreen() {
     dispatch(fetchSubscriptionStatus())
       .unwrap()
       .then((res: any) => {
-        if (!res?.isPremium) {
-          return dispatch(syncSubscriptionWithRetry({ maxAttempts: 1 }));
+        // `settled`: backend satın almayı görmüş ve abonelik bitmiş. Kart zaten
+        // kapandı; ardından `/sync` atmak, cevabı baştan belli (RC'de aktif
+        // entitlement yok → `NOT_FOUND_IN_RC`) bir istekle kullanıcıyı 60/dk
+        // limitine yaklaştırmak olurdu.
+        if (res?.isPremium || res?.settled) {
+          dispatch(clearSyncPending());
+          return;
         }
-        dispatch(clearSyncPending());
+        return dispatch(syncSubscriptionWithRetry({ maxAttempts: 1 }));
       })
       .catch(() => dispatch(syncSubscriptionWithRetry({ maxAttempts: 1 })))
       .finally(() => {
@@ -725,6 +749,10 @@ export default function ProfileScreen() {
   // (metric.key ↔ EditProfileForm'daki bölüm anahtarı). Normal "Düzenle"
   // butonundan açılışta null → scroll yok.
   const [editFocusSection, setEditFocusSection] = useState<string | null>(null);
+  // Moderasyon bildiriminden gelindiyse vurgulanacak fotoğrafın id'si
+  // (`relatedEntityId`). Kararın hangi fotoğrafa ait olduğunu göstermek için;
+  // birkaç saniye sonra kendiliğinden sönüyor (aşağıdaki efekt).
+  const [highlightPhotoId, setHighlightPhotoId] = useState<string | null>(null);
   const [settingsVisible, setSettingsVisible] = useState(false);
   const [purchaseVisible, setPurchaseVisible] = useState(false);
   const [previewVisible, setPreviewVisible] = useState(false);
@@ -793,6 +821,9 @@ export default function ProfileScreen() {
 
   // ── Genel UI ───────────────────────────────────────────────────────────────
   const [loading, setLoading] = useState(true);
+  // Hata ekranı dururken arkada bir deneme uçuyor mu. `loading`'den AYRI: o
+  // skeleton'ı çiziyor, bu yalnız "Tekrar dene" butonundaki spinner'ı.
+  const [retrying, setRetrying] = useState(false);
   // Son çekim düştü mü — focus/foreground tazelemesi bunu okur. State DEĞİL ref:
   // dinleyicilerin closure'ı mount'ta kuruluyor, güncel değeri senkron okumalı.
   const loadFailedRef = useRef(false);
@@ -815,6 +846,7 @@ export default function ProfileScreen() {
 
   // ── Fotoğraf yönetimi (parent-level: profile cache'ini mutate eder) ──────
   const [savingPhoto, setSavingPhoto] = useState(false);
+  const [sourceSheetOpen, setSourceSheetOpen] = useState(false);
 
   // ── Progress bar animasyonu ───────────────────────────────────────────────
   // Layout genişlikleri shared value olarak tutuluyor; React state'i worklet
@@ -870,13 +902,17 @@ export default function ProfileScreen() {
   });
 
   // ── Veri yükleme ───────────────────────────────────────────────────────────
-  // `silent`: elde veri varken tazeleme — dolu ekranı skeleton'a düşürmez
-  // (LikesScreen'deki aynı ayrım). Veri yokken bayrak yok sayılır, skeleton
-  // zaten tek doğru ekran.
+  // `silent`: ekranda ZATEN bir şey duruyor (dolu profil ya da hata ekranı) —
+  // tazeleme onu skeleton'a düşürmemeli. Skeleton yalnız gerçekten ilk yükleme
+  // içindir; hata ekranından yapılan her deneme (focus/foreground/"Tekrar dene")
+  // sessizdir, geri bildirim butondaki spinner'dan gelir.
   const loadProfile = useCallback(async ({ silent = false } = {}) => {
     if (loadInFlightRef.current) return;
     loadInFlightRef.current = true;
-    if (!silent && !myProfileRef.current) setLoading(true);
+    const hasData = myProfileRef.current != null;
+    if (!silent && !hasData) setLoading(true);
+    // Sessiz + veri yok = hata ekranı duruyor demektir; deneme görünsün.
+    else if (!hasData) setRetrying(true);
     try {
       // Catch'leri sessiz tutmak yerine endpoint adıyla logla — yeni eklenen
       // common endpoint'lerden biri 404/500 dönerse hangisi olduğu görünür olsun.
@@ -967,6 +1003,7 @@ export default function ProfileScreen() {
     } finally {
       loadInFlightRef.current = false;
       setLoading(false);
+      setRetrying(false);
     }
   }, []);
 
@@ -990,7 +1027,11 @@ export default function ProfileScreen() {
   useEffect(() => {
     const retryIfFailed = () => {
       if (!loadFailedRef.current) return;
-      loadProfile({ silent: myProfileRef.current != null });
+      // HER ZAMAN sessiz. Elde veri yoksa bile: ekranda hata durumu duruyor ve
+      // skeleton'a düşmek onu bir saniyeliğine yanıp sönen bir geçişe çeviriyor
+      // (başka sekmeden Profil'e her dönüşte + her foreground'da). Deneme
+      // butondaki spinner'dan görünür; sonuç ya profil ya aynı hata ekranı.
+      loadProfile({ silent: true });
     };
     const unsubscribeFocus = navigation.addListener("focus", retryIfFailed);
     const appStateSub = AppState.addEventListener("change", (state) => {
@@ -1003,7 +1044,9 @@ export default function ProfileScreen() {
   }, [navigation, loadProfile]);
 
   const handleRetryLoad = useCallback(() => {
-    loadProfile();
+    // Otomatik denemeyle aynı gerekçe: kullanıcı butona bastığında ekran
+    // skeleton'a düşüp hataya geri dönmesin. Geri bildirim butonun spinner'ı.
+    loadProfile({ silent: true });
   }, [loadProfile]);
 
   // Premium geçişinde profili tazele — İKİ YÖNDE de. Doküman §9: aktivasyon
@@ -1070,11 +1113,20 @@ export default function ProfileScreen() {
         myProfile.departmentDisplay || String(myProfile.department ?? ""),
       yearOfStudy: myProfile.yearOfStudy,
       yearOfStudyDisplay: myProfile.yearOfStudyDisplay,
+      prompts: myProfile.prompts,
+      // Geçiş fazı: kart, prompt'u olmayan profilde bio'ya düşüyor. Önizleme
+      // gerçek kartla aynı alanları almalı, yoksa kullanıcı kendi kartında
+      // olmayan/olan bir bölüm görür.
       bio: myProfile.bio,
       hobbies: resolveHobbies(myProfile.hobbies),
       smokingStatusDisplay: myProfile.smokingStatusDisplay,
       zodiacSignDisplay: myProfile.zodiacSignDisplay,
       relationshipIntentDisplay: myProfile.relationshipIntentDisplay,
+      // enumName de geçiyor: kart niyet etiketini ÖNCE yerel haritadan basıyor
+      // (backend display'i İngilizce dönebiliyor) ve bölüm gradyanını da bu
+      // anahtara göre seçiyor. Eksikken önizleme hep kırmızı fallback'e düşüp
+      // gerçek karttan farklı görünüyordu.
+      relationshipIntent: myProfile.relationshipIntent,
       // Alkol kartın yaşam tarzı pill'lerinde gösteriliyor; önizleme kartı
       // gerçek kartla aynı alanları almalı, yoksa kullanıcı kendi profilini
       // eksik görür.
@@ -1082,8 +1134,16 @@ export default function ProfileScreen() {
       // Boy da yaşam tarzı pill'lerinde — alkolle aynı gerekçe. Kart aralık
       // dışı/eksik değerde pill'i hiç çizmiyor, burada temizlemeye gerek yok.
       height: myProfile.height,
-      cityDisplay: myProfile.cityDisplay,
-      districtDisplay: myProfile.districtDisplay,
+      // isPremium/age ile aynı gerekçe: bu kart "karşı taraf ne görüyor"
+      // önizlemesi. Konum gizliyse gerçek kartta backend bu alanları null
+      // gönderiyor, önizleme de aynısını yapmalı — yoksa kullanıcı ayarı
+      // açtığını sanıp konumunu kartında görmeye devam eder ve "çalışmıyor"
+      // diye geri döner. Profil ekranının KENDİ konum satırı (EditProfileForm)
+      // bundan etkilenmez, kullanıcı kendi konumunu her zaman görür.
+      cityDisplay:
+        myProfile.showLocation === false ? null : myProfile.cityDisplay,
+      districtDisplay:
+        myProfile.showLocation === false ? null : myProfile.districtDisplay,
       distance: null,
     };
   };
@@ -1117,6 +1177,7 @@ export default function ProfileScreen() {
     setEditVisible(false);
     pendingFocusSectionRef.current = null;
     setEditFocusSection(null);
+    setHighlightPhotoId(null);
     // editFormReady'yi ilk açılıştan sonra false'a çekmiyoruz — reopen'da skeleton
     // flash'ı olmasın. İlk kez henüz açılmadıysa (edge) skeleton mantığı korunur.
     if (!hasOpenedEditOnceRef.current) setEditFormReady(false);
@@ -1204,9 +1265,32 @@ export default function ProfileScreen() {
     try {
       const profile = await profileService.getMyProfile(true); // foto sonrası taze
       setMyProfile(profile);
+      // Navigator'daki görünürlük kapısı da bu profili okuyor; foto eklenince
+      // kapının kapanması için haber veriyoruz (cache zaten tazelendi).
+      uiBus.emit('profileDirty');
     } catch (e) {
       console.error("Profil yenileme hatası:", e?.message);
     }
+  };
+
+  // Keşif havuzunda mıyız — foto silme tabanı ve kapının metni buradan okunuyor.
+  const profileVisibility = useMemo(
+    () => normalizeProfileVisibility(myProfile),
+    [myProfile],
+  );
+
+  /** Foto/profil akışına özel UT kodu → gösterilecek metin (yoksa null). */
+  const photoErrorText = (e: any): string | null => {
+    const data = e?.response?.data;
+    const code = data?.code ?? data?.errorCode ?? null;
+    const key = photoModerationCodeKey(code);
+    if (key) {
+      return t(key, {
+        max: MAX_PROFILE_PHOTOS,
+        min: resolveRequiredPhotoCount(profileVisibility),
+      });
+    }
+    return null;
   };
 
   const uploadPickedPhoto = async (picked: PickedPhoto) => {
@@ -1226,6 +1310,10 @@ export default function ProfileScreen() {
       });
       await refreshPhotos();
 
+      // Foto artık sunucuda; yerel kopya bu andan itibaren ölü ağırlık.
+      // (Kayıt akışı bunu YAPMAZ — orada yollar submit'e kadar redux'ta.)
+      forgetPhoto(picked.uri);
+
       const summary = summarizeModeration(photos);
       if (summary) Alert.alert(summary.title, summary.message);
     } catch (e) {
@@ -1233,24 +1321,25 @@ export default function ProfileScreen() {
         "Fotoğraf yükleme hatası:",
         e?.response?.data || e?.message,
       );
-      Alert.alert(t('common.error'), t('profile.photos.uploadError'));
+      // Foto tavanı (UT-6203) ve sağlayıcı erişilemez (UT-6206) artık sunucudan
+      // ayırt edilebilir kodla geliyor — jenerik "yüklenemedi" yerine sebep.
+      Alert.alert(
+        t('common.error'),
+        photoErrorText(e) ?? t('profile.photos.uploadError'),
+      );
     } finally {
       setSavingPhoto(false);
     }
   };
 
   const addPhotoFromGallery = async () => {
-    // Kayıt akışıyla aynı 3:4 crop'lu seçim; crop-picker izni kendisi ister.
+    // Kayıt akışıyla aynı 3:4 crop'lu seçim. Galeri İZNİ SORULMUYOR: seçim
+    // PHPicker'da, yani süreç dışında yapılıyor.
     let picked: PickedPhoto[];
     try {
       picked = await pickAndCropPhotos(1);
     } catch (e: any) {
-      if (e?.code === "E_NO_LIBRARY_PERMISSION") {
-        Alert.alert(
-          t('profile.permissions.title'),
-          t('profile.permissions.galleryMessage'),
-        );
-      }
+      devLog("Galeri seçimi hatası:", e);
       return;
     }
     if (picked.length === 0) return;
@@ -1263,9 +1352,16 @@ export default function ProfileScreen() {
       picked = await captureAndCropPhoto();
     } catch (e: any) {
       if (e?.code === "E_NO_CAMERA_PERMISSION") {
+        // İzin bir daha sorulamıyorsa tek çıkış Ayarlar.
         Alert.alert(
           t('profile.permissions.title'),
           t('profile.permissions.cameraMessage'),
+          e?.canAskAgain === false
+            ? [
+                { text: t('common.cancel'), style: "cancel" },
+                { text: t('profile.permissions.openSettings'), onPress: () => Linking.openSettings().catch(() => {}) },
+              ]
+            : undefined,
         );
       }
       return;
@@ -1274,7 +1370,7 @@ export default function ProfileScreen() {
     await uploadPickedPhoto(picked);
   };
 
-  // Kaynak seçimi — handlePhotoPress ile aynı Alert tabanlı desen.
+  // Kaynak seçimi — kayıt akışıyla ortak PhotoSourceSheet.
   const handleAddPhoto = () => {
     // 6 tavanı bu uçta backend'de KONTROL EDİLMİYOR (bkz. MAX_PROFILE_PHOTOS):
     // istek 200 döner, profil 7 fotoğrafa çıkar ve sıralama kaydetme
@@ -1286,46 +1382,160 @@ export default function ProfileScreen() {
       );
       return;
     }
-    Alert.alert(
-      t('profile.photos.addTitle'),
-      t('profile.photos.addMessage'),
-      [
-        { text: t('profile.photos.sourceCamera'), onPress: addPhotoFromCamera },
-        { text: t('profile.photos.sourceGallery'), onPress: addPhotoFromGallery },
-        { text: t('common.cancel'), style: "cancel" },
-      ],
-    );
+    setSourceSheetOpen(true);
+  };
+
+  /**
+   * Reddedilen fotoğrafa itiraz. Buton görünürlüğü tamamen sunucunun
+   * `isAppealable`'ına bağlı — "terminal red mi", "zaten itiraz edildi mi",
+   * "karar veremedik durumu mu" kurallarının hepsi o alanda.
+   */
+  /**
+   * Tek fotoğrafın moderasyon bloğunu YEREL olarak yamalar.
+   *
+   * Gerekçe (rehber §12.1): `GetMyProfile` itiraz durumunu taşımıyor —
+   * `appealState` her zaman `None`, `isAppealable` her zaman `true` geliyor.
+   * İtirazdan sonra `refreshPhotos()` çağırmak, kullanıcıya itiraz butonunu
+   * GERİ getiriyor ve ikinci basışta 409 üretiyordu.
+   */
+  const patchPhotoModeration = (photoId, patch) => {
+    setMyProfile((prev) => {
+      if (!prev?.photosList) return prev;
+      return {
+        ...prev,
+        photosList: prev.photosList.map((p) =>
+          p?.photoId === photoId
+            ? { ...p, moderation: { ...normalizePhotoModeration(p), ...patch } }
+            : p,
+        ),
+      };
+    });
+  };
+
+  const handleAppealPhoto = async (photoId) => {
+    setSavingPhoto(true);
+    try {
+      const { appealState } = await profileService.appealPhoto(photoId);
+      // 1) Optimistik: buton ANINDA kapanıyor.
+      patchPhotoModeration(photoId, { appealState, isAppealable: false });
+      // 2) Kanonik doğrulama tek fotoğraf ucundan (profil yanıtı bu alanı
+      //    taşımıyor). Başarısız olursa optimistik hâl kalır — 409 yolu
+      //    zaten aynı sonucu veriyor.
+      try {
+        const fresh = await profileService.getPhoto(photoId);
+        if (fresh) patchPhotoModeration(photoId, normalizePhotoModeration(fresh));
+      } catch {}
+      Alert.alert(
+        t('profile.photoModeration.appealSentTitle'),
+        t('profile.photoModeration.appealSentMessage'),
+      );
+    } catch (e) {
+      const data = e?.response?.data;
+      const code = data?.code ?? data?.errorCode ?? null;
+      // UT-6305 (409) = zaten itiraz var / itiraz edilemez. Bu bir HATA DEĞİL:
+      // kullanıcı istediği şeyin zaten yapılmış olduğunu öğreniyor. Sessizce
+      // butonu kapatıyoruz, uyarı göstermiyoruz (rehber §12.1). Geçiş
+      // penceresinde eski UT-6205 de aynı anlama geliyor.
+      if (isPhotoAppealConflict(code)) {
+        patchPhotoModeration(photoId, {
+          appealState: 'Pending',
+          isAppealable: false,
+        });
+      } else {
+        Alert.alert(
+          t('common.error'),
+          photoErrorText(e) ?? t('profile.photoModeration.appealError'),
+        );
+      }
+    } finally {
+      setSavingPhoto(false);
+    }
   };
 
   const handlePhotoPress = (photo) => {
     const isMain = photo.isMainPhoto;
-    const { status, reasonCode } = normalizePhotoModeration(photo);
+    const {
+      status,
+      reasonCode,
+      reasonText,
+      isVisibleToOthers,
+      isAppealable,
+      appealState,
+    } = normalizePhotoModeration(photo);
+
+    // İtiraz beklemede: ne "İtiraz et" ne "Değiştir" gösteriliyor (rehber §10).
+    // Silme itiraz hakkını da götürürdü; karar çıkana kadar dokunulmuyor.
+    if (appealState === 'Pending') {
+      Alert.alert(
+        t('profile.photoModeration.appealPendingTitle'),
+        t('profile.photoModeration.appealPendingMessage'),
+        [{ text: t('common.ok') }],
+      );
+      return;
+    }
+
     const options = [];
 
+    // "Düzenle" yalnız YAYINDA olan fotoğrafta. İncelemedeki ya da reddedilen
+    // bir fotoğrafı yeniden kırpmak aynı karara geri düşer — orada kullanıcıya
+    // yardım eden eylem "Değiştir".
+    if (isVisibleToOthers)
+      options.push({
+        text: t('profile.photos.edit'),
+        onPress: () => handleRecropPhoto(photo),
+      });
+
     // Yalnızca yayında olan bir foto ana foto yapılabilir: gizli bir fotoğraf
-    // ana foto olursa profil kartı boş görünür (rehber §3c).
-    if (!isMain && status === "Approved")
+    // ana foto olursa profil kartı boş görünür (rehber §3c). Kapı sunucunun
+    // görünürlük kararı — status'tan TÜRETİLMİYOR.
+    if (!isMain && isVisibleToOthers)
       options.push({
         text: t('profile.photos.setMain'),
         onPress: () => handleSetMainPhoto(photo.photoId),
       });
 
+    if (isAppealable)
+      options.push({
+        text: t('profile.photoModeration.appeal'),
+        onPress: () => handleAppealPhoto(photo.photoId),
+      });
+
     options.push({
       // Rejected'ta kullanıcının yapması gereken bir şey VAR → "Değiştir".
       // Review/Pending'de yok, o yüzden orada normal "Sil" kalıyor.
+      // (Reddedilen foto S3'te 30 gün tutuluyor ve tavana sayılıyor — silmek
+      // doğru davranış.)
       text: requiresUserAction(status)
         ? t('profile.photoModeration.replace')
         : t('profile.photos.delete'),
       style: "destructive",
-      onPress: () => handleDeletePhoto(photo.photoId),
+      // İtiraz hakkı varken silmek o hakkı da götürüyor (foto S3'ten kalkınca
+      // itiraz edilecek kayıt kalmaz) — rehber §10, onayda söylüyoruz.
+      onPress: () =>
+        isAppealable
+          ? Alert.alert(
+              t('profile.photoModeration.removeWarningTitle'),
+              t('profile.photoModeration.removeWarningMessage'),
+              [
+                { text: t('common.cancel'), style: "cancel" },
+                {
+                  text: t('profile.photos.delete'),
+                  style: "destructive",
+                  onPress: () => handleDeletePhoto(photo.photoId),
+                },
+              ],
+            )
+          : handleDeletePhoto(photo.photoId),
     });
     options.push({ text: t('common.cancel'), style: "cancel" });
 
     Alert.alert(
-      status === "Approved"
+      isVisibleToOthers
         ? t('profile.photos.title')
         : moderationReasonTitle(status, reasonCode),
-      status === "Approved" ? "" : moderationReasonText(status, reasonCode),
+      isVisibleToOthers
+        ? ""
+        : moderationReasonText(status, reasonCode, reasonText),
       options,
     );
   };
@@ -1343,13 +1553,17 @@ export default function ProfileScreen() {
   };
 
   const handleDeletePhoto = async (photoId) => {
-    // Backend silme sonrası en az 2 foto şartını 400 ile uyguluyor; catch bloğu
+    // Backend minimum foto şartını 400 + `UT-6204` ile uyguluyor; catch bloğu
     // jenerik "silinemedi" gösterdiği için kullanıcı sebebi göremiyordu. Önden
     // kesip ne yapması gerektiğini söylüyoruz (önce yeni foto ekle).
-    if ((myProfile?.photosList?.length ?? 0) <= MIN_PROFILE_PHOTOS) {
+    //
+    // Taban artık SABİT DEĞİL: sunucunun `requiredPhotoCount`'u. Kural
+    // değişirse istemci kendiliğinden doğru davranır.
+    const minPhotos = resolveRequiredPhotoCount(profileVisibility);
+    if ((myProfile?.photosList?.length ?? 0) <= minPhotos) {
       Alert.alert(
         t('profile.photos.minTitle'),
-        t('profile.photos.minMessage', { min: MIN_PROFILE_PHOTOS }),
+        t('profile.photos.minMessage', { min: minPhotos }),
       );
       return;
     }
@@ -1359,12 +1573,179 @@ export default function ProfileScreen() {
         PhotoIdsToDelete: [photoId],
       });
       await refreshPhotos();
-    } catch {
-      Alert.alert(t('common.error'), t('profile.photos.deleteError'));
+    } catch (e) {
+      Alert.alert(
+        t('common.error'),
+        photoErrorText(e) ?? t('profile.photos.deleteError'),
+      );
     } finally {
       setSavingPhoto(false);
     }
   };
+
+  /**
+   * Yeni yüklenen fotoğrafı silinen fotoğrafın SIRASINA geri koyar.
+   *
+   * `NewPhotos` her zaman listenin SONUNA ekliyor; kullanıcı açısından
+   * "düzenlediğim fotoğraf en sona atladı" bir hata gibi görünüyor. Sıra TAM
+   * LİSTE olarak gönderiliyor (bkz. EditProfileForm'daki kaydetme) — kısmi
+   * PhotoOrders diye bir şey yok.
+   *
+   * Ana fotoğraf kuralı: yalnız YAYINDA olan bir foto ana olabilir (rehber
+   * §3c). Yeni kayıt incelemedeyse sırayı da değiştirmiyoruz; ilk sıraya konan
+   * görünmez fotoğraf profil kartını boşaltırdı.
+   */
+  const restorePhotoSlot = async (list, added, slot, wasMain) => {
+    const next = list.filter(
+      (p) => String(p?.photoId) !== String(added.photoId),
+    );
+    next.splice(Math.min(slot, next.length), 0, added);
+    if (next.every((p, i) => String(p?.photoId) === String(list[i]?.photoId)))
+      return;
+
+    const updates: any = {
+      PhotoOrders: next.map((p, i) => ({ photoId: p.photoId, newOrder: i + 1 })),
+    };
+    if (wasMain) {
+      if (!normalizePhotoModeration(added).isVisibleToOthers) return;
+      updates.NewMainPhotoId = added.photoId;
+    }
+
+    try {
+      await profileService.updateProfile(updates);
+    } catch (e) {
+      // BEST-EFFORT: asıl iş (yeni kırpma) zaten kaydedildi. Sıranın geri
+      // konamaması yüzünden ikinci bir hata kutusu göstermiyoruz.
+      devLog("Foto sırası geri konulamadı:", e);
+    }
+  };
+
+  /**
+   * "Düzenle" → aynı fotoğrafın çerçevesini yeniden seç.
+   *
+   * Sunucuda YERİNDE KIRPMA UCU YOK; tek yol yeni çıktıyı yükleyip eskisini
+   * silmek. İkisi TEK istekte gidiyor: ayrı ayrı gönderilseydi arada profil ya
+   * minimum foto sayısının altına düşer (önce silme) ya da tavanı aşardı
+   * (önce yükleme).
+   *
+   * Kullanıcının göreceği kaçınılmaz sonuç: yeni kayıt yeniden moderasyondan
+   * geçer. `summarizeModeration` bunu zaten söylüyor.
+   */
+  const handleRecropPhoto = async (photo) => {
+    const uri = resolvePhotoUri(photo);
+    if (!uri) return;
+
+    const list = myProfile?.photosList ?? [];
+    const slot = list.findIndex(
+      (p) => String(p?.photoId) === String(photo.photoId),
+    );
+    const wasMain = !!photo.isMainPhoto;
+
+    // Kaynak indirilirken de spinner dönsün: kırpma ekranı ağdan sonra açılıyor.
+    setSavingPhoto(true);
+    let picked: PickedPhoto | null = null;
+    try {
+      picked = await recropExistingPhoto(uri);
+    } catch (e) {
+      devLog("Yeniden kırpma hatası:", e);
+    }
+    // İptal (ya da indirme hatası) bir HATA DEĞİL — sessizce çıkılıyor.
+    if (!picked) {
+      setSavingPhoto(false);
+      return;
+    }
+
+    try {
+      const { photos } = await profileService.updateProfile({
+        NewPhotos: [
+          { uri: picked.uri, type: picked.mime, name: picked.fileName },
+        ],
+        PhotoIdsToDelete: [photo.photoId],
+      });
+
+      const fresh = await profileService.getMyProfile(true);
+      forgetPhoto(picked.uri);
+
+      // Yeni photoId yanıtta gelmiyor: taze listede ÖNCEDEN OLMAYAN kayıt o.
+      const known = new Set(list.map((p) => String(p?.photoId)));
+      const added = (fresh?.photosList ?? []).find(
+        (p) => !known.has(String(p?.photoId)),
+      );
+      if (added && slot >= 0) {
+        await restorePhotoSlot(fresh.photosList, added, slot, wasMain);
+      }
+      await refreshPhotos();
+
+      const summary = summarizeModeration(photos);
+      if (summary) Alert.alert(summary.title, summary.message);
+    } catch (e) {
+      console.error(
+        "Fotoğraf düzenleme hatası:",
+        e?.response?.data || e?.message,
+      );
+      Alert.alert(
+        t('common.error'),
+        photoErrorText(e) ?? t('profile.photos.editError'),
+      );
+    } finally {
+      setSavingPhoto(false);
+    }
+  };
+
+  // Hub'dan gelen moderasyon kararı (admin onay/red, rescan, itiraz sonucu) →
+  // ekran mount ise anında tazele. Profil cache'ini yayıncı zaten bust etti.
+  // Handler'lar ref üzerinden okunuyor: efekt bir kez bağlanıyor ama her zaman
+  // GÜNCEL closure'ı çağırıyor (aksi halde ilk render'ın bayat `myProfile`ı ile
+  // tavan kontrolü yapılırdı).
+  const photoActionsRef = useRef({ refreshPhotos, handleAddPhoto });
+  photoActionsRef.current = { refreshPhotos, handleAddPhoto };
+  useEffect(
+    () =>
+      uiBus.on('photoModerationChanged', () => {
+        photoActionsRef.current.refreshPhotos();
+      }),
+    [],
+  );
+  // Görünürlük kapısındaki "Fotoğraf ekle" CTA'sı buraya düşüyor.
+  useEffect(
+    () =>
+      uiBus.on('addProfilePhoto', () => {
+        photoActionsRef.current.handleAddPhoto();
+      }),
+    [],
+  );
+
+  // Moderasyon bildirimine basıldı → düzenleme modalını FOTOĞRAFLAR bölümüne aç
+  // ve kararın verildiği fotoğrafı vurgula.
+  //
+  // İki giriş kapısı var ve ikisi de aynı isteği tüketiyor:
+  //  1. Ekran zaten mount ise `openProfilePhoto` event'i,
+  //  2. Push'tan cold start'ta ekran sonradan mount olduğu için mount anındaki
+  //     `consumePhotoHighlight()` (uiBus isteği modülde bekletiyor).
+  const applyPhotoHighlight = useRef<(photoId: string | null) => void>(() => {});
+  applyPhotoHighlight.current = (photoId) => {
+    if (!photoId) return;
+    // Bildirimden ÖNCEKİ moderasyon durumu görünmesin.
+    photoActionsRef.current.refreshPhotos();
+    openEditProfile("photos");
+    setHighlightPhotoId(String(photoId));
+  };
+  useEffect(() => {
+    const unsub = uiBus.on('openProfilePhoto', () => {
+      applyPhotoHighlight.current(consumePhotoHighlight());
+    });
+    // Mount anında bekleyen istek varsa (cold start) onu da tüket.
+    applyPhotoHighlight.current(consumePhotoHighlight());
+    return unsub;
+  }, []);
+
+  // Vurgu kalıcı değil: fotoğraf bulunduktan sonra halka ekranda kalırsa
+  // düzenleme ekranının normal hâli gibi okunmaya başlıyor.
+  useEffect(() => {
+    if (!highlightPhotoId) return;
+    const id = setTimeout(() => setHighlightPhotoId(null), 4500);
+    return () => clearTimeout(id);
+  }, [highlightPhotoId]);
 
   const handleAccordionToggle = (key) => {
     didAutoExpandRef.current = true;
@@ -1397,12 +1778,28 @@ export default function ProfileScreen() {
       desc: t('profile.completion.hobbiesDescription'),
     },
     {
-      key: "bio",
-      title: t('profile.completion.bio'),
+      key: "prompts",
+      title: t('profile.completion.prompts'),
       icon: { sf: "book.fill" as SFSymbol, lucide: BookOpen },
-      current: myProfile?.bio?.trim().length > 0 ? 1 : 0,
-      max: 1,
-      desc: t('profile.completion.bioDescription'),
+      // ⚠️ Bu satır İSTEMCİDE hesaplanıyor (0–3), hemen üstündeki yüzde halkası
+      // ise SUNUCUDAN geliyor (profileCompletionPercentage) ve İKİLİ puanlıyor:
+      //
+      //   prompt sayısı > 0  VEYA  bio dolu  →  +10
+      //
+      // Yani ikisi aynı 10 puanı PAYLAŞIYOR (geçiş fazında bio hâlâ yazılabilir,
+      // ayrı puan olsaydı ikisi de dolu kullanıcıda toplam 100'ü aşardı).
+      //
+      // Görünür sonucu: bio'su dolu bir kullanıcı prompt eklediğinde bu satır
+      // 0/3 → 1/3 ilerler ama HALKA KIPIRDAMAZ (o puanı zaten alıyordu). Aynı
+      // şey fotoğraf satırında da var (6'ya kadar sayıyor, puan kademeli), yani
+      // liste "yapılacaklar", halka "puan" — bilinçli olarak farklı granülerlik.
+      // Backend Faz 4'te bio tarafını düşürünce ayrışma kendiliğinden kapanıyor.
+      current: Math.min(
+        myProfile?.prompts?.length ?? 0,
+        MAX_PROFILE_PROMPTS,
+      ),
+      max: MAX_PROFILE_PROMPTS,
+      desc: t('profile.completion.promptsDescription'),
     },
     {
       key: "smoking",
@@ -1462,7 +1859,7 @@ export default function ProfileScreen() {
           // Veri yoksa sayfayı ÇİZME: aşağıdaki bloklar `myProfile`ı null'la
           // "her alanı boş bir profil" olarak render ediyor ve kullanıcı bunu
           // ağ hatası değil veri kaybı sanıyor.
-          <ProfileLoadError onRetry={handleRetryLoad} />
+          <ProfileLoadError onRetry={handleRetryLoad} retrying={retrying} />
         ) : (
           <Animated.ScrollView
             showsVerticalScrollIndicator={false}
@@ -1476,6 +1873,11 @@ export default function ProfileScreen() {
             onScroll={scrollHandler}
             scrollEventThrottle={16}
           >
+            {/* Keşif görünürlüğü şeridi BURADA DEĞİL: düzenleme modalında,
+                Fotoğraflar bölümünün açıklamasının altında (EditProfileForm).
+                Şeridin söylediği şeyin çözümü fotoğraf grid'i — bilgiyi
+                eylemden ayrı ekranda tutmak anlamsızdı. */}
+
             {/* ── Progress Bar ── */}
             {completionPct > 0 && (
               <View
@@ -1689,11 +2091,11 @@ export default function ProfileScreen() {
               </View>
             </View>
 
-            {/* ── SuperLike kartı ── */}
+            {/* ── Mağaza şeridi: SuperLike + Not kartları ── */}
             {/* Hero'nun altı, upsell'in üstü: sayfanın tek "mağaza" şeridi.
                 Eskiden sayfanın en altındaki QuotaSection'da duran SuperLike
-                bakiyesi de bu kartın içinde. */}
-            <SuperLikeCard />
+                bakiyesi de bu kartların içinde. */}
+            <ShopCardsRow />
 
             {/* --- PREMIUM ACTIVE CARD --- */}
             {showMembershipCard && (
@@ -1927,21 +2329,19 @@ export default function ProfileScreen() {
                         </View>
                       </View>
 
-                      {/* Feature Rows */}
-                      {[
-                        { title: t('discover.premium.feature1') },
-                        { title: t('discover.premium.feature2') },
-                        { title: t('discover.premium.feature3') },
-                        { title: t('discover.premium.feature4') },
-                      ].map((feature, index, arr) => (
+                      {/* Feature Rows — listenin yalnız ilk dördü.
+                          Tamamı PurchaseModal'da; kartın gövdesine dokunmak
+                          zaten oraya açıyor, aşağıdaki "+N özellik daha"
+                          satırı da o yüzden ayrı bir buton değil. */}
+                      {UPSELL_BENEFIT_KEYS.map((key, index, arr) => (
                         <View
-                          key={index}
+                          key={key}
                           className={`flex-row items-center justify-between px-6 ${
                             index !== arr.length - 1 ? "mb-4" : ""
                           }`}
                         >
                           <Text className="font-[500] text-[13px] flex-1 pr-2" style={{ color: colors.onMedia }}>
-                            {feature.title}
+                            {t(premiumBenefitLabelKey(key))}
                           </Text>
                           <View className="flex-row items-center gap-4">
                             <View className="w-16 items-center">
@@ -1960,6 +2360,21 @@ export default function ProfileScreen() {
                           </View>
                         </View>
                       ))}
+
+                      {/* Listenin devamı. Satırın ✗/✓ sütunları YOK: burada
+                          karşılaştırılan bir şey değil, "tabloda göremediğin
+                          maddeler var" işareti — sütun çizmek onları dörtle
+                          aynı ağırlıkta gösterirdi. */}
+                      <View className="px-6 mt-4">
+                        <Text
+                          className="font-[500] text-[13px]"
+                          style={{ color: onMediaAt(0.75) }}
+                        >
+                          {t('discover.premium.benefitsMore', {
+                            n: UPSELL_HIDDEN_BENEFIT_COUNT,
+                          })}
+                        </Text>
+                      </View>
                     </View>
 
                     {/* Purchase Action Button */}
@@ -2162,8 +2577,11 @@ export default function ProfileScreen() {
                 // olmuş kullanıcıdan gizlemek demek. Backend değeri her hâlde
                 // kabul ediyor, erken göstermenin yan etkisi yok.
                 isPremium={isPremium || syncPending}
+                // Fotoğraflar bölümünün başındaki görünürlük şeridi için.
+                profileVisibility={profileVisibility}
                 savingPhoto={savingPhoto}
                 focusSection={editFocusSection}
+                highlightPhotoId={highlightPhotoId}
                 onAddPhoto={handleAddPhoto}
                 onPhotoPress={handlePhotoPress}
                 onPreview={() => {
@@ -2196,6 +2614,16 @@ export default function ProfileScreen() {
           visible={previewVisible}
           onClose={() => setPreviewVisible(false)}
           profile={previewProfile}
+        />
+
+        {/* Foto kaynağı seçimi. `stackBehavior="push"`: düzenleme modalının
+            üstüne biniyor, onu kapatmıyor. */}
+        <PhotoSourceSheet
+          visible={sourceSheetOpen}
+          onClose={() => setSourceSheetOpen(false)}
+          onCamera={addPhotoFromCamera}
+          onGallery={addPhotoFromGallery}
+          stackBehavior="push"
         />
       </View>
     </GestureHandlerRootView>

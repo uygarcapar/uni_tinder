@@ -39,11 +39,6 @@ const PROFILE_TTL_MS = 10_000;
 class ProfileService {
   private _profileCache: { at: number; data: any } | null = null;
   private _profileInFlight: Promise<any> | null = null;
-  // GetMyProfile'ın photosList'i moderasyon alanlarını taşıyor mu bilinmiyor
-  // (rehber bunları yalnızca GetMyPhotos için belgeliyor). Taşıyorsa ek istek
-  // hiç atılmaz; taşımıyorsa GetMyPhotos'tan çekip photoId ile birleştiriyoruz.
-  // Uç 404/403 dönerse bayrak kalıcı olarak kapanır ve bir daha denenmez.
-  private _moderationMergeEnabled = true;
 
   async getMyProfile(force = false) {
     if (!force) {
@@ -53,7 +48,11 @@ class ProfileService {
     }
     const p = (async () => {
       const response = await api.get(API_ENDPOINTS.GET_MY_PROFILE);
-      const result = await this.withPhotoModeration((response as any).result);
+      // `photosList[]` moderasyon alanlarını KENDİSİ taşıyor (2026-08-24'te
+      // doğrulandı — AutoMapper zaten map ediyordu). Eskiden buradan bir de
+      // GetMyPhotos çekilip photoId üzerinden birleştiriliyordu; o katman ve
+      // ikinci istek gereksizdi, ikisi de kaldırıldı.
+      const result = (response as any).result;
       this._profileCache = { at: Date.now(), data: result };
       return result;
     })();
@@ -71,62 +70,45 @@ class ProfileService {
   }
 
   /**
-   * Fotoğraf moderasyon durumları. Kullanıcı KENDİ fotoğraflarını her durumda
-   * görür (sebebiyle birlikte); başkalarına yalnızca Approved olanlar gider.
+   * Reddedilen fotoğrafa itiraz (`202 Accepted`). Butonu YALNIZCA
+   * `moderation.isAppealable === true` iken göster: alan "terminal red mi",
+   * "zaten itiraz edilmiş mi", "karar veremedik durumu mu" kurallarının
+   * tamamını zaten içeriyor.
+   *
+   * İkinci itiraz / itiraz edilemez karar → `409` + `UT-6205`.
+   * Sonuç `PhotoAppealResolved` bildirimi + `PhotoModerationChanged` ile döner.
    */
-  async getMyPhotos(): Promise<any[]> {
-    const response = await api.get(API_ENDPOINTS.GET_MY_PHOTOS);
-    const result = (response as any)?.result;
-    return Array.isArray(result) ? result : (result?.photos ?? []);
+  /**
+   * Tek fotoğrafın KANONİK hâli — `GET /api/photo/GetPhoto/{id}`.
+   *
+   * Neden `GetMyProfile` yetmiyor: rehber §12.1, profil yanıtındaki
+   * `moderation.appealState` AutoMapper sınırı yüzünden HER ZAMAN `None`
+   * geliyor ve `isAppealable` `true` kalıyor. İtiraz durumunun doğru olması
+   * gereken yerde (itiraz sonrası, foto detayı) bu uç kullanılmalı.
+   *
+   * ⚠️ `photo` kotasına tabi (10/dk) — rutin okuma için ÇAĞIRMA, profil yanıtı
+   * yeterli (§12.7).
+   */
+  async getPhoto(photoId: string | number): Promise<any | null> {
+    const response = await api.get(
+      `${API_ENDPOINTS.GET_PHOTO}/${encodeURIComponent(String(photoId))}`,
+    );
+    return (response as any)?.result ?? null;
   }
 
-  /**
-   * photosList moderasyon alanlarını zaten taşıyorsa profili olduğu gibi döner.
-   * Taşımıyorsa GetMyPhotos'tan çekip photoId üzerinden birleştirir — order
-   * silme/sıralama sonrası kayabildiği için eşleştirme ASLA order ile yapılmaz.
-   *
-   * Birleştirme başarısız olursa profil sessizce moderasyonsuz döner: rozet
-   * çıkmaz ama profil ekranı çalışmaya devam eder.
-   */
-  private async withPhotoModeration(result: any) {
-    const photosList = result?.photosList;
-    if (!Array.isArray(photosList) || photosList.length === 0) return result;
-
-    const alreadyHasModeration = photosList.some(
-      (p: any) => p?.moderationStatus != null,
+  async appealPhoto(
+    photoId: string | number,
+    note?: string,
+  ): Promise<{ appealState: PhotoAppealState; createdAt: string | null }> {
+    const response = await api.post(
+      API_ENDPOINTS.PHOTO_APPEAL(photoId),
+      note ? { note } : {},
     );
-    if (alreadyHasModeration || !this._moderationMergeEnabled) return result;
-
-    try {
-      const moderated = await this.getMyPhotos();
-      if (!Array.isArray(moderated) || moderated.length === 0) return result;
-
-      const byId = new Map<string, any>();
-      moderated.forEach((m: any) => {
-        if (m?.photoId != null) byId.set(String(m.photoId), m);
-      });
-
-      return {
-        ...result,
-        photosList: photosList.map((p: any) => {
-          const m = p?.photoId != null ? byId.get(String(p.photoId)) : undefined;
-          if (!m) return p;
-          return {
-            ...p,
-            moderationStatus: m.moderationStatus,
-            rejectionReasonCode: m.rejectionReasonCode,
-            rejectionReasonText: m.rejectionReasonText,
-            isVisibleToOthers: m.isVisibleToOthers,
-          };
-        }),
-      };
-    } catch (e: any) {
-      const status = e?.response?.status;
-      if (status === 404 || status === 403 || status === 405) {
-        this._moderationMergeEnabled = false;
-      }
-      return result;
-    }
+    const result = (response as any)?.result;
+    return {
+      appealState: result?.appealState ?? 'Pending',
+      createdAt: result?.createdAt ?? null,
+    };
   }
 
   async updateProfile(
@@ -157,12 +139,16 @@ class ProfileService {
     const response = await api.put(API_ENDPOINTS.UPDATE_PROFILE, formData);
     this.bustProfileCache(); // sonraki getMyProfile taze veri çeksin
 
-    // KOŞULLU ŞEKİL: NewPhotos gönderildiyse result = { profile, photos },
-    // gönderilmediyse result = düz profileDto. unwrapProfileResult ikisini de
-    // karşılıyor; photos yoksa boş dizi döner.
+    // Şekil artık KOŞULSUZ: `result = { profile, photos }`, foto gönderilsin
+    // gönderilmesin. Foto gönderilmediyse `photos: []` gelir, alanın kendisi
+    // hep var — eski `unwrapProfileResult` sarmalayıcısı bu yüzden silindi.
+    //
+    // `?? result` yalnızca deploy penceresi için: sözleşme canlıya çıkana kadar
+    // eski sunucu hâlâ düz profileDto dönüyor. Backend deploy edildikten sonra
+    // bu arm kaldırılabilir.
     const result = (response as any).result;
     return {
-      profile: unwrapProfileResult(result),
+      profile: result?.profile ?? result,
       photos: extractModerationPhotos(result),
     };
   }

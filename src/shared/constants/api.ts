@@ -40,16 +40,19 @@ export const API_ENDPOINTS = {
   COMPLETE_PROFILE: "/api/profile/CompleteProfile",
   UPDATE_PROFILE: "/api/profile/UpdateProfile",
   GET_MY_PROFILE: "/api/profile/GetMyProfile",
-  // DİKKAT: /api/photo/ altında, /api/profile/ altında DEĞİL (sabit önceden
-  // yanlıştı ama hiç çağrılmadığı için fark edilmemişti). Yalnızca fotoğraf
-  // moderasyon alanları için kullanılıyor — bkz. profileService.getMyPhotos.
-  GET_MY_PHOTOS: "/api/photo/GetMyPhotos",
+  // GET_MY_PHOTOS (/api/photo/GetMyPhotos) KALDIRILDI: GetMyProfile'ın
+  // photosList[]'i kanonik `moderation` bloğunu zaten taşıyor, ikinci istek
+  // gereksizdi (2026-08-24 sözleşmesi §1.1).
   UPDATE_PREFERENCES: "/api/profile/update-preferences",
   // App-open heartbeat: şehir/ilçe artık kullanıcı seçimi değil, backend'in bu
   // koordinattan türettiği sonuç. UpdateProfile'da konum alanları kaldırıldı.
   UPDATE_LOCATION: "/api/profile/location",
 
   GET_PHOTO: "/api/photo/GetPhoto",
+  // Reddedilen fotoğrafa itiraz → 202. Gövde opsiyonel: { note?: string } (≤500).
+  // Günlük 5 istek limiti (`photo_appeal`).
+  PHOTO_APPEAL: (photoId: string | number) =>
+    `/api/photo/${encodeURIComponent(String(photoId))}/appeal`,
 
   GET_POTENTIAL_MATCHES: "/api/swipe/GetPotentialMatches",
   SWIPE_LIKE: "/api/swipe/Like",

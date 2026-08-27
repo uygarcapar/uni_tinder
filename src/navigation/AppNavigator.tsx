@@ -1,4 +1,4 @@
-import { useEffect, useRef, useState, useCallback } from 'react';
+import { useEffect, useMemo, useRef, useState, useCallback } from 'react';
 import { useTranslation } from 'react-i18next';
 import { NavigationContainer, DarkTheme, DefaultTheme, type LinkingOptions } from '@react-navigation/native';
 import { createNativeStackNavigator } from '@react-navigation/native-stack';
@@ -12,8 +12,9 @@ import {
   subscribeTokenRefresh,
   subscribeForegroundMessages,
   subscribeBackgroundOpen,
+  clearDeliveredNotifications,
 } from '@/features/notifications/pushService';
-import uiBus from '@/shared/services/uiBus';
+import uiBus, { requestPhotoHighlight } from '@/shared/services/uiBus';
 import { navigationRef } from '@/shared/services/navigationRef';
 import { setCurrentRouteName } from '@/shared/services/currentRoute';
 import { shortNetError } from '@/shared/utils/netError';
@@ -71,18 +72,29 @@ import {
 import { hasWitnessedPurchase, premiumSyncUserKey } from '@/features/profile/pendingPremiumSync';
 import { addCustomerInfoListener, getRevenueCatAppUserId, initRevenueCat, logRevenueCatIdentity, loginRevenueCat, logoutRevenueCat } from '@/features/profile/subscriptionService';
 import profileService from '@/features/profile/profileService';
+import ProfileHiddenGate from '@/features/profile/components/ProfileHiddenGate';
+import {
+  hasPhotosAwaitingReview,
+  normalizeProfileVisibility,
+  type ProfileVisibility,
+} from '@/features/profile/photoModeration';
+import { ProfileVisibilityProvider } from '@/features/profile/profileVisibilityContext';
 import { sendLocationHeartbeat, clearLocationHeartbeatState } from '@/features/profile/locationHeartbeat';
 import { queryClient } from '@/shared/queries/queryClient';
 import { swipeKeys } from '@/features/discover/swipeQueries';
 import { flushPendingSuperlikeRedeems, redeemUserKey } from '@/features/discover/superlikeRedeem';
+import { flushPendingRecoveryRedeems } from '@/features/discover/recoveryRedeem';
+import { flushPendingNoteRedeems } from '@/features/discover/noteRedeem';
 import AuthNavigator from './AuthNavigator';
 import TabNavigator from './TabNavigator';
 import KVKKConsentScreen, { CURRENT_KVKK_VERSION } from '@/features/auth/screens/KVKKConsentScreen';
 import ChatScreen from '@/features/chat/screens/ChatScreen';
 import NotificationsScreen from '@/features/notifications/screens/NotificationsScreen';
 import ChangePasswordScreen from '@/features/auth/screens/ChangePasswordScreen';
+import ChangeEmailScreen from '@/features/auth/screens/ChangeEmailScreen';
 import DeletionBanner from '@/features/notifications/components/DeletionBanner';
 import MatchModal from '@/features/notifications/components/MatchModal';
+import SuperLikeFlame from '@/features/discover/components/SuperLikeFlame';
 import realtimeService from '@/features/chat/realtimeService';
 import { clearAllDrafts } from '@/features/chat/draftStore';
 import {
@@ -329,6 +341,22 @@ export default function AppNavigator() {
   );
   const [matchGateOpen, setMatchGateOpen] = useState(false);
   const [myPhoto, setMyPhoto] = useState<string | null>(null);
+  // Profil keşif havuzunda mı. `null` = BİLİNMİYOR (alanı göndermeyen sunucu
+  // ya da henüz cevap gelmedi) — kapı yalnız açıkça "Visible değil" denince
+  // açılır, aksi halde deploy öncesi herkesi engellerdik.
+  const [profileVisibility, setProfileVisibility] =
+    useState<ProfileVisibility | null>(null);
+  // İncelemeyi bekleyen fotoğraf var mı — kapının engelleyici mi bilgilendirici
+  // mi olacağını bu belirliyor (bkz. ProfileHiddenGate). `null` = bilinmiyor.
+  const [photosAwaitingReview, setPhotosAwaitingReview] = useState<
+    boolean | null
+  >(null);
+  // Ekranların okuduğu görünürlük bağlamı (Discover kaydırmayı buna göre
+  // kapatıyor). Redux'a yazılmıyor — gerekçe profileVisibilityContext'te.
+  const profileVisibilityInfo = useMemo(
+    () => ({ visibility: profileVisibility, awaitingReview: photosAwaitingReview }),
+    [profileVisibility, photosAwaitingReview],
+  );
   const myPhotoRef = useRef<string | null>(null);
   useEffect(() => {
     myPhotoRef.current = myPhoto;
@@ -989,6 +1017,27 @@ export default function AppNavigator() {
           })
           .catch(() => {});
       }),
+      // Bir fotoğrafın moderasyon kararı değişti (admin onay/red, rescan,
+      // itiraz sonucu). Gövde GET'in kanonik bloklarıyla birebir aynı, ek fetch
+      // gerekmiyor — ama profil cache'i (10 sn TTL) BUST edilmeli: aksi halde
+      // ekran bildirimin anlattığından önceki hâli gösterirdi.
+      realtimeService.on('PhotoModerationChanged', (payload) => {
+        if (!mounted) return;
+        profileService.bustProfileCache();
+        const nextVisibility = normalizeProfileVisibility(payload);
+        if (nextVisibility) setProfileVisibility(nextVisibility);
+        // Gövde yalnız DEĞİŞEN fotoyu taşıyor (liste değil): buradan "bekleyen
+        // foto kaldı mı" sorusu cevaplanamaz. Alan gelirse kullan, gelmezse
+        // mevcut bilgiyi koru ve kanonik listeyi tazele — aksi halde son
+        // inceleme bittikten sonra bayrak `true` kalır ve kapı, engelleyici
+        // olması gerekirken bilgilendirme kipinde kalırdı.
+        const nextAwaiting = hasPhotosAwaitingReview(payload);
+        if (nextAwaiting !== null) setPhotosAwaitingReview(nextAwaiting);
+        else uiBus.emit('profileDirty');
+        // Profil ekranı mount ise kendi tazelemesini yapsın; değilse cache
+        // bust'ı sayesinde bir sonraki açılışta taze veri gelir.
+        uiBus.emit('photoModerationChanged', payload);
+      }),
       realtimeService.on('__connectionStateChanged', (state) => {
         // Force-refetch yalnız RE-connect'te (kopukluk penceresinde kaçan mesaj
         // olabilir — SignalR "en fazla bir kez" teslim eder). İLK bağlantıda
@@ -1143,6 +1192,25 @@ export default function AppNavigator() {
         uiBus.emit('likesDirty');
         // Likes tab HomeTabs stack'inin altında — nested navigate
         navigationRef.navigate('HomeTabs' as never, { screen: 'Likes' } as never);
+        return;
+      }
+      case 'PhotoRejected':
+      case 'PhotoApproved':
+      case 'PhotoAppealResolved': {
+        // Karar bildirimden ÖNCEKİ hâli göstermesin diye önce cache bust.
+        profileService.bustProfileCache();
+        (navigationRef as any).navigate('HomeTabs', { screen: 'Profile' });
+        // `relatedEntityId` = photoId (moderasyon sözleşmesi): düzenleme modalı
+        // fotoğraflar bölümüne açılıp KARARIN VERİLDİĞİ foto vurgulansın —
+        // kullanıcı 6 fotoğraf arasında hangisi olduğunu aramasın. İstek uiBus'ta
+        // bekliyor: push'tan cold start'ta Profil sekmesi henüz mount değil.
+        if (relatedId) requestPhotoHighlight(relatedId);
+        return;
+      }
+      case 'ProfileHiddenInsufficientPhotos': {
+        // Tek bir fotoğrafa değil, profilin bütününe dair: vurgulanacak hedef yok.
+        profileService.bustProfileCache();
+        (navigationRef as any).navigate('HomeTabs', { screen: 'Profile' });
         return;
       }
       case 'MissedMatch':
@@ -1332,21 +1400,31 @@ export default function AppNavigator() {
     const verified = user?.isMailVerified || user?.isProfileCreated;
     if (!isAuthenticated || !verified) {
       setMyPhoto(null);
+      setProfileVisibility(null);
+      setPhotosAwaitingReview(null);
       return;
     }
     let cancelled = false;
-    profileService
-      .getMyProfile()
-      .then((p: any) => {
-        if (cancelled) return;
-        setMyPhoto(resolveMainPhotoUri(p) ?? null);
-        if (__DEV__) {
-          mark('profile-loaded');
-          summary();
-        }
-      })
-      .catch(() => {});
-    return () => { cancelled = true; };
+    const load = () =>
+      profileService
+        .getMyProfile()
+        .then((p: any) => {
+          if (cancelled) return;
+          setMyPhoto(resolveMainPhotoUri(p) ?? null);
+          setProfileVisibility(normalizeProfileVisibility(p));
+          setPhotosAwaitingReview(hasPhotosAwaitingReview(p));
+          if (__DEV__) {
+            mark('profile-loaded');
+            summary();
+          }
+        })
+        .catch(() => {});
+    load();
+    // Foto eklenip profil yeniden görünür olunca kapı kendiliğinden kapansın:
+    // ProfileScreen kaydettiğinde bu efekt yeniden çalışmıyor, sinyal uiBus'tan
+    // geliyor (cache zaten bust edilmiş olduğu için istek taze cevap alır).
+    const unsub = uiBus.on('profileDirty', load);
+    return () => { cancelled = true; unsub(); };
   }, [isAuthenticated, user?.userId, user?.isMailVerified, user?.isProfileCreated]);
 
   // Match overlay'i boot ZİNCİRİNİN TAMAMI bitene kadar mount etme. Modal =
@@ -1446,7 +1524,7 @@ export default function AppNavigator() {
   };
 
   return (
-    <>
+    <ProfileVisibilityProvider value={profileVisibilityInfo}>
       <NavigationContainer
         ref={navigationRef}
         key={navigationKey}
@@ -1518,6 +1596,21 @@ export default function AppNavigator() {
         />
       )}
 
+      {/* Profil keşif havuzundan düştü → bilgilendirme sheet'i (kapatılabilir,
+          hiçbir işlemi engellemiyor). Ayarlar modal'ının ALTINDA duruyor ki
+          açıkken kullanıcı yine de hesabına (çıkış/destek) erişebilsin. */}
+      {showMainNavigator && (
+        <ProfileHiddenGate
+          visibility={profileVisibility}
+          awaitingReview={photosAwaitingReview}
+          onAddPhoto={() => {
+            if (!navigationRef.isReady()) return;
+            (navigationRef as any).navigate('HomeTabs', { screen: 'Profile' });
+            uiBus.emit('addProfilePhoto');
+          }}
+        />
+      )}
+
       {/* Zorunlu / önerilen güncelleme kapısı. Navigator'ın DIŞINDA ve auth'tan
           bağımsız: blokaj login ekranında da geçerli. Yaptırım ekranı (RN Modal)
           bunun üstünde kalır — banlı kullanıcıya "güncelle" demenin anlamı yok. */}
@@ -1535,6 +1628,6 @@ export default function AppNavigator() {
           DIŞINDA: oturum düşerken NavigationContainer remount oluyor, bir
           route'a reset atmak tam o ana denk gelirdi. */}
       <AccountBlockedScreen block={accountBlock} onDismiss={dismissAccountBlock} />
-    </>
+    </ProfileVisibilityProvider>
   );
 }

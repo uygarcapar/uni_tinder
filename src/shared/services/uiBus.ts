@@ -67,3 +67,27 @@ export function resetCardExpandState(): void {
   cardPullProgress.value = 0;
   containerExpand.value = 0;
 }
+
+/**
+ * "Şu fotoğrafı düzenleme modalında göster" isteği — moderasyon bildirimlerinden
+ * (PhotoApproved / PhotoRejected / PhotoAppealResolved) geliyor.
+ *
+ * Neden sadece `emit` yetmiyor: uiBus replay yapmıyor ve Profil sekmesi lazy
+ * mount. Push'tan COLD START'ta yönlendirme, ProfileScreen daha ağaçta yokken
+ * çalışıyor — düz bir emit boşluğa düşerdi. İstek bu yüzden modülde BEKLİYOR;
+ * ekran ister o an dinliyor olsun (emit), ister sonradan mount olsun
+ * (`consumePhotoHighlight`), aynı isteği bir KEZ tüketiyor.
+ */
+let pendingPhotoHighlight: string | null = null;
+
+export function requestPhotoHighlight(photoId: string | number): void {
+  pendingPhotoHighlight = String(photoId);
+  uiBus.emit("openProfilePhoto", { photoId: pendingPhotoHighlight });
+}
+
+/** Bekleyen isteği okur ve TÜKETİR (iki kez uygulanmasın). */
+export function consumePhotoHighlight(): string | null {
+  const id = pendingPhotoHighlight;
+  pendingPhotoHighlight = null;
+  return id;
+}
