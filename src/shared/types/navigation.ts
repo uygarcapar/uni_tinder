@@ -35,6 +35,9 @@ export type AuthStackParamList = {
   RegisterStep10: undefined;
   RegisterStep12: undefined;
   RegisterStep13: undefined;
+  // Sorular (prompt'lar) — akışta Step13 ile Step14 arasında, bkz.
+  // registrationFlow.ts (sıra numarayla değil o diziyle belirleniyor).
+  RegisterStep17: undefined;
   RegisterStep14: undefined;
   // Step16 akışta 15'ten ÖNCE geliyor (alkol/dini görüş → fotoğraflar);
   // numara ekranın eklenme sırasını gösteriyor.

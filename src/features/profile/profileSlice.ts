@@ -1,14 +1,25 @@
 import { createSlice, createAsyncThunk, PayloadAction } from "@reduxjs/toolkit";
 import axios from "axios";
+import i18n from "@/shared/i18n";
 import { API_BASE_URL, API_ENDPOINTS } from "@/shared/constants/api";
-import type { ProfileState } from "@/shared/types";
+import type { ProfilePromptAnswer, ProfileState } from "@/shared/types";
 import { devLog } from '@/shared/utils/devLog';
+import { FREE_MAX_DISTANCE_KM, MAX_PROFILE_PHOTOS } from "@/shared/constants/limits";
+import { photoModerationCodeKey } from "@/shared/constants/responseCodes";
 import {
   extractModerationPhotos,
-  isFatalReasonCode,
+  isBlockingPhoto,
   moderationReasonText,
+  resolveRequiredPhotoCount,
   type PhotoModeration,
 } from "./photoModeration";
+import {
+  extractPromptErrors,
+  promptErrorText,
+  promptSummaryCode,
+  type PromptFieldError,
+} from "./promptErrors";
+import { appendPrompts } from "./promptPayload";
 
 /**
  * Kayıt/profil gönderiminin reddi. Ekranın doğru Alert'i kurabilmesi için ham
@@ -17,16 +28,47 @@ import {
  */
 export interface ProfileSubmitError {
   message: string;
+  /**
+   * Ham `UT-xxxx` kodu (varsa). `message` bilinen foto kodlarında zaten bu
+   * koddan üretiliyor; ekran kodu yalnızca AKSİYON seçmek için okur (ör.
+   * `UT-6306` geçici → "tekrar dene", diğerleri kalıcı → düz uyarı).
+   */
+  code: string | null;
   reasonCode: string | null;
   photos: PhotoModeration[];
+  /**
+   * Reddedilen prompt slotları (`UT-22xx`). Kayıt adımı bunları ilgili cevabın
+   * altına inline yazıyor — tek "profil kaydedilemedi" mesajına düşmesin.
+   */
+  prompts: PromptFieldError[];
 }
 
-// Rehber §7: fotoğraf kaynaklı 400'lerde gövde `result.photos` ile hangi
-// fotoğrafın neden düştüğünü söylüyor. UI metni HER ZAMAN reasonCode'dan
-// üretilir — `reasonText` backend'de Türkçe sabit, yalnızca gösterim/log için.
+// Fotoğraf kaynaklı 400'ler İKİ AYRI ŞEKİLDE geliyor (rehber §12.3) ve ikisi de
+// `code: null` — ayrım `result.photos` alanının VARLIĞINDA:
+//
+//   result.photos VAR  → yetersiz uygun fotoğraf. Hangi fotonun neden elendiği
+//                        dizide; hepsi Review/Pending ise kullanıcı BEKLEMELİ,
+//                        en az biri Rejected ise DEĞİŞTİRMELİ (§5.2).
+//   result.photos YOK  → ANA FOTOĞRAF ihlali. İstek tümden düştü, S3 temizlendi,
+//                        yalnız düz `message` var. `UT-6301/6302` BEKLEME —
+//                        backend o kodları bu yolda döndürmüyor.
+//
+// UI metni HER ZAMAN reasonCode'dan üretilir; akışı hangi kodun DURDURDUĞUNU
+// sunucu söylüyor (`moderation.severity === 'Blocking'`) — istemcide kod listesi
+// tutulmuyor.
 const buildSubmitError = (data: any, fallback: string): ProfileSubmitError => {
   const photos = extractModerationPhotos(data?.result);
-  const fatal = photos.find((p) => isFatalReasonCode(p.reasonCode));
+  // KODLU 400'ler (UT-63xx: foto tavanı, minimum foto, sağlayıcı erişilemez)
+  // `result.photos` taşımıyor, yani aşağıdaki `mainPhotoViolation` dalına düşüp
+  // "ana fotoğraf ihlali" muamelesi görüyorlardı. Kod varsa metin BİZİM
+  // tablomuzdan gelmeli — ProfileScreen'deki `photoErrorText` ile aynı kaynak.
+  const code = data?.code ?? data?.errorCode ?? null;
+  const codeKey = photoModerationCodeKey(code);
+  // Ana foto ihlali: dizi hiç yok. Fotoğraf başına sebep de yok, backend'in
+  // yerelleştirilmiş `message`'ı tek bilgi kaynağı.
+  const mainPhotoViolation =
+    !Array.isArray(data?.result?.photos) && !!data?.message;
+  const fatal = photos.find(isBlockingPhoto);
   const reasonCode =
     fatal?.reasonCode ??
     photos.find((p) => p.reasonCode)?.reasonCode ??
@@ -34,11 +76,38 @@ const buildSubmitError = (data: any, fallback: string): ProfileSubmitError => {
     data?.result?.reasonCode ??
     null;
 
-  const message = reasonCode
-    ? moderationReasonText(fatal?.status ?? 'Rejected', reasonCode)
-    : data?.message || data?.title || fallback;
+  // Prompt reddi (UT-22xx) fotoğraf moderasyonuyla aynı zarftan okunuyor.
+  // Fotoğraf hatası varsa o öncelikli: akışı BLOKLAYAN o, prompt'u düzeltmek
+  // kullanıcıyı ileri taşımaz.
+  const prompts = extractPromptErrors(data);
 
-  return { message, reasonCode, photos };
+  // Özet mesaj üst seviye koddan: backend orada EN AĞIR hatayı veriyor, slot
+  // dizisinin ilk elemanı ise yalnızca en küçük index (bkz. promptSummaryCode).
+  const promptCode = promptSummaryCode(data, prompts);
+
+  const message = codeKey
+    ? // `min` burada sunucunun `requiredPhotoCount`'u DEĞİL: bu zarfta profil
+      // görünürlüğü bloğu yok (profil henüz yok ya da yanıt hata zarfı).
+      // Alan gelmediğinde geçerli olan sunucu kuralına düşülüyor.
+      i18n.t(codeKey, {
+        max: MAX_PROFILE_PHOTOS,
+        min: resolveRequiredPhotoCount(null),
+      })
+    : mainPhotoViolation
+      ? // Kodsuz 400: sunucunun metni ("1. fotoğrafında net bir yüz göremedik…")
+        // hangi fotoğraf ve neden bilgisini taşıyan tek kaynak.
+        data.message
+      : reasonCode
+        ? moderationReasonText(
+            fatal?.status ?? 'Rejected',
+            reasonCode,
+            fatal?.reasonText,
+          )
+        : promptCode
+          ? promptErrorText(promptCode)
+          : data?.message || data?.title || fallback;
+
+  return { message, code, reasonCode, photos, prompts };
 };
 
 // Expo SDK 56'nın winter fetch'i RN'in klasik {uri,name,type} FormData pattern'ini
@@ -60,6 +129,8 @@ const initialState: ProfileState = {
   ageRangeMin: 18,
   ageRangeMax: 65,
   height: "",
+  prompts: [],
+  // Geçiş fazı alanı — kayıt akışı artık doldurmuyor (bkz. ProfileState.bio).
   bio: "",
   interestedIn: [],
   hobbies: [],
@@ -80,6 +151,8 @@ interface CompleteProfileArgs {
     yearOfStudy: string;
     height: string;
     interestedIn: number[];
+    prompts?: ProfilePromptAnswer[];
+    /** @deprecated Geçiş fazı — okunmuyor, bkz. ProfileState.bio. */
     bio?: string;
     ageRangeMin?: number;
     ageRangeMax?: number;
@@ -120,9 +193,10 @@ export const completeProfile = createAsyncThunk(
       formData.append("Latitude", Number(latitude).toFixed(8));
       formData.append("Longitude", Number(longitude).toFixed(8));
 
-      if (profileData.bio) {
-        formData.append("Bio", profileData.bio);
-      }
+      // Bio ARTIK GÖNDERİLMİYOR — yerini prompt'lar aldı. Alan state'te geçiş
+      // fazı boyunca duruyor ama kayıt akışı hiç doldurmuyor, bu yüzden burada
+      // da okunmuyor (bkz. ProfileState.bio @deprecated).
+      appendPrompts(formData, profileData.prompts);
       if (profileData.ageRangeMin) {
         formData.append("AgeRangeMin", String(profileData.ageRangeMin));
       }
@@ -158,7 +232,12 @@ export const completeProfile = createAsyncThunk(
       formData.append("ShowMeOnApp", "true");
       formData.append("ShowDistance", "true");
       formData.append("ShowAge", "true");
-      formData.append("MaxDistance", "50");
+      // Kayıtta mesafe sorulmuyor; yeni hesap free TAVANIYLA başlıyor.
+      // Mesafe 2026-08-21'den beri KATI filtre (yarıçap dışı profil hiç
+      // gelmiyor), dolayısıyla dar bir varsayılan yeni kullanıcıyı doğrudan
+      // boş desteye düşürürdü. Backend aralığa clamp'liyor (Range(5,150) +
+      // tier), yani tavan değişse de bu değer 400 üretmez.
+      formData.append("MaxDistance", String(FREE_MAX_DISTANCE_KM));
 
       const response = await postFormData(
         `${API_BASE_URL}${API_ENDPOINTS.COMPLETE_PROFILE}`,
@@ -181,8 +260,8 @@ export const completeProfile = createAsyncThunk(
       }
 
       devLog('✅ Profile completed successfully!');
-      // KIRICI DEĞİŞİKLİK: result artık { profile, photos }. Zarfı olduğu gibi
-      // döndürüyoruz, çözümü çağıran taraf unwrapProfileResult ile yapıyor.
+      // result = { profile, photos } (koşulsuz). Zarfı olduğu gibi
+      // döndürüyoruz; çağıran taraf ihtiyacı olan alanı kendisi okuyor.
       return data || { success: true };
     } catch (error: any) {
       console.error("❌ Complete Profile Error:", error.message);
@@ -234,7 +313,11 @@ export const registerAndComplete = createAsyncThunk(
 
       // City/District YOK — backend Latitude/Longitude'dan türetiyor (bkz.
       // completeProfile'daki aynı not).
-      put("Bio", profile.bio);
+      //
+      // Bio YOK: prompt'lar devraldı. `put()` zaten boş string'i atlıyordu, yani
+      // satır bugüne kadar da hiçbir şey göndermiyordu — kaldırılması davranışı
+      // değiştirmiyor, sözleşmeyi netleştiriyor.
+      appendPrompts(formData, profile.prompts);
       put("AgeRangeMin", profile.ageRangeMin);
       put("AgeRangeMax", profile.ageRangeMax);
       put("SmokingStatus", profile.smokingStatus);
@@ -246,7 +329,9 @@ export const registerAndComplete = createAsyncThunk(
       put("AlcoholUsage", profile.alcoholUsage);
       put("ReligiousView", profile.religiousView);
 
-      put("MaxDistance", 50);
+      // completeProfile'daki aynı gerekçe: kayıtta mesafe sorulmuyor, yeni
+      // hesap free tavanıyla başlıyor. Katı filtrede dar varsayılan = boş deste.
+      put("MaxDistance", FREE_MAX_DISTANCE_KM);
       put("ShowMyUniversity", true);
       put("ShowMeOnApp", true);
       put("ShowDistance", true);

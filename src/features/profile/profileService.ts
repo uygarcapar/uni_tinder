@@ -2,9 +2,11 @@ import api from '@/shared/services/api';
 import { API_ENDPOINTS } from '@/shared/constants/api';
 import {
   extractModerationPhotos,
-  unwrapProfileResult,
+  type PhotoAppealState,
   type PhotoModeration,
 } from './photoModeration';
+import { appendPrompts } from './promptPayload';
+import type { ProfilePromptAnswer } from '@/shared/types';
 
 interface PhotoOrder {
   photoId: string;
@@ -14,6 +16,17 @@ interface PhotoOrder {
 interface ProfileUpdate {
   NewPhotos?: Array<{ uri: string; name: string; type: string }>;
   PhotoOrders?: PhotoOrder[];
+  /**
+   * Prompt cevapları. GÖNDERİLDİĞİ AN TAM LİSTE demek — sunucu mevcut satırları
+   * silip geleni yazıyor (replace, kısmi güncelleme yok). Değiştirmek
+   * istemiyorsan alanı hiç koyma.
+   *
+   * Boş dizi göndermenin bir anlamı YOK: multipart'ta boş liste ile
+   * "gönderilmedi" ayırt edilemiyor, ikisi de sunucuya null geliyor. Yani
+   * "hepsini sil" isteği sessizce no-op olur — çağıran taraf son prompt'un
+   * silinmesini engellemek zorunda.
+   */
+  Prompts?: ProfilePromptAnswer[];
   [key: string]: any;
 }
 
@@ -129,6 +142,10 @@ class ProfileService {
             formData.append(`PhotoOrders[${i}].PhotoId`, String(item.photoId));
             formData.append(`PhotoOrders[${i}].NewOrder`, String(item.newOrder));
           });
+        } else if (key === 'Prompts' && Array.isArray(value)) {
+          // PhotoOrders ile aynı indeksli desen. Tekrar eden anahtar (Hobbies
+          // gibi) kullanılamaz: soru-cevap eşleşmesi kaybolur.
+          appendPrompts(formData, value as ProfilePromptAnswer[]);
         } else if (Array.isArray(value)) {
           value.forEach((item) => formData.append(key, String(item)));
         } else {

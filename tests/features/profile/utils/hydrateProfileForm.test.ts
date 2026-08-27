@@ -104,4 +104,57 @@ describe('hydrateProfileForm — görünürlük bayrakları', () => {
     expect(values.showMyUniversity).toBe(true);
     expect(values.showMeOnApp).toBe(true);
   });
+
+  it('showLocation alanı hiç gelmezse açık kabul edilir', () => {
+    // AddShowLocation migration'ı uygulanmamış bir backend'e karşı çalışırken
+    // alan yanıtta yok. false'a düşersek submit bunu geri yazıp kullanıcının
+    // konumunu kendi isteği olmadan gizlerdi.
+    expect(hydrate({}).showLocation).toBe(true);
+  });
+
+  it('showLocation: false kapalı olarak hidrate olur', () => {
+    expect(hydrate({ showLocation: false }).showLocation).toBe(false);
+  });
+});
+
+describe('hydrateProfileForm — isim ve sınıf', () => {
+  it('profil adını displayName alanına hidrate eder', () => {
+    expect(hydrate({ displayName: 'Eren' }).displayName).toBe('Eren');
+  });
+
+  it('profil adı yoksa Identity tarafındaki ada düşer', () => {
+    // UpdateProfile ikisini senkronluyor ama senkron YENİ: daha önce profil adı
+    // değişip Identity'deki ad eski kalmış hesaplarda tek dolu alan bu olabilir.
+    // Boş string'le açılırsa kullanıcı adını sıfırdan yazmak zorunda kalırdı.
+    expect(hydrate({ user: { displayName: 'Eren' } }).displayName).toBe('Eren');
+    expect(hydrate({ user: { name: 'Eren' } }).displayName).toBe('Eren');
+  });
+
+  it('hiç isim yoksa boş string döner (undefined değil)', () => {
+    // TextInput'a undefined verirsek RN alanı uncontrolled'a çevirir.
+    expect(hydrate({}).displayName).toBe('');
+  });
+
+  it('sınıfı olduğu gibi hidrate eder, hazırlık (0) dahil', () => {
+    expect(hydrate({ yearOfStudy: 3 }).yearOfStudy).toBe(3);
+    // 0 = Hazırlık: GEÇERLİ bir değer, "seçilmedi" değil.
+    expect(hydrate({ yearOfStudy: 0 }).yearOfStudy).toBe(0);
+    expect(hydrate({ yearOfStudy: 6 }).yearOfStudy).toBe(6);
+  });
+
+  it('sınıf yoksa null döner', () => {
+    expect(hydrate({}).yearOfStudy).toBeNull();
+  });
+
+  it('aralık dışı sınıfı (eski Range(0,8) ile yazılmış 7/8) null yapar', () => {
+    // Backend bu değerlerde yearOfStudyDisplay üretemiyor — sınıf hiçbir yerde
+    // görünmüyor. Formda seçili göstermek "kayıtlı ve çalışıyor" yalanı olurdu.
+    expect(hydrate({ yearOfStudy: 7 }).yearOfStudy).toBeNull();
+    expect(hydrate({ yearOfStudy: 8 }).yearOfStudy).toBeNull();
+    expect(hydrate({ yearOfStudy: -1 }).yearOfStudy).toBeNull();
+  });
+
+  it('sayı olmayan sınıf değerini null yapar', () => {
+    expect(hydrate({ yearOfStudy: '3' }).yearOfStudy).toBeNull();
+  });
 });

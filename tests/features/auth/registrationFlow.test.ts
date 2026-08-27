@@ -21,8 +21,11 @@ import {
 } from '@/features/auth/registrationFlow';
 
 describe('REGISTRATION_FLOW', () => {
-  it('akış sırasında tutulur — Step16 fotoğraflardan (15) önce gelir', () => {
-    expect(REGISTRATION_STEP_NUMBERS).toEqual([3, 5, 6, 7, 8, 9, 10, 12, 13, 14, 16, 15]);
+  // Sıra AKIŞ sırasında, sayısal sırada değil: Step16 fotoğraflardan (15)
+  // önce, Step17 (sorular) ise hobilerden (13) sonra — serbest metin adımıyla
+  // fotoğraf adımı arka arkaya gelmesin diye araya konuldu.
+  it('akış sırasında tutulur — Step17 hobilerden sonra, Step16 fotoğraflardan önce', () => {
+    expect(REGISTRATION_STEP_NUMBERS).toEqual([3, 5, 6, 7, 8, 9, 10, 12, 13, 17, 14, 16, 15]);
   });
 
   it('ilk adım Step3', () => {

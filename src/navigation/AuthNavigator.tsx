@@ -16,6 +16,7 @@ import RegisterStep9Screen from "@/features/auth/screens/RegisterStep9Screen";
 import RegisterStep10Screen from "@/features/auth/screens/RegisterStep10Screen";
 import RegisterStep12Screen from "@/features/auth/screens/RegisterStep12Screen";
 import RegisterStep13Screen from "@/features/auth/screens/RegisterStep13Screen";
+import RegisterStep17Screen from "@/features/auth/screens/RegisterStep17Screen";
 import RegisterStep14Screen from "@/features/auth/screens/RegisterStep14Screen";
 import RegisterStep16Screen from "@/features/auth/screens/RegisterStep16Screen";
 import RegisterStep15Screen from "@/features/auth/screens/RegisterStep15Screen";
@@ -89,6 +90,7 @@ export default function AuthNavigator({ initialRoute = "Welcome" }: AuthNavigato
       <Stack.Screen name="RegisterStep12" component={RegisterStep12Screen} />
       <Stack.Screen name="RegisterStep10" component={RegisterStep10Screen} />
       <Stack.Screen name="RegisterStep13" component={RegisterStep13Screen} />
+      <Stack.Screen name="RegisterStep17" component={RegisterStep17Screen} />
       <Stack.Screen name="RegisterStep14" component={RegisterStep14Screen} />
       {/* Akış sırası: 14 → 16 (alkol/dini görüş) → 15 (fotoğraflar, son). */}
       <Stack.Screen name="RegisterStep16" component={RegisterStep16Screen} />

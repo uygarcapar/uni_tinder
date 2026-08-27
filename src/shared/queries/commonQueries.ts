@@ -2,6 +2,7 @@ import { useQuery } from "@tanstack/react-query";
 import api from "@/shared/services/api";
 import { API_ENDPOINTS } from "@/shared/constants/api";
 import { staticGet } from "@/shared/services/staticCache";
+import { PROMPT_CATALOG_MOCK } from "./promptCatalogMock";
 
 export type CityOption = {
   id: number;
@@ -82,6 +83,32 @@ export type HobbyGroupOption = {
   hobbies: HobbyOption[];
 };
 
+// GET /api/common/prompts — bio'nun yerini alan cümle başlangıçları. Hobilerle
+// birebir aynı gruplu şekil; `enumName` backend'e gönderilen değer
+// ("MostEnjoyInLife"), `display` çift dilli obje (resolveLocalized ile çöz).
+//
+// `maxLength` PROMPT BAŞINA geliyor — cevap sayacı bunu kullanmalı, sabit 150'yi
+// değil (bkz. PROMPT_ANSWER_MAX_LENGTH yalnızca alan gelmediğinde fallback).
+//
+// `isActive: false` = katalogdan çıkarılmış ama SİLİNMEMİŞ prompt. Backend soft
+// delete garantisi verdi: eski cevaplar çözülebilsin diye uçtan dönmeye devam
+// ediyor. Seçim listesinde GÖSTERİLMEZ, ama kullanıcının mevcut cevabı çizilir.
+export type PromptOption = {
+  id: number;
+  name: string;
+  display?: string | LocalizedText;
+  enumName: string;
+  maxLength?: number;
+  isActive?: boolean;
+};
+
+export type PromptGroupOption = {
+  category: string;
+  categoryEnumName?: string;
+  categoryDisplay?: string | LocalizedText;
+  prompts: PromptOption[];
+};
+
 // GET /api/common/relationship-intents — "ilişki niyeti" enum listesi.
 // `enumName` backend'e gönderilen değer ("LongTerm"), `display` çift dilli obje
 // (resolveLocalized ile çöz), `name` sunucuda Accept-Language'e göre çözülmüş.
@@ -106,6 +133,7 @@ export type EnumOption = {
 export const commonKeys = {
   cities: ["common", "cities"] as const,
   hobbies: ["common", "hobbies"] as const,
+  prompts: ["common", "prompts"] as const,
   relationshipIntents: ["common", "relationshipIntents"] as const,
   districts: (cityId: number | string) =>
     ["common", "districts", cityId] as const,
@@ -196,6 +224,66 @@ export function useHobbies() {
     staleTime: Infinity,
   });
 }
+
+// Prompt kataloğu — profil düzenleme ve kayıt adımındaki seçim listesini doldurur.
+//
+// Backend K2 (katalog içeriği) ürün tarafında beklerken uç BOŞ LİSTE dönüyor.
+// Boş listeyle ekran geliştirilemediği için __DEV__'de mock'a düşüyoruz; release
+// build'de asla devreye girmez, yani boş katalog sahada boş liste olarak görünür
+// (sessizce sahte veri servis etmez). K2 dolunca PROMPT_CATALOG_MOCK silinecek.
+export function usePrompts() {
+  return useQuery({
+    queryKey: commonKeys.prompts,
+    queryFn: async (): Promise<PromptGroupOption[]> => {
+      const res = (await staticGet(API_ENDPOINTS.GET_PROMPTS)) as any;
+      const groups =
+        res?.isSuccess && Array.isArray(res.result) ? res.result : [];
+      const cleaned: PromptGroupOption[] = groups.map((g: any) => ({
+        ...g,
+        // enumName'siz kayıt backend'e gönderilemez (enum string bekliyor).
+        prompts: (g?.prompts ?? []).filter((p: any) => !!p?.enumName),
+      }));
+      if (cleaned.some((g) => g.prompts.length > 0)) return cleaned;
+      return __DEV__ ? PROMPT_CATALOG_MOCK : cleaned;
+    },
+    staleTime: Infinity,
+  });
+}
+
+/** Katalogdaki tüm prompt'lar tek düzlemde — arama ve anahtar çözümü için. */
+export const flattenPrompts = (
+  groups: PromptGroupOption[] | undefined,
+): PromptOption[] => (groups ?? []).flatMap((g) => g.prompts ?? []);
+
+/**
+ * `enumName` → katalog kaydı. Kullanıcının kayıtlı cevabının sorusunu çizmek
+ * için kullanılıyor; pasife alınmış prompt'ları da bulur (soft delete sayesinde
+ * katalogda duruyorlar).
+ */
+export const findPrompt = (
+  groups: PromptGroupOption[] | undefined,
+  enumName: string | null | undefined,
+): PromptOption | undefined =>
+  enumName
+    ? flattenPrompts(groups).find((p) => p.enumName === enumName)
+    : undefined;
+
+/**
+ * Seçim listesinde gösterilecekler: pasifler ve kullanıcının zaten kullandığı
+ * anahtarlar elenir (aynı prompt iki kez seçilemez — backend `UT-2203`).
+ */
+export const selectablePrompts = (
+  groups: PromptGroupOption[] | undefined,
+  usedKeys: readonly string[],
+): PromptGroupOption[] =>
+  (groups ?? [])
+    .map((g) => ({
+      ...g,
+      prompts: (g.prompts ?? []).filter(
+        (p) => p.isActive !== false && !usedKeys.includes(p.enumName),
+      ),
+    }))
+    .filter((g) => g.prompts.length > 0);
 
 // İlişki niyeti listesi — keşif filtresindeki çoklu seçim pill'lerini doldurur.
 // ProfileScreen aynı endpoint'i staticGet ile çekiyor; staticGet oturum-boyu tek

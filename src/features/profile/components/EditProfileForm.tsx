@@ -15,6 +15,8 @@ import {
   Dimensions,
   Platform,
   Switch,
+  Alert,
+  Linking,
   type DimensionValue,
   type StyleProp,
   type ViewStyle,
@@ -41,14 +43,12 @@ import {
   X,
   Check,
   InfoIcon,
-  Heart,
   Sparkles,
   Cigarette,
   HandHeart,
   Star,
   Navigation,
   Languages,
-  Users,
   Globe,
   Dog,
   Cat,
@@ -58,7 +58,6 @@ import {
   Turtle,
   PawPrint,
   Ban,
-  Briefcase,
   Wind,
   Sun,
   Moon,
@@ -70,19 +69,6 @@ import {
   Mountain,
   Fish,
   IdCardLanyard,
-  Dumbbell,
-  Trees,
-  Utensils,
-  Palette,
-  PartyPopper,
-  Music,
-  Plane,
-  BookOpen,
-  Theater,
-  Film,
-  Lightbulb,
-  Gamepad2,
-  Code,
   type LucideIcon,
 } from "lucide-react-native";
 import { BottomSheetTextInput } from "@gorhom/bottom-sheet";
@@ -95,21 +81,47 @@ import SFIcon, { type SFSymbol } from "@/shared/components/SFIcon";
 import PillFlow from "@/shared/components/PillFlow";
 import { useKeyboardAwareField } from "@/shared/hooks/useKeyboardAwareField";
 import { useAppModalScroll } from "@/shared/hooks/useAppModalScroll";
-import { getRelationshipIntentIcon } from "@/shared/constants/relationshipIntent";
 // Alkol ikonu keşif filtresiyle ORTAK: aynı seçeneği iki ekranda da aynı
 // sembolle görmek gerekiyor (filterEnumIcons'ın başındaki nota bak).
 import {
   getAlcoholIcon,
+  getYearOfStudyIcon,
   sortZodiacOptions,
 } from "@/shared/constants/filterEnumIcons";
+import {
+  DISPLAY_NAME_MAX_LENGTH,
+  PROMPT_ANSWER_MAX_LENGTH,
+  YEAR_OF_STUDY_VALUES,
+  countPromptAnswer,
+  normalizePromptAnswer,
+} from "@/shared/constants/limits";
+import { SUPPORT_EMAIL } from "@/shared/constants/support";
 import profileService from "@/features/profile/profileService";
-import { normalizePhotoModeration } from "@/features/profile/photoModeration";
+import { resolveDisplayName } from "@/features/profile/utils/hydrateProfileForm";
+import {
+  countPhotosAwaitingReview,
+  countRejectedPhotos,
+  hasPhotosAwaitingReview,
+  normalizePhotoModeration,
+} from "@/features/profile/photoModeration";
+import ProfileVisibilityBanner from "@/features/profile/components/ProfileVisibilityBanner";
 import PhotoModerationBadge, {
   PhotoModerationScrim,
 } from "@/features/profile/components/PhotoModerationBadge";
 import LanguagePickerModal from "@/shared/components/LanguagePickerModal";
+import PromptsEditor from "@/shared/components/PromptsEditor";
+import { sanitizePrompts } from "@/features/profile/promptPayload";
+import {
+  extractPromptErrors,
+  promptErrorText,
+  promptSummaryCode,
+  refreshPromptCatalog,
+  shouldRefreshPromptCatalog,
+  type PromptFieldError,
+} from "@/features/profile/promptErrors";
 import GenderCategoryPicker from "@/shared/components/GenderCategoryPicker";
-import { resolveLocalized } from "@/shared/queries/commonQueries";
+import { commonKeys, resolveLocalized } from "@/shared/queries/commonQueries";
+import { useQueryClient } from "@tanstack/react-query";
 import { useForm, Controller } from "react-hook-form";
 import { zodResolver } from "@hookform/resolvers/zod";
 import { editProfileFormSchema, EditProfileFormData } from "@/shared/schemas/formSchemas";
@@ -222,21 +234,8 @@ const LANGUAGES_ICON: IconEntry = { sf: "character.bubble", lucide: Languages };
 const getLanguageIcon = (enumName): IconEntry =>
   enumName === "Other" ? GLOBE_ICON : LANGUAGES_ICON;
 
-// Hobi kategorisi → ikon. Backend kategori isimlerini Türkçe döndüğü için
-// önce exact match, sonra keyword fallback. Tanınmayan kategori için Heart.
-const DUMBBELL_ICON: IconEntry = { sf: "dumbbell.fill", lucide: Dumbbell };
-const UTENSILS_ICON: IconEntry = { sf: "fork.knife", lucide: Utensils };
-const PALETTE_ICON: IconEntry = { sf: "paintpalette.fill", lucide: Palette };
-const MUSIC_ICON: IconEntry = { sf: "music.note", lucide: Music };
-const TREES_ICON: IconEntry = { sf: "tree.fill", lucide: Trees };
-const BOOK_ICON: IconEntry = { sf: "book.fill", lucide: BookOpen };
-const GAMEPAD_ICON: IconEntry = { sf: "gamecontroller.fill", lucide: Gamepad2 };
-const USERS_ICON: IconEntry = { sf: "person.2.fill", lucide: Users };
-const PLANE_ICON: IconEntry = { sf: "airplane", lucide: Plane };
 const SPARKLES_ICON: IconEntry = { sf: "sparkles", lucide: Sparkles };
 const DOG_ICON: IconEntry = { sf: "dog.fill", lucide: Dog };
-const BRIEFCASE_ICON: IconEntry = { sf: "briefcase.fill", lucide: Briefcase };
-const HEART_ICON: IconEntry = { sf: "heart", lucide: Heart };
 // sf BİLEREK yok: SF Symbols'ta cigarette karşılığı yok, tek yakın aday
 // `smoke.fill` ve o bir duman bulutu — sigarayı okutmuyor. sf'siz entry'de
 // EntryIcon iki platformda da lucide çiziyor (bkz. IconEntry.sf opsiyonel).
@@ -249,63 +248,9 @@ const RELIGIOUS_VIEW_ICON: IconEntry = {
   sf: "hands.and.sparkles.fill",
   lucide: HandHeart,
 };
-const HOBBY_CATEGORY_ICON_MAP: Record<string, IconEntry> = {
-  // Backend categoryEnumName (9 confirmed slugs)
-  SportsFitness: DUMBBELL_ICON,
-  FoodDrink: UTENSILS_ICON,
-  ArtCreativity: PALETTE_ICON,
-  MusicConcerts: MUSIC_ICON,
-  NatureAdventure: TREES_ICON,
-  CultureLearning: BOOK_ICON,
-  GamingTech: GAMEPAD_ICON,
-  SocialLifestyle: USERS_ICON,
-  Intellectual: { sf: "lightbulb.fill", lucide: Lightbulb },
-  // Legacy TR display keys
-  "Spor & Fitness": DUMBBELL_ICON,
-  Spor: DUMBBELL_ICON,
-  Fitness: DUMBBELL_ICON,
-  "Yemek & İçecek": UTENSILS_ICON,
-  Yemek: UTENSILS_ICON,
-  Mutfak: UTENSILS_ICON,
-  "Sanat & Yaratıcılık": PALETTE_ICON,
-  Sanat: PALETTE_ICON,
-  Müzik: MUSIC_ICON,
-  "Müzik & Konser": MUSIC_ICON,
-  "Seyahat & Doğa": PLANE_ICON,
-  Seyahat: PLANE_ICON,
-  Doğa: TREES_ICON,
-  "Doğa & Açık Hava": TREES_ICON,
-  "Okuma & Kültür": BOOK_ICON,
-  Kültür: { sf: "theatermasks.fill", lucide: Theater },
-  "Sinema & Tiyatro": { sf: "film.fill", lucide: Film },
-  "Oyun & Eğlence": GAMEPAD_ICON,
-  Oyun: GAMEPAD_ICON,
-  Eğlence: { sf: "party.popper.fill", lucide: PartyPopper },
-  "Yaşam Tarzı": SPARKLES_ICON,
-  Sosyal: USERS_ICON,
-  Topluluk: USERS_ICON,
-  Gönüllülük: USERS_ICON,
-  Hayvanlar: DOG_ICON,
-  "Evcil Hayvanlar": DOG_ICON,
-  "Bilim & Kariyer": BRIEFCASE_ICON,
-  Kariyer: BRIEFCASE_ICON,
-  Teknoloji: {
-    sf: "chevron.left.forwardslash.chevron.right",
-    lucide: Code,
-  },
-};
-const getHobbyCategoryIcon = (category): IconEntry => {
-  if (!category) return HEART_ICON;
-  const exact = HOBBY_CATEGORY_ICON_MAP[category];
-  if (exact) return exact;
-  // Keyword fallback — kategori string'i map key'lerinden birini içeriyor mu?
-  const lower = category.toLowerCase();
-  for (const [key, entry] of Object.entries(HOBBY_CATEGORY_ICON_MAP)) {
-    if (lower.includes(key.toLowerCase())) return entry;
-  }
-  return HEART_ICON;
-};
-
+// Hobi kategori ikonları KALDIRILDI: hobiler bölümünde ne kategori başlığında
+// ne de pill'de ikon çiziliyor (bkz. HobbyGroup) — harita da onunla birlikte
+// gitti, geriye yalnız evcil hayvan ikonları kaldı.
 const PAWPRINT_ICON: IconEntry = { sf: "pawprint.fill", lucide: PawPrint };
 const PET_ICON_MAP: Record<string, IconEntry> = {
   Dog: DOG_ICON,
@@ -327,6 +272,16 @@ const getPetIcon = (enumName): IconEntry =>
 
 // PURPOSE_META KALDIRILDI: "kullanım amacı" alanı üründen çıktı; profil
 // düzenlemede de bölümü kalmadı (ilişki niyeti bölümü aynı soruyu soruyor).
+
+// Sınıf etiketi — anahtarlar SwipeCard ile ORTAK (`profile.card.*`): kullanıcı
+// düzenleme ekranında hangi metni seçtiyse kartında da birebir onu görmeli.
+// Backend'in `yearOfStudyDisplay`i varken o kullanılır; bu yalnızca pill
+// etiketleri ve yanıt gelmeden yapılan optimistic patch için.
+const yearOfStudyLabel = (
+  year: number,
+  t: (key: string, options?: Record<string, unknown>) => string,
+) =>
+  year === 0 ? t("profile.card.prep") : t("profile.card.grade", { year });
 
 // ─── Memoized pill / list-item components ──────────────────────────────────
 const HobbyPill = React.memo(function HobbyPill({
@@ -350,8 +305,8 @@ const HobbyPill = React.memo(function HobbyPill({
         flexDirection: "row",
         alignItems: "center",
         gap: 6,
-        backgroundColor: isSelected ? colors.inverseSurface : "transparent",
-        borderColor: isSelected ? colors.inverseSurface : colors.hairline,
+        backgroundColor: isSelected ? colors.inverseSurfaceSoft : "transparent",
+        borderColor: isSelected ? colors.inverseSurfaceSoft : colors.hairline,
       }}
     >
       <HobbyIcon
@@ -363,7 +318,8 @@ const HobbyPill = React.memo(function HobbyPill({
       <Text
         style={{
           color: isSelected ? colors.onInverseSurface : colors.textSecondary,
-          fontSize: 13,
+          // Kayıt adımındaki hobi piliyle ORTAK ölçü.
+          fontSize: 14,
           fontWeight: "500",
         }}
       >
@@ -427,10 +383,17 @@ const OptionListItem = React.memo(function OptionListItem({
   isSelected,
   onPress,
   icon: CustomIcon,
+  label,
 }: any) {
   const { i18n } = useTranslation();
   // NOT: `purposeMap` dalı KALDIRILDI — ikon + açıklama taşıyan bu varyantı
   // yalnızca "kullanım amacı" bölümü kullanıyordu, o da üründen çıktı.
+  //
+  // `label` verilmezse backend etiketine düşülüyor. Veren bölümler (ilişki
+  // niyeti, sigara, alkol) kayıt akışındaki i18n cümlelerini geçiyor: backend
+  // kısa etiket döndürüyor ("Uzun süreli"), kayıt ekranları ise birinci ağızdan
+  // cümle gösteriyor ("Uzun süreli bir ilişki tercih ederim"). İki akış aynı
+  // soruyu soruyor, aynı metni göstermeli.
 
   return (
     <TouchableOpacity
@@ -442,12 +405,16 @@ const OptionListItem = React.memo(function OptionListItem({
         justifyContent: "space-between",
       }}
     >
+      {/* flex:1 + paddingRight — birinci ağız cümleleri kısa etiketlerden uzun,
+          tek satıra sığmayanlar tik ikonunun altına taşmak yerine sarmalı. */}
       <View
         style={{
+          flex: 1,
           flexDirection: "row",
           alignItems: "center",
           gap: 10,
           paddingVertical: 18,
+          paddingRight: 12,
         }}
       >
         {CustomIcon && (
@@ -461,23 +428,33 @@ const OptionListItem = React.memo(function OptionListItem({
         <Text
           style={{
             color: isSelected ? colors.text : colors.textSecondary,
-            fontSize: 15,
+            // 15 → 16: kayıt akışındaki aynı satırlarla (RegisterStep14/16)
+            // ORTAK ölçü. Cümleler kısa etiketlerden uzun, 15'te satırlar
+            // sıkışık duruyordu.
+            fontSize: 16,
+            lineHeight: 22,
             fontWeight: "500",
+            flex: 1,
           }}
         >
-          {resolveLocalized(option.display, i18n.language, option.name)}
+          {label ?? resolveLocalized(option.display, i18n.language, option.name)}
         </Text>
       </View>
-      {isSelected && (
-        <SFIcon
-          name="checkmark"
-          fallback={Check}
-          size={20}
-          color={colors.text}
-          strokeWidth={2.5}
-          weight="bold"
-        />
-      )}
+      {/* Tik yuvası HER ZAMAN çiziliyor (koşullu olan yalnız ikon): kayıt
+          ekranlarındaki satırlarla aynı gerekçe — yoksa seçim anında metin
+          alanı 20px genişleyip satır kayıyor. */}
+      <View style={{ width: 20, height: 20, alignItems: "center", justifyContent: "center" }}>
+        {isSelected && (
+          <SFIcon
+            name="checkmark"
+            fallback={Check}
+            size={20}
+            color={colors.text}
+            strokeWidth={2.5}
+            weight="bold"
+          />
+        )}
+      </View>
     </TouchableOpacity>
   );
 });
@@ -550,15 +527,53 @@ function PhotoShimmer({ borderRadius = 0 }: { borderRadius?: number }) {
   );
 }
 
+/**
+ * Bildirimden gelen fotoğrafın etrafında nabız gibi atan halka.
+ *
+ * Kutunun İÇİNDE (absoluteFill + aynı yarıçap): kart `overflow: hidden` ve
+ * dışarı çizilen bir halka kırpılırdı. `pointerEvents="none"` — vurgu yalnız
+ * görsel, altındaki sürükle/sil hedeflerini yutmuyor.
+ */
+function PhotoHighlightRing({ borderRadius }: { borderRadius: number }) {
+  const pulse = useSharedValue(0);
+  useEffect(() => {
+    pulse.value = withRepeat(
+      withTiming(1, { duration: 700, easing: Easing.inOut(Easing.quad) }),
+      -1,
+      true,
+    );
+  }, [pulse]);
+  const style = useAnimatedStyle(() => ({ opacity: 0.35 + 0.65 * pulse.value }));
+  return (
+    <Animated.View
+      pointerEvents="none"
+      style={[
+        {
+          position: "absolute",
+          top: 0,
+          left: 0,
+          right: 0,
+          bottom: 0,
+          borderRadius,
+          borderCurve: "continuous",
+          borderWidth: 3,
+          borderColor: colors.primary,
+        },
+        style,
+      ]}
+    />
+  );
+}
+
 // expo-image — memory+disk cache → modal her açıldığında foto cache'ten anında
 // gelir, ilk yüklemede shimmer gösterilir. Native cachePolicy reliable olduğu
 // için RN Image'daki onLoad-cached-hit problemi ve 5s safety-net gerekmez.
-function PhotoItem({ photo, onPress, savingPhoto }: any) {
+function PhotoItem({ photo, onPress, savingPhoto, highlighted = false }: any) {
   const [loading, setLoading] = useState(true);
   // photoId'li sürüm parametresi: silinip yeniden yüklenen foto backend'de aynı
   // slot URL'ine düşse bile cache anahtarı değişir (bkz. photoUri.ts).
   const uri = resolvePhotoUri(photo);
-  const { status } = normalizePhotoModeration(photo);
+  const { status, isVisibleToOthers } = normalizePhotoModeration(photo);
 
   return (
     <View style={{ width: "100%", height: "100%" }}>
@@ -570,6 +585,10 @@ function PhotoItem({ photo, onPress, savingPhoto }: any) {
           borderCurve: "continuous",
           overflow: "hidden",
           backgroundColor: colors.surface,
+          // "+" kutusuyla aynı çerçeve (bkz. add-btn): koyu fotoğrafların
+          // kenarı zeminde kaybolmasın, boş slotla dolu slot aynı kutu okunsun.
+          borderWidth: 0.5,
+          borderColor: colors.hairline,
         }}
       >
         <Image
@@ -587,9 +606,16 @@ function PhotoItem({ photo, onPress, savingPhoto }: any) {
         />
         {/* Kullanıcı KENDİ fotoğrafını her durumda görür; yayında olmayanı
             gizlemek yerine soluklaştırıp rozetle sebebini belirtiyoruz. */}
-        <PhotoModerationScrim status={status} borderRadius={20} />
-        <PhotoModerationBadge status={status} />
+        <PhotoModerationScrim
+          isVisibleToOthers={isVisibleToOthers}
+          borderRadius={20}
+        />
+        <PhotoModerationBadge
+          status={status}
+          isVisibleToOthers={isVisibleToOthers}
+        />
         {loading && <PhotoShimmer borderRadius={20} />}
+        {highlighted && <PhotoHighlightRing borderRadius={20} />}
       </View>
       <TouchableOpacity
         activeOpacity={1}
@@ -830,6 +856,15 @@ export function EditProfileFormSkeleton() {
   return (
     <>
       <SkelBox shimmer={shimmer} h={52} r={999} mt={8} mb={16} />
+      {/* İsim */}
+      <SkelBox shimmer={shimmer} w={80} h={22} r={6} mb={10} />
+      <SkelBox shimmer={shimmer} w={"85%"} h={14} r={4} mb={14} />
+      <SkelBox shimmer={shimmer} h={52} r={999} />
+      {/* Sınıf — pill satırı */}
+      <SkelBox shimmer={shimmer} w={80} h={22} r={6} mt={28} mb={10} />
+      <SkelBox shimmer={shimmer} w={"85%"} h={14} r={4} mb={14} />
+      <SkelBox shimmer={shimmer} h={44} r={999} mb={28} />
+      {/* Fotoğraflar */}
       <SkelBox shimmer={shimmer} w={130} h={22} r={6} mb={10} />
       <SkelBox shimmer={shimmer} w={"85%"} h={14} r={4} mb={14} />
       <View
@@ -877,122 +912,49 @@ export function EditProfileFormSkeleton() {
   );
 }
 
-// ─── Hobby Accordion: tıklanmadan içerik render edilmez ────────────────────
-const HobbyGroupAccordion = React.memo(function HobbyGroupAccordion({
+// ─── Hobi grubu: accordion DEĞİL, kategori başlığı + hep açık pill listesi ──
+// ÖNCESİ: her kategori tıklanabilir bir accordion'dı (chevron + seçili rozeti),
+// piller yalnız açıkken render ediliyordu. Kullanıcı hobisini bulmak için
+// kategori kategori açmak zorundaydı; artık hepsi ekranda, başlık sadece
+// ayraç. Ayırıcı çizgi de yok — grupları ayıran tek şey başlık ve boşluk;
+// piller formun diğer bölümleriyle aynı şekilde sola yaslı akıyor.
+const HobbyGroup = React.memo(function HobbyGroup({
   group,
   selectedIds,
   onToggle,
-  defaultExpanded,
 }: any) {
   const { i18n } = useTranslation();
-  const [expanded, setExpanded] = useState(!!defaultExpanded);
-  // ÖNCESİ: useSharedValue + useEffect(withTiming) + useAnimatedStyle ile
-  // chevron 220ms easing'le dönüyordu. 9 accordion × 1 worklet seti = mount
-  // sırasında 9 reanimated worklet kaydı → Fabric commit pressure'a katkı.
-  // SONRASI: useState'in driven ettiği inline transform. Easing kayboldu,
-  // chevron tap'te anında dönüyor — UX'te fark edilir değil.
-  const chevStyle = {
-    transform: [{ rotate: expanded ? "180deg" : "0deg" }],
-  };
-
-  const selectedCount = useMemo(
-    () =>
-      (group.hobbies || []).filter((h) => selectedIds.includes(h.id)).length,
-    [group.hobbies, selectedIds],
-  );
-
-  const handleToggle = useCallback(() => setExpanded((e) => !e), []);
-
-  const categoryIcon = useMemo(
-    () => getHobbyCategoryIcon(group.categoryEnumName ?? group.category),
-    [group.categoryEnumName, group.category],
-  );
 
   return (
-    <View
-      style={{
-        marginTop: 8,
-        backgroundColor: "transparent",
-        borderBottomWidth: 0.5,
-        borderBottomColor: colors.hairlineSoft,
-      }}
-    >
-      <TouchableOpacity
-        onPress={handleToggle}
-        activeOpacity={0.7}
+    <View style={{ marginTop: 8, backgroundColor: "transparent" }}>
+      <Text
         style={{
+          color: colors.text,
+          fontSize: 15,
+          fontWeight: "600",
           paddingVertical: 16,
-          flexDirection: "row",
-          justifyContent: "space-between",
-          alignItems: "center",
         }}
       >
-        <View
-          style={{
-            flexDirection: "row",
-            alignItems: "center",
-            gap: 10,
-            flex: 1,
-          }}
-        >
-          <EntryIcon
-            entry={categoryIcon}
-            size={18}
-            color={colors.text}
-            strokeWidth={1.5}
-          />
-          <Text
-            style={{
-              color: colors.text,
-              fontSize: 15,
-              fontWeight: "600",
-            }}
-          >
-            {resolveLocalized(group.categoryDisplay, i18n.language, group.category)}
-          </Text>
-          {selectedCount > 0 && (
-            <View
-              style={{
-                width: 8,
-                height: 8,
-                borderRadius: 4,
-                backgroundColor: colors.error,
-              }}
-            />
-          )}
-        </View>
-        <View style={chevStyle}>
-          <SFIcon
-            name="chevron.down"
-            fallback={ChevronDown}
-            size={18}
-            color={colors.textSecondary}
-            strokeWidth={2}
-            weight="semibold"
-          />
-        </View>
-      </TouchableOpacity>
+        {resolveLocalized(group.categoryDisplay, i18n.language, group.category)}
+      </Text>
 
-      {/* Sadece expanded ise render et — collapse'da DOM ağaçtan çıkar */}
-      {expanded && (
-        <PillFlow
-          gap={8}
-          fillWidth
-          style={{ paddingBottom: 16, paddingTop: 4 }}
-          items={(group.hobbies || []).map((h) => ({
-            // enumName emojiyi ve (dille birlikte) etiketi belirliyor →
-            // genişliği belirleyen her şey anahtarda.
-            id: `hobby:${i18n.language}:${h.enumName ?? h.name}`,
-            element: (
-              <HobbyPill
-                hobby={h}
-                isSelected={selectedIds.includes(h.id)}
-                onPress={onToggle}
-              />
-            ),
-          }))}
-        />
-      )}
+      <PillFlow
+        gap={8}
+        fillWidth
+        style={{ paddingBottom: 20, paddingTop: 4 }}
+        items={(group.hobbies || []).map((h) => ({
+          // enumName (dille birlikte) etiketi belirliyor → genişliği belirleyen
+          // her şey anahtarda.
+          id: `hobby:${i18n.language}:${h.enumName ?? h.name}`,
+          element: (
+            <HobbyPill
+              hobby={h}
+              isSelected={selectedIds.includes(h.id)}
+              onPress={onToggle}
+            />
+          ),
+        }))}
+      />
     </View>
   );
 });
@@ -1008,14 +970,18 @@ const SECTION_SCROLL_DELAY = 160;
 const SECTION_SCROLL_RETRIES = 3;
 
 // Görünürlük bölümündeki switch satırı. `field` form şemasına bağlı olduğu için
-// setValue tip güvenli kalıyor; `hint` yalnızca ek açıklama gereken satırlarda
-// dolu (şimdilik premium rozeti).
+// setValue tip güvenli kalıyor. Satırlar TEK SATIR etiketten ibaret — alt
+// açıklama yok, hepsi aynı yükseklikte kalıyor.
 type VisibilityRow = {
   key: string;
   label: string;
-  hint?: string;
   value: boolean;
-  field: "showMyUniversity" | "showMeOnApp" | "showAge" | "showPremiumBadge";
+  field:
+    | "showMyUniversity"
+    | "showMeOnApp"
+    | "showAge"
+    | "showLocation"
+    | "showPremiumBadge";
 };
 
 // ─── Form ──────────────────────────────────────────────────────────────────
@@ -1036,8 +1002,21 @@ const EditProfileForm = forwardRef(function EditProfileForm(
     // kanonik kaynak redux entitlement'ı (myProfile.isPremium webhook
     // gecikmesinde stale kalabiliyor — bkz. ProfileScreen'deki isPremium).
     isPremium = false,
+    /**
+     * `/profile/visibility` cevabı — Fotoğraflar bölümünün başındaki görünürlük
+     * şeridi için. Parent'tan geliyor: kaynak ProfileScreen'in fetch'i ve
+     * `photoModerationChanged` bus olayıyla tazeleniyor. `null` = bilinmiyor →
+     * şerit hiç çizilmez.
+     */
+    profileVisibility = null,
     savingPhoto,
     focusSection = null,
+    /**
+     * Moderasyon bildiriminden gelindiyse vurgulanacak fotoğrafın id'si. Kutunun
+     * etrafında nabız gibi atan bir halka çiziliyor; ProfileScreen birkaç saniye
+     * sonra null'a çekiyor.
+     */
+    highlightPhotoId = null,
     onAddPhoto,
     onPhotoPress,
     onPreview,
@@ -1057,7 +1036,9 @@ const EditProfileForm = forwardRef(function EditProfileForm(
   const { control, getValues, setValue, watch, formState: { errors } } = useForm<EditProfileFormData>({
     resolver: zodResolver(editProfileFormSchema),
     defaultValues: initialValues ?? {
-      bio: "",
+      prompts: [],
+      displayName: "",
+      yearOfStudy: null,
       hobbies: [],
       smoking: null,
       zodiac: null,
@@ -1071,18 +1052,31 @@ const EditProfileForm = forwardRef(function EditProfileForm(
       showMyUniversity: true,
       showMeOnApp: true,
       showAge: true,
+      showLocation: true,
       showPremiumBadge: true,
     },
   });
 
-  // Bio çok satırlı ve formun ortasında — klavye açılınca altında kalıyordu.
-  // Anchor View ölçülüp modal scroll'u klavyenin üstüne taşınıyor.
+  // Prompt cevapları çok satırlı ve formun ortasında — klavye açılınca altında
+  // kalıyordu (bio'da da aynı sorun vardı). Anchor View ölçülüp modal scroll'u
+  // klavyenin üstüne taşınıyor.
   const {
-    anchorRef: bioAnchorRef,
-    onFocus: onBioFocus,
-    onBlur: onBioBlur,
+    anchorRef: promptsAnchorRef,
+    onFocus: onPromptsFocus,
+    onBlur: onPromptsBlur,
   } = useKeyboardAwareField();
 
+  // İsim alanı formun en üstünde ama bölüm içerik dolduğunda da klavyenin
+  // altında kalabiliyor (kullanıcı "Sınıf"tan yukarı dönerse) — prompt'larla aynı
+  // anchor mekanizması.
+  const {
+    anchorRef: nameAnchorRef,
+    onFocus: onNameFocus,
+    onBlur: onNameBlur,
+  } = useKeyboardAwareField();
+
+  const draftDisplayName = watch("displayName");
+  const draftYearOfStudy = watch("yearOfStudy");
   const draftHobbies = watch("hobbies");
   const draftSmoking = watch("smoking");
   const draftZodiac = watch("zodiac");
@@ -1094,8 +1088,21 @@ const EditProfileForm = forwardRef(function EditProfileForm(
   const draftShowMyUniversity = watch("showMyUniversity");
   const draftShowMeOnApp = watch("showMeOnApp");
   const draftShowAge = watch("showAge");
+  const draftShowLocation = watch("showLocation");
   const draftShowPremiumBadge = watch("showPremiumBadge");
+  const queryClient = useQueryClient();
   const [savingProfile, setSavingProfile] = useState(false);
+  // İsim hatası ayrı state'te tutuluyor, zodResolver'ın `errors`ında değil:
+  // bu form `handleSubmit` kullanmıyor (submit imperative ref'ten çağrılıyor
+  // ve `getValues` okuyor), yani resolver hiç koşmuyor ve `errors` hep boş.
+  // Kaydet'e basıldığında set edilir, kullanıcı yazmaya başlayınca temizlenir.
+  const [nameError, setNameError] = useState(false);
+  // Prompt hataları da aynı gerekçeyle ayrı state'te: bu form handleSubmit
+  // kullanmadığı için zodResolver hiç koşmuyor ve `errors` hep boş kalıyor.
+  //   promptFieldErrors  → istemci doğrulaması (index → mesaj)
+  //   promptSubmitErrors → sunucudan dönen UT-22xx retleri
+  const [promptFieldErrors, setPromptFieldErrors] = useState<Record<number, string>>({});
+  const [promptSubmitErrors, setPromptSubmitErrors] = useState<PromptFieldError[]>([]);
 
   // ── Cinsiyet ────────────────────────────────────────────────────────────
   // Kayıtta (RegisterStep7) seçilen kimlik alanı; artık buradan da değiştirilebiliyor.
@@ -1154,7 +1161,10 @@ const EditProfileForm = forwardRef(function EditProfileForm(
     };
     return {
       photos: make("photos"),
-      bio: make("bio"),
+      // Anahtar profil doluluk satırının `key`i ile AYNI olmak zorunda:
+      // accordion'dan gelen "bu bölüme git" isteği bu haritadan çözülüyor.
+      // Doluluk satırı bio → prompts olarak değişti, burası da onunla değişti.
+      prompts: make("prompts"),
       // "purpose" → "relationshipIntent": kullanım amacı bölümü kalktı, doluluk
       // accordion'ının o satırı artık ilişki niyetine işaret ediyor.
       relationshipIntent: make("relationshipIntent"),
@@ -1287,20 +1297,31 @@ const EditProfileForm = forwardRef(function EditProfileForm(
     }
   }, [getValues, setValue]);
 
-  // İlişki niyeti pill etiketi — backend'in `display` metni satır için yazılmış,
-  // pill'e sığmıyor. FilterModal'daki intentPillLabel'ın aynısı: kısaltma varsa
-  // onu kullan, yoksa display'e düş (ör. StillFiguringOut'un kısası yok).
-  // Anahtarlar discover ad alanında duruyor; iki ekran aynı metni göstersin diye
-  // burada da oradan okunuyor, kopyalanmıyor.
-  const intentPillLabel = useCallback(
-    (opt) => {
-      const short = t(
-        `discover.filters.relationshipIntents.short.${opt?.enumName}`,
-        { defaultValue: "" },
-      );
-      return short || resolveLocalized(opt?.display, i18n.language, opt?.name);
-    },
+  // İlişki niyeti / sigara / alkol satır etiketleri — metin backend'den DEĞİL,
+  // kayıt akışının i18n cümlelerinden okunuyor (auth.step14 / auth.step16).
+  // Uç kısa etiket dönüyor ("Uzun süreli", "İçiyorum"), kayıt ekranları ise
+  // birinci ağızdan cümle gösteriyor; aynı soru iki yerde aynı metinle çıksın
+  // diye anahtarlar kopyalanmıyor, oradan okunuyor. Anahtar enumName; backend
+  // yeni bir değer eklerse `display`e düşülüyor, satır boş kalmıyor.
+  // NOT: sigara ve alkol AYRI haritalar — ikisinde de `None` üyesi var.
+  const sentenceLabel = useCallback(
+    (ns: string, opt: any) =>
+      t(`${ns}.${opt?.enumName}`, {
+        defaultValue: resolveLocalized(opt?.display, i18n.language, opt?.name),
+      }),
     [t, i18n.language],
+  );
+  const intentSentenceLabel = useCallback(
+    (opt: any) => sentenceLabel("auth.step14.intents", opt),
+    [sentenceLabel],
+  );
+  const smokingSentenceLabel = useCallback(
+    (opt: any) => sentenceLabel("auth.step16.smoking", opt),
+    [sentenceLabel],
+  );
+  const alcoholSentenceLabel = useCallback(
+    (opt: any) => sentenceLabel("auth.step16.alcohol", opt),
+    [sentenceLabel],
   );
 
   // ── Photo drag end ──────────────────────────────────────────────────────
@@ -1336,7 +1357,9 @@ const EditProfileForm = forwardRef(function EditProfileForm(
         opt?.enumName ?? opt?.enumValue ?? opt?.value ?? opt?.code ?? opt?.key;
 
       const {
-        bio,
+        prompts: draftPrompts,
+        displayName: draftDisplayName,
+        yearOfStudy: draftYearOfStudy,
         hobbies: hobbyIds,
         smoking: draftSmoking,
         zodiac: draftZodiac,
@@ -1348,8 +1371,23 @@ const EditProfileForm = forwardRef(function EditProfileForm(
         showMyUniversity: draftShowMyUniversity,
         showMeOnApp: draftShowMeOnApp,
         showAge: draftShowAge,
+        showLocation: draftShowLocation,
         showPremiumBadge: draftShowPremiumBadge,
       } = getValues();
+
+      // İsim boş bırakılamaz: backend boş/whitespace `DisplayName`i "değiştirme"
+      // olarak yorumluyor (temizleme yolu YOK). Göndersek istek 200 döner ama
+      // isim eski kalır — kullanıcı adını sildiğini sanır.
+      const nextName = (draftDisplayName ?? "").trim();
+      if (!nextName) {
+        setNameError(true);
+        showInfoToast({
+          title: t("profile.edit.missingInfoTitle"),
+          message: t("profile.edit.nameRequired"),
+          variant: "error",
+        });
+        return; // finally bloğu setSavingProfile(false) yapıyor
+      }
 
       const allHobbies = hobbyGroups.flatMap((g) => g.hobbies || []);
       const hobbyEnums = hobbyIds
@@ -1360,11 +1398,67 @@ const EditProfileForm = forwardRef(function EditProfileForm(
         .filter(Boolean);
 
       const updates: Record<string, unknown> = {
-        Bio: bio,
         ...(hobbyEnums.length > 0
           ? { Hobbies: hobbyEnums }
           : { ClearHobbies: true }),
       };
+
+      // Prompt'lar — `Bio`nun yerini aldı.
+      //
+      // ALAN GÖNDERİLDİĞİ AN TAM LİSTE demek (replace): sunucu mevcut satırları
+      // silip geleni yazıyor. Bu yüzden boş listeyi HİÇ göndermiyoruz — multipart'ta
+      // boş liste "gönderilmedi"den ayırt edilemediği için istek sessizce no-op
+      // olurdu ve kullanıcı sildiğini sanırdı. (Formun kendisi de son cevabın
+      // silinmesini engelliyor, bkz. PromptsEditor `allowRemoveLast`.)
+      // İstemci doğrulaması: soru seçilmiş ama cevabı boş/çok uzun olan slot
+      // isteğe hiç girmemeli. sanitizePrompts boş cevapları SESSİZCE eliyor —
+      // kullanıcı yazdığını sandığı cevabın kaybolduğunu ancak kartta fark
+      // ederdi, o yüzden burada durup slotu işaretliyoruz.
+      const promptIssues: Record<number, string> = {};
+      (draftPrompts ?? []).forEach((prompt, index) => {
+        if (!prompt?.promptKey) return;
+        const answer = normalizePromptAnswer(prompt.answer ?? "");
+        if (!answer) {
+          promptIssues[index] = t('profile.prompts.errors.UT-2204');
+        } else if (countPromptAnswer(answer) > PROMPT_ANSWER_MAX_LENGTH) {
+          promptIssues[index] = t('profile.prompts.errors.UT-2205');
+        }
+      });
+      if (Object.keys(promptIssues).length > 0) {
+        setPromptFieldErrors(promptIssues);
+        showInfoToast({
+          title: t("profile.edit.missingInfoTitle"),
+          message: t('profile.prompts.errors.generic'),
+          variant: "error",
+        });
+        return; // finally bloğu setSavingProfile(false) yapıyor
+      }
+      setPromptFieldErrors({});
+
+      const nextPrompts = sanitizePrompts(draftPrompts);
+      if (nextPrompts.length > 0) {
+        updates.Prompts = nextPrompts;
+      }
+
+      // İsim — yalnızca DEĞİŞTİYSE gidiyor (partial update; bu uç `photo`
+      // rate limit politikasını foto yüklemeyle PAYLAŞIYOR, gereksiz alan
+      // göndermenin bedeli var). `DisplayName` tek başına yeterli: backend
+      // Identity'deki `FirstName`i de aynı değerle senkronluyor, ayrıca
+      // /api/user/UpdateUser çağırmak GEREKMİYOR (o uç yalnız FirstName'e
+      // yazıyor → kartta görünen isim değişmiyordu).
+      if (nextName !== resolveDisplayName(myProfile).trim()) {
+        updates.DisplayName = nextName;
+      }
+
+      // Sınıf — `!= null` bilerek: 0 (Hazırlık) GEÇERLİ bir değer, `!draft…`
+      // yazsaydık hazırlık seçimi hiç gönderilmezdi. null = "seçilmedi";
+      // backend'de temizleme yolu olmadığı için alan hiç gönderilmiyor.
+      if (
+        draftYearOfStudy != null &&
+        draftYearOfStudy !== myProfile?.yearOfStudy
+      ) {
+        updates.YearOfStudy = draftYearOfStudy;
+      }
 
       if (draftSmoking != null) updates.SmokingStatus = enumOf(draftSmoking);
       else if (myProfile?.smokingStatus != null)
@@ -1428,6 +1522,9 @@ const EditProfileForm = forwardRef(function EditProfileForm(
       updates.ShowMyUniversity = draftShowMyUniversity;
       updates.ShowMeOnApp = draftShowMeOnApp;
       updates.ShowAge = draftShowAge;
+      // Kapatınca backend o kullanıcının Redis'teki kartını kendisi düşürüyor;
+      // frontend'in ayrıca bir invalidation çağırması gerekmiyor.
+      updates.ShowLocation = draftShowLocation;
       // Free kullanıcıda satır basılmıyor ama değer yine gönderiliyor: hidrate
       // edilen mevcut tercih olduğu gibi geri yazılır (premium bittiğinde
       // kullanıcının kapattığı rozet ayarı sessizce true'ya dönmesin).
@@ -1445,7 +1542,7 @@ const EditProfileForm = forwardRef(function EditProfileForm(
           // yapılırsa profil kartı boş görünür — sıralamayı kaydetmeyi kesip
           // kullanıcıyı uyarıyoruz (rehber §3c).
           const nextMain = normalizePhotoModeration(orderToSave[0]);
-          if (nextMain.status !== "Approved") {
+          if (!nextMain.isVisibleToOthers) {
             showInfoToast({
               title: t("profile.photoModeration.reorderMainBlockedTitle"),
               message: t("profile.photoModeration.reorderMainBlockedMessage"),
@@ -1457,7 +1554,13 @@ const EditProfileForm = forwardRef(function EditProfileForm(
         }
       }
 
-      await profileService.updateProfile(updates);
+      // Yeni denemede eski inline hatalar kalmasın.
+      setPromptSubmitErrors([]);
+      const saved = await profileService.updateProfile(updates);
+      // Yanıt artık KOŞULSUZ `result = { profile, photos }` (2026-08-24). Foto
+      // gönderilmediyse `photos: []` gelir; polimorfik zarf ve onu çözen
+      // sarmalayıcı kaldırıldı.
+      const savedProfile = saved?.profile;
 
       // Optimistic patch — parent myProfile cache'ini günceller
       const idToEnum = {};
@@ -1465,7 +1568,25 @@ const EditProfileForm = forwardRef(function EditProfileForm(
         if (h?.id != null && h?.enumName) idToEnum[h.id] = h.enumName;
       });
       const optimisticPatch = {
-        bio,
+        // Prompt'lar yalnız gönderildiyse yamalanıyor: alan hiç gitmediyse
+        // sunucudaki liste değişmedi, ekrandaki taslakla ezmek yanlış olurdu.
+        ...(nextPrompts.length > 0 ? { prompts: nextPrompts } : null),
+        // İsim ve sınıf ekrandaki değeri ÖNCE YANITTAN alıyor: JWT'nin `name`
+        // claim'i bir sonraki login/refresh'e kadar eski isimde kalıyor, yani
+        // token'dan okuyan her yer yalan söyler. `yearOfStudyDisplay` de
+        // backend'de kullanıcının diline göre üretiliyor; yanıt gelmezse
+        // (eski backend) karttakiyle aynı i18n metnine düşüyoruz.
+        displayName: savedProfile?.displayName ?? nextName,
+        yearOfStudy:
+          savedProfile?.yearOfStudy ??
+          draftYearOfStudy ??
+          myProfile?.yearOfStudy ??
+          null,
+        yearOfStudyDisplay:
+          savedProfile?.yearOfStudyDisplay ??
+          (draftYearOfStudy != null
+            ? yearOfStudyLabel(draftYearOfStudy, t)
+            : (myProfile?.yearOfStudyDisplay ?? null)),
         hobbies: hobbyIds.map((id) => idToEnum[id]).filter(Boolean),
         smokingStatus: enumOf(draftSmoking) ?? null,
         smokingStatusDisplay: draftSmoking
@@ -1502,6 +1623,7 @@ const EditProfileForm = forwardRef(function EditProfileForm(
         showMyUniversity: draftShowMyUniversity,
         showMeOnApp: draftShowMeOnApp,
         showAge: draftShowAge,
+        showLocation: draftShowLocation,
         showPremiumBadge: draftShowPremiumBadge,
         // Cinsiyet enumName + görünen ad; ProfileScreen refetch'ten önce doğru
         // etiketi göstersin diye display'i kategori listesinden çözüyoruz.
@@ -1525,7 +1647,82 @@ const EditProfileForm = forwardRef(function EditProfileForm(
         "Profil güncelleme hatası:",
         JSON.stringify(e?.response?.data || e?.message || e),
       );
-      showInfoToast({ title: t('common.error'), message: t('profile.edit.updateError'), variant: "error" });
+      // Duruma özel metinler: jenerik "güncellenemedi" bu üç durumda kullanıcıyı
+      // çıkmaza sokuyor — ne yapacağını bilmeden tekrar tekrar kaydete basıyor.
+      //   403 → profil hiç tamamlanmamış (IsProfileCompleted false). Aşağıda
+      //         ayrı ele alınıyor.
+      //   400 → alan doğrulaması (sınıf aralık dışı, isim çok uzun).
+      //   429 → `photo` rate limit'i; foto yüklemeyle ORTAK kota. api katmanı
+      //         3 kez backoff'la deneyip pes ettikten sonra buraya düşer.
+      const status = e?.response?.status;
+
+      // Prompt reddi (UT-22xx) — hangi slotun düştüğü gövdeden okunup ilgili
+      // cevabın altına inline yazılıyor. `api.put` 400'ü reject ettiği için
+      // gövde `error.response.data`da; kayıt yolundan (postFormData) tek farkı
+      // bu, sözleşme aynı.
+      const promptErrors = extractPromptErrors(e?.response?.data);
+      if (promptErrors.length > 0) {
+        setPromptSubmitErrors(promptErrors);
+        // UT-2202'nin en olası sebebi kullanıcının hatası değil, kataloğun bayat
+        // olması: staticGet onu oturum boyu tutuyor. Cache'i düşürüp listeyi
+        // tazeliyoruz ki kullanıcı seçici açtığında güncel soruları görsün.
+        if (shouldRefreshPromptCatalog(promptErrors)) {
+          refreshPromptCatalog();
+          queryClient.invalidateQueries({ queryKey: commonKeys.prompts });
+        }
+        // Toast'ta EN AĞIR hata: üst seviye kod onu taşıyor, dizinin ilk
+        // elemanı yalnızca en küçük index.
+        const summary = promptSummaryCode(e?.response?.data, promptErrors);
+        showInfoToast({
+          title: t('common.error'),
+          message: summary ? promptErrorText(summary) : t('profile.prompts.errors.generic'),
+          variant: "error",
+        });
+        return; // finally bloğu setSavingProfile(false) yapıyor
+      }
+
+      // 403 = IsProfileCompleted false. Backend rehberi "CompleteProfile
+      // akışına yönlendirin" diyor ama bu uygulamada ÖYLE BİR AKIŞ YOK:
+      // hesap `register-and-complete` ile TEK çağrıda hem açılıyor hem
+      // tamamlanıyor (RegisterStep15), ayrı bir CompleteProfile ekranı hiç
+      // yazılmadı. Kayıt yığınına atmak da işe yaramaz — o akış elde kayıt
+      // token'ı olmasını bekliyor, bu kullanıcıda yok; üstelik navigator
+      // kapısı (`isMailVerified || isProfileCreated`) onu anında ana
+      // uygulamaya geri alır → döngü.
+      //
+      // Yani bu durum mevcut FE akışıyla ÜRETİLEMİYOR; ancak eski iki adımlı
+      // `Register` ile açılmış bir hesapta veya backend tutarsızlığında
+      // görülebilir. Kullanıcıyı sahte bir yönlendirmeyle oyalamak yerine
+      // çıkışı olan tek kapıyı veriyoruz.
+      if (status === 403) {
+        Alert.alert(
+          t("profile.edit.profileIncompleteTitle"),
+          t("profile.edit.profileIncompleteError"),
+          [
+            { text: t("common.cancel"), style: "cancel" },
+            {
+              text: t("profile.edit.contactSupport"),
+              onPress: () => {
+                const subject = encodeURIComponent(
+                  t("profile.edit.supportSubject"),
+                );
+                Linking.openURL(
+                  `mailto:${SUPPORT_EMAIL}?subject=${subject}`,
+                ).catch(() => {});
+              },
+            },
+          ],
+        );
+        return; // finally bloğu setSavingProfile(false) yapıyor
+      }
+
+      const message =
+        status === 400
+          ? t("profile.edit.validationError")
+          : status === 429
+            ? t("profile.edit.rateLimitError")
+            : t("profile.edit.updateError");
+      showInfoToast({ title: t('common.error'), message, variant: "error" });
     } finally {
       setSavingProfile(false);
       onSavingChange?.(false);
@@ -1621,9 +1818,91 @@ const EditProfileForm = forwardRef(function EditProfileForm(
         </TouchableOpacity>
       )}
 
+      {/* İsim — stage 1. Tek alan iki yeri birden güncelliyor: kartta görünen
+          ad (UserProfile.DisplayName) ve mail/JWT'deki ad (FirstName). Backend
+          ikisini `DisplayName` üzerinden senkronluyor, ayrı bir istek YOK. */}
+      {stage >= 1 && (
+        <View style={{ marginTop: 8 }}>
+          <View
+            style={{
+              flexDirection: "column",
+              alignItems: "flex-start",
+              marginBottom: 10,
+              marginTop: 12,
+            }}
+          >
+            <Text
+              style={{
+                color: colors.text,
+                fontSize: 20,
+                fontWeight: "600",
+                marginBottom: 6,
+              }}
+            >
+              {t("profile.edit.nameTitle")}
+            </Text>
+            <View className="flex-row items-center gap-2 mb-3 pr-4">
+              <SFIcon name="info.circle" fallback={InfoIcon} size={18} color={colors.textSecondary} strokeWidth={2} weight="semibold" />
+              <Text style={{ color: colors.textSecondary, fontSize: 14, fontWeight: "400" }}>
+                {t("profile.edit.nameDesc")}
+              </Text>
+            </View>
+          </View>
+          {/* collapsable={false}: prompt anchor'ıyla aynı gerekçe — Fabric bu
+              View'ı optimize edip kaldırırsa measureInWindow ölçemez. */}
+          <View ref={nameAnchorRef} collapsable={false}>
+            <Controller
+              control={control}
+              name="displayName"
+              render={({ field: { onChange, value } }) => (
+                <BottomSheetTextInput
+                  value={value}
+                  onChangeText={(text) => {
+                    onChange(text);
+                    // Kullanıcı yazmaya başlar başlamaz hata sönsün; kırmızı
+                    // çerçeve düzeltilmiş alanda asılı kalmasın.
+                    if (nameError && text.trim()) setNameError(false);
+                  }}
+                  onFocus={onNameFocus}
+                  onBlur={onNameBlur}
+                  // Tavan 50 (100 değil): 50'yi aşan isimde backend HATA
+                  // DÖNMÜYOR, profil adını tam kaydedip Identity'deki adı
+                  // sessizce kırpıyor — bkz. DISPLAY_NAME_MAX_LENGTH.
+                  maxLength={DISPLAY_NAME_MAX_LENGTH}
+                  autoCapitalize="words"
+                  autoCorrect={false}
+                  returnKeyType="done"
+                  placeholder={t("profile.edit.namePlaceholder")}
+                  placeholderTextColor={colors.textSecondary}
+                  style={{
+                    borderRadius: 999,
+                    borderCurve: "continuous",
+                    overflow: "hidden",
+                    color: colors.text,
+                    fontSize: 15,
+                    fontWeight: "500",
+                    paddingHorizontal: 16,
+                    paddingVertical: 16,
+                    borderWidth: 0.5,
+                    borderColor: nameError
+                      ? "rgba(239,68,68,0.5)"
+                      : colors.hairline,
+                  }}
+                />
+              )}
+            />
+          </View>
+          {nameError && (
+            <Text style={{ color: colors.error, fontSize: 12, marginTop: 6, marginLeft: 16 }}>
+              {t("profile.edit.nameRequired")}
+            </Text>
+          )}
+        </View>
+      )}
+
       {/* Fotoğraflar GRID — stage 2 */}
       {stage >= 2 && (
-      <View style={{ marginTop: 8 }} onLayout={sectionLayout.photos}>
+      <View style={{ marginTop: 28 }} onLayout={sectionLayout.photos}>
         <View
           style={{
             flexDirection: "column",
@@ -1738,16 +2017,40 @@ const EditProfileForm = forwardRef(function EditProfileForm(
                 photo={photo}
                 onPress={onPhotoPress}
                 savingPhoto={savingPhoto}
+                // Karşılaştırma STRING üzerinden: photoId backend'de sayı,
+                // bildirimin `relatedEntityId`i ise metin geliyor.
+                highlighted={
+                  highlightPhotoId != null &&
+                  String(photo.photoId) === String(highlightPhotoId)
+                }
               />
             </SortablePhoto>
           ))}
         </View>
+
+        {/* Görünürlük şeridi: grid'in ALTINDA. Sebep (keşifte yokum) ile çözüm
+            (fotoğraf kutuları) yan yana kalsın diye bu bölümde duruyor; kutuların
+            üstünde başlık ile grid'in arasına giriyordu. Yatay margin 0 — form
+            gövdesinin kendi padding'i var. */}
+        <ProfileVisibilityBanner
+          visibility={profileVisibility}
+          awaitingReview={hasPhotosAwaitingReview(myProfile)}
+          reviewCount={countPhotosAwaitingReview(myProfile)}
+          rejectedCount={countRejectedPhotos(myProfile)}
+          onAddPhoto={onAddPhoto}
+          style={{
+            marginHorizontal: 0,
+            marginTop: 12,
+            marginBottom: 0,
+            width: "100%",
+          }}
+        />
       </View>
       )}
 
-      {/* Biyografi — stage 1 */}
+      {/* Sorular (prompt'lar) — bio'nun yerini aldı, stage 1 */}
       {stage >= 1 && (
-      <View style={{ marginTop: 28 }} onLayout={sectionLayout.bio}>
+      <View style={{ marginTop: 28 }} onLayout={sectionLayout.prompts}>
         <View
           style={{
             flexDirection: "column",
@@ -1764,58 +2067,42 @@ const EditProfileForm = forwardRef(function EditProfileForm(
               marginBottom: 6,
             }}
           >
-            {t('profile.edit.bioTitle')}
+            {t('profile.prompts.title')}
           </Text>
           <View className="flex-row items-center gap-2 mb-3 pr-4">
             <SFIcon name="info.circle" fallback={InfoIcon} size={18} color={colors.textSecondary} strokeWidth={2} weight="semibold" />
             <Text style={{ color: colors.textSecondary, fontSize: 14, fontWeight: "400" }}>
-              {t('profile.edit.bioDesc')}
+              {t('profile.prompts.description')}
             </Text>
           </View>
         </View>
         {/* collapsable={false}: Fabric bu View'ı optimize edip kaldırırsa
-            measureInWindow ölçemez, scroll hesabı çalışmaz. */}
-        <View ref={bioAnchorRef} collapsable={false}>
+            measureInWindow ölçemez, scroll hesabı çalışmaz.
+            marginTop: bölüm açıklaması ile ilk sorunun başlığı birbirine
+            yapışık duruyordu — nefes payı burada, PromptsEditor'de DEĞİL
+            (aynı bileşeni kayıt adımı da kullanıyor). */}
+        <View ref={promptsAnchorRef} collapsable={false} style={{ marginTop: 12 }}>
           <Controller
             control={control}
-            name="bio"
+            name="prompts"
             render={({ field: { onChange, value } }) => (
-              // BottomSheetTextInput şart: düz TextInput'ta gorhom klavye
-              // target'ını set etmiyor ve sheet klavye davranışını atlıyor.
-              <BottomSheetTextInput
-                value={value}
-                onChangeText={onChange}
-                onFocus={onBioFocus}
-                onBlur={onBioBlur}
-                multiline
-                maxLength={500}
-                placeholder={t('profile.edit.bioPlaceholder')}
-                placeholderTextColor={colors.textSecondary}
-                style={{
-                  borderCurve: "continuous",
-                  overflow: "hidden",
-                  color: colors.text,
-                  fontSize: 15,
-                  lineHeight: 22,
-                  minHeight: 100,
-                  textAlignVertical: "top",
-                  borderRadius: 30,
-                  padding: 12,
-                  paddingLeft: 16,
-                  borderWidth: 0.5,
-                  borderColor: errors.bio
-                    ? "rgba(239,68,68,0.5)"
-                    : colors.hairline,
-                }}
+              <PromptsEditor
+                value={value ?? []}
+                onChange={onChange}
+                serverErrors={promptSubmitErrors}
+                fieldErrors={promptFieldErrors}
+                // Bottom sheet içindeyiz: BottomSheetTextInput şart, düz
+                // TextInput'ta gorhom klavye target'ını set etmiyor.
+                InputComponent={BottomSheetTextInput}
+                onInputFocus={onPromptsFocus}
+                onInputBlur={onPromptsBlur}
+                // Son cevabın silinmesi engelleniyor: boş liste sunucuya
+                // "dokunma" olarak gider, silme sessizce kaybolurdu.
+                allowRemoveLast={false}
               />
             )}
           />
         </View>
-        {errors.bio && (
-          <Text style={{ color: colors.error, fontSize: 12, marginTop: 4 }}>
-            {errors.bio.message}
-          </Text>
-        )}
       </View>
       )}
 
@@ -1823,7 +2110,7 @@ const EditProfileForm = forwardRef(function EditProfileForm(
           "ilişki niyeti" bölümü aynı soruyu soruyordu; profil doluluk
           formülündeki 5 puan da ona devredildi. */}
 
-      {/* İlişki niyeti — stage 1. Tek seçim; seçili pill'e tekrar basmak
+      {/* İlişki niyeti — stage 1. Tek seçim; seçili satıra tekrar basmak
           temizler (submit'te ClearRelationshipIntent=true gider). */}
       {stage >= 1 && relationshipIntentOptions.length > 0 && (
         <View
@@ -1857,41 +2144,35 @@ const EditProfileForm = forwardRef(function EditProfileForm(
               </Text>
             </View>
           </View>
-          {/* Pill grubu — keşif filtresindeki ilişki niyeti bölümüyle aynı
-              görünüm (bkz. FilterModal). Tikli liste satırı yerine pill:
-              beş seçenek iki satıra sığıyor, bölüm ekranı daha az kaplıyor.
-              Seçim yine TEK: seçili pill'e tekrar dokunmak temizliyor. */}
-          <PillFlow
-            gap={8}
-            fillWidth
-            items={relationshipIntentOptions.map((opt) => {
-              const label = intentPillLabel(opt);
-              return {
-                // Etiket zaten dile çözülmüş geliyor → ayrıca dil eki gerekmez.
-                id: `intent:${label}`,
-                element: (
-                  <OptionPill
-                    option={opt}
-                    isSelected={draftRelationshipIntent?.id === opt.id}
-                    icon={getRelationshipIntentIcon(opt.enumName)}
-                    label={label}
-                    onPress={() =>
-                      setValue(
-                        "relationshipIntent",
-                        draftRelationshipIntent?.id === opt.id ? null : opt,
-                      )
-                    }
-                  />
-                ),
-              };
-            })}
-          />
+          {/* Tikli liste — kayıt akışındaki aynı soruyla (RegisterStep14) AYNI
+              görünüm. Pill ızgarasından DÖNÜLDÜ: pill'e ancak kısaltılmış
+              etiket sığıyordu ("Uzun süreli"), kayıt ekranı ise birinci ağızdan
+              cümle gösteriyordu — kullanıcı aynı soruyu iki farklı metinle
+              görüyordu. Satır düzeninde tam cümle sığıyor, metin de oradan
+              (auth.step14.intents) okunuyor. Sigara/alkol bölümleri de aynı
+              biçimde. Seçim yine TEK: seçili satıra tekrar dokunmak temizliyor. */}
+          {relationshipIntentOptions.map((opt) => (
+            <OptionListItem
+              key={opt.id}
+              option={opt}
+              isSelected={draftRelationshipIntent?.id === opt.id}
+              label={intentSentenceLabel(opt)}
+              onPress={() =>
+                setValue(
+                  "relationshipIntent",
+                  draftRelationshipIntent?.id === opt.id ? null : opt,
+                )
+              }
+            />
+          ))}
         </View>
       )}
 
       {/* Hobiler — stage 3 */}
       {stage >= 3 && (
         <View style={{ marginTop: 28 }} onLayout={sectionLayout.hobbies}>
+          {/* Diğer bölümlerle aynı hizalama; tek fark başlık bloğunun ikonsuz
+              olması (hobilerde ikon yalnız pill'lerde). */}
           <View
             style={{
               flexDirection: "column",
@@ -1910,23 +2191,104 @@ const EditProfileForm = forwardRef(function EditProfileForm(
             >
               {t('profile.edit.hobbiesTitle', { count: draftHobbies.length })}
             </Text>
-            <View className="flex-row items-center gap-2 mb-3 pr-4">
-              <SFIcon name="info.circle" fallback={InfoIcon} size={18} color={colors.textSecondary} strokeWidth={2} weight="semibold" />
-              <Text
-                style={{ color: colors.textSecondary, fontSize: 14, fontWeight: "400" }}
-              >
-                {t('profile.edit.hobbiesHint')}
-              </Text>
-            </View>
+            <Text
+              style={{
+                color: colors.textSecondary,
+                fontSize: 14,
+                fontWeight: "400",
+                marginBottom: 12,
+                paddingRight: 16,
+              }}
+            >
+              {t('profile.edit.hobbiesHint')}
+            </Text>
           </View>
           {hobbyGroups.map((group, gi) => (
-            <HobbyGroupAccordion
+            <HobbyGroup
               key={group.categoryEnumName ?? group.category ?? gi}
               group={group}
               selectedIds={draftHobbies}
               onToggle={toggleHobby}
             />
           ))}
+        </View>
+      )}
+
+      {/* Sınıf — stage 1. Değerler ClassYearType ordinali (0 = Hazırlık ... 6);
+          kayıt ekranı (RegisterStep8) ve keşif filtresiyle AYNI aralık.
+          Seçili pill'e tekrar dokunmak TEMİZLEMİYOR: backend'de bu alanın
+          "temizle" yolu yok (ClearYearOfStudy diye bir alan tanımlı değil),
+          sadece başka bir değere çekilebiliyor. */}
+      {stage >= 1 && (
+        <View style={{ marginTop: 28 }}>
+          <View
+            style={{
+              flexDirection: "column",
+              alignItems: "flex-start",
+              marginBottom: 10,
+              marginTop: 12,
+            }}
+          >
+            <Text
+              style={{
+                color: colors.text,
+                fontSize: 20,
+                fontWeight: "600",
+                marginBottom: 6,
+              }}
+            >
+              {t("profile.edit.yearOfStudyTitle")}
+            </Text>
+            <View className="flex-row items-center gap-2 mb-3 pr-4">
+              <SFIcon name="info.circle" fallback={InfoIcon} size={18} color={colors.textSecondary} strokeWidth={2} weight="semibold" />
+              <Text style={{ color: colors.textSecondary, fontSize: 14, fontWeight: "400" }}>
+                {t("profile.edit.yearOfStudyDesc")}
+              </Text>
+            </View>
+          </View>
+          {/* Burçlarla aynı gerekçeyle düz flexWrap: sıra ANLAMLI (hazırlık →
+              6. sınıf), PillFlow'un satır doldurma algoritması sırayı bozardı. */}
+          <View style={{ flexDirection: "row", flexWrap: "wrap", gap: 8 }}>
+            {YEAR_OF_STUDY_VALUES.map((year) => {
+              const selected = draftYearOfStudy === year;
+              return (
+                <TouchableOpacity
+                  key={year}
+                  activeOpacity={1}
+                  onPress={() => setValue("yearOfStudy", year)}
+                  style={{
+                    borderRadius: 999,
+                    borderCurve: "continuous",
+                    overflow: "hidden",
+                    paddingHorizontal: 12,
+                    paddingVertical: 11,
+                    borderWidth: 0.5,
+                    flexDirection: "row",
+                    alignItems: "center",
+                    gap: 6,
+                    backgroundColor: selected ? colors.inverseSurface : "transparent",
+                    borderColor: selected ? colors.inverseSurface : colors.hairline,
+                  }}
+                >
+                  <EntryIcon
+                    entry={getYearOfStudyIcon(year)}
+                    size={20}
+                    color={selected ? colors.onInverseSurface : colors.textSecondary}
+                    strokeWidth={1.5}
+                  />
+                  <Text
+                    style={{
+                      color: selected ? colors.onInverseSurface : colors.textSecondary,
+                      fontSize: 14,
+                      fontWeight: "500",
+                    }}
+                  >
+                    {yearOfStudyLabel(year, t)}
+                  </Text>
+                </TouchableOpacity>
+              );
+            })}
+          </View>
         </View>
       )}
 
@@ -1966,6 +2328,7 @@ const EditProfileForm = forwardRef(function EditProfileForm(
               option={opt}
               isSelected={draftSmoking?.id === opt.id}
               icon={CIGARETTE_ICON}
+              label={smokingSentenceLabel(opt)}
               onPress={() =>
                 setValue("smoking", draftSmoking?.id === opt.id ? null : opt)
               }
@@ -2015,6 +2378,7 @@ const EditProfileForm = forwardRef(function EditProfileForm(
               option={opt}
               isSelected={draftAlcohol?.id === opt.id}
               icon={getAlcoholIcon()}
+              label={alcoholSentenceLabel(opt)}
               onPress={() =>
                 setValue("alcohol", draftAlcohol?.id === opt.id ? null : opt)
               }
@@ -2451,13 +2815,27 @@ const EditProfileForm = forwardRef(function EditProfileForm(
             value: draftShowAge,
             field: "showAge",
           },
+          // Konum — premium'a özel DEĞİL, herkeste görünür. Satır olumlu
+          // ("göster") yazıldı: gruptaki diğer satırlar da olumlu ve başlık
+          // "Görünürlük"; araya tek bir "gösterme" sokmak switch'in yönünü
+          // belirsizleştirirdi. Değer bu yüzden ters çevrilmeden doğrudan
+          // `showLocation` alanına yazılıyor.
+          //
+          // Kapalıyken SADECE karttaki şehir/ilçe (ve harita) gider — keşifte
+          // çıkma, mesafe filtresi, karşı tarafın şehir filtresi ve sıralama
+          // aynen çalışır. Satırların hepsi tek satır etiket, açıklama yok.
+          {
+            key: "location",
+            label: t('profile.edit.visibility.showLocation'),
+            value: draftShowLocation,
+            field: "showLocation",
+          },
           // Premium rozeti — yalnızca premium kullanıcıda anlamlı (free'de
           // gizlenecek rozet zaten yok). Backend free'den gelen değeri reddetmez,
           // sessizce saklar; satırı basmamak tamamen UI kararı.
           //
           // Kapalıyken SADECE rozet gider: kotalar, filtreler, mesafe tavanı ve
-          // keşif sıralamasındaki premium sinyali aynen çalışır. Hint satırı bu
-          // yüzden var — desteğe en çok gelecek soru bu.
+          // keşif sıralamasındaki premium sinyali aynen çalışır.
           //
           // `|| draftShowPremiumBadge === false`: satırı yalnız `isPremium`e
           // bağlamak kilitlenme üretiyordu — kullanıcı rozeti kapatıp premium'u
@@ -2470,7 +2848,6 @@ const EditProfileForm = forwardRef(function EditProfileForm(
                 {
                   key: "premiumBadge",
                   label: t('profile.edit.visibility.showPremiumBadge'),
-                  hint: t('profile.edit.visibility.showPremiumBadgeHint'),
                   value: draftShowPremiumBadge,
                   field: "showPremiumBadge",
                 },
@@ -2496,18 +2873,6 @@ const EditProfileForm = forwardRef(function EditProfileForm(
               <Text style={{ color: colors.text, fontSize: 15, fontWeight: "500" }}>
                 {row.label}
               </Text>
-              {row.hint ? (
-                <Text
-                  style={{
-                    color: colors.textSecondary,
-                    fontSize: 12,
-                    fontWeight: "400",
-                    marginTop: 2,
-                  }}
-                >
-                  {row.hint}
-                </Text>
-              ) : null}
             </View>
             {Platform.OS === "ios" ? (
               // RN'in built-in Switch'i = native UISwitch wrapper. SwiftUI Toggle

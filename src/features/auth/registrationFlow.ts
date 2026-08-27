@@ -19,6 +19,11 @@ export const REGISTRATION_FLOW = [
   'RegisterStep10',
   'RegisterStep12',
   'RegisterStep13',
+  // Sorular (prompt'lar) — bio'nun yerini alan adım. Hobilerden SONRA, yaşam
+  // tarzından ÖNCE: serbest metin akışın en yüksek terk riski, fotoğraf adımı
+  // (Step15) da öyle. İkisini arka arkaya koymamak için araya yerleştirildi.
+  // Numara 17 tarihsel bir devam, sıra bu diziden okunuyor.
+  'RegisterStep17',
   'RegisterStep14',
   'RegisterStep16',
   'RegisterStep15',

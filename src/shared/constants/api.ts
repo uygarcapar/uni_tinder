@@ -129,6 +129,14 @@ export const API_ENDPOINTS = {
   GET_CLASSES: "/api/common/classes",
   GET_DEPARTMENTS: "/api/common/departments",
   GET_HOBBIES: "/api/common/hobbies",
+  // Profil prompt kataloğu — bio'nun yerini alan cümle başlangıçları.
+  // Diğer common uçları gibi ANONİM: kayıt sihirbazında token'dan önce çağrılıyor.
+  //
+  // ⚠️ Katalog `staticGet` ile UYGULAMA OTURUMU BOYUNCA cache'leniyor (TTL yok).
+  // Backend bir prompt'u `isActive:false` yaptığında bayat katalogdaki kullanıcı
+  // onu hâlâ seçebilir → `UT-2202`. O kodda `bustStaticCache(GET_PROMPTS)` çağırıp
+  // listeyi tazelemek gerekiyor (bkz. promptErrors.ts).
+  GET_PROMPTS: "/api/common/prompts",
   GET_SMOKING_STATUSES: "/api/common/smoking-statuses",
   GET_ZODIACS: "/api/common/zodiacs",
   // GET_USAGE_PURPOSES KALDIRILDI: "kullanım amacı" alanı üründen çıktı.

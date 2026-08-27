@@ -1,4 +1,14 @@
 import { z } from "zod";
+import {
+  DISPLAY_NAME_MAX_LENGTH,
+  MAX_PROFILE_PROMPTS,
+  MIN_PROFILE_PROMPTS,
+  PROMPT_ANSWER_MAX_LENGTH,
+  YEAR_OF_STUDY_RANGE,
+  countPromptAnswer,
+  normalizePromptAnswer,
+} from "@/shared/constants/limits";
+import { noteLength } from "@/features/discover/noteTarget";
 
 const calculateAge = (day: number, month: number, year: number) => {
   const today = new Date();
@@ -152,17 +162,81 @@ export const hobbiesSchema = z.object({
     .max(10),
 });
 
-export const lifestyleSchema = z.object({
-  smokingStatus: z.string().optional(),
-  zodiacSign: z.string().optional(),
-  relationshipIntent: z.string().optional(),
+/**
+ * Tek bir prompt slotu. Boş slot form state'inde `promptKey: ""` olarak duruyor
+ * (kullanıcı henüz soru seçmedi) — gönderimden önce eleniyor, bu yüzden şema
+ * yalnızca DOLU slotları görüyor.
+ */
+const promptAnswerSchema = z.object({
+  promptKey: z.string().min(1),
+  // ⚠️ `.transform()` KULLANILMIYOR (normalize edip öyle doğrulamak cazip ama):
+  // transform ZodEffects üretiyor ve giriş/çıkış tipleri ayrıştığı için
+  // react-hook-form alanı `answer?: string` olarak görüyor — form state'i o
+  // noktadan sonra ProfilePromptAnswer'a atanamıyor. Normalizasyon gönderim
+  // anında (`sanitizePrompts`) yapılıyor, doğrulama burada aynı metni HESAPLAYIP
+  // bakıyor. İkisi de `normalizePromptAnswer` üzerinden geçtiği için sonuç aynı.
+  answer: z
+    .string()
+    .refine((v) => normalizePromptAnswer(v).length > 0, "Cevabını yazmayı unutma")
+    // Uzunluk CODE POINT ile sayılıyor (backend `EnumerateRunes`). `.max()`
+    // kullanılamaz: zod UTF-16 sayar ve emojili cevapta sunucudan farklı sonuç
+    // verir. Sınır katalogda prompt başına geliyor; buradaki tavan yalnızca
+    // varsayılan — daha uzun maxLength'li bir prompt eklenirse burası da açılmalı.
+    .refine(
+      (v) => countPromptAnswer(normalizePromptAnswer(v)) <= PROMPT_ANSWER_MAX_LENGTH,
+      `Cevabın en fazla ${PROMPT_ANSWER_MAX_LENGTH} karakter olabilir`,
+    ),
 });
 
-// RegisterStep16 (alkol + dini görüş). lifestyleSchema'dan ayrı: iki alan
-// da tamamen opsiyonel ve adım atlanabilir, Step14'ün alanlarıyla birlikte
-// doğrulanmalarını gerektiren bir kural yok.
+/**
+ * Prompt listesi — hem kayıt adımı hem profil düzenleme aynı kuralları kullanıyor.
+ * Aynı prompt iki kez seçilemez (backend `UT-2203`); tekrar kontrolü burada da
+ * var ki kullanıcı isteği göndermeden uyarılsın.
+ */
+const promptListSchema = z
+  .array(promptAnswerSchema)
+  .max(MAX_PROFILE_PROMPTS)
+  .superRefine((list, ctx) => {
+    const seen = new Set<string>();
+    list.forEach((item, index) => {
+      if (seen.has(item.promptKey)) {
+        ctx.addIssue({
+          code: z.ZodIssueCode.custom,
+          // Çakışmada SONRAKİ index işaretleniyor — kullanıcının önce yazdığı
+          // cevap dursun. Backend'den de aynı kural istendi.
+          path: [index, "promptKey"],
+          message: "Bu soruyu zaten seçtin",
+        });
+      }
+      seen.add(item.promptKey);
+    });
+  });
+
+/** Kayıt adımı: en az 1 zorunlu. */
+export const promptsSchema = z.object({
+  prompts: promptListSchema.refine(
+    (list) => list.length >= MIN_PROFILE_PROMPTS,
+    `En az ${MIN_PROFILE_PROMPTS} soru cevaplamalısın`,
+  ),
+});
+
+// RegisterStep14 — YALNIZ ilişki niyeti. Sigara ve burç bu adımdan çıkıp
+// step16'ya taşındı (adım tek soruya indi, diğer üçü "alışkanlıklar/inanç"
+// ekranında toplandı).
+//
+// Alan ZORUNLU: adım artık atlanamıyor. Ekran doğrulamayı "Devam"da imperative
+// koşuyor (resolver submit yolunda kullanılmıyor), kural burada da yazılı dursun.
+export const lifestyleSchema = z.object({
+  relationshipIntent: z.string().min(1),
+});
+
+// RegisterStep16 (sigara + alkol + burç + dini görüş). lifestyleSchema'dan
+// ayrı: alanların hepsi tamamen opsiyonel ve adım atlanabilir, Step14'ün
+// alanıyla birlikte doğrulanmalarını gerektiren bir kural yok.
 export const beliefsSchema = z.object({
+  smokingStatus: z.string().optional(),
   alcoholUsage: z.string().optional(),
+  zodiacSign: z.string().optional(),
   religiousView: z.string().optional(),
 });
 
@@ -192,9 +266,46 @@ export type LifestyleForm = z.infer<typeof lifestyleSchema>;
 export type BeliefsForm = z.infer<typeof beliefsSchema>;
 export type PhotosForm = z.infer<typeof photosSchema>;
 export type ReportForm = z.infer<typeof reportSchema>;
+export type PromptsForm = z.infer<typeof promptsSchema>;
 
 export const editProfileFormSchema = z.object({
-  bio: z.string().max(500, "Biyografi en fazla 500 karakter olabilir"),
+  /**
+   * Prompt cevapları — bio'nun yerini aldı.
+   *
+   * Burada MIN YOK, kayıt adımından farkı bu: migration'dan gelen kullanıcıların
+   * 0 prompt'u var ve yalnızca boyunu değiştirmek için formu açtıklarında hata
+   * almamalılar (backend de aynı sebeple global invariant kurmuyor).
+   *
+   * "Son prompt'u silme" engeli formda: `Prompts` boş gönderilemediği için
+   * (multipart'ta boş liste "gönderilmedi"den ayırt edilemiyor) hepsini silen
+   * istek sunucuda sessizce no-op olur — kullanıcı sildiğini sanır.
+   */
+  prompts: promptListSchema,
+  // İsim — backend `DisplayName`. Tavan neden 100 değil 50: bkz.
+  // DISPLAY_NAME_MAX_LENGTH (gönderilen değer Identity'deki FirstName'e de
+  // yazılıyor ve o kolon nvarchar(50)).
+  //
+  // Boş/whitespace backend'de "değiştirme" demek, "temizle" DEĞİL — yani boş
+  // gönderilen isim sessizce yutulur ve kullanıcı adını sildiğini sanır.
+  // O yüzden burada boş isim geçersiz.
+  displayName: z
+    .string()
+    .trim()
+    .min(1, "Lütfen ismini gir")
+    .max(
+      DISPLAY_NAME_MAX_LENGTH,
+      `İsim en fazla ${DISPLAY_NAME_MAX_LENGTH} karakter olabilir`,
+    ),
+  // Sınıf — ClassYearType ordinali (0 = Hazırlık ... 6). null = "seçilmedi";
+  // 0 ile karıştırılmamalı. Backend'in "temizle" yolu YOK (ClearYearOfStudy
+  // diye bir alan tanımlı değil), bu yüzden bir kez seçildikten sonra yalnızca
+  // başka bir değere çekilebilir.
+  yearOfStudy: z
+    .number()
+    .int()
+    .min(YEAR_OF_STUDY_RANGE.min)
+    .max(YEAR_OF_STUDY_RANGE.max)
+    .nullable(),
   hobbies: z.array(z.number()),
   smoking: z.any().nullable(),
   zodiac: z.any().nullable(),

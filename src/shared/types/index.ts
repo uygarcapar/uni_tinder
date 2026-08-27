@@ -49,6 +49,33 @@ export interface AuthState {
 
 // ─── Profile ───────────────────────────────────────────────────────────────────
 
+/**
+ * Kullanıcının kendi prompt cevabı — düzenleme ve gönderim şekli.
+ *
+ * `promptKey` katalogdaki `enumName` (PascalCase string). Gönderimde indeksli
+ * multipart'a çevriliyor: `Prompts[0].PromptKey` / `Prompts[0].Answer`.
+ */
+export interface ProfilePromptAnswer {
+  promptKey: string;
+  answer: string;
+}
+
+/**
+ * Kartta çizilen prompt — soru metni SUNUCUDA çözülmüş hâlde geliyor.
+ *
+ * `promptDisplay` İZLEYİCİNİN dilinde (diğer `*Display` alanlarıyla aynı kural),
+ * `answer` ise HER ZAMAN ham: profil sahibinin yazdığı dil ve noktalamayla.
+ * Cevabı çevirmeye/normalize etmeye çalışma.
+ *
+ * `promptDisplay` gelmezse (pasife alınmış prompt, eski sürüm sunucu) katalogdan
+ * `findPrompt` ile çözülüyor; o da bulamazsa bölüm çizilmiyor.
+ */
+export interface ProfilePromptCard {
+  promptKey: string;
+  promptDisplay?: string;
+  answer: string;
+}
+
 export interface ProfileState {
   yearOfStudy: string;
   department: number | null;
@@ -59,6 +86,17 @@ export interface ProfileState {
   ageRangeMin: number;
   ageRangeMax: number;
   height: string;
+  /**
+   * Kayıt akışında toplanan prompt cevapları (en az 1, en fazla 3).
+   * Sıra korunuyor: dizideki index = kartta çizilme sırası = backend `DisplayOrder`.
+   */
+  prompts: ProfilePromptAnswer[];
+  /**
+   * @deprecated Bio üründen kaldırıldı, yerini `prompts` aldı. Alan yalnızca
+   * geçiş fazı için duruyor: kayıt akışı artık HİÇ doldurmuyor (boş string
+   * kalıyor ve `put()` boş değerleri multipart'a eklemiyor). Backend Faz 4'te
+   * kolonu düşürünce bu alan da silinecek.
+   */
   bio: string;
   interestedIn: number[];
   hobbies: string[];

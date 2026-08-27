@@ -54,16 +54,83 @@ export const MAX_SWIPE_PAGE_SIZE = 50;
 // payload'ı ikinci kez kırpar.
 export const MAX_UNIVERSITY_DOMAINS = 3;
 
-// Profil fotoğrafı tavanı/tabanı.
+// Profil fotoğrafı tavanı.
 //
-// ÜST SINIR (6) `PUT /api/profile/UpdateProfile`'da backend'de DOĞRULANMIYOR —
-// yalnızca CompleteProfile'da var. Sınırı FE zorlamazsa 7+ fotoğraflı profil
-// oluşuyor ve `PhotoOrders.NewOrder` alanının Range(1,6) doğrulamasıyla
-// çelişiyor (sıralama artık kaydedilemiyor). Yani bu, kozmetik bir UI kuralı
-// değil; tek savunma hattı burası.
+// 2026-08-24'e kadar `PUT /api/profile/UpdateProfile` bu sınırı DOĞRULAMIYORDU
+// (yalnızca CompleteProfile'da vardı) ve tek savunma hattı FE'ydi. Artık
+// backend de doğruluyor → `UT-6203`. FE kontrolü yine de duruyor: kullanıcıyı
+// boş bir ağ turuna sokmadan uyarmak için.
 export const MAX_PROFILE_PHOTOS = 6;
 
-// ALT SINIR: silme sonrası en az 2 fotoğraf kalmalı — bunu backend doğruluyor
-// (400 + "En az 2 fotoğrafınız olmalı..."). FE önden kesiyor ki kullanıcı
-// jenerik "silinemedi" hatası yerine sebebi görsün.
-export const MIN_PROFILE_PHOTOS = 2;
+// ALT SINIR ARTIK SABİT DEĞİL: silme kapısının tabanı sunucudan geliyor
+// (`profileVisibility.requiredPhotoCount`, bkz. resolveRequiredPhotoCount).
+// Nihai söz backend'in `UT-6204`'ü.
+
+// İsim (`UpdateProfile.DisplayName`) tavanı.
+//
+// DTO'daki sınır 100 ama doğru sınır 50: `DisplayName` gönderildiğinde backend
+// `ApplicationUser.FirstName`i de AYNI değerle senkronluyor (kartta görünen ad
+// ile mail/JWT'deki ad ayrışmasın diye) ve o kolon nvarchar(50). 50'yi aşan
+// isimde HATA DÖNMEZ: profil adı tam kaydedilir, Identity tarafı sessizce
+// kırpılır → kullanıcı kartta uzun adını görür, mailler kırpık adla gider.
+// Tek savunma hattı FE, o yüzden MAX_PROFILE_PHOTOS ile aynı sınıfta.
+export const DISPLAY_NAME_MAX_LENGTH = 50;
+
+// ─── Profil prompt'ları ───────────────────────────────────────────────────────
+// Bio'nun yerini alan "cümle başlangıcı + cevap" çiftleri.
+// Sözleşme: `backend_profile_prompts_proposal.md` + backend cevabı (K1–K6).
+
+/** Kullanıcı başına tavan. Backend `UT-2201` ile aynı sınırı doğruluyor. */
+export const MAX_PROFILE_PROMPTS = 3;
+
+/**
+ * Kayıt akışında zorunlu minimum. `UpdateProfile`'da BU KURAL YOK: migration'dan
+ * gelen kullanıcıların 0 prompt'u var ve boyunu değiştirebilmeleri gerekiyor
+ * (öneri §4.6). Sadece "Prompts gönderiliyorsa" geçerli.
+ */
+export const MIN_PROFILE_PROMPTS = 1;
+
+/**
+ * Cevap tavanı — katalogda prompt başına `maxLength` geliyor, bu yalnızca o alan
+ * gelmediğinde kullanılan varsayılan.
+ *
+ * ⚠️ BİRİM: **code point** (`[...s].length`), `s.length` DEĞİL. Backend
+ * `EnumerateRunes().Count()` ile sayıyor (K5). UTF-16 uzunluğuyla sayarsak
+ * emojili cevapta kullanıcı "148/150" görürken 400 yer — sayaç ve doğrulama
+ * ikisi de `countGraphemesSafe` üzerinden geçmeli.
+ */
+export const PROMPT_ANSWER_MAX_LENGTH = 150;
+
+/**
+ * Cevap uzunluğunu backend'le AYNI birimde sayar (code point).
+ *
+ * `"👋 selam".length` → 8 (UTF-16), `countPromptAnswer` → 7. Backend 7 sayıyor.
+ */
+export const countPromptAnswer = (value: string): number => [...value].length;
+
+/**
+ * Backend'in `NormalizeWhitespace` karşılığı: trim + ardışık boşluk/satır sonu
+ * tek boşluğa. Cevabın geri kalanına DOKUNULMAZ (büyük/küçük harf, noktalama).
+ *
+ * Sunucu bunu kaydetmeden önce uyguluyor; sayaç da aynı metni saymalı, yoksa
+ * kullanıcı "150/150" görüp gönderdiğinde sunucuda 148 karakter kaydedilir.
+ */
+export const normalizePromptAnswer = (value: string): string =>
+  value.trim().replace(/\s+/g, " ");
+
+// Sınıf (`UpdateProfile.YearOfStudy`) — ClassYearType ordinali.
+// 0 = Hazırlık ve GEÇERLİ bir değerdir; "seçilmedi" ayrı bir durum (null).
+//
+// Backend artık `Range(0, 6)` doğruluyor. Eskiden `Range(0, 8)`ti ve 7/8
+// gönderilince istek 200 dönüp değer DB'ye yazılıyor, ama enum'da tanımlı
+// olmadığı için `yearOfStudyDisplay` null kalıyordu → kullanıcı "kaydedildi"
+// görüp sınıfını hiçbir yerde göremiyordu. Aralık dışı değer artık 400 döner.
+export const YEAR_OF_STUDY_VALUES = [0, 1, 2, 3, 4, 5, 6];
+export const YEAR_OF_STUDY_RANGE = { min: 0, max: 6 };
+
+/** Sınıf değeri backend'in kabul ettiği aralıkta mı (0 dahil). */
+export const isValidYearOfStudy = (value: unknown): value is number =>
+  typeof value === "number" &&
+  Number.isInteger(value) &&
+  value >= YEAR_OF_STUDY_RANGE.min &&
+  value <= YEAR_OF_STUDY_RANGE.max;
