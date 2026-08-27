@@ -92,7 +92,10 @@ export default function RegisterStep10Screen({ navigation }: NativeStackScreenPr
                 key={opt.enumName}
                 onPress={() => toggle(opt.enumName)}
                 style={{
-                  borderRadius: 30,
+                  // 30, butonun yarı yüksekliğinden (≈29) büyüktü: iOS köşeyi
+                  // tam kapsül çiziyor ve `borderCurve` görünmüyordu. 24'te
+                  // squircle okunur hale geliyor.
+                  borderRadius: 24,
                   borderCurve: "continuous",
                   borderWidth: 0.5,
                   borderColor: active ? colors.inverseSurface : colors.hairline,

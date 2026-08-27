@@ -72,7 +72,11 @@ export default function RegisterStep1Screen({ navigation }: NativeStackScreenPro
 
   const handleSendVerification = handleSubmit(async ({ email }) => {
     Keyboard.dismiss();
-    const trimmed = email.trim();
+    // Küçük harfe indirgeme, taslak sahipliğinin tek işareti olan e-posta
+    // karşılaştırmasını (startFreshIfEmailChanged + Step1 kısayolu + Step15
+    // token kontrolü) yazım farkına duyarsız kılıyor: "Ali@uni.edu.tr" ile
+    // "ali@uni.edu.tr" backend'de AYNI adres, istemcide farklı iki string'di.
+    const trimmed = email.trim().toLowerCase();
     setLoading(true);
     setError("");
 

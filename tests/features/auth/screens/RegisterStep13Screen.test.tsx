@@ -1,6 +1,13 @@
 import { render, fireEvent, waitFor } from '@testing-library/react-native';
+import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
 
 const mockDispatch = jest.fn();
+// Katalog artık `useHobbies` → `staticGet` üzerinden geliyor (ham fetch değil).
+const mockStaticGet = jest.fn();
+jest.mock('@/shared/services/staticCache', () => ({
+  staticGet: (...args: any[]) => mockStaticGet(...args),
+  bustStaticCache: jest.fn(),
+}));
 let mockProfileState: any = { hobbies: [] };
 
 jest.mock('@/shared/hooks/redux', () => ({
@@ -39,6 +46,11 @@ const HOBBIES = {
   ],
 };
 
+// Tek client tüm mount'larda paylaşılıyor: gerçek akışta da katalog
+// react-query desteşinde (staleTime: Infinity) duruyor, ekran remount olunca
+// veri cache'ten geliyor.
+let client: QueryClient;
+
 beforeEach(() => {
   mockProfileState = { hobbies: [] };
   mockDispatch.mockReset();
@@ -47,13 +59,22 @@ beforeEach(() => {
       mockProfileState = { ...mockProfileState, ...action.payload };
     }
   });
-  (globalThis.fetch as jest.Mock).mockResolvedValue({ json: async () => HOBBIES });
+  mockStaticGet.mockReset();
+  mockStaticGet.mockResolvedValue(HOBBIES);
+  client = new QueryClient({ defaultOptions: { queries: { retry: false } } });
 });
 
 const nav: any = { navigate: jest.fn(), goBack: jest.fn() };
 
+const setup = () =>
+  render(
+    <QueryClientProvider client={client}>
+      <RegisterStep13Screen navigation={nav} route={{} as any} />
+    </QueryClientProvider>,
+  );
+
 it('seçimler "Devam"a basılmadan store\'a yazılıyor', async () => {
-  const { getByText } = render(<RegisterStep13Screen navigation={nav} route={{} as any} />);
+  const { getByText } = setup();
   await waitFor(() => getByText('Gym'));
 
   fireEvent.press(getByText('Gym'));
@@ -65,7 +86,7 @@ it('seçimler "Devam"a basılmadan store\'a yazılıyor', async () => {
 });
 
 it('geri dönüp ekrana tekrar girince tüm seçimler duruyor', async () => {
-  const first = render(<RegisterStep13Screen navigation={nav} route={{} as any} />);
+  const first = setup();
   await waitFor(() => first.getByText('Gym'));
   fireEvent.press(first.getByText('Gym'));
   fireEvent.press(first.getByText('Yoga'));
@@ -73,13 +94,24 @@ it('geri dönüp ekrana tekrar girince tüm seçimler duruyor', async () => {
   first.unmount();
 
   // Ekran yeniden mount ediliyor (geri → tekrar ileri)
-  const second = render(<RegisterStep13Screen navigation={nav} route={{} as any} />);
+  const second = setup();
   await waitFor(() => second.getByText('Gym'));
   expect(second.getByText('auth.step13.titleWithCount:3')).toBeTruthy();
 });
 
+it('ikinci girişte katalog cache\'ten geliyor — yeni istek ve iskelet yok', async () => {
+  const first = setup();
+  await waitFor(() => first.getByText('Gym'));
+  first.unmount();
+
+  const second = setup();
+  // waitFor YOK: piller ilk karede duruyor, yani iskelet turu hiç çıkmıyor.
+  expect(second.getByText('Gym')).toBeTruthy();
+  expect(mockStaticGet).toHaveBeenCalledTimes(1);
+});
+
 it('seçim kaldırma da store\'a yansıyor', async () => {
-  const { getByText } = render(<RegisterStep13Screen navigation={nav} route={{} as any} />);
+  const { getByText } = setup();
   await waitFor(() => getByText('Gym'));
 
   fireEvent.press(getByText('Gym'));

@@ -6,11 +6,9 @@ import {
   ActivityIndicator,
   TouchableWithoutFeedback,
   Keyboard,
-  AppState,
   Platform,
 } from "react-native";
 import { OtpInput, type OtpInputRef } from "react-native-otp-entry";
-import * as Clipboard from "expo-clipboard";
 import { NativeStackScreenProps } from "@react-navigation/native-stack";
 import type { AuthStackParamList } from "@/shared/types/navigation";
 import { useAppDispatch, useAppSelector } from "@/shared/hooks/redux";
@@ -21,7 +19,7 @@ import {
   logout,
   setEmailVerifiedToken,
 } from "@/features/auth/authSlice";
-import { Mail, RotateCcw, ArrowLeft, Check, ClipboardPaste, Clock } from "lucide-react-native";
+import { Mail, RotateCcw, ArrowLeft, Check, Clock } from "lucide-react-native";
 import SFIcon from "@/shared/components/SFIcon";
 import { API_BASE_URL, API_ENDPOINTS } from "@/shared/constants/api";
 import AnimatedPressable from "@/shared/components/AnimatedPressable";
@@ -53,7 +51,6 @@ export default function RegisterStep2Screen({ route, navigation }: NativeStackSc
   // hâlâ geçerli olduğu için) geri sayım oradan başlar; söylemiyorsa 0.
   const [countdown, setCountdown] = useState(route?.params?.retryAfterSeconds ?? 0);
   const [isLoggingOut, setIsLoggingOut] = useState(false);
-  const [clipboardHasText, setClipboardHasText] = useState(false);
 
   const otpRef = useRef<OtpInputRef>(null);
   // onFilled + "Doğrula" butonu aynı anda tetiklenebildiği için (yapıştırma
@@ -61,27 +58,6 @@ export default function RegisterStep2Screen({ route, navigation }: NativeStackSc
   const submittingRef = useRef(false);
 
   const dispatch = useAppDispatch();
-
-  // Panoda metin var mı? (içeriği okumaz → iOS'ta izin uyarısı çıkmaz)
-  useEffect(() => {
-    let cancelled = false;
-    const check = () => {
-      Clipboard.hasStringAsync()
-        .then((has) => {
-          if (!cancelled) setClipboardHasText(has);
-        })
-        .catch(() => {});
-    };
-    check();
-    // Kullanıcı kodu mail uygulamasından kopyalayıp geri döndüğünde yakala.
-    const sub = AppState.addEventListener("change", (state) => {
-      if (state === "active") check();
-    });
-    return () => {
-      cancelled = true;
-      sub.remove();
-    };
-  }, []);
 
   useEffect(() => {
     if (countdown > 0) {
@@ -149,22 +125,6 @@ export default function RegisterStep2Screen({ route, navigation }: NativeStackSc
   const handleOtpChange = useCallback((raw: string) => {
     otpRef.current?.setValue(extractOtp(raw));
   }, []);
-
-  /** Uzun basma menüsü çıkmadığında da çalışan garantili yapıştırma yolu. */
-  const handlePasteFromClipboard = async () => {
-    if (loading) return;
-    try {
-      const pasted = extractOtp((await Clipboard.getStringAsync()) ?? "");
-      if (pasted.length !== OTP_LENGTH) {
-        setError(t('auth.step2.validation.clipboardEmpty'));
-        return;
-      }
-      setError("");
-      otpRef.current?.setValue(pasted); // onFilled → handleVerify
-    } catch {
-      setError(t('auth.step2.validation.clipboardEmpty'));
-    }
-  };
 
   const handleResend = async () => {
     if (countdown > 0) return;
@@ -364,37 +324,6 @@ export default function RegisterStep2Screen({ route, navigation }: NativeStackSc
                   </View>
                 )}
               </TouchableOpacity>
-
-              {clipboardHasText && (
-                <>
-                  <View
-                    style={{
-                      width: 1,
-                      height: 14,
-                      backgroundColor: ink(0.2),
-                    }}
-                  />
-                  <TouchableOpacity
-                    activeOpacity={0.8}
-                    onPress={handlePasteFromClipboard}
-                    disabled={loading}
-                  >
-                    <View className="flex-row py-[2px] items-center gap-2">
-                      <SFIcon
-                        name="doc.on.clipboard"
-                        fallback={ClipboardPaste}
-                        size={16}
-                        color={colors.text}
-                        strokeWidth={2.5}
-                        weight="bold"
-                      />
-                      <Text className="font-medium" style={{ color: colors.text }}>
-                        {t('auth.step2.pasteButton')}
-                      </Text>
-                    </View>
-                  </TouchableOpacity>
-                </>
-              )}
             </View>
 
             <AnimatedPressable

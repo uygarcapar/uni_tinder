@@ -28,7 +28,12 @@ function RegisterBackButton({ onPress, color = colors.text }: Props) {
 
   if (Platform.OS === "ios") {
     return (
-      <Host matchContents>
+      // Host'a SABİT ölçü veriliyor, `matchContents` DEĞİL: intrinsic ölçü
+      // native taraftan bir kare sonra geliyor ve o ilk karede host 0×0 kalıyor.
+      // SwiftUI butonu sıfır ölçülü host'ta kırpılmadığı için 44'lük kutusu
+      // origin'e ORTALANARAK çiziliyor — buton ekranın soluna taşmış görünüp
+      // ölçü gelince yerine sıçrıyordu. Ölçü zaten `frame` modifier'ıyla sabit.
+      <Host style={{ width: 44, height: 44 }}>
         <SwiftUIButton
           label={t("common.back")}
           systemImage="chevron.left"

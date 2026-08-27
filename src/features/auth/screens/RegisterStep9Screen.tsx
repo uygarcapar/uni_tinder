@@ -26,21 +26,34 @@ import { useTranslation } from "react-i18next";
  *
  * İzin isteği ekrandan DEĞİL, ekran odaklanınca otomatik açılan bottom sheet'ten
  * yürütülüyor (LocationPermissionSheet). Sheet swipe ile kapatılırsa ekrandaki
- * sticky buton geri açar.
+ * sticky buton geri açar — ama o yol `requestOnOpen` ile açar: kullanıcı aynı
+ * metni ikinci kez okuyup ikinci kez butona basmasın, sheet açılır açılmaz izin
+ * isteği kendiliğinden gitsin. Odakla açılan İLK sheet'te bu bayrak kapalı
+ * (priming önce okunsun).
  */
 export default function RegisterStep9Screen({ navigation }: NativeStackScreenProps<AuthStackParamList, 'RegisterStep9'>) {
   const { t } = useTranslation();
   const dispatch = useAppDispatch();
 
   const [sheetVisible, setSheetVisible] = useState(false);
+  const [autoRequest, setAutoRequest] = useState(false);
 
   // Ekran odaklanınca sheet açılır; Step10'a geçerken (blur) kendiliğinden kapanır.
   useFocusEffect(
     useCallback(() => {
+      setAutoRequest(false);
       setSheetVisible(true);
       return () => setSheetVisible(false);
     }, []),
   );
+
+  // Sticky buton: sheet'i geri açar VE sheet'teki butona basılmış gibi izin
+  // isteğini tetikler. İki state aynı render'da batch'lendiği için sheet
+  // visible=true'ya geçtiğinde requestOnOpen zaten true.
+  const reopenSheetAndRequest = useCallback(() => {
+    setAutoRequest(true);
+    setSheetVisible(true);
+  }, []);
 
   // Sheet izni aldıktan sonra çağırır. Hata fırlatırsa sheet spinner'dan çıkıp
   // idle'a döner (kullanıcı tekrar deneyebilir) — denied ekranı gösterilmez.
@@ -101,10 +114,10 @@ export default function RegisterStep9Screen({ navigation }: NativeStackScreenPro
         </Text>
       </View>
 
-      {/* Sticky Button — sheet swipe ile kapatıldıysa geri açar */}
+      {/* Sticky Button — sheet swipe ile kapatıldıysa geri açar ve izni ister */}
       <View className="px-8 pb-8 pt-4">
         <AnimatedPressable
-          onPress={() => setSheetVisible(true)}
+          onPress={reopenSheetAndRequest}
           style={{ borderRadius: 999, borderCurve: "continuous", overflow: "hidden", backgroundColor: colors.inverseSurface }}
         >
           <Text className="py-[20px] font-bold text-[15px] text-center" style={{ color: colors.onInverseSurface }}>
@@ -115,6 +128,7 @@ export default function RegisterStep9Screen({ navigation }: NativeStackScreenPro
 
       <LocationPermissionSheet
         visible={sheetVisible}
+        requestOnOpen={autoRequest}
         onClose={() => setSheetVisible(false)}
         onGranted={captureAndContinue}
       />

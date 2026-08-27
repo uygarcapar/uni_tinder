@@ -28,12 +28,19 @@ import { devLog } from "@/shared/utils/devLog";
  * Ayarlar'a yönlendirir; Ayarlar'dan dönüşü AppState 'active' ile yakalayıp
  * izni tekrar kontrol eder (navigation focus event'i uygulamadan çıkışta
  * fire etmediği için bu kontrol AppState'e bağlı).
+ *
+ * `requestOnOpen` bu priming mantığının BİLİNÇLİ istisnası: sheet ekrandaki
+ * "konuma izin ver" butonundan açıldıysa kullanıcı priming'i zaten görmüş ve
+ * butona basmış oluyor — aynı metni bir kez daha okutup ikinci bir tıklama
+ * istemek yerine sistem dialogunu doğrudan açıyoruz.
  */
 type PermState = "idle" | "requesting" | "denied";
 
 interface LocationPermissionSheetProps {
   visible: boolean;
   onClose: () => void;
+  /** Sheet açılır açılmaz izin isteğini tetikle (sheet'teki butona basılmış gibi). */
+  requestOnOpen?: boolean;
   /** İzin alındı — parent koordinatı okur/navigate eder. Promise boyunca spinner döner. */
   onGranted: () => void | Promise<unknown>;
 }
@@ -41,11 +48,13 @@ interface LocationPermissionSheetProps {
 export default function LocationPermissionSheet({
   visible,
   onClose,
+  requestOnOpen = false,
   onGranted,
 }: LocationPermissionSheetProps) {
   const { t } = useTranslation();
   const [permState, setPermState] = useState<PermState>("idle");
   const mountedRef = useRef(true);
+  const autoRequestedRef = useRef(false);
 
   useEffect(() => {
     mountedRef.current = true;
@@ -56,7 +65,10 @@ export default function LocationPermissionSheet({
 
   // Sheet kapanıp tekrar açıldığında eski denied ekranıyla açılmasın.
   useEffect(() => {
-    if (!visible) setPermState("idle");
+    if (!visible) {
+      setPermState("idle");
+      autoRequestedRef.current = false;
+    }
   }, [visible]);
 
   const runGranted = useCallback(async () => {
@@ -93,6 +105,16 @@ export default function LocationPermissionSheet({
     Linking.openSettings().catch(() => {});
   }, []);
 
+  // Otomatik istek present animasyonu BİTİNCE tetiklenir (visible=true anında
+  // değil): sistem dialogu yarı açılmış sheet'in üstüne düşerse arkada boş bir
+  // panel kalıyor. Ref guard'ı gorhom'un onChange'i aynı snap için birden çok
+  // kez fire ederse ikinci isteği engelliyor; sheet kapanınca sıfırlanıyor.
+  const handlePresented = useCallback(() => {
+    if (!requestOnOpen || autoRequestedRef.current) return;
+    autoRequestedRef.current = true;
+    handleRequest();
+  }, [requestOnOpen, handleRequest]);
+
   // Ayarlar'dan izin verip döndüğünde sheet denied'da takılı kalmasın.
   useEffect(() => {
     if (!visible || permState !== "denied") return;
@@ -114,6 +136,7 @@ export default function LocationPermissionSheet({
     <AppBottomSheet
       visible={visible}
       onClose={onClose}
+      onPresented={handlePresented}
       snapPoints={["58%"]}
       handleIndicatorStyle={{ backgroundColor: ink(0.25) }}
       backdrop="blur"

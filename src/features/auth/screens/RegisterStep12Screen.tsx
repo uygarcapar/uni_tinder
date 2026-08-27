@@ -1,4 +1,4 @@
-import { useRef } from "react";
+import { useRef, useState } from "react";
 import {
   View,
   Text,
@@ -26,6 +26,11 @@ import { useTranslation } from 'react-i18next';
 const MIN_HEIGHT = 140;
 const MAX_HEIGHT = 220;
 const RANGE = MAX_HEIGHT - MIN_HEIGHT;
+// Cetvelin kutu kenarlarından içeri çekildiği pay: çentikler ve imleç kenara
+// dayanmıyor, uçtaki değerler de kutunun köşesine sıkışmıyor. Çentik şeridi,
+// imleç ve dolu alan AYNI payı kullanmak zorunda — biri kayarsa imleç
+// çizgisi çentiklerle hizasını kaybeder.
+const RULER_INSET = 20;
 
 export default function RegisterStep12Screen({ navigation }: NativeStackScreenProps<AuthStackParamList, 'RegisterStep12'>) {
   const { t } = useTranslation();
@@ -46,8 +51,11 @@ export default function RegisterStep12Screen({ navigation }: NativeStackScreenPr
 
   const height = watch("height");
 
-  // Slider width — onLayout ile ölçülür, pan responder closure içinde ref olarak okunur.
+  // Slider width — onLayout ile ölçülür. Ref pan responder closure'ı için
+  // (stable), state ise imleç/dolgu konumunu piksel olarak çizebilmek için:
+  // kenar payı yüzde matematiğine sığmıyor, ölçülen genişlik gerekiyor.
   const sliderWidthRef = useRef(0);
+  const [sliderWidth, setSliderWidth] = useState(0);
   const lastHapticHeightRef = useRef(initialHeight);
   const dragStartHeightRef = useRef(initialHeight);
   const valueScale = useRef(new Animated.Value(1)).current;
@@ -93,9 +101,11 @@ export default function RegisterStep12Screen({ navigation }: NativeStackScreenPr
         if (shrinkTimerRef.current) clearTimeout(shrinkTimerRef.current);
       },
       onPanResponderMove: (_e, gestureState) => {
-        const w = sliderWidthRef.current;
-        if (w === 0) return;
-        const deltaCm = Math.round((gestureState.dx / w) * RANGE);
+        // Sürükleme de kenar payından arındırılmış eksene göre: parmak
+        // cetvelin çizili bölümü kadar yol alınca tam RANGE değişsin.
+        const usable = sliderWidthRef.current - RULER_INSET * 2;
+        if (usable <= 0) return;
+        const deltaCm = Math.round((gestureState.dx / usable) * RANGE);
         const newH = Math.max(MIN_HEIGHT, Math.min(MAX_HEIGHT, dragStartHeightRef.current + deltaCm));
         applyHeight(newH);
       },
@@ -103,6 +113,10 @@ export default function RegisterStep12Screen({ navigation }: NativeStackScreenPr
       onPanResponderTerminate: startShrink,
     }),
   ).current;
+
+  // İmlecin piksel konumu — çentik şeridiyle aynı daraltılmış eksende.
+  const rulerUsable = Math.max(0, sliderWidth - RULER_INSET * 2);
+  const thumbX = RULER_INSET + ((height - MIN_HEIGHT) / RANGE) * rulerUsable;
 
   const handleNext = handleSubmit(({ height: h }) => {
     Keyboard.dismiss();
@@ -132,7 +146,11 @@ export default function RegisterStep12Screen({ navigation }: NativeStackScreenPr
             <Text className="text-[14px] font-semibold mb-2" style={{ color: colors.neutral200 }}>{t('auth.step12.heightLabel')}</Text>
             <View
               {...panResponder.panHandlers}
-              onLayout={(e) => { sliderWidthRef.current = e.nativeEvent.layout.width; }}
+              onLayout={(e) => {
+                const w = e.nativeEvent.layout.width;
+                sliderWidthRef.current = w;
+                setSliderWidth(w);
+              }}
               style={{ position: "relative" }}
             >
               {/* Thumb */}
@@ -142,9 +160,9 @@ export default function RegisterStep12Screen({ navigation }: NativeStackScreenPr
                   position: "absolute",
                   top: -4,
                   bottom: -4,
-                  left: `${((height - MIN_HEIGHT) / RANGE) * 100}%`,
+                  left: thumbX,
                   width: 3,
-                  marginLeft: -0.75,
+                  marginLeft: -1.5,
                   borderRadius: 2,
                   backgroundColor: colors.textDisabled,
                   zIndex: 0,
@@ -166,14 +184,16 @@ export default function RegisterStep12Screen({ navigation }: NativeStackScreenPr
                     left: 0,
                     top: 0,
                     bottom: 0,
-                    width: `${((height - MIN_HEIGHT) / RANGE) * 100}%`,
+                    // Dolgu kutunun sol kenarından başlıyor ama imleçte bitiyor:
+                    // ikisi ayrı referans kullanırsa dolgunun ucu çizgiden kayar.
+                    width: thumbX,
                     backgroundColor: colors.shimmer,
                   }}
                 />
                 {/* Cetvel */}
                 <View
                   pointerEvents="none"
-                  style={{ position: "absolute", left: 0, right: 0, bottom: 5, height: 6, flexDirection: "row", justifyContent: "space-between" }}
+                  style={{ position: "absolute", left: RULER_INSET, right: RULER_INSET, bottom: 5, height: 6, flexDirection: "row", justifyContent: "space-between" }}
                 >
                   {Array.from({ length: RANGE + 1 }).map((_, i) => (
                     <View

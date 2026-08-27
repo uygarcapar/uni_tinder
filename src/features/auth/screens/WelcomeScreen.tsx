@@ -1,4 +1,4 @@
-import { useRef } from "react";
+import { useRef, useState } from "react";
 import {
   View,
   Text,
@@ -6,16 +6,45 @@ import {
   Dimensions,
   Image,
   Animated,
+  StyleSheet,
 } from "react-native";
 import { LinearGradient } from "expo-linear-gradient";
 import { StatusBar } from "expo-status-bar";
+import { useVideoPlayer, VideoView } from "expo-video";
 import { NativeStackScreenProps } from "@react-navigation/native-stack";
 import type { AuthStackParamList } from "@/shared/types/navigation";
-import { colors, gradients, onMediaAt } from "../../../shared/theme/colors";
+import { colors, onMediaAt } from "../../../shared/theme/colors";
 import { useTranslation } from 'react-i18next';
+import LegalSheet, { type LegalDocument } from "../components/LegalSheet";
 
 // Ekran boyutunu alıyoruz (Garanti olsun diye)
 const { width, height } = Dimensions.get("window");
+
+// Kusursuz loop için hazırlanmış sürüm: son ~0.6 sn baştaki karelerle
+// çapraz geçişe sokulup kırpıldı, böylece bitiş karesi başlangıcın bir
+// öncesine denk geliyor ve başa dönüş görünmüyor. Kesme noktası videonun
+// en durgun anı (kare 14→15) seçildi.
+const BACKGROUND_VIDEO = require("../../../../assets/videos/onboarding-bg2-loop.mp4");
+
+// Perde düz artmıyor, bilerek "bel" veriyor: üstte status bar için hafif
+// koyuluk, %32'de en açık nokta (videonun görünmesini istediğimiz bölge —
+// bank ve ağaç tüneli orada), sonra alt üçte birde sert yükseliş. Kritik
+// yüzeyler (outline buton, %70 opak sözleşme metni) o sert bölgeye denk
+// geldiği için neredeyse düz koyu zemine oturuyorlar. Renk katmıyor.
+const SCRIM_DARK: readonly [string, string, string, string] = [
+  "rgba(0,0,0,0.38)",
+  "rgba(0,0,0,0.28)",
+  "rgba(0,0,0,0.72)",
+  "rgba(0,0,0,0.98)",
+];
+const SCRIM_LOCATIONS: readonly [number, number, number, number] = [0, 0.32, 0.7, 1];
+
+// Kaynak 9:16, ekran ondan uzun — "cover" yüksekliğe göre ölçeklediği için
+// kırpma YATAYDA oluyor, videonun tüm yüksekliği zaten ekranda. Dolayısıyla
+// içeriği yukarı kaydırmanın tek yolu görünümü ekrandan uzun tutup üstten
+// negatif konumlandırmak. Amaç banktaki çifti buton bloğunun ve perdenin
+// koyu bölgesinin üstüne çıkarmak; bedeli ~%7 daha fazla büyütme.
+const VIDEO_SHIFT = 64;
 
 const PressableScaleButton = ({ onPress, style, className, children }: any) => {
   const scale = useRef(new Animated.Value(1)).current;
@@ -55,15 +84,39 @@ const PressableScaleButton = ({ onPress, style, className, children }: any) => {
 
 export default function WelcomeScreen({ navigation }: NativeStackScreenProps<AuthStackParamList, 'Welcome'>) {
   const { t } = useTranslation();
+  const [legalDoc, setLegalDoc] = useState<LegalDocument | null>(null);
+
+  const player = useVideoPlayer(BACKGROUND_VIDEO, (p) => {
+    p.loop = true;
+    p.muted = true;
+    // Kullanıcının müziğini kesmesin — video zaten sessiz.
+    p.audioMixingMode = "mixWithOthers";
+    p.play();
+  });
+
+  // Odak değişiminde BİLEREK duraklatmıyoruz: Login/Register'dan geri
+  // dönüldüğünde video kaldığı yerden devam etsin, durup-başlaması görünmesin.
+  // Uygulama arka plana atılınca iOS/Android zaten oynatmayı kendisi kesiyor.
+
   return (
-    <View className="flex-1" style={{ backgroundColor: colors.primary }}>
-      <StatusBar style="dark" />
+    // Video ilk kareyi çizene kadar görünen taban. Turuncu filtre kalktığı için
+    // burası da siyah — yoksa açılışta turuncudan koyuya sıçrama oluyor.
+    <View className="flex-1" style={{ backgroundColor: "#000", overflow: "hidden" }}>
+      <StatusBar style="light" />
+
+      <VideoView
+        player={player}
+        style={[StyleSheet.absoluteFill, { top: -VIDEO_SHIFT }]}
+        contentFit="cover"
+        nativeControls={false}
+        pointerEvents="none"
+        accessible={false}
+      />
 
       <LinearGradient
-        colors={gradients.welcomeBackdrop}
-        locations={[0, 0.55, 1]}
-        start={{ x: 0.1, y: 0 }}
-        end={{ x: 0.9, y: 1 }}
+        colors={SCRIM_DARK}
+        locations={SCRIM_LOCATIONS}
+        pointerEvents="none"
         style={{
           position: "absolute",
           left: 0,
@@ -124,18 +177,38 @@ export default function WelcomeScreen({ navigation }: NativeStackScreenProps<Aut
             </PressableScaleButton>
           </View>
 
+          {/* Link'ler iç içe <Text> — sarmalayan paragraf akışı bozulmasın diye
+              TouchableOpacity kullanılmıyor; iç <Text>'in kendi onPress'i var.
+              suppressHighlighting: iOS'ta basılıyken metnin gri kutuya
+              dönmesini engeller, video üstünde çirkin duruyor. */}
           <Text className="opacity-70 text-sm text-center mt-8" style={{ color: colors.onMedia }}>
             {t('auth.welcome.termsAccept')
               .split('<1>')[0]}
-            <Text className=" underline">{t('auth.welcome.termsLink')}</Text>
+            <Text
+              className=" underline"
+              suppressHighlighting
+              accessibilityRole="link"
+              onPress={() => setLegalDoc('terms')}
+            >
+              {t('auth.welcome.termsLink')}
+            </Text>
             {t('auth.welcome.termsAccept')
               .split('</1>')[1]?.split('<2>')[0]}
-            <Text className=" underline">{t('auth.welcome.privacyLink')}</Text>
+            <Text
+              className=" underline"
+              suppressHighlighting
+              accessibilityRole="link"
+              onPress={() => setLegalDoc('privacy')}
+            >
+              {t('auth.welcome.privacyLink')}
+            </Text>
             {t('auth.welcome.termsAccept')
               .split('</2>')[1]}
           </Text>
         </View>
       </View>
+
+      <LegalSheet document={legalDoc} onClose={() => setLegalDoc(null)} />
     </View>
   );
 }
