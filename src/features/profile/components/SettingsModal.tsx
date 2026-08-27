@@ -36,14 +36,13 @@ import {
   type ThemePreference,
 } from "@/shared/theme/themeMode";
 import BlockedUsersModal from "@/features/profile/components/BlockedUsersModal";
-import { useQueryClient } from "@tanstack/react-query";
 import api, { refreshAccessToken } from "@/shared/services/api";
 import { API_ENDPOINTS } from "@/shared/constants/api";
-import { swipeKeys } from "@/features/discover/swipeKeys";
 import chatService from "@/features/chat/chatService";
 import profileService from "@/features/profile/profileService";
 import { logout } from "@/features/auth/authSlice";
 import { navigationRef } from "@/shared/services/navigationRef";
+import { shortNetError } from "@/shared/utils/netError";
 import {
   buildIapReport,
   clearIapDiagnostics,
@@ -116,15 +115,22 @@ export default function SettingsModal({ visible, onClose }: any) {
     }
   };
 
-  // Arayüz dili i18n ile ANINDA değişiyor. Sunucudan gelen metinler (keşif
-  // kartlarındaki hobiler, konuşulan diller, evcil hayvan vb.) ise JWT'deki
-  // `language` claim'ine bakıyor ve claim token yenilenene kadar — yani 2 saate
-  // kadar — eski dilde kalıyor. Profil güncellendikten SONRA token'ı tazeleyip
-  // desteyi invalidate ediyoruz ki kartlar da yeni dile geçsin.
+  // Arayüz dili i18n ile ANINDA değişiyor. Sunucudan gelen metinler (kartlardaki
+  // hobiler, `*Display` alanları, prompt başlıkları) ise ÇEKİLDİĞİ ANDAKİ
+  // `Accept-Language`'a göre sunucuda çözülmüş tek dilli string — yeniden
+  // çekilmedikçe eski dilde kalıyor ve kart yarı Türkçe yarı İngilizce görünüyor.
+  //
+  // BU TAZELEME ARTIK BURADA DEĞİL: App.tsx `LanguageSyncer` dil değişir değişmez
+  // header'ı güncelleyip ilgili cache'leri (`["common"]` + deste) invalidate
+  // ediyor. Buraya bağlıyken tazeleme aşağıdaki iki ağ çağrısının BAŞARISINA
+  // bağlıydı; biri patlarsa (offline/429) kart sessizce karışık dilde kalıyordu.
+  //
+  // Geriye kalan `updateProfile` backend'in DB'deki `Language` alanı için —
+  // sunucunun kendi başlattığı metinler (push bildirimi, e-posta) onu okuyor,
+  // istekteki header'ı değil. Token yenilemesi de claim'i güncel tutmak için.
   //
   // Zincir await EDİLMİYOR: dil seçimi UI'da beklemesin, ağ hatası da seçimi
-  // geri almasın. Token tazelenemezse tek kayıp, kartların bir sonraki doğal
-  // yenilenmeye kadar eski dilde kalması.
+  // geri almasın.
   // "system" yalnız bir TERCİH — i18n'e ve backend'e her zaman çözülmüş dil
   // ("tr"/"en") gidiyor, aksi halde Language alanı binder'da düşerdi.
   const handleLanguageSelect = (pref: LanguagePreference) => {
@@ -134,9 +140,6 @@ export default function SettingsModal({ visible, onClose }: any) {
     profileService
       .updateProfile({ Language: lang })
       .then(() => refreshAccessToken())
-      .then((token) => {
-        if (token) qc.invalidateQueries({ queryKey: swipeKeys.matches });
-      })
       .catch(() => {});
   };
 

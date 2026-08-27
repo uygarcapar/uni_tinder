@@ -47,6 +47,7 @@ import i18n from "./src/shared/i18n";
 import { setCurrentLanguage } from "./src/shared/services/api";
 import { setLanguage } from "./src/shared/store/settingsSlice";
 import { bustStaticCache } from "./src/shared/services/staticCache";
+import { swipeKeys } from "./src/features/discover/swipeKeys";
 
 // Modul-level — Fast Refresh ile module re-execute olduğunda yeni değer alır.
 // Production'da modul yalnız bir kez evaluate edildiği için sabit kalır.
@@ -71,13 +72,24 @@ function LanguageSyncer() {
 
   useEffect(() => {
     if (!language) return;
-    if (i18n.language !== language) {
-      i18n.changeLanguage(language);
-      // Statik referans listeleri (şehir/hobi/burç adları) Accept-Language'a göre
-      // lokalize geliyor → dil değişince oturum cache'ini boşalt, yeni dilde çekilsin.
-      bustStaticCache();
-    }
+    const changed = i18n.language !== language;
+    if (changed) i18n.changeLanguage(language);
+    // Header ÖNCE güncellenmeli: aşağıdaki invalidate'in tetiklediği refetch'ler
+    // yeni dille çıksın.
     setCurrentLanguage(language);
+    if (!changed) return;
+    // Statik referans listeleri (şehir/hobi/burç adları) Accept-Language'a göre
+    // lokalize geliyor → dil değişince oturum cache'ini boşalt, yeni dilde çekilsin.
+    bustStaticCache();
+    // Sunucudan lokalize gelen her şeyi tazele. Kartın metinlerinin BÜYÜK KISMI
+    // (`*Display`, `hobbies[].name`, `promptDisplay`) çekildiği andaki dile göre
+    // sunucuda çözülmüş sabit string; `t()` metinleri anında dönerken bunlar
+    // cache'te eski dilde kalıyor ve kart yarı Türkçe yarı İngilizce görünüyor.
+    // Deste anahtarında dil yok + `refetchOnMount:false` olduğu için kendiliğinden
+    // düzelmiyordu — busting'i dil değişiminin KENDİSİNE bağlıyoruz, Ayarlar'daki
+    // profil-güncelle/token-yenile zincirinin başarısına değil.
+    queryClient.invalidateQueries({ queryKey: ["common"] });
+    queryClient.invalidateQueries({ queryKey: swipeKeys.matches });
   }, [language]);
   return null;
 }
