@@ -16,13 +16,14 @@ import Animated, {
 import type { SharedValue } from "react-native-reanimated";
 import * as Haptics from "expo-haptics";
 import SwipeCard from "@/features/discover/components/SwipeCard";
+import { runFlameSweep } from "@/features/discover/flameSweep";
 import uiBus, { cardExpandAnim, cardPullProgress } from "@/shared/services/uiBus";
+import { photoPinchActive } from "@/shared/components/pinchZoom";
 import { useRenderCount } from "@/shared/debug/useRenderCount";
-import type { PotentialMatch } from "@/shared/types";
+import type { NoteTarget, PotentialMatch } from "@/shared/types";
 
-const { width, height } = Dimensions.get("window");
+const { width } = Dimensions.get("window");
 const SWIPE_THRESHOLD = 85;
-const EXIT_HEIGHT = height * 1.2;
 const SUPER_LIKE_PULL_THRESHOLD = 50; // pull down ty.value bu px'e ulaşınca süper beğeni "ready"
 
 // Animasyon süreleri
@@ -50,10 +51,17 @@ interface SwipeWrapperProps {
   onSuperLike: () => void;
   swipeQuotaExhausted?: boolean;
   superLikeQuotaExhausted?: boolean;
+  /**
+   * Bu kart, ekranı kaplayan bir kutlamanın ALTINDA top karta yükseldi: giriş
+   * animasyonu atlanır, kart doğrudan son hâlinde çizilir (bkz. `scale`).
+   */
+  snapEntry?: boolean;
   superLikesRemaining: number | null;
   /** Kart altındaki moderasyon ikonları — VERİLMEZSE hiç çizilmez. */
   onReport?: (profile: PotentialMatch) => void;
   onBlock?: (profile: PotentialMatch) => void;
+  /** Not kutuları — VERİLMEZSE hiç çizilmez (bkz. SwipeCard.onNote). */
+  onNote?: (profile: PotentialMatch, target: NoteTarget) => void;
 }
 
 function SwipeWrapper({
@@ -70,9 +78,11 @@ function SwipeWrapper({
   onSuperLike,
   swipeQuotaExhausted = false,
   superLikeQuotaExhausted = false,
+  snapEntry = false,
   superLikesRemaining,
   onReport,
   onBlock,
+  onNote,
 }: SwipeWrapperProps) {
   useRenderCount("SwipeWrapper");
   // Expanded'ken kart header'ın üstüne binip orada kalsın (kapatılana kadar).
@@ -182,10 +192,39 @@ function SwipeWrapper({
     uiBus.emit("superLikePaywall", {});
   };
 
-  // Super-like onaylanınca kalp ikonundan yukarı süzülen kalp patlaması.
-  const emitSuperLikeBurst = () => {
-    uiBus.emit("superLikeBurst");
+  /**
+   * Süper beğeni onaylandı.
+   *
+   * Kart FIRLAMIYOR: yerinde kalıyor, kutlama ekranı alttan yukarı süpürüyor ve
+   * deste dalga ekranı tam kapattığında ilerliyor (sözleşme: flameSweep). Not
+   * gönderimi de aynı yolu kullanıyor.
+   *
+   * Eskiden kart 320 ms'de yukarı fırlar, swipe da orada işlenirdi: alev daha
+   * ekranın alt yarısındayken kart çoktan gitmiş, yenisi açıkta belirmiş olurdu.
+   */
+  const flameCoverUnsub = React.useRef<(() => void) | null>(null);
+  const runSuperLike = () => {
+    if (flameCoverUnsub.current) return;
+    flameCoverUnsub.current = runFlameSweep(() => {
+      flameCoverUnsub.current = null;
+      onSwipe("up", profile.userId);
+    });
   };
+  // Kart örtme anından ÖNCE ağaçtan düşerse (deste tazelendi, sekme değişti,
+  // tema remount'u) dinleyici arkada kalmasın.
+  useEffect(
+    () => () => {
+      flameCoverUnsub.current?.();
+      flameCoverUnsub.current = null;
+    },
+    [],
+  );
+
+  // Süper beğeni işlendi ve örtme bekleniyor. Kart hâlâ ekranda ve dokunulabilir
+  // duruyor; bu bayrak o pencerede İKİNCİ bir karar alınmasını engelliyor
+  // (jestler ve buton tetiklemeleri) — aksi halde aynı profile art arda iki
+  // swipe gidebilirdi.
+  const superLikePending = useSharedValue(false);
 
   // Worklet'ten okumak için mirror — runOnJS'siz quota check.
   const quotaExhaustedSV = useSharedValue(swipeQuotaExhausted);
@@ -204,6 +243,8 @@ function SwipeWrapper({
       overlayOpacity.value = 1;
       buttonDragX.value = 0;
       hasVibrated.value = false;
+      // Canlı kart artık bu: bekleyen bir süper beğeni kilidi devralınmasın.
+      superLikePending.value = false;
       return;
     }
     // Kart tepeden düştü. Deste yalnız ileri gitmiyor: rewind currentIndex'i
@@ -222,6 +263,7 @@ function SwipeWrapper({
     buttonDragX,
     expandedSV,
     scrollY,
+    superLikePending,
   ]);
 
   const exitConfig = {
@@ -234,10 +276,41 @@ function SwipeWrapper({
     easing: Easing.out(Easing.quad),
   };
 
+  /**
+   * Süper beğeninin GÖRSEL tarafı — jest ve buton yolları aynı yere düşsün.
+   *
+   * Kart yerine oturuyor: pull-down geri sarılıyor, dolan kalp sönüyor, açıksa
+   * panel kapanıyor. Sonrası alevde: değişimi runSuperLike bekletiyor.
+   */
+  const commitSuperLike = () => {
+    "worklet";
+    if (superLikePending.value) return;
+    superLikePending.value = true;
+    const cfg = { damping: 16, stiffness: 380, mass: 1 };
+    ty.value = withSpring(0, cfg);
+    superLikeProgress.value = withSpring(0);
+    cardPullProgress.value = withSpring(0);
+    // commitExpanded, cardExpandAnim'i tek başına sıfırlamaktan farklı: React
+    // `expanded` aynasını da indiriyor. Kart artık uçup unmount OLMADIĞI için
+    // ikisinin ayrışması (görsel collapsed + ScrollView açık) gerçek bir hâl.
+    if (expandedSV.value) commitExpanded(false);
+    if (cardExpandAnim.value > 0)
+      cardExpandAnim.value = withTiming(0, { duration: 300 });
+    runOnJS(runSuperLike)();
+  };
+
   useAnimatedReaction(
     () => programmaticSwipe?.value,
     (value, previous) => {
       if (!isTopCard || value === 0 || value === previous) return;
+      // Süper beğeni örtme bekliyor: buton tetiklemeleri yutulsun. Bayrağı
+      // SIFIRLAMAK şart — non-zero kalırsa bir sonraki kart mount olduğunda
+      // reaction'ın ilk çalışmasında (previous === undefined) tetiklenir ve
+      // yeni kart kendiliğinden kayar.
+      if (superLikePending.value) {
+        programmaticSwipe.value = 0;
+        return;
+      }
 
       if (value === 1) {
         dragX.value = withTiming(-150, { duration: FADE_IN_DURATION });
@@ -270,17 +343,8 @@ function SwipeWrapper({
         buttonDragX.value = withTiming(0, fadeOutConfig);
         programmaticSwipe.value = 0;
       } else if (value === 3) {
-        // Süper beğeni — kart yukarı doğru ucar (biraz daha yavaş)
-        runOnJS(emitSuperLikeBurst)();
-        if (cardExpandAnim.value > 0)
-          cardExpandAnim.value = withTiming(0, { duration: 300 });
-        ty.value = withTiming(
-          -EXIT_HEIGHT,
-          { duration: 500, easing: Easing.out(Easing.cubic) },
-          () => {
-            runOnJS(onSwipe)("up", profile.userId);
-          },
-        );
+        // Süper beğeni — kart yerinde kalır, değişimi alev örter.
+        commitSuperLike();
         programmaticSwipe.value = 0;
       }
     },
@@ -289,6 +353,16 @@ function SwipeWrapper({
 
   const scale = useDerivedValue(() => {
     if (isTopCard) {
+      // Deste alevin ALTINDA ilerlediyse (süper beğeni) büyüme animasyonu YOK.
+      // Değişimin kendisi örtülüyor ama 0.92→1 yayı ~yarım saniye sürüyor:
+      // dalga çekildikten sonra da devam ettiği için kart "o an geliyormuş"
+      // gibi görünüyordu. Örtülü değişimde kart son hâlinde doğuyor.
+      //
+      // snapEntry bir prop, yani worklet'in kapanışına RENDER anında giriyor —
+      // UI thread'de bu satırın ne zaman değerlendirildiği kararı değiştirmez
+      // (paylaşılan bir bayrak okusaydı, swap'taki JS takılması kararı
+      // kaçırabilirdi).
+      if (snapEntry) return 1;
       return withSpring(1, { damping: 20, stiffness: 100 });
     }
 
@@ -300,6 +374,43 @@ function SwipeWrapper({
     return interpolate(combined, [0, 1], [0.92, 1], Extrapolate.CLAMP);
   });
 
+  /**
+   * Foto büyütme (pinch) başlayınca kartın sürüklemesini iptal et.
+   *
+   * İki parmak birbirinden uzaklaşırken parmakların ORTAK hareketi pan için tek
+   * parmaklı bir sürüklemeden ayırt edilemiyor: kart yana kayıyor, hatta
+   * beğeni/geçme eşiğini geçiyordu. Jest ilişkisi (blocksExternalGesture)
+   * yerine bayrak: "önce pinch'in başarısız olmasını bekle" ilişkisi TEK
+   * parmaklı swipe'ı da geciktirir, o da uygulamanın ana hareketi.
+   */
+  const cancelDragForPinch = () => {
+    "worklet";
+    const cfg = { damping: 16, stiffness: 380, mass: 1 };
+    tx.value = withSpring(0, cfg);
+    dragX.value = withSpring(0, cfg);
+    overlayDragX.value = withSpring(0, cfg);
+    buttonDragX.value = withSpring(0, cfg);
+    overlayOpacity.value = 1;
+    hasVibrated.value = false;
+    ty.value = withSpring(0, cfg);
+    superLikeProgress.value = withSpring(0);
+    cardPullProgress.value = withSpring(0);
+    superLikeReady.value = false;
+    expandHapticFired.value = false;
+    collapseHapticFired.value = false;
+    // Expand durumu KORUNUYOR: pinch çoğunlukla expanded panelde yapılıyor,
+    // yarım kalmış bir collapse varsa bulunduğu uca geri otursun.
+    cardExpandAnim.value = withSpring(expandedSV.value ? 1 : 0, cfg);
+    runOnJS(resetSuperHaptics)();
+  };
+
+  useAnimatedReaction(
+    () => photoPinchActive.value,
+    (active, prev) => {
+      if (active && !prev) cancelDragForPinch();
+    },
+  );
+
   // Yatay swipe — asymptotic rubber-band ile orta zorlanma hissi.
   // max=400, c=1.2 → delta=200'de tx ~150 (threshold), delta=400'de ~240,
   // asymptote 400 → daha güçlü pull'da hala kart hareketi var ama dampened.
@@ -308,6 +419,10 @@ function SwipeWrapper({
     .activeOffsetX([-10, 10])
     .failOffsetY([-15, 15])
     .onUpdate((event) => {
+      // Foto büyütülüyor → kart kıpırdamasın (bkz. cancelDragForPinch).
+      if (photoPinchActive.value) return;
+      // Süper beğeni verildi, alevin örtmesi bekleniyor: kart artık kilitli.
+      if (superLikePending.value) return;
       const delta = event.translationX;
       const absDelta = Math.abs(delta);
       const max = 400;
@@ -330,6 +445,13 @@ function SwipeWrapper({
     })
     .onEnd((event) => {
       hasVibrated.value = false;
+      if (superLikePending.value) return;
+      // Parmaklar kalktı ama büyütme kapanışı sürüyor: bu jest pinch'in
+      // parçasıydı, swipe olarak yorumlanmamalı.
+      if (photoPinchActive.value) {
+        cancelDragForPinch();
+        return;
+      }
 
       // Displacement (85) + velocity (2500 + min 60px) — daha kolay swipe.
       const VELOCITY_THRESHOLD = 2500;
@@ -346,6 +468,9 @@ function SwipeWrapper({
       // Like kotası bittiyse: sağa swipe gerçekleşmiş olsa bile karta geri
       // dönsün, istek atılmasın, paywall açılsın. Sola swipe (Pass) backend'de
       // kotaya sayılmadığı için burada da bloklanmıyor.
+      // KOTA DIŞINDA KİLİT YOK: profil keşif havuzunda görünmese bile backend
+      // like/pass/süper beğeniyi kabul ediyor (rehber §3), istemci kendi kuralını
+      // uydurmuyor.
       if (goRight && quotaExhaustedSV.value) {
         const cfg = { damping: 16, stiffness: 380, mass: 1 };
         tx.value = withSpring(0, cfg);
@@ -404,6 +529,10 @@ function SwipeWrapper({
       dragOffsetY.value = 0;
     })
     .onUpdate((event) => {
+      // Foto büyütülüyor → ne collapse ne super-like (bkz. cancelDragForPinch).
+      if (photoPinchActive.value) return;
+      // Süper beğeni verildi, alevin örtmesi bekleniyor: kart artık kilitli.
+      if (superLikePending.value) return;
       if (expandedSV.value) {
         // EXPANDED MODE — sadece scrollY=0'da pull-down ile collapse.
         if (scrollY.value > 0) {
@@ -510,6 +639,13 @@ function SwipeWrapper({
     })
     .onEnd(() => {
       dragOffsetY.value = 0;
+      if (superLikePending.value) return;
+      // Pinch'in parçasıydı: expand/collapse/super-like kararlarının hiçbiri
+      // verilmemeli, kart bulunduğu uca geri otursun.
+      if (photoPinchActive.value) {
+        cancelDragForPinch();
+        return;
+      }
 
       if (expandedSV.value) {
         // EXPANDED MODE release
@@ -553,14 +689,7 @@ function SwipeWrapper({
         cardPullProgress.value = withSpring(0);
         runOnJS(openSuperLikePaywall)();
       } else if (wasReady) {
-        runOnJS(emitSuperLikeBurst)();
-        ty.value = withTiming(
-          -EXIT_HEIGHT,
-          { duration: 320, easing: Easing.out(Easing.cubic) },
-          () => {
-            runOnJS(onSwipe)("up", profile.userId);
-          },
-        );
+        commitSuperLike();
       } else if (wasExpandReady) {
         ty.value = withSpring(0, { damping: 16, stiffness: 380, mass: 1 });
         // paddingBottom cardExpandAnim'e bağlı, spring 0→1 boyunca senkron büyür.
@@ -600,6 +729,12 @@ function SwipeWrapper({
   const handleBlock = React.useCallback(
     () => onBlock?.(profile),
     [onBlock, profile],
+  );
+  // Aynı köprü notlar için: SwipeCard yalnız HEDEFİ biliyor, hangi profile
+  // yazıldığını burada ekliyoruz.
+  const handleNote = React.useCallback(
+    (target: NoteTarget) => onNote?.(profile, target),
+    [onNote, profile],
   );
 
   // Chevron (SwipeCard alt ok) tap ile expand/collapse toggle — pull-up ve
@@ -694,6 +829,7 @@ function SwipeWrapper({
           superLikesRemaining={superLikesRemaining}
           onReport={onReport ? handleReport : undefined}
           onBlock={onBlock ? handleBlock : undefined}
+          onNote={onNote ? handleNote : undefined}
         />
       </Animated.View>
     </GestureDetector>
@@ -710,12 +846,14 @@ export default React.memo(SwipeWrapper, (prev, next) => {
     prev.isTopCard === next.isTopCard &&
     prev.swipeQuotaExhausted === next.swipeQuotaExhausted &&
     prev.superLikeQuotaExhausted === next.superLikeQuotaExhausted &&
+    prev.snapEntry === next.snapEntry &&
     prev.superLikesRemaining === next.superLikesRemaining &&
     prev.onSwipe === next.onSwipe &&
     prev.onPass === next.onPass &&
     prev.onLike === next.onLike &&
     prev.onSuperLike === next.onSuperLike &&
     prev.onReport === next.onReport &&
-    prev.onBlock === next.onBlock
+    prev.onBlock === next.onBlock &&
+    prev.onNote === next.onNote
   );
 });

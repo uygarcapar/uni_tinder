@@ -9,7 +9,7 @@ import {
 import { BottomSheetTextInput } from "@gorhom/bottom-sheet";
 import { useTranslation } from "react-i18next";
 import { useState } from "react";
-import { Flag, Check, InfoIcon } from "lucide-react-native";
+import { Check, InfoIcon } from "lucide-react-native";
 import SFIcon from "./SFIcon";
 import AppModal from "./AppModal";
 import { useKeyboardAwareField } from "@/shared/hooks/useKeyboardAwareField";
@@ -99,6 +99,28 @@ function Section({
   );
 }
 
+// Anchor'ı KENDİ bileşenine sarmak zorunlu: useKeyboardAwareField, modal scroll
+// view'ını AppModalScrollContext'ten okuyor ve o provider AppModal'ın İÇİNDE.
+// Hook ReportModal'ın gövdesinde çağrılınca context ağaçta daha aşağıda kalıyor,
+// `ctx` null geliyor ve reveal() scroller bulamayıp sessizce çıkıyordu — detay
+// alanı klavyenin altında kalmasının sebebi buydu. Bu bileşen AppModal'ın
+// children'ı olarak render edildiği için provider'ın altında.
+function KeyboardAwareAnchor({
+  children,
+}: {
+  children: (handlers: {
+    onFocus: () => void;
+    onBlur: () => void;
+  }) => React.ReactNode;
+}) {
+  const { anchorRef, onFocus, onBlur } = useKeyboardAwareField();
+  return (
+    <View ref={anchorRef} collapsable={false}>
+      {children({ onFocus, onBlur })}
+    </View>
+  );
+}
+
 // Sebep satırı — SettingsModal/ConversationOptionsSheet pill'i (radius 36,
 // 0.5 border). Seçili hali FilterModal'ın seçim pill'iyle aynı: dolu
 // inverseSurface + onInverseSurface metin/ikon.
@@ -114,7 +136,7 @@ function ReasonRow({
   return (
     <TouchableOpacity
       onPress={onPress}
-      activeOpacity={0.8}
+      activeOpacity={1}
       accessibilityRole="radio"
       accessibilityState={{ selected }}
       style={{
@@ -163,6 +185,7 @@ export default function ReportModal({
   reportedUserId,
   conversationId,
   messageId,
+  noteId,
   onSuccess,
 }: any) {
   const { t } = useTranslation();
@@ -170,10 +193,6 @@ export default function ReportModal({
   // kaldırılabilir; varsayılan İŞARETLİ. Alan sunucuya HER ZAMAN açıkça gider —
   // varsayılanı uca göre değişiyor (bkz. moderationService.ReportArgs).
   const [alsoBlock, setAlsoBlock] = useState(true);
-
-  // Detay alanı içeriğin sonuna yakın; klavye açılınca altında kalıyordu.
-  // Anchor View ölçülüp modal scroll'u klavyenin üstüne taşınıyor.
-  const { anchorRef, onFocus, onBlur } = useKeyboardAwareField();
 
   const { control, handleSubmit, reset, watch, formState: { isSubmitting } } = useForm<ReportForm>({
     resolver: zodResolver(reportSchema),
@@ -201,6 +220,9 @@ export default function ReportModal({
         description: d?.trim() || undefined,
         conversationId,
         messageId,
+        // Not şikayeti: moderatör panelinde yorumun metni de görünsün diye.
+        // Notu olmayan kartlarda undefined → gövdeye hiç yazılmaz.
+        noteId,
         alsoBlock,
       });
       const finish = () => {
@@ -292,40 +314,44 @@ export default function ReportModal({
         title={t('moderation.report.detailLabel')}
         description={t('moderation.report.detailDescription')}
       />
-      <View ref={anchorRef} collapsable={false}>
-        <Controller
-          control={control}
-          name="description"
-          render={({ field: { onChange, value } }) => (
-            // BottomSheetTextInput şart: düz TextInput'ta gorhom klavye
-            // target'ını set etmiyor ve sheet klavye davranışını atlıyor.
-            <BottomSheetTextInput
-              value={value}
-              onChangeText={onChange}
-              onFocus={onFocus}
-              onBlur={onBlur}
-              placeholder={t('moderation.report.detailPlaceholder')}
-              placeholderTextColor={colors.textSecondary}
-              multiline
-              maxLength={1000}
-              style={{
-                borderRadius: 30,
-                borderCurve: "continuous",
-                overflow: "hidden",
-                borderWidth: 0.5,
-                borderColor: colors.hairline,
-                color: colors.text,
-                fontSize: 15,
-                lineHeight: 22,
-                minHeight: 110,
-                textAlignVertical: "top",
-                padding: 12,
-                paddingLeft: 16,
-              }}
-            />
-          )}
-        />
-      </View>
+      {/* Detay alanı içeriğin sonuna yakın; klavye açılınca altında kalıyordu.
+          Anchor View ölçülüp modal scroll'u klavyenin üstüne taşınıyor. */}
+      <KeyboardAwareAnchor>
+        {({ onFocus, onBlur }) => (
+          <Controller
+            control={control}
+            name="description"
+            render={({ field: { onChange, value } }) => (
+              // BottomSheetTextInput şart: düz TextInput'ta gorhom klavye
+              // target'ını set etmiyor ve sheet klavye davranışını atlıyor.
+              <BottomSheetTextInput
+                value={value}
+                onChangeText={onChange}
+                onFocus={onFocus}
+                onBlur={onBlur}
+                placeholder={t('moderation.report.detailPlaceholder')}
+                placeholderTextColor={colors.textSecondary}
+                multiline
+                maxLength={1000}
+                style={{
+                  borderRadius: 30,
+                  borderCurve: "continuous",
+                  overflow: "hidden",
+                  borderWidth: 0.5,
+                  borderColor: colors.hairline,
+                  color: colors.text,
+                  fontSize: 15,
+                  lineHeight: 22,
+                  minHeight: 110,
+                  textAlignVertical: "top",
+                  padding: 12,
+                  paddingLeft: 16,
+                }}
+              />
+            )}
+          />
+        )}
+      </KeyboardAwareAnchor>
       <Text
         style={{
           color: colors.textSecondary,
@@ -347,7 +373,7 @@ export default function ReportModal({
       />
       <TouchableOpacity
         onPress={() => setAlsoBlock((v) => !v)}
-        activeOpacity={0.8}
+        activeOpacity={1}
         accessibilityRole="switch"
         accessibilityState={{ checked: alsoBlock }}
         style={{
@@ -421,7 +447,7 @@ export default function ReportModal({
         testID="report-submit"
         onPress={handleSubmitForm}
         disabled={!canSubmit}
-        activeOpacity={0.8}
+        activeOpacity={1}
         style={{
           borderRadius: 36,
           borderCurve: "continuous",
@@ -431,31 +457,29 @@ export default function ReportModal({
           backgroundColor: reason ? colors.errorStrong : undefined,
           flexDirection: "row",
           alignItems: "center",
-          justifyContent: "space-between",
+          justifyContent: "center",
           padding: 16,
           paddingHorizontal: 20,
           marginTop: 28,
         }}
       >
         <Text
-          style={{ color: submitFg, fontSize: 15, fontWeight: "500", flex: 1 }}
+          style={{
+            color: submitFg,
+            fontSize: 15,
+            fontWeight: "500",
+            textAlign: "center",
+          }}
         >
           {t('moderation.report.submit')}
         </Text>
-        {isSubmitting ? (
+        {/* Spinner absolute: akışa girseydi gönderim başlayınca etiketi
+            merkezden kaydırırdı. */}
+        {isSubmitting && (
           <ActivityIndicator
             size="small"
             color={submitFg}
-            style={{ width: 18, height: 18 }}
-          />
-        ) : (
-          <SFIcon
-            name="flag.fill"
-            fallback={Flag}
-            size={18}
-            color={submitFg}
-            strokeWidth={1.5}
-            style={{ pointerEvents: "none" }}
+            style={{ position: "absolute", right: 20, width: 18, height: 18 }}
           />
         )}
       </TouchableOpacity>

@@ -18,6 +18,7 @@ import {
   Linking,
 } from "react-native";
 import { appPrefs } from "../../../shared/utils/appPrefs";
+import { setSwipeTutorialBlocking } from "@/features/discover/swipeTutorialGate";
 import { GestureHandlerRootView } from "react-native-gesture-handler";
 import Animated, {
   useSharedValue,
@@ -50,7 +51,6 @@ import {
 import SFIcon from "@/shared/components/SFIcon";
 import SwipeWrapper from "@/features/discover/components/SwipeWrapper";
 import SwipeOverlay from "@/features/discover/components/SwipeOverlay";
-import SuperLikeBurst from "@/features/discover/components/SuperLikeBurst";
 import PurchaseModal from "@/features/discover/components/PurchaseModal";
 import SuperLikePurchaseModal from "@/features/discover/components/SuperLikePurchaseModal";
 import FilterModal from "@/features/discover/components/FilterModal";
@@ -64,10 +64,13 @@ import {
   useSwipeFilters,
   useSwipeStats,
   useSwipeMutation,
+  useNoteMutation,
   useSaveFilters,
   useUndoSwipe,
   useUpdateStatsCache,
+  useSetIgnoreDistanceFilter,
 } from "@/features/discover/swipeQueries";
+import { FREE_MAX_DISTANCE_KM } from "@/shared/constants/limits";
 import { formatResetTime } from "@/features/discover/quotaFormat";
 import {
   loadDeckProgress,
@@ -76,8 +79,16 @@ import {
 } from "@/features/discover/deckProgress";
 import { decideTopUp } from "@/features/discover/deckTopUp";
 import { resolveCode, type CodeEntry } from "@/shared/constants/responseCodes";
+import { resolveEmptyDeckCopy } from "@/features/discover/emptyDeckCopy";
 import { SUPPORT_EMAIL } from "@/shared/constants/support";
 import { showInfoToast, showMissedMatchToast } from "@/shared/services/toaster";
+import { runFlameSweep } from "@/features/discover/flameSweep";
+import NoteComposerModal from "@/features/discover/components/NoteComposerModal";
+import NotePurchaseModal from "@/features/discover/components/NotePurchaseModal";
+import {
+  NOTE_SEND_CODES,
+  noteSendCodeI18nKey,
+} from "@/shared/constants/responseCodes";
 import uiBus, {
   cardExpandAnim,
   resetCardExpandState,
@@ -95,7 +106,7 @@ import { refreshEntitlementsForPaywall } from "@/features/profile/subscriptionSl
 import { usePremiumTier } from "@/features/profile/premiumTier";
 import { analytics } from "@/shared/services/analytics";
 import { navigationRef } from "@/shared/services/navigationRef";
-import type { PotentialMatch } from "@/shared/types";
+import type { NoteTarget, PotentialMatch } from "@/shared/types";
 
 // Tab bar geometry — TabNavigator ile tutarlı:
 // FLOATING_BAR_HEIGHT (64) + FLOATING_BAR_BOTTOM_GAP (-10) + insets.bottom + extra gap (12)
@@ -370,10 +381,22 @@ const EmptyDiscoverCard = ({
   title = null,
   actionLabel = null,
   onAction = null,
+  secondaryLabel = null,
+  onSecondary = null,
+  busy = false,
 }: {
   title?: string | null;
   actionLabel?: string | null;
   onAction?: (() => void) | null;
+  // İkincil çıkış yolu — pratikte hep "Mesafe sınırını kaldır". Sebebin kendi
+  // aksiyonunun YERİNE geçmiyor, altına düz metin bağlantı olarak ekleniyor:
+  // deste hangi sebeple boşalırsa boşalsın mesafe sınırı hâlâ açık duruyorsa
+  // kullanıcıya sunulacak somut bir çare var (bkz. emptyCopy).
+  secondaryLabel?: string | null;
+  onSecondary?: (() => void) | null;
+  // Aksiyon uçuşta ("Daha uzağı göster" isteği). Buton pasifleşiyor: yavaş
+  // bağlantıda hiçbir şey olmamış gibi görünüp tekrar tekrar basılıyordu.
+  busy?: boolean;
 }) => {
   const hasReason = !!title;
   return (
@@ -423,7 +446,7 @@ const EmptyDiscoverCard = ({
               color: colors.text,
               fontSize: 22,
               fontWeight: "700",
-              marginBottom: actionLabel ? 16 : 0,
+              marginBottom: actionLabel || secondaryLabel ? 16 : 0,
             }}
           >
             {title}
@@ -431,6 +454,7 @@ const EmptyDiscoverCard = ({
           {actionLabel && onAction && (
             <TouchableOpacity
               onPress={onAction}
+              disabled={busy}
               activeOpacity={0.8}
               style={{
                 alignSelf: "flex-start",
@@ -439,12 +463,43 @@ const EmptyDiscoverCard = ({
                 paddingHorizontal: 20,
                 paddingVertical: 12,
                 backgroundColor: colors.litPlus,
+                opacity: busy ? 0.5 : 1,
               }}
             >
               <Text
                 style={{ color: colors.text, fontSize: 15, fontWeight: "600" }}
               >
                 {actionLabel}
+              </Text>
+            </TouchableOpacity>
+          )}
+          {secondaryLabel && onSecondary && (
+            <TouchableOpacity
+              testID="empty-remove-distance-limit"
+              onPress={onSecondary}
+              disabled={busy}
+              activeOpacity={0.8}
+              // Dolgusuz: birincil aksiyonla yarışmasın. Dokunma alanı yine de
+              // parmak boyutunda kalsın diye dikey padding var, hizayı bozmasın
+              // diye negatif marginLeft ile sola çekiliyor.
+              style={{
+                alignSelf: "flex-start",
+                marginTop: actionLabel ? 10 : 0,
+                marginLeft: -8,
+                paddingHorizontal: 8,
+                paddingVertical: 8,
+                opacity: busy ? 0.5 : 1,
+              }}
+            >
+              <Text
+                style={{
+                  color: colors.textSecondary,
+                  fontSize: 14,
+                  fontWeight: "600",
+                  textDecorationLine: "underline",
+                }}
+              >
+                {secondaryLabel}
               </Text>
             </TouchableOpacity>
           )}
@@ -522,7 +577,15 @@ const EmptyDiscoverCard = ({
 const DEFAULT_FILTERS = {
   ageRangeMin: 18,
   ageRangeMax: 30,
-  maxDistance: 50,
+  // Yanıt henüz inmemişken kullanılan yer tutucu — free TAVANI, dar bir değer
+  // değil. Mesafe 2026-08-21'den beri katı filtre: burada dar bir varsayılan,
+  // gerçek filtresi geniş olan kullanıcıya bir an boş deste gösterirdi.
+  // Gerçek sınırlar `/Filters` yanıtından geliyor (bkz. resolveDistanceBounds).
+  maxDistance: FREE_MAX_DISTANCE_KM,
+  // Yanıt inmeden ÖNCE "sınır uygulanıyor" varsayılıyor. Ters yön (true) boş
+  // destede "Mesafe Sınırını Kaldır" butonunu gizlerdi — yani kullanıcıyı
+  // gerçekte açık olan tek çözümden mahrum bırakırdı.
+  ignoreDistanceFilter: false,
   genders: [],
   interestedIn: [],
   preferredCity: null,
@@ -545,8 +608,10 @@ export default function DiscoverScreen() {
   const filtersQuery = useSwipeFilters();
   const statsQuery = useSwipeStats();
   const swipeMutation = useSwipeMutation();
+  const noteMutation = useNoteMutation();
   const saveFiltersMutation = useSaveFilters();
   const undoMutation = useUndoSwipe();
+  const ignoreDistanceMutation = useSetIgnoreDistanceFilter();
   const updateStatsCache = useUpdateStatsCache();
 
   // Deste ilerlemesi hesap bazlı saklanıyor (bkz. deckProgress.ts). Selector
@@ -579,6 +644,9 @@ export default function DiscoverScreen() {
   // (aşağıdaki index-güvenli prune). Kardeş swipe state'leri render bölümünün
   // yanında kaldı.
   const [currentIndex, setCurrentIndex] = useState(0);
+  // Son ilerleme, ekranı kaplayan bir kutlamanın ALTINDA mı oldu? Yalnız süper
+  // beğenide true — yeni top kart giriş animasyonunu atlar (bkz. handleSwipe).
+  const [coveredSwap, setCoveredSwap] = useState(false);
 
   const potentialMatches = useMemo(() => {
     const all = matchesQuery.data?.pages.flatMap((p) => p.profiles) ?? [];
@@ -830,13 +898,11 @@ export default function DiscoverScreen() {
 
   // Default'tan sapan filtre sayısı — header filter icon'unun sağ-altındaki
   // rozette gösterilir. Mesafe değişikliği rozet'e dahil edilmez (slider'la sürekli
-  // oynanan bir ayar, hep "1" göstermesin) — sadece gender/şehir/üni sayılır.
+  // oynanan bir ayar, hep "1" göstermesin). interestedIn de dahil değil: kimden
+  // hoşlandığın bir "filtre" değil, kalıcı tercih — rozeti sürekli dolu gösterirdi.
+  // Sadece şehir/üni ve görünürlük listeleri sayılır.
   const activeFilterCount = useMemo(() => {
     let count = 0;
-    // interestedIn default'u üç kategori birden (backend Profile.InterestedInFlags
-    // = 7); daraltılmışsa aktif filtre sayılır. Boş liste UI'da engelleniyor.
-    const interestedIn = filters.interestedIn || [];
-    if (interestedIn.length > 0 && interestedIn.length < 3) count++;
     if (filters.preferredCity) count++;
     // Üniversite tercihi de artık liste: kaç domain seçildiğinden bağımsız 1.
     if ((filters.preferredUniversityDomains || []).length > 0) count++;
@@ -1015,11 +1081,13 @@ export default function DiscoverScreen() {
         message: t('discover.swipe.superLikeCooldownMessage', {
           time: resetText,
         }),
+        icon: 'superLike',
       });
     } else {
       showInfoToast({
         title: t('discover.swipe.superLikeExhaustedTitle'),
         message: t('discover.swipe.superLikeExhaustedMessage'),
+        icon: 'superLike',
       });
     }
     setSuperLikePurchaseVisible(true);
@@ -1067,9 +1135,15 @@ export default function DiscoverScreen() {
     const unsubSuperLike = uiBus.on("superLikePaywall", () => {
       showSuperLikeLimitUi();
     });
+    // Not bakiyesi biterken backend 200 + showPaywall ile de uyarabiliyor
+    // (402 yolu handleSendNote'ta ele alınıyor). İkisi de aynı sheet'i açar.
+    const unsubNote = uiBus.on("notePaywall", () => {
+      setNotePurchaseVisible(true);
+    });
     return () => {
       unsubSwipe();
       unsubSuperLike();
+      unsubNote();
     };
     // showSuperLikeLimitUi / openPremiumPaywall useEvent — referansları stabil,
     // resubscribe gerekmez.
@@ -1109,43 +1183,101 @@ export default function DiscoverScreen() {
 
   const lastSwipePromiseRef = useRef(null);
 
-  // ── "Aramanı genişlettik" şeridi KALDIRILDI ─────────────────────────────
-  // Backend aday tükendiğinde yarıçapı hâlâ kademeli genişletiyor (100 → 250
-  // km) ama bunu artık BİLDİRMİYOR: `wasRadiusExpanded` her zaman false,
-  // `appliedRadiusKm` her zaman null (sözleşme 2026-08-17 §3.3-3.4). Ürün
-  // kararı genişletmenin sessiz kalması yönünde; alanlar yalnız eski
-  // istemciler kırılmasın diye response'ta duruyor, sonraki major'da silinecek.
+  const dragX = useSharedValue(0);
+  const overlayDragX = useSharedValue(0);
+  const overlayOpacity = useSharedValue(1);
+  const buttonDragX = useSharedValue(0);
+  const programmaticSwipe = useSharedValue(0);
+  // Kart yığınının yandan giriş ofseti. Boş-durum aksiyonlarından ÖNCE
+  // tanımlı: "Daha uzağı göster" de filtre kaydetme gibi taze desteyi
+  // animasyonla içeri alıyor.
+  const stackEntryX = useSharedValue(0);
+
+  // ── "Mesafe sınırını kaldır" (kalıcı anahtar) ───────────────────────────
+  // Mesafe KATI filtre: yarıçap dışındaki profiller hiç gelmiyor ve backend
+  // kendiliğinden genişletmiyor. Az kullanıcılı şehirlerde deste bu yüzden
+  // boşalıyordu; kaçış yolu artık filtrelerdeki KALICI `ignoreDistanceFilter`
+  // anahtarı (2026-08-22). Tek seferlik "daha uzağı göster" akışı —
+  // `canExpandRadius` / `wasRadiusExpanded` / `?expandRadius=true` — tamamen
+  // kaldırıldı; backend o alanları artık göndermiyor.
+  //
+  // Anahtar ZATEN AÇIKKEN buton çizilmemeli: basmak hiçbir şeyi değiştirmez,
+  // kullanıcı aynı boş desteye bakmaya devam eder. Eskiden bu kararı backend
+  // veriyordu (`canExpandRadius`); alan kalktığı için koşul burada kuruluyor.
+  // İki kaynak da okunuyor — deste yanıtı (bu destenin gerçeği) ve filtre
+  // yanıtı (kaydedilmiş tercih) — hangisi taze gelirse gelsin buton doğru
+  // davransın.
+  const distanceLimitAlreadyOff =
+    lastPage?.distanceFilterIgnored === true ||
+    filters?.ignoreDistanceFilter === true;
+
+  const removeDistanceLimit = useEvent(async () => {
+    if (ignoreDistanceMutation.isPending) return;
+    try {
+      await ignoreDistanceMutation.mutateAsync(true);
+      // Taze deste listenin BAŞINDAN gösterilmeli. currentIndex tükenmiş
+      // destenin sonunda duruyor; sıfırlanmazsa yeni deste ondan uzunsa
+      // baştaki profiller sessizce atlanırdı. Filtre kaydetme yolundaki
+      // (handleSaveFilters) davranışın aynısı — giriş animasyonu dahil.
+      setCurrentIndex(0);
+      stackEntryX.value = ENTRY_DISTANCE;
+      stackEntryX.value = withTiming(0, {
+        duration: ENTRY_DURATION,
+        easing: ENTRY_EASING,
+      });
+    } catch (err: any) {
+      // Sessiz kalma: kullanıcı butona bastı, deste hâlâ boş — hiçbir şey
+      // olmadıysa bunu bilmeli, yoksa buton bozuk sanılıp tekrar tekrar
+      // basılıyor.
+      Alert.alert("", err?.message || t("discover.distanceLimit.error"));
+    }
+  });
+
+  // ── Profil keşifte görünmüyorken ETKİLEŞİMLER kilitli ───────────────────
+  // GÖRÜNÜRLÜK KİLİT DEĞİL: profil keşif havuzunda görünmüyorken de (fotoğraf
+  // incelemede / yetersiz görünür fotoğraf) beğeni, süper beğeni, pass ve not
+  // SERBEST. Backend hiçbir uçta foto onayına bakmıyor (rehber §3) — istemcinin
+  // kapatması sunucuda karşılığı olmayan bir kural yaratıyordu; kullanıcı
+  // butonun neden çalışmadığını anlamıyordu. Durum yalnızca ANLATILIYOR:
+  // Discover'da bir kez `ProfileHiddenGate`, profil ekranında kalıcı
+  // `ProfileVisibilityBanner`.
+  //
+  // Tek istisna `Suspended`: o hesap yaptırımı ve kapısı navigator'ın dışında
+  // (`AccountBlockedScreen`) — bu ekran hiç mount olmuyor.
 
   // ── Boş durum metni + aksiyonu ──────────────────────────────────────────
-  // Metin sırası: uygulama dilindeki i18n karşılığı → backend'in lokalize
-  // `emptyReasonMessage`'ı → sözlükteki TR fallback. i18n önce geliyor çünkü
-  // kullanıcının uygulama içi dil tercihi tek doğru kaynak; backend metni
-  // yalnız FE'nin tanımadığı yeni bir kod geldiğinde devreye girer.
-  const emptyCopy = useMemo(() => {
-    if (!emptyEntry?.emptyReason) return null;
-    const reasonKey =
-      emptyEntry.emptyReason.charAt(0).toLowerCase() +
-      emptyEntry.emptyReason.slice(1);
-    return {
-      title: t(`discover.empty.${reasonKey}.title`, {
-        defaultValue: lastPage?.emptyReasonMessage || emptyEntry.title,
+  // Karar `emptyDeckCopy.ts`de (saf + test edilebilir). Özet: mesafe sınırı
+  // hâlâ uygulanıyorsa "Mesafe sınırını kaldır" deste hangi sebeple boşalırsa
+  // boşalsın teklif edilir; sebebin kendi aksiyonu birincil buton olarak
+  // kalır, teklif altına ikincil satır olarak biner.
+  const emptyCopy = useMemo(
+    () =>
+      resolveEmptyDeckCopy({
+        entry: emptyEntry,
+        backendMessage: lastPage?.emptyReasonMessage,
+        distanceLimitOff: distanceLimitAlreadyOff,
+        deckSettled: isEmptyStack,
+        t,
       }),
-      actionLabel:
-        emptyEntry.action.kind === "dismiss"
-          ? null
-          : t(`discover.empty.${reasonKey}.action`, {
-              defaultValue: emptyEntry.actionLabel,
-            }),
-    };
-  }, [emptyEntry, lastPage?.emptyReasonMessage, t]);
+    [
+      emptyEntry,
+      lastPage?.emptyReasonMessage,
+      distanceLimitAlreadyOff,
+      isEmptyStack,
+      t,
+    ],
+  );
 
-  // `expandRadius` da filtre ekranını açıyor: yarıçapı istemcide sessizce
-  // büyütmüyoruz, mesafe kullanıcının kaydettiği bir tercih — arkasından
-  // değiştirmek yerine slider'ı önüne koyuyoruz.
+  // `removeDistanceLimit` filtre ekranını AÇMIYOR, anahtarı doğrudan açıyor:
+  // tek dokunuşla çözülen bir sorun için ekran değiştirmek gereksiz sürtünme.
+  // Kullanıcının seçtiği `maxDistance`a dokunulmuyor — saklanıyor ve anahtar
+  // kapatılınca geri geliyor.
   const handleEmptyAction = useEvent(() => {
-    switch (emptyEntry?.action.kind) {
+    switch (emptyCopy?.actionKind) {
+      case "removeDistanceLimit":
+        removeDistanceLimit();
+        return;
       case "openFilters":
-      case "expandRadius":
         setFilterVisible(true);
         return;
       case "completeProfile":
@@ -1162,10 +1294,11 @@ export default function DiscoverScreen() {
         refetchMatches();
         return;
       case "contactSupport": {
+        const code = emptyEntry?.code ?? "";
         const subject = encodeURIComponent(
           t("discover.empty.supportSubject", {
-            code: emptyEntry.code,
-            defaultValue: emptyEntry.code,
+            code,
+            defaultValue: code,
           }),
         );
         Linking.openURL(`mailto:${SUPPORT_EMAIL}?subject=${subject}`).catch(
@@ -1178,19 +1311,14 @@ export default function DiscoverScreen() {
     }
   });
 
-  const dragX = useSharedValue(0);
-  const overlayDragX = useSharedValue(0);
-  const overlayOpacity = useSharedValue(1);
-  const buttonDragX = useSharedValue(0);
-  const programmaticSwipe = useSharedValue(0);
-  const stackEntryX = useSharedValue(0);
-
   // ─── Tutorial (ilk giriş kart swipe demo) ────────────────────────────────
   // Flag hesap bazlı: aynı cihazda açılan yeni hesap jesti hiç görmemiş bir
   // kullanıcıdır, tekrar göstermek gerekir.
   const TUTORIAL_TX = 55; // like/pass threshold (85) altında
   const TUTORIAL_SWING_DURATION = 550;
   const TUTORIAL_STORAGE_KEY = "discoverSwipeTutorialShown";
+  // Görünürlük kapısı en fazla bu kadar bekler (bkz. tutorialResolved).
+  const TUTORIAL_GATE_MAX_WAIT = 8000;
   // currentUserId yukarıda, deste hidrasyonundan önce okunuyor.
   // KVKK onay sheet'i navigator'ın üstünde açılıyor; onaylanana kadar Discover
   // odaklı sayılsa da kart modalın arkasında kalıyor. Tutorial'ı onay sonrasına ertele.
@@ -1205,11 +1333,43 @@ export default function DiscoverScreen() {
   const tutorialDoneRef = useRef(false);
   const screenFocused = useIsFocused();
 
+  /**
+   * Görünürlük kapısı (`ProfileHiddenGate`) demoyu beklesin mi?
+   *
+   * Kapı kartın ÜSTÜNDE açılıyor; profili havuzda görünmeyen (fotoğrafları
+   * incelemede olan) YENİ kullanıcıda demo kapının arkasında oynayıp bir daha
+   * oynamamak üzere "görüldü" işaretleniyordu. Kapı, demo çözülene kadar
+   * bekletiliyor — bkz. swipeTutorialGate.ts.
+   *
+   * "Çözüldü" = oynadı/yarıda kesildi, ya da oynamayacağı kesinleşti: bayrak
+   * zaten yazılı (mount'ta senkron okunuyor — kapı bir kare bile boşuna
+   * gecikmesin), demo edilecek kart yok, ya da güvenlik süresi doldu. Süre
+   * kaçışı olmadan deste hiç gelmezse kapı sonsuza dek kapalı kalır ve
+   * kullanıcı profilinin neden gizli olduğunu HİÇ öğrenemezdi.
+   *
+   * currentUserId'nin mount'ta dolu olduğu varsayımı yukarıdaki deste
+   * hidrasyonuyla (loadDeckProgress) aynı: bu ekran main navigator altında.
+   */
+  const [tutorialResolved, setTutorialResolved] = useState(() =>
+    currentUserId
+      ? appPrefs.getBoolean(`${TUTORIAL_STORAGE_KEY}:${currentUserId}`) === true
+      : true,
+  );
+
+  useEffect(() => {
+    setSwipeTutorialBlocking(!tutorialResolved && screenFocused);
+  }, [tutorialResolved, screenFocused]);
+  // Ekran ağaçtan kalkarsa bayrak asılı kalmasın (kapıyı kilitler).
+  useEffect(() => () => setSwipeTutorialBlocking(false), []);
+
   // markSeen=true → demo sonuna kadar oynadı, flag yazılır. Ekran erkenden
   // arkaplana düşerse yazılmaz; bir sonraki açılışta tekrar oynar.
   const stopTutorial = useEvent((markSeen: boolean) => {
     if (!tutorialLiveRef.current) return;
     tutorialLiveRef.current = false;
+    // markSeen'den BAĞIMSIZ: demo bu mount'ta bir daha oynamıyor
+    // (tutorialDoneRef), kapıyı daha fazla bekletmenin anlamı yok.
+    setTutorialResolved(true);
     cancelAnimation(tutorialTx);
     cancelAnimation(tutorialOpacity);
     tutorialTx.value = withTiming(0, { duration: 150 });
@@ -1227,6 +1387,25 @@ export default function DiscoverScreen() {
   }, [screenFocused, stopTutorial]);
 
   const hasCardToDemo = potentialMatches.length > 0;
+
+  // Demo oynamayacağı kesinleşince kapıyı serbest bırak. Oynamaya başladıysa
+  // (tutorialActive) karışma: bitişte stopTutorial zaten çözüyor. KVKK onayı
+  // beklenirken saat işletilmiyor — onay sheet'i uzun sürerse kapı, demo hiç
+  // oynamadan açılırdı.
+  useEffect(() => {
+    if (tutorialResolved || tutorialActive) return;
+    if (!loading && !hasCardToDemo) {
+      setTutorialResolved(true);
+      return;
+    }
+    if (!kvkkAccepted) return;
+    const id = setTimeout(
+      () => setTutorialResolved(true),
+      TUTORIAL_GATE_MAX_WAIT,
+    );
+    return () => clearTimeout(id);
+  }, [tutorialResolved, tutorialActive, loading, hasCardToDemo, kvkkAccepted]);
+
   useEffect(() => {
     if (loading || !hasCardToDemo || !currentUserId) return;
     if (!screenFocused || tutorialDoneRef.current) return;
@@ -1371,6 +1550,12 @@ export default function DiscoverScreen() {
 
   const handleSwipe = useEvent((direction, userId) => {
     if (userId) swipedAtRef.current.set(userId, Date.now());
+    // Süper beğenide deste, alev ekranı tam kapatmışken ilerliyor (bkz.
+    // SwipeWrapper): yeni top kart giriş animasyonuyla DEĞİL, doğrudan son
+    // hâlinde açılmalı — yoksa 0.92→1 yayı dalga çekildikten sonra da sürüyor
+    // ve kart tam o anda "geliyormuş" gibi görünüyor. Diğer yönlerde giriş
+    // animasyonu duruyor: orada kart zaten açıkta değişiyor.
+    setCoveredSwap(direction === "up");
     setCurrentIndex((i) => i + 1);
     analytics.capture('swipe', { direction });
     const isPass = direction === "left";
@@ -1511,7 +1696,13 @@ export default function DiscoverScreen() {
     }
     setIsSwiping(true);
     programmaticSwipe.value = 3;
-    setTimeout(() => setIsSwiping(false), 300);
+    // Diğer iki butondan uzun: süper beğenide kart hemen fırlamıyor, deste alev
+    // ekranı kapatınca (~800 ms, ilk kutlamada lazy chunk payıyla biraz daha)
+    // ilerliyor — bkz. SwipeWrapper. 300 ms'de bırakılsaydı butonlar kart hâlâ
+    // dururken canlanır, ikinci tap yutulmuş gibi görünürdü. Çift tetiklemeye
+    // karşı asıl güvence SwipeWrapper'daki kilit; bu yalnız butonun görünür
+    // durumu.
+    setTimeout(() => setIsSwiping(false), 1300);
   });
 
   // ── Moderasyon (expanded kartın altındaki ikonlar) ───────────────────────
@@ -1520,7 +1711,9 @@ export default function DiscoverScreen() {
   // swipedAtRef kaydı şart — polling refetch'i engellenen profili geri
   // getirirse guard penceresi onu eler. Kart top değilse (teorik) sadece
   // guard'a yazıp indeksi oynatmıyoruz.
-  const dropProfileFromDeck = useEvent((userId: string) => {
+  // `covered`: kart, ekranı kaplayan bir kutlamanın ALTINDA düşüyor (not) —
+  // engelle/şikayet yolunda kutlama yok, kart açıkta değişiyor.
+  const dropProfileFromDeck = useEvent((userId: string, covered = false) => {
     if (!userId) return;
     swipedAtRef.current.set(userId, Date.now());
     // Beni beğenmiş biriyse rozet ANINDA düşsün — handleSwipe'daki temizlikle
@@ -1536,7 +1729,160 @@ export default function DiscoverScreen() {
     // top kart varsa baseline reset'i zaten aynı işi yapıyor, burada ikinci kez
     // sıfırlamak zararsız — index değişmeden ÖNCE olması boş desteyi kurtarır.
     resetCardExpandState();
+    // Guard'ın ARDINDA: kart zaten desteden çıkmışsa (kullanıcı bekleme
+    // penceresinde kendisi kaydırdı) bayrağı kirletmeyelim — deste ilerlemiyor,
+    // ama true kalsaydı SONRAKİ değişimin giriş animasyonu yenmiş olurdu.
+    setCoveredSwap(covered);
     setCurrentIndex((i) => i + 1);
+  });
+
+  // ── Not (yorumlu beğeni) ────────────────────────────────────────────────
+  // Kartta bir fotoğrafın/prompt'un altındaki kutudan açılıyor. Not bir
+  // consumable: kotası günlük like kotasından AYRI, yalnız satın alınıyor.
+  //
+  // Gönderim ucu 2026-08-26'da BAĞLANDI (sözleşme Faz 1: `POST /api/swipe/Note`,
+  // `Stats` alanları ve `WhoLikedMe.note` canlı). Bayrak bilerek duruyor —
+  // uç bir sorun çıkarırsa akışı tek satırla arayüze geri düşürmek, çağrı
+  // yollarını sökmekten güvenli.
+  //
+  // ⚠️ Bayrak kapatılırsa bakiye kapısı da kapanır (aşağıdaki koşul): uca istek
+  // gitmezken "not hakkın yok" deyip paket sheet'i açmak, satın alınan şeyin
+  // hiçbir işe yaramadığı bir tur demek olurdu.
+  const NOTE_SEND_WIRED: boolean = true;
+  const notesRemaining = statsQuery.data?.notesRemaining ?? null;
+  const [notePurchaseVisible, setNotePurchaseVisible] = useState(false);
+  const [noteRequest, setNoteRequest] = useState<{
+    profile: PotentialMatch;
+    target: NoteTarget;
+  } | null>(null);
+  const [noteError, setNoteError] = useState<string | null>(null);
+  // Not kutlaması sürerken ekran ağaçtan düşerse (sekme değişti, tema
+  // remount'u) örtme dinleyicisi arkada kalmasın — sökülmüş bir ağaca
+  // setCurrentIndex yazardı.
+  const noteFlameUnsub = useRef<(() => void) | null>(null);
+  useEffect(
+    () => () => {
+      noteFlameUnsub.current?.();
+      noteFlameUnsub.current = null;
+    },
+    [],
+  );
+
+  const handleNoteRequest = useEvent(
+    (profile: PotentialMatch, target: NoteTarget) => {
+      if (!profile?.userId) return;
+      // Bakiye yok — ya gerçekten 0, ya da backend alanı henüz göndermiyor
+      // (`null`). İkisinde de doğru davranış composer değil paket sheet'i:
+      // gönderilemeyecek bir metni yazdırmak en kötü sonuç olurdu.
+      if (
+        NOTE_SEND_WIRED &&
+        (typeof notesRemaining !== "number" || notesRemaining <= 0)
+      ) {
+        analytics.capture("note_paywall_shown", {
+          reason: notesRemaining === null ? "unknown_balance" : "empty_balance",
+        });
+        setNotePurchaseVisible(true);
+        return;
+      }
+      setNoteError(null);
+      setNoteRequest({ profile, target });
+    },
+  );
+
+  const handleSendNote = useEvent(async (comment: string) => {
+    const req = noteRequest;
+    if (!req?.profile?.userId) return;
+    setNoteError(null);
+    // Uç bağlı değil: sheet kapanır, başka hiçbir şey olmaz. Toast YOK —
+    // "notun gönderildi" demek gönderilmemiş bir şey için yalan olurdu.
+    if (!NOTE_SEND_WIRED) {
+      setNoteRequest(null);
+      return;
+    }
+    try {
+      await noteMutation.mutateAsync({
+        userId: req.profile.userId,
+        comment,
+        target: req.target,
+      });
+      analytics.capture("note_sent", { targetKind: req.target.kind });
+      setNoteRequest(null);
+      // ⚠️ `result.isMatch`e BAKMIYORUZ: bu uçta (Like/SuperLike'ta da) alan
+      // karşılıklı beğenide bile hep `false` ve `matchId` hiç yok. Eşleşme
+      // arka planda çözülüp SignalR `MatchNotification` ile geliyor —
+      // AppNavigator'daki mevcut dinleyici zaten karşılıyor.
+      //
+      // Toast DURUYOR: kutlama alevi ortada yalnız premium rozetini gösteriyor,
+      // "not gönderildi" demiyor — tek onay bu satır. (Kısa bir süre ekranda
+      // hem yazılı hem görsel onay dendi; yazı kaldırılınca toast geri geldi.)
+      showInfoToast({
+        title: t("note.sentTitle"),
+        message: t("note.sentMessage", { name: req.profile.displayName ?? "" }),
+        icon: "note",
+      });
+      // Kutlama süper beğeninin AYNISI (bkz. flameSweep): alev ekranı süpürüyor
+      // ve kart, ekran tam kapalıyken desteden düşüyor.
+      //
+      // Not bir SWIPE: kart destede kalmamalı. `dropProfileFromDeck` beğenmiş
+      // kişi temizliğini de yapıyor (rozet + likerHandled). Rewind hedefi
+      // olmuyor — not geri alınamaz (öneri dokümanı D5).
+      const userId = req.profile.userId;
+      noteFlameUnsub.current?.();
+      noteFlameUnsub.current = runFlameSweep(() => {
+        noteFlameUnsub.current = null;
+        dropProfileFromDeck(userId, true);
+      });
+    } catch (e: any) {
+      const code = e?.response?.data?.code ?? null;
+
+      // Bakiye bitti → composer kapanır, paket sheet'i açılır.
+      if (code === NOTE_SEND_CODES.NO_BALANCE) {
+        setNoteRequest(null);
+        setNotePurchaseVisible(true);
+        return;
+      }
+
+      // Hedef geçersiz (409/410 değil, 400): foto silinmiş ya da sıralama
+      // kaymış, yani kart BAYAT. Metni korumanın anlamı yok — aynı hedefe
+      // tekrar gönderilse yine düşer. Composer kapanıyor, deste tazeleniyor;
+      // kart düşürülmüyor çünkü kullanıcının kararı hâlâ verilmedi.
+      if (code === NOTE_SEND_CODES.INVALID_TARGET) {
+        setNoteRequest(null);
+        matchesQuery.refetch();
+        showInfoToast({
+          title: t("note.failedTitle"),
+          message: t(noteSendCodeI18nKey(code) ?? "note.codes.generic"),
+          icon: "note",
+        });
+        return;
+      }
+
+      // Kredi HARCANMAYAN hatalar: kart artık geçerli değil. Composer'ı açık
+      // tutmanın anlamı yok, kartı düşürüp bilgilendiriyoruz.
+      if (
+        code === NOTE_SEND_CODES.ALREADY_SWIPED ||
+        code === NOTE_SEND_CODES.TARGET_UNAVAILABLE
+      ) {
+        setNoteRequest(null);
+        dropProfileFromDeck(req.profile.userId);
+        showInfoToast({
+          title: t("note.failedTitle"),
+          message: t(noteSendCodeI18nKey(code) ?? "note.codes.generic"),
+          icon: "note",
+        });
+        return;
+      }
+
+      // Kalanlar kullanıcının düzeltebileceği ya da bekleyip tekrar
+      // deneyebileceği hatalar (UT-6402 boş/uzun metin, UT-6406 moderasyon,
+      // UT-6407 suistimal freni, ağ) → sheet AÇIK kalır, yazdığı metin korunur.
+      // Üçünde de kredi harcanmıyor.
+      setNoteError(
+        t(noteSendCodeI18nKey(code) ?? "note.codes.generic", {
+          defaultValue: e?.response?.data?.message || e?.message,
+        }),
+      );
+    }
   });
 
   // ReportModal bir bottom sheet; kart expanded'ken üstüne açılıyor. Şikayet
@@ -1599,9 +1945,11 @@ export default function DiscoverScreen() {
             onSuperLike={handleSuperLikeButton}
             swipeQuotaExhausted={swipeQuotaExhausted}
             superLikeQuotaExhausted={superLikeQuotaExhausted}
+            snapEntry={coveredSwap}
             superLikesRemaining={statsQuery.data?.superLikesRemaining ?? null}
             onReport={handleReportProfile}
             onBlock={handleBlockProfile}
+            onNote={handleNoteRequest}
           />
         );
       });
@@ -1746,14 +2094,15 @@ export default function DiscoverScreen() {
             title={emptyCopy?.title ?? null}
             actionLabel={emptyCopy?.actionLabel ?? null}
             onAction={handleEmptyAction}
+            secondaryLabel={emptyCopy?.secondaryLabel ?? null}
+            onSecondary={removeDistanceLimit}
+            busy={ignoreDistanceMutation.isPending}
           />
         )}
       </Animated.View>
 
-      {/* Super-like kalp patlaması — header ve kartın ÜSTÜnde, tüm ekranı
-          kaplayan overlay; kalpler kartın üstünden header'ı geçip telefonun
-          tepesinden çıkarak kaybolur. */}
-      <SuperLikeBurst />
+      {/* Süper beğeni alevi burada DEĞİL: tab bar'ı da kaplaması gerektiği için
+          navigator'ın dışına, kök ağaca taşındı (bkz. AppNavigator). */}
 
       <FilterModal
         visible={filterVisible}
@@ -1776,6 +2125,42 @@ export default function DiscoverScreen() {
         onClose={() => setSuperLikePurchaseVisible(false)}
         onPurchased={() => {
           setSuperLikePurchaseVisible(false);
+          statsQuery.refetch();
+        }}
+      />
+
+      {/* Not yazma sheet'i — kartta bir fotoğrafın/prompt'un altındaki kutudan
+          açılır. Hata gelince KAPANMAZ: metin korunup inline hata gösterilir. */}
+      <NoteComposerModal
+        visible={!!noteRequest}
+        onClose={() => {
+          setNoteRequest(null);
+          setNoteError(null);
+        }}
+        onSend={handleSendNote}
+        target={noteRequest?.target ?? null}
+        prompts={noteRequest?.profile?.prompts ?? null}
+        photoUri={
+          noteRequest?.target?.kind === "Photo"
+            ? (noteRequest.profile?.photos?.[
+                noteRequest.target.photoIndex ?? 0
+              ] ?? null)
+            : null
+        }
+        targetName={noteRequest?.profile?.displayName ?? null}
+        remaining={notesRemaining}
+        maxLength={statsQuery.data?.noteMaxLength ?? null}
+        sending={noteMutation.isPending}
+        errorText={noteError}
+      />
+
+      {/* Not paketi — bakiye 0 iken kutuya basınca ve UT-6401'de açılır.
+          SuperLike sheet'iyle aynı kabuk, ayrı ürün ve ayrı redeem kuyruğu. */}
+      <NotePurchaseModal
+        visible={notePurchaseVisible}
+        onClose={() => setNotePurchaseVisible(false)}
+        onPurchased={() => {
+          setNotePurchaseVisible(false);
           statsQuery.refetch();
         }}
       />

@@ -5,13 +5,15 @@ import {
   useQueryClient,
 } from "@tanstack/react-query";
 import { useSelector } from "react-redux";
-import { useMemo } from "react";
+import { useCallback, useMemo } from "react";
 import api from "@/shared/services/api";
 import { API_ENDPOINTS } from "@/shared/constants/api";
 import swipeService from "@/features/discover/swipeService";
 import { swipeKeys } from "@/features/discover/swipeKeys";
+import { spendRecoveryPatch } from "@/features/discover/recoveryQuota";
+import { noteTargetPayload } from "@/features/discover/noteTarget";
 import uiBus from "@/shared/services/uiBus";
-import type { SwipeStats } from "@/shared/types";
+import type { NoteTarget, SwipeStats } from "@/shared/types";
 import {
   selectIsPremium,
   selectPremiumResolved,
@@ -90,6 +92,43 @@ export function usePotentialMatches(pageSize = MAX_SWIPE_PAGE_SIZE) {
   });
 }
 
+/**
+ * "Mesafe sınırı olmasın" anahtarını TEK BAŞINA yaz (2026-08-22 sözleşmesi).
+ *
+ * Neden `useSaveFilters` DEĞİL: o mutation tam bir filtre payload'ı kuruyor ve
+ * alanların çoğu OVERWRITE semantiğinde (boş dizi = tercihi temizle). Boş bir
+ * local state'le çağrılırsa kullanıcının hobilerini/üniversitelerini/görünürlük
+ * listelerini sessizce siler. Burada yalnız tek alan gidiyor; gönderilmeyen
+ * alan "değiştirme" demek, yani diğer filtreler olduğu gibi kalıyor.
+ *
+ * Free kullanıcı da açabiliyor — paywall guard'ının DIŞINDA, 403 dönmüyor.
+ *
+ * Anahtar değişince backend Redis aday havuzunu düşürüp sıra tohumunu
+ * yeniliyor; ekstra cache-busting parametresi gerekmiyor, deste invalidate'i
+ * yeterli.
+ */
+export function useSetIgnoreDistanceFilter() {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: async (ignoreDistanceFilter: boolean) => {
+      const res = (await api.put(API_ENDPOINTS.SWIPE_UPDATE_FILTERS, {
+        ignoreDistanceFilter,
+      })) as any;
+      if (!res.isSuccess) throw new Error(res.message || "Filters save failed");
+      return res.result;
+    },
+    onSuccess: (result: any) => {
+      // useSaveFilters'takiyle aynı MERGE gerekçesi: PUT yanıtı GET'in tüm
+      // alanlarını taşımıyor (min/maxSelectableDistanceKm düz replace'te
+      // düşerdi ve slider sınırları tier sabitlerine geri kayardı).
+      qc.setQueryData(swipeKeys.filters, (prev: any) =>
+        prev ? { ...prev, ...result } : result,
+      );
+      qc.invalidateQueries({ queryKey: swipeKeys.matches });
+    },
+  });
+}
+
 export function useSwipeFilters() {
   return useQuery({
     queryKey: swipeKeys.filters,
@@ -129,15 +168,19 @@ export function useSwipeStats() {
         matchesToday: r.matchesToday ?? 0,
         remainingUndos: r.remainingUndos ?? null,
         undoCountResetAt: r.undoCountResetAt ?? null,
-        // Kaçırılan eşleşme kurtarma — GÜNLÜK kota (free 2 / premium 5).
-        // `-1` ve sentinel tarih konvansiyonları burada GEÇERLİ DEĞİL: reset
-        // saniyesi her zaman 0…86400, `nextMissedMatchRecoveryResetAt` her zaman
-        // bir sonraki UTC gün dönümü. Premium'da da gerçek sayı gelir (undo'daki
-        // "sınırsız = -1" mantığı yok).
+        // Kaçırılan eşleşme kurtarma — 2026-08-22'den beri GÜNLÜK DEĞİL:
+        // free'de kota 0 (yalnız satın alınan kredi), premium'da tier başına
+        // 1/2/5 ve abonelik döngüsüyle yenileniyor. Alan tier kotası + satın
+        // alınan kredi TOPLAMINI taşımaya devam ediyor (SuperLike üçlüsüyle
+        // birebir aynı desen) — toplam FE'de yeniden hesaplanmaz.
         remainingMissedMatchRecovery: r.remainingMissedMatchRecovery ?? null,
-        // ⚠️ Tavan alanı ama `-1` DÖNMEZ: premium de sonlu kotaya tabi (5/gün).
+        quotaRecoveryRemaining: r.quotaRecoveryRemaining ?? null,
+        purchasedRecoveries: r.purchasedRecoveries ?? null,
+        // ⚠️ Tavan alanı ama `-1` DÖNMEZ: premium de sonlu kotaya tabi.
         // `dailySwipeLimit`/`dailyUndoLimit` için yazılan "-1 ise sınırsız"
-        // dalını buraya kopyalamayın — "5/5" yerine "∞" yazardı.
+        // dalını buraya kopyalamayın — "2/2" yerine "∞" yazardı. Bakiye tavanı
+        // da DEĞİL (kredi + tier düşüşü onu aşabilir); payda tek yerden
+        // çözülüyor, bkz. recoveryQuota.ts.
         dailyMissedMatchRecoveryLimit: r.dailyMissedMatchRecoveryLimit ?? null,
         // Kaçırılan eşleşme penceresi (gün). Backend config'inden geliyor, FE'de
         // sabit tutulmuyor — metinler bu değerle kuruluyor.
@@ -161,6 +204,14 @@ export function useSwipeStats() {
         dailySwipeLimit: r.dailySwipeLimit ?? null,
         weeklySuperLikeLimit: r.weeklySuperLikeLimit ?? null,
         dailyUndoLimit: r.dailyUndoLimit ?? null,
+        // Not (yorumlu beğeni) bakiyesi. `null` = backend alanı HENÜZ
+        // göndermiyor; 0'a düşürmüyoruz çünkü ikisi farklı: 0 "bakiyen bitti",
+        // null "sözleşme daha canlı değil". Kutu ikisinde de paket sheet'ini
+        // açıyor ama composer'daki bakiye rozeti yalnız sayı varken çiziliyor.
+        notesRemaining: r.notesRemaining ?? null,
+        purchasedNotes: r.purchasedNotes ?? null,
+        quotaNotesRemaining: r.quotaNotesRemaining ?? null,
+        noteMaxLength: r.noteMaxLength ?? null,
       };
     },
     // Stats sadece bir kez fetch — sonraki update'ler optimistik setQueryData ile.
@@ -199,10 +250,11 @@ export function useSwipeStats() {
     ) {
       return { ...result.data, serverIsPremium };
     }
-    // superLikesRemaining'e BİLEREK dokunmuyoruz: premium'da SuperLike
-    // sınırsız değil (weeklySuperLikeLimit / 7-gün rolling), doğru bakiye
-    // ancak backend'den gelir. Satın alma anındaki optimistic değeri
-    // PurchaseModal yazıyor.
+    // superLikesRemaining, kurtarma ve NOT bakiyelerine BİLEREK dokunmuyoruz:
+    // premium'da hiçbiri sınırsız değil (tier'a bağlı sonlu kota + abonelik
+    // döngüsüyle yenilenme; notta kota hiç olmayabilir), doğru bakiye ancak
+    // backend'den gelir. Satın alma anındaki optimistic değeri PurchaseModal
+    // yazıyor.
     return {
       ...result.data,
       serverIsPremium,
@@ -295,6 +347,69 @@ export function useSwipeMutation() {
   });
 }
 
+/**
+ * Not gönderimi — yorumlu, hedefli beğeni.
+ *
+ * `useSwipeMutation`den AYRI tutuldu: yön (`left`/`right`/`up`) semantiği yok,
+ * kotası günlük like kotası değil (ayrı consumable) ve hata yolu tamamen farklı
+ * — composer açık kalıp inline hata göstermek zorunda, oysa swipe mutasyonunda
+ * kart zaten uçmuş oluyor.
+ *
+ * ⚠️ Optimistic decrement YOK. SuperLike'ta var çünkü orada kart anında uçuyor
+ * ve sayacın gecikmesi görünür oluyordu; notta kullanıcı yanıtı bekleyen bir
+ * sheet'in içinde duruyor. Bakiye yalnız sunucu cevabıyla yazılıyor, böylece
+ * kredi harcanmayan hatalar (UT-6404/6405/6407) bakiyeyi hiç kıpırdatmıyor.
+ */
+export function useNoteMutation() {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: ({
+      userId,
+      comment,
+      target,
+    }: {
+      userId: string;
+      comment: string;
+      target: NoteTarget;
+    }) => swipeService.sendNote(userId, comment, noteTargetPayload(target)),
+    onSuccess: (response: any) => {
+      const result = response?.result;
+
+      // Bakiyenin server-truth'u: `remainingNotes` toplam (kota + kredi),
+      // `remainingPurchasedNotes` kredinin kalanı. Kota mı kredi mi harcandığını
+      // yalnız backend biliyor.
+      qc.setQueryData(swipeKeys.stats, (prev: any) => {
+        if (!prev) return prev;
+        const next = { ...prev };
+        if (typeof result?.remainingNotes === "number") {
+          next.notesRemaining = result.remainingNotes;
+        }
+        if (typeof result?.remainingPurchasedNotes === "number") {
+          next.purchasedNotes = result.remainingPurchasedNotes;
+        }
+        // Not günlük like kotasından DÜŞMÜYOR (öneri dokümanı D2) →
+        // `remainingSwipes`/`likesToday` bilerek elle sürülmüyor.
+        return next;
+      });
+
+      // ⚠️ `result.isMatch` OKUNMUYOR: bu uçta karşılıklı beğenide bile hep
+      // `false` dönüyor (Like/SuperLike de öyle) ve `matchId` DTO'da hiç yok.
+      // Eşleşme SignalR `MatchNotification` ile geliyor.
+
+      // Bakiye biterken gelen paywall. Normal yolda buraya HİÇ girilmez: bakiye
+      // bittiğinde uç 402 + UT-6401 atıyor, yani mutation reject oluyor ve sheet
+      // DiscoverScreen'in catch'inden açılıyor. Bu dal yalnız sunucu bir gün
+      // 200 + showPaywall dönerse diye duruyor.
+      if (result?.showPaywall) {
+        uiBus.emit("notePaywall", {
+          paywallType: result.paywallType ?? "NOTE_BALANCE",
+          message: result.paywallMessage || result.message,
+        });
+      }
+    },
+  });
+}
+
 export function useSaveFilters() {
   const qc = useQueryClient();
   return useMutation({
@@ -318,6 +433,10 @@ export function useSaveFilters() {
       // Hangi filtreler "olmazsa olmaz". Semantiği diğerlerinden FARKLI:
       // alan yok/null = değiştirme, [] = hepsini esnet, [...] = tam liste.
       dealbreakers?: string[];
+      // "Mesafe sınırı olmasın" anahtarı. `maxDistance`tan BAĞIMSIZ alan:
+      // ikisi birlikte gönderilebilir, çakışmaz. Anahtar açıkken de kullanıcının
+      // seçtiği yarıçap saklanır ve kapatınca geri yüklenir.
+      ignoreDistanceFilter?: boolean;
     }) => {
       // `city` premium-only alan: doluyken free kullanıcıda backend TÜM isteği
       // 403 + PREMIUM_FILTERS ile reddediyor (yaş/mesafe güncellemesi de gider).
@@ -325,7 +444,7 @@ export function useSaveFilters() {
       const payload: Record<string, unknown> = {
         ageRangeMin: localFilters.ageRangeMin ?? DEFAULT_AGE_RANGE.min,
         ageRangeMax: localFilters.ageRangeMax ?? DEFAULT_AGE_RANGE.max,
-        // Backend doğrulaması artık Range(1, 100) — eski Range(0, 20000) yok.
+        // Backend doğrulaması artık Range(5, 150) — eski Range(1, 100) yok.
         // Aralık dışı bir değer (bayat cache'ten gelen 300 km, eski "sınırsız"
         // sentinel'i 20000) İSTEĞİN TAMAMINI 400'e düşürür, yani cinsiyet/şehir
         // güncellemesi de kaybolur. FilterModal zaten tier tavanına clamp'liyor;
@@ -336,8 +455,8 @@ export function useSaveFilters() {
           DISTANCE_RANGE_KM.max,
           Math.max(
             DISTANCE_RANGE_KM.min,
-            // Alan hiç gelmezse free tavanı: DISTANCE_RANGE_KM.min (1 km)
-            // fiilen "kimseyi gösterme" demek olurdu.
+            // Alan hiç gelmezse free tavanı: DISTANCE_RANGE_KM.min (5 km)
+            // fiilen "kimseyi gösterme" demek olurdu — mesafe artık KATI filtre.
             localFilters.maxDistance ?? FREE_MAX_DISTANCE_KM,
           ),
         ),
@@ -406,6 +525,14 @@ export function useSaveFilters() {
       if (Array.isArray(localFilters.dealbreakers)) {
         payload.dealbreakers = localFilters.dealbreakers;
       }
+      // `ignoreDistanceFilter` de KOŞULLU: alan yok/null = "değiştirme". Free
+      // kullanıcıda da gönderiliyor — premium guard'ının dışında bir alan,
+      // 403 üretmez (sözleşme §0). Anahtarı çizmeyen eski bir çağıran (ya da
+      // alanı hiç taşımayan bayat local state) kullanıcının kayıtlı tercihini
+      // sessizce kapatmasın diye `false`ı da ancak açıkça geldiğinde yolluyoruz.
+      if (typeof localFilters.ignoreDistanceFilter === "boolean") {
+        payload.ignoreDistanceFilter = localFilters.ignoreDistanceFilter;
+      }
       // interestedIn (InterestedInType[]: Men=0, Women=1, NonBinary=2) free alan.
       // Backend semantiği: alan yok/null = değiştirme, boş dizi = 7 (herkes),
       // dolu dizi = o değere ayarla. Boş diziyi yine de göndermiyoruz: FilterModal
@@ -442,7 +569,15 @@ export function useSaveFilters() {
       }
     },
     onSuccess: (result: any) => {
-      qc.setQueryData(swipeKeys.filters, result);
+      // MERGE, replace değil. Kaydettikten sonra yanıttaki `maxDistance` geri
+      // yazılmalı (aralık dışı değer 400 DEĞİL sessiz clamp alıyor — kullanıcı
+      // 150 seçip 75 kaydedildiyse slider gerçeği göstermeli). Ama PUT yanıtı
+      // GET'in tüm alanlarını taşımıyor: `minSelectableDistanceKm` /
+      // `maxSelectableDistanceKm` düz replace'te düşerdi ve slider sınırları
+      // backend yerine tier sabitlerine geri kayardı.
+      qc.setQueryData(swipeKeys.filters, (prev: any) =>
+        prev ? { ...prev, ...result } : result,
+      );
       qc.invalidateQueries({ queryKey: swipeKeys.matches });
     },
   });
@@ -479,4 +614,37 @@ export function useUpdateStatsCache() {
       prev ? { ...prev, ...patch } : prev,
     );
   };
+}
+
+/**
+ * Kurtarma harcandıktan SONRA bakiyeyi hizala: iyimser düşüş + kanonik tazeleme.
+ *
+ * İkisi birlikte olmak ZORUNDA. Bu sorgu `staleTime: Infinity` +
+ * `refetchOnMount: false` ile oturumda BİR KEZ çekiliyor; yalnızca
+ * `setQueryData` yazan bir çağıran, ekrandaki sayıyı oturum başındaki değerin
+ * yerel bir türevi hâlinde bırakıyor. "/Stats bir sonraki tazelemede doğrusunu
+ * getirir" varsayımı yanlıştı — o tazeleme hiç gelmiyordu (2026-08-24 bug'ı:
+ * kota satırı kurtarma yapılmasına rağmen 5/5'te takılı kalıyordu).
+ *
+ * İyimser düşüş yine de duruyor: refetch bir ağ turu, kullanıcı butona bastığı
+ * anda sayının hareket etmesi gerekiyor.
+ *
+ * Yama cache'in O ANKİ hâlinden hesaplanıyor, çağıranın render closure'ından
+ * DEĞİL: bayat bir `stats.remaining` üzerinden guard'lamak (`rem > 0`) düşüşü
+ * sessizce atlatabiliyordu.
+ *
+ * `refetchQueries` (invalidate değil): invalidate yalnız "bayat" işaretler ve
+ * `staleTime: Infinity` altında da observer'ı olan sorgu tazelenir — ama
+ * `type: "all"` ile ekran mount değilken de doğru değeri yazmak istiyoruz.
+ */
+export function useSyncRecoverySpend() {
+  const qc = useQueryClient();
+  return useCallback(() => {
+    qc.setQueryData(swipeKeys.stats, (prev: any) =>
+      prev ? { ...prev, ...spendRecoveryPatch(prev) } : prev,
+    );
+    return qc
+      .refetchQueries({ queryKey: swipeKeys.stats, type: "all" })
+      .catch(() => {});
+  }, [qc]);
 }

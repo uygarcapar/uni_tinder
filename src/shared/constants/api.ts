@@ -76,6 +76,16 @@ export const API_ENDPOINTS = {
   // hep 200 + ResponseDto dönerken bu action GERÇEK HTTP status kullanıyor:
   // 402 = RC webhook'u henüz inmedi (retry), 400 = kalıcı hata.
   SWIPE_SUPER_LIKE_REDEEM: "/api/swipe/SuperLike/Redeem",
+  // Not = kartın BELİRLİ bir içeriğine (foto / prompt) yazılan yorumla birlikte
+  // gönderilen beğeni. Swipe kaydı olarak LIKE sayılır (karşılıklıysa eşleşme),
+  // ama kotası günlük like kotası değil: satın alınan ayrı bir consumable.
+  // Sözleşme: backend_note_consumable_proposal.md. ⚠️ Uç HENÜZ CANLI DEĞİL —
+  // bakiye (`Stats.notesRemaining`) 0 kaldığı sürece FE buraya hiç istek atmaz,
+  // not kutusu doğrudan satın alma sheet'ini açar.
+  SWIPE_NOTE: "/api/swipe/Note",
+  // SuperLike/kurtarma redeem'lerinin birebir aynısı (gerçek HTTP status:
+  // 402 = webhook inmedi → retry, 400 = kalıcı).
+  SWIPE_NOTE_REDEEM: "/api/swipe/Note/Redeem",
   SWIPE_STATS: "/api/swipe/Stats",
   SWIPE_MATCHES: "/api/swipe/GetMatches",
   WHO_LIKED_ME: "/api/swipe/wholikedme",

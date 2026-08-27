@@ -398,8 +398,11 @@ export function resolveCode(
   return null;
 }
 
-// Paywall tip sabitleri (Task 💳). Backend bu 6 string'i döner; frontend
+// Paywall tip sabitleri (Task 💳). Backend bu string'leri döner; frontend
 // switch yaparken `as const` literal'larla kontrol eder.
+//
+// NOTE_BALANCE diğerlerinden AYRI davranıyor: abonelik paywall'ı değil,
+// consumable paket sheet'ini açıyor (bkz. useNoteMutation → uiBus "notePaywall").
 export const PAYWALL_TYPES = {
   SWIPE_LIMIT: "SWIPE_LIMIT",
   SUPER_LIKE_LIMIT: "SUPER_LIKE_LIMIT",
@@ -407,4 +410,5 @@ export const PAYWALL_TYPES = {
   MISSED_MATCH_RECOVERY_LIMIT: "MISSED_MATCH_RECOVERY_LIMIT",
   PREMIUM_FILTERS: "PREMIUM_FILTERS",
   CHAT_QUOTA_EXHAUSTED: "CHAT_QUOTA_EXHAUSTED",
+  NOTE_BALANCE: "NOTE_BALANCE",
 } as const satisfies Record<PaywallType, PaywallType>;

@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useMemo, useState } from "react";
+import { Fragment, useCallback, useEffect, useMemo, useState } from "react";
 import { useTranslation } from "react-i18next";
 import {
   View,
@@ -182,7 +182,6 @@ function BounceScrollView({
     </Animated.ScrollView>
   );
 }
-import * as Haptics from "expo-haptics";
 import uiBus, {
   cardExpandAnim,
   resetCardExpandState,
@@ -216,17 +215,26 @@ import {
   colors as theme,
   gradients,
   getIntentCardGradient,
+  ink,
   isLight,
-  onMediaAt,
   scrimAt,
+  veil,
 } from "../../../shared/theme/colors";
+import { MAX_PROFILE_PROMPTS } from "@/shared/constants/limits";
+import {
+  photoNoteTarget,
+  promptNoteTarget,
+} from "@/features/discover/noteTarget";
+import type { NoteTarget } from "@/shared/types";
 import { buildMapboxStaticUrl } from "@/shared/constants/mapbox";
 import { lookupCityCoordinate } from "@/shared/constants/cityCoordinates";
 import HobbyIcon from "@/shared/components/HobbyIcon";
 import SFIcon, { type SFSymbol } from "@/shared/components/SFIcon";
 import PremiumFlame from "@/shared/components/PremiumFlame";
 import SuperLikeGlyph from "@/shared/components/SuperLikeGlyph";
+import NoteGlyph from "@/shared/components/NoteGlyph";
 import PillFlow from "@/shared/components/PillFlow";
+import PinchZoomable from "@/shared/components/PinchZoomable";
 import {
   getAlcoholIcon,
   getPetIcon,
@@ -234,10 +242,16 @@ import {
 } from "@/shared/constants/filterEnumIcons";
 
 import { useRenderCount } from "@/shared/debug/useRenderCount";
+import { resolveCardAge } from "../cardPrivacy";
 import type { PotentialMatch } from "@/shared/types";
 
 const { width, height } = Dimensions.get("window");
 const SCREEN_HEIGHT = height - 188; // Header height (90px) çıkarıldı
+
+// Super-like kalbi. Arkasındaki beyaz yuvarlak KALDIRILDI: kalp artık kapak
+// fotoğrafının içinde akıyor (sticky değil), yani hiçbir zaman panel zemininin
+// üstüne binmiyor — zemin yalnız o duruş için gerekliydi.
+const SUPER_LIKE_SIZE = 55;
 
 // İsmin yanındaki premium ateş ikonunun kutu boyutu (collapsed: text-4xl isim).
 // Expanded başlık daha küçük (text-3xl) → ikon da oranlı küçülür.
@@ -277,6 +291,15 @@ const PHOTOLESS_BACKDROP_LIGHT = ["#EDEDF1", "#B4B4BC"] as const;
 const HEIGHT_MIN_CM = 140;
 const HEIGHT_MAX_CM = 220;
 
+// Expanded panelde bölümlerin ARASINA serpiştirilen fotoğraflar (2., 3., 4. ve
+// sonrası). Kapaktaki ilk fotoğraf yerinde kalır; galeri artık kenarlara
+// basarak gezilmiyor, bütün fotoğraflar bu bloklarla akışın içinde duruyor.
+// Oran 4:5 — dikey portre, contentFit="cover" ile kırpılır. Genişlik yüzde
+// verilir (sabit px DEĞİL): kart sheet içinde tam ekrandan dar açılabiliyor.
+const SECTION_PHOTO_ASPECT = 4 / 5;
+// Bölüm kutularının yarıçapı ile aynı (bkz. hobiler/yaşam tarzı/bio kutuları).
+const SECTION_PHOTO_RADIUS = 40;
+
 // "ilişki" ekini alan ilişki niyetleri (bkz. relationshipIntentLabel).
 // Anahtar DAİMA enumName: `display` Accept-Language'e göre değişiyor.
 const RELATIONSHIP_INTENTS_WITH_SUFFIX = new Set([
@@ -286,48 +309,273 @@ const RELATIONSHIP_INTENTS_WITH_SUFFIX = new Set([
   "ShortTermOpenToLong",
 ]);
 
-// Expanded karttaki bölüm kutularının (üniversite, hobiler, yaşam tarzı, bio,
-// konum) ORTAK çerçevesi. Niyet kartı HARİÇ: zemini gradyan olduğu için
-// çerçeve gradyanın kenarında çizgi gibi okunuyordu, kutu zaten renkle
-// ayrışıyor. Tek düz hairline yerine kenarlar arası tonlanan
-// bir pah: ışık yukarıdan geliyormuş gibi üst kenar parlak, alt kenar sönük →
-// kutu zeminden hafifçe kabarık okunuyor.
+// Ek takmadan önce "kelime etikette zaten var mı" kontrolü İKİ dilde birden
+// yapılıyor: fallback'e düşen backend display'i hangi dilde geldiyse o dilin
+// kelimesini taşıyor ("Uzun süreli ilişki" / "Long term relationship"). Tek
+// dile bakmak "Long term relationship ilişki" gibi çift kelime üretiyordu.
+const INTENT_SUFFIX_WORDS = ["ilişki", "relationship"];
+
+// Expanded karttaki bölüm kutuları (üniversite, hobiler, yaşam tarzı, bio,
+// prompt, konum + araya giren fotoğraf blokları) ÇERÇEVESİZ. Önceden ortak bir
+// pah (`sectionBevel`) vardı — kenarlar arası tonlanan 1px çerçeve; kaldırıldı.
+// Kutular zeminden yalnız dolgularıyla ayrışıyor (surfaceTranslucent / surface)
+// ve yuvarlak köşeleriyle. Yeni bölüm eklerken çerçeve EKLEME: ritim borderless.
+// Konum satırındaki mesafe pilinin ("3 km uzakta") dolgu + yazı rengi.
 //
-// Neden gölge DEĞİL: bu kutuların hepsinde `overflow: "hidden"` var (niyet
-// kartının absoluteFill gradyanı ve köşe kırpması buna bağlı) ve iOS'ta
-// clipsToBounds katmanın kendi gölgesini de kırpar — shadow* prop'ları hiç
-// görünmezdi. Kenar renkleri kırpılmadığı için 3D etkisi çerçeveden veriliyor.
+// KOYUDA moda ZIT: beyaz dolgu (ink) + siyah yazı (veil) — bölümün koyu
+// zemininde pil kabartma gibi öne çıkıyor.
+// AÇIKTA ARTIK ZIT DEĞİL: siyah dolgu gri yüzeye (surface4) çevrildi, o yüzden
+// yazı da veil(1) (beyaz) OLAMAZ — gri üstünde okunmaz; theme.text'e geçiyor.
+// İkisi bu yüzden TEK yerde: dolgu ile yazı ayrı ayrı değiştirilirse beyaz
+// üstüne beyaz kalma tuzağı geri gelir.
 //
-// RENDER SIRASINDA ÇAĞIR (colors.ts mutasyon sözleşmesi): modül seviyesinde
-// sabite alınırsa tema değişince bayat kalır.
-function sectionBevel() {
-  // Koyuda çerçeve beyaz-üstü şeffaf (üst parlak → alt söner), açıkta
-  // siyah-üstü (üst sönük → alt koyu, yani gölge aşağıda). İki modda da
-  // nötr gri: renk taşımıyor, yalnız hacim veriyor.
-  //
-  // KOYUDA ALT KENARIN TABANI VAR: açıkta "alt = gölge" çünkü siyahı
-  // koyulaştıracak yer var, koyuda ise zemin zaten neredeyse siyah
-  // (surfaceTranslucent = rgba(18,18,18,.8) → bg #121212 / surface3 #262626)
-  // ve beyaz alfayı 0'a indirmek kenarı gölgeye değil YOKLUĞA çeviriyordu —
-  // kutu "sadece üstte çerçevesi var" gibi okunuyordu. Bu yüzden koyuda
-  // aralık daraltıldı: alt hâlâ en sönük kenar ama zeminden ayrışacak bir
-  // tabanın altına inmiyor. Alfalar genel olarak da düşük tutuluyor —
-  // çerçeve fark edilsin ama kutunun içeriğinden önce göze çarpmasın.
+// RENDER SIRASINDA ÇAĞIR (colors.ts mutasyon sözleşmesi).
+function distancePillColors() {
   return isLight()
     ? {
-        borderWidth: 1,
-        borderTopColor: "rgba(0,0,0,0.03)",
-        borderLeftColor: "rgba(0,0,0,0.055)",
-        borderRightColor: "rgba(0,0,0,0.055)",
-        borderBottomColor: "rgba(0,0,0,0.11)",
+        background: theme.surface4,
+        border: ink(0.06),
+        text: theme.text,
       }
     : {
-        borderWidth: 1,
-        borderTopColor: "rgba(255,255,255,0.07)",
-        borderLeftColor: "rgba(255,255,255,0.045)",
-        borderRightColor: "rgba(255,255,255,0.045)",
-        borderBottomColor: "rgba(255,255,255,0.035)",
+        background: ink(1),
+        border: veil(0.1),
+        text: veil(1),
       };
+}
+
+// Not butonu — fotoğrafın İÇİNDE, alt kenarına yaslı konuşma balonu işareti.
+//
+// Eskiden burada fotoğrafın SAĞ ÜSTÜNDE yüzen yuvarlak bir kalp butonu vardı ve
+// hiçbir uca bağlı değildi. Yerini bu buton aldı: not, kartın bütününe değil
+// BELİRLİ bir içeriğine (bu fotoğraf, bu prompt cevabı) yazılan yorumlu bir
+// beğeni — kutunun hedefin İÇİNDE durması "neye yazdığımı" tek bakışta anlatıyor.
+//
+// RENK: her üç yerleşimde de TEMAYI TAKİP EDİYOR — `text` (açık modda siyah,
+// koyu modda beyaz). Önce düz `litPlus` denendi (Mesajlar'ın boş durumundaki
+// birincil CTA rengi); fotoğrafın üstünde renk her zeminde tutmuyordu.
+// Açık moddaki okunurluğu artık arkadaki beyaz disk taşıyor (bkz. ZEMİN notu),
+// o yüzden nötr ton fotoğrafta da prompt kutusunda da kaybolmuyor.
+//
+// İŞARET: içinde SF `bubble.left` duran opak litPlus daireydi; şimdi işaretin
+// kendisi konuşma balonu — uygulama ikonundan sökülen glyph (NoteGlyph),
+// super-like kalbinin (SuperLikeGlyph) kardeşi. İki balon (kap + ikon) üst üste
+// binmesin diye tek siluete indi.
+//
+// ZEMİN: yalnız FOTOĞRAF üstünde, işaretin arkasına disk konuyor
+// (NOTE_DISC_SIZE). Rengi `veil` — açık modda BEYAZ, koyu modda SİYAH, yani
+// işaretin (`text`) tam tersi: fotoğrafın altında ne varsa siluetin kenarı her
+// zeminde tutuyor. Prompt kutusundaki kutuda disk YOK — orası fotoğraf değil,
+// işaret kutunun düz zemininde zaten okunuyor (siyah disk denendi, GERİ
+// ALINDI).
+//
+// Balonun içindeki kalp DELİK: altındaki ne varsa (fotoğraf, prompt kutusunun
+// zemini) oradan görünür, ikinci bir renk taşımıyoruz. Deliği açan şey
+// `fillRule="evenodd"` — NoteGlyph'in içinde, oraya bak.
+//
+// Dokunma hedefi 52 KALDI (glyph kabı saydam): kutunun kalktığı yerde hitbox da
+// küçülürse fotoğrafın alt kenarındaki isabet oranı düşer. Yerleşim payları
+// (NOTE_BOX_INSET ve türevleri) bu 52'lik kaba göre hesaplı, dokunma.
+const NOTE_BOX_SIZE = 52;
+/**
+ * Çizilen işaretin boyu — dokunma kabından (52) küçük, kabın içinde ortalı.
+ * Glyph'in kendi 2/24'lük optik payı da bunun içinde, yani gerçek mürekkep
+ * bunun 20/24'ü. Kabı tam dolduran 52 iki yerde de fazla iriydi.
+ *
+ * İki ölçü var, çünkü işaret iki farklı zeminde duruyor:
+ *   FOTOĞRAF — arkasında disk var (NOTE_DISC_SIZE), okunurluğu o taşıyor →
+ *              siluet daha küçük durabiliyor.
+ *   PROMPT   — disk yok, işaret kutunun zemininde tek başına → bir tık büyük.
+ */
+const NOTE_GLYPH_SIZE_PHOTO = 30;
+const NOTE_GLYPH_SIZE_PROMPT = 40;
+/**
+ * İşaretin arkasındaki diskin çapı — hangi renkte çizildiği için bileşenin
+ * başındaki ZEMİN notuna bak.
+ *
+ * Ölçü dokunma kabını (52) tam doldurmuyor ama glyph'in (32) belirgin şekilde
+ * üstünde: balon diskin içinde nefes alsın, disk de gerçek bir kap gibi okunsun.
+ */
+const NOTE_DISC_SIZE = 50;
+/** Fotoğrafın kenarından içeri — 40'lık köşe yarıçapının teğetini geçecek kadar. */
+const NOTE_BOX_INSET = 14;
+/**
+ * Kapak fotoğrafındaki kutunun sağ payı. Kapak kartın TAM genişliği, panel
+ * içeriği ise 16'lık yan padding'in içinde (`px-4`) — ikisine de aynı 14'ü
+ * verince kapaktaki buton diğerlerinden 16px daha sağda kalıyordu. Panel
+ * padding'i eklenince üçü de (kapak · bölüm fotoları · prompt kutusu) aynı
+ * dikey hatta oturuyor.
+ */
+const NOTE_BOX_COVER_INSET = NOTE_BOX_INSET + 16;
+/**
+ * Prompt kutusunda butonun cevaba doğru çekildiği pay. Cevap kabının kendi
+ * 14'lük alt padding'i aralığı zaten taşıyor, üstüne tam marj eklenince buton
+ * metinden kopuk duruyordu. Butonun HİÇ çizilmediği girişlerde (kendi profil
+ * önizlemesi · Likes · sohbet profili) yerine konan boşluk da aynı payı
+ * düşüyor: kutunun altı iki durumda da birebir aynı kalıyor.
+ */
+const NOTE_BOX_PROMPT_PULL = 8;
+
+function NoteBox({
+  onPress,
+  onPhoto = false,
+}: {
+  onPress?: () => void;
+  /** Kutu bir FOTOĞRAFIN üstünde mi — açık moddaki beyaz diski o belirliyor. */
+  onPhoto?: boolean;
+}) {
+  const { t } = useTranslation();
+  // Basma geri bildirimi SADECE ölçek — opacity sabit (activeOpacity=1).
+  // Gradyan dolgu soluklaşınca kutu "sönmüş" gibi duruyordu; küçülme aynı
+  // dokunulma hissini rengi bozmadan veriyor. Super-like kalbindeki
+  // heartPressAnim ile aynı kalıp ve aynı 180ms/out-quad zamanlaması.
+  const pressAnim = useSharedValue(0);
+  const pressStyle = useAnimatedStyle(() => ({
+    transform: [{ scale: 1 - 0.06 * pressAnim.value }],
+  }));
+  // KONUMLANDIRMA ÇAĞIRANIN İŞİ. Üç yerde üç farklı yerleşim var (panel
+  // fotoğrafının içinde, kapak fotoğrafının içinde + animasyonlu, prompt
+  // kutusunun içinde sağ altta); hepsini buraya bayrak olarak taşımak bu
+  // bileşeni konumlandırma switch'ine çevirirdi. Dikey konumu çağıran veriyor,
+  // yatayda hepsinde aynı: sağa yaslı.
+  return (
+    <TouchableOpacity
+      activeOpacity={1}
+      onPress={onPress}
+      onPressIn={() => {
+        pressAnim.value = withTiming(1, {
+          duration: 180,
+          easing: Easing.out(Easing.quad),
+        });
+      }}
+      onPressOut={() => {
+        pressAnim.value = withTiming(0, {
+          duration: 180,
+          easing: Easing.out(Easing.quad),
+        });
+      }}
+      accessibilityRole="button"
+      // Görünür etiket kalmadı → butonun ADI yalnız burada. Silme.
+      accessibilityLabel={t("note.boxLabel")}
+      style={{ alignSelf: "flex-end" }}
+      hitSlop={8}
+    >
+      <Animated.View
+        style={[
+          {
+            width: NOTE_BOX_SIZE,
+            height: NOTE_BOX_SIZE,
+            alignItems: "center",
+            justifyContent: "center",
+          },
+          pressStyle,
+        ]}
+      >
+        {/* Disk — glyph'in ARKASINDA, mutlak ve ortalı (akışa girseydi kabı
+            büyütürdü). Yalnız fotoğraf üstünde, bkz. ZEMİN notu. Tam opak
+            değil: altındaki fotoğraf bir tık sızsın, disk yapıştırılmış bir pul
+            gibi durmasın. */}
+        {onPhoto && (
+          <View
+            pointerEvents="none"
+            style={{
+              position: "absolute",
+              width: NOTE_DISC_SIZE,
+              height: NOTE_DISC_SIZE,
+              borderRadius: 999,
+              backgroundColor: veil(0.92),
+            }}
+          />
+        )}
+        {/* İşaretin tamamı bu: metin de kalan hak sayısı da YOK. Glyph 52'lik
+            dokunma kabının içinde ortalı, ondan küçük (zemine göre iki ölçü,
+            bkz. NOTE_GLYPH_SIZE_*) — kendi 2/24'lük optik payı da cabası.
+            Kontur kapak kalbindeki ile aynı ince açık hairline: fotoğrafın
+            parlak yerlerinde siluetin kenarını tutuyor. */}
+        <NoteGlyph
+          size={onPhoto ? NOTE_GLYPH_SIZE_PHOTO : NOTE_GLYPH_SIZE_PROMPT}
+          color={theme.text}
+          stroke={theme.swipeHeartBorder}
+          strokeWidth={0.1}
+        />
+      </Animated.View>
+    </TouchableOpacity>
+  );
+}
+
+// Bölümlerin arasına giren fotoğraf bloğu. Kutusu bölüm kutularıyla birebir
+// aynı (radius 40 + continuous, çerçevesiz) → panelde ayrı bir kart gibi
+// değil, aynı ritmin bir parçası gibi okunur.
+//
+// Skeleton/shimmer YOK, bilinçli: kart başına 5-6 fotoğraf olabiliyor ve her
+// biri sonsuz `withRepeat` sürerse Fabric tarafında gereksiz commit yükü
+// birikiyor. Yüklenene kadar kutunun kendi surface zemini duruyor, expo-image
+// de `transition` ile üstüne yumuşakça geliyor.
+function SectionPhoto({
+  uri,
+  onNotePress,
+  hideNote = false,
+  zoomable = true,
+}: {
+  uri: string;
+  onNotePress?: () => void;
+  /** Önizleme (Profil / Likes / Chat kartı): fotoğrafın altında not kutusu yok. */
+  hideNote?: boolean;
+  /** Modal içindeki kartlarda kapalı — büyütme katmanı modal'ın ALTINDA kalıyor. */
+  zoomable?: boolean;
+}) {
+  // Kutu fotoğrafın İÇİNDE (mutlak konumlu) → blok yüksekliğini ve alt
+  // boşluğunu değiştirmiyor; `overflow: hidden` sayesinde yuvarlak köşenin
+  // dışına da taşmıyor.
+  const showNote = !hideNote && !!onNotePress;
+  return (
+    <View
+      style={[
+        {
+          borderRadius: SECTION_PHOTO_RADIUS,
+          borderCurve: "continuous",
+          overflow: "hidden",
+          width: "100%",
+          aspectRatio: SECTION_PHOTO_ASPECT,
+          marginBottom: 16,
+          backgroundColor: theme.surface,
+        },
+      ]}
+    >
+      {/* İki parmakla büyütme — görsel kök katmanda (PinchZoomOverlay)
+          çiziliyor, bu kutunun `overflow: hidden`'ı kırpmasın diye. */}
+      <PinchZoomable
+        uri={uri}
+        radius={SECTION_PHOTO_RADIUS}
+        enabled={zoomable}
+        style={{ width: "100%", height: "100%" }}
+      >
+        <Image
+          source={{ uri }}
+          style={{ width: "100%", height: "100%" }}
+          contentFit="cover"
+          cachePolicy="memory-disk"
+          recyclingKey={uri}
+          transition={150}
+          onLoadEnd={() => {
+            loadedPhotoUris.add(uri);
+          }}
+        />
+      </PinchZoomable>
+      {showNote && (
+        <View
+          style={{
+            position: "absolute",
+            left: NOTE_BOX_INSET,
+            right: NOTE_BOX_INSET,
+            bottom: NOTE_BOX_INSET,
+          }}
+        >
+          <NoteBox onPress={onNotePress} onPhoto />
+        </View>
+      )}
+    </View>
+  );
 }
 
 // Ek takmadan önce "kelime display'de zaten var mı" kontrolü. Türkçe noktalı I
@@ -650,10 +898,10 @@ function NewMemberBadge({ label }: { label: string }) {
   );
 }
 
-// GetPotentialMatches → her kartın `thingsInCommon` rozetleri. Eşleme
-// `kindName` ile yapılıyor: dil değişse de sabit kalan anahtar o. Kardeşi
-// `kind` şu an aynı string'i taşıyor ama ileride numaraya dönebilir — ona
-// GÜVENME.
+// GetPotentialMatches → her kartın `thingsInCommon` rozetleri. Eşleme `kind`
+// ile yapılıyor: dil değişse de sabit kalan PascalCase anahtar o (`label`
+// lokalize metin, ona GÜVENME). İkizi `kindName` 2026-08-22'de kaldırıldı;
+// enum'lar wire'da her zaman string basılıyor, numaraya dönme riski yok.
 const THING_IN_COMMON_ICONS: Record<string, { sf: SFSymbol; lucide: LucideIcon }> =
   {
     Hobby: { sf: "sparkles", lucide: Sparkles },
@@ -666,12 +914,12 @@ const THING_IN_COMMON_ICONS: Record<string, { sf: SFSymbol; lucide: LucideIcon }
     RelationshipIntent: { sf: "heart.fill", lucide: Heart },
     // `UsagePurpose` (ordinal 8) KALDIRILDI: backend bu ortak noktayı artık
     // üretmiyor. Ordinal 8 backend'de REZERVE — Pet=9 / ZodiacSign=10 yerinde,
-    // buradaki eşleme `kindName` ile yapıldığı için indeks kayması da yok.
+    // buradaki eşleme isimle yapıldığı için indeks kayması da yok.
     Pet: { sf: "pawprint.fill", lucide: PawPrint },
     ZodiacSign: { sf: "moon.stars.fill", lucide: Moon },
   };
 
-// Backend ileride yeni tür ekleyebilir; bilinmeyen `kindName` ÇÖKMEMELİ,
+// Backend ileride yeni tür ekleyebilir; bilinmeyen `kind` ÇÖKMEMELİ,
 // varsayılan ikonla görünmeli.
 const DEFAULT_THING_IN_COMMON_ICON: { sf: SFSymbol; lucide: LucideIcon } = {
   sf: "checkmark.circle.fill",
@@ -719,12 +967,26 @@ interface SwipeCardProps {
   onReport?: () => void;
   onBlock?: () => void;
   superLikesRemaining?: number | null;
+  /**
+   * Not (yorumlu beğeni) gönderme isteği — hedefiyle birlikte.
+   *
+   * VERİLMEZSE not kutuları hiç çizilmez: kendi profilini önizlediğin yerde
+   * (ProfileScreen > PreviewModal) ve Likes önizlemesinde kendine/karşı tarafa
+   * not gönderilemez. `previewMode` de aynı sonucu verir, ama bu prop'un yokluğu
+   * daha açık bir sözleşme — çağıran "not gönderilebilir" demediyse gönderilemez.
+   */
+  onNote?: (target: NoteTarget) => void;
 }
+
+// Moderasyon ikonları X/tike doğru bu kadar çekiliyor. Satırın gap'ini
+// düşürmek X ile tiki de birbirine yaklaştırırdı; negatif iç margin sadece
+// uçtaki iki ikonu içeri alır, satır simetrik kaldığı için ortalama bozulmaz.
+const MODERATION_PULL = 10;
 
 // Moderasyon ikonu — şikayet ve engelle. Aksiyon satırı varsa onun İÇİNDE
 // duruyor (şikayet X'in solunda, engelle tikin sağında), aksiyonlar gizliyse
 // (PreviewModal) kendi satırında. Renk Ayarlar'daki "Hesabı Sil" butonunun
-// kırmızısı; 60x60 kutu + 34px glif, like/pass'in 68/75'inin bir tık altında.
+// kırmızısı; 36x36 kutu + 30px glif, like/pass'in 75'inin belirgin altında.
 // Etiket accessibilityLabel'da: ikon tek başına duruyor, metin taşımıyor.
 function ModerationIconButton({
   onPress,
@@ -733,6 +995,7 @@ function ModerationIconButton({
   fallback,
   strokeWidth = 1.5,
   weight = "regular",
+  pullToward,
 }: {
   onPress: () => void;
   label: string;
@@ -740,6 +1003,9 @@ function ModerationIconButton({
   fallback: LucideIcon;
   strokeWidth?: number;
   weight?: "regular" | "medium" | "semibold" | "bold" | "heavy" | "black";
+  // Merkezin hangi tarafta olduğu; o taraftaki boşluk MODERATION_PULL kadar
+  // kısalır. Verilmezse ikon olduğu yerde durur (tek başına duran satır).
+  pullToward?: "left" | "right";
 }) {
   return (
     <TouchableOpacity
@@ -747,22 +1013,24 @@ function ModerationIconButton({
       activeOpacity={0.6}
       accessibilityRole="button"
       accessibilityLabel={label}
-      // Kutu glifi sarmalıyor (40 ≈ 34px glif + 3px pay): aksiyon satırındaki
+      // Kutu glifi sarmalıyor (36 ≈ 30px glif + 3px pay): aksiyon satırındaki
       // dört öğenin ARALARINDAKİ boşluk eşit görünsün diye kutular gliflerinin
-      // ölçüsünde tutuluyor, dokunma alanını hitSlop büyütüyor (efektif 72px).
-      hitSlop={{ top: 16, bottom: 16, left: 16, right: 16 }}
+      // ölçüsünde tutuluyor, dokunma alanını hitSlop büyütüyor (efektif 76px).
+      hitSlop={{ top: 20, bottom: 20, left: 20, right: 20 }}
       style={{
-        width: 40,
-        height: 40,
+        width: 36,
+        height: 36,
         alignItems: "center",
         justifyContent: "center",
+        marginRight: pullToward === "right" ? -MODERATION_PULL : 0,
+        marginLeft: pullToward === "left" ? -MODERATION_PULL : 0,
       }}
     >
       <View pointerEvents="none">
         <SFIcon
           name={name}
           fallback={fallback}
-          size={34}
+          size={30}
           color={theme.errorStrong}
           strokeWidth={strokeWidth}
           weight={weight}
@@ -790,11 +1058,11 @@ export default function SwipeCard({
   zoomImpact,
   onReport,
   onBlock,
+  onNote,
 }: SwipeCardProps) {
   useRenderCount("SwipeCard");
   const insets = useSafeAreaInsets();
   const { t } = useTranslation();
-  const [currentPhotoIndex, setCurrentPhotoIndex] = useState(0);
   const [loadedPhotos, setLoadedPhotos] = useState(
     () => new Set(loadedPhotoUris),
   );
@@ -818,8 +1086,10 @@ export default function SwipeCard({
   // ScrollView içerik toplam yüksekliği — foto bottom'un gradient pozisyonunu
   // hesaplamak için lazım (blend'in bg ile aynı renge bitmesi için).
 
-  // Diğer fotoları arka planda prefetch — render edilmediler ama cache'e
-  // alınıyor; user foto değiştirince anında gelir (skeleton görmeden).
+  // Diğer fotoları arka planda prefetch. Artık expanded panelde bölümlerin
+  // arasında GERÇEKTEN render ediliyorlar (bkz. SectionPhoto), ama o ağaç
+  // `profileReady` ile 100ms geciktiriliyor — prefetch o kadarlık bir avans
+  // veriyor, panel açıldığında fotoğraflar cache'ten gelir.
   // Sadece TOP card için; bottom card foto prefetch'i gereksiz network yükü.
   // İlk foto zaten Image src'ile yükleniyor → skip.
   useEffect(() => {
@@ -909,6 +1179,16 @@ export default function SwipeCard({
     transform: [{ translateY: 80 * (1 - expandAnim.value) }],
   }));
 
+  // Kapak fotoğrafındaki not kutusu — isim/pill bloğu gittikten SONRA gelsin.
+  // Onlar 0→0.55 aralığında kayboluyor (nameAnimStyle · pillsAnimStyle), bu da
+  // 0.55→1 aralığında beliriyor: iki katman aynı bantta hiç üst üste binmiyor.
+  // profileInfoAnimStyle'ı yeniden kullanmıyoruz — oradaki 80px'lik translateY
+  // mutlak konumlu bir kutuyu fotoğrafın alt kenarının dışına taşırdı.
+  const coverNoteAnimStyle = useAnimatedStyle(() => {
+    const p = Math.max(0, Math.min(1, (expandAnim.value - 0.55) / 0.45));
+    return { opacity: p, transform: [{ translateY: 8 * (1 - p) }] };
+  });
+
   // Chevron full range — rotate animasyonu yumuşak gözüksün
   const chevronAnimStyle = useAnimatedStyle(() => ({
     transform: [{ rotate: `${180 * expandAnim.value}deg` }],
@@ -938,8 +1218,15 @@ export default function SwipeCard({
     return "";
   }, [profile?.yearOfStudyDisplay, profile?.yearOfStudy, t]);
 
-  // İlişki niyeti etiketi = backend display'i + "ilişki" eki
+  // İlişki niyeti etiketi = kısa yerel etiket + "ilişki" eki
   // ("Uzun süreli" → "Uzun süreli ilişki").
+  //
+  // ETİKET ÖNCE YERELDEN, backend display'inden DEĞİL: `display` Accept-Language
+  // tr olsa bile İngilizce dönebiliyor ("Long term relationship") ve Türkçe
+  // kartta "... relationship" diye karışık bir metin çıkıyordu. enumName başına
+  // kısa yerel etiket (filtre pill'leriyle AYNI harita) varsa o basılıyor;
+  // yoksa — backend'in sonradan ekleyeceği bir enum — display'e düşülüyor, yani
+  // yeni değerde boş etiket çıkmıyor.
   //
   // Ek SADECE süre bildiren dört enum'a takılıyor. `StillFiguringOut`
   // ("Henüz karar vermedim") bir süre değil bir cümle; ek alırsa
@@ -948,17 +1235,24 @@ export default function SwipeCard({
   // basılır — bilmediğimiz bir etikete kör ek takmaktansa düz göstermek
   // güvenli taraf.
   //
-  // AYRICA: backend display'i kelimeyi ZATEN içerebiliyor ("Uzun süreli
-  // ilişki", "Long term relationship" — bkz. FilterModal pill etiketi notu).
-  // Kör ek "... ilişki ilişki" üretiyordu; kelime içerideyse ek atlanıyor.
+  // AYRICA: display'e düşüldüğünde metin kelimeyi ZATEN içerebiliyor ("Uzun
+  // süreli ilişki", "Long term relationship" — bkz. FilterModal pill etiketi
+  // notu). Kör ek "... ilişki ilişki" üretiyordu; kelime içerideyse (iki dilde
+  // de bakılıyor, bkz. INTENT_SUFFIX_WORDS) ek atlanıyor.
   const relationshipIntentLabel = useMemo(() => {
-    const display = profile?.relationshipIntentDisplay;
-    if (!display) return "";
+    const enumName = profile?.relationshipIntent;
+    const shortLabel = enumName
+      ? t(`discover.filters.relationshipIntents.short.${enumName}`, {
+          defaultValue: "",
+        })
+      : "";
+    const label = shortLabel || profile?.relationshipIntentDisplay;
+    if (!label) return "";
     const suffix = t("profile.card.intentSuffix");
     const needsSuffix =
-      RELATIONSHIP_INTENTS_WITH_SUFFIX.has(profile?.relationshipIntent) &&
-      !containsWord(display, suffix);
-    return needsSuffix ? `${display} ${suffix}` : display;
+      RELATIONSHIP_INTENTS_WITH_SUFFIX.has(enumName) &&
+      !INTENT_SUFFIX_WORDS.some((word) => containsWord(label, word));
+    return needsSuffix ? `${label} ${suffix}` : label;
   }, [profile?.relationshipIntentDisplay, profile?.relationshipIntent, t]);
 
   // "Ortak noktalar" rozetleri. DİKKAT: ortak nokta yoksa backend boş dizi
@@ -972,18 +1266,15 @@ export default function SwipeCard({
       // doğrudan bas.
       const label = typeof item?.label === "string" ? item.label.trim() : "";
       if (!label) return [];
-      const kindName = typeof item?.kindName === "string" ? item.kindName : "";
+      const kind = typeof item?.kind === "string" ? item.kind : "";
       return [
         {
           // Tek istisna: University rozetinde backend üniversite ADINI
           // gönderiyor; pilde okul adı yerine "Aynı Üniversite" yazıyoruz —
           // isim zaten hemen üstteki universityName satırında duruyor.
           label:
-            kindName === "University"
-              ? t('profile.card.sameUniversity')
-              : label,
-          icon:
-            THING_IN_COMMON_ICONS[kindName] ?? DEFAULT_THING_IN_COMMON_ICON,
+            kind === "University" ? t('profile.card.sameUniversity') : label,
+          icon: THING_IN_COMMON_ICONS[kind] ?? DEFAULT_THING_IN_COMMON_ICON,
         },
       ];
     });
@@ -1001,23 +1292,48 @@ export default function SwipeCard({
   const showNewBadge = profile?.isNewMember === true;
   const showModeration = !!(onReport || onBlock);
 
+  // İsmin yanındaki ", 23" eki. `distance` ile AYNI tuzak: `age` DTO'da
+  // non-nullable int olduğu için karşı taraf `showAge`'i kapattığında backend
+  // null yerine **0** gönderiyor — `age != null` kontrolü bunu geçirir ve kartta
+  // ", 0" yazardı. Çözüm tek yerde: resolveCardAge (bkz. cardPrivacy.ts).
+  const ageSuffix = useMemo(() => {
+    const age = resolveCardAge({ age: profile?.age, showAge: profile?.showAge });
+    return age != null ? `, ${age}` : "";
+  }, [profile?.age, profile?.showAge]);
+
   // Konum satırındaki mesafe pili. Backend `distance`'ı km cinsinden gönderir;
-  // alan yoksa/geçersizse pil hiç çizilmez (0 geçerli bir değer — "yok" değil,
-  // "çok yakın" demek). Yaklaşıklık bilinçli: km'ye yuvarlanır ve 1 km altı
-  // ayrı metne düşer, ondalıklı bir mesafe kullanıcının konumunu fazla
-  // keskin ele verir.
+  // alan yoksa/geçersizse pil hiç çizilmez. Yaklaşıklık bilinçli: km'ye
+  // yuvarlanır ve 1 km altı ayrı metne düşer, ondalıklı bir mesafe
+  // kullanıcının konumunu fazla keskin ele verir.
+  //
+  // `0` ARTIK "yok" DEMEK: karşı taraf `showDistance`'ı kapattığında backend
+  // alanı null yapamıyor (DTO'da non-nullable int) ve 0 gönderiyor — `showAge`
+  // → `age: 0` ile aynı desen. Eskiden 0'ı "çok yakın" diye basıyorduk;
+  // gizlenmiş mesafeyi "hemen yanında" diye göstermek yanlış olur. Gerçekten
+  // <1 km olan biri de 0 gelirse pil çizilmez, bu kabul edilmiş maliyet.
   const distanceLabel = useMemo(() => {
     const km = profile?.distance;
-    if (typeof km !== "number" || !Number.isFinite(km) || km < 0) return null;
+    if (typeof km !== "number" || !Number.isFinite(km) || km <= 0) return null;
     if (km < 1) return t('profile.card.distanceNear');
     return t('profile.card.distanceAway', { km: Math.round(km) });
   }, [profile?.distance, t]);
+
+  // İlçe + şehir metni. Karşı taraf `showLocation`'ı kapattıysa backend
+  // `cityDisplay`/`districtDisplay`ı (ve koordinatları) null gönderir — yani
+  // bu alanların dolu geleceği GARANTİ DEĞİL, join'den önce filtrelenmeli
+  // yoksa satırda yalnız bir ayraç (", ") kalır.
+  const locationLabel = useMemo(() => {
+    const parts = [profile?.districtDisplay, profile?.cityDisplay].filter(Boolean);
+    return parts.length > 0 ? parts.join(", ") : null;
+  }, [profile?.districtDisplay, profile?.cityDisplay]);
 
   // Konum bölümündeki Mapbox statik haritası. Koordinat KARTTAN GELMİYOR
   // (ProfileCardDto yalnız `cityDisplay`/`districtDisplay` taşıyor), il
   // merkezleri tablosundan çözülüyor — zoom kaba olduğu için ilçe farkı bu
   // ölçekte görünmez. İl tanınmazsa (tabloda yoksa) harita hiç çizilmez,
-  // bölüm eski hâline — başlık + konum satırı — düşer.
+  // bölüm eski hâline — başlık + konum satırı — düşer. Karşı taraf konumunu
+  // gizlediyse `cityDisplay` null gelir → tablo eşleşmez → harita da çizilmez;
+  // ayrı bir kontrole gerek yok.
   //
   // URL render sırasında türetiliyor: buildMapboxStaticUrl aktif temayı okuyor
   // ve tema değişiminde kök ağaç remount edildiği için doğru stil geliyor.
@@ -1166,40 +1482,361 @@ export default function SwipeCard({
   const allPhotos =
     profile.photos && profile.photos.length > 0 ? profile.photos : [];
 
-  const handlePhotoPress = (event) => {
-    const touchX = event.nativeEvent.locationX;
-    // Threshold ortaya kadar gelmesin — sadece kenarlardaki ~1/4'lük alan foto değiştirir
-    const leftZone = width * 0.28;
-    const rightZone = width * 0.72;
+  // Kapakta yalnız ilk foto durur. Kalanlar expanded panelde bölümlerin
+  // arasına dağıtılıyor (2. → üniversite ile niyet arası, 3. → ilgi alanları
+  // ile yaşam tarzı arası, 4. → 1.-2. prompt arası, 5. → 2.-3. prompt arası,
+  // 6. → konumun üstüne, gerisi konumun altına).
+  // Kenarlara basarak galeri gezme KALDIRILDI: aynı fotoğraflar zaten akışın
+  // içinde, gizli bir dokunma alanı tutmanın anlamı kalmadı.
+  const extraPhotos = allPhotos.slice(1);
 
-    if (touchX >= rightZone) {
-      // Sağ kenara basıldı - sonraki fotoğraf
-      if (currentPhotoIndex < allPhotos.length - 1) {
-        Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
-        setCurrentPhotoIndex((prev) => prev + 1);
-      }
-    } else if (touchX <= leftZone) {
-      // Sol kenara basıldı - önceki fotoğraf
-      if (currentPhotoIndex > 0) {
-        Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
-        setCurrentPhotoIndex((prev) => prev - 1);
-      }
+  // Çizilebilir prompt'lar. Sunucu sırayı garanti ediyor (`OrderBy(DisplayOrder)`),
+  // burada yalnızca eksik alanlı kayıtlar ve tavanı aşan fazlalık eleniyor.
+  //
+  // Boş liste KALICI OLARAK geçerli bir durum: migration'dan gelen kullanıcıların
+  // hiç prompt'u yok. O durumda bölüm çizilmiyor ve kart bio'ya düşüyor.
+  const promptSections = useMemo(
+    () =>
+      (profile.prompts ?? [])
+        .filter((p) => !!p?.promptDisplay && !!p?.answer)
+        .slice(0, MAX_PROFILE_PROMPTS),
+    [profile.prompts],
+  );
+
+  // Prompt'ların ARASINA giren fotoğraflar: 4. foto 1.-2., 5. foto 2.-3.
+  // prompt arasına. Slot yalnız İKİ prompt arasında var — son prompt'un altına
+  // düşmez, orası konum bölümünün alanı. Prompt sayısı yetmiyorsa (kimsenin
+  // prompt'u olmayabiliyor) o fotoğraflar yerleşmez ve aşağıdaki artakalan
+  // bloğuna, profil sırasını koruyarak düşer.
+  const promptGapPhotos = new Map<number, number>();
+  for (let i = 0; i < 2; i += 1) {
+    if (promptSections.length > i + 1 && extraPhotos[2 + i]) {
+      promptGapPhotos.set(i, 2 + i);
     }
-    // Orta bölgeye basıldı — eskiden expand toggle yapardı; artık scroll-driven,
-    // tap orta bir şey yapmıyor.
-  };
+  }
 
-  // Foto tap — Pressable yerine Gesture.Tap kullanıyoruz çünkü Pressable
-  // 10-15px hareket toleransıyla pan'lerin alt threshold'unda fire ediyor
-  // (kullanıcı pull-down yapmaya başlıyor, parmağı kaldırıyor, "tap" sayılıp
-  // foto değişiyordu). maxDistance(8) → 8px'ten fazla hareket varsa tap iptal.
-  const photoTap = Gesture.Tap()
-    .maxDistance(8)
-    .runOnJS(true)
-    .onEnd((e, success) => {
-      if (!success) return;
-      handlePhotoPress({ nativeEvent: { locationX: e.x } });
-    });
+  // Akışta SABİT yeri olan fotoğrafların index'leri; kalanlar konumun altında.
+  const placedPhotoIndexes = new Set<number>([
+    0,
+    1,
+    // 6. foto — konum bölümünün ÜSTÜ.
+    4,
+    ...promptGapPhotos.values(),
+  ]);
+  const trailingPhotos = extraPhotos
+    .map((uri, index) => ({ uri, index }))
+    .filter(({ index }) => index >= 2 && !placedPhotoIndexes.has(index));
+
+  /**
+   * Not kutusunun basma handler'ı. `onNote` verilmediyse `undefined` döner —
+   * SectionPhoto/NoteBox o zaman kutuyu hiç çizmez (önizleme kartları).
+   *
+   * useCallback YOK, bilerek: her kutu KENDİ hedefiyle ayrı bir closure istiyor,
+   * memoize etmek hedef sayısı kadar hook gerektirirdi (kural ihlali). Kart
+   * ağacı zaten `isTopCard` + `profileReady` ile korunuyor.
+   */
+  const noteHandler = (target: NoteTarget) =>
+    onNote ? () => onNote(target) : undefined;
+
+  // İlgi alanları bölümü — çizildiği YER prompt sayısına bağlı olduğu için
+  // (aşağıya bak) burada bir kez kuruluyor, iki ayrı yerde aynı JSX'i
+  // tekrarlamayalım.
+  const interestsSection =
+    profile.hobbies && profile.hobbies.length > 0 ? (
+      <View
+        style={[
+          {
+            borderRadius: 40,
+            borderCurve: "continuous",
+            overflow: "hidden",
+            backgroundColor: theme.surfaceTranslucent,
+          },
+        ]}
+        className="mb-4 p-4 py-8"
+      >
+        <View className="flex-row items-center mb-6 px-4">
+          <Text className="text-[18px] font-semibold" style={{ color: theme.text }}>
+            {t('profile.card.myInterests')}
+          </Text>
+        </View>
+        {/* fillWidth: hobilerin sırası anlam taşımıyor, satırlar
+            olabildiğince dolsun (en geniş pil başa). */}
+        <PillFlow
+          gap={8}
+          fillWidth
+          items={profile.hobbies.map((hobby, index) => {
+            // Hobi ya düz etiket ya da {enumName, name} çifti gelir.
+            // Daralma doğrudan typeof üzerinden: ara bir `isObj`
+            // değişkeni TS'e `label`ın string olduğunu anlatmıyor.
+            const enumName =
+              typeof hobby === "object" ? hobby?.enumName : undefined;
+            const label =
+              typeof hobby === "object" ? hobby?.name : hobby;
+            return {
+              id: String(label ?? index),
+              element: (
+                <View
+                  className="self-start"
+                  style={{
+                    borderRadius: 999,
+                    borderCurve: "continuous",
+                    overflow: "hidden",
+                    // İki modda da gri dolgu, tonu moda göre:
+                    // açıkta mesafe pilinin ("3 km uzakta")
+                    // grisiyle AYNI token (surface4) — aynı panelde
+                    // iki farklı gri tonu istemiyoruz; koyuda
+                    // zeminden bir tık açık koyu gri. Saydam pil her
+                    // iki zeminde de yalnız hairline'ıyla duruyor ve
+                    // kayboluyordu.
+                    //
+                    // KOYUDA mesafe pili takip EDİLMEZ: orada dolgu
+                    // beyaz (ink(1)) ve yazısı veil(1) ile birlikte
+                    // çalışıyor; buradaki yazı theme.text olduğu için
+                    // beyaz dolgu okunmaz hale gelirdi.
+                    backgroundColor: isLight()
+                      ? theme.surface4
+                      : theme.surface3,
+                    borderWidth: 0.5,
+                    borderColor: theme.border,
+                  }}
+                >
+                  <View
+                    style={{
+                      flexDirection: "row",
+                      alignItems: "center",
+                      paddingHorizontal: 12,
+                      paddingVertical: 14,
+                      gap: 8,
+                    }}
+                  >
+                    {/* İkon kutusu ve emoji, lifestyle pilindeki
+                        SFIcon ile AYNI 18px. (Optik denklik için
+                        bir süre 15 kullanıldı: SFIcon'un size'ı
+                        SymbolView'ın çerçevesi ve sembol oraya
+                        scaleAspectFit ediliyor, emoji ise em
+                        kutusunu doldurduğu için aynı sayıda daha
+                        iri görünüyor. Karar sayıların eşitliğinden
+                        yana.) Emoji kutudan biraz taşar (HobbyIcon
+                        açık height verdiği için kırpılmaz), pilin
+                        14px dikey padding'i taşmayı karşılıyor. */}
+                    <View
+                      style={{
+                        height: 18,
+                        justifyContent: "center",
+                        alignItems: "center",
+                        overflow: "visible",
+                      }}
+                    >
+                      <HobbyIcon
+                        hobby={enumName ?? label}
+                        size={18}
+                        color={theme.text}
+                        strokeWidth={1.5}
+                      />
+                    </View>
+                    <Text className="font-[600] text-[14px]" style={{ color: theme.text }}>
+                      {label}
+                    </Text>
+                  </View>
+                </View>
+              ),
+            };
+          })}
+        />
+      </View>
+    
+    ) : null;
+
+  // 6. fotoğraf ve konum bölümü — ikisi de SON prompt'un ÜSTÜNE taşındı
+  // (konum ile son prompt yer değiştirdi). Prompt yoksa dayanacak kart
+  // olmadığı için eski yerlerinde çiziliyorlar; JSX iki dalda da aynı
+  // olsun diye burada bir kez kuruluyor.
+  const photo6Section = extraPhotos[4] ? (
+      <SectionPhoto
+        uri={extraPhotos[4]}
+        hideNote={previewMode}
+        zoomable={!previewMode}
+        onNotePress={noteHandler(photoNoteTarget(5))}
+      />
+    
+  ) : null;
+
+  // Konum — şehir/ilçe VEYA mesafeden en az biri varsa çizilir. İkisi ayrı
+  // gizlilik ayarı (`showLocation` / `showDistance`) olduğu için "şehri gizle
+  // ama mesafeyi göster" geçerli bir kombinasyon: bölümü yalnız cityDisplay'e
+  // bağlarsak o kullanıcının mesafesi de kaybolurdu.
+  const locationSection =
+    locationLabel || distanceLabel ? (
+      <View
+        style={[
+          {
+            borderRadius: 40,
+            borderCurve: "continuous",
+            overflow: "hidden",
+            backgroundColor: theme.surfaceTranslucent,
+          },
+        ]}
+        // Başlık kalktı → üst payı büyüten `pt-8` de gitti, kutu
+        // simetrik: haritanın çevresinde her yönde aynı boşluk.
+        className="mb-4 p-4 py-5"
+      >
+        {/* Bölüm BAŞLIKSIZ: harita + altındaki şehir/mesafe satırı
+            neye baktığını zaten anlatıyor, "Konum" başlığı aynı
+            bilgiyi üçüncü kez tekrarlıyordu. */}
+        {/* Harita — bölümün görseli. Bilgi (ilçe/şehir + mesafe)
+            ALTTAKİ satırda duruyor, harita üstünde tekrarlanmıyor;
+            buradaki tek işaret ortadaki iğne. pointerEvents="none":
+            kartın kendi pan/scroll jestleri kesilmesin. */}
+        {mapUri && (
+          <View
+            style={{
+              borderRadius: 28,
+              borderCurve: "continuous",
+              overflow: "hidden",
+              borderWidth: 0.5,
+              borderColor: theme.hairline,
+              height: 190,
+              marginBottom: 4,
+              backgroundColor: theme.surface2,
+            }}
+            pointerEvents="none"
+          >
+            <Image
+              source={{ uri: mapUri }}
+              style={{ width: "100%", height: "100%" }}
+              contentFit="cover"
+              cachePolicy="memory-disk"
+              recyclingKey={mapUri}
+              transition={120}
+            />
+            <View
+              style={[
+                StyleSheet.absoluteFill,
+                { alignItems: "center", justifyContent: "center" },
+              ]}
+            >
+              {/* İğne zemini blur DEĞİL, düz dolgu: harita
+                  görüntüsü blur'un altından sızınca iğne
+                  karışıyordu. Açıkta beyaz / koyuda koyu gri —
+                  ikonun rengi zaten `text` olduğu için iki modda da
+                  kontrast korunuyor. Koyuda TAM SİYAH değil: koyu
+                  harita karosunun üstünde daire delik gibi
+                  duruyordu, `surface4` + bir tık daha belirgin gölge
+                  onu haritadan ayırıyor. overflow:hidden YOK; gölge
+                  aynı View'da clip'lenirdi. */}
+              <View
+                style={{
+                  width: 44,
+                  height: 44,
+                  borderRadius: 22,
+                  borderCurve: "continuous",
+                  alignItems: "center",
+                  justifyContent: "center",
+                  backgroundColor: isLight() ? "#FFFFFF" : theme.surface4,
+                  shadowColor: theme.shadow,
+                  shadowOpacity: isLight() ? 0.16 : 0.35,
+                  shadowRadius: 8,
+                  shadowOffset: { width: 0, height: 2 },
+                  elevation: 3,
+                }}
+              >
+                <SFIcon
+                  name="mappin"
+                  fallback={MapPin}
+                  size={22}
+                  color={theme.text}
+                />
+              </View>
+            </View>
+          </View>
+        )}
+        <View
+          style={{
+            borderRadius: 40,
+            borderCurve: "continuous",
+            overflow: "hidden",
+            borderWidth: 0,
+            borderColor: theme.hairline,
+          }}
+        >
+          <View
+            style={{
+              flexDirection: "row",
+              alignItems: "center",
+              paddingHorizontal: 14,
+              paddingVertical: 14,
+              gap: 8,
+            }}
+          >
+            <SFIcon
+              name="mappin"
+              fallback={MapPin}
+              size={18}
+              color={theme.text}
+            />
+            {/* flex YOK, yalnız flexShrink: metin doğal genişliğinde
+                kalsın ki mesafe pili sağ kenara itilmeden hemen
+                yanına yapışsın. Uzun ilçe/şehir adında sarma
+                davranışı flexShrink ile korunuyor.
+
+                Konum gizliyken Text HİÇ basılmıyor (boş string'le
+                bırakılsa gap: 8 iğneyle pil arasında ölü boşluk
+                bırakırdı). */}
+            {locationLabel && (
+              <Text
+                style={{
+                  color: theme.text,
+                  fontSize: 15,
+                  fontWeight: "500",
+                  lineHeight: 22,
+                  flexShrink: 1,
+                  flexWrap: "wrap",
+                }}
+              >
+                {locationLabel}
+              </Text>
+            )}
+            {/* Mesafe pili — backend `distance` göndermezse veya
+                0 gönderirse (gizlenmiş mesafe) hiç çizilmez.
+                Dolgu/yazı/çerçeve üçlüsü distancePillColors()'tan
+                geliyor: koyuda beyaz dolgu + siyah yazı, açıkta gri
+                yüzey + koyu yazı (bkz. oradaki not — sabit
+                theme.onMedia / theme.mediaHairline modla dönmediği
+                için KULLANILMIYOR).
+                flexShrink: 0 → uzun ilçe/şehir adı pili ezmez,
+                metin sarar. */}
+            {distanceLabel && (
+              <View
+                style={{
+                  borderRadius: 999,
+                  borderCurve: "continuous",
+                  overflow: "hidden",
+                  borderWidth: 0.5,
+                  borderColor: distancePillColors().border,
+                  backgroundColor: distancePillColors().background,
+                  flexShrink: 0,
+                }}
+              >
+                <View
+                  style={{
+                    paddingHorizontal: 8,
+                    paddingVertical: 10,
+                  }}
+                >
+                  <Text
+                    className="font-[700] text-[12px]"
+                    style={{ color: distancePillColors().text }}
+                  >
+                    {distanceLabel}
+                  </Text>
+                </View>
+              </View>
+            )}
+          </View>
+        </View>
+      </View>
+    
+    ) : null;
 
   return (
     <Animated.View
@@ -1280,95 +1917,74 @@ export default function SwipeCard({
                 />
               )}
 
-              {/* Tüm fotoları mount edip opacity ile gizliyoruz — bir kez yüklenince
-                  geçişler instant, photo 0'a dönünce remount yok = skeleton flash yok.
-                  Bottom card için sadece ilk foto mount (gereksiz network yükü). */}
-              <GestureDetector gesture={photoTap}>
-                {/* Zoom katmanı — top'a çarpma geri bildirimi (photoZoomStyle).
-                    Parent clipping kutusu ve borderRadius sabit kaldığı için
-                    foto kartın içinde yakınlaşır, kart kıpırdamaz. */}
-                <Animated.View style={[{ flex: 1 }, photoZoomStyle]}>
-                  {allPhotos
-                    .map((photo, index) => ({ photo, index }))
-                    .filter(({ index }) => (isTopCard ? true : index === 0))
-                    .map(({ photo, index }) => (
-                      <Image
-                        key={index}
-                        source={{ uri: photo }}
-                        style={{
-                          position: "absolute",
-                          width: width,
-                          height: photoHeight,
-                          opacity: currentPhotoIndex === index ? 1 : 0,
-                        }}
-                        contentFit="cover"
-                        cachePolicy="memory-disk"
-                        recyclingKey={photo}
-                        // Üst kart decode kuyruğunda önceliklidir; alttaki kart
-                        // düşük öncelikle arkada yüklenir (algılanan hız).
-                        priority={isTopCard ? "high" : "low"}
-                        transition={150}
-                        onLoadEnd={() => {
-                          loadedPhotoUris.add(photo);
-                          setLoadedPhotos((prev) => {
-                            if (prev.has(photo)) return prev;
-                            const next = new Set(prev);
-                            next.add(photo);
-                            return next;
-                          });
-                        }}
-                      />
-                    ))}
-                </Animated.View>
-              </GestureDetector>
-
-              {/* Skeleton overlay — current foto henüz yüklenmediyse */}
-              {allPhotos[currentPhotoIndex] &&
-                !loadedPhotos.has(allPhotos[currentPhotoIndex]) && (
-                  <View
+              {/* Kapak = SADECE ilk foto. Diğerleri eskiden burada opacity 0
+                  ile mount ediliyordu (kenara basınca anında geçsin diye);
+                  galeri gezme kalkınca o kopyalara gerek kalmadı — hepsi
+                  aşağıdaki bölümlerin arasında bir kez çiziliyor. */}
+              {/* Zoom katmanı — top'a çarpma geri bildirimi (photoZoomStyle).
+                  Parent clipping kutusu ve borderRadius sabit kaldığı için
+                  foto kartın içinde yakınlaşır, kart kıpırdamaz. */}
+              <Animated.View style={[{ flex: 1 }, photoZoomStyle]}>
+                {allPhotos[0] && (
+                  <PinchZoomable
+                    uri={allPhotos[0]}
+                    // Kapağın köşesi expand ile 40→0 anime oluyor; kopya iki
+                    // uçtan hangisindeyse onu alsın.
+                    radius={expanded ? 0 : 40}
+                    // Kapakta pinch YALNIZ expanded'ken: collapsed'de kapak
+                    // kartın kendisi demek, oradaki iki parmak swipe/pull
+                    // jestlerinin alanı.
+                    enabled={!previewMode && expanded}
+                    style={{ flex: 1 }}
+                  >
+                  <Image
+                    source={{ uri: allPhotos[0] }}
                     style={{
                       position: "absolute",
-                      top: 0,
-                      left: 0,
-                      right: 0,
-                      bottom: 0,
+                      width: width,
+                      height: photoHeight,
                     }}
-                    pointerEvents="none"
-                  >
-                    <SkeletonBox
-                      w={width}
-                      h={photoHeight}
-                      borderRadius={40}
-                    />
-                  </View>
+                    contentFit="cover"
+                    cachePolicy="memory-disk"
+                    recyclingKey={allPhotos[0]}
+                    // Üst kart decode kuyruğunda önceliklidir; alttaki kart
+                    // düşük öncelikle arkada yüklenir (algılanan hız).
+                    priority={isTopCard ? "high" : "low"}
+                    transition={150}
+                    onLoadEnd={() => {
+                      const photo = allPhotos[0];
+                      loadedPhotoUris.add(photo);
+                      setLoadedPhotos((prev) => {
+                        if (prev.has(photo)) return prev;
+                        const next = new Set(prev);
+                        next.add(photo);
+                        return next;
+                      });
+                    }}
+                  />
+                  </PinchZoomable>
                 )}
+              </Animated.View>
 
-              {/* Pagination Indicator - Bullets */}
-              {allPhotos.length > 1 && (
+              {/* Skeleton overlay — kapak fotoğrafı henüz yüklenmediyse */}
+              {allPhotos[0] && !loadedPhotos.has(allPhotos[0]) && (
                 <View
-                  className="absolute top-6 left-0 right-0 items-center z-50"
+                  style={{
+                    position: "absolute",
+                    top: 0,
+                    left: 0,
+                    right: 0,
+                    bottom: 0,
+                  }}
                   pointerEvents="none"
                 >
-                  <View className="flex-row gap-[4px]">
-                    {allPhotos.map((_, index) => (
-                      <View
-                        key={index}
-                        style={{
-                          width: 6,
-                          height: 6,
-                          borderRadius: 3,
-                          // Foto üstü → sabit beyaz (alt blur'daki
-                          // isim/üniversite ile aynı kural).
-                          backgroundColor:
-                            index === currentPhotoIndex
-                              ? theme.onMedia
-                              : onMediaAt(0.4),
-                        }}
-                      />
-                    ))}
-                  </View>
+                  <SkeletonBox w={width} h={photoHeight} borderRadius={40} />
                 </View>
               )}
+
+              {/* Sayfa göstergesi (bullets) KALDIRILDI: kapakta tek foto var,
+                  gezilecek bir galeri kalmadığı için gösterge de yanıltıcıydı
+                  (hep ilk nokta dolu kalırdı). */}
 
               {/* Top Blur Gradient Overlay */}
               <MaskedView
@@ -1454,7 +2070,14 @@ export default function SwipeCard({
               </Animated.View>
 
               {/* Super Like Button — uygulamaya özel kalp glyph'i
-                  (SuperLikeGlyph); lucide Heart değil. */}
+                  (SuperLikeGlyph); lucide Heart değil.
+
+                  Kapak fotoğrafının İÇİNDE, scroll içeriğinin parçası: expand
+                  edilince içerikle birlikte yukarı akar, sağ üstte ASILI
+                  KALMAZ. Arkasındaki beyaz yuvarlak da bu yüzden kalktı — o
+                  zemin yalnız sticky duruşta gerekliydi (kalp panel zemininin
+                  üstüne bindiğinde okunurluk için). Fotoğrafın üstünde kalbin
+                  kendi gradyanı ve ince kenarı yetiyor. */}
               {!hideActions && !hideSuperLike && (
                 <View style={{ position: "absolute", top: 28, right: 28 }}>
                   <TouchableOpacity
@@ -1477,65 +2100,68 @@ export default function SwipeCard({
                     hitSlop={12}
                   >
                     <Animated.View
-                      style={[{ width: 55, height: 55 }, heartPullStyle]}
+                      style={[
+                        { width: SUPER_LIKE_SIZE, height: SUPER_LIKE_SIZE },
+                        heartPullStyle,
+                      ]}
                     >
-                        {/* LitPlus tonlu gradient dolgu — kalp şeklinde
-                            maskelenir (tek path tek renk aldığı için
-                            gradyanı MaskedView ile veriyoruz). */}
-                        <MaskedView
-                          style={StyleSheet.absoluteFill}
-                          maskElement={
-                            <SuperLikeGlyph size={55} color="black" />
-                          }
+                      {/* LitPlus tonlu gradient dolgu — kalp şeklinde maskelenir
+                          (tek path tek renk aldığı için gradyanı MaskedView ile
+                          veriyoruz). */}
+                      <MaskedView
+                        style={StyleSheet.absoluteFill}
+                        maskElement={
+                          <SuperLikeGlyph size={SUPER_LIKE_SIZE} color="black" />
+                        }
+                      >
+                        <LinearGradient
+                          colors={gradients.swipeHeart}
+                          start={{ x: 0, y: 0 }}
+                          end={{ x: 1, y: 1 }}
+                          style={{ flex: 1 }}
+                        />
+                      </MaskedView>
+                      {/* Premium shimmer — kalp şekline maskeli, 4sn'de bir
+                          soldan sağa geçen parıltı. */}
+                      <MaskedView
+                        style={StyleSheet.absoluteFill}
+                        pointerEvents="none"
+                        maskElement={
+                          <SuperLikeGlyph size={SUPER_LIKE_SIZE} color="black" />
+                        }
+                      >
+                        <Animated.View
+                          style={[
+                            {
+                              position: "absolute",
+                              top: 0,
+                              bottom: 0,
+                              left: 0,
+                              width: 150,
+                            },
+                            heartShimmerStyle,
+                          ]}
                         >
                           <LinearGradient
-                            colors={gradients.swipeHeart}
-                            start={{ x: 0, y: 0 }}
-                            end={{ x: 1, y: 1 }}
-                            style={{ flex: 1 }}
-                          />
-                        </MaskedView>
-                        {/* Premium shimmer — kalp şekline maskeli, 4sn'de bir
-                            soldan sağa geçen parıltı. */}
-                        <MaskedView
-                          style={StyleSheet.absoluteFill}
-                          pointerEvents="none"
-                          maskElement={
-                            <SuperLikeGlyph size={55} color="black" />
-                          }
-                        >
-                          <Animated.View
-                            style={[
-                              {
-                                position: "absolute",
-                                top: 0,
-                                bottom: 0,
-                                left: 0,
-                                width: 150,
+                            {...(easeGradient({
+                              colorStops: {
+                                0: { color: "transparent" },
+                                0.5: { color: "rgba(255,255,255,0.22)" },
+                                1: { color: "transparent" },
                               },
-                              heartShimmerStyle,
-                            ]}
-                          >
-                            <LinearGradient
-                              {...(easeGradient({
-                                colorStops: {
-                                  0: { color: "transparent" },
-                                  0.5: { color: "rgba(255,255,255,0.22)" },
-                                  1: { color: "transparent" },
-                                },
-                              }) as any)}
-                              start={{ x: 0, y: 0.35 }}
-                              end={{ x: 1, y: 0.65 }}
-                              style={StyleSheet.absoluteFill}
-                            />
-                          </Animated.View>
-                        </MaskedView>
-                        {/* İnce açık border */}
-                        <SuperLikeGlyph
-                          size={55}
-                          stroke={theme.swipeHeartBorder}
-                          strokeWidth={0.1}
-                        />
+                            }) as any)}
+                            start={{ x: 0, y: 0.35 }}
+                            end={{ x: 1, y: 0.65 }}
+                            style={StyleSheet.absoluteFill}
+                          />
+                        </Animated.View>
+                      </MaskedView>
+                      {/* İnce açık border */}
+                      <SuperLikeGlyph
+                        size={SUPER_LIKE_SIZE}
+                        stroke={theme.swipeHeartBorder}
+                        strokeWidth={0.1}
+                      />
                     </Animated.View>
                   </TouchableOpacity>
                 </View>
@@ -1567,7 +2193,7 @@ export default function SwipeCard({
                     {/* Premium rozeti artık ayrı pill değil — yaşın sağında
                         Discover sekmesinin ateş ikonu. Dolgu super-like
                         kalbiyle birebir aynı: ikon şekline maskelenmiş
-                        gradients.swipeHeart (bkz. kalp / SuperLikeBurst). */}
+                        gradients.swipeHeart (bkz. kalp / SuperLikeFlame). */}
                     <View
                       style={{
                         flexDirection: "row",
@@ -1582,7 +2208,7 @@ export default function SwipeCard({
                         style={{ flexShrink: 1, color: theme.onMedia }}
                       >
                         {profile.displayName}
-                        {profile.age != null ? `, ${profile.age}` : ""}
+                        {ageSuffix}
                       </Text>
                       {profile.isPremium && (
                         <PremiumFlame size={PREMIUM_FLAME_SIZE} />
@@ -1722,6 +2348,37 @@ export default function SwipeCard({
                 </View>
               )}
 
+              {/* Ana fotoğrafın not kutusu — kapak fotoğrafının İÇİNDE, alt
+                  kenarına yaslı (panel fotoları ile aynı yerleşim).
+                  Chevron'un (bottom:30, 28px glif) üstünde duracak kadar
+                  yukarıda; ikisi aynı köşeyi paylaşmıyor.
+
+                  YALNIZ EXPANDED'ken görünür: collapsed'de bu alanı isim /
+                  üniversite / ortak nokta pilleri dolduruyor. Onlar expand'de
+                  fade out ediyor (nameAnimStyle · pillsAnimStyle), kutu da tam
+                  o boşluğa fade in ediyor — yani kapağın alt bandı iki durumda
+                  da tek bir katman taşıyor, üst üste binme yok. */}
+              {!!onNote &&
+                !previewMode &&
+                allPhotos.length > 0 &&
+                measuredCardHeight > 0 && (
+                  <Animated.View
+                    style={[
+                      {
+                        position: "absolute",
+                        left: NOTE_BOX_COVER_INSET,
+                        right: NOTE_BOX_COVER_INSET,
+                        bottom: 74,
+                        zIndex: 55,
+                      },
+                      coverNoteAnimStyle,
+                    ]}
+                    pointerEvents={expanded ? "box-none" : "none"}
+                  >
+                    <NoteBox onPress={noteHandler(photoNoteTarget(0))} onPhoto />
+                  </Animated.View>
+                )}
+
               {/* Chevron — bottom-center, expanded olunca animasyonla yukarı döner.
                   Name overlay gibi measuredCardHeight gate'li → ilk render'da
                   yanlış pozisyondan jump etmesin. */}
@@ -1850,7 +2507,7 @@ export default function SwipeCard({
                       style={{ flexShrink: 1, color: theme.text }}
                     >
                       {profile.displayName}
-                      {profile.age != null ? `, ${profile.age}` : ""}
+                      {ageSuffix}
                     </Text>
                     {profile.isPremium && (
                       <PremiumFlame size={PREMIUM_FLAME_SIZE_EXPANDED} />
@@ -1869,9 +2526,8 @@ export default function SwipeCard({
                         overflow: "hidden",
                         backgroundColor: theme.surfaceTranslucent,
                       },
-                      sectionBevel(),
                     ]}
-                    className=" p-4 py-7 -mt-3 rounded-[45px] mb-4"
+                    className=" p-4 py-9 -mt-3 rounded-[38px] mb-4"
                   >
                     <View className="flex-row flex-wrap items-center gap-3">
                       {/* Bölüm + sınıf artık tek satır → uzun bölüm adları
@@ -1910,6 +2566,16 @@ export default function SwipeCard({
                   </View>
                 )}
 
+                {/* 2. fotoğraf — üniversite ile "Burada ne arıyorum" arası. */}
+                {extraPhotos[0] && (
+                  <SectionPhoto
+                    uri={extraPhotos[0]}
+                    hideNote={previewMode}
+                    zoomable={!previewMode}
+                    onNotePress={noteHandler(photoNoteTarget(1))}
+                  />
+                )}
+
                 {/* Kullanım amacı kartı KALDIRILDI: alan üründen çıktı,
                     `usagePurposeDisplay` artık response'ta dönmüyor. */}
 
@@ -1917,7 +2583,10 @@ export default function SwipeCard({
                     olduğu için yaşam tarzı pilleri arasında kaybolmuyor,
                     kendi başlıklı bölümünde ve ilgi alanlarından ÖNCE
                     duruyor. */}
-                {profile.relationshipIntentDisplay && (
+                {/* Kapı `display` DEĞİL etiketin kendisi: etiket artık yerel
+                    haritadan da gelebiliyor, yani display boş gelse bile
+                    enumName varsa bölüm basılabilir. */}
+                {relationshipIntentLabel && (
                   <View
                     style={{
                       borderRadius: 40,
@@ -1960,99 +2629,6 @@ export default function SwipeCard({
                   </View>
                 )}
 
-                {profile.hobbies && profile.hobbies.length > 0 && (
-                  <View
-                    style={[
-                      {
-                        borderRadius: 40,
-                        borderCurve: "continuous",
-                        overflow: "hidden",
-                        backgroundColor: theme.surfaceTranslucent,
-                      },
-                      sectionBevel(),
-                    ]}
-                    className="mb-4 p-4 py-8"
-                  >
-                    <View className="flex-row items-center mb-6 px-4">
-                      <Text className="text-[18px] font-semibold" style={{ color: theme.text }}>
-                        {t('profile.card.myInterests')}
-                      </Text>
-                    </View>
-                    {/* fillWidth: hobilerin sırası anlam taşımıyor, satırlar
-                        olabildiğince dolsun (en geniş pil başa). */}
-                    <PillFlow
-                      gap={8}
-                      fillWidth
-                      items={profile.hobbies.map((hobby, index) => {
-                        // Hobi ya düz etiket ya da {enumName, name} çifti gelir.
-                        // Daralma doğrudan typeof üzerinden: ara bir `isObj`
-                        // değişkeni TS'e `label`ın string olduğunu anlatmıyor.
-                        const enumName =
-                          typeof hobby === "object" ? hobby?.enumName : undefined;
-                        const label =
-                          typeof hobby === "object" ? hobby?.name : hobby;
-                        return {
-                          id: String(label ?? index),
-                          element: (
-                            <View
-                              className="self-start"
-                              style={{
-                                borderRadius: 999,
-                                borderCurve: "continuous",
-                                overflow: "hidden",
-                                backgroundColor: "transparent",
-                                borderWidth: 0.5,
-                                borderColor: theme.border,
-                              }}
-                            >
-                              <View
-                                style={{
-                                  flexDirection: "row",
-                                  alignItems: "center",
-                                  paddingHorizontal: 12,
-                                  paddingVertical: 12,
-                                  gap: 8,
-                                }}
-                              >
-                                {/* İkon kutusu lifestyle pilindeki SFIcon ile
-                                    aynı 18px. Emoji fontSize'ı ise 18 DEĞİL:
-                                    SFIcon'un size'ı SymbolView'ın çerçevesi ve
-                                    sembol oraya scaleAspectFit ediliyor, yani
-                                    18px kutuda görünen mürekkep ~15px. Emoji
-                                    ise em kutusunu doldurup ~fontSize*1.17
-                                    çiziyor; 18'de lifestyle ikonlarından gözle
-                                    görülür büyük duruyordu. 15 → ~17.5px, iki
-                                    pil optik olarak eşitleniyor. Emoji kutudan
-                                    biraz taşar (HobbyIcon açık height verdiği
-                                    için kırpılmaz), pilin 12px dikey padding'i
-                                    taşmayı karşılıyor. */}
-                                <View
-                                  style={{
-                                    height: 18,
-                                    justifyContent: "center",
-                                    alignItems: "center",
-                                    overflow: "visible",
-                                  }}
-                                >
-                                  <HobbyIcon
-                                    hobby={enumName ?? label}
-                                    size={15}
-                                    color={theme.text}
-                                    strokeWidth={1.5}
-                                  />
-                                </View>
-                                <Text className="font-[500] text-[14px]" style={{ color: theme.text }}>
-                                  {label}
-                                </Text>
-                              </View>
-                            </View>
-                          ),
-                        };
-                      })}
-                    />
-                  </View>
-                )}
-
                 {/* Lifestyle Info — ilişki niyeti BURADA DEĞİL, kendi
                     bölümünde (yukarı bkz. "Burada ne arıyorum"). */}
                 {(profile.smokingStatusDisplay ||
@@ -2068,7 +2644,6 @@ export default function SwipeCard({
                         overflow: "hidden",
                         backgroundColor: theme.surfaceTranslucent,
                       },
-                      sectionBevel(),
                     ]}
                     className="mb-4 p-4 py-8"
                   >
@@ -2130,7 +2705,20 @@ export default function SwipeCard({
                                 borderRadius: 999,
                                 borderCurve: "continuous",
                                 overflow: "hidden",
-                                backgroundColor: "transparent",
+                                // İki modda da gri dolgu, tonu moda göre:
+                                // açıkta mesafe pilinin ("3 km uzakta") grisiyle
+                                // AYNI token (surface4) — aynı panelde iki farklı
+                                // gri tonu istemiyoruz; koyuda zeminden bir tık
+                                // açık koyu gri. Saydam pil her iki zeminde de
+                                // yalnız hairline'ıyla duruyor ve kayboluyordu.
+                                //
+                                // KOYUDA mesafe pili takip EDİLMEZ: orada dolgu
+                                // beyaz (ink(1)) ve yazısı veil(1) ile birlikte
+                                // çalışıyor; buradaki yazı theme.text olduğu için
+                                // beyaz dolgu okunmaz hale gelirdi.
+                                backgroundColor: isLight()
+                                  ? theme.surface4
+                                  : theme.surface3,
                                 borderWidth: 0.5,
                                 borderColor: theme.border,
                               }}
@@ -2140,7 +2728,7 @@ export default function SwipeCard({
                                   flexDirection: "row",
                                   alignItems: "center",
                                   paddingHorizontal: 12,
-                                  paddingVertical: 12,
+                                  paddingVertical: 14,
                                   gap: 8,
                                 }}
                               >
@@ -2151,7 +2739,7 @@ export default function SwipeCard({
                                   size={18}
                                   color={theme.text}
                                 />
-                                <Text className="font-[500] text-[14px]" style={{ color: theme.text }}>
+                                <Text className="font-[600] text-[14px]" style={{ color: theme.text }}>
                                   {label}
                                 </Text>
                               </View>
@@ -2162,10 +2750,39 @@ export default function SwipeCard({
                   </View>
                 )}
 
+                {/* 3. fotoğraf — yaşam tarzı ile 1. prompt arası. */}
+                {extraPhotos[1] && (
+                  <SectionPhoto
+                    uri={extraPhotos[1]}
+                    hideNote={previewMode}
+                    zoomable={!previewMode}
+                    onNotePress={noteHandler(photoNoteTarget(2))}
+                  />
+                )}
 
+                {/* Hiç prompt yoksa ilgi alanları yukarıdaki akışa
+                    giremiyor (dayanağı 1. prompt kartı) → eski yerinde,
+                    prompt bloğundan önce çizilir. */}
+                {promptSections.length === 0 && interestsSection}
 
-                {/* Bio */}
-                {profile.bio && (
+                {/* Prompt'lar — bio'nun yerini alan bölüm. Her cevap kendi
+                    kutusunda, başlığı sorunun kendisi.
+
+                    `promptDisplay` sunucuda İZLEYİCİNİN diline çözülmüş geliyor
+                    (diğer `*Display` alanlarıyla aynı kural), `answer` ise ham.
+                    Alan gelmeyen kayıt çizilmiyor: katalogdan çözmek için karta
+                    bir query eklemek gerekirdi ve kart render bütçesi buna
+                    uygun değil — sözleşme gereği alan zaten dolu gelir. */}
+                {promptSections.map((prompt, index) => (
+                  <Fragment key={`${prompt.promptKey}-${index}`}>
+                  {/* Konum + 6. fotoğraf, SON prompt'un ÜSTÜNDE: konum ile
+                      son prompt yer değiştirdi. */}
+                  {index === promptSections.length - 1 && (
+                    <Fragment>
+                      {locationSection}
+                      {photo6Section}
+                    </Fragment>
+                  )}
                   <View
                     style={[
                       {
@@ -2174,7 +2791,126 @@ export default function SwipeCard({
                         overflow: "hidden",
                         backgroundColor: theme.surfaceTranslucent,
                       },
-                      sectionBevel(),
+                    ]}
+                    // Not kutusu artık kutunun İÇİNDE (sağ altta) → alt boşluk
+                    // her durumda kutunun kendisinde. Alt pay yatay payla AYNI
+                    // (16): buton köşeye eşit uzaklıkta otursun, altında ikinci
+                    // bir boşluk bandı kalmasın. Üst pay ayrı ve büyük (48) —
+                    // orası başlığın nefes alanı.
+                    className="mb-4 p-4 pt-12"
+                  >
+                    <View className="flex-row items-center mb-2 px-4">
+                      <Text className="text-[18px] font-semibold" style={{ color: theme.text }}>
+                        {prompt.promptDisplay}
+                      </Text>
+                    </View>
+                    <View
+                      style={{
+                        borderRadius: 40,
+                        borderCurve: "continuous",
+                        overflow: "hidden",
+                        borderWidth: 0,
+                        borderColor: theme.hairline,
+                      }}
+                    >
+                      <View
+                        style={{
+                          flexDirection: "row",
+                          alignItems: "flex-start",
+                          paddingHorizontal: 14,
+                          paddingVertical: 14,
+                          gap: 8,
+                        }}
+                      >
+                        <SFIcon
+                          name="quote.opening"
+                          fallback={Pen}
+                          size={18}
+                          color={theme.text}
+                          // İkon 18px, satır yüksekliği 32 → ilk satırın
+                          // ortasına oturması için (32-18)/2.
+                          style={{ marginTop: 7 }}
+                        />
+                        {/* Metrikler PromptsEditor'deki cevap alanıyla BİREBİR
+                            aynı (25 / 600 / 32): kullanıcı cevabını düzenlerken
+                            gördüğü boyutla kartta gördüğü boyut ayrışmasın. */}
+                        <Text
+                          style={{
+                            color: theme.text,
+                            fontSize: 25,
+                            fontWeight: "600",
+                            lineHeight: 32,
+                            flex: 1,
+                            flexShrink: 1,
+                            flexWrap: "wrap",
+                          }}
+                        >
+                          {prompt.answer}
+                        </Text>
+                      </View>
+                    </View>
+                    {/* Not butonu prompt kutusunun İÇİNDE, sağ altta —
+                        fotoğraflardaki yerleşimin aynısı: not hedefin içinde
+                        durur, altına iliştirilmiş ayrı bir kontrol gibi değil.
+                        Akışta (mutlak değil) → uzun cevaplarda metnin üstüne
+                        binmiyor, kutu onun kadar uzuyor.
+                        Negatif marj: bkz. NOTE_BOX_PROMPT_PULL. Efektif
+                        boşluk ~6px.
+                        Buton çizilmeyen girişlerde (kendi profil önizlemesi,
+                        Likes, sohbet profili) yerine boşluk konuyor — yoksa
+                        kutu bir anda daralıp cevap metni tabana yapışıyor.
+                        Ölçü 52'lik DOKUNMA kabı değil işaretin kendisi
+                        (NOTE_GLYPH_SIZE_PROMPT): boşlukta mürekkep yok,
+                        hitbox'ın payını da bırakınca alt bant butonlu haline
+                        göre şişkin duruyordu. */}
+                    {!!onNote && !previewMode && !!prompt.promptKey ? (
+                      <View style={{ marginTop: -NOTE_BOX_PROMPT_PULL }}>
+                        <NoteBox
+                          onPress={noteHandler(promptNoteTarget(prompt.promptKey))}
+                        />
+                      </View>
+                    ) : (
+                      <View
+                        style={{
+                          height: NOTE_GLYPH_SIZE_PROMPT - NOTE_BOX_PROMPT_PULL,
+                        }}
+                      />
+                    )}
+                  </View>
+                  {/* İlgi alanları — 1. prompt ile 2. prompt'un arasında.
+                      Eskiden prompt'ların TAMAMINDAN önce geliyordu; ilk
+                      prompt kartıyla yer değiştirdi. Prompt yoksa bölüm
+                      buradan hiç çizilmez, aşağıdaki fallback devralır. */}
+                  {index === 0 && interestsSection}
+                  {/* Prompt ARASI fotoğraf (4. ve 5.) — son prompt'un altına
+                      düşmüyor, bkz. promptGapPhotos. */}
+                  {promptGapPhotos.has(index) && (
+                    <SectionPhoto
+                      uri={extraPhotos[promptGapPhotos.get(index)!]}
+                      hideNote={previewMode}
+                      zoomable={!previewMode}
+                      onNotePress={noteHandler(
+                        photoNoteTarget(promptGapPhotos.get(index)! + 1),
+                      )}
+                    />
+                  )}
+                  </Fragment>
+                ))}
+
+                {/* Bio — GEÇİŞ FAZI FALLBACK'İ, yalnız hiç prompt yokken.
+                    Lansmanda kimsenin prompt'u yok ama bir kısım kullanıcının
+                    bio'su dolu; ikisini birden kesersek o kartlar boşalırdı.
+                    Kullanıcı prompt doldurdukça bölüm kendiliğinden sönüyor,
+                    backend Faz 4'te alanı düşürünce bu blok silinecek. */}
+                {promptSections.length === 0 && profile.bio && (
+                  <View
+                    style={[
+                      {
+                        borderRadius: 40,
+                        borderCurve: "continuous",
+                        overflow: "hidden",
+                        backgroundColor: theme.surfaceTranslucent,
+                      },
                     ]}
                     className="mb-4 p-4 py-5 pt-8"
                   >
@@ -2225,159 +2961,31 @@ export default function SwipeCard({
                   </View>
                 )}
 
-                {/* Konum */}
-                {(profile.cityDisplay || profile.districtDisplay) && (
-                  <View
-                    style={[
-                      {
-                        borderRadius: 40,
-                        borderCurve: "continuous",
-                        overflow: "hidden",
-                        backgroundColor: theme.surfaceTranslucent,
-                      },
-                      sectionBevel(),
-                    ]}
-                    className="mb-4 p-4 py-5 pt-8"
-                  >
-                    <View className="flex-row items-center mb-4 px-4">
-                      <Text className="text-[18px] font-semibold" style={{ color: theme.text }}>
-                        {t('profile.card.location')}
-                      </Text>
-                    </View>
-                    {/* Harita — bölümün görseli. Bilgi (ilçe/şehir + mesafe)
-                        ALTTAKİ satırda duruyor, harita üstünde tekrarlanmıyor;
-                        buradaki tek işaret ortadaki iğne. pointerEvents="none":
-                        kartın kendi pan/scroll jestleri kesilmesin. */}
-                    {mapUri && (
-                      <View
-                        style={{
-                          borderRadius: 28,
-                          borderCurve: "continuous",
-                          overflow: "hidden",
-                          borderWidth: 0.5,
-                          borderColor: theme.hairline,
-                          height: 190,
-                          marginBottom: 4,
-                          backgroundColor: theme.surface2,
-                        }}
-                        pointerEvents="none"
-                      >
-                        <Image
-                          source={{ uri: mapUri }}
-                          style={{ width: "100%", height: "100%" }}
-                          contentFit="cover"
-                          cachePolicy="memory-disk"
-                          recyclingKey={mapUri}
-                          transition={120}
-                        />
-                        <View
-                          style={[
-                            StyleSheet.absoluteFill,
-                            { alignItems: "center", justifyContent: "center" },
-                          ]}
-                        >
-                          <BlurView
-                            intensity={60}
-                            tint={theme.blurTint}
-                            style={{
-                              width: 44,
-                              height: 44,
-                              borderRadius: 22,
-                              borderCurve: "continuous",
-                              overflow: "hidden",
-                              alignItems: "center",
-                              justifyContent: "center",
-                            }}
-                          >
-                            <SFIcon
-                              name="mappin"
-                              fallback={MapPin}
-                              size={22}
-                              color={theme.text}
-                            />
-                          </BlurView>
-                        </View>
-                      </View>
-                    )}
-                    <View
-                      style={{
-                        borderRadius: 40,
-                        borderCurve: "continuous",
-                        overflow: "hidden",
-                        borderWidth: 0,
-                        borderColor: theme.hairline,
-                      }}
-                    >
-                      <View
-                        style={{
-                          flexDirection: "row",
-                          alignItems: "center",
-                          paddingHorizontal: 14,
-                          paddingVertical: 14,
-                          gap: 8,
-                        }}
-                      >
-                        <SFIcon
-                          name="mappin"
-                          fallback={MapPin}
-                          size={18}
-                          color={theme.text}
-                        />
-                        {/* flex YOK, yalnız flexShrink: metin doğal genişliğinde
-                            kalsın ki mesafe pili sağ kenara itilmeden hemen
-                            yanına yapışsın. Uzun ilçe/şehir adında sarma
-                            davranışı flexShrink ile korunuyor. */}
-                        <Text
-                          style={{
-                            color: theme.text,
-                            fontSize: 15,
-                            lineHeight: 22,
-                            flexShrink: 1,
-                            flexWrap: "wrap",
-                          }}
-                        >
-                          {[profile.districtDisplay, profile.cityDisplay]
-                            .filter(Boolean)
-                            .join(", ")}
-                        </Text>
-                        {/* Mesafe pili — backend `distance` göndermezse hiç
-                            çizilmez (0 geçerli bir değer, yokluk değil).
-                            Dolgusuz: yalnız kenarlık + yazı. Zemin kartın
-                            kendi yüzeyi olarak kalıyor, bu yüzden yazı
-                            theme.text (ters yüzey yok, polarite dönmüyor).
-                            flexShrink: 0 → uzun ilçe/şehir adı pili ezmez,
-                            metin sarar. */}
-                        {distanceLabel && (
-                          <View
-                            style={{
-                              borderRadius: 999,
-                              borderCurve: "continuous",
-                              overflow: "hidden",
-                              borderWidth: 0.5,
-                              borderColor: theme.border,
-                              backgroundColor: "transparent",
-                              flexShrink: 0,
-                            }}
-                          >
-                            <View
-                              style={{
-                                paddingHorizontal: 8,
-                                paddingVertical: 10,
-                              }}
-                            >
-                              <Text
-                                className="font-[700] text-[12px]"
-                                style={{ color: theme.text }}
-                              >
-                                {distanceLabel}
-                              </Text>
-                            </View>
-                          </View>
-                        )}
-                      </View>
-                    </View>
-                  </View>
+                {/* Prompt yoksa son prompt kartı da yok → konum ve 6.
+                    fotoğraf eski sıralarında (foto sonra konum) kalır. */}
+                {promptSections.length === 0 && (
+                  <Fragment>
+                    {photo6Section}
+                    {locationSection}
+                  </Fragment>
                 )}
+
+                {/* Artakalan fotoğraflar (7. ve sonrası + prompt azlığından
+                    yerleşemeyenler) — konumun altında, profil sırasını
+                    koruyarak alt alta. Araya girecek bölüm kalmadı, aksiyon
+                    satırından önceki son blok bunlar. */}
+                {trailingPhotos.map(({ uri, index }) => (
+                  <SectionPhoto
+                    key={`extra-${index}`}
+                    uri={uri}
+                    hideNote={previewMode}
+                    zoomable={!previewMode}
+                    // `extraPhotos` ana fotoğrafı atlayarak başlıyor
+                    // (allPhotos.slice(1)) → profildeki gerçek index +1.
+                    onNotePress={noteHandler(photoNoteTarget(index + 1))}
+                  />
+                ))}
+
                 {/* Action Buttons */}
                 {!hideActions && (onPass || onLike) && (
                   <View
@@ -2386,13 +2994,13 @@ export default function SwipeCard({
                       flexDirection: "row",
                       alignItems: "center",
                       justifyContent: "center",
-                      // Tek düz satır: şikayet · X · tik · engelle. Dördünün
-                      // arasındaki boşluk EŞİT — bu yüzden kutular gliflerini
-                      // sarıyor (aksiyonlar 75, moderasyon 40); daha önce 68'lik
-                      // kutudan taşan 75px glif aradaki boşluğu göz için
-                      // eşitsiz gösteriyordu.
-                      // 36 pratik tavan: 230px kutu + 3*36 = 338, en dar yaygın
-                      // ekranın (375pt - 32 kenar boşluğu = 343) içinde kalıyor.
+                      // Tek düz satır: şikayet · X · tik · engelle. Kutular
+                      // gliflerini sarıyor (aksiyonlar 75, moderasyon 36);
+                      // daha önce 68'lik kutudan taşan 75px glif aradaki
+                      // boşluğu göz için eşitsiz gösteriyordu.
+                      // 36 pratik tavan: 222px kutu - 2*MODERATION_PULL +
+                      // 3*36 = 310, en dar yaygın ekranın (375pt - 32 kenar
+                      // boşluğu = 343) içinde kalıyor.
                       gap: 36,
                       paddingTop: ACTIONS_ROW_PADDING_TOP,
                       // Moderasyon ikonları artık bu satırın içinde; alt boşluk
@@ -2400,13 +3008,18 @@ export default function SwipeCard({
                       paddingBottom: 40 + insets.bottom + 66,
                     }}
                   >
-                    {/* Şikayet — X'in SOLUNDA. */}
+                    {/* Şikayet — X'in SOLUNDA. Dolgusuz (`flag`) bayrak; içi
+                        boş glif ince kaldığı için `nosign` ile aynı ağırlığa
+                        çekiliyor, yoksa yanında sönük duruyor. */}
                     {onReport && (
                       <ModerationIconButton
                         onPress={onReport}
                         label={t('profile.card.reportAccount')}
-                        name="flag.fill"
+                        name="flag"
                         fallback={Flag}
+                        strokeWidth={2}
+                        weight="semibold"
+                        pullToward="right"
                       />
                     )}
                     <TouchableOpacity
@@ -2453,9 +3066,7 @@ export default function SwipeCard({
                         />
                       </View>
                     </TouchableOpacity>
-                    {/* Engelle — tikin SAĞINDA. Bayraktan bir tık kalın:
-                        `nosign` ince bir glif, aynı ağırlıkta dolgulu
-                        bayrağın yanında sönük kalıyordu. */}
+                    {/* Engelle — tikin SAĞINDA. */}
                     {onBlock && (
                       <ModerationIconButton
                         onPress={onBlock}
@@ -2464,6 +3075,7 @@ export default function SwipeCard({
                         fallback={Ban}
                         strokeWidth={2}
                         weight="semibold"
+                        pullToward="left"
                       />
                     )}
                   </View>
@@ -2487,8 +3099,10 @@ export default function SwipeCard({
                       <ModerationIconButton
                         onPress={onReport}
                         label={t('profile.card.reportAccount')}
-                        name="flag.fill"
+                        name="flag"
                         fallback={Flag}
+                        strokeWidth={2}
+                        weight="semibold"
                       />
                     )}
                     {onBlock && (
@@ -2508,6 +3122,7 @@ export default function SwipeCard({
           </View>
         </BounceScrollView>
       </ScrollWrapper>
+
     </Animated.View>
   );
 }

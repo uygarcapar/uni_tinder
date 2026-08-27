@@ -252,6 +252,23 @@ export const reportSchema = z.object({
   description: z.string().max(1000).optional(),
 });
 
+/**
+ * Not composer'ı (yorumlu beğeni). Tavan SUNUCUDAN geldiği için sabit değil
+ * fabrika: `Stats.noteMaxLength` değişince şema da değişmeli.
+ *
+ * `.max()` KULLANILMIYOR — o UTF-16 birimi sayar, sunucu code point sayar;
+ * emoji'li bir not sınırın yarısında reddedilirdi (bkz. noteLength).
+ * Composer zaten yazarken `clampNoteText` ile kırpıyor, buradaki tavan kontrolü
+ * o kırpma atlanırsa diye ikinci hat.
+ */
+export const noteSchema = (limit: number) =>
+  z.object({
+    comment: z
+      .string()
+      .refine((v) => v.trim().length > 0, "Notun boş olamaz")
+      .refine((v) => noteLength(v) <= limit, `En fazla ${limit} karakter`),
+  });
+
 export type LoginForm = z.infer<typeof loginSchema>;
 export type EmailForm = z.infer<typeof emailSchema>;
 export type PasswordForm = z.infer<typeof passwordSchema>;

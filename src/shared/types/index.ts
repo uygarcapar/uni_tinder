@@ -283,16 +283,63 @@ export type PaywallType =
   | "UNDO_LIMIT"
   | "MISSED_MATCH_RECOVERY_LIMIT"
   | "PREMIUM_FILTERS"
-  | "CHAT_QUOTA_EXHAUSTED";
+  | "CHAT_QUOTA_EXHAUSTED"
+  // Not bakiyesi bitti. Abonelik paywall'ı DEĞİL: premium kullanıcı da paket
+  // satın alıyor (SuperLike'ın 2026-08-11'deki davranışının aynısı).
+  | "NOTE_BALANCE";
 
 /**
- * Kart üzerinde ortak nokta rozeti. `kindName` dil değişse de sabit kalan
- * anahtar (ikon eşlemesi buna bakar); `label` sunucuda aktif dile göre
- * ÇÖZÜLMÜŞ gelir, istemcide tekrar çevrilmez.
+ * Bir notun hedefi — kartın HANGİ içeriğine yazıldığı.
+ *
+ * Gönderimde index/anahtar ile taşınıyor; kalıcı kayıt backend'de ANLIK GÖRÜNTÜ
+ * olarak tutulmalı (bkz. öneri dokümanı D4): foto silinir ya da sıralama
+ * değişirse `photoIndex` başka bir fotoğrafı işaret etmeye başlar ve alıcı
+ * hiç bahsi geçmeyen bir fotoğrafın altında yorum görür.
+ */
+export interface NoteTarget {
+  kind: "Photo" | "Prompt";
+  /** 0 = ana fotoğraf. `kind === "Photo"` dışında null. */
+  photoIndex: number | null;
+  /** Katalog `enumName`'i (ProfilePromptCard.promptKey). `kind === "Prompt"` dışında null. */
+  promptKey: string | null;
+}
+
+/**
+ * Alıcının gördüğü not. `WhoLikedMe` / `LikerProfile` yanıtındaki liker
+ * kaydına takılı gelir; notu olmayan kayıtta alan `null`.
+ *
+ * Hedef alanları GÖNDERİM ANINDAKİ kopyalar — bugünkü profilden tekrar
+ * çözülmez.
+ */
+export interface LikerNote {
+  /**
+   * Şikayet akışı için. Backend SAYI gönderiyor (`1234`) — `moderation/report`
+   * gövdesine olduğu gibi geçiyor, string'e çevirmeyin.
+   */
+  noteId?: number | string | null;
+  comment: string;
+  /** ISO + Z. */
+  sentAt?: string | null;
+  target?: {
+    kind: "Photo" | "Prompt";
+    photoUrl?: string | null;
+    promptKey?: string | null;
+    /** İzleyicinin dilinde çözülmüş soru metni. */
+    promptDisplay?: string | null;
+    promptAnswer?: string | null;
+  } | null;
+}
+
+/**
+ * Kart üzerinde ortak nokta rozeti. `kind` dil değişse de sabit kalan
+ * PascalCase anahtar (ikon eşlemesi buna bakar); `label` sunucuda aktif dile
+ * göre ÇÖZÜLMÜŞ gelir, istemcide tekrar çevrilmez.
+ *
+ * İkizi `kindName` 2026-08-22 wire standardizasyonunda KALDIRILDI — enum'lar
+ * her yerde string basıldığı için birebir aynı değeri tekrarlıyordu.
  */
 export interface ThingInCommon {
   kind?: string;
-  kindName?: string;
   label?: string;
 }
 
@@ -564,9 +611,34 @@ export interface SwipeStats {
    * Bu yüzden `weeklySuperLikeLimit + purchasedSuperLikes` de güvenli bir payda
    * değil; oran/progress gösterilecekse `Math.min(1, ...)` ile clamp'lenmeli,
    * "x/5" formatı kullanılmamalı (6/5 çıkar).
+   *
+   * ⚠️ Adı "weekly" ama periyot 2026-08-22'den beri TIER'A BAĞLI: haftalık
+   * abonede 7, aylıkta 30, yıllıkta 365 gün — ve tavan da tier'a göre 1/2/5
+   * (eskiden herkese 5). Sabit "5" ya da "7 gün" yazan hiçbir metin doğru
+   * değil; süre `superLikeResetInSeconds`ten okunmalı.
    */
   weeklySuperLikeLimit: number | null;
   dailyUndoLimit: number | null;
+  /**
+   * Not bakiyesi — tier kotası + satın alınan kredi TOPLAMI (SuperLike'ın
+   * `superLikesRemaining`i ile aynı desen). Taban 0, `-1` (sınırsız) dönmez.
+   *
+   * ⚠️ Bu alan bir ÖZELLİK ANAHTARI DEĞİL: backend henüz göndermiyorken de not
+   * kutusu çiziliyor, yalnızca gönderim yerine satın alma sheet'i açılıyor.
+   * Böylece uç canlıya çıkınca istemci sürümü gerekmiyor.
+   */
+  notesRemaining: number | null;
+  /** Satın alınmış, SÜRESİZ kredi. Yenilenmede sıfırlanmaz. */
+  purchasedNotes: number | null;
+  /** Yalnız tier kotasından kalan (krediyi kapsamaz). Kota yoksa hep 0. */
+  quotaNotesRemaining: number | null;
+  /**
+   * Yorumun karakter tavanı. Sunucudan geliyor: sabit yazılırsa sınırı
+   * değiştirmek App Store turu gerektirir ve eski istemciler 400 yemeye başlar
+   * (`weeklySuperLikeLimit`te tam olarak bu yaşandı). Gelmezse FE varsayılana
+   * düşer — bkz. NOTE_MAX_LENGTH_FALLBACK.
+   */
+  noteMaxLength: number | null;
 }
 
 /**

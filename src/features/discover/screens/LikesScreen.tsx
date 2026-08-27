@@ -24,14 +24,20 @@ import {
   Flag,
   Heart,
   HeartCrack,
+  MessageCircle,
   RotateCcw,
   X,
 } from "lucide-react-native";
 import SFIcon from "@/shared/components/SFIcon";
+import type { LikerNote } from "@/shared/types";
 import { useNavigation } from "@react-navigation/native";
 import Animated, {
+  Easing,
+  LinearTransition,
+  useAnimatedStyle,
   useSharedValue,
   useAnimatedScrollHandler,
+  withTiming,
 } from "react-native-reanimated";
 import { useAppDispatch, useAppSelector } from "@/shared/hooks/redux";
 import { refreshEntitlementsForPaywall } from "@/features/profile/subscriptionSlice";
@@ -41,6 +47,7 @@ import AnimatedPressable from "@/shared/components/AnimatedPressable";
 import EmptyState from "@/shared/components/EmptyState";
 import LikerSwipeModal from "@/features/discover/components/LikerSwipeModal";
 import PurchaseModal from "@/features/discover/components/PurchaseModal";
+import RecoveryPurchaseModal from "@/features/discover/components/RecoveryPurchaseModal";
 import ReportModal from "@/shared/components/ReportModal";
 import moderationService from "@/shared/services/moderationService";
 import ScreenHeader from "@/shared/components/ScreenHeader";
@@ -48,23 +55,26 @@ import SkeletonBox from "@/shared/components/SkeletonBox";
 import PremiumFlame from "@/shared/components/PremiumFlame";
 import FilterPills from "@/shared/components/FilterPills";
 import SuperLikeHeart from "@/shared/components/SuperLikeHeart";
+import NoteGlyph from "@/shared/components/NoteGlyph";
 import swipeService from "@/features/discover/swipeService";
+import { resolveCardAge } from "@/features/discover/cardPrivacy";
 import {
   useSwipeMutation,
   useSwipeStats,
-  useUpdateStatsCache,
+  useSyncRecoverySpend,
 } from "@/features/discover/swipeQueries";
 import {
   fetchMissedMatches,
   recoverMissedMatch,
 } from "@/features/discover/missedMatchRecovery";
+import { resolveRecoveryBalance } from "@/features/discover/recoveryQuota";
 import { setWhoLikedMe, removeWhoLikedMe } from "@/features/discover/swipeSlice";
 import { fetchConversations } from "@/features/chat/chatSlice";
 import { showInfoToast, showMissedMatchToast } from "@/shared/services/toaster";
 
 import uiBus from "@/shared/services/uiBus";
 import { appPrefs } from "@/shared/utils/appPrefs";
-import { colors, gradients, scrimAt } from "../../../shared/theme/colors";
+import { colors, gradients, scrimAt, veil } from "../../../shared/theme/colors";
 import { useRenderCount } from "@/shared/debug/useRenderCount";
 
 const { width } = Dimensions.get("window");
@@ -91,8 +101,57 @@ const CARD_ROW_GAP = 16;
 const CARD_WIDTH =
   width - LIST_H_PADDING * 2 - ACTION_GAP - ACTION_BUTTON_SIZE;
 const CARD_HEIGHT = Math.round(CARD_WIDTH * 1.1); // Aspect ratio
+// Sağ üst rozet (not balonu / superlike kalbi) — tek sabit, ikisi de aynı
+// köşede aynı ölçüde durmalı: ayrı sayılar girilseydi kart tipine göre rozet
+// büyüyüp küçülüyormuş gibi okunurdu.
+const BADGE_SIZE = 34;
+// Not rozetinin ÇİZİLEN boyu — rozet kabından (BADGE_SIZE) küçük, kabın içinde
+// ortalı. SwipeCard'daki not işaretiyle aynı karar: arkasındaki disk kabı
+// dolduruyor, siluet onun içinde nefes alıyor (glyph'in kendi 2/24'lük optik
+// payı da bunun içinde).
+const NOTE_BADGE_GLYPH_SIZE = 21;
 // Kart başlığı 18px — SwipeCard'ın 36px isim / 26px ateş oranını korur.
 const LIKE_CARD_FLAME_SIZE = 16;
+
+// ── Not kutusu ───────────────────────────────────────────────────────────────
+// Notun metni + NEYE yazıldığı, kartın alt bloğunda isim/üniversitenin altında.
+// Genişlik kartın %90'ı; alt bloğun kendi yan payları (16 + 12) zaten buna denk
+// düşüyor, yani kutu bloğu doldurur ama kartın kenarına yapışmaz.
+const NOTE_BOX_WIDTH = Math.round(CARD_WIDTH * 0.9);
+// Hedef önizlemesi kutunun SOL ÜST köşesine biner — NoteComposerModal'daki
+// yerleşimin karta göre küçültülmüş hali (orada 52/28): yarısı kutunun içinde,
+// gerisi yukarı taşıyor. Kutunun İÇİNE giren pay iki hedefte de AYNI
+// (NOTE_PREVIEW_INSET), değişen şey yukarı taşan kısım — yazı her iki durumda
+// da aynı yerden başlasın.
+const NOTE_THUMB_SIZE = 40;
+const NOTE_PREVIEW_INSET = 16;
+const NOTE_PREVIEW_LEFT = 8;
+const NOTE_THUMB_OVERHANG = NOTE_THUMB_SIZE - NOTE_PREVIEW_INSET;
+// Yazının kutu kenarlarına nefes payı. Önizleme varken üst pay onun içeri giren
+// kısmı kadar büyüyor — ilk satır thumbnail'in/chip'in altında kalmasın.
+const NOTE_BOX_PAD_V = 12;
+const NOTE_BOX_PAD_H = 14;
+// Prompt hedefinin mini kartı: soru üstte (tek satır), cevap altında tırnakla
+// (tek satır). Kartın yüksekliği SABİT olduğu için ikisi de kırpılıyor — burası
+// hedefi hatırlatan etiket, cevabın okunduğu yer değil.
+const NOTE_CHIP_PAD_V = 10;
+const NOTE_CHIP_QUESTION_LINE = 15;
+const NOTE_CHIP_GAP = 2;
+const NOTE_CHIP_ANSWER_LINE = 19;
+const NOTE_CHIP_ICON_SIZE = 12;
+// Chip ÖLÇÜLÜYOR (cevabı hiç olmayan hedefte tek satıra iniyor); bu yalnız ilk
+// karenin tahmini — yaygın hâl soru + cevap.
+const NOTE_CHIP_HEIGHT_ESTIMATE =
+  2 + 2 * NOTE_CHIP_PAD_V + NOTE_CHIP_QUESTION_LINE + NOTE_CHIP_GAP + NOTE_CHIP_ANSWER_LINE;
+
+// Kartın listeden düşerken oynattığı çıkış animasyonu. Süre TEK yerde duruyor:
+// kart bu süre boyunca uçup sönerken ekran onu veride tutuyor, sonra çıkarıyor
+// (bkz. runCardExit) — yoksa animasyonun oynayacağı bir görünüm kalmazdı.
+const CARD_EXIT_MS = 260;
+// Kart düştükten sonra boşluğun kapanması. Çıkıştan biraz daha yavaş ve
+// yumuşak: kart önce uçar, alttakiler sonra sakince yukarı kayar. İkisi eşit
+// hızda olsaydı tek bir sıçrama gibi okunurdu.
+const LIST_SHIFT_MS = 320;
 
 // Ekran görünür olduğunda listenin bu yaştan eskiyse tazelenmesi. Tab'lar arası
 // gidip gelmeyi her seferinde isteğe çevirmeyecek kadar uzun, "bildirime basıp
@@ -124,6 +183,49 @@ const IMAGE_LOAD_TIMEOUT_MS = 6000;
 // hiç gelmez.
 const LIKES_INFO_DISMISSED_KEY = "likesInfoDismissed";
 
+// Kaçırdıkların sekmesinin AYRI bayrağı. Kart görsel olarak aynı kart ama iki
+// farklı mekaniği anlatıyor (beğeni listesi ↔ pas → beğeni + hak harcama), ve
+// bu sekmeye çoğu kullanıcı beğeni listesini gezdikten çok sonra giriyor. Ortak
+// bayrakta beğeni sekmesindeki X, kullanıcı kurtarma anlatısını hiç görmeden
+// onu da yutuyordu; artık her sekme kendi kartını bir kez gösterip kapatıyor.
+const MISSED_INFO_DISMISSED_KEY = "likesMissedInfoDismissed";
+
+/**
+ * Liker kaydındaki not bloğu → kartın okuduğu şekil.
+ *
+ * Yorum boşsa (ya da alan hiç yoksa) `null` dönüyor: kart `!!item.note`'a
+ * bakarak hem blur'u açıyor hem rozeti çiziyor, boş bir nesne o iki kararı da
+ * yanlış tarafa çevirirdi — yorumsuz bir "not" ürün olarak da yok.
+ *
+ * Moderasyon bir notu reddederse sunucu `isNote: false` + `note: null` dönüyor
+ * ama LIKE listede KALIYOR (sözleşme §3.6) — o kart burada notsuz bir beğeni
+ * olarak normalleşiyor, kart düşmüyor. Ek iş gerekmiyor.
+ *
+ * ⚠️ Hedef alanları backend'in GÖNDERİM ANINDA aldığı kopyalar; bugünkü
+ * profilden yeniden çözülmüyor (D4 = snapshot). TEK İSTİSNA `promptDisplay`:
+ * o okuma anında İZLEYİCİNİN dilinde çözülüyor (§3.2), çünkü snapshot'a
+ * yazılsaydı gönderenin dilinde donardı.
+ */
+function normalizeLikerNote(p: any): LikerNote | null {
+  const raw = p?.note;
+  const comment = typeof raw?.comment === "string" ? raw.comment.trim() : "";
+  if (!comment) return null;
+  return {
+    noteId: raw?.noteId ?? null,
+    comment,
+    sentAt: raw?.sentAt ?? null,
+    target: raw?.target
+      ? {
+          kind: raw.target.kind === "Prompt" ? "Prompt" : "Photo",
+          photoUrl: raw.target.photoUrl ?? null,
+          promptKey: raw.target.promptKey ?? null,
+          promptDisplay: raw.target.promptDisplay ?? null,
+          promptAnswer: raw.target.promptAnswer ?? null,
+        }
+      : null,
+  };
+}
+
 // Yatay padding + üst boşluk YOK: bu liste FlatList'in ListEmptyComponent'i
 // olarak contentContainer'ın içinde çiziliyor, hizayı oradan alır. Böylece
 // skeleton satırları gerçek kartlarla birebir aynı yerde durur — aksiyon
@@ -146,7 +248,10 @@ function SkeletonGlyph({ box, glyph }) {
   );
 }
 
-function LikesSkeletonList() {
+// `showModeration`: uydu glifleri gerçek kartta premium'a bağlı (bkz.
+// canModerate). İskelet koşulsuz dört daire çizseydi veri gelince free
+// kullanıcının kolonu ikiye düşer, kolon "eksilmiş" gibi görünürdü.
+function LikesSkeletonList({ showModeration = false }) {
   const placeholders = Array.from({ length: 3 });
   return (
     <View>
@@ -176,12 +281,16 @@ function LikesSkeletonList() {
               gap: MOD_STACK_GAP,
             }}
           >
-            <SkeletonGlyph box={MOD_BUTTON_SIZE} glyph={20} />
+            {showModeration && (
+              <SkeletonGlyph box={MOD_BUTTON_SIZE} glyph={20} />
+            )}
             <View style={{ gap: ACTION_STACK_GAP, alignItems: "center" }}>
               <SkeletonGlyph box={ACTION_BUTTON_SIZE} glyph={MAIN_ICON_SIZE} />
               <SkeletonGlyph box={ACTION_BUTTON_SIZE} glyph={MAIN_ICON_SIZE} />
             </View>
-            <SkeletonGlyph box={MOD_BUTTON_SIZE} glyph={20} />
+            {showModeration && (
+              <SkeletonGlyph box={MOD_BUTTON_SIZE} glyph={20} />
+            )}
           </View>
         </View>
       ))}
@@ -305,6 +414,181 @@ function LikeActionButton({
   );
 }
 
+/**
+ * Kartın alt bloğundaki not kutusu — notun METNİ ve NEYE yazıldığı.
+ *
+ * ZEMİN `veil`: açık modda BEYAZ, koyu modda SİYAH; yazı `colors.text` ile tam
+ * tersi. Kutu bir FOTOĞRAFIN üstünde duruyor, o yüzden tema yüzeyleri
+ * (`surface`) değil perde kullanılıyor — fotoğrafın parlaklığı ne olursa olsun
+ * kutu okunur kalıyor (SwipeCard'daki not diskiyle aynı karar). Tam opak değil:
+ * altındaki fotoğraf bir tık sızsın, kutu yapıştırılmış bir pul gibi durmasın.
+ *
+ * HEDEF ÖNİZLEMESİ NoteComposerModal'daki yerleşimin küçültülmüşü: kutunun sol
+ * üst köşesine binen fotoğraf thumbnail'i ya da prompt chip'i. Gönderen "neye
+ * yazıyorum"u orada görüyordu, alan da "neye yazılmış"ı burada görüyor — aynı
+ * dil, aynı köşe.
+ *
+ * ⚠️ Hedef alanları GÖNDERİM ANINDAKİ kopyalar (snapshot): fotoğraf profilden
+ * silinmiş olsa bile `photoUrl` notun yanında durur. Hedefi hiç olmayan not
+ * (eski kayıt / realtime önizleme) sadece kutu olarak çizilir, önizlemesiz.
+ */
+function LikeNoteBox({ note }) {
+  const { t } = useTranslation();
+  const target = note?.target ?? null;
+  const photoUri = target?.kind === "Photo" ? target.photoUrl || null : null;
+  const promptAnswer = target?.kind === "Prompt" ? target.promptAnswer : null;
+  // Soru metni izleyicinin dilinde çözülmüş gelir (`promptDisplay`, sözleşme
+  // §3.2). Gelmediyse jenerik etiket: chip'in ilk satırı boş kalırsa cevap
+  // başlıksız asılı durur.
+  const promptLabel =
+    target?.kind === "Prompt"
+      ? target.promptDisplay || t("note.targetPrompt")
+      : null;
+  const showChip = !!promptLabel;
+  const [chipHeight, setChipHeight] = useState(NOTE_CHIP_HEIGHT_ESTIMATE);
+  // Kutunun İÇİNE giren pay sabit; değişen, yukarı taşan kısım.
+  const chipOverhang = Math.max(0, chipHeight - NOTE_PREVIEW_INSET);
+  const overhang = photoUri
+    ? NOTE_THUMB_OVERHANG
+    : showChip
+      ? chipOverhang
+      : 0;
+  const hasPreview = !!photoUri || showChip;
+
+  return (
+    // Sarmalayıcının padding'i YOK: önizleme kutunun çocuğu değil KARDEŞİ
+    // (Yoga absolute çocuğu ebeveynin padding'ine göre konumlandırır, `top: -x`
+    // taşma yerine kutunun içine düşerdi). Üst marj = taşma + nefes, yoksa
+    // önizleme üniversite satırının üstüne biner.
+    <View
+      style={{
+        marginTop: 8 + overhang,
+        width: NOTE_BOX_WIDTH,
+        maxWidth: "100%",
+      }}
+    >
+      <View
+        style={{
+          backgroundColor: veil(0.92),
+          borderRadius: 22,
+          borderCurve: "continuous",
+          paddingTop: hasPreview
+            ? NOTE_PREVIEW_INSET + NOTE_BOX_PAD_V
+            : NOTE_BOX_PAD_V,
+          paddingBottom: NOTE_BOX_PAD_V,
+          paddingHorizontal: NOTE_BOX_PAD_H,
+        }}
+      >
+        <Text
+          numberOfLines={2}
+          style={{
+            color: colors.text,
+            fontSize: 13,
+            lineHeight: 18,
+            fontWeight: "500",
+          }}
+        >
+          {note.comment}
+        </Text>
+      </View>
+
+      {/* Prompt chip'i — soru üstte soluk, cevap altında tırnakla. Kontur
+          gölgenin yerine geçiyor: dolgu kutuyla aynı renk olduğu için chip'in
+          kutunun üst çizgisini kestiği yeri tanımlayan tek şey o. */}
+      {showChip && (
+        <View
+          pointerEvents="none"
+          onLayout={(e) => setChipHeight(e.nativeEvent.layout.height)}
+          style={{
+            position: "absolute",
+            top: -chipOverhang,
+            left: NOTE_PREVIEW_LEFT,
+            maxWidth: "92%",
+            borderRadius: 18,
+            borderCurve: "continuous",
+            borderWidth: 1,
+            borderColor: colors.border,
+            backgroundColor: veil(0.92),
+            paddingVertical: NOTE_CHIP_PAD_V,
+            paddingHorizontal: 12,
+          }}
+        >
+          <Text
+            numberOfLines={1}
+            style={{
+              color: colors.textMuted,
+              fontSize: 11,
+              fontWeight: "600",
+              lineHeight: NOTE_CHIP_QUESTION_LINE,
+            }}
+          >
+            {promptLabel}
+          </Text>
+          {!!promptAnswer && (
+            <View
+              style={{
+                flexDirection: "row",
+                alignItems: "flex-start",
+                gap: 5,
+                marginTop: NOTE_CHIP_GAP,
+              }}
+            >
+              <SFIcon
+                name="quote.opening"
+                fallback={MessageCircle}
+                size={NOTE_CHIP_ICON_SIZE}
+                color={colors.text}
+                // İkon satırın ortasına otursun: (satır boyu - ikon) / 2.
+                style={{
+                  marginTop: (NOTE_CHIP_ANSWER_LINE - NOTE_CHIP_ICON_SIZE) / 2,
+                }}
+              />
+              <Text
+                numberOfLines={1}
+                style={{
+                  color: colors.text,
+                  fontSize: 14,
+                  fontWeight: "600",
+                  lineHeight: NOTE_CHIP_ANSWER_LINE,
+                  flexShrink: 1,
+                }}
+              >
+                {promptAnswer}
+              </Text>
+            </View>
+          )}
+        </View>
+      )}
+
+      {/* Foto hedefi — chip'le AYNI köşede, aynı sebeple kutunun kardeşi. İkisi
+          bir arada olmaz: hedef ya foto ya prompt. Kontur kutu renginde, kesiği
+          temiz bitirsin diye. */}
+      {!!photoUri && (
+        <Image
+          source={{ uri: photoUri }}
+          pointerEvents="none"
+          style={{
+            position: "absolute",
+            top: -NOTE_THUMB_OVERHANG,
+            left: NOTE_PREVIEW_LEFT,
+            width: NOTE_THUMB_SIZE,
+            height: NOTE_THUMB_SIZE,
+            // borderCurve YOK: expo-image'ın ImageStyle'ı kabul etmiyor.
+            borderRadius: 14,
+            borderWidth: 3,
+            borderColor: veil(0.92),
+            backgroundColor: colors.surfaceTranslucent,
+          }}
+          contentFit="cover"
+          cachePolicy="memory-disk"
+          recyclingKey={photoUri}
+          transition={150}
+        />
+      )}
+    </View>
+  );
+}
+
 function LikeCard({
   item,
   isPremium,
@@ -316,9 +600,9 @@ function LikeCard({
   onPass,
   onLike,
   acting,
-  // Moderasyon — kolonun altında/üstünde küçük uydular. Premium kapısı YOK
-  // (bkz. LikesScreen.handleBlock): kartın blur'lu olması "kim olduğunu görmek"
-  // içindir, güvenlik çıkışını satın alınacak bir şey yapmaz.
+  // Moderasyon — kolonun altında/üstünde küçük uydular. Premium'a kapalı:
+  // ekran ikisini de YALNIZ premium'a veriyor (bkz. canModerate), free
+  // kullanıcıda `undefined` gelir ve uydular hiç çizilmez.
   onReport,
   onBlock,
   passLabel,
@@ -330,6 +614,9 @@ function LikeCard({
   // tabi değil ve kullanıcı bu kişileri destede zaten görmüş. Blur burada
   // upsell değil, "kurtarmak için önce kimi kaçırdığını gör" akışını kırardı.
   alwaysClear,
+  // Çıkış animasyonu: "left" / "right" jestin yönüne uçurur, "out" yerinde
+  // söndürür (engelleme gibi yönü olmayan düşüşler). null → kart duruyor.
+  exitDirection = null,
 }) {
   const [imgLoading, setImgLoading] = useState(
     !!item.mainPhoto && !loadedPhotoUris.has(item.mainPhoto),
@@ -343,18 +630,80 @@ function LikeCard({
     const id = setTimeout(() => setImgLoading(false), IMAGE_LOAD_TIMEOUT_MS);
     return () => clearTimeout(id);
   }, [imgLoading]);
-  // SuperLike'lar premium olmasa da blur'suz görünür.
-  const showClear = alwaysClear || isPremium || item.isSuperLike;
+  // SuperLike'lar premium olmasa da blur'suz görünür — NOT da öyle.
+  //
+  // Notun ürün değerinin tamamı bu satırda: kullanıcı "kim yazdı"yı görebilsin
+  // diye para ödüyor. Blur'u premium'a bağlarsak satın alınan şey teslim
+  // edilmemiş olur.
+  //
+  // ✅ Sunucu maskeleme YAPMIYOR (sözleşme §3.3 teyidi): `displayName`/`photos`
+  // free kullanıcıya da gerçek değerleriyle geliyor, blur tamamen bu görsel
+  // katman. ⚠️ AMA "blursuz" ≠ "tüm alanlar dolu" (§3.4): gönderenin KENDİ
+  // gizlilik tercihleri (yaş/konum/mesafe) sert kural, notu alan da bypass
+  // edemez — `age: 0` / `city: null` gelen bir not kartı bug DEĞİL.
+  const showClear =
+    alwaysClear || isPremium || item.isSuperLike || !!item.note || !!item.isNote;
+
+  // Çıkış — kart yalnız GÖRSEL olarak gider; veriden düşürmeyi ekran yapıyor
+  // (bkz. runCardExit), o yüzden burada bitişte çağrılacak bir callback yok.
+  // Hepsi transform/opacity: layout'a dokunmadığı için kare başına Fabric
+  // commit'i doğurmaz, boşluğun kapanması ayrı iş (itemLayoutAnimation).
+  const exitProgress = useSharedValue(0);
+  useEffect(() => {
+    if (!exitDirection) {
+      // Emniyet: çıkış başlayıp kart bir şekilde listede kalırsa (ör. tazeleme
+      // onu geri getirdi) görünmez bir hayalet bırakmasın, yerine otursun.
+      exitProgress.value = 0;
+      return;
+    }
+    exitProgress.value = withTiming(1, {
+      duration: CARD_EXIT_MS,
+      easing: Easing.out(Easing.cubic),
+    });
+  }, [exitDirection, exitProgress]);
+  const exitAxis =
+    exitDirection === "left" ? -1 : exitDirection === "right" ? 1 : 0;
+  const exitStyle = useAnimatedStyle(() => {
+    const p = exitProgress.value;
+    return {
+      opacity: 1 - p,
+      // `as const`: RN'in transform tipi her elemanın TEK anahtarlı olmasını
+      // istiyor, TS ise heterojen diziyi `{translateX; rotate?: undefined}`
+      // birleşimi olarak çıkarıyor (bkz. SwipeCard'daki aynı kaçış).
+      transform: [
+        { translateX: exitAxis * width * 0.7 * p },
+        // Hafif eğim — kaydırma jestinde kartın yaptığının aynısı; butonla
+        // yapılan aksiyon da aynı hareketin karşılığı olarak okunsun.
+        { rotate: `${exitAxis * 7 * p}deg` },
+        { scale: 1 - 0.08 * p },
+      ] as const,
+    };
+  }, [exitAxis]);
+
   return (
-    <View
-      style={{
-        flexDirection: "row",
-        alignItems: "center",
-        marginBottom: CARD_ROW_GAP,
-      }}
+    <Animated.View
+      // Uçarken dokunuş almasın: kart hâlâ ekranda ve basılırsa profil açılır
+      // ya da ikinci bir aksiyon gider.
+      pointerEvents={exitDirection ? "none" : "auto"}
+      style={[
+        {
+          flexDirection: "row",
+          alignItems: "center",
+          marginBottom: CARD_ROW_GAP,
+        },
+        exitStyle,
+      ]}
     >
-      <TouchableOpacity
-        activeOpacity={0.95}
+      {/* Basılı tutunca YALNIZ ölçü değişir, opaklık değil (activeOpacity 1):
+          kart bir fotoğraf taşıyor, soldurmak onu "pasif" gösteriyordu.
+          Ölçü düşüşü kasten çok küçük (0.98) — büyük bir yüzeyde 0.97'lik
+          varsayılan bile kartı yerinden oynatıyormuş gibi okunuyor. Yaylanma
+          kapalı: bırakışta 1'i geçen taşma, tam genişlikteki kartta liste
+          zıplıyormuş hissi veriyor (bkz. AnimatedPressable'daki not). */}
+      <AnimatedPressable
+        activeOpacity={1}
+        pressScale={0.98}
+        pressBounciness={0}
         onPress={onPress}
         style={{
           width: CARD_WIDTH,
@@ -436,18 +785,65 @@ function LikeCard({
             />
           )}
 
-          {/* Sağ üst: sadece superlike için LitPlus tonlu gradient kalp */}
-          {item.isSuperLike && (
+          {/* Sağ üst rozet — superlike'ta LitPlus tonlu gradient kalp, notta
+              konuşma balonu. İkisi aynı köşeyi paylaşıyor; birlikte gelemezler
+              (öneri dokümanı D8: not ve superlike ayrı ürünler), yine de not
+              öncelikli çiziliyor — yorum, kartın taşıdığı daha zengin bilgi.
+              Rozet `note` İÇERİĞİNE değil `isNote` BAYRAĞINA da bakıyor:
+              önizleme boş gelen bir notta (realtime payload'ında `notePreview`
+              yok, ya da liste yorumu kırpmış) kart notluğunu kaybediyordu —
+              blur zaten bayrakla açılıyordu, rozet açılmıyordu. */}
+          {item.note || item.isNote ? (
             <View
               style={{
                 position: "absolute",
                 top: 12,
                 right: 12,
+                width: BADGE_SIZE,
+                height: BADGE_SIZE,
+                alignItems: "center",
+                justifyContent: "center",
               }}
               pointerEvents="none"
             >
-              <SuperLikeHeart size={28} />
+              {/* Disk — işaretin ARKASINDA, mutlak ve ortalı. Rengi `veil`:
+                  açık modda beyaz, koyu modda siyah, yani işaretin (`text`) tam
+                  tersi — fotoğrafın altında ne varsa siluetin kenarı her
+                  zeminde tutuyor (SwipeCard'daki not diskiyle aynı karar). */}
+              <View
+                style={{
+                  position: "absolute",
+                  width: BADGE_SIZE,
+                  height: BADGE_SIZE,
+                  borderRadius: 999,
+                  backgroundColor: veil(0.92),
+                }}
+              />
+              {/* SF `bubble.left.fill` DEĞİL: ürünün kendi işareti — uygulama
+                  ikonundan sökülen konuşma balonu (NoteGlyph), super-like
+                  kalbinin kardeşi. Not nerede görünürse aynı şekli kullanıyor
+                  (SwipeCard'daki not kutusu, paket modalı, toast).
+                  Balonun içindeki kalp DELİK: altındaki disk oradan görünür. */}
+              <NoteGlyph
+                size={NOTE_BADGE_GLYPH_SIZE}
+                color={colors.text}
+                stroke={colors.swipeHeartBorder}
+                strokeWidth={0.1}
+              />
             </View>
+          ) : (
+            item.isSuperLike && (
+              <View
+                style={{
+                  position: "absolute",
+                  top: 12,
+                  right: 12,
+                }}
+                pointerEvents="none"
+              >
+                <SuperLikeHeart size={BADGE_SIZE} />
+              </View>
+            )
           )}
 
           {/* İsim & yaş — kartın sol altında, beyaz. Okunabilirlik için alt gradient scrim. */}
@@ -557,6 +953,12 @@ function LikeCard({
                     {item.universityName}
                   </Text>
                 )}
+                {/* Not — ismin ve üniversitenin ALTINDA, kendi kutusunda.
+                    Kartın en değerli satırı: kişi bir şey YAZMIŞ. Hedef bilgisi
+                    (hangi fotoğraf / hangi prompt) artık kutunun köşesine binen
+                    önizlemede duruyor — notun anlamı neye yazıldığından
+                    ayrılamıyor (bkz. LikeNoteBox). */}
+                {!!item.note?.comment && <LikeNoteBox note={item.note} />}
               </View>
             </>
           )}
@@ -604,7 +1006,7 @@ function LikeCard({
             );
           })()}
         </View>
-      </TouchableOpacity>
+      </AnimatedPressable>
 
       {/* Aksiyon kolonu — kartın sağında, dikeyde ortalanmış. Kaçırdıkların
           sekmesinde geç/beğen yerine TEK "kurtar" butonu var (pas zaten
@@ -692,7 +1094,7 @@ function LikeCard({
           />
         )}
       </View>
-    </View>
+    </Animated.View>
   );
 }
 
@@ -738,37 +1140,96 @@ export default function LikesScreen() {
   // bile çizilmez. userId henüz yoksa (preload mount) kartı göstermiyoruz:
   // hangi hesaba yazılacağı belli olmadan X'e basılırsa bayrak boşluğa giderdi.
   const currentUserId = useAppSelector((s) => s.auth.user?.id);
+  // Kaçırdıkların kendi bayrağını taşıyor (bkz. MISSED_INFO_DISMISSED_KEY):
+  // hangi kartın çizileceği ve X'in neyi kapatacağı aktif sekmeye bakıyor.
+  const isMissedInfo = activeTab === "missed";
+  const infoDismissKey = isMissedInfo
+    ? MISSED_INFO_DISMISSED_KEY
+    : LIKES_INFO_DISMISSED_KEY;
   const infoSeen = useMemo(
     () =>
       currentUserId
-        ? !!appPrefs.getBoolean(`${LIKES_INFO_DISMISSED_KEY}:${currentUserId}`)
+        ? !!appPrefs.getBoolean(`${infoDismissKey}:${currentUserId}`)
         : true,
-    [currentUserId],
+    [currentUserId, infoDismissKey],
   );
   const [infoClosed, setInfoClosed] = useState(false);
-  const showInfoCard = !infoSeen && !infoClosed;
+  const [missedInfoClosed, setMissedInfoClosed] = useState(false);
+  const showInfoCard =
+    !infoSeen && !(isMissedInfo ? missedInfoClosed : infoClosed);
   const dismissInfoCard = useCallback(() => {
-    setInfoClosed(true);
+    if (isMissedInfo) setMissedInfoClosed(true);
+    else setInfoClosed(true);
     if (currentUserId) {
-      appPrefs.set(`${LIKES_INFO_DISMISSED_KEY}:${currentUserId}`, true);
+      appPrefs.set(`${infoDismissKey}:${currentUserId}`, true);
     }
-  }, [currentUserId]);
+  }, [currentUserId, infoDismissKey, isMissedInfo]);
   const insets = useSafeAreaInsets();
   const dispatch = useAppDispatch();
   const navigation = useNavigation();
   const statsQuery = useSwipeStats();
-  const updateStatsCache = useUpdateStatsCache();
+  // Kurtarma harcandıktan sonraki hizalama: iyimser düşüş + kanonik tazeleme.
+  // Referansı stabil (useCallback), bağımlılık listesini kirletmiyor.
+  const syncRecoverySpend = useSyncRecoverySpend();
+  // /Stats'ı ekranın kendi tazelik damgasından tetikleyebilmek için ref'te:
+  // deps'e konsa `loadMissed` her render'da yeniden yaratılırdı.
+  const refetchStatsRef = useRef(statsQuery.refetch);
+  refetchStatsRef.current = statsQuery.refetch;
   // `mutate` TanStack Query'de referans olarak stabil — mutation nesnesinin
   // kendisi her render'da değişiyor, onu bağımlılığa koymak handleQuickSwipe'ı
   // her karede tazelerdi (bu ekran uygulama ömrü boyunca mount kalıyor).
   const { mutate: swipeMutate } = useSwipeMutation();
   const [purchaseVisible, setPurchaseVisible] = useState(false);
+  // Kurtarma paketi sheet'i — premium paywall'ından AYRI. Kurtarma hakkı
+  // bitince backend artık premium'a da `showPaywall:true` dönüyor (satılacak
+  // bir ürün var), yani bu sheet iki tier'da da açılıyor.
+  const [recoveryPurchaseVisible, setRecoveryPurchaseVisible] = useState(false);
   // Şikayet edilen kullanıcı — ReportModal'ın hem görünürlüğü hem hedefi.
   const [reportTarget, setReportTarget] = useState(null);
   // Karttaki X / ✓ butonunun beklediği liker — yalnız premium doğrulaması
   // sürerken dolu kalır (istek fire-and-forget, kart aynı karede düşüyor).
   // Aynı anda iki karta basılmasını da bu engelliyor.
   const [actingId, setActingId] = useState(null);
+
+  // ── Kart çıkışı ───────────────────────────────────────────────────────────
+  // Aksiyon alınan kart veriden ANINDA düşmüyor: önce `exitingIds`e giriyor
+  // (kart uçup söner, bkz. LikeCard), CARD_EXIT_MS sonra gerçek düşüş oluyor.
+  // Ağdan bağımsız — istek zaten yola çıkmış durumda, bu yalnız görsel sıra.
+  //
+  // Boşluğun kapanması BURADA değil: kart veriden çıkınca FlatList'in
+  // `itemLayoutAnimation`ı alttaki hücreleri yukarı kaydırıyor.
+  const [exitingIds, setExitingIds] = useState({});
+  const exitTimersRef = useRef(new Map());
+  const runCardExit = useCallback((userId, direction, remove) => {
+    if (!userId) {
+      remove();
+      return;
+    }
+    // Aynı kart için ikinci bir çıkış başlatma — animasyon baştan oynar ve
+    // `remove` iki kez çağrılırdı.
+    if (exitTimersRef.current.has(userId)) return;
+    setExitingIds((prev) => ({ ...prev, [userId]: direction }));
+    const timer = setTimeout(() => {
+      exitTimersRef.current.delete(userId);
+      setExitingIds((prev) => {
+        if (!(userId in prev)) return prev;
+        const next = { ...prev };
+        delete next[userId];
+        return next;
+      });
+      remove();
+    }, CARD_EXIT_MS);
+    exitTimersRef.current.set(userId, timer);
+  }, []);
+  // Ekran uygulama ömrü boyunca mount kalıyor ama yine de: bekleyen çıkışlar
+  // unmount'ta iptal edilir (timer, kapanmış bir ekranın state'ine yazmasın).
+  useEffect(() => {
+    const timers = exitTimersRef.current;
+    return () => {
+      timers.forEach((id) => clearTimeout(id));
+      timers.clear();
+    };
+  }, []);
 
   // ── Kaçırılan eşleşmeler ("Kaçırdıkların" sekmesi) ────────────────────────
   // Beğeni listesinden tamamen ayrı: farklı uç (`/MissedMatches`), farklı kota
@@ -797,6 +1258,15 @@ export default function LikesScreen() {
       return;
     }
     missedInFlightRef.current = true;
+    // Liste tazelenirken BAKİYE de tazelensin. /Stats `staleTime: Infinity` ile
+    // oturumda bir kez çekiliyor; bu ekranın kota satırı onun dışında hiçbir
+    // yerden yenilenmiyordu, yani başka bir cihazdan (ya da bu oturumdan önce)
+    // harcanmış hak ekranda hep eski değeriyle duruyordu — kullanıcının
+    // "5/5 yazıyor ve hiç azalmıyor" dediği durumun ikinci yarısı bu.
+    //
+    // Ayrı bir damga tutmuyoruz: yukarıdaki `LIKES_STALE_MS` guard'ının arkasında
+    // olduğu için sekmeye her girişte değil, en fazla 30 sn'de bir istek çıkar.
+    refetchStatsRef.current?.()?.catch?.(() => {});
     // Dolu listeyi skeleton'a çevirme — beğeni listesindeki `silent` kuralının
     // aynısı.
     if (missedRef.current.length === 0) setMissedLoading(true);
@@ -857,37 +1327,60 @@ export default function LikesScreen() {
     statsQuery.data?.isPremium,
   ]);
 
+  // Sekmeler AYRIK kümeler: bir kart tek bir sekmeye ait. Not bir beğeninin
+  // üstüne binen ayrı ürün olduğu için "Beğeni" sekmesinden de çıkarılıyor —
+  // yoksa aynı kart hem orada hem "Notlar"da görünürdü. Önceliği not alıyor,
+  // kartın rozetindeki sırayla aynı (bkz. LikeCard'ın sağ üst rozeti).
+  //
+  // Bayrak İÇERİĞE değil `isNote`e DE bakıyor: realtime gelen kartta önizleme
+  // boş olabiliyor (`notePreview` yok) — o kart notluğunu kaybetmemeli.
   const filteredLikes =
     activeTab === "like"
-      ? likes.filter((l) => !l.isSuperLike)
+      ? likes.filter((l) => !l.isSuperLike && !l.note && !l.isNote)
       : activeTab === "superlike"
-        ? likes.filter((l) => l.isSuperLike)
-        : likes;
+        ? likes.filter((l) => l.isSuperLike && !l.note && !l.isNote)
+        : activeTab === "note"
+          ? likes.filter((l) => !!l.note || !!l.isNote)
+          : likes;
 
   // Kaçırdıkların sekmesi AYRI bir veri kaynağı (beğeni listesinin filtresi
   // değil): farklı uç, farklı sayfalama, farklı boş durum.
   const isMissedTab = activeTab === "missed";
   const listData = isMissedTab ? missed : filteredLikes;
 
-  // Kota metni — sayı bilinmiyorsa (eski backend / henüz çekilmedi) hiç
-  // yazmıyoruz; uydurma bir rakam göstermek yanlış vaat olurdu.
+  // Şikayet / engelle uyduları YALNIZ premium'da. Kolon free kullanıcıda
+  // geç/beğen ikilisine iniyor — kart genişliği değişmez (ACTION_BUTTON_SIZE
+  // sabit), yalnız uydular çizilmez.
+  // Tier henüz bilinmiyorken (premiumResolved/premiumChecked ikisi de false)
+  // `isPremium` zaten false: butonu önce gösterip sonra geri almaktansa hiç
+  // göstermemek doğru — sticky satın alma butonundaki kuralın aynısı.
+  const canModerate = isPremium;
+
+  // Bakiye — GÜNLÜK KOTA DEĞİL (2026-08-22): free'de hak yalnız satın alınan
+  // krediden gelir, premium'da tier kotası abonelik döngüsüyle yenilenir. Metin
+  // bu yüzden "bugün kalan" değil bakiye semantiğinde.
   //
-  // ⚠️ Tavan için `-1` KONTROLÜ YOK, bilerek: bu kotada "sınırsız" diye bir
-  // durum yok (premium de 5/gün). Diğer tavanlardaki `-1` dalını kopyalamak
-  // "5/5" yerine "∞" yazdırırdı.
+  // Payda tek yerden (recoveryQuota.ts): `tavan + satın alınan kredi`.
+  // `exceedsTotal` — tier düşüşünden kalan kota paydayı aşmış demek; "5/2"
+  // yazmak yerine oransız gösterime düşüyoruz, sayının kendisi doğru.
+  const recoveryBalance = useMemo(
+    () => resolveRecoveryBalance(statsQuery.data),
+    [statsQuery.data],
+  );
+  // Sayı bilinmiyorsa (eski backend / henüz çekilmedi) hiç yazmıyoruz;
+  // uydurma bir rakam göstermek yanlış vaat olurdu.
   const recoveryQuotaText = useMemo(() => {
-    const rem = statsQuery.data?.remainingMissedMatchRecovery;
-    if (typeof rem !== "number") return null;
-    if (rem <= 0) return t("likes.recoverQuotaEmpty");
-    const limit = statsQuery.data?.dailyMissedMatchRecoveryLimit;
-    return typeof limit === "number" && limit > 0
-      ? t("likes.recoverQuotaWithLimit", { count: rem, limit })
-      : t("likes.recoverQuota", { count: rem });
-  }, [
-    statsQuery.data?.remainingMissedMatchRecovery,
-    statsQuery.data?.dailyMissedMatchRecoveryLimit,
-    t,
-  ]);
+    if (recoveryBalance.unknown) return null;
+    if (!recoveryBalance.hasBalance) return t("likes.recoverBalanceEmpty");
+    return recoveryBalance.total != null &&
+      recoveryBalance.total > 0 &&
+      !recoveryBalance.exceedsTotal
+      ? t("likes.recoverBalanceWithTotal", {
+          count: recoveryBalance.remaining,
+          total: recoveryBalance.total,
+        })
+      : t("likes.recoverBalance", { count: recoveryBalance.remaining });
+  }, [recoveryBalance, t]);
 
   // Boş durum alt metni: pencere uzunluğu backend'den geldiyse sayıyla, yoksa
   // sayısız varyantla. Sabit "30 gün" yazmak, config değiştiği gün yalan olurdu.
@@ -897,6 +1390,20 @@ export default function LikesScreen() {
       ? t("likes.emptyMissedSubtitleDays", { days })
       : t("likes.emptyMissedSubtitle");
   }, [statsQuery.data?.missedMatchLookbackDays, t]);
+
+  // Açıklama kartının metni sekmeye göre: kaçırdıkların listesi beğeni
+  // listesinden başka bir şey anlatıyor (pas → beğeni çevirme, hak harcama),
+  // genel metin orada hiçbir şey açıklamıyordu. Kart ve kapatma bayrağı AYNI —
+  // ayrı bayrak açılmadı: kullanıcı kartı bir kez kapattıysa bir daha
+  // görmek istemiyor demektir, sekme değiştirince geri gelmesi kapatmayı
+  // anlamsızlaştırırdı.
+  const infoDescription = useMemo(() => {
+    if (!isMissedTab) return t("likes.infoDescription");
+    const days = statsQuery.data?.missedMatchLookbackDays;
+    return typeof days === "number" && days > 0
+      ? t("likes.infoMissedDescriptionDays", { days })
+      : t("likes.infoMissedDescription");
+  }, [isMissedTab, statsQuery.data?.missedMatchLookbackDays, t]);
 
   // `silent`: listeyi ekranda tutarak tazele. Görünürlük tazelemesinde (focus /
   // foreground) setLoading(true) tüm grid'i skeleton'a çeviriyordu — kullanıcı
@@ -940,24 +1447,32 @@ export default function LikesScreen() {
             id: `sl_${p.profileId}`,
             userId: p.userId, // LikerProfile detay endpoint'i için lazım
             name: p.displayName,
-            age: p.age,
+            // Gizli yaş `null` değil `0` geliyor (DTO'da non-nullable int) —
+            // normalize burada, kart `age != null` kontrolüne güvenebilsin.
+            age: resolveCardAge(p),
             universityName: p.universityName || "",
             mainPhoto: p.photos?.[0] || "",
             likedAt: p.likedMeAt,
             isSuperLike: true,
             isPremium: p.isPremium ?? false,
+            // `isNote` sunucunun bayrağı, `note` içeriği. İkisi ayrı: bayrak
+            // true iken içerik boş gelirse (beklenmiyor ama) blur yine açılır.
+            isNote: !!p.isNote,
+            note: normalizeLikerNote(p),
           }),
         );
         const likeProfiles = (data.result.likes?.profiles || []).map((p) => ({
           id: `l_${p.profileId}`,
           userId: p.userId,
           name: p.displayName,
-          age: p.age,
+          age: resolveCardAge(p),
           universityName: p.universityName || "",
           mainPhoto: p.photos?.[0] || "",
           likedAt: p.likedMeAt,
           isSuperLike: false,
           isPremium: p.isPremium ?? false,
+          isNote: !!p.isNote,
+          note: normalizeLikerNote(p),
         }));
 
         // SuperLike'lar her zaman üstte (vurgulu bölüm).
@@ -1163,17 +1678,25 @@ export default function LikesScreen() {
         const outcome = await recoverMissedMatch(item.userId);
 
         if (outcome.kind === "recovered") {
-          setMissed((prev) => prev.filter((it) => it.userId !== item.userId));
+          // Kurtarma = geri alınmış bir "geç", yani sonuçta bir beğeni:
+          // kart beğen yönüne uçar.
+          runCardExit(item.userId, "right", () =>
+            setMissed((prev) => prev.filter((it) => it.userId !== item.userId)),
+          );
           // Bakiye yanıtta GELMİYOR (`SwipeResultDto.remaining*` bu akışta
-          // null) — kotayı yerel düşürüyoruz; /Stats bir sonraki tazelemede
-          // doğrusunu getirir.
-          const rem = statsQuery.data?.remainingMissedMatchRecovery;
-          if (typeof rem === "number" && rem > 0) {
-            updateStatsCache({ remainingMissedMatchRecovery: rem - 1 });
-          }
+          // null): önce iyimser düşüş (butona basınca sayı hareket etsin),
+          // arkasından KANONİK tazeleme.
+          //
+          // Tazeleme şart — /Stats `staleTime: Infinity` ile oturumda bir kez
+          // çekiliyor, yani "bir sonraki tazeleme doğrusunu getirir" diye bir
+          // şey yok; sadece setQueryData yazmak sayıyı oturum başındaki değerin
+          // yerel türevinde bırakıyordu (2026-08-24: kota satırı kurtarmaya
+          // rağmen 5/5'te takılı kalıyordu). Bkz. useSyncRecoverySpend.
+          syncRecoverySpend();
           showInfoToast({
             title: t("likes.recoverSuccessTitle"),
             message: t("likes.recoverSuccessMessage"),
+            icon: "recovery",
           });
           // SignalR kopmuş olabilir: `MatchNotification` gelmezse sohbet
           // backend'de VARDIR ama uygulama haberdar olmaz. Tek seferlik emniyet
@@ -1190,39 +1713,62 @@ export default function LikesScreen() {
         }
 
         if (outcome.kind === "paywall") {
-          // 403 = günlük kota doldu. §11: paywall'dan ÖNCE canonical tazeleme —
-          // kullanıcı başka cihazda premium olduysa hakkı 5'e çıkmıştır, satış
-          // ekranı yerine kotayı tazelemek doğru cevap.
+          // 403 = hak bitti. Sözleşme §3: bu paywall artık PREMIUM'a da
+          // dönüyor, çünkü kurtarma satın alınabilir bir ürün oldu.
+          //
+          // §11: paywall'dan ÖNCE canonical tazeleme — kullanıcı başka cihazda
+          // ABONE OLMUŞSA tier kotası açılmıştır ve doğru cevap satış ekranı
+          // değil, kotayı tazelemek. Ama bu yalnız free→premium GEÇİŞİNDE
+          // geçerli: zaten premium olan kullanıcının 403'ü "kotan bitti"
+          // demektir, tazeleme onu değiştirmez ve sheet açılmadan kalırsa
+          // dokunuş sessizce ölürdü.
+          const wasPremium = !!statsQuery.data?.isPremium;
           const premium = await dispatch(refreshEntitlementsForPaywall())
             .unwrap()
             .catch(() => false);
-          if (premium) {
+          if (premium && !wasPremium) {
             statsQuery.refetch?.();
             return;
           }
-          setPurchaseVisible(true);
+          // Free'de sheet'te abonelik bağlantısı da çizilir (paket VEYA
+          // abonelik); premium'da yalnız paket satılır.
+          setRecoveryPurchaseVisible(true);
           return;
         }
 
-        // 400 — kota HARCANMADAN reddedildi. Dört sebep de aynı sonuca çıkıyor:
-        // zaten kurtarılmış, pas penceresi geçmiş, premium kullanıcının günlük
-        // kotası dolmuş, ya da çift artık uygun değil (engelleme/şikayet —
-        // backend bunu kota tüketiminden ÖNCE kontrol ediyor, `showPaywall:false`
-        // ile geliyor, PAYWALL AÇILMAMALI). Hiçbirinde kart artık aksiyon
-        // alınabilir değil: önce yerelde düşür, sonra listeyi doğrulat.
+        // 400 — hak HARCANMADAN reddedildi: zaten kurtarılmış, pas penceresi
+        // geçmiş, kullanıcı yok, ya da çift artık uygun değil (engelleme/
+        // şikayet — backend bunu hak tüketiminden ÖNCE kontrol ediyor,
+        // `showPaywall:false` ile geliyor, PAYWALL AÇILMAMALI). Premium'un
+        // kotası dolduğunda gelen 400 bu listeden ÇIKTI; o durum artık 403 +
+        // paywall (yukarıdaki dal). Hiçbirinde kart aksiyon alınabilir değil:
+        // önce yerelde düşür, sonra listeyi doğrulat.
         showInfoToast({
           title: t("likes.recoverFailed"),
           message: outcome.message ?? "",
+          icon: "recovery",
         });
         if (outcome.kind === "rejected") {
-          setMissed((prev) => prev.filter((it) => it.userId !== item.userId));
-          loadMissed({ force: true });
+          // Doğrulama çekimi kartın düşmesinden SONRA: animasyon oynarken
+          // gelen taze liste kartı yerinde tutar, hareket yarıda kalırdı.
+          runCardExit(item.userId, "out", () => {
+            setMissed((prev) => prev.filter((it) => it.userId !== item.userId));
+            loadMissed({ force: true });
+          });
         }
       } finally {
         setRecoveringId(null);
       }
     },
-    [dispatch, loadMissed, recoveringId, statsQuery, t, updateStatsCache],
+    [
+      dispatch,
+      loadMissed,
+      recoveringId,
+      runCardExit,
+      statsQuery,
+      syncRecoverySpend,
+      t,
+    ],
   );
 
   // LikerSwipeModal'dan dönen swipe sonrası — like/pass/superlike/block fark
@@ -1265,7 +1811,11 @@ export default function LikesScreen() {
   const handleQuickSwipe = useCallback(
     async (item, direction) => {
       const likerUserId = item?.userId || item?.likerUserId;
-      if (!likerUserId || actingId) return;
+      // Uçmakta olan kart hâlâ veride duruyor: ikinci bir basış aynı kişiye
+      // ikinci bir swipe göndermesin.
+      if (!likerUserId || actingId || exitTimersRef.current.has(likerUserId)) {
+        return;
+      }
 
       if (!isPremium && !item?.isSuperLike) {
         // §11: paywall'dan önce canonical tazeleme — başka cihazda premium
@@ -1282,23 +1832,24 @@ export default function LikesScreen() {
       }
 
       Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
+      // İstek ANINDA gidiyor, kartın veriden düşmesi animasyon kadar gecikiyor:
+      // görsel yumuşama ağı bekletmesin.
       swipeMutate({ direction, userId: likerUserId });
-      handleLikerSwiped(likerUserId, direction);
+      runCardExit(likerUserId, direction === "right" ? "right" : "left", () =>
+        handleLikerSwiped(likerUserId, direction),
+      );
     },
     // handleLikerSwiped her render'da yeniden yaratılıyor ama yalnızca ref +
     // dispatch okuyor; bağımlılığa eklemek callback'i her render'da tazelerdi.
     // eslint-disable-next-line react-hooks/exhaustive-deps
-    [actingId, dispatch, isPremium, swipeMutate],
+    [actingId, dispatch, isPremium, runCardExit, swipeMutate],
   );
 
   /**
    * Karttaki küçük bayrak / engelle butonları.
    *
-   * Premium kapısı YOK — geç/beğenin aksine (bkz. handleQuickSwipe). Blur'un
-   * sattığı şey "bu kişi kim"; şikayet ve engelleme ise güvenlik çıkışı ve
-   * kimliği bilmeyi gerektirmiyor ("bu kart bana rahatsız edici geldi, gitsin").
-   * Paywall'ın arkasına koymak free kullanıcıyı taciz eden bir hesapla baş başa
-   * bırakırdı.
+   * Premium'a kapalı (bkz. canModerate): free kullanıcıda butonlar hiç
+   * çizilmiyor, dolayısıyla bu iki fonksiyon da yalnız premium'dan çağrılır.
    *
    * Her iki akışın sonu da aynı: kişi listeden düşer. `handleLikerSwiped`
    * "block" yönüyle çağrılıyor — LikerSwipeModal'ın engelleme yolu da aynı
@@ -1307,19 +1858,26 @@ export default function LikesScreen() {
    */
   const dropFromLists = useCallback(
     (userId) => {
-      handleLikerSwiped(userId, "block");
-      // Kaçırdıkların listesi ayrı bir dizi — `handleLikerSwiped` ona dokunmaz.
-      setMissed((prev) => prev.filter((it) => it.userId !== userId));
+      // Yönsüz çıkış: engelleme/şikayet bir "geç" ya da "beğen" değil, kart
+      // yana uçmak yerine yerinde söner.
+      runCardExit(userId, "out", () => {
+        handleLikerSwiped(userId, "block");
+        // Kaçırdıkların listesi ayrı bir dizi — `handleLikerSwiped` ona dokunmaz.
+        setMissed((prev) => prev.filter((it) => it.userId !== userId));
+      });
     },
     // handleLikerSwiped ref + dispatch okuyor (bkz. handleQuickSwipe notu).
     // eslint-disable-next-line react-hooks/exhaustive-deps
-    [],
+    [runCardExit],
   );
 
   const handleReport = useCallback((item) => {
     const userId = item?.userId || item?.likerUserId;
     if (!userId) return;
-    setReportTarget(userId);
+    // Not varsa şikayete `noteId` de takılıyor — moderatör paneli yorumun
+    // metnini ancak o zaman görüyor (sözleşme §7). Canlı IncomingLike kartında
+    // id yok (event yalnız önizleme taşıyor), o durumda düz profil şikayeti.
+    setReportTarget({ userId, noteId: item?.note?.noteId ?? null });
   }, []);
 
   const handleBlock = useCallback(
@@ -1398,8 +1956,14 @@ export default function LikesScreen() {
   // Realtime: socket'ten yeni IncomingLike geldiğinde listeyi reload etmeden prepend et.
   // AppNavigator IncomingLike SignalR event'ini yakalayıp uiBus.emit('incomingLike', payload)
   // çağırır; payload backend IncomingLikeDto = { likerUserId, likerDisplayName,
-  // likerPhotoUrl, isSuperLike, likedAt }. Mutual like'ta backend bu event'i
-  // göndermez (MatchNotification akışı çalışır) — burada dedup gerekmiyor.
+  // likerPhotoUrl, isSuperLike, isNote, notePreview, likedAt }. Mutual like'ta
+  // backend bu event'i göndermez (MatchNotification akışı çalışır) — burada
+  // dedup gerekmiyor.
+  //
+  // ⚠️ Not için AYRI bir event YOK (sözleşme §6): aynı olaya `isNote` +
+  // `notePreview` eklendi. Önizleme ~60 karakter, yani KIRPIK — canlı kart
+  // `noteId` de taşımıyor. İkisi de reconcile'da (scheduleLikesReconcile) tam
+  // kayıtla değişiyor; o yüzden bu kartta şikayet not id'siz gider.
   useEffect(() => {
     const unsub = uiBus.on("incomingLike", (payload) => {
       if (!payload?.likerUserId) return;
@@ -1412,6 +1976,10 @@ export default function LikesScreen() {
         );
         if (existingByUser) return prev;
 
+        const notePreview =
+          typeof payload.notePreview === "string"
+            ? payload.notePreview.trim()
+            : "";
         const card = {
           // profileId yok (DTO sadece userId döner) — live kart için sentetik id.
           id: dupId,
@@ -1421,6 +1989,11 @@ export default function LikesScreen() {
           mainPhoto: payload.likerPhotoUrl || "",
           likedAt: payload.likedAt,
           isSuperLike: isSuper,
+          isNote: !!payload.isNote,
+          // Önizleme boşsa `note` hiç kurulmuyor: kart `!!item.note`a bakıp
+          // yorum bloğunu çiziyor, boş bir yorum kutusu çizmenin anlamı yok.
+          // Blur yine açık kalır — onu `isNote` taşıyor.
+          note: notePreview ? { comment: notePreview } : null,
         };
 
         // Yeni SuperLike → listenin en başına (en yeni en üstte).
@@ -1443,34 +2016,44 @@ export default function LikesScreen() {
     <>
       <FilterPills
         style={{ marginBottom: 12 }}
+        // Satır listenin yan padding'inden ETKİLENMEZ: kutu tam genişliğe
+        // açılıp aynı payı içeriden veriyor (bkz. FilterPills `bleed`).
+        // Duruşta pill'ler kartlarla aynı hattan başlar, sürüklerken ekranın
+        // kenarına kadar gider — 16px içeride kesilmez.
+        bleed={LIST_H_PADDING}
         activeTab={activeTab}
         onChange={setActiveTab}
         tabs={[
           { key: "all", label: t('likes.tabAll') },
           { key: "like", label: t('likes.tabLike') },
           { key: "superlike", label: t('likes.tabSuperLike') },
+          { key: "note", label: t('likes.tabNote') },
           { key: "missed", label: t('likes.tabMissed') },
         ]}
       />
-      {/* Kota göstergesi — yalnız kaçırdıkların sekmesinde. Sayıyı /Stats
-          veriyor; free 2 / premium 5 tavanları backend config'inden geldiği
-          için burada YAZILMIYOR (değişirse FE'nin haberi olmaz). */}
+      {/* Bakiye göstergesi — yalnız kaçırdıkların sekmesinde. Sayıyı ve tavanı
+          /Stats veriyor; tier tavanları (free 0, premium 1/2/5) backend
+          config'inden geldiği için burada YAZILMIYOR (değişirse FE'nin haberi
+          olmaz). */}
       {isMissedTab && recoveryQuotaText && (
-        <Text
-          style={{
-            marginBottom: 12,
-            marginLeft: 4,
-            color: colors.textSecondary,
-            fontSize: 13,
-            fontWeight: "600",
-          }}
-        >
-          {recoveryQuotaText}
-        </Text>
+        <View style={{ marginBottom: 12, marginLeft: 4 }}>
+          {/* Ana metin `colors.text` — açık modda siyah (#0B0B0C), koyu modda
+              beyaz. textSecondary açık modda gri kalıyordu ve bu satır sayfanın
+              tek bakiye göstergesi, ikincil bir dipnot değil. */}
+          <Text
+            style={{
+              color: colors.text,
+              fontSize: 25,
+              fontWeight: "700",
+            }}
+          >
+            {recoveryQuotaText}
+          </Text>
+        </View>
       )}
       {showInfoCard && (
         <LikesInfoCard
-          description={t('likes.infoDescription')}
+          description={infoDescription}
           onDismiss={dismissInfoCard}
         />
       )}
@@ -1486,7 +2069,7 @@ export default function LikesScreen() {
     // Skeleton gecikme/asgari-süre makinesine bağlanmıyor: bu liste yalnız
     // sekmeye basınca çekiliyor, yani kullanıcı zaten bir bekleme bekliyor.
     missedLoading ? (
-      <LikesSkeletonList />
+      <LikesSkeletonList showModeration={canModerate} />
     ) : (
       <View className="flex-1 items-center justify-center pb-[50%]">
         <EmptyState
@@ -1502,7 +2085,7 @@ export default function LikesScreen() {
       </View>
     )
   ) : showSkeleton ? (
-    <LikesSkeletonList />
+    <LikesSkeletonList showModeration={canModerate} />
   ) : loading ? (
     // Skeleton gecikmesi penceresi: boş durumu ERKEN göstermek de bir flash —
     // istek daha sürüyorken "hiç beğenin yok" yazıp sonra geri almak yerine
@@ -1518,16 +2101,20 @@ export default function LikesScreen() {
         text={
           activeTab === "superlike"
             ? t('likes.emptySuperLike')
-            : activeTab === "like"
-              ? t('likes.emptyLike')
-              : t('likes.emptyAll')
+            : activeTab === "note"
+              ? t('likes.emptyNote')
+              : activeTab === "like"
+                ? t('likes.emptyLike')
+                : t('likes.emptyAll')
         }
         subtitle={
           activeTab === "superlike"
             ? t('likes.emptySuperLikeSubtitle')
-            : activeTab === "like"
-              ? t('likes.emptyLikeSubtitle')
-              : t('likes.emptyAllSubtitle')
+            : activeTab === "note"
+              ? t('likes.emptyNoteSubtitle')
+              : activeTab === "like"
+                ? t('likes.emptyLikeSubtitle')
+                : t('likes.emptyAllSubtitle')
         }
         // Üç filtrenin boş durumu da aynı yere çıkar: beğeni beklemek yerine
         // kaydırmaya dön. Sekmeye göre değişen etiketler (süper beğeni gönder /
@@ -1545,6 +2132,12 @@ export default function LikesScreen() {
         data={listData}
         onScroll={scrollHandler}
         scrollEventThrottle={16}
+        // Bir kart veriden düştüğünde altındaki hücreler boşluğa YAVAŞÇA kayar
+        // (yerlerine zıplamak yerine). Kartın kendi çıkışı ayrı iş: o
+        // transform/opacity ile LikeCard içinde oynuyor.
+        itemLayoutAnimation={LinearTransition.duration(LIST_SHIFT_MS).easing(
+          Easing.out(Easing.cubic),
+        )}
         renderItem={({ item }) => (
           <LikeCard
             item={item}
@@ -1555,14 +2148,15 @@ export default function LikesScreen() {
             onPass={() => handleQuickSwipe(item, "left")}
             onLike={() => handleQuickSwipe(item, "right")}
             acting={actingId === (item.userId || item.likerUserId)}
-            onReport={() => handleReport(item)}
-            onBlock={() => handleBlock(item)}
+            onReport={canModerate ? () => handleReport(item) : undefined}
+            onBlock={canModerate ? () => handleBlock(item) : undefined}
             passLabel={t('likes.passButton')}
             likeLabel={t('likes.likeButton')}
             recoverLabel={t('likes.recoverButton')}
             reportLabel={t('profile.card.reportAccount')}
             blockLabel={t('profile.card.blockAccount')}
             alwaysClear={isMissedTab}
+            exitDirection={exitingIds[item.userId || item.likerUserId] ?? null}
           />
         )}
         keyExtractor={(item) => item.id}
@@ -1653,6 +2247,30 @@ export default function LikesScreen() {
         onClose={() => setPurchaseVisible(false)}
       />
 
+      {/* Kurtarma hakkı bitti → premium paywall DEĞİL, consumable paket sheet'i.
+          SuperLike paketiyle aynı gerekçe: satılacak bir ürün var ve backend iki
+          tier'da da showPaywall:true dönüyor. Abonelik bağlantısı YALNIZ
+          free'de çiziliyor (§3) — premium'a abonelik teklif etmek, zaten aldığı
+          şeyi tekrar satmak olurdu. */}
+      <RecoveryPurchaseModal
+        visible={recoveryPurchaseVisible}
+        onClose={() => setRecoveryPurchaseVisible(false)}
+        onPurchased={() => {
+          setRecoveryPurchaseVisible(false);
+          // Redeem yanıtı bakiyeyi cache'e yazıyor; bu refetch server-truth'u
+          // (kota/kredi ayrışması dahil) teyit eder.
+          statsQuery.refetch?.();
+        }}
+        onUpsellPremium={
+          isPremium
+            ? null
+            : () => {
+                setRecoveryPurchaseVisible(false);
+                setPurchaseVisible(true);
+              }
+        }
+      />
+
       <LikerSwipeModal
         visible={previewVisible}
         profile={previewProfile}
@@ -1667,9 +2285,11 @@ export default function LikesScreen() {
       <ReportModal
         visible={!!reportTarget}
         onClose={() => setReportTarget(null)}
-        reportedUserId={reportTarget}
+        reportedUserId={reportTarget?.userId}
+        noteId={reportTarget?.noteId}
         onSuccess={(result) => {
-          if (result?.blocked && reportTarget) dropFromLists(reportTarget);
+          if (result?.blocked && reportTarget?.userId)
+            dropFromLists(reportTarget.userId);
         }}
       />
     </View>

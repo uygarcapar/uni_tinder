@@ -33,7 +33,7 @@ import { LinearGradient } from "expo-linear-gradient";
 import SFIcon from "@/shared/components/SFIcon";
 import AppBottomSheet from "@/shared/components/AppBottomSheet";
 import type { UniversityOption } from "@/shared/queries/commonQueries";
-import { colors, veil } from "../../../shared/theme/colors";
+import { colors, isLight, veil } from "../../../shared/theme/colors";
 import { glassFallback } from "../../../shared/theme/glass";
 import { chromeBlurTint } from "@/shared/theme/blur";
 
@@ -432,7 +432,8 @@ export default function UniversityPickerModal({
                 width: 36,
                 height: 4,
                 borderRadius: 2,
-                backgroundColor: colors.hairlineMuted,
+                // AppModal'daki drag pill ile aynı kural: açık modda tam siyah.
+                backgroundColor: isLight() ? colors.text : colors.hairlineMuted,
               }}
             />
           </View>

@@ -1,5 +1,6 @@
 import api from '@/shared/services/api';
 import { API_ENDPOINTS } from '@/shared/constants/api';
+import { noteTargetPayload } from '@/features/discover/noteTarget';
 import type {
   PotentialMatchesResult,
   ResponseCode,
@@ -33,6 +34,11 @@ const emptyResult: PotentialMatchesResult = {
   paywallType: null,
   paywallMessage: null,
   isPremium: false,
+  // Alanı göndermeyen backend'de "mesafe filtresi uygulandı" varsayılıyor —
+  // yani şeffaflık satırı çizilmez. Ters yön (varsayılan true) kullanıcıya
+  // "sınır kapalı" diye yalan söylerdi.
+  distanceFilterIgnored: false,
+  appliedRadiusKm: null,
   emptyReason: "None",
   emptyReasonCode: null,
   emptyReasonMessage: null,
@@ -40,7 +46,17 @@ const emptyResult: PotentialMatchesResult = {
 };
 
 class SwipeService {
-  async getPotentialMatches(_token: string | null, pageNumber = 1, pageSize = 10): Promise<PotentialMatchesResponse> {
+  /**
+   * Deste isteği. `?expandRadius=true` KALDIRILDI (2026-08-22): tek seferlik
+   * genişletme yerini filtrelerdeki kalıcı `ignoreDistanceFilter` anahtarına
+   * bıraktı. Backend param'ı artık yok sayıyor — göndermek sessizce hiçbir şey
+   * yapmaz, o yüzden yeniden eklenmemeli.
+   */
+  async getPotentialMatches(
+    _token: string | null,
+    pageNumber = 1,
+    pageSize = 10,
+  ): Promise<PotentialMatchesResponse> {
     const response = await api.get(
       `${API_ENDPOINTS.GET_POTENTIAL_MATCHES}?pageNumber=${pageNumber}&pageSize=${pageSize}`
     ) as any;
@@ -69,6 +85,29 @@ class SwipeService {
 
   async superLikeUser(targetUserId: string, _token?: string | null) {
     return api.post(API_ENDPOINTS.SWIPE_SUPER_LIKE, { targetUserId, swipeType: 'superlike' });
+  }
+
+  /**
+   * Not = yorumla birlikte gönderilen, HEDEFLİ beğeni. Swipe kaydı olarak
+   * like sayılır (karşılıklıysa eşleşme), kotası ayrı consumable.
+   *
+   * `comment` trim'li gönderiliyor: baştaki/sondaki boşluk hem karakter
+   * sayacını hem de sunucudaki "boş mu" kontrolünü yanıltıyordu.
+   * Uzunluk kırpması BURADA YAPILMIYOR — sınır sunucudan geliyor
+   * (`Stats.noteMaxLength`) ve composer zaten oradaki değerle sınırlıyor;
+   * ikinci bir kırpma noktası iki farklı sınır demek olurdu.
+   */
+  async sendNote(
+    targetUserId: string,
+    comment: string,
+    target: ReturnType<typeof noteTargetPayload>,
+  ) {
+    return api.post(API_ENDPOINTS.SWIPE_NOTE, {
+      targetUserId,
+      swipeType: 'note',
+      comment: comment.trim(),
+      target,
+    });
   }
 
   async getLikerProfileDetail(likerUserId: string) {

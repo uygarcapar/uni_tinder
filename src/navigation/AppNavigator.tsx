@@ -823,12 +823,18 @@ export default function AppNavigator() {
         // Düz beğenide kimlik premium'a kilitli (bkz. LikesScreen / bildirim
         // feed'i). Ad ve foto düşünce toast kendi jenerik metnine + kalp
         // ikonuna geri dönüyor.
+        //
+        // ⚠️ NOT bu kuralın DIŞINDA (sözleşme §6): not gönderenin ismi free
+        // alıcıya da açık — ürünün satın alınma sebebi bu. SuperLike ile aynı
+        // muafiyet.
+        const isNote = !!payload?.isNote;
         const identityLocked =
-          !payload?.isSuperLike && !selectIsPremium(store.getState());
+          !payload?.isSuperLike && !isNote && !selectIsPremium(store.getState());
         showLikeToast({
-          kind: payload?.isSuperLike ? 'superLike' : 'like',
+          kind: isNote ? 'note' : payload?.isSuperLike ? 'superLike' : 'like',
           senderName: identityLocked ? null : payload?.likerDisplayName,
           photoUrl: identityLocked ? null : payload?.likerPhotoUrl,
+          preview: payload?.notePreview ?? null,
         });
       }),
       // Karşı taraf eşleşmeyi kaldırdı. BİLDİRİM GÖSTERİLMEZ (ürün kararı:
@@ -915,7 +921,7 @@ export default function AppNavigator() {
       //
       // `reason` artık birden çok senaryo taşıyor: new_login_elsewhere (mevcut),
       // banned / suspended / account_deleted (yaptırım), email_reverify_required,
-      // moderation_action.
+      // email_changed, moderation_action.
       realtimeService.on('ForceLogout', async (payload) => {
         if (!mounted) return;
         const reason = payload?.reason;

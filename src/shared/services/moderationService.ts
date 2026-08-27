@@ -33,6 +33,14 @@ interface ReportArgs {
   messageId?: string;
   conversationId?: string;
   /**
+   * Şikayet edilen NOT (yorumlu beğeni). Kartın `note.noteId`'sinden gelir ve
+   * sayı tipindedir. Sunucu sahipliği doğruluyor: not gerçekten şikayet
+   * edilenden şikayet edene gelmiş olmalı, eşleşmezse alan sessizce yok
+   * sayılır — şikayet yine kaydedilir, yani yanlış id göndermek şikayeti
+   * DÜŞÜRMEZ, yalnız moderatörün not metnini görmesini engeller.
+   */
+  noteId?: number | string | null;
+  /**
    * Şikayetle birlikte engelleme yapılsın mı. AÇIKÇA gönderilir — varsayılan
    * uca göre değişiyor (`/api/swipe/Report` true, `/api/moderation/report`
    * false), aynı gövde iki uçta farklı sonuç verir.
@@ -71,12 +79,15 @@ const moderationService = {
     description,
     messageId,
     conversationId,
+    noteId,
     alsoBlock,
   }: ReportArgs): Promise<ReportResult> {
     const body: Record<string, any> = { reportedUserId, reason, alsoBlock: !!alsoBlock };
     if (description) body.description = description;
     if (messageId) body.messageId = messageId;
     if (conversationId) body.conversationId = conversationId;
+    // `!= null` — id sayı geliyor ve truthy kontrolü 0'ı düşürürdü.
+    if (noteId != null) body.noteId = noteId;
     const res = await api.post(API_ENDPOINTS.MODERATION_REPORT, body);
     const result = (res as any).result;
     return {

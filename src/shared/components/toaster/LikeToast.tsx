@@ -1,24 +1,39 @@
 import { View, Text } from 'react-native';
 import { Image as ExpoImage } from 'expo-image';
-import { Heart, Star } from 'lucide-react-native';
-import SFIcon from '../SFIcon';
 import { colors } from '../../theme/colors';
 import ToastShell from './ToastShell';
+import {
+  ToastIconGlyph,
+  toastIconAccent,
+  toastIconBackground,
+  type ToastIconKind,
+} from './toastIcons';
 
 export type LikeToastProps = {
-  kind: 'like' | 'superLike';
+  kind: Extract<ToastIconKind, 'like' | 'superLike' | 'note'>;
   senderName?: string | null;
   photoUrl?: string | null;
+  /** Yalnız `kind: 'note'` — yorumun ilk ~60 karakteri (IncomingLike.notePreview). */
+  preview?: string | null;
   onPress?: () => void;
 };
 
-export default function LikeToast({ kind, senderName, photoUrl, onPress }: LikeToastProps) {
+export default function LikeToast({ kind, senderName, photoUrl, preview, onPress }: LikeToastProps) {
   const isSuper = kind === 'superLike';
-  const accent = isSuper ? colors.info : colors.likePink;
-  const title = isSuper ? 'Sana Super Like attı!' : 'Birisi seni beğendi';
-  const subtitle = senderName || 'Likes ekranına git ve kim olduğunu gör';
-  const iconName = isSuper ? 'star.fill' : 'heart.fill';
-  const IconFallback = isSuper ? Star : Heart;
+  const isNote = kind === 'note';
+  // Notta kimlik free alıcıya da AÇIK (sözleşme §6) — çağıran adı hiç
+  // gizlemiyor, o yüzden başlıkta ismi kullanabiliyoruz.
+  const accent = toastIconAccent(kind);
+  const title = isNote
+    ? senderName
+      ? `${senderName} sana not gönderdi`
+      : 'Sana not gönderildi'
+    : isSuper
+      ? 'Sana Super Like attı!'
+      : 'Birisi seni beğendi';
+  // Not önizlemesi başlığın altına: ürünün değeri yorumun kendisi.
+  const subtitle =
+    (isNote ? preview : null) || senderName || 'Likes ekranına git ve kim olduğunu gör';
 
   return (
     <ToastShell onPress={onPress} radius={16}>
@@ -44,12 +59,14 @@ export default function LikeToast({ kind, senderName, photoUrl, onPress }: LikeT
               width: 40,
               height: 40,
               borderRadius: 20,
-              backgroundColor: accent,
+              backgroundColor: toastIconBackground(kind),
               alignItems: 'center',
               justifyContent: 'center',
             }}
           >
-            <SFIcon name={iconName} fallback={IconFallback} size={22} color={colors.text} strokeWidth={2} />
+            {/* Glif `onMedia`: dolgu markanın rengi, `text` açık modda koyuya
+                dönüp renkli dairenin üstünde kayboluyordu. */}
+            <ToastIconGlyph kind={kind} size={22} color={colors.onMedia} />
           </View>
         )}
         <View style={{ flex: 1, marginLeft: 12 }}>
@@ -60,7 +77,9 @@ export default function LikeToast({ kind, senderName, photoUrl, onPress }: LikeT
             {subtitle}
           </Text>
         </View>
-        <SFIcon name={iconName} fallback={IconFallback} size={18} color={accent} strokeWidth={2} style={{ marginLeft: 8 }} />
+        <View style={{ marginLeft: 8 }}>
+          <ToastIconGlyph kind={kind} size={18} color={accent} />
+        </View>
       </View>
     </ToastShell>
   );
