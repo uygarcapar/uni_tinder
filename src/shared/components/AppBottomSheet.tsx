@@ -1,11 +1,12 @@
 import { useCallback, useEffect, useMemo, useRef } from "react";
+import { View, Keyboard } from "react-native";
 import {
   BottomSheetModal,
   BottomSheetBackdrop,
   BottomSheetFooter,
 } from "@gorhom/bottom-sheet";
 import { BlurView } from "expo-blur";
-import { colors } from "../theme/colors";
+import { colors, scrimAt } from "../theme/colors";
 import { plainBlurTint } from "@/shared/theme/blur";
 
 /**
@@ -58,6 +59,9 @@ export default function AppBottomSheet({
   backgroundStyle,
   stackBehavior,
   topInset,
+  enableDynamicSizing = false,
+  maxDynamicContentSize,
+  keyboardBehavior = "extend",
 }: any) {
   const ref = useRef(null);
   // gorhom'un `handleDismiss` bir state machine bug'ı taşıyor:
@@ -122,6 +126,21 @@ export default function AppBottomSheet({
                 bottom: 0,
               }}
             />
+            {/* Blur tek başına arkayı yeterince geri itmiyor: içerik bulanık
+                ama AYNI parlaklıkta kalıyor, sheet zeminiyle (colors.bg)
+                kontrast oluşmuyor. Blur'un ÜSTÜNE ince bir perde çekiyoruz —
+                `scrimAt` her iki modda da siyah, açık modda da karartır. */}
+            <View
+              pointerEvents="none"
+              style={{
+                position: "absolute",
+                top: 0,
+                left: 0,
+                right: 0,
+                bottom: 0,
+                backgroundColor: scrimAt(0.28),
+              }}
+            />
           </BottomSheetBackdrop>
         );
       }
@@ -154,10 +173,19 @@ export default function AppBottomSheet({
       snapPoints={snapPoints}
       // gorhom v5 default'u true → sheet kendini içeriğe göre büyütür ve
       // snapPoints sadece "max" gibi davranır. Bu yüzden uzun içerikli
-      // modal'lar (FilterModal vb.) snap'i geçip ekranı kaplıyordu. Burada
-      // disable ediyoruz: snapPoints katı kalsın, içerik scroll'la sığsın.
-      enableDynamicSizing={false}
-      keyboardBehavior="extend"
+      // modal'lar (FilterModal vb.) snap'i geçip ekranı kaplıyordu. Varsayılan
+      // KAPALI: snapPoints katı kalsın, içerik scroll'la sığsın.
+      //
+      // İçeriği kısa ve sabit olan sheet'ler (not composer'ı gibi) prop'la
+      // açabilir: o zaman snapPoints VERİLMEZ, tek detent ölçülen içerik
+      // yüksekliğidir (`maxDynamicContentSize` tavanıyla).
+      enableDynamicSizing={enableDynamicSizing}
+      maxDynamicContentSize={maxDynamicContentSize}
+      // "extend": klavye açılınca sheet en yüksek detent'e gider, KLAVYENİN
+      // ÜSTÜNE ÇIKMAZ — içerik alanı klavye kadar kısalır ve içerik scroll'a
+      // kalır. Input'u klavyenin üstünde TUTMASI gereken sheet'ler
+      // "interactive" geçer: sheet klavye kadar yukarı ötelenir.
+      keyboardBehavior={keyboardBehavior}
       enablePanDownToClose={enablePanDownToClose}
       enableOverDrag={enableOverDrag}
       enableContentPanningGesture={enableContentPanningGesture}
@@ -170,6 +198,15 @@ export default function AppBottomSheet({
       failOffsetX={failOffsetX}
       failOffsetY={failOffsetY}
       onDismiss={handleDismiss}
+      // Kapanış animasyonu BAŞLARKEN klavyeyi de indir. gorhom klavyeyi kendisi
+      // kapatmıyor: input unmount olana (yani sheet tamamen gidene) kadar açık
+      // kalıyor → sheet iniyor, klavye ARDINDAN ayrı bir animasyonla iniyor.
+      // `onAnimate` üç kapanış yolunu da kapsıyor (programatik dismiss, aşağı
+      // swipe, backdrop tap) — `onDismiss` ise animasyon BİTİNCE geldiği için
+      // burada geç kalırdı.
+      onAnimate={(_from: number, to: number) => {
+        if (to === -1) Keyboard.dismiss();
+      }}
       onChange={(index: number) => {
         // index >= 0: modal slide-up animasyonu tamamlandı, snap'lendi.
         // JS thread serbest, parent ağır mount'unu burada güvenle tetikleyebilir.

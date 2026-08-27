@@ -1,5 +1,6 @@
 import { useReducer, useRef, useState, type ReactNode } from "react";
 import {
+  StyleSheet,
   View,
   useWindowDimensions,
   type LayoutChangeEvent,
@@ -33,6 +34,27 @@ type Props = {
    * `fillWidth`i kapatmak yerine o item'a `pinned` ver.
    */
   fillWidth?: boolean;
+  /**
+   * Ölçüm turunu GÖRÜNMEZ yap, yalnız paketlenmiş hâli çiz. Etiketleri ilk kez
+   * görülen listelerde (önbellek soğukken) piller önce verilen sırada çizilip
+   * bir kare sonra paketlenmiş yerlerine atlıyor; `fillWidth` sırayı da
+   * değiştirdiği için sıçrama gözle görülür oluyor.
+   *
+   * Önbellek sıcakken (aynı etiketler daha önce ölçüldüyse) ilk render zaten
+   * paketlenmiş geliyor, bu bayrak hiçbir şeyi geciktirmez.
+   */
+  hideUntilPacked?: boolean;
+  /**
+   * `hideUntilPacked` turunda pillerin yerine çizilecek iskelet.
+   *
+   * Verilmezse o tur BOŞ görünür: etiketler ilk kez ölçülüyorsa (soğuk önbellek
+   * + uzak veri) kategori başlığı ekranda durur, altındaki pil alanı bir süre
+   * boş kalır. İskelet o boşluğu dolduruyor.
+   *
+   * Ölçüm turunun layout'u KORUNUYOR (gerçek piller çizilmeden ölçülemezler);
+   * iskelet onun üstüne absolute konuyor.
+   */
+  placeholder?: ReactNode;
   style?: StyleProp<ViewStyle>;
 };
 
@@ -125,6 +147,8 @@ export default function PillFlow({
   gap = 8,
   rowGap,
   fillWidth = false,
+  hideUntilPacked = false,
+  placeholder,
   style,
 }: Props) {
   const { fontScale } = useWindowDimensions();
@@ -142,8 +166,29 @@ export default function PillFlow({
   const readWidth = (key: string) => widthsRef.current[key] ?? widthCache.get(key);
 
   const handleItemLayout = (key: string) => (event: LayoutChangeEvent) => {
-    if (readWidth(key) != null) return;
-    pendingRef.current.set(key, event.nativeEvent.layout.width);
+    const laidOut = event.nativeEvent.layout.width;
+    const known = readWidth(key);
+    if (known != null) {
+      // BİLİNEN ölçü ile ÇİZİLEN ölçü ayrıştı → önbellek bayat. Sebebi genelde
+      // pilin stilinin değişmesi (padding/font/ikon): önbellek anahtarı yalnız
+      // etiket + font ölçeği, modül seviyesinde yaşadığı için Fast Refresh'i de
+      // aşıyor. Bayat (dar) ölçüyle paketlenen satır artık sığmıyor ve piller
+      // kutunun sağından taşıyordu. Ölçüyü tazeleyip bir kez yeniden paketliyoruz.
+      if (Math.abs(known - laidOut) <= FIT_EPSILON) return;
+      // Kapsayıcıyı dolduran pil kapsayıcıya CLAMP'lenmiş olabilir; o ölçü
+      // içeriği değil kabı anlatır, önbelleğe girerse kalıcı yanlış olur.
+      if (
+        containerWidthRef.current > 0 &&
+        laidOut >= containerWidthRef.current - FIT_EPSILON
+      ) {
+        return;
+      }
+      widthsRef.current[key] = laidOut;
+      widthCache.set(key, laidOut);
+      bumpVersion();
+      return;
+    }
+    pendingRef.current.set(key, laidOut);
 
     // Hepsi ölçülmeden paketlemeye geçmiyoruz: her pil için ayrı bir render
     // (ve ayrı bir Fabric commit'i) çıkarmanın anlamı yok.
@@ -202,9 +247,13 @@ export default function PillFlow({
   ));
 
   if (!rows) {
-    return (
+    const measuringRound = (
       <View
         onLayout={handleContainerLayout}
+        // DİKKAT: burada `pointerEvents="none"` VERME. Görünmez turda dokunmayı
+        // kapatmak mantıklı görünüyor ama onLayout'un çalışmadığı ortamlarda
+        // (jest) bu tur kalıcı hâle geliyor ve piller hiç basılamıyor.
+        // Görünmezlik zaten tek kare sürüyor.
         style={[
           {
             flexDirection: "row",
@@ -212,10 +261,25 @@ export default function PillFlow({
             columnGap: gap,
             rowGap: rowGap ?? gap,
           },
+          // opacity ölçümü engellemez — layout normal çalışır, onLayout fire eder.
+          hideUntilPacked ? { opacity: 0 } : null,
           style,
         ]}
       >
         {wrapped}
+      </View>
+    );
+
+    if (!hideUntilPacked || !placeholder) return measuringRound;
+
+    // İskelet ölçüm turunun ÜSTÜNE biniyor: alttaki tur yerinde kalmalı, yoksa
+    // ölçüm hiç yapılamaz. overflow: iskelet turdan uzun çıkarsa taşmasın.
+    return (
+      <View style={{ overflow: "hidden" }}>
+        {measuringRound}
+        <View pointerEvents="none" style={StyleSheet.absoluteFill}>
+          {placeholder}
+        </View>
       </View>
     );
   }

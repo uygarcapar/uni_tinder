@@ -127,6 +127,15 @@ interface Palette {
    */
   inverseSurface: string;
   onInverseSurface: string;
+  /**
+   * inverseSurface'ın bir tık yumuşağı — hobi pilleri gibi ÇOK sayıda seçili
+   * dolgunun aynı ekranda durduğu yerler için. Açık modda tam siyah bir pil
+   * duvarı sert görünüyordu; bu ton biraz açık siyah.
+   *
+   * Koyu modda inverseSurface'in AYNISI (bilinçli): oradaki dolgu beyaz, beyazın
+   * "daha açığı" yok — kırılsa yalnız kontrast düşerdi.
+   */
+  inverseSurfaceSoft: string;
 
   // ── Chrome (mod ile döner) ───────────────────────────────────────────────
   tabBarBg: string;
@@ -242,6 +251,7 @@ const darkPalette: Palette = {
 
   inverseSurface: "#FFFFFF",
   onInverseSurface: "#000000",
+  inverseSurfaceSoft: "#FFFFFF",
 
   tabBarBg: "rgba(18,18,18,0.92)",
   tabBarInactive: "rgba(255,255,255,0.7)",
@@ -290,6 +300,7 @@ const lightPalette: Palette = {
 
   inverseSurface: "#0B0B0C",
   onInverseSurface: "#FFFFFF",
+  inverseSurfaceSoft: "#26262A",
 
   tabBarBg: "rgba(255,255,255,0.92)",
   tabBarInactive: "rgba(0,0,0,0.55)",

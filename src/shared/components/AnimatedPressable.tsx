@@ -10,6 +10,10 @@ export default function AnimatedPressable({
   disabled,
   activeOpacity = 1,
   pressScale = 0.97,
+  // Bırakınca yaylanma miktarı. Varsayılan 8 kısa bir "taşma" (scale 1'i geçip
+  // geri gelme) üretiyor; buton gibi küçük öğelerde hoş, tam genişlikte liste
+  // satırlarında satır büyüyüp kayıyormuş gibi görünüyor → oralarda 0 geçilir.
+  pressBounciness = 8,
   testID,
   // İkon-only butonlarda ekran okuyucunun okuyacağı tek şey bu — verilmezse
   // (mevcut çağıranların çoğu) TouchableOpacity'nin davranışı değişmez.
@@ -33,7 +37,7 @@ export default function AnimatedPressable({
     Animated.spring(scale, {
       toValue: 1,
       useNativeDriver: true,
-      bounciness: 8,
+      bounciness: pressBounciness,
       speed: 20,
     }).start();
     onPressOut?.(e);

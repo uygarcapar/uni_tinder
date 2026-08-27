@@ -48,7 +48,7 @@ import {
 import { X } from "lucide-react-native";
 import SFIcon from "./SFIcon";
 import AppBottomSheet from "@/shared/components/AppBottomSheet";
-import { colors, veil, withAlpha } from "../theme/colors";
+import { colors, isLight, veil, withAlpha } from "../theme/colors";
 import { glassFallback } from "../theme/glass";
 import { chromeBlurTint } from "@/shared/theme/blur";
 
@@ -98,6 +98,15 @@ type AppModalProps = {
   onLeftPress?: () => void;
   // X'in tarafı: actionLabel/rightSlot varsa default "left", yoksa "right".
   closeSide?: "left" | "right";
+  // Sheet yüksekliği snapPoints yerine ÖLÇÜLEN İÇERİK kadar olur (gorhom
+  // enableDynamicSizing). snapPoints verilmediğinde tek detent içerik
+  // yüksekliğidir; maxDynamicContentSize tavanı aşılmaz. Kısa ve sabit içerikli
+  // sheet'ler için — uzun/scroll'lu modal'larda snapPoints daha öngörülebilir.
+  dynamicSizing?: boolean;
+  maxDynamicContentSize?: number;
+  // gorhom keyboardBehavior. Varsayılan "extend" (bkz. AppBottomSheet);
+  // input'unu klavyenin üstünde tutması gereken sheet'ler "interactive" verir.
+  keyboardBehavior?: "extend" | "interactive" | "fillParent";
   // false ise içerik scroll edilmez; header background opacity sabit kalır.
   scrollable?: boolean;
   // Scrollable=true iken scroll'u disable etmek için.
@@ -150,6 +159,9 @@ export default function AppModal({
   leftLabel,
   onLeftPress,
   closeSide,
+  dynamicSizing = false,
+  maxDynamicContentSize,
+  keyboardBehavior,
   scrollable = true,
   scrollEnabled = true,
   enableContentPanningGesture,
@@ -167,7 +179,12 @@ export default function AppModal({
   // fullScreen: snapPoints ["100%"] + topInset = safe area top → modal en üste
   // kadar açılır ama header notch/dynamic island altına girmez.
   const insets = useSafeAreaInsets();
-  const effectiveSnapPoints = snapPoints ?? (fullScreen ? ["100%"] : ["90%"]);
+  // dynamicSizing'de snapPoints VERİLMEZ: tek detent ölçülen içerik yüksekliği
+  // olsun. Varsayılan ["90%"] burada da geçseydi sheet o yüksekliğe kilitlenir,
+  // "içerik kadar" hiç devreye girmezdi.
+  const effectiveSnapPoints = dynamicSizing
+    ? snapPoints
+    : (snapPoints ?? (fullScreen ? ["100%"] : ["90%"]));
   const effectiveTopInset = fullScreen ? insets.top : undefined;
 
   // ── Scroll plumbing ──────────────────────────────────────────────────────
@@ -373,6 +390,9 @@ export default function AppModal({
       handleComponent={null}
       enableContentPanningGesture={enableContentPanningGesture}
       stackBehavior={stackBehavior}
+      enableDynamicSizing={dynamicSizing}
+      maxDynamicContentSize={maxDynamicContentSize}
+      keyboardBehavior={keyboardBehavior}
       footer={footer}
     >
       {/* ─── Content ─── */}
@@ -394,6 +414,12 @@ export default function AppModal({
           ]}
           showsVerticalScrollIndicator={false}
           nestedScrollEnabled
+          // Klavye açıkken ilk dokunuş SOĞURULMASIN: varsayılan ("never")
+          // scroll view dokunuşu yiyip yalnız klavyeyi kapatıyor, buton ancak
+          // ikinci basışta çalışıyordu (bkz. NoteComposerModal'ın Gönder'i).
+          // "handled": touchable'lar tek basışta tetiklenir, boşluğa basınca
+          // klavye yine kapanır.
+          keyboardShouldPersistTaps="handled"
         >
           {children}
         </AnimatedBottomSheetScrollView>
@@ -495,7 +521,10 @@ export default function AppModal({
               width: 36,
               height: 4,
               borderRadius: 2,
-              backgroundColor: colors.hairlineMuted,
+              // Açık modda tam siyah: hairlineMuted (siyah %26) beyaz sheet
+              // zemininde 4px'lik pil için fazla soluk kalıyordu. Koyu modda
+              // dokunulmuyor — orada beyaz %30 zaten okunuyor.
+              backgroundColor: isLight() ? colors.text : colors.hairlineMuted,
             }}
           />
         </View>

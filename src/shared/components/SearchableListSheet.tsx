@@ -29,7 +29,7 @@ import MaskedView from "@react-native-masked-view/masked-view";
 import { easeGradient } from "react-native-easing-gradient";
 import { BlurView } from "expo-blur";
 import { LinearGradient } from "expo-linear-gradient";
-import { colors, veil } from "../theme/colors";
+import { colors, isLight, veil } from "../theme/colors";
 import { glassFallback } from "../theme/glass";
 import { chromeBlurTint } from "@/shared/theme/blur";
 
@@ -424,7 +424,8 @@ const SearchableListSheet = ({
               width: 36,
               height: 4,
               borderRadius: 2,
-              backgroundColor: colors.hairlineMuted,
+              // AppModal'daki drag pill ile aynı kural: açık modda tam siyah.
+              backgroundColor: isLight() ? colors.text : colors.hairlineMuted,
             }}
           />
         </View>

@@ -1,4 +1,4 @@
-import { View, Text, TouchableOpacity } from "react-native";
+import { ActivityIndicator, View, Text, TouchableOpacity } from "react-native";
 import { colors } from "../theme/colors";
 import SFIcon from "./SFIcon";
 
@@ -14,6 +14,7 @@ export default function EmptyState({
   containerStyle,
   buttonLabel,
   onButtonPress,
+  buttonBusy = false,
 }: any) {
   return (
     <View
@@ -86,6 +87,7 @@ export default function EmptyState({
       {!!buttonLabel && !!onButtonPress && (
         <TouchableOpacity
           onPress={onButtonPress}
+          disabled={buttonBusy}
           activeOpacity={0.8}
           style={{
             marginTop: 20,
@@ -96,9 +98,36 @@ export default function EmptyState({
             backgroundColor: colors.litPlus,
           }}
         >
-          <Text style={{ color: colors.text, fontSize: 15, fontWeight: "600" }}>
+          {/* `buttonBusy`: aksiyon uçuşta. Etiket KALDIRILMIYOR, yalnız
+              görünmez oluyor — spinner üstüne absolute biniyor ki pill'in
+              genişliği oynamasın (aksi halde her denemede buton büzülüp
+              açılıyor, kendisi bir flash oluyor). */}
+          <Text
+            style={{
+              color: colors.text,
+              fontSize: 15,
+              fontWeight: "600",
+              opacity: buttonBusy ? 0 : 1,
+            }}
+          >
             {buttonLabel}
           </Text>
+          {buttonBusy && (
+            <View
+              pointerEvents="none"
+              style={{
+                position: "absolute",
+                top: 0,
+                left: 0,
+                right: 0,
+                bottom: 0,
+                alignItems: "center",
+                justifyContent: "center",
+              }}
+            >
+              <ActivityIndicator size="small" color={colors.text} />
+            </View>
+          )}
         </TouchableOpacity>
       )}
     </View>
