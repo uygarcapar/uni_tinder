@@ -2,6 +2,7 @@ import { createMMKV, type MMKV } from 'react-native-mmkv';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import * as SecureStore from 'expo-secure-store';
 import * as Crypto from 'expo-crypto';
+import { appPrefs } from '@/shared/utils/appPrefs';
 import type { Storage } from 'redux-persist';
 
 /**
@@ -59,17 +60,25 @@ export const clearChatCache = () => chatCacheStorage.clearAll();
  */
 const APP_ENC_KEY_NAME = 'ut_app_enc_key_v1';
 const SECURE_OPTS = { keychainAccessible: SecureStore.AFTER_FIRST_UNLOCK } as const;
+/** "Bu depo ŞİFRELİ" bayrağı — gerekçesi tokenStorage.ts'teki ikiziyle aynı. */
+const APP_ENC_MARKER = 'ut_app_encrypted_v1';
 
 const createAppStore = (): MMKV => {
+  const knownEncrypted = appPrefs.getBoolean(APP_ENC_MARKER) === true;
   try {
     const existingKey = SecureStore.getItem(APP_ENC_KEY_NAME, SECURE_OPTS);
     if (existingKey) {
+      appPrefs.set(APP_ENC_MARKER, true);
       return createMMKV({
         id: 'redux-app',
         encryptionKey: existingKey,
         encryptionType: 'AES-256',
       });
     }
+    // Anahtar yok ama depo şifreli → aşağıdaki encrypt() dosyayı kurtarmaz,
+    // İÇERİĞİ MÜHÜRLER (oturum + ayarlar + yarım kayıt taslağı gider). Keychain
+    // erişimsizliği geçici olabilir; scratch dala düşüp gerçek dosyayı bekletiyoruz.
+    if (knownEncrypted) throw new Error('app store is encrypted but key is unavailable');
     // 24 rastgele bayt → base64 = 32 ASCII karakter (AES-256'nın istediği
     // 32 baytlık anahtar, 192-bit entropi).
     const bytes = Crypto.getRandomBytes(24);
@@ -77,6 +86,7 @@ const createAppStore = (): MMKV => {
     SecureStore.setItem(APP_ENC_KEY_NAME, newKey, SECURE_OPTS);
     const store = createMMKV({ id: 'redux-app' }); // mevcut plaintext dosyayı aç
     store.encrypt(newKey, 'AES-256'); // yerinde şifrele
+    appPrefs.set(APP_ENC_MARKER, true);
     return store;
   } catch (error) {
     // Keychain erişilemedi (nadir arıza / ilk kilit açılmadan arka plan

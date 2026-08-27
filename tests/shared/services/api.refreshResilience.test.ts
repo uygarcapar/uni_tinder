@@ -34,10 +34,16 @@ jest.mock('@/shared/utils/tokenStorage', () => ({
   getRefreshToken: jest.fn(async () => 'refresh-token'),
   saveRefreshToken: jest.fn(async () => {}),
   saveAccessToken: jest.fn(async () => {}),
+  isTokenStoreDegraded: jest.fn(() => false),
 }));
 
 import axios from 'axios';
-import { clearAllTokens, saveRefreshToken } from '@/shared/utils/tokenStorage';
+import {
+  clearAllTokens,
+  saveRefreshToken,
+  getRefreshToken,
+  isTokenStoreDegraded,
+} from '@/shared/utils/tokenStorage';
 import {
   setCurrentAccessToken,
   getCurrentAccessToken,
@@ -272,5 +278,43 @@ describe('UT-code → auth-lost reason', () => {
     await expect(runRefresh()).resolves.toBeNull();
 
     expect(authLost).toHaveBeenCalledWith('session_expired');
+  });
+});
+
+/**
+ * Diskte refresh token BULUNAMAMASI iki farklı şey olabilir ve ikisinin
+ * cevabı da farklı:
+ *   • depo açıldı, token gerçekten yok  → oturum bitmiş, düşür
+ *   • depo hiç AÇILAMADI (Keychain)     → "bakamadım"; hüküm verme, bekle
+ *
+ * İkincisi bildirime basıp uygulamayı öne getirmenin klasik senaryosu: iOS
+ * uygulamayı ilk kilit açılmadan arka planda başlatabiliyor, o anda Keychain
+ * kapalı. Eskiden bu, kullanıcıyı sessizce (release'de tek satır log bile
+ * bırakmadan) oturumdan atıyordu.
+ */
+describe('refresh token missing on disk', () => {
+  it('ends the session when the store opened but held no token', async () => {
+    (isTokenStoreDegraded as jest.Mock).mockReturnValueOnce(false);
+    (getRefreshToken as jest.Mock).mockResolvedValueOnce(null);
+
+    await expect(runRefresh()).resolves.toBeNull();
+
+    expect(axiosPost).not.toHaveBeenCalled();
+    expect(clearAllTokens).toHaveBeenCalled();
+    expect(authLost).toHaveBeenCalledWith('session_expired');
+  });
+
+  it('keeps the session when the store itself could not be opened', async () => {
+    (isTokenStoreDegraded as jest.Mock).mockReturnValueOnce(true);
+    (getRefreshToken as jest.Mock).mockResolvedValueOnce(null);
+
+    await expect(runRefresh()).resolves.toBeNull();
+
+    // Sunucuya sorulmadı, token'a dokunulmadı, kullanıcı atılmadı — sonraki
+    // normal açılışta depo yerinde.
+    expect(axiosPost).not.toHaveBeenCalled();
+    expect(clearAllTokens).not.toHaveBeenCalled();
+    expect(authLost).not.toHaveBeenCalled();
+    expect(getCurrentAccessToken()).toBe('stale-access-token');
   });
 });

@@ -343,7 +343,26 @@ export const refreshAccessToken = async (): Promise<string | null> => {
     try {
       const rt = await getRefreshToken();
       if (!rt) {
-        devLog('❌ Refresh token bulunamadı — Logout');
+        // Depo bu açılışta hiç açılamadıysa (Keychain okunamadı) "token yok"
+        // demek DEĞİL — "bakamadım" demek. Sunucu bir şey söylemedi, hüküm de
+        // vermiyoruz: geçici hatalarla aynı dal. Gerçek dosya yerinde duruyor,
+        // sonraki normal açılışta oturum aynen açılıyor. Aksi halde ilk kilit
+        // açılmadan gelen bir arka plan başlatması kullanıcıyı atıyordu.
+        if (isTokenStoreDegraded()) {
+          console.warn(
+            '[auth] Refresh atlandı — token deposu degrade (Keychain erişilemedi). Oturum korunuyor.',
+          );
+          return null;
+        }
+        // console.warn (devLog değil): oturumun BU yolla düşmesi release'de hiç
+        // iz bırakmıyordu — "durduk yere attı" şikayetlerinde en sessiz yol
+        // tam da burasıydı. `erişim` alanı ayırt edici: token varken refresh
+        // token'ın yokluğu yarım temizlik/yazım kaybına, ikisinin birden
+        // yokluğu zaten kapanmış bir oturuma işaret eder.
+        console.warn(
+          `[auth] Oturum düşürüldü — refresh token diskte YOK ` +
+            `(erişim token'ı ${currentAccessToken ? 'var' : 'yok'}) → session_expired`,
+        );
         await clearAllTokens();
         setCurrentAccessToken(null);
         if (onAuthLost) onAuthLost('session_expired');

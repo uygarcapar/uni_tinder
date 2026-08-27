@@ -2,6 +2,7 @@ import AsyncStorage from '@react-native-async-storage/async-storage';
 import { createMMKV, type MMKV } from 'react-native-mmkv';
 import * as SecureStore from 'expo-secure-store';
 import * as Crypto from 'expo-crypto';
+import { appPrefs } from '@/shared/utils/appPrefs';
 
 /**
  * Token deposu — MMKV (senkron).
@@ -30,28 +31,65 @@ import * as Crypto from 'expo-crypto';
  *
  * Migration: anahtar ilk kez üretildiğinde mevcut plaintext 'auth-tokens'
  * dosyası encrypt() ile YERİNDE şifrelenir — veri kaybı yok, kopya yok.
- * SecureStore erişilemezse (nadir Keychain arızası) plaintext'e düşülür ki
- * kullanıcılar oturumdan atılmasın; sonraki açılışta tekrar denenir.
+ * SecureStore erişilemezse gerçek dosyaya HİÇ DOKUNULMAZ (bkz. createTokenStore
+ * catch dalı): o açılış degrade geçer, sonraki normal açılışta oturum yerinde.
  */
 const ENC_KEY_NAME = 'ut_tokens_enc_key_v1';
 // AFTER_FIRST_UNLOCK: FCM background handler kilitli-ekranda token'a erişebilsin.
 const SECURE_OPTS = { keychainAccessible: SecureStore.AFTER_FIRST_UNLOCK } as const;
 
+/**
+ * "Bu depo ŞİFRELİ" bayrağı — plaintext app-prefs'te (sır değil, yalnız bir
+ * durum bilgisi). Anahtarın Keychain'den okunamadığı açılışlarda dosyanın
+ * şifreli olup olmadığını başka türlü bilemiyoruz: MMKV bunu dışarı vermiyor,
+ * anahtarsız açmayı denemek de içeriği ATTIRIYOR (yani "önce dene, tutmazsa
+ * anla" yok — deneme yıkıcı).
+ */
+const ENC_MARKER = 'ut_tokens_encrypted_v1';
+
+/**
+ * Bu AÇILIŞTA token deposuna erişilemedi (Keychain okunamadı ya da anahtar
+ * kayıp). Depo dosyasına DOKUNULMADI — kayıp değil, bu oturumluk erişilemez.
+ * api.ts bunu okuyup "refresh token yok ⇒ oturumu düşür" hükmünü vermiyor.
+ */
+let storeDegraded = false;
+export const isTokenStoreDegraded = (): boolean => storeDegraded;
+
 const createTokenStore = (): MMKV => {
+  const knownEncrypted = appPrefs.getBoolean(ENC_MARKER) === true;
   try {
     const existingKey = SecureStore.getItem(ENC_KEY_NAME, SECURE_OPTS);
     if (existingKey) {
+      appPrefs.set(ENC_MARKER, true);
       return createMMKV({ id: 'auth-tokens', encryptionKey: existingKey, encryptionType: 'AES-256' });
     }
+    // Anahtar YOK ama depo şifreli: yeni anahtar üretip encrypt() çağırmak
+    // dosyayı kurtarmaz, İÇERİĞİ YOK EDER (anahtarsız açılan şifreli dosyayı
+    // MMKV boş sayar, encrypt() de o boşluğu mühürler). Keychain erişimsizliği
+    // çoğunlukla geçici — ilk kilit açılmadan gelen arka plan başlatması, nadir
+    // Keychain arızası. Kalıcı hale getirmeyelim: bu açılışı degrade geç, depo
+    // yerinde kalsın, sonraki normal açılışta oturum aynen açılsın.
+    if (knownEncrypted) throw new Error('token store is encrypted but key is unavailable');
+
     const bytes = Crypto.getRandomBytes(24);
     const newKey = btoa(String.fromCharCode(...bytes));
     SecureStore.setItem(ENC_KEY_NAME, newKey, SECURE_OPTS);
     const store = createMMKV({ id: 'auth-tokens' }); // mevcut plaintext dosyayı aç
     store.encrypt(newKey, 'AES-256'); // yerinde şifrele
+    appPrefs.set(ENC_MARKER, true);
     return store;
   } catch (error) {
-    console.error('Token store encryption unavailable, falling back to plaintext:', error);
-    return createMMKV({ id: 'auth-tokens' });
+    // ESKİDEN: plaintext `auth-tokens`'a düşülüyordu, gerekçesi de "kullanıcılar
+    // oturumdan atılmasın"dı. Tam TERSİ oluyordu — dosya şifreliyse anahtarsız
+    // açmak MMKV'ye içeriği attırıyor, yani refresh token KALICI olarak siliniyor
+    // ve kullanıcı bir daha o oturuma dönemiyordu (mmkvStorage.ts aynı tuzağı
+    // kendi tarafında zaten böyle tarif ediyor). Artık gerçek dosyaya hiç
+    // dokunmadan ayrı bir scratch dosyaya düşüyoruz.
+    console.warn('[auth] Token deposu bu açılışta açılamadı — degrade mod:', error);
+    storeDegraded = true;
+    const scratch = createMMKV({ id: 'auth-tokens-degraded' });
+    scratch.clearAll();
+    return scratch;
   }
 };
 
