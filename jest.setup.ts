@@ -64,7 +64,48 @@ jest.mock('expo-network', () => ({
   })),
   addNetworkStateListener: jest.fn(() => ({ remove: jest.fn() })),
 }));
+// Lucide ikon barrel'ı (src/shared/icons.ts). Bileşenler ikonları ARTIK oradan
+// alıyor, doğrudan "lucide-react-native"tan değil — suite'lerin tek tek koyduğu
+// lucide mock'ları bu yüzden artık hedefi ıskalıyor ve ikon `undefined` gelip
+// "Element type is invalid" ile düşüyorlar. Proxy: hangi ikon istenirse istensin
+// çizmeyen bir bileşen döner, listeye ikon eklendikçe güncellemek gerekmez.
+jest.mock('@/shared/icons', () =>
+  new Proxy(
+    {},
+    {
+      get: (_target, prop) => (prop === '__esModule' ? true : () => null),
+    },
+  ),
+);
 jest.mock('expo-blur', () => ({ BlurView: 'BlurView' }));
+// Cam yüzeyler. `isLiquidGlassAvailable` FALSE döner: testlerde bileşenler
+// blur/fallback yolunu çizsin — cam yolu native `UIGlassEffect`e dayanıyor,
+// jest'te doğrulanabilir bir karşılığı yok.
+// SwiftUI modifier fabrikaları (glassFallback bunlardan zincir kuruyor).
+// Paket native; içe aktarılması expo-modules-core'u uyandırıp jest'i düşürüyor.
+// Modifier'lar burada opak nesneler — testler zincirin İÇERİĞİNİ değil, onu
+// kuran bileşenin render'ını doğruluyor.
+jest.mock('@expo/ui/swift-ui/modifiers', () => {
+  const modifier = (...args: unknown[]) => ({ __modifier: true, args });
+  return {
+    __esModule: true,
+    background: modifier,
+    frame: modifier,
+    padding: modifier,
+    strokeBorder: modifier,
+    shapes: {
+      circle: modifier,
+      capsule: modifier,
+      roundedRectangle: modifier,
+    },
+  };
+});
+jest.mock('expo-glass-effect', () => ({
+  GlassView: 'GlassView',
+  GlassContainer: 'GlassContainer',
+  isLiquidGlassAvailable: jest.fn(() => false),
+  isGlassEffectAPIAvailable: jest.fn(() => false),
+}));
 // WelcomeScreen arka plan videosu — native player jest'te yok, hook sahte bir
 // player döndürüp VideoView host component olarak render edilir.
 jest.mock('expo-video', () => ({
@@ -78,6 +119,48 @@ jest.mock('expo-video', () => ({
     muted: false,
     audioMixingMode: 'auto',
   })),
+}));
+// Sesli mesaj: oynatıcı da kaydedici de native. Mock olmadan expo-audio'yu
+// içe aktarmak expo-modules-core'u yüklüyor ve jest'te "Cannot read properties
+// of undefined (reading 'EventEmitter')" ile düşüyor — sesli balonu (ve onun
+// klonunu render eden uzun-bas menüsünü) içeren HER suite'i vurur.
+jest.mock('expo-audio', () => ({
+  createAudioPlayer: jest.fn(() => ({
+    play: jest.fn(),
+    pause: jest.fn(),
+    remove: jest.fn(),
+    seekTo: jest.fn(() => Promise.resolve()),
+    addListener: jest.fn(() => ({ remove: jest.fn() })),
+    setPlaybackRate: jest.fn(),
+    shouldCorrectPitch: true,
+    playbackRate: 1,
+    duration: 0,
+    isLoaded: false,
+  })),
+  setAudioModeAsync: jest.fn(() => Promise.resolve()),
+  getRecordingPermissionsAsync: jest.fn(() => Promise.resolve({ granted: true })),
+  requestRecordingPermissionsAsync: jest.fn(() =>
+    Promise.resolve({ granted: true }),
+  ),
+  useAudioRecorder: jest.fn(() => ({
+    record: jest.fn(),
+    stop: jest.fn(() => Promise.resolve()),
+    pause: jest.fn(),
+    prepareToRecordAsync: jest.fn(() => Promise.resolve()),
+    getStatus: jest.fn(() => ({ metering: -60, isRecording: false })),
+    uri: null,
+  })),
+  RecordingPresets: { HIGH_QUALITY: {} },
+}));
+// Dokunsal geri bildirim — native. Tek tek suite'lerde mock'lanıyordu; sesli
+// balon gibi ortak bileşenler de kullandığı için burada tek yerden.
+// Yerel jest.mock'lar bunu ezer, çağrı sayısına bakan testler etkilenmez.
+jest.mock('expo-haptics', () => ({
+  impactAsync: jest.fn(() => Promise.resolve()),
+  selectionAsync: jest.fn(() => Promise.resolve()),
+  notificationAsync: jest.fn(() => Promise.resolve()),
+  ImpactFeedbackStyle: { Light: 'light', Medium: 'medium', Heavy: 'heavy', Rigid: 'rigid', Soft: 'soft' },
+  NotificationFeedbackType: { Success: 'success', Warning: 'warning', Error: 'error' },
 }));
 jest.mock('expo-symbols', () => ({ SymbolView: 'SymbolView' }));
 jest.mock('expo-linear-gradient', () => ({ LinearGradient: 'LinearGradient' }));

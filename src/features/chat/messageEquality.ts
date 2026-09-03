@@ -30,6 +30,12 @@ export function messageContentEqual(a: any, b: any) {
   return (
     a.id === b.id &&
     a.content === b.content &&
+    // Sesli mesaj: optimistic baloncuk yerel süre/dalga formuyla doğuyor, server
+    // kopyası gelince (ve mediaUrl dolunca) balon tazelenmeli.
+    a.contentType === b.contentType &&
+    a.mediaUrl === b.mediaUrl &&
+    a.durationMs === b.durationMs &&
+    a.waveformPeaks === b.waveformPeaks &&
     a.readAt === b.readAt &&
     a.deliveredAt === b.deliveredAt &&
     a.editedAt === b.editedAt &&

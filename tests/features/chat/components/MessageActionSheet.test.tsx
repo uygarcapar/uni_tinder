@@ -8,6 +8,10 @@ jest.mock('react-native-reanimated', () => {
         React.createElement(View, { style }, children),
     },
     useSharedValue: (v: any) => ({ value: v }),
+    // Sesli mesaj klonu voicePlayback'i içe aktarıyor; o da modül seviyesinde
+    // ilerleme için bir mutable kuruyor.
+    makeMutable: (v: any) => ({ value: v }),
+    cancelAnimation: () => {},
     useAnimatedStyle: (fn: any) => fn(),
     // Kapanış callback'i senkron tetiklenir ki onClose akışları test edilebilsin.
     withTiming: (v: any, _cfg: any, cb?: (finished: boolean) => void) => {
@@ -17,6 +21,9 @@ jest.mock('react-native-reanimated', () => {
     interpolate: (v: any, input: any[], output: any[]) =>
       output[0] +
       ((output[1] - output[0]) * (v - input[0])) / (input[1] - input[0] || 1),
+    // Paneller ölçeği bununla kırpıyor (bkz. FloatingPanel); eksikse worklet
+    // "Cannot read properties of undefined" ile düşer.
+    Extrapolation: { CLAMP: 'clamp', EXTEND: 'extend', IDENTITY: 'identity' },
     runOnJS: (fn: any) => fn,
     Easing: {
       out: () => (x: any) => x,
@@ -25,6 +32,16 @@ jest.mock('react-native-reanimated', () => {
     },
   };
 });
+
+// Menü artık sesli mesaj klonunu da çiziyor → VoiceBubble → voicePlayback →
+// chatService → api. axios içe aktarılırken `fetch` global'ini yokluyor, o da
+// expo'nun tembel winter fetch'ini (ve expo-modules-core'un native
+// EventEmitter'ını) uyandırıp jest'te patlıyor. Servisi mock'lamak zinciri
+// burada kesiyor.
+jest.mock('@/shared/services/api', () => ({
+  __esModule: true,
+  default: { get: jest.fn(), post: jest.fn(), put: jest.fn(), delete: jest.fn() },
+}));
 
 jest.mock('lucide-react-native', () =>
   new Proxy({}, { get: () => () => null })

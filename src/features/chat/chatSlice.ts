@@ -150,12 +150,33 @@ function markConversationReadLocally(state: ChatState, conversationId: string) {
   conv.unreadCount = 0;
 }
 
+// MessageContentType: 0 Text, 1 Image, 2 Voice, 3 Video, 99 System. Backend
+// enum'u sayı ya da isim ("Voice") olarak yollayabiliyor; sohbet listesi
+// (MessagesScreen ikon/etiket seçimi) SAYI bekliyor — tek biçime burada iniyor.
+const CONTENT_TYPE_BY_NAME: Record<string, number> = {
+  text: 0,
+  image: 1,
+  voice: 2,
+  video: 3,
+  system: 99,
+};
+
+function contentTypeToNumber(contentType: MessageDto['contentType']): number {
+  if (typeof contentType === 'number') return contentType;
+  if (typeof contentType === 'string') {
+    const asNumber = Number(contentType);
+    if (Number.isFinite(asNumber)) return asNumber;
+    return CONTENT_TYPE_BY_NAME[contentType.toLowerCase()] ?? 0;
+  }
+  return 0;
+}
+
 function updateConversationLastMessage(state: ChatState, msg: MessageDto) {
   const conv = state.conversations.find((c) => c.conversationId === msg.conversationId);
   if (!conv) return;
   conv.lastMessagePreview = msg.content;
   conv.lastMessageAt = msg.sentAt;
-  conv.lastMessageContentType = msg.contentType ?? 0;
+  conv.lastMessageContentType = contentTypeToNumber(msg.contentType);
   const idx = state.conversations.indexOf(conv);
   if (idx > 0) {
     state.conversations.splice(idx, 1);
@@ -416,15 +437,27 @@ const chatSlice = createSlice({
     //
     // restorableUntil: unmatch YANITINDAN gelir (kendi unmatch'imiz). Karşı
     // tarafın unmatch'inde gelmez — geri alma zaten yalnız unmatch edene açık.
+    //
+    // byMe: "Geri Al"ın TEK kapısı. Kapatanın kim olduğunu sunucu liste DTO'sunda
+    // söylemediği için, kendi unmatch'imizde bunu istemcide damgalıyoruz; hub
+    // event'i / gönderim reddi gibi karşı taraf kaynaklı yollar byMe GEÇMEZ →
+    // bayrak false'a düşer ve buton o uçta hiç çıkmaz. Damgaya bakmak yetmiyordu:
+    // karşı taraf event'i kaçırıp uygulamayı yeniden açtığında restorableUntil
+    // `undefined` (bilinmiyor) oluyor ve buton ona da görünüyordu.
     conversationDeactivated: (
       state,
-      action: PayloadAction<{ conversationId: string; restorableUntil?: string | null }>
+      action: PayloadAction<{
+        conversationId: string;
+        restorableUntil?: string | null;
+        byMe?: boolean;
+      }>
     ) => {
-      const { conversationId, restorableUntil } = action.payload;
+      const { conversationId, restorableUntil, byMe } = action.payload;
       const conv = state.conversations.find((c) => c.conversationId === conversationId);
       if (conv) {
         conv.isActive = false;
         if (restorableUntil !== undefined) conv.restorableUntil = restorableUntil;
+        conv.deactivatedByMe = byMe === true;
       }
       const bucket = state.messagesByConv[conversationId];
       if (!bucket) return;
@@ -444,6 +477,7 @@ const chatSlice = createSlice({
       if (!conv) return;
       conv.isActive = true;
       conv.restorableUntil = null;
+      conv.deactivatedByMe = false;
     },
 
     // "Eski sohbeti göster" açıldı — kendi reveal'imiz ya da karşı tarafın
@@ -553,6 +587,13 @@ const chatSlice = createSlice({
           // null derse (pencere kapandı) server kazanır.
           if (next.restorableUntil === undefined && localConv.restorableUntil != null) {
             next = { ...next, restorableUntil: localConv.restorableUntil };
+          }
+          // "Kapatan biz miyiz" bilgisi SUNUCUDA YOK — server objesi bu alanı
+          // hiç taşımıyor, taşımadığı için de her fetch'te bayrağı silerdi.
+          // Sohbet hâlâ kapalıyken yereli koru; server yeniden aktif gösteriyorsa
+          // (restore / rematch) bayrak zaten anlamını yitirir.
+          if (!next.isActive && localConv.deactivatedByMe !== undefined) {
+            next = { ...next, deactivatedByMe: localConv.deactivatedByMe };
           }
           return next;
         });

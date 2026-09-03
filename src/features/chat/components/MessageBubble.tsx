@@ -4,24 +4,26 @@ import {
   Text,
   TouchableOpacity,
   Pressable,
-  Dimensions,
   Animated,
   Easing,
 } from "react-native";
 import { useTranslation } from "react-i18next";
-import { Check, CheckCheck, Clock, AlertCircle } from "lucide-react-native";
+import { Check, CheckCheck, Clock, AlertCircle } from "@/shared/icons";
 import SFIcon from "@/shared/components/SFIcon";
 import ReplyPreview, {
   REPLY_CARD_GAP,
 } from "@/features/chat/components/ReplyPreview";
 import { REVEAL_MAX } from "@/features/chat/components/RevealContext";
 import {
+  BUBBLE_MAX_WIDTH,
   BUBBLE_PAD_H,
   BUBBLE_PAD_V,
   BUBBLE_RADIUS,
   reactionChipBorder,
   bubbleCorners,
 } from "@/features/chat/components/bubbleStyle";
+import VoiceBubble from "@/features/chat/components/VoiceBubble";
+import { isVoiceMessage } from "@/features/chat/voiceMessage";
 import {
   HIGHLIGHT_DURATION,
   useMessageHighlight,
@@ -33,10 +35,6 @@ import { colors } from "../../../shared/theme/colors";
 
 // Fonksiyon: modul seviyesinde sabitlenirse tema degisince bayat kalir.
 const statusGray = () => colors.textSecondary;
-// Satırlar liste genişliğinde (ekran + REVEAL_MAX) — balon max genişliği EKRANA
-// göre hesaplanır, yoksa oran reveal şeridini de sayıp fazla geniş olurdu.
-// Yanıt kartı da bu genişlikle sınırlıdır (kart balonun üstünde ayrı bir kutu).
-const BUBBLE_MAX_WIDTH = Math.round(Dimensions.get("window").width * 0.6);
 
 // Satırlar arası normal boşluk ve reaction kapsülü varken açılan boşluk.
 // Kapsül balonun 15px altına taşar (bottom:-15), altındaki mesaja binmesin diye
@@ -340,6 +338,9 @@ function MessageBubble({
   // her zaman beyaz (onMedia). Karşı tarafınki surface2, yani modla dönüyor.
   const textColor = isOwn ? colors.onMedia : colors.text;
   const metaColor = isOwn ? colors.onMediaMuted : colors.textSecondary;
+  // Sesli mesajda `content` boş: balon metin yerine oynatıcı çizer. Herkesten
+  // silinme yukarıda ele alındı, yani burada medya hâlâ duruyor demektir.
+  const isVoice = isVoiceMessage(message.contentType);
 
   return (
     <Animated.View
@@ -403,6 +404,8 @@ function MessageBubble({
                 ...bubbleCorners(isOwn),
                 borderCurve: "continuous",
                 paddingHorizontal: BUBBLE_PAD_H,
+                // Sesli mesaj dahil HER balonda alt/üst eşit: süre artık
+                // dalganın altında değil sağında, yani içerik zaten dengeli.
                 paddingVertical: BUBBLE_PAD_V,
                 minWidth: 48,
                 // Balon içeriğe göre daralır, tek etkili durum minWidth'tir — "?"
@@ -420,8 +423,27 @@ function MessageBubble({
                 transform: [{ scale: pressed ? 0.97 : 1 }],
               }}
             >
+              {isVoice && (
+                <VoiceBubble
+                  messageId={message.id}
+                  isOwn={isOwn}
+                  durationMs={message.durationMs}
+                  waveformPeaks={message.waveformPeaks}
+                  localUri={message._localUri}
+                  pending={isPending}
+                  failed={isFailed}
+                />
+              )}
+
               {!!message.content && (
-                <Text style={{ color: textColor, fontSize: 17 }}>
+                <Text
+                  style={{
+                    color: textColor,
+                    fontSize: 17,
+                    // Sesli mesaja yazılan altyazı (varsa) oynatıcının altında.
+                    marginTop: isVoice ? 6 : 0,
+                  }}
+                >
                   {message.content}
                   {message.editedAt && (
                     <Text className="text-xs" style={{ color: metaColor }}>

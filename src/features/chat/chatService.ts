@@ -1,3 +1,4 @@
+import { File, UploadType } from 'expo-file-system';
 import api from '@/shared/services/api';
 import { API_ENDPOINTS } from '@/shared/constants/api';
 import { normalizeUtcFields } from '@/shared/utils/dateUtc';
@@ -7,8 +8,13 @@ interface SendMessageArgs {
   content: string;
   clientMessageId: string;
   replyToMessageId?: string;
-  contentType?: number;
+  // Sayı (legacy) ya da PascalCase enum adı ("Voice") — bkz. api wire sözleşmesi.
+  contentType?: number | string;
   mediaUrl?: string;
+  /** Sesli mesajda ZORUNLU (1..60000): balon sesi indirmeden çubuğu çizemez. */
+  durationMs?: number;
+  /** Virgüllü 0-100 tamsayılar, en çok 64 nokta. Opsiyonel. */
+  waveformPeaks?: string;
 }
 
 interface CreateUploadUrlArgs {
@@ -52,11 +58,22 @@ export const chatService = {
     );
   },
 
-  async sendMessage({ conversationId, content, clientMessageId, replyToMessageId, contentType, mediaUrl }: SendMessageArgs) {
+  async sendMessage({
+    conversationId,
+    content,
+    clientMessageId,
+    replyToMessageId,
+    contentType,
+    mediaUrl,
+    durationMs,
+    waveformPeaks,
+  }: SendMessageArgs) {
     const body: Record<string, any> = { conversationId, content, clientMessageId };
     if (replyToMessageId) body.replyToMessageId = replyToMessageId;
     if (contentType !== undefined && contentType !== null) body.contentType = contentType;
     if (mediaUrl) body.mediaUrl = mediaUrl;
+    if (durationMs != null) body.durationMs = durationMs;
+    if (waveformPeaks) body.waveformPeaks = waveformPeaks;
     const res = await api.post(API_ENDPOINTS.MESSAGES_SEND, body);
     return normalizeUtcFields((res as any).result);
   },
@@ -159,6 +176,41 @@ export const chatService = {
   async createUploadUrl({ conversationId, contentType, sizeBytes }: CreateUploadUrlArgs) {
     const res = await api.post(API_ENDPOINTS.MESSAGES_UPLOAD_URL, { conversationId, contentType, sizeBytes });
     return (res as any).result;
+  },
+
+  /**
+   * Sesli mesajın imzalı OYNATMA linki. Kısa ömürlü (15 dk) — oynatmaya
+   * basıldığında çağrılır, CACHE'LENMEZ; 403 alınırsa yeniden istenir.
+   * Herkesten silinen mesajda UT-6606 döner.
+   */
+  async getMediaUrl(messageId: string): Promise<{
+    url: string;
+    expiresAt: string | null;
+    durationMs: number | null;
+  }> {
+    const res = await api.get(API_ENDPOINTS.MESSAGES_MEDIA_URL(messageId));
+    const result = (res as any).result || {};
+    return {
+      url: result.url,
+      expiresAt: result.expiresAt ?? null,
+      durationMs: result.durationMs ?? null,
+    };
+  },
+
+  /**
+   * Yerel dosyayı presigned URL'e ham gövde olarak PUT eder (native yükleme —
+   * dosya JS'e okunmaz). `Content-Type` imzaya dahil: adım 1'de bildirilenle
+   * BİREBİR aynı olmalı, farklıysa S3 403 döner. Authorization header'ı YOK.
+   */
+  async uploadFileToS3(uploadUrl: string, file: File, contentType: string) {
+    const res = await file.upload(uploadUrl, {
+      httpMethod: 'PUT',
+      uploadType: UploadType.BINARY_CONTENT,
+      headers: { 'Content-Type': contentType },
+    });
+    if (res.status < 200 || res.status >= 300) {
+      throw new Error(`S3 upload failed: ${res.status}`);
+    }
   },
 
   // S3 doğrudan PUT — auth header YOK (presigned URL bunu tolere etmez).

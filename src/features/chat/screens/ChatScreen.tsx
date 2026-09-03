@@ -19,17 +19,17 @@ import {
   Host,
   Button as SwiftUIButton,
   Text as SwiftUIText,
+  Image as SwiftUIImage,
 } from "@expo/ui/swift-ui";
 import {
   buttonStyle,
   tint,
-  labelStyle,
+  accessibilityLabel,
   font,
   glassEffect,
   foregroundStyle,
   padding,
   frame,
-  controlSize,
 } from "@expo/ui/swift-ui/modifiers";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 import Animated, {
@@ -47,7 +47,7 @@ import { NativeStackScreenProps } from "@react-navigation/native-stack";
 import { useFocusEffect } from "@react-navigation/native";
 import type { RootStackParamList } from "@/shared/types/navigation";
 import { useAppDispatch, useAppSelector } from "@/shared/hooks/redux";
-import { ChevronLeft, MoreVertical } from "lucide-react-native";
+import { ChevronLeft, MoreVertical } from "@/shared/icons";
 import SFIcon from "@/shared/components/SFIcon";
 import * as Haptics from "expo-haptics";
 import {
@@ -99,24 +99,42 @@ import DateSeparator, {
 } from "@/features/chat/components/DateSeparator";
 import moderationService from "@/shared/services/moderationService";
 import { utcTime } from "@/shared/utils/dateUtc";
-import PurchaseModal from "@/features/discover/components/PurchaseModal";
+import { openLitPlus } from "@/features/profile/litPlusEntry";
 import PreviewModal from "@/features/profile/components/PreviewModal";
 import swipeService from "@/features/discover/swipeService";
+import { sendVoiceMessage, VoiceTooLargeError } from "@/features/chat/voiceSend";
+import {
+  VOICE_CONTENT_TYPE,
+  isVoiceMessage,
+  voiceErrorCode,
+} from "@/features/chat/voiceMessage";
+import { discardVoiceTake } from "@/features/chat/useVoiceRecorder";
+import { stopVoicePlayback } from "@/features/chat/voicePlayback";
 import { showInfoToast } from "@/shared/services/toaster";
 import uiBus from "@/shared/services/uiBus";
 import { analytics } from "@/shared/services/analytics";
 import { colors, veil } from "../../../shared/theme/colors";
-import { glassFallback } from "../../../shared/theme/glass";
+import {
+  glassFallback,
+  glassIconClearGlyph,
+  GLASS_ICON_CLEAR_SIZE,
+} from "../../../shared/theme/glass";
+import GlassFallbackSurface from "@/shared/components/GlassFallbackSurface";
 import { devLog } from '@/shared/utils/devLog';
 import { chromeBlurTint } from "@/shared/theme/blur";
 import { plainBlurTint } from "@/shared/theme/blur";
 
-const ContentType = { Text: 0, System: 99 };
+const ContentType = { Text: 0, Voice: VOICE_CONTENT_TYPE, System: 99 };
 const INPUT_BAR_OPAQUE = 66; // composer opak gövde tahmini (inset başlangıç değeri)
 // Hub `SendMessage` hata durumunda invoke'u REDDETMİYOR — ayrı bir `Error`
 // event'i yayınlıyor (kontrat §17). O event kaçarsa balon sonsuza dek
 // "gönderiliyor"da asılı kalıyordu; bu pencere dolunca başarısıza çeviriyoruz.
 const SEND_ACK_TIMEOUT_MS = 12_000;
+// Giriş toast'ının eşiği: kalan hak bunun ALTINDA ya da eşitse uyarı çıkar.
+// Üstündeyse hiç çıkmıyor — "42 mesaj hakkın var" bir uyarı değil, sohbetin
+// başına düşen gereksiz bir banner'dı. Sunucudan gelmiyor, tamamen istemci
+// tarafı bir "ne zaman söyleyelim" kararı (kotanın kendisi backend'de).
+const QUOTA_ENTRY_TOAST_THRESHOLD = 10;
 // İsim pill'inin sabit yüksekliği: SwiftUI ölçümünü beklemeden header'ın dikey
 // geometrisi İLK frame'de kesinleşsin (13pt metin + 4pt dikey padding ≈ 24, +2 pay).
 const PILL_H = 26;
@@ -124,6 +142,11 @@ const PILL_H = 26;
 // Liste paddingTop'u ve header row height'ı AYNI sabitten beslenir — ikisi ayrışırsa
 // balonlar header'ın altına girer ya da fazla boşluk kalır.
 const HEADER_CONTENT = 8 + 65 + 6 + PILL_H + 8;
+// Geri ve menü butonları TEK ölçüden beslenir: ikisi de aynı çapta daire olsun.
+// Sayı profil/bildirimler/ayarlar başlıklarındaki BERRAK cam butonlarla ORTAK;
+// glif zincirini de onlarla aynı yerden alıyorlar (glassIconClearGlyph). Buton
+// tarafındaki kurulum tuzakları hâlâ GLASS_ICON_BUTTON'ın başında yazılı.
+const HEADER_ACTION_SIZE = GLASS_ICON_CLEAR_SIZE;
 
 // ── TEŞHİS ANAHTARI ─────────────────────────────────────────────────────────
 // true yap → balonlar reanimated'siz/ref'siz/reveal'siz DÜZ View+Text çizilir.
@@ -206,6 +229,10 @@ function buildReplyDraft(message: any) {
     senderDisplayName: message.senderDisplayName,
     contentPreview: (message.content || "").slice(0, 120),
     contentType: message.contentType,
+    // Sesli mesajda önizleme "Sesli mesaj (1:21)" olarak yazılıyor (bkz.
+    // ReplyPreview > mediaLabel) — süre yalnız yerel mesaj nesnesinde var,
+    // taslağa kopyalanmazsa şerit süresiz kalır.
+    durationMs: message.durationMs ?? null,
     isDeleted: !!message.deletedAt,
   };
 }
@@ -325,6 +352,15 @@ function ChatScreen({
         (cc: any) => cc.conversationId === conversationId,
       )?.restorableUntil,
   );
+  // Sohbeti kapatan biz miyiz — "Geri Al" YALNIZ o uçta çıkar. Sunucuda karşılığı
+  // yok, kendi unmatch'imizde damgalanıyor; `?? false` YAPILMAZ (bilinmiyor ≠
+  // karşı taraf kapattı), bkz. shouldOfferRestore.
+  const deactivatedByMe = useAppSelector(
+    (s: any) =>
+      s.chat.conversations.find(
+        (cc: any) => cc.conversationId === conversationId,
+      )?.deactivatedByMe,
+  );
   const hasHiddenHistory = useAppSelector(
     (s: any) => s.chat.messagesByConv[conversationId]?.hasHiddenHistory ?? false,
   );
@@ -335,7 +371,6 @@ function ChatScreen({
   const [actionLayout, setActionLayout] = useState<any>(null);
   const [optionsOpen, setOptionsOpen] = useState(false);
   const [reportOpen, setReportOpen] = useState(false);
-  const [purchaseVisible, setPurchaseVisible] = useState(false);
   const [profileVisible, setProfileVisible] = useState(false);
   const [profileDetail, setProfileDetail] = useState<any>(null);
 
@@ -356,12 +391,12 @@ function ChatScreen({
             return;
           }
           analytics.capture("chat_quota_paywall_viewed", { conversationId, source });
-          setPurchaseVisible(true);
+          openLitPlus();
         })
         .catch(() => {
           // Tazeleme başarısız → eski davranış: paywall'ı yine aç.
           analytics.capture("chat_quota_paywall_viewed", { conversationId, source });
-          setPurchaseVisible(true);
+          openLitPlus();
         });
     },
     [conversationId, dispatch],
@@ -609,17 +644,30 @@ function ChatScreen({
   );
 
   // ── Quota toast'ları ───────────────────────────────────────────────────
-  const quotaEntryToastShownRef = useRef(false);
+  // Giriş toast'ı SOHBETE GİRİŞTE, TEK KEZ karar veriliyor: kotanın ilk anlık
+  // görüntüsü geldiğinde bakılır ve karar (çıksın/çıkmasın) o ziyaret boyunca
+  // değişmez. Eşiğin altındaysa uyarı düşer; üstündeyse bu ziyarette bir daha
+  // bakılmaz — koşul her kota değişiminde yeniden değerlendirilseydi kullanıcı
+  // yazarken hak eşiğe indiği anda banner sohbetin ORTASINA düşerdi. Hak
+  // bittiğinde söylenecek şey zaten ayrı (aşağıdaki tükenme toast'ı + paywall).
+  const quotaEntryDecidedRef = useRef(false);
   const quotaHadRemainingRef = useRef(false);
   const quotaExhaustedToastShownRef = useRef(false);
   useEffect(() => {
-    if (quotaEntryToastShownRef.current || !isActive) return;
-    if (!quota || quota.isUnlimited) return;
+    if (quotaEntryDecidedRef.current || !isActive) return;
+    // Kota henüz gelmedi — karar VERMİYORUZ, bir sonraki anlık görüntüyü bekle.
+    if (!quota) return;
+    quotaEntryDecidedRef.current = true;
+    if (quota.isUnlimited) return;
     const remaining = quota.remainingMessages;
     if (remaining == null || remaining <= 0) return;
-    quotaEntryToastShownRef.current = true;
+    // Eşiğin üstünde bile olsa "hak vardı" işaretleniyor: tükenme toast'ı buna
+    // bakıyor ve giriş toast'ı çıkmadı diye susmamalı (girişte 40 hakla girip
+    // sohbet boyunca bitirmek en olağan yol).
     quotaHadRemainingRef.current = true;
+    if (remaining > QUOTA_ENTRY_TOAST_THRESHOLD) return;
     showInfoToast({
+      icon: "message",
       title: t("chat.quota.title"),
       message: t("chat.quota.message", { remaining }),
     });
@@ -631,6 +679,7 @@ function ChatScreen({
     quotaExhaustedToastShownRef.current = true;
     analytics.capture("chat_quota_exhausted", { conversationId });
     showInfoToast({
+      icon: "message",
       title: t("chat.quota.exhausted"),
       message: t("chat.quota.exhaustedMessage"),
     });
@@ -651,6 +700,9 @@ function ChatScreen({
     dispatch(setActiveConversation(conversationId));
     return () => {
       dispatch(setActiveConversation(null));
+      // Çalan sesli mesaj ekranla birlikte susar — oynatıcı global (tek örnek),
+      // bırakılırsa sohbetten çıktıktan sonra da çalmaya devam ederdi.
+      stopVoicePlayback();
     };
   }, [conversationId, dispatch]);
 
@@ -902,30 +954,13 @@ function ChatScreen({
     [],
   );
 
-  const handleSend = useCallback(
-    async ({ content, replyToMessageId, clientMessageId }: any) => {
-      const q = quotaRef.current;
-      if (q && !q.isUnlimited && q.requiresPremium) {
-        openQuotaPaywall("composer_send");
-        return;
-      }
-      const optimistic: any = {
-        id: `temp-${clientMessageId}`,
-        conversationId,
-        senderId: myUserId,
-        content,
-        sentAt: new Date().toISOString(),
-        readAt: null,
-        deliveredAt: null,
-        isSystemMessage: false,
-        clientMessageId,
-        contentType: ContentType.Text,
-        replyTo: replyToMessageId
-          ? buildReplyPreview(messagesRef.current, replyToMessageId)
-          : null,
-        reactions: [],
-        _pending: true,
-      };
+  /**
+   * Giden mesajı listeye koyar ve listeyi doğru yere sabitler. Metin ve sesli
+   * mesaj AYNI yolu kullanmak zorunda: buradaki ölçüm/scroll dengesi uzun uzun
+   * ayarlandı, ikinci bir kopya çıkarsa biri sessizce ayrışır.
+   */
+  const appendOutgoing = useCallback(
+    (optimistic: any) => {
       // Gönderim ÖNCESİ ölçü: içerik ekranı doldurmuyor mu? (boş sohbet dahil)
       // wasAtEnd de BURADA okunur — gönderimden SONRA bakılamaz, gerekçe aşağıda.
       const stBeforeSend = listRef.current?.getState?.();
@@ -934,7 +969,7 @@ function ChatScreen({
       const wasAtEnd = !!stBeforeSend?.isWithinMaintainScrollAtEndThreshold;
       // Balon listeye girerken alttan süzülsün (bkz. enterAnimation.ts) — kayıt
       // dispatch'ten ÖNCE bırakılmalı, ilk render hemen ardından geliyor.
-      markMessageEntering(clientMessageId);
+      markMessageEntering(optimistic.clientMessageId);
       dispatch(appendOptimisticMessage({ conversationId, message: optimistic }));
 
       // KISA/BOŞ SOHBET: maintainScrollAtEnd tek başına YETMİYOR.
@@ -971,6 +1006,35 @@ function ChatScreen({
           listRef.current?.scrollToEnd({ animated: true });
         }, 100);
       }
+    },
+    [conversationId, dispatch, pinShortListToEnd],
+  );
+
+  const handleSend = useCallback(
+    async ({ content, replyToMessageId, clientMessageId }: any) => {
+      const q = quotaRef.current;
+      if (q && !q.isUnlimited && q.requiresPremium) {
+        openQuotaPaywall("composer_send");
+        return;
+      }
+      const optimistic: any = {
+        id: `temp-${clientMessageId}`,
+        conversationId,
+        senderId: myUserId,
+        content,
+        sentAt: new Date().toISOString(),
+        readAt: null,
+        deliveredAt: null,
+        isSystemMessage: false,
+        clientMessageId,
+        contentType: ContentType.Text,
+        replyTo: replyToMessageId
+          ? buildReplyPreview(messagesRef.current, replyToMessageId)
+          : null,
+        reactions: [],
+        _pending: true,
+      };
+      appendOutgoing(optimistic);
 
       try {
         const useHub = realtimeService.isConnected() && !replyToMessageId;
@@ -1024,7 +1088,101 @@ function ChatScreen({
         }
       }
     },
-    [conversationId, dispatch, myUserId, openQuotaPaywall, pinShortListToEnd],
+    [appendOutgoing, conversationId, dispatch, myUserId, openQuotaPaywall],
+  );
+
+  /**
+   * Sesli mesaj gönderimi. Metin yolundan iki noktada ayrılır:
+   *  - HUB YOK: SignalR `SendMessage` yalnız metin taşıyor (mediaUrl/durationMs
+   *    parametresi yok), üstelik önce S3'e yükleme gerekiyor → hep REST.
+   *  - Optimistic balon YEREL dosyayı taşır (_localUri): kullanıcı gönderdiği
+   *    sesi ağdan yeniden indirmeden anında dinleyebilir.
+   */
+  const handleSendVoice = useCallback(
+    async ({
+      uri,
+      durationMs,
+      waveformPeaks,
+      clientMessageId,
+      replyToMessageId,
+    }: any) => {
+      const q = quotaRef.current;
+      if (q && !q.isUnlimited && q.requiresPremium) {
+        openQuotaPaywall("composer_voice");
+        discardVoiceTake(uri);
+        return;
+      }
+      // Yanıt şeridi metin gönderimindeki gibi ANINDA kapanır (handleInputSend
+      // ile aynı davranış) — gönderim ağda sürerken şerit asılı kalmasın.
+      setReplyTo(null);
+      const optimistic: any = {
+        id: `temp-${clientMessageId}`,
+        conversationId,
+        senderId: myUserId,
+        content: "",
+        sentAt: new Date().toISOString(),
+        readAt: null,
+        deliveredAt: null,
+        isSystemMessage: false,
+        clientMessageId,
+        contentType: ContentType.Voice,
+        durationMs,
+        waveformPeaks: waveformPeaks ?? null,
+        _localUri: uri,
+        replyTo: replyToMessageId
+          ? buildReplyPreview(messagesRef.current, replyToMessageId)
+          : null,
+        reactions: [],
+        _pending: true,
+      };
+      appendOutgoing(optimistic);
+
+      try {
+        const result = await sendVoiceMessage({
+          conversationId,
+          uri,
+          durationMs,
+          waveformPeaks,
+          clientMessageId,
+          replyToMessageId,
+        });
+        // Server kopyası yerel URI'yi EZMEZ (messageSent merge ediyor) — balon
+        // aynı dosyadan çalmaya devam eder.
+        if (result) dispatch(messageSent(result as MessageDto));
+        dispatch(decrementQuotaLocally({ conversationId }));
+      } catch (err: any) {
+        const status = err?.response?.status;
+        const paywallType = err?.response?.data?.result?.paywallType;
+        if (status === 402 || paywallType === "CHAT_QUOTA_EXHAUSTED") {
+          dispatch(removeOptimisticMessage({ conversationId, clientMessageId }));
+          analytics.capture("chat_quota_exhausted", { conversationId });
+          dispatch(fetchChatQuota({ conversationId, force: true }));
+          openQuotaPaywall("voice_402");
+          return;
+        }
+        dispatch(failOptimisticMessage({ conversationId, clientMessageId }));
+        // Switch DAİMA UT kodundan (rehber): 400 tek başına altı ayrı sebebi
+        // ayırt etmiyor ve kullanıcıya söylenecek şey her birinde farklı.
+        const code = err instanceof VoiceTooLargeError ? "UT-6602" : voiceErrorCode(err);
+        const key =
+          code === "UT-6603"
+            ? "chat.voice.maxDuration"
+            : code === "UT-6602"
+              ? "chat.voice.tooLarge"
+              : code === "UT-6601"
+                ? "chat.voice.badFormat"
+                : "chat.voice.sendFailed";
+        showInfoToast({ message: t(key), variant: "error" });
+        devLog("🎙️ [voice] gönderilemedi", code || status || err);
+        if (status === 403 || status === 404) {
+          dispatch(conversationDeactivated({ conversationId, restorableUntil: null }));
+        }
+        if (status === 400 || status === 403 || status === 404) {
+          dispatch(fetchConversations({ force: true }));
+        }
+      }
+    },
+    [appendOutgoing, conversationId, dispatch, myUserId, openQuotaPaywall, setReplyTo, t],
   );
 
   const handleInputSend = useCallback(
@@ -1267,13 +1425,26 @@ function ChatScreen({
           clientMessageId: failedMsg.clientMessageId,
         }),
       );
+      // Sesli mesajın yeniden denemesi metin yoluna DÜŞEMEZ: içerik boş, taşınan
+      // şey dosyanın kendisi. Yükleme yarıda kalmışsa (UT-6605) doğru davranış
+      // zaten üç adımı baştan çalıştırmak.
+      if (isVoiceMessage(failedMsg.contentType) && failedMsg._localUri) {
+        handleSendVoice({
+          uri: failedMsg._localUri,
+          durationMs: failedMsg.durationMs,
+          waveformPeaks: failedMsg.waveformPeaks ?? undefined,
+          clientMessageId: failedMsg.clientMessageId,
+          replyToMessageId: failedMsg.replyTo?.id,
+        });
+        return;
+      }
       handleSend({
         content: failedMsg.content,
         replyToMessageId: failedMsg.replyTo?.id,
         clientMessageId: failedMsg.clientMessageId,
       });
     },
-    [conversationId, dispatch, handleSend],
+    [conversationId, dispatch, handleSend, handleSendVoice],
   );
 
   const handleScrollToReplyTarget = useCallback((reply: any) => {
@@ -1301,6 +1472,7 @@ function ChatScreen({
         conversationDeactivated({
           conversationId,
           restorableUntil: res?.restorableUntil ?? null,
+          byMe: true,
         }),
       );
       dispatch(fetchConversations({ force: true }));
@@ -1385,6 +1557,26 @@ function ChatScreen({
     }
   }, [partner?.userId, navigation, t]);
 
+  const closePartnerProfile = useCallback(() => {
+    setProfileVisible(false);
+    setProfileDetail(null);
+  }, []);
+
+  // Üç nokta menüsü profil önizlemesinin şeridinden mi açıldı. STATE DEĞİL REF:
+  // ConversationOptionsSheet aksiyonu çağırmadan ÖNCE onClose'u çağırıyor, yani
+  // aksiyon elimize geldiğinde menü zaten kapanmış oluyor — bayrak o kapanışla
+  // birlikte sıfırlanmamalı.
+  const optionsFromProfileRef = useRef(false);
+
+  // Menüden bir aksiyon seçildi: menü önizlemeden açıldıysa kart da kapanır.
+  // Üçü ekrandan çıkıyor (eşleşmeyi kaldır / blokla / geri al), şikayet ise
+  // kendi sheet'ini açıyor — altta açık kalan önizleme her durumda fazlalık.
+  const closeProfileAfterOption = useCallback(() => {
+    if (!optionsFromProfileRef.current) return;
+    optionsFromProfileRef.current = false;
+    closePartnerProfile();
+  }, [closePartnerProfile]);
+
   // Profil önizlemesindeki "Bu hesabı blokla" — onay ConversationOptionsSheet
   // ile aynı metinlerle burada soruluyor (handleBlock'un kendisi onay sormaz,
   // sheet soruyordu). Önizleme önce kapanır: blok başarılıysa handleBlock
@@ -1396,13 +1588,12 @@ function ChatScreen({
         text: t("chat.block.confirmButton"),
         style: "destructive",
         onPress: () => {
-          setProfileVisible(false);
-          setProfileDetail(null);
+          closePartnerProfile();
           handleBlock();
         },
       },
     ]);
-  }, [handleBlock, t]);
+  }, [closePartnerProfile, handleBlock, t]);
 
   // Header avatarına dokunuş → ProfileScreen'deki PreviewModal'ın aynısı
   // (SwipeCard'ın expanded hali). Sheet ÖNCE açılır (profile=null iken spinner
@@ -1635,6 +1826,7 @@ function ChatScreen({
             onBack={() => navigation.goBack()}
             onMenu={() => {
               Keyboard.dismiss();
+              optionsFromProfileRef.current = false;
               setOptionsOpen(true);
             }}
           />
@@ -1693,6 +1885,7 @@ function ChatScreen({
               disabled={!isActive}
               quotaLocked={quotaLocked}
               onLockedPress={handleLockedPress}
+              onSendVoice={handleSendVoice}
             />
           </KeyboardStickyView>
         </KeyboardGestureArea>
@@ -1737,6 +1930,7 @@ function ChatScreen({
               disabled={!isActive}
               quotaLocked={quotaLocked}
               onLockedPress={handleLockedPress}
+              onSendVoice={handleSendVoice}
             />
           </KeyboardStickyView>
         </View>
@@ -1779,14 +1973,37 @@ function ChatScreen({
         visible={optionsOpen}
         onClose={() => setOptionsOpen(false)}
         isActive={isActive}
-        // Pencere KESİN yoksa (limit dolmuş / engellenmiş / karşı taraf unmatch
-        // etti) restore çağrısı reddedilirdi — ölü buton göstermiyoruz.
-        canRestore={!isActive && shouldOfferRestore(restorableUntil)}
+        // "Geri Al" YALNIZ eşleşmeyi kaldıran uçta çıkar: karşı taraf sohbete
+        // girip 3 noktaya bastığında buton YOK. Kapatan biz olsak bile pencere
+        // KESİN yoksa (limit dolmuş / engellenmiş) çağrı reddedilirdi — ölü
+        // buton göstermiyoruz.
+        canRestore={!isActive && shouldOfferRestore(restorableUntil, deactivatedByMe)}
         restorableUntil={restorableUntil}
-        onUnmatch={handleUnmatch}
-        onRestore={handleRestore}
-        onReport={() => setReportOpen(true)}
-        onBlock={handleBlock}
+        // Kapatan biz değilsek "geri alma süresi doldu" YALAN olurdu (o uçta
+        // pencere hiç açılmadı) — nötr "sohbet sonlandırıldı" metnine düşülür.
+        closedByMe={deactivatedByMe === true}
+        // Menü profil önizlemesinin şeridinden de açılıyor: `push` alttaki
+        // önizlemeyi yerinde bırakır (gorhom'un varsayılanı onu minimize edip
+        // `visible`ını kilitliyordu — bkz. AppBottomSheet watchdog notu).
+        stackBehavior="push"
+        // Aksiyonlar önizlemeden açıldıysa önce kartı kapatır
+        // (bkz. closeProfileAfterOption); başlıktan açıldığında no-op.
+        onUnmatch={() => {
+          closeProfileAfterOption();
+          handleUnmatch();
+        }}
+        onRestore={() => {
+          closeProfileAfterOption();
+          handleRestore();
+        }}
+        onReport={() => {
+          closeProfileAfterOption();
+          setReportOpen(true);
+        }}
+        onBlock={() => {
+          closeProfileAfterOption();
+          handleBlock();
+        }}
       />
       <ReportModal
         visible={reportOpen}
@@ -1804,27 +2021,23 @@ function ChatScreen({
       />
       <PreviewModal
         visible={profileVisible}
-        onClose={() => {
-          setProfileVisible(false);
-          setProfileDetail(null);
-        }}
+        onClose={closePartnerProfile}
         profile={profileDetail}
         // Kart altındaki kırmızı satırlar, ConversationOptionsSheet'teki
         // aksiyonların aynısını açar. Şikayet için önizlemeyi ÖNCE kapatıyoruz:
         // ReportModal da bir bottom sheet, ikisi üst üste binmesin.
         onReport={() => {
-          setProfileVisible(false);
-          setProfileDetail(null);
+          closePartnerProfile();
           setReportOpen(true);
         }}
         onBlock={handleBlockConfirm}
-      />
-      <PurchaseModal
-        visible={purchaseVisible}
-        onClose={() => {
-          setPurchaseVisible(false);
-          // Premium alınmış olabilir — kota durumunu authoritative tazele.
-          dispatch(fetchChatQuota({ conversationId, force: true }));
+        // Şeridin sağ üstündeki üç nokta = sohbet başlığındaki menü butonunun
+        // aynısı; kart tam ekranı kapladığı için başlıktaki erişilemez oluyor.
+        // Menü kartın ÜSTÜNE biniyor (önizleme açık kalır), seçilen aksiyon
+        // dönünce kart kapanıyor (bkz. closeProfileAfterOption).
+        onMenu={() => {
+          optionsFromProfileRef.current = true;
+          setOptionsOpen(true);
         }}
       />
     </View>
@@ -1850,29 +2063,44 @@ function ChatHeader({ partner, onBack, onMenu, onAvatarPress }: any) {
     >
       {/* Host'larda matchContents YOK: SwiftUI ölçümü ikinci Fabric commit'inde
           geldiği için butonlar ilk frame'de 0x0 anchor'dan taşarak yanlış yerde
-          çiziliyordu ("kenardan ışınlanma"). Sabit 44x44 → Yoga boyutu İLK
-          commit'te bilir; içerideki frame(44,44) modifier'ı birebir dolduruyor. */}
-      <View style={{ position: "absolute", left: 24, top: 8 }}>
+          çiziliyordu ("kenardan ışınlanma"). Sabit HEADER_ACTION_SIZE → Yoga
+          boyutu İLK commit'te bilir; içerideki frame() birebir dolduruyor. */}
+      {/* Kenar boşluğu 16: ScreenHeader'ın left/right slot'larıyla aynı — sohbet
+          başlığı diğer ekranların üst şeridiyle hizalı dursun. */}
+      <View style={{ position: "absolute", left: 16, top: 8 }}>
         {Platform.OS === "ios" ? (
-          <Host style={{ width: 44, height: 44 }}>
-            <SwiftUIButton
-              label={t("common.back")}
-              systemImage="chevron.left"
-              onPress={onBack}
-              modifiers={[
-                buttonStyle("glass"),
-                tint(colors.text),
-                controlSize("large"),
-                labelStyle("iconOnly"),
-                font({ size: 22, weight: "semibold" }),
-                frame({ width: 44, height: 44 }),
-                ...glassFallback({ shape: "circle" }),
-              ]}
-            />
-          </Host>
+          // Sarmalayıcı iOS 26 ALTINDA zemini veriyor, 26+'da hiç render olmuyor.
+          <GlassFallbackSurface
+            shape="circle"
+            width={HEADER_ACTION_SIZE}
+            height={HEADER_ACTION_SIZE}
+          >
+            <Host style={{ width: HEADER_ACTION_SIZE, height: HEADER_ACTION_SIZE }}>
+              <SwiftUIButton
+                onPress={onBack}
+                modifiers={[
+                  // Kabuk YOK, berrak cam glifin üstünde — daireyi de dokunma
+                  // alanını da o zincir taşıyor; bkz. glassIconClearGlyph.
+                  buttonStyle("plain"),
+                  tint(colors.text),
+                  frame({ width: HEADER_ACTION_SIZE, height: HEADER_ACTION_SIZE }),
+                  // label prop'u yok (glif children olarak veriliyor) → erişilebilir
+                  // ad modifier'dan gelmeli, yoksa VoiceOver butonu isimsiz okuyor.
+                  accessibilityLabel(t("common.back")),
+                  ...glassFallback({ shape: "circle" }),
+                ]}
+              >
+                <SwiftUIImage
+                  systemName="chevron.left"
+                  color={colors.text}
+                  modifiers={glassIconClearGlyph()}
+                />
+              </SwiftUIButton>
+            </Host>
+          </GlassFallbackSurface>
         ) : (
           <TouchableOpacity onPress={onBack} hitSlop={10} className="p-2">
-            <SFIcon name="chevron.left" fallback={ChevronLeft} size={26} color={colors.text} />
+            <SFIcon name="chevron.left" fallback={ChevronLeft} size={22} color={colors.text} />
           </TouchableOpacity>
         )}
       </View>
@@ -1959,24 +2187,34 @@ function ChatHeader({ partner, onBack, onMenu, onAvatarPress }: any) {
         </View>
       </View>
 
-      <View style={{ position: "absolute", right: 24, top: 8 }}>
+      <View style={{ position: "absolute", right: 16, top: 8 }}>
         {Platform.OS === "ios" ? (
-          <Host style={{ width: 44, height: 44 }}>
-            <SwiftUIButton
-              label={t("common.menu")}
-              systemImage="ellipsis"
-              onPress={onMenu}
-              modifiers={[
-                buttonStyle("glass"),
-                controlSize("large"),
-                tint(colors.text),
-                labelStyle("iconOnly"),
-                font({ size: 20, weight: "semibold" }),
-                frame({ width: 44, height: 44 }),
-                ...glassFallback({ shape: "circle" }),
-              ]}
-            />
-          </Host>
+          // Geri butonuyla aynı — zemin sarmalayıcıdan, yalnız iOS 26 altında.
+          <GlassFallbackSurface
+            shape="circle"
+            width={HEADER_ACTION_SIZE}
+            height={HEADER_ACTION_SIZE}
+          >
+            <Host style={{ width: HEADER_ACTION_SIZE, height: HEADER_ACTION_SIZE }}>
+              <SwiftUIButton
+                onPress={onMenu}
+                modifiers={[
+                  // Geri butonuyla BİREBİR aynı zincir: aynı sabitler, aynı sırada.
+                  buttonStyle("plain"),
+                  tint(colors.text),
+                  frame({ width: HEADER_ACTION_SIZE, height: HEADER_ACTION_SIZE }),
+                  accessibilityLabel(t("common.menu")),
+                  ...glassFallback({ shape: "circle" }),
+                ]}
+              >
+                <SwiftUIImage
+                  systemName="ellipsis"
+                  color={colors.text}
+                  modifiers={glassIconClearGlyph()}
+                />
+              </SwiftUIButton>
+            </Host>
+          </GlassFallbackSurface>
         ) : (
           <TouchableOpacity hitSlop={10} className="p-2" onPress={onMenu}>
             <SFIcon name="ellipsis" fallback={MoreVertical} size={22} color={colors.textSecondary} />

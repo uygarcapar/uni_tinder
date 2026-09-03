@@ -10,7 +10,16 @@
  * (+ TDZ'de undefined sabit) demek olurdu.
  */
 
+import { Dimensions } from "react-native";
 import { colors } from "@/shared/theme/colors";
+
+/**
+ * Balonun tavan genişliği. Satırlar liste genişliğinde (ekran + REVEAL_MAX) ama
+ * oran EKRANA göre hesaplanır, yoksa reveal şeridi de sayılıp balon fazla geniş
+ * olurdu. VoiceBubble dalga formu çubuk sayısını buradan türetiyor — sabit
+ * kopyalanırsa dar cihazlarda çubuklar balondan taşar.
+ */
+export const BUBBLE_MAX_WIDTH = Math.round(Dimensions.get("window").width * 0.6);
 
 // Balon köşe yarıçapı.
 export const BUBBLE_RADIUS = 24;
