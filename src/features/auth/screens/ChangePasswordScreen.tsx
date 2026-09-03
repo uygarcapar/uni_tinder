@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useRef, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import {
   View,
   Text,
@@ -14,9 +14,9 @@ import {
 import { NativeStackScreenProps } from "@react-navigation/native-stack";
 import { OtpInput, type OtpInputRef } from "react-native-otp-entry";
 import { KeyboardStickyView } from "react-native-keyboard-controller";
-import { useForm, Controller } from "react-hook-form";
+import { useForm } from "react-hook-form";
 import { zodResolver } from "@hookform/resolvers/zod";
-import { Eye, EyeOff, RotateCcw, Check, Circle } from "lucide-react-native";
+import { RotateCcw, Check, Circle } from "@/shared/icons";
 import { useTranslation } from "react-i18next";
 import type { RootStackParamList } from "@/shared/types/navigation";
 import { useAppDispatch, useAppSelector } from "@/shared/hooks/redux";
@@ -30,12 +30,14 @@ import {
   CODE_MAX_ATTEMPTS,
   RESEND_COOLDOWN_SECONDS,
 } from "@/features/auth/passwordErrors";
-import { OTP_LENGTH, extractOtp } from "@/features/auth/otpCode";
+import { OTP_LENGTH, extractOtp, type CodeForm } from "@/features/auth/otpCode";
 import {
   passwordSchema,
   PasswordForm,
   PASSWORD_RULES,
   unmetPasswordRules,
+  currentPasswordSchema,
+  type CurrentPasswordForm,
 } from "@/shared/schemas/formSchemas";
 import {
   markSelfPasswordChange,
@@ -43,6 +45,7 @@ import {
 } from "@/shared/utils/sessionGuard";
 import SFIcon from "@/shared/components/SFIcon";
 import AnimatedPressable from "@/shared/components/AnimatedPressable";
+import AuthPillField from "@/features/auth/components/AuthPillField";
 import RegisterBackButton from "@/features/auth/components/RegisterBackButton";
 import { showInfoToast } from "@/shared/services/toaster";
 import { colors, ink } from "@/shared/theme/colors";
@@ -74,8 +77,6 @@ export default function ChangePasswordScreen({
 
   const [mode, setMode] = useState<"change" | "reset">("change");
   const [step, setStep] = useState<"verify" | "code">("verify");
-  const [currentPassword, setCurrentPassword] = useState("");
-  const [code, setCode] = useState("");
   const [showPassword, setShowPassword] = useState(false);
   const [loading, setLoading] = useState(false);
   const [apiError, setApiError] = useState("");
@@ -109,6 +110,20 @@ export default function ChangePasswordScreen({
     defaultValues: { password: "", confirmPassword: "" },
   });
 
+  // Mevcut şifre AYRI form: yeni şifre formunun şemasıyla (passwordSchema)
+  // birlikte doğrulanamaz — o şema ResetPasswordScreen'de de kullanılıyor ve
+  // orada mevcut şifre diye bir alan yok.
+  const verifySchema = useMemo(() => currentPasswordSchema(t), [t]);
+  const verifyForm = useForm<CurrentPasswordForm>({
+    resolver: zodResolver(verifySchema),
+    defaultValues: { currentPassword: "" },
+  });
+
+  // Kod da formda (bkz. CodeForm): ekranda ona abone olan hiçbir şey yok —
+  // gönder butonu yalnız loading/rate limit'e bakıyor — yani hane girmek
+  // sayaç dışında render tetiklemiyor.
+  const codeForm = useForm<CodeForm>({ defaultValues: { code: "" } });
+
   const newPassword = watch("password") ?? "";
 
   // Tek saniyelik tick iki geri sayımı birden yürütüyor: kodun 15 dakikalık
@@ -137,9 +152,9 @@ export default function ChangePasswordScreen({
     setExpiresIn(CODE_TTL_SECONDS);
     setResendIn(RESEND_COOLDOWN_SECONDS);
     setRateLimited(false);
-    setCode("");
+    codeForm.setValue("code", "");
     otpRef.current?.clear();
-  }, []);
+  }, [codeForm]);
 
   /**
    * Hata gövdesini ekrana bağlar. `keepCode` gelen kodlarda (UT-1003/1010/1011)
@@ -165,42 +180,42 @@ export default function ChangePasswordScreen({
       if (failure.codeBurned) {
         setCodeBurned(true);
         setAttemptsLeft(0);
-        setCode("");
+        codeForm.setValue("code", "");
         otpRef.current?.clear();
       } else if (failure.codeAttemptSpent) {
         setAttemptsLeft((n) => Math.max(0, n - 1));
-        setCode("");
+        codeForm.setValue("code", "");
         otpRef.current?.clear();
       }
 
       setErrorField(failure.field);
       setApiError(passwordErrorMessage(failure, t));
     },
-    [navigation, t],
+    [codeForm, navigation, t],
   );
 
   // ── Adım A1 — mevcut şifreyi doğrula, kodu iste ──────────────────────────
-  const handleRequestCode = async () => {
-    Keyboard.dismiss();
-    if (!currentPassword) {
-      setErrorField("currentPassword");
-      setApiError(t("auth.password.change.validation.currentRequired"));
-      return;
-    }
-    setLoading(true);
-    clearError();
-    try {
-      await authService.requestPasswordChangeCode(currentPassword);
-      startCodeWindow();
-      setMode("change");
-      setStep("code");
-    } catch (err) {
-      devLog("RequestPasswordChangeCode error:", err);
-      applyFailure(err);
-    } finally {
-      setLoading(false);
-    }
-  };
+  // Boş alan kontrolü şemada (currentPasswordSchema). Klavye geçersiz
+  // gönderimde de kapanmalı, yoksa hata satırı klavyenin altında kalıyor.
+  const handleRequestCode = verifyForm.handleSubmit(
+    async ({ currentPassword }) => {
+      Keyboard.dismiss();
+      setLoading(true);
+      clearError();
+      try {
+        await authService.requestPasswordChangeCode(currentPassword);
+        startCodeWindow();
+        setMode("change");
+        setStep("code");
+      } catch (err) {
+        devLog("RequestPasswordChangeCode error:", err);
+        applyFailure(err);
+      } finally {
+        setLoading(false);
+      }
+    },
+    () => Keyboard.dismiss(),
+  );
 
   // ── Kaçış yolu — mevcut şifre bilinmiyorsa B+C akışına aktar ─────────────
   const startResetFlow = async () => {
@@ -239,7 +254,9 @@ export default function ChangePasswordScreen({
     clearError();
     try {
       if (mode === "change") {
-        await authService.requestPasswordChangeCode(currentPassword);
+        await authService.requestPasswordChangeCode(
+          verifyForm.getValues("currentPassword"),
+        );
       } else if (email) {
         await authService.forgotPassword(email);
       }
@@ -259,6 +276,7 @@ export default function ChangePasswordScreen({
   // ── Adım A2 / C — kod + yeni şifre ───────────────────────────────────────
   const handleSubmitNewPassword = handleSubmit(async ({ password }) => {
     Keyboard.dismiss();
+    const code = codeForm.getValues("code");
     if (codeBurned) {
       setErrorField("code");
       setApiError(t("auth.password.errors.codeBurned"));
@@ -275,7 +293,7 @@ export default function ChangePasswordScreen({
     try {
       if (mode === "change") {
         const response: any = await authService.changePassword(
-          currentPassword,
+          verifyForm.getValues("currentPassword"),
           password,
           code,
         );
@@ -336,7 +354,10 @@ export default function ChangePasswordScreen({
     navigation.goBack();
   };
 
-  const formError = errors.password?.message || errors.confirmPassword?.message;
+  const formError =
+    errors.password?.message ||
+    errors.confirmPassword?.message ||
+    verifyForm.formState.errors.currentPassword?.message;
   // Rate limit satırı canlı: donmuş bir "60 saniye sonra dene" metni,
   // kullanıcının ne zaman tekrar deneyebileceğini söylemiyor.
   const displayError = rateLimited
@@ -364,18 +385,16 @@ export default function ChangePasswordScreen({
               {t("auth.password.change.description")}
             </Text>
 
-            <PasswordField
+            <AuthPillField
+              control={verifyForm.control}
+              name="currentPassword"
               label={t("auth.password.change.currentLabel")}
               placeholder={t("auth.password.change.currentPlaceholder")}
-              value={currentPassword}
-              onChangeText={(v) => {
-                setCurrentPassword(v);
-                clearError();
-              }}
               secure={!showPassword}
               onToggleSecure={() => setShowPassword((v) => !v)}
-              invalid={!!apiError}
+              invalid={!!apiError || !!verifyForm.formState.errors.currentPassword}
               editable={!loading}
+              onChanged={clearError}
               returnKeyType="go"
               onSubmitEditing={handleRequestCode}
             />
@@ -425,7 +444,7 @@ export default function ChangePasswordScreen({
               numberOfDigits={OTP_LENGTH}
               type="numeric"
               onTextChange={(text) => {
-                setCode(text);
+                codeForm.setValue("code", text);
                 if (errorField === "code") clearError();
               }}
               textInputProps={{
@@ -501,7 +520,7 @@ export default function ChangePasswordScreen({
             </Text>
           ) : null}
 
-          <PasswordField
+          <AuthPillField
             label={t("auth.password.change.newLabel")}
             placeholder={t("auth.password.change.newPlaceholder")}
             control={control}
@@ -515,7 +534,7 @@ export default function ChangePasswordScreen({
             onSubmitEditing={() => confirmRef.current?.focus()}
           />
 
-          <PasswordField
+          <AuthPillField
             inputRef={confirmRef}
             label={t("auth.password.change.confirmLabel")}
             placeholder={t("auth.password.change.confirmPlaceholder")}
@@ -576,111 +595,6 @@ const formatMmSs = (totalSeconds: number) => {
   const s = totalSeconds % 60;
   return `${m}:${String(s).padStart(2, "0")}`;
 };
-
-/**
- * Şifre alanı — RegisterStep3'teki pill input'un yeniden kullanılabilir hâli.
- * `control` verilirse react-hook-form'a bağlanır, verilmezse kontrollü çalışır
- * (mevcut şifre alanı forma dahil değil: şeması yok, gizli tutulması gereken
- * tek değer o).
- */
-function PasswordField({
-  label,
-  placeholder,
-  value,
-  onChangeText,
-  control,
-  name,
-  secure,
-  onToggleSecure,
-  invalid,
-  editable = true,
-  onChanged,
-  inputRef,
-  returnKeyType,
-  onSubmitEditing,
-}: {
-  label: string;
-  placeholder: string;
-  value?: string;
-  onChangeText?: (v: string) => void;
-  control?: any;
-  name?: "password" | "confirmPassword";
-  secure: boolean;
-  onToggleSecure?: () => void;
-  invalid?: boolean;
-  editable?: boolean;
-  onChanged?: () => void;
-  inputRef?: React.RefObject<TextInput | null>;
-  returnKeyType?: "next" | "go";
-  onSubmitEditing?: () => void;
-}) {
-  const renderInput = (v: string, onChange: (next: string) => void) => (
-    <TextInput
-      ref={inputRef as any}
-      style={{ flex: 1, paddingVertical: 16, fontSize: 18, color: colors.text }}
-      placeholder={placeholder}
-      placeholderTextColor={colors.textSecondary}
-      value={v}
-      onChangeText={(next) => {
-        onChange(next);
-        onChanged?.();
-      }}
-      secureTextEntry={secure}
-      autoCapitalize="none"
-      autoCorrect={false}
-      editable={editable}
-      returnKeyType={returnKeyType}
-      submitBehavior={returnKeyType === "next" ? "submit" : undefined}
-      onSubmitEditing={onSubmitEditing}
-    />
-  );
-
-  return (
-    <View className="mb-4">
-      <Text
-        className="text-[14px] font-semibold mb-2"
-        style={{ color: colors.neutral200 }}
-      >
-        {label}
-      </Text>
-      <View
-        style={{
-          borderRadius: 999,
-          borderCurve: "continuous",
-          overflow: "hidden",
-          borderWidth: 0.5,
-          borderColor: invalid ? colors.error : colors.hairline,
-          flexDirection: "row",
-          alignItems: "center",
-          paddingHorizontal: 16,
-        }}
-      >
-        {control && name ? (
-          <Controller
-            control={control}
-            name={name}
-            render={({ field }) => renderInput(field.value ?? "", field.onChange)}
-          />
-        ) : (
-          renderInput(value ?? "", onChangeText ?? (() => {}))
-        )}
-        {onToggleSecure ? (
-          <TouchableOpacity activeOpacity={0.7} onPress={onToggleSecure}>
-            <View pointerEvents="none">
-              <SFIcon
-                name={secure ? "eye.slash.fill" : "eye.fill"}
-                fallback={secure ? EyeOff : Eye}
-                size={24}
-                strokeWidth={1.5}
-                color={colors.neutral200}
-              />
-            </View>
-          </TouchableOpacity>
-        ) : null}
-      </View>
-    </View>
-  );
-}
 
 /**
  * Canlı kural listesi. Backend zayıf şifreyi UT-1010 ile ayrı raporluyor, yani

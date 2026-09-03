@@ -89,6 +89,58 @@ export const passwordSchema = z
     path: ["confirmPassword"],
   });
 
+/**
+ * Ayarlardaki şifre/e-posta değiştirme akışlarının doğrulama metinleri i18n'den
+ * geliyor, dosyanın geri kalanındaki sabit Türkçe metinlerin aksine — bu iki
+ * ekranın mesajları zaten `auth.*` altında çevrili ve İngilizce arayüzde de
+ * doğru görünmeleri gerekiyor. Bu yüzden şema değil ŞEMA FABRİKASI (noteSchema
+ * ile aynı gerekçe: kural sabit, metin çağrı anında belli).
+ */
+type Translate = (key: string, options?: Record<string, unknown>) => string;
+
+/** Mevcut şifre — kimlik kanıtı olarak istendiği her yerde aynı kural. */
+export const currentPasswordSchema = (t: Translate) =>
+  z.object({
+    currentPassword: z
+      .string()
+      .min(1, t("auth.password.change.validation.currentRequired")),
+  });
+
+/**
+ * E-posta değiştirme 1. adımı. `currentEmail` verilirse aynı adresi baştan
+ * eler: backend de UT-1018 ile reddediyor ama uç dakikada 5 istek kabul
+ * ediyor, boşuna kota harcamayalım.
+ */
+export const changeEmailSchema = (t: Translate, currentEmail?: string) =>
+  z.object({
+    currentPassword: z
+      .string()
+      .min(1, t("auth.password.change.validation.currentRequired")),
+    // trim + toLowerCase BURADA: gönderilen değer şemadan çıkan değer olsun,
+    // ekran ayrıca normalize etmesin. Form state'i kullanıcının yazdığı gibi
+    // kalır, `handleSubmit` normalize edilmişini verir.
+    newEmail: z
+      .string()
+      .trim()
+      .toLowerCase()
+      .min(1, t("auth.email.change.validation.emailRequired"))
+      // Şekil kontrolü yalnızca "@ var mı" seviyesinde: domain'in DESTEKLENEN
+      // bir üniversiteye ait olup olmadığına backend karar veriyor (UT-1019) ve
+      // kayıt defteri orada. Burada tahmin yürütmek, listeye yeni üniversite
+      // eklendiğinde istemciyi yanlış yere reddeden konuma sokardı.
+      .regex(
+        /^[^\s@]+@[^\s@]+\.[^\s@]+$/,
+        t("auth.email.change.validation.emailInvalid"),
+      )
+      .refine(
+        (v) => !currentEmail || v !== currentEmail.trim().toLowerCase(),
+        t("auth.email.errors.sameAsCurrent"),
+      ),
+  });
+
+export type CurrentPasswordForm = z.infer<ReturnType<typeof currentPasswordSchema>>;
+export type ChangeEmailForm = z.infer<ReturnType<typeof changeEmailSchema>>;
+
 export const firstNameSchema = z.object({
   firstName: z.string().min(1, "Lütfen işaretli tüm alanları doldur."),
 });

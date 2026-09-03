@@ -2,6 +2,18 @@
 export const OTP_LENGTH = 6;
 
 /**
+ * Kod alanının form şekli — kodu tutan DÖRT ekranın ortak tipi (kayıt
+ * doğrulama, şifre sıfırlama, şifre değiştirme, e-posta değiştirme).
+ *
+ * Kod hepsinde react-hook-form'da duruyor, ekran state'inde değil: her hane
+ * ekran state'ini güncellediğinde 140px ikonu, başlığı, OTP kutularını ve
+ * tekrar-gönder satırını birden yeniden render ediyordu. Forma yalnızca gerçekten
+ * kodun uzunluğunu bilmesi gereken bileşen abone oluyor (bkz. RegisterStep2'deki
+ * VerifyButton); geri kalan ekranlarda hiçbir abone yok.
+ */
+export type CodeForm = { code: string };
+
+/**
  * Ham metinden (pano, iOS autofill, elle yazım) 6 haneli kodu ayıklar.
  *
  * react-native-otp-entry gelen değeri `type="numeric"` regex'iyle komple

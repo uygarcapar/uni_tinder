@@ -15,6 +15,7 @@ import {
   clearError,
   clearRegistrationForm,
   setRegistrationEmail,
+  setEmailVerifiedToken,
 } from "@/features/auth/authSlice";
 import { clearProfile } from "@/features/profile/profileSlice";
 import {
@@ -27,7 +28,7 @@ import { KeyboardStickyView } from "react-native-keyboard-controller";
 import { API_BASE_URL, API_ENDPOINTS } from "@/shared/constants/api";
 import AnimatedPressable from "@/shared/components/AnimatedPressable";
 import RegisterBackButton from "@/features/auth/components/RegisterBackButton";
-import { InfoIcon } from "lucide-react-native";
+import { InfoIcon } from "@/shared/icons";
 import SFIcon from "@/shared/components/SFIcon";
 import { useForm, Controller } from "react-hook-form";
 import { zodResolver } from "@hookform/resolvers/zod";
@@ -79,6 +80,8 @@ export default function RegisterStep1Screen({ navigation }: NativeStackScreenPro
     const trimmed = email.trim().toLowerCase();
     setLoading(true);
     setError("");
+    // Redux hatası artık her tuşta değil, denemenin başında temizleniyor.
+    dispatch(clearError());
 
     // If user already has a valid token for this exact email, skip re-verification
     if (emailVerifiedToken && registrationEmail === trimmed) {
@@ -126,6 +129,18 @@ export default function RegisterStep1Screen({ navigation }: NativeStackScreenPro
           startFreshIfEmailChanged(trimmed);
           dispatch(setRegistrationEmail(trimmed));
           navigation.navigate("RegisterStep2", { email: trimmed, mode: "registration", retryAfterSeconds });
+          break;
+
+        // Landing ön kaydında e-posta zaten doğrulanmış → kod ekranı (Step2)
+        // atlanır. Backend, verify-email'in vereceği token'ı doğrudan burada
+        // veriyor; Step2'ye hiç uğranmadığı için setRegistrationEmail +
+        // startFreshIfEmailChanged burada yapılıyor. `navigate` DEĞİL `reset`:
+        // geri yığınında dönülecek bir kod ekranı olmamalı.
+        case "PRE_VERIFIED":
+          startFreshIfEmailChanged(trimmed);
+          dispatch(setRegistrationEmail(trimmed));
+          dispatch(setEmailVerifiedToken(data.result.emailVerifiedToken));
+          navigation.reset({ index: 0, routes: [{ name: "RegisterStep3" }] });
           break;
 
         case "CODE_PENDING":
@@ -211,8 +226,14 @@ export default function RegisterStep1Screen({ navigation }: NativeStackScreenPro
                   value={value}
                   onChangeText={(v) => {
                     onChange(v);
-                    setError("");
-                    dispatch(clearError());
+                    // Temizlik YALNIZ hata varken: koşulsuz setError("") +
+                    // dispatch her tuşta ekranı ve tüm redux abonelerini
+                    // uyandırıyordu. Hata yokken yapacak iş de yok — Controller
+                    // dışında hiçbir şey render almasın.
+                    if (error) {
+                      setError("");
+                      dispatch(clearError());
+                    }
                   }}
                 />
               </View>

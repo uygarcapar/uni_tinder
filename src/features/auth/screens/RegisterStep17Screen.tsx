@@ -1,4 +1,4 @@
-import { useCallback, useRef } from "react";
+import { useCallback, useRef, useState } from "react";
 import {
   View,
   Text,
@@ -68,9 +68,15 @@ export default function RegisterStep17Screen({ navigation }: Props) {
   // karede hâlâ eski değer. Doğrulama bu yüzden ref'ten okunuyor — aksi hâlde
   // kullanıcı yazdığı hâlde "cevap boş" hatası alırdı.
   const promptsRef = useRef<ProfilePromptAnswer[] | null>(null);
+  // Hatalı slotlar (index → mesaj). Tek bir "biri kaydedilemedi" toast'ı
+  // kullanıcıyı üç dolu cevaba bakıp hangisinin sorunlu olduğunu tahmin etmeye
+  // bırakıyordu; EditProfileForm zaten slot bazlı işaretliyor, adım da öyle.
+  const [promptIssues, setPromptIssues] = useState<Record<number, string>>({});
   const handleChange = useCallback(
     (next: ProfilePromptAnswer[]) => {
       promptsRef.current = next;
+      // Kullanıcı bir cevaba dokundu: eski işaretler artık yanıltıcı olabilir.
+      setPromptIssues((prev) => (Object.keys(prev).length > 0 ? {} : prev));
       dispatch(updateMultipleFields({ prompts: next }));
     },
     [dispatch],
@@ -83,12 +89,18 @@ export default function RegisterStep17Screen({ navigation }: Props) {
     // Soru seçilmiş ama cevabı boş/çok uzun olan slot varsa devam ettirme.
     // sanitizePrompts bunları sessizce elerdi — kullanıcı yazdığını sandığı
     // cevabın kaybolduğunu sonra fark ederdi.
-    const invalid = (current ?? []).some((prompt) => {
-      if (!prompt?.promptKey) return false;
+    const issues: Record<number, string> = {};
+    (current ?? []).forEach((prompt, index) => {
+      if (!prompt?.promptKey) return;
       const answer = normalizePromptAnswer(prompt.answer ?? "");
-      return !answer || countPromptAnswer(answer) > PROMPT_ANSWER_MAX_LENGTH;
+      if (!answer) {
+        issues[index] = t('profile.prompts.errors.UT-2204');
+      } else if (countPromptAnswer(answer) > PROMPT_ANSWER_MAX_LENGTH) {
+        issues[index] = t('profile.prompts.errors.UT-2205');
+      }
     });
-    if (invalid) {
+    if (Object.keys(issues).length > 0) {
+      setPromptIssues(issues);
       showInfoToast({
         title: t('common.error'),
         message: t('profile.prompts.errors.generic'),
@@ -96,6 +108,7 @@ export default function RegisterStep17Screen({ navigation }: Props) {
       });
       return;
     }
+    setPromptIssues({});
 
     const cleaned = sanitizePrompts(current);
     if (cleaned.length < MIN_PROFILE_PROMPTS) {
@@ -152,6 +165,8 @@ export default function RegisterStep17Screen({ navigation }: Props) {
               <PromptsEditor
                 value={prompts ?? []}
                 onChange={handleChange}
+                // Hangi cevabın eksik/uzun olduğu slotun altında yazıyor.
+                fieldErrors={promptIssues}
                 // Bottom sheet DEĞİL: burada düz TextInput doğru bileşen.
                 // Son cevabın silinmesi burada da engelli — adım zaten en az 1
                 // cevap istiyor, kullanıcıyı sıfıra düşürüp "Devam"da hata

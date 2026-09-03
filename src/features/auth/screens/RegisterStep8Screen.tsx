@@ -11,7 +11,7 @@ import {
 import { NativeStackScreenProps } from "@react-navigation/native-stack";
 import type { AuthStackParamList } from "@/shared/types/navigation";
 import { useAppDispatch, useAppSelector } from "@/shared/hooks/redux";
-import { ChevronDown } from "lucide-react-native";
+import { ChevronDown } from "@/shared/icons";
 import SFIcon from "@/shared/components/SFIcon";
 import { updateMultipleFields } from "@/features/profile/profileSlice";
 import { KeyboardStickyView } from "react-native-keyboard-controller";
@@ -20,7 +20,11 @@ import RegisterBackButton from "@/features/auth/components/RegisterBackButton";
 import AnimatedPressableShared from "@/shared/components/AnimatedPressable";
 import AppBottomSheet from "@/shared/components/AppBottomSheet";
 import SearchableListSheet from "@/shared/components/SearchableListSheet";
-import { useDepartments } from "@/shared/queries/commonQueries";
+import {
+  useDepartments,
+  resolveLocalized,
+  type DepartmentOption,
+} from "@/shared/queries/commonQueries";
 import { useForm } from "react-hook-form";
 import { zodResolver } from "@hookform/resolvers/zod";
 import { educationSchema, EducationForm } from "@/shared/schemas/formSchemas";
@@ -43,7 +47,7 @@ const AnimatedPressable = ({ onPress, style, activeOpacity = 1, children }: any)
 };
 
 export default function RegisterStep8Screen({ navigation }: NativeStackScreenProps<AuthStackParamList, 'RegisterStep8'>) {
-  const { t } = useTranslation();
+  const { t, i18n } = useTranslation();
   const dispatch = useAppDispatch();
   const YEAR_OF_STUDY_OPTIONS = YEAR_OF_STUDY_VALUES.map((value) => ({
     value,
@@ -71,6 +75,17 @@ export default function RegisterStep8Screen({ navigation }: NativeStackScreenPro
   const { data: departments = [], isLoading: loadingDepartments } =
     useDepartments();
 
+  // Bölüm adı çift dilli `display` ile geliyor; `name` sunucunun kendi dil
+  // önceliğine (önce DB'deki tercih, sonra Accept-Language) göre çözülmüş —
+  // kayıt akışında oturum yok, ama tek kural olsun diye burada da display'den
+  // çözüyoruz. Kayıtta üniversite SEÇİLMEZ: doğrulanmış e-posta domain'inden
+  // otomatik atanıyor, o yüzden bu ekranda yalnız bölüm var.
+  const departmentLabelOf = useCallback(
+    (item: DepartmentOption) =>
+      resolveLocalized(item?.display, i18n.language, item?.name ?? ""),
+    [i18n.language],
+  );
+
   const handleOpenDepartmentModal = useCallback(() => {
     Keyboard.dismiss();
     setTimeout(() => setDepartmentVisible(true), 100);
@@ -89,7 +104,9 @@ export default function RegisterStep8Screen({ navigation }: NativeStackScreenPro
   const getDepartmentLabel = () => {
     if (!department) return t('auth.step8.departmentPlaceholder');
     const selectedDepartment = (departments as any[]).find((d) => d.enumName === department);
-    return selectedDepartment ? selectedDepartment.name : t('auth.step8.departmentPlaceholder');
+    return selectedDepartment
+      ? departmentLabelOf(selectedDepartment)
+      : t('auth.step8.departmentPlaceholder');
   };
 
   const handleNext = handleSubmit(({ department: dept, yearOfStudy: year }) => {
@@ -221,6 +238,7 @@ export default function RegisterStep8Screen({ navigation }: NativeStackScreenPro
         >
           <SearchableListSheet
             items={departments}
+            labelOf={departmentLabelOf}
             initialValue={department ?? ""}
             title={t('auth.step8.departmentPlaceholder')}
             onConfirm={confirmDepartmentSelection}

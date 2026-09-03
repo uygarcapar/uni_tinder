@@ -10,21 +10,62 @@ import {
   Platform,
 } from "react-native";
 import { OtpInput, type OtpInputRef } from "react-native-otp-entry";
+import { useForm, useWatch, type Control } from "react-hook-form";
 import * as Clipboard from "expo-clipboard";
 import { NativeStackScreenProps } from "@react-navigation/native-stack";
 import type { AuthStackParamList } from "@/shared/types/navigation";
 import { authService } from "@/features/auth/authService";
-import { Lock, RotateCcw, ArrowLeft, Check, ClipboardPaste } from "lucide-react-native";
+import { Lock, RotateCcw, ArrowLeft, Check, ClipboardPaste } from "@/shared/icons";
 import SFIcon from "@/shared/components/SFIcon";
 import AnimatedPressable from "@/shared/components/AnimatedPressable";
 import { colors, ink } from "@/shared/theme/colors";
 import { useTranslation } from "react-i18next";
 import { parseRetryAfterSeconds } from "@/features/auth/verificationRetry";
-import { extractOtp, OTP_LENGTH } from "@/features/auth/otpCode";
+import { extractOtp, OTP_LENGTH, type CodeForm } from "@/features/auth/otpCode";
 import { devLog } from "@/shared/utils/devLog";
 
 /** ForgotPassword ucu retryAfterSeconds döndürmüyor; yerel bekleme süresi. */
 const RESEND_COOLDOWN_SECONDS = 60;
+
+/**
+ * "Devam Et" AYRI bileşen: girilen kodun uzunluğunu (disabled + opacity) yalnız
+ * burası bilmek zorunda — RegisterStep2'deki VerifyButton ile aynı gerekçe. Kod
+ * ekran state'indeyken her hane 140px kilit ikonunu, başlığı, OTP kutularını ve
+ * tekrar-gönder satırını birden yeniden render ediyordu.
+ */
+function ContinueButton({
+  control,
+  label,
+  onPress,
+}: {
+  control: Control<CodeForm>;
+  label: string;
+  onPress: () => void;
+}) {
+  const code = useWatch({ control, name: "code" }) || "";
+  const disabled = code.length < OTP_LENGTH;
+
+  return (
+    <AnimatedPressable
+      style={{
+        borderRadius: 999,
+        borderCurve: "continuous",
+        overflow: "hidden",
+        opacity: disabled ? 0.5 : 1,
+        backgroundColor: colors.inverseSurface,
+      }}
+      onPress={onPress}
+      disabled={disabled}
+    >
+      <Text
+        className="py-[20px] text-center font-medium text-[15px]"
+        style={{ color: colors.onInverseSurface }}
+      >
+        {label}
+      </Text>
+    </AnimatedPressable>
+  );
+}
 
 /**
  * Şifre sıfırlama akışının 2. adımı: 6 haneli kod. Ekran yapısı bilinçli olarak
@@ -44,7 +85,11 @@ export default function ForgotPasswordCodeScreen({
   const { t } = useTranslation();
   const email = route.params.email;
 
-  const [code, setCode] = useState("");
+  // Kod ekran state'inde DEĞİL, react-hook-form'da: gövde forma abone
+  // olmadığı için hane girmek burayı hiç render etmiyor (bkz. ContinueButton).
+  const { control, getValues, setValue } = useForm<CodeForm>({
+    defaultValues: { code: "" },
+  });
   const [error, setError] = useState("");
   const [resendLoading, setResendLoading] = useState(false);
   const [resendToast, setResendToast] = useState(false);
@@ -92,7 +137,7 @@ export default function ForgotPasswordCodeScreen({
 
   const handleContinue = (otp: string | null = null) => {
     Keyboard.dismiss();
-    const finalCode = otp || code;
+    const finalCode = otp || getValues("code");
     if (finalCode.length !== OTP_LENGTH) {
       setError(t("auth.forgotPassword.code.validation.codeRequired"));
       return;
@@ -237,8 +282,10 @@ export default function ForgotPasswordCodeScreen({
                 numberOfDigits={OTP_LENGTH}
                 type="numeric"
                 onTextChange={(text) => {
-                  setCode(text);
-                  setError("");
+                  setValue("code", text);
+                  // Hata YALNIZ varken siliniyor: koşulsuz setError("") her
+                  // hanede ekranı gereksiz yere uyandırıyordu.
+                  if (error) setError("");
                 }}
                 onFilled={(text) => handleContinue(text)}
                 textInputProps={{
@@ -346,24 +393,11 @@ export default function ForgotPasswordCodeScreen({
               )}
             </View>
 
-            <AnimatedPressable
-              style={{
-                borderRadius: 999,
-                borderCurve: "continuous",
-                overflow: "hidden",
-                opacity: code.length < OTP_LENGTH ? 0.5 : 1,
-                backgroundColor: colors.inverseSurface,
-              }}
+            <ContinueButton
+              control={control}
+              label={t("common.continueButton")}
               onPress={() => handleContinue()}
-              disabled={code.length < OTP_LENGTH}
-            >
-              <Text
-                className="py-[20px] text-center font-medium text-[15px]"
-                style={{ color: colors.onInverseSurface }}
-              >
-                {t("common.continueButton")}
-              </Text>
-            </AnimatedPressable>
+            />
           </View>
 
           <View className="items-center mt-4">

@@ -11,7 +11,7 @@ import { NativeStackScreenProps } from "@react-navigation/native-stack";
 import type { AuthStackParamList } from "@/shared/types/navigation";
 import { useAppDispatch, useAppSelector } from "@/shared/hooks/redux";
 import { login } from "@/features/auth/authSlice";
-import { Eye, EyeOff } from "lucide-react-native";
+import { Eye, EyeOff } from "@/shared/icons";
 import SFIcon from "@/shared/components/SFIcon";
 import RegisterBackButton from "@/features/auth/components/RegisterBackButton";
 import { KeyboardStickyView } from "react-native-keyboard-controller";
@@ -88,9 +88,6 @@ export default function LoginScreen({ navigation }: NativeStackScreenProps<AuthS
 
             {/* Email Input */}
             <View className="mb-4">
-              <Text className="text-lg font-semibold mb-2" style={{ color: colors.text }}>
-                {t('auth.login.emailLabel')}
-              </Text>
               <Controller
                 control={control}
                 name="email"
@@ -125,9 +122,6 @@ export default function LoginScreen({ navigation }: NativeStackScreenProps<AuthS
 
             {/* Password Input */}
             <View className="mb-6">
-              <Text className="text-lg font-semibold mb-2" style={{ color: colors.text }}>
-                {t('auth.login.passwordLabel')}
-              </Text>
               <View
                 style={{
                   borderRadius: 999,

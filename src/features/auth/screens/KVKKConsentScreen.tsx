@@ -6,17 +6,26 @@ import {
 } from "@gorhom/bottom-sheet";
 import { BlurView } from "expo-blur";
 import { useAppDispatch } from "@/shared/hooks/redux";
-import { ShieldCheck } from "lucide-react-native";
+import { ShieldCheck } from "@/shared/icons";
 import SFIcon from "@/shared/components/SFIcon";
 import api from "@/shared/services/api";
 import { API_ENDPOINTS } from "@/shared/constants/api";
 import { setKvkkAccepted } from "@/features/auth/authSlice";
 import AppBottomSheet from "@/shared/components/AppBottomSheet";
+import PolicyMarkdown from "@/shared/components/PolicyMarkdown";
 import { colors, ink } from "../../../shared/theme/colors";
 import { useTranslation } from 'react-i18next';
 import { plainBlurTint } from "@/shared/theme/blur";
 
-export const CURRENT_KVKK_VERSION = "1.0";
+/**
+ * ⚠️ METİN DEĞİŞİRSE BU SABİT DE DEĞİŞMELİ. AppNavigator `kvkkVersion !==
+ * CURRENT_KVKK_VERSION` ile onay ekranını açıyor; sabit sabit kalırsa eski
+ * metni onaylamış kullanıcılar yeni metne sessizce bağlanmış sayılır.
+ */
+export const CURRENT_KVKK_VERSION = "2.0";
+
+/** `auth.kvkkConsent.section{n}` blokları. LegalSheet'teki sayıyla eşit olmalı. */
+const PRIVACY_SECTIONS = Array.from({ length: 13 }, (_, i) => i + 1);
 
 export default function KVKKConsentScreen({ visible }) {
   const { t } = useTranslation();
@@ -214,29 +223,11 @@ export default function KVKKConsentScreen({ visible }) {
               gap: 16,
             }}
           >
-            <Section title={t('auth.kvkkConsent.sectionTitle1')}>
-              {t('auth.kvkkConsent.section1Content')}
-            </Section>
-
-            <Section title={t('auth.kvkkConsent.sectionTitle2')}>
-              {t('auth.kvkkConsent.section2Content')}
-            </Section>
-
-            <Section title={t('auth.kvkkConsent.sectionTitle3')}>
-              {t('auth.kvkkConsent.section3Content')}
-            </Section>
-
-            <Section title={t('auth.kvkkConsent.sectionTitle4')}>
-              {t('auth.kvkkConsent.section4Content')}
-            </Section>
-
-            <Section title={t('auth.kvkkConsent.sectionTitle5')}>
-              {t('auth.kvkkConsent.section5Content')}
-            </Section>
-
-            <Section title={t('auth.kvkkConsent.sectionTitle6')}>
-              {t('auth.kvkkConsent.section6Content')}
-            </Section>
+            {PRIVACY_SECTIONS.map((n) => (
+              <Section key={n} title={t(`auth.kvkkConsent.sectionTitle${n}`)}>
+                {t(`auth.kvkkConsent.section${n}Content`)}
+              </Section>
+            ))}
           </View>
         </BottomSheetScrollView>
       </View>
@@ -250,9 +241,7 @@ function Section({ title, children }) {
       <Text style={{ color: colors.text, fontSize: 20, fontWeight: "600",marginBottom: 12 }}>
         {title}
       </Text>
-      <Text style={{ color: colors.textSecondary, fontSize: 14, lineHeight: 20 }}>
-        {children}
-      </Text>
+      <PolicyMarkdown source={children} />
     </View>
   );
 }

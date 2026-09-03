@@ -1,8 +1,9 @@
 import { View, Text, TouchableOpacity } from "react-native";
 import { BottomSheetScrollView } from "@gorhom/bottom-sheet";
 import { useTranslation } from "react-i18next";
-import { FileText, ShieldCheck, X } from "lucide-react-native";
+import { FileText, ShieldCheck, X } from "@/shared/icons";
 import AppBottomSheet from "@/shared/components/AppBottomSheet";
+import PolicyMarkdown from "@/shared/components/PolicyMarkdown";
 import SFIcon from "@/shared/components/SFIcon";
 import { colors } from "@/shared/theme/colors";
 
@@ -28,7 +29,9 @@ const DOCS = {
   privacy: {
     headerPrefix: "auth.legal.privacy",
     sectionPrefix: "auth.kvkkConsent",
-    sectionCount: 6,
+    // Aydınlatma metni 2.0 → 13 bölüm. `tr.ts`/`en.ts`'teki bölüm sayısıyla
+    // birebir olmalı; fazlası boş başlık, eksiği sessizce kırpılmış metin.
+    sectionCount: 13,
     sfIcon: "checkmark.shield.fill",
     fallbackIcon: ShieldCheck,
   },
@@ -149,15 +152,9 @@ export default function LegalSheet({ document, onClose }: LegalSheetProps) {
                   >
                     {t(`${doc.sectionPrefix}.sectionTitle${n}`)}
                   </Text>
-                  <Text
-                    style={{
-                      color: colors.textSecondary,
-                      fontSize: 14,
-                      lineHeight: 20,
-                    }}
-                  >
-                    {t(`${doc.sectionPrefix}.section${n}Content`)}
-                  </Text>
+                  <PolicyMarkdown
+                    source={t(`${doc.sectionPrefix}.section${n}Content`)}
+                  />
                 </View>
               ),
             )}

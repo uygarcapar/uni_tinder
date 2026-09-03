@@ -9,6 +9,7 @@ import {
   Platform,
 } from "react-native";
 import { OtpInput, type OtpInputRef } from "react-native-otp-entry";
+import { useForm, useWatch, type Control } from "react-hook-form";
 import { NativeStackScreenProps } from "@react-navigation/native-stack";
 import type { AuthStackParamList } from "@/shared/types/navigation";
 import { useAppDispatch, useAppSelector } from "@/shared/hooks/redux";
@@ -19,17 +20,60 @@ import {
   logout,
   setEmailVerifiedToken,
 } from "@/features/auth/authSlice";
-import { Mail, RotateCcw, ArrowLeft, Check, Clock } from "lucide-react-native";
+import { Mail, RotateCcw, ArrowLeft, Check, Clock } from "@/shared/icons";
 import SFIcon from "@/shared/components/SFIcon";
 import { API_BASE_URL, API_ENDPOINTS } from "@/shared/constants/api";
 import AnimatedPressable from "@/shared/components/AnimatedPressable";
 import { colors, ink } from "../../../shared/theme/colors";
 import { useTranslation } from 'react-i18next';
 import { parseRetryAfterSeconds } from '@/features/auth/verificationRetry';
-import { extractOtp, OTP_LENGTH } from '@/features/auth/otpCode';
+import { extractOtp, OTP_LENGTH, type CodeForm } from '@/features/auth/otpCode';
 
 /** Backend retryAfterSeconds döndürmezse kullanılan yerel bekleme süresi. */
 const RESEND_COOLDOWN_SECONDS = 60;
+
+/**
+ * "Doğrula" butonu AYRI bileşen: girilen kodun uzunluğunu (disabled + opacity)
+ * yalnız burası bilmek zorunda. Kod ekran state'indeyken her hane TÜM ekranı
+ * (140px zarf ikonu, başlık, OTP kutuları, tekrar gönder satırı) yeniden render
+ * ediyordu; artık forma abone olan tek yer bu buton.
+ */
+function VerifyButton({
+  control,
+  loading,
+  label,
+  onPress,
+}: {
+  control: Control<CodeForm>;
+  loading: boolean;
+  label: string;
+  onPress: () => void;
+}) {
+  const code = useWatch({ control, name: "code" }) || "";
+  const disabled = loading || code.length < OTP_LENGTH;
+
+  return (
+    <AnimatedPressable
+      style={{
+        borderRadius: 999,
+        borderCurve: "continuous",
+        overflow: "hidden",
+        opacity: disabled ? 0.5 : 1,
+        backgroundColor: colors.inverseSurface,
+      }}
+      onPress={onPress}
+      disabled={disabled}
+    >
+      {loading ? (
+        <ActivityIndicator className="py-[20px]" color={colors.onInverseSurface} />
+      ) : (
+        <Text className="py-[20px] text-center font-medium text-[15px]" style={{ color: colors.onInverseSurface }}>
+          {label}
+        </Text>
+      )}
+    </AnimatedPressable>
+  );
+}
 
 export default function RegisterStep2Screen({ route, navigation }: NativeStackScreenProps<AuthStackParamList, 'RegisterStep2'>) {
   const { t } = useTranslation();
@@ -38,7 +82,11 @@ export default function RegisterStep2Screen({ route, navigation }: NativeStackSc
   const isRegistrationMode = route?.params?.mode === "registration";
   const isPending = route?.params?.pending === true;
 
-  const [code, setCode] = useState("");
+  // Kod artık ekran state'inde DEĞİL, react-hook-form'da: gövde forma abone
+  // olmadığı için hane girmek burayı hiç render etmiyor (bkz. VerifyButton).
+  const { control, getValues, setValue } = useForm<CodeForm>({
+    defaultValues: { code: "" },
+  });
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState("");
   const [resendLoading, setResendLoading] = useState(false);
@@ -68,7 +116,7 @@ export default function RegisterStep2Screen({ route, navigation }: NativeStackSc
 
   const handleVerify = async (verificationCode: string | null = null) => {
     Keyboard.dismiss();
-    const finalCode = verificationCode || code;
+    const finalCode = verificationCode || getValues("code");
     if (finalCode.length !== OTP_LENGTH) {
       setError(t('auth.step2.validation.codeRequired'));
       return;
@@ -253,8 +301,10 @@ export default function RegisterStep2Screen({ route, navigation }: NativeStackSc
                 type="numeric"
                 disabled={loading}
                 onTextChange={(text) => {
-                  setCode(text);
-                  setError("");
+                  setValue("code", text);
+                  // Hata YALNIZ varken siliniyor: koşulsuz setError("") her
+                  // hanede ekranı gereksiz yere uyandırıyordu.
+                  if (error) setError("");
                 }}
                 onFilled={(text) => handleVerify(text)}
                 textInputProps={{
@@ -326,25 +376,12 @@ export default function RegisterStep2Screen({ route, navigation }: NativeStackSc
               </TouchableOpacity>
             </View>
 
-            <AnimatedPressable
-              style={{
-                borderRadius: 999,
-                borderCurve: "continuous",
-                overflow: "hidden",
-                opacity: loading || code.length < OTP_LENGTH ? 0.5 : 1,
-                backgroundColor: colors.inverseSurface,
-              }}
+            <VerifyButton
+              control={control}
+              loading={loading}
+              label={t('auth.step2.verifyButton')}
               onPress={() => handleVerify()}
-              disabled={loading || code.length < OTP_LENGTH}
-            >
-              {loading ? (
-                <ActivityIndicator className="py-[20px]" color={colors.onInverseSurface} />
-              ) : (
-                <Text className="py-[20px] text-center font-medium text-[15px]" style={{ color: colors.onInverseSurface }}>
-                  {t('auth.step2.verifyButton')}
-                </Text>
-              )}
-            </AnimatedPressable>
+            />
           </View>
 
           <View className="items-center mt-4">

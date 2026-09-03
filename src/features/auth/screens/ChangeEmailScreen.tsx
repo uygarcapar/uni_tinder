@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useRef, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import {
   View,
   Text,
@@ -14,7 +14,9 @@ import {
 import { NativeStackScreenProps } from "@react-navigation/native-stack";
 import { OtpInput, type OtpInputRef } from "react-native-otp-entry";
 import { KeyboardStickyView } from "react-native-keyboard-controller";
-import { Eye, EyeOff, RotateCcw, InfoIcon } from "lucide-react-native";
+import { useForm } from "react-hook-form";
+import { zodResolver } from "@hookform/resolvers/zod";
+import { RotateCcw, InfoIcon } from "@/shared/icons";
 import { useTranslation } from "react-i18next";
 import type { RootStackParamList } from "@/shared/types/navigation";
 import { useAppDispatch, useAppSelector } from "@/shared/hooks/redux";
@@ -28,9 +30,14 @@ import {
   CODE_MAX_ATTEMPTS,
   RESEND_COOLDOWN_SECONDS,
 } from "@/features/auth/passwordErrors";
-import { OTP_LENGTH, extractOtp } from "@/features/auth/otpCode";
+import { OTP_LENGTH, extractOtp, type CodeForm } from "@/features/auth/otpCode";
+import {
+  changeEmailSchema,
+  type ChangeEmailForm,
+} from "@/shared/schemas/formSchemas";
 import SFIcon from "@/shared/components/SFIcon";
 import AnimatedPressable from "@/shared/components/AnimatedPressable";
+import AuthPillField from "@/features/auth/components/AuthPillField";
 import RegisterBackButton from "@/features/auth/components/RegisterBackButton";
 import { showInfoToast } from "@/shared/services/toaster";
 import { colors, ink } from "@/shared/theme/colors";
@@ -61,9 +68,10 @@ export default function ChangeEmailScreen({
   const currentEmail = authUser?.email as string | undefined;
 
   const [step, setStep] = useState<"verify" | "code">("verify");
-  const [currentPassword, setCurrentPassword] = useState("");
-  const [newEmail, setNewEmail] = useState("");
-  const [code, setCode] = useState("");
+  // Kodun GİTTİĞİ adres — form alanı değil, akışın durumu. Şemadan çıkan
+  // (trim + küçük harf) değer; ikinci adımın metni ve tekrar gönderme bunu
+  // kullanıyor, kullanıcı bu arada alanı değiştirse bile kod eski adrese gitti.
+  const [pendingEmail, setPendingEmail] = useState("");
   const [showPassword, setShowPassword] = useState(false);
   const [loading, setLoading] = useState(false);
   const [apiError, setApiError] = useState("");
@@ -82,6 +90,28 @@ export default function ChangeEmailScreen({
 
   const otpRef = useRef<OtpInputRef>(null);
   const emailRef = useRef<TextInput>(null);
+
+  // Şema fabrika: hata metinleri i18n'den geliyor, "aynı adres" kuralı da
+  // oturumdaki adresi bilmek zorunda. useForm seçeneklerini her render'da
+  // tazelediği için dil değişimi anında yansır.
+  const schema = useMemo(
+    () => changeEmailSchema(t, currentEmail),
+    [t, currentEmail],
+  );
+  const {
+    control,
+    handleSubmit,
+    getValues,
+    formState: { errors },
+  } = useForm<ChangeEmailForm>({
+    resolver: zodResolver(schema),
+    defaultValues: { currentPassword: "", newEmail: "" },
+  });
+
+  // Kod da formda (bkz. CodeForm): bu ekranda ona abone olan HİÇBİR şey yok —
+  // gönder butonu yalnız loading/rate limit'e bakıyor — yani hane girmek artık
+  // 15 dakikalık sayaç dışında bir render tetiklemiyor.
+  const codeForm = useForm<CodeForm>({ defaultValues: { code: "" } });
 
   // Tek saniyelik tick iki geri sayımı birden yürütüyor: kodun ömrü ve bekleme
   // kilidi. Adımdan bağımsız — 429 ilk adımda da yenebilir.
@@ -115,9 +145,9 @@ export default function ChangeEmailScreen({
     setExpiresIn(CODE_TTL_SECONDS);
     setResendIn(RESEND_COOLDOWN_SECONDS);
     setRateLimited(false);
-    setCode("");
+    codeForm.setValue("code", "");
     otpRef.current?.clear();
-  }, []);
+  }, [codeForm]);
 
   /**
    * Hata gövdesini ekrana bağlar. Adres redleri (UT-1017/1018/1019) `newEmail`
@@ -143,65 +173,43 @@ export default function ChangeEmailScreen({
       if (failure.codeBurned) {
         setCodeBurned(true);
         setAttemptsLeft(0);
-        setCode("");
+        codeForm.setValue("code", "");
         otpRef.current?.clear();
       } else if (failure.codeAttemptSpent) {
         setAttemptsLeft((n) => Math.max(0, n - 1));
-        setCode("");
+        codeForm.setValue("code", "");
         otpRef.current?.clear();
       }
 
       setErrorField(failure.field);
       setApiError(passwordErrorMessage(failure, t));
     },
-    [navigation, t],
+    [codeForm, navigation, t],
   );
 
   // ── Adım 1 — şifreyi doğrula, kodu YENİ adrese iste ─────────────────────
-  const handleRequestCode = async () => {
-    Keyboard.dismiss();
-    if (!currentPassword) {
-      setErrorField("currentPassword");
-      setApiError(t("auth.password.change.validation.currentRequired"));
-      return;
-    }
-    const trimmed = newEmail.trim().toLowerCase();
-    if (!trimmed) {
-      setErrorField("newEmail");
-      setApiError(t("auth.email.change.validation.emailRequired"));
-      return;
-    }
-    // Şekil kontrolü yalnızca "@ var mı" seviyesinde: domain'in DESTEKLENEN bir
-    // üniversiteye ait olup olmadığına backend karar veriyor (UT-1019) ve
-    // kayıt defteri orada. Burada tahmin yürütmek, listeye yeni üniversite
-    // eklendiğinde istemciyi yanlış yere reddeden konuma sokardı.
-    if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(trimmed)) {
-      setErrorField("newEmail");
-      setApiError(t("auth.email.change.validation.emailInvalid"));
-      return;
-    }
-    // Backend de UT-1018 ile reddediyor; önden kesmek 5/dk'lık kotadan
-    // boşuna istek harcamamak için.
-    if (currentEmail && trimmed === currentEmail.trim().toLowerCase()) {
-      setErrorField("newEmail");
-      setApiError(t("auth.email.errors.sameAsCurrent"));
-      return;
-    }
-
-    setLoading(true);
-    clearError();
-    try {
-      await authService.requestEmailChangeCode(currentPassword, trimmed);
-      setNewEmail(trimmed);
-      startCodeWindow();
-      setStep("code");
-    } catch (err) {
-      devLog("RequestEmailChangeCode error:", err);
-      applyFailure(err);
-    } finally {
-      setLoading(false);
-    }
-  };
+  // Alanların doğrulaması şemada (changeEmailSchema); buraya yalnız geçerli
+  // ve NORMALİZE (trim + küçük harf) değerler geliyor. Klavye geçersiz
+  // gönderimde de kapanmalı — yoksa hata satırı klavyenin altında kalıyor.
+  const handleRequestCode = handleSubmit(
+    async ({ currentPassword, newEmail }) => {
+      Keyboard.dismiss();
+      setLoading(true);
+      clearError();
+      try {
+        await authService.requestEmailChangeCode(currentPassword, newEmail);
+        setPendingEmail(newEmail);
+        startCodeWindow();
+        setStep("code");
+      } catch (err) {
+        devLog("RequestEmailChangeCode error:", err);
+        applyFailure(err);
+      } finally {
+        setLoading(false);
+      }
+    },
+    () => Keyboard.dismiss(),
+  );
 
   // ── Kod tekrar gönder ───────────────────────────────────────────────────
   const handleResend = async () => {
@@ -209,7 +217,10 @@ export default function ChangeEmailScreen({
     setLoading(true);
     clearError();
     try {
-      await authService.requestEmailChangeCode(currentPassword, newEmail);
+      await authService.requestEmailChangeCode(
+        getValues("currentPassword"),
+        pendingEmail,
+      );
       startCodeWindow();
       showInfoToast({
         message: t("auth.password.change.resendSuccess"),
@@ -226,6 +237,7 @@ export default function ChangeEmailScreen({
   // ── Adım 2 — kodu onayla, sonra ÇIKIŞ ───────────────────────────────────
   const handleConfirm = async () => {
     Keyboard.dismiss();
+    const code = codeForm.getValues("code");
     if (codeBurned) {
       setErrorField("code");
       setApiError(t("auth.password.errors.codeBurned"));
@@ -240,7 +252,7 @@ export default function ChangeEmailScreen({
     setLoading(true);
     clearError();
     try {
-      const result = await authService.confirmEmailChange(newEmail, code);
+      const result = await authService.confirmEmailChange(pendingEmail, code);
 
       // Üniversite değiştiyse bunu SÖYLEMEK gerekiyor: kullanıcının keşif
       // havuzu komple değişti (aday havuzu düşürüldü). Sessizce yapılırsa
@@ -249,11 +261,11 @@ export default function ChangeEmailScreen({
       const message =
         result?.universityChanged && universityName
           ? t("auth.email.change.successWithUniversity", {
-              email: result?.newEmail ?? newEmail,
+              email: result?.newEmail ?? pendingEmail,
               university: universityName,
             })
           : t("auth.email.change.successMessage", {
-              email: result?.newEmail ?? newEmail,
+              email: result?.newEmail ?? pendingEmail,
             });
 
       // Yeni token seti YOK — oturum bitti. Kapanışı bu ekran yönetiyor
@@ -281,11 +293,12 @@ export default function ChangeEmailScreen({
     navigation.goBack();
   };
 
+  const formError = errors.currentPassword?.message || errors.newEmail?.message;
   // Rate limit satırı canlı: donmuş bir "60 saniye sonra dene" metni,
   // kullanıcının ne zaman tekrar deneyebileceğini söylemiyor.
   const displayError = rateLimited
     ? t("auth.password.errors.rateLimited", { seconds: resendIn })
-    : apiError;
+    : formError || apiError;
   const submitDisabled = loading || rateLimited;
 
   return (
@@ -309,33 +322,29 @@ export default function ChangeEmailScreen({
                 : t("auth.email.change.descriptionNoEmail")}
             </Text>
 
-            <Field
+            <AuthPillField
+              control={control}
+              name="currentPassword"
               label={t("auth.password.change.currentLabel")}
               placeholder={t("auth.password.change.currentPlaceholder")}
-              value={currentPassword}
-              onChangeText={(v) => {
-                setCurrentPassword(v);
-                clearError();
-              }}
               secure={!showPassword}
               onToggleSecure={() => setShowPassword((v) => !v)}
-              invalid={errorField === "currentPassword"}
+              invalid={errorField === "currentPassword" || !!errors.currentPassword}
               editable={!loading}
+              onChanged={clearError}
               returnKeyType="next"
               onSubmitEditing={() => emailRef.current?.focus()}
             />
 
-            <Field
+            <AuthPillField
+              control={control}
+              name="newEmail"
               inputRef={emailRef}
               label={t("auth.email.change.newLabel")}
               placeholder={t("auth.email.change.newPlaceholder")}
-              value={newEmail}
-              onChangeText={(v) => {
-                setNewEmail(v);
-                clearError();
-              }}
-              invalid={errorField === "newEmail"}
+              invalid={errorField === "newEmail" || !!errors.newEmail}
               editable={!loading}
+              onChanged={clearError}
               keyboardType="email-address"
               returnKeyType="go"
               onSubmitEditing={handleRequestCode}
@@ -401,7 +410,7 @@ export default function ChangeEmailScreen({
             className="text-[18px] font-normal mb-6"
             style={{ color: colors.textSecondary }}
           >
-            {t("auth.email.change.codeDescription", { email: newEmail })}
+            {t("auth.email.change.codeDescription", { email: pendingEmail })}
           </Text>
 
           <View className="mb-3">
@@ -410,7 +419,7 @@ export default function ChangeEmailScreen({
               numberOfDigits={OTP_LENGTH}
               type="numeric"
               onTextChange={(text) => {
-                setCode(text);
+                codeForm.setValue("code", text);
                 if (errorField === "code") clearError();
               }}
               textInputProps={{
@@ -532,88 +541,3 @@ const formatMmSs = (totalSeconds: number) => {
   return `${m}:${String(s).padStart(2, "0")}`;
 };
 
-/**
- * Pill input — ChangePasswordScreen'deki PasswordField'ın react-hook-form'suz
- * hâli. Bu ekranda form yok: iki alan da (şifre, adres) tek seferlik değerler,
- * şemaya bağlanmaları bir şey kazandırmazdı.
- */
-function Field({
-  label,
-  placeholder,
-  value,
-  onChangeText,
-  secure,
-  onToggleSecure,
-  invalid,
-  editable = true,
-  inputRef,
-  keyboardType,
-  returnKeyType,
-  onSubmitEditing,
-}: {
-  label: string;
-  placeholder: string;
-  value: string;
-  onChangeText: (v: string) => void;
-  secure?: boolean;
-  onToggleSecure?: () => void;
-  invalid?: boolean;
-  editable?: boolean;
-  inputRef?: React.RefObject<TextInput | null>;
-  keyboardType?: "email-address";
-  returnKeyType?: "next" | "go";
-  onSubmitEditing?: () => void;
-}) {
-  return (
-    <View className="mb-4">
-      <Text
-        className="text-[14px] font-semibold mb-2"
-        style={{ color: colors.neutral200 }}
-      >
-        {label}
-      </Text>
-      <View
-        style={{
-          borderRadius: 999,
-          borderCurve: "continuous",
-          overflow: "hidden",
-          borderWidth: 0.5,
-          borderColor: invalid ? colors.error : colors.hairline,
-          flexDirection: "row",
-          alignItems: "center",
-          paddingHorizontal: 16,
-        }}
-      >
-        <TextInput
-          ref={inputRef as any}
-          style={{ flex: 1, paddingVertical: 16, fontSize: 18, color: colors.text }}
-          placeholder={placeholder}
-          placeholderTextColor={colors.textSecondary}
-          value={value}
-          onChangeText={onChangeText}
-          secureTextEntry={secure}
-          autoCapitalize="none"
-          autoCorrect={false}
-          keyboardType={keyboardType}
-          editable={editable}
-          returnKeyType={returnKeyType}
-          submitBehavior={returnKeyType === "next" ? "submit" : undefined}
-          onSubmitEditing={onSubmitEditing}
-        />
-        {onToggleSecure ? (
-          <TouchableOpacity activeOpacity={0.7} onPress={onToggleSecure}>
-            <View pointerEvents="none">
-              <SFIcon
-                name={secure ? "eye.slash.fill" : "eye.fill"}
-                fallback={secure ? EyeOff : Eye}
-                size={24}
-                strokeWidth={1.5}
-                color={colors.neutral200}
-              />
-            </View>
-          </TouchableOpacity>
-        ) : null}
-      </View>
-    </View>
-  );
-}
