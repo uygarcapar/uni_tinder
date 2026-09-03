@@ -69,6 +69,32 @@ describe('conversationDeactivated', () => {
     expect((next.messagesByConv[OTHER].messages[0] as any)._pending).toBe(true);
   });
 
+  // "Geri Al" yalnız eşleşmeyi kaldırana açık. Kapatanın kim olduğunu sunucu
+  // söylemiyor → bayrağı kendi unmatch'imizde biz damgalıyoruz; karşı taraf
+  // kaynaklı yollar (hub event'i, gönderim reddi) byMe GEÇMEZ.
+  it('byMe geçilmeyen kapanışta deactivatedByMe=false olur', () => {
+    const next = reducer(state(), conversationDeactivated({ conversationId: CID }));
+
+    expect(
+      next.conversations.find((c: any) => c.conversationId === CID).deactivatedByMe,
+    ).toBe(false);
+  });
+
+  it('kendi unmatch\'imizde (byMe) deactivatedByMe=true olur', () => {
+    const next = reducer(
+      state(),
+      conversationDeactivated({
+        conversationId: CID,
+        restorableUntil: '2026-08-16T12:00:00Z',
+        byMe: true,
+      }),
+    );
+
+    const conv = next.conversations.find((c: any) => c.conversationId === CID);
+    expect(conv.deactivatedByMe).toBe(true);
+    expect(conv.restorableUntil).toBe('2026-08-16T12:00:00Z');
+  });
+
   it('bucket yoksa (sohbet hiç açılmamış) patlamaz', () => {
     const base = state();
     delete base.messagesByConv[CID];

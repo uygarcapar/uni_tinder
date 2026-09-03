@@ -7,7 +7,7 @@ import {
   Flag,
   Ban,
   InfoIcon,
-} from "lucide-react-native";
+} from "@/shared/icons";
 import SFIcon from "@/shared/components/SFIcon";
 import AppModal from "@/shared/components/AppModal";
 import { formatRestoreWindow } from "@/features/chat/restoreWindow";
@@ -129,17 +129,22 @@ function ActionRow({
  *   • "Şikayet Et / Engelle" — kalıcı: bir daha asla eşleşilmez, geçmiş açılmaz.
  * Tek bir "unmatch" butonu bırakmak taciz senaryosunda kullanıcıyı korumazdı —
  * o kişi cooldown bitince deck'te yeniden görünürdü.
+ *
+ * "Eşleşmeyi Geri Al" YALNIZ kaldıran uçta çıkar (canRestore'u çağıran hesaplar):
+ * karşı taraf kapanmış sohbete girip 3 noktaya bastığında geri alma tuşu YOKTUR.
  */
 export default function ConversationOptionsSheet({
   visible,
   onClose,
   isActive = true,
   canRestore = false,
+  closedByMe = false,
   restorableUntil,
   onUnmatch,
   onRestore,
   onReport,
   onBlock,
+  stackBehavior,
 }: any) {
   const { t } = useTranslation();
   // Kalan süre SUNUCU damgasından — pencere uzunluğu backend config'inde,
@@ -189,6 +194,11 @@ export default function ConversationOptionsSheet({
       visible={visible}
       onClose={onClose}
       title={t("chat.options.title")}
+      // Menü profil önizlemesinin şeridinden de açılabiliyor, yani ALTINDA açık
+      // bir sheet olabilir: `push` onu yerinde bırakır. gorhom'un varsayılanı
+      // ("switch") o sheet'i minimize edip `visible`ını kilitliyor
+      // (bkz. AppBottomSheet'teki watchdog notu).
+      stackBehavior={stackBehavior}
       snapPoints={["45%", "90%"]}
       closeButton={false}
       contentContainerStyle={{ paddingTop: 36 }}
@@ -258,7 +268,9 @@ export default function ConversationOptionsSheet({
               flex: 1,
             }}
           >
-            {t("chat.options.restoreExpired")}
+            {closedByMe
+              ? t("chat.options.restoreExpired")
+              : t("chat.options.closed")}
           </Text>
         </View>
       )}

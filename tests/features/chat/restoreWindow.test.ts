@@ -39,19 +39,35 @@ describe('canRestore', () => {
 });
 
 describe('shouldOfferRestore', () => {
-  it('damga hiç yoksa (bilinmiyor) butonu gizlemez', () => {
+  it('sohbeti KARŞI taraf kapattıysa damgaya bakmadan gizler', () => {
+    // Ürün kuralı: geri alma yalnız eşleşmeyi kaldırana açık. Karşı taraf
+    // sohbete girip 3 noktaya bastığında "Geri Al" HİÇ çıkmaz.
+    expect(shouldOfferRestore(undefined, false, NOW)).toBe(false);
+    expect(shouldOfferRestore('2026-08-16T12:00:00Z', false, NOW)).toBe(false);
+  });
+
+  it('kapatan bizsek damga hiç yoksa (bilinmiyor) butonu gizlemez', () => {
     // Sohbet listesi DTO\'su alanı taşımayabiliyor; canlı bir pencereyi cold
     // start'ta gizlemektense denemeyi sunuyoruz.
-    expect(shouldOfferRestore(undefined, NOW)).toBe(true);
+    expect(shouldOfferRestore(undefined, true, NOW)).toBe(true);
   });
 
-  it('null damgada (pencere KESİN yok) gizler', () => {
-    expect(shouldOfferRestore(null, NOW)).toBe(false);
+  it('kapatan bizsek null damgada (pencere KESİN yok) gizler', () => {
+    expect(shouldOfferRestore(null, true, NOW)).toBe(false);
   });
 
-  it('dolu damgada pencereye bakar', () => {
-    expect(shouldOfferRestore('2026-08-16T12:00:00Z', NOW)).toBe(true);
-    expect(shouldOfferRestore('2026-08-15T11:00:00Z', NOW)).toBe(false);
+  it('kapatan bizsek dolu damgada pencereye bakar', () => {
+    expect(shouldOfferRestore('2026-08-16T12:00:00Z', true, NOW)).toBe(true);
+    expect(shouldOfferRestore('2026-08-15T11:00:00Z', true, NOW)).toBe(false);
+  });
+
+  it('kapatan bilinmiyorsa yalnız CANLI damga varsa gösterir', () => {
+    // Bayraktan önce yazılmış cache / unmatch başka cihazdan. Dolu damga ancak
+    // kendi unmatch yanıtımızdan gelebildiği için "biz kapattık"ın delilidir;
+    // damga yoksa buton karşı tarafa sızacağı için gösterilmez.
+    expect(shouldOfferRestore('2026-08-16T12:00:00Z', undefined, NOW)).toBe(true);
+    expect(shouldOfferRestore(undefined, undefined, NOW)).toBe(false);
+    expect(shouldOfferRestore(null, undefined, NOW)).toBe(false);
   });
 });
 

@@ -93,11 +93,20 @@ describe('ConversationOptionsSheet — inactive variants', () => {
     expect(tree.getByText('Eşleşmeyi Geri Al')).toBeTruthy();
   });
 
-  it('shows the expired notice when not active and not restorable', () => {
-    const tree = setup({ isActive: false, canRestore: false });
+  it('shows the expired notice when we closed the chat and it is not restorable', () => {
+    const tree = setup({ isActive: false, canRestore: false, closedByMe: true });
     expect(
       tree.getByText('Bu sohbet sonlandırıldı. Geri alma süresi doldu.')
     ).toBeTruthy();
+  });
+
+  // Karşı taraf kapattıysa o uçta geri alma penceresi hiç açılmadı — ne "Geri Al"
+  // tuşu ne de "süre doldu" metni gösterilir.
+  it('shows the neutral closed notice when the other side closed the chat', () => {
+    const tree = setup({ isActive: false, canRestore: false, closedByMe: false });
+    expect(tree.queryByText('Eşleşmeyi Geri Al')).toBeNull();
+    expect(tree.getByText('Bu sohbet sonlandırıldı.')).toBeTruthy();
+    expect(tree.queryByText(/Geri alma süresi doldu/)).toBeNull();
   });
 
   // Pencere uzunluğu backend config'inde — kalan süre `restorableUntil`
