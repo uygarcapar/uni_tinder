@@ -1,0 +1,29 @@
+diff --git a/node_modules/expo-audio/ios/AudioModule.swift b/node_modules/expo-audio/ios/AudioModule.swift
+index 12d7de0..a28f135 100644
+--- a/node_modules/expo-audio/ios/AudioModule.swift
++++ b/node_modules/expo-audio/ios/AudioModule.swift
+@@ -818,6 +818,24 @@ public class AudioModule: Module {
+     } else {
+       try session.setCategory(category, options: sessionOptions)
+     }
++
++    // PATCH (lit): kayıt sürerken haptik ve sistem seslerini AÇIK bırak.
++    //
++    // iOS, oturum kayıt yaparken (.playAndRecord + aktif kayıt) haptikleri
++    // sistem düzeyinde SUSTURUYOR — titreşimin mikrofona sızmaması için.
++    // Uygulamanın bunu geri açması gerekiyor; AVAudioSession'ın tek anahtarı
++    // bu ve expo-audio'nun AudioMode'unda karşılığı YOK.
++    //
++    // Belirti (sesli mesaj kaydı): mikrofona basıp HEMEN yukarı kaydırınca
++    // kilit titreşimi geliyor (kayıt henüz başlamamış), bir an bekleyip
++    // kaydırınca hiç gelmiyor. Ses tarafında bir yan etkisi yok; kayda
++    // karışan tek şey, kullanıcının kendi titreşiminin mikrofona ulaşma
++    // ihtimali — kısa ve tek darbelik olduğu için kabul edildi.
++    #if os(iOS)
++    if #available(iOS 13.0, *) {
++      try? session.setAllowHapticsAndSystemSoundsDuringRecording(true)
++    }
++    #endif
+   }
+ 
+   private func activateSession() throws {

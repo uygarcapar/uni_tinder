@@ -1,0 +1,54 @@
+diff --git a/node_modules/react-native-screens/ios/tabs/host/RNSTabBarController.mm b/node_modules/react-native-screens/ios/tabs/host/RNSTabBarController.mm
+index 481a9e6..100f509 100644
+--- a/node_modules/react-native-screens/ios/tabs/host/RNSTabBarController.mm
++++ b/node_modules/react-native-screens/ios/tabs/host/RNSTabBarController.mm
+@@ -194,9 +194,33 @@ static void rns_pushViewController(__unsafe_unretained id self,
+   RNSLog(@"TabBar: %@ didSelectItem: %@", tabBar, item);
+ }
+ 
++/**
++ * [lit patch] Suppress UIKit's iOS 18+ tab switch zoom.
++ *
++ * Since iOS 18 `UITabBarController` scales the incoming view controller slightly
++ * on every tab change. The animation lives inside UIKit's own selection handling,
++ * so there is no trace of it in this file.
++ *
++ * A zero-duration `UIViewControllerAnimatedTransitioning` from
++ * `tabBarController:animationControllerForTransitionFrom:to:` was tried first and
++ * had NO effect here (verified in a device build) — UIKit does not route this
++ * animation through the transitioning API. Wrapping the selection change in
++ * `performWithoutAnimation:` is what actually suppresses it, and it avoids the
++ * side effects reported for the animator approach (vanishing tab bar background).
++ *
++ * Both setters are covered: user taps on the native tab bar reach the controller
++ * through them just as programmatic selection does — that is exactly why the
++ * `_isHandlingExplicitSelectionUpdate` guard below exists.
++ */
+ - (void)setSelectedIndex:(NSUInteger)selectedIndex
+ {
+-  [super setSelectedIndex:selectedIndex];
++  if (@available(iOS 18.0, *)) {
++    [UIView performWithoutAnimation:^{
++      [super setSelectedIndex:selectedIndex];
++    }];
++  } else {
++    [super setSelectedIndex:selectedIndex];
++  }
+   if (!_isHandlingExplicitSelectionUpdate) {
+     [self reconcileNavigationStateWithUIKitState];
+   }
+@@ -204,7 +228,13 @@ static void rns_pushViewController(__unsafe_unretained id self,
+ 
+ - (void)setSelectedViewController:(__kindof UIViewController *)selectedViewController
+ {
+-  [super setSelectedViewController:selectedViewController];
++  if (@available(iOS 18.0, *)) {
++    [UIView performWithoutAnimation:^{
++      [super setSelectedViewController:selectedViewController];
++    }];
++  } else {
++    [super setSelectedViewController:selectedViewController];
++  }
+   if (!_isHandlingExplicitSelectionUpdate) {
+     [self reconcileNavigationStateWithUIKitState];
+   }

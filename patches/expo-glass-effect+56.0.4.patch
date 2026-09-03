@@ -1,0 +1,149 @@
+diff --git a/node_modules/expo-glass-effect/ios/GlassView.swift b/node_modules/expo-glass-effect/ios/GlassView.swift
+index 35cd8f3..8c8df3c 100644
+--- a/node_modules/expo-glass-effect/ios/GlassView.swift
++++ b/node_modules/expo-glass-effect/ios/GlassView.swift
+@@ -50,15 +50,67 @@ public final class GlassView: ExpoView {
+     return false
+   }
+ 
++  // PATCH (lit): geçici teşhis. Camın hangi kutuda, hangi sırada kurulduğunu
++  // (ya da kurulmadığını) görmek için. Bittiğinde bu blokları ve çağrılarını sil.
++  // NOT: `#if DEBUG` ile sarma! CocoaPods bu pod'un Swift derlemesinde
++  // SWIFT_ACTIVE_COMPILATION_CONDITIONS tanımlamıyor (xcconfig'de yalnız
++  // `-D COCOAPODS` var), yani DEBUG hiç tanımlı değil ve blok sessizce
++  // derlemeden çıkıyor — log hiç basılmıyor.
++  private func glassLog(_ what: String) {
++    let id = UInt(bitPattern: ObjectIdentifier(self).hashValue) & 0xFFFF
++    let effectDesc: String
++    if let e = glassEffectView.effect {
++      effectDesc = NSStringFromClass(type(of: e))
++    } else {
++      effectDesc = "nil"
++    }
++    let msg = "[GLASSDBG] #\(id) \(what) | mounted=\(isMounted ? "Y" : "N")"
++      + " style=\(String(describing: glassStyle))"
++      + " effect=\(effectDesc)"
++      + " size=\(Int(bounds.width))x\(Int(bounds.height))"
++    NSLog("%@", msg)
++  }
++
++  // PATCH (lit): "istenen cam gerçekten kurulu mu" kontrolü.
++  //
++  // `glassEffect` ivar'ı bir UIGlassEffect ise efektin görünen katmanda da
++  // UIGlassEffect olması gerekir. Değilse (düz UIVisualEffect ya da nil) kutu
++  // camsız duruyor demektir.
++  private func glassIsMissing() -> Bool {
++    if #available(iOS 26.0, tvOS 26.0, macOS 26.0, *) {
++      #if compiler(>=6.2)
++      if glassEffect is UIGlassEffect {
++        return !(glassEffectView.effect is UIGlassEffect)
++      }
++      #endif
++    }
++    return false
++  }
++
+   override public func layoutSubviews() {
+     super.layoutSubviews()
+-    if !isMounted {
++    glassLog("layoutSubviews")
++    // PATCH (lit): kapı yalnız `!isMounted` DEĞİL.
++    //
++    // Cihaz logu şunu gösterdi: Fabric geri dönüşüm havuzundan gelen bir view'a
++    // `glassEffectStyle` prop'unu YENİDEN GÖNDERMİYOR (havuzdan dönen
++    // view'larda hiç `applyGlassStyle` çağrısı yok). Yani o view'ın efektini
++    // kuracak tek yer burası. `isMounted` herhangi bir sebeple true kalmışsa
++    // buradan da atlanıyor ve kutu, `effect`inde o an ne varsa (düz
++    // UIVisualEffect) onunla KALICI olarak donuyor — kullanıcının gördüğü
++    // "bazı bölümlerde cam yok, sekme değiştirince geliyor" tam olarak bu.
++    //
++    // Ek koşul idempotent ve bedava: cam zaten kuruluysa `glassIsMissing()`
++    // false döner, hiçbir şey olmaz. Kurulu değilse her layout turunda bir
++    // şans daha veriyoruz — sekme değişiminin yaptığının aynısı, ama otomatik.
++    if !isMounted || glassIsMissing() {
+       isMounted = true
+       // Clear the stale effect before re-applying so UIKit fully tears down
+       // the old UIGlassEffect, otherwise re-assigning does not render GlassView correctly. 
+       // https://github.com/expo/expo/issues/43732
+       glassEffectView.effect = UIVisualEffect()
+       updateEffect()
++      glassLog("layoutSubviews/installed")
+     }
+   }
+ 
+@@ -111,6 +163,7 @@ public final class GlassView: ExpoView {
+   }
+ 
+   private func applyGlassStyle(_ newStyle: GlassStyle, animate: Bool = false, animationDuration: Double? = nil) {
++    glassLog("applyGlassStyle->\(newStyle)")
+     if glassStyle != newStyle {
+       glassStyle = newStyle
+       guard isGlassEffectAvailable() else {
+@@ -234,6 +287,51 @@ public final class GlassView: ExpoView {
+     }
+   }
+   
++  // PATCH (lit): Fabric view recycling leaves a stale UIGlassEffect behind.
++  //
++  // This view is an ExpoFabricView, so React Native returns it to the component
++  // recycling pool instead of deallocating it. Nothing in this class resets the
++  // Swift ivars on reuse, so the next mount can start life with `isMounted`
++  // still true and a live `UIGlassEffect` still assigned to glassEffectView.
++  // When that happens the class's own recovery paths are both closed:
++  //
++  //   • layoutSubviews only tears down/reinstalls when `!isMounted`.
++  //   • applyGlassStyle is a no-op when the incoming style equals `glassStyle`.
++  //
++  // and assigning a new effect over the stale one silently does not render —
++  // the exact hazard the layoutSubviews comment below documents (expo#43732).
++  // Symptom: glass paints on the first card, then never on recycled ones, and
++  // only a tab switch (window detach → didMoveToWindow → setNeedsLayout) fixes
++  // it. Screens that always mount fresh views (modals) are unaffected.
++  //
++  // Deliberately conservative: `glassStyle`/`glassEffect` are NOT cleared. If
++  // they were and Fabric did not re-send `glassEffectStyle` for the reused
++  // view, applyGlassStyle would never run and the box would end up with no
++  // effect at all. Killing the rendered effect and reopening the
++  // layoutSubviews gate is enough — that path re-applies `glassEffect` itself.
++  public override func prepareForRecycle() {
++    super.prepareForRecycle()
++    glassEffectView.effect = UIVisualEffect()
++    isMounted = false
++    // `glassStyle` KORUNUYOR ama efekt NESNESİ tazeleniyor.
++    //
++    // Cihaz logu, Fabric'in havuzdan dönen view'a `glassEffectStyle`i yeniden
++    // GÖNDERMEDİĞİNİ gösterdi. Dolayısıyla `glassStyle`ı nil'lersek
++    // `applyGlassStyle` bir daha hiç koşmaz ve kutu kalıcı olarak efektsiz
++    // kalır — o yüzden duruyor. Ama aynı `UIGlassEffect` ÖRNEĞİNİ iki farklı
++    // view hayatı boyunca taşımak da kütüphanenin uyardığı "stale effect"in ta
++    // kendisi, o yüzden nesneyi burada yeniden yaratıyoruz. Böylece her view
++    // hayatı taze bir efektle başlıyor ve prop'a hiç ihtiyaç kalmıyor.
++    if #available(iOS 26.0, tvOS 26.0, macOS 26.0, *) {
++      #if compiler(>=6.2)
++      if let style = glassStyle, let uiStyle = style.toUIGlassEffectStyle() {
++        glassEffect = UIGlassEffect(style: uiStyle)
++      }
++      #endif
++    }
++    glassLog("prepareForRecycle")
++  }
++
+   public override func didMoveToWindow() {
+     super.didMoveToWindow()
+     if (self.window == nil) {
+@@ -250,6 +348,7 @@ public final class GlassView: ExpoView {
+ 
+   private func updateEffect() {
+     if !isMounted {
++      glassLog("updateEffect SKIPPED (not mounted)")
+       return
+     }
+     guard isGlassEffectAvailable() else {
+@@ -265,6 +364,7 @@ public final class GlassView: ExpoView {
+         }
+         // we need to set the effect again or it has no effect!
+         glassEffectView.effect = effect
++        glassLog("updateEffect APPLIED")
+         updateBorderRadius()
+         setBorderCurve(nil)
+       }
