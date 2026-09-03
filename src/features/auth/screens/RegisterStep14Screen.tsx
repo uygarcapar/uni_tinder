@@ -18,7 +18,7 @@ import { updateMultipleFields } from "@/features/profile/profileSlice";
 import { API_ENDPOINTS } from "@/shared/constants/api";
 import { staticGet } from "@/shared/services/staticCache";
 import { useTranslation } from 'react-i18next';
-import { Check } from "lucide-react-native";
+import { Check } from "@/shared/icons";
 import SFIcon from "@/shared/components/SFIcon";
 import RegisterProgressBar from "@/features/auth/components/RegisterProgressBar";
 import RegisterStickyHeader, {

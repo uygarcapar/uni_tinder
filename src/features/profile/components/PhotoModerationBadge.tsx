@@ -1,5 +1,5 @@
 import { View } from "react-native";
-import { Check, Clock, AlertTriangle } from "lucide-react-native";
+import { Check, Clock, AlertTriangle } from "@/shared/icons";
 import SFIcon, { type SFSymbol } from "@/shared/components/SFIcon";
 import { colors } from "@/shared/theme/colors";
 import {

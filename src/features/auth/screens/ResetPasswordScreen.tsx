@@ -12,7 +12,7 @@ import {
 import { NativeStackScreenProps } from "@react-navigation/native-stack";
 import type { AuthStackParamList } from "@/shared/types/navigation";
 import { KeyboardStickyView } from "react-native-keyboard-controller";
-import { Eye, EyeOff } from "lucide-react-native";
+import { Eye, EyeOff } from "@/shared/icons";
 import { useForm, Controller } from "react-hook-form";
 import { zodResolver } from "@hookform/resolvers/zod";
 import SFIcon from "@/shared/components/SFIcon";

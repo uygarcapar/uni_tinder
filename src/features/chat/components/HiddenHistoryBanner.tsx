@@ -1,7 +1,7 @@
 import { memo, useState } from "react";
 import { View, Text, TouchableOpacity, ActivityIndicator } from "react-native";
 import { useTranslation } from "react-i18next";
-import { MessageSquare } from "lucide-react-native";
+import { MessageSquare } from "@/shared/icons";
 import SFIcon from "@/shared/components/SFIcon";
 import { REVEAL_MAX } from "@/features/chat/components/RevealContext";
 import { colors, ink } from "../../../shared/theme/colors";

@@ -2,7 +2,7 @@ import React, { useCallback, useEffect, useMemo, useState } from "react";
 import { useTranslation } from "react-i18next";
 import { View, Text, TouchableOpacity } from "react-native";
 import { BottomSheetTextInput } from "@gorhom/bottom-sheet";
-import { Search, SearchX, Check } from "lucide-react-native";
+import { Search, SearchX, Check } from "@/shared/icons";
 import SFIcon from "@/shared/components/SFIcon";
 import AppModal from "@/shared/components/AppModal";
 import {

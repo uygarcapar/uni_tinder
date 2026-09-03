@@ -37,7 +37,7 @@ import {
   clearRegistrationForm,
 } from "@/features/auth/authSlice";
 import * as Location from "expo-location";
-import { Plus, X } from "lucide-react-native";
+import { Plus, X } from "@/shared/icons";
 import SFIcon from "@/shared/components/SFIcon";
 import RegisterProgressBar from "@/features/auth/components/RegisterProgressBar";
 import RegisterStickyFooter from "@/features/auth/components/RegisterStickyFooter";

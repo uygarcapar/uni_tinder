@@ -18,7 +18,7 @@ import {
   HeartHandshake,
   HelpCircle,
   type LucideIcon,
-} from "lucide-react-native";
+} from "@/shared/icons";
 
 export type RelationshipIntentIcon = { sf: SFSymbol; lucide: LucideIcon };
 

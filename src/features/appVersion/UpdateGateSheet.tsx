@@ -9,7 +9,7 @@ import {
   Platform,
 } from "react-native";
 import { useTranslation } from "react-i18next";
-import { ArrowDownCircle, RefreshCw, Wrench } from "lucide-react-native";
+import { ArrowDownCircle, RefreshCw, Wrench } from "@/shared/icons";
 import AppBottomSheet from "@/shared/components/AppBottomSheet";
 import SFIcon, { type SFSymbol } from "@/shared/components/SFIcon";
 import AnimatedPressable from "@/shared/components/AnimatedPressable";

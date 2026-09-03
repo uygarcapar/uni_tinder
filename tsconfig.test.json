@@ -6,6 +6,7 @@
   },
   "include": [
     "nativewind-env.d.ts",
+    "lucide-env.d.ts",
     "jest.setup.ts",
     "tests/**/*.test.ts",
     "tests/**/*.test.tsx",

@@ -1,6 +1,6 @@
 import { useEffect } from "react";
 import { View, StyleSheet } from "react-native";
-import { Heart } from "lucide-react-native";
+import { Heart } from "@/shared/icons";
 import { LinearGradient } from "expo-linear-gradient";
 import MaskedView from "@react-native-masked-view/masked-view";
 import { easeGradient } from "react-native-easing-gradient";

@@ -1,6 +1,6 @@
 import { useRef, useState } from "react";
 import { View, Text, TouchableOpacity, Animated } from "react-native";
-import { Check, ChevronDown, ChevronUp } from "lucide-react-native";
+import { Check, ChevronDown, ChevronUp } from "@/shared/icons";
 import SFIcon from "./SFIcon";
 import { useTranslation } from "react-i18next";
 import {

@@ -47,6 +47,9 @@ module.exports = {
       '@reduxjs/toolkit',
       'immer',
       'redux',
+      // ESM build'e (react-redux.legacy-esm.js) çözülüyor — gerçek store ile
+      // render edilen ekran testleri Provider'ı buradan alıyor.
+      'react-redux',
       '@react-native-async-storage/async-storage',
       'react-native-mmkv',
     ].join('|') + ')/)',
@@ -62,6 +65,11 @@ module.exports = {
 
   moduleNameMapper: {
     '^@/(.*)$': '<rootDir>/src/$1',
+    // src/shared/icons.ts ikonları uzantısız deep path'le çekiyor (barrel'ın
+    // 1670 eager require'ından kaçmak için). Metro çözüyor, jest-resolve
+    // çözemiyor: lucide'ın `exports` map'inde ikon başına subpath yok.
+    '^lucide-react-native/dist/esm/icons/(.*)$':
+      '<rootDir>/node_modules/lucide-react-native/dist/esm/icons/$1.js',
     '^react-native-css-interop(.*)$': '<rootDir>/src/__mocks__/react-native-css-interop.ts',
     '\\.(jpg|jpeg|png|gif|svg|ttf|woff2?)$': '<rootDir>/src/__mocks__/fileMock.js',
   },

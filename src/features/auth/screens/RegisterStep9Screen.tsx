@@ -5,7 +5,7 @@ import { useFocusEffect } from "@react-navigation/native";
 import type { AuthStackParamList } from "@/shared/types/navigation";
 import { useAppDispatch } from "@/shared/hooks/redux";
 import { updateMultipleFields } from "@/features/profile/profileSlice";
-import { Navigation } from "lucide-react-native";
+import { Navigation } from "@/shared/icons";
 import SFIcon from "@/shared/components/SFIcon";
 import RegisterProgressBar from "@/features/auth/components/RegisterProgressBar";
 import RegisterBackButton from "@/features/auth/components/RegisterBackButton";

@@ -1,7 +1,7 @@
 import { View, Text, TouchableOpacity, Modal, Linking } from "react-native";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { useTranslation } from "react-i18next";
-import { Ban, Clock, Trash2, type LucideIcon } from "lucide-react-native";
+import { Ban, Clock, Trash2, type LucideIcon } from "@/shared/icons";
 import SFIcon, { type SFSymbol } from "@/shared/components/SFIcon";
 import { getDateLocale } from "@/shared/i18n/dateLocale";
 import type { AccountBlockPayload, AccountBlockReason } from "@/shared/utils/accountBlock";

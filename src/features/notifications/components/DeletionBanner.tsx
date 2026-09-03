@@ -2,7 +2,7 @@ import { useEffect, useState } from "react";
 import { View, Text, TouchableOpacity, ActivityIndicator } from "react-native";
 import { useTranslation } from "react-i18next";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
-import { AlertTriangle } from "lucide-react-native";
+import { AlertTriangle } from "@/shared/icons";
 import SFIcon from "@/shared/components/SFIcon";
 import api from "@/shared/services/api";
 import { API_ENDPOINTS } from "@/shared/constants/api";

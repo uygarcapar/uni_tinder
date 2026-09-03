@@ -1,5 +1,5 @@
 import { View } from "react-native";
-import { WifiOff } from "lucide-react-native";
+import { WifiOff } from "@/shared/icons";
 import { useTranslation } from "react-i18next";
 import SFIcon from "@/shared/components/SFIcon";
 import {

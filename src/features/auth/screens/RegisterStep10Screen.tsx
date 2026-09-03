@@ -5,7 +5,7 @@ import type { AuthStackParamList } from "@/shared/types/navigation";
 import { useAppDispatch, useAppSelector } from "@/shared/hooks/redux";
 import { updateMultipleFields } from "@/features/profile/profileSlice";
 import { KeyboardStickyView } from "react-native-keyboard-controller";
-import { Check, InfoIcon } from "lucide-react-native";
+import { Check, InfoIcon } from "@/shared/icons";
 import SFIcon from "@/shared/components/SFIcon";
 import RegisterProgressBar from "@/features/auth/components/RegisterProgressBar";
 import RegisterBackButton from "@/features/auth/components/RegisterBackButton";
