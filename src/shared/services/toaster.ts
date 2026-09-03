@@ -1,3 +1,4 @@
+import { Easing } from 'react-native';
 import { Notifier } from 'react-native-notifier';
 import i18n from '@/shared/i18n';
 import { navigationRef } from '@/shared/services/navigationRef';
@@ -8,7 +9,37 @@ import MissedMatchToast, {
   MissedMatchToastProps,
 } from '@/shared/components/toaster/MissedMatchToast';
 
-const DEFAULT_DURATION = 4000;
+/**
+ * Toast hareketi — iOS bildirim banner'ının ölçüleri. TEK KAYNAK: dört toast da
+ * bunu yayıyor, tek tek `duration` geçmiyor.
+ *
+ * DİKKAT — bu değerler Apple'ın YAYIMLANMIŞ sabitleri değil (öyle bir belge
+ * yok); sistem banner'ına bakarak yaklaştırıldı. Ayarlarken de referans o:
+ * yan yana bir bildirim düşür, farkı gözle karşılaştır.
+ *
+ * Giriş eğrisi neden bir yay DEĞİL: notifier `translateY`'yi
+ * `[MIN_TRANSLATE_Y, MAX_TRANSLATE_Y]` = `[-1000, 0]` aralığına interpolate
+ * ederken `extrapolate: 'clamp'` uyguluyor (bkz. Notifier.js). Yani `Easing.back`
+ * gibi hedefi AŞAN bir eğri verirsen taşan kısım çizilmiyor — banner 0'da
+ * sertçe duruyor ve yay hissi yerine bir "takılma" oluyor. Sistem banner'ı da
+ * zaten kritik sönümlü: aşmadan, uzun bir yavaşlamayla yerine oturuyor.
+ * Bezier (0.32, 0.72, 0, 1) Apple'ın kendi malzemelerinde kullandığı bu
+ * hissin eğrisi.
+ *
+ * Çıkış girişten HIZLI ve ters yönde: banner geri çekilirken oyalanmıyor,
+ * hızlanarak ekranın dışına akıyor.
+ */
+const BANNER_MOTION = {
+  /** Ekranda kalma süresi. Sistem banner'ı ~5sn duruyor; bizde 4sn'ydi. */
+  duration: 5000,
+  showAnimationDuration: 450,
+  showEasing: Easing.bezier(0.32, 0.72, 0, 1),
+  hideAnimationDuration: 300,
+  hideEasing: Easing.bezier(0.4, 0, 1, 1),
+  /** Parmakla yukarı atınca: kendi kendine kapanmaktan daha çevik. */
+  swipeAnimationDuration: 220,
+  swipeEasing: Easing.bezier(0.4, 0, 1, 1),
+} as const;
 
 type ShowMessageToastArg = Omit<MessageToastProps, 'onPress'> & {
   conversationId: string;
@@ -37,8 +68,8 @@ export function showMessageToast({
   Notifier.showNotification({
     Component: MessageToast,
     componentProps: { senderName, photoUrl, preview, onPress: goToChat } as MessageToastProps,
-    duration: DEFAULT_DURATION,
     swipeEnabled: true,
+    ...BANNER_MOTION,
   });
 }
 
@@ -54,8 +85,8 @@ export function showLikeToast(arg: ShowLikeToastArg) {
   Notifier.showNotification({
     Component: LikeToast,
     componentProps: { ...arg, onPress: goToLikes } as LikeToastProps,
-    duration: DEFAULT_DURATION,
     swipeEnabled: true,
+    ...BANNER_MOTION,
   });
 }
 
@@ -78,8 +109,8 @@ export function showMissedMatchToast({
         ? i18n.t('missedMatch.body', { name })
         : i18n.t('missedMatch.bodyNoName'),
     } as MissedMatchToastProps,
-    duration: DEFAULT_DURATION,
     swipeEnabled: true,
+    ...BANNER_MOTION,
   });
 }
 
@@ -87,7 +118,7 @@ export function showInfoToast(arg: InfoToastProps) {
   Notifier.showNotification({
     Component: InfoToast,
     componentProps: arg,
-    duration: DEFAULT_DURATION,
     swipeEnabled: true,
+    ...BANNER_MOTION,
   });
 }

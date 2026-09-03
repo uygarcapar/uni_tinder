@@ -2,6 +2,7 @@ import {
   ReactNode,
   createContext,
   useCallback,
+  useContext,
   useEffect,
   useMemo,
   useRef,
@@ -19,7 +20,12 @@ import {
 import {
   BottomSheetScrollView,
   BottomSheetBackdrop,
+  SCROLLABLE_STATUS,
+  useBottomSheetInternal,
+  useScrollEventsHandlersDefault,
+  type ScrollEventsHandlersHookType,
 } from "@gorhom/bottom-sheet";
+import { State } from "react-native-gesture-handler";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { LinearGradient } from "expo-linear-gradient";
 import { BlurView } from "expo-blur";
@@ -29,14 +35,18 @@ import Animated, {
   useAnimatedStyle,
   useAnimatedReaction,
   useSharedValue,
-  useAnimatedScrollHandler,
   interpolate,
   Extrapolation,
   withTiming,
   Easing,
 } from "react-native-reanimated";
-import { Host, Button as SwiftUIButton } from "@expo/ui/swift-ui";
 import {
+  Host,
+  Button as SwiftUIButton,
+  Text as SwiftUIText,
+} from "@expo/ui/swift-ui";
+import {
+  accessibilityLabel,
   buttonStyle,
   tint,
   labelStyle,
@@ -44,12 +54,19 @@ import {
   font,
   containerShape,
   shapes,
+  frame,
+  fixedSize,
 } from "@expo/ui/swift-ui/modifiers";
-import { X } from "lucide-react-native";
+import { X } from "@/shared/icons";
 import SFIcon from "./SFIcon";
 import AppBottomSheet from "@/shared/components/AppBottomSheet";
 import { colors, isLight, veil, withAlpha } from "../theme/colors";
-import { glassFallback } from "../theme/glass";
+import {
+  glassFallback,
+  glassFallbackFill,
+  glassTextClearCapsule,
+} from "../theme/glass";
+import GlassFallbackSurface from "./GlassFallbackSurface";
 import { chromeBlurTint } from "@/shared/theme/blur";
 
 // Header dikey breakdown:
@@ -58,10 +75,10 @@ import { chromeBlurTint } from "@/shared/theme/blur";
 //   total = 80 + 8px alt nefes → 88
 const MODAL_HEADER_HEIGHT = 88;
 const SHEET_TOP_RADIUS = 36;
-
-const AnimatedBottomSheetScrollView: any = Animated.createAnimatedComponent(
-  BottomSheetScrollView,
-);
+// Tam ekrana yakın açılan uzun sheet'lerin (FilterModal, profil düzenleme) üst
+// köşesi: aynı yarıçap büyük bir yüzeyde daha "keskin" okunuyor, bir tık açmak
+// sheet'i arkadaki ekrandan ayırıyor. Yalnız opt-in — varsayılan 36 kalıyor.
+export const SHEET_TOP_RADIUS_LARGE = 44;
 
 // İçerideki input'ların (bkz. useKeyboardAwareField) modal scroll view'ına
 // erişebilmesi için. scrollY zaten header animasyonu için tutuluyor; aynı
@@ -70,6 +87,90 @@ export const AppModalScrollContext = createContext<{
   scrollRef: React.MutableRefObject<any>;
   scrollY: { value: number };
 } | null>(null);
+
+/**
+ * Sheet'in scroll olay hattı — gorhom'un varsayılan handler'larını sarar ve iki
+ * şey ekler:
+ *
+ * 1. `scrollY`yi besler (header blur'u + başlık fade'i buradan çiziliyor).
+ *    ÖNCEDEN bu, scroll view'ı `Animated.createAnimatedComponent` ile İKİNCİ
+ *    kez sarıp ayrı bir `useAnimatedScrollHandler` bağlayarak yapılıyordu. O
+ *    yol aynı native scroll view'a ikinci bir olay dinleyicisi takıyor, üstelik
+ *    Reanimated prop'u `dummyListener`a çevirdiği için gorhom HER KAREDE
+ *    `runOnJS(dummyListener)` çağırıyordu. Tek hat hem ucuz hem de (2)'yi
+ *    mümkün kılıyor.
+ *
+ * 2. Momentum boyunca gorhom'un `contentOffsetY`sini TAZE tutar. Sheet'in hızlı
+ *    kaydırmada kendiliğinden kapanmasının sebebi buydu:
+ *
+ *    gorhom bu değeri yalnız üç anda örnekliyor — onBeginDrag, onEndDrag,
+ *    onMomentumEnd (son ikisi o sırada bir sheet animasyonu koşuyorsa hiç
+ *    yazmıyor). Kullanıcı hızlı hızlı fiskeleyip momentum bitmeden yeni bir
+ *    çekiş başlatınca değer bayat (çoğu zaman 0) kalıyor. Sheet'in pan jesti
+ *    "içerik zaten kaydırılmış, bu çekiş listenin" korumasını
+ *    (`wasGestureHandledByScrollView`) tam olarak bu değerden okuduğu için
+ *    koruma düşüyor; tek detent'li bir sheet'te fiskenin hızı da kapanışa
+ *    snap'liyor → modal bir anda kayboluyor.
+ *
+ *    ⚠️ PARMAK YERDEYKEN YAZILMIYOR (content pan ACTIVE/BEGAN). gorhom sürükleme
+ *    matematiğinde `translationY - contentOffsetY` kullanıyor; ikisi birden
+ *    canlı olsaydı aynı hareket iki kez sayılır ve sheet parmaktan hızlı inerdi.
+ *    Negatif offset (iOS bounce) de yazılmıyor: 0'ın altı "yukarı çekme payı",
+ *    kaydırılmış içerik değil.
+ */
+const useModalScrollEventsHandlers: ScrollEventsHandlersHookType = (
+  scrollableRef,
+  scrollableContentOffsetY,
+) => {
+  const { handleOnScroll: baseHandleOnScroll, ...restHandlers } =
+    useScrollEventsHandlersDefault(scrollableRef, scrollableContentOffsetY);
+  // gorhom `context`i handler'a özel bir generic ile tipliyor; sarmalayıcıdan
+  // olduğu gibi geçirebilmek için gevşetiyoruz (davranış değişmiyor).
+  const defaultHandleOnScroll = baseHandleOnScroll as
+    | ((event: any, context: any) => void)
+    | undefined;
+  const {
+    animatedScrollableState,
+    animatedScrollableStatus,
+    animatedContentGestureState,
+  } = useBottomSheetInternal();
+  const scrollY = useContext(AppModalScrollContext)?.scrollY;
+
+  const handleOnScroll = useCallback(
+    (event: any, context: any) => {
+      "worklet";
+      defaultHandleOnScroll?.(event, context);
+
+      const y = event.contentOffset.y;
+      if (scrollY) {
+        scrollY.value = y;
+      }
+
+      if (
+        animatedScrollableStatus.value === SCROLLABLE_STATUS.LOCKED ||
+        animatedContentGestureState.value === State.ACTIVE ||
+        animatedContentGestureState.value === State.BEGAN ||
+        y < 0
+      ) {
+        return;
+      }
+      const current = animatedScrollableState.get();
+      if (current.contentOffsetY === y) return;
+      scrollableContentOffsetY.value = y;
+      animatedScrollableState.set({ ...current, contentOffsetY: y });
+    },
+    [
+      defaultHandleOnScroll,
+      scrollY,
+      scrollableContentOffsetY,
+      animatedScrollableState,
+      animatedScrollableStatus,
+      animatedContentGestureState,
+    ],
+  );
+
+  return { ...restHandlers, handleOnScroll };
+};
 
 type AppModalProps = {
   visible: boolean;
@@ -80,6 +181,10 @@ type AppModalProps = {
   // ayarlanır, böylece header status bar/dynamic island altına girmez ve buton
   // pozisyonları kaymaz. Verildiğinde snapPoints ["100%"]'e çekilir.
   fullScreen?: boolean;
+  // Sheet'in ÜST köşe yarıçapı (varsayılan SHEET_TOP_RADIUS). Sheet çerçevesi
+  // ile header blur'unun kırpması TEK yerden beslensin diye prop: ikisi
+  // ayrışırsa blur, köşenin dışına taşan bir dikdörtgen olarak görünüyor.
+  cornerRadius?: number;
   // false ise X butonu hiç render edilmez (örn. salt görüntüleme modal'ı).
   closeButton?: boolean;
   // Standart action butonu (Kaydet/Uygula/Devam vs). Verilirse header'ın
@@ -96,8 +201,17 @@ type AppModalProps = {
   // backdrop ile kapanmaya devam eder. Action butonuyla birebir aynı stil.
   leftLabel?: string;
   onLeftPress?: () => void;
+  // Header'ın metin butonları (leftLabel + actionLabel) dolgulu `.regular` cam
+  // yerine BERRAK cam çizsin. Yuvarlak ikon butonlarının geçtiği yolun kapsül
+  // hâli (bkz. glassTextClearCapsule); opt-in çünkü aynı header'ı kullanan
+  // sheet'lerin hepsi henüz çevrilmedi.
+  clearGlassActions?: boolean;
   // X'in tarafı: actionLabel/rightSlot varsa default "left", yoksa "right".
   closeSide?: "left" | "right";
+  // Başlık scroll'a bağlı belirmek yerine HEP görünür durur. Modal içi
+  // drill-down sayfalarında ("Geri" butonunun yanında hangi sayfadayız)
+  // başlığın scroll'u beklemesi bilgiyi tamamen gizliyordu.
+  titleAlwaysVisible?: boolean;
   // Sheet yüksekliği snapPoints yerine ÖLÇÜLEN İÇERİK kadar olur (gorhom
   // enableDynamicSizing). snapPoints verilmediğinde tek detent içerik
   // yüksekliğidir; maxDynamicContentSize tavanı aşılmaz. Kısa ve sabit içerikli
@@ -150,6 +264,7 @@ export default function AppModal({
   title,
   snapPoints,
   fullScreen = false,
+  cornerRadius = SHEET_TOP_RADIUS,
   closeButton = true,
   actionLabel,
   onAction,
@@ -158,7 +273,9 @@ export default function AppModal({
   rightSlot,
   leftLabel,
   onLeftPress,
+  clearGlassActions = false,
   closeSide,
+  titleAlwaysVisible = false,
   dynamicSizing = false,
   maxDynamicContentSize,
   keyboardBehavior,
@@ -188,13 +305,10 @@ export default function AppModal({
   const effectiveTopInset = fullScreen ? insets.top : undefined;
 
   // ── Scroll plumbing ──────────────────────────────────────────────────────
+  // scrollY'yi useModalScrollEventsHandlers dolduruyor (bkz. yukarıdaki not) —
+  // burada ayrı bir scroll handler YOK.
   const scrollRef = useRef<any>(null);
   const scrollY = useSharedValue(0);
-  const scrollHandler = useAnimatedScrollHandler({
-    onScroll: (e) => {
-      scrollY.value = e.contentOffset.y;
-    },
-  });
 
   // Modal her açıldığında scroll'u sıfırla — stale title/blur state'i taşımasın.
   useEffect(() => {
@@ -222,8 +336,10 @@ export default function AppModal({
     },
   );
   const titleAnimStyle = useAnimatedStyle(() => ({
-    opacity: titleTriggered.value,
-    transform: [{ translateY: 12 * (1 - titleTriggered.value) }],
+    opacity: titleAlwaysVisible ? 1 : titleTriggered.value,
+    transform: [
+      { translateY: titleAlwaysVisible ? 0 : 12 * (1 - titleTriggered.value) },
+    ],
   }));
 
   // ScreenHeader'daki birebir easeGradient — alt kenarın yumuşak fade'i.
@@ -243,32 +359,51 @@ export default function AppModal({
   // Hem X hem Action glass + controlSize("large") kullanır → aynı height.
   // Android'de iki taraf da 46px yuvarlak/pill TouchableOpacity ile fallback.
   const ACTION_HEIGHT = 46;
+  // Sağdaki/soldaki metin butonunun SABİT kutu genişliği. Etiketler kısa
+  // (Kaydet / Sıfırla / Uygula / Bitti / Save / Reset); 11-13px semibold + 18px
+  // yatay padding en uzununda bile ~90pt. Kutu onlardan geniş, buton içine
+  // kenara yaslanıyor (bkz. aşağıdaki alignment).
+  const ACTION_BOX_WIDTH = 120;
+  // Etiket puntosu. Berrak camda bir tık küçük: `clear` variant'ın dolgusu yok,
+  // kapsül yalnız kırılma + kenar parlamasıyla okunuyor ve aynı punto orada
+  // dolgulu kardeşinden daha iri duruyordu.
+  const ACTION_LABEL_SIZE = clearGlassActions ? 11 : 13;
 
   const closeBtn = closeButton ? (
     Platform.OS === "ios" ? (
-      <Host matchContents>
-        <SwiftUIButton
-          label="Kapat"
-          systemImage="xmark"
-          onPress={onClose}
-          modifiers={[
-            buttonStyle("glass"),
-            controlSize("large"),
-            tint(colors.text),
-            labelStyle("iconOnly"),
-            font({ size: 17, weight: "medium" }),
-            // Default capsule yerine tam circle — iconOnly buton kare/yuvarlak görünsün.
-            containerShape(shapes.circle()),
-            // iOS 26 altında .automatic'e düşüyor: ne zemin ne intrinsic
-            // boyut geliyor. Kare frame veriyoruz ki border tam daire olsun ve
-            // Android fallback'iyle (ACTION_HEIGHT) aynı ölçüde dursun.
-            ...glassFallback({
-              shape: "circle",
-              frame: { width: ACTION_HEIGHT, height: ACTION_HEIGHT },
-            }),
-          ]}
-        />
-      </Host>
+      // matchContents YOK (bkz. SCREEN_HEADER_ACTION_SIZE'daki not): SwiftUI
+      // ölçümü ikinci Fabric commit'inde geldiği için Host ilk frame'de 0
+      // genişlikte kalıyor, space-between satırında butonlar kenara yapışıp
+      // ölçüm gelince yerine zıplıyordu. Host style'ı ile frame() birebir aynı.
+      // Sarmalayıcı iOS 26 ALTINDA zemini veriyor, 26+'da hiç render olmuyor.
+      <GlassFallbackSurface
+        shape="circle"
+        width={ACTION_HEIGHT}
+        height={ACTION_HEIGHT}
+      >
+        <Host style={{ width: ACTION_HEIGHT, height: ACTION_HEIGHT }}>
+          <SwiftUIButton
+            label="Kapat"
+            systemImage="xmark"
+            onPress={onClose}
+            modifiers={[
+              buttonStyle("glass"),
+              controlSize("large"),
+              tint(colors.text),
+              labelStyle("iconOnly"),
+              font({ size: 17, weight: "medium" }),
+              // Default capsule yerine tam circle — iconOnly buton kare/yuvarlak görünsün.
+              containerShape(shapes.circle()),
+              // Kare frame ARTIK her iOS sürümünde: eskiden yalnız glassFallback
+              // içinden (yani < 26'da) geliyordu, 26+'da ölçü intrinsic'ti ve
+              // Host'un sabit kutusuyla uyuşmuyordu. strokeBorder'ın frame'i
+              // takip etmesi için glassFallback'ten ÖNCE (bkz. glass.ts notu).
+              frame({ width: ACTION_HEIGHT, height: ACTION_HEIGHT }),
+              ...glassFallback({ shape: "circle" }),
+            ]}
+          />
+        </Host>
+      </GlassFallbackSurface>
     ) : (
       <TouchableOpacity
         onPress={onClose}
@@ -300,11 +435,48 @@ export default function AppModal({
   const renderTextButton = (
     label: string,
     onPress?: () => void,
-    opts?: { loading?: boolean; disabled?: boolean },
+    opts?: { loading?: boolean; disabled?: boolean; align?: "leading" | "trailing" },
   ) => {
     const inert = !!opts?.loading || !!opts?.disabled;
+    const align = opts?.align ?? "trailing";
+    if (Platform.OS === "ios" && clearGlassActions) {
+      return (
+        // Berrak cam yolu: kabuk `buttonStyle`dan DEĞİL etiketin üstündeki
+        // `.glassEffect(.clear, in: .capsule)`ten geliyor (gerekçe zinciriyle
+        // birlikte glassTextClearCapsule'da). Kutu yine sabit
+        // ACTION_BOX_WIDTH — kapsül ondan dar, son frame() ilgili kenara
+        // yaslıyor, space-between satırında buton hiç yer değiştirmiyor.
+        <Host style={{ width: ACTION_BOX_WIDTH, height: ACTION_HEIGHT }}>
+          <SwiftUIButton
+            onPress={inert ? () => {} : onPress ?? (() => {})}
+            modifiers={[
+              buttonStyle("plain"),
+              // `label` prop'u YOK: verilirse native taraf children'ı yok
+              // sayıyor (bkz. RegisterBackButton) ve cam etiket hiç çizilmiyor.
+              accessibilityLabel(label),
+              frame({ maxWidth: ACTION_BOX_WIDTH, alignment: align }),
+            ]}
+          >
+            <SwiftUIText
+              modifiers={glassTextClearCapsule({
+                height: ACTION_HEIGHT,
+                fontSize: ACTION_LABEL_SIZE,
+              })}
+            >
+              {label}
+            </SwiftUIText>
+          </SwiftUIButton>
+        </Host>
+      );
+    }
     return Platform.OS === "ios" ? (
-      <Host matchContents>
+      // X ile aynı gerekçe: matchContents YOK, kutu iki eksende de sabit.
+      // Genişlik etikete göre değişemeyeceği için ProfileScreen'deki
+      // "Profili Düzenle" deseni: sabit kutu + fixedSize(horizontal) ile
+      // kapsül etikete daralır, son frame() onu kutunun ilgili kenarına yaslar.
+      // Kalan alan şeffaf — space-between satırında kutunun DIŞ kenarı sabit
+      // olduğu için buton hiç yer değiştirmiyor.
+      <Host style={{ width: ACTION_BOX_WIDTH, height: ACTION_HEIGHT }}>
         <SwiftUIButton
           label={label}
           onPress={inert ? () => {} : onPress ?? (() => {})}
@@ -312,11 +484,23 @@ export default function AppModal({
             buttonStyle("glass"),
             controlSize("large"),
             tint(colors.text),
-            font({ size: 13, weight: "semibold" }),
+            font({ size: ACTION_LABEL_SIZE, weight: "semibold" }),
+            frame({ height: ACTION_HEIGHT }),
+            fixedSize({ horizontal: true }),
+            // vertical padding GİTTİ: yüksekliği artık frame() veriyor.
+            //
+            // Zemin BURADA düz dolgu, `GlassFallbackSurface`in bulanıklığı
+            // DEĞİL: kutu bilerek butondan geniş (aşağıdaki maxWidth +
+            // alignment) ve görünen kapsülün genişliğini yalnız SwiftUI biliyor
+            // — RN'deki BlurView kutunun şeffaf kalan kısmını da boyardı.
             ...glassFallback({
               shape: "capsule",
-              padding: { horizontal: 18, vertical: 15 },
+              padding: { horizontal: 18 },
+              backgroundColor: glassFallbackFill(),
             }),
+            // Border'dan SONRA: maxWidth kutusu butonu kenara yaslayıp kalanı
+            // şeffaf bırakıyor, öncesine konsa çerçeve boş alanı da sarardı.
+            frame({ maxWidth: ACTION_BOX_WIDTH, alignment: align }),
           ]}
         />
       </Host>
@@ -338,7 +522,13 @@ export default function AppModal({
         {opts?.loading ? (
           <ActivityIndicator size="small" color={colors.text} />
         ) : (
-          <Text style={{ color: colors.text, fontWeight: "700", fontSize: 13 }}>
+          <Text
+            style={{
+              color: colors.text,
+              fontWeight: "700",
+              fontSize: ACTION_LABEL_SIZE,
+            }}
+          >
             {label}
           </Text>
         )}
@@ -350,10 +540,13 @@ export default function AppModal({
     ? renderTextButton(actionLabel, onAction, {
         loading: actionLoading,
         disabled: actionDisabled,
+        align: "trailing",
       })
     : null;
 
-  const leftBtn = leftLabel ? renderTextButton(leftLabel, onLeftPress) : null;
+  const leftBtn = leftLabel
+    ? renderTextButton(leftLabel, onLeftPress, { align: "leading" })
+    : null;
 
   // actionBtn rightSlot'tan önceliklidir; ikisi de yoksa null.
   const rightContent = actionBtn ?? rightSlot;
@@ -384,6 +577,7 @@ export default function AppModal({
       visible={visible}
       snapPoints={effectiveSnapPoints}
       topInset={effectiveTopInset}
+      cornerRadius={cornerRadius}
       onClose={onClose}
       onPresented={onPresented}
       backdropComponent={renderBackdrop}
@@ -398,10 +592,9 @@ export default function AppModal({
       {/* ─── Content ─── */}
       <AppModalScrollContext.Provider value={scrollContext}>
       {scrollable ? (
-        <AnimatedBottomSheetScrollView
+        <BottomSheetScrollView
           ref={scrollRef}
-          onScroll={scrollHandler}
-          scrollEventThrottle={16}
+          scrollEventsHandlersHook={useModalScrollEventsHandlers}
           scrollEnabled={scrollEnabled}
           style={{ flex: 1, backgroundColor: colors.bg }}
           contentContainerStyle={[
@@ -422,7 +615,7 @@ export default function AppModal({
           keyboardShouldPersistTaps="handled"
         >
           {children}
-        </AnimatedBottomSheetScrollView>
+        </BottomSheetScrollView>
       ) : (
         <View
           style={[
@@ -462,8 +655,8 @@ export default function AppModal({
               left: 0,
               right: 0,
               height: MODAL_HEADER_HEIGHT,
-              borderTopLeftRadius: SHEET_TOP_RADIUS,
-              borderTopRightRadius: SHEET_TOP_RADIUS,
+              borderTopLeftRadius: cornerRadius,
+              borderTopRightRadius: cornerRadius,
               overflow: "hidden",
             },
             headerBgStyle,

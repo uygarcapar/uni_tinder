@@ -29,23 +29,18 @@ export default function LikeToast({ kind, senderName, photoUrl, preview, onPress
       ? `${senderName} sana not gönderdi`
       : 'Sana not gönderildi'
     : isSuper
-      ? 'Sana Super Like attı!'
+      ? 'Sana Superlike attı!'
       : 'Birisi seni beğendi';
   // Not önizlemesi başlığın altına: ürünün değeri yorumun kendisi.
   const subtitle =
     (isNote ? preview : null) || senderName || 'Likes ekranına git ve kim olduğunu gör';
 
   return (
-    <ToastShell onPress={onPress} radius={16}>
-      <View
-        style={{
-          backgroundColor: colors.surface2,
-          paddingVertical: 10,
-          paddingHorizontal: 12,
-          flexDirection: 'row',
-          alignItems: 'center',
-        }}
-      >
+    // Kabuk artık diğer üç toast'la AYNI cam kart: eskiden burası opak
+    // `surface2` idi ve aynı anda düşen iki toast iki farklı malzeme gibi
+    // duruyordu. Köşe yarıçapı kendi kalıyor — bu kart daha alçak.
+    <ToastShell onPress={onPress} radius={16} paddingVertical={10} paddingHorizontal={12}>
+      <View style={{ flexDirection: 'row', alignItems: 'center' }}>
         {photoUrl ? (
           <ExpoImage
             source={{ uri: photoUrl }}

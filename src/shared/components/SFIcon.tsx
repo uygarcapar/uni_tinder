@@ -1,6 +1,6 @@
 import { Platform, type StyleProp, type ViewStyle } from "react-native";
 import type { SFSymbol } from "expo-symbols";
-import type { LucideIcon } from "lucide-react-native";
+import type { LucideIcon } from "@/shared/icons";
 
 export type { SFSymbol };
 
@@ -42,7 +42,16 @@ export default function SFIcon({
   size: number;
   color: string;
   strokeWidth?: number;
-  weight?: "regular" | "medium" | "semibold" | "bold" | "heavy" | "black";
+  weight?:
+    | "ultraLight"
+    | "thin"
+    | "light"
+    | "regular"
+    | "medium"
+    | "semibold"
+    | "bold"
+    | "heavy"
+    | "black";
   // Android/lucide fallback'in dolgusu — .fill SF varyantı kullanan call-site'lar
   // Android'de de dolgulu görünsün diye geçirilir (örn. fill={color}).
   fill?: string;

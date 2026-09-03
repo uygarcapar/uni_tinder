@@ -9,7 +9,7 @@ import {
 import { BottomSheetTextInput } from "@gorhom/bottom-sheet";
 import { useTranslation } from "react-i18next";
 import { useState } from "react";
-import { Check, InfoIcon } from "lucide-react-native";
+import { Check, InfoIcon } from "@/shared/icons";
 import SFIcon from "./SFIcon";
 import AppModal from "./AppModal";
 import { useKeyboardAwareField } from "@/shared/hooks/useKeyboardAwareField";
@@ -199,8 +199,10 @@ export default function ReportModal({
     defaultValues: { reason: '', description: '' },
   });
 
+  // Sadece `reason` izleniyor: seçim dokunuşla değişiyor (tuş başına değil).
+  // Detay metni İZLENMİYOR (sayaç da kaldırıldı) — değeri yalnız kendi
+  // Controller'ında yaşıyor, gönderimde handleSubmit okuyor.
   const reason = watch('reason');
-  const description = watch('description') || '';
 
   // X butonu YOK: sheet swipe-down/backdrop ile kapanıyor ve o noktada gorhom
   // dismiss'i zaten yapmış oluyor. Gönderim sürerken erken çıkıp parent'ın
@@ -352,17 +354,6 @@ export default function ReportModal({
           />
         )}
       </KeyboardAwareAnchor>
-      <Text
-        style={{
-          color: colors.textSecondary,
-          fontSize: 12,
-          marginTop: 8,
-          paddingHorizontal: 4,
-          textAlign: "right",
-        }}
-      >
-        {t('moderation.report.characterCount', { count: description.length })}
-      </Text>
 
       {/* Şikayet ARTIK zorunlu engelleme yapmıyor (v1.5): işaretli gelir,
           kullanıcı kaldırabilir. Engelleme KALICIDIR — ne "engeli kaldır"

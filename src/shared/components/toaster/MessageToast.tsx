@@ -1,11 +1,9 @@
 import { View, Text } from 'react-native';
 import { Image as ExpoImage } from 'expo-image';
-import { BlurView } from 'expo-blur';
-import { UserRound } from 'lucide-react-native';
+import { UserRound } from '@/shared/icons';
 import SFIcon from '../SFIcon';
 import { colors, ink } from '../../theme/colors';
-import { plainBlurTint } from '@/shared/theme/blur';
-import ToastShell, { toastFill, TOAST_BLUR_INTENSITY } from './ToastShell';
+import ToastShell from './ToastShell';
 
 export type MessageToastProps = {
   senderName: string;
@@ -20,18 +18,8 @@ export type MessageToastProps = {
  */
 export default function MessageToast({ senderName, photoUrl, preview, onPress }: MessageToastProps) {
   return (
-    <ToastShell onPress={onPress}>
-      <BlurView
-        intensity={TOAST_BLUR_INTENSITY}
-        tint={plainBlurTint()}
-        style={{
-          paddingVertical: 14,
-          paddingHorizontal: 16,
-          backgroundColor: toastFill(),
-          flexDirection: 'row',
-          alignItems: 'center',
-        }}
-      >
+    <ToastShell onPress={onPress} paddingVertical={14} paddingHorizontal={16}>
+      <View style={{ flexDirection: 'row', alignItems: 'center' }}>
         {photoUrl ? (
           <ExpoImage
             source={{ uri: photoUrl }}
@@ -74,7 +62,7 @@ export default function MessageToast({ senderName, photoUrl, preview, onPress }:
             {preview}
           </Text>
         </View>
-      </BlurView>
+      </View>
     </ToastShell>
   );
 }

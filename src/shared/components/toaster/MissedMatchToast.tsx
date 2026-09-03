@@ -1,11 +1,9 @@
 import { View, Text } from 'react-native';
 import { Image as ExpoImage } from 'expo-image';
-import { BlurView } from 'expo-blur';
-import { HeartCrack } from 'lucide-react-native';
+import { HeartCrack } from '@/shared/icons';
 import SFIcon from '../SFIcon';
 import { colors, ink } from "../../theme/colors";
-import { plainBlurTint } from "@/shared/theme/blur";
-import ToastShell, { toastFill, TOAST_BLUR_INTENSITY } from "./ToastShell";
+import ToastShell from "./ToastShell";
 
 export type MissedMatchToastProps = {
   /** Geçilen kişinin adı — yoksa gövde metni isimsiz varyanta düşer. */
@@ -22,18 +20,8 @@ export type MissedMatchToastProps = {
  */
 export default function MissedMatchToast({ photoUrl, title, body }: MissedMatchToastProps) {
   return (
-    <ToastShell>
-      <BlurView
-        intensity={TOAST_BLUR_INTENSITY}
-        tint={plainBlurTint()}
-        style={{
-          paddingVertical: 14,
-          paddingHorizontal: 16,
-          backgroundColor: toastFill(),
-          flexDirection: 'row',
-          alignItems: 'center',
-        }}
-      >
+    <ToastShell paddingVertical={14} paddingHorizontal={16}>
+      <View style={{ flexDirection: 'row', alignItems: 'center' }}>
         {photoUrl ? (
           <ExpoImage
             source={{ uri: photoUrl }}
@@ -76,7 +64,7 @@ export default function MissedMatchToast({ photoUrl, title, body }: MissedMatchT
             {body}
           </Text>
         </View>
-      </BlurView>
+      </View>
     </ToastShell>
   );
 }

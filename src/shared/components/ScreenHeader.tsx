@@ -33,6 +33,21 @@ export default function ScreenHeader({
   titleAlign = "left",
   titleSize = 35,
   showLogo = true,
+  // Logonun YERİNE, tam aynı kutuda çizilen içerik (Profil ekranında sekme
+  // şeridi). Verildiğinde logo hiç çizilmiyor: ikisi aynı alanı paylaşıyor.
+  //
+  // ⚠️ Logodan farklı olarak scroll'la SÖNMÜYOR — bu slot etkileşimli
+  // (sekmeler), kaybolan bir şeride basılamaz.
+  centerSlot,
+  // Başlık scroll'la mı belirsin, yoksa hep mi görünsün.
+  //
+  // Varsayılan `showLogo`'ya bağlı ve bu ESKİ DAVRANIŞIN AYNISI: logolu
+  // ekranlarda tepede logo durur, başlık ancak kaydırınca gelir; logosuz
+  // ekranlarda (ör. Bildirimler) başlık nav bar'ın kendisidir, hep görünür.
+  // Ayrı prop olmasının sebebi üçüncü bir hâl: logosu OLMAYAN ama sayfa
+  // başlığını İÇERİKTE büyük olarak taşıyan ekranlar (Beğeniler, Mesajlar).
+  // Orada header başlığı da hep görünseydi aynı başlık ekranda iki kez yazardı.
+  titleOnScroll = showLogo,
 }: any) {
   const insets = useSafeAreaInsets();
 
@@ -186,8 +201,9 @@ export default function ScreenHeader({
                   height: 50,
                   justifyContent: "center",
                 },
-            // Logo yoksa başlık page header'ın kendisi — scroll'u beklemeden hep görünür.
-            showLogo ? titleAnimStyle : null,
+            // Bkz. `titleOnScroll`: kapalıysa başlık page header'ın kendisidir
+            // ve scroll'u beklemeden hep görünür.
+            titleOnScroll ? titleAnimStyle : null,
           ]}
         >
           <Text
@@ -203,7 +219,24 @@ export default function ScreenHeader({
         </Animated.View>
       ) : null}
 
-      {showLogo ? (
+      {centerSlot ? (
+        <View
+          pointerEvents="box-none"
+          style={{
+            position: "absolute",
+            top: insets.top,
+            left: 0,
+            right: 0,
+            height: 50,
+            alignItems: "center",
+            justifyContent: "center",
+          }}
+        >
+          {centerSlot}
+        </View>
+      ) : null}
+
+      {showLogo && !centerSlot ? (
         <Animated.View
           pointerEvents="box-none"
           style={[
@@ -292,6 +325,14 @@ export default function ScreenHeader({
 }
 
 export const SCREEN_HEADER_LOGO_HEIGHT = 50;
+
+/**
+ * Başlık satırının yüksekliği — `insets.top`tan itibaren. Header'ın ALTINA
+ * kendi şeridini çakan ekranlar (ör. Beğeniler'in sekme şeridi) nereden
+ * başlayacaklarını bundan hesaplıyor; sabiti elle kopyalamak, buradaki ölçü
+ * değiştiği gün iki şeridi üst üste bindirirdi.
+ */
+export const SCREEN_HEADER_TITLE_HEIGHT = 50;
 
 /**
  * Header'daki ikon butonlarının sabit kenar uzunluğu. SwiftUI `Host`'ları

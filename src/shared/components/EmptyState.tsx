@@ -8,6 +8,9 @@ export default function EmptyState({
   iconSize = 100,
   iconColor = colors.neutral100,
   iconStrokeWidth = 1.2,
+  // iOS/SF tarafının kalınlığı — `iconStrokeWidth`in SF karşılığı. Varsayılanı
+  // SFIcon veriyor ("regular"); ince bir glif isteyen çağıranlar "light" geçer.
+  iconWeight,
   text,
   subtitle,
   topOffset = 24,
@@ -15,6 +18,9 @@ export default function EmptyState({
   buttonLabel,
   onButtonPress,
   buttonBusy = false,
+  // Pill'in yazı rengi. Varsayılan `text` (modla döner); litPlus dolgunun
+  // üstünde koyu mürekkep isteyen çağıranlar `onMediaInverse` geçiyor.
+  buttonLabelColor = colors.text,
 }: any) {
   return (
     <View
@@ -42,6 +48,7 @@ export default function EmptyState({
             size={iconSize}
             color={iconColor}
             strokeWidth={iconStrokeWidth}
+            {...(iconWeight ? { weight: iconWeight } : null)}
           />
         ) : Icon ? (
           <Icon
@@ -104,7 +111,7 @@ export default function EmptyState({
               açılıyor, kendisi bir flash oluyor). */}
           <Text
             style={{
-              color: colors.text,
+              color: buttonLabelColor,
               fontSize: 15,
               fontWeight: "600",
               opacity: buttonBusy ? 0 : 1,
@@ -125,7 +132,7 @@ export default function EmptyState({
                 justifyContent: "center",
               }}
             >
-              <ActivityIndicator size="small" color={colors.text} />
+              <ActivityIndicator size="small" color={buttonLabelColor} />
             </View>
           )}
         </TouchableOpacity>

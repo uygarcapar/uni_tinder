@@ -2,7 +2,7 @@ import { useCallback, useRef } from "react";
 import { Text, View } from "react-native";
 import * as Haptics from "expo-haptics";
 import { useTranslation } from "react-i18next";
-import { Camera, ChevronRight, Images } from "lucide-react-native";
+import { Camera, ChevronRight, Images } from "@/shared/icons";
 
 import { BottomSheetView } from "@gorhom/bottom-sheet";
 
@@ -119,7 +119,7 @@ function SourceRow({
         flexDirection: "row",
         alignItems: "center",
         gap: 14,
-        paddingVertical: 16,
+        paddingVertical: 11,
         paddingHorizontal: 20,
         borderRadius: 999,
         borderCurve: "continuous",

@@ -5,6 +5,10 @@ import { View, Text, TouchableOpacity, ActivityIndicator } from 'react-native';
 // bu modülden import ediyor. Mock'ta da var olmalı, yoksa useContext patlar.
 export const AppModalScrollContext = React.createContext<any>(null);
 
+// Gerçek modüldeki köşe yarıçapı sabiti — tüketiciler (FilterModal,
+// ProfileEditModal) bunu prop olarak geçiriyor.
+export const SHEET_TOP_RADIUS_LARGE = 44;
+
 const AppModal = ({
   visible,
   title,
@@ -14,6 +18,8 @@ const AppModal = ({
   actionLoading,
   actionDisabled,
   rightSlot,
+  leftLabel,
+  onLeftPress,
   children,
 }: any) => {
   if (!visible) return null;
@@ -22,6 +28,11 @@ const AppModal = ({
       <TouchableOpacity onPress={onClose} testID="modal-header-close">
         <Text>X</Text>
       </TouchableOpacity>
+      {leftLabel ? (
+        <TouchableOpacity onPress={onLeftPress} testID="modal-header-left">
+          <Text>{leftLabel}</Text>
+        </TouchableOpacity>
+      ) : null}
       <Text>{title}</Text>
       {actionLabel ? (
         <TouchableOpacity

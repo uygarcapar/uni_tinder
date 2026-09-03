@@ -15,11 +15,18 @@ const SCREEN_WIDTH = Dimensions.get("window").width;
 /**
  * Shimmer'lı iskelet kutusu — soldan sağa kayan yumuşak parlama.
  * width sayı değilse (yüzde/undefined) shimmer ekran genişliğine göre ölçülür.
+ *
+ * `color`/`shimmerColor` MEDYA üstünde çizilen iskeletler için: varsayılanlar
+ * (`surface`/`shimmer`) modla döner, yani açık modda koyu bir parlama üretir —
+ * kırmızı bir kartın üstünde ikisi de yanlış okunur, orada onMedia ailesinden
+ * beyaz-alfa geçilir (bkz. PurchaseSections/SelectedBadge).
  */
 export default function SkeletonBox({
   width: w,
   height: h,
   borderRadius = 8,
+  color,
+  shimmerColor,
   style,
 }: any) {
   const animW = typeof w === "number" ? w : SCREEN_WIDTH;
@@ -45,7 +52,7 @@ export default function SkeletonBox({
           height: h,
           borderRadius,
           borderCurve: "continuous",
-          backgroundColor: colors.surface,
+          backgroundColor: color ?? colors.surface,
           overflow: "hidden",
         },
         style,
@@ -65,7 +72,7 @@ export default function SkeletonBox({
         ]}
       >
         <LinearGradient
-          colors={["transparent", colors.shimmer, "transparent"]}
+          colors={["transparent", shimmerColor ?? colors.shimmer, "transparent"]}
           start={{ x: 0, y: 0 }}
           end={{ x: 1, y: 0 }}
           style={{ flex: 1 }}

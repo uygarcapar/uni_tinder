@@ -1,8 +1,6 @@
 import { View, Text } from 'react-native';
-import { BlurView } from 'expo-blur';
 import { colors } from "../../theme/colors";
-import { plainBlurTint } from "@/shared/theme/blur";
-import ToastShell, { toastFill, TOAST_BLUR_INTENSITY } from "./ToastShell";
+import ToastShell from "./ToastShell";
 import {
   ToastIconGlyph,
   toastIconBackground,
@@ -23,8 +21,8 @@ export type InfoToastProps = {
 
 export default function InfoToast({ title, message, icon }: InfoToastProps) {
   // Simge dairesi dolgulu: cam kartın üstünde soluk bir tint yeterince
-  // okunmuyordu. Dolgu açık modda siyah, koyu modda ürünün rengi
-  // (toastIconBackground); glif iki durumda da `onMedia` beyaz.
+  // okunmuyordu. Dolgu açık modda siyah, koyu modda ürünün rengi — mesaj
+  // hakkında nötr gri (toastIconBackground); glif her durumda `onMedia` beyaz.
   const iconBg = icon ? toastIconBackground(icon) : null;
 
   const body = (
@@ -44,14 +42,9 @@ export default function InfoToast({ title, message, icon }: InfoToastProps) {
   );
 
   return (
-    <ToastShell>
-      <BlurView
-        intensity={TOAST_BLUR_INTENSITY}
-        tint={plainBlurTint()}
+    <ToastShell paddingVertical={16} paddingHorizontal={20}>
+      <View
         style={{
-          paddingVertical: 16,
-          paddingHorizontal: 20,
-          backgroundColor: toastFill(),
           flexDirection: icon ? 'row' : undefined,
           alignItems: icon ? 'center' : undefined,
         }}
@@ -72,7 +65,7 @@ export default function InfoToast({ title, message, icon }: InfoToastProps) {
           </View>
         ) : null}
         {body}
-      </BlurView>
+      </View>
     </ToastShell>
   );
 }

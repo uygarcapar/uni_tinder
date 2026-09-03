@@ -7,6 +7,11 @@ export default function AnimatedPressable({
   onPressOut,
   onLayout,
   style,
+  // `style` içteki TouchableOpacity'ye gidiyor; bu ise dıştaki ölçek
+  // sarmalayıcısına. Çağıranın layout'u sarmalayıcıdan GEÇİRMESİ gerektiğinde
+  // (ör. kartın kardeşleriyle eşit boya gerilmesi) tek yol bu — sarmalayıcı
+  // aksi halde içeriği kadar yer kaplayıp zinciri kesiyor.
+  wrapperStyle,
   disabled,
   activeOpacity = 1,
   pressScale = 0.97,
@@ -44,7 +49,7 @@ export default function AnimatedPressable({
   };
 
   return (
-    <Animated.View style={{ transform: [{ scale }] }}>
+    <Animated.View style={[wrapperStyle, { transform: [{ scale }] }]}>
       <TouchableOpacity
         activeOpacity={activeOpacity}
         onPressIn={handlePressIn}
