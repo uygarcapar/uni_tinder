@@ -5,14 +5,14 @@ const en = {
     done: 'Done',
     cropper: {
       title: 'Edit Photo',
-      choose: 'Choose',
+      save: 'Save',
       reset: 'Reset',
       progress: '{{index}} / {{total}}',
-      hint: 'Drag to reposition, pinch to zoom',
       failed: 'The photo could not be processed, please try again.',
     },
     crashTitle: 'Something went wrong',
-    crashMessage: 'An unexpected error occurred. Tap the button to try again.',
+    crashSubtitle:
+      'An unexpected error occurred. Trying again usually fixes it; if it keeps happening, close and reopen the app.',
     crashRetry: 'Try Again',
     offline: 'No internet connection',
     back: 'Back',
@@ -30,21 +30,30 @@ const en = {
   },
   settings: {
     title: 'Settings',
+    // Description for the root list (categories) — same voice as section blurbs.
+    subtitle: 'Manage your account, notifications and how the app looks.',
+    // `heading`: the title shown ABOVE the blurb on a category page. NOT a copy
+    // of `title` — that one already sits in the header; this one names what is
+    // on the page (rows / pills). The blurbs were made concrete so they no
+    // longer just restate the heading.
     theme: {
       title: 'Theme',
-      subtitle: 'Choose how the app looks.',
+      heading: 'Appearance',
+      subtitle: 'Follow the system, or lock light or dark.',
       system: 'System',
       light: 'Light',
       dark: 'Dark',
     },
     language: {
       title: 'Language',
-      subtitle: 'Choose the language the app is shown in.',
+      heading: 'App language',
+      subtitle: 'Follow the system, or lock Turkish or English.',
       system: 'System',
     },
     messaging: {
       title: 'Messaging',
-      subtitle: 'Control chat and notification behavior.',
+      heading: 'Chats and notifications',
+      subtitle: 'Read receipts, push behavior and what a notification shows.',
     },
     readReceipts: {
       title: 'Read Receipts',
@@ -54,6 +63,11 @@ const en = {
       title: 'Mute Notifications While Online',
       subtitle: "Don't receive push notifications while the app is open",
     },
+    messagePreview: {
+      title: 'Show Message in Notification',
+      subtitle:
+        "The message content shows on your lock screen. Turn it off and you'll only see who wrote.",
+    },
     photoModerationAlerts: {
       title: 'Photo Notifications',
       subtitle:
@@ -61,7 +75,8 @@ const en = {
     },
     privacy: {
       title: 'Privacy',
-      subtitle: 'You have full control over your data.',
+      heading: 'Your data and blocks',
+      subtitle: 'Download a copy of your data, manage who you blocked.',
     },
     downloadData: 'Download My Data',
     blockedUsers: 'Blocked Users',
@@ -69,6 +84,7 @@ const en = {
     changeEmail: 'Change Email',
     account: {
       title: 'Account',
+      heading: 'Account and session',
       subtitle: 'If you delete your account, you can return within 30 days.',
     },
     deleteAccount: 'Delete Account',
@@ -333,32 +349,140 @@ const en = {
         },
       },
     },
+    // Disclosure text — VERSION 2.0. If the section count changes, update
+    // `DOCS.privacy.sectionCount` in LegalSheet and `PRIVACY_SECTIONS` in
+    // KVKKConsentScreen together; both have to know the same number.
+    // Rendered through PolicyMarkdown → `**bold**` and `- bullets` work.
     kvkkConsent: {
       title: 'Privacy & KVKK',
-      description: 'Before continuing to use the app, we ask you to read and agree to the following text.',
+      description:
+        'This text explains, under Law No. 6698 on the Protection of Personal Data (KVKK), for which purposes and on which legal basis your personal data is processed when you use lit, who it is shared with, and how long it is kept. We ask you to read and accept it before continuing.',
       acceptText: 'I have read, understood, and accept the privacy policy and KVKK disclosure text.',
       acceptButton: 'Accept & Continue',
       titleRequired: 'Consent Required',
       messageRequired: 'You must accept the text to continue.',
       errorSave: 'Consent could not be saved, please try again.',
-      sectionTitle1: 'Protection of Personal Data (KVKK)',
-      section1Content:
-        'Within the scope of the Law No. 6698 on the Protection of Personal Data, your personal data is processed by our company as the data controller. Personal data collected through this application is used solely for service provision purposes and shared with third parties within the framework of the law.',
-      sectionTitle2: 'Processed Data',
-      section2Content:
-        'Data such as your name, email, date of birth, gender, university information, location, and profile photos are processed. This data is used to provide you with personalized services.',
-      sectionTitle3: 'Your Rights',
-      section3Content:
-        "Under Article 11 of KVKK, you have the right to learn whether your personal data is processed, request information about it if so, learn the purpose of processing and whether it is used accordingly, know third parties to whom your data is transferred domestically or abroad, and request correction of incomplete or incorrectly processed data.",
-      sectionTitle4: 'Cookies and Analytics',
-      section4Content:
-        'Analytics tools are used to improve the application experience. Data collected through these tools is processed to enhance the user experience.',
-      sectionTitle5: 'Data Retention',
-      section5Content:
-        'Your data is retained as long as your account is active. If you delete your account, your data will be permanently deleted from our systems within 30 days.',
-      sectionTitle6: 'Contact',
-      section6Content:
-        'For questions about our privacy policy or your personal data, you can reach us at support@lit.com.',
+
+      sectionTitle1: 'Data Controller',
+      section1Content: `
+        For the personal data processed through the lit application, the data controller is Uygar Çapar, the natural person who publishes the application.
+
+        E-mail: info@4ourstack.com
+      `,
+
+      sectionTitle2: 'Personal Data We Process',
+      section2Content: `
+        **Account and identity data.** Your name, date of birth, gender, university e-mail address, phone number if provided, your password (stored in an irreversibly hashed form), your e-mail verification status and the delivery records of verification codes.
+
+        **Education data.** The name and e-mail domain of your university, your department, your year, and whether you chose to show your university on your profile.
+
+        **Profile data.** Your display name, your bio, the answers you give to profile prompts, your height, your hobbies and interests, the languages you speak, pet information and the photos you upload.
+
+        **Match preferences.** The genders you are interested in, your age range, your distance preference and your profile visibility settings.
+
+        **Location data.** If you grant the location permission on your device, your coordinates and the city/district derived from them. The location shown to other users is blurred: a fixed offset is applied to your coordinates and the distance is rounded into bands. Your raw coordinates are never sent to other users.
+
+        **Usage data.** The profiles you like or pass, your matches, the profiles shown to you, your daily entitlement usage and your in-app activity times.
+
+        **Communication content.** The messages you exchange with people you match with (text and any media you share), message reactions and the notes you write on a profile.
+
+        **Device and technical data.** Your device identifier (token) so we can send notifications, your platform and app version, your IP address, client information, and error and crash records.
+
+        **Subscription data.** Your premium subscription status and purchase history. Your card and payment details are processed by the App Store or Google Play; that information is not passed to us and is not stored by us.
+
+        **Safety and moderation data.** Reports you make or that are made about you, blocks, photo moderation results, your appeals, and suspension or account closure records.
+
+        **Consent records.** Which version of this text you accepted and when, along with the IP address and device information at the moment of consent. This record is kept as proof of your consent.
+      `,
+
+      sectionTitle3: 'Special Categories of Personal Data',
+      section3Content: `
+        Because lit is a dating application, special categories of personal data within the meaning of Article 6 of KVKK may be processed in two places:
+
+        **Data relating to sexual orientation.** Your match preferences may reveal information about your sexual life.
+
+        **Biometric data.** If you choose to use photo verification, the face in the photo you take is automatically compared with the face in your profile photo to check whether they belong to the same person. The comparison is made in the moment; no biometric template is extracted from your face and none is stored.
+
+        This data is processed only with your explicit consent. You may withdraw your consent at any time; in that case the related feature (match suggestions or photo verification) will not work.
+      `,
+
+      sectionTitle4: 'Purposes of Processing',
+      section4Content: `
+        Your personal data is processed to create your account and verify your student status, publish your profile, suggest suitable profiles and establish matches, let you message the people you match with, send notifications, manage premium subscriptions, keep the application secure and prevent misuse (fake profiles, harassment, fraud, inappropriate content), provide you with support, improve the application, and fulfil our legal obligations.
+      `,
+
+      sectionTitle5: 'Legal Bases',
+      section5Content: `
+        Your data is processed on the grounds that it is directly related to the conclusion and performance of a contract (KVKK art. 5/2-c), the fulfilment of our legal obligation (art. 5/2-ç), the establishment and protection of a right (art. 5/2-e), and our legitimate interest provided that it does not harm your fundamental rights and freedoms (art. 5/2-f).
+
+        Special categories of personal data (art. 6/2-a) and non-essential notification and analytics processing rely on your explicit consent. Transfers abroad are made under appropriate safeguards (standard contract) within the scope of Article 9 of KVKK.
+      `,
+
+      sectionTitle6: 'Transfers and Transfers Abroad',
+      section6Content: `
+        Your data is transferred to the following service providers, only to the extent required to provide the service:
+
+        - **Cloud infrastructure and storage:** your photos and the data files you export are held in cloud storage.
+        - **Photo moderation and face comparison:** the photos you upload are sent to an image processing service to detect inappropriate content and, if you request it, for face comparison.
+        - **Notification infrastructure:** notifications are delivered to your device through Google Firebase Cloud Messaging. For message notifications, the title and the first part of the message pass through this infrastructure; the content is not stored there.
+        - **Subscription management:** your premium subscription status is shared with a subscription verification service.
+        - **Product analytics and error records:** the services we use to improve the application and fix crashes are hosted in the European Union region.
+        - **E-mail delivery:** verification codes and informational e-mails are sent through our own e-mail server.
+        - **Artificial intelligence services:** the answers you give to profile prompts are converted into a numerical representation so we can suggest people with similar interests; the notes you write on a profile are checked for content before they are sent. For these operations the relevant text is passed to the provider and processed solely to produce the result.
+
+        Some of these providers have servers outside Türkiye. Transfers abroad are made under standard contracts signed with the relevant providers and notified to the Authority, in accordance with Article 9 of KVKK.
+
+        In addition, transfers may be made to the extent required by legislation upon the request of legally authorised public institutions and organisations.
+      `,
+
+      sectionTitle7: 'Moderation and Automated Systems',
+      section7Content: `
+        The profiles shown to you are ordered by an automated score. This ordering is only a suggestion; it does not produce a decision that has legal consequences for you or significantly affects you. You can see an explanation of how match suggestions are formed inside the application.
+
+        The photos you upload are reviewed automatically for compliance with the community rules. If one of your photos is rejected automatically, you may appeal and ask for the decision to be reviewed by a person.
+
+        When a report is made about a user, our moderation team may view the reported content and, for message reports, a portion of the relevant conversation in order to assess the report. This access is limited to reviewing the report, is logged, and is not used for any other purpose. Apart from this, your messages are not read by anyone.
+      `,
+
+      sectionTitle8: 'Retention Periods',
+      section8Content: `
+        - **Account and profile data:** for as long as your account is open.
+        - **Messages:** 2 years. Messages older than this are deleted automatically.
+        - **Read notifications:** 30 days.
+        - **Device notification identifiers:** deleted if unused for 90 days.
+        - **Photos rejected in moderation:** 30 days so that you can appeal, then deleted.
+        - **If you delete your account:** your account is suspended for 30 days, and you can cancel the deletion request by logging in during that period. Once the period ends, your data is deleted irreversibly. Only an irreversible hash of your e-mail address, the deletion date and whether the account was banned at the moment of deletion are kept. This record exists to prevent a banned account from being deleted and re-created; it does not give your e-mail address back and is not used for any other purpose.
+        - **Records subject to a statutory retention obligation:** for the periods required by the relevant legislation (10 years for commercial books and documents).
+      `,
+
+      sectionTitle9: 'Your Rights',
+      section9Content: `
+        Under Article 11 of KVKK you have the right to learn whether your personal data is processed, to request information if it has been processed, to learn the purpose of processing and whether it is used accordingly, to know the third parties to whom your data is transferred at home or abroad, to request its correction if it is incomplete or incorrectly processed, to request its erasure or destruction, to request that correction and erasure operations be notified to the third parties to whom the data was transferred, to object to a result against you arising from analysis solely by automated systems, and to claim compensation if you suffer damage due to unlawful processing.
+
+        You can exercise some of these rights directly inside the application: you can correct your profile information from settings, request a copy of your data, and permanently delete your account.
+      `,
+
+      sectionTitle10: 'Applications',
+      section10Content: `
+        You can send requests concerning your rights to info@4ourstack.com from the e-mail address registered on your account, in accordance with the procedures set out in the Communiqué on the Procedures and Principles of Application to the Data Controller. Your application is concluded within 30 days at the latest.
+
+        If your application is rejected, if you find our response insufficient, or if no response is given within the period, you may file a complaint with the Personal Data Protection Board within 30 days of learning the response and in any case within 60 days of the application date (KVKK art. 14).
+      `,
+
+      sectionTitle11: 'Data Security',
+      section11Content: `
+        Your password is stored irreversibly and cannot be seen by us. All communication between the application and our servers goes over an encrypted connection. Your location data is shown to other users in blurred form. Access to data is limited to the people who need it for their duties, and moderation actions are logged.
+      `,
+
+      sectionTitle12: 'Age Limit',
+      section12Content: `
+        lit is only for university students who are at least 18 years old. Use of the application by people under 18 is prohibited; if detected, the account is closed and the related data is deleted.
+      `,
+
+      sectionTitle13: 'Changes to This Text',
+      section13Content: `
+        This text may be updated in line with changes to the application and to legislation. When the version of the text changes, your consent is requested again inside the application; which version you accepted and when is recorded. The current version is always published on this page.
+      `,
     },
     step1: {
       title: 'University E-Mail',
@@ -558,6 +682,18 @@ const en = {
       tabAll: 'All',
       tabUnread: 'Unread',
       tabClosed: 'Closed',
+      // Section heading above the search bar — same pattern as `likes.header*`.
+      headerAll: 'Chats',
+      headerUnread: 'Unread',
+      headerClosed: 'Closed chats',
+      // One-line subtitle under the big title (same job as `likes.desc*`).
+      // ⚠️ Must fit ONE line: the box has a fixed height and `overflow: hidden`
+      // (see MessagesScreen TITLE_BLOCK_HEIGHT).
+      descAll: 'Your chats with everyone you matched.',
+      descUnread: 'Chats still waiting for your reply.',
+      descClosed: 'Chats whose match has ended.',
+      // Pill next to the title — opens the premium sheet, free users only.
+      unlimitedAction: 'Chat unlimited',
       noUnread: 'No unread messages.',
       noClosed: 'No closed chats.',
       empty: 'No messages yet.',
@@ -566,6 +702,9 @@ const en = {
       // Prefix for unsent composer text ("Draft: hello").
       draft: 'Draft:',
       closedChat: 'Chat closed',
+      // Badge next to the name in the conversation list: this chat still counts
+      // free messages (neither side is premium).
+      limitedQuota: 'Limited',
       newMessages: '{{n}} new messages',
       startConversation: 'Start a conversation 👋',
       mediaPhoto: 'Photo',
@@ -617,7 +756,10 @@ const en = {
       sectionChatDescription: 'Quick actions for this chat.',
       unmatch: 'Remove Match',
       restore: 'Restore Match',
+      // Shown only to the side that closed the chat; the other side never had a
+      // restore window, so it must not be told one "expired" (see `closed`).
       restoreExpired: 'This chat has ended. The restore window has expired.',
+      closed: 'This chat has ended.',
       sectionSafety: 'Safety',
       sectionSafetyDescription:
         'Reporting and blocking are permanent: you will never match again and the old chat stays closed.',
@@ -651,6 +793,38 @@ const en = {
       placeholder: 'Message...',
       closed: 'This chat is closed',
       quotaReached: 'Out of messages — go Premium',
+      send: 'Send',
+      voice: 'Voice message',
+    },
+    voice: {
+      cancel: 'Delete recording',
+      pause: 'Pause',
+      resume: 'Resume',
+      holdHint: 'Hold the mic to record a voice message',
+      maxDuration: 'Voice messages can be up to 1 minute',
+      permissionTitle: 'Microphone is off',
+      permissionBody: 'Allow microphone access in Settings to send voice messages.',
+      failed: 'Could not start recording',
+      sendFailed: 'Voice message could not be sent',
+      tooLarge: 'Recording is too large, try a shorter one',
+      badFormat: 'Recording format is not supported, try again',
+    },
+    emoji: {
+      open: 'Emoji',
+      showKeyboard: 'Keyboard',
+      backspace: 'Delete',
+      noRecent: 'Emojis you use will show up here.',
+      categories: {
+        recent: 'Frequently used',
+        smileys: 'Smileys & people',
+        animals: 'Animals & nature',
+        food: 'Food & drink',
+        activity: 'Activity',
+        travel: 'Travel & places',
+        objects: 'Objects',
+        symbols: 'Symbols',
+        flags: 'Flags',
+      },
     },
     replyPreview: {
       deletedSender: 'Deleted',
@@ -703,13 +877,31 @@ const en = {
       durationHoursMinutes: '{{h}}h {{m}}m',
       durationMinutes: '{{m}}m',
       durationSeconds: '{{sec}}s',
-      superLikeCooldownTitle: 'Super Likes used up',
+      superLikeCooldownTitle: 'Superlikes used up',
       // The period can't be hardcoded: since 2026-08-22 the Super Like cycle is
       // tier-based (7/30/365 days). "7-day cycle" was a wrong promise for
       // monthly and yearly subscribers; the real figure is `{{time}}`.
       superLikeCooldownMessage: 'Your quota refills when your billing cycle renews — {{time}}.',
-      superLikeExhaustedTitle: 'You are out of Super Likes',
-      superLikeExhaustedMessage: 'Free membership includes a single Super Like and it does not renew on its own.',
+      superLikeExhaustedTitle: 'You are out of Superlikes',
+      superLikeExhaustedMessage: 'Free membership includes a single Superlike and it does not renew on its own.',
+      // Sent confirmation — same shape as the note one (note.sentTitle/sentMessage).
+      // The nameless variant is required: a card's displayName can come back
+      // empty, which produced a sentence starting with a blank.
+      superLikeSentTitle: 'Superlike sent',
+      superLikeSentMessage: '{{name}} will see you highlighted in their likes.',
+      superLikeSentMessageNoName: 'They will see you highlighted in their likes.',
+      // Daily like quota: running-low warning (thresholds live in
+      // DiscoverScreen) and exhaustion. The cap is never spelled out — it comes
+      // from server config and changes without a FE release; the copy only
+      // states what is LEFT ({{count}}) and the time to renewal ({{time}}).
+      quotaLowTitle: 'Running low on likes',
+      quotaLowMessage: '{{count}} likes left.',
+      quotaLowMessageWithTime: '{{count}} likes left, they renew in {{time}}.',
+      quotaExhaustedTitle: 'You are out of likes',
+      // With no known countdown (missing field / sentinel) we promise nothing —
+      // same split as the Super Like copy above.
+      quotaExhaustedMessage: 'You can not send likes until your quota renews. Go Premium for unlimited likes.',
+      quotaExhaustedMessageWithTime: 'Your likes renew in {{time}}. Go Premium to like without waiting.',
     },
     premium: {
       badge: 'PREMIUM MEMBER',
@@ -758,6 +950,10 @@ const en = {
       standardPlan: 'Free',
       featuresLabel: 'Features',
       planName: 'lit plus',
+      // Big title at the top of the page. Subscribers see the page name
+      // instead of a sales line — there is nothing left to sell there.
+      pageTitle: 'Get Lit Plus',
+      pageTitlePremium: "You're a Lit Plus+ member",
       description: 'Speed up your matches with Lit Plus, see who likes you, and discover more!',
       pricing: '{{price}} / month',
       pricingPrefix: 'Plans starting from ',
@@ -821,8 +1017,8 @@ const en = {
         paused: 'Your Premium filters are paused. Your selections are kept but not applied to the deck — go Premium again and they pick up where they left off.',
       },
       dealbreaker: {
-        on: 'Never show people who do not match this filter',
-        off: 'Show people outside this filter when candidates run out',
+        // One string, does NOT change with the switch state — see tr.ts.
+        label: 'Never show people outside this filter, even when candidates run out',
       },
       enumLoading: 'Loading options…',
       enumUnavailable: 'List could not be loaded right now.',
@@ -897,7 +1093,22 @@ const en = {
       relationshipIntents: {
         title: 'Intentions I look for',
         description: 'People with these intentions are shown first in Discover. Others stay in your deck; you can leave this empty.',
-        // Short pill labels, keyed by enumName. Missing key → backend display.
+        // Checked-row labels in the filter — written in the other person's
+        // voice ("I'm looking for long-term"), same approach as the register
+        // step14 sentences. Missing key → `short`, then backend display
+        // (see FilterModal → intentRowLabel).
+        sentences: {
+          LongTerm: "I'm looking for long-term",
+          ShortTerm: "I'm looking for short-term",
+          LongTermOpenToShort: "I'm looking for long-term but open to short",
+          ShortTermOpenToLong: "I'm looking for short-term but open to long",
+          StillFiguringOut: 'Still figuring it out',
+        },
+        // Short labels, keyed by enumName. Missing key → backend display.
+        // NOTE: this map is now used only on the Discover CARD (see SwipeCard),
+        // where a "relationship" suffix is appended ("Long-term" → "Long-term
+        // relationship"). Don't turn these into sentences — the suffix breaks;
+        // filter rows use `sentences` above.
         short: {
           LongTerm: 'Long-term',
           ShortTerm: 'Short-term',
@@ -960,7 +1171,7 @@ const en = {
         title: 'Nobody to show right now',
       },
       allCandidatesSeen: {
-        title: "You've seen everyone available",
+        title: "You've seen everyone available, come back later",
       },
       filtersTooStrict: {
         title: 'Your filters are too narrow',
@@ -997,12 +1208,38 @@ const en = {
     // Notes get their own tab — see the Turkish file for why they are excluded
     // from the "Like" tab.
     tabNote: 'Notes',
+    // Section heading above the pill row — present on every tab.
+    // Purchase pill beside the section heading — shared by the super like and
+    // note tabs. The missed tab dropped out on 2026-08-31: what it sells is a
+    // subscription now, not a pack, so its pill uses `viewLikersAction`.
+    howToGetAction: 'How to get',
+    // The "All" tab's big title deliberately differs from its pill ('All') —
+    // 'Likes' is the name of the like tab alone; see the Turkish file.
+    headerAll: 'All incoming',
+    headerLike: 'Likes',
+    headerSuperLike: 'Super likes',
+    headerNote: 'Notes',
+    // Big title for the missed tab — it used to be the balance itself
+    // ("Recoveries left: 3/5"); the balance moved into the description line
+    // (see descMissed*). Same wording as the pill (tabMissed) on purpose.
+    headerMissed: 'Missed',
     infoDescription:
       'Everyone who liked or super liked you shows up here. Use the buttons next to a card to pass, or like them back to match instantly.',
+    // See tr.ts for why this replaced the dismissible info card.
+    descAll: 'Everyone who liked you collects here.',
+    descLike: 'People who sent you a regular like are listed here.',
+    descSuperLike: 'Cards from people who super liked you arrive unblurred.',
+    descNote: 'People who wrote a note on your photo or prompt answer.',
+    descMissed: 'People you passed on who had liked you stay here for a while.',
+    descMissedDays:
+      'People you passed on who had liked you stay here for {{days}} days.',
     startSwipingButton: 'Start swiping',
     // Accessibility labels for the round buttons beside each card.
     passButton: 'Pass',
     likeButton: 'Like',
+    // Pill above the name row — see the Turkish file for why it is super-like
+    // only; the badge beside it sits next to the sentence, it does not replace it.
+    superLikePill: 'Sent you a Superlike',
     emptySuperLike: 'No super likes yet.',
     emptySuperLikeSubtitle: 'When someone super likes you, they will appear here.',
     emptyLike: 'No likes yet.',
@@ -1012,9 +1249,14 @@ const en = {
     emptyNote: 'No notes yet.',
     emptyNoteSubtitle:
       'When someone writes a note on your photo or prompt answer, their card shows up here.',
-    viewButton: 'See who likes you',
+    // Premium pill next to the title on the All / Likes tabs. This used to be
+    // a sticky button over the list ("See who likes you", `viewButton`); the
+    // button is gone and the label shrank to fit inline — the title already
+    // says whose likes these are.
+    viewLikersAction: 'See likers',
     // Missed matches: people who liked you but you passed on. The list is open
-    // to everyone; recovering spends a balance (tier quota + purchased credits).
+    // to everyone BUT the cards are blurred for free users (same rule as the
+    // like cards); recovering is a Premium perk as of 2026-08-31.
     tabMissed: 'Missed',
     emptyMissed: 'You have not missed anyone.',
     // The window length comes from the backend — see the Turkish file.
@@ -1022,23 +1264,16 @@ const en = {
       'If you pass on someone who liked you, they stay here for a while so you can take it back.',
     emptyMissedSubtitleDays:
       'If you pass on someone who liked you, they stay here for {{days}} days so you can take it back.',
-    // Info card copy for this tab — same card and same dismiss flag, only the
-    // text switches. See the Turkish file for why this tab needs its own.
-    infoMissedDescription:
-      'People who liked you but you passed on stay here for a while. Recovering turns your pass into a like and you match instantly — each one spends a recovery.',
-    infoMissedDescriptionDays:
-      'People who liked you but you passed on stay here for {{days}} days. Recovering turns your pass into a like and you match instantly — each one spends a recovery.',
     recoverButton: 'Recover',
-    // Deliberately not pluralized — see the Turkish file for why.
+    // Appended to the tab's description sentence (see tabDescriptionFor), hence
+    // the trailing period.
     //
-    // ⚠️ Balance semantics since 2026-08-22 — "today" would be wrong: free
-    // users only have purchased credits (never renewed), subscribers get a
-    // tier quota that renews with the billing cycle.
-    recoverBalance: 'Recoveries left: {{count}}',
-    // Denominator is `cap + purchased credits` (see recoveryQuota.ts). Not used
-    // when the balance exceeds it (tier downgrade) — it would read "5/2".
-    recoverBalanceWithTotal: 'Recoveries left: {{count}}/{{total}}',
-    recoverBalanceEmpty: 'You are out of recoveries.',
+    // ⚠️ Drawn for SUBSCRIBERS ONLY. Free users get no counter, deliberately:
+    // recovery left the quota/credit economy on 2026-08-31 and became a Premium
+    // perk, so there is nothing left to earn or renew — "0 left" would imply a
+    // counter that does not exist. Free users get the offer from the pill next
+    // to the heading instead (viewLikersAction).
+    recoverUnlimited: 'Recoveries are unlimited.',
     recoverSuccessTitle: 'Match recovered 💞',
     recoverSuccessMessage: 'They already liked you — the chat will open shortly.',
     recoverFailed: 'Could not recover.',
@@ -1060,7 +1295,8 @@ const en = {
     },
   },
   match: {
-    title: "It's Lit!",
+    // No title copy — the modal's heading is the brand word itself ("lit",
+    // drawn in Duckie), not a translated sentence. See MatchModal.
     subtitle: 'You matched with {{name}}. Send the first message.',
     sendMessage: 'Send Message',
     back: 'Go Back',
@@ -1073,6 +1309,13 @@ const en = {
   },
   profile: {
     tabTitle: 'Profile',
+    // Header tab strip that replaced the logo (profile page ↔ plus page).
+    tabs: {
+      profile: 'Profile',
+      // "Plus+" — the product's own spelling (see the plus card and
+      // `discover.premium.pageTitlePremium`), not a stray "+".
+      plus: 'Plus+',
+    },
     loadError: 'Profile refresh error:',
     loadFailed: {
       title: "Couldn't load your profile",
@@ -1147,6 +1390,9 @@ const en = {
       subtitleEmpty: 'None left',
       subtitleUnknown: 'Like with words',
     },
+    // NOTE: the leftmost premium-only card (PlusCard) has no translatable
+    // copy — just the "plus+" wordmark (brand spelling, drawn in Duckie) and a
+    // chevron into the plus page.
     account: {
       title: 'Account',
     },
@@ -1266,6 +1512,137 @@ const en = {
       'UT-6305': 'There is already an appeal for this photo.',
       'UT-6306': "We can't check photos right now. Please try again shortly.",
     },
+    // ── Selfie verification ─────────────────────────────────────────────────
+    // 🔴 COPY RULE: this flow verifies PHOTOS, not IDENTITY. Never write
+    // "Identity verified" / "verified person" / "real person" — a determined
+    // attacker can pass by holding up a video of the target, so the copy must
+    // not promise more than the product delivers.
+    //
+    // Server-provided strings are absent here on purpose: the challenge
+    // `instruction` and the failure `message` already arrive localized via
+    // Accept-Language. These keys are only the unknown-code / network fallback.
+    selfie: {
+      badge: {
+        label: 'Photos verified',
+      },
+      row: {
+        idle: {
+          title: 'Verify your photos',
+          subtitle: 'Show that the photos on your profile are really you.',
+        },
+        verified: {
+          title: 'Your photos are verified',
+          subtitle: 'The verification badge is showing on your profile.',
+        },
+        reset: {
+          title: 'Your verification was reset',
+          subtitle:
+            'Your main photo changed, so the badge was removed. Tap to verify again.',
+        },
+      },
+      intro: {
+        title: 'Verify your photos',
+        description:
+          "You'll make two short movements with your front camera. We take a single frame for each one and compare it with your main photo.",
+        bullet1: 'We pick the movements, and they change every time.',
+        bullet2: 'Only two frames are sent — nothing is recorded.',
+        bullet3: 'Fit your face in the frame, find good light, and be alone in the shot.',
+        privacyNote:
+          "Verification shows your photos are really you; it is not an identity check. Apart from the badge, it gives you no priority in discovery.",
+        startButton: 'Start verification',
+        goToPhotos: 'Go to my photos',
+      },
+      consent: {
+        title: 'Verification permissions',
+        description:
+          'Before you continue we need two separate consents. Please read and tick each one on its own.',
+        acceptButton: 'I consent — continue',
+        saveError: "We couldn't save your consents. Check your connection and try again.",
+        withdrawNote:
+          'You can withdraw your consent at any time. If you do, the verification badge is removed; your account and matches are not affected.',
+        BiometricVerification: {
+          title: 'Processing your face data',
+          checkbox:
+            'I explicitly consent to my face data being processed for verification.',
+          fallback:
+            'The face data in the frames captured during verification is processed to compare them with your main photo. Under Turkish data protection law this is special-category personal data, and processing it requires your explicit consent.',
+        },
+        DataTransferAbroad: {
+          title: 'Transfer abroad',
+          checkbox:
+            'I explicitly consent to my face data being processed on servers abroad.',
+          fallback:
+            'The comparison runs on a server located abroad (in the United States), so your face data has to be transferred out of the country. That transfer requires your explicit consent.',
+        },
+      },
+      camera: {
+        stepCounter: '{{index}} / {{total}}',
+        hint: 'Fit your face in the frame and be alone in the shot.',
+        ready: "I'm ready",
+        captureError: "We couldn't take the frame. Try again.",
+        permissionMessage:
+          'We need camera access so you can verify your photos.',
+        grantPermission: 'Allow camera',
+      },
+      result: {
+        successTitle: 'Your photos are verified!',
+        successBody: 'The verification badge now shows on your profile.',
+        failedAtStep: 'We got stuck on step {{step}}.',
+        retry: 'Try again',
+        close: 'Not now',
+      },
+      // Failure reasons. None of these are framed as errors — retrying is a
+      // normal part of the flow (the request returns 200 + isSuccess:true).
+      reason: {
+        challenge_not_met: "We couldn't detect the movement. Let's try once more.",
+        no_face: "We couldn't see your face. Make sure it's clear and well lit.",
+        multiple_faces: 'There is more than one person in the frame. You need to be alone.',
+        face_occluded: 'Your face looks covered. Remove a mask, hat or glasses and try again.',
+        low_quality: 'The frame came out blurry. Try again somewhere brighter.',
+        face_mismatch:
+          "The frames didn't match your main photo. Try again; if it keeps happening, take another look at your main photo.",
+        attempt_expired: 'Time ran out. Starting over.',
+        // 🔴 OUR fault — never phrase this as something the user did wrong.
+        analysis_failed:
+          "Something went wrong on our end and we couldn't finish the check. Try again shortly.",
+        fallback: "We couldn't finish the verification. Try again.",
+      },
+      reasonTitle: {
+        challenge_not_met: "We couldn't detect the movement",
+        no_face: "We couldn't see your face",
+        multiple_faces: 'More than one person in the frame',
+        face_occluded: 'Your face looks covered',
+        low_quality: 'The frame is not clear enough',
+        face_mismatch: "It didn't match your photo",
+        attempt_expired: 'Time ran out',
+        analysis_failed: 'Something went wrong on our end',
+        fallback: 'Verification not completed',
+      },
+      codes: {
+        'UT-6501': 'You need to accept the verification permissions to continue.',
+        'UT-6502':
+          'You need an approved main photo before verifying. Add your main photo first.',
+        'UT-6502Title': 'You need a main photo first',
+        'UT-6503': 'Your photos are already verified.',
+        // ⚠️ The remaining time is deliberately withheld — do not show a countdown.
+        'UT-6504': "You've tried too many times. Wait a bit and try again.",
+        'UT-6505': 'Verification is not available right now.',
+        'UT-6506': 'This verification session is no longer valid. You need to start over.',
+        'UT-6507': "We couldn't finish the verification. Try again.",
+      },
+      errors: {
+        generic: "We couldn't start the verification. Try again.",
+      },
+      // Changing the main photo DROPS the badge (security: otherwise "verify,
+      // then swap in someone else's photo" would show their photo as verified).
+      // Side photos are not affected.
+      mainPhotoWarning: {
+        title: 'Your verification badge will be removed',
+        message:
+          'If you change your main photo, the verification badge is removed and you will need to verify again. Continue?',
+        confirm: 'Continue',
+      },
+    },
     // Status strip in the edit modal, below the photo grid. Copy is
     // DELIBERATELY SHORT — one line each — and the count always leads, since
     // that's the first thing you look for. No plural suffixes (`_one`/`_other`),
@@ -1277,6 +1654,11 @@ const en = {
       // Does NOT say "swiping is off": swiping and liking stay on; only
       // appearing in other people's decks is paused.
       reviewBody: "You're not in discovery until it's done.",
+      /**
+       * Same row, but the profile is STILL in discovery — only that one photo is
+       * held back. Saying "you're not in discovery" here would be plainly wrong.
+       */
+      reviewBodyVisible: "It'll show on your card once approved.",
       photosTitle: '{{visible}}/{{required}} of your photos are live',
       photosBody: 'Not enough to appear in discovery.',
       // Rejection is a SEPARATE row from review: there is something to do here,
@@ -1437,6 +1819,9 @@ const en = {
       blockAccount: 'Block this account',
       activeToday: 'Active today',
       newMember: 'New here',
+      // Sticky şeritteki cam butonun VoiceOver etiketi — buton yalnız ok
+      // taşıyor, görünür bir adı yok.
+      backToTop: 'Back to top',
     },
     languages: {
       title: 'Select Language',
@@ -1451,12 +1836,18 @@ const en = {
     revokedMessage: 'Premium features are now off. If you did not expect this, please contact support.',
     grantedTitle: 'Premium is now active',
     grantedMessage: 'Your premium features are unlocked. Enjoy!',
+    // Fired when the user's OWN purchase completes (as the paywall closes).
+    // Separate from the admin copy above: the user did this themselves, so the
+    // tone is a welcome rather than an announcement.
+    purchasedTitle: 'Lit Plus is yours!',
+    purchasedMessage: 'Every premium feature is unlocked. Enjoy!',
     // NOTE: the paywall feature list now lives under
     // `discover.premium.benefits` — one source shared with the upsell card.
     periods: {
       weeklyShort: 'Weekly',
       monthlyShort: 'Monthly',
       yearlyShort: 'Yearly',
+      lifetimeShort: 'Lifetime',
       weeklyPer: 'week',
       monthlyPer: 'month',
       yearlyPer: 'year',
@@ -1468,8 +1859,14 @@ const en = {
       monthly: 'Renews monthly, no long commitment.',
       yearly: 'Lowest weekly cost — pay once, stay Plus all year.',
     },
-    // Percentage is computed outside i18n (computeSavings) against monthly.
-    savings: 'Save {{percent}}% vs. monthly.',
+    // Red discount pill at the bottom-left of the card. The percentage is
+    // computed outside i18n (computeSavings) against the weekly plan. Keep it
+    // SHORT — it shares a strip with the action badge. (Was the full sentence
+    // 'Save 20% vs. monthly.' on the card's description line.)
+    discount: '{{percent}}% off',
+    // Badge on the period strip: the plan that saves the most. The badge is
+    // NARROW (it sits next to the label) — keep it to a word or two.
+    bestValue: 'Best',
     errors: {
       packageNotFound: 'Package not found.',
       purchaseTitle: 'Purchase Error',
@@ -1479,54 +1876,37 @@ const en = {
       restoreFailed: 'Restore failed.',
     },
     cta: {
-      alreadyPremium: 'Account Already Lit Plus',
       freeTrial: 'Try Free for {{days}} Days',
       freeTrialBadge: 'First {{days}} days free',
-      subscribe: 'Subscribe for {{price}}/{{period}}',
-      buy: 'Buy',
+      // Action badge at the bottom-right of the plan card. Keep it SHORT — the
+      // card already states price and period; the badge only says what the tap
+      // does. (Was 'Subscribe for {{price}}/{{period}}' on the big CTA below,
+      // which has since been removed.)
+      subscribe: 'Subscribe',
       restore: 'Restore Purchases',
       trialDisclaimer: 'Try free for {{days}} days, then {{price}}/{{period}}, renewed automatically.',
       appStoreDisclaimer: 'Lit Plus subscription is automatically renewed through the App Store. Your account will be charged from your App Store account after purchase confirmation.',
     },
   },
   superLikePurchase: {
-    title: 'Get Super Likes',
+    title: 'Buy Superlikes',
     description:
       'Super likes get 3x more matches. They see your card unblurred at the top of their likes — even on a free account. Super likes never expire, so use them whenever you want.',
     packLabel: '{{count}}x Superlike',
     cta: 'Buy',
     ctaWithPrice: 'Buy · {{price}}',
     unavailableMessage: "Packs couldn't be loaded right now. Check your connection and try again in a moment.",
-    successTitle: 'Your super likes are ready',
-    successMessage: '{{count}} super likes were added to your account.',
+    successTitle: 'Your Superlikes are ready',
+    successMessage: '{{count}} Superlikes were added to your account.',
     syncedTitle: 'Your balance is up to date',
     syncedMessage: 'This purchase had already been credited to your account.',
     pendingTitle: 'Purchase received',
-    pendingMessage: 'Your super likes will show up in your balance within a few minutes.',
+    pendingMessage: 'Your Superlikes will show up in your balance within a few minutes.',
     errorTitle: "Purchase couldn't be completed",
     disclaimer: 'Super likes are added to your account instantly upon purchase and never expire. Payments are charged to your App Store account. Purchases are non-refundable.',
   },
-  // Missed-match recovery packs. Same sheet as superLikePurchase, different
-  // product: since 2026-08-22 free users have no renewing quota at all, so this
-  // is the only way for them to recover a match without subscribing.
-  recoveryPurchase: {
-    title: 'Get Recoveries',
-    description: 'Take back a pass on someone who already liked you. Every recovery is a guaranteed match.',
-    packLabel: '{{count}}x Recovery',
-    cta: 'Buy',
-    ctaWithPrice: 'Buy · {{price}}',
-    unavailableMessage: "Packs couldn't be loaded right now. Check your connection and try again in a moment.",
-    successTitle: 'Your recoveries are ready',
-    successMessage: '{{count}} recoveries were added to your account.',
-    syncedTitle: 'Your balance is up to date',
-    syncedMessage: 'This purchase had already been credited to your account.',
-    pendingTitle: 'Purchase received',
-    pendingMessage: 'Your recoveries will show up in your balance within a few minutes.',
-    errorTitle: "Purchase couldn't be completed",
-    // Only shown to non-subscribers — see RecoveryPurchaseModal.
-    premiumUpsell: 'Lit Plus includes recoveries too',
-    disclaimer: 'Recoveries are added to your account instantly upon purchase and never expire. Payments are charged to your App Store account. Purchases are non-refundable.',
-  },
+  // `recoveryPurchase` REMOVED (2026-08-31): the recovery packs were deleted
+  // and recovery became a Premium perk. The offer for free users is Lit Plus.
   // A note is a comment attached to a SPECIFIC piece of the card (photo or
   // prompt). Separate consumable: its balance is independent of the daily like
   // quota and can only be purchased.
@@ -1542,6 +1922,15 @@ const en = {
     targetMainPhoto: 'Main photo',
     targetPhoto: 'Photo {{index}}',
     targetPrompt: 'Prompt answer',
+    // Note box on the like card, when it runs past three lines (see LikesScreen).
+    seeMore: 'See more',
+    seeLess: 'See less',
+    // Grey header of the note box — from the RECEIVER's side, past tense
+    // (`replyingToPhoto` is the sender-side counterpart in the composer).
+    // No "this": the target's preview sits right next to the line, so the
+    // demonstrative read as pointing at something that wasn't there.
+    leftNoteOnPhoto: 'Left a note on your photo',
+    leftNoteOnPrompt: 'Left a note on your answer',
     sentTitle: 'Note sent',
     sentMessage: '{{name}} will see your note in their likes.',
     failedTitle: "Note couldn't be sent",
@@ -1559,7 +1948,7 @@ const en = {
   // Note packs. Same shell as superLikePurchase; notes have NO renewing quota,
   // packs are the only way to get them.
   notePurchase: {
-    title: 'Get Notes',
+    title: 'Buy Notes',
     description:
       'A note is a like you write on one of their photos or prompt answers. They see your card unblurred in their likes — along with your line and the content you wrote it on. Notes never expire, so use them whenever you want.',
     packLabel: '{{count}}x Note',
@@ -1593,7 +1982,6 @@ const en = {
       detailLabel: 'Detail (optional)',
       detailDescription: 'A couple of sentences about what happened speeds up the review.',
       detailPlaceholder: 'Briefly describe the incident…',
-      characterCount: '{{count}}/1000',
       blockSectionTitle: 'Blocking',
       submit: 'Report',
       disclaimer: 'Reports are reviewed by our team. Intentionally false reports may result in your account being restricted.',
@@ -1613,6 +2001,18 @@ const en = {
       blockRetry: 'Try blocking',
       blockRetryFailed:
         'Blocking failed again. You can retry from Settings → Blocked Users.',
+    },
+    // The menu behind the three dots on a like card's header strip (see
+    // ProfileOptionsSheet). Separate from chat.options.*: there a match exists
+    // and the "Unmatch / Restore" rows fill that section; here there is no
+    // match yet, so only the safety actions remain.
+    options: {
+      title: 'Profile Options',
+      sectionSafety: 'Safety',
+      sectionSafetyDescription:
+        "Reporting and blocking are permanent: this person won't show up again and you will never match.",
+      report: 'Report',
+      block: 'Block User',
     },
     block: {
       confirmTitle: 'Block this account',

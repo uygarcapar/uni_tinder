@@ -5,14 +5,14 @@ const tr = {
     done: 'Bitti',
     cropper: {
       title: 'Fotoğrafı Düzenle',
-      choose: 'Seç',
+      save: 'Kaydet',
       reset: 'Sıfırla',
       progress: '{{index}} / {{total}}',
-      hint: 'Kaydırarak ve iki parmakla yakınlaştırarak çerçeveyi ayarla',
       failed: 'Fotoğraf işlenemedi, tekrar dene.',
     },
     crashTitle: 'Bir şeyler ters gitti',
-    crashMessage: 'Beklenmeyen bir hata oluştu. Tekrar denemek için butona dokun.',
+    crashSubtitle:
+      'Beklenmedik bir hata oldu. Tekrar denemek çoğu zaman yetiyor; sürerse uygulamayı kapatıp açabilirsin.',
     crashRetry: 'Tekrar Dene',
     offline: 'İnternet bağlantısı yok',
     back: 'Geri',
@@ -30,21 +30,30 @@ const tr = {
   },
   settings: {
     title: 'Ayarlar',
+    // Kök listenin (kategoriler) açıklaması — bölüm açıklamalarıyla aynı dil.
+    subtitle: 'Hesabını, bildirimlerini ve uygulamanın görünümünü buradan yönet.',
+    // `heading`: kategori sayfasında açıklamanın ÜSTÜNDEKİ başlık. `title`in
+    // kopyası DEĞİL — o zaten header'da yazıyor; buradaki başlık sayfadaki
+    // içeriği (satırlar/pill'ler) adlandırıyor. Açıklamalar da başlığı
+    // tekrarlamayacak şekilde somutlaştı.
     theme: {
       title: 'Tema',
-      subtitle: 'Uygulamanın görünümünü seç.',
+      heading: 'Görünüm',
+      subtitle: 'Sistemi izleyebilir ya da açık/koyu modu sabitleyebilirsin.',
       system: 'Sistem',
       light: 'Açık',
       dark: 'Koyu',
     },
     language: {
       title: 'Dil',
-      subtitle: 'Uygulamanın gösterileceği dili seç.',
+      heading: 'Uygulama dili',
+      subtitle: 'Sistemi izleyebilir ya da Türkçe/İngilizce olarak sabitleyebilirsin.',
       system: 'Sistem',
     },
     messaging: {
       title: 'Mesajlaşma',
-      subtitle: 'Sohbet ve bildirim davranışını kontrol et.',
+      heading: 'Sohbet ve bildirimler',
+      subtitle: 'Okundu bilgisi, push davranışı ve bildirimde ne göründüğü.',
     },
     readReceipts: {
       title: 'Okundu Bilgisi',
@@ -54,6 +63,11 @@ const tr = {
       title: 'Çevrimiçi İken Bildirimleri Sustur',
       subtitle: 'Uygulama açıkken push bildirimi alma',
     },
+    messagePreview: {
+      title: 'Bildirimde Mesajı Göster',
+      subtitle:
+        'Kilit ekranında mesajın içeriği görünür. Kapatırsan yalnızca kimin yazdığını görürsün.',
+    },
     photoModerationAlerts: {
       title: 'Fotoğraf Bildirimleri',
       subtitle:
@@ -61,7 +75,8 @@ const tr = {
     },
     privacy: {
       title: 'Gizlilik',
-      subtitle: 'Verilerin üzerinde tam kontrol sende.',
+      heading: 'Verilerin ve engellediklerin',
+      subtitle: 'Verilerinin kopyasını indir, engellediğin kişileri yönet.',
     },
     downloadData: 'Verilerimi İndir',
     blockedUsers: 'Engellenenler',
@@ -69,6 +84,7 @@ const tr = {
     changeEmail: 'E-posta Değiştir',
     account: {
       title: 'Hesap',
+      heading: 'Hesap ve oturum',
       subtitle: 'Hesabını silersen 30 gün içinde geri dönebilirsin.',
     },
     deleteAccount: 'Hesabı Sil',
@@ -333,32 +349,140 @@ const tr = {
         },
       },
     },
+    // Aydınlatma metni — SÜRÜM 2.0. Bölüm sayısı değişirse LegalSheet'teki
+    // `DOCS.privacy.sectionCount` ve KVKKConsentScreen'deki `PRIVACY_SECTIONS`
+    // birlikte güncellenmeli; ikisi de bu blokla aynı sayıyı bilmek zorunda.
+    // İçerik PolicyMarkdown ile basılıyor → `**kalın**` ve `- madde` çalışır.
     kvkkConsent: {
       title: 'Gizlilik & KVKK',
-      description: 'Uygulamayı kullanmaya devam etmeden önce aşağıdaki metni okumanı ve onaylamanı istiyoruz.',
+      description:
+        'Bu metin, lit uygulamasını kullandığında kişisel verilerinin 6698 sayılı Kişisel Verilerin Korunması Kanunu (KVKK) kapsamında hangi amaçlarla, hangi hukuki sebeple işlendiğini, kimlerle paylaşıldığını ve ne kadar süre saklandığını açıklar. Devam etmeden önce okumanı ve onaylamanı istiyoruz.',
       acceptText: 'Gizlilik politikasını ve KVKK aydınlatma metnini okudum, anladım ve kabul ediyorum.',
       acceptButton: 'Kabul Et ve Devam Et',
       titleRequired: 'Onay Gerekli',
       messageRequired: 'Devam etmek için metni onaylamalısın.',
       errorSave: 'Onay kaydedilemedi, tekrar dene.',
-      sectionTitle1: 'Kişisel Verilerin Korunması (KVKK)',
-      section1Content:
-        '6698 sayılı Kişisel Verilerin Korunması Kanunu kapsamında, kişisel verileriniz veri sorumlusu sıfatıyla şirketimiz tarafından işlenmektedir. Bu uygulama aracılığıyla toplanan kişisel verileriniz, yalnızca hizmet sunumu amacıyla kullanılmakta ve üçüncü taraflarla yasalar çerçevesinde paylaşılmaktadır.',
-      sectionTitle2: 'İşlenen Veriler',
-      section2Content:
-        'Ad, e-posta, doğum tarihi, cinsiyet, üniversite bilgisi, konum ve profil fotoğrafları gibi verileriniz işlenmektedir. Bu veriler, size özelleştirilmiş hizmet sunmak amacıyla kullanılmaktadır.',
-      sectionTitle3: 'Haklarınız',
-      section3Content:
-        "KVKK'nın 11. maddesi kapsamında; kişisel verilerinizin işlenip işlenmediğini öğrenme, işlenmişse buna ilişkin bilgi talep etme, işlenme amacını ve amacına uygun kullanılıp kullanılmadığını öğrenme, yurt içinde veya yurt dışında kişisel verilerin aktarıldığı üçüncü kişileri bilme, kişisel verilerin eksik veya yanlış işlenmiş olması hâlinde bunların düzeltilmesini isteme haklarına sahipsiniz.",
-      sectionTitle4: 'Çerezler ve Analitik',
-      section4Content:
-        'Uygulama deneyimini iyileştirmek amacıyla analitik araçlar kullanılmaktadır. Bu araçlar aracılığıyla toplanan veriler, kullanıcı deneyimini geliştirmek için işlenmektedir.',
-      sectionTitle5: 'Veri Saklama',
-      section5Content:
-        'Verileriniz hesabınız aktif olduğu sürece saklanır. Hesabınızı silmeniz durumunda verileriniz 30 gün içinde sistemlerimizden kalıcı olarak silinir.',
-      sectionTitle6: 'İletişim',
-      section6Content:
-        'Gizlilik politikamız veya kişisel verileriniz hakkında sorularınız için destek@lit.com adresinden bize ulaşabilirsiniz.',
+
+      sectionTitle1: 'Veri Sorumlusu',
+      section1Content: `
+        lit uygulaması aracılığıyla işlenen kişisel veriler bakımından veri sorumlusu, uygulamayı yayımlayan gerçek kişi olan Uygar Çapar'dır.
+
+        E-posta: info@4ourstack.com
+      `,
+
+      sectionTitle2: 'İşlediğimiz Kişisel Veriler',
+      section2Content: `
+        **Hesap ve kimlik verileri.** Adınız, doğum tarihiniz, cinsiyetiniz, üniversite e-posta adresiniz, varsa telefon numaranız, şifreniz (geri döndürülemez şekilde şifrelenmiş olarak saklanır), e-posta doğrulama durumunuz ve doğrulama kodlarının gönderim kayıtları.
+
+        **Eğitim verileri.** Üniversitenizin adı ve e-posta alan adı, bölümünüz, sınıfınız ve üniversitenizi profilinizde göstermeyi seçip seçmediğiniz.
+
+        **Profil verileri.** Görünen adınız, biyografiniz, profil sorularına verdiğiniz cevaplar, boyunuz, hobi ve ilgi alanlarınız, konuştuğunuz diller, evcil hayvan bilgisi ve yüklediğiniz fotoğraflar.
+
+        **Eşleşme tercihleri.** İlgilendiğiniz cinsiyetler, yaş aralığı, mesafe tercihiniz ve profilinizin görünürlüğüne dair ayarlarınız.
+
+        **Konum verileri.** Cihazınızın konum iznini vermeniz hâlinde koordinatlarınız ve bunlardan türetilen şehir/ilçe bilgisi. Diğer kullanıcılara gösterilen konumunuz bulanıklaştırılır: koordinatlarınıza sabit bir kaydırma uygulanır ve mesafe kademelere yuvarlanarak gösterilir. Ham koordinatlarınız hiçbir zaman diğer kullanıcılara iletilmez.
+
+        **Kullanım verileri.** Beğendiğiniz veya geçtiğiniz profiller, eşleşmeleriniz, size gösterilen profiller, günlük hak kullanımlarınız ve uygulama içi etkinlik zamanlarınız.
+
+        **İletişim içerikleri.** Eşleştiğiniz kişilerle yaptığınız mesajlaşmalar (metin ve paylaştığınız medya içerikleri), mesaj reaksiyonları ve bir profile yazdığınız notlar.
+
+        **Cihaz ve teknik veriler.** Bildirim gönderebilmek için cihaz kimliğiniz (token), platform ve uygulama sürümünüz, IP adresiniz, istemci bilgisi ile hata ve çökme kayıtları.
+
+        **Abonelik verileri.** Premium abonelik durumunuz ve satın alma geçmişiniz. Kart ve ödeme bilgileriniz App Store veya Google Play tarafından işlenir; bu bilgiler bize iletilmez ve tarafımızca saklanmaz.
+
+        **Güvenlik ve moderasyon verileri.** Yaptığınız veya hakkınızda yapılan bildirimler, engellemeler, fotoğraf moderasyonu sonuçları, itirazlarınız ile askıya alma veya hesap kapatma kayıtları.
+
+        **Onay kayıtları.** Bu metnin hangi sürümünü ne zaman onayladığınız ile onay anındaki IP adresi ve cihaz bilgisi. Bu kayıt, onayınızın ispatı için tutulur.
+      `,
+
+      sectionTitle3: 'Özel Nitelikli Kişisel Veriler',
+      section3Content: `
+        lit bir tanışma uygulaması olduğu için iki noktada KVKK'nın 6. maddesi anlamında özel nitelikli kişisel veri işlenebilir:
+
+        **Cinsel yönelime ilişkin veriler.** Eşleşme tercihleriniz, cinsel yaşamınıza ilişkin bir bilgi ortaya koyabilir.
+
+        **Biyometrik veriler.** Fotoğraf doğrulamasını kullanmayı seçerseniz, çektiğiniz fotoğraftaki yüz ile profil fotoğrafınızdaki yüzün aynı kişiye ait olup olmadığı otomatik olarak karşılaştırılır. Bu karşılaştırma anlık yapılır; yüzünüzden bir biyometrik şablon çıkarılmaz ve saklanmaz.
+
+        Bu veriler yalnızca açık rızanızla işlenir. Rızanızı dilediğiniz zaman geri çekebilirsiniz; bu durumda ilgili özellik (eşleşme önerileri veya fotoğraf doğrulaması) çalışmaz.
+      `,
+
+      sectionTitle4: 'İşleme Amaçları',
+      section4Content: `
+        Kişisel verileriniz; hesabınızın oluşturulması ve öğrenci doğrulamanızın yapılması, profilinizin yayımlanması, size uygun profillerin önerilmesi ve eşleşmelerin kurulması, eşleştiğiniz kişilerle mesajlaşabilmeniz, bildirim gönderilmesi, premium aboneliğin yönetilmesi, uygulamanın güvenliğinin sağlanması ve kötüye kullanımın (sahte profil, taciz, dolandırıcılık, uygunsuz içerik) önlenmesi, size destek verilmesi, uygulamanın geliştirilmesi ve hukuki yükümlülüklerimizin yerine getirilmesi amaçlarıyla işlenir.
+      `,
+
+      sectionTitle5: 'Hukuki Sebepler',
+      section5Content: `
+        Verileriniz; sözleşmenin kurulması ve ifasıyla doğrudan ilgili olması (KVKK m. 5/2-c), hukuki yükümlülüğümüzün yerine getirilmesi (m. 5/2-ç), bir hakkın tesisi ve korunması (m. 5/2-e) ile temel hak ve özgürlüklerinize zarar vermemek kaydıyla meşru menfaatimiz (m. 5/2-f) hukuki sebeplerine dayanılarak işlenir.
+
+        Özel nitelikli kişisel veriler (m. 6/2-a) ve zorunlu olmayan bildirim ve analiz işlemleri açık rızanıza dayanır. Yurt dışına aktarım, KVKK'nın 9. maddesi kapsamında uygun güvencelere (standart sözleşme) dayanılarak yapılır.
+      `,
+
+      sectionTitle6: 'Aktarım ve Yurt Dışına Aktarım',
+      section6Content: `
+        Verileriniz, hizmetin sunulabilmesi için aşağıdaki hizmet sağlayıcılara, yalnızca gereken ölçüde aktarılır:
+
+        - **Bulut altyapısı ve depolama:** fotoğraflarınız ve dışa aktardığınız veri dosyaları bulut depolamada tutulur.
+        - **Fotoğraf moderasyonu ve yüz karşılaştırma:** yüklediğiniz fotoğraflar, uygunsuz içerik tespiti ve talep etmeniz hâlinde yüz karşılaştırması için görüntü işleme servisine iletilir.
+        - **Bildirim altyapısı:** bildirimler Google Firebase Cloud Messaging üzerinden cihazınıza iletilir. Mesaj bildirimlerinde başlık ve mesajın ilk bölümü bu altyapı üzerinden geçer; içerik bu altyapıda saklanmaz.
+        - **Abonelik yönetimi:** premium abonelik durumunuz, abonelik doğrulama hizmetiyle paylaşılır.
+        - **Ürün analitiği ve hata kayıtları:** uygulamayı geliştirmek ve çökmeleri gidermek için kullandığımız servisler Avrupa Birliği bölgesinde barındırılır.
+        - **E-posta gönderimi:** doğrulama kodları ve bilgilendirme e-postaları kendi e-posta sunucumuz üzerinden gönderilir.
+        - **Yapay zekâ servisleri:** profil sorularına verdiğiniz cevaplar, benzer ilgi alanlarına sahip kişileri önerebilmek için sayısal temsile dönüştürülür; bir profile yazdığınız notlar, gönderilmeden önce içerik kontrolünden geçirilir. Bu işlemler için ilgili metin sağlayıcıya iletilir ve yalnızca sonucun üretilmesi amacıyla işlenir.
+
+        Bu sağlayıcıların bir kısmının sunucuları Türkiye dışında bulunmaktadır. Yurt dışına aktarım, KVKK'nın 9. maddesi uyarınca ilgili sağlayıcılarla imzalanan ve Kurum'a bildirilen standart sözleşmeler kapsamında yapılır.
+
+        Ayrıca, hukuken yetkili kamu kurum ve kuruluşlarının talebi hâlinde mevzuatın öngördüğü ölçüde aktarım yapılabilir.
+      `,
+
+      sectionTitle7: 'Moderasyon ve Otomatik Sistemler',
+      section7Content: `
+        Size gösterilen profiller otomatik bir puanlama ile sıralanır. Bu sıralama yalnızca öneri niteliğindedir; hakkınızda hukuki sonuç doğuran veya sizi önemli ölçüde etkileyen bir karar üretmez. Eşleşme önerilerinin nasıl oluştuğuna dair açıklamayı uygulama içinden görebilirsiniz.
+
+        Yüklediğiniz fotoğraflar, topluluk kurallarına uygunluk açısından otomatik olarak incelenir. Bir fotoğrafınız otomatik olarak reddedilirse itiraz edebilir ve kararın bir kişi tarafından yeniden değerlendirilmesini isteyebilirsiniz.
+
+        Bir kullanıcı hakkında bildirimde bulunulduğunda, bildirimi değerlendirebilmek için moderasyon ekibimiz bildirime konu içeriği ve mesaj bildirimlerinde ilgili sohbetin bir bölümünü görüntüleyebilir. Bu erişim yalnızca bildirimin incelenmesiyle sınırlıdır, kayıt altına alınır ve başka bir amaçla kullanılmaz. Bunun dışında mesajlarınız kimse tarafından okunmaz.
+      `,
+
+      sectionTitle8: 'Saklama Süreleri',
+      section8Content: `
+        - **Hesap ve profil verileri:** hesabınız açık olduğu sürece.
+        - **Mesajlar:** 2 yıl. Bu süreden eski mesajlar otomatik olarak silinir.
+        - **Okunmuş bildirimler:** 30 gün.
+        - **Cihaz bildirim kimlikleri:** 90 gün boyunca kullanılmazsa silinir.
+        - **Moderasyonda reddedilen fotoğraflar:** itiraz hakkınız için 30 gün, sonrasında silinir.
+        - **Hesabınızı silerseniz:** hesabınız 30 gün boyunca askıya alınır ve bu süre içinde giriş yaparak silme talebinizi iptal edebilirsiniz. Süre dolduğunda verileriniz geri alınamaz şekilde silinir. Yalnızca e-posta adresinizin geri döndürülemez özeti (hash), silinme tarihi ve hesabın silinme anında yasaklı olup olmadığı bilgisi saklanır. Bu kayıt, yasaklı bir hesabın silinip yeniden açılmasını engellemek için tutulur; e-posta adresinizi geri vermez ve başka bir amaçla kullanılmaz.
+        - **Yasal saklama yükümlülüğü bulunan kayıtlar:** ilgili mevzuatın öngördüğü süreler boyunca (ticari defter ve belgeler bakımından 10 yıl).
+      `,
+
+      sectionTitle9: 'Haklarınız',
+      section9Content: `
+        KVKK'nın 11. maddesi uyarınca; kişisel verilerinizin işlenip işlenmediğini öğrenme, işlenmişse buna ilişkin bilgi talep etme, işlenme amacını ve amacına uygun kullanılıp kullanılmadığını öğrenme, yurt içinde veya yurt dışında verilerinizin aktarıldığı üçüncü kişileri bilme, eksik veya yanlış işlenmiş olması hâlinde düzeltilmesini isteme, silinmesini veya yok edilmesini isteme, düzeltme ve silme işlemlerinin verilerin aktarıldığı üçüncü kişilere bildirilmesini isteme, münhasıran otomatik sistemlerle analiz edilmesi suretiyle aleyhinize bir sonucun ortaya çıkmasına itiraz etme ve kanuna aykırı işleme sebebiyle zarara uğramanız hâlinde zararın giderilmesini talep etme haklarına sahipsiniz.
+
+        Bu hakların bir kısmını doğrudan uygulama içinden kullanabilirsiniz: profil bilgilerinizi ayarlar üzerinden düzeltebilir, verilerinizin bir kopyasını talep edebilir ve hesabınızı kalıcı olarak silebilirsiniz.
+      `,
+
+      sectionTitle10: 'Başvuru',
+      section10Content: `
+        Haklarınıza ilişkin taleplerinizi, Veri Sorumlusuna Başvuru Usul ve Esasları Hakkında Tebliğ'de belirtilen usullere uygun olarak, hesabınızda kayıtlı e-posta adresinizden info@4ourstack.com adresine iletebilirsiniz. Başvurunuz en geç 30 gün içinde sonuçlandırılır.
+
+        Başvurunuzun reddedilmesi, verdiğimiz cevabı yetersiz bulmanız veya süresinde cevap verilmemesi hâlinde; cevabı öğrendiğiniz tarihten itibaren 30 gün ve her hâlde başvuru tarihinden itibaren 60 gün içinde Kişisel Verileri Koruma Kurulu'na şikâyette bulunabilirsiniz (KVKK m. 14).
+      `,
+
+      sectionTitle11: 'Veri Güvenliği',
+      section11Content: `
+        Şifreniz geri döndürülemez şekilde saklanır ve tarafımızca görülemez. Uygulama ile sunucularımız arasındaki tüm iletişim şifreli bağlantı üzerinden yapılır. Konum verileriniz diğer kullanıcılara bulanıklaştırılarak gösterilir. Verilere erişim, yalnızca görevi gereği ihtiyaç duyan kişilerle sınırlıdır ve moderasyon işlemleri kayıt altına alınır.
+      `,
+
+      sectionTitle12: 'Yaş Sınırı',
+      section12Content: `
+        lit yalnızca 18 yaşını doldurmuş üniversite öğrencileri içindir. 18 yaşından küçük kişilerin uygulamayı kullanması yasaktır; tespit edilmesi hâlinde hesap kapatılır ve ilgili veriler silinir.
+      `,
+
+      sectionTitle13: 'Bu Metindeki Değişiklikler',
+      section13Content: `
+        Bu metin, uygulamadaki değişikliklere ve mevzuata göre güncellenebilir. Metnin sürümü değiştiğinde uygulama içinde yeniden onayınız istenir; hangi sürümü ne zaman onayladığınız kayıt altında tutulur. Güncel sürüm her zaman bu sayfada yayımlanır.
+      `,
     },
     step1: {
       title: 'Üniversite E-Maili',
@@ -560,6 +684,20 @@ const tr = {
       tabAll: 'Tümü',
       tabUnread: 'Okunmamış',
       tabClosed: 'Kapalı',
+      // Arama çubuğunun ÜSTÜNDEKİ bölüm başlığı — Beğeniler'deki `likes.header*`
+      // ile aynı kalıp. Pill etiketini tekrar etmiyor: pill filtrenin adı
+      // ("Tümü"), başlık listenin ne olduğu.
+      headerAll: 'Sohbetler',
+      headerUnread: 'Okunmamışlar',
+      headerClosed: 'Kapalı sohbetler',
+      // Büyük başlığın altındaki tek cümle (Beğeniler'deki `likes.desc*` ile
+      // aynı görev). ⚠️ TEK SATIRA sığmalı: kutu sabit yükseklikli ve
+      // `overflow: hidden` (bkz. MessagesScreen TITLE_BLOCK_HEIGHT).
+      descAll: 'Eşleştiğin herkesle sohbetlerin.',
+      descUnread: 'Yanıtını bekleyen sohbetler.',
+      descClosed: 'Eşleşmesi bozulan sohbetler.',
+      // Başlığın sağındaki pill — premium sheet'ini açar, yalnız free'de çizilir.
+      unlimitedAction: 'Sınırsız mesajlaş',
       noUnread: 'Okunmamış mesajın yok.',
       noClosed: 'Kapalı sohbetin yok.',
       empty: 'Henüz mesajın yok.',
@@ -568,6 +706,9 @@ const tr = {
       // Gönderilmemiş composer metninin önüne gelen etiket ("Taslak: merhaba").
       draft: 'Taslak:',
       closedChat: 'Sohbet kapatıldı',
+      // Sohbet listesinde ismin yanındaki rozet: bu sohbette ücretsiz mesaj
+      // hakkı sayılıyor (taraflardan hiçbiri premium değil).
+      limitedQuota: 'Sınırlı',
       newMessages: '{{n}} yeni mesaj',
       startConversation: 'Konuşmaya başla 👋',
       mediaPhoto: 'Fotoğraf',
@@ -619,7 +760,10 @@ const tr = {
       sectionChatDescription: 'Bu sohbete özel hızlı eylemler.',
       unmatch: 'Eşleşmeyi Kaldır',
       restore: 'Eşleşmeyi Geri Al',
+      // Yalnız KAPATAN uca gösterilir; karşı tarafta geri alma penceresi hiç
+      // açılmadığı için ona "süre doldu" DENMEZ (bkz. `closed`).
       restoreExpired: 'Bu sohbet sonlandırıldı. Geri alma süresi doldu.',
+      closed: 'Bu sohbet sonlandırıldı.',
       sectionSafety: 'Güvenlik',
       sectionSafetyDescription:
         'Şikayet ve engelleme kalıcıdır: bir daha eşleşmezsiniz, eski sohbet açılmaz.',
@@ -653,6 +797,38 @@ const tr = {
       placeholder: 'Mesaj...',
       closed: 'Bu sohbet kapatıldı',
       quotaReached: "Mesaj hakkın bitti — Premium'a geç",
+      send: 'Gönder',
+      voice: 'Sesli mesaj',
+    },
+    voice: {
+      cancel: 'Kaydı sil',
+      pause: 'Duraklat',
+      resume: 'Devam et',
+      holdHint: 'Sesli mesaj için mikrofona basılı tut',
+      maxDuration: 'Sesli mesaj en fazla 1 dakika olabilir',
+      permissionTitle: 'Mikrofon kapalı',
+      permissionBody: 'Sesli mesaj gönderebilmen için Ayarlar’dan mikrofon izni ver.',
+      failed: 'Kayıt başlatılamadı',
+      sendFailed: 'Sesli mesaj gönderilemedi',
+      tooLarge: 'Kayıt çok büyük, daha kısa bir mesaj dene',
+      badFormat: 'Kayıt biçimi desteklenmiyor, tekrar dene',
+    },
+    emoji: {
+      open: 'Emoji',
+      showKeyboard: 'Klavye',
+      backspace: 'Sil',
+      noRecent: 'Kullandığın emojiler burada birikir.',
+      categories: {
+        recent: 'Sık kullanılanlar',
+        smileys: 'İfadeler ve insanlar',
+        animals: 'Hayvanlar ve doğa',
+        food: 'Yiyecek ve içecek',
+        activity: 'Etkinlikler',
+        travel: 'Seyahat ve mekânlar',
+        objects: 'Nesneler',
+        symbols: 'Semboller',
+        flags: 'Bayraklar',
+      },
     },
     replyPreview: {
       deletedSender: 'Silinmiş',
@@ -705,13 +881,31 @@ const tr = {
       durationHoursMinutes: '{{h}} sa {{m}} dk',
       durationMinutes: '{{m}} dk',
       durationSeconds: '{{sec}} sn',
-      superLikeCooldownTitle: 'Süper Beğeni hakkın doldu',
+      superLikeCooldownTitle: 'Superlike hakkın doldu',
       // Süre GÖMÜLEMEZ: SuperLike döngüsü 2026-08-22'den beri tier'a bağlı
       // (haftalık 7, aylık 30, yıllık 365 gün). "7 günlük döngü" yazmak aylık
       // ve yıllık abonelere yanlış vaat oluyordu; gerçek süre `{{time}}`.
       superLikeCooldownMessage: 'Abonelik döngün yenilendiğinde hakların da yenilenecek — {{time}}.',
-      superLikeExhaustedTitle: 'Süper Beğeni hakkın bitti',
-      superLikeExhaustedMessage: 'Ücretsiz üyelikte Süper Beğeni tek seferliktir, kendiliğinden yenilenmez.',
+      superLikeExhaustedTitle: 'Superlike hakkın bitti',
+      superLikeExhaustedMessage: 'Ücretsiz üyelikte Superlike tek seferliktir, kendiliğinden yenilenmez.',
+      // Gönderim onayı — notunkiyle (note.sentTitle/sentMessage) aynı kalıp.
+      // İsimsiz varyant şart: kartın displayName'i boş gelebiliyor ve
+      // "  beğenilerinde..." diye başlayan bir cümle çıkardı.
+      superLikeSentTitle: 'Superlike\'ın gönderildi',
+      superLikeSentMessage: '{{name}} beğenilerinde seni öne çıkmış görecek.',
+      superLikeSentMessageNoName: 'Beğenilerinde seni öne çıkmış görecek.',
+      // Günlük beğeni kotası: azalma uyarısı (eşikler DiscoverScreen'de) ve
+      // tükenme. TAVAN YAZILMIYOR — o sunucu config'inden geliyor ve FE
+      // güncellemesi olmadan değişiyor; metin yalnız KALANI ({{count}}) ve
+      // yenilenmeye kalan süreyi ({{time}}) söylüyor.
+      quotaLowTitle: 'Beğeni hakkın azalıyor',
+      quotaLowMessage: '{{count}} beğeni hakkın kaldı.',
+      quotaLowMessageWithTime: '{{count}} beğeni hakkın kaldı, {{time}} sonra yenilenir.',
+      quotaExhaustedTitle: 'Beğeni hakkın bitti',
+      // Süre bilinmiyorsa (backend alanı yok / sentinel) geri sayım VAAT
+      // EDİLMİYOR — SuperLike metinlerindeki ayrımın aynısı.
+      quotaExhaustedMessage: 'Hakların yenilenene kadar beğeni gönderemezsin. Premium ile sınırsız beğen.',
+      quotaExhaustedMessageWithTime: 'Hakların {{time}} sonra yenilenir. Premium ile beklemeden sınırsız beğen.',
     },
     premium: {
       badge: 'PREMIUM ÜYE',
@@ -760,6 +954,10 @@ const tr = {
       standardPlan: 'Free',
       featuresLabel: 'Özellikler',
       planName: 'lit plus',
+      // Sayfanın tepesindeki büyük başlık. Abonede satış cümlesi değil
+      // sayfanın adı yazıyor — orada satılacak bir şey kalmadı.
+      pageTitle: "Lit Plus'a Geç",
+      pageTitlePremium: 'Lit Plus+ üyesisin',
       description: 'Lit Plus ile eşleşmelerini hızlandır, seni beğenenleri gör ve daha fazlasını keşfet!',
       pricing: '{{price}} / Ay',
       pricingPrefix: '',
@@ -822,8 +1020,10 @@ const tr = {
         paused: 'Premium filtrelerin duraklatıldı. Seçimlerin duruyor ama desteye uygulanmıyor — Premium\'a dönersen kaldığı yerden devam eder.',
       },
       dealbreaker: {
-        on: 'Bu filtreye uymayanları hiç gösterme',
-        off: 'Kişiler tükenirse bu filtre dışındakileri de göster',
+        // TEK metin, anahtarın durumuna göre DEĞİŞMEZ: metin değişince kullanıcı
+        // "yazı da mı değişti, ne oldu?" diye okuyordu. Anahtar etiketi
+        // konvansiyonu — açtığında ne olacağını anlatır, durumu Switch gösterir.
+        label: 'Kişiler tükense bile bu filtre dışındakileri gösterme',
       },
       enumLoading: 'Seçenekler yükleniyor…',
       enumUnavailable: 'Liste şu an yüklenemedi.',
@@ -898,8 +1098,23 @@ const tr = {
       relationshipIntents: {
         title: 'Karşımda görmek istediğim niyetler',
         description: 'Bu niyetlere sahip kişiler keşifte önce gösterilir. Diğerleri listenden çıkmaz; boş bırakabilirsin.',
-        // enumName ile anahtarlanmış kısa pill etiketleri. Anahtar yoksa
-        // backend display'i kullanılır.
+        // Filtredeki TİKLİ SATIR etiketleri — karşı tarafın ağzından cümle
+        // ("Uzun süreli arıyorum"), kayıt akışındaki step14 ile aynı yaklaşım.
+        // Satır düzeninde tam cümle sığıyor, kullanıcı da kartta karşılaşacağı
+        // niyeti okuduğu gibi seçiyor. Anahtar yoksa `short`a, o da yoksa
+        // backend display'ine düşülür (bkz. FilterModal → intentRowLabel).
+        sentences: {
+          LongTerm: 'Uzun süreli arıyorum',
+          ShortTerm: 'Kısa süreli arıyorum',
+          LongTermOpenToShort: 'Uzun süreli arıyorum ama kısaya da açığım',
+          ShortTermOpenToLong: 'Kısa süreli arıyorum ama uzuna da açığım',
+          StillFiguringOut: 'Henüz karar vermedim',
+        },
+        // enumName ile anahtarlanmış KISA etiketler. Anahtar yoksa backend
+        // display'i kullanılır. DİKKAT: bu harita artık yalnız Keşif KARTINDA
+        // kullanılıyor (bkz. SwipeCard) ve orada sonuna "ilişki" eki takılıyor
+        // ("Uzun süreli" → "Uzun süreli ilişki"). Cümleye çevirme — ek bozulur;
+        // filtre satırları için üstteki `sentences` var.
         short: {
           LongTerm: 'Uzun süreli',
           ShortTerm: 'Kısa süreli',
@@ -960,7 +1175,7 @@ const tr = {
         title: 'Şu an gösterecek kimse yok',
       },
       allCandidatesSeen: {
-        title: 'Görebileceklerinin hepsini gördün',
+        title: 'Görebileceklerinin hepsini gördün, daha sonra tekrar gel',
       },
       filtersTooStrict: {
         title: 'Filtrelerin çok dar',
@@ -997,12 +1212,61 @@ const tr = {
     // Not gönderenler kendi sekmesinde: not bir beğeninin üstüne binen ayrı
     // ürün, "Beğeni" sekmesinde de görünseydi aynı kart iki yerde çıkardı.
     tabNote: 'Notlar',
+    // Pill satırının üstündeki bölüm başlığı — HER sekmede var. Metinler pill
+    // etiketini tekrar etmiyor: pill filtrenin adı ("Tümü"), başlık listenin ne
+    // olduğu. Tek istisna kaçırdıkların (bkz. headerMissed).
+    // Başlığın sağındaki satın alma pill'i — süper beğeni ve not sekmelerinde
+    // AYNI metin. Ürüne göre değişmiyor: ikisinde de soru aynı, cevabı açılan
+    // sheet veriyor. "Satın al" değil soru kipinde — pill sheet'i açıyor, satın
+    // alma orada başlıyor.
+    // Kaçırdıkların sekmesi 2026-08-31'de bu metinden ÇIKTI: orada satılan şey
+    // artık bir paket değil abonelik, pill `viewLikersAction` kullanıyor.
+    howToGetAction: 'Nasıl alırım?',
+    // Büyük başlık, sekme pill'inin adını TEKRAR ETMİYOR: pill "Tümü", başlık
+    // "Tüm gelenler" — pill dar bir yerde filtrenin adı, başlık ise listenin ne
+    // olduğunu söylüyor. "Beğeniler" adı yalnız beğeni sekmesinin; all→Beğeniler
+    // olsaydı iki sekme aynı başlığı taşırdı.
+    headerAll: 'Tüm gelenler',
+    headerLike: 'Beğeniler',
+    headerSuperLike: 'Süper beğeniler',
+    headerNote: 'Notlar',
+    // Kaçırdıkların sekmesinin büyük başlığı. Burada başlık bir zamanlar
+    // bakiyenin kendisiydi ("Kurtarma hakkın: 3/5"); bakiye açıklama satırına
+    // indi (bkz. descMissed*) ve başlık diğer sekmelerle aynı işi yapıyor.
+    // Pill'le AYNI metin (tabMissed) — "Kaçırdıkların" zaten hem filtrenin adı
+    // hem listenin ne olduğu, ikisini ayırmak için uydurma bir eş anlamlı
+    // aramak gerekirdi.
+    headerMissed: 'Kaçırdıkların',
     infoDescription:
       'Seni beğenen ve süper beğenen kişiler burada toplanır. Kartın sağındaki butonlarla geçebilir ya da beğenip anında eşleşebilirsin.',
+    // Büyük başlığın ALTINDAKİ tek cümlelik açıklama. Kapatılabilir açıklama
+    // kartının (LikesInfoCard) yerini aldı: kart aynı bilgiyi daha uzun
+    // anlatıyordu ve başlığın altında kalıcı bir satır varken ikisi üst üste
+    // aynı şeyi söylüyordu. Tek cümle sınırı bilinçli — satır başlığın alt
+    // yazısı, ikinci bir paragraf değil.
+    descAll: 'Seni beğenen herkes burada toplanır.',
+    descLike: 'Sana normal beğeni gönderenler burada listelenir.',
+    descSuperLike: 'Seni süper beğenenlerin kartları bulanıklaşmadan gelir.',
+    descNote: 'Fotoğrafına ya da soru cevabına not yazanlar burada.',
+    // Pencere uzunluğu backend'den geliyor; gelmediyse sayısız varyant
+    // (gömülü bir "30 gün" değiştiği gün yalan söylerdi).
+    descMissed: 'Pas geçtiğin ama seni beğenmiş kişiler bir süre burada durur.',
+    descMissedDays:
+      'Pas geçtiğin ama seni beğenmiş kişiler {{days}} gün burada durur.',
     startSwipingButton: 'Kaydırmaya başla',
     // Kartın sağındaki yuvarlak butonların ekran okuyucu etiketleri.
     passButton: 'Geç',
     likeButton: 'Beğen',
+    // İsim satırının ÜSTÜNDEKİ pill — kartın hangi ürünle geldiğini söylüyor.
+    // Yalnız süper beğenide çiziliyor: notta zaten kartın kendi not kutusu var,
+    // düz beğenide söylenecek bir şey yok (kartın orada olması zaten "beğendi"
+    // demek).
+    // Fiil GEÇMİŞ zaman ve özne KARŞI TARAF: pill kartın kime ait olduğunu
+    // değil, o kişinin ne yaptığını anlatıyor. Solundaki rozet (bkz.
+    // SuperLikePillBadge) cümlenin yerini ALMIYOR, yanında duruyor.
+    // "Superlike" TR'de de İngilizce yazılıyor — sekme adı (tabSuperLike) ve
+    // ürünün mağazadaki adı da öyle; ekranın içinde iki farklı ad olmasın.
+    superLikePill: 'Sana Superlike gönderdi',
     emptySuperLike: 'Henüz süper beğeni yok.',
     emptySuperLikeSubtitle: 'Seni süper beğenen birileri olduğunda burada görünecek.',
     emptyLike: 'Henüz beğeni yok.',
@@ -1012,9 +1276,14 @@ const tr = {
     emptyNote: 'Henüz not yok.',
     emptyNoteSubtitle:
       'Biri fotoğrafına ya da soru cevabına not yazdığında kartı burada görünecek.',
-    viewButton: 'Seni beğenenleri gör',
+    // Tümü / Beğeni sekmelerinde başlığın sağındaki premium pill'i. Eskiden
+    // aynı iş listenin üstüne binen sticky bir butondaydı ("Seni beğenenleri
+    // gör", `viewButton`); buton kalktı, metin de satır içine sığacak kadar
+    // kısaldı — başlık zaten kimin beğenileri olduğunu söylüyor.
+    viewLikersAction: 'Beğenenleri gör',
     // Kaçırılan eşleşmeler: seni beğenmiş ama senin pas geçtiğin kişiler.
-    // Liste herkese açık, kurtarma günlük kotaya bağlı.
+    // Liste herkese açık AMA kartlar free'de blur'lu (beğeni kartlarıyla aynı
+    // kural); kurtarma 2026-08-31'den beri premium ayrıcalığı.
     tabMissed: 'Kaçırdıkların',
     emptyMissed: 'Kaçırdığın kimse yok.',
     // Pencere uzunluğu backend'den geliyor (`/Stats` → missedMatchLookbackDays).
@@ -1024,27 +1293,16 @@ const tr = {
       'Seni beğenmiş birini pas geçersen bir süre burada durur, geri alabilirsin.',
     emptyMissedSubtitleDays:
       'Seni beğenmiş birini pas geçersen {{days}} gün boyunca burada durur, geri alabilirsin.',
-    // Açıklama kartının bu sekmedeki metni. Kart AYNI kart (aynı kapatma
-    // bayrağı) — yalnız metin sekmeye göre değişiyor; kaçırdıkların sekmesi
-    // beğeni listesinden farklı bir mekanik (pas → beğeni + hak harcama).
-    infoMissedDescription:
-      'Seni beğenmiş ama pas geçtiğin kişiler bir süre burada durur. Kurtardığında pasın beğeniye döner ve anında eşleşirsiniz; her kurtarma hakkından bir tane düşer.',
-    infoMissedDescriptionDays:
-      'Seni beğenmiş ama pas geçtiğin kişiler {{days}} gün burada durur. Kurtardığında pasın beğeniye döner ve anında eşleşirsiniz; her kurtarma hakkından bir tane düşer.',
     recoverButton: 'Kurtar',
-    // Çoğul eki (`_one`/`_other`) BİLEREK kullanılmıyor: projede başka hiçbir
-    // anahtar çoğullamıyor, yani Intl.PluralRules yolu hiç denenmemiş. Sayıyı
-    // sonda tutan bu kalıp her adette doğru okunuyor.
+    // Sekmenin açıklama cümlesinin SONUNA ekleniyor (bkz. tabDescriptionFor),
+    // bu yüzden nokta ile bitiyor.
     //
-    // ⚠️ Metin 2026-08-22'de GÜNLÜK semantiğinden BAKİYE semantiğine geçti:
-    // "bugün kalan" artık yanlış — free'de hak yalnız satın alınan krediden
-    // geliyor (yenilenmiyor), premium'da tier kotası abonelik döngüsüyle
-    // yenileniyor. Gün kavramı kalmadı.
-    recoverBalance: 'Kurtarma hakkın: {{count}}',
-    // Payda `tavan + satın alınan kredi` (bkz. recoveryQuota.ts). Bakiye
-    // paydayı aşıyorsa (tier düşüşü) bu varyant KULLANILMAZ — "5/2" yazardı.
-    recoverBalanceWithTotal: 'Kurtarma hakkın: {{count}}/{{total}}',
-    recoverBalanceEmpty: 'Kurtarma hakkın kalmadı.',
+    // ⚠️ YALNIZ PREMIUM'DA çiziliyor. Free'de sayaç YOK ve bu bilinçli: kurtarma
+    // 2026-08-31'de kota/kredi ekonomisinden çıkıp premium ayrıcalığı oldu, yani
+    // free'de kazanılabilecek ya da yenilenecek bir hak kalmadı — "0 hakkın
+    // kaldı" demek olmayan bir sayacı ima ederdi. Free'ye teklif başlığın
+    // yanındaki pill'den geliyor (viewLikersAction).
+    recoverUnlimited: 'Kurtarma hakkın sınırsız.',
     recoverSuccessTitle: 'Eşleşme kurtarıldı 💞',
     recoverSuccessMessage: 'Zaten seni beğenmişti — sohbet birazdan açılacak.',
     recoverFailed: 'Kurtarılamadı.',
@@ -1066,7 +1324,8 @@ const tr = {
     },
   },
   match: {
-    title: 'Biriyle Eşleştin!',
+    // Başlık metni YOK: modalin tepesinde çevrilen bir cümle değil, marka
+    // kelimesi ("lit", Duckie) duruyor — bkz. MatchModal.
     subtitle: '{{name}} ile eşleştin. İlk mesajı sen at.',
     sendMessage: 'Mesaj Gönder',
     back: 'Geri Dön',
@@ -1079,6 +1338,13 @@ const tr = {
   },
   profile: {
     tabTitle: 'Profil',
+    // Header'da logonun yerindeki sekme şeridi (profil sayfası ↔ plus sayfası).
+    tabs: {
+      profile: 'Profil',
+      // "Plus+" — ürünün kendi yazımı (bkz. plus kartı ve
+      // `discover.premium.pageTitlePremium`), başıboş bir "+" değil.
+      plus: 'Plus+',
+    },
     loadError: 'Profil yenileme hatası:',
     // Profil çekimi düştüğünde (yavaş ağ / 30 sn timeout) boş profil yerine
     // gösterilen hata durumu.
@@ -1156,6 +1422,9 @@ const tr = {
       subtitleEmpty: 'Notun bitti',
       subtitleUnknown: 'Yazarak beğen',
     },
+    // NOT: şeridin premium'da açılan en sol kartının (PlusCard) çevrilecek
+    // metni YOK — kartta yalnız "plus+" wordmark'ı (marka yazımı, Duckie) ve
+    // plus sayfasına götüren chevron var.
     account: {
       title: 'Hesap',
     },
@@ -1278,6 +1547,137 @@ const tr = {
       'UT-6306':
         'Fotoğraf kontrolü şu an yapılamıyor. Lütfen birazdan tekrar dene.',
     },
+    // ── Selfie doğrulama ────────────────────────────────────────────────────
+    // 🔴 METİN KURALI: bu akış KİMLİK doğrulamıyor, FOTOĞRAF doğruluyor.
+    // "Kimlik Doğrulandı" / "onaylı kişi" / "gerçek kişi" gibi ifadeler
+    // kullanılmayacak — kararlı bir saldırgan hedefin videosuyla geçebilir,
+    // metnin verdiği güven ürünün verdiğinden fazla olmamalı.
+    //
+    // Sunucudan gelenler burada YOK: hareket talimatı (`challenge.instruction`)
+    // ve başarısızlık mesajı (`message`) zaten Accept-Language'e göre
+    // yerelleşiyor. Buradakiler yalnız bilinmeyen kod / ağ hatası yedeği.
+    selfie: {
+      badge: {
+        label: 'Fotoğrafı doğrulanmış',
+      },
+      row: {
+        idle: {
+          title: 'Fotoğrafını Doğrula',
+          subtitle: 'Profildeki fotoğrafların sana ait olduğunu göster.',
+        },
+        verified: {
+          title: 'Fotoğrafın doğrulandı',
+          subtitle: 'Profilinde doğrulama rozeti görünüyor.',
+        },
+        reset: {
+          title: 'Doğrulaman sıfırlandı',
+          subtitle:
+            'Ana fotoğrafın değiştiği için rozet kalktı. Yeniden doğrulamak için dokun.',
+        },
+      },
+      intro: {
+        title: 'Fotoğrafını Doğrula',
+        description:
+          'Ön kameranla iki kısa hareket yapacaksın. Her hareket için tek bir kare çekilir ve ana fotoğrafınla karşılaştırılır.',
+        bullet1: 'Hangi hareketlerin isteneceğine biz karar veririz, her seferinde değişir.',
+        bullet2: 'Yalnızca iki kare gönderilir — video kaydı yapılmaz.',
+        bullet3: 'Yüzün çerçeveye sığsın, ortam aydınlık olsun ve karede yalnız ol.',
+        privacyNote:
+          'Doğrulama, fotoğraflarının sana ait olduğunu gösterir; bir kimlik doğrulaması değildir. Rozet dışında keşifte hiçbir öncelik sağlamaz.',
+        startButton: 'Doğrulamaya Başla',
+        goToPhotos: 'Fotoğraflarıma git',
+      },
+      consent: {
+        title: 'Doğrulama İzinleri',
+        description:
+          'Devam etmeden önce iki ayrı onayına ihtiyacımız var. İkisini de ayrı ayrı okuyup işaretlemen gerekiyor.',
+        acceptButton: 'Onaylıyorum ve Devam Et',
+        saveError: 'Onayların kaydedilemedi. Bağlantını kontrol edip tekrar dene.',
+        withdrawNote:
+          'Onayını istediğin zaman geri alabilirsin. Geri aldığında doğrulama rozetin kalkar; hesabın ve eşleşmelerin etkilenmez.',
+        BiometricVerification: {
+          title: 'Yüz verisinin işlenmesi',
+          checkbox:
+            'Doğrulama için yüz verimin işlenmesine açık rıza gösteriyorum.',
+          fallback:
+            'Doğrulama sırasında çekilen karelerdeki yüz verisi, ana fotoğrafınla karşılaştırılmak üzere işlenir. Bu veri KVKK kapsamında özel nitelikli kişisel veridir ve işlenmesi açık rızana bağlıdır.',
+        },
+        DataTransferAbroad: {
+          title: 'Yurt dışına aktarım',
+          checkbox:
+            'Yüz verimin yurt dışındaki sunucularda işlenmesine açık rıza gösteriyorum.',
+          fallback:
+            'Karşılaştırma, yurt dışında (ABD) bulunan bir sunucu üzerinde yapılır. Bu nedenle yüz verinin yurt dışına aktarılması gerekir ve bu aktarım açık rızana bağlıdır.',
+        },
+      },
+      camera: {
+        stepCounter: '{{index}} / {{total}}',
+        hint: 'Yüzün çerçeveye sığsın ve karede yalnız ol.',
+        ready: 'Hazırım',
+        captureError: 'Kare çekilemedi, tekrar dene.',
+        permissionMessage:
+          'Fotoğrafını doğrulayabilmek için kamera erişimine ihtiyacımız var.',
+        grantPermission: 'Kameraya İzin Ver',
+      },
+      result: {
+        successTitle: 'Fotoğrafın doğrulandı!',
+        successBody: 'Profilinde artık doğrulama rozetin görünüyor.',
+        failedAtStep: '{{step}}. adımda takıldık.',
+        retry: 'Tekrar Dene',
+        close: 'Şimdi Değil',
+      },
+      // Başarısızlık sebepleri. Hiçbiri "hata" tonunda değil: tekrar deneme
+      // akışın normal parçası (istek 200 + isSuccess:true dönüyor).
+      reason: {
+        challenge_not_met: 'İstenen hareketi algılayamadık. Bir kez daha deneyelim.',
+        no_face: 'Yüzünü göremedik. Yüzün net ve aydınlık görünsün.',
+        multiple_faces: 'Karede birden fazla kişi var. Doğrularken yalnız olmalısın.',
+        face_occluded: 'Yüzün kapalı görünüyor. Maske, şapka veya gözlüğü çıkarıp dene.',
+        low_quality: 'Kare bulanık çıktı. Daha aydınlık bir yerde tekrar dene.',
+        face_mismatch:
+          'Kareler ana fotoğrafınla eşleşmedi. Tekrar dene; sorun sürerse ana fotoğrafını gözden geçir.',
+        attempt_expired: 'Süre doldu. Baştan başlıyoruz.',
+        // 🔴 BİZİM hatamız — kullanıcıyı suçlayan bir ifade KULLANMA.
+        analysis_failed:
+          'Bizden kaynaklı bir sorun oldu, doğrulamayı tamamlayamadık. Birazdan tekrar dene.',
+        fallback: 'Doğrulamayı tamamlayamadık. Tekrar dene.',
+      },
+      reasonTitle: {
+        challenge_not_met: 'Hareketi algılayamadık',
+        no_face: 'Yüzünü göremedik',
+        multiple_faces: 'Karede birden fazla kişi var',
+        face_occluded: 'Yüzün kapalı görünüyor',
+        low_quality: 'Kare yeterince net değil',
+        face_mismatch: 'Fotoğrafınla eşleşmedi',
+        attempt_expired: 'Süre doldu',
+        analysis_failed: 'Bizden kaynaklı bir sorun',
+        fallback: 'Doğrulama tamamlanamadı',
+      },
+      codes: {
+        'UT-6501': 'Devam etmek için doğrulama izinlerini onaylaman gerekiyor.',
+        'UT-6502':
+          'Doğrulama için onaylanmış bir ana fotoğrafın olmalı. Önce ana fotoğrafını ekle.',
+        'UT-6502Title': 'Önce ana fotoğrafın gerekiyor',
+        'UT-6503': 'Fotoğrafın zaten doğrulanmış.',
+        // ⚠️ Kalan süre BİLEREK verilmiyor — geri sayım gösterme.
+        'UT-6504': 'Çok fazla deneme yaptın. Biraz bekleyip tekrar dene.',
+        'UT-6505': 'Doğrulama şu an kullanılamıyor.',
+        'UT-6506': 'Bu doğrulama oturumu geçersiz. Baştan başlaman gerekiyor.',
+        'UT-6507': 'Doğrulama tamamlanamadı. Tekrar dene.',
+      },
+      errors: {
+        generic: 'Doğrulama başlatılamadı. Tekrar dene.',
+      },
+      // Ana fotoğraf değişince rozet DÜŞER (güvenlik gereği: yoksa "doğrulan →
+      // fotoğrafı başkasınınkiyle değiştir" ile rozet başkasının fotoğrafını
+      // doğrulanmış gösterirdi). Yan fotoğraflar etkilenmez.
+      mainPhotoWarning: {
+        title: 'Doğrulama rozetin kalkacak',
+        message:
+          'Ana fotoğrafını değiştirirsen doğrulama rozetin kalkar ve yeniden doğrulaman gerekir. Devam edilsin mi?',
+        confirm: 'Devam Et',
+      },
+    },
     // Düzenleme modalındaki görünürlük şeridi (foto grid'inin altında). Sheet
     // bir an, bu bir durum: "keşifte değilim" cümlesini ve sunucudan gelen
     // sayıları taşıyan tek yer.
@@ -1290,6 +1690,11 @@ const tr = {
       // "kaydırma kapalı" DEMİYOR: kaydırma/beğeni açık, kapalı olan sadece
       // BAŞKALARININ destesinde görünmek.
       reviewBody: 'Bitene kadar keşifte görünmüyorsun.',
+      /**
+       * Aynı satırın profil KEŞİFTEYKEN hâli — bekleyen yalnızca o fotoğraf.
+       * Burada "keşifte görünmüyorsun" demek düpedüz yanlış olurdu.
+       */
+      reviewBodyVisible: 'Onaylanınca kartında görünecek.',
       photosTitle: '{{visible}}/{{required}} fotoğrafın yayında',
       photosBody: 'Keşifte görünmek için yeterli değil.',
       // Red, incelemeden AYRI bir satır: burada yapılacak bir iş var ve profil
@@ -1456,6 +1861,9 @@ const tr = {
       // anlık presence değil — bkz. PotentialMatch.isOnlineToday.
       activeToday: 'Bugün aktif',
       newMember: 'Burada yeni',
+      // Sticky şeritteki cam butonun VoiceOver etiketi — buton yalnız ok
+      // taşıyor, görünür bir adı yok.
+      backToTop: 'Başa dön',
     },
     languages: {
       title: 'Dil Seç',
@@ -1472,12 +1880,18 @@ const tr = {
     revokedMessage: 'Premium özelliklerin kapatıldı. Beklemediğin bir durumsa destek ekibiyle iletişime geç.',
     grantedTitle: 'Premium hesabına tanımlandı',
     grantedMessage: 'Premium özelliklerin şu andan itibaren açık. İyi eğlenceler!',
+    // Kullanıcının KENDİ satın alması bittiğinde (paywall kapanırken) düşen
+    // toast. Yukarıdaki admin metinlerinden ayrı: burada "tanımlandı" değil
+    // "hoş geldin" tonu var, çünkü eylemi kullanıcı yaptı.
+    purchasedTitle: 'Lit Plus senin!',
+    purchasedMessage: 'Tüm premium özelliklerin açıldı. Keyfini çıkar!',
     // NOT: paywall'daki özellik listesi artık `discover.premium.benefits`
     // altında — upsell kartıyla tek kaynaktan besleniyor.
     periods: {
       weeklyShort: 'Haftalık',
       monthlyShort: 'Aylık',
       yearlyShort: 'Yıllık',
+      lifetimeShort: 'Ömür Boyu',
       weeklyPer: 'hafta',
       monthlyPer: 'ay',
       yearlyPer: 'yıl',
@@ -1489,8 +1903,14 @@ const tr = {
       monthly: 'Aylık yenilenir, uzun taahhüt yok.',
       yearly: 'En düşük haftalık maliyet; bir kez öde, yıl boyu Plus kal.',
     },
-    // Yüzde i18n dışında hesaplanıyor (computeSavings) — aylık plan taban.
-    savings: 'Aylığa göre %{{percent}} tasarruf.',
+    // Kartın sol alt köşesindeki kırmızı indirim pill'i. Yüzde i18n dışında
+    // hesaplanıyor (computeSavings) — taban haftalık plan. KISA olmalı, pill
+    // rozetle aynı şeride sığıyor. (Eskiden "Aylığa göre %20 tasarruf." diye
+    // tam cümleydi ve kartın açıklama satırında duruyordu.)
+    discount: '%{{percent}} indirim',
+    // Periyot şeridindeki rozet: en çok tasarruf ettiren plan. Rozet DAR
+    // (etiketin yanına sığıyor) — bir iki kelimeyi geçmesin.
+    bestValue: 'En iyi',
     errors: {
       packageNotFound: 'Paket bulunamadı.',
       purchaseTitle: 'Satın Alma Hatası',
@@ -1500,54 +1920,37 @@ const tr = {
       restoreFailed: 'Geri yükleme başarısız.',
     },
     cta: {
-      alreadyPremium: 'Hesap Zaten Lit Plus',
       freeTrial: '{{days}} Gün Ücretsiz Dene',
       freeTrialBadge: 'İlk {{days}} gün ücretsiz',
-      subscribe: '{{price}}/{{period}} için Abone Ol',
-      buy: 'Satın Al',
+      // Plan kartının sağ altındaki eylem rozeti. KISA olmalı — kartın kendi
+      // fiyat/periyot satırları zaten var, rozet yalnız dokunuşun ne yapacağını
+      // söylüyor. (Eskiden '{{price}}/{{period}} için Abone Ol' idi ve alttaki
+      // büyük CTA'da duruyordu; o buton kaldırıldı.)
+      subscribe: 'Abone Ol',
       restore: 'Satın alımları geri yükle',
       trialDisclaimer: 'İlk {{days}} gün ücretsiz kullanabilirsin, ardından {{price}}/{{period}} olarak otomatik yenilenir.',
       appStoreDisclaimer: 'Lit Plus aboneliği, App Store üzerinden otomatik olarak yenilenen bir aboneliktir. Aboneliğiniz, satın alma işleminin onaylanmasından sonra App Store hesabınızdan ücretlendirilir.',
     },
   },
   superLikePurchase: {
-    title: 'Süper Beğeni Al',
+    title: 'Superlike Satın Al',
     description:
       'Süper beğeniler 3x daha fazla eşleşme sağlar. Karşı taraf kartını beğenilerinin en üstünde, bulanıklaşmadan görür — üstelik ücretsiz üyeyse bile. Hakların süresiz, istediğin zaman kullanırsın.',
     packLabel: '{{count}}x Superlike',
     cta: 'Satın Al',
     ctaWithPrice: '{{price}} · Satın Al',
     unavailableMessage: 'Paketler şu anda yüklenemedi. Bağlantını kontrol edip biraz sonra tekrar dene.',
-    successTitle: 'Süper beğenilerin hazır',
-    successMessage: '{{count}} süper beğeni hesabına eklendi.',
+    successTitle: 'Superlike\'ların hazır',
+    successMessage: '{{count}} Superlike hesabına eklendi.',
     syncedTitle: 'Bakiyen güncel',
     syncedMessage: 'Bu satın alma zaten hesabına işlenmişti.',
     pendingTitle: 'Satın alman alındı',
-    pendingMessage: 'Süper beğenilerin birkaç dakika içinde hesabına yansıyacak.',
+    pendingMessage: 'Superlike\'ların birkaç dakika içinde hesabına yansıyacak.',
     errorTitle: 'Satın alma tamamlanamadı',
     disclaimer: 'Süper beğeniler satın alma tamamlandığında hesabına anında eklenir ve süresi dolmaz. Ödemeler App Store hesabından tahsil edilir, satın alma sonrası iade yapılmaz.',
   },
-  // Kaçırılan eşleşme kurtarma paketleri. Kabuk superLikePurchase ile aynı,
-  // ürün farklı: 2026-08-22'den beri free kullanıcının yenilenen kotası HİÇ
-  // yok, yani abonelik dışında kurtarmanın tek yolu bu paketler.
-  recoveryPurchase: {
-    title: 'Kurtarma Hakkı Al',
-    description: 'Seni zaten beğenmiş birine verdiğin pası geri al. Her kurtarma garanti eşleşme demek.',
-    packLabel: '{{count}}x Kurtarma',
-    cta: 'Satın Al',
-    ctaWithPrice: '{{price}} · Satın Al',
-    unavailableMessage: 'Paketler şu anda yüklenemedi. Bağlantını kontrol edip biraz sonra tekrar dene.',
-    successTitle: 'Kurtarma hakkın hazır',
-    successMessage: '{{count}} kurtarma hakkı hesabına eklendi.',
-    syncedTitle: 'Bakiyen güncel',
-    syncedMessage: 'Bu satın alma zaten hesabına işlenmişti.',
-    pendingTitle: 'Satın alman alındı',
-    pendingMessage: 'Kurtarma hakların birkaç dakika içinde hesabına yansıyacak.',
-    errorTitle: 'Satın alma tamamlanamadı',
-    // Yalnız abone OLMAYAN kullanıcıya gösterilir — bkz. RecoveryPurchaseModal.
-    premiumUpsell: 'Lit Plus kurtarma hakkı da veriyor',
-    disclaimer: 'Kurtarma hakları satın alma tamamlandığında hesabına anında eklenir ve süresi dolmaz. Ödemeler App Store hesabından tahsil edilir, satın alma sonrası iade yapılmaz.',
-  },
+  // `recoveryPurchase` KALDIRILDI (2026-08-31): kurtarma paketleri silindi,
+  // kurtarma premium ayrıcalığı oldu. Free'ye teklif Lit Plus'ın kendisi.
   // Not = kartın belirli bir içeriğine (foto / prompt) yazılan yorumlu beğeni.
   // Ayrı bir consumable: kotası günlük like kotasından bağımsız, satın alınır.
   note: {
@@ -1562,6 +1965,15 @@ const tr = {
     targetMainPhoto: 'Ana fotoğraf',
     targetPhoto: '{{index}}. fotoğraf',
     targetPrompt: 'Soru cevabı',
+    // Beğeni kartındaki not kutusu üç satırı aşınca (bkz. LikesScreen).
+    seeMore: 'Devamını gör',
+    seeLess: 'Daha az göster',
+    // Not kutusunun gri başlığı — ALICININ gözünden, geçmiş zaman
+    // (`replyingToPhoto` gönderenin composer'ındaki karşılığı).
+    // "Bu" YOK: hedefin önizlemesi satırın hemen yanında duruyor, işaret zamiri
+    // orada olmayan bir şeye işaret ediyormuş gibi okunuyordu.
+    leftNoteOnPhoto: 'Fotoğrafına not bıraktı',
+    leftNoteOnPrompt: 'Cevabına not bıraktı',
     sentTitle: 'Notun gönderildi',
     sentMessage: '{{name}} notunu beğenilerinde görecek.',
     failedTitle: 'Not gönderilemedi',
@@ -1579,7 +1991,7 @@ const tr = {
   // Not paketleri. Kabuk superLikePurchase ile aynı; notun kotası HİÇ yok,
   // tek edinme yolu bu paketler.
   notePurchase: {
-    title: 'Not Hakkı Al',
+    title: 'Not Satın Al',
     description:
       'Not, bir fotoğrafına ya da soru cevabına yazdığın beğeni. Karşı taraf kartını beğenilerinde bulanıklaşmadan görür — yazdığın cümle ve hangi içeriğe yazdığın da yanında. Hakların süresiz, istediğin zaman kullanırsın.',
     packLabel: '{{count}}x Not',
@@ -1613,7 +2025,6 @@ const tr = {
       detailLabel: 'Detay (opsiyonel)',
       detailDescription: 'Olayı birkaç cümleyle anlatırsan inceleme hızlanır.',
       detailPlaceholder: 'Olayı kısaca anlat…',
-      characterCount: '{{count}}/1000',
       blockSectionTitle: 'Engelleme',
       submit: 'Şikayet Et',
       disclaimer: 'Şikayetler ekibimiz tarafından incelenir. Kasıtlı yanlış şikayetler hesabının kısıtlanmasına neden olabilir.',
@@ -1633,6 +2044,19 @@ const tr = {
       blockRetry: 'Engellemeyi dene',
       blockRetryFailed:
         'Engelleme yine başarısız oldu. Ayarlar → Engellenenler üzerinden tekrar deneyebilirsin.',
+    },
+    // Beğeni kartının şeridindeki üç noktanın açtığı menü (bkz.
+    // ProfileOptionsSheet). chat.options.* ile AYRI: orada eşleşme var ve
+    // "Eşleşmeyi Kaldır / Geri Al" satırları o bölümü dolduruyor; burada henüz
+    // eşleşme yok, yalnız güvenlik aksiyonları kalıyor — açıklama da bu yüzden
+    // sohbetten değil karşılaşmadan bahsediyor.
+    options: {
+      title: 'Profil Seçenekleri',
+      sectionSafety: 'Güvenlik',
+      sectionSafetyDescription:
+        'Şikayet ve engelleme kalıcıdır: bu kişi bir daha karşına çıkmaz ve eşleşemezsiniz.',
+      report: 'Şikayet Et',
+      block: 'Kullanıcıyı Engelle',
     },
     // Profil kartındaki "Bu hesabı blokla" akışı. chat.block.* ile ayrı
     // tutuluyor: oradaki metin açıkça sohbet/eşleşme dilinde konuşuyor, burada
