@@ -17,13 +17,14 @@ import {
 import uiBus, { requestPhotoHighlight } from '@/shared/services/uiBus';
 import { navigationRef } from '@/shared/services/navigationRef';
 import { setCurrentRouteName } from '@/shared/services/currentRoute';
+import { useIsOffline } from '@/shared/services/networkStatus';
 import { shortNetError } from '@/shared/utils/netError';
 import { resolveMainPhotoUri } from '@/shared/utils/photoUri';
 import { showMessageToast, showLikeToast, showInfoToast } from '@/shared/services/toaster';
 import { store } from '@/shared/store';
 import { clearChatCache } from '@/shared/store/mmkvStorage';
 
-import SettingsModal from '@/features/profile/components/SettingsModal';
+import SettingsScreen from '@/features/profile/screens/SettingsScreen';
 import {
   setCurrentAccessToken,
   setOnTokenRefreshed,
@@ -64,6 +65,7 @@ import { checkRegistrationToken } from '@/features/auth/registrationToken';
 import {
   applySubscriptionChanged,
   fetchSubscriptionStatus,
+  hydratePremiumFromCache,
   hydrateSyncPending,
   reconcileIfMismatched,
   resolvePendingPremiumSync,
@@ -71,9 +73,16 @@ import {
   setPremium,
 } from '@/features/profile/subscriptionSlice';
 import { hasWitnessedPurchase, premiumSyncUserKey } from '@/features/profile/pendingPremiumSync';
+import { readPremiumSnapshot } from '@/features/profile/premiumSnapshot';
 import { addCustomerInfoListener, getRevenueCatAppUserId, initRevenueCat, logRevenueCatIdentity, loginRevenueCat, logoutRevenueCat } from '@/features/profile/subscriptionService';
 import profileService from '@/features/profile/profileService';
+import {
+  reconcileServerLanguage,
+  resetServerLanguageSync,
+} from '@/shared/i18n/serverLanguage';
 import ProfileHiddenGate from '@/features/profile/components/ProfileHiddenGate';
+import LocationAccessGate from '@/features/profile/components/LocationAccessGate';
+import { SELFIE_OPEN_EVENT } from '@/features/profile/selfie/selfieEvents';
 import {
   hasPhotosAwaitingReview,
   normalizeProfileVisibility,
@@ -81,11 +90,12 @@ import {
 } from '@/features/profile/photoModeration';
 import { ProfileVisibilityProvider } from '@/features/profile/profileVisibilityContext';
 import { sendLocationHeartbeat, clearLocationHeartbeatState } from '@/features/profile/locationHeartbeat';
+import notificationsService from '@/features/notifications/notificationsService';
 import { queryClient } from '@/shared/queries/queryClient';
 import { swipeKeys } from '@/features/discover/swipeQueries';
 import { flushPendingSuperlikeRedeems, redeemUserKey } from '@/features/discover/superlikeRedeem';
-import { flushPendingRecoveryRedeems } from '@/features/discover/recoveryRedeem';
 import { flushPendingNoteRedeems } from '@/features/discover/noteRedeem';
+import { purgeLegacyRecoveryRedeemQueue } from '@/features/discover/recoveryQueuePurge';
 import AuthNavigator from './AuthNavigator';
 import TabNavigator from './TabNavigator';
 import KVKKConsentScreen, { CURRENT_KVKK_VERSION } from '@/features/auth/screens/KVKKConsentScreen';
@@ -141,17 +151,20 @@ const Stack = createNativeStackNavigator<RootStackParamList>();
 /**
  * Parası alınmış ama krediye çevrilememiş consumable satın almaları boşalt.
  *
- * Üç ürünün kuyruğu AYRI (aynı MMKV anahtarını paylaşsalardı biri diğerinin
+ * İki ürünün kuyruğu AYRI (aynı MMKV anahtarını paylaşsalardı biri diğerinin
  * transaction'ını yanlış uca yollardı), ama boşaltma noktaları aynı — bu yüzden
- * tek yerden çağrılıyorlar: yeni bir consumable eklendiğinde üç ayrı call
+ * tek yerden çağrılıyorlar: yeni bir consumable eklendiğinde iki ayrı call
  * site'ın birini unutmak, o ürünün kredisinin hiç yazılmaması demek.
  *
  * Kuyruk boşsa hiç istek atılmaz; endpoint'ler `transactionId` bazında
  * idempotent.
+ *
+ * Kurtarma kuyruğu 2026-08-31'de LİSTEDEN ÇIKTI (ürün kaldırıldı, uç 404
+ * dönüyor); cihazda kalmış eski kayıtlar burada boşaltılmıyor, SİLİNİYOR.
  */
 function flushConsumableRedeems(userId: string | null | undefined) {
+  purgeLegacyRecoveryRedeemQueue();
   flushPendingSuperlikeRedeems(userId).catch(() => {});
-  flushPendingRecoveryRedeems(userId).catch(() => {});
   flushPendingNoteRedeems(userId).catch(() => {});
 }
 
@@ -276,6 +289,11 @@ function MainNavigator() {
   return (
     <Stack.Navigator
       id="MainStack"
+      // Ekranlar sağdan kayarak geliyor. Ekran bazlı `animation` override'ları
+      // KALDIRILDI: hepsi bu varsayılanın birebir kopyasıydı, tek yerden
+      // yönetiliyor. Bir ekranın anında açılması istenirse yalnız ona
+      // `animation: 'none'` verilmeli — ⚠️ o ekranda kenardan çekerek geri
+      // çıkma jesti de kapanır (native stack'te jest animasyona bağlı).
       screenOptions={{ headerShown: false, animation: 'slide_from_right' }}
       initialRouteName="HomeTabs"
     >
@@ -284,26 +302,17 @@ function MainNavigator() {
         name="Chat"
         component={ChatScreen}
         options={{
-          animation: 'slide_from_right',
           gestureEnabled: true,
           fullScreenGestureEnabled: false,
         }}
       />
-      <Stack.Screen
-        name="Notifications"
-        component={NotificationsScreen}
-        options={{ animation: 'slide_from_right' }}
-      />
-      <Stack.Screen
-        name="ChangePassword"
-        component={ChangePasswordScreen}
-        options={{ animation: 'slide_from_right' }}
-      />
-      <Stack.Screen
-        name="ChangeEmail"
-        component={ChangeEmailScreen}
-        options={{ animation: 'slide_from_right' }}
-      />
+      <Stack.Screen name="Notifications" component={NotificationsScreen} />
+      {/* ⚠️ `gestureEnabled` ekranın KENDİSİ tarafından açılıp kapanıyor
+          (bkz. SettingsScreen): kategori sayfası açıkken kenar çekişi bir
+          kademe yukarı çıkarmalı, ekranı tümden pop'lamamalı. */}
+      <Stack.Screen name="Settings" component={SettingsScreen} />
+      <Stack.Screen name="ChangePassword" component={ChangePasswordScreen} />
+      <Stack.Screen name="ChangeEmail" component={ChangeEmailScreen} />
     </Stack.Navigator>
   );
 }
@@ -384,7 +393,10 @@ export default function AppNavigator() {
   useEffect(() => {
     myPhotoRef.current = myPhoto;
   }, [myPhoto]);
-  const [settingsVisible, setSettingsVisible] = useState(false);
+  // Görünürlük kapısı ekranda mı — konum izni kapısı onun ARKASINA diziliyor
+  // (bkz. ProfileHiddenGate onOpenChange: iki sheet üst üste present edilirse
+  // gorhom ilkini sessizce dismiss ediyor).
+  const [photoGateOpen, setPhotoGateOpen] = useState(false);
   const appStateRef = useRef<AppStateStatus>(AppState.currentState);
   // Foreground abonelik tazelemesi için throttle damgası — boot'taki tur zaten
   // ayrı efektten geçiyor, o yüzden 0'dan başlıyor (ilk foreground'da çalışsın).
@@ -548,6 +560,13 @@ export default function AppNavigator() {
     // kart her tema değişiminde geri gelir. Bu yüzden yalnız GÖRDÜĞÜMÜZ satın
     // almalar okunuyor — RC cache'inden türetilmiş kayıtlar kartı diriltmesin.
     dispatch(hydrateSyncPending(hasWitnessedPurchase(premiumSyncUserKey(user))));
+    // Aynı gerekçenin premium'un KENDİSİ için olan hâli: internetsiz açılışta
+    // `/status` patlıyor ve `resolved:false` penceresindeki ekran yedeklerinin
+    // (getMyProfile, /swipe/stats) hepsi de ağa bağlı — yani ödemiş kullanıcı
+    // premium'unu göremiyordu. Eldeki tek offline yol RC SDK cache'iydi ve o da
+    // Android'de RC anahtarı olmadığı için hiç çalışmıyor. Disk yalnız premium'u
+    // AÇAR, asla kapatmaz; ilk kanonik cevap üzerine yazar (bkz. premiumSnapshot).
+    dispatch(hydratePremiumFromCache(readPremiumSnapshot(premiumSyncUserKey(user))));
     (async () => {
       // Kimlik anahtarı `userId ?? id` — backend bazı yanıtlarda `userId`,
       // bazılarında `id` döndürüyor (superlike redeem kuyruğu da bu yüzden tek
@@ -635,6 +654,38 @@ export default function AppNavigator() {
     return () => clearTimeout(id);
   }, [isAuthenticated, hasToken, isPremiumNow, premiumExpiresAt, dispatch]);
 
+  // ── Ağ geri geldi → kanonik abonelik durumunu tazele ──────────────────────
+  // Kopukluk boyunca `/status` reddedildi ve state "bilmiyoruz"da kaldı (offline
+  // açılışta disk ipucu devreye giriyor ama o da backend'in cevabı DEĞİL —
+  // `resolvedFromCache`). Bunu telafi eden iki yol vardı ve ikisi de dolaylı:
+  // SignalR reconnect'i ve foreground turu. Kullanıcı uygulamayı ÖNDE tutarken
+  // wifi'ye geçerse ikisi de tetiklenmiyor, premium hub yeniden bağlanana kadar
+  // eksik/bayat kalıyordu. `useIsOffline` zaten tek native listener'a bağlı;
+  // burada yalnız offline→online GEÇİŞİ okunuyor, durum değil.
+  //
+  // Foreground turuyla AYNI throttle damgasını paylaşıyor: "arka plandan dön +
+  // ağ geri geldi" peş peşe gelen ve aynı cevabı çeken iki tur demek.
+  const offline = useIsOffline();
+  const wasOfflineRef = useRef(offline);
+  useEffect(() => {
+    const cameOnline = wasOfflineRef.current && !offline;
+    wasOfflineRef.current = offline;
+    if (!cameOnline || !isAuthenticated || !hasToken) return;
+    if (
+      Date.now() - lastSubscriptionRefreshRef.current <=
+      SUBSCRIPTION_REFRESH_THROTTLE_MS
+    ) {
+      return;
+    }
+    lastSubscriptionRefreshRef.current = Date.now();
+    dispatch(fetchSubscriptionStatus()).finally(() => {
+      // Kopukluk sırasında yapılmış/aktive edilememiş satın alma varsa kurtarma
+      // turu; kayıt ve çelişki yoksa ikisi de hiç istek atmaz.
+      dispatch(resolvePendingPremiumSync());
+      dispatch(reconcileIfMismatched());
+    });
+  }, [offline, isAuthenticated, hasToken, dispatch]);
+
   // Parası alınmış ama krediye çevrilememiş consumable paketleri (superlike +
   // kurtarma) — açılışta tekrar redeem et. Satın alma anında RC webhook'u
   // backend'e inmemişse redeem 402 döner ve transaction MMKV kuyruğuna yazılır;
@@ -689,6 +740,10 @@ export default function AppNavigator() {
       // Konum debounce damgası kullanıcıya özgü — sonraki hesap ilk açılışta
       // kendi koordinatını göndersin.
       clearLocationHeartbeatState();
+      // Bildirim feed'inin bellek snapshot'ı (ekran anında açılsın diye tutulan
+      // ilk sayfa) da kişisel veri — aynı process'te başka hesaba girilirse
+      // önceki kullanıcının bildirimleri bir an için listede görünürdü.
+      notificationsService.clearFeedSnapshot();
       return;
     }
 
@@ -842,8 +897,9 @@ export default function AppNavigator() {
       realtimeService.on('ConversationDeactivated', (payload) => {
         if (!mounted) return;
         const convId = payload?.conversationId;
-        // restorableUntil = null: geri alma yalnız unmatch EDENE açık, bu event
-        // karşı tarafa gidiyor — "geri al" butonu bizde çıkmamalı.
+        // `byMe` GEÇİLMEZ (→ deactivatedByMe:false) + restorableUntil = null:
+        // geri alma yalnız unmatch EDENE açık, bu event karşı tarafa gidiyor —
+        // sohbete girip 3 noktaya bassak da "geri al" butonu bizde çıkmamalı.
         if (convId) {
           dispatch(
             conversationDeactivated({ conversationId: convId, restorableUntil: null }),
@@ -898,7 +954,7 @@ export default function AppNavigator() {
         if (err?.code === 'CONVERSATION_ERROR' || err?.code === 'FORBIDDEN') {
           const convId = activeConvRef.current;
           // Kapatan taraf BİZ değiliz (kendi unmatch'imizde gönderim denemiyoruz)
-          // → geri alma penceresi yok, "geri al" butonu çıkmamalı.
+          // → `byMe` geçilmez, geri alma penceresi yok, "geri al" çıkmamalı.
           if (convId) {
             dispatch(
               conversationDeactivated({ conversationId: convId, restorableUntil: null }),
@@ -1282,6 +1338,22 @@ export default function AppNavigator() {
         (navigationRef as any).navigate('HomeTabs', { screen: 'Profile' });
         return;
       }
+      case 'SelfieVerificationReset': {
+        // Ana fotoğraf değiştiği için doğrulama DÜŞTÜ. Sessiz düşürme yok:
+        // kullanıcı sebebiyle birlikte öğrenmeli (rehber §5).
+        //
+        // `extraData.reason` şimdilik yalnız log'a gidiyor — tek olası değer
+        // "main_photo_changed" ve metin zaten bunu söylüyor. Backend başka bir
+        // sebep eklerse ayrım burada yapılır.
+        devLog('🪪 [selfie] doğrulama sıfırlandı', data?.extraData?.reason ?? data?.reason);
+        profileService.bustProfileCache();
+        (navigationRef as any).navigate('HomeTabs', { screen: 'Profile' });
+        // Intro adımında açılıyor — kamera KENDİLİĞİNDEN başlamıyor. Bildirime
+        // basmak doğrudan çekime düşürseydi hem şaşırtıcı olurdu hem de
+        // /start saatlik 5 haktan birini kullanıcının kararı olmadan yakardı.
+        uiBus.emit(SELFIE_OPEN_EVENT);
+        return;
+      }
       case 'MissedMatch':
       case 'System':
       default: {
@@ -1419,9 +1491,14 @@ export default function AppNavigator() {
     }
   }, [currentUserId, dispatch]);
 
-  // ============ Global Settings modal ============
+  // ============ Global Ayarlar kapısı ============
+  // Ayarlar artık burada gizli mount edilen bir modal DEĞİL, stack'teki bir
+  // ekran — kapı da onu itiyor. navigationRef: bu efekt NavigationContainer'ın
+  // dışında, `navigate` çağrıldığında container hazır olmayabilir.
   useEffect(() => {
-    const unsub = uiBus.on('openSettings', () => setSettingsVisible(true));
+    const unsub = uiBus.on('openSettings', () => {
+      if (navigationRef.isReady()) (navigationRef as any).navigate('Settings');
+    });
     return unsub;
   }, []);
 
@@ -1476,6 +1553,8 @@ export default function AppNavigator() {
       setMyPhoto(null);
       setProfileVisibility(null);
       setPhotosAwaitingReview(null);
+      // Sonraki oturum kendi dil tercihiyle gelsin (latch bir kullanıcıya ait).
+      resetServerLanguageSync();
       return;
     }
     let cancelled = false;
@@ -1483,6 +1562,11 @@ export default function AppNavigator() {
       profileService
         .getMyProfile()
         .then((p: any) => {
+          // Cevaba bağlı ama EKRANDAN bağımsız: sunucudaki dil tercihi
+          // arayüzünkinden ayrıysa düzeltir (kartlardaki `*Display` alanları
+          // ona göre üretiliyor — bkz. serverLanguage.ts). `cancelled`
+          // kontrolünden ÖNCE: state'e dokunmuyor, ekran değişse de yapılmalı.
+          reconcileServerLanguage(p, store.getState()?.settings?.language);
           if (cancelled) return;
           setMyPhoto(resolveMainPhotoUri(p) ?? null);
           setProfileVisibility(normalizeProfileVisibility(p));
@@ -1578,6 +1662,9 @@ export default function AppNavigator() {
   const isVerifiedUser = user?.isMailVerified || user?.isProfileCreated;
   const showMainNavigator = isAuthenticated && isVerifiedUser;
   const needsKvkkConsent = showMainNavigator && kvkkVersion !== CURRENT_KVKK_VERSION;
+  // Kimlik anahtarı `userId ?? id` — backend bazı yanıtlarda yalnız `id`
+  // döndürüyor (bkz. RevenueCat/redeem anahtarları).
+  const locationGateUserKey = String(user?.userId ?? user?.id ?? '') || null;
   const navigationKey = `nav-${isAuthenticated ? 'auth' : 'guest'}-${isVerifiedUser ? 'verified' : 'unverified'}`;
 
   const handleOpenMatchChat = (conversationId: string) => {
@@ -1667,26 +1754,34 @@ export default function AppNavigator() {
         />
       )}
 
-      {/* Global Settings modal */}
-      {showMainNavigator && (
-        <SettingsModal
-          visible={settingsVisible}
-          onClose={() => setSettingsVisible(false)}
-        />
-      )}
-
       {/* Profil keşif havuzundan düştü → bilgilendirme sheet'i (kapatılabilir,
-          hiçbir işlemi engellemiyor). Ayarlar modal'ının ALTINDA duruyor ki
-          açıkken kullanıcı yine de hesabına (çıkış/destek) erişebilsin. */}
+          hiçbir işlemi engellemiyor). Navigator'ın üstünde duruyor ama Ayarlar
+          artık bir EKRAN olduğu için onu örtmüyor: kullanıcı bu sheet açıkken de
+          hesabına (çıkış/destek) erişebilir. */}
       {showMainNavigator && (
         <ProfileHiddenGate
           visibility={profileVisibility}
           awaitingReview={photosAwaitingReview}
+          onOpenChange={setPhotoGateOpen}
           onAddPhoto={() => {
             if (!navigationRef.isReady()) return;
             (navigationRef as any).navigate('HomeTabs', { screen: 'Profile' });
             uiBus.emit('addProfilePhoto');
           }}
+        />
+      )}
+
+      {/* Konum izni kapısı — kayıt adımından geçmeden (başka cihazda kaydolup
+          burada yalnızca giriş yapan) ya da izni sonradan kapatmış kullanıcıya
+          girişte bir kez sorar. İzin varsa hiçbir şey çizilmez. Üstünde başka
+          bir kapı varken bekler: KVKK/yaptırım/güncelleme ekranları bunun
+          üstünde duruyor, görünürlük sheet'i ise aynı seviyede. */}
+      {showMainNavigator && (
+        <LocationAccessGate
+          userKey={locationGateUserKey}
+          blocked={
+            needsKvkkConsent || !!accountBlock || versionGate.open || photoGateOpen
+          }
         />
       )}
 

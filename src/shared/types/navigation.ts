@@ -10,6 +10,10 @@ export type RootStackParamList = {
     isActive?: boolean;
   };
   Notifications: undefined;
+  // Ayarlar. Modal değil ekran: Profil'deki dişliden (ve uiBus'taki
+  // 'openSettings' kapısından) stack'e itiliyor, kendi içinde ikinci bir kademe
+  // taşıyor (kategori sayfaları — o kademe route DEĞİL, ekranın iç durumu).
+  Settings: undefined;
   // Ayarlar → Şifre Değiştir. İki adım (mevcut şifre → kod + yeni şifre) tek
   // ekranın iç durumu: mevcut şifreyi route param'ıyla taşımak onu Sentry'nin
   // navigation breadcrumb'larına düşürürdü.
