@@ -18,14 +18,14 @@ import {
 } from "react-hook-form";
 import { zodResolver } from "@hookform/resolvers/zod";
 import { noteSchema } from "@/shared/schemas/formSchemas";
-import { Pen } from "lucide-react-native";
+import { Pen } from "@/shared/icons";
 import AppModal from "@/shared/components/AppModal";
 import SFIcon from "@/shared/components/SFIcon";
 import NoteGlyph from "@/shared/components/NoteGlyph";
 import { useKeyboardAwareField } from "@/shared/hooks/useKeyboardAwareField";
 import { colors as theme, ink, isLight } from "@/shared/theme/colors";
 import {
-  NOTE_MAX_LENGTH_FALLBACK,
+  resolveNoteMaxLength,
   noteTargetLabel,
   clampNoteText,
 } from "@/features/discover/noteTarget";
@@ -447,13 +447,9 @@ export default function NoteComposerModal({
   const [chipHeight, setChipHeight] = useState(CHIP_HEIGHT_ESTIMATE);
   const chipOverhang = Math.max(0, chipHeight - PREVIEW_INSET);
 
-  const limit = useMemo(
-    () =>
-      typeof maxLength === "number" && maxLength > 0
-        ? maxLength
-        : NOTE_MAX_LENGTH_FALLBACK,
-    [maxLength],
-  );
+  // Sunucunun tavanı istemci tavanıyla birlikte okunuyor: `noteMaxLength` daha
+  // büyük gelse de sınır NOTE_MAX_LENGTH'i aşmıyor (bkz. resolveNoteMaxLength).
+  const limit = useMemo(() => resolveNoteMaxLength(maxLength), [maxLength]);
 
   // Tavan sunucudan geliyor → şema da ona bağlı; `limit` değişmedikçe yeniden
   // kurulmasın.

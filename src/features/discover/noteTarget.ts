@@ -17,10 +17,30 @@ import type { NoteTarget, ProfilePromptCard } from "@/shared/types";
  */
 
 /**
- * Yorum karakter tavanı — backend `Stats.noteMaxLength` göndermezse kullanılır.
- * Sözleşmede önerilen değerle aynı; sunucu farklı bir sayı gönderirse O geçerli.
+ * Yorum karakter tavanı. İKİ İŞİ birden görüyor: `Stats.noteMaxLength`
+ * gelmediğindeki varsayılan VE sunucu daha büyük bir sayı gönderse bile
+ * aşılmayan istemci tavanı (bkz. resolveNoteMaxLength).
+ *
+ * 150 ürün kararı, sözleşmenin önerdiği 240'ın BİLEREK altında: aynı işi yapan
+ * uçlar da orada duruyor (Bumble Compliment 150, Hinge prompt cevabı 150). Not
+ * sohbeti başlatmak için değil, başlatmaya sebep olmak için — 240 mini mesaja
+ * davet ediyordu.
+ *
+ * ⚠️ Tavanı AŞAĞI çekmek güvenli: sunucu 240 kabul ederken 150 göndermek 400
+ * üretmez, yalnız kullanıcı erken kesilir. YUKARI çıkarmak sunucuyla BİRLİKTE
+ * ve yeni istemci sürümüyle yapılmalı (bkz. weeklySuperLikeLimit tarihçesi).
  */
-export const NOTE_MAX_LENGTH_FALLBACK = 240;
+export const NOTE_MAX_LENGTH = 150;
+
+/**
+ * Sunucudan gelen tavan + istemci tavanı → yürürlükteki sınır. Sunucu daha
+ * büyük bir sayı gönderirse kazanan KÜÇÜK olan; değer hiç gelmediyse ya da
+ * anlamsızsa (0 / negatif) istemci tavanı geçerli.
+ */
+export const resolveNoteMaxLength = (serverValue?: number | null): number =>
+  typeof serverValue === "number" && serverValue > 0
+    ? Math.min(serverValue, NOTE_MAX_LENGTH)
+    : NOTE_MAX_LENGTH;
 
 /**
  * Yorumun UZUNLUĞU — **code point** cinsinden, `str.length` DEĞİL.
