@@ -20,12 +20,13 @@ import "./global.css";
 import { useThemeMode } from "./src/shared/theme/themeMode";
 import { useEffect } from "react";
 import { View, Text, Pressable } from "react-native";
-import { TriangleAlert } from "lucide-react-native";
+import { AlertCircle } from "@/shared/icons";
 import EmptyState from "./src/shared/components/EmptyState";
 import { colors } from "./src/shared/theme/colors";
 import RenderHudOverlay from "./src/shared/debug/RenderHudOverlay";
 import PinchZoomOverlay from "./src/shared/components/PinchZoomOverlay";
 import CropperOverlay from "./src/shared/components/cropper/CropperOverlay";
+import SelfieVerificationOverlay from "./src/features/profile/selfie/SelfieVerificationOverlay";
 import { PERF_HUD } from "./src/shared/debug/flags";
 import { StatusBar } from "expo-status-bar";
 import { Provider, useSelector, useDispatch } from "react-redux";
@@ -100,20 +101,27 @@ function LanguageSyncer() {
 function CrashFallback({ resetError }: { resetError: () => void }) {
   return (
     <View style={{ flex: 1, backgroundColor: colors.bg, alignItems: "center", justifyContent: "center", paddingBottom: 48 }}>
+      {/* Üçgen değil daire içinde ünlem — iki platformda da aynı: SF'te
+          `exclamationmark.circle`, lucide'da AlertCircle. Kalınlık varsayılanın
+          bir tık altında (SF `light` / lucide 0.8): dairenin çevresi uzun
+          olduğu için regular'da ünlemden daha kalın okunuyordu. */}
       <EmptyState
-        Icon={TriangleAlert}
-        iconStrokeWidth={1}
+        Icon={AlertCircle}
+        sf="exclamationmark.circle"
+        iconStrokeWidth={0.8}
+        iconWeight="light"
         topOffset={0}
         text={i18n.t("common.crashTitle")}
+        subtitle={i18n.t("common.crashSubtitle")}
       />
-      <Text style={{ color: colors.textMuted, fontSize: 14, textAlign: "center", marginTop: 8, marginBottom: 28, paddingHorizontal: 32 }}>
-        {i18n.t("common.crashMessage")}
-      </Text>
+      {/* Dolgu/mürekkep Beğeniler'deki "Beğenenleri gör" pill'iyle aynı:
+          `litPlus` zemin + `onMediaInverse` yazı. `text` olamaz — açık modda
+          beyaza dönüp dolgunun üstünde kaybolur. */}
       <Pressable
         onPress={resetError}
-        style={{ backgroundColor: colors.primary, borderRadius: 24, paddingHorizontal: 32, paddingVertical: 12 }}
+        style={{ marginTop: 28, backgroundColor: colors.litPlus, borderRadius: 24, paddingHorizontal: 32, paddingVertical: 12 }}
       >
-        <Text style={{ color: colors.text, fontSize: 16, fontWeight: "600" }}>
+        <Text style={{ color: colors.onMediaInverse, fontSize: 16, fontWeight: "600" }}>
           {i18n.t("common.crashRetry")}
         </Text>
       </Pressable>
@@ -174,15 +182,24 @@ function App() {
                       */}
                       <AppNavigator key={mode} />
                     </Sentry.ErrorBoundary>
-                    {/* Pinch ile büyütülen fotoğrafın katmanı — navigator'ın
-                        ÜSTÜNDE ve `key={mode}` remount'unun DIŞINDA. Kaynağın
-                        kendi ağacında çizilemiyor: kart frame'i, bölüm kutuları
-                        ve ScrollView kırpıyor. Aktif değilken null döner. */}
-                    <PinchZoomOverlay />
                     <StatusBar style={mode === "light" ? "dark" : "light"} />
                     {PERF_HUD && <RenderHudOverlay />}
                   </NotifierWrapper>
                 </BottomSheetModalProvider>
+                {/* Pinch ile büyütülen fotoğrafın katmanı — navigator'ın
+                    ÜSTÜNDE ve `key={mode}` remount'unun DIŞINDA. Kaynağın kendi
+                    ağacında çizilemiyor: kart frame'i, bölüm kutuları ve
+                    ScrollView kırpıyor. Aktif değilken null döner.
+
+                    Cropper ile AYNI gerekçeyle BottomSheetModalProvider'ın
+                    DIŞINDA (bkz. aşağıdaki not): kart önizlemeleri birer sheet
+                    (PreviewModal / LikerSwipeModal) ve portal host provider'ın
+                    içindeki her şeyin üstüne boyanıyor — katman içeride
+                    kalsaydı büyüyen kopya o sheet'lerin ALTINDA kalır, Likes /
+                    Chat / Profil kartlarında pinch görünmezdi. Cropper'ın
+                    ÜSTÜNDE değil ALTINDA: kırpma ekranı kendi jestini taşıyor,
+                    bu katmanın onu örtmesi için bir sebep yok. */}
+                <PinchZoomOverlay />
                 {/* Kırpma ekranı — BottomSheetModalProvider'ın DIŞINDA olmak
                     ZORUNDA: @gorhom/portal host'unu children'dan sonra render
                     ediyor, yani her bottom sheet provider'ın içindeki her şeyin
@@ -191,6 +208,13 @@ function App() {
                     açılırdı. `key={mode}` remount'unun da dışında: tema değişimi
                     kırpma ortasında promise'i düşürmemeli. */}
                 <CropperOverlay />
+                {/* Selfie doğrulama — cropper ile AYNI gerekçeyle
+                    BottomSheetModalProvider'ın dışında: kamera, profil
+                    düzenleme modalının (o da bir sheet) altında kalmamalı.
+                    `key={mode}` remount'unun da dışında — tema değişimi
+                    doğrulamayı yarıda kesmemeli.
+                    uiBus.emit('openSelfieVerification') ile her ekrandan açılır. */}
+                <SelfieVerificationOverlay />
               </KeyboardProvider>
             </QueryClientProvider>
           </I18nextProvider>

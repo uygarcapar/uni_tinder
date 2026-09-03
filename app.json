@@ -59,6 +59,14 @@
           "microphonePermission": false
         }
       ],
+      [
+        "expo-camera",
+        {
+          "cameraPermission": "Fotoğrafını doğrulayabilmen için kamera erişimine izin vermen gerekir.",
+          "microphonePermission": false,
+          "recordAudioAndroid": false
+        }
+      ],
       "@react-native-firebase/app",
       "@react-native-firebase/messaging",
       [

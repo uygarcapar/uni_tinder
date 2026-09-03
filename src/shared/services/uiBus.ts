@@ -43,6 +43,11 @@ export const cardPullProgress = makeMutable(0);
 // Card stack container'ının expand/collapse durumu.
 export const containerExpand = makeMutable(0);
 
+// Buraya bir dönem `cardStackMotion` eklendi ("deste kabı hareketli mi" —
+// kart camlarının bekleyeceği sinyal), sonra kaldırıldı: camı GECİKTİREN her
+// kapı hatanın kendisiydi, çünkü efekt view'ın ilk layout turunda kurulmak
+// zorunda. Gerekçe CardSectionBox'ın tepesinde.
+
 /**
  * Expand/pull durumunu sıfırla — kart destesi her taze doğuşunda.
  *
