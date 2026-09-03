@@ -74,6 +74,7 @@ jest.mock('@/shared/components/AppModal', () => {
   const { View, Text, TouchableOpacity } = require('react-native');
   return {
     __esModule: true,
+    SHEET_TOP_RADIUS_LARGE: 44,
     default: ({
       visible,
       children,
@@ -256,12 +257,12 @@ const renderModal = (filters: any, opts: any = {}) => {
 
 // i18n gerçek sözlükle 'tr' başlatılıyor (jest.setup.ts) — assert'ler
 // kullanıcı-görünür Türkçe metin üzerinden.
-const DB_ON = 'Bu filtreye uymayanları hiç gösterme';
-const DB_OFF = 'Kişiler tükenirse bu filtre dışındakileri de göster';
+// Etiket SABİT: anahtar açık/kapalı diye metin değişmiyor, durumu yalnızca
+// Switch'in `value`'su söylüyor.
+const DB_LABEL = 'Kişiler tükense bile bu filtre dışındakileri gösterme';
 
-// Toggle sayısı = iki durum etiketinin toplamı (her toggle birini gösterir).
-const toggleCount = () =>
-  screen.queryAllByText(DB_ON).length + screen.queryAllByText(DB_OFF).length;
+// Toggle sayısı = tek etiketin kaç kez çizildiği.
+const toggleCount = () => screen.queryAllByText(DB_LABEL).length;
 
 describe('FilterModal — premium filtreler', () => {
   it('grup başlığını ve sekiz filtreyi render eder', () => {
@@ -739,8 +740,9 @@ describe('FilterModal — premium filtreler', () => {
     // Sekiz capable alan → sekiz toggle. Sadece Height işaretli.
     // Evcil hayvan TEK toggle: legacy `hasPets` ve tür listesi aynı bit.
     expect(toggleCount()).toBe(8);
-    expect(screen.queryAllByText(DB_ON)).toHaveLength(1);
-    expect(screen.queryAllByText(DB_OFF)).toHaveLength(7);
+    // Durum metinden DEĞİL Switch'in value'sundan okunuyor.
+    expect(screen.getByTestId('dealbreaker-Height').props.value).toBe(true);
+    expect(screen.getByTestId('dealbreaker-Alcohol').props.value).toBe(false);
   });
 
   it("toggle'ı yalnızca dealbreakerCapableFields'taki alanlara çizer", () => {

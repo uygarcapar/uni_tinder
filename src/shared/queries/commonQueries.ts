@@ -16,17 +16,27 @@ export type DistrictOption = {
   enumName: string;
 };
 
+// GET /api/common/departments — 2026-09-01'den beri diğer enum listeleriyle
+// aynı desende: `display` çift dilli obje (resolveLocalized ile çöz), `name`
+// sunucuda çözülmüş tek dil. `name`'e GÜVENME: sunucunun dil önceliği önce
+// DB'deki `profile.language`, sonra Accept-Language — tercih backend'e
+// yazılamadıysa (offline/429) `name` eski dilde kalır, `display` kalmaz.
 export type DepartmentOption = {
   id: number;
   name: string;
+  display?: string | LocalizedText;
   enumName: string;
 };
 
 // GET /api/common/universities — diğer common listelerinden farklı olarak
 // `id`/`enumName` YOK: tekil anahtar da, backend'e gönderilen değer de `domain`.
+// `display.en` kurumun KENDİ resmî İngilizce adı (kural bazlı çeviri değil):
+// "Antalya Bilim University", "İstanbul Bilgi University" gibi beklenmedik
+// görünen yazımlar doğru. Liste TR ada göre sıralı gelir.
 export type UniversityOption = {
   domain: string;
   name: string;
+  display?: string | LocalizedText;
 };
 
 // Backend'in çift dilli alanları (EnumLocalizer.LocalizedText) — `display` /
@@ -197,7 +207,11 @@ export function useUniversities() {
         const domain = normalizeDomain(item?.domain);
         if (!domain || seen.has(domain)) continue;
         seen.add(domain);
-        out.push({ domain, name: item?.name || domain });
+        out.push({
+          domain,
+          name: item?.name || domain,
+          display: item?.display,
+        });
       }
       return out;
     },

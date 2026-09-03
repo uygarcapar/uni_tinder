@@ -49,12 +49,15 @@ import {
   Code,
   PauseCircle,
   Languages,
+  Check,
   type LucideIcon,
-} from "lucide-react-native";
+} from "@/shared/icons";
 import Svg, { Circle } from "react-native-svg";
 import SFIcon, { type SFSymbol } from "@/shared/components/SFIcon";
 import HobbyIcon from "@/shared/components/HobbyIcon";
-import AppModal from "@/shared/components/AppModal";
+import AppModal, {
+  SHEET_TOP_RADIUS_LARGE,
+} from "@/shared/components/AppModal";
 import CityPickerModal from "@/features/discover/components/CityPickerModal";
 import UniversityPickerModal from "@/features/discover/components/UniversityPickerModal";
 import LanguagePickerModal from "@/shared/components/LanguagePickerModal";
@@ -72,7 +75,6 @@ import {
   normalizeDomain,
   resolveLocalized,
 } from "@/shared/queries/commonQueries";
-import { getRelationshipIntentIcon } from "@/shared/constants/relationshipIntent";
 import {
   getZodiacIcon,
   getSmokingIcon,
@@ -1164,8 +1166,9 @@ function PremiumGate({ locked, onLockedPress, children }: any) {
 }
 
 // "Olmazsa olmaz" anahtarı — filtrenin katı mı esnek mi olduğunu seçer.
-// Metin duruma göre değişiyor çünkü asıl anlaşılması gereken şey sonucu:
-// açık = daha az ama tam istediğin profil, kapalı = daha çok profil.
+// Metin SABİT: eskiden açık/kapalı için iki ayrı cümle gösteriliyordu, anahtara
+// basınca yazı da değişince kullanıcı ne değiştiğini takip edemiyordu. Artık
+// etiket ne yaptığını anlatıyor, durumu yalnızca Switch'in kendisi gösteriyor.
 function DealbreakerToggle({ value, onToggle, disabled, testID }: any) {
   const { t } = useTranslation();
   return (
@@ -1193,9 +1196,7 @@ function DealbreakerToggle({ value, onToggle, disabled, testID }: any) {
           flex: 1,
         }}
       >
-        {value
-          ? t("discover.filters.dealbreaker.on")
-          : t("discover.filters.dealbreaker.off")}
+        {t("discover.filters.dealbreaker.label")}
       </Text>
       <Switch
         testID={testID}
@@ -1210,16 +1211,18 @@ function DealbreakerToggle({ value, onToggle, disabled, testID }: any) {
   );
 }
 
-// Tüm seçim pill'lerinin ortak ölçüsü — referans "İlgi Alanı" (interestedIn)
-// pill'leri. Hobiler, sınıf, burç, sigara, evcil hayvan, kullanım amacı ve
-// ilişki niyeti hepsi bunu kullanıyor ki modal boyunca tek bir dokunma hedefi
-// ve tipografi olsun.
+// Tüm seçim pill'lerinin ortak ölçüsü. Hobiler, sınıf, burç, sigara ve evcil
+// hayvan hepsi bunu kullanıyor ki modal boyunca tek bir dokunma hedefi ve
+// tipografi olsun. Referans ARTIK profil düzenlemedeki pill'ler (HobbyPill /
+// OptionPill, bkz. EditProfileForm) ve dolayısıyla Keşif kartındaki kapsül:
+// px 12 / py 10 / 14px. Kullanıcı filtrede gördüğü kapsülü profilini
+// düzenlerken de kartta da aynı boyda görüyor.
 const PILL_STYLE = {
   borderRadius: 999,
   borderCurve: "continuous",
   overflow: "hidden",
   paddingHorizontal: 12,
-  paddingVertical: 11,
+  paddingVertical: 10,
   borderWidth: 0.5,
   flexDirection: "row",
   alignItems: "center",
@@ -1255,7 +1258,75 @@ function PillIcon({ icon, selected }: any) {
   );
 }
 
-// Enum çoklu seçim pill'leri (burç, sigara, kullanım amacı). İlişki niyeti
+// Tikli seçim satırı — profil düzenlemedeki OptionListItem'ın (bkz.
+// EditProfileForm) ölçüleri birebir: py 18, metin 16/22, sağda 20px'lik sabit
+// tik yuvası. Aynı soruyu iki ekranda iki farklı biçimde göstermemek için
+// ilişki niyeti bölümü pill ızgarasından buna geçti. Pill'lerden farkı ÇOKLU
+// seçimi de taşıması: `selected` dışarıdan geliyor, satır davranışı aynı.
+//
+// İKONSUZ, orada olduğu gibi: niyet satırları tek ayırt edici olarak metni
+// kullanıyor. Ayırt eden şey ikon değil cümle; solda ikon olunca satırlar
+// pill'lerin dağınıklığını liste düzenine taşıyordu.
+function CheckRow({ label, selected, onPress }: any) {
+  return (
+    <TouchableOpacity
+      activeOpacity={1}
+      onPress={onPress}
+      style={{
+        flexDirection: "row",
+        alignItems: "center",
+        justifyContent: "space-between",
+      }}
+    >
+      {/* flex:1 + paddingRight — uzun etiketler tik ikonunun altına taşmak
+          yerine sarmalı. */}
+      <View
+        style={{
+          flex: 1,
+          flexDirection: "row",
+          alignItems: "center",
+          paddingVertical: 18,
+          paddingRight: 12,
+        }}
+      >
+        <Text
+          style={{
+            color: selected ? colors.text : colors.textSecondary,
+            fontSize: 16,
+            lineHeight: 22,
+            fontWeight: "500",
+            flex: 1,
+          }}
+        >
+          {label}
+        </Text>
+      </View>
+      {/* Tik yuvası HER ZAMAN çiziliyor: yoksa seçim anında metin alanı 20px
+          genişleyip satır kayıyor. */}
+      <View
+        style={{
+          width: 20,
+          height: 20,
+          alignItems: "center",
+          justifyContent: "center",
+        }}
+      >
+        {selected && (
+          <SFIcon
+            name="checkmark"
+            fallback={Check}
+            size={20}
+            color={colors.text}
+            strokeWidth={2.5}
+            weight="bold"
+          />
+        )}
+      </View>
+    </TouchableOpacity>
+  );
+}
+
+// Enum çoklu seçim pill'leri (burç, sigara, kullanım amacı). Hobi
 // pill'leriyle aynı görünüm; ikon `getIcon` ile enumName'den çözülüyor.
 const EnumPillGroup = React.memo(function EnumPillGroup({
   options,
@@ -1998,11 +2069,16 @@ export default function FilterModal({
   );
 
   // Listelerde domain saklanıyor; satırda üniversite adını göstermek için lookup.
+  // Ad çift dilli `display`'den çözülüyor (picker'ın satırlarıyla aynı kural) —
+  // `name` sunucunun dil tercihine bağlı, seçili satır arayüzden farklı dilde
+  // görünebilirdi.
   const universityNameByDomain = useMemo(() => {
     const map = new Map<string, string>();
-    for (const u of universityOptions) map.set(u.domain, u.name);
+    for (const u of universityOptions) {
+      map.set(u.domain, resolveLocalized(u.display, i18n.language, u.name));
+    }
     return map;
-  }, [universityOptions]);
+  }, [universityOptions, i18n.language]);
 
   const summarizeDomains = (domains: string[]) => {
     if (!domains || domains.length === 0) return null;
@@ -2035,8 +2111,14 @@ export default function FilterModal({
 
   // Free kullanıcı kilitli alana dokununca paywall. useSaveFilters'ın 403
   // yolundaki event'in aynısı — DiscoverScreen "swipePaywall"i dinleyip
-  // PurchaseModal'ı açıyor.
+  // lit plus sayfasını açıyor.
+  //
+  // ⚠️ Bu sheet ÖNCE kapanıyor: paywall artık üstümüze binen ikinci bir sheet
+  // değil, başka bir sekmedeki sayfa. Sheet'ler portal'a (App kökü) render
+  // edildiği için açık kalsaydı sekme değişse bile plus sayfasının önünde
+  // durmaya devam ederdi.
   const openPremiumPaywall = () => {
+    onClose?.();
     uiBus.emit("swipePaywall", {
       paywallType: "PREMIUM_FILTERS",
       showPaywall: true,
@@ -2130,11 +2212,21 @@ export default function FilterModal({
     [local?.relationshipIntents],
   );
 
-  // Pill etiketi. Backend display'i cümle uzunluğunda ("Long term relationship",
-  // "Uzun süreli ilişki") ve pill'ler iki satıra taşıyordu; enumName başına kısa
-  // bir yerel karşılık varsa onu kullanıyoruz. Anahtar yoksa backend display'ine
-  // düşer, yani yeni bir enum değeri eklendiğinde boş etiket çıkmaz.
-  const intentPillLabel = (opt: any) => {
+  // Satır etiketi — karşı tarafın ağzından cümle ("Uzun süreli arıyorum"),
+  // kayıt akışındaki step14 ve profil düzenlemedeki listeyle aynı ses. Pill
+  // ızgarasına ancak kısaltılmış etiket sığıyordu; satır düzeninde cümle
+  // sığıyor, o yüzden ayrı bir harita (`sentences`).
+  //
+  // Düşüş sırası: sentences → short → backend display. `short` haritası Keşif
+  // KARTININ etiketi (bkz. SwipeCard, sonuna "ilişki" eki takıyor) — burada
+  // yalnız ara basamak olarak duruyor ki backend yeni bir enum eklediğinde
+  // cümle yazılana kadar boş değil kısa etiket çıksın.
+  const intentRowLabel = (opt: any) => {
+    const sentence = t(
+      `discover.filters.relationshipIntents.sentences.${opt.enumName}`,
+      { defaultValue: "" },
+    );
+    if (sentence) return sentence;
     const short = t(
       `discover.filters.relationshipIntents.short.${opt.enumName}`,
       { defaultValue: "" },
@@ -2676,36 +2768,24 @@ export default function FilterModal({
         </Text>
       ) : (
         <>
-          {/* Sayaç ve "temizle" satırı kaldırıldı: pill'e tekrar dokunmak
-              seçimi zaten kaldırıyor, header'daki Sıfırla da hepsini siliyor. */}
-          <View style={{ flexDirection: "row", flexWrap: "wrap", gap: 8 }}>
-            {relationshipIntentOptions.map((opt: any) => {
-              const selected = relationshipIntents.includes(opt.enumName);
-              const icon = getRelationshipIntentIcon(opt.enumName);
-              return (
-                <TouchableOpacity
-                  key={opt.enumName}
-                  activeOpacity={1}
-                  onPress={() => toggleRelationshipIntent(opt.enumName)}
-                  style={{
-                    ...PILL_STYLE,
-                    backgroundColor: pillColors(selected).backgroundColor,
-                    borderColor: pillColors(selected).borderColor,
-                  }}
-                >
-                  <PillIcon icon={icon} selected={selected} />
-                  <Text
-                    style={{
-                      color: pillColors(selected).fg,
-                      fontSize: PILL_TEXT_SIZE,
-                      fontWeight: "500",
-                    }}
-                  >
-                    {intentPillLabel(opt)}
-                  </Text>
-                </TouchableOpacity>
-              );
-            })}
+          {/* Sayaç ve "temizle" satırı kaldırıldı: satıra tekrar dokunmak
+              seçimi zaten kaldırıyor, header'daki Sıfırla da hepsini siliyor.
+
+              Tikli liste — profil düzenlemedeki ilişki niyeti bölümüyle (bkz.
+              EditProfileForm) AYNI görünüm. Pill ızgarasından DÖNÜLDÜ:
+              kullanıcı aynı enum listesini iki ekranda iki farklı biçimde
+              görüyordu. Buradaki seçim yine ÇOKLU (orada tek), o yüzden
+              OptionListItem'ı paylaşmak yerine CheckRow ile aynı ölçüler
+              yeniden kuruldu. */}
+          <View>
+            {relationshipIntentOptions.map((opt: any) => (
+              <CheckRow
+                key={opt.enumName}
+                label={intentRowLabel(opt)}
+                selected={relationshipIntents.includes(opt.enumName)}
+                onPress={() => toggleRelationshipIntent(opt.enumName)}
+              />
+            ))}
           </View>
         </>
       )}
@@ -2794,9 +2874,20 @@ export default function FilterModal({
       onLeftPress={resetAllFilters}
       actionLabel={t('discover.filters.apply')}
       onAction={() => applyFilters(local)}
+      // Sıfırla/Uygula BERRAK cam: header'ın altından uzun ve renkli bir içerik
+      // (mesafe dial'i, bölüm kartları) geçiyor, dolgulu cam orayı kapatıyordu.
+      // Ekranlardaki yuvarlak cam ikon butonlarıyla aynı malzeme.
+      clearGlassActions
       actionDisabled={interestedInEmpty}
       actionLoading={saving}
-      snapPoints={["90%"]}
+      // İçerik uzun (mesafe + 10'a yakın bölüm) → tek detent ve o da EN TEPEDE:
+      // sheet doğrudan safe area'nın hemen altında açılıyor, ara bir %90 durağı
+      // yok. topInset sayesinde "tepe" ekranın en üstü değil status bar/dynamic
+      // island'ın altı — header (pill + Sıfırla/Uygula) çentiğe girmiyor.
+      fullScreen
+      // Tepeye kadar açılan sheet'te 36 keskin duruyordu — üst köşeler bir tık
+      // daha yuvarlak (bkz. SHEET_TOP_RADIUS_LARGE).
+      cornerRadius={SHEET_TOP_RADIUS_LARGE}
       // Varsayılan paddingBottom 40'a ek bir tık daha — uzun içerik alt kenarda
       // sıkışmasın, sonraki section'lar nefes alsın.
       contentContainerStyle={{ paddingBottom: 80 }}

@@ -5,7 +5,7 @@ import {
   BottomSheetTextInput,
   BottomSheetFlatList,
 } from "@gorhom/bottom-sheet";
-import { Search, SearchX, Check, X } from "lucide-react-native";
+import { Search, SearchX, Check, X } from "@/shared/icons";
 import SFIcon from "./SFIcon";
 import { Host, Button as SwiftUIButton } from "@expo/ui/swift-ui";
 import {
@@ -29,8 +29,10 @@ import MaskedView from "@react-native-masked-view/masked-view";
 import { easeGradient } from "react-native-easing-gradient";
 import { BlurView } from "expo-blur";
 import { LinearGradient } from "expo-linear-gradient";
+import { foldForSearch } from "../utils/searchText";
 import { colors, isLight, veil } from "../theme/colors";
 import { glassFallback } from "../theme/glass";
+import GlassFallbackSurface from "./GlassFallbackSurface";
 import { chromeBlurTint } from "@/shared/theme/blur";
 
 // BottomSheetFlatList'in reanimated handler kabul eden versiyonu —
@@ -40,11 +42,20 @@ const AnimatedBottomSheetFlatList =
 
 const HEADER_HEIGHT = 100;
 
+// Modül seviyesinde: inline default her render'da yeni kimlik üretir ve
+// aşağıdaki memo'ları (liste filtresi/sıralaması) her render'da geçersiz kılardı.
+const defaultLabelOf = (item: any) => item?.name ?? "";
+
 // Searchable sheet content (single + multi mode). EditModal ile aynı floating
 // header pattern'i: ilk açılışta header transparent + title gizli, scroll ile
 // blur + title fade-in. Search input içeriğin en üstünde (header'da değil).
 //
 // items shape: [{id, name, enumName, ...}]
+//
+// labelOf: satırda çizilecek ve ARAMANIN taradığı metni üretir. Varsayılan
+// `item.name` — sunucuda tek dile çözülmüş alan. Listesi çift dilli `display`
+// taşıyan uçlar (bölümler) bunu geçip resolveLocalized ile çözmeli, yoksa
+// backend'in dil tercihi istemcininkinden ayrıştığında liste yanlış dilde çıkar.
 //
 // Single mode (default):
 //   - initialValue: enumName (string)
@@ -66,6 +77,7 @@ const SearchableListSheet = ({
   multi = false,
   maxLimit,
   limitMsg,
+  labelOf = defaultLabelOf,
 }: any) => {
   const { t } = useTranslation();
   const isValid =
@@ -77,12 +89,10 @@ const SearchableListSheet = ({
   );
 
   const filtered = useMemo(() => {
-    const q = search.trim().toLocaleLowerCase("tr");
+    const q = foldForSearch(search.trim());
     if (!q) return items;
-    return items.filter((i) =>
-      (i.name ?? "").toLocaleLowerCase("tr").includes(q),
-    );
-  }, [search, items]);
+    return items.filter((i) => foldForSearch(labelOf(i)).includes(q));
+  }, [search, items, labelOf]);
 
   const orderedItems = useMemo(() => {
     // Multi mode: seçili itemleri listenin başına çek (görsel referans).
@@ -101,14 +111,14 @@ const SearchableListSheet = ({
     const selectedItem = items.find((i) => i.enumName === localValue);
     if (!selectedItem) return filtered;
 
-    const q = search.trim().toLocaleLowerCase("tr");
-    if (q && !(selectedItem.name ?? "").toLocaleLowerCase("tr").includes(q)) {
+    const q = foldForSearch(search.trim());
+    if (q && !foldForSearch(labelOf(selectedItem)).includes(q)) {
       return filtered;
     }
 
     const rest = filtered.filter((i) => i.enumName !== localValue);
     return [selectedItem, ...rest];
-  }, [filtered, items, localValue, multi, localSet, search]);
+  }, [filtered, items, localValue, multi, localSet, search, labelOf]);
 
   const isItemSelected = (item) => {
     if (multi) return localSet?.has(item.enumName) ?? false;
@@ -303,7 +313,7 @@ const SearchableListSheet = ({
                   marginRight: 32,
                 }}
               >
-                {item.name}
+                {labelOf(item)}
               </Text>
               {isSelected && (
                 <View
@@ -472,23 +482,27 @@ const SearchableListSheet = ({
         >
           <View style={{ paddingVertical: 8 }}>
             {Platform.OS === "ios" ? (
-              <Host matchContents>
-                <SwiftUIButton
-                  label="Kapat"
-                  systemImage="xmark"
-                  onPress={onCancel}
-                  modifiers={[
-                    buttonStyle("glass"),
-                    tint(colors.text),
-                    labelStyle("iconOnly"),
-                    font({ size: 22, weight: "medium" }),
-                    ...glassFallback({
-                      shape: "circle",
-                      frame: { width: 46, height: 46 },
-                    }),
-                  ]}
-                />
-              </Host>
+              // Sarmalayıcı iOS 26 ALTINDA zemini veriyor, 26+'da hiç render
+              // olmuyor. Ölçü glassFallback'in frame'iyle BİREBİR aynı olmalı.
+              <GlassFallbackSurface shape="circle" width={46} height={46}>
+                <Host matchContents>
+                  <SwiftUIButton
+                    label="Kapat"
+                    systemImage="xmark"
+                    onPress={onCancel}
+                    modifiers={[
+                      buttonStyle("glass"),
+                      tint(colors.text),
+                      labelStyle("iconOnly"),
+                      font({ size: 22, weight: "medium" }),
+                      ...glassFallback({
+                        shape: "circle",
+                        frame: { width: 46, height: 46 },
+                      }),
+                    ]}
+                  />
+                </Host>
+              </GlassFallbackSurface>
             ) : (
               <TouchableOpacity
                 onPress={onCancel}
@@ -516,22 +530,27 @@ const SearchableListSheet = ({
           </View>
 
           {Platform.OS === "ios" ? (
-            <Host matchContents>
-              <SwiftUIButton
-                label={t("common.done")}
-                onPress={handleDonePress}
-                modifiers={[
-                  buttonStyle("glass"),
-                  controlSize("large"),
-                  tint(colors.text),
-                  font({ size: 12, weight: "semibold" }),
-                  ...glassFallback({
-                    shape: "capsule",
-                    padding: { horizontal: 18, vertical: 12 },
-                  }),
-                ]}
-              />
-            </Host>
+            // Ölçü YOK, bilerek: genişlik SwiftUI etiketinden geliyor
+            // (`Host matchContents`) ve kap `alignItems: "center"` olduğu için
+            // sarmalayıcı da butonla birlikte daralıyor.
+            <GlassFallbackSurface shape="capsule">
+              <Host matchContents>
+                <SwiftUIButton
+                  label={t("common.done")}
+                  onPress={handleDonePress}
+                  modifiers={[
+                    buttonStyle("glass"),
+                    controlSize("large"),
+                    tint(colors.text),
+                    font({ size: 12, weight: "semibold" }),
+                    ...glassFallback({
+                      shape: "capsule",
+                      padding: { horizontal: 18, vertical: 12 },
+                    }),
+                  ]}
+                />
+              </Host>
+            </GlassFallbackSurface>
           ) : (
             <TouchableOpacity
               onPress={handleDonePress}

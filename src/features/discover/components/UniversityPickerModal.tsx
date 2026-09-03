@@ -1,11 +1,11 @@
-import React, { useEffect, useMemo, useState } from "react";
+import React, { useCallback, useEffect, useMemo, useState } from "react";
 import { useTranslation } from "react-i18next";
 import { View, Text, TouchableOpacity, Alert, Platform } from "react-native";
 import {
   BottomSheetTextInput,
   BottomSheetFlatList,
 } from "@gorhom/bottom-sheet";
-import { Search, SearchX, Check, X } from "lucide-react-native";
+import { Search, SearchX, Check, X } from "@/shared/icons";
 import { Host, Button as SwiftUIButton } from "@expo/ui/swift-ui";
 import {
   buttonStyle,
@@ -32,9 +32,14 @@ import { BlurView } from "expo-blur";
 import { LinearGradient } from "expo-linear-gradient";
 import SFIcon from "@/shared/components/SFIcon";
 import AppBottomSheet from "@/shared/components/AppBottomSheet";
-import type { UniversityOption } from "@/shared/queries/commonQueries";
+import {
+  resolveLocalized,
+  type UniversityOption,
+} from "@/shared/queries/commonQueries";
+import { foldForSearch } from "@/shared/utils/searchText";
 import { colors, isLight, veil } from "../../../shared/theme/colors";
 import { glassFallback } from "../../../shared/theme/glass";
+import GlassFallbackSurface from "@/shared/components/GlassFallbackSurface";
 import { chromeBlurTint } from "@/shared/theme/blur";
 
 // BottomSheetFlatList'in reanimated scroll handler kabul eden hali. `any`:
@@ -75,32 +80,50 @@ export default function UniversityPickerModal({
   limitMsg,
   onConfirm,
 }: Props) {
-  const { t } = useTranslation();
+  const { t, i18n } = useTranslation();
   const [search, setSearch] = useState("");
   const [selected, setSelected] = useState<Set<string>>(
     () => new Set(initialSelectedValues),
   );
 
+  // Kurum adı çift dilli `display` ile geliyor; `display.en` kurumun KENDİ
+  // resmî İngilizce adı. `name` de sunucuda çözülüyor ama onun dili istemcinin
+  // değil, backend'in tercih zincirinin sonucu — tek kaynak display.
+  const labelOf = useCallback(
+    (u: UniversityOption) => resolveLocalized(u?.display, i18n.language, u?.name ?? ""),
+    [i18n.language],
+  );
+
   const ordered = useMemo(() => {
-    const q = search.trim().toLocaleLowerCase("tr");
+    const q = foldForSearch(search.trim());
     // Kullanıcı ismi bilmiyorsa domain'den de bulabilsin ("itu" → itu.edu.tr).
+    // Arama İKİ dilde de tarıyor: İngilizce arayüzdeki kullanıcı "Boğaziçi"
+    // yazarsa da bulabilmeli, tersi de.
     const filtered = q
       ? items.filter(
           (i) =>
-            (i.name ?? "").toLocaleLowerCase("tr").includes(q) ||
+            foldForSearch(labelOf(i)).includes(q) ||
+            foldForSearch(i.name).includes(q) ||
             i.domain.includes(q),
         )
       : items;
-    if (selected.size === 0) return filtered;
+    // Backend sıralaması TÜRKÇE ada göre; İngilizce arayüzde bu sıra rastgele
+    // görünür ("Middle East Technical" O harfinde). 207 satırlık listede alfabe
+    // gerçekten kullanılıyor, o yüzden EN'de kendi etiketimize göre diziyoruz.
+    const sorted =
+      i18n.language?.split("-")[0] === "en"
+        ? [...filtered].sort((a, b) => labelOf(a).localeCompare(labelOf(b), "en"))
+        : filtered;
+    if (selected.size === 0) return sorted;
     // Seçili olanlar listenin başında — görsel referans.
     const selectedItems: UniversityOption[] = [];
     const rest: UniversityOption[] = [];
-    for (const it of filtered) {
+    for (const it of sorted) {
       if (selected.has(it.domain)) selectedItems.push(it);
       else rest.push(it);
     }
     return [...selectedItems, ...rest];
-  }, [items, search, selected]);
+  }, [items, search, selected, labelOf, i18n.language]);
 
   const toggle = (domain: string) => {
     setSelected((prev) => {
@@ -311,7 +334,7 @@ export default function UniversityPickerModal({
                       fontWeight: "400",
                     }}
                   >
-                    {item.name}
+                    {labelOf(item)}
                   </Text>
                 </View>
                 {isSelected && (
@@ -480,30 +503,34 @@ export default function UniversityPickerModal({
           >
             <View style={{ paddingVertical: 8 }}>
               {Platform.OS === "ios" ? (
-                <Host matchContents>
-                  <SwiftUIButton
-                    label="Kapat"
-                    systemImage="xmark"
-                    onPress={onClose}
-                    // AppModal'daki (FilterModal) kapat butonuyla BİREBİR aynı
-                    // modifier seti — bu sheet FilterModal'ın üstüne bindiği
-                    // için iki X yan yana görünüyor, boyut/şekil farkı göze
-                    // çarpıyordu. controlSize+containerShape olmadan glass
-                    // buton capsule kalıp daha küçük render oluyordu.
-                    modifiers={[
-                      buttonStyle("glass"),
-                      controlSize("large"),
-                      tint(colors.text),
-                      labelStyle("iconOnly"),
-                      font({ size: 17, weight: "medium" }),
-                      containerShape(shapes.circle()),
-                      ...glassFallback({
-                        shape: "circle",
-                        frame: { width: 46, height: 46 },
-                      }),
-                    ]}
-                  />
-                </Host>
+                // Sarmalayıcı iOS 26 ALTINDA zemini veriyor, 26+'da hiç render
+                // olmuyor. Ölçü glassFallback'in frame'iyle BİREBİR aynı olmalı.
+                <GlassFallbackSurface shape="circle" width={46} height={46}>
+                  <Host matchContents>
+                    <SwiftUIButton
+                      label="Kapat"
+                      systemImage="xmark"
+                      onPress={onClose}
+                      // AppModal'daki (FilterModal) kapat butonuyla BİREBİR aynı
+                      // modifier seti — bu sheet FilterModal'ın üstüne bindiği
+                      // için iki X yan yana görünüyor, boyut/şekil farkı göze
+                      // çarpıyordu. controlSize+containerShape olmadan glass
+                      // buton capsule kalıp daha küçük render oluyordu.
+                      modifiers={[
+                        buttonStyle("glass"),
+                        controlSize("large"),
+                        tint(colors.text),
+                        labelStyle("iconOnly"),
+                        font({ size: 17, weight: "medium" }),
+                        containerShape(shapes.circle()),
+                        ...glassFallback({
+                          shape: "circle",
+                          frame: { width: 46, height: 46 },
+                        }),
+                      ]}
+                    />
+                  </Host>
+                </GlassFallbackSurface>
               ) : (
                 <TouchableOpacity
                   onPress={onClose}
@@ -531,22 +558,27 @@ export default function UniversityPickerModal({
             </View>
 
             {Platform.OS === "ios" ? (
-              <Host matchContents>
-                <SwiftUIButton
-                  label={t("common.done")}
-                  onPress={() => onConfirm(Array.from(selected))}
-                  modifiers={[
-                    buttonStyle("glass"),
-                    controlSize("large"),
-                    tint(colors.text),
-                    font({ size: 12, weight: "semibold" }),
-                    ...glassFallback({
-                      shape: "capsule",
-                      padding: { horizontal: 18, vertical: 12 },
-                    }),
-                  ]}
-                />
-              </Host>
+              // Ölçü YOK, bilerek: genişlik SwiftUI etiketinden geliyor
+              // (`Host matchContents`) ve kap `alignItems: "center"` olduğu için
+              // sarmalayıcı da butonla birlikte daralıyor.
+              <GlassFallbackSurface shape="capsule">
+                <Host matchContents>
+                  <SwiftUIButton
+                    label={t("common.done")}
+                    onPress={() => onConfirm(Array.from(selected))}
+                    modifiers={[
+                      buttonStyle("glass"),
+                      controlSize("large"),
+                      tint(colors.text),
+                      font({ size: 12, weight: "semibold" }),
+                      ...glassFallback({
+                        shape: "capsule",
+                        padding: { horizontal: 18, vertical: 12 },
+                      }),
+                    ]}
+                  />
+                </Host>
+              </GlassFallbackSurface>
             ) : (
               <TouchableOpacity
                 onPress={() => onConfirm(Array.from(selected))}

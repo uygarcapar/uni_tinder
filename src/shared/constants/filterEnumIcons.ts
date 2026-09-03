@@ -41,7 +41,7 @@ import {
   Languages,
   Globe,
   type LucideIcon,
-} from "lucide-react-native";
+} from "@/shared/icons";
 
 export type PillIconSpec = {
   sf: SFSymbol;
@@ -165,8 +165,10 @@ export const getAlcoholIcon = (): PillIconSpec => WINE_ICON;
 // ─── Dini görüş (ReligiousViewType) ─────────────────────────────────────────
 // Sigaradaki desen: TEK sembol, ayırt eden şey pill metni. Enum başına ikon
 // (hilal/haç/Davud yıldızı) hem SF Symbols'ta karşılıksız hem de bir inancı
-// sembolleştirip diğerini jenerik bırakma riski taşıyor. EditProfileForm'un
-// RELIGIOUS_VIEW_ICON'uyla birebir aynı.
+// sembolleştirip diğerini jenerik bırakma riski taşıyor.
+// NOT: Profil düzenlemedeki dini görüş pilleri artık İKONSUZ (bkz.
+// EditProfileForm) — orada aynı sembol onlarca pilde tekrar edip hiçbir şey
+// ayırt etmiyordu. Burası tek bir filtre satırı olduğu için ikon duruyor.
 const RELIGIOUS_VIEW_ICON: PillIconSpec = {
   sf: "hands.and.sparkles.fill",
   lucide: HandHeart,
