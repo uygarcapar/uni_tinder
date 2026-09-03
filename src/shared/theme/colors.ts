@@ -46,17 +46,17 @@ interface Palette {
   errorStrong: string;
   warning: string;
   info: string;
+  /**
+   * Turuncu aksan — şu an yalnızca kırpma ekranının "Kaydet" cam butonu.
+   * `warning` (#F59E0B, amber) DEĞİL: o uyarı semantiği taşıyor. Ton
+   * gradients.premium'un orta durağıyla aynı, marka sıcaklığını koruyor.
+   */
+  accentOrange: string;
   likePink: string;
   /** SwipeCard super-like kalbi — buradan ayarla (gradient: gradients.swipeHeart). */
   swipeHeartBorder: string;
   errorLight: string;
   errorDeep: string;
-  /**
-   * Context menü'deki yıkıcı aksiyonlar (sil / herkesten sil). errorLight'tan
-   * ayrı bir token: o soluk pembe (#FCA5A5) hâlâ MessageBubble'ın "gönderilemedi"
-   * ikonunda kullanılıyor ve orada kalması gerekiyor.
-   */
-  destructive: string;
   successIos: string;
   /** Yıkıcı/uyarı banner zemini (hesap silme bildirimi gibi). */
   dangerSurface: string;
@@ -190,6 +190,7 @@ const brand = {
   errorStrong: "#fc213e",
   warning: "#F59E0B",
   info: "#3B82F6",
+  accentOrange: "#FF8F17",
   // LikeToast'ın beğeni aksanı. Eskiden token #E0457B idi ama HİÇBİR YERDE
   // kullanılmıyordu; tek gerçek kullanım LikeToast'taki #ec4899 literaliydi —
   // token yaşayan değere hizalandı.
@@ -197,7 +198,6 @@ const brand = {
   swipeHeartBorder: "#ff8e7a",
   errorLight: "#FCA5A5",
   errorDeep: "#ff2b2b",
-  destructive: "#FF5C5C",
   successIos: "#34C759",
 
   shadow: "#000000",
@@ -324,7 +324,11 @@ interface GradientSet {
   shopBackdrop: Gradient;
   /** WelcomeScreen zemini: upsell kartının litPlus tonundan shopSurface koyusuna geçiş. */
   welcomeBackdrop: Gradient;
-  /** ProfileScreen premium kartları (aktif üyelik + upsell). */
+  /**
+   * ProfileScreen premium kartları (aktif üyelik + upsell) ve plus sayfasındaki
+   * plan kartları. Üçü de aynı gradyanı paylaşıyor — dolgu MEDYA, üstündeki
+   * bütün mürekkep `onMedia*` ailesinden.
+   */
   litPlusCard: Gradient;
   /** SwipeCard super-like kalbi dolgusu — buradan ayarla. */
   swipeHeart: Gradient;
@@ -404,8 +408,11 @@ const fixedGradients = {
   premium: ["#FF3D3D", "#FF8F17", "#ff9a17"] as Gradient,
   premiumAlt: ["#FF173A", "#FF4D4D", "#FC803D"] as Gradient,
   welcomeBackdrop: ["#ff4d3d", "#ff5d3d", "#ff7e3d"] as Gradient,
-  litPlusCard: ["#ff4d3d", "#ff6038"] as Gradient,
-  swipeHeart: ["#fc1919", "#fc1e1e", "#ff5c33"] as Gradient,
+  litPlusCard: ["#ff423d", "#ff5138"] as Gradient,
+  // Son durak turuncudan bir tık kırmızıya çekildi (#ff5c33 → #ff452a): alev
+  // perdesi (MatchModal) ekranın yarısını kaplıyor ve turuncu uç orada marka
+  // kırmızısından kopuyordu. Buton/dalga/perde AYNI token — bkz. aşağıdaki not.
+  swipeHeart: ["#fc1919", "#fc1e1e", "#ff452a"] as Gradient,
 };
 
 // SuperLike kutlaması artık renkli kalp konfetisi değil, tüm ekranı kaplayan
@@ -444,6 +451,17 @@ const lightGradients: GradientSet = {
  */
 export const colors: Palette = { ...darkPalette };
 export const gradients: GradientSet = { ...darkGradients };
+
+/**
+ * KOYU paletin kendisi — `colors`ın aksine MUTASYONA UĞRAMAZ, hep koyu.
+ *
+ * Tek meşru kullanımı "açık modda da koyu mod mürekkebini isteyen" yüzeyler:
+ * iOS 26 camının üstü. Cam zemini her iki modda da koyulaştırıyor ve açık
+ * moddaki `colors.text` (#0B0B0C) orada yıkanıyor. Cam DIŞINDA her yerde doğru
+ * olan `colors` — buradan okumadan önce yüzeyin gerçekten cam olduğunu
+ * (`theme/glass > hasLiquidGlassSurface`) doğrula.
+ */
+export const darkColors: Palette = { ...darkPalette };
 
 /**
  * İlişki niyetinin gradyanı. Render sırasında ÇAĞIR (modül seviyesinde sabite
@@ -532,6 +550,22 @@ export function veil(alpha: number): string {
   return activeMode === "light"
     ? `rgba(255,255,255,${alpha})`
     : `rgba(0,0,0,${alpha})`;
+}
+
+/**
+ * `veil()`in YÜZEY hali — perde değil, fotoğrafın üstüne oturan bir KUTU için.
+ *
+ * Fark yalnız koyu modda: perde tam siyah, bu ise bir tık açık (yüzeylerin
+ * ailesinden, `surface` ~#1E1E1E civarı). Neredeyse opak büyük bir yüzey tam
+ * siyah olduğunda fotoğrafta kesilmiş bir delik gibi duruyor; açık modda ikisi
+ * de beyaz kaldığı için orada bir ayrım yok.
+ *
+ * Üstündeki yazı yine `colors.text` (koyuda beyaz, açıkta siyah).
+ */
+export function veilSurface(alpha: number): string {
+  return activeMode === "light"
+    ? `rgba(255,255,255,${alpha})`
+    : `rgba(32,32,34,${alpha})`;
 }
 
 export function ink(alpha: number): string {

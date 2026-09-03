@@ -12,10 +12,21 @@ import { colors, isLight } from "./colors";
  * blur'u, MatchModal'ın foto paneli) açık modda da KOYU kalmalı — oralarda
  * `tint="dark"` doğrudan yazılı ve öyle kalmalı.
  *
- * LikesScreen'in KİLİTLİ kart örtüsü bu kaptaki bir istisna ama TERS yönde:
- * her iki modda da BEYAZ (`tint="light"`), placeholder kutuları da bu yüzden
- * koyu (`scrimAt`). Aynı kartın isim/üniversite satırının arkasındaki alt
- * progressive blur ise KOYU kalır — orası normal foto scrim'i.
+ * LikesScreen'in KİLİTLİ kart örtüsü foto üstünde ama yine de `chromeBlurTint()`
+ * kullanıyor — bu kaptaki TEK foto-üstü istisna. Sebebi kalınlığı: kimliği
+ * gizlemek için üst üste iki katman + tam intensity gerekiyor ve o kalınlıkta
+ * SABİT bir tint kartı düz bir pula çeviriyor (beyaz denendi → sütlü, siyah
+ * denendi → kömür; ikisinde de altında fotoğraf olduğu okunmuyor). Sistem
+ * malzemesi aynı kalınlıkta bile fotoğrafın rengini geçiriyor. Bedeli: örtü
+ * modla döndüğü için üstündeki placeholder kutuları da dönmek zorunda (açık
+ * modda `scrimAt`, koyu modda `onMediaAt`) — kutu her zaman perdenin TERSİ.
+ * Aynı kartın isim/üniversite satırının arkasındaki alt progressive blur ise
+ * KOYU kalır: orası kimlik perdesi değil, normal foto scrim'i.
+ *
+ * Aynı kartın NOT KUTUSU da fotoğrafın üstünde ama `chromeBlurTint()`
+ * kullanıyor: o bir foto örtüsü değil, üstüne oturmuş bir panel ve zemini
+ * (veilSurface) başından beri modla dönüyor — lit shop sheet'leriyle aynı
+ * gerekçe.
  *
  * lit shop sheet'leri (PurchaseModal / SuperLikePurchaseModal) BU İSTİSNADA
  * DEĞİL: zeminleri (shopSurface / shopBackdrop) modla döndüğü için panelleri
