@@ -1,4 +1,4 @@
-import { memo, useEffect, useState, useCallback, useMemo } from 'react';
+import { memo, useEffect, useRef, useState, useCallback, useMemo } from 'react';
 import { useTranslation } from 'react-i18next';
 import {
   View,
@@ -9,17 +9,15 @@ import {
 } from 'react-native';
 import { Image } from 'expo-image';
 import { BlurView } from 'expo-blur';
-import { Host, Button as SwiftUIButton } from '@expo/ui/swift-ui';
+import { Host, Button as SwiftUIButton, Image as SwiftUIImage } from '@expo/ui/swift-ui';
 import {
   buttonStyle,
   tint,
-  labelStyle,
-  font,
   frame,
-  controlSize,
+  accessibilityLabel,
 } from '@expo/ui/swift-ui/modifiers';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
-import { useNavigation } from '@react-navigation/native';
+import { useNavigation, useFocusEffect } from '@react-navigation/native';
 import Animated, {
   useSharedValue,
   useAnimatedScrollHandler,
@@ -29,7 +27,7 @@ import {
   BellOff,
   Heart,
   MessageCircle,
-  Sparkles,
+  RotateCcw,
   ChevronLeft,
   ChevronRight,
   User,
@@ -37,8 +35,9 @@ import {
   EyeOff,
   Check,
   AlertTriangle,
-} from 'lucide-react-native';
+} from '@/shared/icons';
 import SFIcon, { type SFSymbol } from '@/shared/components/SFIcon';
+import NoteGlyph from '@/shared/components/NoteGlyph';
 import notificationsService from '@/features/notifications/notificationsService';
 import profileService from '@/features/profile/profileService';
 import { requestPhotoHighlight } from '@/shared/services/uiBus';
@@ -49,33 +48,67 @@ import {
   selectIsPremium,
 } from '@/features/profile/subscriptionSlice';
 import { useAppDispatch, useAppSelector } from '@/shared/hooks/redux';
-import ScreenHeader, {
-  SCREEN_HEADER_ACTION_SIZE,
-} from '@/shared/components/ScreenHeader';
+import ScreenHeader from '@/shared/components/ScreenHeader';
 import EmptyState from '@/shared/components/EmptyState';
 import SkeletonBox from '@/shared/components/SkeletonBox';
 import { formatRelativeTime } from '@/shared/utils/formatRelativeTime';
 import { parseUtc } from '@/shared/utils/dateUtc';
-import { colors } from '../../../shared/theme/colors';
-import { glassFallback } from '../../../shared/theme/glass';
+import { colors, isLight } from '../../../shared/theme/colors';
+import { glassFallback, glassIconClearGlyph, GLASS_ICON_CLEAR_SIZE } from '../../../shared/theme/glass';
+import GlassFallbackSurface from '@/shared/components/GlassFallbackSurface';
 import { useRenderCount } from '@/shared/debug/useRenderCount';
 import { plainBlurTint } from "@/shared/theme/blur";
 
+// Nötr (renk taşımayan) rozetlerin zemini POLARİTE çevirmiyor — iki modda da
+// koyu disk + beyaz glyph. `colors.bg`/`colors.text` kullanılsaydı açık modda
+// beyaz disk beyaz zeminin içinde kaybolurdu. Tek fark ton: koyu modda tam
+// siyah disk, altındaki #121212 liste zemininden ve rozetin kendi `colors.bg`
+// halkasından ayrışmıyordu → koyuda griye çekiliyor, açıkta siyah kalıyor
+// (beyaz zeminde kontrast zaten fazlasıyla var).
+// Modül seviyesinde SABİTLENEMEZ (colors.ts mutasyon sözleşmesi §1) — fonksiyon.
+const badgeNeutralBg = () => (isLight() ? '#000000' : '#3A3A3C');
+// Renkli/koyu diskin üstündeki işaretin beyazı da temadan gelmiyor: `colors.text`
+// açık modda koyuya döndüğü için kırmızı disk üstünde okunmuyordu.
+const BADGE_FG = '#FFFFFF';
+
 // Fotoğrafın sağ altına oturan tip rozeti. Burada olmayan tipler (System,
 // TrialEndingSoon, PremiumExpiringSoon …) sistem bildirimi sayılır, rozet almaz.
+// Match burada YOK: eşleşme bildiriminde fotoğrafın sağ altına rozet
+// çizilmiyor (metin zaten eşleşmeyi söylüyor).
 const TYPE_BADGES = {
-  Match: { Icon: Sparkles, sf: 'sparkles' as SFSymbol, color: colors.litPlus },
-  Like: { Icon: Heart, sf: 'heart' as SFSymbol, color: colors.errorStrong },
-  SuperLike: { Icon: Heart, sf: 'heart' as SFSymbol, color: colors.info },
-  Note: { Icon: MessageCircle, sf: 'bubble.left.fill' as SFSymbol, color: colors.litPlus },
+  // İki beğeni tipi hem işaret hem renkle ayrışıyor: düz beğeni nötr siyah
+  // diskte tik, süper beğeni kırmızı diskte kalp — kalp yalnızca vurgulu olanda
+  // kalıyor. Süper beğeninin kalbi İÇİ DOLU beyaz: 18pt diskin üstünde 11pt ince
+  // konturlu kalp kayboluyor. `filled` Android/lucide fallback'e de dolgu
+  // geçiriyor; tik zaten kontur glyph'i, dolgu istemiyor.
+  Like: { Icon: Check, sf: 'checkmark' as SFSymbol, neutral: true, iconColor: BADGE_FG },
+  SuperLike: { Icon: Heart, sf: 'heart.fill' as SFSymbol, color: colors.errorStrong, iconColor: BADGE_FG, filled: true },
+  // Not'un işareti SF `bubble.left.fill` DEĞİL: ürünün kendi glyph'i
+  // (NoteGlyph — SwipeCard'daki not kutusu, Likes rozeti, paket modalı ve toast
+  // hep aynı şekli kullanıyor). Rozet zemini de tip renginden değil sabit
+  // siyah/beyaz: glyph'in içindeki kalp DELİK, altındaki dolgu oradan görünüyor
+  // — renkli zeminde şekil dağılıyordu.
+  Note: { Glyph: NoteGlyph, neutral: true, iconColor: BADGE_FG },
   Message: { Icon: MessageCircle, sf: 'message.fill' as SFSymbol, color: colors.success },
-  MissedMatch: { Icon: Sparkles, sf: 'sparkles' as SFSymbol, color: colors.warning },
+  // Kaçırılan eşleşme = kurtarma aksiyonu → Discover'daki kurtar butonuyla aynı
+  // işaret (arrow.counterclockwise), siyah disk üstünde beyaz.
+  MissedMatch: {
+    Icon: RotateCcw,
+    sf: 'arrow.counterclockwise' as SFSymbol,
+    neutral: true,
+    iconColor: BADGE_FG,
+  },
   // Fotoğraf moderasyonu. Red/gizlenme kullanıcıdan aksiyon istiyor → uyarı
-  // tonu; onay yalnızca iyi haber → nötr yeşil.
-  PhotoRejected: { Icon: AlertTriangle, sf: 'exclamationmark.triangle.fill' as SFSymbol, color: colors.errorStrong },
-  PhotoApproved: { Icon: Check, sf: 'checkmark' as SFSymbol, color: colors.success },
-  ProfileHiddenInsufficientPhotos: { Icon: EyeOff, sf: 'eye.slash.fill' as SFSymbol, color: colors.errorStrong },
-  PhotoAppealResolved: { Icon: Camera, sf: 'camera.fill' as SFSymbol, color: colors.info },
+  // tonu; onay yalnızca iyi haber → nötr yeşil. Renkli diskin üstündeki işaret
+  // TEMADAN GELMİYOR (`colors.text` açık modda koyuya dönüp kırmızı/yeşil
+  // zeminde okunmaz hâle geliyordu) — hepsi sabit beyaz.
+  PhotoRejected: { Icon: AlertTriangle, sf: 'exclamationmark.triangle.fill' as SFSymbol, color: colors.errorStrong, iconColor: BADGE_FG },
+  PhotoApproved: { Icon: Check, sf: 'checkmark' as SFSymbol, color: colors.success, iconColor: BADGE_FG },
+  ProfileHiddenInsufficientPhotos: { Icon: EyeOff, sf: 'eye.slash.fill' as SFSymbol, color: colors.errorStrong, iconColor: BADGE_FG },
+  // İtiraz sonucu tek başına iyi/kötü haber değil (kabul de red de bu tiple
+  // geliyor) → renk taşımayan nötr rozet: Not/MissedMatch ile aynı siyah disk,
+  // üstünde beyaz kamera.
+  PhotoAppealResolved: { Icon: Camera, sf: 'camera.fill' as SFSymbol, neutral: true, iconColor: BADGE_FG },
 };
 
 // Tap hedefleri. Chat'e gidenler ayrıca sağda chevron gösteriyor; buradaki
@@ -97,6 +130,18 @@ const GOES_TO_PROFILE = {
 const IDENTITY_GATED = { Like: true };
 
 const keyExtractor = (n) => n.id;
+
+// İskelet yalnız istek gerçekten "bekleniyor" hissi verecek kadar sürerse
+// görünür (LikesScreen ile aynı makine). Feed tipik olarak bu eşiğin altında
+// dönüyor ve iskeleti gösterip hemen listeye atlamak ekranda yanıp sönme olarak
+// okunuyordu: önce gecikme (bu süre içinde biterse shimmer hiç çizilmez), bir
+// kez çizildiyse de minimum süre ekranda kalır.
+const SKELETON_DELAY_MS = 220;
+const SKELETON_MIN_VISIBLE_MS = 450;
+
+// Liste boşken ListEmptyComponent'e düşmek için sabit referans — her render'da
+// yeni [] üretmek FlatList'i boşuna yeniden çizdirir.
+const EMPTY_DATA = [];
 
 // Zaman kovaları — feed createdAt'e göre azalan sırada geldiği için tek geçişte
 // gruplanıyor, satırların arasına __section kaydı serpiştiriliyor.
@@ -148,12 +193,14 @@ export default function NotificationsScreen() {
   // sadece senderUserId + senderPhotoUrl var, displayName yok.
   const conversations = useAppSelector((s) => s.chat.conversations);
   const isPremium = useAppSelector(selectIsPremium);
-  const [items, setItems] = useState([]);
+  // Elde son bilinen sayfa varsa ekran ONUNLA açılıyor: iskelet yok, boş ekran
+  // yok, altındaki tazeleme sessizce üstüne yazıyor.
+  const [items, setItems] = useState(
+    () => notificationsService.getFeedSnapshot() ?? [],
+  );
   const [page, setPage] = useState(1);
   const [hasMore, setHasMore] = useState(false);
   const [loading, setLoading] = useState(false);
-  // Sadece ilk açılışta iskelet göster — pagination'da / realtime yenilemede değil.
-  const [firstLoad, setFirstLoad] = useState(true);
 
   const scrollY = useSharedValue(0);
   const scrollHandler = useAnimatedScrollHandler({
@@ -162,23 +209,65 @@ export default function NotificationsScreen() {
     },
   });
 
+  // Guard state değil ref: `loading` state'ine bakan sürüm realtime dinleyicisinde
+  // ÇALIŞMIYORDU — dinleyici mount'taki fetchPage closure'ını tutuyor, oradaki
+  // `loading` sonsuza dek false. Mount fetch'i ile üstüne gelen NewNotification
+  // aynı anda iki kez sayfa 1 çekip listeyi arka arkaya iki kez takas ediyordu.
+  const loadingRef = useRef(false);
+  // Sunucu gerçekten okundu'ya çekildi mi? Çıkışta yerel kopyayı okundu'ya
+  // çekmenin ön koşulu (aşağıdaki useFocusEffect): istek düşmüşse yerelde
+  // okundu göstermek yalan olurdu — o durumda noktalar kalsın, bir sonraki
+  // açılışta sunucudan yine unread gelecek zaten.
+  const allReadRef = useRef(false);
   const fetchPage = useCallback(async (p, append = false) => {
-    if (loading) return;
+    if (loadingRef.current) return;
+    loadingRef.current = true;
     setLoading(true);
     try {
       const data = await notificationsService.getFeed({ page: p, pageSize: 30 });
+      if (!append) notificationsService.setFeedSnapshot(data.items);
       setItems((prev) => append ? [...prev, ...data.items] : data.items);
       setHasMore(data.hasMore);
       setPage(data.page);
       // Sayfayı açtıktan sonra hepsini okundu işaretle (UX standardı).
       if (!append) {
-        notificationsService.markAllRead().catch(() => {});
+        notificationsService
+          .markAllRead()
+          .then(() => {
+            allReadRef.current = true;
+          })
+          .catch(() => {});
       }
     } finally {
+      loadingRef.current = false;
       setLoading(false);
-      setFirstLoad(false);
     }
-  }, [loading]);
+  }, []);
+
+  // İskelet görünürlüğü — `loading`'in kendisi değil, geciktirilmiş/asgari süreli
+  // türevi. Ayrıca elde snapshot varken HİÇ açılmıyor: yeniden girişte zaten
+  // dolu bir liste var, üstüne shimmer basmak geriye gidiş olurdu.
+  const pending = loading && items.length === 0;
+  const [showSkeleton, setShowSkeleton] = useState(false);
+  const skeletonShownAtRef = useRef(0);
+  useEffect(() => {
+    if (pending) {
+      const id = setTimeout(() => {
+        skeletonShownAtRef.current = Date.now();
+        setShowSkeleton(true);
+      }, SKELETON_DELAY_MS);
+      return () => clearTimeout(id);
+    }
+    if (!showSkeleton) return;
+    const rest =
+      SKELETON_MIN_VISIBLE_MS - (Date.now() - skeletonShownAtRef.current);
+    if (rest <= 0) {
+      setShowSkeleton(false);
+      return;
+    }
+    const id = setTimeout(() => setShowSkeleton(false), rest);
+    return () => clearTimeout(id);
+  }, [pending, showSkeleton]);
 
   useEffect(() => {
     fetchPage(1);
@@ -191,6 +280,26 @@ export default function NotificationsScreen() {
     });
     return unsub;
   }, []);
+
+  // Ekrandan çıkarken satırlar yerelde de okundu'ya geçiyor. Satırlar EKRANDA
+  // kasten unread duruyor (kullanıcı neyin yeni olduğunu görsün); bedeli ikinci
+  // girişteki titremeydi: snapshot unread çizilip hemen arkasından gelen taze —
+  // ve artık okunmuş — sayfa noktaları söndürüyordu. Çıkışta hem state hem
+  // snapshot okundu'ya alınınca sonraki giriş baştan noktasız açılıyor.
+  useFocusEffect(
+    useCallback(
+      () => () => {
+        if (!allReadRef.current) return;
+        notificationsService.markSnapshotRead();
+        setItems((prev) =>
+          prev.some((n) => !n.isRead)
+            ? prev.map((n) => (n.isRead ? n : { ...n, isRead: true }))
+            : prev,
+        );
+      },
+      [],
+    ),
+  );
 
   const onEndReached = useCallback(() => {
     if (!hasMore || loading) return;
@@ -288,7 +397,10 @@ export default function NotificationsScreen() {
   return (
     <View className="flex-1" style={{ backgroundColor: colors.bg }}>
       <Animated.FlatList
-        data={data}
+        /* İskelet asgari süresini doldurmadan veri gelirse liste bir an için
+           shimmer'ı kesip satırları basardı; o pencerede listeyi boş tutup
+           ListEmptyComponent'te kalıyoruz. */
+        data={showSkeleton ? EMPTY_DATA : data}
         onScroll={scrollHandler}
         scrollEventThrottle={16}
         showsVerticalScrollIndicator={false}
@@ -297,7 +409,7 @@ export default function NotificationsScreen() {
         onEndReached={onEndReached}
         onEndReachedThreshold={0.4}
         ListEmptyComponent={
-          firstLoad ? (
+          showSkeleton ? (
             <NotificationsSkeleton />
           ) : !loading ? (
             <View className="flex-1 items-center justify-center pb-[50%]">
@@ -323,33 +435,44 @@ export default function NotificationsScreen() {
         showLogo={false}
         leftButton={
           Platform.OS === 'ios' ? (
-            /* matchContents YOK — bkz. SCREEN_HEADER_ACTION_SIZE: frame() zaten
-               44x44 diyor, Host'un da aynı boyutu İLK commit'te bilmesi gerek;
-               yoksa buton sol kenardan içeri ışınlanıyor. */
-            <Host
-              style={{
-                width: SCREEN_HEADER_ACTION_SIZE,
-                height: SCREEN_HEADER_ACTION_SIZE,
-              }}
+            /* matchContents YOK — bkz. GLASS_ICON_BUTTON: frame() ölçüyü zaten
+               veriyor, Host'un da aynı boyutu İLK commit'te bilmesi gerek;
+               yoksa buton sol kenardan içeri ışınlanıyor. Sarmalayıcı iOS 26
+               ALTINDA zemini veriyor, 26+'da hiç render olmuyor. */
+            <GlassFallbackSurface
+              shape="circle"
+              width={GLASS_ICON_CLEAR_SIZE}
+              height={GLASS_ICON_CLEAR_SIZE}
             >
-              <SwiftUIButton
-                label={t('common.back')}
-                systemImage="chevron.left"
-                onPress={() => navigation.goBack()}
-                modifiers={[
-                  buttonStyle('glass'),
-                  tint(colors.text),
-                  controlSize('large'),
-                  labelStyle('iconOnly'),
-                  font({ size: 22, weight: 'semibold' }),
-                  frame({
-                    width: SCREEN_HEADER_ACTION_SIZE,
-                    height: SCREEN_HEADER_ACTION_SIZE,
-                  }),
-                  ...glassFallback({ shape: 'circle' }),
-                ]}
-              />
-            </Host>
+              <Host
+                style={{
+                  width: GLASS_ICON_CLEAR_SIZE,
+                  height: GLASS_ICON_CLEAR_SIZE,
+                }}
+              >
+                <SwiftUIButton
+                  onPress={() => navigation.goBack()}
+                  modifiers={[
+                    // Kabuk YOK, berrak cam glifin üstünde — profil başlığındaki
+                    // çan/ayarlar ile birebir aynı; bkz. glassIconClearGlyph.
+                    buttonStyle('plain'),
+                    tint(colors.text),
+                    frame({
+                      width: GLASS_ICON_CLEAR_SIZE,
+                      height: GLASS_ICON_CLEAR_SIZE,
+                    }),
+                    accessibilityLabel(t('common.back')),
+                    ...glassFallback({ shape: 'circle' }),
+                  ]}
+                >
+                  <SwiftUIImage
+                    systemName="chevron.left"
+                    color={colors.text}
+                    modifiers={glassIconClearGlyph()}
+                  />
+                </SwiftUIButton>
+              </Host>
+            </GlassFallbackSurface>
           ) : (
             <TouchableOpacity onPress={() => navigation.goBack()} hitSlop={10} activeOpacity={0.7}>
               <View pointerEvents="none">
@@ -467,12 +590,27 @@ function NotificationAvatar({ item, locked = false }) {
               width: BADGE_SIZE,
               height: BADGE_SIZE,
               borderRadius: BADGE_SIZE / 2,
-              backgroundColor: badge.color,
+              backgroundColor: badge.neutral ? badgeNeutralBg() : badge.color,
               alignItems: 'center',
               justifyContent: 'center',
             }}
           >
-            <SFIcon name={badge.sf} fallback={badge.Icon} size={11} color={colors.text} strokeWidth={2.5} weight="bold" />
+            {badge.Glyph ? (
+              // Ürünün kendi vektör işareti — SF sembolü değil, o yüzden
+              // SFIcon'dan geçmiyor. Ölçü Likes'taki not rozetiyle aynı oran
+              // (glyph ≈ diskin 0.62'si), kendi optik payı da cabası.
+              <badge.Glyph size={11} color={badge.iconColor} />
+            ) : (
+              <SFIcon
+                name={badge.sf}
+                fallback={badge.Icon}
+                size={11}
+                color={badge.iconColor || colors.text}
+                fill={badge.filled ? badge.iconColor || colors.text : undefined}
+                strokeWidth={2.5}
+                weight="bold"
+              />
+            )}
           </View>
         </View>
       )}
@@ -484,11 +622,25 @@ function NotificationAvatar({ item, locked = false }) {
 // iki metin çizgisi), böylece veri gelince zıplama olmuyor.
 const SKELETON_WIDTHS = ['88%', '64%', '76%', '92%', '58%', '80%'];
 
+// Bölüm başlığının yüksekliği iki yerden de aynı sabitlerle türetiliyor:
+// iskelette başlık yeri BOŞ bırakılınca veri gelince ilk satır bir başlık boyu
+// (28 + 2×16 = 60pt) aşağı kayıyordu — "ekran ufak kaydı" dedirten şey buydu.
+// lineHeight açıkça veriliyor ki iskelet, NativeWind'ın text-xl varsayılanına
+// bağlı kalmasın.
+const SECTION_HEADER_LINE = 28;
+const SECTION_HEADER_PAD = 16;
+
 function SectionHeader({ title }) {
   return (
     <Text
-      className="text-xl font-bold px-5 pt-4 pb-4"
-      style={{ color: colors.text, letterSpacing: 0.2 }}
+      className="text-xl font-bold px-5"
+      style={{
+        color: colors.text,
+        letterSpacing: 0.2,
+        lineHeight: SECTION_HEADER_LINE,
+        paddingTop: SECTION_HEADER_PAD,
+        paddingBottom: SECTION_HEADER_PAD,
+      }}
     >
       {title}
     </Text>
@@ -498,6 +650,17 @@ function SectionHeader({ title }) {
 function NotificationsSkeleton() {
   return (
     <View>
+      {/* Gerçek feed HER ZAMAN bir bölüm başlığıyla başlıyor (en azından
+          "Bugün"/"Daha eski") — iskelette de yerini tutuyoruz. */}
+      <View
+        style={{
+          paddingHorizontal: 20,
+          height: SECTION_HEADER_LINE + SECTION_HEADER_PAD * 2,
+          justifyContent: 'center',
+        }}
+      >
+        <SkeletonBox width={84} height={18} borderRadius={6} />
+      </View>
       {SKELETON_WIDTHS.map((w, i) => (
         <View key={i} className="flex-row items-center px-4 py-3">
           <SkeletonBox

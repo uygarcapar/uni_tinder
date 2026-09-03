@@ -10,7 +10,7 @@ import {
   useWindowDimensions,
 } from "react-native";
 import { Image } from "expo-image";
-import { MessageCircle } from "lucide-react-native";
+import { MessageCircle } from "@/shared/icons";
 import SFIcon from "@/shared/components/SFIcon";
 import * as Haptics from "expo-haptics";
 import { useTranslation } from "react-i18next";
@@ -34,6 +34,14 @@ const FlameCurtain = lazy(() =>
 
 /** İçerik perdeden ÖNDE sönsün: perde yukarı süpürülürken altı boş kalmasın. */
 const CONTENT_FADE_OUT_MS = 180;
+
+/**
+ * Fotoğrafların kenar çizgisi — SABİT açık gri. Palet token'ı değil: modalın
+ * zemini sabit marka gradyanı, `neutral*` gibi modla dönen bir gri açık temada
+ * koyulaşırdı. `mediaHairline` de olmaz — o beyaz-şeffaf, alevin üstünde gri
+ * değil parlak bir halka gibi okunuyor.
+ */
+const AVATAR_EDGE = "#D9D9DE";
 
 export default function MatchModal({ match, myPhoto, onClose, onSendMessage }: any) {
   const { t } = useTranslation();
@@ -298,14 +306,13 @@ export default function MatchModal({ match, myPhoto, onClose, onSendMessage }: a
           >
             <Animated.View
               style={{
-                // Negatif marj BİLEREK: başlık, butonları saran 60px'lik
-                // paddingHorizontal'ın dışına taşıyor. Punto otomatik küçüldüğü
-                // için (aşağıya bkz.) dar kutu doğrudan küçük yazı demekti —
-                // kutu genişleyince başlık ekranın izin verdiği kadar büyük
-                // kalıyor. Butonların genişliği bundan etkilenmiyor.
-                marginHorizontal: -44,
                 paddingVertical: 12,
                 marginBottom: 36,
+                // Kutu içeriğe göre DARALMASIN: Duckie'nin son harfi kendi
+                // ilerleme genişliğinin dışına taşıyor, içerik boyu kutuda
+                // sağdan kırpılıyordu. Yazı ortalı, kutu geniş — kırpılacak
+                // kenar kalmıyor. (Dönme merkezi yine kelimenin ortası.)
+                alignSelf: "stretch",
                 transform: [
                   {
                     translateX: titleShake.interpolate({
@@ -322,18 +329,24 @@ export default function MatchModal({ match, myPhoto, onClose, onSendMessage }: a
                 ],
               }}
             >
-              {/* Tek satırda kalsın: 44px kısa başlığın (EN "It's Lit!") tam
-                  boyu, uzun olanı (TR "Biriyle Eşleştin!") satıra sığacak
-                  kadar küçülüyor. Sarmaya izin verilseydi iki satırlık başlık
-                  küçük ekranlarda içeriği alevlerin şeridine taşıyordu. */}
+              {/* Başlık ÇEVRİLMİYOR: cümle ("Biriyle Eşleştin!") yerine marka
+                  kelimesinin kendisi, paywall'daki "plus+" ile aynı yazımda —
+                  Duckie-regular, küçük harf. Sabit ve kısa olduğu için eski
+                  otomatik küçülme + negatif marj düzeneği kalktı; kelime her
+                  ekranda tam boyunda duruyor. */}
               <Text
-                className="font-bold text-[44px]"
-                numberOfLines={1}
-                adjustsFontSizeToFit
-                minimumFontScale={0.6}
-                style={{ color: colors.onMedia, textAlign: "center" }}
+                style={{
+                  color: colors.onMedia,
+                  textAlign: "center",
+                  fontFamily: "Duckie-regular",
+                  fontSize: 88,
+                  includeFontPadding: false,
+                  // Taşan harf için iki yandan pay; tek yana verilseydi ortalı
+                  // kelime o kadar kayardı.
+                  paddingHorizontal: 10,
+                }}
               >
-                {t('match.title')}
+                lit
               </Text>
             </Animated.View>
 
@@ -356,11 +369,10 @@ export default function MatchModal({ match, myPhoto, onClose, onSendMessage }: a
                     width: AVATAR,
                     height: AVATAR,
                     borderRadius: AVATAR / 2,
-                    // Kalın beyaz halka: fotoğraflar alev perdesinin üstünde
-                    // kesilip çıkarılmış gibi dursun. `onMedia` iki modda da
-                    // beyaz — zemin sabit marka gradyanı, modla dönmüyor.
-                    borderWidth: 4,
-                    borderColor: colors.onMedia,
+                    // Kalın beyaz halkanın yerine ince açık gri çizgi: çerçeve
+                    // gibi değil, fotoğrafın kendi kenarı gibi dursun.
+                    borderWidth: 0.5,
+                    borderColor: AVATAR_EDGE,
                     overflow: "hidden",
                     backgroundColor: colors.surface2,
                   }}
@@ -390,11 +402,10 @@ export default function MatchModal({ match, myPhoto, onClose, onSendMessage }: a
                     width: AVATAR,
                     height: AVATAR,
                     borderRadius: AVATAR / 2,
-                    // Kalın beyaz halka: fotoğraflar alev perdesinin üstünde
-                    // kesilip çıkarılmış gibi dursun. `onMedia` iki modda da
-                    // beyaz — zemin sabit marka gradyanı, modla dönmüyor.
-                    borderWidth: 4,
-                    borderColor: colors.onMedia,
+                    // Kalın beyaz halkanın yerine ince açık gri çizgi: çerçeve
+                    // gibi değil, fotoğrafın kendi kenarı gibi dursun.
+                    borderWidth: 0.5,
+                    borderColor: AVATAR_EDGE,
                     overflow: "hidden",
                     backgroundColor: colors.surface2,
                   }}
@@ -414,7 +425,7 @@ export default function MatchModal({ match, myPhoto, onClose, onSendMessage }: a
               </Animated.View>
             </View>
 
-            <Text className="text-[15px] text-center font-semibold mt-8" style={{ color: colors.onMedia }}>
+            <Text className="text-[13.5px] text-center font-semibold mt-8" style={{ color: colors.onMedia }}>
               {t('match.subtitle', { name: match.matchedUserName })}
             </Text>
 
