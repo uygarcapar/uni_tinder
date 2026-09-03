@@ -11,8 +11,16 @@ const path = require("path");
 const { parsePath, flatten } = require("./lib/glyphPath");
 const { writePNG } = require("./lib/png");
 
-const CANVAS_PT = 28; // ikon kutusu
-const GLYPH_PT = 22; // glyph'in UZUN kenarı (alevde yükseklik, kalpte genişlik)
+const CANVAS_PT = 28; // ikon kutusu — SABİT: HIG'in tab ikon tavanı 32pt, 28
+// hem o tavanın altında hem de profil avatarının kutusuyla (bkz.
+// profileTabAvatar BOX_PT) aynı mertebede. Büyütme kutudan değil glyph'ten
+// yapılır; kutuyu büyütmek ikonun MÜREKKEBİNİ değil sadece footprint'ini
+// büyütür ve tab bar'da dikey hizayı kaydırır.
+const GLYPH_PT = 24; // glyph'in UZUN kenarı (alevde yükseklik, kalpte genişlik)
+// 22 → 24: etiketler kaldıktan sonra ikonlar tab bar'da küçük kalıyordu.
+// Tavan pratikte 24-25: `message` SF Symbol'ü sistem konfigürasyonuyla ~22-25pt
+// çiziliyor ve ona ayar veremiyoruz (RNS `[UIImage systemImageNamed:]` çağırıyor,
+// symbol configuration geçmiyor) — daha fazlası o sekmeyi yanında cüce bırakır.
 const STROKE_PT = 2; // outline kalınlığı (SF tab ikonlarına yakın)
 const SS = 4; // pixel başına supersample (4×4)
 
@@ -27,9 +35,31 @@ const MUL = PREVIEW ? 3 : 1; // önizlemeyi büyüt (siyah/opak, gözle kontrol 
 // kapalı alt-path olmak zorunda (aşağıdaki `(e+1)%N` sarmalı tek halka
 // varsayıyor) — delikli bir glyph (ör. NoteGlyph'in oyulmuş kalbi) buradan
 // GEÇMEZ, deliği dolu çizer.
+//
+// `glyphPt` verilmezse GLYPH_PT kullanılır. Kalp burada AYRI ayarlanıyor: ölçek
+// uzun kenardan alınıyor ve kalbin uzun kenarı GENİŞLİK, alevinki YÜKSEKLİK.
+// İkisi de aynı sayıya ölçeklenince alev 18×24pt, kalp 24×21pt oluyor — sıra
+// halinde göz dikey uzanımı okuduğu için kalp küçük duruyordu. 26pt genişlik
+// kalbi ~22.4pt yüksekliğe çıkarıp farkı kapatıyor; daha fazlası 28pt'lik
+// kutuya sıvanır (yatayda pay kalmaz) ve kalp bu kez enli görünür.
+//
+// Mesaj balonu da burada ve bu ZORUNLU, tercih değil: native tab bar'ın SF
+// Symbol ikonuna İSİMDEN başka hiçbir şey geçilemiyor (bkz. bottom-tabs
+// types.d.ts > IconIOSSfSymbol — ne boyut ne inset). `message` sembolü kendi
+// optik hizasıyla yerleşiyordu ve 28pt'lik PNG kutusunu paylaşan üç kardeşinin
+// (alev, kalp, avatar) birkaç pt üstünde duruyordu. Tek çare onu da aynı
+// kutudan geçirmek.
+//
+// Balon NoteGlyph'in DIŞ halkasıyla aynı şekil (bkz. MessageGlyph) — not
+// ürününün balonu ile mesaj sekmesinin balonu ayrışmasın.
 const GLYPHS = [
   { file: "FlameGlyph.ts", constName: "FLAME_PATH", out: "flame-tab" },
-  { file: "HeartGlyph.ts", constName: "HEART_PATH", out: "heart-tab" },
+  { file: "HeartGlyph.ts", constName: "HEART_PATH", out: "heart-tab", glyphPt: 26 },
+  // Balon neredeyse KARE (20×19.92): uzun kenardan 24'e ölçeklenince 24×23.9
+  // oluyor ve sırada alevden (18×24) de kalpten (26×22.4) de belirgin şişman
+  // duruyor — göz kare bir kütleyi ince-uzun bir siluetten büyük okuyor.
+  // 22 ile 22×21.9'a iniyor: yüksekliği kalbinkiyle (22.4) aynı hizaya geliyor.
+  { file: "MessageGlyph.ts", constName: "MESSAGE_PATH", out: "message-tab", glyphPt: 22 },
 ];
 
 const segDist2 = (px, py, x0, y0, x1, y1) => {
@@ -77,7 +107,7 @@ for (const glyph of GLYPHS) {
 
   for (const scale of [1, 2, 3]) {
     const px = CANVAS_PT * scale * MUL;
-    const s = (GLYPH_PT * scale * MUL) / glyphLong;
+    const s = ((glyph.glyphPt ?? GLYPH_PT) * scale * MUL) / glyphLong;
     const ox = (px - gw * s) / 2 - gx0 * s;
     const oy = (px - gh * s) / 2 - gy0 * s;
     const strokePx = STROKE_PT * scale * MUL;
