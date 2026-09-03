@@ -1,9 +1,10 @@
 import { useEffect, useState } from "react";
-import { Text, useWindowDimensions } from "react-native";
+import { Text, View, useWindowDimensions } from "react-native";
 import { useTranslation } from "react-i18next";
 
 import AppModal from "@/shared/components/AppModal";
 import { colors } from "@/shared/theme/colors";
+import PremiumBenefitIcon from "@/features/profile/components/PremiumBenefitIcon";
 import {
   type PremiumBenefitKey,
   premiumBenefitDetailKey,
@@ -54,9 +55,22 @@ export default function PremiumBenefitInfoSheet({
       // gereksiz ağırlık yapıyordu (bkz. ConversationOptionsSheet).
       closeButton={false}
       // Header satırı boşaldığı için varsayılan 88px'lik üst pay fazla; drag
-      // pill'in (top:20, h:4) altında metni ferah bırakacak kadarı yetiyor.
-      contentContainerStyle={{ paddingTop: 72, paddingBottom: 72 }}
+      // pill'in (top:20, h:4) altında ikonu ferah bırakacak kadarı yetiyor.
+      // Metnin değil İKONUN üstündeki pay olduğu için 72'den kısa: ikonun
+      // kendi optik boşluğu var, 72 onu sayfadan koparıyordu.
+      contentContainerStyle={{ paddingTop: 56, paddingBottom: 72 }}
     >
+      {/* Maddenin simgesi — büyük ve ortada. Sheet'i açan şey tablodaki üç
+          kelimelik satır; ikon, okumadan önce "hangi özellik" sorusunu
+          cevaplıyor ve iki maddede (Süper Beğeni / rozet) doğrudan ürünün
+          kendi glif'i oluyor. Boyut ConsumablePurchaseSheet'in paket
+          glif'iyle aynı ailede (50) ama tek başına durduğu için biraz
+          büyük. */}
+      <View style={{ alignItems: "center", marginBottom: 18 }}>
+        {shown ? (
+          <PremiumBenefitIcon benefitKey={shown} size={56} color={colors.text} />
+        ) : null}
+      </View>
       {/* Başlık İÇERİKTE: AppModal'ın header başlığı scroll'a bağlı fade
           ediyor (55px'ten sonra beliriyor), bu sheet ise içeriği kadar açılıp
           hiç scroll etmiyor → oradaki başlık hep opacity 0 kalırdı.
@@ -67,6 +81,10 @@ export default function PremiumBenefitInfoSheet({
           fontSize: 22,
           fontWeight: "700",
           marginBottom: 16,
+          // İkon ortada durduğu için metin de ortalı: sola yaslı bir başlık
+          // ikonu ayrı bir öge gibi gösteriyordu (bkz. EmptyState — ikon +
+          // başlık + açıklama aynı eksende).
+          textAlign: "center",
         }}
       >
         {shown ? t(premiumBenefitLabelKey(shown)) : ""}
@@ -77,6 +95,7 @@ export default function PremiumBenefitInfoSheet({
           fontSize: 15,
           lineHeight: 22,
           fontWeight: "500",
+          textAlign: "center",
         }}
       >
         {shown ? t(premiumBenefitDetailKey(shown)) : ""}

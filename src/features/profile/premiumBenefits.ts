@@ -29,6 +29,11 @@
  *  - "Beni kim beğendi listesi" backend'de free'ye de açık; premium farkı
  *    listenin BLURSUZ görünmesi (bkz. LikesScreen), madde de onu söylüyor.
  */
+// ⚠️ Yeni bir anahtar eklerken simgesini de ekle: her maddenin açıklama
+// sheet'inin tepesinde büyük bir ikon var (bkz. components/PremiumBenefitIcon).
+// Eşlemesi Record<PremiumBenefitKey, …> olduğu için eksik bırakırsan tsc
+// söyler — ama gliflerini elle seçen iki madde (superLikes / premiumBadge)
+// oradan dışlanmış durumda.
 export const PREMIUM_BENEFIT_KEYS = [
   "unlimitedLikes",
   "seeLikes",

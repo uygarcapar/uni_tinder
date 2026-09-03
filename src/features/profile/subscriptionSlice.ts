@@ -598,7 +598,11 @@ export const resolvePendingPremiumSync = createAsyncThunk(
       yaşDk: Math.round((Date.now() - pending.at) / 60000),
     });
     // Backend zaten premium diyorsa kaydı burada kapat — `/sync` atmaya gerek yok.
-    if (selectIsPremium(getState())) {
+    // `resolvedFromCache` İSTİSNA: premium diskteki offline ipucundan geliyorsa
+    // backend bu satın alma hakkında hâlâ HİÇBİR ŞEY söylememiştir. Kaydı orada
+    // kapatmak, kurtarma turunu tam da ihtiyaç duyulduğu anda iptal ederdi.
+    const st: any = getState();
+    if (selectIsPremium(st) && !st?.subscription?.resolvedFromCache) {
       resolvePendingRecord(getState(), "resolve");
       return { pending: false as const };
     }
@@ -801,6 +805,8 @@ const applyStatus = (state: SubscriptionState, s: SubscriptionStatusSnapshot) =>
   // Buraya gelen her yol (status / hub / sync / reconcile) backend'in kanonik
   // cevabıdır: bundan sonra "premium mi" sorusunun tek muhatabı bu slice.
   state.statusResolvedAt = Date.now();
+  // Diskten gelen ipucunun ömrü tam olarak buraya kadar.
+  state.resolvedFromCache = false;
   state.writeSeq += 1;
 };
 
@@ -868,6 +874,7 @@ const initialState: SubscriptionState = {
   lastEventAt: null,
   statusRequestAt: null,
   statusResolvedAt: null,
+  resolvedFromCache: false,
   writeSeq: 0,
   statusRequestSeq: null,
 };
@@ -891,8 +898,10 @@ const subscriptionSlice = createSlice({
       // üstüne profil bayrağıyla ikinci bir fikir aramamalı.
       if (action.payload.isPremium) state.statusResolvedAt = Date.now();
       // Yerel de olsa bir yazım: uçuşta bekleyen `/status` cevabı artık bayat
-      // (satın alma/oturum değişimi ondan sonra oldu).
+      // (satın alma/oturum değişimi ondan sonra oldu). Diskten gelen ipucu da
+      // aynı sebeple geçersiz — satın alma/oturum değişimi ondan tazedir.
       state.writeSeq += 1;
+      state.resolvedFromCache = false;
       if (!action.payload.isPremium) {
         state.status = null;
         state.productId = null;
@@ -922,6 +931,39 @@ const subscriptionSlice = createSlice({
     // sıfırlıyordu ve kullanıcı "aktivasyon sürüyor" kartını bile göremiyordu.
     hydrateSyncPending: (state, action: PayloadAction<boolean>) => {
       state.syncPending = action.payload;
+    },
+    /**
+     * Boot'ta diskteki son bilinen premium — İNTERNETSİZ AÇILIŞIN tek cevabı.
+     * `hydrateSyncPending` ile aynı gerekçe, bir adım ötesi: orada "ödedi ama
+     * görünmüyor" olgusu kurtarılıyordu, burada premium'un kendisi.
+     *
+     * Üç guard:
+     *   • `statusResolvedAt != null` → kanonik cevap zaten var, disk susar.
+     *     (Bu efekt her MOUNT'ta koşuyor — tema değişimi AppNavigator'ı remount
+     *     ediyor ama store ayakta kalıyor. O turlarda bu dal no-op olmalı.)
+     *   • yalnız premium yazılıyor (`readPremiumSnapshot` `false` döndürmez):
+     *     disk hiçbir zaman premium'u KAPATMAZ, yalnız açar.
+     *   • `writeSeq` BİLEREK ARTMIYOR: uçuşta bir `/status` varsa cevabı bayat
+     *     sayılmamalı — cache'lenmiş bir değer kanonik cevabı eleyemez.
+     */
+    hydratePremiumFromCache: (
+      state,
+      action: PayloadAction<SubscriptionStatusSnapshot | null>,
+    ) => {
+      const s = action.payload;
+      if (!s?.isPremium || state.statusResolvedAt != null) return;
+      state.isPremium = true;
+      state.expiresAt = s.expiresAt;
+      state.status = s.status;
+      state.productId = s.productId;
+      state.autoRenewEnabled = s.autoRenewEnabled;
+      state.isTrial = s.isTrial;
+      state.trialEndsAt = s.trialEndsAt;
+      state.gracePeriodEndsAt = s.gracePeriodEndsAt;
+      state.cancelledAt = s.cancelledAt;
+      state.provider = s.provider;
+      state.statusResolvedAt = Date.now();
+      state.resolvedFromCache = true;
     },
     // Retry turunun ARA adımları. Thunk döngüsünden her yanıtta dispatch
     // ediliyor; turun sonunu beklemeden state güncel kalıyor (doküman §3).
@@ -1073,6 +1115,7 @@ export const {
   setPremium,
   clearSyncPending,
   hydrateSyncPending,
+  hydratePremiumFromCache,
   syncStatusReceived,
   subscriptionChanged,
 } = subscriptionSlice.actions;

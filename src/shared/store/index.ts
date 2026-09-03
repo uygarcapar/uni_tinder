@@ -5,6 +5,7 @@ import authReducer from '@/features/auth/authSlice';
 import profileReducer from '@/features/profile/profileSlice';
 import swipeReducer from '@/features/discover/swipeSlice';
 import subscriptionReducer from '@/features/profile/subscriptionSlice';
+import { premiumSnapshotMiddleware } from '@/features/profile/premiumSnapshot';
 import chatReducer from '@/features/chat/chatSlice';
 import settingsReducer from './settingsSlice';
 import { reduxMmkvChatStorage, reduxMmkvAppStorage } from './mmkvStorage';
@@ -99,7 +100,12 @@ export const store = configureStore({
         ignoredActions: ['persist/PERSIST', 'persist/REHYDRATE'],
         ignoredPaths: ['auth.registrationForm.dateOfBirth'],
       },
-    }),
+      // `subscription` slice'ı persist EDİLMİYOR (yukarıdaki whitelist) ama son
+      // KANONİK premium cevabının kopyası internetsiz açılış için diske ayrılır.
+      // Reducer'a değil middleware'e bağlı: `applyStatus`'a yazan dört yol var
+      // (status/hub/sync/reconcile) ve hepsi tek noktadan aynalanmalı.
+      // Bkz. features/profile/premiumSnapshot.
+    }).concat(premiumSnapshotMiddleware),
 });
 
 export const persistor = persistStore(store);

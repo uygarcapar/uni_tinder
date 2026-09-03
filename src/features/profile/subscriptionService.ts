@@ -390,7 +390,7 @@ export function addCustomerInfoListener(cb: () => void): () => void {
 // chat_unlock consumable'ı 2026-08-02'de kaldırıldı: sohbet kotası dolduğunda
 // artık ürün satılmıyor, Premium aboneliği (PurchaseModal) açılıyor.
 
-// ─── Consumable paketler (SuperLike + kurtarma) ──────────────────────────────
+// ─── Consumable paketler (SuperLike + not) ───────────────────────────────────
 //
 // Abonelikten AYRI RC offering'lerde duruyorlar: `getOfferings()` yalnızca
 // `offerings.current`i (premium) döndürüyor, paketler `offerings.all[...]`
@@ -404,12 +404,11 @@ export function addCustomerInfoListener(cb: () => void): () => void {
 export const SUPERLIKE_OFFERING_ID =
   process.env.EXPO_PUBLIC_REVENUECAT_SUPERLIKE_OFFERING_ID || "superlikes";
 
-/**
- * Kurtarma paketi offering'i. Backend sözleşmesinde `recovery` olarak
- * SABİTLENDİ; env yalnız test/staging'de başka bir id'ye kaydırmak için var.
- */
-export const RECOVERY_OFFERING_ID =
-  process.env.EXPO_PUBLIC_REVENUECAT_RECOVERY_OFFERING_ID || "recovery";
+// `RECOVERY_OFFERING_ID` KALDIRILDI (2026-08-31): kurtarma consumable'ı
+// (`recovery_1/_3/_10`) tümden kaldırıldı, kurtarma premium ayrıcalığı oldu.
+// Paketler ASC/RevenueCat'te hiç açılmamıştı — sahada tek bir satın alma bile
+// yok, onurlandırılacak kredi ya da iade edilecek makbuz yok. RC tarafındaki
+// `recovery` offering'i de dashboard'dan kaldırılmalı.
 
 /**
  * Not paketi offering'i. RC'de **`notes`** olarak açıldı (2026-08-27) —
@@ -417,17 +416,17 @@ export const RECOVERY_OFFERING_ID =
  * RC offering id'si oluşturulduktan sonra DEĞİŞTİRİLEMİYOR, o yüzden kaynak
  * burası. Env yalnız test/staging kaydırması için.
  *
- * ⚠️ Ürünler MAĞAZADA HENÜZ AÇILMADI — offering bulunamadığında sheet
- * "yüklenemedi" gösterir, akışın geri kalanı sağlam.
+ * Ürünler 2026-08-27'de mağazada açıldı. KALAN blokaj satın alma değil REDEEM:
+ * sandbox webhook doğrulaması yapılmadan `/Note/Redeem` kalıcı 402 (UT-6411)
+ * dönebilir (bkz. sözleşme §2). Offering yine de bulunamazsa sheet "yüklenemedi"
+ * gösterir, akışın geri kalanı sağlam.
  */
 export const NOTE_OFFERING_ID =
   process.env.EXPO_PUBLIC_REVENUECAT_NOTE_OFFERING_ID || "notes";
 
 /** ASC/RC ürün id kuralı: `superlike_5` / `_10` / `_15` / `_20`. */
 const SUPERLIKE_PRODUCT_RE = /^superlike/i;
-/** ASC/RC ürün id kuralı: `recovery_1` / `_3` / `_10`. */
-const RECOVERY_PRODUCT_RE = /^recovery/i;
-/** ASC/RC ürün id kuralı: `note_1` / `_3` / `_10`. */
+/** ASC/RC ürün id kuralı: `note_2` / `_4` / `_6` / `_8`. */
 const NOTE_PRODUCT_RE = /^note/i;
 
 export interface SuperlikeStoreTransaction {
@@ -469,9 +468,6 @@ async function getConsumableOffering(
 
 export const getSuperlikeOffering = () =>
   getConsumableOffering(SUPERLIKE_OFFERING_ID, "sl");
-
-export const getRecoveryOffering = () =>
-  getConsumableOffering(RECOVERY_OFFERING_ID, "rec");
 
 export const getNoteOffering = () =>
   getConsumableOffering(NOTE_OFFERING_ID, "note");
@@ -525,9 +521,6 @@ async function purchaseConsumablePack(
 export const purchaseSuperlikePack = (pkg: PurchasesPackage) =>
   purchaseConsumablePack(pkg, "sl");
 
-export const purchaseRecoveryPack = (pkg: PurchasesPackage) =>
-  purchaseConsumablePack(pkg, "rec");
-
 export const purchaseNotePack = (pkg: PurchasesPackage) =>
   purchaseConsumablePack(pkg, "note");
 
@@ -566,8 +559,8 @@ function latestTransactionId(
  * için zararsız ama gereksiz onlarca istek).
  *
  * Ürün deseni ZORUNLU bir ayraç: iki akışın kuyruğu ayrı olduğu için SuperLike
- * taraması bir `recovery_3` satın almasını kendi ucuna yollarsa backend onu
- * kalıcı hatayla ("ürün tanımsız") düşürür ve kredi kaybolur.
+ * taraması bir `note_4` satın almasını kendi ucuna yollarsa backend onu kalıcı
+ * hatayla ("ürün tanımsız") düşürür ve kredi kaybolur.
  */
 async function getRecentConsumableTransactions(
   productRe: RegExp,
@@ -612,10 +605,6 @@ async function getRecentConsumableTransactions(
 export const getRecentSuperlikeTransactions = (
   withinMs = 24 * 60 * 60 * 1000,
 ) => getRecentConsumableTransactions(SUPERLIKE_PRODUCT_RE, withinMs, "sl");
-
-export const getRecentRecoveryTransactions = (
-  withinMs = 24 * 60 * 60 * 1000,
-) => getRecentConsumableTransactions(RECOVERY_PRODUCT_RE, withinMs, "rec");
 
 export const getRecentNoteTransactions = (withinMs = 24 * 60 * 60 * 1000) =>
   getRecentConsumableTransactions(NOTE_PRODUCT_RE, withinMs, "note");

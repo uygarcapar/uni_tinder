@@ -22,16 +22,47 @@ import { colors, ink } from "@/shared/theme/colors";
  */
 
 const { width } = Dimensions.get("window");
-// Şeridin yatay gutter'ı (2×16) ve iki kart arasındaki boşluk (8) düşülüp
-// kalan ikiye bölünüyor — bkz. ShopCardsRow, sayılar orayla eşleşmeli.
+// Şeridin yatay gutter'ı (2×16) ve kartlar arasındaki boşluk (8) — bkz.
+// ShopCardsRow, sayılar orayla eşleşmeli.
 const ROW_GUTTER = 16;
 const ROW_GAP = 8;
-const CARD_WIDTH = (width - ROW_GUTTER * 2 - ROW_GAP) / 2;
 const CARD_RADIUS = 28;
-// Tek kartlık dönemdeki ölçüler — ikinci kart gelince küçültülmüştü, geri
-// alındı: kartın kendisi aynı kart olarak kalıyor, yalnız iki tane var.
-const BADGE = 52;
-const GLYPH = 32;
+// Rozet + simge bir tık küçüldü (52/32 → 44/26): kartı DARALTMAK için, serbest
+// kalan ~8px'i metin sütunu alıyor. Metin de bir ara yarım punto inmişti
+// (14/12 → 13/11) ama okunmuyordu, 14/13'e geri çıktı — daraltmayı artık
+// yalnız rozet taşıyor. Başlık ile alt satır aynı puntoda; ayrım ağırlık
+// (700/500) ve renk (%55 ink). Başlık iki satıra kırılabiliyor (numberOfLines:
+// 2) ve kart boyu sabit olduğu için "Superlike Al" dar kartta kırılırsa
+// rozetin dengesi bozulur — punto buradan yukarı çıkarsa kontrol edilmeli.
+const BADGE = 44;
+const GLYPH = 26;
+const CARD_PADDING = 10;
+// Kartın boyu DEĞİŞMEDİ (2×10 + 52 = 72): daralan kart, kısalan kart değil.
+// Rozet 44'e inince gövdede 8px boşluk kalıyor, rozet ortalanıyor.
+//
+// Boy yine de AÇIK yazılı, içerikten türetilmiyor: şeritteki üç kart farklı
+// içerikle (rozet + iki satır metin / tek satır wordmark + chevron) doluyor ve
+// içerik-güdümlü boy, dilde ya da bakiye metninde bir kırılma olduğu anda
+// kartlardan birini komşularından uzun yapıyordu. AnimatedPressable flex'i
+// geçirmediği için satırdaki `alignItems: stretch` de bunu düzeltemiyor
+// (bkz. yukarıdaki genişlik notu) — tek yol iki kabuğun aynı sabiti yazması.
+const CARD_HEIGHT = 72;
+
+/**
+ * Kart genişliği şeritteki kart SAYISINA bağlı, çünkü şerit iki farklı şey:
+ *
+ *   2 kart (abone değil) — kaydırma yok, kartlar şeridi tam dolduruyor.
+ *   3 kart (abone)       — kaydırılıyor; kartlar bir tık dar, böylece üçüncü
+ *                          kartın kenarı ekrandan sarkıp "devamı var" diyor.
+ *
+ * Tek bir dar genişlik iki durumda da kullanılsaydı, abone olmayan kullanıcının
+ * şeridinin sağında kaydırılamayan ölü bir boşluk kalırdı.
+ */
+export const SHOP_CARD_WIDTH_2UP = (width - ROW_GUTTER * 2 - ROW_GAP) / 2;
+export const SHOP_CARD_WIDTH_3UP = Math.round(SHOP_CARD_WIDTH_2UP * 0.96);
+export const SHOP_CARD_RADIUS = CARD_RADIUS;
+export const SHOP_CARD_PADDING = CARD_PADDING;
+export const SHOP_CARD_HEIGHT = CARD_HEIGHT;
 
 export default function ConsumableShopCard({
   title,
@@ -39,10 +70,13 @@ export default function ConsumableShopCard({
   onPress,
   renderGlyph,
   testID,
+  cardWidth,
 }: {
   title: string;
   subtitle: string;
   onPress: () => void;
+  /** Şeritten geliyor: kart sayısına göre 2UP ya da 3UP genişliği. */
+  cardWidth: number;
   /** Rozetin içindeki simge — ürünün kartta/sheet'te kullandığı glyph'in aynısı. */
   renderGlyph: (size: number, color: string) => ReactNode;
   testID?: string;
@@ -53,12 +87,13 @@ export default function ConsumableShopCard({
       onPress={onPress}
       testID={testID}
       style={{
-        width: CARD_WIDTH,
+        width: cardWidth,
+        height: CARD_HEIGHT,
         flexDirection: "row",
         alignItems: "center",
         gap: 8,
-        paddingHorizontal: 10,
-        paddingVertical: 10,
+        paddingHorizontal: CARD_PADDING,
+        paddingVertical: CARD_PADDING,
         borderRadius: CARD_RADIUS,
         borderCurve: "continuous",
         // Tamamlama accordion'larıyla aynı kabuk: 0.5px beyaz-%10 çizgi +
@@ -97,7 +132,7 @@ export default function ConsumableShopCard({
           numberOfLines={1}
           style={{
             color: ink(0.55),
-            fontSize: 12,
+            fontSize: 13,
             fontWeight: "500",
             marginTop: 2,
           }}
