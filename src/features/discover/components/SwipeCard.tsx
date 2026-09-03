@@ -7,6 +7,7 @@ import {
   TouchableOpacity,
   StyleSheet,
 } from "react-native";
+import type { StyleProp, ViewStyle } from "react-native";
 import { Image } from "expo-image";
 import Animated, {
   useAnimatedScrollHandler,
@@ -20,7 +21,11 @@ import Animated, {
   withTiming,
   Easing,
 } from "react-native-reanimated";
-import type { AnimatedRef, SharedValue } from "react-native-reanimated";
+import type {
+  AnimatedRef,
+  AnimatedStyle,
+  SharedValue,
+} from "react-native-reanimated";
 import { Gesture, GestureDetector } from "react-native-gesture-handler";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 import {
@@ -188,7 +193,6 @@ import uiBus, {
 } from "@/shared/services/uiBus";
 import {
   GraduationCap,
-  Heart,
   X,
   Check,
   Sparkles,
@@ -196,16 +200,12 @@ import {
   ArrowDown,
   PawPrint,
   MapPin,
-  BookOpen,
-  Building2,
-  CalendarDays,
   Languages,
-  Moon,
   Flag,
   Ban,
   Ruler,
   type LucideIcon,
-} from "lucide-react-native";
+} from "@/shared/icons";
 import { LinearGradient } from "expo-linear-gradient";
 import { BlurView } from "expo-blur";
 import MaskedView from "@react-native-masked-view/masked-view";
@@ -214,11 +214,11 @@ import { getColors } from "react-native-image-colors";
 import {
   colors as theme,
   gradients,
-  getIntentCardGradient,
   ink,
   isLight,
   scrimAt,
-  veil,
+  veilSurface,
+  withAlpha,
 } from "../../../shared/theme/colors";
 import { MAX_PROFILE_PROMPTS } from "@/shared/constants/limits";
 import {
@@ -230,8 +230,24 @@ import { buildMapboxStaticUrl } from "@/shared/constants/mapbox";
 import { lookupCityCoordinate } from "@/shared/constants/cityCoordinates";
 import HobbyIcon from "@/shared/components/HobbyIcon";
 import SFIcon, { type SFSymbol } from "@/shared/components/SFIcon";
-import PremiumFlame from "@/shared/components/PremiumFlame";
+import PremiumBadge from "@/shared/components/PremiumBadge";
 import SuperLikeGlyph from "@/shared/components/SuperLikeGlyph";
+import SuperLikeGlassButton, {
+  SUPER_LIKE_GLASS_GLYPH_SIZE,
+  SUPER_LIKE_GLASS_INSET,
+  SUPER_LIKE_GLASS_SIZE,
+  SUPER_LIKE_INSET,
+  SUPER_LIKE_SIZE,
+} from "./SuperLikeGlassButton";
+import CardStickyHeader, {
+  CARD_CHROME_TOP_DROP,
+  CARD_CORNER_RADIUS,
+  CARD_EXPANDED_CORNER_RADIUS,
+  CARD_HEADER_TITLE_BOTTOM,
+} from "./CardStickyHeader";
+import CardGlassBackdrop from "./CardGlassBackdrop";
+import CardSectionBox from "./CardSectionBox";
+import ActivityStatus from "./ActivityStatus";
 import NoteGlyph from "@/shared/components/NoteGlyph";
 import PillFlow from "@/shared/components/PillFlow";
 import PinchZoomable from "@/shared/components/PinchZoomable";
@@ -248,15 +264,149 @@ import type { PotentialMatch } from "@/shared/types";
 const { width, height } = Dimensions.get("window");
 const SCREEN_HEIGHT = height - 188; // Header height (90px) çıkarıldı
 
-// Super-like kalbi. Arkasındaki beyaz yuvarlak KALDIRILDI: kalp artık kapak
-// fotoğrafının içinde akıyor (sticky değil), yani hiçbir zaman panel zemininin
-// üstüne binmiyor — zemin yalnız o duruş için gerekliydi.
-const SUPER_LIKE_SIZE = 55;
+// Kapaktaki serbest kalp → sağ üstte ASILI KALAN cam buton geçişi
+// (bkz. SuperLikeGlassButton). İkisi aynı noktada duruyor ve çekme oranı
+// (cardExpandAnim) bu bantlarda ilerledikçe biri sönerken diğeri beliriyor:
+// jest yarıda bırakılırsa geçiş de yarıda kalır, parmakla geri sarılabilir.
+//
+// Bantlar KASTEN üst üste biniyor (0.30-0.45): kesişimde iki katman da yarı
+// saydam olduğu için tek bir şeklin kabuk değiştirmesi gibi okunuyor — arka
+// arkaya kaybolan/beliren iki ayrı öğe gibi değil.
+const HEART_MORPH_OUT_END = 0.45;
+const HEART_MORPH_IN_START = 0.3;
+const HEART_MORPH_IN_END = 0.8;
+// Serbest kalp sönerken cam butonun İÇİNDEKİ glyph ölçüsüne doğru küçülür →
+// iki şekil kesişme anında aynı büyüklükte oluyor.
+const HEART_MORPH_SCALE = SUPER_LIKE_GLASS_GLYPH_SIZE / SUPER_LIKE_SIZE;
 
-// İsmin yanındaki premium ateş ikonunun kutu boyutu (collapsed: text-4xl isim).
-// Expanded başlık daha küçük (text-3xl) → ikon da oranlı küçülür.
-const PREMIUM_FLAME_SIZE = 26;
-const PREMIUM_FLAME_SIZE_EXPANDED = 22;
+// Kapak fotoğrafındaki isim satırının puntosu. 36 → 32 → 28 küçüldü; rozet
+// ondan TÜRETİLDİĞİ için sayı burada duruyor, JSX'te değil.
+const CARD_NAME_FONT = 28;
+// Satır kutusu ~1.14em. Rozetin hizası bu kutuya göre hesaplanıyor (aşağıda).
+const CARD_NAME_LINE = 32;
+
+// Açılan paneldeki başlık — kapaktaki isim ondan bir tık KÜÇÜK (28 < 30),
+// eskiden tersiydi. Rozet burada da puntodan türüyor, o yüzden sayı sabitte.
+const PANEL_NAME_FONT = 30;
+const PANEL_NAME_LINE = 36;
+
+// Rozetin ölçüsü BU DOSYADA DEĞİL: `PremiumBadge` ismin puntosundan çıkarıyor
+// (bkz. premiumBadgeSize). Buradaki iki punto sabiti onun tek girdisi.
+
+// Kapak fotoğrafı ile profil panelinin arasındaki boşluk. Panelin marginTop'u
+// ile sticky başlığın eşik hesabı AYNI sayıyı kullanmak zorunda: panelin
+// scroll içindeki y'si = kapak yüksekliği + bu boşluk. İkisi ayrışırsa şerit
+// isimden önce/sonra açılır.
+//
+// Ölçü artık NEGATİF: panel kapağın dibine değmekle kalmıyor, altına giriyor.
+// 10 → 4 → 0 adımlarının hiçbiri göze yetmedi çünkü kenarlarda iki yuvarlak
+// köşenin açtığı hilal mesafe 0 olsa bile duruyor; panel yukarı binince o hilal
+// de panelin altında kalıyor. Panel kapaktan SONRA çizildiği için üstte kalır.
+// Sınır kapağın alt köşesinin yarıçapı (COVER_PHOTO_RADIUS = 40): oraya kadar
+// panel yalnız köşe kıvrımlarının açtığı boşluğu yiyor, ondan sonrası
+// fotoğrafın DÜZ kenarını yemeye başlar.
+//
+// -28 → -36 → -40 → -56 diye yaklaştırıldı; SINIR BİLEREK AŞILDI.
+//
+// 40'a kadar panel yalnız köşe kıvrımlarının açtığı hilali yiyordu, yani
+// bedava. Son 16px ise fotoğrafın DÜZ alt kenarını kırpıyor: panel kapağa
+// "bitişik" görünsün diye kapağın ~16px'i feda edildi. Bu bir takas, kaza
+// değil — geri almak istersen -40 bedelsiz durakti.
+//
+// Aşağı doğru serbest ama her piksel kapaktan gider; yukarı doğru -40'ın
+// berisine dönmenin bir anlamı yok, orada hilal geri açılır.
+const PROFILE_PANEL_GAP = -56;
+
+/**
+ * Panelin kendi üst dolgusu — yani ismin (ve altındaki her şeyin) kapağa olan
+ * mesafesi. 32 → 24 → 16 → 8: içerik adım adım kapağa yaklaştırıldı.
+ *
+ * İSMİN ALT MARJIYLA (28) EŞİT DEĞİL, BİLEREK. Boşluklar harflerden değil satır
+ * kutusundan ölçülüyor; 30px bold ismin kutusunda harflerin ÜSTÜNDE ~8px
+ * leading var ve o pay yalnız ÜSTTEKİ boşluğa biniyor — 16/16 yazıldığında üst
+ * gözle belirgin şekilde genişti. Optik karşılığı: 8 + ~8 ≈ 16 üstte, 28 altta
+ * (isim başlık olduğu için altına bir tık fazla nefes bırakıldı).
+ * Bkz. isim bloğunun `marginBottom` notu — biri değişecekse ikisi birlikte.
+ *
+ * NE ZAMAN BU, NE ZAMAN PROFILE_PANEL_GAP — ikisi farklı şeyi oynatıyor:
+ *   • PROFILE_PANEL_GAP → panelin KENDİ ÜST KENARINI. Her piksel kapak
+ *     fotoğrafından gider (bkz. oradaki not).
+ *   • Bu sabit → panelin İÇİNİ. Kenar yerinde kalır, içerik yukarı gelir;
+ *     kapaktan bir şey yemez.
+ *
+ * TARİHÇE — burada bir dönem "oynatma" yasağı vardı: bir ara aynı sayı 16'ya
+ * indirilmiş ve "yanlış kaldıraç, panelin kenarını değil içini çekiyor" diye
+ * geri alınmıştı. O yasağın DAYANAĞI KALKTI: panelin görünür bir kenarı (ve
+ * tülü) artık yok, Keşif'te panel şeffaf bir kap — kullanıcının gördüğü tek şey
+ * içerik. Yani "içini çekmek" burada tam olarak istenen şey.
+ *
+ * ── SINIR: KAPAĞIN ALT BANDI ──────────────────────────────────────────────
+ * İsim bloğunun tepesi, fotoğrafın alt kenarından `-PROFILE_PANEL_GAP -
+ * PANEL_TOP_PAD` = 56 - 8 = 48px yukarıda; yani kapağın son 48px'inin ÜSTÜNE
+ * biniyor (panel kapaktan SONRA çizildiği için örter). O bantta iki katman var:
+ *
+ *   chevron  → `bottom: 30`, 28px kutu  ⇒ 30-58px bandı, YATAYDA ORTALI
+ *   not kutusu → `bottom: 74`           ⇒ bu sayı 74'ün altında kaldığı sürece
+ *                                         dokunulmuyor
+ *
+ * Yani çakışma DİKEYDE var ama YATAYDA yok: isim solda başlıyor (panelin px-4'ü
+ * + bloğun ml-4'ü ≈ 36px), ok ekranın ortasında. Bedeli UZUN İSİMLERDE ödeniyor
+ * — isim + premium ateşi + "burada yeni" rozeti ortaya kadar uzarsa okun
+ * üstüne biner. Buradan aşağı inmeden ÖNCE chevron'u expanded'ken söndür
+ * (rotate yerine/yanında opacity), yoksa sınır kısa isimlerde de tutmaz.
+ *
+ * className'de DEĞİL burada: PREVIEW_HEADER_SPACE bu sayıyı okumak zorunda
+ * (aşağıdaki not), Tailwind sınıfından okunamaz. Türetilmiş olduğu için bu
+ * sayıyı küçültmek ÖNİZLEMEYİ ETKİLEMEZ: oradaki pay aynı miktarda büyür,
+ * toplam sabit kalır.
+ */
+const PANEL_TOP_PAD = 8;
+
+/**
+ * Panelin kendi ALT dolgusu — içeriğin panelin dibiyle arasındaki nefes.
+ *
+ * `p-6`nın 24'ünün yerini alıyor (inline style className'i ezer), tıpkı üst
+ * dolgunun yaptığı gibi ve aynı sebeple: sayı burada görünür olsun, Tailwind
+ * sınıfının içinde saklı kalmasın.
+ *
+ * ACTIONS_ROW_PADDING_BOTTOM / PANEL_TAIL_PADDING_BOTTOM İLE KARIŞTIRMA. Onlar
+ * panelin İÇİNDEKİ son bloğun kendi payı (biri yüzen tab bar'ın örtmemesi,
+ * diğeri rampanın kenarda kesilmemesi için). Bu ise panelin KABININ dolgusu,
+ * yani içerideki her şeyin altında kalan ortak pay.
+ *
+ * 48 → 80: expanded panelde içerik kartın dibine fazla yakın bitiyordu. Burayı
+ * büyütmek üç kuyruk varyantının (aksiyon satırı · moderasyon satırı · boş
+ * kuyruk) HEPSİNE aynı payı ekler; alt rampayı kaydırmaz (rampa `actionsTop`a
+ * çakılı, altındaki düz theme.bg zemin uzar) ve panelin kenar/tül katmanları
+ * kabı takip ettiği için onlar da birlikte uzar.
+ */
+const PANEL_BOTTOM_PAD = 80;
+
+
+
+
+/**
+ * Önizlemede (Likes / Chat / Profil) içeriğin sticky şeridin ALTINDAN
+ * başlaması için panelin kendi dolgusuna eklenen pay.
+ *
+ * Panelin İÇİNDE duruyor, kartın zemininde (theme.bg) açılan bir boşluk DEĞİL:
+ * önce öyle denendi ve açık modda gri panelin üstünde beyaz bir şerit
+ * bırakıyordu — orada kartın tepesinde fotoğraf yok, o zemini örtecek bir şey
+ * de yok.
+ *
+ * Ölçü: şeridin başlık satırının dibi + şeridin durum çubuğundan kaçmak için
+ * aldığı pay (CARD_CHROME_TOP_DROP — sheet artık ekranın tepesine dayanıyor,
+ * bkz. PreviewModal/LikerSwipeModal `topInset`) + 8 nefes − panelin kendi üst
+ * dolgusu (PANEL_TOP_PAD). Daha küçüğü ilk bloğu camın altında bırakır, büyüğü
+ * tepede boş şerit açar.
+ *
+ * TÜRETİLMİŞ, sabit değil: şeridin ölçüsü cam butonun çapından, dolgu da kendi
+ * sabitinden geliyor; ikisi de değişebiliyor ve elle yazılmış bir sayı sessizce
+ * yanlış kalıyordu. Dolgu küçülünce bu pay aynı oranda büyüyor → önizlemede
+ * şeridin altındaki nefes DEĞİŞMİYOR (toplam sabit).
+ */
+const PREVIEW_HEADER_SPACE =
+  CARD_HEADER_TITLE_BOTTOM + CARD_CHROME_TOP_DROP + 8 - PANEL_TOP_PAD;
 
 // Expanded panelin alt ucu: zemin surface3'ten sayfa zeminine (theme.bg —
 // açık modda beyaz) çözülür. Rampa TAM ikonların başladığı çizgide biter,
@@ -272,6 +422,28 @@ const PREMIUM_FLAME_SIZE_EXPANDED = 22;
 const ACTIONS_ROW_PADDING_TOP = 40;
 const ACTIONS_FADE_HEIGHT = 120;
 const ACTIONS_FADE_STOPS = 28;
+
+/**
+ * Aksiyon/moderasyon satırının ALTINDAKİ pay — expanded içeriğin son boşluğu,
+ * yani scroll dibe vurduğunda ikonlarla kartın kenarı arasında kalan alan.
+ * Cihazın alt güvenli alanı (`insets.bottom`) buna RENDER SIRASINDA ekleniyor.
+ *
+ * İki parçası var:
+ *   66 — yüzen tab bar'ın kapladığı yükseklik. Bu pay olmadan son satır barın
+ *        ARKASINDA kalıyor; nefes değil, örtülmeme payı.
+ *   80 — asıl nefes. Eskiden 40'tı; içerik kartın dibinde bitiveriyordu.
+ */
+const ACTIONS_ROW_PADDING_BOTTOM = 80 + 66;
+
+/**
+ * Alt satırın hiç çizilmediği hâlde (bkz. showPanelTail) panelin dibindeki pay.
+ * Aksiyon/moderasyon satırlarının payından (ACTIONS_ROW_PADDING_BOTTOM) KISA:
+ * oradaki boşluk 75px'lik butonların altında okunuyor, burada altında hiçbir şey
+ * yok — aynı sayı kartın dibinde bomboş bir şerit bırakıyordu.
+ * Sıfır da değil: rampanın bittiği yerden sonra düz zeminin görünebileceği bir
+ * pay kalmalı, yoksa geçiş tam panelin kenarında kesiliyor.
+ */
+const PANEL_TAIL_PADDING_BOTTOM = 28;
 
 // Fotoğrafı olmayan profilde görselin yerini tutan zemin. Modla DÖNER: koyu
 // modun tonlarını açık temaya taşımak kartı beyaz ekranın ortasında siyah bir
@@ -299,6 +471,10 @@ const HEIGHT_MAX_CM = 220;
 const SECTION_PHOTO_ASPECT = 4 / 5;
 // Bölüm kutularının yarıçapı ile aynı (bkz. hobiler/yaşam tarzı/bio kutuları).
 const SECTION_PHOTO_RADIUS = 40;
+// Kapak fotoğrafının yarıçapı. Expand'de DEĞİŞMİYOR (kart-benzeri görünüm) —
+// tek sayı: clipping kutusu, skeleton ve pinch kopyası aynı yerden okuyor.
+const COVER_PHOTO_RADIUS = 40;
+
 
 // "ilişki" ekini alan ilişki niyetleri (bkz. relationshipIntentLabel).
 // Anahtar DAİMA enumName: `display` Accept-Language'e göre değişiyor.
@@ -322,27 +498,106 @@ const INTENT_SUFFIX_WORDS = ["ilişki", "relationship"];
 // ve yuvarlak köşeleriyle. Yeni bölüm eklerken çerçeve EKLEME: ritim borderless.
 // Konum satırındaki mesafe pilinin ("3 km uzakta") dolgu + yazı rengi.
 //
-// KOYUDA moda ZIT: beyaz dolgu (ink) + siyah yazı (veil) — bölümün koyu
-// zemininde pil kabartma gibi öne çıkıyor.
-// AÇIKTA ARTIK ZIT DEĞİL: siyah dolgu gri yüzeye (surface4) çevrildi, o yüzden
-// yazı da veil(1) (beyaz) OLAMAZ — gri üstünde okunmaz; theme.text'e geçiyor.
-// İkisi bu yüzden TEK yerde: dolgu ile yazı ayrı ayrı değiştirilirse beyaz
-// üstüne beyaz kalma tuzağı geri gelir.
+// ARTIK MODA ZIT DEĞİL: iki modda da GRİ yüzey + normal yazı
+// (theme.text). Önce koyuda beyaz dolgu + siyah yazı vardı (ink/veil) — pil
+// bölümün koyu zemininde fazla parlıyor, satırdaki asıl bilgiyi (şehir adı)
+// bastırıyordu. Sonra açık mod griye çevrildi, koyusu beyaz kaldı; ikisi tek
+// dile indi.
 //
+// Dolgu ile yazı TEK yerde: ayrı ayrı değiştirilirse beyaz üstüne beyaz (veya
+// gri üstüne beyaz) kalma tuzağı geri gelir. Tokenlar zaten modla dönüyor —
+// ink() ve theme.text karşıtına geçiyor.
+//
+// Zemin `pillFill()`ten: açık modda kartın bütün dolgulu pilleri fotoğraftaki
+// not diskiyle aynı beyaza yakın rengi taşıyor. Koyu mod bu pile ÖZEL kalıyor
+// (surface4) — oradaki değerler değişmedi.
+//
+/**
+ * Kartın DOLGULU pillerinin zemini — ilgi alanları · yaşam tarzı · sınıf ·
+ * mesafe, dördü de buradan.
+ *
+ * AÇIK MODDA hepsi fotoğrafın sağ altındaki not diskiyle AYNI renk:
+ * `veilSurface(NOTE_DISC_FILL_ALPHA)`, yani beyaza yakın. Kartta iki farklı
+ * "açık yüzey" dili istemiyoruz; sayı da tek yerde (diskin kendi dolgusuyla
+ * ortak) duruyor.
+ *
+ * KOYU MOD çağıranın elinde: `darkFill` olduğu gibi dönüyor. Sebebi paletin
+ * sırası — koyuda yükseklik AÇILMAK demek, yani açık modun token'ını oraya
+ * taşımak pili karartırdı; ayrıca koyudaki değerler zaten yerinde.
+ *
+ * RENDER SIRASINDA ÇAĞIR (colors.ts mutasyon sözleşmesi).
+ */
+function pillFill(darkFill: string): string {
+  return isLight() ? veilSurface(NOTE_DISC_FILL_ALPHA) : darkFill;
+}
+
 // RENDER SIRASINDA ÇAĞIR (colors.ts mutasyon sözleşmesi).
 function distancePillColors() {
-  return isLight()
-    ? {
-        background: theme.surface4,
-        border: ink(0.06),
-        text: theme.text,
-      }
-    : {
-        background: ink(1),
-        border: veil(0.1),
-        text: veil(1),
-      };
+  return {
+    background: pillFill(theme.surface4),
+    border: ink(0.06),
+    text: theme.text,
+  };
 }
+
+/**
+ * ── KARTTA ARTIK HİÇ İNCE KENAR ÇİZGİSİ YOK ───────────────────────────────
+ *
+ * Burada iki yardımcı vardı — `cardEdgeColor()` (modla dönen ton: koyuda
+ * `hairlineMuted`, açıkta `hairlineStrong`; bir alt kademe fotoğrafın üstünde
+ * kayboluyor, aynı kademe açık modda kartı siyah kalemle çizilmiş gösteriyordu)
+ * ve `CARD_EDGE_WIDTH = StyleSheet.hairlineWidth` (0.5pt DEĞİL: 3x ekranda 1.5
+ * fiziksel piksel ediyor ve yarım pikselin yuvarlanması kenarın ondalık
+ * koordinatına bağlı olduğu için sol/sağ kenarlar farklı kalınlıkta çıkıyordu).
+ *
+ * Önce kapağın kenarı kaldırıldı (fotoğraf zaten kendi kenarıyla sınırlı,
+ * üstüne çizgi koymak kartı çerçeveletiyordu), sonra panelinki — o çizgi paneli
+ * blur'lu zeminin üstüne yapıştırılmış AYRI BİR LEVHA gibi gösteriyordu
+ * (bkz. aşağıda panelin tülünün kaldırıldığı yer). İkisi de gidince
+ * yardımcıların çağıranı kalmadı.
+ *
+ * Kartta yeniden bir hairline'a ihtiyaç olursa yukarıdaki iki gerekçeyi
+ * (modla dönen kademe + hairlineWidth) tekrar üretme, git geçmişinden al.
+ */
+
+/**
+ * Cam yolunda profil panelinin KENDİ yüzeyi — düz gri `surface3`ün çok hafif
+ * hâli.
+ *
+ * Tam şeffaf denendi ve GERİ ALINDI: panelin yuvarlak üst köşeleri ve kapak
+ * fotoğrafıyla arasındaki boşluk (PROFILE_PANEL_GAP) hiç görünmüyordu — sabit
+ * zemin ikisinin de arkasından kesintisiz aktığı için açık kart, alttan gelen
+ * ayrı bir sayfa değil tek parça bir yüzey gibi okunuyordu.
+ *
+ * Alfa BİLEREK düşük: panelin kenarını göstermeye yetecek kadar, üstündeki cam
+ * kutuların kırılmasını öldürmeyecek kadar az (bkz. CardSectionBox — camın
+ * altına konan opak katman efekti siliyor). Kontrast isteniyorsa bu sayı
+ * oynatılır, panelin altına ikinci bir katman EKLENMEZ.
+ *
+ * RENDER SIRASINDA ÇAĞIR (colors.ts mutasyon sözleşmesi).
+ */
+function panelVeil(): string {
+  return withAlpha(theme.bg, isLight() ? 0.22 : 0.18);
+}
+
+/**
+ * Panelin tülünün, DİBİNE doğru söndüğü bandın boyu (px).
+ *
+ * Panel içerik bitince yuvarlak alt köşeleriyle sert bir şekilde kesiliyordu:
+ * alt uçta bounce edince o kenar ve altındaki sabit zemin (CardGlassBackdrop)
+ * yan yana duruyor, panel zeminin üstüne yapıştırılmış ayrı bir levha gibi
+ * görünüyordu. Rampa o dikişi eritiyor — tül aşağı doğru zemine karışıyor.
+ *
+ * Rampa ZEMİNDE DEĞİL panelde: zemin sabit ve kartı baştan sona kaplamak
+ * zorunda (bkz. CardGlassBackdrop'taki not). Sönen şey panelin kendi tülü.
+ *
+ * Sabit px, yüzde DEĞİL: panelin yüksekliği içerikle birlikte metrelerce
+ * olabiliyor, yüzde orada rampayı ekranlar boyu uzatırdı.
+ */
+const PANEL_FADE_HEIGHT = 160;
+
+/** Rampada bant oluşmasın diye ara durak sayısı (eski alt rampayla aynı reçete). */
+const PANEL_FADE_STOPS = 24;
 
 // Not butonu — fotoğrafın İÇİNDE, alt kenarına yaslı konuşma balonu işareti.
 //
@@ -363,9 +618,12 @@ function distancePillColors() {
 // binmesin diye tek siluete indi.
 //
 // ZEMİN: yalnız FOTOĞRAF üstünde, işaretin arkasına disk konuyor
-// (NOTE_DISC_SIZE). Rengi `veil` — açık modda BEYAZ, koyu modda SİYAH, yani
-// işaretin (`text`) tam tersi: fotoğrafın altında ne varsa siluetin kenarı her
-// zeminde tutuyor. Prompt kutusundaki kutuda disk YOK — orası fotoğraf değil,
+// (NOTE_DISC_SIZE). Rengi `veilSurface` — açık modda BEYAZ, koyu modda bölüm
+// kutularıyla aynı aileden bir yüzey grisi, yani işaretin (`text`) karşıtı:
+// fotoğrafın altında ne varsa siluetin kenarı her zeminde tutuyor. Koyuda
+// `veil` (tam siyah) DEĞİL, bilerek: neredeyse opak siyah disk fotoğrafta
+// kesilmiş bir delik gibi duruyordu, yüzey grisi ise panelin kutularıyla aynı
+// dili konuşuyor. Prompt kutusundaki kutuda disk YOK — orası fotoğraf değil,
 // işaret kutunun düz zemininde zaten okunuyor (siyah disk denendi, GERİ
 // ALINDI).
 //
@@ -386,6 +644,10 @@ const NOTE_BOX_SIZE = 52;
  *   FOTOĞRAF — arkasında disk var (NOTE_DISC_SIZE), okunurluğu o taşıyor →
  *              siluet daha küçük durabiliyor.
  *   PROMPT   — disk yok, işaret kutunun zemininde tek başına → bir tık büyük.
+ *
+ * Prompt ölçüsü butonun çizilmediği girişlerdeki boşluğu da besliyor
+ * (bkz. NOTE_BOX_PROMPT_PULL kullanımı) — kutunun altı iki durumda da aynı
+ * kalsın diye oradan türetiliyor, elle ikinci bir sayı yazma.
  */
 const NOTE_GLYPH_SIZE_PHOTO = 30;
 const NOTE_GLYPH_SIZE_PROMPT = 40;
@@ -397,6 +659,15 @@ const NOTE_GLYPH_SIZE_PROMPT = 40;
  * üstünde: balon diskin içinde nefes alsın, disk de gerçek bir kap gibi okunsun.
  */
 const NOTE_DISC_SIZE = 50;
+/**
+ * Not diskinin dolgusunun alfası. Tam opak DEĞİL: altındaki fotoğraf bir tık
+ * sızsın, disk yapıştırılmış bir pul gibi durmasın.
+ *
+ * Kartın PİLLERİ de (ilgi alanları · yaşam tarzı · sınıf · mesafe) açık modda
+ * bu değerden besleniyor (bkz. pillFill) — ikisi aynı yüzey dili, sayı tek
+ * yerde dursun.
+ */
+const NOTE_DISC_FILL_ALPHA = 0.92;
 /** Fotoğrafın kenarından içeri — 40'lık köşe yarıçapının teğetini geçecek kadar. */
 const NOTE_BOX_INSET = 14;
 /**
@@ -416,12 +687,31 @@ const NOTE_BOX_COVER_INSET = NOTE_BOX_INSET + 16;
  */
 const NOTE_BOX_PROMPT_PULL = 8;
 
+/**
+ * Prompt cevabının satır yüksekliği. Metnin kendi metrikleri PromptsEditor'deki
+ * cevap alanıyla BİREBİR aynı olmak zorunda (25 / 600 / 32) — kullanıcı
+ * yazarken gördüğü boyutla kartta gördüğü ayrışmasın. Sabit, çünkü baştaki
+ * tırnağın dikey hizası da bundan hesaplanıyor.
+ */
+const PROMPT_ANSWER_LINE_HEIGHT = 32;
+
+/**
+ * Cevabın başındaki açılış tırnağı (`quote.opening`). 18'di: 25 puntoluk,
+ * 600 ağırlıklı cevabın yanında dipnot gibi kalıyordu — tırnak burada
+ * dekorasyon değil, cevabın "alıntı" olduğunu söyleyen işaret.
+ *
+ * Tavan satır yüksekliği (32): daha büyüğü ilk satırın kutusunu aşar ve ikon
+ * metinle aynı hatta oturmaz. Dikey hiza türetiliyor, elle yazılmıyor —
+ * (satır − ikon) / 2.
+ */
+const PROMPT_QUOTE_SIZE = 26;
+
 function NoteBox({
   onPress,
   onPhoto = false,
 }: {
   onPress?: () => void;
-  /** Kutu bir FOTOĞRAFIN üstünde mi — açık moddaki beyaz diski o belirliyor. */
+  /** Kutu bir FOTOĞRAFIN üstünde mi — arkasındaki diski o belirliyor. */
   onPhoto?: boolean;
 }) {
   const { t } = useTranslation();
@@ -471,33 +761,53 @@ function NoteBox({
           pressStyle,
         ]}
       >
-        {/* Disk — glyph'in ARKASINDA, mutlak ve ortalı (akışa girseydi kabı
-            büyütürdü). Yalnız fotoğraf üstünde, bkz. ZEMİN notu. Tam opak
-            değil: altındaki fotoğraf bir tık sızsın, disk yapıştırılmış bir pul
-            gibi durmasın. */}
-        {onPhoto && (
-          <View
-            pointerEvents="none"
-            style={{
-              position: "absolute",
-              width: NOTE_DISC_SIZE,
-              height: NOTE_DISC_SIZE,
-              borderRadius: 999,
-              backgroundColor: veil(0.92),
-            }}
-          />
-        )}
-        {/* İşaretin tamamı bu: metin de kalan hak sayısı da YOK. Glyph 52'lik
-            dokunma kabının içinde ortalı, ondan küçük (zemine göre iki ölçü,
+        {/* İşaretin tamamı bu: metin de kalan hak sayısı da YOK. Glyph dokunma
+            kabının içinde ortalı, ondan küçük (zemine göre iki ölçü,
             bkz. NOTE_GLYPH_SIZE_*) — kendi 2/24'lük optik payı da cabası.
             Kontur kapak kalbindeki ile aynı ince açık hairline: fotoğrafın
-            parlak yerlerinde siluetin kenarını tutuyor. */}
-        <NoteGlyph
-          size={onPhoto ? NOTE_GLYPH_SIZE_PHOTO : NOTE_GLYPH_SIZE_PROMPT}
-          color={theme.text}
-          stroke={theme.swipeHeartBorder}
-          strokeWidth={0.1}
-        />
+            parlak yerlerinde siluetin kenarını tutuyor.
+
+            FOTOĞRAF ÜSTÜNDE glyph'in arkasında disk var (bkz. ZEMİN notu):
+            düz `veilSurface(0.92)` dolgusu. Disk artık mutlak konumlu bir
+            KARDEŞ değil, glyph'i SARAN kap — `GlassView` ölçüsünü kendi
+            içeriğinden alamayan boş bir overlay olarak sessizce efektsiz
+            kalıyor (bkz. CardSectionBox). Ölçü yine sabit (52'lik dokunma kabı
+            büyümesin), sadece kap akışın içinde. */}
+        {onPhoto ? (
+          <CardSectionBox
+            // CAM DEĞİL ve bu kalıcı karar: disk fotoğrafın üstünde duruyor,
+            // camın kırdığı şey de altındaki fotoğrafın kendisi oluyordu —
+            // işaret zeminden ayrışmıyordu. Bir dönem bölüm fotoğraflarında
+            // cam, kapakta düz dolgu vardı; ikisi artık AYNI yüzey.
+            glass={false}
+            radius={999}
+            style={{
+              width: NOTE_DISC_SIZE,
+              height: NOTE_DISC_SIZE,
+              alignItems: "center",
+              justifyContent: "center",
+            }}
+            // Cam yokken eski dolgu (bkz. NOTE_DISC_FILL_ALPHA — aynı sayı
+            // kartın pillerini de besliyor).
+            fallbackStyle={{
+              backgroundColor: veilSurface(NOTE_DISC_FILL_ALPHA),
+            }}
+          >
+            <NoteGlyph
+              size={NOTE_GLYPH_SIZE_PHOTO}
+              color={theme.text}
+              stroke={theme.swipeHeartBorder}
+              strokeWidth={0.1}
+            />
+          </CardSectionBox>
+        ) : (
+          <NoteGlyph
+            size={NOTE_GLYPH_SIZE_PROMPT}
+            color={theme.text}
+            stroke={theme.swipeHeartBorder}
+            strokeWidth={0.1}
+          />
+        )}
       </Animated.View>
     </TouchableOpacity>
   );
@@ -515,14 +825,20 @@ function SectionPhoto({
   uri,
   onNotePress,
   hideNote = false,
-  zoomable = true,
+  zoomStyle,
 }: {
   uri: string;
   onNotePress?: () => void;
   /** Önizleme (Profil / Likes / Chat kartı): fotoğrafın altında not kutusu yok. */
   hideNote?: boolean;
-  /** Modal içindeki kartlarda kapalı — büyütme katmanı modal'ın ALTINDA kalıyor. */
-  zoomable?: boolean;
+  /**
+   * Top'a çarpma zoom'unun animated style'ı (bkz. photoZoomStyle). YALNIZ
+   * önizlemedeki ANA fotoğrafa veriliyor — Discover'da aynı geri bildirimi tam
+   * ekran kapak taşıyor, önizlemede kapak çizilmediği için onun yerine akışın
+   * ilk fotoğrafı büyüyor. Kutunun `overflow: hidden` + sabit yarıçapı
+   * değişmediği için foto kutunun içinde yakınlaşır, blok kıpırdamaz.
+   */
+  zoomStyle?: StyleProp<AnimatedStyle<ViewStyle>>;
 }) {
   // Kutu fotoğrafın İÇİNDE (mutlak konumlu) → blok yüksekliğini ve alt
   // boşluğunu değiştirmiyor; `overflow: hidden` sayesinde yuvarlak köşenin
@@ -542,26 +858,32 @@ function SectionPhoto({
         },
       ]}
     >
-      {/* İki parmakla büyütme — görsel kök katmanda (PinchZoomOverlay)
-          çiziliyor, bu kutunun `overflow: hidden`'ı kırpmasın diye. */}
-      <PinchZoomable
-        uri={uri}
-        radius={SECTION_PHOTO_RADIUS}
-        enabled={zoomable}
-        style={{ width: "100%", height: "100%" }}
-      >
-        <Image
-          source={{ uri }}
+      {/* Zoom katmanı — top'a çarpma geri bildirimi (bkz. zoomStyle).
+          `zoomStyle` verilmeyen fotoğraflarda bu View kimliksiz bir kap:
+          transform'suz kaldığı için ek bir maliyeti yok. */}
+      <Animated.View style={[{ width: "100%", height: "100%" }, zoomStyle]}>
+        {/* İki parmakla büyütme — görsel kök katmanda (PinchZoomOverlay)
+            çiziliyor, bu kutunun `overflow: hidden`'ı kırpmasın diye.
+            Önizlemede de AÇIK: katman artık sheet'lerin üstünde (bkz. App.tsx),
+            eskiden kapalıydı çünkü kopya modalın altında kalıyordu. */}
+        <PinchZoomable
+          uri={uri}
+          radius={SECTION_PHOTO_RADIUS}
           style={{ width: "100%", height: "100%" }}
-          contentFit="cover"
-          cachePolicy="memory-disk"
-          recyclingKey={uri}
-          transition={150}
-          onLoadEnd={() => {
-            loadedPhotoUris.add(uri);
-          }}
-        />
-      </PinchZoomable>
+        >
+          <Image
+            source={{ uri }}
+            style={{ width: "100%", height: "100%" }}
+            contentFit="cover"
+            cachePolicy="memory-disk"
+            recyclingKey={uri}
+            transition={150}
+            onLoadEnd={() => {
+              loadedPhotoUris.add(uri);
+            }}
+          />
+        </PinchZoomable>
+      </Animated.View>
       {showNote && (
         <View
           style={{
@@ -840,44 +1162,32 @@ function SkeletonBox({ w, h, borderRadius = 8 }: any) {
 
 // "Bugün aktif" satırı — isim bloğunun ÜSTÜNDE, yeşil.
 //
-// DİL UYARISI (backend sözleşmesi): `isOnlineToday` 24 SAATLİK penceredir,
-// anlık presence değil. Burada "Çevrimiçi" YAZMA — kullanıcı mesaj atıp anında
-// yanıt bekler. Anlık online yalnız sohbette var (partnerIsOnline).
-//
-// Foto üstünde de açılmış kartın chrome zemininde de BİREBİR aynı çiziliyor:
-// 9px nokta + sabit `success` yeşili. Önceden chrome tarafı 8px nokta +
-// `successText` (açık modda koyulaşan ton) kullanıyordu; satır expand
-// animasyonu boyunca yer değiştirirken renk/boy atlaması göze çarpıyordu.
-// Açık modda `successText`in ekstra kontrastı bilinçli olarak tek görünüme
-// feda edildi — değiştirmeden önce bunu bil.
-const ACTIVITY_DOT_SIZE = 9;
-
-function ActivityStatus({ label }: { label: string }) {
-  return (
-    <View style={{ flexDirection: "row", alignItems: "center", gap: 6 }}>
-      {/* Nokta sakin: parlama/nabız YOK — o "şu an bağlı" sinyalidir. */}
-      <View
-        style={{
-          width: ACTIVITY_DOT_SIZE,
-          height: ACTIVITY_DOT_SIZE,
-          borderRadius: ACTIVITY_DOT_SIZE / 2,
-          backgroundColor: theme.success,
-        }}
-      />
-      <Text className="font-[600] text-[13px]" style={{ color: theme.success }}>
-        {label}
-      </Text>
-    </View>
-  );
-}
+// Bileşenin kendisi ./ActivityStatus'a taşındı: sticky şerit de aynı satırı
+// çiziyor ve oradan SwipeCard'ı import etmek döngü olurdu (bkz. o dosyanın
+// başındaki not).
 
 // "Burada yeni" rozeti — ortak nokta pill'leriyle aynı kapsül (999 +
-// continuous), aynı 0.5 hairline kenar, aynı px-4/py-3 iç boşluk, aynı
-// 13px/600 yazı; ortak nokta sırasının EN SOLUNDA, ilk item olarak çiziliyor.
+// continuous), aynı 0.5 hairline kenar, aynı px 12 / py 10 iç boşluk, aynı
+// 14px/600 yazı; ortak nokta sırasının EN SOLUNDA, ilk item olarak çiziliyor.
+// Ölçüler onlarla birlikte hareket etmek ZORUNDA (yan yana duruyorlar) ve üçü
+// de expanded paneldeki yaşam tarzı pillerinin ölçüsünü izliyor.
 // Tek AYRIŞTIĞI yer zemin: ortak noktalar yarı saydam (surfaceTranslucent),
 // bu rozet OPAK `bg` — açık modda beyaz, koyu modda uygulama zemini
 // (#121212). Sıradan öne çıkması için bilinçli.
-function NewMemberBadge({ label }: { label: string }) {
+//
+// Sticky şerittekiyle KARIŞTIRMA: orası litPlus dolgulu ayrı bir pil
+// (bkz. CardStickyHeader) — bu nötr rozet yalnız Keşif kartında kullanılıyor.
+//
+// `compact`: yalnız isim satırındaki kullanım için. Orada rozet pill sırasında
+// değil, ismin SAĞINDA tek başına duruyor — ortak noktalarla hizalanma derdi
+// yok, py 10 orada gereksiz şişkin duruyordu.
+function NewMemberBadge({
+  label,
+  compact = false,
+}: {
+  label: string;
+  compact?: boolean;
+}) {
   return (
     <View
       style={{
@@ -889,8 +1199,10 @@ function NewMemberBadge({ label }: { label: string }) {
         borderColor: theme.hairline,
       }}
     >
-      <View style={{ paddingHorizontal: 16, paddingVertical: 12 }}>
-        <Text className="font-[600] text-[13px]" style={{ color: theme.text }}>
+      <View
+        style={{ paddingHorizontal: 12, paddingVertical: compact ? 5 : 10 }}
+      >
+        <Text className="font-[600] text-[14px]" style={{ color: theme.text }}>
           {label}
         </Text>
       </View>
@@ -902,22 +1214,41 @@ function NewMemberBadge({ label }: { label: string }) {
 // ile yapılıyor: dil değişse de sabit kalan PascalCase anahtar o (`label`
 // lokalize metin, ona GÜVENME). İkizi `kindName` 2026-08-22'de kaldırıldı;
 // enum'lar wire'da her zaman string basılıyor, numaraya dönme riski yok.
-const THING_IN_COMMON_ICONS: Record<string, { sf: SFSymbol; lucide: LucideIcon }> =
-  {
-    Hobby: { sf: "sparkles", lucide: Sparkles },
-    University: { sf: "graduationcap.fill", lucide: GraduationCap },
-    Department: { sf: "book.fill", lucide: BookOpen },
-    City: { sf: "building.2.fill", lucide: Building2 },
-    District: { sf: "mappin.and.ellipse", lucide: MapPin },
-    YearOfStudy: { sf: "calendar", lucide: CalendarDays },
-    SpokenLanguage: { sf: "globe", lucide: Languages },
-    RelationshipIntent: { sf: "heart.fill", lucide: Heart },
-    // `UsagePurpose` (ordinal 8) KALDIRILDI: backend bu ortak noktayı artık
-    // üretmiyor. Ordinal 8 backend'de REZERVE — Pet=9 / ZodiacSign=10 yerinde,
-    // buradaki eşleme isimle yapıldığı için indeks kayması da yok.
-    Pet: { sf: "pawprint.fill", lucide: PawPrint },
-    ZodiacSign: { sf: "moon.stars.fill", lucide: Moon },
-  };
+//
+// SEMBOLLER KARTIN KENDİ BÖLÜMLERİNDEN alınıyor: aynı bilgi kapakta bir
+// sembolle, kart açılınca başka bir sembolle görünüyordu (burç kapakta ay,
+// panelde sparkles; şehir kapakta bina, konum bölümünde mappin). Buradaki bir
+// satırı değiştireceksen ilgili bölümün ikonuna bak:
+//   University / Department / YearOfStudy → eğitim bölümü (graduationcap.fill)
+//   City / District                       → konum bölümü (mappin)
+//   ZodiacSign / Pet                      → yaşam tarzı pilleri
+// Aynı sembolün iki rozette tekrar etmesi normal (sigara/alkol pillerindeki
+// desen): ayırt eden şey pill metni.
+//
+// `null` = İKON YOK. Hobi rozeti ikonunu bu haritadan almıyor, ilgi alanı
+// pilleriyle aynı emojiyi (HobbyIcon) çiziyor; ilişki niyetinde ise kartın
+// hiçbir yerinde sembol yok — kendi başlıklı bölümünde düz metin duruyor,
+// rozete kalp koymak orada olmayan bir sembol uyduruyordu.
+const THING_IN_COMMON_ICONS: Record<
+  string,
+  { sf: SFSymbol; lucide: LucideIcon } | null
+> = {
+  Hobby: null,
+  University: { sf: "graduationcap.fill", lucide: GraduationCap },
+  Department: { sf: "graduationcap.fill", lucide: GraduationCap },
+  City: { sf: "mappin", lucide: MapPin },
+  District: { sf: "mappin", lucide: MapPin },
+  YearOfStudy: { sf: "graduationcap.fill", lucide: GraduationCap },
+  // Konuşulan dilin kartta bölümü YOK — takip edecek bir ikon olmadığı için
+  // rozetin kendi sembolü kalıyor.
+  SpokenLanguage: { sf: "globe", lucide: Languages },
+  RelationshipIntent: null,
+  // `UsagePurpose` (ordinal 8) KALDIRILDI: backend bu ortak noktayı artık
+  // üretmiyor. Ordinal 8 backend'de REZERVE — Pet=9 / ZodiacSign=10 yerinde,
+  // buradaki eşleme isimle yapıldığı için indeks kayması da yok.
+  Pet: { sf: "pawprint.fill", lucide: PawPrint },
+  ZodiacSign: { sf: "sparkles", lucide: Sparkles },
+};
 
 // Backend ileride yeni tür ekleyebilir; bilinmeyen `kind` ÇÖKMEMELİ,
 // varsayılan ikonla görünmeli.
@@ -1083,6 +1414,18 @@ export default function SwipeCard({
     const y = e.nativeEvent.layout.y;
     setActionsTop((prev) => (prev != null && Math.abs(prev - y) < 1 ? prev : y));
   }, []);
+
+  // Paneldeki büyük isim satırının ALT kenarı (panel içi y). Sticky başlığın
+  // eşiği bundan hesaplanıyor — sabit bir sayı tutturulamaz: satırın üstünde
+  // koşullu "bugün aktif" rozeti var ve isim iki satıra sarabiliyor.
+  const [nameBlockBottom, setNameBlockBottom] = useState<number | null>(null);
+  const handleNameBlockLayout = useCallback((e) => {
+    const { y, height } = e.nativeEvent.layout;
+    const bottom = y + height;
+    setNameBlockBottom((prev) =>
+      prev != null && Math.abs(prev - bottom) < 1 ? prev : bottom,
+    );
+  }, []);
   // ScrollView içerik toplam yüksekliği — foto bottom'un gradient pozisyonunu
   // hesaplamak için lazım (blend'in bg ile aynı renge bitmesi için).
 
@@ -1108,6 +1451,17 @@ export default function SwipeCard({
   // gerçek kartı etkilemeyelim, ve hemen expanded başlayalım.
   const localExpandAnim = useSharedValue(previewMode ? 1 : 0);
   const expandAnim = previewMode ? localExpandAnim : cardExpandAnim;
+
+  /**
+   * Köşe butonlarının (sağ üstte süper beğeni, sol üstte "başa dön" oku) durum
+   * çubuğundan kaçmak için aldığı pay — bkz. CARD_CHROME_TOP_DROP.
+   *
+   * ÖNİZLEMEDE 0, çünkü orada bu butonlar kartın İÇİNDE değil: sheet kendi
+   * şeridini kartın kardeşi olarak çiziyor ve payı ona kendisi veriyor
+   * (PreviewModal / LikerSwipeModal > topInset). Buradan da eklenseydi pay iki
+   * kez uygulanırdı.
+   */
+  const cornerDrop = previewMode ? 0 : CARD_CHROME_TOP_DROP;
   // Top card unmount/remount olduğunda baseline'ı resetle.
   // containerExpand de reset edilir → expanded'ken swipe atılırsa yeni top kart
   // padded boyutta gelir (tab bar üstünde durur).
@@ -1122,20 +1476,62 @@ export default function SwipeCard({
   // Profile Info heavy mount swipe sonu lag'inin sebebi olmadığı test edildi
   // (Test A — gate kaldırıldı, lag aynıydı). Yine de gate'i koruyoruz: Profile
   // Info mount'unu animation tail'ından sonraya öteler, görsel olarak temiz.
-  const [profileReady, setProfileReady] = useState(false);
+  //
+  // ÖNİZLEMEDE ERTELEME YOK: bekletecek bir swipe animasyonu yok ve kapak
+  // fotoğrafı da çizilmediği için (bkz. previewMode dalı) 100ms boyunca
+  // gösterilecek bir şey kalmıyordu — sheet boş açılıp panel sonradan
+  // patlıyordu.
+  const [profileReady, setProfileReady] = useState(previewMode);
   useEffect(() => {
+    if (previewMode) {
+      setProfileReady(true);
+      return;
+    }
     if (!isTopCard) {
       setProfileReady(false);
       return;
     }
     const id = setTimeout(() => setProfileReady(true), 100);
     return () => clearTimeout(id);
-  }, [isTopCard]);
+  }, [isTopCard, previewMode]);
 
-  // Photo border radius — expand olunca da rounded kalır (kart-benzeri görünüm).
-  const photoBorderStyle = useAnimatedStyle(() => ({
-    borderRadius: 40,
-  }));
+  /**
+   * Kapak fotoğrafının köşesi. Expand'de de ROUNDED kalıyor (kart-benzeri
+   * görünüm) ama kabukla BİRLİKTE 35'e iniyor: kabuk açıkken telefonun
+   * köşesine inerken foto 40'ta kalsaydı, kartın üst iki köşesinde ikisinin
+   * arasındaki payda kart zemini (açık modda beyaz) görünürdü — bkz.
+   * CARD_EXPANDED_CORNER_RADIUS.
+   */
+  const photoBorderStyle = useAnimatedStyle(() => {
+    if (previewMode) return { borderRadius: COVER_PHOTO_RADIUS };
+    const p = Math.max(0, Math.min(1, expandAnim.value));
+    return {
+      borderRadius:
+        COVER_PHOTO_RADIUS +
+        (CARD_EXPANDED_CORNER_RADIUS - COVER_PHOTO_RADIUS) * p,
+    };
+  });
+
+  /**
+   * Kabuğun köşesi: kapalıyken kart (50), açıkken telefonun köşesi
+   * (bkz. CARD_EXPANDED_CORNER_RADIUS). Çekme oranıyla ilerliyor — jest yarıda
+   * bırakılırsa köşe de yarı yolda kalır, sıçrama yok.
+   *
+   * ÖNİZLEMEDE SABİT AÇIK DEĞER: orada kart ekranı değil sheet'i dolduruyor ve
+   * sheet de en üst detent'te ekranın tepesine dayanıyor — kabuk, sheet'in
+   * clip'i ve şeridin kırpması aynı sayıda olmak zorunda (bkz.
+   * CARD_EXPANDED_CORNER_RADIUS). Kapalı hâli yok: previewMode'da expandAnim
+   * sabit 1 zaten.
+   */
+  const cardFrameRadiusStyle = useAnimatedStyle(() => {
+    if (previewMode) return { borderRadius: CARD_EXPANDED_CORNER_RADIUS };
+    const p = Math.max(0, Math.min(1, expandAnim.value));
+    return {
+      borderRadius:
+        CARD_CORNER_RADIUS +
+        (CARD_EXPANDED_CORNER_RADIUS - CARD_CORNER_RADIUS) * p,
+    };
+  });
 
   // Momentum top'a çarpınca fotoğraf zoom-in yapıp yaylanarak geri döner —
   // native top bounce'un yerini alan geri bildirim. Kart/scroll yerinde durur,
@@ -1172,12 +1568,94 @@ export default function SwipeCard({
     };
   });
 
-  // Profile info — fade-in + slide-up. Pull-up gesture sırasında alttan
-  // yukarı kayarak gelir, opacity progressively artar.
-  const profileInfoAnimStyle = useAnimatedStyle(() => ({
-    opacity: expandAnim.value,
-    transform: [{ translateY: 80 * (1 - expandAnim.value) }],
-  }));
+  /**
+   * Açık kartın zemini düz gri panel (surface3) yerine ANA FOTOĞRAFIN BLUR'LU
+   * HALİ mi — ve dolayısıyla bölüm kutuları cam mı (bkz. CardGlassBackdrop /
+   * CardSectionBox).
+   *
+   * İki kapısı var:
+   *   • Fotoğraf ŞART: fotoğrafsız profilde blur'lanacak bir şey yok, kutular
+   *     düz zeminin üstünde camdan farksız kalırdı.
+   *   • Keşif'te ayrıca `isTopCard && profileReady`: arkadaki kart üstteki
+   *     tarafından tamamen örtülü (orada tam ekran bir zemin kurmanın karşılığı
+   *     yok) ve swipe'ın son karesinde bir katman daha kurmak animasyon
+   *     kuyruğuna biniyor — panelin kendi gate'iyle aynı gerekçe. Önizlemede
+   *     böyle bir kuyruk yok, kart zaten açık doğuyor.
+   *
+   * ZEMİNİ KİM ÇİZİYOR, İKİ BAĞLAMDA FARKLI:
+   *   Keşif — scroll kartın İÇİNDE, kart sabit. Zemini kart kendi çerçevesine
+   *           mutlak olarak çiziyor (aşağıda).
+   *   Sheet — scroll kartın DIŞINDA ve KART kayıyor (bkz. CardSheetScrollView).
+   *           Kartın içine konan bir zemin içerikle birlikte kayardı, yani
+   *           sabit olmazdı → zemini SHEET çiziyor, scroll'un kardeşi olarak
+   *           (PreviewModal · LikerSwipeModal). Kart orada yalnız şeffaflaşır.
+   *
+   * Hook'lardan ÖNCE hesaplanıyor: aşağıdaki animated style'ın buna ihtiyacı
+   * var, `allPhotos` ise erken return'den sonra kuruluyor. `profile?.photos[0]`
+   * ile `allPhotos[0]` aynı değer.
+   */
+  const glassPanel =
+    !!profile?.photos?.[0] && (previewMode || (isTopCard && profileReady));
+
+  /**
+   * ── CAM KURULUMUNU GECİKTİRME — ÜÇ KEZ DENENDİ, ÜÇÜNDE DE HATANIN SEBEBİ ──
+   *
+   * Burada bir dönem `entrySettled` vardı: kart üste geçtikten 700ms sonra
+   * (SwipeWrapper'ın scale springi bitsin diye) camın kurulmasına izin veren
+   * bir kapı. Yanına `cardStackMotion` (destenin kabı) ve `expandAnim === 1`
+   * (kutu ekranda mı) koşulları da eklendi. HEPSİ KALDIRILDI, çünkü gecikmenin
+   * KENDİSİ hataydı.
+   *
+   * Kanıt: aynı `CardSectionBox`, aynı kart bileşeni, Likes/Chat/Profil
+   * önizlemelerinde HİÇ bozulmuyor. Oradaki tek fark bu kapıların `previewMode`
+   * ile anında açılması — yani faz zinciri kutu mount olur olmaz koşuyor.
+   * Keşif'te ise 700ms bekliyordu.
+   *
+   * Native kural (GlassView.swift, expo#43732):
+   *
+   *   // UIGlassEffect must be created during layoutSubviews
+   *   // creating it in didMoveToWindow does not render correctly.
+   *
+   * Efekt, view'ın İLK layout turunda kurulmak zorunda. Zincir mount ile aynı
+   * karede koşarsa son stil ilk `layoutSubviews`e YETİŞİYOR ve efekti native
+   * taraf kendi layout turunda kuruyor (önizlemenin yaptığı bu). 700ms
+   * beklersek ilk layout çoktan geçmiş oluyor; "regular" ataması layout turunun
+   * DIŞINDA kalıyor ve kutu başına tutup tutmuyor — "rastgele bazı sectionlar"
+   * belirtisi tam olarak bu.
+   *
+   * BURAYA YENİ BİR GECİKME/KAPI EKLEME. Camı geciktiren her koşul, onu ilk
+   * layout turunun dışına iter ve hatayı geri getirir.
+   */
+
+
+  /**
+   * Profile info — fade-in + slide-up. CAM YOLUNDA İKİSİ DE YOK: panel
+   * hareketsiz duruyor.
+   *
+   * Sebep tek ve sert: içindeki `GlassView` kutuları, ata zincirinde alfa 1'in
+   * altındayken VEYA kimliksel olmayan bir transform varken efektlerini hiç
+   * render etmiyor (bkz. CardSectionBox'taki kural). Panel KAPALIYKEN mount
+   * oluyor ve cam orada kuruluyor — o an expandAnim 0, yani eski hâlinde alfa
+   * 0 ve translateY 80. İkisi de ihlal.
+   *
+   * Önizleme kartlarının aynı kutuları hep sorunsuz çalışıyordu: orada
+   * expandAnim sabit 1, yani alfa 1 ve translateY 0. Fark buydu.
+   *
+   * Görsel bedeli yok denecek kadar az: panel collapsed'ken zaten kapak
+   * fotoğrafının ALTINDA, katlanmanın dışında duruyor — hareketin görüldüğü
+   * tek yer kartın expand ile uzayan son ~29px'iydi.
+   *
+   * BURAYA YENİ BİR opacity/transform EKLEME. Gerekiyorsa kutuları saran
+   * DEĞİL, kutuların İÇİNDEKİ katmana ver.
+   */
+  const profileInfoAnimStyle = useAnimatedStyle(() =>
+    glassPanel
+      ? { opacity: 1 }
+      : {
+          opacity: expandAnim.value,
+          transform: [{ translateY: 80 * (1 - expandAnim.value) }],
+        },
+  );
 
   // Kapak fotoğrafındaki not kutusu — isim/pill bloğu gittikten SONRA gelsin.
   // Onlar 0→0.55 aralığında kayboluyor (nameAnimStyle · pillsAnimStyle), bu da
@@ -1217,6 +1695,12 @@ export default function SwipeCard({
       return t("profile.card.grade", { year: profile.yearOfStudy });
     return "";
   }, [profile?.yearOfStudyDisplay, profile?.yearOfStudy, t]);
+
+  // Üniversite adı DAİMA `*Display`'den: `universityName` DB'deki Türkçe resmî
+  // ad, dile göre değişmiyor. Fallback yalnız deploy penceresi için — alanı
+  // göndermeyen sunucuda kart üniversitesiz kalmasın.
+  const universityLabel =
+    profile?.universityNameDisplay || profile?.universityName;
 
   // İlişki niyeti etiketi = kısa yerel etiket + "ilişki" eki
   // ("Uzun süreli" → "Uzun süreli ilişki").
@@ -1274,7 +1758,18 @@ export default function SwipeCard({
           // isim zaten hemen üstteki universityName satırında duruyor.
           label:
             kind === "University" ? t('profile.card.sameUniversity') : label,
-          icon: THING_IN_COMMON_ICONS[kind] ?? DEFAULT_THING_IN_COMMON_ICON,
+          // Hobi rozeti ikonunu emoji olarak çiziyor (aşağıda ayrı dal), o
+          // yüzden ham `label` da taşınıyor: "Aynı Üniversite" gibi yeniden
+          // yazılan etiketle karışmasın.
+          hobby: kind === "Hobby" ? label : null,
+          // `?? DEFAULT` DEĞİL, `in` kontrolü: haritadaki `null` değerler
+          // "ikon yok" demek (hobi + ilişki niyeti) — `??` onları da
+          // varsayılan tike düşürürdü. Varsayılan yalnız haritada HİÇ
+          // olmayan, backend'in sonradan eklediği türler için.
+          icon:
+            kind in THING_IN_COMMON_ICONS
+              ? THING_IN_COMMON_ICONS[kind]
+              : DEFAULT_THING_IN_COMMON_ICON,
         },
       ];
     });
@@ -1291,6 +1786,31 @@ export default function SwipeCard({
   const showActivity = profile?.isOnlineToday === true;
   const showNewBadge = profile?.isNewMember === true;
   const showModeration = !!(onReport || onBlock);
+
+  // ── Panelin ALT SATIRI ────────────────────────────────────────────────────
+  // Üç ihtimalden TAM BİRİ çiziliyor ve hangisi olursa olsun `actionsTop`u
+  // (alt zemin rampasının başlangıcı) ve alt payı o veriyor:
+  //   1. Aksiyon satırı — X/tik (+ yanlarında moderasyon uyduları).
+  //   2. Yalnız moderasyon satırı — X/tik yokken ikonlar ortalanır.
+  //   3. Boş kuyruk — ikisi de yokken (kendi profilini önizleme). Sırf ölçü
+  //      taşır: onsuz `actionsTop` null kalıyor, rampa hiç çizilmiyor ve panel
+  //      surface3'te bitiyordu (alt uçta bounce edince zemin rengine geçiş yok).
+  const showActionsRow = !hideActions && !!(onPass || onLike);
+  const showModerationRow = showModeration && !showActionsRow;
+  const showPanelTail = !showActionsRow && !showModerationRow;
+
+  /**
+   * X / tik gliflerinin rengi. Cam yolunda (glassPanel) panelin zemini artık düz
+   * bir yüzey değil, KAPAK FOTOĞRAFININ blur'lu hali (bkz. CardGlassBackdrop) —
+   * yani foto üstü. Açık modda `theme.text` koyu mürekkep ve o zeminin koyu
+   * lekelerinde (saç, gölge, koyu kıyafet) glifler kayboluyordu; perdeyi
+   * kalınlaştırmak yerine mürekkebi foto üstü ailesine (`onMedia`, sabit beyaz)
+   * çekiyoruz — kartın üstündeki diğer medya glifleriyle (chevron, isim) aynı
+   * kural. Fotoğrafsız profilde zemin yine düz surface3, orada tema mürekkebi
+   * doğru olan. Moderasyon ikonları BUNUN DIŞINDA: onların rengi anlam taşıyan
+   * `errorStrong` kırmızısı, iki zeminde de aynı kalıyor.
+   */
+  const actionGlyphColor = glassPanel ? theme.onMedia : theme.text;
 
   // İsmin yanındaki ", 23" eki. `distance` ile AYNI tuzak: `age` DTO'da
   // non-nullable int olduğu için karşı taraf `showAge`'i kapattığında backend
@@ -1417,6 +1937,25 @@ export default function SwipeCard({
   // ScrollView ref — expand sonrası native scroll için.
   const scrollViewRef = useAnimatedRef<Animated.ScrollView>();
 
+  /**
+   * Kartı kapatan aksiyon: önce içeriği başa sar, sonra collapse.
+   *
+   * SIRA ÖNEMLİ — doğrudan collapse edilirse kart, içerik ortasında kaymış
+   * hâlde kapanıyor ve bir sonraki açılış o offset'ten başlıyor. 180ms, scroll
+   * animasyonunun collapse başlamadan ilerlemesine yetecek kadar.
+   *
+   * İKİ GİRİŞİ var ve ikisi de aynı yeri çağırıyor: kapak fotoğrafının
+   * dibindeki ok ve sticky şeritteki cam buton (bkz. CardCollapseGlassButton).
+   * İkincisi birincisi ekrandan çıktığı için var.
+   */
+  const handleCollapse = useCallback(() => {
+    const sv = scrollViewRef.current as unknown as {
+      scrollTo?: (opts: { y: number; animated: boolean }) => void;
+    } | null;
+    sv?.scrollTo?.({ y: 0, animated: true });
+    setTimeout(() => onExpandPress?.(), 180);
+  }, [scrollViewRef, onExpandPress]);
+
   // Pan-driven expand: cardExpandAnim SwipeWrapper.verticalPan tarafından
   // sürülüyor (rubber-band). Scroll sadece scrollY tracking için (super-like
   // detection); cardExpandAnim'i yazmaz çünkü ScrollView ancak expand sonrası
@@ -1444,16 +1983,80 @@ export default function SwipeCard({
     const freq = 4 + p * 12;
     shakePhase.value += (dt / 1000) * freq;
   });
+  // Aynı style expand morph'unu da taşıyor (ayrı bir useAnimatedStyle DEĞİL):
+  // iki style de `transform` yazsaydı sonraki diziyi tamamen ezerdi, pull
+  // scale/rotate'i kaybolurdu. Çakışma riski yok, çünkü SwipeWrapper'da
+  // pull-down (super-like) ile pull-up (expand) ayrı dallar — ikisi aynı anda
+  // ilerlemiyor.
   const heartPullStyle = useAnimatedStyle(() => {
     const pull = superLikeProgress ? superLikeProgress.value : 0;
     const p = Math.max(pull, heartPressAnim.value);
-    const scale = 1 + p * 0.35; // threshold'a doğru büyür
     const amp = p * 8; // titreşim genliği (derece), pull arttıkça artar
     const angle = Math.sin(shakePhase.value * Math.PI * 2) * amp;
+    // Expand ederken yerini cam butona bırakır: söner + glyph ölçüsüne küçülür.
+    const morph = Math.min(
+      1,
+      Math.max(0, expandAnim.value / HEART_MORPH_OUT_END),
+    );
+    const scale = (1 + p * 0.35) * (1 - (1 - HEART_MORPH_SCALE) * morph);
+    // Cam ikizi SABİT olarak cornerDrop kadar aşağıda duruyor; kalp oraya
+    // sönerken yaklaşsın: kesişme bandında (0.30-0.45) iki şekil üst üste
+    // olmalı, yoksa kabuk değiştirme değil yer değiştirme gibi okunur.
+    // `morph` üzerinden ilerliyor (expandAnim değil): kayma tam kalp
+    // görünmez olduğu anda (0.45) tamamlanıyor, kesişmede fark ≤3px kalıyor.
+    // translateY EN BAŞTA: ölçekten sonra gelirse kayma da ölçeklenir.
+    const drop = cornerDrop * morph;
     return {
-      transform: [{ scale }, { rotate: `${angle}deg` }] as const,
+      opacity: 1 - morph,
+      transform: [
+        { translateY: drop },
+        { scale },
+        { rotate: `${angle}deg` },
+      ] as const,
     };
   });
+
+  // Asılı cam buton — serbest kalbin tersi bantta belirir. Konumu burada YOK:
+  // cornerDrop sabit olduğu için statik style'da duruyor (bkz. aşağıdaki
+  // `top`), animasyonlu bir layout prop'u da olmuyor.
+  const superLikeStickyStyle = useAnimatedStyle(() => {
+    const p = Math.min(
+      1,
+      Math.max(
+        0,
+        (expandAnim.value - HEART_MORPH_IN_START) /
+          (HEART_MORPH_IN_END - HEART_MORPH_IN_START),
+      ),
+    );
+    return { opacity: p, transform: [{ scale: 0.8 + 0.2 * p }] as const };
+  });
+
+  // ── Sticky başlığın eşiği: isim şeridin altına indiği an ─────────────────
+  // Şeridi ÇİZEN taraf CardStickyHeader; burada yalnız eşik ölçülüyor. Değer
+  // shared value'da tutuluyor, worklet closure'ında DEĞİL: kapak yüksekliği ve
+  // isim satırının ölçüsü ayrı ayrı geç geliyor, her değişimde worklet'leri
+  // yeniden kurmak yerine tek bir bandı güncelliyoruz.
+  //
+  // YALNIZ KEŞİF'İN derdi: orada büyük isim kartın fotoğrafında/panelinde
+  // duruyor ve şerit onu devralıyor. Önizlemede kartın kendi ismi hiç
+  // çizilmiyor, şerit de scroll beklemeden açık doğuyor (alwaysOpen) — orada
+  // ölçülecek bir devir noktası yok.
+  const headerTriggerY = useSharedValue(Number.MAX_SAFE_INTEGER);
+  useEffect(() => {
+    if (nameBlockBottom == null) {
+      // Panel henüz ölçülmedi → eşik ulaşılamaz, şerit hiç açılmaz.
+      headerTriggerY.value = Number.MAX_SAFE_INTEGER;
+      return;
+    }
+    // Şeridin başlık satırı cornerDrop kadar aşağıda duruyor → devir çizgisi de
+    // o kadar aşağıda: pay eklenmezse isim şeridin altına girmeden devir
+    // tamamlanmış sayılırdı.
+    headerTriggerY.value =
+      photoHeight +
+      PROFILE_PANEL_GAP +
+      nameBlockBottom -
+      (CARD_HEADER_TITLE_BOTTOM + cornerDrop);
+  }, [nameBlockBottom, photoHeight, headerTriggerY, cornerDrop]);
 
   // Premium vurgusu — super-like kalbi üzerinde 6sn'de bir soldan sağa geçen
   // shimmer parıltısı. Sweep ~1.7sn sürer, ardından 4.3sn bekler (toplam 6sn döngü).
@@ -1543,16 +2146,12 @@ export default function SwipeCard({
   // tekrarlamayalım.
   const interestsSection =
     profile.hobbies && profile.hobbies.length > 0 ? (
-      <View
-        style={[
-          {
-            borderRadius: 40,
-            borderCurve: "continuous",
-            overflow: "hidden",
-            backgroundColor: theme.surfaceTranslucent,
-          },
-        ]}
-        className="mb-4 p-4 py-8"
+      <CardSectionBox
+        glass={glassPanel}
+        // Ölçüler eski className'den (`mb-4 p-4 py-8`) birebir taşındı: cam
+        // yolunda kutunun KENDİSİ native bir view, NativeWind oraya sınıf
+        // uygulamıyor.
+        style={{ marginBottom: 16, paddingHorizontal: 16, paddingVertical: 32 }}
       >
         <View className="flex-row items-center mb-6 px-4">
           <Text className="text-[18px] font-semibold" style={{ color: theme.text }}>
@@ -1593,35 +2192,45 @@ export default function SwipeCard({
                     // beyaz (ink(1)) ve yazısı veil(1) ile birlikte
                     // çalışıyor; buradaki yazı theme.text olduğu için
                     // beyaz dolgu okunmaz hale gelirdi.
-                    backgroundColor: isLight()
-                      ? theme.surface4
-                      : theme.surface3,
+                    //
+                    // Açık modda zemin not diskiyle aynı beyaza yakın renk,
+                    // koyuda surface3 (bkz. pillFill).
+                    backgroundColor: pillFill(theme.surface3),
                     borderWidth: 0.5,
                     borderColor: theme.border,
                   }}
                 >
+                  {/* px 12 / py 8 — yaşam tarzı pilleriyle AYNI ölçü; kapaktaki
+                      ortak nokta pilleri (NewMemberBadge / thingsInCommon)
+                      10'da kaldı, oradaki piller kart üstünde tek başına
+                      duruyor, buradakiler ise onlarca yan yana. Tarihçe:
+                      py 14 kapsül değil dikey tablet gibiydi, 6 fazla inceydi;
+                      10 → 8 bu iki bölümün sıkışması için. */}
                   <View
                     style={{
                       flexDirection: "row",
                       alignItems: "center",
                       paddingHorizontal: 12,
-                      paddingVertical: 14,
+                      paddingVertical: 8,
                       gap: 8,
                     }}
                   >
-                    {/* İkon kutusu ve emoji, lifestyle pilindeki
-                        SFIcon ile AYNI 18px. (Optik denklik için
-                        bir süre 15 kullanıldı: SFIcon'un size'ı
-                        SymbolView'ın çerçevesi ve sembol oraya
-                        scaleAspectFit ediliyor, emoji ise em
-                        kutusunu doldurduğu için aynı sayıda daha
-                        iri görünüyor. Karar sayıların eşitliğinden
-                        yana.) Emoji kutudan biraz taşar (HobbyIcon
-                        açık height verdiği için kırpılmaz), pilin
-                        14px dikey padding'i taşmayı karşılıyor. */}
+                    {/* İkon kutusu ve emoji 13px — yaşam tarzı pilindeki
+                        SFIcon ile AYNI sayı (o da 13). Sembol emojiden optik
+                        olarak küçük kalıyor (SFIcon'un size'ı SymbolView'ın
+                        çerçevesi, sembol oraya scaleAspectFit ediliyor; emoji
+                        ise em kutusunu dolduruyor) — iki bölümün pilleri
+                        birebir aynı yükseklikte olsun diye sayılar eşit
+                        tutuldu. Emoji kutudan biraz taşar (HobbyIcon açık height
+                        verdiği için kırpılmaz): lineHeight 13*1.25≈16,
+                        yani üstten/alttan ~1.5px. Pilin 8px dikey padding'i
+                        bunu rahat karşılıyor, sarmalayıcının
+                        overflow:hidden'ı glifi kırpmıyor. Pil yüksekliğini
+                        14px'lik metnin satır kutusu belirlediği için bu
+                        küçülme pilin ölçüsünü değiştirmiyor. */}
                     <View
                       style={{
-                        height: 18,
+                        height: 13,
                         justifyContent: "center",
                         alignItems: "center",
                         overflow: "visible",
@@ -1629,7 +2238,7 @@ export default function SwipeCard({
                     >
                       <HobbyIcon
                         hobby={enumName ?? label}
-                        size={18}
+                        size={13}
                         color={theme.text}
                         strokeWidth={1.5}
                       />
@@ -1643,8 +2252,8 @@ export default function SwipeCard({
             };
           })}
         />
-      </View>
-    
+      </CardSectionBox>
+
     ) : null;
 
   // 6. fotoğraf ve konum bölümü — ikisi de SON prompt'un ÜSTÜNE taşındı
@@ -1655,7 +2264,6 @@ export default function SwipeCard({
       <SectionPhoto
         uri={extraPhotos[4]}
         hideNote={previewMode}
-        zoomable={!previewMode}
         onNotePress={noteHandler(photoNoteTarget(5))}
       />
     
@@ -1667,18 +2275,12 @@ export default function SwipeCard({
   // bağlarsak o kullanıcının mesafesi de kaybolurdu.
   const locationSection =
     locationLabel || distanceLabel ? (
-      <View
-        style={[
-          {
-            borderRadius: 40,
-            borderCurve: "continuous",
-            overflow: "hidden",
-            backgroundColor: theme.surfaceTranslucent,
-          },
-        ]}
+      <CardSectionBox
+        glass={glassPanel}
         // Başlık kalktı → üst payı büyüten `pt-8` de gitti, kutu
         // simetrik: haritanın çevresinde her yönde aynı boşluk.
-        className="mb-4 p-4 py-5"
+        // (Eski className: `mb-4 p-4 py-5`.)
+        style={{ marginBottom: 16, paddingHorizontal: 16, paddingVertical: 20 }}
       >
         {/* Bölüm BAŞLIKSIZ: harita + altındaki şehir/mesafe satırı
             neye baktığını zaten anlatıyor, "Konum" başlığı aynı
@@ -1799,10 +2401,9 @@ export default function SwipeCard({
             {/* Mesafe pili — backend `distance` göndermezse veya
                 0 gönderirse (gizlenmiş mesafe) hiç çizilmez.
                 Dolgu/yazı/çerçeve üçlüsü distancePillColors()'tan
-                geliyor: koyuda beyaz dolgu + siyah yazı, açıkta gri
-                yüzey + koyu yazı (bkz. oradaki not — sabit
-                theme.onMedia / theme.mediaHairline modla dönmediği
-                için KULLANILMIYOR).
+                geliyor: iki modda da gri yüzey + normal yazı (bkz.
+                oradaki not — sabit theme.onMedia / theme.mediaHairline
+                modla dönmediği için KULLANILMIYOR).
                 flexShrink: 0 → uzun ilçe/şehir adı pili ezmez,
                 metin sarar. */}
             {distanceLabel && (
@@ -1817,14 +2418,18 @@ export default function SwipeCard({
                   flexShrink: 0,
                 }}
               >
+                {/* Ölçüler Beğeniler ekranındaki "Nasıl alırım?" piliyle
+                    AYNI: px 12 / py 6 / 13px / 700. Eskiden 8/10/12 idi —
+                    dar ve uzun, yani kapsül değil dikey bir kutu gibi
+                    duruyordu; uygulamada tek bir pil ölçüsü dili olsun. */}
                 <View
                   style={{
-                    paddingHorizontal: 8,
-                    paddingVertical: 10,
+                    paddingHorizontal: 12,
+                    paddingVertical: 6,
                   }}
                 >
                   <Text
-                    className="font-[700] text-[12px]"
+                    className="font-[700] text-[13px]"
                     style={{ color: distancePillColors().text }}
                   >
                     {distanceLabel}
@@ -1834,19 +2439,31 @@ export default function SwipeCard({
             )}
           </View>
         </View>
-      </View>
-    
+      </CardSectionBox>
+
     ) : null;
 
   return (
+    // Sağlayıcı kartın TAMAMINI sarıyor: cam kutular birden çok yerde (panel
+    // bölümleri · bölüm fotoğrafı not diskleri), hepsi aynı sinyali okumalı.
+    // Provider bir host view çizmiyor, ağaca maliyeti yok.
     <Animated.View
       style={[
         {
-          borderRadius: 50,
+          // Kart kabuğunun yarıçapı — şerit ve kartı taşıyan sheet aynı sayıyı
+          // okuyor (bkz. CARD_CORNER_RADIUS). Açıkken telefonun köşesine
+          // iniyor, bir alttaki cardFrameRadiusStyle bunu eziyor.
+          borderRadius: CARD_CORNER_RADIUS,
           borderCurve: "continuous",
           overflow: "hidden",
-          backgroundColor: theme.bg,
+          // Cam yolunda ÖNİZLEMEDE şeffaf: orada zemini sheet çiziyor ve kart
+          // onun ÜSTÜNDE duruyor — opak kalırsa zemini komple örter. Keşif'te
+          // zemin kartın İÇİNDE (bir alttaki CardGlassBackdrop), o yüzden burası
+          // opak kalabiliyor ve foto yüklenene kadarki boşluğu da o dolduruyor.
+          backgroundColor:
+            glassPanel && previewMode ? "transparent" : theme.bg,
         },
+        cardFrameRadiusStyle,
       ]}
       className="flex-1"
       onLayout={(e) => {
@@ -1869,6 +2486,16 @@ export default function SwipeCard({
         });
       }}
     >
+      {/* Kartın SABİT zemini — ana fotoğrafın blur'lu hali. Scroll'un DIŞINDA
+          ve kart çerçevesine göre mutlak: içerik üstünden akıp giderken zemin
+          kıpırdamıyor (bkz. CardGlassBackdrop). Sırası önemli: ScrollWrapper'ın
+          ÖNÜNDE, yani her şeyin altında.
+
+          ÖNİZLEMEDE BURADA ÇİZİLMEZ: orada kartın kendisi kayıyor, zemin de
+          onunla birlikte kayardı. Aynı bileşeni sheet scroll'un KARDEŞİ olarak
+          çiziyor (PreviewModal · LikerSwipeModal) — bkz. glassPanel notu. */}
+      {glassPanel && !previewMode && <CardGlassBackdrop uri={allPhotos[0]} />}
+
       <ScrollWrapper nativeScrollGesture={nativeScrollGesture}>
         <BounceScrollView
           scrollRef={scrollViewRef}
@@ -1880,15 +2507,35 @@ export default function SwipeCard({
               ama multi-stop shader compile mount sırasında ciddi lag yaratıyordu.
               Profile Info'nun kendi inner gradient'i (spotify→#121212 fade)
               zaten görsel geçişi sağlıyor. Foto'nun rounded corners'ı kart
-              frame'inin #121212 bg'siyle uyumlu. */}
-          <View style={{ backgroundColor: theme.bg }}>
+              frame'inin #121212 bg'siyle uyumlu.
+
+              Cam yolunda ŞEFFAF: altındaki sabit blur'lu zemin (bkz.
+              CardGlassBackdrop) görünsün. Opak kalsaydı zemini komple
+              örterdi. */}
+          <View
+            style={{ backgroundColor: glassPanel ? "transparent" : theme.bg }}
+          >
             {/* Photo Gallery — expanded olurken borderRadius 40→0 anime.
                 Fotoğrafı OLMAYAN profilde de aynı ağaç çiziliyor, sadece
                 görsellerin yerinde nötr bir zemin durur (bkz. aşağıdaki
                 placeholder). Eskiden ayrı bir dal vardı: sabit 500px, köşe
                 yarıçapı yok, "fotoğraf yok" yazısı — kartın bütün kabuğunu
                 (blur'lar, isim bloğu, chevron, aksiyonlar) kaybettiği için
-                yapı bozuluyor ve altta düz bir kesik kalıyordu. */}
+                yapı bozuluyor ve altta düz bir kesik kalıyordu.
+
+                ÖNİZLEMEDE HİÇ ÇİZİLMİYOR (Likes / Chat / Profil kartı): orada
+                kart zaten açık doğuyor, yani tam ekran kapak bir kez bile
+                "kapak" olarak görünmüyordu — kullanıcının kaydırıp geçmesi
+                gereken ölü bir ekran boyu oluyordu. İlk fotoğraf onun yerine
+                panelin en üstüne, ismin ALTINA taşındı (aşağıda). Kapakla
+                birlikte yalnız ona ait katmanlar da gidiyor: üst/alt blur,
+                foto üstündeki isim + pill bloğu, chevron, kapak not kutusu ve
+                serbest kalp — hepsi önizlemede zaten gizli ya da görünmezdi.
+
+                Yerini KART ZEMİNİNDE bir boşluk almıyor: panel kartın tepesine
+                dayanıyor ve nefes payını kendi içinde taşıyor
+                (PREVIEW_HEADER_SPACE). Bkz. oradaki not — beyaz şerit. */}
+            {!previewMode && (
             <Animated.View
               style={[
                 {
@@ -1896,6 +2543,10 @@ export default function SwipeCard({
                   overflow: "hidden",
                   height: photoHeight,
                   backgroundColor: theme.surface,
+                  // KAPAĞIN KENARLIĞI YOK, bilerek: kapak zaten fotoğrafın
+                  // kendi kenarıyla sınırlanıyor, üstüne çizgi koymak kartı
+                  // çerçeveletiyordu. Panelin kenarı da sonradan kaldırıldı —
+                  // kartta artık hiç hairline yok (bkz. yukarıdaki not).
                 },
                 photoBorderStyle,
               ]}
@@ -1928,9 +2579,14 @@ export default function SwipeCard({
                 {allPhotos[0] && (
                   <PinchZoomable
                     uri={allPhotos[0]}
-                    // Kapağın köşesi expand ile 40→0 anime oluyor; kopya iki
-                    // uçtan hangisindeyse onu alsın.
-                    radius={expanded ? 0 : 40}
+                    // Kaynağın köşesiyle AYNI: kopya açılırken köşe zıplamasın.
+                    // Pinch YALNIZ açık kartta çalışıyor (bir alttaki
+                    // `enabled`), orada kapağın köşesi de kabukla birlikte
+                    // 35'te — bkz. photoBorderStyle. Sabit 40 yazıldığı dönemde
+                    // pinch başında köşe bir karede zıplıyordu.
+                    radius={
+                      expanded ? CARD_EXPANDED_CORNER_RADIUS : COVER_PHOTO_RADIUS
+                    }
                     // Kapakta pinch YALNIZ expanded'ken: collapsed'de kapak
                     // kartın kendisi demek, oradaki iki parmak swipe/pull
                     // jestlerinin alanı.
@@ -1939,11 +2595,14 @@ export default function SwipeCard({
                   >
                   <Image
                     source={{ uri: allPhotos[0] }}
-                    style={{
-                      position: "absolute",
-                      width: width,
-                      height: photoHeight,
-                    }}
+                    // absoluteFill — ELLE width/height VERME. Mutlak çocuk
+                    // kabın İÇ kutusundan (kenarlığın içinden) başlıyor ama
+                    // ölçü DIŞ kutununki olunca sağ/alt kenarlığın üstüne 0.5px
+                    // taşıyor ve onları boyayarak siliyordu: kapağın çizgisi
+                    // yalnız solda görünüyordu. Inset 0 tam iç kutuyu doldurur,
+                    // dört kenar da açıkta kalır. `contentFit="cover"` ölçüyü
+                    // buradan alıyor, açık genişlik/yüksekliğe gerek yok.
+                    style={StyleSheet.absoluteFill}
                     contentFit="cover"
                     cachePolicy="memory-disk"
                     recyclingKey={allPhotos[0]}
@@ -1978,7 +2637,11 @@ export default function SwipeCard({
                   }}
                   pointerEvents="none"
                 >
-                  <SkeletonBox w={width} h={photoHeight} borderRadius={40} />
+                  <SkeletonBox
+                    w={width}
+                    h={photoHeight}
+                    borderRadius={COVER_PHOTO_RADIUS}
+                  />
                 </View>
               )}
 
@@ -2069,17 +2732,29 @@ export default function SwipeCard({
                 </MaskedView>
               </Animated.View>
 
-              {/* Super Like Button — uygulamaya özel kalp glyph'i
-                  (SuperLikeGlyph); lucide Heart değil.
+              {/* Super Like Button — COLLAPSED duruş. Uygulamaya özel kalp
+                  glyph'i (SuperLikeGlyph); lucide Heart değil.
 
-                  Kapak fotoğrafının İÇİNDE, scroll içeriğinin parçası: expand
-                  edilince içerikle birlikte yukarı akar, sağ üstte ASILI
-                  KALMAZ. Arkasındaki beyaz yuvarlak da bu yüzden kalktı — o
-                  zemin yalnız sticky duruşta gerekliydi (kalp panel zemininin
-                  üstüne bindiğinde okunurluk için). Fotoğrafın üstünde kalbin
-                  kendi gradyanı ve ince kenarı yetiyor. */}
+                  Kapak fotoğrafının İÇİNDE, scroll içeriğinin parçası ve
+                  zeminsiz: fotoğrafın üstünde kalbin kendi gradyanı ile ince
+                  kenarı okunurluk için yetiyor.
+
+                  EXPAND EDİLİRKEN yerini aynı noktadaki cam butona bırakır
+                  (aşağıda, ScrollWrapper'ın DIŞINDA) — çekme oranıyla sönerek.
+                  Sticky duruşta kalp panel zemininin üstüne de binebildiği
+                  için orada zemin şart; onu artık liquid glass kabuk taşıyor.
+
+                  pointerEvents: expanded'ken görünmez olsa da hitSlop'u cam
+                  butonun çevresinde dokunma yakalamaya devam ederdi. */}
               {!hideActions && !hideSuperLike && (
-                <View style={{ position: "absolute", top: 28, right: 28 }}>
+                <View
+                  style={{
+                    position: "absolute",
+                    top: SUPER_LIKE_INSET,
+                    right: SUPER_LIKE_INSET,
+                  }}
+                  pointerEvents={expanded ? "none" : "auto"}
+                >
                   <TouchableOpacity
                     activeOpacity={0.8}
                     onPress={() => {
@@ -2202,24 +2877,38 @@ export default function SwipeCard({
                       }}
                     >
                       <Text
-                        className="text-4xl font-bold"
+                        className="font-bold"
+                        // Punto/satır className'de DEĞİL: rozetin ölçüsü bu
+                        // sayıdan türüyor (bkz. PremiumBadge), Tailwind sınıfına
+                        // gömülü kalsa rozet sessizce ayrışırdı. Kapak ismi
+                        // artık panel başlığının (30) ALTINDA — "kapak daha
+                        // büyük" ilişkisi bilerek terk edildi.
+                        //
                         // Foto üstünde, koyu perdenin üstünde duruyor →
                         // her iki modda SABİT beyaz (theme.text değil).
-                        style={{ flexShrink: 1, color: theme.onMedia }}
+                        style={{
+                          flexShrink: 1,
+                          color: theme.onMedia,
+                          fontSize: CARD_NAME_FONT,
+                          lineHeight: CARD_NAME_LINE,
+                        }}
                       >
                         {profile.displayName}
                         {ageSuffix}
                       </Text>
                       {profile.isPremium && (
-                        <PremiumFlame size={PREMIUM_FLAME_SIZE} />
+                        // Zemin varsayılan (`colors.bg`) — MODLA DÖNER, açıkta
+                        // beyaz koyuda #121212. Satırdaki isim foto üstü chrome
+                        // olduğu için sabit beyazken rozet bilerek temaya bağlı.
+                        <PremiumBadge fontSize={CARD_NAME_FONT} />
                       )}
                     </View>
                   </Animated.View>
 
                   {/* University & Usage Purpose — expand olunca fade out.
-                      universityName yoksa hiç render etme → name'in altında
+                      üniversite yoksa hiç render etme → name'in altında
                       boşluk kalmasın, isim bottom'a otursun. */}
-                  {profile.universityName && (
+                  {universityLabel && (
                     <Animated.View
                       style={[
                         {
@@ -2249,7 +2938,7 @@ export default function SwipeCard({
                           className="font-[600] text-[16px]"
                           style={{ color: theme.onMedia }}
                         >
-                          {profile.universityName}
+                          {universityLabel}
                         </Text>
                       </View>
                     </Animated.View>
@@ -2271,7 +2960,7 @@ export default function SwipeCard({
                     <Animated.View
                       style={[
                         {
-                          marginTop: profile.universityName ? 0 : 6,
+                          marginTop: universityLabel ? 0 : 6,
                           marginBottom: 16,
                         },
                         pillsAnimStyle,
@@ -2297,16 +2986,26 @@ export default function SwipeCard({
                           ...thingsInCommon.map((thing) => ({
                           id: thing.label,
                           element: (
-                            <View
-                              style={{
-                                borderRadius: 999,
-                                borderCurve: "continuous",
-                                overflow: "hidden",
-                                // Foto ÜSTÜNDE ama yine de temayı takip eder
-                                // (bilinçli istisna): açık modda buzlu beyaz
-                                // kapsül + koyu yazı. Expanded section'ların
-                                // kartlarıyla aynı zemin ve kenar.
-                                backgroundColor: theme.surfaceTranslucent,
+                            <CardSectionBox
+                              // CAM DEĞİL, ve bu kalıcı bir karar: bu piller
+                              // `pillsAnimStyle` ile SÖNEREK gidiyor (kart
+                              // açılırken opacity 1→0) ve cam, atasının
+                              // opacity'si 1'in altına düştüğü anda hiç render
+                              // edilmiyor — kütüphanenin belgelenmiş kısıtı,
+                              // bkz. CardSectionBox'taki "ATA ZİNCİRİNDE
+                              // OPACITY < 1 OLAMAZ" notu. Bir dönem cam
+                              // yapıldı; "bazı camlar gelmiyor" belirtisinin
+                              // kaynaklarından biri buydu.
+                              //
+                              // Cam istenirse önce fade'i atadan almak gerekir:
+                              // kapsülün sönmesi camın kendi "none" geçişiyle,
+                              // içindeki yazı/ikonun sönmesi de ÇOCUĞA verilen
+                              // opacity ile yapılmalı.
+                              glass={false}
+                              radius={999}
+                              // Kenarlık yalnız camsız yolda: camda çerçeve
+                              // kırılmayı öldürüyor.
+                              fallbackStyle={{
                                 borderWidth: 0.5,
                                 borderColor: theme.hairline,
                               }}
@@ -2316,29 +3015,60 @@ export default function SwipeCard({
                                   flexDirection: "row",
                                   alignItems: "center",
                                   gap: 6,
-                                  // Premium pill ile aynı padding (px-4 py-3).
-                                  // Text'in kendisine değil satıra veriyoruz,
+                                  // Ölçüler expanded panelin yaşam tarzı /
+                                  // ilgi alanı pillerini izliyor (px 12 /
+                                  // 14px); eskiden 16/12/13 idi ve aynı kart
+                                  // açılıp kapanırken piller boyut değiştiriyor
+                                  // gibi duruyordu. Dikey pay orada 6, BURADA
+                                  // 10: kapak pilleri fotoğrafın üstünde
+                                  // duruyor ve panelin sakin zemininde yeten
+                                  // pay burada kapsülü inceltiyordu. Padding
+                                  // Text'in kendisine değil satıra veriliyor,
                                   // yoksa ikon padding dışında kalıyor.
-                                  paddingHorizontal: 16,
-                                  paddingVertical: 12,
+                                  paddingHorizontal: 12,
+                                  paddingVertical: 10,
                                 }}
                               >
-                                <SFIcon
-                                  name={thing.icon.sf}
-                                  fallback={thing.icon.lucide}
-                                  size={13}
-                                  color={theme.text}
-                                  strokeWidth={2}
-                                  weight="semibold"
-                                />
+                                {/* Üç dal: hobi emojisi (ilgi alanı
+                                    pilleriyle aynı HobbyIcon — kutu 13px,
+                                    oradaki notun aynısı), sembol, ya da
+                                    HİÇBİRİ. İkonsuz dalda satırın `gap`i tek
+                                    çocukla çalıştığı için etiket kapsülde
+                                    kendi başına ortalı kalıyor, ek pay yok. */}
+                                {thing.hobby ? (
+                                  <View
+                                    style={{
+                                      height: 13,
+                                      justifyContent: "center",
+                                      alignItems: "center",
+                                      overflow: "visible",
+                                    }}
+                                  >
+                                    <HobbyIcon
+                                      hobby={thing.hobby}
+                                      size={13}
+                                      color={theme.text}
+                                      strokeWidth={1.5}
+                                    />
+                                  </View>
+                                ) : thing.icon ? (
+                                  <SFIcon
+                                    name={thing.icon.sf}
+                                    fallback={thing.icon.lucide}
+                                    size={13}
+                                    color={theme.text}
+                                    strokeWidth={2}
+                                    weight="semibold"
+                                  />
+                                ) : null}
                                 <Text
-                                  className="font-[600] text-[13px]"
+                                  className="font-[600] text-[14px]"
                                   style={{ color: theme.text }}
                                 >
                                   {thing.label}
                                 </Text>
                               </View>
-                            </View>
+                            </CardSectionBox>
                           ),
                           })),
                         ]}
@@ -2375,7 +3105,15 @@ export default function SwipeCard({
                     ]}
                     pointerEvents={expanded ? "box-none" : "none"}
                   >
-                    <NoteBox onPress={noteHandler(photoNoteTarget(0))} onPhoto />
+                    {/* Diskin camsızlığı artık NoteBox'ın kendi kararı (bkz.
+                        oradaki not) — burada ayrıca kapatmaya gerek yok. Zaten
+                        kapatılmak ZORUNDAYDI: bu kutu `coverNoteAnimStyle` ile
+                        sönerek geliyor (opacity 0→1) ve cam, atasının opacity'si
+                        1'in altındayken hiç render edilmiyor. */}
+                    <NoteBox
+                      onPress={noteHandler(photoNoteTarget(0))}
+                      onPhoto
+                    />
                   </Animated.View>
                 )}
 
@@ -2396,15 +3134,8 @@ export default function SwipeCard({
                 >
                   <TouchableOpacity
                     onPress={() => {
-                      if (expanded) {
-                        const sv = scrollViewRef.current as unknown as {
-                          scrollTo?: (opts: { y: number; animated: boolean }) => void;
-                        } | null;
-                        sv?.scrollTo?.({ y: 0, animated: true });
-                        setTimeout(() => onExpandPress?.(), 180);
-                      } else {
-                        onExpandPress?.();
-                      }
+                      if (expanded) handleCollapse();
+                      else onExpandPress?.();
                     }}
                     hitSlop={16}
                     activeOpacity={1}
@@ -2424,28 +3155,105 @@ export default function SwipeCard({
                 </View>
               )}
             </Animated.View>
+            )}
 
             {/* Heavy content (university, hobbies, location+map, vb.) sadece
                 top card'da + isTopCard true olduktan 100ms sonra render →
                 swipe sonu mount lag'i için defer. */}
             {isTopCard && profileReady && (
               /* Profile Info — ayrı kart görünümü: kendi borderRadius'u, foto
-                 altında 10px gap. Zemin düz gri (surface3: açıkta #E4E4E8,
+                 altında PROFILE_PANEL_GAP kadar boşluk. Zemin düz gri
+                 (surface3: açıkta #E4E4E8,
                  koyuda #262626) — eskiden fotonun baskın renginden theme.bg'ye
                  inen bir LinearGradient vardı. */
               <Animated.View
-                className="p-6 pt-8 px-4"
+                className="p-6 px-4"
                 style={[
                   {
                     overflow: "hidden",
+                    // Üst dolgu className'den ALINDI (bkz. PANEL_TOP_PAD):
+                    // önizlemedeki nefes payı bu sayıdan türüyor, Tailwind
+                    // sınıfı oradan okunamıyordu. Inline style className'i
+                    // ezer, yani `p-6`nın 24'ü değil bu geçerli. DEĞER AYNI
+                    // (32) — panelin içi kısılmıyor, yalnız kaynağı değişti.
+                    paddingTop: PANEL_TOP_PAD,
+                    // Üst dolguyla aynı gerekçe: `p-6`nın 24'ü yerine açık
+                    // sayı (bkz. PANEL_BOTTOM_PAD).
+                    paddingBottom: PANEL_BOTTOM_PAD,
                     borderRadius: 40,
                     borderCurve: "continuous",
-                    marginTop: 10,
-                    backgroundColor: theme.surface3,
+                    // Üst köşeler KARŞISINDAKİ KENARLA aynı yarıçapta
+                    // (COVER_PHOTO_RADIUS): panelin tepesi ile kapak
+                    // fotoğrafının dibi birbirine bakıyor, iki eğri simetrik
+                    // olsun. Bir ara kartın kabuğuyla aynı olsun diye 50
+                    // verilmişti, kenarlarda daha da büyük bir boşluk
+                    // okunuyordu. YARIÇAPI KÜÇÜLTEREK ARAYI KAPATMAYA ÇALIŞMA:
+                    // denendi (20), panelin şekli değişiyor ve istenen bu
+                    // değil — mesafeyi PROFILE_PANEL_GAP ayarlıyor.
+                    //
+                    // Önizlemede DÜZ (0): orada panel kartın TEPESİNDEN
+                    // başlıyor, üstünde kapak yok — yuvarlak köşe de aradaki
+                    // boşluk da kart zeminini panelin üstünde şerit/hilal
+                    // olarak sızdırırdı. Dış şekli zaten kartın kendi yarıçapı
+                    // kesiyor.
+                    borderTopLeftRadius: previewMode ? 0 : COVER_PHOTO_RADIUS,
+                    borderTopRightRadius: previewMode ? 0 : COVER_PHOTO_RADIUS,
+                    marginTop: previewMode ? 0 : PROFILE_PANEL_GAP,
+                    // Cam yolunda panel ŞEFFAF bir kap: altındaki blur'lu zemin
+                    // (CardGlassBackdrop) baştan sona kesintisiz aksın. Kendi
+                    // tülü YALNIZ önizlemede kalıyor ve orada da burada değil,
+                    // ilk çocuktaki katmanda — dibe doğru sönebilmesi gerekiyor
+                    // (bkz. PANEL_FADE_HEIGHT). Düz yolda eski gri zemin.
+                    backgroundColor: glassPanel ? "transparent" : theme.surface3,
+                    // Panelin ince kenarı KALDIRILDI (bkz. aşağıdaki not) —
+                    // buraya `borderWidth` ekleme, o çizgi paneli zeminin
+                    // üstünde ayrı bir levha gibi gösteriyordu.
                   },
                   profileInfoAnimStyle,
                 ]}
               >
+                {/* ── PANELİN KENDİ LEVHASI KEŞİF'TE YOK ────────────────────
+                    Burada iki katman vardı ve ikisi birlikte panelin zeminden
+                    KOPUK, ayrı bir levha gibi okunmasına sebep oluyordu:
+
+                      • Tül — `panelVeil()` dolgusu (bg'nin ~%20 alfası), dibe
+                        doğru PANEL_FADE_HEIGHT boyunca sönen.
+                      • PANEL_EDGE — o levhanın ince kenarı: üst + iki üst köşe
+                        yayı + iki yan, DİP YOK.
+
+                    Kartın zemini zaten kapak fotoğrafının blur'lu hali
+                    (CardGlassBackdrop) ve kendi perdesini taşıyor
+                    (backdropScrim). Tül onun ÜSTÜNE ikinci bir perde koyup
+                    kenarıyla çerçeveleyince "blur üstüne blur" çıkıyordu.
+                    KALDIRILDI: panel artık şeffaf bir kap, altında baştan sona
+                    tek ve aynı blur'lu zemin akıyor.
+
+                    ÖNİZLEMEDE (Likes / Chat / Profil) TÜL DURUYOR — orada zemini
+                    sheet çiziyor ve panelin kendi perdesi hâlâ kontrast taşıyor.
+                    Kenar zaten `!previewMode` kapısındaydı, yani oraya hiç
+                    girmiyordu.
+
+                    Geri koyacaksan ikisini BİRLİKTE koy: kenar tek başına, artık
+                    var olmayan bir levhanın etrafını çiziyor. */}
+                {glassPanel && previewMode && (
+                  <View pointerEvents="none" style={StyleSheet.absoluteFill}>
+                    <View style={{ flex: 1, backgroundColor: panelVeil() }} />
+                    {/* Alt rampanın rengi tülün ŞEFFAF hâli
+                        (`withAlpha(bg, 0)`), düz `"transparent"` DEĞİL: o şeffaf
+                        SİYAH demek ve açık modda rampanın ortası kirli griye
+                        düşüyor. */}
+                    <LinearGradient
+                      {...(easeGradient({
+                        colorStops: {
+                          0: { color: panelVeil() },
+                          1: { color: withAlpha(theme.bg, 0) },
+                        },
+                        extraColorStopsPerTransition: PANEL_FADE_STOPS,
+                      }) as any)}
+                      style={{ height: PANEL_FADE_HEIGHT }}
+                    />
+                  </View>
+                )}
                 {/* Alt zemin — ikon satırının hizasında surface3'ten
                     theme.bg'ye (açık modda beyaz) çözülüp düz devam eder.
                     İlk çocuk olarak duruyor: mutlak konumlu ama sonraki
@@ -2453,8 +3261,13 @@ export default function SwipeCard({
                     Rampa ikon çizgisinde BİTER, yukarı doğru uzar — o yüzden
                     top = satır y'si + üst boşluk - fade. easeGradient: düz iki
                     duraklı LinearGradient uçlarda görünür bir kesim bırakıyor,
-                    çok duraklı bezier rampa iki ucu da eritiyor. */}
-                {actionsTop != null && (
+                    çok duraklı bezier rampa iki ucu da eritiyor.
+
+                    CAM YOLUNDA HİÇ ÇİZİLMİYOR: rampanın işi gri paneli sayfa
+                    zeminine bağlamaktı, ikisi de kalktı — panel şeffaf, altında
+                    baştan sona aynı blur'lu zemin var. Çizilseydi opak bir
+                    dikdörtgen olarak o zemini örterdi. */}
+                {!glassPanel && actionsTop != null && (
                   <View
                     pointerEvents="none"
                     style={{
@@ -2481,14 +3294,60 @@ export default function SwipeCard({
                     <View style={{ flex: 1, backgroundColor: theme.bg }} />
                   </View>
                 )}
-                {/* Name + Age — expanded'ken kartın üst tarafında görünür
-                    (photo overlay'deki name'i replace eder; o fade-out olur).
-                    Premium ateşi collapsed başlıktakiyle aynı — PreviewModal /
-                    LikerSwipeModal kartı SADECE bu satırı gösterdiği için rozet
-                    burada da olmalı. */}
-                <View className="mb-10 ml-4" style={{ paddingHorizontal: 4, gap: 4 }}>
-                  {/* Zemin burada chrome (surface3), foto değil — ama satır
-                      foto üstündekiyle AYNI çiziliyor (bkz. ActivityStatus). */}
+                {/* Önizlemede panelin kendi nefes payı — içerik sticky şeridin
+                    altından başlasın (bkz. PREVIEW_HEADER_SPACE). */}
+                {previewMode && <View style={{ height: PREVIEW_HEADER_SPACE }} />}
+
+                {/* Önizlemede başlık bloğu BURADA HİÇ YOK — isim/yaş da,
+                    "bugün aktif" ve "burada yeni" rozetleri de sticky şeritte,
+                    tek satırda duruyor (bkz. CardStickyHeader). Şerit orada
+                    scroll beklemeden açık doğuyor (`alwaysOpen`) ve kartın tek
+                    başlığı; aynı bilgileri bir de panelin başında yazmak onları
+                    üst üste iki kez göstermek olurdu. */}
+                {previewMode ? null : (
+                  /* Name + Age — expanded'ken kartın üst tarafında görünür
+                     (photo overlay'deki name'i replace eder; o fade-out olur).
+                     Premium ateşi collapsed başlıktakiyle aynı.
+
+                     KUTUSUZ, bilerek — VE BU BİR KEZ DENENİP GERİ ALINDI, İKİ
+                     KEZ: başlık, altındaki bölümlerle aynı malzemeden bir
+                     kutuya girince panelin başlığı değil ilk bölümü gibi
+                     okunuyor. İkinci denemede kutu bölümlerden ayrışsın diye
+                     yarıçapı küçültüldü (32), genişliği içeriğe indirildi ve
+                     altına fazladan nefes verildi; yine tutmadı. Zemine karşı
+                     kontrastı ZEMİNİN KENDİ PERDESİ taşıyor
+                     (CardGlassBackdrop > backdropScrim); panelin tülü artık
+                     yalnız önizlemede var. Camla sarma. */
+                <View
+                  className="ml-4"
+                  style={{
+                    paddingHorizontal: 4,
+                    gap: 4,
+                    // İsmin ALT boşluğu. Üstteki PANEL_TOP_PAD (8) ile eşit
+                    // DEĞİL ve eşitlemeye çalışma — iki ayrı sebeple:
+                    //
+                    // 1) OPTİK DÜZELTME. Boşluklar harflerden değil SATIR
+                    //    KUTUSUNDAN ölçülüyor: isim 30px bold ve kutunun
+                    //    tepesiyle harflerin tepesi arasında ~8px leading var.
+                    //    O pay ÜSTTEKİ boşluğa ekleniyor, alttakine eklenmiyor
+                    //    (aşağıda kutuyu descender dolduruyor). Bir süre ikisi
+                    //    de 16 yazıyordu ve ekranda üst belirgin şekilde geniş
+                    //    duruyordu; üst sayı bu yüzden leading kadar küçük.
+                    // 2) İsim başlık, altındaki kutular gövde: aralarında
+                    //    kutular arası ritimden (16) FAZLA nefes olsun diye
+                    //    16 → 24 → 28. Yani 8 (üst) + ~8 (leading) ≈ 16 optik
+                    //    üst, 28 optik alt.
+                    //
+                    // Not: profil "bugün aktif" ise ismin ÜSTÜNDE ayrıca yeşil
+                    // ActivityStatus satırı çiziliyor (+~22px). O boşluk bu
+                    // sayılarla ilgili değil, ayrı bir katman.
+                    marginBottom: 28,
+                  }}
+                  // Sticky başlığın eşiği bu satırın alt kenarından geliyor.
+                  onLayout={handleNameBlockLayout}
+                >
+                  {/* Satır foto üstündekiyle AYNI çiziliyor
+                      (bkz. ActivityStatus). */}
                   {showActivity && (
                     <ActivityStatus label={t("profile.card.activeToday")} />
                   )}
@@ -2500,34 +3359,85 @@ export default function SwipeCard({
                     }}
                   >
                     <Text
-                      className="text-3xl font-bold"
-                      // Zemin artık düz theme.bg (gradyan kalktı) → başlık da
-                      // sabit beyaz değil, tema metin rengini kullanır; yoksa
-                      // açık modda beyaz üstüne beyaz kalıyordu.
-                      style={{ flexShrink: 1, color: theme.text }}
+                      className="font-bold"
+                      // Punto/satır className'de DEĞİL: rozet bu sayıdan
+                      // türüyor (bkz. PremiumBadge). text-3xl ile aynı ölçü.
+                      //
+                      // SABİT BEYAZ (`onMedia`, modla dönmez): isim panelin tek
+                      // kutusuz metni ve altında blur'lu FOTOĞRAF var — kartın
+                      // kapak üstündeki ismiyle aynı kural. Kutuların içindeki
+                      // yazılar bundan ayrı: onlar camın üstünde chrome sayılıyor
+                      // ve `theme.text` ile tema mürekkebini izliyor. (Başlık
+                      // kutuya alınırsa bu satır da `theme.text` olmak zorunda —
+                      // denendi, kutu geri alındı, mürekkep de geri alındı.)
+                      style={{
+                        flexShrink: 1,
+                        color: theme.onMedia,
+                        fontSize: PANEL_NAME_FONT,
+                        lineHeight: PANEL_NAME_LINE,
+                      }}
                     >
                       {profile.displayName}
                       {ageSuffix}
                     </Text>
                     {profile.isPremium && (
-                      <PremiumFlame size={PREMIUM_FLAME_SIZE_EXPANDED} />
+                      // Kapaktakiyle AYNI rozet: kart açılırken biri diğerinin
+                      // yerini alıyor, ikisi ayrı görünürse geçiş sırıtıyor.
+                      // Ölçü farkı yalnız puntodan (30 > 28).
+                      <PremiumBadge fontSize={PANEL_NAME_FONT} />
                     )}
                     {showNewBadge && (
-                      <NewMemberBadge label={t("profile.card.newMember")} />
+                      <NewMemberBadge
+                        label={t("profile.card.newMember")}
+                        compact
+                      />
                     )}
                   </View>
                 </View>
+                )}
+
+                {/* Ana fotoğraf — YALNIZ önizlemede (Likes / Chat / Profil).
+                    Orada tam ekran kapak çizilmiyor (bkz. yukarıdaki not), ilk
+                    fotoğraf akışın ilk bölümü — şeridin hemen altındaki ilk
+                    blok. Diğer fotoğraflar aşağıdaki bölümlerin arasında,
+                    sıraları bozulmadan devam ediyor.
+
+                    Not kutusu yok: önizlemedeki bütün bölüm fotoğraflarıyla
+                    aynı kural (bkz. SectionPhoto prop'ları). Pinch ile büyütme
+                    ise AÇIK — o da hepsiyle aynı kural.
+
+                    Top'a çarpma zoom'unu da BU blok taşıyor: Discover'da geri
+                    bildirimi tam ekran kapak veriyor, önizlemede kapak hiç
+                    çizilmediği için sinyalin (CardSheetScrollView → zoomImpact)
+                    görsel karşılığı yoktu. Sadece ANA fotoğraf — aşağıdaki
+                    bölüm fotoğrafları çarpma anında ekranda bile değil. */}
+                {previewMode && allPhotos[0] && (
+                  <SectionPhoto
+                    uri={allPhotos[0]}
+                    hideNote
+                    zoomStyle={photoZoomStyle}
+                  />
+                )}
+
                 {/* University & Department */}
                 {profile.showUniversity && profile.departmentDisplay && (
-                  <View
-                    style={[
-                      {
-                        borderCurve: "continuous",
-                        overflow: "hidden",
-                        backgroundColor: theme.surfaceTranslucent,
-                      },
-                    ]}
-                    className=" p-4 py-9 -mt-3 rounded-[38px] mb-4"
+                  <CardSectionBox
+                    glass={glassPanel}
+                    // Bu kutunun yarıçapı diğerlerinden bir tık küçük (38).
+                    radius={38}
+                    // ÜST MARJ YOK. Burada bir dönem `marginTop: -12` (eski
+                    // `-mt-3`) vardı: ismin o zamanki `mb-10`unun 12'sini geri
+                    // kısan snug pay. İsmin alt marjı artık PANEL_TOP_PAD'den
+                    // okunuyor (bkz. oradaki not) ve doğrudan istenen boşluğu
+                    // yazıyor — negatif pay onun üstüne binip ismin altını
+                    // üstünden farklı yapıyordu. Geri koyma; boşluk isim
+                    // tarafında ayarlanır. (Eski className: `p-4 py-9
+                    // rounded-[38px] mb-4`.)
+                    style={{
+                      paddingHorizontal: 16,
+                      paddingVertical: 36,
+                      marginBottom: 16,
+                    }}
                   >
                     <View className="flex-row flex-wrap items-center gap-3">
                       {/* Bölüm + sınıf artık tek satır → uzun bölüm adları
@@ -2548,22 +3458,54 @@ export default function SwipeCard({
                             size={22}
                             color={theme.text}
                           />
-                          <View className="flex-col items-start gap-1 flex-1">
-                            <Text className="font-medium text-[18px]" style={{ color: theme.text }}>
-                              {profile.universityName}
+                          <View className="flex-col items-start gap-2 flex-1">
+                            <Text className="font-semibold text-[21px]" style={{ color: theme.text }}>
+                              {universityLabel}
                             </Text>
-                            {/* Bölüm · Sınıf tek satırda — beyaz, medium,
-                                aralarında nokta ayraç. Sınıf bilinmiyorsa
-                                nokta da render edilmez. */}
-                            <Text className="font-medium text-[16px]" style={{ color: theme.text }}>
-                              {profile.departmentDisplay}
-                              {yearOfStudyLabel ? ` · ${yearOfStudyLabel}` : ""}
-                            </Text>
+                            {/* Bölüm + sınıf yan yana: sınıf artık nokta
+                                ayraçlı metin değil, bölümün SAĞINDA duran gri
+                                kapsül. Uzun bölüm adı sarabilsin diye metne
+                                flex-shrink veriliyor, pil ise kendi boyunda
+                                kalıyor. Sınıf bilinmiyorsa pil hiç çizilmez. */}
+                            <View className="flex-row items-center gap-2 flex-wrap">
+                              <Text
+                                className="font-medium text-[17px] shrink"
+                                style={{ color: theme.text }}
+                              >
+                                {profile.departmentDisplay}
+                              </Text>
+                              {yearOfStudyLabel ? (
+                                <View
+                                  style={{
+                                    borderRadius: 999,
+                                    borderCurve: "continuous",
+                                    // Dolgu artık `hairline` yıkaması değil,
+                                    // kartın DİĞER pilleriyle (ilgi alanları ·
+                                    // yaşam tarzı · mesafe) aynı tema grisi:
+                                    // aynı panelde iki farklı pil dili
+                                    // istemiyoruz.
+                                    backgroundColor: pillFill(theme.surface3),
+                                    paddingHorizontal: 10,
+                                    paddingVertical: 4,
+                                  }}
+                                >
+                                  {/* Yazı `text`: açık modda siyah, koyu modda
+                                      beyaz. Gri (textSecondary) DEĞİL — zemin
+                                      zaten gri, ikisi birlikte okunmuyordu. */}
+                                  <Text
+                                    className="font-[600] text-[13px]"
+                                    style={{ color: theme.text }}
+                                  >
+                                    {yearOfStudyLabel}
+                                  </Text>
+                                </View>
+                              ) : null}
+                            </View>
                           </View>
                         </View>
                       </View>
                     </View>
-                  </View>
+                  </CardSectionBox>
                 )}
 
                 {/* 2. fotoğraf — üniversite ile "Burada ne arıyorum" arası. */}
@@ -2571,7 +3513,6 @@ export default function SwipeCard({
                   <SectionPhoto
                     uri={extraPhotos[0]}
                     hideNote={previewMode}
-                    zoomable={!previewMode}
                     onNotePress={noteHandler(photoNoteTarget(1))}
                   />
                 )}
@@ -2587,30 +3528,17 @@ export default function SwipeCard({
                     haritadan da gelebiliyor, yani display boş gelse bile
                     enumName varsa bölüm basılabilir. */}
                 {relationshipIntentLabel && (
-                  <View
+                  <CardSectionBox
+                    glass={glassPanel}
+                    // Zemin niyete göre değişen gradyandı; kart içindeki diğer
+                    // bölümlerle (yaşam tarzı, ilgi alanları) aynı yüzeye
+                    // çekildi. (Eski className: `mb-4 p-4 py-8`.)
                     style={{
-                      borderRadius: 40,
-                      borderCurve: "continuous",
-                      overflow: "hidden",
-                      // Zemin gradyan; düz dolgu YOK, yoksa gradyanı örter.
-                      backgroundColor: "transparent",
+                      marginBottom: 16,
+                      paddingHorizontal: 16,
+                      paddingVertical: 32,
                     }}
-                    className="mb-4 p-4 py-8"
                   >
-                    {/* Gradyan içerikle akmıyor, mutlak konumda zemin olarak
-                        duruyor — kartın yüksekliği metne göre belirlensin,
-                        gradyan da o yüksekliği doldursun. Köşe yuvarlaklığı
-                        sarmalayıcının overflow:hidden'ı ile kırpılıyor. */}
-                    {/* Renk niyete göre değişiyor (mor/turuncu/kırmızı/pembe/
-                        mavi) — bölüm herkeste aynı kırmızıyı göstermesin,
-                        niyet renkten de okunsun. Anahtar `relationshipIntent`
-                        (enumName); display DEĞİL, o dile göre değişir. */}
-                    <LinearGradient
-                      colors={getIntentCardGradient(profile.relationshipIntent)}
-                      start={{ x: 0, y: 0 }}
-                      end={{ x: 1, y: 1 }}
-                      style={StyleSheet.absoluteFill}
-                    />
                     <View className="flex-row items-center mb-6 px-4">
                       <Text className="text-[18px] font-semibold" style={{ color: theme.text }}>
                         {t('profile.card.myIntent')}
@@ -2626,7 +3554,7 @@ export default function SwipeCard({
                     >
                       {relationshipIntentLabel}
                     </Text>
-                  </View>
+                  </CardSectionBox>
                 )}
 
                 {/* Lifestyle Info — ilişki niyeti BURADA DEĞİL, kendi
@@ -2636,16 +3564,14 @@ export default function SwipeCard({
                   profile.alcoholUsageDisplay ||
                   heightLabel ||
                   petPills.length > 0) && (
-                  <View
-                    style={[
-                      {
-                        borderRadius: 40,
-                        borderCurve: "continuous",
-                        overflow: "hidden",
-                        backgroundColor: theme.surfaceTranslucent,
-                      },
-                    ]}
-                    className="mb-4 p-4 py-8"
+                  <CardSectionBox
+                    glass={glassPanel}
+                    // Eski className: `mb-4 p-4 py-8`.
+                    style={{
+                      marginBottom: 16,
+                      paddingHorizontal: 16,
+                      paddingVertical: 32,
+                    }}
                   >
                     <View className="flex-row items-center mb-6 px-4">
                       <Text className="text-[18px] font-semibold" style={{ color: theme.text }}>
@@ -2716,19 +3642,31 @@ export default function SwipeCard({
                                 // beyaz (ink(1)) ve yazısı veil(1) ile birlikte
                                 // çalışıyor; buradaki yazı theme.text olduğu için
                                 // beyaz dolgu okunmaz hale gelirdi.
-                                backgroundColor: isLight()
-                                  ? theme.surface4
-                                  : theme.surface3,
+                                // İlgi alanları pilleriyle AYNI zemin.
+                                backgroundColor: pillFill(theme.surface3),
                                 borderWidth: 0.5,
                                 borderColor: theme.border,
                               }}
                             >
+                              {/* Ölçü ilgi alanı pilleriyle AYNI: px 12 / py 8
+                                  ve ikon 13. Kapaktaki ortak nokta pilleri
+                                  py 10'da kaldı (bkz. ilgi alanı pilindeki
+                                  not).
+
+                                  İkon 18 → 13: 18'de SFIcon çerçevesi 14px'lik
+                                  metnin satır kutusundan yüksekti ve pil ilgi
+                                  alanı pillerinden bir tık uzun çiziliyordu.
+                                  13'te iki bölümün pilleri birebir aynı
+                                  yükseklikte. Sembol emojiden optik olarak
+                                  küçük kalıyor (SymbolView'ın çerçevesine
+                                  scaleAspectFit ediliyor) — bu, ölçü
+                                  eşitliği için kabul edilmiş maliyet. */}
                               <View
                                 style={{
                                   flexDirection: "row",
                                   alignItems: "center",
                                   paddingHorizontal: 12,
-                                  paddingVertical: 14,
+                                  paddingVertical: 8,
                                   gap: 8,
                                 }}
                               >
@@ -2736,7 +3674,7 @@ export default function SwipeCard({
                                   name={sf}
                                   fallback={lucide}
                                   forceFallback={forceFallback}
-                                  size={18}
+                                  size={13}
                                   color={theme.text}
                                 />
                                 <Text className="font-[600] text-[14px]" style={{ color: theme.text }}>
@@ -2747,7 +3685,7 @@ export default function SwipeCard({
                           ),
                         }))}
                     />
-                  </View>
+                  </CardSectionBox>
                 )}
 
                 {/* 3. fotoğraf — yaşam tarzı ile 1. prompt arası. */}
@@ -2755,7 +3693,6 @@ export default function SwipeCard({
                   <SectionPhoto
                     uri={extraPhotos[1]}
                     hideNote={previewMode}
-                    zoomable={!previewMode}
                     onNotePress={noteHandler(photoNoteTarget(2))}
                   />
                 )}
@@ -2783,21 +3720,15 @@ export default function SwipeCard({
                       {photo6Section}
                     </Fragment>
                   )}
-                  <View
-                    style={[
-                      {
-                        borderRadius: 40,
-                        borderCurve: "continuous",
-                        overflow: "hidden",
-                        backgroundColor: theme.surfaceTranslucent,
-                      },
-                    ]}
+                  <CardSectionBox
+                    glass={glassPanel}
                     // Not kutusu artık kutunun İÇİNDE (sağ altta) → alt boşluk
                     // her durumda kutunun kendisinde. Alt pay yatay payla AYNI
                     // (16): buton köşeye eşit uzaklıkta otursun, altında ikinci
                     // bir boşluk bandı kalmasın. Üst pay ayrı ve büyük (48) —
                     // orası başlığın nefes alanı.
-                    className="mb-4 p-4 pt-12"
+                    // (Eski className: `mb-4 p-4 pt-12`.)
+                    style={{ marginBottom: 16, padding: 16, paddingTop: 48 }}
                   >
                     <View className="flex-row items-center mb-2 px-4">
                       <Text className="text-[18px] font-semibold" style={{ color: theme.text }}>
@@ -2825,11 +3756,16 @@ export default function SwipeCard({
                         <SFIcon
                           name="quote.opening"
                           fallback={Pen}
-                          size={18}
+                          size={PROMPT_QUOTE_SIZE}
                           color={theme.text}
-                          // İkon 18px, satır yüksekliği 32 → ilk satırın
-                          // ortasına oturması için (32-18)/2.
-                          style={{ marginTop: 7 }}
+                          // İlk satırın ortasına otursun: (satır − ikon) / 2.
+                          // Türetilmiş — ikon büyüyünce hiza kendiliğinden
+                          // düzeliyor, elle yazılmış bir pay bayatlamıyor.
+                          style={{
+                            marginTop:
+                              (PROMPT_ANSWER_LINE_HEIGHT - PROMPT_QUOTE_SIZE) /
+                              2,
+                          }}
                         />
                         {/* Metrikler PromptsEditor'deki cevap alanıyla BİREBİR
                             aynı (25 / 600 / 32): kullanıcı cevabını düzenlerken
@@ -2839,7 +3775,7 @@ export default function SwipeCard({
                             color: theme.text,
                             fontSize: 25,
                             fontWeight: "600",
-                            lineHeight: 32,
+                            lineHeight: PROMPT_ANSWER_LINE_HEIGHT,
                             flex: 1,
                             flexShrink: 1,
                             flexWrap: "wrap",
@@ -2876,7 +3812,7 @@ export default function SwipeCard({
                         }}
                       />
                     )}
-                  </View>
+                  </CardSectionBox>
                   {/* İlgi alanları — 1. prompt ile 2. prompt'un arasında.
                       Eskiden prompt'ların TAMAMINDAN önce geliyordu; ilk
                       prompt kartıyla yer değiştirdi. Prompt yoksa bölüm
@@ -2888,7 +3824,6 @@ export default function SwipeCard({
                     <SectionPhoto
                       uri={extraPhotos[promptGapPhotos.get(index)!]}
                       hideNote={previewMode}
-                      zoomable={!previewMode}
                       onNotePress={noteHandler(
                         photoNoteTarget(promptGapPhotos.get(index)! + 1),
                       )}
@@ -2903,16 +3838,15 @@ export default function SwipeCard({
                     Kullanıcı prompt doldurdukça bölüm kendiliğinden sönüyor,
                     backend Faz 4'te alanı düşürünce bu blok silinecek. */}
                 {promptSections.length === 0 && profile.bio && (
-                  <View
-                    style={[
-                      {
-                        borderRadius: 40,
-                        borderCurve: "continuous",
-                        overflow: "hidden",
-                        backgroundColor: theme.surfaceTranslucent,
-                      },
-                    ]}
-                    className="mb-4 p-4 py-5 pt-8"
+                  <CardSectionBox
+                    glass={glassPanel}
+                    // Eski className: `mb-4 p-4 py-5 pt-8`.
+                    style={{
+                      marginBottom: 16,
+                      paddingHorizontal: 16,
+                      paddingVertical: 20,
+                      paddingTop: 32,
+                    }}
                   >
                     <View className="flex-row items-center mb-2 px-4">
                       <Text className="text-[18px] font-semibold" style={{ color: theme.text }}>
@@ -2958,7 +3892,7 @@ export default function SwipeCard({
                         </Text>
                       </View>
                     </View>
-                  </View>
+                  </CardSectionBox>
                 )}
 
                 {/* Prompt yoksa son prompt kartı da yok → konum ve 6.
@@ -2979,7 +3913,6 @@ export default function SwipeCard({
                     key={`extra-${index}`}
                     uri={uri}
                     hideNote={previewMode}
-                    zoomable={!previewMode}
                     // `extraPhotos` ana fotoğrafı atlayarak başlıyor
                     // (allPhotos.slice(1)) → profildeki gerçek index +1.
                     onNotePress={noteHandler(photoNoteTarget(index + 1))}
@@ -2987,7 +3920,7 @@ export default function SwipeCard({
                 ))}
 
                 {/* Action Buttons */}
-                {!hideActions && (onPass || onLike) && (
+                {showActionsRow && (
                   <View
                     onLayout={handleActionsLayout}
                     style={{
@@ -3005,7 +3938,7 @@ export default function SwipeCard({
                       paddingTop: ACTIONS_ROW_PADDING_TOP,
                       // Moderasyon ikonları artık bu satırın içinde; alt boşluk
                       // her hâlükârda burada kalıyor (içeriğin son öğesi bu).
-                      paddingBottom: 40 + insets.bottom + 66,
+                      paddingBottom: ACTIONS_ROW_PADDING_BOTTOM + insets.bottom,
                     }}
                   >
                     {/* Şikayet — X'in SOLUNDA. Dolgusuz (`flag`) bayrak; içi
@@ -3038,7 +3971,7 @@ export default function SwipeCard({
                           name="xmark"
                           fallback={X}
                           size={75}
-                          color={theme.text}
+                          color={actionGlyphColor}
                           strokeWidth={5}
                           weight="heavy"
                         />
@@ -3060,7 +3993,7 @@ export default function SwipeCard({
                           name="checkmark"
                           fallback={Check}
                           size={75}
-                          color={theme.text}
+                          color={actionGlyphColor}
                           strokeWidth={5}
                           weight="heavy"
                         />
@@ -3083,7 +4016,7 @@ export default function SwipeCard({
                 {/* Aksiyon satırı YOKSA (PreviewModal hideActions ile açıyor)
                     moderasyon ikonları yaslanacakları X/tik olmadığı için kendi
                     satırında, ortalanmış olarak içeriğin en altında durur. */}
-                {showModeration && (hideActions || !(onPass || onLike)) && (
+                {showModerationRow && (
                   <View
                     onLayout={handleActionsLayout}
                     style={{
@@ -3092,7 +4025,7 @@ export default function SwipeCard({
                       justifyContent: "center",
                       gap: 28,
                       paddingTop: ACTIONS_ROW_PADDING_TOP,
-                      paddingBottom: 40 + insets.bottom + 66,
+                      paddingBottom: ACTIONS_ROW_PADDING_BOTTOM + insets.bottom,
                     }}
                   >
                     {onReport && (
@@ -3117,12 +4050,107 @@ export default function SwipeCard({
                     )}
                   </View>
                 )}
+                {/* Boş kuyruk — bkz. showPanelTail. Yalnız ÖLÇÜ taşır: alt
+                    zemin rampasının başlangıcını (`actionsTop`) ve panelin alt
+                    payını yukarıdaki iki satır veriyordu, ikisi de yokken panel
+                    surface3'te bitiyor ve alt uçta bounce edince zemin rengine
+                    geçiş hiç çizilmiyordu.
+                    ÜST pay ikisiyle aynı (rampa hep aynı yerde başlasın), ALT
+                    pay ise daha KISA: o satırlarda payın altında 75px'lik
+                    butonlar duruyor ve boşluk onlarla birlikte okunuyor;
+                    burada çizilecek bir şey yok, aynı payı bırakmak kartın
+                    dibinde bomboş bir şerit bırakıyordu. */}
+                {showPanelTail && (
+                  <View
+                    onLayout={handleActionsLayout}
+                    pointerEvents="none"
+                    style={{
+                      paddingTop: ACTIONS_ROW_PADDING_TOP,
+                      paddingBottom: PANEL_TAIL_PADDING_BOTTOM + insets.bottom,
+                    }}
+                  />
+                )}
               </Animated.View>
             )}
           </View>
         </BounceScrollView>
       </ScrollWrapper>
 
+      {/* Sticky başlık — paneldeki büyük isim şeridin altından kayıp gidince
+          aynı isim burada belirir (bkz. CardStickyHeader).
+
+          Scroll'un DIŞINDA, kart çerçevesine göre konumlu: burada kart sabit
+          duruyor, kayan içerik. Sheet içindeki kartta (previewMode) durum TERS
+          — orada kartın kendisi kayıyor, o yüzden şeridi sheet çiziyor ve bu
+          dal hiç girmiyor (`scrollY` de zaten verilmiyor).
+
+          Sırası önemli: ScrollWrapper'dan SONRA (içeriğin üstüne biner), cam
+          butondan ÖNCE (buton camın üstünde kalır) ve zIndex YOK — zIndex
+          verilseydi butonu da altına alırdı.
+
+          Mount kapısı cam butonunkiyle aynı: arkadaki kart üstteki tarafından
+          örtülü, orada BlurView + MaskedView kurmanın karşılığı yok. */}
+      {!!scrollY && isTopCard && profileReady && (
+        <CardStickyHeader
+          profile={profile}
+          scrollY={scrollY}
+          triggerY={headerTriggerY}
+          progress={expandAnim}
+          // Kapağın dibindeki ok akıp gittiği için şeritte cam bir karşılığı
+          // duruyor. Kapı `onExpandPress`: kartı kapatma yetkisi olmayan
+          // girişlerde (varsa) buton da çizilmesin.
+          onCollapse={onExpandPress ? handleCollapse : undefined}
+          // Sol üstteki ok, sağ üstteki cam butonla aynı payda insin.
+          topInset={cornerDrop}
+          // Bandın kendi clip'i kabuğunkiyle aynı olmalı: şerit yalnız kart
+          // TAM AÇIKKEN görünüyor, o yüzden sabit açık değeri yetiyor. 50'de
+          // bırakılsaydı bandın köşesi kabuğunkinden yuvarlak kalır ve üst iki
+          // köşede camın çizmediği ince bir dilim görünürdü.
+          radius={CARD_EXPANDED_CORNER_RADIUS}
+        />
+      )}
+
+      {/* Super Like Button — EXPANDED duruş: sticky. Scroll'un DIŞINDA, kart
+          çerçevesine göre konumlu → panel altından akıp giderken buton sağ
+          üstte asılı kalıyor. Kabuk kalpten büyük olduğu için köşe boşluğu da
+          farklı (SUPER_LIKE_GLASS_INSET): iki şeklin MERKEZİ çakışıyor, geçiş
+          yer değiştirme değil kabuk değiştirme gibi görünsün.
+
+          Mount `profileReady` gate'inde: swipe'ın son karesinde yeni top kart
+          doğarken bir SwiftUI host'u daha kurmak animasyon kuyruğuna biniyor.
+          Buton o an zaten görünmez (expandAnim 0), 100ms sonra gelmesi
+          hissedilmiyor — ilk çekmeye çoktan hazır olur.
+
+          Yalnız TOP kart: cardExpandAnim global, arkadaki kartlar da bu bandı
+          okur; onlar için native host kurmanın karşılığı yok (üstteki kart
+          hepsini örtüyor). */}
+      {!hideActions &&
+        !hideSuperLike &&
+        isTopCard &&
+        profileReady &&
+        onSuperLike && (
+          <Animated.View
+            style={[
+              {
+                position: "absolute",
+                // Köşe diyagonalinin biraz altı, SABİT (bkz. cornerDrop).
+                top: SUPER_LIKE_GLASS_INSET + cornerDrop,
+                right: SUPER_LIKE_GLASS_INSET,
+                width: SUPER_LIKE_GLASS_SIZE,
+                height: SUPER_LIKE_GLASS_SIZE,
+              },
+              superLikeStickyStyle,
+            ]}
+            // Collapsed'ken görünmez ama hâlâ fotoğrafın üstünde duruyor —
+            // kapalıyken dokunmayı altındaki serbest kalbe bırak.
+            pointerEvents={expanded ? "auto" : "none"}
+          >
+            <SuperLikeGlassButton
+              onPress={onSuperLike}
+              label={t("discover.stats.superLikesLabel")}
+            />
+          </Animated.View>
+        )}
     </Animated.View>
   );
 }

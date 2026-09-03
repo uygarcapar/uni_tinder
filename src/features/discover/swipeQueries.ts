@@ -5,12 +5,11 @@ import {
   useQueryClient,
 } from "@tanstack/react-query";
 import { useSelector } from "react-redux";
-import { useCallback, useMemo } from "react";
+import { useMemo } from "react";
 import api from "@/shared/services/api";
 import { API_ENDPOINTS } from "@/shared/constants/api";
 import swipeService from "@/features/discover/swipeService";
 import { swipeKeys } from "@/features/discover/swipeKeys";
-import { spendRecoveryPatch } from "@/features/discover/recoveryQuota";
 import { noteTargetPayload } from "@/features/discover/noteTarget";
 import uiBus from "@/shared/services/uiBus";
 import type { NoteTarget, SwipeStats } from "@/shared/types";
@@ -168,26 +167,27 @@ export function useSwipeStats() {
         matchesToday: r.matchesToday ?? 0,
         remainingUndos: r.remainingUndos ?? null,
         undoCountResetAt: r.undoCountResetAt ?? null,
-        // Kaçırılan eşleşme kurtarma — 2026-08-22'den beri GÜNLÜK DEĞİL:
-        // free'de kota 0 (yalnız satın alınan kredi), premium'da tier başına
-        // 1/2/5 ve abonelik döngüsüyle yenileniyor. Alan tier kotası + satın
-        // alınan kredi TOPLAMINI taşımaya devam ediyor (SuperLike üçlüsüyle
-        // birebir aynı desen) — toplam FE'de yeniden hesaplanmaz.
+        // Kaçırılan eşleşme kurtarma — 2026-08-31'den beri kota DEĞİL, PREMIUM
+        // AYRICALIĞI: free `0`, premium `-1` (SINIRSIZ). Kredi ekonomisi
+        // (`recovery_*` paketleri) tamamen kaldırıldı. Sınırsızlık YALNIZ bu
+        // alandan okunur — bkz. recoveryQuota.resolveRecoveryAccess.
         remainingMissedMatchRecovery: r.remainingMissedMatchRecovery ?? null,
+        // ── Ölü alanlar ────────────────────────────────────────────────────
+        // Backend hepsini `0` sabitliyor ve göndermeye devam ediyor (alan
+        // yokluğunda çöken eski istemciler var). Okumayın; sıfır oldukları için
+        // bir hesaba girerlerse sessizce "hak yok" derler.
         quotaRecoveryRemaining: r.quotaRecoveryRemaining ?? null,
         purchasedRecoveries: r.purchasedRecoveries ?? null,
-        // ⚠️ Tavan alanı ama `-1` DÖNMEZ: premium de sonlu kotaya tabi.
-        // `dailySwipeLimit`/`dailyUndoLimit` için yazılan "-1 ise sınırsız"
-        // dalını buraya kopyalamayın — "2/2" yerine "∞" yazardı. Bakiye tavanı
-        // da DEĞİL (kredi + tier düşüşü onu aşabilir); payda tek yerden
-        // çözülüyor, bkz. recoveryQuota.ts.
+        // ⚠️ Bu alan premium'da da `0` — sınırsızlık sinyali DEĞİL ve `-1` ASLA
+        // dönmez (backend'de bunu kilitleyen bir test var). Bilerek 0'da
+        // tutuluyor: bir kota satırına ham basılsaydı ekranda "5/-1" yazardı.
         dailyMissedMatchRecoveryLimit: r.dailyMissedMatchRecoveryLimit ?? null,
         // Kaçırılan eşleşme penceresi (gün). Backend config'inden geliyor, FE'de
         // sabit tutulmuyor — metinler bu değerle kuruluyor.
         missedMatchLookbackDays: r.missedMatchLookbackDays ?? null,
-        // DİKKAT: bu ikisi farklı yönlere bakıyor — `missedMatchRecoveryResetAt`
-        // kotanın en son ne zaman sıfırlandığı (GEÇMİŞ), ileri sayaç için
-        // `nextMissedMatchRecoveryResetAt` kullanılmalı.
+        // Kurtarmanın yenilenmesi KALMADI (sınırsız ya da hiç yok): backend
+        // `next...At` için `DateTime.MaxValue`, `...InSeconds` için `-1`
+        // gönderiyor. Bu üçlüden geri sayım ÇİZMEYİN.
         missedMatchRecoveryResetAt: r.missedMatchRecoveryResetAt ?? null,
         nextMissedMatchRecoveryResetAt: r.nextMissedMatchRecoveryResetAt ?? null,
         missedMatchRecoveryResetInSeconds:
@@ -616,35 +616,8 @@ export function useUpdateStatsCache() {
   };
 }
 
-/**
- * Kurtarma harcandıktan SONRA bakiyeyi hizala: iyimser düşüş + kanonik tazeleme.
- *
- * İkisi birlikte olmak ZORUNDA. Bu sorgu `staleTime: Infinity` +
- * `refetchOnMount: false` ile oturumda BİR KEZ çekiliyor; yalnızca
- * `setQueryData` yazan bir çağıran, ekrandaki sayıyı oturum başındaki değerin
- * yerel bir türevi hâlinde bırakıyor. "/Stats bir sonraki tazelemede doğrusunu
- * getirir" varsayımı yanlıştı — o tazeleme hiç gelmiyordu (2026-08-24 bug'ı:
- * kota satırı kurtarma yapılmasına rağmen 5/5'te takılı kalıyordu).
- *
- * İyimser düşüş yine de duruyor: refetch bir ağ turu, kullanıcı butona bastığı
- * anda sayının hareket etmesi gerekiyor.
- *
- * Yama cache'in O ANKİ hâlinden hesaplanıyor, çağıranın render closure'ından
- * DEĞİL: bayat bir `stats.remaining` üzerinden guard'lamak (`rem > 0`) düşüşü
- * sessizce atlatabiliyordu.
- *
- * `refetchQueries` (invalidate değil): invalidate yalnız "bayat" işaretler ve
- * `staleTime: Infinity` altında da observer'ı olan sorgu tazelenir — ama
- * `type: "all"` ile ekran mount değilken de doğru değeri yazmak istiyoruz.
- */
-export function useSyncRecoverySpend() {
-  const qc = useQueryClient();
-  return useCallback(() => {
-    qc.setQueryData(swipeKeys.stats, (prev: any) =>
-      prev ? { ...prev, ...spendRecoveryPatch(prev) } : prev,
-    );
-    return qc
-      .refetchQueries({ queryKey: swipeKeys.stats, type: "all" })
-      .catch(() => {});
-  }, [qc]);
-}
+// `useSyncRecoverySpend` KALDIRILDI (2026-08-31). Kurtarma premium ayrıcalığı
+// olunca harcanacak bir bakiye kalmadı: premium sınırsız, free'de hak yok. Yani
+// kurtarma sonrası hizalanacak bir sayı da yok — iyimser düşüş + kanonik
+// tazeleme ikilisi (2026-08-24'te "5/5'te takılı kalıyor" bug'ı için yazılmıştı)
+// artık her zaman aynı iki değer arasında gidip gelirdi.

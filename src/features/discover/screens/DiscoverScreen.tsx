@@ -47,11 +47,11 @@ import {
   ArrowLeft,
   ArrowRight,
   Lock,
-} from "lucide-react-native";
+} from "@/shared/icons";
 import SFIcon from "@/shared/components/SFIcon";
 import SwipeWrapper from "@/features/discover/components/SwipeWrapper";
 import SwipeOverlay from "@/features/discover/components/SwipeOverlay";
-import PurchaseModal from "@/features/discover/components/PurchaseModal";
+import { openLitPlus } from "@/features/profile/litPlusEntry";
 import SuperLikePurchaseModal from "@/features/discover/components/SuperLikePurchaseModal";
 import FilterModal from "@/features/discover/components/FilterModal";
 import ReportModal from "@/shared/components/ReportModal";
@@ -71,7 +71,11 @@ import {
   useSetIgnoreDistanceFilter,
 } from "@/features/discover/swipeQueries";
 import { FREE_MAX_DISTANCE_KM } from "@/shared/constants/limits";
-import { formatResetTime } from "@/features/discover/quotaFormat";
+import {
+  formatResetDuration,
+  formatResetTime,
+  resolveResetSeconds,
+} from "@/features/discover/quotaFormat";
 import {
   loadDeckProgress,
   saveDeckProgress,
@@ -83,6 +87,10 @@ import { resolveEmptyDeckCopy } from "@/features/discover/emptyDeckCopy";
 import { SUPPORT_EMAIL } from "@/shared/constants/support";
 import { showInfoToast, showMissedMatchToast } from "@/shared/services/toaster";
 import { runFlameSweep } from "@/features/discover/flameSweep";
+import {
+  DISCOVER_CARD_TOP_GAP,
+  DISCOVER_HEADER_HEIGHT,
+} from "@/features/discover/components/discoverHeaderMetrics";
 import NoteComposerModal from "@/features/discover/components/NoteComposerModal";
 import NotePurchaseModal from "@/features/discover/components/NotePurchaseModal";
 import {
@@ -116,6 +124,23 @@ const TAB_BAR_BOTTOM_GAP = -10;
 // bar'a bir tık daha yaklaşsın istendi; 0 yapılmıyor, kartın yuvarlak köşesi
 // bar'a değmiş gibi durmasın.
 const CARD_BOTTOM_GAP = 4;
+
+// Günlük beğeni kotası azalırken uyarı verilen KALAN hak eşikleri.
+// Tavanın yüzdesi DEĞİL mutlak sayı: tavan sunucu config'inden geliyor
+// (`SwipeLimits`, free'de 30) ve değişebiliyor — "son 10 / son 5 hak" iki
+// tavanda da aynı şeyi anlatır, %33 anlatmaz. Toast'ta eşik değil KALAN hak
+// yazıldığı için, tek adımda iki eşik birden geçilse de tek toast çıkar ve
+// doğru sayıyı söyler.
+const SWIPE_WARN_THRESHOLDS = [10, 5] as const;
+
+// NOT — kart açılırken tab bar'ı `display:"none"` ile gizlemek DENENDİ ve
+// vazgeçildi: bu gizleme animasyona açılmıyor. react-native-screens
+// `setTabBarHidden:animated:NO` çağırıyor; yamayla önce `animated:YES`, sonra
+// çağrıyı Fabric'in mount fazının dışına atıp (dispatch_async) kendi
+// `UIView animateWithDuration:` + `layoutIfNeeded` bloğumuza alarak denendi.
+// İkisinde de bar tek karede kayboldu — iOS 26'nın yüzen tab bar'ı bu yoldan
+// animasyonlanmıyor. Bar'ın çekilmesini artık iOS 26'nın KENDİ küçülme
+// davranışı yapıyor (bkz. TabNavigator > tabBarMinimizeBehavior).
 
 // Placeholder block — kendi içinde shimmer animasyonu olan dark rect.
 // borderCurve:continuous + overflow:hidden ile yumuşak köşeli kapsayıcı.
@@ -1062,7 +1087,6 @@ export default function DiscoverScreen() {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [potentialMatches.length]);
 
-  const [purchaseVisible, setPurchaseVisible] = useState(false);
   const [superLikePurchaseVisible, setSuperLikePurchaseVisible] = useState(false);
 
   // SuperLike kotası bitti → sheet + durumu açıklayan toast birlikte.
@@ -1093,6 +1117,86 @@ export default function DiscoverScreen() {
     setSuperLikePurchaseVisible(true);
   });
 
+  // Beğeni kotasının yenilenmesine kalan süre — ÇIPLAK metin, mesajın içine
+  // gömülmek için. Ham `swipeResetInSeconds` KULLANILMIYOR: /Stats oturumda bir
+  // kez çekiliyor (staleTime: Infinity), saatler önce hesaplanmış bir sayı
+  // olduğu yerde donardı. resolveResetSeconds mutlak damgadan
+  // (`nextSwipeResetAt`) ya da cache'e yazılma anından tazeliyor.
+  // null = gösterilecek geri sayım yok → çağıran süresiz metne düşer, yanlış
+  // vaat vermiyoruz (SuperLike metinlerindeki ayrımın aynısı).
+  const resolveSwipeResetText = useEvent(() =>
+    formatResetDuration(
+      resolveResetSeconds({
+        absoluteAt: statsQuery.data?.nextSwipeResetAt,
+        seconds: statsQuery.data?.swipeResetInSeconds,
+        fetchedAt: statsQuery.dataUpdatedAt,
+        now: Date.now(),
+      }),
+      t,
+    ),
+  );
+
+  // Kota bitti bilgisi — yalnız BEĞENİ yolunda (buton, sağa kaydırma,
+  // backend'in showPaywall'ı). Pass'te BİLEREK sessiziz: pass kotaya sayılmıyor,
+  // engellenmiyor ve kullanıcı desteyi elemeye devam ederken her kartta toast
+  // yemek istemiyor. Paywall'ı bu fonksiyon AÇMAZ — sheet kararı çağıranın
+  // (SuperLike'taki kalıbın aynısı).
+  const showSwipeQuotaExhaustedToast = useEvent(() => {
+    const time = resolveSwipeResetText();
+    showInfoToast({
+      title: t("discover.swipe.quotaExhaustedTitle"),
+      message: time
+        ? t("discover.swipe.quotaExhaustedMessageWithTime", { time })
+        : t("discover.swipe.quotaExhaustedMessage"),
+      // Kalp DEĞİL tik: kalp bu ekranda "beğeni gönderildi" işareti, kota
+      // toast'ında gönderilmiş bir beğeni yok. Siyah daire iki temada da aynı.
+      icon: "check",
+    });
+  });
+
+  // Kalan hak eşiği (SWIPE_WARN_THRESHOLDS) aşağı doğru geçilince uyarı.
+  //
+  // Değere doğrudan bakıp "=== 10" demek iki yerde yanılırdı: (1) uygulama
+  // zaten 10 hakla açıldığında kullanıcı hiç kaydırmadan toast yerdi, (2)
+  // optimistic düşüş ile sunucu cevabı aynı sayıyı iki kez yazınca toast
+  // tekrarlardı. O yüzden duyurulan şey değer değil GEÇİŞ: önceki okuma eşiğin
+  // üstünde, yenisi eşikte veya altında.
+  const lastRemainingSwipesRef = useRef<number | null>(null);
+  useEffect(() => {
+    const rem = statsQuery.data?.remainingSwipes;
+    // Premium / -1 (sınırsız) / null (bilinmiyor) → sayaç anlamsız. Ref de
+    // sıfırlanıyor: premium bitip kota geri geldiğinde ilk okuma bir "düşüş"
+    // sanılmamalı.
+    if (statsQuery.data?.isPremium || rem == null || rem < 0) {
+      lastRemainingSwipesRef.current = null;
+      return;
+    }
+    const prev = lastRemainingSwipesRef.current;
+    lastRemainingSwipesRef.current = rem;
+    // İlk okuma, ya da hak ARTTI (günlük yenilenme, rewind, başarısız swipe'ın
+    // geri sarılması) → uyarılacak bir şey yok.
+    if (prev == null || rem >= prev) return;
+    // 0 bu toast'ın işi değil ("0 hakkın kaldı" demezdi); tükenme mesajı her
+    // denemede showSwipeQuotaExhaustedToast'tan çıkıyor.
+    if (rem === 0) return;
+    if (!SWIPE_WARN_THRESHOLDS.some((th) => prev > th && rem <= th)) return;
+    const time = resolveSwipeResetText();
+    showInfoToast({
+      title: t("discover.swipe.quotaLowTitle"),
+      message: time
+        ? t("discover.swipe.quotaLowMessageWithTime", { count: rem, time })
+        : t("discover.swipe.quotaLowMessage", { count: rem }),
+      // Tükenme toast'ıyla aynı simge — ikisi tek hikâyenin iki anı.
+      icon: "check",
+    });
+    // resolveSwipeResetText useEvent — referansı stabil, resubscribe yok.
+  }, [
+    statsQuery.data?.remainingSwipes,
+    statsQuery.data?.isPremium,
+    resolveSwipeResetText,
+    t,
+  ]);
+
   // Premium modalını açmadan önce canonical state'i tazele (doküman §11):
   // kullanıcı başka bir cihazda premium olmuş olabilir ve ona tekrar satış
   // ekranı göstermek "zaten aldım, hâlâ para istiyor" şikâyetinin kaynağı.
@@ -1113,11 +1217,11 @@ export default function DiscoverScreen() {
           filtersQuery.refetch?.();
           return;
         }
-        setPurchaseVisible(true);
+        openLitPlus();
       })
       // Tazeleme başarısızsa paywall'ı YİNE aç: kullanıcıyı satın alma yolundan
       // ağ hatası yüzünden koparmak, gereksiz modaldan daha kötü.
-      .catch(() => setPurchaseVisible(true));
+      .catch(() => openLitPlus());
   });
 
   // Backend SwipeResultDto.ShowPaywall=true geldiğinde (Like/Pass kotası dolu) veya
@@ -1129,6 +1233,18 @@ export default function DiscoverScreen() {
       // doldu (satacak bir şey yok) → sheet AÇILMAZ, sadece bilgi. Eski
       // event'lerde alan yoktu, `=== false` ile geriye dönük uyumlu.
       if (payload?.showPaywall === false) return;
+      // Sheet tek başına "neden" demiyor — sağa kaydırma sessizce geri
+      // zıplıyordu ve satış ekranı sebepsiz açılmış gibi duruyordu. Toast
+      // durumu (ve yenilenme süresini) söylüyor, sheet çıkışı sunuyor.
+      //
+      // ⚠️ AMA yalnız BEĞENİ kotası yolunda. Bu event'i premium filtreler
+      // (FilterModal'daki kilitli bölüm dokunuşu + useSaveFilters'ın 403'ü) ve
+      // geri alma kotası da kullanıyor; hepsinde "beğeni hakkın şu saatte
+      // yenilenecek" toast'ı çıkması konuyla alakasız bir bilgi veriyordu.
+      // `paywallType` yoksa eski/serbest emit (SwipeWrapper sağa kaydırma) —
+      // o yol yalnız kota için var, geriye dönük uyumlu kalsın diye toast çıkar.
+      const type = payload?.paywallType;
+      if (!type || type === "SWIPE_LIMIT") showSwipeQuotaExhaustedToast();
       openPremiumPaywall();
     });
     // SuperLike kota bittiğinde SwipeWrapper bu event'i emit eder (pull-up swipe).
@@ -1147,7 +1263,7 @@ export default function DiscoverScreen() {
     };
     // showSuperLikeLimitUi / openPremiumPaywall useEvent — referansları stabil,
     // resubscribe gerekmez.
-  }, [showSuperLikeLimitUi, openPremiumPaywall]);
+  }, [showSuperLikeLimitUi, openPremiumPaywall, showSwipeQuotaExhaustedToast]);
 
   const [filterVisible, setFilterVisible] = useState(false);
 
@@ -1479,7 +1595,21 @@ export default function DiscoverScreen() {
   const tabBarOccupied =
     insets.bottom + TAB_BAR_HEIGHT + TAB_BAR_BOTTOM_GAP + CARD_BOTTOM_GAP;
   const cardContainerStyle = useAnimatedStyle(() => ({
-    paddingBottom: tabBarOccupied * (1 - cardExpandAnim.value),
+    // CLAMP ŞART, kozmetik değil. Bütün collapse yolları
+    // `withSpring(0, {damping:16, stiffness:380})` kullanıyor; sönüm oranı ~0.41,
+    // yani spring 0'ın ALTINA sarkıyor (~-0.2). Clamp'siz `1 - value` o karelerde
+    // 1'i aşıyor ve dolgu dinlenme değerinin üstüne çıkıyor → kart, collapsed
+    // boyundan ~25px DAHA KISA bir frame'de ölçülüyor.
+    //
+    // Bedeli kalıcı: SwipeCard yüksekliği "en küçük ölçüm kazanır" kuralıyla
+    // kilitliyor (bkz. oradaki onLayout notu), yani o geçici kare photoHeight'ı
+    // sonsuza dek küçültüyor. Panel `marginTop: PROFILE_PANEL_GAP` ile kapağa
+    // göre konumlandığı için aradaki fark kadar YUKARI kayıyor: panel kapak
+    // fotoğrafının üstüne biniyordu ("bazen expand ederken bozuluyor" —
+    // yarıda bırakılan bir pull-up'ın geri snap'i de aynı springi çalıştırıyor).
+    // SwipeWrapper'daki `bottom` aynı sebeple zaten clamp'li.
+    paddingBottom:
+      tabBarOccupied * (1 - Math.max(0, Math.min(1, cardExpandAnim.value))),
   }));
 
   // Expand ederken header içeriği (ikonlar/logo) çekme oranıyla soluklaşır →
@@ -1560,6 +1690,22 @@ export default function DiscoverScreen() {
     analytics.capture('swipe', { direction });
     const isPass = direction === "left";
     setLastSwipeWasPass(isPass);
+    // Kartın kendisi — "kime" sorusunun cevabı hem süper beğeni onayında hem de
+    // aşağıdaki kaçırılmış eşleşme toast'ında lazım.
+    const swiped = potentialMatches.find((p) => p?.userId === userId);
+    // Süper beğeni onayı. Gerekçe notunkiyle aynı (bkz. handleSendNote): kutlama
+    // alevi yalnız görsel, kimin süper beğenildiğini SÖYLEMİYOR — kart o sırada
+    // zaten örtünün altında. Toast tek yazılı onay.
+    if (direction === "up") {
+      const name = swiped?.displayName;
+      showInfoToast({
+        title: t("discover.swipe.superLikeSentTitle"),
+        message: name
+          ? t("discover.swipe.superLikeSentMessage", { name })
+          : t("discover.swipe.superLikeSentMessageNoName"),
+        icon: "superLike",
+      });
+    }
     // Destedeki bu kart beni beğenmiş biri miydi? Öyleyse yön ne olursa olsun
     // artık "bekleyen beğeni" değil: sağa kaydırma match yaratır, sola kaydırma
     // eşleşmeyi kaçırır. Rozet iki durumda da ANINDA düşer — MatchNotification'ı
@@ -1567,7 +1713,6 @@ export default function DiscoverScreen() {
     // store.getState(): selector'la abone olmak her gelen beğenide desteyi
     // yeniden render ederdi (render churn = commit-storm riski).
     if (hasLikedMe(store.getState(), userId)) {
-      const swiped = potentialMatches.find((p) => p?.userId === userId);
       dispatch(removeWhoLikedMe(userId));
       // Likes ekranı mount'sa listesinden düşürsün — sayacı O dispatch etmez.
       uiBus.emit("likerHandled", { userId });
@@ -1680,7 +1825,10 @@ export default function DiscoverScreen() {
   const handleLikeButton = useEvent(() => {
     if (isSwiping || potentialMatches.length <= currentIndex) return;
     if (swipeQuotaExhausted) {
-      setPurchaseVisible(true);
+      // Sağa kaydırma yolundaki (uiBus → swipePaywall) davranışın aynısı:
+      // önce durumu söyle, sonra sheet'i aç.
+      showSwipeQuotaExhaustedToast();
+      openLitPlus();
       return;
     }
     setIsSwiping(true);
@@ -1965,7 +2113,10 @@ export default function DiscoverScreen() {
           pointerEvents={headerLocked ? "none" : "auto"}
           style={[
             {
-              height: 50,
+              // Satır boyu ortak dosyadan: açık kartın lift'i (SwipeWrapper >
+              // HEADER_COVER) aynı sayıyı okuyor, ayrışırsa kart header'ı tam
+              // örtmez. Logo kutusundan (50) kısa olmasının sebebi orada.
+              height: DISCOVER_HEADER_HEIGHT,
               paddingHorizontal: 21,
               flexDirection: "row",
               alignItems: "center",
@@ -2078,7 +2229,12 @@ export default function DiscoverScreen() {
       </View>
 
       {/* Cards */}
-      <Animated.View style={[{ flex: 1, paddingTop: 1 }, cardContainerStyle]}>
+      <Animated.View
+        style={[
+          { flex: 1, paddingTop: DISCOVER_CARD_TOP_GAP },
+          cardContainerStyle,
+        ]}
+      >
         {loading && potentialMatches.length === 0 ? (
           <SkeletonCard />
         ) : potentialMatches.length > currentIndex ? (
@@ -2111,10 +2267,6 @@ export default function DiscoverScreen() {
         isPremium={isPremium}
         onSave={handleSaveFilters}
         saving={saveFiltersMutation.isPending}
-      />
-      <PurchaseModal
-        visible={purchaseVisible}
-        onClose={() => setPurchaseVisible(false)}
       />
       {/* SuperLike kotası bitti → premium paywall DEĞİL, consumable paket sheet'i.
           Premium kullanıcının da satın alabileceği bir ürün olduğu için backend

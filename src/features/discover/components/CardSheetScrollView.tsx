@@ -1,4 +1,5 @@
 import { useCallback, useRef, useState } from "react";
+import { View } from "react-native";
 import type {
   NativeScrollEvent,
   NativeSyntheticEvent,
@@ -13,6 +14,20 @@ import {
   isNearBottom,
   zoomImpactAnimation,
 } from "./cardScrollTuning";
+import { colors } from "@/shared/theme/colors";
+import { CARD_CORNER_RADIUS } from "./CardStickyHeader";
+
+/**
+ * Alt bounce kuyruğunun boyu — hızlı bir fırlatmada iOS'un rubber-band'i bu
+ * kadar açılabilir. Düz renkli tek View, cömert vermenin maliyeti yok.
+ */
+const OVERSCROLL_TAIL = 600;
+
+/**
+ * Kuyruğun içeriğin dibinden YUKARI taşan payı. Kartın köşe yarıçapından büyük
+ * olmalı — kuyruk kartın yuvarlak alt köşelerinin arkasına da girsin.
+ */
+const OVERSCROLL_TAIL_OVERLAP = CARD_CORNER_RADIUS + 10;
 
 /**
  * Sheet içindeki SwipeCard'ın scroller'ı (PreviewModal, LikerSwipeModal).
@@ -38,14 +53,31 @@ import {
  */
 export default function CardSheetScrollView({
   zoomImpact,
+  scrollY,
   scrollEnabled = true,
+  fillOverscroll = true,
   style,
   contentContainerStyle,
   children,
 }: {
   /** SwipeCard'a da verilen zoom sinyali (0-1). */
   zoomImpact: SharedValue<number>;
+  /**
+   * Verilirse ham scroll konumu (px) buraya yazılır — sticky şerit "bugün
+   * aktif"i buna göre söndürüyor (bkz. CardStickyHeader).
+   *
+   * `zoomImpact` ile aynı threading: değer JS'ten sürülüyor (gorhom onScroll'ü
+   * runOnJS ile forward ediyor), okuyan taraf UI thread'de kalıyor.
+   */
+  scrollY?: SharedValue<number>;
   scrollEnabled?: boolean;
+  /**
+   * Alt uçtaki bounce boşluğunu kart zeminiyle doldur (aşağıdaki kuyruk).
+   * İçerik EKRANDAN KISAYSA kapatılmalı — PreviewModal profil yüklenirken
+   * yalnız bir spinner çiziyor, orada kuyruk esneme boşluğunu değil ekranın
+   * ortasını boyardı.
+   */
+  fillOverscroll?: boolean;
   style?: StyleProp<ViewStyle>;
   contentContainerStyle?: StyleProp<ViewStyle>;
   children: React.ReactNode;
@@ -76,6 +108,7 @@ export default function CardSheetScrollView({
     (e: NativeSyntheticEvent<NativeScrollEvent>) => {
       const { contentOffset, contentSize, layoutMeasurement } = e.nativeEvent;
       const y = contentOffset.y;
+      if (scrollY) scrollY.value = y;
 
       const nearBottom = isNearBottom(
         y,
@@ -103,7 +136,7 @@ export default function CardSheetScrollView({
       prevSpeed.current = speed;
       prevY.current = y;
     },
-    [zoomImpact],
+    [zoomImpact, scrollY],
   );
 
   return (
@@ -119,6 +152,32 @@ export default function CardSheetScrollView({
       onScrollBeginDrag={handleScrollBeginDrag}
       onScrollEndDrag={handleScrollEndDrag}
     >
+      {/* Alt uçtaki bounce'un açtığı boşluğu dolduran kuyruk.
+          Sheet'in ve bu scroller'ın zemini BİLEREK şeffaf (kartın kendi zemini
+          zaten opak), ama şeffaflığın bedeli alt uçta ödeniyordu: içerik yukarı
+          esneyince altında kalan boşluktan arkadaki ekran görünüyordu.
+          Zemini boyamak yerine SADECE o boşluğu dolduruyoruz.
+
+          İlk çocuk: mutlak konumlu ama kartın ALTINDA boyanır.
+          Mutlak → contentSize'a girmiyor, yani scroll menzili ve bounce eşiği
+          değişmiyor.
+          `bottom` negatif: kuyruk içeriğin dibinden AŞAĞI uzanır. Üstten
+          OVERLAP kadar içeri girmesi de kasıtlı — kartın yuvarlak alt
+          köşelerinin arkasındaki hilalleri de dolduruyor, yoksa esneme anında
+          dikişin iki ucunda koyu birer çentik kalıyordu. */}
+      {fillOverscroll && (
+        <View
+          pointerEvents="none"
+          style={{
+            position: "absolute",
+            left: 0,
+            right: 0,
+            bottom: -(OVERSCROLL_TAIL - OVERSCROLL_TAIL_OVERLAP),
+            height: OVERSCROLL_TAIL,
+            backgroundColor: colors.bg,
+          }}
+        />
+      )}
       {children}
     </BottomSheetScrollView>
   );

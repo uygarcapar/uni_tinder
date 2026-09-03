@@ -5,7 +5,7 @@ import Animated, {
   interpolate,
   Extrapolate,
 } from "react-native-reanimated";
-import { Check, X } from "lucide-react-native";
+import { Check, X } from "@/shared/icons";
 import { useRenderCount } from "@/shared/debug/useRenderCount";
 import { colors } from "@/shared/theme/colors";
 
@@ -78,6 +78,26 @@ export default function SwipeOverlay({ dragX, opacity }: any) {
       style={{ position: "absolute", inset: 0, zIndex: 100 }}
       pointerEvents="none"
     >
+      {/* MÜREKKEP MODLA DÖNMEZ ve dönmemeli: perde kartın KAPAK FOTOĞRAFININ
+          üstünde duruyor, yani foto üstü. Fotoğraf açık modda da fotoğraftır —
+          buradaki soru "hangi tema" değil, "hangi zemin" (bkz. colors.ts,
+          `onMedia*` ailesinin notu: foto/gradyan üstü açık modda DA beyaz).
+
+          BEYAZ (`onMedia`), koyu değil. Gerekçe okunurluk değil — glif kartın
+          ~%30'unda, üstteki blur perdesinin (SwipeCard > top blur gradient,
+          230px) güçlü bandının ALTINDA duruyor, yani çıplak fotoğrafın
+          üstünde: beyazın açık fotoğrafta yaşadığı sorunu koyu da koyu
+          fotoğrafta yaşıyor, ikisi başa baş. Ayıran şey SİSTEM: bu karttaki
+          bütün medya mürekkebi beyaz (isim, üniversite, chevron, kalp) ve
+          bütün okunurluk perdeleri İKİ MODDA DA koyu (top/bottom blur
+          `tint="dark"`, scrimAt). Koyu glif o perdelerin ters tarafına düşer —
+          perde koyulaştıkça kaybolur, yani kartın kendi okunurluk katmanı
+          gliften çalar. `onMediaInverse` de bunun için değil: o token SABİT
+          AÇIK yüzeyler (marka gradyanı üstündeki beyaz buton) için.
+
+          Tek bileşen İKİ YERE birden bakıyor: Keşif (DiscoverScreen) ve
+          Beğeniler'den açılan kart (LikerSwipeModal). Rengi burada değiştirmek
+          ikisini birden değiştirir; birini ayırmak istersen prop'a çıkar. */}
       {/* LIKE (TİK) */}
       <Animated.View
         style={[

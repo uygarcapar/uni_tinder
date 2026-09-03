@@ -16,14 +16,30 @@ import Animated, {
 import type { SharedValue } from "react-native-reanimated";
 import * as Haptics from "expo-haptics";
 import SwipeCard from "@/features/discover/components/SwipeCard";
+import { CARD_CORNER_RADIUS } from "@/features/discover/components/CardStickyHeader";
+import { colors } from "@/shared/theme/colors";
 import { runFlameSweep } from "@/features/discover/flameSweep";
 import uiBus, { cardExpandAnim, cardPullProgress } from "@/shared/services/uiBus";
+import { useSafeAreaInsets } from "react-native-safe-area-context";
+import {
+  DISCOVER_CARD_TOP_GAP,
+  DISCOVER_HEADER_HEIGHT,
+} from "@/features/discover/components/discoverHeaderMetrics";
 import { photoPinchActive } from "@/shared/components/pinchZoom";
 import { useRenderCount } from "@/shared/debug/useRenderCount";
 import type { NoteTarget, PotentialMatch } from "@/shared/types";
 
 const { width } = Dimensions.get("window");
 const SWIPE_THRESHOLD = 85;
+
+/**
+ * Yana kaydırırken kartın en fazla ne kadar kararacağı (0-1).
+ *
+ * Eşiğe (SWIPE_THRESHOLD) varıldığında bu değere ulaşır, ötesinde artmaz —
+ * karar verilmiş bir kartı daha da karartmanın anlatacağı bir şey yok, üstelik
+ * tam o anda ✓/✗ glifi (SwipeOverlay) devreye giriyor ve perde onu yutar.
+ */
+const SWIPE_DIM_MAX = 0.22;
 const SUPER_LIKE_PULL_THRESHOLD = 50; // pull down ty.value bu px'e ulaşınca süper beğeni "ready"
 
 // Animasyon süreleri
@@ -85,11 +101,32 @@ function SwipeWrapper({
   onNote,
 }: SwipeWrapperProps) {
   useRenderCount("SwipeWrapper");
-  // Expanded'ken kart header'ın üstüne binip orada kalsın (kapatılana kadar).
-  // Header bar 50px → yarısı (~25px) kadar hafifçe biner; status bar (insets.top)
-  // hesaba katılmaz. cardExpandAnim'e bağlı: expand oranıyla yukarı biner,
-  // collapse'de (gesture/chevron) senkron geri iner.
-  const HEADER_COVER = 25;
+  const insets = useSafeAreaInsets();
+  // Expanded'ken kart EKRANIN EN TEPESİNE çıkıp orada kalsın (kapatılana
+  // kadar): header şeridi tamamen örtülür, kartın üst kenarı ekranın 0'ına
+  // oturur — durum çubuğu artık kapak fotoğrafının üstünde durur. Okunurluğu
+  // fotonun üstündeki koyu blur rampası taşıyor (bkz. SwipeCard'daki "Top Blur
+  // Gradient Overlay", 230px).
+  //
+  // Hesap: kart container'ının tepesi ekranın tepesinden insets.top (durum
+  // çubuğu) + header satırı + container paddingTop kadar aşağıda (bkz.
+  // DiscoverScreen) — lift o farkın tamamı. Son iki sayı ortak dosyadan
+  // okunuyor, burada tekrar yazma (bkz. discoverHeaderMetrics).
+  //
+  // KARTIN LİFT'İ SABİT, ÜST CHROME'U KÜÇÜK BİR PAY GERİ ALIR: köşe butonları
+  // (sağ üstte süper beğeni, sol üstte "başa dön" oku) diyagonalin biraz
+  // altına iniyor — ne durum çubuğuna girsinler ne de köşeden kopsunlar
+  // (bkz. SwipeCard > EXPANDED_CORNER_DROP). Buradaki lift'i o pay için
+  // DEĞİŞTİRME: kabuk tepeye kadar gitmeye devam etmeli.
+  //
+  // TARİHÇE: header satırı + 1 - LOGO_INK_CENTER_Y (≈28.75) idi — kartın üst kenarı
+  // logonun görünür dikey merkezinde duruyor, header'ın üst yarısı açıkta
+  // kalıyordu. Ondan önce 51 (header tam örtülü, kart safe-area'nın tepesinde),
+  // en başta 25 (logonun altında kalıyordu). cardExpandAnim'e bağlı: expand
+  // oranıyla yukarı biner, collapse'de (gesture/chevron/cam buton) senkron
+  // geri iner.
+  const HEADER_COVER =
+    insets.top + DISCOVER_HEADER_HEIGHT + DISCOVER_CARD_TOP_GAP;
   const tx = useSharedValue(0);
   const ty = useSharedValue(0);
   const scrollY = useSharedValue(0);
@@ -763,6 +800,14 @@ function SwipeWrapper({
       // kalıyordu (tab bar'ın altındaki şerit). Kutuyu aşağı doğru aynı
       // miktarda büyütüyoruz → alt kenar container'ın dibinde kalır ve o şeridi
       // expanded içeriğin devamı doldurur. Kartın iç yapısı değişmiyor.
+      //
+      // BİR ARA `top` İLE YAPILDI, GERİ ALINDI: amacı kart açıkken ata
+      // transform'unu kimliksel tutup içerideki cam kutuları kurtarmaktı
+      // (bkz. CardSectionBox'taki ata kuralı). Kâğıt üstünde geometri birebir
+      // aynı — ama camları düzeltmedi ve kartın yerleşiminde gerileme yarattı.
+      // Amacını vermeyen bir değişikliği tutmadık. Tekrar denenecekse önce
+      // yerleşim doğrulanmalı.
+      //
       // Spring overshoot expandAnim'i 1'in üstüne çıkarabiliyor → clamp.
       bottom: isTopCard
         ? -HEADER_COVER * Math.max(0, Math.min(1, cardExpandAnim.value))
@@ -805,6 +850,30 @@ function SwipeWrapper({
     };
   });
 
+  /**
+   * Yana kaydırırken kartı karartan perde.
+   *
+   * KARTIN KENDİ `opacity`Sİ İLE YAPILMIYOR, ŞART. Cam yüzeyler ata zincirinde
+   * alfa 1'in altına düştüğü anda hiç render edilmiyor (bkz. CardSectionBox'taki
+   * "ATA ZİNCİRİNDE OPACITY < 1 OLAMAZ" notu) — kartı soldurmak açık paneldeki
+   * bütün cam kutuları öldürürdü. Perde bu yüzden kartın ATASI değil KARDEŞİ:
+   * kendi opaklığı animasyonlanıyor, kartınki 1'de sabit kalıyor.
+   *
+   * `tx` okunuyor, `dragX` değil: `tx` bu kartın kendi konumu. `dragX` deste
+   * geneli için paylaşılıyor ve arkadaki kart da onu okuyor — buradan sürseydik
+   * üstteki kart uçarken alttaki de kararırdı.
+   */
+  const swipeDimStyle = useAnimatedStyle(() => {
+    if (!isTopCard) return { opacity: 0 };
+    const progress = interpolate(
+      Math.abs(tx.value),
+      [0, SWIPE_THRESHOLD],
+      [0, SWIPE_DIM_MAX],
+      Extrapolate.CLAMP,
+    );
+    return { opacity: progress };
+  });
+
   return (
     <GestureDetector gesture={composedGesture}>
       <Animated.View
@@ -830,6 +899,28 @@ function SwipeWrapper({
           onReport={onReport ? handleReport : undefined}
           onBlock={onBlock ? handleBlock : undefined}
           onNote={onNote ? handleNote : undefined}
+        />
+        {/* Karartma perdesi — KARTTAN SONRA çiziliyor ki üstünde kalsın.
+            Yarıçap kartınkiyle aynı (CARD_CORNER_RADIUS): kartın köşeleri
+            yuvarlak, perde kare olsaydı sürüklerken köşelerde koyu üçgenler
+            taşardı. Dokunmaları geçirmesi gerekiyor — jest kartın kendisinde. */}
+        <Animated.View
+          pointerEvents="none"
+          style={[
+            {
+              // Açık kenarlar: ata `bottom`u expanded'da negatife indiriyor,
+              // perde de onunla birlikte uzasın.
+              position: "absolute",
+              top: 0,
+              left: 0,
+              right: 0,
+              bottom: 0,
+              borderRadius: CARD_CORNER_RADIUS,
+              borderCurve: "continuous",
+              backgroundColor: colors.mediaScrim,
+            },
+            swipeDimStyle,
+          ]}
         />
       </Animated.View>
     </GestureDetector>

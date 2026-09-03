@@ -1,4 +1,4 @@
-import React, { useEffect, useMemo, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import { StyleSheet, View, useWindowDimensions } from "react-native";
 import {
   Canvas,
@@ -10,17 +10,13 @@ import {
   vec,
   type SkPath,
 } from "@shopify/react-native-skia";
-import Animated, {
+import {
   Easing,
-  Extrapolation,
-  interpolate,
-  useAnimatedStyle,
   useDerivedValue,
   useSharedValue,
   withTiming,
 } from "react-native-reanimated";
 import { FLAME_PATH } from "@/shared/components/icons/FlameGlyph";
-import PremiumFlame from "@/shared/components/PremiumFlame";
 import { gradients } from "@/shared/theme/colors";
 import uiBus from "@/shared/services/uiBus";
 import {
@@ -37,6 +33,15 @@ import type { SharedValue } from "react-native-reanimated";
 
 /** Dalga geçerken hafif yalpalasın — katı bir blok gibi kaymasın. */
 const SWAY_PX = 7;
+
+/** Dalganın o andaki ötelemesi: yol boyunca ilerleme + yalpalama. */
+function waveOffset(p: number, startY: number, endY: number) {
+  "worklet";
+  return {
+    y: startY + (endY - startY) * p,
+    x: Math.sin(p * 7.5) * SWAY_PX,
+  };
+}
 
 /** Kontur — "kenarları belli" olsun diye. Fotoğraf üstünde okunan sıcak krem. */
 const OUTLINE = "#FFD79E";
@@ -135,14 +140,10 @@ function FlameWaveLayer({
   wave,
   width,
   progress,
-  children,
 }: {
   wave: Wave;
   width: number;
   progress: SharedValue<number>;
-  /** Alevin ÜSTÜNE çizilecekler. Silüet kurulamazsa bunlar da çizilmiyor:
-   *  alevsiz kalan beyaz bir yazı kart fotoğrafının üstünde okunmaz. */
-  children?: React.ReactNode;
 }) {
   // Titreşim karesi. Bunun için React state'i yeterli: dalga boyunca ~18 render
   // oluyor, 60 fps'lik öteleme ise React'e hiç uğramıyor.
@@ -158,11 +159,8 @@ function FlameWaveLayer({
   const { startY, endY, tongueHeight, bandHeight } = wave;
 
   const transform = useDerivedValue(() => {
-    const p = progress.value;
-    return [
-      { translateY: startY + (endY - startY) * p },
-      { translateX: Math.sin(p * 7.5) * SWAY_PX },
-    ];
+    const o = waveOffset(progress.value, startY, endY);
+    return [{ translateY: o.y }, { translateX: o.x }];
   }, [startY, endY]);
 
   const path = frameAt(wave, tick, width);
@@ -191,74 +189,9 @@ function FlameWaveLayer({
           />
         </Group>
       </Canvas>
-      {children}
     </View>
   );
 }
-
-/** İşaretin açılıp kapanma payı — ilerleme (0..1) cinsinden ~200 ms. */
-const MARK_FADE = 200 / FLAME_WAVE_MS;
-
-/** Ortadaki rozetin boyu. Rozetin kendi ölçüsünün (26) çok üstünde: burada
- *  isim yanındaki küçük nişan değil, kutlamanın tek görsel odağı. */
-const MARK_SIZE = 72;
-
-/**
- * Kutlamanın ortadaki işareti: dalganın üstünde, ekranın tam ortasında duran
- * premium alev rozeti (bkz. PremiumFlame).
- *
- * DÜZ BEYAZ çiziliyor, kendi gradyanıyla değil: rozetin dolgusu
- * `gradients.swipeHeart` ve dalganın dolgusu da aynı gradyan — üst üste
- * geldiklerinde rozet ateşin içinde kayboluyor. PremiumFlame'in `color`
- * kaçışı zaten tam bu durum için var (lit plus kartında da öyle kullanılıyor).
- *
- * Görünürlük SÜREYE değil GEOMETRİYE bağlı — işaret yalnız ekranın ortası
- * kesintisiz şeridin arkasındayken açılıyor (centerIn..centerOut). Sabit bir
- * gecikmeyle açılsaydı, dalganın ortayı ne zaman kapattığı ekran boyuna göre
- * değiştiği için kısa ekranda geç, uzun ekranda erken kalırdı; erken kalanı
- * beyaz rozeti kartın fotoğrafı üstüne koymak demek.
- *
- * Opaklık aynı `progress`ten türüyor, yani tamamen UI thread'inde: JS takılsa
- * bile işaret dalgadan kopmuyor.
- */
-function SweepMark({
-  progress,
-  centerIn,
-  centerOut,
-}: {
-  progress: SharedValue<number>;
-  centerIn: number;
-  centerOut: number;
-}) {
-  // Pencere dar kalırsa (aşırı geniş ekran) sabit pay iki ucu birbirine
-  // geçirir ve işaret hiç tam açılmaz — payı pencerenin üçte biriyle sınırla.
-  const fade = Math.min(MARK_FADE, (centerOut - centerIn) / 3);
-
-  const style = useAnimatedStyle(
-    () => ({
-      opacity: interpolate(
-        progress.value,
-        [centerIn, centerIn + fade, centerOut - fade, centerOut],
-        [0, 1, 1, 0],
-        Extrapolation.CLAMP,
-      ),
-    }),
-    [centerIn, centerOut, fade],
-  );
-
-  return (
-    <Animated.View style={[StyleSheet.absoluteFill, styles.markWrap, style]}>
-      <PremiumFlame size={MARK_SIZE} color="#FFFFFF" />
-    </Animated.View>
-  );
-}
-
-const styles = StyleSheet.create({
-  markWrap: {
-    alignItems: "center",
-    justifyContent: "center",
-  },
-});
 
 export default function SuperLikeFlameCanvas() {
   // Modül seviyesinde Dimensions.get() DEĞİL: iPad split-view'da pencere
@@ -293,15 +226,7 @@ export default function SuperLikeFlameCanvas() {
     return () => clearTimeout(cover);
   }, [progress, coverMs]);
 
-  return (
-    <FlameWaveLayer wave={wave} width={width} progress={progress}>
-      <SweepMark
-        progress={progress}
-        centerIn={wave.centerIn}
-        centerOut={wave.centerOut}
-      />
-    </FlameWaveLayer>
-  );
+  return <FlameWaveLayer wave={wave} width={width} progress={progress} />;
 }
 
 /**

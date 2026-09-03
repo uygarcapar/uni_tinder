@@ -219,16 +219,6 @@ export interface FlameWaveGeometry {
   endY: number;
   /** Animasyon BAŞINDAN, dalganın ekranı tam kapattığı ana kadar geçen ms. */
   coverMs: number;
-  /**
-   * Ekranın TAM ORTASININ kesintisiz şeridin arkasında kaldığı ilerleme
-   * aralığı (0..1). Kutlama yazısı orada duruyor (bkz. SuperLikeFlameCanvas):
-   * beyaz metin alevin üstünde okunuyor, kartın fotoğrafında kayboluyor.
-   *
-   * Örtme penceresinden ÇOK daha geniş — tek bir noktanın kapalı olması için
-   * şeridin ekranın tamamını kaplaması gerekmiyor.
-   */
-  centerIn: number;
-  centerOut: number;
 }
 
 /**
@@ -278,19 +268,12 @@ export function flameWaveGeometry(
   const ms =
     outMs - inMs > COVER_LEAD_MS ? inMs + COVER_LEAD_MS : (inMs + outMs) / 2;
 
-  // Şerit ekranda [T, T + solid] aralığını dolduruyor (T = o anki öteleme).
-  // Ortanın kapalı olma koşulu: T <= height/2 <= T + solid.
-  const centerY = height / 2;
-  const clamp01 = (v: number) => Math.min(1, Math.max(0, v));
-
   return {
     tongueHeight,
     bandHeight,
     startY,
     endY,
     coverMs: Math.round(Math.min(FLAME_WAVE_MS, Math.max(0, ms))),
-    centerIn: clamp01((startY - centerY) / travel),
-    centerOut: clamp01((startY + solid - centerY) / travel),
   };
 }
 
