@@ -13,16 +13,16 @@ import {
  * SuperLike paketi (consumable) → kredi dönüşümü.
  *
  * Kuyruk/retry/idempotans mekaniğinin TAMAMI consumableRedeem.ts'te; burada
- * yalnız bu ürünün sözleşmesi duruyor. Kurtarma paketi (recoveryRedeem.ts) aynı
- * motoru kullanıyor ama AYRI kuyruk anahtarı ve AYRI kod ailesiyle.
+ * yalnız bu ürünün sözleşmesi duruyor. Not paketi (noteRedeem.ts) aynı motoru
+ * kullanıyor ama AYRI kuyruk anahtarı ve AYRI kod ailesiyle.
  */
 
 export const SUPERLIKE_REDEEM_FLOW: RedeemFlowConfig = {
   kind: "superlike",
   endpoint: API_ENDPOINTS.SWIPE_SUPER_LIKE_REDEEM,
   codes: REDEEM_CODES,
-  // ⛔ Kurtarma kuyruğununkinden FARKLI olmak zorunda — aynı anahtarı paylaşan
-  // iki kuyruk birbirinin kayıtlarını yanlış uca yollar.
+  // ⛔ Not kuyruğununkinden FARKLI olmak zorunda — aynı anahtarı paylaşan iki
+  // kuyruk birbirinin kayıtlarını yanlış uca yollar.
   queuePrefix: "superlikePendingRedeems",
   handledPrefix: "superlikeHandledTx",
   remainingField: "superLikesRemaining",

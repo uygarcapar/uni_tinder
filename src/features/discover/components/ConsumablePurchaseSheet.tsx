@@ -29,12 +29,13 @@ import { colors, gradients, ink } from "../../../shared/theme/colors";
 import { plainBlurTint } from "@/shared/theme/blur";
 
 /**
- * Consumable paket satın alma sheet'i — SuperLike ve kurtarma paketleri bunu
- * PAYLAŞIYOR (SuperLikePurchaseModal / RecoveryPurchaseModal ince sarmalayıcı).
+ * Consumable paket satın alma sheet'i — SuperLike ve not paketleri bunu
+ * PAYLAŞIYOR (SuperLikePurchaseModal / NotePurchaseModal ince sarmalayıcı).
+ * Kurtarma paketi de kullanıyordu; ürün 2026-08-31'de kaldırıldı.
  *
  * Paketler RC'nin AYRI offering'lerinden geliyor (premium offering'i `current`,
  * bunlar `all[...]`). Kredi sayısı ürün id'sinden okunuyor (`superlike_10` → 10,
- * `recovery_3` → 3); fiyat DAİMA RC'nin locale'li `priceString`i — sabit ₺
+ * `note_4` → 4); fiyat DAİMA RC'nin locale'li `priceString`i — sabit ₺
  * yazmak App Store'un bölgesel fiyatlandırmasıyla çelişiyordu.
  *
  * Satın alma bakiyeyi TEK BAŞINA artırmaz: consumable entitlement üretmediği
@@ -55,11 +56,11 @@ interface ConsumablePack {
 }
 
 /**
- * `superlike_10` → 10, `recovery_3` → 3. Bulunamazsa null (kart ürünün kendi
+ * `superlike_10` → 10, `note_4` → 4. Bulunamazsa null (kart ürünün kendi
  * başlığını gösterir).
  *
- * ⛔ Ürün id'sinde adetten BAŞKA rakam olmamalı: `2026_recovery_10` sessizce
- * 2026 kredi okur. Sözleşme bunu mağaza tarafında garanti ediyor.
+ * ⛔ Ürün id'sinde adetten BAŞKA rakam olmamalı: `2026_note_4` sessizce 2026
+ * kredi okur. Sözleşme bunu mağaza tarafında garanti ediyor.
  */
 function creditsFromProductId(productId: string | null): number | null {
   const m = String(productId ?? "").match(/(\d+)/);
@@ -99,9 +100,9 @@ export interface ConsumablePurchaseSheetProps {
   purchasePack: (
     pkg: PurchasesPackage,
   ) => Promise<{ transactionId: string | null; productId: string | null }>;
-  /** i18n anahtar öneki — `superLikePurchase` / `recoveryPurchase`. */
+  /** i18n anahtar öneki — `superLikePurchase` / `notePurchase`. */
   i18nPrefix: string;
-  /** Analytics olay öneki — `superlike_pack` / `recovery_pack`. */
+  /** Analytics olay öneki — `superlike_pack` / `note_pack`. */
   analyticsKind: string;
   /** Paket kartındaki simge. */
   renderGlyph: (size: number, color: string) => ReactNode;
@@ -111,17 +112,18 @@ export interface ConsumablePurchaseSheetProps {
    * söylemiyor — simge o boşluğu kapatıyor.
    */
   toastIcon?: ToastIconKind;
+  // ⚠️ `secondaryAction` KALDIRILDI (2026-08-31). Tek kullanıcısı kurtarma
+  // sheet'iydi ("abonelik de bu hakkı veriyor" bağlantısı); kurtarma premium
+  // ayrıcalığı olunca hem sheet hem bağlantı gereksizleşti. Kalan iki üründe
+  // (SuperLike / not) abonelik bir alternatif DEĞİL — ikisi de premium'da da
+  // satın alınıyor, bağlantı yanlış vaat olurdu.
   /**
-   * İkincil çıkış — kurtarma sheet'inde free kullanıcıya gösterilen "abonelik
-   * de bu hakkı veriyor" bağlantısı. Premium'da geçilmiyor (§3: premium'a
-   * abonelik teklifi gösterilmemeli).
-   */
-  secondaryAction?: { label: string; onPress: () => void } | null;
-  /**
-   * Açılışta en küçük kademeyi (listedeki ilk paket) seçili getirir — not ve
-   * SuperLike sheet'lerinde açık: boş seçimle açılıp CTA'yı ölü göstermek
-   * fazladan bir dokunuş istiyordu, seçim zaten tek dokunuşla değişiyor.
-   * Varsayılan KAPALI — kurtarma sheet'i seçimsiz açılmaya devam ediyor.
+   * Açılışta en küçük kademeyi (listedeki ilk paket) seçili getirir. Kalan iki
+   * çağıranın (SuperLike / not) İKİSİ DE açıkça `true` geçiyor: boş seçimle
+   * açılıp CTA'yı ölü göstermek fazladan bir dokunuş istiyordu, seçim zaten tek
+   * dokunuşla değişiyor. Varsayılanın KAPALI kalmasının sebebi kurtarma
+   * sheet'iydi (seçimsiz açılıyordu) ve o sheet kaldırıldı — yani bugün hiçbir
+   * çağıran varsayılana düşmüyor.
    */
   autoSelectFirstPack?: boolean;
   snapPoints?: string[];
@@ -138,7 +140,6 @@ export default function ConsumablePurchaseSheet({
   analyticsKind,
   renderGlyph,
   toastIcon,
-  secondaryAction = null,
   autoSelectFirstPack = false,
   snapPoints = ["55%", "70%"],
 }: ConsumablePurchaseSheetProps) {
@@ -361,28 +362,6 @@ export default function ConsumablePurchaseSheet({
           />
         )}
       </TouchableOpacity>
-      {/* İkincil çıkış — yalnız kurtarma sheet'inde ve yalnız free'de dolu.
-          Butonu değil bağlantı görünümünü seçiyoruz: burada satılan ürün paket,
-          abonelik ikinci bir seçenek. */}
-      {secondaryAction && !purchasing && (
-        <TouchableOpacity
-          activeOpacity={0.7}
-          onPress={secondaryAction.onPress}
-          hitSlop={{ top: 8, bottom: 8, left: 12, right: 12 }}
-          style={{ marginTop: 12, alignSelf: "center" }}
-        >
-          <Text
-            style={{
-              color: colors.text,
-              fontSize: 13,
-              fontWeight: "600",
-              textDecorationLine: "underline",
-            }}
-          >
-            {secondaryAction.label}
-          </Text>
-        </TouchableOpacity>
-      )}
       <Text
         style={{
           marginTop: 10,

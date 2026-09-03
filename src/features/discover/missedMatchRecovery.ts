@@ -1,7 +1,8 @@
 import api from "@/shared/services/api";
 import { API_ENDPOINTS } from "@/shared/constants/api";
 import { resolveCardAge } from "./cardPrivacy";
-import type { PaywallType } from "@/shared/types";
+import { normalizeLikerNote } from "./likerNote";
+import type { LikerNote, PaywallType } from "@/shared/types";
 
 /**
  * Kaçırılan eşleşme kurtarma.
@@ -22,12 +23,34 @@ export interface MissedMatchCard {
   userId: string;
   name: string;
   age: number | null;
+  /** GÖSTERİM adı (`universityNameDisplay`) — ham `universityName` hep Türkçe. */
   universityName: string;
   mainPhoto: string;
   /** Karşı tarafın beni beğendiği an. */
   likedAt: string | null;
   isSuperLike: boolean;
   isPremium: boolean;
+  /**
+   * Kartın KİLİDİNİ açan sinyaller — beğeni kartlarındakiyle BİREBİR aynı üçlü
+   * (bkz. LikesScreen'deki `isUnlockedLike`).
+   *
+   * Bu liste 2026-08-31'e kadar hiç blur uygulamıyordu ve açık bir sızıntıydı:
+   * sunucu fotoğrafları maskelemediği için, "Seni Beğenenler"de bulanıklaştırılan
+   * kişi keşifte pas geçilip buraya düştüğünde NET görünüyordu — free kullanıcı
+   * paralı bilgiyi bedava alıyordu. Alanlar bu yüzden taşınmak zorunda: kilidi
+   * açan şeyi (SuperLike / not / sunucunun kanonik bayrağı) kart göremezse,
+   * ödemesi yapılmış bir görünürlük yanlışlıkla bulanıklaşır.
+   */
+  isNote: boolean;
+  note: LikerNote | null;
+  /**
+   * ⚠️ KİLİT KARARINA GİRMİYOR (bkz. LikesScreen > isUnlockedLike). Bir zamanlar
+   * "free'de normal beğenide HER ZAMAN false" sayılıp kilidi açan üçüncü sinyaldi;
+   * o maskeleme yalnız KEŞİF DESTESİNDE geçerli, bu listede (tanımı gereği "seni
+   * beğenenler") bayrak her kart için `true` geliyor ve kuralı totolojiye
+   * düşürüyordu. Alan taşınmaya devam ediyor, karar vermiyor.
+   */
+  hasLikedMe: boolean;
 }
 
 export interface MissedMatchesPage {
@@ -51,6 +74,11 @@ const EMPTY_PAGE: MissedMatchesPage = {
  *
  * SuperLike atanlar backend'de zaten listenin başında geliyor (sonra zaman
  * DESC) — burada yeniden sıralamıyoruz.
+ *
+ * ⚠️ Liste ve `totalProfiles` free'de de TAM geliyor, kartlar da maskesiz
+ * (`photos` dolu, `displayName` gerçek). Bilinçli: "burada 3 kişi var" bilgisi
+ * premium'a yönelten motivasyon. Kimliği saklayan tek şey İSTEMCİDEKİ blur —
+ * kart bu yüzden yukarıdaki kilit sinyallerini taşımak zorunda.
  */
 export async function fetchMissedMatches(
   page = 1,
@@ -61,8 +89,7 @@ export async function fetchMissedMatches(
   )) as any;
   if (!res?.isSuccess || !res?.result) return EMPTY_PAGE;
   const r = res.result;
-  return {
-    profiles: (r.profiles ?? []).map((p: any) => ({
+  const profiles: MissedMatchCard[] = (r.profiles ?? []).map((p: any) => ({
       // `profileId` benzersiz; beğeni kartlarıyla aynı grid'de durabilmesi için
       // ayrı önek ("mm_") taşıyor.
       id: `mm_${p.profileId ?? p.userId}`,
@@ -71,12 +98,19 @@ export async function fetchMissedMatches(
       // Gizli yaş `0` olarak geliyor, `?? null` onu yakalamıyor — bkz.
       // cardPrivacy.resolveCardAge.
       age: resolveCardAge(p),
-      universityName: p.universityName || "",
+      universityName: p.universityNameDisplay || p.universityName || "",
       mainPhoto: p.photos?.[0] || "",
       likedAt: p.likedMeAt ?? null,
       isSuperLike: p.isSuperLike ?? false,
       isPremium: p.isPremium ?? false,
-    })),
+      // `isNote` sunucunun bayrağı, `note` içeriği — beğeni kartlarıyla aynı
+      // ayrım (bayrak true iken içerik boş gelirse kilit yine açılır).
+      isNote: !!p.isNote,
+      note: normalizeLikerNote(p),
+      hasLikedMe: p.hasLikedMe === true,
+  }));
+  return {
+    profiles,
     totalProfiles: r.totalProfiles ?? 0,
     currentPage: r.currentPage ?? page,
     hasNextPage: r.hasNextPage ?? false,
@@ -87,20 +121,27 @@ export type RecoverOutcome =
   /** 200 — Pass → Like dönüştü, eşleşme oluşuyor. */
   | { kind: "recovered"; message: string | null; isMatch: boolean }
   /**
-   * 403 — kurtarma hakkı bitti, `showPaywall: true`.
+   * 403 — `showPaywall: true`, `paywallType: MissedMatchRecoveryLimit`.
    *
-   * 2026-08-22'den beri PREMIUM'da da bu dala düşüyor: kurtarma satın
-   * alınabilir bir ürün olduğu için premium'un "satacak bir şey yok" istisnası
-   * kalktı (eskiden 400 + `showPaywall:false` dönüyordu). Yani bu dal artık
-   * "abonelik sat" değil "paket sat" anlamına geliyor; ayrım `stats.isPremium`
-   * ile yapılır (bkz. LikesScreen).
+   * 2026-08-31'den beri bu dal TEK bir şey demek: **kullanıcı free.** Kurtarma
+   * kredi ekonomisinden çıkıp premium ayrıcalığı oldu (paketler kaldırıldı),
+   * yani premium'un tükenebilecek bir kotası yok — abone bu dala HİÇ düşmüyor.
+   * Satılacak şey de artık paket değil aboneliğin kendisi.
+   *
+   * ⚠️ Premium kontrolü hedefin uygunluk kontrollerinden ("seni beğenmiş mi",
+   * "pas geçmiş misin") ÖNCE çalışıyor: free kullanıcı uygun/uygunsuz hedefte
+   * hep aynı yanıtı alır. Bilinçli — aksi halde uç bir "beni beğendi mi?"
+   * oracle'ına dönerdi ve rastgele id denemeleriyle blur delinirdi. Bu davranışa
+   * GÜVENMEYİN ama BOZMAYIN: yanıt metninden "bu kişi seni beğenmiş" gibi bir
+   * çıkarım yapılmamalı.
    */
   | { kind: "paywall"; message: string | null; paywallType: PaywallType | null }
   /**
    * 400 — hak HARCANMADAN reddedildi: bu kişiyi pas geçmemişsin (zaten
    * kurtarılmış), pas 30 günden eski, kullanıcı yok, ya da çift artık uygun
-   * değil (engelleme). Premium'un tükenmiş kotası bu listeden ÇIKTI — o durum
-   * artık 403. Hepsinde yapılacak şey aynı: mesajı göster + listeyi tazele.
+   * değil (engelleme). Yalnız PREMIUM kullanıcı buraya düşebilir (free için
+   * paywall her şeyden önce dönüyor). Hepsinde yapılacak şey aynı: mesajı
+   * göster + listeyi tazele.
    */
   | { kind: "rejected"; message: string | null }
   /** 401 / 5xx / ağ — geçici, kullanıcı tekrar deneyebilir. */

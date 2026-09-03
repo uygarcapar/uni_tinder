@@ -63,7 +63,7 @@ const CODE_ENTRIES: CodeEntry[] = [
   {
     code: "UT-6002",
     emptyReason: "AllCandidatesSeen",
-    title: "Görebileceklerinin hepsini gördün",
+    title: "Görebileceklerinin hepsini gördün, daha sonra tekrar gel",
     actionLabel: "Daha Sonra Bak",
     action: { kind: "dismiss" },
   },
@@ -127,29 +127,11 @@ const CODE_ENTRIES: CodeEntry[] = [
     actionLabel: "Tamam",
     action: { kind: "dismiss" },
   },
-  // ── Kurtarma paketi redeem'i ─────────────────────────────────────────────
-  // UT-61xx ile BİREBİR aynı üçlü, ayrı numara ailesi. Backend ikisini bilerek
-  // ayırdı (çakışma testle korunuyor): aynı kodu paylaşsalardı hangi ürünün
-  // webhook'unun beklendiği yanıttan okunamazdı.
-  {
-    code: "UT-6201",
-    title: "Satın alman doğrulanıyor",
-    actionLabel: "Tamam",
-    action: { kind: "dismiss" },
-    autoRetry: true, // tek geçici durum — 3 sn sonra tekrar, sonra kuyruk
-  },
-  {
-    code: "UT-6202",
-    title: "Bu paket şu an tanımlı değil",
-    actionLabel: "Destek'e Yaz",
-    action: { kind: "contactSupport" },
-  },
-  {
-    code: "UT-6203",
-    title: "Bu satın alma bu hesaba ait değil",
-    actionLabel: "Tamam",
-    action: { kind: "dismiss" },
-  },
+  // ── Kurtarma paketi redeem'i: KALDIRILDI (UT-62xx) ───────────────────────
+  // 2026-08-31'de kurtarma consumable'ı tamamen kaldırıldı (premium ayrıcalığı
+  // oldu), `/Recovery/Redeem` ucu silindi ve UT-6201/6202/6203 emekliye ayrıldı.
+  // Backend bu numaraları BAŞKA BİR AİLEYE VERMEYECEK (testle kilitli), o yüzden
+  // burada boş bırakılıyorlar — bkz. aşağıdaki numaralandırma tarihçesi.
   // ── Not paketi redeem'i (UT-641x) ────────────────────────────────────────
   // UT-61xx/UT-62xx ile aynı üçlü, üçüncü aile. Numaralar UT-640x'ten (gönderim
   // hataları) sonra başlıyor: iki grup da UT-64xx içinde ama karışmıyorlar.
@@ -186,12 +168,10 @@ export const REDEEM_CODES = {
   BELONGS_TO_ANOTHER_USER: "UT-6103",
 } as const;
 
-/** Kurtarma paketinin aynı üçlüsü — SuperLike'ınkiyle ÇAKIŞMAZ. */
-export const RECOVERY_REDEEM_CODES = {
-  PENDING_WEBHOOK: "UT-6201",
-  UNKNOWN_PRODUCT: "UT-6202",
-  BELONGS_TO_ANOTHER_USER: "UT-6203",
-} as const;
+// `RECOVERY_REDEEM_CODES` (UT-6201/6202/6203) KALDIRILDI — bkz. yukarıdaki not.
+// ⚠️ UT-62xx AİLESİ REZERVE: yeni bir akışa bu numaraları vermeyin. Sürüm
+// geçişinde cihazda kalmış eski bir redeem kaydı yabancı bir uca flush edilirdi
+// (kuyruğun kendisi temizleniyor — discover/recoveryQueuePurge.ts).
 
 /**
  * Not paketinin aynı üçlüsü. Sıra (webhook → ürün → hesap) DEĞİŞMEMELİ: motor
@@ -206,10 +186,7 @@ export const NOTE_REDEEM_CODES = {
 } as const;
 
 /** Bir redeem akışının üç kodu — engine bunu config olarak alıyor. */
-export type RedeemCodeSet =
-  | typeof REDEEM_CODES
-  | typeof RECOVERY_REDEEM_CODES
-  | typeof NOTE_REDEEM_CODES;
+export type RedeemCodeSet = typeof REDEEM_CODES | typeof NOTE_REDEEM_CODES;
 
 /**
  * Not GÖNDERİM hataları (UT-640x) — redeem ailesinden ayrı.
@@ -267,7 +244,7 @@ export function noteSendCodeI18nKey(
  * Kalıcı mı? Yalnız "ürün tanımsız" ve "başka hesaba ait" retry ile çözülmez;
  * bekleyen webhook (402) çözülür.
  *
- * `codes` verilmezse ÜÇ aile birden kontrol edilir. Çağıranın hangi ürünü
+ * `codes` verilmezse İKİ aile birden kontrol edilir. Çağıranın hangi ürünü
  * redeem ettiğini bilmediği yerler için (ör. jenerik hata gösterimi) doğru
  * davranış bu: yanlış ailenin kodunu "geçici" sayıp sonsuz retry üretmektense
  * kalıcı saymak.
@@ -276,9 +253,7 @@ export function isPermanentRedeemCode(
   code: string | null | undefined,
   codes?: RedeemCodeSet,
 ): boolean {
-  const families = codes
-    ? [codes]
-    : [REDEEM_CODES, RECOVERY_REDEEM_CODES, NOTE_REDEEM_CODES];
+  const families = codes ? [codes] : [REDEEM_CODES, NOTE_REDEEM_CODES];
   return families.some(
     (f) =>
       code === f.UNKNOWN_PRODUCT || code === f.BELONGS_TO_ANOTHER_USER,
@@ -293,9 +268,11 @@ export function isPermanentRedeemCode(
 //      Değildi: `RECOVERY_REDEEM_CODES` orada canlıydı. Recovery kodları
 //      `Errors.cs`te değil `SwipeCommands.cs` içinde `const string` durduğu
 //      için katalog taramasına görünmemişti. Backend foto ailesini
-//      `UT-63xx`'e taşıdı (`48a6f52`); recovery `UT-62xx`'te KALDI —
-//      recovery'nin üç kodu da canlı ve istemcide KALICI MMKV retry kuyruğu
-//      var, sürüm geçişinde eski kayıt yeni tabloyla eşleşmezdi.
+//      `UT-63xx`'e taşıdı (`48a6f52`); recovery `UT-62xx`'te KALDI.
+//      2026-08-31'de recovery consumable'ı tümden kaldırıldı ve UT-62xx emekli
+//      oldu — ama foto ailesi `UT-63xx`'te KALIYOR, geri taşınmıyor: numaralar
+//      canlıda dönüyor. UT-62xx de yeniden kullanılmayacak (backend testle
+//      kilitledi), yani bu blok kalıcı olarak boş.
 //
 //   2. `UT-6301`–`UT-6306` bu istemcide zaten doluydu: `NOTE_SEND_CODES`.
 //      Aynı kazanın üçüncü tekrarıydı. 2026-08-26'da backend NOT ailesini
@@ -325,11 +302,12 @@ export type PhotoModerationCode =
 
 // code → i18n anahtarı.
 //
-// GEÇİŞ PENCERESİ: eski `UT-62xx` numaraları da AYNI metne bağlı. Backend
-// deploy'u FE'yi bekliyor, yani bu sürüm bir süre eski kodları döndüren
-// sunucuyla konuşacak. Eşleme yalnız BU sözlükte: `UT-6203` global tabloda
-// recovery'nin "satın alma başka hesaba ait"i ve orada aynı şeye bağlanamaz.
-// Backend deploy edildikten bir sürüm sonra eski satırlar silinecek.
+// GEÇİŞ PENCERESİ: foto ailesinin eski `UT-62xx` numaraları da AYNI metne bağlı.
+// Backend deploy'u FE'yi bekliyor, yani bu sürüm bir süre eski kodları döndüren
+// sunucuyla konuşacak. Eşleme yalnız BU sözlükte kalmalı: global tabloya
+// girselerdi `resolveCode` yeniden çakışmaya açılırdı. (Recovery'nin UT-62xx
+// ailesi 2026-08-31'de emekliye ayrıldı, yani numaralar artık yalnız bu geçiş
+// penceresinin işi.) Backend deploy edildikten bir sürüm sonra silinecekler.
 const PHOTO_CODE_I18N: Record<string, string> = {
   [PHOTO_MODERATION_CODES.PHOTO_LIMIT_EXCEEDED]: "profile.photoCodes.UT-6303",
   [PHOTO_MODERATION_CODES.BELOW_MIN_PHOTOS]: "profile.photoCodes.UT-6304",
@@ -372,6 +350,56 @@ export function isPhotoProviderUnavailable(
   return (
     code === PHOTO_MODERATION_CODES.PROVIDER_UNAVAILABLE || code === "UT-6206"
   );
+}
+
+// ── Selfie doğrulama (UT-65xx) ───────────────────────────────────────────────
+// Foto moderasyonu (UT-63xx) ve not (UT-64xx) ile aynı gerekçeyle AYRI sözlük:
+// `CODE_ENTRIES`e girseler tek `resolveCode` tablosu bir akışın metnini
+// diğerine sızdırır (bkz. yukarıdaki numaralandırma tarihçesi).
+//
+// Ailenin iki kodu diğerlerinden farklı davranıyor:
+//   FEATURE_OFF (404) → hata DEĞİL, "bu sürümde yok" demek; giriş noktası
+//                       gizlenir, kullanıcıya hiçbir şey gösterilmez.
+//   BAD_FRAMES  (400) → İSTEMCİ BUG'I (kare sayısı/boyutu); kullanıcıya
+//                       jenerik metin, ayrıntı devLog'a.
+export const SELFIE_CODES = {
+  /** 403 — iki KVKK rızasından biri eksik. Rıza adımını aç. */
+  CONSENT_REQUIRED: "UT-6501",
+  /** 400 — onaylanmış ana fotoğraf yok. Profil düzenlemeye yönlendir. */
+  NO_MAIN_PHOTO: "UT-6502",
+  /** 409 — zaten doğrulanmış. Profili tazele, girişi gizle. */
+  ALREADY_VERIFIED: "UT-6503",
+  /** 429 — kota (5/saat, 20/gün, 10 ardışık redde 24 sa). Kalan süre VERİLMİYOR → geri sayım gösterme. */
+  RATE_LIMITED: "UT-6504",
+  /** 404 — özellik bayrağı kapalı. Giriş noktasını gizle. */
+  FEATURE_OFF: "UT-6505",
+  /** 400 — attempt geçersiz/kullanılmış. Aynı attemptId ile tekrar DENEME, yeni /start al. */
+  INVALID_ATTEMPT: "UT-6506",
+  /** 400 — kare sayısı/boyutu hatalı. İstemci bug'ı, logla. */
+  BAD_FRAMES: "UT-6507",
+} as const;
+
+export type SelfieCode = (typeof SELFIE_CODES)[keyof typeof SELFIE_CODES];
+
+const SELFIE_CODE_I18N: Record<SelfieCode, string> = {
+  [SELFIE_CODES.CONSENT_REQUIRED]: "profile.selfie.codes.UT-6501",
+  [SELFIE_CODES.NO_MAIN_PHOTO]: "profile.selfie.codes.UT-6502",
+  [SELFIE_CODES.ALREADY_VERIFIED]: "profile.selfie.codes.UT-6503",
+  [SELFIE_CODES.RATE_LIMITED]: "profile.selfie.codes.UT-6504",
+  [SELFIE_CODES.FEATURE_OFF]: "profile.selfie.codes.UT-6505",
+  [SELFIE_CODES.INVALID_ATTEMPT]: "profile.selfie.codes.UT-6506",
+  [SELFIE_CODES.BAD_FRAMES]: "profile.selfie.codes.UT-6507",
+};
+
+/**
+ * Selfie akışına ÖZEL çözücü. Bilinmeyen kodda `null` — çağıran taraf backend
+ * `message`'ına ya da kendi jenerik metnine düşer.
+ */
+export function selfieCodeI18nKey(
+  code: string | null | undefined,
+): string | null {
+  if (!code) return null;
+  return SELFIE_CODE_I18N[code as SelfieCode] ?? null;
 }
 
 const CODE_MAP: Record<string, CodeEntry> = Object.fromEntries(

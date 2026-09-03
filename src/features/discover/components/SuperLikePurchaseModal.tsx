@@ -10,8 +10,8 @@ import { SUPERLIKE_REDEEM_FLOW } from "@/features/discover/superlikeRedeem";
  * SuperLike paketi (consumable) satın alma sheet'i.
  *
  * Kabuğun tamamı ConsumablePurchaseSheet'te — burada yalnız bu ürünün kimliği
- * duruyor: RC offering'i, redeem sözleşmesi, simge ve metin öneki. Kurtarma
- * paketi (RecoveryPurchaseModal) aynı kabuğu farklı config'le kullanıyor.
+ * duruyor: RC offering'i, redeem sözleşmesi, simge ve metin öneki. Not paketi
+ * (NotePurchaseModal) aynı kabuğu farklı config'le kullanıyor.
  *
  * Not sheet'iyle aynı iki karar burada da geçerli: açılışta en küçük kademe
  * seçili gelir ve snap yüksekliği içeriğe göre (dört kademe = iki sıra + üç-dört

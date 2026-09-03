@@ -12,14 +12,14 @@ import {
 /**
  * Not paketi (consumable) → kredi dönüşümü.
  *
- * SuperLike ve kurtarma paketleriyle BİREBİR aynı akış (consumableRedeem.ts);
- * ayrıştıkları tek yer bu config. İki zorunlu ayrım:
+ * SuperLike paketiyle BİREBİR aynı akış (consumableRedeem.ts); ayrıştıkları tek
+ * yer bu config. İki zorunlu ayrım:
  *
  *   1. Kuyruk anahtarı AYRI. Aynı MMKV anahtarını paylaşan iki kuyruk
  *      birbirinin transaction'ını yanlış uca yollar ve backend onu "bu satın
  *      alma bu hesaba ait değil" ile kalıcı düşürür — para gider, kredi gelmez.
- *   2. Kod ailesi UT-641x. UT-6101/UT-6201'i burada "geçici" saymak YANLIŞ
- *      ürünün webhook'unu beklemek olurdu.
+ *   2. Kod ailesi UT-641x. SuperLike'ın UT-6101'ini burada "geçici" saymak
+ *      YANLIŞ ürünün webhook'unu beklemek olurdu.
  *
  * ⚠️ Uç ve mağaza ürünleri henüz canlı değil (öneri dokümanı Faz 2). Akış
  * yazıldı, ürünler açılınca tek satır değişmeden çalışır.
