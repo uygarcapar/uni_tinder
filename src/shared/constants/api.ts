@@ -62,6 +62,17 @@ export const API_ENDPOINTS = {
   // koordinattan türettiği sonuç. UpdateProfile'da konum alanları kaldırıldı.
   UPDATE_LOCATION: "/api/profile/location",
 
+  // Selfie doğrulama — sunucunun seçtiği 2 hareket, hareket başına TEK kare.
+  // Gövdesiz POST; yanıt { attemptId, challenges[2], expiresAt } (5 dk).
+  // `attemptId` TEK KULLANIMLIK: submit başarısız olsa bile harcanır, tekrar
+  // için yeni /start gerekir. Kota 5 istek/saat → her /start bir hak yakar,
+  // yani kamera adımına GİRİLDİĞİNDE çağrılmalı, ekran açılışında değil.
+  SELFIE_VERIFICATION_START: "/api/profile/selfie-verification/start",
+  // multipart/form-data: attemptId + `frames` (challenge SIRASIYLA, tam 2 adet,
+  // her biri ≤5 MB). Başarısız doğrulama HATA DEĞİL: 200 + isSuccess:true +
+  // result.verified=false döner (bkz. selfieService.submitSelfieFrames).
+  SELFIE_VERIFICATION_SUBMIT: "/api/profile/selfie-verification/submit",
+
   GET_PHOTO: "/api/photo/GetPhoto",
   // Reddedilen fotoğrafa itiraz → 202. Gövde opsiyonel: { note?: string } (≤500).
   // Günlük 5 istek limiti (`photo_appeal`).
@@ -92,19 +103,20 @@ export const API_ENDPOINTS = {
   LIKER_PROFILE: "/api/swipe/LikerProfile",
   SWIPE_UNDO: "/api/swipe/Undo",
   // Kaçırılan eşleşme = beni beğenmiş ama benim pass'ladığım kullanıcı
-  // (30 günlük pencere, SwipeLimits:MissedMatchLookbackDays). Liste ucu premium
-  // gating'e TABİ DEĞİL — kota yalnız Recover aksiyonunda. 2026-08-22'den beri
-  // kota GÜNLÜK DEĞİL: free'de 0 (yalnız satın alınan kredi), premium'da tier
-  // başına 1/2/5 ve abonelik döngüsüyle yenileniyor. Recover gerçek HTTP status
-  // kullanıyor: 200 / 403 (kota+paywall, artık PREMIUM'da da) / 400 (diğer tüm
-  // retler). Bkz. missedMatchRecovery.ts.
+  // (30 günlük pencere, SwipeLimits:MissedMatchLookbackDays).
+  //
+  // LİSTE ucu premium gating'e tabi değil — kartlar ve `totalProfiles` free'de
+  // de TAM geliyor. Kimliği saklayan tek şey istemcideki blur; kart bunun
+  // sinyallerini taşıyor (bkz. missedMatchRecovery.MissedMatchCard).
+  //
+  // RECOVER aksiyonu 2026-08-31'den beri PREMIUM AYRICALIĞI (kota/kredi yok):
+  // 200 / 403 (free — paywall, `MissedMatchRecoveryLimit`) / 400 (premium'un
+  // uygunsuz hedefi). `POST /api/swipe/Recovery/Redeem` ve `recovery_*`
+  // paketleri KALDIRILDI; UT-62xx ailesi emekliye ayrıldı ve yeniden
+  // kullanılmayacak. Cihazda kalmış eski redeem kuyruğu için bkz.
+  // discover/recoveryQueuePurge.ts.
   SWIPE_MISSED_MATCHES: "/api/swipe/MissedMatches",
   SWIPE_RECOVER_MISSED_MATCH: "/api/swipe/RecoverMissedMatch",
-  // Consumable kurtarma paketinin krediye çevrilmesi — SuperLike/Redeem ile
-  // birebir aynı sözleşme, AYRI hata kodu ailesi (UT-62xx). Kuyruk anahtarı da
-  // ayrı olmak zorunda: aynı MMKV anahtarını paylaşan iki kuyruk birbirinin
-  // isteğini flush eder (bkz. consumableRedeem.ts).
-  SWIPE_RECOVERY_REDEEM: "/api/swipe/Recovery/Redeem",
   SWIPE_FILTERS: "/api/swipe/Filters",
   SWIPE_UPDATE_FILTERS: "/api/swipe/UpdateFilters",
 
@@ -114,6 +126,13 @@ export const API_ENDPOINTS = {
   PRIVACY_MY_DATA: "/api/privacy/my-data",
   PRIVACY_MY_DATA_STATUS: (requestId: number | string) => `/api/privacy/my-data/${requestId}`,
   PRIVACY_ACCEPT_CONSENT: "/api/privacy/accept-consent",
+  // Aydınlatma metni — ANONİM erişilebilir, markdown döner:
+  // { type, version, contentMarkdown, contentType }.
+  // ⚠️ `version` YANITLA GELEN değerdir, sabit kodlanmaz: metin güncellenince
+  // yeniden rıza gerekiyor (KVKKConsentScreen'deki CURRENT_KVKK_VERSION sabiti
+  // bu akışta KULLANILMAZ).
+  PRIVACY_POLICY: (consentType: string) =>
+    `/api/privacy/policy/${encodeURIComponent(consentType)}`,
 
   SUBSCRIPTION_STATUS: "/api/subscription/status",
   SUBSCRIPTION_SYNC: "/api/subscription/sync",
@@ -139,6 +158,9 @@ export const API_ENDPOINTS = {
   MESSAGES_REACTIONS: (msgId: string) => `/api/messages/${msgId}/reactions`,
   MESSAGES_DELIVERED: (msgId: string) => `/api/messages/${msgId}/delivered`,
   MESSAGES_UPLOAD_URL: "/api/messages/upload-url",
+  // Sesli mesaj oynatma linki. DTO'daki mediaUrl oynatılamaz (bucket private) —
+  // oynatmaya basıldığında bu uçtan 15 dakikalık imzalı URL alınır, cache'lenmez.
+  MESSAGES_MEDIA_URL: (msgId: string) => `/api/messages/${msgId}/media-url`,
   MESSAGES_QUOTA: (convId: string) => `/api/messages/conversations/${convId}/quota`,
   // NOT: .../unlock endpoint'i 2026-08-02'de kaldırıldı (consumable satışı yok);
   // kota dolduğunda Premium modalı açılır.

@@ -13,6 +13,9 @@ export interface User {
   isProfileCreated: boolean;
   isKvkkAccepted?: boolean;
   profileImageUrl?: string;
+  /** Ham TR resmî ad — dile göre değişmez; ekranda `universityNameDisplay`. */
+  universityName?: string;
+  universityNameDisplay?: string;
 }
 
 export interface RegistrationForm {
@@ -127,7 +130,8 @@ export interface MessageDto {
   conversationId: string;
   senderId: string;
   content: string;
-  contentType?: number;
+  // Enum: DTO'da sayı (2) ya da isim ("Voice") gelebiliyor — bkz. isVoiceMessage.
+  contentType?: number | string;
   sentAt: string;
   readAt?: string | null;
   deliveredAt?: string | null;
@@ -137,11 +141,26 @@ export interface MessageDto {
   localizationKey?: string;
   deletedAt?: string | null;
   deletedForEveryone?: boolean;
+  /**
+   * ⚠️ KİMLİK, oynatma linki DEĞİL. Bucket private: bunu doğrudan oynatıcıya
+   * verirsen 403 alırsın — sesli mesaj için oynatma anında
+   * `chatService.getMediaUrl(id)` çağrılır.
+   */
   mediaUrl?: string | null;
+  /** Sesli mesajın süresi (1..60000). Herkesten silinmişse null. */
+  durationMs?: number | null;
+  /** "0,12,47,…" 0-100 arası en çok 64 nokta; null olabilir → düz çubuk. */
+  waveformPeaks?: string | null;
   replyToMessageId?: string | null;
   _pending?: boolean;
   _failed?: boolean;
   _selfUserId?: string;
+  /**
+   * Gönderdiğimiz sesli mesajın YEREL dosyası — optimistic baloncuk (ve
+   * gönderim sonrası da aynı balon) sunucudan link istemeden bunu çalar.
+   * Yalnız istemcide vardır; server kopyası merge edilirken korunur.
+   */
+  _localUri?: string | null;
 }
 
 export interface ConversationListItemDto {
@@ -157,11 +176,39 @@ export interface ConversationListItemDto {
   isActive: boolean;
   partnerIsOnline: boolean;
   /**
+   * Sohbet sınırsız mı — `GET .../quota`daki `isUnlimited` ile AYNI anlam
+   * (taraflardan biri premium VEYA legacy unlock), liste yanıtına taşınmış hâli.
+   * Sohbet listesindeki "Sınırlı" rozetinin kanonik kaynağı.
+   *
+   * `undefined` = BİLMİYORUZ, "sınırlı" DEĞİL: alanı göndermeyen bir backend
+   * sürümüne karşı rozet çizilmez (bkz. MessagesScreen `isLimitedByConvId`).
+   */
+  isUnlimited?: boolean;
+  /**
+   * Kalan ücretsiz mesaj hakkı — `GET .../quota`daki alanla aynı anlam.
+   * Sınırsız sohbette anlamsız (`null`). Liste rozeti bunu OKUMUYOR (rozet
+   * "sınırlı mı", "kaç kaldı" değil); satır başına kotanın tamamı geldiği için
+   * taşınıyor.
+   */
+  remainingMessages?: number | null;
+  /** Cap doldu — sohbete girişte Premium modalı açılmalı. */
+  requiresPremium?: boolean;
+  /**
    * Unmatch sonrası geri alma penceresinin bitişi. `null` = geri alma YOK
    * (rematch limiti dolmuş, çift engellenmiş ya da hiç mesajlaşılmamış) —
    * bu durumda "geri al" gösterilmez, restore çağrısı reddedilir.
    */
   restorableUntil?: string | null;
+  /**
+   * Sohbeti BİZ mi kapattık? SUNUCUDAN GELMEZ — liste DTO'su kimin kapattığını
+   * taşımıyor, bayrağı kendi unmatch'imizde istemcide yazıyoruz (bkz.
+   * chatSlice.conversationDeactivated `byMe`). "Geri Al" yalnız eşleşmeyi
+   * kaldıran tarafa açık olduğu için gerekli.
+   *
+   * `undefined` = BİLİNMİYOR (bu bayraktan önce yazılmış cache ya da unmatch
+   * başka cihazdan yapıldı) — `false` ile aynı şey DEĞİL, bkz. shouldOfferRestore.
+   */
+  deactivatedByMe?: boolean;
 }
 
 export interface MessageBucket {
@@ -256,12 +303,9 @@ export type ResponseCode =
   | "UT-6101" // SuperLike/Redeem — webhook henüz inmedi (GEÇİCİ, tek retry'lık durum)
   | "UT-6102" // SuperLike/Redeem — ürün backend map'inde tanımlı değil (KALICI)
   | "UT-6103" // SuperLike/Redeem — transaction başka hesaba ait (KALICI)
-  // Recovery/Redeem — UT-61xx'in birebir aynısı, AYRI aile. Backend çakışmayı
-  // testle koruyor: iki ürünün webhook'u aynı boruyu kullandığı için hangi
-  // paketin beklendiği ancak koddan ayırt edilebiliyor.
-  | "UT-6201" // Recovery/Redeem — webhook henüz inmedi (GEÇİCİ)
-  | "UT-6202" // Recovery/Redeem — ürün tanımlı değil (KALICI)
-  | "UT-6203" // Recovery/Redeem — transaction başka hesaba ait (KALICI)
+  // ⚠️ UT-62xx (Recovery/Redeem) EMEKLİ — 2026-08-31'de kurtarma consumable'ı
+  // kaldırıldı, uç silindi. Backend bu numaraları başka bir aileye VERMEYECEK
+  // (testle kilitli), o yüzden burada da yeniden kullanılmamalı.
   // Not (yorumlu beğeni) — UT-64xx. UT-63xx İSTENMİŞTİ ama o aile 2026-08-25'te
   // foto moderasyonuna verilmişti; backend not ailesini 2026-08-26'da UT-64xx'e
   // taşıdı (`9874f4d`). 640x gönderim, 641x redeem.
@@ -398,8 +442,15 @@ export interface PotentialMatch {
   isPremium?: boolean;
 
   // Üniversite — `showUniversity` false ise kartta hiç gösterilmez.
+  //
+  // `universityName` HAM: DB'de Türkçe resmî ad olarak saklandığı için dile göre
+  // DEĞİŞMEZ, yani ekrana basılacak alan değil (İngilizce arayüzde Türkçe
+  // görünür). Gösterim `universityNameDisplay`, mantık/karşılaştırma ham alan.
+  // Gizlilikte (`showMyUniversity` kapalı) İKİSİ BİRDEN null gelir.
   universityName?: string;
+  universityNameDisplay?: string;
   showUniversity?: boolean;
+  /** Ham enum ("BilgisayarMuhendisligi") — dile göre değişmez, ikon/eşleme için. */
   department?: string;
   departmentDisplay?: string;
   /**
@@ -469,6 +520,13 @@ export interface PotentialMatch {
    * Bu kullanıcı beni beğenmiş mi. Free üyede normal beğeni için HER ZAMAN
    * `false` döner (yalnız karşı taraf SuperLike attıysa gerçek değer gelir);
    * premium'da gerçek değer.
+   *
+   * ⚠️ Bu kısıtlama YALNIZ KEŞİF DESTESİNDE (`GetPotentialMatches`). Aynı DTO
+   * `WhoLikedMe` ve `MissedMatches` yanıtlarında da kullanılıyor ve ORADA free
+   * üyeye de `true` geliyor — mantıklı, çünkü o listeler tanımı gereği "seni
+   * beğenenler", kısılacak bir bilgi yok. Bu yüzden bayrak o iki listede kilit /
+   * blur kararına ASLA girmez (bkz. LikesScreen > isUnlockedLike); girdiğinde
+   * free kullanıcı listenin tamamını blur'suz görüyordu (2026-09-03).
    */
   hasLikedMe?: boolean;
   likedMeAt?: string | null;
@@ -561,41 +619,38 @@ export interface SwipeStats {
   remainingUndos: number | null;
   undoCountResetAt: string | null;
   /**
-   * Kaçırılan eşleşme kurtarma bakiyesi — tier kotası + satın alınan kredi
-   * TOPLAMI (SuperLike'ın `superLikesRemaining`i ile aynı desen).
+   * Kaçırılan eşleşme kurtarma hakkı.
    *
-   * 2026-08-22'de GÜNLÜK olmaktan çıktı: free'de kota 0 (yalnız satın alınan
-   * kredi), premium'da tier başına 1/2/5 ve abonelik döngüsüyle (7/30/365 gün)
-   * yenileniyor. Alan adı ve tipi korunuyor — güncellememiş istemciler doğru
-   * toplamı okumaya devam ediyor.
+   * 2026-08-31'de kota/kredi ekonomisinden ÇIKTI ve PREMIUM AYRICALIĞI oldu:
+   *
+   *   free    → `0`   (hakkı yok, satın da alamaz — `recovery_*` paketleri ve
+   *                    `/Recovery/Redeem` ucu tamamen kaldırıldı)
+   *   premium → `-1`  (SINIRSIZ)
+   *
+   * Sınırsızlığın okunacağı TEK alan bu. Tek yorumlama noktası:
+   * discover/recoveryQuota.resolveRecoveryAccess.
    */
   remainingMissedMatchRecovery: number | null;
-  /** Yalnız tier kotasından kalan (krediyi kapsamaz). */
+  /** @deprecated Ölü alan — backend her tier'da `0` sabitliyor. */
   quotaRecoveryRemaining: number | null;
-  /** Satın alınmış, SÜRESİZ kredi. Döngü yenilenmesinde sıfırlanmaz. */
+  /** @deprecated Ölü alan — backend her tier'da `0` sabitliyor. */
   purchasedRecoveries: number | null;
   /**
-   * Tier tavanı — free 0, premium 1/2/5. `-1` (sınırsız) ASLA dönmez.
+   * @deprecated Ölü alan — free'de de premium'da da `0`.
    *
-   * ⚠️ Bakiye tavanı DEĞİL: `remainingMissedMatchRecovery > bu değer` artık
-   * NORMAL (satın alınan kredi, ya da yıllıktan aylığa düşen kullanıcının eski
-   * kotası). Payda tek yerden çözülüyor — bkz. discover/recoveryQuota.ts.
+   * ⚠️ SINIRSIZLIK SİNYALİ DEĞİL: `remainingMissedMatchRecovery`in aksine `-1`
+   * ASLA dönmez (backend'de bunu kilitleyen bir test var). Bilerek `0`da
+   * tutuldu — bir "{count}/{limit}" satırına ham basılsaydı ekranda "5/-1"
+   * yazardı. `=== -1` kontrolü buraya yazılırsa sessizce hep `false` verir.
    */
   dailyMissedMatchRecoveryLimit: number | null;
   /** Kaçırılan eşleşme penceresi (gün, backend config'i — varsayılan 30). */
   missedMatchLookbackDays: number | null;
-  /** Döngünün en son başladığı an (GEÇMİŞ). İleri sayaç için değil. */
+  /** @deprecated Yenilenme kalmadı; geri sayım ÇİZİLMEZ. */
   missedMatchRecoveryResetAt: string | null;
-  /**
-   * Döngü bitişi. Free'de artık SENTİNEL (`9999-12-31`) — "asla yenilenmez";
-   * quotaFormat.resolveResetSeconds sentinel'i UNLIMITED'a çeviriyor.
-   */
+  /** @deprecated Her tier'da sentinel (`DateTime.MaxValue`) — "asla yenilenmez". */
   nextMissedMatchRecoveryResetAt: string | null;
-  /**
-   * Döngü bitişine kalan saniye. Free'de `-1` = UNLIMITED sentinel'i ("asla
-   * yenilenmez"), premium'da gerçek geri sayım. Günlük kota kalktığı için üst
-   * sınır artık 86400 DEĞİL — yıllık aboneye 365 güne kadar çıkabiliyor.
-   */
+  /** @deprecated Her tier'da `-1` — "asla yenilenmez". Geri sayım ÇİZİLMEZ. */
   missedMatchRecoveryResetInSeconds: number | null;
   // Tavanlar (backend SwipeLimitsOptions). -1 = sınırsız, null = backend
   // henüz göndermiyor. Free'de weeklySuperLikeLimit lifetime kotayı ifade
@@ -635,8 +690,11 @@ export interface SwipeStats {
   /**
    * Yorumun karakter tavanı. Sunucudan geliyor: sabit yazılırsa sınırı
    * değiştirmek App Store turu gerektirir ve eski istemciler 400 yemeye başlar
-   * (`weeklySuperLikeLimit`te tam olarak bu yaşandı). Gelmezse FE varsayılana
-   * düşer — bkz. NOTE_MAX_LENGTH_FALLBACK.
+   * (`weeklySuperLikeLimit`te tam olarak bu yaşandı).
+   *
+   * ⚠️ Tek başına YÜRÜRLÜKTEKİ sınır DEĞİL: FE kendi tavanıyla (150) birlikte
+   * okuyor ve küçük olan kazanıyor — gelmezse de o tavan geçerli. Sunucu 240
+   * göndermeye devam ederken kullanıcı 150'de kesilir; bkz. resolveNoteMaxLength.
    */
   noteMaxLength: number | null;
 }
@@ -768,4 +826,13 @@ export interface SubscriptionState extends SubscriptionStatusSnapshot {
    * kanonik kaynak yalnız bu slice'tır, o OR'lar downgrade'i yutuyordu.
    */
   statusResolvedAt: number | null;
+  /**
+   * `statusResolvedAt` backend'den DEĞİL, diskteki son bilinen kopyadan geldi
+   * (internetsiz açılış — bkz. `premiumSnapshot`). Ekranlar için fark yok:
+   * amaç zaten ödemiş kullanıcıya upsell göstermemek. Fark, backend'in
+   * konuştuğunu VARSAYAN iç akışlar için var — kurtarma turu bu değeri
+   * "backend premium diyor" sayıp bekleyen kaydı kapatmamalı.
+   * İlk kanonik yazımda (`applyStatus`) temizlenir.
+   */
+  resolvedFromCache: boolean;
 }
