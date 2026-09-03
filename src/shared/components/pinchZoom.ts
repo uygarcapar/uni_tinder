@@ -21,6 +21,21 @@ export const zoomRectH = makeMutable(0);
 /** Kaynağın köşe yarıçapı — kopya aynı kesimle büyüsün. */
 export const zoomRadius = makeMutable(0);
 
+/**
+ * Kopyanın görünürlüğü — 0'dan açılıp 0'a kapanıyor.
+ *
+ * NEDEN: kopya KÖK katmanda, yani kaynağın ÜSTÜNDE duran her şeyin de üstünde
+ * çiziliyor — süper beğeni butonu, üst/alt blur şeritleri, not kutusu. Kopya
+ * bir anda belirseydi (ve bitişte bir anda sökülseydi) bu katmanlar jestin ilk
+ * ve son karesinde göz kırpardı. Aradaki geçiş bir cross-fade: kopya açılırken
+ * altındaki chrome eriyor, kapanırken geri geliyor.
+ *
+ * Kopya kaynağıyla PİKSEL AYNI ve üstüne oturuyor; yarı saydam olduğu anlarda
+ * fotoğrafın kendisi değişmiş gibi görünmüyor, yalnız üstündeki katmanlar
+ * çözülüyor.
+ */
+export const zoomFade = makeMutable(0);
+
 export const zoomScale = makeMutable(1);
 export const zoomTranslateX = makeMutable(0);
 export const zoomTranslateY = makeMutable(0);

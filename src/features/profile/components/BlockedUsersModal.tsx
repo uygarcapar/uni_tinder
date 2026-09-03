@@ -8,7 +8,7 @@ import {
 } from "react-native";
 import { useTranslation } from "react-i18next";
 import { Image } from "expo-image";
-import { UserX } from "lucide-react-native";
+import { UserX } from "@/shared/icons";
 import SFIcon from "@/shared/components/SFIcon";
 import AppModal from "@/shared/components/AppModal";
 import EmptyState from "@/shared/components/EmptyState";
@@ -83,9 +83,10 @@ export default function BlockedUsersModal({ visible, onClose }: any) {
       visible={visible}
       onClose={onClose}
       title={t('moderation.blocked.title')}
-      // "push" → SettingsModal altta mount'lu kalır, bu sheet üstüne biner.
-      // Default ("replace") altındaki sheet'i dismiss ediyordu: X'e basınca
-      // veya aşağı sürükleyince ayarlara dönmek yerine her şey kapanıyordu.
+      // "push" → altta açık bir sheet varsa geriye itilir, dismiss EDİLMEZ.
+      // Default ("replace") altındakini kapatıyordu: X'e basınca veya aşağı
+      // sürükleyince bir kademe geri dönmek yerine her şey kapanıyordu.
+      // (Ayarlar artık sheet değil ekran — bu sayfa onun üstünde açılıyor.)
       stackBehavior="push"
       contentContainerStyle={{ paddingTop: 24, paddingBottom: 32 }}
     >

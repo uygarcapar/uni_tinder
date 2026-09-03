@@ -1,7 +1,7 @@
 import { View, Text, TouchableOpacity } from "react-native";
 import type { StyleProp, ViewStyle } from "react-native";
 import { useTranslation } from "react-i18next";
-import { AlertTriangle, Clock } from "lucide-react-native";
+import { AlertTriangle, Clock } from "@/shared/icons";
 import SFIcon from "@/shared/components/SFIcon";
 import { colors, ink, isLight } from "@/shared/theme/colors";
 import {
@@ -29,16 +29,23 @@ import {
  *
  *   Foto rozetleri — HANGİ FOTOĞRAF, NEDEN. Tek tek fotoğrafın sebebi.
  *
- * İKİ SATIR ÜST ÜSTE GELEBİLİR: üstte red uyarısı (varsa), altında görünürlük
- * durumu. Red görünürlükten bağımsız — profil keşifte dururken de bir fotoğraf
- * reddedilmiş olabilir.
+ * ÜÇ SATIR VAR, EN ÇOK İKİSİ AYNI ANDA: üstte red uyarısı (varsa), altında ya
+ * inceleme ya da "fotoğraf eksik" satırı. Son ikisi birbirini dışlıyor —
+ * beklerken fotoğraf eklemek çözüm değil.
  *
- * Görünürlük satırının iki kipi var ve ayrım STATE ADINDAN DEĞİL
- * `awaitingReview`'dan geliyor:
- * backend `HiddenUnderReview` üretmiyor (rehber §4), iki fotoğraf da
- * incelemedeyken state `HiddenInsufficientPhotos` geliyor. Bekleyen foto varsa
- * yapılacak iş yok → nötr ton, CTA yok. Yoksa gerçekten fotoğraf gerekiyor →
- * uyarı tonu + "Fotoğraf ekle".
+ * SATIRLARIN KAPILARI FARKLI KAYNAKTAN:
+ *   red      → `rejectedCount` (görünürlükten bağımsız; profil keşifteyken de
+ *              bir fotoğraf reddedilmiş olabilir)
+ *   inceleme → `awaitingReview`/`reviewCount` (yine görünürlükten bağımsız:
+ *              grid'de saat ikonu çizilen her durumda burada karşılığı olmalı,
+ *              yoksa ikon açıklamasız kalıyor). Profil keşifteyken gövde metni
+ *              değişiyor — bkz. `reviewBodyVisible`.
+ *   eksik    → `state` (gerçekten fotoğraf gerekiyor) → uyarı tonu +
+ *              "Fotoğraf ekle".
+ *
+ * "Bekliyor mu" ayrımı STATE ADINDAN DEĞİL foto verisinden geliyor: backend
+ * `HiddenUnderReview` üretmiyor (rehber §4), iki fotoğraf da incelemedeyken
+ * state `HiddenInsufficientPhotos` geliyor.
  *
  * `Suspended` BURADA DEĞİL: ban akışı (`AccountBlockedScreen`) ekranın üstünde
  * ve her şeyi kapatıyor, altında şerit göstermenin anlamı yok.
@@ -169,13 +176,22 @@ export default function ProfileVisibilityBanner({
   if (state === "Suspended") return null;
 
   const rejected = rejectedCount ?? 0;
-  // Görünürlük satırı: `state` null iken (bilinmiyor) ve `Visible` iken YOK —
-  // deploy öncesi herkese uyarı basmayalım.
-  const showStatus = !!state && state !== "Visible";
-  if (!showStatus && rejected === 0) return null;
-
-  const waiting = state === "HiddenUnderReview" || awaitingReview === true;
   const reviewing = reviewCount ?? 0;
+  // İNCELEME SATIRI GÖRÜNÜRLÜKTEN BAĞIMSIZ (red satırıyla aynı desen): profil
+  // keşifte dururken de bir fotoğraf incelemede olabiliyor — o durumda grid'de
+  // saat ikonu çiziliyor ama ikonun ne anlattığını söyleyen tek yer bu satır.
+  // Kapı eskiden `state !== 'Visible'` idi; profil görünürken ikon açıklamasız
+  // kalıyordu.
+  const waiting =
+    state === "HiddenUnderReview" || awaitingReview === true || reviewing > 0;
+  // Profil keşiften düştü mü. `state` null iken (bilinmiyor) ve `Visible` iken
+  // YOK — deploy öncesi herkese uyarı basmayalım.
+  const hidden = !!state && state !== "Visible";
+  // "Fotoğraf eksik" satırı yalnız BEKLEYEN foto yokken: inceleme sürerken
+  // yapılacak iş yok, eklenen yeni foto da incelemeye girer (rehber §5.2).
+  const showPhotosNeeded = hidden && !waiting;
+  if (!waiting && !showPhotosNeeded && rejected === 0) return null;
+
   const visible = visibility?.visiblePhotoCount ?? 0;
   // Sunucu sayıyı vermediğinde 0 yazmak yanlış olurdu ("0 fotoğraf gerekiyor");
   // kural kaynağı zaten resolveRequiredPhotoCount.
@@ -209,33 +225,42 @@ export default function ProfileVisibilityBanner({
         />
       )}
 
-      {showStatus && (
+      {/* İNCELEME SATIRI: nötr ton, CTA YOK — eklenen yeni fotoğraf da
+          incelemeye girer, buton çözüm sunmuyordu (rehber §5.2). Gövde metni
+          profilin keşifte olup olmamasına göre değişiyor: profil görünürken
+          "keşifte görünmüyorsun" demek düpedüz yanlış olurdu, gizli olan sadece
+          o fotoğraf. */}
+      {waiting && (
         <BannerRow
-          icon={waiting ? "clock" : "exclamationmark.triangle"}
-          fallback={waiting ? Clock : AlertTriangle}
-          tone={waiting ? "neutral" : "error"}
+          icon="clock"
+          fallback={Clock}
+          tone="neutral"
           text={
-            waiting
-              ? // Sayı bilinmiyorsa (foto listesi hiç gelmemiş ama state
-                // `HiddenUnderReview`) sayısız kalıba düşülür — "0 fotoğrafın
-                // inceleniyor" yazmaktansa.
-                `${
-                  reviewing > 0
-                    ? t("profile.visibilityBanner.reviewTitle", { count: reviewing })
-                    : t("profile.visibilityBanner.reviewTitleAny")
-                } · ${t("profile.visibilityBanner.reviewBody")}`
-              : `${t("profile.visibilityBanner.photosTitle", { visible, required })} · ${t("profile.visibilityBanner.photosBody")}`
+            // Sayı bilinmiyorsa (foto listesi hiç gelmemiş ama state
+            // `HiddenUnderReview`) sayısız kalıba düşülür — "0 fotoğrafın
+            // inceleniyor" yazmaktansa.
+            `${
+              reviewing > 0
+                ? t("profile.visibilityBanner.reviewTitle", { count: reviewing })
+                : t("profile.visibilityBanner.reviewTitleAny")
+            } · ${t(
+              hidden
+                ? "profile.visibilityBanner.reviewBody"
+                : "profile.visibilityBanner.reviewBodyVisible",
+            )}`
           }
-          // Beklemede CTA YOK: eklenen yeni fotoğraf da incelemeye girer, buton
-          // çözüm sunmuyordu (rehber §5.2).
-          action={
-            waiting
-              ? undefined
-              : {
-                  label: t("profile.visibilityBanner.addPhoto"),
-                  onPress: onAddPhoto,
-                }
-          }
+        />
+      )}
+
+      {showPhotosNeeded && (
+        <BannerRow
+          icon="exclamationmark.triangle"
+          fallback={AlertTriangle}
+          text={`${t("profile.visibilityBanner.photosTitle", { visible, required })} · ${t("profile.visibilityBanner.photosBody")}`}
+          action={{
+            label: t("profile.visibilityBanner.addPhoto"),
+            onPress: onAddPhoto,
+          }}
         />
       )}
     </View>

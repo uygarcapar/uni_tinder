@@ -32,6 +32,7 @@ import Animated, {
   withSpring,
   withTiming,
   withRepeat,
+  withSequence,
   Easing,
   runOnJS,
   type SharedValue,
@@ -45,7 +46,6 @@ import {
   InfoIcon,
   Sparkles,
   Cigarette,
-  HandHeart,
   Star,
   Navigation,
   Languages,
@@ -70,7 +70,7 @@ import {
   Fish,
   IdCardLanyard,
   type LucideIcon,
-} from "lucide-react-native";
+} from "@/shared/icons";
 import { BottomSheetTextInput } from "@gorhom/bottom-sheet";
 import SFIcon, { type SFSymbol } from "@/shared/components/SFIcon";
 // Pill grupları flexWrap yerine PillFlow + fillWidth ile diziliyor: satır
@@ -104,6 +104,7 @@ import {
   hasPhotosAwaitingReview,
   normalizePhotoModeration,
 } from "@/features/profile/photoModeration";
+import { confirmMainPhotoChange } from "@/features/profile/selfie/confirmMainPhotoChange";
 import ProfileVisibilityBanner from "@/features/profile/components/ProfileVisibilityBanner";
 import PhotoModerationBadge, {
   PhotoModerationScrim,
@@ -241,13 +242,12 @@ const DOG_ICON: IconEntry = { sf: "dog.fill", lucide: Dog };
 // EntryIcon iki platformda da lucide çiziyor (bkz. IconEntry.sf opsiyonel).
 const CIGARETTE_ICON: IconEntry = { lucide: Cigarette };
 
-// Dini görüş — sigaradaki desen: tek sembol, ayırt eden şey satır metni.
-// Seçenek enumName'lerini bilmediğimiz için (backend listesi runtime'da geliyor)
-// enum başına ikon haritası uydurmak yanlış eşleşme riski taşıyordu.
-const RELIGIOUS_VIEW_ICON: IconEntry = {
-  sf: "hands.and.sparkles.fill",
-  lucide: HandHeart,
-};
+// Dini görüş ikonu KALDIRILDI: seçenek enumName'leri runtime'da geldiği için
+// enum başına ikon uydurmak yanlış eşleşme riski taşıyordu, tek jenerik sembol
+// (hands.and.sparkles) ise her pilde AYNI tekrar ederek hiçbir şey ayırt
+// etmiyordu — piller ikonsuz, ayırt eden tek şey metin. Keşif filtrelerindeki
+// getReligiousViewIcon DURUYOR (bkz. filterEnumIcons): orası tek satırlık bir
+// grup başlığı, tekrar sorunu yok.
 // Hobi kategori ikonları KALDIRILDI: hobiler bölümünde ne kategori başlığında
 // ne de pill'de ikon çiziliyor (bkz. HobbyGroup) — harita da onunla birlikte
 // gitti, geriye yalnız evcil hayvan ikonları kaldı.
@@ -299,8 +299,12 @@ const HobbyPill = React.memo(function HobbyPill({
         borderRadius: 999,
         borderCurve: "continuous",
         overflow: "hidden",
+        // Keşif kartındaki pil ölçüsü: px 12 / py 10 / 14px (bkz. SwipeCard —
+        // ortak nokta, hobi ve yaşam tarzı pilleri hepsi bu üçlüyü kullanıyor).
+        // Formdaki tüm pil grupları onunla aynı dili konuşuyor: kullanıcı
+        // düzenlerken gördüğü kapsül, kartta çıkacak kapsülle aynı boyda.
         paddingHorizontal: 12,
-        paddingVertical: 9,
+        paddingVertical: 10,
         borderWidth: 0.5,
         flexDirection: "row",
         alignItems: "center",
@@ -309,16 +313,20 @@ const HobbyPill = React.memo(function HobbyPill({
         borderColor: isSelected ? colors.inverseSurfaceSoft : colors.hairline,
       }}
     >
+      {/* 16px — Keşif kartındaki 18'in bir tık altı (bkz. SwipeCard): orada pil
+          fotoğrafın üstünde tek başına duruyor, burada onlarca pil alt alta
+          akıyor ve iri ikon listeyi gürültülü gösteriyordu. 20 ile başlamıştı,
+          pilin py 10'a inmesiyle kapsül de inceldi. */}
       <HobbyIcon
         hobby={hobby.enumName ?? hobby.name}
-        size={20}
+        size={16}
         color={isSelected ? colors.onInverseSurface : colors.textSecondary}
         strokeWidth={1.5}
       />
       <Text
         style={{
           color: isSelected ? colors.onInverseSurface : colors.textSecondary,
-          // Kayıt adımındaki hobi piliyle ORTAK ölçü.
+          // Kayıt adımındaki hobi piliyle ve Keşif kartındakiyle ORTAK ölçü.
           fontSize: 14,
           fontWeight: "500",
         }}
@@ -347,8 +355,12 @@ function OptionPill({
         borderRadius: 999,
         borderCurve: "continuous",
         overflow: "hidden",
+        // Ölçü HobbyPill ile ve Keşif kartındaki pillerle AYNI:
+        // px 12 / py 10 / 14px. Yazı eskiden 13'tü; uzun enum adları
+        // (ilişki niyeti) `label` prop'uyla zaten kısaltılarak geçiliyor,
+        // yani sığdırma işini punto değil o üstleniyor.
         paddingHorizontal: 12,
-        paddingVertical: 11,
+        paddingVertical: 10,
         borderWidth: 0.5,
         flexDirection: "row",
         alignItems: "center",
@@ -368,7 +380,7 @@ function OptionPill({
       <Text
         style={{
           color: isSelected ? colors.onInverseSurface : colors.textSecondary,
-          fontSize: 13,
+          fontSize: 14,
           fontWeight: "500",
         }}
       >
@@ -533,17 +545,41 @@ function PhotoShimmer({ borderRadius = 0 }: { borderRadius?: number }) {
  * Kutunun İÇİNDE (absoluteFill + aynı yarıçap): kart `overflow: hidden` ve
  * dışarı çizilen bir halka kırpılırdı. `pointerEvents="none"` — vurgu yalnız
  * görsel, altındaki sürükle/sil hedeflerini yutmuyor.
+ *
+ * Ömrü kendi içinde bitiyor: yumuşak açılış → birkaç nabız → yavaş sönme.
+ * Eskiden sonsuz `withRepeat` idi ve ProfileScreen 4.5sn sonra bileşeni
+ * unmount edince halka tam parlaklıkken bir karede yok oluyordu. Sekans
+ * kasten o pencereden kısa (≈4.4sn): unmount ettiğinde ekranda zaten
+ * görünmüyor, sönme kesilmiyor.
  */
+const HIGHLIGHT_FADE_IN_MS = 260;
+const HIGHLIGHT_PULSE_MS = 850;
+const HIGHLIGHT_PULSE_COUNT = 4; // çift sayı → sekans tam parlaklıkta biter
+const HIGHLIGHT_FADE_OUT_MS = 700;
+
 function PhotoHighlightRing({ borderRadius }: { borderRadius: number }) {
-  const pulse = useSharedValue(0);
+  const opacity = useSharedValue(0);
   useEffect(() => {
-    pulse.value = withRepeat(
-      withTiming(1, { duration: 700, easing: Easing.inOut(Easing.quad) }),
-      -1,
-      true,
+    opacity.value = withSequence(
+      withTiming(1, {
+        duration: HIGHLIGHT_FADE_IN_MS,
+        easing: Easing.out(Easing.quad),
+      }),
+      withRepeat(
+        withTiming(0.4, {
+          duration: HIGHLIGHT_PULSE_MS,
+          easing: Easing.inOut(Easing.quad),
+        }),
+        HIGHLIGHT_PULSE_COUNT,
+        true,
+      ),
+      withTiming(0, {
+        duration: HIGHLIGHT_FADE_OUT_MS,
+        easing: Easing.in(Easing.quad),
+      }),
     );
-  }, [pulse]);
-  const style = useAnimatedStyle(() => ({ opacity: 0.35 + 0.65 * pulse.value }));
+  }, [opacity]);
+  const style = useAnimatedStyle(() => ({ opacity: opacity.value }));
   return (
     <Animated.View
       pointerEvents="none"
@@ -557,12 +593,35 @@ function PhotoHighlightRing({ borderRadius }: { borderRadius: number }) {
           borderRadius,
           borderCurve: "continuous",
           borderWidth: 3,
-          borderColor: colors.primary,
+          // Boş deste / boş beğeni ekranlarındaki "Kaydırmaya başla" butonuyla
+          // aynı kırmızı (EmptyState CTA dolgusu) — primary'nin bir tık
+          // doygunu, vurgu bu yüzden kart kenarlarında daha net okunuyor.
+          borderColor: colors.litPlus,
         },
         style,
       ]}
     />
   );
+}
+
+/**
+ * Fotoğrafın moderasyon durumunun karşılaştırılabilir özeti.
+ *
+ * Grid'in sunucu senkronu bunu foto kimliğinin bir parçası gibi kullanıyor:
+ * ekranda görüneni (rozet + karartma) ve foto menüsündeki eylemleri belirleyen
+ * alanlar burada. `reasonCode` de dahil — aynı statüde sebep değişebiliyor ve
+ * menüdeki metin ona bakıyor.
+ */
+function moderationSignature(photo: any): string {
+  const m = normalizePhotoModeration(photo);
+  return [
+    m.status,
+    m.isVisibleToOthers,
+    m.severity,
+    m.appealState,
+    m.isAppealable,
+    m.reasonCode ?? "",
+  ].join("|");
 }
 
 // expo-image — memory+disk cache → modal her açıldığında foto cache'ten anında
@@ -930,7 +989,9 @@ const HobbyGroup = React.memo(function HobbyGroup({
       <Text
         style={{
           color: colors.text,
-          fontSize: 15,
+          // Bölüm başlıkları 20, bu ayraç onların bir alt kademesi: 15'te
+          // pillerin 14'üne fazla yakındı ve grup ayrımı okunmuyordu.
+          fontSize: 17,
           fontWeight: "600",
           paddingVertical: 16,
         }}
@@ -1075,7 +1136,11 @@ const EditProfileForm = forwardRef(function EditProfileForm(
     onBlur: onNameBlur,
   } = useKeyboardAwareField();
 
-  const draftDisplayName = watch("displayName");
+  // ⚠️ `displayName` BİLEREK izlenmiyor: watch aboneliği metin alanının her
+  // tuşunda bu 2900 satırlık formu baştan render ediyordu (üstelik değeri
+  // kimse okumuyordu — submit `getValues()` ile alıyor). Alanın değeri yalnız
+  // kendi Controller'ında yaşıyor. Aşağıdakiler tuşla değil DOKUNUŞLA değişen
+  // alanlar; onlarda watch'ın maliyeti yok.
   const draftYearOfStudy = watch("yearOfStudy");
   const draftHobbies = watch("hobbies");
   const draftSmoking = watch("smoking");
@@ -1206,6 +1271,11 @@ const EditProfileForm = forwardRef(function EditProfileForm(
   }, [photoOrderDirty]);
 
   // ── Photo order: myProfile.photosList değişince grid'i sync et ─────────────
+  // Değişiklik tespiti moderasyonu da SAYIYOR (aşağıdaki `unchanged`): karar
+  // güncellendiğinde (Pending → Review/Rejected) foto id'si de URL'i de aynı
+  // kalıyor. Sadece o ikisine bakıldığında modal açıkken gelen taze profil
+  // grid'e hiç düşmüyor; rozet/karartma ve foto menüsündeki eylemler ancak
+  // modal kapanıp yeniden açılınca doğruya dönüyordu.
   // Stage 2'ye kadar SortablePhoto'lar render olmadığı için sync etmek
   // gereksiz; gate ekledik. İlk mount commit'i daha hafif geçer.
   //
@@ -1242,7 +1312,8 @@ const EditProfileForm = forwardRef(function EditProfileForm(
       nextOrder.every(
         (p, i) =>
           p.photoId === current[i].photoId &&
-          p.photoImageUrl === current[i].photoImageUrl,
+          p.photoImageUrl === current[i].photoImageUrl &&
+          moderationSignature(p) === moderationSignature(current[i]),
       );
     if (unchanged) return;
 
@@ -1550,6 +1621,12 @@ const EditProfileForm = forwardRef(function EditProfileForm(
             });
             return; // finally bloğu setSavingProfile(false) yapıyor
           }
+          // Ana foto değişimi doğrulama rozetini düşürüyor — kaydetmeden önce
+          // sor (rehber §5). Yan fotoğraf sıralaması buraya hiç girmiyor:
+          // koşul yalnızca SONUÇTAKİ ilk fotoğraf değiştiğinde sağlanıyor.
+          if (!(await confirmMainPhotoChange(myProfile))) {
+            return; // finally bloğu setSavingProfile(false) yapıyor
+          }
           updates.NewMainPhotoId = orderToSave[0].photoId;
         }
       }
@@ -1770,8 +1847,16 @@ const EditProfileForm = forwardRef(function EditProfileForm(
           style={{
             position: "absolute",
             top: 0,
-            left: 0,
-            right: 0,
+            // left/right 0 DEĞİL: fotoğraf kutucuklarının silme düğmesi
+            // `right: -8` ile grid'in (ve dolayısıyla bu sarmalayıcının) sağ
+            // kenarından taşıyor. Overlay 0'da bitince, arkada progressive
+            // mount olan 3. sütun fotoğrafının silme çipi skeleton'ın sağından
+            // görünüyordu. Scroll container'ın yatay padding'i kadar dışarı
+            // taşıp aynı ölçüde padding veriyoruz: kapak modalın tam genişliği,
+            // skeleton içeriği ise yerinde kalıyor.
+            left: -CONTAINER_PADDING,
+            right: -CONTAINER_PADDING,
+            paddingHorizontal: CONTAINER_PADDING,
             zIndex: 10,
             backgroundColor: colors.bg,
           }}
@@ -2260,8 +2345,9 @@ const EditProfileForm = forwardRef(function EditProfileForm(
                     borderRadius: 999,
                     borderCurve: "continuous",
                     overflow: "hidden",
+                    // OptionPill / HobbyPill ile aynı üçlü: px 12 / py 10 / 14px.
                     paddingHorizontal: 12,
-                    paddingVertical: 11,
+                    paddingVertical: 10,
                     borderWidth: 0.5,
                     flexDirection: "row",
                     alignItems: "center",
@@ -2435,8 +2521,9 @@ const EditProfileForm = forwardRef(function EditProfileForm(
                     borderRadius: 999,
                     borderCurve: "continuous",
                     overflow: "hidden",
+                    // OptionPill / HobbyPill ile aynı üçlü: px 12 / py 10 / 14px.
                     paddingHorizontal: 12,
-                    paddingVertical: 11,
+                    paddingVertical: 10,
                     borderWidth: 0.5,
                     flexDirection: "row",
                     alignItems: "center",
@@ -2509,11 +2596,12 @@ const EditProfileForm = forwardRef(function EditProfileForm(
             fillWidth
             items={religiousViewOptions.map((opt) => ({
               id: `religion:${resolveLocalized(opt.display, i18n.language, opt.name)}`,
+              // `icon` prop'u BİLEREK verilmiyor — bkz. yukarıdaki not: tek
+              // jenerik sembol her pilde tekrar edip hiçbir şey ayırt etmiyordu.
               element: (
                 <OptionPill
                   option={opt}
                   isSelected={draftReligiousView?.id === opt.id}
-                  icon={RELIGIOUS_VIEW_ICON}
                   onPress={() =>
                     setValue(
                       "religiousView",

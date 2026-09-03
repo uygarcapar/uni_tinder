@@ -18,7 +18,6 @@ import {
   Platform,
   UIManager,
   Linking,
-  ActivityIndicator,
   StyleProp,
   ViewStyle,
 } from "react-native";
@@ -35,7 +34,7 @@ import { forgetPhoto } from "@/shared/utils/photoStore";
 import PhotoSourceSheet from "@/shared/components/PhotoSourceSheet";
 import { devLog } from "@/shared/utils/devLog";
 import { resolveMainPhotoUri, resolvePhotoUri } from "@/shared/utils/photoUri";
-import { useAppDispatch, useAppSelector } from "@/shared/hooks/redux";
+import { useAppSelector } from "@/shared/hooks/redux";
 import { API_ENDPOINTS } from "@/shared/constants/api";
 import {
   MAX_PROFILE_PHOTOS,
@@ -51,6 +50,7 @@ import {
   requiresUserAction,
   resolveRequiredPhotoCount,
   summarizeModeration,
+  type PhotoModeration,
 } from "@/features/profile/photoModeration";
 import {
   isPhotoAppealConflict,
@@ -58,22 +58,11 @@ import {
 } from "@/shared/constants/responseCodes";
 import { staticGet } from "@/shared/services/staticCache";
 import PreviewModal from "@/features/profile/components/PreviewModal";
-import SettingsModal from "@/features/profile/components/SettingsModal";
-import PurchaseModal from "@/features/discover/components/PurchaseModal";
 import ShopCardsRow from "@/features/profile/components/ShopCardsRow";
-import ScreenHeader, {
-  SCREEN_HEADER_ACTION_SIZE,
-} from "@/shared/components/ScreenHeader";
+import ScreenHeader from "@/shared/components/ScreenHeader";
 import EmptyState from "@/shared/components/EmptyState";
-import { useSwipeStats } from "@/features/discover/swipeQueries";
 import { getOfferings } from "@/features/profile/subscriptionService";
-import {
-  clearSyncPending,
-  fetchSubscriptionStatus,
-  reconcileIfMismatched,
-  selectSyncPending,
-  syncSubscriptionWithRetry,
-} from "@/features/profile/subscriptionSlice";
+import { selectSyncPending } from "@/features/profile/subscriptionSlice";
 import { usePremiumTier } from "@/features/profile/premiumTier";
 import {
   UPSELL_BENEFIT_KEYS,
@@ -94,13 +83,20 @@ import {
   ChevronDown,
   UserRound,
   WifiOff,
-} from "lucide-react-native";
+} from "@/shared/icons";
 import SFIcon, { type SFSymbol } from "@/shared/components/SFIcon";
+// Çıplak alev YALNIZ dekoratif kullanım için kaldı (premium tanıtım kartındaki
+// büyük glyph). İsmin yanındaki rozet PremiumBadge.
 import PremiumFlame from "@/shared/components/PremiumFlame";
+import PremiumBadge from "@/shared/components/PremiumBadge";
+import SelfieVerifiedBadge from "@/features/profile/components/SelfieVerifiedBadge";
+import SelfieVerificationRow from "@/features/profile/components/SelfieVerificationRow";
+import { resolveSelfieVerified } from "@/features/profile/selfie/selfieVerification";
+import { confirmMainPhotoChange } from "@/features/profile/selfie/confirmMainPhotoChange";
 
 import { LinearGradient } from "expo-linear-gradient";
 import { BlurView } from "expo-blur";
-import { Host, Button as SwiftUIButton } from "@expo/ui/swift-ui";
+import { Host, Button as SwiftUIButton, Image as SwiftUIImage } from "@expo/ui/swift-ui";
 import {
   buttonStyle,
   tint,
@@ -109,6 +105,7 @@ import {
   font,
   frame,
   fixedSize,
+  accessibilityLabel,
 } from "@expo/ui/swift-ui/modifiers";
 
 // REANIMATED & GESTURE HANDLER IMPORTLARI
@@ -117,10 +114,22 @@ import Animated, {
   useSharedValue,
   useAnimatedStyle,
   useAnimatedScrollHandler,
+  useDerivedValue,
   withTiming,
   withRepeat,
   Easing,
 } from "react-native-reanimated";
+import type PagerView from "react-native-pager-view";
+import PagerTabBar, {
+  AnimatedPagerView,
+  usePagerScrollHandler,
+  usePagerTabCommit,
+} from "@/shared/components/PagerTabBar";
+import PlusPage from "@/features/profile/components/PlusPage";
+import {
+  consumeLitPlusRequest,
+  LIT_PLUS_EVENT,
+} from "@/features/profile/litPlusEntry";
 
 // Android LayoutAnimation aktivasyonu
 if (
@@ -131,6 +140,9 @@ if (
 }
 
 const { width } = Dimensions.get("window");
+
+/** Header'daki şeridin sekmeleri — pager sayfa sırasıyla AYNI. */
+type TabKey = "profile" | "plus";
 
 // ─── Hero Section ölçüleri ───────────────────────────────────────────────────
 // "Profili Düzenle" butonunun SwiftUI Host'u HİÇBİR eksende matchContents
@@ -144,8 +156,21 @@ const EDIT_BUTTON_H = 34;
 // glass kapsül fixedSize ile metne göre daralıp kutunun soluna yaslanır, kalan
 // alan şeffaf kalır.
 const EDIT_BUTTON_BOX_W = width - HERO_PAD_H * 2 - HERO_AVATAR - HERO_GAP;
-// Hero ismi 18px — SwipeCard'ın 36px isim / 26px ateş oranını korur.
-const HERO_FLAME_SIZE = 16;
+// Hero ismi. Premium rozetinin çapı bundan türüyor (bkz. PremiumBadge), o
+// yüzden punto sabitte duruyor.
+const HERO_NAME_FONT = 18;
+const HERO_NAME_LINE = 28;
+// Fotoğraf doğrulama rozetinin ölçüsü. Premium rozetiyle AYNI SAYI DEĞİL artık:
+// premium yuvarlak zeminli bir chip, bu ise çıplak bir SF Symbol — ikisi aynı
+// sayıya bağlanırsa biri diğerinin ölçüsünü bozuyor.
+const HERO_VERIFIED_SIZE = 16;
+
+// Premium rozetinin çapı — İSTİSNA olarak puntodan TÜRETİLMİYOR (bkz.
+// PremiumBadge > size). 18'lik isimden çıkan 14 burada rozet değil nokta gibi
+// duruyordu: hero ismi kart başlıklarındakinden küçük ama rozet bu ekrandaki
+// tek premium işareti, o yüzden orana değil okunurluğa göre seçildi. Yanındaki
+// doğrulama sembolünden (16) bir tık büyük kalması da bilinçli.
+const HERO_PREMIUM_BADGE_SIZE = 18;
 
 
 // ─── Generic skeleton box w/ shimmer ─────────────────────────────────────────
@@ -507,7 +532,9 @@ function CompletionAccordion({
   );
 }
 
-import AppModal from "@/shared/components/AppModal";
+import AppModal, {
+  SHEET_TOP_RADIUS_LARGE,
+} from "@/shared/components/AppModal";
 import AnimatedPressable from "@/shared/components/AnimatedPressable";
 import EditProfileForm, {
   EditProfileFormSkeleton,
@@ -516,7 +543,13 @@ import { hydrateProfileForm } from "@/features/profile/utils/hydrateProfileForm"
 import { useQueryClient } from "@tanstack/react-query";
 import { swipeKeys } from "@/features/discover/swipeQueries";
 import { colors, gradients, onMediaAt, isLight } from "../../../shared/theme/colors";
-import { glassFallback } from "../../../shared/theme/glass";
+import {
+  glassFallback,
+  glassFallbackFill,
+  glassIconClearGlyph,
+  GLASS_ICON_CLEAR_SIZE,
+} from "../../../shared/theme/glass";
+import GlassFallbackSurface from "@/shared/components/GlassFallbackSurface";
 import { useRenderCount } from "@/shared/debug/useRenderCount";
 import { plainBlurTint } from "@/shared/theme/blur";
 
@@ -566,170 +599,39 @@ function ProfileEditModal({
       rightSlot={saving ? savingSlot : undefined}
       scrollEnabled={scrollEnabled}
       fullScreen
+      // FilterModal ile aynı gerekçe: tam ekrana yakın açılan sheet'te üst
+      // köşeler bir tık daha yuvarlak.
+      cornerRadius={SHEET_TOP_RADIUS_LARGE}
     >
       {children}
     </AppModal>
   );
 }
 
-// Abonelik tarihleri (yenileme / iptal geçerlilik / trial bitişi / grace).
-// Aynı yıl içindeyse yıl gösterilmiyor. Geçersiz tarihte "" döner ki metin
-// "undefined tarihine kadar" gibi bozulmasın.
-const formatSubscriptionDate = (iso: string | null | undefined): string => {
-  if (!iso) return "";
-  const d = new Date(iso);
-  if (Number.isNaN(d.getTime())) return "";
-  const sameYear = d.getFullYear() === new Date().getFullYear();
-  return d.toLocaleDateString("tr-TR", {
-    day: "2-digit",
-    month: "short",
-    ...(sameYear ? {} : { year: "numeric" }),
-  });
-};
-
 // ══════════════════════════════════════════════════════════════════════════════
 export default function ProfileScreen() {
   useRenderCount("ProfileScreen");
   const { t } = useTranslation();
   const navigation = useNavigation<any>();
-  const dispatch = useAppDispatch();
   const { user } = useAppSelector((s) => (s as any).auth);
   // Tier'ın tek kaynağı — uygulamadaki diğer premium kapılarıyla aynı hook.
   const {
     isPremium: subscriptionIsPremium,
     resolved: subscriptionStatusResolved,
   } = usePremiumTier();
-  const subscriptionExpiresAt = useAppSelector((s) => (s as any).subscription?.expiresAt);
-  const subscriptionStatus = useAppSelector((s) => (s as any).subscription?.status);
-  const subscriptionIsTrial = useAppSelector((s) => (s as any).subscription?.isTrial);
-  const subscriptionTrialEndsAt = useAppSelector((s) => (s as any).subscription?.trialEndsAt);
-  const subscriptionGraceEndsAt = useAppSelector(
-    (s) => (s as any).subscription?.gracePeriodEndsAt,
-  );
   const syncPending = useAppSelector(selectSyncPending);
-  const syncing = useAppSelector((s) => (s as any).subscription?.syncing);
-  // Yalnız dev teşhisi için — "aktivasyon sürüyor" kartında gösteriliyor.
-  const lastSyncReason = useAppSelector(
-    (s) => (s as any).subscription?.lastSyncReason as string | null,
-  );
   const insets = useSafeAreaInsets();
-  const statsQuery = useSwipeStats();
 
-  // DiscoverScreen ile aynı fill oranı: (limit - kalan) / limit.
-  // Tavan backend'den (dailySwipeLimit) geliyor — SwipeLimitsOptions değişince
-  // FE otomatik uysun diye hard-code edilmiyor. Premium / -1 / limit yok → 0.
-  const swipeFillRatio = useMemo(() => {
-    if (statsQuery.data?.isPremium) return 0;
-    const rem = statsQuery.data?.remainingSwipes;
-    const limit = statsQuery.data?.dailySwipeLimit;
-    if (rem == null || rem < 0) return 0;
-    if (limit == null || limit <= 0) return 0;
-    const used = Math.max(0, limit - rem);
-    return Math.min(1, used / limit);
-  }, [
-    statsQuery.data?.remainingSwipes,
-    statsQuery.data?.dailySwipeLimit,
-    statsQuery.data?.isPremium,
-  ]);
-
-  // Abonelik durum makinesi (backend `/status`.status + isActivelyPremium).
-  // `Cancelled` / `BillingIssue`'da backend premium erişimi AÇIK tutuyor
-  // (dönem sonu / grace bitişine kadar) — burada da kapatmıyoruz, sadece
-  // rozet + CTA değişiyor.
-  const subscriptionView = useMemo(() => {
-    if (syncPending) {
-      return {
-        kind: "pending" as const,
-        badge: t("profile.subscription.pendingBadge"),
-        // Dev build'de `/sync`'in son `reason`'ı da yazılıyor: "aktivasyon
-        // sürüyor" tek başına sorunun hangi tarafta olduğunu söylemiyor ve
-        // cevabı cihaz logunda aramak gerekiyordu.
-        //   NOT_FOUND_IN_RC     → RC'de bu kullanıcıda aktif abonelik yok
-        //                         (prod backend + sandbox satın alma buraya düşer)
-        //   RC_REST_UNAVAILABLE → backend'de RC REST anahtarı konfigüre değil
-        //   RC_REST_ERROR       → backend RC'ye ulaşamadı
-        description: __DEV__ && lastSyncReason
-          ? `${t("profile.subscription.pendingDescription")}\n[dev] sync reason: ${lastSyncReason}`
-          : t("profile.subscription.pendingDescription"),
-      };
-    }
-    if (subscriptionStatus === "BillingIssue") {
-      return {
-        kind: "billingIssue" as const,
-        badge: t("profile.subscription.billingIssueBadge"),
-        description: subscriptionGraceEndsAt
-          ? t("profile.subscription.billingIssueDescription", {
-              date: formatSubscriptionDate(subscriptionGraceEndsAt),
-            })
-          : t("profile.subscription.billingIssueDescriptionNoDate"),
-      };
-    }
-    if (subscriptionStatus === "Cancelled") {
-      return {
-        kind: "cancelled" as const,
-        badge: t("profile.subscription.cancelledBadge"),
-        description: subscriptionExpiresAt
-          ? t("profile.subscription.cancelledDescription", {
-              date: formatSubscriptionDate(subscriptionExpiresAt),
-            })
-          : t("profile.subscription.cancelledDescriptionNoDate"),
-      };
-    }
-    if (subscriptionIsTrial) {
-      return {
-        kind: "trial" as const,
-        badge: t("profile.subscription.trialBadge"),
-        description: subscriptionTrialEndsAt
-          ? t("profile.subscription.trialDescription", {
-              date: formatSubscriptionDate(subscriptionTrialEndsAt),
-            })
-          : t("profile.subscription.trialDescriptionNoDate"),
-      };
-    }
-    return {
-      kind: "active" as const,
-      badge: t("profile.subscription.status"),
-      description: t("profile.subscription.activeDescription"),
-    };
-  }, [
-    syncPending,
-    lastSyncReason,
-    subscriptionStatus,
-    subscriptionIsTrial,
-    subscriptionTrialEndsAt,
-    subscriptionGraceEndsAt,
-    subscriptionExpiresAt,
-    t,
-  ]);
-
-  // "Aktivasyon sürüyor" kartındaki manuel yenile: önce canonical `/status`,
-  // hâlâ premium görünmüyorsa tek bir `/sync` denemesi (backoff'lu tam tur
-  // satın alma anında zaten atıldı; burada kullanıcı tetikliyor).
+  // NOT: header'daki logo sekme şeridine yerini bıraktığı için buradaki
+  // `swipeFillRatio` hesabı (WaveFillLogo'nun dolgu seviyesi) kaldırıldı —
+  // ekranın `useSwipeStats()` aboneliğinin tek tüketicisi oydu.
   //
-  // Turun SONUNDA `reconcileIfMismatched`: bu kartın iki çıkışı var ve ikincisi
-  // eksikti. Premium gerçekten iniyorsa `/status`/`/sync` kapatıyor; ortada
-  // aktive edilecek bir satın alma YOKSA (RC'de de hak görünmüyorsa) kaydı
-  // düşüren tek yer reconcile. O çağrılmadan buton, çözemeyeceği bir durumu
-  // tekrar tekrar deneyip aynı kartı geri çiziyordu.
-  const handleRetrySync = useCallback(() => {
-    dispatch(fetchSubscriptionStatus())
-      .unwrap()
-      .then((res: any) => {
-        // `settled`: backend satın almayı görmüş ve abonelik bitmiş. Kart zaten
-        // kapandı; ardından `/sync` atmak, cevabı baştan belli (RC'de aktif
-        // entitlement yok → `NOT_FOUND_IN_RC`) bir istekle kullanıcıyı 60/dk
-        // limitine yaklaştırmak olurdu.
-        if (res?.isPremium || res?.settled) {
-          dispatch(clearSyncPending());
-          return;
-        }
-        return dispatch(syncSubscriptionWithRetry({ maxAttempts: 1 }));
-      })
-      .catch(() => dispatch(syncSubscriptionWithRetry({ maxAttempts: 1 })))
-      .finally(() => {
-        dispatch(reconcileIfMismatched());
-      });
-  }, [dispatch]);
+  // NOT: abonelik durum makinesi (`useSubscriptionView`) ve "aktivasyon
+  // sürüyor" durumundaki manuel `/status` + `/sync` yenilemesi (`handleRetrySync`)
+  // buradan kaldırıldı — ikisinin de tek tüketicisi silinen üyelik kartıydı.
+  // Bu ekranın abonelik durumundan hâlâ okuduğu tek şey `showMembershipCard`
+  // bayrağı. Durumun ayrıntılı hâli (plan rozeti, yenileme tarihi, aboneliği
+  // yönet) plus sayfasında duruyor.
 
   const scrollY = useSharedValue(0);
   const scrollHandler = useAnimatedScrollHandler({
@@ -737,6 +639,90 @@ export default function ProfileScreen() {
       scrollY.value = e.contentOffset.y;
     },
   });
+
+  // ── Sekmeler: profil ↔ plus ───────────────────────────────────────────────
+  // Header'da logonun yerinde duran şerit bir PAGER sürüyor (Beğeniler ve
+  // Mesajlar ekranlarındaki kurulumun aynısı): "plus" bir modal DEĞİL, sayfanın
+  // yanındaki ikinci sayfa. Uygulamadaki tüm paywall girişleri buraya bakıyor
+  // (bkz. features/profile/litPlusEntry).
+  const pagerRef = useRef<PagerView>(null);
+  // Ekran, bekleyen bir "plus'ı aç" isteğiyle mount olduysa DOĞRUDAN o sayfada
+  // doğuyor. `setPage` ile çevirmek yerine `initialPage`: mount anında pager
+  // henüz yerleşmediği için programatik sayfa değişimi yutulabiliyor, üstelik
+  // kullanıcı bir kare profil sayfasını görürdü. Lazy sekme ilk kez bu istekle
+  // mount olduğunda geçerli olan yol bu.
+  const [initialTabIndex] = useState(() => (consumeLitPlusRequest() ? 1 : 0));
+  const [activeTab, setActiveTab] = useState<TabKey>(
+    initialTabIndex === 1 ? "plus" : "profile",
+  );
+  const tabs = useMemo(
+    () => [
+      { key: "profile", label: t("profile.tabs.profile") },
+      { key: "plus", label: t("profile.tabs.plus") },
+    ],
+    [t],
+  );
+  // Pager'ın anlık konumu (0 → 1, tam sayı değil): alt çizgiyi ve zemin
+  // gradyanının açılışını bu sürüyor.
+  const pagerOffset = useSharedValue(0);
+  const pagerScrollHandler = usePagerScrollHandler({
+    onPageScroll: (e: any) => {
+      "worklet";
+      pagerOffset.value = e.position + e.offset;
+    },
+  });
+  // Sekme state'i pager DURUNCA yazılıyor — gerekçe usePagerTabCommit'te.
+  const commitPage = useCallback(
+    (index: number) => setActiveTab(index === 1 ? "plus" : "profile"),
+    [],
+  );
+  const pagerCommitHandlers = usePagerTabCommit(commitPage);
+  // Katalog fetch'inin kapısı: kullanıcı plus sayfasına BİR KEZ geçtiyse.
+  // `onPageSelected` parmak yarıyı geçince fire ediyor, yani veri kayma
+  // biterken yolda oluyor; sekmeye hiç girilmezse hiç istek atılmıyor.
+  const [plusVisited, setPlusVisited] = useState(initialTabIndex === 1);
+  const handlePageSelected = useCallback(
+    (e: any) => {
+      if (e?.nativeEvent?.position === 1) setPlusVisited(true);
+      pagerCommitHandlers.onPageSelected(e);
+    },
+    [pagerCommitHandlers],
+  );
+  const handleTabChange = useCallback((_key: string, index: number) => {
+    // Şeride basmak doğrudan setState ETMİYOR: pager'a sayfa değiştirmesini
+    // söylüyor, sekme state'i pager'ın kendi olaylarından dönüyor.
+    pagerRef.current?.setPage(index);
+  }, []);
+  /** Sayfadaki upsell / üyelik kartından paywall'a. */
+  const goToPlusPage = useCallback(() => {
+    setPlusVisited(true);
+    pagerRef.current?.setPage(1);
+  }, []);
+
+  // Ekran ZATEN mount ise (sekme daha önce açılmış) paywall isteği buradan
+  // geliyor: pager yerleşmiş durumda, sayfa animasyonla çevriliyor.
+  useEffect(
+    () =>
+      uiBus.on(LIT_PLUS_EVENT, () => {
+        if (!consumeLitPlusRequest()) return;
+        setPlusVisited(true);
+        pagerRef.current?.setPage(1);
+      }),
+    [],
+  );
+
+  // Plus sayfasının kendi scroll'u — header'ın progressive blur'u hangi sayfa
+  // öndeyse onu okusun (tek `scrollY` paylaşılsaydı sekme değişiminde diğer
+  // sayfanın offset'i header'a sızardı).
+  const plusScrollY = useSharedValue(0);
+  const headerScrollY = useDerivedValue(() =>
+    pagerOffset.value < 0.5 ? scrollY.value : plusScrollY.value,
+  );
+
+  // Zemin İKİ SAYFADA DA aynı: kökün `colors.bg`i. Bir süre plus sayfasının
+  // arkasında pager'ın konumundan açılan bir gradyan vardı — kaldırıldı,
+  // sayfanın zemini artık uygulamanın kendi kâğıdı (koyuda siyah, açıkta beyaz).
+  // `pagerOffset` duruyor: sekme şeridinin alt çizgisini hâlâ o sürüyor.
 
   // ── Modal visibility state (declarative) ───────────────────────────────────
   const [editVisible, setEditVisible] = useState(false);
@@ -753,8 +739,6 @@ export default function ProfileScreen() {
   // (`relatedEntityId`). Kararın hangi fotoğrafa ait olduğunu göstermek için;
   // birkaç saniye sonra kendiliğinden sönüyor (aşağıdaki efekt).
   const [highlightPhotoId, setHighlightPhotoId] = useState<string | null>(null);
-  const [settingsVisible, setSettingsVisible] = useState(false);
-  const [purchaseVisible, setPurchaseVisible] = useState(false);
   const [previewVisible, setPreviewVisible] = useState(false);
 
   // ── Premium teaser fiyatı (inline upsell kartı için) ──────────────────────
@@ -1108,6 +1092,10 @@ export default function ProfileScreen() {
       // Hero rozeti bundan etkilenmez — kullanıcı kendi premium'unu hep görür.
       isPremium: isPremium && myProfile.showPremiumBadge !== false,
       universityName: myProfile.user?.universityName || user?.universityName,
+      // Kart ADI display'den basıyor; ham alan (Türkçe resmî ad) yalnız
+      // fallback olarak yukarıda duruyor.
+      universityNameDisplay:
+        myProfile.user?.universityNameDisplay || user?.universityNameDisplay,
       showUniversity: myProfile.showMyUniversity !== false,
       departmentDisplay:
         myProfile.departmentDisplay || String(myProfile.department ?? ""),
@@ -1309,6 +1297,9 @@ export default function ProfileScreen() {
         NewPhotos: [file],
       });
       await refreshPhotos();
+      // Kararı listeye ANINDA işliyoruz: rozet + karartma aşağıdaki uyarıyla
+      // aynı anda görünsün, düzenleme modalı kapanıp açılmayı beklemesin.
+      applyModerationFromResponse(photos);
 
       // Foto artık sunucuda; yerel kopya bu andan itibaren ölü ağırlık.
       // (Kayıt akışı bunu YAPMAZ — orada yollar submit'e kadar redux'ta.)
@@ -1408,6 +1399,35 @@ export default function ProfileScreen() {
             ? { ...p, moderation: { ...normalizePhotoModeration(p), ...patch } }
             : p,
         ),
+      };
+    });
+  };
+
+  /**
+   * Yükleme/güncelleme YANITINDAKİ moderasyon bloklarını listeye yamalar.
+   *
+   * Gerekçe: karar zaten PUT yanıtında geliyor (uyarıyı da o besliyor) ama
+   * hemen ardından çekilen `GetMyProfile` bunu bir tık geriden yansıtabiliyor —
+   * o pencerede kullanıcı "incelemeye alındı" uyarısını görüyor, kutuda ise
+   * rozet/karartma yok. Yanıt tazeliğin ALT sınırı olduğu için üstüne yazmak
+   * güvenli; listede olmayan foto sessizce atlanıyor.
+   */
+  const applyModerationFromResponse = (photos: PhotoModeration[]) => {
+    const byId = new Map(
+      (photos ?? [])
+        .filter((p) => p?.photoId != null)
+        .map((p) => [String(p.photoId), p]),
+    );
+    if (byId.size === 0) return;
+    setMyProfile((prev) => {
+      if (!prev?.photosList) return prev;
+      return {
+        ...prev,
+        photosList: prev.photosList.map((p) => {
+          const fresh = byId.get(String(p?.photoId));
+          if (!fresh) return p;
+          return { ...p, moderation: { ...normalizePhotoModeration(p), ...fresh } };
+        }),
       };
     });
   };
@@ -1541,6 +1561,8 @@ export default function ProfileScreen() {
   };
 
   const handleSetMainPhoto = async (photoId) => {
+    // Ana foto değişimi doğrulama rozetini düşürüyor — önce sor (rehber §5).
+    if (!(await confirmMainPhotoChange(myProfile))) return;
     setSavingPhoto(true);
     try {
       await profileService.updateProfile({ NewMainPhotoId: photoId });
@@ -1567,6 +1589,12 @@ export default function ProfileScreen() {
       );
       return;
     }
+    // Ana fotoğrafı silmek başka bir fotoğrafı otomatik ana yapıyor → rozet
+    // düşer. Yan fotoğrafı silmek etkilemez, orada uyarı çıkmıyor.
+    const deletingMain = myProfile?.photosList?.some(
+      (p) => String(p?.photoId) === String(photoId) && p?.isMainPhoto,
+    );
+    if (deletingMain && !(await confirmMainPhotoChange(myProfile))) return;
     setSavingPhoto(true);
     try {
       await profileService.updateProfile({
@@ -1764,7 +1792,7 @@ export default function ProfileScreen() {
     {
       key: "photos",
       title: t('profile.completion.photos'),
-      icon: { sf: "camera.fill" as SFSymbol, lucide: Camera },
+      icon: { sf: "camera" as SFSymbol, lucide: Camera },
       current: myProfile?.photosList?.length || 0,
       max: 6,
       desc: t('profile.completion.photosDescription'),
@@ -1780,7 +1808,7 @@ export default function ProfileScreen() {
     {
       key: "prompts",
       title: t('profile.completion.prompts'),
-      icon: { sf: "book.fill" as SFSymbol, lucide: BookOpen },
+      icon: { sf: "book" as SFSymbol, lucide: BookOpen },
       // ⚠️ Bu satır İSTEMCİDE hesaplanıyor (0–3), hemen üstündeki yüzde halkası
       // ise SUNUCUDAN geliyor (profileCompletionPercentage) ve İKİLİ puanlıyor:
       //
@@ -1806,7 +1834,7 @@ export default function ProfileScreen() {
       title: t('profile.completion.smoking'),
       // forceFallback: SF Symbols'ta cigarette yok, `smoke.fill` duman bulutu.
       icon: {
-        sf: "smoke.fill" as SFSymbol,
+        sf: "smoke" as SFSymbol,
         lucide: Cigarette,
         forceFallback: true,
       },
@@ -1817,7 +1845,7 @@ export default function ProfileScreen() {
     {
       key: "zodiac",
       title: t('profile.completion.zodiac'),
-      icon: { sf: "star.fill" as SFSymbol, lucide: Star },
+      icon: { sf: "star" as SFSymbol, lucide: Star },
       current: myProfile?.zodiacSign != null ? 1 : 0,
       max: 1,
       desc: t('profile.completion.zodiacDescription'),
@@ -1828,7 +1856,7 @@ export default function ProfileScreen() {
     {
       key: "relationshipIntent",
       title: t('profile.completion.relationshipIntent'),
-      icon: { sf: "heart.fill" as SFSymbol, lucide: Heart },
+      icon: { sf: "heart" as SFSymbol, lucide: Heart },
       current: myProfile?.relationshipIntent != null ? 1 : 0,
       max: 1,
       desc: t('profile.completion.relationshipIntentDescription'),
@@ -1853,625 +1881,596 @@ export default function ProfileScreen() {
       <View style={{ flex: 1, backgroundColor: colors.bg }}>
         <StatusBar barStyle={isLight() ? "dark-content" : "light-content"} />
 
-        {loading ? (
-          <SkeletonBody />
-        ) : !myProfile ? (
-          // Veri yoksa sayfayı ÇİZME: aşağıdaki bloklar `myProfile`ı null'la
-          // "her alanı boş bir profil" olarak render ediyor ve kullanıcı bunu
-          // ağ hatası değil veri kaybı sanıyor.
-          <ProfileLoadError onRetry={handleRetryLoad} retrying={retrying} />
-        ) : (
-          <Animated.ScrollView
-            showsVerticalScrollIndicator={false}
-            contentInsetAdjustmentBehavior="never"
-            contentContainerStyle={{
-              paddingTop: insets.top + 60,
-              // Floating tab bar (64) + altındaki nefes payı — son kart bar'ın
-              // hemen dibinde bitmesin.
-              paddingBottom: insets.bottom + 120,
-            }}
-            onScroll={scrollHandler}
-            scrollEventThrottle={16}
-          >
-            {/* Keşif görünürlüğü şeridi BURADA DEĞİL: düzenleme modalında,
-                Fotoğraflar bölümünün açıklamasının altında (EditProfileForm).
-                Şeridin söylediği şeyin çözümü fotoğraf grid'i — bilgiyi
-                eylemden ayrı ekranda tutmak anlamsızdı. */}
-
-            {/* ── Progress Bar ── */}
-            {completionPct > 0 && (
-              <View
-                style={{
-                  paddingHorizontal: 20,
-                  paddingTop: 10,
-                  position: "relative",
+        <AnimatedPagerView
+          ref={pagerRef}
+          style={{ flex: 1 }}
+          initialPage={initialTabIndex}
+          onPageScroll={pagerScrollHandler}
+          // Sekme state'inin TEK kaynağı bu ikili: seçim ref'e yazılıyor, React
+          // state'i ancak kayma bitince (idle) değişiyor — bkz. usePagerTabCommit.
+          onPageSelected={handlePageSelected}
+          onPageScrollStateChanged={pagerCommitHandlers.onPageScrollStateChanged}
+        >
+          <View key="profile" style={{ flex: 1 }} collapsable={false}>
+            {loading ? (
+              <SkeletonBody />
+            ) : !myProfile ? (
+              // Veri yoksa sayfayı ÇİZME: aşağıdaki bloklar `myProfile`ı null'la
+              // "her alanı boş bir profil" olarak render ediyor ve kullanıcı bunu
+              // ağ hatası değil veri kaybı sanıyor.
+              <ProfileLoadError onRetry={handleRetryLoad} retrying={retrying} />
+            ) : (
+              <Animated.ScrollView
+                showsVerticalScrollIndicator={false}
+                contentInsetAdjustmentBehavior="never"
+                contentContainerStyle={{
+                  paddingTop: insets.top + 60,
+                  // Floating tab bar (64) + altındaki nefes payı — son kart bar'ın
+                  // hemen dibinde bitmesin.
+                  paddingBottom: insets.bottom + 120,
                 }}
+                onScroll={scrollHandler}
+                scrollEventThrottle={16}
               >
-                <View
-                  style={{
-                    height: 4,
-                    borderRadius: 999,
-                    backgroundColor: colors.hairline,
-                    overflow: "visible",
-                  }}
-                  onLayout={(e) => {
-                    barWidthSV.value = e.nativeEvent.layout.width;
-                  }}
-                >
-                  {/* Bar: full-width strip clipped by overflow:hidden wrapper,
-                      translateX ile soldan sağa reveal edilir (transform → UI thread). */}
+                {/* Keşif görünürlüğü şeridi BURADA DEĞİL: düzenleme modalında,
+                    Fotoğraflar bölümünün açıklamasının altında (EditProfileForm).
+                    Şeridin söylediği şeyin çözümü fotoğraf grid'i — bilgiyi
+                    eylemden ayrı ekranda tutmak anlamsızdı. */}
+
+                {/* ── Progress Bar ── */}
+                {completionPct > 0 && (
                   <View
                     style={{
-                      height: "100%",
-                      borderRadius: 999,
-                      overflow: "hidden",
+                      paddingHorizontal: 20,
+                      paddingTop: 10,
+                      position: "relative",
                     }}
-                  >
-                    <Animated.View
-                      style={[
-                        {
-                          width: "100%",
-                          height: "100%",
-                          backgroundColor: colors.inverseSurface,
-                        },
-                        progressBarStyle,
-                      ]}
-                    />
-                  </View>
-                  {/* Yüzde Badge — left:0 base, translateX ile pozisyonlanır */}
-                  <Animated.View
-                    style={[
-                      {
-                        position: "absolute",
-                        top: "50%",
-                        left: 0,
-                      },
-                      progressBadgeStyle,
-                    ]}
                   >
                     <View
-                      className="border-[3px]"
-                      onLayout={(e) => {
-                        badgeWidthSV.value = e.nativeEvent.layout.width;
-                      }}
                       style={{
-                        borderColor: colors.bg,
-                        backgroundColor: colors.inverseSurface,
-                        paddingHorizontal: 6,
-                        paddingVertical: 4,
+                        height: 4,
                         borderRadius: 999,
-                        minWidth: 30,
-                        alignItems: "center",
-                        borderCurve: "continuous",
-                        overflow: "hidden",
+                        backgroundColor: colors.hairline,
+                        overflow: "visible",
+                      }}
+                      onLayout={(e) => {
+                        barWidthSV.value = e.nativeEvent.layout.width;
                       }}
                     >
-                      <Text
+                      {/* Bar: full-width strip clipped by overflow:hidden wrapper,
+                          translateX ile soldan sağa reveal edilir (transform → UI thread). */}
+                      <View
                         style={{
-                          color: colors.onInverseSurface,
-                          fontSize: 12,
-                          fontWeight: "700",
+                          height: "100%",
+                          borderRadius: 999,
+                          overflow: "hidden",
                         }}
                       >
-                        {completionPct}%
-                      </Text>
+                        <Animated.View
+                          style={[
+                            {
+                              width: "100%",
+                              height: "100%",
+                              backgroundColor: colors.inverseSurface,
+                            },
+                            progressBarStyle,
+                          ]}
+                        />
+                      </View>
+                      {/* Yüzde Badge — left:0 base, translateX ile pozisyonlanır */}
+                      <Animated.View
+                        style={[
+                          {
+                            position: "absolute",
+                            top: "50%",
+                            left: 0,
+                          },
+                          progressBadgeStyle,
+                        ]}
+                      >
+                        <View
+                          className="border-[3px]"
+                          onLayout={(e) => {
+                            badgeWidthSV.value = e.nativeEvent.layout.width;
+                          }}
+                          style={{
+                            borderColor: colors.bg,
+                            backgroundColor: colors.inverseSurface,
+                            paddingHorizontal: 6,
+                            paddingVertical: 4,
+                            borderRadius: 999,
+                            minWidth: 30,
+                            alignItems: "center",
+                            borderCurve: "continuous",
+                            overflow: "hidden",
+                          }}
+                        >
+                          <Text
+                            style={{
+                              color: colors.onInverseSurface,
+                              fontSize: 12,
+                              fontWeight: "700",
+                            }}
+                          >
+                            {completionPct}%
+                          </Text>
+                        </View>
+                      </Animated.View>
                     </View>
-                  </Animated.View>
-                </View>
-              </View>
-            )}
+                  </View>
+                )}
 
-            {/* ── Hero Section ── */}
-            {/* Ölçüler EDIT_BUTTON_BOX_W'yi besliyor — birini değiştirirsen
-                sabitleri de güncelle. */}
-            <View
-              style={{
-                paddingHorizontal: HERO_PAD_H,
-                paddingTop: 20,
-                paddingBottom: 24,
-                flexDirection: "row",
-                alignItems: "center",
-                gap: HERO_GAP,
-              }}
-            >
-              <HeroAvatar
-                uri={mainPhoto}
-                size={HERO_AVATAR}
-                loading={!myProfile}
-                onPress={() => mainPhoto && setPreviewVisible(true)}
-              />
-
-              <View style={{ flex: 1, justifyContent: "space-between" }}>
-                {/* İsim + premium ateşi — SwipeCard'daki rozetin aynısı (boyut
-                    ve gradyan dokunulmuyor). Rozet ismin devamı gibi okunsun
-                    diye aradaki boşluk dar tutuluyor.
-                    Hero'da yaş gösterilmiyor, rozet ismin sağına gelir. */}
+                {/* ── Hero Section ── */}
+                {/* Ölçüler EDIT_BUTTON_BOX_W'yi besliyor — birini değiştirirsen
+                    sabitleri de güncelle. */}
                 <View
                   style={{
+                    paddingHorizontal: HERO_PAD_H,
+                    paddingTop: 20,
+                    paddingBottom: 24,
                     flexDirection: "row",
                     alignItems: "center",
-                    gap: 4,
+                    gap: HERO_GAP,
                   }}
                 >
-                  <Text
-                    numberOfLines={1}
-                    style={{
-                      flexShrink: 1,
-                      color: colors.text,
-                      fontSize: 18,
-                      fontWeight: "600",
-                      lineHeight: 28,
-                    }}
-                  >
-                    {myProfile?.displayName || user?.firstName || ""}
-                  </Text>
-                  {isPremium && <PremiumFlame size={HERO_FLAME_SIZE} />}
+                  <HeroAvatar
+                    uri={mainPhoto}
+                    size={HERO_AVATAR}
+                    loading={!myProfile}
+                    onPress={() => mainPhoto && setPreviewVisible(true)}
+                  />
+
+                  <View style={{ flex: 1, justifyContent: "space-between" }}>
+                    {/* İsim + premium rozeti — kart başlıklarındakinin aynısı
+                        (bkz. PremiumBadge). Rozet ismin devamı gibi okunsun diye
+                        aradaki boşluk dar tutuluyor.
+                        Hero'da yaş gösterilmiyor, rozet ismin sağına gelir. */}
+                    <View
+                      style={{
+                        flexDirection: "row",
+                        alignItems: "center",
+                        gap: 4,
+                      }}
+                    >
+                      <Text
+                        numberOfLines={1}
+                        style={{
+                          flexShrink: 1,
+                          color: colors.text,
+                          fontSize: HERO_NAME_FONT,
+                          fontWeight: "600",
+                          lineHeight: HERO_NAME_LINE,
+                        }}
+                      >
+                        {myProfile?.displayName || user?.firstName || ""}
+                      </Text>
+                      {isPremium && (
+                        // Zemin VARSAYILAN DEĞİL: rozetin varsayılan dairesi
+                        // `colors.bg` ve bu ekranın zemini de `bg` — daire
+                        // orada tamamen kaybolurdu. Kart başlıklarında sorun
+                        // yok, orada rozet fotoğrafın üstünde duruyor.
+                        // `surface3` bir kademe ayrışan nötr ton (açık #E4E4E8,
+                        // koyu #262626), render anında okunuyor.
+                        <PremiumBadge
+                          fontSize={HERO_NAME_FONT}
+                          size={HERO_PREMIUM_BADGE_SIZE}
+                          background={colors.surface3}
+                        />
+                      )}
+                      {/* Fotoğraf doğrulama rozeti — premium rozetinden AYRI bir
+                          işaret. `isSelfieVerified` bilerek `isVerified`e
+                          katılmıyor; alan hiç gelmezse hiçbir şey çizilmiyor. */}
+                      <SelfieVerifiedBadge
+                        verified={resolveSelfieVerified(myProfile)}
+                        size={HERO_VERIFIED_SIZE}
+                      />
+                    </View>
+
+                    {Platform.OS === "ios" ? (
+                      // iOS 26+ liquid glass — SwiftUI native Button. iOS 18'de
+                      // default bordered style'a düşer (graceful degradation).
+                      //
+                      // matchContents HİÇBİR eksende YOK: SwiftUI ölçümü ikinci
+                      // Fabric commit'inde geldiği için Host ilk frame'de 0x0 kalıyor
+                      // ve hosting view içeriği bu boş çerçeveye ORTALAYARAK çiziyor —
+                      // buton yarı yarıya sola, avatarın üstüne taşıyor, ölçüm gelince
+                      // yerine zıplıyordu. Kutu artık iki eksende de sabit:
+                      //   • Host + dıştaki frame() = EDIT_BUTTON_BOX_W x EDIT_BUTTON_H
+                      //     → Yoga da SwiftUI da geometriyi İLK commit'te biliyor.
+                      //   • fixedSize(horizontal) dış frame'in önerdiği genişliği
+                      //     butona geçirmiyor → glass kapsül etikete göre daralıyor
+                      //     (dile göre uzunluk değişebilir, sabit genişlik gerekmiyor).
+                      //   • alignment "leading" → kapsül kutunun soluna yaslı, sağdaki
+                      //     artık alan şeffaf ve boş.
+                      <Host
+                        style={{
+                          marginTop: 8,
+                          alignSelf: "flex-start",
+                          width: EDIT_BUTTON_BOX_W,
+                          height: EDIT_BUTTON_H,
+                        }}
+                      >
+                        <SwiftUIButton
+                          label={t('profile.edit.button')}
+                          systemImage="pencil"
+                          onPress={openEditProfile}
+                          modifiers={[
+                            buttonStyle("glass"),
+                            controlSize("regular"),
+                            tint(colors.text),
+                            font({ size: 13, weight: "semibold" }),
+                            frame({ height: EDIT_BUTTON_H }),
+                            fixedSize({ horizontal: true }),
+                            // Border son frame'den ÖNCE: maxWidth kutusu butonu
+                            // leading'e yaslayıp kalanı şeffaf bırakıyor, sonrasına
+                            // konsa çerçeve o boş alanı da sarardı.
+                            //
+                            // Zemin BURADA düz dolgu, `GlassFallbackSurface`in
+                            // bulanıklığı DEĞİL: kutu bilerek butondan geniş
+                            // (maxWidth + leading) ve görünen kapsülün genişliğini
+                            // yalnız SwiftUI biliyor — RN'deki BlurView kutunun
+                            // şeffaf kalan sağ yarısını da boyardı.
+                            ...glassFallback({
+                              shape: "capsule",
+                              padding: { horizontal: 14 },
+                              backgroundColor: glassFallbackFill(),
+                            }),
+                            frame({
+                              maxWidth: EDIT_BUTTON_BOX_W,
+                              alignment: "leading",
+                            }),
+                          ]}
+                        />
+                      </Host>
+                    ) : (
+                      <AnimatedPressable
+                        onPress={openEditProfile}
+                        pressScale={0.97}
+                        style={{ marginTop: 8, alignSelf: "flex-start" }}
+                      >
+                        <BlurView
+                          tint={plainBlurTint()}
+                          intensity={100}
+                          style={{
+                            borderRadius: 999,
+                            borderCurve: "continuous",
+                            overflow: "hidden",
+                            backgroundColor: colors.surfaceTranslucent,
+                            borderColor: colors.hairline,
+                          }}
+                          className="flex-row self-start justify-center text-center items-center border-[0.5px] px-4 py-5 gap-2"
+                        >
+                          <SFIcon name="pencil" fallback={Pencil} size={15} color={colors.text} strokeWidth={2} weight="semibold" />
+                          <Text
+                            style={{
+                              color: colors.text,
+                              fontWeight: "700",
+                              fontSize: 13,
+                            }}
+                          >
+                            {t('profile.edit.button')}
+                          </Text>
+                        </BlurView>
+                      </AnimatedPressable>
+                    )}
+                  </View>
                 </View>
 
-                {Platform.OS === "ios" ? (
-                  // iOS 26+ liquid glass — SwiftUI native Button. iOS 18'de
-                  // default bordered style'a düşer (graceful degradation).
-                  //
-                  // matchContents HİÇBİR eksende YOK: SwiftUI ölçümü ikinci
-                  // Fabric commit'inde geldiği için Host ilk frame'de 0x0 kalıyor
-                  // ve hosting view içeriği bu boş çerçeveye ORTALAYARAK çiziyor —
-                  // buton yarı yarıya sola, avatarın üstüne taşıyor, ölçüm gelince
-                  // yerine zıplıyordu. Kutu artık iki eksende de sabit:
-                  //   • Host + dıştaki frame() = EDIT_BUTTON_BOX_W x EDIT_BUTTON_H
-                  //     → Yoga da SwiftUI da geometriyi İLK commit'te biliyor.
-                  //   • fixedSize(horizontal) dış frame'in önerdiği genişliği
-                  //     butona geçirmiyor → glass kapsül etikete göre daralıyor
-                  //     (dile göre uzunluk değişebilir, sabit genişlik gerekmiyor).
-                  //   • alignment "leading" → kapsül kutunun soluna yaslı, sağdaki
-                  //     artık alan şeffaf ve boş.
-                  <Host
-                    style={{
-                      marginTop: 8,
-                      alignSelf: "flex-start",
-                      width: EDIT_BUTTON_BOX_W,
-                      height: EDIT_BUTTON_H,
-                    }}
-                  >
-                    <SwiftUIButton
-                      label={t('profile.edit.button')}
-                      systemImage="pencil"
-                      onPress={openEditProfile}
-                      modifiers={[
-                        buttonStyle("glass"),
-                        controlSize("regular"),
-                        tint(colors.text),
-                        font({ size: 13, weight: "semibold" }),
-                        frame({ height: EDIT_BUTTON_H }),
-                        fixedSize({ horizontal: true }),
-                        // Border son frame'den ÖNCE: maxWidth kutusu butonu
-                        // leading'e yaslayıp kalanı şeffaf bırakıyor, sonrasına
-                        // konsa çerçeve o boş alanı da sarardı.
-                        ...glassFallback({
-                          shape: "capsule",
-                          padding: { horizontal: 14 },
-                        }),
-                        frame({
-                          maxWidth: EDIT_BUTTON_BOX_W,
-                          alignment: "leading",
-                        }),
-                      ]}
-                    />
-                  </Host>
-                ) : (
-                  <AnimatedPressable
-                    onPress={openEditProfile}
-                    pressScale={0.97}
-                    style={{ marginTop: 8, alignSelf: "flex-start" }}
-                  >
-                    <BlurView
-                      tint={plainBlurTint()}
-                      intensity={100}
-                      style={{
-                        borderRadius: 999,
-                        borderCurve: "continuous",
-                        overflow: "hidden",
-                        backgroundColor: colors.surfaceTranslucent,
-                        borderColor: colors.hairline,
-                      }}
-                      className="flex-row self-start justify-center text-center items-center border-[0.5px] px-4 py-5 gap-2"
+                {/* ── Mağaza şeridi: (premium'da plus) + SuperLike + Not ── */}
+                {/* Hero'nun altı, upsell'in üstü: sayfanın tek "mağaza" şeridi.
+                    Eskiden sayfanın en altındaki QuotaSection'da duran SuperLike
+                    bakiyesi de bu kartların içinde.
+
+                    Şeritteki plus kartı, abone kullanıcının sayfadaki TEK
+                    abonelik yüzeyi: altında duran kocaman üyelik kartı (plan
+                    rozeti + "aboneliği yönet" butonu) kaldırıldı, yerini bu
+                    aldı. Yönetme/geri yükleme plus sayfasında (PurchaseSections)
+                    zaten var, kart oraya götürüyor.
+
+                    Bayrak `showMembershipCard`: kart kendi başına premium
+                    OKUMUYOR, aşağıdaki upsell'le AYNI koşulun iki yüzü — ikisi
+                    ayrı kaynaktan okursa aktivasyon penceresinde ikisi birden
+                    (ya da hiçbiri) çıkar. */}
+                <ShopCardsRow
+                  showPlusCard={showMembershipCard}
+                  onPlusPress={goToPlusPage}
+                />
+
+                {/* --- PREMIUM UPSELL BANNER & COMPARISON --- */}
+                {/* Şerideki plus kartıyla TEK bayrağın iki yüzü: abone olan
+                    küçük kartı, olmayan bu tabloyu görüyor. Abone tarafındaki
+                    kocaman eşi (üyelik kartı) kaldırıldı; bu, yalnız satın
+                    almamış kullanıcıya çıktığı için yerinde duruyor. */}
+                {!showMembershipCard && (
+                  <View className="mb-10 px-4">
+                    <AnimatedPressable
+                      pressScale={0.97}
+                      onPress={goToPlusPage}
                     >
-                      <SFIcon name="pencil" fallback={Pencil} size={15} color={colors.text} strokeWidth={2} weight="semibold" />
-                      <Text
+                      <LinearGradient
+                        colors={gradients.litPlusCard}
+                        start={{ x: 0, y: 0 }}
+                        end={{ x: 1, y: 1 }}
                         style={{
-                          color: colors.text,
-                          fontWeight: "700",
-                          fontSize: 13,
-                        }}
-                      >
-                        {t('profile.edit.button')}
-                      </Text>
-                    </BlurView>
-                  </AnimatedPressable>
-                )}
-              </View>
-            </View>
-
-            {/* ── Mağaza şeridi: SuperLike + Not kartları ── */}
-            {/* Hero'nun altı, upsell'in üstü: sayfanın tek "mağaza" şeridi.
-                Eskiden sayfanın en altındaki QuotaSection'da duran SuperLike
-                bakiyesi de bu kartların içinde. */}
-            <ShopCardsRow />
-
-            {/* --- PREMIUM ACTIVE CARD --- */}
-            {showMembershipCard && (
-              <View className="mb-10 px-4">
-                {/* Premium'da da kartın gövdesi paywall'a açılıyor: plan
-                    karşılaştırması / satın alma geri yükleme oradan.
-                    Alttaki buton kendi TouchableOpacity'si olduğu için
-                    "aboneliği yönet" hâlâ store'a gidiyor. */}
-                <AnimatedPressable
-                  pressScale={0.97}
-                  onPress={() => setPurchaseVisible(true)}
-                >
-                  <LinearGradient
-                    colors={gradients.litPlusCard}
-                    start={{ x: 0, y: 0 }}
-                    end={{ x: 1, y: 1 }}
-                    style={{
-                      borderRadius: 40,
-                      borderCurve: "continuous",
-                      overflow: "hidden",
-                      shadowColor: colors.shadow,
-                      shadowOffset: { width: 0, height: 4 },
-                      shadowOpacity: 0.2,
-                      shadowRadius: 8,
-                      elevation: 5,
-                    }}
-                  >
-                    <View className="p-5 flex-row items-center justify-between">
-                      <View className="flex-1 pr-4">
-                        <View className="flex-row items-center gap-2 mb-2">
-                          <Text
-                            className="pr-2"
-                            numberOfLines={1}
-                            adjustsFontSizeToFit
-                            style={{
-                              color: colors.onMedia,
-                              fontSize: 50,
-                              fontFamily: "Duckie-regular",
-                            }}
-                          >
-                            plus
-                          </Text>
-                        </View>
-                        <Text
-                          numberOfLines={3}
-                          className="font-medium text-[14px] leading-5" style={{ color: colors.onMediaMuted }}
-                        >
-                          {subscriptionView.description}
-                        </Text>
-                      </View>
-                      <View
-                        className="border-[0.5px] px-5 py-2.5 flex-row items-center gap-1.5"
-                        style={{
-                          borderColor: onMediaAt(0.5),
-                          borderRadius: 999,
-                          overflow: "hidden",
+                          borderRadius: 40,
                           borderCurve: "continuous",
+                          overflow: "hidden",
+                          shadowColor: colors.shadow,
+                          shadowOffset: { width: 0, height: 4 },
+                          shadowOpacity: 0.2,
+                          shadowRadius: 8,
+                          elevation: 5,
                         }}
                       >
-                        <Text className="font-bold text-[13px]" style={{ color: colors.onMedia }}>
-                          {subscriptionView.badge}
-                        </Text>
-                      </View>
-                    </View>
+                        {/* Top Banner Section */}
+                        {/* Alev BAŞLIKLA aynı satırda: eskiden dıştaki tek satır
+                            `items-center`di ve alev, başlık + açıklamanın
+                            oluşturduğu sütunun tamamına göre ortalanıyordu —
+                            wordmark'ın epey altına düşüyordu. Şimdi başlıkla
+                            alev kendi satırında (`items-center` orada), açıklama
+                            altta. Açıklamanın genişliği DEĞİŞMESİN diye sağdan
+                            alev sütunu kadar (84 + 16) padding alıyor: eskiden
+                            bu boşluğu satırdaki alev sütununun kendisi veriyordu.
 
-                    <View className="px-5 pb-6 pt-3">
-                      {/* Aktivasyon bekliyorsa (satın alma alındı, backend henüz
-                          premium görmüyor) store'a değil manuel yenilemeye
-                          yönlendiriyoruz. İptal/ödeme sorununda ise store'daki
-                          abonelik ekranı doğru hedef. */}
-                      {subscriptionView.kind === "pending" ? (
-                        <TouchableOpacity
-                          activeOpacity={0.8}
-                          onPress={handleRetrySync}
-                          disabled={syncing}
-                          className="w-full border-[0.5px] py-[17px] items-center justify-center"
-                          style={{
-                            borderColor: onMediaAt(0.5),
-                            borderRadius: 999,
-                            borderCurve: "continuous",
-                            overflow: "hidden",
-                            opacity: syncing ? 0.6 : 1,
-                          }}
-                        >
-                          {syncing ? (
-                            <ActivityIndicator size="small" color={colors.onMedia} />
-                          ) : (
-                            <Text className="font-bold text-[14px]" style={{ color: colors.onMedia }}>
-                              {t('profile.subscription.retryButton')}
+                            Satır yüksekliğini Duckie'nin satır kutusundan
+                            hesaplamak yerine flexbox'a bırakıyoruz — fontun
+                            metriği harflerin üstünde kendi boşluğunu taşıyor,
+                            elle verilen bir yükseklik/lineHeight 'p'nin kuyruğunu
+                            kırpma riski taşıyor. */}
+                        <View className="p-5">
+                          <View className="flex-row items-center justify-between">
+                            <Text
+                              className="flex-1 pr-4"
+                              numberOfLines={1}
+                              adjustsFontSizeToFit
+                              style={{
+                                color: colors.onMedia,
+                                // Plus sayfasındaki başlıklardan BİLEREK büyük:
+                                // bu kart bir reklam, oradaki durum göstergesi.
+                                fontSize: 64,
+                                fontFamily: "Duckie-regular",
+                              }}
+                            >
+                              plus+
                             </Text>
-                          )}
-                        </TouchableOpacity>
-                      ) : (
-                        <TouchableOpacity
-                          activeOpacity={0.8}
-                          onPress={() => {
-                            const url =
-                              Platform.OS === "ios"
-                                ? "https://apps.apple.com/account/subscriptions"
-                                : "https://play.google.com/store/account/subscriptions";
-                            Linking.openURL(url).catch(() => {});
-                          }}
-                          className="w-full border-[0.5px] py-[17px] items-center justify-center"
-                          style={{
-                            borderColor: onMediaAt(0.5),
-                            borderRadius: 999,
-                            borderCurve: "continuous",
-                            overflow: "hidden",
-                          }}
-                        >
-                          <Text className="font-medium text-[14px]" style={{ color: colors.onMedia }}>
-                            {subscriptionView.kind === "billingIssue" ? (
-                              <Text style={{ fontWeight: "700" }}>
-                                {t('profile.subscription.fixPaymentButton')}
-                              </Text>
-                            ) : subscriptionView.kind === "cancelled" ? (
-                              <Text style={{ fontWeight: "700" }}>
-                                {t('profile.subscription.resubscribeButton')}
-                              </Text>
-                            ) : subscriptionExpiresAt ? (
-                              <>
-                                <Text style={{ fontWeight: "700" }}>
-                                  {t('profile.subscription.manageButton')}
-                                </Text>
-                                <Text style={{ color: onMediaAt(0.55) }}>
-                                  {` · ${t(
-                                    subscriptionView.kind === "trial"
-                                      ? 'profile.subscription.trialEndsLabel'
-                                      : 'profile.subscription.renewalLabel',
-                                  )} `}
-                                  {formatSubscriptionDate(
-                                    subscriptionView.kind === "trial" && subscriptionTrialEndsAt
-                                      ? subscriptionTrialEndsAt
-                                      : subscriptionExpiresAt,
-                                  )}
-                                </Text>
-                              </>
-                            ) : (
-                              t('profile.subscription.manageAlt')
-                            )}
-                          </Text>
-                        </TouchableOpacity>
-                      )}
-                    </View>
-                  </LinearGradient>
-                </AnimatedPressable>
-              </View>
-            )}
-
-            {/* --- PREMIUM UPSELL BANNER & COMPARISON --- */}
-            {/* Üyelik kartıyla TEK bayrağın iki yüzü — ikisi ayrı koşullara
-                bağlanırsa "aktivasyon sürüyor" durumunda ikisi birden çıkar. */}
-            {!showMembershipCard && (
-              <View className="mb-10 px-4">
-                <AnimatedPressable
-                  pressScale={0.97}
-                  onPress={() => setPurchaseVisible(true)}
-                >
-                  <LinearGradient
-                    colors={gradients.litPlusCard}
-                    start={{ x: 0, y: 0 }}
-                    end={{ x: 1, y: 1 }}
-                    style={{
-                      borderRadius: 40,
-                      borderCurve: "continuous",
-                      overflow: "hidden",
-                      shadowColor: colors.shadow,
-                      shadowOffset: { width: 0, height: 4 },
-                      shadowOpacity: 0.2,
-                      shadowRadius: 8,
-                      elevation: 5,
-                    }}
-                  >
-                    {/* Top Banner Section */}
-                    <View className="p-5 flex-row items-center justify-between">
-                      <View className="flex-1 pr-4">
-                        <View className="flex-row items-center gap-2 mb-2">
-                          <Text
-                            className="pr-2"
-                            numberOfLines={1}
-                            adjustsFontSizeToFit
-                            style={{
-                              color: colors.onMedia,
-                              fontSize: 50,
-                              fontFamily: "Duckie-regular",
-                            }}
-                          >
-                            plus
-                          </Text>
-                        </View>
-                        <Text
-                          numberOfLines={3}
-                          className="font-medium text-[14px] leading-5" style={{ color: colors.onMediaMuted }}
-                        >
-                          {t('discover.premium.description')}
-                        </Text>
-                      </View>
-                      {/* Ok yığını + "5x eşleşme" yazısının yerine marka alevi.
-                          Kartın zemini zaten kırmızı-turuncu gradyan olduğu için
-                          rozetin gradyanı değil düz onMedia dolgusu. */}
-                      <View style={{ width: 84, alignItems: "center" }}>
-                        <PremiumFlame size={68} color={colors.onMedia} />
-                      </View>
-                    </View>
-
-                    {/* Comparison Table Section */}
-                    <View className="pt-5 pb-2">
-                      {/* Table Header */}
-                      <View className="flex-row items-center justify-between mb-2 px-6">
-                        <Text className="font-bold text-[12px] uppercase tracking-wider flex-1" style={{ color: colors.onMedia }}>
-                          {t('discover.premium.featuresLabel')}
-                        </Text>
-                        <View className="flex-row items-center gap-4">
-                          <Text
-                            numberOfLines={1}
-                            adjustsFontSizeToFit
-                            className="font-bold text-[12px] uppercase w-16 text-center" style={{ color: colors.onMedia }}
-                          >
-                            {t('discover.premium.standardPlan')}
-                          </Text>
-                          <Text
-                            className="w-16 text-center mb-2"
-                            style={{
-                              color: colors.onMedia,
-                              fontSize: 25,
-                              fontFamily: "Duckie-regular",
-                            }}
-                          >
-                            plus
-                          </Text>
-                        </View>
-                      </View>
-
-                      {/* Feature Rows — listenin yalnız ilk dördü.
-                          Tamamı PurchaseModal'da; kartın gövdesine dokunmak
-                          zaten oraya açıyor, aşağıdaki "+N özellik daha"
-                          satırı da o yüzden ayrı bir buton değil. */}
-                      {UPSELL_BENEFIT_KEYS.map((key, index, arr) => (
-                        <View
-                          key={key}
-                          className={`flex-row items-center justify-between px-6 ${
-                            index !== arr.length - 1 ? "mb-4" : ""
-                          }`}
-                        >
-                          <Text className="font-[500] text-[13px] flex-1 pr-2" style={{ color: colors.onMedia }}>
-                            {t(premiumBenefitLabelKey(key))}
-                          </Text>
-                          <View className="flex-row items-center gap-4">
-                            <View className="w-16 items-center">
-                              <SFIcon
-                                name="xmark"
-                                fallback={X}
-                                size={18}
-                                color={onMediaAt(0.4)}
-                                strokeWidth={2}
-                                weight="semibold"
-                              />
-                            </View>
-                            <View className="w-16 items-center">
-                              <SFIcon name="checkmark" fallback={Check} size={18} color={colors.onMedia} strokeWidth={2} weight="semibold" />
+                            {/* Ok yığını + "5x eşleşme" yazısının yerine marka
+                                alevi. Kartın zemini zaten kırmızı-turuncu gradyan
+                                olduğu için rozetin gradyanı değil düz onMedia
+                                dolgusu. */}
+                            <View style={{ width: 84, alignItems: "center" }}>
+                              <PremiumFlame size={68} color={colors.onMedia} />
                             </View>
                           </View>
+                          <Text
+                            numberOfLines={3}
+                            className="font-medium text-[14px] leading-5 mt-2"
+                            style={{ color: colors.onMediaMuted, paddingRight: 100 }}
+                          >
+                            {t('discover.premium.description')}
+                          </Text>
                         </View>
+
+                        {/* Comparison Table Section */}
+                        {/* pt küçük: üstteki banner'ın kendi pb-5'i (20) zaten
+                            boşluğu veriyor, buraya bir 20 daha eklenince
+                            açıklama ile tablo kopuk duruyordu. */}
+                        <View className="pt-1 pb-2">
+                          {/* Table Header */}
+                          <View className="flex-row items-center justify-between mb-2 px-6">
+                            <Text className="font-bold text-[12px] uppercase tracking-wider flex-1" style={{ color: colors.onMedia }}>
+                              {t('discover.premium.featuresLabel')}
+                            </Text>
+                            <View className="flex-row items-center gap-4">
+                              <Text
+                                numberOfLines={1}
+                                adjustsFontSizeToFit
+                                className="font-bold text-[12px] uppercase w-16 text-center" style={{ color: colors.onMedia }}
+                              >
+                                {t('discover.premium.standardPlan')}
+                              </Text>
+                              <Text
+                                // Kartın tepesindeki başlıkla AYNI yazım
+                                // ("plus+"); 64px'lik sütuna sığmazsa sarmak
+                                // yerine küçülür — Free sütunundaki kalıp.
+                                numberOfLines={1}
+                                adjustsFontSizeToFit
+                                className="w-16 text-center mb-2"
+                                style={{
+                                  color: colors.onMedia,
+                                  fontSize: 25,
+                                  fontFamily: "Duckie-regular",
+                                }}
+                              >
+                                plus+
+                              </Text>
+                            </View>
+                          </View>
+
+                          {/* Feature Rows — listenin yalnız ilk dördü.
+                              Tamamı PurchaseModal'da; kartın gövdesine dokunmak
+                              zaten oraya açıyor, aşağıdaki "+N özellik daha"
+                              satırı da o yüzden ayrı bir buton değil. */}
+                          {UPSELL_BENEFIT_KEYS.map((key, index, arr) => (
+                            <View
+                              key={key}
+                              className={`flex-row items-center justify-between px-6 ${
+                                index !== arr.length - 1 ? "mb-4" : ""
+                              }`}
+                            >
+                              <Text className="font-[500] text-[13px] flex-1 pr-2" style={{ color: colors.onMedia }}>
+                                {t(premiumBenefitLabelKey(key))}
+                              </Text>
+                              <View className="flex-row items-center gap-4">
+                                <View className="w-16 items-center">
+                                  <SFIcon
+                                    name="xmark"
+                                    fallback={X}
+                                    size={18}
+                                    color={onMediaAt(0.4)}
+                                    strokeWidth={2}
+                                    weight="semibold"
+                                  />
+                                </View>
+                                <View className="w-16 items-center">
+                                  <SFIcon name="checkmark" fallback={Check} size={18} color={colors.onMedia} strokeWidth={2} weight="semibold" />
+                                </View>
+                              </View>
+                            </View>
+                          ))}
+
+                          {/* Listenin devamı. Satırın ✗/✓ sütunları YOK: burada
+                              karşılaştırılan bir şey değil, "tabloda göremediğin
+                              maddeler var" işareti — sütun çizmek onları dörtle
+                              aynı ağırlıkta gösterirdi. */}
+                          <View className="px-6 mt-4">
+                            <Text
+                              className="font-[500] text-[13px]"
+                              style={{ color: onMediaAt(0.75) }}
+                            >
+                              {t('discover.premium.benefitsMore', {
+                                n: UPSELL_HIDDEN_BENEFIT_COUNT,
+                              })}
+                            </Text>
+                          </View>
+                        </View>
+
+                        {/* Purchase Action Button */}
+                        <View className="px-5 pb-6 pt-3">
+                          <View
+                            className=" w-full border-[0.5px] py-[17px] items-center justify-center flex-row gap-2"
+                            style={{
+                              borderColor: onMediaAt(0.5),
+                              borderRadius: 999,
+                              borderCurve: "continuous",
+                              overflow: "hidden",
+                            }}
+                          >
+                            <Text className="font-medium text-[14px]" style={{ color: colors.onMedia }}>
+                              {teaserPrice ? (
+                                <>
+                                  <Text style={{ color: colors.onMediaMuted }}>
+                                    {t('discover.premium.pricingPrefix')}
+                                  </Text>
+                                  <Text style={{ fontWeight: "700" }}>
+                                    {t('discover.premium.pricing', { price: teaserPrice })}
+                                  </Text>
+                                  <Text style={{ color: colors.onMediaMuted }}>
+                                    {t('discover.premium.pricingSuffix')}
+                                  </Text>
+                                </>
+                              ) : (
+                                t('discover.premium.cta')
+                              )}
+                            </Text>
+                          </View>
+                        </View>
+                      </LinearGradient>
+                    </AnimatedPressable>
+                  </View>
+                )}
+
+                {/* ── Fotoğraf Doğrulama ── Akışın TEK giriş noktası.
+                    Görünürlüğünü kendisi karar veriyor: `isSelfieVerified` alanı
+                    gelmiyorsa ya da yakın zamanda UT-6505 alındıysa null döner. */}
+                <SelfieVerificationRow profile={myProfile} userId={user?.id} />
+
+                {/* ── Profil Tamamlama Göstergeleri (Accordion) ── */}
+                {completionMetrics.some((m) => m.current < m.max) && (
+                  <View style={{ paddingHorizontal: 16, paddingBottom: 24 }}>
+                    {completionMetrics
+                      .filter((m) => m.current < m.max)
+                      .map((metric) => (
+                        <CompletionAccordion
+                          key={metric.key}
+                          title={metric.title}
+                          icon={metric.icon}
+                          current={metric.current}
+                          max={metric.max}
+                          description={metric.desc}
+                          isExpanded={expandedSection === metric.key}
+                          onToggle={() => handleAccordionToggle(metric.key)}
+                          // Modal açılınca form doğrudan bu bölüme kaydırılır.
+                          onEdit={() => openEditProfile(metric.key)}
+                        />
                       ))}
+                  </View>
+                )}
 
-                      {/* Listenin devamı. Satırın ✗/✓ sütunları YOK: burada
-                          karşılaştırılan bir şey değil, "tabloda göremediğin
-                          maddeler var" işareti — sütun çizmek onları dörtle
-                          aynı ağırlıkta gösterirdi. */}
-                      <View className="px-6 mt-4">
-                        <Text
-                          className="font-[500] text-[13px]"
-                          style={{ color: onMediaAt(0.75) }}
-                        >
-                          {t('discover.premium.benefitsMore', {
-                            n: UPSELL_HIDDEN_BENEFIT_COUNT,
-                          })}
-                        </Text>
-                      </View>
-                    </View>
-
-                    {/* Purchase Action Button */}
-                    <View className="px-5 pb-6 pt-3">
-                      <View
-                        className=" w-full border-[0.5px] py-[17px] items-center justify-center flex-row gap-2"
-                        style={{
-                          borderColor: onMediaAt(0.5),
-                          borderRadius: 999,
-                          borderCurve: "continuous",
-                          overflow: "hidden",
-                        }}
-                      >
-                        <Text className="font-medium text-[14px]" style={{ color: colors.onMedia }}>
-                          {teaserPrice ? (
-                            <>
-                              <Text style={{ color: colors.onMediaMuted }}>
-                                {t('discover.premium.pricingPrefix')}
-                              </Text>
-                              <Text style={{ fontWeight: "700" }}>
-                                {t('discover.premium.pricing', { price: teaserPrice })}
-                              </Text>
-                              <Text style={{ color: colors.onMediaMuted }}>
-                                {t('discover.premium.pricingSuffix')}
-                              </Text>
-                            </>
-                          ) : (
-                            t('discover.premium.cta')
-                          )}
-                        </Text>
-                      </View>
-                    </View>
-                  </LinearGradient>
-                </AnimatedPressable>
-              </View>
+              </Animated.ScrollView>
             )}
+          </View>
 
-            {/* ── Profil Tamamlama Göstergeleri (Accordion) ── */}
-            {completionMetrics.some((m) => m.current < m.max) && (
-              <View style={{ paddingHorizontal: 16, paddingBottom: 24 }}>
-                {completionMetrics
-                  .filter((m) => m.current < m.max)
-                  .map((metric) => (
-                    <CompletionAccordion
-                      key={metric.key}
-                      title={metric.title}
-                      icon={metric.icon}
-                      current={metric.current}
-                      max={metric.max}
-                      description={metric.desc}
-                      isExpanded={expandedSection === metric.key}
-                      onToggle={() => handleAccordionToggle(metric.key)}
-                      // Modal açılınca form doğrudan bu bölüme kaydırılır.
-                      onEdit={() => openEditProfile(metric.key)}
-                    />
-                  ))}
-              </View>
-            )}
-
-          </Animated.ScrollView>
-        )}
+          {/* Paywall artık sayfanın YANINDA: aynı içerik, aynı tasarım, sheet
+              yerine ikinci sayfa. Katalog yalnız buraya bir kez geçilince
+              çekiliyor (bkz. plusVisited). */}
+          <View key="plus" style={{ flex: 1 }} collapsable={false}>
+            <PlusPage
+              active={plusVisited}
+              scrollY={plusScrollY}
+              onSuccess={loadProfile}
+            />
+          </View>
+        </AnimatedPagerView>
 
         <ScreenHeader
-          scrollY={scrollY}
-          title={t('profile.tabTitle')}
-          // Başlık scroll'la belirirken logonun yerine geçiyor; iki yanda da
-          // buton olduğu için sola yaslı değil ortada duruyor (sadece bu ekran).
-          titleAlign="center"
-          fillRatio={swipeFillRatio}
+          scrollY={headerScrollY}
+          // Başlık YOK: logonun yerini sekme şeridi aldı ve scroll'la beliren
+          // ortalanmış başlık tam onun üstüne binerdi. "Profil" adı zaten
+          // şeritteki sekmenin etiketi.
+          centerSlot={
+            <PagerTabBar
+              tabs={tabs}
+              activeTab={activeTab}
+              offset={pagerOffset}
+              onPress={handleTabChange}
+              centered
+            />
+          }
+          showLogo={false}
+          // Logo çizilmediği için dalga doluluğu (swipeFillRatio) da artık
+          // OKUNMUYOR — o oran WaveFillLogo'nun içindeki dolgunun seviyesiydi.
+          // Header'a başka bir yerden gelen tek şey scroll konumu.
           leftButton={
             Platform.OS === "ios" ? (
-              /* matchContents YOK — bkz. SCREEN_HEADER_ACTION_SIZE: sabit boyut
+              /* matchContents YOK — bkz. GLASS_ICON_BUTTON: sabit boyut
                  Yoga'ya ilk commit'te bildirilmezse buton kenardan içeri
-                 ışınlanıyor. */
-              <Host
-                style={{
-                  width: SCREEN_HEADER_ACTION_SIZE,
-                  height: SCREEN_HEADER_ACTION_SIZE,
-                }}
+                 ışınlanıyor. Sarmalayıcı iOS 26 ALTINDA zemini veriyor,
+                 26+'da hiç render olmuyor. */
+              <GlassFallbackSurface
+                shape="circle"
+                width={GLASS_ICON_CLEAR_SIZE}
+                height={GLASS_ICON_CLEAR_SIZE}
               >
-                <SwiftUIButton
-                  label={t('common.notifications')}
-                  systemImage="bell.fill"
-                  onPress={() => navigation.navigate("Notifications")}
-                  modifiers={[
-                    buttonStyle("glass"),
-                    tint(colors.text),
-                    labelStyle("iconOnly"),
-                    font({ size: 22, weight: "medium" }),
-                    frame({
-                      width: SCREEN_HEADER_ACTION_SIZE,
-                      height: SCREEN_HEADER_ACTION_SIZE,
-                    }),
-                    ...glassFallback({ shape: "circle" }),
-                  ]}
-                />
-              </Host>
+                <Host
+                  style={{
+                    width: GLASS_ICON_CLEAR_SIZE,
+                    height: GLASS_ICON_CLEAR_SIZE,
+                  }}
+                >
+                  <SwiftUIButton
+                    onPress={() => navigation.navigate("Notifications")}
+                    modifiers={[
+                      // Kabuk YOK, cam glifin üstünde: berrak camın buton stili
+                      // karşılığı olmadığı için — gerekçenin tamamı
+                      // glassIconClearGlyph'in başında.
+                      buttonStyle("plain"),
+                      tint(colors.text),
+                      frame({
+                        width: GLASS_ICON_CLEAR_SIZE,
+                        height: GLASS_ICON_CLEAR_SIZE,
+                      }),
+                      accessibilityLabel(t('common.notifications')),
+                      ...glassFallback({ shape: "circle" }),
+                    ]}
+                  >
+                    <SwiftUIImage
+                      systemName="bell.fill"
+                      color={colors.text}
+                      modifiers={glassIconClearGlyph()}
+                    />
+                  </SwiftUIButton>
+                </Host>
+              </GlassFallbackSurface>
             ) : (
               <TouchableOpacity
                 onPress={() => navigation.navigate("Notifications")}
@@ -2493,36 +2492,46 @@ export default function ProfileScreen() {
           }
           rightButton={
             Platform.OS === "ios" ? (
-              /* matchContents YOK — bkz. SCREEN_HEADER_ACTION_SIZE: sabit boyut
+              /* matchContents YOK — bkz. GLASS_ICON_BUTTON: sabit boyut
                  Yoga'ya ilk commit'te bildirilmezse buton sağ kenardan içeri
-                 ışınlanıyor. */
-              <Host
-                style={{
-                  width: SCREEN_HEADER_ACTION_SIZE,
-                  height: SCREEN_HEADER_ACTION_SIZE,
-                }}
+                 ışınlanıyor. Zemin çan butonuyla aynı yoldan (sarmalayıcı). */
+              <GlassFallbackSurface
+                shape="circle"
+                width={GLASS_ICON_CLEAR_SIZE}
+                height={GLASS_ICON_CLEAR_SIZE}
               >
-                <SwiftUIButton
-                  label={t('profile.settings.button')}
-                  systemImage="gearshape.fill"
-                  onPress={() => setSettingsVisible(true)}
-                  modifiers={[
-                    buttonStyle("glass"),
-                    tint(colors.text),
-                    labelStyle("iconOnly"),
-                    font({ size: 22, weight: "medium" }),
-                    frame({
-                      width: SCREEN_HEADER_ACTION_SIZE,
-                      height: SCREEN_HEADER_ACTION_SIZE,
-                    }),
-                    ...glassFallback({ shape: "circle" }),
-                  ]}
-                />
-              </Host>
+                <Host
+                  style={{
+                    width: GLASS_ICON_CLEAR_SIZE,
+                    height: GLASS_ICON_CLEAR_SIZE,
+                  }}
+                >
+                  <SwiftUIButton
+                    onPress={() => navigation.navigate("Settings")}
+                    modifiers={[
+                      // Çan butonuyla birebir aynı — bkz. glassIconClearGlyph.
+                      buttonStyle("plain"),
+                      tint(colors.text),
+                      frame({
+                        width: GLASS_ICON_CLEAR_SIZE,
+                        height: GLASS_ICON_CLEAR_SIZE,
+                      }),
+                      accessibilityLabel(t('profile.settings.button')),
+                      ...glassFallback({ shape: "circle" }),
+                    ]}
+                  >
+                    <SwiftUIImage
+                      systemName="gearshape.fill"
+                      color={colors.text}
+                      modifiers={glassIconClearGlyph()}
+                    />
+                  </SwiftUIButton>
+                </Host>
+              </GlassFallbackSurface>
             ) : (
               <TouchableOpacity
                 activeOpacity={0.7}
-                onPress={() => setSettingsVisible(true)}
+                onPress={() => navigation.navigate("Settings")}
               >
                 <SFIcon
                   name="gearshape.fill"
@@ -2595,19 +2604,6 @@ export default function ProfileScreen() {
               <EditProfileFormSkeleton />
             ))}
         </ProfileEditModal>
-
-        {/* ══ PURCHASE MODALI ══ */}
-        <PurchaseModal
-          visible={purchaseVisible}
-          onClose={() => setPurchaseVisible(false)}
-          onSuccess={loadProfile}
-        />
-
-        {/* ══ SETTINGS MODALI ══ */}
-        <SettingsModal
-          visible={settingsVisible}
-          onClose={() => setSettingsVisible(false)}
-        />
 
         {/* ══ PREVİEW MODALI (ARTIK ORIJINAL MODAL) ══ */}
         <PreviewModal

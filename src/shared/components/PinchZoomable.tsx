@@ -13,6 +13,7 @@ import Animated, {
 import {
   photoPinchActive,
   setZoomImage,
+  zoomFade,
   zoomProgress,
   zoomRadius,
   zoomRectH,
@@ -26,6 +27,13 @@ import {
 
 /** Parmaklar bırakılınca kopyanın yerine dönüş süresi. */
 const RELEASE_DURATION = 220;
+/**
+ * Kopyanın açılış cross-fade'i (bkz. zoomFade). Kısa: uzun tutulsaydı kopya
+ * büyürken bir süre yarı saydam kalır ve altındaki kaynakla çift görüntü
+ * yapardı. `Easing.out` ile alfanın çoğu ilk karelerde, ölçek daha 1'e yakınken
+ * geliyor.
+ */
+const FADE_IN_DURATION = 140;
 /** Büyütme tavanı — üstünde jest "kayıyor" gibi hissettiriyor. */
 const MAX_SCALE = 3.5;
 
@@ -60,10 +68,17 @@ export default function PinchZoomable({
   const startFocalX = useSharedValue(0);
   const startFocalY = useSharedValue(0);
   // Parmak sayısı 2'nin altına düştüğünde jest DEVAM ediyor (RNGH pinch tek
-  // parmakla bitmiyor) ama `focal` artık kalan tek parmak → referans kayıyor ve
-  // görsel o parmağın peşinden sürükleniyordu. Bayrak: iki parmağın altındayken
-  // hiçbir güncelleme uygulanmıyor, geri dönülünce referanslar YENİDEN kuruluyor.
-  const lostPointers = useSharedValue(false);
+  // parmakla bitmiyor) ve `focal` artık kalan tek parmak. Bu modda ÖLÇEK
+  // donuyor, gezinme sürüyor: kalan parmakla görseli dolaştırmak Instagram'daki
+  // davranış. İki parmağa dönülünce referanslar YENİDEN kuruluyor.
+  const onePointer = useSharedValue(false);
+  // Tek parmak moduna geçiş anındaki parmak konumu + kayma. Sonraki karelerde
+  // sadece aradaki FARK ekleniyor; böylece geçişte sıçrama olmuyor (odak iki
+  // parmağın ortasından kalan parmağa atlıyor).
+  const onePointerRefX = useSharedValue(0);
+  const onePointerRefY = useSharedValue(0);
+  const onePointerBaseX = useSharedValue(0);
+  const onePointerBaseY = useSharedValue(0);
   // Ölçek referansı — refingering sonrası `e.scale` sıçramasın diye çarpan.
   const scaleOffset = useSharedValue(1);
 
@@ -85,22 +100,40 @@ export default function PinchZoomable({
       // çevirmek için ölçülen köşe ekleniyor.
       startFocalX.value = m.pageX + e.focalX;
       startFocalY.value = m.pageY + e.focalY;
-      lostPointers.value = false;
+      onePointer.value = false;
       scaleOffset.value = 1;
+      zoomFade.value = 0;
+      zoomFade.value = withTiming(1, {
+        duration: FADE_IN_DURATION,
+        easing: Easing.out(Easing.quad),
+      });
       photoPinchActive.value = true;
       runOnJS(setZoomImage)(uri ?? null);
     })
     .onUpdate((e) => {
-      // Tek parmağa düşüldü: görsel olduğu yerde DONSUN. Kalan parmakla
-      // sürüklemek pinch değil, ayrı bir jest olurdu.
+      // Tek parmağa düşüldü: ölçek DONUYOR, gezinme sürüyor.
       if (e.numberOfPointers < 2) {
-        lostPointers.value = true;
+        if (!onePointer.value) {
+          // Geçiş karesi: referans kur, bu karede hiçbir şey oynatma.
+          onePointer.value = true;
+          onePointerRefX.value = e.focalX;
+          onePointerRefY.value = e.focalY;
+          onePointerBaseX.value = zoomTranslateX.value;
+          onePointerBaseY.value = zoomTranslateY.value;
+          return;
+        }
+        // Büyütme yokken sürüklemek kopyayı kaynağının üstünden kaydırırdı.
+        if (zoomScale.value <= 1) return;
+        zoomTranslateX.value =
+          onePointerBaseX.value + (e.focalX - onePointerRefX.value);
+        zoomTranslateY.value =
+          onePointerBaseY.value + (e.focalY - onePointerRefY.value);
         return;
       }
       const cxNow = zoomRectX.value + zoomRectW.value / 2;
       const cyNow = zoomRectY.value + zoomRectH.value / 2;
-      if (lostPointers.value) {
-        lostPointers.value = false;
+      if (onePointer.value) {
+        onePointer.value = false;
         // İki parmağa dönüldü → referansları mevcut GÖRÜNÜME göre yeniden kur,
         // yoksa hem ölçek hem odak bir karede sıçrar.
         //
@@ -138,6 +171,14 @@ export default function PinchZoomable({
       zoomTranslateX.value = withTiming(0, cfg);
       zoomTranslateY.value = withTiming(0, cfg);
       zoomProgress.value = withTiming(0, cfg);
+      // Kopya SONDA çözülüyor (`Easing.in`): şekil `Easing.out` ile hızlıca
+      // yerine oturuyor, alfa ise geride kalıyor → çift görüntü olmadan, kaynak
+      // chrome'u (buton/blur) son ~100ms'de yerine fade'liyor. Süre aynı: katman
+      // sökülürken alfa tam 0 olmuş oluyor, sökülme anında geri-pop yok.
+      zoomFade.value = withTiming(0, {
+        duration: RELEASE_DURATION,
+        easing: Easing.in(Easing.quad),
+      });
       zoomScale.value = withTiming(1, cfg, (finished) => {
         if (!finished) return;
         // Bayrak kapanışın SONUNDA düşüyor: kart destesi bunu okuyup swipe

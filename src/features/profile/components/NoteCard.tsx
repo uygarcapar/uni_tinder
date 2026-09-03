@@ -1,7 +1,9 @@
 import { useState } from "react";
 import { useTranslation } from "react-i18next";
 import NoteGlyph from "@/shared/components/NoteGlyph";
-import ConsumableShopCard from "@/features/profile/components/ConsumableShopCard";
+import ConsumableShopCard, {
+  SHOP_CARD_WIDTH_2UP,
+} from "@/features/profile/components/ConsumableShopCard";
 import NotePurchaseModal from "@/features/discover/components/NotePurchaseModal";
 import { useConsumableCardBalance } from "@/features/profile/consumableCardBalance";
 
@@ -19,10 +21,15 @@ import { useConsumableCardBalance } from "@/features/profile/consumableCardBalan
  * yazılmaz, kart yine de çizilir ve satın alma sheet'ini açar; NoteBox'ta
  * olduğu gibi uç canlıya çıkınca istemci sürümü gerekmiyor.
  *
- * ⚠️ Mağaza ürünleri ve RC offering'i (`note`) henüz açılmadı; o zamana kadar
- * sheet "paketler yüklenemedi" durumunda kalır.
+ * Mağaza ürünleri ve RC offering'i (`notes` — çoğul) 2026-08-27'de açıldı;
+ * kalan blokaj redeem'in sandbox webhook doğrulaması (bkz. NotePurchaseModal).
  */
-export default function NoteCard() {
+export default function NoteCard({
+  /** Şeritten geliyor; varsayılan iki kartlık genişlik (bkz. ShopCardsRow). */
+  cardWidth = SHOP_CARD_WIDTH_2UP,
+}: {
+  cardWidth?: number;
+} = {}) {
   const { t } = useTranslation();
   const { balance, refetch } = useConsumableCardBalance("notesRemaining", {
     premiumGranted: false,
@@ -41,6 +48,7 @@ export default function NoteCard() {
     <>
       <ConsumableShopCard
         testID="note-card"
+        cardWidth={cardWidth}
         title={t("profile.noteCard.title")}
         subtitle={subtitle}
         onPress={() => setSheetVisible(true)}

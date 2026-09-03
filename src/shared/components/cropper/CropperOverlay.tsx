@@ -30,7 +30,7 @@ import {
   labelStyle,
   tint,
 } from "@expo/ui/swift-ui/modifiers";
-import { RotateCcw, X } from "lucide-react-native";
+import { RotateCcw, X } from "@/shared/icons";
 
 import SFIcon, { type SFSymbol } from "@/shared/components/SFIcon";
 import AnimatedPressable from "@/shared/components/AnimatedPressable";
@@ -71,6 +71,30 @@ const RUBBER_MIN = 0.85;
 const SPRING = { damping: 20, stiffness: 180, mass: 0.9 };
 
 /**
+ * Tek karede uygulanabilecek en büyük ölçek sıçraması.
+ *
+ * `scaleChange` = current.scale / previous.scale ve UIPinchGestureRecognizer
+ * parmak sayısı değiştiğinde `scale`'i yeniden tabanlıyor. O karede oran
+ * saçmalıyor (0.2 gibi) ve görüntü tek frame'de RUBBER_MIN'e çakılıp bırakınca
+ * 1'e yaylanıyordu — kullanıcıya "zoom'um kayboldu" olarak görünen ikinci yol.
+ * 60fps'te insan parmağı bir karede %25'ten fazla açamaz.
+ */
+const MAX_SCALE_STEP = 1.25;
+
+/**
+ * Çift dokunuşun kabul ettiği en fazla ağırlık merkezi kayması (pt).
+ *
+ * VARSAYILANI BIRAKMA: RNGH'nin iOS tap tanıyıcısında `maxDistSq` NAN, yani
+ * mesafe kontrolü HİÇ çalışmıyor (apple/Handlers/RNTapHandler.m:59). Üstelik
+ * `_tapsSoFar` her `touchesBegan` çağrısında artıyor — pinch'in iki parmağı
+ * ayrı olaylarda indiğinde TEK pinch iki dokunuş sayılıyor ve
+ * `_maxNumberOfTouches >= _minPointers` de sağlandığı için çift dokunuş
+ * tetikleniyordu. Ölçüt ağırlık merkezi: ikinci parmak inince merkez
+ * parmakların ortasına sıçrar, bu da eşiği aşar.
+ */
+const TAP_SLOP = 24;
+
+/**
  * Chrome ölçüleri SABİT — Host'lara `matchContents` VERİLMİYOR.
  *
  * SwiftUI intrinsic ölçüsü ikinci Fabric commit'inde geliyor; ilk karede host
@@ -79,7 +103,7 @@ const SPRING = { damping: 20, stiffness: 180, mass: 0.9 };
  * yerine sıçradı" olarak görünürdü.
  */
 const ICON_BTN = 44;
-const CTA_W = 200;
+const CTA_W = 132;
 const CTA_H = 52;
 
 type Session = { request: CropRequest; settle: (outcome: CropOutcome) => void };
@@ -97,6 +121,8 @@ export default function CropperOverlay() {
   const ty = useSharedValue(0);
   const gestureActive = useSharedValue(0);
   const atEdge = useSharedValue(false);
+  /** Aktif pinch'in son bilinen parmak sayısı (tabanlama sıçramasını yakalar). */
+  const pinchPointers = useSharedValue(0);
 
   /**
    * Jest değerlerinin JS tarafındaki AYNASI.
@@ -113,8 +139,8 @@ export default function CropperOverlay() {
   // ---------------------------------------------------------------- yerleşim
   const layout = useMemo(() => {
     const headerH = insets.top + 56;
-    // 16 (üst pad) + 15 (ipucu satırı) + 14 (boşluk) + CTA + 16 (alt pad).
-    const footerH = insets.bottom + 61 + CTA_H;
+    // 16 (üst pad) + CTA + 16 (alt pad).
+    const footerH = insets.bottom + 32 + CTA_H;
     const availW = screenW - 32;
     const availH = Math.max(120, screenH - headerH - footerH - 24);
     const winW = Math.min(availW, (availH * ASPECT_W) / ASPECT_H);
@@ -147,10 +173,11 @@ export default function CropperOverlay() {
     ty.value = 0;
     gestureActive.value = 0;
     atEdge.value = false;
+    pinchPointers.value = 0;
     latest.current = { s: 1, tx: 0, ty: 0 };
     setBusy(false);
     setSession({ request, settle });
-  }, [scale, tx, ty, gestureActive, atEdge]);
+  }, [scale, tx, ty, gestureActive, atEdge, pinchPointers]);
 
   useEffect(() => {
     bindCropper(present);
@@ -245,14 +272,24 @@ export default function CropperOverlay() {
       .onFinalize(settleBack);
 
     const pinch = Gesture.Pinch()
-      .onStart(() => {
+      .onStart((e) => {
         "worklet";
         gestureActive.value = 1;
+        pinchPointers.value = e.numberOfPointers;
       })
       .onChange((e) => {
         "worklet";
+        // Parmak eklenip çıkarıldığı KAREYİ atla: hem `scaleChange` hem odak
+        // noktası o karede süreksiz. Bir sonraki karede yeni tabandan devam
+        // ediyoruz — kullanıcı ölçeğini kaybetmiyor.
+        if (e.numberOfPointers !== pinchPointers.value) {
+          pinchPointers.value = e.numberOfPointers;
+          return;
+        }
+        if (!Number.isFinite(e.scaleChange) || e.scaleChange <= 0) return;
         const prev = scale.value;
-        const next = clamp(prev * e.scaleChange, RUBBER_MIN, maxScale);
+        const step = clamp(e.scaleChange, 1 / MAX_SCALE_STEP, MAX_SCALE_STEP);
+        const next = clamp(prev * step, RUBBER_MIN, maxScale);
         const k = next / prev;
         // Parmakların altındaki nokta sabit kalsın: f = t + p·s, p sabit
         // tutulunca t' = f + (t − f)·(s'/s).
@@ -270,8 +307,12 @@ export default function CropperOverlay() {
     const doubleTap = Gesture.Tap()
       .numberOfTaps(2)
       .maxDuration(260)
+      .maxDistance(TAP_SLOP)
       .onEnd((e) => {
         "worklet";
+        // İkinci savunma hattı: tanıyıcı yine de iki parmakla biterse bu bir
+        // pinch'tir, çift dokunuş değil.
+        if (e.numberOfPointers > 1) return;
         const target = scale.value > 1.05 ? 1 : Math.min(2.2, maxScale);
         const k = target / scale.value;
         const fx = e.x - winCX;
@@ -292,7 +333,7 @@ export default function CropperOverlay() {
     return Gesture.Simultaneous(pinch, pan, doubleTap);
   }, [
     baseScale, maxScale, srcW, srcH, winW, winH, winCX, winCY,
-    scale, tx, ty, gestureActive, atEdge, commit, edgeHaptic,
+    scale, tx, ty, gestureActive, atEdge, pinchPointers, commit, edgeHaptic,
   ]);
 
   const imageStyle = useAnimatedStyle(() => ({
@@ -460,7 +501,7 @@ export default function CropperOverlay() {
             </Text>
           </View>
         ) : (
-          <Text style={{ color: colors.onMedia, fontSize: 16, fontWeight: "700" }}>
+          <Text style={{ color: colors.onMedia, fontSize: 19, fontWeight: "700" }}>
             {t("common.cropper.title")}
           </Text>
         )}
@@ -481,13 +522,12 @@ export default function CropperOverlay() {
           pointerEvents VERİLMİYOR (box-none DEĞİL): opak şerit dokunuşları
           yutmalı, yoksa altındaki GestureDetector'a düşüp görüntü kayardı. */}
       <View
-        style={{ position: "absolute", left: 0, right: 0, bottom: 0, paddingBottom: insets.bottom + 16, paddingTop: 16, paddingHorizontal: 20, backgroundColor: scrimAt(0.9), alignItems: "center" }}
+        // Sağ padding başlıktakiyle (16) aynı: Kaydet, üstteki "Sıfırla"
+        // butonuyla aynı dikey hatta oturuyor.
+        style={{ position: "absolute", left: 0, right: 0, bottom: 0, paddingBottom: insets.bottom + 16, paddingTop: 16, paddingHorizontal: 16, backgroundColor: scrimAt(0.9), alignItems: "flex-end" }}
       >
-        <Text style={{ color: onMediaAt(0.55), fontSize: 12, textAlign: "center", marginBottom: 14 }}>
-          {t("common.cropper.hint")}
-        </Text>
         <ChromeConfirmButton
-          label={t("common.cropper.choose")}
+          label={t("common.cropper.save")}
           onPress={handleConfirm}
           busy={busy}
         />
@@ -536,7 +576,6 @@ function ChromeIconButton({
             // Medya üstünde çalışan koyu çip + açık kenar veriyoruz.
             ...glassFallback({
               shape: "circle",
-              color: colors.onMedia,
               backgroundColor: colors.mediaChipBg,
               borderColor: onMediaAt(0.35),
             }),
@@ -570,7 +609,7 @@ function ChromeIconButton({
   );
 }
 
-/** Alt bardaki tek birincil eylem ("Seç"). */
+/** Alt barın sağındaki tek birincil eylem ("Kaydet"). */
 function ChromeConfirmButton({
   label,
   onPress,
@@ -586,7 +625,7 @@ function ChromeConfirmButton({
   if (busy) {
     return (
       <View
-        style={{ width: CTA_W, height: CTA_H, borderRadius: 999, borderCurve: "continuous", alignItems: "center", justifyContent: "center", backgroundColor: colors.primary, opacity: 0.7 }}
+        style={{ width: CTA_W, height: CTA_H, borderRadius: 999, borderCurve: "continuous", alignItems: "center", justifyContent: "center", backgroundColor: colors.accentOrange, opacity: 0.7 }}
       >
         <ActivityIndicator size="small" color={colors.onMedia} />
       </View>
@@ -602,16 +641,16 @@ function ChromeConfirmButton({
           modifiers={[
             // glassProminent = dolgulu (tint'li) cam. iOS 26 altında sessizce
             // .automatic'e düşeceği için orada "glass" + fallback dolgusu
-            // kullanılıyor; iki yolda da sonuç birincil kırmızı kapsül.
+            // kullanılıyor; iki yolda da sonuç turuncu bir kapsül.
             buttonStyle(HAS_LIQUID_GLASS ? "glassProminent" : "glass"),
             controlSize("large"),
-            tint(HAS_LIQUID_GLASS ? colors.primary : colors.onMedia),
+            tint(HAS_LIQUID_GLASS ? colors.accentOrange : colors.onMedia),
             font({ size: 16, weight: "semibold" }),
             frame({ width: CTA_W, height: CTA_H }),
             ...glassFallback({
               shape: "capsule",
-              backgroundColor: colors.primary,
-              borderColor: colors.primary,
+              backgroundColor: colors.accentOrange,
+              borderColor: colors.accentOrange,
             }),
           ]}
         />
@@ -623,7 +662,7 @@ function ChromeConfirmButton({
     <AnimatedPressable
       onPress={onPress}
       accessibilityRole="button"
-      style={{ width: CTA_W, height: CTA_H, borderRadius: 999, borderCurve: "continuous", alignItems: "center", justifyContent: "center", backgroundColor: colors.primary }}
+      style={{ width: CTA_W, height: CTA_H, borderRadius: 999, borderCurve: "continuous", alignItems: "center", justifyContent: "center", backgroundColor: colors.accentOrange }}
     >
       <Text style={{ color: colors.onMedia, fontSize: 16, fontWeight: "700" }}>
         {label}

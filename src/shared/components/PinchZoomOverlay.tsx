@@ -5,6 +5,7 @@ import Animated, { useAnimatedStyle } from "react-native-reanimated";
 
 import {
   bindZoomOverlay,
+  zoomFade,
   zoomProgress,
   zoomRadius,
   zoomRectH,
@@ -43,16 +44,28 @@ export default function PinchZoomOverlay() {
 
   // Konum/boyut da animated: değerler jest BAŞINDA bir kez yazılıyor (measure),
   // sonra sabit kalıyor — her frame'de değişen tek şey transform.
-  const imageStyle = useAnimatedStyle(() => ({
-    width: zoomRectW.value,
-    height: zoomRectH.value,
-    borderRadius: zoomRadius.value,
-    transform: [
-      { translateX: zoomRectX.value + zoomTranslateX.value },
-      { translateY: zoomRectY.value + zoomTranslateY.value },
-      { scale: zoomScale.value },
-    ] as const,
-  }));
+  const imageStyle = useAnimatedStyle(() => {
+    // Köşe iki şeyi birden yapıyor:
+    //  1) `/ s` — transform ölçeği yarıçapı da büyütüyor. Bölünce kopyanın
+    //     köşesi EKRANDA kaynağınkiyle aynı kalınlıkta başlıyor, açılışta köşe
+    //     zıplaması olmuyor.
+    //  2) `* (1 - progress)` — büyüdükçe köşe düzleşiyor (tam açık görselde
+    //     yuvarlak köşe tuhaf duruyor). Ani değil: aynı ilerlemeyle, karartmayla
+    //     birlikte akıyor ve bırakışta withTiming ile geri geliyor.
+    const s = zoomScale.value <= 0 ? 1 : zoomScale.value;
+    return {
+      width: zoomRectW.value,
+      height: zoomRectH.value,
+      // Kaynağın üstündeki katmanlarla cross-fade (bkz. zoomFade).
+      opacity: zoomFade.value,
+      borderRadius: (zoomRadius.value * (1 - zoomProgress.value)) / s,
+      transform: [
+        { translateX: zoomRectX.value + zoomTranslateX.value },
+        { translateY: zoomRectY.value + zoomTranslateY.value },
+        { scale: zoomScale.value },
+      ] as const,
+    };
+  });
 
   if (!uri) return null;
 

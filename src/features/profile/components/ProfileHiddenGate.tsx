@@ -1,7 +1,7 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 import { View, Text, TouchableOpacity } from "react-native";
 import { BottomSheetBackdrop } from "@gorhom/bottom-sheet";
-import { EyeOff, ShieldAlert, Camera } from "lucide-react-native";
+import { EyeOff, ShieldAlert, Camera } from "@/shared/icons";
 import { useTranslation } from "react-i18next";
 import AppBottomSheet from "@/shared/components/AppBottomSheet";
 import { useSwipeTutorialBlocking } from "@/features/discover/swipeTutorialGate";
@@ -38,6 +38,7 @@ export default function ProfileHiddenGate({
   visibility,
   awaitingReview,
   onAddPhoto,
+  onOpenChange,
 }: {
   visibility: ProfileVisibility | null;
   /**
@@ -47,6 +48,14 @@ export default function ProfileHiddenGate({
    */
   awaitingReview: boolean | null;
   onAddPhoto: () => void;
+  /**
+   * Kapı açıldı/kapandı. Aynı seviyedeki diğer sheet'ler (konum izni kapısı)
+   * sıraya girebilsin diye: gorhom'un `stackBehavior` varsayılanı "replace",
+   * yani ikinci bir sheet present edilirse bu kapı sessizce dismiss edilir ve
+   * kullanıcı mesajı hiç görmez. `dismissed` bu component'in İÇİNDE tutulduğu
+   * için açıklık dışarıdan türetilemiyor — bu yüzden bildiriliyor.
+   */
+  onOpenChange?: (open: boolean) => void;
 }) {
   const { t } = useTranslation();
 
@@ -102,6 +111,10 @@ export default function ProfileHiddenGate({
 
   const open =
     !!state && state !== "Visible" && !suspended && !dismissed && !tutorialBlocking;
+
+  useEffect(() => {
+    onOpenChange?.(open);
+  }, [open, onOpenChange]);
 
   const renderBackdrop = useCallback(
     (props: any) => (
