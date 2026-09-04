@@ -41,9 +41,24 @@ const BANNER_MOTION = {
   swipeEasing: Easing.bezier(0.4, 0, 1, 1),
 } as const;
 
-type ShowMessageToastArg = Omit<MessageToastProps, 'onPress'> & {
+/**
+ * ⚠️ TIKLAMA KAPISI NOTIFIER SEVİYESİNDE — `componentProps.onPress` DEĞİL.
+ *
+ * Notifier gösterdiği bileşeni RNGH `TouchableWithoutFeedback` ile sarıyor;
+ * onun native zemini bir `UIControl` ve dokunmayı içteki RN view'lara hiç
+ * geçirmiyor (uzun gerekçe: ToastShell'in tepesi). Toast'ın içine konan
+ * `Pressable` bu yüzden sessizce ölüydü: basınca toast kapanıyor ama
+ * yönlendirme çalışmıyordu. Doğru yer `showNotification({ onPress })`.
+ *
+ * `hideOnPress` varsayılanı true → kapatmayı notifier kendisi yapıyor, elle
+ * `hideNotification()` çağırmaya gerek yok.
+ */
+
+type ShowMessageToastArg = MessageToastProps & {
   conversationId: string;
   partnerUserId?: string;
+  /** Unmatch edilmiş sohbette composer kapalı açılsın (bkz. ChatScreen). */
+  isActive?: boolean;
 };
 
 export function showMessageToast({
@@ -52,39 +67,38 @@ export function showMessageToast({
   preview,
   conversationId,
   partnerUserId,
+  isActive = true,
 }: ShowMessageToastArg) {
   const goToChat = () => {
     if (!navigationRef.isReady()) return;
-    Notifier.hideNotification();
-    navigationRef.navigate('Chat' as never, {
+    navigationRef.navigate('Chat', {
       conversationId,
       partner: partnerUserId
         ? { userId: partnerUserId, displayName: senderName, profileImageUrl: photoUrl ?? undefined }
         : undefined,
-      isActive: true,
-    } as never);
+      isActive,
+    });
   };
 
   Notifier.showNotification({
     Component: MessageToast,
-    componentProps: { senderName, photoUrl, preview, onPress: goToChat } as MessageToastProps,
+    componentProps: { senderName, photoUrl, preview } as MessageToastProps,
+    onPress: goToChat,
     swipeEnabled: true,
     ...BANNER_MOTION,
   });
 }
 
-type ShowLikeToastArg = Omit<LikeToastProps, 'onPress'>;
-
-export function showLikeToast(arg: ShowLikeToastArg) {
+export function showLikeToast(arg: LikeToastProps) {
   const goToLikes = () => {
     if (!navigationRef.isReady()) return;
-    Notifier.hideNotification();
     navigationRef.navigate('HomeTabs' as never, { screen: 'Likes' } as never);
   };
 
   Notifier.showNotification({
     Component: LikeToast,
-    componentProps: { ...arg, onPress: goToLikes } as LikeToastProps,
+    componentProps: { ...arg } as LikeToastProps,
+    onPress: goToLikes,
     swipeEnabled: true,
     ...BANNER_MOTION,
   });

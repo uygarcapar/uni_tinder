@@ -1,5 +1,5 @@
 import { ReactNode } from 'react';
-import { View, Pressable, StyleSheet, type ViewStyle } from 'react-native';
+import { View, StyleSheet, type ViewStyle } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { BlurView } from 'expo-blur';
 import { GlassView } from 'expo-glass-effect';
@@ -35,11 +35,20 @@ import { glassColorScheme, hasLiquidGlassSurface } from '../../theme/glass';
  *
  * Değerler render anında okunuyor: palet tema değişiminde MUTASYONA uğruyor
  * (bkz. shared/theme/colors.ts), modül seviyesinde sabitlenemez.
+ *
+ * ⚠️ BURADA DOKUNMA KAPISI YOK, olamaz da: toast'ın tıklaması `Notifier`
+ * seviyesinde (`showNotification({ onPress })`, bkz. services/toaster.ts).
+ * Kabuğun içine RN `Pressable`/`Touchable` koymak SESSİZCE çalışmıyordu —
+ * notifier bileşeni RNGH `TouchableWithoutFeedback` ile sarıyor, onun native
+ * zemini `RNGestureHandlerButton` (bir `UIControl`) ve `hitTest:` sonucu
+ * `shouldHandleTouch:` geçene kadar YUKARI yürütüyor: düz bir RN view ne
+ * `UIControl` ne de üzerinde etkin gesture recognizer taşıyor, dolayısıyla
+ * dokunma hedefi butonun KENDİSİ oluyor. Sonuç: tıklayınca toast kapanıyor
+ * (notifier'ın `hideOnPress`'i) ama içteki `onPress` hiç çağrılmıyor — mesaj
+ * toast'ına basınca sohbete gidilmemesinin sebebi tam olarak buydu.
  */
 
 type Props = {
-  /** Basılabilir toast'lar için — verilmezse kabuk dokunulamaz olur. */
-  onPress?: () => void;
   radius?: number;
   /** İçeriğin kenar boşluğu — toast'lar farklı yoğunlukta. */
   paddingVertical: number;
@@ -48,7 +57,6 @@ type Props = {
 };
 
 export default function ToastShell({
-  onPress,
   radius = 24,
   paddingVertical,
   paddingHorizontal,
@@ -107,13 +115,7 @@ export default function ToastShell({
     </View>
   );
 
-  return onPress ? (
-    <Pressable onPress={onPress} style={shadow}>
-      {surface}
-    </Pressable>
-  ) : (
-    <View style={shadow}>{surface}</View>
-  );
+  return <View style={shadow}>{surface}</View>;
 }
 
 /** Cam dolgu — blur'un üstündeki renk katmanı. Yalnız fallback yolunda. */

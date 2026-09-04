@@ -9,16 +9,19 @@ export type MessageToastProps = {
   senderName: string;
   photoUrl?: string | null;
   preview: string;
-  onPress?: () => void;
 };
 
 /**
- * Yeni mesaj toast'ı — kabuk InfoToast ile aynı cam kart, iki farkla:
- * solda gönderenin yuvarlak avatarı var ve basılabilir (tap → ilgili sohbet).
+ * Yeni mesaj toast'ı — kabuk InfoToast ile aynı cam kart, tek farkla: solda
+ * gönderenin yuvarlak avatarı var.
+ *
+ * Tap → ilgili sohbet, ama o kapı BURADA DEĞİL: notifier'ın kendi dokunma
+ * katmanı içteki `Pressable`'ı yutuyor (gerekçe ToastShell'in tepesinde),
+ * bu yüzden `onPress` `showMessageToast` içinde notifier'a veriliyor.
  */
-export default function MessageToast({ senderName, photoUrl, preview, onPress }: MessageToastProps) {
+export default function MessageToast({ senderName, photoUrl, preview }: MessageToastProps) {
   return (
-    <ToastShell onPress={onPress} paddingVertical={14} paddingHorizontal={16}>
+    <ToastShell paddingVertical={14} paddingHorizontal={16}>
       <View style={{ flexDirection: 'row', alignItems: 'center' }}>
         {photoUrl ? (
           <ExpoImage

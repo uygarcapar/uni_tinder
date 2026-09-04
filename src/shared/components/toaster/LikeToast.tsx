@@ -15,10 +15,11 @@ export type LikeToastProps = {
   photoUrl?: string | null;
   /** Yalnız `kind: 'note'` — yorumun ilk ~60 karakteri (IncomingLike.notePreview). */
   preview?: string | null;
-  onPress?: () => void;
 };
 
-export default function LikeToast({ kind, senderName, photoUrl, preview, onPress }: LikeToastProps) {
+// Tap → Likes ekranı; kapı `showLikeToast` içinde notifier seviyesinde
+// (gerekçe ToastShell'in tepesinde).
+export default function LikeToast({ kind, senderName, photoUrl, preview }: LikeToastProps) {
   const isSuper = kind === 'superLike';
   const isNote = kind === 'note';
   // Notta kimlik free alıcıya da AÇIK (sözleşme §6) — çağıran adı hiç
@@ -39,7 +40,7 @@ export default function LikeToast({ kind, senderName, photoUrl, preview, onPress
     // Kabuk artık diğer üç toast'la AYNI cam kart: eskiden burası opak
     // `surface2` idi ve aynı anda düşen iki toast iki farklı malzeme gibi
     // duruyordu. Köşe yarıçapı kendi kalıyor — bu kart daha alçak.
-    <ToastShell onPress={onPress} radius={16} paddingVertical={10} paddingHorizontal={12}>
+    <ToastShell radius={16} paddingVertical={10} paddingHorizontal={12}>
       <View style={{ flexDirection: 'row', alignItems: 'center' }}>
         {photoUrl ? (
           <ExpoImage
