@@ -1,0 +1,30 @@
+diff --git a/node_modules/react-native/Libraries/Text/TextInput/RCTBackedTextInputDelegateAdapter.mm b/node_modules/react-native/Libraries/Text/TextInput/RCTBackedTextInputDelegateAdapter.mm
+index 8db8703..67f0068 100644
+--- a/node_modules/react-native/Libraries/Text/TextInput/RCTBackedTextInputDelegateAdapter.mm
++++ b/node_modules/react-native/Libraries/Text/TextInput/RCTBackedTextInputDelegateAdapter.mm
+@@ -292,8 +292,23 @@ static void *TextFieldSelectionObservingContext = &TextFieldSelectionObservingCo
+     return NO;
+   }
+ 
+-  if (range.location + range.length > _backedTextInputView.text.length) {
+-    range = NSMakeRange(range.location, _backedTextInputView.text.length - range.location);
++  // Clamp against the *attributed* text: that is the string mutated below, and
++  // `text` can lag behind it for a run loop turn.
++  NSUInteger currentLength = _backedTextInputView.attributedText.string.length;
++
++  if (range.location > currentLength) {
++    // UIKit handed us a range computed against a longer, already-replaced
++    // string (autocorrection / inline prediction / dictation racing a
++    // JS-driven text update). The clamp below would underflow
++    // `currentLength - range.location` (NSUInteger) into a huge length and
++    // `-replaceCharactersInRange:withString:` would raise NSRangeException
++    // ("NSMutableRLEArray objectAtIndex:effectiveRange:: Out of bounds").
++    // Rejecting this one edit is the only safe move.
++    return NO;
++  }
++
++  if (range.location + range.length > currentLength) {
++    range = NSMakeRange(range.location, currentLength - range.location);
+   } else if ([newText isEqualToString:text]) {
+     _textDidChangeIsComing = YES;
+     return YES;
