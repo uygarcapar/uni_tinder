@@ -22,6 +22,17 @@ export const MAPBOX_STYLE_LIGHT = "uygarcapar/cmt75ib0000as01sgh2auhnfd";
 // eski görsel dönmeye devam eder.
 export const MAPBOX_STYLE_VERSION = 2;
 
+/**
+ * ATIF — SİLİNEMEZ BAĞ. Static URL `attribution=false&logo=false` ile
+ * kuruluyor (bkz. buildMapboxStaticUrl): Mapbox buna izin veriyor AMA şartı,
+ * atfın uygulamanın başka bir yerinde metin olarak durması. Tek gösterildiği
+ * yer Ayarlar'ın alt bilgisi (SettingsScreen → `settings.mapAttribution`).
+ * O satırı kaldırırsan buradaki iki parametreyi de kaldırmak ZORUNDASIN,
+ * yoksa Mapbox şartları ihlal ediliyor.
+ */
+export const MAPBOX_ATTRIBUTION_URL = "https://www.mapbox.com/about/maps/";
+export const OSM_COPYRIGHT_URL = "https://www.openstreetmap.org/copyright";
+
 interface BuildMapboxStaticUrlArgs {
   latitude: number;
   longitude: number;
@@ -50,5 +61,7 @@ export function buildMapboxStaticUrl({
   const resolvedStyle =
     style ?? (isLight() ? MAPBOX_STYLE_LIGHT : MAPBOX_STYLE_DARK);
   const scale = retina ? "@2x" : "";
+  // `attribution=false&logo=false` → atıf Ayarlar'ın alt bilgisinde metin
+  // olarak duruyor; bkz. MAPBOX_ATTRIBUTION_URL üstündeki not.
   return `https://api.mapbox.com/styles/v1/${resolvedStyle}/static/${longitude},${latitude},${zoom}/${width}x${height}${scale}?access_token=${MAPBOX_TOKEN}&v=${MAPBOX_STYLE_VERSION}&attribution=false&logo=false`;
 }

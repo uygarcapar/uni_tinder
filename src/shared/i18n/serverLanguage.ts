@@ -49,6 +49,34 @@ export function noteServerLanguage(lang: string | null): void {
 }
 
 /**
+ * Sunucuda dile göre ÇÖZÜLMÜŞ metin taşıyan cache'leri tazeler: statik referans
+ * listeleri + `["common"]` + swipe destesi (`*Display`, `hobbies[].name`,
+ * `promptDisplay`, ortak nokta etiketleri).
+ *
+ * ZAMANLAMA KRİTİK — `refetchDeck` bunun için var: yukarıdaki öncelik sırası
+ * gereği bu metinleri belirleyen şey Accept-Language header'ı DEĞİL, DB'deki
+ * `profile.language`. Yani dil seçilir seçilmez atılan bir deste refetch'i,
+ * `updateProfile({ Language })` daha sunucuya işlemediği için ESKİ dilde veri
+ * çekip cache'i yeniden o dille dolduruyor. Deste anahtarında dil yok ve
+ * `refetchOnMount:false` — ikinci bir tazeleme gelmezse kart uygulama
+ * kapanana kadar eski dilde kalıyordu. Gerçek tazeleme yazma BİTTİKTEN sonra
+ * yapılır; öncesinde deste yalnız BAYAT İŞARETLENİR.
+ *
+ * @param refetchDeck `false` → desteyi yalnız bayat işaretle (yazma öncesi),
+ *   `true` → hemen yeniden çek. `refetchType:"all"`: kullanıcı dili Ayarlar'dan
+ *   değiştiriyor, Discover o an ekranda olmayabilir; pasif query
+ *   `refetchOnMount:false` yüzünden bayat işaretiyle mount'ta da çekmezdi.
+ */
+export function refreshLocalizedCaches(refetchDeck = true): void {
+  bustStaticCache();
+  queryClient.invalidateQueries({ queryKey: ["common"] });
+  queryClient.invalidateQueries({
+    queryKey: swipeKeys.matches,
+    refetchType: refetchDeck ? "all" : "none",
+  });
+}
+
+/**
  * @param profile `GetMyProfile` yanıtı (`language` alanı okunur).
  * @param local   İstemcinin ÇÖZÜLMÜŞ dili ("tr"/"en") — çağıran taraftan
  *   geçiliyor, store bu modülden okunmuyor: Ayarlar ekranı da bu dosyayı
@@ -69,11 +97,9 @@ export async function reconcileServerLanguage(
   try {
     await profileService.updateProfile({ Language: local });
     serverBelief = local;
-    // Sunucu bu ana kadar YANLIŞ dilde `*Display` üretmiş olabilir; dil
-    // değişiminin kendisinde yaptığımızın aynısı (bkz. App.tsx LanguageSyncer).
-    bustStaticCache();
-    queryClient.invalidateQueries({ queryKey: ["common"] });
-    queryClient.invalidateQueries({ queryKey: swipeKeys.matches });
+    // Sunucu bu ana kadar YANLIŞ dilde `*Display` üretmiş olabilir; yazma
+    // bittiği için artık doğru dilde çekilir (bkz. refreshLocalizedCaches).
+    refreshLocalizedCaches();
   } catch {
     // Sessiz: açılışta ağ hatası kullanıcıya gösterilecek bir şey değil,
     // sonraki açılışta yeniden denenir.

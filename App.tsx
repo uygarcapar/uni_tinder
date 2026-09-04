@@ -47,8 +47,7 @@ import { I18nextProvider } from "react-i18next";
 import i18n from "./src/shared/i18n";
 import { setCurrentLanguage } from "./src/shared/services/api";
 import { setLanguage } from "./src/shared/store/settingsSlice";
-import { bustStaticCache } from "./src/shared/services/staticCache";
-import { swipeKeys } from "./src/features/discover/swipeKeys";
+import { refreshLocalizedCaches } from "./src/shared/i18n/serverLanguage";
 
 // Modul-level — Fast Refresh ile module re-execute olduğunda yeni değer alır.
 // Production'da modul yalnız bir kez evaluate edildiği için sabit kalır.
@@ -79,18 +78,19 @@ function LanguageSyncer() {
     // yeni dille çıksın.
     setCurrentLanguage(language);
     if (!changed) return;
-    // Statik referans listeleri (şehir/hobi/burç adları) Accept-Language'a göre
-    // lokalize geliyor → dil değişince oturum cache'ini boşalt, yeni dilde çekilsin.
-    bustStaticCache();
-    // Sunucudan lokalize gelen her şeyi tazele. Kartın metinlerinin BÜYÜK KISMI
-    // (`*Display`, `hobbies[].name`, `promptDisplay`) çekildiği andaki dile göre
-    // sunucuda çözülmüş sabit string; `t()` metinleri anında dönerken bunlar
-    // cache'te eski dilde kalıyor ve kart yarı Türkçe yarı İngilizce görünüyor.
-    // Deste anahtarında dil yok + `refetchOnMount:false` olduğu için kendiliğinden
-    // düzelmiyordu — busting'i dil değişiminin KENDİSİNE bağlıyoruz, Ayarlar'daki
-    // profil-güncelle/token-yenile zincirinin başarısına değil.
-    queryClient.invalidateQueries({ queryKey: ["common"] });
-    queryClient.invalidateQueries({ queryKey: swipeKeys.matches });
+    // Statik referans listeleri + `["common"]` burada tazeleniyor: ikisi de
+    // çift dilli `display` taşıyor, yani yanlış dilde dönseler bile istemci
+    // resolveLocalized ile doğru dili basıyor.
+    //
+    // DESTE İSE YALNIZ BAYAT İŞARETLENİYOR (refetchDeck=false). Kartın metinleri
+    // (`*Display`, `hobbies[].name`, `promptDisplay`, ortak nokta etiketleri)
+    // sunucuda TEK dile çözülmüş sabit string ve sunucunun dil önceliği
+    // Accept-Language değil DB'deki `profile.language` — o yazma daha atılmadan
+    // burada refetch etmek desteyi tam da eski dille yeniden dolduruyordu.
+    // Gerçek tazeleme yazma bittikten sonra: Ayarlar (handleLanguageSelect) ve
+    // açılıştaki reconcileServerLanguage, ikisi de refreshLocalizedCaches()
+    // çağırıyor.
+    refreshLocalizedCaches(false);
   }, [language]);
   return null;
 }

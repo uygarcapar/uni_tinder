@@ -1,4 +1,12 @@
-import { useState, useRef, useEffect, useMemo } from "react";
+import {
+  useState,
+  useRef,
+  useEffect,
+  useMemo,
+  Children,
+  Fragment,
+  isValidElement,
+} from "react";
 import {
   View,
   Text,
@@ -67,13 +75,18 @@ import SFIcon from "@/shared/components/SFIcon";
 import {
   useThemePreference,
   setThemePreference,
+  onBeforeThemeSwap,
   type ThemePreference,
 } from "@/shared/theme/themeMode";
 import BlockedUsersModal from "@/features/profile/components/BlockedUsersModal";
 import { openLitPlus } from "@/features/profile/litPlusEntry";
 import { usePremiumTier } from "@/features/profile/premiumTier";
-import api, { refreshAccessToken } from "@/shared/services/api";
+import api from "@/shared/services/api";
 import { API_ENDPOINTS } from "@/shared/constants/api";
+import {
+  MAPBOX_ATTRIBUTION_URL,
+  OSM_COPYRIGHT_URL,
+} from "@/shared/constants/mapbox";
 import chatService from "@/features/chat/chatService";
 import profileService from "@/features/profile/profileService";
 import { logout } from "@/features/auth/authSlice";
@@ -87,7 +100,7 @@ import {
   readPendingPremiumSync,
 } from "@/features/profile/pendingPremiumSync";
 import { readPendingRedeems } from "@/features/discover/superlikeRedeem";
-import { colors, ink } from "../../../shared/theme/colors";
+import { colors, ink, scrimAt } from "../../../shared/theme/colors";
 import {
   setLanguage,
   resolveLanguage,
@@ -95,7 +108,10 @@ import {
 } from "@/shared/store/settingsSlice";
 import i18n from "@/shared/i18n";
 import { getDateLocale } from "@/shared/i18n/dateLocale";
-import { noteServerLanguage } from "@/shared/i18n/serverLanguage";
+import {
+  noteServerLanguage,
+  refreshLocalizedCaches,
+} from "@/shared/i18n/serverLanguage";
 import type { RootState } from "@/shared/store";
 
 // ── Veri export'u: gövde okuma yardımcıları ─────────────────────────────────
@@ -143,20 +159,53 @@ const PAGE_EASING = Easing.out(Easing.cubic);
 /** Sol kenardan geri çekişin kabul edildiği bant (pt). */
 const EDGE_HIT = 44;
 
-/** Kök listedeki kategori ikonları — tema chip'leriyle aynı SF + lucide çifti. */
+/**
+ * Kategori sayfası tam açıkken alttaki kök listenin üstündeki karartmanın
+ * en koyu hâli. iOS'un push/pop perdesiyle aynı iş: parallax tek başına
+ * "hangisi üstte" sorusunu tam söylemiyor, alttaki kademe geri çekilirken
+ * ışığını da kaybetmeli.
+ */
+const ROOT_DIM_MAX = 0.25;
+
+/**
+ * Kök listedeki kategori ikonları — tema chip'leriyle aynı SF + lucide çifti.
+ *
+ * Tamamı ÇİZGİSEL (outline) varyant, dolu değil: dolu gliflerin siluetleri
+ * satır etiketinin yanında birer mürekkep lekesi gibi ağır basıyordu. Çizgi
+ * varyantı hem Android'deki lucide fallback'iyle (lucide zaten yalnız outline)
+ * aynı ağırlıkta okunuyor hem de sağdaki chevron'un ince çizgisiyle uyumlu.
+ * Yeni bir kategori eklerken `.fill` sonekli sembol SEÇME.
+ */
 const SECTION_ICONS: Record<
   SectionKey,
   { sf: React.ComponentProps<typeof SFIcon>["name"]; lucide: typeof Globe }
 > = {
   // Mesajlar sekmesiyle AYNI glif (bkz. navigation/TabNavigator, SF `message`):
   // ayarlardaki kategori ile sekme aynı kavramı gösteriyor, iki farklı baloncuk
-  // çizmesin. Kök listedeki diğer ikonlar gibi dolu varyant.
-  messaging: { sf: "message.fill", lucide: MessageCircle },
-  privacy: { sf: "lock.shield.fill", lucide: ShieldCheck },
+  // çizmesin.
+  messaging: { sf: "message", lucide: MessageCircle },
+  privacy: { sf: "lock.shield", lucide: ShieldCheck },
+  // Görünüm sembolünün çizgisel karşılığı YOK — `circle.lefthalf.filled` zaten
+  // çizili bir çemberin yarısını boyuyor, dolu bir siluet değil. iOS'un kendi
+  // "Görünüm" glifi de bu.
   theme: { sf: "circle.lefthalf.filled", lucide: SunMoon },
   language: { sf: "globe", lucide: Globe },
-  account: { sf: "person.crop.circle.fill", lucide: CircleUser },
+  account: { sf: "person.crop.circle", lucide: CircleUser },
 };
+
+/**
+ * Tema takasında ağacın tamamı remount ediliyor (App.tsx `key={mode}`), yani bu
+ * ekranın state'i de sıfırlanıyor — Görünüm sayfasından tema değiştiren
+ * kullanıcı kök listeye düşüyordu. Navigasyon YIĞINI aynı kancayla zaten
+ * korunuyor (bkz. AppNavigator/themeSwapNavState); ekranın İÇİNDEKİ kademe de
+ * korunmalı, aksi halde yığın doğru ekrana dönse bile kullanıcı bir kademe
+ * geriye atılmış oluyor.
+ *
+ * TEK KULLANIMLIK ve yalnız tema takasında yazılıyor: ekrandan normal çıkışta
+ * (pop) dokunulmadığı için "Ayarlar'ı yeniden aç, kategori açık gelsin" gibi bir
+ * yan etki doğmuyor.
+ */
+let themeSwapSection: SectionKey | null = null;
 
 export default function SettingsScreen() {
   const { t } = useTranslation();
@@ -180,8 +229,28 @@ export default function SettingsScreen() {
   const [downloadLoading, setDownloadLoading] = useState(false);
   const [deleteLoading, setDeleteLoading] = useState(false);
   const [blockedVisible, setBlockedVisible] = useState(false);
-  /** null = kök liste (5 kategori); dolu = o kategorinin satırları. */
-  const [section, setSection] = useState<SectionKey | null>(null);
+  /**
+   * null = kök liste (5 kategori); dolu = o kategorinin satırları.
+   *
+   * Başlangıç değeri tema takası snapshot'ından geliyor (bkz. themeSwapSection):
+   * normal açılışta her zaman null, yalnız tema değişimi remount'unda açık
+   * kategori geri yükleniyor.
+   */
+  const [section, setSection] = useState<SectionKey | null>(
+    () => themeSwapSection,
+  );
+  const sectionRef = useRef<SectionKey | null>(section);
+  useEffect(() => {
+    sectionRef.current = section;
+  }, [section]);
+  // Snapshot'ı mount'tan hemen sonra tüket: initializer'da silmek StrictMode'un
+  // çift render'ında değeri ikinci çağrıdan önce yok ederdi.
+  useEffect(() => {
+    themeSwapSection = null;
+    return onBeforeThemeSwap(() => {
+      themeSwapSection = sectionRef.current;
+    });
+  }, []);
   const [prefs, setPrefs] = useState(null);
   const pollingRef = useRef(null);
   /** Her yeni export turu nesli ilerletir; eski tur cevabı dönerse yok sayılır. */
@@ -254,8 +323,13 @@ export default function SettingsScreen() {
   // Tek bir shared value (`pageX`) hem animasyonu hem sürüklemeyi taşıyor, o
   // yüzden yarım kalan bir çekiş kesintisiz olarak animasyona devrediliyor.
   // `screenW` = kategori sayfası tam ekran dışında (kök kademe).
+  //
+  // Başlangıç değeri `section`e bakıyor: tema takasından geri yüklenen açık
+  // kategori YERİNDE açılmalı (0), sağdan tekrar kaymamalı — mount'taki giriş
+  // efekti (aşağıdaki useEffect) o durumda 0'dan 0'a gidip görsel olarak
+  // sessiz kalıyor.
   const { width: screenW } = useWindowDimensions();
-  const pageX = useSharedValue(screenW);
+  const pageX = useSharedValue(section ? 0 : screenW);
   /** Çekiş ekranın sol kenarından mı başladı — yalnız o zaman geri götürür. */
   const fromEdge = useSharedValue(0);
 
@@ -295,6 +369,19 @@ export default function SettingsScreen() {
   // gibi okunur, hangisinin üstte olduğu kaybolurdu.
   const rootStyle = useAnimatedStyle(() => ({
     transform: [{ translateX: -(screenW - pageX.value) * 0.3 }],
+  }));
+
+  // Karartma da parallax'la AYNI kaynaktan (`pageX`) türüyor: girişte 260ms
+  // boyunca koyulaşıyor, çıkışta 240ms boyunca açılıyor, kenardan çekerken de
+  // parmağın katettiği yola birebir bağlı — üç davranışı ayrı ayrı yazmaya
+  // gerek yok, hepsi tek değerin sonucu. Yarım bırakılan bir çekiş de bu
+  // yüzden kesintisiz devam ediyor.
+  //
+  // Clamp ŞART: çekiş ekran genişliğini aşabiliyor (`translationX` sınırsız),
+  // clamp'siz opacity negatife düşerdi.
+  const rootDimStyle = useAnimatedStyle(() => ({
+    opacity:
+      Math.min(1, Math.max(0, (screenW - pageX.value) / screenW)) * ROOT_DIM_MAX,
   }));
 
   // failOffsetY: dikey hareket bunu düşürür → liste scroll'u önceliğini korur.
@@ -372,18 +459,34 @@ export default function SettingsScreen() {
   };
 
   // Arayüz dili i18n ile ANINDA değişiyor. Sunucudan gelen metinler (kartlardaki
-  // hobiler, `*Display` alanları, prompt başlıkları) ise ÇEKİLDİĞİ ANDAKİ
-  // `Accept-Language`'a göre sunucuda çözülmüş tek dilli string — yeniden
+  // hobiler, `*Display` alanları, prompt başlıkları, ortak nokta etiketleri) ise
+  // ÇEKİLDİĞİ ANDAKİ dile göre sunucuda çözülmüş tek dilli string — yeniden
   // çekilmedikçe eski dilde kalıyor ve kart yarı Türkçe yarı İngilizce görünüyor.
   //
-  // BU TAZELEME ARTIK BURADA DEĞİL: App.tsx `LanguageSyncer` dil değişir değişmez
-  // header'ı güncelleyip ilgili cache'leri (`["common"]` + deste) invalidate
-  // ediyor. Buraya bağlıyken tazeleme aşağıdaki iki ağ çağrısının BAŞARISINA
-  // bağlıydı; biri patlarsa (offline/429) kart sessizce karışık dilde kalıyordu.
+  // TAZELEME İKİYE BÖLÜNDÜ. Header'ı güncellemek ve `["common"]` + statik
+  // listeleri boşaltmak dil değişir değişmez oluyor (App.tsx `LanguageSyncer`),
+  // ama DESTE tazelemesi aşağıdaki `updateProfile`den SONRAYA bağlı: sunucunun
+  // dil önceliği `Accept-Language` DEĞİL, DB'deki `profile.language`
+  // (bkz. serverLanguage.ts). Yazma inmeden atılan refetch desteyi eski dille
+  // yeniden dolduruyordu ve deste anahtarında dil olmadığı + `refetchOnMount`
+  // kapalı olduğu için kart uygulama kapanıp açılana kadar öyle kalıyordu.
   //
-  // Geriye kalan `updateProfile` backend'in DB'deki `Language` alanı için —
-  // sunucunun kendi başlattığı metinler (push bildirimi, e-posta) onu okuyor,
-  // istekteki header'ı değil. Token yenilemesi de claim'i güncel tutmak için.
+  // Yani `updateProfile` yalnız push/e-posta metinleri için değil, kartların
+  // dili için de ŞART.
+  //
+  // TOKEN YENİLENMİYOR (eskiden burada zorla `refreshAccessToken()` vardı ve
+  // "dil değiştirince atıyor" şikayetinin kaynağı oydu). Gerekçe:
+  //   • Rotasyon TEK KULLANIMLIK. Zorla yenileme, sağlıklı bir oturumda hiç
+  //     gerekmeyen bir rotasyonu ateşliyor; refresh 4xx alırsa (ölü/eski token,
+  //     grace penceresi kapalı) ya da token diskte yoksa api.ts clearAllTokens +
+  //     onAuthLost işletiyor → AppNavigator dispatch(logout()). `session_expired`
+  //     dalı TOAST'SIZ olduğu için kullanıcı sebepsiz login ekranında buluyordu.
+  //   • Kazanç yok: istemci JWT'den yalnız `exp` okuyor (jwt.ts), sunucu da
+  //     metinleri claim'den değil DB'deki `profile.language`tan çözüyor — az
+  //     önceki `updateProfile` onu zaten yazdı.
+  //   • Zaten kuralımız: serverLanguage.ts açılış eşitlemesinde de bilerek
+  //     token'a dokunmuyor, EditProfileForm de ad değişince claim'i bayat
+  //     bırakıyor. Claim bir sonraki normal yenilemede güncelleniyor.
   //
   // Zincir await EDİLMİYOR: dil seçimi UI'da beklemesin, ağ hatası da seçimi
   // geri almasın.
@@ -399,7 +502,12 @@ export default function SettingsScreen() {
         // Açılıştaki eşitleyici bu yazmayı bilmezse ya boşuna aynı isteği atar
         // ya da (başarısızlıkta) düzeltmeyi atlar — bkz. serverLanguage.ts.
         noteServerLanguage(lang);
-        return refreshAccessToken();
+        // ASIL TAZELEME BURADA. Dil değişir değişmez atılan tazeleme desteyi
+        // yalnız bayat işaretliyor (bkz. App.tsx LanguageSyncer): sunucu
+        // `*Display` alanlarını Accept-Language'a değil DB'deki `Language`
+        // alanına göre çözdüğü için, yazma inmeden çekilen deste eski dilde
+        // geliyordu ve uygulama kapanana kadar öyle kalıyordu.
+        refreshLocalizedCaches();
       })
       .catch(() => noteServerLanguage(null));
   };
@@ -681,7 +789,7 @@ export default function SettingsScreen() {
   // satırları. Satırların kendisi bire bir eskisi — tasarım değişmedi, içerik
   // gruplara ayrıldı.
   const messagingRows = (
-    <>
+    <SettingsList>
       {/* Read receipt opt-out */}
       <SettingsToggleRow
         icon={<SFIcon name="eye.fill" fallback={Eye} size={18} color={colors.text} strokeWidth={1.5} />}
@@ -747,37 +855,18 @@ export default function SettingsScreen() {
         disabled={!prefs}
         onToggle={() => togglePref('photoModerationAlerts')}
       />
-    </>
+    </SettingsList>
   );
 
   const privacyRows = (
-    <>
+    <SettingsList>
       {/* Verilerimi İndir */}
-      <TouchableOpacity
+      <SettingsActionRow
+        title={t('settings.downloadData')}
         onPress={handleDownloadData}
         disabled={downloadLoading}
-        activeOpacity={0.8}
-        style={{
-          borderRadius: 36,
-          borderCurve: "continuous",
-          overflow: "hidden",
-          borderWidth: 0.5,
-          borderColor: colors.hairline,
-          flexDirection: "row",
-          alignItems: "center",
-          justifyContent: "space-between",
-          padding: 16,
-          paddingHorizontal: 20,
-          marginBottom: 8,
-        }}
-      >
-        <View style={{ flexDirection: "row", alignItems: "center", gap: 10, flex: 1 }}>
-          <View style={{ flex: 1 }}>
-            <Text style={{ color: colors.text, fontSize: 15, fontWeight: "500" }}>
-              {t('settings.downloadData')}
-            </Text>
-          </View>
-          {downloadLoading ? (
+        trailing={
+          downloadLoading ? (
             <ActivityIndicator
               size="small"
               color={colors.textSecondary}
@@ -785,162 +874,73 @@ export default function SettingsScreen() {
             />
           ) : (
             <SFIcon name="square.and.arrow.down" fallback={Download} size={18} color={colors.text} strokeWidth={2} weight="semibold" style={{ pointerEvents: "none" }} />
-          )}
-        </View>
-      </TouchableOpacity>
+          )
+        }
+      />
 
       {/* Engellenenler */}
-      <TouchableOpacity
+      <SettingsActionRow
+        title={t('settings.blockedUsers')}
         onPress={() => setBlockedVisible(true)}
-        activeOpacity={0.8}
-        style={{
-          borderRadius: 36,
-          borderCurve: "continuous",
-          overflow: "hidden",
-          borderWidth: 0.5,
-          borderColor: colors.hairline,
-          flexDirection: "row",
-          alignItems: "center",
-          justifyContent: "space-between",
-          padding: 16,
-          paddingHorizontal: 20,
-        }}
-      >
-        <View style={{ flexDirection: "row", alignItems: "center", gap: 10, flex: 1 }}>
-          <View style={{ flex: 1 }}>
-            <Text style={{ color: colors.text, fontSize: 15, fontWeight: "500" }}>
-              {t('settings.blockedUsers')}
-            </Text>
-          </View>
+        trailing={
           <SFIcon name="chevron.right" fallback={ChevronRight} size={18} color={colors.textSecondary} strokeWidth={1.5} style={{ pointerEvents: "none" }} />
-        </View>
-      </TouchableOpacity>
-    </>
+        }
+      />
+    </SettingsList>
   );
 
   const accountRows = (
-    <>
+    <SettingsList>
       {/* E-posta Değiştir */}
-      <TouchableOpacity
+      <SettingsActionRow
+        title={t('settings.changeEmail')}
         onPress={handleChangeEmail}
-        activeOpacity={0.8}
-        style={{
-          borderRadius: 36,
-          borderCurve: "continuous",
-          overflow: "hidden",
-          borderWidth: 0.5,
-          borderColor: colors.hairline,
-          flexDirection: "row",
-          alignItems: "center",
-          justifyContent: "space-between",
-          padding: 16,
-          paddingHorizontal: 20,
-          marginBottom: 8,
-        }}
-      >
-        <View style={{ flexDirection: "row", alignItems: "center", gap: 10, flex: 1 }}>
-          <View style={{ flex: 1 }}>
-            <Text style={{ color: colors.text, fontSize: 15, fontWeight: "500" }}>
-              {t('settings.changeEmail')}
-            </Text>
-          </View>
+        trailing={
           <SFIcon name="envelope" fallback={Mail} size={18} color={colors.text} strokeWidth={1.5} style={{ pointerEvents: "none" }} />
-        </View>
-      </TouchableOpacity>
+        }
+      />
 
       {/* Şifre Değiştir */}
-      <TouchableOpacity
+      <SettingsActionRow
+        title={t('settings.changePassword')}
         onPress={handleChangePassword}
-        activeOpacity={0.8}
-        style={{
-          borderRadius: 36,
-          borderCurve: "continuous",
-          overflow: "hidden",
-          borderWidth: 0.5,
-          borderColor: colors.hairline,
-          flexDirection: "row",
-          alignItems: "center",
-          justifyContent: "space-between",
-          padding: 16,
-          paddingHorizontal: 20,
-          marginBottom: 8,
-        }}
-      >
-        <View style={{ flexDirection: "row", alignItems: "center", gap: 10, flex: 1 }}>
-          <View style={{ flex: 1 }}>
-            <Text style={{ color: colors.text, fontSize: 15, fontWeight: "500" }}>
-              {t('settings.changePassword')}
-            </Text>
-          </View>
+        trailing={
           <SFIcon name="lock.rotation" fallback={KeyRound} size={18} color={colors.text} strokeWidth={1.5} style={{ pointerEvents: "none" }} />
-        </View>
-      </TouchableOpacity>
+        }
+      />
 
       {/* Çıkış Yap */}
-      <TouchableOpacity
+      <SettingsActionRow
+        title={t('profile.logout.button')}
         onPress={handleLogout}
-        activeOpacity={0.8}
-        style={{
-          borderRadius: 36,
-          borderCurve: "continuous",
-          overflow: "hidden",
-          borderWidth: 0.5,
-          borderColor: colors.hairline,
-          flexDirection: "row",
-          alignItems: "center",
-          justifyContent: "space-between",
-          padding: 16,
-          paddingHorizontal: 20,
-          marginBottom: 8,
-        }}
-      >
-        <View style={{ flexDirection: "row", alignItems: "center", gap: 10, flex: 1 }}>
-          <View style={{ flex: 1 }}>
-            <Text style={{ color: colors.text, fontSize: 15, fontWeight: "500" }}>
-              {t('profile.logout.button')}
-            </Text>
-          </View>
+        trailing={
           <SFIcon name="rectangle.portrait.and.arrow.right" fallback={LogOut} size={18} color={colors.text} strokeWidth={1.5} style={{ pointerEvents: "none" }} />
-        </View>
-      </TouchableOpacity>
+        }
+      />
 
-      {/* Hesabı Sil */}
-      <TouchableOpacity
+      {/* Hesabı Sil — dolu kırmızı kapsül DEĞİL artık: bölünmüş listede tek
+          bir satırın zemini boyanınca liste ikiye bölünüyor, ayırıcılar o
+          satırın etrafında anlamını kaybediyordu. Yıkıcılığı iOS'un kendi
+          dilinde taşıyor: kırmızı metin + kırmızı glif, satır düzeni diğer
+          satırlarla birebir aynı. Onay yine alert'te. */}
+      <SettingsActionRow
+        title={t('settings.deleteAccount')}
         onPress={handleDeleteAccount}
         disabled={deleteLoading}
-        activeOpacity={0.8}
-        style={{
-          borderRadius: 36,
-          borderCurve: "continuous",
-          overflow: "hidden",
-          borderWidth: 0.5,
-          borderColor: colors.errorStrong,
-          backgroundColor: colors.errorStrong,
-          flexDirection: "row",
-          alignItems: "center",
-          justifyContent: "space-between",
-          padding: 16,
-          paddingHorizontal: 20,
-        }}
-      >
-        <View style={{ flexDirection: "row", alignItems: "center", gap: 10, flex: 1 }}>
-          <View style={{ flex: 1 }}>
-            <Text style={{ color: colors.onInverseSurface, fontSize: 15, fontWeight: "500" }}>
-              {t('settings.deleteAccount')}
-            </Text>
-          </View>
-          {deleteLoading ? (
+        destructive
+        trailing={
+          deleteLoading ? (
             <ActivityIndicator
               size="small"
-              color={colors.onInverseSurface}
+              color={colors.errorStrong}
               style={{ width: 18, height: 18 }}
             />
           ) : (
-            <SFIcon name="trash.fill" fallback={Trash2} size={18} color={colors.onInverseSurface} strokeWidth={1.5} style={{ pointerEvents: "none" }} />
-          )}
-        </View>
-      </TouchableOpacity>
-    </>
+            <SFIcon name="trash.fill" fallback={Trash2} size={18} color={colors.errorStrong} strokeWidth={1.5} style={{ pointerEvents: "none" }} />
+          )
+        }
+      />
+    </SettingsList>
   );
 
   // Header'ın sol butonu — Bildirimler ekranıyla birebir aynı cam chevron
@@ -1027,7 +1027,10 @@ export default function SettingsScreen() {
           }}
         >
           {/* Kök liste: yalnız kategori başlığı + sağında chevron. Açıklamalar
-              burada YOK — bölüm açıklaması kategoriye girince görünüyor. */}
+              burada YOK — bölüm açıklaması kategoriye girince görünüyor.
+              Ayırıcılar kategori sayfalarındakiyle AYNI (bkz. SettingsList):
+              iki kademe de liste, ikisi de aynı dili konuşmalı. */}
+          <SettingsList>
           {SECTION_KEYS.map((key, i) => (
             <SettingsSection
               key={key}
@@ -1042,6 +1045,11 @@ export default function SettingsScreen() {
                 />
               }
               title={t(`settings.${key}.title`)}
+              // Kategori sayfalarındaki satır etiketleriyle BİREBİR tipografi:
+              // iki kademe de aynı listenin devamı, kademe atlarken metin
+              // ne büyüyor ne kalınlaşıyor.
+              titleSize={ROW_TEXT_SIZE}
+              titleWeight="500"
               marginTop={i === 0 ? 8 : 0}
               // Açık kategorinin satırı gri kalıyor: geri çekişinde solda
               // beliren kök listede hangi satırdan gelindiği görünüyor.
@@ -1049,6 +1057,7 @@ export default function SettingsScreen() {
               onPress={() => openSection(key)}
             />
           ))}
+          </SettingsList>
 
           {/* Ortam satırı — normal basışta hiçbir şey yapmaz, UZUN BASINCA
               satın alma teşhis raporunu panoya kopyalar (bkz.
@@ -1064,7 +1073,63 @@ export default function SettingsScreen() {
               {`LIT · ${__DEV__ ? "dev" : "release"}`}
             </Text>
           </TouchableOpacity>
+
+          {/* Harita atfı — ZORUNLU, dekoratif değil. Kartlardaki harita
+              Mapbox Static Images API'sinden `attribution=false&logo=false`
+              ile geliyor (bkz. buildMapboxStaticUrl); Mapbox bunu ancak atıf
+              uygulamanın başka bir yerinde METİN olarak dururken kabul
+              ediyor. Gösterildiği tek yer burası — kaldırmadan önce oradaki
+              iki parametreyi de kaldır.
+
+              Kategori değil, alt bilgi: bir ayar sunmuyor, yalnız künye.
+              Sağlayıcı adları tıklanabilir (Mapbox atıf yönergesi bağlantı
+              tercih ediyor), "©" ve isimler ÇEVRİLMİYOR — marka adları. */}
+          <Text
+            style={{
+              color: ink(0.25),
+              fontSize: 11,
+              textAlign: "center",
+              marginTop: 6,
+            }}
+          >
+            {t('settings.mapAttribution')}{' '}
+            <Text
+              style={{ color: ink(0.45) }}
+              onPress={() => {
+                Linking.openURL(MAPBOX_ATTRIBUTION_URL).catch(() => {});
+              }}
+            >
+              © Mapbox
+            </Text>
+            {'  '}
+            <Text
+              style={{ color: ink(0.45) }}
+              onPress={() => {
+                Linking.openURL(OSM_COPYRIGHT_URL).catch(() => {});
+              }}
+            >
+              © OpenStreetMap
+            </Text>
+          </Text>
         </Animated.ScrollView>
+
+        {/* Karartma perdesi kök kademenin İÇİNDE, listenin ÜSTÜNDE: dışarıda
+            dursaydı parallax'la kaymaz, kayan listeyle perde arasında ekranın
+            solunda bir şerit açılırdı. Kardeş olarak duruyor, ata değil —
+            `opacity` bir ata katmanına binseydi altındaki her şey offscreen
+            pass'e girerdi. `box-none` değil, tümden geçirgen: kök kademe zaten
+            kategori açıkken pointer'ları kapatıyor, perde onun üstüne ikinci
+            bir engel koymamalı. */}
+        <Animated.View
+          pointerEvents="none"
+          style={[
+            StyleSheet.absoluteFill,
+            // Sabit siyah (bkz. scrimAt): perde iki temada da karartır —
+            // açık modda "beyazlatmak" geri çekilme hissini vermiyor.
+            { backgroundColor: scrimAt(1) },
+            rootDimStyle,
+          ]}
+        />
       </Animated.View>
 
       {/* ── Üst kademe: kategori sayfası ──────────────────────────────────
@@ -1158,7 +1223,22 @@ export default function SettingsScreen() {
 // boşluğundan (26) küçük: vurgu ekran kenarına yapışmasın.
 const PRESS_INSET = 12;
 
-function SettingsSection({ title, subtitle, marginTop = 40, onPress, icon, active, titleSize = 20 }: any) {
+// `titleWeight`: sayfa başlığı (600) ile kategori SATIRI (500) aynı bileşenden
+// çiziliyor ama aynı ağırlıkta olmamalı — biri sayfanın adı, diğeri listedeki
+// bir seçenek.
+function SettingsSection({
+  title,
+  subtitle,
+  marginTop = 40,
+  onPress,
+  icon,
+  active,
+  titleSize = 20,
+  titleWeight = "600",
+}: any) {
+  // Basılı hâl STATE'te, `Pressable`ın `pressed` argümanında değil — gerekçe
+  // aşağıdaki style prop'unda.
+  const [pressed, setPressed] = useState(false);
   const block = (
     <View style={{ flexDirection: "column", alignItems: "flex-start", flex: 1 }}>
       {/* Başlıksız çağrı: kategori sayfasında başlık header'da duruyor, burada
@@ -1168,7 +1248,7 @@ function SettingsSection({ title, subtitle, marginTop = 40, onPress, icon, activ
           style={{
             color: colors.text,
             fontSize: titleSize,
-            fontWeight: "600",
+            fontWeight: titleWeight,
             marginBottom: subtitle ? 6 : 0,
           }}
         >
@@ -1185,14 +1265,15 @@ function SettingsSection({ title, subtitle, marginTop = 40, onPress, icon, activ
           }}
         >
           <SFIcon name="info.circle" fallback={InfoIcon} size={19} color={colors.textSecondary} strokeWidth={2} weight="semibold" />
-          {/* Kategori açıklaması satır etiketlerinden (15) bir tık BÜYÜK:
-              kategori sayfasında ekranın tek gri metni bu ve 14'te satırların
-              yanında fazla siliktı. Sayfa içinde başlık yok (o header'da), o
-              yüzden 17 hiyerarşiyi bozmuyor. İkon da metinle orantılı büyüdü. */}
+          {/* Açıklama satır etiketleriyle AYNI punto (ROW_TEXT_SIZE): bir tık
+              büyük denendi (18) ve kategori sayfasının içi kök listeye göre
+              şişkin okundu — sayfadaki her metin tek ölçüde. Ayrımı punto değil
+              renk/ağırlık taşıyor: bu gri ve 400, satırlar ise `colors.text` ve
+              500. Satır puntosu değişirse bu da birlikte kaymalı. */}
           <Text
             style={{
               color: colors.textSecondary,
-              fontSize: 17,
+              fontSize: ROW_TEXT_SIZE,
               lineHeight: 23,
               fontWeight: "400",
               flex: 1,
@@ -1217,15 +1298,26 @@ function SettingsSection({ title, subtitle, marginTop = 40, onPress, icon, activ
     // blok gibi durmuştu. Çözüm: negatif margin + eşit padding (satır içeriği
     // hizasını korur, zemin iki yana taşar) ve kapsül yerine ölçülü köşe.
     //
-    // ⚠️ Vurgu YALNIZ `pressed`e bağlanamıyor: dokunuş kategoriyi açar açmaz
-    // kök panelin pointerEvents'i kapanıyor, RN basışı iptal edip `pressed`i
-    // tek karede false'a çeviriyordu — gri zemin gözle görülmeden kayboluyor,
-    // "hiç olmuyor" gibi duruyordu. `active` (bu satırın kategorisi açık mı)
-    // vurguyu geçiş animasyonu boyunca ve sayfa açık kaldığı sürece tutuyor.
+    // ⚠️ `style` FONKSİYON OLARAK VERİLEMEZ — bu dosyada denendi ve satır
+    // stilsiz kaldı: babel'deki `jsxImportSource: "nativewind"` her RN
+    // bileşenini interop sürümüyle değiştiriyor, interop da inline stilde
+    // yalnız dizi/nesne tanıyor; fonksiyon bir stil kuralı sanılıp
+    // düzleştiriliyor ve HİÇ ÇAĞRILMIYOR. Hata/uyarı yok, o yüzden vurgunun
+    // hiç çizilmediği (üstelik marginTop/inset'in de düştüğü) fark edilmemişti.
+    // Bu yüzden basılı hâl `pressed` argümanından değil, onPressIn/Out ile
+    // tutulan state'ten geliyor ve stil düz bir dizi.
+    //
+    // Vurgu YALNIZ basışa da bağlanamıyor: dokunuş kategoriyi açar açmaz kök
+    // panelin pointerEvents'i kapanıyor, RN basışı iptal edip onPressOut'u tek
+    // karede tetikliyor — gri zemin gözle görülmeden kaybolurdu. `active` (bu
+    // satırın kategorisi açık mı) vurguyu geçiş animasyonu boyunca ve sayfa
+    // açık kaldığı sürece tutuyor.
     // Renk `ink()`: tema dönünce koyuda beyaz, açıkta siyah katman.
     <Pressable
       onPress={onPress}
-      style={({ pressed }) => [
+      onPressIn={() => setPressed(true)}
+      onPressOut={() => setPressed(false)}
+      style={[
         {
           marginTop,
           marginHorizontal: -PRESS_INSET,
@@ -1244,7 +1336,11 @@ function SettingsSection({ title, subtitle, marginTop = 40, onPress, icon, activ
           flexDirection: "row",
           alignItems: "center",
           gap: 12,
-          paddingVertical: 14,
+          // Kategori sayfalarındaki satırlarla AYNI dikey ritim (bkz.
+          // listRowStyle): iki kademe de ayırıcılı liste, kademeler arasında
+          // geçerken satır yükseklikleri zıplamamalı.
+          minHeight: ROW_MIN_HEIGHT,
+          paddingVertical: ROW_PAD_V,
         }}
       >
         {icon}
@@ -1271,7 +1367,115 @@ function SettingsSection({ title, subtitle, marginTop = 40, onPress, icon, activ
   );
 }
 
-// Reusable toggle row — icon + title + subtitle + Switch.
+// ── Bölünmüş liste (Mesajlaşma / Gizlilik / Hesap) ──────────────────────────
+//
+// Bu üç kategori kapsül DEĞİL: her satıra ayrı bir çerçeve çizmek yerine
+// satırlar tek bir sütun olarak akıyor ve aralarına saç teli kalınlığında bir
+// çizgi giriyor. Kapsül dizisi 4-5 satırda "aynı listenin parçaları" gibi
+// değil, üst üste dizilmiş ayrı kartlar gibi okunuyordu; ayırıcı hem daha az
+// mürekkep harcıyor hem de grubu tek bir blok yapıyor.
+//
+// Tema/Dil sayfaları bunun DIŞINDA: oradaki chip'ler bir liste değil, tek bir
+// seçimin şıkları — kapsül orada anlamı taşıyor (bkz. SettingsThemeRow).
+
+/**
+ * Liste gövdesinin puntosu. Kök listedeki kategori satırları (bkz.
+ * `titleSize`), kategori sayfalarındaki liste satırları ve kategori açıklaması
+ * — üçü de buradan besleniyor, iki kademe tek yerden büyüyüp küçülüyor.
+ *
+ * Açıklama bir ara satırlardan büyüktü (18); kategori sayfası kök listeye göre
+ * şişkin okunuyordu. Ayrımı artık punto değil renk + ağırlık taşıyor: açıklama
+ * gri ve 400, satırlar `colors.text` ve 500.
+ *
+ * Sayfa başlığı (`titleSize={22}`) bunun DIŞINDA: o satır değil, sayfanın adı.
+ */
+const ROW_TEXT_SIZE = 16;
+/**
+ * Tema/Dil chip'lerinin puntosu — satır etiketinin bir tık ALTINDA, bilerek
+ * ayrı sabit: chip bir liste satırı değil, dolgusu ve kapsülü metne göre
+ * ölçülmüş bir şık. Satırla aynı puntoya çıkarıldığında kapsüller şişip
+ * sayfanın tek içeriği olarak fazla ağır duruyordu.
+ */
+const CHIP_TEXT_SIZE = 15;
+/**
+ * Satırların ortak yüksekliği. Sabitlenmesi ŞART: switch'li satır (31pt) ile
+ * ikon'lu satır (18pt) yalnız dolguyla hizalandığında ayırıcılar eşit
+ * aralıklarla düşmüyor, liste hafifçe titrek okunuyordu.
+ *
+ * Tek satırlık etiketlerde satır yüksekliğini FİİLEN bu belirliyor (dolgu her
+ * iki tipte de bunun altında kalıyor) — aralığı buradan aç/kapat.
+ */
+const ROW_MIN_HEIGHT = 60;
+/**
+ * Satır içi dikey dolgu. Etiket iki satıra taştığında `minHeight` devre dışı
+ * kalıyor, nefes payını o zaman bu veriyor — tek satırlık hâlle aynı hissi
+ * versin diye yüksek. Kök listedeki kategori satırları da bunu kullanıyor.
+ */
+const ROW_PAD_V = 12;
+
+function SettingsList({ children }: { children: React.ReactNode }) {
+  // `Children.toArray` fragment'ları DÜZLEMİYOR — satırlar bu bileşenin
+  // doğrudan çocuğu olmalı, araya `<>…</>` girerse tek çocuk sayılıp hiç
+  // ayırıcı çizilmez.
+  const rows = Children.toArray(children).filter(isValidElement);
+  return (
+    <View>
+      {rows.map((row, i) => (
+        <Fragment key={i}>
+          {i > 0 ? (
+            <View
+              style={{
+                height: StyleSheet.hairlineWidth,
+                backgroundColor: colors.hairlineStrong,
+              }}
+            />
+          ) : null}
+          {row}
+        </Fragment>
+      ))}
+    </View>
+  );
+}
+
+/** Liste satırlarının ortak düzeni: solda etiket, sağda ikon/gösterge. */
+const listRowStyle = {
+  flexDirection: "row" as const,
+  alignItems: "center" as const,
+  justifyContent: "space-between" as const,
+  gap: 12,
+  minHeight: ROW_MIN_HEIGHT,
+  paddingVertical: ROW_PAD_V,
+};
+
+/**
+ * Basılabilir liste satırı. `destructive`: yıkıcı eylem kırmızı METİNLE
+ * anlatılıyor (dolu kırmızı zeminle değil) — bölünmüş listede boyalı tek satır
+ * grubu ortadan ikiye bölerdi.
+ */
+function SettingsActionRow({ title, trailing, onPress, disabled, destructive }: any) {
+  return (
+    <TouchableOpacity
+      onPress={onPress}
+      disabled={disabled}
+      activeOpacity={0.6}
+      style={listRowStyle}
+    >
+      <Text
+        style={{
+          color: destructive ? colors.errorStrong : colors.text,
+          fontSize: ROW_TEXT_SIZE,
+          fontWeight: "500",
+          flex: 1,
+        }}
+      >
+        {title}
+      </Text>
+      {trailing}
+    </TouchableOpacity>
+  );
+}
+
+// Reusable toggle row — title + Switch.
 // Optimistic toggle pattern: parent state'i hemen değişir, fail durumunda rollback.
 //
 // `locked`: ayar premium'a bağlıysa satır görsel olarak diğer switch'li
@@ -1287,34 +1491,31 @@ function SettingsToggleRow({
   locked,
   onLockedPress,
 }: any) {
-  const rowStyle = {
-    borderRadius: 36,
-    borderCurve: "continuous" as const,
-    overflow: "hidden" as const,
-    borderWidth: 0.5,
-    borderColor: colors.hairline,
-    flexDirection: "row" as const,
-    alignItems: "center" as const,
-    justifyContent: "space-between" as const,
-    padding: 16,
-    marginBottom: 8,
-  };
+  const rowStyle = listRowStyle;
 
+  // Etiket ve switch KARDEŞ — araya sarmalayıcı girmiyor. Öncesinde metin iki
+  // ayrı View'ın içindeydi: dıştaki `flex: 1` yüzünden satırın boş yüksekliğini
+  // de kaplıyor, kendi `alignItems`'ı metni o kutunun ortasına alıyordu; switch
+  // ise satırın ortasına hizalanıyordu. İki farklı kutunun ortası çakışmayınca
+  // switch metne göre kayık duruyordu. Tek kutu = tek orta.
   const body = (
     <>
-      <View style={{ flexDirection: "row", alignItems: "center", gap: 10, flex: 1 }}>
-        <View style={{ flex: 1 }}>
-          <Text style={{ color: colors.text, fontSize: 15, fontWeight: "500" }}>
-            {title}
-          </Text>
-        </View>
-      </View>
+      <Text
+        style={{
+          color: colors.text,
+          fontSize: ROW_TEXT_SIZE,
+          fontWeight: "500",
+          flex: 1,
+        }}
+      >
+        {title}
+      </Text>
       {locked ? (
         // Aynı switch, soluk. Dokunuş switch'e DEĞİL satıra gitmeli
         // (pointerEvents: "none") — aksi halde basış paywall'ı açmadan
         // switch'te yutulurdu. `value={false}`: premium olmadan önizleme
         // fiilen kapalı, açık bir switch yanlış beklenti yaratırdı.
-        <View style={{ opacity: 0.4, pointerEvents: "none" }}>
+        <View style={{ opacity: 0.4, pointerEvents: "none", alignSelf: "center" }}>
           <Switch
             value={false}
             trackColor={{ false: colors.hairlineStrong, true: colors.errorStrong }}
@@ -1327,6 +1528,7 @@ function SettingsToggleRow({
           value={value}
           onValueChange={onToggle}
           disabled={disabled}
+          style={{ alignSelf: "center" }}
           trackColor={{ false: colors.hairlineStrong, true: colors.errorStrong }}
           thumbColor={colors.text}
           ios_backgroundColor={colors.border}
@@ -1391,14 +1593,13 @@ function SettingsThemeRow() {
               borderColor: isSelected ? colors.inverseSurface : colors.hairline,
             }}
           >
-            {/* Chip metni satır etiketleriyle (15) aynı puntoda: sayfanın TEK
-                etkileşimi bu üç chip, 13'te açıklamanın (17) yanında ikincil
-                bir rozet gibi duruyordu. İkon ve yan boşluk metinle orantılı
-                büyüdü — chip'in dolgu/metin dengesi korunuyor. */}
+            {/* Chip puntosu (CHIP_TEXT_SIZE) satır etiketinden bağımsız —
+                gerekçe sabitin başında. İkon etiketten bir tık büyük: aynı
+                puntoda glif optik olarak metnin altında kalıyor. */}
             <SFIcon
               name={sf}
               fallback={lucide}
-              size={16}
+              size={CHIP_TEXT_SIZE + 1}
               color={isSelected ? colors.onInverseSurface : colors.textSecondary}
               strokeWidth={1.5}
               style={{ pointerEvents: "none" }}
@@ -1406,7 +1607,7 @@ function SettingsThemeRow() {
             <Text
               style={{
                 color: isSelected ? colors.onInverseSurface : colors.textSecondary,
-                fontSize: 15,
+                fontSize: CHIP_TEXT_SIZE,
                 fontWeight: "500",
               }}
             >
@@ -1454,13 +1655,13 @@ function SettingsLanguageRow({
               borderColor: isSelected ? colors.inverseSurface : colors.hairline,
             }}
           >
-            {/* Punto tema chip'leriyle BİREBİR (15): iki sayfa aynı deseni
-                kullanıyor, birinde 13 birinde 15 olsaydı kategoriler arası
+            {/* Punto tema chip'leriyle BİREBİR (CHIP_TEXT_SIZE): iki sayfa aynı
+                deseni kullanıyor, ayrı puntolar olsaydı kategoriler arası
                 geçişte metin zıplardı. */}
             <Text
               style={{
                 color: isSelected ? colors.onInverseSurface : colors.textSecondary,
-                fontSize: 15,
+                fontSize: CHIP_TEXT_SIZE,
                 fontWeight: "500",
               }}
             >
