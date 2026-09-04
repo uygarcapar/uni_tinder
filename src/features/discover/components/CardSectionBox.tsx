@@ -5,11 +5,20 @@ import { colors as theme, isLight, withAlpha } from "@/shared/theme/colors";
 import { glassColorScheme, hasLiquidGlassSurface } from "@/shared/theme/glass";
 
 /**
- * Kartın CAM YÜZEY ilkeli. İki yerde kullanılıyor:
+ * Kartın CAM YÜZEY ilkeli. Kutunun kullanıldığı yerler:
  *   • Açık paneldeki bölüm kutuları — üniversite · niyet · ilgi alanları ·
  *     yaşam tarzı · prompt · bio · konum. (Fotoğraf blokları HARİÇ, onların
  *     kabı SectionPhoto.)
- *   • Kapaktaki ortak nokta pilleri (radius 999).
+ *   • Kapaktaki ortak nokta pilleri (radius 999) ve kapak not diski.
+ *
+ * AÇIK PANELDEKİ KUTULAR CAM (`glass={glassPanel}` — bkz. SwipeCard >
+ * glassPanel notu); kapak pilleri ve not diski KALICI olarak camsız, gerekçeleri
+ * kendi çağrı yerlerinde. Camı bir tur tamamen kaldırılmıştı, geri açıldı.
+ *
+ * ⚠️ Camın altındaki zemin 26+'da bir `BlurView` (CardGlassBackdrop) — yani
+ * efekt view üstünde efekt view, ve ikisi aynı sürüm kapısını okuduğu için hep
+ * BİRLİKTE açılıyorlar. Kutular "bazı kartlarda var, bazılarında yok" hâline
+ * dönerse aşağıdaki üç tuzaktan ÖNCE oraya bak.
  *
  * Tek yerde durmasının sebebi süsleme değil: aşağıdaki üç `GlassView` tuzağı
  * her cam yüzeyde geçerli ve her çağıran tarafında ayrı ayrı çözülemez.
@@ -134,19 +143,59 @@ function sectionGlassTint(): string {
   return withAlpha(theme.bg, isLight() ? 0.24 : 0.2);
 }
 
+/**
+ * Kutunun arkasındaki gölge — POLARİTESİ MODLA DÖNÜYOR ve kutunun KENDİ
+ * rengini izliyor: koyu modda siyah, açık modda beyaz.
+ *
+ * Yani gölge kontrast bir dış çizgi değil, kutunun zeminini zemine bağlayan
+ * yumuşak bir pay. Tersi de denendi (koyuda beyaz hâle) — istenmedi.
+ *
+ * `theme.shadow` yalnız SİYAH tarafta kullanılıyor; o token her iki modda da
+ * siyah (bkz. kendi notu), açık moddaki beyaz karşılığı yok.
+ *
+ * Yön moda bağlı: siyah gölge aşağı düşüyor (3px), beyaz olan simetrik hâle
+ * (0). Beyaz bir "gölgenin" aşağı kaçması ışık değil leke gibi duruyor.
+ *
+ * Opaklık iki tarafta da yüksek görünüyor ama sonuç HAFİF: gölge zeminle aynı
+ * polaritede olduğu için (siyah üstüne siyah, beyaz üstüne beyaz) düşük
+ * alfada hiç okunmuyordu.
+ *
+ * RENDER SIRASINDA ÇAĞIR (colors.ts mutasyon sözleşmesi).
+ */
+function sectionShadow(): ViewStyle {
+  const light = isLight();
+  return {
+    shadowColor: light ? "#FFFFFF" : theme.shadow,
+    shadowOffset: { width: 0, height: light ? 0 : 3 },
+    shadowOpacity: 0.35,
+    shadowRadius: 10,
+    // Android'de gölgenin rengi API 28'den itibaren shadowColor'ı izliyor;
+    // altındaki sürümlerde siyah kalır — kabul, orada zaten cam da yok.
+    elevation: 3,
+  };
+}
+
 export default function CardSectionBox({
   glass,
+  elevated = false,
   radius = 40,
   style,
   fallbackStyle,
   children,
 }: {
   /**
-   * Kartın zemini blur'lu fotoğraf mı (bkz. SwipeCard `glassPanel`). `false`
-   * iken kutu eski düz yüzeyinde kalıyor — önizleme kartlarının (Likes / Chat /
-   * Profil) yolu bu.
+   * Kutu native cam mı. `false` iken düz `surfaceTranslucent` yüzeyde kalıyor —
+   * ŞU AN BÜTÜN ÇAĞIRANLAR bunu veriyor (bkz. dosyanın başındaki not).
    */
   glass: boolean;
+  /**
+   * Kutunun arkasında hafif gölge (bkz. sectionShadow) — panelin bölüm
+   * kutuları bunu veriyor, kapak pilleri ve not diski VERMİYOR: onlar
+   * fotoğrafın üstünde duruyor, orada zaten kendi kenarlıkları var.
+   *
+   * Gölge kutunun KENDİ KIRPMASINI da kapatıyor; gerekçe aşağıda.
+   */
+  elevated?: boolean;
   radius?: number;
   /** Marj + dolgu; kutunun ölçüsünü bu ve çocuklar belirliyor. */
   style?: StyleProp<ViewStyle>;
@@ -235,14 +284,29 @@ export default function CardSectionBox({
     );
   }
 
-  // Cam yoksa değişiklik öncesindeki yüzey — iki durumda da AYNI (blur'lu foto
-  // zemininin üstünde de, düz gri panelin üstünde de). `surfaceTranslucent`
-  // yarı saydam olduğu için zemin bir tık geçiyor, kutu yine de opak okunuyor.
+  // OPAK ZEMİN: koyuda siyah, açıkta beyaz (`theme.bg`). Bir dönem
+  // `surfaceTranslucent` (bg'nin ~%80'i) vardı ve altındaki blur'lu fotoğraf bir
+  // tık sızıyordu; kutular istendiği gibi net bir siyah/beyaz levha olarak
+  // okunmuyordu. İçlerindeki piller bu yüzden `surface3` grisine çekildi (bkz.
+  // SwipeCard > distancePillColors'ın üstündeki not) — beyaz kutuda beyaza yakın
+  // pil kayboluyordu.
+  //
+  // Kendi zemini olan çağıranlar (kapak pilleri · not diski) bunu
+  // `fallbackStyle` ile eziyor: dizide sonra geliyor.
+  //
+  // GÖLGELİ YOLDA `overflow: hidden` YOK, ŞART: iOS'ta o prop clipsToBounds'a
+  // dönüyor ve gölge kutunun DIŞINA düştüğü için tamamen kırpılıyor — ikisi
+  // aynı view'da olamaz. Bölüm kutularının çocukları kendi kırpmalarını zaten
+  // yapıyor (harita · piller · not kutusu hepsi kendi radius + overflow'unu
+  // taşıyor), o yüzden clip'i bırakmanın bedeli yok. Gölgesiz yolda (kapak
+  // pilleri · not diski) eski davranış aynen duruyor.
   return (
     <View
       style={[
         shape,
-        { overflow: "hidden", backgroundColor: theme.surfaceTranslucent },
+        elevated
+          ? { backgroundColor: theme.bg, ...sectionShadow() }
+          : { overflow: "hidden", backgroundColor: theme.bg },
         style,
         fallbackStyle,
       ]}

@@ -17,11 +17,17 @@ import { colors as theme } from "@/shared/theme/colors";
 // SwipeCard'ın içinde tanımlıydı; CardStickyHeader de aynı satırı çizmeye
 // başlayınca buraya taşındı — şerit SwipeCard'dan import edilseydi iki modül
 // birbirini çağırırdı (SwipeCard → CardStickyHeader → SwipeCard).
-export const ACTIVITY_DOT_SIZE = 9;
+// 9 → 7 ve metin 13 → 11: satır artık kartın hiçbir yerinde tek başına
+// durmuyor, sticky şeritte ismin YANINDA duruyor (bkz. CardStickyHeader). Orada
+// isim 21pt ve bu satır ona eşlik eden bir dipnot — eski ölçüde ikinci bir
+// başlık gibi okunuyordu. Noktayla metin birlikte küçüldü: ikisinin oranı
+// (nokta ≈ metnin 2/3'ü) korunmalı, yoksa nokta ya lekeye ya toz tanesine
+// dönüyor.
+export const ACTIVITY_DOT_SIZE = 7;
 
 export default function ActivityStatus({ label }: { label: string }) {
   return (
-    <View style={{ flexDirection: "row", alignItems: "center", gap: 6 }}>
+    <View style={{ flexDirection: "row", alignItems: "center", gap: 5 }}>
       {/* Nokta sakin: parlama/nabız YOK — o "şu an bağlı" sinyalidir. */}
       <View
         style={{
@@ -31,7 +37,7 @@ export default function ActivityStatus({ label }: { label: string }) {
           backgroundColor: theme.success,
         }}
       />
-      <Text className="font-[600] text-[13px]" style={{ color: theme.success }}>
+      <Text className="font-[600] text-[11px]" style={{ color: theme.success }}>
         {label}
       </Text>
     </View>

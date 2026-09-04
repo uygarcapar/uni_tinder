@@ -465,7 +465,7 @@ export default function LikerSwipeModal({
                     profile={profile}
                     previewMode
                     expanded={false}
-                    hideChevron
+                    hideExpandHint
                     hideSuperLike
                     // Jest kapalıysa kartın altındaki X/tik satırı da kalkar:
                     // ikisi AYNI aksiyonun iki yolu, birini bırakmak kapıyı

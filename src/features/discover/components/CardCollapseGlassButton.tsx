@@ -11,7 +11,7 @@ import {
 import { ArrowUp } from "@/shared/icons";
 import SFIcon from "@/shared/components/SFIcon";
 import { colors as theme, withAlpha } from "@/shared/theme/colors";
-import { glassFallback } from "@/shared/theme/glass";
+import { glassClearShadow, glassFallback } from "@/shared/theme/glass";
 import GlassFallbackSurface from "@/shared/components/GlassFallbackSurface";
 import { SUPER_LIKE_GLASS_SIZE } from "./SuperLikeGlassButton";
 
@@ -175,6 +175,10 @@ function CardCollapseGlassButton({ onPress, label }: Props) {
                 glass: { variant: "clear", interactive: true },
                 shape: "circle",
               }),
+              // Açık moddaki ayrışma gölgesi — camdan SONRA. Sağdaki kardeşi
+              // (CardMenuGlassButton) aynı gölgeyi ortak zincirden alıyor;
+              // biri alıp diğeri almazsa şeridin iki ucu farklı görünür.
+              ...glassClearShadow(),
               a11yLabel(label),
               // iOS 26 altında glassEffect sessizce no-op → kabuğun KENARINI
               // biz çiziyoruz, zemini sarmalayıcı.

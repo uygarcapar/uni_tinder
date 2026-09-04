@@ -105,8 +105,8 @@ export default function PreviewModal({
           fillOverscroll={!!profile && !backdropUri}
         >
           {profile ? (
-            // hideChevron: kart zaten `expanded` açılıyor ve `onExpandPress`
-            // yok — ok sadece dekoratif kalıyordu. LikerSwipeModal ile aynı.
+            // hideExpandHint: kart zaten `expanded` açılıyor ve `onExpandPress`
+            // yok — ipucu sadece dekoratif kalıyordu. LikerSwipeModal ile aynı.
             // expanded={false}: scroll'u saran CardSheetScrollView yapar, kartın
             // kendi scroll'u kapalı (bkz. CardSheetScrollView).
             <SwipeCard
@@ -114,7 +114,7 @@ export default function PreviewModal({
               hideActions
               previewMode
               expanded={false}
-              hideChevron
+              hideExpandHint
               zoomImpact={photoZoom}
               onReport={onReport}
               onBlock={onBlock}

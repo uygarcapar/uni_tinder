@@ -40,6 +40,25 @@ export const cardExpandAnim = makeMutable(0);
 // Top card'ın pull-down (super-like) progress'i.
 export const cardPullProgress = makeMutable(0);
 
+/**
+ * Kapak KROMUNUN devir oranı (0-1) — `cardExpandAnim`den AYRI bir düğme.
+ *
+ * Krom = kapak fotoğrafının üstünde duran ve açık kartta yeri olmayan katman:
+ * isim + pill bloğu (sol alt), "yukarı kaydır" ipucu (alt orta) ve serbest
+ * süper beğeni kalbi — kalp sönmüyor, sağ üstteki cam butona DÖNÜŞÜYOR.
+ *
+ * Neden expand'den ayrı bir değer: bu ikisinin ZAMANLAMASI artık farklı.
+ * Krom PARMAKLA devroluyor (çekiş boyunca ilerler, eşikte biter), panel ise
+ * BIRAKIŞTA açılıyor. Tek değere bağlıyken çekiş ya paneli de açıyordu (kartın
+ * altından sızan panel) ya da krom bırakışa kadar donuk kalıyordu. Ayrılınca
+ * çekiş "neye dokunduğunu" gösteriyor, açılış kararı ise elden çıkmıyor.
+ *
+ * Eşikte 1'e varır ve açılış boyunca 1'de KALIR (expanded kartın kalıcı hâli
+ * de bu). Sıfıra dönüşü iki yoldan: eşiğe varmadan bırakış (niyet iptal) veya
+ * kapanış.
+ */
+export const cardChromeAnim = makeMutable(0);
+
 // Card stack container'ının expand/collapse durumu.
 export const containerExpand = makeMutable(0);
 
@@ -51,7 +70,7 @@ export const containerExpand = makeMutable(0);
 /**
  * Expand/pull durumunu sıfırla — kart destesi her taze doğuşunda.
  *
- * Bu üç değer MODÜL seviyesinde: onları yazan ağaç (Discover destesi) unmount
+ * Bu dört değer MODÜL seviyesinde: onları yazan ağaç (Discover destesi) unmount
  * olsa da değer ayakta kalıyor. Kart expanded'ken (1) tema değişimi ağacı
  * remount ediyor (App.tsx `key={mode}`) ya da (2) deste tazelenip top kart
  * değişiyorsa, yeni kart 1'de donmuş expand değeriyle doğuyordu: header soluk +
@@ -68,9 +87,11 @@ export function resetCardExpandState(): void {
   cancelAnimation(cardExpandAnim);
   cancelAnimation(cardPullProgress);
   cancelAnimation(containerExpand);
+  cancelAnimation(cardChromeAnim);
   cardExpandAnim.value = 0;
   cardPullProgress.value = 0;
   containerExpand.value = 0;
+  cardChromeAnim.value = 0;
 }
 
 /**

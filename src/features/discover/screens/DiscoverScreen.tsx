@@ -53,6 +53,7 @@ import SwipeWrapper from "@/features/discover/components/SwipeWrapper";
 import SwipeOverlay from "@/features/discover/components/SwipeOverlay";
 import { openLitPlus } from "@/features/profile/litPlusEntry";
 import SuperLikePurchaseModal from "@/features/discover/components/SuperLikePurchaseModal";
+import { Image as ExpoImage } from "expo-image";
 import FilterModal from "@/features/discover/components/FilterModal";
 import ReportModal from "@/shared/components/ReportModal";
 import moderationService from "@/shared/services/moderationService";
@@ -90,7 +91,10 @@ import { runFlameSweep } from "@/features/discover/flameSweep";
 import {
   DISCOVER_CARD_TOP_GAP,
   DISCOVER_HEADER_HEIGHT,
+  EXPAND_SCRIM_ALPHA,
+  discoverTabBarInset,
 } from "@/features/discover/components/discoverHeaderMetrics";
+import { CARD_FACE_CORNER_RADIUS } from "@/features/discover/components/CardStickyHeader";
 import NoteComposerModal from "@/features/discover/components/NoteComposerModal";
 import NotePurchaseModal from "@/features/discover/components/NotePurchaseModal";
 import {
@@ -116,14 +120,9 @@ import { analytics } from "@/shared/services/analytics";
 import { navigationRef } from "@/shared/services/navigationRef";
 import type { NoteTarget, PotentialMatch } from "@/shared/types";
 
-// Tab bar geometry — TabNavigator ile tutarlı:
-// FLOATING_BAR_HEIGHT (64) + FLOATING_BAR_BOTTOM_GAP (-10) + insets.bottom + extra gap (12)
-const TAB_BAR_HEIGHT = 64;
-const TAB_BAR_BOTTOM_GAP = -10;
-// Kart alt kenarı ile yüzen tab bar arasındaki nefes payı. 12 → 4: kart tab
-// bar'a bir tık daha yaklaşsın istendi; 0 yapılmıyor, kartın yuvarlak köşesi
-// bar'a değmiş gibi durmasın.
-const CARD_BOTTOM_GAP = 4;
+// Tab bar geometrisi ortak dosyada (discoverTabBarInset): SwipeCard da aynı
+// payı okumak zorunda — kapak ekranın dibine kadar indiği için alt bandındaki
+// yazılar o pay kadar yukarıda durmalı.
 
 // Günlük beğeni kotası azalırken uyarı verilen KALAN hak eşikleri.
 // Tavanın yüzdesi DEĞİL mutlak sayı: tavan sunucu config'inden geliyor
@@ -212,7 +211,9 @@ const SkeletonCard = () => {
     <View
       style={{
         flex: 1,
-        borderRadius: 40,
+        // Kartın YÜZÜYLE aynı yarıçap: iskeletten karta geçerken köşe
+        // değişmesin (bkz. CARD_FACE_CORNER_RADIUS).
+        borderRadius: CARD_FACE_CORNER_RADIUS,
         borderCurve: "continuous",
         overflow: "hidden",
         backgroundColor: colors.surface,
@@ -1349,6 +1350,47 @@ export default function DiscoverScreen() {
     }
   });
 
+  /**
+   * İlk kartın kapak fotoğrafı hazır mı — iskelet bunu bekliyor.
+   *
+   * Kart, fotoğrafı gelmeden mount edildiğinde ekranda ARA BİR KARE oluyordu:
+   * kabuk çizilmiş, kapak boş, iskeletin kendisi ise kartın geometrisiyle
+   * (kabuk kartın göründüğü alandan uzun, kapak kutusu ondan da uzun ve yukarı
+   * kaydırılmış) bir türlü aynı boya oturmuyordu. Her denemede farklı bir gri
+   * dikdörtgen kalıyordu.
+   *
+   * Çözüm ölçüyü düzeltmek değil, o kareyi HİÇ ÇİZMEMEK: fotoğraf önceden
+   * yükleniyor, kart ancak hazır olduğunda mount ediliyor. Ekran iskeletten
+   * doğrudan gerçek karta geçiyor.
+   *
+   * BİR KEZ: yalnız ilk kart için. Deste ilerlerken (swipe) sonraki kartların
+   * fotoğrafları zaten arka planda prefetch ediliyor (bkz. SwipeCard) ve orada
+   * beklemek her kaydırmada iskelet göstermek olurdu.
+   */
+  const [firstPhotoReady, setFirstPhotoReady] = useState(false);
+  useEffect(() => {
+    if (firstPhotoReady) return;
+    const first = potentialMatches[0];
+    if (!first) return;
+    const uri = first.photos?.[0];
+    // Fotoğrafsız profilde beklenecek bir şey yok.
+    if (!uri) {
+      setFirstPhotoReady(true);
+      return;
+    }
+    let cancelled = false;
+    // `finally`: yükleme başarısız olsa da kartı göster — aksi halde ağ hatası
+    // ekranı kalıcı iskelette bırakırdı.
+    ExpoImage.prefetch(uri)
+      .catch(() => {})
+      .finally(() => {
+        if (!cancelled) setFirstPhotoReady(true);
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, [potentialMatches, firstPhotoReady]);
+
   // ── Profil keşifte görünmüyorken ETKİLEŞİMLER kilitli ───────────────────
   // GÖRÜNÜRLÜK KİLİT DEĞİL: profil keşif havuzunda görünmüyorken de (fotoğraf
   // incelemede / yetersiz görünür fotoğraf) beğeni, süper beğeni, pass ve not
@@ -1588,36 +1630,45 @@ export default function DiscoverScreen() {
     ],
   }));
 
-  // Tab bar tarafından kaplanan dikey alan — kartın bottom'unun üstünde durması için.
-  // cardExpandAnim'e bağlı: pull sırasında container progressively büyür → içerik
-  // pull oranıyla görünür hale gelir. photoHeight set-once olduğu için onLayout
-  // loop'u tetiklenmez, lag yok.
-  const tabBarOccupied =
-    insets.bottom + TAB_BAR_HEIGHT + TAB_BAR_BOTTOM_GAP + CARD_BOTTOM_GAP;
-  const cardContainerStyle = useAnimatedStyle(() => ({
-    // CLAMP ŞART, kozmetik değil. Bütün collapse yolları
-    // `withSpring(0, {damping:16, stiffness:380})` kullanıyor; sönüm oranı ~0.41,
-    // yani spring 0'ın ALTINA sarkıyor (~-0.2). Clamp'siz `1 - value` o karelerde
-    // 1'i aşıyor ve dolgu dinlenme değerinin üstüne çıkıyor → kart, collapsed
-    // boyundan ~25px DAHA KISA bir frame'de ölçülüyor.
-    //
-    // Bedeli kalıcı: SwipeCard yüksekliği "en küçük ölçüm kazanır" kuralıyla
-    // kilitliyor (bkz. oradaki onLayout notu), yani o geçici kare photoHeight'ı
-    // sonsuza dek küçültüyor. Panel `marginTop: PROFILE_PANEL_GAP` ile kapağa
-    // göre konumlandığı için aradaki fark kadar YUKARI kayıyor: panel kapak
-    // fotoğrafının üstüne biniyordu ("bazen expand ederken bozuluyor" —
-    // yarıda bırakılan bir pull-up'ın geri snap'i de aynı springi çalıştırıyor).
-    // SwipeWrapper'daki `bottom` aynı sebeple zaten clamp'li.
-    paddingBottom:
-      tabBarOccupied * (1 - Math.max(0, Math.min(1, cardExpandAnim.value))),
-  }));
+  /**
+   * Kart kabının alt dolgusu — ARTIK ANİMASYONLU DEĞİL, ve deste varken SIFIR.
+   *
+   * Kapak fotoğrafı ekranın dibine kadar iniyor: yüzen tab bar'ın altına da
+   * giriyor, yani kart tam ekran bir fotoğraf olarak duruyor. Çekişte kart
+   * yalnız YUKARI kayıyor (alt kenarı ekranın dibinde sabit) ve altından panel
+   * geliyor — açılış tek yönlü bir hareket.
+   *
+   * Eskiden burada `tabBarOccupied * (1 - cardExpandAnim)` vardı: kart kapalı
+   * hâlde tab bar'ın üstünde bitiyor, açılırken dolgu eriyip kart aşağı
+   * uzuyordu. İki sorunu vardı — panel aşağıdan gelirken tam o bandın üstünde
+   * kesiliyordu, ve dolgu her karede layout'u yeniden hesaplatıyordu (kartın
+   * `bottom`u ve panelin `marginTop`u ile birlikte üçüncü layout animasyonu).
+   *
+   * KAPALI kart tab bar'ın ÜSTÜNDE bitiyor — dolgu her zaman duruyor. Açılışta
+   * kabuk bu payı da yiyerek ekranın dibine iniyor, ama onu `bottom` yapıyor
+   * (bkz. SwipeWrapper animatedStyle), dolgu değil: kap sabit kaldıkça kartın
+   * altındaki her şey (panelin geleceği alan) tek bir yerden ölçülüyor.
+   */
+  const tabBarOccupied = discoverTabBarInset(insets.bottom);
 
-  // Expand ederken header içeriği (ikonlar/logo) çekme oranıyla soluklaşır →
-  // header geri çekilip kart öne çıkmış hissi. bg #121212 zaten koyu olduğu
-  // için karartma görünmez; asıl görünür efekt içeriğin fade'i. cardExpandAnim 0→1.
-  const headerFadeStyle = useAnimatedStyle(() => ({
-    opacity: 1 - cardExpandAnim.value * 0.6,
-  }));
+  /**
+   * ── ÜST ŞERİDİN KARARTMASI KALDIRILDI (istek) ────────────────────────────
+   *
+   * Burada `headerScrimStyle` vardı: kart açılırken şeridin üstüne
+   * `EXPAND_SCRIM_ALPHA` oranında siyah bir perde iniyordu.
+   *
+   * Gerekçesi kayıt için duruyor — geri istenirse sıfırdan tartışılmasın:
+   * şerit bir dönem yalnız soluyordu ve "zemin zaten koyu, karartma görünmez"
+   * deniyordu; o gerekçe AÇIK MODDA geçmiyor, orada zemin beyaz kalıyor ve
+   * geçiş "kart bir sayfanın üstüne biniyor" yerine "kart boşluğa kayıyor" gibi
+   * okunuyordu. Perde, referans alınan geçişteki (Instagram gönderi açılışı)
+   * "arka sayfa solmuyor, KARARIYOR" görüntüsünü veriyordu. 0.92 fazla (şerit
+   * simsiyah), 0.3 az (geri çekilme okunmuyor), 0.45 yerleşen değerdi.
+   *
+   * Geri gelirse kartın içindeki eşiyle (SwipeCard > cardGapScrimStyle) AYNI
+   * oranı okumalı; ayrışırlarsa kartın üstü ile kapak-panel arası farklı tonda
+   * kararıyor.
+   */
 
   // Expanded'ken header ikonları (rewind/filtre) çalışmasın — sadece kart mode'da
   // aktif. cardExpandAnim'i JS boolean'a çevirip ikon satırının touch'unu kapatırız.
@@ -1678,14 +1729,37 @@ export default function DiscoverScreen() {
     refetchMatches,
   ]);
 
-  const handleSwipe = useEvent((direction, userId) => {
+  /**
+   * Bu profile gidecek bir beğeni EŞLEŞMEYLE mi sonuçlanır?
+   *
+   * İki kaynak OR'lanıyor, ikisi de eksik olabildiği için:
+   *   • Kartın kendi `hasLikedMe` bayrağı — free üyede düz beğeni için her zaman
+   *     `false` geliyor (yalnız SuperLike/not gerçek değeri taşıyor, bkz. DTO).
+   *   • Yerel "beni beğenenler" kümesi — yalnız ÇEKİLEN SAYFAYI biliyor, yani
+   *     ikinci sayfadaki bir liker burada görünmüyor.
+   * Kestirim yanlışsa maliyet küçük ve tek yönlü: eşleşme sanılmayan bir süper
+   * beğenide alev süpürmesi oynar, MatchModal da ardından açılır (düzeltmeye
+   * çalıştığımız eski davranışın ta kendisi) — tersi, yani eşleşmeyen bir
+   * süper beğeninin kutlamasız kalması olmuyor.
+   *
+   * Kümeyi `store.getState()` ile okuyoruz: selector'la abone olmak her gelen
+   * beğenide desteyi yeniden render ederdi (bkz. hasLikedMe'nin kendi notu).
+   */
+  const willMatchOnLike = useEvent(
+    (profile: PotentialMatch | null | undefined) =>
+      profile?.hasLikedMe === true ||
+      hasLikedMe(store.getState(), profile?.userId),
+  );
+
+  const handleSwipe = useEvent((direction, userId, covered = false) => {
     if (userId) swipedAtRef.current.set(userId, Date.now());
-    // Süper beğenide deste, alev ekranı tam kapatmışken ilerliyor (bkz.
-    // SwipeWrapper): yeni top kart giriş animasyonuyla DEĞİL, doğrudan son
+    // Deste alevin ALTINDA ilerlediyse (eşleşmeyen süper beğeni, bkz.
+    // SwipeWrapper) yeni top kart giriş animasyonuyla DEĞİL, doğrudan son
     // hâlinde açılmalı — yoksa 0.92→1 yayı dalga çekildikten sonra da sürüyor
-    // ve kart tam o anda "geliyormuş" gibi görünüyor. Diğer yönlerde giriş
-    // animasyonu duruyor: orada kart zaten açıkta değişiyor.
-    setCoveredSwap(direction === "up");
+    // ve kart tam o anda "geliyormuş" gibi görünüyor. Örtüsüz değişimlerde
+    // (yana kaydırma ve eşleşmeyle biten süper beğeni) giriş animasyonu duruyor:
+    // orada kart zaten açıkta değişiyor.
+    setCoveredSwap(covered === true);
     setCurrentIndex((i) => i + 1);
     analytics.capture('swipe', { direction });
     const isPass = direction === "left";
@@ -1968,13 +2042,20 @@ export default function DiscoverScreen() {
         message: t("note.sentMessage", { name: req.profile.displayName ?? "" }),
         icon: "note",
       });
-      // Kutlama süper beğeninin AYNISI (bkz. flameSweep): alev ekranı süpürüyor
-      // ve kart, ekran tam kapalıyken desteden düşüyor.
-      //
       // Not bir SWIPE: kart destede kalmamalı. `dropProfileFromDeck` beğenmiş
       // kişi temizliğini de yapıyor (rozet + likerHandled). Rewind hedefi
       // olmuyor — not geri alınamaz (öneri dokümanı D5).
       const userId = req.profile.userId;
+      // EŞLEŞME GELİYORSA KUTLAMA YOK (bkz. flameSweep'teki kural): MatchModal
+      // birazdan aynı ateşin perde hâliyle açılacak, süpürmeyi de oynatmak tek
+      // bir nota iki alev demek. Kart o zaman örtüsüz düşüyor — composer'ın
+      // kapanışı zaten değişimin üstünde.
+      if (willMatchOnLike(req.profile)) {
+        dropProfileFromDeck(userId, false);
+        return;
+      }
+      // Kutlama süper beğeninin AYNISI (bkz. flameSweep): alev ekranı süpürüyor
+      // ve kart, ekran tam kapalıyken desteden düşüyor.
       noteFlameUnsub.current?.();
       noteFlameUnsub.current = runFlameSweep(() => {
         noteFlameUnsub.current = null;
@@ -2091,6 +2172,7 @@ export default function DiscoverScreen() {
             onPass={handlePassButton}
             onLike={handleLikeButton}
             onSuperLike={handleSuperLikeButton}
+            willMatch={willMatchOnLike}
             swipeQuotaExhausted={swipeQuotaExhausted}
             superLikeQuotaExhausted={superLikeQuotaExhausted}
             snapEntry={coveredSwap}
@@ -2111,18 +2193,15 @@ export default function DiscoverScreen() {
       >
         <Animated.View
           pointerEvents={headerLocked ? "none" : "auto"}
-          style={[
-            {
-              // Satır boyu ortak dosyadan: açık kartın lift'i (SwipeWrapper >
-              // HEADER_COVER) aynı sayıyı okuyor, ayrışırsa kart header'ı tam
-              // örtmez. Logo kutusundan (50) kısa olmasının sebebi orada.
-              height: DISCOVER_HEADER_HEIGHT,
-              paddingHorizontal: 21,
-              flexDirection: "row",
-              alignItems: "center",
-            },
-            headerFadeStyle,
-          ]}
+          style={{
+            // Satır boyu ortak dosyadan: açık kartın lift'i (SwipeWrapper >
+            // HEADER_COVER) aynı sayıyı okuyor, ayrışırsa kart header'ı tam
+            // örtmez. Logo kutusundan (50) kısa olmasının sebebi orada.
+            height: DISCOVER_HEADER_HEIGHT,
+            paddingHorizontal: 21,
+            flexDirection: "row",
+            alignItems: "center",
+          }}
         >
           {/* Rewind */}
           <View style={{ flex: 1, alignItems: "flex-start" }}>
@@ -2226,16 +2305,38 @@ export default function DiscoverScreen() {
             </TouchableOpacity>
           </View>
         </Animated.View>
+
+        {/* ── ŞERİDİ KARARTAN PERDE KALDIRILDI (istek) ───────────────────
+            Kart açılırken üst şeridin üstüne inen siyah perde buradaydı
+            (EXPAND_SCRIM_ALPHA oranında). Şerit artık açılış boyunca kendi
+            renginde kalıyor.
+
+            Perdenin gerekçesi "arkadaki sayfa geri çekilmiş görünsün"dü
+            (referans: Instagram'ın gönderi açılışı — arka sayfa solmuyor,
+            KARARIYOR). Geri istenirse o gerekçe hâlâ ayakta, ama kartın
+            içindeki eşiyle (SwipeCard > cardGapScrimStyle) AYNI oranı okumak
+            zorunda; ayrışırlarsa kartın üstü ile kapak-panel arası farklı
+            tonda kararıyor.
+
+            Şeridin DOKUNMA kilidi bu perdede değil, ayrı bir kapıda
+            (headerLocked) — perde gitti, kilit duruyor. */}
       </View>
 
       {/* Cards */}
-      <Animated.View
-        style={[
-          { flex: 1, paddingTop: DISCOVER_CARD_TOP_GAP },
-          cardContainerStyle,
-        ]}
+      <View
+        style={{
+          flex: 1,
+          paddingTop: DISCOVER_CARD_TOP_GAP,
+          paddingBottom: tabBarOccupied,
+        }}
       >
-        {loading && potentialMatches.length === 0 ? (
+        {(loading && potentialMatches.length === 0) ||
+        (potentialMatches.length > 0 && !firstPhotoReady) ? (
+          // İSKELET KABIN İÇİNDE KALIR, kartın kabuğu gibi TAŞMAZ. Bir tur
+          // `marginBottom: -tabBarOccupied` verilmişti (kabuk ekranın dibine
+          // iniyor diye); yanlıştı — kabuğun taşan kısmı boş, kartın GÖRÜNEN
+          // alt kenarı fotoğrafın bittiği yer, yani kabın dibi. İskelet
+          // uzatılınca karttan bir tab bar boyu uzun duruyordu.
           <SkeletonCard />
         ) : potentialMatches.length > currentIndex ? (
           <Animated.View
@@ -2255,7 +2356,7 @@ export default function DiscoverScreen() {
             busy={ignoreDistanceMutation.isPending}
           />
         )}
-      </Animated.View>
+      </View>
 
       {/* Süper beğeni alevi burada DEĞİL: tab bar'ı da kaplaması gerektiği için
           navigator'ın dışına, kök ağaca taşındı (bkz. AppNavigator). */}

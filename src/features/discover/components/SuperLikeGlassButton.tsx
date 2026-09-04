@@ -66,8 +66,9 @@ const CARD_GLASS_BUMP = 4;
  * GLASS_ICON_BUTTON ve CARD_GLASS_BUMP). Sohbet başlığındaki geri/menü ve
  * profil başlığındaki çan/ayarlar butonlarıyla aynı DİLDEN, bir tık büyük.
  *
- * ŞERİDİN İKİ UCU BU SAYIYI PAYLAŞIYOR: soldaki cam "başa dön" butonu da
- * buradan okuyor (bkz. CardCollapseGlassButton) — iki daire aynı çapta olsun.
+ * ŞERİDİN İKİ UCU BU SAYIYI PAYLAŞIYOR: soldaki isim satırının payı da buradan
+ * okunuyor (bkz. CardStickyHeader > TITLE_LEFT_INSET) — sağdaki daireyle aynı
+ * köşe boşluğunda başlasın.
  * Şeridin kendi ölçüleri de (TITLE_TOP / TITLE_HEIGHT / CARD_HEADER_HEIGHT,
  * bkz. CardStickyHeader) buradan türüyor, yani değiştirmek bandı da küçültür.
  * Başlık satırının MERKEZİ bundan etkilenmiyor: TITLE_TOP =
