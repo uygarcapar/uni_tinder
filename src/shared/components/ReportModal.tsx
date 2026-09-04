@@ -20,6 +20,12 @@ import moderationService, {
 import { useForm, Controller } from "react-hook-form";
 import { zodResolver } from "@hookform/resolvers/zod";
 import { reportSchema, ReportForm } from "@/shared/schemas/formSchemas";
+import {
+  MODERATION_CODES,
+  chatErrorCodeOf,
+  chatErrorText,
+} from "@/shared/constants/responseCodes";
+import { devLog } from "@/shared/utils/devLog";
 import { colors } from "../theme/colors";
 
 // Sebepler enum sırasında sabit: "Diğer" en sonda kalsın, listenin sırası
@@ -269,10 +275,18 @@ export default function ReportModal({
       );
     } catch (err: any) {
       const status = err?.response?.status;
-      if (status === 409) {
+      const code = chatErrorCodeOf(err);
+      // Mükerrer şikayet artık KODLA geliyor (UT-6804, 400). 409 dalı yedek:
+      // sözleşme öncesi sunucular bu durumu status'la anlatıyordu.
+      if (code === MODERATION_CODES.REPORT_DUPLICATE || (!code && status === 409)) {
         Alert.alert(t('common.info'), t('moderation.report.alreadyReported'));
+      } else if (code === MODERATION_CODES.EMPTY_USER_ID) {
+        // İstemci bug'ı — gövde boş userId ile gitmiş. Kullanıcıya teknik
+        // sebebi göstermenin faydası yok, ayrıntı log'a.
+        devLog('🚩 [report] boş userId ile istek atıldı (UT-6805)');
+        Alert.alert(t('common.error'), t('moderation.report.error'));
       } else {
-        Alert.alert(t('common.error'), err?.response?.data?.message || t('moderation.report.error'));
+        Alert.alert(t('common.error'), chatErrorText(err, t, 'moderation.report.error'));
       }
     }
   });

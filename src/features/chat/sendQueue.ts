@@ -9,6 +9,15 @@
  * Kuyruk yalnızca NETWORK kısmını serialize eder — optimistic append UI'da anında
  * kalır, kullanıcı akıcılığı bozulmaz. Görevler settle sırasına göre paslanır,
  * böylece mesaj sırası da deterministik olur.
+ *
+ * SIRA NEDEN SUNUCU İÇİN DE ÖNEMLİ: `sentAt` damgasını sunucu isteği İŞLERKEN
+ * atıyor, istemcinin gönderme niyetine göre değil. Sesli mesaj üç adımlı ve
+ * S3 yüklemesi saniyeler sürüyor (bkz. voiceSend); ses yüklenirken yazılan bir
+ * metin serbest bırakılırsa sunucuya ÖNCE varıyor ve daha ERKEN damgalanıyor.
+ * Yerel liste ekleme sırasını koruduğu için ekranda sıra doğru görünüyor, ama
+ * kanonik sıra (karşı tarafın cihazı, sohbet listesi önizlemesi ve her
+ * reconcile fetch'i) metni sesin ÜSTÜNE alıyordu. Kuyruk bunu kaynağında
+ * çözüyor: metin, sesin POST'u dönene kadar bekler.
  */
 let tail: Promise<unknown> = Promise.resolve();
 

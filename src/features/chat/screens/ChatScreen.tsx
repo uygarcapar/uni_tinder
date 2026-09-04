@@ -56,6 +56,7 @@ import {
   setActiveConversation,
   appendOptimisticMessage,
   failOptimisticMessage,
+  retryOptimisticMessage,
   removeOptimisticMessage,
   clearUnreadForConversation,
   conversationDeactivated,
@@ -74,6 +75,7 @@ import { newClientMessageId } from "@/features/chat/clientMessageId";
 import { markMessageEntering } from "@/features/chat/enterAnimation";
 import { applyReactionPick } from "@/features/chat/reactionPick";
 import { getDraft, setDraft } from "@/features/chat/draftStore";
+import { enqueueSend } from "@/features/chat/sendQueue";
 import realtimeService from "@/features/chat/realtimeService";
 import MessageBubble from "@/features/chat/components/MessageBubble";
 import ReplySwipeRow from "@/features/chat/components/ReplySwipeRow";
@@ -111,6 +113,11 @@ import {
 import { discardVoiceTake } from "@/features/chat/useVoiceRecorder";
 import { stopVoicePlayback } from "@/features/chat/voicePlayback";
 import { showInfoToast } from "@/shared/services/toaster";
+import {
+  chatErrorCodeOf,
+  chatErrorEffect,
+  chatErrorText,
+} from "@/shared/constants/responseCodes";
 import uiBus from "@/shared/services/uiBus";
 import { analytics } from "@/shared/services/analytics";
 import { colors, veil } from "../../../shared/theme/colors";
@@ -121,6 +128,7 @@ import {
 } from "../../../shared/theme/glass";
 import GlassFallbackSurface from "@/shared/components/GlassFallbackSurface";
 import { devLog } from '@/shared/utils/devLog';
+import { useIsOffline } from "@/shared/services/networkStatus";
 import { chromeBlurTint } from "@/shared/theme/blur";
 import { plainBlurTint } from "@/shared/theme/blur";
 
@@ -130,6 +138,12 @@ const INPUT_BAR_OPAQUE = 66; // composer opak gövde tahmini (inset başlangıç
 // event'i yayınlıyor (kontrat §17). O event kaçarsa balon sonsuza dek
 // "gönderiliyor"da asılı kalıyordu; bu pencere dolunca başarısıza çeviriyoruz.
 const SEND_ACK_TIMEOUT_MS = 12_000;
+// Ağ geri geldikten sonra otomatik yeniden denemeye kadar beklenen süre.
+// `isInternetReachable` bağlantı fiilen kullanılabilir olmadan hemen önce
+// true'ya dönebiliyor (ve hub'ın da yeniden bağlanması gerekiyor); hemen
+// denenirse ilk istek boşa gider ve mesajlar bir sonraki geçişe kadar
+// başarısız kalırdı.
+const AUTO_RETRY_DELAY_MS = 800;
 // Giriş toast'ının eşiği: kalan hak bunun ALTINDA ya da eşitse uyarı çıkar.
 // Üstündeyse hiç çıkmıyor — "42 mesaj hakkın var" bir uyarı değil, sohbetin
 // başına düşen gereksiz bir banner'dı. Sunucudan gelmiyor, tamamen istemci
@@ -412,6 +426,9 @@ function ChatScreen({
   const messagesRef = useRef<MessageDto[]>(messages);
   const quotaRef = useRef(quota);
   const lastReadSentAtRef = useRef(0);
+  // Tek native ağ listener'ının paylaşılan durumu (bkz. networkStatus) —
+  // başarısız mesajların otomatik yeniden denemesi bunu izliyor.
+  const isOffline = useIsOffline();
   useEffect(() => {
     messagesRef.current = messages;
   }, [messages]);
@@ -1011,12 +1028,16 @@ function ChatScreen({
   );
 
   const handleSend = useCallback(
-    async ({ content, replyToMessageId, clientMessageId }: any) => {
+    async ({ content, replyToMessageId, clientMessageId, retry }: any) => {
       const q = quotaRef.current;
       if (q && !q.isUnlimited && q.requiresPremium) {
         openQuotaPaywall("composer_send");
         return;
       }
+      // YENİDEN GÖNDERİMDE balon zaten listede: çıkarılıp yeniden eklenmez,
+      // yerinde "tekrar bekliyor"a döner (bkz. retryOptimisticMessage) —
+      // remount olmadığı için kayma animasyonu akıcı kalır ve satır listenin
+      // en altına ışınlanmaz.
       const optimistic: any = {
         id: `temp-${clientMessageId}`,
         conversationId,
@@ -1034,13 +1055,20 @@ function ChatScreen({
         reactions: [],
         _pending: true,
       };
-      appendOutgoing(optimistic);
+      if (retry) dispatch(retryOptimisticMessage({ conversationId, clientMessageId }));
+      else appendOutgoing(optimistic);
 
       try {
         const useHub = realtimeService.isConnected() && !replyToMessageId;
         let httpResult: MessageDto | null = null;
+        // Ağ kısmı KUYRUKTAN geçer: sunucu `sentAt`i isteği işlerken damgalıyor,
+        // yani sırayı gönderim sırası değil VARIŞ sırası belirliyor. Yükleme
+        // süren bir sesli mesajın önüne geçen metin, kanonik sırada sesin üstüne
+        // çıkıyordu (bkz. sendQueue).
         if (useHub) {
-          await realtimeService.sendMessage(conversationId, content, clientMessageId);
+          await enqueueSend(() =>
+            realtimeService.sendMessage(conversationId, content, clientMessageId),
+          );
           // invoke resolve olsa bile mesajın gittiği garanti değil (hata ayrı
           // `Error` event'iyle gelir, sohbet kapandıysa ack hiç gelmez).
           const timer = setTimeout(() => {
@@ -1054,12 +1082,14 @@ function ChatScreen({
           }, SEND_ACK_TIMEOUT_MS);
           ackTimersRef.current.add(timer);
         } else {
-          httpResult = await chatService.sendMessage({
-            conversationId,
-            content,
-            clientMessageId,
-            replyToMessageId,
-          } as any);
+          httpResult = await enqueueSend(() =>
+            chatService.sendMessage({
+              conversationId,
+              content,
+              clientMessageId,
+              replyToMessageId,
+            } as any),
+          );
         }
         if (httpResult) dispatch(messageSent(httpResult));
         dispatch(decrementQuotaLocally({ conversationId }));
@@ -1074,21 +1104,38 @@ function ChatScreen({
           openQuotaPaywall("send_402");
           return;
         }
+        // Balon LİSTEDEN ÇIKARILMAZ (kod ne olursa olsun): yazdığı metin
+        // kullanıcının elinde kalsın. Sözleşme "taslağı input'a geri koy"
+        // diyor; bizde aynı işi başarısız balon + "tekrar dene" görüyor —
+        // üstelik içerik gözden kaybolmadan.
         dispatch(failOptimisticMessage({ conversationId, clientMessageId }));
-        // Sohbet kapanmış olabilir (karşı taraf unmatch etti / engelledi):
-        // REST yolunda 403/404 kesin, 400 CONVERSATION_ERROR olabilir ama
-        // validasyon da olabilir — 400'de yerel bayrağı çevirmeyip listeyi
-        // sunucudan doğrulatıyoruz, isActive oradan düzeliyor.
-        if (status === 403 || status === 404) {
-          // Kapatan taraf karşı taraf — geri alma bize açık değil.
+        // Karar UT KODUNDAN (UT-67xx). Status yedek dal: kodsuz gövde =
+        // eski sunucu. Kod geldiğinde status'a bakmak yanlış olur — aynı hata
+        // uca göre 400/404 dönebiliyordu, sözleşme bunu düzeltti.
+        const code = chatErrorCodeOf(err);
+        const effect = chatErrorEffect(code);
+        if (code) {
+          showInfoToast({
+            message: chatErrorText(err, t, "chat.send.failed"),
+            variant: "error",
+          });
+        }
+        // Sohbet kapanmış (karşı taraf unmatch etti / engelledi): kapatan taraf
+        // biz değiliz → geri alma penceresi yok.
+        if (effect === "conversationGone" || (!code && (status === 403 || status === 404))) {
           dispatch(conversationDeactivated({ conversationId, restorableUntil: null }));
         }
-        if (status === 400 || status === 403 || status === 404) {
+        // Kodsuz 400 tek başına altı ayrı sebebi ayırt etmiyor (validasyon da
+        // olabilir) — yerel bayrağı çevirmeyip listeyi sunucudan doğrulatıyoruz.
+        if (
+          effect === "conversationGone" ||
+          (!code && (status === 400 || status === 403 || status === 404))
+        ) {
           dispatch(fetchConversations({ force: true }));
         }
       }
     },
-    [appendOutgoing, conversationId, dispatch, myUserId, openQuotaPaywall],
+    [appendOutgoing, conversationId, dispatch, myUserId, openQuotaPaywall, t],
   );
 
   /**
@@ -1105,6 +1152,7 @@ function ChatScreen({
       waveformPeaks,
       clientMessageId,
       replyToMessageId,
+      retry,
     }: any) => {
       const q = quotaRef.current;
       if (q && !q.isUnlimited && q.requiresPremium) {
@@ -1135,17 +1183,28 @@ function ChatScreen({
         reactions: [],
         _pending: true,
       };
-      appendOutgoing(optimistic);
+      // Yeniden gönderimde satır yerinde kalır (bkz. handleSend'deki not);
+      // _localUri de dahil optimistic alanlar zaten mevcut kopyada duruyor.
+      if (retry) dispatch(retryOptimisticMessage({ conversationId, clientMessageId }));
+      else appendOutgoing(optimistic);
 
       try {
-        const result = await sendVoiceMessage({
-          conversationId,
-          uri,
-          durationMs,
-          waveformPeaks,
-          clientMessageId,
-          replyToMessageId,
-        });
+        // ÜÇ ADIMIN TAMAMI kuyrukta: sıra sunucudaki `sentAt` damgasına göre
+        // belirlendiği için metin, sesin POST'u dönmeden gönderilemez — yoksa
+        // yükleme sürerken yazılan metin sesten ERKEN damgalanıp kanonik sırada
+        // (karşı taraf, sohbet önizlemesi, her reconcile) üste çıkıyor.
+        // Bedeli bilinçli: o sırada gönderilen metin, yükleme bitene kadar
+        // "gönderiliyor" durumunda bekler.
+        const result = await enqueueSend(() =>
+          sendVoiceMessage({
+            conversationId,
+            uri,
+            durationMs,
+            waveformPeaks,
+            clientMessageId,
+            replyToMessageId,
+          }),
+        );
         // Server kopyası yerel URI'yi EZMEZ (messageSent merge ediyor) — balon
         // aynı dosyadan çalmaya devam eder.
         if (result) dispatch(messageSent(result as MessageDto));
@@ -1163,6 +1222,11 @@ function ChatScreen({
         dispatch(failOptimisticMessage({ conversationId, clientMessageId }));
         // Switch DAİMA UT kodundan (rehber): 400 tek başına altı ayrı sebebi
         // ayırt etmiyor ve kullanıcıya söylenecek şey her birinde farklı.
+        // İKİ AİLE ayrı eksende: UT-66xx sesin KENDİSİ (biçim/süre/boyut),
+        // UT-67xx sohbetin durumu (kapalı, yetki yok). Kesişmiyorlar; sohbet
+        // kodu geldiyse ses hakkında söylenecek bir şey yok.
+        const chatCode = chatErrorCodeOf(err);
+        const effect = chatErrorEffect(chatCode);
         const code = err instanceof VoiceTooLargeError ? "UT-6602" : voiceErrorCode(err);
         const key =
           code === "UT-6603"
@@ -1172,12 +1236,18 @@ function ChatScreen({
               : code === "UT-6601"
                 ? "chat.voice.badFormat"
                 : "chat.voice.sendFailed";
-        showInfoToast({ message: t(key), variant: "error" });
-        devLog("🎙️ [voice] gönderilemedi", code || status || err);
-        if (status === 403 || status === 404) {
+        showInfoToast({
+          message: chatCode ? chatErrorText(err, t, key) : t(key),
+          variant: "error",
+        });
+        devLog("🎙️ [voice] gönderilemedi", chatCode || code || status || err);
+        if (effect === "conversationGone" || (!chatCode && (status === 403 || status === 404))) {
           dispatch(conversationDeactivated({ conversationId, restorableUntil: null }));
         }
-        if (status === 400 || status === 403 || status === 404) {
+        if (
+          effect === "conversationGone" ||
+          (!chatCode && (status === 400 || status === 403 || status === 404))
+        ) {
           dispatch(fetchConversations({ force: true }));
         }
       }
@@ -1363,7 +1433,7 @@ function ChatScreen({
             }),
           );
         }
-      } catch {
+      } catch (err: any) {
         dispatch(
           reactionsChanged({
             messageId: message.id,
@@ -1371,9 +1441,20 @@ function ChatScreen({
             reactions: prev,
           }),
         );
+        // Tepki sessizce geri alınıyordu: emoji yerinden kayboluyor, sebebi
+        // hiçbir yerde yazmıyordu. Sistem mesajı (UT-6731), silinmiş mesaj
+        // (UT-6720) ve kapalı sohbet (UT-6740) artık söyleniyor; ağ hatasında
+        // (kodsuz) eski sessiz davranış duruyor — orada geri alma yeterli.
+        const code = chatErrorCodeOf(err);
+        if (code) {
+          showInfoToast({
+            message: chatErrorText(err, t, "errors.generic"),
+            variant: "error",
+          });
+        }
       }
     },
-    [dispatch, myUserId],
+    [dispatch, myUserId, t],
   );
 
   const handleReply = useCallback((message: any) => {
@@ -1400,6 +1481,14 @@ function ChatScreen({
       try {
         await chatService.deleteMessage(message.id, forEveryone);
       } catch (err: any) {
+        // UT-6720: mesaj sunucuda ZATEN YOK (başka cihazdan silinmiş, geçmiş
+        // bayat). Silinmiş göstermek gerçeği yansıtıyor — satırı geri getirip
+        // "silinemedi" demek kullanıcıyı var olmayan bir mesajla bırakırdı.
+        // Doğru davranış geçmişi tazeleyip sessizce devam etmek.
+        if (chatErrorEffect(chatErrorCodeOf(err)) === "messageGone") {
+          dispatch(fetchHistory({ conversationId, cursor: null, pageSize: 30 }));
+          return;
+        }
         dispatch(
           messageEdited({
             id: message.id,
@@ -1407,24 +1496,18 @@ function ChatScreen({
             ...snapshot,
           } as any),
         );
-        Alert.alert(
-          t("common.error"),
-          err?.response?.data?.message || t("chat.deleteMessage.error"),
-        );
+        Alert.alert(t("common.error"), chatErrorText(err, t, "chat.deleteMessage.error"));
       }
     },
-    [dispatch, t],
+    [conversationId, dispatch, t],
   );
 
   const handleRetrySend = useCallback(
     (failedMsg: any) => {
       if (!failedMsg?._failed) return;
-      dispatch(
-        removeOptimisticMessage({
-          conversationId,
-          clientMessageId: failedMsg.clientMessageId,
-        }),
-      );
+      // Balon LİSTEDEN ÇIKARILMAZ — `retry` bayrağıyla yerinde "tekrar
+      // bekliyor"a döner (gerekçe: retryOptimisticMessage). Çıkar-ekle yolu
+      // satırı remount edip animasyonu öldürüyordu.
       // Sesli mesajın yeniden denemesi metin yoluna DÜŞEMEZ: içerik boş, taşınan
       // şey dosyanın kendisi. Yükleme yarıda kalmışsa (UT-6605) doğru davranış
       // zaten üç adımı baştan çalıştırmak.
@@ -1435,6 +1518,7 @@ function ChatScreen({
           waveformPeaks: failedMsg.waveformPeaks ?? undefined,
           clientMessageId: failedMsg.clientMessageId,
           replyToMessageId: failedMsg.replyTo?.id,
+          retry: true,
         });
         return;
       }
@@ -1442,10 +1526,54 @@ function ChatScreen({
         content: failedMsg.content,
         replyToMessageId: failedMsg.replyTo?.id,
         clientMessageId: failedMsg.clientMessageId,
+        retry: true,
       });
     },
-    [conversationId, dispatch, handleSend, handleSendVoice],
+    [handleSend, handleSendVoice],
   );
+
+  /**
+   * AĞ GERİ GELİNCE bekleyen başarısız mesajları kendiliğinden yeniden dener.
+   *
+   * Tetik SADECE offline→online GEÇİŞİ (wasOfflineRef): `useIsOffline` wifi↔LTE
+   * gibi geçişlerde de uyanabiliyor, her uyanışta yeniden denesek çevrimiçiyken
+   * de kuyruk tazelenirdi. Ters yönde de güvenli — `handleRetrySend` yalnız
+   * `_failed` satırlarda çalışıyor ve ilk iş olarak bayrağı düşürüyor, yani
+   * mükerrer tetik ikinci bir istek doğurmuyor.
+   *
+   * SIRA ESKİDEN YENİYE: bucket en yeniden eskiye dizili, o yüzden ters
+   * geziliyor. Ağ kısmı zaten FIFO kuyruktan geçtiği (bkz. sendQueue) için
+   * sunucudaki `sentAt` damgaları da bu sırayla düşüyor.
+   *
+   * KISA GECİKME: `isInternetReachable` bağlantı gerçekten kullanılabilir
+   * olmadan hemen önce true'ya dönebiliyor; hemen denersek ilk istek boşa
+   * gidip mesajlar tekrar başarısız işaretlenir ve bir sonraki geçişe kadar
+   * öylece kalırdı.
+   *
+   * KAPSAM: yalnız AÇIK sohbet. Başka sohbette kalan başarısız mesajlar oraya
+   * girilip ağ geri geldiğinde (ya da elle butonla) gönderilir.
+   */
+  // Efekt YALNIZ `isOffline`a bağlı: handleRetrySend'i deps'e koysaydık, kimliği
+  // 800ms'lik pencere içinde değişen her şey (kota, paywall callback'i…) cleanup'ı
+  // çalıştırıp zamanlayıcıyı iptal ederdi — üstelik efekt yeniden kurulduğunda
+  // wasOfflineRef çoktan false olduğu için deneme bir daha HİÇ yapılmazdı.
+  const retryRef = useRef(handleRetrySend);
+  useEffect(() => {
+    retryRef.current = handleRetrySend;
+  }, [handleRetrySend]);
+  const wasOfflineRef = useRef(isOffline);
+  useEffect(() => {
+    const cameBackOnline = wasOfflineRef.current && !isOffline;
+    wasOfflineRef.current = isOffline;
+    if (!cameBackOnline) return;
+    const timer = setTimeout(() => {
+      const failed = (messagesRef.current as any[]).filter((m) => m._failed);
+      if (!failed.length) return;
+      devLog(`📶 [chat] ağ geri geldi, ${failed.length} mesaj yeniden deneniyor`);
+      for (let i = failed.length - 1; i >= 0; i--) retryRef.current(failed[i]);
+    }, AUTO_RETRY_DELAY_MS);
+    return () => clearTimeout(timer);
+  }, [isOffline]);
 
   const handleScrollToReplyTarget = useCallback((reply: any) => {
     if (!reply?.id) return;
@@ -1486,8 +1614,10 @@ function ChatScreen({
           ? t("chat.unmatch.removedRestorable", { time: restoreWindow })
           : t("chat.unmatch.removedPermanent"),
       });
-    } catch {
-      Alert.alert(t("common.error"), t("chat.unmatch.error"));
+    } catch (err: any) {
+      // UT-6713 (sohbet yok) burada da çıkabiliyor: liste bayatsa kaldırılmış
+      // bir eşleşme için istek atılır.
+      Alert.alert(t("common.error"), chatErrorText(err, t, "chat.unmatch.error"));
     }
   }, [conversationId, dispatch, navigation, t]);
 
@@ -1504,8 +1634,11 @@ function ChatScreen({
         dispatch(conversationRestored({ conversationId }));
       }
       dispatch(fetchConversations({ force: true }));
-    } catch {
-      Alert.alert(t("common.error"), t("chat.unmatch.restoreFailed"));
+    } catch (err: any) {
+      // UT-6743: geri alma yalnız UNMATCH EDEN tarafa açık. Buton `byMe`
+      // kapısından geçiyor ama bayrak bayat olabilir (event kaçtı, uygulama
+      // yeniden açıldı) — sunucu reddederse sebebi söylüyoruz.
+      Alert.alert(t("common.error"), chatErrorText(err, t, "chat.unmatch.restoreFailed"));
     }
   }, [conversationId, dispatch, t]);
 
@@ -1550,10 +1683,9 @@ function ChatScreen({
       Alert.alert(t("chat.block.title"), t("chat.block.message"));
       navigation.goBack();
     } catch (err: any) {
-      Alert.alert(
-        t("common.error"),
-        err?.response?.data?.message || t("chat.block.error"),
-      );
+      // UT-6801 (kendini engelleme) istemci bug'ına yakın ama gösteriliyor:
+      // partner id'si karışmışsa kullanıcı en azından neden olmadığını görür.
+      Alert.alert(t("common.error"), chatErrorText(err, t, "chat.block.error"));
     }
   }, [partner?.userId, navigation, t]);
 

@@ -257,7 +257,19 @@ export function useVoiceRecorder({
       if (!holdRef.current) return "aborted";
 
       await setAudioModeAsync({ allowsRecording: true, playsInSilentMode: true });
-      await recorder.prepareToRecordAsync();
+      // SEÇENEKLER HER KAYITTA YENİDEN VERİLİR — argümansız çağrı DEĞİL.
+      // expo-audio'nun native prepare'ı yeni AVAudioRecorder'ı (ve onunla yeni
+      // dosya yolunu) YALNIZ options geldiğinde kuruyor: ios/AudioRecorder.swift
+      // > prepare > `if let options { … ref = newRecorder }`. JS katmanı da
+      // argümansız çağrıda undefined geçiriyor (build/ExpoAudio.js). Yani
+      // `prepareToRecordAsync()` oturum boyunca AYNI dosyaya yazıyordu:
+      // ikinci sesli mesajın balonu birincinin dosyasını işaret ediyor
+      // (AVFoundation aynı URL'in içeriğini önbelleklediği için kullanıcı
+      // ikinci balonda BİRİNCİNİN sesini duyuyordu; dalga formu DTO'dan geldiği
+      // için doğru çizilip hatayı gizliyordu), üstelik iptal edilen bir kayıt
+      // discardVoiceTake ile henüz yüklenmemiş mesajın dosyasını siliyordu.
+      // Android'de dosya adı zaten her prepare'da UUID alıyor — orada fark yok.
+      await recorder.prepareToRecordAsync(RECORDING_OPTIONS);
       if (!holdRef.current) {
         await releaseSession();
         return "aborted";

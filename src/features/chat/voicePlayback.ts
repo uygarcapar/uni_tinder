@@ -366,11 +366,16 @@ export async function toggleVoicePlayback(
     // tek işi geri sayım metnini (saniyelik) beslemek, bitişi yakalamak ve
     // gerçek bir kopma olursa animasyonu düzeltmek.
     //
-    // downloadFirst: dosya ÖNCE indirilir, oynatma ondan sonra başlar — akış
-    // ortasında buffer beklemesi (ve onun yarattığı duraklama/geri sarma) olmaz.
+    // downloadFirst YALNIZ UZAK kaynakta: dosya ÖNCE indirilir, oynatma ondan
+    // sonra başlar — akış ortasında buffer beklemesi (ve onun yarattığı
+    // duraklama/geri sarma) olmaz. YEREL dosyada indirilecek bir şey yok,
+    // üstelik o yol kaynağı expo-asset'e sokuyor: `Asset.fromURI` nesneyi
+    // URI'ye göre BELLEKTE saklıyor (Asset.byUri) ve ilk indirmeden sonra kısa
+    // devre yapıyor, yani aynı yola yazılmış YENİ bir kayıt eski kopya sanılıp
+    // çalınabiliyor.
     const next = createAudioPlayer(source, {
       updateInterval: 500,
-      downloadFirst: true,
+      downloadFirst: !source.startsWith("file:"),
     });
     player = next;
 

@@ -8,7 +8,7 @@ import {
   Easing,
 } from "react-native";
 import { useTranslation } from "react-i18next";
-import { Check, CheckCheck, Clock, AlertCircle } from "@/shared/icons";
+import { Check, CheckCheck, Clock, AlertCircle, RefreshCw } from "@/shared/icons";
 import SFIcon from "@/shared/components/SFIcon";
 import ReplyPreview, {
   REPLY_CARD_GAP,
@@ -71,6 +71,19 @@ const ENTER_RISE = 30;
 // Opaklık yükselişten HIZLI biter: balon yolun yarısında tam görünür olur,
 // kalan yol sadece yerine oturma hareketidir (yarı saydam sürüklenme olmaz).
 const ENTER_FADE_END = 0.55;
+// Gönderilemeyen mesajın yanındaki yuvarlak "tekrar dene" butonu. 28pt görünür
+// çap + hitSlop 10 = 48pt'lik dokunma alanı; balonu kendi genişliği + boşluğu
+// kadar sola ittiği için ayrıca kaydırma hesabı yok.
+const RETRY_SIZE = 28;
+const RETRY_GAP = 6;
+// Balonun sola kayışı: buton kutusu 0'dan RETRY_SIZE+RETRY_GAP'e AÇILIR, yani
+// balon zıplamaz. ENTER ile aynı süre/easing — aynı ekranda iki farklı hız
+// olmasın. Layout prop'u (width) animasyonu: native driver YOK.
+const FAIL_SHIFT_DURATION = 220;
+// Butonun görünürlüğü kayışın İKİNCİ YARISINDA açılır: kutu daha darken buton
+// sağa yapışık durduğu için balonun üstüne taşıyor, erken görünürse "balondan
+// çıkıyormuş" gibi duruyor.
+const FAIL_ICON_IN = 0.45;
 
 /**
  * Tek mesaj baloncuğu — TEXT-ONLY ve TAMAMEN STATİK (reanimated YOK).
@@ -259,6 +272,37 @@ function MessageBubble({
     };
   }, [enterAnim]);
 
+  // ── Gönderilemedi kayması ──────────────────────────────────────────────
+  // Balon önce normal yerinde duruyor, gönderim başarısız olunca sağında yer
+  // açılıp sola kayıyor. Değer SATIR KİMLİĞİNE bağlı (enterRef ile aynı desen):
+  //  - satır zaten başarısız halde çiziliyorsa (listeye kaydırılıp gelindi,
+  //    ya da container recycle edildi) 1'de DOĞAR → animasyon yok, zıplama yok;
+  //  - satır ekrandayken başarısız olursa 0'da doğup 1'e akar → kayış görünür.
+  // Başarısız olmayan satırlarda anim null: tek Animated.Value bile ayrılmıyor.
+  // `message._failed` DOĞRUDAN okunuyor: isFailed aşağıda, erken return'lerden
+  // sonra tanımlı — hook'lar ise koşulsuz ve o satırlardan önce çalışmak zorunda.
+  const failed = !!message._failed;
+  const failRef = useRef<{ key: string; anim: Animated.Value | null } | null>(null);
+  if (failRef.current?.key !== rowKey) {
+    failRef.current = { key: rowKey, anim: failed ? new Animated.Value(1) : null };
+  }
+  if (failed && !failRef.current.anim) {
+    failRef.current.anim = new Animated.Value(0);
+  }
+  const failAnim = failRef.current.anim;
+  useLayoutEffect(() => {
+    if (!failAnim) return;
+    const anim = Animated.timing(failAnim, {
+      toValue: failed ? 1 : 0,
+      duration: FAIL_SHIFT_DURATION,
+      easing: Easing.out(Easing.cubic),
+      // width bir layout prop'u — native driver desteklemez.
+      useNativeDriver: false,
+    });
+    anim.start();
+    return () => anim.stop();
+  }, [failAnim, failed]);
+
   const handleLongPress = () => {
     if (!onLongPress) return;
     // Scale feedback SADECE uzun basışta — normal dokunuşta değil.
@@ -395,7 +439,9 @@ function MessageBubble({
           <View style={{ position: "relative", maxWidth: BUBBLE_MAX_WIDTH }}>
             <Pressable
               onLongPress={handleLongPress}
-              onPress={isFailed ? () => onRetryTap?.(message) : undefined}
+              // Yeniden gönderme balona DOKUNARAK değil, sağdaki yuvarlak
+              // butondan yapılır (aşağıya bak): balonun tamamı dokunma hedefiyken
+              // yanlışlıkla yeniden göndermek çok kolaydı.
               onPressOut={() => setPressed(false)}
               delayLongPress={300}
               style={{
@@ -416,7 +462,9 @@ function MessageBubble({
                 // DİKKAT: MessageActionSheet klonu da aynı — ayrışırsa uzun basışta
                 // metin yana zıplar.
                 alignItems: "center",
-                opacity: isFailed ? 0.7 : 1,
+                // Gönderilemeyen balon SOLUKLAŞMAZ: mesaj hâlâ orada duruyor ve
+                // okunabilir olmalı. Başarısızlığın işareti sağdaki kırmızı
+                // yeniden-gönder butonu (+ reveal şeridindeki ünlem ikonu).
                 position: "relative",
                 // Uzun basış feedback'i: anlık hafif shrink (animasyonsuz).
                 // onPressIn'de DEĞİL — normal dokunuşta scale istenmiyor.
@@ -451,12 +499,6 @@ function MessageBubble({
                       {t("chat.bubble.edited")}
                     </Text>
                   )}
-                </Text>
-              )}
-
-              {isFailed && (
-                <Text className="text-[10px] mt-1" style={{ color: colors.errorLight }}>
-                  {t("chat.bubble.tapToRetry")}
                 </Text>
               )}
 
@@ -522,6 +564,73 @@ function MessageBubble({
             )}
           </View>
         </View>
+
+        {/* Gönderilemeyen mesajın yeniden gönderme butonu — balonun SAĞINDA.
+            Satırın normal akışında duruyor (absolute DEĞİL): satır flex-end
+            hizalı olduğu için buton balonu kendi genişliği kadar SOLA itiyor,
+            yani "balon hafif solda, sağında yuvarlak" düzeni ayrı bir kaydırma
+            hesabı olmadan çıkıyor. alignSelf: center — satırın hizası
+            (stretch) balon sütununu etkilemesin diye burada, satırda DEĞİL. */}
+        {/* Koşul `isFailed` DEĞİL `failAnim`: başarısızlık kalkınca (yeniden
+            gönder) düğüm anında sökülseydi kutu 34→0 zıplar, balon sağa
+            ışınlanırdı. Kutu takılı kalıp 0'a KAPANIYOR; kapalıyken dokunuş
+            almasın diye pointerEvents kısılıyor. failAnim yalnız bir kez
+            başarısız olmuş satırlarda var, diğerlerinde bu düğüm hiç doğmuyor. */}
+        {!!failAnim && (
+          <Animated.View
+            pointerEvents={isFailed ? "auto" : "none"}
+            style={{
+              alignSelf: "center",
+              // BALONU İTEN YER: 0'dan açılır, yani balon zıplamaz — kayarak
+              // sola gider. Buton bu kutunun SAĞINA yapışık ve kutu darken
+              // taşıyor (RN kırpmaz), o yüzden görünürlük ikinci yarıda açılıyor.
+              width: failAnim.interpolate({
+                inputRange: [0, 1],
+                outputRange: [0, RETRY_SIZE + RETRY_GAP],
+              }),
+              alignItems: "flex-end",
+              justifyContent: "center",
+              opacity: failAnim.interpolate({
+                inputRange: [FAIL_ICON_IN, 1],
+                outputRange: [0, 1],
+                extrapolate: "clamp",
+              }),
+            }}
+          >
+            {/* DÜZ NESNE stil — `style={({pressed}) => …}` bu projede sessizce
+                düşüyor (bkz. yukarıdaki `pressed` notu); basış geri bildirimi
+                activeOpacity'den. Dolgu MODLA DÖNEN gri (surface3): açıkta
+                #E4E4E8, koyuda #262626 — ikisi de kendi zemininden (bg) ayrışan
+                ton. İkon `text`, yani açıkta siyah / koyuda beyaz. */}
+            <TouchableOpacity
+              onPress={() => onRetryTap?.(message)}
+              activeOpacity={0.7}
+              hitSlop={10}
+              accessibilityRole="button"
+              accessibilityLabel={t("chat.bubble.retrySend")}
+              style={{
+                width: RETRY_SIZE,
+                height: RETRY_SIZE,
+                borderRadius: RETRY_SIZE / 2,
+                backgroundColor: colors.surface3,
+                alignItems: "center",
+                justifyContent: "center",
+                // Uzun basış klonu açıkken balonla birlikte kaybolur, yoksa
+                // menünün üstünde tek başına asılı kalırdı.
+                opacity: hiddenForMenu ? 0 : 1,
+              }}
+            >
+              <SFIcon
+                name="arrow.clockwise"
+                fallback={RefreshCw}
+                size={14}
+                color={colors.text}
+                weight="semibold"
+                strokeWidth={2.5}
+              />
+            </TouchableOpacity>
+          </Animated.View>
+        )}
       </View>
 
       {/* Saat/okundu kolonu: satırın SAĞ İÇİNDE, ekranın hemen dışında park eder
@@ -587,7 +696,10 @@ function renderDeletedBubble(isOwn: boolean, t: (key: string) => string) {
 
 function renderStatus(message: any, isPending: boolean, isFailed: boolean) {
   if (isFailed) return <SFIcon name="exclamationmark.circle.fill" fallback={AlertCircle} size={12} color={colors.errorLight} />;
-  if (isPending) return <SFIcon name="clock.fill" fallback={Clock} size={12} color={statusGray()} />;
+  // Dolgulu DEĞİL çizgisel varyant: `clock.fill` 12px'te içi dolu bir lekeye
+  // dönüşüp saat olduğu okunmuyor. Android/lucide fallback'i (`Clock`) zaten
+  // çizgisel — iki platform da aynı görünüyor.
+  if (isPending) return <SFIcon name="clock" fallback={Clock} size={12} color={statusGray()} />;
   if (message.readAt) return <CheckCheck size={14} color={statusGray()} />;
   if (message.deliveredAt) return <CheckCheck size={14} color={statusGray()} />;
   return <SFIcon name="checkmark" fallback={Check} size={14} color={statusGray()} />;

@@ -59,6 +59,7 @@ import ConversationOptionsSheet from "@/features/chat/components/ConversationOpt
 import ReportModal from "@/shared/components/ReportModal";
 import moderationService from "@/shared/services/moderationService";
 import { showInfoToast } from "@/shared/services/toaster";
+import { chatErrorText } from "@/shared/constants/responseCodes";
 import { parseUtc } from "@/shared/utils/dateUtc";
 import { store } from "@/shared/store";
 import EmptyState from "@/shared/components/EmptyState";
@@ -743,8 +744,8 @@ export default function MessagesScreen() {
             ? t("chat.unmatch.removedRestorable", { time: removedWindow })
             : t("chat.unmatch.removedPermanent"),
         });
-      } catch {
-        Alert.alert(t("common.error"), t("chat.unmatch.error"));
+      } catch (err: any) {
+        Alert.alert(t("common.error"), chatErrorText(err, t, "chat.unmatch.error"));
       }
     },
     [dispatch, t],
@@ -773,8 +774,9 @@ export default function MessagesScreen() {
         }
         // Mutasyon-sonrası tazeleme — staleness gate'ini bypass et.
         dispatch(fetchConversations({ force: true }));
-      } catch {
-        Alert.alert(t("common.error"), t("chat.unmatch.restoreFailed"));
+      } catch (err: any) {
+        // UT-6743: geri alma yalnız unmatch edene açık (bkz. ChatScreen).
+        Alert.alert(t("common.error"), chatErrorText(err, t, "chat.unmatch.restoreFailed"));
       }
     },
     [dispatch, t],
@@ -795,10 +797,7 @@ export default function MessagesScreen() {
         );
         dispatch(fetchConversations({ force: true }));
       } catch (err: any) {
-        Alert.alert(
-          t("common.error"),
-          err?.response?.data?.message || t("chat.block.error"),
-        );
+        Alert.alert(t("common.error"), chatErrorText(err, t, "chat.block.error"));
       }
     },
     [dispatch, t],

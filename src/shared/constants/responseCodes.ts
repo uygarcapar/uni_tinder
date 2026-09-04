@@ -402,6 +402,213 @@ export function selfieCodeI18nKey(
   return SELFIE_CODE_I18N[code as SelfieCode] ?? null;
 }
 
+// ── Sohbet (UT-67xx) + moderasyon (UT-68xx) ─────────────────────────────────
+//
+// 2026-09-03'e kadar bu iki akışın hataları `code: null` ile geliyordu ve
+// ayırt etmenin tek yolu TÜRKÇE METNİ karşılaştırmaktı — açık dil desteğiyle
+// birlikte o yol zaten kırıktı. Backend artık yapılandırılmış kod döndürüyor.
+//
+// ⚠️ STATUS DEĞİŞTİ (kırılma riski burada): aynı hata uca göre farklı status
+// dönüyordu, düzeltildi. UT-6720 ve UT-6713 artık HER YERDE 404 (eskiden bazı
+// uçlarda 400), UT-6803 400 → 404. Bu yüzden karar status'tan değil KODDAN
+// veriliyor; status yalnız kod GELMEDİĞİNDE (eski sunucu) yedek dal.
+//
+// Ayrıca 11 uç eskiden BOŞ GÖVDELİ 403 dönüyordu (`Forbid()`); artık gövde var.
+// Ek alan, kırıcı değil — ama sebebi gösterebiliyoruz.
+//
+// Diğer ailelerle aynı gerekçeyle AYRI sözlük (`CODE_ENTRIES`e girmiyorlar):
+// tek `resolveCode` tablosu bir akışın metnini diğerine sızdırırdı.
+export const CHAT_ERROR_CODES = {
+  // 403 — erişim / yetki
+  NO_ACCESS: "UT-6701",
+  CANNOT_SEND: "UT-6702",
+  EDIT_NOT_OWNER: "UT-6703",
+  DELETE_NOT_OWNER: "UT-6704",
+  /** Geri alma yalnız UNMATCH EDEN tarafa açık. */
+  RESTORE_NOT_OWNER: "UT-6743",
+  // 404 — bulunamadı
+  CONVERSATION_NOT_FOUND: "UT-6713",
+  MESSAGE_NOT_FOUND: "UT-6720",
+  // 400 — gönderim
+  EMPTY_CONTENT: "UT-6710",
+  TOO_LONG: "UT-6711",
+  REPLY_TARGET_INVALID: "UT-6712",
+  // 400 — düzenleme / silme
+  EDIT_SYSTEM: "UT-6721",
+  EDIT_DELETED: "UT-6722",
+  EDIT_WINDOW_CLOSED: "UT-6723",
+  EDIT_NON_TEXT: "UT-6724",
+  DELETE_SYSTEM: "UT-6725",
+  // 400 — reaction
+  REACTION_BAD_EMOJI: "UT-6730",
+  REACTION_ON_SYSTEM: "UT-6731",
+  // 400 — sohbet durumu / arama
+  CONVERSATION_CLOSED: "UT-6740",
+  INVALID_CURSOR: "UT-6741",
+  SEARCH_TOO_SHORT: "UT-6742",
+} as const;
+
+export const MODERATION_CODES = {
+  BLOCK_SELF: "UT-6801",
+  REPORT_SELF: "UT-6802",
+  /** 404 (eskiden 400) — şikayet edilecek kullanıcı yok. */
+  REPORT_TARGET_MISSING: "UT-6803",
+  /** Aynı kişi 24 saat içinde ikinci kez şikayet edildi. */
+  REPORT_DUPLICATE: "UT-6804",
+  /** İSTEMCİ BUG'I — kullanıcıya gösterilmez, loglanır. */
+  EMPTY_USER_ID: "UT-6805",
+} as const;
+
+export type ChatErrorCode =
+  (typeof CHAT_ERROR_CODES)[keyof typeof CHAT_ERROR_CODES];
+export type ModerationCode =
+  (typeof MODERATION_CODES)[keyof typeof MODERATION_CODES];
+
+// Düzenleme kodları (UT-672x) ve arama kodu (UT-6742) bu istemcide HENÜZ
+// tetiklenmiyor — mesaj düzenleme yalnız hub'dan ALINIYOR, arama istemci
+// tarafında yapılıyor. Yine de tabloda duruyorlar: aile eksiksiz olmadan
+// backend kataloğuyla karşılaştırılamıyor ve o akışlar açıldığında metin
+// hazır olsun.
+const CHAT_CODE_I18N: Record<ChatErrorCode, string> = {
+  [CHAT_ERROR_CODES.NO_ACCESS]: "chat.codes.UT-6701",
+  [CHAT_ERROR_CODES.CANNOT_SEND]: "chat.codes.UT-6702",
+  [CHAT_ERROR_CODES.EDIT_NOT_OWNER]: "chat.codes.UT-6703",
+  [CHAT_ERROR_CODES.DELETE_NOT_OWNER]: "chat.codes.UT-6704",
+  [CHAT_ERROR_CODES.RESTORE_NOT_OWNER]: "chat.codes.UT-6743",
+  [CHAT_ERROR_CODES.CONVERSATION_NOT_FOUND]: "chat.codes.UT-6713",
+  [CHAT_ERROR_CODES.MESSAGE_NOT_FOUND]: "chat.codes.UT-6720",
+  [CHAT_ERROR_CODES.EMPTY_CONTENT]: "chat.codes.UT-6710",
+  [CHAT_ERROR_CODES.TOO_LONG]: "chat.codes.UT-6711",
+  [CHAT_ERROR_CODES.REPLY_TARGET_INVALID]: "chat.codes.UT-6712",
+  [CHAT_ERROR_CODES.EDIT_SYSTEM]: "chat.codes.UT-6721",
+  [CHAT_ERROR_CODES.EDIT_DELETED]: "chat.codes.UT-6722",
+  [CHAT_ERROR_CODES.EDIT_WINDOW_CLOSED]: "chat.codes.UT-6723",
+  [CHAT_ERROR_CODES.EDIT_NON_TEXT]: "chat.codes.UT-6724",
+  [CHAT_ERROR_CODES.DELETE_SYSTEM]: "chat.codes.UT-6725",
+  [CHAT_ERROR_CODES.REACTION_BAD_EMOJI]: "chat.codes.UT-6730",
+  [CHAT_ERROR_CODES.REACTION_ON_SYSTEM]: "chat.codes.UT-6731",
+  [CHAT_ERROR_CODES.CONVERSATION_CLOSED]: "chat.codes.UT-6740",
+  [CHAT_ERROR_CODES.INVALID_CURSOR]: "chat.codes.UT-6741",
+  [CHAT_ERROR_CODES.SEARCH_TOO_SHORT]: "chat.codes.UT-6742",
+};
+
+// UT-6804 mevcut anahtarı kullanıyor: metin birebir aynı ve ReportModal onu
+// zaten 409 dalında gösteriyor — ikiye bölmenin faydası yok.
+// UT-6805 BİLEREK YOK: istemci bug'ı, kullanıcıya jenerik metin gösterilir.
+const MODERATION_CODE_I18N: Record<string, string> = {
+  [MODERATION_CODES.BLOCK_SELF]: "moderation.codes.UT-6801",
+  [MODERATION_CODES.REPORT_SELF]: "moderation.codes.UT-6802",
+  [MODERATION_CODES.REPORT_TARGET_MISSING]: "moderation.codes.UT-6803",
+  [MODERATION_CODES.REPORT_DUPLICATE]: "moderation.report.alreadyReported",
+};
+
+/**
+ * Hatanın UI'da ne yapılması gerektiği — kod ailesinin davranış eksenine
+ * indirgenmiş hâli. Ekran-bağımsız (ChatScreen ile MessagesScreen aynı kodla
+ * farklı navigasyon yapabilsin), tıpkı `CodeAction` gibi.
+ *
+ *   conversationGone → sohbet artık kullanılamaz: yerel `isActive` bayrağını
+ *                      çevir + listeyi sunucudan doğrulat.
+ *   messageGone      → hedef mesaj sunucuda yok: geçmişi tazele.
+ *   actionRejected   → aksiyon reddedildi ama veri yerinde: metni göster, geri al.
+ *   inputInvalid     → kullanıcı düzeltebilir: GİRDİYİ KORU, temizleme.
+ *   staleCursor      → sayfalamayı baştan kur (sessiz).
+ *   clientBug        → kullanıcıya jenerik metin, ayrıntı log'a.
+ */
+export type ChatErrorEffect =
+  | "conversationGone"
+  | "messageGone"
+  | "actionRejected"
+  | "inputInvalid"
+  | "staleCursor"
+  | "clientBug";
+
+const CHAT_CODE_EFFECT: Record<string, ChatErrorEffect> = {
+  [CHAT_ERROR_CODES.NO_ACCESS]: "conversationGone",
+  [CHAT_ERROR_CODES.CANNOT_SEND]: "conversationGone",
+  [CHAT_ERROR_CODES.CONVERSATION_NOT_FOUND]: "conversationGone",
+  [CHAT_ERROR_CODES.CONVERSATION_CLOSED]: "conversationGone",
+  [CHAT_ERROR_CODES.MESSAGE_NOT_FOUND]: "messageGone",
+  [CHAT_ERROR_CODES.EDIT_NOT_OWNER]: "actionRejected",
+  [CHAT_ERROR_CODES.DELETE_NOT_OWNER]: "actionRejected",
+  [CHAT_ERROR_CODES.RESTORE_NOT_OWNER]: "actionRejected",
+  [CHAT_ERROR_CODES.EDIT_SYSTEM]: "actionRejected",
+  [CHAT_ERROR_CODES.EDIT_DELETED]: "actionRejected",
+  [CHAT_ERROR_CODES.EDIT_WINDOW_CLOSED]: "actionRejected",
+  [CHAT_ERROR_CODES.EDIT_NON_TEXT]: "actionRejected",
+  [CHAT_ERROR_CODES.DELETE_SYSTEM]: "actionRejected",
+  [CHAT_ERROR_CODES.REACTION_ON_SYSTEM]: "actionRejected",
+  [CHAT_ERROR_CODES.EMPTY_CONTENT]: "inputInvalid",
+  [CHAT_ERROR_CODES.TOO_LONG]: "inputInvalid",
+  [CHAT_ERROR_CODES.REPLY_TARGET_INVALID]: "inputInvalid",
+  [CHAT_ERROR_CODES.REACTION_BAD_EMOJI]: "inputInvalid",
+  [CHAT_ERROR_CODES.SEARCH_TOO_SHORT]: "inputInvalid",
+  [CHAT_ERROR_CODES.INVALID_CURSOR]: "staleCursor",
+  [MODERATION_CODES.EMPTY_USER_ID]: "clientBug",
+};
+
+/**
+ * Gövdedeki sohbet/moderasyon kodu. İKİ ŞEKLİ de okur:
+ *   • axios hatası  → `err.response.data.code`
+ *   • hub payload'ı → `err.code` (MatchHub "Error" event'i aynı kodları taşıyor)
+ *
+ * Önek kontrolü ŞART: axios'un kendi `code`'u (`ECONNABORTED`) ve hub'ın eski
+ * string kodları (`CHAT_QUOTA_EXHAUSTED`, `RATE_LIMITED`, `JOIN_FAILED`…) aynı
+ * alandan geliyor. Onlar KALDIRILMADI — bu fonksiyon null döndürünce çağıran
+ * mevcut mantığına düşer.
+ */
+export function chatErrorCodeOf(err: any): string | null {
+  const data = err?.response?.data ?? err;
+  for (const raw of [data?.code, data?.errorCode, data?.result?.code]) {
+    if (typeof raw === "string" && (raw.startsWith("UT-67") || raw.startsWith("UT-68"))) {
+      return raw;
+    }
+  }
+  return null;
+}
+
+/** Bilinmeyen/yabancı kodda null — çağıran kendi jenerik davranışına düşer. */
+export function chatErrorEffect(
+  code: string | null | undefined,
+): ChatErrorEffect | null {
+  if (!code) return null;
+  return CHAT_CODE_EFFECT[code] ?? null;
+}
+
+/**
+ * Hata → kullanıcıya gösterilecek metin. Sıra:
+ *   1. kod → i18n anahtarı (kanonik yol; metin bizim, dil cihazın)
+ *   2. backend `message` (yeni sözleşmede zaten kullanıcının dilinde) —
+ *      yalnız BİLİNMEYEN kod için, yani sunucu bizden yeniyse
+ *   3. çağıranın jenerik metni
+ *
+ * ⚠️ TR metin karşılaştırmasına ASLA düşülmez (eski yöntemin tamamı buydu).
+ *
+ * `t` parametre olarak geçer: bu modül constants katmanında, i18n init
+ * sırasına bağlanmamalı.
+ */
+export function chatErrorText(
+  err: any,
+  t: (key: string) => string,
+  fallbackKey: string,
+): string {
+  const code = chatErrorCodeOf(err);
+  const key = code
+    ? (CHAT_CODE_I18N[code as ChatErrorCode] ?? MODERATION_CODE_I18N[code])
+    : null;
+  if (key) return t(key);
+  // Bilinmeyen kod ya da kodsuz gövde: backend metni varsa o, yoksa jenerik.
+  //
+  // Metin YALNIZ API GÖVDESİNDEN alınır (REST'te `response.data`, hub'da kod
+  // taşıyan payload'ın kendisi). `err.message`e düşmek axios'un teknik metnini
+  // ("Network Error", "timeout of 30000ms exceeded") kullanıcıya gösterirdi.
+  const body = err?.response?.data ?? (typeof err?.code === "string" ? err : null);
+  const message = body?.message;
+  return typeof message === "string" && message.trim()
+    ? message
+    : t(fallbackKey);
+}
+
 const CODE_MAP: Record<string, CodeEntry> = Object.fromEntries(
   CODE_ENTRIES.map((e) => [e.code, e]),
 );

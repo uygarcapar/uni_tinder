@@ -2,6 +2,7 @@ import { createSlice, createAsyncThunk, PayloadAction } from '@reduxjs/toolkit';
 import chatService from '@/features/chat/chatService';
 import { messageContentEqual } from '@/features/chat/messageEquality';
 import { utcTime } from '@/shared/utils/dateUtc';
+import { chatErrorCodeOf, chatErrorEffect } from '@/shared/constants/responseCodes';
 import type {
   ChatState,
   MessageDto,
@@ -49,6 +50,20 @@ export const fetchHistory = createAsyncThunk(
       const data = await chatService.getMessageHistory(conversationId, { cursor, pageSize });
       return { conversationId, ...data, append: !!cursor };
     } catch (e: any) {
+      // UT-6741 (bozuk cursor) TEK KENDİNİ ONARAN hata: cursor bizden çıkıyor
+      // ve persist'ten bayat gelebiliyor. Aynı isteği cursor'suz tekrarlıyoruz —
+      // sayfalama sayfa-1'den kurulur (append:false bucket'ı tazeler). Kullanıcı
+      // hiçbir şey görmez; alternatifi geçmişin kalıcı olarak açılmamasıydı.
+      if (cursor && chatErrorEffect(chatErrorCodeOf(e)) === 'staleCursor') {
+        try {
+          const fresh = await chatService.getMessageHistory(conversationId, { pageSize });
+          return { conversationId, ...fresh, append: false };
+        } catch (retryErr: any) {
+          return rejectWithValue(
+            retryErr?.response?.data?.message || retryErr?.message || 'Failed'
+          );
+        }
+      }
       return rejectWithValue(e?.response?.data?.message || e?.message || 'Failed');
     }
   },
@@ -526,6 +541,30 @@ const chatSlice = createSlice({
       if (m) m._failed = true;
     },
 
+    /**
+     * Yeniden gönderim — balon YERİNDE "tekrar bekliyor" durumuna döner.
+     *
+     * Eski yol (removeOptimisticMessage + yeniden append) satırı REMOUNT
+     * ediyordu: yeniden-gönder butonu bir anda yok olup balon sağa ışınlanıyor,
+     * hata dönünce yine bir anda sola atlıyordu — kayma animasyonu (bkz.
+     * MessageBubble > failAnim) çalışacak satırı bulamıyordu. Üstelik satır
+     * listenin en altına taşınıyor ve yalnız optimistic kopyada duran alanlar
+     * (_localUri gibi) yeniden kurulmak zorunda kalıyordu.
+     */
+    retryOptimisticMessage: (
+      state,
+      action: PayloadAction<{ conversationId: string; clientMessageId: string }>
+    ) => {
+      const { conversationId, clientMessageId } = action.payload;
+      const bucket = state.messagesByConv[conversationId];
+      if (!bucket) return;
+      const m = bucket.messages.find((x) => x.clientMessageId === clientMessageId);
+      if (m) {
+        m._failed = false;
+        m._pending = true;
+      }
+    },
+
     removeOptimisticMessage: (
       state,
       action: PayloadAction<{ conversationId: string; clientMessageId: string }>
@@ -761,6 +800,7 @@ export const {
   historyRevealed,
   appendOptimisticMessage,
   failOptimisticMessage,
+  retryOptimisticMessage,
   removeOptimisticMessage,
   resetChat,
   decrementQuotaLocally,
