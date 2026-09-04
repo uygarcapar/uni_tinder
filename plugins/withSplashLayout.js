@@ -1,4 +1,5 @@
-// Native açılış ekranının ALT ORTASINA 4ourstack imzasını koyar (iOS).
+// Native açılış ekranının yerleşimini düzenler (iOS): alt ortaya "developed by"
+// + 4ourstack imzasını koyar, ortadaki logoyu optik merkeze kaydırır.
 //
 // NEDEN CONFIG PLUGIN: `ios/` prebuild ürünü ve .gitignore'da — storyboard'ı
 // elle düzenlemek ilk `expo prebuild`de geri alınırdı. expo-splash-screen
@@ -26,11 +27,33 @@ const { withDangerousMod, withMod } = require("@expo/config-plugins");
 
 const IMAGE_NAME = "SplashScreenFooter";
 const VIEW_ID = "FOURSTACK-SplashFooter";
+const LABEL_ID = "FOURSTACK-SplashFooterLabel";
+const LOGO_ID = "EXPO-SplashScreen"; // expo-splash-screen'in ortadaki logosu
 const CONTAINER_ID = "EXPO-ContainerView";
 
+// Home indicator payı — yalnız IB'nin tuval önizlemesindeki `rect`ler için.
+// Çalışma zamanında konumu safeArea kılavuzu belirliyor, bu sayı değil.
+const SAFE_BOTTOM_PT = 34;
+
 // İmzanın güvenli alanın altına olan mesafesi. Home indicator'ın 34pt'si
-// ÜSTÜNE biniyor (safeArea referans alınıyor), yani ekran dibine toplam ~58pt.
-const BOTTOM_PT = 24;
+// ÜSTÜNE biniyor (safeArea referans alınıyor), yani ekran dibine toplam ~70pt.
+const BOTTOM_PT = 36;
+
+// Logonun geometrik merkezden ne kadar YUKARI kaydığı. Göz "orta"yı merkezin
+// biraz üstünde okuyor; altta imza bloğu varken fark büyüyor, tam ortadaki logo
+// aşağı sarkmış duruyordu.
+const LOGO_RISE_PT = 32;
+
+const LABEL_TEXT = "developed by";
+const LABEL_SIZE_PT = 11;
+const LABEL_GAP_PT = 4; // yazının altı ile markanın üstü arası
+
+// Paletteki `textMuted` (bkz. src/shared/theme/colors.ts). Açık modda #8E8E93,
+// koyuda #878787 — fark gözle seçilmiyor, o yüzden storyboard'da tek statik
+// renk. Marka PNG'sinin aksine burada asset catalog varyantı yok: dinamik renk
+// için resources'a systemColor eklemek gerekirdi ve tek kazanç 7 birimlik bir
+// gri farkı olurdu.
+const LABEL_INK = [0x8e, 0x8e, 0x93];
 
 // assets/fourstack içindeki dosya adı → imageset içindeki ad.
 const ASSET_SOURCE_DIR = path.join(__dirname, "..", "assets", "fourstack");
@@ -137,7 +160,7 @@ function applyFooterToStoryboard(xml, size) {
         $: {
           key: "frame",
           x: (canvasW - size.width) / 2,
-          y: canvasH - 34 - BOTTOM_PT - size.height,
+          y: canvasH - SAFE_BOTTOM_PT - BOTTOM_PT - size.height,
           width: size.width,
           height: size.height,
         },
@@ -145,8 +168,61 @@ function applyFooterToStoryboard(xml, size) {
     ],
   });
 
-  // Boyut kısıtı BİLEREK yok: imageView intrinsic content size'ıyla yerleşiyor,
-  // yani gen-fourstack.js'te WIDTH_PT'yi değiştirmek tek başına yetiyor.
+  // "developed by" — marka PNG'ye gömülemezdi: repoda font rasterleştirici yok
+  // ve gömseydik metin cihazın piksel yoğunluğuna göre değil bizim ürettiğimiz
+  // üç ölçeğe mahkûm kalırdı. Native UILabel hem keskin hem de metni
+  // storyboard'dan okunur tutuyor.
+  const labelH = Math.round(LABEL_SIZE_PT * 1.21); // system font satır yüksekliği
+  const labelW = Math.round(LABEL_TEXT.length * LABEL_SIZE_PT * 0.5);
+  mainView.subviews[0].label = mainView.subviews[0].label || [];
+  upsert(mainView.subviews[0].label, {
+    $: {
+      opaque: "NO",
+      userInteractionEnabled: "NO",
+      contentMode: "left",
+      horizontalHuggingPriority: 251,
+      verticalHuggingPriority: 251,
+      text: LABEL_TEXT,
+      textAlignment: "center",
+      lineBreakMode: "tailTruncation",
+      baselineAdjustment: "alignBaselines",
+      adjustsFontSizeToFit: "NO",
+      translatesAutoresizingMaskIntoConstraints: "NO",
+      id: LABEL_ID,
+    },
+    rect: [
+      {
+        $: {
+          key: "frame",
+          x: (canvasW - labelW) / 2,
+          y: canvasH - SAFE_BOTTOM_PT - BOTTOM_PT - size.height - LABEL_GAP_PT - labelH,
+          width: labelW,
+          height: labelH,
+        },
+      },
+    ],
+    fontDescription: [
+      { $: { key: "fontDescription", type: "system", pointSize: LABEL_SIZE_PT } },
+    ],
+    color: [
+      {
+        $: {
+          key: "textColor",
+          red: LABEL_INK[0] / 255,
+          green: LABEL_INK[1] / 255,
+          blue: LABEL_INK[2] / 255,
+          alpha: 1,
+          colorSpace: "custom",
+          customColorSpace: "sRGB",
+        },
+      },
+    ],
+    nil: [{ $: { key: "highlightedColor" } }],
+  });
+
+  // Boyut kısıtı BİLEREK yok: iki görünüm de intrinsic content size'ıyla
+  // yerleşiyor, yani gen-fourstack.js'te WIDTH_PT'yi ya da buradaki
+  // LABEL_SIZE_PT'yi değiştirmek tek başına yetiyor.
   mainView.constraints = mainView.constraints || [{}];
   mainView.constraints[0].constraint = mainView.constraints[0].constraint || [];
   upsert(mainView.constraints[0].constraint, {
@@ -168,6 +244,40 @@ function applyFooterToStoryboard(xml, size) {
       id: `${VIEW_ID}-bottom`,
     },
   });
+  upsert(mainView.constraints[0].constraint, {
+    $: {
+      firstItem: LABEL_ID,
+      firstAttribute: "centerX",
+      secondItem: CONTAINER_ID,
+      secondAttribute: "centerX",
+      id: `${LABEL_ID}-centerX`,
+    },
+  });
+  upsert(mainView.constraints[0].constraint, {
+    $: {
+      firstItem: LABEL_ID,
+      firstAttribute: "bottom",
+      secondItem: VIEW_ID,
+      secondAttribute: "top",
+      constant: -LABEL_GAP_PT,
+      id: `${LABEL_ID}-bottom`,
+    },
+  });
+
+  // Ortadaki logoyu optik merkeze çek. expo-splash-screen onu tam ortaya
+  // sabitliyor; kısıtı SİLMİYORUZ, sabitini kaydırıyoruz — expo her prebuild'de
+  // onu kendi id'siyle yeniden yazacak, biz de her seferinde üstüne bineceğiz.
+  const logoCenterY = mainView.constraints[0].constraint.find(
+    (c) => c.$.firstItem === LOGO_ID && c.$.firstAttribute === "centerY",
+  );
+  if (logoCenterY) logoCenterY.$.constant = -LOGO_RISE_PT;
+  const logo = mainView.subviews[0].imageView.find((v) => v.$.id === LOGO_ID);
+  if (logo && logo.rect && logo.rect[0]) {
+    // Mutlak hesap, mevcut değerden çıkarma DEĞİL: standalone uygulayıcı aynı
+    // dosyaya iki kez çalıştırılırsa logo iki kat yukarı kaymasın.
+    logo.rect[0].$.y =
+      (canvasH - Number(logo.rect[0].$.height)) / 2 - LOGO_RISE_PT;
+  }
 
   const resources = xml.document.resources && xml.document.resources[0];
   if (resources) {
@@ -188,7 +298,7 @@ function footerSize() {
   return pngSize(path.join(ASSET_SOURCE_DIR, "splash-footer-light.png"));
 }
 
-const withSplashFooter = (config) => {
+const withSplashLayout = (config) => {
   config = withDangerousMod(config, [
     "ios",
     (cfg) => {
@@ -211,16 +321,27 @@ const withSplashFooter = (config) => {
   });
 };
 
-module.exports = withSplashFooter;
+module.exports = withSplashLayout;
 module.exports.writeFooterImageSet = writeFooterImageSet;
 module.exports.applyFooterToStoryboard = applyFooterToStoryboard;
+// scripts/preview-splash.js aynı sayılarla çiziyor — önizleme ile storyboard'ın
+// ayrışmaması için sabitler TEK yerden okunuyor.
+module.exports.LAYOUT = {
+  SAFE_BOTTOM_PT,
+  BOTTOM_PT,
+  LOGO_RISE_PT,
+  LABEL_TEXT,
+  LABEL_SIZE_PT,
+  LABEL_GAP_PT,
+  LABEL_INK,
+};
 
 // Prebuild ÇALIŞTIRMADAN mevcut ios/ ağacına uygula — pod'lar yerindeyken
 // sadece splash'i tazelemek için:
-//   node plugins/withSplashFooter.js ios/Lit
+//   node plugins/withSplashLayout.js ios/Lit
 if (require.main === module) {
   const projectDir = process.argv[2];
-  if (!projectDir) throw new Error("kullanım: node plugins/withSplashFooter.js <ios/ProjeAdı>");
+  if (!projectDir) throw new Error("kullanım: node plugins/withSplashLayout.js <ios/ProjeAdı>");
   const { Parser, Builder } = require("xml2js");
   const storyboard = path.join(projectDir, "SplashScreen.storyboard");
   writeFooterImageSet(projectDir);

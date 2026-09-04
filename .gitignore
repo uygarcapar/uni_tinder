@@ -44,3 +44,4 @@ coverage/
 /ios
 /android
 .icon-preview/
+.splash-preview.html

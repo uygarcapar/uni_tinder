@@ -23,12 +23,16 @@ const { writePNG } = require("./lib/png");
 const ROOT = path.resolve(__dirname, "..");
 const DIR = path.join(ROOT, "assets", "fourstack");
 
-// Ekrandaki genişlik. "lit" logosu 180pt (app.json > expo-splash-screen
-// imageWidth); imza onun ~%31'i — okunur ama açıkça ikincil. Yükseklik
-// verilmiyor, glyph'in kendi en-boy oranından türüyor: storyboard'daki
+// Ekrandaki genişlik. Ölçek Instagram'ın "from Meta" imzasından alındı: oradaki
+// kilit ~20pt yüksekliğinde ve bizim markamızın en-boy oranı 1.93 olduğu için
+// aynı yüksekliğe 40pt genişlik denk geliyor. GENİŞLİKTEN eşlemedik — Meta'nınki
+// alçak-geniş bir wordmark (oran ~3.6), bizimki iki tıknaz glyph; aynı genişliğe
+// çekseydik iki katı yükseklikte, imzadan çok logo gibi dururdu.
+//
+// Yükseklik verilmiyor, glyph'in kendi oranından türüyor: storyboard'daki
 // imageView boyut kısıtı taşımıyor, intrinsic content size'ı kullanıyor, yani
 // burayı değiştirmek tek başına yeterli.
-const WIDTH_PT = 56;
+const WIDTH_PT = 40;
 
 const SS_Y = 16; // dikey süper-örnekleme (yatayda örtüşme analitik hesaplanıyor)
 const FLATTEN_STEPS = 48; // kübik başına poligon adımı — gen-tab-icons ile aynı

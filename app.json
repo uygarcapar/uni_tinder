@@ -94,12 +94,12 @@
           }
         }
       ],
-      "./plugins/withSplashFooter",
+      "./plugins/withSplashLayout",
       [
         "expo-splash-screen",
         {
           "image": "./assets/splash-icon-light.png",
-          "imageWidth": 180,
+          "imageWidth": 96,
           "resizeMode": "contain",
           "backgroundColor": "#FFFFFF",
           "dark": {
