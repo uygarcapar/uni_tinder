@@ -16,7 +16,10 @@ import { forgetPhoto } from "@/shared/utils/photoStore";
 import { devLog } from "@/shared/utils/devLog";
 import { captureSelfieFrame } from "./captureSelfieFrame";
 import type { SelfieFrame } from "./selfieService";
-import type { SelfieChallenge } from "./selfieVerification";
+import {
+  selfieChallengeHintKey,
+  type SelfieChallenge,
+} from "./selfieVerification";
 
 /**
  * Kamera adımı — challenge başına TEK kare.
@@ -171,6 +174,7 @@ export default function SelfieCameraStep({
   }
 
   const challenge = challenges[index];
+  const moveHintKey = selfieChallengeHintKey(challenge?.code);
   const ovalWidth = width * OVAL_WIDTH_RATIO;
   const disabled = busy || submitting;
 
@@ -250,6 +254,22 @@ export default function SelfieCameraStep({
         >
           {challenge?.instruction ?? ""}
         </Text>
+        {/* Hareketin nasıl yapılacağı — talimatın kendisi değil, dozu. Poz ile
+            mimik ipuçları ZIT yönde uyarıyor (savrulma vs. görünmezlik), o
+            yüzden tek bir cümle yerine koda göre seçiliyor. */}
+        {moveHintKey && (
+          <Text
+            style={{
+              color: onMediaAt(0.85),
+              fontSize: 14,
+              lineHeight: 20,
+              fontWeight: "600",
+              textAlign: "center",
+            }}
+          >
+            {t(moveHintKey)}
+          </Text>
+        )}
         <Text
           style={{
             color: onMediaAt(0.7),

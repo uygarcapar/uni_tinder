@@ -21,16 +21,19 @@ import i18n from '@/shared/i18n';
 // değiştiremez. `code` yalnız ikon/animasyon seçmek için — ekranda gösterilen
 // metin sunucudan gelen `instruction`'dır (zaten Accept-Language'e göre
 // yerelleşmiş).
+//
+// 2026-09-01 kalibrasyonundan sonra havuz 9'dan 5'e indi. Emekli olanlar
+// (`LookDown`, `TiltHead`, `Neutral`, `EyesClosed`) ölçümde nötrden ya da
+// birbirinden ayrışmadığı için havuzdan çıkarıldı; backend enum'unda hâlâ
+// duruyorlar (eski attempt kayıtları var) ama ARTIK GÖNDERİLMİYORLAR — bunlara
+// ikon/animasyon yazmak boşa emek. Yine de havuz ileride genişleyebilir, o
+// yüzden `code` `string` kalıyor ve her switch'te `default` dalı var.
 export const SELFIE_CHALLENGE_CODES = [
   'TurnRight',
   'TurnLeft',
   'LookUp',
-  'LookDown',
-  'TiltHead',
   'Smile',
-  'Neutral',
   'MouthOpen',
-  'EyesClosed',
 ] as const;
 
 export type SelfieChallengeCode = (typeof SELFIE_CHALLENGE_CODES)[number];
@@ -51,8 +54,15 @@ export interface SelfieAttempt {
 
 // ── Sonuç ────────────────────────────────────────────────────────────────────
 
+// Poz hataları tek sebepten kaynaklanmıyor: hepsine "algılayamadık" demek
+// kullanıcıyı AYNI hatayı tekrarlamaya itiyordu. Kalibrasyondan sonra
+// `challenge_not_met` üçe ayrıldı (zayıf / yanlış / aşırı) ve jenerik kod
+// yalnız hiçbirine girmeyen durumlar için kaldı.
 export const SELFIE_REASON_CODES = [
   'challenge_not_met',
+  'challenge_too_weak',
+  'challenge_wrong_move',
+  'challenge_too_much',
   'no_face',
   'multiple_faces',
   'face_occluded',
@@ -137,11 +147,20 @@ export function normalizeSelfieResult(raw: any, message?: unknown): SelfieResult
  * `false` sanmamalı: rozeti çizmemek ile "doğrulanmamış" göstermek farklı
  * şeyler, ikincisi henüz var olmayan bir özelliğe davet eder.
  *
+ * ⚠️ İKİ SEVİYE de okunuyor. `GetMyProfile` bir ProfileDto döndürüyor ve
+ * kullanıcı alanlarının bir kısmı (`age`, `universityName`, …) iç içe `user`
+ * nesnesinde duruyor. Alan UserDto'da tanımlıysa profilin köküne çıkmıyor;
+ * yalnız kökü okumak "backend'in bu sürümü yok" sonucunu veriyor ve satır
+ * sessizce hiç çizilmiyor. Hangi seviyede geldiği sözleşmede sabitlenene kadar
+ * ikisi de kabul: kök önce, sonra `user`.
+ *
  * ⚠️ Bu alan `isVerified`'a DAHİL DEĞİL ve olmayacak — ayrı rozet.
  */
 export function resolveSelfieVerified(raw: any): boolean | null {
-  const value = raw?.isSelfieVerified;
-  return typeof value === 'boolean' ? value : null;
+  const own = raw?.isSelfieVerified;
+  if (typeof own === 'boolean') return own;
+  const nested = raw?.user?.isSelfieVerified;
+  return typeof nested === 'boolean' ? nested : null;
 }
 
 // ── i18n ─────────────────────────────────────────────────────────────────────
@@ -171,6 +190,34 @@ export function selfieReasonTitle(reasonCode: string | null | undefined): string
     if (translated !== key) return translated;
   }
   return i18n.t('profile.selfie.reasonTitle.fallback');
+}
+
+/**
+ * Talimatın altındaki ikinci ipucu satırının i18n anahtarı.
+ *
+ * Kalibrasyonda en sık iki başarısızlık `challenge_too_weak` ve
+ * `challenge_too_much` çıktı — ikisi de ZITTI, yani tek bir "hareketi belirgin
+ * yap" cümlesi birini düzeltirken diğerini üretiyor. İpucu bu yüzden hareketin
+ * tipine göre değişiyor: poz hareketleri savrulmaya, mimikler görünmezliğe
+ * yatkın.
+ *
+ * Bilinmeyen kodda `null` — havuz genişlerse yanlış ipucu vermektense hiç
+ * vermemek doğru. Talimatın kendisi zaten sunucudan geliyor.
+ */
+export function selfieChallengeHintKey(
+  code: string | null | undefined,
+): string | null {
+  switch (code) {
+    case 'TurnRight':
+    case 'TurnLeft':
+    case 'LookUp':
+      return 'profile.selfie.camera.hintPose';
+    case 'Smile':
+    case 'MouthOpen':
+      return 'profile.selfie.camera.hintExpression';
+    default:
+      return null;
+  }
 }
 
 /**

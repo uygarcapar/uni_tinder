@@ -1,5 +1,10 @@
 import { useCallback, useEffect, useRef, useState } from "react";
-import { ActivityIndicator, Alert, ScrollView, Text, View } from "react-native";
+import { ActivityIndicator, Alert, StyleSheet, Text, View } from "react-native";
+import {
+  BottomSheetModalProvider,
+  BottomSheetScrollView,
+} from "@gorhom/bottom-sheet";
+import AppBottomSheet from "@/shared/components/AppBottomSheet";
 import { useTranslation } from "react-i18next";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { BadgeCheck, ShieldCheck } from "@/shared/icons";
@@ -93,6 +98,11 @@ export default function SelfieVerificationOverlay() {
     try {
       const next = await startSelfieVerification();
       if (!next) {
+        // 200 geldi ama şekil tutmadı (challenge yok / attemptId yok). Kod
+        // yolundan AYRI bir başarısızlık — dev'de ayırt edilebilir olmalı.
+        if (__DEV__) {
+          showInfoToast({ message: "[dev] /start 200 ama şekil geçersiz", variant: "error" });
+        }
         showInfoToast({ message: t("profile.selfie.errors.generic"), variant: "error" });
         close();
         return;
@@ -102,7 +112,19 @@ export default function SelfieVerificationOverlay() {
       setStep("camera");
     } catch (error: any) {
       const code = errorCodeOf(error);
-      devLog("🪪 [selfie] /start hatası", code, error?.response?.status);
+      const status = error?.response?.status;
+      devLog("🪪 [selfie] /start hatası", code, status);
+
+      // UT-6503 ve UT-6505 ikisi de SESSİZCE kapanıyor (kasıtlı: kullanıcının
+      // bilmesi gereken bir şey yok). Geliştirici için bu ikisi ayırt
+      // edilemez hale geliyor — "neden kapandı"nın cevabı yalnız Metro
+      // log'unda kalıyor. Dev'de kodu ekrana da bas.
+      if (__DEV__) {
+        showInfoToast({
+          message: `[dev] /start ${status ?? "ağ"} · ${code ?? "kod yok"}`,
+          variant: "error",
+        });
+      }
 
       switch (code) {
         case SELFIE_CODES.CONSENT_REQUIRED:
@@ -182,7 +204,13 @@ export default function SelfieVerificationOverlay() {
           !autoRestartedRef.current
         ) {
           autoRestartedRef.current = true;
-          setAttempt(null);
+          // ⚠️ `setAttempt(null)` YAPMA. `step` hâlâ "camera" ve kamera dalının
+          // koşulu `step === "camera" && attempt` — attempt'i erken silmek
+          // beginAttempt dönene kadar HİÇBİR dalı eşleştirmez ve render intro
+          // sheet'ine düşer. Sheet o aralıkta mount olup hemen unmount olur,
+          // gorhom'un present/dismiss state machine'i bunu kaldırmıyor
+          // (bkz. AppBottomSheet'teki handleDismiss notu). Yeni attempt
+          // zaten beginAttempt içinde set ediliyor.
           await beginAttempt();
           return;
         }
@@ -218,10 +246,16 @@ export default function SelfieVerificationOverlay() {
     [attempt, userId, beginAttempt, close, t],
   );
 
-  /** Yeniden deneme HER ZAMAN yeni `/start` — attemptId tek kullanımlık. */
+  /**
+   * Yeniden deneme HER ZAMAN yeni `/start` — attemptId tek kullanımlık.
+   *
+   * ⚠️ Burada `setResult(null)` / `setAttempt(null)` YAPILMIYOR. Yapılırsa
+   * `step` "result" kalırken `result` null olur, hiçbir dal eşleşmez ve render
+   * intro sheet'ine düşer: kullanıcı "Tekrar Dene"ye bastığında sheet bir anlık
+   * açılıp kapanıyor ve akış kapanmış gibi görünüyordu. İkisini de beginAttempt
+   * başarılı olunca kendisi temizliyor; o ana kadar sonuç ekranı durur.
+   */
   const handleRetry = useCallback(() => {
-    setAttempt(null);
-    setResult(null);
     autoRestartedRef.current = false;
     beginAttempt();
   }, [beginAttempt]);
@@ -240,6 +274,11 @@ export default function SelfieVerificationOverlay() {
     return (
       <Host>
         <SelfieCameraStep
+          // Yeni attempt = SIFIRDAN çekim. `attempt_expired` otomatik yeniden
+          // başlatmasında `step` "camera"da kaldığı için bileşen kendiliğinden
+          // unmount olmuyor; key olmadan iç `index`i son karede takılı kalır ve
+          // kullanıcı challenge sayısından az kare çekip UT-6507'ye düşerdi.
+          key={attempt.attemptId}
           challenges={attempt.challenges}
           submitting={submitting}
           onFrames={handleFrames}
@@ -254,6 +293,7 @@ export default function SelfieVerificationOverlay() {
       <Host>
         <ResultStep
           result={result}
+          busy={starting}
           onRetry={handleRetry}
           onClose={close}
           insetTop={insets.top}
@@ -263,16 +303,28 @@ export default function SelfieVerificationOverlay() {
     );
   }
 
+  // Intro bir BottomSheetModal ve KENDİ provider'ını taşıyor.
+  //
+  // Gerekçe: bu overlay App.tsx'te uygulama genelindeki
+  // `BottomSheetModalProvider`ın DIŞINA mount edilmiş (kamera adımı profil
+  // düzenleme sheet'inin altında kalmasın diye). Sheet'in bir portal host'a
+  // ihtiyacı var, o yüzden burada yerel bir tane kuruluyor. Katman sırası yine
+  // doğru: App.tsx'te overlay uygulama provider'ından SONRA render edildiği
+  // için bu host da onun üstüne boyanıyor.
+  //
+  // `Host`'a SARILMIYOR — opak zemin sheet'in perdesini öldürür, arkadaki
+  // profil ekranı görünmeli. `box-none`: perde dışındaki dokunuşlar altta.
   return (
-    <Host>
-      <IntroStep
-        busy={starting}
-        onStart={beginAttempt}
-        onClose={close}
-        insetTop={insets.top}
-        insetBottom={insets.bottom}
-      />
-    </Host>
+    <View style={StyleSheet.absoluteFill} pointerEvents="box-none">
+      <BottomSheetModalProvider>
+        <IntroStep
+          busy={starting}
+          onStart={beginAttempt}
+          onClose={close}
+          insetBottom={insets.bottom}
+        />
+      </BottomSheetModalProvider>
+    </View>
   );
 }
 
@@ -298,48 +350,117 @@ function IntroStep({
   busy,
   onStart,
   onClose,
-  insetTop,
   insetBottom,
 }: {
   busy: boolean;
   onStart: () => void;
   onClose: () => void;
-  insetTop: number;
   insetBottom: number;
 }) {
   const { t } = useTranslation();
 
+  const footer = (
+    <View
+      style={{
+        paddingHorizontal: 28,
+        paddingTop: 12,
+        paddingBottom: insetBottom + 16,
+        backgroundColor: colors.bg,
+      }}
+    >
+      <AnimatedPressable
+        onPress={onStart}
+        disabled={busy}
+        style={{
+          borderRadius: 999,
+          borderCurve: "continuous",
+          overflow: "hidden",
+          backgroundColor: colors.inverseSurface,
+        }}
+      >
+        {busy ? (
+          <ActivityIndicator
+            style={{ paddingVertical: 17.5 }}
+            color={colors.onInverseSurface}
+          />
+        ) : (
+          <Text
+            style={{
+              paddingVertical: 20,
+              textAlign: "center",
+              fontSize: 15,
+              fontWeight: "700",
+              color: colors.onInverseSurface,
+            }}
+          >
+            {t("profile.selfie.intro.startButton")}
+          </Text>
+        )}
+      </AnimatedPressable>
+    </View>
+  );
+
   return (
-    <View style={{ flex: 1 }}>
-      <ScrollView
+    <AppBottomSheet
+      visible
+      // İPTAL BUTONU KALDIRILDI → kapanma yolları yalnız aşağı sürükleme ve
+      // perdeye dokunma. `handleComponent`'i null'a çekme: tutamaç bu iki
+      // yolun TEK görsel işareti. `busy` iken kapanış kapalı, `/start` uçarken
+      // kapatmak attempt'i sahipsiz bırakırdı.
+      onClose={busy ? () => {} : onClose}
+      enablePanDownToClose={!busy}
+      snapPoints={["88%"]}
+      footer={footer}
+      backgroundStyle={{ backgroundColor: colors.bg }}
+    >
+      <BottomSheetScrollView
         contentContainerStyle={{
-          paddingTop: insetTop + 32,
+          paddingTop: 8,
           paddingHorizontal: 28,
-          paddingBottom: 24,
+          // Footer içeriğin üstüne biniyor; son satır altında kalmasın.
+          paddingBottom: 120,
           gap: 16,
         }}
         showsVerticalScrollIndicator={false}
       >
-        <SFIcon
-          name="checkmark.seal.fill"
-          fallback={ShieldCheck}
-          size={44}
-          color={colors.text}
-          style={{ pointerEvents: "none" }}
-        />
-        <Text style={{ color: colors.text, fontSize: 28, fontWeight: "700" }}>
-          {t("profile.selfie.intro.title")}
-        </Text>
-        <Text
-          style={{ color: colors.textSecondary, fontSize: 15, lineHeight: 22 }}
-        >
-          {t("profile.selfie.intro.description")}
-        </Text>
+        {/* Başlık bloğu ORTALI, madde listesi değil: ortalanmış bir liste sol
+            kenarını kaybeder ve okunurluğu düşer. */}
+        <View style={{ alignItems: "center", gap: 16 }}>
+          <SFIcon
+            name="checkmark.seal.fill"
+            fallback={ShieldCheck}
+            size={72}
+            color={colors.text}
+            style={{ pointerEvents: "none" }}
+          />
+          <Text
+            style={{
+              color: colors.text,
+              fontSize: 28,
+              fontWeight: "700",
+              textAlign: "center",
+            }}
+          >
+            {t("profile.selfie.intro.title")}
+          </Text>
+          <Text
+            style={{
+              color: colors.textSecondary,
+              fontSize: 15,
+              lineHeight: 22,
+              textAlign: "center",
+            }}
+          >
+            {t("profile.selfie.intro.description")}
+          </Text>
+        </View>
 
         <View style={{ gap: 12, marginTop: 8 }}>
           <IntroBullet text={t("profile.selfie.intro.bullet1")} />
           <IntroBullet text={t("profile.selfie.intro.bullet2")} />
           <IntroBullet text={t("profile.selfie.intro.bullet3")} />
+          <IntroBullet text={t("profile.selfie.intro.bullet4")} />
+          <IntroBullet text={t("profile.selfie.intro.bullet5")} />
         </View>
 
         <Text
@@ -352,60 +473,8 @@ function IntroStep({
         >
           {t("profile.selfie.intro.privacyNote")}
         </Text>
-      </ScrollView>
-
-      <View
-        style={{
-          paddingHorizontal: 28,
-          paddingTop: 12,
-          paddingBottom: insetBottom + 16,
-          gap: 8,
-        }}
-      >
-        <AnimatedPressable
-          onPress={onStart}
-          disabled={busy}
-          style={{
-            borderRadius: 999,
-            borderCurve: "continuous",
-            overflow: "hidden",
-            backgroundColor: colors.inverseSurface,
-          }}
-        >
-          {busy ? (
-            <ActivityIndicator
-              style={{ paddingVertical: 17.5 }}
-              color={colors.onInverseSurface}
-            />
-          ) : (
-            <Text
-              style={{
-                paddingVertical: 20,
-                textAlign: "center",
-                fontSize: 15,
-                fontWeight: "700",
-                color: colors.onInverseSurface,
-              }}
-            >
-              {t("profile.selfie.intro.startButton")}
-            </Text>
-          )}
-        </AnimatedPressable>
-
-        <AnimatedPressable onPress={onClose} disabled={busy} pressScale={1}>
-          <Text
-            style={{
-              paddingVertical: 8,
-              textAlign: "center",
-              fontSize: 14,
-              color: colors.textSecondary,
-            }}
-          >
-            {t("common.cancel")}
-          </Text>
-        </AnimatedPressable>
-      </View>
-    </View>
+      </BottomSheetScrollView>
+    </AppBottomSheet>
   );
 }
 
@@ -431,12 +500,14 @@ function IntroBullet({ text }: { text: string }) {
 
 function ResultStep({
   result,
+  busy,
   onRetry,
   onClose,
   insetTop,
   insetBottom,
 }: {
   result: SelfieResult;
+  busy: boolean;
   onRetry: () => void;
   onClose: () => void;
   insetTop: number;
@@ -508,6 +579,10 @@ function ResultStep({
         {!success && result.canRetry && (
           <AnimatedPressable
             onPress={onRetry}
+            // Yeni `/start` uçarken sonuç ekranı DURUYOR (bkz. handleRetry).
+            // Geri bildirim olmazsa buton ölü görünür ve ikinci dokunuş
+            // saatlik 5 haktan bir tane daha yakar.
+            disabled={busy}
             style={{
               borderRadius: 999,
               borderCurve: "continuous",
@@ -515,17 +590,24 @@ function ResultStep({
               backgroundColor: colors.inverseSurface,
             }}
           >
-            <Text
-              style={{
-                paddingVertical: 20,
-                textAlign: "center",
-                fontSize: 15,
-                fontWeight: "700",
-                color: colors.onInverseSurface,
-              }}
-            >
-              {t("profile.selfie.result.retry")}
-            </Text>
+            {busy ? (
+              <ActivityIndicator
+                style={{ paddingVertical: 17.5 }}
+                color={colors.onInverseSurface}
+              />
+            ) : (
+              <Text
+                style={{
+                  paddingVertical: 20,
+                  textAlign: "center",
+                  fontSize: 15,
+                  fontWeight: "700",
+                  color: colors.onInverseSurface,
+                }}
+              >
+                {t("profile.selfie.result.retry")}
+              </Text>
+            )}
           </AnimatedPressable>
         )}
 

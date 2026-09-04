@@ -40,6 +40,15 @@ export function markSelfieFeatureUnavailable(): void {
  * yine kullanıcının dokunuşuyla yapılır; hâlâ kapalıysa pencere tazelenir.
  */
 export function isSelfieFeatureAvailable(): boolean {
+  // 🔴 DEV'DE PENCERE UYGULANMIYOR. Backend bayrağı kapalıyken `/start` her
+  // seferinde `UT-6505` dönüyor, yani geliştiricinin girişe TEK dokunuşu satırı
+  // 24 saat yok ediyor ve özellik üzerinde çalışmayı imkânsız kılıyor —
+  // `clearSelfieUnavailable`'ı çağıran bir UI da yok, uygulamayı silmek
+  // gerekiyordu. Yazma ve log aşağıda aynen duruyor (markSelfieFeatureUnavailable
+  // değişmedi), yalnız OKUMA dev'de pencereyi yok sayıyor; release davranışı
+  // rehber §7.2'deki gibi.
+  if (__DEV__) return true;
+
   const until = appPrefs.getNumber(UNAVAILABLE_UNTIL_KEY);
   if (typeof until !== 'number') return true;
   if (Date.now() >= until) {

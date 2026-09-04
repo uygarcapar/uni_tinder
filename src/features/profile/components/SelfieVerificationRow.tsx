@@ -6,6 +6,7 @@ import AnimatedPressable from "@/shared/components/AnimatedPressable";
 import SFIcon, { type SFSymbol } from "@/shared/components/SFIcon";
 import uiBus from "@/shared/services/uiBus";
 import { colors } from "@/shared/theme/colors";
+import { devLog } from "@/shared/utils/devLog";
 import {
   isSelfieFeatureAvailable,
   wasSelfieVerifiedBefore,
@@ -40,6 +41,24 @@ import { resolveSelfieVerified } from "../selfie/selfieVerification";
  * sebebiyle birlikte öğrenmeli.
  */
 
+/**
+ * Kapalı kapıyı bir kez logla. Render başına yazmak profil ekranında onlarca
+ * satır üretir; anlamlı olan yalnız DEĞİŞİM.
+ */
+let lastGate: string | null = null;
+function logGate(gate: string) {
+  if (lastGate === gate) return;
+  lastGate = gate;
+  devLog(
+    `🪪 [selfie] satır çizilmedi — kapı: ${gate}` +
+      (gate === "alan-yok"
+        ? " (isSelfieVerified ne kökte ne user'da boolean geldi)"
+        : gate === "UT-6505"
+          ? " (özellik kapalı penceresi açık — clearSelfieUnavailable ile sıfırlanır)"
+          : ""),
+  );
+}
+
 const TONE: Record<
   "idle" | "verified" | "reset",
   { sf: SFSymbol; fallback: any; color: () => string }
@@ -68,7 +87,14 @@ export default function SelfieVerificationRow({
   );
 
   const verified = resolveSelfieVerified(profile);
-  if (verified === null || !available) return null;
+  if (verified === null || !available) {
+    // Satır iki kapıdan biri yüzünden hiç çizilmeyebiliyor ve ikisi de SESSİZ:
+    // ekranda "eksik bir şey" işareti yok. Hangisinin kapattığını cihazda
+    // görebilmek için tek satır — profil yüklendikten sonra durum değişmediği
+    // sürece tekrarlamıyor.
+    logGate(profile == null ? "profil-yok" : verified === null ? "alan-yok" : "UT-6505");
+    return null;
+  }
 
   const wasVerified = wasSelfieVerifiedBefore(userId);
   const state = verified ? "verified" : wasVerified ? "reset" : "idle";
@@ -83,10 +109,16 @@ export default function SelfieVerificationRow({
         flexDirection: "row",
         alignItems: "center",
         gap: 14,
-        borderRadius: 36,
+        // Zemin CompletionAccordion ile aynı (`surface`): sayfanın zemini `bg`,
+        // bu satır onun üstünde bir kat. Yarıçap ise accordion'ın 40'ından
+        // BİLEREK küçük — bu kutu iki satır metin taşıdığı için daha yüksek,
+        // 40'ta kapsüle yaklaşıp kartlardan çok butona benziyordu.
+        borderRadius: 28,
         borderCurve: "continuous",
         borderWidth: 0.5,
         borderColor: colors.hairline,
+        overflow: "hidden",
+        backgroundColor: colors.surface,
         padding: 20,
       }}
     >

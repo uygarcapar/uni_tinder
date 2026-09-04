@@ -1,6 +1,12 @@
 import api, { SKIP_429_RETRY } from '@/shared/services/api';
 import { API_ENDPOINTS } from '@/shared/constants/api';
+import { SELFIE_CODES } from '@/shared/constants/responseCodes';
 import { devLog } from '@/shared/utils/devLog';
+import {
+  isMockSelfieAttempt,
+  mockSelfieAttempt,
+  mockSelfieResult,
+} from './selfieDevMock';
 import {
   normalizeSelfieAttempt,
   normalizeSelfieResult,
@@ -61,11 +67,26 @@ const FORM_DATA_CONFIG = { ...SKIP_429_RETRY, timeout: 60_000 };
  * kodları (`UT-65xx`) axios reject'i olarak yukarı çıkar.
  */
 export async function startSelfieVerification(): Promise<SelfieAttempt | null> {
-  const response = await api.post(
-    API_ENDPOINTS.SELFIE_VERIFICATION_START,
-    undefined,
-    SKIP_429_RETRY,
-  );
+  let response: unknown;
+  try {
+    response = await api.post(
+      API_ENDPOINTS.SELFIE_VERIFICATION_START,
+      undefined,
+      SKIP_429_RETRY,
+    );
+  } catch (error: any) {
+    // 🔴 DEV KANCASI — bkz. selfieDevMock.ts. Yalnız bayrak kapalıyken
+    // (`UT-6505`) devreye giriyor; diğer tüm hatalar olduğu gibi yukarı çıkıyor.
+    if (
+      __DEV__ &&
+      (error?.response?.data?.code ?? error?.response?.data?.errorCode) ===
+        SELFIE_CODES.FEATURE_OFF
+    ) {
+      return mockSelfieAttempt();
+    }
+    throw error;
+  }
+
   const attempt = normalizeSelfieAttempt((response as any)?.result);
   if (!attempt) {
     devLog('🪪 [selfie] /start beklenmeyen şekil', (response as any)?.result);
@@ -90,6 +111,12 @@ export async function submitSelfieFrames(
   attemptId: string,
   frames: SelfieFrame[],
 ): Promise<SelfieResult> {
+  // 🔴 DEV KANCASI — mock attempt'in kareleri sunucuya gitmez; dosyalar
+  // okunmaz bile, çağıran taraf onları yine `forgetPhoto` ile siliyor.
+  if (__DEV__ && isMockSelfieAttempt(attemptId)) {
+    return mockSelfieResult();
+  }
+
   const formData = new FormData();
   formData.append('attemptId', attemptId);
   frames.forEach((frame) => {

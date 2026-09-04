@@ -29,6 +29,21 @@ describe('resolveSelfieVerified', () => {
     expect(resolveSelfieVerified({ isSelfieVerified: true })).toBe(true);
     expect(resolveSelfieVerified({ isSelfieVerified: false })).toBe(false);
   });
+
+  // GetMyProfile bir ProfileDto: kullanıcı alanlarının bir kısmı iç içe `user`
+  // nesnesinde geliyor. Yalnız kökü okumak alanı "hiç gelmedi" sanıp satırı
+  // sessizce gizliyordu.
+  it('alan iç içe user nesnesinde geldiğinde de okunur', () => {
+    expect(resolveSelfieVerified({ user: { isSelfieVerified: true } })).toBe(true);
+    expect(resolveSelfieVerified({ user: { isSelfieVerified: false } })).toBe(false);
+    expect(resolveSelfieVerified({ user: {} })).toBeNull();
+  });
+
+  it('kök seviyedeki değer user içindekini EZER', () => {
+    expect(
+      resolveSelfieVerified({ isSelfieVerified: true, user: { isSelfieVerified: false } }),
+    ).toBe(true);
+  });
 });
 
 describe('normalizeSelfieAttempt', () => {
