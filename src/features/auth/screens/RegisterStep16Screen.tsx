@@ -20,8 +20,8 @@ import { updateMultipleFields } from "@/features/profile/profileSlice";
 import { API_ENDPOINTS } from "@/shared/constants/api";
 import { staticGet } from "@/shared/services/staticCache";
 import { useTranslation } from "react-i18next";
-import { Check } from "@/shared/icons";
 import SFIcon from "@/shared/components/SFIcon";
+import RegisterOptionCheckbox from "@/features/auth/components/RegisterOptionCheckbox";
 import {
   getAlcoholIcon,
   getSmokingIcon,
@@ -98,21 +98,10 @@ const OptionItem = memo(
       >
         {label ?? option.name}
       </Text>
-      {/* Tik yuvası HER ZAMAN çiziliyor (koşullu olan yalnız ikon): yoksa
-          seçilince metnin genişliği daralıp satır kayıyor. Yükseklik de sabit —
-          boş View'ın boyu 0. */}
-      <View style={{ width: 20, height: 20, alignItems: "center", justifyContent: "center" }}>
-        {isSelected && (
-          <SFIcon
-            name="checkmark"
-            fallback={Check}
-            size={20}
-            color={colors.text}
-            strokeWidth={2.5}
-            weight="bold"
-          />
-        )}
-      </View>
+      {/* Çıplak tik DEĞİL, kutu — Step14'teki niyet satırlarıyla, keşif
+          filtresindeki ve profil düzenlemedeki sigara/alkol listeleriyle ortak
+          işaret (bkz. RegisterOptionCheckbox). */}
+      <RegisterOptionCheckbox selected={isSelected} />
     </AnimatedPressable>
   ),
 );
@@ -228,7 +217,9 @@ const ZodiacPill = memo(({ option, isSelected, onToggle }: any) => {
         borderColor: isSelected ? colors.inverseSurface : colors.hairline,
       }}
     >
-      <SFIcon name={icon.sf} fallback={icon.lucide} size={20} color={isSelected ? colors.onInverseSurface : colors.textSecondary} strokeWidth={1.5} />
+      {/* forceFallback: burç sembollerinin SF karşılığı YOK, iki platformda da
+          elle çizilmiş glif render ediliyor (bkz. ZodiacIcon). */}
+      <SFIcon name={icon.sf} fallback={icon.lucide} forceFallback={icon.forceFallback} size={20} color={isSelected ? colors.onInverseSurface : colors.textSecondary} strokeWidth={1.5} />
       {/* Pil yazı boyutu 14: hobi pilleri ve dini görüş pilleriyle ORTAK ölçü. */}
       <Text style={{ color: isSelected ? colors.onInverseSurface : colors.textSecondary, fontSize: 14, fontWeight: "500" }}>{option.name}</Text>
     </AnimatedPressable>

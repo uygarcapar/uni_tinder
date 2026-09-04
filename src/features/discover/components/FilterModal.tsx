@@ -23,38 +23,19 @@ import {
   GraduationCap,
   InfoIcon,
   Navigation,
-  ChevronDown,
   X as XIcon,
   User,
   UserRound,
   Users,
-  Eye,
-  EyeOff,
-  Dumbbell,
-  Utensils,
-  Palette,
-  Music,
-  Trees,
-  BookOpen,
-  Gamepad2,
-  Plane,
-  Sparkles,
-  Dog,
-  Briefcase,
-  Heart,
-  Lightbulb,
-  Theater,
-  Film,
-  PartyPopper,
-  Code,
   PauseCircle,
   Languages,
   Check,
-  type LucideIcon,
+  Plus,
 } from "@/shared/icons";
 import Svg, { Circle } from "react-native-svg";
 import SFIcon, { type SFSymbol } from "@/shared/components/SFIcon";
 import HobbyIcon from "@/shared/components/HobbyIcon";
+import PillFlow from "@/shared/components/PillFlow";
 import AppModal, {
   SHEET_TOP_RADIUS_LARGE,
 } from "@/shared/components/AppModal";
@@ -82,7 +63,6 @@ import {
   getPetIcon,
   getAlcoholIcon,
   getYearOfStudyIcon,
-  getReligiousViewIcon,
   getLanguageIcon,
   sortZodiacOptions,
 } from "@/shared/constants/filterEnumIcons";
@@ -96,6 +76,51 @@ import {
   resolveDistanceBounds,
 } from "@/shared/constants/limits";
 import { colors, ink, isLight } from "../../../shared/theme/colors";
+
+// Bu ekrandaki "pasif" mürekkep: bölüm açıklamaları, seçilmemiş pill'ler ve
+// yanlarındaki ikonlar, chevron'lar, boş picker satırları.
+//
+// Açık modda `textSecondary` (#6B7280) BU EKRANDA fazla ağır kalıyor. Modal
+// baştan sona pasif eleman: ekranın büyük kısmı seçilmemiş pill ve açıklama
+// satırı, hepsi o koyulukta çizilince pasif taraf aktif olan kadar bağırıyor ve
+// seçim gözle taranamıyor. Bir kademe açıp (`textMuted`) aktif/pasif farkını
+// geri veriyoruz. Koyuda token'ın kendisi kalıyor — orada zemin zaten siyah,
+// grinin daha açığı kontrastı değil okunabilirliği bozar.
+//
+// Palet DEĞİŞTİRİLMEDİ, kapsam bilerek bu dosya: `textSecondary` uygulamanın her
+// yerinde kullanılıyor, buradaki yoğunluk sorunu diğer ekranlarda yok.
+// Fonksiyon çünkü palet mutable (bkz. colors.ts) — mod değişiminde render
+// anında okunmalı, modül yüklenirken değil.
+const mutedInk = () => (isLight() ? colors.textMuted : colors.textSecondary);
+
+// Kontrol kenarlıkları — seçilmemiş pill'ler, checkbox kutuları, picker
+// satırları ve anahtar kapsülleri.
+//
+// 0.5px'te bu ekranda GÖRÜNMÜYORDU: seçilmemiş pill sınırı olmayan bir metin
+// gibi duruyor, checkbox'ın boş hâli fark edilmiyordu. Tam 1px — kesirli bir ara
+// değer (0.7) denendi ve geri alındı; ayar kalınlıkta değil TONDA yapılıyor
+// (bkz. controlBorderInk).
+const CONTROL_BORDER_WIDTH = 1;
+
+// Kenarlık rengi metninkinden AYRI ve mürekkep ailesinden DEĞİL: her iki modda
+// `hairline` (%10 siyah/beyaz), paletin en zayıf çizgisi.
+//
+// AÇIKTA sırayla `mutedInk` (#8E8E93), `textDisabled` (#B0B4BB), `border2`
+// (#D2D2D8) ve `border` (#DCDCE0) denendi; hepsi fazla bağırıyordu — kapsüller
+// kutulu forma dönüyor, göz içerikten önce çerçeveyi görüyordu. Bu, işin
+// BAŞLADIĞI renk — ama aynısı değil: o zaman kalınlık 0.5'ti ve çizgi hiç
+// okunmuyordu, şimdi tam 1px (bkz. CONTROL_BORDER_WIDTH). Ton bundan sonra
+// açılacaksa geriye yalnız `hairlineSoft` (%6) kalıyor, o da pratikte çizgiyi
+// tamamen siliyor.
+//
+// KOYUDA eskiden `textSecondary` (#9CA3AF) vardı ve mod ayrımının tek sebebi
+// buydu: siyah zeminde çizgi yazıdan baskın, seçilmemiş pill'ler seçiliymiş gibi
+// parlıyordu. Profil düzenlemedeki pill/satır ailesi (bkz. EditProfileForm)
+// koyuda da `hairline` kullanıyor; iki ekranın aynı kapsülü aynı görünsün diye
+// dal kaldırıldı. Kalınlık farkı (burada 1px, profilde 0.5) BİLEREK duruyor —
+// bkz. CONTROL_BORDER_WIDTH ve HobbyGroup'taki ölçüm önbelleği notu.
+const controlBorderInk = () => colors.hairline;
+
 
 // NOT: slider'ın sınırları ARTIK SABİT DEĞİL. Taban ve seçilebilir tavan
 // `GET /api/swipe/Filters` yanıtından geliyor (minSelectableDistanceKm /
@@ -123,8 +148,13 @@ type DomainField = (typeof DOMAIN_FIELD_BY_TARGET)[DomainTarget];
 
 // SelectRow props'u any olduğu için isimler orada denetlenmiyor; SFSymbol
 // olarak burada sabitleyip yazım hatasını compile-time'da yakalıyoruz.
-const VISIBLE_ONLY_ICON: SFSymbol = "eye.fill";
-const HIDDEN_FROM_ICON: SFSymbol = "eye.slash.fill";
+//
+// ÜÇ üniversite satırı da (kimi göreyim / beni kim görsün / kimden gizlensin)
+// aynı mezuniyet külahını taşıyor. Görünürlük satırlarındaki göz/çizili-göz
+// KALDIRILDI: ikon satırın NE SEÇTİRDİĞİNİ söylemeli, seçimin sonucunu değil —
+// üçünde de seçilen şey üniversite. Göz ikonu ayrıca "bu satır bir görünürlük
+// anahtarı" gibi okunuyordu; satırın ne yaptığını üstündeki etiket zaten
+// yazıyor (bkz. VisibilityListLabel).
 const UNIVERSITY_ICON: SFSymbol = "graduationcap.fill";
 // Dil satırının ikonu — pill'lerdekiyle (getLanguageIcon) aynı sembol.
 const LANGUAGE_ICON: SFSymbol = "character.bubble";
@@ -791,79 +821,10 @@ function DistanceCircle({
   );
 }
 
-// ─── Hobi kategorisi ikonları ──────────────────────────────────────────────
-// EditProfileForm'daki map'in filtre ekranına taşınmış hali: backend
-// categoryEnumName slug'ları + eski TR display isimleri (geçiş dönemi).
-type IconEntry = { sf?: SFSymbol; lucide: LucideIcon };
-
-const DUMBBELL_ICON: IconEntry = { sf: "dumbbell.fill", lucide: Dumbbell };
-const UTENSILS_ICON: IconEntry = { sf: "fork.knife", lucide: Utensils };
-const PALETTE_ICON: IconEntry = { sf: "paintpalette.fill", lucide: Palette };
-const MUSIC_ICON: IconEntry = { sf: "music.note", lucide: Music };
-const TREES_ICON: IconEntry = { sf: "tree.fill", lucide: Trees };
-const BOOK_ICON: IconEntry = { sf: "book.fill", lucide: BookOpen };
-const GAMEPAD_ICON: IconEntry = { sf: "gamecontroller.fill", lucide: Gamepad2 };
-const USERS_ICON: IconEntry = { sf: "person.2.fill", lucide: Users };
-const PLANE_ICON: IconEntry = { sf: "airplane", lucide: Plane };
-const SPARKLES_ICON: IconEntry = { sf: "sparkles", lucide: Sparkles };
-const DOG_ICON: IconEntry = { sf: "dog.fill", lucide: Dog };
-const BRIEFCASE_ICON: IconEntry = { sf: "briefcase.fill", lucide: Briefcase };
-const HEART_ICON: IconEntry = { sf: "heart", lucide: Heart };
-
-const HOBBY_CATEGORY_ICON_MAP: Record<string, IconEntry> = {
-  // Backend categoryEnumName (9 confirmed slugs)
-  SportsFitness: DUMBBELL_ICON,
-  FoodDrink: UTENSILS_ICON,
-  ArtCreativity: PALETTE_ICON,
-  MusicConcerts: MUSIC_ICON,
-  NatureAdventure: TREES_ICON,
-  CultureLearning: BOOK_ICON,
-  GamingTech: GAMEPAD_ICON,
-  SocialLifestyle: USERS_ICON,
-  Intellectual: { sf: "lightbulb.fill", lucide: Lightbulb },
-  // Legacy TR display keys
-  "Spor & Fitness": DUMBBELL_ICON,
-  Spor: DUMBBELL_ICON,
-  Fitness: DUMBBELL_ICON,
-  "Yemek & İçecek": UTENSILS_ICON,
-  Yemek: UTENSILS_ICON,
-  Mutfak: UTENSILS_ICON,
-  "Sanat & Yaratıcılık": PALETTE_ICON,
-  Sanat: PALETTE_ICON,
-  Müzik: MUSIC_ICON,
-  "Müzik & Konser": MUSIC_ICON,
-  "Seyahat & Doğa": PLANE_ICON,
-  Seyahat: PLANE_ICON,
-  Doğa: TREES_ICON,
-  "Doğa & Açık Hava": TREES_ICON,
-  "Okuma & Kültür": BOOK_ICON,
-  Kültür: { sf: "theatermasks.fill", lucide: Theater },
-  "Sinema & Tiyatro": { sf: "film.fill", lucide: Film },
-  "Oyun & Eğlence": GAMEPAD_ICON,
-  Oyun: GAMEPAD_ICON,
-  Eğlence: { sf: "party.popper.fill", lucide: PartyPopper },
-  "Yaşam Tarzı": SPARKLES_ICON,
-  Sosyal: USERS_ICON,
-  Topluluk: USERS_ICON,
-  Gönüllülük: USERS_ICON,
-  Hayvanlar: DOG_ICON,
-  "Evcil Hayvanlar": DOG_ICON,
-  "Bilim & Kariyer": BRIEFCASE_ICON,
-  Kariyer: BRIEFCASE_ICON,
-  Teknoloji: { sf: "chevron.left.forwardslash.chevron.right", lucide: Code },
-};
-
-const getHobbyCategoryIcon = (category?: string): IconEntry => {
-  if (!category) return HEART_ICON;
-  const exact = HOBBY_CATEGORY_ICON_MAP[category];
-  if (exact) return exact;
-  // Keyword fallback — kategori string'i map key'lerinden birini içeriyor mu?
-  const lower = category.toLowerCase();
-  for (const [key, entry] of Object.entries(HOBBY_CATEGORY_ICON_MAP)) {
-    if (lower.includes(key.toLowerCase())) return entry;
-  }
-  return HEART_ICON;
-};
+// Hobi kategorisi ikonları KALDIRILDI: kategori başlıkları artık yalnız ayraç
+// (bkz. HobbyGroup), pill'lerde de emoji var — harita ve onu besleyen lucide
+// importları da onunla birlikte gitti. EditProfileForm aynı temizliği daha önce
+// yapmıştı, iki ekran yine hizalı.
 
 // Hobi pill'i — EditProfileForm'un aynısı; farkı seçimin id değil enumName ile
 // takip edilmesi (filtre payload'ı enum string dizisi bekliyor).
@@ -902,121 +863,88 @@ const HobbyPill = React.memo(function HobbyPill({
   );
 });
 
-// Kategori accordion'ı — tıklanmadan içerik render edilmez (9 kategori × ~8 pill
-// mount maliyeti modal açılışına binmesin).
-const HobbyGroupAccordion = React.memo(function HobbyGroupAccordion({
+// ─── Hobi grubu: accordion DEĞİL, kategori başlığı + hep açık pill listesi ──
+// ÖNCESİ: her kategori tıklanabilir bir accordion'dı (kategori ikonu + chevron
+// + seçili rozeti) ve piller yalnız açıkken render ediliyordu. Kullanıcı
+// hobisini bulmak için kategori kategori açmak zorundaydı. Profil düzenlemedeki
+// hobi bölümü (bkz. EditProfileForm → HobbyGroup) bu dönüşü zaten yapmıştı,
+// filtre de aynı yere geldi: hepsi ekranda, başlık sadece ayraç.
+//
+// Kategori İKONU ve ayırıcı çizgi de kalktı — orada da yok. Ayıran şey başlık ve
+// boşluk; ikon sırası liste boyunca gürültü ekliyordu.
+//
+// KİLİT ARTIK BURADA ELE ALINMIYOR: accordion'ın "kilitliyken açma, paywall'a
+// git" dalı vardı, açılacak bir şey kalmadı. Tek kapı pill'in kendisi
+// (bkz. togglePreferredHobby → hobbiesLocked).
+const HobbyGroup = React.memo(function HobbyGroup({
   group,
   selectedEnums,
   onToggle,
-  locked,
-  onLockedPress,
 }: any) {
   const { i18n } = useTranslation();
-  const [expanded, setExpanded] = useState(false);
-
   const hobbies = useMemo(() => group.hobbies ?? [], [group.hobbies]);
-  const selectedCount = useMemo(
-    () => hobbies.filter((h: any) => selectedEnums.includes(h.enumName)).length,
-    [hobbies, selectedEnums],
-  );
-
-  const categoryIcon = useMemo(
-    () => getHobbyCategoryIcon(group.categoryEnumName ?? group.category),
-    [group.categoryEnumName, group.category],
-  );
-
-  // Kilitliyken accordion açılmaz; dokunuş doğrudan paywall'a gider.
-  const handleToggle = () => {
-    if (locked) {
-      onLockedPress();
-      return;
-    }
-    setExpanded((e) => !e);
-  };
 
   return (
-    <View
-      style={{
-        marginTop: 8,
-        borderBottomWidth: 0.5,
-        borderBottomColor: colors.hairlineSoft,
-      }}
-    >
-      <TouchableOpacity
-        onPress={handleToggle}
-        activeOpacity={0.7}
+    <View style={{ marginTop: 8 }}>
+      <Text
         style={{
+          color: colors.text,
+          // Bölüm başlıkları 20, bu ayraç onların bir alt kademesi —
+          // EditProfileForm'daki kategori başlığıyla aynı ölçü.
+          fontSize: 17,
+          fontWeight: "600",
           paddingVertical: 16,
-          flexDirection: "row",
-          justifyContent: "space-between",
-          alignItems: "center",
         }}
       >
-        <View
-          style={{
-            flexDirection: "row",
-            alignItems: "center",
-            gap: 10,
-            flex: 1,
-          }}
-        >
-          <SFIcon
-            name={categoryIcon.sf as SFSymbol}
-            fallback={categoryIcon.lucide}
-            size={18}
-            color={colors.text}
-            strokeWidth={1.5}
-          />
-          <Text style={{ color: colors.text, fontSize: 15, fontWeight: "600" }}>
-            {resolveLocalized(
-              group.categoryDisplay,
-              i18n.language,
-              group.category,
-            )}
-          </Text>
-          {selectedCount > 0 && (
-            <View
-              style={{
-                width: 8,
-                height: 8,
-                borderRadius: 4,
-                backgroundColor: colors.error,
-              }}
-            />
-          )}
-        </View>
-        <View style={{ transform: [{ rotate: expanded ? "180deg" : "0deg" }] }}>
-          <SFIcon
-            name="chevron.down"
-            fallback={ChevronDown}
-            size={18}
-            color={colors.textSecondary}
-            strokeWidth={2}
-            weight="semibold"
-          />
-        </View>
-      </TouchableOpacity>
+        {resolveLocalized(group.categoryDisplay, i18n.language, group.category)}
+      </Text>
 
-      {expanded && (
-        <View
-          style={{
-            paddingBottom: 16,
-            paddingTop: 4,
-            flexDirection: "row",
-            flexWrap: "wrap",
-            gap: 8,
-          }}
-        >
-          {hobbies.map((h: any) => (
-            <HobbyPill
-              key={h.enumName}
-              hobby={h}
-              isSelected={selectedEnums.includes(h.enumName)}
-              onPress={onToggle}
-            />
-          ))}
-        </View>
-      )}
+      {/* Piller çerçeveli bir kutunun İÇİNDE, kategori başlığı DIŞINDA: başlık
+          ayraç olarak kalsın, kutu da o kategoriye ait pil kümesini tek blok
+          gibi göstersin. Profil düzenlemedeki hobi bölümüyle aynı kutu
+          (bkz. EditProfileForm → HobbyGroup).
+
+          DOLGU YOK, yalnız kenarlık: gri zemin denendi ve geri alındı — kutu
+          sayfadan kopan ayrı bir kart gibi duruyor, içindeki seçilmemiş pill'ler
+          de kendi zeminini kaybediyordu. Kenarlık `hairline` (kontrollerin
+          `controlBorderInk`i DEĞİL): bu bir kontrol değil kapsayıcı, içindeki
+          pill'lerin çizgisinden daha zayıf kalmalı.
+
+          Düz flexWrap yerine PillFlow(fillWidth): satır sonlarındaki boşluk
+          kapanıyor, uzun etiketler tek başına satırda kalmıyor. Sıra bozuluyor
+          ama hobi listesinin sırası anlam taşımıyor (burçların aksine). */}
+      <View
+        style={{
+          borderRadius: 32,
+          borderCurve: "continuous",
+          overflow: "hidden",
+          borderWidth: 1,
+          borderColor: colors.hairline,
+          padding: 12,
+          marginBottom: 8,
+        }}
+      >
+        <PillFlow
+          gap={8}
+          fillWidth
+          items={hobbies.map((h: any) => ({
+            // Ölçüm önbelleği modül genelinde bu id ile anahtarlanıyor ve
+            // anahtar profil düzenlemedekinden AYRI (`filterHobby:` öneki) olmak
+            // ZORUNDA: iki ekranın pili aynı iç ölçüde ama kenarlık
+            // kalınlıkları farklı (burada CONTROL_BORDER_WIDTH, profilde 0.5) —
+            // ortak anahtar birinin genişliğini diğerine uygulayıp yanlış
+            // paketlerdi.
+            id: `filterHobby:${i18n.language}:${h.enumName ?? h.name}`,
+            element: (
+              <HobbyPill
+                hobby={h}
+                isSelected={selectedEnums.includes(h.enumName)}
+                onPress={onToggle}
+              />
+            ),
+          }))}
+        />
+      </View>
     </View>
   );
 });
@@ -1030,12 +958,16 @@ const HobbyGroupAccordion = React.memo(function HobbyGroupAccordion({
 // + dokunuşu paywall'a gidiyor, başlıktaki ikon aynı şeyi üçüncü kez söylüyor
 // ve premium grubunda başlık başına bir kilit sıralanınca ekran kilit ikonu
 // tarlasına dönüyordu. Kilit sinyali görsel katmanda kalsın.
-function FilterSection({ title, description, marginTop = 40 }: any) {
+// `trailing` — başlık satırının SAĞ ucuna oturan kontrol ("olmazsa olmaz"
+// anahtarı). Satır artık space-between: başlık solda, kontrol ekranın sağ
+// kenarında. Dış sarmalayıcı bu yüzden `stretch` — `flex-start` çocuğu içeriğe
+// göre daraltıyor, o hâlde sağa yaslanacak bir genişlik kalmıyordu.
+function FilterSection({ title, description, marginTop = 40, trailing }: any) {
   return (
     <View
       style={{
         flexDirection: "column",
-        alignItems: "flex-start",
+        alignItems: "stretch",
         marginTop,
         marginBottom: 10,
       }}
@@ -1044,13 +976,23 @@ function FilterSection({ title, description, marginTop = 40 }: any) {
         style={{
           flexDirection: "row",
           alignItems: "center",
-          gap: 8,
+          justifyContent: "space-between",
+          gap: 12,
           marginBottom: description ? 9 : 0,
         }}
       >
-        <Text style={{ color: colors.text, fontSize: 20, fontWeight: "600" }}>
+        <Text
+          style={{
+            color: colors.text,
+            fontSize: 20,
+            fontWeight: "600",
+            // Anahtar sabit genişlikte; uzun başlık taşmak yerine daralsın.
+            flexShrink: 1,
+          }}
+        >
           {title}
         </Text>
+        {trailing}
       </View>
       {description ? (
         <View
@@ -1066,13 +1008,13 @@ function FilterSection({ title, description, marginTop = 40 }: any) {
             name="info.circle"
             fallback={InfoIcon}
             size={16}
-            color={colors.textSecondary}
+            color={mutedInk()}
             strokeWidth={2}
             weight="semibold"
           />
           <Text
             style={{
-              color: colors.textSecondary,
+              color: mutedInk(),
               fontSize: 14,
               fontWeight: "400",
               flex: 1,
@@ -1131,13 +1073,13 @@ function PremiumGroupHeader({ title, description }: any) {
           name="info.circle"
           fallback={InfoIcon}
           size={16}
-          color={colors.textSecondary}
+          color={mutedInk()}
           strokeWidth={2}
           weight="semibold"
         />
         <Text
           style={{
-            color: colors.textSecondary,
+            color: mutedInk(),
             fontSize: 14,
             fontWeight: "400",
             flex: 1,
@@ -1166,38 +1108,43 @@ function PremiumGate({ locked, onLockedPress, children }: any) {
 }
 
 // "Olmazsa olmaz" anahtarı — filtrenin katı mı esnek mi olduğunu seçer.
-// Metin SABİT: eskiden açık/kapalı için iki ayrı cümle gösteriliyordu, anahtara
-// basınca yazı da değişince kullanıcı ne değiştiğini takip edemiyordu. Artık
-// etiket ne yaptığını anlatıyor, durumu yalnızca Switch'in kendisi gösteriyor.
-function DealbreakerToggle({ value, onToggle, disabled, testID }: any) {
-  const { t } = useTranslation();
+// Durumu yalnızca Switch'in kendisi gösteriyor; yanında durum metni YOK.
+// (Bir dönem açık/kapalı için iki ayrı cümle yazılıyordu: anahtara basınca yazı
+// da değişince kullanıcı ne değiştiğini takip edemiyordu.)
+//
+// Bölüm başlığının SAĞ ucunda duruyor (bkz. FilterSection → trailing), altında
+// ayrı bir kapsül olarak değil. Kendi kenarlığı/dolgusu YOK: başlık satırının
+// içinde çerçeveli bir kutu, bölümün altında ikinci bir bölüm gibi duruyordu.
+//
+// METİN YOK, tek bir gri info ikonu: iki kelimelik bir etiket ("Olmazsa olmaz")
+// başlıkla aynı satırda ikinci bir başlık gibi okunuyordu ve anahtarın ne
+// yaptığını yine anlatmıyordu. İkona dokunuş açıklamayı bir sheet'te veriyor
+// (bkz. dealbreakerInfoVisible) — anlatı, ihtiyaç duyan kullanıcının isteğiyle
+// geliyor, her bölümün başlığını kalabalıklaştırarak değil.
+function DealbreakerToggle({
+  value,
+  onToggle,
+  disabled,
+  testID,
+  onInfoPress,
+}: any) {
   return (
-    <View
-      style={{
-        marginTop: 12,
-        borderRadius: 24,
-        borderCurve: "continuous",
-        overflow: "hidden",
-        borderWidth: 0.5,
-        borderColor: colors.hairline,
-        flexDirection: "row",
-        alignItems: "center",
-        justifyContent: "space-between",
-        gap: 12,
-        paddingVertical: 12,
-        paddingHorizontal: 16,
-      }}
-    >
-      <Text
-        style={{
-          color: colors.textSecondary,
-          fontSize: 13,
-          fontWeight: "500",
-          flex: 1,
-        }}
+    <View style={{ flexDirection: "row", alignItems: "center", gap: 10 }}>
+      <TouchableOpacity
+        onPress={onInfoPress}
+        hitSlop={12}
+        activeOpacity={0.7}
+        testID={testID ? `${testID}-info` : undefined}
       >
-        {t("discover.filters.dealbreaker.label")}
-      </Text>
+        <SFIcon
+          name="info.circle"
+          fallback={InfoIcon}
+          size={18}
+          color={mutedInk()}
+          strokeWidth={2}
+          weight="semibold"
+        />
+      </TouchableOpacity>
       <Switch
         testID={testID}
         value={value}
@@ -1223,7 +1170,7 @@ const PILL_STYLE = {
   overflow: "hidden",
   paddingHorizontal: 12,
   paddingVertical: 10,
-  borderWidth: 0.5,
+  borderWidth: CONTROL_BORDER_WIDTH,
   flexDirection: "row",
   alignItems: "center",
   gap: 6,
@@ -1234,23 +1181,30 @@ const PILL_TEXT_SIZE = 14;
 
 // Hobi pilleri emoji kullanıyor (bkz. HobbyIcon) ve emojinin satır kutusu
 // fontSize'ın 1.25 katı. Aynı size verildiğinde SFIcon 20px'lik kutu üretirken
-// emoji 25px üretiyor ve hobi pili burç/sigara pillerinden yüksek çıkıyordu.
+// emoji 25px üretiyor ve hobi pili sigara/burç pillerinden yüksek çıkıyordu.
 // Emojiyi kutusu tam PILL_ICON_SIZE olacak boyuta indiriyoruz.
 const PILL_EMOJI_SIZE = Math.round(PILL_ICON_SIZE / 1.25);
 
 // Pill'in seçili/seçilmemiş rengi — ikon ve metin aynı rengi alır.
 const pillColors = (selected: boolean) => ({
   backgroundColor: selected ? colors.inverseSurface : "transparent",
-  borderColor: selected ? colors.inverseSurface : colors.hairline,
-  fg: selected ? colors.onInverseSurface : colors.textSecondary,
+  borderColor: selected ? colors.inverseSurface : controlBorderInk(),
+  fg: selected ? colors.onInverseSurface : mutedInk(),
 });
 
+// `icon` İKİ şeyden biri olabilir:
+//   undefined           → ikonsuz pill (dini görüş; ayırt eden tek şey metin)
+//   { sf, lucide, ... } → SF/lucide sembolü (kalan hepsi)
+// Burç pill'leri de buradan geçiyor: sembolleri SF'te yok, forceFallback ile
+// elle çizilmiş glifleri render ediliyor (bkz. ZodiacIcon) — emoji DEĞİL, yani
+// seçili/seçilmemiş ayrımı ikonda da görünüyor.
 function PillIcon({ icon, selected }: any) {
   if (!icon) return null;
   return (
     <SFIcon
       name={icon.sf}
       fallback={icon.lucide}
+      forceFallback={icon.forceFallback}
       size={PILL_ICON_SIZE}
       color={pillColors(selected).fg}
       strokeWidth={1.5}
@@ -1258,16 +1212,40 @@ function PillIcon({ icon, selected }: any) {
   );
 }
 
-// Tikli seçim satırı — profil düzenlemedeki OptionListItem'ın (bkz.
-// EditProfileForm) ölçüleri birebir: py 18, metin 16/22, sağda 20px'lik sabit
-// tik yuvası. Aynı soruyu iki ekranda iki farklı biçimde göstermemek için
+// Çoklu seçim satırı — profil düzenlemedeki OptionListItem'ın (bkz.
+// EditProfileForm) ölçüleri birebir: py 18, metin 16/22, sağda sabit genişlikli
+// seçim yuvası. Aynı soruyu iki ekranda iki farklı biçimde göstermemek için
 // ilişki niyeti bölümü pill ızgarasından buna geçti. Pill'lerden farkı ÇOKLU
 // seçimi de taşıması: `selected` dışarıdan geliyor, satır davranışı aynı.
 //
-// İKONSUZ, orada olduğu gibi: niyet satırları tek ayırt edici olarak metni
-// kullanıyor. Ayırt eden şey ikon değil cümle; solda ikon olunca satırlar
-// pill'lerin dağınıklığını liste düzenine taşıyordu.
-function CheckRow({ label, selected, onPress }: any) {
+// Sağdaki işaret ÇIPLAK TİK DEĞİL, yuvarlak kare bir checkbox: OptionListItem
+// tek seçimli (radyo semantiği), burada aynı anda birden fazla satır seçilebilir
+// — kutu bunu daha ilk bakışta söylüyor. Seçiliyken kutunun zemini de doluyor
+// (pill'lerle aynı inverseSurface/onInverseSurface çifti), boşken yalnız kenarlık
+// duruyor: seçili satır uzaktan da taranabilsin.
+//
+// İLİŞKİ NİYETİ satırları İKONSUZ, profil düzenlemedeki gibi: ayırt eden şey
+// ikon değil cümle. `icon` opsiyonel — sigara/alkol bölümleri veriyor, çünkü
+// onların profil düzenlemedeki karşılığı da soldaki sembolü taşıyor (bkz.
+// EditProfileForm → OptionListItem). Sembol o iki grupta seçenek başına
+// değişmiyor (üçü de sigara/kadeh), bölümün NE OLDUĞUNU söylüyor.
+//
+// Kutu, yerini aldığı tikten (20) bir tık büyük: içine 14px'lik tik girdiği için
+// aynı ölçüde kalsaydı işaret kutuya sıkışmış görünürdü.
+const CHECKBOX_SIZE = 22;
+
+// Kutunun kenarlığı — ölçüsü gibi RENGİ ve KALINLIĞI da profil düzenlemedeki
+// kardeşiyle birebir (bkz. EditProfileForm → OptionListItem, `checkbox` dalı).
+// Aynı liste iki ekranda çiziliyor, kutunun boş hâli ikisinde ayrı görünmemeli.
+//
+// Bu yüzden bu ikisi bu dosyanın kontrol kenarlığı ailesine (CONTROL_BORDER_WIDTH
+// 1px + controlBorderInk) BİLEREK bağlı değil: o aile pill'lerin/picker'ların
+// çerçevesi ve açık modda paletin en zayıf çizgisine (`hairline`, %10) ayarlı —
+// checkbox'ın kendi başına duran boş karesi orada kayboluyor. `hairlineStrong`
+// (%14 siyah / %15 beyaz) 1.5px ile kutuyu bir kontrol gibi okutuyor.
+const CHECKBOX_BORDER_WIDTH = 1.5;
+
+function CheckRow({ label, selected, onPress, icon }: any) {
   return (
     <TouchableOpacity
       activeOpacity={1}
@@ -1285,13 +1263,26 @@ function CheckRow({ label, selected, onPress }: any) {
           flex: 1,
           flexDirection: "row",
           alignItems: "center",
+          // İkon yokken boşluk da yok: ikonsuz satırlarda metin sola dayalı
+          // kalsın (niyet listesi bu haliyle çizilmişti).
+          gap: icon ? 10 : 0,
           paddingVertical: 18,
           paddingRight: 12,
         }}
       >
+        {icon ? (
+          <SFIcon
+            name={icon.sf}
+            fallback={icon.lucide}
+            forceFallback={icon.forceFallback}
+            size={16}
+            color={selected ? colors.text : mutedInk()}
+            strokeWidth={1.5}
+          />
+        ) : null}
         <Text
           style={{
-            color: selected ? colors.text : colors.textSecondary,
+            color: selected ? colors.text : mutedInk(),
             fontSize: 16,
             lineHeight: 22,
             fontWeight: "500",
@@ -1301,12 +1292,17 @@ function CheckRow({ label, selected, onPress }: any) {
           {label}
         </Text>
       </View>
-      {/* Tik yuvası HER ZAMAN çiziliyor: yoksa seçim anında metin alanı 20px
-          genişleyip satır kayıyor. */}
+      {/* Kutu HER ZAMAN çiziliyor (boşken kenarlıklı): tik gibi görünüp
+          kaybolsaydı seçim anında metin alanı genişleyip satır kayardı. */}
       <View
         style={{
-          width: 20,
-          height: 20,
+          width: CHECKBOX_SIZE,
+          height: CHECKBOX_SIZE,
+          borderRadius: 7,
+          borderCurve: "continuous",
+          borderWidth: selected ? 0 : CHECKBOX_BORDER_WIDTH,
+          borderColor: colors.hairlineStrong,
+          backgroundColor: selected ? colors.inverseSurface : "transparent",
           alignItems: "center",
           justifyContent: "center",
         }}
@@ -1315,9 +1311,9 @@ function CheckRow({ label, selected, onPress }: any) {
           <SFIcon
             name="checkmark"
             fallback={Check}
-            size={20}
-            color={colors.text}
-            strokeWidth={2.5}
+            size={14}
+            color={colors.onInverseSurface}
+            strokeWidth={3}
             weight="bold"
           />
         )}
@@ -1533,7 +1529,7 @@ function HeightRangeSlider({ min, max, onChange }: any) {
           <TouchableOpacity hitSlop={12} activeOpacity={0.7} onPress={clear}>
             <Text
               style={{
-                color: colors.textSecondary,
+                color: mutedInk(),
                 fontSize: 14,
                 fontWeight: "600",
               }}
@@ -1552,11 +1548,18 @@ function HeightRangeSlider({ min, max, onChange }: any) {
           // Track ince ama dokunma alanı parmak boyutunda olmalı.
           style={{ paddingVertical: 12, justifyContent: "center" }}
         >
+          {/* Boş track, tutamak katmanıyla AYNI eksende: eskiden kenardan
+              kenara uzanıyordu ama tutamaklar THUMB/2 + kenar payı içinden
+              başlıyor, yani iki uçta hiçbir zaman doldurulamayan gri parçalar
+              kalıyordu — kullanıcı 120 cm'i seçmişken solda hâlâ boş çizgi
+              görüyordu. Artık çizgi tam olarak seçilebilir aralık kadar; uçtaki
+              tutamak track'in üstüne taşıyor (klasik slider görünümü). */}
           <View
             style={{
               height: HEIGHT_TRACK,
               borderRadius: HEIGHT_TRACK / 2,
               backgroundColor: ink(0.12),
+              marginHorizontal: HEIGHT_THUMB / 2 + HEIGHT_EDGE_INSET,
             }}
           />
           {/* Tutamaklar bu daraltılmış katmanda konumlanıyor: yüzdeler track
@@ -1617,70 +1620,64 @@ function PremiumFilterSection({
   capable,
   dealbreakerOn,
   onToggleDealbreaker,
+  onDealbreakerInfo,
   testID,
   children,
 }: any) {
   return (
     <PremiumGate locked={locked} onLockedPress={onLockedPress}>
       <View>
-        <FilterSection title={title} description={description} />
+        <FilterSection
+          title={title}
+          description={description}
+          trailing={
+            capable ? (
+              <DealbreakerToggle
+                testID={testID}
+                value={dealbreakerOn}
+                onToggle={onToggleDealbreaker}
+                onInfoPress={onDealbreakerInfo}
+              />
+            ) : null
+          }
+        />
         {children}
-        {capable ? (
-          <DealbreakerToggle
-            testID={testID}
-            value={dealbreakerOn}
-            onToggle={onToggleDealbreaker}
-          />
-        ) : null}
       </View>
     </PremiumGate>
   );
 }
 
-// Üniversite listesinin etiketi + doluluk sayacı. Limit 3'e indiği için sayaç
-// artık kritik: picker sınıra gelince uyarıyor ama kullanıcı kaç hakkı kaldığını
-// ancak burada görüyor. Sayaç yalnızca seçim varken çıkıyor — boş listede "0/3"
-// gereksiz gürültü.
-// `label` opsiyoneldir: üniversite bölümü yalnızca sayaç gösteriyor, o yüzden
-// etiket yokken satır sağa yaslanır, sayaç da yoksa hiç render edilmez.
-function VisibilityListLabel({ label, count, marginTop = 0 }: any) {
-  if (!label && !(count > 0)) return null;
+// Görünürlük listelerinin etiketi — hangi satırın ne seçtiğini söyler.
+//
+// "3/3" DOLULUK SAYACI KALDIRILDI: satırın kendisi seçimi zaten özetliyor
+// ("İTÜ +2") ve picker sınıra gelince uyarıyor; sayaç aynı bilgiyi üçüncü kez,
+// teknik bir kesirle tekrar ediyordu. Sayaç gidince yalnız sayaç taşıyan çağrı
+// (üniversite bölümü) de gereksizleşti, o satır tamamen kalktı.
+function VisibilityListLabel({ label, marginTop = 0 }: any) {
+  if (!label) return null;
   return (
     <View
       style={{
         flexDirection: "row",
         alignItems: "center",
-        justifyContent: label ? "space-between" : "flex-end",
-        gap: 12,
         marginTop,
         marginBottom: 8,
       }}
     >
-      {label ? (
-        <Text
-          style={{
-            color: colors.textSecondary,
-            fontSize: 14,
-            fontWeight: "500",
-          }}
-        >
-          {label}
-        </Text>
-      ) : null}
-      {count > 0 ? (
-        <Text
-          style={{
-            color: count >= MAX_UNIVERSITY_DOMAINS
-              ? colors.text
-              : colors.textMuted,
-            fontSize: 13,
-            fontWeight: "500",
-            fontVariant: ["tabular-nums"],
-          }}
-        >
-          {count}/{MAX_UNIVERSITY_DOMAINS}
-        </Text>
-      ) : null}
+      <Text
+        style={{
+          // Tam mürekkepte ve 15px: bu etiketler ("Beni sadece şu
+          // üniversiteler görsün") bölümün AÇIKLAMASI değil, hemen altındaki
+          // satırın ne seçtiğini söyleyen başlığı — gri 14px'te alt not gibi
+          // okunuyordu.
+          color: colors.text,
+          fontSize: 15,
+          fontWeight: "500",
+          flexShrink: 1,
+        }}
+      >
+        {label}
+      </Text>
     </View>
   );
 }
@@ -1706,8 +1703,8 @@ function SelectRow({
         borderRadius: 999,
         borderCurve: "continuous",
         overflow: "hidden",
-        borderWidth: 0.5,
-        borderColor: colors.hairline,
+        borderWidth: CONTROL_BORDER_WIDTH,
+        borderColor: controlBorderInk(),
         paddingHorizontal: 16,
         paddingVertical: 18,
         flexDirection: "row",
@@ -1719,17 +1716,25 @@ function SelectRow({
       <View
         style={{ flexDirection: "row", alignItems: "center", gap: 8, flex: 1 }}
       >
+        {/* Soldaki ikon ve sağdaki artı TAM MÜRKEPTE (açıkta siyah, koyuda
+            beyaz), metinle aynı tonda: satırın tamamı tek bir dokunma hedefi,
+            içindeki üç eleman da aynı ağırlıkta okunsun. Pasif gri yalnız
+            "temizle" X'inde kaldı — o satırın kendisi değil, yıkıcı bir yan
+            eylem. */}
         <SFIcon
           name={sfIcon}
           fallback={lucideIcon}
           size={18}
-          color={colors.textSecondary}
+          color={colors.text}
           strokeWidth={1.5}
         />
         <Text
           numberOfLines={1}
           style={{
-            color: value ? colors.text : colors.textSecondary,
+            // Placeholder da (`Dil seç`, `Üniversite seç`) tam mürekkepte:
+            // açık modda siyah, koyuda beyaz. Boşluk mutedInk ile işaretlenmiyor
+            // — o ayrımı zaten sağdaki chevron/X taşıyor.
+            color: colors.text,
             fontSize: 15,
             fontWeight: "500",
             flex: 1,
@@ -1744,17 +1749,20 @@ function SelectRow({
             name="xmark"
             fallback={XIcon}
             size={18}
-            color={colors.textSecondary}
+            color={mutedInk()}
             strokeWidth={2}
             weight="semibold"
           />
         </TouchableOpacity>
       ) : (
+        // Chevron DEĞİL artı: chevron "burada bir liste açılır/kapanır" diyordu,
+        // oysa satır bir seçim ekranı açıyor ve seçim ÇOKLU — artı "buna bir
+        // şey ekle" işini doğrudan söylüyor.
         <SFIcon
-          name="chevron.down"
-          fallback={ChevronDown}
+          name="plus"
+          fallback={Plus}
           size={18}
-          color={colors.textSecondary}
+          color={colors.text}
           strokeWidth={2}
           weight="semibold"
         />
@@ -1994,6 +2002,10 @@ export default function FilterModal({
   };
 
   const [local, setLocal] = useState(() => toLocalState(filters));
+  // "Olmazsa olmaz" anahtarının açıklaması. Anahtar her premium bölümün
+  // başlığında ayrı ayrı duruyor ama açıklama TEK: hepsi aynı şeyi yapıyor, o
+  // yüzden tek bir sheet ve tek bir görünürlük bayrağı yetiyor.
+  const [dealbreakerInfoVisible, setDealbreakerInfoVisible] = useState(false);
   const [cityPickerVisible, setCityPickerVisible] = useState(false);
   // Dil listesi 34 değer — pill ızgarası yerine aranabilir picker (profil
   // düzenlemedeki dil seçiciyle aynı bileşen, farklı başlık).
@@ -2125,6 +2137,11 @@ export default function FilterModal({
       message: null,
     });
   };
+
+  // Paywall'ın AKSİNE bu sheet FilterModal'ı KAPATMIYOR: açıklama okumak
+  // filtre düzenlemeyi bölmemeli, kullanıcı kapatınca kaldığı yere döner
+  // (stackBehavior="push" — bkz. aşağıdaki AppModal).
+  const openDealbreakerInfo = () => setDealbreakerInfoVisible(true);
 
   const onVisibilityConfirm = (domains: string[]) => {
     setVisibilityPickerVisible(false);
@@ -2671,28 +2688,13 @@ export default function FilterModal({
         description={t("discover.filters.preferredHobbies.description")}
       />
 
-      <View
-        style={{
-          flexDirection: "row",
-          alignItems: "center",
-          justifyContent: "space-between",
-          gap: 12,
-        }}
-      >
-        <Text
-          style={{
-            color: colors.textSecondary,
-            fontSize: 14,
-            fontWeight: "500",
-          }}
-        >
-          {t("discover.filters.preferredHobbies.selected", {
-            // `count` DEĞİL: i18next'te çoğul çözümlemesini tetikler.
-            selected: preferredHobbies.length,
-            max: MAX_PREFERRED_HOBBIES,
-          })}
-        </Text>
-        {preferredHobbies.length > 0 && !hobbiesLocked ? (
+      {/* "2/5 seçildi" sayacı KALDIRILDI (üniversitedeki 3/3 ile aynı gerekçe):
+          seçili hobiler zaten dolu pill olarak görünüyor, sınır aşılınca da
+          uyarı çıkıyor — kesir aynı bilgiyi teknik bir dille tekrar ediyordu.
+          Satır yalnız "Temizle" için duruyor, o yüzden sağa yaslı ve seçim
+          yokken hiç render edilmiyor. */}
+      {preferredHobbies.length > 0 && !hobbiesLocked ? (
+        <View style={{ flexDirection: "row", justifyContent: "flex-end" }}>
           <TouchableOpacity
             onPress={clearPreferredHobbies}
             hitSlop={12}
@@ -2700,7 +2702,7 @@ export default function FilterModal({
           >
             <Text
               style={{
-                color: colors.textSecondary,
+                color: mutedInk(),
                 fontSize: 14,
                 fontWeight: "600",
               }}
@@ -2708,13 +2710,13 @@ export default function FilterModal({
               {t("discover.filters.preferredHobbies.clear")}
             </Text>
           </TouchableOpacity>
-        ) : null}
-      </View>
+        </View>
+      ) : null}
 
       {hobbyGroups.length === 0 ? (
         <Text
           style={{
-            color: colors.textSecondary,
+            color: mutedInk(),
             fontSize: 14,
             fontWeight: "400",
             marginTop: 12,
@@ -2726,13 +2728,11 @@ export default function FilterModal({
         </Text>
       ) : (
         hobbyGroups.map((group: any, gi: number) => (
-          <HobbyGroupAccordion
+          <HobbyGroup
             key={group.categoryEnumName ?? group.category ?? gi}
             group={group}
             selectedEnums={preferredHobbies}
             onToggle={togglePreferredHobby}
-            locked={hobbiesLocked}
-            onLockedPress={openPremiumPaywall}
           />
         ))
       )}
@@ -2757,7 +2757,7 @@ export default function FilterModal({
       {relationshipIntentOptions.length === 0 ? (
         <Text
           style={{
-            color: colors.textSecondary,
+            color: mutedInk(),
             fontSize: 14,
             fontWeight: "400",
           }}
@@ -2801,16 +2801,26 @@ export default function FilterModal({
   // kendi bölümünde (bkz. setPetMode).
   //
   // `extra.options` — backend listesinden bazı değerleri düşüren bölümler için
-  // (dini görüşte PreferNotToSay). `extra.note` — pill'lerin ALTINDA, yalnız
+  // (dini görüşte PreferNotToSay). `extra.note` — seçeneklerin ALTINDA, yalnız
   // seçim varken çıkan uyarı satırı (evcil hayvandaki orNote deseni): filtrenin
   // sonuç üzerindeki yan etkisini seçim yapıldığı anda söylüyor.
+  //
+  // `extra.asRows` — pill ızgarası yerine tikli satır listesi (bkz. CheckRow).
+  // Sigara ve alkol bunu kullanıyor: profil düzenlemede aynı iki soru zaten
+  // satır listesi (bkz. EditProfileForm → OptionListItem), kullanıcı aynı soruyu
+  // iki ekranda iki farklı biçimde görmesin. Seçim burada yine ÇOKLU (orada
+  // tek), kutunun kendisi de bunu söylüyor.
+  // Kalan enum bölümleri (burç, evcil hayvan) pill'de kalıyor: onlar 12'ye
+  // varan seçenekle satır listesi olarak sayfayı uzatırdı.
   const renderEnumFilter = (
     key: DealbreakerKey,
     query: any,
     titleKey: string,
     descKey: string,
-    getIcon: (opt: any) => any,
-    extra?: { options?: any[]; note?: string },
+    // undefined = pill'ler İKONSUZ (dini görüş) — EnumPillGroup opsiyonel
+    // çağırıyor, PillIcon da boş spec'te null dönüyor.
+    getIcon: ((opt: any) => any) | undefined,
+    extra?: { options?: any[]; note?: string; asRows?: boolean },
   ) => {
     const options = extra?.options ?? query.data ?? [];
     const selected: EnumValue[] = local?.[key] ?? [];
@@ -2823,12 +2833,13 @@ export default function FilterModal({
         capable={dealbreakerCapable(key)}
         dealbreakerOn={dealbreakers.includes(DEALBREAKER_FIELDS[key])}
         onToggleDealbreaker={() => toggleDealbreaker(key)}
+        onDealbreakerInfo={openDealbreakerInfo}
         testID={`dealbreaker-${DEALBREAKER_FIELDS[key]}`}
       >
         {options.length === 0 ? (
           <Text
             style={{
-              color: colors.textSecondary,
+              color: mutedInk(),
               fontSize: 14,
               fontWeight: "400",
             }}
@@ -2839,12 +2850,26 @@ export default function FilterModal({
           </Text>
         ) : (
           <>
-            <EnumPillGroup
-              options={options}
-              selected={selected}
-              onToggle={(opt: any) => toggleEnumValue(key, opt)}
-              getIcon={getIcon}
-            />
+            {extra?.asRows ? (
+              <View>
+                {options.map((opt: any) => (
+                  <CheckRow
+                    key={opt.enumName}
+                    icon={getIcon?.(opt.enumName)}
+                    label={resolveLocalized(opt.display, i18n.language, opt.name)}
+                    selected={isEnumSelected(selected, opt)}
+                    onPress={() => toggleEnumValue(key, opt)}
+                  />
+                ))}
+              </View>
+            ) : (
+              <EnumPillGroup
+                options={options}
+                selected={selected}
+                onToggle={(opt: any) => toggleEnumValue(key, opt)}
+                getIcon={getIcon}
+              />
+            )}
             {extra?.note && selected.length > 0 ? (
               <Text
                 style={{
@@ -2922,8 +2947,8 @@ export default function FilterModal({
           borderRadius: 24,
           borderCurve: "continuous",
           overflow: "hidden",
-          borderWidth: 0.5,
-          borderColor: colors.hairline,
+          borderWidth: CONTROL_BORDER_WIDTH,
+          borderColor: controlBorderInk(),
           flexDirection: "row",
           alignItems: "center",
           justifyContent: "space-between",
@@ -2940,7 +2965,7 @@ export default function FilterModal({
               sıralamanın değişmediğini söyleyen ikinci cümle kaldırıldı. */}
           <Text
             style={{
-              color: colors.textSecondary,
+              color: mutedInk(),
               fontSize: 13,
               fontWeight: "400",
             }}
@@ -3060,14 +3085,14 @@ export default function FilterModal({
             name="pause.circle"
             fallback={PauseCircle}
             size={18}
-            color={colors.textSecondary}
+            color={mutedInk()}
             strokeWidth={2}
             weight="semibold"
           />
           <Text
             style={{
               flex: 1,
-              color: colors.textSecondary,
+              color: mutedInk(),
               fontSize: 13,
               fontWeight: "400",
             }}
@@ -3090,7 +3115,6 @@ export default function FilterModal({
             title={t("discover.filters.university.title")}
             description={t("discover.filters.university.description")}
           />
-          <VisibilityListLabel count={preferredUniversityDomains.length} />
           <SelectRow
             sfIcon={UNIVERSITY_ICON}
             lucideIcon={GraduationCap}
@@ -3129,8 +3153,8 @@ export default function FilterModal({
               borderRadius: 999,
               borderCurve: "continuous",
               overflow: "hidden",
-              borderWidth: 0.5,
-              borderColor: colors.hairline,
+              borderWidth: CONTROL_BORDER_WIDTH,
+              borderColor: controlBorderInk(),
               paddingHorizontal: 16,
               paddingVertical: 18,
               flexDirection: "row",
@@ -3147,16 +3171,18 @@ export default function FilterModal({
                 flex: 1,
               }}
             >
+              {/* SelectRow ile aynı kural: ikonlar tam mürekkepte. */}
               <SFIcon
                 name="location.fill"
                 fallback={Navigation}
                 size={18}
-                color={colors.textSecondary}
+                color={colors.text}
                 strokeWidth={1.5}
               />
               <Text
                 style={{
-                  color: selectedCityName ? colors.text : colors.textSecondary,
+                  // SelectRow ile aynı kural: `Şehir Seç` de tam mürekkepte.
+                  color: colors.text,
                   fontSize: 15,
                   fontWeight: "500",
                 }}
@@ -3174,17 +3200,18 @@ export default function FilterModal({
                   name="xmark"
                   fallback={XIcon}
                   size={18}
-                  color={colors.textSecondary}
+                  color={mutedInk()}
                   strokeWidth={2}
                   weight="semibold"
                 />
               </TouchableOpacity>
             ) : (
+              // SelectRow ile aynı: chevron değil artı.
               <SFIcon
-                name="chevron.down"
-                fallback={ChevronDown}
+                name="plus"
+                fallback={Plus}
                 size={18}
-                color={colors.textSecondary}
+                color={colors.text}
                 strokeWidth={2}
                 weight="semibold"
               />
@@ -3204,6 +3231,7 @@ export default function FilterModal({
         capable={dealbreakerCapable("yearOfStudy")}
         dealbreakerOn={dealbreakers.includes(DEALBREAKER_FIELDS.yearOfStudy)}
         onToggleDealbreaker={() => toggleDealbreaker("yearOfStudy")}
+        onDealbreakerInfo={openDealbreakerInfo}
         testID={`dealbreaker-${DEALBREAKER_FIELDS.yearOfStudy}`}
       >
         <View style={{ flexDirection: "row", flexWrap: "wrap", gap: 8 }}>
@@ -3247,6 +3275,7 @@ export default function FilterModal({
         capable={dealbreakerCapable("height")}
         dealbreakerOn={dealbreakers.includes(DEALBREAKER_FIELDS.height)}
         onToggleDealbreaker={() => toggleDealbreaker("height")}
+        onDealbreakerInfo={openDealbreakerInfo}
         testID={`dealbreaker-${DEALBREAKER_FIELDS.height}`}
       >
         <HeightRangeSlider
@@ -3274,6 +3303,7 @@ export default function FilterModal({
         capable={dealbreakerCapable("language")}
         dealbreakerOn={dealbreakers.includes(DEALBREAKER_FIELDS.language)}
         onToggleDealbreaker={() => toggleDealbreaker("language")}
+        onDealbreakerInfo={openDealbreakerInfo}
         testID={`dealbreaker-${DEALBREAKER_FIELDS.language}`}
       >
         <SelectRow
@@ -3323,6 +3353,7 @@ export default function FilterModal({
         "discover.filters.smoking.title",
         "discover.filters.smoking.description",
         getSmokingIcon,
+        { asRows: true },
       )}
 
       {/* Alkol — sigarayla aynı sınıf (yaşam tarzı) ve aynı semantik: filtre
@@ -3335,6 +3366,7 @@ export default function FilterModal({
         "discover.filters.alcohol.title",
         "discover.filters.alcohol.description",
         getAlcoholIcon,
+        { asRows: true },
       )}
 
       {/* Dini görüş — alkol/sigarayla aynı sınıf ve aynı semantik: filtre
@@ -3350,7 +3382,10 @@ export default function FilterModal({
         religiousViewsQuery,
         "discover.filters.religion.title",
         "discover.filters.religion.description",
-        getReligiousViewIcon,
+        // İKONSUZ (bilerek): tek jenerik sembol dokuz pilde tekrar edip hiçbir
+        // şey ayırt etmiyordu, inanç başına ikon ise yanlış eşleşme riski.
+        // Kayıt akışı ve profil düzenleme de ikonsuz — üç ekran hizalı.
+        undefined,
         {
           options: religiousViewOptions,
           note: t("discover.filters.religion.hiddenNote"),
@@ -3371,6 +3406,7 @@ export default function FilterModal({
         capable={dealbreakerCapable("pets")}
         dealbreakerOn={dealbreakers.includes(DEALBREAKER_FIELDS.pets)}
         onToggleDealbreaker={() => toggleDealbreaker("pets")}
+        onDealbreakerInfo={openDealbreakerInfo}
         testID={`dealbreaker-${DEALBREAKER_FIELDS.pets}`}
       >
         <View style={{ flexDirection: "row", flexWrap: "wrap", gap: 8 }}>
@@ -3417,7 +3453,7 @@ export default function FilterModal({
             {petOptions.length === 0 ? (
               <Text
                 style={{
-                  color: colors.textSecondary,
+                  color: mutedInk(),
                   fontSize: 14,
                   fontWeight: "400",
                 }}
@@ -3480,11 +3516,10 @@ export default function FilterModal({
 
         <VisibilityListLabel
           label={t('discover.filters.visibility.visibleOnlyLabel')}
-          count={visibleOnlyDomains.length}
         />
         <SelectRow
-          sfIcon={VISIBLE_ONLY_ICON}
-          lucideIcon={Eye}
+          sfIcon={UNIVERSITY_ICON}
+          lucideIcon={GraduationCap}
           value={summarizeDomains(visibleOnlyDomains)}
           placeholder={t('discover.filters.visibility.selectUniversities')}
           disabled={!visibleOnlyLocked && universityOptions.length === 0}
@@ -3494,12 +3529,11 @@ export default function FilterModal({
 
         <VisibilityListLabel
           label={t('discover.filters.visibility.hiddenFromLabel')}
-          count={hiddenFromDomains.length}
           marginTop={18}
         />
         <SelectRow
-          sfIcon={HIDDEN_FROM_ICON}
-          lucideIcon={EyeOff}
+          sfIcon={UNIVERSITY_ICON}
+          lucideIcon={GraduationCap}
           value={summarizeDomains(hiddenFromDomains)}
           placeholder={t('discover.filters.visibility.selectUniversities')}
           disabled={!hiddenFromLocked && universityOptions.length === 0}
@@ -3510,7 +3544,7 @@ export default function FilterModal({
         {visibilityOverlap ? (
           <Text
             style={{
-              color: colors.textSecondary,
+              color: mutedInk(),
               fontSize: 13,
               fontWeight: "500",
               marginTop: 10,
@@ -3537,6 +3571,57 @@ export default function FilterModal({
           </Text>
         ) : null}
       </View>
+
+      {/* "Olmazsa olmaz" açıklaması — başlıklardaki info ikonu bunu açıyor.
+          Paywall'daki özellik açıklamasıyla (bkz. PremiumBenefitInfoSheet) aynı
+          kalıp: push davranışı (FilterModal geride kalır), içerikten yükseklik,
+          X yok — swipe-down ve backdrop zaten kapatıyor. */}
+      <AppModal
+        visible={dealbreakerInfoVisible}
+        onClose={() => setDealbreakerInfoVisible(false)}
+        title={t("discover.filters.dealbreaker.label")}
+        stackBehavior="push"
+        dynamicSizing
+        closeButton={false}
+        contentContainerStyle={{ paddingTop: 56, paddingBottom: 72 }}
+      >
+        <View style={{ alignItems: "center", marginBottom: 18 }}>
+          <SFIcon
+            name="info.circle"
+            fallback={InfoIcon}
+            size={44}
+            color={colors.text}
+            strokeWidth={1.75}
+            weight="medium"
+          />
+        </View>
+        {/* Başlık İÇERİKTE: AppModal'ın header başlığı scroll'a bağlı fade
+            ediyor, bu sheet ise içeriği kadar açılıp hiç scroll etmiyor →
+            oradaki başlık hep opacity 0 kalırdı (kısa sheet'lerin ortak
+            paterni). */}
+        <Text
+          style={{
+            color: colors.text,
+            fontSize: 22,
+            fontWeight: "700",
+            marginBottom: 16,
+            textAlign: "center",
+          }}
+        >
+          {t("discover.filters.dealbreaker.label")}
+        </Text>
+        <Text
+          style={{
+            color: mutedInk(),
+            fontSize: 15,
+            lineHeight: 22,
+            fontWeight: "500",
+            textAlign: "center",
+          }}
+        >
+          {t("discover.filters.dealbreaker.info")}
+        </Text>
+      </AppModal>
 
       {/* City picker — AppModal-based, stackBehavior:"push" → FilterModal
           geride kalır, üstüne biner. */}

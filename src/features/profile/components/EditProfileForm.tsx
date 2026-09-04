@@ -58,19 +58,11 @@ import {
   Turtle,
   PawPrint,
   Ban,
-  Wind,
-  Sun,
-  Moon,
-  Flame,
-  Leaf,
-  Scale,
-  Zap,
-  Droplets,
-  Mountain,
   Fish,
   IdCardLanyard,
   type LucideIcon,
 } from "@/shared/icons";
+import { ZODIAC_GLYPH_ICONS } from "@/shared/components/ZodiacIcon";
 import { BottomSheetTextInput } from "@gorhom/bottom-sheet";
 import SFIcon, { type SFSymbol } from "@/shared/components/SFIcon";
 // Pill grupları flexWrap yerine PillFlow + fillWidth ile diziliyor: satır
@@ -199,33 +191,42 @@ function EntryIcon({
   );
 }
 
+// Burç ikonları — burcun KENDİ sembolü (♈–♓), elementel karşılığı (alev,
+// yaprak) değil: Boğa ile Başak aynı yaprağa düşüyordu. Glifler elle çizilmiş
+// (bkz. ZodiacIcon); `sf` BİLEREK yok, SF Symbols'ta burç sembolü yok →
+// EntryIcon iki platformda da bunları çiziyor. Keşif filtresi ve kayıt akışı
+// aynı glifleri kullanıyor (bkz. filterEnumIcons → ZODIAC_ICONS).
+const zodiacEntry = (enumName: string): IconEntry => ({
+  lucide: ZODIAC_GLYPH_ICONS[enumName],
+});
+
 const ZODIAC_ICON_MAP: Record<string, IconEntry> = {
   // Backend enumName (PascalCase)
-  Aries: { sf: "flame.fill", lucide: Flame },
-  Taurus: { sf: "leaf.fill", lucide: Leaf },
-  Gemini: { sf: "wind", lucide: Wind },
-  Cancer: { sf: "moon.fill", lucide: Moon },
-  Leo: { sf: "sun.max.fill", lucide: Sun },
-  Virgo: { sf: "leaf.fill", lucide: Leaf },
-  Libra: { sf: "scalemass.fill", lucide: Scale },
-  Scorpio: { sf: "bolt.fill", lucide: Zap },
-  Sagittarius: { sf: "location.fill", lucide: Navigation },
-  Capricorn: { sf: "mountain.2.fill", lucide: Mountain },
-  Aquarius: { sf: "drop.fill", lucide: Droplets },
-  Pisces: { sf: "fish.fill", lucide: Fish },
+  Aries: zodiacEntry("Aries"),
+  Taurus: zodiacEntry("Taurus"),
+  Gemini: zodiacEntry("Gemini"),
+  Cancer: zodiacEntry("Cancer"),
+  Leo: zodiacEntry("Leo"),
+  Virgo: zodiacEntry("Virgo"),
+  Libra: zodiacEntry("Libra"),
+  Scorpio: zodiacEntry("Scorpio"),
+  Sagittarius: zodiacEntry("Sagittarius"),
+  Capricorn: zodiacEntry("Capricorn"),
+  Aquarius: zodiacEntry("Aquarius"),
+  Pisces: zodiacEntry("Pisces"),
   // Legacy TR display fallback
-  Koç: { sf: "flame.fill", lucide: Flame },
-  Boğa: { sf: "leaf.fill", lucide: Leaf },
-  İkizler: { sf: "wind", lucide: Wind },
-  Yengeç: { sf: "moon.fill", lucide: Moon },
-  Aslan: { sf: "sun.max.fill", lucide: Sun },
-  Başak: { sf: "leaf.fill", lucide: Leaf },
-  Terazi: { sf: "scalemass.fill", lucide: Scale },
-  Akrep: { sf: "bolt.fill", lucide: Zap },
-  Yay: { sf: "location.fill", lucide: Navigation },
-  Oğlak: { sf: "mountain.2.fill", lucide: Mountain },
-  Kova: { sf: "drop.fill", lucide: Droplets },
-  Balık: { sf: "fish.fill", lucide: Fish },
+  Koç: zodiacEntry("Aries"),
+  Boğa: zodiacEntry("Taurus"),
+  İkizler: zodiacEntry("Gemini"),
+  Yengeç: zodiacEntry("Cancer"),
+  Aslan: zodiacEntry("Leo"),
+  Başak: zodiacEntry("Virgo"),
+  Terazi: zodiacEntry("Libra"),
+  Akrep: zodiacEntry("Scorpio"),
+  Yay: zodiacEntry("Sagittarius"),
+  Oğlak: zodiacEntry("Capricorn"),
+  Kova: zodiacEntry("Aquarius"),
+  Balık: zodiacEntry("Pisces"),
 };
 const STAR_ICON: IconEntry = { sf: "star.fill", lucide: Star };
 const getZodiacIcon = (name): IconEntry => ZODIAC_ICON_MAP[name] || STAR_ICON;
@@ -390,12 +391,17 @@ function OptionPill({
   );
 }
 
+// Sağdaki işaretin yuvarlak kare bir kutu olduğu satırların ölçüsü — Keşif
+// filtresindeki CheckRow ile birebir (bkz. FilterModal).
+const CHECKBOX_SIZE = 22;
+
 const OptionListItem = React.memo(function OptionListItem({
   option,
   isSelected,
   onPress,
   icon: CustomIcon,
   label,
+  checkbox,
 }: any) {
   const { i18n } = useTranslation();
   // NOT: `purposeMap` dalı KALDIRILDI — ikon + açıklama taşıyan bu varyantı
@@ -452,21 +458,51 @@ const OptionListItem = React.memo(function OptionListItem({
           {label ?? resolveLocalized(option.display, i18n.language, option.name)}
         </Text>
       </View>
-      {/* Tik yuvası HER ZAMAN çiziliyor (koşullu olan yalnız ikon): kayıt
+      {/* İşaret yuvası HER ZAMAN çiziliyor (koşullu olan yalnız ikon): kayıt
           ekranlarındaki satırlarla aynı gerekçe — yoksa seçim anında metin
-          alanı 20px genişleyip satır kayıyor. */}
-      <View style={{ width: 20, height: 20, alignItems: "center", justifyContent: "center" }}>
-        {isSelected && (
-          <SFIcon
-            name="checkmark"
-            fallback={Check}
-            size={20}
-            color={colors.text}
-            strokeWidth={2.5}
-            weight="bold"
-          />
-        )}
-      </View>
+          alanı genişleyip satır kayıyor.
+          `checkbox` verilirse çıplak tik yerine yuvarlak kare kutu: seçiliyken
+          zemini de doluyor. Keşif filtresindeki aynı liste (bkz. FilterModal →
+          CheckRow) bu biçimde, ilişki niyeti bölümü onunla hizalı olsun diye. */}
+      {checkbox ? (
+        <View
+          style={{
+            width: CHECKBOX_SIZE,
+            height: CHECKBOX_SIZE,
+            borderRadius: 7,
+            borderCurve: "continuous",
+            borderWidth: isSelected ? 0 : 1.5,
+            borderColor: colors.hairlineStrong,
+            backgroundColor: isSelected ? colors.inverseSurface : "transparent",
+            alignItems: "center",
+            justifyContent: "center",
+          }}
+        >
+          {isSelected && (
+            <SFIcon
+              name="checkmark"
+              fallback={Check}
+              size={14}
+              color={colors.onInverseSurface}
+              strokeWidth={3}
+              weight="bold"
+            />
+          )}
+        </View>
+      ) : (
+        <View style={{ width: 20, height: 20, alignItems: "center", justifyContent: "center" }}>
+          {isSelected && (
+            <SFIcon
+              name="checkmark"
+              fallback={Check}
+              size={20}
+              color={colors.text}
+              strokeWidth={2.5}
+              weight="bold"
+            />
+          )}
+        </View>
+      )}
     </TouchableOpacity>
   );
 });
@@ -999,23 +1035,41 @@ const HobbyGroup = React.memo(function HobbyGroup({
         {resolveLocalized(group.categoryDisplay, i18n.language, group.category)}
       </Text>
 
-      <PillFlow
-        gap={8}
-        fillWidth
-        style={{ paddingBottom: 20, paddingTop: 4 }}
-        items={(group.hobbies || []).map((h) => ({
-          // enumName (dille birlikte) etiketi belirliyor → genişliği belirleyen
-          // her şey anahtarda.
-          id: `hobby:${i18n.language}:${h.enumName ?? h.name}`,
-          element: (
-            <HobbyPill
-              hobby={h}
-              isSelected={selectedIds.includes(h.id)}
-              onPress={onToggle}
-            />
-          ),
-        }))}
-      />
+      {/* Piller çerçeveli bir kutunun İÇİNDE, kategori başlığı DIŞINDA: başlık
+          ayraç olarak kalsın, kutu da o kategoriye ait pil kümesini tek bir blok
+          gibi göstersin. Aynı kutu keşif filtresindeki hobi bölümünde de var
+          (bkz. FilterModal → HobbyGroup).
+
+          DOLGU YOK, yalnız kenarlık: gri zemin denendi ve geri alındı — kutu
+          formdan kopan ayrı bir kart gibi duruyordu. */}
+      <View
+        style={{
+          borderRadius: 32,
+          borderCurve: "continuous",
+          overflow: "hidden",
+          borderWidth: 1,
+          borderColor: colors.hairline,
+          padding: 12,
+          marginBottom: 8,
+        }}
+      >
+        <PillFlow
+          gap={8}
+          fillWidth
+          items={(group.hobbies || []).map((h) => ({
+            // enumName (dille birlikte) etiketi belirliyor → genişliği
+            // belirleyen her şey anahtarda.
+            id: `hobby:${i18n.language}:${h.enumName ?? h.name}`,
+            element: (
+              <HobbyPill
+                hobby={h}
+                isSelected={selectedIds.includes(h.id)}
+                onPress={onToggle}
+              />
+            ),
+          }))}
+        />
+      </View>
     </View>
   );
 });
@@ -2242,6 +2296,12 @@ const EditProfileForm = forwardRef(function EditProfileForm(
               option={opt}
               isSelected={draftRelationshipIntent?.id === opt.id}
               label={intentSentenceLabel(opt)}
+              // Keşif filtresindeki ilişki niyeti listesiyle AYNI işaret (bkz.
+              // FilterModal → CheckRow). Aynı soruyu iki ekranda iki farklı
+              // biçimde göstermeme kuralının devamı. Seçim burada yine TEK —
+              // kutu çoklu seçim ima ediyor ama satıra tekrar dokunmak
+              // temizlediği için davranış değişmiyor.
+              checkbox
               onPress={() =>
                 setValue(
                   "relationshipIntent",
@@ -2415,6 +2475,9 @@ const EditProfileForm = forwardRef(function EditProfileForm(
               isSelected={draftSmoking?.id === opt.id}
               icon={CIGARETTE_ICON}
               label={smokingSentenceLabel(opt)}
+              // İlişki niyeti satırlarıyla ve keşif filtresindeki aynı soruyla
+              // (bkz. FilterModal → CheckRow) ortak işaret.
+              checkbox
               onPress={() =>
                 setValue("smoking", draftSmoking?.id === opt.id ? null : opt)
               }
@@ -2465,6 +2528,9 @@ const EditProfileForm = forwardRef(function EditProfileForm(
               isSelected={draftAlcohol?.id === opt.id}
               icon={getAlcoholIcon()}
               label={alcoholSentenceLabel(opt)}
+              // Sigarayla aynı: kutu, hem üstteki niyet listesiyle hem de keşif
+              // filtresindeki alkol bölümüyle hizalı.
+              checkbox
               onPress={() =>
                 setValue("alcohol", draftAlcohol?.id === opt.id ? null : opt)
               }

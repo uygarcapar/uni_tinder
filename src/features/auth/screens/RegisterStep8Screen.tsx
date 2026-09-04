@@ -165,12 +165,18 @@ export default function RegisterStep8Screen({ navigation }: NativeStackScreenPro
                 className="border-[0.5px] px-4 py-5 flex-row items-center justify-between"
               >
                 <Text
+                  numberOfLines={1}
+                  ellipsizeMode="tail"
                   className="text-[16px] font-medium"
-                  style={{ color: department ? colors.text : colors.textSecondary }}
+                  style={{
+                    flexShrink: 1,
+                    marginRight: 8,
+                    color: department ? colors.text : colors.textSecondary,
+                  }}
                 >
                   {getDepartmentLabel()}
                 </Text>
-                <SFIcon name="chevron.down" fallback={ChevronDown} size={20} color={colors.textSecondary} strokeWidth={2} weight="semibold" style={{ pointerEvents: "none" }} />
+                <SFIcon name="chevron.down" fallback={ChevronDown} size={20} color={colors.textSecondary} strokeWidth={2} weight="semibold" style={{ flexShrink: 0, pointerEvents: "none" }} />
               </TouchableOpacity>
             </View>
           )}

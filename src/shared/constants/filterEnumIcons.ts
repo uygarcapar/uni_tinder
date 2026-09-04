@@ -4,22 +4,13 @@
 // `name`/`display` backend'de Accept-Language'e göre değişiyor — onunla
 // anahtarlamak eşleşmeyi dile bağlar.
 //
-// Semboller RegisterStep14Screen ve EditProfileForm'daki haritalarla BİREBİR
-// aynı: aynı burcu üç ekranda da aynı ikonla görüyorsun. Buradaki bir
-// sembolü değiştirirsen o iki ekranı da güncelle (o haritalar legacy TR display
+// Semboller EditProfileForm'daki haritayla BİREBİR aynı: aynı burcu üç ekranda
+// da (kayıt, profil düzenleme, keşif filtresi) aynı ikonla görüyorsun. Buradaki
+// bir sembolü değiştirirsen o haritayı da güncelle (legacy TR display
 // anahtarlarını da taşıdığı için henüz tek dosyaya indirilmedi).
 import type { SFSymbol } from "@/shared/components/SFIcon";
+import { ZODIAC_GLYPH_ICONS } from "@/shared/components/ZodiacIcon";
 import {
-  Flame,
-  Leaf,
-  Wind,
-  Moon,
-  Sun,
-  Scale,
-  Zap,
-  Navigation,
-  Mountain,
-  Droplets,
   Fish,
   Star,
   Cigarette,
@@ -36,8 +27,6 @@ import {
   Turtle,
   Dog,
   Wine,
-  Ban,
-  HandHeart,
   Languages,
   Globe,
   type LucideIcon,
@@ -51,25 +40,40 @@ export type PillIconSpec = {
 };
 
 // ─── Burç (ZodiacType) ──────────────────────────────────────────────────────
-// Burcun kendi sembolü (♈♉♊) yerine elementel karşılığı kullanılıyor: SF
-// Symbols'ta burç glifi yok ve emoji, monokrom ikon setinin içinde yamalı
-// duruyordu. Kaynak: RegisterStep14Screen ZODIAC_MAP / EditProfileForm
-// ZODIAC_ICON_MAP.
+// Her burç KENDİ sembolüyle (♈–♓) çiziliyor. İki ara çözüm de elendi:
+//   • Elementel karşılık (Koç → alev, Başak → yaprak) ikinci bir bilgi katmanı
+//     istiyordu, üstelik Boğa ve Başak aynı yaprağa düşüp ayırt edilemiyordu.
+//   • Unicode emojisi (♈️) renk almıyor — seçili/seçilmemiş ayrımı ikondan
+//     düşüyor ve monokrom ikon setinin içinde yamalı duruyordu.
+// Sembollerin kendisi elle çizilmiş SVG (bkz. components/icons/ZodiacGlyphs):
+// SF Symbols'ta da lucide'da da burç yok.
+//
+// forceFallback: iOS'ta da bu glifler çiziliyor. `sf` yine duruyor — hem
+// SFIcon'un imzası istiyor hem de SF ileride burç sembollerini eklerse
+// bayrağı silmek yetsin diye elementel en yakın karşılık yazılı (sigara
+// ikonundaki desenin aynısı, bkz. CIGARETTE_ICON).
+const zodiacIcon = (sf: SFSymbol, enumName: string): PillIconSpec => ({
+  sf,
+  lucide: ZODIAC_GLYPH_ICONS[enumName],
+  forceFallback: true,
+});
+
 const ZODIAC_ICONS: Record<string, PillIconSpec> = {
-  Aries: { sf: "flame.fill", lucide: Flame },
-  Taurus: { sf: "leaf.fill", lucide: Leaf },
-  Gemini: { sf: "wind", lucide: Wind },
-  Cancer: { sf: "moon.fill", lucide: Moon },
-  Leo: { sf: "sun.max.fill", lucide: Sun },
-  Virgo: { sf: "leaf.fill", lucide: Leaf },
-  Libra: { sf: "scalemass.fill", lucide: Scale },
-  Scorpio: { sf: "bolt.fill", lucide: Zap },
-  Sagittarius: { sf: "location.fill", lucide: Navigation },
-  Capricorn: { sf: "mountain.2.fill", lucide: Mountain },
-  Aquarius: { sf: "drop.fill", lucide: Droplets },
-  Pisces: { sf: "fish.fill", lucide: Fish },
+  Aries: zodiacIcon("flame.fill", "Aries"),
+  Taurus: zodiacIcon("leaf.fill", "Taurus"),
+  Gemini: zodiacIcon("wind", "Gemini"),
+  Cancer: zodiacIcon("moon.fill", "Cancer"),
+  Leo: zodiacIcon("sun.max.fill", "Leo"),
+  Virgo: zodiacIcon("leaf.fill", "Virgo"),
+  Libra: zodiacIcon("scalemass.fill", "Libra"),
+  Scorpio: zodiacIcon("bolt.fill", "Scorpio"),
+  Sagittarius: zodiacIcon("location.fill", "Sagittarius"),
+  Capricorn: zodiacIcon("mountain.2.fill", "Capricorn"),
+  Aquarius: zodiacIcon("drop.fill", "Aquarius"),
+  Pisces: zodiacIcon("fish.fill", "Pisces"),
 };
 
+// Backend yeni bir değer eklerse yıldız — tanınmayan burcun karşılığı.
 const STAR_ICON: PillIconSpec = { sf: "star.fill", lucide: Star };
 
 // Burçların KANONİK sırası (Koç → Balık) — ZODIAC_ICONS zaten bu sırada
@@ -163,19 +167,12 @@ const WINE_ICON: PillIconSpec = { sf: "wineglass.fill", lucide: Wine };
 export const getAlcoholIcon = (): PillIconSpec => WINE_ICON;
 
 // ─── Dini görüş (ReligiousViewType) ─────────────────────────────────────────
-// Sigaradaki desen: TEK sembol, ayırt eden şey pill metni. Enum başına ikon
-// (hilal/haç/Davud yıldızı) hem SF Symbols'ta karşılıksız hem de bir inancı
-// sembolleştirip diğerini jenerik bırakma riski taşıyor.
-// NOT: Profil düzenlemedeki dini görüş pilleri artık İKONSUZ (bkz.
-// EditProfileForm) — orada aynı sembol onlarca pilde tekrar edip hiçbir şey
-// ayırt etmiyordu. Burası tek bir filtre satırı olduğu için ikon duruyor.
-const RELIGIOUS_VIEW_ICON: PillIconSpec = {
-  sf: "hands.and.sparkles.fill",
-  lucide: HandHeart,
-};
-
-export const getReligiousViewIcon = (): PillIconSpec => RELIGIOUS_VIEW_ICON;
-
+// İKON YOK — helper de yok, bilerek. Enum başına ikon (hilal/haç/Davud yıldızı)
+// hem SF Symbols'ta karşılıksız hem de bir inancı sembolleştirip diğerini
+// jenerik bırakma riski taşıyordu; tek jenerik sembol (hands.and.sparkles) ise
+// her pilde AYNI tekrar edip hiçbir şey ayırt etmiyor, yalnız gürültü
+// ekliyordu. Üç ekran da (kayıt, profil düzenleme, keşif filtresi) artık
+// ikonsuz: ayırt eden tek şey metin.
 // ─── Dil (LanguageType) ─────────────────────────────────────────────────────
 // EditProfileForm'un getLanguageIcon'uyla birebir aynı: "Diğer" globe, kalanlar
 // konuşma balonu. 34 değerin her birine bayrak koymak (a) SF'te yok, (b) dil ≠

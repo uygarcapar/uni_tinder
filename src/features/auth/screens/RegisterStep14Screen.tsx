@@ -18,8 +18,7 @@ import { updateMultipleFields } from "@/features/profile/profileSlice";
 import { API_ENDPOINTS } from "@/shared/constants/api";
 import { staticGet } from "@/shared/services/staticCache";
 import { useTranslation } from 'react-i18next';
-import { Check } from "@/shared/icons";
-import SFIcon from "@/shared/components/SFIcon";
+import RegisterOptionCheckbox from "@/features/auth/components/RegisterOptionCheckbox";
 import RegisterProgressBar from "@/features/auth/components/RegisterProgressBar";
 import RegisterStickyHeader, {
   REGISTER_HEADER_HEIGHT,
@@ -49,18 +48,16 @@ const IntentOptionItem = memo(({ option, isSelected, onToggle }: any) => {
       pressBounciness={0}
       style={{ borderRadius: 30, borderCurve: "continuous", paddingHorizontal: 4, paddingVertical: 18, flexDirection: "row", alignItems: "center", justifyContent: "space-between" }}
     >
-      {/* lineHeight (22) > tik ikonunun boyu (20): satır yüksekliğini HER ZAMAN
-          metin belirliyor, tik gelince satır 1px uzayıp altındakileri itmiyor. */}
+      {/* lineHeight (22) = kutunun boyu (22): satır yüksekliğini HER ZAMAN metin
+          belirliyor, işaret gelince satır uzayıp altındakileri itmiyor. */}
       <Text style={{ color: isSelected ? colors.text : colors.textSecondary, fontSize: 16, lineHeight: 22, fontWeight: "500", flex: 1, marginRight: 12 }}>
         {t(`auth.step14.intents.${option.enumName}`, { defaultValue: option.name })}
       </Text>
-      {/* Tik yuvası HER ZAMAN çiziliyor (koşullu olan yalnız ikon): eskiden
-          seçilince 20px'lik ikon araya girip metnin genişliğini daraltıyor ve
-          satır kayıyordu. Yükseklik de sabit — boş View'ın boyu 0 olduğu için
-          yalnız genişliği sabitlemek dikey kaymayı önlemiyordu. */}
-      <View style={{ width: 20, height: 20, alignItems: "center", justifyContent: "center" }}>
-        {isSelected && <SFIcon name="checkmark" fallback={Check} size={20} color={colors.text} strokeWidth={2.5} weight="bold" />}
-      </View>
+      {/* Çıplak tik DEĞİL, kutu: aynı ilişki niyeti listesi keşif filtresinde ve
+          profil düzenlemede de var, üçü aynı işareti taşımalı (bkz.
+          RegisterOptionCheckbox). Seçim burada TEK — kutu çoklu seçim ima ediyor
+          ama seçili satıra tekrar dokunmak temizlediği için davranış aynı. */}
+      <RegisterOptionCheckbox selected={isSelected} />
     </AnimatedPressable>
   );
 });

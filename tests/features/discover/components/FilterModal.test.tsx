@@ -54,13 +54,21 @@ jest.mock('react-native-svg', () => {
 });
 // SF sembol adını testID olarak sızdırıyor — pill ikonlarının hangi sembolü
 // kullandığı ancak böyle assert edilebiliyor.
+// forceFallback GERÇEK bileşendeki gibi ele alınıyor: o bayrakla gelen ikonlar
+// (burç glifleri, sigara) iOS'ta da SF değil fallback çiziyor, testID de
+// fallback'in adını taşıyor — yoksa test SF sembolünü doğruluyor gibi görünüp
+// aslında hiç çizilmeyen bir sembolü assert ederdi.
 jest.mock('@/shared/components/SFIcon', () => {
   const React = require('react');
   const { View } = require('react-native');
   return {
     __esModule: true,
-    default: ({ name }: any) =>
-      React.createElement(View, { testID: `sficon-${name}` }),
+    default: ({ name, fallback, forceFallback }: any) =>
+      React.createElement(View, {
+        testID: forceFallback
+          ? `icon-${fallback?.displayName ?? name}`
+          : `sficon-${name}`,
+      }),
   };
 });
 jest.mock('@/shared/components/HobbyIcon', () => ({
@@ -282,12 +290,16 @@ describe('FilterModal — premium filtreler', () => {
   });
 
   it('pill ikonları Register/EditProfileForm ile aynı sembolleri kullanır', () => {
-    // Aynı burcu üç ekranda da aynı ikonla görmek gerekiyor; semboller
-    // RegisterStep14Screen ZODIAC_MAP'ten.
+    // Aynı burcu üç ekranda da aynı ikonla görmek gerekiyor; burçlar KENDİ
+    // sembolleriyle çiziliyor (elementel karşılık ya da emoji DEĞİL) ve
+    // sembolleri SF'te olmadığı için iki platformda da glif fallback'i geçerli.
     renderModal(baseFilters);
-    expect(screen.getByTestId('sficon-flame.fill')).toBeTruthy(); // Koç
-    expect(screen.getByTestId('sficon-sun.max.fill')).toBeTruthy(); // Aslan
-    expect(screen.getByTestId('sficon-smoke.fill')).toBeTruthy(); // sigara
+    expect(screen.getByTestId('icon-ZodiacAries')).toBeTruthy(); // Koç
+    expect(screen.getByTestId('icon-ZodiacLeo')).toBeTruthy(); // Aslan
+    // Sigara da fallback yolundan çiziliyor; `@/shared/icons` proxy'si adsız
+    // bileşen döndürdüğü için testID sf adına düşüyor — assert edilen şey
+    // sembolün kendisi değil, SF'in DEVREDE OLMAMASI.
+    expect(screen.getByTestId('icon-smoke.fill')).toBeTruthy(); // sigara
     // person.2.fill artık yalnız "İlgi Alanı"ndaki Non-Binary pill'inde:
     // "Arkadaşlık" amaç pill'i kalktı.
     expect(screen.getAllByTestId('sficon-person.2.fill').length).toBe(1);
