@@ -88,6 +88,9 @@ const tr = {
       subtitle: 'Hesabını silersen 30 gün içinde geri dönebilirsin.',
     },
     deleteAccount: 'Hesabı Sil',
+    // Ayarlar alt bilgisindeki harita atfı. Yalnız önek çevriliyor —
+    // "© Mapbox" ve "© OpenStreetMap" marka adı, olduğu gibi kalıyor.
+    mapAttribution: 'Harita verileri',
   },
   errors: {
     generic: 'Hata',
@@ -785,7 +788,7 @@ const tr = {
     bubble: {
       edited: '(düzenlendi)',
       deleted: 'Bu mesaj silindi.',
-      tapToRetry: 'Tekrar göndermek için dokun',
+      retrySend: 'Tekrar gönder',
     },
     actions: {
       reply: 'Yanıtla',
@@ -836,6 +839,33 @@ const tr = {
     },
     deleteMessage: {
       error: 'Silme başarısız.',
+    },
+    send: {
+      failed: 'Mesaj gönderilemedi.',
+    },
+    // Backend sohbet hata kodları (UT-67xx). Anahtarlar kodun kendisi:
+    // metin koda bağlanır, backend `message`'ına DEĞİL (bkz. responseCodes.ts).
+    codes: {
+      'UT-6701': 'Bu sohbete erişemiyorsun.',
+      'UT-6702': 'Bu sohbete mesaj gönderemezsin.',
+      'UT-6703': 'Sadece kendi mesajını düzenleyebilirsin.',
+      'UT-6704': 'Sadece kendi mesajını silebilirsin.',
+      'UT-6710': 'Mesaj boş olamaz.',
+      'UT-6711': 'Mesaj en fazla 2000 karakter olabilir.',
+      'UT-6712': 'Yanıtladığın mesaj bu sohbette değil ya da silinmiş.',
+      'UT-6713': 'Sohbet bulunamadı.',
+      'UT-6720': 'Mesaj bulunamadı.',
+      'UT-6721': 'Sistem mesajı düzenlenemez.',
+      'UT-6722': 'Silinmiş mesaj düzenlenemez.',
+      'UT-6723': 'Düzenleme süresi (15 dakika) doldu.',
+      'UT-6724': 'Yalnız metin mesajları düzenlenebilir.',
+      'UT-6725': 'Sistem mesajı silinemez.',
+      'UT-6730': 'Emoji 1-16 karakter olmalı.',
+      'UT-6731': 'Sistem mesajına tepki veremezsin.',
+      'UT-6740': 'Bu sohbet kapatıldı.',
+      'UT-6741': 'Sohbet yenileniyor…',
+      'UT-6742': 'Arama en az 2 karakter olmalı.',
+      'UT-6743': 'Bu sohbeti yalnız eşleşmeyi kaldıran taraf geri alabilir.',
     },
     restore: {
       error: 'Geri alınamadı',
@@ -959,6 +989,9 @@ const tr = {
       pageTitle: "Lit Plus'a Geç",
       pageTitlePremium: 'Lit Plus+ üyesisin',
       description: 'Lit Plus ile eşleşmelerini hızlandır, seni beğenenleri gör ve daha fazlasını keşfet!',
+      // Başlıkla aynı ayrım: aboneye satış cümlesi değil, zaten sahip olduğu
+      // şeyi anlatan bir cümle yazıyor.
+      descriptionPremium: 'Bütün plus özellikleri açık. Aboneliğinin durumu aşağıdaki kartta.',
       pricing: '{{price}} / Ay',
       pricingPrefix: '',
       pricingSuffix: "'dan başlayan planlar",
@@ -1023,7 +1056,15 @@ const tr = {
         // TEK metin, anahtarın durumuna göre DEĞİŞMEZ: metin değişince kullanıcı
         // "yazı da mı değişti, ne oldu?" diye okuyordu. Anahtar etiketi
         // konvansiyonu — açtığında ne olacağını anlatır, durumu Switch gösterir.
-        label: 'Kişiler tükense bile bu filtre dışındakileri gösterme',
+        //
+        // Başlık satırında artık METİN GÖRÜNMÜYOR: orada yalnız gri bir info
+        // ikonu + anahtar var. Bu etiket ikona basınca açılan sheet'in başlığı
+        // (bkz. FilterModal → dealbreakerInfoVisible).
+        label: 'Olmazsa olmaz',
+        // Sheet'in gövdesi: anahtarın AÇIK ve KAPALI hâllerinin ne yaptığını
+        // yan yana söylüyor. Açık hâlin bedeli (boş ekran) saklanmıyor —
+        // kullanıcı kuyruğu kendi eliyle daraltıyor.
+        info: 'Açıkken bu filtreye uymayan hiç kimse sana gösterilmez; uygun kişiler tükenirse keşif ekranın boşalır. Kapalıyken filtre bir tercih olarak kalır: keşfin boşaldığında kendiliğinden gevşer ve daha fazla kişi görürsün.',
       },
       enumLoading: 'Seçenekler yükleniyor…',
       enumUnavailable: 'Liste şu an yüklenemedi.',
@@ -1096,7 +1137,7 @@ const tr = {
         unavailable: 'Hobi listesi şu an yüklenemedi.',
       },
       relationshipIntents: {
-        title: 'Karşımda görmek istediğim niyetler',
+        title: 'Görmek istediğim niyetler',
         description: 'Bu niyetlere sahip kişiler keşifte önce gösterilir. Diğerleri listenden çıkmaz; boş bırakabilirsin.',
         // Filtredeki TİKLİ SATIR etiketleri — karşı tarafın ağzından cümle
         // ("Uzun süreli arıyorum"), kayıt akışındaki step14 ile aynı yaklaşım.
@@ -1582,6 +1623,11 @@ const tr = {
         bullet1: 'Hangi hareketlerin isteneceğine biz karar veririz, her seferinde değişir.',
         bullet2: 'Yalnızca iki kare gönderilir — video kaydı yapılmaz.',
         bullet3: 'Yüzün çerçeveye sığsın, ortam aydınlık olsun ve karede yalnız ol.',
+        // Bu ikisi hazırlık listesi: kamerada üç kare sonra öğrenilen her
+        // `face_occluded` / `face_mismatch` bir denemeyi (saatlik 5 haktan
+        // birini) yakıyor.
+        bullet4: 'Maske, şapka ve güneş gözlüğünü çıkar; saçın yüzünü kapatmasın.',
+        bullet5: 'Ana fotoğrafındaki gibi görünmen karşılaştırmayı kolaylaştırır.',
         privacyNote:
           'Doğrulama, fotoğraflarının sana ait olduğunu gösterir; bir kimlik doğrulaması değildir. Rozet dışında keşifte hiçbir öncelik sağlamaz.',
         startButton: 'Doğrulamaya Başla',
@@ -1613,6 +1659,11 @@ const tr = {
       camera: {
         stepCounter: '{{index}} / {{total}}',
         hint: 'Yüzün çerçeveye sığsın ve karede yalnız ol.',
+        // Hareketin dozu. İkisi ZIT yönde uyarıyor: poz hareketlerinde asıl
+        // risk savrulmak (`challenge_too_much`), mimiklerde kameranın
+        // göremeyeceği kadar hafif kalmak (`challenge_too_weak`).
+        hintPose: 'Belirgin yap ama abartma.',
+        hintExpression: 'Belirgin olsun, kamera görebilsin.',
         ready: 'Hazırım',
         captureError: 'Kare çekilemedi, tekrar dene.',
         permissionMessage:
@@ -1630,6 +1681,14 @@ const tr = {
       // akışın normal parçası (istek 200 + isSuccess:true dönüyor).
       reason: {
         challenge_not_met: 'İstenen hareketi algılayamadık. Bir kez daha deneyelim.',
+        // ⚠️ Bu üçü hareketin YÖNÜNÜ ya da eşiğin SAYISINI sızdırmıyor
+        // ("sağa değil sola döndün", "20 derece daha" YASAK) — saldırgana eşiği
+        // deneme-yanılmayla kalibre ettirir. "Biraz daha belirgin" güvenli:
+        // kullanıcı ne istendiğini zaten biliyor.
+        challenge_too_weak: 'Neredeyse oldu — hareketi biraz daha belirgin yapar mısın?',
+        challenge_wrong_move:
+          'İstenen hareketi göremedik. Yönergeyi okuyup tekrar dener misin?',
+        challenge_too_much: 'Biraz fazla oldu — daha yumuşak bir hareket yeterli.',
         no_face: 'Yüzünü göremedik. Yüzün net ve aydınlık görünsün.',
         multiple_faces: 'Karede birden fazla kişi var. Doğrularken yalnız olmalısın.',
         face_occluded: 'Yüzün kapalı görünüyor. Maske, şapka veya gözlüğü çıkarıp dene.',
@@ -1644,6 +1703,9 @@ const tr = {
       },
       reasonTitle: {
         challenge_not_met: 'Hareketi algılayamadık',
+        challenge_too_weak: 'Neredeyse oldu',
+        challenge_wrong_move: 'Hareketi göremedik',
+        challenge_too_much: 'Biraz fazla oldu',
         no_face: 'Yüzünü göremedik',
         multiple_faces: 'Karede birden fazla kişi var',
         face_occluded: 'Yüzün kapalı görünüyor',
@@ -1823,6 +1885,19 @@ const tr = {
       pendingBadge: 'Aktivasyon sürüyor',
       pendingDescription: 'Satın alman alındı. Mağaza onayının bize ulaşması birkaç dakika sürebilir.',
       retryButton: 'Yenile',
+      // Plus sayfasındaki kartın GÖVDE cümlesi (bkz. subscriptionCardNote).
+      // Yukarıdaki `*Description`lardan ayrı: bunlar durumun KELİMESİNİ tekrar
+      // etmiyor ("Aktif" / "Deneme" …), onu kartın ad satırındaki rozet
+      // söylüyor. İki satırı geçmesin — kart için ayrılan boy (PLAN_CARD_HEIGHT)
+      // buna göre.
+      cardNoteActive: 'Bütün plus özellikleri hesabında açık; aboneliğin dönem sonunda kendiliğinden yenilenir.',
+      cardNoteTrial: 'Deneme boyunca bütün plus özellikleri açık. Süre bitmeden iptal edersen ücret alınmaz.',
+      // İptalde alt satırın yerini mağaza butonu alıyor, yani tarihi yazan tek
+      // yer burası (bkz. subscriptionCardNote).
+      cardNoteCancelledDate: '{{date}} tarihine kadar her şey açık kalır, sonrasında plus kapanır.',
+      cardNoteCancelled: 'Dönem sonuna kadar her şey açık kalır, sonrasında plus kapanır.',
+      cardNoteBillingIssue: 'Son ödemen alınamadı. Erişimin şimdilik açık, ödeme yönteminin yenilenmesi gerekiyor.',
+      cardNotePending: 'Satın alman alındı. Mağaza onayı bize ulaşınca özellikler açılacak.',
     },
     settings: {
       button: 'Ayarlar',
@@ -1839,6 +1914,9 @@ const tr = {
       petsYes: 'Evcil hayvan var',
       petsNo: 'Evcil hayvan yok',
       bio: 'Biyografi',
+      // Kapak fotoğrafının altındaki ipucu — eskiden orada expand oku vardı.
+      // Küçük harf BİLEREK: buton etiketi değil, sessiz bir fısıltı.
+      expandHint: 'detaylar için yukarı kaydır',
       prep: 'Hazırlık',
       grade: '{{year}}. Sınıf',
       premium: 'Premium',
@@ -1896,8 +1974,10 @@ const tr = {
       monthlyPer: 'ay',
       yearlyPer: 'yıl',
     },
-    // Plan kartındaki açıklama satırı. Backend `/plans` metin DÖNMÜYOR (yalnız
-    // displayName/highlight/sortOrder), o yüzden copy burada duruyor.
+    // Plan kartındaki açıklama satırı. YALNIZ satın alınabilir kartta: abonede
+    // kartın gövdesini durum cümlesi yazıyor (`profile.subscription.cardNote*`).
+    // Backend `/plans` metin DÖNMÜYOR (yalnız displayName/highlight/sortOrder),
+    // o yüzden copy burada duruyor.
     planDesc: {
       weekly: 'Kısa denemek için ideal; istediğin an iptal edebilirsin.',
       monthly: 'Aylık yenilenir, uzun taahhüt yok.',
@@ -1913,6 +1993,13 @@ const tr = {
     bestValue: 'En iyi',
     errors: {
       packageNotFound: 'Paket bulunamadı.',
+      // RC kimliği anonim/yabancı kaldığında satın alma HİÇ başlatılmıyor
+      // (bkz. isPurchaseIdentityReady). Metin teknik ayrıntı vermiyor ama tek
+      // işe yarar çözümü söylüyor: uygulamayı yeniden aç — açılışta kimlik
+      // onarımı yeniden koşuyor. Consumable sheet'i de aynı iki anahtarı
+      // kullanıyor, ürün adı geçmemesinin sebebi bu.
+      identityTitle: 'Satın alma başlatılamadı',
+      identityMessage: 'Hesabın mağaza ile eşleştirilemedi. Uygulamayı kapatıp yeniden açtıktan sonra tekrar dener misin?',
       purchaseTitle: 'Satın Alma Hatası',
       operationFailed: 'İşlem gerçekleştirilemedi.',
       restoreNotFoundTitle: 'Bulunamadı',
@@ -2008,6 +2095,14 @@ const tr = {
     disclaimer: 'Not hakları satın alma tamamlandığında hesabına anında eklenir ve süresi dolmaz. Ödemeler App Store hesabından tahsil edilir, satın alma sonrası iade yapılmaz.',
   },
   moderation: {
+    // Backend moderasyon hata kodları (UT-68xx). UT-6804 mevcut
+    // `report.alreadyReported` anahtarını kullanıyor — metin aynı, kaynak tek.
+    // UT-6805 (boş userId) BİLEREK yok: istemci bug'ı, jenerik metin gösterilir.
+    codes: {
+      'UT-6801': 'Kendi hesabını engelleyemezsin.',
+      'UT-6802': 'Kendi hesabını şikayet edemezsin.',
+      'UT-6803': 'Bu kullanıcı bulunamadı.',
+    },
     report: {
       title: 'Kullanıcıyı Şikayet Et',
       reasonLabel: 'Şikayet sebebi',

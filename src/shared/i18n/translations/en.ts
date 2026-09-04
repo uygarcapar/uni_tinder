@@ -88,6 +88,9 @@ const en = {
       subtitle: 'If you delete your account, you can return within 30 days.',
     },
     deleteAccount: 'Delete Account',
+    // Map attribution in the settings footer. Only the prefix is translated —
+    // "© Mapbox" and "© OpenStreetMap" are brand names, left as-is.
+    mapAttribution: 'Map data',
   },
   errors: {
     generic: 'Error',
@@ -781,7 +784,7 @@ const en = {
     bubble: {
       edited: '(edited)',
       deleted: 'This message was deleted.',
-      tapToRetry: 'Tap to resend',
+      retrySend: 'Resend',
     },
     actions: {
       reply: 'Reply',
@@ -832,6 +835,33 @@ const en = {
     },
     deleteMessage: {
       error: 'Deletion failed.',
+    },
+    send: {
+      failed: 'Message could not be sent.',
+    },
+    // Backend chat error codes (UT-67xx). Keys are the codes themselves: text
+    // is bound to the code, never to the backend `message` (see responseCodes.ts).
+    codes: {
+      'UT-6701': "You don't have access to this chat.",
+      'UT-6702': "You can't send messages in this chat.",
+      'UT-6703': 'You can only edit your own messages.',
+      'UT-6704': 'You can only delete your own messages.',
+      'UT-6710': "Your message can't be empty.",
+      'UT-6711': 'Messages can be at most 2000 characters.',
+      'UT-6712': "The message you're replying to isn't in this chat or was deleted.",
+      'UT-6713': 'Chat not found.',
+      'UT-6720': 'Message not found.',
+      'UT-6721': "System messages can't be edited.",
+      'UT-6722': "A deleted message can't be edited.",
+      'UT-6723': 'The 15-minute editing window has closed.',
+      'UT-6724': 'Only text messages can be edited.',
+      'UT-6725': "System messages can't be deleted.",
+      'UT-6730': 'An emoji must be 1-16 characters.',
+      'UT-6731': "You can't react to a system message.",
+      'UT-6740': 'This chat has been closed.',
+      'UT-6741': 'Refreshing the chat…',
+      'UT-6742': 'Your search must be at least 2 characters.',
+      'UT-6743': 'Only the person who unmatched can restore this chat.',
     },
     restore: {
       error: 'Could not restore',
@@ -955,6 +985,9 @@ const en = {
       pageTitle: 'Get Lit Plus',
       pageTitlePremium: "You're a Lit Plus+ member",
       description: 'Speed up your matches with Lit Plus, see who likes you, and discover more!',
+      // Same split as the title: subscribers get a sentence about what they
+      // already have, not a pitch for something they have already bought.
+      descriptionPremium: 'Every plus feature is unlocked. Your subscription status is on the card below.',
       pricing: '{{price}} / month',
       pricingPrefix: 'Plans starting from ',
       pricingSuffix: '',
@@ -1018,7 +1051,12 @@ const en = {
       },
       dealbreaker: {
         // One string, does NOT change with the switch state — see tr.ts.
-        label: 'Never show people outside this filter, even when candidates run out',
+        // No longer rendered next to the switch — the title row shows only a
+        // grey info icon. This is the title of the sheet that icon opens.
+        label: 'Dealbreaker',
+        // Sheet body: says what BOTH switch states do. The cost of turning it
+        // on (an empty deck) is stated, not hidden.
+        info: 'When this is on, nobody outside this filter is ever shown to you — if matching people run out, your Discover screen goes empty. When it is off, the filter stays a preference: it relaxes on its own once your deck empties, so you keep seeing people.',
       },
       enumLoading: 'Loading options…',
       enumUnavailable: 'List could not be loaded right now.',
@@ -1547,6 +1585,11 @@ const en = {
         bullet1: 'We pick the movements, and they change every time.',
         bullet2: 'Only two frames are sent — nothing is recorded.',
         bullet3: 'Fit your face in the frame, find good light, and be alone in the shot.',
+        // These two are a prep checklist: every `face_occluded` /
+        // `face_mismatch` discovered three frames into the camera step burns
+        // an attempt (one of the 5 per hour).
+        bullet4: 'Take off any mask, hat or sunglasses, and keep your hair off your face.',
+        bullet5: 'Looking like your main photo makes the comparison easier.',
         privacyNote:
           "Verification shows your photos are really you; it is not an identity check. Apart from the badge, it gives you no priority in discovery.",
         startButton: 'Start verification',
@@ -1578,6 +1621,11 @@ const en = {
       camera: {
         stepCounter: '{{index}} / {{total}}',
         hint: 'Fit your face in the frame and be alone in the shot.',
+        // How far to take the movement. The two warn in OPPOSITE directions:
+        // poses tend to overshoot (`challenge_too_much`), expressions tend to
+        // stay too subtle for the camera (`challenge_too_weak`).
+        hintPose: "Make it clear, but don't overdo it.",
+        hintExpression: 'Make it clear enough for the camera to see.',
         ready: "I'm ready",
         captureError: "We couldn't take the frame. Try again.",
         permissionMessage:
@@ -1595,6 +1643,15 @@ const en = {
       // normal part of the flow (the request returns 200 + isSuccess:true).
       reason: {
         challenge_not_met: "We couldn't detect the movement. Let's try once more.",
+        // ⚠️ None of these leak the DIRECTION of the movement or the NUMBER
+        // behind the threshold ("you turned left, not right", "20 more degrees"
+        // are forbidden) — that lets an attacker calibrate by trial and error.
+        // "A bit more pronounced" is safe: the user already knows the prompt.
+        challenge_too_weak:
+          'Almost there — could you make the movement a bit more pronounced?',
+        challenge_wrong_move:
+          "We didn't see the movement. Mind reading the prompt and trying again?",
+        challenge_too_much: 'That was a bit much — a gentler movement is enough.',
         no_face: "We couldn't see your face. Make sure it's clear and well lit.",
         multiple_faces: 'There is more than one person in the frame. You need to be alone.',
         face_occluded: 'Your face looks covered. Remove a mask, hat or glasses and try again.',
@@ -1609,6 +1666,9 @@ const en = {
       },
       reasonTitle: {
         challenge_not_met: "We couldn't detect the movement",
+        challenge_too_weak: 'Almost there',
+        challenge_wrong_move: "We didn't see the movement",
+        challenge_too_much: 'That was a bit much',
         no_face: "We couldn't see your face",
         multiple_faces: 'More than one person in the frame',
         face_occluded: 'Your face looks covered',
@@ -1787,6 +1847,18 @@ const en = {
       pendingBadge: 'Activating',
       pendingDescription: 'Your purchase went through. It can take a few minutes for the store confirmation to reach us.',
       retryButton: 'Refresh',
+      // Body line of the plan card on the plus page (see subscriptionCardNote).
+      // Separate from the `*Description` copy above: these never repeat the
+      // state WORD ('Active' / 'Trial' …) — the pill on the card's name row
+      // says that. Keep them to two lines; PLAN_CARD_HEIGHT budgets for that.
+      cardNoteActive: 'Every plus feature is unlocked on your account, and your subscription renews on its own at the end of each period.',
+      cardNoteTrial: 'Every plus feature is unlocked during the trial. Cancel before it ends and you are not charged.',
+      // When cancelled, the card's bottom line is replaced by the store button,
+      // so this is the only place the date appears (see subscriptionCardNote).
+      cardNoteCancelledDate: 'Everything stays unlocked until {{date}}, then plus turns off.',
+      cardNoteCancelled: 'Everything stays unlocked until the period ends, then plus turns off.',
+      cardNoteBillingIssue: "We couldn't take your last payment. Your access is still on for now, but your payment method needs updating.",
+      cardNotePending: 'Your purchase went through. Features unlock as soon as the store confirmation reaches us.',
     },
     settings: {
       button: 'Settings',
@@ -1802,6 +1874,9 @@ const en = {
       petsYes: 'Has pets',
       petsNo: 'No pets',
       bio: 'Bio',
+      // Hint under the cover photo, where the expand chevron used to be.
+      // Lowercase on purpose: it is a quiet aside, not a button label.
+      expandHint: 'swipe up to see details',
       prep: 'Prep',
       grade: 'Year {{year}}',
       premium: 'Premium',
@@ -1852,8 +1927,10 @@ const en = {
       monthlyPer: 'month',
       yearlyPer: 'year',
     },
-    // Plan card description line. `/plans` returns no copy (displayName /
-    // highlight / sortOrder only), so the wording lives here.
+    // Plan card description line. PURCHASABLE card only: for subscribers the
+    // body is written by the subscription state (`profile.subscription.cardNote*`).
+    // `/plans` returns no copy (displayName / highlight / sortOrder only), so
+    // the wording lives here.
     planDesc: {
       weekly: 'Best for a short try — cancel any time.',
       monthly: 'Renews monthly, no long commitment.',
@@ -1869,6 +1946,13 @@ const en = {
     bestValue: 'Best',
     errors: {
       packageNotFound: 'Package not found.',
+      // Shown when the RevenueCat identity is still anonymous/foreign, in which
+      // case the purchase is never started (see isPurchaseIdentityReady). No
+      // technical detail — just the one fix that works: restart, which re-runs
+      // the identity repair. The consumable sheet reuses these two keys, hence
+      // no product name in the copy.
+      identityTitle: 'Purchase could not start',
+      identityMessage: 'We could not match your account with the store. Please close and reopen the app, then try again.',
       purchaseTitle: 'Purchase Error',
       operationFailed: 'Operation could not be completed.',
       restoreNotFoundTitle: 'Not Found',
@@ -1965,6 +2049,14 @@ const en = {
     disclaimer: 'Notes are added to your account instantly when the purchase completes and never expire. Payments are charged to your App Store account; purchases are non-refundable.',
   },
   moderation: {
+    // Backend moderation error codes (UT-68xx). UT-6804 reuses
+    // `report.alreadyReported` — same sentence, one source.
+    // UT-6805 (empty user id) is deliberately absent: client bug, generic text.
+    codes: {
+      'UT-6801': "You can't block your own account.",
+      'UT-6802': "You can't report your own account.",
+      'UT-6803': "We couldn't find that user.",
+    },
     report: {
       title: 'Report User',
       reasonLabel: 'Reason for report',
