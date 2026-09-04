@@ -9,6 +9,7 @@ import {
   frame,
   glassEffect,
   padding,
+  shadow,
   shapes,
   strokeBorder,
   type ModifierConfig,
@@ -55,6 +56,22 @@ export function hasLiquidGlassSurface(): boolean {
  */
 export const glassColorScheme = (): "light" | "dark" =>
   isLight() ? "light" : "dark";
+
+/**
+ * iOS 26 altındaki cam fallback'inin KENAR ÇİZGİSİ — SwiftUI zincirindeki
+ * `glassFallback()` ve butonu doğrudan RN'de çizen yollar (bkz. AppModal'ın
+ * header metin butonu) aynı sayıyı okusun diye burada.
+ *
+ * 0.5pt ve `colors.border`: gerekçesi `glassFallback`in gövdesinde.
+ *
+ * Render anında ÇAĞIR — palet mutasyona uğruyor.
+ */
+export const GLASS_FALLBACK_BORDER_WIDTH = 0.5;
+
+export const glassFallbackBorderStyle = () => ({
+  borderWidth: GLASS_FALLBACK_BORDER_WIDTH,
+  borderColor: colors.border,
+});
 
 type GlassFallbackShape = "capsule" | "circle" | "roundedRectangle";
 
@@ -114,6 +131,37 @@ function toShape(shape: GlassFallbackShape, cornerRadius: number): Shape {
 export const glassFallbackFill = (): string => withAlpha(colors.text, 0.16);
 
 /**
+ * BERRAK camın AÇIK moddaki ayrışma gölgesi — soluk, geniş, siyah, aşağı doğru.
+ *
+ * Gerekçe: `clear` variant'ın dolgusu yok, yalnız kırılma ve kenar parlaması
+ * var. Koyu zeminde o parlama kabuğu tek başına okutuyor; açık modda zemin
+ * beyaza (`colors.bg` = #FFFFFF) çıkınca kenar beyazın içinde eriyip buton
+ * "havada duran bir glif" gibi kalıyordu. Gölge kabuğu değil YALNIZ ayrımı
+ * veriyor — camın kendi görünümüne dokunmuyor.
+ *
+ * ALFA ve YARIÇAP BİRLİKTE oynatılır: dar yarıçapta (2-3pt) gölge kabuğun
+ * kenarına ikinci bir çizgi gibi yapışıp çerçeve okunuyordu, o yüzden geniş
+ * ve soluk tarafta duruyor. Yarıçapı büyütürken alfayı sabit bırakırsan aynı
+ * mürekkep daha geniş alana yayılıp gölge tamamen kaybolur.
+ *
+ * ÜÇ SINIR:
+ *  1. Yalnız AÇIK modda. Koyuda gölge zaten görünmezdi (siyah üstü siyah) ama
+ *     boşuna bir offscreen pass'i olurdu.
+ *  2. Yalnız iOS 26+. 26 altında `glassEffect` no-op → SwiftUI tarafında
+ *     gölgelenecek bir kabuk yok, gölge doğrudan GLİFİN üstüne düşerdi. O yolda
+ *     zemin RN'deki `GlassFallbackSurface`ten (BlurView) geliyor.
+ *  3. Zincirde `glassEffect`ten SONRA gelmeli — SwiftUI gölgeyi o ana kadar
+ *     birikmiş içeriğin alfasından türetiyor, camdan önce takılırsa yine glifin
+ *     gölgesi çıkar.
+ *
+ * Render anında ÇAĞIR: `isLight()` aktif moda bakıyor.
+ */
+export function glassClearShadow(): ModifierConfig[] {
+  if (!HAS_LIQUID_GLASS || !isLight()) return [];
+  return [shadow({ color: "rgba(0,0,0,0.1)", radius: 7, y: 2 })];
+}
+
+/**
  * iOS 26 öncesindeki glass fallback'ine border (+ padding/frame) ekler; 26 ve
  * üstünde boş dizi döner — native glass kendi kenarını zaten çiziyor.
  *
@@ -142,7 +190,7 @@ export const glassFallbackFill = (): string => withAlpha(colors.text, 0.16);
 export function glassFallback({
   shape = "capsule",
   cornerRadius = 8,
-  borderWidth = 0.5,
+  borderWidth = GLASS_FALLBACK_BORDER_WIDTH,
   borderColor,
   backgroundColor,
   padding: pad,
@@ -299,6 +347,9 @@ export function glassIconClearGlyph(): ModifierConfig[] {
       glass: { variant: "clear", interactive: true },
       shape: "circle",
     }),
+    // Açık modda beyaz zeminden ayrılsın diye ufak gölge; koyuda ve 26 altında
+    // boş dizi (bkz. glassClearShadow). Camdan SONRA geliyor — sırası şart.
+    ...glassClearShadow(),
   ];
 }
 
@@ -351,6 +402,8 @@ export function glassTextClearCapsule({
       glass: { variant: "clear", interactive: true },
       shape: "capsule",
     }),
+    // İkon kardeşiyle aynı gölge; camdan sonra, fallback'ten önce.
+    ...glassClearShadow(),
     // 26+'da boş dizi. Padding TEKRAR verilmiyor: yukarıdaki `padding` her
     // sürümde uygulanıyor, fallback'in kendi padding'i çift boşluk yapardı.
     ...glassFallback({

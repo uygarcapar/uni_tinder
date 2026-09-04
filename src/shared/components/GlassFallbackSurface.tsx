@@ -28,10 +28,15 @@ import { HAS_LIQUID_GLASS } from "@/shared/theme/glass";
  * kap `alignItems: "center"` olduğu için sarmalayıcı da onunla daralıyor.
  *
  * `frame({ maxWidth, alignment })` ile kutusu BİLEREK butondan geniş bırakılan
- * (AppModal'ın metin butonu, ProfileScreen'in "Profili Düzenle"si) yerlerde
- * KULLANMA: oralarda görünen kapsülün genişliği yalnız SwiftUI'ın bildiği bir
- * şey, bulanıklık kutunun şeffaf kalan kısmını da boyar. Onlar `glassFallback`
- * içindeki düz dolguyla (`glassFallbackFill()`) kalmalı.
+ * (ProfileScreen'in "Profili Düzenle"si) yerlerde KULLANMA: oralarda görünen
+ * kapsülün genişliği yalnız SwiftUI'ın bildiği bir şey, bulanıklık kutunun
+ * şeffaf kalan kısmını da boyar. Onlar `glassFallback` içindeki düz dolguyla
+ * (`glassFallbackFill()`) kalmalı.
+ *
+ * O kısıtın diğer çıkışı ETİKETİ RN'DE ÇİZMEK — 26 altında SwiftUI butonundan
+ * geriye zaten yalnız etiket kalıyor. AppModal'ın header metin butonları
+ * (Sıfırla/Uygula/Kaydet) bu yoldan geçiyor ve ölçü Yoga'da belli olduğu için
+ * sarmalayıcı kapsüle birebir oturuyor.
  */
 
 type Props = {

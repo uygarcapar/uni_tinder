@@ -12,8 +12,15 @@ import { colors, isLight } from "./colors";
  * blur'u, MatchModal'ın foto paneli) açık modda da KOYU kalmalı — oralarda
  * `tint="dark"` doğrudan yazılı ve öyle kalmalı.
  *
+ * SwipeCard'ın AÇIK PANEL ZEMİNİ (CardGlassBackdrop) bu kuralın DIŞINDA ve
+ * `ultraThinBlurTint()` kullanıyor: orada blur bir foto perdesi değil, panelin
+ * zemini — üstündeki bölüm kutuları ve yazıları tema mürekkebini okuyor,
+ * dolayısıyla zeminin de modla dönmesi gerekiyor. Sabit `dark` bir tur denendi
+ * ve geri alındı. Kalın kademeler (chrome) de denendi ve geri alındı: açık modda
+ * fotoğrafı beyazlatıyorlardı. Gerekçenin tamamı o dosyada.
+ *
  * LikesScreen'in KİLİTLİ kart örtüsü foto üstünde ama yine de `chromeBlurTint()`
- * kullanıyor — bu kaptaki TEK foto-üstü istisna. Sebebi kalınlığı: kimliği
+ * kullanıyor. Sebebi kalınlığı: kimliği
  * gizlemek için üst üste iki katman + tam intensity gerekiyor ve o kalınlıkta
  * SABİT bir tint kartı düz bir pula çeviriyor (beyaz denendi → sütlü, siyah
  * denendi → kömür; ikisinde de altında fotoğraf olduğu okunmuyor). Sistem
@@ -51,5 +58,26 @@ export function thinBlurTint() {
   const dark = !isLight();
   if (Platform.OS === "ios")
     return dark ? "systemThinMaterialDark" : "systemThinMaterialLight";
+  return dark ? "dark" : "light";
+}
+
+/**
+ * EN İNCE malzeme — altındaki şeyin RENGİNİ korumak istendiğinde.
+ *
+ * Sistem malzemeleri kalınlaştıkça kendi tülünü de kalınlaştırıyor: chrome açık
+ * modda sütlü beyaz bir katman gibi davranıyor ve altındaki fotoğrafın rengini
+ * yutuyor. Ultra-thin bulanıklığı bırakıp tülü en aza indiriyor — "bulanık ama
+ * hâlâ o fotoğraf" istendiğinde doğru kademe.
+ *
+ * BEDELİ KONTRAST: üstüne yazı/glif koyacaksan onların okunurluğunu artık bu
+ * katman TAŞIMIYOR, kendi zeminlerini bulmaları gerekiyor. Okunurluk sorunu
+ * çıkarsa kademeyi kalınlaştırmadan önce yazının kendi yüzeyine bak.
+ *
+ * Tek okuyucusu şimdilik SwipeCard'ın açık panel zemini (CardGlassBackdrop).
+ */
+export function ultraThinBlurTint() {
+  const dark = !isLight();
+  if (Platform.OS === "ios")
+    return dark ? "systemUltraThinMaterialDark" : "systemUltraThinMaterialLight";
   return dark ? "dark" : "light";
 }

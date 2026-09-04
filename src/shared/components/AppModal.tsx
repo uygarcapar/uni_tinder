@@ -62,8 +62,9 @@ import SFIcon from "./SFIcon";
 import AppBottomSheet from "@/shared/components/AppBottomSheet";
 import { colors, isLight, veil, withAlpha } from "../theme/colors";
 import {
+  HAS_LIQUID_GLASS,
   glassFallback,
-  glassFallbackFill,
+  glassFallbackBorderStyle,
   glassTextClearCapsule,
 } from "../theme/glass";
 import GlassFallbackSurface from "./GlassFallbackSurface";
@@ -439,6 +440,63 @@ export default function AppModal({
   ) => {
     const inert = !!opts?.loading || !!opts?.disabled;
     const align = opts?.align ?? "trailing";
+    // ── iOS 26 ALTI: kapsül SwiftUI'da DEĞİL, RN'de ─────────────────────────
+    // 26 altında `buttonStyle("glass")` de `glassEffect` de no-op (bkz.
+    // theme/glass.ts) — SwiftUI tarafında butondan geriye yalnız bir etiket
+    // kalıyor, GÖRÜNEN her şey (zemin + kenar) zaten fallback'ten geliyordu. O
+    // zemin düz bir dolguydu (`glassFallbackFill`), çünkü kutu bilerek butondan
+    // geniş bırakılıyor (aşağıdaki `frame({ maxWidth, alignment })`) ve görünen
+    // kapsülün genişliğini yalnız SwiftUI biliyor — RN'deki BlurView kutunun
+    // şeffaf kalan kısmını da boyardı.
+    //
+    // Etiketi RN'de çizince o kısıt kalkıyor: ölçü Yoga'da ve İLK commit'te
+    // belli, sarmalayıcı kapsüle birebir oturuyor. Böylece zemin de kenar da
+    // ProfileScreen'in başlık butonlarıyla (çan/ayarlar) AYNI yerden geliyor —
+    // `GlassFallbackSurface`in bulanıklığı + 0.5pt `colors.border`.
+    //
+    // `Host matchContents` ile de daralırdı ama o yol bu satırda denendi ve geri
+    // alındı: SwiftUI ölçümü ikinci Fabric commit'inde geliyor, buton ilk
+    // frame'de 0 genişlikte kalıp ölçüm gelince yerine zıplıyordu (aynı not X
+    // butonunda). RN metni bu yarışa hiç girmiyor.
+    //
+    // Aşağıdaki iki SwiftUI dalı artık YALNIZ iOS 26+ çalışıyor.
+    if (Platform.OS === "ios" && !HAS_LIQUID_GLASS) {
+      return (
+        <TouchableOpacity
+          onPress={onPress}
+          disabled={inert}
+          activeOpacity={0.7}
+          accessibilityRole="button"
+          accessibilityLabel={label}
+        >
+          {/* width YOK: kapsül içeriğine göre daralıyor, satır space-between
+              olduğu için dış kenarı yine header'ın kenarında duruyor. */}
+          <GlassFallbackSurface
+            shape="capsule"
+            height={ACTION_HEIGHT}
+            style={{
+              paddingHorizontal: 18,
+              alignItems: "center",
+              justifyContent: "center",
+              ...glassFallbackBorderStyle(),
+            }}
+          >
+            <Text
+              style={{
+                color: colors.text,
+                // SwiftUI "semibold" karşılığı — 26+'daki kardeşiyle aynı ağırlık.
+                fontWeight: "600",
+                fontSize: ACTION_LABEL_SIZE,
+                includeFontPadding: false,
+              }}
+              numberOfLines={1}
+            >
+              {label}
+            </Text>
+          </GlassFallbackSurface>
+        </TouchableOpacity>
+      );
+    }
     if (Platform.OS === "ios" && clearGlassActions) {
       return (
         // Berrak cam yolu: kabuk `buttonStyle`dan DEĞİL etiketin üstündeki
@@ -489,17 +547,13 @@ export default function AppModal({
             fixedSize({ horizontal: true }),
             // vertical padding GİTTİ: yüksekliği artık frame() veriyor.
             //
-            // Zemin BURADA düz dolgu, `GlassFallbackSurface`in bulanıklığı
-            // DEĞİL: kutu bilerek butondan geniş (aşağıdaki maxWidth +
-            // alignment) ve görünen kapsülün genişliğini yalnız SwiftUI biliyor
-            // — RN'deki BlurView kutunun şeffaf kalan kısmını da boyardı.
-            ...glassFallback({
-              shape: "capsule",
-              padding: { horizontal: 18 },
-              backgroundColor: glassFallbackFill(),
-            }),
-            // Border'dan SONRA: maxWidth kutusu butonu kenara yaslayıp kalanı
-            // şeffaf bırakıyor, öncesine konsa çerçeve boş alanı da sarardı.
+            // `glassFallback()` YOK: bu dal artık yalnız iOS 26+ çalışıyor
+            // (26 altı yukarıdaki RN dalında), yani zemini de kenarı da native
+            // cam çiziyor.
+            //
+            // Kutu bilerek butondan geniş: maxWidth + alignment butonu kenara
+            // yaslayıp kalanı şeffaf bırakıyor, fixedSize de kapsülün etikete
+            // daralmasını sağlıyor.
             frame({ maxWidth: ACTION_BOX_WIDTH, alignment: align }),
           ]}
         />
