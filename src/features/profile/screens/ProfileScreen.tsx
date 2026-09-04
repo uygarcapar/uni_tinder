@@ -156,21 +156,14 @@ const EDIT_BUTTON_H = 34;
 // glass kapsül fixedSize ile metne göre daralıp kutunun soluna yaslanır, kalan
 // alan şeffaf kalır.
 const EDIT_BUTTON_BOX_W = width - HERO_PAD_H * 2 - HERO_AVATAR - HERO_GAP;
-// Hero ismi. Premium rozetinin çapı bundan türüyor (bkz. PremiumBadge), o
+// Hero ismi. Premium işaretinin puntosu bundan türüyor (bkz. PremiumBadge), o
 // yüzden punto sabitte duruyor.
 const HERO_NAME_FONT = 18;
 const HERO_NAME_LINE = 28;
-// Fotoğraf doğrulama rozetinin ölçüsü. Premium rozetiyle AYNI SAYI DEĞİL artık:
-// premium yuvarlak zeminli bir chip, bu ise çıplak bir SF Symbol — ikisi aynı
+// Fotoğraf doğrulama rozetinin ölçüsü. Premium işaretine BAĞLI DEĞİL: o bir
+// yazı ve puntosu isimden türüyor, bu ise çıplak bir SF Symbol — ikisi aynı
 // sayıya bağlanırsa biri diğerinin ölçüsünü bozuyor.
 const HERO_VERIFIED_SIZE = 16;
-
-// Premium rozetinin çapı — İSTİSNA olarak puntodan TÜRETİLMİYOR (bkz.
-// PremiumBadge > size). 18'lik isimden çıkan 14 burada rozet değil nokta gibi
-// duruyordu: hero ismi kart başlıklarındakinden küçük ama rozet bu ekrandaki
-// tek premium işareti, o yüzden orana değil okunurluğa göre seçildi. Yanındaki
-// doğrulama sembolünden (16) bir tık büyük kalması da bilinçli.
-const HERO_PREMIUM_BADGE_SIZE = 18;
 
 
 // ─── Generic skeleton box w/ shimmer ─────────────────────────────────────────
@@ -2045,17 +2038,11 @@ export default function ProfileScreen() {
                         {myProfile?.displayName || user?.firstName || ""}
                       </Text>
                       {isPremium && (
-                        // Zemin VARSAYILAN DEĞİL: rozetin varsayılan dairesi
-                        // `colors.bg` ve bu ekranın zemini de `bg` — daire
-                        // orada tamamen kaybolurdu. Kart başlıklarında sorun
-                        // yok, orada rozet fotoğrafın üstünde duruyor.
-                        // `surface3` bir kademe ayrışan nötr ton (açık #E4E4E8,
-                        // koyu #262626), render anında okunuyor.
-                        <PremiumBadge
-                          fontSize={HERO_NAME_FONT}
-                          size={HERO_PREMIUM_BADGE_SIZE}
-                          background={colors.surface3}
-                        />
+                        // Zemin/çap İSTİSNASI GİTTİ: işaret artık daire değil,
+                        // marka renginde bir yazı — `bg` üstünde de kart
+                        // başlıklarındaki gibi okunuyor, ölçüsü de puntodan
+                        // türüyor (bkz. PremiumBadge).
+                        <PremiumBadge fontSize={HERO_NAME_FONT} />
                       )}
                       {/* Fotoğraf doğrulama rozeti — premium rozetinden AYRI bir
                           işaret. `isSelfieVerified` bilerek `isVerified`e
@@ -2155,6 +2142,15 @@ export default function ProfileScreen() {
                     )}
                   </View>
                 </View>
+
+                {/* ── Fotoğraf Doğrulama ── Akışın TEK giriş noktası.
+                    Görünürlüğünü kendisi karar veriyor: `isSelfieVerified` alanı
+                    gelmiyorsa ya da yakın zamanda UT-6505 alındıysa null döner.
+
+                    Mağaza şeridinin ÜSTÜNDE: doğrulama bir satın alma değil,
+                    profilin eksiğini kapatan bir iş — sıralamada hero'dan hemen
+                    sonra, kartların ve upsell'in önünde geliyor. */}
+                <SelfieVerificationRow profile={myProfile} userId={user?.id} />
 
                 {/* ── Mağaza şeridi: (premium'da plus) + SuperLike + Not ── */}
                 {/* Hero'nun altı, upsell'in üstü: sayfanın tek "mağaza" şeridi.
@@ -2368,11 +2364,6 @@ export default function ProfileScreen() {
                     </AnimatedPressable>
                   </View>
                 )}
-
-                {/* ── Fotoğraf Doğrulama ── Akışın TEK giriş noktası.
-                    Görünürlüğünü kendisi karar veriyor: `isSelfieVerified` alanı
-                    gelmiyorsa ya da yakın zamanda UT-6505 alındıysa null döner. */}
-                <SelfieVerificationRow profile={myProfile} userId={user?.id} />
 
                 {/* ── Profil Tamamlama Göstergeleri (Accordion) ── */}
                 {completionMetrics.some((m) => m.current < m.max) && (

@@ -1,109 +1,111 @@
-import type { StyleProp, ViewStyle } from "react-native";
-import PremiumFlame from "./PremiumFlame";
+import { Text, type StyleProp, type TextStyle } from "react-native";
 import { colors } from "../theme/colors";
 
 /**
- * İSMİN YANINDAKİ premium rozeti — yuvarlak zeminin içinde alev.
+ * İSMİN YANINDAKİ premium işareti — ürünün wordmark'ı, marka renginde küçük.
  *
- * `PremiumFlame`den farkı ne için olduğu: o çıplak bir glyph (toast ikonu, lit
- * shop kartı, fayda listesi — zemini kendinden belli yerler), bu ise bir
- * KİMLİK SATIRI rozeti. Kullanıldığı yerler kart başlıkları (keşif kartının
- * kapağı ve açılmış paneli, yukarı kaydırınca çıkan şerit, Likes kartı) ve
- * profildeki hero ismi. Yeni bir yerde ismin yanına premium işareti koyacaksan
- * `PremiumFlame`i değil BUNU çağır — aksi halde aynı rozet ekrandan ekrana
- * farklı görünür.
+ * Eskiden yuvarlak zeminin içinde bir alevdi (`PremiumFlame`); alev artık bu
+ * satırlarda çizilmiyor. Rozetin ne olduğunu simgeden çıkarmak gerekiyordu,
+ * wordmark doğrudan söylüyor. `PremiumFlame` yerinde duruyor ama işi değişti —
+ * zemini kendinden belli yerlerin glyph'i (toast ikonu, lit shop kartı, fayda
+ * listesi). İsim satırında ONU DEĞİL bunu çağır, aksi halde aynı işaret
+ * ekrandan ekrana farklı görünür.
+ *
+ * Kullanıldığı yerler kart başlıkları (keşif kartının kapağı ve açılmış paneli,
+ * yukarı kaydırınca çıkan şerit, Likes kartı) ve profildeki hero ismi.
  *
  * Ölçü ELLE VERİLMİYOR, yanındaki ismin puntosundan çıkıyor: tek bir kural
- * bütün satırlarda aynı oranı tutuyor ve punto değişince rozet kendiliğinden
- * takip ediyor (bkz. premiumBadgeSize).
+ * bütün satırlarda aynı oranı tutuyor (bkz. premiumBadgeFontSize).
  */
 
 /**
- * İsmin puntosundan rozetin ÇAPINI verir.
+ * Marka yazımı — çevrilmiyor, "lit plus" DEĞİL.
  *
- * Referans satır kutusu DEĞİL büyük harf bandı: rozet harflerin yanında
- * duruyor, satırın boşluğunda değil. Cap yüksekliği SF Pro'da ≈ 0.7em.
+ * Ürünün her yerdeki wordmark'ıyla birebir aynı dize ve aynı font: plus
+ * sayfasının plan kartı (PurchaseSections > PlanBrandWord), lit shop satırı
+ * (PlusCard), profildeki upsell kartının başlığı ve karşılaştırma tablosunun
+ * sütun başlığı. "+" da Duckie'nin KENDİ glifi: ayrı fontta bir artı işareti
+ * iki farklı yazı gibi okunuyor (aynı gerekçe PlanBrandWord'de).
  *
- * 1.15 payı dolu dairenin kendi çapından büyük okunmasını karşılıyor; bandın
- * bir tık üstüne taşıyor, altta da baseline'ı hafifçe geçiyor — chip'lerin
- * normal duruşu. Bir dönem 1.3'tü, halka aleve göre fazla genişti.
- *
- * Alevin daire içindeki oranı BURADA DEĞİL, `PremiumFlame > FLAME_IN_CIRCLE`:
- * glyph kendi kutusunun yalnız 20/24'ünü dolduruyor (bkz. icons/FlameGlyph) ve
- * o pay çağıranın hesabına girmemeli. İkisi BİRLİKTE ayarlanır — payı
- * küçültürken oranı büyütmezsen alev de küçülür.
+ * `premium.planName` çevirisinden okunmuyor: bu bir marka işareti, tr/en'de
+ * aynı ve satır başına bir `useTranslation` aboneliği (LikesScreen'de liste
+ * satırı başına bir tane) sabit bir dize için gereksiz render trafiği demek.
  */
-export const premiumBadgeSize = (fontSize: number): number =>
-  Math.round(fontSize * 0.7 * 1.15);
+const BADGE_LABEL = "plus+";
 
 /**
- * Dairenin kenarı — saç telinden de ince, yalnızca zeminin bittiği yeri
- * belirtiyor.
- *
- * 0.1pt `StyleSheet.hairlineWidth` DEĞİL, bilerek: hairline cihaz ölçeğine göre
- * 0.33–0.5pt arası bir ÇİZGİ çiziyor ve bu rozet ölçüsünde (14–24pt çap) çizgi
- * halka gibi okunmaya başlıyor. 0.1'de kalan şey çizgi değil, anti-aliasing'in
- * bıraktığı ton farkı — kartın kalp glifindeki kenarla aynı kalınlık
- * (bkz. SuperLikeGlyph, strokeWidth 0.1).
- *
- * RN'de kenar kutunun İÇİNE çiziliyor: alevin yeri 0.2pt daralıyor, bu ölçüde
- * gözle görünmez.
+ * Duckie-regular. Runtime'da yüklenmiyor, expo-font config plugin'i binary'e
+ * gömüyor (bkz. App.tsx) — ilk frame'de hazır, yükleme kapısı gerekmiyor.
  */
-const BADGE_BORDER_WIDTH = 0.1;
+const BADGE_FONT = "Duckie-regular";
+
+/**
+ * İsmin puntosundan wordmark'ın PUNTOSUNU verir.
+ *
+ * 0.75 SF Pro'ya bakan bir orana göre YÜKSEK duruyor, sebebi fontun metriği:
+ * Duckie'nin x yüksekliği 0.338em (SF Pro'da ≈0.52). Yani aynı puntoda
+ * Duckie'nin küçük harfleri arayüz fontununkilerin ancak üçte ikisi kadar
+ * okunuyor; oran ismin puntosuyla kıyaslanacak bir sayı değil, o kaybı
+ * kapatıyor. Aynı hesap uygulamada zaten var: profildeki upsell kartının tablo
+ * başlığında 25 punto Duckie, yanındaki 12 punto BÜYÜK HARF SF ile aynı boyda
+ * okunuyor.
+ *
+ * 18 tabanı okunurluk sınırı: oran hero isminde (18) 13'e düşüyordu ve o
+ * puntoda kelime lekeye dönüşüyor. Fiilen: kart kapağı 21, panel 23,
+ * şerit/Likes/hero 18.
+ *
+ * 0.55/14 → 0.65/16 → 0.75/18: wordmark ismin yanında iki turda da silik
+ * kaldı. Büyütürken İKİSİ BİRLİKTE oynuyor — yalnız oranı artırmak küçük
+ * puntolu satırları (hero 18, şerit 21) tabanda bıraktığı için orada hiçbir şey
+ * değişmiyor. Buradan sonrası ismin puntosuna dayanıyor: 0.75'te kapaktaki
+ * wordmark'ın ink yüksekliği ismin cap bandına yaklaşıyor, daha ötesi "isim
+ * yanında küçük işaret" değil ikinci bir başlık olur.
+ *
+ * Daire çapı hesabı (0.7 × 1.15, cap bandı payı) BİLEREK gitti: kutu yok,
+ * metnin kendi satır kutusu var.
+ */
+export const premiumBadgeFontSize = (fontSize: number): number =>
+  Math.max(18, Math.round(fontSize * 0.75));
 
 export default function PremiumBadge({
   fontSize,
-  size,
-  background,
-  borderColor,
   style,
 }: {
-  /** Rozetin yanındaki ismin puntosu — çap bundan türüyor. */
+  /** İşaretin yanındaki ismin puntosu — ölçü bundan türüyor. */
   fontSize: number;
-  /**
-   * Çapı doğrudan verir ve `fontSize`tan türetmeyi ATLAR.
-   *
-   * KURAL DEĞİL İSTİSNA: normalde ölçü puntodan çıkmalı, yoksa rozet ekrandan
-   * ekrana ayrışır. Tek meşru kullanımı ismin küçük olduğu ama rozetin o
-   * ekrandaki TEK premium işareti olduğu satırlar — profil hero'su böyle:
-   * türetilen çap (18 punto → 14) orada rozeti değil bir noktayı andırıyordu.
-   */
-  size?: number;
-  /**
-   * Dairenin rengi. Varsayılan `colors.bg` ve bu FOTOĞRAF ÜSTÜ satırlar için:
-   * kart başlıklarında rozet medyanın üstünde duruyor, tema zemini orada
-   * kontrast veriyor.
-   *
-   * Rozet `bg` zeminli normal bir ekranda duruyorsa (profil hero'su) daire
-   * kaybolur — orada `surface` ailesinden bir ton geçir.
-   *
-   * Renk render anında okunuyor: palet mutasyona uğruyor, modül seviyesinde
-   * sabitleme.
-   */
-  background?: string;
-  /**
-   * Kenar rengi. Varsayılan `colors.border` — nötr gri ve MODLA DÖNÜYOR
-   * (koyu #3A3A3A, açık #DCDCE0). Aynı ton cam fallback'lerinin kenarında da
-   * kullanılıyor (bkz. theme/glass > glassFallback), yani rozet uygulamanın
-   * geri kalanıyla aynı gri aileden.
-   */
-  borderColor?: string;
-  style?: StyleProp<ViewStyle>;
+  style?: StyleProp<TextStyle>;
 }) {
   return (
-    <PremiumFlame
-      size={size ?? premiumBadgeSize(fontSize)}
-      background={background ?? colors.bg}
-      // Kenar `style` üzerinden gidiyor: PremiumFlame zaten dış stili DAİREYE
-      // uyguluyor ve taban stilinden SONRA yayıyor. Çağıranın kendi `style`i en
-      // sonda kalıyor, yani gerekirse kenarı o ezebilir.
+    <Text
+      numberOfLines={1}
       style={[
         {
-          borderWidth: BADGE_BORDER_WIDTH,
-          borderColor: borderColor ?? colors.border,
+          // İsim kırpılır, bu kırpılmaz: iki karakteri eksik kalan bir wordmark
+          // bilgi vermiyor. Satırda daralacak olan taraf isim (çağıranlarda
+          // `flexShrink: 1`).
+          flexShrink: 0,
+          // Marka rengi — `litPlus` (#ff3d3d), plus sayfasının ve dolu
+          // CTA'ların rengiyle AYNI. Modla dönmüyor (sabit marka tonu) ve
+          // render anında okunuyor: palet mutasyona uğruyor, modül seviyesinde
+          // sabitleme.
+          color: colors.litPlus,
+          fontFamily: BADGE_FONT,
+          fontSize: premiumBadgeFontSize(fontSize),
+          // `fontWeight` YOK: Duckie tek ağırlıklı, kalınlık istendiğinde
+          // Android sentetik bold çiziyor ya da aileyi ıskalayıp sistem fontuna
+          // düşüyor — wordmark o an marka olmaktan çıkıyor.
+          includeFontPadding: false,
+          // `lineHeight` BİLEREK verilmiyor: fontun satır kutusu harflerin
+          // üstünde kendi boşluğunu taşıyor ve elle daraltılan kutu "plus"ın
+          // sarkan p'sini kırpıyor (aynı tuzak profildeki upsell kartında da
+          // not düşülmüş). Dikey hizayı satırın kendi `alignItems`ı yapıyor —
+          // baseline hizalı satırlarda (Likes kartı) wordmark ismin tabanına
+          // oturuyor, ki metin için doğru duruş bu.
         },
         style,
       ]}
-    />
+    >
+      {BADGE_LABEL}
+    </Text>
   );
 }
