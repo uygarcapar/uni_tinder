@@ -79,7 +79,6 @@ import {
 } from "@/features/discover/swipeSlice";
 import { fetchConversations } from "@/features/chat/chatSlice";
 import { showInfoToast, showMissedMatchToast } from "@/shared/services/toaster";
-import { runFlameSweep } from "@/features/discover/flameSweep";
 
 import uiBus from "@/shared/services/uiBus";
 import {
@@ -268,8 +267,8 @@ const CARD_CORNER_GLASS_SIZE = RECOVER_GLASS_SIZE;
 const CARD_CORNER_GLYPH_SIZE = RECOVER_GLASS_GLYPH_SIZE;
 // Kart başlığı — isim/yaş TEK yerden ölçülüyor: satırın kendisi, blurlu kartın
 // yerine geçen kutu ve not kutusunun yükseklik bütçesi (NOTE_IDENTITY_BLOCK)
-// hep buna bakar. Premium rozetinin çapı da buradan türüyor, ayrı sabiti YOK
-// (eskiden LIKE_CARD_FLAME_SIZE vardı; bkz. PremiumBadge > premiumBadgeSize).
+// hep buna bakar. Premium işaretinin puntosu da buradan türüyor, ayrı sabiti YOK
+// (eskiden LIKE_CARD_FLAME_SIZE vardı; bkz. PremiumBadge > premiumBadgeFontSize).
 const LIKE_CARD_NAME_SIZE = 22;
 const LIKE_CARD_NAME_LINE = 26;
 // Üniversite — kimlik bloğunun ikinci satırı. İsimden bir kademe küçük ama
@@ -1458,10 +1457,12 @@ function LikeCard({
   // sekme aynı `showClear` kapısından geçiyor.
   //
   // Çıkış animasyonu: "left" / "right" jestin yönüne uçurur, "out" yerinde
-  // söndürür (engelleme gibi yönü olmayan düşüşler), "hold" ise kartı OLDUĞU
-  // GİBİ bırakır — düşüşü örten şey kartın kendi hareketi değil, ekranı
-  // kaplayan alev kutlaması (bkz. runCardFlameExit). Üç hâlde de kart dokunuşa
+  // söndürür (engelleme gibi yönü olmayan düşüşler). İkisinde de kart dokunuşa
   // kapanıyor. null → kart duruyor.
+  //
+  // ⚠️ "hold" KALDIRILDI (2026-09-03): kartı olduğu gibi bırakıp düşüşü ekranı
+  // kaplayan alev kutlamasına örttüren hâliydi. Onay/kurtarma artık kutlama
+  // oynatmıyor (bkz. runCardExit başlığındaki not) — kutlama MatchModal'ın.
   exitDirection = null,
 }) {
   const [imgLoading, setImgLoading] = useState(
@@ -1584,10 +1585,7 @@ function LikeCard({
   // commit'i doğurmaz, boşluğun kapanması ayrı iş (itemLayoutAnimation).
   const exitProgress = useSharedValue(0);
   useEffect(() => {
-    // "hold" da burada: kart kutlamanın altında düşüyor, yani GÖRSEL olarak
-    // hiçbir şey yapmıyor — uçarsa ya da sönerse dalganın altında kalmayan
-    // ilk karelerde hareket görünür ve "kart nereye gitti" hissi doğardı.
-    if (!exitDirection || exitDirection === "hold") {
+    if (!exitDirection) {
       // Emniyet: çıkış başlayıp kart bir şekilde listede kalırsa (ör. tazeleme
       // onu geri getirdi) görünmez bir hayalet bırakmasın, yerine otursun.
       exitProgress.value = 0;
@@ -1981,19 +1979,15 @@ function LikeCard({
                       {`, ${item.age}`}
                     </Text>
                   )}
-                  {/* Premium rozeti — kart başlıklarındakinin AYNISI, yaşın
+                  {/* Premium işareti — kart başlıklarındakinin AYNISI, yaşın
                       sağında; ölçü isim puntosundan türüyor (bkz. PremiumBadge).
-                      `alignSelf: "center"` ŞART: satır baseline hizalı ve bir
-                      View'ın baseline'ı ALT kenarıdır — onsuz daire yazının
-                      altına sarkar. */}
+                      `alignSelf` YOK: işaret artık daire değil metin, satırın
+                      baseline hizası onu ismin tabanına oturtuyor — daire
+                      döneminde gereken `center` yamasının işi bitti. */}
                   {item.isPremium && (
                     <PremiumBadge
                       fontSize={LIKE_CARD_NAME_SIZE}
-                      style={{
-                        flexShrink: 0,
-                        marginLeft: 4,
-                        alignSelf: "center",
-                      }}
+                      style={{ marginLeft: 4 }}
                     />
                   )}
                 </Animated.View>
@@ -2314,17 +2308,21 @@ export default function LikesScreen() {
   // ── Kart çıkışı ───────────────────────────────────────────────────────────
   // Aksiyon alınan kart veriden ANINDA düşmüyor: önce `exitingIds`e giriyor,
   // düşüş sonra oluyor. Ağdan bağımsız — istek zaten yola çıkmış durumda, bu
-  // yalnız görsel sıra. İki tür var:
-  //   • runCardExit — kart uçup söner (bkz. LikeCard), CARD_EXIT_MS sonra düşer.
-  //   • runCardFlameExit — kart yerinde durur, ekranı kaplayan alev kutlaması
-  //     onu ÖRTTÜĞÜ anda düşer (onaylama ve kurtarma).
+  // yalnız görsel sıra. Tek tür var: runCardExit — kart uçup söner (bkz.
+  // LikeCard), CARD_EXIT_MS sonra düşer.
+  //
+  // ⚠️ BU EKRANDA KUTLAMA YOK (2026-09-03). Onaylama ve kurtarma bir zamanlar
+  // Keşfet'teki alev süpürmesini oynatıyor, kart da dalganın altında düşüyordu
+  // (runCardFlameExit). Ama bu listedeki HERKES seni zaten beğenmiş: iki aksiyon
+  // da kesin bir eşleşme, yani hemen ardından MatchModal aynı ateşin perde
+  // hâliyle açılıyordu — tek bir basışa iki alev. Eşleşme kutlaması MatchModal'ın
+  // işi (bkz. flameSweep'teki kural); kart burada yalnız beğeni yönüne uçuyor.
   //
   // Boşluğun kapanması BURADA değil: kart veriden çıkınca FlatList'in
   // `itemLayoutAnimation`ı alttaki hücreleri yukarı kaydırıyor.
   const [exitingIds, setExitingIds] = useState({});
-  // userId → çıkışı İPTAL eden fonksiyon. İki çıkış türü var (zamanlayıcılı
-  // uçuş ve alev örtüsünü bekleyen düşüş) ve ikisi de aynı haritada duruyor:
-  // "bu kart zaten gidiyor" kontrolü ile unmount temizliği tek yerden okunsun.
+  // userId → çıkışı İPTAL eden fonksiyon. "Bu kart zaten gidiyor" kontrolü ile
+  // unmount temizliği tek yerden okunsun.
   const exitTimersRef = useRef(new Map());
   const finishCardExit = useCallback((userId, remove) => {
     exitTimersRef.current.delete(userId);
@@ -2355,42 +2353,6 @@ export default function LikesScreen() {
     [finishCardExit],
   );
 
-  // Kutlamalı çıkış — ONAYLAMA ve KURTARMA. İkisi de bir eşleşme yaratıyor,
-  // yani Keşfet'teki süper beğeni/not ile aynı ana ait (bkz. flameSweep):
-  // kart hiçbir yere uçmuyor, yerinde duruyor; ekranı alttan yukarı süpüren
-  // alev dalgası ekranı TAM KAPATTIĞI anda kart listeden düşüyor. Boşluğun
-  // kapanması (LIST_SHIFT_MS) da örtünün altında bitiyor — kullanıcı ne kartın
-  // gidişini ne de listenin toparlanmasını görüyor, yalnız kutlamayı.
-  //
-  // Aynı anda tek kutlama: dalga ekranı kaplayana kadar liste hâlâ dokunulabilir
-  // ve ikinci bir onay, örtme olayını (tek bir global olay) kendi kartına
-  // kaydırıp ilkini yarım bırakırdı.
-  const flamePendingRef = useRef(null);
-  const runCardFlameExit = useCallback(
-    (userId, remove) => {
-      if (!userId) {
-        remove();
-        return;
-      }
-      if (exitTimersRef.current.has(userId)) return;
-      flamePendingRef.current = userId;
-      const clearPending = () => {
-        if (flamePendingRef.current === userId) flamePendingRef.current = null;
-      };
-      // "hold": kart görsel olarak değişmiyor, yalnız dokunuşa kapanıyor —
-      // örtülene kadar geçen ~yarım saniyede ikinci bir aksiyon gitmesin.
-      setExitingIds((prev) => ({ ...prev, [userId]: "hold" }));
-      const cancel = runFlameSweep(() => {
-        clearPending();
-        finishCardExit(userId, remove);
-      });
-      exitTimersRef.current.set(userId, () => {
-        clearPending();
-        cancel();
-      });
-    },
-    [finishCardExit],
-  );
   // Ekran uygulama ömrü boyunca mount kalıyor ama yine de: bekleyen çıkışlar
   // unmount'ta iptal edilir (timer/dinleyici, kapanmış bir ekranın state'ine
   // yazmasın).
@@ -2420,10 +2382,10 @@ export default function LikesScreen() {
   const [missedLoaded, setMissedLoaded] = useState(false);
   // ⚠️ `recoveringId` KALDIRILDI (2026-09-02). Kurtarma isteği uçarken karttaki
   // butonu spinner'a çeviren state'ti; artık istek fire-and-forget gidiyor ve
-  // kutlama aynı karede başlıyor, yani gösterilecek bir bekleme yok. Tekrar
+  // kart aynı karede uçuyor, yani gösterilecek bir bekleme yok. Tekrar
   // basmayı da o engellemiyor: kart basılır basılmaz çıkışa giriyor ve
-  // `exitTimersRef`/`flamePendingRef` guard'ları beğeniyle aynı kapıyı kuruyor
-  // (bkz. handleRecover / handleQuickSwipe).
+  // `exitTimersRef` guard'ı beğeniyle aynı kapıyı kuruyor (bkz. handleRecover /
+  // handleQuickSwipe).
   const lastMissedFetchRef = useRef(0);
   const missedInFlightRef = useRef(false);
   // Sekmedeki adet — LİSTEDEN AYRI tutuluyor, iki sebeple:
@@ -3138,17 +3100,10 @@ export default function LikesScreen() {
   const handleRecover = useCallback(
     async (item) => {
       const userId = item?.userId;
-      // Guard'lar beğeniyle aynı: uçmakta olan kart hâlâ veride duruyor (ikinci
-      // basış aynı kişiye ikinci bir istek göndermesin) ve kutlama sürerken
-      // (flamePendingRef) hiçbir karta aksiyon alınamaz — dalga ekranı kaplayana
-      // kadar liste dokunulabilir kalıyor ve ikinci bir onay, tek olan örtme
-      // anını kendi kartına kaydırıp ilkini yarım bırakırdı.
-      if (
-        !userId ||
-        actingRef.current ||
-        flamePendingRef.current ||
-        exitTimersRef.current.has(userId)
-      ) {
+      // Guard beğeniyle aynı: uçmakta olan kart hâlâ veride duruyor, ikinci
+      // basış aynı kişiye ikinci bir istek göndermesin. Kartlar birbirini
+      // BLOKLAMIYOR — çıkışlar bağımsız, ekranı kaplayan ortak bir kutlama yok.
+      if (!userId || actingRef.current || exitTimersRef.current.has(userId)) {
         return;
       }
 
@@ -3173,23 +3128,23 @@ export default function LikesScreen() {
       }
 
       Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
-      // İstek ANINDA gidiyor, kartın veriden düşmesi kutlama kadar gecikiyor.
-      // Kurtarma = geri alınmış bir "geç", yani kesin bir eşleşme: kart BEĞEN
-      // YÖNÜNE UÇMUYOR, Keşfet'teki süper beğeni/not kutlamasının aynısı oynuyor
-      // ve kart alev ekranı kaplamışken listeden düşüyor (bkz. runCardFlameExit).
+      // İstek ANINDA gidiyor, kartın veriden düşmesi animasyon kadar gecikiyor.
+      // Kurtarma = geri alınmış bir "geç", yani KESİN bir eşleşme: kutlamayı
+      // MatchModal yapıyor (bkz. flameSweep'teki kural), kart burada yalnız
+      // beğeni yönüne uçuyor — pas yönünün aynadaki hâli.
       //
       // Bakiye HİZALAMASI YOK ve gerekmiyor: kurtarma premium'da sınırsız,
       // free bu satıra hiç gelmiyor. Harcanan bir sayı olmadığı için ne iyimser
       // düşüş ne kanonik tazeleme kaldı (ikisi birlikte 2026-08-24'teki "kota
       // 5/5'te takılı kalıyor" bug'ı içindi).
       const request = recoverMissedMatch(userId);
-      // Hata yolundaki doğrulama çekimi kartın düşmesinden SONRA olmalı:
-      // kutlama oynarken gelen taze liste kartı yerinde tutar, düşüş örtünün
-      // altında değil ekranın ortasında olurdu. Yanıt çıkıştan önce de sonra da
-      // gelebildiği için iki yön de bu iki bayrakla bağlanıyor.
+      // Hata yolundaki doğrulama çekimi kartın düşmesinden SONRA olmalı: kart
+      // uçarken gelen taze liste onu yerinde tutar, uçuş yarıda kalırdı. Yanıt
+      // çıkıştan önce de sonra da gelebildiği için iki yön de bu iki bayrakla
+      // bağlanıyor.
       let exited = false;
       let needsResync = false;
-      runCardFlameExit(userId, () => {
+      runCardExit(userId, "right", () => {
         exited = true;
         dropMissed(userId);
         if (needsResync) loadMissed({ force: true });
@@ -3241,15 +3196,7 @@ export default function LikesScreen() {
       if (exited) loadMissed({ force: true });
       else needsResync = true;
     },
-    [
-      dispatch,
-      dropMissed,
-      isPremium,
-      loadMissed,
-      runCardFlameExit,
-      statsQuery,
-      t,
-    ],
+    [dispatch, dropMissed, isPremium, loadMissed, runCardExit, statsQuery, t],
   );
 
   // LikerSwipeModal'dan dönen swipe sonrası — like/pass/superlike/block fark
@@ -3294,14 +3241,11 @@ export default function LikesScreen() {
     async (item, direction) => {
       const likerUserId = item?.userId || item?.likerUserId;
       // Uçmakta olan kart hâlâ veride duruyor: ikinci bir basış aynı kişiye
-      // ikinci bir swipe göndermesin. Kutlama sürerken (flamePendingRef) HİÇBİR
-      // karta aksiyon alınamaz: dalga ekranı kaplayana kadar liste dokunulabilir
-      // kalıyor ve ikinci bir onay, tek olan örtme anını kendi kartına kaydırıp
-      // ilkini yarım bırakırdı.
+      // ikinci bir swipe göndermesin. Kartlar birbirini BLOKLAMIYOR — çıkışlar
+      // bağımsız, ekranı kaplayan ortak bir kutlama yok.
       if (
         !likerUserId ||
         actingRef.current ||
-        flamePendingRef.current ||
         exitTimersRef.current.has(likerUserId)
       ) {
         return;
@@ -3329,15 +3273,14 @@ export default function LikesScreen() {
       // görsel yumuşama ağı bekletmesin.
       swipeMutate({ direction, userId: likerUserId });
       if (direction === "right") {
-        // ONAY: bu kişi seni zaten beğenmişti, yani sonuç eşleşme. Kart yana
-        // uçmuyor — kutlama alevi giriyor ve kart örtünün altında düşüyor
-        // (bkz. runCardFlameExit). Pas yönü olduğu gibi kalıyor: orada
-        // kutlanacak bir şey yok, kart sola uçup söner.
-        // Örtünün altındaki temizlik HER İKİ listeyi de kapsıyor: eşleşme
-        // sinyali kutlama sürerken geldiğinde `pruneBoth` bu kartı atlıyor
-        // (bkz. aşağıdaki prune guard'ı), yani kaçırdıkların tarafını da
-        // buranın düşürmesi gerek.
-        runCardFlameExit(likerUserId, () => {
+        // ONAY: bu kişi seni zaten beğenmişti, yani sonuç KESİN eşleşme —
+        // kutlama MatchModal'ın (bkz. flameSweep'teki kural), kart burada pas
+        // yönünün aynası olarak sağa uçuyor.
+        // Uçuşun altındaki temizlik HER İKİ listeyi de kapsıyor: eşleşme
+        // sinyali kart uçarken geldiğinde `pruneBoth` bu kartı atlıyor (bkz.
+        // aşağıdaki prune guard'ı), yani kaçırdıkların tarafını da buranın
+        // düşürmesi gerek.
+        runCardExit(likerUserId, "right", () => {
           handleLikerSwiped(likerUserId, direction);
           dropMissed(likerUserId);
         });
@@ -3350,14 +3293,7 @@ export default function LikesScreen() {
     // handleLikerSwiped her render'da yeniden yaratılıyor ama yalnızca ref +
     // dispatch okuyor; bağımlılığa eklemek callback'i her render'da tazelerdi.
     // eslint-disable-next-line react-hooks/exhaustive-deps
-    [
-      dispatch,
-      dropMissed,
-      isPremium,
-      runCardExit,
-      runCardFlameExit,
-      swipeMutate,
-    ],
+    [dispatch, dropMissed, isPremium, runCardExit, swipeMutate],
   );
 
   /**
@@ -3437,12 +3373,11 @@ export default function LikesScreen() {
     // Düşürme `dropMissed` üzerinden — sekme pill'indeki adet de onunla iniyor.
     const pruneBoth = (userId) => {
       // Kart ZATEN bir çıkışın içindeyse dokunma. Kritik olan onay/kurtarma:
-      // ikisi de eşleşme yaratıyor, yani `MatchNotification` kutlamanın tam
-      // ortasında (~1 sn) geliyor ve buradan düşürülseydi kart alev daha
-      // ekranın yarısındayken AÇIKTA yok olurdu — kaçınmaya çalıştığımız şeyin
-      // ta kendisi. Çıkışın kendi `remove`'u aynı temizliği örtünün altında
-      // zaten yapıyor (bkz. runCardFlameExit çağrıları: her ikisi de hem
-      // beğeni listesini hem kaçırdıkları düşürüyor).
+      // ikisi de eşleşme yaratıyor, yani `MatchNotification` kart daha uçarken
+      // gelebiliyor ve buradan düşürülseydi kart uçuşun ortasında bir anda yok
+      // olurdu. Çıkışın kendi `remove`'u aynı temizliği uçuş bitince zaten
+      // yapıyor (bkz. handleQuickSwipe / handleRecover: her ikisi de hem beğeni
+      // listesini hem kaçırdıkları düşürüyor).
       if (userId && exitTimersRef.current.has(userId)) return;
       prune(userId);
       dropMissed(userId);

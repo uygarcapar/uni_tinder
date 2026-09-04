@@ -13,6 +13,17 @@ import uiBus from "@/shared/services/uiBus";
  * eylemden geldiğini söylemiyor, o yüzden burada bir "tür" parametresi de yok.
  * Ayrışması gerekirse olaya bir alan eklenip rozet ona göre seçilir.
  *
+ * ⚠️ EŞLEŞMEYLE SONUÇLANACAK AKSİYONDA BU SÜPÜRME HİÇ ÇALIŞTIRILMAZ
+ * (2026-09-03). MatchModal aynı ateşin PERDE hâliyle açılıyor (bkz.
+ * flameCurtainGeometry); ikisi arka arkaya oynayınca kullanıcı tek bir
+ * eylemden iki alev görüyordu. Kural: eşleşme kutlaması MatchModal'ın,
+ * süpürme yalnız eşleşmeyen (tek yönlü) süper beğeni ve not içindir.
+ * Çağıranların "eşleşme gelecek mi" kestirimi:
+ *   • Beğenenler/Kaçırdıkların — liste tanımı gereği KESİN (herkes seni zaten
+ *     beğenmiş), orada süpürme hiç çağrılmıyor.
+ *   • Keşfet destesi — kartın `hasLikedMe` bayrağı VEYA yerel "beni beğenenler"
+ *     kümesi (bkz. DiscoverScreen > willMatchOnLike).
+ *
  * `onCovered` TAM BİR KEZ çalışır. Örtme olayının iki kaynağı var — canvas'ın
  * kendisi ve canvas hiç çizemezse devreye giren yedek zamanlayıcı (bkz.
  * SuperLikeFlame) — ilki alınıp abonelik hemen bırakılıyor.
