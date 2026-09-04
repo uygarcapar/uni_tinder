@@ -24,21 +24,31 @@ jest.mock('react-native-gesture-handler', () => {
 
 const mockDispatch = jest.fn();
 let mockIsPremium = false;
+// Abonelik durum makinesinin (features/profile/subscriptionView) okuduğu alanlar:
+// kartın alt satırı — "Yenileme <tarih>" ya da sorunlu durumda eylem butonu —
+// buradan besleniyor.
+let mockSubscription: any = {};
 jest.mock('@/shared/hooks/redux', () => ({
   useAppDispatch: () => mockDispatch,
   useAppSelector: (selector: any) =>
-    selector({ subscription: { isPremium: mockIsPremium } }),
+    selector({
+      subscription: { isPremium: mockIsPremium, ...mockSubscription },
+    }),
 }));
 
 const mockGetOfferings = jest.fn();
 const mockPurchasePackage = jest.fn();
 const mockRestorePurchases = jest.fn();
 const mockCheckIntroEligibility = jest.fn();
+// Satın almanın önündeki RC kimlik kapısı — anonim kimlikte satın alma HİÇ
+// başlatılmıyor (bkz. subscriptionService.isPurchaseIdentityReady).
+const mockIdentityReady = jest.fn();
 jest.mock('@/features/profile/subscriptionService', () => ({
   getOfferings: (...a: any[]) => mockGetOfferings(...a),
   purchasePackage: (...a: any[]) => mockPurchasePackage(...a),
   restorePurchases: (...a: any[]) => mockRestorePurchases(...a),
   checkIntroEligibility: (...a: any[]) => mockCheckIntroEligibility(...a),
+  isPurchaseIdentityReady: (...a: any[]) => mockIdentityReady(...a),
 }));
 
 jest.mock('@/features/profile/subscriptionSlice', () => ({
@@ -134,9 +144,12 @@ beforeEach(() => {
   // syncSubscriptionWithRetry dispatch'i thunk gibi .unwrap() edilir.
   mockDispatch.mockReturnValue({ unwrap: () => Promise.resolve({ synced: false }) });
   mockIsPremium = false;
+  mockSubscription = {};
   mockGetOfferings.mockReset();
   mockPurchasePackage.mockReset();
   mockRestorePurchases.mockReset();
+  mockIdentityReady.mockReset();
+  mockIdentityReady.mockResolvedValue(true);
   // Varsayılan: kullanıcı denemeye hak kazanıyor. Deneme metni artık ürünün
   // introPrice'ına DEĞİL, bu sorguya bağlı.
   mockCheckIntroEligibility.mockReset();
@@ -260,43 +273,122 @@ describe('PlusPage — render & loading', () => {
     expect(tree.queryByText(/gün ücretsiz kullanabilirsin/)).toBeNull();
   });
 
-  // Abonede kart artık bir satın alma teklifi değil, aboneliğin yönetim girişi:
-  // eskiden orada "Hesap Zaten Lit Plus" yazıyor ve dokunuş hiçbir şey
-  // yapmıyordu.
-  it('offers subscription management instead of a purchase when already premium', async () => {
+  // Olağan abonelikte kart bir SATIŞ yüzeyi değil: alt satırında yalnız
+  // yenileme tarihi var. Eskiden orada "Aboneliği Yönet" yazıyor ve dokunuş
+  // mağazanın abonelik ekranını açıyordu — yapacak bir iş yokken sayfanın
+  // ödeyen kullanıcıya önerdiği tek şey uygulamadan çıkmaktı.
+  it('shows only the renewal date — no manage CTA, no store redirect — while premium', async () => {
     mockIsPremium = true;
+    mockSubscription = { expiresAt: '2026-09-12T10:00:00Z' };
     mockGetOfferings.mockResolvedValue(monthlyOffering);
     const tree = setup();
     await waitFor(() => {
-      expect(tree.getByText('Aboneliği Yönet')).toBeTruthy();
+      expect(tree.getByTestId('plan-card-renewal-monthly')).toBeTruthy();
     });
+    // Etiket + tarih TEK metin düğümü: satır tek parça yazılıyor.
+    expect(tree.getByText(/^Yenileme 12 Eyl/)).toBeTruthy();
+    expect(tree.queryByText('Aboneliği Yönet')).toBeNull();
     expect(tree.queryByText('Abone Ol')).toBeNull();
 
     await act(async () => {
       fireEvent.press(tree.getByTestId('plan-card-monthly'));
     });
-    // Satın alma DEĞİL, mağazanın abonelik ekranı.
+    // Kart ölü: ne satın alma, ne mağaza.
+    expect(mockPurchasePackage).not.toHaveBeenCalled();
+    expect(mockOpenURL).not.toHaveBeenCalled();
+  });
+
+  // Denemede tarih bir YENİLEME değil bitiş: ilk ödemenin alınacağı gün.
+  it('labels the trial end date instead of a renewal', async () => {
+    mockIsPremium = true;
+    mockSubscription = {
+      isTrial: true,
+      trialEndsAt: '2026-09-07T10:00:00Z',
+      expiresAt: '2026-09-07T10:00:00Z',
+    };
+    mockGetOfferings.mockResolvedValue(monthlyOffering);
+    const tree = setup();
+    await waitFor(() => tree.getByTestId('plan-card-renewal-monthly'));
+    expect(tree.getByText(/^Bitiş 07 Eyl/)).toBeTruthy();
+    expect(tree.queryByText(/Yenileme/)).toBeNull();
+  });
+
+  // Mağaza linki YALNIZ yapılacak bir iş varken: ödeme sorunu uygulama içinden
+  // düzeltilemiyor ve üyelik kartı silindiğinden beri bu kart oraya açılan tek
+  // kapı.
+  it('keeps the store link when the subscription has a billing issue', async () => {
+    mockIsPremium = true;
+    mockSubscription = { status: 'BillingIssue' };
+    mockGetOfferings.mockResolvedValue(monthlyOffering);
+    const tree = setup();
+    await waitFor(() => {
+      expect(tree.getByText('Ödeme Yöntemini Güncelle')).toBeTruthy();
+    });
+
+    await act(async () => {
+      fireEvent.press(tree.getByTestId('plan-card-monthly'));
+    });
+
     expect(mockPurchasePackage).not.toHaveBeenCalled();
     expect(mockOpenURL).toHaveBeenCalledWith(
       'https://apps.apple.com/account/subscriptions'
     );
   });
 
-  // Regresyon: şerit abonede kapalıydı ve pill'lere basılmıyordu. Kart satın
-  // alma adımı olmaktan çıktığına göre planları gezmeyi engellemek için sebep
-  // yok — kilit yalnız satın alma/geri yükleme uçarken.
-  it('keeps the period strip usable while premium', async () => {
+  // Şerit bir SATIN ALMA kumandası: abonede seçilecek bir şey yok, kartta
+  // periyoda bağlı bilgi de kalmadı (fiyat ve plan cümlesi çizilmiyor).
+  it('hides the period strip while premium', async () => {
     mockIsPremium = true;
     mockGetOfferings.mockResolvedValue(twoPlanOffering);
     const tree = setup();
-    await waitFor(() => tree.getByTestId('plan-pill-monthly'));
+    await waitFor(() => tree.getByTestId('plan-card-weekly'));
 
-    await act(async () => {
-      fireEvent.press(tree.getByTestId('plan-pill-monthly'));
-    });
+    expect(tree.queryByTestId('plan-pill-weekly')).toBeNull();
+    expect(tree.queryByTestId('plan-pill-monthly')).toBeNull();
+    // Kartın gövdesi satın alma metinlerinden TEMİZ: ne fiyat, ne satın alma
+    // için yazılmış plan cümlesi.
+    expect(tree.queryByText('₺19.99')).toBeNull();
+    expect(tree.queryByText(/Kısa denemek için ideal/)).toBeNull();
+  });
 
-    expect(tree.getByTestId('plan-card-monthly')).toBeTruthy();
-    expect(tree.getByText('₺49.99')).toBeTruthy();
+  // Ad satırındaki rozet aboneliğin DURUMUNU söylüyor; kartın gövdesi de o
+  // durumun ne anlama geldiğini — ikisi aynı kelimeyi tekrarlamıyor.
+  it('badges the card as active and explains the state in the body', async () => {
+    mockIsPremium = true;
+    mockSubscription = { expiresAt: '2026-09-12T10:00:00Z' };
+    mockGetOfferings.mockResolvedValue(monthlyOffering);
+    const tree = setup();
+    await waitFor(() => tree.getByTestId('plan-card-status'));
+
+    expect(tree.getByText('Aktif')).toBeTruthy();
+    expect(tree.getByText(/Bütün plus özellikleri hesabında açık/)).toBeTruthy();
+  });
+
+  // İptalde alt satırın yerini mağaza butonu alıyor → erişimin ne zaman
+  // biteceğini yazan tek yer gövde cümlesi.
+  it('names the state and the end date when the subscription is cancelled', async () => {
+    mockIsPremium = true;
+    mockSubscription = {
+      status: 'Cancelled',
+      expiresAt: '2026-09-12T10:00:00Z',
+    };
+    mockGetOfferings.mockResolvedValue(monthlyOffering);
+    const tree = setup();
+    await waitFor(() => tree.getByTestId('plan-card-status'));
+
+    expect(tree.getByText('İptal edildi')).toBeTruthy();
+    expect(
+      tree.getByText(/^12 Eyl tarihine kadar her şey açık kalır/)
+    ).toBeTruthy();
+  });
+
+  // Satın alınabilir kartta ad satırının yanı BOŞ: söylenecek bir durum yok.
+  it('draws no status pill while the card is purchasable', async () => {
+    mockGetOfferings.mockResolvedValue(monthlyOffering);
+    const tree = setup();
+    await waitFor(() => tree.getByTestId('plan-card-monthly'));
+
+    expect(tree.queryByTestId('plan-card-status')).toBeNull();
   });
 });
 
@@ -466,6 +558,26 @@ describe('PlusPage — purchase flow', () => {
     expect(Alert.alert).toHaveBeenCalledWith('Satın Alma Hatası', 'IAP fail');
   });
 
+  it('does NOT start the purchase while the RevenueCat identity is anonymous', async () => {
+    // Anonim kimliğe (`$RCAnonymousID:…`) yazılan makbuz webhook'ta hiçbir
+    // profile eşleşmiyor: para alınır, premium kimseye uygulanmaz. Bu yüzden
+    // satın alma HİÇ başlatılmamalı; kullanıcı bir uyarı görmeli.
+    mockGetOfferings.mockResolvedValue(monthlyOffering);
+    mockIdentityReady.mockResolvedValue(false);
+    const tree = setup();
+    await waitFor(() => tree.getByTestId('plan-card-monthly'));
+
+    await act(async () => {
+      fireEvent.press(tree.getByTestId('plan-card-monthly'));
+    });
+
+    expect(mockPurchasePackage).not.toHaveBeenCalled();
+    expect(Alert.alert).toHaveBeenCalledWith(
+      'Satın alma başlatılamadı',
+      expect.any(String)
+    );
+  });
+
   it('does NOT Alert when the user cancels the purchase', async () => {
     mockGetOfferings.mockResolvedValue(monthlyOffering);
     mockPurchasePackage.mockRejectedValue({ userCancelled: true });
@@ -517,6 +629,25 @@ describe('PlusPage — restore flow', () => {
     expect(Alert.alert).toHaveBeenCalledWith(
       'Bulunamadı',
       'Aktif bir abonelik bulunamadı.'
+    );
+  });
+
+  it('does NOT restore while the RevenueCat identity is anonymous', async () => {
+    // Anonim kimlikte yapılan restore makbuzu gene anonim kimliğe bağlıyor —
+    // sahadaki 41 günlük gecikmenin kaynağı bu.
+    mockGetOfferings.mockResolvedValue(monthlyOffering);
+    mockIdentityReady.mockResolvedValue(false);
+    const tree = setup();
+    await waitFor(() => tree.getByText('Satın alımları geri yükle'));
+
+    await act(async () => {
+      fireEvent.press(tree.getByText('Satın alımları geri yükle'));
+    });
+
+    expect(mockRestorePurchases).not.toHaveBeenCalled();
+    expect(Alert.alert).toHaveBeenCalledWith(
+      'Satın alma başlatılamadı',
+      expect.any(String)
     );
   });
 

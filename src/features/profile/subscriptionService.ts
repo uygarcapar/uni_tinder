@@ -35,6 +35,12 @@ export function initRevenueCat(userId?: string | null): void {
     // bırakıyordu: ilk configure userId'siz olduysa (anonim) ve bu ikinci çağrı
     // userId ile geldiyse fark yalnız burada görülebilir.
     iapLog("rc-configure-skip", { neden: "zaten configure", istenen: userId ?? null });
+    // …ve erken dönüş kimliği ANONİM BIRAKIYORDU: `configure` bir kez anonim
+    // koştuysa sonraki `initRevenueCat(gerçekId)` hiçbir şey yapmıyor, o andan
+    // sonraki satın alma anonim kimliğe yazılıyordu. Kimliği burada onar.
+    // Aynı anda gelen `ensureRevenueCatIdentity` çağrısı in-flight promise'e
+    // katılır → ikinci bir `logIn` atılmaz.
+    if (userId) void ensureRevenueCatIdentity(userId);
     return;
   }
 
@@ -72,34 +78,132 @@ export function initRevenueCat(userId?: string | null): void {
   });
 }
 
-export async function loginRevenueCat(userId: string): Promise<void> {
+// ─── Kimlik ──────────────────────────────────────────────────────────────────
+//
+// Webhook'un taşıdığı `app_user_id` doğrudan `UserProfiles.UserId` ile
+// eşleştiriliyor: RC'nin o an kullandığı kimlik backend userId'si ile BİREBİR
+// aynı değilse satın alma KİMSEYE uygulanmaz. Prod'da ölçülen tablo (2026-09-02)
+// tam olarak bu: 18 abonelik satırının 13'ünde `OriginalTransactionId` NULL,
+// yani satır webhook'tan değil kurtarma amaçlı `/sync`ten doğmuş.
+//
+// Altın kural: HİÇBİR SATIN ALMA KİMLİK ANONİMKEN GERÇEKLEŞMEMELİ. Kural
+// `configure` anına değil SATIN ALMA anına bağlı — ilk kurulumda ve logout
+// sonrası açılışta backend userId elde olmayabiliyor.
+
+const isAnonymousId = (id: string | null): boolean =>
+  typeof id === "string" && id.startsWith("$RCAnonymousID");
+
+/**
+ * `ok`          — aktif `app_user_id` backend userId'si ile birebir aynı.
+ * `anonymous`   — `$RCAnonymousID:…`. Bu haldeki satın alma parayı alır,
+ *                 premium'u kimseye vermez.
+ * `mismatch`    — anonim değil ama BAŞKA bir kimlik (logIn patladı ve önceki
+ *                 kullanıcının id'si duruyor; ya da kimlik hiç okunamadı).
+ *                 Aynı tehlike.
+ * `unavailable` — SDK configure değil (API key yok/geçersiz). Kimlik hakkında
+ *                 söylenecek bir şey yok; satın alma zaten `purchasePackage`
+ *                 içinde kendi hatasıyla düşer.
+ */
+export type RevenueCatIdentityState =
+  | "ok"
+  | "anonymous"
+  | "mismatch"
+  | "unavailable";
+
+export interface RevenueCatIdentity {
+  state: RevenueCatIdentityState;
+  /** RC'nin o an kullandığı `app_user_id` — webhook'a giden değer. */
+  appUserId: string | null;
+}
+
+let lastIdentity: RevenueCatIdentity = { state: "unavailable", appUserId: null };
+let identityInFlight: {
+  userId: string | null;
+  promise: Promise<RevenueCatIdentity>;
+} | null = null;
+
+/** Son bilinen kimlik durumu — ağ turu YOK. Teşhis/rapor içindir. */
+export function getRevenueCatIdentity(): RevenueCatIdentity {
+  return lastIdentity;
+}
+
+async function resolveIdentity(userId: string | null): Promise<RevenueCatIdentity> {
   if (!isConfigured) {
-    iapLog("rc-login-atlandı", { neden: "SDK configure değil", userId });
-    return;
+    iapLog("rc-kimlik-atlandı", { neden: "SDK configure değil", istenen: userId });
+    lastIdentity = { state: "unavailable", appUserId: null };
+    return lastIdentity;
   }
-  try {
-    const { created } = await Purchases.logIn(String(userId));
-    iapLog("rc-login", { userId, yeniKullanıcı: created });
-  } catch (e: any) {
-    // console.error → iapLog: bu satır rapora da girsin. logIn patlarsa satın
-    // alma anonim kimliğe yazılır ve webhook hiçbir profile eşleşmez.
-    iapLog("rc-login-hata", { userId, hata: e?.message ?? String(e) });
+  let current = await Purchases.getAppUserID().catch(() => null);
+  if (userId && current !== userId) {
+    iapLog("rc-kimlik-onarım", {
+      mevcut: current,
+      istenen: userId,
+      anonim: isAnonymousId(current),
+    });
+    try {
+      const { created } = await Purchases.logIn(userId);
+      iapLog("rc-login", { userId, yeniKullanıcı: created });
+    } catch (e: any) {
+      // console.error → iapLog: bu satır rapora da girsin. logIn patlarsa satın
+      // alma anonim kimliğe yazılır ve webhook hiçbir profile eşleşmez.
+      iapLog("rc-login-hata", { userId, hata: e?.message ?? String(e) });
+    }
+    // Onarımın SONUCU okunuyor, `logIn`in dönmesi değil: hata yutulduğunda bile
+    // kimliğin gerçekten düzelip düzelmediğini yalnız bu okuma söyleyebilir.
+    current = await Purchases.getAppUserID().catch(() => null);
   }
+  const state: RevenueCatIdentityState = userId
+    ? current === userId
+      ? "ok"
+      : isAnonymousId(current)
+        ? "anonymous"
+        : "mismatch"
+    : // Backend id'si elimizde yok (user nesnesi henüz oturmamış) → onarılacak
+      // bir hedef de yok. Söyleyebileceğimiz tek şey anonimlik; kimliği hiç
+      // okuyamadıysak da güvenli tarafta kalıp "anonim" diyoruz.
+      isAnonymousId(current) || !current
+      ? "anonymous"
+      : "ok";
+  lastIdentity = { state, appUserId: current };
+  setIapFacts({ rcKimlikDurumu: state, rcAktifId: current });
+  if (state !== "ok") {
+    iapLog("rc-kimlik-bozuk", { durum: state, aktifId: current, istenen: userId });
+  }
+  return lastIdentity;
 }
 
 /**
- * RC'nin o an kullandığı `appUserID`. Webhook'taki `app_user_id` doğrudan
- * `UserProfiles.UserId` olarak yazıldığı için bunun backend userId'si ile
- * BİREBİR aynı olması şart; değilse satın alma kimseye uygulanmaz (anonim
- * satın almada `$RCAnonymousID:...` gelir). Teşhis içindir.
+ * Kimliği doğrula, gerekiyorsa `logIn` ile ONAR. Aynı kimlik için eşzamanlı
+ * çağrılar tek bir tura katılır (paywall kapısı + açılış efekti aynı anda
+ * gelebiliyor; iki ayrı `logIn` RC'de gereksiz transfer gürültüsü demek).
  */
-export async function getRevenueCatAppUserId(): Promise<string | null> {
-  if (!isConfigured) return null;
-  try {
-    return await Purchases.getAppUserID();
-  } catch {
-    return null;
+export function ensureRevenueCatIdentity(
+  userId?: string | null,
+): Promise<RevenueCatIdentity> {
+  const key = userId ? String(userId) : null;
+  if (identityInFlight && identityInFlight.userId === key) {
+    return identityInFlight.promise;
   }
+  const promise = resolveIdentity(key).finally(() => {
+    if (identityInFlight?.promise === promise) identityInFlight = null;
+  });
+  identityInFlight = { userId: key, promise };
+  return promise;
+}
+
+/**
+ * Paywall'ın SON KAPISI: satın alma başlatılabilir mi?
+ *
+ * `unavailable` geçirilir — SDK configure değilse satın alma zaten
+ * `purchasePackage` içinde kendi hatasıyla düşer, ikinci bir mesaj göstermenin
+ * anlamı yok. Anonim/yabancı kimlikte ise satın alma HİÇ başlatılmamalı:
+ * kullanıcının parasını alıp premium'u vermemek demek.
+ */
+export async function isPurchaseIdentityReady(
+  userId?: string | null,
+): Promise<boolean> {
+  const { state } = await ensureRevenueCatIdentity(userId);
+  return state === "ok" || state === "unavailable";
 }
 
 export async function logoutRevenueCat(): Promise<void> {
@@ -108,6 +212,10 @@ export async function logoutRevenueCat(): Promise<void> {
     await Purchases.logOut();
   } catch {
     // RC anonymous user için logout 22 (LogOutWithAnonymousUserError) atar — yutulur.
+  } finally {
+    // Kimlik artık anonim: bayat bir "ok" bir sonraki kullanıcıya "kimlik
+    // tamam" dedirtmesin (kapı canlı sorguluyor ama rapor bu değeri okuyor).
+    lastIdentity = { state: "anonymous", appUserId: null };
   }
 }
 

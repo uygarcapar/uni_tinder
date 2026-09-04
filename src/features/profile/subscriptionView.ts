@@ -7,10 +7,10 @@ import { selectSyncPending } from "@/features/profile/subscriptionSlice";
 /**
  * Abonelik durum makinesi — TEK KAYNAK.
  *
- * İki yüzey aynı cümleleri yazıyor: ProfileScreen'in üyelik kartı ve paywall'ın
- * plan kartındaki eylem rozeti (premium'da "Aboneliği Yönet"). Durum makinesi
- * ekranlardan birinde kalırsa ikisi kaçınılmaz olarak ayrışıyor — ekranın biri
- * "iptal edildi" derken diğeri "abone ol" yazıyordu.
+ * Tek tüketicisi paywall'ın plan kartı (ProfileScreen'in üyelik kartı silindi):
+ * abonede kartın alt satırını bu makine yazıyor — olağan hâlde yalnız bilgi
+ * ("Yenileme 12 Eyl"), sorunlu hâlde eylem. Durum makinesi ekranın içinde
+ * kalsaydı yeni bir yüzey aynı cümleleri baştan uydurmak zorunda kalırdı.
  *
  * Kaynak backend `/status`.status + `isActivelyPremium`. `Cancelled` ve
  * `BillingIssue`'da erişim AÇIK kalır (dönem sonu / grace bitişine kadar);
@@ -159,10 +159,29 @@ export function useSubscriptionView(): SubscriptionView {
 }
 
 /**
+ * Abonenin ekranında MAĞAZAYA GİDEN bir buton olmalı mı?
+ *
+ * Yalnız yapılacak bir iş varken: ödeme yöntemi düzeltilecek ya da iptal
+ * geri alınacak. İkisi de uygulama içinden yapılamıyor, tek yer mağaza —
+ * bu iki durumda linki kaldırmak kullanıcıyı çaresiz bırakırdı.
+ *
+ * OLAĞAN aboneliğe (aktif / deneme) buton YOK: orada "Aboneliği Yönet"
+ * yapacak bir iş önermiyor, yalnızca kartı mağazaya açılan bir kapıya
+ * çeviriyordu. Onun yerine yalnız bilgi duruyor (bkz.
+ * subscriptionRenewalNote). `pending` de burada değil: oradaki iş mağazaya
+ * gitmek değil `/status`ü beklemek.
+ */
+export function subscriptionNeedsStoreAction(
+  kind: SubscriptionViewKind,
+): boolean {
+  return kind === "billingIssue" || kind === "cancelled";
+}
+
+/**
  * "Yönet" dokunuşunun etiketi — duruma göre değişiyor ama hedefi hep aynı
- * (mağazanın abonelik ekranı). `pending` BURADA YOK: orada yapılacak şey
- * mağazaya gitmek değil `/status`ü yenilemek, o yüzden çağıran o durumu ayrıca
- * ele alıyor (bkz. ProfileScreen üyelik kartı).
+ * (mağazanın abonelik ekranı). YALNIZ `subscriptionNeedsStoreAction` true'yken
+ * anlamlı; `manageButton` fallback'i sadece beklenmedik bir durum eklenirse
+ * etiketsiz buton çıkmasın diye duruyor.
  */
 export function subscriptionManageLabel(
   kind: SubscriptionViewKind,
@@ -171,4 +190,75 @@ export function subscriptionManageLabel(
   if (kind === "billingIssue") return t("profile.subscription.fixPaymentButton");
   if (kind === "cancelled") return t("profile.subscription.resubscribeButton");
   return t("profile.subscription.manageButton");
+}
+
+/**
+ * Abone kartının GÖVDE cümlesi — satın alınabilir kartta fiyatın ve plan
+ * cümlesinin (`purchase.planDesc.*`) durduğu yer.
+ *
+ * Aboneye satış cümlesi yazmıyor: kart artık bir SATIŞ yüzeyi değil, aboneliğin
+ * durum yüzeyi. (Eskiden orada tek bir sabit cümle vardı — "Artılardan
+ * faydalanıyorsun" — ve altında satın alma için yazılmış plan cümlesi; ikisi de
+ * ödeyen kullanıcıya bir şey söylemiyordu.)
+ *
+ * Durumun KELİMESİNİ tekrar etmiyor ("Aktif" / "Deneme" …): onu ad satırındaki
+ * çerçeveli rozet söylüyor (bkz. PurchaseSections > PlanStatusPill). Burada
+ * yalnız o durumun ne anlama geldiği var.
+ *
+ * TARİH yalnız `cancelled`ta: aktif ve denemede tarihi kartın alt satırı zaten
+ * yazıyor (bkz. subscriptionRenewalNote), iptalde ise o satırın yerini mağaza
+ * butonu alıyor — tarih başka yerde geçmiyor. `billingIssue`ta grace bitişi bu
+ * görünümde taşınmıyor, o yüzden cümle tarihsiz.
+ */
+export function subscriptionCardNote(
+  view: SubscriptionView,
+  t: (key: string, opts?: any) => string,
+): string {
+  if (view.kind === "pending") return t("profile.subscription.cardNotePending");
+  if (view.kind === "billingIssue") {
+    return t("profile.subscription.cardNoteBillingIssue");
+  }
+  if (view.kind === "cancelled") {
+    const date = formatSubscriptionDate(view.expiresAt);
+    return date
+      ? t("profile.subscription.cardNoteCancelledDate", { date })
+      : t("profile.subscription.cardNoteCancelled");
+  }
+  if (view.kind === "trial") return t("profile.subscription.cardNoteTrial");
+  return t("profile.subscription.cardNoteActive");
+}
+
+/**
+ * Olağan abonelikte kartın alt satırı: "Yenileme 12 Eyl" — eylem değil, BİLGİ.
+ *
+ * `label` + `date` ayrı dönüyor çünkü çağıran ikisini farklı mürekkeple
+ * yazıyor (etiket soluk, tarih okunur). Tarih bilinmiyorsa `date` boş: satır
+ * o zaman yalnız durumu söyler, "Yenileme " diye yarım kalmaz.
+ *
+ * `null` = yazacak bir şey yok (aktif abonelikte tarih de gelmemiş).
+ */
+export function subscriptionRenewalNote(
+  view: SubscriptionView,
+  t: (key: string) => string,
+): { label: string; date: string } | null {
+  // Mağaza onayı beklenirken tarih henüz YOK (satın alma backend'e ulaşmadı) —
+  // satırın söyleyeceği tek doğru şey durumun kendisi.
+  if (view.kind === "pending") {
+    return { label: t("profile.subscription.pendingBadge"), date: "" };
+  }
+  const isEnding = view.kind === "trial" || view.kind === "cancelled";
+  const date = formatSubscriptionDate(
+    view.kind === "trial" && view.trialEndsAt ? view.trialEndsAt : view.expiresAt,
+  );
+  if (!date) return null;
+  return {
+    // Deneme ve iptal edilmiş abonelik YENİLENMİYOR: ikisinde de tarih bir
+    // bitiş ("Bitiş 12 Eyl"), yenileme değil.
+    label: t(
+      isEnding
+        ? "profile.subscription.trialEndsLabel"
+        : "profile.subscription.renewalLabel",
+    ),
+    date,
+  };
 }

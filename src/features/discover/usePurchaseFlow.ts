@@ -7,9 +7,11 @@ import { useAppDispatch, useAppSelector } from "@/shared/hooks/redux";
 import {
   checkIntroEligibility,
   getOfferings,
+  isPurchaseIdentityReady,
   purchasePackage,
   restorePurchases,
 } from "@/features/profile/subscriptionService";
+import { premiumSyncUserKey } from "@/features/profile/pendingPremiumSync";
 import {
   markPremiumPurchasePending,
   selectIsPremium,
@@ -211,6 +213,9 @@ export function usePurchaseFlow({ active, onCompleted, onSuccess }: Options) {
   const queryClient = useQueryClient();
   const isPremium = useAppSelector(selectIsPremium);
   const { t } = useTranslation();
+  // RC kimlik kapısının hedefi: satın alma bu id'ye yazılmalı. `?.` bilinçli —
+  // paywall oturum açılmadan da mount edilebiliyor (bileşen her ekranda gömülü).
+  const rcUserKey = premiumSyncUserKey(useAppSelector((s: any) => s.auth?.user));
 
   // Premium satın alma/restore sonrası swipe stats cache'ini güncelle —
   // backend sınırsız için -1 dönüyor. Local cache eski limitli değerlerle
@@ -436,6 +441,21 @@ export function usePurchaseFlow({ active, onCompleted, onSuccess }: Options) {
     const productId = pkg?.product?.identifier ?? null;
     analytics.capture('purchase_initiated', { productId });
     try {
+      // SON KAPI — kimlik anonimse satın alma HİÇ başlatılmaz. Anonim kimliğe
+      // (`$RCAnonymousID:…`) yazılan makbuz webhook'ta hiçbir profile eşleşmiyor:
+      // para alınır, premium kimseye uygulanmaz ve kullanıcı ancak restore
+      // denediğinde (sahada 41 gün sonra) premium'una kavuşur.
+      if (!(await isPurchaseIdentityReady(rcUserKey))) {
+        analytics.capture('purchase_blocked_identity', {
+          productId,
+          backendUserId: rcUserKey,
+        });
+        Alert.alert(
+          t('purchase.errors.identityTitle'),
+          t('purchase.errors.identityMessage'),
+        );
+        return;
+      }
       // throw etmediyse mağaza ödemeyi ALDI. `hasEntitlement` yalnız teşhis:
       // RC customerInfo'yu geç güncellediğinde eskiden bu dal hiç çalışmıyor,
       // kullanıcı parayı ödeyip hiçbir geri bildirim alamıyordu.
@@ -472,6 +492,18 @@ export function usePurchaseFlow({ active, onCompleted, onSuccess }: Options) {
   const handleRestore = async () => {
     setRestoring(true);
     try {
+      // Restore da aynı kapıdan geçiyor: anonim kimlikte yapılan restore
+      // makbuzu gene anonim kimliğe bağlıyor — sahadaki 41 günlük vakanın
+      // kaynağı tam olarak bu. Kimlik onarılamıyorsa kullanıcıyı tekrar
+      // denemeye yönlendiriyoruz, sessizce yanlış kimliğe yazmıyoruz.
+      if (!(await isPurchaseIdentityReady(rcUserKey))) {
+        analytics.capture('restore_blocked_identity', { backendUserId: rcUserKey });
+        Alert.alert(
+          t('purchase.errors.identityTitle'),
+          t('purchase.errors.identityMessage'),
+        );
+        return;
+      }
       const restored = await restorePurchases();
       if (restored) {
         // Restore'da `false` gerçekten "geri yüklenecek bir şey yok" demek

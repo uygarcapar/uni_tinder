@@ -21,6 +21,7 @@ import { useIsOffline } from '@/shared/services/networkStatus';
 import { shortNetError } from '@/shared/utils/netError';
 import { resolveMainPhotoUri } from '@/shared/utils/photoUri';
 import { showMessageToast, showLikeToast, showInfoToast } from '@/shared/services/toaster';
+import { chatErrorCodeOf, chatErrorEffect } from '@/shared/constants/responseCodes';
 import { store } from '@/shared/store';
 import { clearChatCache } from '@/shared/store/mmkvStorage';
 
@@ -74,7 +75,7 @@ import {
 } from '@/features/profile/subscriptionSlice';
 import { hasWitnessedPurchase, premiumSyncUserKey } from '@/features/profile/pendingPremiumSync';
 import { readPremiumSnapshot } from '@/features/profile/premiumSnapshot';
-import { addCustomerInfoListener, getRevenueCatAppUserId, initRevenueCat, logRevenueCatIdentity, loginRevenueCat, logoutRevenueCat } from '@/features/profile/subscriptionService';
+import { addCustomerInfoListener, ensureRevenueCatIdentity, initRevenueCat, logRevenueCatIdentity, logoutRevenueCat } from '@/features/profile/subscriptionService';
 import profileService from '@/features/profile/profileService';
 import {
   reconcileServerLanguage,
@@ -579,19 +580,24 @@ export default function AppNavigator() {
       const rcUserKey = premiumSyncUserKey(user);
       initRevenueCat(rcUserKey);
       if (rcUserKey) {
-        await loginRevenueCat(rcUserKey).catch(() => {});
-        // Doğrula ve uyuşmazlığı GÖRÜNÜR yap: bu eşleşme bozuksa hiçbir satın
-        // alma hesaba işlemez ve sorun yalnızca sunucu loglarından anlaşılırdı.
-        const rcAppUserId = await getRevenueCatAppUserId();
-        if (rcAppUserId && rcAppUserId !== rcUserKey) {
+        // Kimliği doğrula ve gerekiyorsa ONAR. Eskiden burada
+        // `loginRevenueCat(...).catch(() => {})` vardı: `logIn` patladığında
+        // hata görünmez oluyor, akış "kimlik tamam" varsayımıyla devam ediyor
+        // ve o andan sonraki satın alma anonim kimliğe yazılıyordu. Şimdi
+        // sonuç okunuyor; bozuk kalırsa paywall kapısı (isPurchaseIdentityReady)
+        // aynı onarımı satın alma anında tekrar deniyor ve düzelmezse satın
+        // almayı hiç başlatmıyor.
+        const identity = await ensureRevenueCatIdentity(rcUserKey);
+        if (identity.state !== "ok" && identity.state !== "unavailable") {
           // eslint-disable-next-line no-console
           console.warn(
-            `[RevenueCat] appUserID uyuşmuyor — RC: "${rcAppUserId}" / backend: "${rcUserKey}". ` +
+            `[RevenueCat] appUserID uyuşmuyor — RC: "${identity.appUserId}" / backend: "${rcUserKey}". ` +
               "Bu haldeki satın almalar backend'e uygulanmaz.",
           );
           analytics.capture("revenuecat_appuserid_mismatch", {
-            rcAppUserId,
+            rcAppUserId: identity.appUserId,
             backendUserId: rcUserKey,
+            state: identity.state,
           });
         }
         // Kimlik + aktif entitlement + SANDBOX bayrağı tek dökümde, teşhis
@@ -832,6 +838,9 @@ export default function AppNavigator() {
           preview,
           conversationId: msg.conversationId,
           partnerUserId: conv.partnerUserId,
+          // Push routing'iyle aynı: sohbetin canlılığı listeden geliyor,
+          // "mesaj geldi → mutlaka aktif" varsayımıyla değil.
+          isActive: conv.isActive ?? true,
         });
       }),
       realtimeService.on('MessageSent', (msg) => mounted && dispatch(messageSent(msg))),
@@ -948,11 +957,22 @@ export default function AppNavigator() {
         }
         // Sohbet kapalı/erişilemez (karşı taraf unmatch etti ya da engelledi).
         // Backend unmatch için ayrı bir event yayınlamıyor — bu, uygulama
-        // açıkken alabileceğimiz TEK anlık sinyal. Payload'da conversationId
-        // yok (kontrat: { code, message? }); kapalı sohbete gönderim/typing
-        // yalnız açık sohbetten çıkabileceği için aktif sohbet doğru hedef.
-        if (err?.code === 'CONVERSATION_ERROR' || err?.code === 'FORBIDDEN') {
-          const convId = activeConvRef.current;
+        // açıkken alabileceğimiz TEK anlık sinyal.
+        //
+        // Hub artık REST ile AYNI UT-67xx kodlarını taşıyor ve payload'da
+        // conversationId de var. Eski string kodları (CONVERSATION_ERROR /
+        // FORBIDDEN) KALDIRILMADI — kapsam dışı iç hatalar hâlâ onlarla
+        // geliyor, ikisini birden karşılıyoruz.
+        if (
+          chatErrorEffect(chatErrorCodeOf(err)) === 'conversationGone' ||
+          err?.code === 'CONVERSATION_ERROR' ||
+          err?.code === 'FORBIDDEN'
+        ) {
+          // Payload'daki id ÖNCE: aktif sohbet varsayımı yalnız kodsuz/eski
+          // gövdeler için doğru — kullanıcı bu arada başka sohbete geçmiş
+          // olabilir ve yanlış sohbeti kapalıya düşürmek geri alınamaz bir
+          // yalan olurdu (liste tazelemesi düzeltene kadar).
+          const convId = err?.conversationId || activeConvRef.current;
           // Kapatan taraf BİZ değiliz (kendi unmatch'imizde gönderim denemiyoruz)
           // → `byMe` geçilmez, geri alma penceresi yok, "geri al" çıkmamalı.
           if (convId) {

@@ -21,9 +21,11 @@ import {
   type PurchaseFlow,
 } from "@/features/discover/usePurchaseFlow";
 import {
-  formatSubscriptionDate,
   openStoreSubscriptions,
+  subscriptionCardNote,
   subscriptionManageLabel,
+  subscriptionNeedsStoreAction,
+  subscriptionRenewalNote,
   useSubscriptionView,
 } from "@/features/profile/subscriptionView";
 import { colors, gradients, ink, isLight, onMediaAt } from "@/shared/theme/colors";
@@ -71,8 +73,8 @@ const PLAN_CARD_FLAME_SIZE = 46;
  * başlıyor, bu rozet de o dokunuşun ne yapacağını söylüyor.
  *
  * YALNIZ SATIN ALINABİLİR HÂLDE: kullanıcı zaten aboneyse kartın alt şeridini
- * bu rozet değil üyelik kartındakinin aynısı olan "Aboneliği Yönet" butonu
- * alıyor (bkz. renderItem).
+ * bu rozet değil aboneliğin durum satırı alıyor ("Yenileme 12 Eyl" — bkz.
+ * PurchasePlanCarousel).
  *
  * BEKLEME GÖSTERGESİ = İSKELET, spinner değil: basınca rozetin yerinde tam onun
  * boyunda bir shimmer pill dönüyor. Dönen çember denenmişti, mağaza sayfası bir
@@ -212,7 +214,31 @@ function PlanFactsFade({ swapKey, children }: any) {
  * görünen kopya seçili planınki, diğerleri görünmez ölçü kopyası
  * (bkz. PlanFactsBlock).
  */
-function PlanFacts({ plan, t, isTrialEligible }: any) {
+function PlanFacts({ plan, t, isTrialEligible, isPremium, premiumNote }: any) {
+  // ABONEDE kartın gövdesi PLANDAN BAĞIMSIZ: tek bir durum cümlesi
+  // (bkz. subscriptionCardNote). Fiyat, periyot, plan cümlesi ve deneme vaadi —
+  // hepsi satın alma bilgisi; satın alınacak bir şey kalmayan kartta "ne
+  // ödeyeceğim" sorusunu açıyor, "ilk 3 gün ücretsiz" ise ödeyen kullanıcıya
+  // bir teklif gibi okunuyordu.
+  //
+  // Kartın hangi PERİYODA ait olduğu da kasıtlı olarak yazmıyor: abonede
+  // gösterilen kart katalogdaki varsayılan plan, kullanıcının satın aldığı plan
+  // DEĞİL — periyot yazmak yanlış bilgi olurdu.
+  if (isPremium) {
+    return premiumNote ? (
+      <Text
+        style={{
+          color: colors.onMediaMuted,
+          fontSize: 13,
+          fontWeight: "400",
+          lineHeight: 17,
+        }}
+      >
+        {premiumNote}
+      </Text>
+    ) : null;
+  }
+
   const planIntro = plan.introPrice;
   const planTrialUnits = planIntro?.periodNumberOfUnits;
   const planTrialDays =
@@ -318,8 +344,31 @@ function PlanFacts({ plan, t, isTrialEligible }: any) {
  *
  * (Alternatifi — her varyantı `onLayout` ile ölçüp en büyüğünü state'e yazmak —
  * ilk turda yine bir kare oynardı; burada ilk düzen turunda boy zaten doğru.)
+ *
+ * ABONEDE bu düzenek HİÇ kurulmuyor: periyot şeridi çizilmediği için seçim
+ * değişmiyor ve gövdede periyoda bağlı bilgi kalmadı (tek bir durum cümlesi var,
+ * bkz. PlanFacts). Görünmez kopyalar orada aynı cümlenin tekrarı olurdu.
  */
-function PlanFactsBlock({ plans, plan, t, isTrialEligible }: any) {
+function PlanFactsBlock({
+  plans,
+  plan,
+  t,
+  isTrialEligible,
+  isPremium,
+  premiumNote,
+}: any) {
+  if (isPremium) {
+    return (
+      <PlanFacts
+        plan={plan}
+        t={t}
+        isTrialEligible={isTrialEligible}
+        isPremium
+        premiumNote={premiumNote}
+      />
+    );
+  }
+
   return (
     <View
       style={{
@@ -332,7 +381,12 @@ function PlanFactsBlock({ plans, plan, t, isTrialEligible }: any) {
         {/* Şeritten periyot değişince yalnız bu blok yeniden beliriyor;
             marka kelimesi, alev ve alt şerit hiç oynamıyor. */}
         <PlanFactsFade swapKey={plan.period}>
-          <PlanFacts plan={plan} t={t} isTrialEligible={isTrialEligible} />
+          <PlanFacts
+            plan={plan}
+            t={t}
+            isTrialEligible={isTrialEligible}
+            isPremium={isPremium}
+          />
         </PlanFactsFade>
       </View>
       {plans
@@ -345,7 +399,12 @@ function PlanFactsBlock({ plans, plan, t, isTrialEligible }: any) {
             importantForAccessibility="no-hide-descendants"
             style={{ width: "100%", flexShrink: 0, opacity: 0 }}
           >
-            <PlanFacts plan={p} t={t} isTrialEligible={isTrialEligible} />
+            <PlanFacts
+              plan={p}
+              t={t}
+              isTrialEligible={isTrialEligible}
+              isPremium={isPremium}
+            />
           </View>
         ))}
     </View>
@@ -389,11 +448,68 @@ function PlanBrandWord({
 }
 
 /**
+ * Abone kartının ad satırındaki durum rozeti: "plus+"ın hemen SAĞINDA, tek
+ * kelimelik ("Aktif") çerçeveli bir kapsül.
+ *
+ * Yalnız abonede çiziliyor — satın alınabilir kartta marka kelimesinin yanı boş
+ * kalıyor, orada söylenecek bir durum yok.
+ *
+ * DOLGUSUZ: kartın kendi kırmızı gradyanının üstünde dolgulu bir rozet (alt
+ * şeritteki indirim pill'i gibi) satın alma rozetleriyle karışırdı; burada
+ * okunması gereken şey "bu senin durumun", bir teklif değil. Çerçevesi de
+ * abonede alt şeritte çıkan mağaza butonunun çerçevesiyle aynı — ikisi de
+ * kartın durum yüzeyine ait.
+ *
+ * Etiket durum makinesinden geliyor (`SubscriptionView.badge`), sabit "Aktif"
+ * değil: iptal edilmiş ya da ödemesi düşmüş bir abonelikte "Aktif" yazmak
+ * yalan olurdu — orada "İptal edildi" / "Ödeme sorunu" yazıyor ve alt şeritteki
+ * mağaza butonuyla aynı hikâyeyi anlatıyor.
+ *
+ * Dikey hizası ORTALI: Duckie'nin satır kutusu harflerin ÜSTÜNDE kendi boşluğunu
+ * taşıyor (bkz. PlusCard'daki lineHeight notu), yani rozet gliflerin optik
+ * ortasından bir tık yukarıda okunabilir. Düzeltmek gerekirse rozete `marginTop`
+ * verin — marka kelimesinin `lineHeight`ine dokunmak başlığın kendisini yukarı
+ * kaydırır ve kartın tepe payını (paddingTop: 18) bozar.
+ */
+function PlanStatusPill({ label }: { label: string }) {
+  return (
+    <View
+      testID="plan-card-status"
+      style={{
+        // Rozet uzun etiketde ("Aktivasyon sürüyor") alevin üstüne binmesin:
+        // kırpılacak olan rozettir, marka kelimesi değil.
+        flexShrink: 1,
+        paddingHorizontal: 10,
+        paddingVertical: 4,
+        borderRadius: 999,
+        borderCurve: "continuous",
+        borderWidth: 0.5,
+        borderColor: onMediaAt(0.5),
+        overflow: "hidden",
+      }}
+    >
+      <Text
+        numberOfLines={1}
+        style={{
+          color: colors.onMedia,
+          fontSize: 12,
+          fontWeight: "700",
+        }}
+      >
+        {label}
+      </Text>
+    </View>
+  );
+}
+
+/**
  * Sayfanın tepesindeki başlık + giriş cümlesi.
  *
  * Başlık ABONELİĞE GÖRE: abone değilse eylem ("Lit Plus'a Geç"), aboneyse
  * yalnız sayfanın adı ("Lit Plus") — aboneye satış cümlesiyle sesleniyor
- * olmak sayfanın geri kalanıyla (yönetim kartı) çelişiyordu.
+ * olmak sayfanın geri kalanıyla (yönetim kartı) çelişiyordu. Alt yazı da AYNI
+ * ayrımda: "eşleşmelerini hızlandır" bir teklif, ödeyen kullanıcıya zaten
+ * sahip olduğu şeyi satıyordu.
  *
  * SOLA YASLI ve kabın kendi gutter'ında — başlık, plan kartı, özellik tablosu
  * ve bu cümle aynı sol hattan başlıyor.
@@ -436,7 +552,11 @@ export function PurchaseHeading({ flow }: { flow: PurchaseFlow }) {
           paddingRight: 8,
         }}
       >
-        {t('discover.premium.description')}
+        {t(
+          isPremium
+            ? 'discover.premium.descriptionPremium'
+            : 'discover.premium.description',
+        )}
       </Text>
     </View>
   );
@@ -649,14 +769,18 @@ function PlanPeriodPills({
  */
 const PLAN_PILLS_SKELETON_HEIGHT = 44;
 
-function PlanCarouselSkeleton() {
+function PlanCarouselSkeleton({ showPills = true }: { showPills?: boolean }) {
   return (
     <View style={{ marginBottom: 20 }}>
-      <SkeletonBox
-        height={PLAN_PILLS_SKELETON_HEIGHT}
-        borderRadius={999}
-        style={{ marginBottom: 14 }}
-      />
+      {/* Abonede şerit hiç çizilmeyecek (bkz. PurchasePlanCarousel) — iskeletinde
+          durursa katalog gelince kart bir şerit boyu yukarı zıplardı. */}
+      {showPills && (
+        <SkeletonBox
+          height={PLAN_PILLS_SKELETON_HEIGHT}
+          borderRadius={999}
+          style={{ marginBottom: 14 }}
+        />
+      )}
       {/* Gerçek kart kabın tam genişliğinde (yatay liste ve onun gutter'dan
           taşan kabı kalktı) — iskelet de aynı hatta. */}
       <SkeletonBox
@@ -684,29 +808,25 @@ export function PurchasePlanCarousel({ flow }: { flow: PurchaseFlow }) {
     isTrialEligible,
   } = flow;
 
-  // Abone için kart artık satın alma teklifi değil bir YÖNETİM girişi. Alt
-  // şeridine üyelik kartındakinin AYNISI olan buton geliyor: aynı kalıp (tam
-  // genişlik, 0.5px `onMedia` çerçeve, kapsül), aynı metin — kalın eylem +
-  // soluk "· Yenileme <tarih>". Durum makinesi de aynı kaynaktan
-  // (features/profile/subscriptionView), iki yüzey ayrışmasın diye.
+  // Abonede kart bir SATIŞ yüzeyi değil, aboneliğin durum satırı.
+  //
+  // Olağan abonelikte (aktif / deneme / aktivasyon bekliyor) kart ÖLÜ: alt
+  // satırında yalnız "Yenileme 12 Eyl" yazıyor, dokunuş hiçbir yere gitmiyor.
+  // Eskiden orada "Aboneliği Yönet" vardı ve dokunuş mağazanın abonelik
+  // ekranını açıyordu — ödeyen kullanıcıya sayfanın önerdiği tek şey
+  // uygulamadan çıkmaktı, üstelik yapacak bir iş yokken.
+  //
+  // Mağaza linki YALNIZ yapılacak iş varken kalıyor (ödeme sorunu / iptal):
+  // ikisi de uygulama içinden düzeltilemiyor ve üyelik kartı silindiğinden beri
+  // bu kart oraya açılan TEK kapı (bkz. subscriptionNeedsStoreAction).
   const subscriptionView = useSubscriptionView();
+  const needsStoreAction =
+    isPremium && subscriptionNeedsStoreAction(subscriptionView.kind);
   const manageLabel = subscriptionManageLabel(subscriptionView.kind, t);
-  // Tarih yalnız "olağan" hâllerde: ödeme sorunu / iptal durumunda buton
-  // tarihi değil yapılacak işi yazıyor (üyelik kartındaki ayrımın aynısı).
-  const manageDateSuffix =
-    subscriptionView.kind === "billingIssue" ||
-    subscriptionView.kind === "cancelled" ||
-    !subscriptionView.expiresAt
-      ? ""
-      : ` · ${t(
-          subscriptionView.kind === "trial"
-            ? "profile.subscription.trialEndsLabel"
-            : "profile.subscription.renewalLabel",
-        )} ${formatSubscriptionDate(
-          subscriptionView.kind === "trial" && subscriptionView.trialEndsAt
-            ? subscriptionView.trialEndsAt
-            : subscriptionView.expiresAt,
-        )}`;
+  const renewalNote = subscriptionRenewalNote(subscriptionView, t);
+  // Abonede kartın gövdesindeki tek cümle — satın alma metinlerinin (fiyat,
+  // plan cümlesi, deneme vaadi) yerini alıyor (bkz. subscriptionCardNote).
+  const premiumNote = subscriptionCardNote(subscriptionView, t);
 
   // Periyodun TEK kumandası bu şerit. (Eskiden kartlar yatay bir listeydi ve
   // seçim iki yerden birden yazılıyordu: pill + serbest sürükleme. Sürükleme
@@ -722,7 +842,7 @@ export function PurchasePlanCarousel({ flow }: { flow: PurchaseFlow }) {
     [selectedPeriod, setSelectedPeriod],
   );
 
-  if (loadingOffering) return <PlanCarouselSkeleton />;
+  if (loadingOffering) return <PlanCarouselSkeleton showPills={!isPremium} />;
   if (plans.length === 0 || !selectedPlan) return null;
 
   // TEK kart: şeritte hangi periyot seçiliyse o. Yatay liste kaldırıldı, deste
@@ -735,32 +855,43 @@ export function PurchasePlanCarousel({ flow }: { flow: PurchaseFlow }) {
 
   return (
     <View style={{ marginBottom: 20 }}>
-      <PlanPeriodPills
-        plans={plans}
-        selectedPeriod={selectedPlan.period}
-        onSelect={handlePillSelect}
-        // ABONEDE DE AÇIK: şerit satın alma adımı değil, kartın hangi planı
-        // yazdığını seçen kumanda — abonenin planları gezmesini engellemek için
-        // sebep yok (kartın eylemi zaten "Aboneliği Yönet"). Yalnız satın
-        // alma/geri yükleme uçarken kilitli: o sırada seçimi değiştirmek
-        // basılan planla dönen sonucu ayrıştırırdı.
-        disabled={purchasing || restoring}
-        t={t}
-      />
+      {/* Şerit ABONEDE HİÇ ÇİZİLMİYOR: seçilecek bir şey yok. Bir süre açık
+          durdu ("abone de planları gezebilsin") ama şerit bir SATIN ALMA
+          kumandası — ödeyen kullanıcıya haftalık/aylık/yıllık sunmak, zaten
+          sahip olduğu şeyi yeniden satmaya çalışmak gibi okunuyordu. Kartta
+          kalan periyot da artık görünmüyor (fiyat ve plan cümlesi abonede
+          çizilmiyor, bkz. PlanFacts), yani seçimin bir karşılığı da yok.
+          Kilit: satın alma/geri yükleme uçarken seçimi değiştirmek, basılan
+          planla dönen sonucu ayrıştırırdı. */}
+      {!isPremium && (
+        <PlanPeriodPills
+          plans={plans}
+          selectedPeriod={selectedPlan.period}
+          onSelect={handlePillSelect}
+          disabled={purchasing || restoring}
+          t={t}
+        />
+      )}
       <AnimatedPressable
         testID={`plan-card-${plan.period}`}
         pressScale={0.97}
         onPress={() => {
-          // Abonede kart ÖLÜ DEĞİL: dokunuş mağazanın abonelik
-          // ekranına gidiyor (iptal/plan değişikliği yalnız orada
-          // yapılabiliyor).
+          // Abonede dokunuş YALNIZ yapılacak bir iş varken bir yere
+          // gidiyor (ödeme sorunu / iptal → mağaza). Olağan abonelikte
+          // kart tamamen ölü: `disabled` yüzünden buraya hiç girmiyor,
+          // basılma ölçeği bile çalışmıyor.
           if (isPremium) {
-            openStoreSubscriptions();
+            if (needsStoreAction) openStoreSubscriptions();
             return;
           }
           handlePurchase(plan);
         }}
-        disabled={purchasing || restoring || loadingOffering}
+        disabled={
+          purchasing ||
+          restoring ||
+          loadingOffering ||
+          (isPremium && !needsStoreAction)
+        }
         // Boyun TABANI `minHeight` (kart artık tek; yatay listenin
         // "kardeşe gerilme" zinciri kalktı). Tabanın üstünde kalan boy
         // ise periyottan BAĞIMSIZ: içeriğin plana göre değişen iki yeri
@@ -825,70 +956,110 @@ export function PurchasePlanCarousel({ flow }: { flow: PurchaseFlow }) {
               justifyContent: "space-between",
             }}
           >
-            <PlanBrandWord size={55} color={colors.onMedia} />
+            {/* Marka kelimesi + (abonede) durum rozeti tek grup: rozet
+                "plus+"a bitişik durmalı, satırın ortasına ya da alevin
+                yanına düşmemeli. Grup `flexShrink` ile daralıyor, alev
+                değil — alev sabit boyda bir marka öğesi. */}
+            <View
+              style={{
+                flexShrink: 1,
+                flexDirection: "row",
+                alignItems: "center",
+                gap: 10,
+              }}
+            >
+              <PlanBrandWord size={55} color={colors.onMedia} />
+              {isPremium && <PlanStatusPill label={subscriptionView.badge} />}
+            </View>
             <PremiumFlame
               size={PLAN_CARD_FLAME_SIZE}
               color={colors.onMedia}
             />
           </View>
-          {/* Kartın periyoda göre DEĞİŞEN bilgisi — fiyat + açıklama (ve
-              varsa deneme uyarısı). Boyu bütün periyotların en uzunu kadar
-              sabit: seçim değişince kart oynamıyor (bkz. PlanFactsBlock). */}
+          {/* Kartın gövdesi. Satın alınabilir hâlde periyoda göre DEĞİŞEN
+              bilgi — fiyat + açıklama (ve varsa deneme uyarısı) — ve boyu
+              bütün periyotların en uzunu kadar sabit: seçim değişince kart
+              oynamıyor. Abonede tek bir durum cümlesi (bkz. PlanFactsBlock). */}
           <PlanFactsBlock
             plans={plans}
             plan={plan}
             t={t}
             isTrialEligible={isTrialEligible}
+            isPremium={isPremium}
+            premiumNote={premiumNote}
           />
           {/* Kartın alt şeridi: solda indirim, sağda eylem rozeti.
               `marginTop: "auto"` şeridi kartın dibine iter — kartlar
               eşit boya gerildiği için kısa kartlarda üstte kalan boşluk
               buraya düşüyor ve üç kartın şeridi aynı hizada oluyor.
 
-              ABONEDE şeridin yerini yönetim butonu alıyor: indirim
-              yüzdesi satın alma bilgisi, satın alacak bir şey kalmayan
-              kartta yeri yok. */}
+              ABONEDE şeridin yerini yenileme satırı (ya da sorunlu
+              durumda tek bir eylem butonu) alıyor: indirim yüzdesi satın
+              alma bilgisi, satın alacak bir şey kalmayan kartta yeri
+              yok. */}
           {isPremium ? (
-            // Üyelik kartındaki butonun AYNISI (bkz. ProfileScreen
-            // "PREMIUM ACTIVE CARD"): iki yüzey aynı işi aynı kalıpla
-            // sunsun. Kendi TouchableOpacity'si YOK — kartın kendisi
-            // zaten mağazanın abonelik ekranına götürüyor, içine ikinci
-            // bir dokunma hedefi koymak aynı eylemi iki kez tanımlardı.
-            <View
-              testID={`plan-card-manage-${plan.period}`}
-              style={{
-                marginTop: "auto",
-                paddingTop: 20,
-              }}
-            >
+            needsStoreAction ? (
+              // YALNIZ ödeme sorunu / iptal: kapsül buton, kartın kendi
+              // dokunuşunu etiketliyor. Kendi TouchableOpacity'si YOK —
+              // kartın kendisi zaten mağazaya götürüyor, içine ikinci bir
+              // dokunma hedefi koymak aynı eylemi iki kez tanımlardı.
               <View
+                testID={`plan-card-manage-${plan.period}`}
                 style={{
-                  borderWidth: 0.5,
-                  borderColor: onMediaAt(0.5),
-                  borderRadius: 999,
-                  borderCurve: "continuous",
-                  overflow: "hidden",
-                  paddingVertical: 17,
-                  alignItems: "center",
-                  justifyContent: "center",
+                  marginTop: "auto",
+                  paddingTop: 20,
+                }}
+              >
+                <View
+                  style={{
+                    borderWidth: 0.5,
+                    borderColor: onMediaAt(0.5),
+                    borderRadius: 999,
+                    borderCurve: "continuous",
+                    overflow: "hidden",
+                    paddingVertical: 17,
+                    alignItems: "center",
+                    justifyContent: "center",
+                  }}
+                >
+                  <Text
+                    style={{
+                      color: colors.onMedia,
+                      fontSize: 14,
+                      fontWeight: "700",
+                    }}
+                  >
+                    {manageLabel}
+                  </Text>
+                </View>
+              </View>
+            ) : renewalNote ? (
+              // Olağan abonelik: tek satır BİLGİ, buton değil. Kapsül
+              // çerçevesi yok — çerçeve "basılabilir" diyor, oysa kart
+              // artık ölü. Etiket ve tarih TEK parça: ayrı ton ve ayrı
+              // ağırlık da denendi, ikisi de satırı tek cümle yerine
+              // "başlık + değer" gibi gösteriyordu — oysa okunan şey tek
+              // bir not.
+              <View
+                testID={`plan-card-renewal-${plan.period}`}
+                style={{
+                  marginTop: "auto",
+                  paddingTop: 20,
                 }}
               >
                 <Text
                   style={{
-                    color: colors.onMedia,
                     fontSize: 14,
-                    fontWeight: "500",
+                    fontWeight: "400",
+                    color: onMediaAt(0.55),
                   }}
                 >
-                  <Text style={{ fontWeight: "700" }}>{manageLabel}</Text>
-                  {manageDateSuffix ? (
-                    <Text style={{ color: onMediaAt(0.55) }}>
-                      {manageDateSuffix}
-                    </Text>
-                  ) : null}
+                  {renewalNote.date
+                    ? `${renewalNote.label} ${renewalNote.date}`
+                    : renewalNote.label}
                 </Text>
               </View>
-            </View>
+            ) : null
           ) : (
             <View
               style={{
@@ -978,11 +1149,11 @@ export function PurchaseFeatureTable({ flow }: { flow: PurchaseFlow }) {
   const { t, features, infoBenefit, openBenefitInfo, closeBenefitInfo } = flow;
 
   // Özellik satırının tonu — info ikonu ve başlık TEK dokunma hedefi, ikisi de
-  // bunu kullanır. Açık modda siyah %45 beyaz sheet zemininde fazla soluk
-  // kalıyordu; koyu modda beyaz %45 zaten okunuyor, oraya dokunulmuyor.
-  // Palet mutable + tema değişiminde kök remount olduğu için render'da okumak
-  // güvenli (bkz. shared/theme/colors.ts).
-  const featureInk = isLight() ? ink(0.62) : ink(0.45);
+  // bunu kullanır. TAM KONTRAST (açıkta siyah, koyuda beyaz): soluk alfa
+  // tonları satırı ✓/✗ sütunlarının gerisine düşürüyordu, oysa okunacak asıl
+  // şey maddenin adı. Palet mutable + tema değişiminde kök remount olduğu için
+  // render'da okumak güvenli (bkz. shared/theme/colors.ts).
+  const featureInk = colors.text;
 
   return (
     <View style={{ marginBottom: 24, paddingVertical: 4 }}>
@@ -1014,13 +1185,16 @@ export function PurchaseFeatureTable({ flow }: { flow: PurchaseFlow }) {
 
       {/* Feature rows — başlık üç kelime, "bu ne demek" cevabı info
           ikonunun açtığı sheet'te. Dokunma hedefi ikon + başlık; ✗/✓
-          sütunları dışarıda kalıyor ki tablo hâlâ tablo gibi dursun. */}
+          sütunları dışarıda kalıyor ki tablo hâlâ tablo gibi dursun.
+          Satır arası 24 → 30: başlıklar tam kontrasta çıkınca on satır tek
+          blok gibi okunuyordu, nefes payı onları yeniden satır yapıyor. */}
       {features.map(({ key, label }, index) => (
         <View
           key={key}
-          className={`flex-row items-center justify-between ${
-            index !== features.length - 1 ? "mb-6" : ""
-          }`}
+          className="flex-row items-center justify-between"
+          style={{
+            marginBottom: index !== features.length - 1 ? 30 : 0,
+          }}
         >
           {/* `flex: 1` DIŞ View'da: AnimatedPressable içeride bir
               Animated.View'a sarıyor ve o sarmalayıcı style almıyor —
@@ -1051,10 +1225,10 @@ export function PurchaseFeatureTable({ flow }: { flow: PurchaseFlow }) {
                 weight="semibold"
               />
               <Text
-                className="font-normal text-[15px] flex-1"
-                // İkonla AYNI ton: tam kontrastlı başlık, yanındaki soluk
-                // info ikonunu ayrı bir öge gibi gösteriyordu — ikisi tek
-                // dokunma hedefi, tek tonda okunmalı.
+                className="font-medium text-[15px] flex-1"
+                // İkonla AYNI ton: ikisi tek dokunma hedefi, tek tonda
+                // okunmalı — ton farkı ikonu satırdan ayrı bir öge gibi
+                // gösteriyordu.
                 style={{ color: featureInk }}
               >
                 {label}

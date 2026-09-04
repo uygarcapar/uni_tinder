@@ -22,6 +22,7 @@ import {
   type ConsumableRedeemResult,
   type RedeemFlowConfig,
 } from "@/features/discover/consumableRedeem";
+import { isPurchaseIdentityReady } from "@/features/profile/subscriptionService";
 import { showInfoToast } from "@/shared/services/toaster";
 import type { ToastIconKind } from "@/shared/components/toaster/toastIcons";
 import { analytics } from "@/shared/services/analytics";
@@ -238,6 +239,20 @@ export default function ConsumablePurchaseSheet({
       productId: selectedPack.productId,
     });
     try {
+      // SON KAPI — kimlik anonimse satın alma HİÇ başlatılmaz. Consumable'da
+      // zarar aboneliktekinden de doğrudan: redeem `userId` ile yapılıyor ama
+      // makbuz anonim kimliğe bağlanıyor, backend eşleştiremediğinde kredi hiç
+      // yazılmıyor (bkz. subscriptionService — kimlik bölümü).
+      if (!(await isPurchaseIdentityReady(userId))) {
+        analytics.capture(`${analyticsKind}_purchase_blocked_identity`, {
+          productId: selectedPack.productId,
+        });
+        Alert.alert(
+          t("purchase.errors.identityTitle"),
+          t("purchase.errors.identityMessage"),
+        );
+        return;
+      }
       const { transactionId, productId } = await purchasePack(selectedPack.pkg);
       analytics.capture(`${analyticsKind}_purchase_completed`, { productId });
 
