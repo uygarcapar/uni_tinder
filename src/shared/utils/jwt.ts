@@ -4,7 +4,8 @@
  * loop'a girer. accessTokenFactory bu modülü kullanarak expiry'yi proaktif
  * görür ve refresh tetikler.
  *
- * Sadece `exp` claim'ini okur — imza doğrulama backend'in işi.
+ * İmza DOĞRULANMIYOR — o backend'in işi. Buradan okunan claim'ler yalnızca
+ * "sunucu bize ne söyledi"yi UI'a taşımak için; yetki kararı vermek için değil.
  */
 
 const base64UrlDecode = (str: string): string => {
@@ -15,18 +16,57 @@ const base64UrlDecode = (str: string): string => {
   throw new Error("base64 decode not available");
 };
 
-export const getTokenExpiryMs = (token: string | null | undefined): number | null => {
+/** Payload objesi; token bozuk/eksikse `null`. Ayrıştırma hatası YUTULUR. */
+const readPayload = (token: string | null | undefined): Record<string, any> | null => {
   if (!token || typeof token !== "string") return null;
   const parts = token.split(".");
   if (parts.length !== 3) return null;
   try {
-    const payloadJson = base64UrlDecode(parts[1]);
-    const payload = JSON.parse(payloadJson);
-    if (typeof payload?.exp !== "number") return null;
-    return payload.exp * 1000;
+    return JSON.parse(base64UrlDecode(parts[1]));
   } catch {
     return null;
   }
+};
+
+export const getTokenExpiryMs = (token: string | null | undefined): number | null => {
+  const payload = readPayload(token);
+  if (typeof payload?.exp !== "number") return null;
+  return payload.exp * 1000;
+};
+
+export type TokenPremiumClaims = {
+  isPremium: boolean;
+  /** Ham ISO damgası; claim boşsa `null` (biçimlendirme çağıranda). */
+  expiresAt: string | null;
+};
+
+/**
+ * Token'daki premium claim'leri.
+ *
+ * NEDEN VAR: ön kayıt (waitlist) premium sözü register isteğinin İÇİNDE
+ * uygulanıyor, ama kullanıcının o anda bunu öğrenebileceği başka yer yok —
+ * cevabın `UserDto`sunda premium alanı hiç yok ve realtime event BİLEREK
+ * bastırılmış (kullanıcı kayıt akışında, hub'a henüz bağlanmadı). Token ise
+ * grant'ten SONRA üretiliyor, yani claim'ler taze.
+ *
+ * İKİ TUZAK — ikisi de backend'in claim yazma biçiminden:
+ *   • `IsPremium` bir STRING ("True"/"False", .NET `bool.ToString()`).
+ *     Doğrudan boolean'a çevrilirse "False" da truthy olur.
+ *   • `PremiumExpiresAt` tarih yoksa BOŞ STRING; `new Date("")` → Invalid Date.
+ * (bkz. backend JwtTokenGenerator.BuildIdentityClaims)
+ */
+export const readPremiumClaims = (
+  token: string | null | undefined,
+): TokenPremiumClaims => {
+  const payload = readPayload(token);
+  const raw = payload?.IsPremium;
+  const isPremium =
+    raw === true || (typeof raw === "string" && raw.toLowerCase() === "true");
+  const expiresAt =
+    typeof payload?.PremiumExpiresAt === "string" && payload.PremiumExpiresAt
+      ? payload.PremiumExpiresAt
+      : null;
+  return { isPremium, expiresAt };
 };
 
 export const isTokenExpiringSoon = (token: string | null | undefined, bufferSec = 30): boolean => {

@@ -31,6 +31,20 @@ describe('resolveSelfieVerified', () => {
     expect(resolveSelfieVerified({ isSelfieVerified: 'true' })).toBeNull();
   });
 
+  it('🔴 ProfileDto şeklinde `user` ALTINDAN okur', () => {
+    // GET /api/profile/me kökünde isSelfieVerified YOK (isMailVerified ve
+    // isPhotoVerified var). Yalnız kök okunduğunda kendi profilinde hep
+    // undefined dönüyordu ve doğrulama satırı hiç çizilmiyordu.
+    expect(resolveSelfieVerified({ user: { isSelfieVerified: true } })).toBe(true);
+    expect(resolveSelfieVerified({ user: { isSelfieVerified: false } })).toBe(false);
+    // Kart şekli (ProfileCardDto) kökte taşıyor — o da çalışmaya devam etmeli.
+    expect(resolveSelfieVerified({ isSelfieVerified: true })).toBe(true);
+    // Kökteki `false` gerçek cevap; `user`a düşüp true dönmemeli.
+    expect(
+      resolveSelfieVerified({ isSelfieVerified: false, user: { isSelfieVerified: true } }),
+    ).toBe(false);
+  });
+
   it('boolean geldiğinde olduğu gibi okur', () => {
     expect(resolveSelfieVerified({ isSelfieVerified: true })).toBe(true);
     expect(resolveSelfieVerified({ isSelfieVerified: false })).toBe(false);

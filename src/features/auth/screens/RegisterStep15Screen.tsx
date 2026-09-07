@@ -36,6 +36,10 @@ import {
   setUserAndToken,
   clearRegistrationForm,
 } from "@/features/auth/authSlice";
+import { setPremium } from "@/features/profile/subscriptionSlice";
+import { formatSubscriptionDate } from "@/features/profile/subscriptionView";
+import { readPremiumClaims } from "@/shared/utils/jwt";
+import { normalizeBackendIso } from "@/shared/utils/backendDate";
 import * as Location from "expo-location";
 import { Plus, X } from "@/shared/icons";
 import SFIcon from "@/shared/components/SFIcon";
@@ -555,18 +559,63 @@ export default function RegisterStep15Screen({ navigation }: NativeStackScreenPr
         pruneOrphanPhotos([]);
       };
 
+      /**
+       * Ön kayıt (waitlist) premium hediyesi. Söz verilmiş premium TAM BU
+       * istekte uygulanıyor (backend: ApplyPromiseOnRegistrationAsync), ama
+       * kullanıcının bunu şu anda öğrenebileceği tek yer TOKEN:
+       *   • cevabın `UserDto`sunda premium alanı yok,
+       *   • realtime event bilerek bastırılmış — kullanıcı kayıt akışında,
+       *     hub'a henüz bağlanmadı, event boşa giderdi.
+       * Bildirmezsek hediye sessizce veriliyor: kullanıcı premium olduğunu
+       * ancak günler sonra bir paywall'a çarpmayınca fark ediyor.
+       */
+      const premium = readPremiumClaims(response.result.token);
+      // Claim `.ToString("o")` ile yazılıyor ve damga offset'siz gelebiliyor —
+      // ham `new Date()` UTC+3'te tarihi bir GÜN geriye kaydırabilir.
+      const premiumExpiresAt = normalizeBackendIso(premium.expiresAt);
+
+      const celebratePremiumThen = (next: () => void) => {
+        if (!premium.isPremium) { next(); return; }
+        // Redux'a da yazıyoruz: aksi hâlde uygulamaya giriş ile ilk `/status`
+        // cevabı arasında premium yüzeyleri "free" gösterip sonra zıplıyor.
+        // Kaynak backend'in KENDİ imzaladığı token (RC tahmini değil) →
+        // `optimistic` DEĞİL; grace penceresi açmasına gerek yok.
+        dispatch(setPremium({ isPremium: true, expiresAt: premiumExpiresAt }));
+        const until = formatSubscriptionDate(premiumExpiresAt);
+        Alert.alert(
+          t('auth.step15.premiumGiftTitle'),
+          until
+            ? t('auth.step15.premiumGiftMessage', { date: until })
+            : t('auth.step15.premiumGiftMessageNoDate'),
+          [{ text: t('auth.step15.premiumGiftCta'), onPress: next }],
+          // Android'de dışarı dokunmak alert'i kapatır ve `onPress` HİÇ
+          // koşmaz: hesap açılmış, kullanıcı Step15'te asılı kalırdı.
+          // Uygulamaya giriş bu alert'in arkasında olduğu için kapatılamaz.
+          { cancelable: false },
+        );
+      };
+
       // register-and-complete'in LoginResponseDto'suna opsiyonel `photos` alanı
       // eklendi. Review/Pending fotoğraf kaydı ENGELLEMEZ — profil oluşur, foto
       // gizli kalır. Kullanıcıya "beklemen yeterli, yeniden yükleme" demek için
       // uygulamaya girmeden önce bir kez bilgilendiriyoruz.
+      //
+      // İki alert ZİNCİRLENİYOR, aynı anda açılmıyor: RN'de üst üste binen iki
+      // Alert'te ikincisi sessizce düşer. Sıra "önce yapılacak iş (fotoğraf),
+      // sonra hediye" — hediye uygulamaya girmeden önceki son ekran olsun.
       const summary = summarizeModeration(extractModerationPhotos(response.result));
       if (summary) {
-        Alert.alert(summary.title, summary.message, [
-          { text: t('common.ok'), onPress: enterApp },
-        ]);
+        Alert.alert(
+          summary.title,
+          summary.message,
+          [{ text: t('common.ok'), onPress: () => celebratePremiumThen(enterApp) }],
+          // Aynı gerekçe: zincirin devamı (hediye + uygulamaya giriş) bu
+          // butonun `onPress`inde.
+          { cancelable: false },
+        );
         return;
       }
-      enterApp();
+      celebratePremiumThen(enterApp);
     } catch (err) {
       // Eskiden burada yalnızca devLog vardı: ana fotoğraf reddedildiğinde
       // spinner duruyor ve kullanıcıya HİÇBİR ŞEY gösterilmiyordu.

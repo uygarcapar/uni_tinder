@@ -209,7 +209,19 @@ export function normalizeSelfieResult(raw: any, message?: unknown): SelfieResult
  * ⚠️ Bu alan `isVerified`'a DAHİL DEĞİL ve olmayacak — ayrı rozet.
  */
 export function resolveSelfieVerified(raw: any): boolean | null {
-  const value = raw?.isSelfieVerified;
+  // 🔴 ALAN İKİ FARKLI YERDE GELİYOR, ikisi de okunmalı:
+  //
+  //   ProfileCardDto / UserDto  → KÖKTE     (keşif kartı, beğenenler, kaçırdıkların)
+  //   ProfileDto                → `user` ALTINDA  (GET /api/profile/me)
+  //
+  // ProfileDto kökünde `isMailVerified` ve `isPhotoVerified` var ama
+  // `isSelfieVerified` YOK — o yalnızca `User` alt nesnesinde. Yalnız kökü
+  // okumak kendi profilinde her zaman `undefined` üretiyordu, yani doğrulama
+  // satırı HİÇ çizilmiyordu (bkz. SelfieVerificationRow'daki `verified === null`
+  // kapısı) ve akışa giriş noktası yoktu.
+  //
+  // `??` bilerek: kökteki `false` gerçek bir cevaptır, `user`a düşülmemeli.
+  const value = raw?.isSelfieVerified ?? raw?.user?.isSelfieVerified;
   return typeof value === 'boolean' ? value : null;
 }
 

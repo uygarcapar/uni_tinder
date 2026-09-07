@@ -539,6 +539,10 @@ const tr = {
       monthPlaceholder: 'aa',
       yearLabel: 'Yıl',
       yearPlaceholder: 'yyyy',
+      // Doğrulama metinleri. Şema (dobSchema) bunları ÇAĞRI ANINDA çözüyor —
+      // modül seviyesinde çözülse uygulamanın açılış dili sabitlenirdi.
+      invalidDate: 'Geçerli bir doğum tarihi gir.',
+      tooYoung: 'Uygulamayı kullanabilmek için 18 yaşından büyük olmalısın.',
     },
     step7: {
       title: 'Cinsiyetin',
@@ -676,6 +680,17 @@ const tr = {
       sessionExpiredTitle: 'Doğrulama süresi doldu',
       sessionExpired:
         'E-posta doğrulamanın süresi dolmuş. Aynı e-postayı tekrar doğrularsan girdiğin bilgiler korunur.',
+      // Ön kayıt hediyesi kayıt İSTEĞİNİN içinde uygulanıyor ve kullanıcıya
+      // bunu söyleyen başka bir yüzey yok (cevapta premium alanı yok, realtime
+      // event bastırılmış). Bu üç satır olmazsa hediye sessiz kalıyor.
+      premiumGiftTitle: 'Hoş geldin hediyen: Premium 🎉',
+      premiumGiftMessage:
+        'Ön kayıt olduğun için premium hesabın açıldı — {{date}} tarihine kadar tüm premium özellikler senin.',
+      // Bitiş tarihi claim'de boş gelirse cümle "undefined tarihine kadar"a
+      // dönmesin diye ayrı metin.
+      premiumGiftMessageNoDate:
+        'Ön kayıt olduğun için premium hesabın açıldı — tüm premium özellikler senin.',
+      premiumGiftCta: 'Harika',
     },
   },
   chat: {

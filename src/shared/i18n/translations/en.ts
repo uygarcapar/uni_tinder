@@ -539,6 +539,10 @@ const en = {
       monthPlaceholder: 'mm',
       yearLabel: 'Year',
       yearPlaceholder: 'yyyy',
+      // Validation copy. dobSchema resolves these AT VALIDATION TIME — resolving
+      // at module scope would freeze whatever language the app booted in.
+      invalidDate: 'Enter a valid date of birth.',
+      tooYoung: 'You must be over 18 to use the app.',
     },
     step7: {
       title: 'Your Gender',
@@ -674,6 +678,17 @@ const en = {
       sessionExpiredTitle: 'Verification expired',
       sessionExpired:
         'Your email verification has expired. Verify the same email again and everything you entered will be kept.',
+      // Ön kayıt hediyesi kayıt İSTEĞİNİN içinde uygulanıyor ve kullanıcıya
+      // bunu söyleyen başka bir yüzey yok (cevapta premium alanı yok, realtime
+      // event bastırılmış). Bu üç satır olmazsa hediye sessiz kalıyor.
+      premiumGiftTitle: 'Your welcome gift: Premium 🎉',
+      premiumGiftMessage:
+        'Because you pre-registered, premium is on us — every premium feature is yours until {{date}}.',
+      // Bitiş tarihi claim'de boş gelirse cümle "until undefined"a dönmesin
+      // diye ayrı metin.
+      premiumGiftMessageNoDate:
+        'Because you pre-registered, premium is on us — every premium feature is yours.',
+      premiumGiftCta: 'Nice',
     },
   },
   chat: {
