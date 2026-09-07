@@ -39,16 +39,23 @@ npm start        # Metro (dev client)
 
 ### Ortam değişkenleri
 
-Proje kök dizininde `.env` dosyası oluşturun:
-
 ```
-EXPO_PUBLIC_API_BASE_URL=https://your-backend.example.com
-EXPO_PUBLIC_REVENUECAT_IOS_API_KEY=...
-EXPO_PUBLIC_REVENUECAT_ANDROID_API_KEY=...
-EXPO_PUBLIC_REVENUECAT_ENTITLEMENT_ID=...
+cp .env.example .env
 ```
 
-`.env` dosyası `.gitignore`'a alınmıştır ve commit edilmez.
+Tüm değişkenler, hangisinin zorunlu olduğu ve eksik olduklarında ne olduğu
+`.env.example` içinde açıklanıyor. Özet:
+
+| Değişken | Yoksa ne olur |
+| --- | --- |
+| `EXPO_PUBLIC_API_BASE_URL` | **Uygulama açılmaz** — `api.ts` başlangıçta throw eder |
+| `EXPO_PUBLIC_REVENUECAT_IOS_API_KEY` / `..._ANDROID_API_KEY` | Satın alma akışları sessizce kapanır |
+| `EXPO_PUBLIC_POSTHOG_KEY` | Analytics no-op — hiçbir olay gönderilmez |
+| `EXPO_PUBLIC_SENTRY_DSN` | Crash reporting no-op |
+| `EXPO_PUBLIC_MAPBOX_TOKEN` | Kodda çalışan public token gömülü, boş bırakılabilir |
+
+`.env` dosyası `.gitignore`'a alınmıştır ve commit edilmez; `.env.example`
+edilir. Değişiklikten sonra Metro'yu `npm run clean` ile başlatın.
 
 ## Komutlar
 
