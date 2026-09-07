@@ -396,6 +396,13 @@ export const editProfileFormSchema = z.object({
   // filtrelerine takılmaya, konum heartbeat'i göndermeye devam eder.
   // Mesafe ayrı bir bayrak (`showDistance`) — ikisi bağımsız.
   showLocation: z.boolean(),
+  // Çevrimiçi görünürlük — opt-out: backend varsayılanı true. Kapalıyken karttaki
+  // "bugün aktif" rozeti, sohbet listesindeki yeşil nokta ve canlı presence
+  // event'leri gider; keşiften DÜŞMEZ, eşleşme mantığı değişmez.
+  //
+  // Simetri YOK (bilinçli): ayarı kapatan kullanıcı karşı tarafın online
+  // durumunu görmeye devam eder.
+  showOnlineStatus: z.boolean(),
   // Premium rozeti — opt-out: backend varsayılanı true, kapatınca yalnızca
   // ROZET gizlenir (kotalar/filtreler/sıralama avantajı aynen sürer).
   showPremiumBadge: z.boolean(),

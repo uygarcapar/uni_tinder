@@ -157,5 +157,8 @@ export const hydrateProfileForm = ({
     // dönmüyorsa (migration uygulanmamış eski backend) switch açık doğar,
     // backend varsayılanıyla (true) hizalı kalır.
     showLocation: myProfile?.showLocation !== false,
+    // Aynı `!== false` gerekçesi: migration uygulanmamış backend'de alan hiç
+    // gelmez, switch açık doğmalı (backend varsayılanı da true).
+    showOnlineStatus: myProfile?.showOnlineStatus !== false,
   };
 };
