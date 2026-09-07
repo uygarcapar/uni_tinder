@@ -21,19 +21,79 @@ import i18n from '@/shared/i18n';
 // değiştiremez. `code` yalnız ikon/animasyon seçmek için — ekranda gösterilen
 // metin sunucudan gelen `instruction`'dır (zaten Accept-Language'e göre
 // yerelleşmiş).
+// ⚠️ Bu liste backend'in AKTİF HAVUZU (`SelfieChallengePool.Active`), enum'un
+// tamamı değil. 2026-09-01 kalibrasyonunda dört hareket ölçülüp havuzdan
+// çıkarıldı ve bir daha GELMEYECEK:
+//
+//   LookDown   — selfie açısı yüzünden pitch nötrü ~+8; "aşağı bak" −5.4'te
+//                kaldı, nötrden ayrışmıyor
+//   TiltHead   — baş çevirmeyle aynı roll'ü üretiyor, iki hareket ayrışmıyor
+//   Neutral    — "hiçbir şey yapma" bir hareket değil, herkes geçiyor
+//   EyesClosed — göz kırpmayla karışıyor, yanlış-negatif riski büyük
+//
+// Enum'dan silinmediler (DB'de eski attempt kayıtları var) ama havuza girmiyorlar;
+// bu yüzden burada da yoklar — olmayan bir koda ikon/ipucu yazmak boşa emek.
+// Havuz ileride genişleyebilir, o yüzden `code` her yerde `string` kalıyor ve
+// çözücülerin `default` dalı var.
 export const SELFIE_CHALLENGE_CODES = [
   'TurnRight',
   'TurnLeft',
   'LookUp',
-  'LookDown',
-  'TiltHead',
   'Smile',
-  'Neutral',
   'MouthOpen',
-  'EyesClosed',
 ] as const;
 
 export type SelfieChallengeCode = (typeof SELFIE_CHALLENGE_CODES)[number];
+
+/**
+ * Hareketin türü — kamera ekranındaki ikinci ipucu satırını seçer.
+ *
+ * 🔴 AYRIM BACKEND'İN DEĞERLENDİRME YOLUNDAN GELİYOR, keyfi değil
+ * (`SelfieChallengeEvaluator`):
+ *
+ *   pose (TurnRight/TurnLeft/LookUp) → `EvaluatePose`
+ *     Karşı-eksen kapıları var, aşırı savrulma `challenge_too_much` döndürüyor.
+ *     Yani "belirgin yap AMA ABARTMA" doğru tavsiye.
+ *
+ *   expression (Smile/MouthOpen)     → `EvaluateBoolSignal`
+ *     `challenge_too_much` dalı HİÇ YOK — fazla gülümsemek diye bir şey yok,
+ *     güven skoru artıyor sadece. Burada "abartma" demek kullanıcıyı
+ *     `challenge_too_weak`e iter, yani metin zararlı olurdu.
+ */
+export type SelfieChallengeKind = 'pose' | 'expression' | 'unknown';
+
+const POSE_CODES: ReadonlySet<string> = new Set(['TurnRight', 'TurnLeft', 'LookUp']);
+const EXPRESSION_CODES: ReadonlySet<string> = new Set(['Smile', 'MouthOpen']);
+
+export function selfieChallengeKind(code: string | null | undefined): SelfieChallengeKind {
+  if (!code) return 'unknown';
+  if (POSE_CODES.has(code)) return 'pose';
+  if (EXPRESSION_CODES.has(code)) return 'expression';
+  // Havuz genişlerse bilinmeyen kod gelir; genel ipucuna düşülür, ekran çökmez.
+  return 'unknown';
+}
+
+/**
+ * Talimatın altındaki ikinci satırın i18n anahtarı. Talimatın KENDİSİ sunucudan
+ * geliyor (`challenge.instruction`) — bu yalnızca ona eşlik eden ipucu.
+ *
+ * Kalibrasyon `challenge_too_weak` ve `challenge_too_much`u en sık iki
+ * başarısızlık olarak ölçtü; ikisi de bu satırla önlenebilir hatalar.
+ *
+ * Bilinmeyen kodda `null` — genel ipucu satırı zaten çiziliyor, ona düşmek aynı
+ * metni iki kez göstermek olurdu. Uydurma tavsiye vermektense sessiz kalmak
+ * doğru: havuz genişlediğinde yeni hareketin nasıl değerlendirildiğini bilmiyoruz.
+ */
+export function selfieChallengeHintKey(code: string | null | undefined): string | null {
+  switch (selfieChallengeKind(code)) {
+    case 'pose':
+      return 'profile.selfie.camera.hintPose';
+    case 'expression':
+      return 'profile.selfie.camera.hintExpression';
+    default:
+      return null;
+  }
+}
 
 export interface SelfieChallenge {
   /** Bilinmeyen kod gelebilir (backend yeni hareket ekleyebilir) — string kalıyor. */
@@ -51,8 +111,17 @@ export interface SelfieAttempt {
 
 // ── Sonuç ────────────────────────────────────────────────────────────────────
 
+// ⚠️ Backend 11 kod gönderiyor (`SelfieFailureReasons`) — listenin eksik kalması
+// sessiz bir bozulma: `KNOWN_REASON_CODES.has()` false döner, gövde metni sunucu
+// `message`'ına düşer (doğru metin) ama BAŞLIK jenerik "Doğrulama tamamlanamadı"
+// olur ve gövdeyi yalanlar. Backend'e kod eklendiğinde buraya da eklenmeli.
 export const SELFIE_REASON_CODES = [
   'challenge_not_met',
+  // Poz/mimik hatasının üç yönlendirici alt sebebi (2026-09-01 kalibrasyonu):
+  // hepsine "algılayamadık" demek kullanıcıyı aynı hatayı tekrarlamaya itiyordu.
+  'challenge_too_weak',
+  'challenge_wrong_move',
+  'challenge_too_much',
   'no_face',
   'multiple_faces',
   'face_occluded',
@@ -182,6 +251,48 @@ export function selfieReasonTitle(reasonCode: string | null | undefined): string
  */
 export function isSelfieRetryAuto(reasonCode: string | null | undefined): boolean {
   return reasonCode === 'attempt_expired';
+}
+
+// ── Analytics ────────────────────────────────────────────────────────────────
+
+/**
+ * Sonucun analytics yükü. Rehber §14.3: eşik ayarının asıl girdisi "hangi
+ * hareket hangi kodla düştü" — bu yüzden `reasonCode` ve `challengeCode`
+ * birlikte gidiyor.
+ *
+ * 🔴 KARE, `similarity` VE HAM POZ DEĞERİ GÖNDERİLMEZ. `similarity` yanıtta
+ * zaten yok; kare hiçbir telemetri kanalına (analytics, Sentry, crash) eklenmez.
+ * Buradan çıkan her alan bir KOD ya da sayaçtır.
+ *
+ * ⚠️ Metin de gönderilmez: sunucu `message`'ı dile göre değişir, aynı olayı iki
+ * ayrı satır gibi gösterir.
+ */
+export interface SelfieResultAnalytics {
+  verified: boolean;
+  reasonCode: string | null;
+  failedAtStep: number | null;
+  /** Takılınan adımdaki hareketin kodu; adım bilinmiyorsa null. */
+  challengeCode: string | null;
+}
+
+export function selfieResultAnalytics(
+  result: SelfieResult,
+  attempt: SelfieAttempt | null,
+): SelfieResultAnalytics {
+  const step = result.failedAtStep;
+
+  // `failedAtStep` 1 TABANLI. face_mismatch / analysis_failed / attempt_expired
+  // durumlarında null geliyor (hata belirli bir harekete ait değil) — o zaman
+  // hareket kodu da gönderilmez, uydurulmaz.
+  const challenge =
+    step != null && step >= 1 ? attempt?.challenges[step - 1] : undefined;
+
+  return {
+    verified: result.verified,
+    reasonCode: result.reasonCode ?? null,
+    failedAtStep: step,
+    challengeCode: challenge?.code ?? null,
+  };
 }
 
 /** `expiresAt` geçti mi. Alan yoksa `false` — sunucu nihai söz sahibi. */

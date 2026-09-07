@@ -1578,6 +1578,12 @@ const en = {
       camera: {
         stepCounter: '{{index}} / {{total}}',
         hint: 'Fit your face in the frame and be alone in the shot.',
+        // Second line, chosen by movement kind (see selfieChallengeHintKey).
+        // 🔴 "Don't overdo it" applies to POSE only: the backend's expression
+        // check never returns `challenge_too_much`, so suggesting restraint there
+        // would push users into `challenge_too_weak`.
+        hintPose: "Make it clear but don't overdo it — a gentle movement is enough.",
+        hintExpression: 'Make it clear enough for the camera to see.',
         ready: "I'm ready",
         captureError: "We couldn't take the frame. Try again.",
         permissionMessage:
@@ -1595,6 +1601,14 @@ const en = {
       // normal part of the flow (the request returns 200 + isSuccess:true).
       reason: {
         challenge_not_met: "We couldn't detect the movement. Let's try once more.",
+        // 🔴 These three mirror the backend resx (SelfieFailure_*) word for word.
+        // Design limit: they never leak the DIRECTION of the movement or the
+        // NUMERIC threshold — that would let an attacker calibrate against it.
+        challenge_too_weak:
+          'Almost there — could you make the movement a bit more pronounced?',
+        challenge_wrong_move:
+          "We didn't see the movement. Mind reading the prompt and trying again?",
+        challenge_too_much: 'That was a bit much — a gentler movement is enough.',
         no_face: "We couldn't see your face. Make sure it's clear and well lit.",
         multiple_faces: 'There is more than one person in the frame. You need to be alone.',
         face_occluded: 'Your face looks covered. Remove a mask, hat or glasses and try again.',
@@ -1609,6 +1623,11 @@ const en = {
       },
       reasonTitle: {
         challenge_not_met: "We couldn't detect the movement",
+        // FE-only (the backend has no titles) — must keep the same tone as the
+        // body, otherwise the pair contradicts itself.
+        challenge_too_weak: 'Almost there',
+        challenge_wrong_move: "We didn't see the movement",
+        challenge_too_much: 'That was a bit much',
         no_face: "We couldn't see your face",
         multiple_faces: 'More than one person in the frame',
         face_occluded: 'Your face looks covered',
@@ -1761,6 +1780,7 @@ const en = {
         showOnApp: 'Show me on the app',
         showAge: 'Show my age',
         showLocation: 'Show my location',
+        showOnlineStatus: "Show when I'm online",
         showPremiumBadge: 'Show my premium badge',
       },
     },

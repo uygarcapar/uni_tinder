@@ -27,9 +27,11 @@ import {
   isSelfieRetryAuto,
   selfieReasonText,
   selfieReasonTitle,
+  selfieResultAnalytics,
   type SelfieAttempt,
   type SelfieResult,
 } from "./selfieVerification";
+import { analytics } from "@/shared/services/analytics";
 
 /**
  * Selfie doğrulama akışının kök host'u: intro → rıza → kamera → sonuç.
@@ -91,6 +93,10 @@ export default function SelfieVerificationOverlay() {
     if (starting) return;
     setStarting(true);
     try {
+      // Geçiş oranının PAYDASI. Sonuç olayı tek başına "kaç kişi denedi"yi
+      // söylemiyor: akışı yarıda bırakan kullanıcı sonuç üretmiyor.
+      analytics.capture("selfie_verification_started");
+
       const next = await startSelfieVerification();
       if (!next) {
         showInfoToast({ message: t("profile.selfie.errors.generic"), variant: "error" });
@@ -138,6 +144,15 @@ export default function SelfieVerificationOverlay() {
           // gereken bir şey de yok. Giriş noktası da gizleniyor.
           markSelfieFeatureUnavailable();
           close();
+          // ⚠️ DEV'E ÖZEL: üretimde bu sessizlik doğru, ama geliştiricide
+          // "butona bastım, modal kapandı, hiçbir şey olmadı" görüntüsü veriyor
+          // ve bozuk koddan ayırt edilemiyor. Sebebi söylüyoruz.
+          if (__DEV__) {
+            showInfoToast({
+              message: "[dev] SelfieVerification:Enabled kapalı (UT-6505)",
+              variant: "error",
+            });
+          }
           break;
 
         case SELFIE_CODES.RATE_LIMITED:
@@ -166,6 +181,14 @@ export default function SelfieVerificationOverlay() {
       setSubmitting(true);
       try {
         const outcome = await submitSelfieFrames(attempt.attemptId, frames);
+
+        // Rehber §14.3: eşiklerin gevşetilip gevşetilmeyeceği bu dağılıma
+        // bakılarak karar verilecek. Yalnızca KOD gidiyor — kare/similarity/ham
+        // poz değeri asla (bkz. selfieResultAnalytics).
+        analytics.capture(
+          "selfie_verification_result",
+          selfieResultAnalytics(outcome, attempt),
+        );
 
         // 🔴 verified:false HATA DEĞİL — buraya normal akışta geliniyor.
         if (outcome.verified) {

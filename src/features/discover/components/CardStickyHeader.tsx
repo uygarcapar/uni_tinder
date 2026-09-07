@@ -17,6 +17,9 @@ import { easeGradient } from "react-native-easing-gradient";
 import { BlurView } from "expo-blur";
 import { LinearGradient } from "expo-linear-gradient";
 import PremiumBadge from "@/shared/components/PremiumBadge";
+import SelfieVerifiedBadge, {
+  selfieBadgeSize,
+} from "@/features/profile/components/SelfieVerifiedBadge";
 import ActivityStatus from "./ActivityStatus";
 import { colors as theme, veil } from "@/shared/theme/colors";
 import { chromeBlurTint } from "@/shared/theme/blur";
@@ -649,6 +652,12 @@ export default function CardStickyHeader({
           {/* Kart başlıklarındaki rozetin AYNISI — ölçü isim puntosundan
               türüyor, elle verilmiyor (bkz. PremiumBadge). */}
           {profile?.isPremium && <PremiumBadge fontSize={TITLE_FONT} />}
+          {/* Foto doğrulama rozeti — premium'dan AYRI işaret, `isVerified`e
+              katılmıyor. Alan gelmezse hiçbir şey çizilmiyor. */}
+          <SelfieVerifiedBadge
+            verified={profile?.isSelfieVerified}
+            size={selfieBadgeSize(TITLE_FONT)}
+          />
           {/* `flexShrink: 0`: uzun isim satırı doldurursa kırpılacak olan isim,
               bu işaret değil — ya tam görünür ya hiç. `marginLeft` satırın
               `gap`ine ek: bu ayrı bir bilgi, ismin devamı değil (ikisinin
@@ -711,6 +720,12 @@ export default function CardStickyHeader({
             `PremiumBadge` puntodan çıkarıyor. Kapak/panel başlıklarıyla aynı
             kural, tek fark punto. */}
           {profile?.isPremium && <PremiumBadge fontSize={TITLE_FONT} />}
+          {/* Foto doğrulama rozeti — premium'dan AYRI işaret, `isVerified`e
+              katılmıyor. Alan gelmezse hiçbir şey çizilmiyor. */}
+          <SelfieVerifiedBadge
+            verified={profile?.isSelfieVerified}
+            size={selfieBadgeSize(TITLE_FONT)}
+          />
           {/* "Bugün aktif" BURADA YOK: durum işareti yalnız önizleme şeridinde
             çiziliyor ve orada satırın SOL bölmesinde duruyor (yukarıdaki
             dala bak). Keşif'te bilgi kartın kendi isim bloğunda kalıyor. */}

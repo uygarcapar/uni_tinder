@@ -28,6 +28,20 @@ const UNAVAILABLE_WINDOW_MS = 24 * 60 * 60 * 1000;
 
 /** `UT-6505` alındı: girişi 24 saat gizle ve dinleyenlere haber ver. */
 export function markSelfieFeatureUnavailable(): void {
+  // 🔴 DEV'DE PENCERE YAZILMAZ. Backend flag'i açtığı an test cihazının satırı
+  // 24 saat daha gizli kalırdı ve bu, "özellik bozuk" ile "flag kapalı"yı ayırt
+  // edilemez hâle getiriyordu — akış sessizce kapandığı için geliştirici butonun
+  // çalışmadığını sanıyor. Üretimde davranış aynen korunuyor: kullanıcı
+  // çalışmayan bir giriş noktası görmemeli.
+  if (__DEV__) {
+    devLog(
+      '🪪 [selfie] UT-6505 — SelfieVerification:Enabled kapalı. ' +
+        'Dev build: giriş gizlenmedi, satır yerinde kalıyor.',
+    );
+    uiBus.emit(SELFIE_AVAILABILITY_EVENT);
+    return;
+  }
+
   appPrefs.set(UNAVAILABLE_UNTIL_KEY, Date.now() + UNAVAILABLE_WINDOW_MS);
   devLog('🪪 [selfie] UT-6505 — özellik kapalı, giriş 24 sa gizlendi');
   uiBus.emit(SELFIE_AVAILABILITY_EVENT);

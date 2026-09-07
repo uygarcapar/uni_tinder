@@ -1613,6 +1613,13 @@ const tr = {
       camera: {
         stepCounter: '{{index}} / {{total}}',
         hint: 'Yüzün çerçeveye sığsın ve karede yalnız ol.',
+        // Hareket tipine göre ikinci satır (bkz. selfieChallengeHintKey).
+        // 🔴 "Abartma" YALNIZ poz hareketlerinde: backend mimik değerlendirmesinde
+        // (EvaluateBoolSignal) `challenge_too_much` diye bir sonuç üretmiyor, yani
+        // gülümsemeyi/ağzı "fazla" açmak diye bir başarısızlık yok. Orada abartmayı
+        // önermek kullanıcıyı `challenge_too_weak`e iterdi.
+        hintPose: 'Hareketi belirgin yap ama abartma — yumuşak bir hareket yeterli.',
+        hintExpression: 'Belirgin olsun ki kamera görebilsin.',
         ready: 'Hazırım',
         captureError: 'Kare çekilemedi, tekrar dene.',
         permissionMessage:
@@ -1630,6 +1637,15 @@ const tr = {
       // akışın normal parçası (istek 200 + isSuccess:true dönüyor).
       reason: {
         challenge_not_met: 'İstenen hareketi algılayamadık. Bir kez daha deneyelim.',
+        // 🔴 Aşağıdaki üçü backend resx'iyle (SelfieFailure_*) BİREBİR aynı tonda.
+        // Sözleşme sınırı: hareketin YÖNÜNÜ ("sağa değil sola döndün") ya da eşiğin
+        // SAYISINI ("20 derece daha") sızdırmıyorlar — saldırgana eşiği kalibre
+        // etme imkânı verirdi. "Biraz daha belirgin" güvenli, kullanıcı zaten ne
+        // istendiğini biliyor.
+        challenge_too_weak: 'Neredeyse oldu — hareketi biraz daha belirgin yapar mısın?',
+        challenge_wrong_move:
+          'İstenen hareketi göremedik. Yönergeyi okuyup tekrar dener misin?',
+        challenge_too_much: 'Biraz fazla oldu — daha yumuşak bir hareket yeterli.',
         no_face: 'Yüzünü göremedik. Yüzün net ve aydınlık görünsün.',
         multiple_faces: 'Karede birden fazla kişi var. Doğrularken yalnız olmalısın.',
         face_occluded: 'Yüzün kapalı görünüyor. Maske, şapka veya gözlüğü çıkarıp dene.',
@@ -1644,6 +1660,12 @@ const tr = {
       },
       reasonTitle: {
         challenge_not_met: 'Hareketi algılayamadık',
+        // Başlıklar backend'de YOK, FE'ye özel — gövdeyle aynı tonu tutmalı,
+        // yoksa "Doğrulama tamamlanamadı / Neredeyse oldu" gibi kendini yalanlayan
+        // bir çift çıkıyor.
+        challenge_too_weak: 'Neredeyse oldu',
+        challenge_wrong_move: 'Hareketi göremedik',
+        challenge_too_much: 'Biraz fazla oldu',
         no_face: 'Yüzünü göremedik',
         multiple_faces: 'Karede birden fazla kişi var',
         face_occluded: 'Yüzün kapalı görünüyor',
@@ -1797,6 +1819,7 @@ const tr = {
         showOnApp: 'Beni uygulamada göster',
         showAge: 'Yaşımı göster',
         showLocation: 'Konumumu göster',
+        showOnlineStatus: 'Çevrimiçi olduğumu göster',
         showPremiumBadge: 'Premium rozetimi göster',
       },
     },

@@ -16,7 +16,10 @@ import { forgetPhoto } from "@/shared/utils/photoStore";
 import { devLog } from "@/shared/utils/devLog";
 import { captureSelfieFrame } from "./captureSelfieFrame";
 import type { SelfieFrame } from "./selfieService";
-import type { SelfieChallenge } from "./selfieVerification";
+import {
+  selfieChallengeHintKey,
+  type SelfieChallenge,
+} from "./selfieVerification";
 
 /**
  * Kamera adımı — challenge başına TEK kare.
@@ -171,6 +174,8 @@ export default function SelfieCameraStep({
   }
 
   const challenge = challenges[index];
+  // Bilinmeyen hareket kodunda null → ikinci satır hiç çizilmez.
+  const challengeHintKey = selfieChallengeHintKey(challenge?.code);
   const ovalWidth = width * OVAL_WIDTH_RATIO;
   const disabled = busy || submitting;
 
@@ -250,6 +255,12 @@ export default function SelfieCameraStep({
         >
           {challenge?.instruction ?? ""}
         </Text>
+        {/* İki ayrı ipucu, ikisi de gerekli:
+            • genel ipucu → no_face / multiple_faces (her karede geçerli)
+            • harekete özel ipucu → challenge_too_weak / challenge_too_much,
+              kalibrasyonda ölçülen EN SIK iki başarısızlık. Metin hareket
+              tipine göre değişiyor çünkü backend mimik ve poz hareketlerini
+              farklı değerlendiriyor (bkz. selfieChallengeHintKey). */}
         <Text
           style={{
             color: onMediaAt(0.7),
@@ -260,6 +271,18 @@ export default function SelfieCameraStep({
         >
           {t("profile.selfie.camera.hint")}
         </Text>
+        {challengeHintKey && (
+          <Text
+            style={{
+              color: onMediaAt(0.55),
+              fontSize: 13,
+              lineHeight: 19,
+              textAlign: "center",
+            }}
+          >
+            {t(challengeHintKey)}
+          </Text>
+        )}
       </View>
 
       <View

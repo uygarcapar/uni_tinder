@@ -231,6 +231,9 @@ import { lookupCityCoordinate } from "@/shared/constants/cityCoordinates";
 import HobbyIcon from "@/shared/components/HobbyIcon";
 import SFIcon, { type SFSymbol } from "@/shared/components/SFIcon";
 import PremiumBadge from "@/shared/components/PremiumBadge";
+import SelfieVerifiedBadge, {
+  selfieBadgeSize,
+} from "@/features/profile/components/SelfieVerifiedBadge";
 import SuperLikeGlyph from "@/shared/components/SuperLikeGlyph";
 import SuperLikeGlassButton, {
   SUPER_LIKE_GLASS_GLYPH_SIZE,
@@ -2902,6 +2905,13 @@ export default function SwipeCard({
                         // olduğu için sabit beyazken rozet bilerek temaya bağlı.
                         <PremiumBadge fontSize={CARD_NAME_FONT} />
                       )}
+                      {/* Foto doğrulama rozeti — premium rozetinden AYRI bir
+                          işaret, `isVerified`e de katılmıyor. Alan gelmezse
+                          (backend'in bu sürümü yok) hiçbir şey çizilmiyor. */}
+                      <SelfieVerifiedBadge
+                        verified={profile.isSelfieVerified}
+                        size={selfieBadgeSize(CARD_NAME_FONT)}
+                      />
                     </View>
                   </Animated.View>
 
@@ -3386,6 +3396,11 @@ export default function SwipeCard({
                       // Ölçü farkı yalnız puntodan (30 > 28).
                       <PremiumBadge fontSize={PANEL_NAME_FONT} />
                     )}
+                    {/* Kapaktakiyle aynı işaret, ölçü farkı yalnız puntodan. */}
+                    <SelfieVerifiedBadge
+                      verified={profile.isSelfieVerified}
+                      size={selfieBadgeSize(PANEL_NAME_FONT)}
+                    />
                     {showNewBadge && (
                       <NewMemberBadge
                         label={t("profile.card.newMember")}
