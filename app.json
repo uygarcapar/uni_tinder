@@ -15,7 +15,7 @@
         "ITSAppUsesNonExemptEncryption": false,
         "NSMicrophoneUsageDescription": "Sesli mesaj gönderebilmen için mikrofon erişimine izin vermen gerekir.",
         "NSPhotoLibraryUsageDescription": "Profil fotoğraflarını seçebilmen için galeri erişimine izin vermen gerekir.",
-        "NSCameraUsageDescription": "Profil fotoğrafını anında çekebilmen için kamera erişimine izin vermen gerekir.",
+        "NSCameraUsageDescription": "Profil fotoğrafını çekmen ve fotoğraflarının sana ait olduğunu doğrulaman için kamera erişimine izin vermen gerekir.",
         "UIBackgroundModes": [
           "remote-notification"
         ]
@@ -55,14 +55,14 @@
         "expo-image-picker",
         {
           "photosPermission": "Profil fotoğraflarını seçebilmen için galeri erişimine izin vermen gerekir.",
-          "cameraPermission": "Profil fotoğrafını anında çekebilmen için kamera erişimine izin vermen gerekir.",
+          "cameraPermission": "Profil fotoğrafını çekmen ve fotoğraflarının sana ait olduğunu doğrulaman için kamera erişimine izin vermen gerekir.",
           "microphonePermission": false
         }
       ],
       [
         "expo-camera",
         {
-          "cameraPermission": "Fotoğrafını doğrulayabilmen için kamera erişimine izin vermen gerekir.",
+          "cameraPermission": "Profil fotoğrafını çekmen ve fotoğraflarının sana ait olduğunu doğrulaman için kamera erişimine izin vermen gerekir.",
           "microphonePermission": false,
           "recordAudioAndroid": false
         }
