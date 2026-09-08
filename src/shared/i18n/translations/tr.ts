@@ -683,13 +683,11 @@ const tr = {
       // Ön kayıt hediyesi kayıt İSTEĞİNİN içinde uygulanıyor ve kullanıcıya
       // bunu söyleyen başka bir yüzey yok (cevapta premium alanı yok, realtime
       // event bastırılmış). Bu üç satır olmazsa hediye sessiz kalıyor.
-      premiumGiftTitle: 'Hoş geldin hediyen: Premium 🎉',
+      // Bitiş tarihi BİLEREK geçilmiyor — bu ekranın işi hediyeyi duyurmak,
+      // süreyi Profil > Üyelik kartı anlatıyor.
+      premiumGiftTitle: 'Premium hediyen hazır 🎉',
       premiumGiftMessage:
-        'Ön kayıt olduğun için premium hesabın açıldı — {{date}} tarihine kadar tüm premium özellikler senin.',
-      // Bitiş tarihi claim'de boş gelirse cümle "undefined tarihine kadar"a
-      // dönmesin diye ayrı metin.
-      premiumGiftMessageNoDate:
-        'Ön kayıt olduğun için premium hesabın açıldı — tüm premium özellikler senin.',
+        'Ön kayıt olduğun için premium hediyeni tanımladık — tüm premium özellikler artık senin.',
       premiumGiftCta: 'Harika',
     },
   },

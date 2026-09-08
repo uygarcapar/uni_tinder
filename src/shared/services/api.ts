@@ -97,10 +97,6 @@ api.interceptors.request.use(
     (config as TimedConfig).__route = getCurrentRouteName();
     if (currentAccessToken) {
       config.headers.Authorization = `Bearer ${currentAccessToken}`;
-      const tokenPreview = currentAccessToken.substring(0, 20) + '...';
-      devLog(`🔐 Request: ${config.method?.toUpperCase()} ${config.url} - Token: ${tokenPreview}`);
-    } else {
-      devLog(`⚠️ Request: ${config.method?.toUpperCase()} ${config.url} - Token YOK!`);
     }
     config.headers['Accept-Language'] = currentLanguage;
     // FormData gönderilirken Content-Type'ı sil —

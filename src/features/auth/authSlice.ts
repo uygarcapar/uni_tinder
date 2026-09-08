@@ -15,9 +15,7 @@ export const fetchUserData = createAsyncThunk(
   'auth/fetchUserData',
   async ({ userId, token }: { userId: string; token: string }, { rejectWithValue }) => {
     try {
-      devLog('🔍 Fetching user data from /api/user/GetUser/' + userId);
       const response = await authService.getUserById(userId, token);
-      devLog('📦 GetUser Response:', JSON.stringify(response, null, 2));
       return response;
     } catch (error: any) {
       devLog('❌ GetUser Error:', error.message);
@@ -38,8 +36,6 @@ export const login = createAsyncThunk(
       markSelfLogin();
       await realtimeService.disconnect().catch(() => {});
       const response = await authService.login(email, password);
-      devLog("🔑 Login response keys:", Object.keys(response || {}));
-      devLog("🔑 Login refreshToken received:", response?.refreshToken ? "YES" : "NO");
       if (response?.token) {
         setCurrentAccessToken(response.token);
         await saveAccessToken(response.token);
@@ -147,8 +143,6 @@ const authSlice = createSlice({
         state.refreshToken = action.payload.refreshToken;
       }
       state.isAuthenticated = true;
-      devLog('🔑 Redux: User and token set');
-      devLog('🔑 Token exists:', !!state.token);
     },
     setNeedsVerification: (state, action: PayloadAction<string>) => {
       state.needsVerification = true;
@@ -257,9 +251,6 @@ const authSlice = createSlice({
         state.token = action.payload.token;
         state.refreshToken = action.payload.refreshToken;
         state.error = null;
-        devLog('✅ Login successful - User data:', JSON.stringify(action.payload.user, null, 2));
-        devLog('✅ isMailVerified:', action.payload.user?.isMailVerified);
-        devLog('✅ isProfileCreated:', action.payload.user?.isProfileCreated);
       })
       .addCase(login.rejected, (state, action) => {
         state.loading = false;
@@ -278,7 +269,6 @@ const authSlice = createSlice({
         state.token = action.payload.token;
         state.refreshToken = action.payload.refreshToken;
         state.error = null;
-        devLog('🔑 Register: Token saved to Redux:', !!state.token);
       })
       .addCase(register.rejected, (state, action) => {
         state.loading = false;
@@ -294,8 +284,6 @@ const authSlice = createSlice({
       .addCase(fetchUserData.fulfilled, (state, action) => {
         const payload = action.payload as any;
         if (payload.isSuccess && payload.result) {
-          devLog('✅ fetchUserData successful - Updated user data');
-          devLog('✅ Updated isProfileCreated:', payload.result.isProfileCreated);
           state.user = payload.result;
         }
       })

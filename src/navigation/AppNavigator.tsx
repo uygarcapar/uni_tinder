@@ -936,7 +936,6 @@ export default function AppNavigator() {
         const exists = ((store.getState() as any).chat?.conversations ?? [])
           .some((c: any) => c.conversationId === convId);
         if (!exists) {
-          console.warn('[conv] refetch tag=unknown-conv-notif', convId);
           dispatch(fetchConversations({ force: true }));
         }
       }),

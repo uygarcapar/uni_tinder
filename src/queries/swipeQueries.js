@@ -23,11 +23,6 @@ export function usePotentialMatches(pageSize = 10) {
         pageParam,
         pageSize,
       );
-      if (__DEV__) {
-        console.log(
-          `[swipeQueries] page ${pageParam} → profiles=${result.profiles?.length ?? 0} hasNextPage=${result.hasNextPage} currentPage=${result.currentPage}`,
-        );
-      }
       return result;
     },
     initialPageParam: 1,

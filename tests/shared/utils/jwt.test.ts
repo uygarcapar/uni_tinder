@@ -7,8 +7,13 @@
 import { readPremiumClaims, getTokenExpiryMs } from '@/shared/utils/jwt';
 
 // İmza doğrulanmıyor (backend'in işi) → üçüncü parça sabit dolgu olabilir.
+// `Buffer` globalThis üzerinden: tsconfig'de node tipleri yok, çıplak `Buffer`
+// type-check'i kırıyor (testler jest'te zaten Node ortamında koşuyor).
+const nodeBuffer = (globalThis as any).Buffer;
+
 const tokenWith = (payload: Record<string, unknown>): string => {
-  const b64 = Buffer.from(JSON.stringify(payload), 'utf8')
+  const b64 = nodeBuffer
+    .from(JSON.stringify(payload), 'utf8')
     .toString('base64')
     .replace(/\+/g, '-')
     .replace(/\//g, '_')

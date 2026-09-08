@@ -37,7 +37,6 @@ import {
   clearRegistrationForm,
 } from "@/features/auth/authSlice";
 import { setPremium } from "@/features/profile/subscriptionSlice";
-import { formatSubscriptionDate } from "@/features/profile/subscriptionView";
 import { readPremiumClaims } from "@/shared/utils/jwt";
 import { normalizeBackendIso } from "@/shared/utils/backendDate";
 import * as Location from "expo-location";
@@ -570,8 +569,10 @@ export default function RegisterStep15Screen({ navigation }: NativeStackScreenPr
        * ancak günler sonra bir paywall'a çarpmayınca fark ediyor.
        */
       const premium = readPremiumClaims(response.result.token);
-      // Claim `.ToString("o")` ile yazılıyor ve damga offset'siz gelebiliyor —
-      // ham `new Date()` UTC+3'te tarihi bir GÜN geriye kaydırabilir.
+      // Claim `.ToString("o")` ile yazılıyor ve damga offset'siz gelebiliyor.
+      // Alert'te GÖSTERİLMİYOR ama redux'a bu hâliyle yazılmalı: `selectIsPremium`
+      // `expiresAt`i client-side de doğruluyor ve offset'siz damga UTC+3'te
+      // geçmiş okunup premium'u anında kapatırdı.
       const premiumExpiresAt = normalizeBackendIso(premium.expiresAt);
 
       const celebratePremiumThen = (next: () => void) => {
@@ -581,12 +582,12 @@ export default function RegisterStep15Screen({ navigation }: NativeStackScreenPr
         // Kaynak backend'in KENDİ imzaladığı token (RC tahmini değil) →
         // `optimistic` DEĞİL; grace penceresi açmasına gerek yok.
         dispatch(setPremium({ isPremium: true, expiresAt: premiumExpiresAt }));
-        const until = formatSubscriptionDate(premiumExpiresAt);
+        // Bitiş tarihi BİLEREK yok: kayıt biter bitmez okunacak tek cümle
+        // "hediyen tanımlandı" olsun. Süre zaten Profil > Üyelik kartında
+        // duruyor ve tek doğruluk kaynağı orası (`/status`).
         Alert.alert(
           t('auth.step15.premiumGiftTitle'),
-          until
-            ? t('auth.step15.premiumGiftMessage', { date: until })
-            : t('auth.step15.premiumGiftMessageNoDate'),
+          t('auth.step15.premiumGiftMessage'),
           [{ text: t('auth.step15.premiumGiftCta'), onPress: next }],
           // Android'de dışarı dokunmak alert'i kapatır ve `onPress` HİÇ
           // koşmaz: hesap açılmış, kullanıcı Step15'te asılı kalırdı.

@@ -218,15 +218,22 @@ export const CARD_EXPANDED_CORNER_RADIUS = 35;
  * köşe diyagonalinden aşağı kayma payı.
  *
  * Kart tepeye dayandığı için chrome, pay olmadan durum çubuğu gliflerinin
- * (~y17-40) üstüne biniyor; tam safe-area payı (insets.top ≈ 59) ise butonları
- * köşeden kopartıp ortada asılı bırakıyor. İkisinin arası: buton köşenin
- * butonu gibi okunmaya devam ediyor, üst kenarı saatin/pilin birkaç px altına
- * iniyor.
+ * (~y17-40) üstüne biniyor; tam safe-area payı (insets.top ≈ 59-62) ise
+ * butonları köşeden kopartıp ortada asılı bırakıyor. İkisinin arası: buton
+ * köşenin butonu gibi okunmaya devam ediyor, üst kenarı saatin/pilin birkaç px
+ * altına iniyor.
+ *
+ * 14 → 22: chrome'un üst kenarı payla birlikte SUPER_LIKE_GLASS_INSET'ten
+ * (33.5) başlıyor, yani 14'te y≈47.5'te duruyordu — Dynamic Island'ın dibi
+ * (~y48) TAM oraya denk geliyor, buton ve şeritteki isim adaya yapışık
+ * okunuyordu. 22 ile üst kenar y≈55.5: adanın ~7pt altında, tam safe-area
+ * çizgisinin (59-62) ise hâlâ yukarısında — yani köşeden de kopmuyor.
+ * Çentikli/çentiksiz cihazlarda pay zaten fazlasıyla güvenli tarafta kalıyor.
  *
  * SABİT, açılma oranıyla ANİME DEĞİL: buton bir kez yerine oturduktan sonra
  * hiçbir jestte kıpırdamamalı (gerekçesi SwipeCard > cornerDrop).
  */
-export const CARD_CHROME_TOP_DROP = 14;
+export const CARD_CHROME_TOP_DROP = 22;
 
 type Props = {
   profile: any;

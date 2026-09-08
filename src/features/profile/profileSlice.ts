@@ -3,7 +3,6 @@ import axios from "axios";
 import i18n from "@/shared/i18n";
 import { API_BASE_URL, API_ENDPOINTS } from "@/shared/constants/api";
 import type { ProfilePromptAnswer, ProfileState } from "@/shared/types";
-import { devLog } from '@/shared/utils/devLog';
 import { FREE_MAX_DISTANCE_KM, MAX_PROFILE_PHOTOS } from "@/shared/constants/limits";
 import { photoModerationCodeKey } from "@/shared/constants/responseCodes";
 import {
@@ -246,9 +245,6 @@ export const completeProfile = createAsyncThunk(
       );
 
       const data = response.data;
-      devLog("📤 Response status:", response.status);
-      devLog("📤 Parsed JSON:", JSON.stringify(data, null, 2));
-
       if (
         response.status < 200 ||
         response.status >= 300 ||
@@ -259,7 +255,6 @@ export const completeProfile = createAsyncThunk(
         );
       }
 
-      devLog('✅ Profile completed successfully!');
       // result = { profile, photos } (koşulsuz). Zarfı olduğu gibi
       // döndürüyoruz; çağıran taraf ihtiyacı olan alanı kendisi okuyor.
       return data || { success: true };
@@ -346,15 +341,6 @@ export const registerAndComplete = createAsyncThunk(
       }
       put("MainPhotoIndex", mainPhotoIndex);
 
-      devLog("📤 [registerAndComplete] Sending to backend:");
-      for (const [key, value] of (formData as any)._parts ?? []) {
-        if (value && typeof value === "object" && value.uri) {
-          devLog(`  ${key}: <photo ${value.name}>`);
-        } else {
-          devLog(`  ${key}:`, value);
-        }
-      }
-
       const response = await postFormData(
         `${API_BASE_URL}${API_ENDPOINTS.REGISTER_AND_COMPLETE}`,
         formData
@@ -362,9 +348,6 @@ export const registerAndComplete = createAsyncThunk(
 
       const data = response.data;
       const rawText = typeof data === "string" ? data : JSON.stringify(data);
-      devLog("📥 [registerAndComplete] HTTP", response.status);
-      devLog("📥 [registerAndComplete] Response body:", rawText);
-
       if (response.status < 200 || response.status >= 300 || (data && data.isSuccess === false)) {
         const rawErr = data?.message || data?.title || data?.errors || rawText;
         console.error("❌ Backend error detail:", rawErr);
@@ -408,11 +391,9 @@ const profileSlice = createSlice({
         state.error = null;
       })
       .addCase(completeProfile.fulfilled, () => {
-        devLog('✅ Profile completed successfully - clearing profile state');
         return initialState;
       })
       .addCase(completeProfile.rejected, (state, action) => {
-        devLog('❌ Profile completion rejected - keeping profile data for retry');
         state.loading = false;
         // payload artık ProfileSubmitError; state yalnızca gösterilebilir
         // mesajı tutar, reasonCode'u ekran .unwrap() catch'inden alıyor.

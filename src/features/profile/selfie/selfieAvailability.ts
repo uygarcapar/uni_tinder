@@ -54,6 +54,13 @@ export function markSelfieFeatureUnavailable(): void {
  * yine kullanıcının dokunuşuyla yapılır; hâlâ kapalıysa pencere tazelenir.
  */
 export function isSelfieFeatureAvailable(): boolean {
+  // 🔴 DEV'DE PENCERE OKUNMAZ DA. `markSelfieFeatureUnavailable` dev'de artık
+  // yazmıyor ama DAHA ÖNCE yazılmış bir kayıt cihazda duruyor olabilir: MMKV
+  // uygulama container'ında ve Xcode'dan yeniden kurulum onu silmiyor. Yalnız
+  // yazma tarafını kapatmak asimetrikti — flag açıldıktan sonra bile eski
+  // pencere dolana kadar satır gizli kalıyordu.
+  if (__DEV__) return true;
+
   const until = appPrefs.getNumber(UNAVAILABLE_UNTIL_KEY);
   if (typeof until !== 'number') return true;
   if (Date.now() >= until) {

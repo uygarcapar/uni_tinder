@@ -706,36 +706,6 @@ export default function DiscoverScreen() {
     const out = deduped.filter(
       (p, i) => i < historyLimit || !isGuarded(p.userId),
     );
-    if (__DEV__) {
-      // GEÇİCİ TEŞHİS LOGU — desteyi hangi adımın boşalttığını gösterir.
-      const pruned = deduped.filter(
-        (p, i) => !(i < historyLimit || !isGuarded(p.userId)),
-      );
-      // eslint-disable-next-line no-console
-      console.log(
-        `[deck] api=${all.length} dedupe=${deduped.length} → deste=${out.length} | ` +
-          `currentIndex=${currentIndex} historyLimit=${historyLimit} ` +
-          `swipeKaydı=${swipedAtRef.current.size} elenen=${pruned.length}`,
-      );
-      if (pruned.length) {
-        // eslint-disable-next-line no-console
-        console.log(
-          `[deck] swipe koruması elemiş (<${SWIPE_GUARD_MS / 1000}sn):`,
-          pruned.map((p) => `${p?.displayName}(${p?.userId})`).join(", "),
-        );
-      }
-      // eslint-disable-next-line no-console
-      console.log(
-        "[deck] gösterilecek:",
-        out
-          .map(
-            (p, i) =>
-              `${i === currentIndex ? "▶" : " "}${i}. ${p?.displayName ?? "?"} ` +
-              `${p?.age ?? "-"}y ${p?.distance ?? "-"}km ${p?.universityName ?? "-"}`,
-          )
-          .join("\n") || "(BOŞ → EmptyDiscoverCard/radar gösterilir)",
-      );
-    }
     return out;
   }, [matchesQuery.data, currentIndex, isGuarded]);
 

@@ -5,6 +5,7 @@ import { BadgeCheck, ChevronRight, ShieldAlert, ShieldCheck } from "@/shared/ico
 import AnimatedPressable from "@/shared/components/AnimatedPressable";
 import SFIcon, { type SFSymbol } from "@/shared/components/SFIcon";
 import uiBus from "@/shared/services/uiBus";
+import { devLog } from "@/shared/utils/devLog";
 import { colors } from "@/shared/theme/colors";
 import {
   isSelfieFeatureAvailable,
@@ -68,6 +69,19 @@ export default function SelfieVerificationRow({
   );
 
   const verified = resolveSelfieVerified(profile);
+
+  // Satır çizilmediğinde SEBEBİ görünsün: iki kapı da sessizce `null` dönüyor
+  // ve dışarıdan "özellik yok" ile "profil daha yüklenmedi" ayırt edilemiyor.
+  if (__DEV__ && (verified === null || !available)) {
+    devLog('🪪 [selfie] satır çizilmedi', {
+      sebep: verified === null ? 'isSelfieVerified alanı yok' : 'UT-6505 penceresi',
+      kokte: profile?.isSelfieVerified,
+      userAltinda: profile?.user?.isSelfieVerified,
+      profilYuklendiMi: !!profile,
+      available,
+    });
+  }
+
   if (verified === null || !available) return null;
 
   const wasVerified = wasSelfieVerifiedBefore(userId);
