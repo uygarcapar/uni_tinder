@@ -14,6 +14,9 @@ import { easeGradient } from "react-native-easing-gradient";
 import { BlurView } from "expo-blur";
 import { LinearGradient } from "expo-linear-gradient";
 import PremiumBadge from "@/shared/components/PremiumBadge";
+import SelfieVerifiedBadge, {
+  selfieBadgeSize,
+} from "@/features/profile/components/SelfieVerifiedBadge";
 import ActivityStatus from "./ActivityStatus";
 import { colors as theme, veil } from "@/shared/theme/colors";
 import { chromeBlurTint } from "@/shared/theme/blur";
@@ -260,15 +263,22 @@ export const CARD_OPEN_CORNER_RADIUS = 26;
  * köşe diyagonalinden aşağı kayma payı.
  *
  * Kart tepeye dayandığı için chrome, pay olmadan durum çubuğu gliflerinin
- * (~y17-40) üstüne biniyor; tam safe-area payı (insets.top ≈ 59) ise butonları
- * köşeden kopartıp ortada asılı bırakıyor. İkisinin arası: buton köşenin
- * butonu gibi okunmaya devam ediyor, üst kenarı saatin/pilin birkaç px altına
- * iniyor.
+ * (~y17-40) üstüne biniyor; tam safe-area payı (insets.top ≈ 59-62) ise
+ * butonları köşeden kopartıp ortada asılı bırakıyor. İkisinin arası: buton
+ * köşenin butonu gibi okunmaya devam ediyor, üst kenarı saatin/pilin birkaç px
+ * altına iniyor.
+ *
+ * 14 → 22: chrome'un üst kenarı payla birlikte SUPER_LIKE_GLASS_INSET'ten
+ * (33.5) başlıyor, yani 14'te y≈47.5'te duruyordu — Dynamic Island'ın dibi
+ * (~y48) TAM oraya denk geliyor, buton ve şeritteki isim adaya yapışık
+ * okunuyordu. 22 ile üst kenar y≈55.5: adanın ~7pt altında, tam safe-area
+ * çizgisinin (59-62) ise hâlâ yukarısında — yani köşeden de kopmuyor.
+ * Çentikli/çentiksiz cihazlarda pay zaten fazlasıyla güvenli tarafta kalıyor.
  *
  * SABİT, açılma oranıyla ANİME DEĞİL: buton bir kez yerine oturduktan sonra
  * hiçbir jestte kıpırdamamalı (gerekçesi SwipeCard > cornerDrop).
  */
-export const CARD_CHROME_TOP_DROP = 14;
+export const CARD_CHROME_TOP_DROP = 22;
 
 type Props = {
   profile: any;
@@ -578,6 +588,12 @@ export default function CardStickyHeader({
         {/* İşaret isimle ORANLI kalmak zorunda — oranı elle tutmuyoruz,
             `PremiumBadge` puntodan çıkarıyor. */}
         {profile?.isPremium && <PremiumBadge fontSize={TITLE_FONT} />}
+        {/* Foto doğrulama rozeti — premium'dan AYRI işaret, `isVerified`e
+            katılmıyor. Alan gelmezse hiçbir şey çizilmiyor. */}
+        <SelfieVerifiedBadge
+          verified={profile?.isSelfieVerified}
+          size={selfieBadgeSize(TITLE_FONT)}
+        />
         {/* `flexShrink: 0`: uzun isim satırı doldurursa kırpılacak olan isim,
             bu işaret değil — ya tam görünür ya hiç. `marginLeft` satırın
             `gap`ine ek: bu ayrı bir bilgi, ismin devamı değil (ikisinin toplamı

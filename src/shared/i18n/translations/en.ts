@@ -79,6 +79,16 @@ const en = {
       subtitle: 'Download a copy of your data, manage who you blocked.',
     },
     downloadData: 'Download My Data',
+    privacyPolicy: 'Privacy & KVKK Text',
+    // Photo verification's two SEPARATE explicit consents. Titles and bodies
+    // come from `profile.selfie.consent.*` so the text has a single source.
+    selfieConsent: {
+      heading: 'Verification permissions',
+      note: 'Photo verification relies on these two permissions. You do not have to give them and you can switch them off at any time: if you do, your verification badge is removed and you cannot verify again; your account, profile and matches are unaffected.',
+      // Neither is enough on its own: /start requires both.
+      pairHint: 'Both permissions must be on before verification can be used.',
+      error: "We couldn't save your choice, please try again.",
+    },
     blockedUsers: 'Blocked Users',
     changePassword: 'Change Password',
     changeEmail: 'Change Email',
@@ -352,7 +362,17 @@ const en = {
         },
       },
     },
-    // Disclosure text — VERSION 2.0. If the section count changes, update
+    // Disclosure text — VERSION 1.0 (single source is lit-landing's
+    // src/data/privacy-policy.ts; copied from there into the backend's
+    // wwwroot/legal and into this file — the three must not drift). Sections 4
+    // and 5 are photo verification's two EXPLICIT CONSENTS, given separately
+    // Disclosure text — VERSION 1.0 (single source is lit-landing's
+    // src/data/privacy-policy.ts; copied from there into the backend's
+    // wwwroot/legal and into this file — the three must not drift). Sections 4
+    // and 5 are photo verification's two EXPLICIT CONSENTS. The text is read
+    // here, but the consents are NOT collected here — they are given as two
+    // separate switches under Settings > Privacy (see `settings.selfieConsent`).
+    // If the section count changes, update
     // `DOCS.privacy.sectionCount` in LegalSheet and `PRIVACY_SECTIONS` in
     // KVKKConsentScreen together; both have to know the same number.
     // Rendered through PolicyMarkdown → `**bold**` and `- bullets` work.
@@ -365,6 +385,7 @@ const en = {
       titleRequired: 'Consent Required',
       messageRequired: 'You must accept the text to continue.',
       errorSave: 'Consent could not be saved, please try again.',
+
 
       sectionTitle1: 'Data Controller',
       section1Content: `
@@ -404,29 +425,60 @@ const en = {
 
         **Data relating to sexual orientation.** Your match preferences may reveal information about your sexual life.
 
-        **Biometric data.** If you choose to use photo verification, the face in the photo you take is automatically compared with the face in your profile photo to check whether they belong to the same person. The comparison is made in the moment; no biometric template is extracted from your face and none is stored.
+        **Biometric data.** If you choose to use photo verification, the face in the frames you capture is automatically compared with the face in your profile photo to check whether they belong to the same person. The scope and duration of this processing, and the conditions of your consent, are explained separately in sections 4 and 5 below.
 
         This data is processed only with your explicit consent. You may withdraw your consent at any time; in that case the related feature (match suggestions or photo verification) will not work.
       `,
 
-      sectionTitle4: 'Purposes of Processing',
+      sectionTitle4: 'Photo Verification — Explicit Consent for Your Biometric Data',
       section4Content: `
+        lit has an **optional** photo verification feature: the frames captured while you perform two small movements in front of your camera are automatically compared with the main photo on your profile. There is a single purpose — to show that the photo on the profile really belongs to you, making it harder to open fake profiles with someone else's photos.
+
+        That comparison requires processing your facial data, which is a **special category of personal data** within the meaning of Article 6 of KVKK. Such data may only be processed **with your explicit consent** (art. 6/2-a); no other legal basis (legitimate interest, performance of a contract, etc.) is relied upon.
+
+        **Data processed.** The live camera frames captured during verification, your current main photo as the other side of the comparison, and the outcome of the operation (verified / not verified, its date, and the technical reason if it failed).
+
+        **The frames are not stored.** The captured frames are processed only at the moment of comparison, in the server's temporary memory, and are deleted as soon as the operation ends; they are not written to disk, not uploaded to cloud storage and not backed up. No permanent **biometric template (face print) is extracted from your face or stored** — meaning no biometric record capable of recognising you later is created. The only thing kept is the outcome itself; these technical records are deleted after 90 days.
+
+        **Not used for any other purpose.** This data is not used for identity verification, advertising, profiling, the matching algorithm or training artificial intelligence models; it is not shared with other users or with third parties.
+
+        **This consent is entirely optional.** If you do not give it, or withdraw it later, your account is not closed, your profile is not hidden, and your matches and messages are unaffected; you simply cannot obtain the verification badge. You may give this consent together with this text while creating your account, and withdraw it or give it again at any time from Settings > Privacy in the app. When you withdraw it, your verification badge is removed and you can no longer verify; there is no biometric data to delete, because none was stored in the first place.
+
+        **The badge means something limited.** Verification reasonably shows that the person using the app is the person in the profile photo; it is not an identity check. It is not proof of your name, your age or your student status. That is why the badge says "photo verified", not "identity verified".
+      `,
+
+      sectionTitle5: 'Photo Verification — Explicit Consent for Transfer Abroad',
+      section5Content: `
+        The image processing service that performs the comparison above does not run in Türkiye, but on servers located in the United States (Amazon Web Services Rekognition, US us-east-1 region). Sending the frames there is a **transfer abroad** within the meaning of Article 9 of KVKK, and it requires a separate **explicit consent**. For this reason, using photo verification requires both the biometric data consent in section 4 and this consent; if either is missing, verification is never started.
+
+        **Only the two sides of the comparison are transferred:** the frames captured at that moment and your current main photo. Your name, e-mail address, user id, university, department, age, location, messages, matches and the other photos on your profile are not sent. The service performing the comparison does not know who the images belong to; it only answers the question "how similar are these two faces".
+
+        **The transfer is momentary and is not stored on the other side.** The images are sent only at the moment of comparison, over an encrypted connection (TLS); as soon as the operation ends they leave both our server's memory and the processing on the other side. The transfer happens only when you use the feature, once per attempt.
+
+        **To put the risk plainly:** once your data leaves Türkiye, the protection of Turkish law does not apply directly. The authorities of the country where the data is located may request access under their own law, and such a request may not match the safeguards KVKK requires. We limit this risk by minimising the data transferred (only two images, without identity information), keeping the transfer momentary and using an encrypted connection.
+
+        **This consent is also entirely optional** and, like the consent in section 4, can be withdrawn at any time from Settings > Privacy. Once withdrawn there is no data left to transfer; your account and profile are unaffected.
+      `,
+
+      sectionTitle6: 'Purposes of Processing',
+      section6Content: `
         Your personal data is processed to create your account and verify your student status, publish your profile, suggest suitable profiles and establish matches, let you message the people you match with, send notifications, manage premium subscriptions, keep the application secure and prevent misuse (fake profiles, harassment, fraud, inappropriate content), provide you with support, improve the application, and fulfil our legal obligations.
       `,
 
-      sectionTitle5: 'Legal Bases',
-      section5Content: `
+      sectionTitle7: 'Legal Bases',
+      section7Content: `
         Your data is processed on the grounds that it is directly related to the conclusion and performance of a contract (KVKK art. 5/2-c), the fulfilment of our legal obligation (art. 5/2-ç), the establishment and protection of a right (art. 5/2-e), and our legitimate interest provided that it does not harm your fundamental rights and freedoms (art. 5/2-f).
 
-        Special categories of personal data (art. 6/2-a) and non-essential notification and analytics processing rely on your explicit consent. Transfers abroad are made under appropriate safeguards (standard contract) within the scope of Article 9 of KVKK.
+        Special categories of personal data (art. 6/2-a) and non-essential notification and analytics processing rely on your explicit consent. Transfers abroad are made under appropriate safeguards (standard contract) within the scope of Article 9 of KVKK. The only exception is photo verification: the transfer there relies not on a standard contract but on the explicit consent described in section 5, and does not happen at all without it.
       `,
 
-      sectionTitle6: 'Transfers and Transfers Abroad',
-      section6Content: `
+      sectionTitle8: 'Transfers and Transfers Abroad',
+      section8Content: `
         Your data is transferred to the following service providers, only to the extent required to provide the service:
 
         - **Cloud infrastructure and storage:** your photos and the data files you export are held in cloud storage.
-        - **Photo moderation and face comparison:** the photos you upload are sent to an image processing service to detect inappropriate content and, if you request it, for face comparison.
+        - **Photo moderation:** the photos you upload are sent to an image processing service to detect inappropriate content.
+        - **Face comparison (photo verification):** only if you choose to use this feature and have given the explicit consents in sections 4 and 5, the frames captured at that moment and your main photo are sent to an image processing service for comparison.
         - **Notification infrastructure:** notifications are delivered to your device through Google Firebase Cloud Messaging. For message notifications, the title and the first part of the message pass through this infrastructure; the content is not stored there.
         - **Subscription management:** your premium subscription status is shared with a subscription verification service.
         - **Product analytics and error records:** the services we use to improve the application and fix crashes are hosted in the European Union region.
@@ -438,8 +490,8 @@ const en = {
         In addition, transfers may be made to the extent required by legislation upon the request of legally authorised public institutions and organisations.
       `,
 
-      sectionTitle7: 'Moderation and Automated Systems',
-      section7Content: `
+      sectionTitle9: 'Moderation and Automated Systems',
+      section9Content: `
         The profiles shown to you are ordered by an automated score. This ordering is only a suggestion; it does not produce a decision that has legal consequences for you or significantly affects you. You can see an explanation of how match suggestions are formed inside the application.
 
         The photos you upload are reviewed automatically for compliance with the community rules. If one of your photos is rejected automatically, you may appeal and ask for the decision to be reviewed by a person.
@@ -447,43 +499,44 @@ const en = {
         When a report is made about a user, our moderation team may view the reported content and, for message reports, a portion of the relevant conversation in order to assess the report. This access is limited to reviewing the report, is logged, and is not used for any other purpose. Apart from this, your messages are not read by anyone.
       `,
 
-      sectionTitle8: 'Retention Periods',
-      section8Content: `
+      sectionTitle10: 'Retention Periods',
+      section10Content: `
         - **Account and profile data:** for as long as your account is open.
         - **Messages:** 2 years. Messages older than this are deleted automatically.
         - **Read notifications:** 30 days.
         - **Device notification identifiers:** deleted if unused for 90 days.
         - **Photos rejected in moderation:** 30 days so that you can appeal, then deleted.
+        - **Photo verification records:** the outcome of the attempt, its date and, if it failed, the technical reason, for 90 days. The frames captured during verification are never stored (see section 4).
         - **If you delete your account:** your account is suspended for 30 days, and you can cancel the deletion request by logging in during that period. Once the period ends, your data is deleted irreversibly. Only an irreversible hash of your e-mail address, the deletion date and whether the account was banned at the moment of deletion are kept. This record exists to prevent a banned account from being deleted and re-created; it does not give your e-mail address back and is not used for any other purpose.
         - **Records subject to a statutory retention obligation:** for the periods required by the relevant legislation (10 years for commercial books and documents).
       `,
 
-      sectionTitle9: 'Your Rights',
-      section9Content: `
+      sectionTitle11: 'Your Rights',
+      section11Content: `
         Under Article 11 of KVKK you have the right to learn whether your personal data is processed, to request information if it has been processed, to learn the purpose of processing and whether it is used accordingly, to know the third parties to whom your data is transferred at home or abroad, to request its correction if it is incomplete or incorrectly processed, to request its erasure or destruction, to request that correction and erasure operations be notified to the third parties to whom the data was transferred, to object to a result against you arising from analysis solely by automated systems, and to claim compensation if you suffer damage due to unlawful processing.
 
         You can exercise some of these rights directly inside the application: you can correct your profile information from settings, request a copy of your data, and permanently delete your account.
       `,
 
-      sectionTitle10: 'Applications',
-      section10Content: `
+      sectionTitle12: 'Applications',
+      section12Content: `
         You can send requests concerning your rights to info@4ourstack.com from the e-mail address registered on your account, in accordance with the procedures set out in the Communiqué on the Procedures and Principles of Application to the Data Controller. Your application is concluded within 30 days at the latest.
 
         If your application is rejected, if you find our response insufficient, or if no response is given within the period, you may file a complaint with the Personal Data Protection Board within 30 days of learning the response and in any case within 60 days of the application date (KVKK art. 14).
       `,
 
-      sectionTitle11: 'Data Security',
-      section11Content: `
+      sectionTitle13: 'Data Security',
+      section13Content: `
         Your password is stored irreversibly and cannot be seen by us. All communication between the application and our servers goes over an encrypted connection. Your location data is shown to other users in blurred form. Access to data is limited to the people who need it for their duties, and moderation actions are logged.
       `,
 
-      sectionTitle12: 'Age Limit',
-      section12Content: `
+      sectionTitle14: 'Age Limit',
+      section14Content: `
         lit is only for university students who are at least 18 years old. Use of the application by people under 18 is prohibited; if detected, the account is closed and the related data is deleted.
       `,
 
-      sectionTitle13: 'Changes to This Text',
-      section13Content: `
+      sectionTitle15: 'Changes to This Text',
+      section15Content: `
         This text may be updated in line with changes to the application and to legislation. When the version of the text changes, your consent is requested again inside the application; which version you accepted and when is recorded. The current version is always published on this page.
       `,
     },
@@ -542,6 +595,10 @@ const en = {
       monthPlaceholder: 'mm',
       yearLabel: 'Year',
       yearPlaceholder: 'yyyy',
+      // Validation copy. dobSchema resolves these AT VALIDATION TIME — resolving
+      // at module scope would freeze whatever language the app booted in.
+      invalidDate: 'Enter a valid date of birth.',
+      tooYoung: 'You must be over 18 to use the app.',
     },
     step7: {
       title: 'Your Gender',
@@ -677,6 +734,15 @@ const en = {
       sessionExpiredTitle: 'Verification expired',
       sessionExpired:
         'Your email verification has expired. Verify the same email again and everything you entered will be kept.',
+      // Ön kayıt hediyesi kayıt İSTEĞİNİN içinde uygulanıyor ve kullanıcıya
+      // bunu söyleyen başka bir yüzey yok (cevapta premium alanı yok, realtime
+      // event bastırılmış). Bu üç satır olmazsa hediye sessiz kalıyor.
+      // Bitiş tarihi BİLEREK geçilmiyor — bu ekranın işi hediyeyi duyurmak,
+      // süreyi Profil > Üyelik kartı anlatıyor.
+      premiumGiftTitle: 'Your premium gift is ready 🎉',
+      premiumGiftMessage:
+        'Because you pre-registered, your premium gift is now active — every premium feature is yours.',
+      premiumGiftCta: 'Nice',
     },
   },
   chat: {
@@ -1594,39 +1660,34 @@ const en = {
           "Verification shows your photos are really you; it is not an identity check. Apart from the badge, it gives you no priority in discovery.",
         startButton: 'Start verification',
         goToPhotos: 'Go to my photos',
+        goToPrivacySettings: 'Go to privacy settings',
       },
+      // Single source for the verification permission texts. The two rows in
+      // Settings > Privacy render these (see SettingsScreen privacyRows); that
+      // screen is where consent is given and withdrawn. The long form lives in
+      // sections 4 and 5 of the disclosure text.
       consent: {
-        title: 'Verification permissions',
-        description:
-          'Before you continue we need two separate consents. Please read and tick each one on its own.',
-        acceptButton: 'I consent — continue',
-        saveError: "We couldn't save your consents. Check your connection and try again.",
-        withdrawNote:
-          'You can withdraw your consent at any time. If you do, the verification badge is removed; your account and matches are not affected.',
         BiometricVerification: {
           title: 'Processing your face data',
-          checkbox:
-            'I explicitly consent to my face data being processed for verification.',
-          fallback:
-            'The face data in the frames captured during verification is processed to compare them with your main photo. Under Turkish data protection law this is special-category personal data, and processing it requires your explicit consent.',
+          note: 'The face data in the frames captured during verification is processed to compare them with your main photo. Under Turkish data protection law this is special-category personal data, and processing it requires your explicit consent.',
         },
         DataTransferAbroad: {
           title: 'Transfer abroad',
-          checkbox:
-            'I explicitly consent to my face data being processed on servers abroad.',
-          fallback:
-            'The comparison runs on a server located abroad (in the United States), so your face data has to be transferred out of the country. That transfer requires your explicit consent.',
+          note: 'The comparison runs on a server located abroad (in the United States), so your face data has to be transferred out of the country. That transfer requires your explicit consent.',
         },
       },
       camera: {
+        // Screen-reader label for the dot indicator — never rendered as text
+        // (see the dot row in SelfieCameraStep).
         stepCounter: '{{index}} / {{total}}',
         hint: 'Fit your face in the frame and be alone in the shot.',
-        // How far to take the movement. The two warn in OPPOSITE directions:
-        // poses tend to overshoot (`challenge_too_much`), expressions tend to
-        // stay too subtle for the camera (`challenge_too_weak`).
-        hintPose: "Make it clear, but don't overdo it.",
+        // Second line, chosen by movement kind (see selfieChallengeHintKey).
+        // 🔴 "Don't overdo it" applies to POSE only: the backend's expression
+        // check never returns `challenge_too_much`, so suggesting restraint there
+        // would push users into `challenge_too_weak`.
+        hintPose: "Make it clear but don't overdo it — a gentle movement is enough.",
         hintExpression: 'Make it clear enough for the camera to see.',
-        ready: "I'm ready",
+        submit: 'Send',
         captureError: "We couldn't take the frame. Try again.",
         permissionMessage:
           'We need camera access so you can verify your photos.',
@@ -1643,9 +1704,10 @@ const en = {
       // normal part of the flow (the request returns 200 + isSuccess:true).
       reason: {
         challenge_not_met: "We couldn't detect the movement. Let's try once more.",
-        // ⚠️ None of these leak the DIRECTION of the movement or the NUMBER
-        // behind the threshold ("you turned left, not right", "20 more degrees"
-        // are forbidden) — that lets an attacker calibrate by trial and error.
+        // 🔴 These three mirror the backend resx (SelfieFailure_*) word for word.
+        // Design limit: they never leak the DIRECTION of the movement or the
+        // NUMERIC threshold ("you turned left, not right", "20 more degrees" are
+        // forbidden) — that would let an attacker calibrate by trial and error.
         // "A bit more pronounced" is safe: the user already knows the prompt.
         challenge_too_weak:
           'Almost there — could you make the movement a bit more pronounced?',
@@ -1666,6 +1728,8 @@ const en = {
       },
       reasonTitle: {
         challenge_not_met: "We couldn't detect the movement",
+        // FE-only (the backend has no titles) — must keep the same tone as the
+        // body, otherwise the pair contradicts itself.
         challenge_too_weak: 'Almost there',
         challenge_wrong_move: "We didn't see the movement",
         challenge_too_much: 'That was a bit much',
@@ -1679,7 +1743,13 @@ const en = {
         fallback: 'Verification not completed',
       },
       codes: {
-        'UT-6501': 'You need to accept the verification permissions to continue.',
+        // Consent is collected during sign-up together with the disclosure
+        // text; anyone landing here either left those boxes unticked or
+        // withdrew the consent later. The text names the ONE place the
+        // decision can be changed.
+        'UT-6501Title': 'Photo verification consent required',
+        'UT-6501':
+          'We do not see your explicit consent for photo verification. You can give it — or withdraw it — under Settings > Privacy.',
         'UT-6502':
           'You need an approved main photo before verifying. Add your main photo first.',
         'UT-6502Title': 'You need a main photo first',
@@ -1821,6 +1891,7 @@ const en = {
         showOnApp: 'Show me on the app',
         showAge: 'Show my age',
         showLocation: 'Show my location',
+        showOnlineStatus: "Show when I'm online",
         showPremiumBadge: 'Show my premium badge',
       },
     },

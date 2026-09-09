@@ -420,8 +420,8 @@ export function useSaveFilters() {
       interestedIn?: number[];
       preferredCity?: string | null;
       preferredUniversityDomains?: string[];
-      visibleOnlyToUniversityDomains?: string[];
-      hiddenFromUniversityDomains?: string[];
+      // NOT: `visibleOnly*` / `hiddenFrom*` bilerek YOK. O ayar profil ekranına
+      // taşındı; bu uca gönderilmiyor (yukarıdaki payload notuna bak).
       preferredHobbies?: string[];
       relationshipIntents?: string[];
       // Dealbreaker'lı premium filtreler (boy/sınıf/burç/sigara/alkol/dil/
@@ -479,16 +479,12 @@ export function useSaveFilters() {
           0,
           MAX_UNIVERSITY_DOMAINS,
         ),
-        // Görünürlük listeleri ("beni kim görsün/görmesin") — premium-only,
-        // ikisi de domain string listesi. Backend bu alanları OVERWRITE
-        // ediyor: gönderilmeyen ya da boş dizi gelen liste temizlenir, o
-        // yüzden FilterModal her kaydetmede güncel state'in tamamını yolluyor
-        // ve burada alanı koşullu bırakmıyoruz. Boş dizi = kısıtlama yok,
-        // free kullanıcıda da 403 tetiklemez.
-        visibleOnlyToUniversityDomains:
-          localFilters.visibleOnlyToUniversityDomains ?? [],
-        hiddenFromUniversityDomains:
-          localFilters.hiddenFromUniversityDomains ?? [],
+        // 🔴 GÖRÜNÜRLÜK LİSTELERİ ARTIK BU UÇTAN GİTMİYOR. "Beni kim görsün /
+        // görmesin" profil ekranına taşındı ve `UpdateProfile` altında
+        // yazılıyor (bkz. profile/components/UniversityVisibilitySheet).
+        // Filtre ucu alanları geriye uyumluluk için hâlâ KABUL ediyor ama
+        // semantiği `null = değiştirme`ye çevrildi — göndermediğimiz için
+        // kullanıcının profilden kurduğu kural burada silinmiyor.
         // "Karşımda görmek istediğim hobiler" (PreferredHobbies) — enumName
         // string dizisi, premium-only, HARD FİLTRE DEĞİL: backend skor boost'u
         // olarak kullanıyor. Görünürlük listeleri gibi overwrite semantiği →

@@ -46,7 +46,7 @@ import { resolveSelfieVerified } from "../selfie/selfieVerification";
  * satır üretir; anlamlı olan yalnız DEĞİŞİM.
  */
 let lastGate: string | null = null;
-function logGate(gate: string) {
+function logGate(gate: string, detail: Record<string, unknown>) {
   if (lastGate === gate) return;
   lastGate = gate;
   devLog(
@@ -56,6 +56,7 @@ function logGate(gate: string) {
         : gate === "UT-6505"
           ? " (özellik kapalı penceresi açık — clearSelfieUnavailable ile sıfırlanır)"
           : ""),
+    detail,
   );
 }
 
@@ -91,8 +92,14 @@ export default function SelfieVerificationRow({
     // Satır iki kapıdan biri yüzünden hiç çizilmeyebiliyor ve ikisi de SESSİZ:
     // ekranda "eksik bir şey" işareti yok. Hangisinin kapattığını cihazda
     // görebilmek için tek satır — profil yüklendikten sonra durum değişmediği
-    // sürece tekrarlamıyor.
-    logGate(profile == null ? "profil-yok" : verified === null ? "alan-yok" : "UT-6505");
+    // sürece tekrarlamıyor. Alan okuma `user` altını da kapsadığı için ikisi de
+    // dökülüyor: "kökte yok" ile "hiç yok" ayrımı ancak böyle görünüyor.
+    logGate(profile == null ? "profil-yok" : verified === null ? "alan-yok" : "UT-6505", {
+      kokte: profile?.isSelfieVerified,
+      userAltinda: profile?.user?.isSelfieVerified,
+      profilYuklendiMi: !!profile,
+      available,
+    });
     return null;
   }
 

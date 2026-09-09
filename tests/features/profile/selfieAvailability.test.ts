@@ -44,6 +44,25 @@ import {
 import { SELFIE_AVAILABILITY_EVENT } from '@/features/profile/selfie/selfieEvents';
 import uiBus from '@/shared/services/uiBus';
 
+/**
+ * Gizleme penceresi ÜRETİM davranışı — jest'te `__DEV__` true olduğu için
+ * varsayılan olarak dev dalına düşülür. Pencereyi sınayan testler bunu açıkça
+ * kapatıyor, ayrı bir test de dev dalının kendisini doğruluyor.
+ */
+const asProduction = <T,>(fn: () => T): T => {
+  // `global` yerine `globalThis`: test tsconfig'inde @types/node yok, `global`
+  // tipli değil ve `npm run type-check` patlıyordu (jest çalışma anında ikisi de
+  // aynı nesne).
+  const g = globalThis as any;
+  const original = g.__DEV__;
+  g.__DEV__ = false;
+  try {
+    return fn();
+  } finally {
+    g.__DEV__ = original;
+  }
+};
+
 beforeEach(() => {
   mockStore.clear();
   jest.restoreAllMocks();
@@ -56,26 +75,50 @@ describe('özellik erişilebilirliği', () => {
 
   it('UT-6505 sonrası kapanır ve satırı tazelemek için olay yayınlanır', () => {
     const emit = jest.spyOn(uiBus, 'emit');
-    markSelfieFeatureUnavailable();
+    const available = asProduction(() => {
+      markSelfieFeatureUnavailable();
+      return isSelfieFeatureAvailable();
+    });
 
-    expect(isSelfieFeatureAvailable()).toBe(false);
+    expect(available).toBe(false);
     expect(emit).toHaveBeenCalledWith(SELFIE_AVAILABILITY_EVENT);
   });
 
   it('24 saat dolunca KENDİLİĞİNDEN geri gelir — kalıcı kilit yok', () => {
-    markSelfieFeatureUnavailable();
-    expect(isSelfieFeatureAvailable()).toBe(false);
+    expect(
+      asProduction(() => {
+        markSelfieFeatureUnavailable();
+        return isSelfieFeatureAvailable();
+      }),
+    ).toBe(false);
 
     const dayLater = Date.now() + 24 * 60 * 60 * 1000 + 1;
     jest.spyOn(Date, 'now').mockReturnValue(dayLater);
 
-    expect(isSelfieFeatureAvailable()).toBe(true);
+    expect(asProduction(() => isSelfieFeatureAvailable())).toBe(true);
   });
 
   it('clearSelfieUnavailable pencereyi hemen düşürür', () => {
-    markSelfieFeatureUnavailable();
+    asProduction(() => markSelfieFeatureUnavailable());
     clearSelfieUnavailable();
+    expect(asProduction(() => isSelfieFeatureAvailable())).toBe(true);
+  });
+
+  it('🔴 DEV build: pencere YAZILMAZ, satır yerinde kalır', () => {
+    // Backend flag'i açtığı an test cihazının satırı 24 saat daha gizli kalırdı
+    // ve "özellik bozuk" ile "flag kapalı" ayırt edilemez hâle gelirdi.
+    const emit = jest.spyOn(uiBus, 'emit');
+    markSelfieFeatureUnavailable(); // __DEV__ === true
+
     expect(isSelfieFeatureAvailable()).toBe(true);
+
+    // Cihazda ESKİDEN yazılmış bir pencere de dev'de yok sayılmalı: MMKV
+    // uygulama container'ında kalıyor, Xcode'dan yeniden kurmak silmiyor.
+    asProduction(() => markSelfieFeatureUnavailable());
+    expect(isSelfieFeatureAvailable()).toBe(true);
+    // Dinleyiciler yine haberdar ediliyor: davranış "hiçbir şey yapma" değil,
+    // "gizleme" — satır tazeleniyor, sadece gizlenmiyor.
+    expect(emit).toHaveBeenCalledWith(SELFIE_AVAILABILITY_EVENT);
   });
 });
 

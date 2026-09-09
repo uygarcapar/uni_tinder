@@ -28,6 +28,20 @@ const UNAVAILABLE_WINDOW_MS = 24 * 60 * 60 * 1000;
 
 /** `UT-6505` alındı: girişi 24 saat gizle ve dinleyenlere haber ver. */
 export function markSelfieFeatureUnavailable(): void {
+  // 🔴 DEV'DE PENCERE YAZILMAZ. Backend flag'i açtığı an test cihazının satırı
+  // 24 saat daha gizli kalırdı ve bu, "özellik bozuk" ile "flag kapalı"yı ayırt
+  // edilemez hâle getiriyordu — akış sessizce kapandığı için geliştirici butonun
+  // çalışmadığını sanıyor. Üretimde davranış aynen korunuyor: kullanıcı
+  // çalışmayan bir giriş noktası görmemeli.
+  if (__DEV__) {
+    devLog(
+      '🪪 [selfie] UT-6505 — SelfieVerification:Enabled kapalı. ' +
+        'Dev build: giriş gizlenmedi, satır yerinde kalıyor.',
+    );
+    uiBus.emit(SELFIE_AVAILABILITY_EVENT);
+    return;
+  }
+
   appPrefs.set(UNAVAILABLE_UNTIL_KEY, Date.now() + UNAVAILABLE_WINDOW_MS);
   devLog('🪪 [selfie] UT-6505 — özellik kapalı, giriş 24 sa gizlendi');
   uiBus.emit(SELFIE_AVAILABILITY_EVENT);
@@ -40,12 +54,13 @@ export function markSelfieFeatureUnavailable(): void {
  * yine kullanıcının dokunuşuyla yapılır; hâlâ kapalıysa pencere tazelenir.
  */
 export function isSelfieFeatureAvailable(): boolean {
-  // 🔴 DEV'DE PENCERE UYGULANMIYOR. Backend bayrağı kapalıyken `/start` her
-  // seferinde `UT-6505` dönüyor, yani geliştiricinin girişe TEK dokunuşu satırı
-  // 24 saat yok ediyor ve özellik üzerinde çalışmayı imkânsız kılıyor —
-  // `clearSelfieUnavailable`'ı çağıran bir UI da yok, uygulamayı silmek
-  // gerekiyordu. Yazma ve log aşağıda aynen duruyor (markSelfieFeatureUnavailable
-  // değişmedi), yalnız OKUMA dev'de pencereyi yok sayıyor; release davranışı
+  // 🔴 DEV'DE PENCERE OKUNMAZ DA. `markSelfieFeatureUnavailable` dev'de artık
+  // yazmıyor ama DAHA ÖNCE yazılmış bir kayıt cihazda duruyor olabilir: MMKV
+  // uygulama container'ında ve Xcode'dan yeniden kurulum onu silmiyor. Yalnız
+  // yazma tarafını kapatmak asimetrikti — flag açıldıktan sonra bile eski
+  // pencere dolana kadar satır gizli kalıyordu. Okuma da atlanınca geliştiricinin
+  // girişe TEK dokunuşu satırı 24 saat yok etmiyor (`clearSelfieUnavailable`'ı
+  // çağıran bir UI yok, uygulamayı silmek gerekiyordu). Release davranışı
   // rehber §7.2'deki gibi.
   if (__DEV__) return true;
 

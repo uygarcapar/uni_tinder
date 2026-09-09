@@ -1875,13 +1875,11 @@ export default function ProfileScreen() {
           <TouchableOpacity
             activeOpacity={0.85}
             onPress={() => {
-              console.log("🎬 Edit kapatılıyor...");
               // 1. Önce düzenleme ekranını kapatıyoruz
               editBottomSheetRef.current?.dismiss();
 
               // 2. Kapanma animasyonunun bitmesini bekleyip orijinal Modalı tetikliyoruz
               setTimeout(() => {
-                console.log("🎬 Orijinal Modal ile Preview açılıyor!");
                 setPreviewVisible(true);
               }, 400);
             }}

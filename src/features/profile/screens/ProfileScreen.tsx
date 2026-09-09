@@ -59,6 +59,9 @@ import {
 import { staticGet } from "@/shared/services/staticCache";
 import PreviewModal from "@/features/profile/components/PreviewModal";
 import ShopCardsRow from "@/features/profile/components/ShopCardsRow";
+import UniversityVisibilitySheet, {
+  VisibilityHeroButton,
+} from "@/features/profile/components/UniversityVisibilitySheet";
 import ScreenHeader from "@/shared/components/ScreenHeader";
 import EmptyState from "@/shared/components/EmptyState";
 import { getOfferings } from "@/features/profile/subscriptionService";
@@ -763,6 +766,7 @@ export default function ProfileScreen() {
 
   // ── Profil verisi ──────────────────────────────────────────────────────────
   const [myProfile, setMyProfile] = useState(null);
+  const [visibilitySheetVisible, setVisibilitySheetVisible] = useState(false);
   // TEK KAYNAK: abonelik slice'ı (`/status` + hub + `/sync`). Kısa bir süre
   // burada `/stats` ve profil bayrağı da OR'lanıyordu, çünkü slice sahada
   // yanlış cevap veriyordu — sebebi bu ekran değil `selectIsPremium`in tarih
@@ -2141,6 +2145,21 @@ export default function ProfileScreen() {
                       </AnimatedPressable>
                     )}
                   </View>
+
+                  {/* Görünürlük — hero'nun sağ ucunda, isim + "Düzenle"
+                      bloğuyla Y ekseninde ortalı. Satırın `alignItems:
+                      "center"`i bu hizayı zaten veriyor, ayrı bir hizalama
+                      gerekmiyor. Neden burada ve neden durum bildiriyor:
+                      bkz. VisibilityHeroButton. */}
+                  <VisibilityHeroButton
+                    visibleOnlyCount={
+                      (myProfile?.visibleOnlyToUniversityDomains ?? []).length
+                    }
+                    hiddenFromCount={
+                      (myProfile?.hiddenFromUniversityDomains ?? []).length
+                    }
+                    onPress={() => setVisibilitySheetVisible(true)}
+                  />
                 </View>
 
                 {/* ── Fotoğraf Doğrulama ── Akışın TEK giriş noktası.
@@ -2171,6 +2190,17 @@ export default function ProfileScreen() {
                   showPlusCard={showMembershipCard}
                   onPlusPress={goToPlusPage}
                 />
+
+                {/* ── Fotoğraf Doğrulama ── Akışın TEK giriş noktası.
+                    Görünürlüğünü kendisi karar veriyor: `isSelfieVerified` alanı
+                    gelmiyorsa ya da yakın zamanda UT-6505 alındıysa null döner.
+
+                    NEDEN UPSELL'İN ÜSTÜNDE: abone olmayan kullanıcıda hemen
+                    altta ekran boyu bir plus kartı var; satır onun altında
+                    kalınca doğrulama pratikte kaydırılmadan görülmeyen bir yere
+                    düşüyordu. Rozet sayfanın ürün şeridiyle (SuperLike / Not)
+                    aynı öbekte duruyor, reklamın arkasında değil. */}
+                <SelfieVerificationRow profile={myProfile} userId={user?.id} />
 
                 {/* --- PREMIUM UPSELL BANNER & COMPARISON --- */}
                 {/* Şerideki plus kartıyla TEK bayrağın iki yüzü: abone olan
@@ -2536,6 +2566,20 @@ export default function ProfileScreen() {
               </TouchableOpacity>
             )
           }
+        />
+
+        {/* ══ GÖRÜNÜRLÜK SHEET'İ ══ */}
+        {/* "Beni kimler görsün / görmesin" — filtre ekranından TAŞINDI, çünkü
+            bunlar keşif filtresi değil kendi görünürlük ayarların (bkz.
+            UniversityVisibilitySheet dosya başı). Kaydettikten sonra profil
+            yeniden çekiliyor: hero'daki butonun rozeti sunucudaki hâli
+            göstermeli, yerel taslağı değil. */}
+        <UniversityVisibilitySheet
+          visible={visibilitySheetVisible}
+          onClose={() => setVisibilitySheetVisible(false)}
+          profile={myProfile}
+          isPremium={isPremium}
+          onSaved={() => loadProfile({ silent: true })}
         />
 
         {/* ══ PROFİL DÜZENLEME MODALI ══ */}

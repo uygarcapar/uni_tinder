@@ -112,10 +112,12 @@ export default function RegisterStep17Screen({ navigation }: Props) {
 
     const cleaned = sanitizePrompts(current);
     if (cleaned.length < MIN_PROFILE_PROMPTS) {
+      // Başlık YOK ve hata tonu YOK: bu bir hata değil, eksik bir adım.
+      // "Hata" başlığı kullanıcıya bir şeyi yanlış yaptığını söylüyordu; oysa
+      // yapması gereken şey henüz yapılmamış. Ekrandaki açıklama zaten "en az
+      // bir soruyu cevapla" diyor, toast onu tekrarlıyor.
       showInfoToast({
-        title: t('common.error'),
         message: t('profile.prompts.requiredForRegister'),
-        variant: "error",
       });
       return;
     }

@@ -211,6 +211,9 @@ function App() {
                 {/* Selfie doğrulama — cropper ile AYNI gerekçeyle
                     BottomSheetModalProvider'ın dışında: kamera, profil
                     düzenleme modalının (o da bir sheet) altında kalmamalı.
+                    Akışın kamera dışındaki adımları bottom sheet olarak
+                    açılıyor; provider dışında kaldığı için kendi
+                    BottomSheetModalProvider'ını taşıyor (bkz. bileşen).
                     `key={mode}` remount'unun da dışında — tema değişimi
                     doğrulamayı yarıda kesmemeli.
                     uiBus.emit('openSelfieVerification') ile her ekrandan açılır. */}

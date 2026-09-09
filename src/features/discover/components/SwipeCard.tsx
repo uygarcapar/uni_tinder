@@ -256,6 +256,9 @@ import { lookupCityCoordinate } from "@/shared/constants/cityCoordinates";
 import HobbyIcon from "@/shared/components/HobbyIcon";
 import SFIcon, { type SFSymbol } from "@/shared/components/SFIcon";
 import PremiumBadge from "@/shared/components/PremiumBadge";
+import SelfieVerifiedBadge, {
+  selfieBadgeSize,
+} from "@/features/profile/components/SelfieVerifiedBadge";
 import SuperLikeGlyph from "@/shared/components/SuperLikeGlyph";
 import SuperLikeGlassButton, {
   SUPER_LIKE_GLASS_INSET,
@@ -3797,6 +3800,13 @@ export default function SwipeCard({
                         // modda aynı (bkz. PremiumBadge).
                         <PremiumBadge fontSize={CARD_NAME_FONT} />
                       )}
+                      {/* Foto doğrulama rozeti — premium rozetinden AYRI bir
+                          işaret, `isVerified`e de katılmıyor. Alan gelmezse
+                          (backend'in bu sürümü yok) hiçbir şey çizilmiyor. */}
+                      <SelfieVerifiedBadge
+                        verified={profile.isSelfieVerified}
+                        size={selfieBadgeSize(CARD_NAME_FONT)}
+                      />
                     </View>
                   </Animated.View>
 
@@ -4598,9 +4608,24 @@ export default function SwipeCard({
                     // bir boşluk bandı kalmasın. Üst pay ayrı ve büyük (48) —
                     // orası başlığın nefes alanı.
                     // (Eski className: `mb-4 p-4 pt-12`.)
-                    style={{ marginBottom: 16, padding: 16, paddingTop: 48 }}
+                    // `alignSelf: stretch` BİLEREK: kutunun genişliği
+                    // panelden gelsin, içeriğinden DEĞİL. İçerikten gelirse
+                    // uzun cevap kutuyu panelin dışına taşırıyor ve satır
+                    // ekranın kenarında kesiliyor.
+                    style={{
+                      marginBottom: 16,
+                      padding: 16,
+                      paddingTop: 48,
+                      alignSelf: "stretch",
+                    }}
                   >
-                    <View className="flex-row items-center mb-2 px-4">
+                    {/* Sorunun kendisi. Satır kabı `flex-row` DEĞİL: tek
+                        çocuklu bir satırda Text'in genişliği içeriğinden
+                        çıkıyordu (Yoga'da satır çocuğu varsayılan olarak
+                        büzülmez) ve uzun sorular sarmak yerine kutunun
+                        dışına taşıp kesiliyordu. Blok kapta genişlik
+                        kaptan geliyor, metin kendiliğinden sarıyor. */}
+                    <View className="mb-2 px-4">
                       <Text className="text-[18px] font-semibold" style={{ color: theme.text }}>
                         {prompt.promptDisplay}
                       </Text>
@@ -4637,22 +4662,31 @@ export default function SwipeCard({
                               2,
                           }}
                         />
-                        {/* Metrikler PromptsEditor'deki cevap alanıyla BİREBİR
+                        {/* Cevabın KABI ayrı bir View — Text doğrudan satırın
+                            çocuğu DEĞİL. PromptsEditor'deki cevap alanının
+                            yapısının aynısı ve sebebi ölçü: sarma genişliği
+                            kabın kesin ölçüsünden geliyor, metnin kendi
+                            içeriğinden değil. Text'e verilen `flex` ikonun
+                            yanında bazı ölçüm turlarında tutmuyor ve satır
+                            kutunun dışına taşıp kesiliyordu.
+                            `minWidth: 0`: kap içeriğinin altına inebilsin —
+                            yoksa uzun bir kelime kabı şişirir.
+
+                            Metrikler PromptsEditor'deki cevap alanıyla BİREBİR
                             aynı (25 / 600 / 32): kullanıcı cevabını düzenlerken
                             gördüğü boyutla kartta gördüğü boyut ayrışmasın. */}
-                        <Text
-                          style={{
-                            color: theme.text,
-                            fontSize: 25,
-                            fontWeight: "600",
-                            lineHeight: PROMPT_ANSWER_LINE_HEIGHT,
-                            flex: 1,
-                            flexShrink: 1,
-                            flexWrap: "wrap",
-                          }}
-                        >
-                          {prompt.answer}
-                        </Text>
+                        <View style={{ flex: 1, minWidth: 0 }}>
+                          <Text
+                            style={{
+                              color: theme.text,
+                              fontSize: 25,
+                              fontWeight: "600",
+                              lineHeight: PROMPT_ANSWER_LINE_HEIGHT,
+                            }}
+                          >
+                            {prompt.answer}
+                          </Text>
+                        </View>
                       </View>
                     </View>
                     {/* Not butonu prompt kutusunun İÇİNDE, sağ altta —
@@ -4751,18 +4785,19 @@ export default function SwipeCard({
                           color={theme.text}
                           style={{ marginTop: 2 }}
                         />
-                        <Text
-                          style={{
-                            color: theme.text,
-                            fontSize: 15,
-                            lineHeight: 22,
-                            flex: 1,
-                            flexShrink: 1,
-                            flexWrap: "wrap",
-                          }}
-                        >
-                          {profile.bio}
-                        </Text>
+                        {/* Kap ayrı — gerekçesi prompt cevabındakiyle aynı:
+                            sarma genişliği kabın kesin ölçüsünden gelsin. */}
+                        <View style={{ flex: 1, minWidth: 0 }}>
+                          <Text
+                            style={{
+                              color: theme.text,
+                              fontSize: 15,
+                              lineHeight: 22,
+                            }}
+                          >
+                            {profile.bio}
+                          </Text>
+                        </View>
                       </View>
                     </View>
                   </CardSectionBox>

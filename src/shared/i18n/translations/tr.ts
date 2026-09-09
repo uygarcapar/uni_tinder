@@ -79,6 +79,16 @@ const tr = {
       subtitle: 'Verilerinin kopyasını indir, engellediğin kişileri yönet.',
     },
     downloadData: 'Verilerimi İndir',
+    privacyPolicy: 'Gizlilik & KVKK Metni',
+    // Fotoğraf doğrulamanın iki AYRI açık rızası. Başlıklar ve açıklamalar
+    // `profile.selfie.consent.*`ten geliyor — metin tek kaynakta dursun.
+    selfieConsent: {
+      heading: 'Doğrulama İzinleri',
+      note: 'Fotoğraf doğrulaması bu iki izne dayanır. Vermek zorunda değilsin ve istediğin zaman kapatabilirsin: kapattığında doğrulama rozetin kalkar ve yeni doğrulama yapamazsın; hesabın, profilin ve eşleşmelerin etkilenmez.',
+      // İkisi tek başına yetmiyor: /start ikisini birden arıyor.
+      pairHint: 'Doğrulamayı kullanabilmek için iki iznin de açık olması gerekir.',
+      error: 'Rıza tercihin kaydedilemedi, tekrar dene.',
+    },
     blockedUsers: 'Engellenenler',
     changePassword: 'Şifre Değiştir',
     changeEmail: 'E-posta Değiştir',
@@ -352,7 +362,16 @@ const tr = {
         },
       },
     },
-    // Aydınlatma metni — SÜRÜM 2.0. Bölüm sayısı değişirse LegalSheet'teki
+    // Aydınlatma metni — SÜRÜM 1.0 (metnin tek kaynağı lit-landing'deki
+    // src/data/privacy-policy.ts; oradan backend'in wwwroot/legal'ına ve buraya
+    // kopyalanıyor, üçü ayrışmamalı). 4. ve 5. bölüm fotoğraf doğrulamanın iki
+    // Aydınlatma metni — SÜRÜM 1.0 (metnin tek kaynağı lit-landing'deki
+    // src/data/privacy-policy.ts; oradan backend'in wwwroot/legal'ına ve buraya
+    // kopyalanıyor, üçü ayrışmamalı). 4. ve 5. bölüm fotoğraf doğrulamanın iki
+    // AÇIK RIZASI: metin burada okunuyor ama RIZALAR BURADA ALINMIYOR —
+    // kullanıcı onları Ayarlar > Gizlilik > Doğrulama İzinleri'nde iki ayrı
+    // anahtarla veriyor (bkz. `settings.selfieConsent`).
+    // Bölüm sayısı değişirse LegalSheet'teki
     // `DOCS.privacy.sectionCount` ve KVKKConsentScreen'deki `PRIVACY_SECTIONS`
     // birlikte güncellenmeli; ikisi de bu blokla aynı sayıyı bilmek zorunda.
     // İçerik PolicyMarkdown ile basılıyor → `**kalın**` ve `- madde` çalışır.
@@ -365,6 +384,7 @@ const tr = {
       titleRequired: 'Onay Gerekli',
       messageRequired: 'Devam etmek için metni onaylamalısın.',
       errorSave: 'Onay kaydedilemedi, tekrar dene.',
+
 
       sectionTitle1: 'Veri Sorumlusu',
       section1Content: `
@@ -404,29 +424,60 @@ const tr = {
 
         **Cinsel yönelime ilişkin veriler.** Eşleşme tercihleriniz, cinsel yaşamınıza ilişkin bir bilgi ortaya koyabilir.
 
-        **Biyometrik veriler.** Fotoğraf doğrulamasını kullanmayı seçerseniz, çektiğiniz fotoğraftaki yüz ile profil fotoğrafınızdaki yüzün aynı kişiye ait olup olmadığı otomatik olarak karşılaştırılır. Bu karşılaştırma anlık yapılır; yüzünüzden bir biyometrik şablon çıkarılmaz ve saklanmaz.
+        **Biyometrik veriler.** Fotoğraf doğrulamasını kullanmayı seçerseniz, çektiğiniz karelerdeki yüz ile profil fotoğrafınızdaki yüzün aynı kişiye ait olup olmadığı otomatik olarak karşılaştırılır. Bu işlemenin kapsamı, süresi ve rızanızın koşulları aşağıda 4. ve 5. bölümlerde ayrı ayrı açıklanmıştır.
 
         Bu veriler yalnızca açık rızanızla işlenir. Rızanızı dilediğiniz zaman geri çekebilirsiniz; bu durumda ilgili özellik (eşleşme önerileri veya fotoğraf doğrulaması) çalışmaz.
       `,
 
-      sectionTitle4: 'İşleme Amaçları',
+      sectionTitle4: 'Fotoğraf Doğrulama — Biyometrik Verinize İlişkin Açık Rıza',
       section4Content: `
+        lit'te **isteğe bağlı** bir fotoğraf doğrulama özelliği vardır: kameranızla sizden istenen iki küçük hareketi yaparken çekilen kareler, profilinizdeki ana fotoğrafla otomatik olarak karşılaştırılır. Amaç tektir — profildeki fotoğrafın gerçekten size ait olduğunu göstermek, yani başkasının fotoğraflarıyla sahte profil açılmasını zorlaştırmak.
+
+        Bu karşılaştırma yüz verinizi, yani KVKK'nın 6. maddesi anlamında **özel nitelikli kişisel veriyi** işlemeyi gerektirir. Bu tür veriler yalnızca **açık rızanızla** işlenebilir (m. 6/2-a); başka hiçbir hukuki sebebe (meşru menfaat, sözleşmenin ifası vb.) dayanılmaz.
+
+        **İşlenen veriler.** Doğrulama sırasında çekilen canlı kamera kareleri, karşılaştırmanın diğer tarafı olan mevcut ana fotoğrafınız ve işlemin sonucu (doğrulandı / doğrulanmadı, tarihi ve başarısızsa teknik sebebi).
+
+        **Kareler saklanmaz.** Çekilen kareler yalnızca karşılaştırma anında, sunucunun geçici belleğinde işlenir ve işlem biter bitmez silinir; diske yazılmaz, bulut depolamaya yüklenmez, yedeklenmez. Yüzünüzden kalıcı bir **biyometrik şablon (yüz izi) çıkarılmaz ve saklanmaz** — yani sizi ileride tanıyabilecek bir biyometrik kayıt üretilmez. Saklanan tek şey sonucun kendisidir; bu teknik kayıtlar 90 gün sonra silinir.
+
+        **Başka hiçbir amaçla kullanılmaz.** Bu veriler kimlik tespiti, reklam, profilleme, eşleştirme algoritması veya yapay zekâ modeli eğitimi için kullanılmaz; diğer kullanıcılarla veya üçüncü kişilerle paylaşılmaz.
+
+        **Bu rıza tamamen isteğe bağlıdır.** Vermezseniz veya sonradan geri alırsanız hesabınız kapanmaz, profiliniz gizlenmez, eşleşmeleriniz ve mesajlarınız etkilenmez; yalnızca doğrulama rozetini alamazsınız. Rızanızı hesabınızı oluştururken bu metinle birlikte verebilir, dilediğiniz zaman Ayarlar > Gizlilik bölümünden geri alabilir veya yeniden verebilirsiniz. Geri aldığınızda doğrulama rozetiniz kaldırılır ve yeni doğrulama yapamazsınız; silinecek bir biyometrik veri yoktur, çünkü zaten saklanmamıştır.
+
+        **Rozetin anlamı sınırlıdır.** Doğrulama, uygulamayı kullanan kişinin profildeki fotoğraftaki kişi olduğunu makul ölçüde gösterir; bir kimlik doğrulaması değildir. Adınızın, yaşınızın veya öğrenci olduğunuzun kanıtı sayılmaz. Bu yüzden rozet "fotoğraf doğrulandı" der, "kimlik doğrulandı" demez.
+      `,
+
+      sectionTitle5: 'Fotoğraf Doğrulama — Yurt Dışına Aktarıma İlişkin Açık Rıza',
+      section5Content: `
+        Yukarıdaki karşılaştırmayı yapan görüntü işleme hizmeti Türkiye'de değil, Amerika Birleşik Devletleri'nde bulunan sunucularda (Amazon Web Services Rekognition, ABD us-east-1 bölgesi) çalışır. Karelerin oraya gönderilmesi KVKK'nın 9. maddesi anlamında **yurt dışına aktarım**dır ve bunun için ayrı bir **açık rıza** gerekir. Bu nedenle fotoğraf doğrulamayı kullanabilmek için hem 4. bölümdeki biyometrik veri rızasının hem de bu rızanın verilmiş olması gerekir; biri eksikse doğrulama hiç başlatılmaz.
+
+        **Aktarılan veriler yalnızca karşılaştırmanın iki tarafıdır:** o an çekilen kareler ve mevcut ana fotoğrafınız. Adınız, e-posta adresiniz, kullanıcı kimliğiniz, üniversiteniz, bölümünüz, yaşınız, konumunuz, mesajlarınız, eşleşmeleriniz ve profilinizdeki diğer fotoğraflar gönderilmez. Karşılaştırmayı yapan hizmet, gönderilen görüntülerin kime ait olduğunu bilmez; yalnızca "bu iki yüz ne kadar benziyor" sorusunu cevaplar.
+
+        **Aktarım anlıktır ve karşı tarafta saklanmaz.** Görüntüler yalnızca karşılaştırma anında, şifreli bağlantı (TLS) üzerinden gönderilir; işlem biter bitmez hem bizim sunucumuzun belleğinden hem de karşı tarafta işlemden düşer. Aktarım yalnızca siz özelliği kullandığınızda, her deneme için tek seferlik gerçekleşir.
+
+        **Riski açıkça söylemek gerekirse:** veriniz Türkiye dışına çıktığında Türk hukukunun koruması doğrudan uygulanmaz. Verinin bulunduğu ülkenin makamları kendi hukuklarına göre bu verilere erişim talep edebilir ve bu talep KVKK'nın öngördüğü güvencelerle birebir örtüşmeyebilir. Bu riski; aktarılan veriyi en aza indirerek (kimlik bilgisi olmadan yalnızca iki görüntü), aktarımı anlık tutarak ve şifreli bağlantı kullanarak sınırlıyoruz.
+
+        **Bu rıza da tamamen isteğe bağlıdır** ve 4. bölümdeki rıza gibi, Ayarlar > Gizlilik bölümünden dilediğiniz zaman geri alınabilir. Geri aldığınızda aktarılacak bir veri kalmaz; hesabınız ve profiliniz etkilenmez.
+      `,
+
+      sectionTitle6: 'İşleme Amaçları',
+      section6Content: `
         Kişisel verileriniz; hesabınızın oluşturulması ve öğrenci doğrulamanızın yapılması, profilinizin yayımlanması, size uygun profillerin önerilmesi ve eşleşmelerin kurulması, eşleştiğiniz kişilerle mesajlaşabilmeniz, bildirim gönderilmesi, premium aboneliğin yönetilmesi, uygulamanın güvenliğinin sağlanması ve kötüye kullanımın (sahte profil, taciz, dolandırıcılık, uygunsuz içerik) önlenmesi, size destek verilmesi, uygulamanın geliştirilmesi ve hukuki yükümlülüklerimizin yerine getirilmesi amaçlarıyla işlenir.
       `,
 
-      sectionTitle5: 'Hukuki Sebepler',
-      section5Content: `
+      sectionTitle7: 'Hukuki Sebepler',
+      section7Content: `
         Verileriniz; sözleşmenin kurulması ve ifasıyla doğrudan ilgili olması (KVKK m. 5/2-c), hukuki yükümlülüğümüzün yerine getirilmesi (m. 5/2-ç), bir hakkın tesisi ve korunması (m. 5/2-e) ile temel hak ve özgürlüklerinize zarar vermemek kaydıyla meşru menfaatimiz (m. 5/2-f) hukuki sebeplerine dayanılarak işlenir.
 
-        Özel nitelikli kişisel veriler (m. 6/2-a) ve zorunlu olmayan bildirim ve analiz işlemleri açık rızanıza dayanır. Yurt dışına aktarım, KVKK'nın 9. maddesi kapsamında uygun güvencelere (standart sözleşme) dayanılarak yapılır.
+        Özel nitelikli kişisel veriler (m. 6/2-a) ve zorunlu olmayan bildirim ve analiz işlemleri açık rızanıza dayanır. Yurt dışına aktarım, KVKK'nın 9. maddesi kapsamında uygun güvencelere (standart sözleşme) dayanılarak yapılır. Bunun tek istisnası fotoğraf doğrulamadır: oradaki aktarım standart sözleşmeye değil, 5. bölümde açıklanan açık rızanıza dayanır ve rıza yoksa hiç yapılmaz.
       `,
 
-      sectionTitle6: 'Aktarım ve Yurt Dışına Aktarım',
-      section6Content: `
+      sectionTitle8: 'Aktarım ve Yurt Dışına Aktarım',
+      section8Content: `
         Verileriniz, hizmetin sunulabilmesi için aşağıdaki hizmet sağlayıcılara, yalnızca gereken ölçüde aktarılır:
 
         - **Bulut altyapısı ve depolama:** fotoğraflarınız ve dışa aktardığınız veri dosyaları bulut depolamada tutulur.
-        - **Fotoğraf moderasyonu ve yüz karşılaştırma:** yüklediğiniz fotoğraflar, uygunsuz içerik tespiti ve talep etmeniz hâlinde yüz karşılaştırması için görüntü işleme servisine iletilir.
+        - **Fotoğraf moderasyonu:** yüklediğiniz fotoğraflar, uygunsuz içerik tespiti için görüntü işleme servisine iletilir.
+        - **Yüz karşılaştırma (fotoğraf doğrulama):** yalnızca bu özelliği kullanmayı seçerseniz ve 4. ile 5. bölümdeki açık rızalarınızı vermişseniz, o anda çekilen kareler ve ana fotoğrafınız karşılaştırma için görüntü işleme servisine iletilir.
         - **Bildirim altyapısı:** bildirimler Google Firebase Cloud Messaging üzerinden cihazınıza iletilir. Mesaj bildirimlerinde başlık ve mesajın ilk bölümü bu altyapı üzerinden geçer; içerik bu altyapıda saklanmaz.
         - **Abonelik yönetimi:** premium abonelik durumunuz, abonelik doğrulama hizmetiyle paylaşılır.
         - **Ürün analitiği ve hata kayıtları:** uygulamayı geliştirmek ve çökmeleri gidermek için kullandığımız servisler Avrupa Birliği bölgesinde barındırılır.
@@ -438,8 +489,8 @@ const tr = {
         Ayrıca, hukuken yetkili kamu kurum ve kuruluşlarının talebi hâlinde mevzuatın öngördüğü ölçüde aktarım yapılabilir.
       `,
 
-      sectionTitle7: 'Moderasyon ve Otomatik Sistemler',
-      section7Content: `
+      sectionTitle9: 'Moderasyon ve Otomatik Sistemler',
+      section9Content: `
         Size gösterilen profiller otomatik bir puanlama ile sıralanır. Bu sıralama yalnızca öneri niteliğindedir; hakkınızda hukuki sonuç doğuran veya sizi önemli ölçüde etkileyen bir karar üretmez. Eşleşme önerilerinin nasıl oluştuğuna dair açıklamayı uygulama içinden görebilirsiniz.
 
         Yüklediğiniz fotoğraflar, topluluk kurallarına uygunluk açısından otomatik olarak incelenir. Bir fotoğrafınız otomatik olarak reddedilirse itiraz edebilir ve kararın bir kişi tarafından yeniden değerlendirilmesini isteyebilirsiniz.
@@ -447,43 +498,44 @@ const tr = {
         Bir kullanıcı hakkında bildirimde bulunulduğunda, bildirimi değerlendirebilmek için moderasyon ekibimiz bildirime konu içeriği ve mesaj bildirimlerinde ilgili sohbetin bir bölümünü görüntüleyebilir. Bu erişim yalnızca bildirimin incelenmesiyle sınırlıdır, kayıt altına alınır ve başka bir amaçla kullanılmaz. Bunun dışında mesajlarınız kimse tarafından okunmaz.
       `,
 
-      sectionTitle8: 'Saklama Süreleri',
-      section8Content: `
+      sectionTitle10: 'Saklama Süreleri',
+      section10Content: `
         - **Hesap ve profil verileri:** hesabınız açık olduğu sürece.
         - **Mesajlar:** 2 yıl. Bu süreden eski mesajlar otomatik olarak silinir.
         - **Okunmuş bildirimler:** 30 gün.
         - **Cihaz bildirim kimlikleri:** 90 gün boyunca kullanılmazsa silinir.
         - **Moderasyonda reddedilen fotoğraflar:** itiraz hakkınız için 30 gün, sonrasında silinir.
+        - **Fotoğraf doğrulama kayıtları:** denemenin sonucu, tarihi ve başarısızsa teknik sebebi 90 gün. Doğrulama sırasında çekilen kareler hiç saklanmaz (bkz. 4. bölüm).
         - **Hesabınızı silerseniz:** hesabınız 30 gün boyunca askıya alınır ve bu süre içinde giriş yaparak silme talebinizi iptal edebilirsiniz. Süre dolduğunda verileriniz geri alınamaz şekilde silinir. Yalnızca e-posta adresinizin geri döndürülemez özeti (hash), silinme tarihi ve hesabın silinme anında yasaklı olup olmadığı bilgisi saklanır. Bu kayıt, yasaklı bir hesabın silinip yeniden açılmasını engellemek için tutulur; e-posta adresinizi geri vermez ve başka bir amaçla kullanılmaz.
         - **Yasal saklama yükümlülüğü bulunan kayıtlar:** ilgili mevzuatın öngördüğü süreler boyunca (ticari defter ve belgeler bakımından 10 yıl).
       `,
 
-      sectionTitle9: 'Haklarınız',
-      section9Content: `
+      sectionTitle11: 'Haklarınız',
+      section11Content: `
         KVKK'nın 11. maddesi uyarınca; kişisel verilerinizin işlenip işlenmediğini öğrenme, işlenmişse buna ilişkin bilgi talep etme, işlenme amacını ve amacına uygun kullanılıp kullanılmadığını öğrenme, yurt içinde veya yurt dışında verilerinizin aktarıldığı üçüncü kişileri bilme, eksik veya yanlış işlenmiş olması hâlinde düzeltilmesini isteme, silinmesini veya yok edilmesini isteme, düzeltme ve silme işlemlerinin verilerin aktarıldığı üçüncü kişilere bildirilmesini isteme, münhasıran otomatik sistemlerle analiz edilmesi suretiyle aleyhinize bir sonucun ortaya çıkmasına itiraz etme ve kanuna aykırı işleme sebebiyle zarara uğramanız hâlinde zararın giderilmesini talep etme haklarına sahipsiniz.
 
         Bu hakların bir kısmını doğrudan uygulama içinden kullanabilirsiniz: profil bilgilerinizi ayarlar üzerinden düzeltebilir, verilerinizin bir kopyasını talep edebilir ve hesabınızı kalıcı olarak silebilirsiniz.
       `,
 
-      sectionTitle10: 'Başvuru',
-      section10Content: `
+      sectionTitle12: 'Başvuru',
+      section12Content: `
         Haklarınıza ilişkin taleplerinizi, Veri Sorumlusuna Başvuru Usul ve Esasları Hakkında Tebliğ'de belirtilen usullere uygun olarak, hesabınızda kayıtlı e-posta adresinizden info@4ourstack.com adresine iletebilirsiniz. Başvurunuz en geç 30 gün içinde sonuçlandırılır.
 
         Başvurunuzun reddedilmesi, verdiğimiz cevabı yetersiz bulmanız veya süresinde cevap verilmemesi hâlinde; cevabı öğrendiğiniz tarihten itibaren 30 gün ve her hâlde başvuru tarihinden itibaren 60 gün içinde Kişisel Verileri Koruma Kurulu'na şikâyette bulunabilirsiniz (KVKK m. 14).
       `,
 
-      sectionTitle11: 'Veri Güvenliği',
-      section11Content: `
+      sectionTitle13: 'Veri Güvenliği',
+      section13Content: `
         Şifreniz geri döndürülemez şekilde saklanır ve tarafımızca görülemez. Uygulama ile sunucularımız arasındaki tüm iletişim şifreli bağlantı üzerinden yapılır. Konum verileriniz diğer kullanıcılara bulanıklaştırılarak gösterilir. Verilere erişim, yalnızca görevi gereği ihtiyaç duyan kişilerle sınırlıdır ve moderasyon işlemleri kayıt altına alınır.
       `,
 
-      sectionTitle12: 'Yaş Sınırı',
-      section12Content: `
+      sectionTitle14: 'Yaş Sınırı',
+      section14Content: `
         lit yalnızca 18 yaşını doldurmuş üniversite öğrencileri içindir. 18 yaşından küçük kişilerin uygulamayı kullanması yasaktır; tespit edilmesi hâlinde hesap kapatılır ve ilgili veriler silinir.
       `,
 
-      sectionTitle13: 'Bu Metindeki Değişiklikler',
-      section13Content: `
+      sectionTitle15: 'Bu Metindeki Değişiklikler',
+      section15Content: `
         Bu metin, uygulamadaki değişikliklere ve mevzuata göre güncellenebilir. Metnin sürümü değiştiğinde uygulama içinde yeniden onayınız istenir; hangi sürümü ne zaman onayladığınız kayıt altında tutulur. Güncel sürüm her zaman bu sayfada yayımlanır.
       `,
     },
@@ -542,6 +594,10 @@ const tr = {
       monthPlaceholder: 'aa',
       yearLabel: 'Yıl',
       yearPlaceholder: 'yyyy',
+      // Doğrulama metinleri. Şema (dobSchema) bunları ÇAĞRI ANINDA çözüyor —
+      // modül seviyesinde çözülse uygulamanın açılış dili sabitlenirdi.
+      invalidDate: 'Geçerli bir doğum tarihi gir.',
+      tooYoung: 'Uygulamayı kullanabilmek için 18 yaşından büyük olmalısın.',
     },
     step7: {
       title: 'Cinsiyetin',
@@ -679,6 +735,15 @@ const tr = {
       sessionExpiredTitle: 'Doğrulama süresi doldu',
       sessionExpired:
         'E-posta doğrulamanın süresi dolmuş. Aynı e-postayı tekrar doğrularsan girdiğin bilgiler korunur.',
+      // Ön kayıt hediyesi kayıt İSTEĞİNİN içinde uygulanıyor ve kullanıcıya
+      // bunu söyleyen başka bir yüzey yok (cevapta premium alanı yok, realtime
+      // event bastırılmış). Bu üç satır olmazsa hediye sessiz kalıyor.
+      // Bitiş tarihi BİLEREK geçilmiyor — bu ekranın işi hediyeyi duyurmak,
+      // süreyi Profil > Üyelik kartı anlatıyor.
+      premiumGiftTitle: 'Premium hediyen hazır 🎉',
+      premiumGiftMessage:
+        'Ön kayıt olduğun için premium hediyeni tanımladık — tüm premium özellikler artık senin.',
+      premiumGiftCta: 'Harika',
     },
   },
   chat: {
@@ -1632,39 +1697,35 @@ const tr = {
           'Doğrulama, fotoğraflarının sana ait olduğunu gösterir; bir kimlik doğrulaması değildir. Rozet dışında keşifte hiçbir öncelik sağlamaz.',
         startButton: 'Doğrulamaya Başla',
         goToPhotos: 'Fotoğraflarıma git',
+        goToPrivacySettings: 'Gizlilik ayarlarına git',
       },
+      // Doğrulama izinlerinin metni — TEK KAYNAK. Ayarlar > Gizlilik'teki iki
+      // satır bunları gösteriyor (bkz. SettingsScreen privacyRows); rızanın
+      // verildiği/geri alındığı yer orası. Ayrıntılı hâli aydınlatma metninin
+      // 4. ve 5. bölümü.
       consent: {
-        title: 'Doğrulama İzinleri',
-        description:
-          'Devam etmeden önce iki ayrı onayına ihtiyacımız var. İkisini de ayrı ayrı okuyup işaretlemen gerekiyor.',
-        acceptButton: 'Onaylıyorum ve Devam Et',
-        saveError: 'Onayların kaydedilemedi. Bağlantını kontrol edip tekrar dene.',
-        withdrawNote:
-          'Onayını istediğin zaman geri alabilirsin. Geri aldığında doğrulama rozetin kalkar; hesabın ve eşleşmelerin etkilenmez.',
         BiometricVerification: {
           title: 'Yüz verisinin işlenmesi',
-          checkbox:
-            'Doğrulama için yüz verimin işlenmesine açık rıza gösteriyorum.',
-          fallback:
-            'Doğrulama sırasında çekilen karelerdeki yüz verisi, ana fotoğrafınla karşılaştırılmak üzere işlenir. Bu veri KVKK kapsamında özel nitelikli kişisel veridir ve işlenmesi açık rızana bağlıdır.',
+          note: 'Doğrulama sırasında çekilen karelerdeki yüz verisi, ana fotoğrafınla karşılaştırılmak üzere işlenir. Bu veri KVKK kapsamında özel nitelikli kişisel veridir ve işlenmesi açık rızana bağlıdır.',
         },
         DataTransferAbroad: {
           title: 'Yurt dışına aktarım',
-          checkbox:
-            'Yüz verimin yurt dışındaki sunucularda işlenmesine açık rıza gösteriyorum.',
-          fallback:
-            'Karşılaştırma, yurt dışında (ABD) bulunan bir sunucu üzerinde yapılır. Bu nedenle yüz verinin yurt dışına aktarılması gerekir ve bu aktarım açık rızana bağlıdır.',
+          note: 'Karşılaştırma, yurt dışında (ABD) bulunan bir sunucu üzerinde yapılır. Bu nedenle yüz verinin yurt dışına aktarılması gerekir ve bu aktarım açık rızana bağlıdır.',
         },
       },
       camera: {
+        // Nokta göstergesinin ekran okuyucu karşılığı — ekranda YAZI olarak
+        // görünmüyor (bkz. SelfieCameraStep nokta satırı).
         stepCounter: '{{index}} / {{total}}',
         hint: 'Yüzün çerçeveye sığsın ve karede yalnız ol.',
-        // Hareketin dozu. İkisi ZIT yönde uyarıyor: poz hareketlerinde asıl
-        // risk savrulmak (`challenge_too_much`), mimiklerde kameranın
-        // göremeyeceği kadar hafif kalmak (`challenge_too_weak`).
-        hintPose: 'Belirgin yap ama abartma.',
-        hintExpression: 'Belirgin olsun, kamera görebilsin.',
-        ready: 'Hazırım',
+        // Hareket tipine göre ikinci satır (bkz. selfieChallengeHintKey).
+        // 🔴 "Abartma" YALNIZ poz hareketlerinde: backend mimik değerlendirmesinde
+        // (EvaluateBoolSignal) `challenge_too_much` diye bir sonuç üretmiyor, yani
+        // gülümsemeyi/ağzı "fazla" açmak diye bir başarısızlık yok. Orada abartmayı
+        // önermek kullanıcıyı `challenge_too_weak`e iterdi.
+        hintPose: 'Hareketi belirgin yap ama abartma — yumuşak bir hareket yeterli.',
+        hintExpression: 'Belirgin olsun ki kamera görebilsin.',
+        submit: 'Gönder',
         captureError: 'Kare çekilemedi, tekrar dene.',
         permissionMessage:
           'Fotoğrafını doğrulayabilmek için kamera erişimine ihtiyacımız var.',
@@ -1681,10 +1742,11 @@ const tr = {
       // akışın normal parçası (istek 200 + isSuccess:true dönüyor).
       reason: {
         challenge_not_met: 'İstenen hareketi algılayamadık. Bir kez daha deneyelim.',
-        // ⚠️ Bu üçü hareketin YÖNÜNÜ ya da eşiğin SAYISINI sızdırmıyor
-        // ("sağa değil sola döndün", "20 derece daha" YASAK) — saldırgana eşiği
-        // deneme-yanılmayla kalibre ettirir. "Biraz daha belirgin" güvenli:
-        // kullanıcı ne istendiğini zaten biliyor.
+        // 🔴 Aşağıdaki üçü backend resx'iyle (SelfieFailure_*) BİREBİR aynı tonda.
+        // Sözleşme sınırı: hareketin YÖNÜNÜ ("sağa değil sola döndün") ya da eşiğin
+        // SAYISINI ("20 derece daha") sızdırmıyorlar — saldırgana eşiği kalibre
+        // etme imkânı verirdi. "Biraz daha belirgin" güvenli, kullanıcı zaten ne
+        // istendiğini biliyor.
         challenge_too_weak: 'Neredeyse oldu — hareketi biraz daha belirgin yapar mısın?',
         challenge_wrong_move:
           'İstenen hareketi göremedik. Yönergeyi okuyup tekrar dener misin?',
@@ -1703,6 +1765,9 @@ const tr = {
       },
       reasonTitle: {
         challenge_not_met: 'Hareketi algılayamadık',
+        // Başlıklar backend'de YOK, FE'ye özel — gövdeyle aynı tonu tutmalı,
+        // yoksa "Doğrulama tamamlanamadı / Neredeyse oldu" gibi kendini yalanlayan
+        // bir çift çıkıyor.
         challenge_too_weak: 'Neredeyse oldu',
         challenge_wrong_move: 'Hareketi göremedik',
         challenge_too_much: 'Biraz fazla oldu',
@@ -1716,7 +1781,12 @@ const tr = {
         fallback: 'Doğrulama tamamlanamadı',
       },
       codes: {
-        'UT-6501': 'Devam etmek için doğrulama izinlerini onaylaman gerekiyor.',
+        // Rıza kayıt sırasında aydınlatma metniyle alınıyor; buraya düşen
+        // kullanıcı ya o kutuları işaretlememiş ya da sonradan geri almış.
+        // Metin, kararın değiştirilebileceği TEK yeri söylüyor.
+        'UT-6501Title': 'Fotoğraf doğrulama rızası gerekiyor',
+        'UT-6501':
+          'Fotoğraf doğrulama için verdiğin açık rıza görünmüyor. Ayarlar > Gizlilik bölümünden verebilir ya da geri alabilirsin.',
         'UT-6502':
           'Doğrulama için onaylanmış bir ana fotoğrafın olmalı. Önce ana fotoğrafını ekle.',
         'UT-6502Title': 'Önce ana fotoğrafın gerekiyor',
@@ -1859,6 +1929,7 @@ const tr = {
         showOnApp: 'Beni uygulamada göster',
         showAge: 'Yaşımı göster',
         showLocation: 'Konumumu göster',
+        showOnlineStatus: 'Çevrimiçi olduğumu göster',
         showPremiumBadge: 'Premium rozetimi göster',
       },
     },

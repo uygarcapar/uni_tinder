@@ -363,7 +363,11 @@ export function isPhotoProviderUnavailable(
 //   BAD_FRAMES  (400) → İSTEMCİ BUG'I (kare sayısı/boyutu); kullanıcıya
 //                       jenerik metin, ayrıntı devLog'a.
 export const SELFIE_CODES = {
-  /** 403 — iki KVKK rızasından biri eksik. Rıza adımını aç. */
+  /**
+   * 403 — iki KVKK rızasından biri eksik (biyometrik işleme / yurt dışına
+   * aktarım). Rıza kayıt sırasında aydınlatma metniyle alınıyor, akışın içinde
+   * DEĞİL: kullanıcı Ayarlar > Gizlilik'e yönlendirilir.
+   */
   CONSENT_REQUIRED: "UT-6501",
   /** 400 — onaylanmış ana fotoğraf yok. Profil düzenlemeye yönlendir. */
   NO_MAIN_PHOTO: "UT-6502",

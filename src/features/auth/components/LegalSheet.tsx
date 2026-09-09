@@ -29,9 +29,10 @@ const DOCS = {
   privacy: {
     headerPrefix: "auth.legal.privacy",
     sectionPrefix: "auth.kvkkConsent",
-    // Aydınlatma metni 2.0 → 13 bölüm. `tr.ts`/`en.ts`'teki bölüm sayısıyla
-    // birebir olmalı; fazlası boş başlık, eksiği sessizce kırpılmış metin.
-    sectionCount: 13,
+    // Aydınlatma metni 1.0 → 15 bölüm (4 ve 5 fotoğraf doğrulamanın iki açık
+    // rızası). `tr.ts`/`en.ts`'teki bölüm sayısıyla birebir olmalı; fazlası boş
+    // başlık, eksiği sessizce kırpılmış metin.
+    sectionCount: 15,
     sfIcon: "checkmark.shield.fill",
     fallbackIcon: ShieldCheck,
   },

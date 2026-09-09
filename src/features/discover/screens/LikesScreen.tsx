@@ -61,6 +61,9 @@ import ScreenHeader, {
 } from "@/shared/components/ScreenHeader";
 import SkeletonBox from "@/shared/components/SkeletonBox";
 import PremiumBadge from "@/shared/components/PremiumBadge";
+import SelfieVerifiedBadge, {
+  selfieBadgeSize,
+} from "@/features/profile/components/SelfieVerifiedBadge";
 import swipeService from "@/features/discover/swipeService";
 import { resolveCardAge } from "@/features/discover/cardPrivacy";
 import {
@@ -1990,6 +1993,17 @@ function LikeCard({
                       style={{ marginLeft: 4 }}
                     />
                   )}
+                  {/* Foto doğrulama rozeti — premium'un sağında, AYNI hizalama
+                      kuralıyla (baseline satırında alignSelf şart). */}
+                  <SelfieVerifiedBadge
+                    verified={item.isSelfieVerified}
+                    size={selfieBadgeSize(LIKE_CARD_NAME_SIZE)}
+                    style={{
+                      flexShrink: 0,
+                      marginLeft: 4,
+                      alignSelf: "center",
+                    }}
+                  />
                 </Animated.View>
                 {/* Üniversite — isim/yaş satırının ALTINDA, aynı bloğun
                     ikinci satırı. `identityStyle` ile isimle birlikte solar:

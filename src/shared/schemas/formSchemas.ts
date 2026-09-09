@@ -9,6 +9,7 @@ import {
   normalizePromptAnswer,
 } from "@/shared/constants/limits";
 import { noteLength } from "@/features/discover/noteTarget";
+import i18n from "@/shared/i18n";
 
 const calculateAge = (day: number, month: number, year: number) => {
   const today = new Date();
@@ -145,11 +146,25 @@ export const firstNameSchema = z.object({
   firstName: z.string().min(1, "Lütfen işaretli tüm alanları doldur."),
 });
 
+/**
+ * Doğum tarihi mesajları — FONKSİYON olarak veriliyor, sabit string olarak değil.
+ *
+ * Şemalar modül seviyesinde bir kez kuruluyor; `i18n.t()` burada doğrudan
+ * çağrılsaydı uygulamanın AÇILIŞ dili mesaja donardı ve kullanıcı dili
+ * değiştirdiğinde eski dilde kalırdı. Zod 4 `error` alanında fonksiyon kabul
+ * ediyor, fonksiyon doğrulama anında çalışıyor.
+ */
+const dobInvalid = () => i18n.t("auth.step6.invalidDate");
+
 export const dobSchema = z
   .object({
-    day: z.string().min(1),
-    month: z.string().min(1),
-    year: z.string().min(1),
+    // 🔴 MESAJ ŞART. Mesajsız `.min(1)` Zod'un İngilizce varsayılanını basıyor
+    // ("Too small: expected string to have >=1 characters") ve bu metin
+    // kullanıcıya OLDUĞU GİBİ görünüyordu — alan boşken taban doğrulaması
+    // başarısız oluyor ve aşağıdaki superRefine hiç çalışmıyor.
+    day: z.string().min(1, { error: dobInvalid }),
+    month: z.string().min(1, { error: dobInvalid }),
+    year: z.string().min(1, { error: dobInvalid }),
   })
   .superRefine((data, ctx) => {
     const d = parseInt(data.day);
@@ -168,16 +183,16 @@ export const dobSchema = z
       y > new Date().getFullYear();
 
     if (dayInvalid)
-      ctx.addIssue({ code: "custom", message: "Geçerli bir doğum tarihi gir.", path: ["day"] });
+      ctx.addIssue({ code: "custom", message: dobInvalid(), path: ["day"] });
     if (monthInvalid)
-      ctx.addIssue({ code: "custom", message: "Geçerli bir doğum tarihi gir.", path: ["month"] });
+      ctx.addIssue({ code: "custom", message: dobInvalid(), path: ["month"] });
     if (yearInvalid)
-      ctx.addIssue({ code: "custom", message: "Geçerli bir doğum tarihi gir.", path: ["year"] });
+      ctx.addIssue({ code: "custom", message: dobInvalid(), path: ["year"] });
 
     if (!dayInvalid && !monthInvalid && !yearInvalid) {
       const age = calculateAge(d, mo, y);
       if (age < 18) {
-        const msg = "Uygulamayı kullanabilmek için 18 yaşından büyük olmalısın.";
+        const msg = i18n.t("auth.step6.tooYoung");
         ctx.addIssue({ code: "custom", message: msg, path: ["day"] });
         ctx.addIssue({ code: "custom", message: msg, path: ["month"] });
         ctx.addIssue({ code: "custom", message: msg, path: ["year"] });
@@ -396,6 +411,13 @@ export const editProfileFormSchema = z.object({
   // filtrelerine takılmaya, konum heartbeat'i göndermeye devam eder.
   // Mesafe ayrı bir bayrak (`showDistance`) — ikisi bağımsız.
   showLocation: z.boolean(),
+  // Çevrimiçi görünürlük — opt-out: backend varsayılanı true. Kapalıyken karttaki
+  // "bugün aktif" rozeti, sohbet listesindeki yeşil nokta ve canlı presence
+  // event'leri gider; keşiften DÜŞMEZ, eşleşme mantığı değişmez.
+  //
+  // Simetri YOK (bilinçli): ayarı kapatan kullanıcı karşı tarafın online
+  // durumunu görmeye devam eder.
+  showOnlineStatus: z.boolean(),
   // Premium rozeti — opt-out: backend varsayılanı true, kapatınca yalnızca
   // ROZET gizlenir (kotalar/filtreler/sıralama avantajı aynen sürer).
   showPremiumBadge: z.boolean(),

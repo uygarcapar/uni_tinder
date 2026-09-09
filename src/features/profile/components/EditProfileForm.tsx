@@ -1096,6 +1096,7 @@ type VisibilityRow = {
     | "showMeOnApp"
     | "showAge"
     | "showLocation"
+    | "showOnlineStatus"
     | "showPremiumBadge";
 };
 
@@ -1168,6 +1169,7 @@ const EditProfileForm = forwardRef(function EditProfileForm(
       showMeOnApp: true,
       showAge: true,
       showLocation: true,
+      showOnlineStatus: true,
       showPremiumBadge: true,
     },
   });
@@ -1208,6 +1210,7 @@ const EditProfileForm = forwardRef(function EditProfileForm(
   const draftShowMeOnApp = watch("showMeOnApp");
   const draftShowAge = watch("showAge");
   const draftShowLocation = watch("showLocation");
+  const draftShowOnlineStatus = watch("showOnlineStatus");
   const draftShowPremiumBadge = watch("showPremiumBadge");
   const queryClient = useQueryClient();
   const [savingProfile, setSavingProfile] = useState(false);
@@ -1497,6 +1500,7 @@ const EditProfileForm = forwardRef(function EditProfileForm(
         showMeOnApp: draftShowMeOnApp,
         showAge: draftShowAge,
         showLocation: draftShowLocation,
+        showOnlineStatus: draftShowOnlineStatus,
         showPremiumBadge: draftShowPremiumBadge,
       } = getValues();
 
@@ -1755,6 +1759,7 @@ const EditProfileForm = forwardRef(function EditProfileForm(
         showMeOnApp: draftShowMeOnApp,
         showAge: draftShowAge,
         showLocation: draftShowLocation,
+        showOnlineStatus: draftShowOnlineStatus,
         showPremiumBadge: draftShowPremiumBadge,
         // Cinsiyet enumName + görünen ad; ProfileScreen refetch'ten önce doğru
         // etiketi göstersin diye display'i kategori listesinden çözüyoruz.
@@ -2983,6 +2988,23 @@ const EditProfileForm = forwardRef(function EditProfileForm(
             label: t('profile.edit.visibility.showLocation'),
             value: draftShowLocation,
             field: "showLocation",
+          },
+          // Çevrimiçi görünürlük — konumla aynı desen: olumlu ("göster") yazıldı,
+          // değer ters çevrilmeden doğrudan alana yazılıyor.
+          //
+          // Kapalıyken SADECE görünürlük kısılıyor: karttaki "bugün aktif" rozeti,
+          // sohbetteki yeşil nokta ve canlı presence event'leri gider. Keşifte
+          // çıkma, eşleşme mantığı, "yazıyor..." göstergesi ve push tercihleri
+          // aynen çalışır — presence TAKİBİ sürüyor, kısılan yalnız yayılması.
+          //
+          // Simetri yok: ayarı kapatan kullanıcı karşı tarafı online görmeye
+          // devam eder. Satırda bunu YAZMIYORUZ (diğerleri gibi tek satır etiket),
+          // ama "sen de göremezsin" izlenimi veren bir metin de kullanılmadı.
+          {
+            key: "onlineStatus",
+            label: t('profile.edit.visibility.showOnlineStatus'),
+            value: draftShowOnlineStatus,
+            field: "showOnlineStatus",
           },
           // Premium rozeti — yalnızca premium kullanıcıda anlamlı (free'de
           // gizlenecek rozet zaten yok). Backend free'den gelen değeri reddetmez,

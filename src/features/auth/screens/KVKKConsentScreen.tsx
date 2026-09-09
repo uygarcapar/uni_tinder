@@ -1,16 +1,12 @@
-import { useState, useCallback } from "react";
+import { useState } from "react";
 import { View, Text, TouchableOpacity, ActivityIndicator, Alert } from "react-native";
-import {
-  BottomSheetScrollView,
-  BottomSheetBackdrop,
-} from "@gorhom/bottom-sheet";
+import { BottomSheetScrollView } from "@gorhom/bottom-sheet";
 import { BlurView } from "expo-blur";
 import { useAppDispatch } from "@/shared/hooks/redux";
 import { ShieldCheck } from "@/shared/icons";
 import SFIcon from "@/shared/components/SFIcon";
-import api from "@/shared/services/api";
-import { API_ENDPOINTS } from "@/shared/constants/api";
 import { setKvkkAccepted } from "@/features/auth/authSlice";
+import { recordConsent } from "@/features/auth/consents";
 import AppBottomSheet from "@/shared/components/AppBottomSheet";
 import PolicyMarkdown from "@/shared/components/PolicyMarkdown";
 import { colors, ink } from "../../../shared/theme/colors";
@@ -22,29 +18,16 @@ import { plainBlurTint } from "@/shared/theme/blur";
  * CURRENT_KVKK_VERSION` ile onay ekranını açıyor; sabit sabit kalırsa eski
  * metni onaylamış kullanıcılar yeni metne sessizce bağlanmış sayılır.
  */
-export const CURRENT_KVKK_VERSION = "2.0";
+export const CURRENT_KVKK_VERSION = "1.0";
 
 /** `auth.kvkkConsent.section{n}` blokları. LegalSheet'teki sayıyla eşit olmalı. */
-const PRIVACY_SECTIONS = Array.from({ length: 13 }, (_, i) => i + 1);
+const PRIVACY_SECTIONS = Array.from({ length: 15 }, (_, i) => i + 1);
 
 export default function KVKKConsentScreen({ visible }) {
   const { t } = useTranslation();
   const dispatch = useAppDispatch();
   const [loading, setLoading] = useState(false);
   const [agreed, setAgreed] = useState(false);
-
-  const renderBackdrop = useCallback(
-    (props) => (
-      <BottomSheetBackdrop
-        {...props}
-        appearsOnIndex={0}
-        disappearsOnIndex={-1}
-        opacity={0.7}
-        pressBehavior="none"
-      />
-    ),
-    [],
-  );
 
   const handleAccept = async () => {
     if (!agreed) {
@@ -53,9 +36,19 @@ export default function KVKKConsentScreen({ visible }) {
     }
     setLoading(true);
     try {
-      await api.post(API_ENDPOINTS.PRIVACY_ACCEPT_CONSENT, {
-        version: CURRENT_KVKK_VERSION,
-      });
+      // Ekranı açan kapı bu (kvkkVersion) ve BU EKRANDA SORULAN TEK RIZA.
+      await recordConsent('PrivacyPolicy', CURRENT_KVKK_VERSION);
+
+      // 🔴 İKİ AÇIK RIZA BURADA SORULMUYOR (biyometrik işleme / yurt dışına
+      // aktarım). Aynı şeritte üç kutu birden okunmuyordu: metinler sığmıyor,
+      // zorunlu onayla isteğe bağlı olanlar tek blok gibi görünüyordu. Onlar
+      // artık Ayarlar > Gizlilik > Doğrulama İzinleri'nde, AYRI AYRI iki
+      // anahtarla veriliyor (bkz. SettingsScreen privacyRows). Doğrulama akışı
+      // rıza eksikse kullanıcıyı oraya yolluyor.
+      //
+      // Burada `accepted: false` yazmıyoruz: kullanıcı o kararı VERMEDİ,
+      // sorulmadı bile. Sorulmamış bir rızayı "hayır" diye kaydetmek KVKK
+      // ispatında kaydın kendisini şaibeli hale getirir.
       dispatch(setKvkkAccepted(CURRENT_KVKK_VERSION));
     } catch {
       Alert.alert(t('errors.generic'), t('auth.kvkkConsent.errorSave'));
@@ -156,7 +149,6 @@ export default function KVKKConsentScreen({ visible }) {
       enablePanDownToClose={false}
       enableContentPanningGesture={false}
       enableHandlePanningGesture={false}
-      backdropComponent={renderBackdrop}
       footer={footer}
       backgroundStyle={{
         backgroundColor: colors.bg,
@@ -211,7 +203,9 @@ export default function KVKKConsentScreen({ visible }) {
 
         <BottomSheetScrollView
           style={{ flex: 1, marginHorizontal: 16 }}
-          contentContainerStyle={{ paddingBottom: 240 }}
+          // Şerit yalnız zorunlu onay kutusu + butonu taşıyor; metnin son
+          // satırı onun altında kalmasın diye o kadarlık pay yeter.
+          contentContainerStyle={{ paddingBottom: 220 }}
           showsVerticalScrollIndicator={false}
         >
           <View

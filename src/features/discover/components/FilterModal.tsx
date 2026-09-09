@@ -135,26 +135,8 @@ const controlBorderInk = () => colors.hairline;
 // deste görür. Mesafe artık KATI filtre olduğu için bu yalan eskisinden
 // pahalı: yarıçap dışı profiller hiç gösterilmiyor.
 
-// Picker hedefi → local state alanı. Üç üniversite listesi de aynı bileşenden
-// besleniyor; hangi alana yazılacağı tek yerde tanımlı olsun.
-const DOMAIN_FIELD_BY_TARGET = {
-  preferred: "preferredUniversityDomains",
-  visibleOnly: "visibleOnlyToUniversityDomains",
-  hiddenFrom: "hiddenFromUniversityDomains",
-} as const;
-
-type DomainTarget = keyof typeof DOMAIN_FIELD_BY_TARGET;
-type DomainField = (typeof DOMAIN_FIELD_BY_TARGET)[DomainTarget];
-
 // SelectRow props'u any olduğu için isimler orada denetlenmiyor; SFSymbol
 // olarak burada sabitleyip yazım hatasını compile-time'da yakalıyoruz.
-//
-// ÜÇ üniversite satırı da (kimi göreyim / beni kim görsün / kimden gizlensin)
-// aynı mezuniyet külahını taşıyor. Görünürlük satırlarındaki göz/çizili-göz
-// KALDIRILDI: ikon satırın NE SEÇTİRDİĞİNİ söylemeli, seçimin sonucunu değil —
-// üçünde de seçilen şey üniversite. Göz ikonu ayrıca "bu satır bir görünürlük
-// anahtarı" gibi okunuyordu; satırın ne yaptığını üstündeki etiket zaten
-// yazıyor (bkz. VisibilityListLabel).
 const UNIVERSITY_ICON: SFSymbol = "graduationcap.fill";
 // Dil satırının ikonu — pill'lerdekiyle (getLanguageIcon) aynı sembol.
 const LANGUAGE_ICON: SFSymbol = "character.bubble";
@@ -215,16 +197,6 @@ const isHobbiesPremiumGated = (f: any) =>
 
 const isIntentsPremiumGated = (f: any) =>
   isFieldPremiumGated(f, "relationshipIntents");
-
-// Görünürlük listeleri de premiumOnlyFields üzerinden gate'leniyor. DİKKAT:
-// backend bu listede PUT alan adlarını kullanıyor (GET'teki Preferred* adlarını
-// değil) — bu iki alanda GET/PUT adı zaten aynı. isFieldPremiumGated iki tarafı
-// da lowercase'lediği için PascalCase/camelCase farkı sorun değil.
-const isVisibleOnlyPremiumGated = (f: any) =>
-  isFieldPremiumGated(f, "VisibleOnlyToUniversityDomains");
-
-const isHiddenFromPremiumGated = (f: any) =>
-  isFieldPremiumGated(f, "HiddenFromUniversityDomains");
 
 // "Ben kimi göreyim" üniversite filtresi. premiumOnlyFields PUT adını taşıyor —
 // GET'teki `preferred*` adını değil. Alan çoğullaşırken (`universityDomain` →
@@ -1647,44 +1619,9 @@ function PremiumFilterSection({
   );
 }
 
-// Görünürlük listelerinin etiketi — hangi satırın ne seçtiğini söyler.
-//
-// "3/3" DOLULUK SAYACI KALDIRILDI: satırın kendisi seçimi zaten özetliyor
-// ("İTÜ +2") ve picker sınıra gelince uyarıyor; sayaç aynı bilgiyi üçüncü kez,
-// teknik bir kesirle tekrar ediyordu. Sayaç gidince yalnız sayaç taşıyan çağrı
-// (üniversite bölümü) de gereksizleşti, o satır tamamen kalktı.
-function VisibilityListLabel({ label, marginTop = 0 }: any) {
-  if (!label) return null;
-  return (
-    <View
-      style={{
-        flexDirection: "row",
-        alignItems: "center",
-        marginTop,
-        marginBottom: 8,
-      }}
-    >
-      <Text
-        style={{
-          // Tam mürekkepte ve 15px: bu etiketler ("Beni sadece şu
-          // üniversiteler görsün") bölümün AÇIKLAMASI değil, hemen altındaki
-          // satırın ne seçtiğini söyleyen başlığı — gri 14px'te alt not gibi
-          // okunuyordu.
-          color: colors.text,
-          fontSize: 15,
-          fontWeight: "500",
-          flexShrink: 1,
-        }}
-      >
-        {label}
-      </Text>
-    </View>
-  );
-}
-
 // Çoklu seçim picker'ını açan satır. Şehir satırıyla aynı pill görünümü; farkı
 // seçimi özetlemesi ("İTÜ +2", "3 dil seçildi") ve X'in listeyi tamamen
-// temizlemesi. Üç üniversite listesi ve dil filtresi bunu paylaşıyor.
+// temizlemesi. Üniversite ve dil filtreleri bunu paylaşıyor.
 function SelectRow({
   sfIcon,
   lucideIcon,
@@ -1839,14 +1776,9 @@ export default function FilterModal({
     const hobbiesGated = isHobbiesPremiumGated(filters);
     const intentsGated = isIntentsPremiumGated(filters);
     const universityGated = isUniversityPremiumGated(filters);
-    const visibleOnlyGated = isVisibleOnlyPremiumGated(filters);
-    const hiddenFromGated = isHiddenFromPremiumGated(filters);
     return (
       f.preferredCity != null ||
       (universityGated && (f.preferredUniversityDomains?.length ?? 0) > 0) ||
-      (visibleOnlyGated &&
-        (f.visibleOnlyToUniversityDomains?.length ?? 0) > 0) ||
-      (hiddenFromGated && (f.hiddenFromUniversityDomains?.length ?? 0) > 0) ||
       (hobbiesGated && (f.preferredHobbies?.length ?? 0) > 0) ||
       (intentsGated && (f.relationshipIntents?.length ?? 0) > 0) ||
       // Dealbreaker'lı premium filtreler — hepsi premium-only, biri bile
@@ -1874,18 +1806,10 @@ export default function FilterModal({
     if (isPremium || !f) return f;
     if (!hasPremiumValue(f)) return f;
     const universityGated = isUniversityPremiumGated(filters);
-    const visibleOnlyGated = isVisibleOnlyPremiumGated(filters);
-    const hiddenFromGated = isHiddenFromPremiumGated(filters);
-    // Görünürlük listeleri overwrite semantiğiyle yazılıyor: free kullanıcıda boş
-    // dizi göndermek premium döneminden kalan kısıtlamayı da temizler — istenen
-    // davranış bu, aksi halde kullanıcı düşürdüğü premium'un gizlilik kuralına
-    // kilitli kalırdı.
     return {
       ...f,
       preferredCity: null,
       ...(universityGated ? { preferredUniversityDomains: [] } : {}),
-      ...(visibleOnlyGated ? { visibleOnlyToUniversityDomains: [] } : {}),
-      ...(hiddenFromGated ? { hiddenFromUniversityDomains: [] } : {}),
       preferredHobbies: [],
       relationshipIntents: [],
       heightMin: null,
@@ -1916,12 +1840,10 @@ export default function FilterModal({
     const normalized = {
       ...f,
       interestedIn: normalizeInterestedIn(f.interestedIn),
-      // Görünürlük listeleri: backend boş dizi döner (null değil) ama eski
-      // response'lara / eksik alana karşı da normalize et.
-      visibleOnlyToUniversityDomains: toDomainList(
-        f.visibleOnlyToUniversityDomains,
-      ),
-      hiddenFromUniversityDomains: toDomainList(f.hiddenFromUniversityDomains),
+      // 🔴 GÖRÜNÜRLÜK LİSTELERİ ARTIK BURADA DEĞİL. `GET /Filters` onları hâlâ
+      // döndürüyor ama YOK SAYIYORUZ: ayar profil ekranına taşındı ve kaynağı
+      // `GetMyProfile` (bkz. profile/components/UniversityVisibilitySheet).
+      // Local state'e almazsak payload'a da giremezler — istenen bu.
       // "Ben kimi göreyim" üniversite tercihi — artık ÇOKLU (max 3). GET adı
       // `preferredUniversityDomains`, PUT adı `universityDomains`.
       // Tekil `preferredUniversityDomain` deprecated ama backend hâlâ döndürüyor:
@@ -2010,16 +1932,10 @@ export default function FilterModal({
   // Dil listesi 34 değer — pill ızgarası yerine aranabilir picker (profil
   // düzenlemedeki dil seçiciyle aynı bileşen, farklı başlık).
   const [languagePickerVisible, setLanguagePickerVisible] = useState(false);
-  // Tek picker instance'ı iki listeye de hizmet ediyor. Açık/kapalı ile hedef
-  // liste AYRI tutuluyor: gorhom dismiss animasyonlu (~300ms) ve hedefi tek bir
-  // nullable state'te tutarsak kapanış sırasında null'a düşüp başlık diğer
-  // listeninkine atlıyor. Hedef kapanış boyunca sabit kalsın.
-  const [visibilityPickerVisible, setVisibilityPickerVisible] = useState(false);
-  // Üçüncü hedef "preferred" = "ben kimi göreyim". Üçü de çoklu seçim ve aynı
-  // limite (MAX_UNIVERSITY_DOMAINS) tabi; farkları yalnızca hangi alana
-  // yazdıkları ve picker başlığı.
-  const [visibilityPicker, setVisibilityPicker] =
-    useState<DomainTarget>("visibleOnly");
+  // Üniversite picker'ı — artık TEK hedefi var: "ben kimi göreyim"
+  // (`preferredUniversityDomains`). Görünürlük listeleri profil ekranına
+  // taşındığı için buradaki hedef seçimi de kalktı.
+  const [universityPickerVisible, setUniversityPickerVisible] = useState(false);
 
   const citiesQuery = useCities();
   const cityOptions = citiesQuery.data ?? [];
@@ -2102,24 +2018,7 @@ export default function FilterModal({
     () => local?.preferredUniversityDomains ?? [],
     [local?.preferredUniversityDomains],
   );
-  const visibleOnlyDomains: string[] = useMemo(
-    () => local?.visibleOnlyToUniversityDomains ?? [],
-    [local?.visibleOnlyToUniversityDomains],
-  );
-  const hiddenFromDomains: string[] = useMemo(
-    () => local?.hiddenFromUniversityDomains ?? [],
-    [local?.hiddenFromUniversityDomains],
-  );
 
-  // Aynı domain iki listede birdense backend'de block kazanır (kullanıcı o
-  // üniversiteden kimseye görünmez) — sessiz kalmak yerine uyarı gösteriyoruz.
-  const visibilityOverlap = useMemo(() => {
-    if (visibleOnlyDomains.length === 0 || hiddenFromDomains.length === 0) {
-      return false;
-    }
-    const blocked = new Set(hiddenFromDomains);
-    return visibleOnlyDomains.some((d) => blocked.has(d));
-  }, [visibleOnlyDomains, hiddenFromDomains]);
 
   // Free kullanıcı kilitli alana dokununca paywall. useSaveFilters'ın 403
   // yolundaki event'in aynısı — DiscoverScreen "swipePaywall"i dinleyip
@@ -2143,31 +2042,17 @@ export default function FilterModal({
   // (stackBehavior="push" — bkz. aşağıdaki AppModal).
   const openDealbreakerInfo = () => setDealbreakerInfoVisible(true);
 
-  const onVisibilityConfirm = (domains: string[]) => {
-    setVisibilityPickerVisible(false);
-    const field = DOMAIN_FIELD_BY_TARGET[visibilityPicker];
-    setLocal((prev: any) => ({ ...prev, [field]: toDomainList(domains) }));
-  };
-
-  // Kilit kararı premiumOnlyFields'tan geliyor (hobiler/niyetlerle aynı):
-  // backend bir listeyi ileride free'ye açarsa UI kendiliğinden takip etsin.
-  // İki liste ayrı ayrı değerlendiriliyor çünkü backend'de de ayrı alanlar.
-  const visibleOnlyLocked = !isPremium && isVisibleOnlyPremiumGated(filters);
-  const hiddenFromLocked = !isPremium && isHiddenFromPremiumGated(filters);
-  const visibilityLocked = visibleOnlyLocked || hiddenFromLocked;
-
-  // Picker'ı hedef listeye kilitleyip aç. Free kullanıcı kilitli satıra
-  // dokununca picker yerine paywall.
-  const openVisibilityPicker = (target: "visibleOnly" | "hiddenFrom") => {
-    if (target === "hiddenFrom" ? hiddenFromLocked : visibleOnlyLocked) {
-      openPremiumPaywall();
-      return;
-    }
-    setVisibilityPicker(target);
-    setVisibilityPickerVisible(true);
+  const onUniversityConfirm = (domains: string[]) => {
+    setUniversityPickerVisible(false);
+    setLocal((prev: any) => ({
+      ...prev,
+      preferredUniversityDomains: toDomainList(domains),
+    }));
   };
 
   // "Ben kimi göreyim" üniversite filtresi — premium-only, çoklu seçim (max 3).
+  // Kilit kararı premiumOnlyFields'tan geliyor (hobiler/niyetlerle aynı):
+  // backend alanı ileride free'ye açarsa UI kendiliğinden takip etsin.
   const universityLocked = !isPremium && isUniversityPremiumGated(filters);
 
   const openUniversityPicker = () => {
@@ -2175,8 +2060,7 @@ export default function FilterModal({
       openPremiumPaywall();
       return;
     }
-    setVisibilityPicker("preferred");
-    setVisibilityPickerVisible(true);
+    setUniversityPickerVisible(true);
   };
 
   const hobbiesLocked = !isPremium && isHobbiesPremiumGated(filters);
@@ -2445,9 +2329,8 @@ export default function FilterModal({
     setLocal((prev: any) => ({ ...prev, language: enumNames }));
   };
 
-  // Boş dizi = "temizle" (overwrite semantiği), "değiştirme" değil — üç
-  // üniversite listesi de aynı davranışta.
-  const clearDomainList = (field: DomainField) => {
+  // Boş dizi = "temizle" (overwrite semantiği), "değiştirme" değil.
+  const clearDomainList = (field: "preferredUniversityDomains") => {
     setLocal((prev: any) => ({ ...prev, [field]: [] }));
   };
 
@@ -2543,12 +2426,6 @@ export default function FilterModal({
       // PUT adı `universityDomains`; eşleme useSaveFilters'ta (şehirle aynı).
       preferredUniversityDomains: toDomainList(
         sanitized?.preferredUniversityDomains,
-      ),
-      visibleOnlyToUniversityDomains: toDomainList(
-        sanitized?.visibleOnlyToUniversityDomains,
-      ),
-      hiddenFromUniversityDomains: toDomainList(
-        sanitized?.hiddenFromUniversityDomains,
       ),
       // Hobiler de OVERWRITE: boş dizi = tercihi temizle. Bu yüzden koşulsuz
       // gönderiliyor, aksi halde kullanıcı seçimini silemezdi.
@@ -3503,74 +3380,13 @@ export default function FilterModal({
         { options: zodiacOptions },
       )}
 
-      {/* Görünürlük — premium-only, iki ayrı liste. Yukarıdaki filtrelerden
-          KAVRAM OLARAK ayrı: onlar "ben kimi göreyim", bu "beni kim görsün".
-          Değerler karşı kullanıcının destesini etkiliyor.
-          pointerEvents kapatılmıyor (City'den farkı): free kullanıcı satıra
-          dokununca paywall açılsın. */}
-      <View style={{ opacity: visibilityLocked ? 0.4 : 1 }}>
-        <FilterSection
-          title={t('discover.filters.visibility.title')}
-          description={t('discover.filters.visibility.description')}
-        />
-
-        <VisibilityListLabel
-          label={t('discover.filters.visibility.visibleOnlyLabel')}
-        />
-        <SelectRow
-          sfIcon={UNIVERSITY_ICON}
-          lucideIcon={GraduationCap}
-          value={summarizeDomains(visibleOnlyDomains)}
-          placeholder={t('discover.filters.visibility.selectUniversities')}
-          disabled={!visibleOnlyLocked && universityOptions.length === 0}
-          onPress={() => openVisibilityPicker("visibleOnly")}
-          onClear={() => clearDomainList("visibleOnlyToUniversityDomains")}
-        />
-
-        <VisibilityListLabel
-          label={t('discover.filters.visibility.hiddenFromLabel')}
-          marginTop={18}
-        />
-        <SelectRow
-          sfIcon={UNIVERSITY_ICON}
-          lucideIcon={GraduationCap}
-          value={summarizeDomains(hiddenFromDomains)}
-          placeholder={t('discover.filters.visibility.selectUniversities')}
-          disabled={!hiddenFromLocked && universityOptions.length === 0}
-          onPress={() => openVisibilityPicker("hiddenFrom")}
-          onClear={() => clearDomainList("hiddenFromUniversityDomains")}
-        />
-
-        {visibilityOverlap ? (
-          <Text
-            style={{
-              color: mutedInk(),
-              fontSize: 13,
-              fontWeight: "500",
-              marginTop: 10,
-            }}
-          >
-            {t('discover.filters.visibility.overlapWarning')}
-          </Text>
-        ) : null}
-
-        {/* Backend bu kuralları premium bitince BİLİNÇLİ olarak devre dışı
-            bırakıyor: engellenen üniversite kullanıcıyı tekrar görmeye başlar.
-            Gizlilik beklentisi yaratan bir ayar, sessiz kalmıyoruz. Yalnız
-            kural kurulmuşken gösteriliyor — boş listede uyarının konusu yok. */}
-        {visibleOnlyDomains.length > 0 || hiddenFromDomains.length > 0 ? (
-          <Text
-            style={{
-              color: colors.textMuted,
-              fontSize: 13,
-              fontWeight: "500",
-              marginTop: 10,
-            }}
-          >
-            {t('discover.filters.visibility.premiumExpiryNote')}
-          </Text>
-        ) : null}
-      </View>
+      {/* 🔴 GÖRÜNÜRLÜK BÖLÜMÜ BURADAN TAŞINDI → profil ekranı (hero'daki göz
+          butonu → UniversityVisibilitySheet). Gerekçe: "beni kim görsün /
+          görmesin" bir keşif filtresi değil, kendi görünürlük ayarın —
+          `showLocation` / `showOnlineStatus` ailesinden. Kullanıcı testinde en
+          sık karışan şey, aynı ekranda duran "ben kimi göreyim" ile ayırt
+          edilememesiydi. Backend de artık onları `UpdateProfile` altında
+          yazıyor; bu ekranın payload'ı o alanları GÖNDERMİYOR. */}
 
       {/* "Olmazsa olmaz" açıklaması — başlıklardaki info ikonu bunu açıyor.
           Paywall'daki özellik açıklamasıyla (bkz. PremiumBenefitInfoSheet) aynı
@@ -3646,34 +3462,21 @@ export default function FilterModal({
         onConfirm={onLanguageConfirm}
       />
 
-      {/* Tek üniversite picker'ı iki listeye de hizmet ediyor; hangi listenin
-          hedeflendiğini visibilityPicker tutuyor (kapanış animasyonu boyunca
-          da sabit kalır — bkz. state tanımındaki not). */}
+      {/* Üniversite picker'ı — tek hedef: "ben kimi göreyim". Görünürlük
+          listeleri profil ekranına taşındığından buradaki hedef ayrımı kalktı. */}
       <UniversityPickerModal
-        visible={visibilityPickerVisible}
-        onClose={() => setVisibilityPickerVisible(false)}
-        title={
-          visibilityPicker === "preferred"
-            ? t('discover.universityPicker.preferredTitle')
-            : visibilityPicker === "hiddenFrom"
-              ? t('discover.universityPicker.hiddenFromTitle')
-              : t('discover.universityPicker.visibleOnlyTitle')
-        }
+        visible={universityPickerVisible}
+        onClose={() => setUniversityPickerVisible(false)}
+        title={t('discover.universityPicker.preferredTitle')}
         items={universityOptions}
-        initialSelectedValues={
-          visibilityPicker === "preferred"
-            ? preferredUniversityDomains
-            : visibilityPicker === "hiddenFrom"
-              ? hiddenFromDomains
-              : visibleOnlyDomains
-        }
+        initialSelectedValues={preferredUniversityDomains}
         maxLimit={MAX_UNIVERSITY_DOMAINS}
         limitMsg={t('discover.universityPicker.limitMsg', {
           // `count` DEĞİL: i18next'te count çoğul çözümlemesini tetikler
           // (limitMsg_other arar) ve anahtar bulunamaz.
           max: MAX_UNIVERSITY_DOMAINS,
         })}
-        onConfirm={onVisibilityConfirm}
+        onConfirm={onUniversityConfirm}
       />
     </AppModal>
   );

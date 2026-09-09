@@ -945,7 +945,6 @@ export default function AppNavigator() {
         const exists = ((store.getState() as any).chat?.conversations ?? [])
           .some((c: any) => c.conversationId === convId);
         if (!exists) {
-          console.warn('[conv] refetch tag=unknown-conv-notif', convId);
           dispatch(fetchConversations({ force: true }));
         }
       }),
@@ -1516,8 +1515,14 @@ export default function AppNavigator() {
   // ekran — kapı da onu itiyor. navigationRef: bu efekt NavigationContainer'ın
   // dışında, `navigate` çağrıldığında container hazır olmayabilir.
   useEffect(() => {
-    const unsub = uiBus.on('openSettings', () => {
-      if (navigationRef.isReady()) (navigationRef as any).navigate('Settings');
+    // Payload isteğe bağlı: `{ section }` verilirse Ayarlar o kategoriyle açılır
+    // (bkz. RootStackParamList.Settings), verilmezse kök liste.
+    const unsub = uiBus.on('openSettings', (payload?: { section?: string }) => {
+      if (!navigationRef.isReady()) return;
+      (navigationRef as any).navigate(
+        'Settings',
+        payload?.section ? { section: payload.section } : undefined,
+      );
     });
     return unsub;
   }, []);

@@ -126,11 +126,22 @@ export const API_ENDPOINTS = {
   PRIVACY_MY_DATA: "/api/privacy/my-data",
   PRIVACY_MY_DATA_STATUS: (requestId: number | string) => `/api/privacy/my-data/${requestId}`,
   PRIVACY_ACCEPT_CONSENT: "/api/privacy/accept-consent",
+  // Rızanın şu anki durumu (Ayarlar'daki fotoğraf doğrulama anahtarı).
+  PRIVACY_CONSENT_STATUS: (consentType: string) =>
+    `/api/privacy/consent-status?type=${encodeURIComponent(consentType)}`,
+  // Tüm rıza kararlarının geçmişi (kabul + geri alma). `consent-status`
+  // `isAccepted` vermeyen ESKİ sunucularda geçerli durumu buradan çıkarıyoruz
+  // (bkz. features/auth/consents.ts).
+  PRIVACY_CONSENT_HISTORY: "/api/privacy/consent-history",
   // Aydınlatma metni — ANONİM erişilebilir, markdown döner:
   // { type, version, contentMarkdown, contentType }.
   // ⚠️ `version` YANITLA GELEN değerdir, sabit kodlanmaz: metin güncellenince
-  // yeniden rıza gerekiyor (KVKKConsentScreen'deki CURRENT_KVKK_VERSION sabiti
-  // bu akışta KULLANILMAZ).
+  // yeniden rıza gerekiyor.
+  //
+  // Uygulama şu an bu ucu ÇAĞIRMIYOR: onay ekranı metni i18n'den basıyor
+  // (auth.kvkkConsent.section*), çünkü metin iki dilli ve sunucu tek dil
+  // servis ediyor. Uç, aynı metnin makine tarafından doğrulanabilir kopyasını
+  // (ve onay anındaki sürümü) sunmaya devam ediyor.
   PRIVACY_POLICY: (consentType: string) =>
     `/api/privacy/policy/${encodeURIComponent(consentType)}`,
 

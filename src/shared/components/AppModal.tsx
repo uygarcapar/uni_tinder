@@ -7,6 +7,7 @@ import {
   useMemo,
   useRef,
 } from "react";
+import SheetBlurBackdrop from "@/shared/components/SheetBlurBackdrop";
 import {
   View,
   Text,
@@ -17,14 +18,7 @@ import {
   ViewStyle,
   StyleProp,
 } from "react-native";
-import {
-  BottomSheetScrollView,
-  BottomSheetBackdrop,
-  SCROLLABLE_STATUS,
-  useBottomSheetInternal,
-  useScrollEventsHandlersDefault,
-  type ScrollEventsHandlersHookType,
-} from "@gorhom/bottom-sheet";
+import { BottomSheetScrollView, SCROLLABLE_STATUS, useBottomSheetInternal, useScrollEventsHandlersDefault, type ScrollEventsHandlersHookType } from "@gorhom/bottom-sheet";
 import { State } from "react-native-gesture-handler";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { LinearGradient } from "expo-linear-gradient";
@@ -610,14 +604,7 @@ export default function AppModal({
 
   // ── Backdrop ─────────────────────────────────────────────────────────────
   const renderBackdrop = useCallback(
-    (props: any) => (
-      <BottomSheetBackdrop
-        {...props}
-        appearsOnIndex={0}
-        disappearsOnIndex={-1}
-        opacity={0.5}
-      />
-    ),
+    (props: any) => <SheetBlurBackdrop {...props} />,
     [],
   );
 

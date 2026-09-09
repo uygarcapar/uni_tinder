@@ -440,6 +440,24 @@ export interface PotentialMatch {
    */
   distance?: number;
   isPremium?: boolean;
+  /**
+   * Foto (selfie) doğrulama rozeti — kullanıcı canlı kamerayla, sunucunun
+   * seçtiği hareketleri yapıp ana fotoğrafıyla eşleştiği için verilir.
+   *
+   * ⚠️ `isVerified`'a DAHİL DEĞİL, ayrı bir rozet ve ayrı bir iddia:
+   * `isVerified = mail ✓ && foto moderasyonu ✓`. İkisi birleştirilmemeli.
+   *
+   * ⚠️ `undefined` ile `false` AYNI ŞEY DEĞİL: `false` "doğrulanmamış",
+   * `undefined` "backend bu alanı hiç göndermiyor". Rozet ikisinde de
+   * çizilmiyor (`SelfieVerifiedBadge` yalnız `true`da çiziyor), ama ayrımı
+   * korumak önemli — profil satırında davranış farklı (bkz.
+   * SelfieVerificationRow).
+   *
+   * 🔴 ŞU AN BACKEND `ProfileCardDto`'DA BU ALAN YOK (bkz.
+   * `backend_selfie_verification_blockers.md` §2) — alan eklenene kadar hep
+   * `undefined` gelir ve rozet çizilmez. Alan eklendiği an FE deploy'suz açılır.
+   */
+  isSelfieVerified?: boolean;
 
   // Üniversite — `showUniversity` false ise kartta hiç gösterilmez.
   //

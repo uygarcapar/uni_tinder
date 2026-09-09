@@ -15,7 +15,13 @@ import {
   normalizeSelfieAttempt,
   normalizeSelfieResult,
   resolveSelfieVerified,
+  selfieChallengeHintKey,
+  selfieChallengeKind,
   selfieReasonText,
+  selfieReasonTitle,
+  selfieResultAnalytics,
+  SELFIE_CHALLENGE_CODES,
+  SELFIE_REASON_CODES,
 } from '@/features/profile/selfie/selfieVerification';
 
 describe('resolveSelfieVerified', () => {
@@ -23,6 +29,20 @@ describe('resolveSelfieVerified', () => {
     expect(resolveSelfieVerified({})).toBeNull();
     expect(resolveSelfieVerified(null)).toBeNull();
     expect(resolveSelfieVerified({ isSelfieVerified: 'true' })).toBeNull();
+  });
+
+  it('🔴 ProfileDto şeklinde `user` ALTINDAN okur', () => {
+    // GET /api/profile/me kökünde isSelfieVerified YOK (isMailVerified ve
+    // isPhotoVerified var). Yalnız kök okunduğunda kendi profilinde hep
+    // undefined dönüyordu ve doğrulama satırı hiç çizilmiyordu.
+    expect(resolveSelfieVerified({ user: { isSelfieVerified: true } })).toBe(true);
+    expect(resolveSelfieVerified({ user: { isSelfieVerified: false } })).toBe(false);
+    // Kart şekli (ProfileCardDto) kökte taşıyor — o da çalışmaya devam etmeli.
+    expect(resolveSelfieVerified({ isSelfieVerified: true })).toBe(true);
+    // Kökteki `false` gerçek cevap; `user`a düşüp true dönmemeli.
+    expect(
+      resolveSelfieVerified({ isSelfieVerified: false, user: { isSelfieVerified: true } }),
+    ).toBe(false);
   });
 
   it('boolean geldiğinde olduğu gibi okur', () => {
@@ -156,5 +176,147 @@ describe('isAttemptExpired', () => {
       isAttemptExpired({ attemptId: 'a', challenges: [], expiresAt: 'çöp' }),
     ).toBe(false);
     expect(isAttemptExpired(null)).toBe(false);
+  });
+});
+
+// ── Backend sözleşmesiyle hizalanma ─────────────────────────────────────────
+// Bu iki liste backend'den KOPYA: `SelfieFailureReasons` (11 kod) ve
+// `SelfieChallengePool.Active` (5 hareket). Sürüklenmeleri sessiz bir bozulma
+// üretiyor, o yüzden sayıları da içerikleri de burada sabitleniyor.
+
+describe('sebep kodu listesi', () => {
+  it('backend’in 11 kodunun HEPSİNİ tanır', () => {
+    // 8'de kalmıştı: eksik üç kod `KNOWN_REASON_CODES.has()`i false'a düşürüyor,
+    // gövde sunucu metnine düşerken BAŞLIK jeneriğe kayıyor ve gövdeyi yalanlıyor.
+    expect(SELFIE_REASON_CODES).toHaveLength(11);
+    expect(SELFIE_REASON_CODES).toEqual(
+      expect.arrayContaining([
+        'challenge_too_weak',
+        'challenge_wrong_move',
+        'challenge_too_much',
+      ]),
+    );
+  });
+
+  it('yeni üç kodun metni VE başlığı jeneriğe düşmez', () => {
+    for (const code of [
+      'challenge_too_weak',
+      'challenge_wrong_move',
+      'challenge_too_much',
+    ]) {
+      // Sunucu metni verilse bile kendi metnimizi kullanıyoruz (kod > metin).
+      const body = selfieReasonText(code, 'sunucudan gelen metin');
+      expect(body).not.toBe('sunucudan gelen metin');
+      expect(body).not.toBe(`profile.selfie.reason.${code}`);
+
+      const title = selfieReasonTitle(code);
+      expect(title).not.toBe(selfieReasonTitle('bilinmeyen_kod'));
+    }
+  });
+});
+
+describe('hareket havuzu', () => {
+  it('yalnız kalibre edilmiş 5 hareketi listeler', () => {
+    expect(SELFIE_CHALLENGE_CODES).toEqual([
+      'TurnRight',
+      'TurnLeft',
+      'LookUp',
+      'Smile',
+      'MouthOpen',
+    ]);
+  });
+
+  it('emekli hareketler listede YOK — havuza girmiyorlar', () => {
+    for (const retired of ['LookDown', 'TiltHead', 'Neutral', 'EyesClosed']) {
+      expect(SELFIE_CHALLENGE_CODES).not.toContain(retired);
+    }
+  });
+});
+
+describe('selfieChallengeKind / selfieChallengeHintKey', () => {
+  it('poz hareketlerinde "abartma" ipucu verilir', () => {
+    for (const code of ['TurnRight', 'TurnLeft', 'LookUp']) {
+      expect(selfieChallengeKind(code)).toBe('pose');
+      expect(selfieChallengeHintKey(code)).toBe('profile.selfie.camera.hintPose');
+    }
+  });
+
+  it('🔴 mimik hareketlerinde ASLA "abartma" denmez', () => {
+    // Backend'in EvaluateBoolSignal'inde `challenge_too_much` dalı YOK: fazla
+    // gülümsemek diye bir başarısızlık yok. Orada abartmayı önermek kullanıcıyı
+    // `challenge_too_weak`e iterdi.
+    for (const code of ['Smile', 'MouthOpen']) {
+      expect(selfieChallengeKind(code)).toBe('expression');
+      expect(selfieChallengeHintKey(code)).toBe(
+        'profile.selfie.camera.hintExpression',
+      );
+    }
+  });
+
+  it('bilinmeyen kodda null — genel ipucu zaten çiziliyor, tekrarlanmaz', () => {
+    expect(selfieChallengeKind('SomethingNew')).toBe('unknown');
+    expect(selfieChallengeHintKey('SomethingNew')).toBeNull();
+    expect(selfieChallengeHintKey(undefined)).toBeNull();
+  });
+});
+
+describe('selfieResultAnalytics', () => {
+  const attempt = {
+    attemptId: 'a',
+    expiresAt: null,
+    challenges: [
+      { code: 'TurnRight', instruction: 'sağa çevir' },
+      { code: 'Smile', instruction: 'gülümse' },
+    ],
+  };
+
+  it('takılınan ADIMIN hareket kodunu çözer (1 tabanlı)', () => {
+    const payload = selfieResultAnalytics(
+      normalizeSelfieResult({
+        verified: false,
+        reasonCode: 'challenge_too_weak',
+        failedAtStep: 2,
+      }),
+      attempt,
+    );
+    // failedAtStep 2 → challenges[1] = Smile. 0 tabanlı okunursa TurnRight çıkar
+    // ve eşik ayarının girdisi yanlış harekete yazılır.
+    expect(payload.challengeCode).toBe('Smile');
+    expect(payload.reasonCode).toBe('challenge_too_weak');
+    expect(payload.failedAtStep).toBe(2);
+  });
+
+  it('adım yoksa hareket kodu UYDURULMAZ', () => {
+    // face_mismatch / analysis_failed / attempt_expired belirli bir harekete ait
+    // değil; backend failedAtStep'i null gönderiyor.
+    const payload = selfieResultAnalytics(
+      normalizeSelfieResult({
+        verified: false,
+        reasonCode: 'face_mismatch',
+        failedAtStep: null,
+      }),
+      attempt,
+    );
+    expect(payload.challengeCode).toBeNull();
+    expect(payload.failedAtStep).toBeNull();
+  });
+
+  it('🔴 kare / similarity / ham poz değeri TAŞIMAZ', () => {
+    const payload = selfieResultAnalytics(
+      normalizeSelfieResult(
+        { verified: true, verifiedAt: '2026-09-06T10:00:00Z' },
+        'Fotoğrafın doğrulandı!',
+      ),
+      attempt,
+    );
+    // Yalnızca bu dört alan; metin bile gitmiyor (dile göre değişir, aynı olayı
+    // iki ayrı satır gibi gösterir).
+    expect(Object.keys(payload).sort()).toEqual([
+      'challengeCode',
+      'failedAtStep',
+      'reasonCode',
+      'verified',
+    ]);
+    expect(payload.verified).toBe(true);
   });
 });

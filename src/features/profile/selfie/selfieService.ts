@@ -28,25 +28,12 @@ import {
  *     `Content-Type`'ı silip boundary'yi RN'e bırakıyor — updateProfile bunun
  *     çalıştığını kanıtlıyor.
  *  3. 60 sn timeout — varsayılan 30 sn iki kare için dar.
+ *
+ * RIZA UÇLARI BURADA DEĞİL (bkz. features/auth/consents.ts): fotoğraf
+ * doğrulamanın iki açık rızası artık kayıt sırasında, aydınlatma metniyle
+ * birlikte alınıyor ve Ayarlar > Gizlilik'ten yönetiliyor. Bu dosya yalnız
+ * doğrulama akışının kendi uçlarını taşıyor.
  */
-
-// KVKK: /start İKİ rıza arıyor, biri eksikse UT-6501. Tek "kabul ediyorum"
-// kutusu yeterli değil, ikisi ayrı ayrı ve bilinçli olarak alınmalı.
-export const SELFIE_CONSENT_TYPES = [
-  // Yüz verisi = KVKK m.6 özel nitelikli kişisel veri.
-  'BiometricVerification',
-  // Rekognition AWS us-east-1'de çalışıyor = yurt dışına aktarım (m.9).
-  'DataTransferAbroad',
-] as const;
-
-export type SelfieConsentType = (typeof SELFIE_CONSENT_TYPES)[number];
-
-export interface ConsentPolicy {
-  consentType: SelfieConsentType;
-  /** ⚠️ Metinle GELEN değer. Sabit kodlanmaz — metin güncellenince yeniden rıza gerekir. */
-  version: string;
-  contentMarkdown: string;
-}
 
 /** Karenin FormData'ya eklenecek hâli. `captureSelfieFrame` üretir. */
 export interface SelfieFrame {
@@ -132,43 +119,4 @@ export async function submitSelfieFrames(
     (response as any)?.result,
     (response as any)?.message,
   );
-}
-
-/**
- * Aydınlatma metnini çeker. Anonim erişilebilir — token olmadan da çalışır.
- *
- * `version` sunucudan geldiği gibi taşınır; `accept-consent` aynı değerle
- * çağrılmalı.
- */
-export async function fetchConsentPolicy(
-  consentType: SelfieConsentType,
-): Promise<ConsentPolicy | null> {
-  const response = await api.get(API_ENDPOINTS.PRIVACY_POLICY(consentType));
-  const result = (response as any)?.result ?? response;
-  const version = result?.version;
-  const contentMarkdown = result?.contentMarkdown;
-  if (typeof version !== 'string' || typeof contentMarkdown !== 'string') {
-    devLog('🪪 [selfie] policy beklenmeyen şekil', result);
-    return null;
-  }
-  return { consentType, version, contentMarkdown };
-}
-
-/**
- * Rızayı kaydet. Her tip AYRI çağrı — tek istekle ikisini birden vermenin yolu
- * yok, KVKK ayrı ayrı bilinçli onay istiyor.
- *
- * ⚠️ Mevcut `KVKKConsentScreen` aynı uca `consentType`SIZ `{ version }`
- * gönderiyor (genel KVKK metni). O çağrı bu akıştan bağımsız, dokunulmadı.
- */
-export async function acceptConsent(
-  consentType: SelfieConsentType,
-  version: string,
-  accepted = true,
-): Promise<void> {
-  await api.post(API_ENDPOINTS.PRIVACY_ACCEPT_CONSENT, {
-    consentType,
-    version,
-    accepted,
-  });
 }

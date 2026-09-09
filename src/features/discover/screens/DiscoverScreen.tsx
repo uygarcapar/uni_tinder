@@ -618,9 +618,6 @@ const DEFAULT_FILTERS = {
   // "Ben kimi göreyim" üniversite tercihi — çoklu (max 3). Tekil
   // `preferredUniversityDomain` deprecated.
   preferredUniversityDomains: [],
-  // "Beni kim görsün / görmesin" listeleri — backend boş dizi döner (null değil).
-  visibleOnlyToUniversityDomains: [],
-  hiddenFromUniversityDomains: [],
   isPremium: false,
 };
 
@@ -707,36 +704,6 @@ export default function DiscoverScreen() {
     const out = deduped.filter(
       (p, i) => i < historyLimit || !isGuarded(p.userId),
     );
-    if (__DEV__) {
-      // GEÇİCİ TEŞHİS LOGU — desteyi hangi adımın boşalttığını gösterir.
-      const pruned = deduped.filter(
-        (p, i) => !(i < historyLimit || !isGuarded(p.userId)),
-      );
-      // eslint-disable-next-line no-console
-      console.log(
-        `[deck] api=${all.length} dedupe=${deduped.length} → deste=${out.length} | ` +
-          `currentIndex=${currentIndex} historyLimit=${historyLimit} ` +
-          `swipeKaydı=${swipedAtRef.current.size} elenen=${pruned.length}`,
-      );
-      if (pruned.length) {
-        // eslint-disable-next-line no-console
-        console.log(
-          `[deck] swipe koruması elemiş (<${SWIPE_GUARD_MS / 1000}sn):`,
-          pruned.map((p) => `${p?.displayName}(${p?.userId})`).join(", "),
-        );
-      }
-      // eslint-disable-next-line no-console
-      console.log(
-        "[deck] gösterilecek:",
-        out
-          .map(
-            (p, i) =>
-              `${i === currentIndex ? "▶" : " "}${i}. ${p?.displayName ?? "?"} ` +
-              `${p?.age ?? "-"}y ${p?.distance ?? "-"}km ${p?.universityName ?? "-"}`,
-          )
-          .join("\n") || "(BOŞ → EmptyDiscoverCard/radar gösterilir)",
-      );
-    }
     return out;
   }, [matchesQuery.data, currentIndex, isGuarded]);
 
@@ -932,9 +899,6 @@ export default function DiscoverScreen() {
     if (filters.preferredCity) count++;
     // Üniversite tercihi de artık liste: kaç domain seçildiğinden bağımsız 1.
     if ((filters.preferredUniversityDomains || []).length > 0) count++;
-    // Görünürlük listeleri: kaç domain seçildiğinden bağımsız, liste başına 1.
-    if ((filters.visibleOnlyToUniversityDomains || []).length > 0) count++;
-    if ((filters.hiddenFromUniversityDomains || []).length > 0) count++;
     return count;
   }, [filters]);
 

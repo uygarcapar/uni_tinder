@@ -1,14 +1,13 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
-import { View, Keyboard } from "react-native";
+import { Keyboard } from "react-native";
 import {
   BottomSheetModal,
   BottomSheetBackdrop,
   BottomSheetFooter,
 } from "@gorhom/bottom-sheet";
 import { useSharedValue } from "react-native-reanimated";
-import { BlurView } from "expo-blur";
-import { colors, scrimAt } from "../theme/colors";
-import { plainBlurTint } from "@/shared/theme/blur";
+import { colors } from "../theme/colors";
+import SheetBlurBackdrop from "@/shared/components/SheetBlurBackdrop";
 
 /**
  * Genel amaçlı bottom sheet wrapper'ı. Tüm modal'larda ortak gorhom config'i,
@@ -25,7 +24,8 @@ import { plainBlurTint } from "@/shared/theme/blur";
  *   onClose — modal dismiss olduğunda (swipe/backdrop tap/programatik) çağrılır
  *   snapPoints — ['90%'] gibi gorhom snapPoints
  *   footer — sticky bottom footer içeriği (BottomSheetFooter ile sarılır)
- *   backdrop — 'default' (siyah opak) | 'blur' (BlurView dark) | 'none'
+ *   backdrop — 'blur' (VARSAYILAN, bkz. SheetBlurBackdrop) | 'default'
+ *              (siyah opaklık, bilerek isteyen için) | 'none'
  *   enablePanDownToClose, enableOverDrag, enableContentPanningGesture,
  *   enableHandlePanningGesture — gorhom passthrough
  *   handleComponent — null verirsen drag handle kaybolur
@@ -59,7 +59,10 @@ export default function AppBottomSheet({
   children,
   footer,
   footerComponent: customFooterComponent,
-  backdrop = "default",
+  // 🔴 VARSAYILAN BLUR: uygulamadaki tüm sheet'ler arkayı bulanıklaştırıyor,
+  // düz opaklıkla karartmıyor (bkz. SheetBlurBackdrop). "default" (siyah
+  // opaklık) yalnız bilerek isteyen bir çağıran için duruyor.
+  backdrop = "blur",
   backdropComponent: customBackdropComponent,
   enablePanDownToClose = true,
   enableOverDrag = false,
@@ -235,41 +238,10 @@ export default function AppBottomSheet({
       if (backdrop === "none") return null;
       if (backdrop === "blur") {
         return (
-          <BottomSheetBackdrop
+          <SheetBlurBackdrop
             {...props}
-            appearsOnIndex={0}
-            disappearsOnIndex={-1}
-            opacity={1}
             pressBehavior={enablePanDownToClose ? "close" : "none"}
-            style={[props.style, { backgroundColor: "transparent" }]}
-          >
-            <BlurView
-              intensity={30}
-              tint={plainBlurTint()}
-              style={{
-                position: "absolute",
-                top: 0,
-                left: 0,
-                right: 0,
-                bottom: 0,
-              }}
-            />
-            {/* Blur tek başına arkayı yeterince geri itmiyor: içerik bulanık
-                ama AYNI parlaklıkta kalıyor, sheet zeminiyle (colors.bg)
-                kontrast oluşmuyor. Blur'un ÜSTÜNE ince bir perde çekiyoruz —
-                `scrimAt` her iki modda da siyah, açık modda da karartır. */}
-            <View
-              pointerEvents="none"
-              style={{
-                position: "absolute",
-                top: 0,
-                left: 0,
-                right: 0,
-                bottom: 0,
-                backgroundColor: scrimAt(0.28),
-              }}
-            />
-          </BottomSheetBackdrop>
+          />
         );
       }
       return (
