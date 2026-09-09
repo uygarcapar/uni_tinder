@@ -14,6 +14,7 @@ import {
   isSelfieRetryAuto,
   normalizeSelfieAttempt,
   normalizeSelfieResult,
+  resolveSelfieResetAt,
   resolveSelfieVerified,
   selfieChallengeHintKey,
   selfieChallengeKind,
@@ -63,6 +64,44 @@ describe('resolveSelfieVerified', () => {
     expect(
       resolveSelfieVerified({ isSelfieVerified: true, user: { isSelfieVerified: false } }),
     ).toBe(true);
+  });
+});
+
+describe('resolveSelfieResetAt', () => {
+  it('alan hiç gelmediyse undefined döner', () => {
+    expect(resolveSelfieResetAt({})).toBeUndefined();
+    expect(resolveSelfieResetAt(null)).toBeUndefined();
+    expect(resolveSelfieResetAt(undefined)).toBeUndefined();
+  });
+
+  it('null GERÇEK cevaptır: "sıfırlanmadı"', () => {
+    expect(resolveSelfieResetAt({ selfieResetAt: null })).toBeNull();
+    expect(resolveSelfieResetAt({ user: { selfieResetAt: null } })).toBeNull();
+  });
+
+  it('sıfırlandıysa tarihi döner — kökten de user altından da', () => {
+    expect(
+      resolveSelfieResetAt({ user: { selfieResetAt: '2026-09-10T08:00:00Z' } }),
+    ).toBe('2026-09-10T08:00:00Z');
+    expect(resolveSelfieResetAt({ selfieResetAt: '2026-09-10T08:00:00Z' })).toBe(
+      '2026-09-10T08:00:00Z',
+    );
+  });
+
+  it('🔴 kökteki null, user\'daki tarihe DÜŞMEZ', () => {
+    // `??` ile yazılmış bir uygulama tam burada düşer: null'ı atlayıp
+    // user'daki eski tarihi döndürür, satır yanlışlıkla "sıfırlandı" gösterir.
+    expect(
+      resolveSelfieResetAt({
+        selfieResetAt: null,
+        user: { selfieResetAt: '2026-09-10T08:00:00Z' },
+      }),
+    ).toBeNull();
+  });
+
+  it('boş string ve tarih olmayan tipler undefined sayılır', () => {
+    expect(resolveSelfieResetAt({ selfieResetAt: '' })).toBeUndefined();
+    expect(resolveSelfieResetAt({ selfieResetAt: 123 })).toBeUndefined();
   });
 });
 

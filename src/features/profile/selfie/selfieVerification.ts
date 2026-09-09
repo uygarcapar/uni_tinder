@@ -243,6 +243,40 @@ export function resolveSelfieVerified(raw: any): boolean | null {
   return typeof value === 'boolean' ? value : null;
 }
 
+/**
+ * `selfieResetAt` — doğrulama SIFIRLANDI mı, sunucunun cevabı.
+ *
+ * `isSelfieVerified === false` ÜÇ durumu aynı değere düşürüyor:
+ *   1. hiç doğrulanmadı
+ *   2. doğrulanmıştı, ana fotoğraf değişince düştü
+ *   3. doğrulandı ama elimizdeki profil henüz tazelenmedi
+ *
+ * Ayrımı eskiden `wasSelfieVerifiedBefore` yerel bayrağı TAHMİN ediyordu ve (3)
+ * durumunu (2) sanıyordu: doğrulamayı yeni geçen kullanıcıya "ana fotoğrafın
+ * değiştiği için rozet kalktı" yazıyordu — fotoğrafa hiç dokunmamışken. Ayrımı
+ * artık sunucu yapıyor.
+ *
+ * Dönüş:
+ *   string    → sıfırlandı (ISO tarih)
+ *   null      → sıfırlanmadı (sunucu AÇIKÇA söyledi)
+ *   undefined → alan hiç gelmedi (eski backend) → çağıran yerel bayrağa düşer
+ *
+ * 🔴 `??` KULLANILMAZ. `resolveSelfieVerified`'da doğru çünkü orada `false`
+ * gerçek cevap. Burada `null` DA gerçek cevap; `??` onu atlayıp `user`daki eski
+ * tarihe düşerdi ve kökte "sıfırlanmadı" yazarken satır "sıfırlandı" gösterirdi.
+ * Bu yüzden açık `root !== undefined` kontrolü.
+ */
+export function resolveSelfieResetAt(raw: any): string | null | undefined {
+  const root = raw?.selfieResetAt;
+  const nested = raw?.user?.selfieResetAt;
+
+  const value = root !== undefined ? root : nested;
+
+  if (typeof value === 'string' && value.length > 0) return value;
+  if (value === null) return null;
+  return undefined;
+}
+
 // ── i18n ─────────────────────────────────────────────────────────────────────
 
 /**

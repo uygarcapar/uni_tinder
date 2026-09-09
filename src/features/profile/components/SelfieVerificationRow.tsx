@@ -17,7 +17,10 @@ import {
   SELFIE_AVAILABILITY_EVENT,
   SELFIE_OPEN_EVENT,
 } from "../selfie/selfieEvents";
-import { resolveSelfieVerified } from "../selfie/selfieVerification";
+import {
+  resolveSelfieResetAt,
+  resolveSelfieVerified,
+} from "../selfie/selfieVerification";
 
 /**
  * Profil ekranındaki doğrulama satırı — akışın TEK giriş noktası.
@@ -35,10 +38,18 @@ import { resolveSelfieVerified } from "../selfie/selfieVerification";
  *   sıfırlanmış        → "ana fotoğraf değişikliği nedeniyle sıfırlandı" +
  *                        "Yeniden Doğrula"
  *
- * Üçüncü durumun ayrımı `wasSelfieVerifiedBefore`'dan geliyor: sunucu ikisine de
- * `false` diyor, "hiç doğrulanmadı" ile "doğrulaman düştü" farkını yalnız
- * istemci biliyor. Rehber §5 sessiz düşürmeyi açıkça yasaklıyor — kullanıcı
- * sebebiyle birlikte öğrenmeli.
+ * Üçüncü durumun ayrımı SUNUCUDAN geliyor (`selfieResetAt`). Eskiden yerel
+ * `wasSelfieVerifiedBefore` bayrağı TAHMİN ediyordu ve doğrulamayı yeni geçen
+ * kullanıcıyı yanlış sınıflıyordu: profil henüz tazelenmediği için `verified`
+ * hâlâ `false` oluyor, bayrak ise doğrulama başarılı olunca yazılmış oluyordu →
+ * satır "ana fotoğrafın değiştiği için rozet kalktı" diyordu, oysa fotoğrafa
+ * dokunulmamıştı.
+ *
+ * Yerel bayrak YEDEK olarak duruyor: alan hiç gelmediğinde (henüz deploy
+ * edilmemiş sunucu) eski davranış aynen sürüyor.
+ *
+ * Rehber §5 sessiz düşürmeyi açıkça yasaklıyor — kullanıcı sebebiyle birlikte
+ * öğrenmeli.
  */
 
 /**
@@ -103,8 +114,12 @@ export default function SelfieVerificationRow({
     return null;
   }
 
-  const wasVerified = wasSelfieVerifiedBefore(userId);
-  const state = verified ? "verified" : wasVerified ? "reset" : "idle";
+  // Sunucu konuştuysa ona uy; alan hiç gelmediyse (eski backend) yerel bayrağa düş.
+  const resetAt = resolveSelfieResetAt(profile);
+  const wasReset =
+    resetAt !== undefined ? resetAt !== null : wasSelfieVerifiedBefore(userId);
+
+  const state = verified ? "verified" : wasReset ? "reset" : "idle";
   const tone = TONE[state];
 
   const title = t(`profile.selfie.row.${state}.title`);
