@@ -21,8 +21,6 @@ import Animated, {
 import type { SharedValue } from "react-native-reanimated";
 import * as Haptics from "expo-haptics";
 import SwipeCard from "@/features/discover/components/SwipeCard";
-import { CARD_FACE_CORNER_RADIUS } from "@/features/discover/components/CardStickyHeader";
-import { colors } from "@/shared/theme/colors";
 import { runFlameSweep } from "@/features/discover/flameSweep";
 import uiBus, {
   cardChromeAnim,
@@ -43,14 +41,6 @@ import type { NoteTarget, PotentialMatch } from "@/shared/types";
 const { width, height } = Dimensions.get("window");
 const SWIPE_THRESHOLD = 85;
 
-/**
- * Yana kaydırırken kartın en fazla ne kadar kararacağı (0-1).
- *
- * Eşiğe (SWIPE_THRESHOLD) varıldığında bu değere ulaşır, ötesinde artmaz —
- * karar verilmiş bir kartı daha da karartmanın anlatacağı bir şey yok, üstelik
- * tam o anda ✓/✗ glifi (SwipeOverlay) devreye giriyor ve perde onu yutar.
- */
-const SWIPE_DIM_MAX = 0.22;
 const SUPER_LIKE_PULL_THRESHOLD = 50; // pull down ty.value bu px'e ulaşınca süper beğeni "ready"
 
 /**
@@ -1428,30 +1418,7 @@ function SwipeWrapper({
     };
   });
 
-  /**
-   * Yana kaydırırken kartı karartan perde.
-   *
-   * KARTIN KENDİ `opacity`Sİ İLE YAPILMIYOR, ŞART. Cam yüzeyler ata zincirinde
-   * alfa 1'in altına düştüğü anda hiç render edilmiyor (bkz. CardSectionBox'taki
-   * "ATA ZİNCİRİNDE OPACITY < 1 OLAMAZ" notu) — kartı soldurmak açık paneldeki
-   * bütün cam kutuları öldürürdü. Perde bu yüzden kartın ATASI değil KARDEŞİ:
-   * kendi opaklığı animasyonlanıyor, kartınki 1'de sabit kalıyor.
-   *
-   * `tx` okunuyor, `dragX` değil: `tx` bu kartın kendi konumu. `dragX` deste
-   * geneli için paylaşılıyor ve arkadaki kart da onu okuyor — buradan sürseydik
-   * üstteki kart uçarken alttaki de kararırdı.
-   */
-  const swipeDimStyle = useAnimatedStyle(() => {
-    if (!isTopCard) return { opacity: 0 };
-    const progress = interpolate(
-      Math.abs(tx.value),
-      [0, SWIPE_THRESHOLD],
-      [0, SWIPE_DIM_MAX],
-      Extrapolate.CLAMP,
-    );
-    return { opacity: progress };
-  });
-
+  
   return (
     <GestureDetector gesture={composedGesture}>
       <Animated.View
@@ -1480,31 +1447,6 @@ function SwipeWrapper({
           onReport={onReport ? handleReport : undefined}
           onBlock={onBlock ? handleBlock : undefined}
           onNote={onNote ? handleNote : undefined}
-        />
-        {/* Karartma perdesi — KARTTAN SONRA çiziliyor ki üstünde kalsın.
-            Yarıçap kartınkiyle aynı (CARD_FACE_CORNER_RADIUS): kartın köşeleri
-            yuvarlak, perde kare olsaydı sürüklerken köşelerde koyu üçgenler
-            taşardı. Perde yalnız YATAY sürüklemede görünüyor, yani kart hep
-            kapalı — kabuğun alt köşeleri açılırken 0'a indiği hâli burada
-            görünmüyor, sabit değer yetiyor.
-            Dokunmaları geçirmesi gerekiyor — jest kartın kendisinde. */}
-        <Animated.View
-          pointerEvents="none"
-          style={[
-            {
-              // Açık kenarlar: ata `bottom`u expanded'da negatife indiriyor,
-              // perde de onunla birlikte uzasın.
-              position: "absolute",
-              top: 0,
-              left: 0,
-              right: 0,
-              bottom: 0,
-              borderRadius: CARD_FACE_CORNER_RADIUS,
-              borderCurve: "continuous",
-              backgroundColor: colors.mediaScrim,
-            },
-            swipeDimStyle,
-          ]}
         />
       </Animated.View>
     </GestureDetector>

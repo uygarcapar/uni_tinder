@@ -2281,6 +2281,36 @@ export default function SwipeCard({
   }));
 
   /**
+   * Kabuğun KAPALI karttaki taşma payını BOYANMAZ yapan alt inset.
+   *
+   * Kutu bilerek sabit ve ekranın dibinin altına taşıyor
+   * (SwipeWrapper > `bottom: -(HEADER_COVER + tabBarInset)`). Gerekçesi orada
+   * yazılı: alt kenar animasyonluyken `bottom` bir layout prop'u olarak
+   * transform'dan bir kare geriden geliyor ve açılışta "kart alttan büyüyor"
+   * görüntüsü çıkıyordu; kutu sabitlenince hem o titreme hem de
+   * `measuredCardHeight`in oynaması bitti.
+   *
+   * O notta "görsel bir bedeli yok" deniyor ama cümle ALT KART için yazılmış.
+   * Üstteki kart kaydırılırken DÖNÜYOR (±15°): ekranın dışında kalması gereken
+   * pay yandan içeri giriyor ve kartın altına yapışmış ayrı bir zemin gibi
+   * okunuyor.
+   *
+   * Düzeltme ÖLÇÜYE DEĞİL BOYAMAYA dokunuyor — kutu eskisi gibi sabit ve tam
+   * boyunda ölçülüyor (photoHeight onun türevi; kabuk küçültülseydi fotoğraf
+   * açılış boyunca kayardı, fee744e'nin çözdüğü titreme geri gelirdi). Yalnız
+   * zemini taşıyan katman kapalıyken fotoğrafın dibinde bitiyor, açıldıkça
+   * tam boya uzuyor.
+   *
+   * `expandAnim` ile sürülüyor (chromeAnim ile değil): pay geometrik — kutunun
+   * ne kadarının görünür olduğu açılma oranının kendisi.
+   */
+  const cardPaintInsetStyle = useAnimatedStyle(() => {
+    if (previewMode) return { bottom: 0 };
+    const p = Math.max(0, Math.min(1, expandAnim.value));
+    return { bottom: cardBottomDrop * (1 - p) };
+  });
+
+  /**
    * ── ZEMİNİN KIRPMA KUTUSU KALDIRILDI ──────────────────────────────────────
    *
    * Zemin kabuğun ilk çocuğuydu ve panelin üst kenarını takip eden bir kutu
@@ -3158,8 +3188,15 @@ export default function SwipeCard({
           // onun ÜSTÜNDE duruyor — opak kalırsa zemini komple örter. Keşif'te
           // zemin kartın İÇİNDE (bir alttaki CardGlassBackdrop), o yüzden burası
           // opak kalabiliyor ve foto yüklenene kadarki boşluğu da o dolduruyor.
-          backgroundColor:
-            glassPanel && previewMode ? "transparent" : theme.bg,
+          // ZEMİN CAM YOLUNDA BURADA DEĞİL (bkz. cardPaintInsetStyle): kabuk
+          // kapalı kartta fotoğraftan uzun; opak bir zemin taşırsa aradaki pay
+          // kart dönerken görünüyor. Cam yolunda zemini aşağıdaki boyama kutusu
+          // taşıyor ve o kutu kapalıyken fotoğrafın dibinde bitiyor.
+          //
+          // `glassPanel` KAPALIYKEN burada kalmak ZORUNDA: o yolda boyama kutusu
+          // hiç render edilmiyor (bkz. `glassPanel && !previewMode` kapısı),
+          // kabuk şeffaf bırakılırsa kartın zemini komple kayboluyor.
+          backgroundColor: glassPanel ? "transparent" : theme.bg,
         },
         cardFrameRadiusStyle,
       ]}
@@ -3244,8 +3281,15 @@ export default function SwipeCard({
           pointerEvents="none"
           style={[
             StyleSheet.absoluteFill,
-            { overflow: "hidden", borderCurve: "continuous" },
+            {
+              overflow: "hidden",
+              borderCurve: "continuous",
+              // Kabuktan devraldı: fotoğraf yüklenene kadarki boşluğu bu
+              // dolduruyor ve kapalı kartta fotoğrafın dibinde bitiyor.
+              backgroundColor: theme.bg,
+            },
             cardFrameRadiusStyle,
+            cardPaintInsetStyle,
           ]}
         >
           <CardGlassBackdrop uri={allPhotos[0]} />

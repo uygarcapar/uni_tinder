@@ -2162,15 +2162,6 @@ export default function ProfileScreen() {
                   />
                 </View>
 
-                {/* ── Fotoğraf Doğrulama ── Akışın TEK giriş noktası.
-                    Görünürlüğünü kendisi karar veriyor: `isSelfieVerified` alanı
-                    gelmiyorsa ya da yakın zamanda UT-6505 alındıysa null döner.
-
-                    Mağaza şeridinin ÜSTÜNDE: doğrulama bir satın alma değil,
-                    profilin eksiğini kapatan bir iş — sıralamada hero'dan hemen
-                    sonra, kartların ve upsell'in önünde geliyor. */}
-                <SelfieVerificationRow profile={myProfile} userId={user?.id} />
-
                 {/* ── Mağaza şeridi: (premium'da plus) + SuperLike + Not ── */}
                 {/* Hero'nun altı, upsell'in üstü: sayfanın tek "mağaza" şeridi.
                     Eskiden sayfanın en altındaki QuotaSection'da duran SuperLike
