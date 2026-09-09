@@ -21,9 +21,20 @@ import i18n from '@/shared/i18n';
 // değiştiremez. `code` yalnız ikon/animasyon seçmek için — ekranda gösterilen
 // metin sunucudan gelen `instruction`'dır (zaten Accept-Language'e göre
 // yerelleşmiş).
-// ⚠️ Bu liste backend'in AKTİF HAVUZU (`SelfieChallengePool.Active`), enum'un
-// tamamı değil. 2026-09-01 kalibrasyonunda dört hareket ölçülüp havuzdan
-// çıkarıldı ve bir daha GELMEYECEK:
+// ⚠️ Bu liste artık AKTİF HAVUZDAN GENİŞ. Backend'in havuzu (2026-09-09
+// itibarıyla `SelfieChallengePool.Active`) YALNIZ İKİ MİMİK: `Smile` ve
+// `MouthOpen`. Poz hareketleri (`TurnRight`/`TurnLeft`/`LookUp`) emekliye
+// ayrıldı: `face_occluded` ortak kapısı baş çevrilince/yukarı bakılınca gölge
+// ve perspektif yüzünden yüzü "kapalı" sayıp doğrulamayı tamamen bloke
+// ediyordu (bkz. docs/frontend_selfie_challenge_pool_change.md).
+//
+// 🔴 BURADAN SİLMİYORUZ: havuz yeniden genişleyebilir (occlusion eşiği 98'e
+// gevşetildi, poz hareketleri o hâlde yeniden kalibre edilecek) ve kod zaten
+// bilinmeyen kodu `unknown`a düşürüyor — silmek hiçbir şey kazandırmıyor.
+// Pratik sonucu: `kind === 'pose'` dalı ve `camera.hintPose` metni şu an ÖLÜ,
+// her adımda `hintExpression` görünüyor.
+//
+// 2026-09-01 kalibrasyonunda çıkarılan ve enum'da duran diğer dört hareket:
 //
 //   LookDown   — selfie açısı yüzünden pitch nötrü ~+8; "aşağı bak" −5.4'te
 //                kaldı, nötrden ayrışmıyor

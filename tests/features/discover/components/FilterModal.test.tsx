@@ -638,7 +638,7 @@ describe('FilterModal — premium filtreler', () => {
     const at = (text: string) => order.indexOf(screen.getByText(text));
     const header = at('Premium Filtreler');
 
-    ['Şehir', 'Üniversite', 'Boy', 'Görünürlük'].forEach((title) =>
+    ['Şehir', 'Üniversite', 'Boy'].forEach((title) =>
       expect(at(title)).toBeGreaterThan(header),
     );
     // Ücretsiz alanlar başlığın ÜSTÜNDE kalmalı.
@@ -649,9 +649,8 @@ describe('FilterModal — premium filtreler', () => {
 
   it('premium bölümleri önem sırasına göre çizer', () => {
     // Sıra ürün kararı, kaza değil: eleme yapan (hard) filtreler önem sırasında,
-    // sonra eleme YAPMAYAN boost bölümleri ard arda, en sonda görünürlük —
-    // görünürlük metni "yukarıdaki filtrelerden farklı olarak" dediği için
-    // konumu kopyaya bağlı. Bölüm eklerken sıra sessizce bozulmasın.
+    // sonra eleme YAPMAYAN boost bölümleri ard arda. Bölüm eklerken sıra
+    // sessizce bozulmasın.
     renderModal(baseFilters);
 
     const order = screen.root.findAll(() => true);
@@ -675,8 +674,8 @@ describe('FilterModal — premium filtreler', () => {
       // eleme yapmayanlar (skor boost'u) — ard arda, hard filtrelerden sonra
       'Karşımda görmek istediğim hobiler',
       'Karşımda görmek istediğim niyetler',
-      // "beni kim görsün" — kavramsal olarak ayrı, en sonda
-      'Görünürlük',
+      // NOT: "Görünürlük" bölümü bu ekrandan TAŞINDI (profil ekranı, hero'daki
+      // göz butonu). Sıra beklentisinden de bu yüzden çıkarıldı.
     ];
 
     const positions = expected.map(at);
@@ -684,55 +683,9 @@ describe('FilterModal — premium filtreler', () => {
     expect(positions).not.toContain(-1);
   });
 
-  it('görünürlük listelerini üniversite adıyla özetler ve sayacı gösterir', () => {
-    renderModal(baseFilters);
-
-    // Listede domain tutuluyor, satırda isim gösteriliyor ("İTÜ +1").
-    expect(screen.getByText('İstanbul Teknik Üniversitesi +1')).toBeTruthy();
-    expect(screen.getByText('Dokuz Eylül Üniversitesi')).toBeTruthy();
-    // Backend 100'de sessizce kırpıyor — doluluk görünür olmalı.
-    expect(screen.getByText('2/100')).toBeTruthy();
-    expect(screen.getByText('1/100')).toBeTruthy();
-  });
-
-  it('görünürlük listelerini normalize edip her kaydetmede TAM gönderir', () => {
-    // Overwrite semantiği: alan gönderilmezse liste temizlenir, o yüzden
-    // ekrandaki state'in tamamı her seferinde gitmeli. Domain'ler trim +
-    // lowercase + tekilleştirilmiş olmalı.
-    const { onSave } = renderModal({
-      ...baseFilters,
-      visibleOnlyToUniversityDomains: [' ITU.edu.TR ', 'itu.edu.tr'],
-    });
-
-    fireEvent.press(screen.getByTestId('apply'));
-
-    const payload = onSave.mock.calls[0][0];
-    expect(payload.visibleOnlyToUniversityDomains).toEqual(['itu.edu.tr']);
-    expect(payload.hiddenFromUniversityDomains).toEqual(['ogr.deu.edu.tr']);
-  });
-
-  it('free kullanıcıda görünürlük listeleri temizlenir (403 önlemi)', () => {
-    // Premium alan dolu giderse backend TÜM isteği 403 ile reddediyor.
-    const { onSave } = renderModal(baseFilters, { isPremium: false });
-
-    fireEvent.press(screen.getByTestId('apply'));
-
-    const payload = onSave.mock.calls[0][0];
-    expect(payload.visibleOnlyToUniversityDomains).toEqual([]);
-    expect(payload.hiddenFromUniversityDomains).toEqual([]);
-  });
-
-  it('aynı domain iki listedeyse block önceliği uyarısını gösterir', () => {
-    renderModal({
-      ...baseFilters,
-      hiddenFromUniversityDomains: ['itu.edu.tr'],
-    });
-    expect(
-      screen.getByText(
-        'İki listede birden olan üniversite seni göremez — engelleme önceliklidir.',
-      ),
-    ).toBeTruthy();
-  });
+  // 🔴 GÖRÜNÜRLÜK TESTLERİ BURADAN KALKTI: "beni kim görsün / görmesin" ayarı
+  // profil ekranına taşındı (bkz. tests/features/profile/universityVisibility).
+  // Bu ekranın tek sorumluluğu artık o alanları payload'a KOYMAMAK.
 
   it('toggle durumunu dealbreakers listesinden türetir', () => {
     renderModal(baseFilters);

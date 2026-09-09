@@ -22,7 +22,7 @@ jest.mock('@/shared/services/api', () => ({
 }));
 
 import {
-  fetchConsentStatus,
+  fetchSelfieConsentStates,
   recordConsent,
   SELFIE_CONSENT_TYPES,
 } from '@/features/auth/consents';
@@ -65,35 +65,48 @@ describe('recordConsent', () => {
   });
 });
 
-describe('fetchConsentStatus', () => {
-  it('isAccepted sunucudan okunur', async () => {
-    mockGet.mockResolvedValue({
-      isSuccess: true,
-      result: { isAccepted: true, currentVersion: '1.0' },
-    });
-
-    const status = await fetchConsentStatus('BiometricVerification');
-
-    expect(mockGet).toHaveBeenCalledWith(
-      API_ENDPOINTS.PRIVACY_CONSENT_STATUS('BiometricVerification'),
-    );
-    expect(status).toEqual({ isAccepted: true, currentVersion: '1.0' });
+describe('fetchSelfieConsentStates', () => {
+  const statusReply = (isAccepted: boolean) => ({
+    isSuccess: true,
+    result: { isAccepted, currentVersion: '1.0' },
   });
 
-  it('geri alınmış rıza false döner', async () => {
-    mockGet.mockResolvedValue({
-      isSuccess: true,
-      result: { isAccepted: false, currentVersion: '1.0' },
-    });
+  it('iki iznin durumu AYRI okunur', async () => {
+    mockGet
+      .mockResolvedValueOnce(statusReply(true))
+      .mockResolvedValueOnce(statusReply(false));
 
-    await expect(fetchConsentStatus('DataTransferAbroad')).resolves.toEqual({
-      isAccepted: false,
-      currentVersion: '1.0',
+    await expect(fetchSelfieConsentStates()).resolves.toEqual({
+      BiometricVerification: true,
+      DataTransferAbroad: false,
     });
   });
 
-  it('alan yoksa (eski sunucu) null — anahtar çizilmez', async () => {
-    mockGet.mockResolvedValue({ isSuccess: true, result: { currentVersion: '1.0' } });
-    await expect(fetchConsentStatus('BiometricVerification')).resolves.toBeNull();
+  it('sunucu `isAccepted` vermiyorsa GEÇMİŞTEN türetilir', async () => {
+    // Eski sunucu: consent-status alanı taşımıyor.
+    mockGet
+      .mockResolvedValueOnce({ isSuccess: true, result: { currentVersion: '1.0' } })
+      .mockResolvedValueOnce({ isSuccess: true, result: { currentVersion: '1.0' } })
+      // consent-history — her tipin EN SON kararı geçerli olan.
+      .mockResolvedValueOnce({
+        isSuccess: true,
+        result: [
+          { consentType: 'BiometricVerification', accepted: true, decisionAt: '2026-09-01T10:00:00Z' },
+          { consentType: 'DataTransferAbroad', accepted: true, decisionAt: '2026-09-01T10:00:00Z' },
+          // Sonradan geri alınmış: "kabul var" saymamalı.
+          { consentType: 'DataTransferAbroad', accepted: false, decisionAt: '2026-09-02T10:00:00Z' },
+        ],
+      });
+
+    await expect(fetchSelfieConsentStates()).resolves.toEqual({
+      BiometricVerification: true,
+      DataTransferAbroad: false,
+    });
+    expect(mockGet).toHaveBeenLastCalledWith(API_ENDPOINTS.PRIVACY_CONSENT_HISTORY);
+  });
+
+  it('hiçbir kaynak okunamazsa null — çağıran taraf "izin yok" sayar', async () => {
+    mockGet.mockRejectedValue(new Error('offline'));
+    await expect(fetchSelfieConsentStates()).resolves.toBeNull();
   });
 });

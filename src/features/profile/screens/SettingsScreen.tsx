@@ -80,7 +80,7 @@ import uiBus from "@/shared/services/uiBus";
 import LegalSheet, { type LegalDocument } from "@/features/auth/components/LegalSheet";
 import { CURRENT_KVKK_VERSION } from "@/features/auth/screens/KVKKConsentScreen";
 import {
-  fetchConsentStatus,
+  fetchSelfieConsentStates,
   recordConsent,
   SELFIE_CONSENT_TYPES,
 } from "@/features/auth/consents";
@@ -202,17 +202,20 @@ export default function SettingsScreen() {
   );
   const [prefs, setPrefs] = useState(null);
   /**
-   * Fotoğraf doğrulamanın açık rızası — İKİ rızanın ortak anahtarı
-   * (biyometrik işleme + yurt dışına aktarım). `null` = henüz bilinmiyor ya da
-   * sunucu bu alanı vermiyor; o hâlde satır hiç çizilmiyor (yanlış bir durum
-   * göstermektense hiç göstermemek doğru).
+   * İZİN BAŞINA durum: iki izin AYRI AYRI açılıp kapanıyor.
+   *
+   * ⚠️ SATIRLAR HER ZAMAN ÇİZİLİYOR, sunucu durumu okunamasa bile. Rızanın
+   * verilebildiği ve geri alınabildiği TEK yer burası; cevaba bakıp satırları
+   * gizlemek, kullanıcıyı "doğrulamak için Gizlilik'e git" uyarısıyla boş bir
+   * sayfaya göndermek demekti (bir kez öyle oldu: sunucu `isAccepted` alanını
+   * taşımıyordu). Okunamayan durum KAPALI kabul ediliyor — yanlış yönü "izin
+   * yok" göstermek, olmayan bir izni var göstermekten iyidir ve dokunuş zaten
+   * durumu düzeltir.
    */
-  // İZİN BAŞINA durum: iki izin AYRI AYRI açılıp kapanıyor. `null` = sunucu
-  // durumu okunamadı, satırlar hiç çizilmiyor.
-  const [selfieConsents, setSelfieConsents] =
-    useState<Record<string, boolean> | null>(null);
+  const [selfieConsents, setSelfieConsents] = useState<Record<string, boolean>>(
+    () => Object.fromEntries(SELFIE_CONSENT_TYPES.map((type) => [type, false])),
+  );
   const [selfieConsentSaving, setSelfieConsentSaving] = useState<string | null>(null);
-  const [selfieConsentVersion, setSelfieConsentVersion] = useState<string | null>(null);
   const [legalDoc, setLegalDoc] = useState<LegalDocument | null>(null);
   const pollingRef = useRef(null);
   /** Her yeni export turu nesli ilerletir; eski tur cevabı dönerse yok sayılır. */
@@ -238,18 +241,9 @@ export default function SettingsScreen() {
    */
   useEffect(() => {
     let cancelled = false;
-    Promise.all(SELFIE_CONSENT_TYPES.map((type) => fetchConsentStatus(type)))
-      .then((statuses) => {
-        if (cancelled) return;
-        // Biri bile okunamadıysa satırı çizme: yarım bilgiyle anahtar göstermek
-        // kullanıcıyı yanlış duruma inandırır.
-        if (statuses.some((st) => st == null)) return;
-        setSelfieConsents(
-          Object.fromEntries(
-            SELFIE_CONSENT_TYPES.map((type, i) => [type, statuses[i]!.isAccepted]),
-          ),
-        );
-        setSelfieConsentVersion(statuses[0]?.currentVersion || null);
+    fetchSelfieConsentStates()
+      .then((states) => {
+        if (!cancelled && states) setSelfieConsents(states);
       })
       .catch(() => {});
     return () => { cancelled = true; };
@@ -269,12 +263,16 @@ export default function SettingsScreen() {
    * görünür.
    */
   const handleToggleSelfieConsent = async (type: string) => {
-    if (!selfieConsents || selfieConsentSaving) return;
+    if (selfieConsentSaving) return;
     const next = !selfieConsents[type];
     setSelfieConsentSaving(type);
     try {
-      await recordConsent(type as any, selfieConsentVersion || CURRENT_KVKK_VERSION, next);
-      setSelfieConsents((prev) => (prev ? { ...prev, [type]: next } : prev));
+      // Sürüm, kullanıcının GÖRDÜĞÜ metnin sürümü: aynı metin bu ekrandaki
+      // "Gizlilik & KVKK Metni" satırından okunuyor. Sunucunun bildirdiği
+      // sürüm alınsaydı (henüz yeni metinle deploy edilmemiş bir sunucuda)
+      // kullanıcı okumadığı bir sürüme rıza vermiş görünürdü.
+      await recordConsent(type as any, CURRENT_KVKK_VERSION, next);
+      setSelfieConsents((prev) => ({ ...prev, [type]: next }));
       if (!next) {
         profileService.bustProfileCache();
         uiBus.emit('profileDirty');
@@ -848,10 +846,9 @@ export default function SettingsScreen() {
           karar istiyor; tek anahtar iki rızayı tek karara indirger. Yalnız biri
           açıkken doğrulama çalışmaz — o durumu `pairHint` söylüyor.
 
-          Satırlar, sunucu durumu okunamadıysa HİÇ çizilmiyor (`null`): yanlış
-          bir durum göstermektense hiç göstermemek doğru. */}
-      {selfieConsents !== null && (
-        <>
+          Satırlar HER KOŞULDA çiziliyor (bkz. state'in başındaki not): burası
+          rızanın verilebildiği tek yer, sunucu cevabına göre gizlenemez. */}
+      <>
           <Text
             style={{
               color: colors.text,
@@ -915,8 +912,7 @@ export default function SettingsScreen() {
           >
             {t('settings.selfieConsent.note')}
           </Text>
-        </>
-      )}
+      </>
 
       {/* Aydınlatma metni — rızanın dayanağı elin altında olmalı: metni
           okumadan verilen/geri alınan bir rıza "bilgilendirilmiş" sayılmaz.

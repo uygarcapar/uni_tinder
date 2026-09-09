@@ -1,6 +1,7 @@
 import { useCallback } from "react";
+import SheetBlurBackdrop from "@/shared/components/SheetBlurBackdrop";
 import { View, ActivityIndicator } from "react-native";
-import { BottomSheetBackdrop } from "@gorhom/bottom-sheet";
+
 import { useSharedValue } from "react-native-reanimated";
 import SwipeCard from "@/features/discover/components/SwipeCard";
 import CardGlassBackdrop from "@/features/discover/components/CardGlassBackdrop";
@@ -48,14 +49,7 @@ export default function PreviewModal({
   const backdropUri: string | undefined = profile?.photos?.[0];
 
   const renderBackdrop = useCallback(
-    (props: any) => (
-      <BottomSheetBackdrop
-        {...props}
-        appearsOnIndex={0}
-        disappearsOnIndex={-1}
-        opacity={0.5}
-      />
-    ),
+    (props: any) => <SheetBlurBackdrop {...props} />,
     [],
   );
 

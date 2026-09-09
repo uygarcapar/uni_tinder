@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useRef, useState } from "react";
+import SheetBlurBackdrop from "@/shared/components/SheetBlurBackdrop";
 import { View, Text, TouchableOpacity } from "react-native";
-import { BottomSheetBackdrop } from "@gorhom/bottom-sheet";
+
 import { EyeOff, ShieldAlert, Camera } from "@/shared/icons";
 import { useTranslation } from "react-i18next";
 import AppBottomSheet from "@/shared/components/AppBottomSheet";
@@ -117,15 +118,7 @@ export default function ProfileHiddenGate({
   }, [open, onOpenChange]);
 
   const renderBackdrop = useCallback(
-    (props: any) => (
-      <BottomSheetBackdrop
-        {...props}
-        appearsOnIndex={0}
-        disappearsOnIndex={-1}
-        opacity={0.7}
-        pressBehavior="close"
-      />
-    ),
+    (props: any) => <SheetBlurBackdrop {...props} />,
     [],
   );
 

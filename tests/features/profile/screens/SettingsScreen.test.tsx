@@ -394,7 +394,12 @@ describe('SettingsScreen — data download', () => {
     });
 
     expect(Alert.alert).toHaveBeenCalledWith('Hata', 'Yetki yok');
-    expect(mockApi.get).not.toHaveBeenCalled();
+    // Ekran açılışta rıza durumunu da çekiyor (Gizlilik'teki doğrulama
+    // anahtarları) — "get hiç çağrılmadı" artık doğru soru değil. Sorulan şey
+    // POLL'un başlamaması: talep açılamadıysa durum ucuna gidilmemeli.
+    expect(mockApi.get).not.toHaveBeenCalledWith(
+      expect.stringContaining('/privacy/my-data/'),
+    );
   });
 
   // Backend status'ü PascalCase döner ("Completed"/"Failed") — karşılaştırma

@@ -1,7 +1,8 @@
 import { useCallback, useEffect, useRef, useState } from "react";
+import SheetBlurBackdrop from "@/shared/components/SheetBlurBackdrop";
 import { View, Modal, Dimensions, Alert } from "react-native";
 import { useTranslation } from "react-i18next";
-import { BottomSheetBackdrop } from "@gorhom/bottom-sheet";
+
 import { Gesture, GestureDetector } from "react-native-gesture-handler";
 import Animated, {
   useAnimatedReaction,
@@ -353,11 +354,8 @@ export default function LikerSwipeModal({
 
   const renderBackdrop = useCallback(
     (props: any) => (
-      <BottomSheetBackdrop
+      <SheetBlurBackdrop
         {...props}
-        appearsOnIndex={0}
-        disappearsOnIndex={-1}
-        opacity={0.6}
         pressBehavior={tutorialActive ? "none" : "close"}
       />
     ),

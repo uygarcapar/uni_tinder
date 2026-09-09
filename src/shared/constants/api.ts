@@ -129,6 +129,10 @@ export const API_ENDPOINTS = {
   // Rızanın şu anki durumu (Ayarlar'daki fotoğraf doğrulama anahtarı).
   PRIVACY_CONSENT_STATUS: (consentType: string) =>
     `/api/privacy/consent-status?type=${encodeURIComponent(consentType)}`,
+  // Tüm rıza kararlarının geçmişi (kabul + geri alma). `consent-status`
+  // `isAccepted` vermeyen ESKİ sunucularda geçerli durumu buradan çıkarıyoruz
+  // (bkz. features/auth/consents.ts).
+  PRIVACY_CONSENT_HISTORY: "/api/privacy/consent-history",
   // Aydınlatma metni — ANONİM erişilebilir, markdown döner:
   // { type, version, contentMarkdown, contentType }.
   // ⚠️ `version` YANITLA GELEN değerdir, sabit kodlanmaz: metin güncellenince

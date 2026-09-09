@@ -1,9 +1,6 @@
-import { useState, useCallback } from "react";
+import { useState } from "react";
 import { View, Text, TouchableOpacity, ActivityIndicator, Alert } from "react-native";
-import {
-  BottomSheetScrollView,
-  BottomSheetBackdrop,
-} from "@gorhom/bottom-sheet";
+import { BottomSheetScrollView } from "@gorhom/bottom-sheet";
 import { BlurView } from "expo-blur";
 import { useAppDispatch } from "@/shared/hooks/redux";
 import { ShieldCheck } from "@/shared/icons";
@@ -31,19 +28,6 @@ export default function KVKKConsentScreen({ visible }) {
   const dispatch = useAppDispatch();
   const [loading, setLoading] = useState(false);
   const [agreed, setAgreed] = useState(false);
-
-  const renderBackdrop = useCallback(
-    (props) => (
-      <BottomSheetBackdrop
-        {...props}
-        appearsOnIndex={0}
-        disappearsOnIndex={-1}
-        opacity={0.7}
-        pressBehavior="none"
-      />
-    ),
-    [],
-  );
 
   const handleAccept = async () => {
     if (!agreed) {
@@ -165,7 +149,6 @@ export default function KVKKConsentScreen({ visible }) {
       enablePanDownToClose={false}
       enableContentPanningGesture={false}
       enableHandlePanningGesture={false}
-      backdropComponent={renderBackdrop}
       footer={footer}
       backgroundStyle={{
         backgroundColor: colors.bg,

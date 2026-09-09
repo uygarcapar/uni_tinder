@@ -617,9 +617,6 @@ const DEFAULT_FILTERS = {
   // "Ben kimi göreyim" üniversite tercihi — çoklu (max 3). Tekil
   // `preferredUniversityDomain` deprecated.
   preferredUniversityDomains: [],
-  // "Beni kim görsün / görmesin" listeleri — backend boş dizi döner (null değil).
-  visibleOnlyToUniversityDomains: [],
-  hiddenFromUniversityDomains: [],
   isPremium: false,
 };
 
@@ -901,9 +898,6 @@ export default function DiscoverScreen() {
     if (filters.preferredCity) count++;
     // Üniversite tercihi de artık liste: kaç domain seçildiğinden bağımsız 1.
     if ((filters.preferredUniversityDomains || []).length > 0) count++;
-    // Görünürlük listeleri: kaç domain seçildiğinden bağımsız, liste başına 1.
-    if ((filters.visibleOnlyToUniversityDomains || []).length > 0) count++;
-    if ((filters.hiddenFromUniversityDomains || []).length > 0) count++;
     return count;
   }, [filters]);
 
