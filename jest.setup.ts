@@ -85,6 +85,28 @@ jest.mock('expo-blur', () => ({ BlurView: 'BlurView' }));
 // Paket native; içe aktarılması expo-modules-core'u uyandırıp jest'i düşürüyor.
 // Modifier'lar burada opak nesneler — testler zincirin İÇERİĞİNİ değil, onu
 // kuran bileşenin render'ını doğruluyor.
+// SwiftUI bileşenleri (Host/Button/Image/RNHostView). `modifiers` gibi bu paket
+// de NATIVE: import edilir edilmez expo-modules-core'u uyandırıp suite'i
+// "Cannot read properties of undefined (reading 'EventEmitter')" ile düşürüyor.
+// Zinciri cam butonlardan (SuperLikeGlassButton, CardMenuGlassButton) geçen HER
+// ekran bunu yiyordu — tek tek suite'lere mock yazmak yerine taban burada.
+//
+// Etkileşime ihtiyaç duyan suite'ler kendi mock'unu yazıp bunu EZİYOR (bkz.
+// SettingsScreen.test / PlusPage.test — oradaki sürüm etiketten testID
+// türetiyor). Buradaki taban yalnız "import patlamasın, ağaç çizilsin" diyor.
+jest.mock('@expo/ui/swift-ui', () => {
+  const React = require('react');
+  const { View, TouchableOpacity } = require('react-native');
+  return {
+    __esModule: true,
+    Host: ({ children }: any) => children ?? null,
+    RNHostView: ({ children }: any) => React.createElement(View, null, children),
+    Image: () => null,
+    Button: ({ onPress, children }: any) =>
+      React.createElement(TouchableOpacity, { onPress }, children ?? null),
+  };
+});
+
 jest.mock('@expo/ui/swift-ui/modifiers', () => {
   const modifier = (...args: unknown[]) => ({ __modifier: true, args });
   return {

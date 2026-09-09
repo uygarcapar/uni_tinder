@@ -51,7 +51,9 @@ describe('MatchModal', () => {
         onSendMessage={jest.fn()}
       />
     );
-    expect(tree.getByText('Biriyle Eşleştin!')).toBeTruthy();
+    // Başlık artık cümle DEĞİL, marka kelimesinin kendisi (Duckie-regular,
+    // küçük harf) — bilerek çevrilmiyor, bkz. MatchModal'daki not.
+    expect(tree.getByText('lit')).toBeTruthy();
     expect(
       tree.getByText('Ada ile eşleştin. İlk mesajı sen at.')
     ).toBeTruthy();

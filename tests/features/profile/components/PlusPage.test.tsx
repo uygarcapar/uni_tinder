@@ -169,12 +169,14 @@ afterEach(() => {
 
 describe('PlusPage — render & loading', () => {
   // Sabit footer kalktı: yükleniyor hâlinin tek göstergesi plan kartlarının
-  // yerindeki spinner.
-  it('renders an ActivityIndicator in place of the plan cards while offering loads', async () => {
+  // yerindeki İSKELET. (Spinner değil — katalog gelince kart iskeletle aynı
+  // hatta oturuyor, dönen bir gösterge o zıplamayı gizleyemiyordu.)
+  it('renders the plan skeleton in place of the plan cards while offering loads', async () => {
     mockGetOfferings.mockReturnValue(new Promise(() => {}));
     const tree = setup();
     await act(async () => {});
-    expect(tree.UNSAFE_queryAllByType(ActivityIndicator).length).toBeGreaterThan(0);
+    expect(tree.getByTestId('plan-carousel-skeleton')).toBeTruthy();
+    expect(tree.queryByTestId('plan-card-monthly')).toBeNull();
   });
 
   // Ayrı bir "abone ol" butonu YOK — satın alma kartın kendisine dokununca
@@ -186,7 +188,11 @@ describe('PlusPage — render & loading', () => {
       expect(tree.getByTestId('plan-card-monthly')).toBeTruthy();
     });
     expect(tree.getByText('₺49.99')).toBeTruthy();
-    expect(tree.queryByText(/Abone Ol/)).toBeNull();
+    // Ayrı, tam genişlikte bir CTA butonu YOK. "Abone Ol" yalnız kartın sağ
+    // altındaki küçük eylem rozetinde geçiyor (purchase.cta.subscribe) —
+    // dokunuşun ne yapacağını söylüyor, kartın kendisi buton. Tek örnek
+    // olması bunun kanıtı: ikinci bir örnek geri gelen CTA demek olurdu.
+    expect(tree.getAllByText('Abone Ol')).toHaveLength(1);
   });
 
   // Regresyon: özellik satırları başlıksız çıkmıştı. Liste tek kaynaktan
@@ -432,18 +438,20 @@ describe('PlusPage — purchase flow', () => {
     expect(mockPurchasePackage).not.toHaveBeenCalled();
   });
 
-  // Tasarruf rozetinin tabanı HAFTALIK plan: aylık/yıllık "%X off" gösterebilsin
-  // diye (taban aylık olsaydı aylık kendi kendine indirim yazamazdı).
-  // ₺19.99/hafta → 4.345 haftalık karşılığı ₺86.86; ₺49.99'luk aylık %42 ucuz.
-  it('badges the cheaper-per-week periods with their savings', async () => {
+  // Rozetin tabanı HAFTALIK plan: haftalık maliyeti en düşük periyot
+  // işaretleniyor (taban aylık olsaydı aylık kendini işaretleyemezdi).
+  // ₺19.99/hafta → 4.345 haftalık karşılığı ₺86.86; ₺49.99'luk aylık daha ucuz.
+  // Rozet artık hesaplanmış yüzde DEĞİL, sabit "En iyi" etiketi — şeritteki
+  // kapsül dar, iki haneli yüzde etiketi periyot adını taşırıyordu.
+  it('badges the cheapest-per-week period as best value', async () => {
     mockGetOfferings.mockResolvedValue(twoPlanOffering);
     const tree = setup();
     await waitFor(() => tree.getByTestId('plan-pill-monthly'));
 
-    expect(tree.getByTestId('plan-pill-savings-monthly')).toBeTruthy();
-    expect(tree.getByText('%42')).toBeTruthy();
+    expect(tree.getByTestId('plan-pill-best-monthly')).toBeTruthy();
+    expect(tree.getByText('En iyi')).toBeTruthy();
     // Taban planın kendisinde rozet YOK.
-    expect(tree.queryByTestId('plan-pill-savings-weekly')).toBeNull();
+    expect(tree.queryByTestId('plan-pill-best-weekly')).toBeNull();
   });
 
   it('hides the period strip when the catalog has a single plan', async () => {

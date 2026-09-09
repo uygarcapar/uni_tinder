@@ -771,7 +771,7 @@ const PLAN_PILLS_SKELETON_HEIGHT = 44;
 
 function PlanCarouselSkeleton({ showPills = true }: { showPills?: boolean }) {
   return (
-    <View style={{ marginBottom: 20 }}>
+    <View testID="plan-carousel-skeleton" style={{ marginBottom: 20 }}>
       {/* Abonede şerit hiç çizilmeyecek (bkz. PurchasePlanCarousel) — iskeletinde
           durursa katalog gelince kart bir şerit boyu yukarı zıplardı. */}
       {showPills && (

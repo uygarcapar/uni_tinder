@@ -3,6 +3,16 @@ import { TouchableOpacity } from 'react-native';
 import { fireEvent, render } from '@testing-library/react-native';
 import ReplyPreview from '@/features/chat/components/ReplyPreview';
 
+// ReplyPreview artık sesli mesajın süresini store'dan tamamlıyor
+// (useReplyVoiceDuration). Provider kurmak yerine seçiciyi doğrudan besliyoruz:
+// bu suite'in konusu şerit metni, ses süresi değil. Boş `chat` dilimi = süre
+// bilinmiyor, bileşenin `durationMs` propuna düşmesi beklenen davranış.
+let mockReduxState: any = { chat: { messagesByConv: {} } };
+jest.mock('@/shared/hooks/redux', () => ({
+  useAppSelector: (selector: any) => selector(mockReduxState),
+  useAppDispatch: () => jest.fn(),
+}));
+
 jest.mock('lucide-react-native', () =>
   new Proxy({}, { get: () => () => null })
 );
@@ -52,7 +62,9 @@ describe('ReplyPreview', () => {
     const tree = render(
       <ReplyPreview reply={{ senderDisplayName: 'A', contentType: 2 }} />
     );
-    expect(tree.getByText('🎙️ Sesli mesaj')).toBeTruthy();
+    // Emoji öneki kaldırıldı — şeritte mikrofon ikonu zaten çiziliyor,
+    // metindeki 🎙️ onu tekrarlıyordu (bkz. i18n chat.mediaVoice).
+    expect(tree.getByText('Sesli mesaj')).toBeTruthy();
   });
 
   it('shows the media label for video content', () => {

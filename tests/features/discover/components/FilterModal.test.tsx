@@ -267,10 +267,18 @@ const renderModal = (filters: any, opts: any = {}) => {
 // kullanıcı-görünür Türkçe metin üzerinden.
 // Etiket SABİT: anahtar açık/kapalı diye metin değişmiyor, durumu yalnızca
 // Switch'in `value`'su söylüyor.
-const DB_LABEL = 'Kişiler tükense bile bu filtre dışındakileri gösterme';
+// Etiket artık SATIRDA GÖRÜNMÜYOR: başlıkta yalnız gri info ikonu + Switch var,
+// metin ikona basınca açılan sheet'in başlığı (i18n dealbreaker.label →
+// 'Olmazsa olmaz'). Sayım bu yüzden testID üzerinden.
+const DB_LABEL = 'Olmazsa olmaz';
 
 // Toggle sayısı = tek etiketin kaç kez çizildiği.
-const toggleCount = () => screen.queryAllByText(DB_LABEL).length;
+// Bölüm başlığı İKİ testID basıyor: Switch'e `dealbreaker-X`, yanındaki gri
+// info ikonuna `dealbreaker-X-info`. Sayılan yalnız anahtarın kendisi.
+const toggleCount = () =>
+  screen
+    .queryAllByTestId(/^dealbreaker-/)
+    .filter((n: any) => !String(n.props.testID).endsWith('-info')).length;
 
 describe('FilterModal — premium filtreler', () => {
   it('grup başlığını ve sekiz filtreyi render eder', () => {
@@ -324,13 +332,17 @@ describe('FilterModal — premium filtreler', () => {
     expect(screen.getAllByText('Farketmez').length).toBeGreaterThan(0);
   });
 
-  it('boyu boş profillerin elendiği uyarısını bölüm açıklamasında tutar', () => {
-    // Uyarı slider'ın altında değil, info ikonunun yanında — o yüzden filtre
-    // kapalıyken de görünür.
+  it('boy açıklamasını filtre kapalıyken de gösterir', () => {
+    // Açıklama slider'ın altında değil, info ikonunun yanında — o yüzden
+    // filtre kapalıyken de görünür.
+    //
+    // "Filtre açıkken boyunu girmemiş profiller gösterilmez" cümlesi
+    // açıklamadan ÇIKARILDI (i18n height.description). Aynı uyarıyı taşıyan
+    // dealbreaker anlatısı artık başlıktaki info ikonunun sheet'inde.
     renderModal({ ...baseFilters, heightMin: null, heightMax: null });
     expect(
       screen.getByText(
-        'Aradığın boy aralığını seç; iki ucu da serbest bırakabilirsin. Filtre açıkken boyunu girmemiş profiller gösterilmez.',
+        'Aradığın boy aralığını seç; iki ucu da serbest bırakabilirsin.',
       ),
     ).toBeTruthy();
   });
@@ -592,7 +604,7 @@ describe('FilterModal — premium filtreler', () => {
       { ...baseFilters, isPremium: true },
       { isPremium: false },
     );
-    expect(screen.queryAllByTestId('sficon-lock.fill').length).toBeGreaterThan(0);
+    expect(screen.queryAllByTestId('premium-gate').length).toBeGreaterThan(0);
   });
 
   it('prop verilmemişse filtre yanıtının kendi alanına düşer', () => {
@@ -606,12 +618,12 @@ describe('FilterModal — premium filtreler', () => {
         saving={false}
       />,
     );
-    expect(screen.queryAllByTestId('sficon-lock.fill')).toHaveLength(0);
+    expect(screen.queryAllByTestId('premium-gate')).toHaveLength(0);
   });
 
   it('gerçekten free kullanıcıda kilit gösterir', () => {
     renderModal({ ...baseFilters, isPremium: false }, { isPremium: false });
-    expect(screen.queryAllByTestId('sficon-lock.fill').length).toBeGreaterThan(0);
+    expect(screen.queryAllByTestId('premium-gate').length).toBeGreaterThan(0);
   });
 
   it('üniversite filtresini seçili üniversitenin adıyla gösterir', () => {
@@ -638,7 +650,9 @@ describe('FilterModal — premium filtreler', () => {
 
     fireEvent.press(screen.getByTestId('apply'));
 
-    expect(onSave.mock.calls[0][0].preferredUniversityDomain).toBeNull();
+    // Alan ÇOĞULLAŞTI (`preferredUniversityDomain` → `preferredUniversityDomains`).
+    // Free kullanıcıda boş dizi gidiyor: tekil alandaki null'ın karşılığı bu.
+    expect(onSave.mock.calls[0][0].preferredUniversityDomains).toEqual([]);
   });
 
   it('premium bölümlerin tamamını "Premium Filtreler" başlığından SONRA çizer', () => {
@@ -660,32 +674,33 @@ describe('FilterModal — premium filtreler', () => {
   });
 
   it('premium bölümleri önem sırasına göre çizer', () => {
-    // Sıra ürün kararı, kaza değil: eleme yapan (hard) filtreler önem sırasında,
-    // sonra eleme YAPMAYAN boost bölümleri ard arda. Bölüm eklerken sıra
-    // sessizce bozulmasın.
+    // Sıra ürün kararı, kaza değil. Bölüm eklerken sessizce bozulmasın.
+    //
+    // Eleme YAPMAYAN iki bölüm (niyet, hobiler) artık hard filtrelerin ARASINDA:
+    // ikisi de "kimi arıyorum"un doğrudan cevabı, kullanıcı onları teknik
+    // sınıflarına göre değil sorunun kendisine göre arıyor. Gerekçe bileşende
+    // yazılı (bkz. intentsSection / hobbiesSection konum notları).
     renderModal(baseFilters);
 
     const order = screen.root.findAll(() => true);
     const at = (text: string) => order.indexOf(screen.getByText(text));
 
     const expected = [
-      // hard filtreler — en önemliden en önemsize
       'Üniversite',
-      // Dil en üstte: ortak dil diğer her uyumun ön koşulu. (Eskiden burada
-      // "Kullanım Amacı" vardı; alan üründen çıktı.)
-      'Konuştuğu diller',
+      // Niyet üniversitenin hemen altında — "kimi arıyorum"un en doğrudan cevabı.
+      'Görmek istediğim niyetler',
       'Şehir',
-      'Boy',
       'Sınıf',
+      'Boy',
+      // Hobiler kalan hard filtrelerin üstünde, aynı gerekçeyle.
+      'Karşımda görmek istediğim hobiler',
+      'Konuştuğu diller',
       'Sigara',
       'Alkol',
       // Dini görüş sigara/alkolün devamında — aynı sınıf, aynı yan etki.
       'Dini görüş',
       'Evcil Hayvan',
       'Burç',
-      // eleme yapmayanlar (skor boost'u) — ard arda, hard filtrelerden sonra
-      'Karşımda görmek istediğim hobiler',
-      'Karşımda görmek istediğim niyetler',
       // NOT: "Görünürlük" bölümü bu ekrandan TAŞINDI (profil ekranı, hero'daki
       // göz butonu). Sıra beklentisinden de bu yüzden çıkarıldı.
     ];
@@ -911,15 +926,16 @@ describe('FilterModal — mesafe sınırı anahtarı', () => {
     ).toBeTruthy();
   });
 
-  it('anahtar açıkken tavan cümlesini açıklamadan çıkarır', () => {
-    // "Sınır 75 km" o an fiilen uygulanmıyor — yazmak yanlış bilgi olurdu.
-    // Açıklamanın kendisi duruyor, yalnız son cümle düşüyor.
+  it('tavan cümlesi anahtardan BAĞIMSIZ — açıkken de durur', () => {
+    // Cümle eskiden anahtar açılınca düşüyordu. Bırakıldı: her açma/kapamada
+    // açıklama uzayıp kısalıyor, altındaki dial zıplıyordu. Bilgi anahtar
+    // açıkken de doğru — kapatınca yine o tavan geçerli olacak.
     renderModal(
       { ...baseFilters, ignoreDistanceFilter: true },
       { isPremium: false },
     );
 
-    expect(screen.queryByText(/Ücretsiz hesapta sınır/)).toBeNull();
+    expect(screen.getByText(/Ücretsiz hesapta sınır 75 km/i)).toBeTruthy();
     expect(screen.getByText(/daireyi sürükle/i)).toBeTruthy();
   });
 

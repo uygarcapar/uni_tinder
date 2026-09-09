@@ -1071,7 +1071,7 @@ function PremiumGroupHeader({ title, description }: any) {
 function PremiumGate({ locked, onLockedPress, children }: any) {
   if (!locked) return children;
   return (
-    <TouchableOpacity activeOpacity={0.7} onPress={onLockedPress}>
+    <TouchableOpacity testID="premium-gate" activeOpacity={0.7} onPress={onLockedPress}>
       <View style={{ opacity: 0.4 }} pointerEvents="none">
         {children}
       </View>

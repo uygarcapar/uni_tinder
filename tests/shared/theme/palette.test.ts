@@ -161,8 +161,14 @@ describe('gradyanlar', () => {
   it('LinearGradient için en az iki durak taşır', () => {
     for (const mode of ['dark', 'light'] as const) {
       applyPalette(mode);
-      for (const stops of Object.values(gradients)) {
-        expect(stops.length).toBeGreaterThanOrEqual(2);
+      // `intentCards` düz bir gradyan DEĞİL, enumName → Gradient sözlüğü
+      // (bkz. GradientSet). Değerlerini tek tek açmak gerekiyor; aksi hâlde
+      // `stops.length` undefined olur ve matcher patlar.
+      const flat = Object.values(gradients).flatMap((v) =>
+        Array.isArray(v) ? [v] : Object.values(v as Record<string, unknown>),
+      );
+      for (const stops of flat) {
+        expect((stops as unknown[]).length).toBeGreaterThanOrEqual(2);
       }
     }
   });
