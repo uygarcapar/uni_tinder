@@ -69,16 +69,21 @@ jest.mock('@/features/profile/litPlusEntry', () => ({
   openLitPlus: () => mockOpenLitPlus(),
 }));
 
-const mockApi = { get: jest.fn(), post: jest.fn() };
+const mockApi = { get: jest.fn(), post: jest.fn(), delete: jest.fn() };
 jest.mock('@/shared/services/api', () => ({
   __esModule: true,
-  default: { get: (...a: any[]) => mockApi.get(...a), post: (...a: any[]) => mockApi.post(...a) },
+  default: {
+    get: (...a: any[]) => mockApi.get(...a),
+    post: (...a: any[]) => mockApi.post(...a),
+    delete: (...a: any[]) => mockApi.delete(...a),
+  },
 }));
 jest.mock('@/shared/constants/api', () => ({
   API_ENDPOINTS: {
     PRIVACY_MY_DATA: '/privacy/my-data',
     PRIVACY_MY_DATA_STATUS: (id: string) => `/privacy/my-data/${id}`,
-    PRIVACY_DELETE_ACCOUNT: '/privacy/delete',
+    PRIVACY_DELETE_PERMANENT: '/privacy/account',
+    PRIVACY_DEACTIVATE: '/privacy/deactivate',
     MODERATION_BLOCKED_USERS: '/moderation/blocked-users',
     MODERATION_BLOCK: (id: string) => `/moderation/block/${id}`,
   },
@@ -599,69 +604,131 @@ describe('SettingsScreen — data download', () => {
   });
 });
 
-describe('SettingsScreen — account deletion', () => {
-  it('opens a destructive confirmation Alert before deleting', async () => {
+describe('SettingsScreen — hesabı dondur', () => {
+  it('dondurmadan önce yıkıcı bir onay Alert\'i açar', async () => {
     const tree = setup();
     await openSection(tree, 'Hesap');
-    await waitFor(() => tree.getByText('Hesabı Sil'));
+    await waitFor(() => tree.getByText('Hesabı Dondur'));
 
-    fireEvent.press(tree.getByText('Hesabı Sil'));
+    fireEvent.press(tree.getByText('Hesabı Dondur'));
     expect(Alert.alert).toHaveBeenCalledTimes(1);
     const buttons = (Alert.alert as jest.Mock).mock.calls[0][2];
-    expect(buttons.map((b: any) => b.text)).toEqual(['İptal', 'Devam Et']);
+    expect(buttons.map((b: any) => b.text)).toEqual(['Vazgeç', 'Dondur']);
     expect(buttons[1].style).toBe('destructive');
   });
 
-  it('calls the delete endpoint after destructive confirmation', async () => {
+  it('onaydan sonra deactivate ucunu çağırır ve çıkış yaptırır', async () => {
     mockApi.post.mockResolvedValue({ isSuccess: true });
     const tree = setup();
     await openSection(tree, 'Hesap');
-    await waitFor(() => tree.getByText('Hesabı Sil'));
+    await waitFor(() => tree.getByText('Hesabı Dondur'));
 
-    fireEvent.press(tree.getByText('Hesabı Sil'));
-    const destructive = (Alert.alert as jest.Mock).mock.calls[0][2][1];
-
-    await act(async () => {
-      await destructive.onPress();
-    });
-
-    expect(mockApi.post).toHaveBeenCalledWith('/privacy/delete', {});
-    expect(
-      (Alert.alert as jest.Mock).mock.calls.some(
-        (c) => c[0] === 'Hesap Silme Başlatıldı'
-      )
-    ).toBe(true);
-  });
-
-  it('leaves the screen when user taps OK on the success Alert', async () => {
-    mockApi.post.mockResolvedValue({ isSuccess: true });
-    const tree = setup();
-    await openSection(tree, 'Hesap');
-    await waitFor(() => tree.getByText('Hesabı Sil'));
-
-    fireEvent.press(tree.getByText('Hesabı Sil'));
+    fireEvent.press(tree.getByText('Hesabı Dondur'));
     const destructive = (Alert.alert as jest.Mock).mock.calls[0][2][1];
     await act(async () => {
       await destructive.onPress();
     });
 
-    const successCall = (Alert.alert as jest.Mock).mock.calls.find(
-      (c) => c[0] === 'Hesap Silme Başlatıldı'
+    expect(mockApi.post).toHaveBeenCalledWith('/privacy/deactivate', {});
+    const success = (Alert.alert as jest.Mock).mock.calls.find(
+      (c) => c[0] === 'Hesabın donduruldu'
     );
-    successCall[2][0].onPress();
-    expect(mockGoBack).toHaveBeenCalledTimes(1);
-  });
+    expect(success).toBeTruthy();
 
-  it('shows the server message when delete fails', async () => {
-    mockApi.post.mockResolvedValue({ isSuccess: false, message: 'Yapamazsın' });
-    const tree = setup();
+    // Dondurma sonrası oturum kapanmalı — hesap artık gizli.
+    mockDispatch.mockClear();
+    success[2][0].onPress();
+    expect(mockDispatch).toHaveBeenCalled();
+  });
+});
+
+describe('SettingsScreen — hesabı sil', () => {
+  /** Silme satırına basıp şifre modalını açar. */
+  const openDeleteModal = async (tree: any) => {
     await openSection(tree, 'Hesap');
     await waitFor(() => tree.getByText('Hesabı Sil'));
-
-    fireEvent.press(tree.getByText('Hesabı Sil'));
-    const destructive = (Alert.alert as jest.Mock).mock.calls[0][2][1];
     await act(async () => {
-      await destructive.onPress();
+      fireEvent.press(tree.getByText('Hesabı Sil'));
+    });
+  };
+
+  it('Alert değil, şifre soran modalı açar', async () => {
+    const tree = setup();
+    await openDeleteModal(tree);
+
+    // Eski akış burada bir Alert açıyordu; artık şifre teyidi şart.
+    expect(Alert.alert).not.toHaveBeenCalled();
+    expect(tree.getByText('Hesabını kalıcı olarak sil')).toBeTruthy();
+    expect(tree.getByPlaceholderText('Şifreni gir')).toBeTruthy();
+  });
+
+  it('şifre boşken uç çağrılmaz', async () => {
+    const tree = setup();
+    await openDeleteModal(tree);
+
+    await act(async () => {
+      fireEvent.press(tree.getByText('Kalıcı Olarak Sil'));
+    });
+
+    expect(mockApi.delete).not.toHaveBeenCalled();
+    expect(tree.getByText('Şifreni gir.')).toBeTruthy();
+  });
+
+  it('şifreyi gövdede DELETE ile yollar ve çıkış yaptırır', async () => {
+    mockApi.delete.mockResolvedValue('');
+    const tree = setup();
+    await openDeleteModal(tree);
+
+    fireEvent.changeText(tree.getByPlaceholderText('Şifreni gir'), 'hunter2');
+    await act(async () => {
+      fireEvent.press(tree.getByText('Kalıcı Olarak Sil'));
+    });
+
+    // DELETE gövdesi axios'ta config.data ile gider.
+    expect(mockApi.delete).toHaveBeenCalledWith('/privacy/account', {
+      data: { password: 'hunter2' },
+    });
+
+    const success = (Alert.alert as jest.Mock).mock.calls.find(
+      (c) => c[0] === 'Hesabın silindi'
+    );
+    expect(success).toBeTruthy();
+
+    // Hesap gitti; goBack() ölü ekranda bırakırdı, oturum kapanmalı.
+    mockDispatch.mockClear();
+    success[2][0].onPress();
+    expect(mockDispatch).toHaveBeenCalled();
+    expect(mockGoBack).not.toHaveBeenCalled();
+  });
+
+  it('yanlış şifrede modal açık kalır, hata içeride gösterilir', async () => {
+    mockApi.delete.mockRejectedValue({
+      response: { data: { code: 'INVALID_PASSWORD', message: 'Şifre hatalı.' } },
+    });
+    const tree = setup();
+    await openDeleteModal(tree);
+
+    fireEvent.changeText(tree.getByPlaceholderText('Şifreni gir'), 'yanlis');
+    await act(async () => {
+      fireEvent.press(tree.getByText('Kalıcı Olarak Sil'));
+    });
+
+    // Alert DEĞİL: kullanıcı modalı kapatmadan tekrar denesin.
+    expect(Alert.alert).not.toHaveBeenCalled();
+    expect(tree.getByText('Şifre hatalı.')).toBeTruthy();
+    expect(tree.getByPlaceholderText('Şifreni gir')).toBeTruthy();
+  });
+
+  it('diğer hatalarda sunucu mesajını Alert ile gösterir', async () => {
+    mockApi.delete.mockRejectedValue({
+      response: { data: { message: 'Yapamazsın' } },
+    });
+    const tree = setup();
+    await openDeleteModal(tree);
+
+    fireEvent.changeText(tree.getByPlaceholderText('Şifreni gir'), 'hunter2');
+    await act(async () => {
+      fireEvent.press(tree.getByText('Kalıcı Olarak Sil'));
     });
 
     expect(

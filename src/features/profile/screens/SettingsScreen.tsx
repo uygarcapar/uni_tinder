@@ -59,6 +59,7 @@ import {
   ChevronLeft,
   ChevronRight,
   KeyRound,
+  PauseCircle,
   Mail,
   LogOut,
   Sun,
@@ -78,6 +79,7 @@ import {
   onBeforeThemeSwap,
   type ThemePreference,
 } from "@/shared/theme/themeMode";
+import DeleteAccountModal from "@/features/profile/components/DeleteAccountModal";
 import BlockedUsersModal from "@/features/profile/components/BlockedUsersModal";
 import { openLitPlus } from "@/features/profile/litPlusEntry";
 import { usePremiumTier } from "@/features/profile/premiumTier";
@@ -237,6 +239,9 @@ export default function SettingsScreen() {
 
   const [downloadLoading, setDownloadLoading] = useState(false);
   const [deleteLoading, setDeleteLoading] = useState(false);
+  const [deleteModalVisible, setDeleteModalVisible] = useState(false);
+  const [deletePwError, setDeletePwError] = useState<string | null>(null);
+  const [deactivateLoading, setDeactivateLoading] = useState(false);
   const [blockedVisible, setBlockedVisible] = useState(false);
   /**
    * null = kök liste (5 kategori); dolu = o kategorinin satırları.
@@ -819,48 +824,86 @@ export default function SettingsScreen() {
     }
   };
 
-  // ── Hesabı Sil ──────────────────────────────────────────────────────────────
-  const handleDeleteAccount = () => {
+  // ── Hesabı Dondur ───────────────────────────────────────────────────────────
+  //
+  // POST /api/privacy/deactivate — veri DURUR, kullanıcı tekrar giriş yapınca
+  // hesap kendiliğinden açılır (ayrı bir "aktifleştir" ucu yok, bkz.
+  // AuthService.Login). Silmeden ayrı bir seçenek olarak duruyor: Apple 5.1.1(v)
+  // dondurmayı silmenin yerine saymıyor, ikisi de bulunmak zorunda.
+  const handleDeactivateAccount = () => {
     Alert.alert(
-      t('deleteAccount.alertTitle'),
-      t('deleteAccount.alertMsg'),
+      t('deactivateAccount.alertTitle'),
+      t('deactivateAccount.alertMsg'),
       [
-        { text: t('deleteAccount.cancel'), style: "cancel" },
+        { text: t('deactivateAccount.cancel'), style: "cancel" },
         {
-          text: t('deleteAccount.confirm'),
+          text: t('deactivateAccount.confirm'),
           style: "destructive",
-          onPress: confirmDelete,
+          onPress: confirmDeactivate,
         },
       ],
     );
   };
 
-  const confirmDelete = async () => {
-    setDeleteLoading(true);
+  const confirmDeactivate = async () => {
+    setDeactivateLoading(true);
     try {
-      const res = await api.post(API_ENDPOINTS.PRIVACY_DELETE_ACCOUNT, {});
-      if (!res.isSuccess) throw new Error(res.message);
-      // Backend gerçek silinme tarihini + kalan gün sayısını dönüyor; sabit
-      // "30 gün" metni yerine onu göster.
-      const scheduledAt = res.result?.scheduledDeletionAt;
-      const daysRemaining = res.result?.daysRemaining;
-      const message = scheduledAt
-        ? t('deleteAccount.successMsgDated', {
-            date: new Date(scheduledAt).toLocaleDateString(getDateLocale(), {
-              day: 'numeric',
-              month: 'long',
-              year: 'numeric',
-            }),
-            days: daysRemaining ?? 30,
-          })
-        : t('deleteAccount.successMsg');
+      await api.post(API_ENDPOINTS.PRIVACY_DEACTIVATE, {});
+      Alert.alert(
+        t('deactivateAccount.successTitle'),
+        t('deactivateAccount.successMsg'),
+        [{ text: t('common.ok'), onPress: () => dispatch(logout()) }],
+      );
+    } catch (e: any) {
+      const backendMessage =
+        readField(e?.response?.data, "message", "errorMessage") ?? e?.message;
+      Alert.alert(t('errors.generic'), backendMessage || t('errors.operationFailed'));
+    } finally {
+      setDeactivateLoading(false);
+    }
+  };
+
+  // ── Hesabı Sil ──────────────────────────────────────────────────────────────
+  //
+  // DELETE /api/privacy/account — KALICI ve ANINDA, şifre zorunlu, 204 döner.
+  //
+  // Eski POST /api/privacy/delete-account kullanılmıyor: backend'de [ESKİ]
+  // işaretli ve artık silmiyor, yalnızca donduruyor. Ekran "30 gün içinde
+  // silinecek" derken hesabın dondurulması App Store Guideline 5.1.1(v)
+  // ihlaliydi — kullanıcıya verilen söz ile olan iş tutmuyordu.
+  const handleDeleteAccount = () => {
+    setDeletePwError(null);
+    setDeleteModalVisible(true);
+  };
+
+  const confirmDelete = async (password: string) => {
+    setDeleteLoading(true);
+    setDeletePwError(null);
+    try {
+      // DELETE gövdesi axios'ta config.data ile gider. 204 döndüğü için
+      // `res.isSuccess` KONTROL EDİLMEZ — interceptor response.data döndürüyor,
+      // gövdesiz yanıtta o boş string. Hata zaten exception olarak düşüyor.
+      await api.delete(API_ENDPOINTS.PRIVACY_DELETE_PERMANENT, {
+        data: { password },
+      });
+      setDeleteModalVisible(false);
       Alert.alert(
         t('deleteAccount.successTitle'),
-        message,
-        [{ text: t('common.ok'), onPress: () => navigation.goBack() }],
+        t('deleteAccount.successMsg'),
+        // Hesap gitti; oturum geçersiz. goBack() kullanıcıyı ölü bir
+        // ekranda bırakırdı.
+        [{ text: t('common.ok'), onPress: () => dispatch(logout()) }],
       );
-    } catch (e) {
-      Alert.alert(t('errors.generic'), e.message || t('errors.operationFailed'));
+    } catch (e: any) {
+      // Yanlış şifre modalın İÇİNDE gösterilir ki kullanıcı tekrar denesin.
+      const code = readField(e?.response?.data, "code");
+      if (code === "INVALID_PASSWORD") {
+        setDeletePwError(t('deleteAccount.passwordWrong'));
+        return;
+      }
+      const backendMessage =
+        readField(e?.response?.data, "message", "errorMessage") ?? e?.message;
+      Alert.alert(t('errors.generic'), backendMessage || t('errors.operationFailed'));
     } finally {
       setDeleteLoading(false);
     }
@@ -1098,11 +1141,33 @@ export default function SettingsScreen() {
         }
       />
 
+      {/* Hesabı Dondur — silmeden AYRI satır. Ara vermek isteyen kullanıcıyı
+          kalıcı silmeye zorlamamak için; Apple 5.1.1(v) da dondurmayı silmenin
+          yerine saymıyor, ikisi de bulunmak zorunda. Yıkıcı DEĞİL: geri
+          dönülebilir bir işlem, o yüzden `destructive` yok. */}
+      <SettingsActionRow
+        title={t('settings.deactivateAccount')}
+        onPress={handleDeactivateAccount}
+        disabled={deactivateLoading}
+        trailing={
+          deactivateLoading ? (
+            <ActivityIndicator
+              size="small"
+              color={colors.text}
+              style={{ width: 18, height: 18 }}
+            />
+          ) : (
+            <SFIcon name="pause.circle.fill" fallback={PauseCircle} size={18} color={colors.text} strokeWidth={1.5} style={{ pointerEvents: "none" }} />
+          )
+        }
+      />
+
       {/* Hesabı Sil — dolu kırmızı kapsül DEĞİL artık: bölünmüş listede tek
           bir satırın zemini boyanınca liste ikiye bölünüyor, ayırıcılar o
           satırın etrafında anlamını kaybediyordu. Yıkıcılığı iOS'un kendi
           dilinde taşıyor: kırmızı metin + kırmızı glif, satır düzeni diğer
-          satırlarla birebir aynı. Onay yine alert'te. */}
+          satırlarla birebir aynı. Onay artık alert'te DEĞİL, şifre soran
+          modalda (bkz. DeleteAccountModal) — işlem geri alınamaz. */}
       <SettingsActionRow
         title={t('settings.deleteAccount')}
         onPress={handleDeleteAccount}
@@ -1387,6 +1452,13 @@ export default function SettingsScreen() {
     <BlockedUsersModal
       visible={blockedVisible}
       onClose={() => setBlockedVisible(false)}
+    />
+    <DeleteAccountModal
+      visible={deleteModalVisible}
+      onClose={() => setDeleteModalVisible(false)}
+      onConfirm={confirmDelete}
+      loading={deleteLoading}
+      serverError={deletePwError}
     />
     </View>
   );

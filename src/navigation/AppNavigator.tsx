@@ -104,7 +104,6 @@ import ChatScreen from '@/features/chat/screens/ChatScreen';
 import NotificationsScreen from '@/features/notifications/screens/NotificationsScreen';
 import ChangePasswordScreen from '@/features/auth/screens/ChangePasswordScreen';
 import ChangeEmailScreen from '@/features/auth/screens/ChangeEmailScreen';
-import DeletionBanner from '@/features/notifications/components/DeletionBanner';
 import MatchModal from '@/features/notifications/components/MatchModal';
 import SuperLikeFlame from '@/features/discover/components/SuperLikeFlame';
 import realtimeService from '@/features/chat/realtimeService';
@@ -1754,7 +1753,6 @@ export default function AppNavigator() {
       <KVKKConsentScreen visible={needsKvkkConsent} />
 
       {/* Soft-delete banner */}
-      {showMainNavigator && <DeletionBanner />}
 
       {/* Süper beğeni alevi — tüm ekranı (tab bar ve safe area dahil) kaplaması
           gerektiği için navigator'ın DIŞINDA. MatchModal'ın ALTINDA duruyor:

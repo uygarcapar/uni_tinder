@@ -46,7 +46,7 @@ export const API_ENDPOINTS = {
   FORGOT_PASSWORD: "/api/user/ForgotPassword",
   RESET_PASSWORD: "/api/user/ResetPasswordWithCode",
   // NOT: DELETE /api/user/DeleteUser deprecated (orphan kayıt bırakıyor).
-  // Hesap silme için PRIVACY_DELETE_ACCOUNT kullan — KVKK akışı, 30 gün geri alınabilir.
+  // Hesap silme için PRIVACY_DELETE_PERMANENT kullan — kalıcı ve anında.
   VALIDATE_TOKEN: "/api/user/validate-token",
   REFRESH_TOKEN: "/api/user/refresh-token",
   REVOKE_TOKEN: "/api/user/revoke-token",
@@ -120,9 +120,18 @@ export const API_ENDPOINTS = {
   SWIPE_FILTERS: "/api/swipe/Filters",
   SWIPE_UPDATE_FILTERS: "/api/swipe/UpdateFilters",
 
-  PRIVACY_DELETE_ACCOUNT: "/api/privacy/delete-account",
-  PRIVACY_CANCEL_DELETION: "/api/privacy/cancel-deletion",
-  PRIVACY_DELETION_STATUS: "/api/privacy/deletion-status",
+  // Kalıcı silme — ANINDA, geri alınamaz, gövdede şifre zorunlu. 204 döner.
+  // DELETE gövdesi axios'ta config.data ile gider:
+  //   api.delete(PRIVACY_DELETE_PERMANENT, { data: { password } })
+  PRIVACY_DELETE_PERMANENT: "/api/privacy/account",
+  // Dondurma — veri durur, kullanıcı tekrar giriş yapınca kendiliğinden açılır.
+  // Ayrı bir "aktifleştir" ucu yok (bkz. AuthService.Login).
+  PRIVACY_DEACTIVATE: "/api/privacy/deactivate",
+  // KALDIRILDI: PRIVACY_DELETE_ACCOUNT (/api/privacy/delete-account),
+  // PRIVACY_CANCEL_DELETION, PRIVACY_DELETION_STATUS. Backend'de üçü de [ESKİ]:
+  // 30 günlük grace period modeli kaldırıldı, /delete-account artık silmiyor
+  // yalnızca donduruyor. Uygulama "30 gün içinde silinecek" derken hesabın
+  // dondurulması App Store Guideline 5.1.1(v) ihlaliydi.
   PRIVACY_MY_DATA: "/api/privacy/my-data",
   PRIVACY_MY_DATA_STATUS: (requestId: number | string) => `/api/privacy/my-data/${requestId}`,
   PRIVACY_ACCEPT_CONSENT: "/api/privacy/accept-consent",

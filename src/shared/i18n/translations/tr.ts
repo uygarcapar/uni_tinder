@@ -95,9 +95,10 @@ const tr = {
     account: {
       title: 'Hesap',
       heading: 'Hesap ve oturum',
-      subtitle: 'Hesabını silersen 30 gün içinde geri dönebilirsin.',
+      subtitle: 'Hesabını dondurabilir ya da kalıcı olarak silebilirsin.',
     },
     deleteAccount: 'Hesabı Sil',
+    deactivateAccount: 'Hesabı Dondur',
     // Ayarlar alt bilgisindeki harita atfı. Yalnız önek çevriliyor —
     // "© Mapbox" ve "© OpenStreetMap" marka adı, olduğu gibi kalıyor.
     mapAttribution: 'Harita verileri',
@@ -115,20 +116,28 @@ const tr = {
     operationFailed: 'İşlem gerçekleştirilemedi.',
   },
   deleteAccount: {
-    alertTitle: 'Hesabı Sil',
+    alertTitle: 'Hesabını kalıcı olarak sil',
     alertMsg:
-      'Hesabın 30 gün boyunca askıya alınır. Bu süre içinde giriş yaparak geri dönebilirsin. 30 gün sonra kalıcı olarak silinir.',
-    cancel: 'İptal',
-    confirm: 'Devam Et',
-    successTitle: 'Hesap Silme Başlatıldı',
-    successMsg:
-      'Hesabın 30 gün içinde silinecek. Bu süre içinde giriş yaparak iptal edebilirsin.',
-    successMsgDated:
-      'Hesabın {{date}} tarihinde kalıcı olarak silinecek ({{days}} gün kaldı). Bu süre içinde giriş yaparak iptal edebilirsin.',
-    bannerTitle: 'Hesabın silinmek üzere',
-    bannerDated: '{{date}} tarihinde kalıcı olarak silinecek.',
-    bannerDatedWithDays: '{{date}} tarihinde kalıcı olarak silinecek ({{days}} gün kaldı).',
-    bannerUndo: 'İptal Et',
+      'Profilin, eşleşmelerin ve tüm mesajların anında silinir. Bu işlem geri alınamaz.\n\nSadece ara vermek istiyorsan bunun yerine hesabını dondurabilirsin.',
+    cancel: 'Vazgeç',
+    confirm: 'Kalıcı Olarak Sil',
+    passwordLabel: 'Şifren',
+    passwordPlaceholder: 'Şifreni gir',
+    passwordHint: 'Onaylamak için şifreni gir.',
+    passwordRequired: 'Şifreni gir.',
+    passwordWrong: 'Şifre hatalı.',
+    deleting: 'Siliniyor…',
+    successTitle: 'Hesabın silindi',
+    successMsg: 'Verilerin kaldırıldı. Bizi tercih ettiğin için teşekkürler.',
+  },
+  deactivateAccount: {
+    alertTitle: 'Hesabını dondur',
+    alertMsg:
+      'Profilin kimseye gösterilmez ve bildirim almazsın. Verilerin durur — tekrar giriş yaptığında hesabın kaldığı yerden açılır.',
+    cancel: 'Vazgeç',
+    confirm: 'Dondur',
+    successTitle: 'Hesabın donduruldu',
+    successMsg: 'İstediğin zaman giriş yaparak geri dönebilirsin.',
   },
   auth: {
     session: {

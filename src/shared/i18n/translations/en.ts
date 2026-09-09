@@ -95,9 +95,10 @@ const en = {
     account: {
       title: 'Account',
       heading: 'Account and session',
-      subtitle: 'If you delete your account, you can return within 30 days.',
+      subtitle: 'You can deactivate your account or delete it permanently.',
     },
     deleteAccount: 'Delete Account',
+    deactivateAccount: 'Deactivate Account',
     // Map attribution in the settings footer. Only the prefix is translated —
     // "© Mapbox" and "© OpenStreetMap" are brand names, left as-is.
     mapAttribution: 'Map data',
@@ -115,20 +116,28 @@ const en = {
     operationFailed: 'Operation could not be completed.',
   },
   deleteAccount: {
-    alertTitle: 'Delete Account',
+    alertTitle: 'Permanently delete your account',
     alertMsg:
-      'Your account will be suspended for 30 days. You can log in and return during this time. After 30 days, it will be permanently deleted.',
+      'Your profile, matches and all messages are deleted immediately. This cannot be undone.\n\nIf you just need a break, you can deactivate your account instead.',
     cancel: 'Cancel',
-    confirm: 'Continue',
-    successTitle: 'Account Deletion Initiated',
-    successMsg:
-      'Your account will be deleted within 30 days. You can cancel by logging in during this time.',
-    successMsgDated:
-      'Your account will be permanently deleted on {{date}} ({{days}} days left). You can cancel by logging in during this time.',
-    bannerTitle: 'Your account is scheduled for deletion',
-    bannerDated: 'It will be permanently deleted on {{date}}.',
-    bannerDatedWithDays: 'It will be permanently deleted on {{date}} ({{days}} days left).',
-    bannerUndo: 'Undo',
+    confirm: 'Delete Permanently',
+    passwordLabel: 'Your password',
+    passwordPlaceholder: 'Enter your password',
+    passwordHint: 'Enter your password to confirm.',
+    passwordRequired: 'Enter your password.',
+    passwordWrong: 'Incorrect password.',
+    deleting: 'Deleting…',
+    successTitle: 'Account deleted',
+    successMsg: 'Your data has been removed. Thanks for giving us a try.',
+  },
+  deactivateAccount: {
+    alertTitle: 'Deactivate your account',
+    alertMsg:
+      'Your profile is hidden from everyone and you stop receiving notifications. Your data stays — logging back in reactivates your account.',
+    cancel: 'Cancel',
+    confirm: 'Deactivate',
+    successTitle: 'Account deactivated',
+    successMsg: 'Log back in any time to return.',
   },
   auth: {
     session: {
