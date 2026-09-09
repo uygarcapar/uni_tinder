@@ -13,7 +13,11 @@ export type RootStackParamList = {
   // Ayarlar. Modal değil ekran: Profil'deki dişliden (ve uiBus'taki
   // 'openSettings' kapısından) stack'e itiliyor, kendi içinde ikinci bir kademe
   // taşıyor (kategori sayfaları — o kademe route DEĞİL, ekranın iç durumu).
-  Settings: undefined;
+  //
+  // `section` o iç kademenin YALNIZCA BAŞLANGIÇ değeri: bir yerden doğrudan bir
+  // kategoriye yönlendirildiğinde (ör. doğrulama akışı rıza eksikken kullanıcıyı
+  // Gizlilik'e gönderiyor) kullanıcıyı kök listede bırakıp "sen bul" dememek için.
+  Settings: { section?: 'messaging' | 'privacy' | 'theme' | 'language' | 'account' } | undefined;
   // Ayarlar → Şifre Değiştir. İki adım (mevcut şifre → kod + yeni şifre) tek
   // ekranın iç durumu: mevcut şifreyi route param'ıyla taşımak onu Sentry'nin
   // navigation breadcrumb'larına düşürürdü.

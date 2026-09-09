@@ -25,7 +25,7 @@ import Animated, {
 } from "react-native-reanimated";
 import { Gesture, GestureDetector } from "react-native-gesture-handler";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
-import { useNavigation } from "@react-navigation/native";
+import { useNavigation, useRoute } from "@react-navigation/native";
 import * as Clipboard from "expo-clipboard";
 import { useSelector } from "react-redux";
 import { useAppDispatch } from "@/shared/hooks/redux";
@@ -76,6 +76,14 @@ import api, { refreshAccessToken } from "@/shared/services/api";
 import { API_ENDPOINTS } from "@/shared/constants/api";
 import chatService from "@/features/chat/chatService";
 import profileService from "@/features/profile/profileService";
+import uiBus from "@/shared/services/uiBus";
+import LegalSheet, { type LegalDocument } from "@/features/auth/components/LegalSheet";
+import { CURRENT_KVKK_VERSION } from "@/features/auth/screens/KVKKConsentScreen";
+import {
+  fetchConsentStatus,
+  recordConsent,
+  SELFIE_CONSENT_TYPES,
+} from "@/features/auth/consents";
 import { logout } from "@/features/auth/authSlice";
 import { shortNetError } from "@/shared/utils/netError";
 import {
@@ -162,6 +170,7 @@ export default function SettingsScreen() {
   const { t } = useTranslation();
   const dispatch = useAppDispatch();
   const navigation = useNavigation<any>();
+  const route = useRoute<any>();
   const insets = useSafeAreaInsets();
   // `languagePreference` yeni bir alan: persist'te bu anahtarı taşımayan eski
   // kullanıcılarda undefined gelir. O durumda çözülmüş dile düşüyoruz — daha
@@ -180,9 +189,31 @@ export default function SettingsScreen() {
   const [downloadLoading, setDownloadLoading] = useState(false);
   const [deleteLoading, setDeleteLoading] = useState(false);
   const [blockedVisible, setBlockedVisible] = useState(false);
-  /** null = kök liste (5 kategori); dolu = o kategorinin satırları. */
-  const [section, setSection] = useState<SectionKey | null>(null);
+  /**
+   * null = kök liste (5 kategori); dolu = o kategorinin satırları.
+   *
+   * Başlangıç değeri route'tan gelebiliyor: bir akış kullanıcıyı belirli bir
+   * kategoriye yönlendirmiş olabilir (ör. doğrulama, rıza eksikken Gizlilik'e).
+   * Yalnızca İLK değer — sonrası ekranın kendi durumu, geri tuşu kök listeye
+   * döner.
+   */
+  const [section, setSection] = useState<SectionKey | null>(
+    () => route?.params?.section ?? null,
+  );
   const [prefs, setPrefs] = useState(null);
+  /**
+   * Fotoğraf doğrulamanın açık rızası — İKİ rızanın ortak anahtarı
+   * (biyometrik işleme + yurt dışına aktarım). `null` = henüz bilinmiyor ya da
+   * sunucu bu alanı vermiyor; o hâlde satır hiç çizilmiyor (yanlış bir durum
+   * göstermektense hiç göstermemek doğru).
+   */
+  // İZİN BAŞINA durum: iki izin AYRI AYRI açılıp kapanıyor. `null` = sunucu
+  // durumu okunamadı, satırlar hiç çizilmiyor.
+  const [selfieConsents, setSelfieConsents] =
+    useState<Record<string, boolean> | null>(null);
+  const [selfieConsentSaving, setSelfieConsentSaving] = useState<string | null>(null);
+  const [selfieConsentVersion, setSelfieConsentVersion] = useState<string | null>(null);
+  const [legalDoc, setLegalDoc] = useState<LegalDocument | null>(null);
   const pollingRef = useRef(null);
   /** Her yeni export turu nesli ilerletir; eski tur cevabı dönerse yok sayılır. */
   const pollGenRef = useRef(0);
@@ -199,6 +230,61 @@ export default function SettingsScreen() {
       .catch(() => {});
     return () => { cancelled = true; };
   }, []);
+
+  /**
+   * Rıza durumu — İKİSİ BİRDEN. Doğrulama akışı ikisini birden aradığı için
+   * anahtar de ancak ikisi de verilmişken "açık" gösterilebilir; yalnız biri
+   * varsa kullanıcı "rıza verdim ama çalışmıyor" durumuna düşer.
+   */
+  useEffect(() => {
+    let cancelled = false;
+    Promise.all(SELFIE_CONSENT_TYPES.map((type) => fetchConsentStatus(type)))
+      .then((statuses) => {
+        if (cancelled) return;
+        // Biri bile okunamadıysa satırı çizme: yarım bilgiyle anahtar göstermek
+        // kullanıcıyı yanlış duruma inandırır.
+        if (statuses.some((st) => st == null)) return;
+        setSelfieConsents(
+          Object.fromEntries(
+            SELFIE_CONSENT_TYPES.map((type, i) => [type, statuses[i]!.isAccepted]),
+          ),
+        );
+        setSelfieConsentVersion(statuses[0]?.currentVersion || null);
+      })
+      .catch(() => {});
+    return () => { cancelled = true; };
+  }, []);
+
+  /**
+   * TEK bir izni ver / geri al.
+   *
+   * İkisi AYRI: kullanıcı yüz verisinin işlenmesine izin verip yurt dışına
+   * aktarıma vermeyebilir — KVKK'nın istediği de bu, m.6/2-a ile m.9 ayrı
+   * rızalar. Yarım rıza doğrulamayı çalıştırmaz (`/start` ikisini birden
+   * arıyor); kullanıcı o duruma düşerse satırların altındaki `pairHint`
+   * bunu söylüyor.
+   *
+   * Geri almada rozet SUNUCUDA düşüyor (metnin sözü) — profil önbelleğini
+   * boşaltıp ekranı tazeliyoruz, aksi halde rozet 30 dk daha kendi profilinde
+   * görünür.
+   */
+  const handleToggleSelfieConsent = async (type: string) => {
+    if (!selfieConsents || selfieConsentSaving) return;
+    const next = !selfieConsents[type];
+    setSelfieConsentSaving(type);
+    try {
+      await recordConsent(type as any, selfieConsentVersion || CURRENT_KVKK_VERSION, next);
+      setSelfieConsents((prev) => (prev ? { ...prev, [type]: next } : prev));
+      if (!next) {
+        profileService.bustProfileCache();
+        uiBus.emit('profileDirty');
+      }
+    } catch {
+      Alert.alert(t('errors.generic'), t('settings.selfieConsent.error'));
+    } finally {
+      setSelfieConsentSaving(null);
+    }
+  };
 
   // Poll'u durdurmanın TEK yolu: timer'ı temizle + nesli ilerlet. Nesil sayacı
   // olmadan uçuşta olan bir status isteği durdurulduktan sonra geri dönüp
@@ -752,6 +838,116 @@ export default function SettingsScreen() {
 
   const privacyRows = (
     <>
+      {/* ── Doğrulama İzinleri ──────────────────────────────────────────────
+          İzinlerin verildiği, geri alındığı ve durumunun görüldüğü TEK yer.
+          Kayıt ekranı yalnız aydınlatma metninin kabulünü alıyor; doğrulama
+          akışı rıza eksikse (UT-6501) kullanıcıyı buraya yolluyor.
+
+          İKİ AYRI ANAHTAR: biri özel nitelikli verinin işlenmesi (m.6/2-a),
+          diğeri yurt dışına aktarım (m.9). KVKK ikisi için ayrı ve bilinçli
+          karar istiyor; tek anahtar iki rızayı tek karara indirger. Yalnız biri
+          açıkken doğrulama çalışmaz — o durumu `pairHint` söylüyor.
+
+          Satırlar, sunucu durumu okunamadıysa HİÇ çizilmiyor (`null`): yanlış
+          bir durum göstermektense hiç göstermemek doğru. */}
+      {selfieConsents !== null && (
+        <>
+          <Text
+            style={{
+              color: colors.text,
+              fontSize: 15,
+              fontWeight: "600",
+              paddingHorizontal: 20,
+              marginBottom: 8,
+            }}
+          >
+            {t('settings.selfieConsent.heading')}
+          </Text>
+
+          {SELFIE_CONSENT_TYPES.map((type) => (
+            <View key={type}>
+              <SettingsToggleRow
+                title={t(`profile.selfie.consent.${type}.title`)}
+                value={selfieConsents[type]}
+                disabled={selfieConsentSaving !== null}
+                onToggle={() => handleToggleSelfieConsent(type)}
+              />
+              <Text
+                style={{
+                  color: colors.textSecondary,
+                  fontSize: 13,
+                  lineHeight: 19,
+                  paddingHorizontal: 20,
+                  marginTop: -2,
+                  marginBottom: 12,
+                }}
+              >
+                {t(`profile.selfie.consent.${type}.note`)}
+              </Text>
+            </View>
+          ))}
+
+          {/* Yarım rıza uyarısı — yalnız biri açıkken. Kullanıcı "izin verdim
+              ama doğrulama başlamıyor" durumuna düşmesin. */}
+          {SELFIE_CONSENT_TYPES.some((type) => selfieConsents[type]) &&
+            !SELFIE_CONSENT_TYPES.every((type) => selfieConsents[type]) && (
+              <Text
+                style={{
+                  color: colors.textMuted,
+                  fontSize: 13,
+                  lineHeight: 19,
+                  paddingHorizontal: 20,
+                  marginBottom: 12,
+                }}
+              >
+                {t('settings.selfieConsent.pairHint')}
+              </Text>
+            )}
+
+          <Text
+            style={{
+              color: colors.textMuted,
+              fontSize: 13,
+              lineHeight: 19,
+              paddingHorizontal: 20,
+              marginBottom: 16,
+            }}
+          >
+            {t('settings.selfieConsent.note')}
+          </Text>
+        </>
+      )}
+
+      {/* Aydınlatma metni — rızanın dayanağı elin altında olmalı: metni
+          okumadan verilen/geri alınan bir rıza "bilgilendirilmiş" sayılmaz.
+          Kayıt ekranından sonra metne ulaşmanın başka yolu yoktu. */}
+      <TouchableOpacity
+        onPress={() => setLegalDoc('privacy')}
+        activeOpacity={0.8}
+        style={{
+          borderRadius: 36,
+          borderCurve: "continuous",
+          overflow: "hidden",
+          borderWidth: 0.5,
+          borderColor: colors.hairline,
+          flexDirection: "row",
+          alignItems: "center",
+          justifyContent: "space-between",
+          padding: 16,
+          paddingHorizontal: 20,
+          marginBottom: 8,
+        }}
+      >
+        <View style={{ flexDirection: "row", alignItems: "center", gap: 10, flex: 1 }}>
+          <View style={{ flex: 1 }}>
+            <Text style={{ color: colors.text, fontSize: 15, fontWeight: "500" }}>
+              {t('settings.privacyPolicy')}
+            </Text>
+          </View>
+          <SFIcon name="chevron.right" fallback={ChevronRight} size={18} color={colors.textSecondary} strokeWidth={1.5} style={{ pointerEvents: "none" }} />
+        </View>
+      </TouchableOpacity>
+
       {/* Verilerimi İndir */}
       <TouchableOpacity
         onPress={handleDownloadData}
@@ -1138,6 +1334,7 @@ export default function SettingsScreen() {
       leftButton={backButton}
     />
 
+    <LegalSheet document={legalDoc} onClose={() => setLegalDoc(null)} />
     <BlockedUsersModal
       visible={blockedVisible}
       onClose={() => setBlockedVisible(false)}

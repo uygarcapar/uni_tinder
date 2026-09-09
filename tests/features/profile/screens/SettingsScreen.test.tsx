@@ -14,6 +14,9 @@ jest.mock('@react-navigation/native', () => ({
     navigate: mockNavigate,
     setOptions: jest.fn(),
   }),
+  // Ekran, açılacak kategoriyi route param'ından okuyabiliyor (bkz.
+  // RootStackParamList.Settings). Param'sız açılış = kök liste.
+  useRoute: () => ({ params: undefined }),
 }));
 
 // ── Ekran kabuğunun bağımlılıkları (ScreenHeader + cam geri butonu) ──────────

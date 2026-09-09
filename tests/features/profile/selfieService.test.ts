@@ -23,8 +23,6 @@ jest.mock('@/shared/services/api', () => ({
 }));
 
 import {
-  acceptConsent,
-  fetchConsentPolicy,
   startSelfieVerification,
   submitSelfieFrames,
 } from '@/features/profile/selfie/selfieService';
@@ -119,38 +117,5 @@ describe('submitSelfieFrames', () => {
     // Kota + iki kare için genişletilmiş timeout birlikte geçiliyor.
     expect(config.__skip429Retry).toBe(true);
     expect(config.timeout).toBe(60_000);
-  });
-});
-
-describe('rıza uçları', () => {
-  it('policy version SUNUCUDAN okunur, sabit kodlanmaz', async () => {
-    mockGet.mockResolvedValue({
-      isSuccess: true,
-      result: { version: '2.3', contentMarkdown: '## Başlık' },
-    });
-
-    const policy = await fetchConsentPolicy('BiometricVerification');
-
-    expect(mockGet).toHaveBeenCalledWith(
-      API_ENDPOINTS.PRIVACY_POLICY('BiometricVerification'),
-    );
-    expect(policy?.version).toBe('2.3');
-  });
-
-  it('metin şekli bozuksa null — uydurulmuş sürümle rıza kaydedilmez', async () => {
-    mockGet.mockResolvedValue({ isSuccess: true, result: { version: '1.0' } });
-    await expect(fetchConsentPolicy('DataTransferAbroad')).resolves.toBeNull();
-  });
-
-  it('accept-consent consentType + version + accepted gönderir', async () => {
-    mockPost.mockResolvedValue({ isSuccess: true });
-
-    await acceptConsent('DataTransferAbroad', '1.0');
-
-    expect(mockPost).toHaveBeenCalledWith(API_ENDPOINTS.PRIVACY_ACCEPT_CONSENT, {
-      consentType: 'DataTransferAbroad',
-      version: '1.0',
-      accepted: true,
-    });
   });
 });

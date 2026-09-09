@@ -2176,6 +2176,17 @@ export default function ProfileScreen() {
                   onPlusPress={goToPlusPage}
                 />
 
+                {/* ── Fotoğraf Doğrulama ── Akışın TEK giriş noktası.
+                    Görünürlüğünü kendisi karar veriyor: `isSelfieVerified` alanı
+                    gelmiyorsa ya da yakın zamanda UT-6505 alındıysa null döner.
+
+                    NEDEN UPSELL'İN ÜSTÜNDE: abone olmayan kullanıcıda hemen
+                    altta ekran boyu bir plus kartı var; satır onun altında
+                    kalınca doğrulama pratikte kaydırılmadan görülmeyen bir yere
+                    düşüyordu. Rozet sayfanın ürün şeridiyle (SuperLike / Not)
+                    aynı öbekte duruyor, reklamın arkasında değil. */}
+                <SelfieVerificationRow profile={myProfile} userId={user?.id} />
+
                 {/* --- PREMIUM UPSELL BANNER & COMPARISON --- */}
                 {/* Şerideki plus kartıyla TEK bayrağın iki yüzü: abone olan
                     küçük kartı, olmayan bu tabloyu görüyor. Abone tarafındaki
@@ -2368,11 +2379,6 @@ export default function ProfileScreen() {
                     </AnimatedPressable>
                   </View>
                 )}
-
-                {/* ── Fotoğraf Doğrulama ── Akışın TEK giriş noktası.
-                    Görünürlüğünü kendisi karar veriyor: `isSelfieVerified` alanı
-                    gelmiyorsa ya da yakın zamanda UT-6505 alındıysa null döner. */}
-                <SelfieVerificationRow profile={myProfile} userId={user?.id} />
 
                 {/* ── Profil Tamamlama Göstergeleri (Accordion) ── */}
                 {completionMetrics.some((m) => m.current < m.max) && (

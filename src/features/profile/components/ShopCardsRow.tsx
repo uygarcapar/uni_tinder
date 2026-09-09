@@ -28,8 +28,9 @@ import {
  * geçirmiyor, orada anlatıldı). Aşağıdaki gutter/gap sayıları o hesapla
  * eşleşmek ZORUNDA.
  *
- * paddingBottom 16: bölüm ritmi 24 ama premium kartı hemen altında ve o kadar
- * boşluk şeridi hero'dan koparıyordu — bilerek bir tık dar.
+ * paddingBottom 16: bölüm ritmi 24 ama altındaki blok (doğrulama satırı, onun
+ * altında da premium kartı) şeride yakın duruyor ve o kadar boşluk şeridi
+ * hero'dan koparıyordu — bilerek bir tık dar.
  */
 export default function ShopCardsRow({
   /** ProfileScreen'deki `showMembershipCard` — alttaki üyelik kartıyla TEK
