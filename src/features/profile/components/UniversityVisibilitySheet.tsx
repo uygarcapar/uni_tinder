@@ -278,10 +278,11 @@ export default function UniversityVisibilitySheet({
     <AppBottomSheet
       visible={visible}
       onClose={onClose}
-      // TEK DETENT ve kısa (eski boy). Davet şeridi/CTA eklendiğinde içerik
-      // taşarsa BottomSheetScrollView kaydırıyor. `enableDynamicSizing` bilerek
+      // TEK DETENT. Davet şeridi/CTA eklendikten sonra 55% içerikte sürekli
+      // kaydırma bırakıyordu; bir tık uzattık. İçerik yine taşarsa
+      // BottomSheetScrollView kaydırıyor. `enableDynamicSizing` bilerek
       // KAPALI (AppBottomSheet varsayılanı) — not belirip kaybolunca boy zıplamasın.
-      snapPoints={["55%"]}
+      snapPoints={["57%"]}
       footer={footer}
       backgroundStyle={{ backgroundColor: colors.bg }}
     >
@@ -459,21 +460,15 @@ export default function UniversityVisibilitySheet({
           <AnimatedPressable
             onPress={openReferral}
             testID="visibility-invite-cta"
-            style={{
-              marginTop: 20,
-              borderRadius: 999,
-              borderCurve: "continuous",
-              overflow: "hidden",
-              borderWidth: 0.5,
-              borderColor: colors.hairline,
-              backgroundColor: colors.surface,
-            }}
+            // Buton kabuğu YOK: alttaki kaydet butonuyla yarışıyordu. Düz
+            // metin bağlantı, dokunma alanı paddingVertical ile korunuyor.
+            style={{ marginTop: 20 }}
           >
             <Text
               style={{
                 paddingVertical: 16,
                 textAlign: "center",
-                fontSize: 14,
+                fontSize: 15,
                 fontWeight: "600",
                 color: colors.text,
               }}

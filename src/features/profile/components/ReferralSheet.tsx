@@ -1,10 +1,18 @@
-import { Text, View } from "react-native";
+import type { ReactNode } from "react";
+import { Text, View, type StyleProp, type ViewStyle } from "react-native";
 import { useTranslation } from "react-i18next";
 import { BottomSheetScrollView } from "@gorhom/bottom-sheet";
 import AppBottomSheet from "@/shared/components/AppBottomSheet";
 import AnimatedPressable from "@/shared/components/AnimatedPressable";
 import SFIcon, { type SFSymbol } from "@/shared/components/SFIcon";
-import { ChevronRight, Copy, Gift, Share2, type LucideIcon } from "@/shared/icons";
+import {
+  ChevronRight,
+  Copy,
+  Gift,
+  InfoIcon,
+  Share2,
+  type LucideIcon,
+} from "@/shared/icons";
 import { useReferralSummary } from "@/features/profile/referralQueries";
 import {
   shareReferralCode,
@@ -22,8 +30,15 @@ import { colors } from "@/shared/theme/colors";
  * geçmişi listesi yok — sıradaki ödül satırı ve görünürlük notu zaten "ne
  * kazandım / ne kazanacağım"ı söylüyor.
  *
- * Kod KUTUSUZ: "#" + büyük kod, yanında zeminsiz iki ikon. Kutu ve daireler
- * sheet'i kart-içinde-kart yapıyordu; kodun kendisi zaten yeterince belirgin.
+ * 🔴 YÜZEY DİLİ (2026-09-10): içerik KARTLARA alındı. Öncesinde her şey çıplak
+ * metindi ve sheet, uygulamanın geri kalanından kopuyordu — kullanıcı profilde
+ * 28 yarıçaplı bir surface KARTA basıp içi düz metin olan bir sayfaya
+ * iniyordu. Şimdi aynı kabuk sheet'in içinde de sürüyor: kod kartı, ilerleme
+ * kartı, katılanlar kartı. Ölçüler ReferralProgressRow'dan geliyor.
+ *
+ * Kart kabuğu, çip ve bölüm başlığı bu dosyanın ALTINDA tek tek duruyor
+ * (Card / Chip / SectionLabel); yeni bir blok eklerken onları kullan, satır
+ * içine yeni bir yüzey yazma.
  *
  * 🔴 YALNIZ İLK AD gösteriliyor: davet edilenin tam kimliğini davet edene
  * açmak, kaydolan kişinin vermediği bir rıza olurdu (backend zaten böyle
@@ -45,129 +60,236 @@ export default function ReferralSheet({
   const pausedDays = data?.visibilityGrant.pausedDays ?? null;
   const next = data?.nextTier ?? null;
   const nextLabel = next ? rewardLabel(t, next.type, next.amount) : null;
+  const ratio =
+    next && next.needed > 0
+      ? Math.min(1, Math.max(0, next.progress / next.needed))
+      : 1;
 
   return (
     <AppBottomSheet
       visible={visible}
       onClose={onClose}
-      snapPoints={["52%"]}
+      // Kardeş sheet ile (UniversityVisibilitySheet) AYNI detent: ikisi de
+      // profilden açılıyor, farklı yükseklikte açılmaları iki ayrı yüzey gibi
+      // okunuyordu. `enableDynamicSizing` bilerek KAPALI — katılanlar listesi
+      // uzayıp kısaldıkça sheet'in boyu zıplamasın, içerik taşarsa kaydırsın.
+      snapPoints={["64%"]}
       backgroundStyle={{ backgroundColor: colors.bg }}
     >
       <BottomSheetScrollView
         style={{ flex: 1 }}
-        contentContainerStyle={{ paddingHorizontal: 24, paddingBottom: 40 }}
+        contentContainerStyle={{ paddingHorizontal: 20, paddingBottom: 40 }}
         showsVerticalScrollIndicator={false}
       >
         <Text
-          style={{ color: colors.text, fontSize: 20, fontWeight: "600", marginBottom: 16 }}
+          style={{ color: colors.text, fontSize: 20, fontWeight: "600", marginBottom: 9 }}
         >
           {t("referral.sheet.title")}
         </Text>
 
+        {/* İkon + açıklama — kardeş sheet'in açılış satırının aynısı. Metin
+            zaten sözlükte duruyordu ama hiç çizilmiyordu: sheet doğrudan koda
+            başlıyor ve "3 arkadaş = 1 ödül" kuralını hiçbir yerde söylemiyordu. */}
+        <View
+          style={{
+            flexDirection: "row",
+            alignItems: "center",
+            gap: 8,
+            marginBottom: 20,
+          }}
+        >
+          <SFIcon
+            name="info.circle"
+            fallback={InfoIcon}
+            size={16}
+            color={colors.textSecondary}
+            strokeWidth={2}
+            weight="semibold"
+          />
+          <Text
+            style={{
+              flex: 1,
+              color: colors.textSecondary,
+              fontSize: 13,
+              lineHeight: 19,
+              fontWeight: "500",
+            }}
+          >
+            {t("referral.sheet.description")}
+          </Text>
+        </View>
+
         {data ? (
           <>
-            {/* Kod + iki eylem. */}
-            <View
-              style={{
-                flexDirection: "row",
-                alignItems: "center",
-                gap: 8,
-                opacity: data.codeDisabled ? 0.4 : 1,
-              }}
-            >
-              {/* "#" ayrı Text: kodun letterSpacing'i ona bulaşmasın, rengi soluk. */}
-              <Text
-                style={{
-                  color: colors.textMuted,
-                  fontSize: 30,
-                  fontWeight: "600",
-                }}
-              >
-                #
-              </Text>
-              <Text
-                testID="referral-sheet-code"
-                numberOfLines={1}
-                style={{
-                  flex: 1,
-                  color: colors.text,
-                  fontSize: 34,
-                  fontWeight: "800",
-                  letterSpacing: 4,
-                  fontVariant: ["tabular-nums"],
-                }}
-              >
-                {data.code}
-              </Text>
-              <SheetAction
-                sfIcon="doc.on.doc"
-                fallback={Copy}
-                label={t("referral.card.copy")}
-                disabled={data.codeDisabled}
-                testID="referral-sheet-copy"
-                onPress={() => copyCode(data.code)}
-              />
-              <SheetAction
-                sfIcon="square.and.arrow.up"
-                fallback={Share2}
-                label={t("referral.card.share")}
-                disabled={data.codeDisabled}
-                testID="referral-sheet-share"
-                onPress={() => shareReferralCode(data.code)}
-              />
-            </View>
+            {/* KOD KARTI. Kod eskiden zeminsizdi ve sheet düz metin bir sayfa
+                gibi okunuyordu; oysa bu sheet'i açan şey profildeki SURFACE
+                KART. Aynı kabuk (28 yarıçap, hairline, surface) burada da
+                sürüyor, yani kullanıcı karta basıp kartın içine giriyor. */}
+            <Card style={{ opacity: data.codeDisabled ? 0.4 : 1 }}>
+              <CardLabel text={t("referral.card.label")} />
+              {/* Kod ve iki eylem AYNI SATIRDA, kod solda / glifler onun
+                  KARŞISINDA sağda. Eylemler önce kodun altında ayrı bir
+                  satırdaydı: kart boşuna uzuyordu ve iki glif, ait oldukları
+                  şeyden (koddan) kopuk, sahipsiz duruyordu. Yan yana
+                  gelince "bu kodu kopyala / paylaş" tek bakışta okunuyor.
 
-            {data.codeDisabled ? (
-              <Note text={t("referral.card.disabled")} />
-            ) : (
-              <>
-                {/* Tek satır ilerleme: "2 / 3 arkadaş katıldı" ve sıradaki ödül.
-                    Merdiven bittiyse (nextTier null) "yeni ödüller yakında". */}
+                  Glifler hâlâ ÇIPLAK: yazı yok, zemin yok. Kapsül buton
+                  denendi ve kartın içinde fazla ağırdı — kod kartın konusu,
+                  iki buton onun önüne geçiyordu. Görünen şey glifin kendisi,
+                  40pt yalnız dokunma alanı. */}
+              <View style={{ flexDirection: "row", alignItems: "center", marginTop: 6 }}>
+                {/* "#" ayrı Text: kodun letterSpacing'i ona bulaşmasın, rengi soluk. */}
+                <Text style={{ color: colors.textMuted, fontSize: 30, fontWeight: "600" }}>
+                  #
+                </Text>
                 <Text
+                  testID="referral-sheet-code"
+                  numberOfLines={1}
+                  // flex: 1 — kod kalan genişliği alır, glifleri sağ kenara iter;
+                  // uzun bir kod da glifleri ezmeden kendi içinde kısalır.
                   style={{
+                    flex: 1,
+                    marginLeft: 6,
                     color: colors.text,
-                    fontSize: 15,
-                    fontWeight: "600",
-                    marginTop: 18,
+                    fontSize: 34,
+                    fontWeight: "800",
+                    letterSpacing: 4,
+                    fontVariant: ["tabular-nums"],
                   }}
                 >
-                  {next
-                    ? t("referral.card.progress", {
-                        progress: next.progress,
-                        needed: next.needed,
-                      })
-                    : t("referral.card.comingSoon")}
+                  {data.code}
                 </Text>
+                <View style={{ flexDirection: "row", gap: 4, marginLeft: 8 }}>
+                  <SheetAction
+                    sfIcon="doc.on.doc"
+                    fallback={Copy}
+                    label={t("referral.card.copy")}
+                    disabled={data.codeDisabled}
+                    testID="referral-sheet-copy"
+                    onPress={() => copyCode(data.code)}
+                  />
+                  <SheetAction
+                    sfIcon="square.and.arrow.up"
+                    fallback={Share2}
+                    label={t("referral.card.share")}
+                    disabled={data.codeDisabled}
+                    testID="referral-sheet-share"
+                    onPress={() => shareReferralCode(data.code)}
+                  />
+                </View>
+              </View>
+            </Card>
+
+            {data.codeDisabled ? (
+              <Chip text={t("referral.card.disabled")} />
+            ) : (
+              /* İLERLEME KARTI — profildeki giriş satırının içeriğiyle aynı:
+                 sayı, 4pt çubuk, sıradaki ödül. Çubuk orada da burada da
+                 duruyor ki sheet, bastığı satırın devamı gibi okunsun. */
+              <Card style={{ marginTop: 12 }}>
+                <View
+                  style={{
+                    flexDirection: "row",
+                    alignItems: "center",
+                    justifyContent: "space-between",
+                    gap: 12,
+                  }}
+                >
+                  <Text
+                    style={{ flex: 1, color: colors.text, fontSize: 15, fontWeight: "600" }}
+                  >
+                    {next
+                      ? t("referral.card.progress", {
+                          progress: next.progress,
+                          needed: next.needed,
+                        })
+                      : t("referral.card.comingSoon")}
+                  </Text>
+                  {next ? (
+                    <Text
+                      style={{
+                        color: colors.text,
+                        fontSize: 15,
+                        fontWeight: "700",
+                        fontVariant: ["tabular-nums"],
+                      }}
+                    >
+                      {`${next.progress} / ${next.needed}`}
+                    </Text>
+                  ) : null}
+                </View>
+
+                <View
+                  style={{
+                    height: 4,
+                    borderRadius: 999,
+                    marginTop: 12,
+                    backgroundColor: colors.hairline,
+                    overflow: "hidden",
+                  }}
+                >
+                  <View
+                    style={{
+                      width: `${ratio * 100}%`,
+                      height: "100%",
+                      borderRadius: 999,
+                      backgroundColor: colors.inverseSurface,
+                    }}
+                  />
+                </View>
+
                 {next && nextLabel ? (
-                  <Note text={t("referral.card.nextReward", { reward: nextLabel })} top={4} />
+                  <Text
+                    style={{
+                      color: colors.textSecondary,
+                      fontSize: 13,
+                      lineHeight: 19,
+                      fontWeight: "500",
+                      marginTop: 10,
+                    }}
+                  >
+                    {t("referral.card.nextReward", { reward: nextLabel })}
+                  </Text>
                 ) : null}
-              </>
+              </Card>
             )}
 
+            {/* Görünürlük hakkı ÇİP olarak. Aynı cümle görünürlük sheet'inde
+                zaten `hairlineSoft` zeminli yuvarlak bir çip; burada gri düz
+                metindi, yani aynı bilgi iki farklı görsel dilde çiziliyordu. */}
             {activeDays !== null ? (
-              <Note text={t("referral.card.visibilityActive", { days: activeDays })} />
+              <Chip text={t("referral.card.visibilityActive", { days: activeDays })} />
             ) : pausedDays ? (
-              <Note text={t("referral.card.visibilityPaused", { days: pausedDays })} />
+              <Chip text={t("referral.card.visibilityPaused", { days: pausedDays })} />
             ) : null}
 
-            <Text
-              style={{
-                color: colors.textSecondary,
-                fontSize: 14,
-                fontWeight: "600",
-                marginTop: 26,
-                marginBottom: 6,
-              }}
-            >
-              {t("referral.sheet.inviteesTitle")}
-            </Text>
-            {data.invitees.length === 0 ? (
-              <Note text={t("referral.sheet.inviteesEmpty")} top={4} />
-            ) : (
-              data.invitees.map((invitee, index) => (
-                <InviteeRow key={`${invitee.firstName}-${index}`} invitee={invitee} />
-              ))
-            )}
+            <SectionLabel text={t("referral.sheet.inviteesTitle")} />
+            {/* Liste de KART İÇİNDE: satırlar eskiden zemine çizilip alt
+                çizgiyle ayrılıyordu, yani gruplanmış liste hissi yoktu.
+                Ayraç kart içinde ve SON satırda çizilmiyor. */}
+            <Card style={{ paddingVertical: 4, paddingHorizontal: 16 }}>
+              {data.invitees.length === 0 ? (
+                <Text
+                  style={{
+                    color: colors.textSecondary,
+                    fontSize: 14,
+                    lineHeight: 20,
+                    fontWeight: "500",
+                    paddingVertical: 12,
+                  }}
+                >
+                  {t("referral.sheet.inviteesEmpty")}
+                </Text>
+              ) : (
+                data.invitees.map((invitee, index) => (
+                  <InviteeRow
+                    key={`${invitee.firstName}-${index}`}
+                    invitee={invitee}
+                    last={index === data.invitees.length - 1}
+                  />
+                ))
+              )}
+            </Card>
           </>
         ) : null}
       </BottomSheetScrollView>
@@ -175,7 +297,94 @@ export default function ReferralSheet({
   );
 }
 
-function InviteeRow({ invitee }: { invitee: ReferralInvitee }) {
+/**
+ * Sheet'in tek kabuğu. Ölçüler profildeki giriş satırından (ReferralProgressRow)
+ * geliyor — sheet onun içi, ayrı bir yüzey dili kurmuyor.
+ */
+function Card({
+  children,
+  style,
+}: {
+  children: ReactNode;
+  style?: StyleProp<ViewStyle>;
+}) {
+  return (
+    <View
+      style={[
+        {
+          borderRadius: 28,
+          borderCurve: "continuous",
+          borderWidth: 0.5,
+          borderColor: colors.hairline,
+          overflow: "hidden",
+          backgroundColor: colors.surface,
+          padding: 20,
+        },
+        style,
+      ]}
+    >
+      {children}
+    </View>
+  );
+}
+
+/** Kart içi üst etiket — kartın neyi taşıdığını söyleyen küçük satır. */
+function CardLabel({ text }: { text: string }) {
+  return (
+    <Text style={{ color: colors.textSecondary, fontSize: 13, fontWeight: "600" }}>
+      {text}
+    </Text>
+  );
+}
+
+/** Kartlar arası bölüm başlığı (grouped list'in section header'ı). */
+function SectionLabel({ text }: { text: string }) {
+  return (
+    <Text
+      style={{
+        color: colors.textSecondary,
+        fontSize: 14,
+        fontWeight: "600",
+        marginTop: 24,
+        marginBottom: 8,
+        marginLeft: 4,
+      }}
+    >
+      {text}
+    </Text>
+  );
+}
+
+/**
+ * Zeminli bilgi çipi — görünürlük sheet'indeki `grantNote` şeridiyle BİREBİR
+ * aynı ölçüler. Aynı bilgiyi iki ekranda iki farklı biçimde çizmemek için tek
+ * kaynak burası; oradaki şerit de ileride buna bağlanabilir.
+ */
+function Chip({ text }: { text: string }) {
+  return (
+    <View
+      style={{
+        borderRadius: 999,
+        borderCurve: "continuous",
+        alignSelf: "flex-start",
+        paddingHorizontal: 14,
+        paddingVertical: 8,
+        marginTop: 12,
+        backgroundColor: colors.hairlineSoft,
+      }}
+    >
+      <Text style={{ color: colors.text, fontSize: 13, fontWeight: "600" }}>{text}</Text>
+    </View>
+  );
+}
+
+function InviteeRow({
+  invitee,
+  last,
+}: {
+  invitee: ReferralInvitee;
+  last: boolean;
+}) {
   const { t } = useTranslation();
   // Reddedilen davet SAKLANMIYOR: davet eden neyin sayılmadığını görmeli,
   // yoksa "üç kişi çağırdım ama ödül gelmedi" sessiz bir şikâyete dönüşür.
@@ -188,7 +397,9 @@ function InviteeRow({ invitee }: { invitee: ReferralInvitee }) {
         alignItems: "center",
         gap: 10,
         paddingVertical: 12,
-        borderBottomWidth: 0.5,
+        // Son satırda ayraç YOK: kartın kendi kenarı zaten listeyi kapatıyor,
+        // ikisi üst üste binince kartın dibinde çift çizgi oluşuyordu.
+        borderBottomWidth: last ? 0 : 0.5,
         borderBottomColor: colors.hairline,
       }}
     >
@@ -211,22 +422,14 @@ function InviteeRow({ invitee }: { invitee: ReferralInvitee }) {
   );
 }
 
-function Note({ text, top = 12 }: { text: string; top?: number }) {
-  return (
-    <Text
-      style={{
-        color: colors.textSecondary,
-        fontSize: 13,
-        lineHeight: 19,
-        fontWeight: "500",
-        marginTop: top,
-      }}
-    >
-      {text}
-    </Text>
-  );
-}
-
+/**
+ * Kod kartının iki eylemi — ÇIPLAK GLİF, kabuk yok.
+ *
+ * `label` ekranda çizilmiyor, yalnız `accessibilityLabel` olarak gidiyor:
+ * VoiceOver kullanıcısı iki glifi ayırt edebilmeli, ama görsel olarak yazı da
+ * zemin de kartı ağırlaştırıyordu (kod kartın konusu, butonlar onun önüne
+ * geçmemeli). 40pt'lik kutu yalnız dokunma alanı, görünen şey glifin kendisi.
+ */
 function SheetAction({
   sfIcon,
   fallback,
@@ -248,8 +451,8 @@ function SheetAction({
       onPress={onPress}
       disabled={disabled}
       testID={testID}
+      accessibilityRole="button"
       accessibilityLabel={label}
-      // Zemin YOK: 40pt yalnız dokunma alanı, görünen şey ikonun kendisi.
       style={{
         width: 40,
         height: 40,

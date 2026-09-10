@@ -26,6 +26,7 @@ import * as Haptics from "expo-haptics";
 import {
   Check,
   ChevronDown,
+  Lock,
   MessageCircle,
   RotateCcw,
 } from "@/shared/icons";
@@ -226,6 +227,13 @@ const lockedVeilTint = () =>
 // ⚠️ Yükseltirken placeholder kutuları unutulmamalı: açık modda kutular KOYU
 // (bkz. boxInk), perde koyulaştıkça kutularla arasındaki kontrast düşer.
 const LOCKED_CARD_VEIL_SCRIM_LIGHT = 0.2;
+// Kilitli kartın ORTASINDAKİ kilit — kartın "yükleniyor" değil "kapalı"
+// okunmasını sağlayan TEK işaret (gerekçe LikeCard'daki kilit bloğunda).
+// Kabuk/disk YOK: kilit doğrudan bulanık fotoğrafın üstünde duruyor, bir
+// kabuğa oturduğunda köşedeki cam butonun ikizi gibi okunup basılabilir
+// sanılıyordu. Ölçü köşedeki butonun glifinden belirgin büyük — köşe bir
+// aksiyon, orta bir durum; yakın ölçülerde ikisi aynı ailedenmiş gibi görünür.
+const LOCKED_CARD_LOCK_GLYPH_SIZE = 44;
 
 /**
  * Kart fotoğrafının ALT BANDINDAKİ okunabilirlik perdesi — isim/üniversite
@@ -2044,64 +2052,47 @@ function LikeCard({
             </>
           )}
 
-          {/* Blurlu (kilitli) kartlar — isim/yaş/üni yerine kutu placeholder.
-              Kutu perdenin TERSİ olmak zorunda; aynı yöndeki bir kutu camın
-              içinde kaybolur. Perde `chromeBlurTint()` ile modla döndüğü için
-              kutular da dönüyor: açık modda koyu, koyu modda açık.
-              `isLight()` render sırasında okunuyor — modül seviyesinde
-              sabitlenirse tema değişince bayat kalır (bkz. theme/colors.ts).
-              Genişlikler gerçek metin uzunluğuna göre dinamik (karakter ≈ px). */}
-          {!showClear &&
-            (() => {
-              const boxInk = isLight() ? scrimAt : onMediaAt;
-              const maxW = CARD_WIDTH - CARD_SIDE_INSET_PLAIN * 2;
-              const nameText =
-                item.age != null
-                  ? `${item.name || ""}, ${item.age}`
-                  : item.name || "";
-              // Karakter ≈ px oranı isim ölçüsüne bağlı: 700 ağırlıkta bir
-              // karakterin ortalama genişliği punto'nun yarısına yakın.
-              const nameW = Math.min(
-                maxW,
-                Math.max(
-                  28,
-                  Math.round(nameText.length * LIKE_CARD_NAME_SIZE * 0.53),
-                ),
-              );
-              // Kilitli kart notsuz beğenidir (not Likes'ta blursuz
-              // geliyor): placeholder'lar açık kartın kimlik bloğuyla AYNI
-              // paylarda duruyor ki listede kilitli/açık kartların isim
-              // satırları aynı hizaya gelsin (bkz. blockBottom).
-              return (
-                <View
-                  style={{
-                    position: "absolute",
-                    left: CARD_SIDE_INSET_PLAIN,
-                    right: CARD_SIDE_INSET_PLAIN,
-                    bottom: blockBottom,
-                  }}
-                  pointerEvents="none"
-                >
-                  <View
-                    style={{
-                      width: nameW,
-                      height: 18,
-                      borderRadius: 6,
-                      backgroundColor: boxInk(0.6),
-                    }}
-                  />
-                  <View
-                    style={{
-                      marginTop: 8,
-                      width: "80%",
-                      height: 12,
-                      borderRadius: 5,
-                      backgroundColor: boxInk(0.35),
-                    }}
-                  />
-                </View>
-              );
-            })()}
+          {/* Blurlu (kilitli) kartlar — kartın ortasında TEK bir beyaz kilit.
+              Eskiden isim/üniversitenin yerinde iki gri kutu vardı; kutular
+              yükleme iskeletiyle (SkeletonBox) birebir aynı dile sahipti ve
+              kart "hâlâ yükleniyor" gibi görünüyordu — kullanıcı paywall'ı
+              değil bekleme ekranını okuyordu. Kilit bunu tek işaretle çözüyor:
+              kart yüklenmiyor, KAPALI.
+
+              YAZI YOK (ürün kararı): kilidin ne olduğu ve çözümün ne olduğu
+              zaten sekmenin başlığında ve "Beğenenleri gör" pill'inde duruyor;
+              kartın üstünde tekrar edilince liste bir paywall duvarına
+              dönüşüyordu.
+
+              Renk SABİT BEYAZ, `boxInk` gibi modla DÖNMÜYOR: kilit fotoğrafın
+              üstünde duruyor (bkz. theme/blur.ts'teki foto üstü kuralı) ve
+              altındaki perde iki modda da fotoğrafın rengini geçiriyor —
+              koyu bir glif açık bir fotoğrafın üstünde kayboluyordu. Açık
+              modun ince camında kontrastı taşıyan şey `LOCKED_CARD_VEIL_
+              SCRIM_LIGHT` perdesi; o kısılırsa burası da gözden geçirilmeli. */}
+          {!showClear && (
+            <View
+              pointerEvents="none"
+              style={[
+                StyleSheet.absoluteFill,
+                { alignItems: "center", justifyContent: "center" },
+              ]}
+            >
+              <SFIcon
+                // DOLU DEĞİL çizgili (`lock.fill` değil `lock`): bu ölçüde
+                // dolu asma kilit bulanık fotoğrafın üstünde tek parça beyaz
+                // bir leke gibi oturuyordu. Çizgili varyant aynı şeyi söyleyip
+                // altındaki fotoğrafı boğmuyor — ve Android'deki lucide
+                // fallback'i de zaten çizgili, iki platform ayrışmıyor.
+                name="lock"
+                fallback={Lock}
+                size={LOCKED_CARD_LOCK_GLYPH_SIZE}
+                color={colors.onMedia}
+                strokeWidth={2}
+                weight="semibold"
+              />
+            </View>
+          )}
         </View>
       </AnimatedPressable>
     </Animated.View>

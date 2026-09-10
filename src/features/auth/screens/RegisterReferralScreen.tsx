@@ -77,6 +77,16 @@ export default function RegisterReferralScreen({
   const savedCode = useAppSelector(
     (s: any) => s.auth.registrationForm.referralCode as string | null,
   );
+  // Sonuç toast'ı bu kod için daha önce gösterildi mi? Persist'ten geliyor:
+  // uygulama kapatılıp açılınca ekran yeniden kurulup kodu yeniden doğruluyor
+  // (sunucu otoritesi kalsın), ama aynı hükmü ikinci kez BANNER YAPMIYOR.
+  // Kullanıcının şikâyeti tam buydu: linkle bir kez gelen kodun "geçerli"
+  // toast'ı her açılışta tekrar düşüyordu.
+  const toastedCode = useAppSelector(
+    (s: any) => s.auth.registrationForm.referralCodeToasted as string | null,
+  );
+  const toastedCodeRef = useRef(toastedCode);
+  toastedCodeRef.current = toastedCode;
 
   // Kod ekran STATE'inde (RegisterStep2'deki gibi react-hook-form'da değil):
   // orada formu yalnız "Doğrula" butonu okuyordu, burada ise durum satırı,
@@ -96,6 +106,17 @@ export default function RegisterReferralScreen({
   const verdictToastShown = useRef(false);
 
   const complete = code.length === REFERRAL_CODE_LENGTH;
+
+  // Redux'taki kodu (davet linkinden — bkz. AppNavigator LINKING — ya da geri
+  // gelince) KUTULARA yaz. OtpInput uncontrolled: `code` state'i savedCode ile
+  // başlasa da kütüphane onu görmüyor; doğrulama çalışıp "kod geçerli" derken
+  // kutular boş kalıyordu. `setValue` onTextChange'i tetikler → `code` de
+  // aynı yoldan güncellenir. Bağımlılık savedCode: link ekran açıkken
+  // gelirse de yazılsın.
+  useEffect(() => {
+    const saved = normalizeReferralCode(savedCode);
+    if (saved) otpRef.current?.setValue(saved);
+  }, [savedCode]);
 
   // ── Doğrulama: 5 karakter dolunca, 300 ms debounce ───────────────────────
   useEffect(() => {
@@ -129,16 +150,20 @@ export default function RegisterReferralScreen({
       }
       if (requestSeq.current !== seq) return;
       setStatus(next);
+      if (next === "idle") return;
+      // Aynı kodun hükmü zaten duyuruldu (persist'ten geri gelen tur):
+      // durum satırı/kenarlık güncellendi, banner tekrarlanmıyor.
+      if (toastedCodeRef.current === code) return;
+      dispatch(updateRegistrationField({ field: "referralCodeToasted", value: code }));
+      verdictToastShown.current = true;
       if (next === "valid") {
-        verdictToastShown.current = true;
         // `note`: hediye 1 not, simge onu gösteriyor.
         showInfoToast({
           title: t("auth.referral.validTitle"),
           message: t("auth.referral.valid"),
           icon: "note",
         });
-      } else if (next === "invalid") {
-        verdictToastShown.current = true;
+      } else {
         showInfoToast({
           title: t("auth.referral.invalidTitle"),
           message: t("auth.referral.invalid"),
@@ -148,7 +173,7 @@ export default function RegisterReferralScreen({
     }, VALIDATE_DEBOUNCE_MS);
 
     return () => clearTimeout(timer);
-  }, [code, complete, t]);
+  }, [code, complete, t, dispatch]);
 
   // Panoda metin var mı? (içeriği OKUMAZ → iOS'ta izin uyarısı çıkmaz.)
   // Yapıştır butonu yalnız bunun doğru olduğu hâlde çiziliyor: boş panoda
@@ -207,6 +232,7 @@ export default function RegisterReferralScreen({
   const handleSkip = () => {
     Keyboard.dismiss();
     dispatch(updateRegistrationField({ field: "referralCode", value: null }));
+    dispatch(updateRegistrationField({ field: "referralCodeToasted", value: null }));
     // `reset`: "Atla" kesin bir karar, geri yığınında dönülecek bir kod ekranı
     // bırakmıyor (Step3'ün geri butonu zaten kaydı bırakma onayına gidiyor).
     navigation.reset({ index: 0, routes: [{ name: "RegisterStep3" }] });

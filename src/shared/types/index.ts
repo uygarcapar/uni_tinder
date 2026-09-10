@@ -34,6 +34,13 @@ export interface RegistrationForm {
    * `null` = kullanıcı adımı atladı ya da kod hiç girilmedi.
    */
   referralCode: string | null;
+  /**
+   * Sonuç toast'ı ("kod geçerli" / "bulunamadı") EN SON hangi kod için
+   * gösterildi. Form persist ediliyor ve uygulama her açılışta davet ekranına
+   * dönüp kodu yeniden doğruluyor; bu alan olmadan aynı hüküm her açılışta
+   * yeniden banner oluyordu. Kod değişince eşleşmez → yeni hüküm yine toast.
+   */
+  referralCodeToasted: string | null;
 }
 
 export interface AuthState {
