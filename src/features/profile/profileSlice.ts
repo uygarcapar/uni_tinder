@@ -4,6 +4,7 @@ import i18n from "@/shared/i18n";
 import { API_BASE_URL, API_ENDPOINTS } from "@/shared/constants/api";
 import type { ProfilePromptAnswer, ProfileState } from "@/shared/types";
 import { FREE_MAX_DISTANCE_KM, MAX_PROFILE_PHOTOS } from "@/shared/constants/limits";
+import { getInstallationId } from "@/shared/utils/installationId";
 import { photoModerationCodeKey } from "@/shared/constants/responseCodes";
 import {
   extractModerationPhotos,
@@ -296,6 +297,17 @@ export const registerAndComplete = createAsyncThunk(
       put("Gender", reg.gender);
       put("DateOfBirth", reg.dateOfBirth);
       put("Password", reg.password);
+
+      // ── Davet programı ────────────────────────────────────────────────────
+      // İkisi de OPSİYONEL: kod boşsa (kullanıcı adımı atladı) `put` alanı hiç
+      // eklemiyor ve backend davet aramıyor. Sayım anı TAM BU İSTEK — davet
+      // edilen profilini bitirdiği anda davet "qualified" oluyor, ayrı bir
+      // aktiflik beklemesi yok (plan §1.2).
+      put("ReferralCode", reg.referralCode);
+      // Kötüye kullanım freni: aynı kurulumdan ikinci davetli kaydı sayılmaz.
+      // Kimlik ALINAMAZSA (izin yok, emülatör) yerel bir UUID dönüyor; istek
+      // yine de gidiyor, sadece fren o cihaz için zayıf kalıyor.
+      put("InstallationId", await getInstallationId());
 
       put("Height", profile.height);
       put("Department", profile.department);

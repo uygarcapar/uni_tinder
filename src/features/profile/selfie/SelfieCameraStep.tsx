@@ -12,6 +12,7 @@ import {
 import { useTranslation } from "react-i18next";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { CameraView, useCameraPermissions } from "expo-camera";
+import { Image } from "expo-image";
 import { BlurView } from "expo-blur";
 import { LinearGradient } from "expo-linear-gradient";
 import MaskedView from "@react-native-masked-view/masked-view";
@@ -32,14 +33,39 @@ import {
  *
  * 🔴 SÜREKLİ AKIŞ YOK. Kamera önizlemesi elbette akıyor ama SUNUCUYA giden kare
  * sayısı challenge sayısını (2) geçmemeli: video akışını örneklemek gerçek bir
- * liveness ürününden ~3× pahalıya geliyor. Kullanıcı "Gönder"e basar, tek kare
+ * liveness ürününden ~3× pahalıya geliyor. Kullanıcı "Çek"e basar, TEK kare
  * çekilir.
  *
- * 🔴 `mirror={false}`: önizleme AYNALANMIYOR. Ön kameranın aynalı önizlemesi
- * standart ama burada zararlı — kullanıcı "sağa çevir" deyip aynadaki kendini
- * takip ederse dosyada ters yöne dönmüş görünür. Aynalamayı kapatınca önizleme
- * ile dosya aynı yönde oluyor ve talimat ikisinde de aynı şeye karşılık geliyor.
- * Dosyaya ayrıca hiçbir flip uygulanmıyor (bkz. captureSelfieFrame).
+ * 🔴 HER KARE ÖNCE ONAYLANIYOR (çek → önizle → gönder / tekrar çek). Deklanşör
+ * doğrudan bir sonraki adıma geçseydi kötü çıkan kareyi (göz kapalı, hareket
+ * yarım, yüz kadraj dışı) düzeltmenin YOLU OLMAZDI: kareler adım adım değil,
+ * sonuncusu çekilince TEK `/submit` isteğinde topluca gidiyor ve başarısızlık
+ * saatlik 5 haktan birini yakıyor. Önizleme kameradan değil, diske yazılan
+ * JPEG'den çiziliyor — yani onaylanan kare ile gönderilen kare AYNI dosya.
+ *
+ * ══════════════════════════════════════════════════════════════════════════
+ * 🔴 AYNALAMA: CANLI GÖRÜNTÜYE DOKUNMA, YALNIZ ÖNİZLEMEYİ ÇEVİR.
+ * ══════════════════════════════════════════════════════════════════════════
+ * `mirror={false}` sanılanın aksine canlı görüntüyü ETKİLEMİYOR: expo-camera bu
+ * prop'u yalnız ÇEKİM bağlantısına uyguluyor (iOS `isVideoMirrored`, Android
+ * `ResolveTakenPicture`'daki `shouldMirror`). Canlı görüntü iki platformda da
+ * sistemin varsayılanıyla geliyor ve ön kamerada AYNALI
+ * (`AVCaptureVideoPreviewLayer` / CameraX `PreviewView`); expo o katmana hiç
+ * dokunmadığı için prop'la kapatılamıyor. Yani:
+ *
+ *   canlı görüntü → aynalı (kullanıcı kendini aynadaki gibi görüyor)
+ *   dosya         → HAM, aynasız (başkalarının gördüğü yön)
+ *
+ * ⚠️ DENENDİ VE GERİ ALINDI: `CameraView`e `scaleX: -1` verip sistemin
+ * aynalamasını iptal etmek. Sonuç daha kötü — kullanıcı çekim ANINDA kendini
+ * ters görüyor, yani her karede yanlış görünen bir kamera. Aynalı önizleme
+ * selfie'nin beklenen davranışı, ONA DOKUNMUYORUZ.
+ *
+ * Kalan tek yer çizim: `scaleX: -1` YALNIZ önizleme katmanına uygulanıyor,
+ * böylece onay ekranı kullanıcının hareketi yaparken gördüğü yönde. Dosyaya
+ * hiçbir flip uygulanmıyor ve `mirror` `false` kalıyor — sunucuya giden kare HAM
+ * gitmek zorunda (gerekçe: captureSelfieFrame dosya başı, AWS `Yaw` işaret
+ * konvansiyonu ölçülmedi).
  */
 
 const OVAL_WIDTH_RATIO = 0.68;
@@ -71,6 +97,18 @@ export default function SelfieCameraStep({
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
+  // Çekilmiş ama HENÜZ ONAYLANMAMIŞ kare. `framesRef`e ancak kullanıcı
+  // "Gönder"/"Devam" dedikten sonra giriyor; "Tekrar Çek" dosyayı siliyor.
+  // Ref + state birlikte: unmount temizliği (aşağıdaki effect) state'in son
+  // değerini okuyamaz, o yüzden ikisi `setPendingFrame` üzerinden birlikte
+  // yürüyor.
+  const [pending, setPending] = useState<SelfieFrame | null>(null);
+  const pendingRef = useRef<SelfieFrame | null>(null);
+  const setPendingFrame = useCallback((frame: SelfieFrame | null) => {
+    pendingRef.current = frame;
+    setPending(frame);
+  }, []);
+
   // Kullanıcı Ayarlar'dan izin verip döndüğünde ekran kendiliğinden açılsın —
   // LocationPermissionSheet'teki desenin aynısı. Yoksa sayfa "izin yok"ta
   // takılı kalıyor ve kullanıcı akışı yeniden başlatmak zorunda kalıyor.
@@ -86,36 +124,58 @@ export default function SelfieCameraStep({
     () => () => {
       framesRef.current.forEach((frame) => forgetPhoto(frame.uri));
       framesRef.current = [];
+      // Onaylanmamış kare de diskte kalmasın — sahibi hâlâ bu ekran.
+      if (pendingRef.current) forgetPhoto(pendingRef.current.uri);
+      pendingRef.current = null;
     },
     [],
   );
 
   const handleCapture = useCallback(async () => {
     const camera = cameraRef.current;
-    if (!camera || busy || submitting) return;
+    if (!camera || busy || submitting || pendingRef.current) return;
 
     setBusy(true);
     setError(null);
     try {
-      const frame = await captureSelfieFrame(camera, index);
-      framesRef.current = [...framesRef.current, frame];
-
-      if (framesRef.current.length >= challenges.length) {
-        // Kareler challenge SIRASIYLA gidiyor — dizi zaten sırayla dolduruldu.
-        const frames = framesRef.current;
-        // Üst katman artık sahibi: unmount temizliği bunları silmemeli.
-        framesRef.current = [];
-        onFrames(frames);
-        return;
-      }
-      setIndex((i) => i + 1);
+      // Kare yalnız ÖNİZLEMEYE düşüyor; adım ilerlemiyor, hiçbir şey
+      // gönderilmiyor. İlerletme kararı `handleConfirm`in.
+      setPendingFrame(await captureSelfieFrame(camera, index));
     } catch (e) {
       devLog("🪪 [selfie] kare çekilemedi", e);
       setError(t("profile.selfie.camera.captureError"));
     } finally {
       setBusy(false);
     }
-  }, [busy, submitting, index, challenges.length, onFrames, t]);
+  }, [busy, submitting, index, setPendingFrame, t]);
+
+  /** "Tekrar Çek" — dosya SİLİNİYOR, adım aynı kalıyor. */
+  const handleRetake = useCallback(() => {
+    if (submitting) return;
+    const frame = pendingRef.current;
+    setPendingFrame(null);
+    setError(null);
+    if (frame) forgetPhoto(frame.uri);
+  }, [submitting, setPendingFrame]);
+
+  /** Kareyi kabul et: son adımsa gönder, değilse bir sonraki harekete geç. */
+  const handleConfirm = useCallback(() => {
+    const frame = pendingRef.current;
+    if (!frame || submitting) return;
+
+    framesRef.current = [...framesRef.current, frame];
+    setPendingFrame(null);
+
+    if (framesRef.current.length >= challenges.length) {
+      // Kareler challenge SIRASIYLA gidiyor — dizi zaten sırayla dolduruldu.
+      const frames = framesRef.current;
+      // Üst katman artık sahibi: unmount temizliği bunları silmemeli.
+      framesRef.current = [];
+      onFrames(frames);
+      return;
+    }
+    setIndex((i) => i + 1);
+  }, [submitting, challenges.length, onFrames, setPendingFrame]);
 
   if (!permission) {
     return (
@@ -205,11 +265,31 @@ export default function SelfieCameraStep({
         ref={cameraRef}
         style={StyleSheet.absoluteFill}
         facing="front"
-        // 🔴 Bkz. dosya başı: aynalama KAPALI, önizleme ile dosya aynı yönde.
+        // 🔴 Bkz. dosya başı: çekim bağlantısında aynalama YOK, dosya ham gidiyor.
+        // Canlı görüntüye DOKUNULMUYOR — sistemin aynalı önizlemesi olduğu gibi.
         mirror={false}
         mode="picture"
         animateShutter={false}
       />
+
+      {/* Önizleme kamerayı ÖRTÜYOR (aynı absolute katman, sonra çizildiği için
+          üstte). Kaynak çekilen JPEG'in kendisi.
+
+          🔴 `scaleX: -1` YALNIZ BU KATMANDA, dosyaya dokunmuyor (bkz. dosya
+          başı). Canlı görüntü sistem tarafından aynalı, dosya ise ham; kareyi
+          ham çizmek "çekince resim döndü" hissi veriyor. Çevirince onay ekranı,
+          kullanıcının hareketi yaparken baktığı görüntüyle aynı yönde oluyor.
+
+          `cachePolicy="none"` — dosya birazdan silinebilir, expo-image'ın
+          belleğinde tutmasının anlamı yok. */}
+      {pending && (
+        <Image
+          source={{ uri: pending.uri }}
+          style={[StyleSheet.absoluteFill, { transform: [{ scaleX: -1 }] }]}
+          contentFit="cover"
+          cachePolicy="none"
+        />
+      )}
 
       <View style={{ flex: 1 }} pointerEvents="box-none">
         <SelfieCameraHeader insetTop={insets.top}>
@@ -274,8 +354,11 @@ export default function SelfieCameraStep({
               textAlign: "center",
             }}
           >
-            {t("profile.selfie.camera.hint")}
-            {challengeHintKey ? ` ${t(challengeHintKey)}` : ""}
+            {pending
+              ? t("profile.selfie.camera.reviewHint")
+              : `${t("profile.selfie.camera.hint")}${
+                  challengeHintKey ? ` ${t(challengeHintKey)}` : ""
+                }`}
           </Text>
         </SelfieCameraHeader>
 
@@ -285,15 +368,19 @@ export default function SelfieCameraStep({
           pointerEvents="none"
           style={{ flex: 1, alignItems: "center", justifyContent: "center" }}
         >
-          <View
-            style={{
-              width: ovalWidth,
-              height: ovalHeight,
-              borderRadius: 999,
-              borderWidth: 2,
-              borderColor: onMediaAt(0.85),
-            }}
-          />
+          {/* Önizlemede kılavuz ÇİZİLMİYOR: kadraj artık sabit, oval yalnız
+              karenin üstünü kapatır ve yüzü değerlendirmeyi zorlaştırır. */}
+          {!pending && (
+            <View
+              style={{
+                width: ovalWidth,
+                height: ovalHeight,
+                borderRadius: 999,
+                borderWidth: 2,
+                borderColor: onMediaAt(0.85),
+              }}
+            />
+          )}
         </View>
 
         {/* Alt blokta ZEMİN YOK: butonun kendisi dolu beyaz, altındaki tek
@@ -315,35 +402,107 @@ export default function SelfieCameraStep({
             </Text>
           )}
 
-          <AnimatedPressable
-            onPress={handleCapture}
-            disabled={disabled}
-            style={{
-              borderRadius: 999,
-              borderCurve: "continuous",
-              overflow: "hidden",
-              backgroundColor: disabled ? onMediaAt(0.35) : colors.onMedia,
-            }}
-          >
-            {disabled ? (
-              <ActivityIndicator
-                style={{ paddingVertical: 17.5 }}
-                color={colors.onMediaInverse}
-              />
-            ) : (
-              <Text
+          {/* İki mod, TEK satır yüksekliği: deklanşör ya da onay/tekrar çifti.
+              SOLDA onay (dolu), SAĞDA yeniden çek (çerçeveli) — varsayılan
+              davranış (kare iyiyse ilerle) başparmağın düştüğü yerde ve dolgusu
+              ağır olan buton. Çerçevelinin dikey boşluğu 1px eksik ki kenarlıkla
+              birlikte dolu butonla aynı yüksekliğe otursun.
+
+              🔴 `flex: 1` `wrapperStyle`DA, `style`da DEĞİL: AnimatedPressable
+              `style`ı içteki TouchableOpacity'ye, `wrapperStyle`ı dıştaki ölçek
+              sarmalayıcısına veriyor. `flex`i içeriye vermek satırdaki payı
+              değil, İÇERİĞİ KADAR yer kaplayan sarmalayıcının içindeki dikey
+              esnemeyi ayarlıyordu: butonlar 0 yüksekliğe çöküp ekranda iki
+              çizgi olarak görünüyordu. */}
+          {pending ? (
+            <View style={{ flexDirection: "row", gap: 10 }}>
+              <AnimatedPressable
+                onPress={handleConfirm}
+                disabled={submitting}
+                wrapperStyle={{ flex: 1 }}
                 style={{
-                  paddingVertical: 20,
-                  textAlign: "center",
-                  fontSize: 15,
-                  fontWeight: "700",
-                  color: colors.onMediaInverse,
+                  borderRadius: 999,
+                  borderCurve: "continuous",
+                  overflow: "hidden",
+                  backgroundColor: submitting ? onMediaAt(0.35) : colors.onMedia,
                 }}
               >
-                {t("profile.selfie.camera.submit")}
-              </Text>
-            )}
-          </AnimatedPressable>
+                {submitting ? (
+                  <ActivityIndicator
+                    style={{ paddingVertical: 17.5 }}
+                    color={colors.onMediaInverse}
+                  />
+                ) : (
+                  <Text
+                    style={{
+                      paddingVertical: 20,
+                      textAlign: "center",
+                      fontSize: 15,
+                      fontWeight: "700",
+                      color: colors.onMediaInverse,
+                    }}
+                  >
+                    {t("profile.selfie.camera.confirm")}
+                  </Text>
+                )}
+              </AnimatedPressable>
+
+              <AnimatedPressable
+                onPress={handleRetake}
+                disabled={submitting}
+                wrapperStyle={{ flex: 1 }}
+                style={{
+                  borderRadius: 999,
+                  borderCurve: "continuous",
+                  overflow: "hidden",
+                  borderWidth: 1,
+                  borderColor: onMediaAt(submitting ? 0.3 : 0.6),
+                }}
+              >
+                <Text
+                  style={{
+                    paddingVertical: 19,
+                    textAlign: "center",
+                    fontSize: 15,
+                    fontWeight: "700",
+                    color: onMediaAt(submitting ? 0.4 : 1),
+                  }}
+                >
+                  {t("profile.selfie.camera.retake")}
+                </Text>
+              </AnimatedPressable>
+            </View>
+          ) : (
+            <AnimatedPressable
+              onPress={handleCapture}
+              disabled={disabled}
+              style={{
+                borderRadius: 999,
+                borderCurve: "continuous",
+                overflow: "hidden",
+                backgroundColor: disabled ? onMediaAt(0.35) : colors.onMedia,
+              }}
+            >
+              {disabled ? (
+                <ActivityIndicator
+                  style={{ paddingVertical: 17.5 }}
+                  color={colors.onMediaInverse}
+                />
+              ) : (
+                <Text
+                  style={{
+                    paddingVertical: 20,
+                    textAlign: "center",
+                    fontSize: 15,
+                    fontWeight: "700",
+                    color: colors.onMediaInverse,
+                  }}
+                >
+                  {t("profile.selfie.camera.capture")}
+                </Text>
+              )}
+            </AnimatedPressable>
+          )}
 
           <AnimatedPressable onPress={onCancel} disabled={submitting} pressScale={1}>
             <Text

@@ -66,6 +66,7 @@ import { photosSchema, PhotosForm } from "@/shared/schemas/formSchemas";
 import { colors } from "../../../shared/theme/colors";
 import { useTranslation } from 'react-i18next';
 import { devLog } from '@/shared/utils/devLog';
+import { showInfoToast } from "@/shared/services/toaster";
 import { checkRegistrationToken } from '@/features/auth/registrationToken';
 
 const { width } = Dimensions.get("window");
@@ -553,6 +554,16 @@ export default function RegisterStep15Screen({ navigation }: NativeStackScreenPr
       const enterApp = () => {
         dispatch(setUserAndToken({ user: response.result.user, token: response.result.token, refreshToken: response.result.refreshToken }));
         dispatch(clearRegistrationForm());
+        // Davet kodu TUTTU: hoş geldin hediyesi (1 not) kayıt commit'inde
+        // verildi. Backend'in söylediği tek yer bu bayrak — bildirmezsek
+        // kullanıcı bir notunun olduğunu ancak tesadüfen fark eder.
+        //
+        // Alert DEĞİL toast: kod geçersiz çıksa da kayıt başarılı ve
+        // kullanıcı uygulamaya girmek üzere; hediyeyi bir onay butonunun
+        // arkasına koymak, akışa hak etmediği bir duraklama eklerdi.
+        if (response.result?.referralApplied === true) {
+          showInfoToast({ message: t('referral.welcomeGift'), variant: 'success' });
+        }
         // Fotoğraflar sunucuda; yerel kopyaların tamamı artık ölü ağırlık.
         // Documents dizinini OS temizlemediği için bunu KENDİMİZ yapmalıyız.
         pruneOrphanPhotos([]);

@@ -10,6 +10,10 @@
     "ios": {
       "supportsTablet": true,
       "bundleIdentifier": "com.uygarcapar.lit",
+      "associatedDomains": [
+        "applinks:lit.4ourstack.com",
+        "applinks:lit.4ourstack.com?mode=developer"
+      ],
       "googleServicesFile": "./GoogleService-Info.plist",
       "infoPlist": {
         "ITSAppUsesNonExemptEncryption": false,

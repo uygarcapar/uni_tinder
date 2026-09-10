@@ -140,6 +140,13 @@ export const SELFIE_REASON_CODES = [
   'face_mismatch',
   'attempt_expired',
   'analysis_failed',
+  // Ana fotoğrafta (KARŞILAŞTIRMA REFERANSINDA) yüz yok — kullanıcının çektiği
+  // karede değil. Backend bunu CompareFaces'ten ÖNCE ayırıyor: eskiden bu durum
+  // `analysis_failed`e düşüyor ve kullanıcıya "bizden kaynaklı bir sorun,
+  // birazdan tekrar dene" deniyordu. İkisi de yanlıştı — sorun bizde değildi ve
+  // ana fotoğraf değişmediği sürece doğrulama HİÇBİR ZAMAN tamamlanamazdı.
+  // Tek `canRetry: false` dönen başarısızlık türü.
+  'reference_photo_no_face',
 ] as const;
 
 export type SelfieReasonCode = (typeof SELFIE_REASON_CODES)[number];

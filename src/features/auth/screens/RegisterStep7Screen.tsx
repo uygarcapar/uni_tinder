@@ -1,4 +1,4 @@
-import { View, Text, ActivityIndicator } from "react-native";
+import { View, Text, ActivityIndicator, ScrollView } from "react-native";
 import { NativeStackScreenProps } from "@react-navigation/native-stack";
 import type { AuthStackParamList } from "@/shared/types/navigation";
 import { useAppDispatch, useAppSelector } from "@/shared/hooks/redux";
@@ -48,7 +48,14 @@ export default function RegisterStep7Screen({ navigation }: NativeStackScreenPro
 
       <RegisterProgressBar step={7} />
 
-      <View className="flex-1 px-6 py-6 pt-0">
+      {/* Alt cinsiyet listesi açılınca içerik ekrana sığmıyor; düz View'da
+          taşan kısım Devam Et butonunun altında kalıyor ve kaydırılamıyordu. */}
+      <ScrollView
+        className="flex-1 px-6"
+        contentContainerStyle={{ paddingBottom: 24 }}
+        keyboardShouldPersistTaps="handled"
+        showsVerticalScrollIndicator={false}
+      >
         <View className="flex flex-col gap-2">
           <Text className="text-4xl font-bold" style={{ color: colors.text }}>{t('auth.step7.title')}</Text>
           <Text className="text-[18px] font-normal mb-6" style={{ color: colors.textSecondary }}>
@@ -81,7 +88,7 @@ export default function RegisterStep7Screen({ navigation }: NativeStackScreenPro
             {t('auth.step7.infoText')}
           </Text>
         </View>
-      </View>
+      </ScrollView>
 
       <KeyboardStickyView offset={{ closed: 0, opened: 15 }}>
         <View className="px-6 pb-8 pt-4">

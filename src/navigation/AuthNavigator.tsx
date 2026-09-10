@@ -7,6 +7,7 @@ import ForgotPasswordCodeScreen from "@/features/auth/screens/ForgotPasswordCode
 import ResetPasswordScreen from "@/features/auth/screens/ResetPasswordScreen";
 import RegisterStep1Screen from "@/features/auth/screens/RegisterStep1Screen";
 import RegisterStep2Screen from "@/features/auth/screens/RegisterStep2Screen";
+import RegisterReferralScreen from "@/features/auth/screens/RegisterReferralScreen";
 import RegisterStep3Screen from "@/features/auth/screens/RegisterStep3Screen";
 import RegisterStep5Screen from "@/features/auth/screens/RegisterStep5Screen";
 import RegisterStep6Screen from "@/features/auth/screens/RegisterStep6Screen";
@@ -77,6 +78,8 @@ export default function AuthNavigator({ initialRoute = "Welcome" }: AuthNavigato
       {/* Account security: 1.email → 2.verify → 3.password */}
       <Stack.Screen name="RegisterStep1" component={RegisterStep1Screen} />
       <Stack.Screen name="RegisterStep2" component={RegisterStep2Screen} />
+      {/* Davet kodu: doğrulamadan SONRA, sihirbazın ilk adımı. */}
+      <Stack.Screen name="RegisterReferral" component={RegisterReferralScreen} />
       <Stack.Screen name="RegisterStep6" component={RegisterStep6Screen} />
       <Stack.Screen name="RegisterStep7" component={RegisterStep7Screen} />
 

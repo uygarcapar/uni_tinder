@@ -1005,18 +1005,6 @@ export default function SettingsScreen() {
           ayrı birer satır yapıp aralarına ayırıcı çizerdi. Aşağıdaki asıl
           liste ayrı başlıyor. */}
       <>
-          <Text
-            style={{
-              color: colors.text,
-              fontSize: 15,
-              fontWeight: "600",
-              paddingHorizontal: 20,
-              marginBottom: 8,
-            }}
-          >
-            {t('settings.selfieConsent.heading')}
-          </Text>
-
           {SELFIE_CONSENT_TYPES.map((type) => (
             <View key={type}>
               <SettingsToggleRow

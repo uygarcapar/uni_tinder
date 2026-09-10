@@ -140,7 +140,7 @@ export default function RegisterStep1Screen({ navigation }: NativeStackScreenPro
           startFreshIfEmailChanged(trimmed);
           dispatch(setRegistrationEmail(trimmed));
           dispatch(setEmailVerifiedToken(data.result.emailVerifiedToken));
-          navigation.reset({ index: 0, routes: [{ name: "RegisterStep3" }] });
+          navigation.reset({ index: 0, routes: [{ name: "RegisterReferral" }] });
           break;
 
         case "CODE_PENDING":

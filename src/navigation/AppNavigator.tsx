@@ -1,6 +1,6 @@
 import { useEffect, useMemo, useRef, useState, useCallback } from 'react';
 import { useTranslation } from 'react-i18next';
-import { NavigationContainer, DarkTheme, DefaultTheme, type LinkingOptions } from '@react-navigation/native';
+import { NavigationContainer, DarkTheme, DefaultTheme, getStateFromPath, type LinkingOptions } from '@react-navigation/native';
 import { createNativeStackNavigator } from '@react-navigation/native-stack';
 import { View, AppState, AppStateStatus, InteractionManager } from 'react-native';
 import { Image as ExpoImage } from 'expo-image';
@@ -23,6 +23,9 @@ import { resolveMainPhotoUri } from '@/shared/utils/photoUri';
 import { showMessageToast, showLikeToast, showInfoToast } from '@/shared/services/toaster';
 import { chatErrorCodeOf, chatErrorEffect } from '@/shared/constants/responseCodes';
 import { store } from '@/shared/store';
+import { updateRegistrationField } from '@/features/auth/authSlice';
+import { parseInviteLinkPath } from '@/navigation/inviteLink';
+import { SITE_URL } from '@/shared/constants/links';
 import { clearChatCache } from '@/shared/store/mmkvStorage';
 
 import SettingsScreen from '@/features/profile/screens/SettingsScreen';
@@ -94,6 +97,8 @@ import { sendLocationHeartbeat, clearLocationHeartbeatState } from '@/features/p
 import notificationsService from '@/features/notifications/notificationsService';
 import { queryClient } from '@/shared/queries/queryClient';
 import { swipeKeys } from '@/features/discover/swipeQueries';
+import { referralKeys } from '@/features/profile/referralKeys';
+import { REFERRAL_NOTIFICATION_TYPES } from '@/features/notifications/notificationsService';
 import { flushPendingSuperlikeRedeems, redeemUserKey } from '@/features/discover/superlikeRedeem';
 import { flushPendingNoteRedeems } from '@/features/discover/noteRedeem';
 import { purgeLegacyRecoveryRedeemQueue } from '@/features/discover/recoveryQueuePurge';
@@ -172,9 +177,23 @@ function flushConsumableRedeems(userId: string | null | undefined) {
 // Push-tap routing'e DOKUNMAZ: o akış bilinçli olarak imperative navigationRef
 // üzerinden yürür (cold-start dedupe + boot gate). Bu config yalnız URL ile
 // açılışları (şifre sıfırlama maili, profil paylaşımı, kampanya linki) karşılar.
-// Universal link (https) prefix'i web domain'i alındığında eklenecek.
+// Universal link: https://lit.4ourstack.com/... (app.json ios.associatedDomains).
+// Şu an tek https rotası davet linki — /invite/:code. Rota DEĞİL, yakalama:
+// getStateFromPath içinde kod Redux'a yazılıp navigasyon olduğu gibi bırakılıyor;
+// giriş yapmamış kullanıcı zaten Welcome'da, kayıt akışındaki davet ekranı kodu
+// dolu gösteriyor. Giriş yapmış kullanıcıda link yok sayılır.
 const LINKING: LinkingOptions<RootStackParamList> = {
-  prefixes: ['lit://'],
+  prefixes: ['lit://', SITE_URL, SITE_URL.replace('https://', 'http://')],
+  getStateFromPath: (path, options) => {
+    const inviteCode = parseInviteLinkPath(path);
+    if (inviteCode) {
+      if (!store.getState().auth.isAuthenticated) {
+        store.dispatch(updateRegistrationField({ field: 'referralCode', value: inviteCode }));
+      }
+      return undefined;
+    }
+    return getStateFromPath(path, options);
+  },
   config: {
     screens: {
       HomeTabs: {
@@ -933,6 +952,21 @@ export default function AppNavigator() {
       }),
       realtimeService.on('NewNotification', (notif) => {
         if (!mounted) return;
+        // ── Davet programı ────────────────────────────────────────────────
+        // Bakiye için ayrı bir SignalR kanalı YOK; ödül verildiğinde uygulama
+        // açıksa haberi alacağımız tek yer bu event. Üç kaynak birden
+        // bayatlıyor: davet özeti, swipe bakiyesi (SuperLike/Not kredisi) ve
+        // profil (görünürlük hakkı). Yönlendirme YAPILMIYOR — kullanıcı
+        // bildirime basmadı, ekranını çalmıyoruz.
+        if ((REFERRAL_NOTIFICATION_TYPES as readonly string[]).includes(notif?.type)) {
+          queryClient.invalidateQueries({ queryKey: referralKeys.me });
+          queryClient.invalidateQueries({ queryKey: swipeKeys.stats });
+          profileService.bustProfileCache();
+          // Profil ekranı mount ise kendi tazelemesini yapsın; değilse cache
+          // bust'ı bir sonraki açılışta taze veri getirir.
+          uiBus.emit('profileDirty');
+          return;
+        }
         if (notif?.type !== 'Match' && notif?.type !== 'Message') return;
         // ReceiveMessage / MatchNotification handler'ları zaten Redux state'i
         // authoritative güncelliyor (receiveMessage → updateConversationLastMessage
@@ -1370,6 +1404,34 @@ export default function AppNavigator() {
         // basmak doğrudan çekime düşürseydi hem şaşırtıcı olurdu hem de
         // /start saatlik 5 haktan birini kullanıcının kararı olmadan yakardı.
         uiBus.emit(SELFIE_OPEN_EVENT);
+        return;
+      }
+      // ── Davet programı ──────────────────────────────────────────────────
+      // Üçü de aynı yere gidiyor çünkü kullanıcının sorusu aynı: "kaç kişi
+      // katıldı, ne kazandım". Cevap kartın DETAY sheet'inde, o yüzden Profil'e
+      // düşürüp sheet'i açıyoruz — kullanıcı sayfada kartı ayrıca aramasın.
+      case 'ReferralJoined':
+      case 'ReferralRewardGranted':
+      case 'ReferralWelcomeGift': {
+        // Bildirimden ÖNCEKİ sayılar görünmesin: özet ve bakiye tam da bu
+        // bildirimin konusu. Profil cache'i de bust ediliyor — görünürlük hakkı
+        // `profile/me` üzerinden geliyor.
+        queryClient.invalidateQueries({ queryKey: referralKeys.me });
+        queryClient.invalidateQueries({ queryKey: swipeKeys.stats });
+        profileService.bustProfileCache();
+        (navigationRef as any).navigate('HomeTabs', { screen: 'Profile' });
+        uiBus.emit('openReferral');
+        return;
+      }
+      // Görünürlük hakkının süresi: bitiyor / bitti. Hedef davet kartı DEĞİL
+      // görünürlük sheet'i — kullanıcının bakması gereken şey kendi kuralları
+      // (süre bitince backend onları siliyor, plan §1.7).
+      case 'VisibilityGrantExpiring':
+      case 'VisibilityGrantExpired': {
+        queryClient.invalidateQueries({ queryKey: referralKeys.me });
+        profileService.bustProfileCache();
+        (navigationRef as any).navigate('HomeTabs', { screen: 'Profile' });
+        uiBus.emit('openVisibility');
         return;
       }
       case 'MissedMatch':

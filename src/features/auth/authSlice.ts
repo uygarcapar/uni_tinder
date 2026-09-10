@@ -122,6 +122,7 @@ const initialState: AuthState = {
     password: '',
     confirmPassword: '',
     email: '',
+    referralCode: null,
   },
 };
 
@@ -200,6 +201,9 @@ const authSlice = createSlice({
           password: '',
           confirmPassword: '',
           email: '',
+          // Davet kodu da gidiyor: kayıt bittiğinde kod SUNUCUDA işlendi, yarım
+          // kalan turda ise bir sonraki kayıt kendi kodunu sormalı.
+          referralCode: null,
         };
       },
       // prepare: argümansız çağrı (kayıt başarıyla bittiğinde) tam temizlik.

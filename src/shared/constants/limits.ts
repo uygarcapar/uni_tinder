@@ -86,12 +86,25 @@ export const MAX_PREFERRED_HOBBIES = 10;
 // 10'a DÜŞÜRÜLÜYOR, o yüzden bu değer aşılmamalı.
 export const MAX_SWIPE_PAGE_SIZE = 50;
 
-// ÜÇ üniversite listesinin ortak tavanı: `universityDomains` (ben kimi göreyim),
-// `visibleOnlyToUniversityDomains` ve `hiddenFromUniversityDomains`. Backend
+// Keşif filtresindeki "ben kimi göreyim" (`universityDomains`) tavanı. Backend
 // eskiden fazlasını sessizce kırpıyordu, artık 400 dönüyor ("en fazla 3
 // üniversite seçebilirsiniz") — picker seçimi bu sayıda durdurur, useSaveFilters
 // payload'ı ikinci kez kırpar.
+//
+// ⚠️ ARTIK ÜÇ LİSTENİN ORTAK TAVANI DEĞİL. Görünürlük listelerinin (aşağıdaki
+// iki sabit) tavanları 2026-09-10'da ayrıştı.
 export const MAX_UNIVERSITY_DOMAINS = 3;
+
+// "Beni sadece şu üniversiteler görsün" (Allow) tavanı — filtreninkiyle aynı
+// sayı ama AYRI sabit: backend'de de ayrı (`MaxVisibilityDomains` vs
+// `MaxBlockDomains`) ve biri değişince diğerinin peşinden sürüklenmemeli.
+export const MAX_ALLOW_DOMAINS = 3;
+
+// "Beni şu üniversiteler görmesin" (Block) tavanı — bilerek daha geniş.
+// İki mod iki farklı niyete hizmet ediyor: Allow daraltıcı bir seçim, 3 yeterli;
+// Block ise saklanma niyeti (eski sevgili, akraba, aynı sınıftan biri) ve orada
+// 3 pratikte az kalıyor. Backend: UniversityVisibilityService.MaxBlockDomains.
+export const MAX_BLOCK_DOMAINS = 5;
 
 // Profil fotoğrafı tavanı.
 //

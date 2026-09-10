@@ -83,7 +83,6 @@ const en = {
     // Photo verification's two SEPARATE explicit consents. Titles and bodies
     // come from `profile.selfie.consent.*` so the text has a single source.
     selfieConsent: {
-      heading: 'Verification permissions',
       note: 'Photo verification relies on these two permissions. You do not have to give them and you can switch them off at any time: if you do, your verification badge is removed and you cannot verify again; your account, profile and matches are unaffected.',
       // Neither is enough on its own: /start requires both.
       pairHint: 'Both permissions must be on before verification can be used.',
@@ -218,7 +217,7 @@ const en = {
           'Premium subscriptions are sold through the App Store or Google Play and renew automatically at the end of each period unless you cancel. You manage and cancel subscriptions in your store account settings. One-off packs such as SuperLikes are consumed as you use them and are non-refundable; unused entitlements end when your account is closed. Refund requests follow the rules of the relevant store.',
         sectionTitle6: 'Suspension and Account Closure',
         section6Content:
-          'We may suspend your account temporarily or close it permanently if you break these rules. You can also delete your account from inside the app at any time; you may reverse the request within 30 days, after which your data is permanently deleted.',
+          'We may suspend your account temporarily or close it permanently if you break these rules. You can also delete your account permanently from inside the app at any time; deletion happens immediately and cannot be undone, which is why we ask for your password to confirm. If you just want a break, you can deactivate your account instead: your data stays put and your account resumes where it left off when you log in again.',
         sectionTitle7: 'Limits of Our Responsibility',
         section7Content:
           'Lit is a platform that makes meeting people easier; we do not guarantee the identity, statements or behaviour of other users. Be careful when you meet someone and put your own safety first. The service is provided "as is" and may be interrupted for maintenance, updates or technical reasons.',
@@ -516,7 +515,10 @@ const en = {
         - **Device notification identifiers:** deleted if unused for 90 days.
         - **Photos rejected in moderation:** 30 days so that you can appeal, then deleted.
         - **Photo verification records:** the outcome of the attempt, its date and, if it failed, the technical reason, for 90 days. The frames captured during verification are never stored (see section 4).
-        - **If you delete your account:** your account is suspended for 30 days, and you can cancel the deletion request by logging in during that period. Once the period ends, your data is deleted irreversibly. Only an irreversible hash of your e-mail address, the deletion date and whether the account was banned at the moment of deletion are kept. This record exists to prevent a banned account from being deleted and re-created; it does not give your e-mail address back and is not used for any other purpose.
+        - **If you delete your account:** your account and your data are deleted **immediately and irreversibly**; there is no waiting period and no way to take the request back. Your profile, photos, matches and messages are deleted. Only these two records are kept:
+          - An irreversible hash of your e-mail address, the deletion date and whether the account was banned at the moment of deletion. This record exists to prevent a banned account from being deleted and re-created; it does not give your e-mail address back and is not used for any other purpose.
+          - Subscription and payment records. These cannot be deleted because of retention obligations under financial legislation; they are kept with their link to your identity severed (anonymised) and no longer show that they belonged to you.
+        - **If you deactivate your account:** your data stays as it is, your profile is not visible to other users and you do not appear in Discover. When you log in again, your account resumes where it left off. Deactivation is not a deletion request and has no time limit.
         - **Records subject to a statutory retention obligation:** for the periods required by the relevant legislation (10 years for commercial books and documents).
       `,
 
@@ -524,7 +526,7 @@ const en = {
       section11Content: `
         Under Article 11 of KVKK you have the right to learn whether your personal data is processed, to request information if it has been processed, to learn the purpose of processing and whether it is used accordingly, to know the third parties to whom your data is transferred at home or abroad, to request its correction if it is incomplete or incorrectly processed, to request its erasure or destruction, to request that correction and erasure operations be notified to the third parties to whom the data was transferred, to object to a result against you arising from analysis solely by automated systems, and to claim compensation if you suffer damage due to unlawful processing.
 
-        You can exercise some of these rights directly inside the application: you can correct your profile information from settings, request a copy of your data, and permanently delete your account.
+        You can exercise some of these rights directly inside the application: you can correct your profile information from settings, request a copy of your data, deactivate your account temporarily, or delete it permanently. Deletion happens immediately and cannot be undone, which is why we ask for your password to confirm.
       `,
 
       sectionTitle12: 'Applications',
@@ -577,6 +579,25 @@ const en = {
       validation: {
         codeRequired: 'Please enter the 6-digit code',
       },
+    },
+    // ── Invite code step (RegisterReferralScreen) ─────────────────────────
+    // The step is OPTIONAL: "Continue" works with an empty field and "Skip" is
+    // prominent. The inviter's NAME is deliberately never shown.
+    referral: {
+      title: 'Did someone invite you?',
+      subtitle: 'Enter your invite code if you have one. You can skip this step.',
+      // OtpInput fills the boxes character by character, so the sample code
+      // doubles as a format hint (5 characters, uppercase).
+      placeholder: 'AK7M2',
+      checking: 'Checking your code...',
+      // Sonuç toast'ta: title + message (bkz. RegisterReferralScreen).
+      validTitle: 'Invite code accepted',
+      valid: 'You get 1 free note once you finish signing up.',
+      invalidTitle: 'Code not found',
+      invalid: 'We could not find this code — it may be a typo.',
+      paste: 'Paste',
+      skip: 'Skip',
+      continue: 'Continue',
     },
     step3: {
       title: 'Create your password.',
@@ -1234,12 +1255,36 @@ const en = {
       },
       visibility: {
         title: 'Visibility',
-        description: 'Choose who can see you in Discover. Unlike the filters above, these lists change other people\'s decks, not yours.',
+        description: 'Choose who can see you in Discover.',
+        // Three options, one choice: the backend allows only one rule at a time.
+        modeEveryone: 'Everyone can see me',
         visibleOnlyLabel: 'Only these universities can see me',
         hiddenFromLabel: 'These universities cannot see me',
+        selectedUniversities: 'Selected universities',
         selectUniversities: 'Select universities',
-        overlapWarning: 'A university on both lists will not see you — blocking takes priority.',
-        premiumExpiryNote: 'These rules stop when your Premium ends — universities you blocked will start seeing you again.',
+        exclusiveNote: 'Only one of the two lists can be active. Picking in one clears the other; if both are empty, everyone can see you.',
+        // 🔴 `overlapWarning` REMOVED: a domain can no longer be on both lists
+        // (single-mode rule), so the warning has nothing to warn about.
+        //
+        // This one describes a real effect: the rule is a hard filter, you drop
+        // out of those decks entirely.
+        reachWarning: 'With this on, fewer people can see you — so you may get fewer matches.',
+        // Switching modes clears the other list — there is no undo, the user
+        // would have to build the list again from scratch.
+        modeChangeTitle: 'Your selection will be cleared',
+        // NOT `count`: that triggers i18next pluralization and the
+        // suffix-less key would not resolve.
+        modeChangeMessage: 'The {{total}} universities in "{{list}}" will be removed.',
+        // ── Invite reward ───────────────────────────────────────────────
+        // The visibility filter is no longer Premium-only: 3 invites unlock a
+        // 30-day grant too (see features/profile/referralView.ts).
+        grantNote: 'Invite reward · {{days}} days left',
+        inviteCta: 'Invite 3 friends, get 30 days free',
+        premiumExpiryNote: 'This rule stops when your Premium ends — the universities on the list can see you again.',
+        // For a user whose Premium HAS ended: the future-tense note would be
+        // misleading, the rule is already inactive. The record is kept, so we
+        // do not say it was deleted either.
+        premiumInactiveNote: 'This rule is not being applied right now because your Premium ended. Your setting is saved and comes back automatically when you renew.',
       },
     },
     rewind: {
@@ -1419,6 +1464,49 @@ const en = {
     title: 'You missed a match',
     body: '{{name}} had liked you.',
     bodyNoName: 'You passed on someone who liked you.',
+  },
+  // ── Referral programme ──────────────────────────────────────────────────
+  // The card and the sheet share these keys: two different day counts or two
+  // different reward names on one screen is the fastest way to lose trust.
+  referral: {
+    // Shown at the end of registration when `LoginResponseDto.referralApplied`.
+    welcomeGift: 'Invite code applied — 1 free note is in your account.',
+    copied: 'Invite code copied.',
+    // The message carries the code AND the download address; in phase 2 the
+    // address becomes the /invite/:code universal link (shared/constants/links.ts).
+    shareMessage: 'Join Lit and enter my code when you sign up: {{code}}\n{{url}}',
+    reward: {
+      // `amount` is DAYS for VisibilityFilter and CREDITS for the other two —
+      // the unit lives in the text, callers do not carry it.
+      visibilityFilter: 'Visibility filter · {{amount}} days',
+      superLike: '{{amount}} super likes',
+      note: '{{amount}} notes',
+    },
+    card: {
+      label: 'Your invite code',
+      copy: 'Copy',
+      share: 'Share',
+      // NOT `count`: that triggers i18next pluralization.
+      progress: '{{progress}} / {{needed}} friends joined',
+      nextReward: 'Next reward: {{reward}}',
+      // The ladder is over (`nextTier: null`) — tier 4+ is still a product call.
+      comingSoon: 'New rewards coming soon',
+      disabled: 'Your invite code is unavailable right now.',
+      visibilityActive: 'Visibility filter · {{days}} days left',
+      visibilityPaused: 'Resumes for {{days}} days when your Premium ends',
+    },
+    sheet: {
+      title: 'Your invites',
+      description: 'One reward for every 3 friends. Your code never changes.',
+      inviteesTitle: 'Joined',
+      inviteesEmpty: 'Nobody has joined with your code yet.',
+      rewardsTitle: 'Rewards earned',
+      rewardsEmpty: 'No rewards yet.',
+      statusQualified: 'Counted',
+      // A rejected invite is NOT hidden, so "I invited three people and got
+      // nothing" never becomes a silent complaint.
+      statusRejected: 'Not counted',
+    },
   },
   profile: {
     tabTitle: 'Profile',
@@ -1619,6 +1707,15 @@ const en = {
     // Keys use the NEW (UT-63xx) numbers; the transition-window UT-62xx codes
     // map onto the same keys (see PHOTO_CODE_I18N).
     photoCodes: {
+      // Main-photo face rules — returned synchronously as 400 + code. Each one
+      // points at "pick another photo", never "try again": the rule is
+      // permanent, retrying hits the same wall.
+      'UT-6301':
+        'You need to be alone in your main photo. Your other photos can include friends.',
+      'UT-6302':
+        "We couldn't see a clear face in your main photo. Pick a shot where your face is visible and well lit.",
+      'UT-6307':
+        "If you delete this, the next photo becomes your main one — but your face isn't clearly visible there. Move a photo where your face shows to the front first, then delete this one.",
       'UT-6303': 'You can add at most {{max}} photos. Delete one first.',
       'UT-6304':
         'You need at least {{min}} photos. Add a new one before deleting this.',
@@ -1696,7 +1793,12 @@ const en = {
         // would push users into `challenge_too_weak`.
         hintPose: "Make it clear but don't overdo it — a gentle movement is enough.",
         hintExpression: 'Make it clear enough for the camera to see.',
-        submit: 'Send',
+        // Review step copy (see SelfieCameraStep: capture → review → confirm).
+        reviewHint: 'Is your face clear and the movement obvious? If not, retake it.',
+        capture: 'Take photo',
+        // The review pair: confirm on the LEFT, retake on the RIGHT.
+        confirm: 'Confirm',
+        retake: 'Retake',
         captureError: "We couldn't take the frame. Try again.",
         permissionMessage:
           'We need camera access so you can verify your photos.',
@@ -1733,6 +1835,13 @@ const en = {
         // 🔴 OUR fault — never phrase this as something the user did wrong.
         analysis_failed:
           "Something went wrong on our end and we couldn't finish the check. Try again shortly.",
+        // 🔴 NEVER reuse the `no_face` copy here. They point at different
+        // places: `no_face` is about the frame you just captured, this one is
+        // about your MAIN PHOTO. Same copy would send the user to fix the wrong
+        // thing. That is also why `canRetry` is false — retrying without
+        // changing the photo fails identically and burns an hourly attempt.
+        reference_photo_no_face:
+          "We can't see your face in your main photo. Set a photo where your face is clearly visible as your main photo, then try again.",
         fallback: "We couldn't finish the verification. Try again.",
       },
       reasonTitle: {
@@ -1749,6 +1858,7 @@ const en = {
         face_mismatch: "It didn't match your photo",
         attempt_expired: 'Time ran out',
         analysis_failed: 'Something went wrong on our end',
+        reference_photo_no_face: "We can't see your face in your main photo",
         fallback: 'Verification not completed',
       },
       codes: {

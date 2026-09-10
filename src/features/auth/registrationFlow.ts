@@ -10,6 +10,10 @@
  * tek yer burasıdır.
  */
 export const REGISTRATION_FLOW = [
+  // Davet kodu — sihirbazın İLK adımı. Kodu 6 haneli mail doğrulamasından
+  // (Step2) hemen sonra sormak ürün kararı: kullanıcı daveti hatırlarken
+  // soruluyor, dokuz adım sonra değil. Adım opsiyonel, "Atla" belirgin.
+  'RegisterReferral',
   'RegisterStep3',
   'RegisterStep5',
   'RegisterStep6',
@@ -56,7 +60,21 @@ export function registrationResumeStack(
   return REGISTRATION_FLOW.slice(0, at + 1);
 }
 
+/**
+ * Numarasız adımların progress bar karşılığı.
+ *
+ * Bar bir SAYI alıyor (`RegisterProgressBar step={13}`) ve sayı bugüne kadar
+ * rota adından türetiliyordu. "RegisterReferral"da o türetme NaN üretir ve adım
+ * bardaki yerini kaybeder — bu yüzden akışın başındaki adıma açık bir 0
+ * veriliyor. Yeni bir numarasız adım eklenirse burada da bir sayı almalı.
+ */
+export const REFERRAL_STEP_NUMBER = 0;
+
+const STEP_NUMBER_OVERRIDES: Record<string, number> = {
+  RegisterReferral: REFERRAL_STEP_NUMBER,
+};
+
 /** "RegisterStep13" → 13. Progress bar numarayla çalışıyor. */
-export const REGISTRATION_STEP_NUMBERS: number[] = REGISTRATION_FLOW.map((r) =>
-  Number(r.replace('RegisterStep', '')),
+export const REGISTRATION_STEP_NUMBERS: number[] = REGISTRATION_FLOW.map(
+  (r) => STEP_NUMBER_OVERRIDES[r] ?? Number(r.replace('RegisterStep', '')),
 );

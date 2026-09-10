@@ -142,7 +142,7 @@ export default function RegisterStep2Screen({ route, navigation }: NativeStackSc
 
         if (data.isSuccess && data.result?.emailVerifiedToken) {
           dispatch(setEmailVerifiedToken(data.result.emailVerifiedToken));
-          navigation.reset({ index: 0, routes: [{ name: "RegisterStep3" }] });
+          navigation.reset({ index: 0, routes: [{ name: "RegisterReferral" }] });
         } else {
           setError(data.message || "Doğrulama başarısız");
         }

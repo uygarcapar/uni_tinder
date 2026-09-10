@@ -11,6 +11,7 @@ import authReducer, {
   setRegistrationStep,
   setEmailVerifiedToken,
   clearRegistrationForm,
+  updateRegistrationField,
 } from '@/features/auth/authSlice';
 import {
   FIRST_REGISTRATION_STEP,
@@ -25,17 +26,28 @@ describe('REGISTRATION_FLOW', () => {
   // önce, Step17 (sorular) ise hobilerden (13) sonra — serbest metin adımıyla
   // fotoğraf adımı arka arkaya gelmesin diye araya konuldu.
   it('akış sırasında tutulur — Step17 hobilerden sonra, Step16 fotoğraflardan önce', () => {
-    expect(REGISTRATION_STEP_NUMBERS).toEqual([3, 5, 6, 7, 8, 9, 10, 12, 13, 17, 14, 16, 15]);
+    // Baştaki 0 davet kodu adımı: rota adı numarasız olduğu için progress bar'a
+    // açık bir sayı veriliyor (bkz. REFERRAL_STEP_NUMBER).
+    expect(REGISTRATION_STEP_NUMBERS).toEqual([0, 3, 5, 6, 7, 8, 9, 10, 12, 13, 17, 14, 16, 15]);
   });
 
-  it('ilk adım Step3', () => {
-    expect(FIRST_REGISTRATION_STEP).toBe('RegisterStep3');
-    expect(REGISTRATION_FLOW[0]).toBe('RegisterStep3');
+  it('numarasız adım progress bar dizisini BOZMUYOR — NaN yok', () => {
+    // `Number('RegisterReferral'.replace('RegisterStep',''))` NaN üretiyordu ve
+    // NaN hiçbir indexOf'ta bulunmadığı için adım bardaki yerini kaybediyordu.
+    expect(REGISTRATION_STEP_NUMBERS.every((n) => Number.isFinite(n))).toBe(true);
+  });
+
+  it('ilk adım davet kodu', () => {
+    expect(FIRST_REGISTRATION_STEP).toBe('RegisterReferral');
+    expect(REGISTRATION_FLOW[0]).toBe('RegisterReferral');
+    // Kod adımı doğrulamadan (Step2) HEMEN sonra geliyor; şifre adımı ikinci.
+    expect(REGISTRATION_FLOW[1]).toBe('RegisterStep3');
   });
 });
 
 describe('isRegistrationStep', () => {
   it('sihirbaz ekranlarını tanır', () => {
+    expect(isRegistrationStep('RegisterReferral')).toBe(true);
     expect(isRegistrationStep('RegisterStep13')).toBe(true);
     expect(isRegistrationStep('RegisterStep15')).toBe(true);
   });
@@ -55,6 +67,7 @@ describe('isRegistrationStep', () => {
 describe('registrationResumeStack', () => {
   it('kaldığı adıma kadar olan tüm ekranları dizer (geri butonu için)', () => {
     expect(registrationResumeStack('RegisterStep13')).toEqual([
+      'RegisterReferral',
       'RegisterStep3',
       'RegisterStep5',
       'RegisterStep6',
@@ -75,14 +88,21 @@ describe('registrationResumeStack', () => {
   });
 
   it('ilk adımda tek ekranlı yığın döndürür', () => {
-    expect(registrationResumeStack('RegisterStep3')).toEqual(['RegisterStep3']);
+    expect(registrationResumeStack('RegisterReferral')).toEqual(['RegisterReferral']);
+  });
+
+  it('ikinci adımda davet kodu da yığında', () => {
+    expect(registrationResumeStack('RegisterStep3')).toEqual([
+      'RegisterReferral',
+      'RegisterStep3',
+    ]);
   });
 
   it('bilinmeyen/boş adımda başa düşer', () => {
     // Eski sürümden gelen state veya akıştan çıkarılmış ekran (Step4/Step11).
-    expect(registrationResumeStack('RegisterStep11')).toEqual(['RegisterStep3']);
-    expect(registrationResumeStack(null)).toEqual(['RegisterStep3']);
-    expect(registrationResumeStack(undefined)).toEqual(['RegisterStep3']);
+    expect(registrationResumeStack('RegisterStep11')).toEqual(['RegisterReferral']);
+    expect(registrationResumeStack(null)).toEqual(['RegisterReferral']);
+    expect(registrationResumeStack(undefined)).toEqual(['RegisterReferral']);
   });
 });
 
@@ -121,5 +141,36 @@ describe('authSlice.registrationStep', () => {
     const fresh = authReducer(state, setEmailVerifiedToken('tok-123'));
     expect(fresh.registrationStep).toBeNull();
     expect(fresh.emailVerifiedToken).toBe('tok-123');
+  });
+});
+
+describe('authSlice.registrationForm.referralCode', () => {
+  it('başlangıçta boş — kod ancak kullanıcı girerse doluyor', () => {
+    const state = authReducer(undefined, { type: '@@INIT' });
+    expect(state.registrationForm.referralCode).toBeNull();
+  });
+
+  it('updateRegistrationField ile yazılıyor ve persist edilen alanla aynı yerde', () => {
+    const state = authReducer(
+      undefined,
+      updateRegistrationField({ field: 'referralCode', value: 'AK7M2' }),
+    );
+    expect(state.registrationForm.referralCode).toBe('AK7M2');
+  });
+
+  it('kayıt bitince/iptal olunca temizleniyor', () => {
+    // Aksi halde bir sonraki kayıt, önceki turun kodunu sessizce devralırdı.
+    const withCode = authReducer(
+      undefined,
+      updateRegistrationField({ field: 'referralCode', value: 'AK7M2' }),
+    );
+    expect(
+      authReducer(withCode, clearRegistrationForm()).registrationForm.referralCode,
+    ).toBeNull();
+    // `keepEmail` yalnız e-postayı koruyor; kod her hâlükârda gidiyor.
+    expect(
+      authReducer(withCode, clearRegistrationForm({ keepEmail: true })).registrationForm
+        .referralCode,
+    ).toBeNull();
   });
 });

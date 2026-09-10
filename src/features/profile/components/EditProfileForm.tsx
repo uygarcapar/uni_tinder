@@ -82,6 +82,7 @@ import {
 } from "@/shared/constants/filterEnumIcons";
 import {
   DISPLAY_NAME_MAX_LENGTH,
+  MAX_PROFILE_PHOTOS,
   PROMPT_ANSWER_MAX_LENGTH,
   YEAR_OF_STUDY_VALUES,
   countPromptAnswer,
@@ -95,7 +96,9 @@ import {
   countRejectedPhotos,
   hasPhotosAwaitingReview,
   normalizePhotoModeration,
+  resolveRequiredPhotoCount,
 } from "@/features/profile/photoModeration";
+import { photoModerationCodeKey } from "@/shared/constants/responseCodes";
 import { confirmMainPhotoChange } from "@/features/profile/selfie/confirmMainPhotoChange";
 import ProfileVisibilityBanner from "@/features/profile/components/ProfileVisibilityBanner";
 import PhotoModerationBadge, {
@@ -1852,8 +1855,21 @@ const EditProfileForm = forwardRef(function EditProfileForm(
         return; // finally bloğu setSavingProfile(false) yapıyor
       }
 
-      const message =
-        status === 400
+      // Foto kuralı ihlalleri (UT-6301/6302/6307) jenerik "doğrulama hatası"na
+      // DÜŞMEMELİ: sürükle-bırak ile sıralama değiştiğinde ekran sessizce eski
+      // hâline dönüyor ve kullanıcı neden reddedildiğini hiç öğrenemiyordu.
+      // ("Ana Yap" yolu ProfileScreen'deki photoErrorText'ten zaten doğru metni
+      // veriyor — eksik olan yalnızca BU kaydetme yoluydu.)
+      const photoCode =
+        e?.response?.data?.code ?? e?.response?.data?.errorCode ?? null;
+      const photoKey = photoModerationCodeKey(photoCode);
+
+      const message = photoKey
+        ? t(photoKey, {
+            max: MAX_PROFILE_PHOTOS,
+            min: resolveRequiredPhotoCount(profileVisibility),
+          })
+        : status === 400
           ? t("profile.edit.validationError")
           : status === 429
             ? t("profile.edit.rateLimitError")
@@ -1873,6 +1889,9 @@ const EditProfileForm = forwardRef(function EditProfileForm(
     i18n.language,
     onSavingChange,
     onSaved,
+    // Foto kodu metnindeki `min` bundan türüyor; bayat kalırsa UT-6304 yanlış
+    // sayı gösterir.
+    profileVisibility,
   ]);
 
   useImperativeHandle(ref, () => ({ submit }), [submit]);

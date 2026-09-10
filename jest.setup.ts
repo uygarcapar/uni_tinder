@@ -275,6 +275,9 @@ jest.mock('expo-constants', () => ({
 jest.mock('expo-clipboard', () => ({
   setStringAsync: jest.fn(async () => true),
   getStringAsync: jest.fn(async () => ''),
+  // Panoda metin var mı? Varsayılan HAYIR: "Yapıştır" butonunu gerçekten test
+  // eden suite'ler bunu kendi dosyasında eziyor.
+  hasStringAsync: jest.fn(async () => false),
 }));
 jest.mock('posthog-react-native', () => ({
   __esModule: true,

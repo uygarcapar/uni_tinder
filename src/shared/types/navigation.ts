@@ -38,6 +38,11 @@ export type AuthStackParamList = {
   ResetPassword: { email: string; resetCode: string };
   RegisterStep1: undefined;
   RegisterStep2: { email?: string; mode?: string; pending?: boolean; retryAfterSeconds?: number } | undefined;
+  // Davet kodu — sihirbazın ilk adımı, mail doğrulamasından hemen sonra
+  // (bkz. registrationFlow.ts). Parametre YOK: kod redux'taki
+  // `registrationForm.referralCode` alanında duruyor, çünkü kayıt isteği
+  // (register-and-complete) dokuz adım sonra, bambaşka bir ekrandan atılıyor.
+  RegisterReferral: undefined;
   RegisterStep3: undefined;
   RegisterStep5: undefined;
   RegisterStep6: undefined;

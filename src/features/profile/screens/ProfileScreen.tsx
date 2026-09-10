@@ -59,9 +59,13 @@ import {
 import { staticGet } from "@/shared/services/staticCache";
 import PreviewModal from "@/features/profile/components/PreviewModal";
 import ShopCardsRow from "@/features/profile/components/ShopCardsRow";
+import ReferralSheet, {
+  ReferralProgressRow,
+} from "@/features/profile/components/ReferralSheet";
 import UniversityVisibilitySheet, {
   VisibilityHeroButton,
 } from "@/features/profile/components/UniversityVisibilitySheet";
+import { resolveVisibilityDraft } from "@/features/profile/universityVisibility";
 import ScreenHeader from "@/shared/components/ScreenHeader";
 import EmptyState from "@/shared/components/EmptyState";
 import { getOfferings } from "@/features/profile/subscriptionService";
@@ -143,6 +147,13 @@ if (
 }
 
 const { width } = Dimensions.get("window");
+
+/**
+ * `profileDirty` yayınında kaynak etiketi — bu ekranın KENDİ yayınını
+ * dinleyicisinden ayırmak için. Yayıncı profili zaten tazelediyse dinleyicinin
+ * bir kez daha `getMyProfile` çağırması saf israf olurdu.
+ */
+const PROFILE_DIRTY_SELF = 'profileScreen';
 
 /** Header'daki şeridin sekmeleri — pager sayfa sırasıyla AYNI. */
 type TabKey = "profile" | "plus";
@@ -767,6 +778,14 @@ export default function ProfileScreen() {
   // ── Profil verisi ──────────────────────────────────────────────────────────
   const [myProfile, setMyProfile] = useState(null);
   const [visibilitySheetVisible, setVisibilitySheetVisible] = useState(false);
+  const [referralSheetVisible, setReferralSheetVisible] = useState(false);
+  // Hero butonu iki listeyi değil TEK MODU gösteriyor (backend 2026-09-10'dan
+  // beri ikisini birbirini dışlar hâle getirdi). Çıkarım sheet'inkiyle aynı
+  // kaynaktan: iki yerde iki farklı sonuca varmak mümkün olmasın.
+  const visibilityDraft = useMemo(
+    () => resolveVisibilityDraft(myProfile),
+    [myProfile],
+  );
   // TEK KAYNAK: abonelik slice'ı (`/status` + hub + `/sync`). Kısa bir süre
   // burada `/stats` ve profil bayrağı da OR'lanıyordu, çünkü slice sahada
   // yanlış cevap veriyordu — sebebi bu ekran değil `selectIsPremium`in tarih
@@ -1252,7 +1271,9 @@ export default function ProfileScreen() {
       setMyProfile(profile);
       // Navigator'daki görünürlük kapısı da bu profili okuyor; foto eklenince
       // kapının kapanması için haber veriyoruz (cache zaten tazelendi).
-      uiBus.emit('profileDirty');
+      // `source`: aşağıdaki profileDirty dinleyicisi kendi yayınımızı atlasın —
+      // profil bir satır yukarıda zaten tazelendi.
+      uiBus.emit('profileDirty', { source: PROFILE_DIRTY_SELF });
     } catch (e) {
       console.error("Profil yenileme hatası:", e?.message);
     }
@@ -1740,6 +1761,42 @@ export default function ProfileScreen() {
     [],
   );
 
+  // Ekran DIŞI değişiklikler (selfie doğrulama, ayarlardan gizlilik rızası,
+  // navigator'ın kapı kontrolü) profili bayat bırakıyordu ve satır doğrulama
+  // başarılı olduğu hâlde "Fotoğrafını Doğrula" göstermeye devam ediyordu.
+  //
+  // `focus` bu boşluğu kapatmıyor: yalnız ÖNCEKİ yükleme BAŞARISIZSA tazeliyor,
+  // üstelik overlay bir modal olduğu için ekran odağı hiç kaybetmiyor.
+  //
+  // `silent`: ekranda dolu profil duruyor, her doğrulamada skeleton'a düşmemeli.
+  useEffect(
+    () =>
+      uiBus.on('profileDirty', (payload) => {
+        // Kendi yayınımız (refreshPhotos) profili zaten tazeledi; dinlemek her
+        // foto aksiyonunda ikinci bir getMyProfile turu demek olurdu.
+        if (payload?.source === PROFILE_DIRTY_SELF) return;
+        loadProfile({ silent: true });
+      }),
+    [loadProfile],
+  );
+
+  // Davet ve görünürlük bildirimleri (ve görünürlük sheet'indeki davet CTA'sı)
+  // buraya düşüyor: iki sheet de bu ekranın state'inde, yayıncıların (navigator,
+  // başka bir sheet) onlara doğrudan erişimi yok.
+  //
+  // ⚠️ Cold start'ta bu ekran HENÜZ MOUNT DEĞİL (Profil sekmesi lazy). Push'tan
+  // gelen kullanıcı sekmeye düştüğünde emit çoktan boşluğa gitmiş oluyor;
+  // `openProfilePhoto`taki gibi bir bekletme kuyruğu BİLEREK yok — kaçırılan
+  // şey bir sheet açılışı, kullanıcı kartı zaten önünde buluyor.
+  useEffect(
+    () => uiBus.on('openReferral', () => setReferralSheetVisible(true)),
+    [],
+  );
+  useEffect(
+    () => uiBus.on('openVisibility', () => setVisibilitySheetVisible(true)),
+    [],
+  );
+
   // Moderasyon bildirimine basıldı → düzenleme modalını FOTOĞRAFLAR bölümüne aç
   // ve kararın verildiği fotoğrafı vurgula.
   //
@@ -2151,13 +2208,13 @@ export default function ProfileScreen() {
                       "center"`i bu hizayı zaten veriyor, ayrı bir hizalama
                       gerekmiyor. Neden burada ve neden durum bildiriyor:
                       bkz. VisibilityHeroButton. */}
+                  {/* Davet ikonu buradan kalktı: programın kapısı artık
+                      fotoğraf doğrulamanın altındaki ilerleme satırı
+                      (ReferralProgressRow) — hero'da durum taşımayan bir
+                      ikondu, satır "kaç davet kaldı"yı da gösteriyor. */}
                   <VisibilityHeroButton
-                    visibleOnlyCount={
-                      (myProfile?.visibleOnlyToUniversityDomains ?? []).length
-                    }
-                    hiddenFromCount={
-                      (myProfile?.hiddenFromUniversityDomains ?? []).length
-                    }
+                    mode={visibilityDraft.mode}
+                    domainCount={visibilityDraft.domains.length}
                     onPress={() => setVisibilitySheetVisible(true)}
                   />
                 </View>
@@ -2192,6 +2249,11 @@ export default function ProfileScreen() {
                     düşüyordu. Rozet sayfanın ürün şeridiyle (SuperLike / Not)
                     aynı öbekte duruyor, reklamın arkasında değil. */}
                 <SelfieVerificationRow profile={myProfile} userId={user?.id} />
+
+                {/* ── Davetler ── Doğrulama satırıyla aynı kabuk, hemen altında:
+                    ikisi de "profilimi güçlendir" öbeği. Satır ilerlemeyi
+                    (1 / 3) ve sıradaki ödülü gösteriyor, basınca sheet açılıyor. */}
+                <ReferralProgressRow onPress={() => setReferralSheetVisible(true)} />
 
                 {/* --- PREMIUM UPSELL BANNER & COMPARISON --- */}
                 {/* Şerideki plus kartıyla TEK bayrağın iki yüzü: abone olan
@@ -2569,8 +2631,23 @@ export default function ProfileScreen() {
           visible={visibilitySheetVisible}
           onClose={() => setVisibilitySheetVisible(false)}
           profile={myProfile}
-          isPremium={isPremium}
+          // 🔴 Kapı artık premium DEĞİL: davet ödülü de açıyor ve kanonik cevabı
+          // backend veriyor (`canUseUniversityVisibility`, premium'u da kapsıyor).
+          // `isPremium` yine OR'lanıyor çünkü satın almadan hemen sonra profil
+          // bir tur bayat kalıyor — o pencerede parasını ödemiş kullanıcıyı
+          // kendi ayarından kilitlemek, kartın `syncPending` gerekçesiyle aynı.
+          canUse={myProfile?.canUseUniversityVisibility === true || isPremium}
+          grantExpiresAt={myProfile?.universityVisibilityGrantExpiresAt ?? null}
           onSaved={() => loadProfile({ silent: true })}
+        />
+
+        {/* ══ DAVET SHEET'İ ══ Kartın detayı: kimler katıldı, ne kazanıldı.
+            Görünürlüğü burada duruyor çünkü `uiBus.emit('openReferral')` üç
+            yerden geliyor (kart, bildirim yönlendirmesi, görünürlük sheet'inin
+            CTA'sı) ve üçü de bu ekrana ulaşabilmeli. */}
+        <ReferralSheet
+          visible={referralSheetVisible}
+          onClose={() => setReferralSheetVisible(false)}
         />
 
         {/* ══ PROFİL DÜZENLEME MODALI ══ */}

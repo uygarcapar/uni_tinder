@@ -16,6 +16,16 @@ export const API_ENDPOINTS = {
   CHECK_REGISTRATION_TOKEN: "/api/auth/check-registration-token",
   REGISTER_AND_COMPLETE: "/api/auth/register-and-complete",
 
+  // ── Davet programı (referral) ───────────────────────────────────────────
+  // Validate ANONİM: kayıt akışında kullanıcı henüz yok. Cevap bilerek FAKİR —
+  // yalnız `{ valid: bool }`; davet edenin adı DÖNMÜYOR (kod deneyerek isim
+  // toplamayı engellemek için). `api` instance'ı yerine ham fetch ile
+  // çağrılıyor, bkz. features/auth/registrationToken.ts.
+  REFERRAL_VALIDATE: "/api/referral/validate",
+  // Özet kart + sheet'in tek kaynağı. Kullanıcının kodu YOKSA bu uç üretiyor
+  // (lazy) — mevcut kullanıcılar için backfill job'ı bu yüzden yok.
+  REFERRAL_ME: "/api/referral/me",
+
   REGISTER: "/api/user/Register",
   LOGIN: "/api/user/Login",
   VERIFY_EMAIL: "/api/user/verifyemailwithcode",

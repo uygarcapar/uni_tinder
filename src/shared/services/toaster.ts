@@ -136,3 +136,13 @@ export function showInfoToast(arg: InfoToastProps) {
     ...BANNER_MOTION,
   });
 }
+
+/**
+ * Ekrandaki toast'ı erken kapat. Bir verdict artık GEÇERSİZ olduğunda
+ * (ör. davet ekranında kullanıcı kodu yeniden düzenlemeye başladı) eski
+ * "kod geçerli/bulunamadı" banner'ının 5 sn daha asılı kalmaması için.
+ * Gösterilen bir şey yoksa no-op.
+ */
+export function hideToast() {
+  Notifier.hideNotification();
+}

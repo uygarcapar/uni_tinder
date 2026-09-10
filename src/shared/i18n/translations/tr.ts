@@ -83,7 +83,6 @@ const tr = {
     // Fotoğraf doğrulamanın iki AYRI açık rızası. Başlıklar ve açıklamalar
     // `profile.selfie.consent.*`ten geliyor — metin tek kaynakta dursun.
     selfieConsent: {
-      heading: 'Doğrulama İzinleri',
       note: 'Fotoğraf doğrulaması bu iki izne dayanır. Vermek zorunda değilsin ve istediğin zaman kapatabilirsin: kapattığında doğrulama rozetin kalkar ve yeni doğrulama yapamazsın; hesabın, profilin ve eşleşmelerin etkilenmez.',
       // İkisi tek başına yetmiyor: /start ikisini birden arıyor.
       pairHint: 'Doğrulamayı kullanabilmek için iki iznin de açık olması gerekir.',
@@ -218,7 +217,7 @@ const tr = {
           'Premium abonelikler App Store veya Google Play üzerinden satılır; iptal etmediğin sürece dönem sonunda otomatik yenilenir. Aboneliği yönetme ve iptal etme işlemleri mağaza hesabının ayarlarından yapılır. SuperLike gibi tek seferlik paketler kullanıldıkça tükenir ve iade edilmez; kullanılmayan haklar hesabın kapanmasıyla sona erer. İade talepleri ilgili mağazanın kurallarına tabidir.',
         sectionTitle6: 'Askıya Alma ve Hesap Kapatma',
         section6Content:
-          'Kuralların ihlali hâlinde hesabını geçici olarak askıya alabilir veya kalıcı olarak kapatabiliriz. Sen de dilediğin an uygulama içinden hesabını silebilirsin; silme talebinden sonra 30 gün içinde geri dönebilir, bu süre dolduğunda verilerin kalıcı olarak silinir.',
+          'Kuralların ihlali hâlinde hesabını geçici olarak askıya alabilir veya kalıcı olarak kapatabiliriz. Sen de dilediğin an uygulama içinden hesabını kalıcı olarak silebilirsin; silme anında gerçekleşir ve geri alınamaz, bu yüzden onaylaman için şifren istenir. Ara vermek istiyorsan silmek yerine hesabını dondurabilirsin: verilerin durur ve tekrar giriş yaptığında hesabın kaldığı yerden açılır.',
         sectionTitle7: 'Sorumluluğun Sınırı',
         section7Content:
           "Lit yalnızca tanışmayı kolaylaştıran bir platformdur; kullanıcıların kimliğini, beyanlarını veya davranışlarını garanti etmez. Tanıştığın kişilerle buluşurken dikkatli ol ve kendi güvenliğini önceliklendir. Hizmet 'olduğu gibi' sunulur; bakım, güncelleme veya teknik nedenlerle kesintiler yaşanabilir.",
@@ -515,7 +514,10 @@ const tr = {
         - **Cihaz bildirim kimlikleri:** 90 gün boyunca kullanılmazsa silinir.
         - **Moderasyonda reddedilen fotoğraflar:** itiraz hakkınız için 30 gün, sonrasında silinir.
         - **Fotoğraf doğrulama kayıtları:** denemenin sonucu, tarihi ve başarısızsa teknik sebebi 90 gün. Doğrulama sırasında çekilen kareler hiç saklanmaz (bkz. 4. bölüm).
-        - **Hesabınızı silerseniz:** hesabınız 30 gün boyunca askıya alınır ve bu süre içinde giriş yaparak silme talebinizi iptal edebilirsiniz. Süre dolduğunda verileriniz geri alınamaz şekilde silinir. Yalnızca e-posta adresinizin geri döndürülemez özeti (hash), silinme tarihi ve hesabın silinme anında yasaklı olup olmadığı bilgisi saklanır. Bu kayıt, yasaklı bir hesabın silinip yeniden açılmasını engellemek için tutulur; e-posta adresinizi geri vermez ve başka bir amaçla kullanılmaz.
+        - **Hesabınızı silerseniz:** hesabınız ve verileriniz **anında ve geri alınamaz şekilde** silinir; bekleme süresi ya da talebi geri alma imkânı yoktur. Profiliniz, fotoğraflarınız, eşleşmeleriniz ve mesajlarınız silinir. Yalnızca şu iki kayıt saklanır:
+          - E-posta adresinizin geri döndürülemez özeti (hash), silinme tarihi ve hesabın silinme anında yasaklı olup olmadığı bilgisi. Bu kayıt, yasaklı bir hesabın silinip yeniden açılmasını engellemek için tutulur; e-posta adresinizi geri vermez ve başka bir amaçla kullanılmaz.
+          - Abonelik ve ödeme kayıtları. Bunlar mali mevzuattan doğan saklama yükümlülüğü nedeniyle silinemez; kimliğinizle bağlantıları koparılarak (anonimleştirilerek) saklanır ve artık size ait olduklarını göstermezler.
+        - **Hesabınızı dondurursanız:** verileriniz olduğu gibi kalır, profiliniz diğer kullanıcılara görünmez ve keşifte çıkmazsınız. Tekrar giriş yaptığınızda hesabınız kaldığı yerden açılır. Dondurma bir silme talebi değildir; süre sınırı yoktur.
         - **Yasal saklama yükümlülüğü bulunan kayıtlar:** ilgili mevzuatın öngördüğü süreler boyunca (ticari defter ve belgeler bakımından 10 yıl).
       `,
 
@@ -523,7 +525,7 @@ const tr = {
       section11Content: `
         KVKK'nın 11. maddesi uyarınca; kişisel verilerinizin işlenip işlenmediğini öğrenme, işlenmişse buna ilişkin bilgi talep etme, işlenme amacını ve amacına uygun kullanılıp kullanılmadığını öğrenme, yurt içinde veya yurt dışında verilerinizin aktarıldığı üçüncü kişileri bilme, eksik veya yanlış işlenmiş olması hâlinde düzeltilmesini isteme, silinmesini veya yok edilmesini isteme, düzeltme ve silme işlemlerinin verilerin aktarıldığı üçüncü kişilere bildirilmesini isteme, münhasıran otomatik sistemlerle analiz edilmesi suretiyle aleyhinize bir sonucun ortaya çıkmasına itiraz etme ve kanuna aykırı işleme sebebiyle zarara uğramanız hâlinde zararın giderilmesini talep etme haklarına sahipsiniz.
 
-        Bu hakların bir kısmını doğrudan uygulama içinden kullanabilirsiniz: profil bilgilerinizi ayarlar üzerinden düzeltebilir, verilerinizin bir kopyasını talep edebilir ve hesabınızı kalıcı olarak silebilirsiniz.
+        Bu hakların bir kısmını doğrudan uygulama içinden kullanabilirsiniz: profil bilgilerinizi ayarlar üzerinden düzeltebilir, verilerinizin bir kopyasını talep edebilir, hesabınızı geçici olarak dondurabilir veya kalıcı olarak silebilirsiniz. Silme işlemi anında gerçekleşir ve geri alınamaz; bu nedenle onaylamanız için şifreniz istenir.
       `,
 
       sectionTitle12: 'Başvuru',
@@ -576,6 +578,25 @@ const tr = {
       validation: {
         codeRequired: 'Lütfen 6 haneli kodu girin',
       },
+    },
+    // ── Davet kodu adımı (RegisterReferralScreen) ─────────────────────────
+    // Adım OPSİYONEL: "Devam" kod boşken de aktif, "Atla" belirgin. Davet
+    // edenin ADI bilerek gösterilmiyor (kod deneyerek isim toplanmasın).
+    referral: {
+      title: 'Seni davet eden biri var mı?',
+      subtitle: 'Davet kodun varsa buraya gir. Yoksa bu adımı atlayabilirsin.',
+      // OtpInput kutulara HANE HANE yazıyor: örnek kod aynı zamanda biçim
+      // ipucu (5 karakter, büyük harf).
+      placeholder: 'AK7M2',
+      checking: 'Kod kontrol ediliyor...',
+      // Sonuç toast'ta: title + message (bkz. RegisterReferralScreen).
+      validTitle: 'Davet kodu geçerli',
+      valid: 'Üyeliğin bitince 1 not hediye.',
+      invalidTitle: 'Kod bulunamadı',
+      invalid: 'Bu kodu bulamadık, yanlış yazılmış olabilir.',
+      paste: 'Yapıştır',
+      skip: 'Atla',
+      continue: 'Devam Et',
     },
     step3: {
       title: 'Şifreni oluştur.',
@@ -1242,12 +1263,36 @@ const tr = {
       },
       visibility: {
         title: 'Görünürlük',
-        description: 'Keşfette seni kimlerin görebileceğini seç. Yukarıdaki filtrelerden farklı olarak bu listeler senin değil, karşı tarafın destesini etkiler.',
+        description: 'Keşfette seni kimlerin görebileceğini seç.',
+        // Üç şık, tek seçim: backend aynı anda yalnız bir kurala izin veriyor.
+        modeEveryone: 'Herkes görebilsin',
         visibleOnlyLabel: 'Beni sadece şu üniversiteler görsün',
         hiddenFromLabel: 'Beni şu üniversiteler görmesin',
+        selectedUniversities: 'Seçili üniversiteler',
         selectUniversities: 'Üniversite seç',
-        overlapWarning: 'İki listede birden olan üniversite seni göremez — engelleme önceliklidir.',
-        premiumExpiryNote: 'Premium\'un bittiğinde bu kurallar durur; engellediğin üniversiteler seni yeniden görmeye başlar.',
+        exclusiveNote: 'İki listeden yalnız biri aktif olabilir. Birinde seçim yapınca diğeri temizlenir; ikisi de boşsa herkes seni görebilir.',
+        // 🔴 `overlapWarning` KALDIRILDI: aynı domain'in iki listede olması
+        // artık mümkün değil (tek mod kuralı), uyarının konusu kalmadı.
+        //
+        // Bu uyarı ise gerçek bir etkiyi anlatıyor: kural bir hard filter,
+        // kullanıcı o okulların destesinden tamamen çıkıyor.
+        reachWarning: 'Bu ayar açıkken seni görebilecek kişi sayısı azalır, yani daha az eşleşme alabilirsin.',
+        // Mod değişince karşı listedeki seçim siliniyor — geri alma yolu yok,
+        // kullanıcı listeyi baştan kurmak zorunda kalır.
+        modeChangeTitle: 'Seçimlerin silinecek',
+        // `count` DEĞİL: i18next'te count çoğul çözümlemesini tetikler ve
+        // sonek'siz anahtar çözülemez.
+        modeChangeMessage: '"{{list}}" listendeki {{total}} üniversite kaldırılacak.',
+        // ── Davet ödülü ─────────────────────────────────────────────────
+        // Görünürlük filtresi premium'a ÖZEL değil artık: 3 davetle 30 günlük
+        // bir hak da açıyor (bkz. features/profile/referralView.ts).
+        grantNote: 'Davet ödülü · {{days}} gün kaldı',
+        inviteCta: '3 arkadaşını davet et, 30 gün ücretsiz',
+        premiumExpiryNote: 'Premium\'un bittiğinde bu kural durur; listedeki üniversiteler seni yeniden görebilir.',
+        // Premium BİTMİŞ kullanıcı için: gelecek zamanlı uyarı burada yanıltıcı
+        // olurdu, kural zaten uygulanmıyor. Kayıt duruyor, o yüzden "silindi"
+        // de demiyoruz.
+        premiumInactiveNote: 'Premium\'un bittiği için bu kural şu an uygulanmıyor. Ayarın duruyor; Premium\'a döndüğünde kendiliğinden devreye girer.',
       },
     },
     rewind: {
@@ -1450,6 +1495,49 @@ const tr = {
     title: 'Bir eşleşmeyi kaçırdın',
     body: '{{name}} seni beğenmişti.',
     bodyNoName: 'Seni beğenmiş birini geçtin.',
+  },
+  // ── Davet programı (referral) ───────────────────────────────────────────
+  // Kart ve sheet AYNI anahtarları paylaşıyor: iki yüzeyde iki farklı gün
+  // sayısı ya da iki farklı ödül adı görmek en hızlı güven kaybı.
+  referral: {
+    // Kayıt biterken, `LoginResponseDto.referralApplied` doğruysa (Step15).
+    welcomeGift: 'Davet kodun işlendi — 1 not hediyen hesabında.',
+    copied: 'Davet kodun kopyalandı.',
+    // Mesaj kodu VE indirme adresini birlikte taşıyor; adres Faz 2'de
+    // /invite/:code universal link'ine dönecek (shared/constants/links.ts).
+    shareMessage: 'Lit\'e katıl, kayıt olurken kodumu gir: {{code}}\n{{url}}',
+    reward: {
+      // `amount` VisibilityFilter'da GÜN, diğer ikisinde KREDİ — birim metnin
+      // içinde, çağıran taşımıyor.
+      visibilityFilter: 'Görünürlük filtresi · {{amount}} gün',
+      superLike: '{{amount}} süper beğeni',
+      note: '{{amount}} not',
+    },
+    card: {
+      label: 'Davet kodun',
+      copy: 'Kopyala',
+      share: 'Paylaş',
+      // `count` DEĞİL: i18next'te çoğul çözümlemesini tetikler.
+      progress: '{{progress}} / {{needed}} arkadaş katıldı',
+      nextReward: 'Sıradaki ödül: {{reward}}',
+      // Merdiven bitti (`nextTier: null`) — kademe 4+ henüz ürün kararı bekliyor.
+      comingSoon: 'Yeni ödüller yakında',
+      disabled: 'Davet kodun şu an kullanılamıyor.',
+      visibilityActive: 'Görünürlük filtresi · {{days}} gün kaldı',
+      visibilityPaused: 'Premium bitince {{days}} gün devam edecek',
+    },
+    sheet: {
+      title: 'Davetlerin',
+      description: 'Her 3 arkadaşın için bir ödül. Kodun ömür boyu aynı kalır.',
+      inviteesTitle: 'Katılanlar',
+      inviteesEmpty: 'Henüz kimse kodunla katılmadı.',
+      rewardsTitle: 'Kazandıkların',
+      rewardsEmpty: 'Henüz ödül kazanmadın.',
+      statusQualified: 'Sayıldı',
+      // Sayılmayan davet SAKLANMIYOR: "üç kişi çağırdım, ödül gelmedi" sessiz
+      // bir şikâyete dönüşmesin.
+      statusRejected: 'Sayılmadı',
+    },
   },
   profile: {
     tabTitle: 'Profil',
@@ -1655,6 +1743,16 @@ const tr = {
     // Anahtarlar YENİ (UT-63xx) numaralarda; geçiş penceresindeki eski UT-62xx
     // kodları aynı anahtara bağlanıyor (bkz. PHOTO_CODE_I18N).
     photoCodes: {
+      // Ana fotoğraf yüz kuralları — senkron 400 yanıtından geliyor. Metinler
+      // sunucudaki Errors.cs karşılıklarıyla aynı yönlendirmeyi veriyor:
+      // hepsi "başka fotoğraf seç"e çıkıyor, "tekrar dene"ye DEĞİL (kural
+      // kalıcı, tekrar denemek aynı duvara toslar).
+      'UT-6301':
+        'Ana fotoğrafında yalnız olmalısın. Diğer fotoğraflarında arkadaşlarınla olabilirsin.',
+      'UT-6302':
+        'Ana fotoğrafında net bir yüz göremedik. Yüzünün açık ve aydınlık göründüğü bir kare seç.',
+      'UT-6307':
+        'Bunu silersen sıradaki fotoğraf ana fotoğrafın olur ama orada yüzün net görünmüyor. Önce yüzünün göründüğü bir fotoğrafı başa taşı, sonra bunu sil.',
       'UT-6303': 'En fazla {{max}} fotoğraf ekleyebilirsin. Önce birini sil.',
       'UT-6304':
         'En az {{min}} fotoğrafın olmalı. Silmeden önce yeni bir fotoğraf ekle.',
@@ -1734,7 +1832,12 @@ const tr = {
         // önermek kullanıcıyı `challenge_too_weak`e iterdi.
         hintPose: 'Hareketi belirgin yap ama abartma — yumuşak bir hareket yeterli.',
         hintExpression: 'Belirgin olsun ki kamera görebilsin.',
-        submit: 'Gönder',
+        // Önizleme adımının metni (bkz. SelfieCameraStep: çek → önizle → onayla).
+        reviewHint: 'Yüzün net ve hareket belirgin mi? Değilse yeniden çek.',
+        capture: 'Çek',
+        // Önizlemedeki ikili: SOLDA onay, SAĞDA yeniden çekim.
+        confirm: 'Onayla',
+        retake: 'Yeniden Çek',
         captureError: 'Kare çekilemedi, tekrar dene.',
         permissionMessage:
           'Fotoğrafını doğrulayabilmek için kamera erişimine ihtiyacımız var.',
@@ -1770,6 +1873,14 @@ const tr = {
         // 🔴 BİZİM hatamız — kullanıcıyı suçlayan bir ifade KULLANMA.
         analysis_failed:
           'Bizden kaynaklı bir sorun oldu, doğrulamayı tamamlayamadık. Birazdan tekrar dene.',
+        // 🔴 `no_face` İLE AYNI METNİ KULLANMA. İkisi farklı yeri işaret ediyor:
+        // `no_face` çektiğin karede, bu ise ANA FOTOĞRAFINDA yüz olmadığını
+        // söylüyor. Aynı metin kullanıcıyı yanlış düzeltmeye iter — kameraya
+        // bakmayı dener, oysa fotoğrafı değiştirmesi gerekiyor. `canRetry:false`
+        // gelmesinin sebebi de bu: fotoğraf değişmeden tekrar denemek aynı
+        // hatayı verir ve saatlik 5 hakkın birini yakar.
+        reference_photo_no_face:
+          'Ana fotoğrafında yüzün görünmüyor. Yüzünün net göründüğü bir fotoğrafı ana fotoğraf yap, sonra tekrar dene.',
         fallback: 'Doğrulamayı tamamlayamadık. Tekrar dene.',
       },
       reasonTitle: {
@@ -1787,6 +1898,7 @@ const tr = {
         face_mismatch: 'Fotoğrafınla eşleşmedi',
         attempt_expired: 'Süre doldu',
         analysis_failed: 'Bizden kaynaklı bir sorun',
+        reference_photo_no_face: 'Ana fotoğrafında yüzün görünmüyor',
         fallback: 'Doğrulama tamamlanamadı',
       },
       codes: {

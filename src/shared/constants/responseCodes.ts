@@ -285,16 +285,27 @@ export function isPermanentRedeemCode(
 // Aynı `resolveCode` tablosuna girselerdi not gönderen kullanıcı "Fotoğraf
 // tavanı aşıldı" görürdü. `CODE_ENTRIES`e bu yüzden hiçbiri konmuyor.
 //
-// `UT-6301`/`UT-6302` (ana fotoğraf yüz kuralları) BURADA TANIMLI DEĞİL:
-// backend'e göre hiçbir uçtan HTTP hata kodu olarak dönmüyorlar — ana foto
-// kontrolü senkron hata değil, asenkron moderasyon sonucu ve `photos[]`
-// içinde `reasonCode` olarak geliyor (bkz. photoModeration.moderationReasonText).
-// Hiç tetiklenmeyen iki kodu tanımlamanın faydası yok.
+// `UT-6301`/`UT-6302` ARTIK SENKRON HTTP YANITI OLARAK DA DÖNÜYOR (2026-09-07,
+// backend `Errors.cs:88`). Bu blok eskiden "hiç tetiklenmiyorlar, tanımlamanın
+// faydası yok" diyordu; o doğruydu ama artık değil: var olan bir fotoğrafı ANA
+// YAPMA yolu (sürükle-bırak sıralama ya da "Ana Yap") 400 + `code` ile
+// reddediliyor. Kodu okumayan çağıran jenerik "doğrulama hatası" gösteriyor ve
+// kullanıcı NEDEN reddedildiğini bilmeden aynı kaydete basıp duruyordu.
+//
+// `UT-6307` (silme reddi) aynı ailenin üçüncü üyesi: ana fotoğrafı silmek
+// sıradaki uygun olmayan fotoğrafı ana yapacaksa istek reddediliyor.
+//
+// Asenkron moderasyon yolu DEĞİŞMEDİ — `photos[]` içindeki `reasonCode` hâlâ
+// photoModeration.moderationReasonText'ten okunuyor. İki yol aynı numaraları
+// kullanıyor, kaynakları farklı.
 export const PHOTO_MODERATION_CODES = {
+  MAIN_PHOTO_MULTIPLE_FACES: "UT-6301",
+  MAIN_PHOTO_NO_FACE: "UT-6302",
   PHOTO_LIMIT_EXCEEDED: "UT-6303",
   BELOW_MIN_PHOTOS: "UT-6304",
   APPEAL_CONFLICT: "UT-6305",
   PROVIDER_UNAVAILABLE: "UT-6306",
+  NEXT_MAIN_PHOTO_NOT_ELIGIBLE: "UT-6307",
 } as const;
 
 export type PhotoModerationCode =
@@ -309,6 +320,13 @@ export type PhotoModerationCode =
 // ailesi 2026-08-31'de emekliye ayrıldı, yani numaralar artık yalnız bu geçiş
 // penceresinin işi.) Backend deploy edildikten bir sürüm sonra silinecekler.
 const PHOTO_CODE_I18N: Record<string, string> = {
+  // Ana fotoğraf yüz kuralları — senkron 400 yanıtından geliyorlar.
+  // 🔴 `UT-62xx` geçiş eşlemesi BUNLARA YAZILMADI: eski numaralar foto
+  // ailesinin 6303-6306 üyeleri için verilmişti, 6301/6302/6307 o pencerede
+  // hiç dönmedi. Uydurma bir eşleme burada yanlış metin gösterirdi.
+  [PHOTO_MODERATION_CODES.MAIN_PHOTO_MULTIPLE_FACES]: "profile.photoCodes.UT-6301",
+  [PHOTO_MODERATION_CODES.MAIN_PHOTO_NO_FACE]: "profile.photoCodes.UT-6302",
+  [PHOTO_MODERATION_CODES.NEXT_MAIN_PHOTO_NOT_ELIGIBLE]: "profile.photoCodes.UT-6307",
   [PHOTO_MODERATION_CODES.PHOTO_LIMIT_EXCEEDED]: "profile.photoCodes.UT-6303",
   [PHOTO_MODERATION_CODES.BELOW_MIN_PHOTOS]: "profile.photoCodes.UT-6304",
   [PHOTO_MODERATION_CODES.APPEAL_CONFLICT]: "profile.photoCodes.UT-6305",

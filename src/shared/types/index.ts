@@ -25,6 +25,15 @@ export interface RegistrationForm {
   password: string;
   confirmPassword: string;
   email: string;
+  /**
+   * Davet kodu (5 karakter, bkz. features/auth/referralCode.ts). İlk adımda
+   * (RegisterReferral) yazılıyor ama `register-and-complete`e SON adımda
+   * (Step15) gidiyor — arada dokuz ekran ve muhtemelen bir uygulama ölümü var,
+   * o yüzden route param'ı değil persist edilen form alanı.
+   *
+   * `null` = kullanıcı adımı atladı ya da kod hiç girilmedi.
+   */
+  referralCode: string | null;
 }
 
 export interface AuthState {
@@ -853,4 +862,61 @@ export interface SubscriptionState extends SubscriptionStatusSnapshot {
    * İlk kanonik yazımda (`applyStatus`) temizlenir.
    */
   resolvedFromCache: boolean;
+}
+
+// ─── Referral (davet programı) ────────────────────────────────────────────────
+
+/**
+ * `GET /api/referral/me` cevabının birebir TS karşılığı (sözleşme: davet
+ * programı planı §1.8). Alan eklenip çıkarılırsa iki taraf da bilgilendirilir.
+ */
+
+/** Merdivendeki ödül türü — `amount` VisibilityFilter'da GÜN, diğerlerinde KREDİ. */
+export type ReferralRewardType = "VisibilityFilter" | "SuperLike" | "Note";
+
+/** Davet edilenin durumu. `Rejected` = kötüye kullanım freni devreye girdi. */
+export type ReferralInviteeStatus = "Qualified" | "Rejected";
+
+export interface ReferralNextTier {
+  tier: number;
+  type: ReferralRewardType;
+  amount: number;
+  /** Bu kademeye sayılan davet sayısı. */
+  progress: number;
+  /** Kademe için gereken davet sayısı (`inviteesPerTier`). */
+  needed: number;
+}
+
+export interface ReferralVisibilityGrant {
+  /** Aktif hakkın bitişi; `null` = hak yok ya da premium yüzünden dondurulmuş. */
+  expiresAt: string | null;
+  /** Premium bitince devam edecek gün sayısı; `null` = dondurulmuş hak yok. */
+  pausedDays: number | null;
+}
+
+export interface ReferralInvitee {
+  firstName: string;
+  status: ReferralInviteeStatus;
+  joinedAt: string;
+}
+
+export interface ReferralRewardItem {
+  tier: number;
+  type: ReferralRewardType;
+  amount: number;
+  grantedAt: string;
+}
+
+export interface ReferralSummary {
+  code: string;
+  /** Kod pasife alındıysa (şüphe sayacı doldu) paylaşım kapanır. */
+  codeDisabled: boolean;
+  qualifiedCount: number;
+  inviteesPerTier: number;
+  currentTier: number;
+  /** `null` = merdiven bitti; kart "Yeni ödüller yakında" gösterir. */
+  nextTier: ReferralNextTier | null;
+  visibilityGrant: ReferralVisibilityGrant;
+  invitees: ReferralInvitee[];
+  rewards: ReferralRewardItem[];
 }

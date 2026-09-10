@@ -614,6 +614,38 @@ function ResultStep({
           olduğu için `alignSelf: "stretch"` verilmezse pill'ler metin kadar
           büzülüyor. */}
       <View style={{ alignSelf: "stretch", gap: 8, marginTop: 4 }}>
+        {/* `reference_photo_no_face` tek `canRetry: false` dönen başarısızlık:
+            sorun çekilen karede değil ANA FOTOĞRAFTA, dolayısıyla "Tekrar Dene"
+            yukarıdaki koşulla zaten gizleniyor. Ama geriye sadece "Şimdi Değil"
+            kalıyor ve kullanıcı çıkmazda: yapması gereken şeyin (fotoğrafı
+            değiştir) ekranda bir kapısı yok. UT-6502 dalındaki desenin aynısı. */}
+        {!success && result.reasonCode === "reference_photo_no_face" && (
+          <AnimatedPressable
+            onPress={() => {
+              onClose();
+              uiBus.emit("addProfilePhoto");
+            }}
+            style={{
+              borderRadius: 999,
+              borderCurve: "continuous",
+              overflow: "hidden",
+              backgroundColor: colors.inverseSurface,
+            }}
+          >
+            <Text
+              style={{
+                paddingVertical: 20,
+                textAlign: "center",
+                fontSize: 15,
+                fontWeight: "700",
+                color: colors.onInverseSurface,
+              }}
+            >
+              {t("profile.selfie.intro.goToPhotos")}
+            </Text>
+          </AnimatedPressable>
+        )}
+
         {!success && result.canRetry && (
           <AnimatedPressable
             onPress={onRetry}

@@ -2,23 +2,25 @@ import { useCallback, useEffect, useMemo, useState } from "react";
 import { ActivityIndicator, Text, TouchableOpacity, View } from "react-native";
 import { useTranslation } from "react-i18next";
 import { BottomSheetScrollView } from "@gorhom/bottom-sheet";
-import { BlurView } from "expo-blur";
-import { LinearGradient } from "expo-linear-gradient";
 import { ChevronDown, Eye, EyeOff, Info as InfoIcon, X as XIcon } from "@/shared/icons";
 import AppBottomSheet from "@/shared/components/AppBottomSheet";
 import AnimatedPressable from "@/shared/components/AnimatedPressable";
 import SFIcon from "@/shared/components/SFIcon";
 import UniversityPickerModal from "@/features/discover/components/UniversityPickerModal";
 import { useUniversities, resolveLocalized } from "@/shared/queries/commonQueries";
-import { MAX_UNIVERSITY_DOMAINS } from "@/shared/constants/limits";
 import {
   buildVisibilityUpdates,
+  isDirty as isVisibilityDirty,
+  maxDomainsFor,
+  resolveVisibilityDraft,
   toDomainList,
-  sameList,
-  type Target,
+  type VisibilityMode,
 } from "@/features/profile/universityVisibility";
-import { colors, gradients } from "@/shared/theme/colors";
-import { plainBlurTint } from "@/shared/theme/blur";
+import { grantDaysRemaining } from "@/features/profile/referralView";
+
+/** Satırı olan iki mod; "everyone" satır değil, iki satırın da boş hâli. */
+type ListMode = Exclude<VisibilityMode, "everyone">;
+import { colors } from "@/shared/theme/colors";
 import { devLog } from "@/shared/utils/devLog";
 import uiBus from "@/shared/services/uiBus";
 import { showInfoToast } from "@/shared/services/toaster";
@@ -44,7 +46,18 @@ import i18n from "@/shared/i18n";
  *   • alanı hiç gönderme  → DEĞİŞTİRME
  *   • boş liste           → TEMİZLE (kısıtlama kalkar)
  * `null` ile `[]` aynı şey DEĞİL. FormData boş diziyi ifade edemediği için
- * temizleme TEK BOŞ STRING ile gidiyor (aşağıda `CLEAR_SENTINEL`).
+ * temizleme TEK BOŞ STRING ile gidiyor (`CLEAR_SENTINEL`).
+ *
+ * 🔴 TEK MOD (2026-09-10, backend `f61d4c0`): iki liste birbirini dışlıyor,
+ * ikisi birden dolu gelirse backend 400 dönüyor. Ekran yine de ESKİ İKİ SATIRLI
+ * görünümde (ürün kararı): "sadece şunlar görsün" ve "şunlar görmesin" ayrı
+ * satırlar, ama birinde seçim yapınca diğeri kendiliğinden boşalıyor. İkisi de
+ * boşsa herkes görebiliyor — ayrı bir "herkes" şıkkı yok. Taslak içeride tek
+ * mod olarak tutuluyor (bkz. universityVisibility.ts); satırlar o modun iki
+ * görünümü. Kaydetmede karşı mod açıkça temizleniyor (buildVisibilityUpdates).
+ *
+ * Örtüşme uyarısı bu yüzden yok: aynı domain'in iki listede olması artık
+ * mümkün değil.
  */
 
 
@@ -52,13 +65,28 @@ export default function UniversityVisibilitySheet({
   visible,
   onClose,
   profile,
-  isPremium,
+  canUse,
+  grantExpiresAt,
   onSaved,
 }: {
   visible: boolean;
   onClose: () => void;
   profile: any;
-  isPremium: boolean;
+  /**
+   * 🔴 `isPremium` DEĞİL. Görünürlük filtresi 2026-09-10'dan beri premium'a
+   * ÖZEL değil: 3 davetle kazanılan 30 günlük bir hak da açıyor (davet programı
+   * planı §1.5). Kaynak `GET /api/profile/me`nin `canUseUniversityVisibility`
+   * alanı — kapıyı premium'a bağlamak, hakkı olan kullanıcıyı kendi ayarından
+   * kilitler ve üstelik kaydetmeyi denerse backend 200 dönerdi (sunucu tarafı
+   * zaten hakkı tanıyor), yani kilit sadece istemcide bir yalan olurdu.
+   */
+  canUse: boolean;
+  /**
+   * Davet ödülünün bitişi (`universityVisibilityGrantExpiresAt`). Doluysa
+   * üstte kalan gün şeridi çiziliyor. Premium aktifken hak DONDURULUYOR ve
+   * backend bu alanı `null` gönderiyor — o hâlde premium notları geçerli.
+   */
+  grantExpiresAt?: string | null;
   onSaved?: () => void;
 }) {
   const { t } = useTranslation();
@@ -68,21 +96,26 @@ export default function UniversityVisibilitySheet({
     [universitiesQuery.data],
   );
 
-  // Sunucudaki hâl — "değişti mi" kararının tabanı. Kaydetmede yalnız GERÇEKTEN
-  // değişen alan gidiyor (sözleşme §5.2): değişmeyeni göndermek premium'u biten
-  // kullanıcıda gereksiz 403 riski üretir.
+  // Sunucudaki hâl — "değişti mi" kararının tabanı. Değişiklik yoksa hiçbir alan
+  // gönderilmiyor: dokunulmamış bir listeyi yeniden yazmaya çalışmak premium'u
+  // biten kullanıcıda gereksiz 403 riski üretir.
+  //
+  // İki listeden TEK MODA burada iniliyor; ikisi birden dolu gelen (XOR
+  // kuralından eski) profillerde Allow kazanıyor — backend migration'ıyla aynı
+  // yön.
   const initial = useMemo(
-    () => ({
-      visibleOnly: toDomainList(profile?.visibleOnlyToUniversityDomains),
-      hiddenFrom: toDomainList(profile?.hiddenFromUniversityDomains),
-    }),
+    () => resolveVisibilityDraft(profile),
     [profile?.visibleOnlyToUniversityDomains, profile?.hiddenFromUniversityDomains],
   );
 
   const [draft, setDraft] = useState(initial);
   const [saving, setSaving] = useState(false);
-  const [picker, setPicker] = useState<Target | null>(null);
   const [pickerVisible, setPickerVisible] = useState(false);
+  // Seçici hangi satır için açıldı. Taslak tek modlu; satırlar onun görünümü.
+  const [picker, setPicker] = useState<ListMode>("allow");
+
+  const allowDomains = draft.mode === "allow" ? draft.domains : [];
+  const blockDomains = draft.mode === "block" ? draft.domains : [];
 
   // Sheet her açılışta sunucudaki hâlden başlasın: yarım kalmış bir taslak
   // ikinci açılışta "kaydedilmiş" gibi görünürdü.
@@ -104,17 +137,7 @@ export default function UniversityVisibilitySheet({
     return domains.length > 1 ? `${first} +${domains.length - 1}` : first;
   };
 
-  // Aynı üniversite iki listede olabilir — çakışmada BLOCK kazanır (kullanıcı
-  // görünmez). Backend izin veriyor ama neredeyse her zaman kullanıcı hatası.
-  const overlap = useMemo(() => {
-    if (draft.visibleOnly.length === 0 || draft.hiddenFrom.length === 0) return false;
-    const blocked = new Set(draft.hiddenFrom);
-    return draft.visibleOnly.some((d) => blocked.has(d));
-  }, [draft]);
-
-  const dirty =
-    !sameList(draft.visibleOnly, initial.visibleOnly) ||
-    !sameList(draft.hiddenFrom, initial.hiddenFrom);
+  const dirty = isVisibilityDirty(initial, draft);
 
   // Free kullanıcı kilitli satıra dokununca paywall. FilterModal'daki yolun
   // aynısı: sheet ÖNCE kapanıyor, çünkü paywall başka bir sekmedeki sayfa ve
@@ -128,13 +151,50 @@ export default function UniversityVisibilitySheet({
     });
   }, [onClose]);
 
-  const openPicker = (target: Target) => {
-    if (!isPremium) {
+  /**
+   * Kilitli hâlin İKİNCİ kapısı: para değil davet.
+   *
+   * Paywall'ın yanında duruyor çünkü artık iki farklı yol var ve yalnız birini
+   * göstermek, ödemek istemeyen kullanıcıya "bu ayar sana kapalı" demek olurdu.
+   * Sheet ÖNCE kapanıyor (paywall ile aynı gerekçe: kart başka bir sekmede ve
+   * portal'a çizilen sheet onun önünde kalırdı).
+   */
+  const openReferral = useCallback(() => {
+    onClose();
+    uiBus.emit("openReferral");
+  }, [onClose]);
+
+  // Davet ödülünün kalan günü. `null` = hak yok ya da premium yüzünden
+  // dondurulmuş (backend o hâlde `expiresAt`i null gönderiyor).
+  const grantDays = grantDaysRemaining(grantExpiresAt);
+
+  const openPicker = (target: ListMode) => {
+    if (!canUse) {
       openPaywall();
       return;
     }
     setPicker(target);
     setPickerVisible(true);
+  };
+
+  /** Satırdaki X: o liste seçili modsa taslak "herkes"e döner. */
+  const clearList = (target: ListMode) => {
+    if (draft.mode === target) setDraft({ mode: "everyone", domains: [] });
+  };
+
+  /**
+   * Seçici onayı. Dolu liste → o satır mod olur, KARŞI SATIR KENDİLİĞİNDEN
+   * BOŞALIR (tek mod). Boş onay → yalnız o satır seçiliyse temizlenir; öbür
+   * satıra dokunulmaz.
+   */
+  const confirmPicker = (domains: string[]) => {
+    setPickerVisible(false);
+    const list = toDomainList(domains, picker);
+    if (list.length === 0) {
+      clearList(picker);
+      return;
+    }
+    setDraft({ mode: picker, domains: list });
   };
 
   const handleSave = useCallback(async () => {
@@ -143,9 +203,10 @@ export default function UniversityVisibilitySheet({
       onClose();
       return;
     }
-    // 🔴 Free kullanıcıda bu alanlar payload'a HİÇ girmemeli: girerse isteğin
-    // TAMAMI 403'e düşer ve kullanıcı bio'sunu bile kaydedemez (sözleşme §2.1).
-    if (!isPremium) {
+    // 🔴 Hakkı OLMAYAN kullanıcıda bu alanlar payload'a HİÇ girmemeli: girerse
+    // isteğin TAMAMI 403'e düşer ve kullanıcı bio'sunu bile kaydedemez
+    // (sözleşme §2.1).
+    if (!canUse) {
       openPaywall();
       return;
     }
@@ -159,16 +220,25 @@ export default function UniversityVisibilitySheet({
       onClose();
     } catch (error: any) {
       devLog("👁 [visibility] kaydedilemedi", error);
+      const status = error?.response?.status;
       const result = error?.response?.data?.result;
-      if (error?.response?.status === 403 && result?.showPaywall) {
+      if (status === 403 && result?.showPaywall) {
         openPaywall();
         return;
       }
-      showInfoToast({ message: t("errors.generic"), variant: "error" });
+      // 400 = doğrulama. Bu ekranda iki sebebi var ve ikisinde de sunucunun
+      // mesajı bizim jenerik metnimizden iyi: tavan aşımı ("en fazla N
+      // üniversite") ya da XOR ihlali. İkincisi bize bakan bir bug — ekran
+      // radio olduğu sürece üretilemez — ama sessiz kalmak yerine görünür olsun.
+      const message =
+        status === 400 && typeof error?.response?.data?.message === "string"
+          ? error.response.data.message
+          : t("errors.generic");
+      showInfoToast({ message, variant: "error" });
     } finally {
       setSaving(false);
     }
-  }, [saving, dirty, isPremium, draft, initial, onClose, onSaved, openPaywall, t]);
+  }, [saving, dirty, canUse, draft, initial, onClose, onSaved, openPaywall, t]);
 
   const footer = (
     <View style={{ paddingHorizontal: 24, paddingTop: 12, paddingBottom: 28 }}>
@@ -208,10 +278,10 @@ export default function UniversityVisibilitySheet({
     <AppBottomSheet
       visible={visible}
       onClose={onClose}
-      // TEK DETENT ve kısa: içerik iki satır + iki not, uzayacak bir şey yok.
-      // `enableDynamicSizing` bilerek KAPALI (AppBottomSheet varsayılanı) —
-      // örtüşme uyarısı belirip kaybolduğunda sheet'in boyu zıplardı.
-      snapPoints={["52%"]}
+      // TEK DETENT ve kısa (eski boy). Davet şeridi/CTA eklendiğinde içerik
+      // taşarsa BottomSheetScrollView kaydırıyor. `enableDynamicSizing` bilerek
+      // KAPALI (AppBottomSheet varsayılanı) — not belirip kaybolunca boy zıplamasın.
+      snapPoints={["55%"]}
       footer={footer}
       backgroundStyle={{ backgroundColor: colors.bg }}
     >
@@ -259,103 +329,197 @@ export default function UniversityVisibilitySheet({
           </Text>
         </View>
 
-        <View style={{ opacity: isPremium ? 1 : 0.4 }}>
+        {/* Davet ödülü şeridi — hak SÜRELİ, süresi de kullanıcının kendi
+            kurduğu kuralın ömrü. Bitince backend kuralları SİLİYOR (plan §1.7),
+            yani sessiz kalmak "ayarım duruyor" sanan bir kullanıcı üretirdi. */}
+        {grantDays !== null ? (
+          <View
+            style={{
+              borderRadius: 999,
+              borderCurve: "continuous",
+              alignSelf: "flex-start",
+              paddingHorizontal: 14,
+              paddingVertical: 8,
+              marginBottom: 18,
+              backgroundColor: colors.hairlineSoft,
+            }}
+          >
+            <Text style={{ color: colors.text, fontSize: 13, fontWeight: "600" }}>
+              {t("discover.filters.visibility.grantNote", { days: grantDays })}
+            </Text>
+          </View>
+        ) : null}
+
+        <View style={{ opacity: canUse ? 1 : 0.4 }}>
+          {/* İki satır, tek aktif liste. Birinde seçim yapınca diğeri boşalır
+              (confirmPicker) — backend aynı anda ikisini kabul etmiyor. */}
           <ListLabel
             label={t("discover.filters.visibility.visibleOnlyLabel")}
-            count={draft.visibleOnly.length}
+            count={allowDomains.length}
+            max={maxDomainsFor("allow")}
           />
           <SelectRow
+            testID="visibility-row-allow"
             sfIcon="eye.fill"
             lucideIcon={Eye}
-            value={summarizeDomains(draft.visibleOnly)}
+            value={summarizeDomains(allowDomains)}
             placeholder={t("discover.filters.visibility.selectUniversities")}
-            disabled={isPremium && universityOptions.length === 0}
-            onPress={() => openPicker("visibleOnly")}
-            onClear={() => setDraft((d) => ({ ...d, visibleOnly: [] }))}
+            disabled={canUse && universityOptions.length === 0}
+            onPress={() => openPicker("allow")}
+            onClear={() => clearList("allow")}
           />
 
           <ListLabel
             label={t("discover.filters.visibility.hiddenFromLabel")}
-            count={draft.hiddenFrom.length}
+            count={blockDomains.length}
+            max={maxDomainsFor("block")}
             marginTop={18}
           />
           <SelectRow
+            testID="visibility-row-block"
             sfIcon="eye.slash.fill"
             lucideIcon={EyeOff}
-            value={summarizeDomains(draft.hiddenFrom)}
+            value={summarizeDomains(blockDomains)}
             placeholder={t("discover.filters.visibility.selectUniversities")}
-            disabled={isPremium && universityOptions.length === 0}
-            onPress={() => openPicker("hiddenFrom")}
-            onClear={() => setDraft((d) => ({ ...d, hiddenFrom: [] }))}
+            disabled={canUse && universityOptions.length === 0}
+            onPress={() => openPicker("block")}
+            onClear={() => clearList("block")}
           />
 
-          {overlap ? (
+          <Text
+            style={{
+              color: colors.textMuted,
+              fontSize: 13,
+              lineHeight: 19,
+              fontWeight: "500",
+              marginTop: 10,
+              textAlign: "center",
+            }}
+          >
+            {t("discover.filters.visibility.exclusiveNote")}
+          </Text>
+
+          {/* 🔴 Bu bir nezaket metni değil, gerçek bir etki: kural bir HARD
+              FILTER, kullanıcı engellenen okulların destesinden tamamen
+              çıkıyor. Daha az gösterim → daha az beğeni → sıralama modelinin
+              sinyali zayıflıyor. Ayarın bedelini söylemeden kurdurmak
+              dürüst olmazdı. Yalnız bir liste doluyken. */}
+          {draft.mode !== "everyone" && draft.domains.length > 0 ? (
             <Text
               style={{
                 color: colors.textSecondary,
                 fontSize: 13,
+                lineHeight: 19,
                 fontWeight: "500",
                 marginTop: 10,
               }}
             >
-              {t("discover.filters.visibility.overlapWarning")}
+              {t("discover.filters.visibility.reachWarning")}
             </Text>
           ) : null}
 
           {/* Backend kuralları premium bitince BİLİNÇLİ olarak devre dışı
               bırakıyor: engellenen üniversite kullanıcıyı tekrar görmeye başlar.
-              Gizlilik beklentisi yaratan bir ayar, sessiz kalmıyoruz. Yalnız
-              kural kurulmuşken gösteriliyor — boş listede uyarının konusu yok. */}
-          {draft.visibleOnly.length > 0 || draft.hiddenFrom.length > 0 ? (
+              Gizlilik beklentisi yaratan bir ayar, sessiz kalmıyoruz.
+              🔴 İKİ AYRI METİN: premium'u OLAN kullanıcı için bu gelecek zamanlı
+              bir uyarı ("bittiğinde duracak"), premium'u BİTMİŞ kullanıcı için
+              ise mevcut durumun tarifi ("şu an uygulanmıyor"). İkincisine aynı
+              gelecek zamanlı metni göstermek, kuralın hâlâ yürürlükte olduğunu
+              sandırırdı. Kayıt duruyor ve premium yenilenince kendiliğinden geri
+              devreye giriyor — o yüzden listeyi silmiyoruz, sadece söylüyoruz. */}
+          {/* 🔴 ÜÇÜNCÜ DAL (davet ödülü): hak premium'dan DEĞİL davetten
+              geliyorsa "Premium'un bittiğinde" cümlesi olgusal olarak yanlış —
+              kullanıcının premium'u yok, kuralı durduracak olan hakkın kendi
+              süresi. O yüzden bu dalda premium notları hiç çizilmiyor, üstteki
+              gün şeridi (grantNote) zaten kuralın ne zaman duracağını söylüyor. */}
+          {draft.mode !== "everyone" && draft.domains.length > 0 && grantDays === null ? (
             <Text
               style={{
                 color: colors.textMuted,
                 fontSize: 13,
+                lineHeight: 19,
                 fontWeight: "500",
                 marginTop: 10,
               }}
             >
-              {t("discover.filters.visibility.premiumExpiryNote")}
+              {t(
+                canUse
+                  ? "discover.filters.visibility.premiumExpiryNote"
+                  : "discover.filters.visibility.premiumInactiveNote",
+              )}
             </Text>
           ) : null}
         </View>
+
+        {/* ── Kilitli hâlin ikinci kapısı ── Paywall satırlara dokununca zaten
+            açılıyor; bu, PARA İSTEMEYEN yolu görünür kılıyor. Yalnız kilitliyken
+            çiziliyor: hakkı olan kullanıcıya davet reklamı yapmak, ayarı
+            kullanmaya gelmiş kişiyi başka bir ekrana çağırmak olurdu. */}
+        {!canUse ? (
+          <AnimatedPressable
+            onPress={openReferral}
+            testID="visibility-invite-cta"
+            style={{
+              marginTop: 20,
+              borderRadius: 999,
+              borderCurve: "continuous",
+              overflow: "hidden",
+              borderWidth: 0.5,
+              borderColor: colors.hairline,
+              backgroundColor: colors.surface,
+            }}
+          >
+            <Text
+              style={{
+                paddingVertical: 16,
+                textAlign: "center",
+                fontSize: 14,
+                fontWeight: "600",
+                color: colors.text,
+              }}
+            >
+              {t("discover.filters.visibility.inviteCta")}
+            </Text>
+          </AnimatedPressable>
+        ) : null}
       </BottomSheetScrollView>
 
       <UniversityPickerModal
         visible={pickerVisible}
         onClose={() => setPickerVisible(false)}
         title={
-          picker === "hiddenFrom"
+          picker === "block"
             ? t("discover.universityPicker.hiddenFromTitle")
             : t("discover.universityPicker.visibleOnlyTitle")
         }
         items={universityOptions}
-        initialSelectedValues={
-          picker === "hiddenFrom" ? draft.hiddenFrom : draft.visibleOnly
-        }
-        maxLimit={MAX_UNIVERSITY_DOMAINS}
+        // Karşı satır için açıldıysa boş başlar: listeler taşınmaz.
+        initialSelectedValues={draft.mode === picker ? draft.domains : []}
+        // Tavan SATIRA GÖRE: Block 5, Allow 3 (backend'de de ayrı).
+        maxLimit={maxDomainsFor(picker)}
         limitMsg={t("discover.universityPicker.limitMsg", {
           // `count` DEĞİL: i18next'te count çoğul çözümlemesini tetikler.
-          max: MAX_UNIVERSITY_DOMAINS,
+          max: maxDomainsFor(picker),
         })}
-        onConfirm={(domains: string[]) => {
-          setPickerVisible(false);
-          const key = picker === "hiddenFrom" ? "hiddenFrom" : "visibleOnly";
-          setDraft((d) => ({ ...d, [key]: toDomainList(domains) }));
-        }}
+        onConfirm={confirmPicker}
       />
     </AppBottomSheet>
   );
 }
 
-/** FilterModal'daki `VisibilityListLabel`in aynısı — etiket + n/3 sayacı. */
+/**
+ * FilterModal'daki `VisibilityListLabel`in aynısı — etiket + n/max sayacı.
+ * `max` artık PARAMETRE: tavan moda göre değişiyor (Allow 3, Block 5).
+ */
 function ListLabel({
   label,
   count,
+  max,
   marginTop = 0,
 }: {
   label: string;
   count: number;
+  max: number;
   marginTop?: number;
 }) {
   return (
@@ -375,14 +539,13 @@ function ListLabel({
       {count > 0 ? (
         <Text
           style={{
-            color:
-              count >= MAX_UNIVERSITY_DOMAINS ? colors.text : colors.textMuted,
+            color: count >= max ? colors.text : colors.textMuted,
             fontSize: 13,
             fontWeight: "500",
             fontVariant: ["tabular-nums"],
           }}
         >
-          {count}/{MAX_UNIVERSITY_DOMAINS}
+          {count}/{max}
         </Text>
       ) : null}
     </View>
@@ -391,6 +554,7 @@ function ListLabel({
 
 /** FilterModal'daki `SelectRow`un aynısı — pill satır, X listeyi temizler. */
 function SelectRow({
+  testID,
   sfIcon,
   lucideIcon,
   value,
@@ -401,6 +565,7 @@ function SelectRow({
 }: any) {
   return (
     <TouchableOpacity
+      testID={testID}
       activeOpacity={0.7}
       onPress={onPress}
       disabled={disabled}
@@ -471,77 +636,60 @@ function SelectRow({
  * kaybolurdu; ayrı bir yüzey ona hak ettiği ağırlığı veriyor.
  *
  * 🔴 BUTON DURUM BİLDİRİYOR, sadece kapı değil. Kural varken:
- *   • halka premium gradyanına dönüyor (nötr camdan ayrışıyor)
- *   • ikon `eye.slash.fill`e geçiyor — bir liste yüzünden birileri seni GÖRMÜYOR
- *   • sayaç rozeti kaç listenin aktif olduğunu söylüyor (1 ya da 2)
+ *   • ikon `eye.slash.fill`e geçiyor — bir kural yüzünden birileri seni GÖRMÜYOR
+ *   • rozet kaç üniversitenin listede olduğunu söylüyor
  * Böylece kullanıcı sheet'i açmadan "bir kısıtlamam var mı" sorusunu
  * cevaplayabiliyor; gizlilik ayarlarında sessiz kalmak en pahalı seçenek.
+ *
+ * ⚠️ ZEMİN VE HALKA KALDIRILDI (eskiden gradyan halka + buzlu cam daire).
+ * O yüzey ikonu kendi çapının yarısına sıkıştırıyordu; çıplak ikon hem
+ * büyüyebiliyor hem de hero'daki fotoğrafla yarışmıyor. Durum bilgisi
+ * kaybolmuyor: ikonun kendisi ve rozet söylüyor. Dokunma alanı artık ikonun
+ * boyutundan değil `hitSlop`tan geliyor (28 + 2×8 = 44pt, dokunulabilir en
+ * küçük ölçü).
+ *
+ * ⚠️ ROZETTEKİ SAYI DEĞİŞTİ: eskiden "kaç liste aktif" (1 ya da 2) sayılıyordu.
+ * Tek mod kuralından sonra o sayı her zaman 1 olacaktı, yani hiçbir şey
+ * söylemiyordu. Artık seçili moddaki ÜNİVERSİTE SAYISI yazıyor — sheet'teki
+ * n/max sayacıyla aynı sayı, iki yerde iki farklı rakam görmenin kafa
+ * karışıklığı da böylece ortadan kalkıyor.
  */
 export function VisibilityHeroButton({
-  visibleOnlyCount,
-  hiddenFromCount,
+  mode,
+  domainCount,
   onPress,
 }: {
-  visibleOnlyCount: number;
-  hiddenFromCount: number;
+  mode: VisibilityMode;
+  domainCount: number;
   onPress: () => void;
 }) {
-  const activeLists =
-    (visibleOnlyCount > 0 ? 1 : 0) + (hiddenFromCount > 0 ? 1 : 0);
-  const active = activeLists > 0;
-  const SIZE = 54;
-  const RING = 1.5;
+  const active = mode !== "everyone" && domainCount > 0;
+  const SIZE = 28;
 
   return (
     <AnimatedPressable onPress={onPress} pressScale={0.94} hitSlop={8}>
-      <View style={{ width: SIZE, height: SIZE }}>
-        {/* Halka: kural varken gradyan, yokken saç teli. Dolgu İÇERİDE ayrı bir
-            daire — gradyanın yalnız kenarda görünmesi için. */}
-        <LinearGradient
-          colors={active ? gradients.premium : [colors.hairline, colors.hairline]}
-          start={{ x: 0, y: 0 }}
-          end={{ x: 1, y: 1 }}
-          style={{
-            width: SIZE,
-            height: SIZE,
-            borderRadius: SIZE / 2,
-            padding: active ? RING + 0.5 : RING,
-          }}
-        >
-          <BlurView
-            tint={plainBlurTint()}
-            intensity={100}
-            style={{
-              flex: 1,
-              borderRadius: SIZE / 2,
-              overflow: "hidden",
-              alignItems: "center",
-              justifyContent: "center",
-              backgroundColor: colors.surfaceTranslucent,
-            }}
-          >
-            <SFIcon
-              name={hiddenFromCount > 0 ? "eye.slash.fill" : "eye.fill"}
-              fallback={hiddenFromCount > 0 ? EyeOff : Eye}
-              size={22}
-              color={colors.text}
-              strokeWidth={1.75}
-              weight="semibold"
-            />
-          </BlurView>
-        </LinearGradient>
+      {/* Kutu ikon kadar: rozetin ikona yapışması için (eski 54'lük dairede
+          rozet ikondan kopuk duruyordu). */}
+      <View style={{ width: SIZE, height: SIZE, alignItems: "center", justifyContent: "center" }}>
+        <SFIcon
+          name={active && mode === "block" ? "eye.slash.fill" : "eye.fill"}
+          fallback={active && mode === "block" ? EyeOff : Eye}
+          size={SIZE}
+          color={colors.text}
+          strokeWidth={1.75}
+          weight="semibold"
+        />
 
-        {/* Sayaç rozeti — yalnız kural varken. İki listeden kaçının dolu
-            olduğunu söylüyor, domain sayısını DEĞİL: sheet'teki n/3 sayacı
-            zaten onu veriyor ve rozette iki farklı sayı kafa karıştırır. */}
+        {/* Sayaç rozeti — yalnız kural varken, seçili moddaki üniversite
+            sayısını gösteriyor (sheet'teki n/max sayacıyla AYNI sayı). */}
         {active && (
           <View
             style={{
               position: "absolute",
-              right: -2,
-              top: -2,
-              minWidth: 20,
-              height: 20,
+              right: -6,
+              top: -6,
+              minWidth: 18,
+              height: 18,
               borderRadius: 999,
               paddingHorizontal: 5,
               alignItems: "center",
@@ -554,12 +702,12 @@ export function VisibilityHeroButton({
             <Text
               style={{
                 color: colors.onMedia,
-                fontSize: 11,
+                fontSize: 10,
                 fontWeight: "700",
                 fontVariant: ["tabular-nums"],
               }}
             >
-              {activeLists}
+              {domainCount}
             </Text>
           </View>
         )}

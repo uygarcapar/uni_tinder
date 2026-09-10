@@ -21,7 +21,29 @@ export type NotificationType =
   | 'PhotoApproved'
   // `photoModerationAlerts` tercihinden MUAF — hesap durumu bildirimi.
   | 'ProfileHiddenInsufficientPhotos'
-  | 'PhotoAppealResolved';
+  | 'PhotoAppealResolved'
+  // ── Davet programı (referral) ─────────────────────────────────────────────
+  // Beşi de `SystemAlerts` tercihine bağlı (yeni tercih kolonu yok). Push
+  // `data.type` bu adları taşıyor; yönlendirme AppNavigator'daki
+  // `routeFromNotification` switch'inde.
+  | 'ReferralJoined'
+  | 'ReferralRewardGranted'
+  | 'ReferralWelcomeGift'
+  | 'VisibilityGrantExpiring'
+  | 'VisibilityGrantExpired';
+
+/**
+ * Davet/görünürlük bildirimleri — geldiklerinde davet özeti, swipe bakiyesi ve
+ * profil BAYAT oluyor (ödül tam da bu üçünü değiştiriyor). Tek liste, iki
+ * tüketici: yönlendirme ve cache invalidation.
+ */
+export const REFERRAL_NOTIFICATION_TYPES = [
+  'ReferralJoined',
+  'ReferralRewardGranted',
+  'ReferralWelcomeGift',
+  'VisibilityGrantExpiring',
+  'VisibilityGrantExpired',
+] as const;
 
 export interface NotificationItem {
   id: string;

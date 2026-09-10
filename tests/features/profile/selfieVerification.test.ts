@@ -219,21 +219,44 @@ describe('isAttemptExpired', () => {
 });
 
 // ── Backend sözleşmesiyle hizalanma ─────────────────────────────────────────
-// Bu iki liste backend'den KOPYA: `SelfieFailureReasons` (11 kod) ve
+// Bu iki liste backend'den KOPYA: `SelfieFailureReasons` (12 kod) ve
 // `SelfieChallengePool.Active` (5 hareket). Sürüklenmeleri sessiz bir bozulma
 // üretiyor, o yüzden sayıları da içerikleri de burada sabitleniyor.
 
 describe('sebep kodu listesi', () => {
-  it('backend’in 11 kodunun HEPSİNİ tanır', () => {
+  it('backend’in 12 kodunun HEPSİNİ tanır', () => {
     // 8'de kalmıştı: eksik üç kod `KNOWN_REASON_CODES.has()`i false'a düşürüyor,
     // gövde sunucu metnine düşerken BAŞLIK jeneriğe kayıyor ve gövdeyi yalanlıyor.
-    expect(SELFIE_REASON_CODES).toHaveLength(11);
+    // 12. kod (`reference_photo_no_face`) 2026-09-10'da eklendi.
+    expect(SELFIE_REASON_CODES).toHaveLength(12);
     expect(SELFIE_REASON_CODES).toEqual(
       expect.arrayContaining([
         'challenge_too_weak',
         'challenge_wrong_move',
         'challenge_too_much',
+        'reference_photo_no_face',
       ]),
+    );
+  });
+
+  it('🔴 reference_photo_no_face, no_face ile AYNI metni vermez', () => {
+    // Farklı yeri işaret ediyorlar: biri çekilen kare, diğeri ANA FOTOĞRAF.
+    // Aynı metin kullanıcıyı yanlış düzeltmeye iter — kameraya bakmayı dener,
+    // oysa fotoğrafını değiştirmesi gerekiyor.
+    expect(selfieReasonText('reference_photo_no_face')).not.toBe(
+      selfieReasonText('no_face'),
+    );
+    expect(selfieReasonTitle('reference_photo_no_face')).not.toBe(
+      selfieReasonTitle('no_face'),
+    );
+  });
+
+  it('reference_photo_no_face metni VE başlığı jeneriğe düşmez', () => {
+    const body = selfieReasonText('reference_photo_no_face', 'sunucudan gelen metin');
+    expect(body).not.toBe('sunucudan gelen metin');
+    expect(body).not.toBe('profile.selfie.reason.reference_photo_no_face');
+    expect(selfieReasonTitle('reference_photo_no_face')).not.toBe(
+      selfieReasonTitle('bilinmeyen_kod'),
     );
   });
 
