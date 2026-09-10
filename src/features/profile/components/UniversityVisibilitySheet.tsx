@@ -2,10 +2,10 @@ import { useCallback, useEffect, useMemo, useState } from "react";
 import { ActivityIndicator, Text, TouchableOpacity, View } from "react-native";
 import { useTranslation } from "react-i18next";
 import { BottomSheetScrollView } from "@gorhom/bottom-sheet";
-import { ChevronDown, Eye, EyeOff, Info as InfoIcon, X as XIcon } from "@/shared/icons";
+import { ChevronDown, Eye, EyeOff, GraduationCap, Info as InfoIcon, X as XIcon } from "@/shared/icons";
 import AppBottomSheet from "@/shared/components/AppBottomSheet";
 import AnimatedPressable from "@/shared/components/AnimatedPressable";
-import SFIcon from "@/shared/components/SFIcon";
+import SFIcon, { type SFSymbol } from "@/shared/components/SFIcon";
 import UniversityPickerModal from "@/features/discover/components/UniversityPickerModal";
 import { useUniversities, resolveLocalized } from "@/shared/queries/commonQueries";
 import {
@@ -60,6 +60,22 @@ import i18n from "@/shared/i18n";
  * mümkün değil.
  */
 
+
+/**
+ * İki liste satırının ikonu — FilterModal'daki üniversite satırıyla AYNI sembol
+ * ("ben kimi göreyim" oradaki, "beni kim görsün" buradaki): satırın işi ikisinde
+ * de ÜNİVERSİTE SEÇMEK, ikon da onu söylüyor.
+ *
+ * ⚠️ İKİ SATIR ARTIK AYNI İKONU TAŞIYOR. Eskiden `eye.fill` / `eye.slash.fill`
+ * ayrımı taşıyordu; "izin ver" ile "gizlen" farkını şimdi yalnız satırın
+ * üstündeki ListLabel söylüyor. Ayrımı ikona geri taşımak istersen tek yer
+ * burası — o zaman iki ayrı sabit gerekir.
+ *
+ * SelectRow props'u `any`, sembol adı orada denetlenmiyor; SFSymbol olarak
+ * burada sabitleyip yazım hatasını compile-time'da yakalıyoruz (FilterModal >
+ * UNIVERSITY_ICON ile aynı gerekçe).
+ */
+const UNIVERSITY_ICON: SFSymbol = "graduationcap.fill";
 
 export default function UniversityVisibilitySheet({
   visible,
@@ -361,8 +377,8 @@ export default function UniversityVisibilitySheet({
           />
           <SelectRow
             testID="visibility-row-allow"
-            sfIcon="eye.fill"
-            lucideIcon={Eye}
+            sfIcon={UNIVERSITY_ICON}
+            lucideIcon={GraduationCap}
             value={summarizeDomains(allowDomains)}
             placeholder={t("discover.filters.visibility.selectUniversities")}
             disabled={canUse && universityOptions.length === 0}
@@ -378,8 +394,8 @@ export default function UniversityVisibilitySheet({
           />
           <SelectRow
             testID="visibility-row-block"
-            sfIcon="eye.slash.fill"
-            lucideIcon={EyeOff}
+            sfIcon={UNIVERSITY_ICON}
+            lucideIcon={GraduationCap}
             value={summarizeDomains(blockDomains)}
             placeholder={t("discover.filters.visibility.selectUniversities")}
             disabled={canUse && universityOptions.length === 0}
@@ -636,12 +652,26 @@ function SelectRow({
  * Böylece kullanıcı sheet'i açmadan "bir kısıtlamam var mı" sorusunu
  * cevaplayabiliyor; gizlilik ayarlarında sessiz kalmak en pahalı seçenek.
  *
- * ⚠️ ZEMİN VE HALKA KALDIRILDI (eskiden gradyan halka + buzlu cam daire).
- * O yüzey ikonu kendi çapının yarısına sıkıştırıyordu; çıplak ikon hem
- * büyüyebiliyor hem de hero'daki fotoğrafla yarışmıyor. Durum bilgisi
- * kaybolmuyor: ikonun kendisi ve rozet söylüyor. Dokunma alanı artık ikonun
- * boyutundan değil `hitSlop`tan geliyor (28 + 2×8 = 44pt, dokunulabilir en
- * küçük ölçü).
+ * ZEMİN: TERS YÜZEY — açık modda neredeyse siyah, koyuda beyaz daire
+ * (`inverseSurface`), üstündeki sembol `onInverseSurface`. Çıplak ikon dönemi
+ * bitti; çıplakken tek başına duran bir işaret gibi okunuyordu, oysa bu bir
+ * BUTON ve yanındaki "Düzenle" de zeminli.
+ *
+ * Neden kartların `surface`ı değil: hero'nun zemini `bg` ve `surface` ondan
+ * yalnız bir tık ayrışıyor (açıkta #FFFFFF → #EFEFF2) — kart yığınında işe
+ * yarayan o yumuşaklık, tek başına duran 44pt'lik bir dairede butonu
+ * görünmez kılıyordu. Ters dolgu sayfadaki en yüksek kontrast, dikkat de
+ * bunu istiyor: bu buton gizlilik durumu bildiriyor.
+ *
+ * `text` DEĞİL `inverseSurface`: ikisi koyu modda aynı değere düşüyor, açık
+ * modda ayrışıyorlar (bkz. colors.ts > Ters yüzey). Çerçeve yok — ters dolgu
+ * zaten kendi kenarını çiziyor, üstüne hairline eklemek kirletirdi.
+ *
+ * ⚠️ ESKİ HATAYA DÖNÜLMEDİ: kaldırılan gradyan halka + buzlu cam daire 54pt
+ * çapta 28pt ikon taşıyordu, yani ikonu kendi çapının yarısına sıkıştırıyordu.
+ * Yeni kutu 44pt, ikon 26pt (oran ~%59) — zemin ikonu ezmiyor. 44pt ayrıca
+ * dokunulabilir en küçük ölçü; `hitSlop` artık dokunma alanını KURAN değil ona
+ * pay ekleyen şey.
  *
  * ⚠️ ROZETTEKİ SAYI DEĞİŞTİ: eskiden "kaç liste aktif" (1 ya da 2) sayılıyordu.
  * Tek mod kuralından sonra o sayı her zaman 1 olacaktı, yani hiçbir şey
@@ -659,18 +689,30 @@ export function VisibilityHeroButton({
   onPress: () => void;
 }) {
   const active = mode !== "everyone" && domainCount > 0;
-  const SIZE = 28;
+  const ICON = 26;
+  const BOX = 44;
 
   return (
-    <AnimatedPressable onPress={onPress} pressScale={0.94} hitSlop={8}>
-      {/* Kutu ikon kadar: rozetin ikona yapışması için (eski 54'lük dairede
-          rozet ikondan kopuk duruyordu). */}
-      <View style={{ width: SIZE, height: SIZE, alignItems: "center", justifyContent: "center" }}>
+    <AnimatedPressable onPress={onPress} pressScale={0.94} hitSlop={4}>
+      {/* Ters dolgu (açıkta siyah / koyuda beyaz). Rozet bu kutunun köşesine
+          yapışıyor (aşağıda -2/-2): daire kenarı köşegen üzerinde ~6pt içeride
+          kaldığı için rozet kutunun değil dairenin omzunda duruyor. */}
+      <View
+        style={{
+          width: BOX,
+          height: BOX,
+          borderRadius: 999,
+          borderCurve: "continuous",
+          backgroundColor: colors.inverseSurface,
+          alignItems: "center",
+          justifyContent: "center",
+        }}
+      >
         <SFIcon
           name={active && mode === "block" ? "eye.slash.fill" : "eye.fill"}
           fallback={active && mode === "block" ? EyeOff : Eye}
-          size={SIZE}
-          color={colors.text}
+          size={ICON}
+          color={colors.onInverseSurface}
           strokeWidth={1.75}
           weight="semibold"
         />
@@ -681,8 +723,8 @@ export function VisibilityHeroButton({
           <View
             style={{
               position: "absolute",
-              right: -6,
-              top: -6,
+              right: -2,
+              top: -2,
               minWidth: 18,
               height: 18,
               borderRadius: 999,

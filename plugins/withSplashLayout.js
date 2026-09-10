@@ -31,12 +31,22 @@ const LABEL_ID = "FOURSTACK-SplashFooterLabel";
 const LOGO_ID = "EXPO-SplashScreen"; // expo-splash-screen'in ortadaki logosu
 const CONTAINER_ID = "EXPO-ContainerView";
 
-// Home indicator payı — yalnız IB'nin tuval önizlemesindeki `rect`ler için.
-// Çalışma zamanında konumu safeArea kılavuzu belirliyor, bu sayı değil.
+// Home indicator payı. Eskiden yalnız IB önizlemesi içindi (konumu safeArea
+// kılavuzu belirliyordu); artık gerçek yerleşimin parçası — bkz. BOTTOM_PT.
 const SAFE_BOTTOM_PT = 34;
 
-// İmzanın güvenli alanın altına olan mesafesi. Home indicator'ın 34pt'si
-// ÜSTÜNE biniyor (safeArea referans alınıyor), yani ekran dibine toplam ~70pt.
+// İmzanın ekran DİBİNE mesafesi = BOTTOM_PT + SAFE_BOTTOM_PT (~70pt).
+//
+// NEDEN safeArea DEĞİL: splash iki kez çiziliyor. Önce sistem launch screen'i
+// (safeArea çözülmüş), sonra expo-splash-screen aynı storyboard'ı yeniden
+// instantiate edip RN root view'ının `loadingView`'ı olarak koyuyor
+// (node_modules/expo-splash-screen/ios/SplashScreenManager.swift → frame =
+// rootView.bounds). O kopya pencere hiyerarşisine girene kadar safeAreaInsets
+// = 0 okuyor: safeArea'ya çakılı imza 34pt aşağı düşüyor, inset gelince geri
+// zıplıyor — kullanıcının gördüğü "aşağı gidip geliyor" kayması bu. Container'ın
+// dibinden sabit mesafe iki çizimde de aynı sonucu verdiği için sıçrama biter.
+// Bedeli: home indicator'ı olmayan cihazlarda (SE) imza 36 yerine 70pt yukarıda
+// duruyor — scripts/preview-splash.js zaten bu 70'i çiziyordu.
 const BOTTOM_PT = 36;
 
 // Logonun geometrik merkezden ne kadar YUKARI kaydığı. Göz "orta"yı merkezin
@@ -126,17 +136,6 @@ function applyFooterToStoryboard(xml, size) {
   const mainView =
     xml.document.scenes[0].scene[0].objects[0].viewController[0].view[0];
 
-  // Güvenli alan kılavuzu şablondan geliyor; yoksa kendimiz açıyoruz (id
-  // sabit, çalıştırmalar arası kısıtlar oynamasın).
-  if (!mainView.viewLayoutGuide) mainView.viewLayoutGuide = [];
-  let safeArea = mainView.viewLayoutGuide.find(
-    (g) => g.$ && g.$.key === "safeArea",
-  );
-  if (!safeArea) {
-    safeArea = { $: { key: "safeArea", id: `${VIEW_ID}-safeArea` } };
-    mainView.viewLayoutGuide.push(safeArea);
-  }
-
   const frame = mainView.rect && mainView.rect[0];
   const canvasW = frame ? Number(frame.$.width) : 393;
   const canvasH = frame ? Number(frame.$.height) : 852;
@@ -149,12 +148,12 @@ function applyFooterToStoryboard(xml, size) {
       userLabel: IMAGE_NAME,
       image: IMAGE_NAME,
       contentMode: "scaleAspectFit",
-      clipsSubviews: true,
-      userInteractionEnabled: false,
-      translatesAutoresizingMaskIntoConstraints: false,
+      clipsSubviews: "YES",
+      userInteractionEnabled: "NO",
+      translatesAutoresizingMaskIntoConstraints: "NO",
     },
-    // Yalnız IB'nin tuval önizlemesi için; çalışma zamanında kısıtlar +
-    // intrinsic content size belirliyor. 34 = home indicator payı.
+    // Yalnız IB'nin tuval önizlemesi için; çalışma zamanında kısıtlar
+    // belirliyor.
     rect: [
       {
         $: {
@@ -164,6 +163,30 @@ function applyFooterToStoryboard(xml, size) {
           width: size.width,
           height: size.height,
         },
+      },
+    ],
+    // Boyut kısıtı 1x PNG'den okunuyor — tek kaynak yine gen-fourstack.js,
+    // ama artık intrinsic content size'a bağlı DEĞİL: asset bir sebeple geç
+    // çözülürse görünüm 0×0'a çökmüyor, dolayısıyla üstüne çakılı "developed
+    // by" de yerinden oynamıyor.
+    constraints: [
+      {
+        constraint: [
+          {
+            $: {
+              firstAttribute: "width",
+              constant: size.width,
+              id: `${VIEW_ID}-width`,
+            },
+          },
+          {
+            $: {
+              firstAttribute: "height",
+              constant: size.height,
+              id: `${VIEW_ID}-height`,
+            },
+          },
+        ],
       },
     ],
   });
@@ -220,9 +243,9 @@ function applyFooterToStoryboard(xml, size) {
     nil: [{ $: { key: "highlightedColor" } }],
   });
 
-  // Boyut kısıtı BİLEREK yok: iki görünüm de intrinsic content size'ıyla
-  // yerleşiyor, yani gen-fourstack.js'te WIDTH_PT'yi ya da buradaki
-  // LABEL_SIZE_PT'yi değiştirmek tek başına yetiyor.
+  // Label'ın boyut kısıtı BİLEREK yok — intrinsic content size'ıyla yerleşiyor,
+  // yani LABEL_SIZE_PT'yi değiştirmek tek başına yetiyor. İmza görünümünün
+  // boyutu ise yukarıda açıkça veriliyor (yine 1x PNG'den).
   mainView.constraints = mainView.constraints || [{}];
   mainView.constraints[0].constraint = mainView.constraints[0].constraint || [];
   upsert(mainView.constraints[0].constraint, {
@@ -238,9 +261,9 @@ function applyFooterToStoryboard(xml, size) {
     $: {
       firstItem: VIEW_ID,
       firstAttribute: "bottom",
-      secondItem: safeArea.$.id,
+      secondItem: CONTAINER_ID,
       secondAttribute: "bottom",
-      constant: -BOTTOM_PT,
+      constant: -(BOTTOM_PT + SAFE_BOTTOM_PT),
       id: `${VIEW_ID}-bottom`,
     },
   });

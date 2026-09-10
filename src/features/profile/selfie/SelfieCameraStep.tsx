@@ -269,6 +269,20 @@ export default function SelfieCameraStep({
         // Canlı görüntüye DOKUNULMUYOR — sistemin aynalı önizlemesi olduğu gibi.
         mirror={false}
         mode="picture"
+        // Ön kamerada donanım flaşı yok; `screen` ekranın kendisini flaş olarak
+        // kullanıyor (iOS'ta sistemin Retina Flash'i, Android'de CameraX'in
+        // screen flash modu). Karanlık ortam sahada gerçek bir sorun: kare
+        // kararınca ya `low_quality` ya `no_face` dönüyor ve kullanıcı neyi
+        // düzelteceğini bilmeden hakkını yakıyor.
+        //
+        // ⚠️ KOŞULSUZ AÇIK, "auto" DEĞİL. Ortam ışığını cihazda ölçemiyoruz:
+        // expo-camera'nın frame processor'ı yok, expo-sensors'ın LightSensor'ı
+        // yalnız Android ve iOS'ta ISO/pozlama dışarı verilmiyor. Karanlığı ölçen
+        // tek yer sunucu (Rekognition `Quality.Brightness`) ve orası çekimden
+        // SONRA konuşuyor — yani "gerektiğinde yak" kararı verilebilecek bir
+        // sinyal çekim anında elimizde yok. Aydınlık ortamda bir parlama, karanlık
+        // ortamda tamamen boşa giden bir deneme yerine kabul edilebilir bir bedel.
+        flash="screen"
         animateShutter={false}
       />
 
