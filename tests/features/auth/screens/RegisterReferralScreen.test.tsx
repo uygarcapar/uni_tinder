@@ -3,9 +3,15 @@
  *
  * Suite'in koruduğu üç karar:
  *   1. Adım OPSİYONEL: kod boşken de "Devam" çalışıyor.
- *   2. Geçersiz kod akışı DURDURMUYOR (kırmızı satır + Devam hâlâ aktif).
+ *   2. Geçersiz kod akışı DURDURMUYOR (uyarı gösterilir, Devam hâlâ aktif).
  *   3. "Atla" kodu gerçekten TEMİZLİYOR — yarım kalmış bir kod sessizce
  *      register-and-complete'e sızmamalı.
+ *
+ * ⚠️ SONUÇ ARTIK TOAST'TA. Ekran valid/invalid'i satır olarak çizmiyor, uygulama
+ * genelindeki banner'ı kullanıyor (bkz. RegisterReferralScreen dosya başı); yalnız
+ * `checking` inline. Bu yüzden "hüküm verildi mi" sorusu `showInfoToast` çağrısına
+ * bakılarak yanıtlanıyor — `queryByText` ile sorulsaydı testler HER durumda geçerdi
+ * ve hiçbir şeyi korumazdı.
  */
 
 const mockDispatch = jest.fn();
@@ -17,6 +23,12 @@ jest.mock('@/shared/hooks/redux', () => ({
 
 jest.mock('@/features/auth/components/RegisterProgressBar', () => 'RegisterProgressBar');
 jest.mock('@/features/auth/components/RegisterBackButton', () => 'RegisterBackButton');
+
+const mockShowInfoToast = jest.fn();
+jest.mock('@/shared/services/toaster', () => ({
+  showInfoToast: (...args: any[]) => mockShowInfoToast(...args),
+  hideToast: jest.fn(),
+}));
 
 import { act, fireEvent, render, waitFor } from '@testing-library/react-native';
 import RegisterReferralScreen from '@/features/auth/screens/RegisterReferralScreen';
@@ -37,6 +49,7 @@ beforeEach(() => {
   nav.navigate.mockReset();
   nav.reset.mockReset();
   (globalThis.fetch as jest.Mock).mockReset();
+  mockShowInfoToast.mockReset();
   respondWith({ isSuccess: true, result: { valid: true } });
 });
 
@@ -64,11 +77,10 @@ describe('boş kod', () => {
     expect(nav.navigate).toHaveBeenCalledWith('RegisterStep3');
   });
 
-  it('hiçbir durum satırı çizmiyor — "kontrol edilmedi" söylenecek bir şey değil', () => {
+  it('hiçbir hüküm bildirmiyor — "kontrol edilmedi" söylenecek bir şey değil', () => {
     const tree = setup();
-    expect(tree.queryByText(copy.valid)).toBeNull();
-    expect(tree.queryByText(copy.invalid)).toBeNull();
     expect(tree.queryByText(copy.checking)).toBeNull();
+    expect(mockShowInfoToast).not.toHaveBeenCalled();
   });
 
   it('kod tamamlanmadan doğrulama isteği ATMIYOR', async () => {
@@ -84,12 +96,16 @@ describe('dolu kod', () => {
   beforeEach(() => jest.useFakeTimers());
   afterEach(() => jest.useRealTimers());
 
-  it('geçerli kodda yeşil satır çıkıyor ve kod normalize edilmiş gidiyor', async () => {
+  it('geçerli kodda hediye duyuruluyor ve kod normalize edilmiş gidiyor', async () => {
     const tree = setup();
     // Küçük harf + alfabe dışı karakter: normalize zinciri de bu testte.
     await typeCode(tree, 'ak-7m2');
 
-    await waitFor(() => expect(tree.getByText(copy.valid)).toBeTruthy());
+    await waitFor(() =>
+      expect(mockShowInfoToast).toHaveBeenCalledWith(
+        expect.objectContaining({ title: copy.validTitle, message: copy.valid }),
+      ),
+    );
     expect(globalThis.fetch).toHaveBeenCalledWith(
       expect.stringContaining('/api/referral/validate?code=AK7M2'),
     );
@@ -102,12 +118,21 @@ describe('dolu kod', () => {
     );
   });
 
-  it('geçersiz kod akışı DURDURMUYOR — kırmızı satır + Devam hâlâ çalışıyor', async () => {
+  it('geçersiz kod akışı DURDURMUYOR — uyarı + Devam hâlâ çalışıyor', async () => {
     respondWith({ isSuccess: true, result: { valid: false } });
     const tree = setup();
     await typeCode(tree, 'AK7M2');
 
-    await waitFor(() => expect(tree.getByText(copy.invalid)).toBeTruthy());
+    await waitFor(() =>
+      expect(mockShowInfoToast).toHaveBeenCalledWith(
+        expect.objectContaining({
+          title: copy.invalidTitle,
+          message: copy.invalid,
+          // Hüküm olumsuz: banner hata varyantında çiziliyor, "bilgi" gibi değil.
+          variant: 'error',
+        }),
+      ),
+    );
 
     fireEvent.press(tree.getByTestId('referral-continue'));
     // Kod yine GÖNDERİLİYOR: geçerlilik kaydın değil hediyenin koşulu, karar
@@ -126,8 +151,9 @@ describe('dolu kod', () => {
     await typeCode(tree, 'AK7M2');
 
     await waitFor(() => expect(tree.queryByText(copy.checking)).toBeNull());
-    expect(tree.queryByText(copy.invalid)).toBeNull();
-    expect(tree.queryByText(copy.valid)).toBeNull();
+    // Hüküm YOK: ne "geçerli" ne "geçersiz" banner'ı. Offline bir kullanıcıya
+    // "kodun geçersiz" demek, düzeltemeyeceği bir hata için onu suçlamak olurdu.
+    expect(mockShowInfoToast).not.toHaveBeenCalled();
   });
 
   it('429/5xx de hüküm DEĞİL — rate limit kullanıcıya hata olarak yansımıyor', async () => {
@@ -136,7 +162,8 @@ describe('dolu kod', () => {
     await typeCode(tree, 'AK7M2');
 
     await waitFor(() => expect(tree.queryByText(copy.checking)).toBeNull());
-    expect(tree.queryByText(copy.invalid)).toBeNull();
+    // Kota/sunucu arızası kullanıcının kodu hakkında bir şey söylemiyor.
+    expect(mockShowInfoToast).not.toHaveBeenCalled();
   });
 });
 

@@ -72,7 +72,6 @@ import { fireEvent, render } from '@testing-library/react-native';
 import MessageActionSheet from '@/features/chat/components/MessageActionSheet';
 
 const recent = new Date().toISOString();
-const old = new Date(Date.now() - 30 * 60 * 1000).toISOString();
 
 const baseProps = {
   visible: true,
@@ -132,38 +131,11 @@ describe('MessageActionSheet — action visibility', () => {
     expect(tree.queryByText('Kopyala')).toBeNull();
   });
 
-  it('shows Düzenle only when own + recent text message', () => {
-    const tree = render(
-      <MessageActionSheet
-        {...baseProps}
-        message={{ content: 'hi', contentType: 0, sentAt: recent }}
-        isOwn
-      />
-    );
-    expect(tree.getByText('Düzenle')).toBeTruthy();
-  });
-
-  it('hides Düzenle when message is older than the edit window', () => {
-    const tree = render(
-      <MessageActionSheet
-        {...baseProps}
-        message={{ content: 'hi', contentType: 0, sentAt: old }}
-        isOwn
-      />
-    );
-    expect(tree.queryByText('Düzenle')).toBeNull();
-  });
-
-  it('hides Düzenle for non-text content types', () => {
-    const tree = render(
-      <MessageActionSheet
-        {...baseProps}
-        message={{ contentType: 1, sentAt: recent }}
-        isOwn
-      />
-    );
-    expect(tree.queryByText('Düzenle')).toBeNull();
-  });
+  // MESAJ DÜZENLEME KALDIRILDI (2026-08-21, `222551e`): `onEdit` prop'u,
+  // butonu ve `chat.actions.edit` metni bileşenden tümüyle çıktı; çağıran da
+  // kalmadı. Üç test geride unutulmuştu — biri kırmızıydı, ikisi "Düzenle
+  // görünmüyor" diye BOŞA geçiyordu (hiç çizilmeyen bir şeyin yokluğunu
+  // doğruluyorlardı). Özellik geri gelirse testleri de geri gelsin.
 
   it('shows both delete options when own message', () => {
     const tree = render(
