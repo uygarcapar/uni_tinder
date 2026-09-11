@@ -25,6 +25,10 @@ export const API_ENDPOINTS = {
   // Özet kart + sheet'in tek kaynağı. Kullanıcının kodu YOKSA bu uç üretiyor
   // (lazy) — mevcut kullanıcılar için backfill job'ı bu yüzden yok.
   REFERRAL_ME: "/api/referral/me",
+  // Uygulama içi "hakkın geldi" haberleri (davet ödülü, ön kayıt Lit Plus hediyesi):
+  // her açılışta sorulur, gösterilince `seen` ile işaretlenir.
+  NOTICES_UNSEEN: "/api/notices/unseen",
+  NOTICES_SEEN: "/api/notices/seen",
 
   REGISTER: "/api/user/Register",
   LOGIN: "/api/user/Login",

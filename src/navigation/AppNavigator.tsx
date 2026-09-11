@@ -99,6 +99,7 @@ import { queryClient } from '@/shared/queries/queryClient';
 import { swipeKeys } from '@/features/discover/swipeQueries';
 import { referralKeys } from '@/features/profile/referralKeys';
 import { REFERRAL_NOTIFICATION_TYPES } from '@/features/notifications/notificationsService';
+import { checkPendingNotices, markNoticeSeen } from '@/features/notifications/pendingNoticesService';
 import { flushPendingSuperlikeRedeems, redeemUserKey } from '@/features/discover/superlikeRedeem';
 import { flushPendingNoteRedeems } from '@/features/discover/noteRedeem';
 import { purgeLegacyRecoveryRedeemQueue } from '@/features/discover/recoveryQueuePurge';
@@ -1301,6 +1302,17 @@ export default function AppNavigator() {
     clearDeliveredNotifications();
   }, [isAuthenticated, hasToken]);
 
+  // Girişte / soğuk açılışta bekleyen "hakkın geldi" haberleri (davet ödülü, ön
+  // kayıt Lit Plus hediyesi). Bunlar kullanıcı uygulamadayken verilmiyor; push
+  // kaçtıysa ya da izni kapalıysa hakkının geldiğini ancak burada öğreniyor.
+  // "Görüldü" işareti sunucuda: başka cihazdan girse de haber tek sefer çıkar.
+  // Ön plana gelişte aynı kontrol foreground turunda yapılıyor.
+  useEffect(() => {
+    if (!isAuthenticated || !hasToken) return;
+    if (AppState.currentState !== 'active') return;
+    void checkPendingNotices();
+  }, [isAuthenticated, hasToken]);
+
   const routeFromNotification = useCallback((data: Record<string, any>) => {
     // type yoksa payload'ı çözemedik demektir — bilinmeyen bildirimi Notifications'a
     // yönlendirip doğru routing'i ezmektense hiç navigate etmiyoruz.
@@ -1413,6 +1425,9 @@ export default function AppNavigator() {
       case 'ReferralJoined':
       case 'ReferralRewardGranted':
       case 'ReferralWelcomeGift': {
+        // Ödül push'undan geldiyse haberi zaten gördü: kademesini işaretle ki
+        // açılış kontrolü aynı ödül için bir de banner çıkarmasın.
+        if (data.type === 'ReferralRewardGranted') markNoticeSeen('ReferralReward', data.relatedEntityId);
         // Bildirimden ÖNCEKİ sayılar görünmesin: özet ve bakiye tam da bu
         // bildirimin konusu. Profil cache'i de bust ediliyor — görünürlük hakkı
         // `profile/me` üzerinden geliyor.
@@ -1504,6 +1519,9 @@ export default function AppNavigator() {
     // Şehir/ilçe backend'de konumdan türetiliyor → her foreground'da tek
     // atımlık koordinat. İzin yoksa/GPS yoksa sessizce no-op.
     sendLocationHeartbeat();
+    // Arka plandayken verilmiş ödül/hediye (davet, ön kayıt Lit Plus): bir kez
+    // uygulama içi haber.
+    void checkPendingNotices();
   }, [dispatch]);
 
   useEffect(() => {

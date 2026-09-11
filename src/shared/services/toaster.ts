@@ -128,10 +128,15 @@ export function showMissedMatchToast({
   });
 }
 
-export function showInfoToast(arg: InfoToastProps) {
+/**
+ * `onPress` isteğe bağlı ve componentProps'a GİRMİYOR: dokunma kapısı notifier
+ * seviyesinde (bkz. dosya başındaki ⚠️). Verilmezse toast eskisi gibi yalnızca bilgi.
+ */
+export function showInfoToast({ onPress, ...props }: InfoToastProps & { onPress?: () => void }) {
   Notifier.showNotification({
     Component: InfoToast,
-    componentProps: arg,
+    componentProps: props,
+    ...(onPress ? { onPress } : {}),
     swipeEnabled: true,
     ...BANNER_MOTION,
   });
