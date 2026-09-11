@@ -1,10 +1,10 @@
 import { View, Text } from 'react-native';
+import { useTranslation } from 'react-i18next';
 import { Image as ExpoImage } from 'expo-image';
 import { colors } from '../../theme/colors';
 import ToastShell from './ToastShell';
 import {
   ToastIconGlyph,
-  toastIconAccent,
   toastIconBackground,
   type ToastIconKind,
 } from './toastIcons';
@@ -24,17 +24,17 @@ export default function LikeToast({ kind, senderName, photoUrl, preview }: LikeT
   const isNote = kind === 'note';
   // Notta kimlik free alıcıya da AÇIK (sözleşme §6) — çağıran adı hiç
   // gizlemiyor, o yüzden başlıkta ismi kullanabiliyoruz.
-  const accent = toastIconAccent(kind);
-  const title = isNote
-    ? senderName
-      ? `${senderName} sana not gönderdi`
-      : 'Sana not gönderildi'
-    : isSuper
-      ? 'Sana Superlike attı!'
-      : 'Birisi seni beğendi';
-  // Not önizlemesi başlığın altına: ürünün değeri yorumun kendisi.
-  const subtitle =
-    (isNote ? preview : null) || senderName || 'Likes ekranına git ve kim olduğunu gör';
+  const { t } = useTranslation();
+  // İsim ARTIK BAŞLIKTA: adı bilirken bile "Birisi seni beğendi" yazıp ismi alt
+  // satıra koymak jenerik duruyordu. Ad yoksa (düz beğenide premium olmayan
+  // alıcı — kimlik kilidi AppNavigator'da) jenerik varyanta düşülüyor.
+  const kindKey = isNote ? 'note' : isSuper ? 'superLike' : 'like';
+  const title = senderName
+    ? t(`likeToast.${kindKey}`, { name: senderName })
+    : t(`likeToast.${kindKey}NoName`);
+  // Not önizlemesi başlığın altına: ürünün değeri yorumun kendisi. Diğer
+  // durumlarda alt satır ne yapılacağını söylüyor — isim yukarı taşındı.
+  const subtitle = (isNote ? preview : null) || t('likeToast.cta');
 
   return (
     // Kabuk artık diğer üç toast'la AYNI cam kart: eskiden burası opak
@@ -73,9 +73,9 @@ export default function LikeToast({ kind, senderName, photoUrl, preview }: LikeT
             {subtitle}
           </Text>
         </View>
-        <View style={{ marginLeft: 8 }}>
-          <ToastIconGlyph kind={kind} size={18} color={accent} />
-        </View>
+        {/* Sağdaki aksan ikonu KALDIRILDI (ürün kararı): pembe kalp başlığın
+            yanında ikinci bir kalp oluyordu — soldaki avatar zaten fotoğrafsız
+            durumda kalbi gösteriyor. */}
       </View>
     </ToastShell>
   );

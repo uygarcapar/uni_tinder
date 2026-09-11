@@ -1465,6 +1465,21 @@ const en = {
     body: '{{name}} had liked you.',
     bodyNoName: 'You passed on someone who liked you.',
   },
+  // Toast shown on an incoming like / superlike / note (LikeToast).
+  // The `NoName` variants are really only needed for a plain like: a free
+  // recipient gets no name or photo (identity lock lives in AppNavigator).
+  // Superlikes and notes carry the identity even for free users, but the name
+  // can still come back empty.
+  likeToast: {
+    like: '{{name}} liked you',
+    likeNoName: 'Someone liked you',
+    superLike: '{{name}} super liked you!',
+    superLikeNoName: 'You got a Superlike!',
+    note: '{{name}} sent you a note',
+    noteNoName: 'You got a note',
+    // Subtitle: notes show the note preview instead, everything else shows this.
+    cta: 'Tap to see the details',
+  },
   // ── Referral programme ──────────────────────────────────────────────────
   // The card and the sheet share these keys: two different day counts or two
   // different reward names on one screen is the fastest way to lose trust.

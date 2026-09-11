@@ -1496,6 +1496,20 @@ const tr = {
     body: '{{name}} seni beğenmişti.',
     bodyNoName: 'Seni beğenmiş birini geçtin.',
   },
+  // Beğeni/Superlike/not geldiğinde üstten düşen toast (LikeToast).
+  // `NoName` varyantları YALNIZ düz beğenide gerekiyor: premium olmayan alıcıya
+  // ad ve foto gönderilmiyor (kimlik kilidi AppNavigator'da). Superlike ve notta
+  // kimlik free alıcıya da açık, ama isim yine de boş dönebilir.
+  likeToast: {
+    like: '{{name}} seni beğendi',
+    likeNoName: 'Birisi seni beğendi',
+    superLike: '{{name}} sana Superlike attı!',
+    superLikeNoName: 'Sana Superlike attı!',
+    note: '{{name}} sana not gönderdi',
+    noteNoName: 'Sana not gönderildi',
+    // Alt satır: notta yorumun önizlemesi basılıyor, diğerlerinde bu.
+    cta: 'Tıkla ve detayları gör',
+  },
   // ── Davet programı (referral) ───────────────────────────────────────────
   // Kart ve sheet AYNI anahtarları paylaşıyor: iki yüzeyde iki farklı gün
   // sayısı ya da iki farklı ödül adı görmek en hızlı güven kaybı.
