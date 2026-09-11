@@ -770,7 +770,7 @@ const tr = {
       // event bastırılmış). Bu üç satır olmazsa hediye sessiz kalıyor.
       // Bitiş tarihi BİLEREK geçilmiyor — bu ekranın işi hediyeyi duyurmak,
       // süreyi Profil > Üyelik kartı anlatıyor.
-      premiumGiftTitle: 'Premium hediyen hazır 🎉',
+      premiumGiftTitle: 'Premium hediyen hazır',
       premiumGiftMessage:
         'Ön kayıt olduğun için premium hediyeni tanımladık — tüm premium özellikler artık senin.',
       premiumGiftCta: 'Harika',

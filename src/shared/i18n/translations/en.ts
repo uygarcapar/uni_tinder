@@ -769,7 +769,7 @@ const en = {
       // event bastırılmış). Bu üç satır olmazsa hediye sessiz kalıyor.
       // Bitiş tarihi BİLEREK geçilmiyor — bu ekranın işi hediyeyi duyurmak,
       // süreyi Profil > Üyelik kartı anlatıyor.
-      premiumGiftTitle: 'Your premium gift is ready 🎉',
+      premiumGiftTitle: 'Your premium gift is ready',
       premiumGiftMessage:
         'Because you pre-registered, your premium gift is now active — every premium feature is yours.',
       premiumGiftCta: 'Nice',
