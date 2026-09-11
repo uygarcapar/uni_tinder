@@ -4,18 +4,20 @@ import { appPrefs } from "@/shared/utils/appPrefs";
 import { devLog } from "@/shared/utils/devLog";
 
 /**
- * Cihaz KURULUM kimliği — davet programının kötüye kullanım freni.
+ * Cihaz KURULUM kimliği — davet programında şüphe SİNYALİ (fren değil).
  *
- * Backend `register-and-complete`te bunun SHA-256'sını saklıyor: aynı cihazdan
- * ikinci bir davetli kaydı ödül SAYILMIYOR (plan §0). Kimliği kayıt anında
- * gönderiyoruz, başka hiçbir yerde kullanmıyoruz.
+ * Backend `register-and-complete`te bunun SHA-256'sını saklıyor. 2026-09-11'e
+ * kadar aynı cihazdan ikinci davetli kayıt SAYILMIYORDU; kural kaldırıldı (her
+ * hesap zaten ayrı doğrulanmış üni e-postası istiyor). Hash artık yalnız panelin
+ * "Aynı cihaz" rozetini besliyor — admin şüpheli daveti oradan reddediyor.
+ * Kimliği kayıt anında gönderiyoruz, başka hiçbir yerde kullanmıyoruz.
  *
  * ⚠️ Kalıcı bir cihaz parmak izi DEĞİL, olması da istenmiyor: iOS'ta
  * `identifierForVendor` uygulama silinince değişir, Android'de `getAndroidId()`
  * fabrika ayarlarında sıfırlanır. İkisi de yoksa (emülatör, izin verilmemiş
  * ortam) yerel bir UUID üretilip MMKV'de saklanır — o da yalnız bu kurulum
  * boyunca yaşar. `appPrefs` logout'ta temizlenmiyor, yani aynı cihazda hesap
- * değiştiren kullanıcı aynı kimlikle gelir: frenin çalışması tam da buna bağlı.
+ * değiştiren kullanıcı aynı kimlikle gelir: rozetin anlamlı olması buna bağlı.
  *
  * `expo-application` zaten bağımlılık (sürüm kapısı kullanıyor), native rebuild
  * gerekmiyor.
