@@ -178,4 +178,24 @@ describe('RegisterStep17Screen', () => {
     // Slot bazlı işaret: kullanıcı hangi cevabın eksik olduğunu görüyor.
     expect(screen.getByText(copy.errors['UT-2204'])).toBeTruthy();
   });
+  it('son cevabı yazıp "Bitir"e basmadan DOĞRUDAN "Devam Et"e basınca da ilerler', () => {
+    // Sahadaki "3. soruyu bazen eklemiyor" hatası: dokunuş input'u blur etmiyor,
+    // Keyboard.dismiss() blur'u sonradan düşürüyor; doğrulama taslağı görmüyordu.
+    renderStep17([
+      { promptKey: 'A', answer: 'selam' },
+      { promptKey: 'B', answer: 'okeys' },
+      { promptKey: 'C', answer: '' },
+    ]);
+
+    fireEvent.press(screen.getAllByText(copy.editAnswer)[2]);
+    fireEvent.changeText(
+      screen.getAllByPlaceholderText(copy.answerPlaceholder)[2],
+      'adam',
+    );
+    // Blur YOK, "Bitir" YOK.
+    fireEvent.press(screen.getByText(tr.common.continueButton));
+
+    expect(mockToast).not.toHaveBeenCalled();
+    expect(navigate).toHaveBeenCalledWith('RegisterStep14');
+  });
 });

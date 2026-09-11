@@ -1,8 +1,13 @@
 // Soru seçici modalı bu suite'in konusu değil (katalog + bottom sheet çekiyor);
-// editörün kendi state akışı test ediliyor.
+// editörün kendi state akışı test ediliyor. Son props yakalanıyor: soru seçimi
+// `onSelect` doğrudan çağrılarak tetikleniyor.
+const mockPicker: { props?: any } = {};
 jest.mock('@/shared/components/PromptPickerModal', () => ({
   __esModule: true,
-  default: () => null,
+  default: (props: any) => {
+    mockPicker.props = props;
+    return null;
+  },
 }));
 // Katalog ağdan geliyor; test sabit üç soruyla çalışıyor.
 jest.mock('@/shared/queries/commonQueries', () => {
@@ -13,6 +18,7 @@ jest.mock('@/shared/queries/commonQueries', () => {
         { enumName: 'A', display: { tr: 'Soru A' }, name: 'A' },
         { enumName: 'B', display: { tr: 'Soru B' }, name: 'B' },
         { enumName: 'C', display: { tr: 'Soru C' }, name: 'C' },
+        { enumName: 'D', display: { tr: 'Soru D' }, name: 'D' },
       ],
     },
   ];
@@ -28,7 +34,7 @@ jest.mock('@/shared/queries/commonQueries', () => {
 
 import React, { useState } from 'react';
 import { render, fireEvent, act, screen } from '@testing-library/react-native';
-import PromptsEditor from '@/shared/components/PromptsEditor';
+import PromptsEditor, { type PromptsEditorHandle } from '@/shared/components/PromptsEditor';
 import tr from '@/shared/i18n/translations/tr';
 import type { ProfilePromptAnswer } from '@/shared/types';
 
@@ -207,5 +213,98 @@ describe('PromptsEditor', () => {
     });
 
     expect(answersOf(emitted[emitted.length - 1])).toEqual(['selam', 'okeys']);
+  });
+  it('flush(): "Bitir"e ve odak kaybına gerek kalmadan açık slotun taslağını ANINDA yazar', () => {
+    // Sahadaki hata: "Devam Et"/"Kaydet" blur beklemeden cevapları okuyordu; son
+    // yazılan cevap "boş" sayılıp adım takılıyordu.
+    const emitted: ProfilePromptAnswer[][] = [];
+    const ref = React.createRef<PromptsEditorHandle>();
+    function RefHarness() {
+      const [value, setValue] = useState<ProfilePromptAnswer[]>([
+        { promptKey: 'A', answer: 'selam' },
+        { promptKey: 'B', answer: 'okeys' },
+        { promptKey: 'C', answer: '' },
+      ]);
+      return (
+        <PromptsEditor
+          ref={ref}
+          value={value}
+          onChange={(next) => {
+            emitted.push(next);
+            setValue(next);
+          }}
+        />
+      );
+    }
+    render(<RefHarness />);
+
+    fireEvent.press(screen.getAllByText(copy.editAnswer)[2]);
+    fireEvent.changeText(screen.getAllByPlaceholderText(copy.answerPlaceholder)[2], 'adam');
+
+    // Blur YOK, "Bitir" YOK — doğrudan flush.
+    let flushed: ProfilePromptAnswer[] = [];
+    act(() => {
+      flushed = ref.current!.flush();
+    });
+    expect(answersOf(flushed)).toEqual(['selam', 'okeys', 'adam']);
+
+    // Klavye kapanınca blur sonradan düşer: aynı taslak — ikinci yazma olmamalı,
+    // cevap bozulmamalı.
+    const emitsBefore = emitted.length;
+    act(() => {
+      fireEvent(screen.getAllByPlaceholderText(copy.answerPlaceholder)[2], 'blur');
+    });
+    expect(emitted.length).toBe(emitsBefore);
+    expect(answersOf(emitted[emitted.length - 1])).toEqual(['selam', 'okeys', 'adam']);
+  });
+
+  it('flush(): açık slot yoksa üst state\'e dokunmadan güncel diziyi döner', () => {
+    const onChange = jest.fn();
+    const ref = React.createRef<PromptsEditorHandle>();
+    const value = [{ promptKey: 'A', answer: 'selam' }];
+    render(<PromptsEditor ref={ref} value={value} onChange={onChange} />);
+
+    let flushed: ProfilePromptAnswer[] = [];
+    act(() => {
+      flushed = ref.current!.flush();
+    });
+    expect(answersOf(flushed)).toEqual(['selam']);
+    expect(onChange).not.toHaveBeenCalled();
+  });
+
+  it('"Bitir"e basmadan sorusu değiştirilen slotun cevabını kaybetmez', () => {
+    // Sheet açılışı klavyeyi kapatmıyor, blur commit'i yok; soru değişince satırın
+    // key'i değişip yeniden mount oluyor ve taslak siliniyordu.
+    const emitted: ProfilePromptAnswer[][] = [];
+    render(
+      <Harness
+        initial={[
+          { promptKey: 'A', answer: 'selam' },
+          { promptKey: 'B', answer: 'okeys' },
+          { promptKey: 'C', answer: '' },
+        ]}
+        onEmit={(next) => emitted.push(next)}
+      />,
+    );
+
+    fireEvent.press(screen.getAllByText(copy.editAnswer)[2]);
+    fireEvent.changeText(
+      screen.getAllByPlaceholderText(copy.answerPlaceholder)[2],
+      'adam',
+    );
+
+    // Blur YOK, "Bitir" YOK: doğrudan soru başlığına dokunup başka soru seçiliyor.
+    fireEvent.press(screen.getByText('Soru C'));
+    act(() => {
+      mockPicker.props.onSelect('D');
+    });
+
+    const last = emitted[emitted.length - 1];
+    expect(last.map((p) => p.promptKey)).toEqual(['A', 'B', 'D']);
+    expect(answersOf(last)).toEqual(['selam', 'okeys', 'adam']);
+    // Yeniden mount olan satır da cevabı gösteriyor.
+    expect(
+      screen.getAllByPlaceholderText(copy.answerPlaceholder)[2].props.value,
+    ).toBe('adam');
   });
 });

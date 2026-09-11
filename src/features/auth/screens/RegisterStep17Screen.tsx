@@ -23,7 +23,7 @@ import RegisterStickyHeader, {
 import RegisterStickyFooter from "@/features/auth/components/RegisterStickyFooter";
 import RegisterBackButton from "@/features/auth/components/RegisterBackButton";
 import AnimatedPressable from "@/shared/components/AnimatedPressable";
-import PromptsEditor from "@/shared/components/PromptsEditor";
+import PromptsEditor, { type PromptsEditorHandle } from "@/shared/components/PromptsEditor";
 import { showInfoToast } from "@/shared/services/toaster";
 import {
   MIN_PROFILE_PROMPTS,
@@ -62,12 +62,17 @@ export default function RegisterStep17Screen({ navigation }: Props) {
   // Her değişiklik doğrudan store'a yazılıyor: kullanıcı "Devam"a basmadan geri
   // dönüp tekrar girerse cevapları kaybolmasın (Step13'teki toggleHobby ile
   // aynı gerekçe).
-  // Cevaplar artık her tuşta değil, PromptsEditor'ün "Bitir" pili (ya da alanın
-  // odak kaybı) ile geliyor. "Devam"a basmak input'u blur ettiği için commit
-  // handleNext'ten HEMEN ÖNCE düşüyor; selector'dan okunan `prompts` ise o
-  // karede hâlâ eski değer. Doğrulama bu yüzden ref'ten okunuyor — aksi hâlde
-  // kullanıcı yazdığı hâlde "cevap boş" hatası alırdı.
+  // Cevaplar her tuşta değil, PromptsEditor'ün "Bitir" pili (ya da alanın odak
+  // kaybı) ile geliyor. Selector'dan okunan `prompts` commit'ten sonraki karede
+  // bile hâlâ eski değer olabildiği için son yayılan dizi ref'te tutuluyor.
   const promptsRef = useRef<ProfilePromptAnswer[] | null>(null);
+  // ⚠️ Eskiden burada "Devam'a basmak input'u blur ettiği için commit handleNext'ten
+  // HEMEN ÖNCE düşüyor" yazıyordu — YANLIŞTI. `keyboardShouldPersistTaps="handled"`
+  // altında butona dokunmak blur etmiyor, `Keyboard.dismiss()` de blur'u sonradan
+  // düşürüyor. "Bitir"e basmadan doğrudan "Devam Et"e basan kullanıcının son
+  // cevabı "boş" sayılıp adım takılıyordu (ikinci basışta geçiyordu). Doğrulama
+  // artık editörün `flush()`'ından okuyor: açık taslak senkron yazılıyor.
+  const editorRef = useRef<PromptsEditorHandle>(null);
   // Hatalı slotlar (index → mesaj). Tek bir "biri kaydedilemedi" toast'ı
   // kullanıcıyı üç dolu cevaba bakıp hangisinin sorunlu olduğunu tahmin etmeye
   // bırakıyordu; EditProfileForm zaten slot bazlı işaretliyor, adım da öyle.
@@ -84,7 +89,8 @@ export default function RegisterStep17Screen({ navigation }: Props) {
 
   const handleNext = () => {
     Keyboard.dismiss();
-    const current = promptsRef.current ?? prompts;
+    // ÖNCE açık slotun taslağını yaz — blur'u beklemek yarış demek (bkz. editorRef).
+    const current = editorRef.current?.flush() ?? promptsRef.current ?? prompts;
 
     // Soru seçilmiş ama cevabı boş/çok uzun olan slot varsa devam ettirme.
     // sanitizePrompts bunları sessizce elerdi — kullanıcı yazdığını sandığı
@@ -165,6 +171,7 @@ export default function RegisterStep17Screen({ navigation }: Props) {
               <View style={{ height: 20 }} />
 
               <PromptsEditor
+                ref={editorRef}
                 value={prompts ?? []}
                 onChange={handleChange}
                 // Hangi cevabın eksik/uzun olduğu slotun altında yazıyor.

@@ -1,4 +1,13 @@
-import React, { memo, useCallback, useEffect, useMemo, useRef, useState } from "react";
+import React, {
+  forwardRef,
+  memo,
+  useCallback,
+  useEffect,
+  useImperativeHandle,
+  useMemo,
+  useRef,
+  useState,
+} from "react";
 import { useTranslation } from "react-i18next";
 import { useForm, Controller } from "react-hook-form";
 import {
@@ -51,6 +60,22 @@ type Props = {
   onInputBlur?: () => void;
 };
 
+/**
+ * Kaydetmeden ÖNCE çağrılacak tutamak.
+ *
+ * Neden var: açık slotun taslağı üst state'e ancak "Bitir"e basınca ya da alan
+ * odağı kaybedince yazılıyor. "Devam Et"/"Kaydet" ise ikisini de beklemiyor —
+ * `keyboardShouldPersistTaps="handled"` altında o dokunuş input'u blur ETMİYOR,
+ * `Keyboard.dismiss()` de blur'u senkron değil sonradan düşürüyor. Doğrulama
+ * cevapları o arada okuduğu için kullanıcının EKRANDA gördüğü son cevap "boş"
+ * sayılıyor ve adım "boş bırakamazsın" diye takılıyordu (ikinci basışta blur
+ * gelmiş olduğu için geçiyordu — hatanın "bazen" olmasının sebebi bu).
+ */
+export type PromptsEditorHandle = {
+  /** Açık slotun taslağını ANINDA commit eder ve üst state'in güncel hâlini döner. */
+  flush: () => ProfilePromptAnswer[];
+};
+
 type RowProps = {
   index: number;
   answer: string;
@@ -65,6 +90,8 @@ type RowProps = {
   onInputFocus?: () => void;
   onInputBlur?: () => void;
   registerRef: (index: number, node: any) => void;
+  /** Slotun taslak okuyucusu — `flush` açık slotun yazılmamış metnini buradan alıyor. */
+  registerDraft: (index: number, getter: (() => string) | null) => void;
 };
 
 /**
@@ -93,6 +120,7 @@ const PromptRow = memo(function PromptRow({
   onInputFocus,
   onInputBlur,
   registerRef,
+  registerDraft,
 }: RowProps) {
   const { t } = useTranslation();
   const { control, getValues, reset } = useForm<{ answer: string }>({
@@ -129,6 +157,13 @@ const PromptRow = memo(function PromptRow({
     (node: any) => registerRef(index, node),
     [registerRef, index],
   );
+
+  // Taslak yalnız bu satırın formunda duruyor; editörün `flush`'ı ona buradan
+  // ulaşıyor. Index değişince (silme kaydırması) eski kayıt temizlenip yenisi yazılıyor.
+  useEffect(() => {
+    registerDraft(index, () => getValues("answer"));
+    return () => registerDraft(index, null);
+  }, [registerDraft, index, getValues]);
 
   const commit = useCallback(
     () => onCommit(index, getValues("answer")),
@@ -328,7 +363,7 @@ const PromptRow = memo(function PromptRow({
  * Sıra ÖNEMLİ: dizideki index kartta çizilme sırası ve backend `DisplayOrder`
  * değeri. Slot ekleme sona yapılıyor, silme diziyi kaydırıyor.
  */
-export default function PromptsEditor({
+const PromptsEditor = forwardRef<PromptsEditorHandle, Props>(function PromptsEditor({
   value,
   onChange,
   serverErrors,
@@ -337,7 +372,7 @@ export default function PromptsEditor({
   InputComponent = TextInput,
   onInputFocus,
   onInputBlur,
-}: Props) {
+}, ref) {
   const { t, i18n } = useTranslation();
   const { data: groups } = usePrompts();
   // null = kapalı, sayı = o slotun sorusu değiştiriliyor, -1 = yeni slot.
@@ -372,6 +407,11 @@ export default function PromptsEditor({
   }, [editingIndex]);
   const registerRef = useCallback((index: number, node: any) => {
     inputRefs.current[index] = node;
+  }, []);
+  const draftGetters = useRef<Record<number, () => string>>({});
+  const registerDraft = useCallback((index: number, getter: (() => string) | null) => {
+    if (getter) draftGetters.current[index] = getter;
+    else delete draftGetters.current[index];
   }, []);
 
   const usedKeys = useMemo(() => value.map((p) => p.promptKey), [value]);
@@ -461,6 +501,33 @@ export default function PromptsEditor({
     emit(current.filter((_, i) => i !== index));
   }, [emit, allowRemoveLast]);
 
+  // Kaydetmeden önce çağrılır (bkz. PromptsEditorHandle). commitEdit üzerinden
+  // gidiyor: düzenleme kapanıyor, değişiklik varsa `latest` SENKRON güncelleniyor.
+  // Sonradan gelen blur aynı taslağı yazmaya çalışır ama metin artık aynı olduğu
+  // için commitEdit erken dönüyor — ikinci yazma yok.
+  const flush = useCallback(() => {
+    const open = editingRef.current;
+    if (open !== null) {
+      const getDraft = draftGetters.current[open];
+      if (getDraft) commitEdit(open, getDraft());
+    }
+    return latest.current;
+  }, [commitEdit]);
+  useImperativeHandle(ref, () => ({ flush }), [flush]);
+
+  // Seçici açılmadan ÖNCE açık taslak yazılıyor. Sheet açılışı klavyeyi kapatmıyor
+  // (AppBottomSheet yalnız kapanışta dismiss ediyor), yani blur commit'i gelmiyor;
+  // setPromptKey de `latest`'teki boş cevapla soruyu değiştirince satırın key'i
+  // (`promptKey-index`) değişip satır yeniden mount oluyor ve yazılan cevap
+  // sessizce siliniyordu.
+  const openPicker = useCallback(
+    (index: number) => {
+      flush();
+      setPickerFor(index);
+    },
+    [flush],
+  );
+
   const canAdd = value.length < MAX_PROFILE_PROMPTS;
 
   return (
@@ -474,13 +541,14 @@ export default function PromptsEditor({
           isEditing={editingIndex === index}
           errorText={errorTextFor(index)}
           InputComponent={InputComponent}
-          onPickPrompt={setPickerFor}
+          onPickPrompt={openPicker}
           onBeginEdit={beginEdit}
           onCommit={commitEdit}
           onRemove={removeAt}
           onInputFocus={onInputFocus}
           onInputBlur={onInputBlur}
           registerRef={registerRef}
+          registerDraft={registerDraft}
         />
       ))}
 
@@ -493,7 +561,7 @@ export default function PromptsEditor({
       {canAdd && (
         <TouchableOpacity
           activeOpacity={1}
-          onPress={() => setPickerFor(-1)}
+          onPress={() => openPicker(-1)}
           style={{
             flexDirection: "row",
             alignItems: "center",
@@ -536,4 +604,6 @@ export default function PromptsEditor({
       />
     </View>
   );
-}
+});
+
+export default PromptsEditor;

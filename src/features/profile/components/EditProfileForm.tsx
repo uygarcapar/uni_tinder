@@ -105,7 +105,7 @@ import PhotoModerationBadge, {
   PhotoModerationScrim,
 } from "@/features/profile/components/PhotoModerationBadge";
 import LanguagePickerModal from "@/shared/components/LanguagePickerModal";
-import PromptsEditor from "@/shared/components/PromptsEditor";
+import PromptsEditor, { type PromptsEditorHandle } from "@/shared/components/PromptsEditor";
 import { sanitizePrompts } from "@/features/profile/promptPayload";
 import {
   extractPromptErrors,
@@ -1474,11 +1474,19 @@ const EditProfileForm = forwardRef(function EditProfileForm(
   }, []);
 
   // ── Submit ─────────────────────────────────────────────────────────────
+  // Kaydetmeden önce açık prompt taslağını yazmak için (bkz. PromptsEditorHandle).
+  const promptsEditorRef = React.useRef<PromptsEditorHandle>(null);
+
   const submit = useCallback(async () => {
     if (savingProfile) return;
     setSavingProfile(true);
     onSavingChange?.(true);
     try {
+      // "Kaydet" input'u blur ETMİYOR (sheet `keyboardShouldPersistTaps="handled"`):
+      // "Bitir"e basılmadan kaydedilirse açık slotun cevabı üst state'e hiç
+      // yazılmamış oluyor ve aşağıdaki doğrulama onu "boş" sayıp kaydı durduruyordu.
+      // Taslak burada senkron yazılıyor; dönen dizi doğrulamanın kaynağı.
+      const flushedPrompts = promptsEditorRef.current?.flush();
       // `name`e ASLA düşme: UpdateProfile [FromForm] olduğu için JsonStringEnum-
       // Converter devrede değil, form binder yalnızca enum ÜYE ADINI veya ordinal
       // int'i tanıyor. `name` ise backend'in GetDisplay() çıktısı (lokalize metin)
@@ -1546,8 +1554,9 @@ const EditProfileForm = forwardRef(function EditProfileForm(
       // isteğe hiç girmemeli. sanitizePrompts boş cevapları SESSİZCE eliyor —
       // kullanıcı yazdığını sandığı cevabın kaybolduğunu ancak kartta fark
       // ederdi, o yüzden burada durup slotu işaretliyoruz.
+      const promptsForSave = flushedPrompts ?? draftPrompts;
       const promptIssues: Record<number, string> = {};
-      (draftPrompts ?? []).forEach((prompt, index) => {
+      (promptsForSave ?? []).forEach((prompt, index) => {
         if (!prompt?.promptKey) return;
         const answer = normalizePromptAnswer(prompt.answer ?? "");
         if (!answer) {
@@ -1567,7 +1576,7 @@ const EditProfileForm = forwardRef(function EditProfileForm(
       }
       setPromptFieldErrors({});
 
-      const nextPrompts = sanitizePrompts(draftPrompts);
+      const nextPrompts = sanitizePrompts(promptsForSave);
       if (nextPrompts.length > 0) {
         updates.Prompts = nextPrompts;
       }
@@ -2250,6 +2259,7 @@ const EditProfileForm = forwardRef(function EditProfileForm(
             name="prompts"
             render={({ field: { onChange, value } }) => (
               <PromptsEditor
+                ref={promptsEditorRef}
                 value={value ?? []}
                 onChange={onChange}
                 serverErrors={promptSubmitErrors}
