@@ -186,6 +186,28 @@ function contentTypeToNumber(contentType: MessageDto['contentType']): number {
   return 0;
 }
 
+/**
+ * Kota sohbet başına ve İKİ TARAFIN TOPLAMI: karşı tarafın mesajı da hakkı
+ * düşürür. Yerel sayaç bu yüzden hem kendi gönderimimizde
+ * (decrementQuotaLocally) hem karşı tarafın mesajı gelince (receiveMessage)
+ * ilerliyor; aksi halde "kaç kaldı" bir sonraki /quota çekimine kadar bayat
+ * kalıyor ve ara uyarılar (bkz. quotaMilestones) karşı tarafın mesajlarında
+ * hiç tetiklenmiyordu. Sunucu authoritative: sohbet açılışı ve 402 yolu
+ * fetchChatQuota ile düzeltir.
+ */
+function consumeQuotaLocally(state: ChatState, convId: string) {
+  const q = state.quotaByConv[convId];
+  if (!q) return;
+  // Sayaç sınırsız sohbetlerde de artmaya devam eder (backend de öyle
+  // sayıyor) — premium taraf abonelikten çıkarsa sohbet anında cap'e düşsün.
+  q.messageCount = (q.messageCount ?? 0) + 1;
+  if (q.remainingMessages == null) return;
+  q.remainingMessages = Math.max(0, q.remainingMessages - 1);
+  if (q.remainingMessages === 0 && !q.isUnlimited) {
+    q.requiresPremium = true;
+  }
+}
+
 function updateConversationLastMessage(state: ChatState, msg: MessageDto) {
   const conv = state.conversations.find((c) => c.conversationId === msg.conversationId);
   if (!conv) return;
@@ -214,6 +236,15 @@ const chatSlice = createSlice({
 
       const isOwn = !!selfUserId && msg.senderId === selfUserId;
 
+      // Mesaj geldiyse gönderen yazmayı bitirmiştir: göstergeyi bekletmeden
+      // düşür. Gönderenin `StopTyping`i çoğu zaman mesajla aynı anda gelir ama
+      // sırası garanti değil; bu olmadan balon mesajın altında bir an daha
+      // "yazıyor..." kalıyordu (bkz. typingExpiry).
+      if (!isOwn && msg.senderId) {
+        const typing = state.typingByConv[msg.conversationId];
+        if (typing) delete typing[msg.senderId];
+      }
+
       if (msg.clientMessageId) {
         const idx = bucket.messages.findIndex((m) => m.clientMessageId === msg.clientMessageId);
         if (idx >= 0) {
@@ -235,6 +266,10 @@ const chatSlice = createSlice({
         markConversationReadLocally(state, msg.conversationId);
         return;
       }
+      // Karşı tarafın mesajı da kotadan düşer (sistem mesajı düşmez — backend
+      // onu saymıyor). Kendi mesajımız gönderim anında düşülmüştü (echo yukarıda
+      // isOwn ile çıktı), çift sayım yok.
+      if (!msg.isSystemMessage) consumeQuotaLocally(state, msg.conversationId);
       const conv = state.conversations.find((c) => c.conversationId === msg.conversationId);
       if (conv && !msg.isSystemMessage && state.activeConversationId !== msg.conversationId) {
         conv.unreadCount = (conv.unreadCount || 0) + 1;
@@ -400,6 +435,12 @@ const chatSlice = createSlice({
         delete state.typingByConv[conversationId][userId];
       }
     },
+    // Reconnect / foreground: kopukluk penceresinde `UserStoppedTyping`
+    // kaçmış olabilir (hub replay yapmıyor). Eldeki her "yazıyor" bayat
+    // sayılır; hâlâ yazan varsa heartbeat'i birkaç saniyede geri getirir.
+    clearAllTyping: (state) => {
+      state.typingByConv = {};
+    },
 
     userStatusChanged: (
       state,
@@ -506,16 +547,7 @@ const chatSlice = createSlice({
     decrementQuotaLocally: (state, action: PayloadAction<{ conversationId: string }>) => {
       const convId = action.payload?.conversationId;
       if (!convId) return;
-      const q = state.quotaByConv[convId];
-      if (!q) return;
-      // Sayaç sınırsız sohbetlerde de artmaya devam eder (backend de öyle
-      // sayıyor) — premium taraf abonelikten çıkarsa sohbet anında cap'e düşsün.
-      q.messageCount = (q.messageCount ?? 0) + 1;
-      if (q.remainingMessages == null) return;
-      q.remainingMessages = Math.max(0, q.remainingMessages - 1);
-      if (q.remainingMessages === 0 && !q.isUnlimited) {
-        q.requiresPremium = true;
-      }
+      consumeQuotaLocally(state, convId);
     },
 
     appendOptimisticMessage: (
@@ -792,6 +824,7 @@ export const {
   reactionsChanged,
   userStartedTyping,
   userStoppedTyping,
+  clearAllTyping,
   userStatusChanged,
   userStatusResponse,
   matchNotification,

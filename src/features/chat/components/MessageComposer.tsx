@@ -84,6 +84,12 @@ import { colors, scrimAt, veil } from "../../../shared/theme/colors";
 import { chromeBlurTint } from "@/shared/theme/blur";
 
 const TYPING_DEBOUNCE_MS = 1500;
+// Yazma sürerken `StartTyping` bu aralıkla TEKRARLANIR (heartbeat). Alıcı
+// tarafın göstergesi artık kendi TTL'iyle düşüyor (typingExpiry, 6 sn);
+// heartbeat o pencereden kısa ki uzun bir cümle yazılırken balon titremesin.
+// Hub tarafı StartTyping'i dakikada 60 ile sınırlıyor; 3 sn'de bir → en çok
+// 20/dk, pay geniş.
+const TYPING_HEARTBEAT_MS = 3000;
 
 // Taslak diske bu kadar sessizlikten sonra yazılır. Her tuşta yazmak MMKV için
 // ucuz ama abone ekranları (MessagesScreen'in "Taslak: …" satırı) her karakterde
@@ -462,6 +468,27 @@ function MessageComposer({
   );
   const isTypingRef = useRef(false);
   const typingTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
+  // Son `StartTyping` anı — heartbeat bunun üstünden ölçülüyor.
+  const lastTypingSentAt = useRef(0);
+  // Unmount cleanup'ı ([] bağımlılıklı) bayat closure'a takılmasın diye ref.
+  const onTypingChangeRef = useRef(onTypingChange);
+  useEffect(() => {
+    onTypingChangeRef.current = onTypingChange;
+  }, [onTypingChange]);
+  // Ekrandan çıkarken hâlâ "yazıyor" durumundaysak karşı tarafa DURDU
+  // gönder. Eskiden yalnız debounce sayacı vardı; kullanıcı yazıp geri
+  // bastığında sayaç yine doluyordu ama hub o sırada koptuysa stop kayboluyor
+  // ve karşı tarafta gösterge asılı kalıyordu (bkz. typingExpiry).
+  useEffect(
+    () => () => {
+      if (typingTimer.current) clearTimeout(typingTimer.current);
+      if (isTypingRef.current) {
+        isTypingRef.current = false;
+        onTypingChangeRef.current?.(false);
+      }
+    },
+    [],
+  );
   // Taslak: son metin + bekleyen yazım. Callback'i ref'te tutuyoruz ki unmount
   // cleanup'ı ([] bağımlılıklı) bayat closure'a takılmasın.
   const draftRef = useRef(initialText ?? "");
@@ -499,11 +526,27 @@ function MessageComposer({
   const emitTyping = useCallback(
     (value: string) => {
       if (!onTypingChange) return;
-      if (value.length > 0 && !isTypingRef.current) {
+      if (typingTimer.current) clearTimeout(typingTimer.current);
+      // Metin tamamen silindiyse yazma bitti: debounce'u beklemeden durdur.
+      // WhatsApp da böyle — kutu boşalınca "yazıyor" anında düşüyor.
+      if (value.length === 0) {
+        if (isTypingRef.current) {
+          isTypingRef.current = false;
+          onTypingChange(false);
+        }
+        return;
+      }
+      const now = Date.now();
+      // İlk tuşta START; sonrasında yazma sürdükçe heartbeat olarak TEKRAR.
+      // Alıcı her START'ta kendi TTL'ini sıfırdan kuruyor.
+      if (
+        !isTypingRef.current ||
+        now - lastTypingSentAt.current >= TYPING_HEARTBEAT_MS
+      ) {
         isTypingRef.current = true;
+        lastTypingSentAt.current = now;
         onTypingChange(true);
       }
-      if (typingTimer.current) clearTimeout(typingTimer.current);
       typingTimer.current = setTimeout(() => {
         if (isTypingRef.current) {
           isTypingRef.current = false;

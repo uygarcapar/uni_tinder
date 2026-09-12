@@ -114,6 +114,10 @@ import { discardVoiceTake } from "@/features/chat/useVoiceRecorder";
 import { stopVoicePlayback } from "@/features/chat/voicePlayback";
 import { showInfoToast } from "@/shared/services/toaster";
 import {
+  quotaMilestones,
+  takeCrossedMilestone,
+} from "@/features/chat/quotaMilestones";
+import {
   chatErrorCodeOf,
   chatErrorEffect,
   chatErrorText,
@@ -661,28 +665,54 @@ function ChatScreen({
   );
 
   // ── Quota toast'ları ───────────────────────────────────────────────────
-  // Giriş toast'ı SOHBETE GİRİŞTE, TEK KEZ karar veriliyor: kotanın ilk anlık
-  // görüntüsü geldiğinde bakılır ve karar (çıksın/çıkmasın) o ziyaret boyunca
-  // değişmez. Eşiğin altındaysa uyarı düşer; üstündeyse bu ziyarette bir daha
-  // bakılmaz — koşul her kota değişiminde yeniden değerlendirilseydi kullanıcı
-  // yazarken hak eşiğe indiği anda banner sohbetin ORTASINA düşerdi. Hak
-  // bittiğinde söylenecek şey zaten ayrı (aşağıdaki tükenme toast'ı + paywall).
+  // İki uyarı kaynağı, tek toast metni ("N mesaj hakkın var"):
+  //
+  // 1) GİRİŞ toast'ı — sohbete girişte TEK KEZ karar verilir: ilk kota anlık
+  //    görüntüsünde kalan hak eşiğin (10) altında/eşitse uyarı düşer.
+  // 2) ARA EŞİK toast'ları (ürün kararı, Eylül 2026): kota 30 ve iki tarafın
+  //    TOPLAMI; her 10 mesajda bir hatırlatma — kalan 20'ye ve 10'a düştüğünde —
+  //    artı son çağrı 5'te.
+  //    Eşikler limitten türetiliyor (bkz. quotaMilestones). Karşı tarafın
+  //    mesajı da hakkı düşürdüğü için (chatSlice.receiveMessage) uyarı onun
+  //    mesajıyla da tetiklenebiliyor.
+  //
+  // Girişte zaten geçilmiş eşikler "gösterildi" sayılır: 15 hakla girince 20
+  // eşiği için toast çıkmaz (bayat), 10'a inince çıkar. Girişte kalan ≤ 10 ise
+  // giriş toast'ı çıkar ve 10 eşiği onunla tüketilir — aynı ziyarette ikinci
+  // bir "10 kaldı" yok. Hak bittiğinde söylenecek şey ayrı (tükenme toast'ı +
+  // paywall), 0 eşik değil.
   const quotaEntryDecidedRef = useRef(false);
   const quotaHadRemainingRef = useRef(false);
   const quotaExhaustedToastShownRef = useRef(false);
+  const quotaMilestonesShownRef = useRef<Set<number>>(new Set());
   useEffect(() => {
-    if (quotaEntryDecidedRef.current || !isActive) return;
-    // Kota henüz gelmedi — karar VERMİYORUZ, bir sonraki anlık görüntüyü bekle.
-    if (!quota) return;
-    quotaEntryDecidedRef.current = true;
+    if (!isActive || !quota) return;
     if (quota.isUnlimited) return;
     const remaining = quota.remainingMessages;
-    if (remaining == null || remaining <= 0) return;
-    // Eşiğin üstünde bile olsa "hak vardı" işaretleniyor: tükenme toast'ı buna
-    // bakıyor ve giriş toast'ı çıkmadı diye susmamalı (girişte 40 hakla girip
-    // sohbet boyunca bitirmek en olağan yol).
-    quotaHadRemainingRef.current = true;
-    if (remaining > QUOTA_ENTRY_TOAST_THRESHOLD) return;
+    const milestones = quotaMilestones(quota.freeMessageLimit);
+    const shown = quotaMilestonesShownRef.current;
+
+    if (!quotaEntryDecidedRef.current) {
+      // Kota henüz gelmedi — karar VERMİYORUZ, bir sonraki anlık görüntüyü bekle.
+      quotaEntryDecidedRef.current = true;
+      if (remaining == null || remaining <= 0) return;
+      // Eşiğin üstünde bile olsa "hak vardı" işaretleniyor: tükenme toast'ı buna
+      // bakıyor ve giriş toast'ı çıkmadı diye susmamalı (girişte 30 hakla girip
+      // sohbet boyunca bitirmek en olağan yol).
+      quotaHadRemainingRef.current = true;
+      // Girişte geçilmiş eşikler bayat — sessizce tüket.
+      takeCrossedMilestone(remaining, milestones, shown);
+      if (remaining > QUOTA_ENTRY_TOAST_THRESHOLD) return;
+      showInfoToast({
+        icon: "message",
+        title: t("chat.quota.title"),
+        message: t("chat.quota.message", { remaining }),
+      });
+      return;
+    }
+
+    const crossed = takeCrossedMilestone(remaining, milestones, shown);
+    if (crossed === null) return;
     showInfoToast({
       icon: "message",
       title: t("chat.quota.title"),

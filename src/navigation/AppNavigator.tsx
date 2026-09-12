@@ -3,6 +3,7 @@ import { useTranslation } from 'react-i18next';
 import { NavigationContainer, DarkTheme, DefaultTheme, getStateFromPath, type LinkingOptions } from '@react-navigation/native';
 import { createNativeStackNavigator } from '@react-navigation/native-stack';
 import { View, AppState, AppStateStatus, InteractionManager } from 'react-native';
+import { createTypingExpiry } from '@/features/chat/typingExpiry';
 import { Image as ExpoImage } from 'expo-image';
 import {
   registerForPushNotifications,
@@ -124,6 +125,7 @@ import {
   reactionsChanged,
   userStartedTyping,
   userStoppedTyping,
+  clearAllTyping,
   userStatusChanged,
   userStatusResponse,
   matchNotification,
@@ -829,6 +831,12 @@ export default function AppNavigator() {
       }, LIKES_RECONCILE_DEBOUNCE_MS);
     };
 
+    // "Yazıyor..." istemci tarafı TTL'i — StopTyping kaçarsa gösterge kendi
+    // kendine düşsün (gerekçe typingExpiry başlığında).
+    const typingExpiry = createTypingExpiry({
+      onExpire: (payload) => mounted && dispatch(userStoppedTyping(payload)),
+    });
+
     const unsubscribers = [
       realtimeService.on('ReceiveMessage', (msg) => {
         if (!mounted) return;
@@ -875,8 +883,16 @@ export default function AppNavigator() {
       realtimeService.on('MessageEdited', (msg) => mounted && dispatch(messageEdited(msg))),
       realtimeService.on('MessageDeleted', (payload) => mounted && dispatch(messageDeleted(payload))),
       realtimeService.on('ReactionsChanged', (payload) => mounted && dispatch(reactionsChanged(payload))),
-      realtimeService.on('UserStartedTyping', (payload) => mounted && dispatch(userStartedTyping(payload))),
-      realtimeService.on('UserStoppedTyping', (payload) => mounted && dispatch(userStoppedTyping(payload))),
+      realtimeService.on('UserStartedTyping', (payload) => {
+        if (!mounted) return;
+        dispatch(userStartedTyping(payload));
+        typingExpiry.started(payload);
+      }),
+      realtimeService.on('UserStoppedTyping', (payload) => {
+        if (!mounted) return;
+        typingExpiry.stopped(payload);
+        dispatch(userStoppedTyping(payload));
+      }),
       realtimeService.on('UserStatusChanged', (payload) => mounted && dispatch(userStatusChanged(payload))),
       realtimeService.on('UserStatusResponse', (payload) => mounted && dispatch(userStatusResponse(payload))),
       realtimeService.on('MatchNotification', (m) => {
@@ -1212,6 +1228,9 @@ export default function AppNavigator() {
           hadConnectionDropRef.current = true;
         } else if (state === 'connected' && hadConnectionDropRef.current) {
           hadConnectionDropRef.current = false;
+          // Kopuklukta kaçan `UserStoppedTyping` göstergeyi asılı bırakır.
+          typingExpiry.clearAll();
+          dispatch(clearAllTyping());
           dispatch(fetchConversations({ force: true }));
           dispatch(fetchUnreadCount());
           // Kopukluk penceresinde atılan `SubscriptionChanged` KAYBOLDU — hub
@@ -1243,6 +1262,7 @@ export default function AppNavigator() {
       mounted = false;
       if (deliveredFlushTimer) clearTimeout(deliveredFlushTimer);
       if (likesReconcileTimer) clearTimeout(likesReconcileTimer);
+      typingExpiry.clearAll();
       unsubscribers.forEach((u) => u && u());
     };
   }, [isAuthenticated, hasToken, dispatch]);
@@ -1466,6 +1486,11 @@ export default function AppNavigator() {
     // döndürüyor; isConnected() reconnect penceresinde false döndüğü için
     // burada guard'lamak ikinci bir soket açılmasına yol açıyordu.
     realtimeService.connect().catch(() => {});
+    // Arka plandayken soket ölüyor; o pencerede gelen `UserStoppedTyping`
+    // kayboluyor ve gösterge saatlerce "yazıyor..." kalıyordu. Uyanışta
+    // eldeki typing durumu bayat — temizle, hâlâ yazan varsa heartbeat
+    // birkaç saniyede geri getirir (bkz. typingExpiry).
+    dispatch(clearAllTyping());
     dispatch(fetchConversations({ force: true }));
     dispatch(fetchUnreadCount());
     // Arka plandayken gelen beğeniler için IncomingLike event'i kaçmış
