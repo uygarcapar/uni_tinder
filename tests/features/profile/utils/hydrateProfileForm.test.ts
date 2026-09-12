@@ -69,6 +69,26 @@ describe('hydrateProfileForm — alkol ve dini görüş', () => {
     expect(values.religiousView).toEqual(RELIGIOUS[1]);
   });
 
+  it('backend açık null gönderdiğinde 0. seçeneği (Müslüman) SEÇMEZ', () => {
+    // Geri bildirim: "din seçmedim, profilim Müslüman oldu". GetMyProfile
+    // seçilmemiş alanı `null` döndürüyor; Number(null) === 0 olduğu için
+    // id=0 olan Müslüman eşleşiyor, form seçili açılıyor ve ilk kaydetmede
+    // backend'e yazılıyordu. null = seçilmedi, 0 = ilk seçenek — karışmamalı.
+    const values = hydrate({ religiousView: null, religiousViewDisplay: null });
+    expect(values.religiousView).toBeNull();
+  });
+
+  it('aynı null tuzağı alkolde de 0. seçeneği seçmez', () => {
+    const values = hydrate({ alcoholUsage: null, alcoholUsageDisplay: null });
+    expect(values.alcohol).toBeNull();
+  });
+
+  it('gerçek 0 değeri (ilk seçenek) yine eşleşir', () => {
+    // Guard yalnız boş değeri ayıklıyor; 0 geçerli bir enum ordinal'i.
+    expect(hydrate({ religiousView: 0 }).religiousView).toEqual(RELIGIOUS[0]);
+    expect(hydrate({ alcoholUsage: '0' }).alcohol).toEqual(ALCOHOL[0]);
+  });
+
   it('dini görüş yoksa null döner', () => {
     expect(hydrate({}).religiousView).toBeNull();
   });
@@ -77,6 +97,14 @@ describe('hydrateProfileForm — alkol ve dini görüş', () => {
     // Backend enum'a yeni değer eklerse eski client onu tanımaz; null kalması
     // doğru — sahte bir option submit'te geçersiz enumName gönderirdi.
     expect(hydrate({ alcoholUsage: 'Occasionally' }).alcohol).toBeNull();
+  });
+
+  it('hobi listesindeki null/boş eleman 0 id\'li hobiye dönüşmez', () => {
+    const hobbyGroups = [
+      { hobbies: [{ id: 0, enumName: 'Football' }, { id: 3, enumName: 'Chess' }] },
+    ];
+    const values = hydrate({ hobbies: ['Chess', null, ''] }, { hobbyGroups });
+    expect(values.hobbies).toEqual([3]);
   });
 
   it('evcil hayvan çoklu seçimi bozulmadan hidrate olur', () => {

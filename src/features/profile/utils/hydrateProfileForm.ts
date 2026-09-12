@@ -7,12 +7,23 @@ import { isValidYearOfStudy } from "@/shared/constants/limits";
 
 export const matchOption = (options: any[], idValue: any, displayValue?: any) => {
   if (!options?.length) return null;
-  const byId = options.find((o) => o?.id === idValue);
-  if (byId) return byId;
-  const n = Number(idValue);
-  if (Number.isFinite(n)) {
-    const byNumId = options.find((o) => Number(o?.id) === n);
-    if (byNumId) return byNumId;
+  // 🔴 `null` ile `0` AYNI ŞEY DEĞİL. Backend seçilmemiş alanı `null` gönderiyor
+  // ve `Number(null)` 0'a çevriliyordu; listelerin id'si enum ordinal'i olduğu
+  // için 0 = ilk seçenek eşleşiyordu: din "Müslüman", sigara/alkol
+  // "Kullanmıyorum", burç "Koç", niyet "Uzun süreli ilişki". Kullanıcı hiç
+  // seçmemişken form seçili açılıyor ve İLK KAYDETMEDE (bio değiştirmek bile
+  // yeter) backend'e yazılıyordu — kullanıcı geri bildirimi tam buydu.
+  // Boş değer için sayısal eşleşme denenmez; yalnız display metnine düşülür,
+  // o da boşsa null.
+  const hasId = idValue !== null && idValue !== undefined && idValue !== "";
+  if (hasId) {
+    const byId = options.find((o) => o?.id === idValue);
+    if (byId) return byId;
+    const n = Number(idValue);
+    if (Number.isFinite(n)) {
+      const byNumId = options.find((o) => Number(o?.id) === n);
+      if (byNumId) return byNumId;
+    }
   }
   const tryStr = (v: any) =>
     v &&
@@ -91,6 +102,9 @@ export const hydrateProfileForm = ({
     .map((h: any) => {
       if (typeof h === "number") return h;
       if (h && typeof h === "object" && h.id != null) return Number(h.id);
+      // matchOption'daki null tuzağının aynısı: Number(null) ve Number("") 0 —
+      // boş eleman id'si 0 olan hobiyi sessizce ekliyordu.
+      if (h == null || h === "") return null;
       const n = Number(h);
       if (Number.isFinite(n)) return n;
       return lookupToId[h] ?? null;
