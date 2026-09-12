@@ -2,6 +2,7 @@ import api from "@/shared/services/api";
 import { API_ENDPOINTS } from "@/shared/constants/api";
 import { resolveCardAge } from "./cardPrivacy";
 import { normalizeLikerNote } from "./likerNote";
+import { resolveTeaserHobby, type TeaserHobby } from "./likerCardTeaser";
 import type { LikerNote, PaywallType } from "@/shared/types";
 
 /**
@@ -51,6 +52,17 @@ export interface MissedMatchCard {
    * düşürüyordu. Alan taşınmaya devam ediyor, karar vermiyor.
    */
   hasLikedMe: boolean;
+  /** Açık karttaki foto doğrulama rozeti; kilitli kartta da ipucu olarak basılıyor. */
+  isSelfieVerified: boolean | null;
+  /**
+   * Kilitli kartın ipucu katmanı — beğeni kartlarıyla BİREBİR aynı alanlar
+   * (bkz. likerCardTeaser). Bu liste de aynı `LikeCard`ta çiziliyor; alanlar
+   * burada eksik kalırsa kaçırdıkların sekmesindeki kilitli kart yine boş
+   * bulanıklığa döner.
+   */
+  teaserHobby: TeaserHobby | null;
+  relationshipIntent: string | null;
+  relationshipIntentDisplay: string | null;
 }
 
 export interface MissedMatchesPage {
@@ -108,6 +120,10 @@ export async function fetchMissedMatches(
       isNote: !!p.isNote,
       note: normalizeLikerNote(p),
       hasLikedMe: p.hasLikedMe === true,
+      isSelfieVerified: p.isSelfieVerified ?? null,
+      teaserHobby: resolveTeaserHobby(p.hobbies),
+      relationshipIntent: p.relationshipIntent ?? null,
+      relationshipIntentDisplay: p.relationshipIntentDisplay ?? null,
   }));
   return {
     profiles,

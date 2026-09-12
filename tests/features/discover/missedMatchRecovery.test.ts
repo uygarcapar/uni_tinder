@@ -174,6 +174,12 @@ describe('fetchMissedMatches', () => {
       isNote: false,
       note: null,
       hasLikedMe: true,
+      // Kilitli kartın ipucu alanları (bkz. likerCardTeaser) — fixture'da
+      // hobi/niyet/rozet yok, hepsi null'a normalize ediliyor.
+      isSelfieVerified: null,
+      teaserHobby: null,
+      relationshipIntent: null,
+      relationshipIntentDisplay: null,
     });
     expect(page.totalProfiles).toBe(3);
   });

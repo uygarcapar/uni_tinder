@@ -74,10 +74,20 @@ describe('SelfieVerificationRow — sıfırlanma kararı', () => {
     expect(screen.getByText('Fotoğrafını Doğrula')).toBeTruthy();
   });
 
-  it('doğrulanmışsa sıfırlanma bilgisine hiç bakılmaz', () => {
-    renderRow({ user: { isSelfieVerified: true, selfieResetAt: null } });
+  it('doğrulanmışsa satır HİÇ çizilmez — rozet ismin yanında zaten var', () => {
+    // Durum satırı kaldırıldı: kullanıcıya yapacak iş vermiyordu ve aynı bilgiyi
+    // hero'daki rozetle ikinci kez söylüyordu.
+    const tree = renderRow({ user: { isSelfieVerified: true, selfieResetAt: null } });
 
-    expect(screen.getByText('Fotoğrafın doğrulandı')).toBeTruthy();
+    expect(tree.toJSON()).toBeNull();
+    expect(screen.queryByText('Fotoğrafın doğrulandı')).toBeNull();
+  });
+
+  it('doğrulanmışsa yerel "sıfırlanmıştı" bayrağına bakılmaz', () => {
+    mockWasSelfieVerifiedBefore.mockReturnValue(true);
+    const tree = renderRow({ user: { isSelfieVerified: true } });
+
+    expect(tree.toJSON()).toBeNull();
   });
 });
 

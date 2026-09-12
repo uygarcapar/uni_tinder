@@ -1,4 +1,4 @@
-import { Check, Heart, RotateCcw, MessageCircle } from '@/shared/icons';
+import { Check, RotateCcw, MessageCircle } from '@/shared/icons';
 import SFIcon from '../SFIcon';
 import SuperLikeGlyph from '../SuperLikeGlyph';
 import NoteGlyph from '../NoteGlyph';
@@ -61,7 +61,11 @@ function superLikeRed() {
  */
 export function toastIconAccent(kind: ToastIconKind): string {
   if (kind === 'superLike') return superLikeRed();
-  if (kind === 'like') return colors.likePink;
+  // Beğeni MARKA RENGİNDE. Eskiden `likePink` (#ec4899) idi ve uygulamada
+  // pembe olan başka hiçbir yüzey yok: beğeni kalbi kartta, Likes sekmesinde
+  // ve süper beğeni ailesinde hep kırmızı — toast tek başına pembe bir leke
+  // gibi duruyordu. Süper beğeniden ayrım tonda değil başlıkta.
+  if (kind === 'like') return colors.primary;
   // Tik bir ÜRÜN değil, durum bildirimi — ürün rengi taşımıyor.
   if (kind === 'check') return CHECK_CIRCLE;
   return colors.litPlus;
@@ -142,18 +146,11 @@ export function ToastIconGlyph({
       />
     );
   }
-  if (kind === 'like') {
-    return (
-      <SFIcon
-        name="heart.fill"
-        fallback={Heart}
-        size={size}
-        color={color}
-        strokeWidth={2}
-        fill={color}
-      />
-    );
-  }
+  // Beğeni — SF `heart.fill` / lucide `Heart` DEĞİL, ürünün kendi kalbi
+  // (icons/HeartGlyph): Likes sekmesi, kartın süper beğeni butonu ve süper
+  // beğeni toast'ı aynı şekli taşıyor; jenerik sistem kalbi aralarında
+  // yabancı kalıyordu.
+  if (kind === 'like') return <SuperLikeGlyph size={size} color={color} />;
   return (
     <SFIcon
       name="arrow.counterclockwise"

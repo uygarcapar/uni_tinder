@@ -1,7 +1,7 @@
 import { useEffect, useState } from "react";
 import { Text, View } from "react-native";
 import { useTranslation } from "react-i18next";
-import { BadgeCheck, ChevronRight, ShieldAlert, ShieldCheck } from "@/shared/icons";
+import { ChevronRight, ShieldCheck } from "@/shared/icons";
 import AnimatedPressable from "@/shared/components/AnimatedPressable";
 import SFIcon, { type SFSymbol } from "@/shared/components/SFIcon";
 import uiBus from "@/shared/services/uiBus";
@@ -32,11 +32,14 @@ import {
  *      kullanıcıyı `UT-6505`'e sürer.
  *   2. Yakın zamanda `UT-6505` alınmadı mı (selfieAvailability penceresi).
  *
- * ÜÇ DURUM:
+ * İKİ DURUM — ikisi de "yapılacak iş var" demek:
  *   doğrulanmamış      → "Fotoğrafını Doğrula"
- *   doğrulanmış        → durum satırı, tıklanamaz
  *   sıfırlanmış        → "ana fotoğraf değişikliği nedeniyle sıfırlandı" +
  *                        "Yeniden Doğrula"
+ *
+ * DOĞRULANMIŞ kullanıcıda satır HİÇ ÇİZİLMİYOR: rozet zaten ismin yanında
+ * duruyor (hero, kart, beğeniler). Aynı bilgiyi tıklanamaz bir kutuyla
+ * tekrarlamak profilde yer kaplıyordu ve kullanıcıya yapacak bir şey vermiyordu.
  *
  * Üçüncü durumun ayrımı SUNUCUDAN geliyor (`selfieResetAt`). Eskiden yerel
  * `wasSelfieVerifiedBefore` bayrağı TAHMİN ediyordu ve doğrulamayı yeni geçen
@@ -72,14 +75,16 @@ function logGate(gate: string, detail: Record<string, unknown>) {
 }
 
 const TONE: Record<
-  "idle" | "verified" | "reset",
+  "idle" | "reset",
   { sf: SFSymbol; fallback: any; color: () => string }
 > = {
   idle: { sf: "checkmark.seal", fallback: ShieldCheck, color: () => colors.text },
-  verified: { sf: "checkmark.seal.fill", fallback: BadgeCheck, color: () => colors.success },
-  // Uyarı tonu ama YIKICI DEĞİL: kullanıcı bir şey kaybetmedi, yeniden
-  // doğrulaması gerekiyor.
-  reset: { sf: "exclamationmark.shield.fill", fallback: ShieldAlert, color: () => colors.warning },
+  // Sıfırlanma UYARI OLARAK ÇİZİLMİYOR — ikon ilk durumun aynısı.
+  // Kullanıcı ana fotoğrafı değiştirmeden ÖNCE zaten onay penceresinde
+  // uyarılıyor (bkz. confirmMainPhotoChange); sonrasında sarı bir ünlemle
+  // karşılamak, bilerek yapılmış bir işi hata gibi gösteriyordu. Sebebi metin
+  // söylüyor, ikonun işi yapılacak eylemi göstermek.
+  reset: { sf: "checkmark.seal", fallback: ShieldCheck, color: () => colors.text },
 };
 
 export default function SelfieVerificationRow({
@@ -114,12 +119,15 @@ export default function SelfieVerificationRow({
     return null;
   }
 
+  // Doğrulanmışsa satır yok (bkz. dosya başı): rozet ismin yanında zaten var.
+  if (verified) return null;
+
   // Sunucu konuştuysa ona uy; alan hiç gelmediyse (eski backend) yerel bayrağa düş.
   const resetAt = resolveSelfieResetAt(profile);
   const wasReset =
     resetAt !== undefined ? resetAt !== null : wasSelfieVerifiedBefore(userId);
 
-  const state = verified ? "verified" : wasReset ? "reset" : "idle";
+  const state = wasReset ? "reset" : "idle";
   const tone = TONE[state];
 
   const title = t(`profile.selfie.row.${state}.title`);
@@ -159,21 +167,17 @@ export default function SelfieVerificationRow({
           {subtitle}
         </Text>
       </View>
-      {!verified && (
-        <SFIcon
-          name="chevron.right"
-          fallback={ChevronRight}
-          size={16}
-          color={colors.textMuted}
-          style={{ pointerEvents: "none" }}
-        />
-      )}
+      {/* Satır artık YALNIZCA tıklanabilir durumlarda çiziliyor (doğrulanmışta
+          hiç yok), o yüzden chevron koşulsuz. */}
+      <SFIcon
+        name="chevron.right"
+        fallback={ChevronRight}
+        size={16}
+        color={colors.textMuted}
+        style={{ pointerEvents: "none" }}
+      />
     </View>
   );
-
-  if (verified) {
-    return <View style={{ paddingHorizontal: 16, paddingBottom: 16 }}>{body}</View>;
-  }
 
   return (
     <View style={{ paddingHorizontal: 16, paddingBottom: 16 }}>

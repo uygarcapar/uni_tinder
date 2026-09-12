@@ -52,7 +52,6 @@ interface Palette {
    * gradients.premium'un orta durağıyla aynı, marka sıcaklığını koruyor.
    */
   accentOrange: string;
-  likePink: string;
   /** SwipeCard super-like kalbi — buradan ayarla (gradient: gradients.swipeHeart). */
   swipeHeartBorder: string;
   errorLight: string;
@@ -191,10 +190,6 @@ const brand = {
   warning: "#F59E0B",
   info: "#3B82F6",
   accentOrange: "#FF8F17",
-  // LikeToast'ın beğeni aksanı. Eskiden token #E0457B idi ama HİÇBİR YERDE
-  // kullanılmıyordu; tek gerçek kullanım LikeToast'taki #ec4899 literaliydi —
-  // token yaşayan değere hizalandı.
-  likePink: "#ec4899",
   swipeHeartBorder: "#ff8e7a",
   errorLight: "#FCA5A5",
   errorDeep: "#ff2b2b",

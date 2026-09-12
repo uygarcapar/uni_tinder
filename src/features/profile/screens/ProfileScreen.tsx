@@ -173,6 +173,11 @@ const EDIT_BUTTON_BOX_W = width - HERO_PAD_H * 2 - HERO_AVATAR - HERO_GAP;
 // Hero ismi. Premium işaretinin puntosu bundan türüyor (bkz. PremiumBadge), o
 // yüzden punto sabitte duruyor.
 const HERO_NAME_FONT = 18;
+// İsim SATIRININ yüksekliği — yazının `lineHeight`ı DEĞİL. 18 puntoyu 28'lik
+// satır kutusuna koyunca iOS fazladan boşluğu glifin üstüne yığıyor, yazı
+// kutunun altına kayıyor; yanındaki rozet ise kutunun tam ortasında kalıyor ve
+// ikisi bir iki piksel ayrışıyordu. Yazı artık doğal satır kutusunda, 28'i
+// satır taşıyor ve `alignItems: center` ismi de rozetleri de aynı eksene oturtuyor.
 const HERO_NAME_LINE = 28;
 // Fotoğraf doğrulama rozetinin ölçüsü. Premium işaretine BAĞLI DEĞİL: o bir
 // yazı ve puntosu isimden türüyor, bu ise çıplak bir SF Symbol — ikisi aynı
@@ -1107,6 +1112,13 @@ export default function ProfileScreen() {
       // burada da yanmamalı (gerçek kartta backend zaten isPremium=false yolluyor).
       // Hero rozeti bundan etkilenmez — kullanıcı kendi premium'unu hep görür.
       isPremium: isPremium && myProfile.showPremiumBadge !== false,
+      // Foto doğrulama rozeti — gerçek kartta backend `isSelfieVerified`'ı
+      // ProfileCardDto köküne yazıyor, karşı taraf rozeti görüyor. Önizleme bu
+      // alanı geçmeyince kart `undefined` okuyup rozeti hiç çizmiyordu ve
+      // kullanıcı "başkaları görüyor mu?" diye kendi kartından emin olamıyordu.
+      // Hero ile aynı kaynak (`user` altından okunuyor, bkz. resolveSelfieVerified);
+      // alan hiç gelmediyse `undefined` — kartın "backend'de yok" anlamı korunuyor.
+      isSelfieVerified: resolveSelfieVerified(myProfile) ?? undefined,
       universityName: myProfile.user?.universityName || user?.universityName,
       // Kart ADI display'den basıyor; ham alan (Türkçe resmî ad) yalnız
       // fallback olarak yukarıda duruyor.
@@ -2084,6 +2096,7 @@ export default function ProfileScreen() {
                         flexDirection: "row",
                         alignItems: "center",
                         gap: 4,
+                        height: HERO_NAME_LINE,
                       }}
                     >
                       <Text
@@ -2093,7 +2106,8 @@ export default function ProfileScreen() {
                           color: colors.text,
                           fontSize: HERO_NAME_FONT,
                           fontWeight: "600",
-                          lineHeight: HERO_NAME_LINE,
+                          // `lineHeight` YOK — bkz. HERO_NAME_LINE notu.
+                          includeFontPadding: false,
                         }}
                       >
                         {myProfile?.displayName || user?.firstName || ""}

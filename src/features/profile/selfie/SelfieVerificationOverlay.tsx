@@ -576,7 +576,7 @@ function ResultStep({
         name={success ? "checkmark.seal.fill" : "exclamationmark.circle"}
         fallback={success ? BadgeCheck : ShieldCheck}
         size={56}
-        color={success ? colors.success : colors.textSecondary}
+        color={success ? colors.primary : colors.textSecondary}
         style={{ pointerEvents: "none" }}
       />
       <Text

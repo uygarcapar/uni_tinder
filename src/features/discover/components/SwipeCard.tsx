@@ -254,6 +254,7 @@ import type { NoteTarget } from "@/shared/types";
 import { buildMapboxStaticUrl } from "@/shared/constants/mapbox";
 import { lookupCityCoordinate } from "@/shared/constants/cityCoordinates";
 import HobbyIcon from "@/shared/components/HobbyIcon";
+import { relationshipIntentLabel as resolveRelationshipIntentLabel } from "@/features/discover/likerCardTeaser";
 import SFIcon, { type SFSymbol } from "@/shared/components/SFIcon";
 import PremiumBadge from "@/shared/components/PremiumBadge";
 import SelfieVerifiedBadge, {
@@ -658,21 +659,6 @@ function cardCornerRadius(progress: number, openRadius: number) {
   return CARD_FACE_CORNER_RADIUS + (openRadius - CARD_FACE_CORNER_RADIUS) * p;
 }
 
-
-// "ilişki" ekini alan ilişki niyetleri (bkz. relationshipIntentLabel).
-// Anahtar DAİMA enumName: `display` Accept-Language'e göre değişiyor.
-const RELATIONSHIP_INTENTS_WITH_SUFFIX = new Set([
-  "LongTerm",
-  "ShortTerm",
-  "LongTermOpenToShort",
-  "ShortTermOpenToLong",
-]);
-
-// Ek takmadan önce "kelime etikette zaten var mı" kontrolü İKİ dilde birden
-// yapılıyor: fallback'e düşen backend display'i hangi dilde geldiyse o dilin
-// kelimesini taşıyor ("Uzun süreli ilişki" / "Long term relationship"). Tek
-// dile bakmak "Long term relationship ilişki" gibi çift kelime üretiyordu.
-const INTENT_SUFFIX_WORDS = ["ilişki", "relationship"];
 
 // Expanded karttaki bölüm kutuları (üniversite, hobiler, yaşam tarzı, bio,
 // prompt, konum + araya giren fotoğraf blokları) ÇERÇEVESİZ. Önceden ortak bir
@@ -1253,15 +1239,6 @@ function SectionPhoto({
 // Ek takmadan önce "kelime display'de zaten var mı" kontrolü. Türkçe noktalı I
 // yüzünden düz `toLowerCase()` yetmiyor ("İlişki" → nokta birleşik kalıyor);
 // iki tarafı da aynı şekilde sadeleştirip karşılaştırıyoruz.
-function normalizeForWordMatch(text) {
-  return (text || "").replace(/[İIı]/g, "i").toLowerCase();
-}
-
-function containsWord(text, word) {
-  if (!word) return false;
-  return normalizeForWordMatch(text).includes(normalizeForWordMatch(word));
-}
-
 // Daha önce yüklenmiş foto URI'leri — kart remount olunca skeleton tekrar açılmasın
 const loadedPhotoUris = new Set();
 
@@ -2430,22 +2407,19 @@ export default function SwipeCard({
   // AYRICA: display'e düşüldüğünde metin kelimeyi ZATEN içerebiliyor ("Uzun
   // süreli ilişki", "Long term relationship" — bkz. FilterModal pill etiketi
   // notu). Kör ek "... ilişki ilişki" üretiyordu; kelime içerideyse (iki dilde
-  // de bakılıyor, bkz. INTENT_SUFFIX_WORDS) ek atlanıyor.
-  const relationshipIntentLabel = useMemo(() => {
-    const enumName = profile?.relationshipIntent;
-    const shortLabel = enumName
-      ? t(`discover.filters.relationshipIntents.short.${enumName}`, {
-          defaultValue: "",
-        })
-      : "";
-    const label = shortLabel || profile?.relationshipIntentDisplay;
-    if (!label) return "";
-    const suffix = t("profile.card.intentSuffix");
-    const needsSuffix =
-      RELATIONSHIP_INTENTS_WITH_SUFFIX.has(enumName) &&
-      !INTENT_SUFFIX_WORDS.some((word) => containsWord(label, word));
-    return needsSuffix ? `${label} ${suffix}` : label;
-  }, [profile?.relationshipIntentDisplay, profile?.relationshipIntent, t]);
+  // de bakılıyor) ek atlanıyor.
+  //
+  // Kuralın kendisi likerCardTeaser.relationshipIntentLabel'da, TEK yerde:
+  // kilitli beğeni kartı da aynı etiketi basıyor, iki kopya ayrışmasın.
+  const relationshipIntentLabel = useMemo(
+    () =>
+      resolveRelationshipIntentLabel(
+        t,
+        profile?.relationshipIntent,
+        profile?.relationshipIntentDisplay,
+      ),
+    [profile?.relationshipIntentDisplay, profile?.relationshipIntent, t],
+  );
 
   // "Ortak noktalar" rozetleri. DİKKAT: ortak nokta yoksa backend boş dizi
   // DEĞİL `null` gönderiyor — `.length` yerine Array.isArray ile kontrol et.

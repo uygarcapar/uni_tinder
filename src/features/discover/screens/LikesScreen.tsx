@@ -26,9 +26,9 @@ import * as Haptics from "expo-haptics";
 import {
   Check,
   ChevronDown,
-  Lock,
   MessageCircle,
   RotateCcw,
+  Search,
 } from "@/shared/icons";
 import SFIcon from "@/shared/components/SFIcon";
 import SuperLikeGlyph from "@/shared/components/SuperLikeGlyph";
@@ -61,6 +61,7 @@ import ScreenHeader, {
   SCREEN_HEADER_TITLE_HEIGHT,
 } from "@/shared/components/ScreenHeader";
 import SkeletonBox from "@/shared/components/SkeletonBox";
+import HobbyIcon from "@/shared/components/HobbyIcon";
 import PremiumBadge from "@/shared/components/PremiumBadge";
 import SelfieVerifiedBadge, {
   selfieBadgeSize,
@@ -76,6 +77,10 @@ import {
   recoverMissedMatch,
 } from "@/features/discover/missedMatchRecovery";
 import { normalizeLikerNote } from "@/features/discover/likerNote";
+import {
+  relationshipIntentLabel,
+  resolveTeaserHobby,
+} from "@/features/discover/likerCardTeaser";
 import { resolveRecoveryAccess } from "@/features/discover/recoveryQuota";
 import {
   setWhoLikedMe,
@@ -227,13 +232,28 @@ const lockedVeilTint = () =>
 // ⚠️ Yükseltirken placeholder kutuları unutulmamalı: açık modda kutular KOYU
 // (bkz. boxInk), perde koyulaştıkça kutularla arasındaki kontrast düşer.
 const LOCKED_CARD_VEIL_SCRIM_LIGHT = 0.2;
-// Kilitli kartın ORTASINDAKİ kilit — kartın "yükleniyor" değil "kapalı"
-// okunmasını sağlayan TEK işaret (gerekçe LikeCard'daki kilit bloğunda).
-// Kabuk/disk YOK: kilit doğrudan bulanık fotoğrafın üstünde duruyor, bir
-// kabuğa oturduğunda köşedeki cam butonun ikizi gibi okunup basılabilir
-// sanılıyordu. Ölçü köşedeki butonun glifinden belirgin büyük — köşe bir
-// aksiyon, orta bir durum; yakın ölçülerde ikisi aynı ailedenmiş gibi görünür.
-const LOCKED_CARD_LOCK_GLYPH_SIZE = 44;
+
+// ── Kilitli kartın İPUCU satırı (bkz. likerCardTeaser) ──────────────────────
+// Bumble'ın "Liked You" kartı: bulanık fotoğraf + isim yerinde gri bar + foto
+// doğrulama rozeti + bir hobi pili + "ne arıyor" pili. Kimlik hâlâ perdenin
+// altında, ama kart artık "yükleniyor" değil "kapalı ve içinde biri var"
+// okunuyor — paywall'a giden merak buradan geliyor.
+//
+// Piller açık kartın hobi pillerinden (SwipeCard) bir kademe küçük: kart
+// listede yarım boy, tam boy pil perdeyi kaplıyordu. Dolgu `boxInk` ailesinden
+// (placeholder barla AYNI polarite kuralı: açıkta koyu, koyuda açık) — perde
+// modla döndüğü için (bkz. lockedVeilTint) sabit beyaz bir pil açık modda
+// camın içinde kayboluyordu.
+const LOCKED_TEASER_PILL_HEIGHT = 30;
+const LOCKED_TEASER_PILL_PAD_H = 10;
+const LOCKED_TEASER_PILL_GAP = 8;
+const LOCKED_TEASER_ICON_SIZE = 13;
+const LOCKED_TEASER_TEXT_SIZE = 13;
+// İsim barı ile pil satırı arası.
+const LOCKED_TEASER_ROW_GAP = 12;
+const LOCKED_TEASER_FILL_ALPHA = 0.16;
+// Açık modda pil yazısı: bar gibi tam siyah değil, bir tık yumuşak.
+const LOCKED_TEASER_INK_ALPHA_LIGHT = 0.85;
 
 /**
  * Kart fotoğrafının ALT BANDINDAKİ okunabilirlik perdesi — isim/üniversite
@@ -1460,6 +1480,11 @@ function LikeCard({
   // İsim satırının üstündeki pill'in metni. Diğer etiketler gibi PROP: kart
   // i18n hook'u tutmuyor, çeviri ekranın elinde (bkz. likeLabel/recoverLabel).
   superLikeLabel,
+  // Kilitli karttaki "ne arıyor" pilinin etiketi. Diğer etiketler gibi kart
+  // i18n hook'u tutmuyor; ekran `t`'ye bağlı SABİT bir çözücü veriyor (kartı
+  // parametre alıyor, memo bozulmuyor). Kural likerCardTeaser'da, keşif
+  // kartıyla ortak.
+  resolveIntentLabel,
   // ⚠️ Burada bir zamanlar `alwaysClear` vardı ve KALDIRILDI (2026-08-31).
   // Kaçırdıkların sekmesi o prop ile blur'un tamamen dışında kalıyordu;
   // gerekçesi "liste backend'de gating'e tabi değil"di ama gating listede değil
@@ -2052,47 +2077,161 @@ function LikeCard({
             </>
           )}
 
-          {/* Blurlu (kilitli) kartlar — kartın ortasında TEK bir beyaz kilit.
-              Eskiden isim/üniversitenin yerinde iki gri kutu vardı; kutular
-              yükleme iskeletiyle (SkeletonBox) birebir aynı dile sahipti ve
-              kart "hâlâ yükleniyor" gibi görünüyordu — kullanıcı paywall'ı
-              değil bekleme ekranını okuyordu. Kilit bunu tek işaretle çözüyor:
-              kart yüklenmiyor, KAPALI.
+          {/* Blurlu (kilitli) kartlar — Bumble'ın "Liked You" kartı gibi:
+              isim yerinde TEK gri bar (+ foto doğrulama rozeti), altında
+              kimliği açmayan iki ipucu pili (bir hobi, ilişki niyeti).
+              Eskiden iki gri bar vardı (isim + üniversite); iki bar yükleme
+              iskeletiyle (SkeletonBox) birebir aynı dile sahipti ve kart
+              "hâlâ yükleniyor" gibi okunuyordu. Bir ara kartın ortasına kilit
+              glifi de denendi; o da kartı bir paywall duvarına çeviriyordu.
+              İpucu ikisini de çözüyor: kart yüklenmiyor, kapalı ama İÇİNDE
+              BİRİ VAR — paywall'ın gerekçesi kartın kendisinde.
+              ⚠️ İpucuya isim/yaş/üniversite/şehir EKLEME — bkz. likerCardTeaser.
 
-              YAZI YOK (ürün kararı): kilidin ne olduğu ve çözümün ne olduğu
-              zaten sekmenin başlığında ve "Beğenenleri gör" pill'inde duruyor;
-              kartın üstünde tekrar edilince liste bir paywall duvarına
-              dönüşüyordu.
-
-              Renk SABİT BEYAZ, `boxInk` gibi modla DÖNMÜYOR: kilit fotoğrafın
-              üstünde duruyor (bkz. theme/blur.ts'teki foto üstü kuralı) ve
-              altındaki perde iki modda da fotoğrafın rengini geçiriyor —
-              koyu bir glif açık bir fotoğrafın üstünde kayboluyordu. Açık
-              modun ince camında kontrastı taşıyan şey `LOCKED_CARD_VEIL_
-              SCRIM_LIGHT` perdesi; o kısılırsa burası da gözden geçirilmeli. */}
-          {!showClear && (
-            <View
-              pointerEvents="none"
-              style={[
-                StyleSheet.absoluteFill,
-                { alignItems: "center", justifyContent: "center" },
-              ]}
-            >
-              <SFIcon
-                // DOLU DEĞİL çizgili (`lock.fill` değil `lock`): bu ölçüde
-                // dolu asma kilit bulanık fotoğrafın üstünde tek parça beyaz
-                // bir leke gibi oturuyordu. Çizgili varyant aynı şeyi söyleyip
-                // altındaki fotoğrafı boğmuyor — ve Android'deki lucide
-                // fallback'i de zaten çizgili, iki platform ayrışmıyor.
-                name="lock"
-                fallback={Lock}
-                size={LOCKED_CARD_LOCK_GLYPH_SIZE}
-                color={colors.onMedia}
-                strokeWidth={2}
-                weight="semibold"
-              />
-            </View>
-          )}
+              Bar/pil perdenin TERSİ olmak zorunda; aynı yöndeki bir kutu camın
+              içinde kaybolur. Perde `chromeBlurTint()` ile modla döndüğü için
+              kutular da dönüyor: açık modda koyu, koyu modda açık.
+              `isLight()` render sırasında okunuyor — modül seviyesinde
+              sabitlenirse tema değişince bayat kalır (bkz. theme/colors.ts).
+              Bar genişliği gerçek metin uzunluğuna göre dinamik (karakter ≈ px). */}
+          {!showClear &&
+            (() => {
+              const boxInk = isLight() ? scrimAt : onMediaAt;
+              const teaserInk = isLight()
+                ? scrimAt(LOCKED_TEASER_INK_ALPHA_LIGHT)
+                : colors.onMedia;
+              const teaserFill = boxInk(LOCKED_TEASER_FILL_ALPHA);
+              const maxW = CARD_WIDTH - CARD_SIDE_INSET_PLAIN * 2;
+              const nameText =
+                item.age != null
+                  ? `${item.name || ""}, ${item.age}`
+                  : item.name || "";
+              // Karakter ≈ px oranı isim ölçüsüne bağlı: 700 ağırlıkta bir
+              // karakterin ortalama genişliği punto'nun yarısına yakın.
+              const nameW = Math.min(
+                maxW,
+                Math.max(
+                  28,
+                  Math.round(nameText.length * LIKE_CARD_NAME_SIZE * 0.53),
+                ),
+              );
+              const hobby = item.teaserHobby ?? null;
+              const intentLabel = resolveIntentLabel?.(item) ?? "";
+              const pillStyle = {
+                flexDirection: "row" as const,
+                alignItems: "center" as const,
+                height: LOCKED_TEASER_PILL_HEIGHT,
+                paddingHorizontal: LOCKED_TEASER_PILL_PAD_H,
+                borderRadius: 999,
+                borderCurve: "continuous" as const,
+                backgroundColor: teaserFill,
+              };
+              const pillTextStyle = {
+                marginLeft: 6,
+                color: teaserInk,
+                fontSize: LOCKED_TEASER_TEXT_SIZE,
+                fontWeight: "600" as const,
+              };
+              // Kilitli kart notsuz beğenidir (not Likes'ta blursuz
+              // geliyor): blok açık kartın kimlik bloğuyla AYNI paylarda
+              // duruyor ki listede kilitli/açık kartların isim satırları aynı
+              // hizaya gelsin (bkz. blockBottom). Blok tabana çivili: pil
+              // satırı eklenince bar yukarı çıkıyor, piller açık karttaki
+              // üniversite satırının yerini alıyor.
+              return (
+                <View
+                  style={{
+                    position: "absolute",
+                    left: CARD_SIDE_INSET_PLAIN,
+                    right: CARD_SIDE_INSET_PLAIN,
+                    bottom: blockBottom,
+                  }}
+                  pointerEvents="none"
+                >
+                  <View style={{ flexDirection: "row", alignItems: "center" }}>
+                    <View
+                      style={{
+                        width: nameW,
+                        height: 18,
+                        borderRadius: 6,
+                        backgroundColor: boxInk(0.6),
+                      }}
+                    />
+                    {/* Rozet açık karttakiyle AYNI ölçü ve renk (marka
+                        rengi): doğrulanmış olmak kimlik değil, güven sinyali —
+                        free'ye verilebilecek en ucuz ve en ikna edici ipucu. */}
+                    <SelfieVerifiedBadge
+                      verified={item.isSelfieVerified}
+                      size={selfieBadgeSize(LIKE_CARD_NAME_SIZE)}
+                      style={{ marginLeft: 8 }}
+                    />
+                  </View>
+                  {(hobby || !!intentLabel) && (
+                    <View
+                      style={{
+                        flexDirection: "row",
+                        alignItems: "center",
+                        marginTop: LOCKED_TEASER_ROW_GAP,
+                      }}
+                    >
+                      {hobby && (
+                        // Hobi pili DARALMIYOR, niyet pili daralıyor: hobi
+                        // etiketi kısa ve tek kelime, niyet cümlemsi ("Uzun
+                        // süreli ilişki"); yer kalmayınca uzun olan kırpılsın.
+                        <View
+                          style={[
+                            pillStyle,
+                            {
+                              flexShrink: 0,
+                              marginRight: intentLabel
+                                ? LOCKED_TEASER_PILL_GAP
+                                : 0,
+                            },
+                          ]}
+                        >
+                          {/* Emoji kutusu SwipeCard hobi piliyle aynı kaçış:
+                              açık yükseklik, taşan glif kırpılmıyor. */}
+                          <View
+                            style={{
+                              height: LOCKED_TEASER_ICON_SIZE,
+                              justifyContent: "center",
+                              alignItems: "center",
+                              overflow: "visible",
+                            }}
+                          >
+                            <HobbyIcon
+                              hobby={hobby.enumName ?? hobby.label}
+                              size={LOCKED_TEASER_ICON_SIZE}
+                            />
+                          </View>
+                          <Text numberOfLines={1} style={pillTextStyle}>
+                            {hobby.label}
+                          </Text>
+                        </View>
+                      )}
+                      {!!intentLabel && (
+                        <View style={[pillStyle, { flexShrink: 1 }]}>
+                          <SFIcon
+                            name="magnifyingglass"
+                            fallback={Search}
+                            size={LOCKED_TEASER_ICON_SIZE}
+                            color={teaserInk}
+                            strokeWidth={2}
+                            weight="semibold"
+                          />
+                          <Text
+                            numberOfLines={1}
+                            style={[pillTextStyle, { flexShrink: 1 }]}
+                          >
+                            {intentLabel}
+                          </Text>
+                        </View>
+                      )}
+                    </View>
+                  )}
+                </View>
+              );
+            })()}
         </View>
       </AnimatedPressable>
     </Animated.View>
@@ -2226,6 +2365,18 @@ export default function LikesScreen() {
   useRenderCount("LikesScreen");
   const { t } = useTranslation();
   const [likes, setLikes] = useState([]);
+  // Kilitli kartın "ne arıyor" pili — kart `t` tutmuyor, çözücü buradan
+  // gidiyor. `t`'ye bağlı sabit referans: memo'lu kart dil değişmedikçe bu
+  // yüzden yeniden çizilmiyor.
+  const resolveIntentLabel = useCallback(
+    (item) =>
+      relationshipIntentLabel(
+        t,
+        item?.relationshipIntent,
+        item?.relationshipIntentDisplay,
+      ),
+    [t],
+  );
   // Event handler'larda güncel listeye erişmek için — setLikes updater'ının
   // içinde dispatch etmek render sırasında TabNavigator'ı güncelliyordu.
   const likesRef = useRef([]);
@@ -2861,6 +3012,13 @@ export default function LikesScreen() {
             // bayrak her kart için `true` geliyor, çünkü liste zaten "seni
             // beğenenler". Alan yalnız taşınıyor.
             hasLikedMe: p.hasLikedMe === true,
+            // Kilitli kartın ipucu katmanı (bkz. likerCardTeaser) + açık
+            // karttaki foto doğrulama rozeti. Üçü de sunucunun zaten taşıdığı
+            // alanlar; free'de kart bunlardan yalnız kimlik açmayanları basıyor.
+            isSelfieVerified: p.isSelfieVerified ?? null,
+            teaserHobby: resolveTeaserHobby(p.hobbies),
+            relationshipIntent: p.relationshipIntent ?? null,
+            relationshipIntentDisplay: p.relationshipIntentDisplay ?? null,
           }));
           const likeProfiles = (data.result.likes?.profiles || []).map((p) => ({
             id: `l_${p.profileId}`,
@@ -2875,6 +3033,13 @@ export default function LikesScreen() {
             isNote: !!p.isNote,
             note: normalizeLikerNote(p),
             hasLikedMe: p.hasLikedMe === true,
+            // Kilitli kartın ipucu katmanı (bkz. likerCardTeaser) + açık
+            // karttaki foto doğrulama rozeti. Üçü de sunucunun zaten taşıdığı
+            // alanlar; free'de kart bunlardan yalnız kimlik açmayanları basıyor.
+            isSelfieVerified: p.isSelfieVerified ?? null,
+            teaserHobby: resolveTeaserHobby(p.hobbies),
+            relationshipIntent: p.relationshipIntent ?? null,
+            relationshipIntentDisplay: p.relationshipIntentDisplay ?? null,
           }));
 
           // SuperLike'lar her zaman üstte (vurgulu bölüm).
@@ -3693,6 +3858,7 @@ export default function LikesScreen() {
             likeLabel={t("likes.likeButton")}
             recoverLabel={t("likes.recoverButton")}
             superLikeLabel={t("likes.superLikePill")}
+            resolveIntentLabel={resolveIntentLabel}
             exitDirection={exitingIds[item.userId || item.likerUserId] ?? null}
           />
         )}

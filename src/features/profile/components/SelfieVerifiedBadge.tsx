@@ -59,8 +59,10 @@ export default function SelfieVerifiedBadge({
         name="checkmark.seal.fill"
         fallback={BadgeCheck}
         size={size}
-        color={colors.success}
-        fill={colors.success}
+        // Yeşil DEĞİL, marka rengi: yeşil sistem "başarı" tonu ve ekranda
+        // premium rozeti, isim ve bu sembol yan yanayken tek yabancı renk oydu.
+        color={colors.primary}
+        fill={colors.primary}
         weight="semibold"
         strokeWidth={2}
       />
