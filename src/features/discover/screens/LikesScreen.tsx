@@ -219,8 +219,15 @@ const LOCKED_CARD_BLUR_INTENSITY_LIGHT = Platform.OS === "ios" ? 100 : 60;
  * ⚠️ `isLight()` RENDER SIRASINDA okunmalı — modül seviyesinde sabitlenirse
  * tema değişince bayat kalır (bkz. theme/colors.ts).
  */
+// AÇIK MODDA EN İNCE malzeme (2026-09-12): bir kademe ince (thin, ~%78 beyaz)
+// de yetmedi — iki katman üst üste ~%95 beyaz tül oluyor, fotoğrafın rengi
+// gidiyor, üstüne binen siyah perde de o sütlü beyazı DÜZ GRİYE çeviriyordu.
+// Kart "bulanık fotoğraf" değil "gri levha" okunuyordu. Ultra-thin tülü en aza
+// indiriyor, fotoğrafın kendi tonları geçiyor; bulanıklık yarıçapı malzemeden
+// bağımsız olduğu için (bkz. theme/blur.ts) kimlik perdesi aynı kalıyor —
+// gizleme işi zaten `blurRadius`ta.
 const lockedVeilTint = () =>
-  isLight() ? ("systemThinMaterialLight" as const) : chromeBlurTint();
+  isLight() ? ("systemUltraThinMaterialLight" as const) : chromeBlurTint();
 // Açık modun KARARTMA düğmesi — malzemede böyle bir düğme YOK: koyu modda
 // intensity kartı karartıyor (malzeme siyah), açık modda ise BEYAZLATIYOR
 // (malzeme beyaz). Yani "biraz daha koyu olsun" isteği açık tarafta camın
@@ -231,7 +238,10 @@ const lockedVeilTint = () =>
 // kartın ne kadar koyu okunduğunu ayarlıyor.
 // ⚠️ Yükseltirken placeholder kutuları unutulmamalı: açık modda kutular KOYU
 // (bkz. boxInk), perde koyulaştıkça kutularla arasındaki kontrast düşer.
-const LOCKED_CARD_VEIL_SCRIM_LIGHT = 0.2;
+// 0.2 → 0.1 (2026-09-12): malzeme ultra-thin'e inince fotoğrafın rengi geri
+// geldi; 0.2 o rengi yine griye boğuyordu. 0.1 yalnız placeholder kutularının
+// ve pillerin (boxInk, koyu) parlak fotoğraf üstünde okunmasına yetecek kadar.
+const LOCKED_CARD_VEIL_SCRIM_LIGHT = 0.1;
 
 // ── Kilitli kartın İPUCU satırı (bkz. likerCardTeaser) ──────────────────────
 // Bumble'ın "Liked You" kartı: bulanık fotoğraf + isim yerinde gri bar + foto

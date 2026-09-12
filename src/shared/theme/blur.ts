@@ -73,7 +73,9 @@ export function thinBlurTint() {
  * katman TAŞIMIYOR, kendi zeminlerini bulmaları gerekiyor. Okunurluk sorunu
  * çıkarsa kademeyi kalınlaştırmadan önce yazının kendi yüzeyine bak.
  *
- * Tek okuyucusu şimdilik SwipeCard'ın açık panel zemini (CardGlassBackdrop).
+ * Okuyucuları: SwipeCard'ın açık panel zemini (CardGlassBackdrop) ve
+ * LikesScreen'in kilitli kart örtüsünün AÇIK MOD hâli (orada literal yazılı,
+ * koyu mod chrome'da kalıyor — gerekçe lockedVeilTint'in yanında).
  */
 export function ultraThinBlurTint() {
   const dark = !isLight();
