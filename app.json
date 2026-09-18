@@ -7,8 +7,14 @@
     "orientation": "portrait",
     "icon": "./assets/icon.png",
     "userInterfaceStyle": "automatic",
+    "locales": {
+      "en": "./locales/en.json",
+      "tr": "./locales/tr.json"
+    },
     "ios": {
-      "supportsTablet": true,
+      "supportsTablet": false,
+      "requireFullScreen": true,
+      "buildNumber": "37",
       "bundleIdentifier": "com.uygarcapar.lit",
       "associatedDomains": [
         "applinks:lit.4ourstack.com",
@@ -17,9 +23,9 @@
       "googleServicesFile": "./GoogleService-Info.plist",
       "infoPlist": {
         "ITSAppUsesNonExemptEncryption": false,
-        "NSMicrophoneUsageDescription": "Sesli mesaj gönderebilmen için mikrofon erişimine izin vermen gerekir.",
-        "NSPhotoLibraryUsageDescription": "Profil fotoğraflarını seçebilmen için galeri erişimine izin vermen gerekir.",
-        "NSCameraUsageDescription": "Profil fotoğrafını çekmen ve fotoğraflarının sana ait olduğunu doğrulaman için kamera erişimine izin vermen gerekir.",
+        "NSMicrophoneUsageDescription": "Lit needs microphone access so you can send voice messages.",
+        "NSPhotoLibraryUsageDescription": "Lit needs photo library access so you can choose your profile photos.",
+        "NSCameraUsageDescription": "Lit needs camera access so you can take a profile photo and verify that the photos are really you.",
         "UIBackgroundModes": [
           "remote-notification"
         ]
@@ -51,24 +57,32 @@
       [
         "expo-audio",
         {
-          "microphonePermission": "Sesli mesaj gönderebilmen için mikrofon erişimine izin vermen gerekir."
+          "microphonePermission": "Lit needs microphone access so you can send voice messages.",
+          "enableBackgroundPlayback": false,
+          "enableBackgroundRecording": false
         }
       ],
       "expo-image",
       [
         "expo-image-picker",
         {
-          "photosPermission": "Profil fotoğraflarını seçebilmen için galeri erişimine izin vermen gerekir.",
-          "cameraPermission": "Profil fotoğrafını çekmen ve fotoğraflarının sana ait olduğunu doğrulaman için kamera erişimine izin vermen gerekir.",
+          "photosPermission": "Lit needs photo library access so you can choose your profile photos.",
+          "cameraPermission": "Lit needs camera access so you can take a profile photo and verify that the photos are really you.",
           "microphonePermission": false
         }
       ],
       [
         "expo-camera",
         {
-          "cameraPermission": "Profil fotoğrafını çekmen ve fotoğraflarının sana ait olduğunu doğrulaman için kamera erişimine izin vermen gerekir.",
+          "cameraPermission": "Lit needs camera access so you can take a profile photo and verify that the photos are really you.",
           "microphonePermission": false,
           "recordAudioAndroid": false
+        }
+      ],
+      [
+        "expo-dev-client",
+        {
+          "addGeneratedScheme": false
         }
       ],
       "@react-native-firebase/app",
@@ -113,11 +127,19 @@
         }
       ],
       "expo-localization",
-      "expo-secure-store",
+      [
+        "expo-secure-store",
+        {
+          "faceIDPermission": false
+        }
+      ],
       [
         "expo-location",
         {
-          "locationWhenInUsePermission": "Şehrini ve yakınındaki kişileri gösterebilmemiz için konumuna ihtiyacımız var.",
+          "locationWhenInUsePermission": "Lit needs your location to show your city and the people near you.",
+          "locationAlwaysPermission": false,
+          "locationAlwaysAndWhenInUsePermission": false,
+          "motionUsagePermission": false,
           "isIosBackgroundLocationEnabled": false,
           "isAndroidBackgroundLocationEnabled": false
         }
@@ -139,7 +161,8 @@
           ]
         }
       ],
-      "expo-video"
+      "expo-video",
+      "expo-sqlite"
     ],
     "web": {
       "favicon": "./assets/favicon.png"
