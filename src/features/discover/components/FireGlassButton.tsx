@@ -9,40 +9,47 @@ import {
   frame,
   tint,
 } from "@expo/ui/swift-ui/modifiers";
-import SuperLikeGlyph from "@/shared/components/SuperLikeGlyph";
+import FireGlyph from "@/shared/components/FireGlyph";
 import { colors as theme, gradients, withAlpha } from "@/shared/theme/colors";
 import { glassFallback, GLASS_ICON_BUTTON } from "@/shared/theme/glass";
 
 /**
- * SwipeCard expanded'ken sağ üstte ASILI KALAN süper beğeni butonu.
+ * SwipeCard expanded'ken sağ üstte ASILI KALAN Fire butonu.
  *
- * Kapaktaki serbest kalpten farkı kabuğu: burada kalp iOS 26'nın native liquid
- * glass butonunun İÇİNDE duruyor. Gerekçe: sticky duruşta kalp artık
+ * Kapaktaki serbest alevden farkı kabuğu: burada glyph iOS 26'nın native liquid
+ * glass butonunun İÇİNDE duruyor. Gerekçe: sticky duruşta işaret artık
  * fotoğrafın değil, yukarı akan panel zemininin üstünde de kalabiliyor — kendi
  * başına duran bir glyph orada okunmuyordu. Cam kabuk arkasındaki her şeyi
  * kırıp bulanıklaştırdığı için hem foto hem panel üstünde aynı kontrastı verir.
  *
  * Stil `.glass` DEĞİL `.glassProminent`: sade cam neredeyse berrak kalıyor ve
- * tint'i ancak bir ton olarak gösteriyor — buton renkli okunmuyor, beyaz kalp
+ * tint'i ancak bir ton olarak gösteriyor — buton renkli okunmuyor, beyaz glyph
  * de parlak fotoğraf üstünde yıkanıyordu. Prominent, camın kırılmasını koruyup
- * dolguyu tint'e boyuyor: sıcak kırmızı kabuk + beyaz kalp.
+ * dolguyu tint'e boyuyor: sıcak kırmızı kabuk + beyaz alev.
  *
- * Tint kalbin KENDİ kırmızısı (gradients.swipeHeart'ın ilk durağı, #fc1919) —
- * bkz. superLikeTint(). Önce `accentOrange` denendi, turuncu temsil ettiği
- * kalbin ailesinden kopuyordu; sonra marka `primary`'sine (#ff4d3d) geçildi ama
- * o da kırmızıdan çok mercan/turuncu okunuyordu. Artık buton, kapaktaki kalp
- * (SuperLikeHeart) ve kutlama alevi (SuperLikeFlameCanvas ısı rampası) aynı
- * kırmızıdan besleniyor. accentOrange zaten kırpma ekranının kendi aksanı —
- * o ayrı kalsın.
+ * Tint glyph'in KENDİ kırmızısı (gradients.swipeHeart'ın ilk durağı, #fc1919) —
+ * bkz. fireTint(). Önce `accentOrange` denendi, turuncu temsil ettiği
+ * işaretin ailesinden kopuyordu; sonra marka `primary`'sine (#ff4d3d) geçildi
+ * ama o da kırmızıdan çok mercan/turuncu okunuyordu. Artık buton, kapaktaki
+ * alev (FireBurnCanvas) ve kutlama alevi (FireFlameCanvas ısı
+ * rampası) aynı kırmızıdan besleniyor. accentOrange zaten kırpma ekranının
+ * kendi aksanı — o ayrı kalsın.
  *
- * Kalp SF `heart.fill` DEĞİL, uygulamanın kendi glyph'i (bkz. SuperLikeGlyph):
- * butonun label'ı RNHostView ile SwiftUI'ın içine gömülen bir RN alt ağacı.
- * Böylece iOS 26'nın basış animasyonunda cam ile kalp BİRLİKTE ölçekleniyor —
- * camın üstüne RN katmanı bindirseydik kalp yerinde donardı.
+ * Glyph SF `flame.fill` DEĞİL, uygulamanın kendi alevi (bkz. FireGlyph —
+ * ürünün Fire işareti KALPTEN ALEVE geçti): butonun label'ı RNHostView
+ * ile SwiftUI'ın içine gömülen bir RN alt ağacı. Böylece iOS 26'nın basış
+ * animasyonunda cam ile glyph BİRLİKTE ölçekleniyor — camın üstüne RN katmanı
+ * bindirseydik glyph yerinde donardı.
  *
- * Kapaktaki kalbin gradyanı ve shimmer'ı buraya TAŞINMADI: dolgu artık düz
- * beyaz — kırmızı gradyan kendi ailesinden bir kabuğun üstünde okunmuyordu.
- * Parıltıyı da camın kendi spekülar hareketi veriyor.
+ * KAPAKTAKİ YANMA BURAYA GELMİYOR, bilerek: alev orada her karede silüetini
+ * değiştiren bir Skia canvas'ı (bkz. FireBurnCanvas) ve onu RNHostView'ın
+ * içine, SwiftUI'ın cam katmanının altına sokmak hem gereksiz hem riskli —
+ * yanma ÇEKME jestinin geri bildirimi, bu duruşta çekme diye bir şey yok,
+ * yalnız dokunma var. Burada glyph düz beyaz duruyor.
+ *
+ * Kapaktaki gradyan ve shimmer da buraya TAŞINMADI: dolgu düz beyaz — kırmızı
+ * gradyan kendi ailesinden bir kabuğun üstünde okunmuyordu. Parıltıyı camın
+ * kendi spekülar hareketi veriyor.
  */
 
 /**
@@ -54,7 +61,7 @@ import { glassFallback, GLASS_ICON_BUTTON } from "@/shared/theme/glass";
  * burada ufak kalıyordu. Pay TEK YERDE, çünkü ortak sabiti (GLASS_ICON_BUTTON)
  * büyütmek bütün ekranların başlık butonlarını da büyütürdü.
  *
- * KUTUYA DA EKLENMEK ZORUNDA (aşağıdaki SUPER_LIKE_GLASS_LABEL_BOX): dairenin
+ * KUTUYA DA EKLENMEK ZORUNDA (aşağıdaki FIRE_GLASS_LABEL_BOX): dairenin
  * GÖRÜNEN çapı `frame()`ten değil label + controlSize payından geliyor —
  * yalnız frame'i büyütmek kabuğu değil, kabuğun içinde durduğu boşluğu
  * büyütür.
@@ -72,40 +79,42 @@ const CARD_GLASS_BUMP = 4;
  * Şeridin kendi ölçüleri de (TITLE_TOP / TITLE_HEIGHT / CARD_HEADER_HEIGHT,
  * bkz. CardStickyHeader) buradan türüyor, yani değiştirmek bandı da küçültür.
  * Başlık satırının MERKEZİ bundan etkilenmiyor: TITLE_TOP =
- * SUPER_LIKE_GLASS_INSET ve inset farkın yarısını geri aldığı için satır
+ * FIRE_GLASS_INSET ve inset farkın yarısını geri aldığı için satır
  * kısalırken merkezi yerinde kalıyor.
  *
  * 80 → 64 → 50 → 58 → 40 → 44 (48 denendi, geri alındı: kabuk gliflerin
- * yanında fazla boş kalıyordu). Kapaktaki serbest kalpten (SUPER_LIKE_SIZE 55)
+ * yanında fazla boş kalıyordu). Kapaktaki serbest alevden (FIRE_SIZE 55)
  * hâlâ KÜÇÜK; iki şeklin merkezi de çakışmaya devam ediyor
- * (SUPER_LIKE_GLASS_INSET farkı işaretiyle birlikte götürüyor, yani kabuk
- * büyürken buton köşeye yaklaşıyor ama MERKEZİ kıpırdamıyor — kalp→cam
+ * (FIRE_GLASS_INSET farkı işaretiyle birlikte götürüyor, yani kabuk
+ * büyürken buton köşeye yaklaşıyor ama MERKEZİ kıpırdamıyor — alev→cam
  * geçişi ve şeridin başlık hizası bundan etkilenmiyor). 55'e kadar çıkarsa
- * kabuk serbest kalple aynı çapa gelir ve inset de kalbinkine (28) eşitlenir;
- * ötesi geçişi ters çevirir (kabuk kalpten büyük).
+ * kabuk serbest alevle aynı çapa gelir ve inset de onunkine (28) eşitlenir;
+ * ötesi geçişi ters çevirir (kabuk glyph'ten büyük).
  *
- * Glifler kabukla BİRLİKTE büyümüyor: kalp (29) ve ok (19) kendi sabitlerinde
- * kaldı, büyüyen pay cam kenara gitti (kalbin kabuğa oranı 0.73 → 0.66).
+ * Glifler kabukla BİRLİKTE büyümüyor: alev (29) ve ok (19) kendi sabitlerinde
+ * kaldı, büyüyen pay cam kenara gitti (glyph'in kabuğa oranı 0.73 → 0.66).
  * Buradan daha da büyütülecekse glifler de büyümeli, yoksa işaret kabuğun
  * içinde kaybolur — 48'de olan buydu.
  */
-export const SUPER_LIKE_GLASS_SIZE = GLASS_ICON_BUTTON.size + CARD_GLASS_BUMP;
+export const FIRE_GLASS_SIZE = GLASS_ICON_BUTTON.size + CARD_GLASS_BUMP;
 
 /**
- * Kabuğun içindeki kalp. Cam kenarın nefes payı kalsın diye kabuktan küçük.
+ * Kabuğun içindeki alev. Cam kenarın nefes payı kalsın diye kabuktan küçük.
  *
  * KABUĞUN ÖLÇÜSÜNÜ BU BELİRLEMİYOR (artık): iOS 26'nın cam butonu label'ın
- * kutusunu sarıyor, o yüzden çapı SUPER_LIKE_GLASS_LABEL_BOX taşıyor. Bu sabit
- * yalnızca çizilen kalbin kendi ölçüsü — kutunun içinde ortalı duruyor.
+ * kutusunu sarıyor, o yüzden çapı FIRE_GLASS_LABEL_BOX taşıyor. Bu sabit
+ * yalnızca çizilen glyph'in kendi ölçüsü — kutunun içinde ortalı duruyor.
  *
  * Şeridin solundaki ok glifi bundan KÜÇÜK ve ayrı bir sabit (bkz.
  * CardCollapseGlassButton): kabuklar aynı çapta, glifler bilerek değil —
  * gerekçe orada.
  *
- * DOKUNMA: kapaktaki serbest kalbin cam butona geçiş ölçeği de bunu okuyor
- * (bkz. SwipeCard > HEART_MORPH_SCALE) — büyütmek geçişin iki ucunu ayırır.
+ * GEÇİŞ ARTIK ÖLÇEĞE DOKUNMUYOR: serbest glyph ile kabuk aynı boyda kalıp
+ * birbirine çapraz SÖNÜYOR (bkz. SwipeCard > fireMorphStyle). Eskiden
+ * burada bir ölçek uyarısı vardı ve okuduğu sabit (HEART_MORPH_SCALE) çoktan
+ * silinmişti.
  *
- * Label kutusundan (SUPER_LIKE_GLASS_LABEL_BOX = 17) BÜYÜK olabilir ve öyle:
+ * Label kutusundan (FIRE_GLASS_LABEL_BOX = 17) BÜYÜK olabilir ve öyle:
  * kutu yalnızca kabuğun çapını ölçen bir ölçüm kutusu, kırpma sınırı DEĞİL
  * (RNHostView'ın altındaki View clipsToBounds yapmıyor). Glif kutunun içinde
  * ortalı çizildiği için taşma simetrik ve 40'lık kabuğun içinde kalıyor.
@@ -114,9 +123,14 @@ export const SUPER_LIKE_GLASS_SIZE = GLASS_ICON_BUTTON.size + CARD_GLASS_BUMP;
  * 30 → 18 → 15 → 20 → 26 → 29: kabuk 58'den 40'a inerken kutuya sığdırmak için
  * düşürüldü, sonra "işaret çok ufak kaldı" diye kutudan bağımsız olarak geri
  * büyütüldü. 29, 40'lık kabuğun içinde her yanda ~5.5pt cam kenar bırakıyor —
- * TAVANA YAKIN, daha fazlası kalbi kabuğun kenarına dayar.
+ * TAVANA YAKIN, daha fazlası glyph'i kabuğun kenarına dayar.
+ *
+ * KALPTEN ALEVE GEÇİŞ BU SAYIYI OYNATMADI ve oynatmamalı: iki glyph de aynı
+ * 24'lük grid'e UZUN KENARI 20 olacak şekilde bakelendi (kalpte genişlik,
+ * alevde yükseklik), yani aynı `size`ta kapladıkları optik boy eşit — yalnız
+ * doldurdukları eksen değişti (bkz. FireGlyph).
  */
-export const SUPER_LIKE_GLASS_GLYPH_SIZE = 29;
+export const FIRE_GLASS_GLYPH_SIZE = 29;
 
 /**
  * SwiftUI butonunun LABEL kutusu — kabuğun GÖRÜNEN çapını bu taşıyor.
@@ -125,7 +139,7 @@ export const SUPER_LIKE_GLASS_GLYPH_SIZE = 29;
  * ortalamaktan başka bir şey yapmıyor. Kabuğu büyütmek = bu kutuyu büyütmek.
  *
  * Bu yüzden glif ölçüsünden AYRI (ikisi tek sabitken kabuğu büyütmek glifi de
- * büyütüyordu — SUPER_LIKE_GLASS_GLYPH_SIZE ve CardCollapseGlassButton >
+ * büyütüyordu — FIRE_GLASS_GLYPH_SIZE ve CardCollapseGlassButton >
  * ICON_SIZE artık sadece çizilen işareti ölçüyor).
  *
  * Kutu ARTIK SIZE'dan sabit bir pay düşerek hesaplanmıyor, ortak sabitten
@@ -135,31 +149,32 @@ export const SUPER_LIKE_GLASS_GLYPH_SIZE = 29;
  * bu kutu + `controlSize("extraLarge")`. Biri değişip diğeri kalırsa kabuklar
  * yine ayrışır.
  */
-export const SUPER_LIKE_GLASS_LABEL_BOX =
+export const FIRE_GLASS_LABEL_BOX =
   GLASS_ICON_BUTTON.label + CARD_GLASS_BUMP;
 
 /**
- * Kapaktaki SERBEST kalbin ölçüsü — cam kabuğun içindeki değil, kartın
+ * Kapaktaki SERBEST alevin ölçüsü — cam kabuğun içindeki değil, kartın
  * fotoğrafında tek başına duranın (bkz. SwipeCard). Aynı şeklin iki duruşu
  * olduğu için ölçüleri de tek dosyada: geçişin (morph) matematiği ikisini
  * birden okuyor.
  */
-export const SUPER_LIKE_SIZE = 55;
+export const FIRE_SIZE = 55;
 
 /**
- * Kalbin kapaktaki köşe boşluğu. Cam buton kalpten BÜYÜK olduğu için aynı
+ * Glyph'in kapaktaki köşe boşluğu. Cam buton ondan BÜYÜK olduğu için aynı
  * boşluğu kullanamaz: kutuları değil MERKEZLERİ çakışmalı, yoksa geçiş
  * sırasında şekil köşeye doğru kayıyor. Fark yarı yarıya geri alınıyor.
  *
  * Kartın sticky başlığı da bu boşluğa hizalanıyor (bkz. CardStickyHeader):
  * şeritteki isim satırı ile buton aynı merkezde durur.
  */
-export const SUPER_LIKE_INSET = 28;
-export const SUPER_LIKE_GLASS_INSET =
-  SUPER_LIKE_INSET - (SUPER_LIKE_GLASS_SIZE - SUPER_LIKE_SIZE) / 2;
+export const FIRE_INSET = 28;
+export const FIRE_GLASS_INSET =
+  FIRE_INSET - (FIRE_GLASS_SIZE - FIRE_SIZE) / 2;
 
 /**
- * Kabuğun rengi — süper beğeni kalbinin gradyanının İLK durağı (#fc1919).
+ * Kabuğun rengi — Fire glyph'inin gradyanının İLK durağı (#fc1919).
+ * Gradyanın adı (`swipeHeart`) kalp döneminden kalma; rengin kendisi değişmedi.
  * Cam tint'i, iOS 26 altı fallback dolgusu ve Android dairesi bunu paylaşıyor:
  * üçü ayrı ayrı yazılırsa biri güncellenip diğerleri kalır.
  *
@@ -167,30 +182,30 @@ export const SUPER_LIKE_GLASS_INSET =
  * değişince yerinde güncelleniyor, modül seviyesinde bir `const` ilk modun
  * değerini dondururdu.
  */
-function superLikeTint() {
+function fireTint() {
   return gradients.swipeHeart[0];
 }
 
 /**
- * Butonun içindeki kalp — düz beyaz dolgu. `onMedia` (SABİT beyaz, açık modda
- * da dönmez): kırmızı kabuk her iki temada aynı ton, üstündeki kalp de öyle.
+ * Butonun içindeki alev — düz beyaz dolgu. `onMedia` (SABİT beyaz, açık modda
+ * da dönmez): kırmızı kabuk her iki temada aynı ton, üstündeki glyph de öyle.
  */
-function WhiteHeart({ size = SUPER_LIKE_GLASS_GLYPH_SIZE }: { size?: number }) {
+function WhiteFlame({ size = FIRE_GLASS_GLYPH_SIZE }: { size?: number }) {
   return (
     // pointerEvents none: dokunmayı SwiftUI butonu karşılasın, RNHostView'ın
     // iliştirdiği touch handler araya girmesin.
     <View
-      // Kutu kabuğun ölçüsünü taşıyor (bkz. SUPER_LIKE_GLASS_LABEL_BOX), kalp
+      // Kutu kabuğun ölçüsünü taşıyor (bkz. FIRE_GLASS_LABEL_BOX), alev
       // onun içinde ortalı ve kendi ölçüsünde kalıyor.
       style={{
-        width: SUPER_LIKE_GLASS_LABEL_BOX,
-        height: SUPER_LIKE_GLASS_LABEL_BOX,
+        width: FIRE_GLASS_LABEL_BOX,
+        height: FIRE_GLASS_LABEL_BOX,
         alignItems: "center",
         justifyContent: "center",
       }}
       pointerEvents="none"
     >
-      <SuperLikeGlyph size={size} color={theme.onMedia} />
+      <FireGlyph size={size} color={theme.onMedia} />
     </View>
   );
 }
@@ -201,7 +216,7 @@ type Props = {
   label: string;
 };
 
-function SuperLikeGlassButton({ onPress, label }: Props) {
+function FireGlassButton({ onPress, label }: Props) {
   if (Platform.OS === "ios") {
     return (
       // Host'a SABİT ölçü — `matchContents` DEĞİL: intrinsic ölçü native
@@ -220,8 +235,8 @@ function SuperLikeGlassButton({ onPress, label }: Props) {
         // yemiyor. `container`: çentik/durum çubuğu evet, klavye hayır.
         ignoreSafeArea="container"
         style={{
-          width: SUPER_LIKE_GLASS_SIZE,
-          height: SUPER_LIKE_GLASS_SIZE,
+          width: FIRE_GLASS_SIZE,
+          height: FIRE_GLASS_SIZE,
         }}
       >
         <SwiftUIButton
@@ -233,10 +248,10 @@ function SuperLikeGlassButton({ onPress, label }: Props) {
             // çevresine kattığı pay buna bağlı, varsayılan (regular) bırakılınca
             // aynı frame'e rağmen daire belirgin şekilde küçük çiziliyor.
             controlSize("extraLarge"),
-            tint(superLikeTint()),
+            tint(fireTint()),
             frame({
-              width: SUPER_LIKE_GLASS_SIZE,
-              height: SUPER_LIKE_GLASS_SIZE,
+              width: FIRE_GLASS_SIZE,
+              height: FIRE_GLASS_SIZE,
             }),
             a11yLabel(label),
             // iOS 26 altında glassProminent de sessizce .automatic'e düşüyor
@@ -244,13 +259,13 @@ function SuperLikeGlassButton({ onPress, label }: Props) {
             // camsız düz daire. strokeBorder frame'den SONRA gelmeli.
             ...glassFallback({
               shape: "circle",
-              backgroundColor: superLikeTint(),
+              backgroundColor: fireTint(),
               borderColor: withAlpha(theme.onMedia, 0.35),
             }),
           ]}
         >
           <RNHostView matchContents>
-            <WhiteHeart />
+            <WhiteFlame />
           </RNHostView>
         </SwiftUIButton>
       </Host>
@@ -266,20 +281,20 @@ function SuperLikeGlassButton({ onPress, label }: Props) {
       accessibilityRole="button"
       accessibilityLabel={label}
       style={{
-        width: SUPER_LIKE_GLASS_SIZE,
-        height: SUPER_LIKE_GLASS_SIZE,
+        width: FIRE_GLASS_SIZE,
+        height: FIRE_GLASS_SIZE,
         borderRadius: 999,
         borderCurve: "continuous",
         alignItems: "center",
         justifyContent: "center",
-        backgroundColor: superLikeTint(),
+        backgroundColor: fireTint(),
         borderWidth: StyleSheet.hairlineWidth,
         borderColor: withAlpha(theme.onMedia, 0.35),
       }}
     >
-      <WhiteHeart />
+      <WhiteFlame />
     </TouchableOpacity>
   );
 }
 
-export default memo(SuperLikeGlassButton);
+export default memo(FireGlassButton);

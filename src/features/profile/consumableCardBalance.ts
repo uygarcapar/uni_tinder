@@ -5,7 +5,7 @@ import { useAppSelector } from "@/shared/hooks/redux";
 import { selectIsPremium } from "@/features/profile/subscriptionSlice";
 
 /**
- * ProfileScreen'deki mağaza kartlarının (SuperLike, Not) ortak bakiye çözümü.
+ * ProfileScreen'deki mağaza kartlarının (Fire, Not) ortak bakiye çözümü.
  * İki kart aynı /Stats cevabından besleniyor, tek farkları hangi alanı
  * okudukları ve premium aktivasyonunun o alanı etkileyip etkilemediği.
  *
@@ -32,7 +32,7 @@ export function useConsumableCardBalance(
   field: ConsumableBalanceField,
   options: {
     /**
-     * Premium aboneliğin bu bakiyeye hak veriyor mu? SuperLike'ta EVET (tier
+     * Premium aboneliğin bu bakiyeye hak veriyor mu? Fire'ta EVET (tier
      * kotası var), notta HAYIR — not yalnızca satın alınan bir ürün. Sadece
      * "evet"te satın alma ile webhook arası pencere bakiyeyi şüpheli yapar.
      */

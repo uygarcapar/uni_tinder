@@ -1,6 +1,6 @@
 // Recraft'tan gelen 1024'lük SVG'yi 24×24 glyph sabitine "bakeler".
 //
-//   node scripts/bake-glyph.js assets/icons/foo.svg --name SuperLike
+//   node scripts/bake-glyph.js assets/icons/foo.svg --name Fire
 //   PREVIEW=1 node scripts/bake-glyph.js assets/icons/foo.svg
 //
 // PREVIEW=1 dosya YAZMAZ; .icon-preview/ altına 24/48/72px PNG basar ve
@@ -35,7 +35,7 @@ const src = positional[0];
 
 if (!src) {
   console.error(
-    "kullanım: node scripts/bake-glyph.js <svg> [--name SuperLike] [--const SUPER_LIKE]\n" +
+    "kullanım: node scripts/bake-glyph.js <svg> [--name Fire] [--const FIRE]\n" +
       "          PREVIEW=1 ile yalnız önizleme basar",
   );
   process.exit(1);

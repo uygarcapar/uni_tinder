@@ -23,14 +23,14 @@ import { HAS_LIQUID_GLASS } from "@/shared/theme/glass";
  * YUVARLAK cam aksiyon butonu — geç (X) ve beğen (tik). Beğeniler ekranında
  * hem kart kolonunun ana ikilisi hem köşedeki tik bunu kullanıyor.
  *
- * SuperLikeGlassButton'ın kardeşi, kopyası değil: o dosya süper beğeninin
- * kapaktaki serbest kalple ORTAK MERKEZ geometrisini (SUPER_LIKE_*) taşıyor ve
+ * FireGlassButton'ın kardeşi, kopyası değil: o dosya Fire'ın
+ * kapaktaki serbest kalple ORTAK MERKEZ geometrisini (FIRE_*) taşıyor ve
  * o geometri buranın derdi değil — buradaki butonların morph ettiği bir ikinci
  * duruşu yok. İki dosyayı tek bileşende birleştirmek o sözleşmeyi buraya
- * sızdırırdı. Varsayılan ölçü yine de 80: süper beğeni butonuyla tek aile
+ * sızdırırdı. Varsayılan ölçü yine de 80: Fire butonuyla tek aile
  * okunmalı.
  *
- * Kopyalanan kurallar (gerekçeleri SuperLikeGlassButton'da):
+ * Kopyalanan kurallar (gerekçeleri FireGlassButton'da):
  *   • Host'a SABİT ölçü — `matchContents` ilk karede 0×0 bırakıyor.
  *   • Glif SwiftUI'ın İÇİNE `RNHostView` ile gömülüyor, üstüne bindirilmiyor:
  *     iOS 26'nın basış animasyonunda cam ile glif birlikte ölçekleniyor.
@@ -42,7 +42,7 @@ import { HAS_LIQUID_GLASS } from "@/shared/theme/glass";
  * köşenin iki hâli, kapıları da AYNI kalmalı.
  */
 
-/** Cam kabuğun dış ölçüsü — süper beğeni butonuyla aynı aile. */
+/** Cam kabuğun dış ölçüsü — Fire butonuyla aynı aile. */
 export const CARD_ACTION_SIZE = 80;
 
 /** Kabuğun içindeki glif. Cam kenara nefes payı kalsın diye kabuktan küçük. */

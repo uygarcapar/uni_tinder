@@ -11,7 +11,7 @@ import {
 import { iapLog } from "@/features/profile/purchaseDiagnostics";
 
 /**
- * Consumable paket (SuperLike / kurtarma) → kredi dönüşümünün ORTAK motoru.
+ * Consumable paket (Fire / kurtarma) → kredi dönüşümünün ORTAK motoru.
  *
  * Consumable satın alma entitlement üretmediği için bakiye YALNIZCA backend'in
  * `POST .../Redeem` çağrısıyla yazılıyor. Bu çağrı RevenueCat webhook'u ile
@@ -86,7 +86,7 @@ export interface PendingRedeem {
 
 /** Bir consumable ürünün redeem sözleşmesi. */
 export interface RedeemFlowConfig {
-  /** Log/analytics öneki ve MMKV anahtar ailesi ("superlike" / "recovery"). */
+  /** Log/analytics öneki ve MMKV anahtar ailesi ("fire" / "recovery"). */
   kind: string;
   endpoint: string;
   codes: RedeemCodeSet;
@@ -329,7 +329,7 @@ async function attemptRedeem(
     // Karar ÖNCE `code`'dan (backend sözleşmesi): x02 ürün tanımsız, x03
     // transaction başka hesaba ait — ikisi de retry ile çözülmez. x01 webhook
     // yarışıdır, kuyrukta kalır. Kod ailesi ürüne göre config'ten geliyor:
-    // SuperLike'ın UT-6101'i kurtarma akışında geçici SAYILMAMALI (yanlış ürün
+    // Fire'ın UT-6101'i kurtarma akışında geçici SAYILMAMALI (yanlış ürün
     // sonsuz retry döngüsü üretirdi).
     if (isPermanentRedeemCode(code, cfg.codes)) {
       return { kind: "permanent", code, message };

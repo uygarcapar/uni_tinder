@@ -32,14 +32,14 @@
 // ⚠️ Yeni bir anahtar eklerken simgesini de ekle: her maddenin açıklama
 // sheet'inin tepesinde büyük bir ikon var (bkz. components/PremiumBenefitIcon).
 // Eşlemesi Record<PremiumBenefitKey, …> olduğu için eksik bırakırsan tsc
-// söyler — ama gliflerini elle seçen iki madde (superLikes / premiumBadge)
+// söyler — ama gliflerini elle seçen iki madde (fire / premiumBadge)
 // oradan dışlanmış durumda.
 export const PREMIUM_BENEFIT_KEYS = [
   "unlimitedLikes",
   "seeLikes",
   "unlimitedMessages",
   "unlimitedUndo",
-  "superLikes",
+  "fire",
   "advancedFilters",
   "widerDistance",
   "missedMatchRecovery",

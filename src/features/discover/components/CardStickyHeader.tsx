@@ -22,9 +22,9 @@ import { colors as theme, veil } from "@/shared/theme/colors";
 import { chromeBlurTint } from "@/shared/theme/blur";
 import { resolveCardAge } from "../cardPrivacy";
 import {
-  SUPER_LIKE_GLASS_INSET,
-  SUPER_LIKE_GLASS_SIZE,
-} from "./SuperLikeGlassButton";
+  FIRE_GLASS_INSET,
+  FIRE_GLASS_SIZE,
+} from "./FireGlassButton";
 import CardMenuGlassButton, {
   CARD_MENU_GLASS_SIZE,
 } from "./CardMenuGlassButton";
@@ -58,12 +58,12 @@ import CardMenuGlassButton, {
  *           `alwaysOpen` ile açık doğuyor, kartın sabit başlığı oluyor.
  */
 
-// Şeridin ölçüleri asılı süper beğeni butonundan türüyor: başlık satırı o
+// Şeridin ölçüleri asılı Fire butonundan türüyor: başlık satırı o
 // butonla AYNI merkezde durur, yoksa kartın üst şeridinde iki farklı hizada iki
 // öğe olurdu. (Sheet'te buton çizilmiyor ama şerit iki bağlamda da aynı
 // görünsün diye ölçü ortak.)
-const TITLE_TOP = SUPER_LIKE_GLASS_INSET;
-const TITLE_HEIGHT = SUPER_LIKE_GLASS_SIZE;
+const TITLE_TOP = FIRE_GLASS_INSET;
+const TITLE_HEIGHT = FIRE_GLASS_SIZE;
 
 // Şeritteki isim satırının puntosu — İKİ dal da (önizleme şeridi ve keşifteki
 // kayan şerit) aynı sayıyı kullanıyor, premium işareti de ondan türüyor
@@ -102,23 +102,23 @@ export const CARD_HEADER_HEIGHT = CARD_HEADER_TITLE_BOTTOM + 16;
 const TITLE_GAP_AFTER_BUTTON = 14;
 
 /**
- * Keşif şeridinde başlık satırının SOL payı = süper beğeni butonunun köşe
+ * Keşif şeridinde başlık satırının SOL payı = Fire butonunun köşe
  * boşluğu. Eskiden solda cam bir "başa dön" butonu vardı ve isim onun sağına
  * kayıyordu; buton kaldırılınca isim o köşeye TAŞINDI — yani satır artık
  * ortalı değil, sola dayalı ve tam butonun durduğu çizgide başlıyor.
  *
- * Sağdaki süper beğeni butonuyla aynı sabitten türüyor: iki öğe kartın üst
+ * Sağdaki Fire butonuyla aynı sabitten türüyor: iki öğe kartın üst
  * şeridinde simetrik köşe boşluğunda durur.
  */
-const TITLE_LEFT_INSET = SUPER_LIKE_GLASS_INSET;
+const TITLE_LEFT_INSET = FIRE_GLASS_INSET;
 
 /**
- * Aynı şeridin SAĞ payı: sağ köşedeki süper beğeni butonunun boşluğu + çapı +
+ * Aynı şeridin SAĞ payı: sağ köşedeki Fire butonunun boşluğu + çapı +
  * nefes. Uzun isim butonun altına girmek yerine "…"ya düşüyor
  * (numberOfLines={1}).
  */
 const TITLE_SIDE_INSET =
-  SUPER_LIKE_GLASS_INSET + SUPER_LIKE_GLASS_SIZE + TITLE_GAP_AFTER_BUTTON;
+  FIRE_GLASS_INSET + FIRE_GLASS_SIZE + TITLE_GAP_AFTER_BUTTON;
 
 /**
  * ÖNİZLEME şeridinin (`alwaysOpen`) yan payı — soldaki isim ve sağdaki üç nokta
@@ -127,7 +127,7 @@ const TITLE_SIDE_INSET =
  * KEŞİF'İNKİYLE AYNI SABİT: aynı kart iki bağlamda da aynı kenar payıyla
  * açılıyor. Beğeniler / Sohbet / Profil önizlemesinden açılan kartın şeridi,
  * Keşif'teki kartın şeridinden gözle ayrışmamalı — orada isim de köşe cam
- * butonu da SUPER_LIKE_GLASS_INSET çizgisinde duruyor (bkz. TITLE_LEFT_INSET).
+ * butonu da FIRE_GLASS_INSET çizgisinde duruyor (bkz. TITLE_LEFT_INSET).
  *
  * Bir dönem 16'ydı ve ölçü altındaki bölüm fotoğraflarından geliyordu (panelin
  * `px-4` dolgusu): üç noktanın sağ kenarı fotoğrafın sağ kenarına hizalansın
@@ -142,7 +142,7 @@ const PREVIEW_SIDE_INSET = TITLE_LEFT_INSET;
  *
  * Sağ köşede üç nokta VARSA pay ondan türüyor (kenar boşluğu + çap + nefes):
  * uzun isim butonun altına girmek yerine "…"ya düşüyor. Sayı Keşif'inkinden
- * (TITLE_SIDE_INSET) birkaç puan büyük, çünkü üç noktanın kabuğu süper beğeni
+ * (TITLE_SIDE_INSET) birkaç puan büyük, çünkü üç noktanın kabuğu Fire
  * kabuğundan geniş (48 / 44) — GÖRÜNEN kenar payı, yani butonun kartın sağ
  * kenarına uzaklığı ikisinde de aynı.
  *
@@ -158,7 +158,7 @@ const PREVIEW_TITLE_INSET_PLAIN = PREVIEW_SIDE_INSET;
  * değil merkezler çakışsın. Yatayda uygulanmıyor: orada hizalanan şey merkez
  * değil, kabuğun kenarı (bkz. PREVIEW_SIDE_INSET).
  */
-const MENU_CENTER_FIX = (CARD_MENU_GLASS_SIZE - SUPER_LIKE_GLASS_SIZE) / 2;
+const MENU_CENTER_FIX = (CARD_MENU_GLASS_SIZE - FIRE_GLASS_SIZE) / 2;
 
 // ACTIVITY_SPACING (12) KALDIRILDI: "bugün aktif"in isimden toplam boşluğunu
 // (satırın gap'i + işaretin marginLeft'i) yalnız ortalama kaymasını hesaplayan
@@ -268,7 +268,7 @@ export const CARD_OPEN_CORNER_RADIUS = 26;
  * köşenin butonu gibi okunmaya devam ediyor, üst kenarı saatin/pilin birkaç px
  * altına iniyor.
  *
- * 14 → 22: chrome'un üst kenarı payla birlikte SUPER_LIKE_GLASS_INSET'ten
+ * 14 → 22: chrome'un üst kenarı payla birlikte FIRE_GLASS_INSET'ten
  * (33.5) başlıyor, yani 14'te y≈47.5'te duruyordu — Dynamic Island'ın dibi
  * (~y48) TAM oraya denk geliyor, buton ve şeritteki isim adaya yapışık
  * okunuyordu. 22 ile üst kenar y≈55.5: adanın ~7pt altında, tam safe-area
@@ -297,7 +297,7 @@ type Props = {
    */
   scrollY?: SharedValue<number>;
   /**
-   * Şeridin ÖNİZLEME dizilişi (Likes / Chat / Profil): sağ köşede süper beğeni
+   * Şeridin ÖNİZLEME dizilişi (Likes / Chat / Profil): sağ köşede Fire
    * butonu değil, varsa "üç nokta" duruyor — başlık satırının SAĞ payı bu
    * yüzden ayrışıyor. Kenar boşluğu ayrışmıyor: iki bağlam da aynı sabitten
    * besleniyor (bkz. PREVIEW_SIDE_INSET).
@@ -324,7 +324,7 @@ type Props = {
    * Yalnız ÖNİZLEME şeritleri veriyor (`alwaysOpen`): sohbetten açılan profil
    * kartı, ekranın başlığındaki menü butonunu şeride taşıyor — kart tam ekranı
    * kapladığı için altındaki başlık artık erişilebilir değil. Keşif'te YOK:
-   * orada sağ köşe süper beğeni butonunun.
+   * orada sağ köşe Fire butonunun.
    *
    * Buton `titleStyle` ile SARILMIYOR: cam yüzey ata zincirinde opacity<1 ya da
    * kimliksel olmayan transform görürse sessizce hiç render edilmiyor.
@@ -337,7 +337,7 @@ type Props = {
    * kendisi kartın tepesinde kalır, yalnız o kadar uzar.
    *
    * Yalnız Keşif veriyor: açık kart ekranın en tepesine biniyor, yani bandın
-   * tepesi = ekranın 0'ı. Pay, sağ üstteki süper beğeni butonununkiyle AYNI
+   * tepesi = ekranın 0'ı. Pay, sağ üstteki Fire butonununkiyle AYNI
    * olmak zorunda (bkz. SwipeCard > EXPANDED_CORNER_DROP) — iki köşe butonu
    * simetrik durmalı. Şeridin başlık satırı da butonla aynı merkezi paylaştığı
    * için onunla birlikte iniyor.
@@ -457,7 +457,7 @@ export default function CardStickyHeader({
   );
 
   return (
-    // Şerit dekoratif: altındaki içerik (ve Keşif'te üstündeki cam süper beğeni
+    // Şerit dekoratif: altındaki içerik (ve Keşif'te üstündeki cam Fire
     // butonu) dokunmayı almaya devam etmeli. `box-none` bu yüzden — kabuk kendi
     // dokunmayı yakalamıyor ama İÇİNDEKİ tek gerçek kontrol (önizlemedeki cam
     // "üç nokta") yakalayabiliyor. Kalan katmanlar tek tek `none`: aksi halde
@@ -520,7 +520,7 @@ export default function CardStickyHeader({
             top: TITLE_TOP - MENU_CENTER_FIX + topInset,
             // Yatayda merkez değil KENAR hizalanıyor: kabuğun sağ kenarı,
             // Keşif'te sağ köşede duran cam butonun çizgisinde
-            // (PREVIEW_SIDE_INSET → SUPER_LIKE_GLASS_INSET).
+            // (PREVIEW_SIDE_INSET → FIRE_GLASS_INSET).
             right: PREVIEW_SIDE_INSET,
             width: CARD_MENU_GLASS_SIZE,
             height: CARD_MENU_GLASS_SIZE,
@@ -537,9 +537,9 @@ export default function CardStickyHeader({
           satır tam o kaymayı geri alacak kadar sağa gidiyordu (activityShift).
           Sola yaslanınca o düzeltmenin konusu kalmadı: isim zaten yerinde.
 
-          SOL PAY İKİ BAĞLAMDA DA AYNI: süper beğeni butonunun köşe boşluğu
+          SOL PAY İKİ BAĞLAMDA DA AYNI: Fire butonunun köşe boşluğu
           (TITLE_LEFT_INSET = PREVIEW_SIDE_INSET). Sağ pay o köşede ne
-          durduğuna göre türüyor — Keşif'te süper beğeni butonu
+          durduğuna göre türüyor — Keşif'te Fire butonu
           (TITLE_SIDE_INSET), önizlemede varsa "üç nokta"
           (PREVIEW_TITLE_INSET_WITH_MENU), yoksa soldakinin aynısı. Üç sayı da
           aynı kenar boşluğundan çıkıyor, yani kartın şeridi hangi ekrandan

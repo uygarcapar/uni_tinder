@@ -513,7 +513,7 @@ export const syncSubscriptionWithRetry = createAsyncThunk<
     // Denemeler bitti, backend hâlâ premium görmüyor. Kayıt varsa duruyor —
     // cold start / foreground kurtarma turu onu tekrar deneyecek.
     //
-    // Release'de de yazılıyor (superlike redeem'deki gibi): "premium aldım ama
+    // Release'de de yazılıyor (fire redeem'deki gibi): "premium aldım ama
     // gelmedi" şikâyetinde cihazdan alınabilecek TEK somut delil bu satır.
     // `reason` sorunun hangi tarafta olduğunu söylüyor:
     //   NOT_FOUND_IN_RC      → RC'de bu kullanıcıya ait aktif abonelik YOK

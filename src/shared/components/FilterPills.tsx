@@ -15,7 +15,7 @@ import { colors, ink } from "@/shared/theme/colors";
 // çizilir. Dış boşluk/animasyon çağıran ekranda yönetilir; burası sadece pill
 // satırını render eder.
 //
-// Pill'de İKON YOK ve bilerek yok: denendi, ürün işaretleri (super-like kalbi /
+// Pill'de İKON YOK ve bilerek yok: denendi, ürün işaretleri (fire kalbi /
 // not balonu) bu ölçekte kapsülü şişirip satırı kalabalıklaştırıyordu. Sekmenin
 // ne olduğunu etiket zaten söylüyor.
 //

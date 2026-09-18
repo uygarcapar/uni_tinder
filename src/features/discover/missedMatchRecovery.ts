@@ -8,7 +8,7 @@ import type { LikerNote, PaywallType } from "@/shared/types";
 /**
  * Kaçırılan eşleşme kurtarma.
  *
- * "Kaçırılan eşleşme" = beni beğenmiş (Like/SuperLike) AMA benim pass'ladığım
+ * "Kaçırılan eşleşme" = beni beğenmiş (Like/Fire) AMA benim pass'ladığım
  * kullanıcı — süresi dolmuş pending match DEĞİL. Pencere 30 gün ve hem gelen
  * beğeniye hem benim pass'ıma uygulanıyor; backend recovery anında pass tarihini
  * yeniden doğruluyor.
@@ -39,7 +39,7 @@ export interface MissedMatchCard {
    * sunucu fotoğrafları maskelemediği için, "Seni Beğenenler"de bulanıklaştırılan
    * kişi keşifte pas geçilip buraya düştüğünde NET görünüyordu — free kullanıcı
    * paralı bilgiyi bedava alıyordu. Alanlar bu yüzden taşınmak zorunda: kilidi
-   * açan şeyi (SuperLike / not / sunucunun kanonik bayrağı) kart göremezse,
+   * açan şeyi (Fire / not / sunucunun kanonik bayrağı) kart göremezse,
    * ödemesi yapılmış bir görünürlük yanlışlıkla bulanıklaşır.
    */
   isNote: boolean;
@@ -84,7 +84,7 @@ const EMPTY_PAGE: MissedMatchesPage = {
  * BİREBİR aynı zarf ve aynı `ProfileCardDto`. Kart şekli de LikesScreen'in
  * beğeni kartlarıyla aynı tutuluyor ki grid tek bir renderer'la çizilsin.
  *
- * SuperLike atanlar backend'de zaten listenin başında geliyor (sonra zaman
+ * Fire atanlar backend'de zaten listenin başında geliyor (sonra zaman
  * DESC) — burada yeniden sıralamıyoruz.
  *
  * ⚠️ Liste ve `totalProfiles` free'de de TAM geliyor, kartlar da maskesiz

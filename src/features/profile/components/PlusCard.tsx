@@ -13,7 +13,7 @@ import { colors, gradients, onMediaAt } from "@/shared/theme/colors";
 
 /**
  * Mağaza şeridinin YALNIZ premium'da çizilen en sol kartı: "abonesin" rozeti.
- * SuperLike/Not kartlarının aksine satılacak bir şeyi yok — sağdaki chevron'un
+ * Fire/Not kartlarının aksine satılacak bir şeyi yok — sağdaki chevron'un
  * söylediği gibi bir yere GÖTÜRÜYOR: plus sayfasına.
  *
  * Abone kullanıcının profil sayfasındaki TEK abonelik yüzeyi bu: eskiden

@@ -39,7 +39,7 @@ export { swipeKeys };
  * HTTP status'e değil `paywallType` alanının varlığına bakıyoruz.
  *
  * `showPaywall:false` + `paywallType` dolu = premium kullanıcının cycle'ı doldu
- * (ör. haftalık 5 SuperLike). Bu durumda paywall AÇILMAZ, sadece bilgi verilir —
+ * (ör. haftalık 5 Fire). Bu durumda paywall AÇILMAZ, sadece bilgi verilir —
  * çağıran taraf `showPaywall`e göre karar verebilsin diye event'e geçiriyoruz.
  */
 function emitPaywall(node: any, event: string): boolean {
@@ -273,7 +273,7 @@ export function useSwipeMutation() {
   const qc = useQueryClient();
   return useMutation({
     mutationFn: ({ direction, userId }: { direction: string; userId: string }) => {
-      if (direction === "up") return swipeService.superLikeUser(userId);
+      if (direction === "up") return swipeService.fireUser(userId);
       if (direction === "left") return swipeService.passUser(userId);
       return swipeService.likeUser(userId);
     },
@@ -293,7 +293,7 @@ export function useSwipeMutation() {
         next.totalSwipesToday = (next.totalSwipesToday ?? 0) + 1;
 
         // Pass günlük like kotasına DAHİL DEĞİL — backend DailyLimitBehavior
-        // yalnızca Like/SuperLike'ı sayıyor. Burada da düşürülünce free
+        // yalnızca Like/Fire'ı sayıyor. Burada da düşürülünce free
         // kullanıcı 30 pass'ten sonra kotası dolmuş gibi görünüyordu.
         if (direction === "left") {
           next.passesToday = (next.passesToday ?? 0) + 1;
@@ -311,7 +311,7 @@ export function useSwipeMutation() {
       const swipeResult = response?.result;
       const isSuperLike = variables?.direction === "up";
 
-      // SuperLike yanıtı bakiyenin server-truth'unu taşıyor: `remainingSuperLikes`
+      // Fire yanıtı bakiyenin server-truth'unu taşıyor: `remainingSuperLikes`
       // toplam (kota + kredi), `remainingPurchasedSuperLikes` kredinin kalanı.
       // onMutate'teki optimistic decrement yalnızca toplamı düşürüyor; kota mı
       // kredi mi harcandığını backend biliyor, o yüzden gelen değerlerle
@@ -330,14 +330,14 @@ export function useSwipeMutation() {
         });
       }
 
-      // NOT: SuperLike kotası bittiğinde `showPaywall` artık PREMIUM'da da true
+      // NOT: Fire kotası bittiğinde `showPaywall` artık PREMIUM'da da true
       // dönüyor (premium kullanıcı da paket satın alabiliyor). Bu event'i
-      // DiscoverScreen premium paywall'ına değil SuperLikePurchaseModal'a bağlı.
+      // DiscoverScreen premium paywall'ına değil FirePurchaseModal'a bağlı.
       if (swipeResult?.showPaywall) {
-        const isSuperLikePaywall =
+        const isFirePaywall =
           isSuperLike ||
           String(swipeResult?.paywallType ?? "").toLowerCase().includes("super");
-        const event = isSuperLikePaywall ? "superLikePaywall" : "swipePaywall";
+        const event = isFirePaywall ? "firePaywall" : "swipePaywall";
         uiBus.emit(event, {
           paywallType: swipeResult.paywallType,
           message: swipeResult.paywallMessage || swipeResult.message,
@@ -355,7 +355,7 @@ export function useSwipeMutation() {
  * — composer açık kalıp inline hata göstermek zorunda, oysa swipe mutasyonunda
  * kart zaten uçmuş oluyor.
  *
- * ⚠️ Optimistic decrement YOK. SuperLike'ta var çünkü orada kart anında uçuyor
+ * ⚠️ Optimistic decrement YOK. Fire'ta var çünkü orada kart anında uçuyor
  * ve sayacın gecikmesi görünür oluyordu; notta kullanıcı yanıtı bekleyen bir
  * sheet'in içinde duruyor. Bakiye yalnız sunucu cevabıyla yazılıyor, böylece
  * kredi harcanmayan hatalar (UT-6404/6405/6407) bakiyeyi hiç kıpırdatmıyor.
@@ -393,7 +393,7 @@ export function useNoteMutation() {
       });
 
       // ⚠️ `result.isMatch` OKUNMUYOR: bu uçta karşılıklı beğenide bile hep
-      // `false` dönüyor (Like/SuperLike de öyle) ve `matchId` DTO'da hiç yok.
+      // `false` dönüyor (Like/Fire de öyle) ve `matchId` DTO'da hiç yok.
       // Eşleşme SignalR `MatchNotification` ile geliyor.
 
       // Bakiye biterken gelen paywall. Normal yolda buraya HİÇ girilmez: bakiye

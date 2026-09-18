@@ -3,6 +3,7 @@ import { createMMKV, type MMKV } from 'react-native-mmkv';
 import * as SecureStore from 'expo-secure-store';
 import * as Crypto from 'expo-crypto';
 import { appPrefs } from '@/shared/utils/appPrefs';
+import { authDiag } from '@/shared/debug/authDiagnostics';
 
 /**
  * Token deposu — MMKV (senkron).
@@ -55,10 +56,35 @@ const ENC_MARKER = 'ut_tokens_encrypted_v1';
 let storeDegraded = false;
 export const isTokenStoreDegraded = (): boolean => storeDegraded;
 
+/**
+ * Keychain okumasını SINIRLI tekrarla dene.
+ *
+ * `SecureStore.getItem` senkron ve nadiren de olsa geçici hata verebiliyor
+ * (errSecInteractionNotAllowed, ilk kilit açılmadan gelen arka plan
+ * başlatması, Keychain daemon'ının meşgul olduğu anlar). Tek denemede pes
+ * etmek bütün açılışı degrade moda düşürüyor — kullanıcı açısından bu, token
+ * diskte dururken login ekranı görmek demek. Üç deneme bedava: hepsi senkron,
+ * toplamı mikrosaniyeler.
+ *
+ * `null` DÖNÜŞÜ HATA DEĞİL: anahtar gerçekten yok olabilir (ilk kurulum).
+ * Tekrar yalnız FIRLATAN denemeler için.
+ */
+const readKeySync = (name: string): string | null => {
+  let lastError: unknown = null;
+  for (let attempt = 1; attempt <= 3; attempt++) {
+    try {
+      return SecureStore.getItem(name, SECURE_OPTS);
+    } catch (error) {
+      lastError = error;
+    }
+  }
+  throw lastError;
+};
+
 const createTokenStore = (): MMKV => {
   const knownEncrypted = appPrefs.getBoolean(ENC_MARKER) === true;
   try {
-    const existingKey = SecureStore.getItem(ENC_KEY_NAME, SECURE_OPTS);
+    const existingKey = readKeySync(ENC_KEY_NAME);
     if (existingKey) {
       appPrefs.set(ENC_MARKER, true);
       return createMMKV({ id: 'auth-tokens', encryptionKey: existingKey, encryptionType: 'AES-256' });
@@ -85,7 +111,11 @@ const createTokenStore = (): MMKV => {
     // ve kullanıcı bir daha o oturuma dönemiyordu (mmkvStorage.ts aynı tuzağı
     // kendi tarafında zaten böyle tarif ediyor). Artık gerçek dosyaya hiç
     // dokunmadan ayrı bir scratch dosyaya düşüyoruz.
-    console.warn('[auth] Token deposu bu açılışta açılamadı — degrade mod:', error);
+    authDiag('store-degraded', {
+      depo: 'auth-tokens',
+      şifreliBayrağı: knownEncrypted,
+      hata: error instanceof Error ? `${error.name}: ${error.message}` : String(error),
+    });
     storeDegraded = true;
     const scratch = createMMKV({ id: 'auth-tokens-degraded' });
     scratch.clearAll();

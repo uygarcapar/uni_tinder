@@ -23,7 +23,7 @@ import {
 } from "react-native";
 import { Image } from "expo-image";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
-import { useNavigation } from "@react-navigation/native";
+import { useFocusEffect, useNavigation } from "@react-navigation/native";
 import {
   pickAndCropPhotos,
   captureAndCropPhoto,
@@ -62,6 +62,7 @@ import ShopCardsRow from "@/features/profile/components/ShopCardsRow";
 import ReferralSheet, {
   ReferralProgressRow,
 } from "@/features/profile/components/ReferralSheet";
+import { prefetchReferralSummary } from "@/features/profile/referralQueries";
 import UniversityVisibilitySheet, {
   VisibilityHeroButton,
 } from "@/features/profile/components/UniversityVisibilitySheet";
@@ -92,9 +93,8 @@ import {
   WifiOff,
 } from "@/shared/icons";
 import SFIcon, { type SFSymbol } from "@/shared/components/SFIcon";
-// Çıplak alev YALNIZ dekoratif kullanım için kaldı (premium tanıtım kartındaki
-// büyük glyph). İsmin yanındaki rozet PremiumBadge.
-import PremiumFlame from "@/shared/components/PremiumFlame";
+// İsmin yanındaki premium rozeti. (Çıplak alev — PremiumFlame — bu sayfadan
+// tamamen çıktı: upsell kartının köşesindeki büyük glyph kaldırıldı.)
 import PremiumBadge from "@/shared/components/PremiumBadge";
 import SelfieVerifiedBadge from "@/features/profile/components/SelfieVerifiedBadge";
 import SelfieVerificationRow from "@/features/profile/components/SelfieVerificationRow";
@@ -137,6 +137,13 @@ import {
   consumeLitPlusRequest,
   LIT_PLUS_EVENT,
 } from "@/features/profile/litPlusEntry";
+
+/**
+ * Bekleyen "plus'ı aç" isteğinin ekran öne geldikten SONRA tekrarlanacağı anlar
+ * (ms). Neden birden fazla: ilk komut geçişin (stack pop + sekme devri) ortasına
+ * düşerse yutulabiliyor; sonuncusu ısrarın da sonu — bkz. plusRequestRef.
+ */
+const PLUS_PAGE_RETRY_MS = [120, 400, 800];
 
 // Android LayoutAnimation aktivasyonu
 if (
@@ -343,7 +350,7 @@ function SkeletonBody() {
         </View>
       </View>
 
-      {/* SuperLike kartı — ekranın yarısı kadar, sol gutter'a yaslı */}
+      {/* Fire kartı — ekranın yarısı kadar, sol gutter'a yaslı */}
       <View style={{ paddingHorizontal: 16, paddingBottom: 16 }}>
         <SkeletonBox width={width * 0.5} height={76} borderRadius={28} />
       </View>
@@ -472,7 +479,13 @@ function CompletionAccordion({
         onPress={onToggle}
         style={{
           backgroundColor: colors.surface,
-          padding: 16,
+          // Yatay iç boşluk sayfanın diğer kutularıyla (doğrulama satırı,
+          // davet satırı, mağaza kartları) AYNI: 20. Sayfa payı hepsinde 16
+          // olduğu için 16'lık iç boşluk accordion'ın metnini komşularından
+          // 4pt sola kaydırıyor, üst üste dizilen kutularda kırık bir sol
+          // kenar veriyordu. Dikey 16'da kalıyor — bu kutu tek satır.
+          paddingHorizontal: 20,
+          paddingVertical: 16,
           flexDirection: "row",
           justifyContent: "space-between",
           alignItems: "center",
@@ -494,9 +507,13 @@ function CompletionAccordion({
           </Text>
         </View>
         <View style={{ flexDirection: "row", alignItems: "center", gap: 12 }}>
+          {/* Sayaç rengi açıklama metniyle aynı `ink(0.55)`: ikisi de aynı
+              kutunun ikincil bilgisi, sabit `textSecondary` token'ı yanındaki
+              alfa-tabanlı gri ile eşleşmiyordu. Tamamlanmış dal duruyor ama
+              pratikte ölü: şerit yalnız `current < max` olanları çiziyor. */}
           <Text
             style={{
-              color: isComplete ? colors.text : colors.textSecondary,
+              color: isComplete ? colors.text : ink(0.55),
               fontSize: 14,
               fontWeight: "400",
             }}
@@ -504,15 +521,34 @@ function CompletionAccordion({
             {current}/{max}
           </Text>
           <Animated.View style={chevronStyle}>
-            <SFIcon name="chevron.down" fallback={ChevronDown} size={20} color={colors.textSecondary} strokeWidth={2} weight="semibold" />
+            {/* Sayfadaki TÜM satır chevron'larının ölçüsü plus+ kartındakinden
+                (bkz. PlusCard) geliyor: 16pt, strokeWidth 2.5, semibold. Renk
+                orada gradyan zemin yüzünden `onMediaAt(0.7)`; yüzey üstünde
+                karşılığı aynı alfanın ink hâli. Doğrulama ve davet satırları da
+                bu üçlüyü kullanıyor. */}
+            <SFIcon
+              name="chevron.down"
+              fallback={ChevronDown}
+              size={16}
+              color={ink(0.7)}
+              strokeWidth={2.5}
+              weight="semibold"
+            />
           </Animated.View>
         </View>
       </TouchableOpacity>
       <Animated.View style={[{ backgroundColor: colors.surface }, contentStyle]}>
-        <View style={{ paddingHorizontal: 16, paddingBottom: 16 }}>
+        {/* Açılan gövde başlıkla aynı hizada: yatay boşluk başlık satırının
+            20'siyle aynı olmazsa açıklama metni kapalı/açık arasında yana
+            kayıyordu. */}
+        <View style={{ paddingHorizontal: 20, paddingBottom: 20 }}>
+          {/* Açıklama rengi sayfadaki diğer ikincil metinlerle TEK kaynaktan:
+              mağaza şeridinin alt satırı ("{n} hakkın kaldı") ve doğrulama
+              satırının açıklaması da `ink(0.55)`. Sabit `textSecondary`
+              token'ı bunların yanında farklı bir griydi. */}
           <Text
             style={{
-              color: colors.textSecondary,
+              color: ink(0.55),
               fontSize: 14,
               lineHeight: 20,
               marginBottom: 16,
@@ -554,7 +590,7 @@ import EditProfileForm, {
 import { hydrateProfileForm } from "@/features/profile/utils/hydrateProfileForm";
 import { useQueryClient } from "@tanstack/react-query";
 import { swipeKeys } from "@/features/discover/swipeQueries";
-import { colors, gradients, onMediaAt, isLight } from "../../../shared/theme/colors";
+import { colors, gradients, ink, onMediaAt, isLight } from "../../../shared/theme/colors";
 import {
   glassFallback,
   glassFallbackFill,
@@ -567,7 +603,8 @@ import { plainBlurTint } from "@/shared/theme/blur";
 
 // ─── Edit Modal sarmalayıcı ───────────────────────────────────────────────────
 // AppModal'ın standart action props'unu kullanır — Save butonu glass + controlSize
-// large render edilir, X ile aynı height'da.
+// large render edilir, X ile aynı height'da (ikisi de GLASS_ICON_CLEAR_SIZE:
+// `clearGlassHeader` X'i bu ekranın çan/ayarlar butonuyla aynı çapa oturtuyor).
 function ProfileEditModal({
   visible,
   title,
@@ -581,13 +618,14 @@ function ProfileEditModal({
 }) {
   const { t } = useTranslation();
   // Saving sırasında "Kaydediliyor" yazısı yerine "Kaydet" text boyutunda
-  // shimmer skeleton göster. Button frame'i (pill, h46, glass-ish bg) aynı
-  // tutulur ki yer değişmesin.
+  // shimmer skeleton göster. Button frame'i (pill, glass-ish bg) aynı tutulur
+  // ki yer değişmesin — yükseklik de Kaydet/X ile TEK sayıdan
+  // (`clearGlassHeader` yolunun ölçüsü) geliyor.
   const savingSlot = (
     <View
       pointerEvents="none"
       style={{
-        height: 46,
+        height: GLASS_ICON_CLEAR_SIZE,
         paddingHorizontal: 18,
         borderRadius: 999,
         backgroundColor: colors.hairlineSoft,
@@ -610,6 +648,9 @@ function ProfileEditModal({
       actionDisabled={saveDisabled}
       rightSlot={saving ? savingSlot : undefined}
       scrollEnabled={scrollEnabled}
+      // X, bu ekranın başlığındaki çan/ayarlarla aynı berrak cam butona
+      // dönüşüyor; Kaydet de onun yüksekliğine çıkıyor (bkz. AppModal).
+      clearGlassHeader
       fullScreen
       // FilterModal ile aynı gerekçe: tam ekrana yakın açılan sheet'te üst
       // köşeler bir tık daha yuvarlak.
@@ -667,6 +708,13 @@ export default function ProfileScreen() {
   const [activeTab, setActiveTab] = useState<TabKey>(
     initialTabIndex === 1 ? "plus" : "profile",
   );
+  /**
+   * Pager'ın BİLDİRDİĞİ sayfa (onPageSelected). `initialPage`/`setPage` ile
+   * İSTENEN sayfa değil: aşağıdaki ısrar mekanizması tam da "istendi ama
+   * oturmadı" durumunu düzelttiği için istekten türetilemez. Hiç olay gelmediyse
+   * null — "bilmiyoruz", "sayfa 0" değil.
+   */
+  const pagerPageRef = useRef<number | null>(null);
   const tabs = useMemo(
     () => [
       { key: "profile", label: t("profile.tabs.profile") },
@@ -693,35 +741,131 @@ export default function ProfileScreen() {
   // `onPageSelected` parmak yarıyı geçince fire ediyor, yani veri kayma
   // biterken yolda oluyor; sekmeye hiç girilmezse hiç istek atılmıyor.
   const [plusVisited, setPlusVisited] = useState(initialTabIndex === 1);
+
+  // ── "plus'ı aç" isteğinin ISRARLI uygulanması ─────────────────────────────
+  //
+  // TEK ATIMLIK `setPage`/`initialPage` GÜVENİLİR DEĞİL. İstek çoğu zaman bu
+  // ekranın DIŞINDAN geliyor (kota paywall'ı sohbetin içinden, Keşfet'ten,
+  // bildirimden) ve komut pager'ın en kırılgan anına düşüyor:
+  //   • Ekran arka plandayken: iOS'ta pager bir SwiftUI TabView ve hosting
+  //     controller'ı ancak view PENCEREYE girince kuruluyor
+  //     (PagerViewProvider.didMoveToWindow) — o ana kadarki seçim değişimleri
+  //     kayma riski taşıyor.
+  //   • Lazy mount anında: çocuklar Fabric'te TEK TEK ekleniyor ve pager
+  //     "seçili sayfa çocuk sayısını aşıyor" diye onu kırpıyor
+  //     (PagerView.onChange(of: children)) — `initialPage={1}` ilk çocuk
+  //     geldiğinde 0'a düşebiliyor.
+  // İkisinde de kullanıcı paywall yerine profilin ilk sayfasında kalıyordu.
+  //
+  // Çözüm: istek, pager GERÇEKTEN plus'a oturduğunu bildirene kadar (bkz.
+  // `pagerPageRef`) ekran öne geldiğinde birkaç kez yeniden uygulanıyor. Komut
+  // idempotent — sayfa zaten plus ise görünür bir etkisi yok.
+  //
+  // İki emniyet: (a) ısrar TEK odak epizoduyla sınırlı, sonunda bırakılıyor —
+  // yoksa kullanıcı günler sonra Profil sekmesine kendi girdiğinde bayat bir
+  // istek onu plus'a fırlatırdı; (b) parmakla kaydırma başlarsa ısrar anında
+  // düşüyor, kullanıcıyla inatlaşmıyoruz.
+  const plusRequestRef = useRef(initialTabIndex === 1);
+  const plusRetryTimersRef = useRef<ReturnType<typeof setTimeout>[]>([]);
+  const clearPlusRetries = useCallback(() => {
+    plusRetryTimersRef.current.forEach(clearTimeout);
+    plusRetryTimersRef.current = [];
+  }, []);
+  const dropPlusRequest = useCallback(() => {
+    plusRequestRef.current = false;
+    clearPlusRetries();
+  }, [clearPlusRetries]);
+  const applyPlusRequest = useCallback(
+    (animated: boolean) => {
+      if (!plusRequestRef.current) return;
+      if (pagerPageRef.current === 1) {
+        dropPlusRequest();
+        return;
+      }
+      setPlusVisited(true);
+      const pager = pagerRef.current as any;
+      // Ekran öndeyse hareket animasyonlu (kullanıcı sayfanın çevrildiğini
+      // görsün); arka plandaysa animasyonsuz — sekme öne geldiğinde sayfa
+      // ÇOKTAN plus'ta olmalı, geçişin ortasında profil sayfası görünmemeli.
+      if (!animated && typeof pager?.setPageWithoutAnimation === "function") {
+        pager.setPageWithoutAnimation(1);
+      } else {
+        pager?.setPage?.(1);
+      }
+    },
+    [dropPlusRequest],
+  );
+
   const handlePageSelected = useCallback(
     (e: any) => {
-      if (e?.nativeEvent?.position === 1) setPlusVisited(true);
+      const position = e?.nativeEvent?.position;
+      if (typeof position === "number") pagerPageRef.current = position;
+      if (position === 1) {
+        setPlusVisited(true);
+        // İstek yerine ulaştı: ısrarı bırak.
+        dropPlusRequest();
+      }
       pagerCommitHandlers.onPageSelected(e);
     },
-    [pagerCommitHandlers],
+    [pagerCommitHandlers, dropPlusRequest],
   );
-  const handleTabChange = useCallback((_key: string, index: number) => {
-    // Şeride basmak doğrudan setState ETMİYOR: pager'a sayfa değiştirmesini
-    // söylüyor, sekme state'i pager'ın kendi olaylarından dönüyor.
-    pagerRef.current?.setPage(index);
-  }, []);
+  const handlePageScrollStateChanged = useCallback(
+    (e: any) => {
+      if (e?.nativeEvent?.pageScrollState === "dragging") dropPlusRequest();
+      pagerCommitHandlers.onPageScrollStateChanged(e);
+    },
+    [pagerCommitHandlers, dropPlusRequest],
+  );
+
+  const handleTabChange = useCallback(
+    (_key: string, index: number) => {
+      // Şeride basmak doğrudan setState ETMİYOR: pager'a sayfa değiştirmesini
+      // söylüyor, sekme state'i pager'ın kendi olaylarından dönüyor.
+      // Kullanıcının kendi seçimi bekleyen isteği de iptal eder.
+      dropPlusRequest();
+      pagerRef.current?.setPage(index);
+    },
+    [dropPlusRequest],
+  );
   /** Sayfadaki upsell / üyelik kartından paywall'a. */
   const goToPlusPage = useCallback(() => {
-    setPlusVisited(true);
-    pagerRef.current?.setPage(1);
-  }, []);
+    plusRequestRef.current = true;
+    applyPlusRequest(true);
+  }, [applyPlusRequest]);
 
   // Ekran ZATEN mount ise (sekme daha önce açılmış) paywall isteği buradan
-  // geliyor: pager yerleşmiş durumda, sayfa animasyonla çevriliyor.
+  // geliyor. Ekran öndeyse anında çevriliyor; arka plandaysa istek ARMLANIP
+  // bırakılıyor — uygulaması sekme öne gelince (aşağıdaki odak etkisi).
   useEffect(
     () =>
       uiBus.on(LIT_PLUS_EVENT, () => {
         if (!consumeLitPlusRequest()) return;
-        setPlusVisited(true);
-        pagerRef.current?.setPage(1);
+        plusRequestRef.current = true;
+        if (navigation.isFocused?.()) applyPlusRequest(true);
       }),
-    [],
+    [applyPlusRequest, navigation],
   );
+
+  // Odak: bekleyen istek varsa uygula ve pager oturana kadar birkaç kez tekrarla
+  // (stack pop + sekme devri sürerken ilk komut yutulabiliyor). Epizot bitince
+  // istek düşüyor — bayat istek bir sonraki ziyarete taşınmasın.
+  useFocusEffect(
+    useCallback(() => {
+      if (!plusRequestRef.current) return;
+      applyPlusRequest(false);
+      // Pager zaten plus'taysa istek uygulanırken düştü — tekrar kurmaya gerek yok.
+      if (!plusRequestRef.current) return;
+      clearPlusRetries();
+      plusRetryTimersRef.current = PLUS_PAGE_RETRY_MS.map((ms, i) =>
+        setTimeout(() => {
+          applyPlusRequest(false);
+          if (i === PLUS_PAGE_RETRY_MS.length - 1) plusRequestRef.current = false;
+        }, ms),
+      );
+      return clearPlusRetries;
+    }, [applyPlusRequest, clearPlusRetries]),
+  );
+  useEffect(() => clearPlusRetries, [clearPlusRetries]);
 
   // Plus sayfasının kendi scroll'u — header'ın progressive blur'u hangi sayfa
   // öndeyse onu okusun (tek `scrollY` paylaşılsaydı sekme değişiminde diğer
@@ -918,6 +1062,12 @@ export default function ProfileScreen() {
     if (!silent && !hasData) setLoading(true);
     // Sessiz + veri yok = hata ekranı duruyor demektir; deneme görünsün.
     else if (!hasData) setRetrying(true);
+    // Davet özeti BURADAN, profil isteğinin yanından uçuyor. Satır (
+    // ReferralProgressRow) `loading` bitmeden mount olmadığı için kendi
+    // sorgusunu ancak sayfa çizildikten sonra başlatıyordu: kart, ekran
+    // açıldıktan sonra araya giriyordu. Await yok — profil yüklemesini
+    // bekletmiyor, yalnız cache'i ısıtıyor (bkz. prefetchReferralSummary).
+    prefetchReferralSummary();
     try {
       // Catch'leri sessiz tutmak yerine endpoint adıyla logla — yeni eklenen
       // common endpoint'lerden biri 404/500 dönerse hangisi olduğu görünür olsun.
@@ -1955,7 +2105,7 @@ export default function ProfileScreen() {
           // Sekme state'inin TEK kaynağı bu ikili: seçim ref'e yazılıyor, React
           // state'i ancak kayma bitince (idle) değişiyor — bkz. usePagerTabCommit.
           onPageSelected={handlePageSelected}
-          onPageScrollStateChanged={pagerCommitHandlers.onPageScrollStateChanged}
+          onPageScrollStateChanged={handlePageScrollStateChanged}
         >
           <View key="profile" style={{ flex: 1 }} collapsable={false}>
             {loading ? (
@@ -2233,9 +2383,9 @@ export default function ProfileScreen() {
                   />
                 </View>
 
-                {/* ── Mağaza şeridi: (premium'da plus) + SuperLike + Not ── */}
+                {/* ── Mağaza şeridi: (premium'da plus) + Fire + Not ── */}
                 {/* Hero'nun altı, upsell'in üstü: sayfanın tek "mağaza" şeridi.
-                    Eskiden sayfanın en altındaki QuotaSection'da duran SuperLike
+                    Eskiden sayfanın en altındaki QuotaSection'da duran Fire
                     bakiyesi de bu kartların içinde.
 
                     Şeritteki plus kartı, abone kullanıcının sayfadaki TEK
@@ -2260,7 +2410,7 @@ export default function ProfileScreen() {
                     NEDEN UPSELL'İN ÜSTÜNDE: abone olmayan kullanıcıda hemen
                     altta ekran boyu bir plus kartı var; satır onun altında
                     kalınca doğrulama pratikte kaydırılmadan görülmeyen bir yere
-                    düşüyordu. Rozet sayfanın ürün şeridiyle (SuperLike / Not)
+                    düşüyordu. Rozet sayfanın ürün şeridiyle (Fire / Not)
                     aynı öbekte duruyor, reklamın arkasında değil. */}
                 <SelfieVerificationRow profile={myProfile} userId={user?.id} />
 
@@ -2296,14 +2446,14 @@ export default function ProfileScreen() {
                         }}
                       >
                         {/* Top Banner Section */}
-                        {/* Alev BAŞLIKLA aynı satırda: eskiden dıştaki tek satır
-                            `items-center`di ve alev, başlık + açıklamanın
-                            oluşturduğu sütunun tamamına göre ortalanıyordu —
-                            wordmark'ın epey altına düşüyordu. Şimdi başlıkla
-                            alev kendi satırında (`items-center` orada), açıklama
-                            altta. Açıklamanın genişliği DEĞİŞMESİN diye sağdan
-                            alev sütunu kadar (84 + 16) padding alıyor: eskiden
-                            bu boşluğu satırdaki alev sütununun kendisi veriyordu.
+                        {/* Başlığın sağında bir zamanlar marka alevi vardı,
+                            KALDIRILDI (plus sayfasındaki plan kartındaki eşiyle
+                            birlikte) — kartın kırmızı-turuncu gradyanı markayı
+                            zaten taşıyor. Onunla birlikte iki ölçü de gitti:
+                            başlık satırındaki 84pt'lik alev sütunu ve
+                            açıklamanın o sütunu karşılayan sağ padding'i
+                            (84 + 16); ikisi de yalnız alev için vardı, kalsalar
+                            sayfanın sağında boş bir koridor bırakırlardı.
 
                             Satır yüksekliğini Duckie'nin satır kutusundan
                             hesaplamak yerine flexbox'a bırakıyoruz — fontun
@@ -2311,33 +2461,23 @@ export default function ProfileScreen() {
                             elle verilen bir yükseklik/lineHeight 'p'nin kuyruğunu
                             kırpma riski taşıyor. */}
                         <View className="p-5">
-                          <View className="flex-row items-center justify-between">
-                            <Text
-                              className="flex-1 pr-4"
-                              numberOfLines={1}
-                              adjustsFontSizeToFit
-                              style={{
-                                color: colors.onMedia,
-                                // Plus sayfasındaki başlıklardan BİLEREK büyük:
-                                // bu kart bir reklam, oradaki durum göstergesi.
-                                fontSize: 64,
-                                fontFamily: "Duckie-regular",
-                              }}
-                            >
-                              plus+
-                            </Text>
-                            {/* Ok yığını + "5x eşleşme" yazısının yerine marka
-                                alevi. Kartın zemini zaten kırmızı-turuncu gradyan
-                                olduğu için rozetin gradyanı değil düz onMedia
-                                dolgusu. */}
-                            <View style={{ width: 84, alignItems: "center" }}>
-                              <PremiumFlame size={68} color={colors.onMedia} />
-                            </View>
-                          </View>
+                          <Text
+                            numberOfLines={1}
+                            adjustsFontSizeToFit
+                            style={{
+                              color: colors.onMedia,
+                              // Plus sayfasındaki başlıklardan BİLEREK büyük:
+                              // bu kart bir reklam, oradaki durum göstergesi.
+                              fontSize: 64,
+                              fontFamily: "Duckie-regular",
+                            }}
+                          >
+                            plus+
+                          </Text>
                           <Text
                             numberOfLines={3}
                             className="font-medium text-[14px] leading-5 mt-2"
-                            style={{ color: colors.onMediaMuted, paddingRight: 100 }}
+                            style={{ color: colors.onMediaMuted }}
                           >
                             {t('discover.premium.description')}
                           </Text>

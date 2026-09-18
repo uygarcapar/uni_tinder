@@ -25,9 +25,9 @@ const tabIcon = (sfBase: string, materialFilled: string, materialOutlined: strin
       },
     });
 
-// Discover, Likes ve Messages sekmeleri uygulamaya özel glyph kullanır: alev
-// (premium rozetiyle aynı şekil, bkz. shared/components/icons/FlameGlyph),
-// super-like kalbi (SuperLikeGlyph ile aynı, bkz. icons/HeartGlyph) ve mesaj
+// Discover, Likes ve Messages sekmeleri uygulamaya özel glyph kullanır: Lucide
+// kart yelpazesi (bkz. aşağısı), fire kalbi
+// (FireGlyph ile aynı, bkz. icons/HeartGlyph) ve mesaj
 // balonu (not ürününün balonuyla aynı, bkz. icons/MessageGlyph). Native tab bar
 // ikon olarak yalnız SF Symbol veya yerel resim kabul ediyor — React component /
 // SVG geçilemiyor — o yüzden glyph'ler @1x/@2x/@3x PNG'ye rasterize edildi.
@@ -43,13 +43,26 @@ const tabIcon = (sfBase: string, materialFilled: string, materialOutlined: strin
 // Boyutu/kalınlığı değiştirmek istersen PNG'leri üreten script'ten yeniden
 // bas (`node scripts/gen-tab-icons.js`); asset'leri elle ölçekleme, hinting
 // bozulur.
-const FLAME_TAB_FILLED = {
+// Discover sekmesi Lucide'ın `playing-cards-fan`ı. Component olarak GEÇİLEMEZ
+// (native tab bar yalnız SF Symbol ya da yerel resim alıyor), o yüzden ikonun
+// SVG'si assets/icons/lucide-playing-cards-fan.svg'ye alındı ve diğerleriyle
+// aynı 28pt kutudan PNG'ye rasterize edildi — hizası kardeşleriyle tutsun diye.
+// Uygulama İÇİNDE bu ikon lazımsa `PlayingCardsFan`i @/shared/icons'tan al.
+//
+// Çizgi ikonu olduğu için dolu/outline ayrımı diğerlerinin tersi yönde çalışıyor:
+// outline ASIL şekil, dolu varyant onun üstüne ön kartı dolduruyor. Ayrıntı ve
+// gerekçe gen-tab-icons.js > LINE_GLYPHS'te.
+//
+// Alev ve ev glyph'leri DURUYOR ama bu sekme ikisini de kullanmıyor. Alev ürünün
+// aksiyon glyph'i olarak kalıyor (süper-beğeni yanışı, premium rozeti) — sekmede
+// sabit durunca bir "durum" gibi okunuyordu.
+const CARDS_TAB_FILLED = {
   type: "image" as const,
-  source: require("../../assets/icons/flame-tab.png"),
+  source: require("../../assets/icons/cards-tab.png"),
 };
-const FLAME_TAB_OUTLINE = {
+const CARDS_TAB_OUTLINE = {
   type: "image" as const,
-  source: require("../../assets/icons/flame-tab-outline.png"),
+  source: require("../../assets/icons/cards-tab-outline.png"),
 };
 const HEART_TAB_FILLED = {
   type: "image" as const,
@@ -165,7 +178,7 @@ export default function TabNavigator() {
         options={{
           title: t('discover.tabTitle'),
           tabBarIcon: ({ focused }: TabIconArgs) =>
-            focused ? FLAME_TAB_FILLED : FLAME_TAB_OUTLINE,
+            focused ? CARDS_TAB_FILLED : CARDS_TAB_OUTLINE,
         }}
       />
       <Tab.Screen
@@ -174,7 +187,7 @@ export default function TabNavigator() {
         options={{
           title: t('likes.tabTitle'),
           // SF `heart`/`heart.fill` DEĞİL: beğeniler sekmesi de ürünün kendi
-          // kalbini taşıyor (SwipeCard'ın super-like butonu, Likes kartları,
+          // kalbini taşıyor (SwipeCard'ın fire butonu, Likes kartları,
           // paket sheet'i hep aynı glyph). Discover'ın alevi gibi rasterize
           // PNG çifti — idle outline, focused dolu.
           tabBarIcon: ({ focused }: TabIconArgs) =>

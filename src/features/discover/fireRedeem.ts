@@ -1,6 +1,6 @@
 import { API_ENDPOINTS } from "@/shared/constants/api";
 import { REDEEM_CODES } from "@/shared/constants/responseCodes";
-import { getRecentSuperlikeTransactions } from "@/features/profile/subscriptionService";
+import { getRecentFireTransactions } from "@/features/profile/subscriptionService";
 import {
   flushPendingRedeems,
   readPendingRedeems as readQueue,
@@ -10,16 +10,16 @@ import {
 } from "@/features/discover/consumableRedeem";
 
 /**
- * SuperLike paketi (consumable) → kredi dönüşümü.
+ * Fire paketi (consumable) → kredi dönüşümü.
  *
  * Kuyruk/retry/idempotans mekaniğinin TAMAMI consumableRedeem.ts'te; burada
  * yalnız bu ürünün sözleşmesi duruyor. Not paketi (noteRedeem.ts) aynı motoru
  * kullanıyor ama AYRI kuyruk anahtarı ve AYRI kod ailesiyle.
  */
 
-export const SUPERLIKE_REDEEM_FLOW: RedeemFlowConfig = {
-  kind: "superlike",
-  endpoint: API_ENDPOINTS.SWIPE_SUPER_LIKE_REDEEM,
+export const FIRE_REDEEM_FLOW: RedeemFlowConfig = {
+  kind: "fire",
+  endpoint: API_ENDPOINTS.SWIPE_FIRE_REDEEM,
   codes: REDEEM_CODES,
   // ⛔ Not kuyruğununkinden FARKLI olmak zorunda — aynı anahtarı paylaşan iki
   // kuyruk birbirinin kayıtlarını yanlış uca yollar.
@@ -29,7 +29,7 @@ export const SUPERLIKE_REDEEM_FLOW: RedeemFlowConfig = {
   purchasedField: "purchasedSuperLikes",
   statsRemainingField: "superLikesRemaining",
   statsPurchasedField: "purchasedSuperLikes",
-  recentStoreTransactions: getRecentSuperlikeTransactions,
+  recentStoreTransactions: getRecentFireTransactions,
 };
 
 export {
@@ -39,14 +39,14 @@ export {
 } from "@/features/discover/consumableRedeem";
 
 /** Ürüne özel alan adlarıyla — çağıranlar (sheet, testler) bunu okuyor. */
-export interface SuperlikeRedeemResult {
+export interface FireRedeemResult {
   creditsAdded: number;
   purchasedSuperLikes: number | null;
   superLikesRemaining: number | null;
   alreadyRedeemed: boolean;
 }
 
-const toSuperlikeResult = (r: ConsumableRedeemResult): SuperlikeRedeemResult => ({
+const toFireResult = (r: ConsumableRedeemResult): FireRedeemResult => ({
   creditsAdded: r.creditsAdded,
   purchasedSuperLikes: r.purchasedCredits,
   superLikesRemaining: r.remaining,
@@ -54,18 +54,18 @@ const toSuperlikeResult = (r: ConsumableRedeemResult): SuperlikeRedeemResult => 
 });
 
 export const readPendingRedeems = (userId: string) =>
-  readQueue(SUPERLIKE_REDEEM_FLOW, userId);
+  readQueue(FIRE_REDEEM_FLOW, userId);
 
-export async function redeemSuperlikePack(args: {
+export async function redeemFirePack(args: {
   userId: string;
   transactionId: string;
   productId: string | null;
-}): Promise<SuperlikeRedeemResult> {
-  return toSuperlikeResult(
-    await redeemConsumablePack(SUPERLIKE_REDEEM_FLOW, args),
+}): Promise<FireRedeemResult> {
+  return toFireResult(
+    await redeemConsumablePack(FIRE_REDEEM_FLOW, args),
   );
 }
 
-export const flushPendingSuperlikeRedeems = (
+export const flushPendingFireRedeems = (
   userId: string | null | undefined,
-) => flushPendingRedeems(SUPERLIKE_REDEEM_FLOW, userId);
+) => flushPendingRedeems(FIRE_REDEEM_FLOW, userId);

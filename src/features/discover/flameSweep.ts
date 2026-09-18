@@ -3,7 +3,7 @@ import uiBus from "@/shared/services/uiBus";
 /**
  * Ekranı kaplayan alev kutlaması + desteyi ÖRTÜNÜN ALTINDA ilerletme.
  *
- * Süper beğeni ve not aynı akış: kart fırlamıyor, yerinde duruyor; dalga
+ * Fire ve not aynı akış: kart fırlamıyor, yerinde duruyor; dalga
  * alttan yukarı süpürürken ekranı tam kapattığı anda deste bir adım ilerliyor.
  * Kullanıcı ne kartın gidişini ne yenisinin gelişini görüyor — yalnız
  * kutlamayı. Zamanlama ölçülüyor, tahmin edilmiyor: canvas kendi animasyon
@@ -17,7 +17,7 @@ import uiBus from "@/shared/services/uiBus";
  * (2026-09-03). MatchModal aynı ateşin PERDE hâliyle açılıyor (bkz.
  * flameCurtainGeometry); ikisi arka arkaya oynayınca kullanıcı tek bir
  * eylemden iki alev görüyordu. Kural: eşleşme kutlaması MatchModal'ın,
- * süpürme yalnız eşleşmeyen (tek yönlü) süper beğeni ve not içindir.
+ * süpürme yalnız eşleşmeyen (tek yönlü) Fire ve not içindir.
  * Çağıranların "eşleşme gelecek mi" kestirimi:
  *   • Beğenenler/Kaçırdıkların — liste tanımı gereği KESİN (herkes seni zaten
  *     beğenmiş), orada süpürme hiç çağrılmıyor.
@@ -26,7 +26,7 @@ import uiBus from "@/shared/services/uiBus";
  *
  * `onCovered` TAM BİR KEZ çalışır. Örtme olayının iki kaynağı var — canvas'ın
  * kendisi ve canvas hiç çizemezse devreye giren yedek zamanlayıcı (bkz.
- * SuperLikeFlame) — ilki alınıp abonelik hemen bırakılıyor.
+ * FireFlame) — ilki alınıp abonelik hemen bırakılıyor.
  *
  * @returns Aboneliği iptal eden fonksiyon. Çağıran, örtme anından ÖNCE
  * ağaçtan düşebiliyorsa (deste tazelendi, ekran değişti, tema remount'u)

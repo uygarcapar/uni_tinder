@@ -2780,6 +2780,10 @@ export default function FilterModal({
       // (mesafe dial'i, bölüm kartları) geçiyor, dolgulu cam orayı kapatıyordu.
       // Ekranlardaki yuvarlak cam ikon butonlarıyla aynı malzeme.
       clearGlassActions
+      // Ölçü de aynı yerden: Sıfırla/Uygula, X'i olan sheet'lerdeki butonlarla
+      // ve ekran başlıklarındaki yuvarlak cam ikonlarla tek yükseklikte
+      // (GLASS_ICON_CLEAR_SIZE). Bu sheet'te X yok — tek etkisi ölçü.
+      clearGlassHeader
       actionDisabled={interestedInEmpty}
       actionLoading={saving}
       // İçerik uzun (mesafe + 10'a yakın bölüm) → tek detent ve o da EN TEPEDE:

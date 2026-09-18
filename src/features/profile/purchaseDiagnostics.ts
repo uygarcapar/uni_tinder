@@ -5,7 +5,7 @@ import { API_BASE_URL } from "@/shared/constants/api";
 /**
  * Satın alma zincirinin TEK teşhis kaydı — RC SDK'dan backend cevabına kadar.
  *
- * Neden ayrı bir modül: "premium aldım, reload'da gitti" ve "superlike hiç
+ * Neden ayrı bir modül: "premium aldım, reload'da gitti" ve "fire hiç
  * gelmiyor" şikâyetlerinin cevabı zincirin HANGİ halkasında koptuğuna bağlı
  * (RC configure → appUserID eşleşmesi → StoreKit satın alma → webhook →
  * backend `/sync` / `/Redeem`). Bu halkalar beş ayrı dosyaya dağılmış durumda
@@ -181,7 +181,7 @@ export function clearIapDiagnostics(): void {
 /**
  * Paylaşılabilir tek metin. `extra` çağıranın o an okuduğu canlı durum
  * (bekleyen redeem kuyruğu, redux premium bayrağı) — bu modül o dosyaları
- * import etmiyor, aksi halde superlikeRedeem ↔ diagnostics döngüsü oluşurdu.
+ * import etmiyor, aksi halde fireRedeem ↔ diagnostics döngüsü oluşurdu.
  */
 export function buildIapReport(extra?: IapFacts): string {
   const facts = { ...loadFacts(), ...(extra ?? {}) };

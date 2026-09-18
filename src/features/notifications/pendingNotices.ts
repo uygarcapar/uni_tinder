@@ -21,7 +21,7 @@ export interface PendingNotice {
   kind: PendingNoticeKind;
   /** Tür içinde kimlik — işaretlerken aynen geri gider. */
   key: string;
-  /** Simge: "Premium" ya da ödül türü (VisibilityFilter/SuperLike/Note). */
+  /** Simge: "Premium" ya da ödül türü (VisibilityFilter/Fire/Note). */
   type: string;
   /** Sunucuda, kullanıcının dilinde üretiliyor. */
   title: string;
@@ -64,12 +64,12 @@ export function parsePendingNotices(raw: any): PendingNotice[] {
     }));
 }
 
-/** Haberin ürün simgesi — toast diğer SuperLike/not/premium bildirimleriyle aynı dili konuşsun. */
+/** Haberin ürün simgesi — toast diğer Fire/not/premium bildirimleriyle aynı dili konuşsun. */
 export function noticeToastIcon(notice: PendingNotice): ToastIconKind {
   if (notice.kind === "PremiumGift") return "premium";
   switch (notice.type) {
     case "SuperLike":
-      return "superLike";
+      return "fire";
     case "Note":
       return "note";
     default:

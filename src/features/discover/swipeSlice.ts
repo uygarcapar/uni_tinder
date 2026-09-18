@@ -7,7 +7,7 @@ import type { SwipeState } from "@/shared/types";
  * artık BU SLICE'TA DEĞİL. Deste React Query'de (`usePotentialMatches`),
  * kotalar `swipeKeys.stats` cache'inde yaşıyor. Redux → React Query geçişinden
  * kalan `fetchPotentialMatches`, `loadMoreProfiles`, `performLike/Pass/
- * SuperLike`, `nextCard`, `rewindCard`, `updateSwipeStats` thunk/reducer'ları
+ * Fire`, `nextCard`, `rewindCard`, `updateSwipeStats` thunk/reducer'ları
  * ve karşılık gelen state alanları hiçbir yerden okunmuyordu; kaldırıldı.
  * Geriye yalnız "beni beğenenler" rozeti kaldı — o gerçekten global, çünkü
  * Discover, Likes ekranı ve tab rozeti aynı kümeyi paylaşıyor.

@@ -68,13 +68,13 @@ export function initRevenueCat(userId?: string | null): void {
     key: `${String(apiKey).slice(0, 9)}…`,
     appUserID: userId ?? "(anonim — logIn bekleniyor)",
     entitlement: ENTITLEMENT_ID,
-    offering: SUPERLIKE_OFFERING_ID,
+    offering: FIRE_OFFERING_ID,
   });
   setIapFacts({
     rcConfigured: true,
     rcKey: `${String(apiKey).slice(0, 9)}…`,
     entitlement: ENTITLEMENT_ID,
-    slOffering: SUPERLIKE_OFFERING_ID,
+    slOffering: FIRE_OFFERING_ID,
   });
 }
 
@@ -498,7 +498,7 @@ export function addCustomerInfoListener(cb: () => void): () => void {
 // chat_unlock consumable'ı 2026-08-02'de kaldırıldı: sohbet kotası dolduğunda
 // artık ürün satılmıyor, Premium aboneliği (PurchaseModal) açılıyor.
 
-// ─── Consumable paketler (SuperLike + not) ───────────────────────────────────
+// ─── Consumable paketler (Fire + not) ───────────────────────────────────
 //
 // Abonelikten AYRI RC offering'lerde duruyorlar: `getOfferings()` yalnızca
 // `offerings.current`i (premium) döndürüyor, paketler `offerings.all[...]`
@@ -509,7 +509,7 @@ export function addCustomerInfoListener(cb: () => void): () => void {
 // İki ürün de aynı RC mekaniğini kullanıyor; ayrıştıkları tek yer offering id'si
 // ve ürün id deseni.
 
-export const SUPERLIKE_OFFERING_ID =
+export const FIRE_OFFERING_ID =
   process.env.EXPO_PUBLIC_REVENUECAT_SUPERLIKE_OFFERING_ID || "superlikes";
 
 // `RECOVERY_OFFERING_ID` KALDIRILDI (2026-08-31): kurtarma consumable'ı
@@ -533,11 +533,11 @@ export const NOTE_OFFERING_ID =
   process.env.EXPO_PUBLIC_REVENUECAT_NOTE_OFFERING_ID || "notes";
 
 /** ASC/RC ürün id kuralı: `superlike_5` / `_10` / `_15` / `_20`. */
-const SUPERLIKE_PRODUCT_RE = /^superlike/i;
+const FIRE_PRODUCT_RE = /^superlike/i;
 /** ASC/RC ürün id kuralı: `note_2` / `_4` / `_6` / `_8`. */
 const NOTE_PRODUCT_RE = /^note/i;
 
-export interface SuperlikeStoreTransaction {
+export interface FireStoreTransaction {
   transactionId: string;
   productId: string;
   purchaseDate: string | null;
@@ -574,8 +574,8 @@ async function getConsumableOffering(
   return found;
 }
 
-export const getSuperlikeOffering = () =>
-  getConsumableOffering(SUPERLIKE_OFFERING_ID, "sl");
+export const getFireOffering = () =>
+  getConsumableOffering(FIRE_OFFERING_ID, "sl");
 
 export const getNoteOffering = () =>
   getConsumableOffering(NOTE_OFFERING_ID, "note");
@@ -626,7 +626,7 @@ async function purchaseConsumablePack(
   return { transactionId, productId };
 }
 
-export const purchaseSuperlikePack = (pkg: PurchasesPackage) =>
+export const purchaseFirePack = (pkg: PurchasesPackage) =>
   purchaseConsumablePack(pkg, "sl");
 
 export const purchaseNotePack = (pkg: PurchasesPackage) =>
@@ -666,7 +666,7 @@ function latestTransactionId(
  * her yeniden kurulumda tüm geçmiş tekrar redeem edilirdi (idempotent olduğu
  * için zararsız ama gereksiz onlarca istek).
  *
- * Ürün deseni ZORUNLU bir ayraç: iki akışın kuyruğu ayrı olduğu için SuperLike
+ * Ürün deseni ZORUNLU bir ayraç: iki akışın kuyruğu ayrı olduğu için Fire
  * taraması bir `note_4` satın almasını kendi ucuna yollarsa backend onu kalıcı
  * hatayla ("ürün tanımsız") düşürür ve kredi kaybolur.
  */
@@ -674,7 +674,7 @@ async function getRecentConsumableTransactions(
   productRe: RegExp,
   withinMs: number,
   tag: string,
-): Promise<SuperlikeStoreTransaction[]> {
+): Promise<FireStoreTransaction[]> {
   if (!isConfigured) return [];
   try {
     const info = await Purchases.getCustomerInfo();
@@ -710,9 +710,9 @@ async function getRecentConsumableTransactions(
   }
 }
 
-export const getRecentSuperlikeTransactions = (
+export const getRecentFireTransactions = (
   withinMs = 24 * 60 * 60 * 1000,
-) => getRecentConsumableTransactions(SUPERLIKE_PRODUCT_RE, withinMs, "sl");
+) => getRecentConsumableTransactions(FIRE_PRODUCT_RE, withinMs, "sl");
 
 export const getRecentNoteTransactions = (withinMs = 24 * 60 * 60 * 1000) =>
   getRecentConsumableTransactions(NOTE_PRODUCT_RE, withinMs, "note");

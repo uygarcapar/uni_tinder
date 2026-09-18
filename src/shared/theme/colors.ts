@@ -52,7 +52,7 @@ interface Palette {
    * gradients.premium'un orta durağıyla aynı, marka sıcaklığını koruyor.
    */
   accentOrange: string;
-  /** SwipeCard super-like kalbi — buradan ayarla (gradient: gradients.swipeHeart). */
+  /** SwipeCard fire kalbi — buradan ayarla (gradient: gradients.swipeHeart). */
   swipeHeartBorder: string;
   errorLight: string;
   errorDeep: string;
@@ -75,7 +75,7 @@ interface Palette {
    */
   surfaceTranslucent: string;
   /**
-   * lit shop / SuperLike sheet'lerinin zemini (gradients.shopBackdrop'ın son
+   * lit shop / Fire sheet'lerinin zemini (gradients.shopBackdrop'ın son
    * durağıyla eşleşir). MARKA DEĞİL, ZEMİN: bu iki sheet'in içeriği fotoğraf
    * değil normal chrome, o yüzden modla döner ve üstündeki her şey `text` /
    * `ink()` ile çizilir. Tek istisna litPlus dolgulu CTA — orası `onMedia`.
@@ -313,7 +313,7 @@ interface GradientSet {
   /** Liste kenarlarındaki fade — zemine doğru erir, o yüzden modla döner. */
   neutralFade: Gradient;
   /**
-   * PurchaseModal / SuperLikePurchaseModal: nötr gri → shopSurface.
+   * PurchaseModal / FirePurchaseModal: nötr gri → shopSurface.
    * locations={[0, 0.4, 1]}. MODLA DÖNER — sheet'in zemini chrome, foto değil.
    */
   shopBackdrop: Gradient;
@@ -325,16 +325,16 @@ interface GradientSet {
    * bütün mürekkep `onMedia*` ailesinden.
    */
   litPlusCard: Gradient;
-  /** SwipeCard super-like kalbi dolgusu — buradan ayarla. */
+  /** SwipeCard fire kalbi dolgusu — buradan ayarla. */
   swipeHeart: Gradient;
   /**
-   * ProfileScreen SuperLike kartı. Kartın dolgusu YOK — bu gradyan yalnız
+   * ProfileScreen Fire kartı. Kartın dolgusu YOK — bu gradyan yalnız
    * 2px'lik çerçevede ve kalbin yuvarlak rozetinde görünür. Kart zemini
    * sayfanınkiyle aynı (colors.bg) olduğu için metin colors.text, rozetin
    * içindeki kalp ise colors.bg ile çizilir. Koyuda beyaz→gri çerçeve;
    * açıkta beyaz zeminde kaybolmasın diye koyu→gri'ye döner.
    */
-  superLikeCard: Gradient;
+  fireCard: Gradient;
   /**
    * SwipeCard "Burada ne arıyorum" bölümünün zemini. Diğer bölümler düz
    * surfaceTranslucent; bu bölüm gradyanla ayrışıyor. MODLA DÖNER — kart
@@ -410,15 +410,15 @@ const fixedGradients = {
   swipeHeart: ["#fc1919", "#fc1e1e", "#ff452a"] as Gradient,
 };
 
-// SuperLike kutlaması artık renkli kalp konfetisi değil, tüm ekranı kaplayan
-// prosedürel alev — renkleri shader'ın ısı rampasında (SuperLikeFlameCanvas),
+// Fire kutlaması artık renkli kalp konfetisi değil, tüm ekranı kaplayan
+// prosedürel alev — renkleri shader'ın ısı rampasında (FireFlameCanvas),
 // burada bir palet yok. Rampanın kırmızı durağı bilerek gradients.swipeHeart'ın
 // ilk durağıyla (#fc1919) aynı: buton ve kutlama aynı ateşten okunsun.
 
 const darkGradients: GradientSet = {
   ...fixedGradients,
   neutralFade: ["#FFFFFF", "#E5E7EB", "#9CA3AF"],
-  superLikeCard: ["#fff", "#9c9c9c"],
+  fireCard: ["#fff", "#9c9c9c"],
   shopBackdrop: ["#2e2e2e", "#2e2e2e", "#a83220"],
   // surfaceTranslucent'ın koyusundan primary'nin sıcak tonuna. Son durak
   // düşük alfalı: metin (colors.text = beyaz) üstünde okunur kalsın.
@@ -429,7 +429,7 @@ const darkGradients: GradientSet = {
 const lightGradients: GradientSet = {
   ...fixedGradients,
   neutralFade: ["#0B0B0C", "#374151", "#6B7280"],
-  superLikeCard: ["#3A3A3C", "#8E8E93"],
+  fireCard: ["#3A3A3C", "#8E8E93"],
   shopBackdrop: ["#F2F2F7", "#F2F2F7", "#FFD3C9"],
   // Açıkta metin koyu → gradyan da açık kalmalı, ama sol üst durak BEYAZ
   // olmasın: primary'nin beyazla açılmış tonu (#FFD6CB) ile başlıyor, yoksa

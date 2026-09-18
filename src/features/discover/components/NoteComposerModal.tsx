@@ -315,7 +315,10 @@ function NoteField({
           onBlur();
         }}
         placeholder={t("note.placeholder")}
-        placeholderTextColor={theme.textSecondary}
+        // Kutunun üst çizgisindeki "…yanıt veriyorsun" etiketiyle AYNI gri:
+        // ikisi de aynı anda ve aynı kutuda duran ipucu metinleri, iki farklı
+        // tonda okunmaları kademe varmış izlenimi veriyordu.
+        placeholderTextColor={theme.textMuted}
         multiline
         autoFocus
         editable={editable}

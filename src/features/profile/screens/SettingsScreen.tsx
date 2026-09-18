@@ -106,10 +106,16 @@ import {
   clearIapDiagnostics,
 } from "@/features/profile/purchaseDiagnostics";
 import {
+  buildAuthReport,
+  clearAuthDiagnostics,
+} from "@/shared/debug/authDiagnostics";
+import { isTokenStoreDegraded } from "@/shared/utils/tokenStorage";
+import { isAppStoreDegraded } from "@/shared/store/mmkvStorage";
+import {
   premiumSyncUserKey,
   readPendingPremiumSync,
 } from "@/features/profile/pendingPremiumSync";
-import { readPendingRedeems } from "@/features/discover/superlikeRedeem";
+import { readPendingRedeems } from "@/features/discover/fireRedeem";
 import { colors, ink, scrimAt } from "../../../shared/theme/colors";
 import {
   setLanguage,
@@ -231,6 +237,10 @@ export default function SettingsScreen() {
       s.settings?.languagePreference ?? s.settings?.language ?? 'tr',
   );
   const authUser = useSelector((s: RootState) => s.auth?.user);
+  // Yalnız oturum teşhis raporu için — rapor "redux ne diyor" ile "diskte ne
+  // var"ı yan yana koyduğunda degrade açılışı gerçek bir iptalden ayırıyor.
+  const isAuthenticated = useSelector((s: RootState) => s.auth?.isAuthenticated);
+  const authToken = useSelector((s: RootState) => s.auth?.token);
   const subscription = useSelector((s: RootState) => s.subscription);
   // Gating YALNIZ buradan (bkz. premiumTier.ts) — `subscription.isPremium`i
   // doğrudan okumak aşağıdaki kilit için yeterli değil, `resolved` penceresi de
@@ -603,7 +613,7 @@ export default function SettingsScreen() {
   // ── Satın alma teşhis raporu (gizli) ───────────────────────────────────────
   //
   // Alttaki ortam satırına UZUN BASINCA açılır. Ürün özelliği değil, teşhis
-  // aracı: "premium aldım gitti / superlike hiç gelmiyor" akışında cihazdan
+  // aracı: "premium aldım gitti / fire hiç gelmiyor" akışında cihazdan
   // kanıt çıkarmanın tek pratik yolu. TestFlight'ta Metro konsolu yok ve
   // Console.app için kablo gerekiyor; rapor panoya kopyalanıp doğrudan
   // yapıştırılabiliyor.
@@ -651,6 +661,60 @@ export default function SettingsScreen() {
         { text: "Kapat", style: "cancel" },
       ],
     );
+  };
+
+  // ── Oturum teşhis raporu (gizli) ───────────────────────────────────────────
+  //
+  // "Durduk yere atıldım" vakasının tek kanıtı. Defter cold start'ı atlatıyor
+  // (düz metin app-prefs), yani kullanıcı LOGIN EKRANINDAYKEN bile — yani tam
+  // olarak şikâyetin doğduğu anda — rapor alınabilir. Canlı durum başlığa
+  // buradan ekleniyor: defter modülü redux'u import etmiyor.
+  const handleAuthDiagnostics = async () => {
+    const report = buildAuthReport({
+      reduxOturum: isAuthenticated ?? null,
+      reduxErişimToken: authToken ? "var" : "yok",
+      tokenDepo: isTokenStoreDegraded() ? "DEGRADE" : "normal",
+      appDepo: isAppStoreDegraded() ? "DEGRADE" : "normal",
+    });
+    await Clipboard.setStringAsync(report).catch(() => {});
+    Alert.alert(
+      "Oturum teşhis raporu",
+      "Rapor panoya kopyalandı.\n\n" + report.slice(0, 500) + "\n…",
+      [
+        { text: "Paylaş", onPress: () => { Share.share({ message: report }).catch(() => {}); } },
+        {
+          text: "Kaydı sıfırla",
+          style: "destructive",
+          onPress: () => clearAuthDiagnostics(),
+        },
+        { text: "Kapat", style: "cancel" },
+      ],
+    );
+  };
+
+  /**
+   * Gizli teşhis girişi — ortam satırına uzun basınca hangi rapor olduğunu
+   * sorar. Tek girişte toplamanın sebebi: ikinci bir gizli jest (çift dokunuş,
+   * beş dokunuş…) hem keşfedilemez hem de öğretilemez oluyor; sahadaki kişiye
+   * "sürüm yazısına uzun bas" demek yetmeli.
+   */
+  const handleDiagnosticsMenu = () => {
+    Alert.alert("Teşhis raporu", "Hangi rapor?", [
+      // DEV — rapor değil ama girişi burada: yukarıdaki gerekçe ikinci bir gizli
+      // jest icat etmeyi yasaklıyor. Release'de menüye hiç eklenmiyor (route da
+      // kayıtlı değil, bkz. AppNavigator).
+      ...(__DEV__
+        ? [
+            {
+              text: "Toast galerisi",
+              onPress: () => navigation.navigate("ToastGallery"),
+            },
+          ]
+        : []),
+      { text: "Oturum", onPress: () => { void handleAuthDiagnostics(); } },
+      { text: "Satın alma", onPress: () => { void handleDiagnostics(); } },
+      { text: "Kapat", style: "cancel" },
+    ]);
   };
 
   // ── Şifre Değiştir ────────────────────────────────────────────────────────
@@ -1256,7 +1320,7 @@ export default function SettingsScreen() {
             // ya da açıklama yok — ilk satır doğrudan listenin kendisi.
             paddingTop: insets.top + SCREEN_HEADER_TITLE_HEIGHT + 16,
             paddingBottom: insets.bottom + 60,
-            paddingHorizontal: 26,
+            paddingHorizontal: ROOT_PAGE_PAD_H,
           }}
         >
           {/* Kök liste: yalnız kategori başlığı + sağında chevron. Açıklamalar
@@ -1284,21 +1348,18 @@ export default function SettingsScreen() {
               titleSize={ROW_TEXT_SIZE}
               titleWeight="500"
               marginTop={i === 0 ? 8 : 0}
-              // Açık kategorinin satırı gri kalıyor: geri çekişinde solda
-              // beliren kök listede hangi satırdan gelindiği görünüyor.
-              active={section === key}
               onPress={() => openSection(key)}
             />
           ))}
           </SettingsList>
 
           {/* Ortam satırı — normal basışta hiçbir şey yapmaz, UZUN BASINCA
-              satın alma teşhis raporunu panoya kopyalar (bkz.
-              handleDiagnostics). Kök listede duruyor: bir kategoriye ait
+              teşhis raporu seçicisini açar (oturum / satın alma; bkz.
+              handleDiagnosticsMenu). Kök listede duruyor: bir kategoriye ait
               değil ve tek elle ulaşılabilir yer burası. */}
           <TouchableOpacity
             activeOpacity={1}
-            onLongPress={handleDiagnostics}
+            onLongPress={handleDiagnosticsMenu}
             delayLongPress={1200}
             style={{ marginTop: 24, paddingVertical: 8, alignItems: "center" }}
           >
@@ -1460,9 +1521,22 @@ export default function SettingsScreen() {
 // `onPress`: kök listede aynı blok BASILABİLİR bir kategori satırına dönüşür —
 // metin ölçüleri değişmez, sağa chevron eklenir. Bölüm başlığı ve kategori
 // satırı bilerek tek bileşen: iki kademe arasında tipografi kaymasın.
+// Kök listenin yan boşluğu. Basılı vurgunun taşma payı buna BAĞLI (PRESS_INSET)
+// — değiştirirken ikisi birlikte kayıyor, vurgu ekran kenarına tam oturuyor.
+const ROOT_PAGE_PAD_H = 26;
+
 // Basılı zeminin satır hizasından iki yana taştığı pay. Kök listenin sayfa
-// boşluğundan (26) küçük: vurgu ekran kenarına yapışmasın.
-const PRESS_INSET = 12;
+// boşluğuna EŞİT (bkz. ROOT_PAGE_PAD_H): vurgu satır kutusu kadar değil, ekranın
+// tam genişliği boyunca uzuyor — iOS Ayarlar'daki gibi. Daha küçük bir pay (12)
+// denendi, zemin satırın iki yanında havada asılı bir kutu gibi duruyordu.
+const PRESS_INSET = ROOT_PAGE_PAD_H;
+
+// Basıştan sonra vurgunun ekranda kaldığı süre. Dokunuş kategoriyi açar açmaz
+// kök panelin pointerEvents'i kapanıyor, RN basışı iptal edip onPressOut'u TEK
+// KAREDE tetikliyor — gecikmesiz bırakılırsa gri zemin gözle görülmeden kaybolur.
+// Sayfa geçişiyle (240ms) aynı: vurgu geçiş boyunca durup geçiş biter bitmez
+// sönüyor, arkadaki kök listede basılı satır ASILI KALMIYOR.
+const PRESS_HOLD_MS = 240;
 
 // `titleWeight`: sayfa başlığı (600) ile kategori SATIRI (500) aynı bileşenden
 // çiziliyor ama aynı ağırlıkta olmamalı — biri sayfanın adı, diğeri listedeki
@@ -1473,13 +1547,34 @@ function SettingsSection({
   marginTop = 40,
   onPress,
   icon,
-  active,
   titleSize = 20,
   titleWeight = "600",
 }: any) {
   // Basılı hâl STATE'te, `Pressable`ın `pressed` argümanında değil — gerekçe
   // aşağıdaki style prop'unda.
   const [pressed, setPressed] = useState(false);
+  // Bırakış GECİKMELİ (bkz. PRESS_HOLD_MS): basış tek karede iptal edildiği için
+  // gecikmesiz sönerdi. Zamanlayıcı unmount'ta ve her yeni basışta iptal
+  // ediliyor — geri gelip tekrar basınca eski atım vurguyu erken düşürmesin.
+  const releaseRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  useEffect(
+    () => () => {
+      if (releaseRef.current) clearTimeout(releaseRef.current);
+    },
+    [],
+  );
+  const holdPress = () => {
+    if (releaseRef.current) clearTimeout(releaseRef.current);
+    releaseRef.current = null;
+    setPressed(true);
+  };
+  const releasePress = () => {
+    if (releaseRef.current) clearTimeout(releaseRef.current);
+    releaseRef.current = setTimeout(() => {
+      releaseRef.current = null;
+      setPressed(false);
+    }, PRESS_HOLD_MS);
+  };
   const block = (
     <View style={{ flexDirection: "column", alignItems: "flex-start", flex: 1 }}>
       {/* Başlıksız çağrı: kategori sayfasında başlık header'da duruyor, burada
@@ -1550,23 +1645,26 @@ function SettingsSection({
     //
     // Vurgu YALNIZ basışa da bağlanamıyor: dokunuş kategoriyi açar açmaz kök
     // panelin pointerEvents'i kapanıyor, RN basışı iptal edip onPressOut'u tek
-    // karede tetikliyor — gri zemin gözle görülmeden kaybolurdu. `active` (bu
-    // satırın kategorisi açık mı) vurguyu geçiş animasyonu boyunca ve sayfa
-    // açık kaldığı sürece tutuyor.
+    // karede tetikliyor — gri zemin gözle görülmeden kaybolurdu. Çözüm bırakışı
+    // PRESS_HOLD_MS geciktirmek. Bir ara bunun yerine "açık kategorinin satırı"
+    // (`active`) gri tutuluyordu; sayfaya geçildikten sonra da arkadaki kök
+    // listede asılı kaldığı için KALDIRILDI — vurgu yalnız basışın kendisi.
     // Renk `ink()`: tema dönünce koyuda beyaz, açıkta siyah katman.
+    //
+    // Köşe YUVARLAMASI YOK: zemin artık ekranın iki kenarına kadar uzanıyor
+    // (PRESS_INSET = sayfa boşluğu), kenarda kalan yuvarlak uçlar ekranın
+    // dışında kalıp kırpılmış gibi duruyordu.
     <Pressable
       onPress={onPress}
-      onPressIn={() => setPressed(true)}
-      onPressOut={() => setPressed(false)}
+      onPressIn={holdPress}
+      onPressOut={releasePress}
       style={[
         {
           marginTop,
           marginHorizontal: -PRESS_INSET,
           paddingHorizontal: PRESS_INSET,
-          borderRadius: 16,
-          borderCurve: "continuous",
         },
-        (pressed || active) && { backgroundColor: ink(0.12) },
+        pressed && { backgroundColor: ink(0.12) },
       ]}
     >
       {/* Yatay padding dıştaki Pressable'da: satırın içeriği yine sayfanın
@@ -1630,14 +1728,14 @@ function SettingsSection({
  *
  * Sayfa başlığı (`titleSize={22}`) bunun DIŞINDA: o satır değil, sayfanın adı.
  */
-const ROW_TEXT_SIZE = 16;
+const ROW_TEXT_SIZE = 15;
 /**
  * Tema/Dil chip'lerinin puntosu — satır etiketinin bir tık ALTINDA, bilerek
  * ayrı sabit: chip bir liste satırı değil, dolgusu ve kapsülü metne göre
  * ölçülmüş bir şık. Satırla aynı puntoya çıkarıldığında kapsüller şişip
  * sayfanın tek içeriği olarak fazla ağır duruyordu.
  */
-const CHIP_TEXT_SIZE = 15;
+const CHIP_TEXT_SIZE = 14;
 /**
  * Satırların ortak yüksekliği. Sabitlenmesi ŞART: switch'li satır (31pt) ile
  * ikon'lu satır (18pt) yalnız dolguyla hizalandığında ayırıcılar eşit

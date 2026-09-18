@@ -62,7 +62,7 @@ export default function PremiumBenefitInfoSheet({
     >
       {/* Maddenin simgesi — büyük ve ortada. Sheet'i açan şey tablodaki üç
           kelimelik satır; ikon, okumadan önce "hangi özellik" sorusunu
-          cevaplıyor ve iki maddede (Süper Beğeni / rozet) doğrudan ürünün
+          cevaplıyor ve iki maddede (Fire / rozet) doğrudan ürünün
           kendi glif'i oluyor. Boyut ConsumablePurchaseSheet'in paket
           glif'iyle aynı ailede (50) ama tek başına durduğu için biraz
           büyük. */}

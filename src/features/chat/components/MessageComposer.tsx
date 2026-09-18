@@ -627,8 +627,20 @@ function MessageComposer({
   }, [applyText]);
 
   const handleSend = useCallback(() => {
+    // Kota kilitliyken basış ÖLÜ DEĞİL, paywall'a çıkıyor — input'un kendisi
+    // (onPressIn) ve kilit simgesiyle AYNI kapı.
+    //
+    // Hak kullanıcı YAZARKEN bitebiliyor: 30'luk kota iki tarafın TOPLAMI,
+    // karşı tarafın mesajı da düşürüyor. O an kilit iniyor, yazılmış metin
+    // kutuda kalıyor ve tek refleks gönder'e basmak oluyordu; basış burada
+    // sessizce yutulduğu için hiçbir şey olmuyor, yazı taslakta kalıyordu.
+    // Metin BİLEREK silinmiyor: premium alınınca aynı yazı (taslaktan) yerinde.
+    if (quotaLocked) {
+      onLockedPress?.();
+      return;
+    }
     const trimmed = text.trim();
-    if (!trimmed || disabled || quotaLocked) return;
+    if (!trimmed || disabled) return;
     if (isTypingRef.current && onTypingChange) {
       isTypingRef.current = false;
       onTypingChange(false);
@@ -655,6 +667,7 @@ function MessageComposer({
     quotaLocked,
     onTypingChange,
     onSend,
+    onLockedPress,
     replyTo?.id,
     flushDraft,
   ]);
@@ -1291,9 +1304,17 @@ function MessageComposer({
                   Yerine siyah scrim bindiriyoruz, iki modda da koyulaşıyor. */}
                 <Pressable
                   onPress={handleSend}
-                  disabled={showMic || !canSend}
+                  // Kota kilidinde buton SÖNÜK ama BASILABİLİR: dokunuş
+                  // paywall'ı açıyor (bkz. handleSend). Sönük+ölü bir buton,
+                  // hak yazarken bittiğinde kullanıcıyı "bir şey olmuyor"da
+                  // bırakıyordu.
+                  disabled={showMic || (!canSend && !quotaLocked)}
                   accessibilityRole="button"
-                  accessibilityLabel={t("chat.input.send")}
+                  accessibilityLabel={
+                    quotaLocked
+                      ? t("chat.input.quotaReached")
+                      : t("chat.input.send")
+                  }
                   style={{
                     position: "absolute",
                     left: 0,

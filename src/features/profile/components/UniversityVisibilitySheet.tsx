@@ -1,9 +1,10 @@
 import { useCallback, useEffect, useMemo, useState } from "react";
 import { ActivityIndicator, Text, TouchableOpacity, View } from "react-native";
 import { useTranslation } from "react-i18next";
-import { BottomSheetScrollView } from "@gorhom/bottom-sheet";
-import { ChevronDown, Eye, EyeOff, GraduationCap, Info as InfoIcon, X as XIcon } from "@/shared/icons";
-import AppBottomSheet from "@/shared/components/AppBottomSheet";
+import { GraduationCap, Info as InfoIcon, Plus, X as XIcon } from "@/shared/icons";
+// AppBottomSheet DEĞİL AppModal: header (blur + drag pill + scroll'a bağlı
+// başlık) kardeş sheet'lerle tek yerden geliyor (bkz. ReferralSheet).
+import AppModal from "@/shared/components/AppModal";
 import AnimatedPressable from "@/shared/components/AnimatedPressable";
 import SFIcon, { type SFSymbol } from "@/shared/components/SFIcon";
 import UniversityPickerModal from "@/features/discover/components/UniversityPickerModal";
@@ -20,7 +21,10 @@ import { grantDaysRemaining } from "@/features/profile/referralView";
 
 /** Satırı olan iki mod; "everyone" satır değil, iki satırın da boş hâli. */
 type ListMode = Exclude<VisibilityMode, "everyone">;
-import { colors } from "@/shared/theme/colors";
+import { colors, isLight } from "@/shared/theme/colors";
+// Header butonlarının ölçüsü — savingSlot, Kaydet/X ile AYNI yükseklikte
+// dursun diye tek sabitten (bkz. AppModal > clearGlassHeader).
+import { GLASS_ICON_CLEAR_SIZE } from "@/shared/theme/glass";
 import { devLog } from "@/shared/utils/devLog";
 import uiBus from "@/shared/services/uiBus";
 import { showInfoToast } from "@/shared/services/toaster";
@@ -76,6 +80,17 @@ import i18n from "@/shared/i18n";
  * UNIVERSITY_ICON ile aynı gerekçe).
  */
 const UNIVERSITY_ICON: SFSymbol = "graduationcap.fill";
+
+/**
+ * Satırdaki "temizle" X'inin grisi — FilterModal'daki `mutedInk`in aynısı,
+ * oradaki üniversite satırıyla aynı tonu tutturmak için kopyalandı.
+ *
+ * Fonksiyon çünkü palet mutable (bkz. colors.ts): mod değişiminde render anında
+ * okunmalı, modül yüklenirken değil. Açıkta bir kademe açık (`textMuted`),
+ * koyuda token'ın kendisi — siyah zeminde grinin daha açığı kontrastı değil
+ * okunabilirliği bozuyor.
+ */
+const mutedInk = () => (isLight() ? colors.textMuted : colors.textSecondary);
 
 export default function UniversityVisibilitySheet({
   visible,
@@ -256,153 +271,206 @@ export default function UniversityVisibilitySheet({
     }
   }, [saving, dirty, canUse, draft, initial, onClose, onSaved, openPaywall, t]);
 
-  const footer = (
-    <View style={{ paddingHorizontal: 24, paddingTop: 12, paddingBottom: 28 }}>
-      <AnimatedPressable
-        onPress={handleSave}
-        disabled={saving}
-        style={{
-          borderRadius: 999,
-          borderCurve: "continuous",
-          overflow: "hidden",
-          backgroundColor: colors.inverseSurface,
-        }}
-      >
-        {saving ? (
-          <ActivityIndicator
-            style={{ paddingVertical: 17.5 }}
-            color={colors.onInverseSurface}
-          />
-        ) : (
-          <Text
-            style={{
-              paddingVertical: 20,
-              textAlign: "center",
-              fontSize: 15,
-              fontWeight: "700",
-              color: colors.onInverseSurface,
-            }}
-          >
-            {t(dirty ? "common.save" : "common.done")}
-          </Text>
-        )}
-      </AnimatedPressable>
+  // Kaydederken etiketin yerini tutan pill — ProfileEditModal'daki `savingSlot`
+  // ile aynı kabuk (yükseklik/padding/yarıçap), içi shimmer yerine spinner.
+  // Buton çerçevesi korunuyor ki header satırı kaydetme sırasında zıplamasın.
+  const savingSlot = (
+    <View
+      pointerEvents="none"
+      style={{
+        height: GLASS_ICON_CLEAR_SIZE,
+        paddingHorizontal: 18,
+        borderRadius: 999,
+        backgroundColor: colors.hairlineSoft,
+        alignItems: "center",
+        justifyContent: "center",
+      }}
+    >
+      <ActivityIndicator size="small" color={colors.text} />
     </View>
   );
 
   return (
-    <AppBottomSheet
+    <AppModal
       visible={visible}
       onClose={onClose}
+      // Kardeş sheet'le (ReferralSheet) AYNI HEADER: progressive blur, drag
+      // pill, scroll 55px'i geçince beliren küçük başlık.
+      title={t("discover.filters.visibility.title")}
+      // ── Butonlar ProfileEditModal'ın yapısında ──────────────────────────────
+      // Kaydetme ARTIK footer'ın tam genişlikte butonu değil, header'ın sağ
+      // ucundaki cam kapsül; solda da onunla aynı yükseklikte berrak cam X.
+      // İkisinin ölçüsü tek sabitten (`clearGlassHeader` → GLASS_ICON_CLEAR_SIZE)
+      // geliyor, yani profil düzenleme modal'ıyla birebir aynı satır.
+      //
+      // Etiket dirty'ye göre değişiyor: değişiklik varsa "Kaydet", yoksa
+      // "Bitti" — ikisi de handleSave'e gidiyor (temizken o zaten yalnız
+      // kapatıyor).
+      actionLabel={saving ? undefined : t(dirty ? "common.save" : "common.done")}
+      onAction={handleSave}
+      rightSlot={saving ? savingSlot : undefined}
+      clearGlassHeader
       // TEK DETENT. Davet şeridi/CTA eklendikten sonra 55% içerikte sürekli
-      // kaydırma bırakıyordu; bir tık uzattık. İçerik yine taşarsa
-      // BottomSheetScrollView kaydırıyor. `enableDynamicSizing` bilerek
-      // KAPALI (AppBottomSheet varsayılanı) — not belirip kaybolunca boy zıplamasın.
+      // kaydırma bırakıyordu; bir tık uzattık. İçerik yine taşarsa scroll
+      // ediyor. `dynamicSizing` bilerek KAPALI (kardeş sheet'ten AYRILDIĞI
+      // yer) — buradaki içerik seçim yapıldıkça uzayıp kısalıyor (davet
+      // şeridi, erişim uyarısı, satır özetleri), ölçülen boy her dokunuşta
+      // zıplardı.
       snapPoints={["57%"]}
-      footer={footer}
-      backgroundStyle={{ backgroundColor: colors.bg }}
+      // paddingTop VERİLMİYOR: header'da artık buton var, üst pay AppModal'ın
+      // kendi header yüksekliğinden (88) gelmeli — eski 40 butonların altına
+      // girerdi. Yatay 24 bu sheet'in kendi ölçüsü (AppModal varsayılanı 20),
+      // alt pay footer gittiği için bir tık büyüdü.
+      contentContainerStyle={{
+        paddingHorizontal: 24,
+        paddingBottom: 32,
+      }}
     >
-      <BottomSheetScrollView
-        style={{ flex: 1 }}
-        contentContainerStyle={{ paddingHorizontal: 24, paddingBottom: 24 }}
-        showsVerticalScrollIndicator={false}
+      {/* Büyük başlık İÇERİKTE — header'ınki scroll'a bağlı beliriyor. Ölçü
+          ReferralSheet ve doğrulama sheet'iyle AYNI: 26/700. */}
+      <Text
+        style={{
+          color: colors.text,
+          fontSize: 26,
+          fontWeight: "700",
+          marginBottom: 9,
+        }}
       >
+        {t("discover.filters.visibility.title")}
+      </Text>
+      <View
+        style={{
+          flexDirection: "row",
+          alignItems: "center",
+          gap: 8,
+          marginBottom: 20,
+        }}
+      >
+        <SFIcon
+          name="info.circle"
+          fallback={InfoIcon}
+          size={16}
+          color={colors.textSecondary}
+          strokeWidth={2}
+          weight="semibold"
+        />
+        {/* 🔴 `description` ("Keşfette seni kimlerin görebileceğini seç")
+            DEĞİL `exclusiveNote`. Birincisi başlığın söylediğini tekrar
+            ediyordu; ikisinden yalnız birinin aktif olabilmesi ise ekranın
+            TEK gerçek kuralı ve kullanıcı onu ancak bir listede seçim yapıp
+            diğerinin boşaldığını görünce öğreniyordu. Metin aşağıda,
+            satırların ALTINDA ortalı gri bir not olarak duruyordu — orada
+            kaldırıldı, kural artık en üstte. */}
         <Text
           style={{
-            color: colors.text,
-            fontSize: 20,
-            fontWeight: "600",
-            marginBottom: 9,
+            flex: 1,
+            color: colors.textSecondary,
+            fontSize: 13,
+            lineHeight: 19,
+            fontWeight: "500",
           }}
         >
-          {t("discover.filters.visibility.title")}
+          {t("discover.filters.visibility.exclusiveNote")}
         </Text>
+      </View>
+
+      {/* Davet ödülü şeridi — hak SÜRELİ, süresi de kullanıcının kendi
+          kurduğu kuralın ömrü. Bitince backend kuralları SİLİYOR (plan §1.7),
+          yani sessiz kalmak "ayarım duruyor" sanan bir kullanıcı üretirdi. */}
+      {grantDays !== null ? (
         <View
           style={{
-            flexDirection: "row",
-            alignItems: "center",
-            gap: 8,
-            marginBottom: 20,
+            borderRadius: 999,
+            borderCurve: "continuous",
+            alignSelf: "flex-start",
+            paddingHorizontal: 14,
+            paddingVertical: 8,
+            marginBottom: 18,
+            backgroundColor: colors.hairlineSoft,
           }}
         >
-          <SFIcon
-            name="info.circle"
-            fallback={InfoIcon}
-            size={16}
-            color={colors.textSecondary}
-            strokeWidth={2}
-            weight="semibold"
-          />
+          <Text style={{ color: colors.text, fontSize: 13, fontWeight: "600" }}>
+            {t("discover.filters.visibility.grantNote", { days: grantDays })}
+          </Text>
+        </View>
+      ) : null}
+
+      <View style={{ opacity: canUse ? 1 : 0.4 }}>
+        {/* İki satır, tek aktif liste. Birinde seçim yapınca diğeri boşalır
+            (confirmPicker) — backend aynı anda ikisini kabul etmiyor. */}
+        <ListLabel
+          label={t("discover.filters.visibility.visibleOnlyLabel")}
+          count={allowDomains.length}
+          max={maxDomainsFor("allow")}
+        />
+        <SelectRow
+          testID="visibility-row-allow"
+          sfIcon={UNIVERSITY_ICON}
+          lucideIcon={GraduationCap}
+          value={summarizeDomains(allowDomains)}
+          placeholder={t("discover.filters.visibility.selectUniversities")}
+          disabled={canUse && universityOptions.length === 0}
+          onPress={() => openPicker("allow")}
+          onClear={() => clearList("allow")}
+        />
+
+        <ListLabel
+          label={t("discover.filters.visibility.hiddenFromLabel")}
+          count={blockDomains.length}
+          max={maxDomainsFor("block")}
+          marginTop={18}
+        />
+        <SelectRow
+          testID="visibility-row-block"
+          sfIcon={UNIVERSITY_ICON}
+          lucideIcon={GraduationCap}
+          value={summarizeDomains(blockDomains)}
+          placeholder={t("discover.filters.visibility.selectUniversities")}
+          disabled={canUse && universityOptions.length === 0}
+          onPress={() => openPicker("block")}
+          onClear={() => clearList("block")}
+        />
+
+        {/* `exclusiveNote` BURADAN KALKTI: artık başlığın hemen altında,
+            info glifinin yanında (bkz. yukarısı). Kuralı satırların altında
+            ortalı gri bir notta söylemek, kullanıcı iki listeyi de doldurup
+            birinin boşaldığını gördükten SONRA okunacağı anlamına
+            geliyordu. */}
+
+        {/* 🔴 Bu bir nezaket metni değil, gerçek bir etki: kural bir HARD
+            FILTER, kullanıcı engellenen okulların destesinden tamamen
+            çıkıyor. Daha az gösterim → daha az beğeni → sıralama modelinin
+            sinyali zayıflıyor. Ayarın bedelini söylemeden kurdurmak
+            dürüst olmazdı. Yalnız bir liste doluyken. */}
+        {draft.mode !== "everyone" && draft.domains.length > 0 ? (
           <Text
             style={{
-              flex: 1,
               color: colors.textSecondary,
               fontSize: 13,
               lineHeight: 19,
               fontWeight: "500",
+              marginTop: 10,
             }}
           >
-            {t("discover.filters.visibility.description")}
+            {t("discover.filters.visibility.reachWarning")}
           </Text>
-        </View>
-
-        {/* Davet ödülü şeridi — hak SÜRELİ, süresi de kullanıcının kendi
-            kurduğu kuralın ömrü. Bitince backend kuralları SİLİYOR (plan §1.7),
-            yani sessiz kalmak "ayarım duruyor" sanan bir kullanıcı üretirdi. */}
-        {grantDays !== null ? (
-          <View
-            style={{
-              borderRadius: 999,
-              borderCurve: "continuous",
-              alignSelf: "flex-start",
-              paddingHorizontal: 14,
-              paddingVertical: 8,
-              marginBottom: 18,
-              backgroundColor: colors.hairlineSoft,
-            }}
-          >
-            <Text style={{ color: colors.text, fontSize: 13, fontWeight: "600" }}>
-              {t("discover.filters.visibility.grantNote", { days: grantDays })}
-            </Text>
-          </View>
         ) : null}
 
-        <View style={{ opacity: canUse ? 1 : 0.4 }}>
-          {/* İki satır, tek aktif liste. Birinde seçim yapınca diğeri boşalır
-              (confirmPicker) — backend aynı anda ikisini kabul etmiyor. */}
-          <ListLabel
-            label={t("discover.filters.visibility.visibleOnlyLabel")}
-            count={allowDomains.length}
-            max={maxDomainsFor("allow")}
-          />
-          <SelectRow
-            testID="visibility-row-allow"
-            sfIcon={UNIVERSITY_ICON}
-            lucideIcon={GraduationCap}
-            value={summarizeDomains(allowDomains)}
-            placeholder={t("discover.filters.visibility.selectUniversities")}
-            disabled={canUse && universityOptions.length === 0}
-            onPress={() => openPicker("allow")}
-            onClear={() => clearList("allow")}
-          />
-
-          <ListLabel
-            label={t("discover.filters.visibility.hiddenFromLabel")}
-            count={blockDomains.length}
-            max={maxDomainsFor("block")}
-            marginTop={18}
-          />
-          <SelectRow
-            testID="visibility-row-block"
-            sfIcon={UNIVERSITY_ICON}
-            lucideIcon={GraduationCap}
-            value={summarizeDomains(blockDomains)}
-            placeholder={t("discover.filters.visibility.selectUniversities")}
-            disabled={canUse && universityOptions.length === 0}
-            onPress={() => openPicker("block")}
-            onClear={() => clearList("block")}
-          />
-
+        {/* Backend kuralları premium bitince BİLİNÇLİ olarak devre dışı
+            bırakıyor: engellenen üniversite kullanıcıyı tekrar görmeye başlar.
+            Gizlilik beklentisi yaratan bir ayar, sessiz kalmıyoruz.
+            🔴 İKİ AYRI METİN: premium'u OLAN kullanıcı için bu gelecek zamanlı
+            bir uyarı ("bittiğinde duracak"), premium'u BİTMİŞ kullanıcı için
+            ise mevcut durumun tarifi ("şu an uygulanmıyor"). İkincisine aynı
+            gelecek zamanlı metni göstermek, kuralın hâlâ yürürlükte olduğunu
+            sandırırdı. Kayıt duruyor ve premium yenilenince kendiliğinden geri
+            devreye giriyor — o yüzden listeyi silmiyoruz, sadece söylüyoruz. */}
+        {/* 🔴 ÜÇÜNCÜ DAL (davet ödülü): hak premium'dan DEĞİL davetten
+            geliyorsa "Premium'un bittiğinde" cümlesi olgusal olarak yanlış —
+            kullanıcının premium'u yok, kuralı durduracak olan hakkın kendi
+            süresi. O yüzden bu dalda premium notları hiç çizilmiyor, üstteki
+            gün şeridi (grantNote) zaten kuralın ne zaman duracağını söylüyor. */}
+        {draft.mode !== "everyone" && draft.domains.length > 0 && grantDays === null ? (
           <Text
             style={{
               color: colors.textMuted,
@@ -410,90 +478,42 @@ export default function UniversityVisibilitySheet({
               lineHeight: 19,
               fontWeight: "500",
               marginTop: 10,
-              textAlign: "center",
             }}
           >
-            {t("discover.filters.visibility.exclusiveNote")}
+            {t(
+              canUse
+                ? "discover.filters.visibility.premiumExpiryNote"
+                : "discover.filters.visibility.premiumInactiveNote",
+            )}
           </Text>
-
-          {/* 🔴 Bu bir nezaket metni değil, gerçek bir etki: kural bir HARD
-              FILTER, kullanıcı engellenen okulların destesinden tamamen
-              çıkıyor. Daha az gösterim → daha az beğeni → sıralama modelinin
-              sinyali zayıflıyor. Ayarın bedelini söylemeden kurdurmak
-              dürüst olmazdı. Yalnız bir liste doluyken. */}
-          {draft.mode !== "everyone" && draft.domains.length > 0 ? (
-            <Text
-              style={{
-                color: colors.textSecondary,
-                fontSize: 13,
-                lineHeight: 19,
-                fontWeight: "500",
-                marginTop: 10,
-              }}
-            >
-              {t("discover.filters.visibility.reachWarning")}
-            </Text>
-          ) : null}
-
-          {/* Backend kuralları premium bitince BİLİNÇLİ olarak devre dışı
-              bırakıyor: engellenen üniversite kullanıcıyı tekrar görmeye başlar.
-              Gizlilik beklentisi yaratan bir ayar, sessiz kalmıyoruz.
-              🔴 İKİ AYRI METİN: premium'u OLAN kullanıcı için bu gelecek zamanlı
-              bir uyarı ("bittiğinde duracak"), premium'u BİTMİŞ kullanıcı için
-              ise mevcut durumun tarifi ("şu an uygulanmıyor"). İkincisine aynı
-              gelecek zamanlı metni göstermek, kuralın hâlâ yürürlükte olduğunu
-              sandırırdı. Kayıt duruyor ve premium yenilenince kendiliğinden geri
-              devreye giriyor — o yüzden listeyi silmiyoruz, sadece söylüyoruz. */}
-          {/* 🔴 ÜÇÜNCÜ DAL (davet ödülü): hak premium'dan DEĞİL davetten
-              geliyorsa "Premium'un bittiğinde" cümlesi olgusal olarak yanlış —
-              kullanıcının premium'u yok, kuralı durduracak olan hakkın kendi
-              süresi. O yüzden bu dalda premium notları hiç çizilmiyor, üstteki
-              gün şeridi (grantNote) zaten kuralın ne zaman duracağını söylüyor. */}
-          {draft.mode !== "everyone" && draft.domains.length > 0 && grantDays === null ? (
-            <Text
-              style={{
-                color: colors.textMuted,
-                fontSize: 13,
-                lineHeight: 19,
-                fontWeight: "500",
-                marginTop: 10,
-              }}
-            >
-              {t(
-                canUse
-                  ? "discover.filters.visibility.premiumExpiryNote"
-                  : "discover.filters.visibility.premiumInactiveNote",
-              )}
-            </Text>
-          ) : null}
-        </View>
-
-        {/* ── Kilitli hâlin ikinci kapısı ── Paywall satırlara dokununca zaten
-            açılıyor; bu, PARA İSTEMEYEN yolu görünür kılıyor. Yalnız kilitliyken
-            çiziliyor: hakkı olan kullanıcıya davet reklamı yapmak, ayarı
-            kullanmaya gelmiş kişiyi başka bir ekrana çağırmak olurdu. */}
-        {!canUse ? (
-          <AnimatedPressable
-            onPress={openReferral}
-            testID="visibility-invite-cta"
-            // Buton kabuğu YOK: alttaki kaydet butonuyla yarışıyordu. Düz
-            // metin bağlantı, dokunma alanı paddingVertical ile korunuyor.
-            style={{ marginTop: 20 }}
-          >
-            <Text
-              style={{
-                paddingVertical: 16,
-                textAlign: "center",
-                fontSize: 15,
-                fontWeight: "600",
-                color: colors.text,
-              }}
-            >
-              {t("discover.filters.visibility.inviteCta")}
-            </Text>
-          </AnimatedPressable>
         ) : null}
-      </BottomSheetScrollView>
+      </View>
+
+      {/* ── Kilitli hâlin ikinci kapısı ── Paywall satırlara dokununca zaten
+          açılıyor; bu, PARA İSTEMEYEN yolu görünür kılıyor. Yalnız kilitliyken
+          çiziliyor: hakkı olan kullanıcıya davet reklamı yapmak, ayarı
+          kullanmaya gelmiş kişiyi başka bir ekrana çağırmak olurdu. */}
+      {!canUse ? (
+        <AnimatedPressable
+          onPress={openReferral}
+          testID="visibility-invite-cta"
+          // Buton kabuğu YOK: alttaki kaydet butonuyla yarışıyordu. Düz
+          // metin bağlantı, dokunma alanı paddingVertical ile korunuyor.
+          style={{ marginTop: 20 }}
+        >
+          <Text
+            style={{
+              paddingVertical: 16,
+              textAlign: "center",
+              fontSize: 15,
+              fontWeight: "600",
+              color: colors.text,
+            }}
+          >
+            {t("discover.filters.visibility.inviteCta")}
+          </Text>
+        </AnimatedPressable>
+      ) : null}
 
       <UniversityPickerModal
         visible={pickerVisible}
@@ -514,7 +534,7 @@ export default function UniversityVisibilitySheet({
         })}
         onConfirm={confirmPicker}
       />
-    </AppBottomSheet>
+    </AppModal>
   );
 }
 
@@ -563,7 +583,21 @@ function ListLabel({
   );
 }
 
-/** FilterModal'daki `SelectRow`un aynısı — pill satır, X listeyi temizler. */
+/**
+ * FilterModal'daki `SelectRow`un BİREBİR aynısı — pill satır, X listeyi
+ * temizler. İki ekranda da satırın işi aynı: çoklu üniversite seçimi açmak.
+ *
+ * ⚠️ ORADAN KOPYALANAN ÜÇ KARAR (hiçbiri kozmetik değil, bkz. FilterModal
+ * içindeki gerekçeler):
+ *   • Kenarlık TAM 1px — 0.5'te bu kapsül sınırı olmayan bir metin gibi
+ *     görünüyordu. Ayar kalınlıkta değil tonda yapılıyor.
+ *   • İkon ve metin TAM MÜRKEPTE, placeholder dahil: satırın tamamı tek bir
+ *     dokunma hedefi, üç eleman da aynı ağırlıkta okunsun. Pasif gri yalnız
+ *     "temizle" X'inde kaldı — o satırın kendisi değil, yıkıcı bir yan eylem.
+ *   • Sağda chevron DEĞİL ARTI: chevron "burada bir liste açılır/kapanır"
+ *     diyordu, oysa satır bir seçim ekranı açıyor ve seçim ÇOKLU — artı "buna
+ *     bir şey ekle" işini doğrudan söylüyor.
+ */
 function SelectRow({
   testID,
   sfIcon,
@@ -584,7 +618,7 @@ function SelectRow({
         borderRadius: 999,
         borderCurve: "continuous",
         overflow: "hidden",
-        borderWidth: 0.5,
+        borderWidth: 1,
         borderColor: colors.hairline,
         paddingHorizontal: 16,
         paddingVertical: 18,
@@ -599,13 +633,13 @@ function SelectRow({
           name={sfIcon}
           fallback={lucideIcon}
           size={18}
-          color={colors.textSecondary}
+          color={colors.text}
           strokeWidth={1.5}
         />
         <Text
           numberOfLines={1}
           style={{
-            color: value ? colors.text : colors.textSecondary,
+            color: colors.text,
             fontSize: 15,
             fontWeight: "500",
             flex: 1,
@@ -620,17 +654,17 @@ function SelectRow({
             name="xmark"
             fallback={XIcon}
             size={18}
-            color={colors.textSecondary}
+            color={mutedInk()}
             strokeWidth={2}
             weight="semibold"
           />
         </TouchableOpacity>
       ) : (
         <SFIcon
-          name="chevron.down"
-          fallback={ChevronDown}
+          name="plus"
+          fallback={Plus}
           size={18}
-          color={colors.textSecondary}
+          color={colors.text}
           strokeWidth={2}
           weight="semibold"
         />
@@ -646,11 +680,16 @@ function SelectRow({
  * DAĞITILDIĞI. "Düzenle" formunun içine gömülse orada onlarca alanın arasında
  * kaybolurdu; ayrı bir yüzey ona hak ettiği ağırlığı veriyor.
  *
- * 🔴 BUTON DURUM BİLDİRİYOR, sadece kapı değil. Kural varken:
- *   • ikon `eye.slash.fill`e geçiyor — bir kural yüzünden birileri seni GÖRMÜYOR
- *   • rozet kaç üniversitenin listede olduğunu söylüyor
- * Böylece kullanıcı sheet'i açmadan "bir kısıtlamam var mı" sorusunu
- * cevaplayabiliyor; gizlilik ayarlarında sessiz kalmak en pahalı seçenek.
+ * 🔴 BUTON DURUM BİLDİRİYOR, sadece kapı değil: kural varken rozet kaç
+ * üniversitenin listede olduğunu söylüyor. Böylece kullanıcı sheet'i açmadan
+ * "bir kısıtlamam var mı" sorusunu cevaplayabiliyor; gizlilik ayarlarında
+ * sessiz kalmak en pahalı seçenek.
+ *
+ * ⚠️ İKON ARTIK MODA GÖRE DEĞİŞMİYOR. Eskiden `eye.fill` / `eye.slash.fill`
+ * ayrımı vardı; artık her durumda sheet'in kendi satırlarıyla AYNI sembol
+ * (UNIVERSITY_ICON, graduationcap.fill) — buton neyin kapısı olduğunu söylüyor,
+ * "kural var mı"yı rozet taşıyor. `graduationcap`in slash'lı bir varyantı da
+ * yok, ayrımı ikona geri taşımak isteyen önce ona bir karşılık bulmalı.
  *
  * ZEMİN: TERS YÜZEY — açık modda neredeyse siyah, koyuda beyaz daire
  * (`inverseSurface`), üstündeki sembol `onInverseSurface`. Çıplak ikon dönemi
@@ -709,8 +748,8 @@ export function VisibilityHeroButton({
         }}
       >
         <SFIcon
-          name={active && mode === "block" ? "eye.slash.fill" : "eye.fill"}
-          fallback={active && mode === "block" ? EyeOff : Eye}
+          name={UNIVERSITY_ICON}
+          fallback={GraduationCap}
           size={ICON}
           color={colors.onInverseSurface}
           strokeWidth={1.75}

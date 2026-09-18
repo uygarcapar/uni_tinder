@@ -38,7 +38,7 @@ const notices = createPendingNotices({
   },
   refresh: () => {
     queryClient.invalidateQueries({ queryKey: referralKeys.me });
-    // Premium ve SuperLike/not bakiyesi stats cevabında.
+    // Premium ve Fire/not bakiyesi stats cevabında.
     queryClient.invalidateQueries({ queryKey: swipeKeys.stats });
     profileService.bustProfileCache();
     uiBus.emit("profileDirty");

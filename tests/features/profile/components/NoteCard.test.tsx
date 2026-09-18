@@ -76,7 +76,7 @@ describe('NoteCard', () => {
   });
 
   it('premium aktivasyonu beklerken not bakiyesini GİZLEMEZ', () => {
-    // Not premium'la gelen bir hak DEĞİL — SuperLike kartındaki "webhook
+    // Not premium'la gelen bir hak DEĞİL — Fire kartındaki "webhook
     // inmedi, sayıyı yazma" penceresi buraya uygulanmamalı.
     mockReduxPremium = true;
     mockStats = { ...baseStats, serverIsPremium: false, isPremium: true };

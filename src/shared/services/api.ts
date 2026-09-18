@@ -17,6 +17,14 @@ import { extractAccountBlock, emitAccountBlocked } from '@/shared/utils/accountB
 import { devLog } from '@/shared/utils/devLog';
 import { getCurrentRouteName } from '@/shared/services/currentRoute';
 import { shortNetError } from '@/shared/utils/netError';
+import { isTokenExpiringSoon } from '@/shared/utils/jwt';
+import {
+  authDiag,
+  markRefreshOk,
+  markRefreshStart,
+  clearRefreshInflight,
+  markSessionLost,
+} from '@/shared/debug/authDiagnostics';
 
 let currentAccessToken: string | null = null;
 let currentLanguage: 'tr' | 'en' = 'tr';
@@ -89,10 +97,48 @@ type TimedConfig = AxiosRequestConfig & {
  */
 export const SKIP_429_RETRY = { __skip429Retry: true } as AxiosRequestConfig;
 
+/**
+ * Access token'a bakmadan geçilen uçlar — token kapısı (aşağıda) bunları
+ * ATLAR. Login/register henüz oturum yokken çağrılıyor, revoke ise oturumu
+ * kapatırken; ikisinde de bayat bir token'ı tazelemeye çalışmak anlamsız.
+ * `/refresh-token` zaten bu instance'ı kullanmıyor ama listede dursun:
+ * gelecekte biri `api.post` ile çağırırsa sonsuz döngü olurdu.
+ */
+const TOKEN_GATE_EXEMPT: string[] = [
+  API_ENDPOINTS.LOGIN,
+  API_ENDPOINTS.REGISTER,
+  API_ENDPOINTS.REGISTER_AND_COMPLETE,
+  API_ENDPOINTS.REFRESH_TOKEN,
+  API_ENDPOINTS.REVOKE_TOKEN,
+];
+
 api.interceptors.request.use(
-  (config) => {
+  async (config) => {
+    // ── TOKEN KAPISI: bayat token'la yola çıkma ───────────────────────────
+    //
+    // Eskiden bayat access token'la çıkılır, 401 yenir ve refresh ONDAN SONRA
+    // tetiklenirdi. Cold start'ta bu, tek seferde ~7 paralel 401 demekti ve
+    // rotasyonu açılışın en kırılgan anına — kullanıcının bildirimden girip
+    // hemen çıkabildiği saniyelere — denk getiriyordu. Rotasyon tek
+    // kullanımlık: cevabı kaybolan bir refresh, 60 sn'lik grace penceresi
+    // kapandıktan sonra oturumu bitiriyor.
+    //
+    // Kapı isteği DURDURUP önce tek bir refresh yapıyor (single-flight:
+    // paralel istekler aynı promise'i bekler). Refresh düşerse istek eski
+    // token'la yine de gider — 401 yolu yerinde duruyor, kapı yalnız sıklığı
+    // düşürüyor. Fail-open: kapı hiçbir isteği öldürmez.
+    if (
+      currentAccessToken &&
+      isTokenExpiringSoon(currentAccessToken, 60) &&
+      !TOKEN_GATE_EXEMPT.some((path) => (config.url || '').startsWith(path))
+    ) {
+      await refreshAccessToken().catch(() => null);
+    }
+
     recordRequest(config.method || 'GET', config.url || '');
     // Retry'larda (429/401) interceptor tekrar koşar → süre son denemeyi ölçer.
+    // Kapının beklemesi SÜREYE SAYILMAZ: damga await'ten sonra basılıyor, aksi
+    // halde her cold start isteği "yavaş" görünürdü.
     (config as TimedConfig).__startedAt = Date.now();
     (config as TimedConfig).__route = getCurrentRouteName();
     if (currentAccessToken) {
@@ -139,7 +185,7 @@ let inFlightRefresh: Promise<string | null> | null = null;
 const handleBlockedResponse = async (error: any): Promise<boolean> => {
   const blocked = extractAccountBlock(error);
   if (!blocked) return false;
-  devLog(`⛔ Hesap yaptırımı: ${blocked.errorCode} (${blocked.reason})`);
+  markSessionLost('yaptırım', { errorCode: blocked.errorCode, reason: blocked.reason });
   await clearAllTokens();
   setCurrentAccessToken(null);
   emitAccountBlocked(blocked);
@@ -222,6 +268,12 @@ const refreshErrorCodeOf = (data: any): string | null => {
  */
 const handleRefreshFailure = async (err: any, attempts: number): Promise<null> => {
   devLog('❌ Token refresh başarısız:', err?.response?.status, err?.message);
+  // Sunucu KONUŞTU ve 5xx değil (400/401/403/408/429): rotasyon olmadı, elimizdeki
+  // token ne idiyse o. "Yarım kalmış refresh" işareti burada temizlenir — kalsaydı
+  // her uyanışta kurtarılacak bir şey yokken fazladan bir refresh turu açardı.
+  // 5xx'te İŞARET DURUR: sunucu token'ı rotate ettikten sonra da patlamış olabilir.
+  const failStatus = err?.response?.status;
+  if (typeof failStatus === 'number' && failStatus < 500) clearRefreshInflight();
   if (isTimeoutError(err)) {
     logNetworkFailure(
       'TIMEOUT',
@@ -251,8 +303,13 @@ const handleRefreshFailure = async (err: any, attempts: number): Promise<null> =
   // deniyor, ağ geldiğinde ilk deneme tutuyor. Refresh token'ı GERÇEKTEN
   // ölmüşse sunucu cevap verir vermez aşağıdaki kesin dal işliyor.
   if (isTransientRefreshFailure(err)) {
-    devLog(
-      `🔌 Refresh geçici hatayla düştü (${attempts} deneme) — oturum korunuyor, sonraki istekte yeniden denenecek`,
+    // Throttle: kullanıcı uzun süre çevrimdışıysa bu dal arka arkaya
+    // tetiklenebilir; 80 satırlık defteri aynı satırla doldurup asıl kaydı
+    // (session-lost) tamponun dışına itmesin.
+    authDiag(
+      'refresh-transient',
+      { status: err?.response?.status ?? 'yanıt-yok', hata: shortNetError(err), deneme: attempts },
+      { throttleMs: 60_000 },
     );
     return null;
   }
@@ -309,20 +366,23 @@ const handleRefreshFailure = async (err: any, attempts: number): Promise<null> =
     isSelfInflictedPasswordChange() ||
     isSelfInflictedEmailChange()
   ) {
-    devLog('↩️ Refresh fail yok sayıldı — kendi login/şifre/e-posta penceremiz, eski token');
+    authDiag('refresh-ignored', { sebep: 'kendi login/şifre/e-posta penceremiz' });
     return null;
   }
 
-  // console.warn (devLog değil): oturumun neden düştüğü release/TestFlight
-  // build'de de görünmeli. "Beni durduk yere attı" şikayetlerinde tek ayırt
-  // edici veri bu satır — sunucunun gönderdiği HAM reason'ı yazıyoruz ki
-  // istemci sınıflandırmasının mı yoksa backend gerekçesinin mi yanlış
-  // olduğu tartışmasız görülsün.
-  console.warn(
-    `[auth] Oturum düşürüldü — status ${err?.response?.status}, şekil ${shape}, ` +
-      `errorCode ${String(data?.errorCode)}, reason ${String(data?.reason)}, ` +
-      `deneme ${attempts} → ${reason}`,
-  );
+  // Defter + console.warn (devLog değil): oturumun neden düştüğü release/
+  // TestFlight build'de de görünmeli VE cold start'ı atlatmalı. "Beni durduk
+  // yere attı" şikâyetinde tek ayırt edici veri bu kayıt — sunucunun
+  // gönderdiği HAM reason yazılıyor ki istemci sınıflandırmasının mı yoksa
+  // backend gerekçesinin mi yanlış olduğu tartışmasız görülsün.
+  markSessionLost('rest-401', {
+    status: err?.response?.status,
+    şekil: shape,
+    errorCode: data?.errorCode ?? null,
+    reason: data?.reason ?? null,
+    deneme: attempts,
+    sonuç: reason,
+  });
   await clearAllTokens();
   setCurrentAccessToken(null);
   if (onAuthLost) onAuthLost(reason);
@@ -345,20 +405,20 @@ export const refreshAccessToken = async (): Promise<string | null> => {
         // sonraki normal açılışta oturum aynen açılıyor. Aksi halde ilk kilit
         // açılmadan gelen bir arka plan başlatması kullanıcıyı atıyordu.
         if (isTokenStoreDegraded()) {
-          console.warn(
-            '[auth] Refresh atlandı — token deposu degrade (Keychain erişilemedi). Oturum korunuyor.',
-          );
+          authDiag('refresh-skip-degraded', {
+            not: 'token deposu bu açılışta açılamadı — oturum korunuyor',
+          });
           return null;
         }
-        // console.warn (devLog değil): oturumun BU yolla düşmesi release'de hiç
-        // iz bırakmıyordu — "durduk yere attı" şikayetlerinde en sessiz yol
-        // tam da burasıydı. `erişim` alanı ayırt edici: token varken refresh
-        // token'ın yokluğu yarım temizlik/yazım kaybına, ikisinin birden
-        // yokluğu zaten kapanmış bir oturuma işaret eder.
-        console.warn(
-          `[auth] Oturum düşürüldü — refresh token diskte YOK ` +
-            `(erişim token'ı ${currentAccessToken ? 'var' : 'yok'}) → session_expired`,
-        );
+        // Oturumun BU yolla düşmesi release'de hiç iz bırakmıyordu — "durduk
+        // yere attı" şikâyetlerinde en sessiz yol tam da burasıydı.
+        // `erişimToken` alanı ayırt edici: token varken refresh token'ın
+        // yokluğu yarım temizlik/yazım kaybına, ikisinin birden yokluğu zaten
+        // kapanmış bir oturuma işaret eder.
+        markSessionLost('token-yok', {
+          erişimToken: currentAccessToken ? 'var' : 'yok',
+          sonuç: 'session_expired',
+        });
         await clearAllTokens();
         setCurrentAccessToken(null);
         if (onAuthLost) onAuthLost('session_expired');
@@ -371,6 +431,13 @@ export const refreshAccessToken = async (): Promise<string | null> => {
       // iOS uygulamayı donduruyor, cevap işlenemiyor.
       let response: any = null;
       let lastError: any = null;
+
+      // İşaret POST'tan ÖNCE diske (MMKV senkron): bundan sonra app askıya
+      // alınır/öldürülürse sunucu rotasyonu yapmış ama cevap bize ulaşmamış
+      // olabilir. Uyanışta bu işaret koşulsuz bir refresh tetikliyor — 60 sn'lik
+      // grace penceresine yetişirsek oturum kurtuluyor (bkz. authDiagnostics
+      // markRefreshStart ve AppNavigator AppState kapısı).
+      markRefreshStart();
 
       for (let attempt = 1; attempt <= REFRESH_MAX_ATTEMPTS; attempt++) {
         attempts = attempt;
@@ -415,7 +482,10 @@ export const refreshAccessToken = async (): Promise<string | null> => {
       setCurrentAccessToken(newAccessToken);
       await saveAccessToken(newAccessToken);
       if (onTokenRefreshed) onTokenRefreshed(newAccessToken, newRefreshToken);
-      devLog(`✅ Token refresh başarılı (single-flight, ${attempts}. deneme)`);
+      // İşareti TOKEN DİSKE İNDİKTEN SONRA temizle: sıra tersine dönerse,
+      // yazma ile temizleme arasında ölen bir uygulama "yarım refresh yoktu"
+      // diye kaydedilir ve uyanıştaki kurtarma denemesi hiç tetiklenmez.
+      markRefreshOk(attempts);
       return newAccessToken as string;
     } catch (err: any) {
       // Beklenmedik hata: gövde şekli bozuk (`result` yok), disk yazımı patladı,

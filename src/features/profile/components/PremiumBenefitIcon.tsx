@@ -10,18 +10,19 @@ import {
   type LucideIcon,
 } from "@/shared/icons";
 import SFIcon, { type SFSymbol } from "@/shared/components/SFIcon";
-import SuperLikeGlyph from "@/shared/components/SuperLikeGlyph";
-import PremiumFlame from "@/shared/components/PremiumFlame";
+import FireGlyph from "@/shared/components/FireGlyph";
+import PremiumBadge from "@/shared/components/PremiumBadge";
 import type { PremiumBenefitKey } from "@/features/profile/premiumBenefits";
 
 /**
  * Premium maddesinin simgesi — açıklama sheet'inin tepesindeki büyük ikon
  * (bkz. PremiumBenefitInfoSheet).
  *
- * Maddelerin İKİSİ uygulamanın kendi glif'ini kullanır, SF/lucide DEĞİL:
- * Süper Beğeni'nin kalbi ve premium alevi ürünün her yerinde o şekil
- * (SwipeCard butonu, kart rozeti, mağaza kartları) — bir açıklama ekranında
- * jenerik bir kalp/alev çizmek "bu, gördüğün o şey mi?" sorusunu doğurur.
+ * Maddelerin İKİSİ uygulamanın kendi işaretini kullanır, SF/lucide DEĞİL:
+ *  - `fire` → Fire'ın alevi (SwipeCard butonu, kart rozeti, mağaza kartları).
+ *  - `premiumBadge` → rozetin TA KENDİSİ, "plus+" wordmark'ı.
+ * İkisinde de gerekçe aynı: madde ekranda göreceğin bir işareti vaat ediyor,
+ * yerine jenerik bir sembol çizmek "bu, gördüğün o şey mi?" sorusunu doğurur.
  * Kalanı SFIcon: iOS'ta SF Symbol, Android'de lucide.
  *
  * Sembol seçimleri ürünle EŞLEŞTİRİLDİ, dekoratif değil:
@@ -35,7 +36,7 @@ import type { PremiumBenefitKey } from "@/features/profile/premiumBenefits";
 type BenefitSymbol = { sf: SFSymbol; fallback: LucideIcon };
 
 const BENEFIT_SYMBOLS: Record<
-  Exclude<PremiumBenefitKey, "superLikes" | "premiumBadge">,
+  Exclude<PremiumBenefitKey, "fire" | "premiumBadge">,
   BenefitSymbol
 > = {
   unlimitedLikes: { sf: "infinity", fallback: InfinityIcon },
@@ -61,11 +62,29 @@ export default function PremiumBenefitIcon({
   // burada tek başına, diğer maddelerin ince çizgili sembolleriyle aynı
   // ailede durması gereken bir ikon — gradyan onu tek başına bir rozete
   // çevirirdi.
-  if (benefitKey === "superLikes") {
-    return <SuperLikeGlyph size={size} color={color} />;
+  if (benefitKey === "fire") {
+    return <FireGlyph size={size} color={color} />;
   }
+  // "Profilinde premium rozeti" maddesinin simgesi ROZETİN KENDİSİ: satır
+  // birebir o işareti vaat ediyor, o yüzden burada onun bir temsili değil
+  // gerçeği duruyor (bkz. PremiumBadge — isim yanındaki wordmark).
+  //
+  // ⚠️ ESKİDEN `PremiumFlame`Dİ ve artık YANLIŞTI: rozet bir süredir alev
+  // değil "plus+" wordmark'ı. Madde alev gösterip profilde wordmark çıkınca
+  // vaat edilen şeyle görülen şey tutmuyordu.
+  //
+  // `fontSize` = YANINDAKİ İSMİN puntosu, çizilen punto değil: PremiumBadge
+  // ölçüyü `premiumBadgeFontSize` ile (×0.75) kendi türetiyor. Buradaki slot
+  // bir ikon kutusu, yani `size` doğrudan o "isim puntosu" yerine geçiyor —
+  // 56'lık slotta wordmark 42 punto çiziliyor. Duckie'nin x yüksekliği düşük
+  // (0.338em), yani 42 punto bir harf yığını olarak 56'lık SF glifiyle aynı
+  // bantta okunuyor; hesabın tamamı PremiumBadge'de yazılı.
+  //
+  // Renk marka tonu (`litPlus`) DEĞİL, çağıranın verdiği renk: bu slotta
+  // maddeler tek ailede duruyor — yukarıdaki "gradyan yok" kuralıyla aynı
+  // gerekçe. `style` dizide sonda geldiği için rozetin kendi rengini eziyor.
   if (benefitKey === "premiumBadge") {
-    return <PremiumFlame size={size} color={color} />;
+    return <PremiumBadge fontSize={size} style={{ color }} />;
   }
 
   const symbol = BENEFIT_SYMBOLS[benefitKey];

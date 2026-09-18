@@ -85,12 +85,12 @@ export function useSwipeMutation() {
   const qc = useQueryClient();
   return useMutation({
     mutationFn: ({ direction, userId }) => {
-      if (direction === "up") return swipeService.superLikeUser(userId);
+      if (direction === "up") return swipeService.fireUser(userId);
       if (direction === "left") return swipeService.passUser(userId);
       return swipeService.likeUser(userId);
     },
     // Optimistik: swipe sonrası remainingSwipes'ı hemen 1 azalt → logo dalga
-    // animasyonu anlık güncellensin. SuperLike için superLikesRemaining da.
+    // animasyonu anlık güncellensin. Fire için superLikesRemaining da.
     onMutate: ({ direction }) => {
       qc.setQueryData(swipeKeys.stats, (prev) => {
         if (!prev) return prev;

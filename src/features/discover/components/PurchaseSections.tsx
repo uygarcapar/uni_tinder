@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 import {
   View,
   Text,
@@ -12,7 +12,6 @@ import { X, Check, Info, ShoppingBag } from "@/shared/icons";
 import { LinearGradient } from "expo-linear-gradient";
 import SFIcon from "@/shared/components/SFIcon";
 import SkeletonBox from "@/shared/components/SkeletonBox";
-import PremiumFlame from "@/shared/components/PremiumFlame";
 import AnimatedPressable from "@/shared/components/AnimatedPressable";
 import PremiumBenefitInfoSheet from "@/features/discover/components/PremiumBenefitInfoSheet";
 import {
@@ -28,7 +27,7 @@ import {
   subscriptionRenewalNote,
   useSubscriptionView,
 } from "@/features/profile/subscriptionView";
-import { colors, gradients, ink, isLight, onMediaAt } from "@/shared/theme/colors";
+import { colors, gradients, ink, onMediaAt } from "@/shared/theme/colors";
 
 /**
  * Plan kartının yarıçapı — iskelet de aynı sayıyı kullanıyor. 40, çünkü
@@ -50,10 +49,6 @@ const PLAN_CARD_RADIUS = 40;
  * `marginTop: "auto"` ile kartın dibine çivili (bkz. renderItem).
  */
 const PLAN_CARD_HEIGHT = 208;
-// Ad satırındaki alev: "plus"ın 55pt'lik gövdesiyle aynı ağırlıkta dursun diye
-// büyük, ama ondan bir tık KÜÇÜK — eşit boyda ikisi de başlık gibi okunuyordu.
-// ProfileScreen'in upsell kartındaki 68'in kart genişliğine göre küçülmüş hâli.
-const PLAN_CARD_FLAME_SIZE = 46;
 
 /**
  * lit plus paywall'ının görsel parçaları. Tek kabı var: ProfileScreen'in "plus"
@@ -476,7 +471,7 @@ function PlanStatusPill({ label }: { label: string }) {
     <View
       testID="plan-card-status"
       style={{
-        // Rozet uzun etiketde ("Aktivasyon sürüyor") alevin üstüne binmesin:
+        // Rozet uzun etiketde ("Aktivasyon sürüyor") kartın kenarını taşırmasın:
         // kırpılacak olan rozettir, marka kelimesi değil.
         flexShrink: 1,
         paddingHorizontal: 10,
@@ -597,22 +592,15 @@ function PlanPeriodPills({
   t: (key: string, opts?: any) => string;
 }) {
   const [stripWidth, setStripWidth] = useState(0);
-  // Rozet TEK plana takılıyor: en çok tasarruf ettiren. Eskiden tabana göre
-  // tasarrufu olan HER planda bir "%NN" duruyordu (yani hem aylıkta hem
-  // yıllıkta) — iki yüzde yan yana karşılaştırma yaptırıyordu, oysa şeridin işi
-  // seçmek. Yüzdeler kartların kendi indirim pill'lerinde duruyor.
-  const bestPeriod = useMemo(() => {
-    let best: string | null = null;
-    let bestSavings = 0;
-    for (const plan of plans) {
-      const savings = computeSavings(plan, plans);
-      if (savings != null && savings > bestSavings) {
-        bestSavings = savings;
-        best = plan.period;
-      }
-    }
-    return best;
-  }, [plans]);
+  // ŞERİTTE ROZET YOK. Sırayla iki tur denendi ve ikisi de kaldırıldı:
+  // önce tasarrufu olan HER planda bir "%NN" vardı (aylıkta da yıllıkta da) —
+  // iki yüzde yan yana karşılaştırma yaptırıyordu; sonra en çok tasarruf
+  // ettiren TEK plana "En iyi" rozeti takıldı — o da şeridin işini
+  // (seçmek) bir tavsiyeyle karıştırıyordu.
+  //
+  // Şeridin tek işi periyot seçmek; hangisinin ne kazandırdığını kartların
+  // kendi indirim pill'i söylüyor (bkz. renderItem > planSavings). Rozeti geri
+  // isteyen önce oradaki yüzdeyle nasıl birlikte okunacağını çözmeli.
   const slide = useRef(new Animated.Value(0)).current;
   const activeIndex = Math.max(
     0,
@@ -625,21 +613,22 @@ function PlanPeriodPills({
   // ikinci bir yüzey gibi duruyordu; tablo da zeminsiz (bkz.
   // PurchaseFeatureTable), ikisi aynı sayfada farklı şey söylüyordu.
   //
-  // Seçimi taşıyan tek şey KAYAN DOLGU, o yüzden o dolgu sayfa zemininden
-  // yeterince ayrışmak zorunda:
-  //  - açık modda TAM SİYAH (inverseSurface). ink(0.16) beyaz zeminde açık gri
-  //    kalıyordu ve seçili sekme "seçili" görünmüyordu. Dolgu polarite
-  //    çevirdiği için etiketi de `onInverseSurface` taşıyor — uygulamadaki her
-  //    seçili pill'in ikilisi (bkz. theme/colors.ts).
-  //  - koyu modda surface4: oradaki dolgu beyaza yaklaşamaz (açık modun tersi
-  //    olurdu), sayfa zemininin (#121212) bir üst kademesi olarak duruyor.
-  //    Opak palet tonu, ink() değil: alfa bir dolgu şeffaf şeritte doğrudan
-  //    sayfa zeminine binince fark tonun kendisinden değil yığından gelirdi.
+  // Seçimi taşıyan tek şey KAYAN DOLGU ve o dolgu artık ProfileScreen'in
+  // tamamlama accordion'ının kabuğunun aynısı: `surface` zemin + 0.5px
+  // hairline kenar (kenar aşağıda, Animated.View'da). İki yüzey aynı
+  // sözleşmeyi paylaşsın diye — sayfadaki "bir kat yukarısı" kalıbı bu.
+  //
+  // ⚠️ POLARİTE ÇEVİREN DOLGU DÖNEMİ BİTTİ. Önceden açık modda TAM SİYAH
+  // (inverseSurface) + `onInverseSurface` etiket, koyuda surface4 vardı; dolgu
+  // polarite çevirdiği için etiket de çeviriyordu. `surface` her iki modda da
+  // sayfa zeminiyle AYNI yönde (açıkta #FFFFFF üstünde #EFEFF2, koyuda #121212
+  // üstünde #1E1E1E), dolayısıyla etiket artık iki modda da düz `text` ve
+  // ayrışmayı tonun kendisi değil KENAR taşıyor — accordion'da da öyle.
+  //
   // Palet mutable + tema değişiminde kök remount olduğu için render'da okumak
   // güvenli (bkz. shared/theme/colors.ts).
-  const light = isLight();
-  const slotBg = light ? colors.inverseSurface : colors.surface4;
-  const activeLabelColor = light ? colors.onInverseSurface : colors.text;
+  const slotBg = colors.surface;
+  const activeLabelColor = colors.text;
 
   useEffect(() => {
     Animated.spring(slide, {
@@ -683,10 +672,29 @@ function PlanPeriodPills({
             width: slotWidth,
             borderRadius: 999,
             borderCurve: "continuous",
-            backgroundColor: slotBg,
+            // ⚠️ ZEMİN BURADA DEĞİL, İÇTEKİ KATTA — accordion'ın kabuğunun
+            // BİREBİR kopyası olsun diye. Üç değer (0.5 / `hairline` /
+            // `surface`) zaten aynıydı, ama aynı token iki yerde AYNI PİKSELİ
+            // vermiyordu: `hairline` %10'luk bir alfa, yani altında ne varsa
+            // ona karışıyor.
+            //   • accordion'da kenar dıştaki KUTUDA, dolgu içteki çocukta →
+            //     çizgi SAYFA ZEMİNİNE karışıyor (açıkta #FFF üstü → #E6E6E6).
+            //   • burada ikisi tek view'daydı; RN zemini kenar kutusunun
+            //     TAMAMINA sürdüğü için çizgi `surface`a karışıyordu
+            //     (→ ~#D7D7DA). Aynı token, daha koyu bir çizgi.
+            // Kenarı zeminsiz kutuya, dolguyu içeri alınca iki yüzey artık
+            // aynı pikseli veriyor. `overflow` içteki opak dolguyu kapsül
+            // şekline kırpıyor — accordion'da da öyle.
+            borderWidth: 0.5,
+            borderColor: colors.hairline,
+            overflow: "hidden",
             transform: [{ translateX: slide }],
           }}
-        />
+        >
+          {/* Dolgu: TAM OPAK palet tonu (`surface`), alfa yok — accordion'ın
+              içteki dokunma katmanının zeminiyle aynı. */}
+          <View style={{ flex: 1, backgroundColor: slotBg }} />
+        </Animated.View>
       )}
       {plans.map((plan, index) => {
         const isActive = plan.period === selectedPeriod;
@@ -698,17 +706,19 @@ function PlanPeriodPills({
             disabled={disabled}
             onPress={() => onSelect(plan.period, index)}
             style={{
+              // Bölme artık TEK çocuk taşıyor (rozet kalktı), ama satır
+              // düzeni duruyor: etiketi kendi bölmesinde ortalayan şey bu.
               flex: 1,
               flexDirection: "row",
               paddingVertical: 9,
               alignItems: "center",
               justifyContent: "center",
-              gap: 4,
             }}
           >
             <Text
-              // Bölme genişliğinin üçte biri dar: etiket + rozet sığmazsa
-              // etiket sarmasın, kısalsın.
+              // Bölme genişliğinin üçte biri dar: uzun bir periyot etiketi
+              // (ör. yerelleştirilmiş "Yıllık" karşılıkları) sarmasın, kısalsın
+              // — sarılan etiket bölmenin boyunu, dolayısıyla şeridi büyütürdü.
               numberOfLines={1}
               style={{
                 color: isActive ? activeLabelColor : colors.textSecondary,
@@ -720,35 +730,6 @@ function PlanPeriodPills({
             >
               {planPeriodShortLabel(plan.period, t)}
             </Text>
-            {plan.period === bestPeriod && (
-              // Rozetin kırmızısı Beğeniler kartındaki köşe tikinin rengi
-              // (gradients.swipeHeart[0]) — dolgu MEDYA, yazısı bu yüzden
-              // `onMedia`, seçili/seçili değil ayrımından etkilenmiyor.
-              //
-              // Cam bir sürümü denendi: şeridin kendi zemini de yarı saydam
-              // olduğu için rozet ondan ayrışmıyordu.
-              <View
-                testID={`plan-pill-best-${plan.period}`}
-                style={{
-                  paddingHorizontal: 5,
-                  paddingVertical: 2,
-                  borderRadius: 999,
-                  borderCurve: "continuous",
-                  overflow: "hidden",
-                  backgroundColor: gradients.swipeHeart[0],
-                }}
-              >
-                <Text
-                  style={{
-                    color: colors.onMedia,
-                    fontSize: 10,
-                    fontWeight: "700",
-                  }}
-                >
-                  {t("purchase.bestValue")}
-                </Text>
-              </View>
-            )}
           </TouchableOpacity>
         );
       })}
@@ -940,41 +921,24 @@ export function PurchasePlanCarousel({ flow }: { flow: PurchaseFlow }) {
             paddingBottom: 30,
           }}
         >
-          {/* Marka alevi "plus+"ın sağında, kartın sağ kenarına yaslı ve
-              onunla aynı hizada. Absolute DEĞİL, ad satırının ikinci
-              çocuğu: satır onu itsin.
+          {/* Ad satırı: marka kelimesi + (abonede) durum rozeti, ikisi
+              bitişik. Satırın sağ ucunda bir zamanlar marka alevi duruyordu,
+              KALDIRILDI (ProfileScreen'in upsell kartındaki eşiyle birlikte) —
+              kartın kırmızı-turuncu gradyanı markayı zaten taşıyor.
 
-              Dolgu DÜZ (kartın mürekkebi) — ProfileScreen'in upsell
-              kartındaki gibi. Rozetin kendi swipeHeart gradyanı, kartın
-              kırmızı-turuncu dolgusunun üstünde ayrı bir öğe gibi
-              durmuyordu. */}
+              Satır yine de bir satır: rozet "plus+"a yapışık kalmalı,
+              ortalanmamalı. Uzun etikette kırpılan rozettir, marka kelimesi
+              değil — `flexShrink` rozetin kendisinde (bkz. PlanStatusPill). */}
           <View
             style={{
               marginBottom: 6,
               flexDirection: "row",
               alignItems: "center",
-              justifyContent: "space-between",
+              gap: 10,
             }}
           >
-            {/* Marka kelimesi + (abonede) durum rozeti tek grup: rozet
-                "plus+"a bitişik durmalı, satırın ortasına ya da alevin
-                yanına düşmemeli. Grup `flexShrink` ile daralıyor, alev
-                değil — alev sabit boyda bir marka öğesi. */}
-            <View
-              style={{
-                flexShrink: 1,
-                flexDirection: "row",
-                alignItems: "center",
-                gap: 10,
-              }}
-            >
-              <PlanBrandWord size={55} color={colors.onMedia} />
-              {isPremium && <PlanStatusPill label={subscriptionView.badge} />}
-            </View>
-            <PremiumFlame
-              size={PLAN_CARD_FLAME_SIZE}
-              color={colors.onMedia}
-            />
+            <PlanBrandWord size={55} color={colors.onMedia} />
+            {isPremium && <PlanStatusPill label={subscriptionView.badge} />}
           </View>
           {/* Kartın gövdesi. Satın alınabilir hâlde periyoda göre DEĞİŞEN
               bilgi — fiyat + açıklama (ve varsa deneme uyarısı) — ve boyu
@@ -1309,7 +1273,7 @@ export function PurchaseFinePrint({ flow }: { flow: PurchaseFlow }) {
       <Text
         style={{
           marginHorizontal: 10,
-          // SuperLikePurchaseModal disclaimer'ı ile aynı ton
+          // FirePurchaseModal disclaimer'ı ile aynı ton
           color: colors.textMuted,
           fontSize: 11,
           textAlign: "center",

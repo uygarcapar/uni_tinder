@@ -11,7 +11,7 @@
  *      2026-08-31'den beri premium ayrıcalığı), 400 ret (premium'un uygunsuz
  *      hedefi, liste bayat), geri kalan geçici. Karıştırılırsa ya aboneye satış
  *      ekranı açılır ya da free'ye dokunuş sessizce ölür.
- *   3. Kart şekli: kilidi açan sinyaller (SuperLike / not / `hasLikedMe`)
+ *   3. Kart şekli: kilidi açan sinyaller (Fire / not / `hasLikedMe`)
  *      taşınmazsa "Kaçırdıkların" kartları blur'un yanlış tarafında kalır.
  */
 
@@ -227,7 +227,7 @@ describe('fetchMissedMatches', () => {
     expect(card.note).toBeNull();
   });
 
-  // Not, SuperLike gibi ödenmiş bir görünürlük: gönderen karşı taraf kendisini
+  // Not, Fire gibi ödenmiş bir görünürlük: gönderen karşı taraf kendisini
   // görebilsin diye ödedi. Alan taşınmazsa Beğenenler'de açık olan not kartı
   // burada bulanık kalır — aynı çatallanmanın aynası.
   it('carries a note through so the sender stays visible', async () => {

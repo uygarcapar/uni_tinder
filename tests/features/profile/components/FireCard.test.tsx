@@ -4,13 +4,13 @@ jest.mock('lucide-react-native', () =>
 jest.mock('@react-navigation/native', () => ({
   useIsFocused: () => true,
 }));
-jest.mock('@/features/discover/components/SuperLikePurchaseModal', () => {
+jest.mock('@/features/discover/components/FirePurchaseModal', () => {
   const React = require('react');
   const { View } = require('react-native');
   return {
     __esModule: true,
     default: ({ visible }: any) =>
-      visible ? React.createElement(View, { testID: 'superlike-sheet' }) : null,
+      visible ? React.createElement(View, { testID: 'fire-sheet' }) : null,
   };
 });
 
@@ -35,7 +35,7 @@ jest.mock('@/shared/hooks/redux', () => ({
 }));
 
 import { render, fireEvent } from '@testing-library/react-native';
-import SuperLikeCard from '@/features/profile/components/SuperLikeCard';
+import FireCard from '@/features/profile/components/FireCard';
 import tr from '@/shared/i18n/translations/tr';
 
 // Backend /Stats cevabının test için gereken alt kümesi.
@@ -50,17 +50,17 @@ const baseStats = {
   quotaSuperLikesRemaining: 1,
 };
 
-const card = tr.profile.superLikeCard;
+const card = tr.profile.fireCard;
 
-describe('SuperLikeCard', () => {
+describe('FireCard', () => {
   beforeEach(() => {
     mockStats = { ...baseStats };
     mockReduxPremium = false;
     mockRefetch.mockClear();
   });
 
-  it('kalan süper beğeni sayısını alt satırda gösterir', () => {
-    const { getByText } = render(<SuperLikeCard />);
+  it('kalan Fire sayısını alt satırda gösterir', () => {
+    const { getByText } = render(<FireCard />);
     expect(
       getByText(card.subtitleCount.replace('{{count}}', '2')),
     ).toBeTruthy();
@@ -68,13 +68,13 @@ describe('SuperLikeCard', () => {
 
   it('bakiye 0 iken "hakkın kalmadı" der', () => {
     mockStats = { ...baseStats, superLikesRemaining: 0 };
-    const { getByText } = render(<SuperLikeCard />);
+    const { getByText } = render(<FireCard />);
     expect(getByText(card.subtitleEmpty)).toBeTruthy();
   });
 
   it('bakiye null geldiğinde sayı UYDURMAZ', () => {
     mockStats = { ...baseStats, superLikesRemaining: null };
-    const { getByText } = render(<SuperLikeCard />);
+    const { getByText } = render(<FireCard />);
     expect(getByText(card.subtitleUnknown)).toBeTruthy();
   });
 
@@ -82,14 +82,14 @@ describe('SuperLikeCard', () => {
     // Satın alma alındı (redux premium), /Stats hâlâ free tier cevabı veriyor.
     mockReduxPremium = true;
     mockStats = { ...baseStats, serverIsPremium: false, isPremium: true };
-    const { getByText } = render(<SuperLikeCard />);
+    const { getByText } = render(<FireCard />);
     expect(getByText(card.subtitleUnknown)).toBeTruthy();
   });
 
   it('karta basınca paket sheet\'ini açar', () => {
-    const { getByTestId, queryByTestId } = render(<SuperLikeCard />);
-    expect(queryByTestId('superlike-sheet')).toBeNull();
-    fireEvent.press(getByTestId('superlike-card'));
-    expect(getByTestId('superlike-sheet')).toBeTruthy();
+    const { getByTestId, queryByTestId } = render(<FireCard />);
+    expect(queryByTestId('fire-sheet')).toBeNull();
+    fireEvent.press(getByTestId('fire-card'));
+    expect(getByTestId('fire-sheet')).toBeTruthy();
   });
 });

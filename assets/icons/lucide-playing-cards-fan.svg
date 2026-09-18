@@ -1,0 +1,17 @@
+<!-- Lucide `playing-cards-fan`, lucide-static v1.46.0 — ISC lisanslı.
+     Kaynak: https://lucide.dev/icons/playing-cards-fan
+
+     Bu dosya sekme ikonunu RASTERIZE etmek için burada duruyor, uygulamada
+     çizilmiyor: native tab bar ikon olarak React component / SVG kabul etmiyor
+     (bkz. navigation/TabNavigator.tsx). Uygulama içinde bu ikon lazımsa
+     `PlayingCardsFan`i @/shared/icons'tan al — o yol lucide paketine gider.
+
+     Lucide ÇİZGİ ikonu: dolgu yok, stroke-width 2, uçlar/birleşimler yuvarlak.
+     İlk path kapalı (öndeki kart), diğer ikisi AÇIK — arkadaki kartların
+     yalnız görünen kenarları çiziliyor. Bu yüzden "dolu siluet" karşılığı yok;
+     odaklı varyantta yalnız ÖN kart dolduruluyor (bkz. gen-tab-icons.js). -->
+<svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+  <path d="M12.65 7.65a2 2 0 012.629-1.046l5.51 2.374a2 2 0 011.046 2.628l-3.957 9.184a2 2 0 01-2.628 1.046l-5.51-2.374a2 2 0 01-1.046-2.628z" />
+  <path d="M18 7.777V4a2 2 0 00-2-2h-6a2 2 0 00-2 2v10a2 2 0 001.137 1.805" />
+  <path d="m8 4.389-4.364.809a2 2 0 00-1.602 2.33l1.822 9.833a2 2 0 002.331 1.602l2.542-.47" />
+</svg>

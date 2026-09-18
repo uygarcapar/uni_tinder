@@ -17,6 +17,7 @@ import {
   formatVoiceDuration,
   parseWaveformPeaks,
 } from "@/features/chat/voiceMessage";
+import { claimChatListTap } from "@/features/chat/listTapGuard";
 import {
   BUBBLE_MAX_WIDTH,
   BUBBLE_PAD_H,
@@ -480,6 +481,10 @@ function VoiceBubble({
         {/* Çıplak glif: dolgulu daire kaldırıldı, dokunma alanı hitSlop'ta. */}
         <Pressable
           onPress={onToggle}
+          // Dokunuşu SAHİPLEN: listenin üstündeki blanket tap jesti (bkz.
+          // listTapGuard) yoksa klavyeyi kapatıyor — kullanıcı yazdığı mesajı
+          // bırakmadan sesli mesajı dinleyebilmeli.
+          onPressIn={claimChatListTap}
           disabled={!canPlay}
           hitSlop={10}
           accessibilityRole="button"
@@ -586,6 +591,9 @@ function VoiceBubble({
             >
               <Pressable
                 onPress={onCycleRate}
+                // Oynat düğmesiyle aynı gerekçe: hız değiştirmek klavyeyi
+                // kapatmasın (bkz. listTapGuard).
+                onPressIn={claimChatListTap}
                 hitSlop={10}
                 accessibilityRole="button"
                 accessibilityLabel={`${rate}x`}

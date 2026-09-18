@@ -38,6 +38,7 @@ import {
   Host,
   Button as SwiftUIButton,
   Text as SwiftUIText,
+  Image as SwiftUIImage,
 } from "@expo/ui/swift-ui";
 import {
   accessibilityLabel,
@@ -60,13 +61,15 @@ import {
   glassFallback,
   glassFallbackBorderStyle,
   glassTextClearCapsule,
+  glassIconClearGlyph,
+  GLASS_ICON_CLEAR_SIZE,
 } from "../theme/glass";
 import GlassFallbackSurface from "./GlassFallbackSurface";
 import { chromeBlurTint } from "@/shared/theme/blur";
 
 // Header dikey breakdown:
 //   top:20 — drag indicator pill (4px tall), iPhone üstten nefes payı için
-//   top:34 — title + close/right-slot row (height:46)
+//   top:34 — title + close/right-slot row (height:46, clearGlassHeader'da 48)
 //   total = 80 + 8px alt nefes → 88
 const MODAL_HEADER_HEIGHT = 88;
 const SHEET_TOP_RADIUS = 36;
@@ -201,6 +204,17 @@ type AppModalProps = {
   // hâli (bkz. glassTextClearCapsule); opt-in çünkü aynı header'ı kullanan
   // sheet'lerin hepsi henüz çevrilmedi.
   clearGlassActions?: boolean;
+  // Header'ın BÜTÜN butonları (X + metin butonları) uygulamanın yuvarlak cam
+  // ikon ölçüsüne — `GLASS_ICON_CLEAR_SIZE` — çıkar; X de dolgulu
+  // `buttonStyle("glass")` kabuğu yerine berrak cam glife (glassIconClearGlyph)
+  // döner, yani ProfileScreen başlığındaki çan/ayarlar butonunun aynısı olur.
+  // X'i olmayan sheet'lerde (FilterModal: X yerine "Sıfırla") tek etkisi ölçü.
+  //
+  // Metin butonlarının MALZEMESİ ayrı knob: `clearGlassActions`. Bu ikisi
+  // bağımsız — biri ölçüyü, diğeri dolgulu/berrak camı seçiyor.
+  //
+  // Opt-in: aynı header'ı kullanan sheet'lerin hepsi henüz çevrilmedi.
+  clearGlassHeader?: boolean;
   // X'in tarafı: actionLabel/rightSlot varsa default "left", yoksa "right".
   closeSide?: "left" | "right";
   // Başlık scroll'a bağlı belirmek yerine HEP görünür durur. Modal içi
@@ -249,7 +263,7 @@ type AppModalProps = {
  *     {form}
  *   </AppModal>
  *
- *   <AppModal visible={open} onClose={close} title="Süper Beğeni" snapPoints={["60%"]} scrollable={false}>
+ *   <AppModal visible={open} onClose={close} title="Fire" snapPoints={["60%"]} scrollable={false}>
  *     {staticContent}
  *   </AppModal>
  */
@@ -269,6 +283,7 @@ export default function AppModal({
   leftLabel,
   onLeftPress,
   clearGlassActions = false,
+  clearGlassHeader = false,
   closeSide,
   titleAlwaysVisible = false,
   dynamicSizing = false,
@@ -352,17 +367,26 @@ export default function AppModal({
 
   // ── Buttons ──────────────────────────────────────────────────────────────
   // Hem X hem Action glass + controlSize("large") kullanır → aynı height.
-  // Android'de iki taraf da 46px yuvarlak/pill TouchableOpacity ile fallback.
-  const ACTION_HEIGHT = 46;
+  // Android'de iki taraf da aynı px'te yuvarlak/pill TouchableOpacity ile
+  // fallback.
+  //
+  // `clearGlassHeader` verildiğinde sayı 46 değil `GLASS_ICON_CLEAR_SIZE`:
+  // X o yolda başlıklardaki çan/ayarlar butonuyla aynı çapa oturuyor ve metin
+  // butonu (Kaydet) ondan alçak kalmasın diye ölçü TEK yerden — bu sabitten —
+  // besleniyor. Aşağıdaki başlık satırının yüksekliği de buradan geliyor.
+  const ACTION_HEIGHT = clearGlassHeader ? GLASS_ICON_CLEAR_SIZE : 46;
   // Sağdaki/soldaki metin butonunun SABİT kutu genişliği. Etiketler kısa
-  // (Kaydet / Sıfırla / Uygula / Bitti / Save / Reset); 11-13px semibold + 18px
+  // (Kaydet / Sıfırla / Uygula / Bitti / Save / Reset); 13px semibold + 18px
   // yatay padding en uzununda bile ~90pt. Kutu onlardan geniş, buton içine
   // kenara yaslanıyor (bkz. aşağıdaki alignment).
   const ACTION_BOX_WIDTH = 120;
-  // Etiket puntosu. Berrak camda bir tık küçük: `clear` variant'ın dolgusu yok,
-  // kapsül yalnız kırılma + kenar parlamasıyla okunuyor ve aynı punto orada
-  // dolgulu kardeşinden daha iri duruyordu.
-  const ACTION_LABEL_SIZE = clearGlassActions ? 11 : 13;
+  // Etiket puntosu — header'ın METNİ olan bütün butonlarında TEK sayı, camın
+  // malzemesinden bağımsız. Bir süre berrak cam yolunda 11'e düşüyordu (dolgusu
+  // olmayan kapsülde aynı punto dolgulu kardeşinden iri duruyor diye); o
+  // istisna kaldırıldı, modal'dan modal'a değişen etiket boyu dolgu farkından
+  // daha çok göze batıyordu. Kapsül `clearGlassHeader` ile 46'dan 48'e çıktığı
+  // için 13'ün nefes payı da arttı.
+  const ACTION_LABEL_SIZE = 13;
 
   const closeBtn = closeButton ? (
     Platform.OS === "ios" ? (
@@ -377,26 +401,49 @@ export default function AppModal({
         height={ACTION_HEIGHT}
       >
         <Host style={{ width: ACTION_HEIGHT, height: ACTION_HEIGHT }}>
-          <SwiftUIButton
-            label="Kapat"
-            systemImage="xmark"
-            onPress={onClose}
-            modifiers={[
-              buttonStyle("glass"),
-              controlSize("large"),
-              tint(colors.text),
-              labelStyle("iconOnly"),
-              font({ size: 17, weight: "medium" }),
-              // Default capsule yerine tam circle — iconOnly buton kare/yuvarlak görünsün.
-              containerShape(shapes.circle()),
-              // Kare frame ARTIK her iOS sürümünde: eskiden yalnız glassFallback
-              // içinden (yani < 26'da) geliyordu, 26+'da ölçü intrinsic'ti ve
-              // Host'un sabit kutusuyla uyuşmuyordu. strokeBorder'ın frame'i
-              // takip etmesi için glassFallback'ten ÖNCE (bkz. glass.ts notu).
-              frame({ width: ACTION_HEIGHT, height: ACTION_HEIGHT }),
-              ...glassFallback({ shape: "circle" }),
-            ]}
-          />
+          {clearGlassHeader ? (
+            // ProfileScreen'in çan/ayarlar butonuyla BİREBİR aynı zincir:
+            // kabuk yok, cam glifin üstünde (gerekçenin tamamı
+            // glassIconClearGlyph'in başında). `label`/`systemImage` prop'ları
+            // YOK — verilseydi native taraf children'ı yok sayardı.
+            <SwiftUIButton
+              onPress={onClose}
+              modifiers={[
+                buttonStyle("plain"),
+                tint(colors.text),
+                frame({ width: ACTION_HEIGHT, height: ACTION_HEIGHT }),
+                accessibilityLabel("Kapat"),
+                ...glassFallback({ shape: "circle" }),
+              ]}
+            >
+              <SwiftUIImage
+                systemName="xmark"
+                color={colors.text}
+                modifiers={glassIconClearGlyph()}
+              />
+            </SwiftUIButton>
+          ) : (
+            <SwiftUIButton
+              label="Kapat"
+              systemImage="xmark"
+              onPress={onClose}
+              modifiers={[
+                buttonStyle("glass"),
+                controlSize("large"),
+                tint(colors.text),
+                labelStyle("iconOnly"),
+                font({ size: 17, weight: "medium" }),
+                // Default capsule yerine tam circle — iconOnly buton kare/yuvarlak görünsün.
+                containerShape(shapes.circle()),
+                // Kare frame ARTIK her iOS sürümünde: eskiden yalnız glassFallback
+                // içinden (yani < 26'da) geliyordu, 26+'da ölçü intrinsic'ti ve
+                // Host'un sabit kutusuyla uyuşmuyordu. strokeBorder'ın frame'i
+                // takip etmesi için glassFallback'ten ÖNCE (bkz. glass.ts notu).
+                frame({ width: ACTION_HEIGHT, height: ACTION_HEIGHT }),
+                ...glassFallback({ shape: "circle" }),
+              ]}
+            />
+          )}
         </Host>
       </GlassFallbackSurface>
     ) : (
@@ -769,9 +816,16 @@ export default function AppModal({
           style={{
             position: "absolute",
             top: 34,
+            // left + right İKİSİ DE ŞART: biri düşerse satır ekran genişliğine
+            // yayılmaz, içeriği kadar kalır — space-between yayılacak boşluk
+            // bulamaz, butonlar yan yana sola toplanır ve ortalanan başlık da
+            // onlarla birlikte sola kayar.
             left: 0,
             right: 0,
-            height: 46,
+            // Yükseklik butonun kendisi kadar — `clearGlassHeader` yolunda 46
+            // değil 48. Header'ın toplam yüksekliği (88) ikisini de alıyor,
+            // alttaki nefes payı 8'den 6'ya iniyor.
+            height: ACTION_HEIGHT,
             flexDirection: "row",
             alignItems: "center",
             justifyContent: "space-between",

@@ -1,6 +1,6 @@
 /**
  * Kota geri sayımının iki sözleşmesi:
- *   1. `-1` = "asla resetlenmez" (free tier'ın lifetime SuperLike hakkı) →
+ *   1. `-1` = "asla resetlenmez" (free tier'ın lifetime Fire hakkı) →
  *      geri sayım GÖSTERİLMEZ.
  *   2. `nextXResetAt` o durumda sentinel bir tarih taşıyor (9999-12-31) →
  *      parse edilip ekrana basılmamalı.

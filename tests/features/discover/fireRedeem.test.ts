@@ -26,16 +26,16 @@ jest.mock('@/shared/services/api', () => ({
 const mockRecentTransactions = jest.fn(async () => [] as any[]);
 jest.mock('@/features/profile/subscriptionService', () => ({
   __esModule: true,
-  getRecentSuperlikeTransactions: () => mockRecentTransactions(),
+  getRecentFireTransactions: () => mockRecentTransactions(),
 }));
 
 import {
-  redeemSuperlikePack,
-  flushPendingSuperlikeRedeems,
+  redeemFirePack,
+  flushPendingFireRedeems,
   readPendingRedeems,
   isPendingRedeemError,
   redeemUserKey,
-} from '@/features/discover/superlikeRedeem';
+} from '@/features/discover/fireRedeem';
 
 const USER = 'user-1';
 const TX = 'tx-1';
@@ -62,7 +62,7 @@ beforeEach(() => {
   mockRecentTransactions.mockResolvedValue([]);
 });
 
-describe('redeemSuperlikePack', () => {
+describe('redeemFirePack', () => {
   it('402 sonrası 3 sn bekleyip tekrar dener ve krediyi döner', async () => {
     jest.useFakeTimers();
     mockPost
@@ -76,7 +76,7 @@ describe('redeemSuperlikePack', () => {
         }),
       );
 
-    const promise = redeemSuperlikePack({
+    const promise = redeemFirePack({
       userId: USER,
       transactionId: TX,
       productId: 'superlike_10',
@@ -97,7 +97,7 @@ describe('redeemSuperlikePack', () => {
 
     // catch'i timer'ları ilerletmeden ÖNCE bağla: reject fake timer tick'inde
     // düşüyor, handler sonra bağlanırsa unhandled rejection uyarısı çıkar.
-    const settled = redeemSuperlikePack({
+    const settled = redeemFirePack({
       userId: USER,
       transactionId: TX,
       productId: 'superlike_10',
@@ -121,7 +121,7 @@ describe('redeemSuperlikePack', () => {
   it('400 kalıcı hatadır: retry edilmez, kuyruğa da alınmaz', async () => {
     mockPost.mockRejectedValue(httpError(400, 'Geçersiz ürün'));
 
-    const error = await redeemSuperlikePack({
+    const error = await redeemFirePack({
       userId: USER,
       transactionId: TX,
       productId: 'bozuk_urun',
@@ -143,7 +143,7 @@ describe('redeemSuperlikePack', () => {
       }),
     );
 
-    const result = await redeemSuperlikePack({
+    const result = await redeemFirePack({
       userId: USER,
       transactionId: TX,
       productId: 'superlike_10',
@@ -158,7 +158,7 @@ describe('redeemSuperlikePack', () => {
     jest.useFakeTimers();
     mockPost.mockRejectedValue(httpError(404));
 
-    const settled = redeemSuperlikePack({
+    const settled = redeemFirePack({
       userId: USER,
       transactionId: TX,
       productId: 'superlike_5',
@@ -172,7 +172,7 @@ describe('redeemSuperlikePack', () => {
   });
 });
 
-describe('flushPendingSuperlikeRedeems', () => {
+describe('flushPendingFireRedeems', () => {
   const queue = (entries: unknown[]) =>
     mockMemoryStore.set(`superlikePendingRedeems:${USER}`, JSON.stringify(entries));
 
@@ -187,7 +187,7 @@ describe('flushPendingSuperlikeRedeems', () => {
       }),
     );
 
-    await flushPendingSuperlikeRedeems(USER);
+    await flushPendingFireRedeems(USER);
 
     expect(mockPost).toHaveBeenCalledTimes(1);
     expect(readPendingRedeems(USER)).toHaveLength(0);
@@ -198,7 +198,7 @@ describe('flushPendingSuperlikeRedeems', () => {
     queue([{ transactionId: TX, productId: 'superlike_10', attempts: 1, firstSeenAt }]);
     mockPost.mockRejectedValue(httpError(402));
 
-    await flushPendingSuperlikeRedeems(USER);
+    await flushPendingFireRedeems(USER);
 
     // Satın alma anındaki 3 sn'lik retry burada YOK — tek deneme.
     expect(mockPost).toHaveBeenCalledTimes(1);
@@ -220,7 +220,7 @@ describe('flushPendingSuperlikeRedeems', () => {
     ]);
     mockPost.mockRejectedValue(httpError(402));
 
-    await flushPendingSuperlikeRedeems(USER);
+    await flushPendingFireRedeems(USER);
 
     expect(readPendingRedeems(USER)).toHaveLength(1);
   });
@@ -236,7 +236,7 @@ describe('flushPendingSuperlikeRedeems', () => {
     ]);
     mockPost.mockRejectedValue(httpError(402));
 
-    await flushPendingSuperlikeRedeems(USER);
+    await flushPendingFireRedeems(USER);
 
     expect(readPendingRedeems(USER)).toHaveLength(0);
   });
@@ -245,7 +245,7 @@ describe('flushPendingSuperlikeRedeems', () => {
     queue([{ transactionId: TX, productId: 'superlike_10', attempts: 7 }]);
     mockPost.mockRejectedValue(httpError(402));
 
-    await flushPendingSuperlikeRedeems(USER);
+    await flushPendingFireRedeems(USER);
 
     const [entry] = readPendingRedeems(USER);
     expect(entry).toBeDefined();
@@ -253,7 +253,7 @@ describe('flushPendingSuperlikeRedeems', () => {
   });
 
   it('kuyruk boşken ve RC geçmişi boşken hiç istek atmaz', async () => {
-    await flushPendingSuperlikeRedeems(USER);
+    await flushPendingFireRedeems(USER);
     expect(mockPost).not.toHaveBeenCalled();
   });
 
@@ -271,7 +271,7 @@ describe('flushPendingSuperlikeRedeems', () => {
       }),
     );
 
-    await flushPendingSuperlikeRedeems(USER);
+    await flushPendingFireRedeems(USER);
 
     expect(mockPost).toHaveBeenCalledWith(expect.any(String), {
       transactionId: 'tx-rc',
@@ -281,12 +281,12 @@ describe('flushPendingSuperlikeRedeems', () => {
 
     // Sonuçlanmış transaction ikinci açılışta tekrar kuyruğa girmemeli.
     mockPost.mockClear();
-    await flushPendingSuperlikeRedeems(USER);
+    await flushPendingFireRedeems(USER);
     expect(mockPost).not.toHaveBeenCalled();
   });
 
   it('userId yoksa hiçbir şey yapmaz', async () => {
-    await flushPendingSuperlikeRedeems(null);
+    await flushPendingFireRedeems(null);
     expect(mockPost).not.toHaveBeenCalled();
   });
 });
@@ -301,7 +301,7 @@ describe('redeem hata kodları (UT-61xx)', () => {
     );
 
     await expect(
-      redeemSuperlikePack({ userId: USER, transactionId: TX, productId: 'superlike_10' }),
+      redeemFirePack({ userId: USER, transactionId: TX, productId: 'superlike_10' }),
     ).rejects.toMatchObject({ redeemCode: 'PERMANENT' });
 
     expect(mockPost).toHaveBeenCalledTimes(1);
@@ -312,7 +312,7 @@ describe('redeem hata kodları (UT-61xx)', () => {
     mockPost.mockRejectedValue(httpError(400, undefined, 'UT-6102'));
 
     await expect(
-      redeemSuperlikePack({ userId: USER, transactionId: TX, productId: 'superlike_99' }),
+      redeemFirePack({ userId: USER, transactionId: TX, productId: 'superlike_99' }),
     ).rejects.toMatchObject({
       redeemCode: 'PERMANENT',
       message: 'Bu paket şu an tanımlı değil',
@@ -326,7 +326,7 @@ describe('redeem hata kodları (UT-61xx)', () => {
       httpError(402, 'Satın alma henüz doğrulanmadı.', 'UT-6101'),
     );
 
-    const promise = redeemSuperlikePack({
+    const promise = redeemFirePack({
       userId: USER,
       transactionId: TX,
       productId: 'superlike_10',
@@ -345,7 +345,7 @@ describe('redeem hata kodları (UT-61xx)', () => {
     mockPost.mockRejectedValue(httpError(400));
 
     await expect(
-      redeemSuperlikePack({ userId: USER, transactionId: TX, productId: null }),
+      redeemFirePack({ userId: USER, transactionId: TX, productId: null }),
     ).rejects.toMatchObject({ redeemCode: 'PERMANENT' });
     expect(mockPost).toHaveBeenCalledTimes(1);
   });

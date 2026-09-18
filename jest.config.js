@@ -66,10 +66,14 @@ module.exports = {
   moduleNameMapper: {
     '^@/(.*)$': '<rootDir>/src/$1',
     // src/shared/icons.ts ikonları uzantısız deep path'le çekiyor (barrel'ın
-    // 1670 eager require'ından kaçmak için). Metro çözüyor, jest-resolve
-    // çözemiyor: lucide'ın `exports` map'inde ikon başına subpath yok.
-    '^lucide-react-native/dist/esm/icons/(.*)$':
-      '<rootDir>/node_modules/lucide-react-native/dist/esm/icons/$1.js',
+    // eager require yığınından kaçmak için). lucide 1.x'te subpath artık
+    // `exports` map'inde RESMÎ olarak var ama koşullu: "react-native"/"import"
+    // dalları .mjs'e, "require" dalı .cjs'e gidiyor. jest-resolve CJS ortamında
+    // "require" dalını seçip .js'i veriyor; oradaki ESM sözdizimi transform'dan
+    // geçmediği için patlıyordu. .mjs'e sabitleyip transformIgnorePatterns'ın
+    // lucide istisnasına bırakıyoruz.
+    '^lucide-react-native/icons/(.*)$':
+      '<rootDir>/node_modules/lucide-react-native/dist/esm/icons/$1.mjs',
     '^react-native-css-interop(.*)$': '<rootDir>/src/__mocks__/react-native-css-interop.ts',
     '\\.(jpg|jpeg|png|gif|svg|ttf|woff2?)$': '<rootDir>/src/__mocks__/fileMock.js',
   },

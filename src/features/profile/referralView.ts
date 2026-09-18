@@ -32,7 +32,7 @@ export function rewardLabelKey(type: ReferralRewardType | string): string | null
     case "VisibilityFilter":
       return "referral.reward.visibilityFilter";
     case "SuperLike":
-      return "referral.reward.superLike";
+      return "referral.reward.fire";
     case "Note":
       return "referral.reward.note";
     default:
@@ -43,7 +43,7 @@ export function rewardLabelKey(type: ReferralRewardType | string): string | null
 }
 
 /**
- * "Görünürlük filtresi · 30 gün" / "3 süper beğeni" / "2 not".
+ * "Görünürlük filtresi · 30 gün" / "3 Fire" / "2 not".
  *
  * `amount` VisibilityFilter'da GÜN, diğerlerinde KREDİ — ayrım metnin
  * kendisinde, çağıran birim taşımak zorunda değil.

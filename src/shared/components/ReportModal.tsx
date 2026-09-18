@@ -193,6 +193,12 @@ export default function ReportModal({
   messageId,
   noteId,
   onSuccess,
+  // gorhom stackBehavior — BAŞKA BİR SHEET'İN ÜSTÜNE açılırken "push" verilir
+  // (bkz. LikerSwipeModal). Varsayılan gorhom'da "switch": alttaki sheet
+  // minimize edilir, yani şikayet açılırken altındaki kart kapanmış gibi olur.
+  // Şikayet bir sheet'in içinden değil de ekrandan açılıyorsa (DiscoverScreen,
+  // ChatScreen) altında minimize edilecek bir şey yok — verilmez.
+  stackBehavior,
 }: any) {
   const { t } = useTranslation();
   // "Bildirmek istiyorum ama iletişimi kesmek istemiyorum" senaryosu için
@@ -303,6 +309,7 @@ export default function ReportModal({
       // ile belirir. İlk ekranda büyük başlığı ilk Section üstleniyor.
       closeButton={false}
       contentContainerStyle={{ paddingTop: 36 }}
+      stackBehavior={stackBehavior}
     >
       <Section
         title={t('moderation.report.reasonLabel')}

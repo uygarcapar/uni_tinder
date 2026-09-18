@@ -37,15 +37,30 @@ export default uiBus;
 // 0 = card mode (top), 1 = expanded (scroll >= 150).
 export const cardExpandAnim = makeMutable(0);
 
-// Top card'ın pull-down (super-like) progress'i.
+// Top card'ın pull-down (fire) progress'i.
 export const cardPullProgress = makeMutable(0);
+
+/**
+ * Yukarıdaki oranın ÖLÇEĞİ: kart bu kadar px aşağı çekilince oran 1 olur ve
+ * Fire "ready" sayılır (bkz. SwipeWrapper'daki pull-down dalı).
+ *
+ * ORANLA AYNI YERDE, çünkü ikisi tek bir sözleşmenin iki yarısı: oranı okuyan
+ * taraf şeridin KAÇ PİKSEL açıldığını ancak bununla geri hesaplayabiliyor
+ * (bkz. FirePullHint — ipucunu şeridin ortasına koyuyor).
+ *
+ * Bir tur SwipeWrapper'dan export edilmişti ve ipucu oradan import ediyordu;
+ * o import yaprak bileşene SwipeCard'ın bütün ağacını (expo-blur, image-colors,
+ * Skia…) bağladı ve testte ESM çözümlemesinde patladı. Sabitin yeri, onu
+ * paylaşan iki tarafın da ucuzca ulaşabildiği bu modül.
+ */
+export const FIRE_PULL_THRESHOLD = 50;
 
 /**
  * Kapak KROMUNUN devir oranı (0-1) — `cardExpandAnim`den AYRI bir düğme.
  *
  * Krom = kapak fotoğrafının üstünde duran ve açık kartta yeri olmayan katman:
  * isim + pill bloğu (sol alt), "yukarı kaydır" ipucu (alt orta) ve serbest
- * süper beğeni kalbi — kalp sönmüyor, sağ üstteki cam butona DÖNÜŞÜYOR.
+ * Fire kalbi — kalp sönmüyor, sağ üstteki cam butona DÖNÜŞÜYOR.
  *
  * Neden expand'den ayrı bir değer: bu ikisinin ZAMANLAMASI artık farklı.
  * Krom PARMAKLA devroluyor (çekiş boyunca ilerler, eşikte biter), panel ise

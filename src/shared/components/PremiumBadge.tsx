@@ -6,13 +6,15 @@ import { colors } from "../theme/colors";
  *
  * Eskiden yuvarlak zeminin içinde bir alevdi (`PremiumFlame`); alev artık bu
  * satırlarda çizilmiyor. Rozetin ne olduğunu simgeden çıkarmak gerekiyordu,
- * wordmark doğrudan söylüyor. `PremiumFlame` yerinde duruyor ama işi değişti —
- * zemini kendinden belli yerlerin glyph'i (toast ikonu, lit shop kartı, fayda
- * listesi). İsim satırında ONU DEĞİL bunu çağır, aksi halde aynı işaret
- * ekrandan ekrana farklı görünür.
+ * wordmark doğrudan söylüyor. `PremiumFlame` yerinde duruyor ama işi daraldı:
+ * geriye yalnız toast ikonu kaldı. İsim satırında ONU DEĞİL bunu çağır, aksi
+ * halde aynı işaret ekrandan ekrana farklı görünür.
  *
  * Kullanıldığı yerler kart başlıkları (keşif kartının kapağı ve açılmış paneli,
- * yukarı kaydırınca çıkan şerit, Likes kartı) ve profildeki hero ismi.
+ * yukarı kaydırınca çıkan şerit, Likes kartı) ve profildeki hero ismi. Ayrıca
+ * "Profilinde premium rozeti" premium maddesinin ikonu: o satır birebir bu
+ * işareti vaat ediyor (bkz. PremiumBenefitIcon) — orada `fontSize` ikon
+ * kutusunun ölçüsü olarak geçiyor ve rengi `style` ile eziliyor.
  *
  * Ölçü ELLE VERİLMİYOR, yanındaki ismin puntosundan çıkıyor: tek bir kural
  * bütün satırlarda aynı oranı tutuyor (bkz. premiumBadgeFontSize).

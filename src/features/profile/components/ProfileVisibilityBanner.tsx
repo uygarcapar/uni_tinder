@@ -76,7 +76,7 @@ function BannerRow({
   const neutral = tone === "neutral";
   return (
     <View style={{ flexDirection: "row", alignItems: "center", gap: 10 }}>
-      {/* Rozet DOLU: desen SuperLikeCard'ın kalbiyle aynı, rengi Ayarlar'daki
+      {/* Rozet DOLU: desen FireCard'ın kalbiyle aynı, rengi Ayarlar'daki
           "Hesabı Sil" satırının kırmızısı (`errorStrong`) — marka kırmızısı
           (`primary`) değil, o beğeni/eşleşme aksanı.
           Sembol `onMedia`: sabit renkli yüzeyin üstündeki mürekkep açık modda da

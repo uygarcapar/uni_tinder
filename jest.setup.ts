@@ -88,7 +88,7 @@ jest.mock('expo-blur', () => ({ BlurView: 'BlurView' }));
 // SwiftUI bileşenleri (Host/Button/Image/RNHostView). `modifiers` gibi bu paket
 // de NATIVE: import edilir edilmez expo-modules-core'u uyandırıp suite'i
 // "Cannot read properties of undefined (reading 'EventEmitter')" ile düşürüyor.
-// Zinciri cam butonlardan (SuperLikeGlassButton, CardMenuGlassButton) geçen HER
+// Zinciri cam butonlardan (FireGlassButton, CardMenuGlassButton) geçen HER
 // ekran bunu yiyordu — tek tek suite'lere mock yazmak yerine taban burada.
 //
 // Etkileşime ihtiyaç duyan suite'ler kendi mock'unu yazıp bunu EZİYOR (bkz.

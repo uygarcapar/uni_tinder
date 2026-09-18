@@ -235,20 +235,20 @@ export function usePurchaseFlow({ active, onCompleted, onSuccess }: Options) {
         remainingUndos: UNLIMITED,
         dailySwipeLimit: UNLIMITED,
         dailyUndoLimit: UNLIMITED,
-        // SuperLike premium'da SINIRSIZ DEĞİL (weeklySuperLikeLimit, tier'a
+        // Fire premium'da SINIRSIZ DEĞİL (weeklySuperLikeLimit, tier'a
         // bağlı 1/2/5), ama premium tavanını burada BİLMİYORUZ: cache'deki
         // weeklySuperLikeLimit free tier'ın değeri (lifetime kota), premium
         // değeri ancak sync sonrası fetch'te geliyor — üstelik hangi tier
         // alındığına göre değişiyor.
         //
         // Bu yüzden uydurmak yerine "henüz bilinmiyor" diyoruz: null.
-        // superLikeQuotaExhausted null'da false dönüyor → premium alan
+        // fireQuotaExhausted null'da false dönüyor → premium alan
         // kullanıcıya yanlışlıkla "hakkın bitti" sheet'i açılmıyor; SwipeCard
         // rozeti de sayı gelene kadar gizleniyor. Doğru değer sync'ten
         // saniyeler sonra refetchPremiumScoped ile geliyor.
         superLikesRemaining: null,
         weeklySuperLikeLimit: null,
-        // Kurtarma SuperLike'ın aksine tahmin gerektirmiyor: 2026-08-31'den
+        // Kurtarma Fire'ın aksine tahmin gerektirmiyor: 2026-08-31'den
         // beri tier'a bağlı bir kota değil, premium'da düpedüz SINIRSIZ. Yani
         // doğru değer burada zaten biliniyor, "bilinmiyor" demeye gerek yok.
         // Cache'teki free değerini (0) bırakmak abone olan kullanıcıyı kendi

@@ -12,7 +12,7 @@ export type InfoToastProps = {
   message: string;
   variant?: 'success' | 'error';
   /**
-   * Ürüne bağlı toast'larda (SuperLike kotası, not gönderimi, paket satın alma)
+   * Ürüne bağlı toast'larda (Fire kotası, not gönderimi, paket satın alma)
    * solda o ürünün simgesi çizilir. Verilmezse toast düz metin kalır — jenerik
    * mesajlara (oturum, moderasyon) simge takılmamalı.
    */
@@ -42,7 +42,7 @@ export default function InfoToast({ title, message, icon }: InfoToastProps) {
   );
 
   return (
-    <ToastShell paddingVertical={16} paddingHorizontal={20}>
+    <ToastShell>
       <View
         style={{
           flexDirection: icon ? 'row' : undefined,

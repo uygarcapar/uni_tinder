@@ -14,7 +14,7 @@ import type { ProfileVisibility } from "@/features/profile/photoModeration";
  * Profil keşif havuzundan düştüğünde açılan BİLGİLENDİRME kapısı.
  *
  * ⚠️ ADI "kapı" ama hiçbir şeyi KAPATMIYOR — her kipte kapatılabilir. Foto onayı
- * bir kapı değil rozet: backend like/süper beğeni/pass/not/mesajın hiçbirini
+ * bir kapı değil rozet: backend like/Fire/pass/not/mesajın hiçbirini
  * foto durumuna bakarak reddetmiyor (rehber §3), dolayısıyla istemci de
  * etkileşimleri kilitlemiyor. Bu sheet yalnız "profilin şu an keşifte
  * görünmüyor" cümlesini bir kez söylüyor; kalıcı gösterge profil ekranındaki

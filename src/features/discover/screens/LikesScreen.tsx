@@ -31,7 +31,7 @@ import {
   Search,
 } from "@/shared/icons";
 import SFIcon from "@/shared/components/SFIcon";
-import SuperLikeGlyph from "@/shared/components/SuperLikeGlyph";
+import FireGlyph from "@/shared/components/FireGlyph";
 import NoteGlyph from "@/shared/components/NoteGlyph";
 import { useNavigation } from "@react-navigation/native";
 import Animated, {
@@ -55,7 +55,7 @@ import RecoverGlassButton, {
   RECOVER_GLASS_SIZE,
 } from "@/features/discover/components/RecoverGlassButton";
 import CardActionGlassButton from "@/features/discover/components/CardActionGlassButton";
-import SuperLikePurchaseModal from "@/features/discover/components/SuperLikePurchaseModal";
+import FirePurchaseModal from "@/features/discover/components/FirePurchaseModal";
 import NotePurchaseModal from "@/features/discover/components/NotePurchaseModal";
 import ScreenHeader, {
   SCREEN_HEADER_TITLE_HEIGHT,
@@ -106,8 +106,8 @@ import { glassColorScheme, hasLiquidGlassSurface } from "@/shared/theme/glass";
 import { useRenderCount } from "@/shared/debug/useRenderCount";
 
 // ── Boş durum ikonları ──────────────────────────────────────────────────────
-// Lucide `HeartCrack` / SF `heart.slash` DEĞİL: bu ekranın konusu süper beğeni
-// ve not, ikisinin de uygulamaya özel kendi glyph'i var (SuperLikeGlyph /
+// Lucide `HeartCrack` / SF `heart.slash` DEĞİL: bu ekranın konusu Fire
+// ve not, ikisinin de uygulamaya özel kendi glyph'i var (FireGlyph /
 // NoteGlyph — SwipeCard'daki kalp ve not kutusuyla birebir aynı şekil).
 //
 // DOLGU YOK, sadece kontur: dolu glif boş sayfada bir ürün rozeti gibi
@@ -123,7 +123,7 @@ type EmptyGlyphProps = {
   strokeWidth?: number;
 };
 const EmptyHeartIcon = ({ size, color, strokeWidth }: EmptyGlyphProps) => (
-  <SuperLikeGlyph size={size} stroke={color} strokeWidth={strokeWidth} />
+  <FireGlyph size={size} stroke={color} strokeWidth={strokeWidth} />
 );
 // Balonun içindeki kalp burada da delik (fillRule evenodd) — konturlu çizimde
 // ikisi de ayrı ayrı çizilir, yani balonun içinde ince bir kalp kalır.
@@ -293,7 +293,7 @@ const cardPhotoScrim = (alpha: number): string =>
 // boş bir sekmeden çıkarken bu "yeni sekme boş geldi" gibi okunuyordu.
 
 // Sağ üst köşedeki cam butonun kart kenarına payı. Köşede BAŞKA HİÇBİR ŞEY yok:
-// not balonu / superlike kalbi rozetleri buradan kaldırıldı (gerekçe LikeCard'da).
+// not balonu / fire kalbi rozetleri buradan kaldırıldı (gerekçe LikeCard'da).
 const CARD_TOP_RIGHT_INSET = 12;
 // Köşedeki cam butonun çapı ve glifi — kurtar ve beğen TEK ölçüden besleniyor:
 // ikisi aynı köşenin sekmeye göre değişen iki hâli, ayrı sayılara
@@ -341,7 +341,7 @@ const LIKE_CARD_PILL_GAP = 8;
  */
 const LIKE_CARD_PILL_RADIUS =
   (LIKE_CARD_PILL_TEXT_LINE + 2 * LIKE_CARD_PILL_PAD_V) / 2;
-// Pill'in solundaki süper beğeni kalbi (SuperLikeGlyph) ve yazıya olan payı.
+// Pill'in solundaki Fire kalbi (FireGlyph) ve yazıya olan payı.
 // ⚠️ Kalp yazı satırından BÜYÜK OLAMAZ: pill'in yüksekliğini o an kalp
 // belirlerdi ve yukarıdaki yarıçap ölçüden küçük kalırdı (kapsül olmaktan
 // çıkardı). Büyütmek gerekirse LIKE_CARD_PILL_TEXT_LINE'ı da büyüt.
@@ -356,14 +356,18 @@ const LIKE_CARD_PILL_ICON_GAP = 6;
 // yoksa fotoğraf onun boyu kadar yukarı kayıyordu).
 const NOTE_THUMB_SIZE = 56;
 const NOTE_THUMB_GAP = 12;
-// Alt pay üstten GENİŞ — simetrik değil. Kutunun altında yazının yanı sıra
-// chevron da duruyor (mutlak, bkz. NOTE_CHEVRON_BOTTOM); eşit paylarda ok
-// yazının dibine yapışıyor ve kutunun alt kenarı sıkışık okunuyordu.
+const NOTE_BOX_PAD_TOP = 22;
+// Alt pay üstten GENİŞ — ama YALNIZ CHEVRON ÇİZİLİRKEN (bkz. LikeNoteBox'taki
+// `padBottom`). Kutunun altında yazının yanı sıra chevron da duruyor (mutlak,
+// bkz. NOTE_CHEVRON_BOTTOM); eşit paylarda ok yazının dibine yapışıyor ve
+// kutunun alt kenarı sıkışık okunuyordu.
 // ⚠️ Bu sayı chevron'un ÜSTÜNDEKİ boşluğu da belirliyor: ok akışta olmadığı için
 // yazının son satırıyla arasındaki tek şey bu payın chevron'dan artan kısmı
 // (pay − CHEVRON_BOTTOM − CHEVRON_SIZE). 30'ken o fark 2px'ti ve ok yazıya
 // değiyor gibi duruyordu.
-const NOTE_BOX_PAD_TOP = 22;
+// ⚠️ SIĞAN NOTTA (ok yok) KULLANILMAZ: ok akıştan çıktığı için onun payını
+// dolduran başka hiçbir şey yok, kutu 22 üst / 38 alt ile görünür biçimde alta
+// ağır basıyordu. Sığan notta alt pay üstle EŞİT.
 const NOTE_BOX_PAD_BOTTOM = 38;
 const NOTE_BOX_PAD_H = 20;
 // Kutu bloğun İKİ yanına da eşit oturur: kuyruk artık solda değil, üst kenarın
@@ -700,7 +704,7 @@ const glassInk = () => (hasLiquidGlassSurface() ? darkColors : colors);
  * veriyor ("clear"), tek bir string ikisini ayırt edemezdi ve "efekt kuruldu mu"
  * sorusu cevapsız kalırdı.
  *
- * Bu ekranda İKİ cam yüzey var (not kutusunun zemini + süper beğeni pill'i) ve
+ * Bu ekranda İKİ cam yüzey var (not kutusunun zemini + Fire pill'i) ve
  * ikisi de aynı zinciri istiyor; kanca o yüzden ortak. Kancanın kendisi cam
  * dışı yolda da güvenle çağrılabilir (`enabled: false` → zincir hiç koşmaz).
  */
@@ -739,11 +743,11 @@ function useGlassPhase(enabled: boolean) {
 }
 
 /**
- * İsim satırının üstündeki ürün pill'i — süper beğeni kalbi + "Sana Superlike
+ * İsim satırının üstündeki ürün pill'i — Fire kalbi + "Sana Fire
  * gönderdi".
  *
  * Kalp cümlenin yerine GEÇMİYOR, yanında duruyor: yazı ne olduğunu söylüyor,
- * kalp onu bir bakışta seçilir kılıyor (bkz. i18n likes.superLikePill).
+ * kalp onu bir bakışta seçilir kılıyor (bkz. i18n likes.firePill).
  *
  * Zemin `litPlus` — başlığın yanındaki "Beğenenleri gör" pill'iyle (bkz.
  * LikesListHeader) BİREBİR aynı dolgu, mürekkebi de aynı: `onMediaInverse`,
@@ -761,7 +765,7 @@ function useGlassPhase(enabled: boolean) {
  * ⚠️ Pill SOLMUYOR, kayboluyor: not açılınca `LikeCard` onu tamamen KALDIRIYOR
  * (gerekçe orada). Buraya fade/scale animasyonu EKLEME.
  */
-function SuperLikePill({ label }: { label: string }) {
+function FirePill({ label }: { label: string }) {
   return (
     <View
       style={{
@@ -782,7 +786,7 @@ function SuperLikePill({ label }: { label: string }) {
           Rengi yazıyla AYNI ve SABİT (`onMediaInverse`): kırmızı dolgu modla
           dönmediği için üstündeki hiçbir şey de dönmemeli — açık modda da
           siyah. `ink()`/`colors.text` kullanma, ikisi de açık modda çevrilir. */}
-      <SuperLikeGlyph
+      <FireGlyph
         size={LIKE_CARD_PILL_ICON_SIZE}
         color={colors.onMediaInverse}
       />
@@ -1045,22 +1049,23 @@ function LikeNoteBox({ note, expanded, onToggle, progress, onExpandInfo }) {
     : isLight()
       ? colors.textMuted
       : colors.textSecondary;
-  // "…not bıraktı" satırının mürekkebi — notun metninden AÇIK GRİ tarafa iki
-  // kademe (`neutral200`, cam yolunda #D1D5DB). Satır, yanındaki önizlemenin ne
-  // olduğunu söyleyen tek şey: sönük olmamalı ama notun kendisiyle aynı beyazda
-  // olunca ikisi tek blok gibi okunuyordu.
+  // "…not bıraktı" satırının mürekkebi — YANITLANAN PROMPT ALINTISIYLA AYNI
+  // (`chipInk`). Satır da alıntı da tek bir şeyi anlatıyor: notun neye
+  // yazıldığını. İkisi ayrı tonda çizilince o işaret iki parçaya bölünüyordu;
+  // ortak mürekkep onları tek blok yapıyor, notun kendi metniyse (`colors.text`)
+  // ikisinin de üstünde kalıyor.
   //
-  // ⚠️ `secondaryInk`e denk geliyor, ONA BAĞLANMIŞ DEĞİL: eskiden ortak
-  // değişkendi ve satırın tonunu her ayarlamak chevron'u da sürüklüyordu. Daha
-  // gri istenirse sıradaki kademe `textSecondary` (#9CA3AF).
+  // ⚠️ Chevron (`secondaryInk`) hâlâ AYRI değişken: satırın tonunu ayarlamak
+  // oku sürüklememeli.
   //
-  // `inkOnGlass`ten (bkz. glassInk) besleniyor, sabit renk DEĞİL: paletin
-  // polaritesi modla dönüyor, yani cam yoksa açık modda bu token koyu
-  // (#374151) — orada zemin gerçekten açık ve açık gri okunmazdı.
-  const targetLabelInk = inkOnGlass.neutral200;
+  // Sabit renk DEĞİL: `chipInk` modla ve cam/blur yoluyla dönüyor (bkz. orada).
+  const targetLabelInk = chipInk;
   // Prompt kartı yer yediği için açık tavan onda daha alçak. Fotoğraf kutunun
   // İÇİNDE ve yazıdan kısa olduğu için kutunun yüksekliğine katkısı yok.
   // Chevron akıştan çıktı (mutlak) — payı zaten alt pay içinde, ayrıca sayılmaz.
+  //
+  // ⚠️ Alt pay burada KOŞULSUZ `NOTE_BOX_PAD_BOTTOM`: tavanın bağladığı tek hal
+  // AÇIK kutu, açılabilen kutuda da ok her zaman var (bkz. `padBottom`).
   const textMaxHeight = noteTextMaxHeight(
     NOTE_BOX_PAD_TOP +
       NOTE_BOX_PAD_BOTTOM +
@@ -1100,6 +1105,16 @@ function LikeNoteBox({ note, expanded, onToggle, progress, onExpandInfo }) {
   const growth = overflowing
     ? Math.max(0, expandedTextHeight - collapsedTextHeight)
     : 0;
+  // Kutunun alt payı, okun payını YALNIZ ok çizilirken taşır — ok da yalnız
+  // `overflowing` iken çiziliyor (aşağıda). Sığan notta (tipik olarak fotoğrafa
+  // bırakılmış kısa bir not) alt payda 16px'i dolduran hiçbir şey kalmıyordu:
+  // içeriğin üstünde 22, altında 38 vardı ve kutu gözle görülür biçimde alta
+  // ağır basıyordu. Ok yokken paylar simetrik.
+  //
+  // ⚠️ Kaynak `overflowing`, ayrı bir koşul DEĞİL: pay ile ok tek değerden
+  // beslendiği için ikisi hep aynı karede yerine oturur. Ölçümden önce ikisi de
+  // yok — o karede fazladan boşluk çizilmemiş oluyor.
+  const padBottom = overflowing ? NOTE_BOX_PAD_BOTTOM : NOTE_BOX_PAD_TOP;
   // Kart, perdesini ve kimlik bloğunu bu büyümeye göre ayarlıyor.
   useEffect(() => {
     onExpandInfo?.(growth);
@@ -1178,7 +1193,8 @@ function LikeNoteBox({ note, expanded, onToggle, progress, onExpandInfo }) {
           }
           style={{
             paddingTop: NOTE_BOX_PAD_TOP,
-            paddingBottom: NOTE_BOX_PAD_BOTTOM,
+            // Okun payı yalnız ok varken (bkz. `padBottom`).
+            paddingBottom: padBottom,
             paddingHorizontal: NOTE_BOX_PAD_H,
           }}
         >
@@ -1292,7 +1308,7 @@ function LikeNoteBox({ note, expanded, onToggle, progress, onExpandInfo }) {
                 <Text
                   numberOfLines={1}
                   style={{
-                    // Nottan açık gri tarafta (bkz. targetLabelInk).
+                    // Alıntının mürekkebiyle aynı (bkz. targetLabelInk).
                     color: targetLabelInk,
                     fontSize: NOTE_TARGET_LABEL_SIZE,
                     lineHeight: NOTE_TARGET_LABEL_LINE,
@@ -1423,7 +1439,7 @@ function LikeNoteBox({ note, expanded, onToggle, progress, onExpandInfo }) {
  * iki ekran, iki farklı kural — free kullanıcı paralı bilgiyi bedava alıyordu.
  * Kuralı ÇATALLAMAYIN; ikinci bir kopya yazılırsa aynı bug geri gelir.
  *
- * TEK sinyal ailesi: SuperLike / NOT — ayrı ürünler, sözleşmeleri aynı:
+ * TEK sinyal ailesi: Fire / NOT — ayrı ürünler, sözleşmeleri aynı:
  * gönderen, karşı taraf kendisini görebilsin diye ödüyor. Premium'a bağlamak
  * satın alınan şeyi teslim etmemek olurdu.
  *
@@ -1489,7 +1505,7 @@ function LikeCard({
   recoverLabel,
   // İsim satırının üstündeki pill'in metni. Diğer etiketler gibi PROP: kart
   // i18n hook'u tutmuyor, çeviri ekranın elinde (bkz. likeLabel/recoverLabel).
-  superLikeLabel,
+  fireLabel,
   // Kilitli karttaki "ne arıyor" pilinin etiketi. Diğer etiketler gibi kart
   // i18n hook'u tutmuyor; ekran `t`'ye bağlı SABİT bir çözücü veriyor (kartı
   // parametre alıyor, memo bozulmuyor). Kural likerCardTeaser'da, keşif
@@ -1820,11 +1836,11 @@ function LikeCard({
 
           {/* Sağ üst köşe — TEK cam buton: kaçırdıkların sekmesinde KURTAR,
               diğerlerinde BEĞEN.
-              ⚠️ Rozet (superlike kalbi / not balonu) buradan KALDIRILDI: köşe
+              ⚠️ Rozet (fire kalbi / not balonu) buradan KALDIRILDI: köşe
               artık bir aksiyonun yeri, iki şey aynı hizada durunca hangisinin
               basılabilir olduğu belirsizleşiyordu. Kartın hangi ürün olduğu
               zaten başka yerden okunuyor — notlu kartta alt bloktaki not
-              kutusu, süper beğenide sekmenin kendisi (Beğeniler'in "Süper
+              kutusu, Fire'da sekmenin kendisi (Beğeniler'in "Süper
               beğeni" filtresi).
 
               Kap responder'ı ÜSTLENİYOR ve bu şart: butona basmak aksiyonu
@@ -1863,7 +1879,7 @@ function LikeCard({
               // Kabuk kurtarma butonuyla AYNI ölçüde ve o da prominent:
               // ikisi aynı köşenin iki hâli, biri sade cam olsaydı sekme
               // değiştirince köşe zayıflıyormuş gibi okunurdu. Renk
-              // kolondaki tikin rengi (SuperLike kalbinin kırmızısı).
+              // kolondaki tikin rengi (Fire kalbinin kırmızısı).
               <CardActionGlassButton
                 variant="prominent"
                 name="checkmark"
@@ -1971,11 +1987,11 @@ function LikeCard({
                 }}
               >
                 {/* Ürün pill'i — isim satırının ÜSTÜNDE. Karttaki tek tür
-                    işareti: köşedeki rozet (süper beğeni kalbi / not balonu)
+                    işareti: köşedeki rozet (Fire kalbi / not balonu)
                     orası bir aksiyonun yeri olduğu için kaldırılmıştı ve
                     "Beğeniler"de türü sekme söylüyordu; "Kaçırdıkların" tek
                     karma liste olduğu için orada hiçbir şey söylemiyordu.
-                    YALNIZ SÜPER BEĞENİDE: notta kartın kendi not kutusu zaten
+                    YALNIZ FIRE'DA: notta kartın kendi not kutusu zaten
                     ne olduğunu anlatıyor, düz beğenide de söylenecek bir şey
                     yok — kartın listede olması zaten "beğendi" demek.
                     ⚠️ Kimlik satırları gibi `identityStyle` ile SOLMUYOR,
@@ -1983,12 +1999,12 @@ function LikeCard({
                     üstüne büyüdüğü için gitmesi gerekiyor; geçişi yumuşatmak
                     için buraya fade EKLEME — kimlik satırları zaten soluyor,
                     ikinci bir soluşan katman geçişi bulanıklaştırıyor.
-                    ⚠️ Süper beğeni + not aynı kartta olursa blok bu pill kadar
+                    ⚠️ Fire + not aynı kartta olursa blok bu pill kadar
                     (~32px) uzuyor; NOTE_CARD_BLUR_FLOOR / NOTE_IDENTITY_BLOCK
                     tahminleri bunu saymıyor. Bilinçli: ölçüm zaten `onLayout`ile
                     düzeliyor, sapma yalnız ilk karede ve perdede görünmüyor. */}
-                {item.isSuperLike && !!superLikeLabel && !noteExpanded && (
-                  <SuperLikePill label={superLikeLabel} />
+                {item.isSuperLike && !!fireLabel && !noteExpanded && (
+                  <FirePill label={fireLabel} />
                 )}
                 <Animated.View
                   style={[
@@ -2449,11 +2465,11 @@ export default function LikesScreen() {
   // ⚠️ Kurtarma paketi sheet'i (`RecoveryPurchaseModal`) KALDIRILDI: kurtarma
   // 2026-08-31'de consumable olmaktan çıkıp premium ayrıcalığı oldu. Paywall
   // artık yalnız free'ye dönüyor ve hedefi doğrudan abonelik (openLitPlus).
-  // SuperLike / not paketi sheet'leri — başlığın yanındaki "Nasıl alırım?"
+  // Fire / not paketi sheet'leri — başlığın yanındaki "Nasıl alırım?"
   // pill'inden açılıyor (bkz. headerAction). İkisi de DiscoverScreen'dekiyle
   // aynı bileşen ve aynı ürün; buradan açılmaları yalnız ikinci bir giriş
   // kapısı, ayrı bir akış değil.
-  const [superLikePurchaseVisible, setSuperLikePurchaseVisible] =
+  const [firePurchaseVisible, setFirePurchaseVisible] =
     useState(false);
   const [notePurchaseVisible, setNotePurchaseVisible] = useState(false);
   // Şikayet edilen kullanıcı — ReportModal'ın hem görünürlüğü hem hedefi.
@@ -2752,28 +2768,28 @@ export default function LikesScreen() {
   const likesByTab = useMemo(() => {
     const note = [];
     const like = [];
-    const superLike = [];
+    const fire = [];
     for (const l of likes) {
       if (l.note || l.isNote) note.push(l);
-      else if (l.isSuperLike) superLike.push(l);
+      else if (l.isSuperLike) fire.push(l);
       else like.push(l);
     }
     return {
       all: likes,
       like,
-      superlike: superLike,
+      fire: fire,
       note,
     };
   }, [likes]);
 
   // Pill'lerin yanındaki adetler. Sınıflandırma `likesByTab` ile AYNI sırayı
-  // izliyor (önce not, sonra süper beğeni) — sekmeler ayrık kümeler, bir kart
+  // izliyor (önce not, sonra Fire) — sekmeler ayrık kümeler, bir kart
   // tek bir sayıya girer.
   const likeCounts = useMemo(
     () => ({
       all: likes.length,
       like: likesByTab.like.length,
-      superLike: likesByTab.superlike.length,
+      fire: likesByTab.fire.length,
       note: likesByTab.note.length,
     }),
     [likes, likesByTab],
@@ -2841,8 +2857,8 @@ export default function LikesScreen() {
         ? t("likes.headerMissed")
         : tabKey === "like"
           ? t("likes.headerLike")
-          : tabKey === "superlike"
-            ? t("likes.headerSuperLike")
+          : tabKey === "fire"
+            ? t("likes.headerFire")
             : tabKey === "note"
               ? t("likes.headerNote")
               : t("likes.headerAll"),
@@ -2852,7 +2868,7 @@ export default function LikesScreen() {
   // Başlığın SAĞINDAKİ pill. Her sekmede aynı görev: bu sekmede kilidi/eksiği
   // açan sheet'i açmak. Metin sekmeye göre değişiyor, çünkü satılan şey de
   // değişiyor.
-  //   • Süper beğeni / not → kendi consumable paket sheet'leri, "Nasıl alırım?".
+  //   • Fire / not → kendi consumable paket sheet'leri, "Nasıl alırım?".
   //     KOŞULSUZ çiziliyor: ikisi de tükenen ürün, elinde kaç tane olduğu bu
   //     ekrandan görünmüyor ve daha fazlası her zaman satın alınabilir.
   //   • Tümü / Beğeni / Kaçırdıkların → "Beğenenleri gör", premium sheet'i.
@@ -2869,18 +2885,18 @@ export default function LikesScreen() {
   // bloğunun içinde ve blok memo'lu (bkz. LikesListHeader) — her çağrıda yeni
   // bir kapanış üretilseydi memo hiç tutmaz, blok ekranın her render'ında
   // yeniden commit edilirdi.
-  const openSuperLikePurchase = useCallback(
-    () => setSuperLikePurchaseVisible(true),
+  const openFirePurchase = useCallback(
+    () => setFirePurchaseVisible(true),
     [],
   );
   const openNotePurchase = useCallback(() => setNotePurchaseVisible(true), []);
   const openPremiumPurchase = useCallback(() => openLitPlus(), []);
   const headerActionFor = useCallback(
     (tabKey: string) => {
-      if (tabKey === "superlike") {
+      if (tabKey === "fire") {
         return {
           label: t("likes.howToGetAction"),
-          onPress: openSuperLikePurchase,
+          onPress: openFirePurchase,
         };
       }
       if (tabKey === "note") {
@@ -2903,7 +2919,7 @@ export default function LikesScreen() {
     [
       showPremiumUpsellFor,
       t,
-      openSuperLikePurchase,
+      openFirePurchase,
       openNotePurchase,
       openPremiumPurchase,
     ],
@@ -2955,7 +2971,7 @@ export default function LikesScreen() {
         return recoveryAccessText ? `${desc} ${recoveryAccessText}` : desc;
       }
       if (tabKey === "like") return t("likes.descLike");
-      if (tabKey === "superlike") return t("likes.descSuperLike");
+      if (tabKey === "fire") return t("likes.descFire");
       if (tabKey === "note") return t("likes.descNote");
       return t("likes.descAll");
     },
@@ -3000,7 +3016,7 @@ export default function LikesScreen() {
         }
 
         if (data.isSuccess && data.result) {
-          const superLikeProfiles = (
+          const fireProfiles = (
             data.result.superLikes?.profiles || []
           ).map((p) => ({
             id: `sl_${p.profileId}`,
@@ -3052,8 +3068,8 @@ export default function LikesScreen() {
             relationshipIntentDisplay: p.relationshipIntentDisplay ?? null,
           }));
 
-          // SuperLike'lar her zaman üstte (vurgulu bölüm).
-          const merged = [...superLikeProfiles, ...likeProfiles];
+          // Fire'lar her zaman üstte (vurgulu bölüm).
+          const merged = [...fireProfiles, ...likeProfiles];
           setLikes(merged);
           const slTotal = data.result.superLikes?.totalProfiles || 0;
           const lTotal = data.result.likes?.totalProfiles || 0;
@@ -3186,7 +3202,7 @@ export default function LikesScreen() {
 
   // Karta tıklayınca:
   //   - Premium DEĞİL ve normal like → PurchaseModal aç (upsell).
-  //   - Premium ise VEYA beğeni zaten açıksa (SuperLike / NOT — bkz.
+  //   - Premium ise VEYA beğeni zaten açıksa (Fire / NOT — bkz.
   //     `isUnlockedLike`) → LikerProfile detayını çek + interactive
   //     SwipeWrapper'lı LikerSwipeModal'ı aç. Kullanıcı sağa/sola kaydırıp
   //     like/pass yapabilir; mutual like ise backend match yaratır, global
@@ -3234,7 +3250,7 @@ export default function LikesScreen() {
           fetchWhoLikedMe();
         } else if (status === 401 || status === 403) {
           // Backend LikerProfile'ı premium'a kilitliyorsa free kullanıcının açık
-          // bir karta (SuperLike / NOT) dokunuşu sessizce ölmesin: paywall'a düş.
+          // bir karta (Fire / NOT) dokunuşu sessizce ölmesin: paywall'a düş.
           // Bu dal ancak backend bu istisnaları tanımıyorsa çalışır — kalıcı
           // çözüm orada, burası sadece ölü dokunuşa karşı emniyet.
           openLitPlus();
@@ -3379,7 +3395,7 @@ export default function LikesScreen() {
     [dispatch, dropMissed, isPremium, loadMissed, runCardExit, statsQuery, t],
   );
 
-  // LikerSwipeModal'dan dönen swipe sonrası — like/pass/superlike/block fark
+  // LikerSwipeModal'dan dönen swipe sonrası — like/pass/fire/block fark
   // etmez,
   // kullanıcı bu liker'ı handle etti → listeden anında çıkar (backend
   // MatchNotification gelene kadar bekleme). Rozet de aynı karede düşer:
@@ -3414,7 +3430,7 @@ export default function LikesScreen() {
    * Kilit, kart dokunuşundakiyle AYNI (bkz. openLikerProfile): free kullanıcı
    * blur'lu bir kartı butonla da "harcayamaz" — kim olduğunu görmeden pas
    * geçmek de beğenmek de premium'un sattığı bilgiyi bedava tüketirdi.
-   * Açık beğeniler (SuperLike / NOT) burada da istisna: zaten blur'suz
+   * Açık beğeniler (Fire / NOT) burada da istisna: zaten blur'suz
    * gösteriliyorlar, yanıtlanabilmeleri ürünün kendisi (bkz. isUnlockedLike).
    */
   const handleQuickSwipe = useCallback(
@@ -3614,10 +3630,10 @@ export default function LikesScreen() {
           note: notePreview ? { comment: notePreview } : null,
         };
 
-        // Yeni SuperLike → listenin en başına (en yeni en üstte).
+        // Yeni Fire → listenin en başına (en yeni en üstte).
         if (isSuper) return [card, ...prev];
 
-        // Yeni normal Like → SuperLike bloğunun hemen altına, normal like'ların başına.
+        // Yeni normal Like → Fire bloğunun hemen altına, normal like'ların başına.
         const firstNonSuper = prev.findIndex((it) => !it.isSuperLike);
         if (firstNonSuper === -1) return [...prev, card];
         return [
@@ -3647,9 +3663,9 @@ export default function LikesScreen() {
       { key: "all", label: t("likes.tabAll"), count: likeCounts.all },
       { key: "like", label: t("likes.tabLike"), count: likeCounts.like },
       {
-        key: "superlike",
-        label: t("likes.tabSuperLike"),
-        count: likeCounts.superLike,
+        key: "fire",
+        label: t("likes.tabFire"),
+        count: likeCounts.fire,
       },
       { key: "note", label: t("likes.tabNote"), count: likeCounts.note },
       { key: "missed", label: t("likes.tabMissed"), count: missedTotal },
@@ -3756,7 +3772,7 @@ export default function LikesScreen() {
       return (
         <View className="flex-1 items-center justify-center pb-[50%]">
           <EmptyState
-            // Bu sekmenin konusu süper beğeni DEĞİL kurtarma: eksik olan şey
+            // Bu sekmenin konusu Fire DEĞİL kurtarma: eksik olan şey
             // bir beğeni değil, geri alınacak bir kaçırma. Glif kurtarma
             // butonuyla (RecoverGlassButton) ve kolondaki kurtar aksiyonuyla
             // aynı — boş sayfa hangi aksiyonun burayı dolduracağını söylesin.
@@ -3797,8 +3813,8 @@ export default function LikesScreen() {
           iconStrokeWidth={1}
           topOffset={0}
           text={
-            tabKey === "superlike"
-              ? t("likes.emptySuperLike")
+            tabKey === "fire"
+              ? t("likes.emptyFire")
               : tabKey === "note"
                 ? t("likes.emptyNote")
                 : tabKey === "like"
@@ -3806,8 +3822,8 @@ export default function LikesScreen() {
                   : t("likes.emptyAll")
           }
           subtitle={
-            tabKey === "superlike"
-              ? t("likes.emptySuperLikeSubtitle")
+            tabKey === "fire"
+              ? t("likes.emptyFireSubtitle")
               : tabKey === "note"
                 ? t("likes.emptyNoteSubtitle")
                 : tabKey === "like"
@@ -3815,7 +3831,7 @@ export default function LikesScreen() {
                   : t("likes.emptyAllSubtitle")
           }
           // Üç filtrenin boş durumu da aynı yere çıkar: beğeni beklemek yerine
-          // kaydırmaya dön. Sekmeye göre değişen etiketler (süper beğeni gönder
+          // kaydırmaya dön. Sekmeye göre değişen etiketler (Fire gönder
           // / profilimi geliştir) tek bir "kaydırmaya başla" aksiyonuna indi.
           buttonLabel={t("likes.startSwipingButton")}
           buttonLabelColor={colors.onMediaInverse}
@@ -3867,7 +3883,7 @@ export default function LikesScreen() {
             onLike={handleLikeCard}
             likeLabel={t("likes.likeButton")}
             recoverLabel={t("likes.recoverButton")}
-            superLikeLabel={t("likes.superLikePill")}
+            fireLabel={t("likes.firePill")}
             resolveIntentLabel={resolveIntentLabel}
             exitDirection={exitingIds[item.userId || item.likerUserId] ?? null}
           />
@@ -3957,15 +3973,15 @@ export default function LikesScreen() {
           olmaktan çıkıp premium ayrıcalığı oldu, satılacak bir paket kalmadı.
           Free'nin paywall'ı artık doğrudan abonelik (bkz. handleRecover). */}
 
-      {/* SuperLike / not paketleri — başlığın yanındaki "Nasıl alırım?"
+      {/* Fire / not paketleri — başlığın yanındaki "Nasıl alırım?"
           pill'inden açılıyor. DiscoverScreen'dekiyle aynı sheet'ler ve aynı
           kapanış davranışı: satın alma sonrası kapan + /Stats'ı tazele (bakiye
           bu ekranda görünmese de kota sayıları oradan besleniyor). */}
-      <SuperLikePurchaseModal
-        visible={superLikePurchaseVisible}
-        onClose={() => setSuperLikePurchaseVisible(false)}
+      <FirePurchaseModal
+        visible={firePurchaseVisible}
+        onClose={() => setFirePurchaseVisible(false)}
         onPurchased={() => {
-          setSuperLikePurchaseVisible(false);
+          setFirePurchaseVisible(false);
           statsQuery.refetch?.();
         }}
       />

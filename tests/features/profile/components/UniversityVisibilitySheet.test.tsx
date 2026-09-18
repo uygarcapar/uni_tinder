@@ -8,19 +8,10 @@
  * istemcide bir yalan olur.
  */
 
-jest.mock('@/shared/components/AppBottomSheet', () => {
-  const React = require('react');
-  const { View } = require('react-native');
-  return {
-    __esModule: true,
-    default: ({ visible, children, footer }: any) =>
-      visible ? React.createElement(View, null, children, footer) : null,
-  };
-});
-jest.mock('@gorhom/bottom-sheet', () => {
-  const { ScrollView } = require('react-native');
-  return { BottomSheetScrollView: ScrollView };
-});
+// Sheet artık AppModal'ın üstünde (kardeş ReferralSheet ile aynı header).
+// Paylaşılan mock header'ı düz bir View'a indiriyor; başlık METNİ onda da
+// geçiyor, yani `vis.title` ekranda iki kez var (header + içerik).
+jest.mock('@/shared/components/AppModal');
 jest.mock('@/features/discover/components/UniversityPickerModal', () => 'UniversityPickerModal');
 jest.mock('@/shared/queries/commonQueries', () => ({
   useUniversities: () => ({ data: [{ domain: 'bilgi.edu.tr', name: 'Bilgi' }] }),

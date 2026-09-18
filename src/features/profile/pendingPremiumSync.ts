@@ -16,7 +16,7 @@ import { appPrefs } from "@/shared/utils/appPrefs";
  * ve ProfileScreen "aktivasyon sürüyor" kartını gösterir. Premium onaylandığı
  * an kayıt silinir.
  *
- * SuperLike redeem kuyruğunun (`superlikeRedeem.ts`) abonelik tarafındaki
+ * Fire redeem kuyruğunun (`fireRedeem.ts`) abonelik tarafındaki
  * karşılığı; anahtar aynı şekilde hesap bazlı, MMKV `app-prefs` instance'ında.
  */
 

@@ -9,7 +9,7 @@ import { useConsumableCardBalance } from "@/features/profile/consumableCardBalan
 
 /**
  * Mağaza şeridinin sağ kartı: not paketi satın alma girişi + bakiye.
- * SuperLikeCard'ın birebir eşi, iki ürüne özgü ayrım dışında:
+ * FireCard'ın birebir eşi, iki ürüne özgü ayrım dışında:
  *
  *   1. `premiumGranted: false` — not premium'la GELMEYEN bir ürün (tier kotası
  *      yok, `quotaNotesRemaining` hep 0). Premium satın alma ile webhook arası

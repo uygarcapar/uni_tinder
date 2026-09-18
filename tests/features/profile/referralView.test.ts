@@ -37,7 +37,7 @@ describe('grantDaysRemaining', () => {
 describe('rewardLabelKey', () => {
   it('üç ödül türünü eşler', () => {
     expect(rewardLabelKey('VisibilityFilter')).toBe('referral.reward.visibilityFilter');
-    expect(rewardLabelKey('SuperLike')).toBe('referral.reward.superLike');
+    expect(rewardLabelKey('SuperLike')).toBe('referral.reward.fire');
     expect(rewardLabelKey('Note')).toBe('referral.reward.note');
   });
 

@@ -386,7 +386,6 @@ export default function SelfieVerificationOverlay() {
             <IntroStep
               busy={starting}
               onStart={beginAttempt}
-              onClose={close}
               insetBottom={insets.bottom}
             />
           )}
@@ -426,12 +425,11 @@ function Host({ children }: { children: React.ReactNode }) {
 function IntroStep({
   busy,
   onStart,
-  onClose,
   insetBottom,
 }: {
   busy: boolean;
   onStart: () => void;
-  onClose: () => void;
+  /** `onClose` YOK: adımın kapanışı yalnız sheet'in kendi jestlerinden geliyor. */
   insetBottom: number;
 }) {
   const { t } = useTranslation();
@@ -476,10 +474,12 @@ function IntroStep({
         <IntroBullet text={t("profile.selfie.intro.bullet3")} />
       </View>
 
-      <Text style={{ color: colors.textMuted, fontSize: 13, lineHeight: 19 }}>
-        {t("profile.selfie.intro.privacyNote")}
-      </Text>
-
+      {/* `intro.privacyNote` BİLEREK ÇİZİLMİYOR: rozetin ne olduğunu/olmadığını
+          anlatan bu paragraf, madde işaretlerinin hemen altında üçüncü bir
+          açıklama katı oluyordu ve sheet'i "Başla"nın göründüğü yükseklikten
+          aşağı itiyordu. Anahtar çeviride duruyor — hukuki metin DEĞİL (rıza
+          Ayarlar > Gizlilik'te toplanıyor, bkz. dosya başı), yeri gelirse geri
+          konabilir. */}
       <View style={{ gap: 8, marginTop: 4 }}>
         <AnimatedPressable
           onPress={onStart}
@@ -510,19 +510,11 @@ function IntroStep({
             </Text>
           )}
         </AnimatedPressable>
-
-        <AnimatedPressable onPress={onClose} disabled={busy} pressScale={1}>
-          <Text
-            style={{
-              paddingVertical: 8,
-              textAlign: "center",
-              fontSize: 14,
-              color: colors.textSecondary,
-            }}
-          >
-            {t("common.cancel")}
-          </Text>
-        </AnimatedPressable>
+        {/* "Vazgeç" KALDIRILDI: sheet zaten aşağı çekilerek ve backdrop'a
+            dokunarak kapanıyor (bkz. enablePanDownToClose / handleSheetClose),
+            yani vazgeçmenin iki yolu var. Tek eylemli bir sheet'te ikinci bir
+            yazı butonu kararı ağırlaştırıyordu. `/start` uçarken sheet zaten
+            kilitli olduğu için kaçış yolu kapanmıyor. */}
       </View>
     </BottomSheetView>
   );

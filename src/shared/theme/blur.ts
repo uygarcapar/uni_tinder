@@ -35,7 +35,7 @@ import { colors, isLight } from "./colors";
  * (veilSurface) başından beri modla dönüyor — lit shop sheet'leriyle aynı
  * gerekçe.
  *
- * lit shop sheet'leri (PurchaseModal / SuperLikePurchaseModal) BU İSTİSNADA
+ * lit shop sheet'leri (PurchaseModal / FirePurchaseModal) BU İSTİSNADA
  * DEĞİL: zeminleri (shopSurface / shopBackdrop) modla döndüğü için panelleri
  * de `plainBlurTint()` kullanır.
  */

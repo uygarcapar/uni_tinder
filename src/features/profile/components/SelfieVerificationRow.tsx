@@ -5,7 +5,7 @@ import { ChevronRight, ShieldCheck } from "@/shared/icons";
 import AnimatedPressable from "@/shared/components/AnimatedPressable";
 import SFIcon, { type SFSymbol } from "@/shared/components/SFIcon";
 import uiBus from "@/shared/services/uiBus";
-import { colors } from "@/shared/theme/colors";
+import { colors, ink } from "@/shared/theme/colors";
 import { devLog } from "@/shared/utils/devLog";
 import {
   isSelfieFeatureAvailable,
@@ -74,17 +74,21 @@ function logGate(gate: string, detail: Record<string, unknown>) {
   );
 }
 
+// Sembol DOLGULU (`.fill`) — sheet'in başlığındaki ve isimlerin yanındaki
+// rozetin (bkz. SelfieVerificationOverlay > IntroStep, SelfieVerifiedBadge)
+// aynısı. Aynı kavramın iki farklı ağırlıkta çizilmesi, satırdan açılan sheet'te
+// ikon değişmiş gibi okunuyordu.
 const TONE: Record<
   "idle" | "reset",
   { sf: SFSymbol; fallback: any; color: () => string }
 > = {
-  idle: { sf: "checkmark.seal", fallback: ShieldCheck, color: () => colors.text },
+  idle: { sf: "checkmark.seal.fill", fallback: ShieldCheck, color: () => colors.text },
   // Sıfırlanma UYARI OLARAK ÇİZİLMİYOR — ikon ilk durumun aynısı.
   // Kullanıcı ana fotoğrafı değiştirmeden ÖNCE zaten onay penceresinde
   // uyarılıyor (bkz. confirmMainPhotoChange); sonrasında sarı bir ünlemle
   // karşılamak, bilerek yapılmış bir işi hata gibi gösteriyordu. Sebebi metin
   // söylüyor, ikonun işi yapılacak eylemi göstermek.
-  reset: { sf: "checkmark.seal", fallback: ShieldCheck, color: () => colors.text },
+  reset: { sf: "checkmark.seal.fill", fallback: ShieldCheck, color: () => colors.text },
 };
 
 export default function SelfieVerificationRow({
@@ -140,9 +144,11 @@ export default function SelfieVerificationRow({
         alignItems: "center",
         gap: 14,
         // Zemin CompletionAccordion ile aynı (`surface`): sayfanın zemini `bg`,
-        // bu satır onun üstünde bir kat. Yarıçap ise accordion'ın 40'ından
-        // BİLEREK küçük — bu kutu iki satır metin taşıdığı için daha yüksek,
-        // 40'ta kapsüle yaklaşıp kartlardan çok butona benziyordu.
+        // bu satır onun üstünde bir kat. Yarıçap + padding hemen altındaki
+        // davet satırıyla (ReferralProgressRow) BİREBİR aynı: ikisi de "profilimi
+        // güçlendir" öbeği, üst üste duruyorlar ve farklı kabuk iki ayrı
+        // bileşen gibi okunuyordu. Accordion'ın 40'ından ise küçük — bu kutular
+        // iki satır metin taşıdığı için daha yüksek, 40'ta kapsüle yaklaşıyordu.
         borderRadius: 28,
         borderCurve: "continuous",
         borderWidth: 0.5,
@@ -157,23 +163,34 @@ export default function SelfieVerificationRow({
         fallback={tone.fallback}
         size={24}
         color={tone.color()}
+        // `.fill` varyantının Android karşılığı: lucide glifi dolguyu ayrı
+        // prop'tan alıyor, yoksa iOS dolu / Android çizgi görünürdü.
+        fill={tone.color()}
         style={{ pointerEvents: "none" }}
       />
       <View style={{ flex: 1, gap: 3 }}>
         <Text style={{ color: colors.text, fontSize: 15, fontWeight: "600" }}>
           {title}
         </Text>
-        <Text style={{ color: colors.textSecondary, fontSize: 13, lineHeight: 18 }}>
+        {/* Açıklama rengi `textSecondary` DEĞİL, mağaza şeridindeki alt satırla
+            ("{n} hakkın kaldı", bkz. ConsumableShopCard) aynı `ink(0.55)`:
+            ikisi de aynı öbekte, sabit gri token yan yana duran iki ikincil
+            metni farklı ağırlıkta gösteriyordu. Alfa yolu ayrıca temaya kendi
+            çözülüyor — açıkta siyah, koyuda beyaz tabandan. */}
+        <Text style={{ color: ink(0.55), fontSize: 13, lineHeight: 18 }}>
           {subtitle}
         </Text>
       </View>
       {/* Satır artık YALNIZCA tıklanabilir durumlarda çiziliyor (doğrulanmışta
-          hiç yok), o yüzden chevron koşulsuz. */}
+          hiç yok), o yüzden chevron koşulsuz. Ölçüsü plus+ kartındaki okla
+          (bkz. PlusCard) aynı: 16pt / 2.5 / semibold, %70 ink. */}
       <SFIcon
         name="chevron.right"
         fallback={ChevronRight}
         size={16}
-        color={colors.textMuted}
+        color={ink(0.7)}
+        strokeWidth={2.5}
+        weight="semibold"
         style={{ pointerEvents: "none" }}
       />
     </View>

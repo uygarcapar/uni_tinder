@@ -9,13 +9,13 @@ import { NOTE_REDEEM_FLOW } from "@/features/discover/noteRedeem";
 /**
  * Not paketi (consumable) satın alma sheet'i.
  *
- * SuperLike sheet'iyle aynı kabuk (ConsumablePurchaseSheet), farklı config.
+ * Fire sheet'iyle aynı kabuk (ConsumablePurchaseSheet), farklı config.
  * Abonelik bağlantısı YOK: not premium'la gelen bir hak değil, herkes için
  * yalnızca satın alınabilir bir ürün — "abonelik de bunu veriyor" bağlantısı
  * yanlış olurdu. (Kabuğun `secondaryAction` prop'u kurtarma sheet'i içindi ve
  * onunla birlikte kaldırıldı.)
  *
- * Kademeler `note_2` / `_4` / `_6` / `_8` — SuperLike'tan (5/10/15/20) bilinçli
+ * Kademeler `note_2` / `_4` / `_6` / `_8` — Fire'tan (5/10/15/20) bilinçli
  * olarak KÜÇÜK: not yazmak daha ağır bir aksiyon, tüketimi yavaş. Adet istemcide
  * sabit değil, `creditsFromProductId` ile ürün id'sinden okunuyor; fiyat da sabit
  * değil, kartta daima RC'nin `priceString`i var → ASC'de kademe/fiyat oynatmak FE
@@ -28,7 +28,7 @@ import { NOTE_REDEEM_FLOW } from "@/features/discover/noteRedeem";
  *
  * Açılışta İLK paket (en küçük kademe, `note_2`) seçili geliyor: kademeler zaten
  * küçük ve birbirine yakın, boş seçimle açılıp CTA'yı ölü göstermek fazladan bir
- * dokunuş istiyordu. SuperLike/kurtarma sheet'lerinde bu KAPALI kalıyor.
+ * dokunuş istiyordu. Fire/kurtarma sheet'lerinde bu KAPALI kalıyor.
  *
  * Mağaza ürünleri ve RC offering'i (`notes` — çoğul) 2026-08-27'de açıldı.
  * ⚠️ Kalan blokaj satın alma değil REDEEM: sandbox webhook doğrulanmadan

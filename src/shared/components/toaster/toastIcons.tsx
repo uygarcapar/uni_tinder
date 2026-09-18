@@ -1,23 +1,27 @@
 import { Check, RotateCcw, MessageCircle } from '@/shared/icons';
 import SFIcon from '../SFIcon';
-import SuperLikeGlyph from '../SuperLikeGlyph';
+import FireGlyph from '../FireGlyph';
 import NoteGlyph from '../NoteGlyph';
 import PremiumFlame from '../PremiumFlame';
-import { colors, gradients, ink, isLight } from '../../theme/colors';
+import {
+  badgeFireFill,
+  badgeMessageFill,
+  badgeNeutralFill,
+} from '../../theme/badge';
 
 /**
  * Toast'ların solundaki ÜRÜN simgesi — hangi ürün hakkında konuşulduğu metni
  * okumadan anlaşılsın diye ("kredin yüklendi" tek başına hangi kredi olduğunu
  * söylemiyordu).
  *
- * SuperLike ve not, uygulama ikonundan sökülen KENDİ glyph'lerini kullanıyor
- * (SuperLikeGlyph / NoteGlyph) — SwipeCard'daki super-like kalbi ve NoteBox ile
+ * Fire ve not, uygulama ikonundan sökülen KENDİ glyph'lerini kullanıyor
+ * (FireGlyph / NoteGlyph) — SwipeCard'daki fire kalbi ve NoteBox ile
  * birebir aynı şekil. SF karşılıkları (`star.fill`, `bubble.left.fill`) bilerek
  * kullanılmıyor: ürünün işareti uygulama genelinde tek olmalı.
  */
 export type ToastIconKind =
   | 'like'
-  | 'superLike'
+  | 'fire'
   | 'note'
   | 'recovery'
   | 'message'
@@ -25,80 +29,26 @@ export type ToastIconKind =
   | 'premium';
 
 /**
- * Tik'in dairesi — İKİ TEMADA DA siyah. `ink(1)` DEĞİL: o tema-duyarlı mürekkep,
- * koyu modda BEYAZ dönerdi ve daire beyaz tik ile birlikte kaybolurdu.
- */
-const CHECK_CIRCLE = '#000000';
-
-/**
- * Mesaj hakkı dairesinin KOYU MOD dolgusu — nötr gri, yüzey merdiveninin bir
- * tık üstü. Merdivenin tepesi (`surface4`, #2A2A2A) cam kartın üstünde hâlâ
- * zemine yapışıyordu; palete yeni bir yüzey tonu eklemek yerine daire burada
- * sabitleniyor. Üstündeki beyaz glif ile kontrast rahat.
- */
-const MESSAGE_CIRCLE_DARK = '#3A3A3A';
-
-/**
- * Süper beğeninin rengi — kalbin gradyanının İLK durağı (#fc1919), yani
- * SuperLikeGlassButton'ın cam tint'i ve kutlama alevinin ısı rampasıyla aynı
- * kırmızı. Eskiden `colors.info` mavisiydi ama uygulamada süper beğeniyi
- * temsil eden hiçbir yüzey mavi değil: koyu modda dolgu ürünün rengine
- * döndüğü için toast, temsil ettiği ürünün ailesinden kopuk duruyordu.
+ * Simge dairesinin dolgusu — KURALIN KAYNAĞI BİLDİRİMLER EKRANI.
  *
- * RENDER SIRASINDA ÇAĞIR (colors.ts mutasyon sözleşmesi): `gradients` mod
- * değişince yerinde güncelleniyor.
- */
-function superLikeRed() {
-  return gradients.swipeHeart[0];
-}
-
-/**
- * Ürünün rengi — glif ve daire bunun üstüne kuruluyor. Palet mutasyona uğradığı için render anında okunur.
+ * Kanonik olan Bildirimler listesindeki tip rozeti (`TYPE_BADGES`); toast onu
+ * birebir takip ediyor, ortak değerler `shared/theme/badge.ts`te. Aynı olayın
+ * iki yerde farklı renk taşıması (Fire listede kırmızı, toast'ta koyu modda
+ * başka bir kırmızı, açık modda siyah) aynı şeyi iki ayrı şey gibi gösteriyordu.
  *
- * `message` (mesaj hakkı) litPlus'a düşüyor: sohbet listesindeki "Sınırlı"
- * rozeti ve "Sınırsız mesajlaş" pill'i de aynı renkte — kotayı kaldıran şey
- * abonelik, üçü tek dili konuşuyor.
- */
-export function toastIconAccent(kind: ToastIconKind): string {
-  if (kind === 'superLike') return superLikeRed();
-  // Beğeni MARKA RENGİNDE. Eskiden `likePink` (#ec4899) idi ve uygulamada
-  // pembe olan başka hiçbir yüzey yok: beğeni kalbi kartta, Likes sekmesinde
-  // ve süper beğeni ailesinde hep kırmızı — toast tek başına pembe bir leke
-  // gibi duruyordu. Süper beğeniden ayrım tonda değil başlıkta.
-  if (kind === 'like') return colors.primary;
-  // Tik bir ÜRÜN değil, durum bildirimi — ürün rengi taşımıyor.
-  if (kind === 'check') return CHECK_CIRCLE;
-  return colors.litPlus;
-}
-
-/**
- * Simge dairesinin dolgusu.
- *
- * AÇIK MODDA SİYAH — hepsi. Ürün rengiyle dolu daire (kırmızı SuperLike, kırmızı
- * not/kurtarma) beyaz cam kartın üstünde bağırıyordu ve her toast farklı renkte
- * bir leke gibi duruyordu; siyah daire hepsini tek ailede tutuyor, ürünü glifin
- * kendi şekli ayırıyor.
- *
- * Koyu modda daire ürünün rengini taşımaya devam ediyor: siyah, koyu camın
- * üstünde kaybolur ve simge zeminsiz kalırdı. Tek istisna mesaj hakkı: orada
- * daire nötr gri — siyah gibi koyu camda kaybolmuyor, litPlus kırmızısı gibi de
- * bağırmıyor. Bkz. MESSAGE_CIRCLE_DARK.
+ * ⚠️ Eski kural — "açık modda hepsi siyah, koyu modda ürünün rengi" — BİLEREK
+ * kaldırıldı: renk artık temaya göre değil OLAYA göre seçiliyor. Açık modda
+ * beyaz cam kartın üstünde kırmızı/yeşil daire görmek beklenen davranış.
  */
 export function toastIconBackground(kind: ToastIconKind): string {
-  // Tik, koyu modda da siyah kalıyor: bir ürün rengi taşısaydı ("kredin
-  // yüklendi" toast'larındaki gibi) kota uyarısı da kazanılmış bir şey gibi
-  // okunurdu. Koyu camın üstünde kontrast düşük ama kasıtlı.
-  if (kind === 'check') return CHECK_CIRCLE;
-  // Premium açık modda da SİYAHA DÜŞMÜYOR — tek istisna. Daire, Keşfet'teki
-  // upsell CTA'sının dolgusuyla (colors.litPlus) birebir aynı: kullanıcı
-  // saniyeler önce o kırmızı butona bastı, toast onun karşılığı olarak
-  // okunmalı. Siyah daire onu diğer bildirimlerden ayırt edilemez kılardı.
-  if (kind === 'premium') return colors.litPlus;
-  if (isLight()) return ink(1);
-  // Mesaj hakkı bir KAZANÇ değil, kotanın azaldığı/bittiği uyarısı — litPlus
-  // kırmızısı onu "kredin yüklendi" toast'larıyla aynı aileye sokuyordu.
-  if (kind === 'message') return MESSAGE_CIRCLE_DARK;
-  return toastIconAccent(kind);
+  // Bildirimler'de renk taşıyan iki tip bunlar. Kalanların hepsi orada nötr
+  // disk: beğeni, not, kaçırılan eşleşme (= kurtarma) ve kota tiki.
+  if (kind === 'fire') return badgeFireFill();
+  if (kind === 'message') return badgeMessageFill();
+  // Premium'un Bildirimler'de karşılığı YOK — premium haberleri sistem
+  // bildirimi sayılıyor ve rozet almıyor, yani kopyalanacak bir renk yok. Nötr
+  // kovaya düşüyor; eskiden litPlus kırmızısıydı, ürün geri isterse tek satır.
+  return badgeNeutralFill();
 }
 
 export function ToastIconGlyph({
@@ -110,7 +60,7 @@ export function ToastIconGlyph({
   size: number;
   color: string;
 }) {
-  if (kind === 'superLike') return <SuperLikeGlyph size={size} color={color} />;
+  if (kind === 'fire') return <FireGlyph size={size} color={color} />;
   // Premium — isim yanındaki rozetle aynı alev glyph'i. `color` verildiği için
   // gradyan yerine DÜZ dolgu: daire zaten litPlus kırmızısı, rozetin kendi
   // kırmızı-turuncu gradyanı orada zemine gömülürdü (bkz. PremiumFlame).
@@ -147,10 +97,10 @@ export function ToastIconGlyph({
     );
   }
   // Beğeni — SF `heart.fill` / lucide `Heart` DEĞİL, ürünün kendi kalbi
-  // (icons/HeartGlyph): Likes sekmesi, kartın süper beğeni butonu ve süper
+  // (icons/HeartGlyph): Likes sekmesi, kartın Fire butonu ve süper
   // beğeni toast'ı aynı şekli taşıyor; jenerik sistem kalbi aralarında
   // yabancı kalıyordu.
-  if (kind === 'like') return <SuperLikeGlyph size={size} color={color} />;
+  if (kind === 'like') return <FireGlyph size={size} color={color} />;
   return (
     <SFIcon
       name="arrow.counterclockwise"

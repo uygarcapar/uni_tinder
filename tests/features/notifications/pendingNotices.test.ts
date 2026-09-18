@@ -57,7 +57,7 @@ describe('noticeToastIcon', () => {
   it('hediye premium, ödül kendi türünün simgesi', () => {
     expect(noticeToastIcon(gift())).toBe('premium');
     expect(noticeToastIcon(reward(1))).toBe('premium');
-    expect(noticeToastIcon(reward(2, 'SuperLike'))).toBe('superLike');
+    expect(noticeToastIcon(reward(2, 'SuperLike'))).toBe('fire');
     expect(noticeToastIcon(reward(3, 'Note'))).toBe('note');
   });
 });

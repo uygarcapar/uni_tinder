@@ -1,0 +1,6 @@
+{
+  "NSMicrophoneUsageDescription": "Lit needs microphone access so you can send voice messages.",
+  "NSPhotoLibraryUsageDescription": "Lit needs photo library access so you can choose your profile photos.",
+  "NSCameraUsageDescription": "Lit needs camera access so you can take a profile photo and verify that the photos are really you.",
+  "NSLocationWhenInUseUsageDescription": "Lit needs your location to show your city and the people near you."
+}

@@ -4,7 +4,7 @@ import AnimatedPressable from "@/shared/components/AnimatedPressable";
 import { colors, ink } from "@/shared/theme/colors";
 
 /**
- * ProfileScreen'in mağaza şeridindeki tek kartın kabuğu — SuperLike ve Not
+ * ProfileScreen'in mağaza şeridindeki tek kartın kabuğu — Fire ve Not
  * kartları bunun iki örneği (bkz. ShopCardsRow). Kart yalnız sunum: bakiye
  * çözümü consumableCardBalance.ts'te, satın alma sheet'i çağıranda.
  *
@@ -16,7 +16,7 @@ import { colors, ink } from "@/shared/theme/colors";
  *
  * Genişlik SABİT PİKSEL, `flex: 1` DEĞİL. AnimatedPressable style'ı dıştaki
  * Animated.View'a değil içteki TouchableOpacity'ye veriyor: satırda flex hiç
- * işlemiyor, kart içeriğine göre büzülüyor ve sağdaki metin sütunu ("Superlike
+ * işlemiyor, kart içeriğine göre büzülüyor ve sağdaki metin sütunu ("Fire
  * Al" + kalan hak satırı) 0 genişliğe çöküp GÖRÜNMEZ oluyordu. Tek kartlık
  * sürümde bu tuzak yoktu çünkü kartın açık `width`i vardı — o geri geldi.
  */
@@ -32,7 +32,7 @@ const CARD_RADIUS = 28;
 // (14/12 → 13/11) ama okunmuyordu, 14/13'e geri çıktı — daraltmayı artık
 // yalnız rozet taşıyor. Başlık ile alt satır aynı puntoda; ayrım ağırlık
 // (700/500) ve renk (%55 ink). Başlık iki satıra kırılabiliyor (numberOfLines:
-// 2) ve kart boyu sabit olduğu için "Superlike Al" dar kartta kırılırsa
+// 2) ve kart boyu sabit olduğu için "Fire Al" dar kartta kırılırsa
 // rozetin dengesi bozulur — punto buradan yukarı çıkarsa kontrol edilmeli.
 const BADGE = 44;
 const GLYPH = 26;

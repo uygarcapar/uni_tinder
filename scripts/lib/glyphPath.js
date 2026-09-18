@@ -39,6 +39,28 @@ function parsePath(d) {
     }
     return +v;
   };
+  /**
+   * Yay bayrağı okur (large-arc / sweep). Ayrı bir okuyucu ŞART: bu iki alan
+   * spec'e göre tek karakterlik "0"/"1" ve araya ayırıcı konmak zorunda değil.
+   * Lucide tam olarak böyle basıyor — `a2 2 0 012.629-1.046` içindeki "012.629"
+   * aslında [0, 1, 2.629]. Tokenizer bunu tek sayı gördüğü için burada ilk
+   * karakteri koparıp kalanını tokenin yerine geri yazıyoruz.
+   */
+  const flag = () => {
+    const v = tokens[i];
+    if (v === undefined || /[a-zA-Z]/.test(v)) {
+      throw new Error(`yay bayrağı eksik (token ${i})`);
+    }
+    if (v === "0" || v === "1") {
+      i++;
+      return +v;
+    }
+    if (v[0] !== "0" && v[0] !== "1") {
+      throw new Error(`yay bayrağı 0/1 olmalı, '${v}' okundu (token ${i})`);
+    }
+    tokens[i] = v.slice(1); // kalanı sıradaki sayı olarak bırak
+    return +v[0];
+  };
   const openSub = () => {
     sub = { start: [...cur], cubics: [], closed: false };
     subpaths.push(sub);
@@ -139,17 +161,137 @@ function parsePath(d) {
         cur = [...startPt];
         sub = null;
         break;
-      case "A":
-        throw new Error(
-          "yay (A/a) komutu desteklenmiyor — ikonu yay içermeyecek şekilde " +
-            "yeniden üret ya da vektör editöründe yayları bezier'e çevir",
-        );
+      case "A": {
+        const arcRx = num();
+        const arcRy = num();
+        const rot = num();
+        const large = flag();
+        const sweep = flag();
+        const to = [rx + num(), ry + num()];
+        for (const seg of arcToCubics(cur, arcRx, arcRy, rot, large, sweep, to)) {
+          cubic(seg[0], seg[1], seg[2]);
+        }
+        break;
+      }
       default:
         throw new Error(`bilinmeyen path komutu: '${cmd}'`);
     }
   }
 
   return subpaths.filter((s) => s.cubics.length > 0);
+}
+
+/**
+ * SVG yayını (A/a) kübik bezier dizisine çevirir — SVG 2 ek F.6.5'teki
+ * "endpoint → center" parametrelemesi. Lucide ikonları köşe yuvarlamalarını
+ * yayla yazıyor (`a1 1 0 0 0-1-1`), o yüzden gerekli.
+ *
+ * Çeyrek daireden büyük yaylar parçalara bölünüyor: tek kübik bir çeyrekten
+ * fazlasını kabul edilebilir hatayla temsil edemiyor. κ katsayısı yayın açısına
+ * göre hesaplanıyor (çeyrekteki 0.5523 sabitinin genel hali).
+ *
+ * @returns {Array<[[number,number],[number,number],[number,number]]>} [c1, c2, uç] üçlüleri
+ */
+function arcToCubics(from, rx, ry, rotDeg, largeArc, sweep, to) {
+  const [x1, y1] = from;
+  const [x2, y2] = to;
+  // Sıfır uzunluklu yay = çizgi (spec: segmenti yok say).
+  if (x1 === x2 && y1 === y2) return [];
+  // Yarıçapı sıfır olan yay da çizgiye düşer (spec: düz çizgi çiz).
+  rx = Math.abs(rx);
+  ry = Math.abs(ry);
+  if (rx === 0 || ry === 0) {
+    return [[[...from], [...to], [...to]]];
+  }
+
+  const phi = (rotDeg * Math.PI) / 180;
+  const cosP = Math.cos(phi);
+  const sinP = Math.sin(phi);
+
+  // 1) Uç noktaları elipsin kendi eksenine taşı.
+  const dx2 = (x1 - x2) / 2;
+  const dy2 = (y1 - y2) / 2;
+  const x1p = cosP * dx2 + sinP * dy2;
+  const y1p = -sinP * dx2 + cosP * dy2;
+
+  // 2) Yarıçaplar uçları birleştirmeye yetmiyorsa spec gereği ölçekle.
+  const lambda = (x1p * x1p) / (rx * rx) + (y1p * y1p) / (ry * ry);
+  if (lambda > 1) {
+    const k = Math.sqrt(lambda);
+    rx *= k;
+    ry *= k;
+  }
+
+  // 3) Merkez.
+  const rxSq = rx * rx;
+  const rySq = ry * ry;
+  const num = rxSq * rySq - rxSq * y1p * y1p - rySq * x1p * x1p;
+  const den = rxSq * y1p * y1p + rySq * x1p * x1p;
+  const coef =
+    (largeArc === sweep ? -1 : 1) * Math.sqrt(Math.max(0, num / den));
+  const cxp = (coef * (rx * y1p)) / ry;
+  const cyp = (coef * -(ry * x1p)) / rx;
+  const cx = cosP * cxp - sinP * cyp + (x1 + x2) / 2;
+  const cy = sinP * cxp + cosP * cyp + (y1 + y2) / 2;
+
+  // 4) Başlangıç açısı ve süpürülen açı.
+  const ang = (ux, uy, vx, vy) => {
+    const dot = ux * vx + uy * vy;
+    const len = Math.hypot(ux, uy) * Math.hypot(vx, vy);
+    let a = Math.acos(Math.min(1, Math.max(-1, dot / len)));
+    if (ux * vy - uy * vx < 0) a = -a;
+    return a;
+  };
+  const theta1 = ang(1, 0, (x1p - cxp) / rx, (y1p - cyp) / ry);
+  let dTheta = ang(
+    (x1p - cxp) / rx,
+    (y1p - cyp) / ry,
+    (-x1p - cxp) / rx,
+    (-y1p - cyp) / ry,
+  );
+  if (sweep === 0 && dTheta > 0) dTheta -= 2 * Math.PI;
+  else if (sweep === 1 && dTheta < 0) dTheta += 2 * Math.PI;
+
+  // 5) Çeyrek daireyi aşmayan parçalara böl, her parçayı kübiğe çevir.
+  const segs = Math.max(1, Math.ceil(Math.abs(dTheta) / (Math.PI / 2)));
+  const delta = dTheta / segs;
+  const kappa = (4 / 3) * Math.tan(delta / 4);
+
+  const at = (t) => {
+    const ct = Math.cos(t);
+    const st = Math.sin(t);
+    return [
+      cosP * rx * ct - sinP * ry * st + cx,
+      sinP * rx * ct + cosP * ry * st + cy,
+    ];
+  };
+  // Noktadaki teğet (dP/dt) — kontrol noktaları bunun κ katıyla konuluyor.
+  const deriv = (t) => {
+    const ct = Math.cos(t);
+    const st = Math.sin(t);
+    return [
+      -cosP * rx * st - sinP * ry * ct,
+      -sinP * rx * st + cosP * ry * ct,
+    ];
+  };
+
+  const out = [];
+  for (let i = 0; i < segs; i++) {
+    const t0 = theta1 + i * delta;
+    const t1 = t0 + delta;
+    const p0 = at(t0);
+    const p1 = at(t1);
+    const d0 = deriv(t0);
+    const d1 = deriv(t1);
+    out.push([
+      [p0[0] + kappa * d0[0], p0[1] + kappa * d0[1]],
+      [p1[0] - kappa * d1[0], p1[1] - kappa * d1[1]],
+      // Son parçanın ucunu hedefe SABİTLE: trigonometrik yuvarlama hatası
+      // burada birikirse alt-path kapanmıyor ve dolgu sızıyor.
+      i === segs - 1 ? [...to] : p1,
+    ]);
+  }
+  return out;
 }
 
 /** Tek boyutta kübik bezier'in [min,max] aralığı — analitik, örnekleme yok. */
@@ -228,6 +370,45 @@ function flatten(subpaths, steps = 48) {
   });
 }
 
+/**
+ * flatten'ın çizgi ikonları için gereken hali. İki farkı var, ikisi de
+ * ÖNEMLİ ve `flatten` bilerek DEĞİŞTİRİLMEDİ (commit'li tab PNG'leri onun
+ * çıktısına göre üretildi; davranışını oynatmak ikonları görünmez biçimde
+ * kaydırır):
+ *
+ *  1. Alt-path'in BAŞLANGIÇ noktasını da döndürür. flatten her kübik için
+ *     k=1..steps basıyor, yani ilk noktayı atlıyor. Kapalı halkada zararsız
+ *     (son nokta zaten başa eşit) ama açık bir polyline'da ilk segment eksik
+ *     kalır — stroke'ta görünür bir budama demek.
+ *  2. `closed` bilgisini korur. Çizgi çizerken kapalı olmayan alt-path'te
+ *     son noktadan ilkine dönen kenar ÇİZİLMEMELİ; gen-tab-icons'ın dolgu
+ *     yolundaki `(e+1)%N` sarmalı burada yanlış olur.
+ *
+ * @returns {Array<{ points: Array<[number,number]>, closed: boolean }>}
+ */
+function flattenPolylines(subpaths, steps = 48) {
+  return subpaths.map((sp) => {
+    const points = sp.cubics.length ? [[...sp.cubics[0][0]]] : [];
+    for (const [p0, p1, p2, p3] of sp.cubics) {
+      for (let k = 1; k <= steps; k++) {
+        const t = k / steps;
+        const u = 1 - t;
+        points.push([
+          u * u * u * p0[0] +
+            3 * u * u * t * p1[0] +
+            3 * u * t * t * p2[0] +
+            t * t * t * p3[0],
+          u * u * u * p0[1] +
+            3 * u * u * t * p1[1] +
+            3 * u * t * t * p2[1] +
+            t * t * t * p3[1],
+        ]);
+      }
+    }
+    return { points, closed: sp.closed };
+  });
+}
+
 /** Kapalı halkanın işaretli alanı — işaret sarım yönünü verir. */
 function signedArea(ring) {
   let a = 0;
@@ -289,6 +470,7 @@ module.exports = {
   pathBBox,
   cubicExtent,
   flatten,
+  flattenPolylines,
   signedArea,
   bake,
 };

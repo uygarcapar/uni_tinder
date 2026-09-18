@@ -1,4 +1,4 @@
-import { Suspense, lazy, useEffect, useMemo, useRef, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import {
   Modal,
   View,
@@ -10,24 +10,25 @@ import {
   useWindowDimensions,
 } from "react-native";
 import { Image } from "expo-image";
-import { MessageCircle } from "@/shared/icons";
-import SFIcon from "@/shared/components/SFIcon";
+import MessageGlyph from "@/shared/components/MessageGlyph";
+import LazyChunkBoundary from "@/shared/components/LazyChunkBoundary";
+import lazyChunk from "@/shared/components/lazyChunk";
 import * as Haptics from "expo-haptics";
 import { useTranslation } from "react-i18next";
 import { flameCurtainGeometry } from "@/features/discover/components/flameWavePath";
 import { colors, onMediaAt, scrimAt } from "../../../shared/theme/colors";
 
 /**
- * Kutlama zemini: süper beğenideki alev dalgasının PERDE hâli (bkz.
+ * Kutlama zemini: Fire'daki alev dalgasının PERDE hâli (bkz.
  * flameCurtainGeometry). Eskiden burada tam ekran blur + iki yandan konfeti
- * patlaması vardı; süper beğeniyle aynı ateşten okunsun diye ikisi de kalktı.
+ * patlaması vardı; Fire'la aynı ateşten okunsun diye ikisi de kalktı.
  *
  * Skia ağır ve bu bileşen kökte SÜREKLİ mount (bkz. AppNavigator) — canvas
  * ayrı chunk'ta, ilk eşleşmeye kadar hiç yüklenmiyor. Aynı gerekçe
- * SuperLikeFlame'de de yazılı.
+ * FireFlame'de de yazılı.
  */
-const FlameCurtain = lazy(() =>
-  import("@/features/discover/components/SuperLikeFlameCanvas").then((m) => ({
+const FlameCurtain = lazyChunk(() =>
+  import("@/features/discover/components/FireFlameCanvas").then((m) => ({
     default: m.FlameCurtainCanvas,
   })),
 );
@@ -281,9 +282,9 @@ export default function MatchModal({ match, myPhoto, onClose, onSendMessage }: a
           ]}
         />
         {imagesReady && (
-          <Suspense fallback={null}>
+          <LazyChunkBoundary resetKey={match.conversationId}>
             <FlameCurtain key={match.conversationId} closing={closing} />
-          </Suspense>
+          </LazyChunkBoundary>
         )}
         <Animated.View
           pointerEvents={closing ? "none" : "auto"}
@@ -425,7 +426,7 @@ export default function MatchModal({ match, myPhoto, onClose, onSendMessage }: a
               </Animated.View>
             </View>
 
-            <Text className="text-[13.5px] text-center font-semibold mt-8" style={{ color: colors.onMedia }}>
+            <Text className="text-[16px] text-center font-semibold mt-8" style={{ color: colors.onMedia }}>
               {t('match.subtitle', { name: match.matchedUserName })}
             </Text>
 
@@ -463,7 +464,10 @@ export default function MatchModal({ match, myPhoto, onClose, onSendMessage }: a
                 className="w-full flex-row items-center justify-center py-[16px] rounded-full"
                 style={{ backgroundColor: colors.onMedia, borderCurve: "continuous" }}
               >
-                <SFIcon name="message.fill" fallback={MessageCircle} size={18} color={colors.onMediaInverse} strokeWidth={2} weight="semibold" />
+                {/* İkon = mesaj sekmesinin tab bar ikonu (MessageGlyph): CTA
+                    kullanıcıyı oraya götürdüğü için SF `message.fill` yerine
+                    aynı balon. Dolu varyant — sekmenin focused hâliyle eş. */}
+                <MessageGlyph size={18} color={colors.onMediaInverse} />
                 <Text className="font-semibold text-[14px] ml-2" style={{ color: colors.onMediaInverse }}>
                   {t('match.sendMessage')}
                 </Text>

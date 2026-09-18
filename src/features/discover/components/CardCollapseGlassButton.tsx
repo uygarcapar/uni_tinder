@@ -13,7 +13,7 @@ import SFIcon from "@/shared/components/SFIcon";
 import { colors as theme, withAlpha } from "@/shared/theme/colors";
 import { glassClearShadow, glassFallback } from "@/shared/theme/glass";
 import GlassFallbackSurface from "@/shared/components/GlassFallbackSurface";
-import { SUPER_LIKE_GLASS_SIZE } from "./SuperLikeGlassButton";
+import { FIRE_GLASS_SIZE } from "./FireGlassButton";
 
 /**
  * Açık kartın SOL ÜST köşesindeki cam "başa dön" butonu — sticky şeritte,
@@ -24,11 +24,11 @@ import { SUPER_LIKE_GLASS_SIZE } from "./SuperLikeGlassButton";
  * buton onun ŞERİTTEKİ karşılığı: aynı işi yapıyor (önce başa scroll, sonra
  * collapse) ve şeritle birlikte, yani tam okun kaybolduğu eşikte beliriyor.
  *
- * Ölçüsü/ekseni sağdaki süper beğeni butonuyla AYNI (bkz. SUPER_LIKE_GLASS_*):
+ * Ölçüsü/ekseni sağdaki Fire butonuyla AYNI (bkz. FIRE_GLASS_*):
  * şeridin iki ucunda aynı çapta iki daire, aynı dikey merkezde. Ölçüyü oradan
  * import ediyor — ayrı bir sabit tutulsa biri büyüyünce şerit asimetrik kalır.
  *
- * Kabuk kuralları SuperLikeGlassButton ailesinden (gerekçeleri orada):
+ * Kabuk kuralları FireGlassButton ailesinden (gerekçeleri orada):
  *   • Host'a SABİT ölçü — `matchContents` ilk karede 0×0 bırakıyor.
  *   • Glif SwiftUI'ın İÇİNE `RNHostView` ile gömülüyor, üstüne bindirilmiyor:
  *     iOS 26'nın basış animasyonunda cam ile glif birlikte ölçekleniyor.
@@ -45,7 +45,7 @@ import { SUPER_LIKE_GLASS_SIZE } from "./SuperLikeGlassButton";
  *   - `interactive`: basışta camın kendi tepkisi (`.glass` stilinin bedava
  *     verdiği şey) korunsun.
  *   - tint YOK: berrak cam boyanmaz, boyanırsa `regular`dan farkı kalmaz.
- * Sağdaki süper beğeni butonu HÂLÂ `glassProminent`: o bir marka aksiyonu,
+ * Sağdaki Fire butonu HÂLÂ `glassProminent`: o bir marka aksiyonu,
  * bu ise gezinme kontrolü — yanında ikincil okunmalı.
  *
  * Fotoğraf üstünde yıkanma riskini şeridin kendi perdesi + blur'u karşılıyor
@@ -53,7 +53,7 @@ import { SUPER_LIKE_GLASS_SIZE } from "./SuperLikeGlassButton";
  */
 
 /**
- * Sağdaki süper beğeni kabuğundan BÜYÜK (44 → 52), bilerek.
+ * Sağdaki Fire kabuğundan BÜYÜK (44 → 52), bilerek.
  *
  * Aynı çapta çizildiğinde bu buton gözle daha küçük duruyordu: kardeşi
  * tint'li `glassProminent` — dolu, opak bir disk; bu ise berrak cam, yani
@@ -64,7 +64,7 @@ import { SUPER_LIKE_GLASS_SIZE } from "./SuperLikeGlassButton";
  * yerleştiriyor (bkz. CardStickyHeader), iki daire aynı dikey eksende ve
  * köşelerden aynı optik uzaklıkta kalıyor.
  */
-export const CARD_COLLAPSE_GLASS_SIZE = SUPER_LIKE_GLASS_SIZE + 8;
+export const CARD_COLLAPSE_GLASS_SIZE = FIRE_GLASS_SIZE + 8;
 
 /**
  * SwiftUI butonunun LABEL kutusu. Cam kabuk label'ı sarıyor, yani kabuğun
@@ -144,10 +144,10 @@ function CardCollapseGlassButton({ onPress, label }: Props) {
         height={CARD_COLLAPSE_GLASS_SIZE}
       >
         <Host
-          // Sağ üstteki süper beğeni kabuğuyla aynı sebep: bu buton da açık
+          // Sağ üstteki Fire kabuğuyla aynı sebep: bu buton da açık
           // kartta safe-area çizgisinin üstünde duruyor, host'un kendi payını
           // uygulaması camı aşağı itip kart oynayınca yukarı sıçratıyor
-          // (gerekçenin uzunu SuperLikeGlassButton'da).
+          // (gerekçenin uzunu FireGlassButton'da).
           ignoreSafeArea="container"
           style={{
             width: CARD_COLLAPSE_GLASS_SIZE,

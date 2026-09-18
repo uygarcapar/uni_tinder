@@ -26,6 +26,10 @@ export type RootStackParamList = {
   // route param'ı olmuyor. Başarıda oturum kapanıyor (yeni token DÖNMÜYOR),
   // yani bu ekrandan çıkış login'e — geri döndüğü yere değil.
   ChangeEmail: undefined;
+  // DEV — toast galerisi (Ayarlar'daki "LIT · dev" satırına basınca). Route
+  // yalnız `__DEV__` build'lerinde kayıtlı; tipte koşulsuz duruyor ki çağıran
+  // taraf `as never` cast'i yapmak zorunda kalmasın.
+  ToastGallery: undefined;
 };
 
 export type AuthStackParamList = {

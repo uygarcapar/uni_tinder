@@ -20,9 +20,9 @@ import { HAS_LIQUID_GLASS } from "@/shared/theme/glass";
  * KISAYOLU — listedeki tek anlamlı aksiyon o ve jesti keşfetmemiş kullanıcı
  * kartın üstünde hiçbir çıkış görmüyordu. İkisi aynı `onRecover`ı çağırıyor.
  *
- * Kabuk SuperLikeGlassButton ailesinden (iOS 26 liquid glass), ölçüsü küçük:
+ * Kabuk FireGlassButton ailesinden (iOS 26 liquid glass), ölçüsü küçük:
  * burası bir kart köşesi, kartın kapladığı alanla yarışmamalı. Kopyalanan
- * kurallar (gerekçeleri SuperLikeGlassButton'da):
+ * kurallar (gerekçeleri FireGlassButton'da):
  *   • Host'a SABİT ölçü — `matchContents` ilk karede 0×0 bırakıyor.
  *   • Glif SwiftUI'ın İÇİNE `RNHostView` ile gömülüyor, üstüne bindirilmiyor:
  *     iOS 26'nın basış animasyonunda cam ile glif birlikte ölçekleniyor.

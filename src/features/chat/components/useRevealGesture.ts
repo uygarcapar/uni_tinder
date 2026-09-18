@@ -2,6 +2,7 @@ import { useMemo } from "react";
 import { Gesture } from "react-native-gesture-handler";
 import { useSharedValue, withSpring } from "react-native-reanimated";
 import { KeyboardController } from "react-native-keyboard-controller";
+import { chatListTapClaimed } from "@/features/chat/listTapGuard";
 import { REVEAL_MAX } from "./RevealContext";
 
 /**
@@ -67,6 +68,11 @@ export function useRevealGesture() {
         .maxDuration(250)
         .maxDistance(12)
         .onEnd(() => {
+          // Dokunuşu liste İÇİNDEKİ bir kontrol aldıysa klavyeye dokunma: bu
+          // jest bir ATA jest, RN responder'ını görmüyor — sesli mesajın oynat
+          // düğmesine basınca ses çalıyor ama klavye de kapanıyordu
+          // (kullanıcı yazdığı mesajı bırakmadan dinleyemiyordu).
+          if (chatListTapClaimed()) return;
           KeyboardController.dismiss();
         }),
     [],

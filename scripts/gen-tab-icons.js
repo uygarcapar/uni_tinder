@@ -8,7 +8,7 @@
 
 const fs = require("fs");
 const path = require("path");
-const { parsePath, flatten } = require("./lib/glyphPath");
+const { parsePath, flatten, flattenPolylines } = require("./lib/glyphPath");
 const { writePNG } = require("./lib/png");
 
 const CANVAS_PT = 28; // ikon kutusu — SABİT: HIG'in tab ikon tavanı 32pt, 28
@@ -60,6 +60,40 @@ const GLYPHS = [
   // duruyor — göz kare bir kütleyi ince-uzun bir siluetten büyük okuyor.
   // 22 ile 22×21.9'a iniyor: yüksekliği kalbinkiyle (22.4) aynı hizaya geliyor.
   { file: "MessageGlyph.ts", constName: "MESSAGE_PATH", out: "message-tab", glyphPt: 22 },
+  // Ev de neredeyse KARE (19.88×20) → balonla birebir aynı dert, aynı ilaç:
+  // 22pt uzun kenar. Alev burada DURUYOR (flame-tab hâlâ üretiliyor): sekme
+  // ikonu eve geçse de alev glyph'i süper-beğeni yanışında ve premium
+  // rozetinde kullanılıyor.
+  { file: "HomeGlyph.ts", constName: "HOME_PATH", out: "home-tab", glyphPt: 22 },
+];
+
+// Çizgi (line-art) kaynaklı ikonlar — yukarıdakilerden AYRI liste, çünkü
+// yukarısı "dolu siluet + ondan türetilen iç kontur" varsayıyor ve bu sınıf o
+// varsayımı tutmuyor. Lucide ikonları dolgusuz, stroke-width 2, uçları yuvarlak
+// çoklu alt-path; üstelik arkadaki nesnelerin YALNIZ görünen kenarı çiziliyor,
+// yani alt-path'lerin bir kısmı AÇIK. Böyle bir şeyi doldurmak anlamlı bir
+// siluet vermiyor, çöp veriyor.
+//
+// Bu yüzden iki varyant şöyle türetiliyor:
+//   idle    → bütün alt-path'ler çizgi olarak (Lucide'ın kendi görünümü)
+//   focused → aynı çizgiler + `fillSubpaths`teki KAPALI alt-path'ler dolu
+// `fillSubpaths` indeksleri SVG'deki <path> sırasına göre. Açık bir alt-path'i
+// buraya koyma: kapanış kenarı uydurulur ve şekil bozulur.
+//
+// strokeWidth kaynak viewBox biriminde (Lucide'da 2/24) ve glyph ile AYNI
+// oranda ölçekleniyor — yoksa ikon küçülürken çizgi kalınlığı sabit kalır ve
+// 24pt'lik kutuda hamur gibi görünür.
+const LINE_GLYPHS = [
+  // Öndeki kart (indeks 0) kapalı ve zaten kompozisyonun odağı; odaklı
+  // varyantta onu doldurmak "dolu" okumasını veriyor, arkadaki iki kart çizgi
+  // kalınca yelpaze derinliği korunuyor.
+  {
+    svg: "assets/icons/lucide-playing-cards-fan.svg",
+    out: "cards-tab",
+    strokeWidth: 2,
+    fillSubpaths: [0],
+    glyphPt: 23,
+  },
 ];
 
 const segDist2 = (px, py, x0, y0, x1, y1) => {
@@ -185,4 +219,145 @@ for (const glyph of GLYPHS) {
     );
   }
 }
+// --- çizgi ikonları -----------------------------------------------------
+// Dolu siluet yolundan ayrı bir döngü: orada mürekkep "halkanın İÇİ", burada
+// "polyline'a uzaklık ≤ yarım kalınlık". Uzaklık ölçüsü yuvarlak uç ve yuvarlak
+// birleşimi bedavaya veriyor — Lucide'ın stroke-linecap/linejoin="round"
+// tanımıyla birebir örtüşüyor, ayrıca kap/join geometrisi kurmaya gerek yok.
+for (const glyph of LINE_GLYPHS) {
+  const svg = fs.readFileSync(path.join(ROOT, glyph.svg), "utf8");
+  const ds = [...svg.matchAll(/<path\b[^>]*\bd="([^"]+)"/g)].map((m) => m[1]);
+  if (!ds.length) throw new Error(`${glyph.svg}: <path d="…"> yok`);
+
+  // Alt-path'ler <path> sırasında KALMALI: fillSubpaths indeksleri buna göre.
+  const subpaths = ds.flatMap((d) => parsePath(d));
+  const lines = flattenPolylines(subpaths);
+
+  const fillSet = new Set(glyph.fillSubpaths ?? []);
+  for (const i of fillSet) {
+    if (!lines[i]) throw new Error(`${glyph.svg}: fillSubpaths[${i}] yok`);
+    if (!lines[i].closed) {
+      throw new Error(
+        `${glyph.svg}: alt-path ${i} AÇIK, doldurulamaz — fillSubpaths'ten çıkar`,
+      );
+    }
+  }
+
+  // bbox çizgi ORTASINDAN alınıyor; kalınlığın yarısı iki yana taşıyor, o yüzden
+  // ölçek hesabına stroke payı ekleniyor. Aksi halde ikon 28pt kutuda 1pt taşar.
+  let gx0 = Infinity,
+    gx1 = -Infinity,
+    gy0 = Infinity,
+    gy1 = -Infinity;
+  for (const { points } of lines) {
+    for (const [x, y] of points) {
+      gx0 = Math.min(gx0, x);
+      gx1 = Math.max(gx1, x);
+      gy0 = Math.min(gy0, y);
+      gy1 = Math.max(gy1, y);
+    }
+  }
+  const half = glyph.strokeWidth / 2;
+  gx0 -= half;
+  gy0 -= half;
+  gx1 += half;
+  gy1 += half;
+  const gw = gx1 - gx0,
+    gh = gy1 - gy0;
+  const glyphLong = Math.max(gw, gh);
+
+  for (const scale of [1, 2, 3]) {
+    const px = CANVAS_PT * scale * MUL;
+    const s = ((glyph.glyphPt ?? GLYPH_PT) * scale * MUL) / glyphLong;
+    const ox = (px - gw * s) / 2 - gx0 * s;
+    const oy = (px - gh * s) / 2 - gy0 * s;
+    // Kalınlık glyph ile AYNI oranda ölçekleniyor (bkz. LINE_GLYPHS notu).
+    const halfPx = half * s;
+    const half2 = halfPx * halfPx;
+
+    const P = lines.map(({ points, closed }) => ({
+      points: points.map(([x, y]) => [x * s + ox, y * s + oy]),
+      closed,
+    }));
+
+    const fill = Buffer.alloc(px * px * 4);
+    const line = Buffer.alloc(px * px * 4);
+
+    for (let y = 0; y < px; y++) {
+      for (let x = 0; x < px; x++) {
+        let hitFill = 0,
+          hitLine = 0;
+        for (let sy = 0; sy < SS; sy++) {
+          const py = y + (sy + 0.5) / SS;
+          for (let sx = 0; sx < SS; sx++) {
+            const pxs = x + (sx + 0.5) / SS;
+
+            let onLine = false;
+            for (const { points, closed } of P) {
+              const N = points.length;
+              // Açık polyline'da son→ilk kenarı YOK (kapanış uydurma olurdu).
+              const last = closed ? N : N - 1;
+              for (let e = 0; e < last; e++) {
+                const [x0, y0] = points[e];
+                const [x1, y1] = points[(e + 1) % N];
+                if (segDist2(pxs, py, x0, y0, x1, y1) <= half2) {
+                  onLine = true;
+                  break;
+                }
+              }
+              if (onLine) break;
+            }
+
+            let inFill = false;
+            for (const i of fillSet) {
+              const { points } = P[i];
+              const N = points.length;
+              let wind = 0;
+              for (let e = 0; e < N; e++) {
+                const [x0, y0] = points[e],
+                  [x1, y1] = points[(e + 1) % N];
+                const cr = (x1 - x0) * (py - y0) - (pxs - x0) * (y1 - y0);
+                if (y0 <= py) {
+                  if (y1 > py && cr > 0) wind++;
+                } else if (y1 <= py && cr < 0) wind--;
+              }
+              if (wind !== 0) {
+                inFill = true;
+                break;
+              }
+            }
+
+            if (onLine) hitLine++;
+            if (onLine || inFill) hitFill++;
+          }
+        }
+        const o = (y * px + x) * 4;
+        const put = (buf, hits) => {
+          const a = Math.round((hits / (SS * SS)) * 255);
+          if (PREVIEW) {
+            buf[o] = 255 - a;
+            buf[o + 1] = 255 - a;
+            buf[o + 2] = 255 - a;
+            buf[o + 3] = 255;
+          } else {
+            buf[o] = 255;
+            buf[o + 1] = 255;
+            buf[o + 2] = 255;
+            buf[o + 3] = a;
+          }
+        };
+        put(fill, hitFill);
+        put(line, hitLine);
+      }
+    }
+
+    const sfx = scale === 1 ? "" : `@${scale}x`;
+    writePNG(path.join(OUT_DIR, `${glyph.out}${sfx}.png`), px, px, fill);
+    writePNG(path.join(OUT_DIR, `${glyph.out}-outline${sfx}.png`), px, px, line);
+    console.log(
+      `${glyph.out} ${scale}x → ${px}×${px}px, çizgi ${(halfPx * 2).toFixed(2)}px`,
+    );
+  }
+}
+
 console.log(PREVIEW ? "önizleme: " + OUT_DIR : "yazıldı: " + OUT_DIR);

@@ -1,5 +1,5 @@
 import { ScrollView } from "react-native";
-import SuperLikeCard from "@/features/profile/components/SuperLikeCard";
+import FireCard from "@/features/profile/components/FireCard";
 import NoteCard from "@/features/profile/components/NoteCard";
 import PlusCard from "@/features/profile/components/PlusCard";
 import {
@@ -8,7 +8,7 @@ import {
 } from "@/features/profile/components/ConsumableShopCard";
 
 /**
- * ProfileScreen'in mağaza şeridi: SuperLike ve Not kartları yan yana, premium'da
+ * ProfileScreen'in mağaza şeridi: Fire ve Not kartları yan yana, premium'da
  * en solda bir de PlusCard.
  *
  * Eskiden tek kart vardı ve ekranın YARISINI kaplayıp sağını bilerek boş
@@ -16,7 +16,7 @@ import {
  * kendisi oldu.
  *
  * Şerit üçüncü kartla birlikte YATAY KAYDIRILIR oldu. Alternatif üç kartı
- * ekrana sığdırmaktı ama 1/3 genişlikte (~115px) rozetin yanında "Superlike Al"
+ * ekrana sığdırmaktı ama 1/3 genişlikte (~115px) rozetin yanında "Fire Al"
  * metnine 35px kalıyordu: kartların ya dikeye dönmesi ya rozetin epey küçülmesi
  * gerekirdi, yani premium kullanıcı free'den BAŞKA bir kart görürdü.
  *
@@ -66,7 +66,7 @@ export default function ShopCardsRow({
       }}
     >
       {showPlusCard && <PlusCard cardWidth={cardWidth} onPress={onPlusPress} />}
-      <SuperLikeCard cardWidth={cardWidth} />
+      <FireCard cardWidth={cardWidth} />
       <NoteCard cardWidth={cardWidth} />
     </ScrollView>
   );

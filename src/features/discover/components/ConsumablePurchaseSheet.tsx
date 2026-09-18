@@ -30,8 +30,8 @@ import { colors, gradients, ink } from "../../../shared/theme/colors";
 import { plainBlurTint } from "@/shared/theme/blur";
 
 /**
- * Consumable paket satın alma sheet'i — SuperLike ve not paketleri bunu
- * PAYLAŞIYOR (SuperLikePurchaseModal / NotePurchaseModal ince sarmalayıcı).
+ * Consumable paket satın alma sheet'i — Fire ve not paketleri bunu
+ * PAYLAŞIYOR (FirePurchaseModal / NotePurchaseModal ince sarmalayıcı).
  * Kurtarma paketi de kullanıyordu; ürün 2026-08-31'de kaldırıldı.
  *
  * Paketler RC'nin AYRI offering'lerinden geliyor (premium offering'i `current`,
@@ -101,9 +101,9 @@ export interface ConsumablePurchaseSheetProps {
   purchasePack: (
     pkg: PurchasesPackage,
   ) => Promise<{ transactionId: string | null; productId: string | null }>;
-  /** i18n anahtar öneki — `superLikePurchase` / `notePurchase`. */
+  /** i18n anahtar öneki — `firePurchase` / `notePurchase`. */
   i18nPrefix: string;
-  /** Analytics olay öneki — `superlike_pack` / `note_pack`. */
+  /** Analytics olay öneki — `fire_pack` / `note_pack`. */
   analyticsKind: string;
   /** Paket kartındaki simge. */
   renderGlyph: (size: number, color: string) => ReactNode;
@@ -116,11 +116,11 @@ export interface ConsumablePurchaseSheetProps {
   // ⚠️ `secondaryAction` KALDIRILDI (2026-08-31). Tek kullanıcısı kurtarma
   // sheet'iydi ("abonelik de bu hakkı veriyor" bağlantısı); kurtarma premium
   // ayrıcalığı olunca hem sheet hem bağlantı gereksizleşti. Kalan iki üründe
-  // (SuperLike / not) abonelik bir alternatif DEĞİL — ikisi de premium'da da
+  // (Fire / not) abonelik bir alternatif DEĞİL — ikisi de premium'da da
   // satın alınıyor, bağlantı yanlış vaat olurdu.
   /**
    * Açılışta en küçük kademeyi (listedeki ilk paket) seçili getirir. Kalan iki
-   * çağıranın (SuperLike / not) İKİSİ DE açıkça `true` geçiyor: boş seçimle
+   * çağıranın (Fire / not) İKİSİ DE açıkça `true` geçiyor: boş seçimle
    * açılıp CTA'yı ölü göstermek fazladan bir dokunuş istiyordu, seçim zaten tek
    * dokunuşla değişiyor. Varsayılanın KAPALI kalmasının sebebi kurtarma
    * sheet'iydi (seçimsiz açılıyordu) ve o sheet kaldırıldı — yani bugün hiçbir

@@ -43,5 +43,13 @@ coverage/
 # generated native folders
 /ios
 /android
+
+# Ekran kayıtları: assets/fourstack takipli bir dizin, buraya bırakılan ham
+# kayıtlar yanlışlıkla commit'lenmesin ve her EAS yüklemesinde tekrar
+# gönderilmesin (IPA'ya girmiyorlar, maliyet yalnız repo + upload tarafında).
+assets/fourstack/*.MP4
+assets/fourstack/*.mp4
+assets/fourstack/*.mov
 .icon-preview/
+.flame-preview/
 .splash-preview.html

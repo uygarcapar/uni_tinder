@@ -58,7 +58,7 @@ function triggerHaptic() {
 
 /**
  * @param swipeDisabled Kart yalnız OKUNUR açılır: yatay jest, X/tik satırı ve
- *   süper beğeni yok; şikayet/engelle kalır. "Kaçırdıkların" sekmesi için —
+ *   Fire yok; şikayet/engelle kalır. "Kaçırdıkların" sekmesi için —
  *   orada verilebilecek tek yanıt KURTARMA (hak harcar, bkz. LikesScreen'deki
  *   `handleRecover`) ve liste kartı da zaten sadece o butonu çiziyor. Detay
  *   açıldığında swipe'ın canlı kalması, listede olmayan bir aksiyonu (pas /
@@ -188,12 +188,19 @@ export default function LikerSwipeModal({
   };
 
   // ── Moderasyon (kart altındaki kırmızı satırlar) ─────────────────────────
-  // Şikayet için sheet'i ÖNCE kapatıyoruz: ReportModal da bir bottom sheet,
-  // ikisi üst üste binince alttaki jestleri yakalıyor.
+  // Şikayet sheet'i kartın ÜSTÜNE açılıyor, kart AÇIK KALIYOR — üç noktanın
+  // menüsüyle (ProfileOptionsSheet) birebir aynı düzen.
+  //
+  // ⚠️ Eskiden burada `onClose?.()` vardı: kart önce kapanıyor, şikayet sonra
+  // açılıyordu. İki bottom sheet'in üst üste binmesinden kaçınmak içindi ama
+  // bedeli, şikayetten vazgeçen kullanıcının kartı kaybetmesiydi — geri
+  // dönecek bir yer kalmıyordu, listeden yeniden bulup açmak gerekiyordu.
+  // Üst üste binme sorunu `stackBehavior="push"` ile çözülüyor (aşağıda):
+  // gorhom'un varsayılanı "switch" ve alttaki sheet'i MİNİMİZE ediyor, yani
+  // kart yine gözden kayboluyor.
   const handleReportPress = useCallback(() => {
     setReportTarget(profile?.userId ?? null);
-    onClose?.();
-  }, [profile?.userId, onClose]);
+  }, [profile?.userId]);
 
   const handleBlockPress = useCallback(() => {
     const userId = profile?.userId;
@@ -262,7 +269,10 @@ export default function LikerSwipeModal({
     // `handleSwipe`i susturmak yetmezdi: kart yine parmakla eğilir, tik/çarpı
     // perdesi (SwipeOverlay) yine yanar, yani ekran olmayan bir aksiyonu vaat
     // ederdi.
-    .enabled(!tutorialActive && !swipeDisabled)
+    // Üstüne bir sheet bindiyse (menü / şikayet) de kapalı: o sheet'in perdesi
+    // dokunuşu zaten yutuyor ama jesti açık bırakmak, perdenin kenarından
+    // sızan bir sürüklemenin ALTTAKİ kartı savurmasına açık kapı bırakırdı.
+    .enabled(!tutorialActive && !swipeDisabled && !optionsOpen && !reportTarget)
     .activeOffsetX([-10, 10])
     .failOffsetY([-15, 15])
     .onUpdate((event) => {
@@ -464,7 +474,7 @@ export default function LikerSwipeModal({
                     previewMode
                     expanded={false}
                     hideExpandHint
-                    hideSuperLike
+                    hideFire
                     // Jest kapalıysa kartın altındaki X/tik satırı da kalkar:
                     // ikisi AYNI aksiyonun iki yolu, birini bırakmak kapıyı
                     // kapatmamak olurdu. Moderasyon ikonları kalır — SwipeCard
@@ -529,17 +539,28 @@ export default function LikerSwipeModal({
         onBlock={handleBlockPress}
       />
 
-      {/* Şikayet akışı sheet'in KARDEŞİ — kart sheet'i kapandıktan sonra
-          açılır, iki bottom sheet üst üste binmez. */}
+      {/* Şikayet akışı — üç noktanın menüsü gibi kartın ÜSTÜNE biniyor
+          (`push`), kart açık kalıyor. Vazgeçen kullanıcı swipe-down/backdrop
+          ile kartın kendisine dönüyor.
+          ⚠️ `stackBehavior` ŞART: gorhom varsayılanı "switch" ve alttaki
+          sheet'i minimize ediyor — kart "önce kapandı" görüntüsü aynen geri
+          gelirdi. */}
       <ReportModal
         visible={!!reportTarget}
         onClose={() => setReportTarget(null)}
         reportedUserId={reportTarget}
+        stackBehavior="push"
         onSuccess={(result: any) => {
           // Şikayetle birlikte engellediyse bu kişi listede kalmasın.
           if (result?.blocked && reportTarget) {
             onSwipe?.(reportTarget, "block");
           }
+          // Şikayet GÖNDERİLDİ → kart da kapanır. Açık bırakmak, az önce
+          // şikayet edilen (ve çoğu zaman engellenmiş) profilin üstünde
+          // bırakırdı; engellenmişse kart zaten listeden düşmüş oluyor.
+          // Vazgeçme yolu bundan AYRI: orada `onSuccess` hiç çağrılmıyor,
+          // yalnız şikayet sheet'i kapanıp kart ortaya çıkıyor.
+          onClose?.();
         }}
       />
 

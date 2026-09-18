@@ -2,8 +2,8 @@
  * Davet sheet'i + profildeki ilerleme satırı (ReferralProgressRow).
  *
  * Suite dört hâli kilitliyor: ilerleme + sıradaki ödül, merdivenin sonu,
- * pasif kod, katılanlar listesi. Kopyala/paylaş da buradan çalışıyor.
- * Satır: başlık + sayı (2 / 3), basınca callback, veri yokken görünmez.
+ * pasif kod, ve katılanların ÇİZİLMEDİĞİ. Kopyala/paylaş da buradan çalışıyor.
+ * Satır: başlık + sayı (2/3), basınca callback, veri yokken görünmez.
  */
 
 const mockShare = jest.fn();
@@ -22,19 +22,16 @@ jest.mock('@/features/profile/referralQueries', () => ({
   useReferralSummary: () => ({ data: mockSummary }),
 }));
 
-jest.mock('@/shared/components/AppBottomSheet', () => {
-  const React = require('react');
-  const { View } = require('react-native');
-  return {
-    __esModule: true,
-    default: ({ visible, children }: any) =>
-      visible ? React.createElement(View, null, children) : null,
-  };
-});
-jest.mock('@gorhom/bottom-sheet', () => {
-  const { ScrollView } = require('react-native');
-  return { BottomSheetScrollView: ScrollView };
-});
+// Sheet artık AppModal'ın üstünde (progressive blur header + scroll'a bağlı
+// başlık). Paylaşılan mock header'ı düz bir View'a indiriyor — başlık METNİ
+// onda da var, yani `copy.sheet.title` ekranda İKİ kez geçiyor: header'ın
+// küçük başlığı + içerikteki büyük başlık.
+jest.mock('@/shared/components/AppModal');
+// Sheet artık alt payına home indicator'ı katıyor (içerik kadar açılan detent).
+jest.mock('react-native-safe-area-context', () => ({
+  useSafeAreaInsets: () => ({ top: 0, bottom: 34, left: 0, right: 0 }),
+  SafeAreaProvider: ({ children }: any) => children,
+}));
 
 import * as Clipboard from 'expo-clipboard';
 import { act, fireEvent, render } from '@testing-library/react-native';
@@ -72,7 +69,7 @@ it('kodu, ilerlemeyi ve sıradaki ödülü yazıyor', () => {
   const tree = setup();
   expect(tree.getByTestId('referral-sheet-code').props.children).toBe('AK7M2');
   expect(tree.getByText('2 / 3 arkadaş katıldı')).toBeTruthy();
-  expect(tree.getByText('Sıradaki ödül: Görünürlük filtresi · 30 gün')).toBeTruthy();
+  expect(tree.getByText('Sıradaki ödül: 30 günlük görünürlük filtresi')).toBeTruthy();
 });
 
 it('merdiven bitince "yeni ödüller yakında"', () => {
@@ -89,12 +86,15 @@ it('pasif kodda eylemler kapalı ve açıklama var', () => {
   expect(tree.getByTestId('referral-sheet-share').props.accessibilityState?.disabled).toBe(true);
 });
 
-it('katılanları ilk ad + durumla listeliyor', () => {
+it('katılanları ÇİZMİYOR — sayı ilerleme kartında', () => {
+  // Liste sheet'ten kaldırıldı: veri (`invitees`) hâlâ geliyor ama hiçbir ad
+  // ekrana basılmıyor. Testi tutuyoruz ki listeyi geri getiren bir değişiklik
+  // sessizce geçmesin — ad göstermek isteyen, gizlilik kuralını (yalnız ilk ad)
+  // yeniden düşünmek zorunda kalsın.
   const tree = setup();
-  expect(tree.getByText('Mert')).toBeTruthy();
-  expect(tree.getByText('Deniz')).toBeTruthy();
-  expect(tree.getByText(copy.sheet.statusQualified)).toBeTruthy();
-  expect(tree.getByText(copy.sheet.statusRejected)).toBeTruthy();
+  expect(tree.queryByText('Mert')).toBeNull();
+  expect(tree.queryByText('Deniz')).toBeNull();
+  expect(tree.getByText('2 / 3 arkadaş katıldı')).toBeTruthy();
 });
 
 it('kopyala panoya yazıp toast gösteriyor', async () => {
@@ -123,7 +123,8 @@ it('paylaş kodu ve linki taşıyor', async () => {
 it('veri yokken çökmüyor', () => {
   mockSummary = null;
   const tree = setup();
-  expect(tree.getByText(copy.sheet.title)).toBeTruthy();
+  // İki başlık birden (header + içerik) — bkz. AppModal mock notu.
+  expect(tree.getAllByText(copy.sheet.title).length).toBeGreaterThan(0);
 });
 
 describe('ReferralProgressRow', () => {
@@ -131,7 +132,8 @@ describe('ReferralProgressRow', () => {
     const onPress = jest.fn();
     const tree = render(<ReferralProgressRow onPress={onPress} />);
     expect(tree.getByText(copy.sheet.title)).toBeTruthy();
-    expect(tree.getByText('2 / 3')).toBeTruthy();
+    // Boşluksuz: accordion sayacıyla (`{current}/{max}`) aynı yazım.
+    expect(tree.getByText('2/3')).toBeTruthy();
     // Sıradaki ödül metni sheet'in işi, satırda tekrarlanmıyor.
     expect(tree.queryByText(/Sıradaki ödül/)).toBeNull();
     fireEvent.press(tree.getByTestId('referral-progress-row'));

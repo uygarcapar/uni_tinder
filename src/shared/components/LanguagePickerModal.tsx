@@ -113,6 +113,9 @@ export default function LanguagePickerModal({
       stackBehavior="push"
       actionLabel={t('common.done')}
       onAction={() => onConfirm(Array.from(selected))}
+      // X + "Bitti" uygulamanın yuvarlak cam ikon ölçüsünde (bkz. AppModal):
+      // X, ekran başlıklarındaki çan/ayarlar butonunun aynısı oluyor.
+      clearGlassHeader
     >
       {/* Arama input — CityPickerModal ile birebir */}
       <View style={{ position: "relative", marginBottom: 12 }}>

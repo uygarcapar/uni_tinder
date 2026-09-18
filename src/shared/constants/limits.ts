@@ -1,4 +1,4 @@
-// Swipe/SuperLike/Undo tavanları artık backend'den geliyor —
+// Swipe/Fire/Undo tavanları artık backend'den geliyor —
 // GET /api/swipe/Stats → dailySwipeLimit / weeklySuperLikeLimit / dailyUndoLimit.
 // Burada kopyası TUTULMUYOR; SwipeLimitsOptions değişirse FE otomatik uyar.
 

@@ -18,8 +18,6 @@ import Animated, {
   useSharedValue,
   useFrameCallback,
   runOnJS,
-  withRepeat,
-  withSequence,
   withTiming,
   Easing,
 } from "react-native-reanimated";
@@ -234,8 +232,9 @@ import { BlurView } from "expo-blur";
 import { easeGradient } from "react-native-easing-gradient";
 import { getColors } from "react-native-image-colors";
 import {
+  // `gradients` ARTIK BURADA YOK: kapaktaki Fire gradyanı bu dosyanın
+  // tek kullanıcısıydı, alevi çizen canvas'a taşındı (FireBurnCanvas).
   colors as theme,
-  gradients,
   ink,
   isLight,
   scrimAt,
@@ -260,13 +259,14 @@ import PremiumBadge from "@/shared/components/PremiumBadge";
 import SelfieVerifiedBadge, {
   selfieBadgeSize,
 } from "@/features/profile/components/SelfieVerifiedBadge";
-import SuperLikeGlyph from "@/shared/components/SuperLikeGlyph";
-import SuperLikeGlassButton, {
-  SUPER_LIKE_GLASS_INSET,
-  SUPER_LIKE_GLASS_SIZE,
-  SUPER_LIKE_INSET,
-  SUPER_LIKE_SIZE,
-} from "./SuperLikeGlassButton";
+import FireBurnCanvas from "./FireBurnCanvas";
+import { BURN_HZ_MAX, BURN_HZ_MIN } from "./flameBurn";
+import FireGlassButton, {
+  FIRE_GLASS_INSET,
+  FIRE_GLASS_SIZE,
+  FIRE_INSET,
+  FIRE_SIZE,
+} from "./FireGlassButton";
 import CardStickyHeader, {
   CARD_CHROME_TOP_DROP,
   CARD_EXPANDED_CORNER_RADIUS,
@@ -305,21 +305,21 @@ const { height } = Dimensions.get("window");
  */
 const CARD_BOX_FALLBACK_HEIGHT = height;
 
-// Kapaktaki serbest kalp → sağ üstte ASILI KALAN cam buton geçişi
-// (bkz. SuperLikeGlassButton). İkisi aynı noktada duruyor ve çekme oranı
+// Kapaktaki serbest alev → sağ üstte ASILI KALAN cam buton geçişi
+// (bkz. FireGlassButton). İkisi aynı noktada duruyor ve çekme oranı
 // (cardExpandAnim) bu bantlarda ilerledikçe biri sönerken diğeri beliriyor:
 // jest yarıda bırakılırsa geçiş de yarıda kalır, parmakla geri sarılabilir.
 //
 // Bantlar KASTEN üst üste biniyor (0.30-0.45): kesişimde iki katman da yarı
 // saydam olduğu için tek bir şeklin kabuk değiştirmesi gibi okunuyor — arka
 // arkaya kaybolan/beliren iki ayrı öğe gibi değil.
-// Geçiş YALNIZ opaklıkla: bir dönem serbest kalp cam butonun içindeki glyph
-// ölçüsüne doğru küçülüyordu (HEART_MORPH_SCALE), ama iki şekil aynı noktada
-// olduğu için küçülme "kabuk değiştirme" değil "bir şey gitti, başka bir şey
-// geldi" gibi okunuyordu. İkisi de ölçüsünü KORUYOR.
-const HEART_MORPH_OUT_END = 0.45;
-const HEART_MORPH_IN_START = 0.3;
-const HEART_MORPH_IN_END = 0.8;
+// Geçiş YALNIZ opaklıkla: bir dönem serbest glyph cam butonun içindekinin
+// ölçüsüne doğru küçülüyordu, ama iki şekil aynı noktada olduğu için küçülme
+// "kabuk değiştirme" değil "bir şey gitti, başka bir şey geldi" gibi
+// okunuyordu. İkisi de ölçüsünü KORUYOR.
+const FIRE_MORPH_OUT_END = 0.45;
+const FIRE_MORPH_IN_START = 0.3;
+const FIRE_MORPH_IN_END = 0.8;
 
 // Kapak fotoğrafındaki isim satırının puntosu. 36 → 32 → 28 küçüldü; rozet
 // ondan TÜRETİLDİĞİ için sayı burada duruyor, JSX'te değil.
@@ -531,10 +531,10 @@ const PANEL_BOUNCE_PAD = 180;
 const COVER_TEXT_RAMP_HEIGHT = 340;
 
 /**
- * Kapağın TEPESİNDEKİ rampanın boyu (px) — durum çubuğu ile süper beğeni
- * kalbinin durduğu bandı kapsar.
+ * Kapağın TEPESİNDEKİ rampanın boyu (px) — durum çubuğu ile Fire
+ * alevinin durduğu bandı kapsar.
  *
- * Kalp fotoğrafın tepesinden SUPER_LIKE_INSET kadar aşağıda ve kendi boyu
+ * Alev fotoğrafın tepesinden FIRE_INSET kadar aşağıda ve kendi boyu
  * kadar yer kaplıyor; açık kartta bu bandın üstünde bir de durum çubuğu var
  * (kart ekranın tepesine kadar çıkıyor). Rampa ikisinin de altında bitmeli.
  */
@@ -932,9 +932,10 @@ function CoverMeltBand({
 // o yüzden nötr ton fotoğrafta da prompt kutusunda da kaybolmuyor.
 //
 // İŞARET: içinde SF `bubble.left` duran opak litPlus daireydi; şimdi işaretin
-// kendisi konuşma balonu — uygulama ikonundan sökülen glyph (NoteGlyph),
-// super-like kalbinin (SuperLikeGlyph) kardeşi. İki balon (kap + ikon) üst üste
-// binmesin diye tek siluete indi.
+// kendisi konuşma balonu — uygulama ikonundan sökülen glyph (NoteGlyph). İki
+// balon (kap + ikon) üst üste binmesin diye tek siluete indi. Bir dönem
+// fire glyph'iyle kardeşti (ikisi de app-icon'dan); o artık alev, bu
+// balon app-icon'da kaldı.
 //
 // ZEMİN: yalnız FOTOĞRAF üstünde, işaretin arkasına disk konuyor
 // (NOTE_DISC_SIZE). Rengi bölüm kutularınınkiyle AYNI — koyuda siyah, açıkta
@@ -1047,8 +1048,8 @@ function NoteBox({
   const { t } = useTranslation();
   // Basma geri bildirimi SADECE ölçek — opacity sabit (activeOpacity=1).
   // Gradyan dolgu soluklaşınca kutu "sönmüş" gibi duruyordu; küçülme aynı
-  // dokunulma hissini rengi bozmadan veriyor. Super-like kalbindeki
-  // heartPressAnim ile aynı kalıp ve aynı 180ms/out-quad zamanlaması.
+  // dokunulma hissini rengi bozmadan veriyor. Fire alevindeki
+  // firePressAnim ile aynı kalıp ve aynı 180ms/out-quad zamanlaması.
   const pressAnim = useSharedValue(0);
   const pressStyle = useAnimatedStyle(() => ({
     transform: [{ scale: 1 - 0.06 * pressAnim.value }],
@@ -1094,7 +1095,7 @@ function NoteBox({
         {/* İşaretin tamamı bu: metin de kalan hak sayısı da YOK. Glyph dokunma
             kabının içinde ortalı, ondan küçük (zemine göre iki ölçü,
             bkz. NOTE_GLYPH_SIZE_*) — kendi 2/24'lük optik payı da cabası.
-            Kontur kapak kalbindeki ile aynı ince açık hairline: fotoğrafın
+            Kontur kapak alevindeki ile aynı ince açık hairline: fotoğrafın
             parlak yerlerinde siluetin kenarını tutuyor.
 
             FOTOĞRAF ÜSTÜNDE glyph'in arkasında disk var (bkz. ZEMİN notu):
@@ -1549,7 +1550,7 @@ interface SwipeCardProps {
   hideActions?: boolean;
   onPass?: () => void;
   onLike?: () => void;
-  onSuperLike?: () => void;
+  onFire?: () => void;
   /** Expand sonrası native scroll konumu — SwipeWrapper'ın pan'i okuyor. */
   scrollY?: SharedValue<number>;
   /**
@@ -1570,8 +1571,14 @@ interface SwipeCardProps {
   topHitSpeed?: SharedValue<number>;
   /** Pan ile simultaneous çalışan Gesture.Native() örneği. */
   nativeScrollGesture?: ReturnType<typeof Gesture.Native>;
-  /** Pull-down süper beğeni doluluk oranı (0-1). */
-  superLikeProgress?: SharedValue<number>;
+  /** Pull-down Fire doluluk oranı (0-1). */
+  fireProgress?: SharedValue<number>;
+  /**
+   * Dikey jest SÜRÜYOR mu (0/1) — oranı değil, parmağın ekranda olup
+   * olmadığını (bkz. SwipeWrapper > pullActive). Önizlemede pan yok, o yüzden
+   * opsiyonel.
+   */
+  pullActive?: SharedValue<number>;
   isTopCard?: boolean;
   expanded?: boolean;
   /**
@@ -1591,7 +1598,7 @@ interface SwipeCardProps {
    * gösteriyor, yani kaydırılacak bir şey kalmıyor.
    */
   hideExpandHint?: boolean;
-  hideSuperLike?: boolean;
+  hideFire?: boolean;
   onExpandPress?: () => void;
   /**
    * Kartın en altındaki kırmızı moderasyon ikonları. VERİLMEZSE ÇİZİLMEZ —
@@ -1679,18 +1686,19 @@ export default function SwipeCard({
   hideActions = false,
   onPass,
   onLike,
-  onSuperLike,
+  onFire,
   scrollY,
   scrollRef,
   scrollMax,
   topHitSpeed,
   nativeScrollGesture,
-  superLikeProgress,
+  fireProgress,
+  pullActive,
   isTopCard = true,
   expanded = false,
   previewMode = false,
   hideExpandHint = false,
-  hideSuperLike = false,
+  hideFire = false,
   onExpandPress,
   zoomImpact,
   onReport,
@@ -1852,7 +1860,7 @@ export default function SwipeCard({
    * Kapak KROMUNUN devri — panelin açılışından AYRI zamanlanıyor.
    *
    * Krom = kapağın üstünde duran ve açık kartta yeri olmayan katman: isim +
-   * pill bloğu, "yukarı kaydır" ipucu ve serbest süper beğeni kalbi (o sönmez,
+   * pill bloğu, "yukarı kaydır" ipucu ve serbest Fire alevi (o sönmez,
    * sağ üstteki cam butona dönüşür). Bu katman PARMAKLA devroluyor — çekiş
    * boyunca ilerler, eşikte biter — panel ise ancak BIRAKILINCA açılıyor.
    * Gerekçesi ve sıfırlanma yolları uiBus'ta (bkz. cardChromeAnim).
@@ -1864,7 +1872,7 @@ export default function SwipeCard({
   const chromeAnim = previewMode ? localExpandAnim : topChromeAnim;
 
   /**
-   * Üst şeridin (sağ üstte süper beğeni, solda isim satırı) durum çubuğundan
+   * Üst şeridin (sağ üstte Fire, solda isim satırı) durum çubuğundan
    * kaçmak için aldığı pay — bkz. CARD_CHROME_TOP_DROP.
    *
    * ÖNİZLEMEDE 0, çünkü orada bu katmanlar kartın İÇİNDE değil: sheet kendi
@@ -2018,7 +2026,7 @@ export default function SwipeCard({
   // hareket okunuyordu. Zoom yolu duruyor, çünkü kartı SARAN scroller'lar
   // (PreviewModal · LikerSwipeModal) sinyali dışarıdan sürmeye devam ediyor.
   //
-  // Zoom SADECE foto katmanına uygulanır (bullets/blur/kalp/isim ayrı kardeş
+  // Zoom SADECE foto katmanına uygulanır (bullets/blur/alev/isim ayrı kardeş
   // katmanlar) → overlay'ler ölçeklenmez, foto clipping kutusu ve köşe
   // yuvarlaklığı sabit kalır.
   const localPhotoZoom = useSharedValue(0);
@@ -2337,7 +2345,7 @@ export default function SwipeCard({
    *
    * Fotoğraf kabuktan uzun ve `-(PHOTO_CROP + expandedLift × (1−p))` konumunda
    * duruyor (bkz. photoRevealStyle), yani kapalı kartta üst ucundan ~130px
-   * kırpılıyor. `top` ile yerleşen her şey — serbest süper beğeni kalbi — o
+   * kırpılıyor. `top` ile yerleşen her şey — serbest Fire alevi — o
    * kırpılan bantta kalıp hiç görünmüyordu. Aynı payı geri vererek katmanı
    * kartın görünen tepesine sabitliyoruz.
    *
@@ -2625,95 +2633,157 @@ export default function SwipeCard({
   const scrollViewRef = scrollRef ?? localScrollRef;
 
   // Pan-driven expand: cardExpandAnim SwipeWrapper.verticalPan tarafından
-  // sürülüyor (rubber-band). Scroll sadece scrollY tracking için (super-like
+  // sürülüyor (rubber-band). Scroll sadece scrollY tracking için (fire
   // detection); cardExpandAnim'i yazmaz çünkü ScrollView ancak expand sonrası
   // aktif olur ve expand state'inde cardExpandAnim 1'de sabit kalır.
   // Scroll handler + alt-uç bounce mantığı BounceScrollView içinde.
 
-  // Pull-down (super-like) sırasında kalp: fill rengi DEĞİŞMEZ, sadece büyür
-  // ve threshold'a doğru artan hızda titreşir.
-  // shakePhase her frame'de progress'e bağlı bir frekansla ilerler → titreşim
-  // hızı pull arttıkça artar (useFrameCallback ile UI thread'de).
-  // heartPressAnim: kalbe basılı tutunca da aynı animasyon threshold'u geçmiş
-  // (p=1) haliyle oynar — pull ile press'ten hangisi büyükse o sürer.
-  const heartPressAnim = useSharedValue(0);
-  const shakePhase = useSharedValue(0);
+  // Pull-down (fire) sırasında ikon YANIYOR: alevin KIVRIK UCU — ikonun
+  // duran halinde de orada olan dalga — dalgalanıyor, eşiğe yaklaştıkça
+  // hızlanıp kızışıyor. İkona bir şey EKLENMİYOR, silüet her karede ikonun ta
+  // kendisi. Çizim ve geometri ayrı dosyalarda (bkz. FireBurnCanvas /
+  // flameBurn); burada yalnız İKİ SAAT duruyor.
+  //
+  // Eskiden ikon bir KALPTİ ve buradaki tek sinüs onu `rotate ±8°` ile
+  // titretiyordu. Alevde eşik sinyali tek bir kanalda değil: dalganın hızı ve
+  // genliği, ikonun ısı rengi ve ışıması aynı orandan besleniyor.
+  //
+  // firePressAnim: ikona basılı tutunca da aynı animasyon eşiği geçmiş (p=1)
+  // haliyle oynar — pull ile press'ten hangisi büyükse o sürer.
+  const firePressAnim = useSharedValue(0);
+  /**
+   * Parmak ikonun ÜSTÜNDE mi (0/1) — `firePressAnim`in yavaşlayan
+   * rampasından ayrı. Rampa bırakışta 180 ms boyunca iniyor; büyümenin mandalı
+   * ona bakarsa ikon parmak kalktıktan sonra da büyük kalıyor.
+   */
+  const firePressHeld = useSharedValue(0);
+  /** 0..1 yanma oranı — canvas bunu okuyor. */
+  const burnHeat = useSharedValue(0);
+  /** Dalga saati, TUR cinsinden ve 1'de sarılıyor (bkz. flameBurn). */
+  const burnPhase = useSharedValue(0);
+  /**
+   * MANDALLI büyüme: jest başladı mı (0/1), ne kadar ilerledi DEĞİL.
+   *
+   * Isıdan ayrı bir kanal, çünkü ikisi farklı şey söylüyor: ısı "eşiğe ne kadar
+   * kaldı" (dalgayı süren oran), bu ise "bu jest başladı". Bir tur büyüme de
+   * ısıyla çarpılıyordu ve ikon parmak oynadıkça büyüyüp küçülüyordu — oranı
+   * zaten dalga anlatıyor, ikonun boyu onu tekrar etmek yerine jestin kendisini
+   * işaretliyor.
+   */
+  const burnGrow = useSharedValue(0);
   useFrameCallback((frame) => {
     "worklet";
-    const pull = superLikeProgress ? superLikeProgress.value : 0;
-    const p = Math.max(pull, heartPressAnim.value);
+    const pull = fireProgress ? fireProgress.value : 0;
+    const p = Math.max(pull, firePressAnim.value);
     if (p <= 0.001) {
-      shakePhase.value = 0;
+      // Sönükken İKİSİ DE sıfırlanıyor: ısı 0'da canvas saf ikonu çiziyor ve
+      // faz ilerlemediği için silüeti yeniden kurmuyor — dinlenen kart bedava.
+      // Fazı sıfırlamak sıçrama yapmaz, çünkü ısı 0'da faz şekli etkilemiyor.
+      if (burnHeat.value !== 0) burnHeat.value = 0;
+      if (burnPhase.value !== 0) burnPhase.value = 0;
       return;
     }
+    burnHeat.value = p;
     const dt = frame.timeSincePreviousFrame ?? 16;
-    // p: 0→1 iken frekans ~4→16 döngü/sn → threshold'a yaklaştıkça hızlanır.
-    const freq = 4 + p * 12;
-    shakePhase.value += (dt / 1000) * freq;
+    // p: 0→1 iken 1.1→2.0 tur/sn. Dalganın kare hızı bunun BURN_FLICKER_FRAMES
+    // katı (≈11→20 fps), akma ve kabarma da aynı saatten.
+    const freq = BURN_HZ_MIN + p * (BURN_HZ_MAX - BURN_HZ_MIN);
+    // Modulo şart: sayı büyüdükçe `floor(phase * FRAMES)` hassasiyet kaybeder.
+    // Sarma diksiz, çünkü bütün harmonikler tam sayı (bkz. flameBurn).
+    burnPhase.value = (burnPhase.value + (dt / 1000) * freq) % 1;
   });
-  // Aynı style expand morph'unu da taşıyor (ayrı bir useAnimatedStyle DEĞİL):
-  // iki style de `transform` yazsaydı sonraki diziyi tamamen ezerdi, pull
-  // scale/rotate'i kaybolurdu. Çakışma riski yok, çünkü SwipeWrapper'da
-  // pull-down (super-like) ile pull-up (expand) ayrı dallar — ikisi aynı anda
-  // ilerlemiyor.
-  const heartPullStyle = useAnimatedStyle(() => {
-    const pull = superLikeProgress ? superLikeProgress.value : 0;
-    const p = Math.max(pull, heartPressAnim.value);
-    const amp = p * 8; // titreşim genliği (derece), pull arttıkça artar
-    const angle = Math.sin(shakePhase.value * Math.PI * 2) * amp;
-    // Expand ederken yerini cam butona bırakır: söner + glyph ölçüsüne küçülür.
-    // KROM kanalında (expandAnim değil): kabuk değiştirme parmakla çekilirken
-    // oluyor ve eşikte bitiyor, panel daha açılmadan — bkz. chromeAnim.
+
+  /**
+   * Büyümenin mandalı: ısı sıfırdan ayrılır ayrılmaz açılıyor, sıfıra dönünce
+   * kapanıyor — ARADA ISIYI HİÇ OKUMUYOR, o yüzden parmak ileri geri oynarken
+   * ikon nefes almıyor.
+   *
+   * Eşik `0.001`: `useFrameCallback` ısıyı tam sıfıra ancak jest bittiğinde
+   * çekiyor (bkz. yukarıdaki erken dönüş), yani bu karşılaştırma "jest sürüyor
+   * mu" sorusunun kendisi.
+   */
+  useAnimatedReaction(
+    () => {
+      // PARMAK EKRANDA MI — ısının kendisi DEĞİL. Isı bırakışta yayla iniyor ve
+      // 0.001'in altına saniyeler sonra düşüyor; ona bakan bir mandal parmak
+      // kalktıktan çok sonra kapanıyor, yani ikon büyük asılı kalıyordu.
+      // `pullActive` ile `firePressHeld` iki gerçek "parmak orada" sinyali
+      // ve ikisi de bırakış anında sıfırlanıyor.
+      const dragging =
+        (pullActive ? pullActive.value : 0) > 0 &&
+        (fireProgress ? fireProgress.value : 0) > 0.001;
+      return dragging || firePressHeld.value > 0;
+    },
+    (engaged, wasEngaged) => {
+      // Yalnız GEÇİŞ anında: reaction her karede çalışıyor, koşulsuz yazmak
+      // animasyonu her karede yeniden başlatır ve büyüme hiç oturmaz.
+      if (engaged === wasEngaged) return;
+      burnGrow.value = withTiming(engaged ? 1 : 0, {
+        // Küçülme BÜYÜMEDEN HIZLI: büyüme jestin başladığını ilan ediyor ve
+        // yerine oturması gerekiyor, küçülme ise sadece "bitti" — geciken her
+        // ms orada asılı kalmış gibi duruyor.
+        duration: engaged ? 140 : 90,
+        easing: Easing.out(Easing.quad),
+      });
+    },
+  );
+  /**
+   * Serbest alevin EXPAND kanalı — yanmanın kendisi burada DEĞİL.
+   *
+   * Yanma tamamen Skia tarafında, silüetin dış hattının içinde (bkz. flameBurn).
+   * Buraya geri taşıma: RN tarafında ölçeklemek ışımayı da ölçekler, ayrıca
+   * alevin tabandan pivotlanması `transformOrigin` ile ancak yaklaşık
+   * tutturuluyordu.
+   *
+   * Kalan iş cam butonla çapraz sönme: expand ederken alev yerini aynı
+   * noktadaki cam butona bırakıyor. KROM kanalında (expandAnim değil): kabuk
+   * değiştirme parmakla çekilirken oluyor ve eşikte bitiyor, panel daha
+   * açılmadan — bkz. chromeAnim.
+   */
+  const fireMorphStyle = useAnimatedStyle(() => {
     const morph = Math.min(
       1,
-      Math.max(0, chromeAnim.value / HEART_MORPH_OUT_END),
+      Math.max(0, chromeAnim.value / FIRE_MORPH_OUT_END),
     );
-    // Morph ÖLÇEĞE dokunmuyor: geçiş yalnız opaklıkla. Kalp küçülüp cam buton
-    // büyüyerek yer değiştiriyordu; istenen, ikisinin aynı boyda kalıp
-    // birbirine ÇAPRAZ SÖNMESİ. Kalan çarpan basılma geri bildirimi.
-    const scale = 1 + p * 0.35;
-    // Cam ikizi SABİT olarak cornerDrop kadar aşağıda duruyor; kalp oraya
+    // Geçiş yalnız OPAKLIKLA: iki şekil aynı boyda kalıp birbirine çapraz
+    // sönüyor. Ölçekle yapılınca kabuk değiştirme değil yer değiştirme gibi
+    // okunuyordu.
+    //
+    // Cam ikizi SABİT olarak cornerDrop kadar aşağıda duruyor; alev oraya
     // sönerken yaklaşsın: kesişme bandında (0.30-0.45) iki şekil üst üste
-    // olmalı, yoksa kabuk değiştirme değil yer değiştirme gibi okunur.
-    // `morph` üzerinden ilerliyor (expandAnim değil): kayma tam kalp
+    // olmalı. `morph` üzerinden ilerliyor (expandAnim değil): kayma tam alev
     // görünmez olduğu anda (0.45) tamamlanıyor, kesişmede fark ≤3px kalıyor.
-    // translateY EN BAŞTA: ölçekten sonra gelirse kayma da ölçeklenir.
-    const drop = cornerDrop * morph;
     return {
       opacity: 1 - morph,
-      transform: [
-        { translateY: drop },
-        { scale },
-        { rotate: `${angle}deg` },
-      ] as const,
+      transform: [{ translateY: cornerDrop * morph }] as const,
     };
   });
 
   /**
-   * Asılı cam buton — serbest kalbin tersi bantta belirir. Konumu burada YOK:
+   * Asılı cam buton — serbest alevin tersi bantta belirir. Konumu burada YOK:
    * cornerDrop sabit olduğu için statik style'da duruyor (bkz. aşağıdaki
    * `top`), animasyonlu bir layout prop'u da olmuyor.
    *
    * GİZLEME ÖLÇEKLE, OPAKLIKLA DEĞİL. `opacity: p` ile gizleniyordu ve cam
    * yüzeyler alfayla KAYBOLMUYOR: alfa 0'da bile native taraf efekti çizmeye
    * devam ediyordu. Sonuç, kapalı kartta sağ üstte duran turuncu bir disk —
-   * üstelik altındaki gradyanlı serbest kalbi de örtüyordu.
+   * üstelik altındaki gradyanlı serbest alevi de örtüyordu.
    *
    * Ölçek 0'a gitmiyor, 0.01'de duruyor: tam sıfır ölçekte katman kimi karede
    * hiç layout almıyor ve cam geri geldiğinde ilk `layoutSubviews` turunu
    * kaçırıp boş kalabiliyor (efekt o turda kuruluyor).
    */
-  const superLikeStickyStyle = useAnimatedStyle(() => {
+  const fireStickyStyle = useAnimatedStyle(() => {
     const p = Math.min(
       1,
       Math.max(
         0,
-        (chromeAnim.value - HEART_MORPH_IN_START) /
-          (HEART_MORPH_IN_END - HEART_MORPH_IN_START),
+        (chromeAnim.value - FIRE_MORPH_IN_START) /
+          (FIRE_MORPH_IN_END - FIRE_MORPH_IN_START),
       ),
     );
     return {
-      // Geçiş OPAKLIKLA, boy sabit — serbest kalple çapraz sönüyorlar.
+      // Geçiş OPAKLIKLA, boy sabit — serbest alevle çapraz sönüyorlar.
       opacity: p,
       // Ölçek yalnız bir AÇMA/KAPAMA anahtarı, animasyon değil: cam yüzeyler
       // alfa 0'da bile çizilmeye devam ediyor (kapalı kartta sağ üstte duran
@@ -2734,26 +2804,12 @@ export default function SwipeCard({
   // scroll'la değil. Eşik ölçen üç parça (nameBlockBottom, bu efekt ve
   // CardStickyHeader'daki `triggerY`) birlikte silindi.
 
-  // Premium vurgusu — super-like kalbi üzerinde 6sn'de bir soldan sağa geçen
-  // shimmer parıltısı. Sweep ~1.7sn sürer, ardından 4.3sn bekler (toplam 6sn döngü).
-  const heartShimmer = useSharedValue(0);
-  useEffect(() => {
-    heartShimmer.value = 0;
-    heartShimmer.value = withRepeat(
-      withSequence(
-        withTiming(1, { duration: 1700, easing: Easing.inOut(Easing.ease) }),
-        withTiming(0, { duration: 0 }),
-        withTiming(0, { duration: 4300 }),
-      ),
-      -1,
-      false,
-    );
-  }, [heartShimmer]);
-  // Band kalpten çok geniş (150px) → parıltının falloff'u daha da uzun bir
-  // mesafeye yayılır = iyice yumuşak, göz almayan geçiş. Peak -150→+55 arası.
-  const heartShimmerStyle = useAnimatedStyle(() => ({
-    transform: [{ translateX: -150 + heartShimmer.value * 205 }],
-  }));
+  // ── FIRE PARILTISI ARTIK BURADA DEĞİL ────────────────────────────
+  // Premium vurgusu (6 sn'de bir soldan sağa geçen shimmer) kalp şeklinde bir
+  // `MaskedView` bandı olarak buradaydı. Silüet artık her karede değişebildiği
+  // için maske de sabit değil: parıltı, alevi çizen canvas'ın içine taşındı ve
+  // aynı path'ten kırpılıyor (bkz. FireBurnCanvas). Ritmi aynı: 1.7 sn
+  // süpürme + 4.3 sn bekleme.
 
   if (!profile) return null;
 
@@ -3316,7 +3372,7 @@ export default function SwipeCard({
                 panelin en üstüne, ismin ALTINA taşındı (aşağıda). Kapakla
                 birlikte yalnız ona ait katmanlar da gidiyor: üst/alt blur,
                 foto üstündeki isim + pill bloğu, chevron, kapak not kutusu ve
-                serbest kalp — hepsi önizlemede zaten gizli ya da görünmezdi.
+                serbest alev — hepsi önizlemede zaten gizli ya da görünmezdi.
 
                 Yerini KART ZEMİNİNDE bir boşluk almıyor: panel kartın tepesine
                 dayanıyor ve nefes payını kendi içinde taşıyor
@@ -3347,7 +3403,7 @@ export default function SwipeCard({
               {/* ── MEDYA GRUBU ────────────────────────────────────────────
                   Kapağın zemini, fotoğrafsız profilin gradyanı ve fotoğrafın
                   kendisi. Yani "kapak" olarak görünen her opak katman; kromu
-                  (isim, piller, not kutusu, süper beğeni) bu grubun DIŞINDA.
+                  (isim, piller, not kutusu, Fire) bu grubun DIŞINDA.
 
                   DİPTEKİ SÖNME RAMPASI GERİ GELDİ (istek), ama 260px değil
                   COVER_BOTTOM_MELT_HEIGHT ve YALNIZ AÇIK KARTTA. Bir dönem
@@ -3506,14 +3562,14 @@ export default function SwipeCard({
 
               {/* KAPAĞIN TEPESİNDEKİ RAMPA — yukarıdan aşağı AZALAN blur +
                   gölge. Altında durum çubuğu (açık kartta kart ekranın
-                  tepesine çıkıyor) ve süper beğeni kalbi duruyor; ikisi de
+                  tepesine çıkıyor) ve Fire alevi duruyor; ikisi de
                   sabit beyaz, açık bir fotoğrafta perdesiz okunmuyorlar.
 
                   Kapağın kırpılan üst payı kadar aşağı çekiliyor
-                  (coverTopAnchorStyle) — yoksa kalple aynı şekilde görünmeyen
+                  (coverTopAnchorStyle) — yoksa alevle aynı şekilde görünmeyen
                   bantta kalır.
 
-                  Kalpten ÖNCE çiziliyor: rampa onun altında kalmalı. */}
+                  Alevden ÖNCE çiziliyor: rampa onun altında kalmalı. */}
               <Animated.View
                 pointerEvents="none"
                 style={[
@@ -3639,47 +3695,64 @@ export default function SwipeCard({
                   dibinde keskin bir çizgi olarak duruyor — erime maskesi
                   fotoğrafı söndürse bile o dikdörtgen sönmüyordu. */}
 
-              {/* Super Like Button — COLLAPSED duruş. Uygulamaya özel kalp
-                  glyph'i (SuperLikeGlyph); lucide Heart değil.
+              {/* Fire Button — COLLAPSED duruş. Uygulamaya özel ALEV
+                  glyph'i (bkz. FireGlyph); SF/lucide flame değil ve artık
+                  kalp de değil.
 
                   Kapak fotoğrafının İÇİNDE, scroll içeriğinin parçası ve
-                  zeminsiz: fotoğrafın üstünde kalbin kendi gradyanı ile ince
+                  zeminsiz: fotoğrafın üstünde alevin kendi gradyanı ile ince
                   kenarı okunurluk için yetiyor.
+
+                  ÇİZİMİ SKIA YAPIYOR (bkz. FireBurnCanvas), çünkü çekme
+                  sırasında silüetin kendisi oynuyor — RN tarafında bu, maskeyi
+                  her karede yeniden kurmak demekti. Canvas ikonun kutusundan
+                  TAŞIYOR (uçlar + ışıma); kutuyu buradaki View veriyor, taşma
+                  payını canvas kendi içinde hesaplıyor.
 
                   EXPAND EDİLİRKEN yerini aynı noktadaki cam butona bırakır
                   (aşağıda, ScrollWrapper'ın DIŞINDA) — çekme oranıyla sönerek.
-                  Sticky duruşta kalp panel zemininin üstüne de binebildiği
+                  Sticky duruşta alev panel zemininin üstüne de binebildiği
                   için orada zemin şart; onu artık liquid glass kabuk taşıyor.
 
                   pointerEvents: expanded'ken görünmez olsa da hitSlop'u cam
                   butonun çevresinde dokunma yakalamaya devam ederdi. */}
-              {!hideActions && !hideSuperLike && (
+              {!hideActions && !hideFire && (
                 <Animated.View
                   style={[
                     {
                       position: "absolute",
-                      top: SUPER_LIKE_INSET,
-                      right: SUPER_LIKE_INSET,
+                      top: FIRE_INSET,
+                      right: FIRE_INSET,
                     },
-                    // Kapağın kırpılan üst payını geri veriyor; olmadan kalp
+                    // Kapağın kırpılan üst payını geri veriyor; olmadan alev
                     // kapalı kartta görünmeyen bantta kalıyor.
                     coverTopAnchorStyle,
                   ]}
                   pointerEvents={expanded ? "none" : "auto"}
                 >
                   <TouchableOpacity
-                    activeOpacity={0.8}
+                    // SOLMA YOK (activeOpacity=1): basma geri bildirimini artık
+                    // BÜYÜME veriyor (bkz. flameBurn > BURN_SCALE). Varsayılan
+                    // soldurma ikonu gradyanından kopartıp "sönmüş" gösteriyor,
+                    // üstelik büyüme ile aynı anda olunca iki sinyal birbirini
+                    // yiyor. Aynı karar not kutusunda da alınmıştı — gerekçesi
+                    // orada da yazılı (bkz. NoteBox > pressAnim).
+                    activeOpacity={1}
                     onPress={() => {
-                      onSuperLike?.();
+                      onFire?.();
                     }}
                     onPressIn={() => {
-                      heartPressAnim.value = withTiming(1, {
+                      // Mandal (büyüme) ANINDA, rampa (dalga) yavaşça: ikisi
+                      // ayrı sinyal — biri "parmak orada", diğeri "ne kadar".
+                      firePressHeld.value = 1;
+                      firePressAnim.value = withTiming(1, {
                         duration: 180,
                         easing: Easing.out(Easing.quad),
                       });
                     }}
                     onPressOut={() => {
-                      heartPressAnim.value = withTiming(0, {
+                      firePressHeld.value = 0;
+                      firePressAnim.value = withTiming(0, {
                         duration: 180,
                         easing: Easing.out(Easing.quad),
                       });
@@ -3688,66 +3761,21 @@ export default function SwipeCard({
                   >
                     <Animated.View
                       style={[
-                        { width: SUPER_LIKE_SIZE, height: SUPER_LIKE_SIZE },
-                        heartPullStyle,
+                        { width: FIRE_SIZE, height: FIRE_SIZE },
+                        fireMorphStyle,
                       ]}
                     >
-                      {/* LitPlus tonlu gradient dolgu — kalp şeklinde maskelenir
-                          (tek path tek renk aldığı için gradyanı MaskedView ile
-                          veriyoruz). */}
-                      <MaskedView
-                        style={StyleSheet.absoluteFill}
-                        maskElement={
-                          <SuperLikeGlyph size={SUPER_LIKE_SIZE} color="black" />
-                        }
-                      >
-                        <LinearGradient
-                          colors={gradients.swipeHeart}
-                          start={{ x: 0, y: 0 }}
-                          end={{ x: 1, y: 1 }}
-                          style={{ flex: 1 }}
-                        />
-                      </MaskedView>
-                      {/* Premium shimmer — kalp şekline maskeli, 4sn'de bir
-                          soldan sağa geçen parıltı. */}
-                      <MaskedView
-                        style={StyleSheet.absoluteFill}
-                        pointerEvents="none"
-                        maskElement={
-                          <SuperLikeGlyph size={SUPER_LIKE_SIZE} color="black" />
-                        }
-                      >
-                        <Animated.View
-                          style={[
-                            {
-                              position: "absolute",
-                              top: 0,
-                              bottom: 0,
-                              left: 0,
-                              width: 150,
-                            },
-                            heartShimmerStyle,
-                          ]}
-                        >
-                          <LinearGradient
-                            {...(easeGradient({
-                              colorStops: {
-                                0: { color: "transparent" },
-                                0.5: { color: "rgba(255,255,255,0.22)" },
-                                1: { color: "transparent" },
-                              },
-                            }) as any)}
-                            start={{ x: 0, y: 0.35 }}
-                            end={{ x: 1, y: 0.65 }}
-                            style={StyleSheet.absoluteFill}
-                          />
-                        </Animated.View>
-                      </MaskedView>
-                      {/* İnce açık border */}
-                      <SuperLikeGlyph
-                        size={SUPER_LIKE_SIZE}
-                        stroke={theme.swipeHeartBorder}
-                        strokeWidth={0.1}
+                      {/* Gradyan dolgu, ısı, ışıma, parıltı ve kontur — hepsi
+                          tek canvas'ın içinde. Parıltı YALNIZ EN ÜSTTEKİ
+                          kartta dönüyor: arkadaki kartlar için de açık
+                          bırakılsa boşuna her karede canvas tazelenirdi,
+                          üstelik o alev zaten üstteki kartın altında. */}
+                      <FireBurnCanvas
+                        size={FIRE_SIZE}
+                        heat={burnHeat}
+                        phase={burnPhase}
+                        grow={burnGrow}
+                        shimmer={isTopCard}
                       />
                     </Animated.View>
                   </TouchableOpacity>
@@ -3892,6 +3920,15 @@ export default function SwipeCard({
                       <PillFlow
                         gap={6}
                         fillWidth
+                        // Ölçüm turu GÖRÜNMEZ: etiketler kart başına değişiyor
+                        // (üniversite / hobi / burç…), yani genişlik önbelleği
+                        // reload sonrası ilk kartta soğuk. Görünür ölçüm turunda
+                        // piller önce verilen sırada çizilip bir kare sonra
+                        // `fillWidth`in dizdiği yerlerine atlıyordu — kullanıcıya
+                        // "pilin yazısı önce başka, sonra kendine geliyor" diye
+                        // görünüyor. Veri yerel (deste zaten çekilmiş), o yüzden
+                        // görünmezlik TEK kare sürüyor; iskelet gerekmiyor.
+                        hideUntilPacked
                         items={[
                           ...(showNewBadge
                             ? [
@@ -5046,10 +5083,10 @@ export default function SwipeCard({
         />
       )}
 
-      {/* Super Like Button — EXPANDED duruş: sticky. Scroll'un DIŞINDA, kart
+      {/* Fire Button — EXPANDED duruş: sticky. Scroll'un DIŞINDA, kart
           çerçevesine göre konumlu → panel altından akıp giderken buton sağ
-          üstte asılı kalıyor. Kabuk kalpten büyük olduğu için köşe boşluğu da
-          farklı (SUPER_LIKE_GLASS_INSET): iki şeklin MERKEZİ çakışıyor, geçiş
+          üstte asılı kalıyor. Kabuk serbest alevden büyük olduğu için köşe boşluğu da
+          farklı (FIRE_GLASS_INSET): iki şeklin MERKEZİ çakışıyor, geçiş
           yer değiştirme değil kabuk değiştirme gibi görünsün.
 
           Mount `profileReady` gate'inde: swipe'ın son karesinde yeni top kart
@@ -5061,29 +5098,29 @@ export default function SwipeCard({
           okur; onlar için native host kurmanın karşılığı yok (üstteki kart
           hepsini örtüyor). */}
       {!hideActions &&
-        !hideSuperLike &&
+        !hideFire &&
         isTopCard &&
         profileReady &&
-        onSuperLike && (
+        onFire && (
           <Animated.View
             style={[
               {
                 position: "absolute",
                 // Köşe diyagonalinin biraz altı, SABİT (bkz. cornerDrop).
-                top: SUPER_LIKE_GLASS_INSET + cornerDrop,
-                right: SUPER_LIKE_GLASS_INSET,
-                width: SUPER_LIKE_GLASS_SIZE,
-                height: SUPER_LIKE_GLASS_SIZE,
+                top: FIRE_GLASS_INSET + cornerDrop,
+                right: FIRE_GLASS_INSET,
+                width: FIRE_GLASS_SIZE,
+                height: FIRE_GLASS_SIZE,
               },
-              superLikeStickyStyle,
+              fireStickyStyle,
             ]}
             // Collapsed'ken görünmez ama hâlâ fotoğrafın üstünde duruyor —
-            // kapalıyken dokunmayı altındaki serbest kalbe bırak.
+            // kapalıyken dokunmayı altındaki serbest aleve bırak.
             pointerEvents={expanded ? "auto" : "none"}
           >
-            <SuperLikeGlassButton
-              onPress={onSuperLike}
-              label={t("discover.stats.superLikesLabel")}
+            <FireGlassButton
+              onPress={onFire}
+              label={t("discover.stats.fireLabel")}
             />
           </Animated.View>
         )}

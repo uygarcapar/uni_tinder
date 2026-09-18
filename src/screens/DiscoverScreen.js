@@ -952,11 +952,11 @@ export default function DiscoverScreen() {
     setTimeout(() => setIsSwiping(false), 300);
   };
 
-  const handleSuperLikeButton = () => {
+  const handleFireButton = () => {
     if (isSwiping || potentialMatches.length <= currentIndex) return;
     // Kota yoksa backend 403 dönecek; UX olarak doğrudan paywall'a yönlendir.
     // Premium kullanıcının 5/gün kotası bittiğinde de bu yol çalışır — paywall'da
-    // ileride SuperLike consumable pack satın alma akışı açılacak (FAZ 6).
+    // ileride Fire consumable pack satın alma akışı açılacak (FAZ 6).
     const remaining = statsQuery.data?.superLikesRemaining;
     if (typeof remaining === "number" && remaining <= 0) {
       purchaseBottomSheetRef.current?.present();
@@ -986,7 +986,7 @@ export default function DiscoverScreen() {
             programmaticSwipe={programmaticSwipe}
             onPass={handlePassButton}
             onLike={handleLikeButton}
-            onSuperLike={handleSuperLikeButton}
+            onFire={handleFireButton}
           />
         );
       });

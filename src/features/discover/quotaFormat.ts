@@ -10,7 +10,7 @@ import { parseBackendDate } from "@/shared/utils/backendDate";
 const SENTINEL_HORIZON_MS = 10 * 365 * 24 * 60 * 60 * 1000;
 
 /**
- * Swipe/SuperLike kotalarının "ne zaman yenilenir" metinleri. DiscoverScreen'in
+ * Swipe/Fire kotalarının "ne zaman yenilenir" metinleri. DiscoverScreen'in
  * limit toast'ı ile ProfileScreen'deki kalan hak kartı aynı sözleşmeyi
  * kullansın diye ortak modülde.
  */
@@ -18,7 +18,7 @@ const SENTINEL_HORIZON_MS = 10 * 365 * 24 * 60 * 60 * 1000;
 /**
  * Kalan hak sıfırlanana kadar geçecek süreyi okunur metne çevirir.
  *
- * UNLIMITED (-1) = "asla resetlenmez" (free kullanıcının lifetime SuperLike
+ * UNLIMITED (-1) = "asla resetlenmez" (free kullanıcının lifetime Fire
  * hakkı bitti) — geri sayım GÖSTERİLMEZ, null döner ve çağıran taraf kendi
  * mesajına düşer. `sec <= 0` dalı bunu "şu anda yenilenebilir" sanıyordu.
  *

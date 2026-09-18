@@ -1,5 +1,5 @@
 /**
- * Süper beğeni alev dalgasının GEOMETRİSİ — Skia'dan bağımsız.
+ * Fire alev dalgasının GEOMETRİSİ — Skia'dan bağımsız.
  *
  * Tüm path işlemleri dışarıdan verilen bir adaptörle yapılıyor. Sebep: aynı
  * kodu Node tarafında canvaskit-wasm ile render edip şekli cihaza gitmeden
@@ -10,7 +10,14 @@
  * glyph birkaç kez, farklı boy ve konumlarda bir gövdenin üstüne oturtulup
  * BİRLEŞTİRİLİYOR. Birleşim şart — ayrı ayrı çizilse konturları birbirinin
  * içinden geçerdi; tek silüet olunca tek bir dış hat çıkıyor.
+ *
+ * Aynı "glyph üstüne glyph" tekniğinin TEK ALEVLİK sürümü flameBurn.ts'te:
+ * kartın Fire ikonu çekme sırasında orada yanıyor. `addTongue` ORTAK
+ * DEĞİL, bilerek: oradaki silüet her karede UI thread'inde kuruluyor ve bu
+ * dosyanın adaptörlü (WaveApi) çağrıları worklet değil. Ortak olan glyph
+ * metrikleri (FLAME_GLYPH) ve matrisin yazılış şekli.
  */
+import { FLAME_GLYPH } from "@/shared/components/icons/FlameGlyph";
 
 /**
  * Dalganın ekranı bir uçtan bir uca geçme süresi. Kutlama kısa: alev ekranda
@@ -55,11 +62,10 @@ export interface WaveApi<P> {
   offset(p: P, dx: number, dy: number): void;
 }
 
-// FlameGlyph 24'lük grid'inde alev: x 4.48..19.52, y 2..22 (bkz.
-// icons/FlameGlyph — ölçüler oradaki bakeleme notuyla aynı).
-const GLYPH_CX = 12;
-const GLYPH_BOTTOM = 22;
-const GLYPH_HEIGHT = 20;
+// FlameGlyph 24'lük grid'inde alev: x 4.48..19.52, y 2..22. Sayılar glyph'in
+// KENDİ dosyasından geliyor (bkz. icons/FlameGlyph > FLAME_GLYPH) — burada elle
+// kopyalanmışlardı ve path yeniden bakelenirse bayat kalırlardı.
+const { cx: GLYPH_CX, bottom: GLYPH_BOTTOM, height: GLYPH_HEIGHT } = FLAME_GLYPH;
 
 const TAU = Math.PI * 2;
 
@@ -224,7 +230,7 @@ export interface FlameWaveGeometry {
 /**
  * Yerleşimi ve örtme anını ekran ölçüsünden hesaplar.
  *
- * Skia'ya dokunmadan, tek yerde: canvas bu sayılarla ÇİZİYOR, süper beğeni
+ * Skia'ya dokunmadan, tek yerde: canvas bu sayılarla ÇİZİYOR, Fire
  * akışı da aynı sayılarla kart değişimini ZAMANLIYOR. İki tarafta ayrı ayrı
  * durursa biri güncellenip diğeri bayat kalır (FLAME_WAVE_MS'te bir kez oldu).
  */
@@ -290,7 +296,7 @@ export function flameWaveGeometry(
 const CURTAIN_GAP_RATIO = 0.075;
 
 /**
- * Perde, süper beğeni süpürmesinden bu katsayı kadar hızlı. Aynı hareket ama
+ * Perde, Fire süpürmesinden bu katsayı kadar hızlı. Aynı hareket ama
  * mesafe daha uzun: sabit hızda giriş 1.2 sn'yi buluyor ve bir modal için
  * ağır kalıyordu. Tek katsayı — giriş ve çıkış aynı hızda kalsın.
  */

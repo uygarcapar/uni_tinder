@@ -1,5 +1,7 @@
-import { Suspense, lazy, useEffect, useRef, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import uiBus from "@/shared/services/uiBus";
+import LazyChunkBoundary from "@/shared/components/LazyChunkBoundary";
+import lazyChunk from "@/shared/components/lazyChunk";
 // Süre canvas ile PAYLAŞILAN modülden geliyor: flameWavePath Skia'ya
 // dokunmadığı için import etmek lazy chunk'ı buraya çekmiyor. Elle kopyalanan
 // iki sabit olarak tutulduğunda biri güncellenip diğeri bayat kalmıştı.
@@ -8,10 +10,13 @@ import { FLAME_WAVE_MS } from "@/features/discover/components/flameWavePath";
 /**
  * Skia'nın JS modülü ağır ve kök ağaçta duruyoruz (bkz. AppNavigator) —
  * statik import edilseydi her cold start'ta bedavaya evaluate edilirdi.
- * Canvas ayrı chunk'ta: ilk süper beğeniye kadar yüklenmiyor.
+ * Canvas ayrı chunk'ta: ilk Fire'a kadar yüklenmiyor.
+ *
+ * `React.lazy` DEĞİL (bkz. lazyChunk): chunk gelmezse render'da fırlatmak yerine
+ * sessizce atlanıyor — dev'de kırmızı "Render Error" perdesi açılmıyor.
  */
-const FlameCanvas = lazy(
-  () => import("@/features/discover/components/SuperLikeFlameCanvas"),
+const FlameCanvas = lazyChunk(
+  () => import("@/features/discover/components/FireFlameCanvas"),
 );
 
 /**
@@ -25,14 +30,14 @@ const FlameCanvas = lazy(
 const COVER_FALLBACK_MS = FLAME_WAVE_MS + 500;
 
 /**
- * Süper beğeni kutlaması: ekranı alttan yukarı süpüren alev dalgası (bkz.
- * SuperLikeFlameCanvas). Eskiden burada kalp ikonundan süzülen renkli kalp
+ * Fire kutlaması: ekranı alttan yukarı süpüren alev dalgası (bkz.
+ * FireFlameCanvas). Eskiden burada kalp ikonundan süzülen renkli kalp
  * parçacıkları vardı.
  *
  * Bu dosya bilerek "hafif": yalnız uiBus'ı dinler, dalga süresince canvas'ı
  * mount edip sonra söker. Boşta hiçbir animasyon/frame callback dönmüyor.
  */
-export default function SuperLikeFlame() {
+export default function FireFlame() {
   const [runId, setRunId] = useState<number | null>(null);
   const seq = useRef(0);
 
@@ -73,8 +78,8 @@ export default function SuperLikeFlame() {
   if (runId === null) return null;
 
   return (
-    <Suspense fallback={null}>
+    <LazyChunkBoundary resetKey={runId}>
       <FlameCanvas key={runId} />
-    </Suspense>
+    </LazyChunkBoundary>
   );
 }

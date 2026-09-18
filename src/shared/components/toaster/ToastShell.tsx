@@ -48,18 +48,33 @@ import { glassColorScheme, hasLiquidGlassSurface } from '../../theme/glass';
  * toast'ına basınca sohbete gidilmemesinin sebebi tam olarak buydu.
  */
 
+/**
+ * İçeriğin kenar boşluğu — DÖRT TOAST'TA DA AYNI, tek kaynak burası.
+ *
+ * Eskiden her toast kendi değerini geçiyordu (10/12'den 16/20'ye kadar) ve arka
+ * arkaya düşen iki banner iki ayrı bileşen gibi duruyordu: aynı malzeme, aynı
+ * köşe, farklı nefes. Ortak değer en genişinden (InfoToast) alındı — sıkışık
+ * olanı genişletmek, geniş olanı daraltmaktan iyi: avatarlı kartlarda 40pt'lik
+ * daire zaten kutuyu dolduruyordu.
+ *
+ * Bir toast'a özel boşluk vermeden önce iki kez düşün; ayrım nefeste değil
+ * içerikte olmalı.
+ */
+const PADDING_VERTICAL = 16;
+const PADDING_HORIZONTAL = 20;
+
 type Props = {
   radius?: number;
-  /** İçeriğin kenar boşluğu — toast'lar farklı yoğunlukta. */
-  paddingVertical: number;
-  paddingHorizontal: number;
+  /** ⚠️ Yalnızca gerçekten farklı olması gereken kart için — bkz. PADDING_*. */
+  paddingVertical?: number;
+  paddingHorizontal?: number;
   children: ReactNode;
 };
 
 export default function ToastShell({
   radius = 24,
-  paddingVertical,
-  paddingHorizontal,
+  paddingVertical = PADDING_VERTICAL,
+  paddingHorizontal = PADDING_HORIZONTAL,
   children,
 }: Props) {
   const insets = useSafeAreaInsets();

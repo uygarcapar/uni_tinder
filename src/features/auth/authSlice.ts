@@ -10,6 +10,7 @@ import type { AuthState, User } from '@/shared/types';
 import type { RegistrationStepRoute } from '@/features/auth/registrationFlow';
 import type { AccountBlockPayload } from '@/shared/utils/accountBlock';
 import { devLog } from '@/shared/utils/devLog';
+import { markLoginOk, markSessionLost } from '@/shared/debug/authDiagnostics';
 
 export const fetchUserData = createAsyncThunk(
   'auth/fetchUserData',
@@ -43,6 +44,9 @@ export const login = createAsyncThunk(
       if (response?.refreshToken) {
         await saveRefreshToken(response.refreshToken);
       }
+      // Defterin sıfır noktası: "son login"den sonra kaç gün geçtiği,
+      // atılmaların TTL mi yoksa yarış mı olduğunu ayıran ilk ölçü.
+      markLoginOk();
       return response;
     } catch (error: any) {
       devLog('❌ Login error — status:', error.response?.status);
@@ -83,6 +87,11 @@ export const register = createAsyncThunk(
 );
 
 export const logout = createAsyncThunk('auth/logout', async (_, thunkAPI) => {
+  // Defterde İSTENEN çıkışı istenmeyenden ayıran satır. Şart: bu thunk
+  // `onAuthLost` yolundan da çağrılıyor (AppNavigator) — o durumda api.ts zaten
+  // gerçek gerekçeyi yazmış oluyor ve bu satır onun hemen ardına düşüyor, yani
+  // "kullanıcı" etiketi tek başına görülürse çıkış GERÇEKTEN kullanıcıdandır.
+  markSessionLost('kullanıcı');
   // Login damgası oturuma özel — logout'ta sıfırla, yoksa login'den hemen sonra
   // yapılan bir logout+login zincirinde eski damga pencereyi uzatır.
   clearSelfLoginMark();

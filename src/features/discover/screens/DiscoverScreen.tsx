@@ -16,6 +16,7 @@ import {
   AppState,
   Modal,
   Linking,
+  StyleSheet,
 } from "react-native";
 import { appPrefs } from "../../../shared/utils/appPrefs";
 import { setSwipeTutorialBlocking } from "@/features/discover/swipeTutorialGate";
@@ -50,9 +51,12 @@ import {
 } from "@/shared/icons";
 import SFIcon from "@/shared/components/SFIcon";
 import SwipeWrapper from "@/features/discover/components/SwipeWrapper";
+import FirePullHint, {
+  FIRE_PULL_SCRIM_ALPHA,
+} from "@/features/discover/components/FirePullHint";
 import SwipeOverlay from "@/features/discover/components/SwipeOverlay";
 import { openLitPlus } from "@/features/profile/litPlusEntry";
-import SuperLikePurchaseModal from "@/features/discover/components/SuperLikePurchaseModal";
+import FirePurchaseModal from "@/features/discover/components/FirePurchaseModal";
 import { Image as ExpoImage } from "expo-image";
 import FilterModal from "@/features/discover/components/FilterModal";
 import ReportModal from "@/shared/components/ReportModal";
@@ -103,6 +107,7 @@ import {
 } from "@/shared/constants/responseCodes";
 import uiBus, {
   cardExpandAnim,
+  cardPullProgress,
   resetCardExpandState,
 } from "@/shared/services/uiBus";
 import { useEvent } from "@/shared/hooks/useEvent";
@@ -929,14 +934,14 @@ export default function DiscoverScreen() {
     return rem === 0;
   }, [statsQuery.data?.remainingSwipes, statsQuery.data?.isPremium]);
 
-  // SuperLike kota bitince true. Pull-up swipe + button ikisini de blokar.
-  const superLikeQuotaExhausted = useMemo(() => {
+  // Fire kota bitince true. Pull-up swipe + button ikisini de blokar.
+  const fireQuotaExhausted = useMemo(() => {
     const rem = statsQuery.data?.superLikesRemaining;
     // `null` = değer henüz bilinmiyor (satın alma sonrası optimistic pencere) →
-    // bloklama. Negatif ise TÜKENMİŞ sayılır: SuperLike'ın "sınırsız" hâli yok
+    // bloklama. Negatif ise TÜKENMİŞ sayılır: Fire'ın "sınırsız" hâli yok
     // (doküman tuzak #2). Eskiden `rem < 0` sınırsız gibi ele alınıyordu ve
     // backend refund'da claw-back yapmama kararını tam bu yanlış yoruma
-    // dayandırıyor — v2'de gerçek revoke gelirse bedava SuperLike dağıtırdık.
+    // dayandırıyor — v2'de gerçek revoke gelirse bedava Fire dağıtırdık.
     if (rem == null) return false;
     return rem <= 0;
   }, [statsQuery.data?.superLikesRemaining]);
@@ -1052,13 +1057,13 @@ export default function DiscoverScreen() {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [potentialMatches.length]);
 
-  const [superLikePurchaseVisible, setSuperLikePurchaseVisible] = useState(false);
+  const [firePurchaseVisible, setFirePurchaseVisible] = useState(false);
 
-  // SuperLike kotası bitti → sheet + durumu açıklayan toast birlikte.
+  // Fire kotası bitti → sheet + durumu açıklayan toast birlikte.
   // Toast metni tier'a göre değişiyor: premium'da kota rolling 7-gün cycle ile
   // yenileniyor (satacak bir şey yok, backend de showPaywall:false dönüyor),
   // free'de lifetime hak bitmiş ve kendiliğinden yenilenmiyor.
-  const showSuperLikeLimitUi = useEvent(() => {
+  const showFireLimitUi = useEvent(() => {
     const resetText = statsQuery.data?.isPremium
       ? formatResetTime(statsQuery.data?.superLikeResetInSeconds, t)
       : null;
@@ -1066,20 +1071,20 @@ export default function DiscoverScreen() {
     // yerine tükendi metnine düşüyoruz, yoksa yanlış vaat veriyoruz.
     if (resetText) {
       showInfoToast({
-        title: t('discover.swipe.superLikeCooldownTitle'),
-        message: t('discover.swipe.superLikeCooldownMessage', {
+        title: t('discover.swipe.fireCooldownTitle'),
+        message: t('discover.swipe.fireCooldownMessage', {
           time: resetText,
         }),
-        icon: 'superLike',
+        icon: 'fire',
       });
     } else {
       showInfoToast({
-        title: t('discover.swipe.superLikeExhaustedTitle'),
-        message: t('discover.swipe.superLikeExhaustedMessage'),
-        icon: 'superLike',
+        title: t('discover.swipe.fireExhaustedTitle'),
+        message: t('discover.swipe.fireExhaustedMessage'),
+        icon: 'fire',
       });
     }
-    setSuperLikePurchaseVisible(true);
+    setFirePurchaseVisible(true);
   });
 
   // Beğeni kotasının yenilenmesine kalan süre — ÇIPLAK metin, mesajın içine
@@ -1088,7 +1093,7 @@ export default function DiscoverScreen() {
   // olduğu yerde donardı. resolveResetSeconds mutlak damgadan
   // (`nextSwipeResetAt`) ya da cache'e yazılma anından tazeliyor.
   // null = gösterilecek geri sayım yok → çağıran süresiz metne düşer, yanlış
-  // vaat vermiyoruz (SuperLike metinlerindeki ayrımın aynısı).
+  // vaat vermiyoruz (Fire metinlerindeki ayrımın aynısı).
   const resolveSwipeResetText = useEvent(() =>
     formatResetDuration(
       resolveResetSeconds({
@@ -1105,7 +1110,7 @@ export default function DiscoverScreen() {
   // backend'in showPaywall'ı). Pass'te BİLEREK sessiziz: pass kotaya sayılmıyor,
   // engellenmiyor ve kullanıcı desteyi elemeye devam ederken her kartta toast
   // yemek istemiyor. Paywall'ı bu fonksiyon AÇMAZ — sheet kararı çağıranın
-  // (SuperLike'taki kalıbın aynısı).
+  // (Fire'taki kalıbın aynısı).
   const showSwipeQuotaExhaustedToast = useEvent(() => {
     const time = resolveSwipeResetText();
     showInfoToast({
@@ -1168,7 +1173,7 @@ export default function DiscoverScreen() {
   // Premium çıkarsa modal yerine kotaları tazeliyoruz — bu ekranda "hakkın
   // bitti" sayacı ile premium durumu aynı anda duramaz.
   //
-  // NOT: SuperLike paket sheet'i bu kontrolden GEÇMEZ; o premium'da da açılıyor
+  // NOT: Fire paket sheet'i bu kontrolden GEÇMEZ; o premium'da da açılıyor
   // (backend `showPaywall:true` dönüyor, satılacak paket var — §10).
   const openPremiumPaywall = useEvent(() => {
     dispatch(refreshEntitlementsForPaywall())
@@ -1212,9 +1217,9 @@ export default function DiscoverScreen() {
       if (!type || type === "SWIPE_LIMIT") showSwipeQuotaExhaustedToast();
       openPremiumPaywall();
     });
-    // SuperLike kota bittiğinde SwipeWrapper bu event'i emit eder (pull-up swipe).
-    const unsubSuperLike = uiBus.on("superLikePaywall", () => {
-      showSuperLikeLimitUi();
+    // Fire kota bittiğinde SwipeWrapper bu event'i emit eder (pull-up swipe).
+    const unsubFire = uiBus.on("firePaywall", () => {
+      showFireLimitUi();
     });
     // Not bakiyesi biterken backend 200 + showPaywall ile de uyarabiliyor
     // (402 yolu handleSendNote'ta ele alınıyor). İkisi de aynı sheet'i açar.
@@ -1223,12 +1228,12 @@ export default function DiscoverScreen() {
     });
     return () => {
       unsubSwipe();
-      unsubSuperLike();
+      unsubFire();
       unsubNote();
     };
-    // showSuperLikeLimitUi / openPremiumPaywall useEvent — referansları stabil,
+    // showFireLimitUi / openPremiumPaywall useEvent — referansları stabil,
     // resubscribe gerekmez.
-  }, [showSuperLikeLimitUi, openPremiumPaywall, showSwipeQuotaExhaustedToast]);
+  }, [showFireLimitUi, openPremiumPaywall, showSwipeQuotaExhaustedToast]);
 
   const [filterVisible, setFilterVisible] = useState(false);
 
@@ -1357,7 +1362,7 @@ export default function DiscoverScreen() {
 
   // ── Profil keşifte görünmüyorken ETKİLEŞİMLER kilitli ───────────────────
   // GÖRÜNÜRLÜK KİLİT DEĞİL: profil keşif havuzunda görünmüyorken de (fotoğraf
-  // incelemede / yetersiz görünür fotoğraf) beğeni, süper beğeni, pass ve not
+  // incelemede / yetersiz görünür fotoğraf) beğeni, Fire, pass ve not
   // SERBEST. Backend hiçbir uçta foto onayına bakmıyor (rehber §3) — istemcinin
   // kapatması sunucuda karşılığı olmayan bir kural yaratıyordu; kullanıcı
   // butonun neden çalışmadığını anlamıyordu. Durum yalnızca ANLATILIYOR:
@@ -1698,13 +1703,13 @@ export default function DiscoverScreen() {
    *
    * İki kaynak OR'lanıyor, ikisi de eksik olabildiği için:
    *   • Kartın kendi `hasLikedMe` bayrağı — free üyede düz beğeni için her zaman
-   *     `false` geliyor (yalnız SuperLike/not gerçek değeri taşıyor, bkz. DTO).
+   *     `false` geliyor (yalnız Fire/not gerçek değeri taşıyor, bkz. DTO).
    *   • Yerel "beni beğenenler" kümesi — yalnız ÇEKİLEN SAYFAYI biliyor, yani
    *     ikinci sayfadaki bir liker burada görünmüyor.
    * Kestirim yanlışsa maliyet küçük ve tek yönlü: eşleşme sanılmayan bir süper
    * beğenide alev süpürmesi oynar, MatchModal da ardından açılır (düzeltmeye
    * çalıştığımız eski davranışın ta kendisi) — tersi, yani eşleşmeyen bir
-   * süper beğeninin kutlamasız kalması olmuyor.
+   * Fire'ın kutlamasız kalması olmuyor.
    *
    * Kümeyi `store.getState()` ile okuyoruz: selector'la abone olmak her gelen
    * beğenide desteyi yeniden render ederdi (bkz. hasLikedMe'nin kendi notu).
@@ -1717,31 +1722,31 @@ export default function DiscoverScreen() {
 
   const handleSwipe = useEvent((direction, userId, covered = false) => {
     if (userId) swipedAtRef.current.set(userId, Date.now());
-    // Deste alevin ALTINDA ilerlediyse (eşleşmeyen süper beğeni, bkz.
+    // Deste alevin ALTINDA ilerlediyse (eşleşmeyen Fire, bkz.
     // SwipeWrapper) yeni top kart giriş animasyonuyla DEĞİL, doğrudan son
     // hâlinde açılmalı — yoksa 0.92→1 yayı dalga çekildikten sonra da sürüyor
     // ve kart tam o anda "geliyormuş" gibi görünüyor. Örtüsüz değişimlerde
-    // (yana kaydırma ve eşleşmeyle biten süper beğeni) giriş animasyonu duruyor:
+    // (yana kaydırma ve eşleşmeyle biten Fire) giriş animasyonu duruyor:
     // orada kart zaten açıkta değişiyor.
     setCoveredSwap(covered === true);
     setCurrentIndex((i) => i + 1);
     analytics.capture('swipe', { direction });
     const isPass = direction === "left";
     setLastSwipeWasPass(isPass);
-    // Kartın kendisi — "kime" sorusunun cevabı hem süper beğeni onayında hem de
+    // Kartın kendisi — "kime" sorusunun cevabı hem Fire onayında hem de
     // aşağıdaki kaçırılmış eşleşme toast'ında lazım.
     const swiped = potentialMatches.find((p) => p?.userId === userId);
-    // Süper beğeni onayı. Gerekçe notunkiyle aynı (bkz. handleSendNote): kutlama
-    // alevi yalnız görsel, kimin süper beğenildiğini SÖYLEMİYOR — kart o sırada
+    // Fire onayı. Gerekçe notunkiyle aynı (bkz. handleSendNote): kutlama
+    // alevi yalnız görsel, kimin Fire aldığını SÖYLEMİYOR — kart o sırada
     // zaten örtünün altında. Toast tek yazılı onay.
     if (direction === "up") {
       const name = swiped?.displayName;
       showInfoToast({
-        title: t("discover.swipe.superLikeSentTitle"),
+        title: t("discover.swipe.fireSentTitle"),
         message: name
-          ? t("discover.swipe.superLikeSentMessage", { name })
-          : t("discover.swipe.superLikeSentMessageNoName"),
-        icon: "superLike",
+          ? t("discover.swipe.fireSentMessage", { name })
+          : t("discover.swipe.fireSentMessageNoName"),
+        icon: "fire",
       });
     }
     // Destedeki bu kart beni beğenmiş biri miydi? Öyleyse yön ne olursa olsun
@@ -1852,7 +1857,7 @@ export default function DiscoverScreen() {
   // React.memo compareFn'i (onPass === next.onPass) boşa çıkarır ve iki kart
   // birden re-render olur.
   // Pass günlük kotaya dahil değil (backend DailyLimitBehavior yalnız
-  // Like/SuperLike sayıyor) — kota dolsa bile blok yok, paywall yok.
+  // Like/Fire sayıyor) — kota dolsa bile blok yok, paywall yok.
   const handlePassButton = useEvent(() => {
     if (isSwiping || potentialMatches.length <= currentIndex) return;
     setIsSwiping(true);
@@ -1874,15 +1879,15 @@ export default function DiscoverScreen() {
     setTimeout(() => setIsSwiping(false), 300);
   });
 
-  const handleSuperLikeButton = useEvent(() => {
+  const handleFireButton = useEvent(() => {
     if (isSwiping || potentialMatches.length <= currentIndex) return;
-    if (superLikeQuotaExhausted) {
-      requestAnimationFrame(showSuperLikeLimitUi);
+    if (fireQuotaExhausted) {
+      requestAnimationFrame(showFireLimitUi);
       return;
     }
     setIsSwiping(true);
     programmaticSwipe.value = 3;
-    // Diğer iki butondan uzun: süper beğenide kart hemen fırlamıyor, deste alev
+    // Diğer iki butondan uzun: Fire'da kart hemen fırlamıyor, deste alev
     // ekranı kapatınca (~800 ms, ilk kutlamada lazy chunk payıyla biraz daha)
     // ilerliyor — bkz. SwipeWrapper. 300 ms'de bırakılsaydı butonlar kart hâlâ
     // dururken canlanır, ikinci tap yutulmuş gibi görünürdü. Çift tetiklemeye
@@ -1993,7 +1998,7 @@ export default function DiscoverScreen() {
       });
       analytics.capture("note_sent", { targetKind: req.target.kind });
       setNoteRequest(null);
-      // ⚠️ `result.isMatch`e BAKMIYORUZ: bu uçta (Like/SuperLike'ta da) alan
+      // ⚠️ `result.isMatch`e BAKMIYORUZ: bu uçta (Like/Fire'ta da) alan
       // karşılıklı beğenide bile hep `false` ve `matchId` hiç yok. Eşleşme
       // arka planda çözülüp SignalR `MatchNotification` ile geliyor —
       // AppNavigator'daki mevcut dinleyici zaten karşılıyor.
@@ -2018,7 +2023,7 @@ export default function DiscoverScreen() {
         dropProfileFromDeck(userId, false);
         return;
       }
-      // Kutlama süper beğeninin AYNISI (bkz. flameSweep): alev ekranı süpürüyor
+      // Kutlama Fire'ın AYNISI (bkz. flameSweep): alev ekranı süpürüyor
       // ve kart, ekran tam kapalıyken desteden düşüyor.
       noteFlameUnsub.current?.();
       noteFlameUnsub.current = runFlameSweep(() => {
@@ -2116,6 +2121,14 @@ export default function DiscoverScreen() {
     );
   });
 
+  /**
+   * Fire çekişinde header'ın kararması. Sürücü destedeki perdeyle aynı
+   * global oran (uiBus > cardPullProgress), yani ikisi tek hareket gibi iniyor.
+   */
+  const pullHeaderScrimStyle = useAnimatedStyle(() => ({
+    opacity: cardPullProgress.value * FIRE_PULL_SCRIM_ALPHA,
+  }));
+
   const renderStack = () => {
     return potentialMatches
       .slice(currentIndex, currentIndex + 2)
@@ -2135,10 +2148,10 @@ export default function DiscoverScreen() {
             programmaticSwipe={programmaticSwipe}
             onPass={handlePassButton}
             onLike={handleLikeButton}
-            onSuperLike={handleSuperLikeButton}
+            onFire={handleFireButton}
             willMatch={willMatchOnLike}
             swipeQuotaExhausted={swipeQuotaExhausted}
-            superLikeQuotaExhausted={superLikeQuotaExhausted}
+            fireQuotaExhausted={fireQuotaExhausted}
             snapEntry={coveredSwap}
             superLikesRemaining={statsQuery.data?.superLikesRemaining ?? null}
             onReport={handleReportProfile}
@@ -2270,9 +2283,9 @@ export default function DiscoverScreen() {
           </View>
         </Animated.View>
 
-        {/* ── ŞERİDİ KARARTAN PERDE KALDIRILDI (istek) ───────────────────
+        {/* ── KART AÇILIRKEN ŞERİDİ KARARTAN PERDE KALDIRILDI (istek) ────
             Kart açılırken üst şeridin üstüne inen siyah perde buradaydı
-            (EXPAND_SCRIM_ALPHA oranında). Şerit artık açılış boyunca kendi
+            (EXPAND_SCRIM_ALPHA oranında). Şerit artık AÇILIŞ boyunca kendi
             renginde kalıyor.
 
             Perdenin gerekçesi "arkadaki sayfa geri çekilmiş görünsün"dü
@@ -2282,8 +2295,30 @@ export default function DiscoverScreen() {
             zorunda; ayrışırlarsa kartın üstü ile kapak-panel arası farklı
             tonda kararıyor.
 
-            Şeridin DOKUNMA kilidi bu perdede değil, ayrı bir kapıda
-            (headerLocked) — perde gitti, kilit duruyor. */}
+            Aşağıdaki perde BAŞKA BİR JEST: bu açılış (yukarı çekiş) değil,
+            FIRE (aşağı çekiş). İkisi aynı anda ilerlemiyor (bkz.
+            SwipeWrapper'daki ayrı dallar), o yüzden tek bir şeritte iki perde
+            çakışmıyor.
+
+            Şeridin DOKUNMA kilidi hiçbir perdede değil, ayrı bir kapıda
+            (headerLocked). */}
+
+        {/* Fire çekişinde header da kararıyor — destedeki şeritle AYNI
+            oranda (bkz. FIRE_PULL_SCRIM_ALPHA). İkisi yan yana görünüyor:
+            ayrı sayılar verilirse aralarındaki çizgi ortaya çıkıyor.
+
+            Perde içeriğin ÜSTÜNDE: kararan şey şeridin zemini değil header'ın
+            kendisi (butonlar dahil) — "arka plan geri çekildi" sinyali bu.
+            `pointerEvents` yok, çünkü dokunmayı zaten headerLocked yönetiyor ve
+            perde onun kararına karışmamalı. */}
+        <Animated.View
+          pointerEvents="none"
+          style={[
+            StyleSheet.absoluteFill,
+            { backgroundColor: scrimAt(1) },
+            pullHeaderScrimStyle,
+          ]}
+        />
       </View>
 
       {/* Cards */}
@@ -2308,6 +2343,10 @@ export default function DiscoverScreen() {
             style={[{ flex: 1, position: "relative" }, cardStackStyle]}
           >
             {renderStack()}
+            {/* Aşağı çekiş (Fire) ipucu — kartın ALTINDA, arkadaki
+                kartın üstünde (kendi zIndex'i 5). Desteden SONRA yazılıyor ama
+                sırası önemli değil, katmanı zIndex belirliyor. */}
+            <FirePullHint />
             <SwipeOverlay dragX={overlayDragX} opacity={overlayOpacity} />
           </Animated.View>
         ) : (
@@ -2322,7 +2361,7 @@ export default function DiscoverScreen() {
         )}
       </View>
 
-      {/* Süper beğeni alevi burada DEĞİL: tab bar'ı da kaplaması gerektiği için
+      {/* Fire alevi burada DEĞİL: tab bar'ı da kaplaması gerektiği için
           navigator'ın dışına, kök ağaca taşındı (bkz. AppNavigator). */}
 
       <FilterModal
@@ -2333,15 +2372,15 @@ export default function DiscoverScreen() {
         onSave={handleSaveFilters}
         saving={saveFiltersMutation.isPending}
       />
-      {/* SuperLike kotası bitti → premium paywall DEĞİL, consumable paket sheet'i.
+      {/* Fire kotası bitti → premium paywall DEĞİL, consumable paket sheet'i.
           Premium kullanıcının da satın alabileceği bir ürün olduğu için backend
           artık iki tier'da da showPaywall:true dönüyor. Bakiye redeem yanıtından
           cache'e yazılıyor; buradaki refetch server-truth'u teyit eder. */}
-      <SuperLikePurchaseModal
-        visible={superLikePurchaseVisible}
-        onClose={() => setSuperLikePurchaseVisible(false)}
+      <FirePurchaseModal
+        visible={firePurchaseVisible}
+        onClose={() => setFirePurchaseVisible(false)}
         onPurchased={() => {
-          setSuperLikePurchaseVisible(false);
+          setFirePurchaseVisible(false);
           statsQuery.refetch();
         }}
       />
@@ -2372,7 +2411,7 @@ export default function DiscoverScreen() {
       />
 
       {/* Not paketi — bakiye 0 iken kutuya basınca ve UT-6401'de açılır.
-          SuperLike sheet'iyle aynı kabuk, ayrı ürün ve ayrı redeem kuyruğu. */}
+          Fire sheet'iyle aynı kabuk, ayrı ürün ve ayrı redeem kuyruğu. */}
       <NotePurchaseModal
         visible={notePurchaseVisible}
         onClose={() => setNotePurchaseVisible(false)}

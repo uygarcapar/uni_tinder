@@ -83,8 +83,8 @@ class SwipeService {
     return api.post(API_ENDPOINTS.SWIPE_PASS, { targetUserId, swipeType: 'pass' });
   }
 
-  async superLikeUser(targetUserId: string, _token?: string | null) {
-    return api.post(API_ENDPOINTS.SWIPE_SUPER_LIKE, { targetUserId, swipeType: 'superlike' });
+  async fireUser(targetUserId: string, _token?: string | null) {
+    return api.post(API_ENDPOINTS.SWIPE_FIRE, { targetUserId, swipeType: 'superlike' });
   }
 
   /**
@@ -114,7 +114,7 @@ class SwipeService {
     return api.get(`${API_ENDPOINTS.LIKER_PROFILE}/${likerUserId}`);
   }
 
-  // SuperLike'lar ve normal beğeniler AYRI paginate ediliyor; ikisi de tek
+  // Fire'lar ve normal beğeniler AYRI paginate ediliyor; ikisi de tek
   // sayfa çekiliyor. Zarf ham dönüyor — çağıranlar (LikesScreen listesi,
   // fetchWhoLikedMe thunk'ı) farklı alanlarını kullanıyor.
   async getWhoLikedMe(likePage = 1, likePageSize = 10, superLikePageSize = 10) {

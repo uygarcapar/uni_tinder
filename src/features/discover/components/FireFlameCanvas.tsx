@@ -78,7 +78,7 @@ interface Wave extends FlameWaveGeometry {
  *
  * Hepsini mount'ta kurmak ~10 karelik bir takılma demekti (tek kurulum ~1.4 ms).
  * Tembel kurulumla maliyet titreşim hızına (14 fps) yayılıyor — kare başına bir
- * kurulum — ve aynı oturumdaki sonraki süper beğeniler bedava.
+ * kurulum — ve aynı oturumdaki sonraki Fire'lar bedava.
  */
 const CACHE = new Map<string, Wave>();
 
@@ -101,7 +101,7 @@ function frameAt(wave: Wave, index: number, width: number): SkPath | null {
   if (cached) return cached;
   // Path kurulumu render sırasında çalışıyor: glyph ayrıştırılamaz ya da bir
   // path op'u başarısız olursa fırlatılan hata KUTLAMA yüzünden tüm ağacı
-  // düşürürdü. Kutlamanın atlanması kabul — süper beğeni akışı buna bağlı değil.
+  // düşürürdü. Kutlamanın atlanması kabul — Fire akışı buna bağlı değil.
   try {
     const built = buildFlameWave(skiaApi, {
       glyph: FLAME_PATH,
@@ -120,7 +120,7 @@ function frameAt(wave: Wave, index: number, width: number): SkPath | null {
 /**
  * Dalganın ÇİZİMİ — tab bar'daki Keşfet alev ikonundan üretilmiş, ekranı
  * alttan yukarı süpüren bir alev şeridi. İlerlemeyi (0..1, tam süpürmenin
- * oranı) sürmek ÇAĞIRANA ait: süper beğeni baştan sona süpürüyor, eşleşme
+ * oranı) sürmek ÇAĞIRANA ait: Fire baştan sona süpürüyor, eşleşme
  * perdesi yolun bir yerinde durup bekliyor (aşağıdaki iki bileşen).
  *
  * Prosedürel ateş shader'ı (fbm türbülansı, ısı rampası, kıvılcım) denendi ve
@@ -172,7 +172,7 @@ function FlameWaveLayer({
         <Group transform={transform}>
           <Path path={path}>
             {/* İkonun kendi gradyanı (gradients.swipeHeart): uçlarda kırmızı,
-                aşağı indikçe turuncu — rozet ve süper beğeni kalbiyle aynı. */}
+                aşağı indikçe turuncu — rozet ve Fire kalbiyle aynı. */}
             <LinearGradient
               start={vec(0, -tongueHeight)}
               end={vec(width, bandHeight * 0.55)}
@@ -193,7 +193,7 @@ function FlameWaveLayer({
   );
 }
 
-export default function SuperLikeFlameCanvas() {
+export default function FireFlameCanvas() {
   // Modül seviyesinde Dimensions.get() DEĞİL: iPad split-view'da pencere
   // yeniden boyutlandığında o değer bayatlar. Hook her mount'ta güncelini verir.
   const { width, height } = useWindowDimensions();
@@ -215,7 +215,7 @@ export default function SuperLikeFlameCanvas() {
       // dışında oluyor, ease sadece ortadaki geçişi yavaşlatırdı.
       easing: Easing.linear,
     });
-    // Kart değişimi bu ana KİLİTLİ (bkz. flameSweep — süper beğeni de not da):
+    // Kart değişimi bu ana KİLİTLİ (bkz. flameSweep — Fire de not da):
     // dalga ekranı tam kapatınca deste ilerliyor, kullanıcı değişimi görmüyor.
     //
     // Sayaç OLAY anında değil, dalganın gerçekten başladığı yerde kuruluyor:

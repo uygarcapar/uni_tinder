@@ -87,7 +87,7 @@ type GlassFallbackOptions = {
   /**
    * Düz dolgu. VARSAYILAN YOK: zemin normalde `GlassFallbackSurface`in
    * `BlurView`inden geliyor, SwiftUI zincirinden değil. Yalnızca bulanıklığın
-   * kullanılamadığı iki durumda ver — dolu tint'li butonlar (süper beğeni,
+   * kullanılamadığı iki durumda ver — dolu tint'li butonlar (Fire,
    * kırpıcının onay butonu) ve kutusu bilerek butondan geniş bırakılan
    * kapsüller (bkz. `glassFallbackFill`).
    */
@@ -276,11 +276,11 @@ export const GLASS_ICON_BUTTON = {
  * kutusundan taşırır (dokunma alanı 40'ta kalır, cam kenarı boşa basılır),
  * 26 altında da bulanık zemin 40'ta kalıp cam kenarıyla ayrışır.
  *
- * 40 → 44 → 48. Pay kartın payıyla (SuperLikeGlassButton > CARD_GLASS_BUMP)
+ * 40 → 44 → 48. Pay kartın payıyla (FireGlassButton > CARD_GLASS_BUMP)
  * aynı, yani uygulamadaki BÜTÜN yuvarlak cam butonlar tek çapta.
  *
  * `GLASS_ICON_BUTTON.size` yine de 40'ta duruyor ve artık hiçbir buton onu
- * doğrudan çizmiyor: yalnızca bu sabitin ve kart kabuğunun (SUPER_LIKE_GLASS_
+ * doğrudan çizmiyor: yalnızca bu sabitin ve kart kabuğunun (FIRE_GLASS_
  * SIZE) türediği ÖLÇÜ TABANI. İkisi de üstüne 8 ekliyor, yani 40'ı oynatmak
  * başlıkları ve kart şeridini (bant yüksekliği dahil, bkz. CardStickyHeader)
  * birlikte kaydırır — çapı değiştirmek istiyorsan buradaki payı oynat.
@@ -288,7 +288,7 @@ export const GLASS_ICON_BUTTON = {
  * Glif BÜYÜMÜYOR ve oran burada SINIRA GELDİ: 17 punto 48'in içinde her yanda
  * ~15.5pt cam kenar bırakıyor, glif/kabuk oranı 0.43'ten 0.35'e indi. Kabuk
  * bir daha büyütülecekse `GLASS_ICON_BUTTON.icon` da büyümeli, yoksa işaret
- * kabuğun ortasında kaybolur (aynı uyarı SUPER_LIKE_GLASS_SIZE'da).
+ * kabuğun ortasında kaybolur (aynı uyarı FIRE_GLASS_SIZE'da).
  */
 export const GLASS_ICON_CLEAR_SIZE = GLASS_ICON_BUTTON.size + 8;
 
@@ -299,7 +299,7 @@ export const GLASS_ICON_CLEAR_SIZE = GLASS_ICON_BUTTON.size + 8;
  * geri/menü, kayıt + giriş + şifre/e-posta akışlarının ve kırpıcının geri
  * butonu (hepsi RegisterBackButton).
  *
- * Kartın üstündeki ikili (SuperLikeGlassButton, CardActionGlassButton) BUNUN
+ * Kartın üstündeki ikili (FireGlassButton, CardActionGlassButton) BUNUN
  * DIŞINDA: onlar dolgulu cam istiyor — biri tint'e boyanan `glassProminent`,
  * diğeri fotoğrafın üstünde duruyor ve berrak camın kenarı orada kayboluyor.
  *
@@ -322,7 +322,7 @@ export const GLASS_ICON_CLEAR_SIZE = GLASS_ICON_BUTTON.size + 8;
  *
  * Geçiş sırasında çap KENDİLİĞİNDEN değişmedi — eski kabuk da 40 çiziyordu:
  * cam butonun extraLarge payı 23pt, label 17 ile toplamı 40 (aynı denklem kart
- * tarafında da tutuyor, bkz. SuperLikeGlassButton > SUPER_LIKE_GLASS_SIZE:
+ * tarafında da tutuyor, bkz. FireGlassButton > FIRE_GLASS_SIZE:
  * 25'lik kutu 48 veriyor). Sonradan gelen 4pt'lik pay bilinçli ve gerekçesi
  * `GLASS_ICON_CLEAR_SIZE`ın başında. Yan faydası, 26 altındaki
  * `GlassFallbackSurface` dairesiyle ölçünün artık VARSAYIMLA değil birebir

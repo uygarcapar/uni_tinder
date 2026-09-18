@@ -1,13 +1,13 @@
-import SuperLikeGlyph from "@/shared/components/SuperLikeGlyph";
+import FireGlyph from "@/shared/components/FireGlyph";
 import ConsumablePurchaseSheet from "@/features/discover/components/ConsumablePurchaseSheet";
 import {
-  getSuperlikeOffering,
-  purchaseSuperlikePack,
+  getFireOffering,
+  purchaseFirePack,
 } from "@/features/profile/subscriptionService";
-import { SUPERLIKE_REDEEM_FLOW } from "@/features/discover/superlikeRedeem";
+import { FIRE_REDEEM_FLOW } from "@/features/discover/fireRedeem";
 
 /**
- * SuperLike paketi (consumable) satın alma sheet'i.
+ * Fire paketi (consumable) satın alma sheet'i.
  *
  * Kabuğun tamamı ConsumablePurchaseSheet'te — burada yalnız bu ürünün kimliği
  * duruyor: RC offering'i, redeem sözleşmesi, simge ve metin öneki. Not paketi
@@ -18,7 +18,7 @@ import { SUPERLIKE_REDEEM_FLOW } from "@/features/discover/superlikeRedeem";
  * satır açıklama) yükseltilmiştir — kabuğun 55/70 varsayılanında alt sıra sticky
  * footer'ın altında kalıyordu, içerik de scroll etmiyor.
  */
-export default function SuperLikePurchaseModal({
+export default function FirePurchaseModal({
   visible,
   onClose,
   onPurchased,
@@ -28,15 +28,15 @@ export default function SuperLikePurchaseModal({
       visible={visible}
       onClose={onClose}
       onPurchased={onPurchased}
-      flow={SUPERLIKE_REDEEM_FLOW}
-      fetchOffering={getSuperlikeOffering}
-      purchasePack={purchaseSuperlikePack}
-      i18nPrefix="superLikePurchase"
-      analyticsKind="superlike_pack"
-      toastIcon="superLike"
+      flow={FIRE_REDEEM_FLOW}
+      fetchOffering={getFireOffering}
+      purchasePack={purchaseFirePack}
+      i18nPrefix="firePurchase"
+      analyticsKind="fire_pack"
+      toastIcon="fire"
       autoSelectFirstPack
       snapPoints={["68%", "82%"]}
-      renderGlyph={(size, color) => <SuperLikeGlyph size={size} color={color} />}
+      renderGlyph={(size, color) => <FireGlyph size={size} color={color} />}
     />
   );
 }

@@ -14,7 +14,7 @@ import Animated, {
 } from "react-native-reanimated";
 import { colors as theme, gradients, ink } from "@/shared/theme/colors";
 
-type SuperLikeHeartProps = {
+type FireHeartProps = {
   size?: number;
   /** Soldan sağa geçen premium parıltısı. */
   shimmer?: boolean;
@@ -22,15 +22,15 @@ type SuperLikeHeartProps = {
 };
 
 /**
- * LitPlus tonlu, gradient dolgulu SuperLike kalbi. SwipeCard'daki kalbin
+ * LitPlus tonlu, gradient dolgulu Fire kalbi. SwipeCard'daki kalbin
  * ta kendisi — buradan shared olarak kullanılır (LikesScreen kartları, vb.).
  * Lucide fill tek renk aldığı için gradyanı MaskedView ile veriyoruz.
  */
-export default function SuperLikeHeart({
+export default function FireHeart({
   size = 55,
   shimmer = true,
   style,
-}: SuperLikeHeartProps) {
+}: FireHeartProps) {
   // Band kalpten geniş → parıltının falloff'u yumuşak. Boyutla orantılı ölçekle.
   const bandWidth = size * 2.7;
   const shimmerProgress = useSharedValue(0);

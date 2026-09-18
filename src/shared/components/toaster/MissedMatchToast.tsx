@@ -20,7 +20,7 @@ export type MissedMatchToastProps = {
  */
 export default function MissedMatchToast({ photoUrl, title, body }: MissedMatchToastProps) {
   return (
-    <ToastShell paddingVertical={14} paddingHorizontal={16}>
+    <ToastShell>
       <View style={{ flexDirection: 'row', alignItems: 'center' }}>
         {photoUrl ? (
           <ExpoImage

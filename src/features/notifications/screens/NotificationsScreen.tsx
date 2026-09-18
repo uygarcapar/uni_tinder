@@ -53,23 +53,18 @@ import EmptyState from '@/shared/components/EmptyState';
 import SkeletonBox from '@/shared/components/SkeletonBox';
 import { formatRelativeTime } from '@/shared/utils/formatRelativeTime';
 import { parseUtc } from '@/shared/utils/dateUtc';
-import { colors, isLight } from '../../../shared/theme/colors';
+import { colors } from '../../../shared/theme/colors';
 import { glassFallback, glassIconClearGlyph, GLASS_ICON_CLEAR_SIZE } from '../../../shared/theme/glass';
 import GlassFallbackSurface from '@/shared/components/GlassFallbackSurface';
 import { useRenderCount } from '@/shared/debug/useRenderCount';
 import { plainBlurTint } from "@/shared/theme/blur";
+import { BADGE_FG, badgeNeutralFill } from "@/shared/theme/badge";
 
-// Nötr (renk taşımayan) rozetlerin zemini POLARİTE çevirmiyor — iki modda da
-// koyu disk + beyaz glyph. `colors.bg`/`colors.text` kullanılsaydı açık modda
-// beyaz disk beyaz zeminin içinde kaybolurdu. Tek fark ton: koyu modda tam
-// siyah disk, altındaki #121212 liste zemininden ve rozetin kendi `colors.bg`
-// halkasından ayrışmıyordu → koyuda griye çekiliyor, açıkta siyah kalıyor
-// (beyaz zeminde kontrast zaten fazlasıyla var).
-// Modül seviyesinde SABİTLENEMEZ (colors.ts mutasyon sözleşmesi §1) — fonksiyon.
-const badgeNeutralBg = () => (isLight() ? '#000000' : '#3A3A3C');
-// Renkli/koyu diskin üstündeki işaretin beyazı da temadan gelmiyor: `colors.text`
-// açık modda koyuya döndüğü için kırmızı disk üstünde okunmuyordu.
-const BADGE_FG = '#FFFFFF';
+// Nötr (renk taşımayan) rozetlerin zemini ve diskin üstündeki beyaz işaret
+// artık PAYLAŞILAN kaynaktan: toast'ların soldaki simge dairesi de aynı kuralı
+// uyguluyor (bkz. shared/theme/badge.ts, toastIcons.tsx). Buradaki değerleri
+// değiştirmek toast'ları da değiştirir — kasıtlı: aynı olay, aynı işaret.
+const badgeNeutralBg = badgeNeutralFill;
 
 // Fotoğrafın sağ altına oturan tip rozeti. Burada olmayan tipler (System,
 // TrialEndingSoon, PremiumExpiringSoon …) sistem bildirimi sayılır, rozet almaz.
@@ -77,12 +72,12 @@ const BADGE_FG = '#FFFFFF';
 // çizilmiyor (metin zaten eşleşmeyi söylüyor).
 const TYPE_BADGES = {
   // İki beğeni tipi hem işaret hem renkle ayrışıyor: düz beğeni nötr siyah
-  // diskte tik, süper beğeni kırmızı diskte kalp — kalp yalnızca vurgulu olanda
-  // kalıyor. Süper beğeninin kalbi İÇİ DOLU beyaz: 18pt diskin üstünde 11pt ince
+  // diskte tik, Fire kırmızı diskte kalp — kalp yalnızca vurgulu olanda
+  // kalıyor. Fire'ın kalbi İÇİ DOLU beyaz: 18pt diskin üstünde 11pt ince
   // konturlu kalp kayboluyor. `filled` Android/lucide fallback'e de dolgu
   // geçiriyor; tik zaten kontur glyph'i, dolgu istemiyor.
   Like: { Icon: Check, sf: 'checkmark' as SFSymbol, neutral: true, iconColor: BADGE_FG },
-  SuperLike: { Icon: Heart, sf: 'heart.fill' as SFSymbol, color: colors.errorStrong, iconColor: BADGE_FG, filled: true },
+  Fire: { Icon: Heart, sf: 'heart.fill' as SFSymbol, color: colors.errorStrong, iconColor: BADGE_FG, filled: true },
   // Not'un işareti SF `bubble.left.fill` DEĞİL: ürünün kendi glyph'i
   // (NoteGlyph — SwipeCard'daki not kutusu, Likes rozeti, paket modalı ve toast
   // hep aynı şekli kullanıyor). Rozet zemini de tip renginden değil sabit
@@ -114,7 +109,7 @@ const TYPE_BADGES = {
 // Tap hedefleri. Chat'e gidenler ayrıca sağda chevron gösteriyor; buradaki
 // hiçbir listede olmayan tipler (System vb.) tıklanınca bir yere gitmiyor.
 const GOES_TO_CHAT = { Match: true, Message: true };
-const GOES_TO_LIKES = { Like: true, SuperLike: true, Note: true, MissedMatch: true };
+const GOES_TO_LIKES = { Like: true, Fire: true, Note: true, MissedMatch: true };
 // Fotoğraf moderasyonu → Profil sekmesi (foto ızgarası orada).
 const GOES_TO_PROFILE = {
   PhotoRejected: true,
@@ -124,7 +119,7 @@ const GOES_TO_PROFILE = {
 };
 
 // Premium olmayan kullanıcı düz beğenilerde beğenenin kimliğini göremez —
-// LikesScreen'deki kilitle aynı kural. SuperLike orada da açık gösterildiği
+// LikesScreen'deki kilitle aynı kural. Fire orada da açık gösterildiği
 // için burada da açık kalıyor; Match/MissedMatch'te kimlik zaten serbest.
 // Not da MUAF (sözleşme §6): gönderenin adı free alıcıya da açık.
 const IDENTITY_GATED = { Like: true };

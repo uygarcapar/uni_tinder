@@ -5,7 +5,7 @@ import { FLAME_PATH, FLAME_VIEWBOX } from "./icons/FlameGlyph";
 import { gradients } from "../theme/colors";
 
 // Premium rozeti: isim/yaşın sağındaki ateş ikonu. Şekil artık SF/lucide flame
-// değil, uygulamaya özel glyph (bkz. icons/FlameGlyph). Dolgu super-like
+// değil, uygulamaya özel glyph (bkz. icons/FlameGlyph). Dolgu fire
 // kalbiyle aynı: gradients.swipeHeart. SwipeCard, LikesScreen kartı ve
 // ProfileScreen hero'su aynı görseli paylaşsın diye tek yerde duruyor.
 //

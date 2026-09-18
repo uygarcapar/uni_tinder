@@ -3,6 +3,7 @@ import AsyncStorage from '@react-native-async-storage/async-storage';
 import * as SecureStore from 'expo-secure-store';
 import * as Crypto from 'expo-crypto';
 import { appPrefs } from '@/shared/utils/appPrefs';
+import { authDiag } from '@/shared/debug/authDiagnostics';
 import type { Storage } from 'redux-persist';
 
 /**
@@ -63,10 +64,32 @@ const SECURE_OPTS = { keychainAccessible: SecureStore.AFTER_FIRST_UNLOCK } as co
 /** "Bu depo ŞİFRELİ" bayrağı — gerekçesi tokenStorage.ts'teki ikiziyle aynı. */
 const APP_ENC_MARKER = 'ut_app_encrypted_v1';
 
+/**
+ * Bu AÇILIŞTA `redux-app` açılamadı → rehydrate BOŞ gelir, yani oturum diskte
+ * dururken uygulama login ekranıyla açılır. Token deposundaki ikiziyle
+ * (`isTokenStoreDegraded`) aynı gerekçe; farkı: orası "refresh etme" diyor,
+ * burası "kullanıcıya yeniden giriş yaptırma" uyarısının kaynağı.
+ */
+let appStoreDegraded = false;
+export const isAppStoreDegraded = (): boolean => appStoreDegraded;
+
+/** Gerekçesi tokenStorage.ts'teki ikiziyle aynı — üç deneme senkron ve bedava. */
+const readKeySync = (name: string): string | null => {
+  let lastError: unknown = null;
+  for (let attempt = 1; attempt <= 3; attempt++) {
+    try {
+      return SecureStore.getItem(name, SECURE_OPTS);
+    } catch (error) {
+      lastError = error;
+    }
+  }
+  throw lastError;
+};
+
 const createAppStore = (): MMKV => {
   const knownEncrypted = appPrefs.getBoolean(APP_ENC_MARKER) === true;
   try {
-    const existingKey = SecureStore.getItem(APP_ENC_KEY_NAME, SECURE_OPTS);
+    const existingKey = readKeySync(APP_ENC_KEY_NAME);
     if (existingKey) {
       appPrefs.set(APP_ENC_MARKER, true);
       return createMMKV({
@@ -96,7 +119,13 @@ const createAppStore = (): MMKV => {
     // dosyaya düşüyoruz — gerçek dosyaya DOKUNULMUYOR, sonraki normal
     // açılışta her şey yerinde. Baştaki clearAll, degrade oturumun verisinin
     // diskte birikmesini önler.
-    console.error('App store encryption unavailable, using scratch store:', error);
+    appStoreDegraded = true;
+    authDiag('store-degraded', {
+      depo: 'redux-app',
+      şifreliBayrağı: knownEncrypted,
+      hata: error instanceof Error ? `${error.name}: ${error.message}` : String(error),
+      etki: 'rehydrate boş — login ekranı açılır, disktaki oturum YERİNDE',
+    });
     const scratch = createMMKV({ id: 'redux-app-degraded' });
     scratch.clearAll();
     return scratch;

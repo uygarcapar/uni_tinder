@@ -65,6 +65,7 @@ export function showMessageToast({
   senderName,
   photoUrl,
   preview,
+  voiceDuration,
   conversationId,
   partnerUserId,
   isActive = true,
@@ -82,7 +83,7 @@ export function showMessageToast({
 
   Notifier.showNotification({
     Component: MessageToast,
-    componentProps: { senderName, photoUrl, preview } as MessageToastProps,
+    componentProps: { senderName, photoUrl, preview, voiceDuration } as MessageToastProps,
     onPress: goToChat,
     swipeEnabled: true,
     ...BANNER_MOTION,

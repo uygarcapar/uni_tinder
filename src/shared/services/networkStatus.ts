@@ -73,3 +73,17 @@ const getSnapshot = () => offline;
 export function useIsOffline() {
   return useSyncExternalStore(subscribe, getSnapshot);
 }
+
+/**
+ * Hook DIŞI okuma — React ağacında olmayan modüller için (bkz. chat outbox).
+ *
+ * `start()` çağrısı ŞART: bu modülü bugüne kadar hiç hook tüketmediyse native
+ * listener hiç kurulmamış olur ve `offline` başlangıç değeri olan `false`'ta
+ * donar; imperatif okuyan taraf "internet var" sanırdı. start() idempotent.
+ * İlk çağrıda değer yine de bir tur bayat olabilir (getNetworkStateAsync async)
+ * — bu yüzden `false` dönmesi "kesin online" değil "aksi bilinmiyor" demek.
+ */
+export function isOfflineNow(): boolean {
+  start();
+  return offline;
+}
