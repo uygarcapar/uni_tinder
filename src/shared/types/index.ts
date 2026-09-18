@@ -135,10 +135,38 @@ export interface ProfileState {
 
 // ─── Chat ──────────────────────────────────────────────────────────────────────
 
-export interface ReactionDto {
+/**
+ * Mesaj reaction'ı — wire şekli GRUPLU: emoji başına tek satır, kaç kişi
+ * (`count`) ve kimler (`userIds`).
+ *
+ * NOT: burada eskiden `ReactionDto { emoji, userId, reactedAt }` duruyordu; o
+ * şekil hiçbir zaman sunucudan gelmedi ve `MessageDto.reactions` dışında hiçbir
+ * yerde kullanılmıyordu — reaction'a dokunan her şey `any` üzerinden çalışıp
+ * gerçek şekli (reactionPick.ts) varsayıyordu. SQLite'a yazarken şema bir
+ * yalanın üstüne kurulmasın diye düzeltildi.
+ *
+ * "Benim reaction'ım" kararı `userIds`ten çıkar (kullanıcı başına TEK reaction).
+ */
+export interface MessageReactionDto {
   emoji: string;
-  userId: string;
-  reactedAt: string;
+  count?: number;
+  userIds?: string[];
+}
+
+/**
+ * Yanıtlanan mesajın ANLIK GÖRÜNTÜSÜ — iki kaynaktan gelir ve ikisi de tüm
+ * alanları taşımayabilir: composing'de yerel taslak (ChatScreen.buildReplyDraft),
+ * balonda sunucunun `replyTo` bloğu. Bu yüzden `id` dışında her şey opsiyonel;
+ * ReplyPreview eksik alanları asıl mesajdan telafi ediyor.
+ */
+export interface ReplyPreviewDto {
+  id: string;
+  senderId?: string;
+  senderDisplayName?: string;
+  contentPreview?: string;
+  contentType?: number | string;
+  durationMs?: number | null;
+  isDeleted?: boolean;
 }
 
 export interface MessageDto {
@@ -152,9 +180,21 @@ export interface MessageDto {
   readAt?: string | null;
   deliveredAt?: string | null;
   clientMessageId?: string;
-  reactions?: ReactionDto[];
+  reactions?: MessageReactionDto[];
   isSystemMessage?: boolean;
+  /**
+   * Gönderenin hesabı silinmiş. Hesap silinince sohbet ve mesajlar YERİNDE
+   * kalıyor, yalnız gönderen anonimleşiyor — yani bu alan mesaj oluştuktan
+   * SONRA değişebilir ve bu yüzden messageContentEqual'a dahil.
+   */
+  isSenderDeleted?: boolean;
   localizationKey?: string;
+  /**
+   * Düzenlenme zamanı. Tipte YOKTU ama runtime'da hep vardı ve
+   * messageContentEqual onu karşılaştırıyor — comparator'da olup tipte olmayan
+   * alan, "bu alan var mı" sorusunu koda bakarak cevaplanamaz hale getiriyordu.
+   */
+  editedAt?: string | null;
   deletedAt?: string | null;
   deletedForEveryone?: boolean;
   /**
@@ -168,6 +208,12 @@ export interface MessageDto {
   /** "0,12,47,…" 0-100 arası en çok 64 nokta; null olabilir → düz çubuk. */
   waveformPeaks?: string | null;
   replyToMessageId?: string | null;
+  /**
+   * Yanıtlanan mesajın gömülü önizlemesi. `replyToMessageId` yalnız ID'dir;
+   * balonun ÜSTÜNDE çizilen alıntı kartı bunu okur (MessageBubble, ReplyPreview).
+   * Tipte yoktu; hem sunucu gönderiyor hem de retry yolu okuyor.
+   */
+  replyTo?: ReplyPreviewDto | null;
   _pending?: boolean;
   _failed?: boolean;
   _selfUserId?: string;
@@ -216,13 +262,30 @@ export interface ConversationListItemDto {
    */
   restorableUntil?: string | null;
   /**
-   * Sohbeti BİZ mi kapattık? SUNUCUDAN GELMEZ — liste DTO'su kimin kapattığını
-   * taşımıyor, bayrağı kendi unmatch'imizde istemcide yazıyoruz (bkz.
-   * chatSlice.conversationDeactivated `byMe`). "Geri Al" yalnız eşleşmeyi
-   * kaldıran tarafa açık olduğu için gerekli.
+   * Sohbeti BİZ mi kapattık — SUNUCUNUN cevabı. "Geri Al" kapısının kanonik
+   * kaynağı (bkz. resolveClosedByMe).
    *
-   * `undefined` = BİLİNMİYOR (bu bayraktan önce yazılmış cache ya da unmatch
-   * başka cihazdan yapıldı) — `false` ile aynı şey DEĞİL, bkz. shouldOfferRestore.
+   * Sunucu bunu göndermeye 2026-09 delta-sync işiyle başladı; ondan önce
+   * kapatanın kim olduğu yalnız istemcide tahmin ediliyordu (`deactivatedByMe`).
+   * `undefined` = sunucu HENÜZ söylemiyor (eski sürüm / uç deploy edilmedi) →
+   * yerel tahmine düşülür. `false` ile aynı şey DEĞİL.
+   */
+  closedByMe?: boolean;
+  /**
+   * Sohbetin neden kapandığı — `"Unmatched"` | `"Blocked"`.
+   *
+   * Gizlilik kuralı sunucuda: `Blocked` YALNIZ engelleyen tarafa gönderiliyor,
+   * karşı taraf ayrımı göremiyor. İstemci bu değeri yorumlamadan saklıyor.
+   */
+  closedReason?: string;
+  /**
+   * @deprecated Sunucu artık `closedByMe` gönderiyor. Bu, o alandan ÖNCEKİ
+   * istemci-tarafı tahmini: kendi unmatch'imizde damgalanıyordu (bkz.
+   * chatSlice.conversationDeactivated `byMe`). Yalnız geri uyum için duruyor —
+   * `closedByMe` gelmeyen sürümlerde/kayıtlarda devreye giriyor.
+   *
+   * `undefined` = BİLİNMİYOR (eski cache ya da unmatch başka cihazdan) —
+   * `false` ile aynı şey DEĞİL, bkz. shouldOfferRestore.
    */
   deactivatedByMe?: boolean;
 }
@@ -316,9 +379,9 @@ export type ResponseCode =
   | "UT-6005" // AccountRestricted
   | "UT-6006" // PoolWarming
   | "UT-3001" // SwipeLimitReached
-  | "UT-6101" // SuperLike/Redeem — webhook henüz inmedi (GEÇİCİ, tek retry'lık durum)
-  | "UT-6102" // SuperLike/Redeem — ürün backend map'inde tanımlı değil (KALICI)
-  | "UT-6103" // SuperLike/Redeem — transaction başka hesaba ait (KALICI)
+  | "UT-6101" // Fire/Redeem — webhook henüz inmedi (GEÇİCİ, tek retry'lık durum)
+  | "UT-6102" // Fire/Redeem — ürün backend map'inde tanımlı değil (KALICI)
+  | "UT-6103" // Fire/Redeem — transaction başka hesaba ait (KALICI)
   // ⚠️ UT-62xx (Recovery/Redeem) EMEKLİ — 2026-08-31'de kurtarma consumable'ı
   // kaldırıldı, uç silindi. Backend bu numaraları başka bir aileye VERMEYECEK
   // (testle kilitli), o yüzden burada da yeniden kullanılmamalı.
@@ -339,13 +402,13 @@ export type ResponseCode =
 
 export type PaywallType =
   | "SWIPE_LIMIT"
-  | "SUPER_LIKE_LIMIT"
+  | "FIRE_LIMIT"
   | "UNDO_LIMIT"
   | "MISSED_MATCH_RECOVERY_LIMIT"
   | "PREMIUM_FILTERS"
   | "CHAT_QUOTA_EXHAUSTED"
   // Not bakiyesi bitti. Abonelik paywall'ı DEĞİL: premium kullanıcı da paket
-  // satın alıyor (SuperLike'ın 2026-08-11'deki davranışının aynısı).
+  // satın alıyor (Fire'ın 2026-08-11'deki davranışının aynısı).
   | "NOTE_BALANCE";
 
 /**
@@ -552,7 +615,7 @@ export interface PotentialMatch {
 
   /**
    * Bu kullanıcı beni beğenmiş mi. Free üyede normal beğeni için HER ZAMAN
-   * `false` döner (yalnız karşı taraf SuperLike attıysa gerçek değer gelir);
+   * `false` döner (yalnız karşı taraf Fire attıysa gerçek değer gelir);
    * premium'da gerçek değer.
    *
    * ⚠️ Bu kısıtlama YALNIZ KEŞİF DESTESİNDE (`GetPotentialMatches`). Aynı DTO
@@ -709,7 +772,7 @@ export interface SwipeStats {
   weeklySuperLikeLimit: number | null;
   dailyUndoLimit: number | null;
   /**
-   * Not bakiyesi — tier kotası + satın alınan kredi TOPLAMI (SuperLike'ın
+   * Not bakiyesi — tier kotası + satın alınan kredi TOPLAMI (Fire'ın
    * `superLikesRemaining`i ile aynı desen). Taban 0, `-1` (sınırsız) dönmez.
    *
    * ⚠️ Bu alan bir ÖZELLİK ANAHTARI DEĞİL: backend henüz göndermiyorken de not

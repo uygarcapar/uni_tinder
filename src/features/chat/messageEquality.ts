@@ -40,9 +40,45 @@ export function messageContentEqual(a: any, b: any) {
     a.deliveredAt === b.deliveredAt &&
     a.editedAt === b.editedAt &&
     a.deletedAt === b.deletedAt &&
+    // Hesap silinince mesaj yerinde kalıyor, yalnız gönderen anonimleşiyor —
+    // yani mesaj oluştuktan SONRA değişebilen bir alan. messageIdentityEqual'a
+    // koysaydık balon bayat kalırdı.
+    !!a.isSenderDeleted === !!b.isSenderDeleted &&
     a._pending === b._pending &&
     a._failed === b._failed &&
     reactionsEqual(a.reactions, b.reactions)
+  );
+}
+
+/**
+ * "Kimlik" eşitliği — messageContentEqual'ın KAPSAMADIĞI alanlar.
+ *
+ * Neden ayrı bir fonksiyon: messageContentEqual kasten dar, çünkü "balon
+ * yeniden çizilsin mi" sorusunu cevaplıyor. Ama SQLite projeksiyonunda ikinci
+ * bir soru var — "bu satır hâlâ AYNI mesaj mı" — ve onu cevaplayan alanlar
+ * (sentAt, senderId, conversationId…) hiçbir comparator'da yoktu. İkisini tek
+ * comparator'a katmak balonu gereksiz yere yeniden çizdirirdi.
+ *
+ * INVARIANT: iki comparator'da da olmayan bir alan insert'ten SONRA asla
+ * değişmemeli. Yeni alan eklerken ya buraya ya messageContentEqual'a koy.
+ *
+ * `id` kasten YOK: temp-<cmid> → server id geçişinde değişen tek alan o ve
+ * orası meşru (bkz. messageCache.rekey); messageContentEqual zaten karşılaştırıyor.
+ */
+export function messageIdentityEqual(a: any, b: any) {
+  if (a === b) return true;
+  if (!a || !b) return false;
+  return (
+    a.sentAt === b.sentAt &&
+    a.senderId === b.senderId &&
+    a.conversationId === b.conversationId &&
+    a.clientMessageId === b.clientMessageId &&
+    !!a.isSystemMessage === !!b.isSystemMessage &&
+    a.localizationKey === b.localizationKey &&
+    !!a.deletedForEveryone === !!b.deletedForEveryone &&
+    a._localUri === b._localUri &&
+    a.replyToMessageId === b.replyToMessageId &&
+    (a.replyTo?.id ?? null) === (b.replyTo?.id ?? null)
   );
 }
 
