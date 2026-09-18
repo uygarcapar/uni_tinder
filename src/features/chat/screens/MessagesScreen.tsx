@@ -45,7 +45,7 @@ import {
   conversationDeactivated,
   conversationRestored,
 } from "@/features/chat/chatSlice";
-import chatService from "@/features/chat/chatService";
+import chatService, { HISTORY_PAGE_SIZE } from "@/features/chat/chatService";
 import { useDrafts } from "@/features/chat/draftStore";
 import {
   formatVoiceDuration,
@@ -53,6 +53,7 @@ import {
 } from "@/features/chat/voiceMessage";
 import {
   formatRestoreWindow,
+  resolveClosedByMe,
   shouldOfferRestore,
 } from "@/features/chat/restoreWindow";
 import ConversationOptionsSheet from "@/features/chat/components/ConversationOptionsSheet";
@@ -61,7 +62,7 @@ import moderationService from "@/shared/services/moderationService";
 import { showInfoToast } from "@/shared/services/toaster";
 import { chatErrorText } from "@/shared/constants/responseCodes";
 import { parseUtc } from "@/shared/utils/dateUtc";
-import { store } from "@/shared/store";
+import { hydrateConversation } from "@/features/chat/chatHydrate";
 import EmptyState from "@/shared/components/EmptyState";
 import type PagerView from "react-native-pager-view";
 import PagerTabBar, {
@@ -253,7 +254,7 @@ export default function MessagesScreen() {
         fetchHistory({
           conversationId: c.conversationId,
           cursor: null,
-          pageSize: 30,
+          pageSize: HISTORY_PAGE_SIZE,
         }),
       )
         // İstek thunk'ın in-flight guard'ına takıldıysa (aynı sohbete başka bir
@@ -654,42 +655,23 @@ export default function MessagesScreen() {
     }, [dispatch]),
   );
 
-  // WhatsApp davranışı — chat'e girince mesajlar anında gelsin.
-  // Conversations yüklenir yüklenmez ilk N sohbetin mesaj history'sini
-  // arka planda Redux'a doldur. ChatScreen mount olduğunda bucket dolu
-  // → blank ekran/spinner yok. Her conversationId için tek seferlik
-  // prefetch (ref ile dedup) — yeni mesaj geldikçe re-trigger olmasın.
-  const prefetchedHistoryRef = useRef(new Set());
-  useEffect(() => {
-    if (!conversations?.length) return;
-    conversations.slice(0, 15).forEach((conv) => {
-      if (prefetchedHistoryRef.current.has(conv.conversationId)) return;
-      // MMKV hydrate sonrası bucket zaten doluysa network'e GEREK YOK —
-      // ChatScreen açılışta kendi arka plan reconcile fetch'ini yapıyor.
-      // store.getState() ile oku (subscribe etme → messagesByConv değişimleri
-      // bu effect'i re-trigger etmesin). Net: boot fan-out 15 istekten yalnız
-      // gerçekten boş sohbetlere (tipik: yeni match) düşer.
-      const bucket = (store.getState() as any).chat.messagesByConv[
-        conv.conversationId
-      ];
-      if (bucket?.messages?.length) {
-        prefetchedHistoryRef.current.add(conv.conversationId);
-        return;
-      }
-      prefetchedHistoryRef.current.add(conv.conversationId);
-      dispatch(
-        fetchHistory({
-          conversationId: conv.conversationId,
-          cursor: null,
-          pageSize: 30,
-        }),
-      );
-    });
-  }, [conversations, dispatch]);
+  // BOOT PREFETCH KALDIRILDI (local-first geçişi).
+  //
+  // Burada ilk 15 sohbetin history'si arka planda çekiliyordu — tek amacı
+  // Redux'ı ısıtmaktı ki ChatScreen dolu açılsın. Artık geçmiş SQLite'ta
+  // duruyor ve açılışta diskten senkron okunuyor (chatHydrate), yani bu
+  // fan-out saf maliyetti: cold boot'ta 15 HTTP isteği.
+  //
+  // Tazelik kaybı yok: ChatScreen girişte kendi page-1 reconcile fetch'ini
+  // zaten atıyor; sohbet listesinin kendisi de fetchConversations ile geliyor.
 
   const openChat = useCallback(
     (conv) => {
       dispatch(setActiveConversation(conv.conversationId));
+      // Diski BASIŞ ANINDA oku — aşağıdaki runAfterInteractions zaten basış
+      // animasyonunu bekliyor, 1-3 ms'lik okuma o pencereye sığıyor ve
+      // ChatScreen DOLU bucket'la mount oluyor (layout effect'i no-op'a düşer).
+      hydrateConversation(dispatch, conv.conversationId);
       // Bir chatten çıkıp hemen başka chate girmeye çalışınca navigate çağrısı
       // bazen düşüyor (TouchableHighlight highlight'ı görünse de ekran açılmıyor,
       // ikinci tap'te açılıyor). Root cause: önceki ChatScreen exit transition'ı
@@ -1397,13 +1379,13 @@ export default function MessagesScreen() {
           !optionsConv.isActive &&
           shouldOfferRestore(
             optionsConv.restorableUntil,
-            optionsConv.deactivatedByMe,
+            resolveClosedByMe(optionsConv),
           )
         }
         restorableUntil={optionsConv?.restorableUntil}
         // Kapatan biz değilsek "geri alma süresi doldu" YALAN olurdu (o uçta
         // pencere hiç açılmadı) — nötr "sohbet sonlandırıldı" metnine düşülür.
-        closedByMe={optionsConv?.deactivatedByMe === true}
+        closedByMe={resolveClosedByMe(optionsConv) === true}
         onUnmatch={() => optionsConv && handleSheetUnmatch(optionsConv)}
         onRestore={() => optionsConv && handleSheetRestore(optionsConv)}
         onReport={() => setReportConv(optionsConv)}

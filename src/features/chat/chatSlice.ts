@@ -1,6 +1,7 @@
 import { createSlice, createAsyncThunk, PayloadAction } from '@reduxjs/toolkit';
-import chatService from '@/features/chat/chatService';
+import chatService, { HISTORY_PAGE_SIZE } from '@/features/chat/chatService';
 import { messageContentEqual } from '@/features/chat/messageEquality';
+import { contentTypeToNumber } from '@/features/chat/contentType';
 import { utcTime } from '@/shared/utils/dateUtc';
 import { chatErrorCodeOf, chatErrorEffect } from '@/shared/constants/responseCodes';
 import type {
@@ -43,7 +44,7 @@ export const fetchConversations = createAsyncThunk(
 export const fetchHistory = createAsyncThunk(
   'chat/fetchHistory',
   async (
-    { conversationId, cursor, pageSize = 30 }: { conversationId: string; cursor?: string; pageSize?: number },
+    { conversationId, cursor, pageSize = HISTORY_PAGE_SIZE }: { conversationId: string; cursor?: string; pageSize?: number },
     { rejectWithValue }
   ) => {
     try {
@@ -165,26 +166,9 @@ function markConversationReadLocally(state: ChatState, conversationId: string) {
   conv.unreadCount = 0;
 }
 
-// MessageContentType: 0 Text, 1 Image, 2 Voice, 3 Video, 99 System. Backend
-// enum'u sayı ya da isim ("Voice") olarak yollayabiliyor; sohbet listesi
-// (MessagesScreen ikon/etiket seçimi) SAYI bekliyor — tek biçime burada iniyor.
-const CONTENT_TYPE_BY_NAME: Record<string, number> = {
-  text: 0,
-  image: 1,
-  voice: 2,
-  video: 3,
-  system: 99,
-};
-
-function contentTypeToNumber(contentType: MessageDto['contentType']): number {
-  if (typeof contentType === 'number') return contentType;
-  if (typeof contentType === 'string') {
-    const asNumber = Number(contentType);
-    if (Number.isFinite(asNumber)) return asNumber;
-    return CONTENT_TYPE_BY_NAME[contentType.toLowerCase()] ?? 0;
-  }
-  return 0;
-}
+// contentTypeToNumber artık ./contentType'ta — SQLite yazım kapısı
+// (normalizeMessage) ve slice aynı dönüşümü paylaşmak zorunda, iki kopya
+// ayrışırsa sesli mesajlar sessizce farklı tiplere düşer.
 
 /**
  * Kota sohbet başına ve İKİ TARAFIN TOPLAMI: karşı tarafın mesajı da hakkı
@@ -227,6 +211,78 @@ const chatSlice = createSlice({
   reducers: {
     setActiveConversation: (state, action: PayloadAction<string | null>) => {
       state.activeConversationId = action.payload;
+    },
+
+    /**
+     * SQLite'tan gelen SICAK PENCERE — local-first okuma yolunun girişi.
+     *
+     * fetchHistory.fulfilled'ın reconcile merge'ine KASTEN dokunmuyor: o
+     * algoritma tests/features/chat/chatSlice.history.test.ts ile kilitli ve
+     * göç boyunca aynen yaşamalı. Bu AYRI bir yol — kaynağı ağ değil disk.
+     *
+     * Dizi referansı: `messages` zaten messageCache.projectWindow'dan geliyor,
+     * yani hiçbir şey değişmediyse ÖNCEKİYLE AYNI referans. Immer aynı değerin
+     * atanmasını değişiklik saymıyor (set trap `is()` ile kısa devre yapıyor),
+     * dolayısıyla no-op hydrate state'i hiç kirletmiyor → messagesWithSeparators
+     * useMemo'su çalışmıyor → LegendList uyanmıyor.
+     */
+    hydrateWindow: (
+      state,
+      action: PayloadAction<{
+        conversationId: string;
+        messages: MessageDto[];
+        nextCursor: string | null;
+        hasMore: boolean;
+        hasHiddenHistory: boolean;
+      }>,
+    ) => {
+      const { conversationId, messages, nextCursor, hasMore, hasHiddenHistory } = action.payload;
+      const bucket = state.messagesByConv[conversationId] ?? emptyBucket();
+      bucket.messages = messages;
+      bucket.nextCursor = nextCursor;
+      bucket.hasMore = hasMore;
+      bucket.hasHiddenHistory = hasHiddenHistory;
+      bucket.loading = false;
+      state.messagesByConv[conversationId] = bucket;
+    },
+
+    /**
+     * Yukarı kaydırmada YEREL'den gelen eski sayfa (ağ yok).
+     *
+     * Semantiği fetchHistory'nin `append` dalıyla birebir aynı: id-dedupe +
+     * kuyruğa ekleme (liste newest-first, eskiler SONA gider).
+     *
+     * `loading`'e DOKUNMUYOR ve bu kritik: o bayrak retry timer'larını ve giriş
+     * skeleton'ını kapılıyor (ChatScreen.tsx:829, :844). Yerel okuma zaten
+     * senkron bitmiş durumda — "yükleniyor" demek ekranda sahte bir durum
+     * yaratır ve prepend guard'larını yanıltır.
+     */
+    prependOlderFromLocal: (
+      state,
+      action: PayloadAction<{ conversationId: string; messages: MessageDto[] }>,
+    ) => {
+      const { conversationId, messages } = action.payload;
+      const bucket = state.messagesByConv[conversationId];
+      if (!bucket || !messages.length) return;
+      const existing = new Set(bucket.messages.map((m) => m.id));
+      const fresh = messages.filter((m) => !existing.has(m.id));
+      if (!fresh.length) return;
+      bucket.messages = [...bucket.messages, ...fresh];
+    },
+
+    /**
+     * Geçmiş GERÇEKTEN bitti: ne diskte daha eski satır var ne de sunucuda
+     * (cursor yok).
+     *
+     * Şart, çünkü `hasMore` yukarı kaydırmanın tekrar-dene zamanlayıcısını
+     * besliyor (ChatScreen.tsx:893). Yerel tükenip cursor da yokken bayrak
+     * açık kalırsa timer 450 ms'de bir sonsuza kadar boş yere tetiklenir.
+     */
+    setHistoryExhausted: (state, action: PayloadAction<string>) => {
+      const bucket = state.messagesByConv[action.payload];
+      if (!bucket) return;
+      bucket.hasMore = false;
+      bucket.nextCursor = null;
     },
 
     receiveMessage: (state, action: PayloadAction<MessageDto & { _selfUserId?: string }>) => {
@@ -813,6 +869,9 @@ const chatSlice = createSlice({
 
 export const {
   setActiveConversation,
+  hydrateWindow,
+  prependOlderFromLocal,
+  setHistoryExhausted,
   receiveMessage,
   messageSent,
   messagesRead,

@@ -1,4 +1,11 @@
-import { useEffect, useState, useCallback, useRef, useMemo } from "react";
+import {
+  useEffect,
+  useLayoutEffect,
+  useState,
+  useCallback,
+  useRef,
+  useMemo,
+} from "react";
 import { useTranslation } from "react-i18next";
 import {
   View,
@@ -54,28 +61,29 @@ import {
   fetchHistory,
   fetchConversations,
   setActiveConversation,
+  setHistoryExhausted,
   appendOptimisticMessage,
-  failOptimisticMessage,
-  retryOptimisticMessage,
-  removeOptimisticMessage,
   clearUnreadForConversation,
   conversationDeactivated,
   conversationRestored,
   historyRevealed,
   fetchChatQuota,
-  decrementQuotaLocally,
   reactionsChanged,
   messageDeleted,
   messageEdited,
-  messageSent,
 } from "@/features/chat/chatSlice";
-import { refreshEntitlementsForPaywall } from "@/features/profile/subscriptionSlice";
-import chatService from "@/features/chat/chatService";
+import chatService, { HISTORY_PAGE_SIZE } from "@/features/chat/chatService";
 import { newClientMessageId } from "@/features/chat/clientMessageId";
+import {
+  hasLocalHistory,
+  hydrateConversation,
+  loadOlderLocalFirst,
+} from "@/features/chat/chatHydrate";
 import { markMessageEntering } from "@/features/chat/enterAnimation";
 import { applyReactionPick } from "@/features/chat/reactionPick";
 import { getDraft, setDraft } from "@/features/chat/draftStore";
-import { enqueueSend } from "@/features/chat/sendQueue";
+import { sendOutgoing, retryFailedMessage } from "@/features/chat/outbox";
+import { openQuotaPaywall as openChatQuotaPaywall } from "@/features/chat/quotaPaywall";
 import realtimeService from "@/features/chat/realtimeService";
 import MessageBubble from "@/features/chat/components/MessageBubble";
 import ReplySwipeRow from "@/features/chat/components/ReplySwipeRow";
@@ -93,6 +101,7 @@ import HiddenHistoryBanner, {
 } from "@/features/chat/components/HiddenHistoryBanner";
 import {
   formatRestoreWindow,
+  resolveClosedByMe,
   shouldOfferRestore,
 } from "@/features/chat/restoreWindow";
 import ReportModal from "@/shared/components/ReportModal";
@@ -101,15 +110,9 @@ import DateSeparator, {
 } from "@/features/chat/components/DateSeparator";
 import moderationService from "@/shared/services/moderationService";
 import { utcTime } from "@/shared/utils/dateUtc";
-import { openLitPlus } from "@/features/profile/litPlusEntry";
 import PreviewModal from "@/features/profile/components/PreviewModal";
 import swipeService from "@/features/discover/swipeService";
-import { sendVoiceMessage, VoiceTooLargeError } from "@/features/chat/voiceSend";
-import {
-  VOICE_CONTENT_TYPE,
-  isVoiceMessage,
-  voiceErrorCode,
-} from "@/features/chat/voiceMessage";
+import { VOICE_CONTENT_TYPE } from "@/features/chat/voiceMessage";
 import { discardVoiceTake } from "@/features/chat/useVoiceRecorder";
 import { stopVoicePlayback } from "@/features/chat/voicePlayback";
 import { showInfoToast } from "@/shared/services/toaster";
@@ -132,22 +135,11 @@ import {
 } from "../../../shared/theme/glass";
 import GlassFallbackSurface from "@/shared/components/GlassFallbackSurface";
 import { devLog } from '@/shared/utils/devLog';
-import { useIsOffline } from "@/shared/services/networkStatus";
 import { chromeBlurTint } from "@/shared/theme/blur";
 import { plainBlurTint } from "@/shared/theme/blur";
 
 const ContentType = { Text: 0, Voice: VOICE_CONTENT_TYPE, System: 99 };
 const INPUT_BAR_OPAQUE = 66; // composer opak gövde tahmini (inset başlangıç değeri)
-// Hub `SendMessage` hata durumunda invoke'u REDDETMİYOR — ayrı bir `Error`
-// event'i yayınlıyor (kontrat §17). O event kaçarsa balon sonsuza dek
-// "gönderiliyor"da asılı kalıyordu; bu pencere dolunca başarısıza çeviriyoruz.
-const SEND_ACK_TIMEOUT_MS = 12_000;
-// Ağ geri geldikten sonra otomatik yeniden denemeye kadar beklenen süre.
-// `isInternetReachable` bağlantı fiilen kullanılabilir olmadan hemen önce
-// true'ya dönebiliyor (ve hub'ın da yeniden bağlanması gerekiyor); hemen
-// denenirse ilk istek boşa gider ve mesajlar bir sonraki geçişe kadar
-// başarısız kalırdı.
-const AUTO_RETRY_DELAY_MS = 800;
 // Giriş toast'ının eşiği: kalan hak bunun ALTINDA ya da eşitse uyarı çıkar.
 // Üstündeyse hiç çıkmıyor — "42 mesaj hakkın var" bir uyarı değil, sohbetin
 // başına düşen gereksiz bir banner'dı. Sunucudan gelmiyor, tamamen istemci
@@ -370,14 +362,14 @@ function ChatScreen({
         (cc: any) => cc.conversationId === conversationId,
       )?.restorableUntil,
   );
-  // Sohbeti kapatan biz miyiz — "Geri Al" YALNIZ o uçta çıkar. Sunucuda karşılığı
-  // yok, kendi unmatch'imizde damgalanıyor; `?? false` YAPILMAZ (bilinmiyor ≠
-  // karşı taraf kapattı), bkz. shouldOfferRestore.
-  const deactivatedByMe = useAppSelector(
-    (s: any) =>
-      s.chat.conversations.find(
-        (cc: any) => cc.conversationId === conversationId,
-      )?.deactivatedByMe,
+  // Sohbeti kapatan biz miyiz — "Geri Al" YALNIZ o uçta çıkar. Artık SUNUCU
+  // söylüyor (`closedByMe`); eski istemci-tarafı tahmini yalnız sunucu
+  // susuyorsa devreye giriyor (bkz. resolveClosedByMe). `?? false` YAPILMAZ —
+  // bilinmiyor ≠ karşı taraf kapattı, bkz. shouldOfferRestore.
+  const closedByMe = useAppSelector((s: any) =>
+    resolveClosedByMe(
+      s.chat.conversations.find((cc: any) => cc.conversationId === conversationId),
+    ),
   );
   const hasHiddenHistory = useAppSelector(
     (s: any) => s.chat.messagesByConv[conversationId]?.hasHiddenHistory ?? false,
@@ -392,32 +384,12 @@ function ChatScreen({
   const [profileVisible, setProfileVisible] = useState(false);
   const [profileDetail, setProfileDetail] = useState<any>(null);
 
-  // Kota dolduğunda TEK çıkış: Premium modalı (consumable "sohbeti aç" akışı
-  // 2026-08-02'de kaldırıldı). Huni: chat_quota_exhausted →
-  // chat_quota_paywall_viewed → subscription_initial_purchase.
+  // Kota dolduğunda TEK çıkış: Premium modalı. Gövde ekran dışına taşındı
+  // (quotaPaywall.ts) — gönderim yolu artık outbox'ta ve 402'yi orası da
+  // görüyor. Buradaki sarmalayıcı yalnız conversationId'yi bağlıyor.
   const openQuotaPaywall = useCallback(
-    (source: string) => {
-      // §11: modalı açmadan önce canonical premium state'i tazele — kullanıcı
-      // başka bir cihazdan premium olmuş olabilir. Premium çıkarsa kotayı
-      // yeniliyoruz (sohbet zaten sınırsıza dönmüştür) ve paywall açılmıyor;
-      // huni eventi de o durumda yazılmıyor, "görüntülendi" sayısı şişmesin.
-      dispatch(refreshEntitlementsForPaywall())
-        .unwrap()
-        .then((premium: boolean) => {
-          if (premium) {
-            dispatch(fetchChatQuota({ conversationId, force: true }));
-            return;
-          }
-          analytics.capture("chat_quota_paywall_viewed", { conversationId, source });
-          openLitPlus();
-        })
-        .catch(() => {
-          // Tazeleme başarısız → eski davranış: paywall'ı yine aç.
-          analytics.capture("chat_quota_paywall_viewed", { conversationId, source });
-          openLitPlus();
-        });
-    },
-    [conversationId, dispatch],
+    (source: string) => openChatQuotaPaywall(conversationId, source),
+    [conversationId],
   );
 
   const listRef = useRef<any>(null);
@@ -430,9 +402,6 @@ function ChatScreen({
   const messagesRef = useRef<MessageDto[]>(messages);
   const quotaRef = useRef(quota);
   const lastReadSentAtRef = useRef(0);
-  // Tek native ağ listener'ının paylaşılan durumu (bkz. networkStatus) —
-  // başarısız mesajların otomatik yeniden denemesi bunu izliyor.
-  const isOffline = useIsOffline();
   useEffect(() => {
     messagesRef.current = messages;
   }, [messages]);
@@ -753,10 +722,33 @@ function ChatScreen({
     };
   }, [conversationId, dispatch]);
 
+  // "Dolu mu açıldı" kararı. Redux bucket'ı boş olsa bile DİSKTE geçmiş varsa
+  // dolu sayılır: deep link / bildirime dokunma yolunda MessagesScreen'in
+  // hydrate'i çalışmamış olur ve yalnız `messages`e bakmak, geçmiş elimizdeyken
+  // spinner göstermek demekti. Aşağıdaki useLayoutEffect boyamadan ÖNCE
+  // dolduruyor.
   const hadInitialMessagesRef = useRef<boolean | null>(null);
   if (hadInitialMessagesRef.current === null) {
-    hadInitialMessagesRef.current = messages.length > 0;
+    hadInitialMessagesRef.current = messages.length > 0 || hasLocalHistory(conversationId);
   }
+
+  // Skeleton NE KADAR görünüyor — ölçüm, tahmin değil. Skeleton'ın sebebi
+  // verinin nereden geldiği değil, LegendList'in kendi yerleşim gate'i; o
+  // pencere kısaysa sorun yok, uzunsa düzeltilecek yer liste ayarları
+  // (estimatedItemSize / getFixedItemSize), skeleton'ı kaldırmak değil —
+  // kaldırılırsa yerine boş arkaplan gelir.
+  const entryStartedAtRef = useRef(0);
+  if (entryStartedAtRef.current === 0) entryStartedAtRef.current = Date.now();
+
+  // Local-first giriş: diski BOYAMADAN ÖNCE store'a al (useEffect boyama
+  // sonrası çalışır → bir kare boş liste görünürdü). MessagesScreen zaten
+  // navigate'ten önce hydrate ettiyse burası no-op: projectWindow aynı dizi
+  // referansını döndürür, Immer değişiklik saymaz.
+  useLayoutEffect(() => {
+    if (messages.length === 0) hydrateConversation(dispatch, conversationId);
+    // conversationId dışındaki bağımlılıklar kasten yok: bu yalnız GİRİŞ anına ait.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [conversationId]);
 
   // BOŞ AÇILAN SOHBETİN İLK MESAJI (bizden ya da karşıdan) — klavye açıksa
   // kaydırılabilir aralık 0 olduğu için mesaj klavyenin altında doğuyor
@@ -783,6 +775,16 @@ function ChatScreen({
   const [listSettled, setListSettled] = useState(false);
   const handleListLoad = useCallback(() => {
     setListSettled(true);
+    if (__DEV__) {
+      // Skeleton'ın GÖRÜNÜR kaldığı süre. `hadInitialMessages=false` ise
+      // overlay hiç çizilmedi (orada ListEmptyComponent var), sayı yine de
+      // listenin oturma süresini veriyor.
+      console.log(
+        `[chat] giriş→liste oturdu: ${Date.now() - entryStartedAtRef.current}ms · ` +
+          `skeleton=${hadInitialMessagesRef.current ? "görünür" : "yok"} · ` +
+          `${messagesRef.current.length} mesaj`,
+      );
+    }
     // Tohumlama giriş yerleşiminin BİR TIK SONRASINA bırakılır: LegendList
     // initialScrollAtEnd hedefini item'lar ölçüldükçe hâlâ düzeltiyor olabilir ve
     // erken bir scroll olayı "kullanıcı kaydırdı" sayılıp o düzeltmeyi kesebilir.
@@ -813,14 +815,14 @@ function ChatScreen({
     (async () => {
       try {
         if (!hadInitialMessagesRef.current) {
-          await dispatch(fetchHistory({ conversationId, cursor: null, pageSize: 30 }));
+          await dispatch(fetchHistory({ conversationId, cursor: null, pageSize: HISTORY_PAGE_SIZE }));
         } else {
           // Bucket dolu = MMKV hydrate'i ya da önceki oturum — anında render edildi
           // ama tazeliği garanti değil. Fire-and-forget reconcile: fulfilled'da
           // bucket server-authoritative REPLACE edilir (_pending korunur; kaçan
           // edit/delete/receipt düzelir, transform'un null'ladığı cursor onarılır).
           // Rejected'da (offline) cache aynen kalır.
-          dispatch(fetchHistory({ conversationId, cursor: null, pageSize: 30 }));
+          dispatch(fetchHistory({ conversationId, cursor: null, pageSize: HISTORY_PAGE_SIZE }));
         }
         if (!mounted) return;
         await realtimeService.joinConversation(conversationId).catch(() => {});
@@ -885,15 +887,44 @@ function ChatScreen({
   // balonları boşluğa düşürüyordu. Fling bitince bekleyen fetch hemen çalışır.
   const momentumActiveRef = useRef(false);
 
+  // ÖNCE DİSK, bitince ağ.
+  //
+  // Guard'ların HEPSİ yerinde duruyor (momentum, in-flight, 400ms cooldown).
+  // Yerel okuma daha hızlı olduğu için fling ortasında prepend etmeyi
+  // KOLAYLAŞTIRIYOR; "artık anlık" diye momentum kapısını atlamak yukarıdaki
+  // MVCP/commit-storm sorununu geri getirir.
+  //
+  // `!nextCursor` erken guard'dan ÇIKARILDI: cursor yokken de diskte sayfa
+  // olabilir (hydrate sonrası cursor null olabiliyor).
   const fetchOlderPage = useCallback(() => {
-    if (loadingHistory || loadOlderInFlightRef.current || !hasMore || !nextCursor)
-      return false;
+    if (loadingHistory || loadOlderInFlightRef.current || !hasMore) return false;
     if (momentumActiveRef.current) return false;
     const now = Date.now();
     if (now - lastLoadOlderAtRef.current < 400) return false;
+
+    // messagesRef newest-first → en eskisi SON eleman.
+    const current = messagesRef.current;
+    const oldestShown = current.length ? current[current.length - 1] : undefined;
+    const outcome = loadOlderLocalFirst(dispatch, conversationId, oldestShown);
+
+    if (outcome === "local") {
+      lastLoadOlderAtRef.current = now;
+      // loadOlderInFlightRef BİLEREK set edilmiyor: onu `loadingHistory`
+      // düşünce temizleyen efekt sıfırlıyor (satır 829). Yerel okuma senkron
+      // bitti, bekleyecek bir şey yok — set etseydik sonsuza kadar takılırdı.
+      return true;
+    }
+
+    if (!nextCursor) {
+      // Ne diskte ne sunucuda daha eski var. Bayrağı indir, yoksa
+      // scheduleOlderRetry 450 ms'de bir boşuna dönmeye devam eder.
+      if (outcome === "exhausted") dispatch(setHistoryExhausted(conversationId));
+      return false;
+    }
+
     lastLoadOlderAtRef.current = now;
     loadOlderInFlightRef.current = true;
-    dispatch(fetchHistory({ conversationId, cursor: nextCursor, pageSize: 30 }));
+    dispatch(fetchHistory({ conversationId, cursor: nextCursor, pageSize: HISTORY_PAGE_SIZE }));
     return true;
   }, [conversationId, dispatch, hasMore, loadingHistory, nextCursor]);
 
@@ -991,15 +1022,9 @@ function ChatScreen({
   }, [conversationId]);
 
   // ── Send ───────────────────────────────────────────────────────────────
-  // Ack bekleyen hub gönderimlerinin sayaçları; unmount'ta temizlenir.
-  const ackTimersRef = useRef<Set<ReturnType<typeof setTimeout>>>(new Set());
-  useEffect(
-    () => () => {
-      ackTimersRef.current.forEach(clearTimeout);
-      ackTimersRef.current.clear();
-    },
-    [],
-  );
+  // Ağ tarafı ve ack bekçisi ARTIK BURADA DEĞİL: outbox.ts. Bu ekranda kalan
+  // iş, balonu listeye doğru sırayla koymak (ölçüm → giriş animasyonu →
+  // dispatch → pin) ve kullanıcıya dönük kapılar (kota, yanıt şeridi).
 
   /**
    * Giden mesajı listeye koyar ve listeyi doğru yere sabitler. Metin ve sesli
@@ -1058,16 +1083,12 @@ function ChatScreen({
   );
 
   const handleSend = useCallback(
-    async ({ content, replyToMessageId, clientMessageId, retry }: any) => {
+    ({ content, replyToMessageId, clientMessageId }: any) => {
       const q = quotaRef.current;
       if (q && !q.isUnlimited && q.requiresPremium) {
         openQuotaPaywall("composer_send");
         return;
       }
-      // YENİDEN GÖNDERİMDE balon zaten listede: çıkarılıp yeniden eklenmez,
-      // yerinde "tekrar bekliyor"a döner (bkz. retryOptimisticMessage) —
-      // remount olmadığı için kayma animasyonu akıcı kalır ve satır listenin
-      // en altına ışınlanmaz.
       const optimistic: any = {
         id: `temp-${clientMessageId}`,
         conversationId,
@@ -1085,87 +1106,14 @@ function ChatScreen({
         reactions: [],
         _pending: true,
       };
-      if (retry) dispatch(retryOptimisticMessage({ conversationId, clientMessageId }));
-      else appendOutgoing(optimistic);
-
-      try {
-        const useHub = realtimeService.isConnected() && !replyToMessageId;
-        let httpResult: MessageDto | null = null;
-        // Ağ kısmı KUYRUKTAN geçer: sunucu `sentAt`i isteği işlerken damgalıyor,
-        // yani sırayı gönderim sırası değil VARIŞ sırası belirliyor. Yükleme
-        // süren bir sesli mesajın önüne geçen metin, kanonik sırada sesin üstüne
-        // çıkıyordu (bkz. sendQueue).
-        if (useHub) {
-          await enqueueSend(() =>
-            realtimeService.sendMessage(conversationId, content, clientMessageId),
-          );
-          // invoke resolve olsa bile mesajın gittiği garanti değil (hata ayrı
-          // `Error` event'iyle gelir, sohbet kapandıysa ack hiç gelmez).
-          const timer = setTimeout(() => {
-            ackTimersRef.current.delete(timer);
-            const msg = messagesRef.current.find(
-              (m: any) => m.clientMessageId === clientMessageId,
-            ) as any;
-            if (msg?._pending) {
-              dispatch(failOptimisticMessage({ conversationId, clientMessageId }));
-            }
-          }, SEND_ACK_TIMEOUT_MS);
-          ackTimersRef.current.add(timer);
-        } else {
-          httpResult = await enqueueSend(() =>
-            chatService.sendMessage({
-              conversationId,
-              content,
-              clientMessageId,
-              replyToMessageId,
-            } as any),
-          );
-        }
-        if (httpResult) dispatch(messageSent(httpResult));
-        dispatch(decrementQuotaLocally({ conversationId }));
-      } catch (err: any) {
-        const status = err?.response?.status;
-        const paywallType = err?.response?.data?.result?.paywallType;
-        if (status === 402 || paywallType === "CHAT_QUOTA_EXHAUSTED") {
-          dispatch(removeOptimisticMessage({ conversationId, clientMessageId }));
-          analytics.capture("chat_quota_exhausted", { conversationId });
-          // isUnlimited her mesajda değil, girişte ve 402'de tazelenir.
-          dispatch(fetchChatQuota({ conversationId, force: true }));
-          openQuotaPaywall("send_402");
-          return;
-        }
-        // Balon LİSTEDEN ÇIKARILMAZ (kod ne olursa olsun): yazdığı metin
-        // kullanıcının elinde kalsın. Sözleşme "taslağı input'a geri koy"
-        // diyor; bizde aynı işi başarısız balon + "tekrar dene" görüyor —
-        // üstelik içerik gözden kaybolmadan.
-        dispatch(failOptimisticMessage({ conversationId, clientMessageId }));
-        // Karar UT KODUNDAN (UT-67xx). Status yedek dal: kodsuz gövde =
-        // eski sunucu. Kod geldiğinde status'a bakmak yanlış olur — aynı hata
-        // uca göre 400/404 dönebiliyordu, sözleşme bunu düzeltti.
-        const code = chatErrorCodeOf(err);
-        const effect = chatErrorEffect(code);
-        if (code) {
-          showInfoToast({
-            message: chatErrorText(err, t, "chat.send.failed"),
-            variant: "error",
-          });
-        }
-        // Sohbet kapanmış (karşı taraf unmatch etti / engelledi): kapatan taraf
-        // biz değiliz → geri alma penceresi yok.
-        if (effect === "conversationGone" || (!code && (status === 403 || status === 404))) {
-          dispatch(conversationDeactivated({ conversationId, restorableUntil: null }));
-        }
-        // Kodsuz 400 tek başına altı ayrı sebebi ayırt etmiyor (validasyon da
-        // olabilir) — yerel bayrağı çevirmeyip listeyi sunucudan doğrulatıyoruz.
-        if (
-          effect === "conversationGone" ||
-          (!code && (status === 400 || status === 403 || status === 404))
-        ) {
-          dispatch(fetchConversations({ force: true }));
-        }
-      }
+      appendOutgoing(optimistic);
+      // Ağ + hata ele alma outbox'ta; bu ekran gönderimin BİTMESİNİ beklemiyor.
+      void sendOutgoing(
+        { kind: "text", conversationId, clientMessageId, content, replyToMessageId },
+        { mode: "interactive" },
+      );
     },
-    [appendOutgoing, conversationId, dispatch, myUserId, openQuotaPaywall, t],
+    [appendOutgoing, conversationId, myUserId, openQuotaPaywall],
   );
 
   /**
@@ -1176,14 +1124,7 @@ function ChatScreen({
    *    sesi ağdan yeniden indirmeden anında dinleyebilir.
    */
   const handleSendVoice = useCallback(
-    async ({
-      uri,
-      durationMs,
-      waveformPeaks,
-      clientMessageId,
-      replyToMessageId,
-      retry,
-    }: any) => {
+    ({ uri, durationMs, waveformPeaks, clientMessageId, replyToMessageId }: any) => {
       const q = quotaRef.current;
       if (q && !q.isUnlimited && q.requiresPremium) {
         openQuotaPaywall("composer_voice");
@@ -1213,76 +1154,21 @@ function ChatScreen({
         reactions: [],
         _pending: true,
       };
-      // Yeniden gönderimde satır yerinde kalır (bkz. handleSend'deki not);
-      // _localUri de dahil optimistic alanlar zaten mevcut kopyada duruyor.
-      if (retry) dispatch(retryOptimisticMessage({ conversationId, clientMessageId }));
-      else appendOutgoing(optimistic);
-
-      try {
-        // ÜÇ ADIMIN TAMAMI kuyrukta: sıra sunucudaki `sentAt` damgasına göre
-        // belirlendiği için metin, sesin POST'u dönmeden gönderilemez — yoksa
-        // yükleme sürerken yazılan metin sesten ERKEN damgalanıp kanonik sırada
-        // (karşı taraf, sohbet önizlemesi, her reconcile) üste çıkıyor.
-        // Bedeli bilinçli: o sırada gönderilen metin, yükleme bitene kadar
-        // "gönderiliyor" durumunda bekler.
-        const result = await enqueueSend(() =>
-          sendVoiceMessage({
-            conversationId,
-            uri,
-            durationMs,
-            waveformPeaks,
-            clientMessageId,
-            replyToMessageId,
-          }),
-        );
-        // Server kopyası yerel URI'yi EZMEZ (messageSent merge ediyor) — balon
-        // aynı dosyadan çalmaya devam eder.
-        if (result) dispatch(messageSent(result as MessageDto));
-        dispatch(decrementQuotaLocally({ conversationId }));
-      } catch (err: any) {
-        const status = err?.response?.status;
-        const paywallType = err?.response?.data?.result?.paywallType;
-        if (status === 402 || paywallType === "CHAT_QUOTA_EXHAUSTED") {
-          dispatch(removeOptimisticMessage({ conversationId, clientMessageId }));
-          analytics.capture("chat_quota_exhausted", { conversationId });
-          dispatch(fetchChatQuota({ conversationId, force: true }));
-          openQuotaPaywall("voice_402");
-          return;
-        }
-        dispatch(failOptimisticMessage({ conversationId, clientMessageId }));
-        // Switch DAİMA UT kodundan (rehber): 400 tek başına altı ayrı sebebi
-        // ayırt etmiyor ve kullanıcıya söylenecek şey her birinde farklı.
-        // İKİ AİLE ayrı eksende: UT-66xx sesin KENDİSİ (biçim/süre/boyut),
-        // UT-67xx sohbetin durumu (kapalı, yetki yok). Kesişmiyorlar; sohbet
-        // kodu geldiyse ses hakkında söylenecek bir şey yok.
-        const chatCode = chatErrorCodeOf(err);
-        const effect = chatErrorEffect(chatCode);
-        const code = err instanceof VoiceTooLargeError ? "UT-6602" : voiceErrorCode(err);
-        const key =
-          code === "UT-6603"
-            ? "chat.voice.maxDuration"
-            : code === "UT-6602"
-              ? "chat.voice.tooLarge"
-              : code === "UT-6601"
-                ? "chat.voice.badFormat"
-                : "chat.voice.sendFailed";
-        showInfoToast({
-          message: chatCode ? chatErrorText(err, t, key) : t(key),
-          variant: "error",
-        });
-        devLog("🎙️ [voice] gönderilemedi", chatCode || code || status || err);
-        if (effect === "conversationGone" || (!chatCode && (status === 403 || status === 404))) {
-          dispatch(conversationDeactivated({ conversationId, restorableUntil: null }));
-        }
-        if (
-          effect === "conversationGone" ||
-          (!chatCode && (status === 400 || status === 403 || status === 404))
-        ) {
-          dispatch(fetchConversations({ force: true }));
-        }
-      }
+      appendOutgoing(optimistic);
+      void sendOutgoing(
+        {
+          kind: "voice",
+          conversationId,
+          clientMessageId,
+          localUri: uri,
+          durationMs,
+          waveformPeaks,
+          replyToMessageId,
+        },
+        { mode: "interactive" },
+      );
     },
-    [appendOutgoing, conversationId, dispatch, myUserId, openQuotaPaywall, setReplyTo, t],
+    [appendOutgoing, conversationId, myUserId, openQuotaPaywall, setReplyTo],
   );
 
   const handleInputSend = useCallback(
@@ -1516,7 +1402,7 @@ function ChatScreen({
         // "silinemedi" demek kullanıcıyı var olmayan bir mesajla bırakırdı.
         // Doğru davranış geçmişi tazeleyip sessizce devam etmek.
         if (chatErrorEffect(chatErrorCodeOf(err)) === "messageGone") {
-          dispatch(fetchHistory({ conversationId, cursor: null, pageSize: 30 }));
+          dispatch(fetchHistory({ conversationId, cursor: null, pageSize: HISTORY_PAGE_SIZE }));
           return;
         }
         dispatch(
@@ -1532,78 +1418,18 @@ function ChatScreen({
     [conversationId, dispatch, t],
   );
 
-  const handleRetrySend = useCallback(
-    (failedMsg: any) => {
-      if (!failedMsg?._failed) return;
-      // Balon LİSTEDEN ÇIKARILMAZ — `retry` bayrağıyla yerinde "tekrar
-      // bekliyor"a döner (gerekçe: retryOptimisticMessage). Çıkar-ekle yolu
-      // satırı remount edip animasyonu öldürüyordu.
-      // Sesli mesajın yeniden denemesi metin yoluna DÜŞEMEZ: içerik boş, taşınan
-      // şey dosyanın kendisi. Yükleme yarıda kalmışsa (UT-6605) doğru davranış
-      // zaten üç adımı baştan çalıştırmak.
-      if (isVoiceMessage(failedMsg.contentType) && failedMsg._localUri) {
-        handleSendVoice({
-          uri: failedMsg._localUri,
-          durationMs: failedMsg.durationMs,
-          waveformPeaks: failedMsg.waveformPeaks ?? undefined,
-          clientMessageId: failedMsg.clientMessageId,
-          replyToMessageId: failedMsg.replyTo?.id,
-          retry: true,
-        });
-        return;
-      }
-      handleSend({
-        content: failedMsg.content,
-        replyToMessageId: failedMsg.replyTo?.id,
-        clientMessageId: failedMsg.clientMessageId,
-        retry: true,
-      });
-    },
-    [handleSend, handleSendVoice],
-  );
-
   /**
-   * AĞ GERİ GELİNCE bekleyen başarısız mesajları kendiliğinden yeniden dener.
+   * "Tekrar dene" butonu. Balon LİSTEDEN ÇIKARILMAZ, yerinde "tekrar bekliyor"a
+   * döner (remount olmadığı için kayma animasyonu akıcı kalır) — bu iş de dahil
+   * gönderimin tamamı outbox'ta. Metin/ses ayrımını `messageToDescriptor` yapıyor.
    *
-   * Tetik SADECE offline→online GEÇİŞİ (wasOfflineRef): `useIsOffline` wifi↔LTE
-   * gibi geçişlerde de uyanabiliyor, her uyanışta yeniden denesek çevrimiçiyken
-   * de kuyruk tazelenirdi. Ters yönde de güvenli — `handleRetrySend` yalnız
-   * `_failed` satırlarda çalışıyor ve ilk iş olarak bayrağı düşürüyor, yani
-   * mükerrer tetik ikinci bir istek doğurmuyor.
-   *
-   * SIRA ESKİDEN YENİYE: bucket en yeniden eskiye dizili, o yüzden ters
-   * geziliyor. Ağ kısmı zaten FIFO kuyruktan geçtiği (bkz. sendQueue) için
-   * sunucudaki `sentAt` damgaları da bu sırayla düşüyor.
-   *
-   * KISA GECİKME: `isInternetReachable` bağlantı gerçekten kullanılabilir
-   * olmadan hemen önce true'ya dönebiliyor; hemen denersek ilk istek boşa
-   * gidip mesajlar tekrar başarısız işaretlenir ve bir sonraki geçişe kadar
-   * öylece kalırdı.
-   *
-   * KAPSAM: yalnız AÇIK sohbet. Başka sohbette kalan başarısız mesajlar oraya
-   * girilip ağ geri geldiğinde (ya da elle butonla) gönderilir.
+   * AĞ GERİ GELİNCE OTOMATİK DENEME BURADA DEĞİL: `flushOutbox` tüm sohbetleri
+   * kapsıyor ve AppNavigator'dan tetikleniyor (bkz. outbox.ts). Ekran bazlı
+   * efekt yalnız açık sohbeti kurtarıyordu.
    */
-  // Efekt YALNIZ `isOffline`a bağlı: handleRetrySend'i deps'e koysaydık, kimliği
-  // 800ms'lik pencere içinde değişen her şey (kota, paywall callback'i…) cleanup'ı
-  // çalıştırıp zamanlayıcıyı iptal ederdi — üstelik efekt yeniden kurulduğunda
-  // wasOfflineRef çoktan false olduğu için deneme bir daha HİÇ yapılmazdı.
-  const retryRef = useRef(handleRetrySend);
-  useEffect(() => {
-    retryRef.current = handleRetrySend;
-  }, [handleRetrySend]);
-  const wasOfflineRef = useRef(isOffline);
-  useEffect(() => {
-    const cameBackOnline = wasOfflineRef.current && !isOffline;
-    wasOfflineRef.current = isOffline;
-    if (!cameBackOnline) return;
-    const timer = setTimeout(() => {
-      const failed = (messagesRef.current as any[]).filter((m) => m._failed);
-      if (!failed.length) return;
-      devLog(`📶 [chat] ağ geri geldi, ${failed.length} mesaj yeniden deneniyor`);
-      for (let i = failed.length - 1; i >= 0; i--) retryRef.current(failed[i]);
-    }, AUTO_RETRY_DELAY_MS);
-    return () => clearTimeout(timer);
-  }, [isOffline]);
+  const handleRetrySend = useCallback((failedMsg: any) => {
+    void retryFailedMessage(failedMsg, { mode: "interactive" });
+  }, []);
 
   const handleScrollToReplyTarget = useCallback((reply: any) => {
     if (!reply?.id) return;
@@ -1686,7 +1512,7 @@ function ChatScreen({
       if (res.isSuccess) {
         dispatch(historyRevealed({ conversationId }));
         // Gizli mesajlar artık cevaba dahil — ilk sayfayı yeniden çek.
-        dispatch(fetchHistory({ conversationId, cursor: null, pageSize: 30 }));
+        dispatch(fetchHistory({ conversationId, cursor: null, pageSize: HISTORY_PAGE_SIZE }));
         analytics.capture("chat_history_revealed", { conversationId });
         return;
       }
@@ -2139,11 +1965,11 @@ function ChatScreen({
         // girip 3 noktaya bastığında buton YOK. Kapatan biz olsak bile pencere
         // KESİN yoksa (limit dolmuş / engellenmiş) çağrı reddedilirdi — ölü
         // buton göstermiyoruz.
-        canRestore={!isActive && shouldOfferRestore(restorableUntil, deactivatedByMe)}
+        canRestore={!isActive && shouldOfferRestore(restorableUntil, closedByMe)}
         restorableUntil={restorableUntil}
         // Kapatan biz değilsek "geri alma süresi doldu" YALAN olurdu (o uçta
         // pencere hiç açılmadı) — nötr "sohbet sonlandırıldı" metnine düşülür.
-        closedByMe={deactivatedByMe === true}
+        closedByMe={closedByMe === true}
         // Menü profil önizlemesinin şeridinden de açılıyor: `push` alttaki
         // önizlemeyi yerinde bırakır (gorhom'un varsayılanı onu minimize edip
         // `visible`ını kilitliyordu — bkz. AppBottomSheet watchdog notu).
