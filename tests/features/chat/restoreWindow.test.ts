@@ -1,6 +1,7 @@
 import {
   canRestore,
   formatRestoreWindow,
+  resolveClosedByMe,
   shouldOfferRestore,
 } from '@/features/chat/restoreWindow';
 
@@ -99,5 +100,58 @@ describe('formatRestoreWindow', () => {
   it('pencere yoksa null döner (çağıran "kalıcı kapandı" metnine düşer)', () => {
     expect(formatRestoreWindow(null, t, NOW)).toBeNull();
     expect(formatRestoreWindow('2026-08-15T11:00:00Z', t, NOW)).toBeNull();
+  });
+});
+
+/**
+ * "Kapatan biz miyiz" bilgisinin SUNUCUYA devri.
+ *
+ * Devir kademeli olmak zorunda: uç her ortamda yayında değil ve gate'i doğrudan
+ * `closedByMe`ye bağlamak, sunucu susarken "Geri Al"ı herkesten gizlerdi.
+ */
+describe('resolveClosedByMe — kademeli devir', () => {
+  it('sunucu söylüyorsa SUNUCU kazanır', () => {
+    expect(resolveClosedByMe({ closedByMe: true, deactivatedByMe: false })).toBe(true);
+    expect(resolveClosedByMe({ closedByMe: false, deactivatedByMe: true })).toBe(false);
+  });
+
+  it('sunucu SUSUYORSA eski yerel tahmine düşer', () => {
+    expect(resolveClosedByMe({ deactivatedByMe: true })).toBe(true);
+    expect(resolveClosedByMe({ deactivatedByMe: false })).toBe(false);
+  });
+
+  it('closedByMe:false yerel tahmine DÜŞMEZ — anlamlı bir cevap', () => {
+    // `||` kullansaydık false burada yerel true'ya düşer ve karşı tarafın
+    // kapattığı bir sohbette "Geri Al" görünürdü.
+    expect(resolveClosedByMe({ closedByMe: false, deactivatedByMe: true })).toBe(false);
+  });
+
+  it('ikisi de yoksa BİLİNMİYOR kalır — false DEĞİL', () => {
+    // undefined'i false'a çevirmek canlı bir pencereyi gizlerdi.
+    expect(resolveClosedByMe({})).toBeUndefined();
+    expect(resolveClosedByMe(undefined)).toBeUndefined();
+    expect(resolveClosedByMe(null)).toBeUndefined();
+  });
+});
+
+describe('devir sonrası kapı davranışı', () => {
+  const NOW_ = Date.parse('2026-08-16T12:00:00Z');
+  const LIVE = '2026-08-17T12:00:00Z';
+
+  it('sunucu "karşı taraf kapattı" derse buton YOK — canlı pencere olsa bile', () => {
+    const conv = { closedByMe: false, deactivatedByMe: true, restorableUntil: LIVE };
+    expect(shouldOfferRestore(conv.restorableUntil, resolveClosedByMe(conv), NOW_)).toBe(false);
+  });
+
+  it('sunucu "biz kapattık" derse canlı pencerede buton VAR', () => {
+    const conv = { closedByMe: true, restorableUntil: LIVE };
+    expect(shouldOfferRestore(conv.restorableUntil, resolveClosedByMe(conv), NOW_)).toBe(true);
+  });
+
+  it('sunucu susuyorsa ESKİ davranış birebir korunuyor', () => {
+    const legacy = { deactivatedByMe: true, restorableUntil: LIVE };
+    expect(shouldOfferRestore(legacy.restorableUntil, resolveClosedByMe(legacy), NOW_)).toBe(
+      shouldOfferRestore(LIVE, true, NOW_),
+    );
   });
 });

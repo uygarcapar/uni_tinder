@@ -11,12 +11,37 @@ import { utcTime } from "@/shared/utils/dateUtc";
  */
 
 /**
+ * "Kapatan biz miyiz?" — TEK kaynak.
+ *
+ * Sunucu 2026-09 delta-sync işiyle `closedByMe` göndermeye başladı ve kanonik
+ * cevap odur. Ondan önce bu bilgi sunucuda YOKTU ve istemci kendi unmatch'inde
+ * damgalayarak tahmin ediyordu (`deactivatedByMe`) — o tahmin cihaz değişiminde
+ * ve eski cache'te bilinmiyor kalıyordu.
+ *
+ * Devir KADEMELİ, çünkü uç henüz her ortamda yayında değil:
+ *   • sunucu söylüyorsa (true/false) → sunucu kazanır
+ *   • sunucu SUSUYORSA (undefined) → yerel tahmine düş
+ *
+ * `??` kullanılıyor, `||` DEĞİL: `closedByMe === false` anlamlı bir cevap
+ * ("karşı taraf kapattı") ve yerel tahmine düşmemeli.
+ *
+ * Üç durumluluk korunuyor — `undefined`i `false` sanmak canlı bir pencereyi
+ * gizler (bkz. shouldOfferRestore).
+ */
+export function resolveClosedByMe(conv?: {
+  closedByMe?: boolean;
+  deactivatedByMe?: boolean;
+} | null): boolean | undefined {
+  return conv?.closedByMe ?? conv?.deactivatedByMe;
+}
+
+/**
  * "Geri al" sunulsun mu?
  *
  * Geri alma YALNIZ eşleşmeyi kaldıran tarafa açıktır: karşı taraf sohbete girip
- * 3 noktaya bastığında bu buton HİÇ çıkmaz (ürün kararı). Kimin kapattığını
- * yalnız istemci bilir — liste DTO'su taşımıyor, `deactivatedByMe` bayrağı kendi
- * unmatch'imizde yazılır (bkz. chatSlice.conversationDeactivated).
+ * 3 noktaya bastığında bu buton HİÇ çıkmaz (ürün kararı). "Kapatan kim"
+ * cevabını `resolveClosedByMe` veriyor — sunucu söylüyorsa sunucu, susuyorsa
+ * eski istemci-tarafı tahmini.
  *
  * Bayrak ÜÇ durumlu, `undefined`i `false` sanmak canlı bir pencereyi gizler:
  *   • `false` → sohbeti KARŞI taraf kapattı (hub event'i / gönderim reddi) →
@@ -36,11 +61,12 @@ import { utcTime } from "@/shared/utils/dateUtc";
  */
 export function shouldOfferRestore(
   restorableUntil?: string | null,
-  deactivatedByMe?: boolean,
+  /** `resolveClosedByMe()` çıktısı — ham `deactivatedByMe` DEĞİL. */
+  closedByMe?: boolean,
   now: number = Date.now(),
 ): boolean {
-  if (deactivatedByMe === false) return false;
-  if (deactivatedByMe === undefined) return canRestore(restorableUntil, now);
+  if (closedByMe === false) return false;
+  if (closedByMe === undefined) return canRestore(restorableUntil, now);
   if (restorableUntil === undefined) return true;
   if (restorableUntil === null) return false;
   return canRestore(restorableUntil, now);
