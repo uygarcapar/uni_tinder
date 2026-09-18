@@ -2,5 +2,6 @@
   "NSMicrophoneUsageDescription": "Sesli mesaj gönderebilmen için mikrofon erişimine izin vermen gerekir.",
   "NSPhotoLibraryUsageDescription": "Profil fotoğraflarını seçebilmen için galeri erişimine izin vermen gerekir.",
   "NSCameraUsageDescription": "Profil fotoğrafını çekmen ve fotoğraflarının sana ait olduğunu doğrulaman için kamera erişimine izin vermen gerekir.",
-  "NSLocationWhenInUseUsageDescription": "Şehrini ve yakınındaki kişileri gösterebilmemiz için konumuna ihtiyacımız var."
+  "NSLocationWhenInUseUsageDescription": "Şehrini ve yakınındaki kişileri gösterebilmemiz için konumuna ihtiyacımız var.",
+  "NSMotionUsageDescription": "Fotoğraf çekerken kameranın doğru yönlenmesi ve konumunun daha isabetli belirlenmesi için hareket verisi kullanılır."
 }
