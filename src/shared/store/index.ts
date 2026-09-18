@@ -7,9 +7,17 @@ import swipeReducer from '@/features/discover/swipeSlice';
 import subscriptionReducer from '@/features/profile/subscriptionSlice';
 import { premiumSnapshotMiddleware } from '@/features/profile/premiumSnapshot';
 import chatReducer from '@/features/chat/chatSlice';
+import {
+  chatMirrorMiddleware,
+  startChatMirror,
+} from '@/features/chat/chatMirrorMiddleware';
 import settingsReducer from './settingsSlice';
 import { reduxMmkvChatStorage, reduxMmkvAppStorage } from './mmkvStorage';
 import { chatCacheTransform } from './chatPersistTransform';
+import { CHAT_PERSIST_ENABLED, CHAT_SQLITE_ENABLED } from './chatFlags';
+
+// Geriye dönük uyum: bayraklar eskiden bu modülden export ediliyordu.
+export { CHAT_PERSIST_ENABLED, CHAT_SQLITE_ENABLED };
 
 // Auth slice specific persist config - only persist essential auth data.
 // registrationForm persist EDİLİR — kayıt akışında hata olursa veya app reload
@@ -53,16 +61,13 @@ const settingsPersistConfig = {
   storage: reduxMmkvAppStorage,
 };
 
-// Chat: MMKV'ye KISMİ persist (local-first cache) — cold-start'ta Messages +
-// son mesajlar anında, offline okuma, boot'taki 15× history prefetch'in yerini
-// disk alır. MMKV senkron olduğu için eski "AsyncStorage rehydrate latency"
-// itirazı geçerli değil. Yalnız conversations + cap'li messagesByConv +
-// unreadTotal yazılır; typing/presence/quota/activeConversationId BİLEREK
-// persist edilmez (realtime/monetizasyon-hassas — restart'ta taze çekilir).
-// Server authoritative kalır: sohbet açılışında reconcile fetch bucket'ı tazeler.
-// Kill-switch: false → chat eski (volatile in-memory) davranışa döner.
-export const CHAT_PERSIST_ENABLED = true;
-
+// Chat artık SQLite'tan okunuyor (local-first). Aşağıdaki redux-persist yolu
+// yalnızca ROLLBACK HEDEFİ olarak bir release boyunca duruyor:
+// CHAT_SQLITE_ENABLED=false + CHAT_PERSIST_ENABLED=true eski davranışa tam
+// dönüş demek ve `persist:chat` blob'u diskte hâlâ yerinde (bkz.
+// features/chat/db/importLegacyCache.ts — import blob'u SİLMİYOR).
+// Bayraklar ./chatFlags'te: chat tarafı da onları okuyor ve store zaten
+// chatSlice'ı import ettiği için burada dursalar döngü olurdu.
 const chatPersistConfig = {
   key: 'chat',
   storage: reduxMmkvChatStorage,
@@ -105,8 +110,18 @@ export const store = configureStore({
       // Reducer'a değil middleware'e bağlı: `applyStatus`'a yazan dört yol var
       // (status/hub/sync/reconcile) ve hepsi tek noktadan aynalanmalı.
       // Bkz. features/profile/premiumSnapshot.
-    }).concat(premiumSnapshotMiddleware),
+      // chatMirrorMiddleware: chat action'larını SQLite'a AYNALAR (dual-write).
+      // Reducer'a değil middleware'e bağlı, çünkü realtime yolu
+      // (AppNavigator'daki SignalR handler'ları) yalnız dispatch üzerinden
+      // görülebiliyor — o dosyaya dokunmadan tüm yazımları yakalamanın tek yolu.
+      // Faz 2'de gölge: Redux hâlâ tek gerçek, ayna hatası yutuluyor.
+    }).concat(premiumSnapshotMiddleware, chatMirrorMiddleware),
 });
+
+// DB'yi aç + eski MMKV blob'unu taşı. Store kurulduktan SONRA çağrılmalı
+// (middleware o ana kadar zaten no-op) ve React mount'undan önce: outbox
+// drain'i ve sohbet açılışındaki senkron hydrate okuması DB'yi hazır bekliyor.
+startChatMirror(store);
 
 export const persistor = persistStore(store);
 
