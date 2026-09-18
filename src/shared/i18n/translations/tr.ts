@@ -162,6 +162,13 @@ const tr = {
       // ekranı basıyor) — burası kullanıcının diğer cihazları.
       emailChangedTitle: 'E-posta adresin değişti',
       emailChangedMessage: 'Güvenliğin için tüm oturumlar kapatıldı. Yeni adresinle tekrar giriş yap.',
+      // Oturum KAPANMADI: bu açılışta cihazın güvenli deposu okunamadı, o yüzden
+      // uygulama oturumu göremiyor. Yeniden giriş yapmak gereksiz — hatta
+      // zararlı, çünkü diskteki sağlam oturumun üstüne yenisini açar. Doğru
+      // hareket uygulamayı tamamen kapatıp açmak.
+      storeLockedTitle: 'Oturum bilgilerine ulaşılamadı',
+      storeLockedMessage:
+        'Bu açılışta cihaz kilidi yüzünden oturumun okunamadı. Tekrar giriş yapmana gerek yok — uygulamayı tamamen kapatıp yeniden aç.',
     },
     // Ban / askı / silme ekranı. Gövde metni backend'den (`message`) gelir —
     // buradaki fallback'ler yalnız gövde boş dönerse kullanılır.
@@ -214,7 +221,7 @@ const tr = {
           'Yüklediğin fotoğraflar ve yazdığın metinler sana aittir. Bu içerikleri uygulamada gösterebilmemiz için bize sınırlı bir kullanım izni vermiş olursun; bu izin yalnızca hizmeti sunmak içindir ve içeriği sildiğinde ya da hesabını kapattığında sona erer. Fotoğraflar kurallara uygunluk açısından moderasyondan geçebilir.',
         sectionTitle5: 'Premium ve Satın Alımlar',
         section5Content:
-          'Premium abonelikler App Store veya Google Play üzerinden satılır; iptal etmediğin sürece dönem sonunda otomatik yenilenir. Aboneliği yönetme ve iptal etme işlemleri mağaza hesabının ayarlarından yapılır. SuperLike gibi tek seferlik paketler kullanıldıkça tükenir ve iade edilmez; kullanılmayan haklar hesabın kapanmasıyla sona erer. İade talepleri ilgili mağazanın kurallarına tabidir.',
+          'Premium abonelikler App Store veya Google Play üzerinden satılır; iptal etmediğin sürece dönem sonunda otomatik yenilenir. Aboneliği yönetme ve iptal etme işlemleri mağaza hesabının ayarlarından yapılır. Fire gibi tek seferlik paketler kullanıldıkça tükenir ve iade edilmez; kullanılmayan haklar hesabın kapanmasıyla sona erer. İade talepleri ilgili mağazanın kurallarına tabidir.',
         sectionTitle6: 'Askıya Alma ve Hesap Kapatma',
         section6Content:
           'Kuralların ihlali hâlinde hesabını geçici olarak askıya alabilir veya kalıcı olarak kapatabiliriz. Sen de dilediğin an uygulama içinden hesabını kalıcı olarak silebilirsin; silme anında gerçekleşir ve geri alınamaz, bu yüzden onaylaman için şifren istenir. Ara vermek istiyorsan silmek yerine hesabını dondurabilirsin: verilerin durur ve tekrar giriş yaptığında hesabın kaldığı yerden açılır.',
@@ -959,6 +966,7 @@ const tr = {
       'UT-6731': 'Sistem mesajına tepki veremezsin.',
       'UT-6740': 'Bu sohbet kapatıldı.',
       'UT-6741': 'Sohbet yenileniyor…',
+      'UT-6744': 'Sohbet yenileniyor…',
       'UT-6742': 'Arama en az 2 karakter olmalı.',
       'UT-6743': 'Bu sohbeti yalnız eşleşmeyi kaldıran taraf geri alabilir.',
     },
@@ -1006,19 +1014,33 @@ const tr = {
       durationHoursMinutes: '{{h}} sa {{m}} dk',
       durationMinutes: '{{m}} dk',
       durationSeconds: '{{sec}} sn',
-      superLikeCooldownTitle: 'Superlike hakkın doldu',
-      // Süre GÖMÜLEMEZ: SuperLike döngüsü 2026-08-22'den beri tier'a bağlı
+      fireCooldownTitle: 'Fire hakkın doldu',
+      // Süre GÖMÜLEMEZ: Fire döngüsü 2026-08-22'den beri tier'a bağlı
       // (haftalık 7, aylık 30, yıllık 365 gün). "7 günlük döngü" yazmak aylık
       // ve yıllık abonelere yanlış vaat oluyordu; gerçek süre `{{time}}`.
-      superLikeCooldownMessage: 'Abonelik döngün yenilendiğinde hakların da yenilenecek — {{time}}.',
-      superLikeExhaustedTitle: 'Superlike hakkın bitti',
-      superLikeExhaustedMessage: 'Ücretsiz üyelikte Superlike tek seferliktir, kendiliğinden yenilenmez.',
+      fireCooldownMessage: 'Abonelik döngün yenilendiğinde hakların da yenilenecek — {{time}}.',
+      // Eşiğin ALTINDA gösterilen hâli: jest henüz tamamlanmadı, yapılacak
+      // şey çekmeye devam etmek. Eşikte yerini `fireReleaseHint` alıyor —
+      // iki metin de kendi anında DOĞRU, bu yüzden ipucu çekişin başından
+      // itibaren gösterilebiliyor.
+      firePullHint: 'fire göndermek için aşağı kaydır',
+      // Kartı aşağı çekerken üstte açılan şeritte duruyor (bkz.
+      // FirePullHint). "Bırak" EMİR KİPİ ve kısa: şerit 50 px ve yazı
+      // jestin ortasında okunuyor, cümle uzarsa göz onu takip edemiyor.
+      //
+      // TAMAMEN KÜÇÜK HARF — marka sözcüğü dahil. Kapaktaki "yukarı kaydır"
+      // ipucuyla (profile.card.expandHint) aynı kayıt: ikisi de jest fısıltısı,
+      // cümle değil. Uyarı/başlık metinlerindeki "Fire" yazımı buraya
+      // uymuyor, onlar tam cümle.
+      fireReleaseHint: 'fire göndermek için bırak',
+      fireExhaustedTitle: 'Fire hakkın bitti',
+      fireExhaustedMessage: 'Ücretsiz üyelikte Fire tek seferliktir, kendiliğinden yenilenmez.',
       // Gönderim onayı — notunkiyle (note.sentTitle/sentMessage) aynı kalıp.
       // İsimsiz varyant şart: kartın displayName'i boş gelebiliyor ve
       // "  beğenilerinde..." diye başlayan bir cümle çıkardı.
-      superLikeSentTitle: 'Superlike\'ın gönderildi',
-      superLikeSentMessage: '{{name}} beğenilerinde seni öne çıkmış görecek.',
-      superLikeSentMessageNoName: 'Beğenilerinde seni öne çıkmış görecek.',
+      fireSentTitle: 'Fire\'ın gönderildi',
+      fireSentMessage: '{{name}} beğenilerinde seni öne çıkmış görecek.',
+      fireSentMessageNoName: 'Beğenilerinde seni öne çıkmış görecek.',
       // Günlük beğeni kotası: azalma uyarısı (eşikler DiscoverScreen'de) ve
       // tükenme. TAVAN YAZILMIYOR — o sunucu config'inden geliyor ve FE
       // güncellemesi olmadan değişiyor; metin yalnız KALANI ({{count}}) ve
@@ -1028,7 +1050,7 @@ const tr = {
       quotaLowMessageWithTime: '{{count}} beğeni hakkın kaldı, {{time}} sonra yenilenir.',
       quotaExhaustedTitle: 'Beğeni hakkın bitti',
       // Süre bilinmiyorsa (backend alanı yok / sentinel) geri sayım VAAT
-      // EDİLMİYOR — SuperLike metinlerindeki ayrımın aynısı.
+      // EDİLMİYOR — Fire metinlerindeki ayrımın aynısı.
       quotaExhaustedMessage: 'Hakların yenilenene kadar beğeni gönderemezsin. Premium ile sınırsız beğen.',
       quotaExhaustedMessageWithTime: 'Hakların {{time}} sonra yenilenir. Premium ile beklemeden sınırsız beğen.',
     },
@@ -1042,7 +1064,7 @@ const tr = {
         seeLikes: 'Seni beğenenleri net gör',
         unlimitedMessages: 'Sınırsız mesajlaşma',
         unlimitedUndo: 'Sınırsız geri alma',
-        superLikes: 'Yenilenen Süper Beğeni hakkı',
+        fire: 'Yenilenen Fire hakkı',
         advancedFilters: 'Gelişmiş filtreler',
         widerDistance: 'Daha geniş mesafe aralığı',
         missedMatchRecovery: 'Daha fazla eşleşme kurtarma',
@@ -1060,8 +1082,8 @@ const tr = {
           'İki tarafı da ücretsiz olan sohbetlerde mesaj sayısı sınırlıdır ve sınıra gelince yazışma durur. Taraflardan birinin Plus olması o sohbeti sınırsız yapar.',
         unlimitedUndo:
           'Yanlışlıkla geçtiğin profili destenin başına geri getirir. Geri alma ücretsiz üyelikte tamamen kapalıdır; Plus ile istediğin kadar kullanırsın.',
-        superLikes:
-          'Süper Beğeni, beğenini karşı tarafa öne çıkararak iletir — listesinde net görünür ve bildirim alır. Ücretsiz üyelikte tek seferliktir, kendiliğinden yenilenmez; Plus ile her abonelik döngüsünde yeniden dolar.',
+        fire:
+          'Fire, beğenini karşı tarafa öne çıkararak iletir — listesinde net görünür ve bildirim alır. Ücretsiz üyelikte tek seferliktir, kendiliğinden yenilenmez; Plus ile her abonelik döngüsünde yeniden dolar.',
         advancedFilters:
           'Üniversite, bölüm, sınıf, boy, burç, konuşulan diller, alışkanlıklar ve daha fazlası: kimlerin karşına çıkacağını ayrıntılı seçersin. Bu filtreler ücretsiz üyelikte kapalıdır.',
         widerDistance:
@@ -1095,7 +1117,7 @@ const tr = {
     stats: {
       swipesLabel: 'Swipe Hakkı',
       unlimitedDaily: 'Günlük limit yok',
-      superLikesLabel: 'Süper Beğeni',
+      fireLabel: 'Fire',
     },
     filters: {
       saveError: 'Filtreler kaydedilemedi',
@@ -1263,6 +1285,9 @@ const tr = {
       },
       visibility: {
         title: 'Görünürlük',
+        // 🔴 ÇİZİLMİYOR: sheet'in info satırı artık `exclusiveNote`u taşıyor
+        // (bu cümle başlığın söylediğini tekrar ediyordu). Anahtar duruyor —
+        // ayarın bir yerde tek satırlık tarifi gerekirse hazır.
         description: 'Keşfette seni kimlerin görebileceğini seç.',
         // Üç şık, tek seçim: backend aynı anda yalnız bir kurala izin veriyor.
         modeEveryone: 'Herkes görebilsin',
@@ -1367,29 +1392,36 @@ const tr = {
     title: 'Beğeniler',
     tabTitle: 'Beğeniler',
     tabAll: 'Tümü',
-    tabLike: 'Beğeni',
-    tabSuperLike: 'Superlike',
+    // Ürün sekmeleri ÇOĞUL ve büyük başlıklarıyla aynı kelime (bkz.
+    // headerLike/headerFire/headerNote): pill listenin içindekini sayıyor
+    // ("Beğeniler" 12), tekil bir ad tek bir kart varmış gibi okunuyordu.
+    // Çoğullaşmayan iki sekme: "Tümü" ve "Kaçırdıkların" — onlar bir ürünün
+    // değil, bir kesitin adı.
+    tabLike: 'Beğeniler',
+    tabFire: 'Fire\'lar',
     // Not gönderenler kendi sekmesinde: not bir beğeninin üstüne binen ayrı
-    // ürün, "Beğeni" sekmesinde de görünseydi aynı kart iki yerde çıkardı.
-    tabNote: 'Notlar',
-    // Pill satırının üstündeki bölüm başlığı — HER sekmede var. Metinler pill
-    // etiketini tekrar etmiyor: pill filtrenin adı ("Tümü"), başlık listenin ne
-    // olduğu. Tek istisna kaçırdıkların (bkz. headerMissed).
-    // Başlığın sağındaki satın alma pill'i — süper beğeni ve not sekmelerinde
+    // ürün, "Beğeniler" sekmesinde de görünseydi aynı kart iki yerde çıkardı.
+    tabNote: 'Not\'lar',
+    // Pill satırının üstündeki bölüm başlığı — HER sekmede var. Ürün
+    // sekmelerinde pill etiketiyle AYNI kelime; ayrışan yalnız "Tümü" ve
+    // kaçırdıkların (bkz. headerAll / headerMissed).
+    // Başlığın sağındaki satın alma pill'i — Fire ve not sekmelerinde
     // AYNI metin. Ürüne göre değişmiyor: ikisinde de soru aynı, cevabı açılan
     // sheet veriyor. "Satın al" değil soru kipinde — pill sheet'i açıyor, satın
     // alma orada başlıyor.
     // Kaçırdıkların sekmesi 2026-08-31'de bu metinden ÇIKTI: orada satılan şey
     // artık bir paket değil abonelik, pill `viewLikersAction` kullanıyor.
     howToGetAction: 'Nasıl alırım?',
-    // Büyük başlık, sekme pill'inin adını TEKRAR ETMİYOR: pill "Tümü", başlık
-    // "Tüm gelenler" — pill dar bir yerde filtrenin adı, başlık ise listenin ne
-    // olduğunu söylüyor. "Beğeniler" adı yalnız beğeni sekmesinin; all→Beğeniler
-    // olsaydı iki sekme aynı başlığı taşırdı.
+    // Ürün sekmelerinde (beğeni/Fire/not) başlık pill'in AYNISI — ikisi de
+    // listenin içindekinin adı, ikinci bir kelime uydurmak anlam katmıyordu.
+    // "Tümü" ve "Kaçırdıkların" ayrışıyor: pill dar bir yerde filtrenin adı,
+    // başlık ise listenin ne olduğunu söylüyor ("Tümü" → "Tüm gelenler").
+    // "Beğeniler" adı yalnız beğeni sekmesinin; all→Beğeniler olsaydı iki
+    // sekme aynı başlığı taşırdı.
     headerAll: 'Tüm gelenler',
     headerLike: 'Beğeniler',
-    headerSuperLike: 'Süper beğeniler',
-    headerNote: 'Notlar',
+    headerFire: 'Fire\'lar',
+    headerNote: 'Not\'lar',
     // Kaçırdıkların sekmesinin büyük başlığı. Burada başlık bir zamanlar
     // bakiyenin kendisiydi ("Kurtarma hakkın: 3/5"); bakiye açıklama satırına
     // indi (bkz. descMissed*) ve başlık diğer sekmelerle aynı işi yapıyor.
@@ -1398,7 +1430,7 @@ const tr = {
     // aramak gerekirdi.
     headerMissed: 'Kaçırdıkların',
     infoDescription:
-      'Seni beğenen ve süper beğenen kişiler burada toplanır. Kartın sağındaki butonlarla geçebilir ya da beğenip anında eşleşebilirsin.',
+      'Seni beğenen ve sana Fire gönderen kişiler burada toplanır. Kartın sağındaki butonlarla geçebilir ya da beğenip anında eşleşebilirsin.',
     // Büyük başlığın ALTINDAKİ tek cümlelik açıklama. Kapatılabilir açıklama
     // kartının (LikesInfoCard) yerini aldı: kart aynı bilgiyi daha uzun
     // anlatıyordu ve başlığın altında kalıcı bir satır varken ikisi üst üste
@@ -1406,7 +1438,7 @@ const tr = {
     // yazısı, ikinci bir paragraf değil.
     descAll: 'Seni beğenen herkes burada toplanır.',
     descLike: 'Sana normal beğeni gönderenler burada listelenir.',
-    descSuperLike: 'Seni süper beğenenlerin kartları bulanıklaşmadan gelir.',
+    descFire: 'Sana Fire gönderenlerin kartları bulanıklaşmadan gelir.',
     descNote: 'Fotoğrafına ya da soru cevabına not yazanlar burada.',
     // Pencere uzunluğu backend'den geliyor; gelmediyse sayısız varyant
     // (gömülü bir "30 gün" değiştiği gün yalan söylerdi).
@@ -1418,17 +1450,17 @@ const tr = {
     passButton: 'Geç',
     likeButton: 'Beğen',
     // İsim satırının ÜSTÜNDEKİ pill — kartın hangi ürünle geldiğini söylüyor.
-    // Yalnız süper beğenide çiziliyor: notta zaten kartın kendi not kutusu var,
+    // Yalnız Fire'da çiziliyor: notta zaten kartın kendi not kutusu var,
     // düz beğenide söylenecek bir şey yok (kartın orada olması zaten "beğendi"
     // demek).
     // Fiil GEÇMİŞ zaman ve özne KARŞI TARAF: pill kartın kime ait olduğunu
     // değil, o kişinin ne yaptığını anlatıyor. Solundaki rozet (bkz.
-    // SuperLikePillBadge) cümlenin yerini ALMIYOR, yanında duruyor.
-    // "Superlike" TR'de de İngilizce yazılıyor — sekme adı (tabSuperLike) ve
+    // FirePillBadge) cümlenin yerini ALMIYOR, yanında duruyor.
+    // "Fire" TR'de de İngilizce yazılıyor — sekme adı (tabFire) ve
     // ürünün mağazadaki adı da öyle; ekranın içinde iki farklı ad olmasın.
-    superLikePill: 'Sana Superlike gönderdi',
-    emptySuperLike: 'Henüz süper beğeni yok.',
-    emptySuperLikeSubtitle: 'Seni süper beğenen birileri olduğunda burada görünecek.',
+    firePill: 'Sana Fire gönderdi',
+    emptyFire: 'Henüz Fire yok.',
+    emptyFireSubtitle: 'Sana Fire gönderen birileri olduğunda burada görünecek.',
     emptyLike: 'Henüz beğeni yok.',
     emptyLikeSubtitle: 'Yeni beğeniler geldikçe burada listelenecek.',
     emptyAll: 'Henüz seni beğenen kimse yok.',
@@ -1496,15 +1528,15 @@ const tr = {
     body: '{{name}} seni beğenmişti.',
     bodyNoName: 'Seni beğenmiş birini geçtin.',
   },
-  // Beğeni/Superlike/not geldiğinde üstten düşen toast (LikeToast).
+  // Beğeni/Fire/not geldiğinde üstten düşen toast (LikeToast).
   // `NoName` varyantları YALNIZ düz beğenide gerekiyor: premium olmayan alıcıya
-  // ad ve foto gönderilmiyor (kimlik kilidi AppNavigator'da). Superlike ve notta
+  // ad ve foto gönderilmiyor (kimlik kilidi AppNavigator'da). Fire ve notta
   // kimlik free alıcıya da açık, ama isim yine de boş dönebilir.
   likeToast: {
     like: '{{name}} seni beğendi',
     likeNoName: 'Birisi seni beğendi',
-    superLike: '{{name}} sana Superlike attı!',
-    superLikeNoName: 'Sana Superlike attı!',
+    fire: '{{name}} sana Fire attı!',
+    fireNoName: 'Sana Fire attı!',
     note: '{{name}} sana not gönderdi',
     noteNoName: 'Sana not gönderildi',
     // Alt satır: notta yorumun önizlemesi basılıyor, diğerlerinde bu.
@@ -1523,12 +1555,16 @@ const tr = {
     reward: {
       // `amount` VisibilityFilter'da GÜN, diğer ikisinde KREDİ — birim metnin
       // içinde, çağıran taşımıyor.
-      visibilityFilter: 'Görünürlük filtresi · {{amount}} gün',
-      superLike: '{{amount}} süper beğeni',
+      // Etiket+değer değil CÜMLE: "·" ayracı ödülü bir künye satırına
+      // çeviriyordu ("Görünürlük filtresi · 30 gün"), oysa cümle zaten
+      // "Sıradaki ödül:" ile başlıyor.
+      visibilityFilter: '{{amount}} günlük görünürlük filtresi',
+      fire: '{{amount}} Fire',
       note: '{{amount}} not',
     },
     card: {
-      label: 'Davet kodun',
+      // `label` ("Davet kodun") KALDIRILDI: kod kartı artık yalnız kodu
+      // taşıyor, üstündeki etiket 42pt'lik kodun söylediğini tekrar ediyordu.
       copy: 'Kopyala',
       share: 'Paylaş',
       // `count` DEĞİL: i18next'te çoğul çözümlemesini tetikler.
@@ -1543,14 +1579,10 @@ const tr = {
     sheet: {
       title: 'Davetlerin',
       description: 'Her 3 arkadaşın için bir ödül. Kodun ömür boyu aynı kalır.',
-      inviteesTitle: 'Katılanlar',
-      inviteesEmpty: 'Henüz kimse kodunla katılmadı.',
-      rewardsTitle: 'Kazandıkların',
-      rewardsEmpty: 'Henüz ödül kazanmadın.',
-      statusQualified: 'Sayıldı',
-      // Sayılmayan davet SAKLANMIYOR: "üç kişi çağırdım, ödül gelmedi" sessiz
-      // bir şikâyete dönüşmesin.
-      statusRejected: 'Sayılmadı',
+      // "Katılanlar" listesi (ilk adlar + sayıldı/sayılmadı) sheet'ten
+      // KALDIRILDI, anahtarları da onunla gitti: ilerleme kartı zaten
+      // "2 / 3 arkadaş katıldı" diyor. Geri gelirse kural aynı — YALNIZ İLK AD,
+      // davet edilen fazlasına rıza vermiş değil.
     },
   },
   profile: {
@@ -1622,13 +1654,13 @@ const tr = {
         generic: 'Cevaplarından biri kaydedilemedi. Kontrol edip tekrar dene.',
       },
     },
-    // Hero'nun altındaki mağaza şeridi: SuperLike ve Not kartları YAN YANA,
+    // Hero'nun altındaki mağaza şeridi: Fire ve Not kartları YAN YANA,
     // her biri şeridin yarısı — metinler kısa tutulmak ZORUNDA, uzun cümle tek
     // satıra sığmıyor (alt satır numberOfLines:1). subtitleUnknown bilerek
     // sayısız: bakiyeyi bilmediğimiz durumda (stats gelmedi / premium
     // aktivasyonu sürüyor) uydurma sayı yerine ürünün değer önerisi yazılır.
-    superLikeCard: {
-      title: 'Superlike Al',
+    fireCard: {
+      title: 'Fire Al',
       subtitleCount: '{{count}} hakkın kaldı',
       subtitleEmpty: 'Hakkın bitti',
       subtitleUnknown: 'Öne çık',
@@ -1636,7 +1668,7 @@ const tr = {
     noteCard: {
       title: 'Not Al',
       subtitleCount: '{{count}} notun kaldı',
-      subtitleEmpty: 'Notun bitti',
+      subtitleEmpty: 'Not\'un bitti',
       subtitleUnknown: 'Yazarak beğen',
     },
     // NOT: şeridin premium'da açılan en sol kartının (PlusCard) çevrilecek
@@ -2225,22 +2257,22 @@ const tr = {
       appStoreDisclaimer: 'Lit Plus aboneliği, App Store üzerinden otomatik olarak yenilenen bir aboneliktir. Aboneliğiniz, satın alma işleminin onaylanmasından sonra App Store hesabınızdan ücretlendirilir.',
     },
   },
-  superLikePurchase: {
-    title: 'Superlike Satın Al',
+  firePurchase: {
+    title: 'Fire Satın Al',
     description:
-      'Süper beğeniler 3x daha fazla eşleşme sağlar. Karşı taraf kartını beğenilerinin en üstünde, bulanıklaşmadan görür — üstelik ücretsiz üyeyse bile. Hakların süresiz, istediğin zaman kullanırsın.',
-    packLabel: '{{count}}x Superlike',
+      'Fire\'lar 3x daha fazla eşleşme sağlar. Karşı taraf kartını beğenilerinin en üstünde, bulanıklaşmadan görür — üstelik ücretsiz üyeyse bile. Hakların süresiz, istediğin zaman kullanırsın.',
+    packLabel: '{{count}}x Fire',
     cta: 'Satın Al',
     ctaWithPrice: '{{price}} · Satın Al',
     unavailableMessage: 'Paketler şu anda yüklenemedi. Bağlantını kontrol edip biraz sonra tekrar dene.',
-    successTitle: 'Superlike\'ların hazır',
-    successMessage: '{{count}} Superlike hesabına eklendi.',
+    successTitle: 'Fire\'ların hazır',
+    successMessage: '{{count}} Fire hesabına eklendi.',
     syncedTitle: 'Bakiyen güncel',
     syncedMessage: 'Bu satın alma zaten hesabına işlenmişti.',
     pendingTitle: 'Satın alman alındı',
-    pendingMessage: 'Superlike\'ların birkaç dakika içinde hesabına yansıyacak.',
+    pendingMessage: 'Fire\'ların birkaç dakika içinde hesabına yansıyacak.',
     errorTitle: 'Satın alma tamamlanamadı',
-    disclaimer: 'Süper beğeniler satın alma tamamlandığında hesabına anında eklenir ve süresi dolmaz. Ödemeler App Store hesabından tahsil edilir, satın alma sonrası iade yapılmaz.',
+    disclaimer: 'Fire\'lar satın alma tamamlandığında hesabına anında eklenir ve süresi dolmaz. Ödemeler App Store hesabından tahsil edilir, satın alma sonrası iade yapılmaz.',
   },
   // `recoveryPurchase` KALDIRILDI (2026-08-31): kurtarma paketleri silindi,
   // kurtarma premium ayrıcalığı oldu. Free'ye teklif Lit Plus'ın kendisi.
@@ -2267,13 +2299,13 @@ const tr = {
     // orada olmayan bir şeye işaret ediyormuş gibi okunuyordu.
     leftNoteOnPhoto: 'Fotoğrafına not bıraktı',
     leftNoteOnPrompt: 'Cevabına not bıraktı',
-    sentTitle: 'Notun gönderildi',
+    sentTitle: 'Not\'un gönderildi',
     sentMessage: '{{name}} notunu beğenilerinde görecek.',
     failedTitle: 'Not gönderilemedi',
     codes: {
       generic: 'Not gönderilemedi. Biraz sonra tekrar dene.',
       'UT-6401': 'Not hakkın kalmadı.',
-      'UT-6402': 'Notun boş olamaz ve karakter sınırını aşamaz.',
+      'UT-6402': 'Not\'un boş olamaz ve karakter sınırını aşamaz.',
       'UT-6403': 'Bu içerik artık profilde değil. Kartı yenileyip tekrar dene.',
       'UT-6404': 'Bu kişiye zaten karar vermiştin.',
       'UT-6405': 'Bu profile artık ulaşılamıyor.',
@@ -2281,7 +2313,7 @@ const tr = {
       'UT-6407': 'Kısa sürede çok fazla not gönderdin. Biraz sonra tekrar dene.',
     },
   },
-  // Not paketleri. Kabuk superLikePurchase ile aynı; notun kotası HİÇ yok,
+  // Not paketleri. Kabuk firePurchase ile aynı; notun kotası HİÇ yok,
   // tek edinme yolu bu paketler.
   notePurchase: {
     title: 'Not Satın Al',

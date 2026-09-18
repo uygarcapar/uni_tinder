@@ -162,6 +162,13 @@ const en = {
       // its own message) — this is for the user's other devices.
       emailChangedTitle: 'Your email address changed',
       emailChangedMessage: 'All sessions were closed for your security. Sign in again with your new address.',
+      // The session did NOT end: this launch couldn't read the device's secure
+      // store, so the app can't see it. Signing in again is unnecessary — and
+      // harmful, since it starts a new session on top of the intact one on
+      // disk. The right move is a full app restart.
+      storeLockedTitle: "Couldn't read your session",
+      storeLockedMessage:
+        "Your session couldn't be read this launch because of the device lock. No need to sign in again — fully close the app and reopen it.",
     },
     // Ban / suspension / deletion screen. The body text comes from the backend
     // (`message`); these fallbacks are only used when that body is empty.
@@ -214,7 +221,7 @@ const en = {
           'The photos you upload and the text you write remain yours. You grant us a limited permission to display them so we can run the service; that permission exists only for providing the service and ends when you delete the content or close your account. Photos may go through moderation to check they follow the rules.',
         sectionTitle5: 'Premium and Purchases',
         section5Content:
-          'Premium subscriptions are sold through the App Store or Google Play and renew automatically at the end of each period unless you cancel. You manage and cancel subscriptions in your store account settings. One-off packs such as SuperLikes are consumed as you use them and are non-refundable; unused entitlements end when your account is closed. Refund requests follow the rules of the relevant store.',
+          'Premium subscriptions are sold through the App Store or Google Play and renew automatically at the end of each period unless you cancel. You manage and cancel subscriptions in your store account settings. One-off packs such as Fires are consumed as you use them and are non-refundable; unused entitlements end when your account is closed. Refund requests follow the rules of the relevant store.',
         sectionTitle6: 'Suspension and Account Closure',
         section6Content:
           'We may suspend your account temporarily or close it permanently if you break these rules. You can also delete your account permanently from inside the app at any time; deletion happens immediately and cannot be undone, which is why we ask for your password to confirm. If you just want a break, you can deactivate your account instead: your data stays put and your account resumes where it left off when you log in again.',
@@ -956,6 +963,7 @@ const en = {
       'UT-6731': "You can't react to a system message.",
       'UT-6740': 'This chat has been closed.',
       'UT-6741': 'Refreshing the chat…',
+      'UT-6744': 'Refreshing the chat…',
       'UT-6742': 'Your search must be at least 2 characters.',
       'UT-6743': 'Only the person who unmatched can restore this chat.',
     },
@@ -1003,19 +1011,32 @@ const en = {
       durationHoursMinutes: '{{h}}h {{m}}m',
       durationMinutes: '{{m}}m',
       durationSeconds: '{{sec}}s',
-      superLikeCooldownTitle: 'Superlikes used up',
-      // The period can't be hardcoded: since 2026-08-22 the Super Like cycle is
+      fireCooldownTitle: 'Fires used up',
+      // The period can't be hardcoded: since 2026-08-22 the Fire cycle is
       // tier-based (7/30/365 days). "7-day cycle" was a wrong promise for
       // monthly and yearly subscribers; the real figure is `{{time}}`.
-      superLikeCooldownMessage: 'Your quota refills when your billing cycle renews — {{time}}.',
-      superLikeExhaustedTitle: 'You are out of Superlikes',
-      superLikeExhaustedMessage: 'Free membership includes a single Superlike and it does not renew on its own.',
+      fireCooldownMessage: 'Your quota refills when your billing cycle renews — {{time}}.',
+      // The below-threshold half: the gesture is not complete yet, the thing
+      // to do is keep pulling. At the threshold `fireReleaseHint` takes
+      // over — both lines are true at their own moment, which is why the hint
+      // can be shown from the start of the pull.
+      firePullHint: 'swipe down to send a fire',
+      // Shown in the strip that opens above the card while pulling it down
+      // (see FirePullHint). Imperative and short: the strip is 50 px tall
+      // and the line is read mid-gesture.
+      //
+      // ALL LOWERCASE, brand word included — same register as the cover's
+      // "swipe up" hint (profile.card.expandHint). Both are gesture whispers,
+      // not sentences; the "Fire" casing used in alerts belongs there.
+      fireReleaseHint: 'release to send a fire',
+      fireExhaustedTitle: 'You are out of Fires',
+      fireExhaustedMessage: 'Free membership includes a single Fire and it does not renew on its own.',
       // Sent confirmation — same shape as the note one (note.sentTitle/sentMessage).
       // The nameless variant is required: a card's displayName can come back
       // empty, which produced a sentence starting with a blank.
-      superLikeSentTitle: 'Superlike sent',
-      superLikeSentMessage: '{{name}} will see you highlighted in their likes.',
-      superLikeSentMessageNoName: 'They will see you highlighted in their likes.',
+      fireSentTitle: 'Fire sent',
+      fireSentMessage: '{{name}} will see you highlighted in their likes.',
+      fireSentMessageNoName: 'They will see you highlighted in their likes.',
       // Daily like quota: running-low warning (thresholds live in
       // DiscoverScreen) and exhaustion. The cap is never spelled out — it comes
       // from server config and changes without a FE release; the copy only
@@ -1025,7 +1046,7 @@ const en = {
       quotaLowMessageWithTime: '{{count}} likes left, they renew in {{time}}.',
       quotaExhaustedTitle: 'You are out of likes',
       // With no known countdown (missing field / sentinel) we promise nothing —
-      // same split as the Super Like copy above.
+      // same split as the Fire copy above.
       quotaExhaustedMessage: 'You can not send likes until your quota renews. Go Premium for unlimited likes.',
       quotaExhaustedMessageWithTime: 'Your likes renew in {{time}}. Go Premium to like without waiting.',
     },
@@ -1039,7 +1060,7 @@ const en = {
         seeLikes: 'See who likes you, unblurred',
         unlimitedMessages: 'Unlimited messaging',
         unlimitedUndo: 'Unlimited rewinds',
-        superLikes: 'Super Likes that renew',
+        fire: 'Fires that renew',
         advancedFilters: 'Advanced filters',
         widerDistance: 'Wider distance range',
         missedMatchRecovery: 'More missed-match recoveries',
@@ -1057,8 +1078,8 @@ const en = {
           'Chats where both sides are free have a message cap, and the conversation stops once you reach it. If either side has Plus, that chat becomes unlimited.',
         unlimitedUndo:
           'Brings back a profile you passed by mistake. Rewind is completely off on a free membership; with Plus you can use it as often as you like.',
-        superLikes:
-          'A Super Like delivers your like up front — it shows unblurred on their list and they get a notification. Free membership includes a single one that never renews; with Plus it refills every billing cycle.',
+        fire:
+          'A Fire delivers your like up front — it shows unblurred on their list and they get a notification. Free membership includes a single one that never renews; with Plus it refills every billing cycle.',
         advancedFilters:
           'University, department, class year, height, star sign, languages, habits and more: choose exactly who shows up in your deck. These filters are locked on a free membership.',
         widerDistance:
@@ -1092,7 +1113,7 @@ const en = {
     stats: {
       swipesLabel: 'Swipe Limit',
       unlimitedDaily: 'No daily limit',
-      superLikesLabel: 'Super Likes',
+      fireLabel: 'Fires',
     },
     filters: {
       saveError: 'Filters could not be saved',
@@ -1255,6 +1276,9 @@ const en = {
       },
       visibility: {
         title: 'Visibility',
+        // 🔴 NOT RENDERED: the sheet's info row now carries `exclusiveNote`
+        // (this line only repeated the title). The key stays — handy if the
+        // setting ever needs a one-line description somewhere.
         description: 'Choose who can see you in Discover.',
         // Three options, one choice: the backend allows only one rule at a time.
         modeEveryone: 'Everyone can see me',
@@ -1361,32 +1385,37 @@ const en = {
     title: 'Likes',
     tabTitle: 'Likes',
     tabAll: 'All',
-    tabLike: 'Like',
-    tabSuperLike: 'Superlike',
+    // Product tabs are PLURAL and use the same word as their big heading
+    // (headerLike/headerFire/headerNote) — see the Turkish file. 'All' and
+    // 'Missed' stay as they are: they name a slice, not a product.
+    tabLike: 'Likes',
+    tabFire: 'Fires',
     // Notes get their own tab — see the Turkish file for why they are excluded
-    // from the "Like" tab.
+    // from the "Likes" tab.
     tabNote: 'Notes',
     // Section heading above the pill row — present on every tab.
-    // Purchase pill beside the section heading — shared by the super like and
+    // Purchase pill beside the section heading — shared by the fire and
     // note tabs. The missed tab dropped out on 2026-08-31: what it sells is a
     // subscription now, not a pack, so its pill uses `viewLikersAction`.
     howToGetAction: 'How to get',
-    // The "All" tab's big title deliberately differs from its pill ('All') —
-    // 'Likes' is the name of the like tab alone; see the Turkish file.
+    // On the product tabs the heading matches the pill word for word. Only
+    // "All" differs from its pill — 'Likes' is the name of the like tab
+    // alone, so all→Likes would give two tabs the same title. See the
+    // Turkish file.
     headerAll: 'All incoming',
     headerLike: 'Likes',
-    headerSuperLike: 'Super likes',
+    headerFire: 'Fires',
     headerNote: 'Notes',
     // Big title for the missed tab — it used to be the balance itself
     // ("Recoveries left: 3/5"); the balance moved into the description line
     // (see descMissed*). Same wording as the pill (tabMissed) on purpose.
     headerMissed: 'Missed',
     infoDescription:
-      'Everyone who liked or super liked you shows up here. Use the buttons next to a card to pass, or like them back to match instantly.',
+      'Everyone who liked you or sent you a Fire shows up here. Use the buttons next to a card to pass, or like them back to match instantly.',
     // See tr.ts for why this replaced the dismissible info card.
     descAll: 'Everyone who liked you collects here.',
     descLike: 'People who sent you a regular like are listed here.',
-    descSuperLike: 'Cards from people who super liked you arrive unblurred.',
+    descFire: 'Cards from people who sent you a Fire arrive unblurred.',
     descNote: 'People who wrote a note on your photo or prompt answer.',
     descMissed: 'People you passed on who had liked you stay here for a while.',
     descMissedDays:
@@ -1395,11 +1424,11 @@ const en = {
     // Accessibility labels for the round buttons beside each card.
     passButton: 'Pass',
     likeButton: 'Like',
-    // Pill above the name row — see the Turkish file for why it is super-like
+    // Pill above the name row — see the Turkish file for why it is fire
     // only; the badge beside it sits next to the sentence, it does not replace it.
-    superLikePill: 'Sent you a Superlike',
-    emptySuperLike: 'No super likes yet.',
-    emptySuperLikeSubtitle: 'When someone super likes you, they will appear here.',
+    firePill: 'Sent you a Fire',
+    emptyFire: 'No Fires yet.',
+    emptyFireSubtitle: 'When someone sends you a Fire, they will appear here.',
     emptyLike: 'No likes yet.',
     emptyLikeSubtitle: 'New likes will be listed here as they come in.',
     emptyAll: 'No one has liked you yet.',
@@ -1465,16 +1494,16 @@ const en = {
     body: '{{name}} had liked you.',
     bodyNoName: 'You passed on someone who liked you.',
   },
-  // Toast shown on an incoming like / superlike / note (LikeToast).
+  // Toast shown on an incoming like / fire / note (LikeToast).
   // The `NoName` variants are really only needed for a plain like: a free
   // recipient gets no name or photo (identity lock lives in AppNavigator).
-  // Superlikes and notes carry the identity even for free users, but the name
+  // Fires and notes carry the identity even for free users, but the name
   // can still come back empty.
   likeToast: {
     like: '{{name}} liked you',
     likeNoName: 'Someone liked you',
-    superLike: '{{name}} super liked you!',
-    superLikeNoName: 'You got a Superlike!',
+    fire: '{{name}} sent you a Fire!',
+    fireNoName: 'You got a Fire!',
     note: '{{name}} sent you a note',
     noteNoName: 'You got a note',
     // Subtitle: notes show the note preview instead, everything else shows this.
@@ -1493,12 +1522,16 @@ const en = {
     reward: {
       // `amount` is DAYS for VisibilityFilter and CREDITS for the other two —
       // the unit lives in the text, callers do not carry it.
-      visibilityFilter: 'Visibility filter · {{amount}} days',
-      superLike: '{{amount}} super likes',
+      // Reads as a sentence, not a spec row: the "·" separator turned the
+      // reward into a label + value pair ("Visibility filter · 30 days") right
+      // after "Next reward:", which already frames it.
+      visibilityFilter: 'Visibility filter for {{amount}} days',
+      fire: '{{amount}} Fires',
       note: '{{amount}} notes',
     },
     card: {
-      label: 'Your invite code',
+      // `label` ("Your invite code") removed: the code card now carries only
+      // the code — the 42pt code says what the label was repeating.
       copy: 'Copy',
       share: 'Share',
       // NOT `count`: that triggers i18next pluralization.
@@ -1513,14 +1546,10 @@ const en = {
     sheet: {
       title: 'Your invites',
       description: 'One reward for every 3 friends. Your code never changes.',
-      inviteesTitle: 'Joined',
-      inviteesEmpty: 'Nobody has joined with your code yet.',
-      rewardsTitle: 'Rewards earned',
-      rewardsEmpty: 'No rewards yet.',
-      statusQualified: 'Counted',
-      // A rejected invite is NOT hidden, so "I invited three people and got
-      // nothing" never becomes a silent complaint.
-      statusRejected: 'Not counted',
+      // The "Joined" list (invitee first names + counted/not-counted status)
+      // was dropped from the sheet, and its keys with it: the progress card
+      // already says "2 / 3 friends joined". If it ever comes back, only the
+      // FIRST NAME may be shown — the invitee never consented to more.
     },
   },
   profile: {
@@ -1589,13 +1618,13 @@ const en = {
         generic: 'One of your answers could not be saved. Check it and try again.',
       },
     },
-    // Shop row under the hero: SuperLike and Note cards SIDE BY SIDE, each half
+    // Shop row under the hero: Fire and Note cards SIDE BY SIDE, each half
     // the row — subtitles have to stay short, a long line will not fit on one
     // row (the subtitle is numberOfLines:1). subtitleUnknown is deliberately
     // number-free: when the balance is unknown (stats missing / premium
     // activation pending) we show the value prop instead of a made-up count.
-    superLikeCard: {
-      title: 'Get Superlikes',
+    fireCard: {
+      title: 'Get Fires',
       subtitleCount: '{{count}} left',
       subtitleEmpty: 'None left',
       subtitleUnknown: 'Stand out',
@@ -2177,22 +2206,22 @@ const en = {
       appStoreDisclaimer: 'Lit Plus subscription is automatically renewed through the App Store. Your account will be charged from your App Store account after purchase confirmation.',
     },
   },
-  superLikePurchase: {
-    title: 'Buy Superlikes',
+  firePurchase: {
+    title: 'Buy Fires',
     description:
-      'Super likes get 3x more matches. They see your card unblurred at the top of their likes — even on a free account. Super likes never expire, so use them whenever you want.',
-    packLabel: '{{count}}x Superlike',
+      'Fires get 3x more matches. They see your card unblurred at the top of their likes — even on a free account. Fires never expire, so use them whenever you want.',
+    packLabel: '{{count}}x Fire',
     cta: 'Buy',
     ctaWithPrice: 'Buy · {{price}}',
     unavailableMessage: "Packs couldn't be loaded right now. Check your connection and try again in a moment.",
-    successTitle: 'Your Superlikes are ready',
-    successMessage: '{{count}} Superlikes were added to your account.',
+    successTitle: 'Your Fires are ready',
+    successMessage: '{{count}} Fires were added to your account.',
     syncedTitle: 'Your balance is up to date',
     syncedMessage: 'This purchase had already been credited to your account.',
     pendingTitle: 'Purchase received',
-    pendingMessage: 'Your Superlikes will show up in your balance within a few minutes.',
+    pendingMessage: 'Your Fires will show up in your balance within a few minutes.',
     errorTitle: "Purchase couldn't be completed",
-    disclaimer: 'Super likes are added to your account instantly upon purchase and never expire. Payments are charged to your App Store account. Purchases are non-refundable.',
+    disclaimer: 'Fires are added to your account instantly upon purchase and never expire. Payments are charged to your App Store account. Purchases are non-refundable.',
   },
   // `recoveryPurchase` REMOVED (2026-08-31): the recovery packs were deleted
   // and recovery became a Premium perk. The offer for free users is Lit Plus.
@@ -2234,7 +2263,7 @@ const en = {
       'UT-6407': "You've sent too many notes just now. Try again in a bit.",
     },
   },
-  // Note packs. Same shell as superLikePurchase; notes have NO renewing quota,
+  // Note packs. Same shell as firePurchase; notes have NO renewing quota,
   // packs are the only way to get them.
   notePurchase: {
     title: 'Buy Notes',

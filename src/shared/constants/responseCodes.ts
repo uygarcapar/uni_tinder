@@ -103,7 +103,7 @@ const CODE_ENTRIES: CodeEntry[] = [
     actionLabel: "Premium'u İncele",
     action: { kind: "openPaywall", paywallType: "SWIPE_LIMIT" },
   },
-  // ── SuperLike paketi redeem'i ────────────────────────────────────────────
+  // ── Fire paketi redeem'i ────────────────────────────────────────────
   // Bu üçü empty-state değil, satın alma sonucu. Buraya alınmalarının sebebi:
   // redeem'de karar HTTP status'tan değil `code`'dan verilmeli (backend
   // 2026-08-11'de "başka hesaba ait" durumunu 402'den 400'e taşıdı; status'a
@@ -468,6 +468,11 @@ export const CHAT_ERROR_CODES = {
   CONVERSATION_CLOSED: "UT-6740",
   INVALID_CURSOR: "UT-6741",
   SEARCH_TOO_SHORT: "UT-6742",
+  /**
+   * Delta-sync watermark'ı sunucunun değişiklik günlüğünden düşmüş. Cursor'un
+   * aksine bu GERÇEKTEN eskiyebilir. Telafisi: watermark'ı at, tam senkrona dön.
+   */
+  INVALID_WATERMARK: "UT-6744",
 } as const;
 
 export const MODERATION_CODES = {
@@ -512,6 +517,10 @@ const CHAT_CODE_I18N: Record<ChatErrorCode, string> = {
   [CHAT_ERROR_CODES.CONVERSATION_CLOSED]: "chat.codes.UT-6740",
   [CHAT_ERROR_CODES.INVALID_CURSOR]: "chat.codes.UT-6741",
   [CHAT_ERROR_CODES.SEARCH_TOO_SHORT]: "chat.codes.UT-6742",
+  // UT-6744 normalde kullanıcıya HİÇ gösterilmiyor: watermark eskimesi tamamen
+  // sessiz telafi ediliyor (atılır, tam senkrona dönülür). Metin yalnız
+  // beklenmedik bir yolda ekrana düşerse diye var — UT-6741 ile aynı his.
+  [CHAT_ERROR_CODES.INVALID_WATERMARK]: "chat.codes.UT-6744",
 };
 
 // UT-6804 mevcut anahtarı kullanıyor: metin birebir aynı ve ReportModal onu
@@ -535,6 +544,7 @@ const MODERATION_CODE_I18N: Record<string, string> = {
  *   actionRejected   → aksiyon reddedildi ama veri yerinde: metni göster, geri al.
  *   inputInvalid     → kullanıcı düzeltebilir: GİRDİYİ KORU, temizleme.
  *   staleCursor      → sayfalamayı baştan kur (sessiz).
+ *   staleWatermark   → delta watermark'ını at, tam senkrona dön (sessiz).
  *   clientBug        → kullanıcıya jenerik metin, ayrıntı log'a.
  */
 export type ChatErrorEffect =
@@ -543,6 +553,7 @@ export type ChatErrorEffect =
   | "actionRejected"
   | "inputInvalid"
   | "staleCursor"
+  | "staleWatermark"
   | "clientBug";
 
 const CHAT_CODE_EFFECT: Record<string, ChatErrorEffect> = {
@@ -566,6 +577,7 @@ const CHAT_CODE_EFFECT: Record<string, ChatErrorEffect> = {
   [CHAT_ERROR_CODES.REACTION_BAD_EMOJI]: "inputInvalid",
   [CHAT_ERROR_CODES.SEARCH_TOO_SHORT]: "inputInvalid",
   [CHAT_ERROR_CODES.INVALID_CURSOR]: "staleCursor",
+  [CHAT_ERROR_CODES.INVALID_WATERMARK]: "staleWatermark",
   [MODERATION_CODES.EMPTY_USER_ID]: "clientBug",
 };
 
@@ -662,7 +674,7 @@ export function resolveCode(
 // consumable paket sheet'ini açıyor (bkz. useNoteMutation → uiBus "notePaywall").
 export const PAYWALL_TYPES = {
   SWIPE_LIMIT: "SWIPE_LIMIT",
-  SUPER_LIKE_LIMIT: "SUPER_LIKE_LIMIT",
+  FIRE_LIMIT: "FIRE_LIMIT",
   UNDO_LIMIT: "UNDO_LIMIT",
   MISSED_MATCH_RECOVERY_LIMIT: "MISSED_MATCH_RECOVERY_LIMIT",
   PREMIUM_FILTERS: "PREMIUM_FILTERS",

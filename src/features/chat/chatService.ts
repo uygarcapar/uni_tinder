@@ -3,6 +3,30 @@ import api from '@/shared/services/api';
 import { API_ENDPOINTS } from '@/shared/constants/api';
 import { normalizeUtcFields } from '@/shared/utils/dateUtc';
 
+/**
+ * Sunucudan çekilen geçmiş sayfasının boyutu.
+ *
+ * 30 → 50: yerel arşiv artık kalıcı ve "bitişik aralık" invariant'ı ile
+ * korunuyor. Sayfa-1 reconcile'ı yerel aralıkla ÇAKIŞMAZSA yetim kuyruk
+ * siliniyor (gap-replace); sayfayı büyütmek o çakışmanın olasılığını
+ * artırıyor ve cihaz bir süre offline kaldığında delik riskini büyük ölçüde
+ * kaldırıyor. Delta-sync endpoint'i gelene kadar elimizdeki tek kaldıraç bu.
+ *
+ * Sunucu tavanı 100 (`Math.Clamp(pageSize, 1, 100)`) ve aşan değeri SESSİZCE
+ * kırpıyor — 400 dönmüyor. Bu yüzden "istediğim kadar geldi mi" diye saymak
+ * güvenli değil; sayfalama `hasMore`/`nextCursor` ile ilerliyor.
+ *
+ * Yerel diskten okunan sayfa AYRI ve daha küçük (chatHydrate.LOCAL_PAGE):
+ * oradaki maliyet ağ değil, LegendList prepend'i + MVCP yeniden hesabı.
+ */
+export const HISTORY_PAGE_SIZE = 50;
+
+/**
+ * Delta-sync sayfa boyutu. Uzun süre offline kalmış bir istemci tek yanıtta
+ * her şeyi almamalı; `hasMore` ile döngüye giriliyor.
+ */
+export const CHANGES_PAGE_SIZE = 200;
+
 interface SendMessageArgs {
   conversationId: string;
   content: string;
@@ -40,7 +64,7 @@ export const chatService = {
 
   async getMessageHistory(
     conversationId: string,
-    { cursor, pageSize = 30 }: { cursor?: string | null; pageSize?: number } = {}
+    { cursor, pageSize = HISTORY_PAGE_SIZE }: { cursor?: string | null; pageSize?: number } = {}
   ) {
     const params = new URLSearchParams();
     if (cursor) params.append('cursor', cursor);
@@ -55,6 +79,29 @@ export const chatService = {
         hasMore: false,
         hasHiddenHistory: false,
       }
+    );
+  },
+
+  /**
+   * Delta-sync. `watermark` null ise sunucu "şu andan itibaren" anlamında taze
+   * bir watermark döner ve boş değişiklik listesi verir.
+   *
+   * Yanıt opak DEĞİL ama `watermark` öyle: içeriğini yorumlama, aynen sakla,
+   * aynen geri gönder.
+   */
+  async getChanges({ watermark, limit = CHANGES_PAGE_SIZE }: { watermark?: string | null; limit?: number } = {}) {
+    const params = new URLSearchParams();
+    if (watermark) params.append('watermark', watermark);
+    params.append('limit', String(limit));
+    const res = await api.get(`${API_ENDPOINTS.MESSAGES_CHANGES}?${params.toString()}`);
+    return normalizeUtcFields(
+      (res as any).result || {
+        watermark: null,
+        hasMore: false,
+        messages: [],
+        conversations: [],
+        deletions: [],
+      },
     );
   },
 

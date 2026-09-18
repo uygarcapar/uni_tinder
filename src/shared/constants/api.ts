@@ -96,11 +96,11 @@ export const API_ENDPOINTS = {
   GET_POTENTIAL_MATCHES: "/api/swipe/GetPotentialMatches",
   SWIPE_LIKE: "/api/swipe/Like",
   SWIPE_PASS: "/api/swipe/Pass",
-  SWIPE_SUPER_LIKE: "/api/swipe/SuperLike",
-  // Consumable superlike paketinin krediye çevrilmesi. Diğer swipe endpoint'leri
+  SWIPE_FIRE: "/api/swipe/SuperLike",
+  // Consumable fire paketinin krediye çevrilmesi. Diğer swipe endpoint'leri
   // hep 200 + ResponseDto dönerken bu action GERÇEK HTTP status kullanıyor:
   // 402 = RC webhook'u henüz inmedi (retry), 400 = kalıcı hata.
-  SWIPE_SUPER_LIKE_REDEEM: "/api/swipe/SuperLike/Redeem",
+  SWIPE_FIRE_REDEEM: "/api/swipe/SuperLike/Redeem",
   // Not = kartın BELİRLİ bir içeriğine (foto / prompt) yazılan yorumla birlikte
   // gönderilen beğeni. Swipe kaydı olarak LIKE sayılır (karşılıklıysa eşleşme),
   // ama kotası günlük like kotası değil: satın alınan ayrı bir consumable.
@@ -108,7 +108,7 @@ export const API_ENDPOINTS = {
   // bakiye (`Stats.notesRemaining`) 0 kaldığı sürece FE buraya hiç istek atmaz,
   // not kutusu doğrudan satın alma sheet'ini açar.
   SWIPE_NOTE: "/api/swipe/Note",
-  // SuperLike/kurtarma redeem'lerinin birebir aynısı (gerçek HTTP status:
+  // Fire/kurtarma redeem'lerinin birebir aynısı (gerçek HTTP status:
   // 402 = webhook inmedi → retry, 400 = kalıcı).
   SWIPE_NOTE_REDEEM: "/api/swipe/Note/Redeem",
   SWIPE_STATS: "/api/swipe/Stats",
@@ -180,6 +180,12 @@ export const API_ENDPOINTS = {
   MESSAGES_HISTORY: (convId: string) => `/api/messages/conversations/${convId}/history`,
   MESSAGES_SEND: "/api/messages/send",
   MESSAGES_MARK_READ: (convId: string) => `/api/messages/conversations/${convId}/mark-read`,
+  /**
+   * Delta-sync: son watermark'tan bu yana değişen her şey. Bağlantı koptuktan
+   * ya da arka plandan dönüşte "ben yokken ne değişti" sorusunun TEK cevabı —
+   * özellikle silmeler, çünkü silinmiş mesaj `messages[]`'a hiç girmiyor.
+   */
+  MESSAGES_CHANGES: "/api/messages/changes",
   MESSAGES_UNREAD_COUNT: "/api/messages/unread-count",
   MESSAGES_UNREAD_PER_CONV: "/api/messages/unread-per-conversation",
   MESSAGES_DEACTIVATE_CONV: (convId: string) => `/api/messages/conversations/${convId}`,
