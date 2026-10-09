@@ -2771,18 +2771,19 @@ export default function FilterModal({
       onClose={onClose}
       title={t('discover.filters.title')}
       // X yerine "Sıfırla" — sheet swipe-down ve backdrop ile kapanmaya devam
-      // ediyor, kapatma yolu kaybolmuyor.
-      leftLabel={t('discover.filters.reset')}
+      // ediyor, kapatma yolu kaybolmuyor. İkisi de YAZI DEĞİL GLİF: header'ın
+      // bütün butonları (burada ↺ ve ✓) uygulamanın yuvarlak cam ikon
+      // diliyle çiziliyor.
+      leftIcon="arrow.counterclockwise"
+      leftIconLabel={t('discover.filters.reset')}
       onLeftPress={resetAllFilters}
-      actionLabel={t('discover.filters.apply')}
+      actionIcon="checkmark"
+      actionIconLabel={t('discover.filters.apply')}
       onAction={() => applyFilters(local)}
       // Sıfırla/Uygula BERRAK cam: header'ın altından uzun ve renkli bir içerik
       // (mesafe dial'i, bölüm kartları) geçiyor, dolgulu cam orayı kapatıyordu.
-      // Ekranlardaki yuvarlak cam ikon butonlarıyla aynı malzeme.
-      clearGlassActions
-      // Ölçü de aynı yerden: Sıfırla/Uygula, X'i olan sheet'lerdeki butonlarla
-      // ve ekran başlıklarındaki yuvarlak cam ikonlarla tek yükseklikte
-      // (GLASS_ICON_CLEAR_SIZE). Bu sheet'te X yok — tek etkisi ölçü.
+      // Ekranlardaki yuvarlak cam ikon butonlarıyla aynı malzeme ve aynı ölçü
+      // (GLASS_ICON_CLEAR_SIZE).
       clearGlassHeader
       actionDisabled={interestedInEmpty}
       actionLoading={saving}

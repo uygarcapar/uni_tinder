@@ -17,6 +17,9 @@ import { useSafeAreaInsets } from "react-native-safe-area-context";
 // AppBottomSheet DEĞİL AppModal: progressive blur header, drag pill, X ve
 // scroll'a bağlı başlık fade'i uygulamadaki tüm modal'larla tek yerden geliyor.
 import AppModal from "@/shared/components/AppModal";
+// Header butonlarının üst payı buradan: profilden açılan önizleme kartının cam
+// köşe butonlarıyla aynı çizgi (bkz. headerButtonTop).
+import { CARD_CHROME_BUTTON_TOP } from "@/features/discover/components/CardStickyHeader";
 import AnimatedPressable from "@/shared/components/AnimatedPressable";
 import SFIcon, { type SFSymbol } from "@/shared/components/SFIcon";
 import {
@@ -85,12 +88,25 @@ export default function ReferralSheet({
       // İçerideki 26pt başlık scroll'un altına girerken bu devralıyor — iOS'un
       // büyük başlık paterni, ProfileEditModal'daki davranışın aynısı.
       title={t("referral.sheet.title")}
-      // X YOK: sheet hiçbir şey kaydetmiyor, aşağı sürüklemek ve backdrop'a
-      // dokunmak zaten kapatıyor. Kardeş bilgi sheet'leriyle aynı karar
-      // (PremiumBenefitInfoSheet / ProfileOptionsSheet). Header'da buton
-      // kalmadığı için `clearGlassHeader` da geçilmiyor — tek etkisi buton
-      // ölçüsüydü.
-      closeButton={false}
+      // ── HEADER: solda X, sağda ✓ ────────────────────────────────────────────
+      // Kardeş sheet'le (UniversityVisibilitySheet) ve uygulamanın geri kalanıyla
+      // aynı chrome; `clearGlassHeader` ikisini de yuvarlak cam ikon ölçüsüne
+      // (GLASS_ICON_CLEAR_SIZE) oturtuyor.
+      //
+      // ⚠️ BURADA ✓ "KAYDET" DEĞİL: bu sheet hiçbir şey yazmıyor, iki buton da
+      // yalnız kapatıyor (kodu kopyala/paylaş kartın içinde duruyor). ✓ ekranın
+      // çıkışını tanıdık yere koyuyor — kardeş sheet'te aynı köşede kaydeden
+      // buton var, kullanıcı ikisinde de sağ üstü arıyor.
+      clearGlassHeader
+      // X ve ✓, profilden açılan önizleme kartının köşe butonlarıyla AYNI
+      // yükseklikte (14, AppModal varsayılanı 20): profil ekranında kart da bu
+      // sheet de aynı yerden açılıyor, aynı cam dairenin iki ekran arasında 6pt
+      // zıplaması görünüyordu. Kardeş sheet (UniversityVisibilitySheet) aynı payı
+      // veriyor — biri değişirse ikisi birlikte değişmeli.
+      headerButtonTop={CARD_CHROME_BUTTON_TOP}
+      actionIcon="checkmark"
+      actionIconLabel={t("common.done")}
+      onAction={onClose}
       // 🔴 snapPoints YOK: tek detent ÖLÇÜLEN içerik yüksekliği.
       //
       // Önce sabit "64%" idi ve dinamik ölçü bilerek kapalıydı — gerekçe
@@ -114,20 +130,15 @@ export default function ReferralSheet({
       // olduğunda aynı yola geçirilmeli.
       dynamicSizing
       maxDynamicContentSize={windowHeight * 0.85}
-      // ÜST PAY 88 DEĞİL 40. Varsayılan, header'ın TAM yüksekliğini boş
-      // bırakıyor — X'i olan modal'larda doğru (içerik butonun altından
-      // başlamalı), ama bu header'da buton yok: yalnız 20'de başlayıp 24'te
-      // biten drag pill ve scroll'la beliren küçük başlık var. Sonuç,
-      // başlığın üstünde bir parmak boyu boşluktu. 40 = pill'in bittiği yer +
-      // nefes payı.
-      //
-      // Blur ŞERİDİ yine 88: kaydırınca içerik onun altına giriyor ve küçük
-      // başlık orada beliriyor — istenen davranış bu.
+      // paddingTop ARTIK VERİLMİYOR (eskiden 40): header'da buton olmadığı sürece
+      // AppModal'ın tam header payı başlığın üstünde boş bir parmak boyu
+      // bırakıyordu. X + ✓ geri geldiğine göre varsayılan doğru olan — içerik
+      // butonların altından başlamalı.
       //
       // Alt pay HOME INDICATOR'ı sayıyor: içerik kadar açılan sheet'te kartın
       // altı doğrudan ekranın alt kenarı, sabit bir sayı gesture çubuğunun
       // üstüne oturuyordu.
-      contentContainerStyle={{ paddingTop: 40, paddingBottom: 28 + insets.bottom }}
+      contentContainerStyle={{ paddingBottom: 28 + insets.bottom }}
     >
       {/* Büyük başlık İÇERİKTE: header'ınki scroll'a bağlı beliriyor, bu ise
           sheet açılır açılmaz duruyor. Ölçü doğrulama sheet'inin

@@ -1,10 +1,13 @@
 import { useCallback, useEffect, useMemo, useState } from "react";
-import { ActivityIndicator, Text, TouchableOpacity, View } from "react-native";
+import { Text, TouchableOpacity, View } from "react-native";
 import { useTranslation } from "react-i18next";
 import { GraduationCap, Info as InfoIcon, Plus, X as XIcon } from "@/shared/icons";
 // AppBottomSheet DEĞİL AppModal: header (blur + drag pill + scroll'a bağlı
 // başlık) kardeş sheet'lerle tek yerden geliyor (bkz. ReferralSheet).
 import AppModal from "@/shared/components/AppModal";
+// Header butonlarının üst payı buradan — kart chrome'uyla aynı çizgi
+// (gerekçesi aşağıda, `headerButtonTop`).
+import { CARD_CHROME_BUTTON_TOP } from "@/features/discover/components/CardStickyHeader";
 import AnimatedPressable from "@/shared/components/AnimatedPressable";
 import SFIcon, { type SFSymbol } from "@/shared/components/SFIcon";
 import UniversityPickerModal from "@/features/discover/components/UniversityPickerModal";
@@ -22,9 +25,6 @@ import { grantDaysRemaining } from "@/features/profile/referralView";
 /** Satırı olan iki mod; "everyone" satır değil, iki satırın da boş hâli. */
 type ListMode = Exclude<VisibilityMode, "everyone">;
 import { colors, isLight } from "@/shared/theme/colors";
-// Header butonlarının ölçüsü — savingSlot, Kaydet/X ile AYNI yükseklikte
-// dursun diye tek sabitten (bkz. AppModal > clearGlassHeader).
-import { GLASS_ICON_CLEAR_SIZE } from "@/shared/theme/glass";
 import { devLog } from "@/shared/utils/devLog";
 import uiBus from "@/shared/services/uiBus";
 import { showInfoToast } from "@/shared/services/toaster";
@@ -271,25 +271,6 @@ export default function UniversityVisibilitySheet({
     }
   }, [saving, dirty, canUse, draft, initial, onClose, onSaved, openPaywall, t]);
 
-  // Kaydederken etiketin yerini tutan pill — ProfileEditModal'daki `savingSlot`
-  // ile aynı kabuk (yükseklik/padding/yarıçap), içi shimmer yerine spinner.
-  // Buton çerçevesi korunuyor ki header satırı kaydetme sırasında zıplamasın.
-  const savingSlot = (
-    <View
-      pointerEvents="none"
-      style={{
-        height: GLASS_ICON_CLEAR_SIZE,
-        paddingHorizontal: 18,
-        borderRadius: 999,
-        backgroundColor: colors.hairlineSoft,
-        alignItems: "center",
-        justifyContent: "center",
-      }}
-    >
-      <ActivityIndicator size="small" color={colors.text} />
-    </View>
-  );
-
   return (
     <AppModal
       visible={visible}
@@ -297,30 +278,38 @@ export default function UniversityVisibilitySheet({
       // Kardeş sheet'le (ReferralSheet) AYNI HEADER: progressive blur, drag
       // pill, scroll 55px'i geçince beliren küçük başlık.
       title={t("discover.filters.visibility.title")}
-      // ── Butonlar ProfileEditModal'ın yapısında ──────────────────────────────
-      // Kaydetme ARTIK footer'ın tam genişlikte butonu değil, header'ın sağ
-      // ucundaki cam kapsül; solda da onunla aynı yükseklikte berrak cam X.
-      // İkisinin ölçüsü tek sabitten (`clearGlassHeader` → GLASS_ICON_CLEAR_SIZE)
-      // geliyor, yani profil düzenleme modal'ıyla birebir aynı satır.
+      // ── HEADER: solda X, sağda ✓ ────────────────────────────────────────────
+      // İkisi de uygulamanın yuvarlak cam ikon ölçüsünde (`clearGlassHeader` →
+      // GLASS_ICON_CLEAR_SIZE), yani profil düzenleme / filtre sheet'lerindeki
+      // butonlarla aynı kutu. ✓ KAYDEDİYOR (handleSave; değişiklik yoksa yalnız
+      // kapatıyor), X kapatıyor.
       //
-      // Etiket dirty'ye göre değişiyor: değişiklik varsa "Kaydet", yoksa
-      // "Bitti" — ikisi de handleSave'e gidiyor (temizken o zaten yalnız
-      // kapatıyor).
-      actionLabel={saving ? undefined : t(dirty ? "common.save" : "common.done")}
-      onAction={handleSave}
-      rightSlot={saving ? savingSlot : undefined}
+      // ⚠️ İçeriğin altındaki tam genişlikte "Kaydet/Bitti" butonu KALKTI: ✓ ile
+      // aynı işi yapan ikinci bir aksiyon, eski header'ın "hangisi kaydeder"
+      // sorununu bu kez büyük boy üretiyordu. Kaydetme yine TEK yerde, yalnız
+      // yeri header.
       clearGlassHeader
+      // Kardeş sheet (ReferralSheet) ile AYNI pay: iki buton da profilden açılan
+      // önizleme kartının cam köşe butonlarının hizasında (14, AppModal
+      // varsayılanı 20). Birini oynatan ikisini oynatmak zorunda.
+      headerButtonTop={CARD_CHROME_BUTTON_TOP}
+      actionIcon="checkmark"
+      actionIconLabel={t(dirty ? "common.save" : "common.done")}
+      onAction={handleSave}
+      actionLoading={saving}
       // TEK DETENT. Davet şeridi/CTA eklendikten sonra 55% içerikte sürekli
       // kaydırma bırakıyordu; bir tık uzattık. İçerik yine taşarsa scroll
       // ediyor. `dynamicSizing` bilerek KAPALI (kardeş sheet'ten AYRILDIĞI
       // yer) — buradaki içerik seçim yapıldıkça uzayıp kısalıyor (davet
       // şeridi, erişim uyarısı, satır özetleri), ölçülen boy her dokunuşta
       // zıplardı.
+      // Kaydet butonu header'daki ✓'ye taşındığı için 64%'ten geri indi: o 7
+      // puan tam genişlikteki butonun yeriydi (57% → 64% → 57%). İçerik yine
+      // taşarsa scroll ediyor.
       snapPoints={["57%"]}
-      // paddingTop VERİLMİYOR: header'da artık buton var, üst pay AppModal'ın
-      // kendi header yüksekliğinden (88) gelmeli — eski 40 butonların altına
-      // girerdi. Yatay 24 bu sheet'in kendi ölçüsü (AppModal varsayılanı 20),
-      // alt pay footer gittiği için bir tık büyüdü.
+      // paddingTop VERİLMİYOR: üst pay AppModal'ın kendi header yüksekliğinden
+      // gelmeli — header'da yeniden buton var, içerik onların altından
+      // başlamalı. Yatay 24 bu sheet'in kendi ölçüsü (AppModal varsayılanı 20).
       contentContainerStyle={{
         paddingHorizontal: 24,
         paddingBottom: 32,
@@ -501,19 +490,32 @@ export default function UniversityVisibilitySheet({
           // metin bağlantı, dokunma alanı paddingVertical ile korunuyor.
           style={{ marginTop: 20 }}
         >
-          <Text
-            style={{
-              paddingVertical: 16,
-              textAlign: "center",
-              fontSize: 15,
-              fontWeight: "600",
-              color: colors.text,
-            }}
-          >
-            {t("discover.filters.visibility.inviteCta")}
-          </Text>
+          {/* TEK metin, TAMAMI birincil mürekkep: başlık + gri açıklama ikilisi
+              aynı şeyi iki kez söylüyordu ve grinin yarısı CTA'yı "dipnot"
+              gibi gösteriyordu. Dokunma alanı padding'le korunuyor (padding
+              Text'te değil kapsayıcıda: satır arası ölü boşluk yapıyordu). */}
+          <View style={{ paddingVertical: 16 }}>
+            <Text
+              style={{
+                textAlign: "left",
+                fontSize: 15,
+                lineHeight: 21,
+                fontWeight: "600",
+                color: colors.text,
+              }}
+            >
+              {t("discover.filters.visibility.inviteCta")}
+            </Text>
+          </View>
         </AnimatedPressable>
       ) : null}
+
+      {/* ⚠️ TAM GENİŞLİKTE "Kaydet/Bitti" BUTONU KALDIRILDI — aksiyon header'ın
+          sağ üstündeki ✓ (bkz. yukarıdaki AppModal props'u). İçerikte ikinci bir
+          kaydet yüzeyi tutmak, aynı işi yapan iki butonla "hangisi kaydeder"
+          sorusunu üretiyordu. Spinner da ✓'nin yerinde dönüyor (actionLoading).
+          `dirty` hâlâ okunuyor: ✓'nin erişilebilirlik etiketi ona göre
+          "Kaydet"/"Bitti". */}
 
       <UniversityPickerModal
         visible={pickerVisible}

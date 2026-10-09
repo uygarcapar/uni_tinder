@@ -1312,7 +1312,11 @@ const tr = {
         // Görünürlük filtresi premium'a ÖZEL değil artık: 3 davetle 30 günlük
         // bir hak da açıyor (bkz. features/profile/referralView.ts).
         grantNote: 'Davet ödülü · {{days}} gün kaldı',
-        inviteCta: '3 arkadaşını davet et, 30 gün ücretsiz',
+        // TEK satır: önce iki ayrı metin vardı (başlık + açıklama), aynı şeyi
+        // iki kez söyleyip CTA'yı zayıflatıyordu. "Premium gerekmeden" ibaresi
+        // cümlede kalıyor — "30 gün ücretsiz" tek başına neyin ücretsiz
+        // olduğunu belirsiz bırakıyordu (Premium mu, bu ayar mı?).
+        inviteCta: '3 arkadaşını davet et, bu ayarı Premium gerekmeden 30 gün ücretsiz kullan',
         premiumExpiryNote: 'Premium\'un bittiğinde bu kural durur; listedeki üniversiteler seni yeniden görebilir.',
         // Premium BİTMİŞ kullanıcı için: gelecek zamanlı uyarı burada yanıltıcı
         // olurdu, kural zaten uygulanmıyor. Kayıt duruyor, o yüzden "silindi"

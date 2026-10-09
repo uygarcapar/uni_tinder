@@ -12,7 +12,6 @@ import {
   buttonStyle,
   tint,
   labelStyle,
-  controlSize,
   font,
 } from "@expo/ui/swift-ui/modifiers";
 import Animated, {
@@ -30,7 +29,7 @@ import { easeGradient } from "react-native-easing-gradient";
 import { BlurView } from "expo-blur";
 import { LinearGradient } from "expo-linear-gradient";
 import { foldForSearch } from "../utils/searchText";
-import { colors, isLight, veil } from "../theme/colors";
+import { colors, veil } from "../theme/colors";
 import { glassFallback } from "../theme/glass";
 import GlassFallbackSurface from "./GlassFallbackSurface";
 import { chromeBlurTint } from "@/shared/theme/blur";
@@ -40,7 +39,11 @@ import { chromeBlurTint } from "@/shared/theme/blur";
 const AnimatedBottomSheetFlatList =
   Animated.createAnimatedComponent(BottomSheetFlatList);
 
-const HEADER_HEIGHT = 100;
+// AppModal'ın header'ıyla aynı kural: eskiden 100'dü ve 20'de 4px'lik bir drag
+// pill taşıyordu. Pill kalktı, kapladığı 14px'lik bant header'dan düşüldü —
+// içerik ve X/Bitti satırı o kadar yukarı çıktı (satır 20'de başlıyor, AppModal
+// ile birebir).
+const HEADER_HEIGHT = 86;
 
 // Modül seviyesinde: inline default her render'da yeni kimlik üretir ve
 // aşağıdaki memo'ları (liste filtresi/sıralaması) her render'da geçersiz kılardı.
@@ -416,29 +419,8 @@ const SearchableListSheet = ({
           </MaskedView>
         </Animated.View>
 
-        {/* Custom drag pill — AppModal ile birebir aynı. Consumer AppBottomSheet'e
-            handleComponent={null} vermeli, yoksa gorhom'un native handle'ı bunun
-            üstünde kalır. */}
-        <View
-          pointerEvents="none"
-          style={{
-            position: "absolute",
-            top: 20,
-            left: 0,
-            right: 0,
-            alignItems: "center",
-          }}
-        >
-          <View
-            style={{
-              width: 36,
-              height: 4,
-              borderRadius: 2,
-              // AppModal'daki drag pill ile aynı kural: açık modda tam siyah.
-              backgroundColor: isLight() ? colors.text : colors.hairlineMuted,
-            }}
-          />
-        </View>
+        {/* Drag pill YOK — AppModal ile birebir (bkz. MODAL_HEADER_HEIGHT notu).
+            Sheet aşağı çekilerek kapanmaya devam ediyor. */}
 
         {/* Centered animated title — scroll 55px'i geçince fade-in. */}
         {title ? (
@@ -529,23 +511,25 @@ const SearchableListSheet = ({
             )}
           </View>
 
+          {/* "Bitti" METİN KAPSÜLÜ DEĞİL — soldaki X ile birebir aynı yuvarlak
+              cam kutu, yalnız sembolü ✓. Ölçü/malzeme/glif puntosu X'ten
+              kopyalanıyor ki satırın iki ucu simetrik dursun (AppModal'ın
+              actionIcon yolunun bu sheet'teki karşılığı). */}
           {Platform.OS === "ios" ? (
-            // Ölçü YOK, bilerek: genişlik SwiftUI etiketinden geliyor
-            // (`Host matchContents`) ve kap `alignItems: "center"` olduğu için
-            // sarmalayıcı da butonla birlikte daralıyor.
-            <GlassFallbackSurface shape="capsule">
+            <GlassFallbackSurface shape="circle" width={46} height={46}>
               <Host matchContents>
                 <SwiftUIButton
                   label={t("common.done")}
+                  systemImage="checkmark"
                   onPress={handleDonePress}
                   modifiers={[
                     buttonStyle("glass"),
-                    controlSize("large"),
                     tint(colors.text),
-                    font({ size: 12, weight: "semibold" }),
+                    labelStyle("iconOnly"),
+                    font({ size: 22, weight: "medium" }),
                     ...glassFallback({
-                      shape: "capsule",
-                      padding: { horizontal: 18, vertical: 12 },
+                      shape: "circle",
+                      frame: { width: 46, height: 46 },
                     }),
                   ]}
                 />
@@ -555,26 +539,26 @@ const SearchableListSheet = ({
             <TouchableOpacity
               onPress={handleDonePress}
               activeOpacity={0.7}
+              accessibilityRole="button"
+              accessibilityLabel={t("common.done")}
               style={{
+                width: 46,
+                height: 46,
                 borderRadius: 999,
-                borderCurve: "continuous",
-                overflow: "hidden",
-                paddingHorizontal: 18,
-                paddingVertical: 12,
-                backgroundColor: colors.surface,
-                borderWidth: 0.5,
-                borderColor: colors.hairline,
+                backgroundColor: colors.hairlineSoft,
+                alignItems: "center",
+                justifyContent: "center",
               }}
             >
-              <Text
-                style={{
-                  color: colors.text,
-                  fontWeight: "700",
-                  fontSize: 15,
-                }}
-              >
-                {t("common.done")}
-              </Text>
+              <SFIcon
+                name="checkmark"
+                fallback={Check}
+                size={24}
+                color={colors.text}
+                strokeWidth={2}
+                weight="semibold"
+                style={{ pointerEvents: "none" }}
+              />
             </TouchableOpacity>
           )}
         </View>

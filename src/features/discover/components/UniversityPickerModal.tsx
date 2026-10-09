@@ -32,12 +32,14 @@ import { BlurView } from "expo-blur";
 import { LinearGradient } from "expo-linear-gradient";
 import SFIcon from "@/shared/components/SFIcon";
 import AppBottomSheet from "@/shared/components/AppBottomSheet";
+import { SHEET_PICKER_SNAP_POINTS } from "@/shared/components/AppModal";
+import { useSafeAreaInsets } from "react-native-safe-area-context";
 import {
   resolveLocalized,
   type UniversityOption,
 } from "@/shared/queries/commonQueries";
 import { foldForSearch } from "@/shared/utils/searchText";
-import { colors, isLight, veil } from "../../../shared/theme/colors";
+import { colors, veil } from "../../../shared/theme/colors";
 import { glassFallback } from "../../../shared/theme/glass";
 import GlassFallbackSurface from "@/shared/components/GlassFallbackSurface";
 import { chromeBlurTint } from "@/shared/theme/blur";
@@ -48,7 +50,9 @@ import { chromeBlurTint } from "@/shared/theme/blur";
 const AnimatedBottomSheetFlatList: any =
   Animated.createAnimatedComponent(BottomSheetFlatList);
 
-const HEADER_HEIGHT = 100;
+// AppModal / SearchableListSheet ile aynı: eskiden 100'dü ve 20'de 4px'lik bir
+// drag pill taşıyordu. Pill kalktı, kapladığı 14px'lik bant header'dan düşüldü.
+const HEADER_HEIGHT = 86;
 
 type Props = {
   visible: boolean;
@@ -68,7 +72,7 @@ type Props = {
 // üniversite listesi şehir listesinden uzun, virtualize olması gerekiyor ve
 // AppModal'ın scrollable modu kendi ScrollView'ını dayatıyor (içine FlatList
 // nest'lemek virtualization'ı bozar). Chrome — snapPoints, progressive blur
-// header, drag pill, scroll ile fade-in eden başlık, glass butonlar — şehir
+// header, scroll ile fade-in eden başlık, glass butonlar — şehir
 // picker'ıyla (AppModal) birebir aynı; SearchableListSheet ile aynı pattern.
 export default function UniversityPickerModal({
   visible,
@@ -81,6 +85,7 @@ export default function UniversityPickerModal({
   onConfirm,
 }: Props) {
   const { t, i18n } = useTranslation();
+  const insets = useSafeAreaInsets();
   const [search, setSearch] = useState("");
   const [selected, setSelected] = useState<Set<string>>(
     () => new Set(initialSelectedValues),
@@ -205,12 +210,18 @@ export default function UniversityPickerModal({
     <AppBottomSheet
       visible={visible}
       onClose={onClose}
-      // İlk snap %75 — normal durum. İkinci snap %90 — keyboardBehavior="extend"
-      // klavye açıldığında otomatik en yüksek snap'e çıkar → input klavyenin
-      // üstünde dururken liste daha fazla görünür kalır. (CityPickerModal ile aynı.)
-      snapPoints={["75%", "90%"]}
-      // Drag pill'i header'ın içinde biz çiziyoruz; gorhom'un native handle'ı
-      // açık kalırsa blur'un üstünde ikinci bir pill görünür.
+      // Detentler AppModal'lı kardeşleriyle (şehir / dil / prompt) ortak
+      // sabitten — bkz. SHEET_PICKER_SNAP_POINTS. keyboardBehavior="extend"
+      // klavye açıldığında en üst durağa çıkarıyor → input klavyenin üstünde
+      // dururken liste daha fazla görünür kalır.
+      snapPoints={SHEET_PICKER_SNAP_POINTS}
+      // AppModal'ın `fullScreen`inin burada elle yazılmış hâli: %100 durağın
+      // tepesi status bar/dynamic island'ın ALTI olsun (modal'da yüzdeler
+      // containerHeight − topInset üzerinden hesaplanıyor). Inset'siz %100
+      // header'ı çentiğe sokardı.
+      topInset={insets.top}
+      // Tutamaç hiç çizilmiyor (AppBottomSheet varsayılanı da null); burada
+      // açıkça veriliyor ki header'ın kendi ölçüsüyle karışmasın.
       handleComponent={null}
       // FilterModal'ı kapatmadan üstüne biner.
       stackBehavior="push"
@@ -439,27 +450,7 @@ export default function UniversityPickerModal({
             </MaskedView>
           </Animated.View>
 
-          {/* Custom drag pill — AppModal ile birebir. */}
-          <View
-            pointerEvents="none"
-            style={{
-              position: "absolute",
-              top: 20,
-              left: 0,
-              right: 0,
-              alignItems: "center",
-            }}
-          >
-            <View
-              style={{
-                width: 36,
-                height: 4,
-                borderRadius: 2,
-                // AppModal'daki drag pill ile aynı kural: açık modda tam siyah.
-                backgroundColor: isLight() ? colors.text : colors.hairlineMuted,
-              }}
-            />
-          </View>
+          {/* Drag pill YOK — AppModal ile birebir (bkz. HEADER_HEIGHT notu). */}
 
           {/* Ortalanmış başlık — scroll 55px'i geçince fade-in. */}
           <Animated.View
@@ -557,23 +548,27 @@ export default function UniversityPickerModal({
               )}
             </View>
 
+            {/* "Bitti" METİN KAPSÜLÜ DEĞİL — soldaki X'in BİREBİR aynısı, yalnız
+                sembolü ✓. Modifier seti de X'ten kopya (aynı gerekçe: bu sheet
+                FilterModal'ın üstüne biniyor, buton ölçüsü/şekli farkı göze
+                çarpıyor). AppModal'ın actionIcon yolunun buradaki karşılığı. */}
             {Platform.OS === "ios" ? (
-              // Ölçü YOK, bilerek: genişlik SwiftUI etiketinden geliyor
-              // (`Host matchContents`) ve kap `alignItems: "center"` olduğu için
-              // sarmalayıcı da butonla birlikte daralıyor.
-              <GlassFallbackSurface shape="capsule">
+              <GlassFallbackSurface shape="circle" width={46} height={46}>
                 <Host matchContents>
                   <SwiftUIButton
                     label={t("common.done")}
+                    systemImage="checkmark"
                     onPress={() => onConfirm(Array.from(selected))}
                     modifiers={[
                       buttonStyle("glass"),
                       controlSize("large"),
                       tint(colors.text),
-                      font({ size: 12, weight: "semibold" }),
+                      labelStyle("iconOnly"),
+                      font({ size: 17, weight: "medium" }),
+                      containerShape(shapes.circle()),
                       ...glassFallback({
-                        shape: "capsule",
-                        padding: { horizontal: 18, vertical: 12 },
+                        shape: "circle",
+                        frame: { width: 46, height: 46 },
                       }),
                     ]}
                   />
@@ -583,26 +578,26 @@ export default function UniversityPickerModal({
               <TouchableOpacity
                 onPress={() => onConfirm(Array.from(selected))}
                 activeOpacity={0.7}
+                accessibilityRole="button"
+                accessibilityLabel={t("common.done")}
                 style={{
+                  width: 46,
+                  height: 46,
                   borderRadius: 999,
-                  borderCurve: "continuous",
-                  overflow: "hidden",
-                  paddingHorizontal: 18,
-                  paddingVertical: 12,
-                  backgroundColor: colors.surface,
-                  borderWidth: 0.5,
-                  borderColor: colors.hairline,
+                  backgroundColor: colors.hairlineSoft,
+                  alignItems: "center",
+                  justifyContent: "center",
                 }}
               >
-                <Text
-                  style={{
-                    color: colors.text,
-                    fontWeight: "700",
-                    fontSize: 15,
-                  }}
-                >
-                  {t("common.done")}
-                </Text>
+                <SFIcon
+                  name="checkmark"
+                  fallback={Check}
+                  size={20}
+                  color={colors.text}
+                  strokeWidth={2}
+                  weight="semibold"
+                  style={{ pointerEvents: "none" }}
+                />
               </TouchableOpacity>
             )}
           </View>

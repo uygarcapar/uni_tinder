@@ -25,8 +25,11 @@ describe('render', () => {
     expect(mk({ title: 'Test Başlık' }).getByText('Test Başlık')).toBeTruthy();
   });
 
-  it('shows Kaydet button when not saving', () => {
-    expect(mk().getByText('Kaydet')).toBeTruthy();
+  // Kaydet YAZISI yok artık — buton onay işareti (actionIcon="checkmark"),
+  // "Kaydet" yalnız erişilebilirlik etiketi.
+  it('shows save button as a checkmark when not saving', () => {
+    expect(mk().getByLabelText('Kaydet')).toBeTruthy();
+    expect(mk().queryByText('Kaydet')).toBeNull();
   });
 
   it('renders nothing when visible=false', () => {
@@ -51,9 +54,9 @@ describe('callbacks', () => {
     expect(onClose).toHaveBeenCalledTimes(1);
   });
 
-  it('calls onSave when Kaydet is pressed', () => {
+  it('calls onSave when the checkmark is pressed', () => {
     const onSave = jest.fn();
-    fireEvent.press(mk({ onSave }).getByText('Kaydet'));
+    fireEvent.press(mk({ onSave }).getByTestId('modal-header-action'));
     expect(onSave).toHaveBeenCalledTimes(1);
   });
 });
@@ -63,8 +66,9 @@ describe('saving state', () => {
     expect(mk({ saving: true }).UNSAFE_getByType(ActivityIndicator)).toBeTruthy();
   });
 
-  it('hides Kaydet text when saving=true', () => {
-    expect(mk({ saving: true }).queryByText('Kaydet')).toBeNull();
+  // Kaydederken glifin yerini spinner alıyor — kutu aynı yerde kalıyor.
+  it('hides the checkmark glyph when saving=true', () => {
+    expect(mk({ saving: true }).queryByText('checkmark')).toBeNull();
   });
 
   it('disables save button when saving=true', () => {

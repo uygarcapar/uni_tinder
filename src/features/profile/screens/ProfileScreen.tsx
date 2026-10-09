@@ -602,9 +602,10 @@ import { useRenderCount } from "@/shared/debug/useRenderCount";
 import { plainBlurTint } from "@/shared/theme/blur";
 
 // ─── Edit Modal sarmalayıcı ───────────────────────────────────────────────────
-// AppModal'ın standart action props'unu kullanır — Save butonu glass + controlSize
-// large render edilir, X ile aynı height'da (ikisi de GLASS_ICON_CLEAR_SIZE:
-// `clearGlassHeader` X'i bu ekranın çan/ayarlar butonuyla aynı çapa oturtuyor).
+// AppModal'ın standart action props'unu kullanır — Kaydet artık metin kapsülü
+// değil onay işareti, yani X ile BİREBİR aynı yuvarlak cam kutu (ikisi de
+// GLASS_ICON_CLEAR_SIZE: `clearGlassHeader` X'i bu ekranın çan/ayarlar
+// butonuyla aynı çapa oturtuyor).
 function ProfileEditModal({
   visible,
   title,
@@ -617,25 +618,6 @@ function ProfileEditModal({
   children,
 }) {
   const { t } = useTranslation();
-  // Saving sırasında "Kaydediliyor" yazısı yerine "Kaydet" text boyutunda
-  // shimmer skeleton göster. Button frame'i (pill, glass-ish bg) aynı tutulur
-  // ki yer değişmesin — yükseklik de Kaydet/X ile TEK sayıdan
-  // (`clearGlassHeader` yolunun ölçüsü) geliyor.
-  const savingSlot = (
-    <View
-      pointerEvents="none"
-      style={{
-        height: GLASS_ICON_CLEAR_SIZE,
-        paddingHorizontal: 18,
-        borderRadius: 999,
-        backgroundColor: colors.hairlineSoft,
-        alignItems: "center",
-        justifyContent: "center",
-      }}
-    >
-      <SkeletonBox width={44} height={14} borderRadius={3} />
-    </View>
-  );
 
   return (
     <AppModal
@@ -643,10 +625,15 @@ function ProfileEditModal({
       onClose={onClose}
       onPresented={onPresented}
       title={title}
-      actionLabel={saving ? undefined : t('common.save')}
+      // "Kaydet" YAZISI yerine onay işareti — X ile birebir aynı yuvarlak cam
+      // kutu. Kaydederken AppModal aynı kutuda spinner çiziyor (`actionLoading`),
+      // yani buradaki eski shimmer `rightSlot`una gerek kalmadı: yer değiştiren
+      // hiçbir şey yok, kutu iki hâlde de aynı çapta.
+      actionIcon="checkmark"
+      actionIconLabel={t('common.save')}
       onAction={onSave}
       actionDisabled={saveDisabled}
-      rightSlot={saving ? savingSlot : undefined}
+      actionLoading={saving}
       scrollEnabled={scrollEnabled}
       // X, bu ekranın başlığındaki çan/ayarlarla aynı berrak cam butona
       // dönüşüyor; Kaydet de onun yüksekliğine çıkıyor (bkz. AppModal).
@@ -2867,6 +2854,19 @@ export default function ProfileScreen() {
           visible={previewVisible}
           onClose={() => setPreviewVisible(false)}
           profile={previewProfile}
+          // Şeridin sağ üstündeki cam "kalem" — düzenleme→önizleme yolunun
+          // (yukarıdaki `onPreview`) TERSİ ve onunla aynı reçete: önce kartı
+          // kapat, 400ms sonra ötekini aç.
+          //
+          // GECİKME ŞART, ikisi bottom sheet: önizleme kapanma animasyonunu
+          // bitirmeden düzenlemeyi present etmek gorhom'un stack'inde iki sheet'i
+          // aynı anda canlı bırakıyor (biri ötekini minimize ediyor).
+          // `stackBehavior="push"` ile üst üste bindirmek de doğru değil —
+          // önizlemeden düzenlemeye GEÇİLİYOR, kart arkada açık kalmamalı.
+          onEdit={() => {
+            setPreviewVisible(false);
+            setTimeout(() => openEditProfile(), 400);
+          }}
         />
 
         {/* Foto kaynağı seçimi. `stackBehavior="push"`: düzenleme modalının

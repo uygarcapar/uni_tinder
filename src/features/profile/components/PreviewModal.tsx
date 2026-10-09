@@ -2,6 +2,7 @@ import { useCallback } from "react";
 import SheetBlurBackdrop from "@/shared/components/SheetBlurBackdrop";
 import { View, ActivityIndicator } from "react-native";
 
+import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { useSharedValue } from "react-native-reanimated";
 import SwipeCard from "@/features/discover/components/SwipeCard";
 import CardGlassBackdrop from "@/features/discover/components/CardGlassBackdrop";
@@ -21,6 +22,10 @@ import { colors } from "../../../shared/theme/colors";
 // butonu erişilemez oluyor, aynı buton aynı yerde şeride taşınıyor. Açtığı
 // sheet ÖNİZLEMENİN ÜSTÜNE binmeli (çağıran taraf `stackBehavior="push"`
 // vermek zorunda), yoksa gorhom bu sheet'i minimize eder.
+//
+// onEdit: AYNI KÖŞENİN öteki hali — cam "kalem". Yalnız kendi profilini
+// önizleyen ProfileScreen geçiyor; orada menü yok, tek aksiyon düzenlemeye
+// geçmek. `onMenu` ile birlikte VERİLMEZ (bkz. CardStickyHeader > onEdit).
 export default function PreviewModal({
   visible,
   onClose,
@@ -28,12 +33,32 @@ export default function PreviewModal({
   onReport,
   onBlock,
   onMenu,
+  onEdit,
 }: any) {
+  const insets = useSafeAreaInsets();
   // Top'a çarpma zoom'u — scroll CardSheetScrollView'da, foto katmanı SwipeCard'da.
   const photoZoom = useSharedValue(0);
   // Ham scroll konumu — sticky şerit "bugün aktif"i buna göre söndürüp ismi
   // ortalıyor (bkz. CardStickyHeader).
   const scrollY = useSharedValue(0);
+
+  /*
+   * ŞERİDİN KAPANIŞTA SÖNMESİ KALDIRILDI (istek: "kapatırken header yok
+   * olmasın").
+   *
+   * Burada `sheetY` + `sheetIndex` shared value'ları ve
+   * `useCardSheetHeaderReveal` vardı: sheet'i kapatmak için aşağı çekmeye
+   * başlandığı an şerit kendi süresiyle 0'a iniyor, çekiş kapanışa yetmezse
+   * geri geliyordu. O oran `CardStickyHeader`ın `progress` prop'una gidiyordu.
+   *
+   * Prop artık HİÇ VERİLMİYOR → bant, başlık satırı ve iki köşe butonu opaklık
+   * 1'de sabit; kart aşağı kayarken şerit onunla birlikte gidiyor. Hook'un tek
+   * kullanıcısı bu iki sheet'ti, dosyası da silindi.
+   *
+   * `animatedPosition` / `animatedIndex` de bu yüzden artık geçilmiyor:
+   * AppBottomSheet ikisini de kendi içinde üretiyor (`animatedIndexProp ??
+   * internalAnimatedIndex`), yani watchdog'u etkilenmiyor.
+   */
 
   /**
    * Kartın zemini: ana fotoğrafın blur'lu hali (bkz. CardGlassBackdrop).
@@ -58,19 +83,25 @@ export default function PreviewModal({
       visible={visible}
       onClose={onClose}
       snapPoints={["100%"]}
-      // TELEFONUN EN TEPESİNE: kart Keşif'te expand edilince ekranın 0'ına
-      // oturuyor (bkz. SwipeWrapper > HEADER_COVER), buradaki kart da aynı
-      // yere gitmeli — safe-area kadar aşağıda başlamak sheet'i "yarım açılmış"
-      // gösteriyordu. Durum çubuğunun altında kalan tek şey şeridin başlık
-      // satırı değil: onu CARD_CHROME_TOP_DROP aşağı itiyor (aşağıda).
-      topInset={0}
+      // SAFE-AREA ÇİZGİSİNE: kart Keşif'te expand edilince tam buraya oturuyor
+      // (bkz. SwipeWrapper > HEADER_COVER / DISCOVER_CARD_EXPAND_LIFT) ve
+      // uygulamanın tam ekran sheet'leri de (profil düzenleme / filtreler —
+      // AppModal `fullScreen`) aynı tepeden açılıyor. Buradaki kart onlardan
+      // ayrı bir yerden açılmamalı.
+      //
+      // TARİHÇE: 0 idi (sheet telefonun en tepesine dayanıyor, durum çubuğu
+      // kapak fotoğrafının üstünde duruyordu); şeridin başlık satırını
+      // gliflerden kurtarmak için CARD_CHROME_TOP_DROP gerekiyordu — o pay da
+      // bu değişiklikle 0'a indi.
+      topInset={insets.top}
       handleComponent={null}
       backdropComponent={renderBackdrop}
-      // Kartın ve sticky şeridin köşesiyle AYNI. Sheet artık ekranın tepesine
-      // dayandığı için AÇIK değer: 50 telefonun köşe maskesinden yuvarlak
-      // kalıp üst iki köşede hilal bırakıyordu (bkz.
-      // CARD_EXPANDED_CORNER_RADIUS).
+      // Kartın ve sticky şeridin köşesiyle AYNI — üçü de Keşif kartının yüzünü
+      // okuyor (bkz. CARD_EXPANDED_CORNER_RADIUS). Sheet safe-area çizgisinde
+      // açıldığı için donanım köşe maskesiyle çakışma yok.
       cornerRadius={CARD_EXPANDED_CORNER_RADIUS}
+      // Squircle: kartın kabuğu da şeridin kırpması da `continuous` çiziyor,
+      // circular bir clip aynı yarıçapta bile kenar boyunca onları kesiyor.
       cornerCurve="continuous"
       // Sheet zemini şeffaf: kartın kendi zemini zaten opak, ikinci bir katman
       // yalnızca köşelerde sızardı. (Clip artık kartla aynı yarıçapta olduğu
@@ -99,16 +130,16 @@ export default function PreviewModal({
           fillOverscroll={!!profile && !backdropUri}
         >
           {profile ? (
-            // hideExpandHint: kart zaten `expanded` açılıyor ve `onExpandPress`
-            // yok — ipucu sadece dekoratif kalıyordu. LikerSwipeModal ile aynı.
             // expanded={false}: scroll'u saran CardSheetScrollView yapar, kartın
             // kendi scroll'u kapalı (bkz. CardSheetScrollView).
+            //
+            // `hideExpandHint` BURADAYDI — kapaktaki "yukarı kaydır" ipucunu
+            // kapatıyordu; ipucunun kendisi kaldırıldı (bkz. SwipeCard).
             <SwipeCard
               profile={profile}
               hideActions
               previewMode
               expanded={false}
-              hideExpandHint
               zoomImpact={photoZoom}
               onReport={onReport}
               onBlock={onBlock}
@@ -133,15 +164,25 @@ export default function PreviewModal({
           <CardStickyHeader
             profile={profile}
             alwaysOpen
-            // Sheet ekranın 0'ına dayanıyor → şeridin İÇERİĞİ durum çubuğunun
-            // altına insin (bandın kendisi tepede kalır, o kadar uzar).
-            // Keşif'teki köşe butonlarıyla aynı pay.
+            // Keşif'teki köşe butonlarıyla AYNI pay. Sheet artık safe-area'nın
+            // altında başladığı için sıfır — sabit yine de okunuyor ki iki
+            // bağlam ayrışmasın (bkz. CARD_CHROME_TOP_DROP).
             topInset={CARD_CHROME_TOP_DROP}
             radius={CARD_EXPANDED_CORNER_RADIUS}
             onMenu={onMenu}
+            onEdit={onEdit}
+            // Şeridin SOL ucundaki cam "kapat" — sheet'i aşağı çekme jestinin
+            // görünür karşılığı. Kart tam ekranı kapladığı için altındaki
+            // ekranın kendi kapat/geri kontrolü erişilemez durumda; jest de
+            // aynen duruyor, bu onun yerine geçmiyor (bkz. CardStickyHeader >
+            // onClose). Sheet'in kendi kapanış yolundan geçiyor: `onClose`
+            // parent'ın `visible`ını düşürüyor, animasyon gorhom'un.
+            onClose={onClose}
             // Şerit açık doğuyor (`alwaysOpen`), yani scroll'u başlığı AÇMAK
-            // için okumuyor: "bugün aktif" bununla sönüyor ve isim ortalanıyor.
+            // için okumuyor: "bugün aktif" bununla sönüyor.
             scrollY={scrollY}
+            // `progress` VERİLMİYOR → şerit hiç sönmüyor; gerekçe yukarıda,
+            // kaldırılan hook'un yerinde.
           />
         )}
       </View>

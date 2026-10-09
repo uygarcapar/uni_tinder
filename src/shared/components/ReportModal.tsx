@@ -199,12 +199,31 @@ export default function ReportModal({
   // Şikayet bir sheet'in içinden değil de ekrandan açılıyorsa (DiscoverScreen,
   // ChatScreen) altında minimize edilecek bir şey yok — verilmez.
   stackBehavior,
+  /**
+   * GÖNDERİMİ DEVRAL. Verilmezse eski yol (`moderationService.reportUser`).
+   *
+   * Lit Akışı şikayeti AYRI UÇ (`POST /api/feed/reports`) ve gövdesinde
+   * `reportedUserId` YOK — anonim gönderide şikayet edilecek bir kimlik de yok
+   * (yazarı sunucu biliyor, engelleme yine çalışıyor). Form, sebep listesi,
+   * klavye anchor'ı ve hata yolu PAYLAŞILIYOR; yalnız transport değişiyor.
+   */
+  submit,
+  /**
+   * "Ayrıca engelle" satırı çizilsin mi.
+   *
+   * Anonim gönderide `false`: engellenecek bir kullanıcı KİMLİĞİ yok ve satırı
+   * çizmek "kim olduğunu biliyoruz" ima ederdi.
+   */
+  showBlockRow = true,
 }: any) {
   const { t } = useTranslation();
   // "Bildirmek istiyorum ama iletişimi kesmek istemiyorum" senaryosu için
   // kaldırılabilir; varsayılan İŞARETLİ. Alan sunucuya HER ZAMAN açıkça gider —
   // varsayılanı uca göre değişiyor (bkz. moderationService.ReportArgs).
-  const [alsoBlock, setAlsoBlock] = useState(true);
+  //
+  // ⚠️ Varsayılan SATIRI İZLİYOR: satır çizilmiyorsa (anonim gönderi) `true`
+  // göndermek, olmayan bir kullanıcıyı engellemeye çalışmak olurdu.
+  const [alsoBlock, setAlsoBlock] = useState(showBlockRow);
 
   const { control, handleSubmit, reset, watch, formState: { isSubmitting } } = useForm<ReportForm>({
     resolver: zodResolver(reportSchema),
@@ -228,7 +247,15 @@ export default function ReportModal({
 
   const handleSubmitForm = handleSubmit(async ({ reason: r, description: d }) => {
     try {
-      const result = await moderationService.reportUser({
+      // Devralınmış gönderim (akış): sonuç `null` — doğrulanacak `blocked`
+      // bayrağı yok, aşağıdaki engelleme-retry dalı da bu yüzden atlanıyor.
+      const result = submit
+        ? await submit({
+            reason: r as any,
+            description: d?.trim() || undefined,
+            alsoBlock,
+          })
+        : await moderationService.reportUser({
         reportedUserId,
         reason: r as any,
         description: d?.trim() || undefined,
@@ -241,13 +268,16 @@ export default function ReportModal({
       });
       const finish = () => {
         reset();
-        setAlsoBlock(true);
+        setAlsoBlock(showBlockRow);
         onClose?.();
         onSuccess?.(result);
       };
       // Şikayet kaydedildiği halde engelleme düşmüş olabilir. "Engellendi" deyip
       // engellememek en kötü hata — kullanıcıya tekrar deneme imkânı sunuyoruz.
-      if (alsoBlock && result && !result.blocked) {
+      // ⚠️ `!submit` koşulu ZORUNLU: akış ucu `null` dönüyor, `result.blocked`
+      // hiç yok → bu dal her akış şikayetinde yanlışlıkla açılır ve
+      // `blockUser(undefined)` 400 verirdi.
+      if (!submit && alsoBlock && result && !result.blocked) {
         Alert.alert(
           t('moderation.report.successTitle'),
           t('moderation.report.blockFailed'),
@@ -264,7 +294,7 @@ export default function ReportModal({
                   onSuccess?.(result);
                 }
                 reset();
-                setAlsoBlock(true);
+                setAlsoBlock(showBlockRow);
                 onClose?.();
               },
             },
@@ -376,52 +406,59 @@ export default function ReportModal({
         )}
       </KeyboardAwareAnchor>
 
-      {/* Şikayet ARTIK zorunlu engelleme yapmıyor (v1.5): işaretli gelir,
-          kullanıcı kaldırabilir. Engelleme KALICIDIR — ne "engeli kaldır"
-          ne de geri alma penceresi eşleşmeyi geri getirir. */}
-      <Section
-        title={t('moderation.report.blockSectionTitle')}
-        description={t('moderation.report.alsoBlockHint')}
-      />
-      <TouchableOpacity
-        onPress={() => setAlsoBlock((v) => !v)}
-        activeOpacity={1}
-        accessibilityRole="switch"
-        accessibilityState={{ checked: alsoBlock }}
-        style={{
-          borderRadius: 36,
-          borderCurve: "continuous",
-          overflow: "hidden",
-          borderWidth: 0.5,
-          borderColor: colors.hairline,
-          flexDirection: "row",
-          alignItems: "center",
-          justifyContent: "space-between",
-          padding: 16,
-          paddingHorizontal: 20,
-        }}
-      >
-        <Text
+      {/* Engelleme satırı `showBlockRow` arkasında: anonim akış gönderisinde
+          engellenecek bir kullanıcı KİMLİĞİ yok ve satırı çizmek "kim olduğunu
+          biliyoruz" ima ederdi. */}
+      {showBlockRow ? (
+        <>
+        {/* Şikayet ARTIK zorunlu engelleme yapmıyor (v1.5): işaretli gelir,
+            kullanıcı kaldırabilir. Engelleme KALICIDIR — ne "engeli kaldır"
+            ne de geri alma penceresi eşleşmeyi geri getirir. */}
+        <Section
+          title={t('moderation.report.blockSectionTitle')}
+          description={t('moderation.report.alsoBlockHint')}
+        />
+        <TouchableOpacity
+          onPress={() => setAlsoBlock((v) => !v)}
+          activeOpacity={1}
+          accessibilityRole="switch"
+          accessibilityState={{ checked: alsoBlock }}
           style={{
-            color: colors.text,
-            fontSize: 15,
-            fontWeight: "500",
-            flex: 1,
-            marginRight: 12,
+            borderRadius: 36,
+            borderCurve: "continuous",
+            overflow: "hidden",
+            borderWidth: 0.5,
+            borderColor: colors.hairline,
+            flexDirection: "row",
+            alignItems: "center",
+            justifyContent: "space-between",
+            padding: 16,
+            paddingHorizontal: 20,
           }}
         >
-          {t('moderation.report.alsoBlock')}
-        </Text>
-        {/* Dokunuş her zaman satıra gitsin — Switch salt gösterge. */}
-        <View pointerEvents="none">
-          <Switch
-            value={alsoBlock}
-            trackColor={{ false: colors.hairlineStrong, true: colors.errorStrong }}
-            thumbColor={colors.text}
-            ios_backgroundColor={colors.border}
-          />
-        </View>
-      </TouchableOpacity>
+          <Text
+            style={{
+              color: colors.text,
+              fontSize: 15,
+              fontWeight: "500",
+              flex: 1,
+              marginRight: 12,
+            }}
+          >
+            {t('moderation.report.alsoBlock')}
+          </Text>
+          {/* Dokunuş her zaman satıra gitsin — Switch salt gösterge. */}
+          <View pointerEvents="none">
+            <Switch
+              value={alsoBlock}
+              trackColor={{ false: colors.hairlineStrong, true: colors.errorStrong }}
+              thumbColor={colors.text}
+              ios_backgroundColor={colors.border}
+            />
+          </View>
+        </TouchableOpacity>
+        </>
+      ) : null}
 
       <View
         style={{

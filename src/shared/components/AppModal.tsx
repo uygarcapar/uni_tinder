@@ -52,10 +52,10 @@ import {
   frame,
   fixedSize,
 } from "@expo/ui/swift-ui/modifiers";
-import { X } from "@/shared/icons";
-import SFIcon from "./SFIcon";
+import { Check, RotateCcw, X, type LucideIcon } from "@/shared/icons";
+import SFIcon, { type SFSymbol } from "./SFIcon";
 import AppBottomSheet from "@/shared/components/AppBottomSheet";
-import { colors, isLight, veil, withAlpha } from "../theme/colors";
+import { colors, veil, withAlpha } from "../theme/colors";
 import {
   HAS_LIQUID_GLASS,
   glassFallback,
@@ -68,15 +68,40 @@ import GlassFallbackSurface from "./GlassFallbackSurface";
 import { chromeBlurTint } from "@/shared/theme/blur";
 
 // Header dikey breakdown:
-//   top:20 — drag indicator pill (4px tall), iPhone üstten nefes payı için
-//   top:34 — title + close/right-slot row (height:46, clearGlassHeader'da 48)
-//   total = 80 + 8px alt nefes → 88
-const MODAL_HEADER_HEIGHT = 88;
+//   top:20 — title + close/right-slot row (height:46, clearGlassHeader'da 48);
+//            20 iPhone üstten nefes payı
+//   total = 66 + 8px alt nefes → 74
+//
+// ⚠️ Eskiden 88'di: 20'de 4px'lik bir drag indicator pill duruyor, satır da
+// onun altında 34'ten başlıyordu. Pill KALDIRILDI (uygulamadaki bütün
+// sheet'lerde) ve kapladığı 14px'lik bant — pill + altındaki boşluk — header'dan
+// düşüldü, yani içerik olduğu gibi 14px yukarı çıktı. paddingTop'unu elle veren
+// çağıranlar (closeButton={false} olan sheet'ler) da aynı 14'ü düştü.
+const MODAL_HEADER_HEIGHT = 74;
+/**
+ * Buton satırının bandın tepesinden payı — VARSAYILAN, çağıran `headerButtonTop`
+ * ile başka bir çizgiye (örn. kart chrome'unun 14'ü) oturtabilir.
+ */
+const MODAL_HEADER_ROW_TOP = 20;
 const SHEET_TOP_RADIUS = 36;
 // Tam ekrana yakın açılan uzun sheet'lerin (FilterModal, profil düzenleme) üst
 // köşesi: aynı yarıçap büyük bir yüzeyde daha "keskin" okunuyor, bir tık açmak
 // sheet'i arkadaki ekrandan ayırıyor. Yalnız opt-in — varsayılan 36 kalıyor.
 export const SHEET_TOP_RADIUS_LARGE = 44;
+
+// Bir sheet'in ÜSTÜNE binen seçici sheet'lerinin (şehir / dil / üniversite /
+// prompt) detentleri — TEK YERDE, çünkü hepsinin aynı açılması isteniyor.
+//   - İlk durak %75: normal hâl, altta arkadaki sheet'ten bir şerit görünür.
+//   - En üst durak %100: seçiciyi AÇAN sheet'le (profil düzenleme / filtreler,
+//     ikisi de `fullScreen`) AYNI tepe. Eskiden %90'dı; kullanıcı arama yapmak
+//     için yukarı çektiğinde ya da klavye sheet'i en üst detent'e taşıdığında
+//     (keyboardBehavior "extend") liste, onu açan sheet'ten daha dar kalıyordu.
+//
+// ⚠️ `fullScreen` ile BİRLİKTE verilmek zorunda (AppBottomSheet'i doğrudan
+// kullananlarda: `topInset={insets.top}`). Yüzdeler modal'da containerHeight −
+// topInset üzerinden hesaplanıyor; inset olmadan %100 status bar/dynamic
+// island'ın ALTINA değil ekranın tepesine oturur, header çentiğe girer.
+export const SHEET_PICKER_SNAP_POINTS = ["75%", "100%"];
 
 // İçerideki input'ların (bkz. useKeyboardAwareField) modal scroll view'ına
 // erişebilmesi için. scrollY zaten header animasyonu için tutuluyor; aynı
@@ -188,10 +213,29 @@ type AppModalProps = {
   // Standart action butonu (Kaydet/Uygula/Devam vs). Verilirse header'ın
   // sağına konur, X otomatik sola gider. Glass (iOS) / pill TouchableOpacity
   // (Android) olarak X ile aynı height'da render edilir.
+  //
+  // ⚠️ YAZI, header'da artık İSTİSNA: Kaydet/Uygula/Bitti/Sıfırla'nın hepsi
+  // glife çevrildi (`actionIcon` / `leftIcon`), çünkü aynı anlamı taşıyan buton
+  // sheet'ten sheet'e farklı kelimeyle yazılıyordu. Metin yolu yalnız kendi
+  // kelimesi olmadan anlaşılmayan bir eylem için (örn. "Devam") — başka türlü
+  // ikon tercih edilir.
   actionLabel?: string;
   onAction?: () => void;
   actionDisabled?: boolean;
   actionLoading?: boolean;
+  // Action butonunu METİN KAPSÜLÜ yerine YUVARLAK İKON olarak çizer — X ile
+  // birebir aynı kutu (ACTION_HEIGHT), aynı cam malzeme, aynı glif ölçüsü.
+  // `actionLabel` ile birlikte verilmez: etiket varsa o kazanır.
+  //
+  // Kaydetmekten başka işi olmayan sheet'ler için (görünürlük, davet):
+  // `actionIcon="checkmark"` → sol üstte X, sağ üstte ✓ — iki buton da
+  // uygulamanın yuvarlak cam ikon ölçüsünde.
+  actionIcon?: SFSymbol;
+  // SF Symbols'ın olmadığı yolda (Android / eski iOS) çizilen Lucide karşılığı.
+  // Varsayılan `Check`, yani `actionIcon="checkmark"` tek başına yeterli.
+  actionIconFallback?: LucideIcon;
+  // Yalnız erişilebilirlik etiketi — ekranda yazı çizilmiyor.
+  actionIconLabel?: string;
   // Custom rightSlot — actionLabel'ı override eder; tamamen özel buton için.
   rightSlot?: ReactNode;
   // Header'ın soluna X yerine metin butonu koyar (örn. FilterModal'ın
@@ -199,6 +243,19 @@ type AppModalProps = {
   // backdrop ile kapanmaya devam eder. Action butonuyla birebir aynı stil.
   leftLabel?: string;
   onLeftPress?: () => void;
+  // `leftLabel`ın İKON hâli — sağdaki `actionIcon` ile birebir aynı kutu
+  // (ACTION_HEIGHT), aynı cam malzeme, aynı glif ölçüsü. Header'ın metin
+  // butonları yazı yerine glife çevrilirken eklendi: "Sıfırla" →
+  // `leftIcon="arrow.counterclockwise"`.
+  //
+  // `leftLabel` ile birlikte verilmez: etiket varsa o kazanır. Verildiğinde X
+  // yine HİÇ render edilmez (leftLabel'ın aynısı).
+  leftIcon?: SFSymbol;
+  // SF Symbols'ın olmadığı yolda (Android / eski iOS) çizilen Lucide karşılığı.
+  // Varsayılan `RotateCcw` — bu slotun bugünkü tek işi sıfırlamak.
+  leftIconFallback?: LucideIcon;
+  // Yalnız erişilebilirlik etiketi — ekranda yazı çizilmiyor.
+  leftIconLabel?: string;
   // Header'ın metin butonları (leftLabel + actionLabel) dolgulu `.regular` cam
   // yerine BERRAK cam çizsin. Yuvarlak ikon butonlarının geçtiği yolun kapsül
   // hâli (bkz. glassTextClearCapsule); opt-in çünkü aynı header'ı kullanan
@@ -215,6 +272,18 @@ type AppModalProps = {
   //
   // Opt-in: aynı header'ı kullanan sheet'lerin hepsi henüz çevrilmedi.
   clearGlassHeader?: boolean;
+  /**
+   * Header'ın buton satırının (X · başlık · aksiyon) modal'ın TEPESİNE uzaklığı.
+   * Varsayılan `MODAL_HEADER_ROW_TOP`.
+   *
+   * Dışarıdan verilmesinin tek gerekçesi kart yüzeyleriyle hizalanmak: profilden
+   * açılan önizleme kartının cam köşe butonları `CARD_CHROME_BUTTON_TOP`'ta (14)
+   * duruyor, modal'ın varsayılanı 20 — kullanıcı ikisi arasında gezerken aynı
+   * görünen buton zıplıyordu. Pay yalnız SATIRI taşıyor; bandın yüksekliği ve
+   * dolayısıyla içeriğin üst payı (MODAL_HEADER_HEIGHT) sabit kalıyor, satırın
+   * altındaki fark blur'un sönme kuyruğuna gidiyor.
+   */
+  headerButtonTop?: number;
   // X'in tarafı: actionLabel/rightSlot varsa default "left", yoksa "right".
   closeSide?: "left" | "right";
   // Başlık scroll'a bağlı belirmek yerine HEP görünür durur. Modal içi
@@ -252,8 +321,8 @@ type AppModalProps = {
 
 /**
  * Uygulama genelinde tek modal yapısı. Tüm modal'lar bu wrapper'ı kullanır.
- * İçerik dışındaki her şey (progressive blur header, indicator pill, X butonu,
- * Save slot, scroll-driven title fade) burada — consumer sadece içerik geçer.
+ * İçerik dışındaki her şey (progressive blur header, X butonu, Save slot,
+ * scroll-driven title fade) burada — consumer sadece içerik geçer.
  *
  *   <AppModal visible={open} onClose={close} title="Ayarlar">
  *     {sections}
@@ -279,11 +348,18 @@ export default function AppModal({
   onAction,
   actionDisabled,
   actionLoading,
+  actionIcon,
+  actionIconFallback = Check,
+  actionIconLabel = "Tamam",
   rightSlot,
   leftLabel,
   onLeftPress,
+  leftIcon,
+  leftIconFallback = RotateCcw,
+  leftIconLabel = "Sıfırla",
   clearGlassActions = false,
   clearGlassHeader = false,
+  headerButtonTop = MODAL_HEADER_ROW_TOP,
   closeSide,
   titleAlwaysVisible = false,
   dynamicSizing = false,
@@ -299,8 +375,9 @@ export default function AppModal({
   containerStyle,
   children,
 }: AppModalProps) {
-  // actionLabel veya rightSlot varsa X sola alınır (Save sağda kalsın); yoksa X sağda.
-  const hasRightContent = !!actionLabel || !!rightSlot;
+  // actionLabel/actionIcon veya rightSlot varsa X sola alınır (Save sağda
+  // kalsın); yoksa X sağda.
+  const hasRightContent = !!actionLabel || !!actionIcon || !!rightSlot;
   const effectiveCloseSide = closeSide ?? (hasRightContent ? "left" : "right");
 
   // fullScreen: snapPoints ["100%"] + topInset = safe area top → modal en üste
@@ -388,8 +465,45 @@ export default function AppModal({
   // için 13'ün nefes payı da arttı.
   const ACTION_LABEL_SIZE = 13;
 
-  const closeBtn = closeButton ? (
-    Platform.OS === "ios" ? (
+  /**
+   * Header'ın YUVARLAK İKON butonu. Sol üstteki X ve (verilirse) sağ üstteki
+   * onay işareti TEK bu fonksiyondan çıkıyor: ikisi de ACTION_HEIGHT çapında,
+   * aynı cam malzemede ve aynı glif ölçüsünde duruyor. Gövde eskiden X'e özel
+   * inline duruyordu; ✓ eklenirken kopyalanmasın diye buraya alındı.
+   */
+  const renderIconButton = (
+    symbol: SFSymbol,
+    fallback: LucideIcon,
+    onPress?: () => void,
+    opts?: { label: string; loading?: boolean; disabled?: boolean },
+  ) => {
+    // Yükleniyorken buton SPINNER'A dönüyor (ProfileEditModal'ın `savingSlot`
+    // deseni): kutu aynı ölçüde kaldığı için header'da hiçbir şey yer
+    // değiştirmiyor.
+    //
+    // ⚠️ Cam buton opacity<1 bir View'a SARILMIYOR — ata zincirindeki opaklık
+    // cam efektini sessizce hiç render edilmez hâle getiriyor (bkz. theme/glass
+    // + GlassView notları). Disabled hâl bu yüzden yalnız dokunmayı kesiyor.
+    if (opts?.loading) {
+      return (
+        <View
+          style={{
+            width: ACTION_HEIGHT,
+            height: ACTION_HEIGHT,
+            borderRadius: 999,
+            backgroundColor: colors.hairlineSoft,
+            alignItems: "center",
+            justifyContent: "center",
+          }}
+        >
+          <ActivityIndicator size="small" color={colors.text} />
+        </View>
+      );
+    }
+    const handlePress = opts?.disabled ? () => {} : (onPress ?? (() => {}));
+    const label = opts?.label ?? "";
+
+    return Platform.OS === "ios" ? (
       // matchContents YOK (bkz. SCREEN_HEADER_ACTION_SIZE'daki not): SwiftUI
       // ölçümü ikinci Fabric commit'inde geldiği için Host ilk frame'de 0
       // genişlikte kalıyor, space-between satırında butonlar kenara yapışıp
@@ -407,26 +521,26 @@ export default function AppModal({
             // glassIconClearGlyph'in başında). `label`/`systemImage` prop'ları
             // YOK — verilseydi native taraf children'ı yok sayardı.
             <SwiftUIButton
-              onPress={onClose}
+              onPress={handlePress}
               modifiers={[
                 buttonStyle("plain"),
                 tint(colors.text),
                 frame({ width: ACTION_HEIGHT, height: ACTION_HEIGHT }),
-                accessibilityLabel("Kapat"),
+                accessibilityLabel(label),
                 ...glassFallback({ shape: "circle" }),
               ]}
             >
               <SwiftUIImage
-                systemName="xmark"
+                systemName={symbol}
                 color={colors.text}
                 modifiers={glassIconClearGlyph()}
               />
             </SwiftUIButton>
           ) : (
             <SwiftUIButton
-              label="Kapat"
-              systemImage="xmark"
-              onPress={onClose}
+              label={label}
+              systemImage={symbol}
+              onPress={handlePress}
               modifiers={[
                 buttonStyle("glass"),
                 controlSize("large"),
@@ -448,8 +562,10 @@ export default function AppModal({
       </GlassFallbackSurface>
     ) : (
       <TouchableOpacity
-        onPress={onClose}
+        onPress={handlePress}
         activeOpacity={0.7}
+        accessibilityRole="button"
+        accessibilityLabel={label}
         style={{
           width: ACTION_HEIGHT,
           height: ACTION_HEIGHT,
@@ -457,11 +573,12 @@ export default function AppModal({
           backgroundColor: colors.hairlineSoft,
           alignItems: "center",
           justifyContent: "center",
+          opacity: opts?.disabled ? 0.35 : 1,
         }}
       >
         <SFIcon
-          name="xmark"
-          fallback={X}
+          name={symbol}
+          fallback={fallback}
           size={20}
           color={colors.text}
           strokeWidth={2}
@@ -469,8 +586,12 @@ export default function AppModal({
           style={{ pointerEvents: "none" }}
         />
       </TouchableOpacity>
-    )
-  ) : null;
+    );
+  };
+
+  const closeBtn = closeButton
+    ? renderIconButton("xmark", X, onClose, { label: "Kapat" })
+    : null;
 
   // Header'ın metin butonu. Sağdaki action (Uygula/Kaydet) ve soldaki leftLabel
   // (Sıfırla) aynı fonksiyondan çıkıyor ki iki taraf birebir aynı ölçüde dursun.
@@ -637,11 +758,23 @@ export default function AppModal({
         disabled: actionDisabled,
         align: "trailing",
       })
-    : null;
+    : actionIcon
+      ? // İkon yolu: X'in aynısı, yalnız sembolü ve tarafı farklı.
+        renderIconButton(actionIcon, actionIconFallback, onAction, {
+          label: actionIconLabel,
+          loading: actionLoading,
+          disabled: actionDisabled,
+        })
+      : null;
 
   const leftBtn = leftLabel
     ? renderTextButton(leftLabel, onLeftPress, { align: "leading" })
-    : null;
+    : leftIcon
+      ? // İkon yolu: sağdaki ✓ ile aynı fonksiyon, yalnız sembolü farklı.
+        renderIconButton(leftIcon, leftIconFallback, onLeftPress, {
+          label: leftIconLabel,
+        })
+      : null;
 
   // actionBtn rightSlot'tan önceliklidir; ikisi de yoksa null.
   const rightContent = actionBtn ?? rightSlot;
@@ -785,37 +918,19 @@ export default function AppModal({
           )}
         </Animated.View>
 
-        {/* Custom drag handle — gorhom default kapalı, pill'i blur üstüne
-            biz çiziyoruz. */}
-        <View
-          pointerEvents="none"
-          style={{
-            position: "absolute",
-            top: 20,
-            left: 0,
-            right: 0,
-            alignItems: "center",
-          }}
-        >
-          <View
-            style={{
-              width: 36,
-              height: 4,
-              borderRadius: 2,
-              // Açık modda tam siyah: hairlineMuted (siyah %26) beyaz sheet
-              // zemininde 4px'lik pil için fazla soluk kalıyordu. Koyu modda
-              // dokunulmuyor — orada beyaz %30 zaten okunuyor.
-              backgroundColor: isLight() ? colors.text : colors.hairlineMuted,
-            }}
-          />
-        </View>
+        {/* Drag handle YOK — ne gorhom'unki (handleComponent={null}) ne de
+            bizim çizdiğimiz pill. Sheet aşağı çekilerek ve backdrop'a
+            dokunularak kapanmaya devam ediyor; kalkan yalnız çizgi. */}
 
         {/* Title + buttons aynı satırda. Title absolute centered (screen-center'da),
             butonlar sol/sağ kenarda. */}
         <View
           style={{
             position: "absolute",
-            top: 34,
+            // Pill kalkmadan önce 34'tü (pill'in 4px'i + altındaki 10px boşluk).
+            // Varsayılan MODAL_HEADER_ROW_TOP; kart yüzeyleriyle hizalanan
+            // sheet'ler `headerButtonTop` ile kendi payını veriyor.
+            top: headerButtonTop,
             // left + right İKİSİ DE ŞART: biri düşerse satır ekran genişliğine
             // yayılmaz, içeriği kadar kalır — space-between yayılacak boşluk
             // bulamaz, butonlar yan yana sola toplanır ve ortalanan başlık da
@@ -823,7 +938,7 @@ export default function AppModal({
             left: 0,
             right: 0,
             // Yükseklik butonun kendisi kadar — `clearGlassHeader` yolunda 46
-            // değil 48. Header'ın toplam yüksekliği (88) ikisini de alıyor,
+            // değil 48. Header'ın toplam yüksekliği (74) ikisini de alıyor,
             // alttaki nefes payı 8'den 6'ya iniyor.
             height: ACTION_HEIGHT,
             flexDirection: "row",

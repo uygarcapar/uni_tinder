@@ -15,7 +15,10 @@ export default function EditModal({
       visible={visible}
       onClose={onClose}
       title={title}
-      actionLabel={t('common.save')}
+      // "Kaydet" YAZISI yerine onay işareti — header'ın bütün butonları
+      // uygulamanın yuvarlak cam ikon dilinde (bkz. AppModal actionIcon).
+      actionIcon="checkmark"
+      actionIconLabel={t('common.save')}
       onAction={onSave}
       actionLoading={saving}
     >

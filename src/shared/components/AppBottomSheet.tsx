@@ -102,6 +102,20 @@ export default function AppBottomSheet({
   enableDynamicSizing = false,
   maxDynamicContentSize,
   keyboardBehavior = "extend",
+  // ── SHEET'İN CANLI HAREKETİNİ DIŞARI VERME ──────────────────────────────
+  // gorhom ikisini de HER KAREDE yazıyor (animasyon da parmak da): `*Position`
+  // sheet'in tepesinin px konumu, `*Index` ise detent oranı (0 = en üst
+  // detent, -1 = kapalı, arası sürükleme). İçeriği sheet'in hareketine bağlamak
+  // isteyen çağıranlar bunları verir. İKİSİ DE OPSİYONEL: verilmezse sheet
+  // kendi içinde üretiyor (bkz. `internalAnimatedIndex`), yani watchdog
+  // etkilenmiyor. Şu an hiçbir çağıran vermiyor — tek kullanıcısı kart
+  // şeridinin aşağı çekerken sönmesiydi, o kaldırıldı (bkz. CardStickyHeader >
+  // `progress`).
+  animatedPosition,
+  // ⚠️ VERİLİRSE -1 İLE DOĞMALI: aşağıdaki watchdog "sheet ekranda mı"
+  // sorusunu buna soruyor, 0 ile doğan bir değer sheet daha açılmadan
+  // "açık" cevabı verir.
+  animatedIndex: animatedIndexProp,
 }: any) {
   const ref = useRef(null);
   // gorhom'un `handleDismiss` bir state machine bug'ı taşıyor:
@@ -126,7 +140,13 @@ export default function AppBottomSheet({
   // her an doğru. `presentedRef`in dayandığı `onChange` bu garantiyi VERMİYOR
   // (bkz. aşağıdaki watchdog notu), o yüzden "sheet ekranda mı" sorusunun
   // nihai cevabı burası.
-  const animatedIndex = useSharedValue(-1);
+  //
+  // Çağıran kendi shared value'sunu verdiyse O kullanılıyor (ikinci bir kopya
+  // tutup aynaya almak bir kare gecikme demekti): gorhom tek bir
+  // `animatedIndex` prop'u kabul ediyor, watchdog ile çağıran aynı değeri
+  // okuyor.
+  const internalAnimatedIndex = useSharedValue(-1);
+  const animatedIndex = animatedIndexProp ?? internalAnimatedIndex;
   const isOnScreen = useCallback(
     () => animatedIndex.value > -0.5,
     [animatedIndex],
@@ -278,6 +298,9 @@ export default function AppBottomSheet({
       // Watchdog'un ve dismiss yolunun okuduğu "sheet gerçekten ekranda mı"
       // kaynağı (bkz. yukarıdaki animatedIndex notu).
       animatedIndex={animatedIndex}
+      // Sürüklemenin px cinsinden karşılığı — yalnız isteyen çağıranda dolu
+      // (bkz. yukarıdaki prop notu).
+      animatedPosition={animatedPosition}
       // gorhom v5 default'u true → sheet kendini içeriğe göre büyütür ve
       // snapPoints sadece "max" gibi davranır. Bu yüzden uzun içerikli
       // modal'lar (FilterModal vb.) snap'i geçip ekranı kaplıyordu. Varsayılan

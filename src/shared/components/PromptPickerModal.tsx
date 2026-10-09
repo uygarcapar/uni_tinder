@@ -4,7 +4,9 @@ import { View, Text, TouchableOpacity } from "react-native";
 import { BottomSheetTextInput } from "@gorhom/bottom-sheet";
 import { Search, SearchX, Check } from "@/shared/icons";
 import SFIcon from "@/shared/components/SFIcon";
-import AppModal from "@/shared/components/AppModal";
+import AppModal, {
+  SHEET_PICKER_SNAP_POINTS,
+} from "@/shared/components/AppModal";
 import {
   resolveLocalized,
   selectablePrompts,
@@ -80,7 +82,10 @@ export default function PromptPickerModal({
       visible={visible}
       onClose={onClose}
       title={t('profile.prompts.pickerTitle')}
-      snapPoints={["75%", "90%"]}
+      // Detentler ortak sabitten: en üst durak, seçiciyi açan profil düzenleme
+      // sheet'iyle aynı tepe (bkz. SHEET_PICKER_SNAP_POINTS).
+      snapPoints={SHEET_PICKER_SNAP_POINTS}
+      fullScreen
       stackBehavior="push"
       // Header'da buton YOK: seçim satıra basınca kapanıyor, ayrıca swipe-down
       // ve backdrop da kapatıyor — X ayrı bir çıkış yolu eklemiyordu.

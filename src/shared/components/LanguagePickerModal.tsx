@@ -4,7 +4,9 @@ import { View, Text, TouchableOpacity, Alert } from "react-native";
 import { BottomSheetTextInput } from "@gorhom/bottom-sheet";
 import { Search, SearchX, Check } from "@/shared/icons";
 import SFIcon from "@/shared/components/SFIcon";
-import AppModal from "@/shared/components/AppModal";
+import AppModal, {
+  SHEET_PICKER_SNAP_POINTS,
+} from "@/shared/components/AppModal";
 import {
   resolveLocalized,
   type LocalizedText,
@@ -31,9 +33,10 @@ type Props = {
   title?: string;
 };
 
-// CityPickerModal'ın multi-select kardeşi. AppModal chrome, snap points
-// (75%/92% — keyboard extend), arama input ve liste yapısı CityPickerModal
-// ile birebir aynı; tek fark çoklu seçim toggle ve sağda "Bitti" action.
+// CityPickerModal'ın multi-select kardeşi. AppModal chrome, detentler
+// (SHEET_PICKER_SNAP_POINTS — keyboard extend en üst durağa taşır), arama input
+// ve liste yapısı CityPickerModal ile birebir aynı; tek fark çoklu seçim toggle
+// ve sağda "Bitti" action.
 //
 // İki ekran kullanıyor (EditProfileForm ve FilterModal), o yüzden shared/'ta:
 // profil özel hiçbir mantığı yok, `items` dışarıdan geliyor.
@@ -109,11 +112,16 @@ export default function LanguagePickerModal({
       visible={visible}
       onClose={onClose}
       title={title ?? t('profile.languages.title')}
-      snapPoints={["75%", "90%"]}
+      // Detentler ortak sabitten: seçiciyi açan sheet (profil düzenleme /
+      // filtreler) ile aynı tepeye çıkar — bkz. SHEET_PICKER_SNAP_POINTS.
+      snapPoints={SHEET_PICKER_SNAP_POINTS}
+      fullScreen
       stackBehavior="push"
-      actionLabel={t('common.done')}
+      // "Bitti" YAZISI yerine onay işareti — X'in simetriği.
+      actionIcon="checkmark"
+      actionIconLabel={t('common.done')}
       onAction={() => onConfirm(Array.from(selected))}
-      // X + "Bitti" uygulamanın yuvarlak cam ikon ölçüsünde (bkz. AppModal):
+      // X + ✓ uygulamanın yuvarlak cam ikon ölçüsünde (bkz. AppModal):
       // X, ekran başlıklarındaki çan/ayarlar butonunun aynısı oluyor.
       clearGlassHeader
     >

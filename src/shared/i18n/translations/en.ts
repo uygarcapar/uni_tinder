@@ -1303,7 +1303,11 @@ const en = {
         // The visibility filter is no longer Premium-only: 3 invites unlock a
         // 30-day grant too (see features/profile/referralView.ts).
         grantNote: 'Invite reward · {{days}} days left',
-        inviteCta: 'Invite 3 friends, get 30 days free',
+        // ONE line: this used to be a title + note pair that said the same
+        // thing twice and weakened the CTA. "no Premium needed" stays in the
+        // sentence — a bare "30 days free" left it unclear what exactly was
+        // free (Premium, or this setting?).
+        inviteCta: 'Invite 3 friends and use this setting free for 30 days — no Premium needed',
         premiumExpiryNote: 'This rule stops when your Premium ends — the universities on the list can see you again.',
         // For a user whose Premium HAS ended: the future-tense note would be
         // misleading, the rule is already inactive. The record is kept, so we

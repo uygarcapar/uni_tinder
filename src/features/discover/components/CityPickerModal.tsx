@@ -4,7 +4,9 @@ import { View, Text, TouchableOpacity } from "react-native";
 import { BottomSheetTextInput } from "@gorhom/bottom-sheet";
 import { Search, SearchX, Check } from "@/shared/icons";
 import SFIcon from "@/shared/components/SFIcon";
-import AppModal from "@/shared/components/AppModal";
+import AppModal, {
+  SHEET_PICKER_SNAP_POINTS,
+} from "@/shared/components/AppModal";
 import type { CityOption } from "@/shared/queries/commonQueries";
 import { colors } from "../../../shared/theme/colors";
 
@@ -56,10 +58,12 @@ export default function CityPickerModal({
       visible={visible}
       onClose={onClose}
       title={t('discover.cityPicker.title')}
-      // İlk snap %75 — normal durum. İkinci snap %90 — keyboardBehavior="extend"
-      // klavye açıldığında otomatik en yüksek snap'e çıkar → modal yukarı kayar,
-      // input klavyenin üstünde rahat dururken liste daha fazla görünür kalır.
-      snapPoints={["75%", "90%"]}
+      // Detentler ortak sabitten: en üst durak, seçiciyi açan FilterModal ile
+      // aynı tepe. keyboardBehavior="extend" klavye açıldığında otomatik en
+      // yüksek durağa çıkarıyor → input klavyenin üstünde rahat dururken liste
+      // daha fazla görünür kalır (bkz. SHEET_PICKER_SNAP_POINTS).
+      snapPoints={SHEET_PICKER_SNAP_POINTS}
+      fullScreen
       stackBehavior="push"
       closeButton={false}
     >

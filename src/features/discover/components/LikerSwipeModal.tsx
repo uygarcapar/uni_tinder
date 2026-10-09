@@ -4,6 +4,7 @@ import { View, Modal, Dimensions, Alert } from "react-native";
 import { useTranslation } from "react-i18next";
 
 import { Gesture, GestureDetector } from "react-native-gesture-handler";
+import { useSafeAreaInsets } from "react-native-safe-area-context";
 import Animated, {
   useAnimatedReaction,
   useSharedValue,
@@ -73,6 +74,7 @@ export default function LikerSwipeModal({
 }: any) {
   const swipeMutation = useSwipeMutation();
   const { t } = useTranslation();
+  const insets = useSafeAreaInsets();
   // Şikayet edilen kullanıcı — sheet kapandıktan SONRA açılan ReportModal'ın
   // hedefi. Sheet'in `profile`'ı o an null'lanabildiği için ayrı tutulur.
   const [reportTarget, setReportTarget] = useState<string | null>(null);
@@ -86,6 +88,16 @@ export default function LikerSwipeModal({
   // Ham scroll konumu — sticky şerit "bugün aktif"i buna göre söndürüp ismi
   // ortalıyor (bkz. CardStickyHeader).
   const scrollY = useSharedValue(0);
+
+  /*
+   * ŞERİDİN KAPANIŞTA SÖNMESİ KALDIRILDI (istek: "kapatırken header yok
+   * olmasın") — PreviewModal'daki ikiziyle birebir aynı, uzun gerekçe orada.
+   *
+   * Kısası: `sheetY` + `sheetIndex` + `useCardSheetHeaderReveal` üçlüsü şeridin
+   * `progress`ini sürüyordu; prop artık verilmiyor, şerit kartla birlikte
+   * kayıyor. `animatedPosition` / `animatedIndex` de geçilmiyor — AppBottomSheet
+   * ikisini de kendi üretiyor. Hook'un dosyası silindi.
+   */
 
   /**
    * Kartın zemini: ana fotoğrafın blur'lu hali (bkz. CardGlassBackdrop).
@@ -378,15 +390,18 @@ export default function LikerSwipeModal({
         visible={visible}
         onClose={onClose}
         // TEK DETENT, TAM EKRAN — diğer kart sheet'leriyle (PreviewModal) aynı:
-        // sheet doğrudan telefonun en tepesinde açılıyor, Keşif'te expand
-        // edilen kartın oturduğu yerde (bkz. SwipeWrapper > HEADER_COVER).
+        // sheet safe-area çizgisinde açılıyor, Keşif'te expand edilen kartın
+        // oturduğu yerde (bkz. SwipeWrapper > HEADER_COVER) ve uygulamanın tam
+        // ekran sheet'leriyle (AppModal `fullScreen`) aynı tepede.
         //
         // TARİHÇE: [ekranın %85'i, SCREEN_HEIGHT - insets.top] idi — kart önce
         // alt detent'te açılıyor, tepeye ancak elle çekilince geliyordu.
         // Alt detent kaldırıldı: kartı okumak için ikinci bir jest gerekiyordu
         // ve aşağı çekiş artık tek adımda kapatıyor (yine PreviewModal gibi).
-        snapPoints={[SCREEN_HEIGHT]}
-        topInset={0}
+        // Sonra tek detent bir süre SCREEN_HEIGHT + topInset 0 ile telefonun en
+        // tepesindeydi; safe-area'ya geri çekildi.
+        snapPoints={[SCREEN_HEIGHT - insets.top]}
+        topInset={insets.top}
         handleComponent={null}
         backdropComponent={renderBackdrop}
         // Kartın ve sticky şeridin köşesiyle AYNI — varsayılan 36, kartın
@@ -425,12 +440,17 @@ export default function LikerSwipeModal({
                     // parça bir yüzey olarak yatıyor, sabit bir çerçevenin
                     // kenarında dilimlenmiyor.
                     //
-                    // Yarıçap AÇIK değer: sheet tek detent'te ve ekranın
-                    // tepesinde açılıyor, yani kartın üst köşeleri telefonun
-                    // köşelerinde. 50 orada maskeden yuvarlak kalıp hilal
-                    // bırakırdı (bkz. CARD_EXPANDED_CORNER_RADIUS). Kabuk,
+                    // Yarıçap = KEŞİF KARTININ YÜZÜ: sheet safe-area
+                    // çizgisinde açılıyor, yani üst köşeler donanım
+                    // maskesinden uzak ve kartın Keşif'teki köşesinden
+                    // ayrılması için bir sebep yok (bkz.
+                    // CARD_EXPANDED_CORNER_RADIUS'un tarihçesi). Kabuk,
                     // şeridin kırpması ve sheet clip'i aynı sayıyı okumak
                     // zorunda — üçüncü kopya için bkz. CARD_CORNER_RADIUS notu.
+                    //
+                    // `borderCurve: "continuous"` aşağıda ve ŞART: zincirdeki
+                    // her yüzey squircle çizmeli, yoksa aynı yarıçapta bile
+                    // eğriler kenar boyunca birbirini kesiyor.
                     //
                     // ALT KÖŞELER KARE, bilerek: kartın dibi ekranın dibi,
                     // orayı yuvarlatmak duran kartta ekranın alt köşelerinden
@@ -473,7 +493,6 @@ export default function LikerSwipeModal({
                     profile={profile}
                     previewMode
                     expanded={false}
-                    hideExpandHint
                     hideFire
                     // Jest kapalıysa kartın altındaki X/tik satırı da kalkar:
                     // ikisi AYNI aksiyonun iki yolu, birini bırakmak kapıyı
@@ -497,24 +516,31 @@ export default function LikerSwipeModal({
                 <CardStickyHeader
                   profile={profile}
                   alwaysOpen
-                  // Üst detent'te kartın tepesi ekranın 0'ı → şeridin içeriği
-                  // durum çubuğunun altına insin. Keşif'teki köşe butonlarıyla
-                  // aynı pay; alt detent'te de fazladan bir nefes olarak kalıyor.
+                  // Keşif'teki köşe butonlarıyla AYNI pay. Sheet artık
+                  // safe-area'nın altında başladığı için sıfır — sabit yine de
+                  // okunuyor ki iki bağlam ayrışmasın (bkz.
+                  // CARD_CHROME_TOP_DROP).
                   topInset={CARD_CHROME_TOP_DROP}
-                  // Bandın kendi kırpması, sarmalayıcı kabuğun EN KARE hâlinden
-                  // daha yuvarlak OLMAMALI: aksi halde üst köşelerde kabuğun
+                  // Bandın kendi kırpması — sarmalayıcı kabukla AYNI sayı ve
+                  // aynı eğri. Kabuktan yuvarlak kalırsa üst köşelerde kabuğun
                   // içinde kalan ama bandın dışına düşen, camsız bir dilim
-                  // görünür. 35'te iki detent'te de kırpmayı kabuk yapıyor.
+                  // görünür.
                   radius={CARD_EXPANDED_CORNER_RADIUS}
                   // Sohbetten açılan profil önizlemesindeki üç noktanın aynısı
                   // — kart tam ekranı kapladığı için ekranın kendi başlığı
                   // erişilemez oluyor. Açtığı menü orada dört satır, burada
                   // İKİ: henüz eşleşme yok (bkz. ProfileOptionsSheet).
                   onMenu={() => setOptionsOpen(true)}
+                  // Sol uçtaki cam "kapat" — sohbet/profil önizlemesindekinin
+                  // aynısı. Sheet'in kendi kapanış yolundan geçiyor (`onClose`
+                  // parent'ın `visible`ını düşürüyor); aşağı çekme jesti de
+                  // yatay swipe de aynen duruyor.
+                  onClose={onClose}
                   // Şerit açık doğuyor (`alwaysOpen`), yani scroll'u başlığı
-                  // AÇMAK için okumuyor: "bugün aktif" bununla sönüyor ve isim
-                  // ortalanıyor.
+                  // AÇMAK için okumuyor: "bugün aktif" bununla sönüyor.
                   scrollY={scrollY}
+                  // `progress` VERİLMİYOR → şerit hiç sönmüyor; gerekçe
+                  // yukarıda, kaldırılan hook'un yerinde.
                 />
               </Animated.View>
             </GestureDetector>
