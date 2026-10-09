@@ -50,7 +50,6 @@ import FirePullHint, {
   FIRE_PULL_SCRIM_ALPHA,
 } from '@/features/discover/components/FirePullHint';
 import { colors } from '@/shared/theme/colors';
-import { DISCOVER_CARD_TOP_GAP } from '@/features/discover/components/discoverHeaderMetrics';
 import tr from '@/shared/i18n/translations/tr';
 import en from '@/shared/i18n/translations/en';
 
@@ -156,9 +155,9 @@ describe('FirePullHint', () => {
     expect(half).toBeGreaterThan(0);
     expect(half).toBeLessThan(full as number);
     expect(full).toBeLessThan(0.7);
-    // Tam çekişte tam olarak EXPORT EDİLEN oran. Header perdesi (bkz.
-    // DiscoverScreen) aynı sabiti okuyor; buradaki kullanım ondan ayrılırsa
-    // şerit ile üst bant farklı tonda kararır ve aradaki çizgi ortaya çıkar.
+    // Tam çekişte tam olarak EXPORT EDİLEN oran — sabit ile kullanımı
+    // ayrışmasın. (Bir dönem DiscoverScreen'deki header perdesi de aynı sayıyı
+    // okuyordu; header'ın zemini kalkınca o perde kaldırıldı.)
     expect(full).toBe(FIRE_PULL_SCRIM_ALPHA);
   });
 
@@ -191,19 +190,26 @@ describe('FirePullHint', () => {
     expect(style.overflow).toBe('hidden');
   });
 
-  it('perde destenin üst payına TAŞIYOR — header ile arada çizgi kalmıyor', () => {
-    // Deste kabının paddingTop'u kadarlık şerit kabın İÇİNDE değil. Perde
-    // oraya uzanmazsa, header de kararınca iki koyu alanın arasında zemin
-    // renginde bir tel kalıyor (koyu modda açık bir çizgi, gölge gibi).
-    const tree = render(<FirePullHint />);
+  it('perde destenin tepesinden, YAZI güvenli alanın altından başlıyor', () => {
+    // Kart tüm ekranı kaplıyor (kapak durum çubuğunun ardından geçiyor), yani
+    // perde de ekranın 0'ından başlamalı — taşma payı yok.
+    const tree = render(<FirePullHint topInset={64} />);
     const root = tree.UNSAFE_root.findAllByType('View' as never)[0] as any;
-    expect(StyleSheet.flatten(root.props.style).top).toBe(-DISCOVER_CARD_TOP_GAP);
+    expect(StyleSheet.flatten(root.props.style).top).toBe(0);
 
-    // Yazının sıfır noktası DESTENİN TEPESİ olmalı: kap yukarı taştı diye
-    // ipucu da yukarı kaymamalı, şeridin yüksekliği desteden ölçülüyor.
+    // Yazı perdeyle AYNI yerden başlamıyor: saatin/adanın altında kalırdı.
+    // Şeridin yüksekliği güvenli alanın üst çizgisinden ölçülüyor.
+    pull.value = 1;
+    const block = textBlockStyle(render(<FirePullHint topInset={64} />)) as any;
+    expect(block.top).toBe(64);
+  });
+
+  it('topInset verilmezse yazı da kabın tepesinden başlıyor', () => {
+    // Varsayılan 0 — bileşen safe-area'ya kendisi bağlanmıyor, ölçüyü çağıran
+    // veriyor (bkz. prop notu).
     pull.value = 1;
     const block = textBlockStyle(render(<FirePullHint />)) as any;
-    expect(block.top).toBe(DISCOVER_CARD_TOP_GAP);
+    expect(block.top).toBe(0);
   });
 
   it('her iki metin de iki dilde tanımlı', () => {

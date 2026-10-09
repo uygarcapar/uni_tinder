@@ -1326,6 +1326,9 @@ const tr = {
     },
     rewind: {
       error: 'Geri alınamadı',
+      // Keşif'in sol üstündeki cam butonun VoiceOver adı — buton metin
+      // taşımıyor, yalnız glif var (bkz. DiscoverHeaderGlassButton).
+      label: 'Geri al',
     },
     cityPicker: {
       title: 'Şehir Seç',
@@ -2156,9 +2159,10 @@ const tr = {
       petsYes: 'Evcil hayvan var',
       petsNo: 'Evcil hayvan yok',
       bio: 'Biyografi',
-      // Kapak fotoğrafının altındaki ipucu — eskiden orada expand oku vardı.
-      // Küçük harf BİLEREK: buton etiketi değil, sessiz bir fısıltı.
-      expandHint: 'detaylar için yukarı kaydır',
+      // `expandHint` ('detaylar için yukarı kaydır') BURADAN KALDIRILDI:
+      // kapağın altındaki ipucu artık çizilmiyor (istek) — kart parmak
+      // değdiği an kaydırılabiliyor, keşfettirilecek bir jest kalmadı.
+      // (Ondan da önce orada bir expand oku vardı.)
       prep: 'Hazırlık',
       grade: '{{year}}. Sınıf',
       premium: 'Premium',
@@ -2180,6 +2184,9 @@ const tr = {
       // "Çevrimiçi" BİLEREK yok: alan (isOnlineToday) 24 saatlik penceredir,
       // anlık presence değil — bkz. PotentialMatch.isOnlineToday.
       activeToday: 'Bugün aktif',
+      // Keşif şeridinin sol ucundaki cam yukarı okun VoiceOver adı — buton
+      // metin taşımıyor, yalnız glif var (bkz. CardScrollTopGlassButton).
+      scrollTop: 'Başa dön',
       newMember: 'Burada yeni',
       // Sticky şeritteki cam butonun VoiceOver etiketi — buton yalnız ok
       // taşıyor, görünür bir adı yok.

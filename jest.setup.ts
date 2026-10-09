@@ -107,14 +107,34 @@ jest.mock('@expo/ui/swift-ui', () => {
   };
 });
 
+// Modifier'ların TAMAMI burada: hepsi saf fabrika fonksiyonu (düz nesne
+// döndürüp native tarafa listeyle geçiyorlar), yani jest'te ayırt edilecek bir
+// davranışları yok. Liste EKSİK BIRAKILMAMALI — eksik bir ad `(0, _modifiers.x)
+// is not a function` ile, o modifier'ı kullanan buton ağaca ilk kez girdiği
+// suite'te patlıyor; hatanın kaynağı da mock değil bileşen gibi görünüyor.
+// Kaynak: `grep -rho 'from "@expo/ui/swift-ui/modifiers"' -B20 src`.
 jest.mock('@expo/ui/swift-ui/modifiers', () => {
   const modifier = (...args: unknown[]) => ({ __modifier: true, args });
   return {
     __esModule: true,
+    accessibilityLabel: modifier,
     background: modifier,
+    buttonBorderShape: modifier,
+    buttonStyle: modifier,
+    containerShape: modifier,
+    contentShape: modifier,
+    controlSize: modifier,
+    disabled: modifier,
+    fixedSize: modifier,
+    font: modifier,
+    foregroundStyle: modifier,
     frame: modifier,
+    glassEffect: modifier,
+    labelStyle: modifier,
     padding: modifier,
+    shadow: modifier,
     strokeBorder: modifier,
+    tint: modifier,
     shapes: {
       circle: modifier,
       capsule: modifier,

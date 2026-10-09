@@ -162,6 +162,27 @@ export function glassClearShadow(): ModifierConfig[] {
 }
 
 /**
+ * BERRAK cam butonun FOTOĞRAF ÜSTÜNDEKİ mürekkebi — glif rengi.
+ *
+ * Keşif'te bu butonların hepsi bir kapak fotoğrafının üstünde duruyor: kolondaki
+ * not ve üç nokta (kapaktan hiç taşmıyorlar, bkz. COVER_STICKY_EDGE_GAP) ve
+ * ekranın üstünde yüzen geri al / filtre. Berrak camın dolgusu olmadığı için
+ * glifin zemini doğrudan FOTOĞRAF; tema mürekkebi açık modda koyu olduğundan
+ * ikonlar fotoğrafın karanlık yerlerinde kayboluyordu (istek: "light modda
+ * ikonlar beyaz olsun"). Foto üstü mürekkep kuralı zaten `onMedia` (bkz.
+ * theme/colors.ts) — bu yalnız onu doğru yere bağlıyor.
+ *
+ * ⚠️ BEYAZ YALNIZ CAM VARSA. 26 altında / Android'de kabuk berrak cam değil,
+ * `chromeBlurTint()` ile çizilen bir blur diski ve o disk açık modda AÇIK:
+ * üstüne beyaz glif konsa bu kez kabuğun içinde kaybolurdu. O yolda okunan
+ * mürekkep tema metni, o yüzden dal burada — çağıranlar ayrı ayrı sormuyor.
+ *
+ * Render anında ÇAĞIR — palet mutasyona uğruyor.
+ */
+export const glassOnMediaInk = (): string =>
+  HAS_LIQUID_GLASS ? colors.onMedia : colors.text;
+
+/**
  * iOS 26 öncesindeki glass fallback'ine border (+ padding/frame) ekler; 26 ve
  * üstünde boş dizi döner — native glass kendi kenarını zaten çiziyor.
  *
@@ -331,7 +352,15 @@ export const GLASS_ICON_CLEAR_SIZE = GLASS_ICON_BUTTON.size + 8;
  * iOS 26 altında `glassEffect` no-op — zemin yine `GlassFallbackSurface` +
  * `glassFallback()` ikilisinden geliyor, o yol değişmedi.
  */
-export function glassIconClearGlyph(): ModifierConfig[] {
+export function glassIconClearGlyph(
+  /**
+   * Kabuğun çapı. Varsayılan ortak cam ikon ölçüsü; Keşif'in kart chrome'u
+   * kendi (daha iri) sayısını geçiyor — bkz. DISCOVER_GLASS_BUTTON_SIZE.
+   * Zincirdeki `frame` ve `contentShape` ikisi de bunu okuyor, yani camın
+   * dairesi ile dokunma alanı hiçbir ölçüde ayrışmıyor.
+   */
+  size: number = GLASS_ICON_CLEAR_SIZE,
+): ModifierConfig[] {
   return [
     // Kabuk artık ondan doğmuyor ama `controlSize` DURUYOR: ortamdaki
     // `imageScale`i de o belirliyor, yani punto sabit kalsa bile silmek SF
@@ -339,7 +368,7 @@ export function glassIconClearGlyph(): ModifierConfig[] {
     controlSize("extraLarge"),
     // `size` prop'u DEĞİL font modifier'ı — bkz. GLASS_ICON_BUTTON.
     font({ size: GLASS_ICON_BUTTON.icon, weight: GLASS_ICON_BUTTON.weight }),
-    frame({ width: GLASS_ICON_CLEAR_SIZE, height: GLASS_ICON_CLEAR_SIZE }),
+    frame({ width: size, height: size }),
     contentShape(shapes.circle()),
     glassEffect({
       // interactive: basış morph'u artık buton stilinden değil camdan geliyor;

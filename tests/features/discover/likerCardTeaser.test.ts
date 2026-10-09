@@ -1,7 +1,4 @@
-import {
-  relationshipIntentLabel,
-  resolveTeaserHobby,
-} from "@/features/discover/likerCardTeaser";
+import { relationshipIntentLabel } from "@/features/discover/likerCardTeaser";
 
 // Sahte t: kısa harita + ek. `defaultValue` verilen ve haritada olmayan
 // anahtar boş döner (gerçek i18next davranışı).
@@ -16,34 +13,6 @@ const t = ((key: string, opts?: { defaultValue?: string }) => {
   if (m) return SHORT[m[1]] ?? opts?.defaultValue ?? key;
   return key;
 }) as any;
-
-describe("resolveTeaserHobby", () => {
-  it("ilk dolu hobiyi enumName + etiketle döner", () => {
-    expect(
-      resolveTeaserHobby([
-        { enumName: "Dogs", name: "Köpekler" },
-        { enumName: "Gym", name: "Spor" },
-      ]),
-    ).toEqual({ enumName: "Dogs", label: "Köpekler" });
-  });
-
-  it("düz string hobiyi de kabul eder", () => {
-    expect(resolveTeaserHobby(["Yoga"])).toEqual({
-      enumName: undefined,
-      label: "Yoga",
-    });
-  });
-
-  it("boş girdileri atlar, hiç yoksa null", () => {
-    expect(resolveTeaserHobby([{ name: "  " }, { enumName: "Cats" }])).toEqual({
-      enumName: "Cats",
-      label: "Cats",
-    });
-    expect(resolveTeaserHobby([])).toBeNull();
-    expect(resolveTeaserHobby(null)).toBeNull();
-    expect(resolveTeaserHobby(undefined)).toBeNull();
-  });
-});
 
 describe("relationshipIntentLabel", () => {
   it("süre bildiren niyete ek takar", () => {

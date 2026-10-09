@@ -15,7 +15,6 @@ import {
   FIRE_PULL_THRESHOLD,
 } from "@/shared/services/uiBus";
 import { colors as theme, scrimAt } from "@/shared/theme/colors";
-import { DISCOVER_CARD_TOP_GAP } from "./discoverHeaderMetrics";
 
 /**
  * Kartı AŞAĞI çekerken (Fire) açılan şeridin içeriği: kararan zemin +
@@ -53,9 +52,10 @@ import { DISCOVER_CARD_TOP_GAP } from "./discoverHeaderMetrics";
  * Perdenin tam çekişteki koyuluğu. Arkadaki kart seçilebilir kalmalı: bu bir
  * "kapatma" perdesi değil, yazının taşıyıcısı.
  *
- * EXPORT, çünkü aynı çekişte HEADER da kararıyor (bkz. DiscoverScreen) ve iki
- * perde yan yana görünüyor: ayrı sayılar verilirse şerit ile üst bant farklı
- * tonda kararıp aradaki çizgi ortaya çıkıyor.
+ * EXPORT'U TEST İÇİN. Bir dönem DiscoverScreen de okuyordu: aynı çekişte
+ * header'ın zemini bu oranla kararıyordu ve iki perde yan yana görünüyordu.
+ * Header'ın zemini kalktı (kart tüm ekranı kaplıyor, üstte yalnız yüzen cam
+ * butonlar var), o perde de kaldırıldı.
  */
 export const FIRE_PULL_SCRIM_ALPHA = 0.55;
 
@@ -90,21 +90,31 @@ const SWAP_MS = 160;
 const LINE_HALF = 9;
 
 /**
- * Perdenin destenin ÜSTÜNE taştığı pay (px).
+ * ── ÜST TAŞMA PAYI (TOP_BLEED) KALDIRILDI ───────────────────────────────────
  *
- * Deste kabının `paddingTop`u kadar (bkz. DISCOVER_CARD_TOP_GAP): header ile
- * kartların arasında o kadarlık bir şerit var ve orası deste kabının İÇİNDE
- * değil, dolayısıyla buradaki perde onu kaplamıyordu. Header de kararınca
- * (bkz. DiscoverScreen) iki koyu alanın arasında zemin renginde 5 px'lik bir
- * çizgi kalıyordu — koyu modda açık bir tel, gölge gibi.
- *
- * Taşma bu kapta, header tarafında DEĞİL: header'ın perdesini aşağı sarkıtmak
- * Android'de ViewGroup kırpmasına bağımlı olurdu; buradaki kap zaten mutlak
- * konumlu ve kendi kırpmasını kendi yapıyor.
+ * Kap bir dönem `-DISCOVER_CARD_TOP_GAP` kadar yukarı taşıyordu: header ile
+ * deste kabının arasında o kadarlık bir şerit vardı, orası kabın İÇİNDE değildi
+ * ve header de kararınca iki koyu alanın arasında zemin renginde ince bir tel
+ * kalıyordu. Deste kabı tüm ekrana açılınca (bkz. DiscoverScreen) o şerit de
+ * header'ın perdesi de kalktı — taşacak bir yer yok, kap zaten ekranın
+ * tepesinden başlıyor.
  */
-const TOP_BLEED = DISCOVER_CARD_TOP_GAP;
 
-function FirePullHint() {
+type Props = {
+  /**
+   * Güvenli alanın üst payı — YAZININ sıfır noktası.
+   *
+   * Perde ekranın 0'ından başlıyor (kart da oradan başlıyor, kapak durum
+   * çubuğunun ardından geçiyor) ama YAZI oraya konamaz: saatin/adanın altında
+   * kalırdı. Şeridin yüksekliği bu çizgiden ölçülüyor.
+   *
+   * PROP, çünkü bileşen `useSafeAreaInsets`e bağlanmasın — ölçüyü zaten bilen
+   * taraf onu çizen ekran.
+   */
+  topInset?: number;
+};
+
+function FirePullHint({ topInset = 0 }: Props) {
   const { t } = useTranslation();
 
   const scrimStyle = useAnimatedStyle(() => ({
@@ -168,9 +178,9 @@ function FirePullHint() {
       pointerEvents="none"
       style={{
         position: "absolute",
-        // Deste kabının üst payına TAŞIYOR (bkz. TOP_BLEED): header perdesiyle
-        // arada zemin renginde bir çizgi kalmasın.
-        top: -TOP_BLEED,
+        // Kabın tepesi = destenin tepesi = ekranın tepesi (bkz. yukarıdaki
+        // TOP_BLEED notu).
+        top: 0,
         left: 0,
         right: 0,
         bottom: 0,
@@ -190,10 +200,9 @@ function FirePullHint() {
       />
       <Animated.View
         style={[
-          // `top` TOP_BLEED kadar geri alınıyor: kap yukarı taştı ama yazının
-          // sıfır noktası destenin tepesi olmalı, şeridin yüksekliği oradan
-          // ölçülüyor (bkz. textStyle).
-          { position: "absolute", top: TOP_BLEED, left: 0, right: 0 },
+          // Yazının sıfır noktası GÜVENLİ ALANIN üstü: perde ekranın 0'ından
+          // başlıyor ama yazı durum çubuğunun altında kalmalı (bkz. `topInset`).
+          { position: "absolute", top: topInset, left: 0, right: 0 },
           textStyle,
         ]}
       >

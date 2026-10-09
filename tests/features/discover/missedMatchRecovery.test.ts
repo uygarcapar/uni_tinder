@@ -175,9 +175,9 @@ describe('fetchMissedMatches', () => {
       note: null,
       hasLikedMe: true,
       // Kilitli kartın ipucu alanları (bkz. likerCardTeaser) — fixture'da
-      // hobi/niyet/rozet yok, hepsi null'a normalize ediliyor.
+      // niyet/rozet yok, ikisi de null'a normalize ediliyor (ipucunun
+      // üniversitesi ayrı alan değil, yukarıdaki `universityName`).
       isSelfieVerified: null,
-      teaserHobby: null,
       relationshipIntent: null,
       relationshipIntentDisplay: null,
     });

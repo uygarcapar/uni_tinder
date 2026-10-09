@@ -5,13 +5,20 @@ import {
   accessibilityLabel as a11yLabel,
   buttonBorderShape,
   buttonStyle,
+  contentShape,
   controlSize,
   frame,
+  glassEffect,
+  shapes,
   tint,
 } from "@expo/ui/swift-ui/modifiers";
 import FireGlyph from "@/shared/components/FireGlyph";
 import { colors as theme, gradients, withAlpha } from "@/shared/theme/colors";
-import { glassFallback, GLASS_ICON_BUTTON } from "@/shared/theme/glass";
+import {
+  glassClearShadow,
+  glassFallback,
+  GLASS_ICON_BUTTON,
+} from "@/shared/theme/glass";
 
 /**
  * SwipeCard expanded'ken sağ üstte ASILI KALAN Fire butonu.
@@ -190,7 +197,14 @@ function fireTint() {
  * Butonun içindeki alev — düz beyaz dolgu. `onMedia` (SABİT beyaz, açık modda
  * da dönmez): kırmızı kabuk her iki temada aynı ton, üstündeki glyph de öyle.
  */
-function WhiteFlame({ size = FIRE_GLASS_GLYPH_SIZE }: { size?: number }) {
+function WhiteFlame({
+  size = FIRE_GLASS_GLYPH_SIZE,
+  color = theme.onMedia,
+}: {
+  size?: number;
+  /** Berrak cam yolda alev RENKLİ olur (kabuk renksiz) — bkz. `variant`. */
+  color?: string;
+}) {
   return (
     // pointerEvents none: dokunmayı SwiftUI butonu karşılasın, RNHostView'ın
     // iliştirdiği touch handler araya girmesin.
@@ -205,7 +219,7 @@ function WhiteFlame({ size = FIRE_GLASS_GLYPH_SIZE }: { size?: number }) {
       }}
       pointerEvents="none"
     >
-      <FireGlyph size={size} color={theme.onMedia} />
+      <FireGlyph size={size} color={color} />
     </View>
   );
 }
@@ -214,9 +228,39 @@ type Props = {
   onPress: () => void;
   /** VoiceOver etiketi — buton metin taşımıyor, sadece glyph var. */
   label: string;
+  /**
+   * Kabuğun MALZEMESİ.
+   *
+   *  • "prominent" (varsayılan) — dolgulu, marka renginde tint'li cam. Alev
+   *    beyaza yıkanıyor, yani RENKLİ OLAN KABUK. Beğeniler'in kart köşesi
+   *    burada: buton bir fotoğrafın üstünde tek başına duruyor ve "bu bir
+   *    aksiyon" demesi gerekiyor.
+   *
+   *  • "clear" — BERRAK cam daire, tint yok; renkli olan GLİF. Keşif şeridinin
+   *    sağ ucu burada: aynı satırın sol ucundaki yukarı okla (bkz.
+   *    CardScrollTopGlassButton) aynı malzeme olmak zorunda, yoksa bandın iki
+   *    ucunda iki farklı buton dili oluyor. Kapağın aksiyon kolonundaki alevle
+   *    de aynı okuma: kabuk renksiz, iç renkli.
+   */
+  variant?: "prominent" | "clear";
+  /**
+   * Kabuğun çapı — varsayılan kendi sabiti (FIRE_GLASS_SIZE).
+   *
+   * Keşif'in şeridi kendi (daha iri) sayısını geçiyor: oradaki bütün cam
+   * butonlar tek çapta olmak zorunda, çünkü üst chrome devrinde birbirinin
+   * yerini alıyorlar (bkz. DISCOVER_GLASS_BUTTON_SIZE). Beğeniler'in kart köşesi
+   * varsayılanda kalıyor.
+   */
+  size?: number;
 };
 
-function FireGlassButton({ onPress, label }: Props) {
+function FireGlassButton({
+  onPress,
+  label,
+  variant = "prominent",
+  size = FIRE_GLASS_SIZE,
+}: Props) {
+  const clear = variant === "clear";
   if (Platform.OS === "ios") {
     return (
       // Host'a SABİT ölçü — `matchContents` DEĞİL: intrinsic ölçü native
@@ -234,38 +278,57 @@ function FireGlassButton({ onPress, label }: Props) {
         // kabuğu `frame`e bağlı bir background olarak çiziliyor, payı
         // yemiyor. `container`: çentik/durum çubuğu evet, klavye hayır.
         ignoreSafeArea="container"
-        style={{
-          width: FIRE_GLASS_SIZE,
-          height: FIRE_GLASS_SIZE,
-        }}
+        style={{ width: size, height: size }}
       >
         <SwiftUIButton
           onPress={onPress}
           modifiers={[
-            buttonStyle("glassProminent"),
+            // BERRAK YOLDA KABUK BUTON STİLİNDEN DOĞMUYOR: `.plain` hiçbir
+            // yüzey çizmiyor, cam glifin üstüne `glassEffect(.clear)` ile
+            // takılıyor (aşağıda). Uygulamanın bütün berrak cam ikon butonları
+            // bu zinciri kullanıyor — bkz. glassIconClearGlyph.
+            buttonStyle(clear ? "plain" : "glassProminent"),
             buttonBorderShape("circle"),
             // Header'daki cam ikon butonlarıyla AYNI kontrol boyu: kabuğun label
             // çevresine kattığı pay buna bağlı, varsayılan (regular) bırakılınca
             // aynı frame'e rağmen daire belirgin şekilde küçük çiziliyor.
             controlSize("extraLarge"),
             tint(fireTint()),
-            frame({
-              width: FIRE_GLASS_SIZE,
-              height: FIRE_GLASS_SIZE,
-            }),
+            frame({ width: size, height: size }),
+            contentShape(shapes.circle()),
+            ...(clear
+              ? [
+                  glassEffect({
+                    // interactive: basış morph'u buton stilinden değil camdan
+                    // geliyor; `.plain` görsel geri bildirim vermiyor.
+                    glass: { variant: "clear" as const, interactive: true },
+                    shape: "circle" as const,
+                  }),
+                  // Açık modda beyaz zeminden ayrılsın diye ufak gölge; koyuda
+                  // ve 26 altında boş dizi. Camdan SONRA — sırası şart.
+                  ...glassClearShadow(),
+                ]
+              : []),
             a11yLabel(label),
             // iOS 26 altında glassProminent de sessizce .automatic'e düşüyor
             // (bkz. ViewModifierRegistry) → kabuğu biz çiziyoruz: aynı kırmızı,
             // camsız düz daire. strokeBorder frame'den SONRA gelmeli.
-            ...glassFallback({
-              shape: "circle",
-              backgroundColor: fireTint(),
-              borderColor: withAlpha(theme.onMedia, 0.35),
-            }),
+            // 26 ALTINDA kabuğu biz çiziyoruz. Berrak yolda dolgu YOK — orada
+            // görünmesi gereken şey camın kırılması, düz bir daire değil;
+            // fallback yalnız ince bir kenar bırakıyor.
+            ...glassFallback(
+              clear
+                ? { shape: "circle" }
+                : {
+                    shape: "circle",
+                    backgroundColor: fireTint(),
+                    borderColor: withAlpha(theme.onMedia, 0.35),
+                  },
+            ),
           ]}
         >
           <RNHostView matchContents>
-            <WhiteFlame />
+            <WhiteFlame color={clear ? fireTint() : theme.onMedia} />
           </RNHostView>
         </SwiftUIButton>
       </Host>
@@ -281,18 +344,20 @@ function FireGlassButton({ onPress, label }: Props) {
       accessibilityRole="button"
       accessibilityLabel={label}
       style={{
-        width: FIRE_GLASS_SIZE,
-        height: FIRE_GLASS_SIZE,
+        width: size,
+        height: size,
         borderRadius: 999,
         borderCurve: "continuous",
         alignItems: "center",
         justifyContent: "center",
-        backgroundColor: fireTint(),
+        backgroundColor: clear ? withAlpha(theme.text, 0.08) : fireTint(),
         borderWidth: StyleSheet.hairlineWidth,
-        borderColor: withAlpha(theme.onMedia, 0.35),
+        borderColor: clear
+          ? theme.hairlineStrong
+          : withAlpha(theme.onMedia, 0.35),
       }}
     >
-      <WhiteFlame />
+      <WhiteFlame color={clear ? fireTint() : theme.onMedia} />
     </TouchableOpacity>
   );
 }

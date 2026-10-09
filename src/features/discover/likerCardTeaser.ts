@@ -1,5 +1,4 @@
 import type { TFunction } from "i18next";
-import type { ProfileHobby } from "@/shared/types";
 
 /**
  * Kilitli (blurlu) beğeni kartının "ipucu" katmanı.
@@ -8,44 +7,20 @@ import type { ProfileHobby } from "@/shared/types";
  * bir bulanıklık olunca iki şey oluyordu: (1) kart yükleme iskeleti gibi
  * okunuyordu, (2) paywall'a giden merak sıfırdı — ne beğenmiş, ne arıyor,
  * doğrulanmış mı, hiçbiri yok. Bumble'ın yaptığı gibi kimliği AÇMADAN bir-iki
- * sinyal veriyoruz: foto doğrulama rozeti, TEK hobi, ilişki niyeti.
+ * sinyal veriyoruz: foto doğrulama rozeti, ÜNİVERSİTE, ilişki niyeti.
  *
- * ⚠️ Kimlik burada sızmaz: hobi/niyet/rozet tek başına kişiyi tanımlamıyor,
- * isim/yaş/üniversite/fotoğraf hâlâ perdenin altında. İpucuya bunlardan
- * birini EKLEME — ipucu ne kadar özgülse blur o kadar anlamsızlaşır.
+ * ⚠️ İpucuya İSİM / YAŞ / FOTOĞRAF / ŞEHİR EKLEME — ipucu ne kadar özgülse
+ * blur o kadar anlamsızlaşır. Üniversite 2026-10-05'te bilerek içeri alındı
+ * (yerini bir zamanlar TEK hobi tutuyordu): hobi etiketleri kısa ve kartların
+ * çoğunda aynı çıkıyor, merak uyandıran tek somut ortaklık okul. Kampüs
+ * binlerce kişilik bir küme, yani tek başına kimse tanınmıyor; kişi okulunu
+ * gizlemişse alan boş geliyor ve pil hiç çizilmiyor (bkz. profildeki üniversite
+ * görünürlüğü) — yani gizlilik tercihi ipucunu da kapsıyor.
  *
  * Sunucu tarafında ek iş YOK: `WhoLikedMe` / `MissedMatches` zaten
- * ProfileCardDto'nun tamamını (hobbies, relationshipIntent, isSelfieVerified)
- * taşıyor — blur gibi ipucu da istemci tarafı bir seçim.
+ * ProfileCardDto'nun tamamını (universityNameDisplay, relationshipIntent,
+ * isSelfieVerified) taşıyor — blur gibi ipucu da istemci tarafı bir seçim.
  */
-
-export interface TeaserHobby {
-  /** İkon eşlemesi için — `HobbyIcon` enumName ile arıyor. */
-  enumName: string | undefined;
-  /** Kullanıcının dilinde çözülmüş etiket. */
-  label: string;
-}
-
-/**
- * Listeden gösterilecek TEK hobi: ilk dolu olan. Sıra sunucudan geldiği gibi
- * (kullanıcının profilde seçtiği sıra) — rastgele seçmek her yenilemede
- * kartı değiştirirdi, o da "yükleniyor" hissini geri getirir.
- */
-export function resolveTeaserHobby(
-  hobbies: ProfileHobby[] | null | undefined,
-): TeaserHobby | null {
-  if (!Array.isArray(hobbies)) return null;
-  for (const hobby of hobbies) {
-    if (typeof hobby === "string") {
-      const label = hobby.trim();
-      if (label) return { enumName: undefined, label };
-      continue;
-    }
-    const label = (hobby?.name ?? hobby?.enumName ?? "").trim();
-    if (label) return { enumName: hobby?.enumName, label };
-  }
-  return null;
-}
 
 // "ilişki" ekini alan ilişki niyetleri (bkz. relationshipIntentLabel).
 // Anahtar DAİMA enumName: `display` Accept-Language'e göre değişiyor.

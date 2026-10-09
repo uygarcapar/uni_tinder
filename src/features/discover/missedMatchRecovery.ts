@@ -2,7 +2,6 @@ import api from "@/shared/services/api";
 import { API_ENDPOINTS } from "@/shared/constants/api";
 import { resolveCardAge } from "./cardPrivacy";
 import { normalizeLikerNote } from "./likerNote";
-import { resolveTeaserHobby, type TeaserHobby } from "./likerCardTeaser";
 import type { LikerNote, PaywallType } from "@/shared/types";
 
 /**
@@ -58,9 +57,9 @@ export interface MissedMatchCard {
    * Kilitli kartın ipucu katmanı — beğeni kartlarıyla BİREBİR aynı alanlar
    * (bkz. likerCardTeaser). Bu liste de aynı `LikeCard`ta çiziliyor; alanlar
    * burada eksik kalırsa kaçırdıkların sekmesindeki kilitli kart yine boş
-   * bulanıklığa döner.
+   * bulanıklığa döner. İpucunun diğer yarısı olan üniversite ayrı bir alan
+   * değil: yukarıdaki `universityName`, açık kartla ortak.
    */
-  teaserHobby: TeaserHobby | null;
   relationshipIntent: string | null;
   relationshipIntentDisplay: string | null;
 }
@@ -121,7 +120,6 @@ export async function fetchMissedMatches(
       note: normalizeLikerNote(p),
       hasLikedMe: p.hasLikedMe === true,
       isSelfieVerified: p.isSelfieVerified ?? null,
-      teaserHobby: resolveTeaserHobby(p.hobbies),
       relationshipIntent: p.relationshipIntent ?? null,
       relationshipIntentDisplay: p.relationshipIntentDisplay ?? null,
   }));

@@ -1,14 +1,11 @@
-import React, { useEffect, useState } from "react";
+import React, { useEffect } from "react";
 import { Dimensions } from "react-native";
 import { GestureDetector, Gesture } from "react-native-gesture-handler";
 import Animated, {
   cancelAnimation,
-  scrollTo,
   useAnimatedRef,
   useSharedValue,
   useAnimatedStyle,
-  withDecay,
-  withSequence,
   withSpring,
   withTiming,
   runOnJS,
@@ -29,91 +26,73 @@ import uiBus, {
   resetCardExpandState,
   FIRE_PULL_THRESHOLD,
 } from "@/shared/services/uiBus";
-import { useSafeAreaInsets } from "react-native-safe-area-context";
-import {
-  DISCOVER_CARD_TOP_GAP,
-  DISCOVER_HEADER_HEIGHT,
-  discoverTabBarInset,
-} from "@/features/discover/components/discoverHeaderMetrics";
+import { DISCOVER_CARD_EXPAND_LIFT } from "@/features/discover/components/discoverHeaderMetrics";
 import { photoPinchActive } from "@/shared/components/pinchZoom";
 import { useRenderCount } from "@/shared/debug/useRenderCount";
 import type { NoteTarget, PotentialMatch } from "@/shared/types";
 
-const { width, height } = Dimensions.get("window");
+const { width } = Dimensions.get("window");
 const SWIPE_THRESHOLD = 85;
 
 
 
 /**
- * ── EXPAND ARTIK EŞİKSİZ ────────────────────────────────────────────────────
+ * ── AÇ/KAPA DİYE BİR ŞEY YOK: KART HEP AÇIK ────────────────────────────────
  *
- * Kart parmağı ORANLI izliyor: `cardExpandAnim = çekilen yol / (HEADER_COVER
- * × EXPAND_DRAG_SCALE)`.
- * Duvar yok, direnç eğrisi yok, "hazır" haptic'i yok — ve tam açıldığı an mod
- * AYNI JESTİN İÇİNDE devrolduğu için parmak yukarı gitmeye devam ederse
- * hareket kesintisiz scroll'a dönüyor. Bırakış yalnız yarım kalanı tamamlıyor
- * (bkz. settleExpand).
+ * Model (istek): kart tüm ekranı kaplıyor, profil panelinin bölümleri kapağın
+ * hemen altında STATİK duruyor ve içerik ilk dokunuştan itibaren kaydırılıyor.
+ * Dikey jestin tek işi kaldı — tepedeyken aşağı çekişte Fire.
  *
- * ÖNCEKİ İKİ MODEL VE NEDEN GİTTİKLERİ:
- *   1. Rubber-band + eşik + haptic (EXPAND_PULL_RANGE 110, ease-out direnç):
- *      çekiş bir "niyet ölçme" hareketiydi, kart eşikte duvara çarpıyordu.
- *      Sorun: eşiğe varmak açılışı BAŞLATMIYOR, sadece izin veriyordu — jest
- *      ile sonuç arasında bir duraklama kalıyordu.
+ * Üst chrome'un devri (kapaktaki isim/pill bloğu, şeritteki başlık, ekranın
+ * üstündeki cam geri al/filtre) artık SCROLL KONUMUNA bağlı ve onu SwipeCard
+ * sürüyor: kapağın kendi ismi şeridin altına girince devir kendi süresiyle
+ * yapılıyor (bkz. SwipeCard > CHROME_FADE). Jest krom kanalını hiç yazmıyor.
+ *
+ * ── GİDEN DÖRT MODEL, sırayla ───────────────────────────────────────────────
+ *   1. Rubber-band + eşik + haptic: çekiş bir "niyet ölçme" hareketiydi, kart
+ *      eşikte duvara çarpıyordu. Eşiğe varmak açılışı BAŞLATMIYOR, sadece izin
+ *      veriyordu — jest ile sonuç arasında duraklama kalıyordu.
  *   2. Kısmi takip (EXPAND_FOLLOW_RATIO): kart çekişte yolun bir kısmını
  *      gidiyor, kalanı bırakışta yaya kalıyordu. Aynı duraklamanın küçüğü.
+ *   3. Tam oranlı takip (`progress = yol / (TRAVEL × SCALE)`, 110 × 1.3 ≈ 143
+ *      px): hareket akıcıydı ama BEKLEME getiriyordu — içeriğe inmek için önce
+ *      o yolu doldurmak gerekiyordu; üstelik yazılar ve cam butonlar parmakla
+ *      birlikte yarı saydam durup jest yarıda bırakılınca orada asılı
+ *      kalıyordu.
+ *   4. Niyet eşiği (8 px) + krom için ayrı süre: bekleme neredeyse kalkmıştı
+ *      ama hâlâ iki DURUM ve aralarında bir geçiş vardı — panelin yerine
+ *      oturması, scroll kapısının açılması, kapanış dalı ve Fire ile kapanışın
+ *      aynı yönde olmasından doğan kilit.
  *
- * Bölen HEADER_COVER, çünkü kartın açılırken kat ettiği yol tam olarak o
- * (bkz. animatedStyle) — parmak ne kadar giderse kart o kadar gidiyor.
+ * Dördü de aynı sorunun farklı ölçekleriydi: kartın "kapalı" bir hâli olması.
+ * O hâl kalkınca jest de, geçiş de, aralarındaki bütün kenar durumları da
+ * kalktı.
  *
- * Kartın kendi kabuğunu açıyoruz, sahte bir "panel ucu" göstermiyoruz: bir ara
- * kardeş olarak çizilen düz `surface3` bir yüzey vardı ve bıraktığın an devri
- * gerçek panel alıyordu — gri yüzey blur'lu zemine, boş şerit isme ve cam
- * kutulara dönüşüyordu. Çekişte gelen şeyle bırakışta duran şey aynı olmalı.
+ * ── BUNLARLA BİRLİKTE DÜŞEN SABİTLER ───────────────────────────────────────
+ * `EXPAND_DRAG_SCALE` (1.3) / `COLLAPSE_DRAG_SCALE` (0.8): parmağın kat etmesi
+ * gereken yolun çarpanları; kapanış bilerek daha duyarlıydı, çünkü açık kartta
+ * tepedeyken aşağı çekmek native bounce'ın yerini alıyordu.
+ * `EXPAND_TRAVEL_BASE` (110): o yolun tabanı.
+ * `MOMENTUM_HANDOFF` (0.4): bırakıştaki pan hızının scroll'a devredilen payı —
+ * hızın bir kısmı kartı AÇMAK için harcandığından tamamı devredilince hareket
+ * "fırlatma" gibi oluyordu.
+ * `OPEN_INTENT_PX` (8) ve `CHROME_FADE`: dördüncü modelin eşiği ve krom
+ * süresi. Süre SwipeCard'a taşındı — kromu artık orası sürüyor.
+ *
+ * Scroll baştan native: yolu da savrulmayı da ScrollView'ın kendisi yapıyor.
  */
 
 /**
- * Parmağın kartı tam açmak için kat etmesi gereken yolun, kartın kat ettiği
- * yola oranı.
+ * ── KAPANIŞIN AYRI ÇEKİŞ ÖLÇEĞİ (COLLAPSE_DRAG_SCALE) KALDIRILDI ──────────
  *
- * 1 iken hareket birebirdi ve açılış fazla kolay tetikleniyordu; 2'ye
- * çıkarıldı ve o da fazla geldi: kart parmağın o kadar gerisinde kalıyordu ki
- * hafif bir kaydırmada hiç kıpırdamıyor, "ya kapalı ya açık" gibi
- * davranıyordu. 1.3 ikisinin arası — kısmi açılma görünür kalıyor ama kartı
- * yolun yarısına götürmek yine kasıtlı bir hareket istiyor.
- *
- * Kartın GÖRSEL yolu değişmiyor (o hâlâ HEADER_COVER); değişen yalnız o yolu
- * doldurmak için gereken parmak mesafesi.
- */
-const EXPAND_DRAG_SCALE = 1.3;
-
-/**
- * Bırakıştaki pan hızının ne kadarının scroll'a devredileceği.
- *
- * Ham hız aktarıldığında hareket doğal bir scroll gibi değil, fırlatma gibi
- * oluyordu: hızlı bir flick içeriği ortalara kadar götürüyordu. Sebebi, o
- * hızın bir kısmının kartı AÇMAK için harcanmış olması — parmak kartı açacak
- * kadar hızlı gitti, kalanı scroll'un payı.
- *
- * Sönüm katsayısına dokunma; orası iOS'un normali. Momentum uzun/kısa
- * geliyorsa ayarlanacak yer burası.
- */
-const MOMENTUM_HANDOFF = 0.4;
-
-/**
- * Aynı ölçeğin KAPANIŞ tarafı — bilerek daha küçük (yani daha duyarlı).
- *
- * Açık kartta scroll tepedeyken aşağı çekmek native bounce'ın yerini alıyor:
- * ScrollView yaylanmıyor, onun yerine kart kapanmaya başlıyor. Açılışın
- * ölçeğiyle (2) sürüldüğünde o hareket neredeyse görünmüyordu — parmak
- * bounce kadar yol alıyor ama kart kıpırdamıyor, "tepede takıldı" hissi
+ * 0.8'di: açılışın oranlı modelinde kapanış bilerek daha duyarlı sürülüyordu,
+ * çünkü açık kartta tepedeyken aşağı çekmek native bounce'ın yerini alıyor ve
+ * açılışla aynı ölçekte kart neredeyse kıpırdamıyor, "tepede takıldı" hissi
  * veriyordu.
  *
- * 1 olması kapanışı kolaylaştırmıyor: karar hâlâ yolun yarısında
- * (settleExpand). Değişen yalnız o yarıya kadar olan hareketin görünürlüğü —
- * eşiği geçmeden bırakılırsa kart yayla geri açılıyor, yani bounce gibi
- * davranıyor.
+ * Oranlı model gitti (bkz. yukarısı): iki yön de aynı NİYET eşiğini
+ * (OPEN_INTENT_PX) kullanıyor, ölçeklenecek bir yol kalmadı.
  */
-const COLLAPSE_DRAG_SCALE = 0.8;
 
 /**
  * ── KAPANIŞTA EK `ty` PAYI YOK ──────────────────────────────────────────────
@@ -167,12 +146,10 @@ const EXIT_DURATION = 180;
 const FADE_IN_DURATION = 100;
 const FADE_OUT_DURATION = 350;
 const EXIT_DISTANCE = width * 1.2;
-/**
- * Fire'ın YUKARI uçuşu — yalnız eşleşmeyle bitecek dalda (bkz.
- * runFire). Kartın üst kenarı zaten ekranın tepesine yakın, yani bir ekran
- * boyu onu fazlasıyla dışarı taşıyor; yatay çıkıştaki pay burada da var.
- */
-const EXIT_DISTANCE_Y = height * 1.1;
+// ⚠️ Burada bir zamanlar `EXIT_DISTANCE_Y` (Fire'ın yukarı uçuşu) vardı ve
+// KALDIRILDI (2026-10-06): Fire artık hiçbir dalda kartı fırlatmıyor — ne
+// eşleşmeyen dalda (alev süpürmesi örtüyor) ne eşleşmeli dalda (kutlama
+// MatchModal'ın). Bkz. runFire.
 
 export type SwipeDirection = "left" | "right" | "up";
 
@@ -221,6 +198,8 @@ interface SwipeWrapperProps {
   /** Kart altındaki moderasyon ikonları — VERİLMEZSE hiç çizilmez. */
   onReport?: (profile: PotentialMatch) => void;
   onBlock?: (profile: PotentialMatch) => void;
+  /** Kapağın sağ alt kolonundaki "üç nokta" — seçenekler sheet'ini ekran açıyor. */
+  onMenu?: (profile: PotentialMatch) => void;
   /** Not kutuları — VERİLMEZSE hiç çizilmez (bkz. SwipeCard.onNote). */
   onNote?: (profile: PotentialMatch, target: NoteTarget) => void;
 }
@@ -244,43 +223,25 @@ function SwipeWrapper({
   superLikesRemaining,
   onReport,
   onBlock,
+  onMenu,
   onNote,
 }: SwipeWrapperProps) {
   useRenderCount("SwipeWrapper");
-  const insets = useSafeAreaInsets();
-  // Expanded'ken kart EKRANIN EN TEPESİNE çıkıp orada kalsın (kapatılana
-  // kadar): header şeridi tamamen örtülür, kartın üst kenarı ekranın 0'ına
-  // oturur — durum çubuğu artık kapak fotoğrafının üstünde durur. Okunurluğu
-  // fotonun üstündeki koyu blur rampası taşıyor (bkz. SwipeCard'daki "Top Blur
-  // Gradient Overlay", 230px).
+  // Kartın açılırken kalktığı mesafe — ARTIK SIFIR, çünkü kart kapalıyken de
+  // tüm ekranı kaplıyor (gerekçenin tamamı + tarihçe:
+  // DISCOVER_CARD_EXPAND_LIFT). Sabit yine de okunuyor: kutunun `bottom`u ve
+  // açılış transform'u onunla türetilmiş kalsın, pay geri istenirse tek sayı
+  // dönsün.
   //
-  // Hesap: kart container'ının tepesi ekranın tepesinden insets.top (durum
-  // çubuğu) + header satırı + container paddingTop kadar aşağıda (bkz.
-  // DiscoverScreen) — lift o farkın tamamı. Son iki sayı ortak dosyadan
-  // okunuyor, burada tekrar yazma (bkz. discoverHeaderMetrics).
-  //
-  // KARTIN LİFT'İ SABİT, ÜST CHROME'U KÜÇÜK BİR PAY GERİ ALIR: üst şerit
-  // (sağ üstte Fire, solda isim satırı) diyagonalin biraz
-  // altına iniyor — ne durum çubuğuna girsin ne de köşeden kopsun
-  // (bkz. SwipeCard > EXPANDED_CORNER_DROP). Buradaki lift'i o pay için
-  // DEĞİŞTİRME: kabuk tepeye kadar gitmeye devam etmeli.
-  //
-  // TARİHÇE: header satırı + 1 - LOGO_INK_CENTER_Y (≈28.75) idi — kartın üst kenarı
-  // logonun görünür dikey merkezinde duruyor, header'ın üst yarısı açıkta
-  // kalıyordu. Ondan önce 51 (header tam örtülü, kart safe-area'nın tepesinde),
-  // en başta 25 (logonun altında kalıyordu). cardExpandAnim'e bağlı: expand
-  // oranıyla yukarı biner, collapse'de (gesture/chevron/cam buton) senkron
-  // geri iner.
-  const HEADER_COVER =
-    insets.top + DISCOVER_HEADER_HEIGHT + DISCOVER_CARD_TOP_GAP;
+  // ⚠️ JESTİN YOLUYLA KARIŞTIRMA: parmağın kat etmesi gereken mesafe bundan
+  // BAĞIMSIZ: karar bir YOL değil bir NİYET eşiği (bkz. OPEN_INTENT_PX).
+  const HEADER_COVER = DISCOVER_CARD_EXPAND_LIFT;
 
-  /**
-   * Kapalı kartın tab bar'a bıraktığı dolgu (bkz. DiscoverScreen).
-   *
-   * Açılışta kabuk bu dolgunun içine de girip ekranın dibine iniyor; kartın
-   * dibi ile ekranın dibi arasındaki o bant panelin belireceği alan.
-   */
-  const tabBarInset = discoverTabBarInset(insets.bottom);
+  // TAB BAR PAYI BURADAN GİTTİ. Kabuk bir dönem `-(HEADER_COVER + tabBarInset)`
+  // ile ekranın dibinin altına taşıyordu (kap bar'a pay bırakıyor, kutu o payın
+  // içine giriyordu). Kap tüm ekrana açılınca kabuğun taşacağı bir yer kalmadı;
+  // bar'ın üstünde durması gereken tek şey kapağın alt bandındaki chrome ve o
+  // payı kart kendi içinde okuyor (SwipeCard > coverBottomInset).
   const tx = useSharedValue(0);
   const ty = useSharedValue(0);
   const scrollY = useSharedValue(0);
@@ -303,213 +264,46 @@ function SwipeWrapper({
   const pullActive = useSharedValue(0);
   // Threshold geçildiğinde haptic gate (gesture başına 1 kez patlasın).
   const fireReady = useSharedValue(false);
-  // Expand state — sadece top kart için. Pan threshold geçince true olur, ScrollView
-  // SwipeCard içinde scrollEnabled={expanded} ile native scroll'a açılır.
-  //
-  // expandedSV KANONİK, React `expanded` onun aynası — tersi değil. Eskiden SV
-  // bir useEffect ile React state'inden besleniyordu: runOnJS → render → effect
-  // zinciri en az bir frame (ağır kartta birkaç frame) sürüyor ve o pencerede
-  // başlayan yeni bir pan ESKİ değeri okuyup yanlış moda giriyordu:
-  //   expand → hemen pull-down  ⇒ CARD MODE dalı, cardExpandAnim anında 0,
-  //   ama React `expanded` true kaldığı için ScrollView açık kalıyor:
-  //   görsel collapsed + kart scroll'lanabilir + scrollY>0 olunca dikey pan
-  //   tamamen ölüyor = kilitlenmiş bug durumu.
-  // Bu yüzden SV artık karar anında, worklet'in İÇİNDE yazılıyor.
-  const [expanded, setExpanded] = useState(false);
-  const expandedSV = useSharedValue(false);
-  const applyExpanded = React.useCallback((next: boolean) => {
-    setExpanded(next);
-  }, []);
-  const commitExpanded = React.useCallback(
-    (next: boolean) => {
-      "worklet";
-      if (expandedSV.value === next) return;
-      expandedSV.value = next;
-      // Collapse'de scroll gate'ini de temizle: scrollY>0 kalırsa card mode'daki
-      // pull-up expand kalıcı olarak early-return'e düşüyor (BounceScrollView de
-      // native offset'i 0'a çeker, iki taraf tutarlı olsun).
-      if (!next) scrollY.value = 0;
-      runOnJS(applyExpanded)(next);
-    },
-    [applyExpanded, expandedSV, scrollY],
-  );
-
   /**
-   * YAYLA kapanış — React aynası animasyonun SONUNA bırakılıyor.
+   * ── AÇIK/KAPALI DURUMU KALDIRILDI: ÜSTTEKİ KART HEP AÇIK ──────────────────
    *
-   * Kapanış açılıştan farklı takılıyordu ve sebebi buydu: `commitExpanded`
-   * `setExpanded(false)`i ANINDA çağırıyor, yani yayın ilk karesinde SwipeCard
-   * (ağır bir ağaç) baştan render ediliyor, BounceScrollView'ın collapse
-   * effect'i koşuyor, ScrollView kapanıyor. Aynı karede üç layout animasyonu
-   * da sürüyor (kartın `bottom`u, panelin `marginTop`u, zeminin kırpma kutusu)
-   * — JS thread'deki o iş, yayın ilk karelerini yiyordu.
+   * Burada bir durum makinesi vardı: `expanded` React state'i, onun kanonik
+   * worklet aynası `expandedSV`, `commitExpanded` / `openCard` / `collapseCard`
+   * ve jestin iki yönü. Kart kapalı doğuyor, yukarı çekilince açılıyor, aşağı
+   * çekilince kapanıyordu.
    *
-   * Açılışta bu yaşanmıyor, çünkü orada React güncellemesi (kart tam açıldığı
-   * an) ile yay (bırakış) AYNI KAREYE düşmüyor.
+   * HEPSİ GİTTİ (istek): kart zaten tüm ekranı kaplıyor, panel hemen altında
+   * ve içerik ilk dokunuşta kaydırılabiliyor. Açılacak bir şey yok — "açık"
+   * demek artık sadece "bu kart destenin üstünde" demek.
    *
-   * Shared value hemen yazılıyor, yalnız aynası bekliyor: jest bir sonraki
-   * karede card mode'a girebilmeli. Bu ikisinin ayrışması KISA bir pencerede
-   * güvenli — o pencerede ScrollView açık kalıyor ama scrollY zaten 0 (kapanış
-   * hep tepeden başlıyor), yani pan'in `scrollY > 0` kapısı kilitlenmiyor.
+   * Bunun düşürdükleri (hepsinin gerekçesi kendi yerinde yazılıydı):
+   *   • `drivingScroll` / `driveOffset` — scroll'u jestin ELLE sürmesi. iOS
+   *     `scrollEnabled` sonradan açılan bir ScrollView'a devam eden dokunuşu
+   *     devretmiyordu; scroll baştan açık olunca o sorunun konusu kalmadı.
+   *   • `collapseTakeover` — aynı jestte açılıştan kapanışa geçişin
+   *     `scrollY`nin bir-iki kare gecikmesine takılması.
+   *   • `fireLocked` — kapanış ile Fire'ın ikisi de aşağı çekiş olduğu için
+   *     kapanır kapanmaz Fire'ın devralması.
+   *   • `topHitSpeed` — scroll momentumla tepeye çarpınca kartı kapatma
+   *     (ve eşik altındaki çarpmalarda "az kapandı" yaylanması).
+   *   • `settleExpand` — bırakışta yarım kalanı tamamlama + momentum devri.
    *
-   * Callback'teki `!expandedSV.value` kontrolü şart: yay biterken kullanıcı
-   * kartı yeniden açmış olabilir, o zaman ayna güncellenmemeli.
+   * Geriye kalan dikey jest TEK İŞ yapıyor: tepedeyken aşağı çekişte Fire.
    */
-  const collapseWithSpring = React.useCallback(
-    () => {
-      "worklet";
-      expandedSV.value = false;
-      scrollY.value = 0;
-      ty.value = withSpring(0, EXPAND_SPRING);
-      cardChromeAnim.value = withSpring(0, EXPAND_SPRING);
-      cardExpandAnim.value = withSpring(0, EXPAND_SPRING, (finished) => {
-        if (finished && !expandedSV.value) runOnJS(applyExpanded)(false);
-      });
-    },
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-    [applyExpanded, expandedSV, scrollY],
-  );
+  const expanded = isTopCard;
   // Native scroll gesture — pan ile simultaneous çalışsın diye SwipeCard içindeki
   // ScrollView'a uygulanır. Aynı obje referansı pan ve ScrollView arasında paylaşılır.
   const nativeScrollGesture = React.useMemo(() => Gesture.Native(), []);
 
   /**
-   * Kartın scroll'una yazma kapısı ve "scroll'u BU JEST sürüyor" bayrağı.
+   * Kartın scroll'una erişim — `scrollTo` ve BounceScrollView'ın ref'i.
    *
-   * Kart tam açıldığında ScrollView etkinleşiyor ama iOS devam eden bir
-   * dokunuşu UIScrollView'a DEVRETMİYOR: `scrollEnabled` açılmadan önce
-   * başlamış bir parmak hareketi scroll'u sürmüyor, kullanıcının parmağını
-   * kaldırıp yeniden sürmesi gerekiyordu. Açılışın hemen ardından hareket
-   * ölüyordu.
-   *
-   * Çözüm, taşan mesafeyi scroll'a ELLE yazmak. Bayrak şart, çünkü scroll
-   * pozisyonu 0'ı geçtiği anda expanded dalının "scroll'u native handle ediyor"
-   * erken dönüşü devreye girip bizim sürüşümüzü ilk karede kesiyordu.
+   * Yanında bir dizi bayrak daha vardı (drivingScroll · driveOffset ·
+   * scrollMax · collapseTakeover · fireLocked · topHitSpeed) ve hepsi aç/kapa
+   * durum makinesine aitti; makine kalkınca düştüler — listesi ve tek tek
+   * gerekçeleri yukarıda, `expanded`in notunda.
    */
   const scrollRef = useAnimatedRef<Animated.ScrollView>();
-  const drivingScroll = useSharedValue(false);
-
-  /**
-   * Aynı jestte açılıştan KAPANIŞA geçildi.
-   *
-   * Parmak kaldırılmadan kart açılıp hemen geri kapatılmaya çalışıldığında kart
-   * tepede takılıyordu: açılışın sonunda scroll'u biz sürüyoruz (drivingScroll)
-   * ve parmak aşağı dönünce onu 0'a geri sarıyoruz, ama `scrollY` native
-   * event'ten geldiği için bir-iki kare geriden geliyor. O karelerde expanded
-   * dalının "scroll sürüyor" kapısı devreye girip `dragOffsetY`yi her frame
-   * yeniliyor, yani kapanış için gereken delta hiç birikmiyordu — kullanıcının
-   * parmağını kaldırıp yeniden sürmesi gerekiyordu.
-   *
-   * Bayrak o kapıyı bu jest için kapatıyor: scroll'u zaten biz tepeye
-   * getirdik, native değerin yetişmesini beklemeye gerek yok.
-   */
-  const collapseTakeover = useSharedValue(false);
-
-  /**
-   * Bu jest kartı KAPATMAKLA bitti — Fire'a geçmesin.
-   *
-   * Kapanış aşağı doğru bir çekiş, Fire de öyle: parmak kaldırılmadan
-   * devam edildiğinde kart kapanır kapanmaz Fire jesti devralıyor ve
-   * kullanıcı istemeden o animasyona giriyordu. İki hareket aynı yönde olduğu
-   * için ayıracak tek doğal sınır parmağın kalkması.
-   *
-   * Yalnız bu yönde geçerli: açılış tamamlandığında scroll'a devretmek
-   * isteniyor (bkz. drivingScroll), orada kilit yok.
-   */
-  const fireLocked = useSharedValue(false);
-
-  /**
-   * Sürdüğümüz scroll konumu ve içeriğin alt sınırı.
-   *
-   * Konum ayrı bir shared value, çünkü bırakışta MOMENTUM gerekiyor: parmak
-   * kalkınca `withDecay` bu değeri sürmeye devam ediyor ve aşağıdaki reaction
-   * her karede scroll'a yazıyor. Doğrudan `scrollTo` çağırsaydık hareket
-   * parmakla birlikte bıçak gibi kesilirdi — native scroll'un yaptığı
-   * savrulma olmazdı.
-   *
-   * Sınır (scrollMax) kartın kendi scroll event'inden geliyor: `withDecay`
-   * clamp'siz bırakılsa içerik biterken durmaz, ScrollView'ı bounce alanının
-   * ötesine iterdi.
-   */
-  const driveOffset = useSharedValue(0);
-  const scrollMax = useSharedValue(0);
-
-  /**
-   * Scroll momentumla tepeye çarptı — kart kapanıyor.
-   *
-   * Açık kartta aşağı doğru hızlı bir flick, içeriği tepeye getirip orada
-   * ölüyordu; hareketin devamı yoktu. Artık aynı savrulma kartı kapalı hâline
-   * götürüyor: scroll biter, kapanış onun momentumunu devralır.
-   *
-   * Eskiden bu ana bağlı olan şey kapak fotoğrafına verilen bir ZOOM darbesiydi
-   * (bkz. SwipeCard > BounceScrollView'daki top-hit ölçümü). Ölçüm aynı yerde
-   * duruyor, yalnız sonucu değişti.
-   *
-   * Eşik var, çünkü tepeye YAVAŞ oturan her scroll kartı kapatmamalı — parmakla
-   * sürüklenip tepede bırakılan içerik açık kalmaya devam etmeli.
-   */
-  const topHitSpeed = useSharedValue(0);
-  // px/frame. 6 → 16 → 30 → 55: scroll ederken tepeye çarpmak kartı
-  // kapatmamalı; o çarpma çoğu zaman "içeriğin başına döndüm" demek, "kartı
-  // kapat" değil. 55 sıradan bir geri sarmanın çok üstünde, yani momentumla
-  // kapanmak neredeyse yalnız kasıtlı bir fırlatmaya kalıyor.
-  //
-  // Altındaki hızlar boşa düşmüyor: yaylanmayla karşılanıyorlar (aşağıda) ve
-  // dip miktarı bu sayıya ORANLI olduğu için eşik yükseldikçe aynı hızdaki
-  // yaylanma da küçülüyor — kart genel olarak sertleşiyor.
-  const TOP_HIT_COLLAPSE_SPEED = 55;
-  // Eşiğin altında kalan çarpmalarda kartın geri saracağı EN FAZLA açılma
-  // oranı. Hızla orantılı: yavaş oturan scroll neredeyse hiç, eşiğe yakın olan
-  // belirgin bir yaylanma yapıyor.
-  const TOP_HIT_DIP_RATIO = 0.22;
-
-  useAnimatedReaction(
-    () => topHitSpeed.value,
-    (speed) => {
-      if (!isTopCard || speed <= 0) return;
-      topHitSpeed.value = 0;
-      if (!expandedSV.value) return;
-      if (speed < TOP_HIT_COLLAPSE_SPEED) {
-        // Eşiğin ALTINDA: kart kapanmıyor ama hareket de duvara çarpmış gibi
-        // bitmesin — çarpma hızıyla orantılı bir "az kapandı, geri açıldı"
-        // yaylanması. Scroll tepeye yumuşak oturduğunda hiçbir şey olmuyordu,
-        // hızlı geldiğinde ise doğrudan kapanıyordu; aradaki bant boştu.
-        //
-        // AÇILMA ORANININ KENDİSİ geri sarılıyor, yalnız kartın konumu değil:
-        // bir tur `ty` ile yapılmıştı ve kart aşağı zıplıyor ama kapanışın geri
-        // kalanı olmuyordu — isim/pill bloğu gelmiyor, Fire cam
-        // butondan serbest kalbe dönmüyor, kapaktaki rampalar belirmiyordu.
-        // Yaylanma "az kapandı" gibi okunacaksa kapanışın bütün katmanları o
-        // kadar geri gitmeli.
-        const dip = (TOP_HIT_DIP_RATIO * speed) / TOP_HIT_COLLAPSE_SPEED;
-        const dipCfg = {
-          duration: 90,
-          easing: Easing.out(Easing.quad),
-        };
-        cardExpandAnim.value = withSequence(
-          withTiming(1 - dip, dipCfg),
-          withSpring(1, EXPAND_SPRING),
-        );
-        cardChromeAnim.value = withSequence(
-          withTiming(1 - dip, dipCfg),
-          withSpring(1, EXPAND_SPRING),
-        );
-        return;
-      }
-      collapseWithSpring();
-    },
-    [isTopCard],
-  );
-
-  useAnimatedReaction(
-    () => driveOffset.value,
-    (v) => {
-      // Yalnız biz sürerken: bayrak inince (yeni jest başladı, ya da momentum
-      // bitti) scroll'un sahibi yine native taraf.
-      if (!drivingScroll.value) return;
-      scrollTo(scrollRef, 0, v, false);
-    },
-  );
 
   const triggerHaptic = () => {
     Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
@@ -584,75 +378,17 @@ function SwipeWrapper({
    * var (buton × 2, jest × 2) ve dördü de buradan geçiyor — biri unutulursa
    * kart sönük isimle uçar, sonrakinin krom devri yarım doğardı.
    */
-  /**
-   * Parmak kalktı — kart nerede kaldıysa en yakın uca yerleştir.
+  /*
+   * ── `settleExpand` KALDIRILDI ────────────────────────────────────────────
    *
-   * Çekişin KENDİSİNDE eşik yok: kart parmağı sürekli izliyor, duvara çarpmıyor,
-   * haptic patlamıyor. Karar yalnız BIRAKIŞTA veriliyor ve o da bir eşikten
-   * çok bir "yarım kalanı tamamla" hareketi: yarıdan fazla açıksa açılır.
+   * Parmak kalkınca çalışan bırakış işleriydi: kart oranlı açıldığı dönemde
+   * "yarım kalanı tamamla" (yarıdan fazla açıksa aç, hız da sayılır —
+   * SETTLE_VELOCITY 1500 px/sn), sonrasında yalnız momentumu scroll'a devretme
+   * (MOMENTUM_HANDOFF). İkisi de aç/kapa durumuna aitti.
    *
-   * Hız da sayılıyor: yukarı fırlatıp bırakınca kart daha yolun başındayken de
-   * açılıyor, aşağı fırlatınca yolun sonundayken de kapanıyor. Eşik tek başına
-   * kalsaydı hızlı jestler "az çektin" diye geri düşerdi.
+   * Scroll artık baştan native: hem savrulmayı hem momentumu ScrollView'ın
+   * kendisi yapıyor, devredilecek bir şey yok.
    */
-  // Momentumla karar eşiği (px/sn). 600 → 1500: o değerde sıradan bir
-  // kaydırma bile "flick" sayılıyor, kart farkında olmadan açılıp
-  // kapanıyordu. Bir tur 320'ye de indirilmişti (açılış kolaylaşsın diye) ve
-  // geri alındı — asıl eksik eşik değil momentumun devamıydı (bkz.
-  // settleExpand).
-  //
-  // Eşik yükseldikçe karar konuma kayıyor: yavaş sürüklenen kart yine yolun
-  // yarısını geçtiyse açılıyor, yani hareket ölmüyor, yalnız kazara
-  // tetiklenmiyor.
-  const SETTLE_VELOCITY = 1500;
-  const settleExpand = (velocityY: number) => {
-    "worklet";
-    const open =
-      velocityY < -SETTLE_VELOCITY
-        ? true
-        : velocityY > SETTLE_VELOCITY
-          ? false
-          : cardExpandAnim.value >= 0.5;
-    if (!open) {
-      // Kapanışta React aynası yayın sonuna bırakılıyor (bkz.
-      // collapseWithSpring) — açılışta böyle bir sorun yok, orada ayna zaten
-      // jest sırasında, yaydan ÖNCE güncellenmiş oluyor.
-      collapseWithSpring();
-      return;
-    }
-    ty.value = withSpring(0, EXPAND_SPRING);
-    cardExpandAnim.value = withSpring(1, EXPAND_SPRING);
-    cardChromeAnim.value = withSpring(1, EXPAND_SPRING);
-    commitExpanded(true);
-
-    // Bırakıştaki momentum scroll'a devrediliyor: yukarı fırlatıp bırakınca
-    // kart açılıyor ve hareket orada ölmüyor.
-    //
-    // Yalnız HIZLA açıldıysa — konumla açılan (yavaş sürüklenip bırakılan) bir
-    // kartta devam edecek momentum yok.
-    if (velocityY >= -SETTLE_VELOCITY) return;
-    drivingScroll.value = true;
-    driveOffset.value = 0;
-    driveOffset.value = withDecay(
-      {
-        // HAM PAN HIZI DEĞİL: o hızın bir kısmı kartı AÇMAK için harcandı,
-        // tamamı scroll'a geçince hareket "fırlatma" gibi oluyordu — hızlı bir
-        // flick içeriği ortalara kadar götürüp orada duruyordu. Kalan pay
-        // devrediliyor.
-        velocity: -velocityY * MOMENTUM_HANDOFF,
-        // Sınır henüz ölçülmemiş olabilir (kart yeni açılıyor, scroll event'i
-        // gelmedi): o zaman bir ekran boyuna izin ver, ScrollView fazlasını
-        // zaten göstermez.
-        clamp: [0, Math.max(scrollMax.value, height)],
-        // iOS'un normal scroll sönümü — "yavaşlaması doğal değil"in çaresi
-        // burayı sertleştirmek değil, yukarıdaki hızı doğru vermek.
-        deceleration: 0.998,
-      },
-      () => {
-        drivingScroll.value = false;
-      },
-    );
-  };
 
   const unwindForExit = () => {
     "worklet";
@@ -678,9 +414,11 @@ function SwipeWrapper({
    *
    * ⚠️ EŞLEŞMEYLE BİTECEKSE SÜPÜRME YOK (bkz. flameSweep'teki kural): MatchModal
    * saniyesinde aynı ateşin perde hâliyle açılıyor, ikisi arka arkaya oynayınca
-   * tek bir Fire'a iki alev düşüyordu. O dalda kart, eski davranışın
-   * kendisiyle yukarı fırlıyor ve deste ÖRTÜSÜZ ilerliyor — ortada saklanacak
-   * bir değişim yok, kartın gidişi hareketin kendisi.
+   * tek bir Fire'a iki alev düşüyordu. Ama o dalda da KART UÇMUYOR
+   * (2026-10-06): yerinde kalıyor, deste ÖRTÜSÜZ ilerliyor ve kutlamayı
+   * MatchModal yapıyor. Uçuş kaldırıldı çünkü tek bir basış iki harekete
+   * bölünüyordu — kart tepeden çıkıyor, hemen ardından perde aşağıdan
+   * yükseliyordu.
    */
   const flameCoverUnsub = React.useRef<(() => void) | null>(null);
 
@@ -698,29 +436,30 @@ function SwipeWrapper({
    */
   const collapseUnderCover = () => {
     resetCardExpandState();
-    expandedSV.value = false;
     scrollY.value = 0;
-    setExpanded(false);
   };
 
   const runFire = () => {
     if (flameCoverUnsub.current) return;
     if (willMatch?.(profile)) {
-      // Bu dalda örtü yok: kart AÇIKTA uçuyor, o yüzden açık panel uçuşla
-      // birlikte kapanmalı (commitFire artık kapatmıyor). Süre uçuşun
-      // kendisiyle aynı ölçekte — kart ekranı terk ederken tam boy kalmasın.
-      expandedSV.value = false;
-      scrollY.value = 0;
-      setExpanded(false);
-      if (cardExpandAnim.value > 0)
-        cardExpandAnim.value = withTiming(0, { duration: 300 });
-      if (cardChromeAnim.value > 0)
-        cardChromeAnim.value = withTiming(0, { duration: 300 });
-      // Swipe uçuşun SONUNDA işleniyor (yana kaydırmadaki kalıbın aynısı):
-      // önce çağrılsaydı kart aynı karede unmount olur, uçuş hiç görünmezdi.
-      ty.value = withTiming(-EXIT_DISTANCE_Y, exitConfig, (finished) => {
-        if (finished) runOnJS(onSwipe)("up", profile.userId, false);
-      });
+      // ⚠️ KART UÇMUYOR (2026-10-06). Burada bir zamanlar yukarı doğru bir
+      // çıkış uçuşu vardı (EXIT_DISTANCE_Y) ve KALDIRILDI: tek bir Fire iki
+      // ayrı harekete bölünüyordu — kart ekranın tepesinden çıkıyor, hemen
+      // ardından MatchModal'ın alev perdesi aşağıdan yükseliyordu. Eşleşme
+      // kutlaması MatchModal'ın (bkz. flameSweep'teki kural); kart Fire'ın
+      // eşleşmeyen dalında olduğu gibi YERİNDE kalıyor, deste de o anda
+      // ilerliyor. Kullanıcının gördüğü tek hareket kutlama.
+      //
+      // `covered: false` — ortada ekranı kaplayan bir kutlama YOK (perde ağ
+      // yanıtından sonra geliyor), yani yeni top kart giriş animasyonunu
+      // oynamalı; yana kaydırmadaki değişimin aynısı.
+      //
+      // collapseUnderCover: açık panel burada animasyonla kapanmıyor, çünkü
+      // kart bu karede desteden düşüyor — asıl iş expand shared value'larını
+      // deste ilerlemeden ÖNCE sıfırlamak (yoksa yeni top kart donmuş bir
+      // expand oranıyla doğuyor).
+      collapseUnderCover();
+      onSwipe("up", profile.userId, false);
       return;
     }
     flameCoverUnsub.current = runFlameSweep(() => {
@@ -767,20 +506,15 @@ function SwipeWrapper({
       return;
     }
     // Kart tepeden düştü. Deste yalnız ileri gitmiyor: rewind currentIndex'i
-    // geri alıp o anki top kartı ALT kart yapıyor. Expand state'i üstünde
-    // kalırsa tekrar top olduğunda cardExpandAnim (global) 0'a resetlenmiş
-    // olur ama `expanded` true kalır → görsel collapsed, ScrollView açık,
-    // dikey pan EXPANDED MODE'a girer = aynı desync.
-    expandedSV.value = false;
+    // geri alıp o anki top kartı ALT kart yapıyor — scroll konumu üstünde
+    // kalırsa tekrar top olduğunda içerik ortasından doğar.
     scrollY.value = 0;
-    setExpanded(false);
   }, [
     isTopCard,
     dragX,
     overlayDragX,
     overlayOpacity,
     buttonDragX,
-    expandedSV,
     scrollY,
     firePending,
   ]);
@@ -810,12 +544,6 @@ function SwipeWrapper({
     ty.value = withSpring(0, cfg);
     fireProgress.value = withSpring(0);
     cardPullProgress.value = withSpring(0);
-    if (!expandedSV.value) {
-      if (cardExpandAnim.value > 0)
-        cardExpandAnim.value = withTiming(0, { duration: 300 });
-      if (cardChromeAnim.value > 0)
-        cardChromeAnim.value = withTiming(0, { duration: 300 });
-    }
     runOnJS(runFire)();
   };
 
@@ -914,19 +642,9 @@ function SwipeWrapper({
     fireProgress.value = withSpring(0);
     cardPullProgress.value = withSpring(0);
     fireReady.value = false;
-    // Expand durumu KORUNUYOR: pinch çoğunlukla expanded panelde yapılıyor,
-    // yarım kalmış bir collapse varsa bulunduğu uca geri otursun. Yay
-    // expand'in ortak ayarı — bounce'suz (bkz. EXPAND_SPRING); yukarıdaki
-    // `cfg` swipe'ın geri dönüşü için, orada yaylanma isteniyor.
-    cardExpandAnim.value = withSpring(
-      expandedSV.value ? 1 : 0,
-      EXPAND_SPRING,
-    );
-    // Krom aynı uca: kart açıksa devrolmuş (cam buton), kapalıysa yerinde.
-    cardChromeAnim.value = withSpring(
-      expandedSV.value ? 1 : 0,
-      EXPAND_SPRING,
-    );
+    // KROMA DOKUNULMUYOR: onu scroll konumu sürüyor (bkz. SwipeCard >
+    // chrome devri) ve pinch scroll'u oynatmıyor. Bir dönem burada aç/kapa
+    // durumuna göre iki kanal birden geri sarılıyordu.
     runOnJS(resetSuperHaptics)();
   };
 
@@ -1058,101 +776,13 @@ function SwipeWrapper({
       // Yeni jest: scroll'u yine native sürsün. Bayrak ancak açılış bu jestin
       // içinde tamamlanırsa kalkıyor. Süren bir momentum varsa da burada
       // kesiliyor — parmak ekrana değdiğinde savrulma durmalı.
-      drivingScroll.value = false;
-      collapseTakeover.value = false;
-      fireLocked.value = false;
-      cancelAnimation(driveOffset);
+      cancelAnimation(ty);
     })
     .onUpdate((event) => {
-      // Foto büyütülüyor → ne collapse ne fire (bkz. cancelDragForPinch).
+      // Foto büyütülüyor → Fire yok (bkz. cancelDragForPinch).
       if (photoPinchActive.value) return;
       // Fire verildi, alevin örtmesi bekleniyor: kart artık kilitli.
       if (firePending.value) return;
-      if (expandedSV.value) {
-        // Açılış bu jestte tamamlandı → scroll'u biz sürüyoruz (bkz.
-        // drivingScroll). Taşan mesafe doğrudan scroll konumu: parmak
-        // yukarıda kaldıkça içerik akıyor, hareket hiç durmuyor.
-        if (drivingScroll.value) {
-          const target = Math.max(
-            0,
-            dragOffsetY.value - event.translationY,
-          );
-          driveOffset.value = target; // reaction scroll'a yazıyor
-          // Parmak geri indi ve içerik tepeye oturdu: sürüşü bırak, bundan
-          // sonrası collapse jesti. Referansı da taşı ki kapanış sıfırdan
-          // başlasın.
-          if (target <= 0) {
-            // Native offset'i de KESİN olarak tepeye çek. `driveOffset`
-            // üzerinden giden reaction bu karede bayrağı inmiş görüp
-            // atlayabiliyor; içerik o zaman scroll edilmiş kalıyor ve kapanışın
-            // sonunda BounceScrollView'ın `scrollTo(0)`ı onu tek karede geri
-            // alıyordu — "içerik alta kayıyor" görüntüsü buydu.
-            scrollTo(scrollRef, 0, 0, false);
-            drivingScroll.value = false;
-            // Aynayı da hemen yaz ki bir sonraki karede kapanış deltası
-            // sıfırdan başlasın.
-            scrollY.value = 0;
-            collapseTakeover.value = true;
-            dragOffsetY.value = event.translationY;
-          }
-          return;
-        }
-        // EXPANDED MODE — sadece scrollY=0'da pull-down ile collapse.
-        // `collapseTakeover`: bu jest scroll'dan kapanışa geçtiyse native
-        // scrollY'nin yetişmesini bekleme (bkz. bayrağın notu).
-        if (scrollY.value > 0 && !collapseTakeover.value) {
-          dragOffsetY.value = event.translationY;
-          ty.value = 0;
-          return;
-        }
-        const delta = event.translationY - dragOffsetY.value;
-        if (delta > 0) {
-          // Açılışın simetriği: parmak kapatıyor, eşik/direnç yok.
-          const progress = Math.min(
-            1,
-            delta / (HEADER_COVER * COLLAPSE_DRAG_SCALE),
-          );
-          // Kartın aşağı inişini kapanma oranı taşıyor (lift azalıyor); buraya
-          // ek bir kayma KOYMA (bkz. yukarıdaki not).
-          ty.value = 0;
-          cardExpandAnim.value = 1 - progress;
-          cardChromeAnim.value = 1 - progress;
-          // Kart tamamen kapandı: modu da kapat ki parmak aşağı çekmeye devam
-          // ederse Fire'a geçebilsin (card mode dalı). Referansı da
-          // taşı — yoksa card mode `delta`yı kapanışın kat ettiği yoldan
-          // devralır ve Fire doğrudan eşikte doğar.
-          if (progress >= 1) {
-            // Kapanış anında da garanti: kart kapalıyken içerik tepede olmalı,
-            // yoksa bir sonraki açılış scroll edilmiş bir panelle doğuyor.
-            scrollTo(scrollRef, 0, 0, false);
-            commitExpanded(false);
-            // Kapanışın rubber-band payını (ty) burada bırakıyoruz: card mode
-            // Fire'ı kendi eğrisiyle sıfırdan sürüyor ve `ty`yi ilk
-            // karede 0'a yakın bir değere yazıyor. Devralınmazsa kart o karede
-            // COLLAPSE_PEEK_MAX kadar yukarı zıplıyor — "Fire
-            // animasyonuyla çakışma" olarak görünen şey buydu.
-            ty.value = 0;
-            // Aynı jest artık card mode: expanded kapısı yeniden geçerli
-            // olmalı (bkz. collapseTakeover).
-            collapseTakeover.value = false;
-            // Ama Fire'a GEÇMESİN: kapanış da Fire de aşağı
-            // çekiş, aralarındaki tek doğal sınır parmağın kalkması.
-            fireLocked.value = true;
-            dragOffsetY.value = event.translationY;
-          }
-        } else {
-          // Pull-up expanded'da: scroll handle etmeli. Yarıda bırakılmış bir
-          // collapse varsa görseli de expanded'a geri al — yoksa
-          // cardExpandAnim kısmi değerinde donuyor: panel yarı kapalı
-          // görünürken mod hâlâ expanded kalıyordu.
-          ty.value = 0;
-          if (cardExpandAnim.value < 1) {
-            cardExpandAnim.value = 1;
-            cardChromeAnim.value = 1;
-          }
-        }
-        return;
-      }
 
       // CARD MODE
       if (scrollY.value > 0) {
@@ -1170,27 +800,17 @@ function SwipeWrapper({
         // kaldırılmadan devam edildiğinde kart kapanır kapanmaz Fire
         // devralıyordu (bkz. fireLocked).
         //
-        // Kilit YALNIZ BU DAL: bir tur card mode'un tamamına konmuştu ve o
-        // zaman aynı jestte kartı tekrar AÇMAK da imkânsız hâle geliyordu —
-        // yukarı çekiş kapanışın tersi yönde, kazara tetiklenen bir hareket
-        // değil.
-        if (fireLocked.value) {
-          ty.value = 0;
-          fireProgress.value = 0;
-          cardPullProgress.value = 0;
-          return;
-        }
         const max = 100;
         const c = 0.5;
         ty.value = (delta * max * c) / (max + c * delta);
         const progress = Math.min(ty.value / FIRE_PULL_THRESHOLD, 1);
         fireProgress.value = progress;
         cardPullProgress.value = progress;
-        cardExpandAnim.value = 0;
-        // Yön değişti: aynı jest içinde önce yukarı çekilip kart kısmen
-        // açılmış olabilir. Açılışı da kromu da geri al, yoksa isim sönük
-        // kalır ve kalp yarı yolda donar.
-        cardChromeAnim.value = 0;
+        // KROM KANALINA BURADA DOKUNULMUYOR. Eskiden 0'a yazılıyordu (aynı
+        // jestte önce yukarı çekilip kart kısmen açılmış olabiliyordu); açılış
+        // diye bir şey kalmadı. Yazmak artık düzeltmiyor, YALNIZCA KIRIYOR:
+        // ham sayı atamak çalışan animasyonu iptal ediyor, yani scroll'un
+        // sürdüğü krom devri kesilip isim/pill bloğu geri sıçrıyor.
         if (progress >= 1 && !fireReady.value) {
           fireReady.value = true;
           runOnJS(resetSuperHaptics)();
@@ -1201,85 +821,37 @@ function SwipeWrapper({
           runOnJS(updateSuperHaptics)(progress);
         }
       } else if (delta < 0) {
-        // PULL-UP — expand. EŞİK YOK, DİRENÇ YOK: kart parmağı sürekli izliyor.
-        // Bölende HEADER_COVER var, çünkü kartın açılırken kat ettiği görsel
-        // yol o (bkz. animatedStyle); EXPAND_DRAG_SCALE ise parmağın o yolu
-        // doldurmak için kat etmesi gereken mesafeyi uzatıyor.
-        const progress = Math.min(
-          1,
-          -delta / (HEADER_COVER * EXPAND_DRAG_SCALE),
-        );
+        // PULL-UP — SCROLL. Burada yapacak bir şey yok: içerik ilk dokunuştan
+        // itibaren native olarak kaydırılabiliyor (scrollEnabled hep açık) ve
+        // pan onunla `simultaneousWithExternalGesture` çalışıyor. Bu dal yalnız
+        // Fire artıklarını topluyor — aynı jestte önce aşağı çekilip eşik
+        // geçilmiş olabilir, yön dönünce o niyet iptal olmalı.
         ty.value = 0;
-        cardExpandAnim.value = progress;
-        // Krom açılışla BİREBİR (bkz. yukarıdaki not): isim/pill bloğunun
-        // çekilmesi, panelin gelmesi ve fotoğrafın açılması tek hareket.
-        cardChromeAnim.value = progress;
         fireProgress.value = 0;
-        // Arkadaki kart BÜYÜMÜYOR. O büyüme "bu kart gidiyor, sıradaki geliyor"
-        // sinyali (swipe ve fire); expand'de kart gitmiyor.
         cardPullProgress.value = 0;
-        // Simetrik temizlik: önce aşağı çekip fire eşiğini geçtiyse,
-        // yukarı dönüşte o niyet iptal olmalı — yoksa expand'e bırakırken kart
-        // fire olarak uçuyordu.
         fireReady.value = false;
         runOnJS(resetSuperHaptics)();
-        // Kart tam açıldı: modu AYNI JESTİN İÇİNDE devret. ScrollView
-        // `expanded` ile açılıyor (bkz. SwipeCard) ve pan onunla simultaneous
-        // çalışıyor — parmak yukarı çekmeye devam ederse hareket kesintisiz
-        // scroll'a dönüşüyor. Bırakışı beklemek burada bir duraklama olurdu.
-        // Referans taşınıyor: parmak yön değiştirirse collapse sıfırdan
-        // başlasın, açılışın kat ettiği yolu kapanış olarak saymasın.
-        if (progress >= 1) {
-          commitExpanded(true);
-          dragOffsetY.value = event.translationY;
-          // Bundan sonrası scroll ve onu bu jest sürecek: iOS devam eden
-          // dokunuşu ScrollView'a devretmiyor (bkz. drivingScroll).
-          drivingScroll.value = true;
-        }
       } else {
+        // delta tam 0 — parmak yatay gidiyor. Fire artıkları temizleniyor;
+        // krom kanalına DOKUNULMUYOR (gerekçe bir üstteki dalda).
         ty.value = 0;
         fireProgress.value = 0;
         cardPullProgress.value = 0;
-        cardChromeAnim.value = 0;
         runOnJS(resetSuperHaptics)();
       }
     })
-    .onEnd((event) => {
+    .onEnd(() => {
       dragOffsetY.value = 0;
       if (firePending.value) return;
-      // Pinch'in parçasıydı: expand/collapse/fire kararlarının hiçbiri
-      // verilmemeli, kart bulunduğu uca geri otursun.
+      // Pinch'in parçasıydı: Fire kararı verilmemeli, kart yerine otursun.
       if (photoPinchActive.value) {
         cancelDragForPinch();
         return;
       }
 
-      if (expandedSV.value) {
-        // Scroll'u BİZ sürüyorduk: parmak kalktı ama hareket bitmedi —
-        // momentumu withDecay devralıyor, tıpkı native scroll'un savrulması
-        // gibi. Bayrak decay bitene kadar kalkmıyor, yoksa reaction ilk
-        // karede susar ve savrulma hiç görünmez.
-        if (drivingScroll.value) {
-          driveOffset.value = withDecay(
-            {
-              velocity: -event.velocityY,
-              clamp: [0, scrollMax.value],
-              deceleration: 0.998,
-            },
-            () => {
-              drivingScroll.value = false;
-            },
-          );
-          return;
-        }
-        // Native scroll sürüyordu: bu jest kartla ilgili DEĞİL, içerikle.
-        // Karar verilmemeli — aşağı doğru hızlı bir flick `settleExpand`e
-        // "kapat" diye okunurdu.
-        if (scrollY.value > 0) return;
-        // EXPANDED MODE release — kart yarı kapalı kaldıysa en yakın uca.
-        settleExpand(event.velocityY);
-        return;
-      }
+      // Scroll sürüyordu: bu jest kartla ilgili DEĞİL, içerikle. Fire kararı
+      // verilmemeli — aşağı doğru hızlı bir flick kartı uçururdu.
+      if (scrollY.value > 0) return;
 
       // CARD MODE release
       const wasReady = fireReady.value;
@@ -1297,12 +869,10 @@ function SwipeWrapper({
       } else if (wasReady) {
         commitFire();
       } else {
-        // Yukarı çekiş yarıda bırakıldı: kart nerede kaldıysa oradan en yakın
-        // uca. Fire artıkları da burada temizleniyor — aynı jest önce
-        // aşağı çekilmiş olabilir.
+        // Eşik geçilmeden bırakıldı: Fire artıkları yaylanarak geri sarılıyor.
         fireProgress.value = withSpring(0);
         cardPullProgress.value = withSpring(0);
-        settleExpand(event.velocityY);
+        ty.value = withSpring(0, EXPAND_SPRING);
       }
     })
     // `onEnd` DEĞİL: jest iptal edilirse (pinch devraldı, başka bir jest
@@ -1325,6 +895,10 @@ function SwipeWrapper({
     () => onBlock?.(profile),
     [onBlock, profile],
   );
+  const handleMenu = React.useCallback(
+    () => onMenu?.(profile),
+    [onMenu, profile],
+  );
   // Aynı köprü notlar için: SwipeCard yalnız HEDEFİ biliyor, hangi profile
   // yazıldığını burada ekliyoruz.
   const handleNote = React.useCallback(
@@ -1332,25 +906,13 @@ function SwipeWrapper({
     [onNote, profile],
   );
 
-  // "Yukarı kaydır" ipucuna dokunmakla expand/collapse toggle — jestin
-  // bırakışıyla AYNI yay (bkz. EXPAND_SPRING).
-  const handleExpandPress = React.useCallback(() => {
-    // Krom burada PANELLE BİRLİKTE yayda: jestte ikisi ayrı zamanlanıyor
-    // (krom parmakla, panel bırakışta) ama dokunmada ayıracak bir çekiş yok —
-    // tek bir hareket olmalılar. Krom yazılmazsa açık kartta isim/pill duruyor
-    // ve Fire kalbi cam butona hiç dönüşmüyor.
-    if (expandedSV.value) {
-      // Jestin bırakışıyla aynı yol: ayna yayın sonunda güncelleniyor.
-      collapseWithSpring();
-    } else {
-      ty.value = withSpring(0, EXPAND_SPRING);
-      cardExpandAnim.value = withSpring(1, EXPAND_SPRING);
-      cardChromeAnim.value = withSpring(1, EXPAND_SPRING);
-      cardPullProgress.value = withSpring(0, EXPAND_SPRING);
-      commitExpanded(true);
-    }
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [commitExpanded, collapseWithSpring]);
+  // ── DOKUNMAYLA AÇ/KAPA TOGGLE'I KALDIRILDI ────────────────────────────────
+  // `handleExpandPress` buradaydı ve SwipeCard'a `onExpandPress` olarak
+  // geçiyordu: kapağın dibindeki "yukarı kaydır" ipucuna dokunmak kartı
+  // açıp kapatıyordu. İpucu kaldırılınca (istek, bkz. SwipeCard) çağıranı
+  // kalmadı. Geri gelirse kuralı tek satır: jestle AYNI yoldan geçmeli
+  // (openCard / collapseCard) — ayrı yazılırsa dokunma ile çekiş farklı
+  // hızlarda açar.
 
   const animatedStyle = useAnimatedStyle(() => {
     const rotate = interpolate(tx.value, [-width, 0, width], [-15, 0, 15]);
@@ -1371,32 +933,27 @@ function SwipeWrapper({
       //
       // ── KUTU HİÇ BOYUT DEĞİŞTİRMİYOR, YALNIZ KAYIYOR ────────────────────
       //
-      // `bottom` SABİT ve en büyük hâlinde: kutu kapalı kartta da açık kartın
-      // boyunda, alt ucu ekranın dibinin altına taşıyor (ekran kırpıyor, orada
-      // panel bekliyor). Açılış tek bir `translateY` ile — kutu yukarı kayınca
-      // üstten HEADER_COVER kadarı açılıyor, alt kenar ekranın dibinde
-      // kalıyor.
+      // `bottom` SABİT: kutu kapalı kartta da açık kartın boyunda. Bugün ikisi
+      // aynı şey — kart kabı tüm ekran ve lift 0, yani kutu tam kabın boyunda
+      // ve taşma payı yok.
       //
-      // ÖNCE İKİSİ DE ANİMASYONLUYDU (lift transform, alt kenar `bottom`) ve
-      // birbirini götürmesi gerekiyordu; ekranda götürmüyordu: `bottom` bir
-      // layout prop'u, shadow-tree commit'iyle bir kare geriden geliyor,
-      // transform ise anında. O farkta alt kenar aşağı taşıyor, "kart alttan
-      // büyüyor" görüntüsü çıkıyordu. Sonra ikisi de layout'a alındı (`top` +
-      // `bottom`) — bu sefer de layout animasyonu jest boyunca kare
-      // atlıyordu.
+      // TAŞMA PAYI BİR DÖNEM VARDI (`-(HEADER_COVER + tabBarInset)`): kap
+      // üstte şeridin altından başlıyor, altta tab bar'a pay bırakıyordu ve
+      // kutu açılışta yukarı kayınca alt kenarın ekranın dibinde kalması
+      // gerekiyordu. Kap tüm ekrana açılınca ikisi de konusuz kaldı.
       //
-      // Kutu sabit olunca her iki sorun da kalmıyor: tek animasyon transform,
-      // üstelik `measuredCardHeight` de artık hiç değişmiyor.
+      // ANİMASYONLU YAPMA. Bir dönem alt kenar `bottom` ile sürülüyordu:
+      // `bottom` bir layout prop'u, shadow-tree commit'iyle bir kare geriden
+      // geliyor, transform ise anında — o farkta "kart alttan büyüyor"
+      // görüntüsü çıkıyordu. Sonra ikisi de layout'a alındı (`top` + `bottom`)
+      // ve bu sefer layout animasyonu jest boyunca kare atlıyordu.
       //
       // `isTopCard`A BAĞLI DEĞİL, bilerek. Alt kart bunu 0 alıyordu, yani
       // kutusu kısa doğuyordu; SwipeCard yüksekliği "en küçük ölçüm kazanır"
       // kuralıyla kilitlediği için (bkz. oradaki onLayout notu) o kısa değer
       // kart üste çıktığında da kalıyordu: fotoğraf kısa, altında boşluk,
       // panel ekranın ortasında. Kutu deste boyunca aynı olmak zorunda.
-      //
-      // Görsel bir bedeli yok: alt kart üstteki tarafından tamamen örtülü ve
-      // kutunun alt ucu zaten ekranın dışına taşıyor.
-      bottom: -(HEADER_COVER + tabBarInset),
+      bottom: -HEADER_COVER,
       transform: [
         { translateX: tx.value },
         // ty: geçici sürükleme payı (Fire peek'i, swipe bounce'ı).
@@ -1453,19 +1010,15 @@ function SwipeWrapper({
           onPass={onPass}
           onLike={onLike}
           onFire={onFire}
-          onExpandPress={handleExpandPress}
           scrollY={scrollY}
           scrollRef={scrollRef}
-          scrollMax={scrollMax}
-          topHitSpeed={topHitSpeed}
           nativeScrollGesture={nativeScrollGesture}
-          fireProgress={fireProgress}
-          pullActive={pullActive}
           isTopCard={isTopCard}
           expanded={expanded}
           superLikesRemaining={superLikesRemaining}
           onReport={onReport ? handleReport : undefined}
           onBlock={onBlock ? handleBlock : undefined}
+          onMenu={onMenu ? handleMenu : undefined}
           onNote={onNote ? handleNote : undefined}
         />
       </Animated.View>

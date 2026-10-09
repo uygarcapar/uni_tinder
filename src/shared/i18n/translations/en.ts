@@ -1317,6 +1317,9 @@ const en = {
     },
     rewind: {
       error: 'Could not rewind',
+      // VoiceOver name for the glass button in Discover's top-left — the
+      // button carries no text, only a glyph (see DiscoverHeaderGlassButton).
+      label: 'Rewind',
     },
     cityPicker: {
       title: 'Select City',
@@ -2112,9 +2115,10 @@ const en = {
       petsYes: 'Has pets',
       petsNo: 'No pets',
       bio: 'Bio',
-      // Hint under the cover photo, where the expand chevron used to be.
-      // Lowercase on purpose: it is a quiet aside, not a button label.
-      expandHint: 'swipe up to see details',
+      // `expandHint` ('swipe up to see details') WAS REMOVED: the cover no
+      // longer draws a hint — the card scrolls the moment a finger moves, so
+      // there is no gesture left to teach. (Before the text there was an
+      // expand chevron in the same spot.)
       prep: 'Prep',
       grade: 'Year {{year}}',
       premium: 'Premium',
@@ -2131,6 +2135,9 @@ const en = {
       reportAccount: 'Report this account',
       blockAccount: 'Block this account',
       activeToday: 'Active today',
+      // VoiceOver name for the glass up-arrow at the left end of Discover's
+      // sticky bar — the button carries no text, only a glyph.
+      scrollTop: 'Back to top',
       newMember: 'New here',
       // Sticky şeritteki cam butonun VoiceOver etiketi — buton yalnız ok
       // taşıyor, görünür bir adı yok.

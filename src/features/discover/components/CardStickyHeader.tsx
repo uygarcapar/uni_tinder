@@ -18,8 +18,10 @@ import SelfieVerifiedBadge, {
   selfieBadgeSize,
 } from "@/features/profile/components/SelfieVerifiedBadge";
 import ActivityStatus from "./ActivityStatus";
-import { colors as theme, veil } from "@/shared/theme/colors";
-import { chromeBlurTint } from "@/shared/theme/blur";
+// `veil` + `chromeBlurTint` KALDIRILDI: bandın önizleme dalı uygulamanın chrome
+// reçetesini çiziyordu, artık iki bağlam da kapağın rampasını okuyor (gerekçe
+// bandın çizildiği yerde).
+import { colors as theme, scrimAt } from "@/shared/theme/colors";
 import { resolveCardAge } from "../cardPrivacy";
 import {
   FIRE_GLASS_INSET,
@@ -28,6 +30,10 @@ import {
 import CardMenuGlassButton, {
   CARD_MENU_GLASS_SIZE,
 } from "./CardMenuGlassButton";
+import { DISCOVER_GLASS_BUTTON_SIZE } from "./discoverHeaderMetrics";
+import CardCloseGlassButton from "./CardCloseGlassButton";
+import CardEditGlassButton from "./CardEditGlassButton";
+import CardScrollTopGlassButton from "./CardScrollTopGlassButton";
 
 /**
  * Açık kartın üstünde asılı duran başlık şeridi — profil kartının içindeki isim
@@ -37,12 +43,14 @@ import CardMenuGlassButton, {
  * olduğu için orada bir dipnot değil, başlık gibi okunmalı.
  *
  * Zemin PROGRESSIVE BLUR: MaskedView + easeGradient alfa maskesi → üstte tam
- * cam, aşağı doğru şeffafa çözülür. Üçlü ScreenHeader / SearchableListSheet ile
- * birebir aynı: veil perdesi + chrome tint'li BlurView + maske.
+ * cam, aşağı doğru şeffafa çözülür. Maskenin kurulumu üçlü ScreenHeader /
+ * SearchableListSheet ile birebir aynı.
  *
- * Blur tint'i `chromeBlurTint()`, kart fotoğraflarındaki gibi sabit "dark"
- * DEĞİL: şerit bu noktada fotoğrafın değil panelin (surface3) üstünde duruyor —
- * orası uygulama chrome'u, modla dönmeli (bkz. theme/blur.ts).
+ * MALZEMESİ ise onlardan AYRI ve İKİ BAĞLAMDA TEK: kapağın dibindeki rampanın
+ * aynısı — sabit siyah perde (scrimAt) + "dark" tint'li blur. Uygulamanın chrome
+ * reçetesi (veil + `chromeBlurTint()`) burada YANLIŞ olurdu; şerit iki bağlamda
+ * da bir FOTOĞRAFIN üstünde duruyor ve moda dönen tint açık temada fotoğrafı
+ * yıkıyor. Sayılar bandın çizildiği yerde, gerekçesiyle.
  *
  * İKİ FARKLI YERDEN çiziliyor ve iki farklı iş yapıyor:
  *
@@ -77,9 +85,8 @@ const TITLE_FONT = 21;
 const TITLE_LINE = 27;
 
 /**
- * Kartın içindeki büyük ismin ALTININ, şeridin neresine geldiğinde devri
- * tamamlamış sayıldığı çizgi = başlık satırının dibi. Eşiği hesaplayan taraf
- * (SwipeCard) buradan okur: ölçü tek yerde kalsın.
+ * KEŞİF bandında başlık satırının dibi. Önizlemenin ikizi aşağıda
+ * (PREVIEW_HEADER_TITLE_BOTTOM) — ayrışmalarının gerekçesi orada.
  */
 export const CARD_HEADER_TITLE_BOTTOM = TITLE_TOP + TITLE_HEIGHT;
 
@@ -94,6 +101,13 @@ export const CARD_HEADER_HEIGHT = CARD_HEADER_TITLE_BOTTOM + 16;
 // mesafe boyunca açılıyordu. Eşik diye bir şey kalmadı — şerit kartın açıklık
 // oranıyla geliyor (bkz. revealStyle).
 
+// SHEET BAĞLAMINDA (Beğeniler / Sohbet / Profil) ŞERİT HİÇ SÖNMÜYOR (istek:
+// "kapatırken header yok olmasın"). Bir dönem kartı kapatmak için aşağı çekmeye
+// başlandığı an sönüyordu; oranı `useCardSheetHeaderReveal` üretip `progress`
+// prop'una veriyordu. Sheet'ler prop'u artık hiç geçmiyor (→ opaklık sabit 1) ve
+// hook'un dosyası silindi. `progress` prop'u DURUYOR: Keşif onu kartın krom
+// kanalıyla sürüyor.
+
 /**
  * Cam buton ile ismin arasındaki boşluk. Buton ortak cam ikon ölçüsüne (40)
  * inince isim otomatik olarak sola kaydı — 6pt orada yeterliyken artık isim
@@ -101,64 +115,121 @@ export const CARD_HEADER_HEIGHT = CARD_HEADER_TITLE_BOTTOM + 16;
  */
 const TITLE_GAP_AFTER_BUTTON = 14;
 
-/**
- * Keşif şeridinde başlık satırının SOL payı = Fire butonunun köşe
- * boşluğu. Eskiden solda cam bir "başa dön" butonu vardı ve isim onun sağına
- * kayıyordu; buton kaldırılınca isim o köşeye TAŞINDI — yani satır artık
- * ortalı değil, sola dayalı ve tam butonun durduğu çizgide başlıyor.
+/*
+ * `TITLE_LEFT_INSET` (= FIRE_GLASS_INSET ≈ 33.5) KALDIRILDI: Keşif şeridinde
+ * başlık satırının sol payıydı ve kapaktaki cam Fire butonunun köşe boşluğundan
+ * türüyordu — "iki öğe kartın üst şeridinde simetrik köşe boşluğunda durur".
  *
- * Sağdaki Fire butonuyla aynı sabitten türüyor: iki öğe kartın üst
- * şeridinde simetrik köşe boşluğunda durur.
+ * O buton kapağın köşesinden gitti (artık sağ alt aksiyon kolonunda) ve şeridin
+ * hizalanacağı şey değişti: bant devirden önce ekranın üstündeki yüzen cam
+ * butonları (geri al / filtre) taşıyor, devirde onların yerini isim + Fire
+ * alıyor. Üçü de tek kenar payını okuyor — CHROME_EDGE_INSET.
  */
-const TITLE_LEFT_INSET = FIRE_GLASS_INSET;
+
+export const CHROME_EDGE_INSET = 16;
 
 /**
- * Aynı şeridin SAĞ payı: sağ köşedeki Fire butonunun boşluğu + çapı +
- * nefes. Uzun isim butonun altına girmek yerine "…"ya düşüyor
- * (numberOfLines={1}).
+ * Başlık satırının ALTINDA kalan pay — progressive blur'un sönme kuyruğu. Bant
+ * satırla bitseydi cam, yazının hemen altında keskin bir çizgiyle kesilirdi.
+ */
+const CHROME_BAND_TAIL = 16;
+
+/**
+ * KEŞİF şeridinde başlık satırının İKİ YANDAKİ payı — kenar boşluğu + köşe
+ * butonunun çapı + nefes.
+ *
+ * İKİ YANDA AYNI SAYI, çünkü satır ortalı (istek) ve iki uçta da bir cam buton
+ * var: solda yukarı ok, sağda Fire. Tek yana verilse isim optik olarak kayardı.
+ *
+ * Çap `CARD_MENU_GLASS_SIZE` (ortak cam ikon ölçüsü, 48) — Fire kabuğu ondan
+ * kısa (44) ama GÖRÜNEN kenar payı ikisinde de aynı, çünkü Fire dikeyde
+ * ortalanıp yatayda aynı kenara yaslanıyor (bkz. SwipeCard).
+ *
+ * Uzun isim butonların altına girmek yerine "…"ya düşüyor (numberOfLines={1}).
  */
 const TITLE_SIDE_INSET =
-  FIRE_GLASS_INSET + FIRE_GLASS_SIZE + TITLE_GAP_AFTER_BUTTON;
+  CHROME_EDGE_INSET + DISCOVER_GLASS_BUTTON_SIZE + TITLE_GAP_AFTER_BUTTON;
 
 /**
- * ÖNİZLEME şeridinin (`alwaysOpen`) yan payı — soldaki isim ve sağdaki üç nokta
- * bu çizgide başlar/biter.
+ * ÖNİZLEME şeridinin (`alwaysOpen`) kenar payı — soldaki "kapat", sağdaki üç
+ * nokta ve satırın ÜSTTEN payı, üçü de bu tek sayı.
  *
- * KEŞİF'İNKİYLE AYNI SABİT: aynı kart iki bağlamda da aynı kenar payıyla
- * açılıyor. Beğeniler / Sohbet / Profil önizlemesinden açılan kartın şeridi,
- * Keşif'teki kartın şeridinden gözle ayrışmamalı — orada isim de köşe cam
- * butonu da FIRE_GLASS_INSET çizgisinde duruyor (bkz. TITLE_LEFT_INSET).
+ * KARTIN İÇERİĞİYLE AYNI ÇİZGİ: panelin yan dolgusu `px-4`, yani bölüm
+ * kutuları ve fotoğraflar kartın kenarından 16'da başlıyor. Şerit de onların
+ * hizasında duruyor — önizlemede kartın tek başlığı o, altındaki içerikten
+ * içeride durunca köşeye asılı kalıyordu. Üst pay da aynı sayı: kenar boşluğu
+ * dört yönde tek değer.
  *
- * Bir dönem 16'ydı ve ölçü altındaki bölüm fotoğraflarından geliyordu (panelin
- * `px-4` dolgusu): üç noktanın sağ kenarı fotoğrafın sağ kenarına hizalansın
- * diye. O hiza bırakıldı — Keşif'te de köşedeki cam buton fotoğrafların
- * çizgisinde değil, kartın köşe boşluğunda duruyor; iki bağlamı ayrıştıran tek
- * şey oydu.
+ * KEŞİF'İNKİNDEN AYRI (TITLE_LEFT_INSET = FIRE_GLASS_INSET ≈ 33.5) ve bu fark
+ * KASITLI: orada şerit, kapağın üstünde duran cam Fire butonuyla aynı köşe
+ * boşluğunu paylaşmak ZORUNDA — ikisi tek satır gibi okunuyor ve butonun yeri
+ * kendi ölçüsünden türüyor. Önizlemede o buton yok.
+ *
+ * TARİHÇE: bir dönem 16'ydı (aynı gerekçe), sonra iki bağlam eşitlensin diye
+ * FIRE_GLASS_INSET'e bağlandı; içerik hizası istendiği için 16'ya döndü.
  */
-const PREVIEW_SIDE_INSET = TITLE_LEFT_INSET;
 
 /**
- * Önizleme şeridinde başlık satırının SAĞ payı.
+ * Önizleme şeridinde başlık satırının ÜST payı — yan payın aynısı (bkz.
+ * PREVIEW_SIDE_INSET). Keşif'te bu TITLE_TOP, yani Fire butonunun köşe boşluğu.
+ */
+const PREVIEW_TITLE_TOP = CHROME_EDGE_INSET;
+
+/**
+ * Önizleme bandının ölçüleri — Keşif'inkilerin (CARD_HEADER_TITLE_BOTTOM /
+ * CARD_HEADER_HEIGHT) küçük üst paylı ikizi. Ayrı tutuluyorlar çünkü satır
+ * yukarı çıkınca bandın hem dibi hem toplam boyu onunla birlikte çıkmalı:
+ * bant eskisi kadar uzun kalsaydı blur kuyruğu başlığın çok altında biterdi.
  *
- * Sağ köşede üç nokta VARSA pay ondan türüyor (kenar boşluğu + çap + nefes):
+ * İçeriğin şeridin ALTINDAN başlaması için gereken payı SwipeCard bundan
+ * hesaplıyor (bkz. PREVIEW_HEADER_SPACE).
+ */
+export const PREVIEW_HEADER_TITLE_BOTTOM = PREVIEW_TITLE_TOP + TITLE_HEIGHT;
+export const PREVIEW_CARD_HEADER_HEIGHT = PREVIEW_HEADER_TITLE_BOTTOM + 16;
+
+/**
+ * Önizleme şeridinde başlık satırının YAN payı — İKİ YANDA DA AYNI.
+ *
+ * Köşelerde cam buton VARSA pay onlardan türüyor (kenar boşluğu + çap + nefes):
  * uzun isim butonun altına girmek yerine "…"ya düşüyor. Sayı Keşif'inkinden
- * (TITLE_SIDE_INSET) birkaç puan büyük, çünkü üç noktanın kabuğu Fire
- * kabuğundan geniş (48 / 44) — GÖRÜNEN kenar payı, yani butonun kartın sağ
- * kenarına uzaklığı ikisinde de aynı.
+ * (TITLE_SIDE_INSET) birkaç puan büyük, çünkü köşe butonlarının kabuğu Fire
+ * kabuğundan geniş (48 / 44) — GÖRÜNEN kenar payı, yani butonun kartın kenarına
+ * uzaklığı ikisinde de aynı.
  *
- * Buton yoksa (Profil kendi önizlemesi) pay soldakiyle eşitleniyor: sağda
- * yer tutan bir şey olmadığı için satır simetrik duruyor.
+ * SİMETRİK, tek buton varken de: isim şeridin ORTASINDA durmalı (bkz. başlık
+ * satırının `justifyContent`'i). Sol köşede kapat (çarpı), sağda üç nokta var;
+ * biri çizilmese bile pay iki yandan aynı iniyor, yoksa isim boş kalan köşeye
+ * doğru kayıp ortalanmış görünmekten çıkıyordu.
+ *
+ * Hiç buton yoksa (şu an böyle bir çağıran yok — `onClose` da `onMenu` da
+ * verilmeyen önizleme) pay sade kenar boşluğuna düşüyor.
  */
-const PREVIEW_TITLE_INSET_WITH_MENU =
-  PREVIEW_SIDE_INSET + CARD_MENU_GLASS_SIZE + TITLE_GAP_AFTER_BUTTON;
-const PREVIEW_TITLE_INSET_PLAIN = PREVIEW_SIDE_INSET;
+const PREVIEW_TITLE_INSET_WITH_CHROME =
+  CHROME_EDGE_INSET + CARD_MENU_GLASS_SIZE + TITLE_GAP_AFTER_BUTTON;
+const PREVIEW_TITLE_INSET_PLAIN = CHROME_EDGE_INSET;
 
 /**
- * Üç nokta kabuğunun (48) başlık satırından (44) yarım farkı — DİKEYDE. Kutular
- * değil merkezler çakışsın. Yatayda uygulanmıyor: orada hizalanan şey merkez
- * değil, kabuğun kenarı (bkz. PREVIEW_SIDE_INSET).
+ * Köşe butonu kabuğunun (48) başlık satırından (44) yarım farkı — DİKEYDE.
+ * Kutular değil merkezler çakışsın. Yatayda uygulanmıyor: orada hizalanan şey
+ * merkez değil, kabuğun kenarı — kutu içeriğin çizgisine otursun
+ * (PREVIEW_SIDE_INSET). İki köşe butonu aynı çapta olduğu için tek sabit.
  */
-const MENU_CENTER_FIX = (CARD_MENU_GLASS_SIZE - FIRE_GLASS_SIZE) / 2;
+const CHROME_CENTER_FIX = (CARD_MENU_GLASS_SIZE - FIRE_GLASS_SIZE) / 2;
+
+/**
+ * Önizleme şeridindeki cam köşe butonlarının (solda "kapat", sağda üç nokta /
+ * kalem) kartı taşıyan YÜZEYİN TEPESİNE uzaklığı — aşağıdaki `top: rowTop -
+ * CHROME_CENTER_FIX + topInset` ifadesinin `topInset`siz hâli.
+ *
+ * DIŞARIYA AÇIK, çünkü kart TAŞIMAYAN sheet'ler de aynı çizgiye hizalanmak
+ * zorunda: AppModal'ın başlık satırı bunu `headerButtonTop` ile okuyor (davet ve
+ * görünürlük sheet'leri geçiyor — istek: "butonların modalın tepesine uzaklığı
+ * profilden açılan karttaki kadar olsun"). Oraya elle bir sayı yazılsaydı
+ * kullanıcı kart ile sheet arasında gezerken aynı cam buton 6pt zıplıyordu;
+ * burada kalınca satırın payı (PREVIEW_TITLE_TOP) oynadığında ikisi birlikte
+ * gidiyor.
+ */
+export const CARD_CHROME_BUTTON_TOP = PREVIEW_TITLE_TOP - CHROME_CENTER_FIX;
 
 // ACTIVITY_SPACING (12) KALDIRILDI: "bugün aktif"in isimden toplam boşluğunu
 // (satırın gap'i + işaretin marginLeft'i) yalnız ortalama kaymasını hesaplayan
@@ -198,15 +269,14 @@ const ACTIVITY_FADE_DURATION = 450;
 export const CARD_CORNER_RADIUS = 50;
 
 /**
- * KEŞİF KARTININ YÜZÜ — kabuk + kapak fotoğrafı, tek sayı. Kartın KAPALI
- * köşesi: açılırken çekişle CARD_OPEN_CORNER_RADIUS'a iniyor (bkz. SwipeCard >
- * cardCornerRadius), yani açık kart belirgin şekilde kareleşiyor.
+ * KEŞİF KARTININ YÜZÜ — kabuk + kapak fotoğrafı, tek sayı. Kart KAPALIYKEN DE
+ * AÇIKKEN DE bu köşede: açılma boyunca hiç değişmiyor (bkz. SwipeCard >
+ * openCornerRadius; bir dönem 26'ya iniyordu, gerekçesi orada).
  *
- * DÖRT KÖŞE DE AYNI ve iniş ikisinde de aynı formülden: bir dönem alt köşeler
- * açılma oranıyla 0'A kadar iniyordu (açık kartta panel kapağın DEVAMI
- * sayılıyordu), panel ondan ayrı bir yüzeye dönünce kapağın dibi de gerçek bir
- * kenar oldu — 0'a inen kenar fotoğrafı panelin üstünde köşesiz bir blok gibi
- * gösteriyordu. Şimdiki iniş 44→35, yani kenar her durumda yuvarlak.
+ * DÖRT KÖŞE DE AYNI: bir dönem alt köşeler açılma oranıyla 0'A kadar iniyordu
+ * (açık kartta panel kapağın DEVAMI sayılıyordu), panel ondan ayrı bir yüzeye
+ * dönünce kapağın dibi de gerçek bir kenar oldu — 0'a inen kenar fotoğrafı
+ * panelin üstünde köşesiz bir blok gibi gösteriyordu.
  *
  * 32 → 44: kapağın köşesi daha yumuşak istendi.
  *
@@ -219,66 +289,101 @@ export const CARD_CORNER_RADIUS = 50;
 export const CARD_FACE_CORNER_RADIUS = 44;
 
 /**
+ * KEŞİF KARTININ ÜST İKİ KÖŞESİ — yüzün geri kalanından BİR TIK daha kare.
+ *
+ * Cihazda üst köşelerde ince bir beyazlık görünüyordu: köşede üç eş eğri üst
+ * üste biniyor (kabuk → boyama kutusu → kapak fotoğrafı; ilk ikisi açık modda
+ * BEYAZ zemin taşıyor) ve 44'lük `continuous` eğri bu yığında tam oturmuyordu —
+ * en üstteki kapağın kenar yumuşatması altındaki beyazı sızdırıyordu. Yarıçap
+ * büyüdükçe o köşe bandı da büyüdüğü için sızıntı 44'te gözle görülür hale
+ * geliyor.
+ *
+ * İKİ TARAFLI ÇÖZÜMÜN YARISI: üst köşeler burada 38'e indi (sızıntının olduğu
+ * bant küçüldü), DİĞER YARISI kapağın üst köşesini kabuktan 2pt daha kare
+ * çizmek — bkz. SwipeCard > COVER_TOP_RADIUS_OVERFILL.
+ *
+ * YALNIZ ALT İKİSİ 44'TE KALDI (CARD_FACE_CORNER_RADIUS): kapağın dibi panelin
+ * üstünde gerçek bir kenar olarak duruyor, orada altına sızacak bir yüzey yok
+ * ve istek üst köşelerdi.
+ *
+ * ÖNİZLEME BUNU OKUMUYOR: sheet'teki kartın üst köşesi sheet'in clip'iyle
+ * zincirli (CARD_EXPANDED_CORNER_RADIUS); ayrışırsa köşede hilal kalıyor.
+ */
+export const CARD_FACE_TOP_CORNER_RADIUS = 38;
+
+/**
  * SHEET'TEKİ açık kartın köşe yarıçapı — Beğeniler / Sohbet / Profil
  * önizlemesi, sheet'in en üst detent'i.
  *
- * Açık kart ekranı birebir kaplıyor. Kabuk 50'de kalınca telefonun köşe
- * maskesinden DAHA YUVARLAK oluyor ve dört köşede kartla ekran kenarı arasında
- * sayfa zemininden ince bir hilal görünüyor (açık modda beyaz). Çözüm kabuğu
- * telefonunkine EŞİTLEMEK değil — o sayı cihazdan cihaza değişiyor (39…62pt)
- * ve RN'e açık değil — ondan DAHA KARE yapmak: kart köşeye kadar doluyor,
- * kırpmayı donanım maskesi yapıyor, görünen köşe telefonun kendi köşesi
- * oluyor. 35 çentikli iPhone'ların en küçüğünün (39) de altında.
+ * KEŞİF KARTININ YÜZÜYLE AYNI SAYI (istek: "önizleme kartlarının sol/sağ üst
+ * köşesi Keşif'teki ana kartla aynı olsun"). Türetilmiş, kopyalanmış DEĞİL:
+ * `CARD_FACE_CORNER_RADIUS` oynatılınca önizleme de onunla gidiyor — aynı kart,
+ * hangi ekrandan açılırsa açılsın aynı köşede.
  *
- * BU SAYI SHEET'İN CLIP'İYLE ZİNCİRLİ (AppBottomSheet `cornerRadius`), o yüzden
- * "biraz daha kare olsun" gibi bir istek buradan karşılanmıyor — Keşif'in kendi
- * varış noktası ayrı sabitte (CARD_OPEN_CORNER_RADIUS).
+ * TARİHÇE — 50 → 35 → 44: kabuk bir dönem 50'ydi ve açık kart telefonun köşe
+ * maskesinden DAHA YUVARLAK kalıyordu; dört köşede kartla ekran kenarı arasında
+ * sayfa zemininden ince bir hilal görünüyordu (açık modda beyaz). Çözüm kabuğu
+ * telefonunkine eşitlemek değildi — o sayı cihazdan cihaza değişiyor (39…62pt) ve
+ * RN'e açık değil — ondan DAHA KARE yapmaktı: 35, çentikli iPhone'ların en
+ * küçüğünün (39) de altında.
+ *
+ * O HİLAL ARTIK ÜRETİLEMİYOR, bu yüzden 44'e çıkmak güvenli: kart ekranın 0'ına
+ * değil safe-area çizgisine dayanıyor (iki sheet de `topInset={insets.top}`
+ * veriyor), yani üst köşeler donanım maskesinden uzak; alt köşeler ise ekranın
+ * dibinin altına taşıyor. Keşif'in kendi açık kartı tam aynı gerekçeyle 44'te
+ * kaldı (bkz. SwipeCard > openCornerRadius'un tarihçesi).
+ *
+ * BU SAYI SHEET'İN CLIP'İYLE ZİNCİRLİ (AppBottomSheet `cornerRadius`).
  *
  * Aynı sayıyı okuyan yerler: kart kabuğu (SwipeCard > cardFrameRadiusStyle),
  * kapak fotoğrafı (photoBorderStyle), kapağın pinch kopyası, bu şeridin kendi
  * kırpması ve kartı taşıyan sheet'in clip'i. Ayrıştıkları an köşede ya hilal
  * kalıyor ya iki farklı eğri üst üste biniyor (bkz. CARD_CORNER_RADIUS'un
- * notu).
+ * notu). HEPSİ `continuous` eğri çizmek zorunda: aynı yarıçapta bile circular
+ * ile continuous kenar boyunca birbirini kesiyor ve şeffaf zeminli sheet'te
+ * aradan ince hilaller sızıyor.
  */
-export const CARD_EXPANDED_CORNER_RADIUS = 35;
+export const CARD_EXPANDED_CORNER_RADIUS = CARD_FACE_CORNER_RADIUS;
 
-/**
- * KEŞİF'TE açık kartın köşe yarıçapı — kabuk ve kapak fotoğrafı çekişle 44'ten
- * buraya iniyor (bkz. SwipeCard > cardCornerRadius): sıçrayarak değil, jest
- * yarıda bırakılırsa köşe de yarıda kalıyor.
+/*
+ * ── KEŞİF'İN AYRI "AÇIK KÖŞE" SABİTİ KALDIRILDI ──────────────────────────────
  *
- * Sheet'inkinden (35) DAHA KARE ve ondan AYRI bir sabit, çünkü o sayı sheet'in
- * kendi clip'iyle eşleşmek zorunda — burada ise kartı kırpan bir sheet yok,
- * kart doğrudan ekranın kenarına dayanıyor ve istenen "açıkken belirgin şekilde
- * kareleşsin" idi. Hilal riski de yok: telefonun köşe maskesinden (39…62pt) çok
- * daha kare, kırpmayı donanım yapıyor.
+ * Burada `CARD_OPEN_CORNER_RADIUS = 26` vardı: Keşif'te kabuk ve kapak
+ * fotoğrafı açılırken 44'ten oraya iniyor, açık kart belirgin şekilde
+ * kareleşiyordu. Gerekçesi "açık kart ekranın kenarına dayanıyor, 44 telefonun
+ * köşe maskesinden (39…62pt) yuvarlak kalıp kenarda sayfa zemininden ince bir
+ * hilal bırakıyor"du.
  *
- * Keşif'te bu sayıyı okuyan yerler: kabuk, kapak fotoğrafı, şeridin kendi
- * kırpması ve kapağın pinch kopyası.
+ * İSTEK ÜZERİNE KALDIRILDI — köşe açılma boyunca hiç değişmesin, kart aynı
+ * yuvarlaklıkta büyüsün. Hilal de artık üretilemiyor: kart ekranın 0'ına değil
+ * safe-area çizgisine dayanıyor (üst köşeler donanım maskesinden uzak), alt
+ * köşeler ise zaten ekranın dibinin altına taşıyor.
+ *
+ * Yerine Keşif de kapalı kartın sayısını (CARD_FACE_CORNER_RADIUS) varış olarak
+ * okuyor; geri istenirse tek satır — bkz. SwipeCard > openCornerRadius.
  */
-export const CARD_OPEN_CORNER_RADIUS = 26;
 
 /**
  * Açık karttaki ÜST CHROME'un (köşe cam butonları + şeridin başlık satırı)
  * köşe diyagonalinden aşağı kayma payı.
  *
- * Kart tepeye dayandığı için chrome, pay olmadan durum çubuğu gliflerinin
- * (~y17-40) üstüne biniyor; tam safe-area payı (insets.top ≈ 59-62) ise
- * butonları köşeden kopartıp ortada asılı bırakıyor. İkisinin arası: buton
- * köşenin butonu gibi okunmaya devam ediyor, üst kenarı saatin/pilin birkaç px
- * altına iniyor.
+ * ŞİMDİ SIFIR — ve sabit, pay yeniden gerekirse tek yerden dönsün diye duruyor.
+ * Kartı taşıyan HER YÜZEY (Keşif'te expand edilen kart, PreviewModal,
+ * LikerSwipeModal) artık ekranın 0'ına değil safe-area çizgisine dayanıyor,
+ * yani durum çubuğu kartın üstünde değil ARKASINDA kalmıyor: chrome'un
+ * kaçacağı bir glif yok. Köşeden uzaklığı zaten FIRE_GLASS_INSET (33.5)
+ * veriyor.
  *
- * 14 → 22: chrome'un üst kenarı payla birlikte FIRE_GLASS_INSET'ten
- * (33.5) başlıyor, yani 14'te y≈47.5'te duruyordu — Dynamic Island'ın dibi
- * (~y48) TAM oraya denk geliyor, buton ve şeritteki isim adaya yapışık
- * okunuyordu. 22 ile üst kenar y≈55.5: adanın ~7pt altında, tam safe-area
- * çizgisinin (59-62) ise hâlâ yukarısında — yani köşeden de kopmuyor.
- * Çentikli/çentiksiz cihazlarda pay zaten fazlasıyla güvenli tarafta kalıyor.
+ * TARİHÇE (kart tepeye dayanırken): pay olmadan chrome durum çubuğu
+ * gliflerinin (~y17-40) üstüne biniyordu; tam safe-area payı (insets.top ≈
+ * 59-62) ise butonları köşeden kopartıp ortada asılı bırakıyordu. 14 →
+ * 22'ydi: 14'te chrome'un üst kenarı y≈47.5, Dynamic Island'ın dibine (~y48)
+ * yapışıyordu; 22'de y≈55.5 ile adanın ~7pt altına iniyordu.
  *
- * SABİT, açılma oranıyla ANİME DEĞİL: buton bir kez yerine oturduktan sonra
- * hiçbir jestte kıpırdamamalı (gerekçesi SwipeCard > cornerDrop).
+ * Açılma oranıyla ANİME DEĞİL: buton bir kez yerine oturduktan sonra hiçbir
+ * jestte kıpırdamamalı (gerekçesi SwipeCard > cornerDrop).
  */
-export const CARD_CHROME_TOP_DROP = 22;
+export const CARD_CHROME_TOP_DROP = 0;
 
 type Props = {
   profile: any;
@@ -298,25 +403,50 @@ type Props = {
   scrollY?: SharedValue<number>;
   /**
    * Şeridin ÖNİZLEME dizilişi (Likes / Chat / Profil): sağ köşede Fire
-   * butonu değil, varsa "üç nokta" duruyor — başlık satırının SAĞ payı bu
-   * yüzden ayrışıyor. Kenar boşluğu ayrışmıyor: iki bağlam da aynı sabitten
-   * besleniyor (bkz. PREVIEW_SIDE_INSET).
+   * butonu değil, varsa "üç nokta" duruyor. Bandın BÜTÜN ölçüleri bu bayrakla
+   * seçiliyor — kenar payı, üst pay ve toplam boy (bkz. PREVIEW_SIDE_INSET):
+   * önizlemede şerit kartın içerik çizgisine hizalı, Keşif'te kapaktaki cam
+   * Fire butonunun köşe boşluğuna.
    *
-   * ŞERİDİN GÖRÜNÜRLÜĞÜNÜ ARTIK BELİRLEMİYOR: iki bağlamda da şerit kartın
-   * açıklık oranıyla (`progress`) beliriyor — önizlemede o oran zaten sabit 1.
+   * ŞERİDİN GÖRÜNÜRLÜĞÜNÜ BELİRLEMİYOR: iki bağlamda da şerit kartın açıklık
+   * oranıyla (`progress`) beliriyor.
    */
   alwaysOpen?: boolean;
   /**
-   * ŞERİDİN GÖRÜNÜRLÜĞÜNÜ SÜREN ORAN. Verilmezse 1 sayılır — sheet'te kart
-   * zaten açık doğuyor, şerit de onunla birlikte.
+   * ŞERİDİN GÖRÜNÜRLÜĞÜNÜ SÜREN ORAN. Verilmezse 1 sayılır.
    *
    * Keşif KROM kanalını veriyor (cardChromeAnim, cardExpandAnim DEĞİL): şerit
    * kapaktaki büyük ismin yerini alıyor ve o isim krom kanalından çekiliyor —
    * gerekçe SwipeCard'daki prop'un yanında.
+   *
+   * SHEET'TE (`alwaysOpen`) HİÇ VERİLMİYOR → sabit 1, yani şerit kart kapanırken
+   * sonuna kadar duruyor ve onunla birlikte aşağı kayıyor (istek: "kapatırken
+   * header yok olmasın").
+   *
+   * TARİHÇE: bir dönem sheet'in kendi konumundan türeyen bir oran (kaldırılan
+   * `useCardSheetHeaderReveal`) veriliyordu — kart açık doğduğu için 1
+   * başlıyor, kullanıcı kapatmak için aşağı çekmeye BAŞLADIĞI AN kendi süresiyle
+   * 0'a iniyor, çekiş kapanışa yetmezse geri dönüyordu. Ondan öncesi de yine
+   * sabit 1'di; yani bu davranış oraya geri döndü.
    */
   progress?: SharedValue<number>;
   /** Bandın kendi kırpması — varsayılanı kart kabuğuyla aynı. */
   radius?: number;
+  /**
+   * KEŞİF şeridinin SOL ucundaki cam "yukarı ok" — içeriği başa sarar.
+   *
+   * Şerit isim satırını devraldığı an kullanıcı bir ekran boyu aşağıda oluyor ve
+   * kapağa dönmenin tek yolu elle geri kaydırmaktı. Ok o yolu tek dokunuşa
+   * indiriyor; isim de onun sağına değil ORTAYA geçiyor (istek), yani satır iki
+   * cam butonun arasında dengeli duruyor.
+   *
+   * Verilmezse buton çizilmez ve satır sola yaslı kalır — önizleme bu prop'u
+   * hiç vermiyor, oranın sol köşesi "kapat"ın (bkz. `onClose`).
+   *
+   * TARİHÇE: bir dönem burada cam bir "başa dön" butonu vardı ve kaldırılmıştı;
+   * isim o zaman köşeye taşınmıştı. Geri geldi.
+   */
+  onScrollTop?: () => void;
   /**
    * Verilirse şeridin SAĞ ucuna cam bir "üç nokta" konur (bkz.
    * CardMenuGlassButton) ve isim iki butonun arasında ortalanır.
@@ -326,12 +456,40 @@ type Props = {
    * kapladığı için altındaki başlık artık erişilebilir değil. Keşif'te YOK:
    * orada sağ köşe Fire butonunun.
    *
-   * Buton `titleStyle` ile SARILMIYOR: cam yüzey ata zincirinde opacity<1 ya da
-   * kimliksel olmayan transform görürse sessizce hiç render edilmiyor.
-   * `alwaysOpen` şeritte fade zaten yok — animasyonlu sarmalayıcı sıfır fayda
-   * karşılığında o riski alırdı.
+   * Buton `revealStyle`ı taşıyan katmanların ÇOCUĞU DEĞİL (ikisi de kardeş,
+   * yerleşimleri ayrı) ama görünürlüğü onlarla aynı orandan geliyor — kendi
+   * style'ıyla; cam yolundaki opaklık uyarısı için bkz. menuRevealStyle.
    */
   onMenu?: () => void;
+  /**
+   * Verilirse şeridin SAĞ ucuna cam bir "düzenle" (kalem) konur (bkz.
+   * CardEditGlassButton) — üç noktanın yerine, onunla AYNI köşede.
+   *
+   * Yalnız KENDİ PROFİLİNİN önizlemesi veriyor (ProfileScreen > PreviewModal):
+   * orada şikayet/engelle gibi bir menü yok, olması gereken tek aksiyon
+   * düzenlemeye geçmek. Karşı tarafın kartında ise tersi — menü var, düzenlenecek
+   * bir şey yok.
+   *
+   * `onMenu` ÖNCELİKLİ: ikisi birden verilirse üç nokta çizilir. Şu an böyle bir
+   * çağıran yok ve olmamalı — iki aksiyon aynı köşeye sığmaz, biri ötekinin
+   * menüsüne girmeli.
+   */
+  onEdit?: () => void;
+  /**
+   * Verilirse şeridin SOL ucuna cam bir "kapat" (çarpı) konur (bkz.
+   * CardCloseGlassButton) — sağdaki üç noktanın simetriği.
+   *
+   * Yalnız ÖNİZLEME şeritleri veriyor (`alwaysOpen`): kart tam ekranı kapladığı
+   * için altındaki ekranın kendi kapat/geri kontrolü erişilemez oluyor ve kartı
+   * kapatmanın tek yolu aşağı çekme jesti kalıyor. Bu buton o jestin GÖRÜNÜR
+   * karşılığı; jest aynen duruyor. Keşif'te YOK: orada sol köşe kapaktaki
+   * "başa dön" butonunun (bkz. CardCollapseGlassButton).
+   *
+   * Sağdaki kardeşiyle aynı kurallar — `revealStyle`ı taşıyan katmanların
+   * ÇOCUĞU DEĞİL (kardeş, yerleşimleri ayrı) ama görünürlüğü onlarla aynı
+   * orandan geliyor; cam yolundaki opaklık uyarısı için bkz. menuRevealStyle.
+   */
+  onClose?: () => void;
   /**
    * Şeridin İÇERİĞİNİ (başlık satırı + cam buton) bu kadar aşağı iter; bandın
    * kendisi kartın tepesinde kalır, yalnız o kadar uzar.
@@ -345,6 +503,22 @@ type Props = {
    * Sheet'lerde (`alwaysOpen`) 0: orada kart lift almıyor.
    */
   topInset?: number;
+  /**
+   * KEŞİF'TE başlık satırının bandın tepesinden uzaklığı (px) — doğrudan `top`.
+   *
+   * ÇAĞIRAN VERİYOR, çünkü satır ekranın üstündeki yüzen cam butonlarla (geri al
+   * / filtre) AYNI çizgide durmak zorunda ve o çizgi safe-area'dan geliyor:
+   * bant kartın tepesinden (ekranın 0'ı) başlıyor, butonlar `insets.top`ta.
+   * Devir olunca butonların yerini isim + Fire alıyor (istek) — ikisi aynı
+   * satırda değilse devirde yazı yukarı/aşağı zıplıyor.
+   *
+   * `topInset` ile karıştırma: o, bandın İÇERİĞİNİ topluca aşağı iten bir pay
+   * (bant yerinde kalır, yalnız uzar). Bu ise satırın kendi `top`u.
+   *
+   * Verilmezse Keşif TITLE_TOP'a düşüyor (kapaktaki cam Fire butonunun eski
+   * köşe boşluğu); önizleme bu prop'u hiç okumuyor, oranın kendi payı var.
+   */
+  titleTop?: number;
 };
 
 export default function CardStickyHeader({
@@ -354,9 +528,22 @@ export default function CardStickyHeader({
   progress,
   radius = CARD_CORNER_RADIUS,
   onMenu,
+  onEdit,
+  onClose,
   topInset = 0,
+  titleTop,
+  onScrollTop,
 }: Props) {
   const { t } = useTranslation();
+
+  // Şeridin SAĞ köşesinde ne duruyor — önizlemede üç nokta ya da kalem, ikisi
+  // birden DEĞİL (gerekçe `onEdit`in notunda). Tek yerden hesaplanıyor: butonun
+  // çizimi de başlık satırının yan payı da bunu okuyor, ayrışırsa isim boş bir
+  // köşeye doğru kayıp ortalanmış görünmekten çıkıyor.
+  const rightAction = alwaysOpen ? (onMenu ? "menu" : onEdit ? "edit" : null) : null;
+  // Satırın simetrik pay alması için köşelerde EN AZ BİR buton olması yeterli:
+  // pay iki yandan birden iniyor (bkz. PREVIEW_TITLE_INSET_WITH_CHROME).
+  const hasPreviewChrome = alwaysOpen && (!!onClose || rightAction != null);
   // İsmin yanındaki ", 23" eki — SwipeCard'daki başlıkla aynı kural:
   // `showAge` kapalıyken backend null yerine 0 gönderiyor (bkz. cardPrivacy).
   const ageSuffix = useMemo(() => {
@@ -366,6 +553,34 @@ export default function CardStickyHeader({
     });
     return age != null ? `, ${age}` : "";
   }, [profile?.age, profile?.showAge]);
+
+  // ── Bandın ölçüleri bağlama göre ────────────────────────────────────────
+  // ── BANDIN ÖLÇÜLERİ ────────────────────────────────────────────────────
+  // Kenar payı İKİ BAĞLAMDA DA 16 (bkz. CHROME_EDGE_INSET): önizlemede kartın
+  // içerik çizgisi, Keşif'te ekranın üstündeki yüzen cam butonların
+  // (geri al / filtre) yatay payı. Aynı sayı olmak ZORUNDA, çünkü Keşif'te bant
+  // o butonların ALTINDA duruyor ve devir olunca içerik onların yerini alıyor:
+  // solda isim, sağda Fire. Ayrışırlarsa devirde yazı yana zıplıyor.
+  //
+  // Üst pay Keşif'te ÇAĞIRANDAN geliyor (`titleTop` — safe-area'yı yalnız o
+  // biliyor), önizlemede kenar payının aynısı.
+  const edgeInset = CHROME_EDGE_INSET;
+  const rowTop = alwaysOpen ? PREVIEW_TITLE_TOP : (titleTop ?? TITLE_TOP);
+  /**
+   * Chrome satırının YÜKSEKLİĞİ — Keşif'te cam butonun çapı, önizlemede başlık
+   * satırının kendi boyu.
+   *
+   * KEŞİF'TE BUTON ÇAPI OLMAK ZORUNDA: satır ile köşe butonları aynı `top`tan
+   * başlıyor ve isim o kutuya dikey ORTALANIYOR. Eskiden buton, satıra
+   * ortalansın diye yarım fark kadar yukarı çekiliyordu (`-(çap − satır)/2`) —
+   * ama o buton, ekranın üstündeki yüzen geri al/filtre ile de hizalı olmak
+   * zorunda ve onlar `insets.top`ta duruyor. Yarım fark kadarlık kayma, devirde
+   * okun rewind'in yerine geçerken 2px zıplaması olarak görünüyordu.
+   */
+  const rowHeight = alwaysOpen ? TITLE_HEIGHT : DISCOVER_GLASS_BUTTON_SIZE;
+  const bandHeight = alwaysOpen
+    ? PREVIEW_CARD_HEADER_HEIGHT
+    : rowTop + rowHeight + CHROME_BAND_TAIL;
 
   // "Bugün aktif" satırı — HER İKİ bağlamda da şeritte, ismin sağında. Keşif'te
   // de buraya taşındı: kartın panelindeki isim bloğu (satırın eski yeri)
@@ -394,10 +609,57 @@ export default function CardStickyHeader({
    * kartın panelinde büyük puntoyla duruyordu ve şerit onu DEVRALIYORDU. O blok
    * kaldırıldı (bkz. SwipeCard > "BAŞLIK BLOĞU BURADA YOK"): devredilecek bir
    * başlık yok, dolayısıyla eşik (`triggerY`), eşiğin ölçümü ve iki ayrı fade
-   * de yok. Önizlemede `progress` hiç verilmiyor → oran sabit 1, şerit her
-   * zaman açık; davranış değişmedi.
+   * de yok.
+   *
+   * Köşelerdeki cam butonlar bu style'ı TAŞIMIYOR (kardeş, çocuk değil) ama
+   * aynı oranı okuyor — bkz. chromeRevealStyle.
    */
   const revealStyle = useAnimatedStyle(() => ({
+    opacity: progress ? Math.max(0, Math.min(1, progress.value)) : 1,
+  }));
+
+  /**
+   * BANDIN ZEMİNİ — İKİ BAĞLAMDA DA HEP AÇIK.
+   *
+   * Keşif'te bant kartın üst chrome'unun tek yüzeyi: devirden ÖNCE de orada,
+   * çünkü yüzen cam butonlar (geri al / filtre) onun üstünde duruyor ve çıplak
+   * bir fotoğrafın üstünde okunmaları gerekiyor. Devirde değişen şey bandın
+   * kendisi değil İÇERİĞİ — butonlar gidiyor, isim + Fire geliyor (istek).
+   *
+   * Kapağın tepesindeki fotoğrafa yapışık rampa tam bu yüzden kaldırıldı (bkz.
+   * SwipeCard): üstteki blur'u iki katman birden taşıyordu.
+   *
+   * ÖNİZLEMEDE de sabit: `alwaysOpen` dalı bir dönem `progress`e bağlıydı ve
+   * kartı aşağı çekip kapatmaya başlayınca sönüyordu — kaldırıldı (bkz.
+   * `progress` prop'unun notu). Sheet'ler prop'u hiç vermediği için bu ifade
+   * fiilen 1'e sabit; `alwaysOpen && progress` kapısı yine de DURUYOR, çünkü
+   * sönme geri istenirse tek yerden dönmesi gereken şey o.
+   */
+  const bandRevealStyle = useAnimatedStyle(() => ({
+    opacity:
+      alwaysOpen && progress ? Math.max(0, Math.min(1, progress.value)) : 1,
+  }));
+
+  /**
+   * KÖŞE BUTONLARININ (sol "kapat", sağ "üç nokta") çıkışı. Şeridin geri
+   * kalanıyla AYNI oran ama ayrı bir style: butonlar `revealStyle`ı taşıyan
+   * katmanların hiçbirinin çocuğu değil (yerleşim gerekçesi aşağıda,
+   * çizildikleri yerde). İkisi TEK style'ı paylaşıyor — ayrı kanal, aynı jestte
+   * iki farklı anda sönen iki daire demek olurdu.
+   *
+   * ⚠️ OPAKLIK CAM YOLUNDA RİSKLİ, bilerek kabul edildi: SwiftUI cam yüzeyi
+   * ata zincirinde opacity<1 görürse sistem alt ağacı offscreen birleştiriyor
+   * ve efekt o karelerde render EDİLMEYEBİLİYOR. Buton bir dönem bu yüzden
+   * opaklık yerine bandın kırpmasının dışına ötelenerek gidiyordu; istenen
+   * görüntü o değil — şeridin tamamı tek parça sönmeli.
+   *
+   * Riski sınırlayan iki şey: (a) kurulum ANI temiz — buton sheet açılırken,
+   * oran 1 iken doğuyor, yani cam opaklığı bozulmamış bir zincirde kuruluyor;
+   * (b) uç değerler tam 0 ve tam 1, yani camın gerçekten çizilmesi gereken tek
+   * durum (şerit açık) hep opaklığı 1 olan durum. Bozulursa geçiş sırasındaki
+   * birkaç karede cam halka erken kaybolur — kalıcı ölü cam değil.
+   */
+  const chromeRevealStyle = useAnimatedStyle(() => ({
     opacity: progress ? Math.max(0, Math.min(1, progress.value)) : 1,
   }));
 
@@ -470,18 +732,23 @@ export default function CardStickyHeader({
         top: 0,
         left: 0,
         right: 0,
-        height: CARD_HEADER_HEIGHT + topInset,
+        height: bandHeight + topInset,
         // Kendi kırpması var: sheet'te bant kartın DIŞINDA çiziliyor, kartın
         // yuvarlak köşesini oradan devralmazsa üst köşelerde backdrop'un
         // üstüne taşar.
         overflow: "hidden",
         borderTopLeftRadius: radius,
         borderTopRightRadius: radius,
+        // `continuous` ŞART, yarıçapı devralmak yetmiyor: RN'in varsayılanı
+        // `circular` ve kartın kabuğu squircle çiziyor (bkz. SwipeCard). Aynı
+        // sayıda bile iki eğri kenar boyunca birbirini kesiyor, bandın camı
+        // köşede kabuğun dışına taşıp ince bir dilim bırakıyor.
+        borderCurve: "continuous",
       }}
     >
       <Animated.View
         pointerEvents="none"
-        style={[StyleSheet.absoluteFill, revealStyle]}
+        style={[StyleSheet.absoluteFill, bandRevealStyle]}
       >
         <MaskedView
           style={StyleSheet.absoluteFill}
@@ -493,76 +760,198 @@ export default function CardStickyHeader({
             />
           }
         >
-          {/* Derinlik perdesi — koyuda karartır, açıkta AYNI oranlarla
-              beyazlatır. Maske siyah/şeffaf kalır: o alfa maskesi, renk değil. */}
+          {/* ── BANDIN MALZEMESİ — TEK REÇETE, İKİ BAĞLAM ───────────────────
+              KAPAĞIN DİBİNDEKİ RAMPANIN AYNISI: perde 0.42 → 0.10, blur 22 ve
+              "dark". Sayılar SwipeCard'daki dip bandıyla birebir; ayrışırlarsa
+              kartın iki ucu farklı yoğunlukta bulanıklaşıyor.
+
+              ÖNİZLEME (Beğeniler / Sohbet / Profil) DE BUNU OKUYOR (istek —
+              "header'daki progressive kısım Keşif'teki header'la aynı olsun").
+              Orada bir dönem uygulamanın CHROME reçetesi vardı (veil perdesi +
+              `chromeBlurTint()` + blur 15) ve gerekçesi "bant panelin (surface3)
+              üstünde, yani chrome'un parçası"ydı. Pratikte doğru değildi: kartın
+              tepesinde kapak fotoğrafı ve onun bulanık zemini (CardGlassBackdrop)
+              duruyor, yani bant iki bağlamda da bir FOTOĞRAFIN üstünde. Ayrı
+              reçete, aynı kartı iki ekrandan açınca farklı yoğunlukta bir şerit
+              demekti — açık temada veil yolu belirgin şekilde daha açık ve daha
+              az bulanıktı.
+
+              BANDIN BOYU YİNE AYRI ve öyle kalmalı: Keşif'te bant ekranın 0'ından
+              başlıyor (durum çubuğunun arkasını da o örtüyor, satır `titleTop` =
+              safe-area'da), önizlemede kart zaten safe-area'nın altında doğuyor
+              ve satır bandın 16'sında. Maske bandın kendi yüksekliğine göre
+              normalize olduğu için rampa iki yerde aynı ORANDA ama farklı
+              uzunlukta iniyor — eşitlenecek şey malzeme, kapsam değil. */}
           <LinearGradient
-            colors={[veil(1), veil(0.2)]}
+            colors={[scrimAt(0.42), scrimAt(0.1)]}
             style={StyleSheet.absoluteFill}
           />
-          <BlurView
-            intensity={15}
-            tint={chromeBlurTint()}
-            style={StyleSheet.absoluteFill}
-          />
+          <BlurView intensity={22} tint="dark" style={StyleSheet.absoluteFill} />
         </MaskedView>
       </Animated.View>
 
-      {/* Cam "üç nokta" — şeridin sağ ucunda, başlık satırının DIŞINDA. Satır
-          animasyonlu (aşağıdaki kayma) ve cam yüzey ata zincirinde kimliksel
-          olmayan bir transform görürse sessizce hiç render edilmiyor; buton bu
-          yüzden kardeş olarak duruyor, hiçbir animasyonun altında değil. */}
-      {alwaysOpen && onMenu && (
-        <View
-          style={{
-            position: "absolute",
-            // Kabuk başlık satırından 4pt yüksek: kutular değil MERKEZLER
-            // çakışsın.
-            top: TITLE_TOP - MENU_CENTER_FIX + topInset,
-            // Yatayda merkez değil KENAR hizalanıyor: kabuğun sağ kenarı,
-            // Keşif'te sağ köşede duran cam butonun çizgisinde
-            // (PREVIEW_SIDE_INSET → FIRE_GLASS_INSET).
-            right: PREVIEW_SIDE_INSET,
-            width: CARD_MENU_GLASS_SIZE,
-            height: CARD_MENU_GLASS_SIZE,
-          }}
+      {/* KEŞİF'İN SOL UCU: cam "yukarı ok" — içeriği başa sarar (bkz.
+          `onScrollTop`). Önizlemenin "kapat"ıyla (aşağıda) aynı kurallar:
+          başlık satırının DIŞINDA, kendi style'ıyla sönüyor, dikeyde kabuk
+          satırdan yüksek olduğu için MERKEZLER çakışıyor. */}
+      {!alwaysOpen && onScrollTop && (
+        <Animated.View
+          style={[
+            {
+              position: "absolute",
+              // TELAFİ YOK: satır zaten butonun çapında (bkz. rowHeight) ve
+              // ikisi aynı `top`tan başlıyor. Buton bu sayede ekranın üstündeki
+              // yüzen geri al/filtre ile de tam aynı yerde — devirde yer
+              // değiştirmiyor, yalnız içerik değişiyor.
+              top: rowTop + topInset,
+              left: CHROME_EDGE_INSET,
+              width: DISCOVER_GLASS_BUTTON_SIZE,
+              height: DISCOVER_GLASS_BUTTON_SIZE,
+            },
+            chromeRevealStyle,
+          ]}
         >
-          <CardMenuGlassButton onPress={onMenu} label={t("common.menu")} />
-        </View>
+          <CardScrollTopGlassButton
+            onPress={onScrollTop}
+            label={t("profile.card.scrollTop")}
+            size={DISCOVER_GLASS_BUTTON_SIZE}
+          />
+        </Animated.View>
+      )}
+
+      {/* Cam "kapat" (çarpı) — şeridin SOL ucunda, sağdaki üç noktanın
+          simetriği. Başlık satırının DIŞINDA: satır kendi payıyla konumlanıyor,
+          buton kabuğun köşesiyle. Görünürlüğü satırla AYNI orandan ama kendi
+          style'ıyla geliyor (chromeRevealStyle). */}
+      {alwaysOpen && onClose && (
+        <Animated.View
+          style={[
+            {
+              position: "absolute",
+              // Kabuk başlık satırından 4pt yüksek: kutular değil MERKEZLER
+              // çakışsın.
+              top: rowTop - CHROME_CENTER_FIX + topInset,
+              // Yatayda merkez değil KENAR hizalanıyor: kabuğun sol kenarı
+              // kartın içerik çizgisinde (bkz. PREVIEW_SIDE_INSET).
+              left: edgeInset,
+              width: CARD_MENU_GLASS_SIZE,
+              height: CARD_MENU_GLASS_SIZE,
+            },
+            chromeRevealStyle,
+          ]}
+        >
+          {/* `onMedia`: glif iki temada da BEYAZ — gerekçe aşağıda, sağ
+              köşenin yanında (iki uç ayrışamaz). */}
+          <CardCloseGlassButton
+            onPress={onClose}
+            label={t("common.close")}
+            onMedia
+          />
+        </Animated.View>
+      )}
+
+      {/* ŞERİDİN SAĞ UCU — üç nokta YA DA kalem, aynı köşe ve aynı kabuk
+          (bkz. `rightAction`). Kurallar soldaki "kapat"la birebir aynı: başlık
+          satırının DIŞINDA, kendi style'ıyla sönüyor, dikeyde MERKEZLER
+          çakışıyor. */}
+      {rightAction && (
+        <Animated.View
+          style={[
+            {
+              position: "absolute",
+              top: rowTop - CHROME_CENTER_FIX + topInset,
+              right: edgeInset,
+              width: CARD_MENU_GLASS_SIZE,
+              height: CARD_MENU_GLASS_SIZE,
+            },
+            chromeRevealStyle,
+          ]}
+        >
+          {/* ── GLİF İKİ TEMADA DA BEYAZ (`onMedia`) ──────────────────────
+              Şeridin BAŞLIK YAZISIYLA aynı kural (bkz. satırın `theme.onMedia`
+              notu): bandın malzemesi iki temada da kapağın KOYU rampası (scrim
+              0.42→0.10 + `tint="dark"` blur) ve altında kapak fotoğrafı var,
+              yani buradaki mürekkep modla dönmemeli. Eskiden `theme.text`ti ve
+              açık modda aynı bandın üstünde isim beyaz, iki köşedeki glif
+              SİYAH çiziliyordu.
+
+              Sol köşedeki "kapat" da aynı bayrağı alıyor — şeridin iki ucu
+              ayrışamaz.
+
+              iOS 26 ALTINDA KENDİLİĞİNDEN SİYAHA DÜŞÜYOR ve düşmesi doğru:
+              `glassOnMediaInk()` orada `theme.text` veriyor, çünkü fallback
+              zemini butonun KENDİ açık tonlu blur'u (GlassFallbackSurface >
+              chromeBlurTint) — beyaz glif o dairenin içinde kaybolurdu. */}
+          {rightAction === "menu" ? (
+            <CardMenuGlassButton
+              onPress={onMenu!}
+              label={t("common.menu")}
+              onMedia
+            />
+          ) : (
+            // Etiket profil ekranındaki butonun metniyle AYNI ("Profili
+            // Düzenle"): buton onun kısayolu, VoiceOver'da başka bir ad okumak
+            // iki ayrı aksiyon gibi duyulur.
+            <CardEditGlassButton
+              onPress={onEdit!}
+              label={t("profile.edit.button")}
+              onMedia
+            />
+          )}
+        </Animated.View>
       )}
 
       {/* ── ŞERİDİN BAŞLIK SATIRI — TEK DAL, İKİ BAĞLAM ────────────────────
-          İsim + yaş, premium işareti ve "bugün aktif": hepsi tek satırda ve
-          satır SOLA YASLI. Bir dönem satır ortalıydı ve önizlemede ortalanan
-          şey isim değil "isim + işaret" ikilisiydi; işaret kaydırınca sönerken
-          satır tam o kaymayı geri alacak kadar sağa gidiyordu (activityShift).
-          Sola yaslanınca o düzeltmenin konusu kalmadı: isim zaten yerinde.
+          İsim + yaş, premium işareti ve "bugün aktif": hepsi tek satırda.
 
-          SOL PAY İKİ BAĞLAMDA DA AYNI: Fire butonunun köşe boşluğu
-          (TITLE_LEFT_INSET = PREVIEW_SIDE_INSET). Sağ pay o köşede ne
-          durduğuna göre türüyor — Keşif'te Fire butonu
-          (TITLE_SIDE_INSET), önizlemede varsa "üç nokta"
-          (PREVIEW_TITLE_INSET_WITH_MENU), yoksa soldakinin aynısı. Üç sayı da
-          aynı kenar boşluğundan çıkıyor, yani kartın şeridi hangi ekrandan
-          açılırsa açılsın aynı çizgide başlıyor.
+          Önizlemede iki köşede de aynı çapta cam bir daire var: solda "kapat",
+          sağda üç nokta ya da kalem (bkz. `rightAction`). Satır simetrik payla
+          ortalanınca isim iki dairenin tam ortasında bir başlık gibi okunuyor.
 
-          Zemin chrome olduğu için renk theme.text; fotoğraf üstündeki isim gibi
-          sabit beyaz DEĞİL — açık modda beyaz-üstüne-beyaz kalırdı. */}
+          ORTALAMA "BUGÜN AKTİF" GİDİNCE KAYMIYOR: işaret opaklıkla sönüyor,
+          layout'tan çıkmıyor — yani satırın genişliği sabit. Bir dönem satır
+          ortalıyken tam bu yüzden elle düzeltme (activityShift) gerekiyordu;
+          işaret o zaman satırı yeniden ölçtürüyordu.
+
+          YAN PAYLAR BAĞLAMA GÖRE: Keşif'te sol `edgeInset` (Fire butonunun köşe
+          boşluğu) + sağ TITLE_SIDE_INSET; önizlemede iki yanda da tek sayı
+          (PREVIEW_TITLE_INSET_WITH_CHROME) — gerekçesi orada.
+
+          RENK `theme.onMedia` — İKİ BAĞLAMDA DA, yani Keşif'te ne ise
+          önizlemede o. Eskiden `theme.text`ti ve açık modda SİYAH çiziliyordu;
+          bandın malzemesi ise iki yerde de kapağın KOYU rampası (yukarıdaki
+          scrim 0.42→0.10 + `tint="dark"` blur), yani yazı modla dönmemeli.
+          Kapaktaki isim satırı (SwipeCard) başından beri `onMedia` — şerit devri
+          olunca aynı yazı aynı yerde renk değiştiriyordu, artık değiştirmiyor.
+          Satırın diğer üyeleri (premium işareti, foto doğrulama, "bugün aktif")
+          zaten modla dönmeyen marka/semantik tonlarında. */}
       <Animated.View
         pointerEvents="none"
         style={[
           {
             position: "absolute",
-            top: TITLE_TOP + topInset,
-            left: TITLE_LEFT_INSET,
-            right: alwaysOpen
-              ? onMenu
-                ? PREVIEW_TITLE_INSET_WITH_MENU
+            top: rowTop + topInset,
+            // İKİ BAĞLAMDA DA İKİ YANDA AYNI PAY → satır gerçekten ortalı
+            // kalıyor. Keşif'te sol uçta yukarı ok, sağ uçta Fire var; pay
+            // ikisinin de kabuk çapı + nefes kadar (TITLE_SIDE_INSET).
+            // Önizlemede aynı iş PREVIEW_TITLE_INSET_WITH_CHROME'da.
+            left: alwaysOpen
+              ? hasPreviewChrome
+                ? PREVIEW_TITLE_INSET_WITH_CHROME
                 : PREVIEW_TITLE_INSET_PLAIN
               : TITLE_SIDE_INSET,
-            height: TITLE_HEIGHT,
+            right: alwaysOpen
+              ? hasPreviewChrome
+                ? PREVIEW_TITLE_INSET_WITH_CHROME
+                : PREVIEW_TITLE_INSET_PLAIN
+              : TITLE_SIDE_INSET,
+            height: rowHeight,
             flexDirection: "row",
             alignItems: "center",
-            justifyContent: "flex-start",
+            // ORTALI, İKİ BAĞLAMDA DA (istek: "isim, yaş ortada"). Keşif'te bir
+            // dönem sola yaslıydı — o zaman sol köşede buton yoktu ve isim
+            // köşeye taşınmıştı.
+            justifyContent: "center",
             gap: 6,
           },
           revealStyle,
@@ -576,7 +965,7 @@ export default function CardStickyHeader({
           numberOfLines={1}
           style={{
             flexShrink: 1,
-            color: theme.text,
+            color: theme.onMedia,
             fontSize: TITLE_FONT,
             lineHeight: TITLE_LINE,
             fontWeight: "700",

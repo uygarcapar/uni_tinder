@@ -16,7 +16,6 @@ import {
   AppState,
   Modal,
   Linking,
-  StyleSheet,
 } from "react-native";
 import { appPrefs } from "../../../shared/utils/appPrefs";
 import { setSwipeTutorialBlocking } from "@/features/discover/swipeTutorialGate";
@@ -51,18 +50,19 @@ import {
 } from "@/shared/icons";
 import SFIcon from "@/shared/components/SFIcon";
 import SwipeWrapper from "@/features/discover/components/SwipeWrapper";
-import FirePullHint, {
-  FIRE_PULL_SCRIM_ALPHA,
-} from "@/features/discover/components/FirePullHint";
+import FirePullHint from "@/features/discover/components/FirePullHint";
 import SwipeOverlay from "@/features/discover/components/SwipeOverlay";
 import { openLitPlus } from "@/features/profile/litPlusEntry";
 import FirePurchaseModal from "@/features/discover/components/FirePurchaseModal";
 import { Image as ExpoImage } from "expo-image";
 import FilterModal from "@/features/discover/components/FilterModal";
+import ProfileOptionsSheet from "@/features/discover/components/ProfileOptionsSheet";
 import ReportModal from "@/shared/components/ReportModal";
 import moderationService from "@/shared/services/moderationService";
 import { CURRENT_KVKK_VERSION } from "@/features/auth/screens/KVKKConsentScreen";
-import WaveFillLogo from "@/shared/components/WaveFillLogo";
+// `WaveFillLogo` ARTIK ÇİZİLMİYOR (istek): Keşif'in üstündeki dekoratif logo
+// kaldırıldı, yerinde yalnız iki cam buton kaldı. Bileşen duruyor — başka bir
+// yüzeye konmak istenirse hazır.
 import { colors, ink, scrimAt } from "../../../shared/theme/colors";
 import {
   usePotentialMatches,
@@ -94,11 +94,15 @@ import { showInfoToast, showMissedMatchToast } from "@/shared/services/toaster";
 import { runFlameSweep } from "@/features/discover/flameSweep";
 import {
   DISCOVER_CARD_TOP_GAP,
+  DISCOVER_GLASS_BUTTON_SIZE,
   DISCOVER_HEADER_HEIGHT,
-  EXPAND_SCRIM_ALPHA,
   discoverTabBarInset,
 } from "@/features/discover/components/discoverHeaderMetrics";
-import { CARD_FACE_CORNER_RADIUS } from "@/features/discover/components/CardStickyHeader";
+import DiscoverHeaderGlassButton from "@/features/discover/components/DiscoverHeaderGlassButton";
+import {
+  CARD_FACE_CORNER_RADIUS,
+  CARD_FACE_TOP_CORNER_RADIUS,
+} from "@/features/discover/components/CardStickyHeader";
 import NoteComposerModal from "@/features/discover/components/NoteComposerModal";
 import NotePurchaseModal from "@/features/discover/components/NotePurchaseModal";
 import {
@@ -106,8 +110,8 @@ import {
   noteSendCodeI18nKey,
 } from "@/shared/constants/responseCodes";
 import uiBus, {
+  cardChromeAnim,
   cardExpandAnim,
-  cardPullProgress,
   resetCardExpandState,
 } from "@/shared/services/uiBus";
 import { useEvent } from "@/shared/hooks/useEvent";
@@ -198,6 +202,58 @@ const SkeletonBlock = ({ width, height, borderRadius = 8, style }: any) => {
   );
 };
 
+/**
+ * Yüzen üst chrome butonlarının sağ altına oturan küçük rozet — kalan geri
+ * alma hakkı / kilit, ve aktif filtre sayısı.
+ *
+ * ZEMİNİ OPAK (`colors.bg`): rozet cam butonun DIŞINDA ve doğrudan kapak
+ * fotoğrafının üstünde duruyor; saydam bırakılırsa açık bir fotoğrafta sayı
+ * okunmuyor. Camın içine alınamıyordu — SwiftUI ağacına RN çocuğu girmiyor ve
+ * camın ATASI olacak her katman (opacity/transform) efekti öldürüyor.
+ *
+ * Eskiden aynı rozet düz ikonun köşesindeydi; ölçüler oradan devralındı ki
+ * sayı aynı boyda okunsun.
+ */
+function HeaderCountBadge({ icon = false, text }: { icon?: boolean; text: string }) {
+  return (
+    <View
+      style={{
+        backgroundColor: colors.bg,
+        borderRadius: 999,
+        minWidth: 16,
+        height: 16,
+        alignItems: "center",
+        justifyContent: "center",
+        paddingHorizontal: icon ? 0 : 3,
+      }}
+    >
+      {icon ? (
+        <SFIcon
+          name="lock.fill"
+          fallback={Lock}
+          size={12}
+          color={colors.text}
+          strokeWidth={2.5}
+          weight="semibold"
+        />
+      ) : (
+        <Text
+          style={{
+            color: colors.text,
+            fontSize: 15,
+            fontWeight: "700",
+            lineHeight: 16,
+            textAlign: "center",
+            includeFontPadding: false,
+          }}
+        >
+          {text}
+        </Text>
+      )}
+    </View>
+  );
+}
+
 // SwipeCard ile aynı dış yapı (borderRadius:40, full frame) + photo overlay
 // alanları (name, pills) için placeholder block'lar + shimmer overlay.
 const SkeletonCard = () => {
@@ -217,8 +273,11 @@ const SkeletonCard = () => {
       style={{
         flex: 1,
         // Kartın YÜZÜYLE aynı yarıçap: iskeletten karta geçerken köşe
-        // değişmesin (bkz. CARD_FACE_CORNER_RADIUS).
+        // değişmesin (bkz. CARD_FACE_CORNER_RADIUS). Üst ikisi kartta bir tık
+        // daha kare (CARD_FACE_TOP_CORNER_RADIUS) — iskelet de onu izliyor.
         borderRadius: CARD_FACE_CORNER_RADIUS,
+        borderTopLeftRadius: CARD_FACE_TOP_CORNER_RADIUS,
+        borderTopRightRadius: CARD_FACE_TOP_CORNER_RADIUS,
         borderCurve: "continuous",
         overflow: "hidden",
         backgroundColor: colors.surface,
@@ -907,22 +966,14 @@ export default function DiscoverScreen() {
     return count;
   }, [filters]);
 
-  // Lit logosu için fill oranı: (limit - kalan) / limit.
-  // Premium, limit -1 (sınırsız), kalan -1 veya limit henüz bilinmiyor (null,
-  // eski backend) → oran hesaplamıyoruz, boş göster.
-  const swipeFillRatio = useMemo(() => {
-    if (statsQuery.data?.isPremium) return 0;
-    const rem = statsQuery.data?.remainingSwipes;
-    const limit = statsQuery.data?.dailySwipeLimit;
-    if (rem == null || rem < 0) return 0;
-    if (limit == null || limit <= 0) return 0;
-    const used = Math.max(0, limit - rem);
-    return Math.min(1, used / limit);
-  }, [
-    statsQuery.data?.remainingSwipes,
-    statsQuery.data?.dailySwipeLimit,
-    statsQuery.data?.isPremium,
-  ]);
+  // ── LOGONUN DOLUM ORANI KALDIRILDI ────────────────────────────────────
+  // Burada `swipeFillRatio` vardı: (limit − kalan) / limit, Lit logosunun
+  // dalgayla dolan gövdesini süren oran (WaveFillLogo). Logo kaldırılınca
+  // (istek) okuyanı kalmadı.
+  //
+  // Geri istenirse kuralları: premium, limit −1 (sınırsız), kalan −1 ya da
+  // limit bilinmiyorsa (null — eski backend) oran hesaplanmıyordu, logo boş
+  // gösteriliyordu.
 
   // Like kotası bitince true. Premium veya rem<0 (unlimited/unknown) → false.
   // Bu durumda like blok edilir, kart bounce back + paywall açılır.
@@ -2087,6 +2138,14 @@ export default function DiscoverScreen() {
   // sonucu "blocked" gelirse kartı da düşürüyoruz (ReportModal'ın engelle
   // switch'i işaretlenmişse).
   const [reportTarget, setReportTarget] = useState<string | null>(null);
+  /**
+   * Üç noktaya basılan profil — seçenekler sheet'inin hedefi.
+   *
+   * Profilin KENDİSİ tutuluyor, id'si değil: sheet kapandıktan sonra
+   * şikayet/engelle handler'ları profil nesnesi bekliyor ve o an deste
+   * ilerlemiş olabilir (kart uçtu, `currentIndex` oynadı).
+   */
+  const [optionsProfile, setOptionsProfile] = useState<any>(null);
 
   const handleReportProfile = useEvent((profile: PotentialMatch) => {
     if (!profile?.userId) return;
@@ -2122,12 +2181,55 @@ export default function DiscoverScreen() {
   });
 
   /**
-   * Fire çekişinde header'ın kararması. Sürücü destedeki perdeyle aynı
-   * global oran (uiBus > cardPullProgress), yani ikisi tek hareket gibi iniyor.
+   * ── FIRE ÇEKİŞİNİN HEADER PERDESİ KALDIRILDI ───────────────────────────
+   * Burada `pullHeaderScrimStyle` vardı: aşağı çekişte header'ın zemini
+   * destedeki perdeyle AYNI global orandan (uiBus > cardPullProgress ×
+   * FIRE_PULL_SCRIM_ALPHA) kararıyordu. Kararacak bir zemin kalmadı — gerekçe
+   * render tarafındaki notta.
    */
-  const pullHeaderScrimStyle = useAnimatedStyle(() => ({
-    opacity: cardPullProgress.value * FIRE_PULL_SCRIM_ALPHA,
+
+  /**
+   * Yüzen üst chrome'un ÇIKIŞI — kart açıldıkça sönüyor.
+   *
+   * ŞART, dekoratif değil: kart artık açılırken kalkmıyor (lift 0), yani bu iki
+   * buton kapanmazsa açık kartın kendi üst chrome'uyla ÜST ÜSTE biniyor —
+   * sağdaki filtre, kartın sağ üstündeki Fire butonunun tam üstüne düşüyor.
+   *
+   * SÜRÜCÜ KROM KANALI (`cardChromeAnim`), geometri kanalı DEĞİL. İkisi artık
+   * ayrı zamanlanıyor (bkz. SwipeWrapper > OPEN_INTENT_PX / CHROME_FADE):
+   * geometri niyet eşiğinde ANINDA devriliyor, yazılar ve butonlar ise kendi
+   * süresiyle sönüyor. Bu iki buton "yazı ve buton" tarafında — parmağa oranlı
+   * yarı saydam durmaları istenen şey değildi (istek).
+   *
+   * ⚠️ OPAKLIK CAM YOLUNDA RİSKLİ, bilerek kabul edildi — gerekçesi ve iki
+   * hafifletici koşulu CardStickyHeader > menuRevealStyle'da birebir aynı:
+   * (a) butonlar kart KAPALIYKEN, yani oran 1'de doğuyor (temiz zincir),
+   * (b) uç değerler tam 0 ve tam 1; camın çizilmesi gereken tek durum
+   * opaklığın 1 olduğu durum. Bozulursa geçişin birkaç karesinde cam halka
+   * erken kaybolur — kalıcı ölü cam değil.
+   */
+  const headerRevealStyle = useAnimatedStyle(() => ({
+    opacity: 1 - Math.max(0, Math.min(1, cardChromeAnim.value)),
   }));
+
+  /**
+   * Destesi OLMAYAN hâllerin kutusu (iskelet · boş kart). Kart kabı tam ekran
+   * ama bu ikisi değil: birinde okunacak metin ve basılacak buton var, diğeri
+   * kartın yerini tutuyor ama fotoğraf değil — ikisi de durum çubuğunun ya da
+   * yüzen tab bar'ın ardına girmemeli.
+   *
+   * Paylar kartın ESKİ kabının payları: üstte yüzen ikon satırının bittiği
+   * çizgi, altta tab bar'ın boyu.
+   */
+  const chromeSafeBoxStyle = useMemo(
+    () => ({
+      flex: 1,
+      paddingTop:
+        insets.top + DISCOVER_HEADER_HEIGHT + DISCOVER_CARD_TOP_GAP,
+      paddingBottom: tabBarOccupied,
+    }),
+    [insets.top, tabBarOccupied],
+  );
 
   const renderStack = () => {
     return potentialMatches
@@ -2156,6 +2258,7 @@ export default function DiscoverScreen() {
             superLikesRemaining={statsQuery.data?.superLikesRemaining ?? null}
             onReport={handleReportProfile}
             onBlock={handleBlockProfile}
+            onMenu={setOptionsProfile}
             onNote={handleNoteRequest}
           />
         );
@@ -2164,179 +2267,32 @@ export default function DiscoverScreen() {
 
   return (
     <GestureHandlerRootView style={{ flex: 1, backgroundColor: colors.bg }}>
-      {/* Header */}
-      <View
-        style={{ backgroundColor: colors.bg, paddingTop: insets.top }}
-      >
-        <Animated.View
-          pointerEvents={headerLocked ? "none" : "auto"}
-          style={{
-            // Satır boyu ortak dosyadan: açık kartın lift'i (SwipeWrapper >
-            // HEADER_COVER) aynı sayıyı okuyor, ayrışırsa kart header'ı tam
-            // örtmez. Logo kutusundan (50) kısa olmasının sebebi orada.
-            height: DISCOVER_HEADER_HEIGHT,
-            paddingHorizontal: 21,
-            flexDirection: "row",
-            alignItems: "center",
-          }}
-        >
-          {/* Rewind */}
-          <View style={{ flex: 1, alignItems: "flex-start" }}>
-            <TouchableOpacity
-              onPress={handleRewind}
-              activeOpacity={0.7}
-              // Kilitliyken sönük göstermiyoruz: 0.3 opacity "şu an kullanılamaz"
-              // demek, oysa kilitli buton her zaman tıklanabilir (paywall açar).
-              // Sönüklük yalnız premium'un "geri alacak pass yok" hâline kalıyor.
-              style={{ opacity: undoLocked || lastSwipeWasPass ? 1 : 0.3 }}
-            >
-              <View style={{ position: "relative" }} pointerEvents="none">
-                <SFIcon name="arrow.counterclockwise" fallback={RotateCcw} size={24} color={colors.text} strokeWidth={2} weight="semibold" />
-                {(undoLocked || remainingUndos !== null) && (
-                  <View
-                    style={{
-                      position: "absolute",
-                      bottom: -4,
-                      right: -6,
-                      backgroundColor: colors.bg,
-                      borderRadius: 999,
-                      minWidth: 16,
-                      height: 16,
-                      alignItems: "center",
-                      justifyContent: "center",
-                      paddingHorizontal: undoLocked ? 0 : 3,
-                    }}
-                  >
-                    {undoLocked ? (
-                      <SFIcon
-                        name="lock.fill"
-                        fallback={Lock}
-                        size={12}
-                        color={colors.text}
-                        strokeWidth={2.5}
-                        weight="semibold"
-                      />
-                    ) : (
-                      <Text
-                        style={{
-                          color: colors.text,
-                          fontSize: 15,
-                          fontWeight: "700",
-                          lineHeight: 16,
-                          textAlign: "center",
-                          includeFontPadding: false,
-                        }}
-                      >
-                        {remainingUndos === -1 ? "∞" : remainingUndos}
-                      </Text>
-                    )}
-                  </View>
-                )}
-              </View>
-            </TouchableOpacity>
-          </View>
+      {/* ── KART: TAM EKRAN ──────────────────────────────────────────────────
+          Kap ne üstten ne alttan pay bırakıyor. Kapak fotoğrafı durum
+          çubuğunun ardından geçip ekranın tepesine, yüzen tab bar'ın ardından
+          geçip dibine dayanıyor; üst chrome (geri al / filtre) ve tab bar
+          onun ÜSTÜNDE yüzüyor.
 
-          {/* Logo — dekoratif, tap davranışı yok */}
-          <View pointerEvents="none">
-            <WaveFillLogo fillRatio={swipeFillRatio} />
-          </View>
+          Okunurluğu kartın kendi rampaları taşıyor: tepede blur + gölge
+          (SwipeCard > "KAPAĞIN TEPESİNDEKİ RAMPA"), dipte metin rampası.
+          Kapağın alt bandındaki yazı tab bar'ın ARDINA düşmesin diye kart
+          kendi içinde bar boyu pay okuyor (SwipeCard > coverBottomInset).
 
-          {/* Filter */}
-          <View style={{ flex: 1, alignItems: "flex-end" }}>
-            <TouchableOpacity
-              onPress={() => setFilterVisible(true)}
-              activeOpacity={0.7}
-            >
-              <View style={{ position: "relative" }} pointerEvents="none">
-                <SFIcon name="slider.horizontal.3" fallback={SlidersHorizontal} size={24} color={colors.text} strokeWidth={2} weight="semibold" />
-                {activeFilterCount > 0 && (
-                  <View
-                    style={{
-                      position: "absolute",
-                      bottom: -4,
-                      right: -6,
-                      backgroundColor: colors.bg,
-                      borderRadius: 999,
-                      minWidth: 16,
-                      height: 16,
-                      alignItems: "center",
-                      justifyContent: "center",
-                      paddingHorizontal: 3,
-                    }}
-                  >
-                    <Text
-                      style={{
-                        color: colors.text,
-                        fontSize: 15,
-                        fontWeight: "700",
-                        lineHeight: 16,
-                        textAlign: "center",
-                        includeFontPadding: false,
-                      }}
-                    >
-                      {activeFilterCount}
-                    </Text>
-                  </View>
-                )}
-              </View>
-            </TouchableOpacity>
-          </View>
-        </Animated.View>
-
-        {/* ── KART AÇILIRKEN ŞERİDİ KARARTAN PERDE KALDIRILDI (istek) ────
-            Kart açılırken üst şeridin üstüne inen siyah perde buradaydı
-            (EXPAND_SCRIM_ALPHA oranında). Şerit artık AÇILIŞ boyunca kendi
-            renginde kalıyor.
-
-            Perdenin gerekçesi "arkadaki sayfa geri çekilmiş görünsün"dü
-            (referans: Instagram'ın gönderi açılışı — arka sayfa solmuyor,
-            KARARIYOR). Geri istenirse o gerekçe hâlâ ayakta, ama kartın
-            içindeki eşiyle (SwipeCard > cardGapScrimStyle) AYNI oranı okumak
-            zorunda; ayrışırlarsa kartın üstü ile kapak-panel arası farklı
-            tonda kararıyor.
-
-            Aşağıdaki perde BAŞKA BİR JEST: bu açılış (yukarı çekiş) değil,
-            FIRE (aşağı çekiş). İkisi aynı anda ilerlemiyor (bkz.
-            SwipeWrapper'daki ayrı dallar), o yüzden tek bir şeritte iki perde
-            çakışmıyor.
-
-            Şeridin DOKUNMA kilidi hiçbir perdede değil, ayrı bir kapıda
-            (headerLocked). */}
-
-        {/* Fire çekişinde header da kararıyor — destedeki şeritle AYNI
-            oranda (bkz. FIRE_PULL_SCRIM_ALPHA). İkisi yan yana görünüyor:
-            ayrı sayılar verilirse aralarındaki çizgi ortaya çıkıyor.
-
-            Perde içeriğin ÜSTÜNDE: kararan şey şeridin zemini değil header'ın
-            kendisi (butonlar dahil) — "arka plan geri çekildi" sinyali bu.
-            `pointerEvents` yok, çünkü dokunmayı zaten headerLocked yönetiyor ve
-            perde onun kararına karışmamalı. */}
-        <Animated.View
-          pointerEvents="none"
-          style={[
-            StyleSheet.absoluteFill,
-            { backgroundColor: scrimAt(1) },
-            pullHeaderScrimStyle,
-          ]}
-        />
-      </View>
-
-      {/* Cards */}
-      <View
-        style={{
-          flex: 1,
-          paddingTop: DISCOVER_CARD_TOP_GAP,
-          paddingBottom: tabBarOccupied,
-        }}
-      >
+          DESTESİ OLMAYAN HÂLLER AYRI: iskelet ve boş kart tam ekran değil,
+          eski paylarıyla duruyor (aşağıdaki sarmalayıcı) — birinde okunacak
+          metin ve basılacak buton var, diğeri kartın yerini tutuyor ama
+          fotoğraf değil. */}
+      <View style={{ flex: 1 }}>
         {(loading && potentialMatches.length === 0) ||
         (potentialMatches.length > 0 && !firstPhotoReady) ? (
-          // İSKELET KABIN İÇİNDE KALIR, kartın kabuğu gibi TAŞMAZ. Bir tur
-          // `marginBottom: -tabBarOccupied` verilmişti (kabuk ekranın dibine
-          // iniyor diye); yanlıştı — kabuğun taşan kısmı boş, kartın GÖRÜNEN
-          // alt kenarı fotoğrafın bittiği yer, yani kabın dibi. İskelet
-          // uzatılınca karttan bir tab bar boyu uzun duruyordu.
-          <SkeletonCard />
+          <View style={chromeSafeBoxStyle}>
+            {/* İSKELET KABIN İÇİNDE KALIR, kartın kabuğu gibi TAŞMAZ. Bir tur
+                `marginBottom: -tabBarOccupied` verilmişti (kabuk ekranın dibine
+                iniyor diye); yanlıştı — kabuğun taşan kısmı boş, kartın GÖRÜNEN
+                alt kenarı fotoğrafın bittiği yer, yani kabın dibi. İskelet
+                uzatılınca karttan bir tab bar boyu uzun duruyordu. */}
+            <SkeletonCard />
+          </View>
         ) : potentialMatches.length > currentIndex ? (
           <Animated.View
             pointerEvents={tutorialActive ? "none" : "auto"}
@@ -2345,21 +2301,117 @@ export default function DiscoverScreen() {
             {renderStack()}
             {/* Aşağı çekiş (Fire) ipucu — kartın ALTINDA, arkadaki
                 kartın üstünde (kendi zIndex'i 5). Desteden SONRA yazılıyor ama
-                sırası önemli değil, katmanı zIndex belirliyor. */}
-            <FirePullHint />
+                sırası önemli değil, katmanı zIndex belirliyor.
+
+                `topInset`: perde ekranın 0'ından başlıyor ama ipucu yazısı
+                durum çubuğunun altında kalmalı (bkz. oradaki prop notu). */}
+            <FirePullHint topInset={insets.top} />
             <SwipeOverlay dragX={overlayDragX} opacity={overlayOpacity} />
           </Animated.View>
         ) : (
-          <EmptyDiscoverCard
-            title={emptyCopy?.title ?? null}
-            actionLabel={emptyCopy?.actionLabel ?? null}
-            onAction={handleEmptyAction}
-            secondaryLabel={emptyCopy?.secondaryLabel ?? null}
-            onSecondary={removeDistanceLimit}
-            busy={ignoreDistanceMutation.isPending}
-          />
+          <View style={chromeSafeBoxStyle}>
+            <EmptyDiscoverCard
+              title={emptyCopy?.title ?? null}
+              actionLabel={emptyCopy?.actionLabel ?? null}
+              onAction={handleEmptyAction}
+              secondaryLabel={emptyCopy?.secondaryLabel ?? null}
+              onSecondary={removeDistanceLimit}
+              busy={ignoreDistanceMutation.isPending}
+            />
+          </View>
         )}
       </View>
+
+      {/* ── YÜZEN ÜST CHROME ────────────────────────────────────────────────
+          Kendi zemini olan bir header şeridi YOK (istek): solda geri al,
+          sağda filtre — ikisi de kapak fotoğrafının üstünde duran cam
+          yuvarlak butonlar (bkz. DiscoverHeaderGlassButton).
+
+          ORTADAKİ LOGO KALDIRILDI (istek). Dekoratifti ve dolgusu swipe
+          oranıyla doluyordu (`WaveFillLogo` + `swipeFillRatio`); bileşen
+          duruyor, Keşif artık çizmiyor.
+
+          KARTTAN SONRA YAZILIYOR: aynı ata içinde sonraki kardeş üstte
+          çizilir, yani `zIndex` gerekmiyor. `box-none` — satırın boş orta
+          kısmı kartın jestlerini (swipe, pull) yutmamalı.
+
+          KART AÇILINCA SÖNÜYOR (headerRevealStyle): kart artık açılırken
+          kalkmadığı için bu satır kendiliğinden örtülmüyor. */}
+      <Animated.View
+        pointerEvents={headerLocked ? "none" : "box-none"}
+        style={[
+          {
+            position: "absolute",
+            top: insets.top,
+            left: 0,
+            right: 0,
+            // Satır boyu cam butondan BÜYÜK olabilir; buton dikey ortalanıyor.
+            height: Math.max(
+              DISCOVER_HEADER_HEIGHT,
+              DISCOVER_GLASS_BUTTON_SIZE,
+            ),
+            paddingHorizontal: 16,
+            flexDirection: "row",
+            alignItems: "center",
+            justifyContent: "space-between",
+          },
+          headerRevealStyle,
+        ]}
+      >
+        <DiscoverHeaderGlassButton
+          systemName="arrow.counterclockwise"
+          fallback={RotateCcw}
+          // Keşif'in bütün cam butonları tek çapta (bkz.
+          // DISCOVER_GLASS_BUTTON_SIZE) — devirde şeridin uçlarındaki okun ve
+          // Fire'ın yerini alıyorlar.
+          size={DISCOVER_GLASS_BUTTON_SIZE}
+          onPress={handleRewind}
+          label={t("discover.rewind.label")}
+          // Kilitliyken sönük göstermiyoruz: sönüklük "şu an kullanılamaz"
+          // demek, oysa kilitli buton her zaman tıklanabilir (paywall açar).
+          // Sönüklük yalnız premium'un "geri alacak pass yok" hâline kalıyor.
+          dimmed={!(undoLocked || lastSwipeWasPass)}
+          badge={
+            undoLocked || remainingUndos !== null ? (
+              <HeaderCountBadge
+                icon={undoLocked}
+                text={remainingUndos === -1 ? "∞" : String(remainingUndos)}
+              />
+            ) : null
+          }
+        />
+
+        <DiscoverHeaderGlassButton
+          systemName="slider.horizontal.3"
+          fallback={SlidersHorizontal}
+          size={DISCOVER_GLASS_BUTTON_SIZE}
+          onPress={() => setFilterVisible(true)}
+          label={t("discover.filters.title")}
+          badge={
+            activeFilterCount > 0 ? (
+              <HeaderCountBadge text={String(activeFilterCount)} />
+            ) : null
+          }
+        />
+      </Animated.View>
+
+      {/* ── KART AÇILIRKEN ŞERİDİ KARARTAN PERDE KALDIRILDI (istek) ──────────
+          Kart açılırken üst şeridin üstüne inen siyah perde buradaydı
+          (EXPAND_SCRIM_ALPHA oranında). Geri istenirse gerekçesi hâlâ ayakta
+          ("arkadaki sayfa geri çekilmiş görünsün" — referans: Instagram'ın
+          gönderi açılışı), ama kartın içindeki eşiyle (SwipeCard >
+          cardGapScrimStyle) AYNI oranı okumak zorunda.
+
+          ── FIRE ÇEKİŞİNİN HEADER PERDESİ DE KALDIRILDI ─────────────────────
+          Aşağı çekişte (Fire) header'ın zeminini destedeki şeritle aynı oranda
+          karartan katman da buradaydı (`pullHeaderScrimStyle` +
+          FIRE_PULL_SCRIM_ALPHA). KARARTACAK BİR ZEMİN KALMADI: header artık
+          kartın üstünde yüzen iki cam buton. Siyah bir perde onların altına
+          değil ÜSTÜNE düşerdi — camı da glifi de boğar, üstelik bir ata olarak
+          verilseydi cam efektini tamamen yok ederdi.
+
+          Şeridin DOKUNMA kilidi hiçbir perdede değildi, ayrı bir kapıda
+          (headerLocked) — o duruyor. */}
 
       {/* Fire alevi burada DEĞİL: tab bar'ı da kaplaması gerektiği için
           navigator'ın dışına, kök ağaca taşındı (bkz. AppNavigator). */}
@@ -2424,6 +2476,29 @@ export default function DiscoverScreen() {
       {/* Şikayet akışı — expanded kartın bayrak ikonundan açılır. Kart bir
           sheet değil (destenin kendisi), o yüzden LikerSwipeModal'daki gibi
           önce kapatmaya gerek yok. */}
+      {/* Kapağın sağ alt kolonundaki üç noktanın açtığı menü. Sheet EKRANDA,
+          kartta DEĞİL: deste iki kart mount ediyor ve her birine bir sheet
+          koymak aynı anda iki modal demek olurdu. İçindeki iki satır (şikayet ·
+          engelle) kartın panelindeki moderasyon satırıyla aynı handler'lara
+          düşüyor — kapaktaki giriş onun kısayolu.
+
+          `stackBehavior` YOK: Keşif'te kart bir sheet değil (destenin kendisi),
+          yani altında minimize edilecek bir sheet de yok. */}
+      <ProfileOptionsSheet
+        visible={!!optionsProfile}
+        onClose={() => setOptionsProfile(null)}
+        onReport={() => {
+          const target = optionsProfile;
+          setOptionsProfile(null);
+          if (target) handleReportProfile(target);
+        }}
+        onBlock={() => {
+          const target = optionsProfile;
+          setOptionsProfile(null);
+          if (target) handleBlockProfile(target);
+        }}
+      />
+
       <ReportModal
         visible={!!reportTarget}
         onClose={() => setReportTarget(null)}

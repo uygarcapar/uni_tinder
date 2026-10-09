@@ -1,5 +1,6 @@
 import { Fragment, useCallback, useEffect, useMemo, useState } from "react";
 import { useTranslation } from "react-i18next";
+import * as Haptics from "expo-haptics";
 import {
   View,
   Text,
@@ -16,7 +17,6 @@ import Animated, {
   useAnimatedRef,
   useDerivedValue,
   useSharedValue,
-  useFrameCallback,
   runOnJS,
   withTiming,
   Easing,
@@ -48,23 +48,31 @@ function ScrollWrapper({ nativeScrollGesture, children }: any) {
 //
 // State bu ayrı component'te tutuluyor ve kartın gövdesi `children` prop'u
 // olarak geçiyor → toggle sırasında ağır alt ağaç yeniden render edilmiyor.
+/**
+ * Tepeye varış geri bildirimi. `Light`: bu bir onay değil, bir SINIR işareti —
+ * Fire eşiğindeki (Medium/Heavy aile) darbeyle karışmamalı.
+ *
+ * MODÜL SEVİYESİNDE: her kart kendi kopyasını kurmasın, worklet'ten `runOnJS`
+ * ile çağrılan sabit bir referans olsun.
+ */
+function triggerTopHaptic() {
+  Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
+}
+
 function BounceScrollView({
   scrollRef,
   scrollY,
-  scrollMax,
-  topHitSpeed,
   expanded,
   children,
 }: {
   scrollRef: AnimatedRef<Animated.ScrollView>;
   scrollY?: SharedValue<number>;
-  /** Scroll'un alt sınırı (içerik − görünür alan) — pan momentumu clamp'ler. */
-  scrollMax?: SharedValue<number>;
   /**
-   * Scroll momentumla TEPEYE çarptığı andaki hız (px/frame) — kartı kapatma
-   * kararının girdisi. Ölçüm burada, karar SwipeWrapper'da.
+   * `scrollMax` ve `topHitSpeed` BURADAN KALKTI. İlki pan'in elle sürdüğü
+   * scroll momentumunu clamp'liyordu, ikincisi scroll momentumla tepeye
+   * çarpınca kartı kapatma kararının girdisiydi — ikisi de aç/kapa modeline
+   * aitti (bkz. SwipeWrapper'ın başındaki not).
    */
-  topHitSpeed?: SharedValue<number>;
   expanded: boolean;
   children: React.ReactNode;
 }) {
@@ -73,13 +81,14 @@ function BounceScrollView({
   // runOnJS/setState yapalım.
   const bouncesSV = useSharedValue(false);
   const nearBottomSV = useSharedValue(false);
-  const momentumSV = useSharedValue(false);
-  // Top'a çarpma tespiti için önceki frame'in pozisyonu ve hızı (px/event).
-  const prevY = useSharedValue(0);
-  const prevSpeed = useSharedValue(0);
-  // Tek momentum döngüsünde zoom bir kez tetiklensin (0 civarında salınan
-  // event'ler ikinci kez ateşlemesin).
-  const justHitSV = useSharedValue(false);
+  /**
+   * İçerik ŞU AN tepede mi — tepeye varış haptic'inin mandalı.
+   *
+   * Bayrak şart: `onScroll` her karede geliyor ve tepede duran bir parmak 0
+   * civarında salınıyor. Kapısız bırakılırsa haptic tek bir varışta arka arkaya
+   * patlıyor. Yalnız GEÇİŞ anında (tepede değildik, tepeye geldik) tetikleniyor.
+   */
+  const atTopSV = useSharedValue(true);
 
   const applyBounces = useCallback((next: boolean) => {
     setBounces(next);
@@ -99,15 +108,6 @@ function BounceScrollView({
     onScroll: (e) => {
       const y = e.contentOffset.y;
       if (scrollY) scrollY.value = y;
-      // Scroll'un alt sınırı — pan kendi momentumunu buraya CLAMP'liyor (bkz.
-      // SwipeWrapper > drivingScroll). Burada ölçülüyor çünkü içerik yüksekliği
-      // yalnız scroll event'inde geliyor.
-      if (scrollMax)
-        scrollMax.value = Math.max(
-          0,
-          e.contentSize.height - e.layoutMeasurement.height,
-        );
-
       nearBottomSV.value = isNearBottom(
         y,
         e.contentSize.height,
@@ -115,76 +115,38 @@ function BounceScrollView({
       );
       syncBounces(nearBottomSV.value);
 
-      // Top'a çarpma: bu event'te 0'a indik, öncekinde inmemiştik ve momentum
-      // sürüyordu (parmak ekranda değil). Şiddet = son iki frame'in en hızlısı;
-      // clamp event'i hızı kırpabildiği için önceki frame de dikkate alınır.
+      // TEPEYE VARIŞ — anlık haptic (istek). Kapağın başına dönmek kartın bir
+      // "ucu"; scroll orada sessizce duruyordu.
       //
-      // SONUCU DEĞİŞTİ: eskiden burada kapak fotoğrafına bir zoom darbesi
-      // veriliyordu (impactIntensity → zoomImpactAnimation). Artık kartı
-      // KAPATIYOR: aşağı doğru hızlı bir flick, scroll'u tepeye getirip
-      // momentumuyla kartı kapalı hâline götürüyor — hareket scroll'un
-      // sonunda durmuyor, aynı savrulmayla devam ediyor. Kararı SwipeWrapper
-      // veriyor (bkz. oradaki topHitSpeed reaction'ı); burada yalnız ölçüm var.
-      const speed = prevY.value - y;
-      if (
-        momentumSV.value &&
-        y <= TOP_HIT_EPS &&
-        prevY.value > TOP_HIT_EPS &&
-        !justHitSV.value
-      ) {
-        justHitSV.value = true;
-        if (topHitSpeed) topHitSpeed.value = Math.max(speed, prevSpeed.value);
+      // EŞİK 0 DEĞİL `TOP_HIT_EPS`: iOS bounce'ında offset 0'ı hafifçe geçip
+      // negatife iniyor ve tam sıfır karşılaştırması o salınımda ıskalıyor.
+      //
+      // Bu ölçümün yerinde bir dönem "momentumla tepeye çarpma HIZI" vardı ve
+      // SwipeWrapper onu okuyup kartı KAPATIYORDU (daha da öncesinde kapak
+      // fotoğrafına bir zoom darbesi veriyordu). Kapanacak bir şey kalmadı;
+      // geriye yalnız varışın kendisi kaldı.
+      const nowAtTop = y <= TOP_HIT_EPS;
+      if (nowAtTop !== atTopSV.value) {
+        atTopSV.value = nowAtTop;
+        if (nowAtTop) runOnJS(triggerTopHaptic)();
       }
-      prevSpeed.value = speed;
-      prevY.value = y;
-    },
-    // Parmak indi — momentum yok; top'ta pull-down = collapse jesti.
-    onBeginDrag: () => {
-      momentumSV.value = false;
-      justHitSV.value = false;
-    },
-    onMomentumBegin: () => {
-      momentumSV.value = true;
-      justHitSV.value = false;
-    },
-    onMomentumEnd: () => {
-      momentumSV.value = false;
     },
   });
 
-  // Collapse olunca sıfırla — bir sonraki expand temiz başlasın.
+  // Kart tepeden düştü (alt karta dönüştü) → scroll'u başa al. Bir dönem bu
+  // "collapse" anıydı; kapalı hâl kalkınca geriye yalnız bu kaldı: alt kart
+  // tekrar üste çıktığında içerik ortasından doğmasın.
   useEffect(() => {
     if (expanded) return;
     bouncesSV.value = false;
     nearBottomSV.value = false;
-    momentumSV.value = false;
-    justHitSV.value = false;
-    prevY.value = 0;
-    prevSpeed.value = 0;
-    if (topHitSpeed) topHitSpeed.value = 0;
     setBounces(false);
-    // Native offset'i de başa al. scrollEnabled=false olduğu an ScrollView son
-    // contentOffset'inde donuyor: kart collapsed görünürken içerik kaymış
-    // kalıyor ve scrollY hiç sıfırlanmıyordu — SwipeWrapper'ın dikey pan'i
-    // `scrollY > 0` gate'ine takılıp pull-up expand'i kalıcı olarak öldürüyordu.
-    // (Chevron yolu önce animated scrollTo yapıyor; burası artakalanı çeker.)
     const sv = scrollRef.current as unknown as {
       scrollTo?: (opts: { y: number; animated: boolean }) => void;
     } | null;
     sv?.scrollTo?.({ y: 0, animated: false });
     if (scrollY) scrollY.value = 0;
-  }, [
-    expanded,
-    bouncesSV,
-    nearBottomSV,
-    momentumSV,
-    justHitSV,
-    prevY,
-    prevSpeed,
-    topHitSpeed,
-    scrollRef,
-    scrollY,
-  ]);
+  }, [expanded, bouncesSV, nearBottomSV, scrollRef, scrollY]);
 
   return (
     <Animated.ScrollView
@@ -203,12 +165,13 @@ function BounceScrollView({
 }
 import uiBus, {
   cardChromeAnim,
-  cardExpandAnim,
   resetCardExpandState,
 } from "@/shared/services/uiBus";
+import CardMenuGlassButton from "@/features/discover/components/CardMenuGlassButton";
+import CardGlyphGlassButton from "@/features/discover/components/CardGlyphGlassButton";
 import {
-  DISCOVER_CARD_TOP_GAP,
-  DISCOVER_HEADER_HEIGHT,
+  DISCOVER_CARD_EXPAND_LIFT,
+  DISCOVER_GLASS_BUTTON_SIZE,
   EXPAND_SCRIM_ALPHA,
   discoverTabBarInset,
 } from "@/features/discover/components/discoverHeaderMetrics";
@@ -243,7 +206,7 @@ import {
 // YÜZEY kapısı (`HAS_LIQUID_GLASS` değil): native modülün kendi sabitini okuyor
 // ve `UIDesignRequiresCompatibility` bayrağını da sayıyor — CardSectionBox da
 // aynı kapıdan geçiyor, piller onunla aynı cevabı görmek zorunda.
-import { hasLiquidGlassSurface } from "@/shared/theme/glass";
+import { glassOnMediaInk, hasLiquidGlassSurface } from "@/shared/theme/glass";
 import { MAX_PROFILE_PROMPTS } from "@/shared/constants/limits";
 import {
   photoNoteTarget,
@@ -259,20 +222,15 @@ import PremiumBadge from "@/shared/components/PremiumBadge";
 import SelfieVerifiedBadge, {
   selfieBadgeSize,
 } from "@/features/profile/components/SelfieVerifiedBadge";
-import FireBurnCanvas from "./FireBurnCanvas";
-import { BURN_HZ_MAX, BURN_HZ_MIN } from "./flameBurn";
-import FireGlassButton, {
-  FIRE_GLASS_INSET,
-  FIRE_GLASS_SIZE,
-  FIRE_INSET,
-  FIRE_SIZE,
-} from "./FireGlassButton";
+import FireGlassButton from "./FireGlassButton";
 import CardStickyHeader, {
   CARD_CHROME_TOP_DROP,
   CARD_EXPANDED_CORNER_RADIUS,
   CARD_FACE_CORNER_RADIUS,
+  CARD_FACE_TOP_CORNER_RADIUS,
   CARD_HEADER_TITLE_BOTTOM,
-  CARD_OPEN_CORNER_RADIUS,
+  CHROME_EDGE_INSET,
+  PREVIEW_HEADER_TITLE_BOTTOM,
 } from "./CardStickyHeader";
 import CardGlassBackdrop from "./CardGlassBackdrop";
 import CardSectionBox from "./CardSectionBox";
@@ -317,7 +275,6 @@ const CARD_BOX_FALLBACK_HEIGHT = height;
 // ölçüsüne doğru küçülüyordu, ama iki şekil aynı noktada olduğu için küçülme
 // "kabuk değiştirme" değil "bir şey gitti, başka bir şey geldi" gibi
 // okunuyordu. İkisi de ölçüsünü KORUYOR.
-const FIRE_MORPH_OUT_END = 0.45;
 const FIRE_MORPH_IN_START = 0.3;
 const FIRE_MORPH_IN_END = 0.8;
 
@@ -337,36 +294,26 @@ const CARD_NAME_LINE = 32;
 
 // Kapak fotoğrafı ile profil panelinin arasındaki boşluk.
 //
-// ÖLÇÜ NEGATİF: panel kapağın ALT KISMININ ÜSTÜNE biniyor. Aşağıdan gelirken
-// fotoğrafın dibini örtüyor; iki yüzey arasında boşluk değil örtüşme var.
+// SIFIR (istek): panel kapağın dibinin TAM ALTINDAN başlıyor — ne örtüşme, ne
+// boşluk. Bölümler fotoğrafın ÜSTÜNE binmiyor, altında duruyor.
 //
-// Bir tur pozitife (+16) çekilmişti: panel kapaktan ayrı bir sayfa olarak
-// okunsun, arada bir nefes payı kalsın diye. Örtüşme o ayrımı kaybettirmiyor —
-// panelin yuvarlak tepesi ve kendi blur zemini kapağın ÜSTÜNDE duruyor, yani
-// sınır yine belli, yalnız iki yüzey birbirine giriyor.
+// İKİ YÜZEY ARASINDAKİ GÖRÜNEN NEFES bu sayıdan DEĞİL panelin kendi üst
+// dolgusundan geliyor (PANEL_TOP_PAD): burası 0 iken bile ilk kutu kapağın
+// dibinden o kadar aşağıda başlıyor. Aralığı büyütmek isteyen önce oraya baksın
+// — bu sabiti pozitife çekmek panelin KENDİ kenarını indirir.
 //
-// ÖLÇÜ TARİHİ (hepsi istek): −64 → −164 → −30 → −60 → −100. −64'te panelin ilk
-// bölümü (üniversite kutusu) kapağın dibinin ALTINDA kalıyordu; −164 onu kapağın
-// üstüne çıkardı ama fazla derine bindi (kapağın görünen alanından 164px
-// gidiyordu); −30 ince kaldı, −60 da yeterli gelmedi. −100 yerleşen değer.
+// ÖLÇÜ TARİHİ (hepsi istek): −64 → −164 → −30 → −60 → −100 → 0. Negatif olduğu
+// dönemde soru "panelin ilk kutusu kapağın dibinin NE KADAR ÜSTÜNE binsin"di ve
+// örtüşmenin bir işi vardı: kapağın dibi eriyerek bittiği için (alfa maskesi)
+// dikişi örtüşme gizliyordu. Erime kaldırılınca örtüşmenin tek etkisi çakışma
+// oldu.
 //
-// Fark doğrudan panelin ilk kutusuna gidiyor — arada başka bir pay yok, panelin
-// kendi üst dolgusu (PANEL_TOP_PAD) sabit.
+// Örtülen bant kapağın kromasıydı: isim + pill bloğu. Panel oraya varana kadar
+// o blok çekilmiş oluyordu (aynı kanal — bkz. cardChromeAnim), yani panel
+// hiçbir zaman yazının üstüne binmiyordu.
 //
-// Örtülen bant kapağın kroması: isim + pill bloğu, "yukarı kaydır" ipucu. Panel
-// oraya varana kadar onlar zaten çekilmiş oluyor (ikisi de aynı kanalda —
-// bkz. cardChromeAnim), yani panel yazının üstüne binmiyor.
-//
-// SABİTİ OKUYAN HER ŞEY TÜRETİLMİŞ, elle eşlenen bir ikizi YOK: panelin
-// marginTop'u (profileInfoAnimStyle), kapalı kartta bekleme mesafesi
-// (panelSlideTravel) ve kapağın dibindeki gölgenin boyu hep buradan çıkıyor.
-// Bir dönem sticky şeridin eşiği de bu sayıya bağlıydı ve "ikisi ayrışmasın"
-// uyarısı buradaydı; o eşik kalktı, şerit artık kartın açılma oranıyla beliriyor
-// (bkz. CardStickyHeader).
-//
-// Daha da negatife çekmenin bedeli: her piksel kapağın görünen alanından
-// gidiyor ve fotoğrafın düz alt kenarını kırpmaya başlıyor.
-const PROFILE_PANEL_GAP = -100;
+// SABİTİ OKUYAN HER ŞEY TÜRETİLMİŞ: panelin `marginTop`u buradan geliyor.
+const PROFILE_PANEL_GAP = 0;
 
 /**
  * ── PANELİN TEPESİNDEKİ GEÇİŞ BANDI KALDIRILDI (2026-09-04, istek) ──────────
@@ -413,21 +360,152 @@ const PROFILE_PANEL_GAP = -100;
 const PHOTO_CROP = 24;
 
 /**
- * Panelin, EKRANIN DİBİNİN de altında beklemesi için bırakılan fazladan pay.
+ * Kapaktaki isim + üniversite/ortak nokta bloğunun fotoğrafın dibinden
+ * yüksekliği. Tabanı tab bar'ın boyu ekliyor (bkz. coverBottomInset), yani bu
+ * sayı bar'ın ÜSTÜNDE kalan nefes.
  *
- * Panel kapalı kartta ekranın dışında durmalı ve açılışla birlikte aşağıdan
- * süzülüp kapağın altına yapışmalı — kapağın devamı değil, ondan ayrı bir
- * sayfa gibi. Bekleme mesafesi SABİT DEĞİL, hesaplanıyor (bkz.
- * panelSlideTravel): kartın dibi ile ekranın dibi arasındaki bant cihazın
- * safe-area'sına göre değişiyor ve sabit bir sayı kimi telefonda panelin ucunu
- * ekranın altında bırakıyordu.
+ * 70 → 30 → 12 (hepsi istek): 70'in altında bir "detaylar için yukarı kaydır"
+ * fısıltısı duruyordu, o kalkınca blok 30'a indi; sonra "biraz daha yaklaşsın"
+ * denip 12'ye çekildi. Daha da azaltma: 0'a yaklaştıkça blok yüzen bar'ın üst
+ * kenarına değiyor ve ikisi tek yığın gibi okunuyor.
  *
- * TRANSFORM DEĞİL MARGIN, bilerek: panelin içindeki cam kutular ata zincirinde
- * kimliksel olmayan bir transform gördüğü anda efektlerini hiç render etmiyor
- * (bkz. profileInfoAnimStyle notu). Margin bir layout prop'u — kutuların yerini
- * değiştirir, üstlerine dönüşüm katmaz.
+ * Ayrıca İKİ ŞEY daha bu sayıdan türüyor: chrome devrinin eşiği
+ * (chromeHandoffY — blok nerede duruyorsa devir orada tetiklenir) ve sağ alttaki
+ * aksiyon kolonunun tabanı (aynı çizgiden başlasınlar).
  */
-const PANEL_SLIDE_MARGIN = 40;
+const COVER_NAME_BOTTOM = 12;
+
+/**
+ * Kapağın sağ alt köşesindeki aksiyon kolonunun buton çapı ve butonlar arası
+ * boşluk.
+ *
+ * ÜÇÜ AYNI ÖLÇÜ (istek: Instagram'ın sağ alt kolonu gibi): aşağıdan yukarı üç
+ * nokta · not · Fire. Tek çap, tek boşluk — ayrışırlarsa kolon merdiven gibi
+ * okunuyor.
+ *
+ * Sayı ORTAK DOSYADAN (DISCOVER_GLASS_BUTTON_SIZE): ekranın üstündeki geri al /
+ * filtre ve şeridin iki ucundaki ok / Fire da aynı çapta. Devirde biri
+ * diğerinin yerini aldığı için bir tanesi bile ayrışırsa daireler büyüyüp
+ * küçülüyor.
+ */
+const COVER_ACTION_SIZE = DISCOVER_GLASS_BUTTON_SIZE;
+/**
+ * Kolondaki butonların arası. 12 → 18 (istek): 12'de üç daire tek bir dikey
+ * şerit gibi okunuyordu, 18 onları ayrı ayrı butonlar olarak ayırıyor.
+ *
+ * Kolonun TOPLAM boyu buna bağlı (3 × çap + 2 × boşluk) ve yukarı doğru
+ * büyüyor; fazla açmak üst butonu kapağın orta bandına taşır.
+ */
+const COVER_ACTION_GAP = 18;
+
+/**
+ * Kapağın alt chrome'unun (sol yazı bloğu + sağ buton kolonu) fotoğrafın ALT
+ * SINIRINA yaklaşabileceği en küçük mesafe (px).
+ *
+ * İkisi kaydırırken ekranda SABİT kalıyor (bkz. coverStickyStyle) ama fotoğraf
+ * altlarından akıp gidiyor: bir noktada fotoğrafın dibi onları geçip panelin
+ * üstünde bırakırdı. Bu pay o sınırı çiziyor — chrome fotoğraftan TAŞMIYOR,
+ * dibine bu kadar kala takılıp fotoğrafla birlikte yukarı gidiyor.
+ *
+ * 10 → 20 → 30 (istek): her turda bir tık daha yukarıda dursunlar. Sayı doğrudan
+ * pinlenme mesafesinden düşüyor (tavan = blok yüksekliği − bu pay), yani
+ * büyütmek chrome'u sınırdan uzaklaştırırken sticky bandını da kısaltıyor —
+ * 30'da band 40px'e indi.
+ *
+ * Daha da yukarı isteniyorsa kaldıraç ARTIK BURASI DEĞİL: bu sayı bloğun
+ * yüksekliğine (COVER_NAME_BOTTOM + tab bar payı ≈ 70) yaklaştıkça sticky bandı
+ * sıfıra iniyor ve "kaydırırken yerinde kalma" hissi kayboluyor. O noktada
+ * COVER_NAME_BOTTOM büyütülmeli — o, bloğu tab bar'a göre yukarı taşıyor ve
+ * bandı kısaltmıyor.
+ */
+const COVER_STICKY_EDGE_GAP = 30;
+
+/**
+ * Üniversite satırının ortak nokta satırına bıraktığı pay (px) — satırın
+ * `marginBottom`u.
+ *
+ * ÜÇ YER OKUYOR, o yüzden burada: üniversite satırının kendisi, aynı satırın
+ * dikey dolgusu (aşağısı) ve buton kolonunun tabanı. Kolon pillere ÜNİVERSİTE
+ * TEXTİYLE AYNI mesafede durmak zorunda (istek) — iki sayı ayrışırsa kolon
+ * yazıdan farklı bir çizgide duruyor.
+ */
+const COVER_UNI_PILLS_GAP = 8;
+
+/**
+ * Üniversite satırının kendi dikey dolgusu (`py-1`'in 4'ü).
+ *
+ * className'den ALINDI çünkü kolonun payı bunu da saymak zorunda: satırın
+ * KUTUSU yazının 4px altında bitiyor, yani "textin pillere uzaklığı" = margin +
+ * bu dolgu. Kolonun kutusunda böyle bir ölü pay yok (daire kutunun kenarına
+ * dayanıyor), o yüzden farkı elle kapatıyoruz.
+ */
+const COVER_UNI_ROW_PAD = 4;
+
+/**
+ * Buton kolonunun tabanı ile ortak nokta satırının arası — üniversite TEXTİNİN
+ * aynı satıra olan optik uzaklığı (istek).
+ *
+ * 10'du (elle seçilmiş bir sayı) ve yazıyla aynı çizgiye denk gelmiyordu.
+ * Türetilmiş hâli ikisini birbirine kilitliyor.
+ */
+const COVER_ACTION_PILLS_GAP = COVER_UNI_PILLS_GAP + COVER_UNI_ROW_PAD;
+
+/**
+ * Aksiyon kolonunun sağ payı — kolonun MERKEZİ, ekranın üstündeki filtre
+ * butonunun merkeziyle aynı dikey eksende dursun diye (istek).
+ *
+ * Kenar paylarını eşitlemek YETMİYOR, çünkü iki buton farklı çapta: filtre
+ * ortak cam ikon ölçüsünde (48), kolon 52. Aynı kenardan başlasalardı 2px
+ * kayarlardı. Fark yarı yarıya geri alınıyor — kutuları değil merkezleri
+ * çakıştıran, uygulamada başka yerlerde de kullanılan kalıp.
+ */
+const COVER_ACTION_RIGHT =
+  CHROME_EDGE_INSET + (DISCOVER_GLASS_BUTTON_SIZE - COVER_ACTION_SIZE) / 2;
+
+/*
+ * `COVER_FIRE_GLYPH_SIZE` (34) KALDIRILDI: kolondaki alev canvas'ının cam
+ * diskin içinde kalması için küçültülmüş ölçüsüydü (serbest alev 55'ti ve
+ * diskten taşıyordu). Canvas kaldırıldı — alev artık `FireGlassButton`ın
+ * berrak varyantındaki duragan glif ve ölçüsünü o dosya veriyor.
+ */
+
+
+/*
+ * `COVER_SIDE_INSET` (24, `left-6 right-6`nın karşılığı) KALDIRILDI: kapaktaki
+ * yazı grubunun ve aksiyon kolonunun yan payıydı. İkisi de artık ekranın
+ * üstündeki yüzen butonlarla hizalanıyor (istek) ve payları oradan geliyor —
+ * yazı CHROME_EDGE_INSET'ten (geri al butonunun kenarı), kolon
+ * COVER_ACTION_RIGHT'tan (filtre butonunun merkezi).
+ */
+
+/**
+ * Chrome devrinin süresi — yazıların ve butonların sönüp yerlerini devretmesi.
+ *
+ * SCROLL'A ORANLI DEĞİL (istek): eşik geçilince devir bu süreyle akıyor.
+ * `withTiming`, `withSpring` DEĞİL — yay sonunda salınıyor ve metin
+ * opaklığında o salınım titreme olarak okunuyor.
+ *
+ * 260 ms: göz devri fark edecek kadar uzun, kaydırmanın akışını kesmeyecek
+ * kadar kısa.
+ */
+const CHROME_FADE = { duration: 260, easing: Easing.out(Easing.cubic) };
+
+/**
+ * Devir eşiğinin iki yanındaki ölü bant (px). Tam eşikte duran parmak birkaç
+ * pikselik titremeyle devri ileri geri açıp kapatmasın.
+ */
+const CHROME_HYSTERESIS = 12;
+
+/*
+ * ── `PANEL_SLIDE_MARGIN` KALDIRILDI ────────────────────────────────────────
+ * 40'tı: panelin ekranın dibinin de ALTINDA beklemesi için bırakılan fazladan
+ * pay (`panelSlideTravel`in son terimi). Panel artık beklemiyor — kapağın
+ * altında statik duruyor (gerekçesi profileInfoAnimStyle'ın silindiği yerde).
+ *
+ * O notta duran ve hâlâ geçerli olan kural: panelin konumu MARGIN ile
+ * veriliyor, transform ile DEĞİL — içindeki cam kutular ata zincirinde
+ * kimliksel olmayan bir transform gördüğü anda efektlerini hiç render etmiyor.
+ */
 
 /**
  * Panelin ÜST köşelerinin yarıçapı — kendi kimliği olan bir sayfa olsun diye.
@@ -518,27 +596,34 @@ const PANEL_BOTTOM_PAD = 80;
 const PANEL_BOUNCE_PAD = 180;
 
 /**
- * Kapağın dibindeki rampanın boyu (px) — yazının durduğu bandı kapsar.
+ * Kapağın dibindeki rampanın, İSMİN ÜSTÜNDE bıraktığı sönme kuyruğu (px).
  *
- * İsim + pill bloğu fotoğrafın dibinden ~70px yukarıda başlıyor ve yukarı
- * doğru büyüyor (aktiflik satırı, üniversite pili); "yukarı kaydır" ipucu
- * daha aşağıda. Rampa ikisinin de üstünde bitmeli, yoksa yazının tepesi
- * perdesiz kalıp açık fotoğraflarda kayboluyor.
+ * Rampanın boyu artık sabit DEĞİL, yazı bloğundan türüyor (bkz.
+ * coverTextRampHeight): tab bar payı + bloğun kendi yüksekliği + bu kuyruk.
+ * Yani "fotoğrafın dibinden İSME KADAR" — istenen bu.
  *
- * Kısası geçişi sert bir şeride sıkıştırıyor, uzunu fotoğrafın alt yarısını
- * karartmaya başlıyor.
+ * Kuyruk şart: rampa bloğun tam tepesinde biterse ismin üst satırı (aktiflik
+ * işareti / uzun isimde ikinci satır) perdenin dışında kalıp açık fotoğraflarda
+ * kayboluyor. Kuyruk uzadıkça maskenin sönme bandı da uzuyor, yani geçiş
+ * fotoğrafın içinde daha yumuşak tamamlanıyor.
+ *
+ * 64 → 140 → 220 (istek, iki tur): 64'te perde yazının hemen üstünde bitiyor ve
+ * bant blokla birlikte tek bir şerit gibi okunuyordu; 140 sönmeyi fotoğrafın
+ * içine yaydı ama hâlâ kısa geldi. 220'de kuyruk bloğun kendi boyu kadar —
+ * yani perde ismin üstünde, bloğun bir boyu daha devam edip sönüyor.
+ *
+ * AYAR NOKTASI BURASI. Rampanın diğer üç terimi (tab bar payı, bloğun bar üstü
+ * nefesi, bloğun ölçülen boyu) yerleşimden geliyor; "daha yukarı / daha aşağı"
+ * isteyen yalnız bu sayıyı oynatmalı. Çok büyütmek fotoğrafın alt yarısını
+ * karartmaya başlıyor — sabit 340'ın bırakıldığı yer tam olarak orasıydı.
  */
-const COVER_TEXT_RAMP_HEIGHT = 340;
+const COVER_TEXT_RAMP_TAIL = 220;
 
-/**
- * Kapağın TEPESİNDEKİ rampanın boyu (px) — durum çubuğu ile Fire
- * alevinin durduğu bandı kapsar.
- *
- * Alev fotoğrafın tepesinden FIRE_INSET kadar aşağıda ve kendi boyu
- * kadar yer kaplıyor; açık kartta bu bandın üstünde bir de durum çubuğu var
- * (kart ekranın tepesine kadar çıkıyor). Rampa ikisinin de altında bitmeli.
+/*
+ * `COVER_TOP_RAMP_PAD` KALDIRILDI: kapağın tepesindeki rampanın butonların
+ * altında bıraktığı sönme kuyruğuydu (24 → 96). Rampanın kendisi kaldırıldı —
+ * gerekçesi çizildiği yerde: üstteki blur fotoğrafın değil sticky şeridin işi.
  */
-const COVER_TOP_RAMP_HEIGHT = 230;
 
 
 
@@ -552,11 +637,13 @@ const COVER_TOP_RAMP_HEIGHT = 230;
  * bırakıyordu — orada kartın tepesinde fotoğraf yok, o zemini örtecek bir şey
  * de yok.
  *
- * Ölçü: şeridin başlık satırının dibi + şeridin durum çubuğundan kaçmak için
- * aldığı pay (CARD_CHROME_TOP_DROP — sheet artık ekranın tepesine dayanıyor,
- * bkz. PreviewModal/LikerSwipeModal `topInset`) + 8 nefes − panelin kendi üst
- * dolgusu (PANEL_TOP_PAD). Daha küçüğü ilk bloğu camın altında bırakır, büyüğü
- * tepede boş şerit açar.
+ * Ölçü: ÖNİZLEME şeridinin başlık satırının dibi (PREVIEW_HEADER_TITLE_BOTTOM —
+ * Keşif'inkinden kısa, çünkü orada satırın üst payı kartın içerik çizgisi) +
+ * şeridin köşe diyagonalinden aşağı kayma payı (CARD_CHROME_TOP_DROP — sheet
+ * safe-area'nın altında başladığı için şu an 0, bkz. PreviewModal /
+ * LikerSwipeModal `topInset`) + 8 nefes − panelin kendi üst dolgusu
+ * (PANEL_TOP_PAD). Daha küçüğü ilk bloğu camın altında bırakır, büyüğü tepede
+ * boş şerit açar.
  *
  * TÜRETİLMİŞ, sabit değil: şeridin ölçüsü cam butonun çapından, dolgu da kendi
  * sabitinden geliyor; ikisi de değişebiliyor ve elle yazılmış bir sayı sessizce
@@ -564,7 +651,7 @@ const COVER_TOP_RAMP_HEIGHT = 230;
  * şeridin altındaki nefes DEĞİŞMİYOR (toplam sabit).
  */
 const PREVIEW_HEADER_SPACE =
-  CARD_HEADER_TITLE_BOTTOM + CARD_CHROME_TOP_DROP + 8 - PANEL_TOP_PAD;
+  PREVIEW_HEADER_TITLE_BOTTOM + CARD_CHROME_TOP_DROP + 8 - PANEL_TOP_PAD;
 
 // Expanded panelin alt ucu: zemin surface3'ten sayfa zeminine (theme.bg —
 // açık modda beyaz) çözülür. Rampa TAM ikonların başladığı çizgide biter,
@@ -635,23 +722,43 @@ const SECTION_PHOTO_RADIUS = 40;
 // sabit 40'tı ve yalnız kapağı biliyordu.
 
 /**
- * Kart yüzünün köşe yarıçapı, AÇILMA ORANINA bağlı: kapalıda 44
- * (CARD_FACE_CORNER_RADIUS), tam açıkta `openRadius` — Keşif'te
- * CARD_OPEN_CORNER_RADIUS (26), önizlemede CARD_EXPANDED_CORNER_RADIUS (35,
- * sheet'in clip'iyle eşleşmek zorunda).
+ * Kapağın ÜST köşesinin kabuktan ne kadar DAHA KARE çizildiği (pt).
  *
- * NEDEN AÇIKKEN DAHA KARE: açık kart ekranın kenarına dayanıyor ve 44 telefonun
- * köşe maskesinden yuvarlak kalıyor — dört köşede kartla ekran kenarı arasında
- * sayfa zemininden ince bir hilal görünüyordu. Gerekçenin tamamı
- * CARD_OPEN_CORNER_RADIUS'un notunda.
+ * Köşede üç eş eğri üst üste biniyordu — kabuk, panelin boyama kutusu (ikisi de
+ * açık modda BEYAZ zemin) ve en üstte kapak fotoğrafı. Üçü aynı yarıçapta
+ * olunca kapağın kenar yumuşatması altındaki beyazı sızdırıyor ve sağ/sol üst
+ * köşede ince bir beyazlık kalıyordu.
+ *
+ * Kapağı bir tık KARELEŞTİRMEK köşeyi taşırıyor: kırpmayı tek başına kabuk
+ * yapıyor, altındaki beyaz yüzeylerin köşesi tamamen kapağın altında kalıyor.
+ * Ekranda görünen eğri değişmiyor (kabuğun eğrisi), yalnız sızıntı kapanıyor.
+ *
+ * YÖNÜ TERSİNE ÇEVİRME: kapak kabuktan daha YUVARLAK olursa aynı beyazlık geri
+ * gelir, hatta büyür (bkz. photoBorderStyle).
+ *
+ * YALNIZ ÜST İKİ KÖŞE: altta kapağın dibi panelin üstünde gerçek bir kenar,
+ * altına sızacak bir yüzey yok — orada kabukla birebir aynı sayı kalıyor.
+ */
+const COVER_TOP_RADIUS_OVERFILL = 2;
+
+/**
+ * Kart yüzünün köşe yarıçapı, AÇILMA ORANINA bağlı: kapalıda 44
+ * (CARD_FACE_CORNER_RADIUS), tam açıkta `openRadius`.
+ *
+ * KEŞİF'TE ARTIK NO-OP: orada `openRadius` da CARD_FACE_CORNER_RADIUS, yani
+ * köşe açılma boyunca hiç değişmiyor (gerekçe + tarihçe: openCornerRadius).
+ * Fonksiyon duruyor çünkü ÖNİZLEME yolu hâlâ farklı bir varışa gidiyor (35,
+ * sheet'in clip'iyle eşleşmek zorunda) ve varış değeri tek satırda geri
+ * alınabilir kalsın.
  *
  * ÇEKİŞE BAĞLI, süreye değil: kabuk ve kapak fotoğrafı bu tek fonksiyonu
- * okuyor, yani jest yarıda bırakılırsa köşe de yarıda kalıyor ve parmakla geri
- * sarılabiliyor. Doğrusal: köşe kartın büyümesiyle aynı hızda kareleşmeli,
- * kendi bandı olsaydı hareketin ortasında ayrı bir olay gibi okunurdu.
+ * okuyor, yani varışlar yeniden ayrışırsa jest yarıda bırakıldığında köşe de
+ * yarıda kalır, parmakla geri sarılabilir. Doğrusal: köşe kartın büyümesiyle
+ * aynı hızda değişmeli, kendi bandı olsaydı hareketin ortasında ayrı bir olay
+ * gibi okunurdu.
  *
  * KLEMP ŞART: cardExpandAnim yay ile oturuyor ve 1'i aşabiliyor; klempsiz köşe
- * varış noktasının altına inip bir an fazla kareleşirdi.
+ * varış noktasını aşıp bir an fazla kareleşirdi.
  */
 function cardCornerRadius(progress: number, openRadius: number) {
   "worklet";
@@ -953,7 +1060,7 @@ function CoverMeltBand({
 // Dokunma hedefi 52 KALDI (glyph kabı saydam): kutunun kalktığı yerde hitbox da
 // küçülürse fotoğrafın alt kenarındaki isabet oranı düşer. Yerleşim payları
 // (NOTE_BOX_INSET ve türevleri) bu 52'lik kaba göre hesaplı, dokunma.
-const NOTE_BOX_SIZE = 52;
+const NOTE_BOX_SIZE = DISCOVER_GLASS_BUTTON_SIZE;
 /**
  * Çizilen işaretin boyu — dokunma kabından (52) küçük, kabın içinde ortalı.
  * Glyph'in kendi 2/24'lük optik payı da bunun içinde, yani gerçek mürekkep
@@ -977,7 +1084,11 @@ const NOTE_GLYPH_SIZE_PROMPT = 40;
  * Ölçü dokunma kabını (52) tam doldurmuyor ama glyph'in (32) belirgin şekilde
  * üstünde: balon diskin içinde nefes alsın, disk de gerçek bir kap gibi okunsun.
  */
-const NOTE_DISC_SIZE = 50;
+/*
+ * `NOTE_DISC_SIZE` KALDIRILDI: fotoğraf üstündeki not diskinin çapıydı. Disk
+ * artık ortak cam butonun kabuğu (bkz. CardGlyphGlassButton) ve çapı kolonun
+ * sayısından geliyor — COVER_ACTION_SIZE.
+ */
 // Diskin dolgusunun ALFASI KALDIRILDI (0.92 idi: altındaki fotoğraf bir tık
 // sızsın diye). Disk artık bölüm kutularıyla aynı opak zeminde — kartın not ve
 // bölüm yüzeyleri tek dil.
@@ -990,7 +1101,11 @@ const NOTE_BOX_INSET = 14;
  * padding'i eklenince üçü de (kapak · bölüm fotoları · prompt kutusu) aynı
  * dikey hatta oturuyor.
  */
-const NOTE_BOX_COVER_INSET = NOTE_BOX_INSET + 16;
+/*
+ * `NOTE_BOX_COVER_INSET` (NOTE_BOX_INSET + 16) KALDIRILDI: kapaktaki not
+ * kutusunun yan payıydı — kutu sağa yaslı geniş bir katmandı. Artık sağ alt
+ * aksiyon kolonunun içinde ve payı kolondan geliyor.
+ */
 /**
  * Prompt kutusunda butonun cevaba doğru çekildiği pay. Cevap kabının kendi
  * 14'lük alt padding'i aralığı zaten taşıyor, üstüne tam marj eklenince buton
@@ -1000,23 +1115,18 @@ const NOTE_BOX_COVER_INSET = NOTE_BOX_INSET + 16;
  */
 const NOTE_BOX_PROMPT_PULL = 8;
 
-/**
- * Kapaktaki not kutusu ile PANELİN ÜST KENARI arasındaki nefes payı.
+/*
+ * `NOTE_BOX_PANEL_CLEARANCE` (12) KALDIRILDI: kapaktaki not kutusu ile panelin
+ * üst kenarı arasındaki nefesti. Kutu panelin bindiği bandın İÇİNDEYKEN
+ * (sabit `bottom: 74`) panelin ilk bölümüyle çakışıyordu, bu pay onu kenarın
+ * yukarısına alıyordu. Kutu artık sağ alt aksiyon kolonunda ve konumu oradan
+ * geliyor.
  *
- * Kutunun `bottom`u doğrudan `PROFILE_PANEL_GAP`ten türüyor: panel kapağın son
- * |GAP| pikseline biniyor ve kutu o bandın İÇİNDE kalırsa panelin ilk bölümü
- * (üniversite kutusu) üstüne biner. İkisi çakışmasın diye kutu panelin üst
- * kenarının YUKARISINA alınıyor, bu sayı da aradaki boşluk.
- *
- * Z-SIRASIYLA ÇÖZME. Bir tur panele `zIndex` verilerek kutu arkada bırakıldı;
- * çakışma görünmüyordu ama kutu hâlâ panelin altındaydı — istenen onu YUKARI
- * taşımaktı. Üstelik zIndex paneli kapağın bütün katmanlarının (erime bandı
- * dahil) üstüne çıkarıyor.
- *
- * ELLE SAYI YAZMA: `PROFILE_PANEL_GAP` her oynadığında kutunun da oynaması
- * gerekiyor, ikisi türetmeyle bağlı.
+ * O notta duran ve hâlâ geçerli olan uyarı: çakışmayı `zIndex` ile çözmeye
+ * çalışma. Bir tur panele zIndex verilip kutu arkada bırakıldı; çakışma
+ * görünmüyordu ama istenen onu YUKARI taşımaktı, üstelik zIndex paneli kapağın
+ * bütün katmanlarının üstüne çıkarıyor.
  */
-const NOTE_BOX_PANEL_CLEARANCE = 12;
 
 /**
  * Prompt cevabının satır yüksekliği. Metnin kendi metrikleri PromptsEditor'deki
@@ -1042,110 +1152,85 @@ function NoteBox({
   onPhoto = false,
 }: {
   onPress?: () => void;
-  /** Kutu bir FOTOĞRAFIN üstünde mi — arkasındaki diski o belirliyor. */
+  /** Kutu bir FOTOĞRAFIN üstünde mi — kabuğunu o belirliyor. */
   onPhoto?: boolean;
 }) {
   const { t } = useTranslation();
-  // Basma geri bildirimi SADECE ölçek — opacity sabit (activeOpacity=1).
-  // Gradyan dolgu soluklaşınca kutu "sönmüş" gibi duruyordu; küçülme aynı
-  // dokunulma hissini rengi bozmadan veriyor. Fire alevindeki
-  // firePressAnim ile aynı kalıp ve aynı 180ms/out-quad zamanlaması.
-  const pressAnim = useSharedValue(0);
-  const pressStyle = useAnimatedStyle(() => ({
-    transform: [{ scale: 1 - 0.06 * pressAnim.value }],
-  }));
-  // KONUMLANDIRMA ÇAĞIRANIN İŞİ. Üç yerde üç farklı yerleşim var (panel
-  // fotoğrafının içinde, kapak fotoğrafının içinde + animasyonlu, prompt
-  // kutusunun içinde sağ altta); hepsini buraya bayrak olarak taşımak bu
-  // bileşeni konumlandırma switch'ine çevirirdi. Dikey konumu çağıran veriyor,
-  // yatayda hepsinde aynı: sağa yaslı.
-  return (
-    <TouchableOpacity
-      activeOpacity={1}
-      onPress={onPress}
-      onPressIn={() => {
-        pressAnim.value = withTiming(1, {
-          duration: 180,
-          easing: Easing.out(Easing.quad),
-        });
-      }}
-      onPressOut={() => {
-        pressAnim.value = withTiming(0, {
-          duration: 180,
-          easing: Easing.out(Easing.quad),
-        });
-      }}
-      accessibilityRole="button"
-      // Görünür etiket kalmadı → butonun ADI yalnız burada. Silme.
-      accessibilityLabel={t("note.boxLabel")}
-      style={{ alignSelf: "flex-end" }}
-      hitSlop={8}
-    >
-      <Animated.View
-        style={[
-          {
-            width: NOTE_BOX_SIZE,
-            height: NOTE_BOX_SIZE,
-            alignItems: "center",
-            justifyContent: "center",
-          },
-          pressStyle,
-        ]}
-      >
-        {/* İşaretin tamamı bu: metin de kalan hak sayısı da YOK. Glyph dokunma
-            kabının içinde ortalı, ondan küçük (zemine göre iki ölçü,
-            bkz. NOTE_GLYPH_SIZE_*) — kendi 2/24'lük optik payı da cabası.
-            Kontur kapak alevindeki ile aynı ince açık hairline: fotoğrafın
-            parlak yerlerinde siluetin kenarını tutuyor.
 
-            FOTOĞRAF ÜSTÜNDE glyph'in arkasında disk var (bkz. ZEMİN notu):
-            düz `veilSurface(0.92)` dolgusu. Disk artık mutlak konumlu bir
-            KARDEŞ değil, glyph'i SARAN kap — `GlassView` ölçüsünü kendi
-            içeriğinden alamayan boş bir overlay olarak sessizce efektsiz
-            kalıyor (bkz. CardSectionBox). Ölçü yine sabit (52'lik dokunma kabı
-            büyümesin), sadece kap akışın içinde. */}
-        {onPhoto ? (
-          <CardSectionBox
-            // CAM DEĞİL ve bu kalıcı karar: disk fotoğrafın üstünde duruyor,
-            // camın kırdığı şey de altındaki fotoğrafın kendisi oluyordu —
-            // işaret zeminden ayrışmıyordu. Bir dönem bölüm fotoğraflarında
-            // cam, kapakta düz dolgu vardı; ikisi artık AYNI yüzey.
-            glass={false}
-            radius={999}
-            style={{
-              width: NOTE_DISC_SIZE,
-              height: NOTE_DISC_SIZE,
-              alignItems: "center",
-              justifyContent: "center",
-            }}
-            // Dolgu bölüm kutularıyla AYNI: koyuda siyah, açıkta beyaz. Kutunun
-            // kendi varsayılanı da bu, yani burada ezmeye gerek yok — ama
-            // `fallbackStyle` bilerek duruyor: disk fotoğrafın üstünde ve
-            // rengi orada bir tercih, varsayılanın yan etkisi değil.
-            //
-            // Bir dönem `veilSurface(0.92)` idi (altındaki fotoğraf bir tık
-            // sızsın diye); kartın not/bölüm yüzeyleri tek dile indirilince
-            // opak zemine geçti.
-            fallbackStyle={{
-              backgroundColor: theme.bg,
-            }}
-          >
-            <NoteGlyph
-              size={NOTE_GLYPH_SIZE_PHOTO}
-              color={theme.text}
-              stroke={theme.swipeHeartBorder}
-              strokeWidth={0.1}
-            />
-          </CardSectionBox>
-        ) : (
+  // Görünür etiket kalmadı → butonun ADI yalnız burada. Silme.
+  const label = t("note.boxLabel");
+
+  /*
+   * ── BASMA ANİMASYONU KALDIRILDI (istek: "liquid effect") ──────────────────
+   *
+   * `pressAnim` + `scale: 1 − 0.06p` vardı (Fire alevindeki kalıbın aynısı,
+   * 180ms/out-quad). Fotoğraf üstündeki disk CAM olunca iki sebeple gitti:
+   *   1. O `transform` camın ATASINDAYDI — uygulamada kimliksel olmayan bir ata
+   *      transform'u cam efektini sessizce yok ediyor.
+   *   2. İstenen geri bildirim zaten camın kendisinde: `interactive: true` ile
+   *      iOS 26 basışta kabuğu kendi morph'uyla büküyor (bkz.
+   *      CardGlyphGlassButton). Üstüne ölçek koymak iki sinyali üst üste
+   *      bindirirdi.
+   *
+   * PROMPT KUTUSUNDAKİ (onPhoto=false) işaret zeminsiz: orada kabuk yok, o
+   * yüzden camın morph'u da yok. Basma geri bildirimi `TouchableOpacity`nin
+   * varsayılan solmasına bırakıldı — tek başına duran bir glif için yeterli.
+   */
+
+  // FOTOĞRAF ÜSTÜNDE: ortak berrak cam yuvarlak buton. Kolondaki Fire ve üç
+  // noktayla AYNI kabuk — üçü yan yana duruyor (bkz. CardGlyphGlassButton).
+  if (onPhoto) {
+    return (
+      // SAĞA YASLI: kutu bölüm fotoğraflarının ve kapağın İÇİNDE, sağ alt
+      // köşede duruyor. Sarmalayıcı şart — `CardGlyphGlassButton` kendi
+      // hizasını bilmiyor (konumlandırma çağıranın işi) ve pay verilmezse
+      // esnek bir kapta sola yapışıyor.
+      <View style={{ alignSelf: "flex-end" }}>
+        <CardGlyphGlassButton
+          onPress={onPress ?? (() => {})}
+          label={label}
+          size={COVER_ACTION_SIZE}
+        >
           <NoteGlyph
-            size={NOTE_GLYPH_SIZE_PROMPT}
-            color={theme.text}
+            size={NOTE_GLYPH_SIZE_PHOTO}
+            // Mürekkep FOTO ÜSTÜ — açık modda da beyaz. Berrak camın dolgusu
+            // olmadığı için glifin zemini doğrudan fotoğraf; tema mürekkebiyle
+            // açık modda kapağın karanlık yerlerinde kayboluyordu. 26-altı /
+            // Android dalı tema mürekkebinde kalıyor (bkz. glassOnMediaInk).
+            color={glassOnMediaInk()}
             stroke={theme.swipeHeartBorder}
             strokeWidth={0.1}
           />
-        )}
-      </Animated.View>
+        </CardGlyphGlassButton>
+      </View>
+    );
+  }
+
+  // PROMPT KUTUSUNDA: zeminsiz glif. KONUMLANDIRMA ÇAĞIRANIN İŞİ — dikey yeri
+  // oradan geliyor, yatayda sağa yaslı.
+  return (
+    <TouchableOpacity
+      onPress={onPress}
+      accessibilityRole="button"
+      accessibilityLabel={label}
+      style={{ alignSelf: "flex-end" }}
+      hitSlop={8}
+    >
+      <View
+        style={{
+          width: NOTE_BOX_SIZE,
+          height: NOTE_BOX_SIZE,
+          alignItems: "center",
+          justifyContent: "center",
+        }}
+      >
+        <NoteGlyph
+          size={NOTE_GLYPH_SIZE_PROMPT}
+          color={theme.text}
+          stroke={theme.swipeHeartBorder}
+          strokeWidth={0.1}
+        />
+      </View>
     </TouchableOpacity>
   );
 }
@@ -1554,31 +1639,23 @@ interface SwipeCardProps {
   /** Expand sonrası native scroll konumu — SwipeWrapper'ın pan'i okuyor. */
   scrollY?: SharedValue<number>;
   /**
-   * Kartın scroll'una dışarıdan YAZMA kapısı.
+   * Kartın scroll'una dışarıdan erişim. Verilmezse kart kendi ref'ini kurar.
    *
-   * SwipeWrapper'ın pan'i, kart tam açıldıktan sonra taşan hareketi doğrudan
-   * buraya `scrollTo` ile yazıyor: parmak kaldırılmadan açılıştan scroll'a
-   * geçilebilsin diye (bkz. oradaki drivingScroll). Verilmezse kart kendi
-   * ref'ini kurar.
+   * Yanında `scrollMax` ve `topHitSpeed` vardı: ilki pan'in ELLE sürdüğü
+   * scroll momentumunun sınırı, ikincisi "momentum tepeye çarptı → kartı
+   * kapat" kararının girdisiydi. İkisi de aç/kapa modeline aitti (bkz.
+   * SwipeWrapper'ın başındaki not).
    */
   scrollRef?: AnimatedRef<Animated.ScrollView>;
-  /** Scroll'un alt sınırı — pan, kendi sürdüğü momentumu buna clamp'liyor. */
-  scrollMax?: SharedValue<number>;
-  /**
-   * Scroll momentumla tepeye çarptığı andaki hız — SwipeWrapper bunu okuyup
-   * kartı kapatıyor (aşağı flick, scroll'un sonunda durmayıp devam ediyor).
-   */
-  topHitSpeed?: SharedValue<number>;
   /** Pan ile simultaneous çalışan Gesture.Native() örneği. */
   nativeScrollGesture?: ReturnType<typeof Gesture.Native>;
-  /** Pull-down Fire doluluk oranı (0-1). */
-  fireProgress?: SharedValue<number>;
-  /**
-   * Dikey jest SÜRÜYOR mu (0/1) — oranı değil, parmağın ekranda olup
-   * olmadığını (bkz. SwipeWrapper > pullActive). Önizlemede pan yok, o yüzden
-   * opsiyonel.
+  /*
+   * `fireProgress` (pull-down Fire doluluk oranı) ve `pullActive` (parmak
+   * ekranda mı) KALDIRILDI: ikisi de kapaktaki alev canvas'ının yanmasını
+   * sürüyordu. Alev artık cam bir butonun içindeki duragan glif — kartın
+   * çekişten haber almasına gerek kalmadı. Jestin kendi geri bildirimi
+   * SwipeWrapper'da (haptic rampası) ve FirePullHint'te duruyor.
    */
-  pullActive?: SharedValue<number>;
   isTopCard?: boolean;
   expanded?: boolean;
   /**
@@ -1591,15 +1668,16 @@ interface SwipeCardProps {
   /** Profil önizleme / liker modal'ı: jest ve aksiyonlar devre dışı. */
   previewMode?: boolean;
   /**
-   * Kapağın altındaki "yukarı kaydır" ipucunu hiç çizme.
-   *
-   * Adı `hideChevron` idi; orada bir ok vardı ve o ok metinle değiştirildi.
-   * Çağıranların ikisi de (PreviewModal · LikerSwipeModal) kartı zaten AÇIK
-   * gösteriyor, yani kaydırılacak bir şey kalmıyor.
+  /*
+   * ── `hideExpandHint` ve `onExpandPress` KALDIRILDI ────────────────────────
+   * İlki kapağın altındaki "yukarı kaydır" ipucunu gizliyordu (önizleme
+   * sheet'leri kartı zaten AÇIK gösteriyor, kaydırılacak bir şey yok), ikincisi
+   * o ipucuna dokunmayı expand/collapse toggle'ına bağlıyordu. İpucu
+   * kaldırılınca (istek) ikisinin de okuyanı kalmadı; gerekçenin tamamı
+   * çizildiği yerde. `hideExpandHint`in adı bir dönem `hideChevron`dı — orada
+   * metin değil bir ok vardı.
    */
-  hideExpandHint?: boolean;
   hideFire?: boolean;
-  onExpandPress?: () => void;
   /**
    * Kartın en altındaki kırmızı moderasyon ikonları. VERİLMEZSE ÇİZİLMEZ —
    * kendi profilini önizlediğin yerde (ProfileScreen > PreviewModal) bu
@@ -1607,6 +1685,14 @@ interface SwipeCardProps {
    */
   onReport?: () => void;
   onBlock?: () => void;
+  /**
+   * Kapağın sağ alt kolonundaki "üç nokta" — verilmezse buton hiç çizilmez.
+   *
+   * Kart bir sheet AÇMIYOR: hangi profilin seçeneklerinin açıldığını bilen taraf
+   * ekranın kendisi (bkz. DiscoverScreen > ProfileOptionsSheet). Şikayet/engelle
+   * de zaten oradan geçiyor.
+   */
+  onMenu?: () => void;
   superLikesRemaining?: number | null;
   /**
    * Not (yorumlu beğeni) gönderme isteği — hedefiyle birlikte.
@@ -1689,20 +1775,15 @@ export default function SwipeCard({
   onFire,
   scrollY,
   scrollRef,
-  scrollMax,
-  topHitSpeed,
   nativeScrollGesture,
-  fireProgress,
-  pullActive,
   isTopCard = true,
   expanded = false,
   previewMode = false,
-  hideExpandHint = false,
   hideFire = false,
-  onExpandPress,
   zoomImpact,
   onReport,
   onBlock,
+  onMenu,
   onNote,
 }: SwipeCardProps) {
   useRenderCount("SwipeCard");
@@ -1711,38 +1792,43 @@ export default function SwipeCard({
 
   /**
    * Kartın açılırken YUKARI kalktığı mesafe — SwipeWrapper'daki HEADER_COVER'ın
-   * aynısı, aynı üç sayıdan türüyor. Ayrışırlarsa fotoğraf açılış boyunca
+   * aynısı, aynı sabitten okunuyor. Ayrışırlarsa fotoğraf açılış boyunca
    * ekranda kaymaya başlar.
    */
-  const expandedLift = previewMode
-    ? 0
-    : insets.top + DISCOVER_HEADER_HEIGHT + DISCOVER_CARD_TOP_GAP;
+  const expandedLift = previewMode ? 0 : DISCOVER_CARD_EXPAND_LIFT;
 
   /**
    * Kabuğun, KAPALI kartın göründüğü alanın altına taşan payı (bkz.
    * SwipeWrapper animatedStyle > `bottom`).
    *
-   * Kutu hiç boyut değiştirmiyor; kapalı kartta da açık kartın boyunda ve alt
-   * ucu ekranın dibinin altına taşıyor. İki pay:
-   *   • tab bar — kapalı kart bar'ın üstünde bitiyor,
-   *   • expandedLift — kutu açık kartın boyunda.
+   * SIFIR: kabuk artık hiçbir yere taşmıyor — kart kabı tüm ekran ve lift de 0
+   * (bkz. expandedLift). Kutu, kabın ta kendisi.
    *
-   * Fotoğrafın yüksekliği bu payı DÜŞEREK hesaplanıyor: kutu nereye taşarsa
-   * taşsın, fotoğrafın alt kenarı kapalı kartın göründüğü yerde durmalı.
-   * Altında kalan bant kabuğun kendi zemini ve panelin geleceği alan.
+   * TARİHÇE: `tabBarInset + expandedLift` idi. Kap üstte şeridin altından
+   * başlayıp altta tab bar'a pay bırakırken kabuk o iki payın içine giriyordu;
+   * fotoğrafın yüksekliği de bu sayıyı DÜŞEREK hesaplanıyordu ki alt kenarı
+   * kapalı kartın göründüğü yerde dursun. Kap tüm ekrana açılınca ikisi de
+   * konusuz kaldı.
    */
-  const cardBottomDrop = previewMode
-    ? 0
-    : discoverTabBarInset(insets.bottom) + expandedLift;
+  const cardBottomDrop = 0;
 
   /**
    * Kapağın ALT BANDINDAKİ katmanların (isim + pill bloğu, "yukarı kaydır"
    * ipucu, kapak not kutusu) fotoğrafın dibinden yüksekliği.
    *
-   * SIFIR: fotoğrafın alt kenarı artık kırpılmıyor, kapalı kartın göründüğü
-   * yerde bitiyor — kaçılacak bir bant yok. (Fotoğraf yalnız ÜSTTEN taşıyor.)
+   * KEŞİF'TE TAB BAR'IN BOYU: kapak artık ekranın dibine kadar iniyor ve yüzen
+   * tab bar onun ÜSTÜNE biniyor (bkz. DiscoverScreen'deki kart kabı). Bu pay
+   * verilmezse isim/pill bloğu ve ipucu bar'ın ARDINA düşüyor. Kartın kendisi
+   * bilerek bar'ın altına giriyor — kaçan yalnız üstündeki yazı.
+   *
+   * ÖNİZLEMEDE 0: orada kartı bir sheet taşıyor, altında tab bar yok.
+   *
+   * Bir dönem Keşif'te de 0'dı — o dönem kart kabı bar'a pay bırakıyordu, yani
+   * fotoğrafın dibi zaten bar'ın üstünde bitiyordu.
    */
-  const coverBottomInset = 0;
+  const coverBottomInset = previewMode
+    ? 0
+    : discoverTabBarInset(insets.bottom);
 
   // Kart frame'inin gerçek render yüksekliği — onLayout ile ölçülür (KAPALI
   // hâlin boyu; "en küçük ölçüm kazanır", bkz. aşağıdaki onLayout notu).
@@ -1760,18 +1846,12 @@ export default function SwipeCard({
    * Yükseklik animasyonlu DEĞİL, konumu animasyonlu: fotoğrafın kendi layout'u
    * sabit kaldıkça altındaki panel de her karede yeniden yerleşmiyor.
    */
-  /**
-   * Panelin kapalı kartta bekleyeceği mesafe — ekranın dibinin altı.
-   *
-   * Panelin üst kenarı kapağın dibinden `PROFILE_PANEL_GAP` kadar yukarıda
-   * (ölçü negatif, panel kapağa biniyor). Ekranın dibi ise kartın görünen
-   * dibinden `cardBottomDrop − expandedLift` kadar aşağıda. Panelin oradan da
-   * aşağıda kalması için ikisinin farkı + bir pay gerekiyor.
+  /*
+   * ── PANELİN BEKLEME MESAFESİ (`panelSlideTravel`) KALDIRILDI ──────────────
+   * Panelin kapalı kartta ekranın dibinin de altında bekleyeceği yol:
+   * `tabBarInset − PROFILE_PANEL_GAP + PANEL_SLIDE_MARGIN`. Panel artık
+   * beklemiyor, kapağın altında statik duruyor (bkz. yukarıdaki not).
    */
-  const panelSlideTravel =
-    discoverTabBarInset(insets.bottom) -
-    PROFILE_PANEL_GAP +
-    PANEL_SLIDE_MARGIN;
 
   /**
    * AÇIK kartta görünen pencerenin boyu — fotoğrafın yüksekliği bu.
@@ -1827,7 +1907,7 @@ export default function SwipeCard({
   // TabNavigator de bu değeri okuyarak tab bar translateY uyguluyor.
   // previewMode'da kendi local shared value'umuzu kullanırız — Discover'daki
   // gerçek kartı etkilemeyelim, ve hemen expanded başlayalım.
-  const localExpandAnim = useSharedValue(previewMode ? 1 : 0);
+  const localExpandAnim = useSharedValue(1);
 
   /**
    * ── AÇILMA YALNIZ ÜSTTEKİ KARTA UYGULANIR ─────────────────────────────────
@@ -1845,16 +1925,29 @@ export default function SwipeCard({
    * `isTopCard` bağımlılıkta: kart üste geçtiği anda türetilmiş değer yeniden
    * kuruluyor ve global değeri izlemeye başlıyor.
    */
-  const topExpandAnim = useDerivedValue(
-    () => (isTopCard ? cardExpandAnim.value : 0),
-    [isTopCard],
-  );
   const topChromeAnim = useDerivedValue(
     () => (isTopCard ? cardChromeAnim.value : 0),
     [isTopCard],
   );
 
-  const expandAnim = previewMode ? localExpandAnim : topExpandAnim;
+  /**
+   * ── AÇILMA ORANI ARTIK SABİT 1 ────────────────────────────────────────────
+   *
+   * Kartın "kapalı" bir hâli kalmadı (bkz. SwipeWrapper'ın başındaki not):
+   * kapak tüm ekranı kaplıyor, panel onun hemen altında statik duruyor ve
+   * içerik ilk dokunuşta kaydırılıyor. Bu kanalın sürdüğü her şey — panelin
+   * konumu, zemin tülü, kabuğun boyaması — o yüzden açık uçta donuyor.
+   *
+   * Sabit bir SharedValue olarak duruyor, ham `1` değil: onu okuyan bir düzine
+   * `useAnimatedStyle` var ve hepsini teker teker sadeleştirmek yerine tek
+   * yerden besliyoruz. `localExpandAnim` artık iki bağlamda da 1.
+   *
+   * Burada bir `topExpandAnim` vardı (global `cardExpandAnim`i yalnız üstteki
+   * karta süzen türev): deste global bir oran okuduğu için arkadaki kart da
+   * açık geometriye geçiyor ve üstteki yana kaydırılırken altından açık hâliyle
+   * çıkıyordu. Oran sabitlenince süzülecek bir şey kalmadı.
+   */
+  const expandAnim = localExpandAnim;
 
   /**
    * Kapak KROMUNUN devri — panelin açılışından AYRI zamanlanıyor.
@@ -1872,8 +1965,8 @@ export default function SwipeCard({
   const chromeAnim = previewMode ? localExpandAnim : topChromeAnim;
 
   /**
-   * Üst şeridin (sağ üstte Fire, solda isim satırı) durum çubuğundan
-   * kaçmak için aldığı pay — bkz. CARD_CHROME_TOP_DROP.
+   * Üst şeridin (sağ üstte Fire, solda isim satırı) köşe diyagonalinden aşağı
+   * kayma payı — bkz. CARD_CHROME_TOP_DROP (şu an 0).
    *
    * ÖNİZLEMEDE 0, çünkü orada bu katmanlar kartın İÇİNDE değil: sheet kendi
    * şeridini kartın kardeşi olarak çiziyor ve payı ona kendisi veriyor
@@ -1916,54 +2009,84 @@ export default function SwipeCard({
 
   /**
    * Kartın AÇIKKEN varacağı köşe yarıçapı. İki bağlamda farklı ve bu FARK
-   * KASITLI: Keşif'te kartı kırpan bir şey yok, kenar doğrudan ekranın kenarı —
-   * orada belirgin kare bir köşe isteniyor (26). Önizlemede kartı bir sheet
-   * taşıyor ve sheet'in kendi clip'i 35; ayrışırlarsa köşede hilal kalır.
+   * KASITLI:
+   *
+   * ARTIK İKİ DAL AYNI SAYIYA ÇIKIYOR ve dal bilerek duruyor: her bağlamın
+   * yarıçapını KENDİ zincirinden okuduğunu gösteriyor, ikisi tesadüfen eşit
+   * değil (bkz. CARD_EXPANDED_CORNER_RADIUS — o da kart yüzünden türüyor).
+   *
+   *   - KEŞİF'TE KAPALIDAKİNİN AYNISI (CARD_FACE_CORNER_RADIUS): köşe açılma
+   *     boyunca HİÇ DEĞİŞMİYOR, kart aynı yuvarlaklıkta büyüyor. Aradaki
+   *     interpolasyon (bkz. cardCornerRadius) böylece Keşif'te no-op.
+   *   - Önizlemede kartı bir sheet taşıyor; kabuk sheet'in clip'iyle aynı sayıyı
+   *     okumak ZORUNDA, ayrışırlarsa köşede hilal kalıyor. O yüzden varış orada
+   *     sheet'in sayısı — istekle Keşif'inkine eşitlendi (istek: "önizleme
+   *     kartlarının üst köşeleri Keşif'teki ana kartla aynı olsun").
+   *
+   * TARİHÇE: Keşif'te varış CARD_OPEN_CORNER_RADIUS (26) idi — kart açılırken
+   * 44'ten oraya iniyor, yani kareleşiyordu. Gerekçesi "açık kart ekranın
+   * kenarına dayanıyor, 44 telefonun köşe maskesinden yuvarlak kalıp kenarda
+   * sayfa zemininden ince bir hilal bırakıyor"du; o hilal ÜST köşelerde artık
+   * mümkün değil (kart safe-area çizgisinde başlıyor, donanım köşesinden uzak),
+   * altta ise kabuk zaten ekranın dibinin altına taşıyor. Sabit köşe istendi ve
+   * kareleşme kaldırıldı. Geri istenirse tek satır: buradaki varış değeri.
    */
   const openCornerRadius = previewMode
     ? CARD_EXPANDED_CORNER_RADIUS
-    : CARD_OPEN_CORNER_RADIUS;
+    : CARD_FACE_CORNER_RADIUS;
 
   /**
-   * Kapak fotoğrafının köşeleri — DÖRDÜ DE aynı sayı, ve o sayı ÇEKİŞE bağlı:
-   * kapalıda CARD_FACE_CORNER_RADIUS, tam açıkta openCornerRadius. Yani kart
-   * açıldıkça köşe kareleşiyor (gerekçe: açık kart ekranın kenarına dayanıyor,
-   * telefonun köşe maskesinden yuvarlak kalırsa kenarda hilal görünüyor —
-   * bkz. cardCornerRadius).
+   * Kapak fotoğrafının köşeleri — DÖRDÜ DE aynı sayı: kapalıda
+   * CARD_FACE_CORNER_RADIUS, tam açıkta openCornerRadius. KEŞİF'TE İKİSİ DE 44,
+   * yani köşe açılma boyunca sabit (bkz. openCornerRadius).
    *
    * Alt iki köşe bir dönem 0'A kadar iniyordu; gerekçe "açık kartta panel
    * kapağın devamı, dibinde kesilmiş bir kenar okunmamalı"ydı. Panel artık
    * kapağın devamı DEĞİL: aşağıdan gelip altına yapışan ayrı bir yüzey (bkz.
    * panelSlideTravel). Kapağın dibi de o yüzden gerçek bir kenar — düzleşince
-   * fotoğraf panelin üstünde köşesiz bir blok gibi duruyordu. Şimdiki iniş
-   * 44→26, yani kenar hâlâ yuvarlak.
+   * fotoğraf panelin üstünde köşesiz bir blok gibi duruyordu.
    *
    * Kabuk aynı sayıyı okuyor (cardFrameRadiusStyle): ayrışırlarsa aradaki
    * payda kart zemini (açık modda beyaz) görünür.
+   *
+   * ÜST İKİSİ TEK İSTİSNA: kabuktan COVER_TOP_RADIUS_OVERFILL kadar DAHA KARE,
+   * yani kapak köşeyi taşırıyor ve kırpmayı kabuğa bırakıyor. Yön KRİTİK —
+   * daha YUVARLAK olsa aradan beyaz sızar (yukarıdaki not), daha KARE olunca
+   * kabuğun eğrisi tek belirleyici kalıyor ve altındaki beyaz yüzeylerin köşesi
+   * tamamen kapağın altında kalıyor. Silüet değişmiyor: görünen eğri kabuğun.
    */
   const photoBorderStyle = useAnimatedStyle(() => {
     const r = cardCornerRadius(expandAnim.value, openCornerRadius);
+    const top = previewMode
+      ? r
+      : CARD_FACE_TOP_CORNER_RADIUS - COVER_TOP_RADIUS_OVERFILL;
     return {
-      borderTopLeftRadius: r,
-      borderTopRightRadius: r,
+      borderTopLeftRadius: top,
+      borderTopRightRadius: top,
       borderBottomLeftRadius: r,
       borderBottomRightRadius: r,
     };
   });
 
   /**
-   * Kabuğun köşeleri — kapağın birebir aynısı (bkz. photoBorderStyle).
+   * Kabuğun köşeleri — ALT İKİSİ kapağın birebir aynısı (bkz. photoBorderStyle).
    * Ayrışırlarsa aradaki payda kart zemini (açık modda beyaz) görünür.
    *
-   * ÖNİZLEMEDE de aynı formül: orada expandAnim sabit 1 (localExpandAnim) ve
-   * varış noktası zaten sheet'in sayısı, yani sonuç sabit
-   * CARD_EXPANDED_CORNER_RADIUS.
+   * ÜST İKİSİ KEŞİF'TE BİR TIK DAHA KARE (CARD_FACE_TOP_CORNER_RADIUS):
+   * cihazda sağ/sol üst köşede ince bir beyazlık görünüyordu, gerekçesi ve
+   * ikinci yarısı o sabitin notunda. Bu stili kabuk ve panelin boyama kutusu
+   * BİRLİKTE okuyor, yani ikisinin köşesi yine aynı sayıda kalıyor.
+   *
+   * ÖNİZLEMEDE DÖRDÜ DE AYNI: orada kabuk sheet'in clip'iyle zincirli
+   * (CARD_EXPANDED_CORNER_RADIUS) — üst köşeyi tek başına oynatmak köşede hilal
+   * bırakır. expandAnim de orada sabit 1 (localExpandAnim), yani sonuç sabit.
    */
   const cardFrameRadiusStyle = useAnimatedStyle(() => {
     const r = cardCornerRadius(expandAnim.value, openCornerRadius);
+    const top = previewMode ? r : CARD_FACE_TOP_CORNER_RADIUS;
     return {
-      borderTopLeftRadius: r,
-      borderTopRightRadius: r,
+      borderTopLeftRadius: top,
+      borderTopRightRadius: top,
       borderBottomLeftRadius: r,
       borderBottomRightRadius: r,
     };
@@ -2057,30 +2180,17 @@ export default function SwipeCard({
   });
 
   /**
-   * "Yukarı kaydır" ipucu.
+   * ── "YUKARI KAYDIR" İPUCUNUN STİLİ DE KALDIRILDI ────────────────────────
    *
-   * Eskiden burada bir chevron vardı ve `expandAnim` ile 180° dönüyordu: açık
-   * kartta yukarı bakan bir ok olarak kalıp kapatma düğmesi işi görüyordu. Ok
-   * da şeritteki cam karşılığı da gitti: kart açıkken kapatma yalnız aşağı
-   * kaydırmayla oluyor, şeridin sol köşesi artık isme ait.
+   * `expandHintAnimStyle` buradaydı: kayma kromdan, sönme expand'in SON
+   * bandından (0.55→1) geliyordu — isim/pill çekilirken ipucu duruyor, panel
+   * yolun yarısını geçince gidiyordu. İpucunun kendisi kaldırıldı (istek,
+   * gerekçesi çizildiği yerde), sürecek bir şey kalmadı.
    *
-   * İKİ AYRI SÜRÜCÜ, bilerek:
-   *   • Kayma  → krom (çekişle birlikte hafifçe yukarı süzülüyor; metnin
-   *     söylediği yön ile gittiği yön aynı olsun).
-   *   • Sönme  → EXPAND, ve o da yalnız SON bantta (0.55→1). Bir ara krom
-   *     söndürüyordu ve ipucu daha çekişin başında kayboluyordu; oysa hareket
-   *     devam ederken ekranda kalmalı. Kromdan geç bir bant seçilmesinin
-   *     sebebi bu: isim/pill çekilirken ipucu duruyor, ancak panel yolun
-   *     yarısını geçince gidiyor.
-   *
-   * Bant kapak not kutusununkiyle aynı (coverNoteAnimStyle): ipucu giderken o
-   * geliyor, ikisi kapağın alt bandında hiç üst üste binmiyor.
+   * Daha öncesinde aynı yerde `expandAnim` ile 180° dönen bir chevron vardı ve
+   * açık kartta kapatma düğmesi işi görüyordu; o da gitmişti. Kapatma yalnız
+   * aşağı kaydırmayla.
    */
-  const expandHintAnimStyle = useAnimatedStyle(() => {
-    const slide = Math.min(1, chromeAnim.value / 0.55);
-    const open = Math.max(0, Math.min(1, (expandAnim.value - 0.55) / 0.45));
-    return { opacity: 1 - open, transform: [{ translateY: -10 * slide }] };
-  });
 
   /**
    * Açık kartın zemini düz gri panel (surface3) yerine ANA FOTOĞRAFIN BLUR'LU
@@ -2188,24 +2298,23 @@ export default function SwipeCard({
    * BURAYA YENİ BİR opacity/transform EKLEME. Gerekiyorsa kutuları saran
    * DEĞİL, kutuların İÇİNDEKİ katmana ver.
    */
-  const profileInfoAnimStyle = useAnimatedStyle(() => {
-    // Panel AŞAĞIDAN GELİYOR: kapalıyken kartın dibinin de altında bekliyor,
-    // açılırken yukarı süzülüp kapağın altına yapışıyor (bkz.
-    // panelSlideTravel). Bir dönem sabitti — panel kapağın DEVAMI olsun,
-    // parmak ne kadar kaydırırsa o kadar görünsün diye. İstenen bunun tersi:
-    // panel kapaktan ayrı, kendi kimliği olan bir sayfa.
-    if (previewMode) return { opacity: 1, marginTop: 0 };
-    // KROM KANALI, expandAnim DEĞİL: panel, kapağın sol altındaki isim/pill
-    // bloğu çekilirken geliyor ve o blok tamamen gittiğinde yerine oturmuş
-    // oluyor. Aynı kanala bağlı olmalarının sebebi bu — iki hareket tek bir
-    // devir; expandAnim'e bağlıyken panel kromdan sonra da yol almaya devam
-    // ediyor, açılış iki ayrı parçaya bölünüyordu (bkz. cardChromeAnim).
-    const p = Math.max(0, Math.min(1, chromeAnim.value));
-    return {
-      opacity: 1,
-      marginTop: PROFILE_PANEL_GAP + panelSlideTravel * (1 - p),
-    };
-  });
+  /*
+   * ── PANELİN "AŞAĞIDAN GELME" HAREKETİ KALDIRILDI (istek) ──────────────────
+   *
+   * `profileInfoAnimStyle` buradaydı: panel kapalı kartta ekranın dibinin de
+   * altında bekliyor (`panelSlideTravel`), krom devriyle yukarı süzülüp kapağın
+   * altına yapışıyordu. Kanal bilerek `chromeAnim`di — panel, kapağın isim/pill
+   * bloğu çekilirken geliyor, blok gidince yerine oturmuş oluyordu.
+   *
+   * Kartın kapalı hâli kalkınca (bkz. SwipeWrapper'ın başındaki not) hareketin
+   * dayanağı da kalmadı: bölümler kapağın hemen altında STATİK duruyor,
+   * kaydırdıkça oradan çıkıyorlar. Kanal krom olduğu için devir scroll'a
+   * bağlandığında panel KAYDIRDIKÇA yukarı süzülmeye başlıyordu — istenen bu
+   * değildi.
+   *
+   * Mesafe artık tek bir layout sayısı: panelin `marginTop`u = PROFILE_PANEL_GAP
+   * (bkz. oradaki not), animasyonsuz.
+   */
 
   /**
    * Zeminin (CardGlassBackdrop) görünürlüğü — KAPALI KARTTA ÇİZİLMEZ.
@@ -2237,11 +2346,18 @@ export default function SwipeCard({
    * yasak): bu view cam kutuların ATASI DEĞİL, kabuk seviyesinde onların
    * KARDEŞİ. Alfa yalnız kendi ağacını etkiliyor.
    */
-  const backdropVeilStyle = useAnimatedStyle(() => {
-    if (previewMode) return { opacity: 0 };
-    const p = Math.max(0, Math.min(1, chromeAnim.value));
-    return { opacity: 1 - p };
-  });
+  /*
+   * ── ZEMİNİN TÜLÜ KALDIRILDI ──────────────────────────────────────────────
+   *
+   * `backdropVeilStyle` buradaydı: kapalı kartta blur'lu zemini örten düz
+   * `theme.bg` katmanının opaklığı (`1 - chromeAnim`). Gerekçesi kabuğun
+   * kapaktan UZUN olmasıydı — aradaki bant kapalı kartta tab bar'ın ardından
+   * sızıyordu.
+   *
+   * O bant kalmadı (kabuk = kap = kapak, bkz. cardBottomDrop) ve kartın kapalı
+   * hâli de kalmadı; tül kalsaydı krom devriyle birlikte KAYDIRDIKÇA açılan bir
+   * perde olurdu.
+   */
 
   /**
    * ── `panelEdgeBlendStyle` KALDIRILDI ──────────────────────────────────────
@@ -2317,9 +2433,18 @@ export default function SwipeCard({
 
   // Kapağın dibindeki rampa — açılma oranıyla sönüyor. Spring overshoot
   // expandAnim'i geçici olarak >1 yapabiliyor → clamp.
-  const bottomBlurAnimStyle = useAnimatedStyle(() => ({
-    opacity: Math.max(0, Math.min(1, 1 - expandAnim.value)),
-  }));
+  /*
+   * ── KAPAĞIN DİBİNDEKİ RAMPA ARTIK SÖNMÜYOR (istek) ───────────────────────
+   *
+   * `bottomBlurAnimStyle` buradaydı: `1 - expandAnim`, yani kart açılırken
+   * rampa sönüyordu — gerekçe "açık kartta kapağın dibi panelle komşu ve isim
+   * bloğu zaten çekilmiş, rampa orada yalnız fotoğrafı karartır"dı.
+   *
+   * Kart artık HEP açık, yani o kural rampayı KALICI olarak söndürüyordu:
+   * fotoğrafın dibi çıplak kalıyordu. İstenen tersi — ana fotoğrafın iki ucu da
+   * progressive blur — tepesini artık sticky şerit taşıyor. Rampa sabit, kendi maskesi
+   * zaten yukarı doğru sönüyor.
+   */
 
   /**
    * ── KAPAĞIN DİBİNDEKİ ERİMENİN ANİMASYONLU BİR TARAFI KALMADI ─────────────
@@ -2340,37 +2465,28 @@ export default function SwipeCard({
    * etmiyor, yalnız içini yumuşatıyor. Kenarı silen şey baştan beri alfaydı.
    */
 
-  /**
-   * Kapağın ÜST kenarından konumlanan katmanları görünür bantta tutan telafi.
+  /*
+   * ── `coverTopAnchorStyle` KALDIRILDI ──────────────────────────────────────
    *
-   * Fotoğraf kabuktan uzun ve `-(PHOTO_CROP + expandedLift × (1−p))` konumunda
-   * duruyor (bkz. photoRevealStyle), yani kapalı kartta üst ucundan ~130px
-   * kırpılıyor. `top` ile yerleşen her şey — serbest Fire alevi — o
-   * kırpılan bantta kalıp hiç görünmüyordu. Aynı payı geri vererek katmanı
-   * kartın görünen tepesine sabitliyoruz.
+   * Kapağın ÜST kenarından `top` ile konumlanan katmanları görünür bantta tutan
+   * telafiydi: fotoğraf kabuktan uzun ve `-PHOTO_CROP` konumunda duruyor, yani
+   * üst ucundan o kadarı kırpılıyor — `top: 0` ile yerleşen bir katman o
+   * kırpılan bantta kalıp hiç görünmüyordu.
    *
-   * ALT bandın böyle bir derdi yok: oradakiler `bottom` ile, yani fotoğrafın
-   * dibinden ölçülüyor ve o kenar kırpılmıyor.
+   * Okuyanı kalmadı: kapağın tepesindeki rampa kaldırıldı (bkz. oradaki not) ve
+   * serbest Fire alevi de `top` ile değil, sağ alt aksiyon kolonunda `bottom`
+   * ile yerleşiyor. ALT kenardan ölçülen katmanların böyle bir derdi yok — o
+   * kenar kırpılmıyor.
    */
-  const coverTopAnchorStyle = useAnimatedStyle(() => {
-    if (previewMode) return { transform: [{ translateY: 0 }] as const };
-    const p = Math.max(0, Math.min(1, expandAnim.value));
-    return {
-      transform: [
-        { translateY: PHOTO_CROP + expandedLift * (1 - p) },
-      ] as const,
-    };
-  });
 
-  // Kapak fotoğrafındaki not kutusu — isim/pill bloğu gittikten SONRA gelsin.
-  // Onlar 0→0.55 aralığında kayboluyor (nameAnimStyle · pillsAnimStyle), bu da
-  // 0.55→1 aralığında beliriyor: iki katman aynı bantta hiç üst üste binmiyor.
-  // profileInfoAnimStyle'ı yeniden kullanmıyoruz — oradaki 80px'lik translateY
-  // mutlak konumlu bir kutuyu fotoğrafın alt kenarının dışına taşırdı.
-  const coverNoteAnimStyle = useAnimatedStyle(() => {
-    const p = Math.max(0, Math.min(1, (expandAnim.value - 0.55) / 0.45));
-    return { opacity: p, transform: [{ translateY: 8 * (1 - p) }] };
-  });
+  /*
+   * ── `coverNoteAnimStyle` KALDIRILDI ───────────────────────────────────────
+   * Kapaktaki not kutusunun geliş animasyonuydu: isim/pill bloğu 0→0.55'te
+   * kaybolurken kutu 0.55→1'de beliriyordu (iki katman aynı bantta üst üste
+   * binmesin diye). Kutu artık sağ alt aksiyon kolonunda ve hep orada — ayrıca
+   * zemini CAM oldu, yani ata opaklığı efekti öldüreceği için böyle bir sönme
+   * zinciri zaten kurulamaz.
+   */
 
   // İlk fotodan dominant rengi çıkar — Spotify-tarzı bg gradient için.
   // ÖNCE tanımlanmalı: aşağıdaki useMemo'lar dependency olarak kullanıyor.
@@ -2621,143 +2737,205 @@ export default function SwipeCard({
     uiBus.emit("cardBottomColor", photoBottomGradColor);
   }, [isTopCard, photoBottomGradColor]);
 
-  // Scroll-driven expand: 0-150px arası scroll → cardExpandAnim 0→1.
-  // Linear yerine ease-in-out cubic curve uygulanıyor: start ve end yumuşak,
-  // ortada hızlı — daha "premium" hissi (Spotify/Apple Music modal tarzı).
-  // ScrollView ref — expand sonrası native scroll için.
-  // Scroll referansı DIŞARIDAN gelebiliyor: SwipeWrapper'daki pan, kart tam
-  // açıldıktan sonra taşan hareketi doğrudan bu ScrollView'a yazıyor (bkz.
-  // oradaki drivingScroll). Verilmezse kart kendi ref'ini kullanır —
-  // önizlemelerde pan diye bir şey yok.
+  // Scroll referansı DIŞARIDAN gelebiliyor (SwipeWrapper tepedeki kartın
+  // scroll'una erişmek istiyor); verilmezse kart kendi ref'ini kullanır.
   const localScrollRef = useAnimatedRef<Animated.ScrollView>();
   const scrollViewRef = scrollRef ?? localScrollRef;
 
-  // Pan-driven expand: cardExpandAnim SwipeWrapper.verticalPan tarafından
-  // sürülüyor (rubber-band). Scroll sadece scrollY tracking için (fire
-  // detection); cardExpandAnim'i yazmaz çünkü ScrollView ancak expand sonrası
-  // aktif olur ve expand state'inde cardExpandAnim 1'de sabit kalır.
-  // Scroll handler + alt-uç bounce mantığı BounceScrollView içinde.
-
-  // Pull-down (fire) sırasında ikon YANIYOR: alevin KIVRIK UCU — ikonun
-  // duran halinde de orada olan dalga — dalgalanıyor, eşiğe yaklaştıkça
-  // hızlanıp kızışıyor. İkona bir şey EKLENMİYOR, silüet her karede ikonun ta
-  // kendisi. Çizim ve geometri ayrı dosyalarda (bkz. FireBurnCanvas /
-  // flameBurn); burada yalnız İKİ SAAT duruyor.
-  //
-  // Eskiden ikon bir KALPTİ ve buradaki tek sinüs onu `rotate ±8°` ile
-  // titretiyordu. Alevde eşik sinyali tek bir kanalda değil: dalganın hızı ve
-  // genliği, ikonun ısı rengi ve ışıması aynı orandan besleniyor.
-  //
-  // firePressAnim: ikona basılı tutunca da aynı animasyon eşiği geçmiş (p=1)
-  // haliyle oynar — pull ile press'ten hangisi büyükse o sürer.
-  const firePressAnim = useSharedValue(0);
   /**
-   * Parmak ikonun ÜSTÜNDE mi (0/1) — `firePressAnim`in yavaşlayan
-   * rampasından ayrı. Rampa bırakışta 180 ms boyunca iniyor; büyümenin mandalı
-   * ona bakarsa ikon parmak kalktıktan sonra da büyük kalıyor.
-   */
-  const firePressHeld = useSharedValue(0);
-  /** 0..1 yanma oranı — canvas bunu okuyor. */
-  const burnHeat = useSharedValue(0);
-  /** Dalga saati, TUR cinsinden ve 1'de sarılıyor (bkz. flameBurn). */
-  const burnPhase = useSharedValue(0);
-  /**
-   * MANDALLI büyüme: jest başladı mı (0/1), ne kadar ilerledi DEĞİL.
+   * İçeriği başa sar — şeridin sol ucundaki yukarı okun işi.
    *
-   * Isıdan ayrı bir kanal, çünkü ikisi farklı şey söylüyor: ısı "eşiğe ne kadar
-   * kaldı" (dalgayı süren oran), bu ise "bu jest başladı". Bir tur büyüme de
-   * ısıyla çarpılıyordu ve ikon parmak oynadıkça büyüyüp küçülüyordu — oranı
-   * zaten dalga anlatıyor, ikonun boyu onu tekrar etmek yerine jestin kendisini
-   * işaretliyor.
+   * ANİMASYONLU: mesafe bir ekran boyundan uzun ve anında zıplamak kullanıcıyı
+   * nerede olduğundan koparıyor. Krom devri buna ayrıca bakmıyor — scroll 0'a
+   * inerken eşiği geçiyor ve şerit kendi süresiyle sönüyor (bkz. chromeHandoffY).
    */
-  const burnGrow = useSharedValue(0);
-  useFrameCallback((frame) => {
-    "worklet";
-    const pull = fireProgress ? fireProgress.value : 0;
-    const p = Math.max(pull, firePressAnim.value);
-    if (p <= 0.001) {
-      // Sönükken İKİSİ DE sıfırlanıyor: ısı 0'da canvas saf ikonu çiziyor ve
-      // faz ilerlemediği için silüeti yeniden kurmuyor — dinlenen kart bedava.
-      // Fazı sıfırlamak sıçrama yapmaz, çünkü ısı 0'da faz şekli etkilemiyor.
-      if (burnHeat.value !== 0) burnHeat.value = 0;
-      if (burnPhase.value !== 0) burnPhase.value = 0;
-      return;
-    }
-    burnHeat.value = p;
-    const dt = frame.timeSincePreviousFrame ?? 16;
-    // p: 0→1 iken 1.1→2.0 tur/sn. Dalganın kare hızı bunun BURN_FLICKER_FRAMES
-    // katı (≈11→20 fps), akma ve kabarma da aynı saatten.
-    const freq = BURN_HZ_MIN + p * (BURN_HZ_MAX - BURN_HZ_MIN);
-    // Modulo şart: sayı büyüdükçe `floor(phase * FRAMES)` hassasiyet kaybeder.
-    // Sarma diksiz, çünkü bütün harmonikler tam sayı (bkz. flameBurn).
-    burnPhase.value = (burnPhase.value + (dt / 1000) * freq) % 1;
-  });
+  const scrollToTop = useCallback(() => {
+    const sv = scrollViewRef.current as unknown as {
+      scrollTo?: (opts: { y: number; animated: boolean }) => void;
+    } | null;
+    sv?.scrollTo?.({ y: 0, animated: true });
+  }, [scrollViewRef]);
 
   /**
-   * Büyümenin mandalı: ısı sıfırdan ayrılır ayrılmaz açılıyor, sıfıra dönünce
-   * kapanıyor — ARADA ISIYI HİÇ OKUMUYOR, o yüzden parmak ileri geri oynarken
-   * ikon nefes almıyor.
+   * ── ÜST CHROME'UN DEVRİ: SCROLL EŞİĞİ + KENDİ SÜRESİ ──────────────────────
    *
-   * Eşik `0.001`: `useFrameCallback` ısıyı tam sıfıra ancak jest bittiğinde
-   * çekiyor (bkz. yukarıdaki erken dönüş), yani bu karşılaştırma "jest sürüyor
-   * mu" sorusunun kendisi.
+   * Devreden katmanlar: kapaktaki isim + pill bloğu ve kapak rampaları (gider),
+   * sticky şerit (gelir), ekranın üstündeki cam geri al/filtre butonları
+   * (gider — bkz. DiscoverScreen > headerRevealStyle). Hepsi `cardChromeAnim`i
+   * okuyor; yazan tek yer burası.
+   *
+   * EŞİK, ORAN DEĞİL (istek): "kaydırmaya bağlı olmadan animasyona girerek
+   * yavaşça" — yani parmakla scrub edilmiyor, eşik geçilince devir kendi
+   * süresiyle (CHROME_FADE) akıyor. Bir dönem oran doğrudan çekişe bağlıydı ve
+   * yazılar jestin ortasında yarı saydam asılı kalıyordu.
+   *
+   * EŞİK KAPAĞIN KENDİ İSMİNDEN TÜRÜYOR, sabit bir sayı değil: kapaktaki isim
+   * satırı şeridin başlık çizgisinin altına girdiği anda devrediyor — iOS'un
+   * large-title devrinin aynısı. Elle yazılmış bir sayı, farklı ekran
+   * boylarında ismin çok öncesinde ya da çok sonrasında tetiklenirdi.
+   *
+   * HİSTEREZİS: iki eşik arası bant (CHROME_HYSTERESIS) — tam eşikte duran
+   * parmak birkaç pikselik titremeyle devri ileri geri açıp kapatmasın.
    */
-  useAnimatedReaction(
-    () => {
-      // PARMAK EKRANDA MI — ısının kendisi DEĞİL. Isı bırakışta yayla iniyor ve
-      // 0.001'in altına saniyeler sonra düşüyor; ona bakan bir mandal parmak
-      // kalktıktan çok sonra kapanıyor, yani ikon büyük asılı kalıyordu.
-      // `pullActive` ile `firePressHeld` iki gerçek "parmak orada" sinyali
-      // ve ikisi de bırakış anında sıfırlanıyor.
-      const dragging =
-        (pullActive ? pullActive.value : 0) > 0 &&
-        (fireProgress ? fireProgress.value : 0) > 0.001;
-      return dragging || firePressHeld.value > 0;
-    },
-    (engaged, wasEngaged) => {
-      // Yalnız GEÇİŞ anında: reaction her karede çalışıyor, koşulsuz yazmak
-      // animasyonu her karede yeniden başlatır ve büyüme hiç oturmaz.
-      if (engaged === wasEngaged) return;
-      burnGrow.value = withTiming(engaged ? 1 : 0, {
-        // Küçülme BÜYÜMEDEN HIZLI: büyüme jestin başladığını ilan ediyor ve
-        // yerine oturması gerekiyor, küçülme ise sadece "bitti" — geciken her
-        // ms orada asılı kalmış gibi duruyor.
-        duration: engaged ? 140 : 90,
-        easing: Easing.out(Easing.quad),
-      });
-    },
+  /**
+   * Kapaktaki yazı bloğunun ölçülen yüksekliği (isim + yaş, aktiflik satırı,
+   * üniversite / ortak nokta pilleri). Dipteki rampanın boyu bundan türüyor.
+   *
+   * ÖLÇÜM ŞART, hesap değil: bloğun içi profile göre değişiyor — aktiflik satırı
+   * koşullu, pill sayısı değişken, uzun isim ikinci satıra düşüyor. Elle yazılan
+   * bir sayı kimi kartta ismin tepesini perdesiz bırakırdı.
+   */
+  const [coverTextHeight, setCoverTextHeight] = useState(0);
+  const handleCoverTextLayout = useCallback((e) => {
+    // nativeEvent SENKRON okunuyor — synthetic event handler dönünce havuza
+    // geri alınıyor (aynı not kartın onLayout'unda da var).
+    const h = e.nativeEvent.layout.height;
+    setCoverTextHeight((prev) => (Math.abs(prev - h) < 1 ? prev : h));
+  }, []);
+
+  /**
+   * Dipteki rampanın boyu — fotoğrafın dibinden İSMİN ÜSTÜNE kadar.
+   *
+   * Üç terim: tab bar'ın altına giren pay (coverBottomInset), bloğun bar'ın
+   * üstünde bıraktığı nefes (COVER_NAME_BOTTOM) ve bloğun kendi boyu. Üstüne
+   * sönme kuyruğu (COVER_TEXT_RAMP_TAIL) ekleniyor.
+   *
+   * Blok henüz ölçülmediyse yalnız yazısız bant + kuyruk kadar: ilk karede
+   * rampa kısa doğuyor, ölçüm gelince yerine oturuyor. Sıfır vermekten iyi —
+   * fotoğrafın dibi hiçbir karede çıplak kalmıyor.
+   */
+  const coverTextRampHeight =
+    coverBottomInset +
+    COVER_NAME_BOTTOM +
+    coverTextHeight +
+    COVER_TEXT_RAMP_TAIL;
+
+  /**
+   * Kapağın alt chrome'unu KAYDIRIRKEN YERİNDE TUTAN pay.
+   *
+   * `translateY = min(scrollY, tavan)`:
+   *   • Tavana kadar — parmak ne kadar kaydırırsa katman o kadar aşağı
+   *     ötelenir, yani EKRANDA kıpırdamaz. "Sticky" olan kısım bu.
+   *   • Tavandan sonra — öteleme donuyor, katman fotoğrafla birlikte yukarı
+   *     gidiyor. Tavan tam olarak "fotoğrafın dibine COVER_STICKY_EDGE_GAP
+   *     kala" demek: blok fotoğrafın dibinden zaten o kadar yukarıda
+   *     (COVER_NAME_BOTTOM + tab bar payı), aradaki fark kadar pinlenebiliyor.
+   *
+   * Bloğun kaybolması BURADA DEĞİL: onu krom devri yapıyor (nameAnimStyle /
+   * pillsAnimStyle, chromeAnim) — yani şerit ismi devralana kadar ekranda
+   * kalıyorlar.
+   *
+   * ⚠️ SAĞ KOLONDA CAM VAR. Uygulamada kimliksel olmayan bir ata transform'u
+   * cam efektini sessizce yok edebiliyor (kodda birkaç yerde uyarı olarak
+   * duruyor). Burada bilerek göze alındı, çünkü istenen hareketin başka yolu
+   * yok; riski sınırlayan iki şey: (a) kurulum anı temiz — katmanlar
+   * scrollY=0'da, yani transform KİMLİKSELken doğuyor; (b) öteleme küçük ve
+   * üst sınırı var. Cihazda kabuklar kaybolursa çare transform'u kolondan
+   * almak: kolonu scroll'un dışına çıkarıp kart çerçevesine sabitlemek (o
+   * zaman iki taraf farklı hareket eder).
+   */
+  /**
+   * Kapaktaki ORTAK NOKTA satırının ölçülen yüksekliği (rozet + piller).
+   *
+   * Buton kolonunun tabanı bu satırın ÜSTÜNE çekiliyor (istek): piller artık
+   * sağa doğru da uzayabiliyor, çünkü altlarındaki şeridi butonlar
+   * kaplamıyor. Kolon üniversite satırının diziliminde bitiyor.
+   *
+   * ÖLÇÜM, hesap değil: satır sarmalı (`flexWrap`) ve pill sayısına göre bir ya
+   * da iki satır olabiliyor; sabit bir sayı iki satırlık kartlarda kolonu
+   * pillerin üstüne bindirirdi.
+   */
+  /**
+   * Buton kolonunun yanından geçen satırların sağ payı.
+   *
+   * Kolonun sol kenarı ile yazı bloğunun sağ kenarı arasındaki fark + nefes:
+   * kolon bloktan DAHA DIŞARIDA başlıyor (COVER_ACTION_RIGHT <
+   * CHROME_EDGE_INSET), o fark da hesaba katılıyor. Pay verilmezse uzun isimler
+   * ve üniversite satırı butonların ALTINA giriyor — isim `flexShrink` ile
+   * kırpılıyor ama bloğun genişliğine göre, kolonu bilmeden.
+   *
+   * EN ALTTAKİ SATIRA VERİLMİYOR: kolon pillerin üstünde bitiyor (istek).
+   */
+  const coverActionClearance =
+    COVER_ACTION_SIZE +
+    (COVER_ACTION_RIGHT - CHROME_EDGE_INSET) +
+    COVER_ACTION_GAP;
+
+  const [coverPillsHeight, setCoverPillsHeight] = useState(0);
+  const handleCoverPillsLayout = useCallback((e) => {
+    const h = e.nativeEvent.layout.height;
+    setCoverPillsHeight((prev) => (Math.abs(prev - h) < 1 ? prev : h));
+  }, []);
+
+  const coverStickyMax = Math.max(
+    0,
+    COVER_NAME_BOTTOM + coverBottomInset - COVER_STICKY_EDGE_GAP,
   );
-  /**
-   * Serbest alevin EXPAND kanalı — yanmanın kendisi burada DEĞİL.
-   *
-   * Yanma tamamen Skia tarafında, silüetin dış hattının içinde (bkz. flameBurn).
-   * Buraya geri taşıma: RN tarafında ölçeklemek ışımayı da ölçekler, ayrıca
-   * alevin tabandan pivotlanması `transformOrigin` ile ancak yaklaşık
-   * tutturuluyordu.
-   *
-   * Kalan iş cam butonla çapraz sönme: expand ederken alev yerini aynı
-   * noktadaki cam butona bırakıyor. KROM kanalında (expandAnim değil): kabuk
-   * değiştirme parmakla çekilirken oluyor ve eşikte bitiyor, panel daha
-   * açılmadan — bkz. chromeAnim.
-   */
-  const fireMorphStyle = useAnimatedStyle(() => {
-    const morph = Math.min(
-      1,
-      Math.max(0, chromeAnim.value / FIRE_MORPH_OUT_END),
-    );
-    // Geçiş yalnız OPAKLIKLA: iki şekil aynı boyda kalıp birbirine çapraz
-    // sönüyor. Ölçekle yapılınca kabuk değiştirme değil yer değiştirme gibi
-    // okunuyordu.
-    //
-    // Cam ikizi SABİT olarak cornerDrop kadar aşağıda duruyor; alev oraya
-    // sönerken yaklaşsın: kesişme bandında (0.30-0.45) iki şekil üst üste
-    // olmalı. `morph` üzerinden ilerliyor (expandAnim değil): kayma tam alev
-    // görünmez olduğu anda (0.45) tamamlanıyor, kesişmede fark ≤3px kalıyor.
+  const coverStickyStyle = useAnimatedStyle(() => {
+    if (previewMode) return { transform: [{ translateY: 0 }] as const };
+    const y = Math.max(0, scrollY?.value ?? 0);
     return {
-      opacity: 1 - morph,
-      transform: [{ translateY: cornerDrop * morph }] as const,
+      transform: [{ translateY: Math.min(y, coverStickyMax) }] as const,
     };
   });
+
+  const chromeHandoffY =
+    photoWindowOpen -
+    (COVER_NAME_BOTTOM + coverBottomInset) -
+    (cornerDrop + CARD_HEADER_TITLE_BOTTOM);
+
+  useAnimatedReaction(
+    () => {
+      const y = scrollY?.value ?? 0;
+      return y >= chromeHandoffY + CHROME_HYSTERESIS
+        ? 1
+        : y <= chromeHandoffY - CHROME_HYSTERESIS
+          ? 0
+          : -1; // bant içinde: kararı değiştirme
+    },
+    (next, prev) => {
+      if (next < 0 || next === prev || !isTopCard || previewMode) return;
+      cardChromeAnim.value = withTiming(next, CHROME_FADE);
+    },
+    [chromeHandoffY, isTopCard, previewMode],
+  );
+
+  /*
+   * ── ALEVİN YANMA SAATLERİ KALDIRILDI (istek) ──────────────────────────────
+   *
+   * Burada iki saat ve iki mandal vardı; hepsi Skia ile çizilen alev silüetini
+   * (FireBurnCanvas) sürüyordu:
+   *   `firePressAnim` / `firePressHeld` — ikona basılı tutunca yanma.
+   *   `burnHeat` / `burnPhase`          — `useFrameCallback` ile dalga saati;
+   *     oran 0→1 iken frekans BURN_HZ_MIN→MAX, faz 1'de sarılıyor.
+   *   `burnGrow`                        — MANDALLI büyüme (jest başladı mı),
+   *     ısıdan ayrı kanal: ısı "eşiğe ne kadar kaldı", bu "başladı".
+   *
+   * Kapaktaki alev artık berrak cam bir butonun içindeki DURAĞAN glif (istek:
+   * "basınca davranışı headerdaki gibi liquid glass olsun, ateş çıkmasın
+   * icondan") — yanacak bir silüet yok. Geri istenirse `flameBurn` ve
+   * `FireBurnCanvas` dosyaları yerinde duruyor; kurulurken bilinmesi gerekenler:
+   *   • Büyümenin mandalı ISIYA BAKMAMALI. Isı bırakışta yayla iniyor ve
+   *     0.001'in altına saniyeler sonra düşüyor; ona bakan bir mandal parmak
+   *     kalktıktan çok sonra kapanıyor, ikon büyük asılı kalıyordu. Doğru
+   *     girdiler `pullActive` ve basılı-tutma bayrağı.
+   *   • Faz modulo ŞART: sayı büyüdükçe `floor(phase × FRAMES)` hassasiyet
+   *     kaybediyor. Sarma diksiz, çünkü bütün harmonikler tam sayı.
+   *   • Sönükken ısı VE faz birden sıfırlanmalı — faz ilerlemeyince canvas
+   *     silüeti yeniden kurmuyor, dinlenen kart bedava oluyor.
+   */
+
+  /*
+   * ── `fireMorphStyle` KALDIRILDI ───────────────────────────────────────────
+   * Serbest alevin cam butonla ÇAPRAZ SÖNMESİNİ süren stildi: krom kanalında
+   * (expandAnim değil) opaklık + cornerDrop kadar kayma. Serbest alev diye bir
+   * şey kalmadı — kapaktaki Fire da artık cam bir buton, yani takas edilecek
+   * iki şekil yok.
+   *
+   * O notta duran ve hâlâ geçerli olan kural: alevi RN tarafında ÖLÇEKLEMEYE
+   * kalkma. Işımayı da ölçekler ve tabandan pivotlamak `transformOrigin` ile
+   * ancak yaklaşık tutturulabiliyor.
+   */
 
   /**
    * Asılı cam buton — serbest alevin tersi bantta belirir. Konumu burada YOK:
@@ -3323,26 +3501,15 @@ export default function SwipeCard({
           ]}
         >
           <CardGlassBackdrop uri={allPhotos[0]} />
-          {/* ÇEKİŞE BAĞLI TÜL — zemini kapalı kartta örten, parmakla sönen düz
-              katman. Alfa BURADA, zeminin kendisinde DEĞİL: gerekçesi
-              backdropVeilStyle'da (blur'lu bir katmanın kesirli alfası pahalı,
-              düz rengin alfası ucuz). */}
-          <Animated.View
-            style={[
-              StyleSheet.absoluteFill,
-              { backgroundColor: theme.bg },
-              backdropVeilStyle,
-            ]}
-          />
+          {/* ÜSTÜNDEKİ DÜZ TÜL KALDIRILDI — gerekçesi yukarıda, stilin
+              silindiği yerde. Zemin artık hep açık. */}
         </Animated.View>
       )}
 
       <ScrollWrapper nativeScrollGesture={nativeScrollGesture}>
         <BounceScrollView
           scrollRef={scrollViewRef}
-          scrollMax={scrollMax}
           scrollY={scrollY}
-          topHitSpeed={topHitSpeed}
           expanded={expanded}
         >
           {/* Outer wrapper — solid #121212 bg. Eskiden 4-stop LinearGradient'di
@@ -3488,10 +3655,10 @@ export default function SwipeCard({
                   <PinchZoomable
                     uri={allPhotos[0]}
                     // Kaynağın köşesiyle AYNI: kopya açılırken köşe zıplamasın.
-                    // Kapağın köşesi çekişle 44'ten iniyor (photoBorderStyle) ama
-                    // burada SABİT varış değeri yetiyor: pinch yalnız
-                    // expanded'ken etkin (bir alttaki `enabled`), yani kopya
-                    // doğduğu anda kaynak zaten orada.
+                    // SABİT varış değeri yetiyor — Keşif'te köşe zaten hiç
+                    // değişmiyor, önizlemede de pinch yalnız expanded'ken etkin
+                    // (bir alttaki `enabled`), yani kopya doğduğu anda kaynak
+                    // zaten varış noktasında.
                     radius={openCornerRadius}
                     // Kapakta pinch YALNIZ expanded'ken: collapsed'de kapak
                     // kartın kendisi demek, oradaki iki parmak swipe/pull
@@ -3560,89 +3727,59 @@ export default function SwipeCard({
                   gezilecek bir galeri kalmadığı için gösterge de yanıltıcıydı
                   (hep ilk nokta dolu kalırdı). */}
 
-              {/* KAPAĞIN TEPESİNDEKİ RAMPA — yukarıdan aşağı AZALAN blur +
-                  gölge. Altında durum çubuğu (açık kartta kart ekranın
-                  tepesine çıkıyor) ve Fire alevi duruyor; ikisi de
-                  sabit beyaz, açık bir fotoğrafta perdesiz okunmuyorlar.
+              {/* ── KAPAĞIN TEPESİNDEKİ RAMPA KALDIRILDI (istek) ───────────
+                  Fotoğrafa YAPIŞIK bir progressive blur + koyu perde vardı:
+                  boyu üstteki chrome'dan türüyordu (safe-area + cam buton çapı +
+                  COVER_TOP_RAMP_PAD), maskesi/perdesi/blur'u dipteki bandın
+                  aynadaki hâliydi.
 
-                  Kapağın kırpılan üst payı kadar aşağı çekiliyor
-                  (coverTopAnchorStyle) — yoksa alevle aynı şekilde görünmeyen
-                  bantta kalır.
+                  KALDIRILDI, ÇÜNKÜ ÜSTTEKİ BLUR FOTOĞRAFIN DEĞİL HEADER'IN İŞİ:
+                  aşağı kaydırınca gelen sticky şerit kendi progressive blur'unu
+                  zaten taşıyor (bkz. CardStickyHeader — maske + veil perdesi +
+                  chrome tint'li BlurView). İki bant üst üste binince kartın
+                  tepesi kaydırma boyunca iki kez bulanıklaşıyordu.
 
-                  Alevden ÖNCE çiziliyor: rampa onun altında kalmalı. */}
+                  Fotoğrafın çıplak tepesinde kalan tek chrome, yüzen geri al /
+                  filtre butonları. Perdesiz duruyorlar ve durabilirler: ikisi de
+                  cam, yani kendi kenarları ve kırılmaları var — ve isme inene
+                  kadar zaten ordalar, o noktada şerit onların yerini alıyor
+                  (devrin eşiği: chromeHandoffY).
+
+                  DİPTEKİ RAMPA DURUYOR: o bir yazı bloğunu taşıyor (isim, yaş,
+                  piller — hepsi sabit beyaz), yani fotoğrafa ait bir okunurluk
+                  perdesi. Buradakinin böyle bir yükü yoktu. */}
+
+              {/* KAPAĞIN DİBİNDEKİ RAMPA — yazıyı taşıyan bant: fotoğrafın en
+                  altından yukarı doğru AZALARAK sönen PROGRESSIVE BLUR + hafif
+                  progressive siyahlık. Üstünde isim + yaş, aktiflik satırı ve
+                  üniversite/ortak nokta pilleri duruyor; hepsi `theme.onMedia`,
+                  yani sabit beyaz — altlarında açık bir fotoğraf olabilir.
+
+                  BOYU İSİMDEN TÜRÜYOR (bkz. coverTextRampHeight): fotoğrafın
+                  dibinden yazı bloğunun tepesine + bir sönme kuyruğu kadar. Bir
+                  dönem sabit 340'tı ve bloğun epey üstünde bitiyordu.
+
+                  SÖNMÜYOR: `bottomBlurAnimStyle` ile kart açılırken kayboluyordu
+                  (gerekçesi silindiği yerde) — kartın kapalı hâli kalkınca o
+                  kural rampayı KALICI olarak söndürüyordu, yani fotoğrafın dibi
+                  çıplak kalıyordu. Kapağın istenen hâli zaten bu: iki uçta da
+                  progressive blur; tepesini sticky şerit taşıyor.
+
+                  Konum `bottom: 0` yerine mutlak koordinat: parent'ın boyu bir
+                  kare için oynasa bile rampa yerinde kalır. */}
               <Animated.View
                 pointerEvents="none"
                 style={[
                   {
                     position: "absolute",
-                    top: 0,
+                    top: Math.max(0, photoHeight - coverTextRampHeight),
                     left: 0,
                     right: 0,
-                    height: COVER_TOP_RAMP_HEIGHT,
+                    // +PHOTO_CROP: kutu görünen alanın altına o kadar taşıyor,
+                    // rampa da taşsın — yoksa fotoğrafın son bandı perdesiz
+                    // kalıyor.
+                    height: coverTextRampHeight + PHOTO_CROP,
                   },
-                  coverTopAnchorStyle,
-                ]}
-              >
-                <MaskedView
-                  style={{ flex: 1 }}
-                  maskElement={
-                    <LinearGradient
-                      colors={[
-                        "rgba(0,0,0,1)",
-                        "rgba(0,0,0,0.4)",
-                        "transparent",
-                      ]}
-                      locations={[0, 0.6, 1]}
-                      style={{ flex: 1 }}
-                    />
-                  }
-                >
-                  {/* Dipteki rampayla aynı reçete: perde HER İKİ MODDA DA KOYU
-                      (üstündeki glifler sabit beyaz), blur da onun üstünde. */}
-                  <LinearGradient
-                    colors={[scrimAt(0.3), scrimAt(0.06)]}
-                    style={StyleSheet.absoluteFill}
-                  />
-                  {/* Dipteki rampayla AYNI yoğunluk: 70'te üst bant alta göre
-                      çok daha bulanıktı ve kartın tepesi ayrı bir yüzey gibi
-                      duruyordu. */}
-                  <BlurView
-                    intensity={15}
-                    tint="dark"
-                    style={StyleSheet.absoluteFill}
-                  />
-                </MaskedView>
-              </Animated.View>
-
-              {/* KAPAĞIN DİBİNDEKİ RAMPA — kapalı kartta yazıyı taşıyan bant.
-                  Fotoğrafın en altından yukarı doğru AZALARAK sönen bir blur +
-                  koyu perde; isim + pill bloğu ve "yukarı kaydır" ipucu bunun
-                  üstünde duruyor (ikisi de `theme.onMedia`, yani sabit beyaz —
-                  altlarında açık bir fotoğraf olabilir).
-
-                  Yüksekliği içeriğin bulunduğu bandı kapsıyor: blok fotoğrafın
-                  dibinden ~70px yukarıda başlıyor (bkz. isim bloğunun `bottom`u),
-                  rampa ondan da yukarıda bitiyor.
-
-                  AÇILIRKEN SÖNÜYOR (bottomBlurAnimStyle): açık kartta kapağın
-                  dibi panelle komşu ve o blok zaten çekilmiş oluyor — rampa
-                  orada yalnız fotoğrafı karartırdı.
-
-                  Konum `bottom: 0` yerine sabit absolute koordinat: collapse
-                  anında parent height bir kare için değişse bile yerinde kalır.
-                  Blok kendi bandından 30px daha uzun, yani dibi blursuz
-                  kalmıyor. */}
-              <Animated.View
-                pointerEvents="none"
-                style={[
-                  {
-                    position: "absolute",
-                    top: Math.max(0, photoHeight - COVER_TEXT_RAMP_HEIGHT),
-                    left: 0,
-                    right: 0,
-                    height: COVER_TEXT_RAMP_HEIGHT + 30,
-                  },
-                  bottomBlurAnimStyle,
                 ]}
               >
                 <MaskedView
@@ -3662,14 +3799,24 @@ export default function SwipeCard({
                 >
                   {/* Perde HER İKİ MODDA DA KOYU: fotoğraf açık modda da
                       fotoğraftır, beyaz perde altındaki fotoyu yıkayıp kartı
-                      soluk gösteriyordu. Yoğunluk bilinçli düşük (0.06 → 0.30):
-                      fotoğrafı bastırmadan yazıyı taşısın. */}
+                      soluk gösteriyordu.
+
+                      YOĞUNLUK 0.06→0.30 İDİ, 0.10→0.42 OLDU (istek: "bi tık
+                      daha yoğun"). Üst uç da birlikte kalktı, yalnız dip değil:
+                      yalnız dibi koyultmak bandı iki parçaya bölüyor — üstte
+                      soluk bir kuyruk, altta belirgin bir şerit.
+
+                      Tavan ~0.5: onun üstünde fotoğraf bastırılmış görünüyor ve
+                      kart "karartılmış bir resim" gibi okunuyor. */}
                   <LinearGradient
-                    colors={[scrimAt(0.06), scrimAt(0.3)]}
+                    colors={[scrimAt(0.1), scrimAt(0.42)]}
                     style={StyleSheet.absoluteFill}
                   />
+                  {/* 15 → 22: perdeyle birlikte bulanıklık da bir tık arttı.
+                      Üstteki rampa 15'te kalıyor — orası yalnız iki cam butonu
+                      ve durum çubuğunu taşıyor, bu bant ise bir yazı bloğunu. */}
                   <BlurView
-                    intensity={15}
+                    intensity={22}
                     tint="dark"
                     style={StyleSheet.absoluteFill}
                   />
@@ -3709,93 +3856,159 @@ export default function SwipeCard({
                   TAŞIYOR (uçlar + ışıma); kutuyu buradaki View veriyor, taşma
                   payını canvas kendi içinde hesaplıyor.
 
-                  EXPAND EDİLİRKEN yerini aynı noktadaki cam butona bırakır
-                  (aşağıda, ScrollWrapper'ın DIŞINDA) — çekme oranıyla sönerek.
-                  Sticky duruşta alev panel zemininin üstüne de binebildiği
-                  için orada zemin şart; onu artık liquid glass kabuk taşıyor.
+                  KROM DEVRİNDE yerini şeritteki cam butona bırakır (aşağıda,
+                  ScrollWrapper'ın DIŞINDA) — sönerek. Sticky duruşta alev panel
+                  zemininin üstüne de binebildiği için orada zemin şart; onu
+                  liquid glass kabuk taşıyor.
 
-                  pointerEvents: expanded'ken görünmez olsa da hitSlop'u cam
-                  butonun çevresinde dokunma yakalamaya devam ederdi. */}
-              {!hideActions && !hideFire && (
-                <Animated.View
-                  style={[
-                    {
-                      position: "absolute",
-                      top: FIRE_INSET,
-                      right: FIRE_INSET,
-                    },
-                    // Kapağın kırpılan üst payını geri veriyor; olmadan alev
-                    // kapalı kartta görünmeyen bantta kalıyor.
-                    coverTopAnchorStyle,
-                  ]}
-                  pointerEvents={expanded ? "none" : "auto"}
-                >
-                  <TouchableOpacity
-                    // SOLMA YOK (activeOpacity=1): basma geri bildirimini artık
-                    // BÜYÜME veriyor (bkz. flameBurn > BURN_SCALE). Varsayılan
-                    // soldurma ikonu gradyanından kopartıp "sönmüş" gösteriyor,
-                    // üstelik büyüme ile aynı anda olunca iki sinyal birbirini
-                    // yiyor. Aynı karar not kutusunda da alınmıştı — gerekçesi
-                    // orada da yazılı (bkz. NoteBox > pressAnim).
-                    activeOpacity={1}
-                    onPress={() => {
-                      onFire?.();
-                    }}
-                    onPressIn={() => {
-                      // Mandal (büyüme) ANINDA, rampa (dalga) yavaşça: ikisi
-                      // ayrı sinyal — biri "parmak orada", diğeri "ne kadar".
-                      firePressHeld.value = 1;
-                      firePressAnim.value = withTiming(1, {
-                        duration: 180,
-                        easing: Easing.out(Easing.quad),
-                      });
-                    }}
-                    onPressOut={() => {
-                      firePressHeld.value = 0;
-                      firePressAnim.value = withTiming(0, {
-                        duration: 180,
-                        easing: Easing.out(Easing.quad),
-                      });
-                    }}
-                    hitSlop={12}
-                  >
-                    <Animated.View
-                      style={[
-                        { width: FIRE_SIZE, height: FIRE_SIZE },
-                        fireMorphStyle,
-                      ]}
-                    >
-                      {/* Gradyan dolgu, ısı, ışıma, parıltı ve kontur — hepsi
-                          tek canvas'ın içinde. Parıltı YALNIZ EN ÜSTTEKİ
-                          kartta dönüyor: arkadaki kartlar için de açık
-                          bırakılsa boşuna her karede canvas tazelenirdi,
-                          üstelik o alev zaten üstteki kartın altında. */}
-                      <FireBurnCanvas
-                        size={FIRE_SIZE}
-                        heat={burnHeat}
-                        phase={burnPhase}
-                        grow={burnGrow}
-                        shimmer={isTopCard}
-                      />
-                    </Animated.View>
-                  </TouchableOpacity>
-                </Animated.View>
+                  ── KONUM: SAĞ ALT AKSİYON KOLONU (istek) ────────────────────
+                  Kapağın SAĞ ÜST köşesindeydi (`top/right: FIRE_INSET`), sonra
+                  bir tur isim satırının sağ ucuna taşındı. Şimdi Instagram'ın
+                  sağ alt kolonu gibi: AŞAĞIDAN YUKARI üç nokta · not · Fire,
+                  üçü de aynı çaptaki yuvarlak cam butonlar (bkz.
+                  COVER_ACTION_SIZE).
+
+                  KOLON YAZI BLOĞUNUN KARDEŞİ, çocuğu değil: yazı bloğu
+                  `pointerEvents="none"` (metin dokunma almamalı) ve bu üç buton
+                  ALMALI. Tabanı aynı çizgiden (COVER_NAME_BOTTOM +
+                  coverBottomInset) başlıyor, yani kolonun dibi ile ismin dibi
+                  hizalı.
+
+                  KOLON `Animated.View` DEĞİL ve olmamalı: cam yüzeyler ata
+                  zincirinde 1'in altında bir opacity ya da kimliksel olmayan bir
+                  transform gördüğü anda efektlerini hiç render etmiyor. Her
+                  butonun kendi basma animasyonu var, kolonun yok. */}
+              {(!!onMenu || (!!onNote && !previewMode && allPhotos.length > 0) ||
+                (!hideActions && !hideFire)) &&
+                measuredCardHeight > 0 && (
+              <Animated.View
+                style={[
+                  {
+                    position: "absolute",
+                    // TABANI PİLLERİN ÜSTÜNDE (istek): ortak nokta satırı
+                    // kolonun altından geçip sağa doğru uzayabilsin. Kolon
+                    // böylece üniversite satırının hizasında bitiyor.
+                    bottom:
+                      COVER_NAME_BOTTOM +
+                      coverBottomInset +
+                      coverPillsHeight +
+                      // Pillere değmesin (bkz. COVER_ACTION_PILLS_GAP). Yalnız
+                      // ölçüm geldiyse: piller yoksa eklenecek bir ayrım da yok.
+                      (coverPillsHeight > 0 ? COVER_ACTION_PILLS_GAP : 0),
+                    right: COVER_ACTION_RIGHT,
+                    alignItems: "center",
+                    gap: COVER_ACTION_GAP,
+                    zIndex: 55,
+                  },
+                  coverStickyStyle,
+                ]}
+                pointerEvents="box-none"
+              >
+              {/* FIRE — kolonun TEPESİ. Şeridin sağ ucundaki butonla AYNI
+                  bileşen ve aynı varyant (istek: "basınca davranışı
+                  headerdaki gibi liquid glass olsun"): berrak cam daire, basma
+                  geri bildirimi camın kendi morph'undan (`interactive: true`).
+
+                  ── ALEV CANVAS'I VE BASMA YANMASI KALDIRILDI (istek) ────────
+                  Burada `FireBurnCanvas` vardı: Skia ile çizilen, silüeti her
+                  karede oynayan bir alev. İki şey sürüyordu —
+                    • `firePressAnim` / `firePressHeld`: basılı tutunca ikon
+                      YANIYORDU (dalga hızlanıp kızışıyor, BURN_SCALE ile
+                      büyüyor). İstenmedi: "ateş çıkmasın icondan".
+                    • `fireProgress`: aşağı çekişte aynı yanma eşiğe doğru
+                      ilerliyordu. O sinyal kayboluyor ama jest sessiz
+                      kalmıyor — haptic rampası, kartın kendi hareketi ve
+                      FirePullHint'in yazısı duruyor.
+
+                  Geri istenirse `flameBurn` / `FireBurnCanvas` dosyaları
+                  yerinde; dönecek yer bu blok. Dikkat: canvas'ı cam diskin
+                  İÇİNE koymak kabuğu büyütmeden taşıyordu (bkz.
+                  COVER_FIRE_GLYPH_SIZE) ve basma ölçeği camın atasına
+                  konulamaz. */}
+              {!hideActions && !hideFire && onFire && (
+                <FireGlassButton
+                  onPress={onFire}
+                  label={t("discover.stats.fireLabel")}
+                  variant="clear"
+                  size={COVER_ACTION_SIZE}
+                />
+              )}
+
+              {/* NOT — kolonun ORTASI. Eskiden kapağın dibinde, panelin üst
+                  kenarının yukarısında ayrı bir mutlak katmandı (sağa yaslı
+                  geniş bir kutu) ve `coverNoteAnimStyle` ile sönerek geliyordu.
+                  O sönme CAM İLE BAĞDAŞMIYOR (ata opaklığı) ve kartın kapalı
+                  hâli kalkınca gerekçesi de kalmadı: not kutusu hep orada. */}
+              {!!onNote && !previewMode && allPhotos.length > 0 && (
+                <NoteBox onPress={noteHandler(photoNoteTarget(0))} onPhoto />
+              )}
+
+              {/* ÜÇ NOKTA — kolonun DİBİ. Kapaktaki tek "seçenekler" girişi;
+                  şikayet/engelle panelin dibindeki satırda da duruyor ama orası
+                  bir ekran boyu aşağıda. Sheet'i çağıran taraf açıyor (bkz.
+                  `onMenu`), kart onu bilmiyor. */}
+              {!!onMenu && (
+                <CardMenuGlassButton
+                  onPress={onMenu}
+                  label={t("common.menu")}
+                  size={COVER_ACTION_SIZE}
+                  // Kolon kapaktan hiç taşmıyor → glif foto üstü mürekkepte
+                  // (açık modda da beyaz, bkz. glassOnMediaInk).
+                  onMedia
+                />
+              )}
+              </Animated.View>
               )}
 
               {/* Name and Age on Photo — sadece measuredCardHeight set olduktan
                   sonra render. Aksi halde photoHeight fallback (CARD_BOX_FALLBACK_HEIGHT)
                   ile başlayıp actual yüksekliğe geçince name yukarı sıçrar. */}
               {measuredCardHeight > 0 && (
-                <View
-                  className="absolute left-6 right-6"
+                <Animated.View
+                  className="absolute"
                   // Taban className'den ALINDI (`bottom-[70px]`): kapak artık
                   // tab bar'ın altına iniyor, blok o payı da eklemek zorunda
                   // (bkz. coverBottomInset). Inline style className'i ezer.
-                  style={{ position: "absolute", bottom: 70 + coverBottomInset }}
+                  style={[
+                    {
+                    position: "absolute",
+                    bottom: COVER_NAME_BOTTOM + coverBottomInset,
+                    // SOL KENAR: ekranın üstündeki geri al butonunun kenarıyla
+                    // AYNI çizgi (istek). Yazı bir kutu değil, hizası kenardan
+                    // ölçülüyor — butonun merkezine değil sol kenarına
+                    // hizalanıyor, yoksa metin görsel olarak içeri kaçıyor.
+                    // `left-6` (24) idi; className'den ALINDI ki iki sayı tek
+                    // yerden gelsin.
+                    left: CHROME_EDGE_INSET,
+                    right: CHROME_EDGE_INSET,
+                    // KOLON PAYI BLOĞUN TAMAMINDA DEĞİL, SATIR SATIR: kolon
+                    // artık pillerin ÜSTÜNDE bitiyor, yani en alttaki satır
+                    // (ortak noktalar) tam genişliği kullanabiliyor. Pay yalnız
+                    // kolonun yanından geçen iki satıra veriliyor — isim ve
+                    // üniversite (bkz. coverActionClearance).
+                    },
+                    // Sağdaki buton kolonuyla AYNI pin: ikisi tek blok gibi
+                    // davranmalı, ayrı sürülürlerse kaydırırken birbirlerinden
+                    // ayrılıyorlar.
+                    coverStickyStyle,
+                  ]}
                   pointerEvents="none"
+                  // Dipteki rampa bu bloğun boyundan türüyor (bkz.
+                  // coverTextRampHeight) — ölçüm olmadan rampa ismin tepesini
+                  // perdesiz bırakıyor.
+                  onLayout={handleCoverTextLayout}
                 >
                   <Animated.View
-                    style={[{ marginBottom: 2, gap: 4 }, nameAnimStyle]}
+                    style={[
+                      {
+                        marginBottom: 2,
+                        gap: 4,
+                        // Kolonun yanından geçiyor → pay ŞART (bkz.
+                        // coverActionClearance).
+                        paddingRight: coverActionClearance,
+                      },
+                      nameAnimStyle,
+                    ]}
                   >
                     {/* Aktiflik satırı ismin ÜSTÜNDE: blok alttan sabit
                         (bottom-[70px]), yani buraya eklenen satır yukarı
@@ -3867,12 +4080,24 @@ export default function SwipeCard({
                           flexWrap: "wrap",
                           gap: 8,
                           marginTop: 4,
+                          // Kolonun yanından geçiyor → pay ŞART; alttaki ortak
+                          // nokta satırına VERİLMİYOR (bkz.
+                          // coverActionClearance).
+                          paddingRight: coverActionClearance,
                           // Altına rozet sırası geliyorsa aradaki boşluğu
-                          // rozetler taşısın, ikisi üst üste binmesin.
+                          // rozetler taşısın, ikisi üst üste binmesin. SON
+                          // eleman olduğunda 0: bloğun dibi ile sağdaki buton
+                          // kolonunun dibi AYNI çizgide olmalı (istek) ve ikisi
+                          // zaten aynı `bottom`tan yerleşiyor — buradaki her
+                          // artık pay yazıyı yukarı kaldırıp hizayı bozuyor.
+                          //
+                          // Kolonun tabanı da bu sayıdan türüyor (bkz.
+                          // COVER_ACTION_PILLS_GAP): kolon pillere yazıyla aynı
+                          // mesafede duracak.
                           marginBottom:
                             showNewBadge || thingsInCommon.length > 0
-                              ? 8
-                              : 16,
+                              ? COVER_UNI_PILLS_GAP
+                              : 0,
                         },
                         pillsAnimStyle,
                       ]}
@@ -3882,8 +4107,11 @@ export default function SwipeCard({
                           borderRadius: 999,
                           borderCurve: "continuous",
                           overflow: "hidden",
+                          // `py-1` className'den ALINDI: kolonun payı bu ölü
+                          // dolguyu da sayıyor (bkz. COVER_UNI_ROW_PAD).
+                          paddingVertical: COVER_UNI_ROW_PAD,
                         }}
-                        className="flex-row items-center self-start py-1 gap-1"
+                        className="flex-row items-center self-start gap-1"
                       >
                         <Text
                           className="font-[600] text-[16px]"
@@ -3912,10 +4140,14 @@ export default function SwipeCard({
                       style={[
                         {
                           marginTop: universityLabel ? 0 : 6,
-                          marginBottom: 16,
+                          marginBottom: 0,
                         },
                         pillsAnimStyle,
                       ]}
+                      // Kolonun tabanı bu satırın boyundan türüyor (bkz.
+                      // coverPillsHeight): ölçüm olmadan kolon pillerin üstüne
+                      // biniyor.
+                      onLayout={handleCoverPillsLayout}
                     >
                       <PillFlow
                         gap={6}
@@ -4042,106 +4274,19 @@ export default function SwipeCard({
                       />
                     </Animated.View>
                   )}
-                </View>
+                </Animated.View>
               )}
 
-              {/* Ana fotoğrafın not kutusu — kapak fotoğrafının İÇİNDE, alt
-                  kenarına yaslı (panel fotoları ile aynı yerleşim).
+              {/* ── "DETAYLAR İÇİN YUKARI KAYDIR" İPUCU KALDIRILDI (istek) ──
+                  Kapağın dibinde ortalanmış, çekişin ilk anında sönen bir
+                  fısıltı vardı (`profile.card.expandHint` + kendi
+                  `TouchableOpacity`si, onu expand/collapse toggle'ına bağlayan
+                  `onExpandPress` prop'u ve `hideExpandHint` kapısı).
 
-                  YALNIZ EXPANDED'ken görünür: collapsed'de bu alanı isim /
-                  üniversite / ortak nokta pilleri dolduruyor. Onlar expand'de
-                  fade out ediyor (nameAnimStyle · pillsAnimStyle), kutu da tam
-                  o boşluğa fade in ediyor — yani kapağın alt bandı iki durumda
-                  da tek bir katman taşıyor, üst üste binme yok.
-
-                  KONUMU PANELİN ÜST KENARINDAN TÜRÜYOR, sabit bir sayı DEĞİL:
-                  panel kapağın son |PROFILE_PANEL_GAP| pikseline biniyor ve
-                  kutu bir dönem o bandın içindeydi (sabit `bottom: 74`), yani
-                  panelin ilk bölümüyle çakışıyordu. Artık panelin üst kenarının
-                  yukarısında duruyor (bkz. NOTE_BOX_PANEL_CLEARANCE) —
-                  PROFILE_PANEL_GAP oynarsa kutu da onunla oynar. */}
-              {!!onNote &&
-                !previewMode &&
-                allPhotos.length > 0 &&
-                measuredCardHeight > 0 && (
-                  <Animated.View
-                    style={[
-                      {
-                        position: "absolute",
-                        left: NOTE_BOX_COVER_INSET,
-                        right: NOTE_BOX_COVER_INSET,
-                        // Panelin üst kenarı + nefes payı. GAP negatif (panel
-                        // kapağa biniyor), eksisi o örtüşmenin boyu.
-                        // +coverBottomInset: kapak tab bar'ın altına iniyor.
-                        bottom:
-                          -PROFILE_PANEL_GAP +
-                          NOTE_BOX_PANEL_CLEARANCE +
-                          coverBottomInset,
-                        zIndex: 55,
-                      },
-                      coverNoteAnimStyle,
-                    ]}
-                    pointerEvents={expanded ? "box-none" : "none"}
-                  >
-                    {/* Diskin camsızlığı artık NoteBox'ın kendi kararı (bkz.
-                        oradaki not) — burada ayrıca kapatmaya gerek yok. Zaten
-                        kapatılmak ZORUNDAYDI: bu kutu `coverNoteAnimStyle` ile
-                        sönerek geliyor (opacity 0→1) ve cam, atasının opacity'si
-                        1'in altındayken hiç render edilmiyor. */}
-                    <NoteBox
-                      onPress={noteHandler(photoNoteTarget(0))}
-                      onPhoto
-                    />
-                  </Animated.View>
-                )}
-
-              {/* "Yukarı kaydır" ipucu — bottom-center, çekişin ilk anında
-                  söner (bkz. expandHintAnimStyle). Name overlay gibi
-                  measuredCardHeight gate'li → ilk render'da yanlış pozisyondan
-                  jump etmesin.
-
-                  DOKUNMA expanded'ken KAPALI: metin o an görünmez (krom
-                  devrolmuş) ama kutusu yerinde duruyor, açık panelin üstünde
-                  görünmez bir dokunma alanı bırakmayalım. Kart açıkken kapatma
-                  yalnız aşağı kaydırmayla — şeritte cam bir buton YOK, o köşe
-                  artık isme ait (bkz. CardStickyHeader > TITLE_LEFT_INSET). */}
-              {!hideExpandHint && measuredCardHeight > 0 && (
-                <View
-                  style={{
-                    position: "absolute",
-                    // +coverBottomInset: kapak tab bar'ın altına iniyor.
-                    bottom: 30 + coverBottomInset,
-                    left: 0,
-                    right: 0,
-                    alignItems: "center",
-                    zIndex: 60,
-                  }}
-                  pointerEvents={expanded ? "none" : "box-none"}
-                >
-                  <TouchableOpacity
-                    onPress={onExpandPress}
-                    hitSlop={16}
-                    activeOpacity={1}
-                    disabled={!onExpandPress}
-                  >
-                    <Animated.View style={expandHintAnimStyle}>
-                      <Text
-                        style={{
-                          // Medya üstündeki her mürekkep onMedia ailesinden
-                          // (bkz. colors.ts): burada "gri" = beyazın soluğu.
-                          // Düz gri, fotoğrafın koyu bandında okunmuyor.
-                          color: theme.onMediaMuted,
-                          fontSize: 13,
-                          fontWeight: "500",
-                          letterSpacing: 0.2,
-                        }}
-                      >
-                        {t("profile.card.expandHint")}
-                      </Text>
-                    </Animated.View>
-                  </TouchableOpacity>
-                </View>
-              )}
+                  Gerekçesi jesti keşfettirmekti; artık keşfedilecek bir jest
+                  yok — parmak birkaç piksel yukarı gittiği an kart açılıyor ve
+                  hareket kesintisiz scroll'a dönüyor (bkz. SwipeWrapper >
+                  OPEN_INTENT_PX). İpucunun yerini hareketin kendisi aldı. */}
             </Animated.View>
             )}
 
@@ -4164,7 +4309,7 @@ export default function SwipeCard({
                     // paneli onun üstüne çıkarmak sanılmıştı. Yanlış kaldıraç —
                     // kutu panelin ARDINDA kalmamalı, panelin ÜSTÜNDE (yukarı
                     // tarafında) DURMALI. Doğrusu konum işi ve not kutusunun
-                    // kendi `bottom`unda çözüldü (bkz. NOTE_BOX_PANEL_CLEARANCE).
+                    // kendi konumunda çözüldü (bkz. aksiyon kolonu).
                     // Buraya zIndex koymak paneli kapağın tüm katmanlarının —
                     // erime bandı dahil — üstüne çıkarır.
                     // Üst dolgu className'den ALINDI (bkz. PANEL_TOP_PAD):
@@ -4199,8 +4344,12 @@ export default function SwipeCard({
                     // kapağın devamı değil, altına yapışan ayrı bir sayfa.
                     borderTopLeftRadius: previewMode ? 0 : PANEL_TOP_RADIUS,
                     borderTopRightRadius: previewMode ? 0 : PANEL_TOP_RADIUS,
-                    // marginTop BURADA DEĞİL, profileInfoAnimStyle'da — sabit
-                    // PROFILE_PANEL_GAP, açılırken de kapalıyken de aynı.
+                    // KAPAKLA ARASINDAKİ MESAFE: tek layout sayısı, animasyon
+                    // YOK. Bir dönem `profileInfoAnimStyle` panel aşağıdan
+                    // gelirken bunu sürüyordu; hareket kaldırıldı (bkz. oradaki
+                    // not), geriye sabit değer kaldı. Önizlemede 0 — orada panel
+                    // kartın TEPESİNDEN başlıyor, kapak çizilmiyor.
+                    marginTop: previewMode ? 0 : PROFILE_PANEL_GAP,
                     // Cam yolunda panel ŞEFFAF bir kap, İKİ BAĞLAMDA DA:
                     // altındaki blur'lu zemin (CardGlassBackdrop) baştan sona
                     // kesintisiz aksın. Panelin kendi tülü kaldırıldı — bir
@@ -4212,7 +4361,6 @@ export default function SwipeCard({
                     // buraya `borderWidth` ekleme, o çizgi paneli zeminin
                     // üstünde ayrı bir levha gibi gösteriyordu.
                   },
-                  profileInfoAnimStyle,
                 ]}
               >
                 {/* ZEMİN BURADA DEĞİL, KABUKTA (yukarıda, ScrollWrapper'ın
@@ -4354,7 +4502,14 @@ export default function SwipeCard({
                       marginBottom: 16,
                     }}
                   >
-                    <View className="flex-row flex-wrap items-center gap-3">
+                    {/* px-4 = "Burada ne arıyorum" bölümüyle AYNI yatay iç
+                        boşluk: orada da kutunun 16'sının üstüne başlık ve
+                        değer metni px-4 ile biniyor (toplam 32). Kep
+                        kaldırıldıktan sonra bu kutu tek başına kenara
+                        yapışık kalıyordu. Kutunun paddingHorizontal'ını
+                        32'ye çıkarmak değil, aynı dili (16 + px-4) kullanmak
+                        tercih edildi — iki bölüm birlikte değişsin. */}
+                    <View className="flex-row flex-wrap items-center gap-3 px-4">
                       {/* Bölüm + sınıf artık tek satır → uzun bölüm adları
                           taşmasın diye zincir boyunca flex-1 veriliyor;
                           metin sütunu kalan genişliğe sarılır. */}
@@ -4364,15 +4519,12 @@ export default function SwipeCard({
                             flex: 1,
                             flexDirection: "row",
                             alignItems: "center",
-                            gap: 8,
                           }}
                         >
-                          <SFIcon
-                            name="graduationcap.fill"
-                            fallback={GraduationCap}
-                            size={22}
-                            color={theme.text}
-                          />
+                          {/* Üniversite adının başındaki mezuniyet kepi
+                              KALDIRILDI (istek): başlık metinle başlıyor.
+                              Satır içi boşluk (gap 8) de birlikte gitti —
+                              tek çocuk kaldığı için bir işi yoktu. */}
                           <View className="flex-col items-start gap-2 flex-1">
                             <Text className="font-semibold text-[21px]" style={{ color: theme.text }}>
                               {universityLabel}
@@ -5073,21 +5225,42 @@ export default function SwipeCard({
           progress={chromeAnim}
           // Şeridin başlık satırı, sağ üstteki cam butonla aynı payda insin.
           topInset={cornerDrop}
+          // Başlık satırı, ekranın üstündeki yüzen cam butonlarla (geri al /
+          // filtre) AYNI çizgide: bant kartın tepesinden başlıyor, onlar
+          // safe-area'da duruyor. Bant devirden ÖNCE de görünür (zemini hep
+          // açık, bkz. CardStickyHeader > bandRevealStyle) ve devirde yalnız
+          // İÇERİĞİ değişiyor — butonlar gidiyor, isim + Fire geliyor.
+          titleTop={insets.top}
+          // Şeridin sol ucundaki yukarı ok — içerik başa sarılır. Şerit ismi
+          // devraldığında kullanıcı bir ekran boyu aşağıda oluyor; kapağa
+          // dönmenin başka bir kısayolu yok.
+          onScrollTop={scrollToTop}
           // Bandın kendi clip'i kabuğunkiyle aynı olmalı: şerit kartın ÜST
           // köşelerine oturuyor. Kabuktan YUVARLAK kalsaydı üst iki köşede camın
-          // çizmediği ince bir dilim görünürdü — o yüzden kabuğun AÇIK değeri
-          // (çekişle 44'ten buraya iniyor, bkz. cardCornerRadius). Sabit
-          // olabiliyor çünkü şerit ancak kart açıkken görünür oluyor (opaklığı
-          // `progress` ile çarpılı).
-          radius={openCornerRadius}
+          // çizmediği ince bir dilim görünürdü — o yüzden kabuğun ÜST köşe
+          // değeri (CARD_FACE_TOP_CORNER_RADIUS; bu dal yalnız Keşif'te
+          // çiziliyor, previewMode'da şeridi sheet taşıyor). Sabit olabiliyor
+          // çünkü köşe açılma boyunca hiç değişmiyor (bkz. openCornerRadius) ve
+          // şerit ancak kart açıkken görünür oluyor (opaklığı `progress` ile
+          // çarpılı).
+          radius={CARD_FACE_TOP_CORNER_RADIUS}
         />
       )}
 
-      {/* Fire Button — EXPANDED duruş: sticky. Scroll'un DIŞINDA, kart
-          çerçevesine göre konumlu → panel altından akıp giderken buton sağ
-          üstte asılı kalıyor. Kabuk serbest alevden büyük olduğu için köşe boşluğu da
-          farklı (FIRE_GLASS_INSET): iki şeklin MERKEZİ çakışıyor, geçiş
-          yer değiştirme değil kabuk değiştirme gibi görünsün.
+      {/* Fire Button — ŞERİTTEKİ duruş: sticky. Scroll'un DIŞINDA, kart
+          çerçevesine göre konumlu → içerik altından akıp giderken buton
+          şeridin sağ ucunda asılı kalıyor.
+
+          KABUK RENKSİZ, İÇİ RENKLİ (istek): `FireGlassButton`ın BERRAK cam
+          varyantı — satırın sol ucundaki yukarı okla (CardScrollTopGlassButton)
+          BİREBİR aynı malzeme, yani şeridin iki ucu tek bir buton dili.
+          Bir dönem aynı bileşenin `glassProminent` + turuncu tint'li hâliydi:
+          kabuğun KENDİSİ renkliydi, glif beyaza yıkanıyordu.
+
+          Bir tur da `CardSectionBox glass` ile denendi (kapaktaki aksiyon
+          kolonunun diskiyle aynı sarmalayıcı) ve geri alındı: o, oktaki native
+          liquid glass zincirinin aynısı DEĞİL — iki komşu buton yan yana iki
+          farklı cam gibi duruyordu.
 
           Mount `profileReady` gate'inde: swipe'ın son karesinde yeni top kart
           doğarken bir SwiftUI host'u daha kurmak animasyon kuyruğuna biniyor.
@@ -5107,10 +5280,16 @@ export default function SwipeCard({
               {
                 position: "absolute",
                 // Köşe diyagonalinin biraz altı, SABİT (bkz. cornerDrop).
-                top: FIRE_GLASS_INSET + cornerDrop,
-                right: FIRE_GLASS_INSET,
-                width: FIRE_GLASS_SIZE,
-                height: FIRE_GLASS_SIZE,
+                // ŞERİDİN SAĞ UCU: aynı bandın solundaki isimle ve devirden
+                // önce oradaki filtre butonuyla aynı çizgide (kenar payı
+                // CHROME_EDGE_INSET = 16). Dikeyde yüzen butonun kutusuna
+                // ORTALANIYOR — cam Fire kabuğu (44) onlardan (48) kısa.
+                // Yüzen butonlarla AYNI ÇAPTA (ortak sayı), yani dikeyde
+                // telafi payı yok: aynı `top`, aynı kutu.
+                top: insets.top + cornerDrop,
+                right: CHROME_EDGE_INSET,
+                width: DISCOVER_GLASS_BUTTON_SIZE,
+                height: DISCOVER_GLASS_BUTTON_SIZE,
               },
               fireStickyStyle,
             ]}
@@ -5121,6 +5300,8 @@ export default function SwipeCard({
             <FireGlassButton
               onPress={onFire}
               label={t("discover.stats.fireLabel")}
+              variant="clear"
+              size={DISCOVER_GLASS_BUTTON_SIZE}
             />
           </Animated.View>
         )}
