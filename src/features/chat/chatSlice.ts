@@ -205,12 +205,202 @@ function updateConversationLastMessage(state: ChatState, msg: MessageDto) {
   }
 }
 
+/**
+ * Diskten okunmuş sıcak pencereyi bucket'a merge eder — `applyLocalDelta`'nın
+ * iş yapan yarısı. Liste newest-first kalır.
+ *
+ * Üç kural:
+ *  1. Eşleşen satır (id ya da clientMessageId) güncellenir; içerik gerçekten
+ *     aynıysa ESKİ REFERANS korunur (LegendList uyanmasın).
+ *  2. `clientMessageId` asla düşmez — keyExtractor ona bakıyor, kaybı item
+ *     anahtarını değiştirip MVCP çapasını koparırdı.
+ *  3. Bucket'ın en eski satırından DAHA ESKİ yeni satır EKLENMEZ: o satır
+ *     yüklenmemiş bir sayfaya ait ve araya girmesi "bitişik son-ek"
+ *     invariant'ını bozar (arada delik). Diskte duruyor, yukarı kaydırma okur.
+ */
+function mergeLocalWindow(bucket: MessageBucket, incoming: MessageDto[]): void {
+  const byId = new Map<string, number>();
+  const byClientId = new Map<string, number>();
+  bucket.messages.forEach((m, i) => {
+    if (m.id) byId.set(m.id, i);
+    if (m.clientMessageId) byClientId.set(m.clientMessageId, i);
+  });
+  const oldestShown = bucket.messages.length
+    ? utcTime(bucket.messages[bucket.messages.length - 1].sentAt)
+    : 0;
+
+  const fresh: MessageDto[] = [];
+  for (const msg of incoming) {
+    const idx =
+      byId.get(msg.id) ??
+      (msg.clientMessageId ? byClientId.get(msg.clientMessageId) : undefined);
+    if (idx === undefined) {
+      if (oldestShown && utcTime(msg.sentAt) < oldestShown) continue;
+      fresh.push(msg);
+      continue;
+    }
+    const prev = bucket.messages[idx];
+    // Pencere messageCache'ten geliyor: hiçbir şey değişmediyse NESNE AYNI.
+    if (prev === msg) continue;
+    const next =
+      prev.clientMessageId && !msg.clientMessageId
+        ? { ...msg, clientMessageId: prev.clientMessageId }
+        : msg;
+    if (messageContentEqual(prev, next)) continue;
+    bucket.messages[idx] = next;
+  }
+
+  if (!fresh.length) return;
+  bucket.messages = [...fresh, ...bucket.messages].sort(
+    (a, b) => utcTime(b.sentAt) - utcTime(a.sentAt),
+  );
+}
+
 const chatSlice = createSlice({
   name: 'chat',
   initialState,
   reducers: {
     setActiveConversation: (state, action: PayloadAction<string | null>) => {
       state.activeConversationId = action.payload;
+    },
+
+    /**
+     * SQLite'tan gelen SOHBET LİSTESİ — açılışta bir kez (bkz. startChatMirror).
+     *
+     * ── Neden merge DEĞİL, "yalnız boşsa yaz" ───────────────────────────────
+     * Bu bir PRIMER, senkron kaynak değil: açılışta Redux listesi boş olduğu
+     * için diskten dolduruyoruz, ondan sonra tek söz sahibi ağ + realtime.
+     * Liste doluyken diskle merge etmeye kalkmak `fetchConversations.fulfilled`
+     * içindeki dört local-wins kuralını (ve `upsertConversations`'taki SQL
+     * ikizlerini) ÜÇÜNCÜ bir yerde tekrarlamak olurdu — bayat bir disk satırı
+     * az önce gelen mesajı ezebilirdi.
+     *
+     * `_conversationsFetchedAt` damgası KASTEN yazılmıyor: o damga "sunucudan
+     * ne zaman taze veri aldık" demek ve iki şeyi kapılıyor — 15sn staleness
+     * guard'ı (yazarsak odak tazelemesi yutulur) ve AppNavigator'ın boot-settle
+     * ölçütü (yazarsak uygulama ağ hiç cevap vermeden "oturdu" sayılır).
+     * Ekranın boş-durum kapısı için AYRI damga var.
+     */
+    hydrateConversations: (
+      state,
+      action: PayloadAction<ConversationListItemDto[]>,
+    ) => {
+      state._conversationsHydratedAt = Date.now();
+      if (state.conversations.length || !action.payload.length) return;
+      state.conversations = action.payload;
+      // Sekme rozeti de ağı beklemesin. fetchUnreadCount/MessagesRead birazdan
+      // düzeltiyor; buradaki değer yalnız ilk kareler için.
+      state.unreadTotal = action.payload.reduce((sum, c) => sum + (c.unreadCount || 0), 0);
+      action.payload.forEach((c) => {
+        // Presence diskte YOK (bkz. rowToConversation) — herkes offline doğuyor,
+        // hub bağlanınca gerçeği yazıyor.
+        if (c.partnerUserId) {
+          state.presenceByUser[c.partnerUserId] = { isOnline: false, lastSeen: null };
+        }
+      });
+    },
+
+    /**
+     * DELTA-SYNC'İN DİSKE YAZDIĞINI EKRANA TAŞIR.
+     *
+     * Delta akışı (`GET /messages/changes`) doğrudan SQLite'a yazıyor ve hiç
+     * dispatch etmiyordu: "diskte var, ekranda yok" — açık sohbet ve liste,
+     * arka plandan dönüşte çekilen mesajları ancak bir sonraki girişte (ya da
+     * ağ fetch'inde) görüyordu. Bu reducer o tek yönlü sokağı kapatıyor.
+     *
+     * ── Kaynak PAYLOAD DEĞİL DİSK ───────────────────────────────────────────
+     * `windowsByConv` sunucunun delta gövdesi değil, yazımdan SONRA diskten
+     * yeniden okunmuş pencere (bkz. applyDeltaFromLocal). Sebebi alan kaybı:
+     * sunucu kopyası `clientMessageId` ve `_localUri` taşımıyor, disk ise
+     * ikisini COALESCE ile koruyor. Ham payload'ı yazmak gönderdiğimiz sesin
+     * yerel dosyasını düşürürdü (balon imzalı link istemeye başlar) ve
+     * keyExtractor'ın cmid'ini değiştirirdi.
+     *
+     * ── Merge, REPLACE değil ────────────────────────────────────────────────
+     * Bucket'ta yüklü 2.+ sayfalar (`tail`) olabilir; pencereyi körlemesine
+     * yazmak onları silerdi (fetchHistory'nin reconcile dalındaki aynı yara).
+     * Eşleşen satır güncellenir, yeni satır sıraya girer, KUYRUK KORUNUR.
+     *
+     * Bucket'ı OLMAYAN sohbet atlanıyor: orayı açılışta hydrateConversation
+     * zaten diskten okuyor, burada bucket yaratmak sıcak pencere mantığını
+     * ikinci bir yere kopyalamak olurdu.
+     */
+    applyLocalDelta: (
+      state,
+      action: PayloadAction<{
+        /** Diskten yeniden okunmuş liste satırları (dokunulanlar). */
+        conversations: ConversationListItemDto[];
+        /** conversationId → diskten yeniden okunmuş sıcak pencere. */
+        windowsByConv: Record<string, MessageDto[]>;
+        /** Pencerenin DIŞINDA kalan satırlar için silme tombstone'ları. */
+        deletions: {
+          messageId: string;
+          conversationId: string;
+          deletedAt: string;
+          deletedForEveryone: boolean;
+        }[];
+        removedConversationIds: string[];
+      }>,
+    ) => {
+      const { conversations, windowsByConv, deletions, removedConversationIds } =
+        action.payload;
+
+      if (removedConversationIds?.length) {
+        const gone = new Set(removedConversationIds);
+        state.conversations = state.conversations.filter(
+          (c) => !gone.has(c.conversationId),
+        );
+        for (const id of gone) delete state.messagesByConv[id];
+      }
+
+      for (const conversationId in windowsByConv ?? {}) {
+        const bucket = state.messagesByConv[conversationId];
+        const incoming = windowsByConv[conversationId];
+        if (!bucket || !incoming?.length) continue;
+        mergeLocalWindow(bucket, incoming);
+      }
+
+      // Pencere dışındaki silmeler: yukarıdaki merge yalnız diskten okunan 60
+      // satırı kapsıyor, derine kaydırılmış bir bucket'ta daha eski bir mesaj
+      // silinmiş olabilir. Tombstone semantiği messageDeleted ile birebir.
+      for (const d of deletions ?? []) {
+        const bucket = state.messagesByConv[d.conversationId];
+        if (!bucket) continue;
+        const idx = bucket.messages.findIndex((m) => m.id === d.messageId);
+        if (idx < 0) continue;
+        const msg = bucket.messages[idx];
+        if (msg.deletedAt) continue;
+        bucket.messages[idx] = {
+          ...msg,
+          deletedAt: d.deletedAt,
+          deletedForEveryone: d.deletedForEveryone,
+          content: d.deletedForEveryone ? '' : msg.content,
+          mediaUrl: d.deletedForEveryone ? null : msg.mediaUrl,
+        };
+      }
+
+      if (conversations?.length) {
+        const byId = new Map(state.conversations.map((c) => [c.conversationId, c]));
+        for (const fresh of conversations) {
+          const prev = byId.get(fresh.conversationId);
+          // partnerIsOnline diskte YOK (presence volatil, kolonu bile yok) —
+          // mevcut satırdan taşınmazsa hub'ın yazdığı "online" silinirdi.
+          byId.set(fresh.conversationId, {
+            ...fresh,
+            partnerIsOnline: prev?.partnerIsOnline ?? false,
+          });
+        }
+        // Sıra tek kurala bağlı: en yeni mesaj en üstte (readConversations ile
+        // aynı). Yeni satırlar da (ilk mesaj, yeni eşleşme) böylece yerine
+        // oturuyor.
+        state.conversations = Array.from(byId.values()).sort(
+          (a, b) => utcTime(b.lastMessageAt) - utcTime(a.lastMessageAt),
+        );
+        state.unreadTotal = state.conversations.reduce(
+          (sum, c) => sum + (c.unreadCount || 0),
+          0,
+        );
+      }
     },
 
     /**
@@ -869,6 +1059,8 @@ const chatSlice = createSlice({
 
 export const {
   setActiveConversation,
+  applyLocalDelta,
+  hydrateConversations,
   hydrateWindow,
   prependOlderFromLocal,
   setHistoryExhausted,

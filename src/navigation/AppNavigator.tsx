@@ -111,6 +111,7 @@ import AuthNavigator from './AuthNavigator';
 import TabNavigator from './TabNavigator';
 import KVKKConsentScreen, { CURRENT_KVKK_VERSION } from '@/features/auth/screens/KVKKConsentScreen';
 import ChatScreen from '@/features/chat/screens/ChatScreen';
+import { BACK_SWIPE_BAND } from '@/features/chat/components/RevealContext';
 import NotificationsScreen from '@/features/notifications/screens/NotificationsScreen';
 import ChangePasswordScreen from '@/features/auth/screens/ChangePasswordScreen';
 import ChangeEmailScreen from '@/features/auth/screens/ChangeEmailScreen';
@@ -333,7 +334,18 @@ function MainNavigator() {
         component={ChatScreen}
         options={{
           gestureEnabled: true,
-          fullScreenGestureEnabled: false,
+          // Geri jesti TAM EKRAN DEĞİL, solda genişletilmiş bir bant. Sebep:
+          // soldan sağa çekiş bu ekranda "yanıtla" jestiyle aynı hareket
+          // (ReplySwipeRow) — tam ekran açılsaydı native tanıyıcı her balonda
+          // yarışı kazanıp yanıt kaydırmasını fiilen öldürürdü.
+          //
+          // fullScreenGestureEnabled'ı AÇMAK ZORUNDAYIZ: `gestureResponseDistance`
+          // yalnız full-screen tanıyıcıya uygulanıyor (iOS 26'da UIKit'in
+          // interactiveContentPopGestureRecognizer'ı, altında RNSPanGestureRecognizer),
+          // UIKit'in dar varsayılan kenar tanıyıcısına DEĞİL. `end` = bandın SAĞ
+          // sınırı: jest yalnız x ≤ BACK_SWIPE_BAND'de başlıyor.
+          fullScreenGestureEnabled: true,
+          gestureResponseDistance: { end: BACK_SWIPE_BAND },
         }}
       />
       <Stack.Screen name="Notifications" component={NotificationsScreen} />

@@ -3,6 +3,7 @@ import * as repo from '@/features/chat/chatRepository';
 import { openChatDb } from '@/features/chat/db/chatDb';
 import { importLegacyChatCache } from '@/features/chat/db/importLegacyCache';
 import { startDeltaSync } from '@/features/chat/chatDeltaSync';
+import { applyDeltaFromLocal, hydrateConversationList } from '@/features/chat/chatHydrate';
 import { fetchConversations } from '@/features/chat/chatSlice';
 import { clear as clearMessageCache, projectWindow } from '@/features/chat/messageCache';
 import { messageContentEqual } from '@/features/chat/messageEquality';
@@ -55,6 +56,13 @@ export function startChatMirror(store?: {
     // bir kez, indeksli tek DELETE. Sunucudan sinyal beklemiyor: o iş hard
     // delete yapıyor ve arkasında hiç iz bırakmıyor.
     repo.pruneExpiredMessages();
+    // Gönderim sırasında ölen uygulamanın bıraktığı `pending` satırları —
+    // onları sürecek kuyruk bellekte olduğu için process ile öldü. OKUMADAN
+    // ÖNCE çevrilmeli ki diskten gelen balon "tekrar dene"li doğsun.
+    const stale = repo.failStalePendingSends();
+    if (__DEV__ && stale > 0) {
+      console.log(`[chatMirror] ${stale} asılı gönderim failed'a çevrildi`);
+    }
   } catch (error) {
     console.error('[chatMirror] başlatılamadı, ayna devre dışı:', error);
     started = false;
@@ -62,9 +70,20 @@ export function startChatMirror(store?: {
   }
 
   if (!store) return;
+
+  // Sohbet listesini diskten store'a al — React mount'undan ÖNCE, yani ilk
+  // render dolu listeyle boyanıyor (ağ cevabı beklenmiyor, offline'da da
+  // çalışıyor). Ağ tazeliği kaybı yok: MessagesScreen her odakta, hub da her
+  // bağlantıda zaten tazeliyor.
+  hydrateConversationList(store.dispatch);
+
   // Bayrak kapalıyken startDeltaSync no-op döndürüyor; burada koşul yok.
   stopDeltaSync = startDeltaSync({
     getActiveConversationId: () => store.getState()?.chat?.activeConversationId ?? null,
+    // Delta turu yalnız diske yazıyor; ekrana taşıyan tek yer burası. Olmadan
+    // arka plandan dönüşte gelen mesaj/silme açık sohbette ve listede ancak
+    // bir sonraki girişte (ya da ağ fetch'inde) görünüyordu.
+    onApplied: (applied) => applyDeltaFromLocal(store, applied),
     // UT-6744: delta hiçbir şey söyleyemiyor → mevcut yolla tam senkron.
     // Sohbet listesi yenilenince açık sohbetin reconcile'ı ChatScreen'den
     // zaten geliyor.

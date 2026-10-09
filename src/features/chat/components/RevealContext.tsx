@@ -41,7 +41,19 @@ export const REPLY_MAX_X = 50;
 // Kuyruğun sertliği: KÜÇÜLDÜKÇE tavana daha çabuk varır, yani eşikten sonra daha
 // AZ direnç hissedilir. (48 → 34: eşiği geçtikten sonra bir tık daha rahat.)
 export const REPLY_TAIL_K = 34;
-// Ekranın SOL kenarından başlayan çekişler native swipe-back'e (edge pop) ait —
-// bu bantta jest atıl kalır. AppNavigator'da fullScreenGestureEnabled:false,
-// yani native tanıyıcı yalnız bu dar şeritte çalışıyor.
-export const REPLY_EDGE_GUARD = 28;
+// ── Geri (swipe-back) şeridi ──────────────────────────────────────────────────
+// Ekranın solunda, soldan-sağa çekişin EKRANI POP'LADIĞI bant. iOS'un kendi
+// kenar tanıyıcısı (interactivePopGestureRecognizer) çok dar: pratikte ekranın
+// en solundan nişan almak gerekiyordu. Bandı genişletmenin tek yolu full-screen
+// tanıyıcıyı açıp alanını kısıtlamak — `gestureResponseDistance` YALNIZ o
+// tanıyıcıya uygulanıyor, UIKit'in dar kenar tanıyıcısına DEĞİL
+// (RNSScreenStack.mm `isInGestureResponseDistance`). AppNavigator'daki Chat
+// ekranı bu sabiti `gestureResponseDistance: { end: … }` olarak veriyor.
+//
+// ⚠️ Bu iki jest AYNI hareketi paylaşıyor (soldan sağa): bant ne kadar genişse
+// o kadar solda yanıt kaydırması ölür. Native tanıyıcı birkaç px'te aktifleşip
+// 20px eşikli RNGH pan'ini yarışta yeniyor — o yüzden band İÇİNDE yanıt jesti
+// bilerek atıl bırakılıyor (aşağıdaki guard), yoksa balon boşuna kıpırdıyor.
+export const BACK_SWIPE_BAND = 72;
+// Bu bantta yanıt jesti atıl kalır — çekiş geri jestinin.
+export const REPLY_EDGE_GUARD = BACK_SWIPE_BAND;

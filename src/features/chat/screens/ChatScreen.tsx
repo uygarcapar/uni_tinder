@@ -1161,6 +1161,9 @@ function ChatScreen({
           conversationId,
           clientMessageId,
           localUri: uri,
+          // İlk gönderim: yükleme henüz yapılmadı. Tekrar denemelerde outbox
+          // bunu diskten dolduruyor (bkz. outboxPolicy.messageToDescriptor).
+          mediaUrl: null,
           durationMs,
           waveformPeaks,
           replyToMessageId,

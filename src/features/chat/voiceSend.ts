@@ -19,34 +19,65 @@ export class VoiceTooLargeError extends Error {
  * 2. adımın başarısı DOĞRULANMADAN 3. adıma geçilmez: yarım kalan yüklemede
  * sunucu dosyayı bulamayıp UT-6605 döner ve karşı tarafta sonsuza dek
  * oynatılamayan bir baloncuk kalırdı. uploadFileToS3 2xx dışını fırlatıyor.
+ *
+ * ── `mediaUrl` verilirse 1. ve 2. ADIM ATLANIR ──────────────────────────────
+ * Yükleme tamamlandıktan sonra 3. adım patlarsa (ya da uygulama tam o anda
+ * kapanırsa) elimizde kalıcı `mediaUrl` var ve backend'in açık ricası onu
+ * yeniden kullanmak: her `upload-url` çağrısı YENİ bir S3 anahtarı üretiyor,
+ * yani tekrar yüklemek yetim nesne bırakıyor (7 gün sonra temizlik işi
+ * siliyor) ve bedava değil.
+ *
+ * Yan kazanç: bu dalda yerel dosyaya HİÇ bakılmıyor — iOS cache dizinini
+ * boşalttıysa bile mesaj gidebiliyor, çünkü ses zaten S3'te.
+ *
+ * Nesne silinmişse (7 günden eski yetim) sunucu UT-6605 döner; çağıran o kodu
+ * görünce `mediaUrl`'i düşürüp 1. adımdan başlatıyor (bkz. outbox).
  */
 export async function sendVoiceMessage({
   conversationId,
   uri,
+  mediaUrl,
   durationMs,
   waveformPeaks,
   clientMessageId,
   replyToMessageId,
+  onUploaded,
 }: {
   conversationId: string;
-  uri: string;
+  /** Yerel kayıt. `mediaUrl` verilmişse gerekmiyor. */
+  uri?: string | null;
+  /** Tamamlanmış yüklemenin kalıcı anahtarı — varsa yükleme tekrarlanmaz. */
+  mediaUrl?: string | null;
   durationMs: number;
   waveformPeaks?: string;
   clientMessageId: string;
   replyToMessageId?: string;
+  /**
+   * 2. adım bittiği ANDA çağrılır — 3. adımdan ÖNCE. Çağıran burada
+   * `mediaUrl`'i kalıcı yere yazıyor; yoksa gönderim patladığında yükleme
+   * bilgisi uçar ve tekrar denemede dosya ikinci kez yüklenirdi.
+   */
+  onUploaded?: (mediaUrl: string) => void;
 }): Promise<MessageDto> {
-  const file = new File(uri);
-  if (!file.exists) throw new Error("voice-file-missing");
-  const sizeBytes = Number(file.size ?? 0);
-  if (!sizeBytes) throw new Error("voice-file-empty");
-  if (sizeBytes > VOICE_MAX_BYTES) throw new VoiceTooLargeError();
+  let key = mediaUrl ?? null;
 
-  const upload = await chatService.createUploadUrl({
-    conversationId,
-    contentType: VOICE_MIME,
-    sizeBytes,
-  });
-  await chatService.uploadFileToS3(upload.uploadUrl, file, VOICE_MIME);
+  if (!key) {
+    if (!uri) throw new Error("voice-file-missing");
+    const file = new File(uri);
+    if (!file.exists) throw new Error("voice-file-missing");
+    const sizeBytes = Number(file.size ?? 0);
+    if (!sizeBytes) throw new Error("voice-file-empty");
+    if (sizeBytes > VOICE_MAX_BYTES) throw new VoiceTooLargeError();
+
+    const upload = await chatService.createUploadUrl({
+      conversationId,
+      contentType: VOICE_MIME,
+      sizeBytes,
+    });
+    await chatService.uploadFileToS3(upload.uploadUrl, file, VOICE_MIME);
+    key = upload.mediaUrl;
+    onUploaded?.(key);
+  }
 
   return chatService.sendMessage({
     conversationId,
@@ -54,7 +85,7 @@ export async function sendVoiceMessage({
     clientMessageId,
     // Enum PascalCase string olarak gider (bkz. api wire sözleşmesi).
     contentType: "Voice",
-    mediaUrl: upload.mediaUrl,
+    mediaUrl: key,
     durationMs,
     waveformPeaks,
     replyToMessageId,

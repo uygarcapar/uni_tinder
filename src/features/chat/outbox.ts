@@ -32,13 +32,20 @@ import { openQuotaPaywall } from "@/features/chat/quotaPaywall";
 import realtimeService from "@/features/chat/realtimeService";
 import { enqueueSend } from "@/features/chat/sendQueue";
 import { sendVoiceMessage } from "@/features/chat/voiceSend";
+import { inFlightPull } from "@/features/chat/chatDeltaSync";
+import { readFailedOutboxFromLocal } from "@/features/chat/chatHydrate";
+import { clearVoiceMediaUrl, setVoiceMediaUrl } from "@/features/chat/chatRepository";
 import {
   backoffDelayMs,
   classifySendError,
   isEligible,
+  mergeFailedOutbox,
   messageToDescriptor,
+  needsVoiceReupload,
   selectFailedOutbox,
   MAX_ATTEMPTS,
+  MAX_PER_FLUSH,
+  OUTBOX_DISK_MAX_AGE_MS,
   type AttemptEntry,
   type FailOrigin,
   type FailureClass,
@@ -79,6 +86,8 @@ let lastFlushAt = 0;
 let wakeTimer: ReturnType<typeof setTimeout> | null = null;
 /** Sessiz turda biriken "sohbet listesini doğrulat" isteği — tur başına BİR kez. */
 let roundNeedsConversationRefetch = false;
+/** Turda 429 / `RATE_LIMITED` görüldü — kalan mesajlar bir sonraki tura. */
+let roundRateLimited = false;
 
 const dispatch = (action: any) => (store.dispatch as any)(action);
 
@@ -184,7 +193,11 @@ function scheduleWake() {
   const now = Date.now();
   let soonest = Infinity;
   for (const entry of attempts.values()) {
-    if (entry.permanent || entry.origin === "ackTimeout") continue;
+    // `origin === "ackTimeout"` ELENMİYOR (2026-10-06): send idempotent olduğu
+    // için o kayıtlar da sessizce denenebiliyor (bkz. outboxPolicy.FailOrigin).
+    // Elenmeye devam etseydi ack'i kaybolmuş mesaj backoff zamanlayıcısıyla hiç
+    // denenmez, yalnız bir sonraki foreground/reconnect'i beklerdi.
+    if (entry.permanent) continue;
     if (entry.attempts >= MAX_ATTEMPTS) continue;
     if (entry.nextEligibleAt > now && entry.nextEligibleAt < soonest) {
       soonest = entry.nextEligibleAt;
@@ -254,6 +267,11 @@ function handleFailure(
     return;
   }
 
+  // Sunucu "yavaşla" dedi: bu mesaja değil TURA ait bir cevap. Kalan mesajları
+  // denemek aynı 429'u alıp hepsinin deneme hakkını yakardı (sunucu sınırı:
+  // dakikada 30 mesaj, HTTP ve hub için ayrı ayrı).
+  if (fc.reason === "rateLimited") roundRateLimited = true;
+
   // Balon LİSTEDEN ÇIKARILMAZ (kod ne olursa olsun): yazdığı metin kullanıcının
   // elinde kalsın. Sözleşme "taslağı input'a geri koy" diyor; bizde aynı işi
   // başarısız balon + "tekrar dene" görüyor — üstelik içerik gözden kaybolmadan.
@@ -307,10 +325,26 @@ export async function sendOutgoing(
         sendVoiceMessage({
           conversationId,
           uri: d.localUri,
+          // Yükleme daha önce tamamlanmışsa dosya TEKRAR YÜKLENMEZ: her
+          // upload-url yeni bir S3 anahtarı üretiyor ve yetim nesne bırakıyor
+          // (backend'in açık ricası).
+          mediaUrl: d.mediaUrl,
           durationMs: d.durationMs,
           waveformPeaks: d.waveformPeaks ?? undefined,
           clientMessageId,
           replyToMessageId: replyToMessageId ?? undefined,
+          // Yükleme bittiği ANDA diske yaz — `send` patlarsa ya da uygulama
+          // tam o anda kapanırsa bilgi uçmasın, yoksa tekrar denemede dosya
+          // ikinci kez yüklenirdi. Redux'a yazmıyoruz: balon sesi zaten yerel
+          // dosyadan çalıyor, mediaUrl'e ihtiyacı yok.
+          onUploaded: (mediaUrl) => {
+            try {
+              setVoiceMediaUrl(clientMessageId, mediaUrl);
+            } catch {
+              // Arşiv yazımı kozmetik: en kötü ihtimalle tekrar denemede
+              // yeniden yükleriz.
+            }
+          },
         }),
       );
     } else {
@@ -339,7 +373,22 @@ export async function sendOutgoing(
     if (result) dispatch(messageSent(result));
     chargeQuotaOnce(conversationId, clientMessageId);
   } catch (err: any) {
-    handleFailure(d, classifySendError(err, d.kind), opts.mode, err);
+    let fc = classifySendError(err, d.kind);
+    // Tamamlanmış sandığımız yükleme ölmüş (UT-6605: S3 nesnesi 7 günlük yetim
+    // temizliğine gitmiş). Anahtarı düşür → bir sonraki deneme 1. adımdan
+    // başlar ve yerel dosyadan yeniden yükler. Yani görünüşte kalıcı olan hata
+    // aslında geçici.
+    if (needsVoiceReupload(d, fc)) {
+      try {
+        clearVoiceMediaUrl(d.clientMessageId);
+      } catch {
+        // Yazamadıysak tekrar deneme yine ölü anahtarla gider ve aynı koda
+        // düşer — davranış eski hâline döner, kayıp yok.
+      }
+      fc = { ...fc, retryable: true, reason: "transient", toast: false };
+      devLog("📮 [outbox] ses yüklemesi ölmüş, yeniden yüklenecek", d.clientMessageId);
+    }
+    handleFailure(d, fc, opts.mode, err);
   }
 }
 
@@ -400,22 +449,58 @@ export async function flushOutbox(
   // Aynı saniyede gelen üç tetik (online + reconnect + foreground) tek tur olur.
   if (startedAt - lastFlushAt < MIN_FLUSH_INTERVAL_MS) return;
   if (isOfflineNow()) return;
-  const state: any = store.getState();
-  // Oturum yoksa denemenin anlamı yok; 401'e yanıp deneme hakkı yakardı.
-  if (!state?.auth?.isAuthenticated) return;
 
-  const items = selectFailedOutbox(state);
-  pruneAttempts(items);
-  if (!items.length) return;
-
+  // ⚠️ GUARD'LAR await'ten ÖNCE KAPANIR. Aşağıda yakalama turunu bekliyoruz;
+  // `flushing` o await'ten sonra set edilse iki tetik (reconnect + foreground)
+  // aynı tick'te kapıdan geçip İKİ tur başlatırdı.
   flushing = true;
   lastFlushAt = startedAt;
   roundNeedsConversationRefetch = false;
+  roundRateLimited = false;
   let sent = 0;
+  let items: any[] = [];
   try {
+    // Uçuşta bir yakalama turu varsa ÖNCE onu bekle: aynı tetiklerden ikisi
+    // birden ateşleniyor ve delta turu bizim mesajımızı geri getirdiğinde satır
+    // kendiliğinden `sent`e dönüyor — yani ack'i kaybolmuş ama aslında gitmiş
+    // mesaj kuyruktan düşüyor. Beklemek gereksiz bir `send` isteğini önlüyor
+    // (sunucu sınırı: dakikada 30). Tur AÇMIYORUZ.
+    const pull = inFlightPull();
+    if (pull) {
+      try {
+        await pull;
+      } catch {
+        // Yakalama turu patladıysa gönderim turu yine de koşsun.
+      }
+    }
+
+    const state: any = store.getState();
+    // Oturum yoksa denemenin anlamı yok; 401'e yanıp deneme hakkı yakardı.
+    if (!state?.auth?.isAuthenticated) return;
+
+    // İki kaynak: ekrandaki bucket'lar (canlı) + ARŞİV (tam). Disk şart, çünkü
+    // bucket yalnız açılmış sohbetler için var — yeniden başlatmadan sonra
+    // kullanıcı o sohbete girmedikçe oradaki başarısız mesaj hiçbir tura
+    // görünmüyordu. Diskten gelenlerde yaş sınırı mesajın KENDİ damgası
+    // (gerekçe: OUTBOX_DISK_MAX_AGE_MS).
+    // Liste YAKALAMA TURUNDAN SONRA kuruluyor: delta'nın `sent`e çevirdiği
+    // satırlar artık hiç görünmüyor.
+    items = mergeFailedOutbox(
+      selectFailedOutbox(state),
+      readFailedOutboxFromLocal({ sinceMs: startedAt - OUTBOX_DISK_MAX_AGE_MS }),
+    );
+    pruneAttempts(items);
+    if (!items.length) return;
+
     for (const m of items) {
       // Tur ortasında bağlantı giderse kalan mesajları boşuna yakma.
       if (isOfflineNow()) break;
+      // Sunucu bu turda "yavaşla" dedi; gerisi bir sonraki tura kalsın.
+      if (roundRateLimited) break;
+      // Tur başına tavan. Sunucu sınırı dakikada 30; altında kalmak hem
+      // kullanıcının o sırada elle yazdığı mesaja yer bırakıyor hem de
+      // 40 mesajlık bir kuyruğun ilk turda 429 duvarına çarpmasını önlüyor.
+      if (sent >= MAX_PER_FLUSH) break;
       const clientMessageId = m.clientMessageId;
       if (!isEligible(attempts.get(clientMessageId), Date.now(), "silent")) continue;
       sent += 1;

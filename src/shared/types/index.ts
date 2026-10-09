@@ -345,6 +345,13 @@ export interface ChatState {
   conversationsError: string | null;
   /** Son başarılı fetchConversations zamanı — staleness guard için (bkz. chatSlice). */
   _conversationsFetchedAt?: number;
+  /**
+   * Liste diskten bir kez okundu (bkz. chatSlice.hydrateConversations).
+   * `_conversationsFetchedAt` ile BİRLEŞTİRİLEMEZ: o damga "sunucudan taze veri"
+   * demek ve staleness guard'ı + boot-settle ölçütünü kapılıyor. Bu damga
+   * yalnız "artık gösterilecek bir şey var mı" sorusunu cevaplıyor.
+   */
+  _conversationsHydratedAt?: number;
   messagesByConv: Record<string, MessageBucket>;
   typingByConv: Record<string, TypingEntry>;
   presenceByUser: Record<string, PresenceEntry>;

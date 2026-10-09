@@ -5,6 +5,7 @@ import {
   classifySendError,
   isEligible,
   messageToDescriptor,
+  needsVoiceReupload,
   selectFailedOutbox,
   type AttemptEntry,
 } from '@/features/chat/outboxPolicy';
@@ -168,6 +169,36 @@ describe('messageToDescriptor', () => {
     ).toBeNull();
   });
 
+  // Yükleme tamamlandıktan sonra yalnız `send` patlamışsa dosyaya hiç gerek
+  // yok: ses S3'te duruyor ve backend aynı anahtarla devam etmemizi istiyor
+  // (her upload-url yeni nesne üretiyor → yetim).
+  it('mediaUrl varsa yerel dosya DÜŞMÜŞ olsa da gönderilebilir', () => {
+    const d = messageToDescriptor({
+      conversationId: 'c1',
+      clientMessageId: 'cm5',
+      contentType: 2,
+      durationMs: 3200,
+      mediaUrl: 'chat-media/c1/u1/abc.m4a',
+    });
+    expect(d).toMatchObject({
+      kind: 'voice',
+      localUri: null,
+      mediaUrl: 'chat-media/c1/u1/abc.m4a',
+    });
+  });
+
+  it('ikisi de varsa ikisi de taşınır — yükleme atlanır, dosya yedekte kalır', () => {
+    const d = messageToDescriptor({
+      conversationId: 'c1',
+      clientMessageId: 'cm6',
+      contentType: 2,
+      durationMs: 1000,
+      _localUri: 'file:///c.m4a',
+      mediaUrl: 'chat-media/c1/u1/def.m4a',
+    });
+    expect(d).toMatchObject({ localUri: 'file:///c.m4a', mediaUrl: 'chat-media/c1/u1/def.m4a' });
+  });
+
   it('contentType "Voice" (string enum) de ses sayılır', () => {
     const d = messageToDescriptor({
       conversationId: 'c1',
@@ -269,15 +300,79 @@ describe('isEligible', () => {
     expect(isEligible(entry(), NOW + MAX_AGE_MS + 1, 'silent')).toBe(false);
   });
 
-  // Mükerrer mesaj koruması: ack gelmemesi "gitmedi" demek değil.
-  it('ackTimeout kaynaklı hata SESSİZ denenmez ama elle denenebilir', () => {
+  // 2026-10-06: backend `(SenderId, ClientMessageId)` UNIQUE index'i ile send'i
+  // idempotent yaptı — aynı cmid ile ikinci istek yeni satır yaratmıyor, var
+  // olan mesajı döndürüyor. Ack'i görülmemiş gönderimi sessizce denemek artık
+  // çift mesaj riski DEĞİL, o yüzden eski kapı kaldırıldı.
+  it('ackTimeout kaynaklı hata ARTIK sessizce de denenir (send idempotent)', () => {
     const e = entry({ origin: 'ackTimeout' });
-    expect(isEligible(e, NOW, 'silent')).toBe(false);
+    expect(isEligible(e, NOW, 'silent')).toBe(true);
     expect(isEligible(e, NOW, 'interactive')).toBe(true);
+  });
+
+  it('ackTimeout diğer kapıları ES GEÇMİYOR — tavan ve yaş hâlâ bağlayıcı', () => {
+    expect(isEligible(entry({ origin: 'ackTimeout', attempts: MAX_ATTEMPTS }), NOW, 'silent')).toBe(
+      false,
+    );
+    expect(
+      isEligible(entry({ origin: 'ackTimeout' }), NOW + MAX_AGE_MS + 1, 'silent'),
+    ).toBe(false);
   });
 
   it('kullanıcı tetiklediğinde hiçbir kapı bağlamaz', () => {
     const dead = entry({ permanent: true, attempts: 99, nextEligibleAt: NOW + 60_000 });
     expect(isEligible(dead, NOW, 'interactive')).toBe(true);
+  });
+});
+
+// ── Rate limit: sunucu sınırı dakikada 30 (HTTP ve hub ayrı ayrı) ───────────
+describe('rateLimited', () => {
+  it('429 kotayla KARIŞTIRILMAZ — paywall açılmaz, yeniden denenir', () => {
+    const fc = classifySendError(axiosErr(429), 'text');
+    expect(fc.reason).toBe('rateLimited');
+    expect(fc.retryable).toBe(true);
+    // Kullanıcıya gösterilecek bir şey yok: mesaj birazdan kendiliğinden gidiyor.
+    expect(fc.toast).toBe(false);
+  });
+
+  it('hub\'ın string kodu da aynı sınıfa düşer', () => {
+    expect(classifySendError({ code: 'RATE_LIMITED' }, 'text').reason).toBe('rateLimited');
+  });
+
+  it('402 hâlâ kota — 429 dalı onu gölgelemiyor', () => {
+    expect(classifySendError(axiosErr(402), 'text').reason).toBe('quota');
+  });
+});
+
+// ── Ölü yükleme anahtarı (UT-6605) ─────────────────────────────────────────
+describe('needsVoiceReupload', () => {
+  const voice = (over: any = {}) => ({
+    kind: 'voice' as const,
+    conversationId: 'c1',
+    clientMessageId: 'cm1',
+    localUri: 'file:///a.m4a',
+    mediaUrl: 'chat-media/c1/u1/abc.m4a',
+    durationMs: 1000,
+    ...over,
+  });
+
+  it('elimizdeki anahtarla UT-6605 aldıysak nesne silinmiş → yeniden yükle', () => {
+    const fc = classifySendError({ response: { data: { code: 'UT-6605' } } }, 'voice');
+    expect(needsVoiceReupload(voice(), fc)).toBe(true);
+  });
+
+  it('anahtar yoksa (ilk gönderim) kurtarma yok — hata gerçekten kalıcı', () => {
+    const fc = classifySendError({ response: { data: { code: 'UT-6605' } } }, 'voice');
+    expect(needsVoiceReupload(voice({ mediaUrl: null }), fc)).toBe(false);
+  });
+
+  it('yerel dosya da yoksa yeniden yüklenecek bir şey YOK', () => {
+    const fc = classifySendError({ response: { data: { code: 'UT-6605' } } }, 'voice');
+    expect(needsVoiceReupload(voice({ localUri: null }), fc)).toBe(false);
+  });
+
+  it('başka ses kodunda (UT-6603 süre) kurtarma denenmez', () => {
+    const fc = classifySendError({ response: { data: { code: 'UT-6603' } } }, 'voice');
+    expect(needsVoiceReupload(voice(), fc)).toBe(false);
   });
 });

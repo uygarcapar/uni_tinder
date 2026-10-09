@@ -32,11 +32,15 @@ export type SendMode = "interactive" | "silent";
  *  throw      → istek istisna fırlattı, yani sunucuya ULAŞMADIĞINI biliyoruz.
  *  ackTimeout → hub invoke'u çözüldü ama 12 saniyede ack gelmedi. Bu "mesaj
  *               gitmedi" DEĞİL, "geri dönüş gelmedi" demek: sunucu işlemiş ama
- *               `MessageSent` broadcast'i kaybolmuş olabilir. Sessizce yeniden
- *               göndermek mesajı İKİ KEZ yollama riski taşıyor, o yüzden bu
- *               kaynak yalnız kullanıcı elle bastığında denenir (bugünkü
- *               davranışın aynısı). Backend'in `clientMessageId` üzerinden
- *               idempotent olduğu doğrulanırsa kısıt kaldırılabilir.
+ *               `MessageSent` broadcast'i kaybolmuş olabilir.
+ *
+ * Ayrım artık YALNIZ TEŞHİS İÇİN. Eskiden `ackTimeout` sessiz yeniden denemeyi
+ * tamamen kapatıyordu, çünkü aynı mesajı tekrar göndermek çift mesaj riskiydi.
+ * Backend 2026-10-06'da sözleşmeyi dondurdu: `(SenderId, ClientMessageId)`
+ * üzerinde filtreli UNIQUE index var, aynı cmid ile gelen ikinci istek yeni
+ * satır YARATMIYOR — var olan mesajın DTO'sunu döndürüyor, kota bir kez
+ * düşüyor, karşı tarafa bir kez event gidiyor ve garanti zaman penceresine
+ * değil index'e dayanıyor. Yani tekrar denemek artık güvenli ve kısıt kalktı.
  */
 export type FailOrigin = "throw" | "ackTimeout";
 
@@ -53,7 +57,10 @@ export type OutgoingDescriptor =
       kind: "voice";
       conversationId: string;
       clientMessageId: string;
-      localUri: string;
+      /** Yerel kayıt. `mediaUrl` varsa boş olabilir (dosya düşmüş olsa da gider). */
+      localUri: string | null;
+      /** Tamamlanmış yüklemenin kalıcı anahtarı — varsa dosya tekrar yüklenmez. */
+      mediaUrl: string | null;
       durationMs: number;
       waveformPeaks?: string | null;
       replyToMessageId?: string | null;
@@ -65,6 +72,13 @@ export type FailureReason =
   | "inputInvalid"
   | "voiceInvalid"
   | "voiceFileGone"
+  /**
+   * Sunucu "yavaşla" diyor (429 / `RATE_LIMITED`). `transient`ten AYRI bir
+   * sınıf, çünkü tek farkı mesaja değil TURA ait olması: aynı turda kalan
+   * mesajları denemek aynı cevabı alır ve hepsinin deneme hakkını yakar.
+   * Çağıran bu sınıfı görünce turu kesiyor (bkz. outbox.flushOutbox).
+   */
+  | "rateLimited"
   | "transient";
 
 export type FailureClass = {
@@ -97,11 +111,30 @@ export type AttemptEntry = {
 /** Sessiz denemenin tavanı. Aşılınca balon `_failed` kalır, elle buton çalışır. */
 export const MAX_ATTEMPTS = 5;
 /**
- * Yarım saattir gitmeyen mesajı otomatik denemeyi bırak. `consumableRedeem`'in
- * 7 günlük yaş sınırının oturum ölçekli karşılığı — kuyruk kalıcı olmadığı için
- * (uygulama kapanınca zaten kayboluyor) gün ölçeğinde bir sınırın anlamı yok.
+ * Yarım saattir gitmeyen mesajı otomatik denemeyi bırak — OTURUM İÇİ ölçü:
+ * sayaç mesajı ilk gördüğümüz andan (`firstSeenAt`) işliyor.
  */
 export const MAX_AGE_MS = 30 * 60_000;
+/**
+ * DİSKTEN bulunan başarısız mesajın sessiz tura girebileceği en büyük yaş —
+ * ölçü mesajın KENDİ `sentAt`'i, çünkü `firstSeenAt` yeniden başlatmadan sonra
+ * "şimdi" olur ve yaş sınırı anlamını yitirirdi.
+ *
+ * 2 saat bir ÜRÜN kararı, teknik bir sınır değil: kullanıcının sabah yazıp
+ * gitmediğini gördüğü bir mesajı akşam habersiz göndermek doğru olmaz. Elle
+ * "tekrar dene" bu sınıra TABİ DEĞİL (interactive her şeyi ezer) — yani eski
+ * bir mesaj hiçbir zaman gönderilemez hâle gelmiyor, yalnız kararı kullanıcı
+ * veriyor.
+ */
+export const OUTBOX_DISK_MAX_AGE_MS = 2 * 60 * 60_000;
+/**
+ * Tek sessiz turda denenecek en çok mesaj. Sunucu sınırı **dakikada 30**
+ * (HTTP ve hub için ayrı ayrı); altında kalmak hem o sırada kullanıcının elle
+ * yazdığı mesaja yer bırakıyor hem de birikmiş bir kuyruğun ilk turda 429
+ * duvarına çarpıp her mesajın deneme hakkını yakmasını önlüyor. Kalanlar bir
+ * sonraki tura kalıyor (tetikler: ağ, foreground, reconnect, backoff timer'ı).
+ */
+export const MAX_PER_FLUSH = 20;
 const BACKOFF_BASE_MS = 4_000;
 const BACKOFF_MAX_MS = 60_000;
 
@@ -109,6 +142,20 @@ const BACKOFF_MAX_MS = 60_000;
 export function backoffDelayMs(attempts: number): number {
   const n = Math.max(1, attempts);
   return Math.min(BACKOFF_BASE_MS * 2 ** (n - 1), BACKOFF_MAX_MS);
+}
+
+/**
+ * Gövdedeki HAM kod — UT ailesine filtrelenmemiş hâli.
+ *
+ * `chatErrorCodeOf` yalnız `UT-67xx`/`UT-68xx` döndürüyor; hub'ın eski stil
+ * string kodları (`RATE_LIMITED`, `CONVERSATION_ERROR`, …) oradan geçmiyor.
+ */
+function rawErrorCode(err: any): string | null {
+  const data = err?.response?.data ?? err;
+  for (const raw of [data?.code, data?.errorCode, data?.result?.code]) {
+    if (typeof raw === "string" && raw) return raw;
+  }
+  return null;
 }
 
 /**
@@ -134,6 +181,22 @@ export function classifySendError(err: any, kind: "text" | "voice"): FailureClas
     deactivateConversation: false,
     refetchConversations: false,
   };
+
+  // 429 ile 402 ayrı şeyler: kotayla karıştırılırsa paywall açılırdı. REST bunu
+  // status ile söylüyor, hub ise ESKİ STİL string kodla (`RATE_LIMITED`) — o
+  // yüzden `chatErrorCodeOf` DEĞİL `rawErrorCode`: ilki yalnız UT-67xx/68xx
+  // döndürüyor ve string kodlar oradan hiç geçmiyor.
+  if (status === 429 || rawErrorCode(err) === "RATE_LIMITED") {
+    return {
+      ...base,
+      retryable: true,
+      reason: "rateLimited",
+      i18nKey: isVoice ? "chat.voice.sendFailed" : "chat.send.failed",
+      // Kullanıcıya gösterilecek bir şey yok: mesaj birazdan kendiliğinden
+      // gidiyor, "yavaşla" bizim iç meselemiz.
+      toast: false,
+    };
+  }
 
   if (status === 402 || paywallType === "CHAT_QUOTA_EXHAUSTED") {
     return {
@@ -241,11 +304,15 @@ export function classifySendError(err: any, kind: "text" | "voice"): FailureClas
 }
 
 /**
- * Redux mesajından gönderilebilir tanım. `null` → bu mesaj yeniden gönderilemez.
+ * Redux mesajından (ya da diskten projekte edilmiş satırdan) gönderilebilir
+ * tanım. `null` → bu mesaj yeniden gönderilemez.
  *
- * Ses için `_localUri` ŞART: dosya düşmüşse (uygulama yeniden başlamış, cache
- * temizlenmiş) mesaj sessizce metin yoluna düşüp `content: ""` gönderiyordu —
- * sunucu UT-6710 veriyor ve balon bir daha hiç düzelmiyordu.
+ * Ses için `_localUri` VEYA `mediaUrl` şart:
+ *  - `mediaUrl` varsa yükleme TAMAMLANMIŞ, yalnız `send` tekrarlanacak; yerel
+ *    dosya hiç gerekmiyor (iOS cache'i boşaltmış olsa bile mesaj gider).
+ *  - İkisi de yoksa yeniden deneme imkânsız: mesaj sessizce metin yoluna düşüp
+ *    `content: ""` gönderiyordu, sunucu UT-6710 veriyordu ve balon bir daha hiç
+ *    düzelmiyordu.
  */
 export function messageToDescriptor(m: any): OutgoingDescriptor | null {
   const conversationId = m?.conversationId;
@@ -254,13 +321,15 @@ export function messageToDescriptor(m: any): OutgoingDescriptor | null {
   const replyToMessageId = m?.replyTo?.id ?? null;
 
   if (isVoiceMessage(m?.contentType)) {
-    const localUri = m?._localUri;
-    if (typeof localUri !== "string" || !localUri) return null;
+    const localUri = typeof m?._localUri === "string" && m._localUri ? m._localUri : null;
+    const mediaUrl = typeof m?.mediaUrl === "string" && m.mediaUrl ? m.mediaUrl : null;
+    if (!localUri && !mediaUrl) return null;
     return {
       kind: "voice",
       conversationId,
       clientMessageId,
       localUri,
+      mediaUrl,
       durationMs: Number(m?.durationMs) || 0,
       waveformPeaks: m?.waveformPeaks ?? undefined,
       replyToMessageId,
@@ -295,6 +364,55 @@ export function selectFailedOutbox(state: any): any[] {
 }
 
 /**
+ * Redux bucket'larından ve DİSKTEN gelen başarısız mesajları tek listeye
+ * indirger — `clientMessageId` ile tekilleştirip ESKİDEN YENİYE sıralar.
+ *
+ * Neden iki kaynak: disk tam (tüm sohbetler, yeniden başlatmadan sonra da),
+ * Redux ise CANLI (bu saniyede başarısız olmuş ve henüz aynaya yazılmamış bir
+ * satır ya da aynanın yutulmuş bir hatası yüzünden diskte 'failed' görünmeyen
+ * bir mesaj yalnız orada). Biri diğerinin yerine geçmiyor.
+ *
+ * Çakışmada REDUX kazanıyor: ekrandaki nesne kullanıcının gördüğü hâl ve
+ * oturum içi alanları (`_pending` geçişleri) onda taze. Projeksiyon aynı kimlik
+ * haritasından geçtiği için çoğu zaman iki taraf AYNI NESNE zaten.
+ */
+export function mergeFailedOutbox(fromRedux: any[], fromDisk: any[]): any[] {
+  const byClientId = new Map<string, any>();
+  for (const m of fromRedux) {
+    if (m?.clientMessageId) byClientId.set(m.clientMessageId, m);
+  }
+  for (const m of fromDisk) {
+    const cmid = m?.clientMessageId;
+    if (!cmid || byClientId.has(cmid)) continue;
+    byClientId.set(cmid, m);
+  }
+  return Array.from(byClientId.values()).sort(
+    (a, b) => utcTime(a.sentAt) - utcTime(b.sentAt),
+  );
+}
+
+/** Yükleme tamamlanmamış / nesne yok. Sesin UT-66xx ailesinden. */
+export const VOICE_UPLOAD_NOT_COMPLETED = "UT-6605";
+
+/**
+ * "Elimizdeki `mediaUrl` ölü mü?" — UT-6605 + daha önce tamamlanmış bir
+ * yükleme anahtarıyla gönderdiysek evet: S3 nesnesi silinmiş (backend yetim
+ * nesneleri 7 günde temizliyor).
+ *
+ * Bu, görünüşte KALICI bir hatanın (voiceInvalid) aslında kurtarılabilir
+ * olduğu tek durum: anahtarı düşürüp yerel dosyadan yeniden yüklemek yeterli.
+ * Yerel dosya da yoksa kurtarma yok — o zaman gerçekten kalıcı.
+ */
+export function needsVoiceReupload(d: OutgoingDescriptor, fc: FailureClass): boolean {
+  return (
+    d.kind === "voice" &&
+    !!d.mediaUrl &&
+    !!d.localUri &&
+    fc.voiceCode === VOICE_UPLOAD_NOT_COMPLETED
+  );
+}
+
+/**
  * Bu mesaj ŞİMDİ denenebilir mi?
  *
  * `interactive` her şeyi ezer: kullanıcı butona bastıysa backoff da, tavan da,
@@ -308,7 +426,10 @@ export function isEligible(
   if (mode === "interactive") return true;
   if (!entry) return true;
   if (entry.permanent) return false;
-  if (entry.origin === "ackTimeout") return false;
+  // `origin === "ackTimeout"` KAPISI KALDIRILDI (2026-10-06): send artık
+  // cmid üzerinden idempotent (gerekçe: FailOrigin). Ack'i görülmemiş gönderim
+  // de sessizce denenebiliyor — "uygulamayı kapattım, mesaj kendi kendine
+  // gitti" davranışının kilidi buydu.
   if (entry.attempts >= MAX_ATTEMPTS) return false;
   if (now - entry.firstSeenAt > MAX_AGE_MS) return false;
   return now >= entry.nextEligibleAt;

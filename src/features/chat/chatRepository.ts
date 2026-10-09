@@ -1,5 +1,12 @@
 import { getChatDb, type ChatDbDriver, type SqlValue } from '@/features/chat/db/chatDb';
-import type { MessageRow, SendState, SyncStateRow } from '@/features/chat/db/rows';
+import {
+  rowToConversation,
+  type ConversationRow,
+  type MessageRow,
+  type SendState,
+  type SyncStateRow,
+} from '@/features/chat/db/rows';
+import { ContentType } from '@/features/chat/contentType';
 import { rekey as rekeyCache } from '@/features/chat/messageCache';
 import { normalizeMessage } from '@/features/chat/normalizeMessage';
 import { utcTime } from '@/shared/utils/dateUtc';
@@ -62,9 +69,14 @@ function messageParams(raw: MessageDto, conversationId: string, sendState: SendS
  * dönerdi. Bu yüzden uzun: karşılaştırma listesi EKSİK kalırsa o alanın
  * güncellemesi sessizce düşer.
  *
- * `client_message_id` ve `local_uri` COALESCE'li: sunucu kopyası ikisini de
- * taşımıyor ama ikisi de kaybedilemez (keyExtractor cmid'e bakıyor; _localUri
- * gönderdiğimiz sesin yerel dosyası).
+ * `client_message_id` ve `local_uri` COALESCE'li — ama gerekçeleri AYRI:
+ *  • `local_uri` YALNIZ istemcide var (gönderdiğimiz sesin yerel dosyası),
+ *    hiçbir sunucu kopyası taşımıyor. COALESCE olmadan her reconcile silerdi.
+ *  • `client_message_id`'yi sunucu geri yansıtıyor (2026-10-06'da doğrulandı:
+ *    send yanıtı, hub ack'i, history ve /changes — hepsinde dolu geliyor). Yine
+ *    de COALESCE'li, çünkü alan iki durumda boş gelebiliyor: cmid'siz
+ *    gönderilmiş eski mesajlar ve KARŞI TARAFIN mesajları (onların cmid'si
+ *    bizim için anlamsız). Düşerse keyExtractor'ın anahtarı değişir.
  */
 const UPSERT_MESSAGE = `
 INSERT INTO messages (${MESSAGE_COLUMNS})
@@ -228,6 +240,169 @@ function messageCount(db: ChatDbDriver, conversationId: string): number {
     [conversationId],
   );
   return row?.n ?? 0;
+}
+
+/**
+ * Sohbet listesinin TAMAMI, diskten — soğuk açılışın tek kaynağı.
+ *
+ * ── Sıra neden `sort_order` DEĞİL ───────────────────────────────────────────
+ * `sort_order`, /conversations yanıtının o anki index'i; sunucu yanıtından
+ * sonra gelen her mesaj onu bayatlatıyor (yerel mesaj satırın damgasını
+ * güncelliyor ama index'e dokunmuyor). Damgaya göre sıralamak hem sunucunun
+ * kuralıyla aynı hem de yerel yazımlarla tutarlı. Index yalnız TIEBREAKER:
+ * yeni eşleşme satırları `sort_order = -1` ile açılıyor (bkz.
+ * insertConversationFromMatch) ve hiç mesajlaşılmamış sohbetlerin kendi
+ * aralarındaki sırası ancak oradan biliniyor.
+ */
+export function readConversations(): ConversationListItemDto[] {
+  return getChatDb()
+    .getAll<ConversationRow>(
+      `SELECT * FROM conversations
+        ORDER BY COALESCE(last_message_at_ms, 0) DESC, sort_order ASC, conversation_id ASC`,
+    )
+    .map(rowToConversation);
+}
+
+/**
+ * Yalnız BELİRLİ sohbetlerin satırları — delta-sync'in dokunduklarını ekrana
+ * taşımak için (bkz. chatHydrate.applyDeltaFromLocal). Sıra `readConversations`
+ * ile aynı: çağıran bu satırları mevcut listeye upsert edip yeniden sıralıyor.
+ */
+export function readConversationsByIds(
+  conversationIds: string[],
+): ConversationListItemDto[] {
+  if (!conversationIds.length) return [];
+  const holes = conversationIds.map(() => '?').join(',');
+  return getChatDb()
+    .getAll<ConversationRow>(
+      `SELECT * FROM conversations WHERE conversation_id IN (${holes})
+        ORDER BY COALESCE(last_message_at_ms, 0) DESC, sort_order ASC, conversation_id ASC`,
+      conversationIds,
+    )
+    .map(rowToConversation);
+}
+
+/**
+ * AÇILIŞ UZLAŞTIRMASI: `pending` kalmış gönderimleri `failed`'a çevirir.
+ *
+ * Okuma yolu SQLite'a döndüğünden beri (bkz. chatFlags) gönderim sırasında
+ * ölen uygulamanın `send_state='pending'` satırı diskten GERİ GELİYOR ve
+ * `_pending: true` ile balona dönüyor (rows.ts). Ama o satırı sürecek kuyruk
+ * BELLEKTE: outbox'ın attempts/ackTimers map'leri process ile ölüyor
+ * (features/chat/outbox.ts). Yani balon sonsuza kadar "gönderiliyor" halinde
+ * kalıyor ve `_failed` olmadığı için "tekrar dene" bile çıkmıyor.
+ *
+ * `failed`'a çevirmek bilgiyi KAYBETMİYOR, sahipliği kullanıcıya veriyor:
+ * balonda yeniden deneme çıkar. Otomatik yeniden göndermek DOĞRU DEĞİL —
+ * mesaj sunucuya gitmiş ama ack'i görülmemiş olabilir ve `clientMessageId`
+ * idempotency'si backend tarafında henüz teyitli değil; o teyit gelene kadar
+ * kendiliğinden tekrar göndermek sessiz mükerrer mesaj riski.
+ *
+ * @returns failed'a çevrilen satır sayısı (teşhis için).
+ */
+export function failStalePendingSends(): number {
+  const db = getChatDb();
+  const stale = db.getFirst<{ n: number }>(
+    "SELECT COUNT(*) AS n FROM messages WHERE send_state = 'pending'",
+  );
+  const count = stale?.n ?? 0;
+  if (count > 0) {
+    db.run(
+      `UPDATE messages SET send_state = 'failed', row_version = row_version + 1
+        WHERE send_state = 'pending'`,
+    );
+  }
+  return count;
+}
+
+/**
+ * GÖNDERİLEMEMİŞ mesajlar — TÜM arşivden, en eskiden yeniye.
+ *
+ * Outbox'ın sessiz turu bu listeyi şimdiye kadar Redux bucket'larından
+ * çıkarıyordu (`outboxPolicy.selectFailedOutbox`). Bucket ise yalnız AÇILMIŞ
+ * sohbetler için var: uygulama yeniden başladıktan sonra, kullanıcı o sohbete
+ * girmedikçe oradaki başarısız mesaj hiçbir tura görünmüyordu. Arşiv kalıcı
+ * olduğundan doğru kaynak disk.
+ *
+ * @param sinceMs  bundan ESKİ mesajlar dönmez — sessiz devam ettirmenin yaş
+ *                 sınırı (bkz. outboxPolicy.OUTBOX_DISK_MAX_AGE_MS). Elle
+ *                 "tekrar dene" bu yoldan geçmiyor, o yüzden sınırsız kalıyor.
+ * @param limit    tur başına tavan; patolojik bir arşiv tek turda yüz istek
+ *                 üretmesin.
+ */
+export function readFailedSends({
+  sinceMs = 0,
+  limit = 50,
+}: { sinceMs?: number; limit?: number } = {}): MessageRow[] {
+  return getChatDb().getAll<MessageRow>(
+    `SELECT * FROM messages
+      WHERE send_state = 'failed' AND sent_at_ms >= ?
+      ORDER BY sent_at_ms ASC, id ASC LIMIT ?`,
+    [sinceMs, limit],
+  );
+}
+
+/** `readLastVoiceDurations` girdisi — sohbet listesi satırının özeti. */
+export interface LastVoiceQuery {
+  conversationId: string;
+  /**
+   * Liste satırının son mesaj damgası (ms). 0 / verilmemiş → bilinmiyor; o
+   * durumda sohbetin en yeni satırına bakılır.
+   */
+  lastMessageAtMs?: number;
+}
+
+/**
+ * Sohbet listesi satırındaki "🎤 Sesli mesaj (0:07)" için SON MESAJIN SÜRESİ.
+ *
+ * Süre sohbet listesi DTO'sunda YOK (ConversationListItemDto yalnız
+ * preview/at/contentType taşıyor) ama arşivde VAR: her mesaj yazımı
+ * (realtime, delta-sync, history sayfası) `duration_ms` kolonuna düşüyor —
+ * sohbet hiç açılmamış olsa bile. Yani bu okuma, listeyi süre için ağa
+ * çıkmaktan kurtaran local-first yol.
+ *
+ * ── Damga eşleşmesi ŞART ────────────────────────────────────────────────────
+ * "Arşivdeki en yeni satır" ile "sohbetin son mesajı" aynı şey olmak zorunda
+ * değil: metin bir mesaj gelmiş ama henüz diske inmemişse (delta-sync turu
+ * gelmedi) arşivin tepesi hâlâ eski sesli mesajdır — onun süresini yazmak
+ * satırda metin önizlemesinin YERİNE sesli mesaj göstermek olurdu. Bu yüzden
+ * damga ±1sn toleransla eşleşmek zorunda (tolerans optimistic balonun yerel
+ * damgası için; MessagesScreen'in Redux yolundaki kuralın aynısı).
+ *
+ * Süresi olmayan ya da sesli olmayan sohbet SONUÇTA HİÇ GÖRÜNMEZ ("bilmiyoruz"
+ * ile "sıfır" karışmasın): çağıran eksikleri kendi yoluyla tazeler.
+ */
+export function readLastVoiceDurations(queries: LastVoiceQuery[]): Record<string, number> {
+  const out: Record<string, number> = {};
+  if (!queries.length) return out;
+  const db = getChatDb();
+
+  for (const { conversationId, lastMessageAtMs } of queries) {
+    if (!conversationId) continue;
+    const stamp = Number(lastMessageAtMs);
+    const stamped = Number.isFinite(stamp) && stamp > 0;
+    // İki sorgu da (conversation_id, sent_at_ms DESC, id) indeksini kullanıyor;
+    // damgalı dal aralık taraması, damgasız dal tek adımlık seek.
+    const row = stamped
+      ? db.getFirst<Pick<MessageRow, 'content_type' | 'duration_ms'>>(
+          `SELECT content_type, duration_ms FROM messages
+            WHERE conversation_id = ? AND deleted_at IS NULL
+              AND sent_at_ms >= ? AND sent_at_ms <= ?
+            ORDER BY sent_at_ms DESC, id DESC LIMIT 1`,
+          [conversationId, stamp - 1000, stamp + 1000],
+        )
+      : db.getFirst<Pick<MessageRow, 'content_type' | 'duration_ms'>>(
+          `SELECT content_type, duration_ms FROM messages
+            WHERE conversation_id = ? AND deleted_at IS NULL
+            ORDER BY sent_at_ms DESC, id DESC LIMIT 1`,
+          [conversationId],
+        );
+    if (!row || row.content_type !== ContentType.Voice) continue;
+    const ms = Number(row.duration_ms);
+    if (Number.isFinite(ms) && ms > 0) out[conversationId] = ms;
+  }
+
+  return out;
 }
 
 function writeSyncState(
@@ -547,6 +722,35 @@ export function applyReactions(messageId: string, reactions: unknown[] | null): 
     `UPDATE messages SET reactions_json = ?, row_version = row_version + 1
      WHERE id = ? AND reactions_json IS NOT ?`,
     [json, messageId, json],
+  );
+}
+
+/**
+ * Sesli mesajın tamamlanmış yükleme anahtarı — gönderim 3. adımda patlasa bile
+ * KALICI olmalı ki tekrar deneme dosyayı ikinci kez yüklemesin (her upload-url
+ * yeni bir S3 nesnesi üretiyor). `send` başarılı olduğunda sunucu kopyası aynı
+ * değeri getiriyor, yani bu yazım yalnız ARADAKİ pencere için.
+ *
+ * Satır henüz optimistic (`temp-<cmid>`) olduğu için anahtar id değil cmid.
+ */
+export function setVoiceMediaUrl(clientMessageId: string, mediaUrl: string): void {
+  getChatDb().run(
+    `UPDATE messages SET media_url = ?, row_version = row_version + 1
+      WHERE client_message_id = ? AND media_url IS NOT ?`,
+    [mediaUrl, clientMessageId, mediaUrl],
+  );
+}
+
+/**
+ * Ölü yükleme anahtarını düşürür (UT-6605) — bir sonraki deneme dosyayı
+ * yeniden yükleyecek. Yalnız HENÜZ GÖNDERİLMEMİŞ satırlarda: gönderilmiş bir
+ * mesajın `media_url`'i sunucunun kanonik değeri, silinmemeli.
+ */
+export function clearVoiceMediaUrl(clientMessageId: string): void {
+  getChatDb().run(
+    `UPDATE messages SET media_url = NULL, row_version = row_version + 1
+      WHERE client_message_id = ? AND send_state <> 'sent' AND media_url IS NOT NULL`,
+    [clientMessageId],
   );
 }
 

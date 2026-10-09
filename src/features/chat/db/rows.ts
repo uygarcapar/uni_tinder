@@ -1,4 +1,9 @@
-import type { MessageDto, MessageReactionDto, ReplyPreviewDto } from '@/shared/types';
+import type {
+  ConversationListItemDto,
+  MessageDto,
+  MessageReactionDto,
+  ReplyPreviewDto,
+} from '@/shared/types';
 
 /** `messages` tablosunun satır şekli — SQLite'ın döndürdüğü ham hâli. */
 export interface MessageRow {
@@ -86,6 +91,73 @@ export function rowToMessage(row: MessageRow): MessageDto {
     _pending: row.send_state === 'pending',
     _failed: row.send_state === 'failed',
     _localUri: row.local_uri,
+  };
+}
+
+/** `conversations` tablosunun satır şekli. */
+export interface ConversationRow {
+  conversation_id: string;
+  match_id: string | null;
+  partner_user_id: string;
+  partner_display_name: string | null;
+  partner_profile_image_url: string | null;
+  last_message_preview: string | null;
+  last_message_at: string | null;
+  last_message_at_ms: number | null;
+  last_message_content_type: number | null;
+  unread_count: number;
+  is_active: number;
+  is_unlimited: number | null;
+  remaining_messages: number | null;
+  requires_premium: number | null;
+  restorable_until: string | null;
+  restorable_until_known: number;
+  deactivated_by_me: number | null;
+  sort_order: number;
+  closed_by_me: number | null;
+  closed_reason: string | null;
+}
+
+/**
+ * Satır → ConversationListItemDto.
+ *
+ * ── ÜÇ DURUMLU alanlar (en kolay bozulan yer) ───────────────────────────────
+ * `isUnlimited`, `requiresPremium`, `closedByMe`, `deactivatedByMe` ve
+ * `restorableUntil` için `undefined` ("bilmiyoruz") ile `false`/`null`
+ * ("hayır") AYRI anlamlar — üçü de ekranda farklı davranıyor:
+ *   • isUnlimited undefined → "Sınırlı" rozeti ÇİZİLMEZ (MessagesScreen)
+ *   • closedByMe/deactivatedByMe undefined → yerel tahmine düşülür
+ *     (restoreWindow.resolveClosedByMe)
+ *   • restorableUntil undefined → "alan gelmedi", null → "pencere YOK"
+ *     (shouldOfferRestore)
+ * Bu yüzden nullable kolonlar `?? undefined` ile, `restorable_until` ise
+ * `restorable_until_known` bayrağına bakılarak çözülüyor — o bayrak zaten tam
+ * bu ayrımı diskte temsil etmek için var (bkz. upsertConversations kural 3).
+ *
+ * `partnerIsOnline` HER ZAMAN false: presence realtime veri, şemada kolonu
+ * bile yok. Diskten "online" doğurmak, hub bağlanana kadar herkesi sahte
+ * çevrimiçi gösterirdi.
+ */
+export function rowToConversation(row: ConversationRow): ConversationListItemDto {
+  return {
+    conversationId: row.conversation_id,
+    matchId: row.match_id ?? undefined,
+    partnerUserId: row.partner_user_id,
+    partnerDisplayName: row.partner_display_name ?? '',
+    partnerProfileImageUrl: row.partner_profile_image_url ?? undefined,
+    lastMessagePreview: row.last_message_preview,
+    lastMessageAt: row.last_message_at,
+    lastMessageContentType: row.last_message_content_type ?? undefined,
+    unreadCount: row.unread_count ?? 0,
+    isActive: row.is_active === 1,
+    partnerIsOnline: false,
+    isUnlimited: row.is_unlimited == null ? undefined : row.is_unlimited === 1,
+    remainingMessages: row.remaining_messages ?? null,
+    requiresPremium: row.requires_premium == null ? undefined : row.requires_premium === 1,
+    restorableUntil: row.restorable_until_known === 1 ? row.restorable_until : undefined,
+    closedByMe: row.closed_by_me == null ? undefined : row.closed_by_me === 1,
+    closedReason: row.closed_reason ?? undefined,
+    deactivatedByMe: row.deactivated_by_me == null ? undefined : row.deactivated_by_me === 1,
   };
 }
 

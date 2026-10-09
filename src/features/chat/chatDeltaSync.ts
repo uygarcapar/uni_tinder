@@ -45,6 +45,22 @@ export interface DeltaChange {
   retentionWindowDays?: number;
 }
 
+/**
+ * Turun DİSKTE ne değiştirdiği — ekrana taşıma için (bkz.
+ * chatHydrate.applyDeltaFromLocal).
+ *
+ * Mesaj gövdeleri KASTEN taşınmıyor, yalnız hangi sohbete dokunulduğu: ekrana
+ * giden kopya diskten yeniden okunuyor çünkü sunucu kopyası `clientMessageId`
+ * ve `_localUri` taşımıyor (gerekçe: chatSlice.applyLocalDelta).
+ */
+export interface AppliedChanges {
+  /** Mesaj/sohbet satırı yazılan sohbetler — tekilleştirilmiş. */
+  conversationIds: string[];
+  /** Sıcak pencerenin DIŞINDA kalabilecek satırlar için silme olayları. */
+  deletions: NonNullable<DeltaChange['deletions']>;
+  removedConversationIds: string[];
+}
+
 export interface PullResult {
   ran: boolean;
   pages: number;
@@ -52,32 +68,48 @@ export interface PullResult {
   deletions: number;
   /** Watermark reddedildi → atıldı, çağıran tam senkron yapmalı. */
   needsFullResync: boolean;
+  /** Diskte ne değişti — hiç tur koşmadıysa boş. */
+  applied: AppliedChanges;
 }
 
 let inFlight: Promise<PullResult> | null = null;
 
-function applyPage(page: DeltaChange, activeConversationId: string | null): void {
+function applyPage(
+  page: DeltaChange,
+  activeConversationId: string | null,
+  touched: Set<string>,
+  applied: AppliedChanges,
+): void {
   // Sunucu retention politikasının TEK kaynağı; boş yanıtta da geliyor.
   repo.setRetentionWindowDays(page.retentionWindowDays);
 
   if (page.conversations?.length) {
     repo.upsertConversations(page.conversations, { activeConversationId });
+    for (const c of page.conversations) {
+      if (c?.conversationId) touched.add(c.conversationId);
+    }
   }
 
   for (const raw of page.messages ?? []) {
     if (!raw?.id || !raw?.conversationId) continue;
     repo.saveMessage(normalizeMessage(raw, raw.conversationId), raw.conversationId);
+    touched.add(raw.conversationId);
   }
 
   for (const d of page.deletions ?? []) {
     if (!d?.messageId) continue;
     repo.applyDeletionTombstone(d);
+    if (d.conversationId) touched.add(d.conversationId);
+    applied.deletions.push(d);
   }
 
   // Sözleşmede yer alıp almadığı netleşmedi; geldiğinde doğru davranış bu,
   // gelmediğinde kod sessizce atlanıyor.
   for (const r of page.removedConversations ?? []) {
-    if (r?.conversationId) repo.removeConversationLocally(r.conversationId);
+    if (!r?.conversationId) continue;
+    repo.removeConversationLocally(r.conversationId);
+    applied.removedConversationIds.push(r.conversationId);
+    touched.delete(r.conversationId);
   }
 }
 
@@ -97,6 +129,24 @@ export function pullChanges(
   return inFlight;
 }
 
+/**
+ * Uçuştaki tur varsa onu döndürür — YOKSA BAŞLATMAZ.
+ *
+ * Tek tüketicisi outbox: gönderim turu, aynı anda koşan bir yakalama turunu
+ * beklemeli. Sebebi somut — delta turu bizim mesajımızı geri getirdiğinde
+ * satır `send_state='sent'`e dönüyor (UPSERT'in varsayılanı), yani "ack'i
+ * kaybolmuş ama aslında gitmiş" mesaj kuyruktan KENDİLİĞİNDEN düşüyor. Önce
+ * beklemek, gereksiz bir `send` isteğini ve dakikada 30'luk sınırdan bir hak
+ * harcamayı önlüyor.
+ *
+ * Tur başlatmaması şart: outbox her tetikte (ağ, foreground, reconnect, timer)
+ * çalışıyor ve buradan tur açmak `/changes` çağrılarını çoğaltırdı — o turun
+ * kendi aralığı (MIN_PULL_INTERVAL_MS) var.
+ */
+export function inFlightPull(): Promise<PullResult> | null {
+  return inFlight;
+}
+
 async function run(getActiveConversationId: () => string | null): Promise<PullResult> {
   const result: PullResult = {
     ran: false,
@@ -104,10 +154,14 @@ async function run(getActiveConversationId: () => string | null): Promise<PullRe
     messages: 0,
     deletions: 0,
     needsFullResync: false,
+    applied: { conversationIds: [], deletions: [], removedConversationIds: [] },
   };
   if (!CHAT_DELTA_SYNC_ENABLED) return result;
 
   result.ran = true;
+  // Sohbet kimlikleri SAYFALAR BOYUNCA tekilleştiriliyor: aynı sohbet 50
+  // sayfanın her birinde geçebilir, ekrana taşıma onu bir kez okumalı.
+  const touched = new Set<string>();
   let watermark = repo.getSyncWatermark();
 
   for (let i = 0; i < MAX_PAGES; i++) {
@@ -121,14 +175,18 @@ async function run(getActiveConversationId: () => string | null): Promise<PullRe
         // bir sonraki tur sıfırdan başlasın.
         repo.setSyncWatermark(null);
         result.needsFullResync = true;
+        result.applied.conversationIds = [...touched];
         return result;
       }
       // Ağ hatası / endpoint yok (henüz deploy edilmemiş): sessizce vazgeç.
       // Watermark'a DOKUNMA — bir sonraki tur aynı yerden devam etsin.
+      // Önceki sayfalar DİSKE YAZILDI: onları ekrana taşımaktan vazgeçmek
+      // "diskte var, ekranda yok" durumunu geri getirirdi.
+      result.applied.conversationIds = [...touched];
       return result;
     }
 
-    applyPage(page, getActiveConversationId());
+    applyPage(page, getActiveConversationId(), touched, result.applied);
     result.pages++;
     result.messages += page.messages?.length ?? 0;
     result.deletions += page.deletions?.length ?? 0;
@@ -144,6 +202,7 @@ async function run(getActiveConversationId: () => string | null): Promise<PullRe
     if (!page.watermark) break; // ilerlemeyen watermark → sonsuz döngü koruması
   }
 
+  result.applied.conversationIds = [...touched];
   return result;
 }
 
@@ -165,6 +224,15 @@ export interface DeltaSyncDeps {
    * sayfa-1'i) — burada dispatch etmiyoruz ki bu modül store'dan bağımsız kalsın.
    */
   onNeedsFullResync: () => void;
+  /**
+   * Tur diske yazdı — çağıran bunu ekrana taşıyor (chatHydrate
+   * .applyDeltaFromLocal). Opsiyonel ve yine store'dan bağımsız: bu modül neyin
+   * değiştiğini söylüyor, Redux'a dokunan taraf store'u olan taraf.
+   *
+   * Tam senkron gereken turda da çağrılıyor: o ana kadarki sayfalar DİSKE
+   * yazılmış durumda, ekrana taşınmazsa yine ayrışırdı.
+   */
+  onApplied?: (applied: AppliedChanges) => void;
 }
 
 /**
@@ -183,6 +251,11 @@ export function startDeltaSync(deps: DeltaSyncDeps): () => void {
     if (now - lastPullAt < MIN_PULL_INTERVAL_MS) return;
     lastPullAt = now;
     const result = await pullChanges(deps.getActiveConversationId);
+    // Ekrana taşıma, tam-senkron dalından ÖNCE: diske inen ne varsa görünür
+    // olsun, ağ turunu beklemesin.
+    if (result.applied.conversationIds.length || result.applied.removedConversationIds.length) {
+      deps.onApplied?.(result.applied);
+    }
     if (result.needsFullResync) deps.onNeedsFullResync();
     if (__DEV__ && result.pages > 0) {
       console.log(

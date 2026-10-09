@@ -169,6 +169,10 @@ class RealtimeService {
       // alındı / rematch sonrası eski mesajlar çift için açıldı.
       'ConversationDeactivated', 'ConversationRestored', 'ConversationHistoryRevealed',
       'NewNotification', 'Error',
+      // Lit Akışı: gönderine yanıt geldi. Gövde `{ replyId, postId }` — YANIT
+      // METNİ ve YANITLAYAN YOK, liste ayrı uçtan çekiliyor. Rozet artırılıp
+      // liste invalidate ediliyor, NAVIGATE EDİLMİYOR (kullanıcı tap'lamadı).
+      'FeedReplyReceived',
       'ForceLogout',
       // Premium durumu değişti (admin grant/revoke, mağaza webhook'u, /sync
       // upgrade/downgrade). Gövde `/api/subscription/status` ile birebir aynı,

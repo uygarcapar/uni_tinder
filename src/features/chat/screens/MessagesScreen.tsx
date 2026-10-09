@@ -62,7 +62,10 @@ import moderationService from "@/shared/services/moderationService";
 import { showInfoToast } from "@/shared/services/toaster";
 import { chatErrorText } from "@/shared/constants/responseCodes";
 import { parseUtc } from "@/shared/utils/dateUtc";
-import { hydrateConversation } from "@/features/chat/chatHydrate";
+import {
+  hydrateConversation,
+  readVoiceDurationsFromLocal,
+} from "@/features/chat/chatHydrate";
 import EmptyState from "@/shared/components/EmptyState";
 import type PagerView from "react-native-pager-view";
 import PagerTabBar, {
@@ -122,9 +125,15 @@ export default function MessagesScreen() {
   // boot-settle ölçütüyle aynı: fetch reddedilirse ekran sonsuza kadar boş
   // kalmasın. Bir kez settle olduktan sonra loading'e BAKMIYORUZ — her odak
   // tazelemesinde boş durumun sönüp yanması ikinci bir flash olurdu.
+  //
+  // YEREL damga da settle sayılıyor (açılışta diskten okunan liste — bkz.
+  // chatSlice.hydrateConversations): gerçekten hiç sohbeti olmayan kullanıcı
+  // boş durumu ağ beklemeden görüyor. Ters yönde yanılma riski yok, çünkü
+  // satırı olan kullanıcıda liste zaten dolu geliyor ve boş durum hiç çizilmiyor.
   const conversationsSettled = useAppSelector(
     (s) =>
       ((s as any).chat._conversationsFetchedAt ?? 0) > 0 ||
+      ((s as any).chat._conversationsHydratedAt ?? 0) > 0 ||
       !!(s as any).chat.conversationsError,
   );
   const typingByConv = useAppSelector((s) => (s as any).chat.typingByConv);
@@ -174,64 +183,98 @@ export default function MessagesScreen() {
 
   // Son mesaj sesliyse satırda süresi de yazıyor — ama süre sohbet listesi
   // DTO'sunda YOK (ConversationListItemDto yalnız preview/at/contentType
-  // taşıyor). Kaynak yerel mesaj bucket'ı: canlı mesajla (receiveMessage
-  // unshift ediyor), history fetch'iyle doluyor ve persist ediliyor
-  // (chatPersistTransform) → soğuk açılışta da dolu.
+  // taşıyor). Kaynak sırası (ilk tutan kazanır):
+  //   1. liste DTO'su — sunucu bir gün gönderirse hiçbir çıkarıma gerek kalmaz
+  //   2. Redux bucket'ı — oturum içinde en taze (optimistic balon, canlı mesaj)
+  //   3. YEREL ARŞİV (SQLite) — soğuk açılışın tek kaynağı
+  //   4. hedefli history tazelemesi (aşağıdaki effect) — son çare, ağ
   const messagesByConv = useAppSelector((s) => (s as any).chat.messagesByConv);
+  // (3) için küçük bir not defteri: anahtar `conversationId:lastMessageAt`,
+  // değer diskten okunan süre (0 = "disk de bilmiyor"). Amacı tekrar tekrar SQL
+  // koşmamak — memo her chat dispatch'inde (typing, receipt, reaction) yeniden
+  // hesaplanıyor; sohbetin son mesajı değişmedikçe cevap da değişmez. Render
+  // sırasında yazılıyor ama saf: aynı anahtar her zaman aynı değeri taşır.
+  const localVoiceCacheRef = useRef(new Map<string, number>());
   // typingByConv ile aynı gerekçe: satırlara PRIMITIVE iniyor (yalnız süre),
   // böylece memo'lu ConversationRow alakasız değişimde render etmiyor. Kutu
   // referansı her mesaj dispatch'inde değişiyor ama zaten `conversations` da
   // değişiyor — ekran o yüzden fazladan render almıyor.
   const voiceDurationByConvId = useMemo(() => {
     const m: Record<string, number> = {};
+    const cache = localVoiceCacheRef.current;
+    const fromDisk: { conversationId: string; lastMessageAtMs: number; key: string }[] =
+      [];
+
     for (const c of conversations || []) {
       // ⚠️ `lastMessageContentType`e BAKILMIYOR — bilerek. Süre yalnız sesli
       // mesajda dolduğu için mesajın kendi tipi zaten yeterli kanıt, üstelik
       // liste DTO'sundaki alan (satırın ikon/etiket seçiminde kullandığı)
       // eksik ya da isim ("Voice") olarak gelebiliyor; ona kapı yapmak süreyi
       // sessizce hiç çözmemek demekti.
-      //
-      // Sunucu bir gün süreyi liste DTO'sunda gönderirse hiçbir yerel çıkarıma
-      // gerek kalmaz — geldiği gün bu satır devreye girer.
       if (c.lastMessageDurationMs > 0) {
         m[c.conversationId] = c.lastMessageDurationMs;
         continue;
       }
+      const convAt = c.lastMessageAt ? parseUtc(c.lastMessageAt).getTime() : 0;
       const msgs = messagesByConv?.[c.conversationId]?.messages;
-      if (!msgs?.length) continue;
       // Mesajı DAMGADAN buluyoruz, "bucket'ın ilk elemanı" varsayımıyla değil:
       // ilk sırada silinmiş bir satır olabiliyor ve bucket satırdan eski
       // olabiliyor (uygulama kapalıyken gelen mesaj — liste DTO'su güncel,
-      // history değil). Damga tutmuyorsa süre ÇÖZÜLMEMİŞ sayılır: başka bir
-      // sesli mesajın süresini yazmak yanlış bilgi olur, aşağıdaki tazeleme
-      // onu düzeltir.
-      const convAt = c.lastMessageAt ? parseUtc(c.lastMessageAt).getTime() : 0;
-      const last = convAt
-        ? msgs.find((msg: any) => {
-            if (msg.deletedAt) return false;
-            const at = msg.sentAt ? parseUtc(msg.sentAt).getTime() : 0;
-            // 1sn tolerans: optimistic balonun yerel damgası ile sunucununki
-            // birebir aynı olmayabiliyor.
-            return at > 0 && Math.abs(at - convAt) <= 1000;
-          })
-        : // Damga yoksa (eski/eksik satır) en yeni mesaja düş: bucket
-          // newest-first (bkz. ChatScreen'in `.reverse()`i).
-          msgs.find((msg: any) => !msg.deletedAt);
-      if (!last) continue;
-      if (!isVoiceMessage(last.contentType)) continue;
-      if (!(last.durationMs > 0)) continue;
-      m[c.conversationId] = last.durationMs;
+      // bucket değil). Damga tutmuyorsa süre ÇÖZÜLMEMİŞ sayılır: başka bir
+      // sesli mesajın süresini yazmak yanlış bilgi olur.
+      const last = !msgs?.length
+        ? undefined
+        : convAt
+          ? msgs.find((msg: any) => {
+              if (msg.deletedAt) return false;
+              const at = msg.sentAt ? parseUtc(msg.sentAt).getTime() : 0;
+              // 1sn tolerans: optimistic balonun yerel damgası ile sunucununki
+              // birebir aynı olmayabiliyor.
+              return at > 0 && Math.abs(at - convAt) <= 1000;
+            })
+          : // Damga yoksa (eski/eksik satır) en yeni mesaja düş: bucket
+            // newest-first (bkz. ChatScreen'in `.reverse()`i).
+            msgs.find((msg: any) => !msg.deletedAt);
+      if (last && isVoiceMessage(last.contentType) && last.durationMs > 0) {
+        m[c.conversationId] = last.durationMs;
+        continue;
+      }
+
+      // (3) Yerel arşiv. Bucket boş olmak kuraldışı DEĞİL, KURAL: bucket artık
+      // persist edilmiyor (CHAT_PERSIST_ENABLED=false), yani soğuk açılışta
+      // hiçbir sohbetin mesajı bellekte yok. Süre ise diskte duruyor — her
+      // mesaj yazımı (realtime, delta-sync) duration_ms kolonuna düşüyor.
+      const key = `${c.conversationId}:${c.lastMessageAt ?? ""}`;
+      const cached = cache.get(key);
+      if (cached !== undefined) {
+        if (cached > 0) m[c.conversationId] = cached;
+        continue;
+      }
+      fromDisk.push({
+        conversationId: c.conversationId,
+        lastMessageAtMs: convAt,
+        key,
+      });
+    }
+
+    if (fromDisk.length) {
+      const read = readVoiceDurationsFromLocal(fromDisk);
+      for (const q of fromDisk) {
+        const ms = read[q.conversationId] ?? 0;
+        cache.set(q.key, ms);
+        if (ms > 0) m[q.conversationId] = ms;
+      }
     }
     return m;
   }, [conversations, messagesByConv]);
 
-  // Süresi çözülemeyen sesli sohbetler için HEDEFLİ history tazelemesi —
-  // "süre her zaman yazsın" ancak böyle garanti oluyor.
+  // SON ÇARE: süresi ne listeden, ne bellekten, ne de diskten çözülemeyen
+  // sesli sohbetler için HEDEFLİ history tazelemesi.
   //
-  // Neden ayrı bir geçiş, neden aşağıdaki genel prefetch yetmiyor: o prefetch
-  // yalnız BOŞ bucket'ları dolduruyor (boot fan-out'u küçük tutmak için
-  // bilinçli) ve ilk 15 sohbetle sınırlı. Uygulama kapalıyken gelen sesli
-  // mesajda bucket dolu ama bayat → prefetch atlıyor, süre hiç gelmiyordu.
+  // Yerel arşiv geldikten sonra bu dal neredeyse hiç çalışmıyor; kaldığı tek
+  // senaryo "mesaj arşive HİÇ girmemiş" olması: yeni kurulum / logout sonrası
+  // (delta-sync watermark'ı sıfırdan başlıyor, eski mesajlar hiç inmiyor) ya da
+  // sohbet hiç açılmamışken watermark'ın reddedilmesi.
   //
   // Ölçek: yalnız SON MESAJI SESLİ ve süresi bilinmeyen sohbetler; her sohbet
   // için (conversationId + lastMessageAt) başına TEK istek — sunucu süreyi
