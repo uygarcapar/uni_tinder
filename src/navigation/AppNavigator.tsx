@@ -146,7 +146,20 @@ import {
   addWhoLikedMe,
   removeWhoLikedMe,
   fetchWhoLikedMe,
+  incrementPendingFeedReply,
+  setPendingFeedReplyCount,
 } from '@/features/discover/swipeSlice';
+import {
+  feedEnabledForSession,
+  initFeedFlag,
+  markFeedFlagProbed,
+  recordFeedFlag,
+  resetFeedFlagSession,
+  shouldProbeFeedFlag,
+} from '@/features/feed/feedFlag';
+import { openFeed } from '@/features/feed/feedEntry';
+import { feedKeys } from '@/features/feed/feedKeys';
+import feedService from '@/features/feed/feedService';
 import { useAppDispatch, useAppSelector } from '@/shared/hooks/redux';
 import type { RootStackParamList } from '@/shared/types/navigation';
 import { colors, isLight } from '../shared/theme/colors';
@@ -208,6 +221,11 @@ const LINKING: LinkingOptions<RootStackParamList> = {
         screens: {
           Discover: 'discover',
           Likes: 'likes',
+          // Akış bayrağı kapalıyken sekme hiç kayıtlı DEĞİL → bu yol da
+          // çözülmez ve link sessizce yutulur; doğru davranış o.
+          // Tek gönderiye derin link (lit://feed/posts/:id) YOK: tek gönderi
+          // ekranı diye bir şey yok, olmayan rotaya kapı açmıyoruz.
+          Feed: 'feed',
           Messages: 'messages',
           Profile: 'profile',
         },
@@ -640,6 +658,17 @@ export default function AppNavigator() {
     }
   }, [isAuthenticated, user?.userId, user?.id]);
 
+  // Akış bayrağı latch'i (UT-7301). Diskten OKUR, ağa GİTMEZ — cold boot'a
+  // istek eklemiyor. Değer burada okunup oturum boyunca donduruluyor; sekme
+  // listesi `TabNavigator`'da bir `useState` initializer'ından besleniyor, yani
+  // bu efektin bir sonraki koşusu sekmeyi oynatmıyor (bkz. feedFlag.ts).
+  // Logout'ta latch serbest bırakılıyor ki başka hesapla girişte yeniden okunsun.
+  useEffect(() => {
+    const uid = user?.userId || user?.id;
+    if (isAuthenticated && uid) initFeedFlag(String(uid));
+    else if (!isAuthenticated) resetFeedFlagSession();
+  }, [isAuthenticated, user?.userId, user?.id]);
+
   // RevenueCat init + subscription status when authenticated.
   useEffect(() => {
     if (!isAuthenticated || !user) return;
@@ -1061,6 +1090,28 @@ export default function AppNavigator() {
         dispatch(historyRevealed({ conversationId: convId }));
         dispatch(fetchHistory({ conversationId: convId, cursor: null, pageSize: 30 }));
       }),
+      // Lit Akışı: gönderine yanıt geldi. Gövde `{ replyId, postId }`.
+      //
+      // NAVIGATE YOK — kullanıcı tap'lamadı, ekranını çalmıyoruz (yukarıdaki
+      // referans bildirimlerinin koyduğu kural).
+      //
+      // Rozet ANINDA artıyor ama otorite DEĞİL: hub replay yapmıyor ve
+      // reconnect'te aynı olayı tekrar atabiliyor. `/replies/received/count`
+      // hemen ardından çekilip `setPendingFeedReplyCount` ile mutabakata
+      // giriliyor — mükerrer artış orada düzeliyor.
+      realtimeService.on('FeedReplyReceived', () => {
+        if (!mounted) return;
+        if (!feedEnabledForSession()) return;
+        dispatch(incrementPendingFeedReply());
+        uiBus.emit('feedRepliesDirty');
+        queryClient.invalidateQueries({ queryKey: feedKeys.repliesReceived });
+        feedService
+          .getReceivedReplyCount()
+          .then((count) => dispatch(setPendingFeedReplyCount(count)))
+          // Sayım turu düşerse iyimser artış kalır — rozetin bir fazla
+          // göstermesi, hiç göstermemesinden iyi.
+          .catch(() => {});
+      }),
       realtimeService.on('NewNotification', (notif) => {
         if (!mounted) return;
         // ── Davet programı ────────────────────────────────────────────────
@@ -1455,7 +1506,12 @@ export default function AppNavigator() {
     // Fire'ta relatedEntityId ve timestamp gelmeyebiliyor → anahtar hep
     // "Like::") process ömrü boyunca TEK kez route ediliyordu; ikinci beğeni
     // bildirimine basmak hiçbir şey yapmıyordu.
-    const dedupeKey = `${data.type}:${data.conversationId || data.relatedEntityId || ''}:${data.timestamp || ''}`;
+    // ⚠️ `postId`/`replyId` de anahtara GİRİYOR: Lit Akışı push'ları
+    // `conversationId`/`relatedEntityId` TAŞIMIYOR, yalnız bunları taşıyor.
+    // Olmasalardı pencere içindeki her `FeedReply` "FeedReply::"ye çöker ve
+    // ikinci yanıt bildirimine basmak hiçbir şey yapmazdı — yukarıdaki Like
+    // fıkrasının birebir aynısı.
+    const dedupeKey = `${data.type}:${data.conversationId || data.relatedEntityId || data.replyId || data.postId || ''}:${data.timestamp || ''}`;
     const now = Date.now();
     if (
       dedupeKey === lastRoutedNotificationRef.current &&
@@ -1489,6 +1545,50 @@ export default function AppNavigator() {
             : undefined,
           isActive: conv ? conv.isActive : true,
         });
+        return;
+      }
+      // ── Lit Akışı ───────────────────────────────────────────────────────
+      // Hepsinde ortak iki kural: (a) invalidate/emit navigate'ten ÖNCE —
+      // istek ekran görünür olmadan yola çıksın; (b) `openFeed()` false
+      // dönerse (bayrak kapalı, sekme YOK) Bildirimler'e düşülür, yoksa push
+      // ölü tap üretir.
+      case 'FeedReply': {
+        uiBus.emit('feedRepliesDirty');
+        queryClient.invalidateQueries({ queryKey: feedKeys.repliesCount });
+        if (openFeed('replies')) return;
+        navigationRef.navigate('Notifications' as never);
+        return;
+      }
+      case 'FeedLikeMilestone': {
+        uiBus.emit('feedDirty');
+        if (openFeed('mine')) return;
+        navigationRef.navigate('Notifications' as never);
+        return;
+      }
+      case 'FeedPostModerated': {
+        // Arka plan kontrolünde reddedilen gönderide HAK GERİ VERİLİYOR
+        // (sözleşme §5) → kota bayat, /me tazelenmeli.
+        queryClient.invalidateQueries({ queryKey: feedKeys.me });
+        uiBus.emit('feedDirty');
+        if (openFeed('mine')) return;
+        navigationRef.navigate('Notifications' as never);
+        return;
+      }
+      case 'FeedRestricted': {
+        // `scope` (feed|anonymous) ayrı bir ekran gerektirmiyor: iki kısıt da
+        // /me'de yaşıyor ve ekran banner'ı oradan çiziliyor.
+        queryClient.invalidateQueries({ queryKey: feedKeys.me });
+        if (openFeed('feed')) return;
+        navigationRef.navigate('Notifications' as never);
+        return;
+      }
+      // 20:30 hatırlatmaları — backend bunlara in-app bildirim satırı YAZMIYOR
+      // (yalnız push). Case yine de gerekli: tap ölü kalmasın.
+      case 'FeedDailyRefill':
+      case 'FeedDailyUnused': {
+        queryClient.invalidateQueries({ queryKey: feedKeys.me });
+        if (openFeed('feed')) return;
+        navigationRef.navigate('Notifications' as never);
         return;
       }
       case 'Like':
@@ -1655,6 +1755,28 @@ export default function AppNavigator() {
     // Arka plandayken verilmiş ödül/hediye (davet, ön kayıt Lit Plus): bir kez
     // uygulama içi haber.
     void checkPendingNotices();
+    // Akış bayrağı AÇILMA yönü probe'u. Kapanma yönü probe gerektirmiyor —
+    // herhangi bir feed çağrısının UT-7301'i latch'e zaten yazıyor
+    // (feedService > guard). Bu yüzden burada SADECE "kapalıyken açıldı mı"
+    // sorusu var ve 6 saatlik throttle arkasında.
+    //
+    // Sekme zaten görünüyorsa `shouldProbeFeedFlag()` false döner (useFeedMe
+    // /me'nin sahibi) → kararlı durumda SIFIR ek istek. Burası token tazeliği
+    // kapısından SONRA çalışan blok, yani aşağıdaki uyanma fırtınası
+    // yorumunun anlattığı istek selinin içine girmiyor.
+    //
+    // Sonucu ŞİMDİ uygulanmıyor: recordFeedFlag diski güncelliyor, sekme bir
+    // sonraki cold start'ta beliriyor (ortadaki sekme → route index kaydırma).
+    if (shouldProbeFeedFlag()) {
+      markFeedFlagProbed();
+      queryClient
+        .fetchQuery({ queryKey: feedKeys.me, queryFn: () => feedService.getMe() })
+        .then(() => recordFeedFlag(null, true))
+        .catch(() => {
+          // UT-7301 ise markFeedDisabled zaten yazdı; diğer hatalar (ağ, 401)
+          // bayrak hakkında bilgi taşımıyor → latch'e dokunulmaz.
+        });
+    }
   }, [dispatch]);
 
   useEffect(() => {

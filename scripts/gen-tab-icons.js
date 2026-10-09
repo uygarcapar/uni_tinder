@@ -94,6 +94,23 @@ const LINE_GLYPHS = [
     fillSubpaths: [0],
     glyphPt: 23,
   },
+  // Akış sekmesi — iki kapalı dikdörtgen (indeks 0,1) + sağda dört metin
+  // çizgisi. Odaklı varyantta dikdörtgenler doluyor; dolgu çizgilerle
+  // ÇAKIŞMIYOR, yani cards-tab'daki ön-kart mantığının aynısı.
+  //
+  // `newspaper` yerine bu seçildi: onun dış sayfa path'i AÇIK (Z yok) →
+  // doldurulamıyor, odaklı varyantta yalnız küçük manşet kutusu dolup ikon
+  // bozuk okunuyordu. Ayrıntı: assets/icons/lucide-layout-list.svg başlığı.
+  //
+  // glyphPt 22: şekil neredeyse KARE (18×18 görünür kutu) ve balon/ev ile aynı
+  // dert — 24'te kardeşlerinden şişman duruyor.
+  {
+    svg: "assets/icons/lucide-layout-list.svg",
+    out: "feed-tab",
+    strokeWidth: 2,
+    fillSubpaths: [0, 1],
+    glyphPt: 22,
+  },
 ];
 
 const segDist2 = (px, py, x0, y0, x1, y1) => {

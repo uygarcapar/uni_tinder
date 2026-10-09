@@ -416,7 +416,17 @@ export type PaywallType =
   | "CHAT_QUOTA_EXHAUSTED"
   // Not bakiyesi bitti. Abonelik paywall'ı DEĞİL: premium kullanıcı da paket
   // satın alıyor (Fire'ın 2026-08-11'deki davranışının aynısı).
-  | "NOTE_BALANCE";
+  | "NOTE_BALANCE"
+  // ── Lit Akışı (UT-73xx, 402'ler) ──
+  // İlk üçü gerçek abonelik kapısı: Plus alınca özellik açılır.
+  | "FEED_ANONYMOUS" // anonim paylaşım (erkek / non-binary free)
+  | "FEED_UNIVERSITY" // başka kampüsü görme ya da oraya yanıt verme
+  | "FEED_KIND_FILTER" // anonim/normal filtresi
+  // ⚠️ Son ikisi YUMUŞAK teklif: hak SATIN ALINAMIYOR (consumable yok), Plus
+  // sadece günlük tavanı yükseltiyor. Bu yüzden kota sheet'i açılır ve Plus
+  // bağlantısı ikincil bir satır olarak durur — paywall'a zorlanmaz.
+  | "FEED_POST_LIMIT"
+  | "FEED_REPLY_LIMIT";
 
 /**
  * Bir notun hedefi — kartın HANGİ içeriğine yazıldığı.
@@ -818,6 +828,15 @@ export interface SwipeState {
    * Discover'da ağ turu atmadan cevaplamak için var (kaçırılan eşleşme).
    */
   whoLikedMeIds: string[];
+  /**
+   * Karar bekleyen Lit Akışı yanıtları.
+   *
+   * ⚠️ `whoLikedMeCount`tan AYRI ve bilerek: o sayaç id KÜMESİNDEN türüyor
+   * (add/removeWhoLikedMe yalnız id kümedeyse oynatıyor). Yanıt sayısı oraya
+   * karışsa bir beğeniyi işlemek yanıt sayısını da sessizce düşürürdü.
+   * Beğeniler rozeti okuma yerinde TOPLANIYOR (bkz. TabNavigator).
+   */
+  pendingFeedReplyCount: number;
 }
 
 // ─── Subscription ──────────────────────────────────────────────────────────────

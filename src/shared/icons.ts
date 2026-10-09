@@ -78,6 +78,7 @@ export { default as InfoIcon } from "lucide-react-native/icons/info";
 export { default as KeyRound } from "lucide-react-native/icons/key-round";
 export { default as Keyboard } from "lucide-react-native/icons/keyboard";
 export { default as Languages } from "lucide-react-native/icons/languages";
+export { default as LayoutList } from "lucide-react-native/icons/layout-list";
 export { default as Leaf } from "lucide-react-native/icons/leaf";
 export { default as Lightbulb } from "lucide-react-native/icons/lightbulb";
 export { default as Lock } from "lucide-react-native/icons/lock";
@@ -91,6 +92,7 @@ export { default as MessageSquareReply } from "lucide-react-native/icons/message
 export { default as MessageSquareText } from "lucide-react-native/icons/message-square-text";
 export { default as Mic } from "lucide-react-native/icons/mic";
 export { default as Moon } from "lucide-react-native/icons/moon";
+export { default as MoreHorizontal } from "lucide-react-native/icons/ellipsis";
 export { default as MoreVertical } from "lucide-react-native/icons/ellipsis-vertical";
 export { default as Mountain } from "lucide-react-native/icons/mountain";
 export { default as Music } from "lucide-react-native/icons/music";

@@ -68,6 +68,11 @@ const en = {
       subtitle:
         "The message content shows on your lock screen. Turn it off and you'll only see who wrote.",
     },
+    feedAlerts: {
+      title: 'Feed notifications',
+      subtitle:
+        'Replies to your posts, like milestones and the evening reminder. Moderation and restriction notices are not affected by this setting.',
+    },
     photoModerationAlerts: {
       title: 'Photo Notifications',
       subtitle:
@@ -1452,6 +1457,10 @@ const en = {
     // to everyone BUT the cards are blurred for free users (same rule as the
     // like cards); recovering is a Premium perk as of 2026-08-31.
     tabMissed: 'Missed',
+    // Lit Feed replies — same data as the Replies page in the Feed tab (one
+    // query key). The blur/unlock rule used by like cards does NOT apply here:
+    // feed replies are open to free users too.
+    tabFeedReplies: 'Feed replies',
     emptyMissed: 'You have not missed anyone.',
     // The window length comes from the backend — see the Turkish file.
     emptyMissedSubtitle:
@@ -2293,6 +2302,183 @@ const en = {
     errorTitle: 'Purchase could not be completed',
     disclaimer: 'Notes are added to your account instantly when the purchase completes and never expire. Payments are charged to your App Store account; purchases are non-refundable.',
   },
+  // ── Lit Feed ───────────────────────────────────────────────────────────────
+  // Campus-only, text-only feed. No comments under a post; a reply goes only to
+  // the post's author, and a match is made if they accept it.
+  //
+  // ⚠️ DO NOT WRITE MODERATION HINTS. The rules loosened on 2026-09-30: phone
+  // numbers, social handles, profanity, insults and meetup requests are now
+  // ALLOWED. Only sexual content, national-ID/card numbers and web links are
+  // blocked, all three server-side. UT-7306 shows the server `message` verbatim.
+  feed: {
+    tabTitle: 'Feed',
+    tabFeed: 'Feed',
+    tabMine: 'My posts',
+    tabReplies: 'Replies',
+
+    anonymous: {
+      plain: 'Anonymous',
+      Men: 'Anonymous · Man',
+      Women: 'Anonymous · Woman',
+      NonBinary: 'Anonymous · Non-binary',
+    },
+
+    sort: {
+      new: 'Newest',
+      popular: 'Popular',
+      top: 'Most liked',
+    },
+    interest: {
+      all: 'All posts',
+      mine: 'Matching my interests',
+    },
+    kind: {
+      all: 'All',
+      anonymous: 'Anonymous',
+      normal: 'Normal',
+    },
+
+    filter: {
+      title: 'Filter',
+      sort: 'Sort',
+      interest: 'Interests',
+      kind: 'Post type',
+      reset: 'Reset',
+    },
+    university: {
+      title: 'Pick a campus',
+      own: 'My campus',
+    },
+
+    composer: {
+      title: 'Share a post',
+      placeholder: 'What do you want to tell your campus?',
+      anonymousLabel: 'Post anonymously',
+      anonymousHint: 'Your name and photo stay hidden; only your gender shows.',
+      anonymousLocked: 'Anonymous posting is a Lit Plus feature.',
+      anonymousRestricted: 'You cannot post anonymously for a while.',
+      universityHint: 'This post will appear in the {{university}} feed.',
+      send: 'Post',
+      sent: 'Your post is live',
+      pending: 'Your post is being reviewed',
+    },
+
+    reply: {
+      button: 'Reply',
+      replied: 'Replied',
+      restricted: 'Restricted',
+      goToChat: 'Go to chat',
+      title: 'Write a reply',
+      placeholder: 'Write a short reply',
+      sent: 'Your reply was sent',
+      pending: 'Your reply is being reviewed',
+      remaining: '{{count}} replies left',
+    },
+
+    received: {
+      onYourPost: 'Reply to your post',
+      onYourAnonymousPost: 'Reply to your anonymous post',
+      accept: 'Accept',
+      skip: 'Skip',
+      emptyTitle: 'No replies yet',
+      emptyBody: 'Share a post and let your campus write to you.',
+    },
+
+    mine: {
+      emptyTitle: 'No posts yet',
+      emptyBody: 'Posts you share stay in the feed for 15 days.',
+      replyCount: '{{count}} replies',
+      expired: 'Expired',
+      expiresInDays: '{{count}} days left',
+      expiresInHours: '{{count}} hours left',
+      expiresInMinutes: '{{count}} minutes left',
+      status: {
+        PendingReview: 'Under review',
+        SupportHold: 'Not published',
+        HiddenByReports: 'Hidden due to reports',
+        Rejected: 'Not published — community guidelines',
+      },
+      delete: 'Delete post',
+      deleteConfirmTitle: 'Delete this post?',
+      deleteConfirmBody:
+        'This cannot be undone. You do not get the post back and any pending replies to it are dropped.',
+    },
+
+    empty: {
+      title: 'The feed is empty for now',
+      body: 'Be the first to post.',
+      cta: 'Share a post',
+      plusHint: 'Get Lit Plus to see other campuses',
+    },
+
+    quota: {
+      bar: '{{posts}} posts · {{replies}} replies left',
+      reset: 'Your allowance renews around {{time}}',
+      exhaustedTitle: 'You are out for today',
+      exhaustedBody: 'Your allowance renews every evening.',
+      plusOffer: 'Lit Plus gives you more posts and replies per day',
+    },
+
+    restricted: {
+      feed: 'You cannot post for a while.',
+      anonymous: 'Anonymous posting is off until {{date}}.',
+      permanent: 'Your posting access has been removed.',
+    },
+
+    disabled: {
+      title: 'The feed is closed right now',
+      body: 'This feature is coming soon.',
+    },
+
+    support: {
+      title: 'We would like to help',
+      body: 'If you are going through something hard, there are people you can talk to.',
+      // Numbers are Turkey-wide (the app's only market today).
+      emergency: 'Emergency — 112',
+      helpline: 'Psychosocial support line — 182',
+    },
+
+    report: {
+      post: 'Report post',
+      reply: 'Report reply',
+      done: 'Your report was received',
+    },
+
+    // Error codes — FALLBACK text only. The server `message` arrives in the
+    // user's language and ready to display, and it WINS; these kick in only
+    // when that message is empty.
+    codes: {
+      generic: 'Something went wrong. Want to try again?',
+      'UT-7301': 'The feed is closed right now.',
+      'UT-7302': 'Your post cannot be empty.',
+      'UT-7303': 'Your post is too long.',
+      'UT-7304': 'You are out of posts for today.',
+      'UT-7305': 'Anonymous posting needs Lit Plus.',
+      'UT-7306': 'This content does not meet the community guidelines.',
+      'UT-7308': 'You cannot post in the feed for a while.',
+      'UT-7309': 'You cannot post anonymously for a while.',
+      'UT-7310': 'Seeing another campus needs Lit Plus.',
+      'UT-7311': 'This filter needs Lit Plus.',
+      'UT-7312': 'This post is gone.',
+      'UT-7313': 'Invalid university.',
+      'UT-7314': 'The list was refreshed.',
+      'UT-7315': 'Please complete your profile first.',
+      'UT-7316': 'Too many attempts. Try again in a bit.',
+      'UT-7320': 'Your reply cannot be empty.',
+      'UT-7321': 'Your reply is too long.',
+      'UT-7322': 'You are out of replies for today.',
+      'UT-7323': 'You already replied to this post.',
+      'UT-7324': 'You cannot reply to this post.',
+      'UT-7325': 'You cannot reply to your own post.',
+      'UT-7326': 'Replying to another campus needs Lit Plus.',
+      'UT-7327': 'You already matched.',
+      'UT-7328': 'This reply is no longer valid.',
+      'UT-7330': 'You cannot like your own post.',
+      'UT-7340': 'You already reported this content.',
+      'UT-7341': 'You cannot report your own content.',
+    },
+  },
+
   moderation: {
     // Backend moderation error codes (UT-68xx). UT-6804 reuses
     // `report.alreadyReported` — same sentence, one source.

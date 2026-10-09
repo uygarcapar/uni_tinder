@@ -680,4 +680,133 @@ export const PAYWALL_TYPES = {
   PREMIUM_FILTERS: "PREMIUM_FILTERS",
   CHAT_QUOTA_EXHAUSTED: "CHAT_QUOTA_EXHAUSTED",
   NOTE_BALANCE: "NOTE_BALANCE",
+  FEED_ANONYMOUS: "FEED_ANONYMOUS",
+  FEED_UNIVERSITY: "FEED_UNIVERSITY",
+  FEED_KIND_FILTER: "FEED_KIND_FILTER",
+  // ⚠️ Bu ikisi paywall AÇMAZ, kota sheet'i açar — hak satın alınamıyor.
+  FEED_POST_LIMIT: "FEED_POST_LIMIT",
+  FEED_REPLY_LIMIT: "FEED_REPLY_LIMIT",
 } as const satisfies Record<PaywallType, PaywallType>;
+
+/**
+ * Lit Akışı hataları (UT-73xx).
+ *
+ * `CODE_ENTRIES`e KOYULMADILAR ve koyulmamalı — NOTE_SEND_CODES ile aynı gerekçe
+ * (bkz. :191-208): bu metinler composer/kart içinde inline gösteriliyor,
+ * `resolveCode`'un global haritasına girerlerse başka akışlar kalıcı hata
+ * metnini buradan okumaya başlar. UT-62xx'te tam olarak bu kaza yaşandı.
+ *
+ * Backend `message`'ı KULLANICININ DİLİNDE ve gösterime hazır yolluyor; buradaki
+ * i18n anahtarları sunucu mesajı boş geldiğinde devreye giren yedek.
+ * Switch HER ZAMAN `code` üzerinden yapılır, HTTP status üzerinden ASLA
+ * (403 hem UT-7301 hem UT-7308 hem UT-7315 olabiliyor).
+ */
+export const FEED_CODES = {
+  /** 403 — akış bayrağı kapalı. Sekme hiç çizilmez. */
+  DISABLED: "UT-7301",
+  /** 400 — gönderi boş. */
+  POST_EMPTY: "UT-7302",
+  /** 400 — gönderi çok uzun. result.maxLength dolu. */
+  POST_TOO_LONG: "UT-7303",
+  /** 429 — günlük gönderi hakkı bitti. result: nextResetAt + paywallType. */
+  POST_QUOTA: "UT-7304",
+  /** 402 — anonim paylaşım Plus gerektiriyor. */
+  ANONYMOUS_REQUIRES_PLUS: "UT-7305",
+  /**
+   * 422 — içerik kurallara uymuyor. result.category dolu.
+   * ⚠️ HAK DÜŞMEZ → kota azaltılmaz, sheet açık kalır, metin korunur.
+   * ⚠️ Kullanıcıya KATEGORİYE ÖZEL metin yazılmaz; sunucunun `message`'ı aynen
+   * gösterilir (kurallar 2026-09-30'da değişti, istemci kopyası bayatlar).
+   */
+  CONTENT_REJECTED: "UT-7306",
+  /** 403 — akış erişimi kısıtlı. result: until (null = süresiz) + isPermanent. */
+  FEED_RESTRICTED: "UT-7308",
+  /** 403 — anonim paylaşım kısıtlı. */
+  ANONYMOUS_RESTRICTED: "UT-7309",
+  /** 402 — başka kampüsü görmek Plus gerektiriyor. */
+  UNIVERSITY_REQUIRES_PLUS: "UT-7310",
+  /** 402 — tip (anonim/normal) filtresi Plus gerektiriyor. */
+  KIND_FILTER_REQUIRES_PLUS: "UT-7311",
+  /** 410 — gönderi yok / kaldırıldı / süresi doldu. Satırı listeden kaldır. */
+  POST_GONE: "UT-7312",
+  /** 400 — geçersiz üniversite domain'i. Kendi kampüsüne dön. */
+  INVALID_UNIVERSITY: "UT-7313",
+  /** 400 — cursor çürüdü. Cursor'ı at, listeyi BAŞTAN yükle (bir kez). */
+  INVALID_CURSOR: "UT-7314",
+  /**
+   * 403 — profil tamamlanmamış / hesap pasif.
+   * ⚠️ UT-7301 ile KARIŞTIRILMAMALI: ikisi de 403 ama bu "özellik kapalı"
+   * demiyor; bayrak latch'ine YAZILMAZ, profil tamamlamaya yönlendirilir.
+   */
+  PROFILE_INCOMPLETE: "UT-7315",
+  /** 429 — saatlik suistimal freni (sık reddedilen denemeler). Hak düşmez. */
+  RATE_LIMITED: "UT-7316",
+  /** 400 — yanıt boş. */
+  REPLY_EMPTY: "UT-7320",
+  /** 400 — yanıt çok uzun. result.maxLength dolu. */
+  REPLY_TOO_LONG: "UT-7321",
+  /** 429 — günlük yanıt hakkı bitti. result: nextResetAt + paywallType. */
+  REPLY_QUOTA: "UT-7322",
+  /** 409 — bu gönderiye zaten yanıt verdin. Butonu "Yanıtladın" yap. */
+  ALREADY_REPLIED: "UT-7323",
+  /** 403 — tercihler uyuşmuyor. Butonu gizle. */
+  PREFERENCE_MISMATCH: "UT-7324",
+  /** 400 — kendi gönderine yanıt. */
+  OWN_POST_REPLY: "UT-7325",
+  /** 402 — başka kampüse yanıt Plus gerektiriyor. */
+  REPLY_UNIVERSITY_REQUIRES_PLUS: "UT-7326",
+  /** 409 — zaten eşleştiniz. result.conversationId ile sohbete yönlendir. */
+  ALREADY_MATCHED: "UT-7327",
+  /** 409 — yanıt işlenmiş / süresi dolmuş / geçersiz. Listeyi yenile. */
+  REPLY_STALE: "UT-7328",
+  /** 400 — kendi gönderini beğenemezsin. */
+  OWN_POST_LIKE: "UT-7330",
+  /** 409 — bu içeriği zaten şikayet ettin. */
+  ALREADY_REPORTED: "UT-7340",
+  /** 400 — kendi içeriğini şikayet edemezsin. */
+  OWN_CONTENT_REPORT: "UT-7341",
+} as const;
+
+export type FeedCode = (typeof FEED_CODES)[keyof typeof FEED_CODES];
+
+/**
+ * code → i18n anahtarı. YEDEK metin: sunucunun `message`'ı varsa o kazanır
+ * (`t(key, { defaultValue: serverMessage })` DEĞİL — tersi:
+ * `serverMessage ?? t(key)`), çünkü backend mesajı kurallarla birlikte
+ * güncelleniyor, istemci kopyası bayatlıyor.
+ */
+const FEED_I18N: Record<FeedCode, string> = {
+  [FEED_CODES.DISABLED]: "feed.codes.UT-7301",
+  [FEED_CODES.POST_EMPTY]: "feed.codes.UT-7302",
+  [FEED_CODES.POST_TOO_LONG]: "feed.codes.UT-7303",
+  [FEED_CODES.POST_QUOTA]: "feed.codes.UT-7304",
+  [FEED_CODES.ANONYMOUS_REQUIRES_PLUS]: "feed.codes.UT-7305",
+  [FEED_CODES.CONTENT_REJECTED]: "feed.codes.UT-7306",
+  [FEED_CODES.FEED_RESTRICTED]: "feed.codes.UT-7308",
+  [FEED_CODES.ANONYMOUS_RESTRICTED]: "feed.codes.UT-7309",
+  [FEED_CODES.UNIVERSITY_REQUIRES_PLUS]: "feed.codes.UT-7310",
+  [FEED_CODES.KIND_FILTER_REQUIRES_PLUS]: "feed.codes.UT-7311",
+  [FEED_CODES.POST_GONE]: "feed.codes.UT-7312",
+  [FEED_CODES.INVALID_UNIVERSITY]: "feed.codes.UT-7313",
+  [FEED_CODES.INVALID_CURSOR]: "feed.codes.UT-7314",
+  [FEED_CODES.PROFILE_INCOMPLETE]: "feed.codes.UT-7315",
+  [FEED_CODES.RATE_LIMITED]: "feed.codes.UT-7316",
+  [FEED_CODES.REPLY_EMPTY]: "feed.codes.UT-7320",
+  [FEED_CODES.REPLY_TOO_LONG]: "feed.codes.UT-7321",
+  [FEED_CODES.REPLY_QUOTA]: "feed.codes.UT-7322",
+  [FEED_CODES.ALREADY_REPLIED]: "feed.codes.UT-7323",
+  [FEED_CODES.PREFERENCE_MISMATCH]: "feed.codes.UT-7324",
+  [FEED_CODES.OWN_POST_REPLY]: "feed.codes.UT-7325",
+  [FEED_CODES.REPLY_UNIVERSITY_REQUIRES_PLUS]: "feed.codes.UT-7326",
+  [FEED_CODES.ALREADY_MATCHED]: "feed.codes.UT-7327",
+  [FEED_CODES.REPLY_STALE]: "feed.codes.UT-7328",
+  [FEED_CODES.OWN_POST_LIKE]: "feed.codes.UT-7330",
+  [FEED_CODES.ALREADY_REPORTED]: "feed.codes.UT-7340",
+  [FEED_CODES.OWN_CONTENT_REPORT]: "feed.codes.UT-7341",
+};
+
+/** Bilinmeyen kodda null → çağıran `feed.codes.generic`'e düşer. */
+export function feedCodeI18nKey(code: string | null | undefined): string | null {
+  if (!code) return null;
+  return FEED_I18N[code as FeedCode] ?? null;
+}

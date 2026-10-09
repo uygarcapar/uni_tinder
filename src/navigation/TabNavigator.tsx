@@ -1,3 +1,4 @@
+import { useState } from "react";
 import { Platform } from "react-native";
 import { useTranslation } from 'react-i18next';
 import { createNativeBottomTabNavigator } from "@react-navigation/bottom-tabs/unstable";
@@ -5,6 +6,8 @@ import DiscoverScreen from "@/features/discover/screens/DiscoverScreen";
 import LikesScreen from "@/features/discover/screens/LikesScreen";
 import ProfileScreen from "@/features/profile/screens/ProfileScreen";
 import MessagesScreen from "@/features/chat/screens/MessagesScreen";
+import FeedScreen from "@/features/feed/screens/FeedScreen";
+import { feedEnabledForSession } from "@/features/feed/feedFlag";
 import { useAppSelector } from "@/shared/hooks/redux";
 import type { TabParamList } from "@/shared/types/navigation";
 import { colors } from "../shared/theme/colors";
@@ -79,6 +82,19 @@ const HEART_TAB_OUTLINE = {
 // için ikon, 28pt'lik PNG kutusunu paylaşan üç kardeşinin (alev, kalp, profil
 // avatarı) birkaç pt ÜSTÜNDE duruyordu ve sıra kayık okunuyordu. Nudge edecek
 // bir kol olmadığından tek çözüm onu da aynı kutuya almak.
+// Akış sekmesi — Lucide `layout-list` (iki kapalı kutu + dört metin çizgisi).
+// `newspaper` DEĞİL: o ikonun dış sayfa path'i açık, odaklı varyantta
+// doldurulamıyordu (gerekçe assets/icons/lucide-layout-list.svg başlığında).
+// Çizgi ikonu olduğu için dolu/outline ayrımı cards-tab gibi çalışıyor:
+// outline ASIL şekil, dolu varyant iki kutuyu dolduruyor.
+const FEED_TAB_FILLED = {
+  type: "image" as const,
+  source: require("../../assets/icons/feed-tab.png"),
+};
+const FEED_TAB_OUTLINE = {
+  type: "image" as const,
+  source: require("../../assets/icons/feed-tab-outline.png"),
+};
 const MESSAGE_TAB_FILLED = {
   type: "image" as const,
   source: require("../../assets/icons/message-tab.png"),
@@ -110,11 +126,28 @@ const messageTabIcon = ({ focused }: TabIconArgs) =>
 export default function TabNavigator() {
   const { t } = useTranslation();
   const unreadTotal = useAppSelector((s) => (s as any).chat.unreadTotal as number);
-  const whoLikedMeCount = useAppSelector((s) => (s as any).swipe.whoLikedMeCount as number);
+  // Beğeniler rozeti = beni beğenenler + karar bekleyen AKIŞ YANITLARI
+  // (sözleşme §10.1). İki sayaç slice'ta AYRI duruyor ve toplama BURADA
+  // yapılıyor: `whoLikedMeCount` id kümesinden türüyor (add/removeWhoLikedMe
+  // ona göre oynuyor), yanıt sayısı oraya yazılsaydı bir beğeniyi işlemek
+  // yanıt sayısını da düşürürdü. Selector primitive döndüğü için
+  // `createSelector` gerekmiyor — değere göre karşılaştırılıyor.
+  const likesBadgeCount = useAppSelector(
+    (s) =>
+      ((s as any).swipe.whoLikedMeCount as number) +
+      ((s as any).swipe.pendingFeedReplyCount as number),
+  );
+
+  // Akış bayrağı (UT-7301). `useState` initializer'ı — selector ya da query
+  // DEĞİL: sekme listesi render arasında ŞEKİL DEĞİŞTİRMEMELİ. Akış sekmesi
+  // ortada durduğu için canlı eklenip çıkarılması mevcut route index'lerini
+  // kaydırır; değer bu yüzden oturum boyunca donduruluyor ve bayrak değişimi
+  // bir sonraki cold start'ta yürürlüğe giriyor (bkz. features/feed/feedFlag.ts).
+  const [feedEnabled] = useState(() => feedEnabledForSession());
 
   const messagesBadge =
     unreadTotal > 0 ? (unreadTotal > 99 ? "99+" : String(unreadTotal)) : undefined;
-  const likesBadge = whoLikedMeCount > 0 ? String(whoLikedMeCount) : undefined;
+  const likesBadge = likesBadgeCount > 0 ? String(likesBadgeCount) : undefined;
 
   // Profil sekmesi ikonu = kullanıcının ana fotoğrafı (yuvarlak + ince çerçeve).
   // Foto/Skia hazır olana kadar `null` → aşağıda `person` SF Symbol.
@@ -195,6 +228,21 @@ export default function TabNavigator() {
           tabBarBadge: likesBadge,
         }}
       />
+      {/* Lit Akışı. Bayrak kapalıyken sekme HİÇ render edilmiyor — çizilip her
+          uçtan 403 almak kullanıcıya bozuk bir özellik gösterirdi. Rozet YOK:
+          bekleyen yanıtlar Beğeniler rozetinde sayılıyor (sözleşme §10.1),
+          aynı kümeyi iki sekmede göstermek sayıyı iki kez okuturdu. */}
+      {feedEnabled ? (
+        <Tab.Screen
+          name="Feed"
+          component={FeedScreen}
+          options={{
+            title: t('feed.tabTitle'),
+            tabBarIcon: ({ focused }: TabIconArgs) =>
+              focused ? FEED_TAB_FILLED : FEED_TAB_OUTLINE,
+          }}
+        />
+      ) : null}
       <Tab.Screen
         name="Messages"
         component={MessagesScreen}

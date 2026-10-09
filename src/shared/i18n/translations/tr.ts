@@ -68,6 +68,13 @@ const tr = {
       subtitle:
         'Kilit ekranında mesajın içeriği görünür. Kapatırsan yalnızca kimin yazdığını görürsün.',
     },
+    feedAlerts: {
+      title: 'Akış bildirimleri',
+      // Muafiyet AÇIKÇA yazılı: kapatan kullanıcı moderasyon/kısıt
+      // bildirimlerinin de susacağını sanmasın.
+      subtitle:
+        'Gönderine gelen yanıtlar, beğeni eşikleri ve akşam hatırlatması. Moderasyon ve kısıt bildirimleri bu ayardan etkilenmez.',
+    },
     photoModerationAlerts: {
       title: 'Fotoğraf Bildirimleri',
       subtitle:
@@ -1484,6 +1491,10 @@ const tr = {
     // Liste herkese açık AMA kartlar free'de blur'lu (beğeni kartlarıyla aynı
     // kural); kurtarma 2026-08-31'den beri premium ayrıcalığı.
     tabMissed: 'Kaçırdıkların',
+    // Lit Akışı yanıtları — Akış sekmesindeki Yanıtlar sayfasıyla AYNI veri
+    // (tek query key). Beğeni kartlarının blur/unlock kuralı burada
+    // UYGULANMIYOR: akış yanıtları free kullanıcıya da açık.
+    tabFeedReplies: 'Akış yanıtları',
     emptyMissed: 'Kaçırdığın kimse yok.',
     // Pencere uzunluğu backend'den geliyor (`/Stats` → missedMatchLookbackDays).
     // Değer henüz gelmediyse (eski sürüm / ilk yükleme) sayısız varyant
@@ -2343,6 +2354,192 @@ const tr = {
     errorTitle: 'Satın alma tamamlanamadı',
     disclaimer: 'Not hakları satın alma tamamlandığında hesabına anında eklenir ve süresi dolmaz. Ödemeler App Store hesabından tahsil edilir, satın alma sonrası iade yapılmaz.',
   },
+  // ── Lit Akışı ──────────────────────────────────────────────────────────────
+  // Kampüse özel, sadece yazı akışı. Gönderi altında yorum yok; yanıt yalnız
+  // gönderi sahibine gider, sahibi kabul ederse eşleşme olur.
+  //
+  // ⚠️ MODERASYON İPUCU YAZMA. 2026-09-30'da kurallar gevşedi: telefon, sosyal
+  // medya hesabı, küfür, hakaret, buluşma çağrısı artık SERBEST. Engellenenler
+  // yalnız cinsel içerik, TC/kart no ve web linki — üçü de sunucuda. Composer'a
+  // "numaranı paylaşma" gibi bir ipucu koymak hem yanlış hem bir hafta içinde
+  // bayatlar. UT-7306'da sunucunun `message`'ı AYNEN gösteriliyor.
+  feed: {
+    tabTitle: 'Akış',
+    tabFeed: 'Akış',
+    tabMine: 'Gönderilerim',
+    tabReplies: 'Yanıtlar',
+
+    // Anonim gönderide yazar yerine çizilen etiket. `authorCategory` null ise
+    // `plain` kullanılıyor — cinsiyet uydurulmuyor.
+    anonymous: {
+      plain: 'Anonim',
+      Men: 'Anonim · Erkek',
+      Women: 'Anonim · Kadın',
+      NonBinary: 'Anonim · Non-binary',
+    },
+
+    sort: {
+      new: 'En yeni',
+      popular: 'En popüler',
+      top: 'En çok beğenilen',
+    },
+    interest: {
+      all: 'Tüm gönderiler',
+      mine: 'İlgi alanıma uygun',
+    },
+    kind: {
+      all: 'Tümü',
+      anonymous: 'Anonim',
+      normal: 'Normal',
+    },
+
+    filter: {
+      title: 'Filtre',
+      sort: 'Sıralama',
+      interest: 'İlgi alanı',
+      kind: 'Paylaşım tipi',
+      reset: 'Sıfırla',
+    },
+    university: {
+      title: 'Kampüs seç',
+      own: 'Kendi kampüsüm',
+    },
+
+    composer: {
+      title: 'Gönderi paylaş',
+      placeholder: 'Kampüse ne söylemek istersin?',
+      anonymousLabel: 'Anonim paylaş',
+      anonymousHint: 'İsmin ve fotoğrafın görünmez, sadece cinsiyetin görünür.',
+      anonymousLocked: 'Anonim paylaşım Lit Plus ile.',
+      anonymousRestricted: 'Bir süre anonim paylaşım yapamazsın.',
+      universityHint: 'Bu gönderi {{university}} akışında görünecek.',
+      send: 'Paylaş',
+      sent: 'Gönderin paylaşıldı',
+      pending: 'Gönderin inceleniyor',
+    },
+
+    reply: {
+      button: 'Yanıtla',
+      replied: 'Yanıtladın',
+      restricted: 'Kısıtlı',
+      goToChat: 'Sohbete git',
+      title: 'Yanıt yaz',
+      placeholder: 'Kısa bir yanıt yaz',
+      sent: 'Yanıtın iletildi',
+      pending: 'Yanıtın inceleniyor',
+      // Sayı düz interpolasyon — bu sözlükte plural eki hiç kullanılmıyor.
+      remaining: '{{count}} yanıt hakkın kaldı',
+    },
+
+    received: {
+      onYourPost: 'Gönderine yanıt',
+      onYourAnonymousPost: 'Anonim gönderine yanıt',
+      accept: 'Kabul et',
+      skip: 'Geç',
+      emptyTitle: 'Henüz yanıt yok',
+      emptyBody: 'Bir gönderi paylaş, kampüs sana yazsın.',
+    },
+
+    mine: {
+      emptyTitle: 'Henüz gönderin yok',
+      emptyBody: 'Paylaştığın gönderiler 15 gün akışta kalır.',
+      replyCount: '{{count}} yanıt',
+      expired: 'Süresi doldu',
+      expiresInDays: '{{count}} gün kaldı',
+      expiresInHours: '{{count}} saat kaldı',
+      expiresInMinutes: '{{count}} dakika kaldı',
+      status: {
+        PendingReview: 'İnceleniyor',
+        SupportHold: 'Yayınlanmadı',
+        HiddenByReports: 'Şikayetler nedeniyle gizlendi',
+        Rejected: 'Topluluk kuralları nedeniyle yayınlanmadı',
+      },
+      delete: 'Gönderiyi sil',
+      deleteConfirmTitle: 'Gönderi silinsin mi?',
+      // Silmenin İKİ sonucu da yazılı: hak geri gelmiyor VE bekleyen yanıtlar
+      // düşüyor. İkincisini söylememek kullanıcıyı yanıtlarından ediyordu.
+      deleteConfirmBody:
+        'Bu geri alınamaz. Hakkın geri gelmez ve bu gönderiye gelmiş yanıtlar da düşer.',
+    },
+
+    empty: {
+      title: 'Akış şimdilik boş',
+      body: 'İlk gönderiyi sen at.',
+      cta: 'Gönderi paylaş',
+      plusHint: 'Diğer kampüsleri görmek için Lit Plus',
+    },
+
+    quota: {
+      bar: '{{posts}} gönderi · {{replies}} yanıt hakkın var',
+      // Saat sunucudan geliyor; "20:30" SABİT YAZILMIYOR (cihaz saat dilimi
+      // başka olabilir, uydurulmuş saat yanlış bekleme yaratır).
+      reset: 'Hakların {{time}} sularında yenilenir',
+      exhaustedTitle: 'Bugünkü hakların bitti',
+      exhaustedBody: 'Yeni hakların her akşam yenilenir.',
+      plusOffer: 'Lit Plus ile günde daha fazla gönderi ve yanıt',
+    },
+
+    restricted: {
+      feed: 'Bir süre paylaşım yapamazsın.',
+      anonymous: 'Anonim paylaşımın {{date}} tarihine kadar kapalı.',
+      permanent: 'Paylaşım hakkın kapatıldı.',
+    },
+
+    // UT-7301 — bayrak kapalı. Sekme normalde hiç çizilmiyor; bu metin yalnız
+    // sekme açıkken bayrak kapanırsa (ya da dev kancasıyla) görünür.
+    disabled: {
+      title: 'Akış şu an kapalı',
+      body: 'Bu özellik yakında açılacak.',
+    },
+
+    support: {
+      title: 'Yanında olmak isteriz',
+      body: 'Zor bir dönemden geçiyorsan konuşabileceğin yerler var.',
+      emergency: 'Acil çağrı — 112',
+      helpline: 'Psikososyal destek hattı — 182',
+    },
+
+    report: {
+      post: 'Gönderiyi şikayet et',
+      reply: 'Yanıtı şikayet et',
+      done: 'Şikayetin alındı',
+    },
+
+    // Hata kodları — YEDEK metinler. Sunucunun `message`'ı kullanıcının
+    // dilinde ve gösterime hazır geliyor, o KAZANIR; bunlar yalnız mesaj boş
+    // geldiğinde devreye giriyor.
+    codes: {
+      generic: 'Bir şeyler ters gitti. Tekrar dener misin?',
+      'UT-7301': 'Akış şu an kapalı.',
+      'UT-7302': 'Gönderin boş olamaz.',
+      'UT-7303': 'Gönderin çok uzun.',
+      'UT-7304': 'Bugünkü gönderi hakların bitti.',
+      'UT-7305': 'Anonim paylaşım için Lit Plus gerekiyor.',
+      'UT-7306': 'Bu içerik topluluk kurallarına uymuyor.',
+      'UT-7308': 'Akışta bir süre paylaşım yapamazsın.',
+      'UT-7309': 'Bir süre anonim paylaşım yapamazsın.',
+      'UT-7310': 'Başka kampüsü görmek için Lit Plus gerekiyor.',
+      'UT-7311': 'Bu filtre için Lit Plus gerekiyor.',
+      'UT-7312': 'Bu gönderi artık yok.',
+      'UT-7313': 'Geçersiz üniversite.',
+      'UT-7314': 'Liste yenilendi.',
+      'UT-7315': 'Önce profilini tamamlaman gerekiyor.',
+      'UT-7316': 'Çok fazla deneme yaptın. Biraz sonra tekrar dene.',
+      'UT-7320': 'Yanıtın boş olamaz.',
+      'UT-7321': 'Yanıtın çok uzun.',
+      'UT-7322': 'Bugünkü yanıt hakların bitti.',
+      'UT-7323': 'Bu gönderiye zaten yanıt verdin.',
+      'UT-7324': 'Bu gönderiye yanıt veremezsin.',
+      'UT-7325': 'Kendi gönderine yanıt veremezsin.',
+      'UT-7326': 'Başka kampüse yanıt için Lit Plus gerekiyor.',
+      'UT-7327': 'Zaten eşleştiniz.',
+      'UT-7328': 'Bu yanıt artık geçerli değil.',
+      'UT-7330': 'Kendi gönderini beğenemezsin.',
+      'UT-7340': 'Bu içeriği zaten şikayet ettin.',
+      'UT-7341': 'Kendi içeriğini şikayet edemezsin.',
+    },
+  },
+
   moderation: {
     // Backend moderasyon hata kodları (UT-68xx). UT-6804 mevcut
     // `report.alreadyReported` anahtarını kullanıyor — metin aynı, kaynak tek.

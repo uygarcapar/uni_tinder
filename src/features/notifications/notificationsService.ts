@@ -30,7 +30,41 @@ export type NotificationType =
   | 'ReferralRewardGranted'
   | 'ReferralWelcomeGift'
   | 'VisibilityGrantExpiring'
-  | 'VisibilityGrantExpired';
+  | 'VisibilityGrantExpired'
+  // ── Lit Akışı ─────────────────────────────────────────────────────────────
+  // Hepsi `feedAlerts` tercihine bağlı — MODERASYON/KISIT hariç: onlar "sistem
+  // bildirimleri"nde (kullanıcı akış bildirimlerini kapatsa da bir kaldırma
+  // kararını duymalı).
+  //
+  // Push metinlerinde İSİM ve İÇERİK YOK: kimin yanıt verdiği ve ne yazdığı
+  // push'ta görünmüyor (sözleşme §11.2).
+  //
+  // `relatedEntityId` KULLANILMIYOR; ek alanlar `postId` / `replyId` /
+  // `scope`. Bu yüzden routeFromNotification'ın dedupe anahtarına da bu ikisi
+  // eklendi — yoksa pencere içindeki ikinci akış push'u yutuluyordu.
+  | 'FeedReply'
+  | 'FeedLikeMilestone'
+  | 'FeedPostModerated'
+  | 'FeedRestricted'
+  // ⚠️ Bu ikisi YALNIZ push: backend in-app bildirim satırı YAZMIYOR, yani
+  // NotificationsScreen listesinde hiç görünmüyorlar. Tip yine de burada,
+  // çünkü push yönlendirmesi onları tanımak zorunda.
+  | 'FeedDailyRefill'
+  | 'FeedDailyUnused';
+
+/**
+ * Akış bildirimleri — geldiklerinde akış listeleri ve/veya kota bayat oluyor.
+ * `REFERRAL_NOTIFICATION_TYPES` ile aynı rol: tek liste, iki tüketici
+ * (yönlendirme ve cache invalidation).
+ */
+export const FEED_NOTIFICATION_TYPES = [
+  'FeedReply',
+  'FeedLikeMilestone',
+  'FeedPostModerated',
+  'FeedRestricted',
+  'FeedDailyRefill',
+  'FeedDailyUnused',
+] as const;
 
 /**
  * Davet/görünürlük bildirimleri — geldiklerinde davet özeti, swipe bakiyesi ve

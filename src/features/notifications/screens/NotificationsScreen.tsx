@@ -35,12 +35,16 @@ import {
   EyeOff,
   Check,
   AlertTriangle,
+  LayoutList,
 } from '@/shared/icons';
 import SFIcon, { type SFSymbol } from '@/shared/components/SFIcon';
 import NoteGlyph from '@/shared/components/NoteGlyph';
 import notificationsService from '@/features/notifications/notificationsService';
 import profileService from '@/features/profile/profileService';
-import { requestPhotoHighlight } from '@/shared/services/uiBus';
+import uiBus, { requestPhotoHighlight } from '@/shared/services/uiBus';
+import { openFeed } from '@/features/feed/feedEntry';
+import { feedKeys } from '@/features/feed/feedKeys';
+import { queryClient } from '@/shared/queries/queryClient';
 import realtimeService from '@/features/chat/realtimeService';
 import { fetchConversations } from '@/features/chat/chatSlice';
 import {
@@ -104,6 +108,17 @@ const TYPE_BADGES = {
   // geliyor) → renk taşımayan nötr rozet: Not/MissedMatch ile aynı siyah disk,
   // üstünde beyaz kamera.
   PhotoAppealResolved: { Icon: Camera, sf: 'camera.fill' as SFSymbol, neutral: true, iconColor: BADGE_FG },
+  // ── Lit Akışı ─────────────────────────────────────────────────────────────
+  // Yanıt ve beğeni eşiği iyi haber ama RENKLİ değil: akış rozetleri eşleşme/
+  // beğeni rozetleriyle yarışmasın, listede ayrı bir "ses tonu" kurmasın.
+  FeedReply: { Icon: LayoutList, sf: 'arrowshape.turn.up.left.fill' as SFSymbol, neutral: true, iconColor: BADGE_FG },
+  FeedLikeMilestone: { Icon: Heart, sf: 'heart.fill' as SFSymbol, color: colors.errorStrong, filled: true, iconColor: BADGE_FG },
+  // Moderasyon/kısıt kullanıcıdan aksiyon isteyen KÖTÜ haber → foto
+  // moderasyonuyla aynı uyarı tonu.
+  FeedPostModerated: { Icon: AlertTriangle, sf: 'exclamationmark.triangle.fill' as SFSymbol, color: colors.errorStrong, iconColor: BADGE_FG },
+  FeedRestricted: { Icon: EyeOff, sf: 'nosign' as SFSymbol, color: colors.errorStrong, iconColor: BADGE_FG },
+  // FeedDailyRefill / FeedDailyUnused BİLEREK YOK: backend onlara in-app satır
+  // yazmıyor (yalnız push), yani bu listede hiç görünmüyorlar.
 };
 
 // Tap hedefleri. Chat'e gidenler ayrıca sağda chevron gösteriyor; buradaki
@@ -111,6 +126,17 @@ const TYPE_BADGES = {
 const GOES_TO_CHAT = { Match: true, Message: true };
 const GOES_TO_LIKES = { Like: true, Fire: true, Note: true, MissedMatch: true };
 // Fotoğraf moderasyonu → Profil sekmesi (foto ızgarası orada).
+// Lit Akışı → Akış sekmesi. Hangi SAYFAYA gidileceği tipe göre değişiyor, o
+// yüzden düz bir bayrak değil sayfa anahtarı tutuluyor.
+// ⚠️ `openFeed()` false dönerse (bayrak kapalı → sekme YOK) tap bir yere
+// gitmiyor; ölü tap yerine hiçbir şey yapmamak doğru olan.
+const GOES_TO_FEED: Record<string, 'feed' | 'mine' | 'replies'> = {
+  FeedReply: 'replies',
+  FeedLikeMilestone: 'mine',
+  FeedPostModerated: 'mine',
+  FeedRestricted: 'feed',
+};
+
 const GOES_TO_PROFILE = {
   PhotoRejected: true,
   PhotoApproved: true,
@@ -327,6 +353,20 @@ export default function NotificationsScreen() {
 
     if (GOES_TO_LIKES[item.type]) {
       (navigation as any).navigate('HomeTabs', { screen: 'Likes' });
+      return;
+    }
+
+    // Lit Akışı → Akış sekmesinin ilgili sayfası. `openFeed` hem bekleyen-istek
+    // bayrağını kuruyor hem navigate ediyor (bkz. features/feed/feedEntry).
+    const feedPage = GOES_TO_FEED[item.type];
+    if (feedPage) {
+      // Moderasyon kararında hak GERİ VERİLİYOR → kota bayat.
+      if (item.type === 'FeedPostModerated' || item.type === 'FeedRestricted') {
+        queryClient.invalidateQueries({ queryKey: feedKeys.me });
+      }
+      if (feedPage === 'replies') uiBus.emit('feedRepliesDirty');
+      else uiBus.emit('feedDirty');
+      openFeed(feedPage);
       return;
     }
 

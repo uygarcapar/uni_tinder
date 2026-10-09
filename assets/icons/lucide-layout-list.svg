@@ -1,0 +1,35 @@
+<!-- Lucide `layout-list`, lucide-react-native v1.46.0 — ISC lisanslı.
+     Kaynak: https://lucide.dev/icons/layout-list
+
+     Bu dosya Akış sekmesi ikonunu RASTERIZE etmek için burada duruyor,
+     uygulamada çizilmiyor: native tab bar ikon olarak React component / SVG
+     kabul etmiyor (bkz. navigation/TabNavigator.tsx). Uygulama İÇİNDE bu ikon
+     lazımsa `LayoutList`i @/shared/icons'tan al — o yol lucide paketine gider.
+
+     ⚠️ İKİ KASITLI FARK var, kopyalayıp güncellerken dikkat:
+
+     1) Lucide kaynağında ilk iki şekil dikdörtgen elemanı (rect, rx=1).
+        Burada PATH'e çevrildiler, çünkü gen-tab-icons.js SVG'yi regex ile
+        tarıyor ve YALNIZ path elemanlarının d niteliğini topluyor — dikdörtgen
+        elemanı sessizce DÜŞER ve odaklı varyantta doldurulacak kapalı
+        alt-path kalmaz. Dönüşüm birebir: x3/y3 ve x3/y14, 7×7, köşe yarıçapı 1.
+        (Aynı sebeple bu yorumda path elemanı ÖRNEĞİ yazılmamalı: tarayıcı onu
+        da yakalayıp boş bir d ile çakıyor.)
+
+     2) `newspaper` DEĞİL, bilerek. O ikonun dış sayfa path'i AÇIK (`Z` yok,
+        "…v-9a2 2 0 0 1 2-2h2" diye bitiyor), yani doldurulamıyor: odaklı
+        varyantta yalnız küçük manşet kutusu dolar ve ikon "bozuk" okunur.
+        layout-list'in iki dikdörtgeni KAPALI ve dolgu, sağdaki çizgilerle
+        çakışmıyor (cards-tab'da ön kartın doldurulmasıyla aynı mantık).
+
+     Çizgi (line-art) ikonu: dolgu yok, stroke-width 2, uçlar yuvarlak.
+     Varyantlar: idle → hepsi çizgi · focused → aynı çizgiler + iki dikdörtgen
+     dolu (bkz. gen-tab-icons.js > LINE_GLYPHS). -->
+<svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+  <path d="M4 3h5a1 1 0 011 1v5a1 1 0 01-1 1H4a1 1 0 01-1-1V4a1 1 0 011-1z" />
+  <path d="M4 14h5a1 1 0 011 1v5a1 1 0 01-1 1H4a1 1 0 01-1-1v-5a1 1 0 011-1z" />
+  <path d="M14 4h7" />
+  <path d="M14 9h7" />
+  <path d="M14 15h7" />
+  <path d="M14 20h7" />
+</svg>

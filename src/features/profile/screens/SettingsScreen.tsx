@@ -66,6 +66,7 @@ import {
   Moon,
   SunMoon,
   Camera,
+  LayoutList,
   MessageSquareText,
   MessageCircle,
   ShieldCheck,
@@ -81,6 +82,7 @@ import {
 } from "@/shared/theme/themeMode";
 import DeleteAccountModal from "@/features/profile/components/DeleteAccountModal";
 import BlockedUsersModal from "@/features/profile/components/BlockedUsersModal";
+import { feedEnabledForSession } from '@/features/feed/feedFlag';
 import { openLitPlus } from "@/features/profile/litPlusEntry";
 import { usePremiumTier } from "@/features/profile/premiumTier";
 import api from "@/shared/services/api";
@@ -188,8 +190,8 @@ const ROOT_DIM_MAX = 0.25;
  *
  * Tamamı ÇİZGİSEL (outline) varyant, dolu değil: dolu gliflerin siluetleri
  * satır etiketinin yanında birer mürekkep lekesi gibi ağır basıyordu. Çizgi
- * varyantı hem Android'deki lucide fallback'iyle (lucide zaten yalnız outline)
- * aynı ağırlıkta okunuyor hem de sağdaki chevron'un ince çizgisiyle uyumlu.
+ * varyantı Android'deki lucide fallback'iyle (lucide zaten yalnız outline)
+ * aynı ağırlıkta okunuyor.
  * Yeni bir kategori eklerken `.fill` sonekli sembol SEÇME.
  */
 const SECTION_ICONS: Record<
@@ -1045,6 +1047,23 @@ export default function SettingsScreen() {
         disabled={!prefs}
         onToggle={() => togglePref('photoModerationAlerts')}
       />
+
+      {/* Lit Akışı bildirimleri. Akış bayrağı kapalıyken satır HİÇ çizilmiyor:
+          olmayan bir sekmenin bildirim ayarını göstermek anlamsız.
+          ⚠️ MODERASYON ve KISIT bildirimleri bu anahtardan MUAF — onlar "sistem
+          bildirimleri"ne bağlı (kullanıcı akış bildirimlerini kapatsa da bir
+          kaldırma kararını duymalı). Metin bunu söylüyor ki kapatınca yanlış
+          beklentiye girmesin — photoModerationAlerts'taki aynı özen. */}
+      {feedEnabledForSession() ? (
+        <SettingsToggleRow
+          icon={<SFIcon name="list.bullet" fallback={LayoutList} size={18} color={colors.text} strokeWidth={1.5} />}
+          title={t('settings.feedAlerts.title')}
+          subtitle={t('settings.feedAlerts.subtitle')}
+          value={prefs?.feedAlerts ?? true}
+          disabled={!prefs}
+          onToggle={() => togglePref('feedAlerts')}
+        />
+      ) : null}
     </SettingsList>
   );
 
@@ -1130,7 +1149,7 @@ export default function SettingsScreen() {
         title={t('settings.privacyPolicy')}
         onPress={() => setLegalDoc('privacy')}
         trailing={
-          <SFIcon name="chevron.right" fallback={ChevronRight} size={18} color={colors.textSecondary} strokeWidth={1.5} style={{ pointerEvents: "none" }} />
+          <SFIcon name="chevron.right" fallback={ChevronRight} size={16} color={ink(0.7)} strokeWidth={2.5} weight="semibold" style={{ pointerEvents: "none" }} />
         }
       />
 
@@ -1157,7 +1176,7 @@ export default function SettingsScreen() {
         title={t('settings.blockedUsers')}
         onPress={() => setBlockedVisible(true)}
         trailing={
-          <SFIcon name="chevron.right" fallback={ChevronRight} size={18} color={colors.textSecondary} strokeWidth={1.5} style={{ pointerEvents: "none" }} />
+          <SFIcon name="chevron.right" fallback={ChevronRight} size={16} color={ink(0.7)} strokeWidth={2.5} weight="semibold" style={{ pointerEvents: "none" }} />
         }
       />
       </SettingsList>
@@ -1684,7 +1703,13 @@ function SettingsSection({
       >
         {icon}
         {block}
-        <SFIcon name="chevron.right" fallback={ChevronRight} size={15} color={colors.textSecondary} strokeWidth={1.5} style={{ pointerEvents: "none" }} />
+        {/* Profil sayfasındaki accordion başlığının chevron'uyla BİREBİR
+            (bkz. ProfileScreen/CompletionAccordion → PlusCard): 16pt,
+            strokeWidth 2.5, semibold, `ink(0.7)`. Ayarlar'daki üç chevron
+            (kök kategori satırı + Gizlilik'teki iki satır) da aynı üçlüyü
+            kullanıyor — iki ekranda aynı "aç" işareti aynı ağırlıkta
+            okunmalı. */}
+        <SFIcon name="chevron.right" fallback={ChevronRight} size={16} color={ink(0.7)} strokeWidth={2.5} weight="semibold" style={{ pointerEvents: "none" }} />
       </View>
     </Pressable>
   ) : (

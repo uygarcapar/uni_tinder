@@ -26,6 +26,7 @@ import * as Haptics from "expo-haptics";
 import {
   Check,
   ChevronDown,
+  GraduationCap,
   MessageCircle,
   RotateCcw,
   Search,
@@ -43,6 +44,14 @@ import Animated, {
   withTiming,
 } from "react-native-reanimated";
 import { useAppDispatch } from "@/shared/hooks/redux";
+import { decrementPendingFeedReply } from "@/features/discover/swipeSlice";
+import { feedEnabledForSession } from "@/features/feed/feedFlag";
+import {
+  useAcceptReply,
+  useDismissReply,
+  useReceivedReplies,
+} from "@/features/feed/feedQueries";
+import FeedReplyCard from "@/features/feed/components/FeedReplyCard";
 import { refreshEntitlementsForPaywall } from "@/features/profile/subscriptionSlice";
 import { usePremiumTier } from "@/features/profile/premiumTier";
 import profileService from "@/features/profile/profileService";
@@ -61,7 +70,6 @@ import ScreenHeader, {
   SCREEN_HEADER_TITLE_HEIGHT,
 } from "@/shared/components/ScreenHeader";
 import SkeletonBox from "@/shared/components/SkeletonBox";
-import HobbyIcon from "@/shared/components/HobbyIcon";
 import PremiumBadge from "@/shared/components/PremiumBadge";
 import SelfieVerifiedBadge, {
   selfieBadgeSize,
@@ -77,10 +85,7 @@ import {
   recoverMissedMatch,
 } from "@/features/discover/missedMatchRecovery";
 import { normalizeLikerNote } from "@/features/discover/likerNote";
-import {
-  relationshipIntentLabel,
-  resolveTeaserHobby,
-} from "@/features/discover/likerCardTeaser";
+import { relationshipIntentLabel } from "@/features/discover/likerCardTeaser";
 import { resolveRecoveryAccess } from "@/features/discover/recoveryQuota";
 import {
   setWhoLikedMe,
@@ -236,24 +241,27 @@ const lockedVeilTint = () =>
 // bulanıklaştırıp yutardı, perde ancak katmanlar bittikten sonra iş görüyor.
 // Kimliği gizlemeye katkısı YOK (o hâlâ blurRadius'ün işi) — bu sayı sadece
 // kartın ne kadar koyu okunduğunu ayarlıyor.
-// ⚠️ Yükseltirken placeholder kutuları unutulmamalı: açık modda kutular KOYU
-// (bkz. boxInk), perde koyulaştıkça kutularla arasındaki kontrast düşer.
+// ⚠️ Yükseltirken placeholder kutuları unutulmamalı: açık modda kutular AÇIK
+// (yüzey grisi, bkz. barFill) — perde koyulaştıkça bu sefer kutular fotoğraftan
+// AYRIŞIYOR ama kart genel olarak kirleniyor; kutuların okunurluğu artık
+// perdeye bağlı değil, zeminleri opak.
 // 0.2 → 0.1 (2026-09-12): malzeme ultra-thin'e inince fotoğrafın rengi geri
-// geldi; 0.2 o rengi yine griye boğuyordu. 0.1 yalnız placeholder kutularının
-// ve pillerin (boxInk, koyu) parlak fotoğraf üstünde okunmasına yetecek kadar.
+// geldi; 0.2 o rengi yine griye boğuyordu.
 const LOCKED_CARD_VEIL_SCRIM_LIGHT = 0.1;
 
 // ── Kilitli kartın İPUCU satırı (bkz. likerCardTeaser) ──────────────────────
 // Bumble'ın "Liked You" kartı: bulanık fotoğraf + isim yerinde gri bar + foto
-// doğrulama rozeti + bir hobi pili + "ne arıyor" pili. Kimlik hâlâ perdenin
+// doğrulama rozeti + üniversite pili + "ne arıyor" pili. Kimlik hâlâ perdenin
 // altında, ama kart artık "yükleniyor" değil "kapalı ve içinde biri var"
 // okunuyor — paywall'a giden merak buradan geliyor.
 //
 // Piller açık kartın hobi pillerinden (SwipeCard) bir kademe küçük: kart
-// listede yarım boy, tam boy pil perdeyi kaplıyordu. Dolgu `boxInk` ailesinden
-// (placeholder barla AYNI polarite kuralı: açıkta koyu, koyuda açık) — perde
-// modla döndüğü için (bkz. lockedVeilTint) sabit beyaz bir pil açık modda
-// camın içinde kayboluyordu.
+// listede yarım boy, tam boy pil perdeyi kaplıyordu.
+// Dolgu MODA GÖRE İKİ AYRI AİLEDEN (bkz. teaserFill): koyu modda `boxInk`
+// (beyaz alfa, perdenin tersi), açık modda sayfanın yüzey grisi
+// (`colors.surface`). Açık tarafta "perdenin tersi" kuralı zemin yerine YAZI
+// rengiyle sağlanıyor — koyu alfa zemin barı ve pilleri kartın en ağır öğesi
+// yapıyordu.
 const LOCKED_TEASER_PILL_HEIGHT = 30;
 const LOCKED_TEASER_PILL_PAD_H = 10;
 const LOCKED_TEASER_PILL_GAP = 8;
@@ -294,7 +302,12 @@ const cardPhotoScrim = (alpha: number): string =>
 
 // Sağ üst köşedeki cam butonun kart kenarına payı. Köşede BAŞKA HİÇBİR ŞEY yok:
 // not balonu / fire kalbi rozetleri buradan kaldırıldı (gerekçe LikeCard'da).
-const CARD_TOP_RIGHT_INSET = 12;
+//
+// 12 → 6 (istek: "daha çok sağ üstte olsun"). Tavan kartın köşe yarıçapından
+// (40) geliyor: daire kabuk diyagonalde kavisin içine girmeye başladığı yerde
+// kesilmiş görünür, o eşik ~1pt — yani 6 hem belirgin biçimde köşeye yakın hem
+// kavisten uzak. Sıfıra indirmek kabuğu kartın kenarına yapıştırır.
+const CARD_TOP_RIGHT_INSET = 6;
 // Köşedeki cam butonun çapı ve glifi — kurtar ve beğen TEK ölçüden besleniyor:
 // ikisi aynı köşenin sekmeye göre değişen iki hâli, ayrı sayılara
 // bağlansalardı sekme değiştirince köşe büyüyüp küçülüyormuş gibi okunurdu.
@@ -2105,28 +2118,43 @@ function LikeCard({
 
           {/* Blurlu (kilitli) kartlar — Bumble'ın "Liked You" kartı gibi:
               isim yerinde TEK gri bar (+ foto doğrulama rozeti), altında
-              kimliği açmayan iki ipucu pili (bir hobi, ilişki niyeti).
+              kimliği açmayan iki ipucu pili (üniversite, ilişki niyeti).
               Eskiden iki gri bar vardı (isim + üniversite); iki bar yükleme
               iskeletiyle (SkeletonBox) birebir aynı dile sahipti ve kart
               "hâlâ yükleniyor" gibi okunuyordu. Bir ara kartın ortasına kilit
               glifi de denendi; o da kartı bir paywall duvarına çeviriyordu.
               İpucu ikisini de çözüyor: kart yüklenmiyor, kapalı ama İÇİNDE
               BİRİ VAR — paywall'ın gerekçesi kartın kendisinde.
-              ⚠️ İpucuya isim/yaş/üniversite/şehir EKLEME — bkz. likerCardTeaser.
+              ⚠️ İpucuya isim/yaş/şehir EKLEME — bkz. likerCardTeaser
+              (üniversite 2026-10-05'te bilerek içeri alındı, gerekçesi orada).
 
-              Bar/pil perdenin TERSİ olmak zorunda; aynı yöndeki bir kutu camın
-              içinde kaybolur. Perde `chromeBlurTint()` ile modla döndüğü için
-              kutular da dönüyor: açık modda koyu, koyu modda açık.
+              KOYU MODDA bar/pil perdenin TERSİ olmak zorunda; aynı yöndeki bir
+              kutu camın içinde kaybolur. AÇIK MODDA kutu artık perdeyle aynı
+              yönde (yüzey grisi) ve kontrastı koyu YAZI taşıyor — bkz. barFill.
               `isLight()` render sırasında okunuyor — modül seviyesinde
               sabitlenirse tema değişince bayat kalır (bkz. theme/colors.ts).
               Bar genişliği gerçek metin uzunluğuna göre dinamik (karakter ≈ px). */}
           {!showClear &&
             (() => {
-              const boxInk = isLight() ? scrimAt : onMediaAt;
-              const teaserInk = isLight()
+              const light = isLight();
+              const boxInk = light ? scrimAt : onMediaAt;
+              const teaserInk = light
                 ? scrimAt(LOCKED_TEASER_INK_ALPHA_LIGHT)
                 : colors.onMedia;
-              const teaserFill = boxInk(LOCKED_TEASER_FILL_ALPHA);
+              // AÇIK MODDA kutular artık KOYU DEĞİL: zemin, sayfanın kendi
+              // yüzey token'ı (`colors.surface` — profildeki accordion'larla
+              // AYNI gri). Koyu alfa barı ve pilleri kartın en ağır öğesi
+              // yapıyordu; açık temada ekranın geri kalanı yüzey grisi olduğu
+              // için bu gri kartı listenin diline bağlıyor.
+              // Yazı/ikon rengi hâlâ TERS yönde (`teaserInk`, koyu) — polarite
+              // kuralı ölmedi, yalnız zeminden yazıya taşındı.
+              // ⚠️ Zemin OPAK: aynı griyi alfayla kurmak camın ve
+              // `LOCKED_CARD_VEIL_SCRIM_LIGHT` perdesinin üstünde parlak bir
+              // fotoğrafta eriyip koyu yazıyı okunmaz bırakıyor.
+              const barFill = light ? colors.surface : boxInk(0.6);
+              const teaserFill = light
+                ? colors.surface
+                : boxInk(LOCKED_TEASER_FILL_ALPHA);
               const maxW = CARD_WIDTH - CARD_SIDE_INSET_PLAIN * 2;
               const nameText =
                 item.age != null
@@ -2141,7 +2169,14 @@ function LikeCard({
                   Math.round(nameText.length * LIKE_CARD_NAME_SIZE * 0.53),
                 ),
               );
-              const hobby = item.teaserHobby ?? null;
+              // İpucunun İLK pili artık HOBİ DEĞİL ÜNİVERSİTE (2026-10-05).
+              // Hobi tek kelime ve çoğu kartta aynı ("Müzik", "Spor") —
+              // merak uyandırmıyordu; üniversite ise free kullanıcının
+              // kartı açtıracak tek somut ortaklık. Açık karttaki üniversite
+              // satırıyla AYNI kaynak (`universityLabel`), yani kart kilidi
+              // açılınca bilgi yer değiştirmiyor, yalnız pilden satıra geçiyor.
+              // Alan boş gelebiliyor (liste yanıtı her zaman taşımıyor, kişi
+              // gizlemiş olabilir) — o kartta satırda yalnız niyet pili kalır.
               const intentLabel = resolveIntentLabel?.(item) ?? "";
               const pillStyle = {
                 flexDirection: "row" as const,
@@ -2180,7 +2215,7 @@ function LikeCard({
                         width: nameW,
                         height: 18,
                         borderRadius: 6,
-                        backgroundColor: boxInk(0.6),
+                        backgroundColor: barFill,
                       }}
                     />
                     {/* Rozet açık karttakiyle AYNI ölçü ve renk (marka
@@ -2192,7 +2227,7 @@ function LikeCard({
                       style={{ marginLeft: 8 }}
                     />
                   </View>
-                  {(hobby || !!intentLabel) && (
+                  {(!!universityLabel || !!intentLabel) && (
                     <View
                       style={{
                         flexDirection: "row",
@@ -2200,38 +2235,40 @@ function LikeCard({
                         marginTop: LOCKED_TEASER_ROW_GAP,
                       }}
                     >
-                      {hobby && (
-                        // Hobi pili DARALMIYOR, niyet pili daralıyor: hobi
-                        // etiketi kısa ve tek kelime, niyet cümlemsi ("Uzun
-                        // süreli ilişki"); yer kalmayınca uzun olan kırpılsın.
+                      {!!universityLabel && (
+                        // İKİ pil de daralıyor: hobi döneminde ilk pil
+                        // `flexShrink: 0` ile sabitti (tek kelimeydi), ama
+                        // üniversite adı niyet etiketinden bile uzun olabiliyor
+                        // ("Orta Doğu Teknik Üniversitesi") — sabit kalsaydı
+                        // satırı taşırıp niyet pilini kartın dışına atardı.
+                        // İkisi de esneyince Yoga uzun olanı daha çok kırpıyor.
                         <View
                           style={[
                             pillStyle,
                             {
-                              flexShrink: 0,
+                              flexShrink: 1,
                               marginRight: intentLabel
                                 ? LOCKED_TEASER_PILL_GAP
                                 : 0,
                             },
                           ]}
                         >
-                          {/* Emoji kutusu SwipeCard hobi piliyle aynı kaçış:
-                              açık yükseklik, taşan glif kırpılmıyor. */}
-                          <View
-                            style={{
-                              height: LOCKED_TEASER_ICON_SIZE,
-                              justifyContent: "center",
-                              alignItems: "center",
-                              overflow: "visible",
-                            }}
+                          {/* Üniversite ikonu uygulamanın her yerinde aynı
+                              (bkz. filterEnumIcons / UniversityVisibilitySheet):
+                              `graduationcap.fill`. */}
+                          <SFIcon
+                            name="graduationcap.fill"
+                            fallback={GraduationCap}
+                            size={LOCKED_TEASER_ICON_SIZE}
+                            color={teaserInk}
+                            strokeWidth={2}
+                            weight="semibold"
+                          />
+                          <Text
+                            numberOfLines={1}
+                            style={[pillTextStyle, { flexShrink: 1 }]}
                           >
-                            <HobbyIcon
-                              hobby={hobby.enumName ?? hobby.label}
-                              size={LOCKED_TEASER_ICON_SIZE}
-                            />
-                          </View>
-                          <Text numberOfLines={1} style={pillTextStyle}>
-                            {hobby.label}
+                            {universityLabel}
                           </Text>
                         </View>
                       )}
@@ -2453,6 +2490,59 @@ export default function LikesScreen() {
   const insets = useSafeAreaInsets();
   const dispatch = useAppDispatch();
   const navigation = useNavigation();
+
+  // ── Lit Akışı yanıtları (6. sekme) ──────────────────────────────────────
+  // ⚠️ Sorgu `visited` kapısının arkasında ve bu pazarlık konusu DEĞİL: bu
+  // ekran boot'ta `navigation.preload("Likes")` ile mount olup hiç unmount
+  // olmuyor, yani kapı olmasa 6. liste + sorgusu hiç girilmeyen bir sekme için
+  // de doğardı. Kapı sekmeye BASILDIĞINDA açılıyor (bkz. handleTabChange).
+  //
+  // Akış sekmesindeki Yanıtlar sayfasıyla AYNI query key → tek cache.
+  const [feedRepliesVisited, setFeedRepliesVisited] = useState(false);
+  const feedRepliesQuery = useReceivedReplies({ enabled: feedRepliesVisited });
+  const feedReplies = feedRepliesQuery.data?.items ?? [];
+  const feedRepliesTotal = feedRepliesQuery.data?.total;
+  const acceptFeedReply = useAcceptReply();
+  const dismissFeedReply = useDismissReply();
+
+  const handleAcceptFeedReply = useCallback(
+    (reply: any) => {
+      acceptFeedReply.mutate(
+        { replyId: reply.replyId },
+        {
+          onSuccess: (res) => {
+            dispatch(decrementPendingFeedReply());
+            // Yeni eşleşmede global MatchModal SignalR'dan açılıyor; yalnız
+            // "zaten eşleşmiştik" dalında doğrudan sohbete gidiliyor.
+            if (!res.isNewMatch && res.conversationId) {
+              (navigation as any).navigate("Chat", {
+                conversationId: res.conversationId,
+              });
+            }
+          },
+        },
+      );
+    },
+    [acceptFeedReply, dispatch, navigation],
+  );
+
+  const handleDismissFeedReply = useCallback(
+    (reply: any) => {
+      dispatch(decrementPendingFeedReply());
+      dismissFeedReply.mutate({ replyId: reply.replyId });
+    },
+    [dismissFeedReply, dispatch],
+  );
+
+  // Push/SignalR yolu — koşulsuz tazeleme.
+  useEffect(
+    () =>
+      uiBus.on("feedRepliesDirty", () => {
+        if (feedRepliesVisited) feedRepliesQuery.refetch?.();
+      }),
+    [feedRepliesVisited, feedRepliesQuery],
+  );
+
   const statsQuery = useSwipeStats();
   // /Stats'ı ekranın kendi tazelik damgasından tetikleyebilmek için ref'te:
   // deps'e konsa `loadMissed` her render'da yeniden yaratılırdı.
@@ -2799,8 +2889,13 @@ export default function LikesScreen() {
   // değil): farklı uç, farklı sayfalama, farklı boş durum.
   const isMissedTab = activeTab === "missed";
   const listDataFor = useCallback(
-    (tabKey: string) => (tabKey === "missed" ? missed : likesByTab[tabKey]),
-    [missed, likesByTab],
+    (tabKey: string) =>
+      tabKey === "missed"
+        ? missed
+        : tabKey === "feedReplies"
+          ? feedReplies
+          : likesByTab[tabKey],
+    [missed, likesByTab, feedReplies],
   );
 
   // Başlığın yanındaki "Beğenenleri gör" pill'inin GÖRÜNÜRLÜK kapısı (bkz.
@@ -2853,9 +2948,11 @@ export default function LikesScreen() {
   // tabDescriptionFor) — başlık her sekmede aynı işi yapıyor.
   const sectionTitleFor = useCallback(
     (tabKey: string) =>
-      tabKey === "missed"
-        ? t("likes.headerMissed")
-        : tabKey === "like"
+      tabKey === "feedReplies"
+        ? t("likes.tabFeedReplies")
+        : tabKey === "missed"
+          ? t("likes.headerMissed")
+          : tabKey === "like"
           ? t("likes.headerLike")
           : tabKey === "fire"
             ? t("likes.headerFire")
@@ -2970,6 +3067,7 @@ export default function LikesScreen() {
             : t("likes.descMissed");
         return recoveryAccessText ? `${desc} ${recoveryAccessText}` : desc;
       }
+      if (tabKey === "feedReplies") return t("feed.received.emptyBody");
       if (tabKey === "like") return t("likes.descLike");
       if (tabKey === "fire") return t("likes.descFire");
       if (tabKey === "note") return t("likes.descNote");
@@ -3039,10 +3137,10 @@ export default function LikesScreen() {
             // beğenenler". Alan yalnız taşınıyor.
             hasLikedMe: p.hasLikedMe === true,
             // Kilitli kartın ipucu katmanı (bkz. likerCardTeaser) + açık
-            // karttaki foto doğrulama rozeti. Üçü de sunucunun zaten taşıdığı
-            // alanlar; free'de kart bunlardan yalnız kimlik açmayanları basıyor.
+            // karttaki foto doğrulama rozeti. İkisi de sunucunun zaten taşıdığı
+            // alanlar; ipucunun üniversitesi yukarıdaki `universityName`'den
+            // geliyor — kilitli kart da açık kart da AYNI alanı okuyor.
             isSelfieVerified: p.isSelfieVerified ?? null,
-            teaserHobby: resolveTeaserHobby(p.hobbies),
             relationshipIntent: p.relationshipIntent ?? null,
             relationshipIntentDisplay: p.relationshipIntentDisplay ?? null,
           }));
@@ -3060,10 +3158,10 @@ export default function LikesScreen() {
             note: normalizeLikerNote(p),
             hasLikedMe: p.hasLikedMe === true,
             // Kilitli kartın ipucu katmanı (bkz. likerCardTeaser) + açık
-            // karttaki foto doğrulama rozeti. Üçü de sunucunun zaten taşıdığı
-            // alanlar; free'de kart bunlardan yalnız kimlik açmayanları basıyor.
+            // karttaki foto doğrulama rozeti. İkisi de sunucunun zaten taşıdığı
+            // alanlar; ipucunun üniversitesi yukarıdaki `universityName`'den
+            // geliyor — kilitli kart da açık kart da AYNI alanı okuyor.
             isSelfieVerified: p.isSelfieVerified ?? null,
-            teaserHobby: resolveTeaserHobby(p.hobbies),
             relationshipIntent: p.relationshipIntent ?? null,
             relationshipIntentDisplay: p.relationshipIntentDisplay ?? null,
           }));
@@ -3669,8 +3767,22 @@ export default function LikesScreen() {
       },
       { key: "note", label: t("likes.tabNote"), count: likeCounts.note },
       { key: "missed", label: t("likes.tabMissed"), count: missedTotal },
+      // Lit Akışı yanıtları — Akış sekmesindeki Yanıtlar sayfasıyla AYNI query
+      // key'i paylaşıyor (feedKeys.repliesReceived), yani iki cache değil bir
+      // tane var. Sekmeye girilmediyse sayı BİLİNMİYOR → `null`, pill "0"
+      // yazmıyor (missedTotal ile aynı kural).
+      // Akış bayrağı kapalıysa sekme hiç çizilmiyor.
+      ...(feedEnabledForSession()
+        ? [
+            {
+              key: "feedReplies",
+              label: t("likes.tabFeedReplies"),
+              count: feedRepliesVisited ? (feedRepliesTotal ?? null) : null,
+            },
+          ]
+        : []),
     ],
-    [t, likeCounts, missedTotal],
+    [t, likeCounts, missedTotal, feedRepliesVisited, feedRepliesTotal],
   );
 
   // Pill'e basınca pager'a sayfa değiştirmesini söylüyoruz; `activeTab` state'i
@@ -3687,6 +3799,12 @@ export default function LikesScreen() {
       // belirirdi. Guard'lar (in-flight + tazelik) mükerrer isteği zaten
       // yutuyor — `activeTab` effect'i birazdan aynı çağrıyı yapacak.
       if (key === "missed") loadMissed();
+      // Akış yanıtları sorgusu da BASIŞTA açılıyor (missed ile aynı gerekçe):
+      // `activeTab` pager oturunca dönüyor, ona bağlı kalınsaydı sayfa boş
+      // kayıp gelir, yerine oturduktan sonra iskelet belirirdi.
+      // ⚠️ Bu ekran boot'ta preload ediliyor ve hiç unmount olmuyor — kapı
+      // olmasa 6. liste + sorgusu hiç girilmeyen bir sekme için de doğardı.
+      if (key === "feedReplies") setFeedRepliesVisited(true);
       pagerRef.current?.setPage(index);
     },
     [tabs, loadMissed],
@@ -3759,6 +3877,21 @@ export default function LikesScreen() {
   // container'ında, boş durum listenin içinde çiziliyordu; aradaki geçiş
   // ağaç değişimi olduğu için sekmeler bile yeniden mount oluyordu.
   const renderListEmpty = (tabKey: string) => {
+    if (tabKey === "feedReplies") {
+      // Üç yollu makinenin aynısı: iskelet / gecikme penceresinde null /
+      // EmptyState. Sekmeye hiç girilmediyse sorgu da başlamadı → iskelet.
+      if (feedRepliesQuery.isLoading) return <LikesSkeletonList />;
+      return (
+        <View className="flex-1 items-center justify-center pb-[50%]">
+          <EmptyState
+            sf="tray"
+            Icon={EmptyHeartIcon}
+            text={t("feed.received.emptyTitle")}
+            subtitle={t("feed.received.emptyBody")}
+          />
+        </View>
+      );
+    }
     if (tabKey === "missed") {
       // Kaçırdıkların kendi yükleme durumunu taşıyor (ayrı uç, ayrı istek).
       // Skeleton gecikme/asgari-süre makinesine bağlanmıyor: bu liste yalnız
@@ -3874,7 +4007,16 @@ export default function LikesScreen() {
         // değiştirmiyor — dikey sürüklenme sorunu (eski skipItemLayoutRef)
         // tek listeyi paylaşmaktan doğuyordu.
         itemLayoutAnimation={CARD_LAYOUT_TRANSITION}
-        renderItem={({ item }) => (
+        renderItem={({ item }) =>
+          tabKey === "feedReplies" ? (
+            // ⚠️ Beğeni kartlarının blur/unlock kuralı (isUnlockedLike) BURAYA
+            // UYGULANMIYOR: akış yanıtları free kullanıcıya da açık.
+            <FeedReplyCard
+              reply={item}
+              onAccept={handleAcceptFeedReply}
+              onDismiss={handleDismissFeedReply}
+            />
+          ) : (
           <MemoLikeCard
             item={item}
             isPremium={isPremium}
@@ -3887,8 +4029,11 @@ export default function LikesScreen() {
             resolveIntentLabel={resolveIntentLabel}
             exitDirection={exitingIds[item.userId || item.likerUserId] ?? null}
           />
-        )}
-        keyExtractor={(item) => item.id}
+          )
+        }
+        keyExtractor={(item) =>
+          tabKey === "feedReplies" ? item.replyId : item.id
+        }
         ListHeaderComponent={renderListHeader(tabKey)}
         ListEmptyComponent={empty}
         // Skeleton da 3 kart yüksekliğinde — boş durum gibi 0 padding verirsek

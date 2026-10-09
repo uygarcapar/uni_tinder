@@ -219,6 +219,56 @@ export const API_ENDPOINTS = {
   NOTIFICATIONS_READ_ONE: (id: string) => `/api/notifications/${id}/read`,
   NOTIFICATIONS_READ_ALL: "/api/notifications/read-all",
 
+  // ── Lit Akışı (feed) ──────────────────────────────────────────────────────
+  // Kampüse özel, SADECE YAZI akışı. Gönderi altında yorum yok; "yanıt" yalnız
+  // gönderi sahibine gider, sahibi kabul ederse eşleşme olur.
+  //
+  // ⚠️ Aile bir FEATURE FLAG'in arkasında. Bayrak kapalıyken HER uç 403 + UT-7301
+  // dönüyor — bu bir HATA DEĞİL, "özellik yok" demek; istemci sekmeyi hiç
+  // çizmemeli (bkz. features/feed/feedFlag.ts).
+  // UT-7315 de 403 ama BAŞKA bir şey (profil tamamlanmamış / hesap pasif) →
+  // ayrım `code` üzerinden yapılmalı, HTTP status üzerinden ASLA.
+  FEED_ME: "/api/feed/me",
+  // ⚠️ İKİ SAYFALAMA MODU TEK UÇTA: `cursor` YALNIZ sort=new'de, `page` YALNIZ
+  // sort=popular|top'ta geçerli. popular/top sayfalar arasında AYNI gönderiyi
+  // tekrar döndürebiliyor (beğeniler değiştikçe skor kayıyor; backend bunu
+  // bilinçli kabul ediyor) → tüketici listeyi id'ye göre tekilleştirmek ZORUNDA.
+  FEED_POSTS: "/api/feed/posts",
+  // Gönderilerim: offset sayfalama, son 30 gün, sildiklerin hariç HER durum
+  // (Published/PendingReview/SupportHold/HiddenByReports/Rejected/RemovedByAdmin).
+  FEED_MY_POSTS: "/api/feed/posts/mine",
+  // DELETE: silinen gönderi hak İADE ETMEZ ve ona gelmiş bekleyen yanıtlar da
+  // düşer. Rejected/RemovedByAdmin gönderi silinemez (UT-7312).
+  FEED_POST: (id: string) => `/api/feed/posts/${encodeURIComponent(id)}`,
+  // PUT beğenir (İDEMPOTENT — iki kez basmak sayıyı iki artırmaz), DELETE geri
+  // alır. Sınırsız ve ücretsiz. Yazar kimin beğendiğini HİÇBİR yerde görmüyor.
+  FEED_POST_LIKE: (id: string) => `/api/feed/posts/${encodeURIComponent(id)}/like`,
+  // Gövde GET /api/swipe/LikerProfile/{id} ile BİREBİR aynı ProfileCardDto →
+  // mevcut profil kartı bileşeni olduğu gibi kullanılabilir (beğeniye özel
+  // alanlar — hasLikedMe, note — burada dolu GELMEZ). Anonim gönderide UT-7312.
+  FEED_POST_AUTHOR_PROFILE: (id: string) =>
+    `/api/feed/posts/${encodeURIComponent(id)}/author-profile`,
+  // Bir gönderiye BİR KEZ yanıt verilebilir (UT-7323). Yanıt verene sahibin
+  // kabul/red kararı BİLDİRİLMEZ ve hak geri gelmez; kabulde MatchNotification.
+  FEED_POST_REPLIES: (id: string) => `/api/feed/posts/${encodeURIComponent(id)}/replies`,
+  // Bana gelen, YALNIZ karar bekleyen yanıtlar (yeniden eskiye). 30 günden eski
+  // karar verilmemiş yanıtlar otomatik düşüyor.
+  FEED_REPLIES_RECEIVED: "/api/feed/replies/received",
+  FEED_REPLIES_RECEIVED_COUNT: "/api/feed/replies/received/count",
+  FEED_REPLY_PROFILE: (id: string) =>
+    `/api/feed/replies/${encodeURIComponent(id)}/profile`,
+  // Kabul → eşleşme + sohbet, iki tarafa standart MatchNotification gider.
+  // isNewMatch:false → zaten eşleşmişsiniz (anonim gönderide olabilir), yeni
+  // modal yok, conversationId sohbetini aç.
+  FEED_REPLY_ACCEPT: (id: string) =>
+    `/api/feed/replies/${encodeURIComponent(id)}/accept`,
+  FEED_REPLY_DISMISS: (id: string) =>
+    `/api/feed/replies/${encodeURIComponent(id)}/dismiss`,
+  // ⚠️ Şikayet AYRI UÇ — MODERATION_REPORT DEĞİL. Gövdede `reportedUserId` YOK
+  // (anonim gönderide şikayet edilecek bir kimlik de yok; yazarı sunucu biliyor
+  // ve alsoBlock yine çalışıyor); hedef targetType + postId/replyId ile veriliyor.
+  FEED_REPORTS: "/api/feed/reports",
+
   GET_GENDERS: "/api/common/genders",
   GET_CITIES: "/api/common/cities",
   GET_DISTRICTS: "/api/common/cities",

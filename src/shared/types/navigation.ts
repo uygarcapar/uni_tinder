@@ -66,9 +66,17 @@ export type AuthStackParamList = {
   RegisterStep15: undefined;
 };
 
+/**
+ * ⚠️ `Feed` PARAM ALMIYOR ve bu bilinçli. "Yanıtlar sayfasında aç" gibi bir
+ * istek nav param + effect içinde `setPage` ile ÇALIŞMIYOR (iOS'ta SwiftUI
+ * TabView pencereye girmeden seçimi yutuyor, Fabric lazy mount'ta PagerView
+ * `selectedPage`i kırpıyor). İstek `features/feed/feedEntry.ts`teki bekleyen
+ * bayraktan geçiyor — ayrıntı orada ve ProfileScreen.tsx:695-868'de.
+ */
 export type TabParamList = {
   Discover: undefined;
   Likes: undefined;
+  Feed: undefined;
   Messages: undefined;
   Profile: undefined;
 };

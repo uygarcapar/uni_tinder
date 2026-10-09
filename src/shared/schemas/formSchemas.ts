@@ -9,6 +9,7 @@ import {
   normalizePromptAnswer,
 } from "@/shared/constants/limits";
 import { noteLength } from "@/features/discover/noteTarget";
+import { feedTextLength } from "@/features/feed/feedText";
 import i18n from "@/shared/i18n";
 
 const calculateAge = (day: number, month: number, year: number) => {
@@ -334,6 +335,33 @@ export const noteSchema = (limit: number) =>
       .string()
       .refine((v) => v.trim().length > 0, "Notun boş olamaz")
       .refine((v) => noteLength(v) <= limit, `En fazla ${limit} karakter`),
+  });
+
+/**
+ * Lit Akışı gönderi / yanıt şemaları.
+ *
+ * `noteSchema` ile AYNI gerekçe: `.max()` KULLANILMIYOR — o UTF-16 birimi
+ * sayar, sunucu code point sayar; emojili bir gönderi sınırın yarısında
+ * reddedilirdi. Composer zaten yazarken `clampFeedText` ile kırpıyor, buradaki
+ * tavan o kırpma atlanırsa diye ikinci hat.
+ *
+ * İkisi de FABRİKA: tavan `/api/feed/me`den geliyor ve sabit bir şema onu
+ * yakalayamaz.
+ */
+export const feedPostSchema = (limit: number) =>
+  z.object({
+    body: z
+      .string()
+      .refine((v) => v.trim().length > 0, 'Gönderin boş olamaz')
+      .refine((v) => feedTextLength(v) <= limit, `En fazla ${limit} karakter`),
+  });
+
+export const feedReplySchema = (limit: number) =>
+  z.object({
+    comment: z
+      .string()
+      .refine((v) => v.trim().length > 0, 'Yanıtın boş olamaz')
+      .refine((v) => feedTextLength(v) <= limit, `En fazla ${limit} karakter`),
   });
 
 export type LoginForm = z.infer<typeof loginSchema>;
