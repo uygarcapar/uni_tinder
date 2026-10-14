@@ -18,51 +18,10 @@ import type {
  *  - tercih/kampüs/kısıt kuralları sunucuda yaşıyor ve değişiyor.
  */
 
-/** Yanıt butonunun ne yapacağı. */
-export type ReplyAction =
-  /** "Yanıtla" → yanıt composer'ı. */
-  | { kind: "compose" }
-  /** "Sohbete git" → conversationId. Yalnız NORMAL gönderide gelir. */
-  | { kind: "openChat"; conversationId: string | null }
-  /** Buton hiç çizilmez. */
-  | { kind: "hidden" }
-  /** Pasif buton + sebep metni. */
-  | { kind: "disabled"; labelKey: string }
-  /** Kilit ikonlu buton → Plus paywall'ı. */
-  | { kind: "paywall"; paywallType: typeof PAYWALL_TYPES.FEED_UNIVERSITY };
-
-/**
- * `reply.state` → buton. Rehber §4.1 tablosunun birebir karşılığı.
- *
- * `PreferenceMismatch` ve `OwnPost` ikisi de GİZLİ ama ayrı sebeplerle:
- * kendi gönderinde yanıt zaten anlamsız, tercih uyuşmazlığında ise sunucu
- * yanıtı reddedecek (UT-7324) — buton çizilse kullanıcı hata duvarına yürür.
- */
-export function replyActionFor(post: FeedPostDto): ReplyAction {
-  switch (post.reply?.state) {
-    case "Ok":
-      return { kind: "compose" };
-    case "AlreadyMatched":
-      return {
-        kind: "openChat",
-        conversationId: post.reply.conversationId ?? null,
-      };
-    case "AlreadyReplied":
-      return { kind: "disabled", labelKey: "feed.reply.replied" };
-    case "Restricted":
-      return { kind: "disabled", labelKey: "feed.reply.restricted" };
-    case "OtherUniversityRequiresPlus":
-      return { kind: "paywall", paywallType: PAYWALL_TYPES.FEED_UNIVERSITY };
-    case "OwnPost":
-    case "PreferenceMismatch":
-      return { kind: "hidden" };
-    default:
-      // Bilinmeyen state (backend yeni bir değer eklerse): butonu GİZLE.
-      // Alternatifi "Yanıtla" göstermek olurdu ve kullanıcı bilmediğimiz bir
-      // kurala çarpardı.
-      return { kind: "hidden" };
-  }
-}
+// `replyActionFor` ve `ReplyAction` KALDIRILDI (iki modlu yapı): yanıt butonu
+// üründen çıktı, yedi durumlu tablo da onunla birlikte. Sunucu `post.reply`
+// alanını göndermeye devam ediyor (eski istemciler için) ve bu sürüm onu
+// SESSİZCE YOK SAYIYOR.
 
 /**
  * Gönderinin nasıl çizileceği. Yalnız "Gönderilerim" için anlamlı — akışta
@@ -141,23 +100,7 @@ export function composeGate(me: FeedMeDto | undefined | null): ComposeGate {
   return { kind: "open" };
 }
 
-/** Yanıt hakkı kapısı — composer'ın kardeşi, aynı sıralama. */
-export function replyGate(me: FeedMeDto | undefined | null): ComposeGate {
-  if (!me) return { kind: "unknown" };
-  if (me.isPermanentlyRestricted) {
-    return { kind: "restricted", until: null, isPermanent: true };
-  }
-  if (me.restrictedUntil) {
-    return { kind: "restricted", until: me.restrictedUntil, isPermanent: false };
-  }
-  if ((me.quota?.repliesRemaining ?? 0) <= 0) {
-    return {
-      kind: "quotaExhausted",
-      nextResetAt: me.quota?.nextResetAt ?? null,
-    };
-  }
-  return { kind: "open" };
-}
+// `replyGate` KALDIRILDI: tek çağıranı yanıt composer'ının kota kapısıydı.
 
 /** Composer'daki anonim anahtarı. */
 export type AnonymousGate =

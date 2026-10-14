@@ -130,8 +130,13 @@ const GOES_TO_LIKES = { Like: true, Fire: true, Note: true, MissedMatch: true };
 // yüzden düz bir bayrak değil sayfa anahtarı tutuluyor.
 // ⚠️ `openFeed()` false dönerse (bayrak kapalı → sekme YOK) tap bir yere
 // gitmiyor; ölü tap yerine hiçbir şey yapmamak doğru olan.
-const GOES_TO_FEED: Record<string, 'feed' | 'mine' | 'replies'> = {
-  FeedReply: 'replies',
+//
+// `FeedReply` BU HARİTADA YOK (iki modlu yapı): Yanıtlar sayfası üründen çıktı,
+// yani açılacak bir hedef kalmadı. Satır listede çizilmeye devam ediyor (ikonu
+// aşağıda duruyor — sahadaki eski bildirimler ve eski istemcilerden gelen
+// yanıtlar görünsün) ama TIKLANINCA bir yere gitmiyor; akışı açmak yanlış
+// olurdu, kullanıcı yanıtı orada bulamaz.
+const GOES_TO_FEED: Record<string, 'feed' | 'mine'> = {
   FeedLikeMilestone: 'mine',
   FeedPostModerated: 'mine',
   FeedRestricted: 'feed',
@@ -364,8 +369,7 @@ export default function NotificationsScreen() {
       if (item.type === 'FeedPostModerated' || item.type === 'FeedRestricted') {
         queryClient.invalidateQueries({ queryKey: feedKeys.me });
       }
-      if (feedPage === 'replies') uiBus.emit('feedRepliesDirty');
-      else uiBus.emit('feedDirty');
+      uiBus.emit('feedDirty');
       openFeed(feedPage);
       return;
     }

@@ -34,7 +34,6 @@ export const fetchWhoLikedMe = createAsyncThunk(
       // Lit Akışı bekleyen yanıtları (2026-09-29 sözleşmesi) — rozet artık
       // bu üçünün toplamı. Alan eski backend'de yoksa 0, rozet bozulmaz.
       // ⚠️ `count`a EKLENMİYOR: aşağıdaki gerekçeye bak.
-      pendingFeedReplyCount: r.pendingFeedReplyCount ?? 0,
     };
   },
 );
@@ -42,7 +41,6 @@ export const fetchWhoLikedMe = createAsyncThunk(
 const initialState: SwipeState = {
   whoLikedMeCount: 0,
   whoLikedMeIds: [],
-  pendingFeedReplyCount: 0,
 };
 
 // GUID'ler endpoint'e göre farklı case gelebiliyor — küme karşılaştırması
@@ -57,16 +55,12 @@ function applyWhoLikedMe(
   payload: {
     count: number;
     ids: (string | null | undefined)[];
-    pendingFeedReplyCount?: number;
   },
 ) {
   state.whoLikedMeCount = Math.max(0, payload.count || 0);
   state.whoLikedMeIds = Array.from(
     new Set(payload.ids.map(normalizeId).filter(Boolean) as string[]),
   );
-  if (typeof payload.pendingFeedReplyCount === "number") {
-    state.pendingFeedReplyCount = Math.max(0, payload.pendingFeedReplyCount);
-  }
 }
 
 const swipeSlice = createSlice({
@@ -107,22 +101,6 @@ const swipeSlice = createSlice({
      * yazılsa bir beğeniyi işlemek (pass/like/match) yanıt sayısını da
      * düşürürdü. Rozet TabNavigator'da toplanıyor.
      */
-    /** `/replies/received/count` ya da WhoLikedMe'den gelen OTORİTER sayı. */
-    setPendingFeedReplyCount: (state, action: PayloadAction<number>) => {
-      state.pendingFeedReplyCount = Math.max(0, action.payload || 0);
-    },
-    /** Canlı `FeedReplyReceived` — hub replay yapmadığı için sayım sonradan
-     *  `/count` ile mutabakata giriyor (drift düzeltmesi). */
-    incrementPendingFeedReply: (state) => {
-      state.pendingFeedReplyCount = (state.pendingFeedReplyCount || 0) + 1;
-    },
-    /** Kabul/red işlendi → rozet ANINDA düşsün (removeWhoLikedMe mantığı). */
-    decrementPendingFeedReply: (state) => {
-      state.pendingFeedReplyCount = Math.max(
-        0,
-        (state.pendingFeedReplyCount || 0) - 1,
-      );
-    },
   },
   extraReducers: (builder) => {
     builder.addCase(fetchWhoLikedMe.fulfilled, (state, action) => {
@@ -145,8 +123,5 @@ export const {
   setWhoLikedMe,
   addWhoLikedMe,
   removeWhoLikedMe,
-  setPendingFeedReplyCount,
-  incrementPendingFeedReply,
-  decrementPendingFeedReply,
 } = swipeSlice.actions;
 export default swipeSlice.reducer;

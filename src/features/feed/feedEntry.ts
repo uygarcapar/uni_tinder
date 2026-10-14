@@ -22,7 +22,13 @@ import { feedEnabledForSession } from "./feedFlag";
  * sayfada doğmak, (3) pager LANDIĞINI BİLDİRENE kadar ısrarla yeniden uygulamak.
  */
 
-export type FeedPageKey = "feed" | "mine" | "replies";
+/**
+ * `"replies"` KALDIRILDI (iki modlu yapı): yanıt yazarak eşleşme kanalı
+ * üründen çıktı, Yanıtlar sayfası da onunla birlikte. Push'tan gelen eski bir
+ * "yanıtlar sayfasını aç" isteği artık `openFeed`in tip kapısına takılıyor;
+ * `routeFromNotification` o bildirimi Bildirimler'e düşürüyor.
+ */
+export type FeedPageKey = "feed" | "mine";
 
 export const FEED_OPEN_EVENT = "openFeedPage";
 
@@ -30,7 +36,6 @@ export const FEED_OPEN_EVENT = "openFeedPage";
 export const FEED_PAGE_INDEX: Record<FeedPageKey, number> = {
   feed: 0,
   mine: 1,
-  replies: 2,
 };
 
 /**

@@ -1521,7 +1521,6 @@ const en = {
     // Lit Feed replies — same data as the Replies page in the Feed tab (one
     // query key). The blur/unlock rule used by like cards does NOT apply here:
     // feed replies are open to free users too.
-    tabFeedReplies: 'Feed replies',
     emptyMissed: 'You have not missed anyone.',
     // The window length comes from the backend — see the Turkish file.
     emptyMissedSubtitle:
@@ -2381,7 +2380,6 @@ const en = {
     header: {
       descFeed: 'Posts shared around your campus.',
       descMine: 'Your posts and where they stand.',
-      descReplies: 'Replies people sent to your posts.',
       // Pill to the right of the title — opens Plus, drawn for free users only.
       // Deliberately not "unlimited": Plus raises the daily allowance rather
       // than removing the cap (see feed.quota.plusOffer).
@@ -2389,7 +2387,6 @@ const en = {
     },
     tabFeed: 'Feed',
     tabMine: 'My posts',
-    tabReplies: 'Replies',
 
     anonymous: {
       plain: 'Anonymous',
@@ -2448,32 +2445,7 @@ const en = {
       pending: 'Your post is being reviewed',
     },
 
-    reply: {
-      button: 'Reply to match',
-      replied: 'Replied',
-      restricted: 'Restricted',
-      goToChat: 'Go to chat',
-      title: 'Write a reply',
-      placeholder: 'Write a short reply',
-      // Label on the composer's quote chip. Do NOT reuse
-      // `received.onYourPost` — that one is written from the post owner's
-      // point of view; here it is the person writing the reply.
-      quoteLabel: "You're replying to this post",
-      quoteLabelAnonymous: "You're replying to this anonymous post",
-      send: 'Send reply',
-      sent: 'Your reply was sent',
-      pending: 'Your reply is being reviewed',
-      remaining: '{{count}} replies left',
-    },
 
-    received: {
-      onYourPost: 'Reply to your post',
-      onYourAnonymousPost: 'Reply to your anonymous post',
-      accept: 'Accept',
-      skip: 'Skip',
-      emptyTitle: 'No replies yet',
-      emptyBody: 'Share a post and let your campus write to you.',
-    },
 
     mine: {
       emptyTitle: 'No posts yet',

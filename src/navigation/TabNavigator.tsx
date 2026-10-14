@@ -126,16 +126,14 @@ const messageTabIcon = ({ focused }: TabIconArgs) =>
 export default function TabNavigator() {
   const { t } = useTranslation();
   const unreadTotal = useAppSelector((s) => (s as any).chat.unreadTotal as number);
-  // Beğeniler rozeti = beni beğenenler + karar bekleyen AKIŞ YANITLARI
-  // (sözleşme §10.1). İki sayaç slice'ta AYRI duruyor ve toplama BURADA
-  // yapılıyor: `whoLikedMeCount` id kümesinden türüyor (add/removeWhoLikedMe
-  // ona göre oynuyor), yanıt sayısı oraya yazılsaydı bir beğeniyi işlemek
-  // yanıt sayısını da düşürürdü. Selector primitive döndüğü için
+  // Beğeniler rozeti = beni beğenenler. Eskiden buraya karar bekleyen AKIŞ
+  // YANITLARI da toplanıyordu (iki sayaç slice'ta ayrı duruyordu çünkü
+  // `whoLikedMeCount` id kümesinden türüyor ve yanıt sayısı oraya yazılsaydı
+  // bir beğeniyi işlemek yanıt sayısını da düşürürdü); yanıt kanalı üründen
+  // çıkınca toplama da gereksizleşti. Selector primitive döndüğü için
   // `createSelector` gerekmiyor — değere göre karşılaştırılıyor.
   const likesBadgeCount = useAppSelector(
-    (s) =>
-      ((s as any).swipe.whoLikedMeCount as number) +
-      ((s as any).swipe.pendingFeedReplyCount as number),
+    (s) => (s as any).swipe.whoLikedMeCount as number,
   );
 
   // Akış bayrağı (UT-7301). `useState` initializer'ı — selector ya da query

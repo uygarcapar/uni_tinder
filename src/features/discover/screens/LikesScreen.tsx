@@ -20,15 +20,9 @@ import Animated, {
   useAnimatedScrollHandler,
 } from "react-native-reanimated";
 import { useAppDispatch } from "@/shared/hooks/redux";
-import { decrementPendingFeedReply } from "@/features/discover/swipeSlice";
 import { feedEnabledForSession } from "@/features/feed/feedFlag";
 import {
-  useAcceptReply,
-  useDismissReply,
-  useFeedReplierProfile,
-  useReceivedReplies,
 } from "@/features/feed/feedQueries";
-import FeedReplyCard from "@/features/feed/components/FeedReplyCard";
 // Kart ARTIK BURADA DEĞİL (2026-10-10): akış yanıtları da aynı kartı çizdiği
 // için ortak bir bileşene taşındı — gerekçe LikeCard.tsx'in başında.
 import {
@@ -353,80 +347,14 @@ export default function LikesScreen() {
   // olmuyor, yani kapı olmasa 6. liste + sorgusu hiç girilmeyen bir sekme için
   // de doğardı. Kapı sekmeye BASILDIĞINDA açılıyor (bkz. handleTabChange).
   //
-  // Akış sekmesindeki Yanıtlar sayfasıyla AYNI query key → tek cache.
-  const [feedRepliesVisited, setFeedRepliesVisited] = useState(false);
-  const feedRepliesQuery = useReceivedReplies({ enabled: feedRepliesVisited });
-  const feedReplies = feedRepliesQuery.data?.items ?? [];
-  const feedRepliesTotal = feedRepliesQuery.data?.total;
-  const acceptFeedReply = useAcceptReply();
-  const dismissFeedReply = useDismissReply();
-
-  const handleAcceptFeedReply = useCallback(
-    (reply: any) => {
-      acceptFeedReply.mutate(
-        { replyId: reply.replyId },
-        {
-          onSuccess: (res) => {
-            dispatch(decrementPendingFeedReply());
-            // Yeni eşleşmede global MatchModal SignalR'dan açılıyor; yalnız
-            // "zaten eşleşmiştik" dalında doğrudan sohbete gidiliyor.
-            if (!res.isNewMatch && res.conversationId) {
-              (navigation as any).navigate("Chat", {
-                conversationId: res.conversationId,
-              });
-            }
-          },
-        },
-      );
-    },
-    [acceptFeedReply, dispatch, navigation],
-  );
-
-  const handleDismissFeedReply = useCallback(
-    (reply: any) => {
-      dispatch(decrementPendingFeedReply());
-      dismissFeedReply.mutate({ replyId: reply.replyId });
-    },
-    [dismissFeedReply, dispatch],
-  );
-
-  /**
-   * Yanıt kartına dokunmak → YANITLAYANIN PROFİLİ, kaydırarak karar.
-   *
-   * Akış sekmesindeki Yanıtlar sayfasıyla BİREBİR aynı akış (gerekçenin tamamı
-   * FeedScreen > handleReplyPress): aynı kart iki listede duruyor, dokunuşun
-   * iki ekranda farklı şey yapması bozuk okunuyordu.
-   *
-   * Modal bu ekranın beğeni kartlarıyla AYNI bileşen — tek fark kararın
-   * gittiği yer: `onDecide` ile keşif swipe'ı yerine yanıt kabul/geç uçlarına
-   * gidiyor. Şikayet/engelle ve üç nokta menüsü modalın kendisinde.
-   */
-  const [replierTarget, setReplierTarget] = useState<any | null>(null);
-  const replierProfile = useFeedReplierProfile(
-    replierTarget?.replyId ?? null,
-  );
-  const handleFeedReplyPress = useCallback(
-    (reply: any) => setReplierTarget(reply),
-    [],
-  );
-  const handleFeedReplyDecide = useCallback(
-    (direction: "left" | "right") => {
-      const reply = replierTarget;
-      if (!reply) return;
-      if (direction === "right") handleAcceptFeedReply(reply);
-      else handleDismissFeedReply(reply);
-    },
-    [replierTarget, handleAcceptFeedReply, handleDismissFeedReply],
-  );
-
-  // Push/SignalR yolu — koşulsuz tazeleme.
-  useEffect(
-    () =>
-      uiBus.on("feedRepliesDirty", () => {
-        if (feedRepliesVisited) feedRepliesQuery.refetch?.();
-      }),
-    [feedRepliesVisited, feedRepliesQuery],
-  );
+  // AKIŞ YANITLARI SEKMESİ KALDIRILDI (iki modlu yapı): yanıt yazarak
+  // eşleşme kanalı kapandı. Buradaki 6. liste, kendi lazy kapısı
+  // (`feedRepliesVisited`), kabul/geç mutasyonları, yanıtlayan profili modalı
+  // ve `feedRepliesDirty` tazelemesi birlikte düştü. Sunucu uçları eski
+  // istemciler için ayakta; bu sürüm hiç çağırmıyor.
+  //
+  // Sekme rozeti de sadeleşti: artık yalnız `whoLikedMeCount` (bkz.
+  // TabNavigator) — iki sayacı toplama ihtiyacı kalmadı.
 
   const statsQuery = useSwipeStats();
   // /Stats'ı ekranın kendi tazelik damgasından tetikleyebilmek için ref'te:
@@ -775,12 +703,8 @@ export default function LikesScreen() {
   const isMissedTab = activeTab === "missed";
   const listDataFor = useCallback(
     (tabKey: string) =>
-      tabKey === "missed"
-        ? missed
-        : tabKey === "feedReplies"
-          ? feedReplies
-          : likesByTab[tabKey],
-    [missed, likesByTab, feedReplies],
+      tabKey === "missed" ? missed : likesByTab[tabKey],
+    [missed, likesByTab],
   );
 
   // Başlığın yanındaki "Beğenenleri gör" pill'inin GÖRÜNÜRLÜK kapısı (bkz.
@@ -833,9 +757,7 @@ export default function LikesScreen() {
   // tabDescriptionFor) — başlık her sekmede aynı işi yapıyor.
   const sectionTitleFor = useCallback(
     (tabKey: string) =>
-      tabKey === "feedReplies"
-        ? t("likes.tabFeedReplies")
-        : tabKey === "missed"
+      tabKey === "missed"
           ? t("likes.headerMissed")
           : tabKey === "like"
           ? t("likes.headerLike")
@@ -952,7 +874,6 @@ export default function LikesScreen() {
             : t("likes.descMissed");
         return recoveryAccessText ? `${desc} ${recoveryAccessText}` : desc;
       }
-      if (tabKey === "feedReplies") return t("feed.received.emptyBody");
       if (tabKey === "like") return t("likes.descLike");
       if (tabKey === "fire") return t("likes.descFire");
       if (tabKey === "note") return t("likes.descNote");
@@ -1656,18 +1577,11 @@ export default function LikesScreen() {
       // key'i paylaşıyor (feedKeys.repliesReceived), yani iki cache değil bir
       // tane var. Sekmeye girilmediyse sayı BİLİNMİYOR → `null`, pill "0"
       // yazmıyor (missedTotal ile aynı kural).
-      // Akış bayrağı kapalıysa sekme hiç çizilmiyor.
-      ...(feedEnabledForSession()
-        ? [
-            {
-              key: "feedReplies",
-              label: t("likes.tabFeedReplies"),
-              count: feedRepliesVisited ? (feedRepliesTotal ?? null) : null,
-            },
-          ]
-        : []),
+      // AKIŞ YANITLARI SEKMESİ KALDIRILDI — yanıt kanalı üründen çıktı.
+      // `feedEnabledForSession()` kapısı da gereksizleşti: ekranda akışa ait
+      // hiçbir şey kalmadı.
     ],
-    [t, likeCounts, missedTotal, feedRepliesVisited, feedRepliesTotal],
+    [t, likeCounts, missedTotal],
   );
 
   // Pill'e basınca pager'a sayfa değiştirmesini söylüyoruz; `activeTab` state'i
@@ -1684,12 +1598,6 @@ export default function LikesScreen() {
       // belirirdi. Guard'lar (in-flight + tazelik) mükerrer isteği zaten
       // yutuyor — `activeTab` effect'i birazdan aynı çağrıyı yapacak.
       if (key === "missed") loadMissed();
-      // Akış yanıtları sorgusu da BASIŞTA açılıyor (missed ile aynı gerekçe):
-      // `activeTab` pager oturunca dönüyor, ona bağlı kalınsaydı sayfa boş
-      // kayıp gelir, yerine oturduktan sonra iskelet belirirdi.
-      // ⚠️ Bu ekran boot'ta preload ediliyor ve hiç unmount olmuyor — kapı
-      // olmasa 6. liste + sorgusu hiç girilmeyen bir sekme için de doğardı.
-      if (key === "feedReplies") setFeedRepliesVisited(true);
       pagerRef.current?.setPage(index);
     },
     [tabs, loadMissed],
@@ -1762,21 +1670,6 @@ export default function LikesScreen() {
   // container'ında, boş durum listenin içinde çiziliyordu; aradaki geçiş
   // ağaç değişimi olduğu için sekmeler bile yeniden mount oluyordu.
   const renderListEmpty = (tabKey: string) => {
-    if (tabKey === "feedReplies") {
-      // Üç yollu makinenin aynısı: iskelet / gecikme penceresinde null /
-      // EmptyState. Sekmeye hiç girilmediyse sorgu da başlamadı → iskelet.
-      if (feedRepliesQuery.isLoading) return <LikesSkeletonList />;
-      return (
-        <View className="flex-1 items-center justify-center pb-[50%]">
-          <EmptyState
-            sf="tray"
-            Icon={EmptyHeartIcon}
-            text={t("feed.received.emptyTitle")}
-            subtitle={t("feed.received.emptyBody")}
-          />
-        </View>
-      );
-    }
     if (tabKey === "missed") {
       // Kaçırdıkların kendi yükleme durumunu taşıyor (ayrı uç, ayrı istek).
       // Skeleton gecikme/asgari-süre makinesine bağlanmıyor: bu liste yalnız
@@ -1892,17 +1785,7 @@ export default function LikesScreen() {
         // değiştirmiyor — dikey sürüklenme sorunu (eski skipItemLayoutRef)
         // tek listeyi paylaşmaktan doğuyordu.
         itemLayoutAnimation={CARD_LAYOUT_TRANSITION}
-        renderItem={({ item }) =>
-          tabKey === "feedReplies" ? (
-            // ⚠️ Beğeni kartlarının blur/unlock kuralı (isUnlockedLike) BURAYA
-            // UYGULANMIYOR: akış yanıtları free kullanıcıya da açık.
-            <FeedReplyCard
-              reply={item}
-              onPress={handleFeedReplyPress}
-              onAccept={handleAcceptFeedReply}
-              onDismiss={handleDismissFeedReply}
-            />
-          ) : (
+        renderItem={({ item }) => (
           <MemoLikeCard
             item={item}
             isPremium={isPremium}
@@ -1917,9 +1800,7 @@ export default function LikesScreen() {
           />
           )
         }
-        keyExtractor={(item) =>
-          tabKey === "feedReplies" ? item.replyId : item.id
-        }
+        keyExtractor={(item) => item.id}
         ListHeaderComponent={renderListHeader(tabKey)}
         ListEmptyComponent={empty}
         // Skeleton da 3 kart yüksekliğinde — boş durum gibi 0 padding verirsek
@@ -2026,21 +1907,9 @@ export default function LikesScreen() {
         }}
       />
 
-      {/* Yanıt kartına dokununca açılan profil — gerekçe handleFeedReplyPress'te.
-          Beğeni kartlarının açtığı modalın AYNISI, bu yüzden hemen altındaki
-          ikizle karıştırmamak gerek: bu olanın hedefi akış yanıtı, karar
-          `onDecide` ile kabul/geç uçlarına gidiyor. */}
-      <LikerSwipeModal
-        visible={!!replierTarget && !!replierProfile.data}
-        profile={replierProfile.data}
-        onClose={() => setReplierTarget(null)}
-        onDecide={handleFeedReplyDecide}
-        onSwipe={(_userId: string, direction: string) => {
-          // Engellemeden sonra liste tazelenmeli — kart duruyor ama
-          // arkasındaki kişi artık engelli.
-          if (direction === "block") feedRepliesQuery.refetch?.();
-        }}
-      />
+      {/* YANITLAYAN PROFİLİ MODALI KALDIRILDI: akış yanıtları sekmesiyle
+          birlikte düştü. Aşağıdaki ikiz (beğeni kartlarının açtığı) duruyor —
+          eskiden ikisini karıştırmamak gerekiyordu, artık tek tane var. */}
 
       <LikerSwipeModal
         visible={previewVisible}

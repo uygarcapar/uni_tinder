@@ -8,14 +8,15 @@ import HeartGlyph from "@/shared/components/HeartGlyph";
 import { colors } from "@/shared/theme/colors";
 import formatRelativeTime from "@/shared/utils/formatRelativeTime";
 import toDisplayLowercase from "@/shared/utils/textCase";
-import { anonymousLabelKey, replyActionFor } from "../feedPolicy";
+import { anonymousLabelKey } from "../feedPolicy";
 import { feedRowShell } from "../feedRowShell";
 import type { FeedPostDto } from "../feedTypes";
 
 /**
  * Akış gönderi kartı — sadece YAZI (fotoğraf yok, gönderi altında yorum yok).
  *
- * Yanıt butonunun durumu TAMAMEN `feedPolicy.replyActionFor`dan geliyor; burada
+ * YANIT BUTONU YOK (iki modlu yapı): eşleşme kanalı yazarın profil kartı.
+ * Eski kuralın izi — buton durumu TAMAMEN `feedPolicy.replyActionFor`dan geliyordu; burada
  * hiçbir kural yeniden hesaplanmıyor. En kritik sonucu: ANONİM gönderide
  * eşleştiğin kişi bile olsa sunucu `Ok` döndüğü için "Yanıtla" çiziliyor —
  * "Sohbete git" göstermek anonim yazarın kimliğini ifşa ederdi.
@@ -110,9 +111,9 @@ export const LIKE_COUNT_MARGIN =
  * tutucunun genişliği her dilde gerçek butonun genişliği oluyor; sabit bir
  * sayı "Eşleşmek için yanıtla" ile "Reply to match" arasında kayıyordu.
  */
-export const REPLY_PILL_PAD_H = 14;
-export const REPLY_PILL_PAD_V = 10;
-export const REPLY_PILL_FONT = 13.5;
+// REPLY_PILL_* sabitleri KALDIRILDI: tek tüketicisi FeedSkeletonList'in
+// yanıt pill'i yer tutucusuydu (etiketi gerçek metinle ölçüyordu), o da
+// butonla birlikte düştü.
 
 function FeedPostCardBase({
   post,
@@ -129,7 +130,6 @@ function FeedPostCardBase({
   statusTone = "neutral",
 }: FeedPostCardProps) {
   const { t } = useTranslation();
-  const action = replyActionFor(post);
 
   const handleLike = useCallback(() => onToggleLike?.(post), [onToggleLike, post]);
   const handleMenu = useCallback(() => onMenu?.(post), [onMenu, post]);
@@ -139,22 +139,6 @@ function FeedPostCardBase({
     onPressAuthor?.(post);
   }, [onPressAuthor, post]);
 
-  const handleReplyPress = useCallback(() => {
-    switch (action.kind) {
-      case "compose":
-        onReply?.(post);
-        return;
-      case "openChat":
-        onOpenChat?.(action.conversationId);
-        return;
-      case "paywall":
-        onReplyPaywall?.(post);
-        return;
-      default:
-        // hidden / disabled: buton zaten basılamaz halde çiziliyor.
-        return;
-    }
-  }, [action, onReply, onOpenChat, onReplyPaywall, post]);
 
   const anonLabel = t(anonymousLabelKey(post.authorCategory));
 
@@ -440,11 +424,9 @@ function FeedPostCardBase({
           </Text>
         </Pressable>
 
-        {/* Esnek boşluk BURADA, yanıt sayısının SOLUNDA: sayı satırın SAĞ
-            ucuna dayanıyor (istek). Gönderilerim'de yanıt butonu zaten gizli
-            (replyActionFor > OwnPost → hidden), yani sağ uç boş kalıyordu;
-            akış sekmesinde ise aynı boşluk yanıt butonunu sağa itmeye devam
-            ediyor. */}
+        {/* Esnek boşluk: beğeni solda, (Gönderilerim'de) yanıt sayısı sağ uçta.
+            Yanıt butonu kalktığı için akış sekmesinde sağ uç artık boş —
+            boşluk yine duruyor ki beğeni sola yapışsın. */}
         <View style={{ flex: 1 }} />
 
         {/* Gönderilerim: yanıt sayısı — dokununca Yanıtlar sayfası. */}
@@ -467,92 +449,20 @@ function FeedPostCardBase({
           </Pressable>
         ) : null}
 
-        {/* İkinci esnek boşluk YOK: tek boşluk yukarıda, beğeninin hemen
-            sağında. İkisi birden olsa sağa dayanan şey ortaya kayardı. */}
-        <ReplyButton
-          action={action}
-          onPress={handleReplyPress}
-          t={t}
-        />
+        {/* YANIT BUTONU KALDIRILDI (iki modlu yapı).
+            Eşleşme kanalı artık yanıt değil: yazarın adına/avatarına dokunup
+            profil kartını açmak ve orada beğeni/not/Spark atmak (bkz.
+            FeedScreen > handlePressAuthor). Anonim gönderide kart hiç
+            açılmıyor — kimliği ifşa ederdi — ve o gönderiler yalnız beğeni
+            alıyor.
+
+            `replyActionFor` ve ReplyButton bileşeni de düştü; sunucu uçları
+            eski istemciler için ayakta ama bu sürüm hiç çağırmıyor. */}
       </View>
     </View>
   );
 }
 
-/**
- * Yanıt butonu — `ReplyAction` → görünüm. Ayrı bileşen, çünkü kartın geri
- * kalanından BAĞIMSIZ değişiyor (beğeni optimistic'i kartı yeniden çiziyor,
- * buton durumu ise yalnız mutasyon sonrası değişiyor).
- */
-function ReplyButton({
-  action,
-  onPress,
-  t,
-}: {
-  action: ReturnType<typeof replyActionFor>;
-  onPress: () => void;
-  t: (k: string) => string;
-}) {
-  if (action.kind === "hidden") return null;
-
-  const disabled = action.kind === "disabled";
-  const label =
-    action.kind === "openChat"
-      ? t("feed.reply.goToChat")
-      : action.kind === "disabled"
-        ? t(action.labelKey)
-        : t("feed.reply.button");
-
-  return (
-    <Pressable
-      onPress={onPress}
-      disabled={disabled}
-      hitSlop={6}
-      style={{
-        flexDirection: "row",
-        alignItems: "center",
-        // Uzun etiket küçük ekranda satırı taşırmak yerine kısalsın: kapsül
-        // esneyebilir, metin tek satıra kilitli (aşağıda numberOfLines).
-        flexShrink: 1,
-        paddingHorizontal: REPLY_PILL_PAD_H,
-        // Etiket "Yanıtla"dan "Eşleşmek için yanıtla"ya uzadığı için kapsül
-        // artık geniş bir kutu: 7'lik dikey boşlukta metne göre basık
-        // kalıyordu.
-        paddingVertical: REPLY_PILL_PAD_V,
-        borderRadius: 999,
-        borderCurve: "continuous",
-        // Dolgu `litPlus` — Beğeniler ekranındaki "Keşfetmeye başla" butonuyla
-        // AYNI (bkz. EmptyState'in `buttonLabel` pill'i: litPlus zemin, 999
-        // yarıçap). `inverseSurface` nötrdü ve satırın tek aksiyonu olduğunu
-        // söylemiyordu.
-        // PASİF DAL DEĞİŞMEDİ: "Yanıtladın"/"Kısıtlı" ürünün renginde çizilse
-        // basılabilir görünürdü — orası nötr `surface3`te kalıyor.
-        backgroundColor: disabled ? colors.surface3 : colors.litPlus,
-        opacity: disabled ? 0.6 : 1,
-      }}
-    >
-      {/* Kilit YALNIZ paywall dalında — "bilinmiyor" ya da pasif durumda kilit
-          çizmek kullanıcıya olmayan bir satın alma ima ederdi. */}
-      {action.kind === "paywall" ? (
-        <Text style={{ fontSize: 12, marginRight: 5 }}>🔒</Text>
-      ) : null}
-      <Text
-        numberOfLines={1}
-        style={{
-          fontSize: REPLY_PILL_FONT,
-          fontWeight: "600",
-          // ⚠️ `onMediaInverse` — koyu modda DA SİYAH. `text`/`onInverseSurface`
-          // koyuda beyaza dönüp litPlus dolgunun üstünde kayboluyor; Beğeniler
-          // ekranındaki aynı buton da tam bu gerekçeyle sabit mürekkep
-          // kullanıyor (bkz. LikesScreen > buttonLabelColor).
-          color: disabled ? colors.textMuted : colors.onMediaInverse,
-        }}
-      >
-        {label}
-      </Text>
-    </Pressable>
-  );
-}
 
 /**
  * `memo` — liste satırı. Beğeni optimistic'i tek gönderiyi yamalıyor ve

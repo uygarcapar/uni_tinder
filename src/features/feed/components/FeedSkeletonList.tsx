@@ -10,9 +10,6 @@ import {
   BODY_LINE_HEIGHT,
   LIKE_COUNT_MARGIN,
   LIKE_HEART_BOX,
-  REPLY_PILL_FONT,
-  REPLY_PILL_PAD_H,
-  REPLY_PILL_PAD_V,
 } from "./FeedPostCard";
 
 /**
@@ -106,39 +103,6 @@ function Bar({
   );
 }
 
-/**
- * Yanıt kapsülünün yer tutucusu.
- *
- * ⚠️ İÇİNDE GÖRÜNMEZ GERÇEK ETİKET VAR, sabit bir genişlik DEĞİL. İki şeyi
- * birden çözüyor: kapsülün yüksekliği (dikey pay + SF'in doğal satır kutusu)
- * elle `× 1.19` tahmin edilmiyor, ve genişliği her dilde gerçek butonla aynı
- * kalıyor — "Eşleşmek için yanıtla" ile "Reply to match" arasında 40pt'den
- * fazla fark var, sabit sayı ikisinden birinde yanlış oluyordu.
- *
- * `opacity: 0` burada güvenli: düz bir `Text`, cam yüzey değil (alfa ile
- * gizlenen GlassView'ın efekti hiç render edilmiyor — bkz. shared/theme notu).
- */
-function ReplyPillBar() {
-  const { t } = useTranslation();
-  return (
-    <View
-      style={{
-        paddingHorizontal: REPLY_PILL_PAD_H,
-        paddingVertical: REPLY_PILL_PAD_V,
-        borderRadius: 999,
-        borderCurve: "continuous",
-        backgroundColor: colors.shimmer,
-      }}
-    >
-      <Text
-        numberOfLines={1}
-        style={{ fontSize: REPLY_PILL_FONT, fontWeight: "600", opacity: 0 }}
-      >
-        {t("feed.reply.button")}
-      </Text>
-    </View>
-  );
-}
 
 function Row({
   lines,
@@ -207,16 +171,13 @@ function Row({
         <HeartGlyph size={LIKE_HEART_BOX} color={colors.shimmer} />
         <Bar width={COUNT_BAR_W} height={COUNT_BAR_H} marginLeft={LIKE_COUNT_MARGIN} />
         <View style={{ flex: 1 }} />
-        {/* ⚠️ GÖNDERİLERİM'DE KAPSÜL YOK: yanıt butonu kendi gönderinde hiç
-            çizilmiyor (feedPolicy > replyActionFor: OwnPost → hidden), yerine
-            yanıt sayısı duruyor. Kapsülü iki sayfada da çizmek o sayfada her
-            satırı ~13pt yüksek gösteriyordu — yükleme bitince liste yukarı
-            toparlanıyordu. */}
+        {/* YANIT KAPSÜLÜ YER TUTUCUSU KALDIRILDI: buton üründen çıktı (bkz.
+            FeedPostCard). Gönderilerim'de yanıt SAYISI duruyor, akış
+            sekmesinde sağ uç artık boş — iki sayfanın satır yüksekliği de bu
+            yüzden artık aynı. */}
         {variant === "mine" ? (
           <Bar width={REPLY_COUNT_BAR_W} height={REPLY_COUNT_BAR_H} />
-        ) : (
-          <ReplyPillBar />
-        )}
+        ) : null}
       </View>
     </View>
   );

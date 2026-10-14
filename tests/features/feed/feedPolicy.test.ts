@@ -20,8 +20,6 @@ import {
   composeGate,
   dedupeById,
   postPresentation,
-  replyActionFor,
-  replyGate,
   universityPickerGate,
   kindFilterGate,
 } from '@/features/feed/feedPolicy';
@@ -74,74 +72,6 @@ const post = (over: Partial<FeedPostDto> = {}): FeedPostDto => ({
   ...over,
 });
 
-const actionFor = (state: FeedReplyState, conversationId: string | null = null) =>
-  replyActionFor(post({ reply: { state, conversationId } }));
-
-describe('replyActionFor — yedi state tablosu', () => {
-  it('Ok → yanıt composer\'ı açılır', () => {
-    expect(actionFor('Ok')).toEqual({ kind: 'compose' });
-  });
-
-  it('AlreadyMatched → sohbete git, conversationId taşınır', () => {
-    expect(actionFor('AlreadyMatched', '3f2a')).toEqual({
-      kind: 'openChat',
-      conversationId: '3f2a',
-    });
-  });
-
-  it('AlreadyMatched conversationId gelmezse null taşır (çağıran karar verir)', () => {
-    expect(actionFor('AlreadyMatched')).toEqual({
-      kind: 'openChat',
-      conversationId: null,
-    });
-  });
-
-  it('OwnPost → buton gizli', () => {
-    expect(actionFor('OwnPost')).toEqual({ kind: 'hidden' });
-  });
-
-  it('PreferenceMismatch → buton gizli (çizilse UT-7324 duvarına yürürdü)', () => {
-    expect(actionFor('PreferenceMismatch')).toEqual({ kind: 'hidden' });
-  });
-
-  it('AlreadyReplied → pasif, "yanıtladın" etiketi', () => {
-    expect(actionFor('AlreadyReplied')).toEqual({
-      kind: 'disabled',
-      labelKey: 'feed.reply.replied',
-    });
-  });
-
-  it('Restricted → pasif, kısıt etiketi', () => {
-    expect(actionFor('Restricted')).toEqual({
-      kind: 'disabled',
-      labelKey: 'feed.reply.restricted',
-    });
-  });
-
-  it('OtherUniversityRequiresPlus → FEED_UNIVERSITY paywall\'ı', () => {
-    expect(actionFor('OtherUniversityRequiresPlus')).toEqual({
-      kind: 'paywall',
-      paywallType: 'FEED_UNIVERSITY',
-    });
-  });
-
-  it('bilinmeyen state → GİZLİ (bilmediğimiz bir kurala yürütmeyiz)', () => {
-    expect(actionFor('SomethingNew' as FeedReplyState)).toEqual({
-      kind: 'hidden',
-    });
-  });
-
-  it('ANONİM gönderide eşleşmiş olsak bile sunucu Ok diyorsa "Yanıtla" çizilir', () => {
-    // Kimlik koruması: isAnonymous/author'a BAKILMAZ, karar sunucunun.
-    const anonymous = post({
-      isAnonymous: true,
-      author: null,
-      authorCategory: 'Women',
-      reply: { state: 'Ok', conversationId: null },
-    });
-    expect(replyActionFor(anonymous)).toEqual({ kind: 'compose' });
-  });
-});
 
 describe('postPresentation — altı durum + süre', () => {
   it('Published ve süresi dolmamış → normal', () => {
@@ -234,28 +164,6 @@ describe('composeGate', () => {
       me({ isPermanentlyRestricted: true, restrictedUntil: '2026-10-05T00:00:00Z' }),
     );
     expect(gate).toEqual({ kind: 'restricted', until: null, isPermanent: true });
-  });
-});
-
-describe('replyGate — composeGate\'in kardeşi, repliesRemaining okur', () => {
-  it('yanıt hakkı bittiğinde gönderi hakkı duruyorsa yine quotaExhausted', () => {
-    const gate = replyGate(
-      me({ quota: quota({ repliesRemaining: 0, postsRemaining: 2 }) }),
-    );
-    expect(gate).toEqual({
-      kind: 'quotaExhausted',
-      nextResetAt: '2026-10-01T17:30:00Z',
-    });
-  });
-
-  it('gönderi hakkı bitse de yanıt hakkı duruyorsa open', () => {
-    expect(
-      replyGate(me({ quota: quota({ postsRemaining: 0, repliesRemaining: 1 }) })),
-    ).toEqual({ kind: 'open' });
-  });
-
-  it('me yoksa unknown', () => {
-    expect(replyGate(undefined)).toEqual({ kind: 'unknown' });
   });
 });
 

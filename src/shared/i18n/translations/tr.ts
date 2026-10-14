@@ -1558,7 +1558,6 @@ const tr = {
     // Lit Akışı yanıtları — Akış sekmesindeki Yanıtlar sayfasıyla AYNI veri
     // (tek query key). Beğeni kartlarının blur/unlock kuralı burada
     // UYGULANMIYOR: akış yanıtları free kullanıcıya da açık.
-    tabFeedReplies: 'Akış yanıtları',
     emptyMissed: 'Kaçırdığın kimse yok.',
     // Pencere uzunluğu backend'den geliyor (`/Stats` → missedMatchLookbackDays).
     // Değer henüz gelmediyse (eski sürüm / ilk yükleme) sayısız varyant
@@ -2436,7 +2435,6 @@ const tr = {
     tabTitle: 'Akış',
     tabFeed: 'Akış',
     tabMine: 'Gönderilerim',
-    tabReplies: 'Yanıtlar',
 
     // Büyük başlık bloğu — Mesajlar ekranındaki kalıbın aynısı: başlık, sağında
     // Plus pill'i, altında TEK satır açıklama.
@@ -2445,7 +2443,6 @@ const tr = {
     header: {
       descFeed: 'Kampüsünden paylaşılan yazılar.',
       descMine: 'Paylaştığın yazılar ve durumları.',
-      descReplies: 'Gönderilerine gelen yanıtlar.',
       // Başlığın sağındaki pill — Plus sayfasını açar, yalnız free'de çizilir.
       // "Sınırsız" DEMİYOR: Plus akışta sınırı kaldırmıyor, günlük hakkı
       // artırıyor (bkz. feed.quota.plusOffer).
@@ -2517,33 +2514,7 @@ const tr = {
       pending: 'Gönderin inceleniyor',
     },
 
-    reply: {
-      button: 'Eşleşmek için yanıtla',
-      replied: 'Yanıtladın',
-      restricted: 'Kısıtlı',
-      goToChat: 'Sohbete git',
-      title: 'Yanıt yaz',
-      placeholder: 'Kısa bir yanıt yaz',
-      // Composer'daki alıntı chip'inin etiketi. `received.onYourPost`
-      // KULLANILAMAZ: o gönderi SAHİBİNİN gözünden yazılmış ("Gönderine
-      // yanıt"), burada yanıtı YAZAN kişi duruyor.
-      quoteLabel: 'Bu gönderiye yanıt veriyorsun',
-      quoteLabelAnonymous: 'Bu anonim gönderiye yanıt veriyorsun',
-      send: 'Yanıtı gönder',
-      sent: 'Yanıtın iletildi',
-      pending: 'Yanıtın inceleniyor',
-      // Sayı düz interpolasyon — bu sözlükte plural eki hiç kullanılmıyor.
-      remaining: '{{count}} yanıt hakkın kaldı',
-    },
 
-    received: {
-      onYourPost: 'Gönderine yanıt',
-      onYourAnonymousPost: 'Anonim gönderine yanıt',
-      accept: 'Kabul et',
-      skip: 'Geç',
-      emptyTitle: 'Henüz yanıt yok',
-      emptyBody: 'Bir gönderi paylaş, kampüs sana yazsın.',
-    },
 
     mine: {
       emptyTitle: 'Henüz gönderin yok',

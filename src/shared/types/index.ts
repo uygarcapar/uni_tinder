@@ -845,15 +845,9 @@ export interface SwipeState {
    * Discover'da ağ turu atmadan cevaplamak için var (kaçırılan eşleşme).
    */
   whoLikedMeIds: string[];
-  /**
-   * Karar bekleyen Lit Akışı yanıtları.
-   *
-   * ⚠️ `whoLikedMeCount`tan AYRI ve bilerek: o sayaç id KÜMESİNDEN türüyor
-   * (add/removeWhoLikedMe yalnız id kümedeyse oynatıyor). Yanıt sayısı oraya
-   * karışsa bir beğeniyi işlemek yanıt sayısını da sessizce düşürürdü.
-   * Beğeniler rozeti okuma yerinde TOPLANIYOR (bkz. TabNavigator).
-   */
-  pendingFeedReplyCount: number;
+  // `pendingFeedReplyCount` KALDIRILDI: akış yanıtları üründen çıktı (iki
+  // modlu yapı). Rozet artık yalnız `whoLikedMeCount` okuyor, iki sayacı
+  // toplama gereği kalmadı.
 }
 
 // ─── Subscription ──────────────────────────────────────────────────────────────

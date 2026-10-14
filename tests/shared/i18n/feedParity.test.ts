@@ -80,9 +80,22 @@ describe('feed namespace — tr/en paritesi', () => {
   });
 });
 
-describe('likes.tabFeedReplies', () => {
-  it('iki dilde de tanımlı', () => {
-    expect((tr as any).likes.tabFeedReplies).toBeTruthy();
-    expect((en as any).likes.tabFeedReplies).toBeTruthy();
+/**
+ * `likes.tabFeedReplies` SİLİNDİ (iki modlu yapı): Beğeniler'deki akış
+ * yanıtları sekmesi üründen çıktı. Testi kaldırmak yerine TERSİNİ doğruluyoruz
+ * — anahtar geri sızarsa (ör. eski bir branch merge edilirse) sekme de geri
+ * gelmiş olur ve bunu fark etmek isteriz.
+ */
+describe('kaldırılan akış yanıtı anahtarları', () => {
+  it('likes.tabFeedReplies iki dilde de YOK', () => {
+    expect((tr as any).likes.tabFeedReplies).toBeUndefined();
+    expect((en as any).likes.tabFeedReplies).toBeUndefined();
+  });
+
+  it('feed.reply / feed.received blokları iki dilde de YOK', () => {
+    expect((tr as any).feed.reply).toBeUndefined();
+    expect((en as any).feed.reply).toBeUndefined();
+    expect((tr as any).feed.received).toBeUndefined();
+    expect((en as any).feed.received).toBeUndefined();
   });
 });

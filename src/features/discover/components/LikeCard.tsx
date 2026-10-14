@@ -2,10 +2,11 @@
  * Beğeni/not kartı — fotoğraf kartı, kimlik bloğu ve NOT KUTUSU.
  *
  * 2026-10-10'da LikesScreen'den BURAYA taşındı; tek sebebi ikinci bir çağıran:
- * Lit Akışı'nın gelen yanıtları (bkz. FeedReplyCard) aynı kartı çiziyor —
- * "biri sana bir şey YAZDI" ekranın hangi sekmesinde olursa olsun tek bir
- * görsel dil konuşuyor. Ekranda bırakıp dışa açmak dairesel bağ demekti
- * (LikesScreen → FeedReplyCard → LikesScreen).
+ * İKİNCİ ÇAĞIRAN İÇİN ÇIKARILMIŞTI (akışın gelen yanıtları, FeedReplyCard) ve
+ * o çağıran 2026-10-15'te üründen çıktı — kart yine LikesScreen'in tek
+ * kullanıcısına döndü. Dosya YERİNDE BIRAKILDI: ekranın kendi işleri (iskelet,
+ * tazeleme, liste layout'u) ile kartın çizimi ayrı kalınca ikisi de okunur,
+ * geri taşımak 2000 satırlık ekranı yeniden şişirmek olurdu.
  *
  * TAŞIMA SIRASINDA DAVRANIŞ DEĞİŞMEDİ: kod olduğu gibi geldi, LikesScreen'de
  * kalan tek şey ekranın kendi işleri (iskelet listesi, tazeleme süreleri,

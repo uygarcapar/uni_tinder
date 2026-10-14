@@ -241,71 +241,43 @@ describe('anonim gönderide fotoğraf', () => {
   });
 });
 
-describe('yanıt butonu — yalnız reply.state\'e göre', () => {
-  it('Ok → "Yanıtla"', () => {
-    render(<FeedPostCard post={withReply('Ok')} />);
-    expect(screen.getByText(tr.feed.reply.button)).toBeTruthy();
+describe('yanıt butonu KALDIRILDI (iki modlu yapı)', () => {
+  /**
+   * Eşleşme kanalı artık yanıt değil: yazara dokunup profil kartını açmak ve
+   * orada beğeni/not/Spark atmak. Kart hiçbir `reply.state` için buton
+   * çizmemek zorunda — sunucu alanı göndermeye devam ediyor (eski istemciler
+   * için) ve kartın onu SESSİZCE YOK SAYMASI test edilen şey.
+   */
+  it.each([
+    'Ok',
+    'AlreadyMatched',
+    'AlreadyReplied',
+    'OwnPost',
+    'PreferenceMismatch',
+    'OtherUniversityRequiresPlus',
+    'Restricted',
+  ] as const)('%s → hiçbir yanıt butonu çizilmiyor', (state) => {
+    render(<FeedPostCard post={withReply(state, '3f2a')} />);
+    // `tr.feed.reply.*` anahtarları da SİLİNDİ — o yüzden metinle değil
+    // sözleşmeyle ölçüyoruz: kartta dokunulabilir TEK şey beğeni kalbi ve
+    // (Gönderilerim'de) yanıt sayısı. Yanıt kapsülü hiçbir durumda yok.
+    expect(screen.queryByText(/Yanıtla|Sohbete git|Yanıtladın/)).toBeNull();
   });
 
-  it('AlreadyMatched → "Sohbete git" ve conversationId taşınır', () => {
+  it('AlreadyMatched gelse bile sohbet açma çağrılmıyor', () => {
+    // Buton yok → tetiklenecek bir şey de yok. Prop hâlâ kabul ediliyor
+    // (çağıran taraf temizlenmedi) ama kart onu kullanmıyor.
     const onOpenChat = jest.fn();
     render(
       <FeedPostCard post={withReply('AlreadyMatched', '3f2a')} onOpenChat={onOpenChat} />,
     );
-    fireEvent.press(screen.getByText(tr.feed.reply.goToChat));
-    expect(onOpenChat).toHaveBeenCalledWith('3f2a');
+    expect(onOpenChat).not.toHaveBeenCalled();
   });
 
-  it('⚠️ ANONİM gönderide sunucu Ok diyorsa "Yanıtla" — "Sohbete git" DEĞİL', () => {
-    // Kimlik koruması: kart eşleşme durumunu kendi hesaplamıyor.
-    render(
-      <FeedPostCard
-        post={post({
-          isAnonymous: true,
-          authorCategory: 'Women',
-          reply: { state: 'Ok', conversationId: null },
-        })}
-      />,
-    );
-    expect(screen.getByText(tr.feed.reply.button)).toBeTruthy();
-    expect(screen.queryByText(tr.feed.reply.goToChat)).toBeNull();
-  });
-
-  it('AlreadyReplied → pasif "Yanıtladın", basınca mutasyon tetiklenmez', () => {
-    const onReply = jest.fn();
-    render(<FeedPostCard post={withReply('AlreadyReplied')} onReply={onReply} />);
-    fireEvent.press(screen.getByText(tr.feed.reply.replied));
-    expect(onReply).not.toHaveBeenCalled();
-  });
-
-  it('OwnPost ve PreferenceMismatch → buton hiç çizilmez', () => {
-    const { rerender } = render(<FeedPostCard post={withReply('OwnPost')} />);
-    expect(screen.queryByText(tr.feed.reply.button)).toBeNull();
-
-    rerender(<FeedPostCard post={withReply('PreferenceMismatch')} />);
-    expect(screen.queryByText(tr.feed.reply.button)).toBeNull();
-  });
-
-  it('OtherUniversityRequiresPlus → kilitli buton, paywall çağrılır', () => {
-    const onReplyPaywall = jest.fn();
-    const onReply = jest.fn();
-    render(
-      <FeedPostCard
-        post={withReply('OtherUniversityRequiresPlus')}
-        onReply={onReply}
-        onReplyPaywall={onReplyPaywall}
-      />,
-    );
-    fireEvent.press(screen.getByText(tr.feed.reply.button));
-    expect(onReplyPaywall).toHaveBeenCalled();
-    expect(onReply).not.toHaveBeenCalled(); // composer AÇILMAZ
-  });
-
-  it('Restricted → pasif', () => {
-    const onReply = jest.fn();
-    render(<FeedPostCard post={withReply('Restricted')} onReply={onReply} />);
-    fireEvent.press(screen.getByText(tr.feed.reply.restricted));
-    expect(onReply).not.toHaveBeenCalled();
+  it('gönderi gövdesi ve beğeni satırı yerinde kalıyor', () => {
+    // Söküm sırasında esnek boşluk ve beğeni satırı bozulmamalı.
+    render(<FeedPostCard post={withReply('Ok')} />);
+    expect(screen.getByText('Yarın kütüphane kaçta açılıyor?')).toBeTruthy();
   });
 });
 

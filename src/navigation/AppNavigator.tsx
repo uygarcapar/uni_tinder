@@ -146,8 +146,6 @@ import {
   addWhoLikedMe,
   removeWhoLikedMe,
   fetchWhoLikedMe,
-  incrementPendingFeedReply,
-  setPendingFeedReplyCount,
 } from '@/features/discover/swipeSlice';
 import {
   feedEnabledForSession,
@@ -1097,20 +1095,17 @@ export default function AppNavigator() {
       //
       // Rozet ANINDA artıyor ama otorite DEĞİL: hub replay yapmıyor ve
       // reconnect'te aynı olayı tekrar atabiliyor. `/replies/received/count`
-      // hemen ardından çekilip `setPendingFeedReplyCount` ile mutabakata
-      // giriliyor — mükerrer artış orada düzeliyor.
+      // FeedReplyReceived — NO-OP HANDLER (iki modlu yapı).
+      //
+      // Yanıt kanalı üründen çıktı ama sunucu uçları eski istemciler için
+      // ayakta ve `feed.replies.enabled` bayrağı açıkken hub BU OLAYI HÂLÂ
+      // GÖNDEREBİLİR (ör. eski bir istemciden gelen yanıt). Handler'ı komple
+      // silmek yerine boş bırakıyoruz: realtimeService bilinmeyen olayı
+      // sessizce yutsa bile abonelik listesinin olayı TANIMASI, ileride
+      // "neden hiçbir şey olmuyor" diye aranmasını önlüyor.
       realtimeService.on('FeedReplyReceived', () => {
-        if (!mounted) return;
-        if (!feedEnabledForSession()) return;
-        dispatch(incrementPendingFeedReply());
-        uiBus.emit('feedRepliesDirty');
-        queryClient.invalidateQueries({ queryKey: feedKeys.repliesReceived });
-        feedService
-          .getReceivedReplyCount()
-          .then((count) => dispatch(setPendingFeedReplyCount(count)))
-          // Sayım turu düşerse iyimser artış kalır — rozetin bir fazla
-          // göstermesi, hiç göstermemesinden iyi.
-          .catch(() => {});
+        // Bilinçli olarak boş: rozet sayacı, Yanıtlar sekmesi ve yanıt
+        // listesi üründen çıktı (bkz. LikesScreen / FeedScreen).
       }),
       realtimeService.on('NewNotification', (notif) => {
         if (!mounted) return;
@@ -1552,10 +1547,11 @@ export default function AppNavigator() {
       // istek ekran görünür olmadan yola çıksın; (b) `openFeed()` false
       // dönerse (bayrak kapalı, sekme YOK) Bildirimler'e düşülür, yoksa push
       // ölü tap üretir.
+      // FeedReply push'u artık AÇILACAK BİR SAYFA BULAMIYOR: Yanıtlar sayfası
+      // üründen çıktı. Sahadaki eski bildirimler (ve eski istemcilerden gelen
+      // yanıtlar) ölü tap üretmesin diye Bildirimler'e düşürülüyor — akışı
+      // açmak da yanlış olurdu, kullanıcı yanıtı orada bulamaz.
       case 'FeedReply': {
-        uiBus.emit('feedRepliesDirty');
-        queryClient.invalidateQueries({ queryKey: feedKeys.repliesCount });
-        if (openFeed('replies')) return;
         navigationRef.navigate('Notifications' as never);
         return;
       }

@@ -21,7 +21,6 @@ import { colors } from "@/shared/theme/colors";
 import uiBus from "@/shared/services/uiBus";
 import { navigationRef } from "@/shared/services/navigationRef";
 import { useAppDispatch, useAppSelector } from "@/shared/hooks/redux";
-import { decrementPendingFeedReply } from "@/features/discover/swipeSlice";
 import { refreshEntitlementsForPaywall } from "@/features/profile/subscriptionSlice";
 import { openLitPlus } from "@/features/profile/litPlusEntry";
 import PreviewModal from "@/features/profile/components/PreviewModal";
@@ -47,7 +46,6 @@ import FeedListPage, {
   LIST_H_PADDING as FEED_LIST_H_PADDING,
 } from "../components/FeedListPage";
 import FeedPostCard from "../components/FeedPostCard";
-import FeedReplyCard from "../components/FeedReplyCard";
 // Yanıt kartı Beğeniler'in foto kartı olduğu için onun liste payını da bilmek
 // zorundayız — kartın genişliği o sayıdan türüyor.
 import { LIST_H_PADDING as LIKE_CARD_H_PADDING } from "@/features/discover/components/LikeCard";
@@ -67,7 +65,6 @@ import { usePremiumTier } from "@/features/profile/premiumTier";
 import FeedComposerSheet from "../components/FeedComposerSheet";
 import FeedQuotaSheet from "../components/FeedQuotaSheet";
 import FeedSupportSheet from "../components/FeedSupportSheet";
-import FeedReplyComposerSheet from "../components/FeedReplyComposerSheet";
 import FeedReportSheet from "../components/FeedReportSheet";
 import {
   FEED_DIRTY_EVENT,
@@ -79,13 +76,10 @@ import {
   useCreateReply,
   useDeletePost,
   writeFeedQuotaExhausted,
-  useAcceptReply,
-  useDismissReply,
   useFeedMe,
   useFeedPosts,
   useMyFeedPosts,
   useOwnFeedAvatar,
-  useReceivedReplies,
   useTogglePostLike,
 } from "../feedQueries";
 import {
@@ -93,7 +87,6 @@ import {
   composeGate,
   kindFilterGate,
   postPresentation,
-  replyGate,
   universityPickerGate,
 } from "../feedPolicy";
 import { useFeedAuthorProfile, useFeedReplierProfile } from "../feedQueries";
@@ -115,7 +108,8 @@ import type {
 /** İskelet gecikme penceresi — LikesScreen'deki değerlerin aynısı. */
 const SKELETON_DELAY_MS = 220;
 
-const PAGES: FeedPageKey[] = ["feed", "mine", "replies"];
+// Yanıtlar sayfası KALDIRILDI (iki modlu yapı).
+const PAGES: FeedPageKey[] = ["feed", "mine"];
 
 /**
  * Sekme şeridinin sol hattı — Mesajlar/Beğeniler ekranlarındaki
@@ -331,7 +325,6 @@ export default function FeedScreen() {
   const [visited, setVisited] = useState<Record<FeedPageKey, boolean>>(() => ({
     feed: true, // ilk sayfa her halükârda açılıyor
     mine: initialRequest === "mine",
-    replies: initialRequest === "replies",
   }));
   const markVisited = useCallback((key: FeedPageKey) => {
     setVisited((prev) => (prev[key] ? prev : { ...prev, [key]: true }));
@@ -374,7 +367,6 @@ export default function FeedScreen() {
 
   const postsQuery = useFeedPosts(listParams);
   const minePostsQuery = useMyFeedPosts({ enabled: visited.mine });
-  const repliesQuery = useReceivedReplies({ enabled: visited.replies });
 
   /**
    * Kendi ana fotoğrafım — sunucu kendi gönderimin avatarını boş bırakıyor
@@ -385,12 +377,9 @@ export default function FeedScreen() {
   const ownPhotoUrl = useOwnFeedAvatar();
 
   const toggleLike = useTogglePostLike();
-  const acceptReply = useAcceptReply();
-  const dismissReply = useDismissReply();
 
   const posts = postsQuery.data?.items ?? [];
   const minePosts = minePostsQuery.data?.items ?? [];
-  const replies = repliesQuery.data?.items ?? [];
 
   // ── "şu sayfayı aç" isteğinin ISRARLI uygulanması ─────────────────────────
   //
@@ -527,29 +516,15 @@ export default function FeedScreen() {
       }),
     [minePostsQuery, meQuery],
   );
-  useEffect(
-    () =>
-      uiBus.on(FEED_REPLIES_DIRTY_EVENT, () => {
-        repliesQuery.refetch?.();
-      }),
-    [repliesQuery],
-  );
 
   // ── Sekme şeridi ──────────────────────────────────────────────────────────
-  const replyTotal = repliesQuery.data?.total;
+  // YANITLAR SEKMESİ KALDIRILDI (iki modlu yapı).
   const tabs = useMemo(
     () => [
       { key: "feed", label: t("feed.tabFeed"), count: null },
       { key: "mine", label: t("feed.tabMine"), count: null },
-      {
-        key: "replies",
-        label: t("feed.tabReplies"),
-        // Sekmeye hiç girilmediyse sayı BİLİNMİYOR → `null`; pill onu çizmiyor,
-        // "0" yazmıyor (LikesScreen'in missedTotal kuralı).
-        count: visited.replies ? (replyTotal ?? null) : null,
-      },
     ],
-    [t, visited.replies, replyTotal],
+    [t],
   );
 
   // ── Aksiyonlar ────────────────────────────────────────────────────────────
@@ -565,38 +540,9 @@ export default function FeedScreen() {
     (navigationRef as any).navigate("Chat", { conversationId });
   }, []);
 
-  const handleAccept = useCallback(
-    (reply: FeedReceivedReplyDto) => {
-      acceptReply.mutate(
-        { replyId: reply.replyId },
-        {
-          onSuccess: (res) => {
-            analytics.capture("feed_reply_accepted", {
-              is_new_match: res.isNewMatch,
-            });
-            // Rozet ANINDA düşsün (removeWhoLikedMe mantığı).
-            dispatch(decrementPendingFeedReply());
-            // Yeni eşleşmede global MatchModal SignalR'dan zaten açılıyor —
-            // buradan ikinci bir modal açmak çift gösterim olurdu. Yalnız
-            // "zaten eşleşmiştik" dalında doğrudan sohbete gidiliyor.
-            if (!res.isNewMatch && res.conversationId) {
-              handleOpenChat(res.conversationId);
-            }
-          },
-        },
-      );
-    },
-    [acceptReply, dispatch, handleOpenChat],
-  );
-
-  const handleDismiss = useCallback(
-    (reply: FeedReceivedReplyDto) => {
-      analytics.capture("feed_reply_dismissed");
-      dispatch(decrementPendingFeedReply());
-      dismissReply.mutate({ replyId: reply.replyId });
-    },
-    [dismissReply, dispatch],
-  );
+  // YANIT KABUL/GEÇ mutasyonları KALDIRILDI (iki modlu yapı): yanıt yazarak
+  // eşleşme kanalı kapandı. `handleOpenChat` DURUYOR — eşleşme listesinden
+  // sohbete gitmek için hâlâ gerekiyor.
 
   /**
    * Yanıt kartına dokunmak → YANITLAYANIN PROFİLİ, kaydırarak karar.
@@ -618,26 +564,8 @@ export default function FeedScreen() {
    * TÜM YANIT state'te tutuluyor, yalnız `replyId` değil: kabul/geç
    * sarmalayıcıları yanıtın kendisini alıyor (analytics + rozet düşürme).
    */
-  const [replierTarget, setReplierTarget] =
-    useState<FeedReceivedReplyDto | null>(null);
-  const replierProfile = useFeedReplierProfile(replierTarget?.replyId ?? null);
-  const handleReplyPress = useCallback(
-    (reply: FeedReceivedReplyDto) => setReplierTarget(reply),
-    [],
-  );
-  const handleReplyDecide = useCallback(
-    (direction: "left" | "right") => {
-      const reply = replierTarget;
-      if (!reply) return;
-      if (direction === "right") handleAccept(reply);
-      else handleDismiss(reply);
-    },
-    [replierTarget, handleAccept, handleDismiss],
-  );
+  // YANITLAYAN PROFİLİ yolu KALDIRILDI: yanıt kanalı üründen çıktı.
 
-  const goToReplies = useCallback(() => {
-    handleTabChange("replies", FEED_PAGE_INDEX.replies);
-  }, [handleTabChange]);
 
   /**
    * Paywall yolu — DiscoverScreen.tsx:1223-1239'daki şeklin aynısı.
@@ -794,104 +722,9 @@ export default function FeedScreen() {
     [createPost, t, handleTabChange, meQuery, openPaywall],
   );
 
-  // ── Yanıt verme ───────────────────────────────────────────────────────────
-  const createReply = useCreateReply();
-  const [replyTarget, setReplyTarget] = useState<FeedPostDto | null>(null);
-  const [replyError, setReplyError] = useState<string | null>(null);
-
-  const handleOpenReply = useCallback(
-    (post: FeedPostDto) => {
-      // Yanıt hakkı bittiyse composer AÇILMIYOR: yazdırıp sonra UT-7322 ile
-      // geri almak, kullanıcıya iki kez kaybettirmek olurdu.
-      const gate = replyGate(me);
-      if (gate.kind === "quotaExhausted") {
-        setQuotaSheet({ visible: true, nextResetAt: gate.nextResetAt });
-        return;
-      }
-      if (gate.kind === "restricted") return;
-      setReplyError(null);
-      setReplyTarget(post);
-    },
-    [me],
-  );
-
-  const handleSendReply = useCallback(
-    (comment: string) => {
-      const post = replyTarget;
-      if (!post) return;
-      setReplyError(null);
-      createReply.mutate(
-        { postId: post.id, comment },
-        {
-          onSuccess: (result) => {
-            setReplyTarget(null);
-            if (result.supportResources) {
-              setSupportVisible(true);
-              return;
-            }
-            analytics.capture("feed_reply_sent", { status: result.status });
-            showInfoToast({
-              message: t(
-                result.status === "PendingReview"
-                  ? "feed.reply.pending"
-                  : "feed.reply.sent",
-              ),
-            });
-          },
-          onError: (e) => {
-            const code = feedErrorCode(e);
-            const serverMessage = feedErrorMessage(e);
-            const result = feedErrorResult(e);
-
-            if (code === FEED_CODES.REPLY_QUOTA) {
-              setReplyTarget(null);
-              writeFeedQuotaExhausted(qc, "reply", result?.nextResetAt ?? null);
-              setQuotaSheet({
-                visible: true,
-                nextResetAt: result?.nextResetAt ?? null,
-              });
-              return;
-            }
-
-            // Kart bayat: zaten yanıtlanmış / zaten eşleşilmiş / tercih
-            // uyuşmuyor / gönderi gitmiş. Mutation cache'i ZATEN düzeltiyor
-            // (useCreateReply.onError), burada yalnız sheet kapanıp durum
-            // anlatılıyor — kullanıcı aynı karta tekrar yüklenmesin.
-            if (
-              code === FEED_CODES.ALREADY_REPLIED ||
-              code === FEED_CODES.ALREADY_MATCHED ||
-              code === FEED_CODES.PREFERENCE_MISMATCH ||
-              code === FEED_CODES.POST_GONE
-            ) {
-              setReplyTarget(null);
-              showInfoToast({
-                message:
-                  serverMessage ?? t(feedCodeI18nKey(code) ?? "feed.codes.generic"),
-              });
-              // "Zaten eşleştiniz" → sohbete götür (sözleşme §9).
-              if (code === FEED_CODES.ALREADY_MATCHED) {
-                handleOpenChat(result?.conversationId ?? null);
-              }
-              return;
-            }
-
-            if (code === FEED_CODES.REPLY_UNIVERSITY_REQUIRES_PLUS) {
-              setReplyTarget(null);
-              openPaywall();
-              return;
-            }
-
-            // Geri kalan (UT-7306 içerik reddi, UT-7321 uzunluk, UT-7316 fren,
-            // ağ) → sheet AÇIK kalır, metin korunur.
-            setReplyError(
-              serverMessage ?? t(feedCodeI18nKey(code) ?? "feed.codes.generic"),
-            );
-          },
-        },
-      );
-    },
-    [replyTarget, createReply, qc, t, handleOpenChat, openPaywall],
-  );
+  // YANIT VERME YOLU KALDIRILDI (iki modlu yapı): composer, kota kapısı,
+  // gönderim mutasyonu ve hata makinesi birlikte düştü. Eşleşme kanalı artık
+  // yazarın profil kartı (bkz. handlePressAuthor → PreviewModal).
 
   // ── Kart menüsü: şikayet / sil ────────────────────────────────────────────
   const deletePost = useDeletePost();
@@ -1088,11 +921,10 @@ export default function FeedScreen() {
     const codes = [
       postsQuery.error,
       minePostsQuery.error,
-      repliesQuery.error,
       meQuery.error,
     ].map(feedErrorCode);
     return codes.includes(FEED_CODES.DISABLED);
-  }, [postsQuery.error, minePostsQuery.error, repliesQuery.error, meQuery.error]);
+  }, [postsQuery.error, minePostsQuery.error, meQuery.error]);
 
   const disabledEmpty = (
     <FeedEmptyWrap>
@@ -1113,12 +945,7 @@ export default function FeedScreen() {
   // büyük başlığı birebir aynı kelime, iki kaynak olsa biri güncellenmeden
   // kalırdı.
   const sectionTitleFor = useCallback(
-    (key: FeedPageKey) =>
-      key === "mine"
-        ? t("feed.tabMine")
-        : key === "replies"
-          ? t("feed.tabReplies")
-          : t("feed.tabFeed"),
+    (key: FeedPageKey) => (key === "mine" ? t("feed.tabMine") : t("feed.tabFeed")),
     [t],
   );
 
@@ -1126,11 +953,7 @@ export default function FeedScreen() {
   // görev: sayfanın ne listelediğini bir cümlede söylemek.
   const sectionDescriptionFor = useCallback(
     (key: FeedPageKey) =>
-      key === "mine"
-        ? t("feed.header.descMine")
-        : key === "replies"
-          ? t("feed.header.descReplies")
-          : t("feed.header.descFeed"),
+      key === "mine" ? t("feed.header.descMine") : t("feed.header.descFeed"),
     [t],
   );
 
@@ -1185,83 +1008,8 @@ export default function FeedScreen() {
       />
     );
 
-    if (key === "replies") {
-      const loading = repliesQuery.isLoading;
-      return (
-        <FeedListPage<FeedReceivedReplyDto>
-          data={replies}
-          isActive={isActive}
-          scrollHandler={scrollHandler}
-          loading={loading}
-          showSkeleton={loading && skeletonReady}
-          keyExtractor={(item) => item.replyId}
-          renderItem={({ item }) => (
-            // ⚠️ PAY FARKINI GERİ ALAN KAP. Yanıt kartı artık Beğeniler'in
-            // foto kartı (bkz. FeedReplyCard) ve genişliği SABİT: ekran
-            // genişliği − 2 × kendi payı (10). Akış listesi ise 16 pay
-            // veriyor; kart o kabın içinde 16'dan başlayıp sağda 4'e
-            // dayanıyordu, yani ekranda eğri duruyordu. Negatif marj farkı
-            // (10 − 16) kapatıyor: kart iki yanında da 10 ile oturuyor,
-            // sayfanın başlığı 16'lık hattında kalıyor.
-            <View
-              style={{
-                marginHorizontal: LIKE_CARD_H_PADDING - FEED_LIST_H_PADDING,
-              }}
-            >
-              <FeedReplyCard
-                reply={item}
-                onPress={handleReplyPress}
-                onAccept={handleAccept}
-                onDismiss={handleDismiss}
-              />
-            </View>
-          )}
-          listHeader={title}
-          onEndReached={() => {
-            if (repliesQuery.hasNextPage && !repliesQuery.isFetchingNextPage) {
-              repliesQuery.fetchNextPage();
-            }
-          }}
-          empty={
-            disabledError ? (
-              disabledEmpty
-            ) : (
-              <FeedEmptyWrap>
-                <EmptyState
-                  sf="tray"
-                  Icon={LayoutList}
-                  text={t("feed.received.emptyTitle")}
-                  subtitle={t("feed.received.emptyBody")}
-                  topOffset={0}
-                  // Boş durumun altındaki CTA — Mesajlar/Beğeniler
-                  // ekranlarındaki pill'in aynısı (litPlus zemin,
-                  // `onMediaInverse` mürekkep; `text` açık modda beyaza döner
-                  // ve dolgunun üstünde kaybolur).
-                  //
-                  // BU SAYFADA ÖZELLİKLE GEREKLİ: "Paylaş" FAB'ı Yanıtlar
-                  // sekmesinde çizilmiyor, yani boş durumun gövdesi ("Bir
-                  // gönderi paylaş, kampüs sana yazsın") kullanıcıyı dokunacak
-                  // hiçbir şeyin olmadığı bir işe yolluyordu.
-                  //
-                  // `restricted` iken GİZLİ: kapı kapalıyken `openComposer`
-                  // sessizce hiçbir şey yapmıyor, yani buton ölü kalırdı
-                  // (FAB'ın aynı kapısı). `quotaExhausted` ise gizlenmiyor —
-                  // o dalda composer açılıyor ve hakkın bittiğini kendi
-                  // rozetinde söylüyor (bkz. openComposer).
-                  {...(gate.kind === "restricted"
-                    ? null
-                    : {
-                        buttonLabel: t("feed.empty.cta"),
-                        buttonLabelColor: colors.onMediaInverse,
-                        onButtonPress: openComposer,
-                      })}
-                />
-              </FeedEmptyWrap>
-            )
-          }
-        />
-      );
-    }
+    // YANITLAR SAYFASI KALDIRILDI: yanıt kanalı üründen çıktı (iki modlu
+    // yapı). Pager iki sayfaya indi (bkz. PAGES).
 
     const isMine = key === "mine";
     const query = isMine ? minePostsQuery : postsQuery;
@@ -1287,10 +1035,8 @@ export default function FeedScreen() {
             onToggleLike={handleToggleLike}
             onOpenChat={handleOpenChat}
             onPressAuthor={isMine ? undefined : handlePressAuthor}
-            onReply={handleOpenReply}
-            onReplyPaywall={openPaywall}
             onMenu={handlePostMenu}
-            onPressReplyCount={isMine ? goToReplies : undefined}
+            // `onPressReplyCount` KALDIRILDI: Yanıtlar sayfası yok artık.
             statusLabel={
               isMine ? statusLabelFor(item, t) : null
             }
@@ -1386,7 +1132,7 @@ export default function FeedScreen() {
           ata zincirindeki opacity<1 efekti tamamen öldürüyor (bkz. proje notu).
           `composeGate` "unknown" iken buton NORMAL çiziliyor — kilit çizmek
           /me gelene kadar olmayan bir kısıt uydururdu. */}
-      {activeTab !== "replies" && gate.kind !== "restricted" ? (
+      {gate.kind !== "restricted" ? (
         <Pressable
           onPress={openComposer}
           // ETİKET KALDIRILDI (istek) → kapsül artık YUVARLAK bir buton.
@@ -1463,17 +1209,9 @@ export default function FeedScreen() {
         errorText={composerError}
       />
 
-      <FeedReplyComposerSheet
-        visible={!!replyTarget}
-        onClose={() => setReplyTarget(null)}
-        onSend={handleSendReply}
-        postExcerpt={replyTarget?.body ?? null}
-        postIsAnonymous={replyTarget?.isAnonymous ?? false}
-        maxLength={me?.replyMaxLength}
-        remaining={me?.quota?.repliesRemaining ?? null}
-        sending={createReply.isPending}
-        errorText={replyError}
-      />
+      {/* YANIT COMPOSER'I KALDIRILDI (iki modlu yapı): yanıt yazarak eşleşme
+          kanalı kapandı. Yerine yazarın profil kartından beğeni/not/Spark
+          geldi — akıştan profile girmenin yolu PreviewModal (aşağıda). */}
 
       <FeedQuotaSheet
         visible={quotaSheet.visible}
@@ -1542,21 +1280,9 @@ export default function FeedScreen() {
         profile={authorProfile.data}
       />
 
-      {/* Yanıt kartına dokununca açılan profil — gerekçe `handleReplyPress`in
-          başında. `visible` profil GELDİKTEN sonra açılıyor (yazar
-          önizlemesiyle aynı desen): boş bir kartla açıp doldurmak sheet'i bir
-          kare boyunca iskelet gibi gösteriyordu. */}
-      <LikerSwipeModal
-        visible={!!replierTarget && !!replierProfile.data}
-        profile={replierProfile.data}
-        onClose={() => setReplierTarget(null)}
-        onDecide={handleReplyDecide}
-        // Engellemeden sonra yanıt listesi tazelenmeli: kart hâlâ listede
-        // duruyor ama arkasındaki kişi artık engelli.
-        onSwipe={(_userId: string, direction: string) => {
-          if (direction === "block") repliesQuery.refetch?.();
-        }}
-      />
+      {/* YANITLAYAN PROFİLİ MODALI KALDIRILDI: yanıt kanalı üründen çıktı.
+          Yazar önizlemesi (PreviewModal, yukarıda) duruyor — akıştan profile
+          girmenin yolu artık o. */}
     </View>
   );
 }
