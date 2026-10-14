@@ -39,6 +39,7 @@ import FeedFilterSheet, {
   type FeedFilterValue,
 } from "../components/FeedFilterSheet";
 import FeedUniversitySheet from "../components/FeedUniversitySheet";
+import FeedMapStrip from "../components/FeedMapStrip";
 import {
   activeFilterCount,
   loadFeedParams,
@@ -956,16 +957,29 @@ export default function FeedScreen() {
     return universityNameByDomain.get(domain) ?? domain;
   }, [me?.universityDomain, universityNameByDomain]);
 
+  // Gösterilen kampüs: Plus seçimi varsa o, yoksa kullanıcının KENDİ kampüsü
+  // (/api/feed/me yalnız domain veriyor, adı listeden çözüyoruz).
+  //
+  // ⚠️ MEMO'NUN DIŞINDA: pill satırı DA harita şeridi DE aynı kampüsü
+  // gösteriyor. İkisi ayrı ayrı türetirse biri güncellenip öbürü kalabilir ve
+  // şeritteki ad pill'dekinden farklı okunur.
+  const campusDomain = listParams.university ?? me?.universityDomain ?? null;
+  // Ad çözülemediyse (liste henüz gelmedi ya da domain listede yok) domain'in
+  // kendisi, o da yoksa "Kendi kampüsüm". Boş etiket çizmektense ham domain.
+  const campusLabel = campusDomain
+    ? (universityNameByDomain.get(campusDomain) ?? campusDomain)
+    : t("feed.university.own");
+  // Sunucudan gelen üniversite kaydı — harita koordinatı varsa oradan
+  // (bkz. universityGeo > resolveUniversityCoordinate).
+  const selectedUniversityOption = useMemo(
+    () =>
+      campusDomain
+        ? ((universities ?? []).find((u) => u.domain === campusDomain) ?? null)
+        : null,
+    [campusDomain, universities],
+  );
+
   const filterPills = useMemo(() => {
-    // Gösterilen kampüs: Plus seçimi varsa o, yoksa kullanıcının KENDİ
-    // kampüsü (/api/feed/me yalnız domain veriyor, adı listeden çözüyoruz).
-    const domain = listParams.university ?? me?.universityDomain ?? null;
-    // Ad çözülemediyse (liste henüz gelmedi ya da domain listede yok)
-    // domain'in kendisi, o da yoksa eski "Kendi kampüsüm" metni. Boş pill
-    // çizmektense ham domain göstermek yeğ.
-    const campusLabel = domain
-      ? (universityNameByDomain.get(domain) ?? domain)
-      : t("feed.university.own");
     return [
       {
         key: "campus",
@@ -1012,7 +1026,7 @@ export default function FeedScreen() {
     // `universityGate` ARTIK BAĞIMLILIK DEĞİL: kilit rozeti kalkınca memo
     // kapının durumunu hiç okumuyor, listede tutmak kapı değiştiğinde üç
     // pill'i boşuna yeniden kurardı.
-  }, [listParams, t, me?.universityDomain, universityNameByDomain]);
+  }, [listParams, t, campusLabel]);
 
   const handlePillPress = useCallback(
     (key: string) => {
@@ -1089,6 +1103,26 @@ export default function FeedScreen() {
   // `isPremium:false` doğuyor ve o pencerede pill çizilip hemen kaybolurdu —
   // premium'a premium satmak en pahalı yanılma yönü.
   const showPlusUpsell = premiumResolved && !isPremium;
+
+  /**
+   * Kampüs haritası şeridi — pill'lerin altında.
+   *
+   * Dokunuş KAMPÜS SEÇİCİYİ açıyor: tam ekran interaktif harita native SDK
+   * istiyor (`@rnmapbox/maps` + dev-client yeniden build) ve o gelene kadar
+   * aynı işi yapan mevcut yüzeye yönlendirmek, çalışmayan bir buton
+   * göstermekten iyi.
+   *
+   * Plus kapısı seçicinin İÇİNDE (free kullanıcı listeyi görüyor, başka
+   * kampüs satırları kilitli) — şerit kapı taşımıyor.
+   */
+  const mapStrip = (
+    <FeedMapStrip
+      domain={listParams.university ?? me?.universityDomain ?? null}
+      label={campusLabel}
+      option={selectedUniversityOption}
+      onPress={handleUniversityPill}
+    />
+  );
 
   const filterRow = (
     // Alt pay PILL_ROW_GAP: ham marjı değil, açıklamayla pill'ler arasındaki
@@ -1177,6 +1211,11 @@ export default function FeedScreen() {
           <>
             {title}
             {isMine ? null : filterRow}
+            {/* Harita şeridi pill'lerin ALTINDA: pill satırı "neyi
+                filtreliyorum", şerit "neredeyim" diyor. Gönderilerim'de YOK —
+                orası kampüs filtresi taşımıyor, harita da bir kampüs
+                göstergesi. */}
+            {isMine ? null : mapStrip}
           </>
         }
         onEndReached={() => {
