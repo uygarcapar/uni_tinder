@@ -29,14 +29,13 @@ import RegisterProgressBar from '@/features/auth/components/RegisterProgressBar'
  * bir şey değil.
  */
 const renderWithMode = (step: number, mode?: string) => {
-  const store = configureStore({
-    reducer: { auth: authReducer },
-    // Mod kayıt formunda; reducer'ı doğrudan besliyoruz ki test adım
-    // numarasına değil PAYDAYA baksın.
-    preloadedState: mode
-      ? ({ auth: { registrationForm: { mode } } } as any)
-      : undefined,
-  });
+  // Mod kayıt formunda; store'u doğrudan besliyoruz ki test adım numarasına
+  // değil PAYDAYA baksın. Config `any`: KISMİ state veriyoruz (yalnız
+  // registrationForm.mode) — AuthState'in tamamını kurmak bu smoke testi için
+  // gereksiz yük, ama `preloadedState` tam şekli istiyor.
+  const config: any = { reducer: { auth: authReducer } };
+  if (mode) config.preloadedState = { auth: { registrationForm: { mode } } };
+  const store = configureStore(config);
   return render(
     <Provider store={store}>
       <RegisterProgressBar step={step} />
