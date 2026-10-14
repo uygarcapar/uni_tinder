@@ -113,6 +113,7 @@
           }
         }
       ],
+      "./plugins/withSplashAppearance",
       "./plugins/withSplashLayout",
       [
         "expo-splash-screen",

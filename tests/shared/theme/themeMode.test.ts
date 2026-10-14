@@ -19,7 +19,21 @@ const mockAppearance = {
   }),
 };
 
-jest.mock("react-native", () => ({ Appearance: mockAppearance }));
+// NSUserDefaults aynası (RN `Settings` → RCTSettingsManager). Splash'in temasını
+// JS boot'tan önce belirleyen tek kanal — bkz. plugins/withSplashAppearance.js.
+const mockDefaults = new Map<string, unknown>();
+const mockSettings = {
+  get: jest.fn((key: string) => mockDefaults.get(key)),
+  set: jest.fn((values: Record<string, unknown>) => {
+    Object.entries(values).forEach(([k, v]) => mockDefaults.set(k, v));
+  }),
+};
+
+jest.mock("react-native", () => ({
+  Appearance: mockAppearance,
+  Platform: { OS: "ios" },
+  Settings: mockSettings,
+}));
 jest.mock("@/shared/utils/appPrefs", () => ({
   appPrefs: {
     getString: (key: string) => mockPrefs.get(key),
@@ -32,8 +46,10 @@ jest.mock("@/shared/utils/appPrefs", () => ({
 function load(opts: { persisted?: string; system?: Scheme } = {}) {
   jest.resetModules();
   mockPrefs.clear();
+  mockDefaults.clear();
   mockListeners.length = 0;
   mockAppearance.setColorScheme.mockClear();
+  mockSettings.set.mockClear();
   mockAppearance.getColorScheme.mockReturnValue(opts.system ?? "light");
   if (opts.persisted) mockPrefs.set("theme.mode", opts.persisted);
 
@@ -105,6 +121,44 @@ describe("tercih değişimi", () => {
 
     themeMode.setThemePreference("light");
     expect(beforeSwap).toHaveBeenCalledTimes(1);
+  });
+});
+
+describe("native splash aynası", () => {
+  it("açılışta TERCİH NSUserDefaults'a yazılır (mod değil)", () => {
+    // Koyu cihazda "Açık" tercihi: splash'in koyu açılıp açığa atlamasının
+    // sebebi buydu — AppDelegate bu anahtarı RN başlamadan okuyup pencereye
+    // override basıyor.
+    load({ persisted: "light", system: "dark" });
+
+    expect(mockDefaults.get("litThemeMode")).toBe("light");
+  });
+
+  it("'system' tercihi AYNEN yazılır — native tarafta override kaldırılacak", () => {
+    load({ persisted: "system", system: "dark" });
+
+    expect(mockDefaults.get("litThemeMode")).toBe("system");
+  });
+
+  it("tercih değişince ayna güncellenir", () => {
+    const { themeMode } = load({ persisted: "light", system: "dark" });
+    mockSettings.set.mockClear();
+
+    themeMode.setThemePreference("system");
+
+    expect(mockDefaults.get("litThemeMode")).toBe("system");
+  });
+
+  it("değer aynıysa yeniden yazılmaz", () => {
+    const { themeMode } = load({ persisted: "light", system: "light" });
+    mockSettings.set.mockClear();
+
+    // Sistem olayı "system" tercihinde olmadığı için yok sayılıyor; yine de
+    // applyEverywhere çağrılan her yolda bedava yazma olmamalı.
+    themeMode.setThemePreference("dark");
+    themeMode.setThemePreference("dark");
+
+    expect(mockSettings.set).toHaveBeenCalledTimes(1);
   });
 });
 
