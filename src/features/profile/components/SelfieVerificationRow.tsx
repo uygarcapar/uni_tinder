@@ -172,12 +172,12 @@ export default function SelfieVerificationRow({
         <Text style={{ color: colors.text, fontSize: 15, fontWeight: "600" }}>
           {title}
         </Text>
-        {/* Açıklama rengi `textSecondary` DEĞİL, mağaza şeridindeki alt satırla
-            ("{n} hakkın kaldı", bkz. ConsumableShopCard) aynı `ink(0.55)`:
-            ikisi de aynı öbekte, sabit gri token yan yana duran iki ikincil
-            metni farklı ağırlıkta gösteriyordu. Alfa yolu ayrıca temaya kendi
-            çözülüyor — açıkta siyah, koyuda beyaz tabandan. */}
-        <Text style={{ color: ink(0.55), fontSize: 13, lineHeight: 18 }}>
+        {/* Açıklama rengi mağaza şeridindeki alt satırla ("{n} hakkın kaldı",
+            bkz. ConsumableShopCard) AYNI token'dan: ikisi de aynı öbekte,
+            farklı iki gri yan yana duramaz. Bir ara ikisi de `ink(0.55)` idi
+            çünkü `textSecondary` o zaman başka bir griydi; ayrım paletten
+            kalktı (bkz. colors.ts → textSecondary ≡ textMuted). */}
+        <Text style={{ color: colors.textMuted, fontSize: 13, lineHeight: 18 }}>
           {subtitle}
         </Text>
       </View>

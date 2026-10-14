@@ -1,10 +1,16 @@
 import { useCallback, useState } from "react";
-import { Pressable, Text, TouchableOpacity, View } from "react-native";
+import { Text, TouchableOpacity, View } from "react-native";
 import { useTranslation } from "react-i18next";
-import AppModal from "@/shared/components/AppModal";
+import AppModal, {
+  SHEET_PICKER_SNAP_POINTS,
+} from "@/shared/components/AppModal";
 import SFIcon from "@/shared/components/SFIcon";
-import { Check, Lock } from "@/shared/icons";
+import { Check, Info, Lock } from "@/shared/icons";
 import { colors } from "@/shared/theme/colors";
+import {
+  sectionGroupStyle,
+  SECTION_GROUP_PAD_H,
+} from "@/shared/theme/sectionGroup";
 import type { FeedInterest, FeedKind, FeedSort } from "../feedTypes";
 
 /**
@@ -75,7 +81,16 @@ export default function FeedFilterSheet({
       onClose={onClose}
       onPresented={handlePresented}
       title={t("feed.filter.title")}
-      dynamicSizing
+      // `dynamicSizing` DEĞİL ve TEK BAŞINA `fullScreen` DE DEĞİL. Üç bölüm
+      // başlık+açıklama+satırlarla uzadıktan sonra içerikten ölçülen sheet
+      // neredeyse tepeye dayanıyor, yani her açılışta tam ekran gibi
+      // davranıyordu. Detentler ortak sabitten: alt durak 75%, ÜST DURAK
+      // FilterModal'ın tepesiyle AYNI — `fullScreen` burada "tam ekran" değil
+      // "tepe, status bar/dynamic island'ın ALTI" demek (topInset = safe area),
+      // yani başlık çentiğe girmiyor. Şehir seçicinin kurulumunun aynısı
+      // (bkz. CityPickerModal > SHEET_PICKER_SNAP_POINTS).
+      snapPoints={SHEET_PICKER_SNAP_POINTS}
+      fullScreen
       // Bitti/Sıfırla YAZISI yerine glif — FilterModal ile birebir aynı dil.
       actionIcon="checkmark"
       actionIconLabel={t("common.done")}
@@ -83,9 +98,25 @@ export default function FeedFilterSheet({
       leftIcon="arrow.counterclockwise"
       leftIconLabel={t("feed.filter.reset")}
       onLeftPress={reset}
-      contentContainerStyle={{ paddingTop: 8, paddingBottom: 28 }}
+      // Header'ın iki butonu da profil düzenleme modalındaki kabukla AYNI:
+      // uygulamanın yuvarlak BERRAK cam ikon ölçüsü (GLASS_ICON_CLEAR_SIZE) ve
+      // dolgulu `.regular` cam yerine berrak cam glif — yani ProfileScreen
+      // başlığındaki çan/ayarlar butonunun aynısı (bkz. AppModal >
+      // clearGlassHeader). Opt-in bir knob; bu sheet çevrilmemişti, o yüzden
+      // butonları komşularından bir tık küçük ve dolgulu duruyordu.
+      clearGlassHeader
+      // ⚠️ `paddingTop` VERİLMİYOR ve bu kasıtlı: `contentContainerStyle`
+      // AppModal'ın varsayılanının ÜSTÜNE yazılıyor, yani buradaki bir sayı
+      // içeriğin header'a bırakılan payını (MODAL_HEADER_HEIGHT = 74) EZİYOR.
+      // Eskiden 8 yazıyordu ve ilk bölümün başlığı bulanık header'ın altında
+      // kalıyordu. Üst nefes artık bölümlerin kendi `marginTop`undan geliyor.
+      contentContainerStyle={{ paddingBottom: 28 }}
     >
-      <Section title={t("feed.filter.sort")}>
+      <Section
+        title={t("feed.filter.sort")}
+        description={t("feed.filter.sortDesc")}
+        first
+      >
         {SORTS.map((key) => (
           <OptionRow
             key={key}
@@ -96,7 +127,10 @@ export default function FeedFilterSheet({
         ))}
       </Section>
 
-      <Section title={t("feed.filter.interest")}>
+      <Section
+        title={t("feed.filter.interest")}
+        description={t("feed.filter.interestDesc")}
+      >
         {INTERESTS.map((key) => (
           <OptionRow
             key={key}
@@ -109,6 +143,7 @@ export default function FeedFilterSheet({
 
       <Section
         title={t("feed.filter.kind")}
+        description={t("feed.filter.kindDesc")}
         // Kilit rozeti yalnız "paywall" dalında — "unknown" (/me henüz gelmedi)
         // iken kilit çizmek kullanıcıya olmayan bir kısıt uydururdu
         // (premiumTier.resolved kuralının aynısı).
@@ -144,53 +179,125 @@ export default function FeedFilterSheet({
   );
 }
 
+/**
+ * Bölüm başlığı — PROFİL DÜZENLEME ekranındaki bölüm başlığının birebir kalıbı
+ * (bkz. EditProfileForm: `marginTop: 28`, başlık 20/600 `text`, altında 16
+ * nefes). Eskiden 13/600 `textSecondary` küçük bir etiketti ve seçenekleri
+ * dolgulu bir kutuya alıyordu — iki ekran aynı soruyu iki ayrı dille soruyordu.
+ */
 function Section({
   title,
+  description,
   locked,
+  first,
   children,
 }: {
   title: string;
+  /** Başlığın altındaki tek cümle — profil düzenlemedeki `*Desc` satırları. */
+  description: string;
   locked?: boolean;
+  /**
+   * İlk bölüm — bölümler arası 28'lik pay BURADA UYGULANMIYOR.
+   *
+   * İçerik kabı header'a zaten MODAL_HEADER_HEIGHT (74) ayırıyor; üstüne 28 + 12
+   * binince ilk başlık header butonlarından ~114 aşağıda kalıyor ve sheet boş
+   * açılmış gibi duruyordu. Bölümler arasındaki ritim bozulmadan yalnız tepedeki
+   * fazlalık alınıyor.
+   */
+  first?: boolean;
   children: React.ReactNode;
 }) {
   return (
-    <View style={{ marginTop: 18 }}>
-      <View style={{ flexDirection: "row", alignItems: "center", marginBottom: 6 }}>
-        <Text
+    <View style={{ marginTop: first ? 0 : 28 }}>
+      {/* Başlık bloğu profil düzenlemedeki kalıbın aynısı: dikey yığın, üst pay
+          12, başlığın altında 6, açıklamanın altında 12 (orada `mb-3`). */}
+      <View style={{ marginTop: 12, marginBottom: 10 }}>
+        <View
           style={{
-            fontSize: 13,
-            fontWeight: "600",
-            color: colors.textSecondary,
-            letterSpacing: 0.2,
+            flexDirection: "row",
+            alignItems: "center",
+            gap: 6,
+            marginBottom: 6,
           }}
         >
-          {title}
-        </Text>
-        {locked ? (
-          <View style={{ marginLeft: 6 }}>
+          <Text style={{ color: colors.text, fontSize: 20, fontWeight: "600" }}>
+            {title}
+          </Text>
+          {locked ? (
+            // Glif başlıkla birlikte büyüdü: 20 puntonun yanında 12'lik kilit
+            // kayboluyordu.
             <SFIcon
               name="lock.fill"
               fallback={Lock}
-              size={12}
+              size={16}
               color={colors.textMuted}
               strokeWidth={2}
             />
-          </View>
-        ) : null}
+          ) : null}
+        </View>
+        {/* Açıklama satırı — profil düzenlemedeki `info.circle` + 14/400
+            `textSecondary` ikilisinin birebir aynısı. `flex: 1` + `paddingRight`
+            uzun cümle glifin altına taşmak yerine sarsın diye. */}
+        <View
+          style={{
+            flexDirection: "row",
+            alignItems: "flex-start",
+            gap: 8,
+            marginBottom: 12,
+            paddingRight: 16,
+          }}
+        >
+          <SFIcon
+            name="info.circle"
+            fallback={Info}
+            size={18}
+            color={colors.textSecondary}
+            strokeWidth={2}
+            weight="semibold"
+            // Glif ilk satırın ortasına otursun: (satır boyu - glif) / 2.
+            style={{ marginTop: (20 - 18) / 2 }}
+          />
+          <Text
+            style={{
+              color: colors.textSecondary,
+              fontSize: 14,
+              lineHeight: 20,
+              fontWeight: "400",
+              flex: 1,
+            }}
+          >
+            {description}
+          </Text>
+        </View>
       </View>
-      <View
-        style={{
-          backgroundColor: colors.surface,
-          borderRadius: 18,
-          borderCurve: "continuous",
-          overflow: "hidden",
-        }}
-      >
-        {children}
-      </View>
+      {/* Seçenekler GRUP KUTUSUNDA — Ayarlar'daki liste kutusunun aynısı
+          (bkz. sectionGroupStyle). Eskiden satırlar doğrudan sayfa zemini
+          üstünde duruyordu ve yan payını modal'ın içerik kabından alıyordu;
+          Ayarlar'ın listeleri kutuya girdikten sonra aynı soruyu soran iki
+          sheet iki ayrı dille soruyor oldu.
+
+          Satırların yatay payı KUTUDA DEĞİL satırın kendisinde (bkz.
+          OptionRow) — Ayarlar'daki kuralın aynısı: dokunulabilir alan ve
+          ileride gelebilecek bir basılı zemin kutunun kenarından kenarına
+          uzasın, metin yine kenarlıktan içeri çekilsin. */}
+      <View style={sectionGroupStyle()}>{children}</View>
     </View>
   );
 }
+
+/**
+ * Seçenek satırı — `EditProfileForm > OptionListItem`in `checkbox` varyantının
+ * birebir kalıbı: dikey pay 18, metin 16/22/500, seçili olmayan satır
+ * `textSecondary`, sağda sabit yuvarlak kare kutu.
+ *
+ * ⚠️ İŞARET YUVASI HER ZAMAN ÇİZİLİYOR (koşullu olan yalnız içindeki tik):
+ * yoksa seçim anında metin alanı genişleyip satır yana kayıyor.
+ *
+ * Kutu biçimi (çıplak tik değil) keşif filtresindeki aynı listeyle ortak
+ * (bkz. FilterModal > CheckRow) — uygulamada "filtrede seçenek işaretle" dili
+ * tek.
+ */
+const CHECKBOX_SIZE = 22;
 
 function OptionRow({
   label,
@@ -202,25 +309,65 @@ function OptionRow({
   onPress: () => void;
 }) {
   return (
-    <Pressable
+    <TouchableOpacity
+      activeOpacity={1}
       onPress={onPress}
       style={{
         flexDirection: "row",
         alignItems: "center",
-        paddingHorizontal: 16,
-        paddingVertical: 13,
+        justifyContent: "space-between",
+        // Grup kutusunun iç payı (bkz. SECTION_GROUP_PAD_H): metin kutunun
+        // kenarlığına yapışmasın. Kutuda değil burada — gerekçe Section'da.
+        paddingHorizontal: SECTION_GROUP_PAD_H,
       }}
     >
-      <Text style={{ flex: 1, fontSize: 15.5, color: colors.text }}>{label}</Text>
-      {selected ? (
-        <SFIcon
-          name="checkmark"
-          fallback={Check}
-          size={16}
-          color={colors.text}
-          strokeWidth={2.4}
-        />
-      ) : null}
-    </Pressable>
+      {/* flex:1 + paddingRight — uzun etiket tik kutusunun altına taşmak
+          yerine sarsın. */}
+      <View
+        style={{
+          flex: 1,
+          flexDirection: "row",
+          alignItems: "center",
+          paddingVertical: 18,
+          paddingRight: 12,
+        }}
+      >
+        <Text
+          style={{
+            color: selected ? colors.text : colors.textSecondary,
+            fontSize: 16,
+            lineHeight: 22,
+            fontWeight: "500",
+            flex: 1,
+          }}
+        >
+          {label}
+        </Text>
+      </View>
+      <View
+        style={{
+          width: CHECKBOX_SIZE,
+          height: CHECKBOX_SIZE,
+          borderRadius: 7,
+          borderCurve: "continuous",
+          borderWidth: selected ? 0 : 1.5,
+          borderColor: colors.hairlineStrong,
+          backgroundColor: selected ? colors.inverseSurface : "transparent",
+          alignItems: "center",
+          justifyContent: "center",
+        }}
+      >
+        {selected && (
+          <SFIcon
+            name="checkmark"
+            fallback={Check}
+            size={14}
+            color={colors.onInverseSurface}
+            strokeWidth={3}
+            weight="bold"
+          />
+        )}
+      </View>
+    </TouchableOpacity>
   );
 }

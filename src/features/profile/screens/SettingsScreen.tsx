@@ -102,6 +102,7 @@ import {
   SELFIE_CONSENT_TYPES,
 } from "@/features/auth/consents";
 import { logout } from "@/features/auth/authSlice";
+import { clearLastLoginEmail } from "@/features/auth/lastEmail";
 import { shortNetError } from "@/shared/utils/netError";
 import {
   buildIapReport,
@@ -119,6 +120,13 @@ import {
 } from "@/features/profile/pendingPremiumSync";
 import { readPendingRedeems } from "@/features/discover/fireRedeem";
 import { colors, ink, scrimAt } from "../../../shared/theme/colors";
+// Bölüm kutusu (zemin + kenarlık + iç boşluklar) PAYLAŞILAN kaynaktan: aynı
+// kutuyu akış filtre sheet'i de çiziyor, iki ekranın grisi ayrışmamalı.
+import {
+  sectionGroupStyle,
+  SECTION_GROUP_PAD_B,
+  SECTION_GROUP_PAD_H,
+} from "../../../shared/theme/sectionGroup";
 import {
   setLanguage,
   resolveLanguage,
@@ -953,6 +961,9 @@ export default function SettingsScreen() {
         data: { password },
       });
       setDeleteModalVisible(false);
+      // Hesap kalıcı olarak gitti: login ekranının hatırladığı adres artık
+      // hiçbir hesaba ait değil, önden doldurmak yanıltıcı olurdu.
+      clearLastLoginEmail();
       Alert.alert(
         t('deleteAccount.successTitle'),
         t('deleteAccount.successMsg'),
@@ -1086,9 +1097,14 @@ export default function SettingsScreen() {
           açıklaması var (rıza "bilgilendirilmiş" olmak zorunda) ve
           SettingsToggleRow alt metni çizmiyor. Metinleri listeye sokmak onları
           ayrı birer satır yapıp aralarına ayırıcı çizerdi. Aşağıdaki asıl
-          liste ayrı başlıyor. */}
-      <>
-          {SELFIE_CONSENT_TYPES.map((type) => (
+          liste ayrı başlıyor.
+
+          Blok `SettingsList` dışında olsa da KUTUSU aynı (bkz. sectionGroupStyle):
+          sayfadaki öbür grup kutulu çizilirken bu ikisinin zeminsiz kalması
+          onları sayfadan düşmüş gibi gösteriyordu. Ayırıcı yok — anahtarları
+          zaten kendi açıklamaları ayırıyor. */}
+      <View style={[sectionGroupStyle(), { paddingBottom: SECTION_GROUP_PAD_B }]}>
+          {SELFIE_CONSENT_TYPES.map((type, i) => (
             <View key={type}>
               <SettingsToggleRow
                 title={t(`profile.selfie.consent.${type}.title`)}
@@ -1096,50 +1112,65 @@ export default function SettingsScreen() {
                 disabled={selfieConsentSaving !== null}
                 onToggle={() => handleToggleSelfieConsent(type)}
               />
+              {/* Yatay boşluk satırlarınkiyle AYNI (SECTION_GROUP_PAD_H): açıklama
+                  anahtarın etiketiyle tek hizada başlamalı.
+                  Alt boşluk yalnız ARADAKİ açıklamada: sondakinin altını kutu
+                  kendisi veriyor (bkz. SECTION_GROUP_PAD_B), ikisi toplanmasın.
+                  Renk `textMuted`: ayarlardaki TÜM açıklamalar bu gride
+                  (bkz. SettingsSection'daki `subtitle`) — eskiden bu ikisi
+                  `textSecondary` idi ve altındaki genel notun yanında bir tık
+                  parlak kalıyordu. */}
               <Text
                 style={{
-                  color: colors.textSecondary,
+                  color: colors.textMuted,
                   fontSize: 13,
                   lineHeight: 19,
-                  paddingHorizontal: 20,
+                  paddingHorizontal: SECTION_GROUP_PAD_H,
                   marginTop: -2,
-                  marginBottom: 12,
+                  marginBottom:
+                    i === SELFIE_CONSENT_TYPES.length - 1 ? 0 : 12,
                 }}
               >
                 {t(`profile.selfie.consent.${type}.note`)}
               </Text>
             </View>
           ))}
+      </View>
 
-          {/* Yarım rıza uyarısı — yalnız biri açıkken. Kullanıcı "izin verdim
-              ama doğrulama başlamıyor" durumuna düşmesin. */}
-          {SELFIE_CONSENT_TYPES.some((type) => selfieConsents[type]) &&
-            !SELFIE_CONSENT_TYPES.every((type) => selfieConsents[type]) && (
-              <Text
-                style={{
-                  color: colors.textMuted,
-                  fontSize: 13,
-                  lineHeight: 19,
-                  paddingHorizontal: 20,
-                  marginBottom: 12,
-                }}
-              >
-                {t('settings.selfieConsent.pairHint')}
-              </Text>
-            )}
+      {/* Kutunun ALTINDAKİ dipnotlar — bir ayar sunmuyorlar, grubu
+          açıklıyorlar; iOS'un gruplu listesinde de bu metinler kutunun
+          dışında durur. Yatay boşluk kutunun iç boşluğuyla aynı: metin
+          yukarıdaki açıklamalarla tek hizada akıyor. */}
 
+      {/* Yarım rıza uyarısı — yalnız biri açıkken. Kullanıcı "izin verdim
+          ama doğrulama başlamıyor" durumuna düşmesin. */}
+      {SELFIE_CONSENT_TYPES.some((type) => selfieConsents[type]) &&
+        !SELFIE_CONSENT_TYPES.every((type) => selfieConsents[type]) && (
           <Text
             style={{
               color: colors.textMuted,
               fontSize: 13,
               lineHeight: 19,
-              paddingHorizontal: 20,
-              marginBottom: 16,
+              paddingHorizontal: SECTION_GROUP_PAD_H,
+              marginTop: 12,
             }}
           >
-            {t('settings.selfieConsent.note')}
+            {t('settings.selfieConsent.pairHint')}
           </Text>
-      </>
+        )}
+
+      <Text
+        style={{
+          color: colors.textMuted,
+          fontSize: 13,
+          lineHeight: 19,
+          paddingHorizontal: SECTION_GROUP_PAD_H,
+          marginTop: 12,
+          marginBottom: 16,
+        }}
+      >
+        {t('settings.selfieConsent.note')}
+      </Text>
 
       <SettingsList>
       {/* Aydınlatma metni — rızanın dayanağı elin altında olmalı: metni
@@ -1337,7 +1368,9 @@ export default function SettingsScreen() {
             // İçerik header'ın başlık satırının ALTINDAN başlıyor: sayfa adını
             // yazan tek yer header (ortalanmış, hep görünür), içerikte başlık
             // ya da açıklama yok — ilk satır doğrudan listenin kendisi.
-            paddingTop: insets.top + SCREEN_HEADER_TITLE_HEIGHT + 16,
+            // 24 = eski 16 + ilk satırın kendi üstünde taşıdığı 8 (bkz.
+            // SettingsSection `marginTop`): pay satırdan kutunun dışına taşındı.
+            paddingTop: insets.top + SCREEN_HEADER_TITLE_HEIGHT + 24,
             paddingBottom: insets.bottom + 60,
             paddingHorizontal: ROOT_PAGE_PAD_H,
           }}
@@ -1366,7 +1399,10 @@ export default function SettingsScreen() {
               // ne büyüyor ne kalınlaşıyor.
               titleSize={ROW_TEXT_SIZE}
               titleWeight="500"
-              marginTop={i === 0 ? 8 : 0}
+              // Satır içi boşluk YOK: ilk satırın üstündeki 8pt'lik pay grup
+              // kutusu gelince kutunun İÇİNDE gri bir şerit bırakıyordu —
+              // header'dan ayıran nefes artık ScrollView'ın paddingTop'unda.
+              marginTop={0}
               onPress={() => openSection(key)}
             />
           ))}
@@ -1540,15 +1576,10 @@ export default function SettingsScreen() {
 // `onPress`: kök listede aynı blok BASILABİLİR bir kategori satırına dönüşür —
 // metin ölçüleri değişmez, sağa chevron eklenir. Bölüm başlığı ve kategori
 // satırı bilerek tek bileşen: iki kademe arasında tipografi kaymasın.
-// Kök listenin yan boşluğu. Basılı vurgunun taşma payı buna BAĞLI (PRESS_INSET)
-// — değiştirirken ikisi birlikte kayıyor, vurgu ekran kenarına tam oturuyor.
-const ROOT_PAGE_PAD_H = 26;
-
-// Basılı zeminin satır hizasından iki yana taştığı pay. Kök listenin sayfa
-// boşluğuna EŞİT (bkz. ROOT_PAGE_PAD_H): vurgu satır kutusu kadar değil, ekranın
-// tam genişliği boyunca uzuyor — iOS Ayarlar'daki gibi. Daha küçük bir pay (12)
-// denendi, zemin satırın iki yanında havada asılı bir kutu gibi duruyordu.
-const PRESS_INSET = ROOT_PAGE_PAD_H;
+// Kök listenin yan boşluğu. Kategori sayfalarının boşluğuyla AYNI (20) olmak
+// ZORUNDA: iki kademe de aynı grup kutusunu çiziyor ve geçiş parallax'la
+// oluyor — 26'da kalırsa kayan iki sayfanın kutu kenarları 6pt kaçık gidiyor.
+const ROOT_PAGE_PAD_H = 20;
 
 // Basıştan sonra vurgunun ekranda kaldığı süre. Dokunuş kategoriyi açar açmaz
 // kök panelin pointerEvents'i kapanıyor, RN basışı iptal edip onPressOut'u TEK
@@ -1557,24 +1588,29 @@ const PRESS_INSET = ROOT_PAGE_PAD_H;
 // sönüyor, arkadaki kök listede basılı satır ASILI KALMIYOR.
 const PRESS_HOLD_MS = 240;
 
-// `titleWeight`: sayfa başlığı (600) ile kategori SATIRI (500) aynı bileşenden
-// çiziliyor ama aynı ağırlıkta olmamalı — biri sayfanın adı, diğeri listedeki
-// bir seçenek.
-function SettingsSection({
-  title,
-  subtitle,
-  marginTop = 40,
-  onPress,
-  icon,
-  titleSize = 20,
-  titleWeight = "600",
-}: any) {
-  // Basılı hâl STATE'te, `Pressable`ın `pressed` argümanında değil — gerekçe
-  // aşağıdaki style prop'unda.
+/**
+ * Basılı satır vurgusu — ayarlardaki İKİ kademe de buradan besleniyor: kök
+ * listedeki kategori satırları ve kategori sayfalarındaki basılabilir satırlar.
+ * Aynı dokunuş iki kademede farklı tepki vermemeli.
+ *
+ * Basılı hâl STATE'te, `Pressable`ın `pressed` argümanında değil:
+ * ⚠️ `style` FONKSİYON OLARAK VERİLEMEZ — bu dosyada denendi ve satır stilsiz
+ * kaldı: babel'deki `jsxImportSource: "nativewind"` her RN bileşenini interop
+ * sürümüyle değiştiriyor, interop da inline stilde yalnız dizi/nesne tanıyor;
+ * fonksiyon bir stil kuralı sanılıp düzleştiriliyor ve HİÇ ÇAĞRILMIYOR. Hata
+ * ya da uyarı yok, o yüzden vurgunun hiç çizilmediği fark edilmemişti.
+ *
+ * Bırakış GECİKMELİ (bkz. PRESS_HOLD_MS): kök listede dokunuş kategoriyi açar
+ * açmaz panelin pointerEvents'i kapanıyor, RN basışı iptal edip onPressOut'u
+ * tek karede tetikliyor — gecikmesiz bırakılsa gri zemin gözle görülmeden
+ * kaybolurdu. Aynısı kategori sayfalarında da geçerli: ekran değiştiren
+ * satırlar (e-posta/şifre) basıldığı anda sayfadan çıkıyor.
+ *
+ * Zamanlayıcı unmount'ta ve her yeni basışta iptal ediliyor — geri gelip
+ * tekrar basınca eski atım vurguyu erken düşürmesin.
+ */
+function usePressHighlight() {
   const [pressed, setPressed] = useState(false);
-  // Bırakış GECİKMELİ (bkz. PRESS_HOLD_MS): basış tek karede iptal edildiği için
-  // gecikmesiz sönerdi. Zamanlayıcı unmount'ta ve her yeni basışta iptal
-  // ediliyor — geri gelip tekrar basınca eski atım vurguyu erken düşürmesin.
   const releaseRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   useEffect(
     () => () => {
@@ -1594,6 +1630,29 @@ function SettingsSection({
       setPressed(false);
     }, PRESS_HOLD_MS);
   };
+  return { pressed, holdPress, releasePress };
+}
+
+/**
+ * Vurgunun zemini. Renk `ink()`: tema dönünce koyuda beyaz, açıkta siyah
+ * katman — sabit bir gri iki paletten birinde kayboluyordu. Fonksiyon olmak
+ * ZORUNDA, `colors`/`ink` mutable palete bakıyor (bkz. sectionGroupStyle).
+ */
+const pressBg = () => ({ backgroundColor: ink(0.12) });
+
+// `titleWeight`: sayfa başlığı (600) ile kategori SATIRI (500) aynı bileşenden
+// çiziliyor ama aynı ağırlıkta olmamalı — biri sayfanın adı, diğeri listedeki
+// bir seçenek.
+function SettingsSection({
+  title,
+  subtitle,
+  marginTop = 40,
+  onPress,
+  icon,
+  titleSize = 20,
+  titleWeight = "600",
+}: any) {
+  const { pressed, holdPress, releasePress } = usePressHighlight();
   const block = (
     <View style={{ flexDirection: "column", alignItems: "flex-start", flex: 1 }}>
       {/* Başlıksız çağrı: kategori sayfasında başlık header'da duruyor, burada
@@ -1619,15 +1678,23 @@ function SettingsSection({
             paddingRight: 16,
           }}
         >
-          <SFIcon name="info.circle" fallback={InfoIcon} size={19} color={colors.textSecondary} strokeWidth={2} weight="semibold" />
+          {/* Glif açıklamayla AYNI renkte: ikisi tek bir blok, biri diğerinden
+              parlak olduğunda ikon metinden kopup satır ikonları gibi
+              okunuyordu. */}
+          <SFIcon name="info.circle" fallback={InfoIcon} size={19} color={colors.textMuted} strokeWidth={2} weight="semibold" />
           {/* Açıklama satır etiketleriyle AYNI punto (ROW_TEXT_SIZE): bir tık
               büyük denendi (18) ve kategori sayfasının içi kök listeye göre
               şişkin okundu — sayfadaki her metin tek ölçüde. Ayrımı punto değil
               renk/ağırlık taşıyor: bu gri ve 400, satırlar ise `colors.text` ve
-              500. Satır puntosu değişirse bu da birlikte kaymalı. */}
+              500. Satır puntosu değişirse bu da birlikte kaymalı.
+              Gri TEK kaynak — `textMuted`: ayarlardaki her açıklama (sayfa
+              başlığının alt metni, rıza anahtarlarının notları, dipnotlar)
+              aynı gride. `textSecondary` bir tık parlaktı, aynı sayfada iki
+              gri yan yana düşünce ikisi de kasıtsız bir hiyerarşi
+              uyduruyordu. */}
           <Text
             style={{
-              color: colors.textSecondary,
+              color: colors.textMuted,
               fontSize: ROW_TEXT_SIZE,
               lineHeight: 23,
               fontWeight: "400",
@@ -1648,47 +1715,29 @@ function SettingsSection({
     // düzeni hep iç View'da tutuyor.
     //
     // Basılı hâl gri ZEMİN: satır iOS ayarlarındaki gibi altına vurgu alıyor.
-    // Vurgunun yatay payı ŞART — ilk denemede padding'siz bir kapsül çizilmiş,
-    // yuvarlak uçlar ikonun/chevron'un içine girip metnin arkasında kirli bir
-    // blok gibi durmuştu. Çözüm: negatif margin + eşit padding (satır içeriği
-    // hizasını korur, zemin iki yana taşar) ve kapsül yerine ölçülü köşe.
+    // Zemin artık GRUP KUTUSUNUN iki kenarı arasında uzuyor (eskiden negatif
+    // margin ile ekranın tam genişliğine taşıyordu; kutu geldikten sonra o pay
+    // kenarlığın dışına sızıyordu). Kırpma kutunun `overflow: hidden`'ından
+    // geliyor — köşelerde zemin kutunun yarıçapını alıyor. Vurgunun mekaniği
+    // (state + gecikmeli bırakış + fonksiyon-stil yasağı) usePressHighlight'ta
+    // anlatılıyor; kategori sayfalarındaki satırlar da aynı kaynağı kullanıyor.
     //
-    // ⚠️ `style` FONKSİYON OLARAK VERİLEMEZ — bu dosyada denendi ve satır
-    // stilsiz kaldı: babel'deki `jsxImportSource: "nativewind"` her RN
-    // bileşenini interop sürümüyle değiştiriyor, interop da inline stilde
-    // yalnız dizi/nesne tanıyor; fonksiyon bir stil kuralı sanılıp
-    // düzleştiriliyor ve HİÇ ÇAĞRILMIYOR. Hata/uyarı yok, o yüzden vurgunun
-    // hiç çizilmediği (üstelik marginTop/inset'in de düştüğü) fark edilmemişti.
-    // Bu yüzden basılı hâl `pressed` argümanından değil, onPressIn/Out ile
-    // tutulan state'ten geliyor ve stil düz bir dizi.
+    // Bir ara bunun yerine "açık kategorinin satırı" (`active`) gri tutuluyordu;
+    // sayfaya geçildikten sonra da arkadaki kök listede asılı kaldığı için
+    // KALDIRILDI — vurgu yalnız basışın kendisi.
     //
-    // Vurgu YALNIZ basışa da bağlanamıyor: dokunuş kategoriyi açar açmaz kök
-    // panelin pointerEvents'i kapanıyor, RN basışı iptal edip onPressOut'u tek
-    // karede tetikliyor — gri zemin gözle görülmeden kaybolurdu. Çözüm bırakışı
-    // PRESS_HOLD_MS geciktirmek. Bir ara bunun yerine "açık kategorinin satırı"
-    // (`active`) gri tutuluyordu; sayfaya geçildikten sonra da arkadaki kök
-    // listede asılı kaldığı için KALDIRILDI — vurgu yalnız basışın kendisi.
-    // Renk `ink()`: tema dönünce koyuda beyaz, açıkta siyah katman.
-    //
-    // Köşe YUVARLAMASI YOK: zemin artık ekranın iki kenarına kadar uzanıyor
-    // (PRESS_INSET = sayfa boşluğu), kenarda kalan yuvarlak uçlar ekranın
-    // dışında kalıp kırpılmış gibi duruyordu.
+    // Kendi köşe YUVARLAMASI YOK: kutunun köşelerini kutunun kendisi kırpıyor,
+    // satıra ayrı bir yarıçap vermek grubun ortasındaki satırlarda havada asılı
+    // bir kapsül gibi duruyordu.
     <Pressable
       onPress={onPress}
       onPressIn={holdPress}
       onPressOut={releasePress}
-      style={[
-        {
-          marginTop,
-          marginHorizontal: -PRESS_INSET,
-          paddingHorizontal: PRESS_INSET,
-        },
-        pressed && { backgroundColor: ink(0.12) },
-      ]}
+      style={[{ marginTop }, pressed && pressBg()]}
     >
-      {/* Yatay padding dıştaki Pressable'da: satırın içeriği yine sayfanın
-          kendi yan boşluğunda başlayıp bitiyor — başlık/açıklama ile birebir
-          aynı hizada, zemin ise iki yandan taşıyor. */}
+      {/* Yatay padding İÇERİDEKİ View'da (bkz. SECTION_GROUP_PAD_H): basılı zemin
+          kutunun kenarından kenarına uzuyor, metin ise kenarlıktan içeri
+          çekiliyor — kategori sayfalarındaki satırlarla birebir aynı hiza. */}
       <View
         style={{
           flexDirection: "row",
@@ -1699,6 +1748,7 @@ function SettingsSection({
           // geçerken satır yükseklikleri zıplamamalı.
           minHeight: ROW_MIN_HEIGHT,
           paddingVertical: ROW_PAD_V,
+          paddingHorizontal: SECTION_GROUP_PAD_H,
         }}
       >
         {icon}
@@ -1738,6 +1788,10 @@ function SettingsSection({
 // çizgi giriyor. Kapsül dizisi 4-5 satırda "aynı listenin parçaları" gibi
 // değil, üst üste dizilmiş ayrı kartlar gibi okunuyordu; ayırıcı hem daha az
 // mürekkep harcıyor hem de grubu tek bir blok yapıyor.
+//
+// Çerçeve SATIRIN değil GRUBUN: liste tek bir gri kutunun içinde duruyor (bkz.
+// sectionGroupStyle), ayırıcılar o kutunun içinde kenardan kenara geçiyor. Kutu
+// ProfileScreen'deki bölüm kutularının aynısı — iki ekran aynı dili konuşuyor.
 //
 // Tema/Dil sayfaları bunun DIŞINDA: oradaki chip'ler bir liste değil, tek bir
 // seçimin şıkları — kapsül orada anlamı taşıyor (bkz. SettingsThemeRow).
@@ -1783,7 +1837,7 @@ function SettingsList({ children }: { children: React.ReactNode }) {
   // ayırıcı çizilmez.
   const rows = Children.toArray(children).filter(isValidElement);
   return (
-    <View>
+    <View style={sectionGroupStyle()}>
       {rows.map((row, i) => (
         <Fragment key={i}>
           {i > 0 ? (
@@ -1809,20 +1863,31 @@ const listRowStyle = {
   gap: 12,
   minHeight: ROW_MIN_HEIGHT,
   paddingVertical: ROW_PAD_V,
+  // Yatay boşluk grup kutusunda DEĞİL burada (bkz. SECTION_GROUP_PAD_H).
+  paddingHorizontal: SECTION_GROUP_PAD_H,
 };
 
 /**
  * Basılabilir liste satırı. `destructive`: yıkıcı eylem kırmızı METİNLE
  * anlatılıyor (dolu kırmızı zeminle değil) — bölünmüş listede boyalı tek satır
  * grubu ortadan ikiye bölerdi.
+ *
+ * Basılı hâl SOLMA değil gri ZEMİN (bkz. usePressHighlight): kök listedeki
+ * kategori satırları zemin veriyordu, kategori sayfalarındaki satırlar ise
+ * opaklık düşürüyordu — aynı dokunuş iki kademede iki ayrı şey yapıyordu.
+ * `activeOpacity: 1` o yüzden: solma zeminin üstüne binerse gri de birlikte
+ * soluyor, vurgu yarım görünüyordu.
  */
 function SettingsActionRow({ title, trailing, onPress, disabled, destructive }: any) {
+  const { pressed, holdPress, releasePress } = usePressHighlight();
   return (
     <TouchableOpacity
       onPress={onPress}
+      onPressIn={holdPress}
+      onPressOut={releasePress}
       disabled={disabled}
-      activeOpacity={0.6}
-      style={listRowStyle}
+      activeOpacity={1}
+      style={[listRowStyle, pressed && pressBg()]}
     >
       <Text
         style={{
@@ -1856,6 +1921,10 @@ function SettingsToggleRow({
   onLockedPress,
 }: any) {
   const rowStyle = listRowStyle;
+  // Vurgu YALNIZ `locked` dalında işe yarıyor: orada satırın tamamı paywall'a
+  // basan bir düğme. Kilitsiz satırda basılacak bir şey yok (dokunuşu switch
+  // alıyor), gri zemin "bastım ama olmadı" hissi verirdi.
+  const { pressed, holdPress, releasePress } = usePressHighlight();
 
   // Etiket ve switch KARDEŞ — araya sarmalayıcı girmiyor. Öncesinde metin iki
   // ayrı View'ın içindeydi: dıştaki `flex: 1` yüzünden satırın boş yüksekliğini
@@ -1902,7 +1971,13 @@ function SettingsToggleRow({
   );
 
   return locked ? (
-    <TouchableOpacity onPress={onLockedPress} activeOpacity={0.8} style={rowStyle}>
+    <TouchableOpacity
+      onPress={onLockedPress}
+      onPressIn={holdPress}
+      onPressOut={releasePress}
+      activeOpacity={1}
+      style={[rowStyle, pressed && pressBg()]}
+    >
       {body}
     </TouchableOpacity>
   ) : (

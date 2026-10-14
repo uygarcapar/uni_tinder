@@ -1,7 +1,7 @@
 import type { ReactNode } from "react";
 import { View, Text, Dimensions } from "react-native";
 import AnimatedPressable from "@/shared/components/AnimatedPressable";
-import { colors, ink } from "@/shared/theme/colors";
+import { colors } from "@/shared/theme/colors";
 
 /**
  * ProfileScreen'in mağaza şeridindeki tek kartın kabuğu — Fire ve Not
@@ -131,7 +131,11 @@ export default function ConsumableShopCard({
         <Text
           numberOfLines={1}
           style={{
-            color: ink(0.55),
+            // Uygulamanın tek ikincil grisi (bkz. colors.ts → textSecondary ≡
+            // textMuted). Bir ara `ink(0.55)` idi: o zaman `textSecondary`
+            // ayrı bir griydi ve doğrulama satırının açıklamasının yanında
+            // ayrışıyordu — ayrım paletten kalktı.
+            color: colors.textMuted,
             fontSize: 13,
             fontWeight: "500",
             marginTop: 2,
