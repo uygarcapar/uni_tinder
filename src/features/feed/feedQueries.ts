@@ -230,10 +230,16 @@ export function useReceivedReplyCount(options?: { enabled?: boolean }) {
   });
 }
 
-export function useFeedAuthorProfile(postId: string | null) {
+export function useFeedAuthorProfile(
+  postId: string | null,
+  mode?: string | null,
+) {
   return useQuery({
-    queryKey: feedKeys.authorProfile(postId ?? ""),
-    queryFn: () => feedService.getPostAuthorProfile(postId as string),
+    // Mod anahtarın İÇİNDE: kart moda göre farklı içerik taşıyor (prompt seti
+    // ve niyet alanı), tek anahtarda iki mod aynı cache'i paylaşır ve mod
+    // değişiminde bir kare yabancı içerik görünür.
+    queryKey: [...feedKeys.authorProfile(postId ?? ""), mode ?? "default"],
+    queryFn: () => feedService.getPostAuthorProfile(postId as string, mode),
     enabled: feedEnabled() && !!postId,
     // Profil kartı açıkken bayatlamasın diye kısa değil: sheet kapanıp
     // açılınca aynı veriyi tekrar çekmek gereksiz tur.

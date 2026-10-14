@@ -137,3 +137,96 @@ describe('başlık kaynağı', () => {
     expect(copy?.title).toBe('Backend metni');
   });
 });
+
+/**
+ * MOD KAPISI (UT-2302 / UT-2304) — her şeyden ÖNCE değerlendiriliyor.
+ *
+ * Bu iki kodda deste "boşalmadı", o modun HAVUZU HİÇ YOK. Mesafe sınırını
+ * kaldırmayı teklif etmek yalan olurdu: sınır kalksa da tek kart gelmez.
+ *
+ * ⚠️ İKİ KOD AYRI MESAJ VE AYRI AKSİYON taşıyor; ikisi de "Friends yok"
+ * demiyor. 2302 ÖZELLİK kapalı (yapılacak bir şey yok), 2304 KULLANICI
+ * profilini açmamış (açabilir). Aynı mesajla karşılamak, açabileceği bir modu
+ * "kapalı" diye göstermek olurdu.
+ */
+describe('mod kapısı — mesafe/filtre tavsiyesini EZİYOR', () => {
+  it('UT-2302 (özellik kapalı) → aksiyon YOK', () => {
+    const copy = resolveEmptyDeckCopy({
+      entry: null,
+      distanceLimitOff: false, // mesafe sınırı AÇIK: normalde teklif çıkardı
+      deckSettled: true,
+      modeCode: 'UT-2302',
+      mode: 'Friends',
+      t,
+    });
+    expect(copy?.modeAction).toBe('none');
+    expect(copy?.actionLabel).toBeNull();
+    // Mesafe teklifi SIZMAMALI.
+    expect(copy?.secondaryLabel).toBeNull();
+    expect(copy?.title).toBe('discover.empty.modeDisabled.title');
+  });
+
+  it('UT-2304 (kullanıcı modu açmamış) → "Profili aç" aksiyonu', () => {
+    const copy = resolveEmptyDeckCopy({
+      entry: null,
+      distanceLimitOff: false,
+      deckSettled: true,
+      modeCode: 'UT-2304',
+      mode: 'Friends',
+      t,
+    });
+    expect(copy?.modeAction).toBe('openModeSetup');
+    expect(copy?.actionLabel).toBe('discover.mode.openCta');
+    expect(copy?.title).toBe('discover.mode.lockedTitle.Friends');
+    expect(copy?.secondaryLabel).toBeNull();
+  });
+
+  it('UT-2304 başlığı MODA GÖRE isimlendiriliyor', () => {
+    const dating = resolveEmptyDeckCopy({
+      entry: null,
+      distanceLimitOff: false,
+      deckSettled: true,
+      modeCode: 'UT-2304',
+      mode: 'Dating',
+      t,
+    });
+    expect(dating?.title).toBe('discover.mode.lockedTitle.Dating');
+  });
+
+  it('mod kapısı SEBEBİN kendi aksiyonunu da eziyor', () => {
+    // Swipe limiti dolmuş AMA mod da kapalı: mod kapısı önce, çünkü limit
+    // yenilense bile o modda kart gelmez.
+    const copy = resolveEmptyDeckCopy({
+      entry: resolveCode(null, 'SwipeLimitReached'),
+      distanceLimitOff: true,
+      deckSettled: true,
+      modeCode: 'UT-2302',
+      mode: 'Friends',
+      t,
+    });
+    expect(copy?.modeAction).toBe('none');
+  });
+
+  it('mod kodu YOKSA normal akış bozulmuyor', () => {
+    const copy = resolveEmptyDeckCopy({
+      entry: null,
+      distanceLimitOff: false,
+      deckSettled: true,
+      modeCode: null,
+      t,
+    });
+    expect(copy?.modeAction).toBeUndefined();
+    expect(copy?.actionKind).toBe('removeDistanceLimit');
+  });
+
+  it('ALAKASIZ bir kod mod kapısını tetiklemiyor', () => {
+    const copy = resolveEmptyDeckCopy({
+      entry: null,
+      distanceLimitOff: false,
+      deckSettled: true,
+      modeCode: 'UT-6101',
+      t,
+    });
+    expect(copy?.modeAction).toBeUndefined();
+  });
+});

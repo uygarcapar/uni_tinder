@@ -1066,6 +1066,27 @@ const tr = {
       },
       promptsTitle: 'Soruların',
       promptsDescription: 'En az bir soruyu yanıtla. Kartının en çok okunan yeri burası.',
+      interestedInTitle: 'Kiminle ilgileniyorsun?',
+      interestedInDescription: 'Destende kimleri göreceğini belirler. Birden fazla seçebilirsin.',
+      interestedInRequired: 'En az bir tane seç.',
+      // Mod hataları (UT-23xx). Sunucu mesajı varsa O kullanılıyor;
+      // bunlar yedek. 2305/2309 NÖTR — ifşa edici hale getirmeyin.
+      errors: {
+          // ── İki modlu yapı (UT-23xx) ─────────────────────────────────────────
+          // ⚠️ 2305 ve 2309 BİLEREK NÖTR: karşı tarafın modu/cinsiyeti bilgi
+          // sızıntısı, mesaj ifşa edici olmamalı.
+          'UT-2207': 'Bu soru bu profilde kullanılamıyor.',
+          'UT-2301': 'Uygulamanı güncellemen gerekiyor.',
+          'UT-2302': 'Bu mod çok yakında.',
+          'UT-2303': 'Bu profilin zaten açık.',
+          'UT-2304': 'Bu modu kullanmak için profilini oluştur.',
+          'UT-2305': 'Bu kişiye şu anda ulaşılamıyor.',
+          'UT-2306': 'En az bir seçim yapman gerekiyor.',
+          'UT-2307': 'Uygulamanı güncellemen gerekiyor.',
+          'UT-2308': 'Kiminle ilgilendiğini seçmen gerekiyor.',
+          'UT-2309': 'Bu kişiye şu anda ulaşılamıyor.',
+          'UT-2310': 'Önce bu modun profilini aç.',
+      },
       intentsRequired: 'En az bir tane seç.',
       promptsRequired: 'En az bir soruyu yanıtla.',
     },
@@ -1434,6 +1455,9 @@ const tr = {
       },
       // Backend sebep göndermedi / FE kodu tanımıyor ama deste boş. Sebebe
       // bağlı bir şey İDDİA ETMEYEN nötr metin; yanına mesafe teklifi biniyor.
+      modeDisabled: {
+        title: 'Bu mod çok yakında.',
+      },
       unknown: {
         title: 'Şu an gösterecek kimse yok',
       },
@@ -2241,6 +2265,7 @@ const tr = {
       grade: '{{year}}. Sınıf',
       premium: 'Premium',
       knowMeAs: 'Beni bu şekilde tanırsın:',
+      friendshipIntent: 'Ne için arkadaş arıyor',
       myIntent: 'Burada ne arıyorum:',
       // Niyet etiketinin sonuna eklenir: "Uzun süreli" → "Uzun süreli ilişki".
       intentSuffix: 'ilişki',
@@ -2609,6 +2634,8 @@ const tr = {
       'UT-7304': 'Bugünkü gönderi hakların bitti.',
       'UT-7305': 'Anonim paylaşım için Lit Plus gerekiyor.',
       'UT-7306': 'Bu içerik topluluk kurallarına uymuyor.',
+      'UT-7307': 'Uygulamanı güncellemen gerekiyor.',
+      'UT-7329': 'Bu özellik artık kullanılmıyor.',
       'UT-7308': 'Akışta bir süre paylaşım yapamazsın.',
       'UT-7309': 'Bir süre anonim paylaşım yapamazsın.',
       'UT-7310': 'Başka kampüsü görmek için Lit Plus gerekiyor.',

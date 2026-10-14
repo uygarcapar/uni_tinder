@@ -1498,22 +1498,67 @@ export default function DiscoverScreen() {
     };
   }, []);
 
+  /**
+   * Aksiyon REDDİ — Like/SuperLike/Note sunucuda kapıya takıldı.
+   *
+   * ⚠️ KART GERİ KONMUYOR. Deste iyimser ilerliyor, yani kart zaten düştü;
+   * buradaki iş yalnızca kullanıcıya haber vermek. Hedef gerçekten uygun değil
+   * (silinmiş/pasif, engel, modu kapalı, cinsiyet kuralı) — geri koymak aynı
+   * reddedilecek kişiyi tekrar göstermek olurdu.
+   *
+   * Mesaj NÖTR tutuluyor: UT-2305/2309 karşı tarafın modunu ya da cinsiyetini
+   * ifşa etmemeli (backend sözleşmesi bunu açıkça söylüyor). Kodun kendi i18n
+   * karşılığı zaten nötr; sunucu mesajı varsa o kullanılıyor.
+   */
+  useEffect(
+    () =>
+      uiBus.on("swipeRejected", (payload: any) => {
+        const code = payload?.code as string | undefined;
+        showInfoToast({
+          message:
+            payload?.message ??
+            (code
+              ? t(`discover.mode.errors.${code}`, {
+                  defaultValue: t("common.somethingWentWrong"),
+                })
+              : t("common.somethingWentWrong")),
+          variant: "error",
+        });
+      }),
+    [t],
+  );
+
   const handleOpenModeSetup = useCallback((next: AppMode) => {
     setSetupError(null);
     setSetupMode(next);
   }, []);
 
   const handleSubmitModeSetup = useCallback(
-    async (payload: { intents: string[]; prompts: { promptKey: string; answer: string }[] }) => {
+    async (payload: {
+      intents: string[];
+      prompts: { promptKey: string; answer: string }[];
+      interestedIn?: string[];
+    }) => {
       if (!setupMode) return;
       setSetupSubmitting(true);
       setSetupError(null);
       try {
-        await profileService.openProfileMode(setupMode, payload);
-        // Açıldı: haritayı güncelle, sheet'i kapat ve O MODA GEÇ — kullanıcı
-        // profili açtıysa amacı o modu kullanmak.
-        setOpenModes((prev) => ({ ...(prev ?? {}), [setupMode]: true }));
+        const result = await profileService.openProfileMode(setupMode, payload);
+        // Açık mod haritası SUNUCUNUN YANITINDAN: `{dating, friends}` dönüyor,
+        // yani ayrı bir profil turu atmaya gerek yok. Yanıt beklenmedik şekilde
+        // gelirse yerel tahmine düşüyoruz (mod açıldı, en azından o true).
+        setOpenModes((prev) => {
+          const base = prev ?? {};
+          if (result && typeof result === "object") {
+            return {
+              Dating: result.dating !== false,
+              Friends: result.friends === true,
+            };
+          }
+          return { ...base, [setupMode]: true };
+        });
         setSetupMode(null);
+        // Profili açtıysa amacı o modu kullanmak.
         setMode(setupMode);
       } catch (e: any) {
         // Sheet AÇIK kalıyor ve girilen veri korunuyor (composer kuralı).
@@ -2018,13 +2063,20 @@ export default function DiscoverScreen() {
         backendMessage: lastPage?.emptyReasonMessage,
         distanceLimitOff: distanceLimitAlreadyOff,
         deckSettled: isEmptyStack,
+        // Mod kapısı: UT-2302 (özellik kapalı) ve UT-2304 (kullanıcı profilini
+        // açmamış) her şeyden önce değerlendiriliyor — o modun havuzu HİÇ yok,
+        // mesafe/filtre tavsiyesi anlamsız.
+        modeCode: lastPage?.code ?? null,
+        mode,
         t,
       }),
     [
       emptyEntry,
       lastPage?.emptyReasonMessage,
+      lastPage?.code,
       distanceLimitAlreadyOff,
       isEmptyStack,
+      mode,
       t,
     ],
   );
@@ -2034,6 +2086,12 @@ export default function DiscoverScreen() {
   // Kullanıcının seçtiği `maxDistance`a dokunulmuyor — saklanıyor ve anahtar
   // kapatılınca geri geliyor.
   const handleEmptyAction = useEvent(() => {
+    // MOD KAPISI ÖNCE: doluysa `actionKind` yok sayılıyor (bkz. emptyDeckCopy).
+    if (emptyCopy?.modeAction === "openModeSetup") {
+      handleOpenModeSetup(mode);
+      return;
+    }
+    if (emptyCopy?.modeAction === "none") return;
     switch (emptyCopy?.actionKind) {
       case "removeDistanceLimit":
         removeDistanceLimit();
@@ -2541,7 +2599,8 @@ export default function DiscoverScreen() {
     }
 
     try {
-      await undoMutation.mutateAsync();
+      // Geri alma MOD BAŞINA — "son swipe" her modda ayrı.
+      await undoMutation.mutateAsync({ mode });
     } catch (err) {
       // Kart henüz üste geçmediyse index HİÇ kaymadı: ileri almak desteyi bir
       // fazla sürerdi. O pencerede tek doğru geri alma, ısınan kartı düşürmek.

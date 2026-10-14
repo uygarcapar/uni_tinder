@@ -2739,6 +2739,36 @@ export default function SwipeCard({
   //
   // Kuralın kendisi likerCardTeaser.relationshipIntentLabel'da, TEK yerde:
   // kilitli beğeni kartı da aynı etiketi basıyor, iki kopya ayrışmasın.
+  /**
+   * Arkadaşlık niyetlerinin GÖRÜNEN etiketleri.
+   *
+   * Sıra: sunucunun `friendshipIntentsDisplay`i → i18n yedeği → ham enumName.
+   * Sunucu önce geliyor çünkü yeni bir niyet eklendiğinde uygulama sürümü
+   * çıkmadan görünebilmeli (prompt kataloğunun aynı kuralı).
+   */
+  const friendshipIntentLabels = useMemo<string[]>(() => {
+    const keys: string[] = Array.isArray((profile as any)?.friendshipIntents)
+      ? (profile as any).friendshipIntents.filter(
+          (v: any) => typeof v === "string",
+        )
+      : [];
+    if (keys.length === 0) return [];
+    const display: string[] = Array.isArray(
+      (profile as any)?.friendshipIntentsDisplay,
+    )
+      ? (profile as any).friendshipIntentsDisplay
+      : [];
+    return keys.map((key, i) => {
+      const fromServer = typeof display[i] === "string" ? display[i] : "";
+      if (fromServer) return fromServer;
+      return t(`discover.friendshipIntents.${key}`, { defaultValue: key });
+    });
+  }, [
+    (profile as any)?.friendshipIntents,
+    (profile as any)?.friendshipIntentsDisplay,
+    t,
+  ]);
+
   const relationshipIntentLabel = useMemo(
     () =>
       resolveRelationshipIntentLabel(
@@ -4926,6 +4956,65 @@ export default function SwipeCard({
                 {/* Kapı `display` DEĞİL etiketin kendisi: etiket artık yerel
                     haritadan da gelebiliyor, yani display boş gelse bile
                     enumName varsa bölüm basılabilir. */}
+                {/* ── ARKADAŞLIK NİYETİ — YALNIZ FRIENDS MODUNDA ────────────
+                    İlişki niyeti bölümünün AYNI yuvası, aynı kutu. Sunucu
+                    kartı moda göre dolduruyor: Friends görünümünde
+                    `relationshipIntent` NULL ve `friendshipIntents` dolu
+                    geliyor, yani iki bölüm asla aynı anda çizilmiyor.
+
+                    Niyet ÇOKLU olduğu için tek büyük metin değil PİL AKIŞI —
+                    tek değerli ilişki niyetinde 22pt tek satır doğruydu,
+                    burada üç-beş değer yan yana duruyor. */}
+                {friendshipIntentLabels.length > 0 && (
+                  <CardSectionBox
+                    glass={glassPanel}
+                    elevated
+                    style={{
+                      marginBottom: 16,
+                      paddingHorizontal: 16,
+                      paddingVertical: 32,
+                    }}
+                  >
+                    <View className="flex-row items-center mb-6 px-4">
+                      <Text className="text-[18px] font-semibold" style={{ color: theme.text }}>
+                        {t('profile.card.friendshipIntent')}
+                      </Text>
+                    </View>
+                    <View
+                      className="px-4"
+                      style={{ flexDirection: "row", flexWrap: "wrap", gap: 8 }}
+                    >
+                      {friendshipIntentLabels.map((label) => (
+                        <View
+                          key={label}
+                          style={{
+                            paddingHorizontal: 14,
+                            paddingVertical: 9,
+                            borderRadius: 999,
+                            borderCurve: "continuous",
+                            // Mod rengiyle değil NÖTR yüzeyle: kart zaten
+                            // Friends modunda ve Spark yeşili aksiyonun rengi.
+                            // Niyet pilleri bir aksiyon değil bilgi.
+                            backgroundColor: theme.surfaceTranslucent,
+                            borderWidth: 0.5,
+                            borderColor: theme.hairline,
+                          }}
+                        >
+                          <Text
+                            style={{
+                              color: theme.text,
+                              fontSize: 15,
+                              fontWeight: "600",
+                            }}
+                          >
+                            {label}
+                          </Text>
+                        </View>
+                      ))}
+                    </View>
+                  </CardSectionBox>
+                )}
+
                 {relationshipIntentLabel && (
                   <CardSectionBox
                     // Bölüm kutuları CAM — bkz. glassPanel notu.

@@ -37,6 +37,22 @@ export type UniversityOption = {
   domain: string;
   name: string;
   display?: string | LocalizedText;
+  /**
+   * ── Harita alanları (`?distinct=true` ile) ───────────────────────────────
+   *
+   * `canonicalDomain`: çoklu domain'li üniversiteler (ör. `boun.edu.tr` +
+   * `bogazici.edu.tr`) `distinct=true` ile TEK kayda iniyor; bu alan o tek
+   * kaydın kimliği. Haritada `distinct` kullanılmazsa aynı kampüse iki pin
+   * düşer.
+   *
+   * `isApproximate`: koordinat il merkezi (kampüs koordinatı değil).
+   * ⚠️ PIN İÇİN yeterli, MESAFE HESABI İÇİN KULLANILMAZ — eşleşme mesafesi
+   * her zaman kullanıcının kendi konumundan hesaplanıyor.
+   */
+  canonicalDomain?: string;
+  lat?: number;
+  lon?: number;
+  isApproximate?: boolean;
 };
 
 // Backend'in çift dilli alanları (EnumLocalizer.LocalizedText) — `display` /
@@ -204,11 +220,20 @@ export function useGenders() {
 // Seçim/gönderim daima `domain` üzerinden; backend normalize edilmiş domain
 // bekliyor, o yüzden listeyi okurken de normalize edip tekilleştiriyoruz
 // (aynı domain iki isimle gelirse picker'da çift satır çıkmasın).
-export function useUniversities() {
+/**
+ * @param distinct Çoklu domain'li üniversiteleri TEK kanonik kayda indirir —
+ *   HARİTA İÇİN ZORUNLU (aksi halde aynı kampüse iki pin düşer). Seçici
+ *   listelerinde KAPALI: kullanıcı kendi domain'ini aramak isteyebilir.
+ */
+export function useUniversities(distinct = false) {
   return useQuery({
-    queryKey: commonKeys.universities,
+    queryKey: distinct
+      ? [...commonKeys.universities, "distinct"]
+      : commonKeys.universities,
     queryFn: async (): Promise<UniversityOption[]> => {
-      const res = (await staticGet(API_ENDPOINTS.GET_UNIVERSITIES)) as any;
+      const res = (await staticGet(
+        `${API_ENDPOINTS.GET_UNIVERSITIES}${distinct ? "?distinct=true" : ""}`,
+      )) as any;
       if (!res?.isSuccess || !Array.isArray(res.result)) return [];
       const seen = new Set<string>();
       const out: UniversityOption[] = [];

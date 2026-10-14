@@ -53,6 +53,7 @@ import {
   useSwipeMutation,
   useSwipeStats,
 } from "@/features/discover/swipeQueries";
+import { useAppMode } from "@/features/discover/useAppMode";
 import {
   fetchMissedMatches,
   recoverMissedMatch,
@@ -326,6 +327,12 @@ export default function LikesScreen() {
   const premiumCheckedRef = useRef(false);
   const [premiumChecked, setPremiumChecked] = useState(false);
   const [activeTab, setActiveTab] = useState("all");
+
+  // ── MOD ──────────────────────────────────────────────────────────────────
+  // Keşif'le PAYLAŞILAN tek kaynak (bkz. useAppMode): Keşif'te Arkadaş'a
+  // geçmek bu ekranı da arkadaş beğenilerine kapsıyor. Beğeni listesi,
+  // kaçırdıklar, liker profili ve kurtarma — hepsi mod başına.
+  const { mode } = useAppMode();
   const pagerRef = useRef<PagerView>(null);
   // Pager'ın ANLIK konumu — tam sayı değil, kaydırma sürerken 1.0 → 1.37 → 2.0
   // diye akıyor. Alt çizgi bunu okuyor, dolayısıyla parmakla yarım sayfa çekip
@@ -516,7 +523,7 @@ export default function LikesScreen() {
     // boş), oysa ekranda zaten bir cevap duruyor.
     if (!missedLoadedRef.current) setMissedLoading(true);
     try {
-      const page = await fetchMissedMatches();
+      const page = await fetchMissedMatches(1, 20, mode);
       setMissed(page.profiles);
       // Adet listenin uzunluğundan DEĞİL zarftan: `profiles` ilk sayfa, sayı
       // tüm kümeyi anlatmalı.
@@ -555,7 +562,7 @@ export default function LikesScreen() {
     if (now - lastMissedCountFetchRef.current < LIKES_STALE_MS) return;
     missedCountInFlightRef.current = true;
     try {
-      const page = await fetchMissedMatches(1, 1);
+      const page = await fetchMissedMatches(1, 1, mode);
       setMissedTotal(page.totalProfiles);
       lastMissedCountFetchRef.current = Date.now();
     } catch {
@@ -1137,7 +1144,7 @@ export default function LikesScreen() {
       setPreviewProfile(null);
       setPreviewLoading(true);
       try {
-        const res = await swipeService.getLikerProfileDetail(likerUserId);
+        const res = await swipeService.getLikerProfileDetail(likerUserId, mode);
         if (res?.isSuccess && res?.result) {
           setPreviewProfile(res.result);
           // Kaçırılan eşleşmede yanıt yolu TEK: kurtarma. Detayda swipe açık
@@ -1237,7 +1244,7 @@ export default function LikesScreen() {
       // free bu satıra hiç gelmiyor. Harcanan bir sayı olmadığı için ne iyimser
       // düşüş ne kanonik tazeleme kaldı (ikisi birlikte 2026-08-24'teki "kota
       // 5/5'te takılı kalıyor" bug'ı içindi).
-      const request = recoverMissedMatch(userId);
+      const request = recoverMissedMatch(userId, mode);
       // Hata yolundaki doğrulama çekimi kartın düşmesinden SONRA olmalı: kart
       // uçarken gelen taze liste onu yerinde tutar, uçuş yarıda kalırdı. Yanıt
       // çıkıştan önce de sonra da gelebildiği için iki yön de bu iki bayrakla

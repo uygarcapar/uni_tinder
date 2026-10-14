@@ -21,7 +21,11 @@
  * yok, teklif birincil butona oturuyor.
  */
 
-import type { CodeAction, CodeEntry } from "@/shared/constants/responseCodes";
+import {
+  MODE_CODES,
+  type CodeAction,
+  type CodeEntry,
+} from "@/shared/constants/responseCodes";
 
 /**
  * Mesafe teklifinin GÖSTERİLMEDİĞİ sebepler: mesafenin çözemeyeceği kapılar.
@@ -33,6 +37,15 @@ export const DISTANCE_IRRELEVANT_REASONS: readonly string[] = [
   "AccountRestricted", // hesap yaptırımı
 ];
 
+/**
+ * Mod kapısı aksiyonları — `CodeAction["kind"]` ailesinin DIŞINDA iki değer.
+ *
+ * Ayrı tutuluyor çünkü ikisi de kod kataloğundaki jenerik aksiyonlardan
+ * farklı bir şey yapıyor: biri hiçbir şey (özellik kapalı, kullanıcının
+ * yapabileceği yok), öbürü MOD KURULUM AKIŞINI açıyor.
+ */
+export type ModeGateAction = "openModeSetup" | "none";
+
 export interface EmptyDeckCopy {
   title: string;
   /** `null` = birincil buton çizilmez (yalnız `dismiss` sebeplerinde). */
@@ -40,9 +53,24 @@ export interface EmptyDeckCopy {
   actionKind: CodeAction["kind"];
   /** Birincil butonun ALTINDAKİ ikincil satır — pratikte hep mesafe teklifi. */
   secondaryLabel: string | null;
+  /**
+   * Mod kapısı aksiyonu. `undefined` = normal boş deste (aksiyon `actionKind`
+   * üzerinden). Doluysa `actionKind` YOK SAYILIR.
+   */
+  modeAction?: ModeGateAction;
 }
 
 export interface EmptyDeckCopyInput {
+  /**
+   * Deste yanıtındaki ham kod (`UT-2302` / `UT-2304`).
+   *
+   * MOD KAPISI EN ÖNCE değerlendiriliyor: mesafe/filtre tavsiyesi vermek
+   * anlamsız, çünkü deste boş değil — o modun HAVUZU YOK (özellik kapalı ya
+   * da kullanıcı profilini açmamış).
+   */
+  modeCode?: string | null;
+  /** Seçili mod — kapalı mod başlığını isimlendirmek için. */
+  mode?: string | null;
   /** Çözülmüş `emptyReasonCode`/`emptyReason` girdisi; yoksa `null`. */
   entry: CodeEntry | null;
   /** Backend'in lokalize `emptyReasonMessage`'ı — i18n'de karşılık yoksa. */
@@ -75,10 +103,38 @@ export function resolveEmptyDeckCopy({
   backendMessage,
   distanceLimitOff,
   deckSettled,
+  modeCode,
+  mode,
   t,
 }: EmptyDeckCopyInput): EmptyDeckCopy | null {
   const distanceOfferLabel = () =>
     t("discover.empty.noCandidatesInRadius.action");
+
+  // ── MOD KAPISI — HER ŞEYDEN ÖNCE ────────────────────────────────────────
+  // Bu iki kodda deste "boşalmadı", o modun havuzu HİÇ YOK. Mesafe sınırını
+  // kaldırmayı teklif etmek yalan olurdu: sınır kalksa da tek kart gelmez.
+  //
+  // İki kod AYRI mesaj ve AYRI aksiyon taşıyor (ikisi de "Friends yok"
+  // demiyor): 2302 özellik kapalı → yapılacak bir şey yok; 2304 kullanıcı
+  // profilini açmamış → açabilir.
+  if (modeCode === MODE_CODES.MODE_DISABLED) {
+    return {
+      title: t("discover.empty.modeDisabled.title"),
+      actionLabel: null,
+      actionKind: "dismiss",
+      secondaryLabel: null,
+      modeAction: "none",
+    };
+  }
+  if (modeCode === MODE_CODES.MODE_NOT_OPENED) {
+    return {
+      title: t(`discover.mode.lockedTitle.${mode ?? "Friends"}`),
+      actionLabel: t("discover.mode.openCta"),
+      actionKind: "dismiss",
+      secondaryLabel: null,
+      modeAction: "openModeSetup",
+    };
+  }
 
   // Sebep hiç çözülemedi (bilinmeyen kod / alan hiç gelmiyor) ama deste boş.
   // Eskiden bu yol yalnız radar döndürüyordu: kullanıcıya tek bir çıkış yolu

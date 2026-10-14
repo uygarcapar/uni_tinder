@@ -125,8 +125,12 @@ class SwipeService {
     });
   }
 
-  async getLikerProfileDetail(likerUserId: string) {
-    return api.get(`${API_ENDPOINTS.LIKER_PROFILE}/${likerUserId}`);
+  async getLikerProfileDetail(likerUserId: string, mode?: string | null) {
+    // Kart MODA GÖRE geliyor: `prompts` o modun cevaplarını, niyet alanı da
+    // o modun niyetini taşıyor (bkz. backend ProfileCardDto notu).
+    return api.get(
+      `${API_ENDPOINTS.LIKER_PROFILE}/${likerUserId}${mode ? `?mode=${encodeURIComponent(mode)}` : ""}`,
+    );
   }
 
   // Fire'lar ve normal beğeniler AYRI paginate ediliyor; ikisi de tek

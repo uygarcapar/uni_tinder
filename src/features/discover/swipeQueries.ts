@@ -337,6 +337,35 @@ export function useSwipeMutation() {
       const swipeResult = response?.result;
       const isSuperLike = variables?.direction === "up";
 
+      /**
+       * ── AKSİYON REDDİ (2026-10-15 davranış değişikliği) ──────────────────
+       *
+       * Like/SuperLike ESKİDEN hedefte hiçbir kontrol yapmıyordu (blok bile)
+       * ve sessizce başarılı oluyordu. Artık ortak bir kapıdan geçiyorlar;
+       * hedef silinmiş/pasif/shadowban'lıysa, iki yönlü blok varsa, mod iki
+       * tarafta açık değilse ya da mod cinsiyet kuralı tutmuyorsa
+       * `isSuccess:false` + `code` dönüyor (HTTP yine 200 — ResponseDto).
+       *
+       * ⚠️ KART DESTEDEN DÜŞÜYOR VE GERİ KONMUYOR. Deste iyimser ilerliyor,
+       * yani kart zaten düştü; burada yapılması gereken onu GERİ KOYMAMAK.
+       * Hedef gerçekten uygun değil — geri koymak kullanıcıyı aynı
+       * reddedilecek kişiyle tekrar karşılaştırırdı.
+       *
+       * Paywall kodları BU DALA GİRMİYOR: `showPaywall` yolu aşağıda ayrıca
+       * ele alınıyor ve orada kart geri konmuyor ama paywall açılıyor.
+       */
+      if (response?.isSuccess === false && !swipeResult?.showPaywall) {
+        const code = response?.code ?? swipeResult?.code ?? null;
+        uiBus.emit("swipeRejected", {
+          code,
+          // Sunucu mesajı önce: kurallar sunucuda değişiyor, istemci kopyası
+          // bayatlıyor. Kod tanınmıyorsa jenerik metne düşülüyor.
+          message: response?.message ?? swipeResult?.message ?? null,
+          direction: variables?.direction,
+        });
+        return;
+      }
+
       // Fire yanıtı bakiyenin server-truth'unu taşıyor: `remainingSuperLikes`
       // toplam (kota + kredi), `remainingPurchasedSuperLikes` kredinin kalanı.
       // onMutate'teki optimistic decrement yalnızca toplamı düşürüyor; kota mı
@@ -611,8 +640,13 @@ export function useSaveFilters() {
 export function useUndoSwipe() {
   const qc = useQueryClient();
   return useMutation({
-    mutationFn: async () => {
-      const res = await api.post(API_ENDPOINTS.SWIPE_UNDO) as any;
+    mutationFn: async (vars?: { mode?: string | null }) => {
+      // Geri alma MOD BAŞINA: "son swipe" her modda ayrı. Mod gönderilmezse
+      // sunucu Dating sayar ve Arkadaş modunda son flört swipe'ı geri alınır.
+      const query = vars?.mode
+        ? `?mode=${encodeURIComponent(vars.mode)}`
+        : "";
+      const res = await api.post(`${API_ENDPOINTS.SWIPE_UNDO}${query}`) as any;
       if (!res.isSuccess) {
         // Günlük undo kotası dolduğunda backend 200 + isSuccess:false +
         // UNDO_LIMIT dönüyor; bu paywall hiç bağlı değildi, kullanıcı sadece
@@ -622,12 +656,30 @@ export function useUndoSwipe() {
       }
       return res.result;
     },
-    onSuccess: (result: any) => {
+    onSuccess: (result: any, variables) => {
       if (result?.remainingUndosToday != null) {
         qc.setQueryData(swipeKeys.stats, (prev: any) =>
           prev ? { ...prev, remainingUndos: result.remainingUndosToday } : prev,
         );
       }
+      /**
+       * Geri alınan kart DOĞRU DESTEYE dönmeli.
+       *
+       * Yanıt `mode` taşıyor (sunucu hangi modun son swipe'ını geri aldığını
+       * söylüyor) ve İSTEĞİN modundan farklı olabilir — ikisi ayrıştığında
+       * sunucunun söylediği kazanıyor. Yanlış desteyi tazelemek kartı
+       * kullanıcının bakmadığı moda geri koyar ve o modda hiç geri gelmez.
+       *
+       * Mod hiç gelmezse istekteki mod, o da yoksa TÜM desteler (kök):
+       * hangisine döndüğünü bilmediğimizde hepsini bayatlatmak, yanlışını
+       * tazelemekten iyi.
+       */
+      const undoneMode = result?.mode ?? variables?.mode ?? null;
+      qc.invalidateQueries({
+        queryKey: undoneMode
+          ? swipeKeys.deck(undoneMode)
+          : swipeKeys.deckRoot,
+      });
     },
   });
 }

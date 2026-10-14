@@ -39,6 +39,19 @@ import type { AppMode } from "../modeTheme";
  * AÇIK KALIYOR — kullanıcı yazdığını kaybetmesin (FeedComposerSheet'in aynı
  * kuralı).
  */
+/**
+ * "Kiminle ilgileniyorsun" seçenekleri — wire değerleri (PascalCase) ve kayıt
+ * adımındaki i18n anahtarları. Liste SABİT: sunucunun `InterestedInType`
+ * enum'u üç değerli ve bir uçtan gelmiyor (kayıt adımı da aynı sabiti
+ * taşıyor, bkz. RegisterStep10Screen).
+ */
+const INTERESTED_IN_KEYS = ["Men", "Women", "NonBinary"] as const;
+const INTERESTED_IN_LABEL_KEY: Record<string, string> = {
+  Men: "male",
+  Women: "female",
+  NonBinary: "nonBinary",
+};
+
 export interface ModeSetupSheetProps {
   visible: boolean;
   onClose: () => void;
@@ -46,6 +59,8 @@ export interface ModeSetupSheetProps {
   onSubmit: (payload: {
     intents: string[];
     prompts: ProfilePromptAnswer[];
+    /** YALNIZ Dating: "kiminle ilgileniyorsun" (en az 1 zorunlu, UT-2308). */
+    interestedIn?: string[];
   }) => void;
   submitting?: boolean;
   /** Doluyken sheet açık kalır ve girilen veri korunur. */
@@ -74,6 +89,15 @@ export default function ModeSetupSheet({
     : relationshipIntents.isLoading;
 
   const [intents, setIntents] = useState<string[]>([]);
+  /**
+   * YALNIZ DATING: "kiminle ilgileniyorsun" (Men/Women/NonBinary, çoklu).
+   *
+   * Sunucu Dating açılışında bunu ZORUNLU tutuyor (UT-2308) çünkü deste
+   * filtresinin tek kaynağı bu alan — boş bırakılsa kullanıcı boş desteyle
+   * karşılaşırdı. Arkadaş modunda SORULMUYOR: orada eşleşme kuralı aynı
+   * cinsiyet ve tercih sorusunun karşılığı yok.
+   */
+  const [interestedIn, setInterestedIn] = useState<string[]>([]);
   const [prompts, setPrompts] = useState<ProfilePromptAnswer[]>([]);
   const [promptIssues, setPromptIssues] = useState<Record<number, string>>({});
   const [localError, setLocalError] = useState<string | null>(null);
@@ -88,6 +112,7 @@ export default function ModeSetupSheet({
   useEffect(() => {
     if (visible) {
       setIntents([]);
+      setInterestedIn([]);
       setPrompts([]);
       setPromptIssues({});
       setLocalError(null);
@@ -125,6 +150,13 @@ export default function ModeSetupSheet({
       return;
     }
 
+    // Dating'de tercih ZORUNLU (UT-2308). İstemcide durdurmak, sunucuya
+    // gidip hata metnini çevirmekten iyi: alan ekranda duruyor.
+    if (!isFriends && interestedIn.length === 0) {
+      setLocalError(t("discover.mode.interestedInRequired"));
+      return;
+    }
+
     // Slot bazlı doğrulama: `sanitizePrompts` boş/uzun cevabı SESSİZCE elerdi
     // ve kullanıcı yazdığını sandığı cevabın kaybolduğunu görmezdi (kayıt
     // adımındaki aynı teşhis).
@@ -149,8 +181,14 @@ export default function ModeSetupSheet({
     }
 
     setLocalError(null);
-    onSubmit({ intents, prompts: clean });
-  }, [intents, onSubmit, prompts, t]);
+    onSubmit({
+      intents,
+      prompts: clean,
+      // Arkadaş modunda alan HİÇ gönderilmiyor (sunucu yok sayıyor ama ölü
+      // yük göndermenin anlamı yok).
+      ...(isFriends ? {} : { interestedIn }),
+    });
+  }, [intents, interestedIn, isFriends, onSubmit, prompts, t]);
 
   const shownError = errorText ?? localError;
 
@@ -233,6 +271,54 @@ export default function ModeSetupSheet({
           })
         )}
       </Section>
+
+      {/* ── Kiminle ilgileniyorsun — YALNIZ DATING ── */}
+      {!isFriends ? (
+        <Section
+          title={t("discover.mode.interestedInTitle")}
+          description={t("discover.mode.interestedInDescription")}
+        >
+          {INTERESTED_IN_KEYS.map((key) => {
+            const selected = interestedIn.includes(key);
+            return (
+              <TouchableOpacity
+                key={key}
+                activeOpacity={1}
+                onPress={() => {
+                  setLocalError(null);
+                  setInterestedIn((prev) =>
+                    prev.includes(key)
+                      ? prev.filter((v) => v !== key)
+                      : [...prev, key],
+                  );
+                }}
+                style={{
+                  flexDirection: "row",
+                  alignItems: "center",
+                  justifyContent: "space-between",
+                  paddingVertical: 16,
+                }}
+              >
+                <Text
+                  style={{
+                    color: selected ? colors.text : colors.textSecondary,
+                    fontSize: 16,
+                    lineHeight: 22,
+                    fontWeight: "500",
+                    flex: 1,
+                    marginRight: 12,
+                  }}
+                >
+                  {/* Kayıt adımıyla AYNI anahtar ailesi (auth.step10): aynı
+                      soru iki ekranda iki farklı metinle görünmesin. */}
+                  {t(`auth.step10.${INTERESTED_IN_LABEL_KEY[key]}`)}
+                </Text>
+                <RegisterOptionCheckbox selected={selected} />
+              </TouchableOpacity>
+            );
+          })}
+        </Section>
+      ) : null}
 
       {/* ── Prompt'lar ── */}
       <Section

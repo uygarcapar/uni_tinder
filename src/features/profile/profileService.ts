@@ -179,18 +179,31 @@ class ProfileService {
    */
   async openProfileMode(
     mode: string,
-    payload: { intents: string[]; prompts: { promptKey: string; answer: string }[] },
-  ) {
+    payload: {
+      intents: string[];
+      prompts: { promptKey: string; answer: string }[];
+      /** YALNIZ Dating: kiminle ilgilendiği (en az 1 zorunlu, UT-2308). */
+      interestedIn?: string[];
+    },
+  ): Promise<{ dating?: boolean; friends?: boolean } | undefined> {
     const body: Record<string, any> =
       mode === "Friends"
         ? { friendshipIntents: payload.intents }
-        : { relationshipIntent: payload.intents[0] ?? null };
+        : {
+            // Dating açılışında İKİ alan birden gidiyor: `interestedIn` (en az
+            // 1 ZORUNLU — sunucu UT-2308 ile reddediyor) ve `relationshipIntent`
+            // (opsiyonel). Niyet listesi tek seçimli olduğu için ilk eleman.
+            interestedIn: payload.interestedIn ?? [],
+            relationshipIntent: payload.intents[0] ?? null,
+          };
     body.prompts = payload.prompts.map((p) => ({
       promptKey: p.promptKey,
       answer: p.answer,
     }));
     const response = await api.post(API_ENDPOINTS.OPEN_PROFILE_MODE(mode), body);
     this.bustProfileCache();
+    // Yanıt açık mod haritasını döndürüyor (`{dating, friends}`) — çağıran
+    // mod seçicisini bununla güncelliyor, ayrı bir profil turu atmıyor.
     return (response as any).result;
   }
 }

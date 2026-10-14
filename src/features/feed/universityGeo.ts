@@ -5,100 +5,65 @@ import {
 import type { UniversityOption } from "@/shared/queries/commonQueries";
 
 /**
- * Üniversitenin haritadaki konumu.
+ * Üniversitenin haritadaki konumu — SUNUCUDAN.
  *
- * ── Üç kaynak, bu sırayla ───────────────────────────────────────────────────
- * 1. SUNUCU: `/api/common/universities` yanıtındaki `lat`/`lon`. Kanonik
- *    kaynak — kampüsün gerçek koordinatı ve yeni üniversite eklendiğinde
- *    uygulama sürümü çıkmadan haritada görünür.
- * 2. Sunucunun `city` alanı → il merkezi (`cityCoordinates`). Sunucu şehri
- *    biliyor ama koordinatı vermiyorsa bu yeter: bu zoom'da il merkezi ile
- *    kampüs arasındaki fark birkaç piksel.
- * 3. İSTEMCİ YEDEĞİ: aşağıdaki domain→şehir tablosu. En büyük kampüsler
- *    elle, gerisi yok — tablo KASITLI OLARAK EKSİK.
+ * `GET /api/common/universities?distinct=true` her kayıt için `lat`/`lon`
+ * döndürüyor (205 üniversite: 74'ü elle girilmiş kampüs koordinatı, 131'i il
+ * merkezi — `isApproximate` hangisi olduğunu söylüyor).
  *
- * ⚠️ YEDEK TABLO KAPSAMLI OLMAYA ÇALIŞMIYOR ve çalışmamalı: 200+ üniversiteyi
- * istemciye gömmek hem ölü yük hem bakım borcu (üniversite açılıyor/kapanıyor,
- * ad değişiyor). Sunucu geo alanını gönderdiği an bu tablonun tamamı ölü koda
- * dönüyor — silinmesi tek satırlık iş. Tabloda olmayan üniversite için harita
- * ÇİZİLMİYOR (yanlış yere pin koymaktansa hiç koymamak doğru taraf).
+ * ── Neden istemci yedeği YOK ────────────────────────────────────────────────
+ * Bir tur elle yazılmış domain→şehir tablosu vardı; sunucu sözleşmesi
+ * kesinleşince SİLİNDİ. 205 üniversiteyi istemciye gömmek hem ölü yük hem
+ * bakım borcuydu (üniversite açılıyor/kapanıyor, ad değişiyor) ve sunucu
+ * zaten hepsini kapsıyor. Tek fallback `city` → il merkezi: sunucu şehri
+ * biliyor ama koordinatı vermiyorsa (sözleşme dışı bir durum) harita yine
+ * çizilebilsin.
+ *
+ * ⚠️ KOORDİNAT YOKSA `null` ve çağıran haritayı HİÇ ÇİZMİYOR. Yanlış yere pin
+ * koymak kullanıcıya başka bir şehri kendi kampüsü sandırırdı.
+ *
+ * ⚠️ `isApproximate: true` olan koordinat PIN İÇİN yeterli ama MESAFE HESABI
+ * İÇİN KULLANILMAZ (backend sözleşmesi bunu açıkça söylüyor): eşleşme mesafesi
+ * her zaman kullanıcının kendi konumundan hesaplanıyor.
  */
 
-/** Domain → il adı. `cityCoordinates`in normalize ettiği hâliyle yazılıyor. */
-const FALLBACK_UNIVERSITY_CITY: Record<string, string> = {
-  // İstanbul
-  "itu.edu.tr": "istanbul",
-  "boun.edu.tr": "istanbul",
-  "bogazici.edu.tr": "istanbul",
-  "yildiz.edu.tr": "istanbul",
-  "marmara.edu.tr": "istanbul",
-  "istanbul.edu.tr": "istanbul",
-  "sabanciuniv.edu": "istanbul",
-  "ku.edu.tr": "istanbul",
-  "bilgi.edu.tr": "istanbul",
-  "bahcesehir.edu.tr": "istanbul",
-  "bau.edu.tr": "istanbul",
-  "mef.edu.tr": "istanbul",
-  "ozyegin.edu.tr": "istanbul",
-  // Ankara
-  "metu.edu.tr": "ankara",
-  "odtu.edu.tr": "ankara",
-  "bilkent.edu.tr": "ankara",
-  "hacettepe.edu.tr": "ankara",
-  "ankara.edu.tr": "ankara",
-  "gazi.edu.tr": "ankara",
-  "tobb.edu.tr": "ankara",
-  // İzmir
-  "deu.edu.tr": "izmir",
-  "ege.edu.tr": "izmir",
-  "iyte.edu.tr": "izmir",
-  "yasar.edu.tr": "izmir",
-  // Diğer büyükler
-  "uludag.edu.tr": "bursa",
-  "akdeniz.edu.tr": "antalya",
-  "cu.edu.tr": "adana",
-  "erciyes.edu.tr": "kayseri",
-  "atauni.edu.tr": "erzurum",
-  "omu.edu.tr": "samsun",
-  "gantep.edu.tr": "gaziantep",
-  "selcuk.edu.tr": "konya",
-  "pau.edu.tr": "denizli",
-  "trabzon.edu.tr": "trabzon",
-  "ktu.edu.tr": "trabzon",
-  "eskisehir.edu.tr": "eskisehir",
-  "anadolu.edu.tr": "eskisehir",
-};
+/** Koordinat + ne kadar kesin olduğu. */
+export interface UniversityCoordinate extends CityCoordinate {
+  /** `true` = il merkezi (kampüs koordinatı değil). Yalnız pin için. */
+  isApproximate: boolean;
+}
 
-/** Domain karşılaştırması — sunucunun normalize ettiği kuralla aynı. */
-const normalize = (raw: unknown): string =>
-  typeof raw === "string" ? raw.trim().toLowerCase() : "";
-
-/**
- * Üniversitenin koordinatı; bulunamazsa `null` → harita çizilmiyor.
- *
- * `option` sunucudan gelen kayıt (geo alanları varsa onlar kullanılıyor);
- * yoksa yalnız domain ile yedek tabloya bakılıyor.
- */
 export function resolveUniversityCoordinate(
   domain: string | null | undefined,
   option?: UniversityOption | null,
-): CityCoordinate | null {
+): UniversityCoordinate | null {
   // 1) Sunucunun koordinatı — kanonik.
+  //    `lat`/`lon` sözleşmedeki adlar; `latitude`/`longitude` de okunuyor
+  //    çünkü aynı bilgi kart DTO'larında o adlarla geliyor ve iki adlandırma
+  //    arasında kalmak bir alan adı hatasını sessiz boş haritaya çevirir.
   const lat = (option as any)?.lat ?? (option as any)?.latitude;
   const lon = (option as any)?.lon ?? (option as any)?.longitude;
   if (typeof lat === "number" && typeof lon === "number") {
-    return { latitude: lat, longitude: lon };
+    return {
+      latitude: lat,
+      longitude: lon,
+      // Alan yoksa KESİN varsayılıyor: sunucu yalnız yaklaşık olanları
+      // işaretliyor, tersi değil.
+      isApproximate: (option as any)?.isApproximate === true,
+    };
   }
 
-  // 2) Sunucunun şehri → il merkezi.
+  // 2) Sunucunun şehri → il merkezi. Sözleşme dışı bir durum ama haritayı
+  //    tamamen kaybetmekten iyi.
   const serverCity = (option as any)?.city;
   if (typeof serverCity === "string" && serverCity) {
-    const fromServerCity = lookupCityCoordinate(serverCity);
-    if (fromServerCity) return fromServerCity;
+    const fromCity = lookupCityCoordinate(serverCity);
+    if (fromCity) return { ...fromCity, isApproximate: true };
   }
 
-  // 3) İstemci yedeği — eksik olmasına izin verilen tablo.
-  const key = normalize(domain);
-  const city = key ? FALLBACK_UNIVERSITY_CITY[key] : undefined;
-  return city ? lookupCityCoordinate(city) : null;
+  // 3) Hiçbiri yok → harita çizilmiyor. `domain` imzada duruyor çünkü
+  //    çağıranlar onu zaten elinde tutuyor ve ileride sunucu-dışı bir
+  //    çözüm gerekirse imza değişmeden eklenebilir.
+  void domain;
+  return null;
 }

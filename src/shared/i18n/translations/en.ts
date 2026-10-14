@@ -1058,6 +1058,27 @@ const en = {
       },
       promptsTitle: 'Your prompts',
       promptsDescription: 'Answer at least one. This is the most-read part of your card.',
+      interestedInTitle: 'Who are you interested in?',
+      interestedInDescription: 'This decides who shows up in your deck. Pick as many as you like.',
+      interestedInRequired: 'Pick at least one.',
+      // Mode errors (UT-23xx). The SERVER message wins when present; these
+      // are the fallback. 2305/2309 are NEUTRAL — do not make them revealing.
+      errors: {
+        // ── Two-mode structure (UT-23xx) ─────────────────────────────────────
+        // ⚠️ 2305 and 2309 are DELIBERATELY NEUTRAL: the other person's mode or
+        // gender is an information leak, the message must not reveal it.
+        'UT-2207': 'This prompt is not available on this profile.',
+        'UT-2301': 'You need to update the app.',
+        'UT-2302': 'This mode is coming soon.',
+        'UT-2303': 'This profile is already open.',
+        'UT-2304': 'Create your profile to use this mode.',
+        'UT-2305': "You can't reach this person right now.",
+        'UT-2306': 'Pick at least one.',
+        'UT-2307': 'You need to update the app.',
+        'UT-2308': 'Pick who you are interested in.',
+        'UT-2309': "You can't reach this person right now.",
+        'UT-2310': 'Open this mode\'s profile first.',
+      },
       intentsRequired: 'Pick at least one.',
       promptsRequired: 'Answer at least one prompt.',
     },
@@ -1422,6 +1443,9 @@ const en = {
       // The backend sent no reason (or the FE doesn't know the code) but the
       // deck is empty. Neutral copy that CLAIMS NOTHING about the cause; the
       // distance offer rides along with it.
+      modeDisabled: {
+        title: 'This mode is coming soon.',
+      },
       unknown: {
         title: 'Nobody to show right now',
       },
@@ -1688,7 +1712,7 @@ const en = {
         'UT-2201': 'You can answer between 1 and 3 prompts.',
         'UT-2202': 'This prompt is no longer available. Pick another one from the list.',
         'UT-2203': 'You already picked this prompt.',
-        'UT-2204': "Don't forget to write your answer.",
+      'UT-2204': "Don't forget to write your answer.",
         'UT-2205': 'Your answer is too long, shorten it a little.',
         'UT-2206': "This answer doesn't follow our community guidelines. Try writing something different.",
         generic: 'One of your answers could not be saved. Check it and try again.',
@@ -2192,6 +2216,7 @@ const en = {
       grade: 'Year {{year}}',
       premium: 'Premium',
       knowMeAs: "This is how you'll know me:",
+      friendshipIntent: 'Looking for friends to',
       myIntent: "What I'm looking for:",
       // Appended to the intent label: "Long-term" → "Long-term relationship".
       intentSuffix: 'relationship',
@@ -2535,6 +2560,8 @@ const en = {
       'UT-7304': 'You are out of posts for today.',
       'UT-7305': 'Anonymous posting needs Lit Plus.',
       'UT-7306': 'This content does not meet the community guidelines.',
+      'UT-7307': 'You need to update the app.',
+      'UT-7329': 'This feature is no longer available.',
       'UT-7308': 'You cannot post in the feed for a while.',
       'UT-7309': 'You cannot post anonymously for a while.',
       'UT-7310': 'Seeing another campus needs Lit Plus.',

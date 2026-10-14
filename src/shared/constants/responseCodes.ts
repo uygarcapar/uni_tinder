@@ -701,6 +701,60 @@ export const PAYWALL_TYPES = {
  * Switch HER ZAMAN `code` üzerinden yapılır, HTTP status üzerinden ASLA
  * (403 hem UT-7301 hem UT-7308 hem UT-7315 olabiliyor).
  */
+/**
+ * İKİ MODLU YAPI — UT-23xx ailesi (`/api/profile/modes/*` ve mod-bazlı swipe).
+ *
+ * ⚠️ İKİ KODU AYRI ELE ALIN, ikisi de "Friends yok" demiyor:
+ *   • MODE_DISABLED (2302) = ÖZELLİK kapalı (sunucu bayrağı). Kullanıcının
+ *     yapabileceği bir şey yok → sekmeyi/segmenti gizle, "çok yakında".
+ *   • MODE_NOT_OPENED (2304) = KULLANICI o modun profilini açmamış. Yapabileceği
+ *     bir şey VAR → "Profili Oluştur" CTA'sı, mini kurulum akışına götür.
+ * İkisini aynı mesajla karşılamak, açabileceği bir modu "kapalı" diye
+ * göstermek olurdu.
+ *
+ * ⚠️ TARGET_MODE_INACTIVE (2305) ve MODE_GENDER_RULE (2309) BİLEREK NÖTR:
+ * karşı tarafın hangi modları kullandığı ya da cinsiyeti BİLGİ SIZINTISIDIR.
+ * Mesajı ifşa edici hale getirmeyin — "bu kişi arkadaş modunu kapatmış"
+ * demek, kimin hangi havuzda olduğunu söyler.
+ */
+export const MODE_CODES = {
+  /** 400 — prompt o modda seçilemez. Seçici `modes` ile filtrelenirse hiç düşmez. */
+  PROMPT_MODE_MISMATCH: "UT-2207",
+  /** 400 — tanınmayan mod değeri. "Uygulamayı güncelle". */
+  UNKNOWN_MODE: "UT-2301",
+  /** 403 — `modes.friends.enabled` kapalı. Sekmeyi GİZLE. */
+  MODE_DISABLED: "UT-2302",
+  /** 409 — bu modun profili zaten açık. Düzenleme ekranına yönlendir. */
+  MODE_ALREADY_OPEN: "UT-2303",
+  /** 403 — KULLANICI modu açmamış. "Profili Oluştur" CTA'sı. */
+  MODE_NOT_OPENED: "UT-2304",
+  /** 403 — HEDEF o modda aktif değil. Nötr mesaj, kartı düşür. */
+  TARGET_MODE_INACTIVE: "UT-2305",
+  /** 400 — Friends niyeti seçilmedi. Niyet adımına dön. */
+  FRIENDSHIP_INTENTS_REQUIRED: "UT-2306",
+  /** 400 — geçersiz niyet değeri. "Uygulamayı güncelle". */
+  INVALID_FRIENDSHIP_INTENT: "UT-2307",
+  /** 400 — Dating'te `interestedIn` seçilmedi. Tercih adımına dön. */
+  INTERESTED_IN_REQUIRED: "UT-2308",
+  /** 403 — mod cinsiyet kuralı (Friends = aynı cinsiyet). Nötr mesaj. */
+  MODE_GENDER_RULE: "UT-2309",
+  /** 403 — Friends alanı gönderildi ama profil kapalı. "Önce modu aç". */
+  MODE_FIELD_WITHOUT_PROFILE: "UT-2310",
+} as const;
+
+/**
+ * Kartın DESTEDEN DÜŞMESİ gereken kodlar.
+ *
+ * Bu dörtlüde hedef gerçekten uygun değil (silinmiş/pasif, engel, modu kapalı,
+ * cinsiyet kuralı) — kartı geri koymak kullanıcıyı aynı reddedilecek kişiyle
+ * tekrar karşılaştırır. Backend notu: "bilinmeyen kodu jenerik hata olarak
+ * çizin ve kartı desteden düşürün".
+ */
+export const MODE_DROP_CARD_CODES: readonly string[] = [
+  MODE_CODES.TARGET_MODE_INACTIVE,
+  MODE_CODES.MODE_GENDER_RULE,
+];
+
 export const FEED_CODES = {
   /** 403 — akış bayrağı kapalı. Sekme hiç çizilmez. */
   DISABLED: "UT-7301",
@@ -712,6 +766,23 @@ export const FEED_CODES = {
   POST_QUOTA: "UT-7304",
   /** 402 — anonim paylaşım Plus gerektiriyor. */
   ANONYMOUS_REQUIRES_PLUS: "UT-7305",
+  /**
+   * 400 — geçersiz akış konusu. "Uygulamayı güncelle".
+   *
+   * ⚠️ Sunucu tanınmayan konuyu SESSİZCE `General`a DÜŞÜRMÜYOR: wire'daki
+   * `General` varsayılanı yalnız eski istemciler için ve o istemciler konu
+   * alanını hiç göndermiyor. Yeni istemci geçersiz bir anahtar gönderirse
+   * bu bir hata, görmezden gelinmemeli.
+   */
+  INVALID_TOPIC: "UT-7307",
+  /**
+   * 410 — yanıt sistemi kapatıldı (`feed.replies.enabled` kill switch).
+   *
+   * Bu sürüm yanıt uçlarını HİÇ ÇAĞIRMIYOR (sistem söküldü), yani kod
+   * pratikte düşmüyor. Katalogda duruyor çünkü sahadaki eski sürümler
+   * çağırmaya devam ediyor ve kodun ne olduğunu bilmek gerekiyor.
+   */
+  REPLIES_DISABLED: "UT-7329",
   /**
    * 422 — içerik kurallara uymuyor. result.category dolu.
    * ⚠️ HAK DÜŞMEZ → kota azaltılmaz, sheet açık kalır, metin korunur.
@@ -782,6 +853,8 @@ const FEED_I18N: Record<FeedCode, string> = {
   [FEED_CODES.POST_QUOTA]: "feed.codes.UT-7304",
   [FEED_CODES.ANONYMOUS_REQUIRES_PLUS]: "feed.codes.UT-7305",
   [FEED_CODES.CONTENT_REJECTED]: "feed.codes.UT-7306",
+  [FEED_CODES.INVALID_TOPIC]: "feed.codes.UT-7307",
+  [FEED_CODES.REPLIES_DISABLED]: "feed.codes.UT-7329",
   [FEED_CODES.FEED_RESTRICTED]: "feed.codes.UT-7308",
   [FEED_CODES.ANONYMOUS_RESTRICTED]: "feed.codes.UT-7309",
   [FEED_CODES.UNIVERSITY_REQUIRES_PLUS]: "feed.codes.UT-7310",

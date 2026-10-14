@@ -789,14 +789,16 @@ export default function FeedScreen() {
   const [filterVisible, setFilterVisible] = useState(false);
   const [universityVisible, setUniversityVisible] = useState(false);
   const [previewPostId, setPreviewPostId] = useState<string | null>(null);
-  const authorProfile = useFeedAuthorProfile(previewPostId);
+  // ⚠️ SIRA: mod hook'u author-profile sorgusundan ÖNCE okunuyor (sorgu
+  // anahtarı modu taşıyor).
+  const { mode: selectedMode } = useAppMode();
+  const authorProfile = useFeedAuthorProfile(previewPostId, selectedMode);
 
   // ── Yazar kartının AKSİYON MODU ───────────────────────────────────────────
   // Keşif'teki seçili mod (Beğeniler'le de paylaşılan tek kaynak) + sunucunun
   // `availableModes` listesi → kartın hangi modda açılacağı. Karar saf bir
   // fonksiyonda (bkz. feedCardMode): yanlış dal sessizce yanlış modda beğeni
   // atıyor ve geri alınamıyor.
-  const { mode: selectedMode } = useAppMode();
   const cardMode = useMemo(
     () =>
       resolveCardMode(
@@ -931,6 +933,12 @@ export default function FeedScreen() {
   // kampüsüm" ya da HAM DOMAIN ("boun.edu.tr") yazıyordu; ikisi de kampüsün
   // adını söylemiyor. Liste `staleTime: Infinity` ile zaten önbellekte (kampüs
   // sheet'i aynı sorguyu kullanıyor), yani bu ek bir tur açmıyor.
+  // ⚠️ `distinct` KAPALI ve bilinçli. İki iş yapıyor: (a) pill etiketi için
+  // domain→ad haritası — kullanıcının KENDİ domain'i kanonik olmayabilir
+  // (ör. `bau.edu.tr`), distinct listede bulunmaz ve etiket ham domain'e
+  // düşerdi; (b) harita şeridinin TEK kampüs koordinatı — tek arama için
+  // distinct'in anlamı yok. `distinct=true` ÇOKLU PIN içindir (tam ekran
+  // harita, henüz yok).
   const { data: universities } = useUniversities();
   const universityNameByDomain = useMemo(() => {
     const map = new Map<string, string>();

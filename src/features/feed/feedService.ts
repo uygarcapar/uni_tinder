@@ -173,9 +173,14 @@ class FeedService {
   }
 
   /** GET /api/swipe/LikerProfile/{id} ile AYNI ProfileCardDto. */
-  getPostAuthorProfile(postId: string): Promise<any> {
+  /**
+   * `mode`: kart MODA GÖRE geliyor — `prompts` o modun cevaplarını, niyet
+   * alanı o modun niyetini taşıyor. Yanıt ayrıca `availableModes` içeriyor
+   * (izleyicinin bu yazara hangi modlarda aksiyon alabileceği).
+   */
+  getPostAuthorProfile(postId: string, mode?: string | null): Promise<any> {
     return guard(
-      () => api.get(API_ENDPOINTS.FEED_POST_AUTHOR_PROFILE(postId)),
+      () => api.get(API_ENDPOINTS.FEED_POST_AUTHOR_PROFILE(postId, mode)),
       (res) => requireResult<any>(res, "authorProfile"),
     );
   }

@@ -94,9 +94,14 @@ const EMPTY_PAGE: MissedMatchesPage = {
 export async function fetchMissedMatches(
   page = 1,
   pageSize = 20,
+  mode?: string | null,
 ): Promise<MissedMatchesPage> {
+  // `mode` gönderilmezse sunucu Dating sayıyor — kaçırılan eşleşmeler de mod
+  // başına tutuluyor, yani Arkadaş modunda liste o modun kaçırdıklarını
+  // göstermek zorunda.
+  const modeParam = mode ? `&mode=${encodeURIComponent(mode)}` : "";
   const res = (await api.get(
-    `${API_ENDPOINTS.SWIPE_MISSED_MATCHES}?pageNumber=${page}&pageSize=${pageSize}`,
+    `${API_ENDPOINTS.SWIPE_MISSED_MATCHES}?pageNumber=${page}&pageSize=${pageSize}${modeParam}`,
   )) as any;
   if (!res?.isSuccess || !res?.result) return EMPTY_PAGE;
   const r = res.result;
@@ -191,11 +196,16 @@ const paywallOf = (node: any): PaywallType | null =>
  */
 export async function recoverMissedMatch(
   targetUserId: string,
+  mode?: string | null,
 ): Promise<RecoverOutcome> {
   try {
     const res = (await api.post(API_ENDPOINTS.SWIPE_RECOVER_MISSED_MATCH, {
       targetUserId,
       swipeType: "like",
+      // Kurtarma bir BEĞENİ yazıyor; hangi modun satırı olduğu burada
+      // belirleniyor (yoksa sunucu Dating sayar ve arkadaş kurtarması flört
+      // beğenisine dönüşür).
+      ...(mode ? { mode } : {}),
     })) as any;
     // Controller başarısız sonucu 200 ile döndürmüyor; yine de gövdeye göre
     // ayırıyoruz ki sözleşme değişirse sessizce "kurtarıldı" demeyelim.

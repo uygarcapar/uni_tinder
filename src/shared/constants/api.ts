@@ -252,8 +252,10 @@ export const API_ENDPOINTS = {
   // Gövde GET /api/swipe/LikerProfile/{id} ile BİREBİR aynı ProfileCardDto →
   // mevcut profil kartı bileşeni olduğu gibi kullanılabilir (beğeniye özel
   // alanlar — hasLikedMe, note — burada dolu GELMEZ). Anonim gönderide UT-7312.
-  FEED_POST_AUTHOR_PROFILE: (id: string) =>
-    `/api/feed/posts/${encodeURIComponent(id)}/author-profile`,
+  FEED_POST_AUTHOR_PROFILE: (id: string, mode?: string | null) =>
+    `/api/feed/posts/${encodeURIComponent(id)}/author-profile${
+      mode ? `?mode=${encodeURIComponent(mode)}` : ""
+    }`,
   // Bir gönderiye BİR KEZ yanıt verilebilir (UT-7323). Yanıt verene sahibin
   // kabul/red kararı BİLDİRİLMEZ ve hak geri gelmez; kabulde MatchNotification.
   FEED_POST_REPLIES: (id: string) => `/api/feed/posts/${encodeURIComponent(id)}/replies`,

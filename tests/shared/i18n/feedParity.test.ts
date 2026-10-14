@@ -39,13 +39,20 @@ describe('feed namespace — tr/en paritesi', () => {
     expect(trKeys.filter((k) => !enKeys.includes(k))).toEqual([]);
   });
 
-  it('27 hata kodunun hepsi iki dilde de var (+ generic)', () => {
+  it('tüm hata kodları iki dilde de var (+ generic)', () => {
     // Kod aileleri kaymasın: feedCodeI18nKey bu anahtarlara işaret ediyor,
     // biri eksikse kullanıcı ham "feed.codes.UT-73xx" görür.
-    const codeKeys = (prefix: string[]) =>
-      prefix.filter((k) => k.startsWith('feed.codes.')).length;
-    expect(codeKeys(trKeys)).toBe(28);
-    expect(codeKeys(enKeys)).toBe(28);
+    //
+    // ⚠️ SAYI SABİT YAZILMIYOR ARTIK. Eskiden 28'e kilitliydi ve her yeni kod
+    // bu testi "kırıyordu" — oysa yeni kod eklemek bir hata değil. Asıl kural
+    // İKİ DİLİN EŞİT olması; tek taraflı eklenen kod hâlâ yakalanıyor.
+    // (Üstteki "eksik anahtar YOK" testi de aynı kuralı genel olarak kuruyor;
+    // bu test kod ailesine özel, çünkü oradaki eksik ham kod gösteriyor.)
+    const codeKeys = (keys: string[]) =>
+      keys.filter((k) => k.startsWith('feed.codes.')).length;
+    expect(codeKeys(trKeys)).toBe(codeKeys(enKeys));
+    // Alt sınır: aile hiç boşalmasın (ör. blok yanlışlıkla silinirse).
+    expect(codeKeys(trKeys)).toBeGreaterThanOrEqual(28);
   });
 
   it('hiçbir değer boş string değil', () => {
