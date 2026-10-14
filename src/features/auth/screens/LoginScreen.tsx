@@ -19,6 +19,7 @@ import { useRef, useState } from "react";
 import { useForm, Controller } from "react-hook-form";
 import { zodResolver } from "@hookform/resolvers/zod";
 import { loginSchema, LoginForm } from "@/shared/schemas/formSchemas";
+import { loadLastLoginEmail } from "@/features/auth/lastEmail";
 import { colors } from "../../../shared/theme/colors";
 import { useTranslation } from 'react-i18next';
 import { devLog } from '@/shared/utils/devLog';
@@ -31,9 +32,14 @@ export default function LoginScreen({ navigation }: NativeStackScreenProps<AuthS
   const dispatch = useAppDispatch();
   const { loading, error } = useAppSelector((s) => (s as any).auth);
 
+  // Son başarılı girişin adresi önden dolu gelir. Mount anında BİR KEZ okunuyor
+  // (useState ilk değeri): diskteki değer ekran açıkken değişse bile kullanıcının
+  // yazdığının üstüne binmesin.
+  const [initialEmail] = useState(loadLastLoginEmail);
+
   const { control, handleSubmit, getValues } = useForm<LoginForm>({
     resolver: zodResolver(loginSchema),
-    defaultValues: { email: "", password: "" },
+    defaultValues: { email: initialEmail, password: "" },
   });
 
   const handleForgotPassword = () => {

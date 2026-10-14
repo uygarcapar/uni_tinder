@@ -11,6 +11,7 @@ import type { RegistrationStepRoute } from '@/features/auth/registrationFlow';
 import type { AccountBlockPayload } from '@/shared/utils/accountBlock';
 import { devLog } from '@/shared/utils/devLog';
 import { markLoginOk, markSessionLost } from '@/shared/debug/authDiagnostics';
+import { saveLastLoginEmail } from '@/features/auth/lastEmail';
 
 export const fetchUserData = createAsyncThunk(
   'auth/fetchUserData',
@@ -47,6 +48,9 @@ export const login = createAsyncThunk(
       // Defterin sıfır noktası: "son login"den sonra kaç gün geçtiği,
       // atılmaların TTL mi yoksa yarış mı olduğunu ayıran ilk ölçü.
       markLoginOk();
+      // Bir dahaki girişte alan önden dolsun. Yalnız BAŞARILI girişte
+      // yazılıyor — yanlış yazılmış bir adres diske kalmasın.
+      saveLastLoginEmail(email);
       return response;
     } catch (error: any) {
       devLog('❌ Login error — status:', error.response?.status);

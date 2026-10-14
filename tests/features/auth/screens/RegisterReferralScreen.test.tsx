@@ -1,10 +1,13 @@
 /**
  * Davet kodu adımı — sihirbazın ilk ekranı.
  *
- * Suite'in koruduğu üç karar:
+ * Suite'in koruduğu dört karar:
  *   1. Adım OPSİYONEL: kod boşken de "Devam" çalışıyor.
- *   2. Geçersiz kod akışı DURDURMUYOR (uyarı gösterilir, Devam hâlâ aktif).
- *   3. "Atla" kodu gerçekten TEMİZLİYOR — yarım kalmış bir kod sessizce
+ *   2. Geçersiz kod akışı DURDURMUYOR (uyarı gösterilir, Devam hâlâ aktif) —
+ *      ama KENDİ KENDİNE de ilerlemiyor, kullanıcı yazdığını düzeltebilsin.
+ *   3. Geçerli kodda ekran RegisterStep2'nin `onFilled`'ı gibi davranıyor:
+ *      buton beklemeden kodu yazıp Step3'e geçiyor.
+ *   4. "Atla" kodu gerçekten TEMİZLİYOR — yarım kalmış bir kod sessizce
  *      register-and-complete'e sızmamalı.
  *
  * ⚠️ SONUÇ ARTIK TOAST'TA. Ekran valid/invalid'i satır olarak çizmiyor, uygulama
@@ -118,6 +121,21 @@ describe('dolu kod', () => {
     );
   });
 
+  it('geçerli kodda butona basmadan Step3\'e geçiyor', async () => {
+    const tree = setup();
+    await typeCode(tree, 'ak-7m2');
+
+    // Hüküm olumlu → "Devam"ı beklemiyoruz (Step2'nin onFilled'ı gibi).
+    await waitFor(() =>
+      expect(nav.navigate).toHaveBeenCalledWith('RegisterStep3'),
+    );
+    expect(mockDispatch).toHaveBeenCalledWith(
+      expect.objectContaining({
+        payload: { field: 'referralCode', value: 'AK7M2' },
+      }),
+    );
+  });
+
   it('geçersiz kod akışı DURDURMUYOR — uyarı + Devam hâlâ çalışıyor', async () => {
     respondWith({ isSuccess: true, result: { valid: false } });
     const tree = setup();
@@ -133,6 +151,10 @@ describe('dolu kod', () => {
         }),
       ),
     );
+
+    // Olumsuz hüküm KENDİ KENDİNE ilerletmiyor: kullanıcı yazdığını
+    // düzeltebilsin (çıkış yolu yine "Devam"/"Atla").
+    expect(nav.navigate).not.toHaveBeenCalled();
 
     fireEvent.press(tree.getByTestId('referral-continue'));
     // Kod yine GÖNDERİLİYOR: geçerlilik kaydın değil hediyenin koşulu, karar

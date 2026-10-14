@@ -2,7 +2,6 @@ import { useCallback, useEffect, useRef, useState } from "react";
 import {
   ActivityIndicator,
   Alert,
-  AppState,
   Keyboard,
   Text,
   TouchableOpacity,
@@ -10,7 +9,6 @@ import {
   View,
 } from "react-native";
 import { OtpInput, type OtpInputRef } from "react-native-otp-entry";
-import * as Clipboard from "expo-clipboard";
 import { useTranslation } from "react-i18next";
 import type { NativeStackScreenProps } from "@react-navigation/native-stack";
 import type { AuthStackParamList } from "@/shared/types/navigation";
@@ -19,8 +17,6 @@ import { updateRegistrationField } from "@/features/auth/authSlice";
 import RegisterProgressBar from "@/features/auth/components/RegisterProgressBar";
 import RegisterBackButton from "@/features/auth/components/RegisterBackButton";
 import AnimatedPressable from "@/shared/components/AnimatedPressable";
-import SFIcon from "@/shared/components/SFIcon";
-import { ClipboardPaste } from "@/shared/icons";
 import { hideToast, showInfoToast } from "@/shared/services/toaster";
 import { API_BASE_URL, API_ENDPOINTS } from "@/shared/constants/api";
 import { REFERRAL_STEP_NUMBER } from "@/features/auth/registrationFlow";
@@ -47,6 +43,14 @@ import { devLog } from "@/shared/utils/devLog";
  * kalıyor. Kodun geçerliliği kaydın koşulu değil, bir hediyenin koşulu — yanlış
  * hatırlanan bir kod yüzünden kullanıcıyı kayıt olamaz hâle getirmek orantısız.
  * Kod yine de gönderiliyor; backend geçersizse sessizce yok sayıyor.
+ *
+ * 🔴 KOD DOLUNCA KENDİ İLERLİYOR (RegisterStep2'nin `onFilled` mantığının
+ * aynısı): hüküm "geçerli" ise kullanıcı "Devam"a basmak zorunda değil, ekran
+ * kodu yazıp Step3'e geçiyor. GEÇERSİZDE İLERLEMİYOR — kullanıcı yazdığını
+ * düzeltebilsin; çıkış yolu "Devam"/"Atla" olarak duruyor. Otomatik geçiş
+ * yalnız o kod için hükmün İLK duyurulduğu turda var (toast ile aynı kapı):
+ * aksi halde persist'ten dönen geçerli bir kod kullanıcıyı ekranda tutmaz,
+ * her açılışta Step3'e fırlatırdı.
  *
  * SONUÇ (geçerli / bulunamadı) TOAST'TA, satırda değil: uygulamanın geri
  * kalanıyla aynı dynamic-island banner'ı (bkz. services/toaster.ts). Ekranda
@@ -94,7 +98,6 @@ export default function RegisterReferralScreen({
   // kazandırmaz, sadece üç aboneye ayrı `useWatch` yazdırırdı.
   const [code, setCode] = useState(() => normalizeReferralCode(savedCode));
   const [status, setStatus] = useState<ValidationState>("idle");
-  const [clipboardHasText, setClipboardHasText] = useState(false);
 
   const otpRef = useRef<OtpInputRef>(null);
   // Uçuştaki isteğin sırası. Kullanıcı kodu düzeltince eski cevap sonradan
@@ -117,6 +120,21 @@ export default function RegisterReferralScreen({
     const saved = normalizeReferralCode(savedCode);
     if (saved) otpRef.current?.setValue(saved);
   }, [savedCode]);
+
+  /**
+   * Kodu forma yazıp Step3'e geçer. İki çağıranı var: "Devam" ve kod geçerli
+   * çıktığında doğrulama efektinin kendisi (bkz. dosya başı). Yarım kod
+   * GÖNDERİLMEZ: backend 5 karakter bekliyor, eksik değer yalnız sunucuda bir
+   * doğrulama hatasına dönüşürdü.
+   */
+  const goNext = useCallback(
+    (value: string | null) => {
+      Keyboard.dismiss();
+      dispatch(updateRegistrationField({ field: "referralCode", value }));
+      navigation.navigate("RegisterStep3");
+    },
+    [dispatch, navigation],
+  );
 
   // ── Doğrulama: 5 karakter dolunca, 300 ms debounce ───────────────────────
   useEffect(() => {
@@ -163,6 +181,10 @@ export default function RegisterReferralScreen({
           message: t("auth.referral.valid"),
           icon: "note",
         });
+        // Hüküm olumlu → buton beklemeden ilerliyoruz. Banner uygulama
+        // genelinde olduğu için Step3'te de görünmeye devam ediyor; burada
+        // "toast'ı görsün" diye gecikme koymuyoruz.
+        goNext(code);
       } else {
         showInfoToast({
           title: t("auth.referral.invalidTitle"),
@@ -173,30 +195,7 @@ export default function RegisterReferralScreen({
     }, VALIDATE_DEBOUNCE_MS);
 
     return () => clearTimeout(timer);
-  }, [code, complete, t, dispatch]);
-
-  // Panoda metin var mı? (içeriği OKUMAZ → iOS'ta izin uyarısı çıkmaz.)
-  // Yapıştır butonu yalnız bunun doğru olduğu hâlde çiziliyor: boş panoda
-  // "Yapıştır"a basmak sessiz bir hata (bkz. ForgotPasswordCodeScreen).
-  useEffect(() => {
-    let cancelled = false;
-    const check = () => {
-      Clipboard.hasStringAsync()
-        ?.then((has) => {
-          if (!cancelled) setClipboardHasText(has === true);
-        })
-        .catch(() => {});
-    };
-    check();
-    // Kullanıcı kodu mesajlaşma uygulamasından kopyalayıp geri döndüğünde yakala.
-    const sub = AppState.addEventListener("change", (state) => {
-      if (state === "active") check();
-    });
-    return () => {
-      cancelled = true;
-      sub.remove();
-    };
-  }, []);
+  }, [code, complete, t, dispatch, goNext]);
 
   /**
    * Native input'tan gelen HAM metni koda çevirip kütüphaneye ref üzerinden
@@ -206,28 +205,7 @@ export default function RegisterReferralScreen({
     otpRef.current?.setValue(extractReferralCode(raw));
   }, []);
 
-  const handlePaste = async () => {
-    try {
-      const pasted = extractReferralCode((await Clipboard.getStringAsync()) ?? "");
-      if (!pasted) return;
-      otpRef.current?.setValue(pasted);
-    } catch (error) {
-      devLog("⚠️ [referral] pano okunamadı:", error);
-    }
-  };
-
-  const handleContinue = () => {
-    Keyboard.dismiss();
-    // Yarım kod GÖNDERİLMEZ: backend 5 karakter bekliyor, eksik değer yalnız
-    // sunucuda bir doğrulama hatasına dönüşürdü.
-    dispatch(
-      updateRegistrationField({
-        field: "referralCode",
-        value: complete ? code : null,
-      }),
-    );
-    navigation.navigate("RegisterStep3");
-  };
+  const handleContinue = () => goNext(complete ? code : null);
 
   const handleSkip = () => {
     Keyboard.dismiss();
@@ -277,15 +255,17 @@ export default function RegisterReferralScreen({
             </Text>
           </View>
 
-          {/* RegisterStep2'deki OTP bloğunun aynısı; farklar: 5 hane,
-              alfanümerik tip, büyük harf zorlaması ve `textContentType` YOK —
-              davet kodu bir doğrulama kodu değil, iOS'un oneTimeCode autofill'i
-              buraya yanlış değer basardı. */}
+          {/* RegisterStep2'deki OTP bloğunun aynısı — kutu ölçüsü, yarıçapı,
+              zemini ve punto dahil tek bir dil (48×64, 30pt). Farklar yalnız
+              davranışsal: 5 hane, alfanümerik tip, büyük harf zorlaması ve
+              `textContentType` YOK — davet kodu bir doğrulama kodu değil,
+              iOS'un oneTimeCode autofill'i buraya yanlış değer basardı.
+              PLACEHOLDER DA YOK: Step2'nin kutuları boşken boş duruyor, örnek
+              kod ("AK7M2") girilmiş bir koddan ayırt edilemiyordu. */}
           <OtpInput
             ref={otpRef}
             numberOfDigits={REFERRAL_CODE_LENGTH}
             type="alphanumeric"
-            placeholder={t("auth.referral.placeholder")}
             onTextChange={(text) => setCode(normalizeReferralCode(text))}
             textInputProps={{
               autoCapitalize: "characters",
@@ -307,7 +287,7 @@ export default function RegisterReferralScreen({
             theme={{
               containerStyle: { justifyContent: "center", gap: 4 },
               pinCodeContainerStyle: {
-                width: 56,
+                width: 48,
                 height: 64,
                 borderRadius: 15,
                 borderCurve: "continuous",
@@ -320,37 +300,18 @@ export default function RegisterReferralScreen({
                 borderColor: status === "invalid" ? colors.error : "transparent",
               },
               pinCodeTextStyle: {
+                // Zemin colors.surface (medya değil) → metin de tema metin
+                // rengi; Step2'deki not burada da geçerli.
                 color: colors.text,
-                fontSize: 28,
+                fontSize: 30,
                 fontWeight: "600",
               },
-              placeholderTextStyle: { color: ink(0.25), fontSize: 28 },
               focusStickStyle: { backgroundColor: colors.inverseSurface },
             }}
           />
 
-          {clipboardHasText ? (
-            <View className="flex-row justify-center mt-5">
-              <TouchableOpacity activeOpacity={0.8} onPress={handlePaste}>
-                <View className="flex-row items-center gap-2 py-[2px]">
-                  <SFIcon
-                    name="doc.on.clipboard"
-                    fallback={ClipboardPaste}
-                    size={16}
-                    color={colors.text}
-                    strokeWidth={2.5}
-                    weight="bold"
-                  />
-                  <Text className="font-medium" style={{ color: colors.text }}>
-                    {t("auth.referral.paste")}
-                  </Text>
-                </View>
-              </TouchableOpacity>
-            </View>
-          ) : null}
-
-          {/* Yapıştır'ın ALTINDA ve sabit yükseklikte: spinner kutuların hemen
-              altında belirip kaybolunca Yapıştır aşağı-yukarı zıplıyordu. */}
+          {/* Sabit yükseklikte: spinner kutuların hemen altında belirip
+              kaybolunca altındaki her şey aşağı-yukarı zıplıyordu. */}
           <StatusLine status={status} t={t} />
         </View>
       </TouchableWithoutFeedback>

@@ -22,6 +22,7 @@ import type { RootStackParamList } from "@/shared/types/navigation";
 import { useAppDispatch, useAppSelector } from "@/shared/hooks/redux";
 import { authService } from "@/features/auth/authService";
 import { logout } from "@/features/auth/authSlice";
+import { saveLastLoginEmail } from "@/features/auth/lastEmail";
 import {
   parsePasswordError,
   passwordErrorMessage,
@@ -253,6 +254,11 @@ export default function ChangeEmailScreen({
     clearError();
     try {
       const result = await authService.confirmEmailChange(pendingEmail, code);
+
+      // Oturum birazdan kapanıyor ve login ekranı "son giriş" adresini önden
+      // dolduruyor — eski adres diskte kalsa kullanıcı kendi kapattığı adresle
+      // giriş denerdi.
+      saveLastLoginEmail(result?.newEmail ?? pendingEmail);
 
       // Üniversite değiştiyse bunu SÖYLEMEK gerekiyor: kullanıcının keşif
       // havuzu komple değişti (aday havuzu düşürüldü). Sessizce yapılırsa

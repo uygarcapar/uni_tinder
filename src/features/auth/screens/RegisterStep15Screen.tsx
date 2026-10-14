@@ -42,6 +42,7 @@ import { normalizeBackendIso } from "@/shared/utils/backendDate";
 import * as Location from "expo-location";
 import { Plus, X } from "@/shared/icons";
 import SFIcon from "@/shared/components/SFIcon";
+import { saveLastLoginEmail } from "@/features/auth/lastEmail";
 import RegisterProgressBar from "@/features/auth/components/RegisterProgressBar";
 import RegisterStickyFooter from "@/features/auth/components/RegisterStickyFooter";
 import RegisterBackButton from "@/features/auth/components/RegisterBackButton";
@@ -553,6 +554,12 @@ export default function RegisterStep15Screen({ navigation }: NativeStackScreenPr
 
       const enterApp = () => {
         dispatch(setUserAndToken({ user: response.result.user, token: response.result.token, refreshToken: response.result.refreshToken }));
+        // Kayıt da bir "giriş": çıkış yapıp dönen yeni kullanıcı adresini
+        // login ekranında önden dolu bulsun. Cevaptaki adres kanonik (backend
+        // normalize ediyor), ama o alanın geldiğine GÜVENİLMİYOR — kaydın
+        // `Email` olarak gönderdiği doğrulanmış adres yedek. Yazma
+        // `clearRegistrationForm`den ÖNCE: o reducer taslağı siliyor.
+        saveLastLoginEmail(response.result.user?.email ?? registrationEmail);
         dispatch(clearRegistrationForm());
         // Davet kodu TUTTU: hoş geldin hediyesi (1 not) kayıt commit'inde
         // verildi. Backend'in söylediği tek yer bu bayrak — bildirmezsek
