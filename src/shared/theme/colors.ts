@@ -54,6 +54,22 @@ interface Palette {
   accentOrange: string;
   /** SwipeCard fire kalbi — buradan ayarla (gradient: gradients.swipeHeart). */
   swipeHeartBorder: string;
+  /**
+   * FRIENDS modunun vurgusu — Dating'deki `litPlus` kırmızısının yeşil eşi.
+   * Keşif Friends modundayken turuncu-kırmızı CTA'lar bu tona döner; Fire'ın
+   * Friends'teki adı Spark ve rengi bu ailedendir (gradient:
+   * gradients.friendsHeart). DOĞRUDAN OKUMA — moda göre seçimi
+   * `features/discover/modeTheme.ts` yapıyor; buradan okuyan bir bileşen
+   * Dating modunda da yeşil çizer.
+   *
+   * `success` (#34D399) DEĞİL ve bilerek değil: o bir DURUM rengi (başarı
+   * toast'ı, çevrimiçi noktası). Mod kimliği durum semantiğine bağlanırsa
+   * ikisi birbirinden bağımsız ayarlanamaz — bu dosyanın gri tarihçesinin
+   * (bkz. textSecondary notu) renkli tekrarı olurdu.
+   */
+  friendsAccent: string;
+  /** `swipeHeartBorder`ın Friends eşi — Spark kalbinin kenarlığı/soluk tonu. */
+  friendsHeartBorder: string;
   errorLight: string;
   errorDeep: string;
   successIos: string;
@@ -218,6 +234,8 @@ const brand = {
   info: "#3B82F6",
   accentOrange: "#FF8F17",
   swipeHeartBorder: "#ff8e7a",
+  friendsAccent: "#22C55E",
+  friendsHeartBorder: "#7fe3ac",
   errorLight: "#FCA5A5",
   errorDeep: "#ff2b2b",
   successIos: "#34C759",
@@ -357,6 +375,13 @@ interface GradientSet {
   /** SwipeCard fire kalbi dolgusu — buradan ayarla. */
   swipeHeart: Gradient;
   /**
+   * `swipeHeart`ın Friends eşi — Spark'ın dolgusu (buton, dalga, perde).
+   * swipeHeart ile AYNI 3-durak şekli: koyu→orta→parlak; alev shader'ının
+   * ısı rampası ve MatchModal perdesi ilk duraktan okunduğu için ilk durak
+   * "Spark'ın yeşili"dir. Moda göre seçimi modeTheme.ts yapar.
+   */
+  friendsHeart: Gradient;
+  /**
    * ProfileScreen Fire kartı. Kartın dolgusu YOK — bu gradyan yalnız
    * 2px'lik çerçevede ve kalbin yuvarlak rozetinde görünür. Kart zemini
    * sayfanınkiyle aynı (colors.bg) olduğu için metin colors.text, rozetin
@@ -437,6 +462,10 @@ const fixedGradients = {
   // perdesi (MatchModal) ekranın yarısını kaplıyor ve turuncu uç orada marka
   // kırmızısından kopuyordu. Buton/dalga/perde AYNI token — bkz. aşağıdaki not.
   swipeHeart: ["#fc1919", "#fc1e1e", "#ff452a"] as Gradient,
+  // swipeHeart'ın yeşil kardeşi — duraklar aynı rolde: ilk durak buton/perde
+  // tonu, son durak dalganın parlak ucu. friendsAccent (#22C55E) buradaki orta
+  // ailenin düz-dolgu hâli; ikisini birlikte ayarla.
+  friendsHeart: ["#0fae57", "#12c96a", "#2bff8a"] as Gradient,
 };
 
 // Fire kutlaması artık renkli kalp konfetisi değil, tüm ekranı kaplayan

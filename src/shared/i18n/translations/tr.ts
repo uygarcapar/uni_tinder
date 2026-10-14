@@ -1005,6 +1005,70 @@ const tr = {
   },
   discover: {
     tabTitle: 'Keşfet',
+    // İki modlu yapı (Dating/Friends). Anahtarlar PascalCase enum değeriyle
+    // birebir — modeTheme.ts anahtarı `discover.mode.*.${mode}` diye kuruyor,
+    // yani buradaki adlar wire değerleridir, çevrilmez.
+    mode: {
+      title: {
+        Dating: 'Flört',
+        Friends: 'Arkadaş',
+      },
+      // Ürün adı İKİ DİLDE DE çevrilmeden kalıyor ("Fire" kuralının aynısı):
+      // marka sözcüğü. Yine de i18n'den geçiyor ki tek kaynak olsun.
+      fireName: {
+        Dating: 'Fire',
+        Friends: 'Spark',
+      },
+      // Seçici sheet'i: başlık + her modun bir satırlık açıklaması.
+      pickerTitle: 'Nasıl tanışmak istiyorsun?',
+      description: {
+        Dating: 'Flört için tanış — karşılıklı beğeniyle eşleşin.',
+        Friends: 'Kampüsten arkadaş bul — yalnız aynı cinsiyetten kişiler.',
+      },
+      // Profili açılmamış mod satırı: CTA + mini kurulum akışı.
+      openCta: 'Profili aç',
+      openTitle: {
+        Dating: 'Flört profilini aç',
+        Friends: 'Arkadaş profilini aç',
+      },
+      openIntro: {
+        Dating:
+          'Flört profilin ayrı: kendi sorularını ve ne aradığını burada belirliyorsun. Fotoğrafların ve temel bilgilerin aynı kalıyor.',
+        Friends:
+          'Arkadaş profilin ayrı: kendi sorularını ve ne için arkadaş aradığını burada belirliyorsun. Fotoğrafların ve temel bilgilerin aynı kalıyor.',
+      },
+      openSubmit: 'Profili aç',
+      opening: 'Açılıyor…',
+      // Mod kapalıyken o modun destesine girilmek istenirse.
+      lockedTitle: {
+        Dating: 'Flört profilin yok',
+        Friends: 'Arkadaş profilin yok',
+      },
+      lockedMessage: 'Bu modda kimseyi görmek için önce profilini açman gerekiyor.',
+      // Mini kurulumun iki bölümü.
+      intentsTitle: {
+        Dating: 'Ne arıyorsun?',
+        Friends: 'Ne için arkadaş arıyorsun?',
+      },
+      intentsDescription: {
+        Dating: 'Kartında görünür ve aynı şeyi isteyenlerle eşleştirir.',
+        Friends: 'Birden fazla seçebilirsin. Kartında görünür.',
+      },
+      promptsTitle: 'Soruların',
+      promptsDescription: 'En az bir soruyu yanıtla. Kartının en çok okunan yeri burası.',
+      intentsRequired: 'En az bir tane seç.',
+      promptsRequired: 'En az bir soruyu yanıtla.',
+    },
+    // Arkadaşlık niyetleri — backend `GET /api/common/friendship-intents`
+    // etiketlerini de dönüyor; buradaki harita YEREL YEDEK ve birinci ağızdan
+    // cümle (sunucu kısa etiket veriyor). Anahtar enumName.
+    friendshipIntents: {
+      FunHangout: 'Takılmak, eğlenmek',
+      StudyBuddy: 'Ders arkadaşı',
+      Roommate: 'Ev arkadaşı',
+      Events: 'Etkinliklere birlikte gitmek',
+      Sports: 'Spor yapmak',
+    },
     swipe: {
       resetNow: 'Şu anda yenilenebilir',
       resetDays: '{{d}} gün sonra yenilenir',

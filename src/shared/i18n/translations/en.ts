@@ -1000,6 +1000,67 @@ const en = {
   },
   discover: {
     tabTitle: 'Discover',
+    // Two-mode structure (Dating/Friends). Keys mirror the PascalCase enum
+    // values exactly — modeTheme.ts builds `discover.mode.*.${mode}`, so these
+    // names are wire values and are not translated.
+    mode: {
+      title: {
+        Dating: 'Dating',
+        Friends: 'Friends',
+      },
+      // The product name stays untranslated in BOTH languages (same rule as
+      // "Fire"): it is a brand word. It still goes through i18n so there is a
+      // single source.
+      fireName: {
+        Dating: 'Fire',
+        Friends: 'Spark',
+      },
+      pickerTitle: 'How do you want to meet?',
+      description: {
+        Dating: 'Meet for dating — match when you both like each other.',
+        Friends: 'Find friends on campus — same gender only.',
+      },
+      openCta: 'Open profile',
+      openTitle: {
+        Dating: 'Open your dating profile',
+        Friends: 'Open your friends profile',
+      },
+      openIntro: {
+        Dating:
+          'Your dating profile is separate: you pick its own prompts and what you are looking for here. Your photos and basics stay the same.',
+        Friends:
+          'Your friends profile is separate: you pick its own prompts and what you want from a friendship here. Your photos and basics stay the same.',
+      },
+      openSubmit: 'Open profile',
+      opening: 'Opening…',
+      lockedTitle: {
+        Dating: 'You have no dating profile',
+        Friends: 'You have no friends profile',
+      },
+      lockedMessage: 'Open your profile for this mode to start seeing people.',
+      intentsTitle: {
+        Dating: 'What are you looking for?',
+        Friends: 'What kind of friendship?',
+      },
+      intentsDescription: {
+        Dating: 'This is on your card and matches you with people who want the same thing.',
+        Friends: 'Pick as many as you like. This is on your card.',
+      },
+      promptsTitle: 'Your prompts',
+      promptsDescription: 'Answer at least one. This is the most-read part of your card.',
+      intentsRequired: 'Pick at least one.',
+      promptsRequired: 'Answer at least one prompt.',
+    },
+    // Friendship intents — the backend also returns labels via
+    // `GET /api/common/friendship-intents`; this map is the LOCAL FALLBACK and
+    // first-person phrasing (the server sends short labels). Key is enumName.
+    friendshipIntents: {
+      FunHangout: 'Hanging out, having fun',
+      StudyBuddy: 'A study buddy',
+      Roommate: 'A roommate',
+      Events: 'Going to events together',
+      Sports: 'Playing sports',
+    },
     swipe: {
       resetNow: 'Can reset now',
       resetDays: 'Resets in {{d}}d',
