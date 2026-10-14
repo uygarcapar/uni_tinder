@@ -128,8 +128,46 @@ function mirror(action: any, getState: () => any): void {
 
     // Gelen/giden mesaj. upsertMessage clientMessageId ile uzlaştırıyor, yani
     // optimistic satır ikizlenmiyor.
-    case 'chat/receiveMessage':
+    //
+    // Mesaj satırının YANINDA liste satırı da güncelleniyor (önizleme + sıra +
+    // rozet): gerekçe chatRepository'nin "Sohbet listesi satırının YEREL
+    // tazeliği" bölümünde. Kurallar chatSlice.receiveMessage'ın AYNISI —
+    // ayrışırlarsa ekran ile soğuk açılış farklı liste gösterir:
+    //   • kendi mesajımız (ya da echo'su) → sohbet okundu sayılır
+    //   • karşı tarafın mesajı → sohbet AÇIK DEĞİLSE ve sistem mesajı değilse
+    //     rozet ilerler
+    // `_selfUserId` payload'a dispatch eden tarafça konuyor (hub handler'ları);
+    // Redux de kimliği oradan okuyor, yani iki taraf aynı kaynağa bakıyor.
+    case 'chat/receiveMessage': {
+      if (!p?.id || !p?.conversationId) return;
+      // Yazımdan ÖNCE: mükerrer hub event'i rozeti iki kez artırmasın.
+      const alreadyKnown = repo.messageExists(p.id);
+      repo.saveMessage(p, p.conversationId);
+      repo.touchConversationFromMessage(p);
+      const isOwn = !!p._selfUserId && p.senderId === p._selfUserId;
+      if (isOwn) {
+        repo.clearConversationUnread(p.conversationId);
+      } else if (
+        !alreadyKnown &&
+        !p.isSystemMessage &&
+        getState()?.chat?.activeConversationId !== p.conversationId
+      ) {
+        repo.bumpConversationUnread(p.conversationId);
+      }
+      return;
+    }
+
+    // Kendi gönderimimizin ack'i — sohbet okunmuş sayılır.
     case 'chat/messageSent':
+      if (!p?.id || !p?.conversationId) return;
+      repo.saveMessage(p, p.conversationId);
+      repo.touchConversationFromMessage(p);
+      repo.clearConversationUnread(p.conversationId);
+      return;
+
+    // DÜZENLEME liste satırına DOKUNMUYOR — chatSlice.messageEdited de
+    // dokunmuyor. (Son mesaj düzenlenince önizlemenin tazelenmesi ayrı bir
+    // ürün kararı; iki tarafta AYNI ANDA değişmeli.)
     case 'chat/messageEdited':
       if (p?.id && p?.conversationId) repo.saveMessage(p, p.conversationId);
       return;
@@ -137,6 +175,10 @@ function mirror(action: any, getState: () => any): void {
     case 'chat/appendOptimisticMessage':
       if (p?.message?.id && p?.conversationId) {
         repo.saveMessage(p.message, p.conversationId, 'pending');
+        // Önizleme ANINDA değişsin: gönderdiğin mesaj listede görünmeden
+        // uygulama kapanırsa (offline kuyruk) satır yine doğru olsun.
+        repo.touchConversationFromMessage({ ...p.message, conversationId: p.conversationId });
+        repo.clearConversationUnread(p.conversationId);
       }
       return;
 
@@ -153,7 +195,20 @@ function mirror(action: any, getState: () => any): void {
       return;
 
     case 'chat/messagesRead':
-      if (p?.conversationId && p?.readByUserId) repo.applyReadReceipt(p);
+      if (!p?.conversationId || !p?.readByUserId) return;
+      repo.applyReadReceipt(p);
+      // OKUYAN BİZSEK rozet de düşer (chatSlice.messagesRead'in aynısı).
+      // Karşı taraf okuduğunda rozetimizle ilgisi yok — o yalnız tik rengi.
+      if (p._selfUserId && p.readByUserId === p._selfUserId) {
+        repo.clearConversationUnread(p.conversationId);
+      }
+      return;
+
+    // Sohbete girildi (ChatScreen) — rozet yerelde düşüyor, sunucu tarafını
+    // markRead kapatıyor. Disk bunu duymadığı için soğuk açılışta rozet geri
+    // geliyordu.
+    case 'chat/clearUnreadForConversation':
+      if (typeof p === 'string' && p) repo.clearConversationUnread(p);
       return;
 
     case 'chat/messageDelivered':

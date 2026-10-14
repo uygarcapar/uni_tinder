@@ -327,3 +327,164 @@ describe('fetchConversations aynası', () => {
     expect(Object.keys(convRow())).not.toContain('partner_is_online');
   });
 });
+
+/**
+ * Liste satırının realtime tazeliği — soğuk açılışta görünen hata sınıfı.
+ *
+ * Bu olaylar mesaj satırını yazıyordu ama liste satırına dokunmuyordu: önizleme,
+ * sıra ve rozet yalnız AĞ yanıtıyla tazeleniyordu. Redux aynı anda doğruyu
+ * gösterdiği için hata ancak "kapat → offline aç" ile ortaya çıkıyordu.
+ */
+describe('liste satırı realtime\'da da güncellenir', () => {
+  const SELF = 'me';
+  const existing = {
+    conversationId: CONV,
+    partnerUserId: 'partner',
+    partnerDisplayName: 'Ada',
+    unreadCount: 0,
+    isActive: true,
+    lastMessageAt: new Date(BASE).toISOString(),
+    lastMessagePreview: 'eski',
+  };
+
+  const convRow = () =>
+    getChatDb().getFirst<any>('SELECT * FROM conversations WHERE conversation_id = ?', [CONV]);
+
+  function seeded(state: any = { chat: { activeConversationId: null, messagesByConv: {} } }) {
+    const harness = makeHarness(state);
+    harness.dispatch({ type: 'chat/fetchConversations/fulfilled', payload: [existing] });
+    return harness;
+  }
+
+  it('karşı tarafın mesajı önizlemeyi ve rozeti ilerletir', () => {
+    const { dispatch } = seeded();
+
+    dispatch({ type: 'chat/receiveMessage', payload: msg(5, { _selfUserId: SELF } as any) });
+
+    expect(convRow().last_message_preview).toBe('mesaj 5');
+    expect(convRow().last_message_at_ms).toBe(BASE + 5 * 60_000);
+    expect(convRow().unread_count).toBe(1);
+  });
+
+  it('MÜKERRER hub event\'i rozeti iki kez artırmaz', () => {
+    const { dispatch } = seeded();
+    const payload = msg(5, { _selfUserId: SELF } as any);
+
+    dispatch({ type: 'chat/receiveMessage', payload });
+    dispatch({ type: 'chat/receiveMessage', payload });
+
+    expect(convRow().unread_count).toBe(1);
+  });
+
+  it('SOHBET AÇIKKEN rozet ilerlemez', () => {
+    const { dispatch } = seeded({
+      chat: { activeConversationId: CONV, messagesByConv: {} },
+    });
+
+    dispatch({ type: 'chat/receiveMessage', payload: msg(5, { _selfUserId: SELF } as any) });
+
+    expect(convRow().unread_count).toBe(0);
+    expect(convRow().last_message_preview).toBe('mesaj 5');
+  });
+
+  it('sistem mesajı rozet ilerletmez', () => {
+    const { dispatch } = seeded();
+
+    dispatch({
+      type: 'chat/receiveMessage',
+      payload: msg(5, { isSystemMessage: true, _selfUserId: SELF } as any),
+    });
+
+    expect(convRow().unread_count).toBe(0);
+  });
+
+  it('KENDİ mesajımızın echo\'su sohbeti okunmuş yapar', () => {
+    const { dispatch } = seeded();
+    dispatch({ type: 'chat/receiveMessage', payload: msg(5, { _selfUserId: SELF } as any) });
+    expect(convRow().unread_count).toBe(1);
+
+    dispatch({
+      type: 'chat/receiveMessage',
+      payload: msg(6, { senderId: SELF, _selfUserId: SELF } as any),
+    });
+
+    expect(convRow().unread_count).toBe(0);
+    expect(convRow().last_message_preview).toBe('mesaj 6');
+  });
+
+  it('optimistic balon önizlemeyi ANINDA yazar (ağ cevabı beklemiyor)', () => {
+    const { dispatch } = seeded();
+
+    dispatch({
+      type: 'chat/appendOptimisticMessage',
+      payload: {
+        conversationId: CONV,
+        message: msg(7, { id: 'temp-c7', clientMessageId: 'c7', senderId: SELF }),
+      },
+    });
+
+    expect(convRow().last_message_preview).toBe('mesaj 7');
+  });
+
+  it('messageSent önizlemeyi tazeler ve sohbeti okunmuş yapar', () => {
+    const { dispatch } = seeded();
+    dispatch({ type: 'chat/receiveMessage', payload: msg(5, { _selfUserId: SELF } as any) });
+
+    dispatch({ type: 'chat/messageSent', payload: msg(8, { senderId: SELF }) });
+
+    expect(convRow().unread_count).toBe(0);
+    expect(convRow().last_message_preview).toBe('mesaj 8');
+  });
+
+  it('clearUnreadForConversation rozeti DİSKTE de düşürür', () => {
+    const { dispatch } = seeded();
+    dispatch({ type: 'chat/receiveMessage', payload: msg(5, { _selfUserId: SELF } as any) });
+
+    dispatch({ type: 'chat/clearUnreadForConversation', payload: CONV });
+
+    expect(convRow().unread_count).toBe(0);
+  });
+
+  it('messagesRead: OKUYAN BİZSEK rozet düşer, karşı taraf okuduysa düşmez', () => {
+    const { dispatch } = seeded();
+    dispatch({ type: 'chat/receiveMessage', payload: msg(5, { _selfUserId: SELF } as any) });
+
+    // Karşı taraf bizim mesajlarımızı okudu — rozetimizle ilgisi yok.
+    dispatch({
+      type: 'chat/messagesRead',
+      payload: { conversationId: CONV, readByUserId: 'partner', _selfUserId: SELF },
+    });
+    expect(convRow().unread_count).toBe(1);
+
+    dispatch({
+      type: 'chat/messagesRead',
+      payload: { conversationId: CONV, readByUserId: SELF, _selfUserId: SELF },
+    });
+    expect(convRow().unread_count).toBe(0);
+  });
+
+  it('messageEdited liste satırına DOKUNMAZ (Redux ile parite)', () => {
+    const { dispatch } = seeded();
+    dispatch({ type: 'chat/receiveMessage', payload: msg(5, { _selfUserId: SELF } as any) });
+
+    dispatch({
+      type: 'chat/messageEdited',
+      payload: msg(5, { content: 'düzeltildi', editedAt: new Date(BASE).toISOString() }),
+    });
+
+    expect(convRow().last_message_preview).toBe('mesaj 5');
+    expect(rowOf('m5').content).toBe('düzeltildi');
+  });
+
+  it('bilinmeyen sohbete gelen mesaj satır YARATMAZ (mesaj yine yazılır)', () => {
+    const { dispatch } = makeHarness();
+
+    dispatch({
+      type: 'chat/receiveMessage',
+      payload: msg(5, { _selfUserId: SELF } as any),
+    });
+
+    expect(convRow()).toBeNull();
+    expect(ids()).toEqual(['m5']);
+  });
+});

@@ -6,7 +6,7 @@ import {
   type SendState,
   type SyncStateRow,
 } from '@/features/chat/db/rows';
-import { ContentType } from '@/features/chat/contentType';
+import { ContentType, contentTypeToNumber } from '@/features/chat/contentType';
 import { rekey as rekeyCache } from '@/features/chat/messageCache';
 import { normalizeMessage } from '@/features/chat/normalizeMessage';
 import { utcTime } from '@/shared/utils/dateUtc';
@@ -303,13 +303,15 @@ export function readConversationsByIds(
 export function failStalePendingSends(): number {
   const db = getChatDb();
   const stale = db.getFirst<{ n: number }>(
-    "SELECT COUNT(*) AS n FROM messages WHERE send_state = 'pending'",
+    // `send_state <> 'sent'` terimi MANTIKSAL FAZLALIK ama kısmi indeksi
+    // (idx_messages_unsent) açan anahtar — gerekçe: migrations.ts V5.
+    "SELECT COUNT(*) AS n FROM messages WHERE send_state = 'pending' AND send_state <> 'sent'",
   );
   const count = stale?.n ?? 0;
   if (count > 0) {
     db.run(
       `UPDATE messages SET send_state = 'failed', row_version = row_version + 1
-        WHERE send_state = 'pending'`,
+        WHERE send_state = 'pending' AND send_state <> 'sent'`,
     );
   }
   return count;
@@ -335,8 +337,9 @@ export function readFailedSends({
   limit = 50,
 }: { sinceMs?: number; limit?: number } = {}): MessageRow[] {
   return getChatDb().getAll<MessageRow>(
+    // `send_state <> 'sent'`: bkz. failStalePendingSends — kısmi indeks kapısı.
     `SELECT * FROM messages
-      WHERE send_state = 'failed' AND sent_at_ms >= ?
+      WHERE send_state = 'failed' AND send_state <> 'sent' AND sent_at_ms >= ?
       ORDER BY sent_at_ms ASC, id ASC LIMIT ?`,
     [sinceMs, limit],
   );
@@ -403,6 +406,28 @@ export function readLastVoiceDurations(queries: LastVoiceQuery[]): Record<string
   }
 
   return out;
+}
+
+/**
+ * TEŞHİS (yalnız `__DEV__`): bir sohbetin arşivdeki en yeni satırlarının ham
+ * hâli. `readLastVoiceDurations` "bilmiyorum" dediğinde sebebi ayırmak için —
+ * dört farklı sebep aynı sonucu veriyor ve ikisi istemci, ikisi sunucu tarafı:
+ *   • satır HİÇ YOK            → arşiv o mesajı henüz almamış (delta zamanlaması)
+ *   • damga çok uzak           → tarih normalizasyonu (bkz. dateUtc)
+ *   • content_type ≠ 2         → yazım kapısı tipi çözememiş
+ *   • duration_ms NULL         → payload süreyi taşımıyor
+ * Ürün yolunda ÇAĞRILMAZ.
+ */
+export function debugLastMessageRows(
+  conversationId: string,
+  limit = 3,
+): Pick<MessageRow, 'id' | 'sent_at' | 'sent_at_ms' | 'content_type' | 'duration_ms' | 'deleted_at'>[] {
+  return getChatDb().getAll(
+    `SELECT id, sent_at, sent_at_ms, content_type, duration_ms, deleted_at
+       FROM messages WHERE conversation_id = ?
+       ORDER BY sent_at_ms DESC, id DESC LIMIT ?`,
+    [conversationId, limit],
+  );
 }
 
 function writeSyncState(
@@ -853,6 +878,104 @@ export function insertConversationFromMatch(p: {
   );
 }
 
+// ── Sohbet listesi satırının YEREL tazeliği ─────────────────────────────────
+//
+// Bu üç fonksiyon olmadan `conversations` satırına yalnız AĞ yazıyordu
+// (`upsertConversations`: /conversations yanıtı ve delta turu). Mesaj satırı
+// realtime'da diske iniyordu ama liste satırı inmiyordu, yani:
+//   mesaj gel/gönder → uygulamayı kapat → offline aç
+// listede ESKİ önizleme, ESKİ sıra ve okuduğun sohbette GERİ GELEN rozet.
+// Redux tarafı aynı anda doğruyu gösteriyordu (chatSlice
+// .updateConversationLastMessage / markConversationReadLocally), yani hata
+// yalnız soğuk açılışta görünüyordu — ağ cevabı gelene kadar.
+//
+// `upsertConversations`'ın "local wins" kuralları (1) ve (2) tam bu yazımları
+// korumak için var: oradaki "yerel kesin daha yeni" ve "yerel 0'ı ezme"
+// dalları, korunacak yerel değer diske hiç yazılmadığı için boşa çalışıyordu.
+
+/**
+ * Son mesaj özeti — mesaj satırını diske yazan realtime yolların EŞLİKÇİSİ.
+ *
+ * Damga GERİYE GİTMEZ (`<=` koşulu): Redux tarafı koşulsuz üzerine yazıyor
+ * ama orada tek kaynak ekran ve her odakta /conversations tazeliyor. Disk ise
+ * soğuk açılışın TEK kaynağı: sırası bozulan bir satır kullanıcıya yanlış
+ * sıralı liste olarak görünür. Sıra dışı gelen (ya da delta turunda yeniden
+ * oynatılan) eski bir mesaj bu yüzden satıra dokunmuyor.
+ *
+ * Eşitlik DAHİL: optimistic balon ile sunucunun echo'su aynı damgayı
+ * taşıyabiliyor ve echo'nun içeriği (sunucunun normalize ettiği hâli) kazanmalı.
+ *
+ * Satır yoksa hiçbir şey olmuyor — Redux'ta da `if (!conv) return` var. Sohbet
+ * satırını yaratmak bu yolun işi değil (bkz. insertConversationFromMatch).
+ */
+export function touchConversationFromMessage(p: {
+  conversationId: string;
+  content?: string | null;
+  sentAt?: string | null;
+  contentType?: MessageDto['contentType'];
+}): void {
+  if (!p.conversationId || !p.sentAt) return;
+  const ms = utcTime(p.sentAt);
+  if (!Number.isFinite(ms)) return;
+  getChatDb().run(
+    `UPDATE conversations SET
+       last_message_preview      = ?,
+       last_message_at           = ?,
+       last_message_at_ms        = ?,
+       last_message_content_type = ?
+     WHERE conversation_id = ? AND COALESCE(last_message_at_ms, 0) <= ?`,
+    [
+      p.content ?? '',
+      p.sentAt,
+      ms,
+      contentTypeToNumber(p.contentType),
+      p.conversationId,
+      ms,
+    ],
+  );
+}
+
+/**
+ * Bu mesaj arşivde VAR MI — rozetin MÜKERRER artmasına karşı kapı.
+ *
+ * `bumpConversationUnread` tanımı gereği idempotent değil, hub ise aynı
+ * `ReceiveMessage`'ı iki kez yayınlayabiliyor (reconnect yarışı). Redux tarafı
+ * bunu bucket'taki id kontrolüyle eliyor (chatSlice.ts:505) — diskte karşılığı
+ * bu tek PK okuması. Yazımdan ÖNCE çağrılmak zorunda; sonra çağırırsan satır
+ * zaten yazılmış olur ve her mesaj "mükerrer" görünür.
+ */
+export function messageExists(id: string): boolean {
+  if (!id) return false;
+  return !!getChatDb().getFirst<{ n: number }>(
+    'SELECT 1 AS n FROM messages WHERE id = ?',
+    [id],
+  );
+}
+
+/** Karşı tarafın mesajı geldi ve sohbet AÇIK DEĞİL — rozet ilerler. */
+export function bumpConversationUnread(conversationId: string): void {
+  if (!conversationId) return;
+  getChatDb().run(
+    'UPDATE conversations SET unread_count = unread_count + 1 WHERE conversation_id = ?',
+    [conversationId],
+  );
+}
+
+/**
+ * Sohbet okundu sayıldı (girildi, kendi mesajımızı gönderdik ya da kendi
+ * `MessagesRead` event'imiz geldi).
+ *
+ * `unread_count <> 0` koruması diğer nokta mutasyonlardaki no-op kuralının
+ * aynısı: zaten sıfırsa satıra dokunma.
+ */
+export function clearConversationUnread(conversationId: string): void {
+  if (!conversationId) return;
+  getChatDb().run(
+    'UPDATE conversations SET unread_count = 0 WHERE conversation_id = ? AND unread_count <> 0',
+    [conversationId],
+  );
+}
+
 /**
  * Yerel arşiv saklama penceresi — SUNUCUNUN `MessageRetentionJob`'ı ile AYNI.
  *
@@ -1127,7 +1250,14 @@ export function upsertConversations(
           c.lastMessagePreview ?? null,
           c.lastMessageAt ?? null,
           serverMs,
-          c.lastMessageContentType ?? null,
+          // SAYIYA indiriliyor: wire enum'ları PascalCase string gelebiliyor
+          // ("Voice") ve bu kolonu okuyan taraf sayı karşılaştırıyor. Realtime
+          // yazıcısı (touchConversationFromMessage) da aynı dönüşümü yapıyor —
+          // iki yazıcı aynı kolona iki FORMAT yazarsa okuyan taraf satırın
+          // kaynağına göre farklı davranır.
+          c.lastMessageContentType == null
+            ? null
+            : contentTypeToNumber(c.lastMessageContentType),
           c.unreadCount ?? 0,
           c.isActive ? 1 : 0,
           c.isUnlimited === undefined ? null : c.isUnlimited ? 1 : 0,

@@ -51,6 +51,7 @@ import {
   formatVoiceDuration,
   isVoiceMessage,
 } from "@/features/chat/voiceMessage";
+import { contentTypeToNumber } from "@/features/chat/contentType";
 import {
   formatRestoreWindow,
   resolveClosedByMe,
@@ -62,10 +63,12 @@ import moderationService from "@/shared/services/moderationService";
 import { showInfoToast } from "@/shared/services/toaster";
 import { chatErrorText } from "@/shared/constants/responseCodes";
 import { parseUtc } from "@/shared/utils/dateUtc";
+import formatRelativeTime from "@/shared/utils/formatRelativeTime";
 import {
   hydrateConversation,
   readVoiceDurationsFromLocal,
 } from "@/features/chat/chatHydrate";
+import { debugLastMessageRows } from "@/features/chat/chatRepository";
 import EmptyState from "@/shared/components/EmptyState";
 import type PagerView from "react-native-pager-view";
 import PagerTabBar, {
@@ -77,6 +80,10 @@ import ScreenHeader, {
   SCREEN_HEADER_TITLE_HEIGHT,
 } from "@/shared/components/ScreenHeader";
 import AnimatedPressable from "@/shared/components/AnimatedPressable";
+// Çubuğun yüksekliği seçici sheet'lerinin arama kapsülüyle ORTAK sabitten
+// geliyor (bkz. SheetSearchInput): o kapsül bu çubuğun kopyası, iki yerde ayrı
+// sayı tutulduğunda modalla sohbet arası geçişte çubuk görünür şekilde zıplıyor.
+import { SEARCH_BAR_HEIGHT } from "@/shared/components/SheetSearchInput";
 import { openLitPlus } from "@/features/profile/litPlusEntry";
 import { usePremiumTier } from "@/features/profile/premiumTier";
 import { colors, ink, veil } from "../../../shared/theme/colors";
@@ -102,6 +109,40 @@ function usePagerSlide(offset: SharedValue<number>, pageWidth: number) {
     () => ({ transform: [{ translateX: -offset.value * pageWidth }] }),
     [pageWidth],
   );
+}
+
+/**
+ * Diskten süre okuması "bilmiyorum" dediğinde tekrar denemeden önceki bekleme.
+ *
+ * Amacı tek: "bilmiyorum" cevabını KALICI yapmamak (gerekçe
+ * localVoiceCacheRef). Süre kısa, çünkü bu değeri diske yazan şey (delta turu)
+ * genelde ilk render'dan bir-iki saniye sonra tamamlanıyor; uzun tutmak sürenin
+ * görünmesini o kadar geciktirirdi. Kısa tutmanın bedeli de sınırlı: tur başına
+ * yalnız SÜRESİ BİLİNMEYEN sohbet kadar, indeksli tek satırlık okuma.
+ */
+const VOICE_MISS_RETRY_MS = 1500;
+
+/**
+ * Yalnız `__DEV__`: süre çözülemediğinde arşivin o sohbet için ne tuttuğunu
+ * yazar — anahtar başına BİR kez (yoksa her dispatch'te konuşur).
+ *
+ * Dört olası sebebi ayırmak için var (bkz. debugLastMessageRows): satır yok /
+ * damga uzak / tip yanlış / süre null. Cihazda tek koşumda cevap veriyor.
+ */
+const voiceMissLogged = new Set<string>();
+function logVoiceDurationMiss(conversationId: string, lastMessageAtMs: number) {
+  const key = `${conversationId}:${lastMessageAtMs}`;
+  if (voiceMissLogged.has(key)) return;
+  voiceMissLogged.add(key);
+  try {
+    const rows = debugLastMessageRows(conversationId);
+    console.log(
+      `[messages] ses süresi çözülemedi · conv=${conversationId} · convAt=${lastMessageAtMs} · ` +
+        `arşiv=${JSON.stringify(rows)}`,
+    );
+  } catch (error) {
+    console.log(`[messages] ses süresi çözülemedi · conv=${conversationId} · arşiv okunamadı:`, error);
+  }
 }
 
 export default function MessagesScreen() {
@@ -190,11 +231,29 @@ export default function MessagesScreen() {
   //   4. hedefli history tazelemesi (aşağıdaki effect) — son çare, ağ
   const messagesByConv = useAppSelector((s) => (s as any).chat.messagesByConv);
   // (3) için küçük bir not defteri: anahtar `conversationId:lastMessageAt`,
-  // değer diskten okunan süre (0 = "disk de bilmiyor"). Amacı tekrar tekrar SQL
-  // koşmamak — memo her chat dispatch'inde (typing, receipt, reaction) yeniden
-  // hesaplanıyor; sohbetin son mesajı değişmedikçe cevap da değişmez. Render
-  // sırasında yazılıyor ama saf: aynı anahtar her zaman aynı değeri taşır.
-  const localVoiceCacheRef = useRef(new Map<string, number>());
+  // değer diskten okunan süre. Amacı tekrar tekrar SQL koşmamak — memo her chat
+  // dispatch'inde (typing, receipt, reaction) yeniden hesaplanıyor; sohbetin son
+  // mesajı değişmedikçe cevap da değişmez. Render sırasında yazılıyor ama saf:
+  // aynı anahtar her zaman aynı değeri taşır.
+  //
+  // ── KAÇIRILAN OKUMA (0) KALICI OLAMAZ ──────────────────────────────────────
+  // "Disk de bilmiyor" cevabını süresiz saklamak, süreyi KALICI olarak boş
+  // bırakıyordu. Senaryo soğuk açılışta olağan:
+  //   1. liste diskten doğuyor → eski son mesajın damgası
+  //   2. /conversations dönüyor → damga sesli mesaja kayıyor, satır "🎤 Sesli
+  //      mesaj" oluyor. Ama arşivde o mesaj HENÜZ YOK: onu getiren delta turu
+  //      (`/messages/changes`) hub bağlandıktan sonra tamamlanıyor.
+  //   3. memo yeni anahtarla diski okuyor → bulamıyor → 0'ı yazıyor
+  //   4. delta turu mesajı diske yazıyor, `conversations` tazeleniyor ama
+  //      ANAHTAR AYNI (son mesaj değişmedi) → bir daha okunmuyor
+  // Kullanıcının gördüğü: sohbete girip çıkana kadar süre gelmiyor — çünkü
+  // sohbete girmek bucket'ı dolduruyor ve (2) bu defteri hiç sormuyor.
+  //
+  // Çözüm: POZİTİF cevap kalıcı (bir mesajın süresi değişmez), KAÇIRILAN cevap
+  // kısa ömürlü. Böylece hem SQL her dispatch'te koşmuyor hem de arşiv dolunca
+  // sonraki dispatch'te (delta/fetch zaten bir tane üretiyor) süre kendiliğinden
+  // yerine oturuyor.
+  const localVoiceCacheRef = useRef(new Map<string, { ms: number; at: number }>());
   // typingByConv ile aynı gerekçe: satırlara PRIMITIVE iniyor (yalnız süre),
   // böylece memo'lu ConversationRow alakasız değişimde render etmiyor. Kutu
   // referansı her mesaj dispatch'inde değişiyor ama zaten `conversations` da
@@ -202,6 +261,7 @@ export default function MessagesScreen() {
   const voiceDurationByConvId = useMemo(() => {
     const m: Record<string, number> = {};
     const cache = localVoiceCacheRef.current;
+    const now = Date.now();
     const fromDisk: { conversationId: string; lastMessageAtMs: number; key: string }[] =
       [];
 
@@ -246,9 +306,13 @@ export default function MessagesScreen() {
       // mesaj yazımı (realtime, delta-sync) duration_ms kolonuna düşüyor.
       const key = `${c.conversationId}:${c.lastMessageAt ?? ""}`;
       const cached = cache.get(key);
-      if (cached !== undefined) {
-        if (cached > 0) m[c.conversationId] = cached;
-        continue;
+      if (cached) {
+        if (cached.ms > 0) {
+          m[c.conversationId] = cached.ms;
+          continue;
+        }
+        // Kaçırılan okuma: TTL dolmadıysa tekrar sorma, dolduysa yeniden dene.
+        if (now - cached.at < VOICE_MISS_RETRY_MS) continue;
       }
       fromDisk.push({
         conversationId: c.conversationId,
@@ -261,11 +325,16 @@ export default function MessagesScreen() {
       const read = readVoiceDurationsFromLocal(fromDisk);
       for (const q of fromDisk) {
         const ms = read[q.conversationId] ?? 0;
-        cache.set(q.key, ms);
+        cache.set(q.key, { ms, at: now });
         if (ms > 0) m[q.conversationId] = ms;
+        else if (__DEV__) logVoiceDurationMiss(q.conversationId, q.lastMessageAtMs);
       }
     }
     return m;
+    // `now` KASTEN bağımlılık değil: TTL'in amacı yeniden hesaplamayı TETİKLEMEK
+    // değil, bir sonraki hesaplamada tekrar denemeye izin vermek. Tetikleyici
+    // zaten var — delta turu ve /conversations ikisi de dispatch üretiyor.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [conversations, messagesByConv]);
 
   // SON ÇARE: süresi ne listeden, ne bellekten, ne de diskten çözülemeyen
@@ -365,8 +434,15 @@ export default function MessagesScreen() {
   // blok sabit yükseklikli ve `overflow: hidden` — sarmasına izin verilseydi
   // ikinci satır kırpılır, spacer da eksik kalırdı. Beğeniler'de kutu serbest
   // yükseklikli olduğu için orada böyle bir kısıt yok.
+  const DESC_FONT_SIZE = 16;
   const DESC_LINE_HEIGHT = 22;
   const DESC_MARGIN_TOP = 2;
+  // Açıklamanın HARFLERİNİN ALTINDA kalan ölü boşluk: `lineHeight` (22)
+  // `fontSize`tan (16) büyük, fark satırın altına ve üstüne dağılıyor. Yani
+  // açıklamayla altındaki şey arasındaki GÖRÜNEN boşluk, yazılan payın üstüne
+  // bir de bunu alıyor. (Akış ekranındaki `DESC_TRAILING_LEADING` ile aynı
+  // hesap — iki ekranın boşlukları o sayı üzerinden eşitleniyor.)
+  const DESC_TRAILING_LEADING = (DESC_LINE_HEIGHT - DESC_FONT_SIZE) / 2;
   // Başlık bloğunun TAMAMI (başlık satırı + açıklama) — hem kapanma
   // animasyonunun yüksekliği hem spacer'ın payı bunu okuyor, ikisi ayrışırsa
   // liste başlığın altından başlamaz.
@@ -382,8 +458,8 @@ export default function MessagesScreen() {
   // 44 → 40: çubuğun dikey payı bir tık kısaldı. Yazının kendi satırı (18pt ≈
   // 22) hâlâ rahat sığıyor; kısalan yalnız üstündeki/altındaki boşluk.
   // Satırın toplam yüksekliği (SEARCH_ROW_INTRINSIC) ve dolayısıyla listenin
-  // spacer'ı buradan türüyor — ayrıca elle düşürülmemeli.
-  const SEARCH_BAR_HEIGHT = 40;
+  // spacer'ı buradan türüyor — ayrıca elle düşürülmemeli. Sayının kendisi
+  // SheetSearchInput'tan geliyor (yukarıdaki import notu).
   const scrollY = useSharedValue(0);
   const onListScroll = useAnimatedScrollHandler({
     onScroll: (e) => {
@@ -415,9 +491,37 @@ export default function MessagesScreen() {
   // `insets.top + SCREEN_HEADER_TITLE_HEIGHT + 14` payıyla başlıyor, yani
   // şeritle büyük başlık arasındaki nefes 14. İki ekranın tepesi tek kalıp.
   const HEADER_ROW_BLOCK_HEIGHT = SCREEN_HEADER_TITLE_HEIGHT + 14;
-  // pt-0.5 (2) + bar + altında 12 nefes. Üst pay başlığa yaklaşmak için
-  // pt-3'ten (12) 2'ye indi; satır da onunla birlikte 10 kısaldı.
-  const SEARCH_ROW_INTRINSIC = 14 + SEARCH_BAR_HEIGHT;
+  // Başlık bloğunun ALTINDA kalan ölü boşluk. Akış'ta blok serbest yükseklikli
+  // (açıklamanın kutusu bloğun alt kenarı), burada ise blok SABİT
+  // (TITLE_BLOCK_HEIGHT, `overflow: hidden`) ve TITLE_HEIGHT başlık satırından
+  // bu kadar uzun — yani açıklama bloğun dibinde bitmiyor, altında bu pay var.
+  const TITLE_BLOCK_TRAILING_DEAD = TITLE_HEIGHT - TITLE_LINE_HEIGHT;
+  // Açıklamayla arama çubuğu arasındaki pay.
+  // Yolu: 2 (çubuk açıklamaya yapışıyordu) → 18 (Akış'ın ham marjı; oradan 2
+  // fazla göründü, çünkü yukarıdaki ölü pay üstüne biniyor) → 16 (Akış'la
+  // GÖRÜNEN eşitlik: 16 + 2 + 3 = 21) → 12. Son adım bilerek Akış'ın altında:
+  // orada açıklamanın altındaki şey ince bir pill satırı, burada satırın
+  // tamamını kaplayan dolu bir yüzey — aynı boşluk burada daha geniş okunuyor.
+  // GÖRÜNEN boşluk = bu sayı + iki ölü pay (2 + 3), yani 14.
+  // Son iki adım: 12 (görünen 17) → 10 (görünen 15) → 9.
+  const SEARCH_ROW_TOP_GAP = 9;
+  // Sohbet satırının KENDİ üst payı (`py-2`) — çubuğun altındaki boşluğun bir
+  // parçası: satırın kutusu görünmez, gözle görülen ilk şey avatarın üst kenarı
+  // ve o, kutunun 8 altında başlıyor. ⚠️ Satırdaki `py-2` değişirse burası da.
+  const CHAT_ROW_TOP_PADDING = 8;
+  // Çubuğun altındaki nefes — çubuğun ÜSTÜNDEKİ görünen boşluğun eşi:
+  //   üstte: SEARCH_ROW_TOP_GAP + başlık bloğunun ölü payı + açıklamanın ölü payı
+  //   altta:  bu sayı + satırın kendi 8'i
+  // İkisi eşitlenince çubuk iki boşluğun tam ortasında duruyor. Eskiden 6'ydı
+  // (aslında yazılı bile değildi: satır `items-center` olduğu için artan pay
+  // kendiliğinden 6/6 bölünüyordu) — çubuk üstteki boşluğa yapışık görünüyordu.
+  const SEARCH_ROW_BOTTOM_GAP =
+    SEARCH_ROW_TOP_GAP +
+    TITLE_BLOCK_TRAILING_DEAD +
+    DESC_TRAILING_LEADING -
+    CHAT_ROW_TOP_PADDING;
+  const SEARCH_ROW_INTRINSIC =
+    SEARCH_ROW_TOP_GAP + SEARCH_BAR_HEIGHT + SEARCH_ROW_BOTTOM_GAP;
   const HEADER_BOTTOM_PADDING_ACTIVE = 0; // aktifken bar altı nefes alanı
   // Eskiden `+ 50`ydi: o 50, ScreenHeader'ın LOGO satırının yüksekliğiydi
   // (SCREEN_HEADER_LOGO_HEIGHT) ve içerik onun altından başlasın diye
@@ -430,7 +534,13 @@ export default function MessagesScreen() {
   // header satırının spacer'ı — Beğeniler'de de liste payı aynı hattan
   // hesaplanıyor.
   const HEADER_TOP_INACTIVE = insets.top;
-  const HEADER_TOP_ACTIVE = insets.top + 8;
+  // Arama AKTİFken çubuğun durum çubuğundan uzaklığı 16'da kalsın: o uzaklık
+  // overlay'in payı + satırın KENDİ üst payı. Satırın payı açıklamayla hizalanmak
+  // için büyüdü (bkz. SEARCH_ROW_TOP_GAP), overlay'in payı da aynı kadar küçülüyor
+  // — yoksa aramaya girince çubuk olduğu yerden aşağı kayardı.
+  const SEARCH_ACTIVE_TOP_GAP = 16;
+  const HEADER_TOP_ACTIVE =
+    insets.top + SEARCH_ACTIVE_TOP_GAP - SEARCH_ROW_TOP_GAP;
   // Spacer (ListHeaderComponent) — search overlay'in işgal ettiği yer kadar boş alan
   // bırakır, böylece ilk chat overlay'in altından başlar. Aktifken pills kaybolduğu için
   // toplam yükseklik düşer → chat listesi otomatik yukarı kayar.
@@ -1207,7 +1317,7 @@ export default function MessagesScreen() {
                   style={{
                     marginTop: DESC_MARGIN_TOP,
                     color: colors.textSecondary,
-                    fontSize: 16,
+                    fontSize: DESC_FONT_SIZE,
                     lineHeight: DESC_LINE_HEIGHT,
                     paddingRight: 8,
                   }}
@@ -1228,10 +1338,9 @@ export default function MessagesScreen() {
             bir input'la birebir aynı görünüyor. */}
         <View
           pointerEvents="box-none"
-          // pt-0.5 (2) — başlıkla çubuk arası: 14 (pt-3) → 10 (pt-2) → 6
-          // (pt-1) → 4. Toplam pay bu sayı + TITLE_HEIGHT'in yazı üstündeki
-          // 2'lik artığı. Daha da kısaltmak için TITLE_HEIGHT'e girmek gerekir
-          // ki orada `overflow: hidden` var — büyük yazı ölçeğinde kırpar.
+          // Üst pay SEARCH_ROW_TOP_GAP (açıklamayla çubuk arası, Akış'taki
+          // TITLE_BLOCK_GAP'in eşi) — hücrelerin paddingTop'u da oradan okuyor,
+          // ikisi ayrışırsa kutu çubuğu kırpar (`overflow: hidden`).
           style={{ height: SEARCH_ROW_INTRINSIC, overflow: "hidden" }}
         >
           <Animated.View
@@ -1255,8 +1364,13 @@ export default function MessagesScreen() {
                   // ulaşılamıyor, kaydırmanın ortasında yarım görünen komşuya
                   // basılması ise yanlış sayfanın aramasını açardı.
                   pointerEvents={isActiveCell ? "box-none" : "none"}
-                  className="px-4 pt-0.5 flex-row items-center"
-                  style={{ width: SCREEN_W, height: "100%" }}
+                  className="px-4 flex-row items-center"
+                  style={{
+                    width: SCREEN_W,
+                    height: "100%",
+                    paddingTop: SEARCH_ROW_TOP_GAP,
+                    paddingBottom: SEARCH_ROW_BOTTOM_GAP,
+                  }}
                 >
                   {/* Chevron YALNIZ aktif hücrede: yalnız arama açıkken
                       görünüyor ve o sırada sayfa değiştirilmiyor. */}
@@ -1528,7 +1642,14 @@ const ConversationRow = memo(function ConversationRow({
       };
 
     // Media (no text content) — icon + label
-    const ct = conv.lastMessageContentType;
+    //
+    // SAYIYA ÇEVİRİLİYOR: aşağıdaki dallar `=== 2` diye soruyor ama bu alan
+    // satırın KAYNAĞINA göre iki formatta gelebiliyordu — realtime yolu sayı
+    // yazıyor (chatSlice.updateConversationLastMessage), /conversations yanıtı
+    // ise wire enum'unu ("Voice") olduğu gibi taşıyor. Çevirmeden sorulunca
+    // ağdan gelen sesli satır hiçbir dala girmiyor ve mikrofon etiketi yerine
+    // düz metin önizlemesi çiziliyordu — süre de o satırda zaten yok.
+    const ct = contentTypeToNumber(conv.lastMessageContentType);
     if (ct === 1)
       return {
         kind: "media",
@@ -1783,28 +1904,10 @@ const ConversationRow = memo(function ConversationRow({
   );
 });
 
-function formatRelativeTime(iso, t) {
-  if (!iso) return "";
-  // Server damgası Z'siz gelebiliyor (kontrat §8.3) — bkz. shared/utils/dateUtc.ts.
-  const d = parseUtc(iso);
-  const now = new Date();
-
-  const startOfDay = (date) =>
-    new Date(date.getFullYear(), date.getMonth(), date.getDate());
-  const dayDiff = Math.floor(
-    (startOfDay(now).getTime() - startOfDay(d).getTime()) /
-      (1000 * 60 * 60 * 24),
-  );
-
-  if (dayDiff <= 0) {
-    return d.toLocaleTimeString("tr-TR", {
-      hour: "2-digit",
-      minute: "2-digit",
-    });
-  }
-  if (dayDiff === 1) return t("chat.messages.yesterday");
-  if (dayDiff < 7) {
-    return d.toLocaleDateString("tr-TR", { weekday: "long" });
-  }
-  return d.toLocaleDateString("tr-TR", { day: "2-digit", month: "2-digit" });
-}
+// `formatRelativeTime`ın YEREL KOPYASI SİLİNDİ → @/shared/utils (üstteki
+// import). Kopya, util çıkarıldığında geride kalmıştı ve kuralları birebir
+// aynıydı; tek farkı gün adı/tarih locale'ini `"tr-TR"` sabitlemesiydi, yani
+// İngilizce'de sohbet satırları "Salı"/"Tuesday" yerine hep Türkçe gün adı
+// basıyordu (bkz. i18n/dateLocale.ts'in kendi uyarısı). Util `getDateLocale()`
+// kullanıyor. Saat dalı DEĞİŞMEDİ: o kasıtlı olarak dilden bağımsız 24 saat,
+// yani TR'de davranış birebir aynı kalıyor.

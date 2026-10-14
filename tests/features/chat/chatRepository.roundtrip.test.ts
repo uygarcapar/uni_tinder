@@ -65,6 +65,7 @@ describe('şema sürümü', () => {
     db.exec('DROP TABLE meta'); // v3
     db.exec('ALTER TABLE conversations DROP COLUMN closed_by_me'); // v4
     db.exec('ALTER TABLE conversations DROP COLUMN closed_reason');
+    db.exec('DROP INDEX idx_messages_unsent'); // v5
     db.exec('PRAGMA user_version = 1');
 
     __resetChatDbForTests();

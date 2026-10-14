@@ -146,11 +146,41 @@ ALTER TABLE conversations ADD COLUMN closed_by_me INTEGER;
 ALTER TABLE conversations ADD COLUMN closed_reason TEXT;
 `;
 
+/**
+ * v5 — GÖNDERİLMEMİŞ satırların indeksi.
+ *
+ * İki sorgu arşivin TAMAMINI tarıyordu: `failStalePendingSends` her AÇILIŞTA
+ * (okumadan önce, yani ilk kareyi geciktiren yolda) ve `readFailedSends` her
+ * outbox turunda. İkisi de sohbete değil DURUMA bakıyor, yani
+ * `idx_messages_conv_time` yardım edemiyor. İki yıllık bir arşivde maliyet
+ * satır sayısıyla doğrusal büyüyor — oysa aranan satırlar neredeyse her zaman
+ * SIFIR tane.
+ *
+ * ── Kısmi index + sorgudaki "gereksiz" terim ────────────────────────────────
+ * Index yalnız `send_state <> 'sent'` satırlarını taşıyor (pratikte 0-birkaç
+ * satır; tam index arşiv kadar yer tutardı ve her mesaj yazımında güncellenirdi).
+ * Bedeli: planlayıcı kısmi indeksi ancak sorgunun WHERE'i indeksin WHERE'ini
+ * İMA EDİYORSA kullanıyor ve bu ima kanıtlayıcısı basit — `send_state='pending'`
+ * ifadesinin `send_state <> 'sent'`'i ima ettiğini GÖREMİYOR (3.53'te ölçüldü:
+ * SCAN'de kalıyor). Bu yüzden iki sorgu da terimi AYNEN tekrarlıyor; o terim
+ * mantıksal olarak fazlalık ama indeksi açan anahtar. Birini silersen sorgu
+ * sessizce tam taramaya döner — ölçüm: EXPLAIN QUERY PLAN'de
+ * "SEARCH ... USING INDEX idx_messages_unsent" görünmeli.
+ *
+ * `sent_at_ms, id` kolonları sırayı da indeksten veriyor (readFailedSends
+ * ORDER BY'ı) — yoksa temp b-tree kuruluyordu.
+ */
+const V5 = `
+CREATE INDEX idx_messages_unsent ON messages (send_state, sent_at_ms, id)
+  WHERE send_state <> 'sent';
+`;
+
 export const MIGRATIONS: { version: number; up: (db: ChatDbDriver) => void }[] = [
   { version: 1, up: (db) => db.exec(V1) },
   { version: 2, up: (db) => db.exec(V2) },
   { version: 3, up: (db) => db.exec(V3) },
   { version: 4, up: (db) => db.exec(V4) },
+  { version: 5, up: (db) => db.exec(V5) },
 ];
 
 export const CHAT_DB_VERSION = MIGRATIONS[MIGRATIONS.length - 1].version;

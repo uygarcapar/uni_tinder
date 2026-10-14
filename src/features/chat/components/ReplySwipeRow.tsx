@@ -9,6 +9,7 @@ import Animated, {
 } from "react-native-reanimated";
 import * as Haptics from "expo-haptics";
 import {
+  BACK_SWIPE_BAND,
   REPLY_EDGE_GUARD,
   REPLY_MAX_X,
   REPLY_RELEASE_X,
@@ -45,6 +46,29 @@ const SPRING_BACK = { damping: 22, stiffness: 260, mass: 0.6 } as const;
  *
  * Yön ayrımı: activeOffsetX(20) sadece sağ çekişi sahiplenir, failOffsetX(-15)
  * sol çekişi liste reveal'ine, failOffsetY dikey hareketi scroll'a bırakır.
+ *
+ * ── GERİ ŞERİDİ: jest o bandı HİÇ GÖRMEMELİ (sadece atıl kalması yetmez) ─────
+ * Soldan sağa çekiş bu ekranda iki şey yapıyor: solda ekranı pop'luyor (native
+ * tanıyıcı), sağında yanıtlıyor (bu jest). Band içinde yanıtı `inert` ile
+ * susturmak YETERSİZDİ, çünkü `inert` yalnız ETKİYİ (kayma + onReply) kapatıyor;
+ * jest yine AKTİFLEŞİYORDU. Aktifleşince iki tanıyıcı aynı dokunuş için yarışa
+ * giriyor ve UIKit kaybedeni iptal ediyor:
+ *   • hızlı bir flick'te RNGH pan'i 20px eşiğini tek dokunuş olayında aşıp
+ *     yarışı kazanabiliyor → native geri jesti iptal ediliyor, yanıt da atıl
+ *     olduğu için HİÇBİR ŞEY olmuyor
+ *   • yarısında iptal olan interaktif geçişin iptal animasyonu boyunca (~0.3sn)
+ *     ikisi de cevap vermiyor → "bir süre deactive" hissi
+ * (Native taraf da simetrik davranıyor: geri jesti başlarken RN dokunuşlarını
+ * iptal ediyor — react-native-screens RNSScreenStack.mm `cancelTouchesInParent`.)
+ *
+ * NEGATİF `hitSlop` tam bu iş için: RNGH, hitSlop verilmişse dokunuşu
+ * `gestureRecognizer:shouldReceiveTouch:`te süzüyor (RNGestureHandler.mm) —
+ * yani jest o bantta dokunuş AKIŞINI HİÇ ALMIYOR, dolayısıyla aktifleşemiyor ve
+ * yarış diye bir şey kalmıyor. Band yalnız geri jestinin.
+ *
+ * `inert`in band dalı GENE DE duruyor: hitSlop satırın KENDİ bounds'una göre
+ * ölçülüyor ve satır yaylanma penceresinde sağa kaymış olabiliyor; o pencerede
+ * band kayıyor, ikinci kapı onu kapatıyor.
  */
 function ReplySwipeRow({
   messageId,
@@ -80,6 +104,9 @@ function ReplySwipeRow({
         .activeOffsetX(20)
         .failOffsetX(-15)
         .failOffsetY([-12, 12])
+        // Soldaki geri şeridi bu jestin DUYARLI ALANININ DIŞINDA (negatif değer
+        // alanı sol kenardan içeri çeker) — gerekçe başlıktaki "GERİ ŞERİDİ".
+        .hitSlop({ left: -BACK_SWIPE_BAND })
         .onBegin((e) => {
           "worklet";
           inert.value = idSV.value === "" || e.x < REPLY_EDGE_GUARD;
