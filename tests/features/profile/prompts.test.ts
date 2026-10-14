@@ -228,3 +228,55 @@ describe('promptSummaryCode — özet mesaj EN AĞIR hatadan', () => {
     expect(promptSummaryCode({}, [])).toBeNull();
   });
 });
+
+/**
+ * İKİ PROMPT SETİNİN ALAN KÖKLERİ (iki modlu yapı).
+ *
+ * ⚠️ Test edilen şey SESSİZ VERİ KAYBI: sunucuda her alan kendi modunun
+ * satırlarını FULL-REPLACE ediyor ve multipart'ta "boş liste" ile "alan
+ * gönderilmedi" ayırt edilemiyor. Kökler karışırsa bir modun cevapları
+ * öbürünün üstüne yazılır ve kullanıcı kaybı ancak kartta fark eder.
+ */
+describe('appendPrompts — mod başına alan kökü', () => {
+  const PROMPTS = [
+    { promptKey: 'MostEnjoyInLife', answer: 'kahve' },
+    { promptKey: 'MyIdealSunday', answer: 'uyumak' },
+  ];
+
+  it('varsayılan kök Prompts (flört) — arkadaş alanına SIZMIYOR', () => {
+    const { parts, formData } = makeForm();
+    appendPrompts(formData, PROMPTS);
+    expect(parts).toEqual([
+      ['Prompts[0].PromptKey', 'MostEnjoyInLife'],
+      ['Prompts[0].Answer', 'kahve'],
+      ['Prompts[1].PromptKey', 'MyIdealSunday'],
+      ['Prompts[1].Answer', 'uyumak'],
+    ]);
+  });
+
+  it('FriendsPrompts kökü — flört alanına SIZMIYOR', () => {
+    const { parts, formData } = makeForm();
+    appendPrompts(formData, PROMPTS, 'FriendsPrompts');
+    expect(parts.map(([k]) => k)).toEqual([
+      'FriendsPrompts[0].PromptKey',
+      'FriendsPrompts[0].Answer',
+      'FriendsPrompts[1].PromptKey',
+      'FriendsPrompts[1].Answer',
+    ]);
+  });
+
+  it('iki set aynı FormData\'da yan yana durabiliyor', () => {
+    // Kaydetme yolu İKİSİNİ BİRDEN gönderiyor: gönderilmeyen mod sunucuda
+    // olduğu gibi kalıyor, ama gönderilen BOŞ liste hepsini silerdi — o yüzden
+    // kaydetme tarafında uzunluk kapısı var.
+    const { parts, formData } = makeForm();
+    appendPrompts(formData, [PROMPTS[0]]);
+    appendPrompts(formData, [PROMPTS[1]], 'FriendsPrompts');
+    expect(parts).toEqual([
+      ['Prompts[0].PromptKey', 'MostEnjoyInLife'],
+      ['Prompts[0].Answer', 'kahve'],
+      ['FriendsPrompts[0].PromptKey', 'MyIdealSunday'],
+      ['FriendsPrompts[0].Answer', 'uyumak'],
+    ]);
+  });
+});

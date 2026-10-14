@@ -106,6 +106,13 @@ import PhotoModerationBadge, {
 } from "@/features/profile/components/PhotoModerationBadge";
 import LanguagePickerModal from "@/shared/components/LanguagePickerModal";
 import PromptsEditor, { type PromptsEditorHandle } from "@/shared/components/PromptsEditor";
+import {
+  APP_MODES,
+  DEFAULT_APP_MODE,
+  modeAccent,
+  type AppMode,
+} from "@/features/discover/modeTheme";
+import { useFriendshipIntents } from "@/shared/queries/commonQueries";
 import { sanitizePrompts } from "@/features/profile/promptPayload";
 import {
   extractPromptErrors,
@@ -397,6 +404,127 @@ function OptionPill({
 // Sağdaki işaretin yuvarlak kare bir kutu olduğu satırların ölçüsü — Keşif
 // filtresindeki CheckRow ile birebir (bkz. FilterModal).
 const CHECKBOX_SIZE = 22;
+
+/**
+ * Mod anahtarı — formun hangi modun profilini düzenlediğini seçen segmented
+ * kontrol.
+ *
+ * MODÜL SEVİYESİNDE (bu dosyanın diğer alt bileşenleri gibi): render içinde
+ * tanımlanan bir bileşen her tuşta yeni bir tip olur, React onu yeni bir ağaç
+ * sayıp altındaki input'ları remount eder ve klavye düşer.
+ *
+ * SEGMENT RENGİ MODUN RENGİ (`modeAccent`): kullanıcı Keşif'teki mod
+ * başlığında, sohbet listesindeki halkada ve burada AYNI rengi görüyor —
+ * ilişkiyi bir kez öğrenip her yerde tanıyor.
+ *
+ * Kapalı modun segmentinde nokta SÖNÜK: "burada bir şey var ama henüz açık
+ * değil" demek. Segment yine SEÇİLEBİLİR — seçince editör yerine "Profili aç"
+ * CTA'sı çıkıyor, yani kapalı modu keşfetmenin yolu bu.
+ */
+/**
+ * Kapalı modun yerine çizilen bilgi satırı.
+ *
+ * Profil AÇMA akışı burada DEĞİL (Keşif'teki mod seçicisinin mini kurulumunda):
+ * o akış niyet + prompt'u TEK ATOMİK istekte gönderiyor, buradaki form ise
+ * partial-update semantiğinde. İkisini birleştirmek "yarım açılmış profil"
+ * durumu üretirdi — niyet yazılıp prompt yazılmazsa kullanıcı o modun
+ * destesinde görünür ama kartı boş olurdu.
+ */
+const ModeClosedNotice = React.memo(function ModeClosedNotice({
+  mode,
+}: {
+  mode: AppMode;
+}) {
+  const { t } = useTranslation();
+  return (
+    <View style={{ paddingVertical: 20 }}>
+      <Text
+        style={{
+          color: colors.text,
+          fontSize: 17,
+          fontWeight: "600",
+          marginBottom: 6,
+        }}
+      >
+        {t(`discover.mode.lockedTitle.${mode}`)}
+      </Text>
+      <Text
+        style={{ color: colors.textSecondary, fontSize: 14, lineHeight: 20 }}
+      >
+        {t("discover.mode.lockedMessage")}
+      </Text>
+    </View>
+  );
+});
+
+const ModeSwitch = React.memo(function ModeSwitch({
+  value,
+  onChange,
+  friendsOpen,
+  datingOpen,
+}: {
+  value: AppMode;
+  onChange: (mode: AppMode) => void;
+  friendsOpen: boolean;
+  datingOpen: boolean;
+}) {
+  const { t } = useTranslation();
+  return (
+    <View
+      style={{
+        flexDirection: "row",
+        gap: 8,
+        marginTop: 8,
+        marginBottom: 4,
+      }}
+    >
+      {APP_MODES.map((mode) => {
+        const active = value === mode;
+        const open = mode === "Friends" ? friendsOpen : datingOpen;
+        return (
+          <TouchableOpacity
+            key={mode}
+            activeOpacity={0.8}
+            onPress={() => onChange(mode)}
+            style={{
+              flex: 1,
+              flexDirection: "row",
+              alignItems: "center",
+              justifyContent: "center",
+              gap: 7,
+              paddingVertical: 12,
+              borderRadius: 14,
+              borderCurve: "continuous",
+              borderWidth: active ? 0 : 0.5,
+              borderColor: colors.hairline,
+              backgroundColor: active ? colors.surface3 : "transparent",
+            }}
+          >
+            <View
+              style={{
+                width: 8,
+                height: 8,
+                borderRadius: 4,
+                backgroundColor: modeAccent(mode),
+                // Kapalı modda nokta sönük: bölüm var ama profil açılmamış.
+                opacity: open ? 1 : 0.35,
+              }}
+            />
+            <Text
+              style={{
+                color: active ? colors.text : colors.textSecondary,
+                fontSize: 15,
+                fontWeight: "600",
+              }}
+            >
+              {t(`discover.mode.title.${mode}`)}
+            </Text>
+          </TouchableOpacity>
+        );
+      })}
+    </View>
+  );
+});
 
 const OptionListItem = React.memo(function OptionListItem({
   option,
@@ -1238,6 +1366,41 @@ const EditProfileForm = forwardRef(function EditProfileForm(
     () => myProfile?.gender ?? "",
   );
 
+  /**
+   * ── DÜZENLEME MODU (Flört / Arkadaş) ──────────────────────────────────────
+   *
+   * Formun hangi modun profilini düzenlediği. Ortak alanlar (isim, fotoğraf,
+   * boy, yaşam tarzı) MODA GÖRE DEĞİŞMİYOR — tek kopya, iki modda da aynı.
+   * Takaslanan yalnız iki bölüm: PROMPT'LAR ve NİYET.
+   *
+   * ⚠️ RHF DIŞINDA (plain state): `prompts` ve `friendsPrompts` iki AYRI form
+   * alanı ve ikisi de kaydedilirken flush ediliyor — hangisinin GÖRÜNDÜĞÜ bir
+   * form değeri değil, bir görünüm durumu. RHF'ye sokulsaydı mod değiştirmek
+   * formu "kirli" sayar ve kaydetmeden çıkış uyarısı yanlış tetiklenirdi.
+   */
+  const [editMode, setEditMode] = useState<AppMode>(DEFAULT_APP_MODE);
+
+  /**
+   * Hangi modların profili AÇIK — sunucudan (`/api/profile` → `modes`).
+   * Kapalı modun sekmesi editör yerine "Profili aç" CTA'sı gösteriyor:
+   * açılmamış bir modun prompt'unu kaydetmek sunucuda reddedilir.
+   *
+   * Bilinmiyorsa (alan gelmedi) İKİSİ DE AÇIK sayılıyor — olmayan bir kısıt
+   * uydurup kullanıcıyı kendi profilinden kilitlemek yanlış taraf.
+   */
+  const friendsOpen = (myProfile as any)?.modes?.friends !== false;
+  const datingOpen = (myProfile as any)?.modes?.dating !== false;
+  const activeModeOpen = editMode === "Friends" ? friendsOpen : datingOpen;
+
+  /** Arkadaşlık niyetleri (çoklu seçim) — Flört'ün `relationshipIntent` eşi. */
+  const friendshipIntentsQuery = useFriendshipIntents();
+  const [draftFriendshipIntents, setDraftFriendshipIntents] = useState<string[]>(
+    () => {
+      const raw = (myProfile as any)?.friendshipIntents;
+      return Array.isArray(raw) ? raw.filter((v: any) => typeof v === "string") : [];
+    },
+  );
+
   // ── Picker sheet visibility ─────────────────────────────────────────────
   // Şehir/ilçe picker'ları KALDIRILDI: konum artık kullanıcı seçimi değil,
   // backend'in app-open heartbeat'inden (POST /api/profile/location) türettiği
@@ -1446,6 +1609,59 @@ const EditProfileForm = forwardRef(function EditProfileForm(
     (opt: any) => sentenceLabel("auth.step14.intents", opt),
     [sentenceLabel],
   );
+
+  // ── NİYET: MODA GÖRE LİSTE, ETİKET VE SEÇİM ───────────────────────────────
+  const isFriendsEdit = editMode === "Friends";
+
+  /**
+   * Çizilecek liste. Arkadaş'ta react-query'den, Flört'te ekranın `staticGet`
+   * ile çektiği mevcut liste (o yol tarihsel, dokunulmadı).
+   */
+  const intentOptions: any[] = isFriendsEdit
+    ? (friendshipIntentsQuery.data ?? [])
+    : relationshipIntentOptions;
+
+  /**
+   * Etiket. Flört kayıt adımıyla AYNI anahtar ailesinden (iki ekran aynı
+   * cümleyi söylemek zorunda); Arkadaş kendi ailesinden, sunucu etiketi yedek.
+   */
+  const intentLabelFor = useCallback(
+    (opt: any) =>
+      isFriendsEdit
+        ? sentenceLabel("discover.friendshipIntents", opt)
+        : intentSentenceLabel(opt),
+    [isFriendsEdit, intentSentenceLabel, sentenceLabel],
+  );
+
+  const isIntentSelected = useCallback(
+    (opt: any) =>
+      isFriendsEdit
+        ? draftFriendshipIntents.includes(opt.enumName)
+        : draftRelationshipIntent?.id === opt.id,
+    [draftFriendshipIntents, draftRelationshipIntent, isFriendsEdit],
+  );
+
+  /**
+   * Flört TEK seçim (tekrar dokunmak temizler → submit'te Clear* gider),
+   * Arkadaş ÇOKLU seçim (ekle/çıkar).
+   */
+  const toggleIntent = useCallback(
+    (opt: any) => {
+      if (isFriendsEdit) {
+        const key = opt.enumName;
+        if (!key) return;
+        setDraftFriendshipIntents((prev) =>
+          prev.includes(key) ? prev.filter((v) => v !== key) : [...prev, key],
+        );
+        return;
+      }
+      setValue(
+        "relationshipIntent",
+        draftRelationshipIntent?.id === opt.id ? null : opt,
+      );
+    },
+    [draftRelationshipIntent, isFriendsEdit, setValue],
+  );
   const smokingSentenceLabel = useCallback(
     (opt: any) => sentenceLabel("auth.step16.smoking", opt),
     [sentenceLabel],
@@ -1497,6 +1713,7 @@ const EditProfileForm = forwardRef(function EditProfileForm(
 
       const {
         prompts: draftPrompts,
+        friendsPrompts: draftFriendsPrompts,
         displayName: draftDisplayName,
         yearOfStudy: draftYearOfStudy,
         hobbies: hobbyIds,
@@ -1554,7 +1771,25 @@ const EditProfileForm = forwardRef(function EditProfileForm(
       // isteğe hiç girmemeli. sanitizePrompts boş cevapları SESSİZCE eliyor —
       // kullanıcı yazdığını sandığı cevabın kaybolduğunu ancak kartta fark
       // ederdi, o yüzden burada durup slotu işaretliyoruz.
-      const promptsForSave = flushedPrompts ?? draftPrompts;
+      // ⚠️ `flush()` YALNIZ AKTİF MODUN editöründen geliyor (ekranda tek
+      // editör var). Öbür modun cevapları form değerinden okunuyor — orada
+      // açık bir taslak olamaz, çünkü o editör mount edilmiş değil.
+      //
+      // İKİSİ DE GÖNDERİLİYOR: her alan kendi modunun satırlarını
+      // FULL-REPLACE ediyor, yani gönderilmeyen mod'un cevapları sunucuda
+      // OLDUĞU GİBİ KALIYOR. Boş gönderilen alan ise hepsini silerdi — o
+      // yüzden aşağıda uzunluk kapısı var.
+      const datingPrompts = isFriendsEdit
+        ? draftPrompts
+        : (flushedPrompts ?? draftPrompts);
+      const friendsPromptsForSave = isFriendsEdit
+        ? (flushedPrompts ?? draftFriendsPrompts)
+        : draftFriendsPrompts;
+
+      // Doğrulama YALNIZ AKTİF MOD için: hata işaretleri slot index'ine göre
+      // çiziliyor ve ekranda yalnız aktif modun slotları var. Öbür modun
+      // cevabı zaten daha önce doğrulanmış halde kaydedilmiş.
+      const promptsForSave = isFriendsEdit ? friendsPromptsForSave : datingPrompts;
       const promptIssues: Record<number, string> = {};
       (promptsForSave ?? []).forEach((prompt, index) => {
         if (!prompt?.promptKey) return;
@@ -1576,9 +1811,23 @@ const EditProfileForm = forwardRef(function EditProfileForm(
       }
       setPromptFieldErrors({});
 
-      const nextPrompts = sanitizePrompts(promptsForSave);
+      const nextPrompts = sanitizePrompts(datingPrompts);
       if (nextPrompts.length > 0) {
         updates.Prompts = nextPrompts;
+      }
+      // Arkadaş prompt'ları AYRI ALAN ADIYLA gidiyor (`FriendsPrompts[i].*`).
+      // Tek alanda mod etiketiyle gönderilseydi, alanı tanımayan ESKİ bir
+      // istemcinin full-replace'i arkadaş satırlarını sessizce silerdi.
+      const nextFriendsPrompts = sanitizePrompts(friendsPromptsForSave);
+      if (nextFriendsPrompts.length > 0) {
+        updates.FriendsPrompts = nextFriendsPrompts;
+      }
+      // Arkadaşlık niyetleri — yalnız Arkadaş profili AÇIKKEN gönderiliyor
+      // (sunucu kapalı modun alanını reddediyor). Boş dizi de gidiyor: "hiçbiri
+      // seçili değil" geçerli bir durum ve `Clear*` bayrağı yerine listenin
+      // kendisi full-replace ediyor.
+      if (friendsOpen) {
+        updates.FriendshipIntents = draftFriendshipIntents;
       }
 
       // İsim — yalnızca DEĞİŞTİYSE gidiyor (partial update; bu uç `photo`
@@ -1952,6 +2201,23 @@ const EditProfileForm = forwardRef(function EditProfileForm(
         </View>
       )}
 
+      {/* ── MOD ANAHTARI ───────────────────────────────────────────────────
+          SCROLL İÇERİĞİNİN İLK ÇOCUĞU, header'da DEĞİL: AppModal'ın başlık
+          satırı dolu (X · başlık · ✓) ve ortadaki başlık scroll'a bağlı
+          beliriyor — oraya üçüncü bir öğe koymak ikisini çakıştırır.
+          Emsali ProfileScreen'in `centerSlot`'u (orada başlık YOK, o yüzden
+          yer vardı).
+
+          `stage` kapısı YOK: mod seçimi kademeli mount'un en başında görünmeli
+          — kullanıcı hangi profili düzenlediğini bilmeden ada/fotoğrafa
+          bakmaya başlamamalı. */}
+      <ModeSwitch
+        value={editMode}
+        onChange={setEditMode}
+        friendsOpen={friendsOpen}
+        datingOpen={datingOpen}
+      />
+
       {/* Kartımı Önizle — stage 1 */}
       {stage >= 1 && (
         <TouchableOpacity
@@ -2254,12 +2520,34 @@ const EditProfileForm = forwardRef(function EditProfileForm(
             yapışık duruyordu — nefes payı burada, PromptsEditor'de DEĞİL
             (aynı bileşeni kayıt adımı da kullanıyor). */}
         <View ref={promptsAnchorRef} collapsable={false} style={{ marginTop: 12 }}>
+          {/* KAPALI MODDA EDİTÖR YERİNE CTA: açılmamış bir modun prompt'unu
+              kaydetmek sunucuda reddediliyor, yani editör çizmek kullanıcıya
+              dolduracağı ama gönderemeyeceği bir form göstermek olurdu.
+              Profil açma akışı Keşif'teki mod seçicisinde (mini kurulum) —
+              buradan oraya yönlendiriliyor. */}
+          {!activeModeOpen ? (
+            <ModeClosedNotice mode={editMode} />
+          ) : (
+          <>
+          {/* ⚠️ İKİ AYRI FORM ALANI, tek alanın iki değeri DEĞİL: `prompts`
+              (flört) ve `friendsPrompts` (arkadaş). Tek alan olup mod
+              değişiminde içeriği takaslanırsa, kaydetmeden mod değiştiren
+              kullanıcı öbür modun cevaplarını SİLER — çünkü submit her iki
+              alanı da gönderiyor ve boş gönderilen alan sunucuda tüm satırları
+              siliyor (full-replace semantiği).
+
+              `key` moda bağlı: editör slot bazlı iç state tutuyor (açık
+              taslak, düzenlenen index) ve mod değişince o state'in sıfırlanması
+              gerekiyor — yoksa flört slotunda yazılan taslak arkadaş
+              cevabının üstüne commit edilir. */}
           <Controller
             control={control}
-            name="prompts"
+            name={editMode === "Friends" ? "friendsPrompts" : "prompts"}
             render={({ field: { onChange, value } }) => (
               <PromptsEditor
+                key={editMode}
                 ref={promptsEditorRef}
+                mode={editMode}
                 value={value ?? []}
                 onChange={onChange}
                 serverErrors={promptSubmitErrors}
@@ -2275,6 +2563,8 @@ const EditProfileForm = forwardRef(function EditProfileForm(
               />
             )}
           />
+          </>
+          )}
         </View>
       </View>
       )}
@@ -2283,9 +2573,16 @@ const EditProfileForm = forwardRef(function EditProfileForm(
           "ilişki niyeti" bölümü aynı soruyu soruyordu; profil doluluk
           formülündeki 5 puan da ona devredildi. */}
 
-      {/* İlişki niyeti — stage 1. Tek seçim; seçili satıra tekrar basmak
-          temizler (submit'te ClearRelationshipIntent=true gider). */}
-      {stage >= 1 && relationshipIntentOptions.length > 0 && (
+      {/* ── NİYET — MODA GÖRE TAKASLANIYOR ─────────────────────────────────
+          Flört: ilişki niyeti, TEK seçim (seçili satıra tekrar basmak
+          temizler → submit'te ClearRelationshipIntent=true gider).
+          Arkadaş: arkadaşlık niyeti, ÇOKLU seçim (sunucuda bitmask).
+
+          Aynı bölüm kutusu, aynı satır bileşeni — ayrışan tek şey hangi
+          listenin çizildiği ve seçimin tek mi çok mu olduğu. İki ayrı bölüm
+          yapılmadı: başlık/açıklama/satır düzeni birebir aynıydı ve kopya
+          bakım demekti. */}
+      {stage >= 1 && activeModeOpen && intentOptions.length > 0 && (
         <View
           style={{ marginTop: 28 }}
           onLayout={sectionLayout.relationshipIntent}
@@ -2306,14 +2603,18 @@ const EditProfileForm = forwardRef(function EditProfileForm(
                 marginBottom: 6,
               }}
             >
-              {t('profile.edit.relationshipIntentTitle')}
+              {isFriendsEdit
+                ? t('discover.mode.intentsTitle.Friends')
+                : t('profile.edit.relationshipIntentTitle')}
             </Text>
             <View className="flex-row items-center gap-2 mb-3 pr-4">
               <SFIcon name="info.circle" fallback={InfoIcon} size={18} color={colors.textSecondary} strokeWidth={2} weight="semibold" />
               <Text
                 style={{ color: colors.textSecondary, fontSize: 14, fontWeight: "400" }}
               >
-                {t('profile.edit.relationshipIntentDesc')}
+                {isFriendsEdit
+                  ? t('discover.mode.intentsDescription.Friends')
+                  : t('profile.edit.relationshipIntentDesc')}
               </Text>
             </View>
           </View>
@@ -2324,24 +2625,21 @@ const EditProfileForm = forwardRef(function EditProfileForm(
               görüyordu. Satır düzeninde tam cümle sığıyor, metin de oradan
               (auth.step14.intents) okunuyor. Sigara/alkol bölümleri de aynı
               biçimde. Seçim yine TEK: seçili satıra tekrar dokunmak temizliyor. */}
-          {relationshipIntentOptions.map((opt) => (
+          {intentOptions.map((opt: any) => (
             <OptionListItem
-              key={opt.id}
+              // Anahtar `enumName`: Arkadaş listesi bitmask değerleri taşıyor
+              // (1,2,4…) ve `id` iki listede çakışabilir.
+              key={opt.enumName ?? opt.id}
               option={opt}
-              isSelected={draftRelationshipIntent?.id === opt.id}
-              label={intentSentenceLabel(opt)}
+              isSelected={isIntentSelected(opt)}
+              label={intentLabelFor(opt)}
               // Keşif filtresindeki ilişki niyeti listesiyle AYNI işaret (bkz.
               // FilterModal → CheckRow). Aynı soruyu iki ekranda iki farklı
               // biçimde göstermeme kuralının devamı. Seçim burada yine TEK —
               // kutu çoklu seçim ima ediyor ama satıra tekrar dokunmak
               // temizlediği için davranış değişmiyor.
               checkbox
-              onPress={() =>
-                setValue(
-                  "relationshipIntent",
-                  draftRelationshipIntent?.id === opt.id ? null : opt,
-                )
-              }
+              onPress={() => toggleIntent(opt)}
             />
           ))}
         </View>

@@ -128,6 +128,14 @@ class ProfileService {
           // PhotoOrders ile aynı indeksli desen. Tekrar eden anahtar (Hobbies
           // gibi) kullanılamaz: soru-cevap eşleşmesi kaybolur.
           appendPrompts(formData, value as ProfilePromptAnswer[]);
+        } else if (key === 'FriendsPrompts' && Array.isArray(value)) {
+          // Arkadaş profilinin prompt'ları — AYNI desen, AYRI alan kökü
+          // (gerekçe promptPayload > appendPrompts).
+          appendPrompts(
+            formData,
+            value as ProfilePromptAnswer[],
+            'FriendsPrompts',
+          );
         } else if (Array.isArray(value)) {
           value.forEach((item) => formData.append(key, String(item)));
         } else {

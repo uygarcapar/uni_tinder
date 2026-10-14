@@ -124,6 +124,15 @@ export const hydrateProfileForm = ({
         promptKey: String(p.promptKey),
         answer: typeof p?.answer === "string" ? p.answer : "",
       })),
+    // Arkadaş modunun prompt'ları AYRI alan ve AYNI şekilde hidrate ediliyor.
+    // Sunucu alanı henüz göndermiyorsa boş dizi — `undefined` bırakmak RHF'de
+    // "kontrolsüz alan" uyarısı üretiyor ve editör ilk render'da boşa düşüyor.
+    friendsPrompts: ((myProfile as any)?.friendsPrompts ?? [])
+      .filter((p: any) => !!p?.promptKey)
+      .map((p: any) => ({
+        promptKey: String(p.promptKey),
+        answer: typeof p?.answer === "string" ? p.answer : "",
+      })),
     displayName: resolveDisplayName(myProfile),
     // Sınıf: aralık dışı değer (eski backend Range(0,8) ile yazılmış 7/8)
     // null'a düşürülüyor — o değerlerde backend zaten `yearOfStudyDisplay`

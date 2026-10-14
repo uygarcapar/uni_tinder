@@ -27,11 +27,22 @@ import type { ProfilePromptAnswer } from "@/shared/types";
 export const appendPrompts = (
   formData: FormData,
   prompts: readonly ProfilePromptAnswer[] | null | undefined,
+  /**
+   * Multipart alan adının KÖKÜ. Varsayılan `Prompts` (flört profili);
+   * arkadaş profili `FriendsPrompts` kullanıyor.
+   *
+   * ⚠️ İKİ AYRI AD, tek alanda mod etiketi DEĞİL. Sunucuda her alan kendi
+   * modunun satırlarını FULL-REPLACE ediyor ve multipart'ta "boş liste" ile
+   * "alan gönderilmedi" ayırt edilemiyor — tek alan + `Mode` etiketi olsaydı,
+   * alanı tanımayan ESKİ bir istemcinin güncellemesi karşı modun cevaplarını
+   * sessizce silerdi.
+   */
+  field: "Prompts" | "FriendsPrompts" = "Prompts",
 ): void => {
   const cleaned = sanitizePrompts(prompts);
   cleaned.forEach((prompt, index) => {
-    formData.append(`Prompts[${index}].PromptKey`, prompt.promptKey);
-    formData.append(`Prompts[${index}].Answer`, prompt.answer);
+    formData.append(`${field}[${index}].PromptKey`, prompt.promptKey);
+    formData.append(`${field}[${index}].Answer`, prompt.answer);
   });
 };
 

@@ -393,6 +393,15 @@ export const editProfileFormSchema = z.object({
    * istek sunucuda sessizce no-op olur — kullanıcı sildiğini sanır.
    */
   prompts: promptListSchema,
+  /**
+   * ARKADAŞ MODUNUN prompt'ları — flörtünkiyle AYNI şema, AYRI alan.
+   *
+   * İki alan olmasının sebebi gönderim semantiği: her biri kendi modunun
+   * satırlarını FULL-REPLACE ediyor (`Prompts[i].*` vs `FriendsPrompts[i].*`).
+   * Tek alan olup mod değişiminde içeriği takaslanırsa, kaydetmeden mod
+   * değiştiren kullanıcı öbür modun cevaplarını siler.
+   */
+  friendsPrompts: promptListSchema,
   // İsim — backend `DisplayName`. Tavan neden 100 değil 50: bkz.
   // DISPLAY_NAME_MAX_LENGTH (gönderilen değer Identity'deki FirstName'e de
   // yazılıyor ve o kolon nvarchar(50)).
