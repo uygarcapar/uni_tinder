@@ -9,6 +9,11 @@ import { colors } from "@/shared/theme/colors";
 import formatRelativeTime from "@/shared/utils/formatRelativeTime";
 import toDisplayLowercase from "@/shared/utils/textCase";
 import { anonymousLabelKey } from "../feedPolicy";
+// Kart `/api/feed/me`yi GÖRMÜYOR (prop olarak inmesi listedeki her satıra bir
+// nesne daha taşımak olurdu), o yüzden etiket i18n yedeğinden çözülüyor —
+// `topicLabel(key, null)` tam bunun için null kabul ediyor. Sunucunun kendi
+// etiketi composer ve filtrede kullanılıyor; oralarda `me` zaten elde.
+import { topicLabel } from "../feedTopics";
 import { feedRowShell } from "../feedRowShell";
 import type { FeedPostDto } from "../feedTypes";
 
@@ -362,6 +367,38 @@ function FeedPostCardBase({
           satırına, üç noktanın soluna taşındı; "kalan gün" etiketi ise tümden
           çıktı (istek). `formatExpiresIn` feedText'te duruyor ve testleri de —
           gönderinin ömrü hâlâ ürünün bir kuralı, yalnız kartta yazmıyor. */}
+
+      {/* ── Konu çipi ──────────────────────────────────────────────────────
+          Gövdenin ALTINDA, aksiyon satırının üstünde. Dokunulabilir DEĞİL:
+          kartta bir filtre kısayolu olsaydı kullanıcı listeyi istemeden
+          daraltır ve geri dönmenin yolunu aramak zorunda kalırdı — konu
+          seçimi filtrenin işi.
+
+          Alan gelmezse çizilmiyor (varsayılan "Genel" UYDURULMUYOR: konusuz
+          bir gönderiyi etiketlemek yanlış bilgi olurdu). */}
+      {post.topic ? (
+        <View style={{ flexDirection: "row", marginTop: 10 }}>
+          <View
+            style={{
+              paddingHorizontal: 9,
+              paddingVertical: 4,
+              borderRadius: 999,
+              borderCurve: "continuous",
+              backgroundColor: colors.surface2,
+            }}
+          >
+            <Text
+              style={{
+                color: colors.textSecondary,
+                fontSize: 12,
+                fontWeight: "600",
+              }}
+            >
+              {topicLabel(post.topic, null)}
+            </Text>
+          </View>
+        </View>
+      ) : null}
 
       {/* ── Alt satır: beğeni + yanıt ── */}
       <View

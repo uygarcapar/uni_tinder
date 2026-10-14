@@ -73,12 +73,14 @@ const PARAMS_NEW: FeedListParams = {
   sort: 'new',
   interest: 'all',
   kind: 'all',
+  topic: 'all',
 };
 const PARAMS_TOP: FeedListParams = {
   university: null,
   sort: 'top',
   interest: 'all',
   kind: 'all',
+  topic: 'all',
 };
 
 const infinite = (items: FeedPostDto[]) => ({

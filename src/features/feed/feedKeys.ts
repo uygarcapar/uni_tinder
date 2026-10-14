@@ -31,6 +31,7 @@ export const feedKeys = {
       p.sort,
       p.interest,
       p.kind,
+      p.topic,
     ] as const,
   mine: ["feed", "mine"] as const,
   /**

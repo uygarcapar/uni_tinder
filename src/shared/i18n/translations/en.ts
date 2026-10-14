@@ -2388,6 +2388,20 @@ const en = {
     tabFeed: 'Feed',
     tabMine: 'My posts',
 
+    // ── Topics (hashtags) ────────────────────────────────────────────────────
+    // Labels come from the SERVER (`/api/feed/me` → topics); these are the
+    // FALLBACK — used when the server list is missing or has an unknown key.
+    topics: {
+      all: 'All topics',
+      General: 'General',
+      Roommate: 'Roommate',
+      Event: 'Event',
+      StudyGroup: 'Study group',
+      LostAndFound: 'Lost & found',
+      Advice: 'Advice',
+      Social: 'Social',
+    },
+
     anonymous: {
       plain: 'Anonymous',
       Men: 'Anonymous · Man',
@@ -2411,6 +2425,8 @@ const en = {
     },
 
     filter: {
+      topic: 'Topic',
+      topicDesc: 'Narrow the feed down to a single topic.',
       title: 'Filter',
       // One line under each title — the counterpart of the `*Desc` rows in
       // profile editing. Kept short: three sections stack up.
@@ -2428,6 +2444,7 @@ const en = {
     },
 
     composer: {
+      topicLabel: 'Pick a topic',
       title: 'Share a post',
       placeholder: 'What do you want to tell your campus?',
       anonymousLabel: 'Post anonymously',

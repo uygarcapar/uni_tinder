@@ -2436,6 +2436,20 @@ const tr = {
     tabFeed: 'Akış',
     tabMine: 'Gönderilerim',
 
+    // ── Konular (hashtag) ────────────────────────────────────────────────────
+    // Etiketler SUNUCUDAN geliyor (`/api/feed/me` → topics); buradakiler
+    // YEDEK — sunucu listesi gelmediğinde ya da tanımadığı bir anahtar için.
+    topics: {
+      all: 'Tüm konular',
+      General: 'Genel',
+      Roommate: 'Ev arkadaşı',
+      Event: 'Etkinlik',
+      StudyGroup: 'Ders grubu',
+      LostAndFound: 'Kayıp eşya',
+      Advice: 'Tavsiye',
+      Social: 'Sosyal',
+    },
+
     // Büyük başlık bloğu — Mesajlar ekranındaki kalıbın aynısı: başlık, sağında
     // Plus pill'i, altında TEK satır açıklama.
     // ⚠️ Açıklamalar KISA yazıldı: satır `numberOfLines={1}` ve uzun cümle
@@ -2474,6 +2488,8 @@ const tr = {
     },
 
     filter: {
+      topic: 'Konu',
+      topicDesc: 'Akışı tek bir konuya kısıtla.',
       title: 'Filtre',
       // Her başlığın altındaki tek cümle — profil düzenlemedeki `*Desc`
       // satırlarının karşılığı. Kısa tutuldu: üç bölüm üst üste duruyor.
@@ -2491,6 +2507,7 @@ const tr = {
     },
 
     composer: {
+      topicLabel: 'Konu seç',
       title: 'Gönderi paylaş',
       placeholder: 'Kampüse ne söylemek istersin?',
       anonymousLabel: 'Anonim paylaş',

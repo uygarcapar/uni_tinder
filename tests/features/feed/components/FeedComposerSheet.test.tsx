@@ -43,6 +43,12 @@ const PAYWALL: AnonymousGate = { kind: 'paywall', paywallType: 'FEED_ANONYMOUS' 
 const RESTRICTED: AnonymousGate = { kind: 'restricted' };
 const UNKNOWN: AnonymousGate = { kind: 'unknown' };
 
+// Konu kataloğu — gerçekte `/api/feed/me`den geliyor (bkz. feedTopics).
+// Testte sabit bir liste: ETİKET ÇÖZÜMÜ bu dosyanın konusu değil, konunun
+// ZORUNLULUĞU.
+const TOPIC_KEYS = ['Roommate', 'Event', 'General'];
+const topicLabelFor = (key: string) => `#${key}`;
+
 const setup = (over: Partial<React.ComponentProps<typeof FeedComposerSheet>> = {}) => {
   const onSend = jest.fn();
   const onClose = jest.fn();
@@ -56,10 +62,17 @@ const setup = (over: Partial<React.ComponentProps<typeof FeedComposerSheet>> = {
       anonymousGate={ALLOWED}
       onAnonymousPaywall={onAnonymousPaywall}
       universityLabel="itu.edu.tr"
+      topicKeys={TOPIC_KEYS}
+      topicLabelFor={topicLabelFor}
       {...over}
     />,
   );
   return { onSend, onClose, onAnonymousPaywall, ...utils };
+};
+
+/** Konu seçimi — gönderimin ÖN KOŞULU (zorunlu alan, ön seçim yok). */
+const pickTopic = (key = 'Roommate') => {
+  fireEvent.press(screen.getByText(topicLabelFor(key)));
 };
 
 const typeBody = (text: string) => {
@@ -91,6 +104,8 @@ const sendLabel = (university: string | null = 'itu.edu.tr') =>
 const typeAndSend = async (text: string) => {
   typeBody(text);
   await act(async () => {});
+  // Konu ZORUNLU: seçilmeden gönder butonu pasif.
+  pickTopic();
   fireEvent.press(screen.getByText(sendLabel()));
   await act(async () => {});
 };
@@ -108,12 +123,14 @@ describe('temel akış', () => {
     const { onSend } = setup();
     await typeAndSend('  Kütüphane kaçta açılıyor?  ');
     // Baştaki/sondaki boşluk kırpılıyor (sunucu da normalize ediyor).
-    expect(onSend).toHaveBeenCalledWith('Kütüphane kaçta açılıyor?', false);
+    expect(onSend).toHaveBeenCalledWith('Kütüphane kaçta açılıyor?', false, 'Roommate');
   });
 
   it('boş metinle gönderilemez', async () => {
     const { onSend } = setup();
     await act(async () => {});
+    // Konu ZORUNLU: seçilmeden gönder butonu pasif.
+    pickTopic();
     fireEvent.press(screen.getByText(sendLabel()));
     expect(onSend).not.toHaveBeenCalled();
   });
@@ -167,7 +184,7 @@ describe('kota bitti — composer kilitli', () => {
   it('remaining null + kapı kapalı değil → gönderim normal', async () => {
     const { onSend } = setup({ quotaExhausted: false, remaining: null });
     await typeAndSend('merhaba');
-    expect(onSend).toHaveBeenCalledWith('merhaba', false);
+    expect(onSend).toHaveBeenCalledWith('merhaba', false, 'Roommate');
   });
 });
 
@@ -179,7 +196,7 @@ describe('anonim kapısı', () => {
     const sw = screen.UNSAFE_getByType(require('react-native').Switch);
     fireEvent(sw, 'valueChange', true);
     await typeAndSend('anonim gönderi');
-    expect(onSend).toHaveBeenCalledWith('anonim gönderi', true);
+    expect(onSend).toHaveBeenCalledWith('anonim gönderi', true, 'Roommate');
   });
 
   it('paywall → kilit metni çizilir ve gönderi ANONİM OLMADAN gider', async () => {
@@ -195,19 +212,16 @@ describe('anonim kapısı', () => {
     fireEvent(sw, 'valueChange', true);
     await typeAndSend('deneme');
     // UT-7305 yenmesin diye gönderi NORMAL gidiyor.
-    expect(onSend).toHaveBeenCalledWith('deneme', false);
+    expect(onSend).toHaveBeenCalledWith('deneme', false, 'Roommate');
   });
 
   it('paywall → anahtara dokunuş SHEET\'İ KAPATIR, sonra Plus açar', () => {
     const { onClose, onAnonymousPaywall } = setup({ anonymousGate: PAYWALL });
     // Anahtarın üstündeki sarmalayıcı (Switch kendisi `pointerEvents:"none"`
-    // katmanının altında). `testID`siz olan bu: diğeri AppModal mock'unun
-    // header kapatma butonu.
-    const touchables = screen.UNSAFE_getAllByType(
-      require('react-native').TouchableOpacity,
-    );
-    const gateWrapper = touchables.find((n: any) => !n.props.testID);
-    fireEvent.press(gateWrapper!);
+    // katmanının altında). `testID` ile adresliyoruz: "testID'siz ilk
+    // TouchableOpacity" varsayımı konu çipleri eklenince kırıldı (çiplerin
+    // hepsi testID'siz dokunulabilir öğe).
+    fireEvent.press(screen.getByTestId('feed-composer-anonymous-gate'));
     // Composer altta açık kalırsa Plus onun ÜSTÜNE biniyor ve kullanıcı Plus'ı
     // kapattığında yarım yazılmış bir gönderiyle baş başa kalıyordu.
     expect(onClose).toHaveBeenCalled();
@@ -243,6 +257,8 @@ describe('hata yolu — sheet AÇIK kalır', () => {
         maxLength={400}
         anonymousGate={ALLOWED}
         onAnonymousPaywall={jest.fn()}
+        topicKeys={TOPIC_KEYS}
+        topicLabelFor={topicLabelFor}
         errorText="Cinsel içerik paylaşılamaz."
       />,
     );

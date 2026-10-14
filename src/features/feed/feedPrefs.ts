@@ -1,5 +1,11 @@
 import { appPrefs } from "@/shared/utils/appPrefs";
-import type { FeedInterest, FeedKind, FeedListParams, FeedSort } from "./feedTypes";
+import type {
+  FeedInterest,
+  FeedKind,
+  FeedListParams,
+  FeedSort,
+  FeedTopicFilter,
+} from "./feedTypes";
 
 /**
  * Akış filtre tercihlerinin oturumlar arası kalıcılığı (MMKV, `app-prefs`).
@@ -16,13 +22,18 @@ import type { FeedInterest, FeedKind, FeedListParams, FeedSort } from "./feedTyp
  */
 
 const KEY_PREFIX = "feedFilters:";
-const SCHEMA_VERSION = 1;
+// v1 → v2: `topic` alanı eklendi. SÜRÜM ATLAMA BİLİNÇLİ OLARAK GÖÇÜRÜLÜYOR
+// (varsayılana düşmek yerine): kullanıcının kampüs/sıralama tercihi onun
+// kurduğu bir şey, konu alanı eklendi diye sıfırlanması kazanılmış bir ayarı
+// kaybetmek olurdu. Eski kayıt okunup `topic: "all"` ile tamamlanıyor.
+const SCHEMA_VERSION = 2;
 
 export const DEFAULT_FEED_PARAMS: FeedListParams = {
   university: null,
   sort: "new",
   interest: "all",
   kind: "all",
+  topic: "all",
 };
 
 interface StoredPrefs {
@@ -31,6 +42,8 @@ interface StoredPrefs {
   sort: FeedSort;
   interest: FeedInterest;
   kind: FeedKind;
+  /** v2'de eklendi — v1 kayıtlarında YOK, okuma tarafı "all"a tamamlıyor. */
+  topic?: FeedTopicFilter;
 }
 
 const SORTS: FeedSort[] = ["new", "popular", "top"];
@@ -46,7 +59,11 @@ export function loadFeedParams(userId?: string | null): FeedListParams {
   if (!raw) return DEFAULT_FEED_PARAMS;
   try {
     const parsed = JSON.parse(raw) as StoredPrefs;
-    if (!parsed || parsed.v !== SCHEMA_VERSION) return DEFAULT_FEED_PARAMS;
+    if (!parsed) return DEFAULT_FEED_PARAMS;
+    // v1 OKUNABİLİR: tek fark `topic`in yokluğu ve o alan aşağıda "all"a
+    // tamamlanıyor. Bilinmeyen/gelecek bir sürümde ise varsayılana düşülüyor —
+    // o şekli yorumlamaya çalışmak yanlış bir filtre üretebilir.
+    if (parsed.v !== SCHEMA_VERSION && parsed.v !== 1) return DEFAULT_FEED_PARAMS;
     return {
       university:
         typeof parsed.university === "string" && parsed.university
@@ -59,6 +76,14 @@ export function loadFeedParams(userId?: string | null): FeedListParams {
         ? parsed.interest
         : DEFAULT_FEED_PARAMS.interest,
       kind: KINDS.includes(parsed.kind) ? parsed.kind : DEFAULT_FEED_PARAMS.kind,
+      // Konu anahtarı sunucunun kapalı kümesinden geliyor ve istemci onu
+      // DOĞRULAMIYOR: yeni bir konu eklendiğinde (uygulama sürümü çıkmadan)
+      // diskteki tercih geçersiz sayılıp sıfırlanmamalı. Tek kural tip:
+      // string olmayan değer "all"a düşüyor.
+      topic:
+        typeof parsed.topic === "string" && parsed.topic
+          ? (parsed.topic as FeedTopicFilter)
+          : DEFAULT_FEED_PARAMS.topic,
     };
   } catch {
     return DEFAULT_FEED_PARAMS;
@@ -103,5 +128,6 @@ export function activeFilterCount(params: FeedListParams): number {
   if (params.sort !== DEFAULT_FEED_PARAMS.sort) n += 1;
   if (params.interest !== DEFAULT_FEED_PARAMS.interest) n += 1;
   if (params.kind !== DEFAULT_FEED_PARAMS.kind) n += 1;
+  if (params.topic !== DEFAULT_FEED_PARAMS.topic) n += 1;
   return n;
 }

@@ -15,6 +15,35 @@ export type FeedSort = "new" | "popular" | "top";
 export type FeedInterest = "all" | "mine";
 export type FeedKind = "all" | "anonymous" | "normal";
 
+/**
+ * Gönderi konusu (hashtag) — KAPALI küme, kullanıcı serbest etiket yazamıyor.
+ *
+ * Değerler sunucunun enum'u (PascalCase string, wire sözleşmesi). Liste
+ * `/api/feed/me` içinde `topics` olarak geliyor — ETİKETLERİ ORADAN OKU,
+ * buradaki tip yalnız hangi değerlerin geçerli olduğunu söylüyor.
+ *
+ * ⚠️ İstemci kendi etiketini SABİT YAZMAZ: yeni bir konu eklendiğinde
+ * uygulama sürümü çıkmadan görünmesi gerekiyor. i18n'deki karşılıklar yalnız
+ * YEDEK (sunucu listesi gelmediğinde / tanımadığı bir anahtar için).
+ */
+export type FeedTopic =
+  | "General"
+  | "Roommate"
+  | "Event"
+  | "StudyGroup"
+  | "LostAndFound"
+  | "Advice"
+  | "Social";
+
+/** Filtrede "hepsi" seçeneği — sunucuya parametre GÖNDERİLMİYOR demek. */
+export type FeedTopicFilter = FeedTopic | "all";
+
+/** `/api/feed/me`den gelen konu kataloğu — etiket çift dilli. */
+export interface FeedTopicOption {
+  key: string;
+  display?: { tr?: string; en?: string } | string;
+}
+
 /** Gönderi durumu. Akışta yalnız `Published` görünür; diğerleri Gönderilerim'de. */
 export type FeedPostStatus =
   | "Published"
@@ -67,6 +96,12 @@ export interface FeedPostDto {
   /** createdAt + 15 gün. Geçmişteyse "süresi doldu". */
   expiresAt: string;
   isAnonymous: boolean;
+  /**
+   * Gönderinin konusu. Eski sunucu alanı göndermiyorsa `undefined` —
+   * kart çipi o zaman çizilmiyor (varsayılan "General" UYDURULMUYOR:
+   * konusuz bir gönderiyi "Genel" diye etiketlemek yanlış bilgi olurdu).
+   */
+  topic?: FeedTopic;
   authorCategory: FeedAuthorCategory | null;
   /** Normal gönderide dolu; ANONİM gönderide HER ZAMAN null. */
   author: FeedAuthorDto | null;
@@ -100,6 +135,11 @@ export interface FeedMeDto {
   /** Akış kısıtı bitişi; null = kısıt yok YA DA süresiz (isPermanent'a bak). */
   restrictedUntil: string | null;
   isPermanentlyRestricted: boolean;
+  /**
+   * Konu kataloğu — composer çipleri ve filtre bölümü buradan doluyor.
+   * Alan gelmezse istemci kendi yedek listesine düşüyor (bkz. feedTopics.ts).
+   */
+  topics?: FeedTopicOption[];
   /** ⚠️ Karakter sınırlarını SABİT YAZMA — buradan oku. */
   postMaxLength: number;
   replyMaxLength: number;
@@ -169,6 +209,8 @@ export interface FeedListParams {
   sort: FeedSort;
   interest: FeedInterest;
   kind: FeedKind;
+  /** "all" = konu filtresi yok (parametre hiç gönderilmez). */
+  topic: FeedTopicFilter;
 }
 
 export type FeedReportTargetType = "Post" | "Reply";

@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { memo, useCallback, useEffect, useMemo, useRef, useState } from "react";
 import {
   ActivityIndicator,
   Dimensions,
@@ -70,7 +70,11 @@ const styles = StyleSheet.create({
 export interface FeedComposerSheetProps {
   visible: boolean;
   onClose: () => void;
-  onSend: (body: string, isAnonymous: boolean) => void;
+  onSend: (body: string, isAnonymous: boolean, topic: string) => void;
+  /** Konu kataloğu — `/api/feed/me`den çözülmüş anahtarlar (feedTopics.ts). */
+  topicKeys: string[];
+  /** Anahtar → görünen ad. Sunucu etiketi öncelikli (bkz. topicLabel). */
+  topicLabelFor: (key: string) => string;
   /** `/api/feed/me`den; gelmemişse istemci tavanına düşülür. */
   maxLength?: number | null;
   anonymousGate: AnonymousGate;
@@ -97,6 +101,8 @@ export default function FeedComposerSheet({
   visible,
   onClose,
   onSend,
+  topicKeys,
+  topicLabelFor,
   maxLength,
   anonymousGate,
   onAnonymousPaywall,
@@ -120,11 +126,20 @@ export default function FeedComposerSheet({
   });
 
   const [isAnonymous, setIsAnonymous] = useState(false);
+  /**
+   * Seçili konu — ZORUNLU, ÖN SEÇİM YOK.
+   *
+   * Varsayılan bir konu olsaydı kullanıcıların çoğu düşünmeden onu gönderir ve
+   * alan hiçbir şey ayırt etmezdi; zorunlu bir alanın anlamı seçimin bir karar
+   * olmasından geliyor (kayıttaki mod adımının aynı gerekçesi).
+   */
+  const [topic, setTopic] = useState<string | null>(null);
 
   useEffect(() => {
     if (visible) {
       reset({ body: "" });
       setIsAnonymous(false);
+      setTopic(null);
     }
   }, [visible, reset]);
 
@@ -135,7 +150,10 @@ export default function FeedComposerSheet({
     // İKİNCİ KAPI, butonun `disabled`ına ek: form gönderimi klavyedeki
     // "gönder"den de tetiklenebiliyor ve orası butonun pasifliğini görmüyor.
     if (quotaExhausted) return;
-    onSend(body.trim(), isAnonymous);
+    // ÜÇÜNCÜ KAPI (butonun `disabled`ı ve kota kapısına ek): klavyedeki
+    // "gönder" butonun pasifliğini görmüyor.
+    if (!topic) return;
+    onSend(body.trim(), isAnonymous, topic);
   });
 
   // Kapanış animasyonu boyunca içerik boşalmasın diye son değerler ref'te
@@ -226,6 +244,21 @@ export default function FeedComposerSheet({
         ) : null}
 
         {/* ── Anonim anahtarı ── */}
+        {/* ── KONU ÇİPLERİ ───────────────────────────────────────────────────
+            Zorunlu alan: seçilmeden gönder butonu aktifleşmiyor. Metin
+            alanının ALTINDA, anonim anahtarının ÜSTÜNDE — yazma akışı
+            bozulmasın (kullanıcı önce yazar, sonra etiketler).
+
+            ⚠️ `TopicChips` MODÜL SEVİYESİNDE bir bileşen: render içinde
+            tanımlansaydı her tuşta yeniden kurulur, input remount olur ve
+            klavye düşerdi (bu dosyanın başlığındaki kural). */}
+        <TopicChips
+          keys={topicKeys}
+          selected={topic}
+          labelFor={topicLabelFor}
+          onSelect={setTopic}
+        />
+
         <View
           style={{
             flexDirection: "row",
@@ -261,7 +294,16 @@ export default function FeedComposerSheet({
               Switch'in kendisi tepkisiz (yanlışlıkla açılıp UT-7305 yenmesin),
               dokunuş paywall'a gidiyor (PremiumGate deseni). */}
           {anonymousGate.kind === "paywall" ? (
-            <TouchableOpacity activeOpacity={0.7} onPress={openAnonymousPaywall}>
+            <TouchableOpacity
+              // ⚠️ `testID` TEST İÇİN: sarmalayıcı görünmez bir katman ve metni
+              // yok, yani testte yalnız "testID'siz ilk TouchableOpacity" diye
+              // bulunabiliyordu. Konu çipleri eklenince (hepsi testID'siz
+              // dokunulabilir) o varsayım kırıldı. Öğeyi adreslenebilir
+              // yapmak, testin ağaç sırasına bağlı kalmasından iyi.
+              testID="feed-composer-anonymous-gate"
+              activeOpacity={0.7}
+              onPress={openAnonymousPaywall}
+            >
               <View style={{ opacity: 0.4 }} pointerEvents="none">
                 <Switch value={false} />
               </View>
@@ -282,7 +324,8 @@ export default function FeedComposerSheet({
         <SendButton
           control={control}
           sending={sending}
-          locked={quotaExhausted}
+          // Konu seçilmeden gönderim YOK — butonun kendisi de pasif.
+          locked={quotaExhausted || !topic}
           onPress={submit}
           university={shownUniversity ?? null}
         />
@@ -290,6 +333,81 @@ export default function FeedComposerSheet({
     </AppModal>
   );
 }
+
+/**
+ * Konu çipleri — tek seçim, ZORUNLU.
+ *
+ * MODÜL SEVİYESİNDE (render içinde değil): bu dosyanın üç alt bileşeni de
+ * öyle ve sebebi somut — render'da tanımlanan bir bileşen her tuşta yeni bir
+ * tip oluyor, React onu yeni bir ağaç sayıp input'u remount ediyor ve klavye
+ * düşüyor.
+ *
+ * SATIR SARIYOR (`flexWrap`), yatay kaydırma DEĞİL: yedi çip iki satıra
+ * sığıyor ve hepsinin aynı anda görünmesi seçimi hızlandırıyor. Kaydırmalı bir
+ * şeritte sağdaki çipler keşfedilmeyi bekler, oysa alan zorunlu.
+ *
+ * Seçili çip DOLGULU (`inverseSurface`), seçilmemiş çip yalnız KENARLIKLI —
+ * uygulamanın her yerindeki seçim dili (bkz. RegisterStep10 kartları,
+ * FilterModal pill'leri).
+ */
+const TopicChips = memo(function TopicChips({
+  keys,
+  selected,
+  labelFor,
+  onSelect,
+}: {
+  keys: string[];
+  selected: string | null;
+  labelFor: (key: string) => string;
+  onSelect: (key: string) => void;
+}) {
+  const { t } = useTranslation();
+  return (
+    <View style={{ marginTop: 18 }}>
+      <Text
+        style={{
+          color: colors.textSecondary,
+          fontSize: 13,
+          fontWeight: "600",
+          marginBottom: 10,
+        }}
+      >
+        {t("feed.composer.topicLabel")}
+      </Text>
+      <View style={{ flexDirection: "row", flexWrap: "wrap", gap: 8 }}>
+        {keys.map((key) => {
+          const active = selected === key;
+          return (
+            <TouchableOpacity
+              key={key}
+              activeOpacity={0.7}
+              onPress={() => onSelect(key)}
+              style={{
+                paddingHorizontal: 14,
+                paddingVertical: 8,
+                borderRadius: 999,
+                borderCurve: "continuous",
+                borderWidth: active ? 0 : 0.5,
+                borderColor: colors.hairlineStrong,
+                backgroundColor: active ? colors.inverseSurface : "transparent",
+              }}
+            >
+              <Text
+                style={{
+                  color: active ? colors.onInverseSurface : colors.text,
+                  fontSize: 13.5,
+                  fontWeight: "600",
+                }}
+              >
+                {labelFor(key)}
+              </Text>
+            </TouchableOpacity>
+          );
+        })}
+      </View>
+    </View>
+  );
+});
 
 /** Sunucu tavanı + istemci tavanı → yürürlükteki sınır (feedText ile aynı kural). */
 function resolveLimit(serverValue?: number | null): number {

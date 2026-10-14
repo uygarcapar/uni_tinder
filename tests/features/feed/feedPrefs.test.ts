@@ -136,6 +136,69 @@ describe('sanitizeFeedParams — Plus\'tan düşme', () => {
   });
 });
 
+/**
+ * ŞEMA GÖÇÜ v1 → v2 (`topic` alanı eklendi).
+ *
+ * Sürüm atlamada VARSAYILANA DÜŞMEK yerine GÖÇÜRÜYORUZ ve test edilen şey bu:
+ * kullanıcının kampüs/sıralama tercihi onun kurduğu bir şey, yeni bir alan
+ * eklendi diye sıfırlanması kazanılmış bir ayarı kaybettirirdi.
+ */
+describe('şema göçü — v1 kaydı okunabilir', () => {
+  it('v1 kaydının tercihleri KORUNUYOR, topic "all"a tamamlanıyor', () => {
+    appPrefs.set(
+      `feedFilters:${USER}`,
+      JSON.stringify({
+        v: 1,
+        university: 'boun.edu.tr',
+        sort: 'popular',
+        interest: 'mine',
+        kind: 'anonymous',
+      }),
+    );
+    expect(loadFeedParams(USER)).toEqual({
+      university: 'boun.edu.tr',
+      sort: 'popular',
+      interest: 'mine',
+      kind: 'anonymous',
+      topic: 'all',
+    });
+  });
+
+  it('bilinmeyen/gelecek sürüm varsayılana düşüyor', () => {
+    // O şekli yorumlamaya çalışmak yanlış bir filtre üretip akışı boş
+    // gösterebilir — bilmediğimizde varsayılan doğru taraf.
+    appPrefs.set(
+      `feedFilters:${USER}`,
+      JSON.stringify({ v: 99, university: 'x.edu.tr', sort: 'top' }),
+    );
+    expect(loadFeedParams(USER)).toEqual(DEFAULT_FEED_PARAMS);
+  });
+
+  it('v2 gidiş-dönüş — topic korunuyor', () => {
+    saveFeedParams(USER, params({ topic: 'Roommate' }));
+    expect(loadFeedParams(USER).topic).toBe('Roommate');
+  });
+
+  it('TANIMADIĞI konu anahtarını da koruyor', () => {
+    // Sunucu yeni bir konu eklediğinde (uygulama sürümü çıkmadan) diskteki
+    // tercih geçersiz sayılıp sıfırlanmamalı — istemci konu kümesini
+    // DOĞRULAMIYOR, yalnız tipe bakıyor.
+    appPrefs.set(
+      `feedFilters:${USER}`,
+      JSON.stringify({ ...params(), v: 2, topic: 'BrandNewTopic' }),
+    );
+    expect(loadFeedParams(USER).topic).toBe('BrandNewTopic');
+  });
+
+  it('string olmayan topic "all"a düşüyor', () => {
+    appPrefs.set(
+      `feedFilters:${USER}`,
+      JSON.stringify({ ...params(), v: 2, topic: 42 }),
+    );
+    expect(loadFeedParams(USER).topic).toBe('all');
+  });
+});
+
 describe('activeFilterCount — "Filtre" pill rozeti', () => {
   it('varsayılanlarda 0 (pill sayı çizmez)', () => {
     expect(activeFilterCount(DEFAULT_FEED_PARAMS)).toBe(0);

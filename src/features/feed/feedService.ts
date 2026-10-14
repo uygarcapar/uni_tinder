@@ -100,6 +100,9 @@ class FeedService {
     params.set("sort", args.sort);
     params.set("interest", args.interest);
     params.set("kind", args.kind);
+    // "all" = filtre yok → parametre HİÇ gönderilmiyor. Boş/"all" göndermek
+    // sunucuda enum çözümlemesini patlatır (`university`nin aynı kuralı).
+    if (args.topic && args.topic !== "all") params.set("topic", args.topic);
     if (args.cursor) params.set("cursor", args.cursor);
     if (typeof args.page === "number" && args.page > 0) {
       params.set("page", String(args.page));
@@ -122,9 +125,19 @@ class FeedService {
     );
   }
 
-  createPost(body: string, isAnonymous: boolean): Promise<FeedCreatePostResult> {
+  /**
+   * `topic` ZORUNLU (yeni sözleşme): composer seçilmeden gönder butonunu
+   * aktifleştirmiyor. Wire'da opsiyonel kalmaya devam ediyor çünkü sunucu eski
+   * istemcilerin konusuz gönderilerini "General" sayıyor — ama bu sürüm her
+   * zaman açıkça gönderiyor.
+   */
+  createPost(
+    body: string,
+    isAnonymous: boolean,
+    topic: string,
+  ): Promise<FeedCreatePostResult> {
     return guard(
-      () => api.post(API_ENDPOINTS.FEED_POSTS, { body, isAnonymous }),
+      () => api.post(API_ENDPOINTS.FEED_POSTS, { body, isAnonymous, topic }),
       (res) => {
         const result = requireResult<any>(res, "createPost");
         return {

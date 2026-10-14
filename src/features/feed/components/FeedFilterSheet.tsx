@@ -11,7 +11,12 @@ import {
   sectionGroupStyle,
   SECTION_GROUP_PAD_H,
 } from "@/shared/theme/sectionGroup";
-import type { FeedInterest, FeedKind, FeedSort } from "../feedTypes";
+import type {
+  FeedInterest,
+  FeedKind,
+  FeedSort,
+  FeedTopicFilter,
+} from "../feedTypes";
 
 /**
  * Akış filtre sheet'i — sıralama · ilgi alanı · paylaşım tipi.
@@ -27,6 +32,7 @@ export interface FeedFilterValue {
   sort: FeedSort;
   interest: FeedInterest;
   kind: FeedKind;
+  topic: FeedTopicFilter;
 }
 
 export interface FeedFilterSheetProps {
@@ -37,6 +43,15 @@ export interface FeedFilterSheetProps {
   /** `kindFilterGate(me)` sonucu — "unknown" iken kilit ÇİZİLMEZ. */
   kindGate: "unknown" | "allowed" | "paywall";
   onKindPaywall: () => void;
+  /**
+   * Konu kataloğu — `/api/feed/me`den çözülmüş anahtarlar + etiketleri
+   * (bkz. feedTopics). Sunucu yeni bir konu eklediğinde uygulama sürümü
+   * çıkmadan filtrede görünmesi için liste İÇERİDE SABİT YAZILMIYOR.
+   */
+  topicKeys: string[];
+  topicLabelFor: (key: string) => string;
+  /** "Tüm konular" satırının etiketi. */
+  topicAllLabel: string;
 }
 
 const SORTS: FeedSort[] = ["new", "popular", "top"];
@@ -47,6 +62,7 @@ const DEFAULTS: FeedFilterValue = {
   sort: "new",
   interest: "all",
   kind: "all",
+  topic: "all",
 };
 
 export default function FeedFilterSheet({
@@ -56,6 +72,9 @@ export default function FeedFilterSheet({
   onApply,
   kindGate,
   onKindPaywall,
+  topicKeys,
+  topicLabelFor,
+  topicAllLabel,
 }: FeedFilterSheetProps) {
   const { t } = useTranslation();
   // Yerel taslak: sheet kapanana kadar listeyi yeniden çekme. Her dokunuşta
@@ -112,10 +131,35 @@ export default function FeedFilterSheet({
       // kalıyordu. Üst nefes artık bölümlerin kendi `marginTop`undan geliyor.
       contentContainerStyle={{ paddingBottom: 28 }}
     >
+      {/* KONU EN ÜSTTE: akışın birincil ayrımı artık konu (sıralama ikincil
+          bir tercih). Premium KAPISI YOK — konu ürünün kendisi, upsell değil. */}
+      <Section
+        title={t("feed.filter.topic")}
+        description={t("feed.filter.topicDesc")}
+        first
+      >
+        {/* "Tümü" + katalog. Tek seçim: çoklu seçim satır bileşeni bu
+            sheet'te yok ve sunucu da tek konu filtreliyor. */}
+        <OptionRow
+          label={topicAllLabel}
+          selected={draft.topic === "all"}
+          onPress={() => setDraft((d) => ({ ...d, topic: "all" }))}
+        />
+        {topicKeys.map((key) => (
+          <OptionRow
+            key={key}
+            label={topicLabelFor(key)}
+            selected={draft.topic === key}
+            onPress={() =>
+              setDraft((d) => ({ ...d, topic: key as FeedTopicFilter }))
+            }
+          />
+        ))}
+      </Section>
+
       <Section
         title={t("feed.filter.sort")}
         description={t("feed.filter.sortDesc")}
-        first
       >
         {SORTS.map((key) => (
           <OptionRow

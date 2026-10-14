@@ -89,6 +89,7 @@ import {
   postPresentation,
   universityPickerGate,
 } from "../feedPolicy";
+import { resolveTopicKeys, topicAllLabel, topicLabel } from "../feedTopics";
 import { useFeedAuthorProfile, useFeedReplierProfile } from "../feedQueries";
 import LikerSwipeModal from "@/features/discover/components/LikerSwipeModal";
 import type {
@@ -603,6 +604,12 @@ export default function FeedScreen() {
 
   const gate = composeGate(me);
 
+  // Konu kataloğu + etiket çözücü. `me` değişince (dil/kota tazelemesi)
+  // yenileniyor; etiket fonksiyonu `me`yi kapattığı için sunucu etiketleri
+  // de tazeyi kullanıyor.
+  const topicKeys = useMemo(() => resolveTopicKeys(me), [me]);
+  const topicLabelFor = useCallback((key: string) => topicLabel(key, me), [me]);
+
   const openComposer = useCallback(() => {
     // ⚠️ HAK BİTTİĞİNDE KOTA SHEET'İ AÇILMIYOR (istek): composer'ın KENDİSİ
     // açılıyor, rozetinde "0 hakkın kaldı" yazıyor ve gönder butonu basılamaz
@@ -627,10 +634,10 @@ export default function FeedScreen() {
    * metnin korunup korunmayacağına çağıran karar veriyor.
    */
   const handleSendPost = useCallback(
-    (body: string, isAnonymous: boolean) => {
+    (body: string, isAnonymous: boolean, topic: string) => {
       setComposerError(null);
       createPost.mutate(
-        { body, isAnonymous },
+        { body, isAnonymous, topic },
         {
           onSuccess: (result) => {
             setComposerVisible(false);
@@ -796,6 +803,7 @@ export default function FeedScreen() {
         sort: next.sort,
         interest: next.interest,
         kind: next.kind,
+        topic: next.topic,
       });
       applyParams({ ...listParams, ...next });
     },
@@ -878,9 +886,25 @@ export default function FeedScreen() {
       },
       { key: "sort", label: t(`feed.sort.${listParams.sort}`) },
       {
+        key: "topic",
+        // Seçili konunun ADI pill'de yazıyor (kampüs pill'inin aynı deseni):
+        // "Filtre (1)" demek kullanıcıya HANGİ konuyu seçtiğini söylemiyordu.
+        label:
+          listParams.topic === "all"
+            ? topicAllLabel()
+            : topicLabelFor(listParams.topic),
+        // Konu seçiliyken pill DOLU çizilsin: bu bir seçenek değil, sayfanın
+        // hangi konuya kısıtlandığını söyleyen bir durum (kampüs pill'i gibi).
+        filled: listParams.topic !== "all",
+        maxLabelWidth: 160,
+      },
+      {
         key: "filter",
         label: t("feed.filter.title"),
         // Varsayılandan sapan filtre sayısı; 0 ise pill sayı çizmiyor.
+        // ⚠️ Konu da bu sayıya giriyor (bkz. activeFilterCount) ve AYRICA
+        // kendi pill'inde yazıyor — ikisi aynı bilgiyi iki farklı amaçla
+        // söylüyor: pill "hangi konu", rozet "kaç filtre varsayılandan sapmış".
         count: activeFilterCount(listParams),
       },
     ];
@@ -1196,6 +1220,11 @@ export default function FeedScreen() {
         maxLength={me?.postMaxLength}
         anonymousGate={anonymousGate(me)}
         onAnonymousPaywall={openPaywall}
+        // Konu kataloğu: sunucu listesi öncelikli, yokken istemci yedeği
+        // (bkz. feedTopics). Composer'da konu ZORUNLU olduğu için liste asla
+        // boş kalamaz — boş liste ekranı kilitlerdi.
+        topicKeys={topicKeys}
+        topicLabelFor={topicLabelFor}
         // Yanıt composer'ıyla aynı kaynak: /api/feed/me'nin kota bloğu.
         remaining={me?.quota?.postsRemaining ?? null}
         // ⚠️ KAPI BURADAN GEÇİYOR, `remaining <= 0`DAN TÜRETİLMİYOR. Composer
@@ -1246,10 +1275,14 @@ export default function FeedScreen() {
           sort: listParams.sort,
           interest: listParams.interest,
           kind: listParams.kind,
+          topic: listParams.topic,
         }}
         onApply={handleApplyFilters}
         kindGate={kindGate}
         onKindPaywall={openPaywall}
+        topicKeys={topicKeys}
+        topicLabelFor={topicLabelFor}
+        topicAllLabel={topicAllLabel()}
       />
 
       <FeedUniversitySheet
