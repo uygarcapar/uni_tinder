@@ -109,6 +109,12 @@ import {
   discoverTabBarInset,
 } from "@/features/discover/components/discoverHeaderMetrics";
 import DiscoverHeaderGlassButton from "@/features/discover/components/DiscoverHeaderGlassButton";
+import ModeTitle from "../components/ModeTitle";
+import ModeSelectorSheet from "../components/ModeSelectorSheet";
+import ModeSetupSheet from "../components/ModeSetupSheet";
+import { useAppMode } from "../useAppMode";
+import type { AppMode } from "../modeTheme";
+import profileService from "@/features/profile/profileService";
 import {
   CARD_FACE_CORNER_RADIUS,
   CARD_FACE_TOP_CORNER_RADIUS,
@@ -1439,6 +1445,77 @@ export default function DiscoverScreen() {
   }, [showFireLimitUi, openPremiumPaywall, showSwipeQuotaExhaustedToast]);
 
   const [filterVisible, setFilterVisible] = useState(false);
+
+  // ── MOD (Flört / Arkadaş) ──────────────────────────────────────────────────
+  // Seçim diskte ve Beğeniler ekranıyla PAYLAŞILIYOR (bkz. useAppMode).
+  const { mode, setMode } = useAppMode();
+  const [modePickerVisible, setModePickerVisible] = useState(false);
+  // Hangi modun kurulumu açık; `null` = sheet kapalı.
+  const [setupMode, setSetupMode] = useState<AppMode | null>(null);
+  const [setupSubmitting, setSetupSubmitting] = useState(false);
+  const [setupError, setSetupError] = useState<string | null>(null);
+  /**
+   * Hangi modların profili AÇIK — sunucunun bilgisi (`/api/profile` → `modes`).
+   * `undefined` = henüz bilinmiyor; seçici o durumda satırları seçilebilir
+   * çiziyor (olmayan bir kısıt uydurmamak doğru taraf).
+   */
+  const [openModes, setOpenModes] = useState<
+    Partial<Record<AppMode, boolean>> | undefined
+  >(undefined);
+
+  // Açık mod haritası profilden okunuyor. `getMyProfile` kendi içinde TTL +
+  // in-flight dedupe'lu, yani açılıştaki diğer turlarla aynı isteğe biniyor.
+  useEffect(() => {
+    let alive = true;
+    (async () => {
+      try {
+        const profile: any = await profileService.getMyProfile();
+        if (!alive) return;
+        const modes = profile?.modes;
+        if (modes && typeof modes === "object") {
+          setOpenModes({
+            Dating: modes.dating !== false,
+            Friends: modes.friends === true,
+          });
+        }
+      } catch {
+        // Bilinmiyor olarak kalıyor — seçici kısıt çizmiyor, sunucu reddederse
+        // kurulum CTA'sı zaten o yoldan açılıyor.
+      }
+    })();
+    return () => {
+      alive = false;
+    };
+  }, []);
+
+  const handleOpenModeSetup = useCallback((next: AppMode) => {
+    setSetupError(null);
+    setSetupMode(next);
+  }, []);
+
+  const handleSubmitModeSetup = useCallback(
+    async (payload: { intents: string[]; prompts: { promptKey: string; answer: string }[] }) => {
+      if (!setupMode) return;
+      setSetupSubmitting(true);
+      setSetupError(null);
+      try {
+        await profileService.openProfileMode(setupMode, payload);
+        // Açıldı: haritayı güncelle, sheet'i kapat ve O MODA GEÇ — kullanıcı
+        // profili açtıysa amacı o modu kullanmak.
+        setOpenModes((prev) => ({ ...(prev ?? {}), [setupMode]: true }));
+        setSetupMode(null);
+        setMode(setupMode);
+      } catch (e: any) {
+        // Sheet AÇIK kalıyor ve girilen veri korunuyor (composer kuralı).
+        setSetupError(
+          e?.response?.data?.message ?? e?.message ?? t("common.somethingWentWrong"),
+        );
+      } finally {
+        setSetupSubmitting(false);
+      }
+    },
+    [setMode, setupMode, t],
+  );
 
   // Filtre modalı açılırken tier'ı canonical kaynaktan teyit et. İki cache de
   // kendi başına bayat kalabiliyor: /Stats oturumda BİR KEZ çekiliyor
@@ -3003,9 +3080,11 @@ export default function DiscoverScreen() {
           sağda filtre — ikisi de kapak fotoğrafının üstünde duran cam
           yuvarlak butonlar (bkz. DiscoverHeaderGlassButton).
 
-          ORTADAKİ LOGO KALDIRILDI (istek). Dekoratifti ve dolgusu swipe
-          oranıyla doluyordu (`WaveFillLogo` + `swipeFillRatio`); bileşen
-          duruyor, Keşif artık çizmiyor.
+          ORTADA SEÇİLİ MODUN ADI (Flört / Arkadaş) + chevron: dokununca mod
+          seçici açılıyor. Eskiden burada WaveFillLogo vardı (dekoratif, dolgusu
+          swipe oranıyla doluyordu); logo kaldırılınca boşalan yuva moda geçti.
+          `ModeTitle` ABSOLUTE ortalanıyor, üçüncü flex çocuk DEĞİL — gerekçe o
+          bileşenin başlığında (iki cam butonun 16pt insets'i kaymasın).
 
           KARTTAN SONRA YAZILIYOR: aynı ata içinde sonraki kardeş üstte
           çizilir, yani `zIndex` gerekmiyor. `box-none` — satırın boş orta
@@ -3034,6 +3113,10 @@ export default function DiscoverScreen() {
           headerRevealStyle,
         ]}
       >
+        {/* Absolute ortalı — butonlardan ÖNCE yazılıyor ki onların dokunma
+            alanı üstte kalsın (aynı ata, sonraki kardeş üstte çizilir). */}
+        <ModeTitle mode={mode} onPress={() => setModePickerVisible(true)} />
+
         <DiscoverHeaderGlassButton
           systemName="arrow.counterclockwise"
           fallback={RotateCcw}
@@ -3095,6 +3178,30 @@ export default function DiscoverScreen() {
 
       {/* Fire alevi burada DEĞİL: tab bar'ı da kaplaması gerektiği için
           navigator'ın dışına, kök ağaca taşındı (bkz. AppNavigator). */}
+
+      {/* ── MOD SHEET'LERİ ─────────────────────────────────────────────────
+          Seçici ÖNCE kapanıp sonra kurulum açılıyor (ModeSelectorSheet içinde):
+          iki sheet üst üste açılırsa gorhom'un stack sırası beklenmedik hâle
+          düşüyor. */}
+      <ModeSelectorSheet
+        visible={modePickerVisible}
+        onClose={() => setModePickerVisible(false)}
+        mode={mode}
+        openModes={openModes}
+        onSelect={setMode}
+        onOpenProfile={handleOpenModeSetup}
+      />
+
+      <ModeSetupSheet
+        visible={setupMode !== null}
+        onClose={() => setSetupMode(null)}
+        // `mode` prop'u ZORUNLU; sheet kapalıyken de bir değer gerekiyor —
+        // `setupMode` null olduğunda sheet görünmüyor, değer önemsiz.
+        mode={setupMode ?? mode}
+        onSubmit={handleSubmitModeSetup}
+        submitting={setupSubmitting}
+        errorText={setupError}
+      />
 
       <FilterModal
         visible={filterVisible}

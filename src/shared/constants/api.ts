@@ -72,6 +72,12 @@ export const API_ENDPOINTS = {
   // photosList[]'i kanonik `moderation` bloğunu zaten taşıyor, ikinci istek
   // gereksizdi (2026-08-24 sözleşmesi §1.1).
   UPDATE_PREFERENCES: "/api/profile/update-preferences",
+  // Bir modun (Dating/Friends) profilini AÇMA — niyet + prompt'lar tek atomik
+  // istekte gidiyor ve sunucu `*ProfileOpenedAt`i damgalıyor. Yarım açılmış
+  // profil diye bir durum YOK: niyet yazılıp prompt yazılmazsa kullanıcı o
+  // modun destesinde görünür ama kartı boş olurdu.
+  OPEN_PROFILE_MODE: (mode: string) =>
+    `/api/profile/modes/${encodeURIComponent(mode.toLowerCase())}/open`,
   // App-open heartbeat: şehir/ilçe artık kullanıcı seçimi değil, backend'in bu
   // koordinattan türettiği sonuç. UpdateProfile'da konum alanları kaldırıldı.
   UPDATE_LOCATION: "/api/profile/location",

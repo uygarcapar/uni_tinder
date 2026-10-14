@@ -157,6 +157,34 @@ class ProfileService {
     const response = await api.patch(API_ENDPOINTS.UPDATE_PREFERENCES, preferences);
     return (response as any).result;
   }
+
+  /**
+   * Bir modun profilini aç (Dating/Friends) — niyet + prompt'lar.
+   *
+   * Niyet alanı MODA GÖRE ayrışıyor ve asla ikisi birden gitmiyor: Flört tek
+   * seçimli `relationshipIntent`, Arkadaş çoklu seçimli `friendshipIntents`
+   * (sunucuda bitmask). Yanlış modun alanını göndermek sunucuda reddedilir.
+   *
+   * ⚠️ Profil cache'i bust ediliyor: `modes` haritası ve yeni prompt'lar
+   * `getMyProfile`ın TTL'li kopyasında bayat kalırdı ve seçici satırı
+   * "kapalı" göstermeye devam ederdi.
+   */
+  async openProfileMode(
+    mode: string,
+    payload: { intents: string[]; prompts: { promptKey: string; answer: string }[] },
+  ) {
+    const body: Record<string, any> =
+      mode === "Friends"
+        ? { friendshipIntents: payload.intents }
+        : { relationshipIntent: payload.intents[0] ?? null };
+    body.prompts = payload.prompts.map((p) => ({
+      promptKey: p.promptKey,
+      answer: p.answer,
+    }));
+    const response = await api.post(API_ENDPOINTS.OPEN_PROFILE_MODE(mode), body);
+    this.bustProfileCache();
+    return (response as any).result;
+  }
 }
 
 export default new ProfileService();
