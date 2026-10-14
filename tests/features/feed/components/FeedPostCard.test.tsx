@@ -44,26 +44,53 @@ const post = (over: Partial<FeedPostDto> = {}): FeedPostDto =>
 const withReply = (state: FeedReplyState, conversationId: string | null = null) =>
   post({ reply: { state, conversationId } });
 
+/**
+ * İsim ve tarih ZORUNLU küçük harf (istek) — ama `textTransform` ile DEĞİL,
+ * `toDisplayLowercase` ile. Fark görünür: RN'in iOS `textTransform`u locale'den
+ * bağımsız `lowercaseString` olduğu için "İ"yi "i" + birleşen nokta yapıyor,
+ * yani Türkçe adlarda iki noktalı bir i çiziyor (bkz. utils/textCase.ts).
+ * Aşağıdaki "İrem" testi tam olarak o yolu kilitliyor.
+ */
 describe('normal gönderi', () => {
-  it('yazar adı, yaşı ve üniversitesi çizilir', () => {
+  it('yazar adı ve yaşı KÜÇÜK HARF çizilir', () => {
     render(<FeedPostCard post={post()} />);
-    expect(screen.getByText('Esra, 21')).toBeTruthy();
-    expect(screen.getByText('İTÜ')).toBeTruthy();
+    expect(screen.getByText('esra, 21')).toBeTruthy();
+    expect(screen.queryByText('Esra, 21')).toBeNull();
+  });
+
+  // ⚠️ Türkçe "İ" → "i", BİRLEŞEN NOKTA YOK. Beklenen dize bilerek kaçışlı
+  // yazıldı: "i̇rem" ile "irem" ekranda ayırt edilemiyor ama farklı
+  // dizeler, düz yazımda gözden kaçar.
+  it('Türkçe "İ" tek noktalı "i"ye iner (birleşen nokta BIRAKMAZ)', () => {
+    render(
+      <FeedPostCard post={post({ author: { ...post().author!, name: 'İrem' } })} />,
+    );
+    expect(screen.getByText('irem, 21')).toBeTruthy();
+    expect(screen.queryByText('i̇rem, 21')).toBeNull();
+  });
+
+  // Türkçede noktasız "I" → "ı". Katlama YOK: `foldForSearch` "ı"yı "i"ye
+  // indiriyor ama o ARAMA içindir — adı "irmak" yazmak kullanıcının adını
+  // yanlış yazmak olur.
+  it('noktasız "I" → "ı" (arama katlaması uygulanmaz)', () => {
+    render(
+      <FeedPostCard post={post({ author: { ...post().author!, name: 'Irmak' } })} />,
+    );
+    expect(screen.getByText('ırmak, 21')).toBeTruthy();
   });
 
   it('yaş gizliyse (null) yalnız isim çizilir', () => {
     render(
       <FeedPostCard post={post({ author: { ...post().author!, age: null } })} />,
     );
-    expect(screen.getByText('Esra')).toBeTruthy();
+    expect(screen.getByText('esra')).toBeTruthy();
   });
 
-  it('üniversite gizliyse (null) satır hiç çizilmez', () => {
-    render(
-      <FeedPostCard
-        post={post({ author: { ...post().author!, universityDisplay: null } })}
-      />,
-    );
+  // Üniversite satırı kartta KALDIRILDI (istek): başlık tek satıra indi ki
+  // tarih ve menü isim/yaşla aynı hizaya oturabilsin. DTO alanı duruyor ve
+  // profil önizlemesi onu hâlâ gösteriyor — burada çizilmemesi doğru olan.
+  it('üniversite DTO dolu olsa bile kartta çizilmez', () => {
+    render(<FeedPostCard post={post()} />);
     expect(screen.queryByText('İTÜ')).toBeNull();
   });
 
@@ -92,14 +119,17 @@ describe('anonim gönderi — kimlik sızdırmama', () => {
         })}
       />,
     );
-    expect(screen.getByText(tr.feed.anonymous.Women)).toBeTruthy();
-    expect(screen.queryByText('Esra, 21')).toBeNull();
+    // Anonim etiketi de küçük harf: isimle AYNI slot, aynı listede yan yana.
+    expect(screen.getByText('anonim · kadın')).toBeTruthy();
+    expect(screen.queryByText(tr.feed.anonymous.Women)).toBeNull();
+    expect(screen.queryByText('esra, 21')).toBeNull();
     expect(screen.queryByText('İTÜ')).toBeNull();
+    expect(screen.queryByText('itü')).toBeNull();
   });
 
   it('authorCategory null ise sade "Anonim"', () => {
     render(<FeedPostCard post={post({ isAnonymous: true, authorCategory: null })} />);
-    expect(screen.getByText(tr.feed.anonymous.plain)).toBeTruthy();
+    expect(screen.getByText('anonim')).toBeTruthy();
   });
 
   it('yazara dokunma profil AÇMAZ (anonimde açılacak profil yok)', () => {
@@ -110,8 +140,104 @@ describe('anonim gönderi — kimlik sızdırmama', () => {
         onPressAuthor={onPressAuthor}
       />,
     );
-    fireEvent.press(screen.getByText(tr.feed.anonymous.Men));
+    fireEvent.press(screen.getByText('anonim · erkek'));
     expect(onPressAuthor).not.toHaveBeenCalled();
+  });
+
+  // ⚠️ YEDEĞİN EN KRİTİK SINIRI. Sunucu kendi gönderimin avatarını boş
+  // bırakıyor ve kart onu kendi fotoğrafımla dolduruyor (aşağıdaki describe).
+  // Gönderi ANONİM iken aynı yedek uygulanırsa kullanıcı kendi anonim
+  // gönderisini fotoğrafıyla görür — ekran görüntüsüyle paylaşıldığında gerçek
+  // bir sızıntı. `isAnonymous` bu yüzden `isMine`den ÖNCE bakılıyor.
+  it('anonim + kendi gönderimde `ownPhotoUrl` yedeği UYGULANMAZ', () => {
+    render(
+      <FeedPostCard
+        post={post({ isAnonymous: true, isMine: true, author: null })}
+        ownPhotoUrl="https://cdn/ben.jpg"
+      />,
+    );
+    expect(avatarUris()).toEqual([]);
+  });
+});
+
+/**
+ * Çizilen avatarın URI'si.
+ *
+ * Tipe göre değil `testID`ye göre soruluyor: kart bir dönem aynı URI'yi taşıyan
+ * İKİ `Image` çiziyordu (avatar + baloncuğun bulanık zemini) ve o deneme geri
+ * alınsa da "hangi katman" sorusu doğru soru. Boş dizi = yer tutucu dalı
+ * çizildi (`View` + SFIcon, hiç `Image` doğmuyor).
+ */
+const avatarUris = () =>
+  screen
+    .queryAllByTestId('feed-post-avatar')
+    .map((n) => (n.props as any)?.source?.uri)
+    .filter(Boolean);
+
+/**
+ * Kendi gönderimin avatarı — sunucu `author.mainPhotoUrl`u null bıraktığında
+ * kendi fotoğrafımla doluyor (bkz. feedQueries > useOwnFeedAvatar).
+ */
+describe('kendi gönderimin avatarı', () => {
+  it('sunucu fotoğrafı boşsa kendi fotoğrafım çizilir', () => {
+    render(
+      <FeedPostCard
+        post={post({ isMine: true, author: { ...post().author!, mainPhotoUrl: null } })}
+        ownPhotoUrl="https://cdn/ben.jpg"
+      />,
+    );
+    expect(avatarUris()).toEqual(['https://cdn/ben.jpg']);
+  });
+
+  // Sunucu alanı doldurmaya başlarsa yedek kendiliğinden ölü kalmalı.
+  it('sunucu fotoğrafı DOLUYSA yedek kazanmaz', () => {
+    render(
+      <FeedPostCard
+        post={post({
+          isMine: true,
+          author: { ...post().author!, mainPhotoUrl: 'https://cdn/sunucu.jpg' },
+        })}
+        ownPhotoUrl="https://cdn/ben.jpg"
+      />,
+    );
+    expect(avatarUris()).toEqual(['https://cdn/sunucu.jpg']);
+  });
+
+  // Başkasının fotoğrafını TAHMİN ETMİYORUZ — yedek yalnız kendi gönderimde.
+  it('başkasının gönderisinde yedek uygulanmaz (yer tutucu kalır)', () => {
+    render(
+      <FeedPostCard
+        post={post({ isMine: false, author: { ...post().author!, mainPhotoUrl: null } })}
+        ownPhotoUrl="https://cdn/ben.jpg"
+      />,
+    );
+    expect(avatarUris()).toEqual([]);
+  });
+
+  it('yedek de yoksa yer tutucu çizilir', () => {
+    render(<FeedPostCard post={post({ isMine: true })} ownPhotoUrl={null} />);
+    expect(avatarUris()).toEqual([]);
+  });
+});
+
+/**
+ * ⚠️ ANONİM gönderide fotoğraf çizilmemesi, avatar dalının bu dosyadaki ikinci
+ * kimlik testi. Bir dönem baloncuğun zemini de aynı değerden besleniyordu ve o
+ * katman geri alındı (bkz. FeedPostCard > zemin notu); tekrar eklenirse
+ * anonimlik kapısı YİNE tek olmalı ve burası o kapıyı kilitleyen yer.
+ */
+describe('anonim gönderide fotoğraf', () => {
+  it('bayat bir nesne fotoğraf taşısa bile çizilmez', () => {
+    render(
+      <FeedPostCard
+        post={post({
+          isAnonymous: true,
+          authorCategory: 'Women',
+          author: { ...post().author!, mainPhotoUrl: 'https://cdn/esra.jpg' },
+        })}
+      />,
+    );
+    expect(avatarUris()).toEqual([]);
   });
 });
 
@@ -206,7 +332,9 @@ describe('Gönderilerim varyantı', () => {
         post={post({ status: 'PendingReview', replyCount: 3 })}
         variant="mine"
         statusLabel={tr.feed.mine.status.PendingReview}
-        statusTone="warning"
+        // İnceleme tonu artık NÖTR (bkz. FeedScreen > statusToneFor): turuncu
+        // bir "İnceleniyor" uyarı gibi okunuyordu.
+        statusTone="neutral"
       />,
     );
     expect(screen.getByText(tr.feed.mine.status.PendingReview)).toBeTruthy();

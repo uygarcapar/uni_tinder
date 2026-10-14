@@ -598,16 +598,12 @@ const en = {
     referral: {
       title: 'Did someone invite you?',
       subtitle: 'Enter your invite code if you have one. You can skip this step.',
-      // OtpInput fills the boxes character by character, so the sample code
-      // doubles as a format hint (5 characters, uppercase).
-      placeholder: 'AK7M2',
       checking: 'Checking your code...',
       // Sonuç toast'ta: title + message (bkz. RegisterReferralScreen).
       validTitle: 'Invite code accepted',
       valid: 'You get 1 free note once you finish signing up.',
       invalidTitle: 'Code not found',
       invalid: 'We could not find this code — it may be a typo.',
-      paste: 'Paste',
       skip: 'Skip',
       continue: 'Continue',
     },
@@ -1036,12 +1032,8 @@ const en = {
       fireReleaseHint: 'release to send a fire',
       fireExhaustedTitle: 'You are out of Fires',
       fireExhaustedMessage: 'Free membership includes a single Fire and it does not renew on its own.',
-      // Sent confirmation — same shape as the note one (note.sentTitle/sentMessage).
-      // The nameless variant is required: a card's displayName can come back
-      // empty, which produced a sentence starting with a blank.
-      fireSentTitle: 'Fire sent',
-      fireSentMessage: '{{name}} will see you highlighted in their likes.',
-      fireSentMessageNoName: 'They will see you highlighted in their likes.',
+      // No sent-confirmation copy here on purpose: sending a Fire is confirmed
+      // by the flame sweep alone (see DiscoverScreen.handleSwipe).
       // Daily like quota: running-low warning (thresholds live in
       // DiscoverScreen) and exhaustion. The cap is never spelled out — it comes
       // from server config and changes without a FE release; the copy only
@@ -1328,13 +1320,11 @@ const en = {
     },
     cityPicker: {
       title: 'Select City',
-      search: 'Search city',
     },
     universityPicker: {
       preferredTitle: 'Select University',
       visibleOnlyTitle: 'Who Can See Me',
       hiddenFromTitle: 'Who Cannot See Me',
-      search: 'Search university',
       limitMsg: 'You can pick up to {{max}} universities.',
     },
     // Failure path for the empty-deck "Remove distance limit" button. The
@@ -2143,7 +2133,9 @@ const en = {
       distanceNear: 'Less than 1 km',
       reportAccount: 'Report this account',
       blockAccount: 'Block this account',
-      activeToday: 'Active today',
+      // NOT "Active today": the field (isOnlineToday) is a rolling 24-hour
+      // window, not a calendar day — see the Turkish file for the full note.
+      activeToday: 'Active within 24 hours',
       // VoiceOver name for the glass up-arrow at the left end of Discover's
       // sticky bar — the button carries no text, only a glyph.
       scrollTop: 'Back to top',
@@ -2154,7 +2146,6 @@ const en = {
     },
     languages: {
       title: 'Select Language',
-      search: 'Search language',
       notFound: "'{{search}}' not found",
     },
   },
@@ -2312,6 +2303,19 @@ const en = {
   // blocked, all three server-side. UT-7306 shows the server `message` verbatim.
   feed: {
     tabTitle: 'Feed',
+
+    // Large title block — same pattern as Messages: title, Plus pill on its
+    // right, one-line description underneath.
+    // Keep the descriptions SHORT: the line is `numberOfLines={1}`.
+    header: {
+      descFeed: 'Posts shared around your campus.',
+      descMine: 'Your posts and where they stand.',
+      descReplies: 'Replies people sent to your posts.',
+      // Pill to the right of the title — opens Plus, drawn for free users only.
+      // Deliberately not "unlimited": Plus raises the daily allowance rather
+      // than removing the cap (see feed.quota.plusOffer).
+      plusAction: 'Post more',
+    },
     tabFeed: 'Feed',
     tabMine: 'My posts',
     tabReplies: 'Replies',
@@ -2340,9 +2344,14 @@ const en = {
 
     filter: {
       title: 'Filter',
+      // One line under each title — the counterpart of the `*Desc` rows in
+      // profile editing. Kept short: three sections stack up.
       sort: 'Sort',
+      sortDesc: 'The order posts appear in your feed.',
       interest: 'Interests',
+      interestDesc: 'Everyone’s posts, or only the ones close to your interests.',
       kind: 'Post type',
+      kindDesc: 'See anonymous and regular posts together or apart.',
       reset: 'Reset',
     },
     university: {
@@ -2357,19 +2366,30 @@ const en = {
       anonymousHint: 'Your name and photo stay hidden; only your gender shows.',
       anonymousLocked: 'Anonymous posting is a Lit Plus feature.',
       anonymousRestricted: 'You cannot post anonymously for a while.',
-      universityHint: 'This post will appear in the {{university}} feed.',
+      // `universityHint` ("This post will appear in the … feed.") was removed:
+      // the same information now lives on the send button.
+      // Balance badge, top-left — same shape as `reply.remaining`.
+      remaining: '{{count}} posts left',
+      sendIn: 'Post in {{university}}',
+      /** Fallback when the campus name has not resolved yet. */
       send: 'Post',
       sent: 'Your post is live',
       pending: 'Your post is being reviewed',
     },
 
     reply: {
-      button: 'Reply',
+      button: 'Reply to match',
       replied: 'Replied',
       restricted: 'Restricted',
       goToChat: 'Go to chat',
       title: 'Write a reply',
       placeholder: 'Write a short reply',
+      // Label on the composer's quote chip. Do NOT reuse
+      // `received.onYourPost` — that one is written from the post owner's
+      // point of view; here it is the person writing the reply.
+      quoteLabel: "You're replying to this post",
+      quoteLabelAnonymous: "You're replying to this anonymous post",
+      send: 'Send reply',
       sent: 'Your reply was sent',
       pending: 'Your reply is being reviewed',
       remaining: '{{count}} replies left',

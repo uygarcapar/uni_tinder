@@ -15,10 +15,9 @@ import { useController, useForm, useFormState, type Control } from "react-hook-f
 import { zodResolver } from "@hookform/resolvers/zod";
 import AppModal from "@/shared/components/AppModal";
 import { useKeyboardAwareField } from "@/shared/hooks/useKeyboardAwareField";
-import SFIcon from "@/shared/components/SFIcon";
-import { Lock } from "@/shared/icons";
 import { colors } from "@/shared/theme/colors";
 import { feedPostSchema } from "@/shared/schemas/formSchemas";
+import FeedQuotaBadge from "./FeedQuotaBadge";
 import {
   FEED_COUNTER_WARN_REMAINING,
   clampFeedText,
@@ -76,6 +75,17 @@ export interface FeedComposerSheetProps {
   maxLength?: number | null;
   anonymousGate: AnonymousGate;
   onAnonymousPaywall: () => void;
+  /** Kalan gönderi hakkı. `null` = backend henüz söylemedi → sayı çizilmez. */
+  remaining?: number | null;
+  /**
+   * Gönderi hakkı bitti → sheet AÇILIYOR ama gönderilemiyor (istek: kota
+   * sheet'i yerine "aynı modal, hak 0, butona basılmıyor").
+   *
+   * ⚠️ `remaining <= 0` İLE AYNI ŞEY DEĞİL, o yüzden ayrı prop: `remaining`
+   * `null` olabiliyor ("backend henüz söylemedi") ve bu "hak yok" demek değil.
+   * Kota kuralının sahibi `feedPolicy.composeGate`; burada yeniden hesaplama.
+   */
+  quotaExhausted?: boolean;
   /** Kullanıcının kendi üniversite adı — "şu akışta görünecek" satırı için. */
   universityLabel?: string | null;
   sending?: boolean;
@@ -90,6 +100,8 @@ export default function FeedComposerSheet({
   maxLength,
   anonymousGate,
   onAnonymousPaywall,
+  remaining = null,
+  quotaExhausted = false,
   universityLabel,
   sending = false,
   errorText = null,
@@ -120,6 +132,9 @@ export default function FeedComposerSheet({
 
   const submit = handleSubmit(({ body }) => {
     if (sending) return;
+    // İKİNCİ KAPI, butonun `disabled`ına ek: form gönderimi klavyedeki
+    // "gönder"den de tetiklenebiliyor ve orası butonun pasifliğini görmüyor.
+    if (quotaExhausted) return;
     onSend(body.trim(), isAnonymous);
   });
 
@@ -130,19 +145,35 @@ export default function FeedComposerSheet({
   if (visible && universityLabel) lastUniversity.current = universityLabel;
   const shownUniversity = universityLabel ?? lastUniversity.current;
 
-  const anonLocked =
-    anonymousGate.kind === "paywall" || anonymousGate.kind === "restricted";
+  /**
+   * Paywall dalında anahtara dokunma → SHEET KAPANIR, sonra Plus açılır.
+   *
+   * Önce yalnız `onAnonymousPaywall()` çağrılıyordu ve composer altta açık
+   * kalıyordu: Plus sayfası onun ÜSTÜNE biniyor, kullanıcı Plus'ı kapattığında
+   * yarım yazılmış bir gönderiyle baş başa kalıyordu.
+   *
+   * ⚠️ SIRA ÖNEMLİ — `onClose()` ÖNCE: Plus girişi kendi modalını açıyor ve
+   * açılırken altta kapanan bir sheet varsa gorhom iki modalı üst üste bindirip
+   * backdrop'u takıyor. Kapanmayı başlatıp Plus'ı hemen ardından çağırmak,
+   * sheet'in iniş animasyonuyla Plus'ın çıkışını aynı kareye koyuyor.
+   */
+  const openAnonymousPaywall = useCallback(() => {
+    onClose();
+    onAnonymousPaywall();
+  }, [onClose, onAnonymousPaywall]);
 
   const handleAnonymousToggle = useCallback(
     (next: boolean) => {
       if (anonymousGate.kind === "paywall") {
-        onAnonymousPaywall();
+        openAnonymousPaywall();
         return;
       }
+      // "restricted" / "unknown": sessizce yoksay. Kısıt geçici bir ceza,
+      // satılabilir bir şey değil — paywall açmak yanlış kapıyı gösterirdi.
       if (anonymousGate.kind !== "allowed") return;
       setIsAnonymous(next);
     },
-    [anonymousGate, onAnonymousPaywall],
+    [anonymousGate, openAnonymousPaywall],
   );
 
   return (
@@ -158,6 +189,18 @@ export default function FeedComposerSheet({
       closeButton={false}
       contentContainerStyle={{ paddingTop: 20, paddingBottom: 28 }}
     >
+      {/* Bakiye rozeti yanıt composer'ıyla ORTAK bileşen (bkz. FeedQuotaBadge):
+          iki sheet'te aynı yerde, aynı ölçüde durması gerekiyor.
+          ⚠️ Anchor'ın DIŞINDA: anchor yalnız klavyenin üstünde kalması gereken
+          şeyi (input + gönder butonu) sarıyor, rozet onun konusu değil. */}
+      <FeedQuotaBadge
+        label={
+          typeof remaining === "number"
+            ? t("feed.composer.remaining", { count: remaining })
+            : null
+        }
+      />
+
       <View ref={anchorRef as any} collapsable={false}>
         <PostField
           control={control}
@@ -192,26 +235,19 @@ export default function FeedComposerSheet({
           }}
         >
           <View style={{ flex: 1 }}>
-            <View style={{ flexDirection: "row", alignItems: "center" }}>
-              <Text style={{ fontSize: 15.5, fontWeight: "600", color: colors.text }}>
-                {t("feed.composer.anonymousLabel")}
-              </Text>
-              {/* Kilit YALNIZ paywall/restricted dalında. "unknown" (/me henüz
-                  gelmedi) iken kilit çizmek olmayan bir kısıt uydururdu. */}
-              {anonLocked ? (
-                <View style={{ marginLeft: 6 }}>
-                  <SFIcon
-                    name="lock.fill"
-                    fallback={Lock}
-                    size={12}
-                    color={colors.textMuted}
-                    strokeWidth={2}
-                  />
-                </View>
-              ) : null}
-            </View>
+            {/* KİLİT İKONU KALDIRILDI (istek). Kapıyı artık iki şey söylüyor:
+                altındaki açıklama satırı ("Anonim paylaşmak Lit Plus özelliği")
+                ve anahtarın soluk/tepkisiz hâli. Üçüncü bir işaret satırı
+                kalabalıklaştırıyordu. */}
+            <Text style={{ fontSize: 15.5, fontWeight: "600", color: colors.text }}>
+              {t("feed.composer.anonymousLabel")}
+            </Text>
+            {/* Açıklama grisi `textSecondary` DEĞİL `textMuted`: hemen altındaki
+                "bu gönderi X akışında görünecek" satırı da aynı gride ve ikisi
+                aynı işi yapıyor (başlığın altındaki açıklama). İki ayrı gri üst
+                üste gelince blok üç katmanlı bir metin yığınına dönüyordu. */}
             <Text
-              style={{ fontSize: 12.5, color: colors.textSecondary, marginTop: 2 }}
+              style={{ fontSize: 12.5, color: colors.textMuted, marginTop: 2 }}
             >
               {anonymousGate.kind === "paywall"
                 ? t("feed.composer.anonymousLocked")
@@ -225,7 +261,7 @@ export default function FeedComposerSheet({
               Switch'in kendisi tepkisiz (yanlışlıkla açılıp UT-7305 yenmesin),
               dokunuş paywall'a gidiyor (PremiumGate deseni). */}
           {anonymousGate.kind === "paywall" ? (
-            <TouchableOpacity activeOpacity={0.7} onPress={onAnonymousPaywall}>
+            <TouchableOpacity activeOpacity={0.7} onPress={openAnonymousPaywall}>
               <View style={{ opacity: 0.4 }} pointerEvents="none">
                 <Switch value={false} />
               </View>
@@ -239,17 +275,17 @@ export default function FeedComposerSheet({
           )}
         </View>
 
-        {/* Normal modda hangi akışta görüneceği — anonim modda anlamsız
-            (kampüs yine aynı ama satır "kimliğin görünür" izlenimi veriyordu). */}
-        {!isAnonymous && shownUniversity ? (
-          <Text
-            style={{ fontSize: 12.5, color: colors.textMuted, marginTop: 14 }}
-          >
-            {t("feed.composer.universityHint", { university: shownUniversity })}
-          </Text>
-        ) : null}
+        {/* "Bu gönderi X akışında görünecek" SATIRI KALDIRILDI (istek): aynı
+            bilgi artık gönder butonunun KENDİSİNDE duruyor ("X akışında
+            paylaş"), iki yerde yazmak gereksizdi. */}
 
-        <SendButton control={control} sending={sending} onPress={submit} />
+        <SendButton
+          control={control}
+          sending={sending}
+          locked={quotaExhausted}
+          onPress={submit}
+          university={shownUniversity ?? null}
+        />
       </View>
     </AppModal>
   );
@@ -303,9 +339,18 @@ function PostField({
 
   const used = feedTextLength(field.value ?? "");
   const remaining = limit - used;
-  // Sayaç BAŞTAN değil, sona yaklaşınca görünür: 400 karakterlik bir alanda
+  // Sayaç BAŞTAN değil, SONA YAKLAŞINCA görünür: 400 karakterlik bir alanda
   // "3/400" sürekli durursa gereksiz baskı yaratıyor.
-  const showCounter = remaining <= FEED_COUNTER_WARN_REMAINING || used > 0;
+  //
+  // ⚠️ Koşuldaki `|| used > 0` KALDIRILDI: yorumun söylediğinin tersini
+  // yapıyordu — ilk harfte sayaç açılıyor ve yazı boyunca orada kalıyordu.
+  // Artık yalnız son FEED_COUNTER_WARN_REMAINING karakterde çıkıyor.
+  //
+  // Tümden kaldırılmadı ve bu kasıtlı: kırpma SESSİZ (clampFeedText tavana
+  // varınca yeni harfleri hiç kabul etmiyor). Hiç sayaç olmasa kullanıcı
+  // klavyeye basıp hiçbir şey olmadığını görürdü — sınıra yaklaşırken bir
+  // uyarı şart.
+  const showCounter = remaining <= FEED_COUNTER_WARN_REMAINING;
 
   return (
     // Aynalar ve input AYNI sarmalayıcıda, sarmalayıcının padding'i YOK —
@@ -373,20 +418,43 @@ function PostField({
 function SendButton({
   control,
   sending,
+  locked,
   onPress,
+  university,
 }: {
   control: Control<FeedPostForm>;
   sending: boolean;
+  /**
+   * Hak bitti → buton SADECE basılamaz (istek). Paywall AÇILMIYOR, kota sheet'i
+   * de açılmıyor: gönderi hakkı satın alınabilen bir şey değil (consumable yok,
+   * Plus yalnız günlük tavanı yükseltiyor), dolayısıyla dokunuşa bir yer
+   * göstermek olmayan bir satın almayı ima ederdi. Kullanıcıya durumu söyleyen
+   * şey rozetteki "0 hakkın kaldı".
+   *
+   * ⚠️ Sohbet composer'ının kuralıyla KARIŞTIRMA: orada kilitli composer'da
+   * gönder butonu paywall'a çıkıyor, çünkü orada satılacak bir şey var.
+   */
+  locked: boolean;
   onPress: () => void;
+  /** Kullanıcının kampüs ADI; `null` ise buton sade "Paylaş" yazıyor. */
+  university: string | null;
 }) {
   const { t } = useTranslation();
   const { isValid } = useFormState({ control });
-  const disabled = !isValid || sending;
+  const disabled = !isValid || sending || locked;
+  // Kampüs adı henüz çözülmediyse (liste gelmedi ya da /me yok) sade etiket —
+  // "undefined akışında paylaş" yazmaktansa susmak.
+  const label = university
+    ? t("feed.composer.sendIn", { university })
+    : t("feed.composer.send");
 
   return (
     <Pressable
       onPress={onPress}
       disabled={disabled}
+      // ⚠️ Dikey pay (14), üst marj (20) ve aşağıdaki punto (15.5) yanıt
+      // composer'ının gönder butonuyla EŞLENİK — iki sheet'in butonu aynı boyda
+      // olmalı (bkz. FeedReplyComposerSheet > SendButton).
       style={{
         marginTop: 20,
         paddingVertical: 14,
@@ -401,14 +469,17 @@ function SendButton({
       {/* Etiket yerinde kalıyor (opacity 0) ve spinner üstüne biniyor —
           genişlik zıplamasın (EmptyState'in buttonBusy deseni). */}
       <Text
+        // Uzun kampüs adı butonu iki satıra bölmesin — kırpılacak olan ad.
+        numberOfLines={1}
         style={{
           fontSize: 15.5,
           fontWeight: "600",
           color: colors.onInverseSurface,
           opacity: sending ? 0 : 1,
+          paddingHorizontal: 16,
         }}
       >
-        {t("feed.composer.send")}
+        {label}
       </Text>
       {sending ? (
         <View style={StyleSheet.absoluteFill as any}>

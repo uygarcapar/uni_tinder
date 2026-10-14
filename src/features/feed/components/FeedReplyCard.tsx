@@ -1,21 +1,38 @@
-import { memo, useCallback } from "react";
-import { Image, Pressable, Text, View } from "react-native";
+import { memo, useCallback, useMemo } from "react";
 import { useTranslation } from "react-i18next";
-import { MoreHorizontal, User } from "@/shared/icons";
-import SFIcon from "@/shared/components/SFIcon";
-import { colors } from "@/shared/theme/colors";
+import { MemoLikeCard } from "@/features/discover/components/LikeCard";
 import formatRelativeTime from "@/shared/utils/formatRelativeTime";
 import type { FeedReceivedReplyDto } from "../feedTypes";
 
 /**
  * Gelen yanıt kartı — "gönderine şu kişi şunu yazdı, kabul mü?".
  *
+ * TASARIM BU DOSYAYA AİT DEĞİL: kart, Beğeniler'deki NOT KARTININ ta kendisi
+ * (bkz. discover/components/LikeCard). Burada yapılan tek şey yanıtı o kartın
+ * beklediği şekle çevirmek — fotoğraf kartı, kimlik bloğu, cam not kutusu,
+ * açılma animasyonu, perdeler, hepsi oradan geliyor.
+ *
+ * NEDEN AYNI KART: ürün açısından ikisi tek cümle — "biri sana bir şey YAZDI".
+ * Not Beğeniler'de, yanıt Akış'ta doğuyor ama kullanıcı ikisini de aynı listede
+ * (Beğeniler'in akış yanıtları sekmesi) yan yana görüyor; iki ayrı görsel dil
+ * orada iki ayrı ürün gibi okunuyordu.
+ *
+ * EŞLEME:
+ *   • yanıtlayanın fotoğrafı → kartın fotoğrafı
+ *   • isim, yaş, üniversite  → kartın kimlik bloğu
+ *   • yorum                  → notun metni
+ *   • gönderi alıntısı       → not kutusunun hedef bloğu ("FeedPost" hedefi)
+ *   • Kabul / Geç / ⋯        → kartın köşe butonları
+ *
  * ⚠️ Yanıt VEREN her zaman görünür, anonimlik burada YOK: anonim olan gönderi
  * SAHİBİ (yani bu kartı gören kişi), yanıtlayan değil. `postIsAnonymous` sadece
- * alıntı satırının metnini değiştiriyor ("Anonim gönderine").
+ * hedef satırının metnini değiştiriyor ("Anonim gönderine yanıt").
  *
  * ⚠️ Beğeniler ekranındaki blur/unlock kuralı (isUnlockedLike) BURAYA
- * UYGULANMIYOR: akış yanıtları free kullanıcıya da açık.
+ * UYGULANMIYOR: akış yanıtları free kullanıcıya da açık. Kart `isPremium`
+ * ALMASA bile net çiziliyor, çünkü `isUnlockedLike` notu olan kartı zaten
+ * açıyor — yanıtın kendisi bir not. Buraya premium bayrağı BAĞLAMA: bağlanırsa
+ * free kullanıcıda yanıt bulanıklaşır.
  */
 
 export interface FeedReplyCardProps {
@@ -24,10 +41,9 @@ export interface FeedReplyCardProps {
   onAccept?: (reply: FeedReceivedReplyDto) => void;
   onDismiss?: (reply: FeedReceivedReplyDto) => void;
   onMenu?: (reply: FeedReceivedReplyDto) => void;
+  /** İstek uçarken ikinci basışı yut — kart kendi başına bekleme hâli tutmuyor. */
   busy?: boolean;
 }
-
-const AVATAR = 44;
 
 function FeedReplyCardBase({
   reply,
@@ -39,183 +55,81 @@ function FeedReplyCardBase({
 }: FeedReplyCardProps) {
   const { t } = useTranslation();
 
+  /**
+   * Yanıt → kart nesnesi.
+   *
+   * `useMemo` ŞART: kart `memo`lu ve prop'ları sığ karşılaştırılıyor (bkz.
+   * MemoLikeCard'ın başındaki not). Her render'da yeni bir nesne üretilirse
+   * memo hiç tutmaz ve listedeki bütün kartlar yeniden çizilir — bu kartın
+   * içinde kare kare yükseklik süren bir not kutusu var.
+   *
+   * Hedef etiketi BURADA birleşiyor: akışın cümlesi + zaman damgası. Kart i18n
+   * kararı vermiyor (etiketleri prop'la alıyor) ve zamanı yazacak ayrı bir
+   * satırı da yok — Beğeniler'deki not kartında zaman hiç görünmüyor.
+   * "Gönderine yanıt · 42 dk önce" ikisini tek gri satırda veriyor.
+   */
+  const item = useMemo(
+    () => ({
+      userId: reply.replier?.userId,
+      name: reply.replier?.name,
+      age: reply.replier?.age,
+      mainPhoto: reply.replier?.mainPhotoUrl ?? null,
+      // Kartın alanı `universityName` ama beklediği şey GÖRÜNTÜLENECEK ad
+      // (gerekçe kartın içinde, `universityLabel`'ın yanında).
+      universityName: reply.replier?.universityDisplay ?? null,
+      // Rozetler ÇİZİLMİYOR: yanıt DTO'su premium/selfie bilgisi taşımıyor
+      // (bkz. FeedAuthorDto). `false` "bu kişi premium değil" demek değil,
+      // "bilmiyoruz" demek — uydurma bir rozet çizmekten iyisi.
+      isPremium: false,
+      isSelfieVerified: false,
+      isSuperLike: false,
+      note: {
+        comment: reply.comment,
+        target: {
+          kind: "FeedPost" as const,
+          label: `${
+            reply.postIsAnonymous
+              ? t("feed.received.onYourAnonymousPost")
+              : t("feed.received.onYourPost")
+          } · ${formatRelativeTime(reply.sentAt, t)}`,
+          excerpt: reply.postExcerpt,
+        },
+      },
+    }),
+    [reply, t],
+  );
+
+  // Kart `onX(item)` çağırıyor (kartı parametre alıyor), bu dosyanın dışa
+  // verdiği sözleşme ise YANITI veriyor — sarmalayıcılar o çeviriyi yapıyor.
+  // `busy` kapısı da burada: kartın kendi bekleme hâli yok.
   const handlePress = useCallback(() => onPress?.(reply), [onPress, reply]);
-  const handleAccept = useCallback(() => onAccept?.(reply), [onAccept, reply]);
-  const handleDismiss = useCallback(() => onDismiss?.(reply), [onDismiss, reply]);
+  const handleAccept = useCallback(() => {
+    if (busy) return;
+    onAccept?.(reply);
+  }, [busy, onAccept, reply]);
+  const handleDismiss = useCallback(() => {
+    if (busy) return;
+    onDismiss?.(reply);
+  }, [busy, onDismiss, reply]);
   const handleMenu = useCallback(() => onMenu?.(reply), [onMenu, reply]);
 
   return (
-    <View
-      style={{
-        backgroundColor: colors.surface,
-        borderRadius: 22,
-        borderCurve: "continuous",
-        paddingHorizontal: 16,
-        paddingTop: 14,
-        paddingBottom: 12,
-        marginBottom: 10,
-      }}
-    >
-      {/* ── Alıntı: hangi gönderine ── */}
-      <View style={{ flexDirection: "row", alignItems: "flex-start" }}>
-        <View style={{ flex: 1 }}>
-          <Text style={{ fontSize: 12, color: colors.textMuted }}>
-            {reply.postIsAnonymous
-              ? t("feed.received.onYourAnonymousPost")
-              : t("feed.received.onYourPost")}
-          </Text>
-          <Text
-            numberOfLines={2}
-            style={{
-              fontSize: 13.5,
-              color: colors.textSecondary,
-              marginTop: 3,
-              // Alıntı gövdeden ayrışsın: sol çizgi yerine italik + soluk renk
-              // (sol çizgi kartın yuvarlak köşesiyle çakışıyordu).
-              fontStyle: "italic",
-            }}
-          >
-            {reply.postExcerpt}
-          </Text>
-        </View>
-        {onMenu ? (
-          <Pressable onPress={handleMenu} hitSlop={10} style={{ marginLeft: 8 }}>
-            <SFIcon
-              name="ellipsis"
-              fallback={MoreHorizontal}
-              size={18}
-              color={colors.textMuted}
-              strokeWidth={2}
-            />
-          </Pressable>
-        ) : null}
-      </View>
-
-      <View
-        style={{
-          height: 1,
-          backgroundColor: colors.hairlineSoft,
-          marginVertical: 12,
-        }}
-      />
-
-      {/* ── Yanıt veren + yorum ── */}
-      <Pressable
-        onPress={handlePress}
-        disabled={!onPress}
-        style={{ flexDirection: "row", alignItems: "flex-start" }}
-      >
-        {reply.replier?.mainPhotoUrl ? (
-          <Image
-            source={{ uri: reply.replier.mainPhotoUrl }}
-            style={{
-              width: AVATAR,
-              height: AVATAR,
-              borderRadius: AVATAR / 2,
-              backgroundColor: colors.surface3,
-            }}
-          />
-        ) : (
-          <View
-            style={{
-              width: AVATAR,
-              height: AVATAR,
-              borderRadius: AVATAR / 2,
-              backgroundColor: colors.surface3,
-              alignItems: "center",
-              justifyContent: "center",
-            }}
-          >
-            <SFIcon
-              name="person.fill"
-              fallback={User}
-              size={20}
-              color={colors.textMuted}
-              strokeWidth={1.8}
-            />
-          </View>
-        )}
-
-        <View style={{ flex: 1, marginLeft: 12 }}>
-          <View style={{ flexDirection: "row", alignItems: "center" }}>
-            <Text
-              numberOfLines={1}
-              style={{ fontSize: 15, fontWeight: "600", color: colors.text, flex: 1 }}
-            >
-              {[reply.replier?.name, reply.replier?.age]
-                .filter((v) => v != null && v !== "")
-                .join(", ")}
-            </Text>
-            <Text style={{ fontSize: 12, color: colors.textMuted, marginLeft: 8 }}>
-              {formatRelativeTime(reply.sentAt, t)}
-            </Text>
-          </View>
-          {reply.replier?.universityDisplay ? (
-            <Text
-              numberOfLines={1}
-              style={{ fontSize: 12.5, color: colors.textSecondary, marginTop: 1 }}
-            >
-              {reply.replier.universityDisplay}
-            </Text>
-          ) : null}
-          <Text
-            style={{
-              fontSize: 15,
-              lineHeight: 20,
-              color: colors.text,
-              marginTop: 7,
-            }}
-          >
-            {reply.comment}
-          </Text>
-        </View>
-      </Pressable>
-
-      {/* ── Kabul / Geç ── */}
-      <View style={{ flexDirection: "row", marginTop: 14 }}>
-        <Pressable
-          onPress={handleDismiss}
-          disabled={busy || !onDismiss}
-          style={{
-            flex: 1,
-            paddingVertical: 11,
-            borderRadius: 999,
-            borderCurve: "continuous",
-            backgroundColor: colors.surface3,
-            alignItems: "center",
-            opacity: busy ? 0.5 : 1,
-          }}
-        >
-          <Text style={{ fontSize: 14.5, fontWeight: "600", color: colors.text }}>
-            {t("feed.received.skip")}
-          </Text>
-        </Pressable>
-        <View style={{ width: 10 }} />
-        <Pressable
-          onPress={handleAccept}
-          disabled={busy || !onAccept}
-          style={{
-            flex: 1,
-            paddingVertical: 11,
-            borderRadius: 999,
-            borderCurve: "continuous",
-            backgroundColor: colors.inverseSurface,
-            alignItems: "center",
-            opacity: busy ? 0.5 : 1,
-          }}
-        >
-          <Text
-            style={{
-              fontSize: 14.5,
-              fontWeight: "600",
-              color: colors.onInverseSurface,
-            }}
-          >
-            {t("feed.received.accept")}
-          </Text>
-        </Pressable>
-      </View>
-    </View>
+    <MemoLikeCard
+      item={item}
+      // Bilerek `false` — gerekçe dosyanın başındaki uyarıda.
+      isPremium={false}
+      onPress={onPress ? handlePress : undefined}
+      // Köşedeki prominent tik: Beğeniler'de "beğen", burada "kabul et".
+      onLike={onAccept ? handleAccept : undefined}
+      likeLabel={t("feed.received.accept")}
+      // Sade cam X — yalnız bu kartta çiziliyor (bkz. LikeCard > onSkip).
+      onSkip={onDismiss ? handleDismiss : undefined}
+      skipLabel={t("feed.received.skip")}
+      onMenu={onMenu ? handleMenu : undefined}
+      // Buton metin taşımıyor, bu yalnız VoiceOver etiketi — akışa özel bir
+      // çeviri anahtarı yok, ortak "Menü" doğru olanı.
+      menuLabel={t("common.menu")}
+    />
   );
 }
 

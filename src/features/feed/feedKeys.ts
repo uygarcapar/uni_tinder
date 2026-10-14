@@ -33,6 +33,14 @@ export const feedKeys = {
       p.kind,
     ] as const,
   mine: ["feed", "mine"] as const,
+  /**
+   * KENDİ ana fotoğrafım — sunucunun kendi gönderimde boş bıraktığı avatarı
+   * doldurmak için (bkz. feedQueries > useOwnFeedAvatar).
+   *
+   * `feed` kökünün altında ama akışın verisi DEĞİL; buraya konmasının tek
+   * sebebi akışın invalidate'leriyle birlikte düşmesi.
+   */
+  ownAvatar: ["feed", "ownAvatar"] as const,
   /** ⚠️ LikesScreen'in "Akış yanıtları" sekmesi de BU anahtarı kullanır — tek cache. */
   repliesReceived: ["feed", "replies", "received"] as const,
   repliesCount: ["feed", "replies", "count"] as const,

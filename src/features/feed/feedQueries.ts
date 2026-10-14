@@ -8,6 +8,12 @@ import {
 } from "@tanstack/react-query";
 import uiBus from "@/shared/services/uiBus";
 import { FEED_CODES } from "@/shared/constants/responseCodes";
+import profileService from "@/features/profile/profileService";
+// Ana fotoğraf sırası (isMainPhoto → ilk foto → profileImageUrl) ve sürüm
+// parametresi TEK kaynaktan: ProfileScreen header'ı ve sekme avatarı da bunu
+// kullanıyor, akış kendi sırasını üretirse aynı kullanıcı iki ekranda iki ayrı
+// fotoğrafla çizilebilir.
+import { resolveMainPhotoUri } from "@/shared/utils/photoUri";
 import { feedKeys } from "./feedKeys";
 import feedService from "./feedService";
 import { dedupeById } from "./feedPolicy";
@@ -242,6 +248,46 @@ export function useFeedReplierProfile(replyId: string | null) {
     enabled: feedEnabled() && !!replyId,
     staleTime: 5 * 60 * 1000,
   });
+}
+
+/**
+ * KENDİ ana fotoğrafım — kendi gönderimin avatarı için YEDEK.
+ *
+ * NEDEN VAR: sunucu kendi gönderimin `author` bloğunu ad ve yaşla dolduruyor
+ * ama `mainPhotoUrl`u null bırakıyor (en belirgin hâli: gönderiyi attıktan
+ * hemen sonra listeye eklenen satır). Kart boş fotoğrafı anonim yer tutucusuyla
+ * çiziyor, yani kullanıcı kendi gönderisini "ad + yaş var ama fotoğraf yok"
+ * diye, anonim atmış gibi görüyordu.
+ *
+ * ⚠️ YALNIZ KENDİ gönderim için meşru: başka birinin fotoğrafını tahmin
+ * edemeyiz, ama kendi fotoğrafımı BİLİYORUZ. Yedek `isMine && !isAnonymous`
+ * kapısından geçiyor (bkz. FeedPostCard > ownPhotoUrl) — anonim gönderide
+ * uygulanırsa kullanıcının kimliğini KENDİ ekranında ifşa eder, listeyi
+ * ekran görüntüsüyle paylaşan biri için de gerçek bir sızıntı olur.
+ *
+ * ⚠️ Sunucu bir gün alanı doldurursa bu yol KENDİLİĞİNDEN ölü kalır: kart
+ * önce `author.mainPhotoUrl`a bakıyor, yedek yalnız o boşken devreye giriyor.
+ *
+ * Tek sorgu, satır başına değil: ekran düzeyinde bir kez çağrılıp karta prop
+ * olarak iniyor. `getMyProfile` ayrıca kendi içinde TTL + in-flight dedupe'lu,
+ * yani uygulama açılışındaki turlarla aynı isteğe binme ihtimali yüksek.
+ */
+export function useOwnFeedAvatar(options?: { enabled?: boolean }) {
+  const query = useQuery({
+    queryKey: feedKeys.ownAvatar,
+    queryFn: async () => {
+      const profile = await profileService.getMyProfile();
+      // `?? null`: `undefined` react-query'de "veri yok" demek ve sorgu hata
+      // durumuna düşüyor. Fotoğrafı olmayan kullanıcı geçerli bir cevap.
+      return resolveMainPhotoUri(profile) ?? null;
+    },
+    enabled: feedEnabled(options?.enabled),
+    // Ana fotoğraf oturum içinde nadiren değişiyor; değiştiğinde ProfileScreen
+    // `profileDirty` yayınlıyor ve `getMyProfile` cache'i bust ediliyor, yani
+    // sonraki tur zaten tazeyi getirir.
+    staleTime: 10 * 60 * 1000,
+  });
+  return query.data ?? null;
 }
 
 // ─────────────────────────────────────────────────────────────────────────────

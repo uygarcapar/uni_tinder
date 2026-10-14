@@ -1,6 +1,19 @@
 import { memo } from "react";
-import { View } from "react-native";
+import { Text, View } from "react-native";
+import { useTranslation } from "react-i18next";
+import HeartGlyph from "@/shared/components/HeartGlyph";
 import { colors } from "@/shared/theme/colors";
+import { feedRowShell } from "../feedRowShell";
+import {
+  AVATAR,
+  BLOCK_GAP,
+  BODY_LINE_HEIGHT,
+  LIKE_COUNT_MARGIN,
+  LIKE_HEART_BOX,
+  REPLY_PILL_FONT,
+  REPLY_PILL_PAD_H,
+  REPLY_PILL_PAD_V,
+} from "./FeedPostCard";
 
 /**
  * Akış yükleme iskeleti.
@@ -9,71 +22,230 @@ import { colors } from "@/shared/theme/colors";
  * `null` → EmptyState). Hepsi AYNI FlatList'in `ListEmptyComponent`'inde
  * duruyor ki ağaç şekil değiştirmesin — LikesScreen'de ayrı container'a
  * alınmış bir iskelet sekmelerin yeniden mount olmasına yol açmıştı.
+ *
+ * ⚠️ İSKELET GERÇEK SATIRIN ÖLÇÜSÜNÜ TAKLİT ETMEK ZORUNDA, ama ölçüler BURADA
+ * TANIMLI DEĞİL: kabuk `feedRowShell`den, dikey hiza/kalp/kapsül ise
+ * FeedPostCard'ın `export`larından geliyor. Sayıları buraya kopyalamak iki kez
+ * geri tepti (üniversite satırı karttan kalkmıştı ama iskelet adın altına
+ * ikinci çubuğu çizmeye devam ediyordu; gövde 16.5'e çıkınca satır boyu eski
+ * kalmıştı) — yükleme bitince liste zıplıyordu. Buradaki tek serbest değer
+ * çubukların GENİŞLİĞİ: karttaki karşılığı metnin kendisi, yani sabit bir
+ * ölçüsü yok.
+ *
+ * ⚠️ Çubukların rengi (`colors.shimmer`) ALFA-TABANLI, bu yüzden baloncuğun
+ * `surface` zemini üstünde kendiliğinden doğru tona oturuyor. Opak bir gri
+ * yazılırsa kutunun içinde ya kaybolur ya da leke gibi okunur.
  */
-function Row({ lines }: { lines: number }) {
+
+/**
+ * Başlık satırındaki ad VE tarih ikisi de 15 punto, o yüzden iki çubuk da tek
+ * yükseklikte. Beğeni sayısı da 15/600 ama kendi sabitini kullanıyor — başlıkla
+ * birlikte değişmemesi için ayrı.
+ */
+const HEAD_BAR_H = 12;
+const COUNT_BAR_H = 12;
+
+/**
+ * Gövde çubuğu + altındaki boşluk TOPLAMI kartın satır boyuna eşit
+ * (`BODY_LINE_HEIGHT`), yani üç satırlık iskelet üç satırlık yazıyla birebir
+ * aynı yeri kaplıyor.
+ */
+const BODY_BAR_H = 13;
+const BODY_BAR_GAP = BODY_LINE_HEIGHT - BODY_BAR_H;
+
+/**
+ * Üç noktanın yer tutucusu — glif 18pt geniş, ink'i yatay bir şerit kadar.
+ * Üç ayrı daire çizmek iskeleti "yüklenen" değil "çizilmiş" gösteriyordu.
+ */
+const MENU_BAR_W = 18;
+const MENU_BAR_H = 4;
+
+/**
+ * Ad çubuğunun genişliği SATIRA GÖRE DEĞİŞİYOR: gerçek liste "irem, 21" ile
+ * "Anonim Kadın"ı yan yana taşıyor, hepsi tek boyda olunca iskelet form gibi
+ * okunuyordu. Tarih çubuğu sabit — "salı"/"dün" arasındaki fark gözle
+ * ayırt edilmiyor.
+ */
+const NAME_BAR_W = [96, 72, 112];
+const DATE_BAR_W = 38;
+/** Beğeni sayısı tek/çift haneli — kartta da 15/600 iki karakterlik bir kutu. */
+const COUNT_BAR_W = 18;
+/**
+ * Gönderilerim'deki yanıt sayısı ("3 yanıt") — kapsül DEĞİL düz metin, o yüzden
+ * yer tutucusu da çubuk. 13.5 punto → çubuk 11.
+ */
+const REPLY_COUNT_BAR_W = 56;
+const REPLY_COUNT_BAR_H = 11;
+
+function Bar({
+  width,
+  height,
+  marginLeft,
+  marginTop,
+  marginBottom,
+}: {
+  width: number | `${number}%`;
+  height: number;
+  marginLeft?: number;
+  marginTop?: number;
+  marginBottom?: number;
+}) {
   return (
     <View
       style={{
-        backgroundColor: colors.surface,
-        borderRadius: 22,
+        width,
+        height,
+        // Yarıçap yüksekliğin yarısı: çubuk her ölçüde kapsül kalıyor.
+        borderRadius: height / 2,
+        backgroundColor: colors.shimmer,
+        marginLeft,
+        marginTop,
+        marginBottom,
+      }}
+    />
+  );
+}
+
+/**
+ * Yanıt kapsülünün yer tutucusu.
+ *
+ * ⚠️ İÇİNDE GÖRÜNMEZ GERÇEK ETİKET VAR, sabit bir genişlik DEĞİL. İki şeyi
+ * birden çözüyor: kapsülün yüksekliği (dikey pay + SF'in doğal satır kutusu)
+ * elle `× 1.19` tahmin edilmiyor, ve genişliği her dilde gerçek butonla aynı
+ * kalıyor — "Eşleşmek için yanıtla" ile "Reply to match" arasında 40pt'den
+ * fazla fark var, sabit sayı ikisinden birinde yanlış oluyordu.
+ *
+ * `opacity: 0` burada güvenli: düz bir `Text`, cam yüzey değil (alfa ile
+ * gizlenen GlassView'ın efekti hiç render edilmiyor — bkz. shared/theme notu).
+ */
+function ReplyPillBar() {
+  const { t } = useTranslation();
+  return (
+    <View
+      style={{
+        paddingHorizontal: REPLY_PILL_PAD_H,
+        paddingVertical: REPLY_PILL_PAD_V,
+        borderRadius: 999,
         borderCurve: "continuous",
-        padding: 16,
-        marginBottom: 10,
+        backgroundColor: colors.shimmer,
       }}
     >
-      <View style={{ flexDirection: "row", alignItems: "center" }}>
-        <View
-          style={{
-            width: 34,
-            height: 34,
-            borderRadius: 17,
-            backgroundColor: colors.shimmer,
-          }}
-        />
-        <View style={{ marginLeft: 10 }}>
-          <View
-            style={{
-              width: 110,
-              height: 11,
-              borderRadius: 6,
-              backgroundColor: colors.shimmer,
-            }}
-          />
-          <View
-            style={{
-              width: 70,
-              height: 9,
-              borderRadius: 5,
-              backgroundColor: colors.shimmer,
-              marginTop: 6,
-            }}
-          />
-        </View>
-      </View>
-      {Array.from({ length: lines }).map((_, i) => (
-        <View
-          key={i}
-          style={{
-            height: 11,
-            borderRadius: 6,
-            backgroundColor: colors.shimmer,
-            marginTop: i === 0 ? 14 : 8,
-            // Son satır kısa — gerçek metin gibi okunsun.
-            width: i === lines - 1 ? "55%" : "100%",
-          }}
-        />
-      ))}
+      <Text
+        numberOfLines={1}
+        style={{ fontSize: REPLY_PILL_FONT, fontWeight: "600", opacity: 0 }}
+      >
+        {t("feed.reply.button")}
+      </Text>
     </View>
   );
 }
 
-function FeedSkeletonListBase({ count = 3 }: { count?: number }) {
+function Row({
+  lines,
+  nameWidth,
+  variant,
+}: {
+  lines: number;
+  nameWidth: number;
+  variant: FeedSkeletonVariant;
+}) {
+  // Kabuk gönderi satırıyla TEK nesneden (bkz. feedRowShell): iskeletin
+  // baloncuğu, köşesi, payları ve satır arası boşluğu gerçek satırla aynı.
+  return (
+    <View style={feedRowShell()}>
+      {/* ── Başlık: avatar · ad · tarih ··· üç nokta ──
+          ⚠️ Adın ALTINDA İKİNCİ ÇUBUK YOK: üniversite satırı karttan kaldırıldı
+          (bkz. FeedPostCard), iskelet onu çizmeye devam ederse yükleme sonrası
+          başlık bloğu bir satır kısalıp liste zıplıyor. */}
+      <View style={{ flexDirection: "row", alignItems: "center" }}>
+        <View
+          style={{
+            width: AVATAR,
+            height: AVATAR,
+            borderRadius: AVATAR / 2,
+            backgroundColor: colors.shimmer,
+          }}
+        />
+        {/* 10 = kartta adın avatara olan marjı. */}
+        <Bar width={nameWidth} height={HEAD_BAR_H} marginLeft={10} />
+        {/* 8 = kartta tarihin ada olan marjı. */}
+        <Bar width={DATE_BAR_W} height={HEAD_BAR_H} marginLeft={8} />
+        <View style={{ flex: 1 }} />
+        <Bar width={MENU_BAR_W} height={MENU_BAR_H} marginLeft={8} />
+      </View>
+
+      {/* ── Gövde ── İlk satırın üst payı kartın blok payı. */}
+      {Array.from({ length: lines }).map((_, i) => (
+        <Bar
+          key={i}
+          height={BODY_BAR_H}
+          marginTop={i === 0 ? BLOCK_GAP : BODY_BAR_GAP}
+          // ⚠️ SON ÇUBUĞUN ALT PAYI: gerçek metin bloğunun yüksekliği
+          // `satır × BODY_LINE_HEIGHT` ve son satırın da altında kendi satır
+          // boşluğu var. Bu pay olmadan iskelet her gönderide ~9pt kısa kalıyor.
+          marginBottom={i === lines - 1 ? BODY_BAR_GAP : undefined}
+          // Son satır kısa — gerçek metin gibi okunsun.
+          width={i === lines - 1 ? "55%" : "100%"}
+        />
+      ))}
+
+      {/* ── Alt satır: kalp + sayı ··· yanıt kapsülü ──
+          Satırın yüksekliği KARTTA DA olduğu gibi kapsülden türüyor; sabit bir
+          `height` verilmiyor ki kapsülün ölçüsü değişince ikisi ayrışmasın. */}
+      <View
+        style={{
+          flexDirection: "row",
+          alignItems: "center",
+          marginTop: BLOCK_GAP,
+        }}
+      >
+        {/* Kalp YUVARLAK KUTU DEĞİL, kartın GERÇEK glyph'i düz shimmer dolguyla:
+            yeni tasarımın alt satırındaki en tanınır şekil o ve kare bir blok
+            yükleme bitince başka bir ikona dönüşüyormuş gibi okunuyordu.
+            Glyph'in iki yanındaki şeffaf optik pay da kartla aynı, yani
+            shimmer kalp gerçek kalbin tam üstüne oturuyor. */}
+        <HeartGlyph size={LIKE_HEART_BOX} color={colors.shimmer} />
+        <Bar width={COUNT_BAR_W} height={COUNT_BAR_H} marginLeft={LIKE_COUNT_MARGIN} />
+        <View style={{ flex: 1 }} />
+        {/* ⚠️ GÖNDERİLERİM'DE KAPSÜL YOK: yanıt butonu kendi gönderinde hiç
+            çizilmiyor (feedPolicy > replyActionFor: OwnPost → hidden), yerine
+            yanıt sayısı duruyor. Kapsülü iki sayfada da çizmek o sayfada her
+            satırı ~13pt yüksek gösteriyordu — yükleme bitince liste yukarı
+            toparlanıyordu. */}
+        {variant === "mine" ? (
+          <Bar width={REPLY_COUNT_BAR_W} height={REPLY_COUNT_BAR_H} />
+        ) : (
+          <ReplyPillBar />
+        )}
+      </View>
+    </View>
+  );
+}
+
+/**
+ * Hangi gönderi sayfasının iskeleti — FeedPostCard'ın `variant`ıyla AYNI
+ * sözlük. Alt satırın sağ ucu ikisinde farklı (kapsül ↔ yanıt sayısı).
+ */
+export type FeedSkeletonVariant = "feed" | "mine";
+
+function FeedSkeletonListBase({
+  count = 3,
+  variant = "feed",
+}: {
+  count?: number;
+  variant?: FeedSkeletonVariant;
+}) {
   return (
     <View>
       {Array.from({ length: count }).map((_, i) => (
         // Satır uzunlukları sabit ama DEĞİŞKEN: hepsi aynı olsaydı liste
         // "yükleniyor" yerine "bozuk" okunurdu.
-        <Row key={i} lines={i % 2 === 0 ? 3 : 2} />
+        <Row
+          key={i}
+          lines={i % 2 === 0 ? 3 : 2}
+          nameWidth={NAME_BAR_W[i % NAME_BAR_W.length]}
+          variant={variant}
+        />
       ))}
     </View>
   );

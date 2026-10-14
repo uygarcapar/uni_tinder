@@ -7,6 +7,8 @@ import {
   type NativeScrollEvent,
   type NativeSyntheticEvent,
 } from "react-native";
+import SFIcon from "@/shared/components/SFIcon";
+import { ChevronDown } from "@/shared/icons";
 import { colors, ink } from "@/shared/theme/colors";
 
 // Tab filtre pilleri — MessagesScreen ve LikesScreen aynı görünümü paylaşıyor.
@@ -15,9 +17,19 @@ import { colors, ink } from "@/shared/theme/colors";
 // çizilir. Dış boşluk/animasyon çağıran ekranda yönetilir; burası sadece pill
 // satırını render eder.
 //
-// Pill'de İKON YOK ve bilerek yok: denendi, ürün işaretleri (fire kalbi /
+// Pill'de ÜRÜN İKONU YOK ve bilerek yok: denendi, ürün işaretleri (fire kalbi /
 // not balonu) bu ölçekte kapsülü şişirip satırı kalabalıklaştırıyordu. Sekmenin
 // ne olduğunu etiket zaten söylüyor.
+//
+// `chevron` BAŞKA BİR ŞEY ve opt-in: pill bir SEKME değil, bir açılır seçici
+// olduğunda (akışın kampüs/sıralama/filtre satırı — her pill kendi sheet'ini
+// açıyor) etiketin sağına chevron.down giriyor. Sekme şeritlerinde (Mesajlar,
+// Beğeniler) KAPALI kalmalı: orada basış sayfa değiştiriyor, aşağı açılan bir
+// şey yok ve chevron olmayan bir menü vaat ederdi.
+//
+// `maxLabelWidth` (tab başına): uzun etiket — ör. üniversite adı — kapsülü
+// ekran dışına taşırmasın, kırpılsın. Verilmeyen pill'ler eskisi gibi
+// içeriklerine göre büyüyor.
 //
 // Satır YATAY KAYDIRILABİLİR. Sabit `flex-row` iken 4. sekme ("Kaçırdıkların")
 // dar ekranlarda taşıyordu — pill genişliği etiket uzunluğuna ve kullanıcının
@@ -59,6 +71,7 @@ export default function FilterPills({
   style,
   bleed = 0,
   inset,
+  chevron = false,
 }: any) {
   // Duruş payı: verilmediyse bleed'in kendisi (eski davranış birebir korunur).
   const restInset = inset ?? bleed;
@@ -140,9 +153,17 @@ export default function FilterPills({
       }}
     >
       {tabs.map((tab: any) => {
-        const isActive = activeTab === tab.key;
-        // Etiket ve sayı TEK mürekkepten: seçili pill'in zemini
-        // `inverseSurface`, yazı da onun üstüne yazılan `onInverseSurface`.
+        // `tab.filled`: pill SEÇİLİ OLMADAN da dolu çizilsin. Tek seçimli bir
+        // şerit olmayan satırlarda (akışın kampüs/sıralama/filtre pill'leri —
+        // `activeTab` boş geçiliyor) hiçbir pill dolu çizilmiyordu; kampüs
+        // pill'i ise sayfanın hangi akışa baktığını söyleyen DURUM bilgisi,
+        // komşularıyla aynı dolgusuz kabukta kalması onu bir seçenek gibi
+        // gösteriyordu.
+        const isActive = activeTab === tab.key || !!tab.filled;
+        // Etiket ve sayı TEK mürekkepten: dolu pill'in zemini `inverseSurface`
+        // (açık modda siyah, koyuda beyaz), yazı da onun üstüne yazılan
+        // `onInverseSurface` — yani ters mod. İkisi aynı çiftten geldiği için
+        // kontrast her iki temada kendiliğinden doğru.
         const inkColor = isActive ? colors.onInverseSurface : colors.text;
         return (
           <TouchableOpacity
@@ -175,6 +196,11 @@ export default function FilterPills({
             }}
           >
             <Text
+              // Kırpma YALNIZ `maxLabelWidth` verilen pill'de: tek satıra
+              // kilitlemek genel kural olsaydı, yazı tipi ölçeğini büyüten
+              // kullanıcıda sığmayan etiket sessizce kesilirdi — oysa satır
+              // zaten yatay kaydırılabilir, orada doğrusu büyümek.
+              numberOfLines={tab.maxLabelWidth ? 1 : undefined}
               style={{
                 color: inkColor,
                 // "600" = semibold (sistem yazı tipi; bu satırda özel bir
@@ -184,6 +210,9 @@ export default function FilterPills({
                 // sekme adını okunur yapıyor ve pill yüksekliğini payların
                 // kırptığı kadarını geri veriyor.
                 fontSize: 14,
+                ...(tab.maxLabelWidth
+                  ? { maxWidth: tab.maxLabelWidth, flexShrink: 1 }
+                  : null),
               }}
             >
               {tab.label}
@@ -207,6 +236,22 @@ export default function FilterPills({
               >
                 {tab.count}
               </Text>
+            )}
+            {/* Chevron EN SAĞDA — sayının da sağında: okuma sırası "ne / kaç
+                tane / açılır". Mürekkep etiketle AYNI `inkColor`, yani seçili
+                kapsülün ters zemininde de okunuyor.
+                Ölçü 13: 14px etiketin yanında 16 (sayfa satırlarındaki glif
+                ölçüsü) kapsülü dikeyde şişiriyordu. */}
+            {chevron && (
+              <SFIcon
+                name="chevron.down"
+                fallback={ChevronDown}
+                size={13}
+                color={inkColor}
+                strokeWidth={2.5}
+                weight="semibold"
+                style={{ marginLeft: 5 }}
+              />
             )}
           </TouchableOpacity>
         );

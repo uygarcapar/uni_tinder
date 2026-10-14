@@ -1,4 +1,4 @@
-import { useReducer, useRef, useState, type ReactNode } from "react";
+import { useEffect, useReducer, useRef, useState, type ReactNode } from "react";
 import {
   StyleSheet,
   View,
@@ -55,6 +55,19 @@ type Props = {
    * iskelet onun üstüne absolute konuyor.
    */
   placeholder?: ReactNode;
+  /**
+   * Paketlenmiş tura GEÇİLDİĞİNDE bir kez çağrılır — yani satırlar artık
+   * kesinleşti, piller bir daha yer değiştirmeyecek.
+   *
+   * Çağıranı: Keşif kartının kapağı. Orada iskelet, piller paketlenene kadar
+   * ekranda tutuluyor (bkz. DiscoverScreen > coverSettled) — `hideUntilPacked`
+   * ölçüm turunu görünmez yaptığı için kullanıcı aksi halde pillerin
+   * "kaybolup geri gelmesini" görüyordu.
+   *
+   * ÖLÇÜM HİÇ GELMEZSE ÇAĞRILMAZ (onLayout'un çalışmadığı ortamlar — jest):
+   * bekleyen taraf buna tek güvence olarak yaslanmamalı.
+   */
+  onPacked?: () => void;
   style?: StyleProp<ViewStyle>;
 };
 
@@ -149,6 +162,7 @@ export default function PillFlow({
   fillWidth = false,
   hideUntilPacked = false,
   placeholder,
+  onPacked,
   style,
 }: Props) {
   const { fontScale } = useWindowDimensions();
@@ -233,6 +247,17 @@ export default function PillFlow({
           items.map((item) => !!item.pinned),
         )
       : null;
+
+  // Paketlenme HABERİ — render sırasında değil efekt içinde veriliyor: dinleyen
+  // taraf (kapağın iskeleti) bunu kendi state'ine yazıyor ve render fazında
+  // başka bir bileşeni set etmek React'in uyarı verdiği yol.
+  const packed = !!rows;
+  const packedNotifiedRef = useRef(false);
+  useEffect(() => {
+    if (!packed || packedNotifiedRef.current) return;
+    packedNotifiedRef.current = true;
+    onPacked?.();
+  }, [packed, onPacked]);
 
   // Ölçüm turu ile paketlenmiş tur aynı sarmalayıcıyı kullanır; ölçülen
   // genişlik birebir render edilen genişlik olsun.

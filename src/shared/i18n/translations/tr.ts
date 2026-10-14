@@ -599,16 +599,12 @@ const tr = {
     referral: {
       title: 'Seni davet eden biri var mı?',
       subtitle: 'Davet kodun varsa buraya gir. Yoksa bu adımı atlayabilirsin.',
-      // OtpInput kutulara HANE HANE yazıyor: örnek kod aynı zamanda biçim
-      // ipucu (5 karakter, büyük harf).
-      placeholder: 'AK7M2',
       checking: 'Kod kontrol ediliyor...',
       // Sonuç toast'ta: title + message (bkz. RegisterReferralScreen).
       validTitle: 'Davet kodu geçerli',
       valid: 'Üyeliğin bitince 1 not hediye.',
       invalidTitle: 'Kod bulunamadı',
       invalid: 'Bu kodu bulamadık, yanlış yazılmış olabilir.',
-      paste: 'Yapıştır',
       skip: 'Atla',
       continue: 'Devam Et',
     },
@@ -1042,12 +1038,8 @@ const tr = {
       fireReleaseHint: 'fire göndermek için bırak',
       fireExhaustedTitle: 'Fire hakkın bitti',
       fireExhaustedMessage: 'Ücretsiz üyelikte Fire tek seferliktir, kendiliğinden yenilenmez.',
-      // Gönderim onayı — notunkiyle (note.sentTitle/sentMessage) aynı kalıp.
-      // İsimsiz varyant şart: kartın displayName'i boş gelebiliyor ve
-      // "  beğenilerinde..." diye başlayan bir cümle çıkardı.
-      fireSentTitle: 'Fire\'ın gönderildi',
-      fireSentMessage: '{{name}} beğenilerinde seni öne çıkmış görecek.',
-      fireSentMessageNoName: 'Beğenilerinde seni öne çıkmış görecek.',
+      // Gönderim onayı metni BİLEREK YOK: Fire'ın gönderildiğini ekranı
+      // süpüren alev söylüyor, toast düşmüyor (bkz. DiscoverScreen.handleSwipe).
       // Günlük beğeni kotası: azalma uyarısı (eşikler DiscoverScreen'de) ve
       // tükenme. TAVAN YAZILMIYOR — o sunucu config'inden geliyor ve FE
       // güncellemesi olmadan değişiyor; metin yalnız KALANI ({{count}}) ve
@@ -1339,13 +1331,11 @@ const tr = {
     },
     cityPicker: {
       title: 'Şehir Seç',
-      search: 'Şehir ara',
     },
     universityPicker: {
       preferredTitle: 'Üniversite Seç',
       visibleOnlyTitle: 'Beni Görebilecekler',
       hiddenFromTitle: 'Beni Göremeyecekler',
-      search: 'Üniversite ara',
       limitMsg: 'En fazla {{max}} üniversite seçebilirsin.',
     },
     // Boş destedeki "Mesafe Sınırını Kaldır" butonunun HATA yolu. Başarı yolu
@@ -2194,7 +2184,13 @@ const tr = {
       blockAccount: 'Bu hesabı blokla',
       // "Çevrimiçi" BİLEREK yok: alan (isOnlineToday) 24 saatlik penceredir,
       // anlık presence değil — bkz. PotentialMatch.isOnlineToday.
-      activeToday: 'Bugün aktif',
+      //
+      // "Bugün aktif" DEĞİL (istek): o metin pencereyi takvim gününe
+      // okutuyordu — gece yarısını geçmiş bir aktiflik "bugün" sayılmaz ama
+      // bayrak yanmaya devam ediyor. Metin artık alanın gerçek tanımını
+      // söylüyor. Anahtar adı (`activeToday`) backend alanının adıyla eş
+      // kaldı, bilerek: çağıranlar hangi bayrağı çizdiklerini oradan buluyor.
+      activeToday: '24 saat içerisinde aktif',
       // Keşif şeridinin sol ucundaki cam yukarı okun VoiceOver adı — buton
       // metin taşımıyor, yalnız glif var (bkz. CardScrollTopGlassButton).
       scrollTop: 'Başa dön',
@@ -2205,7 +2201,6 @@ const tr = {
     },
     languages: {
       title: 'Dil Seç',
-      search: 'Dil ara',
       notFound: "'{{search}}' bulunamadı",
     },
   },
@@ -2369,6 +2364,20 @@ const tr = {
     tabMine: 'Gönderilerim',
     tabReplies: 'Yanıtlar',
 
+    // Büyük başlık bloğu — Mesajlar ekranındaki kalıbın aynısı: başlık, sağında
+    // Plus pill'i, altında TEK satır açıklama.
+    // ⚠️ Açıklamalar KISA yazıldı: satır `numberOfLines={1}` ve uzun cümle
+    // sessizce kırpılır.
+    header: {
+      descFeed: 'Kampüsünden paylaşılan yazılar.',
+      descMine: 'Paylaştığın yazılar ve durumları.',
+      descReplies: 'Gönderilerine gelen yanıtlar.',
+      // Başlığın sağındaki pill — Plus sayfasını açar, yalnız free'de çizilir.
+      // "Sınırsız" DEMİYOR: Plus akışta sınırı kaldırmıyor, günlük hakkı
+      // artırıyor (bkz. feed.quota.plusOffer).
+      plusAction: 'Daha fazla paylaş',
+    },
+
     // Anonim gönderide yazar yerine çizilen etiket. `authorCategory` null ise
     // `plain` kullanılıyor — cinsiyet uydurulmuyor.
     anonymous: {
@@ -2395,9 +2404,14 @@ const tr = {
 
     filter: {
       title: 'Filtre',
+      // Her başlığın altındaki tek cümle — profil düzenlemedeki `*Desc`
+      // satırlarının karşılığı. Kısa tutuldu: üç bölüm üst üste duruyor.
       sort: 'Sıralama',
+      sortDesc: 'Akıştaki gönderilerin hangi sıraya göre dizileceği.',
       interest: 'İlgi alanı',
+      interestDesc: 'Herkesin gönderileri mi, yalnız senin ilgi alanlarına yakın olanlar mı.',
       kind: 'Paylaşım tipi',
+      kindDesc: 'Anonim ve normal gönderileri birlikte ya da ayrı gör.',
       reset: 'Sıfırla',
     },
     university: {
@@ -2412,19 +2426,36 @@ const tr = {
       anonymousHint: 'İsmin ve fotoğrafın görünmez, sadece cinsiyetin görünür.',
       anonymousLocked: 'Anonim paylaşım Lit Plus ile.',
       anonymousRestricted: 'Bir süre anonim paylaşım yapamazsın.',
-      universityHint: 'Bu gönderi {{university}} akışında görünecek.',
+      // `universityHint` ("Bu gönderi {{university}} akışında görünecek.")
+      // KALDIRILDI: aynı bilgi artık gönder butonunun üstünde.
+      //
+      // ⚠️ Kampüs adı EK ALMIYOR ("Bilgi Üniversitesi'nde paylaş" DEĞİL):
+      // Türkçe bulunma hâli ünlü uyumuna göre -de/-da/-te/-ta/-nde/-nda
+      // değişiyor ve bunu tek bir statik şablonla doğru yapmak mümkün değil.
+      // Eki "akışında" kelimesi taşıyor, ad çıplak kalıyor.
+      // Sol üstteki bakiye rozeti — `reply.remaining` ile aynı kalıp.
+      // Sayı düz interpolasyon; bu sözlükte plural eki hiç kullanılmıyor.
+      remaining: '{{count}} gönderi hakkın kaldı',
+      sendIn: '{{university}} akışında paylaş',
+      /** Kampüs adı çözülemediğinde (liste gelmedi / /me yok) sade etiket. */
       send: 'Paylaş',
       sent: 'Gönderin paylaşıldı',
       pending: 'Gönderin inceleniyor',
     },
 
     reply: {
-      button: 'Yanıtla',
+      button: 'Eşleşmek için yanıtla',
       replied: 'Yanıtladın',
       restricted: 'Kısıtlı',
       goToChat: 'Sohbete git',
       title: 'Yanıt yaz',
       placeholder: 'Kısa bir yanıt yaz',
+      // Composer'daki alıntı chip'inin etiketi. `received.onYourPost`
+      // KULLANILAMAZ: o gönderi SAHİBİNİN gözünden yazılmış ("Gönderine
+      // yanıt"), burada yanıtı YAZAN kişi duruyor.
+      quoteLabel: 'Bu gönderiye yanıt veriyorsun',
+      quoteLabelAnonymous: 'Bu anonim gönderiye yanıt veriyorsun',
+      send: 'Yanıtı gönder',
       sent: 'Yanıtın iletildi',
       pending: 'Yanıtın inceleniyor',
       // Sayı düz interpolasyon — bu sözlükte plural eki hiç kullanılmıyor.

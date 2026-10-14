@@ -4,7 +4,11 @@ import Animated, { LinearTransition } from "react-native-reanimated";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { SCREEN_HEADER_TITLE_HEIGHT } from "@/shared/components/ScreenHeader";
 import { colors } from "@/shared/theme/colors";
-import FeedSkeletonList from "./FeedSkeletonList";
+// Yan pay `feedRowShell`den geliyor: satır kabuğu da onu okuyor (çizgiyi ekran
+// kenarına taşıyan negatif marj için) ve tek kaynak orada olmak zorunda — ters
+// yön döngü yapardı (bu dosya iskeleti import ediyor, iskelet de kabuğu).
+import { LIST_H_PADDING } from "../feedRowShell";
+import FeedSkeletonList, { type FeedSkeletonVariant } from "./FeedSkeletonList";
 
 /**
  * Akış pager'ının üç sayfasının ORTAK gövdesi.
@@ -19,8 +23,6 @@ import FeedSkeletonList from "./FeedSkeletonList";
  * (LikesScreen.tsx:3850 civarındaki aynı not).
  */
 
-const LIST_H_PADDING = 10;
-
 /** Satır kaybolunca altındakiler boşluğa YAVAŞÇA kayar, yerlerine zıplamaz. */
 const ROW_LAYOUT_TRANSITION = LinearTransition.duration(220);
 
@@ -33,6 +35,12 @@ export interface FeedListPageProps<T> {
   scrollHandler?: any;
   /** İskelet çizilsin mi (ilk yükleme, gecikme penceresinden sonra). */
   showSkeleton?: boolean;
+  /**
+   * İskeletin taklit edeceği satır — gönderi kartının `variant`ıyla aynı
+   * sözlük. Gönderilerim'de alt satırın sağ ucu yanıt kapsülü DEĞİL yanıt
+   * sayısı, yani satır daha kısa (bkz. FeedSkeletonList).
+   */
+  skeletonVariant?: FeedSkeletonVariant;
   /**
    * Yükleniyor ama iskelet penceresi henüz açılmadı → `null` çiz.
    * "Hiçbir şey yok" deyip hemen geri almamak için (LikesScreen'in üç yollu
@@ -55,6 +63,7 @@ export default function FeedListPage<T>({
   isActive,
   scrollHandler,
   showSkeleton = false,
+  skeletonVariant = "feed",
   loading = false,
   empty = null,
   listHeader = null,
@@ -85,7 +94,7 @@ export default function FeedListPage<T>({
   );
 
   const emptyComponent = showSkeleton ? (
-    <FeedSkeletonList />
+    <FeedSkeletonList variant={skeletonVariant} />
   ) : loading ? null : (
     empty
   );
@@ -135,7 +144,18 @@ export default function FeedListPage<T>({
 /** Sayfa dışına da lazım olan pay (FAB konumu vb.). */
 export { LIST_H_PADDING };
 
-/** Boş durumun ortalanması için ortak sarmalayıcı (LikesScreen deseni). */
+/**
+ * Boş durumun ortalanması için ortak sarmalayıcı.
+ *
+ * Ölçüler MESAJLAR ekranından: orada da `flex-1 items-center justify-center`
+ * ve `pb-[40%]` var (bkz. MessagesScreen > ListEmptyComponent). Burası 35'ti,
+ * yani akışın boş durumu kardeş sekmelerden birkaç puan aşağıda duruyordu.
+ *
+ * ⚠️ `EmptyState`in kendi `topOffset`u da SIFIRLANMALI (varsayılanı 24).
+ * Mesajlar `topOffset={0}` geçiyor; sarmalayıcı zaten dikeyde ortalıyor,
+ * üstüne eklenen pay bloğu aşağı kaydırıyor. Çağıranların hepsi geçiyor —
+ * yeni bir boş durum eklerken atlama.
+ */
 export function FeedEmptyWrap({ children }: { children: React.ReactNode }) {
   return (
     <View
@@ -143,7 +163,7 @@ export function FeedEmptyWrap({ children }: { children: React.ReactNode }) {
         flex: 1,
         alignItems: "center",
         justifyContent: "center",
-        paddingBottom: "35%",
+        paddingBottom: "40%",
       }}
     >
       {children}

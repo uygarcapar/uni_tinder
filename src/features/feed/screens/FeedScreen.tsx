@@ -15,6 +15,7 @@ import PagerTabBar, {
 import ScreenHeader from "@/shared/components/ScreenHeader";
 import EmptyState from "@/shared/components/EmptyState";
 import SFIcon from "@/shared/components/SFIcon";
+import AnimatedPressable from "@/shared/components/AnimatedPressable";
 import { LayoutList } from "@/shared/icons";
 import { colors } from "@/shared/theme/colors";
 import uiBus from "@/shared/services/uiBus";
@@ -25,6 +26,10 @@ import { refreshEntitlementsForPaywall } from "@/features/profile/subscriptionSl
 import { openLitPlus } from "@/features/profile/litPlusEntry";
 import PreviewModal from "@/features/profile/components/PreviewModal";
 import FilterPills from "@/shared/components/FilterPills";
+import {
+  resolveLocalized,
+  useUniversities,
+} from "@/shared/queries/commonQueries";
 import FeedFilterSheet, {
   type FeedFilterValue,
 } from "../components/FeedFilterSheet";
@@ -35,9 +40,17 @@ import {
   sanitizeFeedParams,
   saveFeedParams,
 } from "../feedPrefs";
-import FeedListPage, { FeedEmptyWrap } from "../components/FeedListPage";
+import FeedListPage, {
+  FeedEmptyWrap,
+  // Akış listesinin yatay payı. Yanıt sayfasında kartın KENDİ payıyla
+  // karşılaştırılıyor (bkz. renderItem), o yüzden adı açık yazıldı.
+  LIST_H_PADDING as FEED_LIST_H_PADDING,
+} from "../components/FeedListPage";
 import FeedPostCard from "../components/FeedPostCard";
 import FeedReplyCard from "../components/FeedReplyCard";
+// Yanıt kartı Beğeniler'in foto kartı olduğu için onun liste payını da bilmek
+// zorundayız — kartın genişliği o sayıdan türüyor.
+import { LIST_H_PADDING as LIKE_CARD_H_PADDING } from "@/features/discover/components/LikeCard";
 import {
   FEED_OPEN_EVENT,
   FEED_PAGE_INDEX,
@@ -50,7 +63,7 @@ import { useQueryClient } from "@tanstack/react-query";
 import { FEED_CODES, feedCodeI18nKey } from "@/shared/constants/responseCodes";
 import { showInfoToast } from "@/shared/services/toaster";
 import { analytics } from "@/shared/services/analytics";
-import { useIsPremium } from "@/features/profile/premiumTier";
+import { usePremiumTier } from "@/features/profile/premiumTier";
 import FeedComposerSheet from "../components/FeedComposerSheet";
 import FeedQuotaSheet from "../components/FeedQuotaSheet";
 import FeedSupportSheet from "../components/FeedSupportSheet";
@@ -71,6 +84,7 @@ import {
   useFeedMe,
   useFeedPosts,
   useMyFeedPosts,
+  useOwnFeedAvatar,
   useReceivedReplies,
   useTogglePostLike,
 } from "../feedQueries";
@@ -82,7 +96,8 @@ import {
   replyGate,
   universityPickerGate,
 } from "../feedPolicy";
-import { useFeedAuthorProfile } from "../feedQueries";
+import { useFeedAuthorProfile, useFeedReplierProfile } from "../feedQueries";
+import LikerSwipeModal from "@/features/discover/components/LikerSwipeModal";
 import type {
   FeedListParams,
   FeedPostDto,
@@ -102,14 +117,174 @@ const SKELETON_DELAY_MS = 220;
 
 const PAGES: FeedPageKey[] = ["feed", "mine", "replies"];
 
+/**
+ * Sekme şeridinin sol hattı — Mesajlar/Beğeniler ekranlarındaki
+ * `HEADER_LEFT_INSET` ile AYNI sayı. Liste payı (LIST_H_PADDING) da 16, yani
+ * kartlar, şerit ve filtre satırı tek hatta oturuyor.
+ */
+const HEADER_LEFT_INSET = 16;
+
+/**
+ * BÜYÜK BAŞLIĞIN sol hattı — şeridin 16'sına 3 ekliyor ve bu fark OPTİK:
+ * Mesajlar ekranındaki başlık da `paddingLeft: 19` kullanıyor. 33 puntoluk
+ * yazının sol kenar boşluğu, 14-16 puntoluk etiketlerin yanında daha dar
+ * göründüğü için aynı 16'dan başlasa başlık sola taşmış gibi okunuyor.
+ * ⚠️ Mesajlar'daki sayı değişirse burası da değişmeli — iki ekranın büyük
+ * başlığı tek kalıp.
+ */
+const TITLE_LEFT_INSET = HEADER_LEFT_INSET + 3;
+
+/** Açıklama satırının ölçüsü — Mesajlar ekranındaki 16/22 ile aynı. */
+const DESC_FONT_SIZE = 16;
+const DESC_LINE_HEIGHT = 22;
+
+/**
+ * Başlık bloğunun altındaki marj.
+ *
+ * Akış sekmesinde üst üste üç blok var: başlık+açıklama · filtre pill'leri ·
+ * kartlar. Açıklamayla pill'ler arası 18, pill'lerle ilk kart arası 8 olunca
+ * pill satırı aşağıdaki listeye yapışıyor ve başlığın bir parçası gibi değil,
+ * kartların başlığı gibi okunuyordu.
+ */
+const TITLE_BLOCK_GAP = 18;
+
+/**
+ * Açıklama satırının HARFLERİNİN ALTINDA kalan ölü boşluk.
+ *
+ * `lineHeight` (22) `fontSize`tan (16) büyük olduğu için fark satırın altına ve
+ * üstüne dağılıyor; altta kalan yarısı metnin görünen alt kenarıyla kutunun alt
+ * kenarı arasında duruyor. Yani açıklamayla pill'ler arasındaki GÖRÜNEN boşluk
+ * marjın kendisi değil, `TITLE_BLOCK_GAP + bu`.
+ *
+ * Pill satırının altında böyle bir ölü boşluk YOK (kapsülün kenarlığı kutunun
+ * kenarı), bu yüzden iki marj eşit yazıldığında alt boşluk gözle daha dar
+ * görünüyordu. Filtre satırı aradaki farkı geri ekliyor.
+ */
+const DESC_TRAILING_LEADING = (DESC_LINE_HEIGHT - DESC_FONT_SIZE) / 2;
+
+/** Pill satırının altı — açıklamayla pill'ler arasındaki GÖRÜNEN boşluğun eşi. */
+const PILL_ROW_GAP = TITLE_BLOCK_GAP + DESC_TRAILING_LEADING;
+
+/**
+ * Sağ alttaki "paylaş" butonu — DAİRE, yani genişlik = yükseklik.
+ *
+ * Glifin ölçüsü ayrı sabit ve İKİ YERDE kullanılıyor: SFIcon'un `size`ı ve onu
+ * saran kutunun kenarı. İkisi ayrışırsa glif dairenin ortasından kayar (native
+ * sembolün doğal ölçüsü `size`la birebir aynı değil).
+ */
+const FAB_SIZE = 52;
+const FAB_GLYPH = 22;
+
+/**
+ * Sayfanın büyük başlık BLOĞU — Mesajlar ekranındaki başlığın birebir kalıbı:
+ * 33/700 başlık, SAĞINDA Plus pill'i, ALTINDA tek satır açıklama (16/22,
+ * `textSecondary`, marginTop 2).
+ *
+ * Her sayfanın KENDİ liste başlığında duruyor, pager'ın dışında değil: blok
+ * böylece sayfayla birlikte native olarak kayıyor ve sekme değişince yandaki
+ * sayfanın başlığı onunla beraber giriyor. Sabit sekme şeridi onun üstünde
+ * kalıyor (listenin paddingTop'u şeridin bandını zaten boş bırakıyor).
+ */
+function FeedSectionTitle({
+  title,
+  description,
+  actionLabel,
+  onActionPress,
+}: {
+  title: string;
+  description: string;
+  actionLabel: string | null;
+  onActionPress: (() => void) | null;
+}) {
+  return (
+    <View
+      style={{
+        // Listenin kendi yatay payının ÜSTÜNE eklenen fark — başlık ekran
+        // kenarından TITLE_LEFT_INSET kadar içeride başlasın diye.
+        marginLeft: TITLE_LEFT_INSET - FEED_LIST_H_PADDING,
+        // Blok artık iki satır (başlık + açıklama); altındaki pay doğrudan
+        // filtre satırıyla/ilk kartla arasındaki nefes.
+        marginBottom: TITLE_BLOCK_GAP,
+      }}
+    >
+      {/* Başlık satırı — metin ve (varsa) hemen SAĞINDA Plus pill'i. */}
+      <View style={{ flexDirection: "row", alignItems: "center", gap: 10 }}>
+        <Text
+          numberOfLines={1}
+          // `flexShrink: 1` — uzun başlık pill'i satır dışına itmesin,
+          // kırpılacak olan başlık.
+          style={{
+            flexShrink: 1,
+            color: colors.text,
+            fontSize: 33,
+            fontWeight: "700",
+          }}
+        >
+          {title}
+        </Text>
+        {!!actionLabel && !!onActionPress && (
+          // Dolgu/mürekkep Mesajlar ve Beğeniler'deki pill'le AYNI (litPlus +
+          // onMediaInverse): uygulamada "bu premium'a bakıyor" dili tek. Yazı
+          // `text` olamaz — açık modda beyaza döner ve dolgunun üstünde
+          // kaybolur.
+          <AnimatedPressable
+            pressScale={0.96}
+            onPress={onActionPress}
+            accessibilityRole="button"
+            hitSlop={8}
+            style={{
+              flexShrink: 0,
+              borderRadius: 999,
+              borderCurve: "continuous",
+              backgroundColor: colors.litPlus,
+              paddingHorizontal: 12,
+              paddingVertical: 6,
+            }}
+          >
+            <Text
+              style={{
+                color: colors.onMediaInverse,
+                fontSize: 13,
+                fontWeight: "700",
+              }}
+            >
+              {actionLabel}
+            </Text>
+          </AnimatedPressable>
+        )}
+      </View>
+      {/* Açıklama — başlığın devamı, bağımsız bir paragraf değil: 33 puntonun
+          kendi satır boşluğu zaten aşağı pay bırakıyor, üstüne eklenen her px
+          ikisini ayrı blok gibi gösteriyor (Mesajlar'daki DESC_MARGIN_TOP).
+          TEK SATIR — metinler buna göre kısa yazıldı (bkz. feed.header.desc*). */}
+      <Text
+        numberOfLines={1}
+        style={{
+          marginTop: 2,
+          color: colors.textSecondary,
+          fontSize: DESC_FONT_SIZE,
+          lineHeight: DESC_LINE_HEIGHT,
+          paddingRight: 8,
+        }}
+      >
+        {description}
+      </Text>
+    </View>
+  );
+}
+
 export default function FeedScreen() {
-  const { t } = useTranslation();
+  // `i18n` de lazım: kampüs pill'inin etiketi /api/common/universities'ten
+  // gelen çift dilli `display` alanından çözülüyor.
+  const { t, i18n } = useTranslation();
   const dispatch = useAppDispatch();
   const navigation = useNavigation<any>();
   const qc = useQueryClient();
-  // Yalnız kota sheet'indeki YUMUŞAK Plus satırını çizmek için — kapı kararı
-  // değil (kapılar /api/feed/me'den gelir).
-  const isPremium = useIsPremium();
+  // Yalnız kota sheet'indeki YUMUŞAK Plus satırını ve başlığın yanındaki upsell
+  // pill'ini çizmek için — kapı kararı değil (kapılar /api/feed/me'den gelir).
+  // `resolved` da okunuyor: pill'in "henüz bilinmiyor" ile "free" arasını
+  // ayırması gerekiyor (bkz. showPlusUpsell).
+  const { isPremium, resolved: premiumResolved } = usePremiumTier();
 
   // ── Pager kurulumu ────────────────────────────────────────────────────────
   const pagerRef = useRef<PagerView>(null);
@@ -200,6 +375,14 @@ export default function FeedScreen() {
   const postsQuery = useFeedPosts(listParams);
   const minePostsQuery = useMyFeedPosts({ enabled: visited.mine });
   const repliesQuery = useReceivedReplies({ enabled: visited.replies });
+
+  /**
+   * Kendi ana fotoğrafım — sunucu kendi gönderimin avatarını boş bırakıyor
+   * (gerekçe: feedQueries > useOwnFeedAvatar). EKRAN DÜZEYİNDE bir kez, karta
+   * prop olarak iniyor: satır başına bir hook, listedeki her gönderiyi aynı
+   * sorgunun abonesi yapardı.
+   */
+  const ownPhotoUrl = useOwnFeedAvatar();
 
   const toggleLike = useTogglePostLike();
   const acceptReply = useAcceptReply();
@@ -415,6 +598,43 @@ export default function FeedScreen() {
     [dismissReply, dispatch],
   );
 
+  /**
+   * Yanıt kartına dokunmak → YANITLAYANIN PROFİLİ, kaydırarak karar.
+   *
+   * Kart artık tek bir kutu değil bir kapı: üstündeki tik/X hızlı yol, profil
+   * ise "önce bakayım" yolu. İkisi aynı iki uca gidiyor (kabul / geç), karar
+   * nerede verilirse verilsin sonuç aynı.
+   *
+   * SEÇİLEN MODAL Beğeniler'in kartı (`LikerSwipeModal`), yeni bir ekran DEĞİL:
+   * sağa/sola kaydırma, X/tik satırı, şikayet/engelle ve üç nokta menüsü orada
+   * hazır. Kararı keşif ucuna göndermesin diye `onDecide` ile devralıyoruz
+   * (bkz. o prop'un notu) — yoksa yanıtı kabul etmek bir de kullanıcının
+   * beğeni kotasından yiyordu.
+   *
+   * PROFİL AKSİYONSUZ `PreviewModal` DEĞİL (gönderi yazarında o kullanılıyor):
+   * orada profil "gönderinin arkasındaki kişiyi görmek" içindir, burada ise
+   * değerlendirilecek bir kart — zaten bir karar bekliyor.
+   *
+   * TÜM YANIT state'te tutuluyor, yalnız `replyId` değil: kabul/geç
+   * sarmalayıcıları yanıtın kendisini alıyor (analytics + rozet düşürme).
+   */
+  const [replierTarget, setReplierTarget] =
+    useState<FeedReceivedReplyDto | null>(null);
+  const replierProfile = useFeedReplierProfile(replierTarget?.replyId ?? null);
+  const handleReplyPress = useCallback(
+    (reply: FeedReceivedReplyDto) => setReplierTarget(reply),
+    [],
+  );
+  const handleReplyDecide = useCallback(
+    (direction: "left" | "right") => {
+      const reply = replierTarget;
+      if (!reply) return;
+      if (direction === "right") handleAccept(reply);
+      else handleDismiss(reply);
+    },
+    [replierTarget, handleAccept, handleDismiss],
+  );
+
   const goToReplies = useCallback(() => {
     handleTabChange("replies", FEED_PAGE_INDEX.replies);
   }, [handleTabChange]);
@@ -456,13 +676,18 @@ export default function FeedScreen() {
   const gate = composeGate(me);
 
   const openComposer = useCallback(() => {
-    // FAB'ın kendisi kapıya göre çiziliyor ama kapı burada da kontrol ediliyor:
-    // /me iki render arasında değişmiş olabilir ve kullanıcıyı 403'e yürütmek
-    // istemiyoruz.
-    if (gate.kind === "quotaExhausted") {
-      setQuotaSheet({ visible: true, nextResetAt: gate.nextResetAt });
-      return;
-    }
+    // ⚠️ HAK BİTTİĞİNDE KOTA SHEET'İ AÇILMIYOR (istek): composer'ın KENDİSİ
+    // açılıyor, rozetinde "0 hakkın kaldı" yazıyor ve gönder butonu basılamaz
+    // halde duruyor (bkz. FeedComposerSheet > quotaExhausted). Kullanıcı aynı
+    // modalı görüyor, araya giren ikinci bir sheet yok.
+    //
+    // `FeedQuotaSheet` SİLİNMEDİ — yanıt yolu onu hâlâ kullanıyor (bkz.
+    // handleOpenReply). Orada composer'ı açıp kilitlemek aynı iş GÖRMEZ: yanıt
+    // composer'ı bir gönderinin üstüne açılıyor ve kullanıcı yazdığı yanıtı
+    // gönderemeyeceğini ancak butona varınca anlar.
+    //
+    // Kısıt dalı DEĞİŞMEDİ: orada composer açmak yanlış olurdu, kısıt bir hak
+    // değil ceza — yazdırıp sonra reddetmek kullanıcıyı iki kez kaybettirir.
     if (gate.kind === "restricted") return;
     setComposerError(null);
     setComposerVisible(true);
@@ -507,17 +732,22 @@ export default function FeedScreen() {
             const serverMessage = feedErrorMessage(e);
             const result = feedErrorResult(e);
 
-            // Kota bitti → sheet KAPANIR, kota sheet'i açılır. Metni saklamanın
-            // anlamı yok: hak yarın geliyor.
+            // Kota bitti → sheet AÇIK KALIR ve kendi içinde kilitlenir.
+            //
+            // Eskiden burada sheet kapanıp kota sheet'i açılıyordu; o sheet
+            // post yolundan tümden kalktı (bkz. openComposer). Yerine konan şey
+            // bir metin değil, `/me`'ye yazılan kota: `remaining` 0'a inince
+            // rozet "0 hakkın kaldı" yazıyor ve gönder butonu basılamaz hale
+            // geliyor — yani kullanıcı zaten composer'ı hakkı bitmiş halde
+            // açmış olsaydı göreceği ekranın AYNISI.
+            //
+            // Bu yazım ayrıca gerçek bir yarışı da kapatıyor: `/me` bayatken
+            // (ör. başka cihazdan paylaşıldı) composer "hakkın var" diye açılır
+            // ve hak bittiğini ancak sunucu söyler. O an kullanıcıyı boş bir
+            // ekrana atmak yerine aynı modal kilitleniyor.
             if (code === FEED_CODES.POST_QUOTA) {
-              setComposerVisible(false);
-              // Sunucu kovanın boş olduğunu söyledi → /me'yi düzelt, yoksa FAB
-              // "hakkın var" görünmeye devam eder.
               writeFeedQuotaExhausted(qc, "post", result?.nextResetAt ?? null);
-              setQuotaSheet({
-                visible: true,
-                nextResetAt: result?.nextResetAt ?? null,
-              });
+              setComposerError(serverMessage ?? t("feed.quota.exhaustedBody"));
               return;
             }
 
@@ -700,15 +930,13 @@ export default function FeedScreen() {
     [t, deletePost],
   );
 
-  const handleReplyMenu = useCallback((reply: FeedReceivedReplyDto) => {
-    // Yanıt şikayetinde hedef HER ZAMAN kimlikli (yanıtlayan görünüyor) →
-    // engelleme satırı çizilir.
-    setReportTarget({
-      targetType: "Reply",
-      replyId: reply.replyId,
-      isAnonymous: false,
-    });
-  }, []);
+  // ⚠️ `handleReplyMenu` SİLİNDİ: kartın üç nokta butonu kaldırıldı, yanıt
+  // moderasyonu artık yanıtlayanın profilinden geçiyor (bkz. handleReplyPress →
+  // LikerSwipeModal'ın kendi şikayet/engelle satırları ve üç nokta menüsü).
+  // ⚠️ FARK: oradaki şikayet KULLANICIYI hedefliyor (moderationService), burada
+  // ise YANIT İÇERİĞİ hedeflenebiliyordu (`FeedReportSheet`, targetType
+  // "Reply"). Yanıt içeriğini şikayet etme yolu şu an hiçbir ekranda AÇIK
+  // DEĞİL — sheet'in kendisi duruyor, yalnız gönderi dalı kullanılıyor.
 
   // ── Sheet'ler ─────────────────────────────────────────────────────────────
   const [filterVisible, setFilterVisible] = useState(false);
@@ -720,14 +948,14 @@ export default function FeedScreen() {
   const kindGate = kindFilterGate(me);
 
   const handleUniversityPill = useCallback(() => {
-    // Kapı kapalıysa seçici HİÇ açılmıyor: açıp seçtirip sonra UT-7310 ile
-    // geri almak kullanıcıyı boşuna gezdirmek olurdu.
-    if (universityGate === "paywall") {
-      openPaywall();
-      return;
-    }
+    // ⚠️ KAPI ARTIK BURADA DEĞİL, SHEET'İN İÇİNDE (istek). Eskiden free
+    // kullanıcıya seçici hiç açılmıyordu ve pill doğrudan Plus'a gidiyordu;
+    // gerekçe "seçtirip sonra UT-7310 ile geri almayalım"dı. O risk kalktı
+    // çünkü seçim de kilitli: kilitli satır taslağı DEĞİŞTİRMİYOR, sheet'i
+    // kapatıp Plus'a götürüyor (bkz. FeedUniversitySheet > handleLockedPress).
+    // Kazanılan şey: kullanıcı satın alacağı şeyin ne olduğunu görüyor.
     setUniversityVisible(true);
-  }, [universityGate, openPaywall]);
+  }, []);
 
   const handleApplyFilters = useCallback(
     (next: FeedFilterValue) => {
@@ -753,15 +981,67 @@ export default function FeedScreen() {
   // ── Filtre satırı ─────────────────────────────────────────────────────────
   // Üç pill: kampüs · sıralama · filtre(rozetli). `FilterPills` tek seçimli bir
   // şerit olduğu için burada "aktif sekme" kavramı yok — her pill kendi
-  // sheet'ini açıyor, o yüzden `activeTab` boş geçiliyor.
+  // sheet'ini açıyor, o yüzden `activeTab` boş geçiliyor (ve bu yüzden
+  // `chevron`: üçü de aşağı açılan bir seçici).
+  //
+  // Üniversite listesi domain → ad çevirisi için: pill eskiden "Kendi
+  // kampüsüm" ya da HAM DOMAIN ("boun.edu.tr") yazıyordu; ikisi de kampüsün
+  // adını söylemiyor. Liste `staleTime: Infinity` ile zaten önbellekte (kampüs
+  // sheet'i aynı sorguyu kullanıyor), yani bu ek bir tur açmıyor.
+  const { data: universities } = useUniversities();
+  const universityNameByDomain = useMemo(() => {
+    const map = new Map<string, string>();
+    for (const u of universities ?? []) {
+      // `display` çift dilli NESNE, `name` sunucunun DB dilinden çözdüğü
+      // string — doğru kaynak `resolveLocalized` (bkz. /api/common/* notu).
+      map.set(u.domain, resolveLocalized(u.display, i18n.language, u.name));
+    }
+    return map;
+  }, [universities, i18n.language]);
+
+  /**
+   * Kullanıcının KENDİ kampüsünün gösterim adı — composer'daki "bu gönderi X
+   * akışında görünecek" satırı için.
+   *
+   * `/api/feed/me` yalnız DOMAIN veriyor (`bilgiedu.net`); satırda ham domain
+   * yazmak kullanıcıya üniversitesinin adını değil sunucunun anahtarını
+   * gösteriyordu. Ad çözülemezse (liste henüz gelmedi ya da domain listede yok)
+   * domain'e düşüyor — satırı tümden gizlemektense.
+   */
+  const ownUniversityName = useMemo(() => {
+    const domain = me?.universityDomain ?? null;
+    if (!domain) return null;
+    return universityNameByDomain.get(domain) ?? domain;
+  }, [me?.universityDomain, universityNameByDomain]);
+
   const filterPills = useMemo(() => {
-    const campusLabel = listParams.university
-      ? listParams.university
+    // Gösterilen kampüs: Plus seçimi varsa o, yoksa kullanıcının KENDİ
+    // kampüsü (/api/feed/me yalnız domain veriyor, adı listeden çözüyoruz).
+    const domain = listParams.university ?? me?.universityDomain ?? null;
+    // Ad çözülemediyse (liste henüz gelmedi ya da domain listede yok)
+    // domain'in kendisi, o da yoksa eski "Kendi kampüsüm" metni. Boş pill
+    // çizmektense ham domain göstermek yeğ.
+    const campusLabel = domain
+      ? (universityNameByDomain.get(domain) ?? domain)
       : t("feed.university.own");
     return [
       {
         key: "campus",
-        label: universityGate === "paywall" ? `🔒 ${campusLabel}` : campusLabel,
+        // Kilit işareti KALDIRILDI. Etiketin başındaki 🔒 kampüsün adını bir
+        // emojiyle açıyor ve satırın tek renkli glif dilinden (chevron) ayrı
+        // duruyordu. Kapının kendisi de artık pill'de değil SHEET'İN İÇİNDE:
+        // free kullanıcıya da seçici açılıyor, kilit satır bazında çiziliyor
+        // (bkz. handleUniversityPill ve FeedUniversitySheet).
+        label: campusLabel,
+        // Üniversite adları uzun ("Orta Doğu Teknik Üniversitesi"): kapsül
+        // sınırlanmazsa tek başına ekranı aşıyor ve yanındaki iki pill
+        // sürüklenmeden hiç görünmüyordu. 200'de ~2 kelime sığıyor, gerisi
+        // kırpılıyor; tam adı kampüs sheet'i gösteriyor.
+        maxLabelWidth: 200,
+        // DOLU çizilsin: bu pill bir seçenek değil, sayfanın hangi akışa
+        // baktığını söyleyen durum bilgisi. Zemin `inverseSurface` (açık modda
+        // siyah, koyuda beyaz), yazı `onInverseSurface` — yani tam tersi.
+        filled: true,
       },
       { key: "sort", label: t(`feed.sort.${listParams.sort}`) },
       {
@@ -771,7 +1051,10 @@ export default function FeedScreen() {
         count: activeFilterCount(listParams),
       },
     ];
-  }, [listParams, universityGate, t]);
+    // `universityGate` ARTIK BAĞIMLILIK DEĞİL: kilit rozeti kalkınca memo
+    // kapının durumunu hiç okumuyor, listede tutmak kapı değiştiğinde üç
+    // pill'i boşuna yeniden kurardı.
+  }, [listParams, t, me?.universityDomain, universityNameByDomain]);
 
   const handlePillPress = useCallback(
     (key: string) => {
@@ -818,28 +1101,89 @@ export default function FeedScreen() {
         Icon={LayoutList}
         text={t("feed.disabled.title")}
         subtitle={t("feed.disabled.body")}
+        // Sarmalayıcı dikeyde ortalıyor; EmptyState'in varsayılan 24'lük
+        // üst payı bloğu aşağı kaydırıyordu. Mesajlar da 0 geçiyor.
+        topOffset={0}
       />
     </FeedEmptyWrap>
   );
 
+  // Sayfa başlığı — şeridin etiketiyle AYNI sözlük anahtarı. Ayrı bir
+  // "headerFeed/headerMine" ailesi açılmadı: üç sayfanın şerit etiketi ile
+  // büyük başlığı birebir aynı kelime, iki kaynak olsa biri güncellenmeden
+  // kalırdı.
+  const sectionTitleFor = useCallback(
+    (key: FeedPageKey) =>
+      key === "mine"
+        ? t("feed.tabMine")
+        : key === "replies"
+          ? t("feed.tabReplies")
+          : t("feed.tabFeed"),
+    [t],
+  );
+
+  // Başlığın altındaki tek satır — Mesajlar'daki `tabDescriptionFor` ile aynı
+  // görev: sayfanın ne listelediğini bir cümlede söylemek.
+  const sectionDescriptionFor = useCallback(
+    (key: FeedPageKey) =>
+      key === "mine"
+        ? t("feed.header.descMine")
+        : key === "replies"
+          ? t("feed.header.descReplies")
+          : t("feed.header.descFeed"),
+    [t],
+  );
+
+  // Başlığın SAĞINDAKİ pill — tek görevi Plus sayfasını açmak. Sekmeye göre
+  // DEĞİŞMİYOR: üç sayfada da aynı günlük hak geçerli.
+  // ⚠️ `resolved` kapısı ŞART (Mesajlar'daki aynı gerekçe): abonelik slice'ı
+  // persist edilmediği için reload'da premium kullanıcı da bir an
+  // `isPremium:false` doğuyor ve o pencerede pill çizilip hemen kaybolurdu —
+  // premium'a premium satmak en pahalı yanılma yönü.
+  const showPlusUpsell = premiumResolved && !isPremium;
+
   const filterRow = (
-    <View style={{ marginBottom: 8 }}>
+    // Alt pay PILL_ROW_GAP: ham marjı değil, açıklamayla pill'ler arasındaki
+    // GÖRÜNEN boşluğu eşliyor (açıklamanın satır yüksekliğinden kalan ölü
+    // boşluk da o aralığın parçası — bkz. DESC_TRAILING_LEADING). Pill
+    // satırının üstündeki ve altındaki boşluk böylece gözle eşit, satır iki
+    // blok arasında kendi başına duruyor.
+    <View style={{ marginBottom: PILL_ROW_GAP }}>
       <FilterPills
         tabs={filterPills}
         // Tek seçimli şerit DEĞİL: her pill kendi sheet'ini açıyor, o yüzden
         // "aktif" olan yok. Boş string hiçbir pill'i vurgulamıyor.
         activeTab=""
         onChange={handlePillPress}
-        // Liste yatay payını (10) aşıp kartlarla aynı hizada başlasın;
-        // `bleed` negatif marj, `inset` ise duruş payı.
-        bleed={10}
-        inset={6}
+        // `bleed` = listenin yan payı: satırın çerçevesi tam ekran genişliğinde
+        // açılsın diye onu birebir geri alıyor.
+        //
+        // `inset` = duruş payı ve `bleed`in TAM KENDİSİ (16): Mesajlar
+        // ekranının arama çubuğu da hücresinin `px-4`üne oturuyor, yani
+        // kapsülün sol kenarı o çubukla aynı x'te. Daha önce 4 kadar solda
+        // duruyordu (dolgusuz kenarlığın optik düzeltmesi) — o fark iki ekranı
+        // yan yana koyduğunda hiza bozukluğu olarak okunuyordu.
+        bleed={FEED_LIST_H_PADDING}
+        inset={FEED_LIST_H_PADDING}
+        // Üç pill de kendi sheet'ini açıyor, sekme değil → chevron.down.
+        chevron
       />
     </View>
   );
 
   const renderPage = (key: FeedPageKey) => {
     const isActive = key === activeTab;
+    const title = (
+      <FeedSectionTitle
+        title={sectionTitleFor(key)}
+        description={sectionDescriptionFor(key)}
+        actionLabel={showPlusUpsell ? t("feed.header.plusAction") : null}
+        // `openLitPlus()` DEĞİL `openPaywall`: o önce hak sahipliğini
+        // tazeliyor, yani premium'u yeni almış ama slice'ı bayat kalmış
+        // kullanıcıya satın aldığı şeyi tekrar satmıyor.
+        onActionPress={showPlusUpsell ? openPaywall : null}
+      />
+    );
 
     if (key === "replies") {
       const loading = repliesQuery.isLoading;
@@ -852,13 +1196,27 @@ export default function FeedScreen() {
           showSkeleton={loading && skeletonReady}
           keyExtractor={(item) => item.replyId}
           renderItem={({ item }) => (
-            <FeedReplyCard
-              reply={item}
-              onAccept={handleAccept}
-              onDismiss={handleDismiss}
-              onMenu={handleReplyMenu}
-            />
+            // ⚠️ PAY FARKINI GERİ ALAN KAP. Yanıt kartı artık Beğeniler'in
+            // foto kartı (bkz. FeedReplyCard) ve genişliği SABİT: ekran
+            // genişliği − 2 × kendi payı (10). Akış listesi ise 16 pay
+            // veriyor; kart o kabın içinde 16'dan başlayıp sağda 4'e
+            // dayanıyordu, yani ekranda eğri duruyordu. Negatif marj farkı
+            // (10 − 16) kapatıyor: kart iki yanında da 10 ile oturuyor,
+            // sayfanın başlığı 16'lık hattında kalıyor.
+            <View
+              style={{
+                marginHorizontal: LIKE_CARD_H_PADDING - FEED_LIST_H_PADDING,
+              }}
+            >
+              <FeedReplyCard
+                reply={item}
+                onPress={handleReplyPress}
+                onAccept={handleAccept}
+                onDismiss={handleDismiss}
+              />
+            </View>
           )}
+          listHeader={title}
           onEndReached={() => {
             if (repliesQuery.hasNextPage && !repliesQuery.isFetchingNextPage) {
               repliesQuery.fetchNextPage();
@@ -874,6 +1232,29 @@ export default function FeedScreen() {
                   Icon={LayoutList}
                   text={t("feed.received.emptyTitle")}
                   subtitle={t("feed.received.emptyBody")}
+                  topOffset={0}
+                  // Boş durumun altındaki CTA — Mesajlar/Beğeniler
+                  // ekranlarındaki pill'in aynısı (litPlus zemin,
+                  // `onMediaInverse` mürekkep; `text` açık modda beyaza döner
+                  // ve dolgunun üstünde kaybolur).
+                  //
+                  // BU SAYFADA ÖZELLİKLE GEREKLİ: "Paylaş" FAB'ı Yanıtlar
+                  // sekmesinde çizilmiyor, yani boş durumun gövdesi ("Bir
+                  // gönderi paylaş, kampüs sana yazsın") kullanıcıyı dokunacak
+                  // hiçbir şeyin olmadığı bir işe yolluyordu.
+                  //
+                  // `restricted` iken GİZLİ: kapı kapalıyken `openComposer`
+                  // sessizce hiçbir şey yapmıyor, yani buton ölü kalırdı
+                  // (FAB'ın aynı kapısı). `quotaExhausted` ise gizlenmiyor —
+                  // o dalda composer açılıyor ve hakkın bittiğini kendi
+                  // rozetinde söylüyor (bkz. openComposer).
+                  {...(gate.kind === "restricted"
+                    ? null
+                    : {
+                        buttonLabel: t("feed.empty.cta"),
+                        buttonLabelColor: colors.onMediaInverse,
+                        onButtonPress: openComposer,
+                      })}
                 />
               </FeedEmptyWrap>
             )
@@ -894,11 +1275,15 @@ export default function FeedScreen() {
         scrollHandler={scrollHandler}
         loading={loading}
         showSkeleton={loading && skeletonReady}
+        // İskelet de kartın `variant`ını almalı: Gönderilerim'in satırında
+        // yanıt kapsülü yok (bkz. FeedSkeletonList).
+        skeletonVariant={isMine ? "mine" : "feed"}
         keyExtractor={(item) => item.id}
         renderItem={({ item }) => (
           <FeedPostCard
             post={item}
             variant={isMine ? "mine" : "feed"}
+            ownPhotoUrl={ownPhotoUrl}
             onToggleLike={handleToggleLike}
             onOpenChat={handleOpenChat}
             onPressAuthor={isMine ? undefined : handlePressAuthor}
@@ -912,11 +1297,17 @@ export default function FeedScreen() {
             statusTone={isMine ? statusToneFor(item) : "neutral"}
           />
         )}
-        // Filtre satırı YALNIZ akış sayfasında ve LİSTENİN İÇİNDE: pager'ın
-        // dışına alınsaydı Gönderilerim/Yanıtlar sayfalarında da durur ve
-        // onlarla ilgisi olmayan bir filtreyi ima ederdi. Liste başlığı olduğu
-        // için sayfayla birlikte native olarak kayıyor.
-        listHeader={isMine ? null : filterRow}
+        // Büyük başlık HER sayfada; filtre satırı YALNIZ akış sayfasında ve
+        // ikisi de LİSTENİN İÇİNDE: pager'ın dışına alınsaydı filtre
+        // Gönderilerim/Yanıtlar sayfalarında da durur ve onlarla ilgisi olmayan
+        // bir filtreyi ima ederdi. Liste başlığı olduğu için ikisi de sayfayla
+        // birlikte native olarak kayıyor.
+        listHeader={
+          <>
+            {title}
+            {isMine ? null : filterRow}
+          </>
+        }
         onEndReached={() => {
           if (query.hasNextPage && !query.isFetchingNextPage) {
             query.fetchNextPage();
@@ -940,6 +1331,7 @@ export default function FeedScreen() {
                 Icon={LayoutList}
                 text={t(isMine ? "feed.mine.emptyTitle" : "feed.empty.title")}
                 subtitle={t(isMine ? "feed.mine.emptyBody" : "feed.empty.body")}
+                topOffset={0}
               />
             </FeedEmptyWrap>
           )
@@ -977,7 +1369,11 @@ export default function FeedScreen() {
               activeTab={activeTab}
               offset={pagerOffset}
               onPress={handleTabChange}
-              centered
+              // ORTALANMIYOR — Mesajlar ve Beğeniler ekranlarındaki kurulumun
+              // aynısı: şerit tam genişlikte duruyor ve sayfanın büyük
+              // başlığıyla AYNI sol hattan (HEADER_LEFT_INSET) başlıyor.
+              // Ortalanmış şerit başlıkla iki ayrı sol kenar veriyordu.
+              inset={HEADER_LEFT_INSET}
             />
           </View>
         }
@@ -993,19 +1389,25 @@ export default function FeedScreen() {
       {activeTab !== "replies" && gate.kind !== "restricted" ? (
         <Pressable
           onPress={openComposer}
+          // ETİKET KALDIRILDI (istek) → kapsül artık YUVARLAK bir buton.
+          // `paddingHorizontal` yerine `width: height` ve `borderRadius: 999`:
+          // yatay pay bırakılsa daire değil hap biçiminde kalırdı.
+          accessibilityRole="button"
+          // Yazı gidince buton ne yaptığını kendi söylemiyor — erişilebilirlik
+          // etiketi ZORUNLU, yoksa ekran okuyucuda isimsiz bir düğme kalıyor.
+          accessibilityLabel={t("feed.empty.cta")}
           style={{
             position: "absolute",
             right: 16,
             // 92 = tab bar + nefes payı.
             bottom: 92,
-            height: 52,
-            paddingHorizontal: 20,
+            width: FAB_SIZE,
+            height: FAB_SIZE,
             borderRadius: 999,
             borderCurve: "continuous",
             backgroundColor: colors.inverseSurface,
             alignItems: "center",
             justifyContent: "center",
-            flexDirection: "row",
             shadowColor: colors.shadow,
             shadowOpacity: 0.18,
             shadowRadius: 12,
@@ -1013,23 +1415,31 @@ export default function FeedScreen() {
             elevation: 4,
           }}
         >
-          <SFIcon
-            name="square.and.pencil"
-            fallback={LayoutList}
-            size={17}
-            color={colors.onInverseSurface}
-            strokeWidth={2}
-          />
-          <Text
+          {/* ⚠️ GLİFİN DIŞ KUTUSU AÇIK: Pressable'ın `alignItems/justifyContent`
+              center'ı tek başına yetmiyor. SFIcon native bir sembol çiziyor ve
+              o görünümün doğal ölçüsü `size`la birebir aynı değil; dairenin
+              ortası ikonun gerçek kutusuna göre hesaplanınca glif birkaç pt
+              kayıyor (bakiye rozetindeki aynı tuzak, bkz. FeedQuotaBadge).
+              Sabit kare kutu + içinde ortalama glifi bilinen bir eksene
+              oturtuyor.
+              17 → 22: glif etiketin yanında küçük bir işaretti, şimdi butonun
+              TEK içeriği — 52'lik dairede 17 kaybolup gidiyordu. */}
+          <View
             style={{
-              marginLeft: 8,
-              fontSize: 15,
-              fontWeight: "600",
-              color: colors.onInverseSurface,
+              width: FAB_GLYPH,
+              height: FAB_GLYPH,
+              alignItems: "center",
+              justifyContent: "center",
             }}
           >
-            {t("feed.empty.cta")}
-          </Text>
+            <SFIcon
+              name="square.and.pencil"
+              fallback={LayoutList}
+              size={FAB_GLYPH}
+              color={colors.onInverseSurface}
+              strokeWidth={2}
+            />
+          </View>
         </Pressable>
       ) : null}
 
@@ -1040,7 +1450,15 @@ export default function FeedScreen() {
         maxLength={me?.postMaxLength}
         anonymousGate={anonymousGate(me)}
         onAnonymousPaywall={openPaywall}
-        universityLabel={me?.universityDomain ?? null}
+        // Yanıt composer'ıyla aynı kaynak: /api/feed/me'nin kota bloğu.
+        remaining={me?.quota?.postsRemaining ?? null}
+        // ⚠️ KAPI BURADAN GEÇİYOR, `remaining <= 0`DAN TÜRETİLMİYOR. Composer
+        // içinde türetilse `remaining: null` (backend henüz söylemedi) de
+        // kilitlenirdi ve o "hak yok" değil "bilmiyoruz" demek. Kota kuralının
+        // tek sahibi `composeGate` — kısıt/kota sıralaması da orada.
+        quotaExhausted={gate.kind === "quotaExhausted"}
+        // Domain DEĞİL gösterim adı (bkz. ownUniversityName).
+        universityLabel={ownUniversityName}
         sending={createPost.isPending}
         errorText={composerError}
       />
@@ -1101,6 +1519,15 @@ export default function FeedScreen() {
         onClose={() => setUniversityVisible(false)}
         value={listParams.university}
         onSelect={handleSelectUniversity}
+        // İlk satır "Kendi kampüsüm" yerine kampüsün ADINI yazıyor; domain de
+        // o üniversiteyi listeden düşürmek için (bkz. sheet'in prop notu).
+        ownDomain={me?.universityDomain ?? null}
+        ownUniversityName={ownUniversityName}
+        // Kapı sheet'in İÇİNDE uygulanıyor: free kullanıcı listeyi görüyor,
+        // başka kampüs satırlarında kutu yerine kilit var ve dokunuş sheet'i
+        // kapatıp Plus'a götürüyor (bkz. handleUniversityPill).
+        gate={universityGate}
+        onPaywall={openPaywall}
       />
 
       {/* Normal gönderinin yazarına dokunulunca AKSİYONSUZ profil önizlemesi.
@@ -1113,6 +1540,22 @@ export default function FeedScreen() {
         visible={!!previewPostId && !!authorProfile.data}
         onClose={() => setPreviewPostId(null)}
         profile={authorProfile.data}
+      />
+
+      {/* Yanıt kartına dokununca açılan profil — gerekçe `handleReplyPress`in
+          başında. `visible` profil GELDİKTEN sonra açılıyor (yazar
+          önizlemesiyle aynı desen): boş bir kartla açıp doldurmak sheet'i bir
+          kare boyunca iskelet gibi gösteriyordu. */}
+      <LikerSwipeModal
+        visible={!!replierTarget && !!replierProfile.data}
+        profile={replierProfile.data}
+        onClose={() => setReplierTarget(null)}
+        onDecide={handleReplyDecide}
+        // Engellemeden sonra yanıt listesi tazelenmeli: kart hâlâ listede
+        // duruyor ama arkasındaki kişi artık engelli.
+        onSwipe={(_userId: string, direction: string) => {
+          if (direction === "block") repliesQuery.refetch?.();
+        }}
       />
     </View>
   );
@@ -1139,8 +1582,15 @@ function statusLabelFor(post: FeedPostDto, t: (k: string) => string): string | n
 
 function statusToneFor(post: FeedPostDto): "neutral" | "warning" | "danger" {
   switch (postPresentation(post)) {
+    // İNCELEME NÖTR (istek), "warning" DEĞİL: rozet başlık satırına taşınınca
+    // turuncu bir "İnceleniyor" tarihin ve üç noktanın yanında bir uyarı —
+    // hatta bir hata — gibi okunuyordu. Oysa inceleme bir bekleme durumu,
+    // kullanıcının yapması gereken bir şey yok. Nötr ton grinin kendisi
+    // (bkz. FeedPostCard > statusColor).
     case "pending":
-      return "warning";
+      return "neutral";
+    // Kaldırılan/gizlenen gönderi KIRMIZI kalıyor: orada gerçekten bir sorun
+    // var ve kullanıcının bilmesi gerekiyor.
     case "removed":
     case "hidden":
       return "danger";

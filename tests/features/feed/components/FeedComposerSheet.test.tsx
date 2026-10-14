@@ -71,6 +71,16 @@ const typeBody = (text: string) => {
 };
 
 /**
+ * Gönder butonunun etiketi — kampüs adı verilmişse onu taşıyor
+ * ("… akışında paylaş"), yoksa sade "Paylaş". `setup` varsayılan olarak
+ * `universityLabel` geçtiği için testlerin çoğu ilk dalda.
+ */
+const sendLabel = (university: string | null = 'itu.edu.tr') =>
+  university
+    ? tr.feed.composer.sendIn.replace('{{university}}', university)
+    : tr.feed.composer.send;
+
+/**
  * Metni yaz ve gönder.
  *
  * ⚠️ Araya `act` BOŞALTMASI şart: RHF `mode:'onChange'` + zodResolver ile
@@ -81,7 +91,7 @@ const typeBody = (text: string) => {
 const typeAndSend = async (text: string) => {
   typeBody(text);
   await act(async () => {});
-  fireEvent.press(screen.getByText(tr.feed.composer.send));
+  fireEvent.press(screen.getByText(sendLabel()));
   await act(async () => {});
 };
 
@@ -89,7 +99,7 @@ describe('temel akış', () => {
   it('başlık, placeholder ve gönder butonu çizilir', () => {
     setup();
     expect(screen.getByText(tr.feed.composer.title)).toBeTruthy();
-    expect(screen.getByText(tr.feed.composer.send)).toBeTruthy();
+    expect(screen.getByText(sendLabel())).toBeTruthy();
   });
 
   // ⚠️ `await waitFor`: RHF + zodResolver doğrulaması ASENKRON ve `handleSubmit`
@@ -104,7 +114,7 @@ describe('temel akış', () => {
   it('boş metinle gönderilemez', async () => {
     const { onSend } = setup();
     await act(async () => {});
-    fireEvent.press(screen.getByText(tr.feed.composer.send));
+    fireEvent.press(screen.getByText(sendLabel()));
     expect(onSend).not.toHaveBeenCalled();
   });
 
@@ -118,6 +128,46 @@ describe('temel akış', () => {
     const { onSend } = setup({ sending: true });
     await typeAndSend('merhaba');
     expect(onSend).not.toHaveBeenCalled();
+  });
+});
+
+/**
+ * HAK BİTTİĞİNDE — kota sheet'i YOK, aynı composer kilitli (istek).
+ *
+ * Kapı prop'tan geliyor (`quotaExhausted`), `remaining`den TÜRETİLMİYOR:
+ * `remaining: null` "backend söylemedi" demek ve o durumda kilitlemek
+ * kullanıcıya olmayan bir kısıt uydurur. Aşağıdaki son test tam o ayrımı
+ * koruyor.
+ */
+describe('kota bitti — composer kilitli', () => {
+  it('rozet 0 yazar ve gönderilemez', async () => {
+    const { onSend } = setup({ quotaExhausted: true, remaining: 0 });
+    expect(
+      screen.getByText(tr.feed.composer.remaining.replace('{{count}}', '0')),
+    ).toBeTruthy();
+    await typeAndSend('merhaba');
+    expect(onSend).not.toHaveBeenCalled();
+  });
+
+  // Paywall AÇILMIYOR: gönderi hakkı satın alınabilen bir şey değil, dokunuşa
+  // bir yer göstermek olmayan bir satın almayı ima ederdi. Buton SADECE pasif.
+  it('kilitli butona basmak paywall AÇMAZ, sheet de KAPANMAZ', async () => {
+    const { onSend, onClose, onAnonymousPaywall } = setup({
+      quotaExhausted: true,
+      remaining: 0,
+    });
+    await typeAndSend('merhaba');
+    expect(onSend).not.toHaveBeenCalled();
+    expect(onAnonymousPaywall).not.toHaveBeenCalled();
+    expect(onClose).not.toHaveBeenCalled();
+  });
+
+  // ⚠️ `remaining: null` = "bilmiyoruz", "hak yok" DEĞİL. Kapı kapalı değilse
+  // gönderim çalışmaya devam etmeli.
+  it('remaining null + kapı kapalı değil → gönderim normal', async () => {
+    const { onSend } = setup({ quotaExhausted: false, remaining: null });
+    await typeAndSend('merhaba');
+    expect(onSend).toHaveBeenCalledWith('merhaba', false);
   });
 });
 
@@ -146,6 +196,22 @@ describe('anonim kapısı', () => {
     await typeAndSend('deneme');
     // UT-7305 yenmesin diye gönderi NORMAL gidiyor.
     expect(onSend).toHaveBeenCalledWith('deneme', false);
+  });
+
+  it('paywall → anahtara dokunuş SHEET\'İ KAPATIR, sonra Plus açar', () => {
+    const { onClose, onAnonymousPaywall } = setup({ anonymousGate: PAYWALL });
+    // Anahtarın üstündeki sarmalayıcı (Switch kendisi `pointerEvents:"none"`
+    // katmanının altında). `testID`siz olan bu: diğeri AppModal mock'unun
+    // header kapatma butonu.
+    const touchables = screen.UNSAFE_getAllByType(
+      require('react-native').TouchableOpacity,
+    );
+    const gateWrapper = touchables.find((n: any) => !n.props.testID);
+    fireEvent.press(gateWrapper!);
+    // Composer altta açık kalırsa Plus onun ÜSTÜNE biniyor ve kullanıcı Plus'ı
+    // kapattığında yarım yazılmış bir gönderiyle baş başa kalıyordu.
+    expect(onClose).toHaveBeenCalled();
+    expect(onAnonymousPaywall).toHaveBeenCalled();
   });
 
   it('restricted → kısıt metni, anahtar devre dışı', () => {
@@ -191,10 +257,28 @@ describe('hata yolu — sheet AÇIK kalır', () => {
 });
 
 describe('karakter sayacı ve kırpma', () => {
-  it('sayaç code point sayar — emoji 1', () => {
+  // Sayaç YALNIZ son FEED_COUNTER_WARN_REMAINING (40) karakterde görünüyor —
+  // yazarken sürekli "3/400" durması gereksiz baskı yaratıyordu. Aşağıdaki
+  // testler bu yüzden sınıra DAYANARAK ölçüyor.
+  it('yazarken sayaç ÇİZİLMEZ (sınırdan uzakken)', () => {
     setup({ maxLength: 400 });
+    typeBody('abc');
+    expect(screen.queryByText('3/400')).toBeNull();
+  });
+
+  it('sınıra yaklaşınca sayaç çıkar', () => {
+    setup({ maxLength: 400 });
+    // Kalan 40 → eşik tam üstünde.
+    typeBody('a'.repeat(360));
+    expect(screen.getByText('360/400')).toBeTruthy();
+  });
+
+  it('sayaç code point sayar — emoji 1', () => {
+    // Küçük tavan: sayacın görünmesi için sınıra dayanmak gerekiyor. `str.length`
+    // 4 derdi, code point sayımı 2 diyor — testin asıl konusu bu.
+    setup({ maxLength: 5 });
     typeBody('😀😀');
-    expect(screen.getByText('2/400')).toBeTruthy();
+    expect(screen.getByText('2/5')).toBeTruthy();
   });
 
   it('metin sunucu tavanına kırpılır', () => {
@@ -203,37 +287,38 @@ describe('karakter sayacı ve kırpma', () => {
     expect(input.props.value).toBe('abcde');
   });
 
+  // Tavan artık sayaçtan değil KIRPMADAN okunuyor: 3 karakterde sayaç
+  // görünmüyor, ama tavanın 400 olduğunu kırpma kanıtlıyor.
   it('sunucu tavanı gelmezse istemci tavanı (400) kullanılır', () => {
     setup({ maxLength: null });
-    typeBody('abc');
-    expect(screen.getByText('3/400')).toBeTruthy();
+    const input = typeBody('a'.repeat(410));
+    expect(input.props.value).toHaveLength(400);
   });
 
   it('sunucu tavanı istemci tavanından BÜYÜKSE istemci kazanır', () => {
     setup({ maxLength: 1000 });
-    typeBody('abc');
-    expect(screen.getByText('3/400')).toBeTruthy();
+    const input = typeBody('a'.repeat(410));
+    expect(input.props.value).toHaveLength(400);
   });
 });
 
-describe('üniversite ipucu', () => {
-  it('normal modda hangi akışta görüneceği yazar', () => {
-    setup({ universityLabel: 'itu.edu.tr' });
-    expect(
-      screen.getByText(
-        tr.feed.composer.universityHint.replace('{{university}}', 'itu.edu.tr'),
-      ),
-    ).toBeTruthy();
+// Ayrı "bu gönderi X akışında görünecek" SATIRI KALDIRILDI; bilgi gönder
+// butonunun kendisinde duruyor.
+describe('kampüs adı gönder butonunda', () => {
+  it('kampüs adı verilince buton onu taşır', () => {
+    setup({ universityLabel: 'Bilgi Üniversitesi' });
+    expect(screen.getByText(sendLabel('Bilgi Üniversitesi'))).toBeTruthy();
   });
 
-  it('anonim modda ipucu ÇİZİLMEZ (kimlik görünür izlenimi vermesin)', () => {
+  it('anonim modda da taşır — gönderi aynı akışa gidiyor', () => {
     setup({ universityLabel: 'itu.edu.tr', anonymousGate: ALLOWED });
     const sw = screen.UNSAFE_getByType(require('react-native').Switch);
     fireEvent(sw, 'valueChange', true);
-    expect(
-      screen.queryByText(
-        tr.feed.composer.universityHint.replace('{{university}}', 'itu.edu.tr'),
-      ),
-    ).toBeNull();
+    expect(screen.getByText(sendLabel())).toBeTruthy();
+  });
+
+  it('kampüs adı YOKSA sade etiket — "undefined akışında" yazmıyor', () => {
+    setup({ universityLabel: null });
+    expect(screen.getByText(tr.feed.composer.send)).toBeTruthy();
   });
 });
