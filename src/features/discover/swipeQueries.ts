@@ -59,12 +59,19 @@ function emitPaywall(node: any, event: string): boolean {
 // en fazla 50 (TargetPoolSize) → tek istekte deste biter, `hasNextPage` pratikte
 // hep false olur ve sayfa sınırında kullanıcıyı bekleten ikinci tur kalkar.
 // (Tavanın üstü 50'ye kırpılmaz, 10'a düşer — bkz. MAX_SWIPE_PAGE_SIZE.)
-export function usePotentialMatches(pageSize = MAX_SWIPE_PAGE_SIZE) {
+export function usePotentialMatches(
+  pageSize = MAX_SWIPE_PAGE_SIZE,
+  mode?: string | null,
+) {
   const size = Math.min(Math.max(1, pageSize), MAX_SWIPE_PAGE_SIZE);
   return useInfiniteQuery({
-    queryKey: swipeKeys.matches,
+    // ⚠️ Anahtar MOD'U TAŞIYOR. Taşımasaydı Arkadaş destesi Flört destesinin
+    // cache'ine yazılır, mod değişiminde bir kare yabancı kart görünürdü.
+    // Mod anahtarın parçası olduğu için elle reset de gerekmiyor: geçiş
+    // yepyeni bir infinite query doğuruyor.
+    queryKey: mode ? swipeKeys.deck(mode) : swipeKeys.matches,
     queryFn: async ({ pageParam = 1 }: { pageParam: number }) => {
-      const result = await swipeService.getPotentialMatches(null, pageParam, size);
+      const result = await swipeService.getPotentialMatches(null, pageParam, size, mode);
       return result;
     },
     initialPageParam: 1,
@@ -269,15 +276,34 @@ export function useSwipeStats() {
   return { ...result, data };
 }
 
+/**
+ * Swipe değişkenleri — TEK YERDE tanımlı.
+ *
+ * Üç callback (`mutationFn`, `onMutate`, `onSuccess`) aynı şekli ayrı ayrı
+ * yazıyordu; `mode` eklenirken biri atlanınca TS onu "bilinmeyen alan" diye
+ * reddetti. Tip tek kaynaktan gelince o sınıf hata imkânsız.
+ *
+ * `mode` opsiyonel: gönderilmezse sunucu Dating sayıyor (eski istemci
+ * sözleşmesi) ve kart aksiyonları dışındaki çağıranlar modu bilmiyor olabilir.
+ */
+type SwipeVariables = {
+  direction: string;
+  userId: string;
+  mode?: string | null;
+};
+
 export function useSwipeMutation() {
   const qc = useQueryClient();
   return useMutation({
-    mutationFn: ({ direction, userId }: { direction: string; userId: string }) => {
-      if (direction === "up") return swipeService.fireUser(userId);
-      if (direction === "left") return swipeService.passUser(userId);
-      return swipeService.likeUser(userId);
+    // `mode` HER AKSİYONDA taşınıyor: sunucu swipe satırını o modun altına
+    // yazıyor ve karşılıklı beğeni kontrolü AYNI modda yapılıyor (çapraz-mod
+    // beğeni eşleşme üretmiyor).
+    mutationFn: ({ direction, userId, mode }: SwipeVariables) => {
+      if (direction === "up") return swipeService.fireUser(userId, null, mode);
+      if (direction === "left") return swipeService.passUser(userId, null, mode);
+      return swipeService.likeUser(userId, null, mode);
     },
-    onMutate: ({ direction }: { direction: string; userId: string }) => {
+    onMutate: ({ direction }: SwipeVariables) => {
       qc.setQueryData(swipeKeys.stats, (prev: any) => {
         if (!prev) return prev;
         const next = { ...prev };
@@ -307,7 +333,7 @@ export function useSwipeMutation() {
         return next;
       });
     },
-    onSuccess: (response: any, variables: { direction: string; userId: string }) => {
+    onSuccess: (response: any, variables: SwipeVariables) => {
       const swipeResult = response?.result;
       const isSuperLike = variables?.direction === "up";
 
@@ -367,11 +393,14 @@ export function useNoteMutation() {
       userId,
       comment,
       target,
+      mode,
     }: {
       userId: string;
       comment: string;
       target: NoteTarget;
-    }) => swipeService.sendNote(userId, comment, noteTargetPayload(target)),
+      /** Notun hangi modda gönderildiği — bkz. useSwipeMutation'daki not. */
+      mode?: string | null;
+    }) => swipeService.sendNote(userId, comment, noteTargetPayload(target), mode),
     onSuccess: (response: any) => {
       const result = response?.result;
 

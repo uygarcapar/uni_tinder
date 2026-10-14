@@ -45,6 +45,18 @@ const emptyResult: PotentialMatchesResult = {
   emptyReasonAction: null,
 };
 
+/**
+ * `mode` WIRE'DA OPSİYONEL ve bu bilinçli: sunucu alanı görmediğinde "Dating"
+ * sayıyor (eski istemci sözleşmesi). Boş/null modu HİÇ GÖNDERMİYORUZ —
+ * `mode=` biçiminde boş bir parametre sunucuda enum çözümlemesini patlatır.
+ */
+const modeParam = (mode?: string | null): string =>
+  mode ? `&mode=${encodeURIComponent(mode)}` : "";
+
+/** Gövdeli isteklerin karşılığı: alan ya dolu gidiyor ya hiç gitmiyor. */
+const modeBody = (mode?: string | null): Record<string, string> =>
+  mode ? { mode } : {};
+
 class SwipeService {
   /**
    * Deste isteği. `?expandRadius=true` KALDIRILDI (2026-08-22): tek seferlik
@@ -56,9 +68,10 @@ class SwipeService {
     _token: string | null,
     pageNumber = 1,
     pageSize = 10,
+    mode?: string | null,
   ): Promise<PotentialMatchesResponse> {
     const response = await api.get(
-      `${API_ENDPOINTS.GET_POTENTIAL_MATCHES}?pageNumber=${pageNumber}&pageSize=${pageSize}`
+      `${API_ENDPOINTS.GET_POTENTIAL_MATCHES}?pageNumber=${pageNumber}&pageSize=${pageSize}${modeParam(mode)}`
     ) as any;
 
     const result: PotentialMatchesResult = {
@@ -75,16 +88,16 @@ class SwipeService {
     };
   }
 
-  async likeUser(targetUserId: string, _token?: string | null) {
-    return api.post(API_ENDPOINTS.SWIPE_LIKE, { targetUserId, swipeType: 'like' });
+  async likeUser(targetUserId: string, _token?: string | null, mode?: string | null) {
+    return api.post(API_ENDPOINTS.SWIPE_LIKE, { targetUserId, swipeType: 'like', ...modeBody(mode) });
   }
 
-  async passUser(targetUserId: string, _token?: string | null) {
-    return api.post(API_ENDPOINTS.SWIPE_PASS, { targetUserId, swipeType: 'pass' });
+  async passUser(targetUserId: string, _token?: string | null, mode?: string | null) {
+    return api.post(API_ENDPOINTS.SWIPE_PASS, { targetUserId, swipeType: 'pass', ...modeBody(mode) });
   }
 
-  async fireUser(targetUserId: string, _token?: string | null) {
-    return api.post(API_ENDPOINTS.SWIPE_FIRE, { targetUserId, swipeType: 'superlike' });
+  async fireUser(targetUserId: string, _token?: string | null, mode?: string | null) {
+    return api.post(API_ENDPOINTS.SWIPE_FIRE, { targetUserId, swipeType: 'superlike', ...modeBody(mode) });
   }
 
   /**
@@ -101,12 +114,14 @@ class SwipeService {
     targetUserId: string,
     comment: string,
     target: ReturnType<typeof noteTargetPayload>,
+    mode?: string | null,
   ) {
     return api.post(API_ENDPOINTS.SWIPE_NOTE, {
       targetUserId,
       swipeType: 'note',
       comment: comment.trim(),
       target,
+      ...modeBody(mode),
     });
   }
 
@@ -117,9 +132,14 @@ class SwipeService {
   // Fire'lar ve normal beğeniler AYRI paginate ediliyor; ikisi de tek
   // sayfa çekiliyor. Zarf ham dönüyor — çağıranlar (LikesScreen listesi,
   // fetchWhoLikedMe thunk'ı) farklı alanlarını kullanıyor.
-  async getWhoLikedMe(likePage = 1, likePageSize = 10, superLikePageSize = 10) {
+  async getWhoLikedMe(
+    likePage = 1,
+    likePageSize = 10,
+    superLikePageSize = 10,
+    mode?: string | null,
+  ) {
     return api.get(
-      `${API_ENDPOINTS.WHO_LIKED_ME}?likePageNumber=${likePage}&likePageSize=${likePageSize}&superLikePageNumber=1&superLikePageSize=${superLikePageSize}`,
+      `${API_ENDPOINTS.WHO_LIKED_ME}?likePageNumber=${likePage}&likePageSize=${likePageSize}&superLikePageNumber=1&superLikePageSize=${superLikePageSize}${modeParam(mode)}`,
     );
   }
 }

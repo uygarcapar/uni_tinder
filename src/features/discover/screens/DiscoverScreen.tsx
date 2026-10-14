@@ -822,7 +822,14 @@ export default function DiscoverScreen() {
   const insets = useSafeAreaInsets();
   const dispatch = useAppDispatch();
 
-  const matchesQuery = usePotentialMatches();
+  // ── MOD (Flört / Arkadaş) ──────────────────────────────────────────────────
+  // ⚠️ SIRA BAĞLAYICI: deste sorgusu ve deste ilerlemesi ikisi de moda bağlı,
+  // yani hook bu ikisinden ÖNCE okunmak zorunda. Seçim diskte ve Beğeniler
+  // ekranıyla paylaşılıyor (bkz. useAppMode).
+  const { mode, setMode } = useAppMode();
+
+  // Deste MOD BAŞINA ayrı cache'te — anahtar modu taşıyor (bkz. swipeKeys).
+  const matchesQuery = usePotentialMatches(undefined, mode);
   const filtersQuery = useSwipeFilters();
   const statsQuery = useSwipeStats();
   const swipeMutation = useSwipeMutation();
@@ -836,7 +843,9 @@ export default function DiscoverScreen() {
   // burada, ref'lerden ÖNCE okunuyor: aşağıdaki lazy initializer'lar userId'ye
   // ihtiyaç duyuyor. Tutorial bayrağı da aynı değeri kullanır.
   const currentUserId = useAppSelector((s) => s.auth.user?.id);
-  const [restoredDeck] = useState(() => loadDeckProgress(currentUserId));
+  // İlerleme de mod başına: tek anahtar olsaydı Arkadaş'ta ilerlemek Flört
+  // destesinin demirini ezer, kullanıcı dönünce desteyi yabancı yerden sürdürürdü.
+  const [restoredDeck] = useState(() => loadDeckProgress(currentUserId, mode));
 
   // Swipe edilen userId → swipe ANI. Backend geçmiş swipe'ları zaten filtreliyor;
   // bu küme yalnızca commit yarışını kapatıyor: stack boşalıp polling refetch
@@ -983,12 +992,16 @@ export default function DiscoverScreen() {
     const sig = `${anchorUserIdRef.current ?? ""}|${swipedAtRef.current.size}`;
     if (sig !== persistedDeckSigRef.current) {
       persistedDeckSigRef.current = sig;
-      saveDeckProgress(currentUserId, {
-        anchorUserId: anchorUserIdRef.current,
-        swipes: [...swipedAtRef.current],
-      });
+      saveDeckProgress(
+        currentUserId,
+        {
+          anchorUserId: anchorUserIdRef.current,
+          swipes: [...swipedAtRef.current],
+        },
+        mode,
+      );
     }
-  }, [matchesQuery.data, potentialMatches, currentIndex, currentUserId]);
+  }, [matchesQuery.data, potentialMatches, currentIndex, currentUserId, mode]);
 
   const loading = matchesQuery.isLoading;
   const filters = filtersQuery.data ?? DEFAULT_FILTERS;
@@ -1446,9 +1459,6 @@ export default function DiscoverScreen() {
 
   const [filterVisible, setFilterVisible] = useState(false);
 
-  // ── MOD (Flört / Arkadaş) ──────────────────────────────────────────────────
-  // Seçim diskte ve Beğeniler ekranıyla PAYLAŞILIYOR (bkz. useAppMode).
-  const { mode, setMode } = useAppMode();
   const [modePickerVisible, setModePickerVisible] = useState(false);
   // Hangi modun kurulumu açık; `null` = sheet kapalı.
   const [setupMode, setSetupMode] = useState<AppMode | null>(null);
@@ -2450,6 +2460,9 @@ export default function DiscoverScreen() {
     lastSwipePromiseRef.current = swipeMutation.mutateAsync({
       direction,
       userId,
+      // Swipe hangi modda yapıldı — sunucu satırı o modun altına yazıyor ve
+      // karşılıklı beğeniyi AYNI modda arıyor (çapraz-mod eşleşme yok).
+      mode,
     });
   });
 
@@ -2689,6 +2702,7 @@ export default function DiscoverScreen() {
         userId: req.profile.userId,
         comment,
         target: req.target,
+        mode,
       });
       analytics.capture("note_sent", { targetKind: req.target.kind });
       setNoteRequest(null);

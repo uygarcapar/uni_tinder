@@ -73,18 +73,34 @@ export function dayStamp(now: Date = new Date()): string {
   return `${now.getFullYear()}-${p(now.getMonth() + 1)}-${p(now.getDate())}`;
 }
 
-const keyFor = (userId: string) => `${KEY_PREFIX}${userId}`;
+/**
+ * Anahtar kullanıcı + MOD başına.
+ *
+ * Mod eklenmesinin sebebi: ilerleme "destede nerede kaldım" demek ve iki modun
+ * destesi apayrı. Tek anahtar olsaydı Arkadaş'ta ilerlemek Flört destesinin
+ * anchor'ını ezer, kullanıcı Flört'e dönünce desteyi yabancı bir yerden
+ * sürdürürdü.
+ *
+ * ⚠️ Mod VERİLMEZSE eski anahtar biçimi kullanılıyor (sonek yok): sahadaki
+ * kaydı göçürmüyoruz — bir günlük ilerleme bilgisi, ve gün dönünce zaten
+ * düşüyor. Flört kullanıcısı eski anahtarını okumaya devam ediyor.
+ */
+const keyFor = (userId: string, mode?: string | null) =>
+  mode ? `${KEY_PREFIX}${userId}:${mode}` : `${KEY_PREFIX}${userId}`;
 
-export function loadDeckProgress(userId?: string | null): DeckProgress {
+export function loadDeckProgress(
+  userId?: string | null,
+  mode?: string | null,
+): DeckProgress {
   if (!userId) return EMPTY;
-  const raw = appPrefs.getString(keyFor(userId));
+  const raw = appPrefs.getString(keyFor(userId, mode));
   if (!raw) return EMPTY;
   try {
     const parsed = JSON.parse(raw);
     // Gün döndü → dünkü ilerleme geçersiz. Kaydı da temizliyoruz ki bir daha
     // parse edilmesin.
     if (parsed?.day !== dayStamp()) {
-      appPrefs.remove(keyFor(userId));
+      appPrefs.remove(keyFor(userId, mode));
       return EMPTY;
     }
     // Bayat kayıtlar YÜKLENİRKEN düşürülüyor. Cold start'ta uygulama en az
@@ -103,7 +119,7 @@ export function loadDeckProgress(userId?: string | null): DeckProgress {
     };
   } catch {
     // Bozuk kayıt — sessizce sıfırdan başla.
-    appPrefs.remove(keyFor(userId));
+    appPrefs.remove(keyFor(userId, mode));
     return EMPTY;
   }
 }
@@ -111,10 +127,11 @@ export function loadDeckProgress(userId?: string | null): DeckProgress {
 export function saveDeckProgress(
   userId: string | null | undefined,
   progress: DeckProgress,
+  mode?: string | null,
 ): void {
   if (!userId) return;
   appPrefs.set(
-    keyFor(userId),
+    keyFor(userId, mode),
     JSON.stringify({
       day: dayStamp(),
       anchorUserId: progress.anchorUserId,
@@ -123,7 +140,10 @@ export function saveDeckProgress(
   );
 }
 
-export function clearDeckProgress(userId?: string | null): void {
+export function clearDeckProgress(
+  userId?: string | null,
+  mode?: string | null,
+): void {
   if (!userId) return;
-  appPrefs.remove(keyFor(userId));
+  appPrefs.remove(keyFor(userId, mode));
 }
