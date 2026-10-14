@@ -24,6 +24,12 @@ import { useAppDispatch, useAppSelector } from "@/shared/hooks/redux";
 import { refreshEntitlementsForPaywall } from "@/features/profile/subscriptionSlice";
 import { openLitPlus } from "@/features/profile/litPlusEntry";
 import PreviewModal from "@/features/profile/components/PreviewModal";
+import { useAppMode } from "@/features/discover/useAppMode";
+import { useNoteMutation, useSwipeStats } from "@/features/discover/swipeQueries";
+import NoteComposerModal from "@/features/discover/components/NoteComposerModal";
+import type { NoteTarget } from "@/shared/types";
+import { resolveCardMode } from "../feedCardMode";
+import { feedKeys } from "../feedKeys";
 import FilterPills from "@/shared/components/FilterPills";
 import {
   resolveLocalized,
@@ -784,6 +790,101 @@ export default function FeedScreen() {
   const [previewPostId, setPreviewPostId] = useState<string | null>(null);
   const authorProfile = useFeedAuthorProfile(previewPostId);
 
+  // ── Yazar kartının AKSİYON MODU ───────────────────────────────────────────
+  // Keşif'teki seçili mod (Beğeniler'le de paylaşılan tek kaynak) + sunucunun
+  // `availableModes` listesi → kartın hangi modda açılacağı. Karar saf bir
+  // fonksiyonda (bkz. feedCardMode): yanlış dal sessizce yanlış modda beğeni
+  // atıyor ve geri alınamıyor.
+  const { mode: selectedMode } = useAppMode();
+  const cardMode = useMemo(
+    () =>
+      resolveCardMode(
+        (authorProfile.data as any)?.availableModes,
+        selectedMode,
+      ),
+    [authorProfile.data, selectedMode],
+  );
+
+  // Fire bakiyesi kartta rozet olarak gösteriliyor (keşifteki kartla aynı
+  // sözleşme). Deste sorgusuyla AYNI cache — ek tur yok.
+  const statsQuery = useSwipeStats();
+
+  /**
+   * Kart üzerinden not gönderimi.
+   *
+   * COMPOSER BU EKRANDA RENDER EDİLİYOR, Keşif'e devredilmiyor. uiBus ile
+   * devretmek denendi ve kırılgan: Keşif sekmesi LAZY MOUNT ve uiBus REPLAY
+   * YAPMIYOR — kullanıcı Keşif'e hiç girmemişse olay boşluğa düşer ve not
+   * kutusuna dokunmak hiçbir şey yapmaz (feedEntry.ts'teki aynı tuzak).
+   *
+   * Mutasyon ortak (`useNoteMutation`), yani kota/bakiye/paywall davranışı
+   * Keşif'tekiyle birebir aynı — ayrışan tek şey composer'ın nerede
+   * çizildiği.
+   */
+  const noteMutation = useNoteMutation();
+  const [noteRequest, setNoteRequest] = useState<{
+    target: NoteTarget;
+    profile: any;
+  } | null>(null);
+  const [noteError, setNoteError] = useState<string | null>(null);
+
+  const handleAuthorNote = useCallback(
+    (target: NoteTarget) => {
+      const profile = authorProfile.data as any;
+      if (!profile?.userId) return;
+      setNoteError(null);
+      // Kart KAPANIYOR: composer onun üstüne binerse iki sheet üst üste gelir
+      // ve gorhom'un stack sırası beklenmedik hâle düşer (mod seçicideki aynı
+      // kural).
+      setPreviewPostId(null);
+      setNoteRequest({ target, profile });
+    },
+    [authorProfile.data],
+  );
+
+  const handleSendAuthorNote = useCallback(
+    async (comment: string) => {
+      const req = noteRequest;
+      if (!req) return;
+      setNoteError(null);
+      try {
+        await noteMutation.mutateAsync({
+          userId: req.profile.userId,
+          comment,
+          target: req.target,
+          // Notun modu da taşınıyor: sunucu swipe satırını o modun altına
+          // yazıyor (bkz. useNoteMutation).
+          mode: cardMode ?? undefined,
+        });
+        setNoteRequest(null);
+      } catch (e: any) {
+        // Sheet AÇIK kalıyor ve metin korunuyor (composer sözleşmesi).
+        setNoteError(
+          e?.response?.data?.message ?? e?.message ?? t("common.somethingWentWrong"),
+        );
+      }
+    },
+    [cardMode, noteMutation, noteRequest, t],
+  );
+
+  /**
+   * Kart kararından sonra: beğeni/Fire gittiyse aynı yazarın kartı bayatladı
+   * (ör. artık eşleştiniz) ve akış satırları da yazarın durumunu taşıyor.
+   *
+   * ENGELLEME dalı ayrı: yazarın TÜM gönderileri listeden düşmeli.
+   */
+  const handleAuthorSwipe = useCallback(
+    (_userId: string, direction: string) => {
+      qc.invalidateQueries({ queryKey: feedKeys.authorProfile(previewPostId ?? "") });
+      if (direction === "block") {
+        // Engellenen kişinin gönderileri sunucuda eleniyor — listeyi
+        // tazelemek yeterli, elle budamaya gerek yok.
+        qc.invalidateQueries({ queryKey: feedKeys.postsRoot });
+      }
+    },
+    [qc, previewPostId],
+  );
+
   const universityGate = universityPickerGate(me);
   const kindGate = kindFilterGate(me);
 
@@ -1301,21 +1402,59 @@ export default function FeedScreen() {
         onPaywall={openPaywall}
       />
 
-      {/* Normal gönderinin yazarına dokunulunca AKSİYONSUZ profil önizlemesi.
-          `onReport`/`onBlock`/`onMenu`/`onEdit` BİLEREK verilmiyor → kartta
-          moderasyon satırı ve not kutusu çıkmıyor; buradan beğeni/süper beğeni
-          de yapılamıyor (akışta profil "değerlendirilecek kart" değil,
-          gönderinin arkasındaki kişiyi görmenin yolu).
-          Anonim gönderide bu yol zaten hiç açılmıyor (FeedPostCard). */}
-      <PreviewModal
-        visible={!!previewPostId && !!authorProfile.data}
-        onClose={() => setPreviewPostId(null)}
-        profile={authorProfile.data}
-      />
+      {/* ── YAZAR KARTI ────────────────────────────────────────────────────
+          Normal gönderinin yazarına dokunulunca profil kartı açılıyor. İKİ
+          AYRI MODAL, çünkü iki ayrı ürün durumu var:
 
-      {/* YANITLAYAN PROFİLİ MODALI KALDIRILDI: yanıt kanalı üründen çıktı.
-          Yazar önizlemesi (PreviewModal, yukarıda) duruyor — akıştan profile
-          girmenin yolu artık o. */}
+          (a) AKSİYON ALINABİLİYOR (`cardMode` dolu) → `LikerSwipeModal`:
+              beğeni / Fire-Spark / not, hepsi o modda. Eşleşme kanalı artık
+              bu — yanıt butonunun yerini aldı.
+
+          (b) ALINAMIYOR (`cardMode` null: sunucu hiçbir modu uygun görmedi ya
+              da alanı hiç göndermedi) → `PreviewModal`, salt okunur. Olmayan
+              bir hakkı varsayıp reddedilecek bir buton göstermek, kullanıcıya
+              iki kez kaybettirirdi.
+
+          Anonim gönderide bu yol HİÇ açılmıyor (FeedPostCard'daki kapı):
+          kart açılsa anonim yazarın kimliği ifşa olurdu. */}
+      {cardMode ? (
+        <LikerSwipeModal
+          visible={!!previewPostId && !!authorProfile.data}
+          profile={authorProfile.data}
+          onClose={() => setPreviewPostId(null)}
+          // Aksiyonun modu — swipe isteğine iliştiriliyor ve kartın
+          // Fire/Spark rengini belirliyor.
+          mode={cardMode}
+          // Akış kartında Fire ANLAMLI: karşı tarafın seni beğenip
+          // beğenmediğini bilmiyorsun ("seni beğenenler"de anlamsızdı).
+          allowFire
+          onNote={handleAuthorNote}
+          superLikesRemaining={statsQuery.data?.superLikesRemaining ?? null}
+          onSwipe={handleAuthorSwipe}
+        />
+      ) : (
+        <PreviewModal
+          visible={!!previewPostId && !!authorProfile.data}
+          onClose={() => setPreviewPostId(null)}
+          profile={authorProfile.data}
+        />
+      )}
+
+      {/* Not composer'ı — kart kapandıktan sonra açılıyor (üst üste binme).
+          Keşif'tekiyle AYNI bileşen ve AYNI mutasyon; tek fark nerede
+          render edildiği (gerekçe handleAuthorNote'ta). */}
+      <NoteComposerModal
+        visible={!!noteRequest}
+        onClose={() => setNoteRequest(null)}
+        onSend={handleSendAuthorNote}
+        target={noteRequest?.target ?? null}
+        prompts={noteRequest?.profile?.prompts ?? null}
+        targetName={noteRequest?.profile?.displayName ?? null}
+        remaining={statsQuery.data?.notesRemaining ?? null}
+        maxLength={statsQuery.data?.noteMaxLength ?? null}
+        sending={noteMutation.isPending}
+        errorText={noteError}
+      />
     </View>
   );
 }

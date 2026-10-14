@@ -213,6 +213,27 @@ export interface FeedListParams {
   topic: FeedTopicFilter;
 }
 
+/**
+ * Yazar profili kartının aksiyon kapısı — `/api/feed/posts/{id}/author-profile`
+ * yanıtına eklenen alan.
+ *
+ * Sunucu, İZLEYİCİYE GÖRE hangi modların karşılıklı uygun olduğunu söylüyor:
+ * Dating için karşılıklı cinsiyet tercihi + iki tarafta da flört profilinin
+ * açık olması; Friends için aynı cinsiyet + iki tarafta da arkadaş profilinin
+ * açık olması.
+ *
+ * ⚠️ İSTEMCİ BUNU YENİDEN HESAPLAMIYOR. Karşı tarafın tercihlerini ve hangi
+ * modlarının açık olduğunu bilmiyor (bilmemeli de — `EnabledMeetModes` hiçbir
+ * DTO'da dönmüyor, dönerse kimin flört piyasasında olduğu kampüse sızar).
+ *
+ * Boş dizi = hiçbir modda aksiyon alınamaz → kart SALT OKUNUR açılıyor.
+ * Alan HİÇ GELMEZSE (eski sunucu) kart yine salt okunur açılıyor: olmayan bir
+ * hakkı varsaymak, kullanıcıya reddedilecek bir buton göstermek olurdu.
+ */
+export interface FeedAuthorProfileGate {
+  availableModes?: string[];
+}
+
 export type FeedReportTargetType = "Post" | "Reply";
 
 export interface FeedReportArgs {

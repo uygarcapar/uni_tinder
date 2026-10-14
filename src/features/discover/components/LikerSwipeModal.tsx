@@ -78,6 +78,21 @@ function triggerHaptic() {
  *   iki modda da moderasyon servisinden geçiyor ve `onSwipe?.(userId,
  *   "block")` ile haber veriliyor. Yanıt tarafında o haberi dinleyen listeyi
  *   tazeleme işi çağıranda.
+ *
+ * @param mode Aksiyonun hangi uygulama modunda yapıldığı ("Dating"/"Friends").
+ *   Swipe isteğine iliştiriliyor (sunucu satırı o modun altına yazıyor ve
+ *   karşılıklı beğeniyi AYNI modda arıyor) ve kartın Fire/Spark rengini
+ *   belirliyor. Verilmezse sunucu Dating sayıyor.
+ *
+ * @param allowFire Fire/Spark butonu ÇİZİLSİN Mİ. Varsayılan KAPALI ve bu
+ *   bilinçli: bu modalın asıl kullanıcısı "seni beğenenler" listesi ve orada
+ *   Fire anlamsız — karşı taraf seni zaten beğenmiş, yükseltecek bir şey yok.
+ *   AKIŞ KARTINDA açık: orada karşı tarafın seni beğenip beğenmediğini
+ *   bilmiyorsun, yani Fire gerçek bir sinyal.
+ *
+ * @param onNote Not kutularını açan kapı. `SwipeCard` sözleşmesi gereği
+ *   VERİLMEZSE not kutuları HİÇ çizilmiyor — "seni beğenenler"de not zaten
+ *   gönderilmiş olabiliyor ve ikinci bir not kanalı kafa karıştırırdı.
  */
 export default function LikerSwipeModal({
   visible,
@@ -86,6 +101,10 @@ export default function LikerSwipeModal({
   onSwipe,
   onDecide,
   swipeDisabled = false,
+  mode,
+  allowFire = false,
+  onNote,
+  superLikesRemaining,
 }: any) {
   const swipeMutation = useSwipeMutation();
   const { t } = useTranslation();
@@ -218,7 +237,9 @@ export default function LikerSwipeModal({
     }
     const userId = profile?.userId;
     if (userId) {
-      swipeMutation.mutate({ direction, userId });
+      // `mode`: sunucu swipe satırını o modun altına yazıyor; karşılıklı
+      // beğeni kontrolü AYNI modda yapılıyor (çapraz-mod eşleşme üretmiyor).
+      swipeMutation.mutate({ direction, userId, mode });
       onSwipe?.(userId, direction);
     }
     onClose?.();
@@ -269,6 +290,25 @@ export default function LikerSwipeModal({
       ],
     );
   }, [profile?.userId, onClose, onSwipe, t]);
+
+  /**
+   * Fire/Spark — YATAY ÇIKIŞ ANİMASYONU YOK.
+   *
+   * `triggerAction` kartı yana uçuruyor (sağ/sol kararın görsel karşılığı);
+   * Fire'ın yönü "up" ve onun görsel karşılığı kartın yana gitmesi DEĞİL,
+   * alev kutlaması — o da global (MatchModal / FireFlame, bkz. flameSweep).
+   * Kartı yana uçurmak iki animasyonu üst üste bindiriyordu.
+   *
+   * Modal kapanıyor: karar verildi, kartta yapacak bir şey kalmadı.
+   */
+  const triggerFire = () => {
+    const userId = profile?.userId;
+    if (userId) {
+      swipeMutation.mutate({ direction: "up", userId, mode });
+      onSwipe?.(userId, "up");
+    }
+    onClose?.();
+  };
 
   const triggerAction = (direction: "left" | "right") => {
     const to = direction === "right" ? EXIT_DISTANCE : -EXIT_DISTANCE;
@@ -517,7 +557,15 @@ export default function LikerSwipeModal({
                     profile={profile}
                     previewMode
                     expanded={false}
-                    hideFire
+                    // Fire varsayılan olarak KAPALI (gerekçe yukarıda);
+                    // akış kartı onu açıyor.
+                    hideFire={!allowFire}
+                    // Kartın Fire/Spark rengi ve adı moda göre.
+                    mode={mode}
+                    // `onNote` verilmezse SwipeCard not kutularını hiç
+                    // çizmiyor — kapı tek yerde.
+                    onNote={onNote}
+                    superLikesRemaining={superLikesRemaining}
                     // Jest kapalıysa kartın altındaki X/tik satırı da kalkar:
                     // ikisi AYNI aksiyonun iki yolu, birini bırakmak kapıyı
                     // kapatmamak olurdu. Moderasyon ikonları kalır — SwipeCard
@@ -527,6 +575,9 @@ export default function LikerSwipeModal({
                     zoomImpact={photoZoom}
                     onPass={() => triggerAction("left")}
                     onLike={() => triggerAction("right")}
+                    // Fire keşifteki ile AYNI yön: "up". `allowFire` kapalıysa
+                    // buton hiç çizilmiyor, bu kol da ölü kalıyor.
+                    onFire={allowFire ? triggerFire : undefined}
                     onReport={handleReportPress}
                     onBlock={handleBlockPress}
                   />
