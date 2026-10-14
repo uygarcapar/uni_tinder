@@ -16,6 +16,7 @@ import {
   AppState,
   Modal,
   Linking,
+  StyleSheet,
 } from "react-native";
 import { appPrefs } from "../../../shared/utils/appPrefs";
 import { setSwipeTutorialBlocking } from "@/features/discover/swipeTutorialGate";
@@ -34,9 +35,13 @@ import Animated, {
   Easing,
 } from "react-native-reanimated";
 import { LinearGradient } from "expo-linear-gradient";
+import { BlurView } from "expo-blur";
 
 const { width: SCREEN_WIDTH } = Dimensions.get("window");
-const ENTRY_DISTANCE = SCREEN_WIDTH * 1.2;
+// Destenin TAMAMININ yandan girdiği yolların mesafesi (filtre · mesafe sınırı).
+// Tek kartın girişiyle aynı sayı, türetilmiş: iki giriş aynı hızda okunsun
+// (bkz. SwipeWrapper > CARD_ENTRY_DISTANCE).
+const ENTRY_DISTANCE = CARD_ENTRY_DISTANCE;
 const ENTRY_DURATION = 180;
 const ENTRY_EASING = Easing.out(Easing.cubic);
 import { useSafeAreaInsets } from "react-native-safe-area-context";
@@ -49,7 +54,9 @@ import {
   Lock,
 } from "@/shared/icons";
 import SFIcon from "@/shared/components/SFIcon";
-import SwipeWrapper from "@/features/discover/components/SwipeWrapper";
+import SwipeWrapper, {
+  CARD_ENTRY_DISTANCE,
+} from "@/features/discover/components/SwipeWrapper";
 import FirePullHint from "@/features/discover/components/FirePullHint";
 import SwipeOverlay from "@/features/discover/components/SwipeOverlay";
 import { openLitPlus } from "@/features/profile/litPlusEntry";
@@ -64,6 +71,7 @@ import { CURRENT_KVKK_VERSION } from "@/features/auth/screens/KVKKConsentScreen"
 // kaldırıldı, yerinde yalnız iki cam buton kaldı. Bileşen duruyor — başka bir
 // yüzeye konmak istenirse hazır.
 import { colors, ink, scrimAt } from "../../../shared/theme/colors";
+import { chromeBlurTint } from "@/shared/theme/blur";
 import {
   usePotentialMatches,
   useSwipeFilters,
@@ -91,9 +99,11 @@ import { resolveCode, type CodeEntry } from "@/shared/constants/responseCodes";
 import { resolveEmptyDeckCopy } from "@/features/discover/emptyDeckCopy";
 import { SUPPORT_EMAIL } from "@/shared/constants/support";
 import { showInfoToast, showMissedMatchToast } from "@/shared/services/toaster";
-import { runFlameSweep } from "@/features/discover/flameSweep";
 import {
-  DISCOVER_CARD_TOP_GAP,
+  runFlameSweep,
+  runMatchCurtain,
+} from "@/features/discover/flameSweep";
+import {
   DISCOVER_GLASS_BUTTON_SIZE,
   DISCOVER_HEADER_HEIGHT,
   discoverTabBarInset,
@@ -102,7 +112,16 @@ import DiscoverHeaderGlassButton from "@/features/discover/components/DiscoverHe
 import {
   CARD_FACE_CORNER_RADIUS,
   CARD_FACE_TOP_CORNER_RADIUS,
+  CHROME_EDGE_INSET,
 } from "@/features/discover/components/CardStickyHeader";
+// İskeletin yazı bloğu kartın KENDİ sayılarıyla yerleşiyor (bkz. SkeletonCard):
+// taban, satır boyu ve satır araları SwipeCard'dan geliyor, burada kopyalanmıyor.
+import {
+  CARD_NAME_LINE,
+  COVER_NAME_BOTTOM,
+  COVER_UNI_PILLS_GAP,
+  COVER_UNI_ROW_PAD,
+} from "@/features/discover/components/SwipeCard";
 import NoteComposerModal from "@/features/discover/components/NoteComposerModal";
 import NotePurchaseModal from "@/features/discover/components/NotePurchaseModal";
 import {
@@ -140,6 +159,57 @@ import type { NoteTarget, PotentialMatch } from "@/shared/types";
 // yazıldığı için, tek adımda iki eşik birden geçilse de tek toast çıkar ve
 // doğru sayıyı söyler.
 const SWIPE_WARN_THRESHOLDS = [10, 5] as const;
+
+/**
+ * Kapağın ölçüm haberi (bkz. coverSettled) en çok bu kadar bekleniyor.
+ *
+ * Ölçüm normalde iki-üç karede geliyor; bu sayı o yolun tıkandığı hâl için.
+ * Kısa tutuluyor: haber gecikirse kullanıcı sıçramayı görür ama kart MUTLAKA
+ * açılır — uzun bir tavan, hatada ekranı iskelette bırakmak demek.
+ */
+const COVER_SETTLE_TIMEOUT_MS = 600;
+
+/**
+ * Yandan giren deste (rewind · filtre kaydetme) en çok bu kadar DIŞARIDA
+ * bekliyor — yeni üst kartın ölçüm haberi (bkz. `enterStackFrom`) gelmezse
+ * kayma yine de başlıyor.
+ *
+ * `COVER_SETTLE_TIMEOUT_MS`DEN KISA, bilerek: orada perdenin ardında bir kart
+ * var ve beklemek yalnız perdeyi uzatıyor; burada ekranda kart YOK, bekleme
+ * boş ekran demek. Ölçüm normalde 3-4 karede (~60ms) geliyor, bu sayı yalnız o
+ * yolun tıkandığı hâl için.
+ */
+const STACK_ENTRY_SETTLE_TIMEOUT_MS = 240;
+
+/*
+ * ── `REWIND_SLOT_WARMUP_MS` KALDIRILDI ────────────────────────────────────
+ *
+ * 1200 ms'di: geri alınabilir kart, kullanıcı o kadar kaydırmadan durursa
+ * canlı kartın ardında ısınmaya başlıyordu. Fikir yanlıştı — geri al genelde
+ * swipe'tan hemen SONRA basılıyor, yani ısınma hiç yetişmiyordu ve rewind
+ * "bazen hızlı, bazen değil" oluyordu.
+ *
+ * Yerine yapısal çözüm: kart zaten mount, çünkü ekrandan çıkarken unmount
+ * edilmiyor (bkz. renderStack > slotProfile).
+ */
+
+/**
+ * Geç/beğen/Fire butonlarının art arda basışa kapalı kaldığı süre.
+ *
+ * ÜÇÜ AYNI SAYI (2026-10-13): üç yönün de kartı yerinde tutup değişimi alevin
+ * altında yaptığı modelde (bkz. SwipeWrapper > commitExit) buton basıştan
+ * ~800 ms sonra iş görüyor. Fire zaten 1300'de bekliyordu; geç/beğen 120'de
+ * kalınca butonlar kart hâlâ dururken canlanıyor ve ikinci tap yutulmuş gibi
+ * görünüyordu.
+ *
+ * Tarihçe: 300 ms'den 120'ye indirilmişti, çünkü deste kartın UÇUŞU ekranı
+ * terk eder etmez (~65 ms) ilerliyordu ve kalan kilit boş beklemeydi. Uçuş
+ * kalktı, gerekçe tersine döndü.
+ *
+ * Çift tetiklemeye karşı asıl güvence SwipeWrapper'daki `exitPending` kilidi;
+ * bu yalnız butonun görünür durumu.
+ */
+const BUTTON_SWIPE_LOCK_MS = 1300;
 
 // NOT — kart açılırken tab bar'ı `display:"none"` ile gizlemek DENENDİ ve
 // vazgeçildi: bu gizleme animasyona açılmıyor. react-native-screens
@@ -206,57 +276,121 @@ const SkeletonBlock = ({ width, height, borderRadius = 8, style }: any) => {
  * Yüzen üst chrome butonlarının sağ altına oturan küçük rozet — kalan geri
  * alma hakkı / kilit, ve aktif filtre sayısı.
  *
- * ZEMİNİ OPAK (`colors.bg`): rozet cam butonun DIŞINDA ve doğrudan kapak
- * fotoğrafının üstünde duruyor; saydam bırakılırsa açık bir fotoğrafta sayı
- * okunmuyor. Camın içine alınamıyordu — SwiftUI ağacına RN çocuğu girmiyor ve
- * camın ATASI olacak her katman (opacity/transform) efekti öldürüyor.
+ * ZEMİN İKİ YOLDAN GELİYOR, kasıtlı:
+ *
+ * - SAYI yolu OPAK (`colors.bg`): 15px rakamın 16px'lik diskte okunması zeminin
+ *   kapatıcılığına bağlı; saydam bırakılınca açık bir fotoğrafın üstünde sayı
+ *   kayboluyordu.
+ * - KİLİT yolu BULANIK (istek: "arka planı renk değil blur olsun"): glif tek
+ *   parça ve kapatıcı bir diske ihtiyacı yok, bulanıklık onu üstünde durduğu
+ *   butonun cam ailesine bağlıyor. Malzeme `chromeBlurTint()` — rozet bir foto
+ *   perdesi değil, chrome'un parçası (bkz. shared/theme/blur.ts).
+ *
+ * Her iki yol da cam butonun DIŞINDA kalmak zorunda: SwiftUI ağacına RN çocuğu
+ * girmiyor ve camın ATASI olacak her katman (opacity/transform) efekti
+ * öldürüyor.
  *
  * Eskiden aynı rozet düz ikonun köşesindeydi; ölçüler oradan devralındı ki
  * sayı aynı boyda okunsun.
  */
+
+/**
+ * Kilit rozetinin bulanıklığı — `GlassFallbackSurface`in buton zeminiyle (60)
+ * aynı kademe: ikisi de bir perde değil, kendi kutusu olan küçük bir yüzey.
+ */
+const HEADER_BADGE_BLUR_INTENSITY = 60;
+
 function HeaderCountBadge({ icon = false, text }: { icon?: boolean; text: string }) {
-  return (
-    <View
-      style={{
-        backgroundColor: colors.bg,
-        borderRadius: 999,
-        minWidth: 16,
-        height: 16,
-        alignItems: "center",
-        justifyContent: "center",
-        paddingHorizontal: icon ? 0 : 3,
-      }}
-    >
-      {icon ? (
+  const box = {
+    borderRadius: 999,
+    borderCurve: "continuous" as const,
+    minWidth: 16,
+    height: 16,
+    alignItems: "center" as const,
+    justifyContent: "center" as const,
+    paddingHorizontal: icon ? 0 : 3,
+  };
+
+  // Kilit glifi geri alma butonunun okuyla AYNI ailede: dolgulu `lock.fill`
+  // yerine çizgisel `lock` + aynı `semibold` ağırlık (bkz. yukarıdaki butonun
+  // `arrow.counterclockwise` glifi). Mürekkep tema metni, foto-üstü beyaz
+  // DEĞİL: rozetin arkasında berrak cam değil bir blur diski var ve o disk
+  // açık modda açık — beyaz glif içinde kaybolurdu (`glassOnMediaInk` notu).
+  if (icon)
+    return (
+      // `overflow: hidden` olmadan BlurView kare kalıyor (yarıçap bulanıklığı
+      // kırpmıyor) — GlassFallbackSurface'teki aynı kural.
+      <BlurView
+        tint={chromeBlurTint()}
+        intensity={HEADER_BADGE_BLUR_INTENSITY}
+        style={[box, { overflow: "hidden" }]}
+      >
         <SFIcon
-          name="lock.fill"
+          name="lock"
           fallback={Lock}
           size={12}
           color={colors.text}
           strokeWidth={2.5}
           weight="semibold"
         />
-      ) : (
-        <Text
-          style={{
-            color: colors.text,
-            fontSize: 15,
-            fontWeight: "700",
-            lineHeight: 16,
-            textAlign: "center",
-            includeFontPadding: false,
-          }}
-        >
-          {text}
-        </Text>
-      )}
+      </BlurView>
+    );
+
+  return (
+    <View style={[box, { backgroundColor: colors.bg }]}>
+      <Text
+        style={{
+          color: colors.text,
+          fontSize: 15,
+          fontWeight: "700",
+          lineHeight: 16,
+          textAlign: "center",
+          includeFontPadding: false,
+        }}
+      >
+        {text}
+      </Text>
     </View>
   );
 }
 
-// SwipeCard ile aynı dış yapı (borderRadius:40, full frame) + photo overlay
-// alanları (name, pills) için placeholder block'lar + shimmer overlay.
-const SkeletonCard = () => {
+/**
+ * Kapağın üniversite satırının yazı kutusu — `text-[16px]`in satır boyu.
+ * Placeholder'ın boyu buna kendi dikey dolgusunu (COVER_UNI_ROW_PAD ×2) ekliyor,
+ * çünkü kartta da satırın KUTUSU yazıdan o kadar uzun (bkz. SwipeCard >
+ * COVER_UNI_ROW_PAD).
+ */
+const SKELETON_UNI_LINE = 20;
+
+/**
+ * Ortak nokta pilinin boyu — kartta `paddingVertical: 10` + 14px yazı kutusu
+ * (bkz. SwipeCard'daki pil satırı). Tek kaynak yapılamıyor: ölçü kapsülün kendi
+ * dolgusundan çıkıyor, dışa açık bir sayı değil.
+ */
+const SKELETON_PILL_HEIGHT = 37;
+
+/**
+ * Kapağın iskeleti — deste gelene ya da ilk fotoğraf yüklenene kadar ekranda
+ * duran hâl. Kartın KAPALI yüzünü taklit ediyor:
+ *
+ * - TAM EKRAN, kartla aynı köşe yarıçapları (CARD_FACE_*): kart artık ekranın
+ *   tepesinden dibine kadar uzanıyor, iskelet eski paylı kabında kalsaydı ilk
+ *   fotoğraf gelince çerçeve bir anda büyüyor gibi görünüyordu.
+ * - Yazı bloğu kartın tabanından (COVER_NAME_BOTTOM + tab bar payı) ve aynı
+ *   kenar payından (CHROME_EDGE_INSET) yerleşiyor.
+ * - Sıra kartla birebir: isim → üniversite → ortak nokta pilleri.
+ *
+ * İKİ ESKİ PARÇA KALDIRILDI: tepedeki sayfalama pili (kapakta artık fotoğraf
+ * göstergesi YOK, kapalı kart yalnız ilk fotoğrafı çiziyor) ve ismin üstündeki
+ * premium pili (premium işareti artık ayrı bir kapsül değil, ismin sağındaki
+ * wordmark — bkz. SwipeCard > PremiumBadge).
+ *
+ * Aktiflik satırı (“bugün aktif”) ve sağdaki aksiyon kolonu bilerek
+ * çizilmiyor: ilki koşullu ve blok alttan sabit olduğu için yokluğu aşağısını
+ * kaydırmıyor, ikincisi basılacak butonlardan oluşuyor — iskelet buton
+ * göstermiyor.
+ */
+const SkeletonCard = ({ coverBottomInset }: { coverBottomInset: number }) => {
   const shimmer = useSharedValue(-SCREEN_WIDTH);
   useEffect(() => {
     shimmer.value = withRepeat(
@@ -283,54 +417,46 @@ const SkeletonCard = () => {
         backgroundColor: colors.surface,
       }}
     >
-      {/* Pagination — tek pill */}
+      {/* Kapağın alt yazı bloğu — SwipeCard'daki “Name and Age on Photo”
+          bloğunun aynı yerleşimi: taban COVER_NAME_BOTTOM + tab bar payı,
+          kenarlar CHROME_EDGE_INSET. */}
       <View
         pointerEvents="none"
         style={{
           position: "absolute",
-          top: 20,
-          left: 0,
-          right: 0,
-          alignItems: "center",
+          bottom: COVER_NAME_BOTTOM + coverBottomInset,
+          left: CHROME_EDGE_INSET,
+          right: CHROME_EDGE_INSET,
         }}
       >
-        <SkeletonBlock width={40} height={6} borderRadius={3} />
-      </View>
-
-      {/* SwipeCard.js:830-905 birebir mirror:
-            className="absolute bottom-[70px] left-6 right-6"
-            Premium BlurView: mb-2 py-3 px-3 self-start text-[11px] (~36h)
-            Name wrapper: {marginBottom:2, gap:4} text-4xl (~44h)
-            Pills wrapper: {flexDirection:'row',flexWrap:'wrap',gap:8,marginTop:4,marginBottom:16}
-              Uni pill: px-1 py-1 + icon20 + text-[15px] (~28h) — usage purpose yorum satırı, tek pill */}
-      <View
-        pointerEvents="none"
-        style={{
-          position: "absolute",
-          bottom: 70,
-          left: 24,
-          right: 24,
-        }}
-      >
-        {/* Premium pill */}
-        <View style={{ alignSelf: "flex-start", marginBottom: 8 }}>
-          <SkeletonBlock width={70} height={30} borderRadius={999} />
+        {/* İsim + yaş satırı */}
+        <View style={{ marginBottom: 2 }}>
+          <SkeletonBlock width={168} height={CARD_NAME_LINE} borderRadius={999} />
         </View>
-        {/* Name + age */}
-        <View style={{ marginBottom: 2, gap: 4 }}>
-          <SkeletonBlock width={150} height={35} borderRadius={999} />
+        {/* Üniversite satırı — kartta `marginTop: 4` ile geliyor ve kendi dikey
+            dolgusunu taşıyor; altındaki pil satırına COVER_UNI_PILLS_GAP
+            bırakıyor. */}
+        <View style={{ marginTop: 4, marginBottom: COVER_UNI_PILLS_GAP }}>
+          <SkeletonBlock
+            width={196}
+            height={SKELETON_UNI_LINE + COVER_UNI_ROW_PAD * 2}
+            borderRadius={999}
+          />
         </View>
-        {/* Pills row — tek uni pill (usage purpose yorum satırı) */}
-        <View
-          style={{
-            flexDirection: "row",
-            flexWrap: "wrap",
-            gap: 8,
-            marginTop: 4,
-            marginBottom: 16,
-          }}
-        >
-          <SkeletonBlock width={180} height={28} borderRadius={999} />
+        {/* Ortak nokta pilleri — kartta PillFlow `gap: 6` ile diziyor; iskelet
+            ilk satırı iki kapsülle temsil ediyor (deste gelmeden kaç tane
+            olacağı bilinmiyor). */}
+        <View style={{ flexDirection: "row", gap: 6 }}>
+          <SkeletonBlock
+            width={132}
+            height={SKELETON_PILL_HEIGHT}
+            borderRadius={999}
+          />
+          <SkeletonBlock
+            width={96}
+            height={SKELETON_PILL_HEIGHT}
+            borderRadius={999}
+          />
         </View>
       </View>
 
@@ -465,8 +591,26 @@ const FigureEightRadar = () => {
   );
 };
 
-// Boş deste kartı. `title`/`actionLabel` verilirse backend'in yapısal boşluk
-// sebebi (emptyReason) gösterilir; verilmezse eski davranış (yalnız radar).
+/**
+ * Boş deste kartı — KART GİBİ TAM EKRAN (2026-10-13). Eskiden kendi kabının
+ * içinde, 40'lık yarıçapla ve 24/70'lik kendi paylarıyla duran küçük bir kutuydu;
+ * kart tam ekrana geçince (bkz. "KART: TAM EKRAN") yanında eski UI olarak kalmıştı.
+ *
+ * Artık iskeletle birebir aynı dış yapı: ekranı dolduruyor, köşeleri kartın yüzü
+ * (CARD_FACE_CORNER_RADIUS / üst ikisi CARD_FACE_TOP_CORNER_RADIUS), yazı bloğu
+ * kartın kapağıyla aynı çizgide — taban COVER_NAME_BOTTOM + tab bar payı,
+ * kenarlar CHROME_EDGE_INSET.
+ *
+ * ESKİ SAYFALAMA PİLİ KALKTI: kapakta artık fotoğraf göstergesi yok (bkz.
+ * SkeletonCard'daki aynı not), boş kartta zaten hiç fotoğraf yoktu.
+ *
+ * Paylar artık KABIN değil kartın içinde: dışarıda sarmalayıcı kalmadığı için
+ * (kap tam ekran) metin ve butonun durum çubuğunun / yüzen tab bar'ın ardına
+ * girmemesini kart kendi `topInset`/`coverBottomInset` payıyla sağlıyor.
+ *
+ * `title`/`actionLabel` verilirse backend'in yapısal boşluk sebebi (emptyReason)
+ * gösterilir; verilmezse eski davranış (yalnız radar + yer tutucu bloklar).
+ */
 const EmptyDiscoverCard = ({
   title = null,
   actionLabel = null,
@@ -474,6 +618,8 @@ const EmptyDiscoverCard = ({
   secondaryLabel = null,
   onSecondary = null,
   busy = false,
+  topInset,
+  coverBottomInset,
 }: {
   title?: string | null;
   actionLabel?: string | null;
@@ -487,50 +633,45 @@ const EmptyDiscoverCard = ({
   // Aksiyon uçuşta ("Daha uzağı göster" isteği). Buton pasifleşiyor: yavaş
   // bağlantıda hiçbir şey olmamış gibi görünüp tekrar tekrar basılıyordu.
   busy?: boolean;
+  // Üstte yüzen chrome'un (geri al / filtre) bittiği çizgi — radar onun ALTINDA
+  // ortalanıyor, yoksa tam ekranda ikonun merkezi cam butonların arkasına denk
+  // geliyor.
+  topInset: number;
+  // Kartın kapağındaki yazı bloğunun okuduğu tab bar payı (bkz. SwipeCard >
+  // coverBottomInset) — yazı yüzen bar'ın ardına düşmesin.
+  coverBottomInset: number;
 }) => {
   const hasReason = !!title;
   return (
     <View
       style={{
         flex: 1,
-        borderRadius: 40,
+        // Kartın YÜZÜYLE aynı yarıçap (bkz. SkeletonCard'daki aynı not).
+        borderRadius: CARD_FACE_CORNER_RADIUS,
+        borderTopLeftRadius: CARD_FACE_TOP_CORNER_RADIUS,
+        borderTopRightRadius: CARD_FACE_TOP_CORNER_RADIUS,
         borderCurve: "continuous",
         overflow: "hidden",
         backgroundColor: colors.surface,
+        // Akış yerleşimi (absolute DEĞİL): radar kalan boşlukta ortalanıyor,
+        // yazı bloğu dibe oturuyor — blok ne kadar uzarsa radar o kadar yukarı
+        // kayıyor, üst üste binmiyorlar.
+        paddingTop: topInset,
+        paddingBottom: COVER_NAME_BOTTOM + coverBottomInset,
       }}
     >
-      {/* Pagination — tek pill (static) */}
+      {/* Ortada Search ikonu + radar pulse — yazı bloğunun ÜSTÜNDEKİ alanda */}
       <View
         pointerEvents="none"
-        style={{
-          position: "absolute",
-          top: 20,
-          left: 0,
-          right: 0,
-          alignItems: "center",
-        }}
+        style={{ flex: 1, alignItems: "center", justifyContent: "center" }}
       >
-        <View
-          style={{
-            width: 40,
-            height: 6,
-            borderRadius: 3,
-            backgroundColor: colors.surface4,
-          }}
-        />
+        <FigureEightRadar />
       </View>
 
       {/* Bottom bölge: sebep biliniyorsa metin + aksiyon, bilinmiyorsa
-          SwipeCard overlay'ini taklit eden placeholder block'lar. */}
+          SwipeCard kapağını taklit eden placeholder block'lar. */}
       {hasReason ? (
-        <View
-          style={{
-            position: "absolute",
-            bottom: 70,
-            left: 24,
-            right: 24,
-          }}
-        >
+        <View style={{ paddingHorizontal: CHROME_EDGE_INSET }}>
           <Text
             style={{
               color: colors.text,
@@ -595,71 +736,55 @@ const EmptyDiscoverCard = ({
           )}
         </View>
       ) : (
+        /* Yer tutucular iskeletin yazı bloğuyla AYNI ölçülerde (isim → üniversite
+           → ortak nokta pilleri), shimmer YOK: burada yüklenen bir şey yok. */
         <View
           pointerEvents="none"
-          style={{
-            position: "absolute",
-            bottom: 70,
-            left: 24,
-            right: 24,
-          }}
+          style={{ paddingHorizontal: CHROME_EDGE_INSET }}
         >
           <View
             style={{
-              alignSelf: "flex-start",
-              marginBottom: 8,
-              width: 70,
-              height: 30,
+              marginBottom: 2,
+              width: 168,
+              height: CARD_NAME_LINE,
               borderRadius: 999,
+              borderCurve: "continuous",
               backgroundColor: colors.surface4,
             }}
           />
-          <View style={{ marginBottom: 2, gap: 4 }}>
+          <View
+            style={{
+              marginTop: 4,
+              marginBottom: COVER_UNI_PILLS_GAP,
+              width: 196,
+              height: SKELETON_UNI_LINE + COVER_UNI_ROW_PAD * 2,
+              borderRadius: 999,
+              borderCurve: "continuous",
+              backgroundColor: colors.surface4,
+            }}
+          />
+          <View style={{ flexDirection: "row", gap: 6 }}>
             <View
               style={{
-                width: 150,
-                height: 35,
+                width: 132,
+                height: SKELETON_PILL_HEIGHT,
                 borderRadius: 999,
+                borderCurve: "continuous",
                 backgroundColor: colors.surface4,
               }}
             />
-          </View>
-          <View
-            style={{
-              flexDirection: "row",
-              flexWrap: "wrap",
-              gap: 8,
-              marginTop: 4,
-              marginBottom: 16,
-            }}
-          >
             <View
               style={{
-                width: 180,
-                height: 28,
+                width: 96,
+                height: SKELETON_PILL_HEIGHT,
                 borderRadius: 999,
+                borderCurve: "continuous",
                 backgroundColor: colors.surface4,
               }}
             />
           </View>
         </View>
       )}
-
-      {/* Ortada Search ikonu + radar pulse */}
-      <View
-        pointerEvents="none"
-        style={{
-          position: "absolute",
-          top: 0,
-          left: 0,
-          right: 0,
-          bottom: 0,
-          alignItems: "center",
-          justifyContent: "center",
-        }}
-      >
-        <FigureEightRadar />
-      </View>
     </View>
   );
 };
@@ -727,13 +852,32 @@ export default function DiscoverScreen() {
     return at != null && Date.now() - at < SWIPE_GUARD_MS;
   }, []);
 
+  /**
+   * ÜST KART "GÖNDERİLDİ AMA HÂLÂ EKRANDA" — index bir örtmeyi bekliyor.
+   *
+   * Tek kullanıcısı eşleşme dalı (bkz. handleSwipe > `matching`): beğeninin
+   * İSTEĞİ gidiyor ve kart `swipedAtRef`e yazılıyor, ama `currentIndex`
+   * MatchModal'ın perdesi ekranı kaplayana kadar kaymıyor.
+   *
+   * O pencerede desteyi süzen memo tehlikeli: kart artık "guarded" olduğu
+   * için KUYRUKTAN elenir ve deste kendiliğinden kayar — hem değişim açıkta
+   * olur hem de bekleyen index artışı ikinci bir kartı atlar. Bayrak o yüzden
+   * süzgeci bir eleman geriye itiyor (aşağıda, `historyLimit`).
+   *
+   * Diğer yollarda (geç/beğen/Fire süpürmesi) böyle bir pencere YOK:
+   * `handleSwipe`ın tamamı alevin örtme anına kadar hiç çağrılmıyor, yani
+   * guard da index de aynı karede yazılıyor.
+   */
+  const deckHoldRef = useRef(false);
+
   // currentIndex burada tanımlı çünkü potentialMatches memo'su ona bağımlı
   // (aşağıdaki index-güvenli prune). Kardeş swipe state'leri render bölümünün
   // yanında kaldı.
   const [currentIndex, setCurrentIndex] = useState(0);
-  // Son ilerleme, ekranı kaplayan bir kutlamanın ALTINDA mı oldu? Yalnız süper
-  // beğenide true — yeni top kart giriş animasyonunu atlar (bkz. handleSwipe).
-  const [coveredSwap, setCoveredSwap] = useState(false);
+  // `coveredSwap` KALDIRILDI: "son ilerleme ekranı kaplayan bir kutlamanın
+  // ALTINDA mı oldu" bayrağıydı ve tek müşterisi yeni üst kartın 0.92→1 giriş
+  // yayıydı (SwipeWrapper.snapEntry). Yay kaldırıldı — gerekçesi orada,
+  // ölçeğin silindiği yerde.
 
   const potentialMatches = useMemo(() => {
     const all = matchesQuery.data?.pages.flatMap((p) => p.profiles) ?? [];
@@ -764,7 +908,15 @@ export default function DiscoverScreen() {
     // yanıtta az önce swipe edilen profiller duruyor olabiliyor → deste
     // boşalınca yapılan takviyede pass'lanan kart yeniden kartın üstüne
     // düşüyordu. Yarışı biz kapatıyoruz, backend'in commit'ini beklemeden.
-    const historyLimit = deduped.length > currentIndex ? currentIndex : 0;
+    // ÜST KART BİR ÖRTMEYİ BEKLİYORSA "geçmiş" bir eleman daha uzun sayılıyor
+    // (bkz. deckHoldRef): kart gönderildi ve guard'a yazıldı ama hâlâ ekranda,
+    // kuyruktan elenmesi desteyi altımızdan kaydırırdı.
+    //
+    // Ref okuması bilerek: burada "şu anda bir tutma var mı" sorusunun
+    // cevabı lazım, reaktif bir bağımlılık değil — tutma bittiğinde index
+    // artışı memo'yu zaten yeniden hesaplatıyor.
+    const limitBase = currentIndex + (deckHoldRef.current ? 1 : 0);
+    const historyLimit = deduped.length > limitBase ? limitBase : 0;
     const out = deduped.filter(
       (p, i) => i < historyLimit || !isGuarded(p.userId),
     );
@@ -1320,15 +1472,303 @@ export default function DiscoverScreen() {
 
   const lastSwipePromiseRef = useRef(null);
 
-  const dragX = useSharedValue(0);
+  /*
+   * `dragX` ve `buttonDragX` KALDIRILDI (2026-10-13): ilki alttaki kartın
+   * tülünü sürükleme oranıyla açıyordu, ikincisinin okuyucusu (kaymayla
+   * ölçeklenen eski aksiyon barı) çok önce kalkmıştı. Yatay sürükleme de kartın
+   * çıkış uçuşu da yok artık — gerekçenin tamamı SwipeWrapper'da, uçuşun
+   * kaldırıldığı not.
+   *
+   * Rozet kanalları DURUYOR: beğen/geç'te büyük tik/X alev yükselirken kartın
+   * üstünde duran tek geri bildirim.
+   */
   const overlayDragX = useSharedValue(0);
   const overlayOpacity = useSharedValue(1);
-  const buttonDragX = useSharedValue(0);
   const programmaticSwipe = useSharedValue(0);
   // Kart yığınının yandan giriş ofseti. Boş-durum aksiyonlarından ÖNCE
   // tanımlı: "Daha uzağı göster" de filtre kaydetme gibi taze desteyi
   // animasyonla içeri alıyor.
   const stackEntryX = useSharedValue(0);
+
+  /**
+   * ── YANDAN GİREN DESTE ÖLÇÜLDÜKTEN SONRA KAYIYOR ──────────────────────────
+   *
+   * Filtre kaydetme ve mesafe sınırını kaldırma, destenin ÜST kartını SIFIRDAN
+   * mount ediyor (swipe'ta ise yeni üst kart zaten bir süredir arkada duruyor ve
+   * ölçülmüş oluyor). Taze mount'un ilk kareleri sıçramalı: kartın boyu ölçülene
+   * kadar isim bloğu ve sağ aksiyon kolonu HİÇ çizilmiyor, ortak nokta pilleri
+   * görünmez ölçüm turundan geçiyor (bkz. PillFlow > hideUntilPacked) ve kolonun
+   * tabanı pil satırı ölçülünce bir kez daha kayıyor.
+   *
+   * Eskiden kayma bu sıçramayla AYNI ANDA başlıyordu: kart yanda titreyerek
+   * geliyor, yerine oturduktan sonra isim/piller "yok olup geri geliyor",
+   * butonlar yeniden hizalanıyordu. Artık deste dışarıda bekliyor ve kayma
+   * ancak kart "yerine oturdu" haberini verince başlıyor (aynı haber iskeletin
+   * beklediği haber — bkz. coverSettled · SwipeCard > onCoverReady), yani
+   * kullanıcı yalnız bitmiş kartın kaymasını görüyor.
+   *
+   * Bekleme EKRANDA KART OLMADAN geçiyor, o yüzden tavan kısa
+   * (STACK_ENTRY_SETTLE_TIMEOUT_MS) ve haber gelmezse kayma yine başlıyor.
+   *
+   * REWIND BU YOLU KULLANMIYOR (ve kullanmamalı): orada ekranda canlı bir kart
+   * duruyor, desteyi yana park etmek o kartı da götürüp arkasındaki sayfa
+   * zeminini açıyordu — açık temada tam ekran beyazlık. Geri gelen kart artık
+   * hiç kaymıyor, canlı kartın ARDINDA ölçülüyor (bkz. rewindWarmup).
+   */
+  const pendingStackEntry = useRef(false);
+  const stackEntryTimeout = useRef<ReturnType<typeof setTimeout> | null>(null);
+
+  const releaseStackEntry = useCallback(() => {
+    if (!pendingStackEntry.current) return;
+    pendingStackEntry.current = false;
+    if (stackEntryTimeout.current) {
+      clearTimeout(stackEntryTimeout.current);
+      stackEntryTimeout.current = null;
+    }
+    stackEntryX.value = withTiming(0, {
+      duration: ENTRY_DURATION,
+      easing: ENTRY_EASING,
+    });
+  }, [stackEntryX]);
+
+  /**
+   * Desteyi `offset` kadar yana park et; kaymayı yeni üst kartın ölçüm haberine
+   * (ya da tavana) bırak. Üç çağıranı var: rewind (soldan), filtre kaydetme ve
+   * mesafe sınırını kaldırma (sağdan).
+   */
+  const enterStackFrom = useCallback(
+    (offset: number) => {
+      // Doğrudan atama koşan withTiming'i de iptal ediyor: arka arkaya iki
+      // giriş (hızlı rewind) birbirinin yarısından devam etmesin.
+      stackEntryX.value = offset;
+      pendingStackEntry.current = true;
+      if (stackEntryTimeout.current) clearTimeout(stackEntryTimeout.current);
+      stackEntryTimeout.current = setTimeout(
+        releaseStackEntry,
+        STACK_ENTRY_SETTLE_TIMEOUT_MS,
+      );
+    },
+    [releaseStackEntry, stackEntryX],
+  );
+
+  /**
+   * ── REWIND: GERİ GELEN KART CANLI KARTIN ARDINDA DOĞUYOR ──────────────────
+   *
+   * Geri alınan profil, `currentIndex` HİÇ KIPIRDAMADAN destenin en altına
+   * fazladan bir kart olarak mount ediliyor (bkz. renderStack). Ekranda duran
+   * kart tam ekran ve opak, yani ısınan kart görünmüyor; ama normal bir alt kart
+   * gibi ölçülüyor — kartın boyu, isim bloğu, pil satırının paketlenmesi. Ölçüm
+   * bitince (`onCoverReady`) index tek karede kayıyor: kart son hâlinde, tam
+   * boyunda, altındaki kartı tamamen örterek üste geçiyor.
+   *
+   * KULLANICININ GÖRDÜĞÜ TEK ŞEY YENİ KART: ne beyazlık (deste kıpırdamıyor,
+   * sayfa zemini hiç açılmıyor) ne sıçrama (ölçüm örtünün ardında bitti).
+   *
+   * `currentIndex`E BU PENCEREDE DOKUNULMUYOR, bilerek: index'e bağlı her şey
+   * (buton aksiyonları, kota, not hedefi, demir hizalaması) ekranda GÖRÜNEN
+   * kartı anlatmaya devam ediyor. Bu yüzden pencere içinde bir swipe gelirse
+   * ısınma iptal — index iki yönden birden sürülemez (bkz. cancelRewindWarmup).
+   */
+  const [rewindWarmup, setRewindWarmup] = useState<string | null>(null);
+  const pendingRewind = useRef<string | null>(null);
+  const rewindTimeout = useRef<ReturnType<typeof setTimeout> | null>(null);
+  /**
+   * Geri gelen kartın giriş ofseti. Destenin KABINA değil KARTA veriliyor —
+   * kabı kaydırmak canlı kartı da götürüyordu (bkz. SwipeWrapper > entryX ve
+   * aşağıdaki `stackEntryX` ile farkı: o, destenin TAMAMI değişen yollar için).
+   */
+  const cardEntryX = useSharedValue(0);
+
+  /**
+   * ── GİRİŞ KAYMASI COMMIT'TEN SONRA BAŞLIYOR ───────────────────────────────
+   *
+   * `withTiming` bir dönem `setCurrentIndex` ile AYNI satırda kuruluyordu ve
+   * yarışı kaybediyordu: animasyon o anda başlıyor, kart ise ancak React
+   * commit'i bitince (bu ekran küçük değil — deste memo'su, hizalama
+   * layout-effect'i, kartın kendi ağacı) ÜST KART olup `entryX`i okumaya
+   * başlıyor. Arada geçen süre kadarı yutuluyordu; commit uzadığında kayma hiç
+   * görünmüyor, kart olduğu yerde PAT diye beliriyordu — "geri al'a bastım,
+   * önce eski kart duruyor sonra yeni kart zınk diye geliyor" tarifi bu.
+   *
+   * Bayrak + dep'siz effect: effect her commit'ten SONRA koşuyor, yani kart
+   * ekranda ve başlangıç ofsetinde. Kayma oradan başlıyor.
+   */
+  const pendingEntryKick = useRef(false);
+  useEffect(() => {
+    if (!pendingEntryKick.current) return;
+    pendingEntryKick.current = false;
+    cardEntryX.value = withTiming(0, {
+      duration: ENTRY_DURATION,
+      easing: ENTRY_EASING,
+    });
+  });
+
+  const clearRewindTimeout = () => {
+    if (rewindTimeout.current) {
+      clearTimeout(rewindTimeout.current);
+      rewindTimeout.current = null;
+    }
+  };
+
+  /**
+   * Isınan kartı üste al — ölçüm haberiyle ya da tavanda.
+   *
+   * Kart SOLDAN KAYARAK geliyor: ofset state commit'inden ÖNCE yazılıyor ki
+   * kartın üste geçtiği ilk karede zaten dışarıda olsun, sonra `withTiming` onu
+   * yerine getiriyor. Kayan tek şey bu kart — altındaki kart yerinde duruyor ve
+   * giriş boyunca tam boy kalıyor, yani arada sayfa zemini açılmıyor (bkz.
+   * SwipeWrapper > entryX).
+   *
+   * ÇAPRAZ: dikey pay ve eğim de aynı ofsetten türüyor (bkz. SwipeWrapper >
+   * CARD_ENTRY_RISE · CARD_ENTRY_TILT) — hareket, reddetme atışının geri
+   * sarımı. Kartın BOYU hiç oynamıyor; giriş animasyonu kaymanın kendisi.
+   */
+  const commitRewind = useCallback(() => {
+    if (!pendingRewind.current) return;
+    pendingRewind.current = null;
+    clearRewindTimeout();
+    setRewindWarmup(null);
+    // Ofset ŞİMDİ, kayma commit'ten SONRA (bkz. pendingEntryKick): kart üste
+    // geçtiği ilk karede zaten yanda duruyor, yolunu ondan sonra alıyor.
+    cardEntryX.value = -CARD_ENTRY_DISTANCE;
+    pendingEntryKick.current = true;
+    setCurrentIndex((i) => Math.max(0, i - 1));
+  }, [cardEntryX]);
+
+  /**
+   * Isınmayı DÜŞÜR (index'i kaydırmadan). İki çağıranı var: pencere içinde gelen
+   * bir swipe ve geri alma isteğinin başarısız olması.
+   */
+  const cancelRewindWarmup = useCallback(() => {
+    if (!pendingRewind.current) return false;
+    pendingRewind.current = null;
+    clearRewindTimeout();
+    setRewindWarmup(null);
+    return true;
+  }, []);
+
+  const warmRewind = useCallback(
+    (userId: string) => {
+      pendingRewind.current = userId;
+      setRewindWarmup(userId);
+      clearRewindTimeout();
+      // Güvenlik ağı: ölçüm haberi hiç gelmezse kart hiç gelmemiş olurdu —
+      // haklar düşmüş, geri alma isteği gitmiş ama ekran değişmemiş. ALEV
+      // KAPISINI ATLATIYOR (commitRewind, tryCommitRewind değil): ağın işi
+      // kilitlenmeyi açmak.
+      rewindTimeout.current = setTimeout(
+        commitRewind,
+        STACK_ENTRY_SETTLE_TIMEOUT_MS,
+      );
+    },
+    [commitRewind],
+  );
+
+  /**
+   * ── GERİ AL DA ALEVİN ALTINDA DEVREDİYOR (istek, 2026-10-13) ──────────────
+   *
+   * "Rewind atınca da aynı alev gelsin, kart o sırada değişsin." Yani üç çıkış
+   * yönüyle (geç · beğen · Fire, bkz. SwipeWrapper > commitExit) tek dil:
+   * kullanıcı ne giden kartı ne gelenini görüyor, yalnız alevi.
+   *
+   * İKİ SİNYAL BİRLİKTE: alev ekranı kapattı VE geri gelecek kart ölçüldü.
+   *   • Yuva yolunda (normal hâl) ikincisi zaten sağlanmış — kart destenin
+   *     altında kurulu ve ölçülü duruyor, yani tek bekleyen alev.
+   *   • `warmRewind` yolunda (destenin sonu / taze deste) kart şimdi mount
+   *     oluyor: hangisi sonra gelirse devri o tetikliyor. Bu yüzden ölçüm
+   *     haberi `commitRewind`i DOĞRUDAN değil `tryCommitRewind` üzerinden
+   *     çağırıyor — yoksa kart alev henüz yarı yoldayken açıkta değişirdi.
+   *
+   * `commitRewind` bekleyen basış yoksa no-op, o yüzden iki kapının da
+   * kapanmasını beklemek güvenli; sıra önemli değil.
+   */
+  const rewindFlameUnsub = useRef<(() => void) | null>(null);
+  const rewindCovered = useRef(false);
+  /**
+   * Eşleşme perdesinin örtme aboneliği (bkz. handleSwipe > `matching`). Ayrı
+   * ref, çünkü geri al alevinden FARKLI bir olayı bekliyor: biri Keşif'in
+   * kendi süpürmesi, öteki MatchModal'ın perdesi.
+   */
+  const matchCurtainUnsub = useRef<(() => void) | null>(null);
+
+  const tryCommitRewind = useCallback(() => {
+    if (!rewindCovered.current) return;
+    commitRewind();
+  }, [commitRewind]);
+
+  const startRewindUnderCover = useCallback(() => {
+    rewindCovered.current = false;
+    // Bir önceki alev hâlâ bekliyorsa dinleyicisi bırakılıyor: her basış kendi
+    // örtmesini bekler.
+    rewindFlameUnsub.current?.();
+    rewindFlameUnsub.current = runFlameSweep(() => {
+      rewindFlameUnsub.current = null;
+      rewindCovered.current = true;
+      tryCommitRewind();
+    });
+  }, [tryCommitRewind]);
+
+  // Ekran ağaçtan düşerse (sekme değişti, tema remount'u) örtme dinleyicileri
+  // arkada kalmasın — sözleşme flameSweep'te.
+  useEffect(
+    () => () => {
+      rewindFlameUnsub.current?.();
+      rewindFlameUnsub.current = null;
+      matchCurtainUnsub.current?.();
+      matchCurtainUnsub.current = null;
+      // Tutma bayrağı ekranla birlikte gitsin: ekran yeniden mount olduğunda
+      // ref sıfırdan doğuyor ama aynı mount'ta iptal edilen bir tutma
+      // süzgeci kalıcı olarak bir eleman geriye iterdi.
+      deckHoldRef.current = false;
+    },
+    [],
+  );
+
+  /**
+   * ── GERİ AL YUVASI: BİR ÖNCEKİ KART UNMOUNT EDİLMİYOR ─────────────────────
+   *
+   * `warmRewind` yolu doğruydu ama GEÇ: basıştan sonra kart sıfırdan mount
+   * oluyor, ölçülüyor, ancak ondan sonra üste geçiyordu. Kullanıcının gördüğü
+   * "bastım, bir süre eski kart durdu, sonra yeni kart geldi" — ve ölçüm
+   * uzadığında giriş kayması da yetişemiyordu.
+   *
+   * Çözüm bir zamanlayıcı DEĞİL (bir tur öyle denendi: kullanıcı oyalanırsa
+   * kart arkada ısınıyordu — basış erken gelince hiçbir şey kazanmıyordu,
+   * yani "bazen hızlı" oluyordu ki en kötüsü o). Artık yapısal: deste
+   * ilerlerken ekrandan çıkan kart UNMOUNT EDİLMİYOR, destenin en altındaki
+   * yuvada kalıyor. Geri alınacak kart her zaman "bir önce ekranda duran kart"
+   * olduğu için yuvadaki kart HER ZAMAN kurulmuş ve ölçülmüş oluyor; basışta
+   * yapılacak iş index'i bir geri almaktan ibaret.
+   *
+   * MOUNT/UNMOUNT TRAFİĞİ ARTMIYOR: her swipe'ta yine bir kart doğuyor (deste
+   * önü) ve bir kart ölüyor (yuvanın altı) — yalnız kurban değişti. Bedel
+   * ekranda duran kart sayısı: ikiden üçe çıktı. Üçüncünün ağır paneli
+   * soğuyarak düşüyor (bkz. SwipeCard > PANEL_COOLDOWN_MS), yani kalıcı olarak
+   * taşıdığı şey kapak + zemin.
+   *
+   * ⚠️ YUVA, ALTTAKİ KART VARKEN KURULUYOR: destenin sonunda (arkada kart yok)
+   * üstteki kartı sürüklemek yuvadaki kartı AÇIĞA ÇIKARIRDI — kullanıcı az önce
+   * geçtiği kişiyi arkada görürdü. O durumda eski `warmRewind` yolu devrede.
+   */
+  const rewindSlotIdRef = useRef<string | null>(null);
+
+  // Ölçüm haberi — pratikte yalnız `warmRewind` yolunda işe yarıyor: yuva
+  // kuruluyken kart çoktan ölçülmüş oluyor ve haber (tek atımlık, bkz. SwipeCard
+  // > coverReadyNotifiedRef) bir daha gelmiyor. Bekleyen basış yoksa no-op.
+  const handleRewindSlotReady = useEvent(() => {
+    // `tryCommitRewind`: ölçüm geldi ama alev henüz örtmediyse devir bekliyor
+    // (bkz. startRewindUnderCover).
+    if (pendingRewind.current) tryCommitRewind();
+  });
+
+  // Ekran ağaçtan düşerse bekleyen tavanlar arkada kalmasın.
+  useEffect(
+    () => () => {
+      if (stackEntryTimeout.current) clearTimeout(stackEntryTimeout.current);
+      if (rewindTimeout.current) clearTimeout(rewindTimeout.current);
+    },
+    [],
+  );
 
   // ── "Mesafe sınırını kaldır" (kalıcı anahtar) ───────────────────────────
   // Mesafe KATI filtre: yarıçap dışındaki profiller hiç gelmiyor ve backend
@@ -1357,11 +1797,7 @@ export default function DiscoverScreen() {
       // baştaki profiller sessizce atlanırdı. Filtre kaydetme yolundaki
       // (handleSaveFilters) davranışın aynısı — giriş animasyonu dahil.
       setCurrentIndex(0);
-      stackEntryX.value = ENTRY_DISTANCE;
-      stackEntryX.value = withTiming(0, {
-        duration: ENTRY_DURATION,
-        easing: ENTRY_EASING,
-      });
+      enterStackFrom(ENTRY_DISTANCE);
     } catch (err: any) {
       // Sessiz kalma: kullanıcı butona bastı, deste hâlâ boş — hiçbir şey
       // olmadıysa bunu bilmeli, yoksa buton bozuk sanılıp tekrar tekrar
@@ -1410,6 +1846,66 @@ export default function DiscoverScreen() {
       cancelled = true;
     };
   }, [potentialMatches, firstPhotoReady]);
+
+  /**
+   * Kapağın alt chrome'u (yazı bloğu + sağ buton kolonu) yerine oturdu mu —
+   * iskelet fotoğraftan SONRA bir de bunu bekliyor.
+   *
+   * Fotoğrafın hazır olması yetmiyordu: o blokların yerleşimi ölçüme bağlı
+   * (bkz. SwipeCard > onCoverReady) ve ölçümler ilk karede yok. Kullanıcı
+   * iskeletten çıkınca butonların hizalanmasını ve ortak nokta pillerinin
+   * kaybolup geri gelmesini görüyordu. Kart ölçülürken iskelet ÜSTÜNDE
+   * duruyor — kart mount olmadan ölçüm de yapılamaz, o yüzden "iskelet mi kart
+   * mı" değil, "kartın üstünde iskelet".
+   *
+   * BİR KEZ, firstPhotoReady ile aynı gerekçe: sonraki kartlar üstteki kartın
+   * ARDINDA ölçülüyor, oraya iskelet koymak her kaydırmada perde indirmek
+   * olurdu.
+   */
+  const [coverSettled, setCoverSettled] = useState(false);
+  /**
+   * HABER İKİ YERE GİDİYOR: perdeyi kaldırıyor (ilk kart) ve yanda park etmiş
+   * desteyi içeri alıyor (rewind · filtre) — ikisi de "kart artık sıçramaz"
+   * demenin iki ayrı bağlamı, bkz. enterStackFrom.
+   *
+   * Kart başına BİR KEZ geliyor (SwipeCard > coverReadyNotifiedRef) ve yalnız
+   * ÜST karttan: taze mount eden her üst kart kendi haberini veriyor, yani
+   * rewind'de geri gelen kart da.
+   */
+  const handleCoverReady = useCallback(() => {
+    setCoverSettled(true);
+    releaseStackEntry();
+  }, [releaseStackEntry]);
+
+  /**
+   * Ekranda kart KALMAYINCA perde yeniden kuruluyor.
+   *
+   * Deste tükenip (boş kart) sonra takviye gelince yeni kart gene ÜST kart
+   * olarak doğuyor, yani ölçüm sıçraması açılıştaki ile birebir aynı. Bayrak
+   * tek seferlik bırakılırsa o sıçrama orada geri geliyordu.
+   *
+   * KAYDIRMA SIRASINDA SIFIRLANMIYOR: koşul "deste bitti mi", "kart değişti mi"
+   * değil. Her kaydırmada sıfırlamak ekrana iskelet indirmek olurdu — sonraki
+   * kartlar zaten üstteki kartın ardında ölçülüyor.
+   */
+  const deckHasCard = potentialMatches.length > currentIndex;
+  useEffect(() => {
+    if (!deckHasCard) setCoverSettled(false);
+  }, [deckHasCard]);
+
+  /**
+   * Güvenlik ağı: ölçüm haberi hiç gelmezse iskelet kalıcı olmasın.
+   *
+   * `onCoverReady` onLayout zincirine bağlı (kartın boyu, yazı bloğu, pillerin
+   * paketlenmesi) ve o zincir çalışmayan ortamlar var (jest), ayrıca beklenmeyen
+   * bir dal haberi hiç vermeyebilir. Takılı kalan bir iskelet, görünen bir
+   * sıçramadan KÖTÜ: süre dolunca kart olduğu gibi açılıyor.
+   */
+  useEffect(() => {
+    if (coverSettled || !firstPhotoReady) return;
+    const id = setTimeout(() => setCoverSettled(true), COVER_SETTLE_TIMEOUT_MS);
+    return () => clearTimeout(id);
+  }, [coverSettled, firstPhotoReady]);
 
   // ── Profil keşifte görünmüyorken ETKİLEŞİMLER kilitli ───────────────────
   // GÖRÜNÜRLÜK KİLİT DEĞİL: profil keşif havuzunda görünmüyorken de (fotoğraf
@@ -1566,6 +2062,31 @@ export default function DiscoverScreen() {
 
   const hasCardToDemo = potentialMatches.length > 0;
 
+  /**
+   * Demonun oynayabilmesi için deste YETMİYOR, EKRANDA GERÇEK KART OLMALI.
+   *
+   * `potentialMatches` diskten hidrasyonla (loadDeckProgress) ya da taze
+   * istekle mount'un ilk karelerinde dolabiliyor; kart ise kapak fotoğrafı
+   * hazır olmadan mount EDİLMİYOR, o arada ekranda `SkeletonCard` duruyor (bkz.
+   * firstPhotoReady). Demo yalnız `!loading && hasCardToDemo`ya bakıyordu, yani
+   * uygulama açılır açılmaz İSKELETİN üstünde oynuyordu: salınan bir kart yok,
+   * oklar ve perde boşluğa geliyor ve bitişte "görüldü" yazıldığı için jest bir
+   * daha da gösterilmiyordu.
+   *
+   * KAPIYI (`tutorialResolved`) BU DEĞİL `hasCardToDemo` SÜRÜYOR ve öyle
+   * kalmalı: kapı "demo oynamayacağı kesinleşti mi" diye soruyor, fotoğraf
+   * beklenirken cevap "henüz bilinmiyor"dur. Buraya bağlanırsa deste varken bile
+   * kapı hemen açılıp demoyu kaçırırdı; fotoğraf hiç gelmezse de
+   * TUTORIAL_GATE_MAX_WAIT zaten kurtarıyor.
+   *
+   * `coverSettled` DE ŞART, aynı gerekçenin devamı: kart mount olduktan sonra
+   * da kapağın alt chrome'u ölçülene kadar iskelet onun ÜSTÜNDE duruyor (bkz.
+   * coverSettled). O perdenin ardında oynayan demo de görülmez. İkisi sırayla
+   * geldiği için kilitlenme yok — ölçüm haberi gelmezse 600 ms'lik güvenlik ağı
+   * coverSettled'ı zaten açıyor.
+   */
+  const cardReadyToDemo = hasCardToDemo && firstPhotoReady && coverSettled;
+
   // Demo oynamayacağı kesinleşince kapıyı serbest bırak. Oynamaya başladıysa
   // (tutorialActive) karışma: bitişte stopTutorial zaten çözüyor. KVKK onayı
   // beklenirken saat işletilmiyor — onay sheet'i uzun sürerse kapı, demo hiç
@@ -1585,7 +2106,9 @@ export default function DiscoverScreen() {
   }, [tutorialResolved, tutorialActive, loading, hasCardToDemo, kvkkAccepted]);
 
   useEffect(() => {
-    if (loading || !hasCardToDemo || !currentUserId) return;
+    // İSKELETİN üstünde oynamasın: gerçek kart mount olana kadar bekle (bkz.
+    // cardReadyToDemo).
+    if (loading || !cardReadyToDemo || !currentUserId) return;
     if (!screenFocused || tutorialDoneRef.current) return;
     // KVKK onay sheet'i kapanmadan tutorial oynatma (kart modalın arkasında kalır).
     if (!kvkkAccepted) return;
@@ -1620,7 +2143,7 @@ export default function DiscoverScreen() {
       ),
     );
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [loading, hasCardToDemo, currentUserId, screenFocused, kvkkAccepted]);
+  }, [loading, cardReadyToDemo, currentUserId, screenFocused, kvkkAccepted]);
 
   // Stack entry (undo / filtre sonrası yandan giriş) + tutorial salınımı tek
   // animated style'da: iki ayrı style'ın `transform` key'i flatten'da birbirini
@@ -1668,8 +2191,11 @@ export default function DiscoverScreen() {
    * kabuk bu payı da yiyerek ekranın dibine iniyor, ama onu `bottom` yapıyor
    * (bkz. SwipeWrapper animatedStyle), dolgu değil: kap sabit kaldıkça kartın
    * altındaki her şey (panelin geleceği alan) tek bir yerden ölçülüyor.
+   *
+   * BU SAYININ TEK OKURU KALDI: kapağın yazı bloğu (bkz. aşağıda
+   * `coverBottomInset`). Buradaki `tabBarOccupied` bağı destesi olmayan
+   * hâllerin sarmalayıcısıyla birlikte söküldü.
    */
-  const tabBarOccupied = discoverTabBarInset(insets.bottom);
 
   /**
    * ── ÜST ŞERİDİN KARARTMASI KALDIRILDI (istek) ────────────────────────────
@@ -1771,35 +2297,62 @@ export default function DiscoverScreen() {
       hasLikedMe(store.getState(), profile?.userId),
   );
 
-  const handleSwipe = useEvent((direction, userId, covered = false) => {
+  const handleSwipe = useEvent((direction, userId, matching) => {
     if (userId) swipedAtRef.current.set(userId, Date.now());
-    // Deste alevin ALTINDA ilerlediyse (eşleşmeyen Fire, bkz.
-    // SwipeWrapper) yeni top kart giriş animasyonuyla DEĞİL, doğrudan son
-    // hâlinde açılmalı — yoksa 0.92→1 yayı dalga çekildikten sonra da sürüyor
-    // ve kart tam o anda "geliyormuş" gibi görünüyor. Örtüsüz değişimlerde
-    // (yana kaydırma ve eşleşmeyle biten Fire) giriş animasyonu duruyor:
-    // orada kart zaten açıkta değişiyor.
-    setCoveredSwap(covered === true);
-    setCurrentIndex((i) => i + 1);
+    // Rewind ısınması varsa DÜŞ: index'i iki yönden birden süremeyiz. Bu
+    // pencere ~60ms, yani buraya ancak kullanıcı geri al'a basıp hemen
+    // ardından kaydırdıysa düşülür; o durumda görünen kartın kaydırılması
+    // kazanıyor, geri gelen kart sonraki tazelemede yine destede olur.
+    cancelRewindWarmup();
+    /**
+     * DESTENİN İLERLEMESİ — ya şimdi ya PERDENİN ALTINDA.
+     *
+     * Çağrıldığı an zaten örtülü oluyor: geç/beğen/Fire'da kart alevin ekranı
+     * tam kapattığı karede buraya geliyor (bkz. SwipeWrapper >
+     * runCoveredExit), yani burada beklenecek bir şey yok.
+     *
+     * TEK İSTİSNA `matching`: o dalda alev süpürmesi hiç oynamıyor (kutlama
+     * MatchModal'ın perdesi) ve perde ancak aşağıdaki isteğin eşleşme
+     * bildirimi dönünce açılıyor. İstek ŞİMDİ gidiyor, index ise perdenin
+     * ekranı kapladığı anı bekliyor (bkz. flameSweep > runMatchCurtain) —
+     * yoksa "önce kart değişiyor, sonra alev modalı geliyor" oluyordu.
+     *
+     * Kart o pencerede ekranda duruyor ama kilitli: SwipeWrapper'ın
+     * `exitPending` bayrağı ikinci kararı yutuyor, buton kilidi de (1300 ms)
+     * aynı pencereyi örtüyor.
+     */
+    const advanceDeck = () => {
+      // Perde altında ilerliyorsa expand değerleri DE burada sıfırlanmalı —
+      // sırası `dropProfileFromDeck`takiyle aynı, yoksa yeni top kart donmuş
+      // bir oranla doğuyor. Örtüsüz dalda SwipeWrapper çoktan yapmış oldu;
+      // ikinci kez yazmak zararsız (ham atama).
+      deckHoldRef.current = false;
+      resetCardExpandState();
+      setCurrentIndex((i) => i + 1);
+    };
+    if (matching) {
+      matchCurtainUnsub.current?.();
+      // Kart gönderildi ama ekranda: süzgeç onu kuyruktan ELEMESİN (bkz.
+      // deckHoldRef).
+      deckHoldRef.current = true;
+      matchCurtainUnsub.current = runMatchCurtain(() => {
+        matchCurtainUnsub.current = null;
+        advanceDeck();
+      });
+    } else {
+      advanceDeck();
+    }
     analytics.capture('swipe', { direction });
     const isPass = direction === "left";
     setLastSwipeWasPass(isPass);
-    // Kartın kendisi — "kime" sorusunun cevabı hem Fire onayında hem de
-    // aşağıdaki kaçırılmış eşleşme toast'ında lazım.
+    // Kartın kendisi — aşağıdaki kaçırılmış eşleşme toast'ında lazım.
     const swiped = potentialMatches.find((p) => p?.userId === userId);
-    // Fire onayı. Gerekçe notunkiyle aynı (bkz. handleSendNote): kutlama
-    // alevi yalnız görsel, kimin Fire aldığını SÖYLEMİYOR — kart o sırada
-    // zaten örtünün altında. Toast tek yazılı onay.
-    if (direction === "up") {
-      const name = swiped?.displayName;
-      showInfoToast({
-        title: t("discover.swipe.fireSentTitle"),
-        message: name
-          ? t("discover.swipe.fireSentMessage", { name })
-          : t("discover.swipe.fireSentMessageNoName"),
-        icon: "fire",
-      });
-    }
+    // ⚠️ Fire gönderiminde TOAST YOK (bilerek): ekranı süpüren kutlama alevi
+    // (bkz. flameSweep) onayı zaten veriyor, üstüne banner düşürmek aynı anı
+    // iki kez duyurmak oluyordu. Bir süre "alev kimin Fire aldığını
+    // söylemiyor" gerekçesiyle toast duruyordu; ürün kararı görsel onayın
+    // yeterli olduğu. Notun toast'ı DURUYOR — orada kutlama premium rozetini
+    // gösteriyor, gönderimi değil (bkz. handleSendNote).
     // Destedeki bu kart beni beğenmiş biri miydi? Öyleyse yön ne olursa olsun
     // artık "bekleyen beğeni" değil: sağa kaydırma match yaratır, sola kaydırma
     // eşleşmeyi kaçırır. Rozet iki durumda da ANINDA düşer — MatchNotification'ı
@@ -1834,6 +2387,11 @@ export default function DiscoverScreen() {
     }
     if (currentIndex === 0) return;
     if (!lastSwipeWasPass) return;
+    // Bir geri alma zaten alevin altında bekliyor: ikinci basış aynı kartı bir
+    // kez daha geri almaya çalışırdı (index henüz kaymadı). `lastSwipeWasPass`
+    // bunu pratikte zaten tutuyor — bu, pencerenin açık kaldığı ~800 ms için
+    // açık güvence.
+    if (rewindFlameUnsub.current) return;
     if (remainingUndos === 0) {
       // Buraya yalnız premium + kalan hak 0 düşer (free zaten undoLocked'ta
       // yakalandı). openPremiumPaywall entitlement'ı tazeleyip premium çıkarsa
@@ -1846,15 +2404,29 @@ export default function DiscoverScreen() {
     // refetch'inde koruma penceresi onu listeden silmeye devam eder.
     const undoneUserId = potentialMatches[currentIndex - 1]?.userId;
     if (undoneUserId) swipedAtRef.current.delete(undoneUserId);
+    // Geri gelecek kartı okuyamadıysak (deste altımızdan değişti) hiçbir şey
+    // yapma: index'i kaydırmak ekranda bambaşka birini açardı.
+    if (!undoneUserId) return;
 
-    // Optimistic UI: kart hemen geri gelir + animasyon
-    setCurrentIndex((i) => Math.max(0, i - 1));
+    // Optimistic UI — ama kart EKRANA DEĞİL, canlı kartın ARDINA doğuyor:
+    // ölçümünü orada yapıyor, index ancak bitince kayıyor (bkz. warmRewind).
+    // Index'i burada kaydırmak kartı yarı ölçülmüş hâlde ekrana koymak, yana
+    // park etmek ise altındaki sayfa zeminini açmak demekti.
     setLastSwipeWasPass(false);
-    stackEntryX.value = -ENTRY_DISTANCE;
-    stackEntryX.value = withTiming(0, {
-      duration: ENTRY_DURATION,
-      easing: ENTRY_EASING,
-    });
+    // ALEV ÖNCE BAŞLIYOR, devir onun örtüsü altında (bkz.
+    // startRewindUnderCover): kullanıcı kartın değiştiğini görmüyor — geç,
+    // beğen ve Fire'da olduğu gibi.
+    startRewindUnderCover();
+    if (rewindSlotIdRef.current === undoneUserId) {
+      // Kart yuvada duruyor — kurulmuş, ölçülmüş, ekranın ardında bekliyor
+      // (bkz. rewindSlotIdRef). Ölçüm beklenmiyor; tek kapı alevin örtmesi.
+      pendingRewind.current = undoneUserId;
+      tryCommitRewind();
+    } else {
+      // Yuva yok (destenin sonu, taze deste): eski yol — kart canlı kartın
+      // ardında mount edilip ölçülüyor, devir iki sinyalin sonuncusuyla.
+      warmRewind(undoneUserId);
+    }
     const prevUndos = remainingUndos;
     if (remainingUndos !== null && remainingUndos !== -1) {
       updateStatsCache({ remainingUndos: remainingUndos - 1 });
@@ -1881,7 +2453,9 @@ export default function DiscoverScreen() {
     try {
       await undoMutation.mutateAsync();
     } catch (err) {
-      setCurrentIndex((i) => i + 1);
+      // Kart henüz üste geçmediyse index HİÇ kaymadı: ileri almak desteyi bir
+      // fazla sürerdi. O pencerede tek doğru geri alma, ısınan kartı düşürmek.
+      if (!cancelRewindWarmup()) setCurrentIndex((i) => i + 1);
       if (undoneUserId) swipedAtRef.current.set(undoneUserId, Date.now());
       if (prevUndos !== null) updateStatsCache({ remainingUndos: prevUndos });
       Alert.alert("", err?.message || t('discover.rewind.error'));
@@ -1892,11 +2466,7 @@ export default function DiscoverScreen() {
     try {
       await saveFiltersMutation.mutateAsync(localFilters);
       setCurrentIndex(0);
-      stackEntryX.value = ENTRY_DISTANCE;
-      stackEntryX.value = withTiming(0, {
-        duration: ENTRY_DURATION,
-        easing: ENTRY_EASING,
-      });
+      enterStackFrom(ENTRY_DISTANCE);
       setFilterVisible(false);
     } catch (err) {
       Alert.alert("", err?.message || t('discover.filters.saveError'));
@@ -1913,7 +2483,7 @@ export default function DiscoverScreen() {
     if (isSwiping || potentialMatches.length <= currentIndex) return;
     setIsSwiping(true);
     programmaticSwipe.value = 1;
-    setTimeout(() => setIsSwiping(false), 300);
+    setTimeout(() => setIsSwiping(false), BUTTON_SWIPE_LOCK_MS);
   });
 
   const handleLikeButton = useEvent(() => {
@@ -1927,7 +2497,7 @@ export default function DiscoverScreen() {
     }
     setIsSwiping(true);
     programmaticSwipe.value = 2;
-    setTimeout(() => setIsSwiping(false), 300);
+    setTimeout(() => setIsSwiping(false), BUTTON_SWIPE_LOCK_MS);
   });
 
   const handleFireButton = useEvent(() => {
@@ -1938,13 +2508,10 @@ export default function DiscoverScreen() {
     }
     setIsSwiping(true);
     programmaticSwipe.value = 3;
-    // Diğer iki butondan uzun: Fire'da kart hemen fırlamıyor, deste alev
+    // Diğer iki butonla AYNI süre: üçünde de kart hemen gitmiyor, deste alev
     // ekranı kapatınca (~800 ms, ilk kutlamada lazy chunk payıyla biraz daha)
-    // ilerliyor — bkz. SwipeWrapper. 300 ms'de bırakılsaydı butonlar kart hâlâ
-    // dururken canlanır, ikinci tap yutulmuş gibi görünürdü. Çift tetiklemeye
-    // karşı asıl güvence SwipeWrapper'daki kilit; bu yalnız butonun görünür
-    // durumu.
-    setTimeout(() => setIsSwiping(false), 1300);
+    // ilerliyor — bkz. BUTTON_SWIPE_LOCK_MS.
+    setTimeout(() => setIsSwiping(false), BUTTON_SWIPE_LOCK_MS);
   });
 
   // ── Moderasyon (expanded kartın altındaki ikonlar) ───────────────────────
@@ -1953,9 +2520,10 @@ export default function DiscoverScreen() {
   // swipedAtRef kaydı şart — polling refetch'i engellenen profili geri
   // getirirse guard penceresi onu eler. Kart top değilse (teorik) sadece
   // guard'a yazıp indeksi oynatmıyoruz.
-  // `covered`: kart, ekranı kaplayan bir kutlamanın ALTINDA düşüyor (not) —
-  // engelle/şikayet yolunda kutlama yok, kart açıkta değişiyor.
-  const dropProfileFromDeck = useEvent((userId: string, covered = false) => {
+  // `covered` PARAMETRESİ KALDIRILDI (handleSwipe'dakiyle aynı gerekçe):
+  // "kart, ekranı kaplayan bir kutlamanın ALTINDA düşüyor" demekti ve tek işi
+  // giriş yayını atlatmaktı; o yay artık yok.
+  const dropProfileFromDeck = useEvent((userId: string) => {
     if (!userId) return;
     swipedAtRef.current.set(userId, Date.now());
     // Beni beğenmiş biriyse rozet ANINDA düşsün — handleSwipe'daki temizlikle
@@ -1966,15 +2534,13 @@ export default function DiscoverScreen() {
       uiBus.emit("likerHandled", { userId });
     }
     if (potentialMatches[currentIndex]?.userId !== userId) return;
+    // handleSwipe'dakiyle aynı gerekçe: index iki yönden birden sürülemez.
+    cancelRewindWarmup();
     // Kart expanded'ken düşüyor: expand shared value'ları sıfırlanmazsa deste
     // biterse (arkada kart yok) boş durum expanded ölçülerde kalır. Yeni bir
     // top kart varsa baseline reset'i zaten aynı işi yapıyor, burada ikinci kez
     // sıfırlamak zararsız — index değişmeden ÖNCE olması boş desteyi kurtarır.
     resetCardExpandState();
-    // Guard'ın ARDINDA: kart zaten desteden çıkmışsa (kullanıcı bekleme
-    // penceresinde kendisi kaydırdı) bayrağı kirletmeyelim — deste ilerlemiyor,
-    // ama true kalsaydı SONRAKİ değişimin giriş animasyonu yenmiş olurdu.
-    setCoveredSwap(covered);
     setCurrentIndex((i) => i + 1);
   });
 
@@ -2071,7 +2637,7 @@ export default function DiscoverScreen() {
       // bir nota iki alev demek. Kart o zaman örtüsüz düşüyor — composer'ın
       // kapanışı zaten değişimin üstünde.
       if (willMatchOnLike(req.profile)) {
-        dropProfileFromDeck(userId, false);
+        dropProfileFromDeck(userId);
         return;
       }
       // Kutlama Fire'ın AYNISI (bkz. flameSweep): alev ekranı süpürüyor
@@ -2079,7 +2645,7 @@ export default function DiscoverScreen() {
       noteFlameUnsub.current?.();
       noteFlameUnsub.current = runFlameSweep(() => {
         noteFlameUnsub.current = null;
-        dropProfileFromDeck(userId, true);
+        dropProfileFromDeck(userId);
       });
     } catch (e: any) {
       const code = e?.response?.data?.code ?? null;
@@ -2213,53 +2779,137 @@ export default function DiscoverScreen() {
   }));
 
   /**
-   * Destesi OLMAYAN hâllerin kutusu (iskelet · boş kart). Kart kabı tam ekran
-   * ama bu ikisi değil: birinde okunacak metin ve basılacak buton var, diğeri
-   * kartın yerini tutuyor ama fotoğraf değil — ikisi de durum çubuğunun ya da
-   * yüzen tab bar'ın ardına girmemeli.
-   *
-   * Paylar kartın ESKİ kabının payları: üstte yüzen ikon satırının bittiği
-   * çizgi, altta tab bar'ın boyu.
+   * DESTESİ OLMAYAN HÂLLERİN AYRI KUTUSU KALKTI (2026-10-13). Burada
+   * `chromeSafeBoxStyle` vardı: iskeleti ve boş kartı kartın ESKİ kabının
+   * paylarıyla (üstte yüzen ikon satırının bittiği çizgi, altta tab bar boyu)
+   * küçülten bir sarmalayıcı. İkisi de artık kartla aynı ölçüde tam ekran;
+   * metnin/butonun chrome'un ardına girmemesini kendi iç payları sağlıyor
+   * (bkz. EmptyDiscoverCard > topInset/coverBottomInset, SkeletonCard).
    */
-  const chromeSafeBoxStyle = useMemo(
-    () => ({
-      flex: 1,
-      paddingTop:
-        insets.top + DISCOVER_HEADER_HEIGHT + DISCOVER_CARD_TOP_GAP,
-      paddingBottom: tabBarOccupied,
-    }),
-    [insets.top, tabBarOccupied],
-  );
+
+  // Kartın kapağındaki yazı bloğunun okuduğu tab bar payı — iskelet ve boş
+  // kart da aynı sayıyı okuyor (bkz. SwipeCard > coverBottomInset).
+  const coverBottomInset = discoverTabBarInset(insets.bottom);
+
+  /**
+   * İskeletin İKİ hâli var:
+   *
+   *  • `deckSkeletonOnly` — kart henüz MOUNT EDİLMEDİ (deste yok ya da ilk
+   *    kapak fotoğrafı yüklenmedi). Ekranda yalnız iskelet duruyor.
+   *  • `deckSkeletonOverlay` — kart mount edildi, ölçülüyor; iskelet onun
+   *    ÜSTÜNDE perde olarak duruyor (bkz. coverSettled).
+   *
+   * İkincisi olmadan kullanıcı iskeletten çıkınca butonların hizalanmasını ve
+   * ortak nokta pillerinin kaybolup geri gelmesini görüyordu.
+   */
+  const deckSkeletonOnly =
+    (loading && potentialMatches.length === 0) ||
+    (potentialMatches.length > 0 && !firstPhotoReady);
+  const deckSkeletonOverlay =
+    !deckSkeletonOnly && potentialMatches.length > currentIndex && !coverSettled;
+
+  /**
+   * Yanda park etmiş desteyi BEKLETMEYECEK hâller: ekranda gerçek bir kart yok
+   * (iskelet ya da boş durum). Bekleyen tavan dolana kadar durmasın — orada
+   * ölçüm haberi verecek bir kart da yok, perdeyi/boş kartı 240ms geciktirmenin
+   * karşılığı yok (bkz. enterStackFrom).
+   */
+  useEffect(() => {
+    if (deckSkeletonOnly || !deckHasCard) {
+      releaseStackEntry();
+      // Deste çizilmiyor = yuva da yok. Bayrağı `renderStack` yazıyor ve o
+      // şu an hiç çağrılmıyor; bayat kalırsa geri al basışı kartı mount
+      // edilmiş sanıp beklemeden üste alırdı.
+      rewindSlotIdRef.current = null;
+    }
+  }, [deckSkeletonOnly, deckHasCard, releaseStackEntry]);
 
   const renderStack = () => {
-    return potentialMatches
-      .slice(currentIndex, currentIndex + 2)
-      .reverse()
-      .map((profile, index, array) => {
-        const isTopCard = index === array.length - 1;
+    const topProfile = potentialMatches[currentIndex];
+    const nextProfile = potentialMatches[currentIndex + 1];
+    const prevProfile =
+      currentIndex > 0 ? potentialMatches[currentIndex - 1] : undefined;
+    /**
+     * GERİ AL YUVASI — destenin EN ALTINDAKİ, ekranda hiç görünmeyen kart
+     * (gerekçesi rewindSlotIdRef'in yanında).
+     *
+     * İki yoldan doluyor:
+     *   • Normal hâl: bir önceki kart orada DURMAYA devam ediyor (unmount
+     *     edilmiyor). Koşul `nextProfile` — arkada kart yoksa yuva açığa
+     *     çıkardı.
+     *   • `rewindWarmup`: yuva kurulu değilken basıldı, kart ölçülmek için
+     *     şimdi mount ediliyor.
+     *
+     * KİMLİK KONTROLÜ ŞART: deste altımızdan değişmiş olabilir (polling
+     * refetch, demir hizalaması) ve `currentIndex - 1`de artık başka biri
+     * durabilir — onu yuvaya koymak yanlış kartı üste almak olurdu.
+     */
+    const slotProfile =
+      prevProfile &&
+      (!!nextProfile || prevProfile.userId === rewindWarmup) &&
+      (!rewindWarmup || prevProfile.userId === rewindWarmup)
+        ? prevProfile
+        : undefined;
+    rewindSlotIdRef.current = slotProfile?.userId ?? null;
+
+    /**
+     * BOYAMA SIRASI, alttan üste: yuva → arkadaki kart → üstteki kart.
+     *
+     * Açıkça kuruluyor, `reverse()` ile DEĞİL. Eskiden deste iki elemandı ve
+     * ters çevirmek yetiyordu; yuva kalıcı olunca dizi doğal sırada
+     * [önceki, üstteki, sonraki] geliyor ve ters çevirmek üstteki kartı ortaya
+     * atıyordu. Sıra artık okunduğu gibi: son eleman üstte duran kart.
+     */
+    const painted = [slotProfile, nextProfile, topProfile].filter(
+      (p): p is NonNullable<typeof p> => !!p,
+    );
+    return painted
+      .map((profile) => {
+        const isTopCard = profile.userId === topProfile?.userId;
+        const isWarm = profile.userId === slotProfile?.userId;
         return (
           <SwipeWrapper
             key={profile.userId}
             profile={profile}
             isTopCard={isTopCard}
             onSwipe={handleSwipe}
-            dragX={dragX}
             overlayDragX={overlayDragX}
             overlayOpacity={overlayOpacity}
-            buttonDragX={buttonDragX}
             programmaticSwipe={programmaticSwipe}
             onPass={handlePassButton}
             onLike={handleLikeButton}
             onFire={handleFireButton}
             willMatch={willMatchOnLike}
-            swipeQuotaExhausted={swipeQuotaExhausted}
+            // `swipeQuotaExhausted` GEÇİLMİYOR: kartta onu okuyan tek dal
+            // sağa kaydırma jestiydi ve o jest kaldırıldı (bkz. SwipeWrapper).
+            // Kota kapısı artık yalnız beğen butonunda — handleLikeButton.
             fireQuotaExhausted={fireQuotaExhausted}
-            snapEntry={coveredSwap}
+            entryX={cardEntryX}
             superLikesRemaining={statsQuery.data?.superLikesRemaining ?? null}
             onReport={handleReportProfile}
             onBlock={handleBlockProfile}
             onMenu={setOptionsProfile}
             onNote={handleNoteRequest}
+            // Yuvadaki kart EKRANDA DEĞİL: ağır paneli soğuyarak düşüyor (bkz.
+            // SwipeWrapper > rewindSlot · SwipeCard > PANEL_COOLDOWN_MS).
+            // Üste geçtiğinde prop kalkıyor ve panel geri geliyor; kapağın
+            // kendisi (fotoğraf, cam zemin) hiçbir zaman sökülmüyor.
+            rewindSlot={isWarm}
+            // Ölçüm haberini KİMİN vereceğine burası karar veriyor (kart artık
+            // kendi "üst kart mıyım" kontrolünü yapmıyor — bkz. SwipeCard >
+            // onCoverReady). İki muhatap var ve ikisi aynı anda olamaz:
+            //   • YUVADAKİ kart (rewind) — haber "ölçüm bitti" demek; basış
+            //     bekliyorsa devir orada oluyor (handleRewindSlotReady).
+            //   • ÜST kart — haber iskelet perdesini kaldırıyor (coverSettled).
+            // Prop'u geri kalan kartlardan esirgemek onları memo
+            // karşılaştırmasında sabit tutuyor.
+            onCoverReady={
+              isWarm
+                ? handleRewindSlotReady
+                : isTopCard
+                  ? handleCoverReady
+                  : undefined
+            }
           />
         );
       });
@@ -2278,21 +2928,25 @@ export default function DiscoverScreen() {
           Kapağın alt bandındaki yazı tab bar'ın ARDINA düşmesin diye kart
           kendi içinde bar boyu pay okuyor (SwipeCard > coverBottomInset).
 
-          DESTESİ OLMAYAN HÂLLER AYRI: iskelet ve boş kart tam ekran değil,
-          eski paylarıyla duruyor (aşağıdaki sarmalayıcı) — birinde okunacak
-          metin ve basılacak buton var, diğeri kartın yerini tutuyor ama
-          fotoğraf değil. */}
+          İSKELET DE TAM EKRAN (kartın yerini tutuyor, bkz. SkeletonCard):
+          çerçevesi ve yazı bloğunun çizgisi kartla birebir aynı, yoksa ilk
+          fotoğraf gelince kart büyüyor gibi görünüyor.
+
+          BOŞ KART DA TAM EKRAN (2026-10-13): eskiden kendi küçük kutusunda
+          eski paylarıyla duruyordu. Metni ve butonu durum çubuğunun / tab
+          bar'ın ardına girmesin diye kart kendi içinde pay bırakıyor (bkz.
+          EmptyDiscoverCard > topInset/coverBottomInset). */}
       <View style={{ flex: 1 }}>
-        {(loading && potentialMatches.length === 0) ||
-        (potentialMatches.length > 0 && !firstPhotoReady) ? (
-          <View style={chromeSafeBoxStyle}>
-            {/* İSKELET KABIN İÇİNDE KALIR, kartın kabuğu gibi TAŞMAZ. Bir tur
-                `marginBottom: -tabBarOccupied` verilmişti (kabuk ekranın dibine
-                iniyor diye); yanlıştı — kabuğun taşan kısmı boş, kartın GÖRÜNEN
-                alt kenarı fotoğrafın bittiği yer, yani kabın dibi. İskelet
-                uzatılınca karttan bir tab bar boyu uzun duruyordu. */}
-            <SkeletonCard />
-          </View>
+        {deckSkeletonOnly ? (
+          /* İSKELET KABIN İÇİNDE KALIR, kartın kabuğu gibi TAŞMAZ. Bir tur
+             `marginBottom: -tabBarOccupied` verilmişti (kabuk ekranın dibine
+             iniyor diye); yanlıştı — kabuğun taşan kısmı boş, kartın GÖRÜNEN
+             alt kenarı fotoğrafın bittiği yer, yani kabın dibi. İskelet
+             uzatılınca karttan bir tab bar boyu uzun duruyordu.
+
+             Kabın kendisi artık tam ekran, o yüzden ayrı bir sarmalayıcı yok —
+             iskelet doğrudan `flex: 1` ile ekranı dolduruyor. */
+          <SkeletonCard coverBottomInset={coverBottomInset} />
         ) : potentialMatches.length > currentIndex ? (
           <Animated.View
             pointerEvents={tutorialActive ? "none" : "auto"}
@@ -2309,15 +2963,37 @@ export default function DiscoverScreen() {
             <SwipeOverlay dragX={overlayDragX} opacity={overlayOpacity} />
           </Animated.View>
         ) : (
-          <View style={chromeSafeBoxStyle}>
-            <EmptyDiscoverCard
-              title={emptyCopy?.title ?? null}
-              actionLabel={emptyCopy?.actionLabel ?? null}
-              onAction={handleEmptyAction}
-              secondaryLabel={emptyCopy?.secondaryLabel ?? null}
-              onSecondary={removeDistanceLimit}
-              busy={ignoreDistanceMutation.isPending}
-            />
+          /* BOŞ KART DA TAM EKRAN: ayrı sarmalayıcı yok, payları kendi içinde
+             taşıyor (bkz. EmptyDiscoverCard > topInset/coverBottomInset). */
+          <EmptyDiscoverCard
+            title={emptyCopy?.title ?? null}
+            actionLabel={emptyCopy?.actionLabel ?? null}
+            onAction={handleEmptyAction}
+            secondaryLabel={emptyCopy?.secondaryLabel ?? null}
+            onSecondary={removeDistanceLimit}
+            busy={ignoreDistanceMutation.isPending}
+            // Yüzen chrome satırının gerçek boyu: şerit cam butondan kısa
+            // olabilir, o yüzden aşağıdaki satırla AYNI max okunuyor.
+            topInset={
+              insets.top +
+              Math.max(DISCOVER_HEADER_HEIGHT, DISCOVER_GLASS_BUTTON_SIZE)
+            }
+            coverBottomInset={coverBottomInset}
+          />
+        )}
+
+        {/* KARTIN ÜSTÜNDEKİ İSKELET — kart mount oldu ama kapağın alt chrome'u
+            henüz ölçülmedi (bkz. coverSettled). Kart ölçülebilmek için ekranda
+            olmak zorunda, o yüzden perde onun ÜSTÜNE iniyor; kardeş sırası
+            yeterli (aynı ata içinde sonraki kardeş üstte boyanır), zIndex
+            ayrıca veriliyor ki destedeki üst kartın kendi zIndex'iyle
+            yarışmasın.
+
+            DOKUNMAYI YUTUYOR (pointerEvents verilmedi): altında görünmeyen bir
+            kart var, kullanıcı göremediği kartı kaydırmasın. */}
+        {deckSkeletonOverlay && (
+          <View style={[StyleSheet.absoluteFill, { zIndex: 60 }]}>
+            <SkeletonCard coverBottomInset={coverBottomInset} />
           </View>
         )}
       </View>
@@ -2371,12 +3047,16 @@ export default function DiscoverScreen() {
           // demek, oysa kilitli buton her zaman tıklanabilir (paywall açar).
           // Sönüklük yalnız premium'un "geri alacak pass yok" hâline kalıyor.
           dimmed={!(undoLocked || lastSwipeWasPass)}
+          // SINIRSIZDA ROZET YOK (istek): `remainingUndos === -1` sayı değil
+          // "sınır yok" demek ve eskiden "∞" rozetiyle çiziliyordu. Sonsuz
+          // işareti bir SAYAÇ gibi okunuyor — oysa sayacak bir şey kalmadığı
+          // durumun işareti. Kalan hak bir SAYIYSA rozet yine çıkıyor, kilitte
+          // de kilit glifi duruyor.
           badge={
-            undoLocked || remainingUndos !== null ? (
-              <HeaderCountBadge
-                icon={undoLocked}
-                text={remainingUndos === -1 ? "∞" : String(remainingUndos)}
-              />
+            undoLocked ? (
+              <HeaderCountBadge icon text="" />
+            ) : remainingUndos !== null && remainingUndos !== -1 ? (
+              <HeaderCountBadge text={String(remainingUndos)} />
             ) : null
           }
         />

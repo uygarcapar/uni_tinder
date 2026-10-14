@@ -60,7 +60,8 @@ export const CARD_CHROME_GLASS_SIZE = GLASS_ICON_CLEAR_SIZE;
  * KULLANILMIYOR: orada punto ortak zincirden geliyor (bkz.
  * GLASS_ICON_BUTTON.icon) — bu sayı yalnız SFIcon'un fallback yolunu besliyor.
  */
-const FALLBACK_ICON_SIZE = 22;
+export const CARD_CHROME_FALLBACK_ICON_SIZE = 22;
+const FALLBACK_ICON_SIZE = CARD_CHROME_FALLBACK_ICON_SIZE;
 
 type Props = {
   onPress: () => void;

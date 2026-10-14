@@ -1,4 +1,11 @@
-import { Fragment, useCallback, useEffect, useMemo, useState } from "react";
+import {
+  Fragment,
+  useCallback,
+  useEffect,
+  useMemo,
+  useRef,
+  useState,
+} from "react";
 import { useTranslation } from "react-i18next";
 import * as Haptics from "expo-haptics";
 import {
@@ -169,6 +176,10 @@ import uiBus, {
 } from "@/shared/services/uiBus";
 import CardMenuGlassButton from "@/features/discover/components/CardMenuGlassButton";
 import CardGlyphGlassButton from "@/features/discover/components/CardGlyphGlassButton";
+// Kapak kolonundaki tik / X — üç noktanın (CardMenuGlassButton) sardığı
+// kabuğun AYNISI, yalnız glifleri farklı. Kolonun beş dairesi tek malzeme
+// olmak zorunda (bkz. kolonun kendi notu).
+import CardChromeGlassButton from "@/features/discover/components/CardChromeGlassButton";
 import {
   DISCOVER_CARD_EXPAND_LIFT,
   DISCOVER_GLASS_BUTTON_SIZE,
@@ -282,7 +293,9 @@ const FIRE_MORPH_IN_END = 0.8;
 // ondan TÜRETİLDİĞİ için sayı burada duruyor, JSX'te değil.
 const CARD_NAME_FONT = 28;
 // Satır kutusu ~1.14em. Rozetin hizası bu kutuya göre hesaplanıyor (aşağıda).
-const CARD_NAME_LINE = 32;
+// DIŞA AÇIK: kapağın iskeleti (DiscoverScreen > SkeletonCard) isim bloğunu bu
+// boyda çiziyor — ayrışırsa iskeletten karta geçerken satır boy değiştiriyor.
+export const CARD_NAME_LINE = 32;
 
 // PANELİN BAŞLIK PUNTOSU KALDIRILDI (27/32 idi): panelin başında isim satırı
 // yok, isim yalnız sticky şeritte ve puntosu orada (CardStickyHeader >
@@ -369,11 +382,13 @@ const PHOTO_CROP = 24;
  * denip 12'ye çekildi. Daha da azaltma: 0'a yaklaştıkça blok yüzen bar'ın üst
  * kenarına değiyor ve ikisi tek yığın gibi okunuyor.
  *
- * Ayrıca İKİ ŞEY daha bu sayıdan türüyor: chrome devrinin eşiği
- * (chromeHandoffY — blok nerede duruyorsa devir orada tetiklenir) ve sağ alttaki
- * aksiyon kolonunun tabanı (aynı çizgiden başlasınlar).
+ * Ayrıca ÜÇ ŞEY daha bu sayıdan türüyor: chrome devrinin eşiği
+ * (chromeHandoffY — blok nerede duruyorsa devir orada tetiklenir), sağ alttaki
+ * aksiyon kolonunun tabanı (aynı çizgiden başlasınlar) ve kapağın iskeleti
+ * (DiscoverScreen > SkeletonCard — iskeletin yazı bloğu kartınkiyle AYNI
+ * çizgide durmalı, yoksa ilk fotoğraf gelince blok yerinden zıplıyor).
  */
-const COVER_NAME_BOTTOM = 12;
+export const COVER_NAME_BOTTOM = 12;
 
 /**
  * Kapağın sağ alt köşesindeki aksiyon kolonunun buton çapı ve butonlar arası
@@ -424,12 +439,13 @@ const COVER_STICKY_EDGE_GAP = 30;
  * Üniversite satırının ortak nokta satırına bıraktığı pay (px) — satırın
  * `marginBottom`u.
  *
- * ÜÇ YER OKUYOR, o yüzden burada: üniversite satırının kendisi, aynı satırın
- * dikey dolgusu (aşağısı) ve buton kolonunun tabanı. Kolon pillere ÜNİVERSİTE
- * TEXTİYLE AYNI mesafede durmak zorunda (istek) — iki sayı ayrışırsa kolon
- * yazıdan farklı bir çizgide duruyor.
+ * DÖRT YER OKUYOR, o yüzden burada: üniversite satırının kendisi, aynı satırın
+ * dikey dolgusu (aşağısı), buton kolonunun tabanı ve kapağın iskeleti
+ * (DiscoverScreen > SkeletonCard). Kolon pillere ÜNİVERSİTE TEXTİYLE AYNI
+ * mesafede durmak zorunda (istek) — iki sayı ayrışırsa kolon yazıdan farklı bir
+ * çizgide duruyor.
  */
-const COVER_UNI_PILLS_GAP = 8;
+export const COVER_UNI_PILLS_GAP = 8;
 
 /**
  * Üniversite satırının kendi dikey dolgusu (`py-1`'in 4'ü).
@@ -438,8 +454,11 @@ const COVER_UNI_PILLS_GAP = 8;
  * KUTUSU yazının 4px altında bitiyor, yani "textin pillere uzaklığı" = margin +
  * bu dolgu. Kolonun kutusunda böyle bir ölü pay yok (daire kutunun kenarına
  * dayanıyor), o yüzden farkı elle kapatıyoruz.
+ *
+ * İskelet de bunu okuyor (DiscoverScreen > SkeletonCard): oradaki placeholder
+ * satırın boyu "yazı kutusu + bu dolgu" olmak zorunda.
  */
-const COVER_UNI_ROW_PAD = 4;
+export const COVER_UNI_ROW_PAD = 4;
 
 /**
  * Buton kolonunun tabanı ile ortak nokta satırının arası — üniversite TEXTİNİN
@@ -562,6 +581,18 @@ const PANEL_TOP_RADIUS = CARD_FACE_CORNER_RADIUS;
 const PANEL_TOP_PAD = 28;
 
 /**
+ * Panelin YATAY dolgusu — `px-4`ün 16'sı, artık açık sayı olarak burada
+ * (inline style className'i ezer; değer AYNI, yalnız kaynağı değişti).
+ *
+ * Sayı burada görünür olsun diye, tıpkı üst/alt dolgunun kaynağının açık
+ * yazılması gibi: önizlemenin tam kenar ana fotoğrafı tam olarak BU dolgunun
+ * dışında kalmak zorunda ve bunu panelin KARDEŞİ olarak çözüyor — negatif
+ * marjla değil (bkz. SectionPhoto > bleed). Yani burayı büyütmek fotoğrafı
+ * etkilemez; panelin içindeki her şeyi kenardan uzaklaştırır.
+ */
+const PANEL_PAD_H = 16;
+
+/**
  * Panelin kendi ALT dolgusu — içeriğin panelin dibiyle arasındaki nefes.
  *
  * `p-6`nın 24'ünün yerini alıyor (inline style className'i ezer), tıpkı üst
@@ -631,6 +662,10 @@ const COVER_TEXT_RAMP_TAIL = 220;
 /**
  * Önizlemede (Likes / Chat / Profil) içeriğin sticky şeridin ALTINDAN
  * başlaması için panelin kendi dolgusuna eklenen pay.
+ *
+ * ARTIK YALNIZ FOTOĞRAFSIZ PROFİLDE: ana fotoğraf varken o blok kartın
+ * tepesine dayanıyor ve şerit onun ÜSTÜNDE duruyor (bkz. SectionPhoto >
+ * bleed) — pay çizilse fotoğrafın üstünde boş bir şerit açardı.
  *
  * Panelin İÇİNDE duruyor, kartın zemininde (theme.bg) açılan bir boşluk DEĞİL:
  * önce öyle denendi ve açık modda gri panelin üstünde beyaz bir şerit
@@ -714,6 +749,19 @@ const HEIGHT_MAX_CM = 220;
 // Oran 4:5 — dikey portre, contentFit="cover" ile kırpılır. Genişlik yüzde
 // verilir (sabit px DEĞİL): kart sheet içinde tam ekrandan dar açılabiliyor.
 const SECTION_PHOTO_ASPECT = 4 / 5;
+/**
+ * Önizlemenin TAM KENAR ana fotoğrafının oranı (bkz. SectionPhoto > bleed).
+ *
+ * Bölüm fotoğraflarından UZUN, bilerek (istek): o blok artık panelin dolgusunun
+ * dışına taşıyor, yani 32px daha geniş çiziliyor ve aynı oranda kalsa kutu
+ * boyuyla birlikte "basık" okunuyordu. Sticky şerit de üstünde durduğu için
+ * fotoğrafın kendi yüzüne kalan alan kısalıyor.
+ *
+ * 4/5 (1.25w) → 3/4 (1.33w) → 7/10 (1.43w), ikisi de istek: tek ayar noktası
+ * burası, fotoğrafın yüksekliğini oynatmak isteyen `SECTION_PHOTO_ASPECT`e
+ * dokunmamalı — o diğer bütün bölüm fotoğraflarının ritmi.
+ */
+const SECTION_PHOTO_BLEED_ASPECT = 7 / 10;
 // Bölüm kutularının yarıçapı ile aynı (bkz. hobiler/yaşam tarzı/bio kutuları).
 const SECTION_PHOTO_RADIUS = 40;
 // Kapak fotoğrafının yarıçapı ARTIK BURADA DEĞİL: kabukla aynı sayı olmak
@@ -1247,12 +1295,40 @@ function SectionPhoto({
   uri,
   onNotePress,
   hideNote = false,
+  bleed = false,
   zoomStyle,
 }: {
   uri: string;
   onNotePress?: () => void;
   /** Önizleme (Profil / Likes / Chat kartı): fotoğrafın altında not kutusu yok. */
   hideNote?: boolean;
+  /**
+   * TAM KENAR — yalnız önizlemenin ANA (ilk) fotoğrafı: kartın tepesine ve iki
+   * yanına dayanır, dolgu yok (istek). Diğer bölüm fotoğrafları panelin
+   * dolgusunun İÇİNDE kalıyor — ritim onlarda bozulmuyor.
+   *
+   * BLOK PANELİN DIŞINDA ÇİZİLİYOR (scroll içeriğinin ilk çocuğu, panelin
+   * KARDEŞİ) — bkz. çağrıldığı yer. NEGATİF MARJLA KURMAYA ÇALIŞMA: bir tur
+   * panelin içinde `marginHorizontal: -PANEL_PAD_H` ile denendi ve iki yan
+   * EŞİT ÇIKMADI. Sebep yüzde genişliğin panelin İÇERİK kutusunu (dolgu
+   * düşülmüş hali) çözmesi: negatif marj açık genişliği büyütmüyor, kutuyu
+   * yalnız sola kaydırıyor → sol kenar yapışıyor, sağda 2×PANEL_PAD_H eksik
+   * kalıyor. `width: "auto"` + stretch da güvenilir çıkmadı. Dolgusuz bir
+   * ebeveynin altında bu sorunun kaynağı yok.
+   *
+   * ÜST KÖŞELER DÜZ: yuvarlak kalsalardı kartın kendi köşesiyle (kabuk +
+   * sheet, ikisi de CARD_EXPANDED_CORNER_RADIUS) iç içe iki yarıçap çıkıyordu.
+   * Tepeyi kabuğun kırpması yuvarlıyor; ALT köşeler 40'ta kalıyor — blok
+   * aşağıda hâlâ akışın bir parçası.
+   *
+   * ALT MARJ YOK: fotoğrafın altındaki nefesi panelin kendi üst dolgusu
+   * (PANEL_TOP_PAD) veriyor, blok artık onun üstünde duruyor.
+   *
+   * Şeridin altındaki nefes payı (PREVIEW_HEADER_SPACE) bu yolda ÇİZİLMİYOR:
+   * sticky şerit artık fotoğrafın üstünde duruyor, tıpkı Keşif'teki kapakta
+   * olduğu gibi.
+   */
+  bleed?: boolean;
   /**
    * Top'a çarpma zoom'unun animated style'ı (bkz. photoZoomStyle). YALNIZ
    * önizlemedeki ANA fotoğrafa veriliyor — Discover'da aynı geri bildirimi tam
@@ -1277,6 +1353,15 @@ function SectionPhoto({
           aspectRatio: SECTION_PHOTO_ASPECT,
           marginBottom: 16,
           backgroundColor: theme.surface,
+        },
+        bleed && {
+          // MARJ YOK, NEGATİF MARJ DA YOK — blok dolgusuz bir ebeveynin
+          // altında, yani iki yan kendiliğinden eşit (bkz. bleed prop'u).
+          marginBottom: 0,
+          // Bölüm fotoğraflarından uzun — bkz. SECTION_PHOTO_BLEED_ASPECT.
+          aspectRatio: SECTION_PHOTO_BLEED_ASPECT,
+          borderTopLeftRadius: 0,
+          borderTopRightRadius: 0,
         },
       ]}
     >
@@ -1679,6 +1764,18 @@ interface SwipeCardProps {
    */
   hideFire?: boolean;
   /**
+   * Ağır panel kendi kendine ısınsın mı (bkz. profileReady).
+   *
+   * `false` YALNIZ REWIND YUVASINDA: orada kart ekranda DEĞİL, yalnız ölçülmek
+   * için mount ediliyor ve kullanıcı geri al'a hiç basmayabilir. O kartın
+   * panelini de kurmak her pass'tan sonra bir tam ekran cam zemin daha açardı —
+   * ödediğimiz bedel, kazandığımızdan büyük olurdu.
+   *
+   * Kart yuvadan çıkıp ekrana geldiğinde prop `true`ya dönüyor ve ısınma orada
+   * başlıyor; panel kapağın altında kaldığı için gecikmesi görünmüyor.
+   */
+  panelWarmup?: boolean;
+  /**
    * Kartın en altındaki kırmızı moderasyon ikonları. VERİLMEZSE ÇİZİLMEZ —
    * kendi profilini önizlediğin yerde (ProfileScreen > PreviewModal) bu
    * ikonların çıkmaması buna bağlı.
@@ -1703,7 +1800,42 @@ interface SwipeCardProps {
    * daha açık bir sözleşme — çağıran "not gönderilebilir" demediyse gönderilemez.
    */
   onNote?: (target: NoteTarget) => void;
+  /**
+   * Kapağın alt chrome'u (yazı bloğu + sağ buton kolonu) ARTIK YERİNDE — bir kez
+   * çağrılır.
+   *
+   * Neden var: o blokların yerleşimi ÖLÇÜME bağlı (kartın boyu, yazı bloğunun
+   * yüksekliği, ortak nokta satırının yüksekliği, pillerin paketlenmesi) ve
+   * ölçümler ilk karede henüz yok. İlk kartta bu sıçrama kullanıcının gözünde
+   * oluyordu: butonlar bir hizalanıyor, ortak nokta pilleri bir kaybolup geri
+   * geliyordu. Keşif bu haberi bekleyip iskeleti o ana kadar ekranda tutuyor
+   * (bkz. DiscoverScreen > coverSettled).
+   *
+   * YALNIZ ÜST KART ve yalnız Keşif (previewMode'da çağrılmıyor): alttaki kart
+   * zaten üstünün ardında ölçülüyor, önizlemede kapak hiç çizilmiyor.
+   */
+  onCoverReady?: () => void;
 }
+
+/**
+ * Ağır panelin kurulmasından önce beklenen süre — kartın KENDİ mount'undan
+ * sayılıyor (bkz. profileReady).
+ *
+ * Tek işi swipe'ın son karesini geçirmek: destenin yeni alt kartı tam o karede
+ * doğuyor, paneli de aynı anda kursak kazanılan bir şey olmazdı. Ondan
+ * sonrası boş zaman — bir sonraki swipe'a kadar ~yarım saniye var ve panel o
+ * aralıkta sessizce kuruluyor.
+ */
+const PANEL_WARMUP_MS = 240;
+
+/**
+ * Rewind yuvasına düşen kartın panelini bırakma gecikmesi (bkz. profileReady).
+ *
+ * Isınmadan UZUN ve kasıtlı: swipe'ın hemen ardından gelen geri almada panel
+ * hiç sökülmemiş oluyor (kart olduğu gibi dönüyor), sökülme ise swipe karesinin
+ * çoktan geçtiği boş zamana düşüyor.
+ */
+const PANEL_COOLDOWN_MS = 700;
 
 // Moderasyon ikonları X/tike doğru bu kadar çekiliyor. Satırın gap'ini
 // düşürmek X ile tiki de birbirine yaklaştırırdı; negatif iç margin sadece
@@ -1780,11 +1912,13 @@ export default function SwipeCard({
   expanded = false,
   previewMode = false,
   hideFire = false,
+  panelWarmup = true,
   zoomImpact,
   onReport,
   onBlock,
   onMenu,
   onNote,
+  onCoverReady,
 }: SwipeCardProps) {
   useRenderCount("SwipeCard");
   const insets = useSafeAreaInsets();
@@ -1887,11 +2021,13 @@ export default function SwipeCard({
   // ScrollView içerik toplam yüksekliği — foto bottom'un gradient pozisyonunu
   // hesaplamak için lazım (blend'in bg ile aynı renge bitmesi için).
 
-  // Diğer fotoları arka planda prefetch. Artık expanded panelde bölümlerin
-  // arasında GERÇEKTEN render ediliyorlar (bkz. SectionPhoto), ama o ağaç
-  // `profileReady` ile 100ms geciktiriliyor — prefetch o kadarlık bir avans
-  // veriyor, panel açıldığında fotoğraflar cache'ten gelir.
-  // Sadece TOP card için; bottom card foto prefetch'i gereksiz network yükü.
+  // Diğer fotoları arka planda prefetch. Artık panelde bölümlerin arasında
+  // GERÇEKTEN render ediliyorlar (bkz. SectionPhoto), ama o ağaç
+  // `PANEL_WARMUP_MS` kadar geciktiriliyor — prefetch o kadarlık bir avans
+  // veriyor, panel kurulduğunda fotoğraflar cache'ten gelir.
+  // Sadece TOP card için: alt kartın paneli de artık kuruluyor, yani fotoları
+  // zaten `SectionPhoto` çekiyor — buradaki avansa gerek yok, kapı sırf aynı
+  // isteği iki yerden başlatmamak için duruyor.
   // İlk foto zaten Image src'ile yükleniyor → skip.
   useEffect(() => {
     if (!isTopCard) return;
@@ -1985,27 +2121,58 @@ export default function SwipeCard({
     if (isTopCard) resetCardExpandState();
   }, [isTopCard, previewMode]);
 
-  // Profile Info heavy mount swipe sonu lag'inin sebebi olmadığı test edildi
-  // (Test A — gate kaldırıldı, lag aynıydı). Yine de gate'i koruyoruz: Profile
-  // Info mount'unu animation tail'ından sonraya öteler, görsel olarak temiz.
-  //
-  // ÖNİZLEMEDE ERTELEME YOK: bekletecek bir swipe animasyonu yok ve kapak
-  // fotoğrafı da çizilmediği için (bkz. previewMode dalı) 100ms boyunca
-  // gösterilecek bir şey kalmıyordu — sheet boş açılıp panel sonradan
-  // patlıyordu.
+  /**
+   * ── AĞIR PANEL, KART DESTENİN ALTINDAYKEN KURULUYOR ───────────────────────
+   *
+   * Kapı bir dönem `isTopCard`'a bağlıydı: panel kart ÜSTE GEÇTİKTEN 100 ms
+   * sonra mount oluyordu. Yanlış pencere — swipe'ın bittiği an zaten günün en
+   * kalabalık karesi: giden kart unmount oluyor, DiscoverScreen deste
+   * memo'sunu yeniden türetiyor, destenin yeni ALT kartı sıfırdan mount
+   * ediliyor. Panelin 26 bölüm kutusu, pil ölçüm turları, bölüm fotoğrafları
+   * ve statik harita görseli de tam oraya düşüyordu; kullanıcının gördüğü
+   * "kart uçtu, arayüz bir an dondu".
+   *
+   * O kapıyı bir kez kaldırıp ("Test A") lag aynı çıktığı için panel aklanmıştı
+   * — AMA O TEST YANLIŞ KURULMUŞTU: gate'i kaldırmak işi ortadan kaldırmıyor,
+   * yalnız "üste geçtikten 100 ms sonra"dan "alt kart mount olurken"e taşıyor
+   * ve alt kart da zaten aynı karede mount ediliyor. İki hâlde de maliyet aynı
+   * yere düşüyor, o yüzden fark görülmedi.
+   *
+   * Şimdiki kapı KARTIN KENDİ MOUNT'UNDAN sayıyor ve bir daha kapanmıyor: kart
+   * destenin altındayken, iki swipe arasındaki boş zamanda kuruluyor. Üste
+   * geçtiğinde kurulacak hiçbir şey kalmıyor — `isTopCard` değişimi artık
+   * yalnız bir re-render.
+   *
+   * SÜRE, swipe'ın son karesini BEKLEMEK İÇİN: alt kart tam o karede doğuyor,
+   * paneli de aynı anda kursaydık hiçbir şey kazanmazdık.
+   *
+   * ⚠️ GERİ ALMA REÇETESİ: belirti "alt kart örtülüyken de cam zemin çiziliyor,
+   * sürükleme kasıyor" ise suçlu bu kapı (iki kart birden tam ekran BlurView
+   * taşıyor). O zaman kapıyı `isTopCard`a geri bağla — ama panelin mount
+   * maliyeti swipe karesine geri döner, ölçümü ona göre yap.
+   *
+   * ÖNİZLEMEDE ERTELEME YOK: bekletecek bir swipe animasyonu yok ve kapak
+   * fotoğrafı da çizilmediği için (bkz. previewMode dalı) gösterilecek bir şey
+   * kalmıyordu — sheet boş açılıp panel sonradan patlıyordu.
+   */
   const [profileReady, setProfileReady] = useState(previewMode);
   useEffect(() => {
-    if (previewMode) {
-      setProfileReady(true);
-      return;
-    }
-    if (!isTopCard) {
-      setProfileReady(false);
-      return;
-    }
-    const id = setTimeout(() => setProfileReady(true), 100);
+    if (previewMode) return;
+    // İki yön, iki süre:
+    //   • Isınma (panelWarmup) — kart destede, sırası gelecek.
+    //   • SOĞUMA — kart rewind yuvasına düştü (bkz. prop'un notu): geri alma
+    //     ihtimali için mount KALIYOR ama ağır paneli bırakıyor, yoksa üç kart
+    //     birden tam panel taşırdı. Gecikme ŞART: panel swipe'ın tam o
+    //     karesinde sökülseydi, kaçınmaya çalıştığımız işin aynısını bu kez
+    //     unmount olarak yapardık.
+    // Kullanıcı o pencerede geri alırsa panel hiç sökülmüyor — zamanlayıcı
+    // iptal oluyor ve kart panelli dönüyor.
+    const id = setTimeout(
+      () => setProfileReady(panelWarmup),
+      panelWarmup ? PANEL_WARMUP_MS : PANEL_COOLDOWN_MS,
+    );
     return () => clearTimeout(id);
-  }, [isTopCard, previewMode]);
+  }, [previewMode, panelWarmup]);
 
   /**
    * Kartın AÇIKKEN varacağı köşe yarıçapı. İki bağlamda farklı ve bu FARK
@@ -2217,11 +2384,14 @@ export default function SwipeCard({
    * İki kapısı var:
    *   • Fotoğraf ŞART: fotoğrafsız profilde blur'lanacak bir şey yok, kutular
    *     düz zeminin üstünde camdan farksız kalırdı.
-   *   • Keşif'te ayrıca `isTopCard && profileReady`: arkadaki kart üstteki
-   *     tarafından tamamen örtülü (orada tam ekran bir zemin kurmanın karşılığı
-   *     yok) ve swipe'ın son karesinde bir katman daha kurmak animasyon
-   *     kuyruğuna biniyor — panelin kendi gate'iyle aynı gerekçe. Önizlemede
-   *     böyle bir kuyruk yok, kart zaten açık doğuyor.
+   *   • Keşif'te ayrıca `profileReady`: zemin panelin bir parçası, onunla
+   *     birlikte kuruluyor. Kapı bir dönem `isTopCard && profileReady`'ydi
+   *     ("arkadaki kart örtülü, orada tam ekran bir zemin kurmanın karşılığı
+   *     yok") ve `isTopCard` payı KALDIRILDI: panel artık kart destenin
+   *     altındayken ısınıyor (bkz. profileReady), zemin de onunla gelmek
+   *     ZORUNDA — kutular düz yüzeyle mount olup cam yüzeye sonradan geçerse
+   *     `CardSectionBox` tip değiştiriyor ve panelin tamamı tam da kaçındığımız
+   *     karede yeniden mount oluyor.
    *
    * ZEMİNİ KİM ÇİZİYOR, İKİ BAĞLAMDA FARKLI:
    *   Keşif — scroll kartın İÇİNDE, kart sabit. Zemini kart kendi çerçevesine
@@ -2235,8 +2405,31 @@ export default function SwipeCard({
    * var, `allPhotos` ise erken return'den sonra kuruluyor. `profile?.photos[0]`
    * ile `allPhotos[0]` aynı değer.
    */
-  const glassPanel =
-    !!profile?.photos?.[0] && (previewMode || (isTopCard && profileReady));
+  const glassPanel = !!profile?.photos?.[0] && (previewMode || profileReady);
+
+  /**
+   * KABUĞUN cam yolu — zemin (CardGlassBackdrop) ve onun görünmesi için şeffaf
+   * bırakılan katmanlar. `glassPanel`DEN AYRI ve KAPISIZ.
+   *
+   * Ayrılmasının sebebi görünür bir hata: zemin de panelin kapısına bağlıyken
+   * kart ekrana `theme.bg` ile geliyor, ısınma bitince (PANEL_WARMUP_MS) zemin
+   * bir anda altına giriyordu. Fotoğrafın dibiyle kartın dibi arasındaki bant —
+   * yüzen tab bar'ın ardında kalan şerit — bu yüzden önce koyu gelip sonra
+   * açılıyordu. Rewind'de apaçık görülüyordu: oraya gelen kart hiç ısınmamış
+   * oluyor (yuvada paneli kurulmuyor, bkz. panelWarmup).
+   *
+   * Zeminin ertelenecek bir maliyeti de yok: tek bir blur'lu fotoğraf, kartın
+   * geri kalanıyla aynı karede kuruluyor.
+   *
+   * BÖLÜM KUTULARI AYRI KALDI (glassPanel): onların camı ilk layout turunda
+   * kurulmak ZORUNDA (bkz. "CAM KURULUMUNU GECİKTİRME" notu), yani panelle
+   * birlikte doğup birlikte gitmeli. Panel ekranın altında, görünmüyor —
+   * gecikmesinin bedeli yok.
+   *
+   * ÖNİZLEMEDE `glassPanel` İLE AYNI DEĞER (ikisi de fotoğrafa bakıyor): oradaki
+   * davranış değişmiyor, zemini zaten sheet çiziyor.
+   */
+  const coverGlass = !!profile?.photos?.[0];
 
   /**
    * Bölüm kutuları GERÇEKTEN cam mı — panel pillerinin zeminini bu belirliyor
@@ -2867,6 +3060,51 @@ export default function SwipeCard({
     setCoverPillsHeight((prev) => (Math.abs(prev - h) < 1 ? prev : h));
   }, []);
 
+  /**
+   * Ortak nokta pilleri paketlendi mi (bkz. PillFlow > onPacked).
+   *
+   * Satır sayısı paketlemeyle DEĞİŞEBİLİYOR (ölçüm turu `flexWrap` ile verilen
+   * sırayı çiziyor, paketlenmiş tur first-fit ile diziyor) — yani kolonun
+   * tabanını besleyen `coverPillsHeight` iki kez oturuyor. "Yerinde" demek için
+   * ikisini birlikte beklemek gerekiyor.
+   */
+  const [coverPillsPacked, setCoverPillsPacked] = useState(false);
+  const handleCoverPillsPacked = useCallback(() => {
+    setCoverPillsPacked(true);
+  }, []);
+
+  /**
+   * Kapağın alt chrome'u yerine oturdu mu — iskeletin beklediği haber
+   * (bkz. onCoverReady).
+   *
+   * Dört ölçüm: kartın boyu (yazı bloğu ve kolon bundan önce hiç
+   * ÇİZİLMİYOR), yazı bloğunun yüksekliği (dipteki rampa ve sağ pay bundan
+   * türüyor) ve ortak nokta satırı varsa onun yüksekliği + paketlenmesi
+   * (kolonun tabanı bu ikisinden).
+   *
+   * Satır hiç yoksa (ortak nokta da "burada yeni" de yok) beklenecek bir şey
+   * yok — kolon doğrudan yazı bloğunun hizasında doğuyor.
+   */
+  const hasCoverPills = showNewBadge || thingsInCommon.length > 0;
+  const coverReady =
+    measuredCardHeight > 0 &&
+    coverTextHeight > 0 &&
+    (!hasCoverPills || (coverPillsHeight > 0 && coverPillsPacked));
+  /**
+   * HABERİ KİMİN VERECEĞİNE ÇAĞIRAN KARAR VERİYOR — burada `isTopCard` kapısı
+   * YOK ve olmamalı: Keşif'te rewind, geri gelen kartı ÜST KARTIN ARDINDA
+   * ölçtürüyor (bkz. DiscoverScreen > rewindWarmup) ve haberi veren tam olarak
+   * o alt kart. Kapı burada olsaydı ısınan kart hiç haber vermez, kart da hiç
+   * üste geçmezdi. Prop'u yalnız muhatap karta geçirmek çağıranın işi.
+   */
+  const coverReadyNotifiedRef = useRef(false);
+  useEffect(() => {
+    if (previewMode || !coverReady) return;
+    if (coverReadyNotifiedRef.current) return;
+    coverReadyNotifiedRef.current = true;
+    onCoverReady?.();
+  }, [coverReady, previewMode, onCoverReady]);
+
   const coverStickyMax = Math.max(
     0,
     COVER_NAME_BOTTOM + coverBottomInset - COVER_STICKY_EDGE_GAP,
@@ -3060,7 +3298,7 @@ export default function SwipeCard({
    *
    * useCallback YOK, bilerek: her kutu KENDİ hedefiyle ayrı bir closure istiyor,
    * memoize etmek hedef sayısı kadar hook gerektirirdi (kural ihlali). Kart
-   * ağacı zaten `isTopCard` + `profileReady` ile korunuyor.
+   * ağacı zaten `profileReady` ile korunuyor.
    */
   const noteHandler = (target: NoteTarget) =>
     onNote ? () => onNote(target) : undefined;
@@ -3401,10 +3639,12 @@ export default function SwipeCard({
           // kart dönerken görünüyor. Cam yolunda zemini aşağıdaki boyama kutusu
           // taşıyor ve o kutu kapalıyken fotoğrafın dibinde bitiyor.
           //
-          // `glassPanel` KAPALIYKEN burada kalmak ZORUNDA: o yolda boyama kutusu
-          // hiç render edilmiyor (bkz. `glassPanel && !previewMode` kapısı),
-          // kabuk şeffaf bırakılırsa kartın zemini komple kayboluyor.
-          backgroundColor: glassPanel ? "transparent" : theme.bg,
+          // `coverGlass` KAPALIYKEN (fotoğrafsız profil) burada kalmak ZORUNDA:
+          // o yolda boyama kutusu hiç render edilmiyor (bkz. `coverGlass &&
+          // !previewMode` kapısı), kabuk şeffaf bırakılırsa kartın zemini komple
+          // kayboluyor. İkisi AYNI bayrağı okumalı — ayrışırlarsa ya zemin ya
+          // kabuk kazanır, ikisi de yanlış.
+          backgroundColor: coverGlass ? "transparent" : theme.bg,
         },
         cardFrameRadiusStyle,
       ]}
@@ -3484,7 +3724,7 @@ export default function SwipeCard({
 
           ÖNİZLEMEDE ÇİZİLMEZ: orada zemini sheet taşıyor ve kartın kendisi
           kayıyor (PreviewModal · LikerSwipeModal) — bkz. glassPanel notu. */}
-      {glassPanel && !previewMode && (
+      {coverGlass && !previewMode && (
         <Animated.View
           pointerEvents="none"
           style={[
@@ -3522,8 +3762,42 @@ export default function SwipeCard({
               CardGlassBackdrop) görünsün. Opak kalsaydı zemini komple
               örterdi. */}
           <View
-            style={{ backgroundColor: glassPanel ? "transparent" : theme.bg }}
+            style={{ backgroundColor: coverGlass ? "transparent" : theme.bg }}
           >
+            {/* ANA FOTOĞRAF — YALNIZ önizlemede (Likes / Chat / Profil).
+                Orada tam ekran kapak çizilmiyor (bkz. aşağıdaki not), ilk
+                fotoğraf akışın ilk bölümü: kartın tepesine ve iki yanına
+                dayanan tam kenar blok. Diğer fotoğraflar panelin İÇİNDE,
+                bölümlerin arasında, sıraları bozulmadan devam ediyor.
+
+                PANELİN İÇİNDE DEĞİL, KARDEŞİ — ve scroll içeriğinin İLK
+                çocuğu. Panelin yatay dolgusu (PANEL_PAD_H) burada yok, yani
+                blok iki yanda da kendiliğinden kenara dayanıyor; panelin
+                içinde durup dolguyu negatif marjla geri almak iki yanı EŞİT
+                ÇIKARMIYORDU (gerekçe SectionPhoto > bleed). Panel hemen
+                altından başlıyor ve fotoğrafın altındaki nefesi kendi üst
+                dolgusu veriyor.
+
+                Not kutusu yok: önizlemedeki bütün bölüm fotoğraflarıyla aynı
+                kural (bkz. SectionPhoto prop'ları). Pinch ile büyütme ise
+                AÇIK — o da hepsiyle aynı kural.
+
+                Top'a çarpma zoom'unu da BU blok taşıyor: Discover'da geri
+                bildirimi tam ekran kapak veriyor, önizlemede kapak hiç
+                çizilmediği için sinyalin (CardSheetScrollView → zoomImpact)
+                görsel karşılığı yoktu. Sadece ANA fotoğraf — aşağıdaki bölüm
+                fotoğrafları çarpma anında ekranda bile değil. */}
+            {previewMode && allPhotos[0] && (
+              <SectionPhoto
+                uri={allPhotos[0]}
+                hideNote
+                // Tam kenar: üstten ve yanlardan boşluk yok — YALNIZ bu foto
+                // (bkz. SectionPhoto > bleed).
+                bleed
+                zoomStyle={photoZoomStyle}
+              />
+            )}
+
             {/* Photo Gallery — expanded olurken borderRadius 40→0 anime.
                 Fotoğrafı OLMAYAN profilde de aynı ağaç çiziliyor, sadece
                 görsellerin yerinde nötr bir zemin durur (bkz. aşağıdaki
@@ -3542,8 +3816,12 @@ export default function SwipeCard({
                 serbest alev — hepsi önizlemede zaten gizli ya da görünmezdi.
 
                 Yerini KART ZEMİNİNDE bir boşluk almıyor: panel kartın tepesine
-                dayanıyor ve nefes payını kendi içinde taşıyor
-                (PREVIEW_HEADER_SPACE). Bkz. oradaki not — beyaz şerit. */}
+                dayanıyor. İlk fotoğraf da panelin dolgusunu negatif marjla geri
+                alıp kartın tepesine ve iki yanına dayanıyor (bkz. SectionPhoto >
+                bleed) — yani şerit, Keşif'teki kapakta olduğu gibi fotoğrafın
+                üstünde duruyor. Fotoğrafsız profilde şeridin altındaki nefes
+                payını panel kendi içinde taşıyor (PREVIEW_HEADER_SPACE, bkz.
+                oradaki not — beyaz şerit). */}
             {!previewMode && (
             <Animated.View
               style={[
@@ -3879,7 +4157,8 @@ export default function SwipeCard({
                   transform gördüğü anda efektlerini hiç render etmiyor. Her
                   butonun kendi basma animasyonu var, kolonun yok. */}
               {(!!onMenu || (!!onNote && !previewMode && allPhotos.length > 0) ||
-                (!hideActions && !hideFire)) &&
+                (!hideActions && !hideFire) ||
+                (!hideActions && !previewMode && !!(onPass || onLike))) &&
                 measuredCardHeight > 0 && (
               <Animated.View
                 style={[
@@ -3925,6 +4204,47 @@ export default function SwipeCard({
                   İÇİNE koymak kabuğu büyütmeden taşıyordu (bkz.
                   COVER_FIRE_GLYPH_SIZE) ve basma ölçeği camın atasına
                   konulamaz. */}
+              {/* TİK (beğen) ve X (geç) — KOLONUN TEPESİ.
+                  Jest kaldırıldığı için (bkz. SwipeWrapper > "YATAY SWIPE
+                  JESTİ KALDIRILDI") beğen/geç'in kapakta bir girişi olmak
+                  ZORUNDA: panelin dibindeki büyük X/tik satırı bir ekran boyu
+                  aşağıda, oraya inmek her kart için kaydırmak demekti.
+
+                  Kabuk üç noktayla AYNI (CardChromeGlassButton, `onMedia`):
+                  kolonun beş dairesi tek malzeme, tek çap. Sıra yukarıdan
+                  aşağı tik · X · Fire · not · üç nokta — ilk ikisi istek
+                  üzerine bu sırada.
+
+                  `onPress` doğrudan ekranın buton yoluna gidiyor (onLike /
+                  onPass): kota kapısı, kilit ve kartın uçuşu orada tek
+                  elden sürülüyor (bkz. DiscoverScreen > handleLikeButton).
+
+                  ÖNİZLEMEDE ÇİZİLMİYOR (`!previewMode`, not kutusundaki
+                  kuralın aynısı): Beğeniler'den açılan kart (LikerSwipeModal)
+                  da `onPass`/`onLike` veriyor ama orada jest DURUYOR ve
+                  sheet'in kendi aksiyon yolu var — bu iki daire yalnız
+                  Keşif'teki jestsiz destenin telafisi. */}
+              {!hideActions && !previewMode && onLike && (
+                <CardChromeGlassButton
+                  onPress={onLike}
+                  label={t("likes.likeButton")}
+                  systemName="checkmark"
+                  fallback={Check}
+                  size={COVER_ACTION_SIZE}
+                  onMedia
+                />
+              )}
+              {!hideActions && !previewMode && onPass && (
+                <CardChromeGlassButton
+                  onPress={onPass}
+                  label={t("likes.passButton")}
+                  systemName="xmark"
+                  fallback={X}
+                  size={COVER_ACTION_SIZE}
+                  onMedia
+                />
+              )}
+
               {!hideActions && !hideFire && onFire && (
                 <FireGlassButton
                   onPress={onFire}
@@ -4160,7 +4480,17 @@ export default function SwipeCard({
                         // "pilin yazısı önce başka, sonra kendine geliyor" diye
                         // görünüyor. Veri yerel (deste zaten çekilmiş), o yüzden
                         // görünmezlik TEK kare sürüyor; iskelet gerekmiyor.
+                        //
+                        // O "tek kare" İLK KARTTA GÖZLE GÖRÜLÜYORDU (piller
+                        // kaybolup geri geliyor gibi): orada kart iskeletin
+                        // hemen ardından ÜST kart olarak doğuyor, yani görünmez
+                        // tur ekranda duran ilk kare oluyor. Sonraki kartlarda
+                        // sorun yok — onlar üstteki kartın ardında ölçülüyor.
+                        // Çare pili görünür kılmak değil (sıçrama geri gelirdi):
+                        // paketlenme haberi Keşif'e gidiyor, iskelet o ana kadar
+                        // ekranda tutuluyor (bkz. onCoverReady).
                         hideUntilPacked
+                        onPacked={handleCoverPillsPacked}
                         items={[
                           ...(showNewBadge
                             ? [
@@ -4290,10 +4620,12 @@ export default function SwipeCard({
             </Animated.View>
             )}
 
-            {/* Heavy content (university, hobbies, location+map, vb.) sadece
-                top card'da + isTopCard true olduktan 100ms sonra render →
-                swipe sonu mount lag'i için defer. */}
-            {isTopCard && profileReady && (
+            {/* Ağır içerik (üniversite, hobiler, konum+harita, bölüm
+                fotoğrafları). Kapı `isTopCard` DEĞİL: kart destenin altındayken,
+                iki swipe arasındaki boş zamanda kuruluyor — üste geçtiğinde
+                mount edilecek bir şey kalmıyor. Gerekçenin tamamı ve geri alma
+                reçetesi profileReady'nin yanında. */}
+            {profileReady && (
               /* Profile Info — ayrı kart görünümü: kendi borderRadius'u, foto
                  altında PROFILE_PANEL_GAP kadar boşluk. Zemin düz gri
                  (surface3: açıkta #E4E4E8,
@@ -4318,6 +4650,10 @@ export default function SwipeCard({
                     // ezer, yani `p-6`nın 24'ü değil bu geçerli. DEĞER AYNI
                     // (32) — panelin içi kısılmıyor, yalnız kaynağı değişti.
                     paddingTop: PANEL_TOP_PAD,
+                    // `px-4`ün 16'sı, açık sayı olarak (bkz. PANEL_PAD_H):
+                    // önizlemenin ana fotoğrafı bu payı negatif marjla geri
+                    // alıyor, iki yerin aynı sayıyı okuması şart.
+                    paddingHorizontal: PANEL_PAD_H,
                     // Üst dolguyla aynı gerekçe: `p-6`nın 24'ü yerine açık
                     // sayı (bkz. PANEL_BOTTOM_PAD).
                     // +BOUNCE: panel bounce boyunca da kendi zeminini
@@ -4434,8 +4770,15 @@ export default function SwipeCard({
                   </View>
                 )}
                 {/* Önizlemede panelin kendi nefes payı — içerik sticky şeridin
-                    altından başlasın (bkz. PREVIEW_HEADER_SPACE). */}
-                {previewMode && <View style={{ height: PREVIEW_HEADER_SPACE }} />}
+                    altından başlasın (bkz. PREVIEW_HEADER_SPACE).
+                    ANA FOTOĞRAF VARSA ÇİZİLMİYOR: o blok artık tam kenar
+                    (bkz. aşağıdaki `bleed`) ve şerit onun ÜSTÜNDE duruyor —
+                    pay burada kalsa fotoğrafın üstünde boş bir şerit açardı.
+                    Fotoğrafsız profilde aynen duruyor: orada şeridin altına
+                    gelecek ilk şey bir bölüm kutusu. */}
+                {previewMode && !allPhotos[0] && (
+                  <View style={{ height: PREVIEW_HEADER_SPACE }} />
+                )}
 
                 {/* BAŞLIK BLOĞU BURADA YOK — İKİ BAĞLAMDA DA.
                     İsim + yaş, premium işareti ve "bugün aktif" yalnız sticky
@@ -4450,28 +4793,12 @@ export default function SwipeCard({
                     kapalı kartta zaten var (ortak nokta pillerinin yanında) ve
                     şeride taşınmıyor (gerekçe CardStickyHeader'da). */}
 
-                {/* Ana fotoğraf — YALNIZ önizlemede (Likes / Chat / Profil).
-                    Orada tam ekran kapak çizilmiyor (bkz. yukarıdaki not), ilk
-                    fotoğraf akışın ilk bölümü — şeridin hemen altındaki ilk
-                    blok. Diğer fotoğraflar aşağıdaki bölümlerin arasında,
-                    sıraları bozulmadan devam ediyor.
-
-                    Not kutusu yok: önizlemedeki bütün bölüm fotoğraflarıyla
-                    aynı kural (bkz. SectionPhoto prop'ları). Pinch ile büyütme
-                    ise AÇIK — o da hepsiyle aynı kural.
-
-                    Top'a çarpma zoom'unu da BU blok taşıyor: Discover'da geri
-                    bildirimi tam ekran kapak veriyor, önizlemede kapak hiç
-                    çizilmediği için sinyalin (CardSheetScrollView → zoomImpact)
-                    görsel karşılığı yoktu. Sadece ANA fotoğraf — aşağıdaki
-                    bölüm fotoğrafları çarpma anında ekranda bile değil. */}
-                {previewMode && allPhotos[0] && (
-                  <SectionPhoto
-                    uri={allPhotos[0]}
-                    hideNote
-                    zoomStyle={photoZoomStyle}
-                  />
-                )}
+                {/* ANA FOTOĞRAF BURADA DEĞİL, PANELİN KARDEŞİ olarak
+                    scroll'un ilk çocuğu (bkz. yukarısı, kapak dalının
+                    ÖNCESİ). Bir tur burada duruyordu ve dolguyu negatif
+                    marjla geri alıyordu; iki yan eşit çıkmadı — gerekçe
+                    SectionPhoto > bleed'de. Buraya geri taşıma.
+                 */}
 
                 {/* University & Department */}
                 {profile.showUniversity && profile.departmentDisplay && (
@@ -5199,9 +5526,11 @@ export default function SwipeCard({
           kaydırılmış) aynı boya oturmuyor, ekranda fazladan bir gri dikdörtgen
           bırakıyordu. */}
 
-      {/* Sticky başlık — AÇIK KARTIN TEK BAŞLIĞI: isim + yaş, premium işareti
-          ve "bugün aktif" yalnız burada (bkz. CardStickyHeader). Kapaktaki
-          büyük isim çekilirken bu geliyor; panelde artık bir isim satırı yok.
+      {/* Sticky başlık — AÇIK KARTIN TEK BAŞLIĞI: isim + yaş ve premium
+          işareti (bkz. CardStickyHeader). Kapaktaki büyük isim çekilirken bu
+          geliyor; panelde artık bir isim satırı yok. "24 saat içerisinde
+          aktif" ŞERİTTE YOK — ne burada ne önizlemede; satırın tek yeri
+          kapağın isim bloğu (bkz. showActivity).
 
           Scroll'un DIŞINDA, kart çerçevesine göre konumlu: burada kart sabit
           duruyor, kayan içerik. Sheet içindeki kartta (previewMode) durum TERS
@@ -5212,12 +5541,28 @@ export default function SwipeCard({
           butondan ÖNCE (buton camın üstünde kalır) ve zIndex YOK — zIndex
           verilseydi butonu da altına alırdı.
 
-          Mount kapısı cam butonunkiyle aynı: arkadaki kart üstteki tarafından
-          örtülü, orada BlurView + MaskedView kurmanın karşılığı yok. */}
-      {!!scrollY && isTopCard && profileReady && (
+          ── BANT DESTENİN ALTINDAKİ KARTTA DA MOUNT EDİLİYOR ──────────────
+          Mount kapısı bir dönem cam butonunkiyle aynıydı (`isTopCard &&
+          profileReady`) ve gerekçesi "arkadaki kart üstteki tarafından örtülü,
+          orada BlurView + MaskedView kurmanın karşılığı yok"du. KARŞILIĞI VAR:
+          bandın malzemesi kartın ÜST GÖLGESİ ve kapalı kartta da hep açık
+          (bkz. CardStickyHeader > bandRevealStyle). Kapı yüzünden gölge, kart
+          üste geçtikten 100ms sonra doğuyordu — swipe bitiyor, kartın tepesi
+          bir an sonra kararıyordu (istek: "direkt gölgeli gelsin").
+
+          Alt kart yalnız BANDI alıyor (`bandOnly`): başlık satırı ve köşe cam
+          butonları yine kart üste geçerken kuruluyor — kabukları opaklık 0'da
+          doğarsa cam efekti hiç kurulmuyor (gerekçe prop'un yanında). */}
+      {!!scrollY && (
         <CardStickyHeader
           profile={profile}
-          scrollY={scrollY}
+          bandOnly={!(isTopCard && profileReady)}
+          // `scrollY` ARTIK GEÇİLMİYOR: şeridin scroll'la tek işi "bugün
+          // aktif"in sönme eşiğiydi, o satır da şeritten çıktı (bkz.
+          // CardStickyHeader — prop'un ve satırın kaldırma notları). Mount
+          // kapısı aşağıda yine
+          // `scrollY`e bakıyor — orada ölçtüğü şey başka: kartın Keşif'te mi
+          // (scroll kartın içinde) yoksa önizlemede mi olduğu.
           // KROM KANALI, expandAnim DEĞİL: şerit kapaktaki büyük ismin YERİNİ
           // alıyor, o da bu kanaldan çekiliyor (nameAnimStyle). expandAnim'e
           // bağlanınca isim kapaktan gidiyor ama şerit yolun kalanını sürdüğü

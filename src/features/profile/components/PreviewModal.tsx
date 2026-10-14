@@ -38,9 +38,13 @@ export default function PreviewModal({
   const insets = useSafeAreaInsets();
   // Top'a çarpma zoom'u — scroll CardSheetScrollView'da, foto katmanı SwipeCard'da.
   const photoZoom = useSharedValue(0);
-  // Ham scroll konumu — sticky şerit "bugün aktif"i buna göre söndürüp ismi
-  // ortalıyor (bkz. CardStickyHeader).
-  const scrollY = useSharedValue(0);
+  /*
+   * `scrollY` KALDIRILDI: ham scroll konumunu CardSheetScrollView'dan alıp
+   * sticky şeride veriyordu, tek müşterisi oradaki "24 saat içerisinde aktif"
+   * satırının sönme eşiğiydi. Satır şeritten tamamen çıktı (bkz.
+   * CardStickyHeader), eşik ondan önce çıkmıştı — okuyanı kalmayınca
+   * yazma-tek-yönlü bir shared value olarak duruyordu.
+   */
 
   /*
    * ŞERİDİN KAPANIŞTA SÖNMESİ KALDIRILDI (istek: "kapatırken header yok
@@ -122,7 +126,6 @@ export default function PreviewModal({
           style={{ flex: 1, backgroundColor: "transparent" }}
           contentContainerStyle={{ paddingBottom: 0 }}
           zoomImpact={photoZoom}
-          scrollY={scrollY}
           // Profil yüklenene kadar içerik sadece bir spinner — ekrandan kısa,
           // yani doldurulacak bir esneme boşluğu da yok.
           // Zemin varken de KAPALI: alt uçtaki bounce boşluğunu artık zemin
@@ -178,9 +181,6 @@ export default function PreviewModal({
             // onClose). Sheet'in kendi kapanış yolundan geçiyor: `onClose`
             // parent'ın `visible`ını düşürüyor, animasyon gorhom'un.
             onClose={onClose}
-            // Şerit açık doğuyor (`alwaysOpen`), yani scroll'u başlığı AÇMAK
-            // için okumuyor: "bugün aktif" bununla sönüyor.
-            scrollY={scrollY}
             // `progress` VERİLMİYOR → şerit hiç sönmüyor; gerekçe yukarıda,
             // kaldırılan hook'un yerinde.
           />

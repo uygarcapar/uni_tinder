@@ -16,6 +16,7 @@ import lazyChunk from "@/shared/components/lazyChunk";
 import * as Haptics from "expo-haptics";
 import { useTranslation } from "react-i18next";
 import { flameCurtainGeometry } from "@/features/discover/components/flameWavePath";
+import uiBus from "@/shared/services/uiBus";
 import { colors, onMediaAt, scrimAt } from "../../../shared/theme/colors";
 
 /**
@@ -35,6 +36,23 @@ const FlameCurtain = lazyChunk(() =>
 
 /** İçerik perdeden ÖNDE sönsün: perde yukarı süpürülürken altı boş kalmasın. */
 const CONTENT_FADE_OUT_MS = 180;
+
+/**
+ * Zeminin alev YÜKSELİRKEN aldığı koyuluk (0-1). Eskiden tek değerdi ve
+ * zirvesi buydu: arkadaki ekran %28 seçiliyor, alev de karanlığa karşı
+ * okunuyordu. Perde oturunca üstüne çıkılıyor — gerekçesi kullanıldığı yerde.
+ */
+const SCRIM_RISE = 0.72;
+
+/**
+ * Perde oturduktan sonra zeminin TAM OPAK hâle geçme süresi (ms).
+ *
+ * Keşif destesi bu geçişin sonunda değişiyor (bkz. `matchCurtainCover`), yani
+ * sayı iki yere birden gidiyor: kararmanın süresi ve devrin gecikmesi.
+ * Kısa — göz o anda açılan kutlama içeriğinde; uzatmak kart değişimini
+ * gereksiz geciktirir.
+ */
+const SCRIM_SEAL_MS = 160;
 
 /**
  * Fotoğrafların kenar çizgisi — SABİT açık gri. Palet token'ı değil: modalın
@@ -126,13 +144,55 @@ export default function MatchModal({ match, myPhoto, onClose, onSendMessage }: a
       () => {},
     );
 
-    // Zemin, perde daha alttayken kararıyor: alev karanlığa karşı yükselsin.
-    Animated.timing(scrimOpacity, {
-      toValue: 1,
-      duration: 220,
-      easing: Easing.out(Easing.ease),
-      useNativeDriver: true,
-    }).start();
+    /**
+     * ZEMİN İKİ ADIMDA KARARIYOR.
+     *
+     * 1) Perde daha alttayken `SCRIM_RISE`a (eski tek değer): alev karanlığa
+     *    karşı yükseliyor ama arkadaki ekran hâlâ seçiliyor.
+     * 2) Perde asılı konuma oturunca TAM OPAK: perdenin dibinde bilerek
+     *    bırakılan boşluk (bkz. flameCurtainGeometry > CURTAIN_GAP_RATIO,
+     *    ekranın %7.5'i) o ana kadar arkayı %28 geçiriyordu ve Keşif destesi
+     *    TAM O KAREDE değişiyor (aşağıdaki `matchCurtainCover`). İstek
+     *    netti: "her türlü perde tam ekranı kaplamışken arkada değişmesi
+     *    lazım." Geçiş göze batmıyor, çünkü aynı anda kutlama içeriği
+     *    (fotoğraflar + başlık) açılıyor ve bakış oraya gidiyor.
+     */
+    Animated.sequence([
+      Animated.timing(scrimOpacity, {
+        toValue: SCRIM_RISE,
+        duration: 220,
+        easing: Easing.out(Easing.ease),
+        useNativeDriver: true,
+      }),
+      Animated.delay(Math.max(0, curtain.enterMs - 220)),
+      Animated.timing(scrimOpacity, {
+        toValue: 1,
+        duration: SCRIM_SEAL_MS,
+        easing: Easing.out(Easing.ease),
+        useNativeDriver: true,
+      }),
+    ]).start();
+
+    /**
+     * PERDE EKRANI KAPLADI — Keşif destesinin beklediği haber.
+     *
+     * Eşleşmeyle biten beğenide kart DEĞİŞMİYOR, bu anı bekliyor (sözleşme:
+     * flameSweep > runMatchCurtain): kullanıcı önce kutlamayı görüyor,
+     * değişim perdenin arkasında oluyor. Bekleyen yoksa olay boşa gidiyor —
+     * yayınlamanın maliyeti yok.
+     *
+     * An `curtain.enterMs + SCRIM_SEAL_MS`: perdenin asılı konuma oturduğu
+     * (içeriğin de açıldığı) kare DEĞİL, zeminin tam opak olduğu kare —
+     * yukarıdaki iki adımlı kararmanın sonu. `enterMs`te yayınlansa deste
+     * perdenin dibindeki boşluktan %28 görünür hâlde değişirdi.
+     *
+     * Süreler TEK YERDEN: `reveal` de aynı `enterMs`i okuyor. Ayrı yazılsa
+     * biri oynatıldığında devir perdenin altından çıkardı.
+     */
+    const cover = setTimeout(
+      () => uiBus.emit("matchCurtainCover"),
+      curtain.enterMs + SCRIM_SEAL_MS,
+    );
 
     // İçerik perde YERİNE OTURDUKTAN sonra açılıyor: önce ateş, sonra kutlama.
     // Üst üste binseydi fotoğraflar hâlâ yükselen alevin altında belirirdi.
@@ -219,6 +279,7 @@ export default function MatchModal({ match, myPhoto, onClose, onSendMessage }: a
     });
 
     return () => {
+      clearTimeout(cover);
       reveal.stop();
       shake.stop();
       intro.stop();
@@ -274,11 +335,16 @@ export default function MatchModal({ match, myPhoto, onClose, onSendMessage }: a
       onRequestClose={() => startClose(onClose)}
     >
       <View style={{ flex: 1 }}>
+        {/* Zemin TAM SİYAH, koyuluğu `scrimOpacity`den geliyor (bkz.
+            SCRIM_RISE / SCRIM_SEAL_MS): yükseliş boyunca 0.72'de duruyor, perde
+            oturunca 1'e çıkıyor. Rengin içine alfa gömülü olsaydı (eski
+            `scrimAt(0.72)`) opaklık 1'de bile arkadaki Keşif destesi %28
+            görünür kalırdı — kart tam o karede değişiyor. */}
         <Animated.View
           pointerEvents="none"
           style={[
             StyleSheet.absoluteFill,
-            { backgroundColor: scrimAt(0.72), opacity: scrimOpacity },
+            { backgroundColor: scrimAt(1), opacity: scrimOpacity },
           ]}
         />
         {imagesReady && (

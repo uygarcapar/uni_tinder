@@ -3,15 +3,19 @@ import uiBus from "@/shared/services/uiBus";
 /**
  * Ekranı kaplayan alev kutlaması + desteyi ÖRTÜNÜN ALTINDA ilerletme.
  *
- * Fire ve not aynı akış: kart fırlamıyor, yerinde duruyor; dalga
- * alttan yukarı süpürürken ekranı tam kapattığı anda deste bir adım ilerliyor.
- * Kullanıcı ne kartın gidişini ne yenisinin gelişini görüyor — yalnız
- * kutlamayı. Zamanlama ölçülüyor, tahmin edilmiyor: canvas kendi animasyon
- * saatinden "kapandım" diyor (bkz. flameWaveGeometry / coverMs).
+ * KEŞİF'TE KARTIN TEK DEĞİŞME YOLU (2026-10-13 isteğiyle genişledi): geç ·
+ * beğen · Fire · not · GERİ AL — hepsinde kart fırlamıyor, yerinde duruyor;
+ * dalga alttan yukarı süpürürken ekranı tam kapattığı anda deste bir adım
+ * ilerliyor (geri al'da bir adım geri). Kullanıcı ne gidenin ne gelenin
+ * karesini görüyor — yalnız kutlamayı. Zamanlama ölçülüyor, tahmin
+ * edilmiyor: canvas kendi animasyon saatinden "kapandım" diyor (bkz.
+ * flameWaveGeometry / coverMs).
  *
- * Kutlama iki eylemde de BİREBİR aynı: ortada duran premium alev rozeti hangi
- * eylemden geldiğini söylemiyor, o yüzden burada bir "tür" parametresi de yok.
- * Ayrışması gerekirse olaya bir alan eklenip rozet ona göre seçilir.
+ * Kutlama bütün eylemlerde BİREBİR aynı: ortada duran premium alev rozeti
+ * hangi eylemden geldiğini söylemiyor, o yüzden burada bir "tür" parametresi
+ * de yok. Ayrışması gerekirse olaya bir alan eklenip rozet ona göre seçilir.
+ * Yönü SÖYLEYEN şey kartın üstündeki büyük tik/X rozeti (bkz. SwipeOverlay);
+ * alev onun üstünden geçiyor.
  *
  * ⚠️ EŞLEŞMEYLE SONUÇLANACAK AKSİYONDA BU SÜPÜRME HİÇ ÇALIŞTIRILMAZ
  * (2026-09-03). MatchModal aynı ateşin PERDE hâliyle açılıyor (bkz.
@@ -32,6 +36,97 @@ import uiBus from "@/shared/services/uiBus";
  * ağaçtan düşebiliyorsa (deste tazelendi, ekran değişti, tema remount'u)
  * temizlikte bunu çağırmalı; yoksa `onCovered` sökülmüş bir ağaca yazar.
  */
+/**
+ * ── EŞLEŞME DALI: PERDE ÖNCE, DEĞİŞİM ARKASINDA (istek, 2026-10-13) ─────────
+ *
+ * Eşleşmeyle bitecek beğenide süpürme oynamıyor (yukarıdaki kural) — kutlamayı
+ * MatchModal'ın PERDESİ yapıyor. Ama deste o perdeyi beklemiyordu: kart basışın
+ * ilk karesinde değişiyor, kutlama ancak HTTP + SignalR turundan sonra
+ * açılıyordu. Kullanıcının tarifi: "önce kart değişiyor, sonra alev modalı
+ * geliyor; ilk o gelsin, kart arkasında değişsin."
+ *
+ * Bu yüzden eşleşme dalı da bir ÖRTME anı bekliyor; tek farkı örtüyü başka
+ * birinin kurması: perde `MatchNotification` ile açılıyor ve ekranı
+ * `curtain.enterMs` sonunda kaplıyor (bkz. MatchModal, `matchCurtainCover`
+ * olayını o yayıyor).
+ *
+ * ⚠️ DEĞİŞİM HİÇBİR DALDA ÖRTÜSÜZ OLMUYOR (istek: "her türlü perde tam ekranı
+ * kaplamışken arkada değişmesi lazım, kassa bile"). Bu yüzden zaman aşımları
+ * "deste şimdi ilerlesin" DEMİYOR — örtüyü KENDİMİZ kuruyor: kendi alev
+ * süpürmemiz oynuyor ve devir onun örtüsünün altında oluyor
+ * (`runFlameSweep`). Yani kötü yolda bedel GECİKME, görünür bir kart
+ * değişimi değil.
+ *
+ * İki pencere var, çünkü "eşleşecek" bir KESTİRİM (bkz. DiscoverScreen >
+ * willMatchOnLike) ve perde ağın ucunda:
+ *   • `MATCH_WAIT_MS` — bildirim gelmedi: kestirim yanlış olabilir (ya da
+ *     bildirim kayıp). Perdeyi beklemeyi bırakıp kendi alevimizi oynatıyoruz;
+ *     kullanıcı eşleşmeyen bir beğeninin kutlamasını görüyor, yani yolun
+ *     doğrusu. Uzatmak "tik'e bastım, kart donup kaldı" demek.
+ *   • `CURTAIN_WAIT_MS` — bildirim GELDİ, yani kutlama kesin: modal
+ *     fotoğrafları bekliyor olabilir ve perde ancak ondan sonra yükseliyor.
+ *     Pencere o yüzden geniş ve ÖLÇÜLÜ: MatchModal'ın fotoğraf emniyet kemeri
+ *     3 sn + perdenin yükselişi (`curtain.enterMs`, ~1 sn) + pay. Bu da
+ *     dolarsa (modal hiç açılmadı, gate kapalı, uygulama arkaplandan döndü)
+ *     yine kendi alevimiz örtüyor — o patolojik durumda perde ARKASINDAN
+ *     gelip ikinci alev olarak görünebilir; iki alev, örtüsüz değişimden
+ *     iyidir.
+ */
+const MATCH_WAIT_MS = 1500;
+const CURTAIN_WAIT_MS = 5000;
+
+export function runMatchCurtain(onCovered: () => void): () => void {
+  let done = false;
+  let timer: ReturnType<typeof setTimeout> | null = null;
+  /** Yedek yolda kurulan KENDİ süpürmemizin aboneliği. */
+  let sweepUnsub: (() => void) | null = null;
+  const unsubs: Array<() => void> = [];
+  const cleanup = () => {
+    if (timer) clearTimeout(timer);
+    timer = null;
+    unsubs.forEach((u) => u());
+    unsubs.length = 0;
+  };
+  const finish = () => {
+    if (done) return;
+    done = true;
+    cleanup();
+    onCovered();
+  };
+  /**
+   * Perde gelmedi ya da gecikti: örtüyü kendimiz kuruyoruz.
+   *
+   * `done` BURADA İŞARETLENİYOR — perde dinleyicisi bırakılıyor, yani bu
+   * noktadan sonra gelen `matchCurtainCover` desteyi ikinci kez ilerletmiyor;
+   * devrin tek sahibi artık kendi süpürmemiz.
+   */
+  const coverOurselves = () => {
+    if (done) return;
+    done = true;
+    cleanup();
+    sweepUnsub = runFlameSweep(() => {
+      sweepUnsub = null;
+      onCovered();
+    });
+  };
+  unsubs.push(uiBus.on("matchCurtainCover", finish));
+  // Bildirim geldi: artık perdeyi beklemek güvenli, süreyi uzat.
+  unsubs.push(
+    uiBus.on("match", () => {
+      if (done) return;
+      if (timer) clearTimeout(timer);
+      timer = setTimeout(coverOurselves, CURTAIN_WAIT_MS);
+    }),
+  );
+  timer = setTimeout(coverOurselves, MATCH_WAIT_MS);
+  return () => {
+    done = true;
+    cleanup();
+    sweepUnsub?.();
+    sweepUnsub = null;
+  };
+}
+
 export function runFlameSweep(onCovered: () => void): () => void {
   let done = false;
   const unsub = uiBus.on("flameSweepCover", () => {

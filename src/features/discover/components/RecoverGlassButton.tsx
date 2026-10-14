@@ -132,6 +132,10 @@ function RecoverGlassButton({ onPress, label }: Props) {
           modifiers={[
             buttonStyle("glassProminent"),
             buttonBorderShape("circle"),
+            // ⚠️ `controlSize` BURAYA DA KONULMAZ — köşedeki tikle AYNI kalmak
+            // zorunda (bu dosyanın başındaki "iki hâl ayrışamaz" kuralı).
+            // Kontrol payı kabuğun çapını büyütüyor; gerekçenin tamamı
+            // CardActionGlassButton'ın modifier listesinde.
             tint(theme.litPlus),
             frame({ width: RECOVER_GLASS_SIZE, height: RECOVER_GLASS_SIZE }),
             a11yLabel(label),

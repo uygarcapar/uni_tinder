@@ -88,6 +88,17 @@ type Props = {
    * fotoğrafın üstünde etrafında daha geniş bir cam payı istiyor.
    */
   glyphSize?: number;
+  /**
+   * Glifin oturduğu KARE kutu — verilmezse `glyphSize`ın kendisi.
+   *
+   * NEDEN AYRI BİR KOL: camlı yolda çemberin çapını `frame` DEĞİL bu kutu
+   * belirliyor (kabuk label + kontrol payı kadar doğuyor). Yani glifi
+   * küçültmek, istemsiz biçimde KABUĞU da küçültüyor. Kutuyu sabit tutup
+   * yalnız çizilen işareti küçültmek için bu prop var — kardeş butonlarla aynı
+   * çapta kalırken içindeki glif farklı puntoda olabiliyor (köşedeki üç nokta
+   * böyle: kabuk tik/X ile aynı, işaret Keşif'in üç noktasıyla aynı).
+   */
+  glyphBoxSize?: number;
   /** İstek uçarken: glif spinner'a döner ve buton basılamaz olur. */
   busy?: boolean;
 };
@@ -97,10 +108,14 @@ function Glyph({
   fallback,
   color,
   size,
+  box,
   busy,
 }: Pick<Props, "name" | "fallback"> & {
   color: string;
+  /** Çizilen işaretin puntosu. */
   size: number;
+  /** Kutunun kenarı — çapı belirleyen kol (bkz. `glyphBoxSize`). */
+  box: number;
   busy: boolean;
 }) {
   return (
@@ -108,8 +123,8 @@ function Glyph({
     // iliştirdiği touch handler araya girmesin.
     <View
       style={{
-        width: size,
-        height: size,
+        width: box,
+        height: box,
         alignItems: "center",
         justifyContent: "center",
       }}
@@ -141,10 +156,13 @@ function CardActionGlassButton({
   onPress,
   size = CARD_ACTION_SIZE,
   glyphSize: glyphSizeProp,
+  glyphBoxSize,
   busy = false,
 }: Props) {
   const prominent = variant === "prominent";
   const glyphSize = glyphSizeProp ?? Math.round(size * GLYPH_RATIO);
+  // Kutu verilmediyse glifin kendisi kadar — eski davranış.
+  const glyphBox = glyphBoxSize ?? glyphSize;
 
   if (HAS_LIQUID_GLASS) {
     return (
@@ -154,6 +172,15 @@ function CardActionGlassButton({
           modifiers={[
             buttonStyle(prominent ? "glassProminent" : "glass"),
             buttonBorderShape("circle"),
+            // ⚠️ `controlSize("extraLarge")` BİLEREK YOK (2026-10-10'da
+            // eklenip geri alındı). Cam çemberin çapını `frame` değil kontrol
+            // payı belirliyor (kabuk LABEL'ın etrafına o payı ekleyerek
+            // doğuyor, `frame` onu yalnız içine ortalıyor) — yani extraLarge
+            // butonu GÖRÜNÜR ŞEKİLDE BÜYÜTÜYOR. İstenmedi: köşedeki daireler
+            // bu çapta kalmalı.
+            // Aralarındaki boşluk bu yüzden `frame`in çemberden artan ölü
+            // payından geliyor ve çözümü kolonun NEGATİF payı (bkz. LikeCard >
+            // CARD_CORNER_PAIR_GAP), kabuğu büyütmek değil.
             tint(tintColor),
             frame({ width: size, height: size }),
             swiftDisabled(busy),
@@ -166,6 +193,7 @@ function CardActionGlassButton({
               fallback={fallback}
               color={glyphColor}
               size={glyphSize}
+              box={glyphBox}
               busy={busy}
             />
           </RNHostView>
@@ -203,6 +231,7 @@ function CardActionGlassButton({
         fallback={fallback}
         color={glyphColor}
         size={glyphSize}
+        box={glyphBox}
         busy={busy}
       />
     </TouchableOpacity>

@@ -18,8 +18,12 @@ jest.mock('react-native-reanimated', () => {
   return {
     __esModule: true,
     default: {
-      View: ({ children, style }: any) =>
-        React.createElement(View, { style }, children),
+      // `pointerEvents` DE GEÇİYOR: ipucu bandı artık kartın ÜSTÜNDE duran bir
+      // `Animated.View` (bkz. bileşenin iki katman notu) ve dokunmayı
+      // yutmadığı orada doğrulanıyor — mock prop'u düşürürse test kendi
+      // ölçtüğü şeyi kaybediyor.
+      View: ({ children, style, pointerEvents }: any) =>
+        React.createElement(View, { style, pointerEvents }, children),
       // İki ipucu satırı `Animated.Text` — mock'ta yoksa ağaç `undefined`
       // bileşenle patlıyor.
       Text: ({ children, style }: any) =>
@@ -132,18 +136,31 @@ describe('FirePullHint', () => {
     expect(lineOpacity(tree, tr.discover.swipe.firePullHint)).toBe(0);
   });
 
-  it('yazı şeritle birlikte iniyor — ilk açılan piksellerde de ortada', () => {
-    // Şeridin yüksekliği oran × THRESHOLD; yazı onun YARISINDA duruyor. Sabit
-    // bir `top` çekişin başında yazıyı kartın altında bırakıyordu.
-    const centerAt = (v: number) => {
+  it('yazı şeridin boyundan BAĞIMSIZ: güvenli alanın altında kalıyor', () => {
+    // ESKİ MODEL (kaldırıldı): yazı şeridin ortasında duruyor, `oran ×
+    // THRESHOLD / 2` kadar iniyordu. Şerit 50 px, yazının sıfır noktası ise
+    // güvenli alanın üstü (çentikli telefonda ~59 px) — yazı tam çekişte bile
+    // kartın ALTINDA kalıyor, ipucu hiç görünmüyordu. Band artık kartın
+    // üstünde ve yazı ekranın tepesine sabit.
+    const driftAt = (v: number) => {
       pull.value = v;
-      const tf = (textBlockStyle(render(<FirePullHint />)) as any).transform;
+      const tf = (textBlockStyle(render(<FirePullHint topInset={64} />)) as any)
+        .transform;
       return tf[0].translateY;
     };
-    // 50 px eşik: yarı çekişte şerit 25 px, merkez 12.5 (satır yarısı düşülmüş).
-    expect(centerAt(0.5)).toBeCloseTo(0.5 * 25 - 9, 5);
-    expect(centerAt(1)).toBeCloseTo(25 - 9, 5);
-    expect(centerAt(0.2)).toBeLessThan(centerAt(1));
+    // Kalan hareket SEMBOLİK (bandı jeste bağlı göstermek için): tam çekişte
+    // bile bir satırın yarısından az, yani yazı yerinden kıpırdamıyor sayılır.
+    expect(driftAt(1)).toBeLessThan(9);
+    expect(driftAt(0.2)).toBeLessThan(driftAt(1));
+    // Yazının YERİ çekişle değişmiyor — `top` sabit.
+    pull.value = 0.2;
+    const low = (textBlockStyle(render(<FirePullHint topInset={64} />)) as any)
+      .top;
+    pull.value = 1;
+    const high = (textBlockStyle(render(<FirePullHint topInset={64} />)) as any)
+      .top;
+    expect(low).toBe(high);
+    expect(low).toBeGreaterThanOrEqual(64);
   });
 
   it('perde çekişle birlikte kararıyor ama opak olmuyor', () => {
@@ -161,9 +178,11 @@ describe('FirePullHint', () => {
     expect(full).toBe(FIRE_PULL_SCRIM_ALPHA);
   });
 
-  it('yazının rengi kapaktaki "yukarı kaydır" ipucuyla aynı', () => {
-    // İkisi de aynı cins jest fısıltısı; farklı tonda olmaları onları ayrı
-    // diller gibi gösteriyordu (bkz. SwipeCard > expandHint).
+  it('yazı foto üstü MÜREKKEPLE, tam beyaz', () => {
+    // Kapaktaki "yukarı kaydır" ipucuyla aynı AİLE (medya mürekkebi, modla
+    // dönmez) ama sönük tonu DEĞİL: yazı artık kartın terk ettiği boş şeritte
+    // değil, fotoğrafın üstündeki gradyanın içinde duruyor — `onMediaMuted`
+    // orada açık fotoğraflarda kayboluyor.
     pull.value = 1;
     const tree = render(<FirePullHint />);
     for (const line of [
@@ -171,37 +190,54 @@ describe('FirePullHint', () => {
       tr.discover.swipe.fireReleaseHint,
     ]) {
       expect(StyleSheet.flatten(tree.getByText(line).props.style)?.color).toBe(
-        colors.onMediaMuted,
+        colors.onMedia,
       );
     }
   });
 
-  it('dokunmayı yutmuyor ve kartın ALTINDA duruyor', () => {
-    // Perde desteyi tamamen kaplıyor: dokunmayı geçirmezse kart sürüklenemez.
-    // zIndex de kartınkinden (10) küçük olmak zorunda, yoksa çekiş boyunca
-    // kartın kendisini karartır.
-    const tree = render(<FirePullHint />);
-    const root = tree.UNSAFE_root.findAllByType('View' as never)[0] as any;
-    expect(root.props.pointerEvents).toBe('none');
-    const style = StyleSheet.flatten(root.props.style);
-    expect(style.zIndex).toBeGreaterThan(1);
-    expect(style.zIndex).toBeLessThan(10);
-    // Kırpma BURADA: destenin kabına konamıyor, açık kart oradan taşıyor.
-    expect(style.overflow).toBe('hidden');
-  });
+  it('perde kartın ALTINDA, ipucu bandı ÜSTÜNDE — ikisi de dokunmayı yutmuyor', () => {
+    // İki katman, kartın iki yanında (bkz. bileşenin dosya başı notu):
+    //   • Perde kartın terk ettiği şeridi karartıyor → zIndex kartınkinden
+    //     (10) KÜÇÜK olmalı, yoksa çekiş boyunca kartın kendisini karartır.
+    //   • Band yazıyı taşıyor → zIndex kartınkinden BÜYÜK olmalı, yoksa yazı
+    //     kartın altında kalır (düzeltilen kusurun ta kendisi).
+    // Dokunma ikisinden de geçmeli: aksi halde çekiş jesti hiç başlamaz.
+    pull.value = 1;
+    const tree = render(<FirePullHint topInset={64} />);
+    const views = tree.UNSAFE_root.findAllByType('View' as never) as any[];
 
-  it('perde destenin tepesinden, YAZI güvenli alanın altından başlıyor', () => {
+    const scrimLayer = views[0];
+    expect(scrimLayer.props.pointerEvents).toBe('none');
+    const scrim = StyleSheet.flatten(scrimLayer.props.style);
+    expect(scrim.zIndex).toBeGreaterThan(1);
+    expect(scrim.zIndex).toBeLessThan(10);
+    // Kırpma BURADA: destenin kabına konamıyor, açık kart oradan taşıyor.
+    expect(scrim.overflow).toBe('hidden');
     // Kart tüm ekranı kaplıyor (kapak durum çubuğunun ardından geçiyor), yani
     // perde de ekranın 0'ından başlamalı — taşma payı yok.
-    const tree = render(<FirePullHint topInset={64} />);
-    const root = tree.UNSAFE_root.findAllByType('View' as never)[0] as any;
-    expect(StyleSheet.flatten(root.props.style).top).toBe(0);
+    expect(scrim.top).toBe(0);
 
-    // Yazı perdeyle AYNI yerden başlamıyor: saatin/adanın altında kalırdı.
-    // Şeridin yüksekliği güvenli alanın üst çizgisinden ölçülüyor.
+    const bandLayer = views.find(
+      (n) => (StyleSheet.flatten(n.props.style) as any)?.zIndex > 10,
+    );
+    expect(bandLayer).toBeTruthy();
+    expect(bandLayer.props.pointerEvents).toBe('none');
+    const band = StyleSheet.flatten(bandLayer.props.style) as any;
+    // Band TAM EKRAN DEĞİL: kartın üstünde duruyor, bir satırlık şeritten
+    // uzun olursa çekiş boyunca kartın tamamını karartır.
+    expect(band.top).toBe(0);
+    expect(band.height).toBeGreaterThan(64);
+    expect(band.height).toBeLessThan(64 + 120);
+  });
+
+  it('yazı güvenli alanın ALTINDAN başlıyor', () => {
+    // Band ekranın 0'ından başlıyor ama yazı saatin/adanın ardına düşemez.
     pull.value = 1;
     const block = textBlockStyle(render(<FirePullHint topInset={64} />)) as any;
-    expect(block.top).toBe(64);
+    expect(block.top).toBeGreaterThanOrEqual(64);
+    // Bandın içinde kalıyor: yazı bandın dibinden taşarsa perdesiz, çıplak
+    // fotoğrafın üstünde okunur.
+    expect(block.top).toBeLessThan(64 + 52);
   });
 
   it('topInset verilmezse yazı da kabın tepesinden başlıyor', () => {
@@ -209,7 +245,7 @@ describe('FirePullHint', () => {
     // veriyor (bkz. prop notu).
     pull.value = 1;
     const block = textBlockStyle(render(<FirePullHint />)) as any;
-    expect(block.top).toBe(0);
+    expect(block.top).toBeLessThan(10);
   });
 
   it('her iki metin de iki dilde tanımlı', () => {

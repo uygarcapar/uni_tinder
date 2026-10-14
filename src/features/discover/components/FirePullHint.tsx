@@ -1,5 +1,6 @@
-import { memo } from "react";
+import { Fragment, memo } from "react";
 import { StyleSheet, View } from "react-native";
+import { LinearGradient } from "expo-linear-gradient";
 import Animated, {
   Easing,
   interpolate,
@@ -10,10 +11,11 @@ import Animated, {
   Extrapolate,
 } from "react-native-reanimated";
 import { useTranslation } from "react-i18next";
-import {
-  cardPullProgress,
-  FIRE_PULL_THRESHOLD,
-} from "@/shared/services/uiBus";
+// `FIRE_PULL_THRESHOLD` ARTIK OKUNMUYOR: yazının yeri ondan türüyordu (şeridin
+// ortası) ve band kartın üstüne alınınca o hesap düştü — bkz. dosya başındaki
+// iki katman notu. Eşik hâlâ ORANI üreten sayı (SwipeWrapper), buranın ondan
+// haberi olmasına gerek yok.
+import { cardPullProgress } from "@/shared/services/uiBus";
 import { colors as theme, scrimAt } from "@/shared/theme/colors";
 
 /**
@@ -38,9 +40,26 @@ import { colors as theme, scrimAt } from "@/shared/theme/colors";
  * sönüyorlar. `useAnimatedReaction` + `setState` ile metni değiştirmek jestin
  * ortasında bir render (ve Fabric commit'i) demekti.
  *
- * KENDİ ŞERİDİNİ ÇİZMİYOR: perde desteyi TAMAMEN kaplıyor ve üstteki kartın
- * ALTINDA duruyor (zIndex, aşağıya bak). Yani görünen tek yeri kartın terk
- * ettiği şerit; şeridi ayrıca maskelemek gerekmiyor, kartın kendisi maskeliyor.
+ * ── İKİ KATMAN, KARTIN İKİ YANINDA (2026-10-13 düzeltmesi) ─────────────────
+ *
+ * Bileşenin tamamı bir dönem üstteki kartın ALTINDA duruyordu (zIndex 5) ve
+ * görünen tek yeri kartın terk ettiği şeritti. YAZI O ŞERİDE SIĞMIYOR:
+ * çekişin tamamı `FIRE_PULL_THRESHOLD` (50 px) ve yazının sıfır noktası
+ * güvenli alanın üstü (çentikli telefonlarda ~59 px) — yani şerit tam açıkken
+ * bile yazının yeri kartın ALTINDA kalıyor, ipucu hiç görünmüyordu.
+ * ("yukarıdan alta çekerken 'bırak' yazısı kartın altında kalıyor.")
+ *
+ * Şimdi iki parça:
+ *   • ŞERİT PERDESİ — kartın ALTINDA (zIndex 5), eskisi gibi. Kartın terk
+ *     ettiği bandı karartıyor; maskeye gerek yok, kartın kendisi maskeliyor.
+ *   • İPUCU BANDI — kartın ÜSTÜNDE (zIndex 100, yatay rozetle aynı kat).
+ *     Ekranın tepesine sabit, yüksekliği güvenli alan + bir satır: üstten
+ *     aşağı sönen bir gradyan ve ortasında yazı. Kart altından kayıp gidiyor,
+ *     yazı yerinde duruyor — pull-to-refresh başlığının davranışı.
+ *
+ * YAZIYI ŞERİDİN İÇİNDE TUTMAYA ÇALIŞMA: eşiği büyütmek gerekir (çekişin
+ * asimptotu 100 px, bkz. SwipeWrapper'daki rubber-band) ve jestin hissi o
+ * sayıya bağlı. Bandı kartın üstüne almak jeste hiç dokunmuyor.
  *
  * SÜRÜCÜ GLOBAL (`cardPullProgress`, bkz. uiBus): prop olarak geçirmek
  * SwipeWrapper → DiscoverScreen yönünde ters akış olurdu. Değer yalnız
@@ -84,10 +103,26 @@ const TEXT_FULL = 0.34;
 const SWAP_MS = 160;
 
 /**
- * Yazının satır yüksekliğinin yarısı (px). `translateY` yazının MERKEZİNİ
- * konumlandırsın diye çıkarılıyor, üst kenarını değil.
+ * İpucu bandının güvenli alanın ALTINDA kapladığı yer (px) — bir satır yazı +
+ * gradyanın sönmesi için nefes. Band yazıyı taşıyor, perde değil: ekranın
+ * tepesinden başlıyor ki durum çubuğunun ardı da kararsın.
  */
-const LINE_HALF = 9;
+const BAND_BELOW_INSET = 52;
+
+/**
+ * Yazının bandın içindeki yeri — güvenli alan çizgisinin hemen altı.
+ * Eskiden yazı çekişle birlikte AŞAĞI iniyordu (`p × THRESHOLD/2`) çünkü
+ * kartın terk ettiği şeridin ortasında durması gerekiyordu; band kartın
+ * üstüne alınınca o hesap düştü (bkz. dosya başındaki iki katman notu).
+ */
+const TEXT_TOP_GAP = 6;
+
+/**
+ * Yazının çekişle birlikte indiği KÜÇÜK pay (px). Sıfır da olabilirdi; bu
+ * kadarı bandı jeste bağlı gösteriyor, scrub edilebilir bir yazı hissi
+ * vermeden.
+ */
+const TEXT_DRIFT = 6;
 
 /**
  * ── ÜST TAŞMA PAYI (TOP_BLEED) KALDIRILDI ───────────────────────────────────
@@ -122,26 +157,34 @@ function FirePullHint({ topInset = 0 }: Props) {
   }));
 
   /**
-   * Yazı bloğu: şeridin ORTASINDA duruyor ve şeritle birlikte aşağı iniyor.
+   * İpucu bandının gradyanı — çekişle birlikte koyulaşıyor, yazıyla aynı
+   * bantta (TEXT_FULL'de tam) ki yazı hiçbir karede perdesiz kalmasın.
    *
-   * Şeridin yüksekliği orana doğrudan bağlı — oran `ty / THRESHOLD` olduğu için
-   * eşiğin altında şerit tam olarak `oran × THRESHOLD` piksel, yani yarısı
-   * merkez. Eşikten SONRA şerit lastik gibi uzamaya devam ederken oran 1'de
-   * pinlendiği için yazı orada duruyor: jest zaten tamamlanmışken aşağı
-   * sürüklenen bir yazı göz çeliyor.
+   * Band kartın ÜSTÜNDE olduğu için bu opaklık KARTI karartıyor: bu yüzden
+   * tam ekran değil, yalnız tepedeki bir satırlık şerit ve altına doğru
+   * sönüyor (gradyan). Tam ekran bir perde kartın tamamını griye çekerdi.
+   */
+  const bandStyle = useAnimatedStyle(() => ({
+    opacity: interpolate(
+      cardPullProgress.value,
+      [0, TEXT_FULL],
+      [0, 1],
+      Extrapolate.CLAMP,
+    ),
+  }));
+
+  /**
+   * Yazı bloğu: bandın içinde, güvenli alan çizgisinin hemen altında SABİT.
    *
-   * Sabit bir `top` da denenebilirdi ama o, çekişin başında yazıyı kartın
-   * ALTINDA bırakıyor: şerit daha açılmamışken yazı zaten ekranın o
-   * bölgesinde, yani görünmez. Şeritle birlikte inince ilk açılan piksellerde
-   * bile okunuyor.
+   * Çekişle birlikte inen hâli (`p × THRESHOLD/2`) kartın altında kaldığı
+   * için kaldırıldı — tarihçesi dosya başındaki iki katman notunda. Kalan
+   * `TEXT_DRIFT` yalnız bandı jeste bağlı göstermek için.
    */
   const textStyle = useAnimatedStyle(() => {
     const p = cardPullProgress.value;
     return {
       opacity: interpolate(p, [TEXT_IN, TEXT_FULL], [0, 1], Extrapolate.CLAMP),
-      transform: [
-        { translateY: p * (FIRE_PULL_THRESHOLD / 2) - LINE_HALF },
-      ],
+      transform: [{ translateY: p * TEXT_DRIFT }],
     };
   });
 
@@ -171,52 +214,87 @@ function FirePullHint({ topInset = 0 }: Props) {
   const releaseTextStyle = useAnimatedStyle(() => ({ opacity: ready.value }));
 
   return (
-    // KIRPAN KAP KENDİSİ: destenin kabına `overflow: hidden` konamaz, açık kart
-    // o kabın dibinden TAŞIYOR (bkz. SwipeWrapper animatedStyle > bottom).
-    // Kırpma burada kalınca hem yazı deste dışına sızmıyor hem kart özgür.
-    <View
-      pointerEvents="none"
-      style={{
-        position: "absolute",
-        // Kabın tepesi = destenin tepesi = ekranın tepesi (bkz. yukarıdaki
-        // TOP_BLEED notu).
-        top: 0,
-        left: 0,
-        right: 0,
-        bottom: 0,
-        overflow: "hidden",
-        // Üstteki kart 10, arkadaki 1 (bkz. SwipeWrapper animatedStyle):
-        // aradaki her sayı "kartın altında ama destenin üstünde" demek.
-        // Yatay swipe'ın LIKE/NOPE perdesi 100'de, yani o hep üstte kalıyor.
-        zIndex: 5,
-      }}
-    >
+    <Fragment>
+      {/* ŞERİT PERDESİ — KARTIN ALTINDA.
+          KIRPAN KAP KENDİSİ: destenin kabına `overflow: hidden` konamaz, açık
+          kart o kabın dibinden TAŞIYOR (bkz. SwipeWrapper animatedStyle >
+          bottom). Kırpma burada kalınca hem perde deste dışına sızmıyor hem
+          kart özgür. */}
+      <View
+        pointerEvents="none"
+        style={{
+          position: "absolute",
+          // Kabın tepesi = destenin tepesi = ekranın tepesi (bkz. yukarıdaki
+          // TOP_BLEED notu).
+          top: 0,
+          left: 0,
+          right: 0,
+          bottom: 0,
+          overflow: "hidden",
+          // Üstteki kart 10, arkadaki 1 (bkz. SwipeWrapper animatedStyle):
+          // aradaki her sayı "kartın altında ama destenin üstünde" demek.
+          zIndex: 5,
+        }}
+      >
+        <Animated.View
+          style={[
+            StyleSheet.absoluteFill,
+            { backgroundColor: scrimAt(1) },
+            scrimStyle,
+          ]}
+        />
+      </View>
+
+      {/* İPUCU BANDI — KARTIN ÜSTÜNDE (gerekçesi dosya başında).
+          Ekranın tepesine sabit; kart altından kayıp giderken yazı yerinde
+          duruyor. Yükseklik güvenli alan + bir satır: gradyan o satırın
+          altında sönüyor, yani kartın geri kalanı kararmıyor.
+          zIndex 100 — rozetle (SwipeOverlay) aynı kat, kartın (10) üstü. */}
       <Animated.View
+        pointerEvents="none"
         style={[
-          StyleSheet.absoluteFill,
-          { backgroundColor: scrimAt(1) },
-          scrimStyle,
-        ]}
-      />
-      <Animated.View
-        style={[
-          // Yazının sıfır noktası GÜVENLİ ALANIN üstü: perde ekranın 0'ından
-          // başlıyor ama yazı durum çubuğunun altında kalmalı (bkz. `topInset`).
-          { position: "absolute", top: topInset, left: 0, right: 0 },
-          textStyle,
+          {
+            position: "absolute",
+            top: 0,
+            left: 0,
+            right: 0,
+            height: topInset + BAND_BELOW_INSET,
+            zIndex: 100,
+          },
+          bandStyle,
         ]}
       >
-        {/* İki metin ÜST ÜSTE: ikisi de mutlak konumlu ve `textAlign` ile
-            ortalı, yani uzunlukları farklı olsa da aynı merkezde duruyorlar ve
-            devirde yazı yana kaymıyor. */}
-        <Animated.Text style={[styles.line, pullTextStyle]}>
-          {t("discover.swipe.firePullHint")}
-        </Animated.Text>
-        <Animated.Text style={[styles.line, releaseTextStyle]}>
-          {t("discover.swipe.fireReleaseHint")}
-        </Animated.Text>
+        <LinearGradient
+          // Dipte TAM SAYDAM: bandın alt kenarı kartın üstünde bir çizgi
+          // olarak okunmasın.
+          colors={[scrimAt(FIRE_PULL_SCRIM_ALPHA + 0.2), scrimAt(0)]}
+          style={StyleSheet.absoluteFill}
+        />
+        <Animated.View
+          style={[
+            // Yazı güvenli alanın ALTINDA: band ekranın 0'ından başlıyor ama
+            // yazı saatin/adanın ardına düşemez (bkz. `topInset`).
+            {
+              position: "absolute",
+              top: topInset + TEXT_TOP_GAP,
+              left: 0,
+              right: 0,
+            },
+            textStyle,
+          ]}
+        >
+          {/* İki metin ÜST ÜSTE: ikisi de mutlak konumlu ve `textAlign` ile
+              ortalı, yani uzunlukları farklı olsa da aynı merkezde duruyorlar
+              ve devirde yazı yana kaymıyor. */}
+          <Animated.Text style={[styles.line, pullTextStyle]}>
+            {t("discover.swipe.firePullHint")}
+          </Animated.Text>
+          <Animated.Text style={[styles.line, releaseTextStyle]}>
+            {t("discover.swipe.fireReleaseHint")}
+          </Animated.Text>
+        </Animated.View>
       </Animated.View>
-    </View>
+    </Fragment>
   );
 }
 
@@ -227,11 +305,12 @@ const styles = StyleSheet.create({
     left: 0,
     right: 0,
     textAlign: "center",
-    // Kapaktaki "yukarı kaydır" ipucuyla AYNI mürekkep (bkz. SwipeCard >
-    // expandHint): ikisi de jestin ne yapacağını söyleyen aynı cins fısıltı,
-    // farklı tonda olmaları ikisini ayrı diller gibi gösteriyordu.
-    // `onMediaMuted` medya ailesinden ve modla DÖNMEZ — perde sabit siyah.
-    color: theme.onMediaMuted,
+    // `onMedia` (tam beyaz), `onMediaMuted` DEĞİL: yazı artık kartın terk
+    // ettiği boş şeritte değil, FOTOĞRAFIN üstündeki gradyanın içinde duruyor
+    // (bkz. dosya başındaki iki katman notu) — sönük beyaz orada açık
+    // fotoğraflarda kayboluyor. Aile aynı kalıyor: medya mürekkebi modla
+    // dönmez, perde iki temada da koyu.
+    color: theme.onMedia,
     fontSize: 13,
     fontWeight: "600",
     letterSpacing: 0.2,

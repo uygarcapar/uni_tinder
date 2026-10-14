@@ -1,13 +1,7 @@
 import { useMemo } from "react";
 import { useTranslation } from "react-i18next";
 import { StyleSheet, Text, View } from "react-native";
-import Animated, {
-  useAnimatedReaction,
-  useAnimatedStyle,
-  useSharedValue,
-  withTiming,
-  Easing,
-} from "react-native-reanimated";
+import Animated, { useAnimatedStyle } from "react-native-reanimated";
 import type { SharedValue } from "react-native-reanimated";
 import MaskedView from "@react-native-masked-view/masked-view";
 import { easeGradient } from "react-native-easing-gradient";
@@ -17,7 +11,6 @@ import PremiumBadge from "@/shared/components/PremiumBadge";
 import SelfieVerifiedBadge, {
   selfieBadgeSize,
 } from "@/features/profile/components/SelfieVerifiedBadge";
-import ActivityStatus from "./ActivityStatus";
 // `veil` + `chromeBlurTint` KALDIRILDI: bandın önizleme dalı uygulamanın chrome
 // reçetesini çiziyordu, artık iki bağlam da kapağın rampasını okuyor (gerekçe
 // bandın çizildiği yerde).
@@ -235,26 +228,24 @@ export const CARD_CHROME_BUTTON_TOP = PREVIEW_TITLE_TOP - CHROME_CENTER_FIX;
 // (satırın gap'i + işaretin marginLeft'i) yalnız ortalama kaymasını hesaplayan
 // formül okuyordu. Satır sola yaslandı, kayma da formül de gitti.
 
-/**
- * "Bugün aktif"in sönmesini TETİKLEYEN scroll eşiği (px).
+/*
+ * ── AKTİFLİK İŞARETİNİN SCROLL FADE'İ KALDIRILDI ─────────────────────────────
  *
- * EŞİK, mesafe DEĞİL: işaret scroll'a bağlı sürülmüyor. Eşik geçilince kendi
- * süresiyle (ACTIVITY_FADE_DURATION) tek seferde sönüyor, geri gelince aynı
- * şekilde tek seferde dönüyor — parmağı yavaş oynatınca işaretin yarı yolda
- * asılı kalması ya da kaydırmayla birlikte titremesi böyle bitiyor.
+ * Burada `ACTIVITY_FADE_TRIGGER` (40px eşik) + `ACTIVITY_FADE_DURATION` (450ms)
+ * vardı: açık kartta bir süre kaydırılınca satır sadeleşip yalnız isme düşsün
+ * diye işaret OPAKLIKLA sönüyordu — layout'tan çıkmadan, yani genişliği
+ * kalıyordu (ortalanmış satır işaret gidince kaymasın diye bilerek böyleydi).
  *
- * 40: kullanıcı kaydırma niyetini belli edecek kadar uzak, işaret ilk bölüm
- * şeridin altına girmeden ÖNCE gidip bitecek kadar yakın.
+ * Sonuç tersine döndü: Keşif'te şerit ancak kart açıkken görünüyor ve o an
+ * scroll çoktan eşiğin üstünde oluyor, yani işaret GÖRÜNMEZ ama yerini tutuyor
+ * — isim satırın ortasında değil, görünmez bir bloğun soluna yaslı duruyordu.
  *
- * İKİ BAĞLAM DA AYNI eşiği ve aynı süreyi kullanıyor. Keşif'te scroll kartın
- * İÇİNDE, önizlemede kartın DIŞINDA akıyor ama ikisi de aynı şeyi ölçüyor:
- * içeriğin şeridin altından ne kadar geçtiğini. Ayrı eşik, aynı jestte iki
- * farklı anda sönen bir işaret demek olurdu.
+ * Çözüm fade'i düzeltmek değil, işareti Keşif şeridinden tamamen çıkarmak oldu:
+ * aktiflik artık kapağın isim bloğunda duruyor (SwipeCard), şerit isim + yaş +
+ * rozetlerle sınırlı ve ortalı. Önizlemede işaret bir süre durdu (orada scroll
+ * prop'u hiç verilmediği için fade zaten hiç çalışmıyordu), sonra oradan da
+ * kaldırıldı — gerekçe aşağıda, bayrağın silindiği yerde.
  */
-const ACTIVITY_FADE_TRIGGER = 40;
-
-/** Sönme/dönme süresi — şeridin başlık devriyle aynı 450ms cubic. */
-const ACTIVITY_FADE_DURATION = 450;
 
 /**
  * Kart kabuğunun köşe yarıçapı. ÜÇ yer aynı sayıyı kullanmak ZORUNDA: kartın
@@ -387,20 +378,15 @@ export const CARD_CHROME_TOP_DROP = 0;
 
 type Props = {
   profile: any;
-  /**
-   * Kartın scroll pozisyonu — İKİ BAĞLAMDA DA tek iş için okunuyor: bir EŞİK
-   * olarak. Geçilince "bugün aktif" kendi süresiyle sönüyor, geri gelince aynı
-   * şekilde dönüyor (bkz. ACTIVITY_FADE_TRIGGER).
-   *
-   * Şeridin GÖRÜNÜRLÜĞÜNÜ sürmüyor: onu kartın açıklık oranı belirliyor (bkz.
-   * `progress`). Verilmezse işaret hiç sönmez, satır da kıpırdamaz — yani
-   * opsiyonel kalması güvenli.
-   *
-   * Ölçtüğü scroll bağlama göre farklı yerde akıyor (Keşif'te kartın İÇİNDE,
-   * sheet'te kartın DIŞINDA) ama eşik için ikisi de aynı şeyi söylüyor:
-   * içerik şeridin altından ne kadar geçti.
+  /*
+   * `scrollY` PROP'U KALDIRILDI: tek işi "bugün aktif"in sönme eşiğini
+   * beslemekti (Keşif kartın İÇİNDEKİ, sheet kartın DIŞINDAKİ scroll'u
+   * veriyordu) ve fiilen yalnız Keşif geçiyordu. İşaret şeritten çıkınca
+   * (önce Keşif'ten, sonra önizlemeden de — bkz. aşağıdaki kaldırma notu)
+   * şeridin scroll'la hiçbir işi kalmadı; görünürlüğünü baştan beri kartın
+   * açıklık oranı sürüyor (bkz. `progress`). İki sheet de artık shared
+   * value'yu hiç kurmuyor.
    */
-  scrollY?: SharedValue<number>;
   /**
    * Şeridin ÖNİZLEME dizilişi (Likes / Chat / Profil): sağ köşede Fire
    * butonu değil, varsa "üç nokta" duruyor. Bandın BÜTÜN ölçüleri bu bayrakla
@@ -432,6 +418,22 @@ type Props = {
   progress?: SharedValue<number>;
   /** Bandın kendi kırpması — varsayılanı kart kabuğuyla aynı. */
   radius?: number;
+  /**
+   * YALNIZ BANDI ÇİZ — başlık satırı ve köşe cam butonları hiç mount edilmez.
+   *
+   * Keşif'te DESTENİN ALTINDAKİ kart bunu alıyor. Gerekçesi görsel: bandın
+   * malzemesi (scrim + blur) kartın ÜST GÖLGESİ ve kapalı kartta da hep açık
+   * (bkz. bandRevealStyle). Kart üste geçtiği anda mount edilirse gölge
+   * fotoğrafın üstüne SONRADAN düşüyor — swipe biter, bir an sonra kartın
+   * tepesi kararır. Bant alt karttayken de duruyorsa kart üste geçtiğinde
+   * gölge ÇOKTAN yerinde.
+   *
+   * CAM BUTONLAR BANDLA GELMİYOR, bilerek: alt kartta krom oranı 0, yani
+   * kabukları opaklık 0'da doğardı — SwiftUI cam yüzeyi ilk layout turunu
+   * alfa 1'in altında geçirirse efektini hiç kurmuyor (bkz. chromeRevealStyle'ın
+   * uyarısı). Onlar kart üste geçerken mount ediliyor, tıpkı bugün olduğu gibi.
+   */
+  bandOnly?: boolean;
   /**
    * KEŞİF şeridinin SOL ucundaki cam "yukarı ok" — içeriği başa sarar.
    *
@@ -523,10 +525,10 @@ type Props = {
 
 export default function CardStickyHeader({
   profile,
-  scrollY,
   alwaysOpen = false,
   progress,
   radius = CARD_CORNER_RADIUS,
+  bandOnly = false,
   onMenu,
   onEdit,
   onClose,
@@ -582,22 +584,29 @@ export default function CardStickyHeader({
     ? PREVIEW_CARD_HEADER_HEIGHT
     : rowTop + rowHeight + CHROME_BAND_TAIL;
 
-  // "Bugün aktif" satırı — HER İKİ bağlamda da şeritte, ismin sağında. Keşif'te
-  // de buraya taşındı: kartın panelindeki isim bloğu (satırın eski yeri)
-  // kaldırıldı, şerit artık açık kartın tek başlığı.
-  //
-  // Bayrağın kaynağı SwipeCard'dakiyle aynı alan: `isOnlineToday` (24 saatlik
-  // pencere, anlık presence DEĞİL — bkz. ActivityStatus).
-  const showActivity = profile?.isOnlineToday === true;
+  /*
+   * ── AKTİFLİK İŞARETİ ŞERİTTEN TAMAMEN KALKTI ────────────────────────────
+   *
+   * Burada `showActivity = alwaysOpen && profile?.isOnlineToday === true`
+   * vardı: Keşif şeridinde çizilmiyordu (isim ortada kalsın diye, gerekçe
+   * yukarıda), önizleme şeritlerinde — Beğeniler / Mesajlar / Akış / kendi
+   * profil önizlemesi — ismin sağında "24 saat içerisinde aktif" olarak
+   * duruyordu.
+   *
+   * İSTEK ÜZERİNE KALDIRILDI: önizlemeden açılan kartın başlığında bu yazı
+   * olmasın. Şerit artık İKİ BAĞLAMDA DA isim + yaş + rozetlerle sınırlı, yani
+   * kart hangi ekrandan açılırsa açılsın başlığı aynı.
+   *
+   * Bayrağın kaynağı duruyor ve Keşif kartının KAPAĞINDA aynen çiziliyor (bkz.
+   * SwipeCard > showActivity); önizlemede kapağın isim bloğu hiç çizilmediği
+   * için (kart açık doğuyor → chrome kanalı 1) satır oralarda hiç görünmüyor.
+   * Geri istenirse dönecek yer burası.
+   */
 
   // "Burada yeni" rozeti burada YOK ve eklenmeyecek: şerit isim + yaş + premium
-  // + "bugün aktif" ile sınırlı. Rozet kapalı Keşif kartına ait (bkz. SwipeCard
+  // ile sınırlı. Rozet kapalı Keşif kartına ait (bkz. SwipeCard
   // > NewMemberBadge) — swipe kararına giren bir sinyal, kart açıkken ya da
   // karşındaki kişiyi zaten beğenmişken / yazışırken taşıdığı bir bilgi yok.
-
-  // Prop verilmediğinde de worklet'lerin okuyacağı bir değer olsun.
-  const noScroll = useSharedValue(0);
-  const scroll = scrollY ?? noScroll;
 
   /**
    * ŞERİDİN GÖRÜNÜRLÜĞÜ TEK ŞEYE BAĞLI: kartın açıklık oranı. Zemin de başlık
@@ -663,45 +672,19 @@ export default function CardStickyHeader({
     opacity: progress ? Math.max(0, Math.min(1, progress.value)) : 1,
   }));
 
-  /**
-   * İşaretin görünürlüğü: 1 → 0.
+  /*
+   * ── İŞARETİN KENDİ FADE KANALI DA KALDIRILDI ────────────────────────────
    *
-   * Scroll'a BAĞLI SÜRÜLMÜYOR: scroll yalnız eşiği tetikliyor, geçildiği anda
-   * değer kendi süresiyle uçtan uca gidiyor (bkz. ACTIVITY_FADE_TRIGGER).
+   * `activityAnim` + `activityReveal` buradaydı: scroll eşiği geçilince işaret
+   * 1 → 0 gidiyor, kart kapanıp scroll 0'a dönünce geri geliyordu. Kanalın tek
+   * müşterisi Keşif'ti (önizleme `scrollY` vermiyor → sabit 1) ve işaret o
+   * şeritten çıktı; gerekçesi dosyanın başında, eşiğin kaldırıldığı yerde.
    *
-   * İKİ BAĞLAMDA DA: açık kartta bir süre kaydırdıktan sonra satırın sadeleşip
-   * yalnız isme düşmesi isteniyor — hangi ekrandan açıldığı fark etmemeli.
-   * Keşif'te bir dönem işaret sabit duruyordu (`alwaysOpen` kapısı); kapı
-   * kalktı, kanal ortak. Orada scroll kartın İÇİNDE ama şerit yine sabit
-   * duruyor, yani sönmenin gerekçesi de birebir aynı.
-   *
-   * Keşif'te değer kendiliğinden GERİ DÖNÜYOR: kart kapanınca scroll 0'a
-   * çekiliyor (bkz. BounceScrollView'ın collapse effect'i), eşik geri
-   * geçiliyor ve işaret aynı süreyle dönüyor — bir sonraki açılış temiz
-   * başlıyor.
-   *
-   * Satırın KAYMASI kaldırıldı (activityShift + previewTitleShift): o kayma,
-   * ortalanmış satırda işaret giderken ismi tek başına ortalamak içindi. Satır
-   * artık sola yaslı, yani işaret gidince isim zaten yerinde kalıyor.
+   * Satırın KAYMASI daha önce kaldırılmıştı (activityShift + previewTitleShift):
+   * ortalanmış satırda işaret giderken ismi tek başına ortalamak içindi —
+   * işaretin ya hep görünür ya hiç çizilmediği bu düzende böyle bir telafi
+   * gerekmiyor.
    */
-  const activityAnim = useSharedValue(1);
-  useAnimatedReaction(
-    () => scroll.value > ACTIVITY_FADE_TRIGGER,
-    (isPast, prev) => {
-      // prev null = ilk çağrı. Karşılaştırmaya SOKULUYOR (atlanmıyor): kart
-      // eşiğin üstünde doğabiliyor (ölçüler geç oturunca).
-      if (isPast !== prev) {
-        activityAnim.value = withTiming(isPast ? 0 : 1, {
-          duration: ACTIVITY_FADE_DURATION,
-          easing: Easing.out(Easing.cubic),
-        });
-      }
-    },
-  );
-
-  const activityReveal = useAnimatedStyle(() => ({
-    opacity: activityAnim.value,
-  }));
 
   // Maske — üstte opak, aşağı doğru şeffafa çözülür. Düz iki duraklı gradient
   // uçta görünür bir kesim bırakıyor; easeGradient çok duraklı bezier rampayla
@@ -790,6 +773,13 @@ export default function CardStickyHeader({
         </MaskedView>
       </Animated.View>
 
+      {/* BANDIN ÜSTÜNDEKİ HER ŞEY TEK KAPIDA (bkz. `bandOnly`): destenin
+          altındaki kart yalnız gölgeyi taşıyor, satırı ve cam butonları
+          taşımıyor. Bant yukarıda KOŞULSUZ çiziliyor — kapı buranın içine
+          konsaydı bayrak dönerken bandın host view'ı da yeniden kurulur ve
+          gölge yine sonradan düşerdi. */}
+      {!bandOnly && (
+        <>
       {/* KEŞİF'İN SOL UCU: cam "yukarı ok" — içeriği başa sarar (bkz.
           `onScrollTop`). Önizlemenin "kapat"ıyla (aşağıda) aynı kurallar:
           başlık satırının DIŞINDA, kendi style'ıyla sönüyor, dikeyde kabuk
@@ -902,16 +892,20 @@ export default function CardStickyHeader({
       )}
 
       {/* ── ŞERİDİN BAŞLIK SATIRI — TEK DAL, İKİ BAĞLAM ────────────────────
-          İsim + yaş, premium işareti ve "bugün aktif": hepsi tek satırda.
+          İsim + yaş ve premium/foto rozetleri; başka hiçbir şey. Aktiflik
+          işareti bir dönem önizlemede buraya katılıyordu, kaldırıldı (gerekçe
+          yukarıda).
 
           Önizlemede iki köşede de aynı çapta cam bir daire var: solda "kapat",
           sağda üç nokta ya da kalem (bkz. `rightAction`). Satır simetrik payla
           ortalanınca isim iki dairenin tam ortasında bir başlık gibi okunuyor.
 
-          ORTALAMA "BUGÜN AKTİF" GİDİNCE KAYMIYOR: işaret opaklıkla sönüyor,
-          layout'tan çıkmıyor — yani satırın genişliği sabit. Bir dönem satır
-          ortalıyken tam bu yüzden elle düzeltme (activityShift) gerekiyordu;
-          işaret o zaman satırı yeniden ölçtürüyordu.
+          SATIRIN GENİŞLİĞİ İSMİN KENDİSİ — İKİ BAĞLAMDA DA: aktiflik işareti
+          hiçbir yerde çizilmediği için isim gerçekten iki cam butonun ortasında
+          duruyor. İşaret Keşif şeridindeyken — hatta scroll'la SÖNMÜŞKEN bile, çünkü opaklık layout'tan
+          çıkarmıyor — isim onun genişliği kadar sola kayıyordu (istek: "yine
+          ortalansın"). Aynı sorun bir dönem elle düzeltiliyordu (activityShift);
+          telafi de, telafiyi gerektiren işaret de artık yok.
 
           YAN PAYLAR BAĞLAMA GÖRE: Keşif'te sol `edgeInset` (Fire butonunun köşe
           boşluğu) + sağ TITLE_SIDE_INSET; önizlemede iki yanda da tek sayı
@@ -923,8 +917,8 @@ export default function CardStickyHeader({
           scrim 0.42→0.10 + `tint="dark"` blur), yani yazı modla dönmemeli.
           Kapaktaki isim satırı (SwipeCard) başından beri `onMedia` — şerit devri
           olunca aynı yazı aynı yerde renk değiştiriyordu, artık değiştirmiyor.
-          Satırın diğer üyeleri (premium işareti, foto doğrulama, "bugün aktif")
-          zaten modla dönmeyen marka/semantik tonlarında. */}
+          Satırın diğer üyeleri (premium işareti, foto doğrulama) zaten modla
+          dönmeyen marka/semantik tonlarında. */}
       <Animated.View
         pointerEvents="none"
         style={[
@@ -983,18 +977,11 @@ export default function CardStickyHeader({
           verified={profile?.isSelfieVerified}
           size={selfieBadgeSize(TITLE_FONT)}
         />
-        {/* `flexShrink: 0`: uzun isim satırı doldurursa kırpılacak olan isim,
-            bu işaret değil — ya tam görünür ya hiç. `marginLeft` satırın
-            `gap`ine ek: bu ayrı bir bilgi, ismin devamı değil (ikisinin toplamı
-            ACTIVITY_SPACING). */}
-        {showActivity && (
-          <Animated.View
-            style={[{ flexShrink: 0, marginLeft: 6 }, activityReveal]}
-          >
-            <ActivityStatus label={t("profile.card.activeToday")} />
-          </Animated.View>
-        )}
+        {/* AKTİFLİK İŞARETİ BURADAN KALKTI (istek) — gerekçe yukarıda,
+            bayrağın kaldırıldığı yerde. */}
       </Animated.View>
+        </>
+      )}
     </View>
   );
 }

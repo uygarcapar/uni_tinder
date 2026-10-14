@@ -1,11 +1,14 @@
 import { Text, View } from "react-native";
 import { colors as theme } from "@/shared/theme/colors";
 
-// "Bugün aktif" satırı — yeşil nokta + yeşil metin.
+// Aktiflik satırı — yeşil nokta + yeşil metin. Metni ÇAĞIRAN veriyor; ikisi de
+// `profile.card.activeToday`ı geçiyor ("24 saat içerisinde aktif").
 //
 // DİL UYARISI (backend sözleşmesi): `isOnlineToday` 24 SAATLİK penceredir,
 // anlık presence değil. Burada "Çevrimiçi" YAZMA — kullanıcı mesaj atıp anında
-// yanıt bekler. Anlık online yalnız sohbette var (partnerIsOnline).
+// yanıt bekler. Anlık online yalnız sohbette var (partnerIsOnline). "Bugün
+// aktif" de yazma: pencere takvim günü değil, kayan 24 saat (bkz. çevirinin
+// yanındaki not).
 //
 // Foto üstünde de, açılmış kartın chrome zemininde de, sticky şeritte de
 // BİREBİR aynı çiziliyor: 9px nokta + sabit `success` yeşili. Önceden chrome

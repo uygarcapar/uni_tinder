@@ -51,9 +51,15 @@ const OVERSCROLL_TAIL_OVERLAP = CARD_CORNER_RADIUS + 10;
  * State burada tutulur ve kart `children` olarak geçer → bounces toggle'ında
  * ağır kart ağacı yeniden render edilmez.
  */
+/*
+ * `scrollY` PROP'U KALDIRILDI: ham scroll konumunu (px) çağıranın verdiği bir
+ * shared value'ya yazıyordu ve tek okuyucusu sticky şeritteki "24 saat
+ * içerisinde aktif" satırının sönme eşiğiydi. Satır şeritten tamamen çıktı
+ * (bkz. CardStickyHeader), iki sheet de (PreviewModal, LikerSwipeModal)
+ * değeri artık hiç kurmuyor.
+ */
 export default function CardSheetScrollView({
   zoomImpact,
-  scrollY,
   scrollEnabled = true,
   fillOverscroll = true,
   style,
@@ -62,14 +68,6 @@ export default function CardSheetScrollView({
 }: {
   /** SwipeCard'a da verilen zoom sinyali (0-1). */
   zoomImpact: SharedValue<number>;
-  /**
-   * Verilirse ham scroll konumu (px) buraya yazılır — sticky şerit "bugün
-   * aktif"i buna göre söndürüyor (bkz. CardStickyHeader).
-   *
-   * `zoomImpact` ile aynı threading: değer JS'ten sürülüyor (gorhom onScroll'ü
-   * runOnJS ile forward ediyor), okuyan taraf UI thread'de kalıyor.
-   */
-  scrollY?: SharedValue<number>;
   scrollEnabled?: boolean;
   /**
    * Alt uçtaki bounce boşluğunu kart zeminiyle doldur (aşağıdaki kuyruk).
@@ -108,7 +106,6 @@ export default function CardSheetScrollView({
     (e: NativeSyntheticEvent<NativeScrollEvent>) => {
       const { contentOffset, contentSize, layoutMeasurement } = e.nativeEvent;
       const y = contentOffset.y;
-      if (scrollY) scrollY.value = y;
 
       const nearBottom = isNearBottom(
         y,
@@ -136,7 +133,7 @@ export default function CardSheetScrollView({
       prevSpeed.current = speed;
       prevY.current = y;
     },
-    [zoomImpact, scrollY],
+    [zoomImpact],
   );
 
   return (

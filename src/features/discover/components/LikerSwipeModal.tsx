@@ -64,12 +64,27 @@ function triggerHaptic() {
  *   `handleRecover`) ve liste kartı da zaten sadece o butonu çiziyor. Detay
  *   açıldığında swipe'ın canlı kalması, listede olmayan bir aksiyonu (pas /
  *   beğen) kotasız bir arka kapıdan sunuyordu.
+ *
+ * @param onDecide Yatay kararı ÇAĞIRANA devreder: verildiğinde keşif swipe
+ *   ucuna istek ATILMIYOR (`useSwipeMutation` atlanıyor) ve `onSwipe` de
+ *   çağrılmıyor — modal yalnız "sağa mı sola mı" bilgisini verip kapanıyor.
+ *
+ *   AKIŞ YANITLARI İÇİN: orada karar bir beğeni değil, yanıtın KABULÜ ya da
+ *   REDDİ (ayrı uçlar, ayrı kotalar — bkz. feedQueries > useAcceptReply /
+ *   useDismissReply). Sağ = kabul, sol = geç. Jest, X/tik satırı ve
+ *   moderasyon aynen çalışıyor; değişen tek şey kararın gittiği yer.
+ *
+ *   ⚠️ `onSwipe` yolundaki ENGELLEME dalı bundan etkilenmiyor: engelleme her
+ *   iki modda da moderasyon servisinden geçiyor ve `onSwipe?.(userId,
+ *   "block")` ile haber veriliyor. Yanıt tarafında o haberi dinleyen listeyi
+ *   tazeleme işi çağıranda.
  */
 export default function LikerSwipeModal({
   visible,
   profile,
   onClose,
   onSwipe,
+  onDecide,
   swipeDisabled = false,
 }: any) {
   const swipeMutation = useSwipeMutation();
@@ -85,9 +100,11 @@ export default function LikerSwipeModal({
   const tx = useSharedValue(0);
   // Top'a çarpma zoom'u — scroll CardSheetScrollView'da, foto katmanı SwipeCard'da.
   const photoZoom = useSharedValue(0);
-  // Ham scroll konumu — sticky şerit "bugün aktif"i buna göre söndürüp ismi
-  // ortalıyor (bkz. CardStickyHeader).
-  const scrollY = useSharedValue(0);
+  /*
+   * `scrollY` KALDIRILDI — PreviewModal'daki ikiziyle aynı gerekçe: tek
+   * müşterisi sticky şeritteki "24 saat içerisinde aktif" satırının sönme
+   * eşiğiydi, satır şeritten tamamen çıktı (bkz. CardStickyHeader).
+   */
 
   /*
    * ŞERİDİN KAPANIŞTA SÖNMESİ KALDIRILDI (istek: "kapatırken header yok
@@ -191,6 +208,14 @@ export default function LikerSwipeModal({
   ]);
 
   const handleSwipe = (direction: "left" | "right") => {
+    // Karar devredilmişse keşif ucuna HİÇ dokunulmuyor (bkz. `onDecide`):
+    // yanıt kabul/reddi ayrı uçlar ve buradan bir de swipe atmak kullanıcının
+    // kotasından sessizce yiyordu.
+    if (onDecide) {
+      onDecide(direction);
+      onClose?.();
+      return;
+    }
     const userId = profile?.userId;
     if (userId) {
       swipeMutation.mutate({ direction, userId });
@@ -484,7 +509,6 @@ export default function LikerSwipeModal({
                   contentContainerStyle={{ paddingBottom: 0 }}
                   scrollEnabled={!tutorialActive}
                   zoomImpact={photoZoom}
-                  scrollY={scrollY}
                   // Zemin varken alt uçtaki bounce boşluğunu o dolduruyor;
                   // kuyruk onun üstüne opak bir şerit çizerdi.
                   fillOverscroll={!backdropUri}
@@ -536,9 +560,6 @@ export default function LikerSwipeModal({
                   // parent'ın `visible`ını düşürüyor); aşağı çekme jesti de
                   // yatay swipe de aynen duruyor.
                   onClose={onClose}
-                  // Şerit açık doğuyor (`alwaysOpen`), yani scroll'u başlığı
-                  // AÇMAK için okumuyor: "bugün aktif" bununla sönüyor.
-                  scrollY={scrollY}
                   // `progress` VERİLMİYOR → şerit hiç sönmüyor; gerekçe
                   // yukarıda, kaldırılan hook'un yerinde.
                 />
