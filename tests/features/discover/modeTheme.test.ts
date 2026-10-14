@@ -106,6 +106,38 @@ describe("modeTheme — mod farkındalı getter'lar", () => {
   });
 });
 
+/**
+ * Tema iplikleme sözleşmesi: Fire ailesinin TÜM yüzeyleri aynı moddan okumak
+ * zorunda. Biri atlanırsa Arkadaş modunda yeşil bir buton kırmızı bir alev
+ * açar — kullanıcıya iki ayrı ürün gibi görünür.
+ */
+describe("Fire/Spark yüzeyleri tek moddan okuyor", () => {
+  it("buton tint'i, dalga dolgusu ve kontur aynı modu izliyor", () => {
+    const friendsTint = modeFireTint("Friends");
+    const friendsGradient = modeFireGradient("Friends");
+    const datingTint = modeFireTint("Dating");
+
+    // Buton = gradyanın ilk durağı (tek ateş kuralı).
+    expect(friendsTint).toBe(friendsGradient[0]);
+    expect(friendsTint).not.toBe(datingTint);
+    // Kontur da ayrışıyor — dolgu değişip kontur sabit kalsa kenar yabancı durur.
+    expect(modeFlameOutline("Friends")).not.toBe(modeFlameOutline("Dating"));
+    expect(modeHeartBorder("Friends")).not.toBe(modeHeartBorder("Dating"));
+  });
+
+  it("gradyanlar aynı 3-durak şeklinde", () => {
+    // Shader ve LinearGradient durak sayısına göre interpolasyon yapıyor;
+    // şekil ayrışırsa Arkadaş alevi farklı bir ritimde geçiş yapar.
+    expect(modeFireGradient("Dating")).toHaveLength(3);
+    expect(modeFireGradient("Friends")).toHaveLength(3);
+  });
+
+  it("Spark adı i18n anahtarından geliyor, sabit yazılmıyor", () => {
+    expect(modeFireNameKey("Friends")).toBe("discover.mode.fireName.Friends");
+    expect(modeFireNameKey("Dating")).toBe("discover.mode.fireName.Dating");
+  });
+});
+
 describe("modePrefs — kalıcılık", () => {
   it("yazılmamışken varsayılana düşer", () => {
     expect(loadAppMode(USER)).toBe("Dating");

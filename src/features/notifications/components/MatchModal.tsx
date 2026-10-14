@@ -16,6 +16,7 @@ import lazyChunk from "@/shared/components/lazyChunk";
 import * as Haptics from "expo-haptics";
 import { useTranslation } from "react-i18next";
 import { flameCurtainGeometry } from "@/features/discover/components/flameWavePath";
+import { isAppMode, DEFAULT_APP_MODE } from "@/features/discover/modeTheme";
 import uiBus from "@/shared/services/uiBus";
 import { colors, onMediaAt, scrimAt } from "../../../shared/theme/colors";
 
@@ -320,6 +321,19 @@ export default function MatchModal({ match, myPhoto, onClose, onSendMessage }: a
     return () => clearTimeout(done);
   }, [closing, curtain.exitMs]);
 
+  /**
+   * Perdenin rengi: eşleşme Flört'te mi Arkadaş'ta mı oluştu.
+   *
+   * ⚠️ DEĞER BİLDİRİM PAYLOAD'INDAN, ekrandaki seçili moddan DEĞİL. Eşleşme
+   * kullanıcı diğer moddayken, uygulama arka plandayken ya da mod tercihi
+   * diskten okunmadan önce gelebilir — o anki UI modundan okumak yeşil bir
+   * eşleşmeyi kırmızı perdeyle (ya da tersi) kutlardı.
+   *
+   * Alan YOKSA Dating: eski sunucu `mode` göndermiyor ve bugünkü tüm
+   * eşleşmeler flört eşleşmesi.
+   */
+  const curtainMode = isAppMode(match?.mode) ? match.mode : DEFAULT_APP_MODE;
+
   if (!match) return null;
 
   const AVATAR = 150;
@@ -349,7 +363,11 @@ export default function MatchModal({ match, myPhoto, onClose, onSendMessage }: a
         />
         {imagesReady && (
           <LazyChunkBoundary resetKey={match.conversationId}>
-            <FlameCurtain key={match.conversationId} closing={closing} />
+            <FlameCurtain
+              key={match.conversationId}
+              closing={closing}
+              mode={curtainMode}
+            />
           </LazyChunkBoundary>
         )}
         <Animated.View

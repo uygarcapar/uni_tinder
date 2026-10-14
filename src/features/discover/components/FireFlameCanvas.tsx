@@ -18,6 +18,12 @@ import {
 } from "react-native-reanimated";
 import { FLAME_PATH } from "@/shared/components/icons/FlameGlyph";
 import { gradients } from "@/shared/theme/colors";
+import {
+  DEFAULT_APP_MODE,
+  modeFireGradient,
+  modeFlameOutline,
+  type AppMode,
+} from "../modeTheme";
 import uiBus from "@/shared/services/uiBus";
 import {
   buildFlameWave,
@@ -43,8 +49,12 @@ function waveOffset(p: number, startY: number, endY: number) {
   };
 }
 
-/** Kontur — "kenarları belli" olsun diye. Fotoğraf üstünde okunan sıcak krem. */
-const OUTLINE = "#FFD79E";
+/**
+ * Kontur — "kenarları belli" olsun diye. Fotoğraf üstünde okunan düşük
+ * kontrastlı kenar. Rengi MODA GÖRE: Flört'te sıcak krem, Arkadaş'ta soluk
+ * nane (bkz. modeTheme > modeFlameOutline). İkisi de MEDYA rengi — perde her
+ * temada aynı çiziliyor, o yüzden palet token'ı değil sabit.
+ */
 const OUTLINE_WIDTH = 5;
 
 const skiaApi: WaveApi<SkPath> = {
@@ -140,10 +150,13 @@ function FlameWaveLayer({
   wave,
   width,
   progress,
+  mode = DEFAULT_APP_MODE,
 }: {
   wave: Wave;
   width: number;
   progress: SharedValue<number>;
+  /** Alevin rengi — Flört ateşi / Arkadaş Spark'ı. */
+  mode?: AppMode;
 }) {
   // Titreşim karesi. Bunun için React state'i yeterli: dalga boyunca ~18 render
   // oluyor, 60 fps'lik öteleme ise React'e hiç uğramıyor.
@@ -171,12 +184,12 @@ function FlameWaveLayer({
       <Canvas style={StyleSheet.absoluteFill}>
         <Group transform={transform}>
           <Path path={path}>
-            {/* İkonun kendi gradyanı (gradients.swipeHeart): uçlarda kırmızı,
-                aşağı indikçe turuncu — rozet ve Fire kalbiyle aynı. */}
+            {/* İkonun kendi gradyanı: uçlarda koyu, aşağı indikçe parlak —
+                rozet ve Fire/Spark kalbiyle AYNI token (modeFireGradient). */}
             <LinearGradient
               start={vec(0, -tongueHeight)}
               end={vec(width, bandHeight * 0.55)}
-              colors={[...gradients.swipeHeart]}
+              colors={[...modeFireGradient(mode)]}
             />
           </Path>
           <Path
@@ -185,7 +198,7 @@ function FlameWaveLayer({
             strokeWidth={OUTLINE_WIDTH}
             strokeJoin="round"
             strokeCap="round"
-            color={OUTLINE}
+            color={modeFlameOutline(mode)}
           />
         </Group>
       </Canvas>
@@ -193,7 +206,7 @@ function FlameWaveLayer({
   );
 }
 
-export default function FireFlameCanvas() {
+export default function FireFlameCanvas({ mode }: { mode?: AppMode } = {}) {
   // Modül seviyesinde Dimensions.get() DEĞİL: iPad split-view'da pencere
   // yeniden boyutlandığında o değer bayatlar. Hook her mount'ta güncelini verir.
   const { width, height } = useWindowDimensions();
@@ -226,7 +239,9 @@ export default function FireFlameCanvas() {
     return () => clearTimeout(cover);
   }, [progress, coverMs]);
 
-  return <FlameWaveLayer wave={wave} width={width} progress={progress} />;
+  return (
+    <FlameWaveLayer wave={wave} width={width} progress={progress} mode={mode} />
+  );
 }
 
 /**
@@ -239,7 +254,20 @@ export default function FireFlameCanvas() {
  * Yerleşim ve süreler Skia'sız modülde (flameCurtainGeometry): modal, bu chunk
  * hiç yüklenemese bile aynı sayılarla kendi içeriğini zamanlıyor.
  */
-export function FlameCurtainCanvas({ closing }: { closing?: boolean }) {
+export function FlameCurtainCanvas({
+  closing,
+  mode,
+}: {
+  closing?: boolean;
+  /**
+   * Eşleşmenin modu — perde Flört'te kırmızı, Arkadaş'ta yeşil.
+   *
+   * ⚠️ DEĞER BİLDİRİM PAYLOAD'INDAN GELMEK ZORUNDA, ekrandaki seçili moddan
+   * DEĞİL: eşleşme kullanıcı diğer moddayken, arka plandayken ya da mod
+   * tercihi diskten okunmadan önce gelebilir (bkz. MatchModal).
+   */
+  mode?: AppMode;
+}) {
   const { width, height } = useWindowDimensions();
   const wave = useMemo(() => getWave(width, height), [width, height]);
   const curtain = useMemo(
@@ -271,5 +299,7 @@ export function FlameCurtainCanvas({ closing }: { closing?: boolean }) {
     });
   }, [closing, progress, exitMs]);
 
-  return <FlameWaveLayer wave={wave} width={width} progress={progress} />;
+  return (
+    <FlameWaveLayer wave={wave} width={width} progress={progress} mode={mode} />
+  );
 }

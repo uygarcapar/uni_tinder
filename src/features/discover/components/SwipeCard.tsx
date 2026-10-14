@@ -234,6 +234,7 @@ import SelfieVerifiedBadge, {
   selfieBadgeSize,
 } from "@/features/profile/components/SelfieVerifiedBadge";
 import FireGlassButton from "./FireGlassButton";
+import { DEFAULT_APP_MODE, modeFireNameKey, type AppMode } from "../modeTheme";
 import CardStickyHeader, {
   CARD_CHROME_TOP_DROP,
   CARD_EXPANDED_CORNER_RADIUS,
@@ -1764,6 +1765,15 @@ interface SwipeCardProps {
    */
   hideFire?: boolean;
   /**
+   * Kartın çizildiği uygulama modu — Fire/Spark butonunun rengini ve adını
+   * belirliyor (Flört kırmızı "Fire" / Arkadaş yeşil "Spark"). Verilmezse
+   * Dating: akıştan açılan kart gibi modu bilmeyen çağıranlar bozulmasın.
+   *
+   * NOT: kartın NOT glifi (NoteGlyph'in `swipeHeartBorder` kenarı) moda göre
+   * DEĞİŞMİYOR — not ayrı bir ürün ve iki modda da aynı balonu taşıyor.
+   */
+  mode?: AppMode;
+  /**
    * Ağır panel kendi kendine ısınsın mı (bkz. profileReady).
    *
    * `false` YALNIZ REWIND YUVASINDA: orada kart ekranda DEĞİL, yalnız ölçülmek
@@ -1912,6 +1922,7 @@ export default function SwipeCard({
   expanded = false,
   previewMode = false,
   hideFire = false,
+  mode = DEFAULT_APP_MODE,
   panelWarmup = true,
   zoomImpact,
   onReport,
@@ -4248,7 +4259,9 @@ export default function SwipeCard({
               {!hideActions && !hideFire && onFire && (
                 <FireGlassButton
                   onPress={onFire}
-                  label={t("discover.stats.fireLabel")}
+                  // Etiket moda göre: Flört'te "Fire", Arkadaş'ta "Spark".
+                  label={t(modeFireNameKey(mode))}
+                  mode={mode}
                   variant="clear"
                   size={COVER_ACTION_SIZE}
                 />
@@ -5644,7 +5657,8 @@ export default function SwipeCard({
           >
             <FireGlassButton
               onPress={onFire}
-              label={t("discover.stats.fireLabel")}
+              label={t(modeFireNameKey(mode))}
+              mode={mode}
               variant="clear"
               size={DISCOVER_GLASS_BUTTON_SIZE}
             />

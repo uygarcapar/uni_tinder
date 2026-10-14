@@ -16,6 +16,7 @@ import Animated, {
 import type { SharedValue } from "react-native-reanimated";
 import * as Haptics from "expo-haptics";
 import SwipeCard from "@/features/discover/components/SwipeCard";
+import type { AppMode } from "../modeTheme";
 import { runFlameSweep } from "@/features/discover/flameSweep";
 import uiBus, {
   // `cardChromeAnim` ARTIK OKUNMUYOR: tek kullanıcısı `unwindForExit`ti
@@ -307,6 +308,8 @@ interface SwipeWrapperProps {
   onPass: () => void;
   onLike: () => void;
   onFire: () => void;
+  /** Kartın modu — Fire/Spark rengi ve adı buradan (bkz. modeTheme). */
+  mode?: AppMode;
   /**
    * Bu profile gidecek beğeni EŞLEŞMEYLE mi biter? Kutlama kararı buna bağlı
    * (bkz. runFire): eşleşecekse alev süpürmesi oynatılmıyor, kutlama
@@ -374,6 +377,7 @@ function SwipeWrapper({
   onPass,
   onLike,
   onFire,
+  mode,
   willMatch,
   fireQuotaExhausted = false,
   entryX,
@@ -1160,6 +1164,7 @@ function SwipeWrapper({
         ]}
       >
         <SwipeCard
+          mode={mode}
           profile={profile}
           onPass={onPass}
           onLike={onLike}
@@ -1207,6 +1212,7 @@ export default React.memo(SwipeWrapper, (prev, next) => {
     prev.onPass === next.onPass &&
     prev.onLike === next.onLike &&
     prev.onFire === next.onFire &&
+    prev.mode === next.mode &&
     prev.willMatch === next.willMatch &&
     prev.onReport === next.onReport &&
     prev.onBlock === next.onBlock &&

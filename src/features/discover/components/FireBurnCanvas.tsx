@@ -18,7 +18,12 @@ import {
   type SharedValue,
 } from "react-native-reanimated";
 import { FLAME_PATH } from "@/shared/components/icons/FlameGlyph";
-import { colors as theme, gradients } from "@/shared/theme/colors";
+import {
+  DEFAULT_APP_MODE,
+  modeFireGradient,
+  modeHeartBorder,
+  type AppMode,
+} from "../modeTheme";
 import {
   BURN_CONTOUR_POINTS,
   BURN_FLICKER_FRAMES,
@@ -111,6 +116,8 @@ type Props = {
    * da her karede canvas tazeliyor; SwipeCard yalnız en üstteki için açıyor.
    */
   shimmer?: boolean;
+  /** Yanmanın rengi — Flört ateşi / Arkadaş Spark'ı. Verilmezse Dating. */
+  mode?: AppMode;
 };
 
 export default function FireBurnCanvas({
@@ -119,6 +126,7 @@ export default function FireBurnCanvas({
   phase,
   grow,
   shimmer = false,
+  mode = DEFAULT_APP_MODE,
 }: Props) {
   // Kutu ikondan geniş: diller glyph'in tepesini aşıyor ve ışıma daha da
   // taşıyor (bkz. BURN_PAD_RATIO). Kırpan bir katman yok, dar kutu doğrudan
@@ -227,7 +235,7 @@ export default function FireBurnCanvas({
             <LinearGradient
               start={vec(0, 0)}
               end={vec(24, 24)}
-              colors={[...gradients.swipeHeart]}
+              colors={[...modeFireGradient(mode)]}
             />
           </Path>
 
@@ -253,7 +261,7 @@ export default function FireBurnCanvas({
             style="stroke"
             strokeWidth={OUTLINE_WIDTH}
             strokeJoin="round"
-            color={theme.swipeHeartBorder}
+            color={modeHeartBorder(mode)}
           />
         </Group>
       </Canvas>

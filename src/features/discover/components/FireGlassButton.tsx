@@ -14,6 +14,7 @@ import {
 } from "@expo/ui/swift-ui/modifiers";
 import FireGlyph from "@/shared/components/FireGlyph";
 import { colors as theme, gradients, withAlpha } from "@/shared/theme/colors";
+import { DEFAULT_APP_MODE, modeFireTint, type AppMode } from "../modeTheme";
 import {
   glassClearShadow,
   glassFallback,
@@ -35,7 +36,7 @@ import {
  * dolguyu tint'e boyuyor: sıcak kırmızı kabuk + beyaz alev.
  *
  * Tint glyph'in KENDİ kırmızısı (gradients.swipeHeart'ın ilk durağı, #fc1919) —
- * bkz. fireTint(). Önce `accentOrange` denendi, turuncu temsil ettiği
+ * bkz. fireTint(mode). Önce `accentOrange` denendi, turuncu temsil ettiği
  * işaretin ailesinden kopuyordu; sonra marka `primary`'sine (#ff4d3d) geçildi
  * ama o da kırmızıdan çok mercan/turuncu okunuyordu. Artık buton, kapaktaki
  * alev (FireBurnCanvas) ve kutlama alevi (FireFlameCanvas ısı
@@ -185,12 +186,16 @@ export const FIRE_GLASS_INSET =
  * Cam tint'i, iOS 26 altı fallback dolgusu ve Android dairesi bunu paylaşıyor:
  * üçü ayrı ayrı yazılırsa biri güncellenip diğerleri kalır.
  *
- * RENDER SIRASINDA ÇAĞIR (colors.ts mutasyon sözleşmesi): `gradients` mod
- * değişince yerinde güncelleniyor, modül seviyesinde bir `const` ilk modun
+ * RENDER SIRASINDA ÇAĞIR (colors.ts mutasyon sözleşmesi): `gradients` TEMA
+ * değişince yerinde güncelleniyor, modül seviyesinde bir `const` ilk temanın
  * değerini dondururdu.
+ *
+ * UYGULAMA MODU (Flört/Arkadaş) ayrı bir eksen: Flört'te ateş kırmızısı,
+ * Arkadaş'ta Spark yeşili (bkz. modeTheme > modeFireTint). Mod verilmezse
+ * Dating — eski çağıranlar ve mod bilmeyen yollar bozulmasın.
  */
-function fireTint() {
-  return gradients.swipeHeart[0];
+function fireTint(mode?: AppMode) {
+  return modeFireTint(mode ?? DEFAULT_APP_MODE);
 }
 
 /**
@@ -244,6 +249,11 @@ type Props = {
    */
   variant?: "prominent" | "clear";
   /**
+   * Uygulama modu — butonun rengini belirliyor (Flört kırmızı / Arkadaş
+   * yeşil). Verilmezse Dating.
+   */
+  mode?: AppMode;
+  /**
    * Kabuğun çapı — varsayılan kendi sabiti (FIRE_GLASS_SIZE).
    *
    * Keşif'in şeridi kendi (daha iri) sayısını geçiyor: oradaki bütün cam
@@ -258,6 +268,7 @@ function FireGlassButton({
   onPress,
   label,
   variant = "prominent",
+  mode,
   size = FIRE_GLASS_SIZE,
 }: Props) {
   const clear = variant === "clear";
@@ -293,7 +304,7 @@ function FireGlassButton({
             // çevresine kattığı pay buna bağlı, varsayılan (regular) bırakılınca
             // aynı frame'e rağmen daire belirgin şekilde küçük çiziliyor.
             controlSize("extraLarge"),
-            tint(fireTint()),
+            tint(fireTint(mode)),
             frame({ width: size, height: size }),
             contentShape(shapes.circle()),
             ...(clear
@@ -321,14 +332,14 @@ function FireGlassButton({
                 ? { shape: "circle" }
                 : {
                     shape: "circle",
-                    backgroundColor: fireTint(),
+                    backgroundColor: fireTint(mode),
                     borderColor: withAlpha(theme.onMedia, 0.35),
                   },
             ),
           ]}
         >
           <RNHostView matchContents>
-            <WhiteFlame color={clear ? fireTint() : theme.onMedia} />
+            <WhiteFlame color={clear ? fireTint(mode) : theme.onMedia} />
           </RNHostView>
         </SwiftUIButton>
       </Host>
@@ -350,14 +361,14 @@ function FireGlassButton({
         borderCurve: "continuous",
         alignItems: "center",
         justifyContent: "center",
-        backgroundColor: clear ? withAlpha(theme.text, 0.08) : fireTint(),
+        backgroundColor: clear ? withAlpha(theme.text, 0.08) : fireTint(mode),
         borderWidth: StyleSheet.hairlineWidth,
         borderColor: clear
           ? theme.hairlineStrong
           : withAlpha(theme.onMedia, 0.35),
       }}
     >
-      <WhiteFlame color={clear ? fireTint() : theme.onMedia} />
+      <WhiteFlame color={clear ? fireTint(mode) : theme.onMedia} />
     </TouchableOpacity>
   );
 }

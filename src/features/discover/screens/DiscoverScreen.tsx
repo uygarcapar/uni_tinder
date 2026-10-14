@@ -2960,6 +2960,7 @@ export default function DiscoverScreen() {
         const isWarm = profile.userId === slotProfile?.userId;
         return (
           <SwipeWrapper
+            mode={mode}
             key={profile.userId}
             profile={profile}
             isTopCard={isTopCard}

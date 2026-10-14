@@ -12,13 +12,21 @@ import Animated, {
   withTiming,
   Easing,
 } from "react-native-reanimated";
-import { colors as theme, gradients, ink } from "@/shared/theme/colors";
+import { ink } from "@/shared/theme/colors";
+import {
+  DEFAULT_APP_MODE,
+  modeFireGradient,
+  modeHeartBorder,
+  type AppMode,
+} from "@/features/discover/modeTheme";
 
 type FireHeartProps = {
   size?: number;
   /** Soldan sağa geçen premium parıltısı. */
   shimmer?: boolean;
   style?: any;
+  /** Kalbin rengi — Flört ateşi / Arkadaş Spark'ı. Verilmezse Dating. */
+  mode?: AppMode;
 };
 
 /**
@@ -30,6 +38,7 @@ export default function FireHeart({
   size = 55,
   shimmer = true,
   style,
+  mode = DEFAULT_APP_MODE,
 }: FireHeartProps) {
   // Band kalpten geniş → parıltının falloff'u yumuşak. Boyutla orantılı ölçekle.
   const bandWidth = size * 2.7;
@@ -64,7 +73,7 @@ export default function FireHeart({
         }
       >
         <LinearGradient
-          colors={gradients.swipeHeart}
+          colors={modeFireGradient(mode)}
           start={{ x: 0, y: 0 }}
           end={{ x: 1, y: 1 }}
           style={{ flex: 1 }}
@@ -111,7 +120,7 @@ export default function FireHeart({
       {/* İnce açık border */}
       <Heart
         size={size}
-        color={theme.swipeHeartBorder}
+        color={modeHeartBorder(mode)}
         strokeWidth={0.1}
         fill="transparent"
       />
