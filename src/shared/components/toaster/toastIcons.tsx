@@ -3,11 +3,7 @@ import SFIcon from '../SFIcon';
 import FireGlyph from '../FireGlyph';
 import NoteGlyph from '../NoteGlyph';
 import PremiumFlame from '../PremiumFlame';
-import {
-  badgeFireFill,
-  badgeMessageFill,
-  badgeNeutralFill,
-} from '../../theme/badge';
+import { badgeFireFill, badgeNeutralFill } from '../../theme/badge';
 
 /**
  * Toast'ların solundaki ÜRÜN simgesi — hangi ürün hakkında konuşulduğu metni
@@ -38,13 +34,22 @@ export type ToastIconKind =
  *
  * ⚠️ Eski kural — "açık modda hepsi siyah, koyu modda ürünün rengi" — BİLEREK
  * kaldırıldı: renk artık temaya göre değil OLAYA göre seçiliyor. Açık modda
- * beyaz cam kartın üstünde kırmızı/yeşil daire görmek beklenen davranış.
+ * beyaz cam kartın üstünde kırmızı daire görmek beklenen davranış.
+ *
+ * Takip BİREBİR DEĞİL, tek istisna `message`: aynı glif Bildirimler'de gelen
+ * mesajı, toast'ta ise mesaj HAKKINI anlatıyor — ikisi aynı olay olmadığı için
+ * renk de aynı değil (gerekçe fonksiyonun içinde).
  */
 export function toastIconBackground(kind: ToastIconKind): string {
-  // Bildirimler'de renk taşıyan iki tip bunlar. Kalanların hepsi orada nötr
-  // disk: beğeni, not, kaçırılan eşleşme (= kurtarma) ve kota tiki.
+  // Bildirimler'de renk taşıyan tek karşılığı olan tip Fire. Kalanların hepsi
+  // orada nötr disk: beğeni, not, kaçırılan eşleşme (= kurtarma) ve kota tiki.
   if (kind === 'fire') return badgeFireFill();
-  if (kind === 'message') return badgeMessageFill();
+  // ⚠️ `message` BİLEREK yeşil DEĞİL (Bildirimler'deki Message rozeti yeşil
+  // olmaya devam ediyor). Oradaki rozet GELEN bir mesajı işaretliyor; bu
+  // simgenin tek kullanıcısı ise sohbetteki mesaj HAKKI toast'ları
+  // (chat.quota.*, bkz. ChatScreen) — yani iyi haber değil, kota haberi.
+  // Yeşil daire "mesajın geldi" diye okunuyordu; kota ailesinin geri kalanı
+  // (beğeni kotasının tiki) gibi nötr siyah diskte beyaz glif.
   // Premium'un Bildirimler'de karşılığı YOK — premium haberleri sistem
   // bildirimi sayılıyor ve rozet almıyor, yani kopyalanacak bir renk yok. Nötr
   // kovaya düşüyor; eskiden litPlus kırmızısıydı, ürün geri isterse tek satır.

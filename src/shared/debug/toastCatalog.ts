@@ -388,28 +388,8 @@ export const TOAST_CATALOG: ToastGroup[] = [
             icon: 'fire',
           }),
       },
-      {
-        id: 'fire.sent',
-        label: 'Gönderildi · isimli',
-        from: 'DiscoverScreen · flameSweep',
-        run: () =>
-          showInfoToast({
-            title: t('discover.swipe.fireSentTitle'),
-            message: t('discover.swipe.fireSentMessage', { name: NAME }),
-            icon: 'fire',
-          }),
-      },
-      {
-        id: 'fire.sentNoName',
-        label: 'Gönderildi · isimsiz',
-        from: 'DiscoverScreen · flameSweep',
-        run: () =>
-          showInfoToast({
-            title: t('discover.swipe.fireSentTitle'),
-            message: t('discover.swipe.fireSentMessageNoName'),
-            icon: 'fire',
-          }),
-      },
+      // Fire gönderim onayı burada YOK: o toast kaldırıldı, onayı kutlama
+      // alevi veriyor (bkz. DiscoverScreen.handleSwipe).
       {
         id: 'fire.packSuccess',
         label: 'Paket satın alındı',

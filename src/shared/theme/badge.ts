@@ -9,11 +9,14 @@ import { colors, isLight } from "./colors";
  * şeymiş gibi okunuyordu (aynı Fire bildirimi listede kırmızı, toast'ta
  * siyahtı). Kanonik olan Bildirimler ekranı; toast onu takip ediyor.
  *
- * Kural üç kova:
+ * Kural iki kova:
  *   • nötr  → `badgeNeutralFill()` — renk taşımayan olaylar (beğeni, not,
- *             kaçırılan eşleşme, kota uyarısı)
+ *             kaçırılan eşleşme, kota uyarıları — mesaj hakkı dahil)
  *   • Fire  → `colors.errorStrong`
- *   • mesaj → `colors.success`
+ *
+ * Bildirimler'deki Message rozetinin yeşili (`colors.success`) burada DEĞİL,
+ * orada yerel: tek kullanıcısı o liste. Toast'taki mesaj simgesi gelen mesajı
+ * değil mesaj hakkını anlatıyor ve nötr kovada (bkz. toastIcons.tsx).
  *
  * Glif HER ZAMAN `BADGE_FG` beyazı: `colors.text` açık modda koyuya dönüp
  * renkli/siyah diskin üstünde kayboluyordu.
@@ -36,6 +39,3 @@ export const badgeNeutralFill = (): string => (isLight() ? "#000000" : "#3A3A3C"
 
 /** Fire — Bildirimler'deki Fire rozetiyle aynı kırmızı. */
 export const badgeFireFill = (): string => colors.errorStrong;
-
-/** Mesaj — Bildirimler'deki Message rozetiyle aynı yeşil. */
-export const badgeMessageFill = (): string => colors.success;

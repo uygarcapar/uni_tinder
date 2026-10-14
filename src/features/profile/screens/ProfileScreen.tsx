@@ -507,13 +507,16 @@ function CompletionAccordion({
           </Text>
         </View>
         <View style={{ flexDirection: "row", alignItems: "center", gap: 12 }}>
-          {/* Sayaç rengi açıklama metniyle aynı `ink(0.55)`: ikisi de aynı
-              kutunun ikincil bilgisi, sabit `textSecondary` token'ı yanındaki
-              alfa-tabanlı gri ile eşleşmiyordu. Tamamlanmış dal duruyor ama
-              pratikte ölü: şerit yalnız `current < max` olanları çiziyor. */}
+          {/* Sayaç rengi açıklama metniyle aynı: ikisi de aynı kutunun ikincil
+              bilgisi. Eskiden ikisi de `ink(0.55)` idi çünkü sabit
+              `textSecondary` token'ı alfa-tabanlı grinin yanında başka bir gri
+              okunuyordu; o ayrım 2026-10-13'te paletten kalktı (bkz. colors.ts
+              → textSecondary ≡ textMuted), artık ikincil metnin tek adı var.
+              Tamamlanmış dal duruyor ama pratikte ölü: şerit yalnız
+              `current < max` olanları çiziyor. */}
           <Text
             style={{
-              color: isComplete ? colors.text : ink(0.55),
+              color: isComplete ? colors.text : colors.textMuted,
               fontSize: 14,
               fontWeight: "400",
             }}
@@ -544,11 +547,13 @@ function CompletionAccordion({
         <View style={{ paddingHorizontal: 20, paddingBottom: 20 }}>
           {/* Açıklama rengi sayfadaki diğer ikincil metinlerle TEK kaynaktan:
               mağaza şeridinin alt satırı ("{n} hakkın kaldı") ve doğrulama
-              satırının açıklaması da `ink(0.55)`. Sabit `textSecondary`
-              token'ı bunların yanında farklı bir griydi. */}
+              satırının açıklaması da `textMuted`. Bu üçlü bir ara `ink(0.55)`
+              ile yazılıydı — o zaman `textSecondary` farklı bir griydi ve yan
+              yana düşünce ayrışıyordu; iki gri paletten birleşince (bkz.
+              colors.ts) alfa yoluna gerek kalmadı. */}
           <Text
             style={{
-              color: ink(0.55),
+              color: colors.textMuted,
               fontSize: 14,
               lineHeight: 20,
               marginBottom: 16,

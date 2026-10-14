@@ -164,8 +164,57 @@ export const PAGER_TAB_BAR_HEIGHT = 36;
 
 const UNDERLINE_HEIGHT = 3;
 const TAB_GAP = 22;
-/** `scaleX` bunun üstüne uygulanıyor; 1 seçilmesi ölçeği doğrudan px yapıyor. */
-const UNDERLINE_BASE_W = 1;
+/**
+ * Şerit sekme yazısından bir tık dar: iki yandan bu kadar içeride duruyor.
+ *
+ * 4 denendi, yazıya göre kısa kalıyordu — şerit yazının altını baştan sona
+ * kat etmeli, yoksa "eksik çizilmiş" gibi duruyor. 2 yalnız uçların keskin
+ * görünmesini kesiyor.
+ */
+const UNDERLINE_X_INSET = 2;
+/** Sekme genişliğinden şeridin genişliği. Yüksekliğin altına inmiyor: iki uç
+ *  dairesi bindiğinde şerit en kötü halde bir daire kalıyor. */
+const underlineW = (tabW: number) => {
+  "worklet";
+  return Math.max(tabW - 2 * UNDERLINE_X_INSET, UNDERLINE_HEIGHT);
+};
+
+/**
+ * Şerit ÜÇ parçadan çiziliyor: iki ucunda sabit boyutlu birer DAİRE, aralarında
+ * gerilen köşesiz bir gövde.
+ *
+ * Tek parça + `scaleX` olmuyor: köşe yarıçapı da ölçekle geriliyor. Yarıçap
+ * zaten min(genişlik, yükseklik)/2 ile kırpılı olduğu için ince bir tabanda uçlar
+ * tamamen düz kalıyor, geniş bir tabanda ise sekme genişliğine göre basık
+ * duruyordu — "tam yuvarlak" hiçbir genişlikte tutmuyordu. Daireler hiç
+ * ölçeklenmediği için yuvarlaklık her sekmede birebir aynı; gövdenin köşesi yok,
+ * dolayısıyla gerilmesi şekli bozmuyor.
+ *
+ * Gövde taban genişliği 1px: ölçek böylece doğrudan piksel oluyor. Daireler
+ * gövdeye iki yandan yarım çap biniyor, yani aralarında dikiş kalmıyor.
+ */
+const UNDERLINE_PIECES = ["body", "cap-left", "cap-right"] as const;
+type UnderlinePieceRole = (typeof UNDERLINE_PIECES)[number];
+const UNDERLINE_BODY_BASE_W = 1;
+
+/** Parçanın sekme kutusuna göre yatay konumu ve ölçeği. */
+const piecePlacement = (role: UnderlinePieceRole, tabW: number) => {
+  "worklet";
+  const w = underlineW(tabW);
+  const left = (tabW - w) / 2;
+  if (role === "body") {
+    // `scaleX` MERKEZE göre gerdiği için gövde şeridin ortasına hizalanıyor.
+    const inner = Math.max(w - UNDERLINE_HEIGHT, 0.01);
+    return {
+      dx: left + w / 2 - UNDERLINE_BODY_BASE_W / 2,
+      sx: inner / UNDERLINE_BODY_BASE_W,
+    };
+  }
+  return {
+    dx: role === "cap-left" ? left : left + w - UNDERLINE_HEIGHT,
+    sx: 1,
+  };
+};
 
 /**
  * Şeridin kaydırmasını yumuşatan yay (bkz. aşağıdaki iki reaction).
@@ -252,6 +301,85 @@ function TabLabel({
     >
       {label}
     </Animated.Text>
+  );
+}
+
+/**
+ * Alt çizginin bir parçası (bkz. UNDERLINE_PIECES). Ayrı component olmasının
+ * sebebi TabLabel'dakiyle aynı: `useAnimatedStyle` döngüde çağrılamıyor ve bir
+ * stil sonucu birden çok view'a bağlanamıyor.
+ */
+function UnderlinePiece({
+  role,
+  measured,
+  settled,
+  offset,
+}: {
+  role: UnderlinePieceRole;
+  /** Tüm sekmelerin ölçüsü; biri bile eksikse parça çizilmiyor. */
+  measured: { xs: number[]; ws: number[] } | null;
+  /** Oturmuş sekmenin ölçüsü — taban stilin girdisi. */
+  settled: { x: number; w: number } | null;
+  offset: SharedValue<number>;
+}) {
+  const isBody = role === "body";
+
+  const animatedStyle = useAnimatedStyle(() => {
+    if (!measured || measured.xs.length < 2) return { opacity: 0 };
+    const input = measured.xs.map((_, i) => i);
+    const w = interpolate(offset.value, input, measured.ws, "clamp");
+    const x = interpolate(offset.value, input, measured.xs, "clamp");
+    const p = piecePlacement(role, w);
+    return {
+      opacity: 1,
+      // `as const`: RN'in transform tipi her elemanın TEK anahtarlı olmasını
+      // istiyor, TS ise heterojen diziyi birleşim olarak çıkarıyor (aynı kaçış
+      // LikeCard'ın exitStyle'ında da var).
+      transform: [{ translateX: x + p.dx }, { scaleX: p.sx }] as const,
+    };
+  }, [measured, role]);
+
+  // ⚠️ Reanimated her re-render'da animasyonlu stilin yerine İLK render'da
+  // yakalanan değeri basıyor (bkz. PropsFilter._initialPropsMap), doğrusunu
+  // ancak bir kare sonra `componentDidUpdate` geri yazıyor. Burada o ilk değer
+  // `{ opacity: 0 }` (ölçüler henüz yoktu), yani sekme değişiminin geldiği
+  // render'da çizgi bir kare kayboluyordu. Taban stil oturmuş sekmeyi
+  // taşıdığı için o kare artık doğru. Sıra önemli: animasyon stilinden SONRA.
+  const settledStyle = useMemo(() => {
+    if (!settled) return { opacity: 0 };
+    const p = piecePlacement(role, settled.w);
+    return {
+      opacity: 1,
+      transform: [
+        { translateX: settled.x + p.dx },
+        { scaleX: p.sx },
+      ] as const,
+    };
+  }, [settled, role]);
+
+  return (
+    <Animated.View
+      pointerEvents="none"
+      style={[
+        {
+          position: "absolute",
+          left: 0,
+          bottom: 0,
+          // Taban ölçüler SABİT: gövdenin 1px'i ölçeği doğrudan piksel yapıyor,
+          // dairelerin çapı hiç ölçeklenmiyor. Taban bir layout propu olduğu
+          // için sekmeye göre değişseydi React commit'inde anında değişir, buna
+          // karşılık animasyonlu `scaleX` bir kare geriden gelir ve şerit o tek
+          // karede büyüyüp küçülürdü (bir kez öyleydi).
+          width: isBody ? UNDERLINE_BODY_BASE_W : UNDERLINE_HEIGHT,
+          height: UNDERLINE_HEIGHT,
+          // Gövdenin köşesi YOK: yuvarlaklığın tamamını uç daireleri taşıyor.
+          borderRadius: isBody ? 0 : UNDERLINE_HEIGHT / 2,
+          backgroundColor: colors.text,
+        },
+        animatedStyle,
+        settledStyle,
+      ]}
+    />
   );
 }
 
@@ -344,45 +472,9 @@ export default function PagerTabBar({
     return { xs, ws };
   }, [tabs, layouts]);
 
-  const underlineStyle = useAnimatedStyle(() => {
-    if (!measured || measured.xs.length < 2) return { opacity: 0 };
-    const input = measured.xs.map((_, i) => i);
-    const w = interpolate(offset.value, input, measured.ws, "clamp");
-    const x = interpolate(offset.value, input, measured.xs, "clamp");
-    return {
-      opacity: 1,
-      // scaleX merkeze göre gerdiği için sol kenarı hizalamak adına yarım
-      // genişlik ekleniyor.
-      //
-      // `as const`: RN'in transform tipi her elemanın TEK anahtarlı olmasını
-      // istiyor, TS ise heterojen diziyi birleşim olarak çıkarıyor (aynı kaçış
-      // LikeCard'ın exitStyle'ında da var).
-      transform: [
-        { translateX: x + w / 2 - UNDERLINE_BASE_W / 2 },
-        { scaleX: w },
-      ] as const,
-    };
-  }, [measured]);
-
-  // Çizginin OTURMUŞ yeri — animasyon stilinin taban değeri.
-  //
-  // ⚠️ Reanimated her re-render'da animasyonlu stilin yerine İLK render'da
-  // yakalanan değeri basıyor (bkz. PropsFilter._initialPropsMap), doğrusunu
-  // ancak bir kare sonra `componentDidUpdate` geri yazıyor. Burada o ilk değer
-  // `{ opacity: 0 }` (ölçüler henüz yoktu), yani sekme değişiminin geldiği
-  // render'da çizgi bir kare kayboluyordu. Taban stil oturmuş sekmeyi
-  // taşıdığı için o kare artık doğru. Sıra önemli: animasyon stilinden SONRA.
-  const settledUnderlineStyle = useMemo(() => {
-    const l = layouts[activeTab];
-    if (!l) return { opacity: 0 };
-    return {
-      opacity: 1,
-      transform: [
-        { translateX: l.x + l.w / 2 - UNDERLINE_BASE_W / 2 },
-        { scaleX: l.w },
-      ] as const,
-    };
-  }, [layouts, activeTab]);
+  // Şeridin OTURMUŞ yeri — parçaların taban stilini bu besliyor (bkz.
+  // UnderlinePiece'teki uyarı).
+  const settledLayout = layouts[activeTab] ?? null;
 
   // Sekmelerin İÇERİK koordinatındaki merkezleri. `onLayout`un verdiği `x`
   // `strip` kabına göre; şerit ise contentContainer'ın `paddingLeft`inden sonra
@@ -515,23 +607,18 @@ export default function PagerTabBar({
         })}
       </View>
       {/* Çizgi sekmelerle AYNI kapta ve mutlak konumlu: ölçüler (`x`) bu kabın
-          koordinatlarında, aynı yerde çizilmesi için aynı kapta durmalı. */}
-      <Animated.View
-        pointerEvents="none"
-        style={[
-          {
-            position: "absolute",
-            left: 0,
-            bottom: 0,
-            width: UNDERLINE_BASE_W,
-            height: UNDERLINE_HEIGHT,
-            borderRadius: UNDERLINE_HEIGHT / 2,
-            backgroundColor: colors.text,
-          },
-          underlineStyle,
-          settledUnderlineStyle,
-        ]}
-      />
+          koordinatlarında, aynı yerde çizilmesi için aynı kapta durmalı.
+          Gövde ÖNCE: uç daireleri onun üstüne biniyor (renk aynı, sadece
+          dikişin kalmaması için). */}
+      {UNDERLINE_PIECES.map((role) => (
+        <UnderlinePiece
+          key={role}
+          role={role}
+          measured={measured}
+          settled={settledLayout}
+          offset={offset}
+        />
+      ))}
     </View>
   );
 

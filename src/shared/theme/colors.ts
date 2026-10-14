@@ -86,6 +86,33 @@ interface Palette {
 
   // ── Metin (mod ile döner) ────────────────────────────────────────────────
   text: string;
+  /**
+   * İKİNCİL METNİN TEK GRİSİ — `textMuted` ile AYNI DEĞERİ taşıyor (2026-10-13).
+   *
+   * Değer Apple'ın `systemGray`i: #8E8E93, İKİ MODDA DA AYNI. Apple da bu
+   * griyi modla döndürmüyor; iOS Ayarlar'daki grup dipnotları/başlık
+   * açıklamaları bu tonda okunuyor ve referans bilerek oradan alındı (ikincil
+   * metnin ne kadar sönük olacağı sistemin kendi cevabı). `secondaryLabel`
+   * (rgba, zemine göre çözülen) yolu DEĞİL: alfa, metni kutunun zeminine göre
+   * değiştirir — aynı sayfada kart içindeki ve kart dışındaki açıklama iki ayrı
+   * gri okunur, bu dosyanın tarihçesi tam olarak o sorunla dolu.
+   *
+   * İkisi ayrı tonken (koyuda #9CA3AF / #878787, açıkta #6B7280 / #8E8E93)
+   * aynı satırda iki gri yan yana düşüyordu ve bu defalarca tek tek
+   * yamanmıştı: FeedPostCard'ın beğeni sayısı, kartın tarihi, Ayarlar'daki
+   * rıza açıklamaları… Hepsinin ortak teşhisi aynıydı — "tek bir bilgiyi
+   * söyleyen iki eleman iki ayrı griden okunuyor". Sekme çubuğunun pasif
+   * etiketi (PagerTabBar), açıklama satırları ve Mesajlar'ın önizleme/zaman
+   * metni de bu griye bağlı.
+   *
+   * İki token BİLEREK duruyor: anlamları ayrı (biri "ikincil metin", diğeri
+   * "dipnot/sönük") ve ileride yeniden ayrılabilir. Ayırmaya kalkarsan
+   * yukarıdaki tarihçeyi oku — ayrım görsel olarak hep sorun çıkardı.
+   *
+   * ⚠️ Açık modda beyaz üstünde ~3.4:1 — küçük metin için WCAG AA'nın (4.5)
+   * altında. Sistemin kendi tonu olduğu için bilinçli tercih; kontrast gereken
+   * yerde `text` kullan, bu griyi koyulaştırma.
+   */
   textSecondary: string;
   textMuted: string;
   textDisabled: string;
@@ -225,8 +252,9 @@ const darkPalette: Palette = {
   border2: "#3E3E3E",
 
   text: "#FFFFFF",
-  textSecondary: "#9CA3AF",
-  textMuted: "#878787",
+  // Apple'ın `systemGray`i — iki modda da aynı değer, bkz. tipin yanındaki not.
+  textSecondary: "#8E8E93",
+  textMuted: "#8E8E93",
   textDisabled: "#4B5563",
   textPlaceholder: "#8B93A2",
 
@@ -273,7 +301,8 @@ const lightPalette: Palette = {
   border2: "#D2D2D8",
 
   text: "#0B0B0C",
-  textSecondary: "#6B7280",
+  // Apple'ın `systemGray`i — iki modda da aynı değer, bkz. tipin yanındaki not.
+  textSecondary: "#8E8E93",
   textMuted: "#8E8E93",
   textDisabled: "#B0B4BB",
   textPlaceholder: "#9AA0AB",
