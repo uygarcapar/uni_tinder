@@ -1,9 +1,9 @@
 import React, { useCallback, useEffect, useMemo, useState } from "react";
 import { useTranslation } from 'react-i18next';
 import { View, Text, TouchableOpacity, Alert } from "react-native";
-import { BottomSheetTextInput } from "@gorhom/bottom-sheet";
-import { Search, SearchX, Check } from "@/shared/icons";
+import { SearchX, Check } from "@/shared/icons";
 import SFIcon from "@/shared/components/SFIcon";
+import SheetSearchInput from "@/shared/components/SheetSearchInput";
 import AppModal, {
   SHEET_PICKER_SNAP_POINTS,
 } from "@/shared/components/AppModal";
@@ -33,6 +33,9 @@ type Props = {
   title?: string;
 };
 
+/** Seçenek satırının sağındaki kutu — akış kampüs/filtre sheet'i ile aynı ölçü. */
+const CHECKBOX_SIZE = 22;
+
 // CityPickerModal'ın multi-select kardeşi. AppModal chrome, detentler
 // (SHEET_PICKER_SNAP_POINTS — keyboard extend en üst durağa taşır), arama input
 // ve liste yapısı CityPickerModal ile birebir aynı; tek fark çoklu seçim toggle
@@ -55,12 +58,24 @@ export default function LanguagePickerModal({
   const [selected, setSelected] = useState<Set<string>>(
     () => new Set(initialSelectedValues),
   );
+  /**
+   * LİSTENİN BAŞINA ALINAN anahtarlar — canlı `selected` DEĞİL.
+   *
+   * Sıralama canlı seçime bakarsa satıra dokunan kullanıcı dokunduğu dili
+   * parmağının altından kaybediyor: liste anında yeniden diziliyor. Bu yüzden
+   * sabitlenen küme YALNIZ modal açılırken yazılıyor (bkz. FeedUniversitySheet
+   * > pinnedKey — aynı tuzak, aynı çözüm).
+   */
+  const [pinned, setPinned] = useState<Set<string>>(
+    () => new Set(initialSelectedValues),
+  );
 
   // Modal her açıldığında initial seçimi resetle; kapanınca arama state'ini sıfırla
   // (CityPickerModal ile aynı pattern — stale state karışmasın).
   useEffect(() => {
     if (visible) {
       setSelected(new Set(initialSelectedValues));
+      setPinned(new Set(initialSelectedValues));
     } else {
       setSearch("");
     }
@@ -80,16 +95,17 @@ export default function LanguagePickerModal({
     const filtered = q
       ? items.filter((i) => label(i).toLocaleLowerCase("tr").includes(q))
       : items;
-    if (selected.size === 0) return filtered;
-    // Seçili olanlar listenin başında — görsel referans.
+    if (pinned.size === 0) return filtered;
+    // Açılışta seçili olanlar listenin başında — görsel referans. Dokunuşla
+    // sıra DEĞİŞMİYOR; `pinned` yalnız açılışta yazılıyor.
     const selectedItems: Option[] = [];
     const rest: Option[] = [];
     for (const it of filtered) {
-      if (selected.has(it.enumName)) selectedItems.push(it);
+      if (pinned.has(it.enumName)) selectedItems.push(it);
       else rest.push(it);
     }
     return [...selectedItems, ...rest];
-  }, [items, search, selected, label]);
+  }, [items, search, pinned, label]);
 
   const toggle = (enumName: string) => {
     setSelected((prev) => {
@@ -125,42 +141,8 @@ export default function LanguagePickerModal({
       // X, ekran başlıklarındaki çan/ayarlar butonunun aynısı oluyor.
       clearGlassHeader
     >
-      {/* Arama input — CityPickerModal ile birebir */}
-      <View style={{ position: "relative", marginBottom: 12 }}>
-        <View
-          pointerEvents="none"
-          style={{
-            position: "absolute",
-            left: 18,
-            top: 0,
-            bottom: 0,
-            justifyContent: "center",
-            zIndex: 1,
-          }}
-        >
-          <SFIcon name="magnifyingglass" fallback={Search} size={18} color={colors.textSecondary} strokeWidth={2} weight="semibold" />
-        </View>
-        <BottomSheetTextInput
-          value={search}
-          onChangeText={setSearch}
-          placeholder={t('profile.languages.search')}
-          placeholderTextColor={colors.textMuted}
-          autoCorrect={false}
-          autoCapitalize="none"
-          style={{
-            borderRadius: 999,
-            borderCurve: "continuous",
-            borderWidth: 0.5,
-            borderColor: colors.hairline,
-            backgroundColor: "transparent",
-            paddingLeft: 44,
-            paddingRight: 16,
-            paddingVertical: 14,
-            color: colors.text,
-            fontSize: 15,
-          }}
-        />
-      </View>
+      {/* Arama input — CityPickerModal ile birebir (ortak bileşen) */}
+      <SheetSearchInput value={search} onChangeText={setSearch} />
 
       {ordered.length === 0 ? (
         <View style={{ paddingVertical: 32, alignItems: "center" }}>
@@ -185,48 +167,62 @@ export default function LanguagePickerModal({
           return (
             <TouchableOpacity
               key={item.id}
-              activeOpacity={0.7}
+              // activeOpacity 1 — basılı tutarken solma yok. Tek geri bildirim
+              // seçimin kendisi (sağdaki kutu).
+              activeOpacity={1}
               onPress={() => toggle(item.enumName)}
+              // ZEMİN HİÇ DEĞİŞMİYOR (istek): seçili satır eskiden `hairline`
+              // dolguya bürünüyordu. Seçimi söyleyen tek şey artık sağdaki kutu
+              // — bkz. FeedUniversitySheet, birebir aynı satır.
+              // ⚠️ Dolgu kalkınca `borderRadius`/`overflow` da işsiz kaldı:
+              // yuvarlatacak bir yüzey yok.
               style={{
                 marginTop: idx === 0 ? 0 : 6,
-                paddingVertical: 20,
-                paddingHorizontal: 16,
+                paddingVertical: 18,
                 flexDirection: "row",
                 alignItems: "center",
-                borderCurve: "continuous",
-                overflow: "hidden",
-                borderRadius: 999,
-                backgroundColor: isSelected
-                  ? colors.hairline
-                  : "transparent",
-                position: "relative",
               }}
             >
               <Text
                 style={{
                   color: isSelected ? colors.text : colors.textSecondary,
                   fontSize: 16,
-                  fontWeight: "400",
+                  fontWeight: "500",
                   flex: 1,
-                  marginRight: 32,
+                  marginRight: 12,
                 }}
               >
                 {label(item)}
               </Text>
-              {isSelected && (
-                <View
-                  pointerEvents="none"
-                  style={{
-                    position: "absolute",
-                    right: 16,
-                    top: 0,
-                    bottom: 0,
-                    justifyContent: "center",
-                  }}
-                >
-                  <SFIcon name="checkmark" fallback={Check} size={18} color={colors.text} strokeWidth={2.5} weight="bold" />
-                </View>
-              )}
+              {/* Kutu HER ZAMAN çiziliyor, koşullu olan yalnız içindeki tik:
+                  yoksa seçim anında metin alanı genişleyip satır yana kayıyor
+                  (bkz. FeedFilterSheet > OptionRow). */}
+              <View
+                style={{
+                  width: CHECKBOX_SIZE,
+                  height: CHECKBOX_SIZE,
+                  borderRadius: 7,
+                  borderCurve: "continuous",
+                  borderWidth: isSelected ? 0 : 1.5,
+                  borderColor: colors.hairlineStrong,
+                  backgroundColor: isSelected
+                    ? colors.inverseSurface
+                    : "transparent",
+                  alignItems: "center",
+                  justifyContent: "center",
+                }}
+              >
+                {isSelected && (
+                  <SFIcon
+                    name="checkmark"
+                    fallback={Check}
+                    size={14}
+                    color={colors.onInverseSurface}
+                    strokeWidth={3}
+                    weight="bold"
+                  />
+                )}
+              </View>
             </TouchableOpacity>
           );
         })

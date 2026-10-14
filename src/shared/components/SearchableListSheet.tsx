@@ -1,18 +1,20 @@
 import React, { useState, useMemo, useEffect } from "react";
 import { useTranslation } from "react-i18next";
 import { View, Text, TouchableOpacity, Platform, Alert } from "react-native";
+import { BottomSheetFlatList } from "@gorhom/bottom-sheet";
+import { SearchX, Check, X, type LucideIcon } from "@/shared/icons";
+import SFIcon, { type SFSymbol } from "./SFIcon";
+import SheetSearchInput from "./SheetSearchInput";
 import {
-  BottomSheetTextInput,
-  BottomSheetFlatList,
-} from "@gorhom/bottom-sheet";
-import { Search, SearchX, Check, X } from "@/shared/icons";
-import SFIcon from "./SFIcon";
-import { Host, Button as SwiftUIButton } from "@expo/ui/swift-ui";
+  Host,
+  Button as SwiftUIButton,
+  Image as SwiftUIImage,
+} from "@expo/ui/swift-ui";
 import {
+  accessibilityLabel,
   buttonStyle,
   tint,
-  labelStyle,
-  font,
+  frame,
 } from "@expo/ui/swift-ui/modifiers";
 import Animated, {
   useSharedValue,
@@ -30,7 +32,11 @@ import { BlurView } from "expo-blur";
 import { LinearGradient } from "expo-linear-gradient";
 import { foldForSearch } from "../utils/searchText";
 import { colors, veil } from "../theme/colors";
-import { glassFallback } from "../theme/glass";
+import {
+  glassFallback,
+  glassIconClearGlyph,
+  GLASS_ICON_CLEAR_SIZE,
+} from "../theme/glass";
 import GlassFallbackSurface from "./GlassFallbackSurface";
 import { chromeBlurTint } from "@/shared/theme/blur";
 
@@ -39,15 +45,100 @@ import { chromeBlurTint } from "@/shared/theme/blur";
 const AnimatedBottomSheetFlatList =
   Animated.createAnimatedComponent(BottomSheetFlatList);
 
-// AppModal'ın header'ıyla aynı kural: eskiden 100'dü ve 20'de 4px'lik bir drag
-// pill taşıyordu. Pill kalktı, kapladığı 14px'lik bant header'dan düşüldü —
-// içerik ve X/Bitti satırı o kadar yukarı çıktı (satır 20'de başlıyor, AppModal
-// ile birebir).
-const HEADER_HEIGHT = 86;
+// AppModal'ın `MODAL_HEADER_HEIGHT`i ile BİREBİR aynı sayı — profil düzenleme
+// modalı (ProfileEditModal) da onu çiziyor, bu sheet de aynı çizgide dursun
+// diye. Dikey breakdown aynı: satır 20'de başlıyor, yüksekliği butonun kendisi
+// kadar (GLASS_ICON_CLEAR_SIZE = 48), altta 6px nefes payı → 74. Eskiden 86'ydı
+// ve satır bandın içinde ORTALANIYORDU; sayı AppModal'dan 12px fazla olduğu
+// için başlık/butonlar o kadar aşağıda duruyordu.
+const HEADER_HEIGHT = 74;
+// Satırın bandın tepesinden payı — AppModal'ın MODAL_HEADER_ROW_TOP'u.
+const HEADER_ROW_TOP = 20;
+// Yuvarlak cam butonun çapı. Sayıyı uydurmuyoruz: uygulamadaki BÜTÜN berrak cam
+// ikon butonları (profildeki çan/ayarlar, AppModal'ın clearGlassHeader yolundaki
+// X + onay) bu tek sabitten besleniyor.
+const ACTION_SIZE = GLASS_ICON_CLEAR_SIZE;
 
 // Modül seviyesinde: inline default her render'da yeni kimlik üretir ve
 // aşağıdaki memo'ları (liste filtresi/sıralaması) her render'da geçersiz kılardı.
 const defaultLabelOf = (item: any) => item?.name ?? "";
+
+/**
+ * Header'ın YUVARLAK cam ikon butonu — X (sol) ve onay (sağ) TEK buradan
+ * çıkıyor, yani ölçü/malzeme/glif puntosu iki uçta birebir aynı.
+ *
+ * Zincir AppModal'ın `clearGlassHeader` yolundan kopya (ProfileEditModal'ın
+ * çizdiği buton): dolgulu `buttonStyle("glass")` KABUĞU değil, `.plain` butonun
+ * GLİFİNE takılan BERRAK cam (`glassIconClearGlyph`). Gerekçeler theme/glass.ts'te
+ * — kısaca: `buttonStyle("glass")` yalnız `.regular` cam veriyor, berrağın tek
+ * yolu `glassEffect(.clear)` ve o bir arka plan çizdiği için buton stilinin
+ * `.plain`e inmesi, cam + frame + contentShape'in de glifin üstünde durması
+ * şart (yoksa dokunma alanı 17pt'lik glif kutusunda kalır).
+ *
+ * `label`/`systemImage` PROP'LARI YOK: verildiği anda native taraf children'ı
+ * yok sayıyor, erişilebilirlik adı bu yüzden modifier'dan geliyor.
+ */
+const renderHeaderIconButton = (
+  symbol: SFSymbol,
+  fallback: LucideIcon,
+  onPress: (() => void) | undefined,
+  label: string,
+) => {
+  const handlePress = onPress ?? (() => {});
+
+  return Platform.OS === "ios" ? (
+    // Host'ta `matchContents` YOK (bkz. AppModal): SwiftUI ölçümü ikinci Fabric
+    // commit'inde geldiği için ilk frame'de 0 genişlikte kalıyor, space-between
+    // satırında butonlar kenara yapışıp ölçüm gelince yerine zıplıyordu.
+    // Sarmalayıcı iOS 26 ALTINDA zemini veriyor, 26+'da hiç render olmuyor;
+    // ölçüsü glassFallback'in frame'iyle BİREBİR aynı olmalı.
+    <GlassFallbackSurface shape="circle" width={ACTION_SIZE} height={ACTION_SIZE}>
+      <Host style={{ width: ACTION_SIZE, height: ACTION_SIZE }}>
+        <SwiftUIButton
+          onPress={handlePress}
+          modifiers={[
+            buttonStyle("plain"),
+            tint(colors.text),
+            frame({ width: ACTION_SIZE, height: ACTION_SIZE }),
+            accessibilityLabel(label),
+            ...glassFallback({ shape: "circle" }),
+          ]}
+        >
+          <SwiftUIImage
+            systemName={symbol}
+            color={colors.text}
+            modifiers={glassIconClearGlyph(ACTION_SIZE)}
+          />
+        </SwiftUIButton>
+      </Host>
+    </GlassFallbackSurface>
+  ) : (
+    <TouchableOpacity
+      onPress={handlePress}
+      activeOpacity={0.7}
+      accessibilityRole="button"
+      accessibilityLabel={label}
+      style={{
+        width: ACTION_SIZE,
+        height: ACTION_SIZE,
+        borderRadius: 999,
+        backgroundColor: colors.hairlineSoft,
+        alignItems: "center",
+        justifyContent: "center",
+      }}
+    >
+      <SFIcon
+        name={symbol}
+        fallback={fallback}
+        size={20}
+        color={colors.text}
+        strokeWidth={2}
+        weight="semibold"
+        style={{ pointerEvents: "none" }}
+      />
+    </TouchableOpacity>
+  );
+};
 
 // Searchable sheet content (single + multi mode). EditModal ile aynı floating
 // header pattern'i: ilk açılışta header transparent + title gizli, scroll ile
@@ -219,47 +310,14 @@ const SearchableListSheet = ({
           paddingBottom: 32,
         }}
         ListHeaderComponent={
-          <View style={{ position: "relative", marginBottom: 30 }}>
-            <View
-              pointerEvents="none"
-              style={{
-                position: "absolute",
-                left: 18,
-                top: 0,
-                bottom: 0,
-                justifyContent: "center",
-                zIndex: 1,
-              }}
-            >
-              <SFIcon
-                name="magnifyingglass"
-                fallback={Search}
-                size={18}
-                color={colors.textSecondary}
-                strokeWidth={2}
-                weight="semibold"
-              />
-            </View>
-            <BottomSheetTextInput
-              defaultValue=""
-              onChangeText={setSearch}
-              placeholder=""
-              autoCorrect={false}
-              autoCapitalize="none"
-              style={{
-                borderRadius: 999,
-                borderCurve: "continuous",
-                borderWidth: 0.5,
-                borderColor: colors.hairline,
-                backgroundColor: "transparent",
-                paddingLeft: 44,
-                paddingRight: 16,
-                paddingVertical: 14,
-                color: colors.text,
-                fontSize: 15,
-              }}
-            />
-          </View>
+          /* Arama input — diğer seçicilerle ortak bileşen (bkz.
+             SheetSearchInput). `value` GEÇİLMİYOR: burada input kontrolsüz
+             kalıyor, liste zaten arama state'iyle yeniden diziliyor.
+             Alttaki 30pt'lik boşluk bu sheet'e özel, o yüzden stilden. */
+          <SheetSearchInput
+            onChangeText={setSearch}
+            style={{ marginBottom: 30 }}
+          />
         }
         ItemSeparatorComponent={() => <View style={{ height: 6 }} />}
         ListEmptyComponent={
@@ -422,145 +480,73 @@ const SearchableListSheet = ({
         {/* Drag pill YOK — AppModal ile birebir (bkz. MODAL_HEADER_HEIGHT notu).
             Sheet aşağı çekilerek kapanmaya devam ediyor. */}
 
-        {/* Centered animated title — scroll 55px'i geçince fade-in. */}
-        {title ? (
-          <Animated.View
-            pointerEvents="none"
-            style={[
-              {
-                position: "absolute",
-                top: 0,
-                left: 0,
-                right: 0,
-                height: HEADER_HEIGHT,
-                alignItems: "center",
-                justifyContent: "center",
-              },
-              titleAnimStyle,
-            ]}
-          >
-            <Text
-              style={{ color: colors.text, fontSize: 19, fontWeight: "700" }}
-              numberOfLines={1}
-            >
-              {title}
-            </Text>
-          </Animated.View>
-        ) : null}
-
-        {/* Sol/sağ butonlar — her zaman görünür, scroll'dan bağımsız. */}
+        {/* Title + butonlar AYNI satırda (AppModal ile birebir): satır bandın
+            tepesinden 20px'te başlıyor ve yüksekliği butonun kendisi kadar,
+            başlık da o satırın içinde ortalanıyor — yani ✓/X ile aynı eksende.
+            Butonlar her zaman görünür; başlık scroll 55px'i geçince fade-in. */}
         <View
           style={{
             position: "absolute",
-            top: 0,
+            top: HEADER_ROW_TOP,
+            // left + right İKİSİ DE ŞART: biri düşerse satır ekran genişliğine
+            // yayılmaz, space-between yayılacak boşluk bulamaz.
             left: 0,
             right: 0,
-            height: HEADER_HEIGHT,
+            height: ACTION_SIZE,
             flexDirection: "row",
             alignItems: "center",
             justifyContent: "space-between",
             paddingHorizontal: 16,
           }}
         >
-          <View style={{ paddingVertical: 8 }}>
-            {Platform.OS === "ios" ? (
-              // Sarmalayıcı iOS 26 ALTINDA zemini veriyor, 26+'da hiç render
-              // olmuyor. Ölçü glassFallback'in frame'iyle BİREBİR aynı olmalı.
-              <GlassFallbackSurface shape="circle" width={46} height={46}>
-                <Host matchContents>
-                  <SwiftUIButton
-                    label="Kapat"
-                    systemImage="xmark"
-                    onPress={onCancel}
-                    modifiers={[
-                      buttonStyle("glass"),
-                      tint(colors.text),
-                      labelStyle("iconOnly"),
-                      font({ size: 22, weight: "medium" }),
-                      ...glassFallback({
-                        shape: "circle",
-                        frame: { width: 46, height: 46 },
-                      }),
-                    ]}
-                  />
-                </Host>
-              </GlassFallbackSurface>
-            ) : (
-              <TouchableOpacity
-                onPress={onCancel}
-                activeOpacity={0.7}
-                style={{
-                  width: 46,
-                  height: 46,
-                  borderRadius: 999,
-                  backgroundColor: colors.hairlineSoft,
+          {title ? (
+            <Animated.View
+              pointerEvents="none"
+              style={[
+                {
+                  position: "absolute",
+                  top: 0,
+                  left: 0,
+                  right: 0,
+                  bottom: 0,
                   alignItems: "center",
                   justifyContent: "center",
+                },
+                titleAnimStyle,
+              ]}
+            >
+              <Text
+                style={{
+                  color: colors.text,
+                  fontSize: 18,
+                  fontWeight: "700",
+                  includeFontPadding: false,
+                  textAlignVertical: "center",
                 }}
+                numberOfLines={1}
               >
-                <SFIcon
-                  name="xmark"
-                  fallback={X}
-                  size={24}
-                  color={colors.text}
-                  strokeWidth={2}
-                  weight="semibold"
-                  style={{ pointerEvents: "none" }}
-                />
-              </TouchableOpacity>
-            )}
+                {title}
+              </Text>
+            </Animated.View>
+          ) : null}
+
+          {/* AppModal'ın satırıyla aynı 8px dikey pay — buton kutusu satırın
+              tam ortasında kalsın diye iki uçta da var. */}
+          <View style={{ paddingVertical: 8 }}>
+            {renderHeaderIconButton("xmark", X, onCancel, t("common.close"))}
           </View>
 
           {/* "Bitti" METİN KAPSÜLÜ DEĞİL — soldaki X ile birebir aynı yuvarlak
-              cam kutu, yalnız sembolü ✓. Ölçü/malzeme/glif puntosu X'ten
-              kopyalanıyor ki satırın iki ucu simetrik dursun (AppModal'ın
-              actionIcon yolunun bu sheet'teki karşılığı). */}
-          {Platform.OS === "ios" ? (
-            <GlassFallbackSurface shape="circle" width={46} height={46}>
-              <Host matchContents>
-                <SwiftUIButton
-                  label={t("common.done")}
-                  systemImage="checkmark"
-                  onPress={handleDonePress}
-                  modifiers={[
-                    buttonStyle("glass"),
-                    tint(colors.text),
-                    labelStyle("iconOnly"),
-                    font({ size: 22, weight: "medium" }),
-                    ...glassFallback({
-                      shape: "circle",
-                      frame: { width: 46, height: 46 },
-                    }),
-                  ]}
-                />
-              </Host>
-            </GlassFallbackSurface>
-          ) : (
-            <TouchableOpacity
-              onPress={handleDonePress}
-              activeOpacity={0.7}
-              accessibilityRole="button"
-              accessibilityLabel={t("common.done")}
-              style={{
-                width: 46,
-                height: 46,
-                borderRadius: 999,
-                backgroundColor: colors.hairlineSoft,
-                alignItems: "center",
-                justifyContent: "center",
-              }}
-            >
-              <SFIcon
-                name="checkmark"
-                fallback={Check}
-                size={24}
-                color={colors.text}
-                strokeWidth={2}
-                weight="semibold"
-                style={{ pointerEvents: "none" }}
-              />
-            </TouchableOpacity>
-          )}
+              cam kutu, yalnız sembolü ✓ (AppModal'ın actionIcon yolunun bu
+              sheet'teki karşılığı). */}
+          <View style={{ paddingVertical: 8 }}>
+            {renderHeaderIconButton(
+              "checkmark",
+              Check,
+              handleDonePress,
+              t("common.done"),
+            )}
+          </View>
         </View>
       </View>
     </View>

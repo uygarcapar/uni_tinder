@@ -1,9 +1,9 @@
 import React, { useCallback, useEffect, useMemo, useState } from "react";
 import { useTranslation } from "react-i18next";
 import { View, Text, TouchableOpacity } from "react-native";
-import { BottomSheetTextInput } from "@gorhom/bottom-sheet";
-import { Search, SearchX, Check } from "@/shared/icons";
+import { SearchX, Check } from "@/shared/icons";
 import SFIcon from "@/shared/components/SFIcon";
+import SheetSearchInput from "@/shared/components/SheetSearchInput";
 import AppModal, {
   SHEET_PICKER_SNAP_POINTS,
 } from "@/shared/components/AppModal";
@@ -30,6 +30,9 @@ type Props = {
   selectedKey?: string | null;
   onSelect: (enumName: string) => void;
 };
+
+/** Seçenek satırının sağındaki kutu — akış kampüs/filtre sheet'i ile aynı ölçü. */
+const CHECKBOX_SIZE = 22;
 
 // Tek seçimli prompt seçici. LanguagePickerModal'ın kardeşi: aynı AppModal
 // chrome'u, aynı arama input'u — farkı çoklu seçim yerine tek seçim (satıra
@@ -95,46 +98,17 @@ export default function PromptPickerModal({
       // ve scroll'da gelen başlığı yerinde — yalnız boşluk kapandı.
       contentContainerStyle={{ paddingTop: 36 }}
     >
-      <View style={{ position: "relative", marginBottom: 12 }}>
-        <View
-          pointerEvents="none"
-          style={{
-            position: "absolute",
-            left: 18,
-            top: 0,
-            bottom: 0,
-            justifyContent: "center",
-            zIndex: 1,
-          }}
-        >
-          <SFIcon name="magnifyingglass" fallback={Search} size={18} color={colors.textSecondary} strokeWidth={2} weight="semibold" />
-        </View>
-        <BottomSheetTextInput
-          value={search}
-          onChangeText={setSearch}
-          placeholder={t('profile.prompts.pickerTitle')}
-          placeholderTextColor={colors.textMuted}
-          autoCorrect={false}
-          // Yükseklik SABİT + dikey dolgu 0: `paddingVertical` ile büyüyen tek
-          // satırlık input'ta metin/placeholder içerik kutusunun altına
-          // kayıyordu (iOS'ta ölçülen satır yüksekliği dolguyla toplanıyor),
-          // solundaki büyüteç ikonu dikeyde ortalıyken yazı aşağıda kalıyordu.
-          // Sabit yükseklikte ikisi de aynı merkeze oturuyor.
-          style={{
-            height: 50,
-            borderRadius: 999,
-            borderCurve: "continuous",
-            borderWidth: 0.5,
-            borderColor: colors.hairline,
-            backgroundColor: "transparent",
-            paddingLeft: 44,
-            paddingRight: 16,
-            paddingVertical: 0,
-            color: colors.text,
-            fontSize: 15,
-          }}
-        />
-      </View>
+      {/* Arama input — diğer seçicilerle ortak bileşen (bkz. SheetSearchInput).
+          ÜST BOŞLUK SIFIR: ortak bileşenin 10pt'lik payı header'daki X/tik
+          butonlarının altında nefes bırakmak için; bu sheet'te o butonlar YOK
+          (closeButton={false}) ve içerik zaten `paddingTop: 36` ile drag
+          pill'inin altından başlıyor — 10pt daha fazlası arama kutusunu
+          gereksiz aşağı itiyordu. */}
+      <SheetSearchInput
+        value={search}
+        onChangeText={setSearch}
+        style={{ marginTop: 0 }}
+      />
 
       {isEmpty ? (
         <View style={{ paddingVertical: 32, alignItems: "center" }}>
@@ -168,7 +142,9 @@ export default function PromptPickerModal({
                 fontSize: 20,
                 fontWeight: "600",
                 marginBottom: 6,
-                paddingHorizontal: 16,
+                // Yatay dolgu YOK: satırların kapsül dolgusu kalkınca metinler
+                // kenara dayandı, 16pt'lik girinti kategori başlığını
+                // altındaki satırlardan içeri kaydırıyordu.
                 paddingVertical: 8,
               }}
             >
@@ -184,44 +160,59 @@ export default function PromptPickerModal({
                     onSelect(prompt.enumName);
                     onClose();
                   }}
+                  // ZEMİN HİÇ DEĞİŞMİYOR (istek): seçili satır eskiden
+                  // `hairline` dolguya bürünüyordu. Seçimi söyleyen tek şey
+                  // artık sağdaki kutu — bkz. FeedUniversitySheet, birebir aynı
+                  // satır.
+                  // ⚠️ Dolgu kalkınca `borderRadius`/`overflow` da işsiz kaldı:
+                  // yuvarlatacak bir yüzey yok.
                   style={{
                     marginTop: idx === 0 ? 0 : 6,
                     paddingVertical: 18,
-                    paddingHorizontal: 16,
                     flexDirection: "row",
                     alignItems: "center",
-                    borderCurve: "continuous",
-                    overflow: "hidden",
-                    borderRadius: 999,
-                    backgroundColor: isSelected ? colors.hairline : "transparent",
-                    position: "relative",
                   }}
                 >
                   <Text
                     style={{
                       color: isSelected ? colors.text : colors.textSecondary,
                       fontSize: 16,
-                      fontWeight: "400",
+                      fontWeight: "500",
                       flex: 1,
-                      marginRight: 32,
+                      marginRight: 12,
                     }}
                   >
                     {label(prompt.display, prompt.name)}
                   </Text>
-                  {isSelected && (
-                    <View
-                      pointerEvents="none"
-                      style={{
-                        position: "absolute",
-                        right: 16,
-                        top: 0,
-                        bottom: 0,
-                        justifyContent: "center",
-                      }}
-                    >
-                      <SFIcon name="checkmark" fallback={Check} size={18} color={colors.text} strokeWidth={2.5} weight="bold" />
-                    </View>
-                  )}
+                  {/* Kutu HER ZAMAN çiziliyor, koşullu olan yalnız içindeki
+                      tik: yoksa seçim anında metin alanı genişleyip satır yana
+                      kayıyor (bkz. FeedFilterSheet > OptionRow). */}
+                  <View
+                    style={{
+                      width: CHECKBOX_SIZE,
+                      height: CHECKBOX_SIZE,
+                      borderRadius: 7,
+                      borderCurve: "continuous",
+                      borderWidth: isSelected ? 0 : 1.5,
+                      borderColor: colors.hairlineStrong,
+                      backgroundColor: isSelected
+                        ? colors.inverseSurface
+                        : "transparent",
+                      alignItems: "center",
+                      justifyContent: "center",
+                    }}
+                  >
+                    {isSelected && (
+                      <SFIcon
+                        name="checkmark"
+                        fallback={Check}
+                        size={14}
+                        color={colors.onInverseSurface}
+                        strokeWidth={3}
+                        weight="bold"
+                      />
+                    )}
+                  </View>
                 </TouchableOpacity>
               );
             })}

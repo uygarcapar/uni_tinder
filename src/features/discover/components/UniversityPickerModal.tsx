@@ -1,11 +1,8 @@
 import React, { useCallback, useEffect, useMemo, useState } from "react";
 import { useTranslation } from "react-i18next";
 import { View, Text, TouchableOpacity, Alert, Platform } from "react-native";
-import {
-  BottomSheetTextInput,
-  BottomSheetFlatList,
-} from "@gorhom/bottom-sheet";
-import { Search, SearchX, Check, X } from "@/shared/icons";
+import { BottomSheetFlatList } from "@gorhom/bottom-sheet";
+import { SearchX, Check, X } from "@/shared/icons";
 import { Host, Button as SwiftUIButton } from "@expo/ui/swift-ui";
 import {
   buttonStyle,
@@ -32,6 +29,7 @@ import { BlurView } from "expo-blur";
 import { LinearGradient } from "expo-linear-gradient";
 import SFIcon from "@/shared/components/SFIcon";
 import AppBottomSheet from "@/shared/components/AppBottomSheet";
+import SheetSearchInput from "@/shared/components/SheetSearchInput";
 import { SHEET_PICKER_SNAP_POINTS } from "@/shared/components/AppModal";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 import {
@@ -241,49 +239,9 @@ export default function UniversityPickerModal({
             paddingBottom: 40,
           }}
           ListHeaderComponent={
-            /* Arama input — listenin üstünde, içerikle birlikte scroll olur */
-            <View style={{ position: "relative", marginBottom: 12 }}>
-              <View
-                pointerEvents="none"
-                style={{
-                  position: "absolute",
-                  left: 18,
-                  top: 0,
-                  bottom: 0,
-                  justifyContent: "center",
-                  zIndex: 1,
-                }}
-              >
-                <SFIcon
-                  name="magnifyingglass"
-                  fallback={Search}
-                  size={18}
-                  color={colors.textSecondary}
-                  strokeWidth={2}
-                  weight="semibold"
-                />
-              </View>
-              <BottomSheetTextInput
-                value={search}
-                onChangeText={setSearch}
-                placeholder={t("discover.universityPicker.search")}
-                placeholderTextColor={colors.textMuted}
-                autoCorrect={false}
-                autoCapitalize="none"
-                style={{
-                  borderRadius: 999,
-                  borderCurve: "continuous",
-                  borderWidth: 0.5,
-                  borderColor: colors.hairline,
-                  backgroundColor: "transparent",
-                  paddingLeft: 44,
-                  paddingRight: 16,
-                  paddingVertical: 14,
-                  color: colors.text,
-                  fontSize: 15,
-                }}
-              />
-            </View>
+            /* Arama input — listenin üstünde, içerikle birlikte scroll olur.
+               Diğer seçicilerle ortak bileşen (bkz. SheetSearchInput). */
+            <SheetSearchInput value={search} onChangeText={setSearch} />
           }
           ItemSeparatorComponent={() => <View style={{ height: 6 }} />}
           ListEmptyComponent={
