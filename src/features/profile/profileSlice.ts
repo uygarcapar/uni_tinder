@@ -137,6 +137,7 @@ const initialState: ProfileState = {
   smokingStatus: null,
   zodiacSign: null,
   relationshipIntent: null,
+  friendshipIntents: [],
   alcoholUsage: null,
   religiousView: null,
   photos: [],
@@ -315,7 +316,17 @@ export const registerAndComplete = createAsyncThunk(
       put("Latitude", Number(latitude).toFixed(8));
       put("Longitude", Number(longitude).toFixed(8));
 
-      profile.interestedIn.forEach((val: any) => put("InterestedIn", val));
+      // ⚠️ MOD. Wire'da opsiyonel ve sunucu yokluğunda "Dating" sayıyor (eski
+      // istemci sözleşmesi); yeni kayıt her zaman açıkça gönderiyor.
+      put("Mode", reg.mode);
+
+      // InterestedIn YALNIZ FLÖRT kaydında gidiyor: Arkadaş modunda o adım
+      // akışta yok (bkz. registrationFlow > DATING_ONLY_STEPS) ve sunucu
+      // InterestedInFlags'i varsayılan (üç kategori) bırakıyor. Boş dizi
+      // göndermek sunucuda "zorunlu alan boş" hatası üretirdi.
+      if (reg.mode !== "Friends") {
+        profile.interestedIn.forEach((val: any) => put("InterestedIn", val));
+      }
       profile.hobbies.forEach((val: any) => put("Hobbies", val));
 
       // City/District YOK — backend Latitude/Longitude'dan türetiyor (bkz.
@@ -329,7 +340,17 @@ export const registerAndComplete = createAsyncThunk(
       put("AgeRangeMax", profile.ageRangeMax);
       put("SmokingStatus", profile.smokingStatus);
       put("ZodiacSign", profile.zodiacSign);
-      put("RelationshipIntent", profile.relationshipIntent);
+      // Niyet alanları MODA GÖRE ayrışıyor ve asla ikisi birden gitmiyor:
+      // Flört tek seçimli `RelationshipIntent`, Arkadaş çoklu seçimli
+      // `FriendshipIntents` (sunucuda bitmask). Yanlış modun alanını
+      // göndermek sunucuda "açılmamış mod" reddine düşer.
+      if (reg.mode === "Friends") {
+        (profile.friendshipIntents ?? []).forEach((val: any) =>
+          put("FriendshipIntents", val),
+        );
+      } else {
+        put("RelationshipIntent", profile.relationshipIntent);
+      }
       // Alan adları profil PUT'undakiyle aynı (bkz. EditProfileForm:
       // updates.AlcoholUsage / updates.ReligiousView). Kullanıcı Step16'yı
       // atlarsa değerler null kalır ve put() bunları hiç eklemez.

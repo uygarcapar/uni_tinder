@@ -695,6 +695,16 @@ const tr = {
       title: 'Kendini anlat.',
       description: 'En az bir soruyu cevapla. Kartında en çok okunan bölüm burası — istersen üçe kadar çıkabilirsin.',
     },
+    stepMode: {
+      title: 'Burada ne arıyorsun?',
+      description:
+        'Seçtiğin moda göre profilini kuruyoruz. Diğerini sonradan da açabilirsin.',
+      // Adım ZORUNLU ve ön-seçimi YOK: ön-seçim olsaydı kullanıcı farkında
+      // olmadan bir modda kayıt olurdu.
+      requiredError: 'Devam etmek için birini seç.',
+      infoText:
+        'Fotoğrafların ve temel bilgilerin iki modda da aynı. Değişen yalnız soruların ve ne aradığın.',
+    },
     step14: {
       // Ekran tek soruya indiği için başlık da o soru.
       title: 'Ne Arıyorsun?',

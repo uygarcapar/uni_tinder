@@ -692,6 +692,16 @@ const en = {
       title: 'Tell us about you.',
       description: 'Answer at least one prompt. This is the most-read part of your card — add up to three if you like.',
     },
+    stepMode: {
+      title: 'What are you here for?',
+      description:
+        'We build your profile around the mode you pick. You can open the other one later.',
+      // The step is REQUIRED with NO pre-selection: a default would sign people
+      // up in a mode they never chose.
+      requiredError: 'Pick one to continue.',
+      infoText:
+        'Your photos and basics are the same in both modes. Only your prompts and what you are looking for change.',
+    },
     step14: {
       // Ekran tek soruya indiği için başlık da o soru: bölüm başlığı
       // (relationshipIntentLabel) artık YALNIZ profil düzenlemede kullanılıyor.

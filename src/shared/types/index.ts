@@ -41,6 +41,16 @@ export interface RegistrationForm {
    * yeniden banner oluyordu. Kod değişince eşleşmez → yeni hüküm yine toast.
    */
   referralCodeToasted: string | null;
+  /**
+   * Kayıtta seçilen mod ("Dating" | "Friends", bkz. features/discover/
+   * modeTheme.ts > AppMode). `''` = henüz sorulmadı.
+   *
+   * Form alanı, route param'ı DEĞİL: seçimden sonra beş ekran daha var,
+   * arada uygulama ölebilir, ve mod o beş ekranın İÇERİĞİNİ belirliyor
+   * (InterestedIn atlanıyor mu, hangi niyet listesi, prompt kataloğu nasıl
+   * süzülüyor). Ayrıca ilerleme çubuğunun paydası da buradan okunuyor.
+   */
+  mode: string;
 }
 
 export interface AuthState {
@@ -122,6 +132,13 @@ export interface ProfileState {
   smokingStatus: string | null;
   zodiacSign: string | null;
   relationshipIntent: string | null;
+  /**
+   * Arkadaşlık niyetleri — `relationshipIntent`in Arkadaş modu karşılığı.
+   * ÇOKLU seçim: enumName dizisi (sunucuda bitmask). İki alan ASLA birlikte
+   * gönderilmiyor; hangisinin gittiğini kayıt modu belirliyor (bkz.
+   * profileSlice > registerAndComplete).
+   */
+  friendshipIntents: string[];
   // Alkol + dini görüş — kayıt akışında RegisterStep16'da toplanıyor
   // (fotoğraflardan bir önceki adım). Diğer yaşam tarzı alanları gibi
   // opsiyonel: atlanırsa null kalır ve payload'a hiç eklenmez.

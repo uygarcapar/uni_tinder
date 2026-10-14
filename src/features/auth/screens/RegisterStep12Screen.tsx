@@ -121,7 +121,7 @@ export default function RegisterStep12Screen({ navigation }: NativeStackScreenPr
   const handleNext = handleSubmit(({ height: h }) => {
     Keyboard.dismiss();
     dispatch(updateMultipleFields({ height: h, bio: "" }));
-    navigation.navigate("RegisterStep13");
+    navigation.navigate("RegisterStepMode");
   });
 
   return (

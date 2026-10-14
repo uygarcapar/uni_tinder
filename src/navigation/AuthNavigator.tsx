@@ -16,6 +16,7 @@ import RegisterStep8Screen from "@/features/auth/screens/RegisterStep8Screen";
 import RegisterStep9Screen from "@/features/auth/screens/RegisterStep9Screen";
 import RegisterStep10Screen from "@/features/auth/screens/RegisterStep10Screen";
 import RegisterStep12Screen from "@/features/auth/screens/RegisterStep12Screen";
+import RegisterStepModeScreen from "@/features/auth/screens/RegisterStepModeScreen";
 import RegisterStep13Screen from "@/features/auth/screens/RegisterStep13Screen";
 import RegisterStep17Screen from "@/features/auth/screens/RegisterStep17Screen";
 import RegisterStep14Screen from "@/features/auth/screens/RegisterStep14Screen";
@@ -91,6 +92,9 @@ export default function AuthNavigator({ initialRoute = "Welcome" }: AuthNavigato
 
       {/* Matching prefs & profile */}
       <Stack.Screen name="RegisterStep12" component={RegisterStep12Screen} />
+      {/* Mod seçimi — boydan sonra; kendinden sonraki adımları dallandırıyor. */}
+      <Stack.Screen name="RegisterStepMode" component={RegisterStepModeScreen} />
+      {/* YALNIZ FLÖRT: Arkadaş modunda atlanıyor (bkz. registrationFlow). */}
       <Stack.Screen name="RegisterStep10" component={RegisterStep10Screen} />
       <Stack.Screen name="RegisterStep13" component={RegisterStep13Screen} />
       <Stack.Screen name="RegisterStep17" component={RegisterStep17Screen} />

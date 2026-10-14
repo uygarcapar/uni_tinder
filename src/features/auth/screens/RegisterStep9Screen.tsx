@@ -67,7 +67,7 @@ export default function RegisterStep9Screen({ navigation }: NativeStackScreenPro
         }),
       );
       setSheetVisible(false);
-      navigation.navigate("RegisterStep10");
+      navigation.navigate("RegisterStep12");
     } catch (err) {
       // İzin var ama fix alınamadı (kapalı alan / GPS kapalı).
       devLog("[step9] position read failed:", err);

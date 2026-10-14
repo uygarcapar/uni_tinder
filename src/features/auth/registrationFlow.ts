@@ -20,8 +20,16 @@ export const REGISTRATION_FLOW = [
   'RegisterStep7',
   'RegisterStep8',
   'RegisterStep9',
-  'RegisterStep10',
   'RegisterStep12',
+  // Mod seçimi (Flört / Arkadaş) — TEMEL adımlardan (ad, doğum tarihi,
+  // cinsiyet, boy) hemen SONRA, kendinden sonraki üç adımı dallandırdığı için
+  // tam burada: InterestedIn yalnız flörte ait, prompt'lar ve niyet ise seçilen
+  // modun profilini doldurur.
+  'RegisterStepMode',
+  // Kiminle ilgilendiğin — YALNIZ FLÖRT. Arkadaş modunda bu adım atlanıyor ve
+  // sunucu `InterestedInFlags`i varsayılan (üç kategori) bırakıyor; kullanıcı
+  // sonradan flört profilini açarsa soru o akışta soruluyor.
+  'RegisterStep10',
   'RegisterStep13',
   // Sorular (prompt'lar) — bio'nun yerini alan adım. Hobilerden SONRA, yaşam
   // tarzından ÖNCE: serbest metin akışın en yüksek terk riski, fotoğraf adımı
@@ -37,6 +45,31 @@ export type RegistrationStepRoute = (typeof REGISTRATION_FLOW)[number];
 
 /** Akışın ilk adımı — resume doğrulanamazsa buraya düşülür. */
 export const FIRST_REGISTRATION_STEP: RegistrationStepRoute = REGISTRATION_FLOW[0];
+
+/**
+ * YALNIZ FLÖRT modunda gösterilen adımlar.
+ *
+ * Arkadaş modu seçen kullanıcı bunları hiç görmüyor; `stepsForMode` akıştan
+ * eliyor. Set olarak duruyor çünkü iki yer okuyor: ilerleme çubuğunun payda
+ * hesabı ve resume yığını. İkisi ayrışırsa Arkadaş kullanıcısının barı
+ * 14/15'te takılır ya da geri tuşu ona ait olmayan bir soruya düşer.
+ */
+export const DATING_ONLY_STEPS: ReadonlySet<string> = new Set(['RegisterStep10']);
+
+/** Mod seçiminden ÖNCEKİ adımlar — mod daha bilinmiyor, eleme uygulanamaz. */
+const MODE_STEP_INDEX = REGISTRATION_FLOW.indexOf('RegisterStepMode');
+
+/**
+ * Seçilen moda göre gerçekten gösterilecek adımlar.
+ *
+ * `mode` henüz yoksa (kullanıcı mod adımına gelmemiş) HİÇBİR ŞEY elenmiyor:
+ * o noktada barın paydası tam akış, ve mod seçilince payda bir adım kısalıyor.
+ * Arkadaş'ta barın bir tık ilerlemesi doğru olan — adım gerçekten azaldı.
+ */
+export function stepsForMode(mode?: string | null): RegistrationStepRoute[] {
+  if (mode !== 'Friends') return [...REGISTRATION_FLOW];
+  return REGISTRATION_FLOW.filter((r) => !DATING_ONLY_STEPS.has(r));
+}
 
 /** Rota adı kayıt sihirbazına ait mi? (Welcome/Login/Step1/Step2 hariç.) */
 export function isRegistrationStep(name?: string | null): name is RegistrationStepRoute {
@@ -54,10 +87,16 @@ export function isRegistrationStep(name?: string | null): name is RegistrationSt
  */
 export function registrationResumeStack(
   route?: string | null,
+  mode?: string | null,
 ): RegistrationStepRoute[] {
-  const at = (REGISTRATION_FLOW as readonly string[]).indexOf(route ?? '');
+  // ⚠️ Eleme ÖNCE yapılıyor, slice SONRA: tam akıştan dilimleyip sonra elemek
+  // Arkadaş kullanıcısında yığını bir adım kısa bırakır (elenen adım dilimin
+  // İÇİNDEyse). Eleme sonrası dizide index de kaydığı için `indexOf` de bu
+  // dizide aranmalı.
+  const steps = stepsForMode(mode);
+  const at = (steps as readonly string[]).indexOf(route ?? '');
   if (at <= 0) return [FIRST_REGISTRATION_STEP];
-  return REGISTRATION_FLOW.slice(0, at + 1);
+  return steps.slice(0, at + 1);
 }
 
 /**
@@ -70,11 +109,29 @@ export function registrationResumeStack(
  */
 export const REFERRAL_STEP_NUMBER = 0;
 
+/**
+ * Mod adımının bar numarası. 18, "numara ekranın eklenme sırasını gösterir"
+ * konvansiyonunun devamı (Step17 de öyleydi) — akıştaki YERİ bu sayıdan değil
+ * REGISTRATION_FLOW dizisinden okunuyor.
+ */
+export const MODE_STEP_NUMBER = 18;
+
 const STEP_NUMBER_OVERRIDES: Record<string, number> = {
   RegisterReferral: REFERRAL_STEP_NUMBER,
+  RegisterStepMode: MODE_STEP_NUMBER,
 };
 
+const numberFor = (route: string): number =>
+  STEP_NUMBER_OVERRIDES[route] ?? Number(route.replace('RegisterStep', ''));
+
 /** "RegisterStep13" → 13. Progress bar numarayla çalışıyor. */
-export const REGISTRATION_STEP_NUMBERS: number[] = REGISTRATION_FLOW.map(
-  (r) => STEP_NUMBER_OVERRIDES[r] ?? Number(r.replace('RegisterStep', '')),
-);
+export const REGISTRATION_STEP_NUMBERS: number[] =
+  REGISTRATION_FLOW.map(numberFor);
+
+/**
+ * Barın moda göre payda listesi. Arkadaş modunda flörte özel adım çıkınca
+ * payda da kısalıyor — yoksa bar son adımda %100'e varmaz.
+ */
+export function stepNumbersForMode(mode?: string | null): number[] {
+  return stepsForMode(mode).map(numberFor);
+}

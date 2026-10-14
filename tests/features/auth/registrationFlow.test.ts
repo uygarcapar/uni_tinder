@@ -14,11 +14,15 @@ import authReducer, {
   updateRegistrationField,
 } from '@/features/auth/authSlice';
 import {
+  DATING_ONLY_STEPS,
   FIRST_REGISTRATION_STEP,
+  MODE_STEP_NUMBER,
   REGISTRATION_FLOW,
   REGISTRATION_STEP_NUMBERS,
   isRegistrationStep,
   registrationResumeStack,
+  stepNumbersForMode,
+  stepsForMode,
 } from '@/features/auth/registrationFlow';
 
 describe('REGISTRATION_FLOW', () => {
@@ -28,7 +32,11 @@ describe('REGISTRATION_FLOW', () => {
   it('akış sırasında tutulur — Step17 hobilerden sonra, Step16 fotoğraflardan önce', () => {
     // Baştaki 0 davet kodu adımı: rota adı numarasız olduğu için progress bar'a
     // açık bir sayı veriliyor (bkz. REFERRAL_STEP_NUMBER).
-    expect(REGISTRATION_STEP_NUMBERS).toEqual([0, 3, 5, 6, 7, 8, 9, 10, 12, 13, 17, 14, 16, 15]);
+    // Mod adımı (18) boydan (12) SONRA, InterestedIn (10) ise mod adımından
+    // sonraya taşındı — flörte özel olduğu için (bkz. DATING_ONLY_STEPS).
+    expect(REGISTRATION_STEP_NUMBERS).toEqual([
+      0, 3, 5, 6, 7, 8, 9, 12, 18, 10, 13, 17, 14, 16, 15,
+    ]);
   });
 
   it('numarasız adım progress bar dizisini BOZMUYOR — NaN yok', () => {
@@ -74,8 +82,9 @@ describe('registrationResumeStack', () => {
       'RegisterStep7',
       'RegisterStep8',
       'RegisterStep9',
-      'RegisterStep10',
       'RegisterStep12',
+      'RegisterStepMode',
+      'RegisterStep10',
       'RegisterStep13',
     ]);
   });
@@ -103,6 +112,65 @@ describe('registrationResumeStack', () => {
     expect(registrationResumeStack('RegisterStep11')).toEqual(['RegisterReferral']);
     expect(registrationResumeStack(null)).toEqual(['RegisterReferral']);
     expect(registrationResumeStack(undefined)).toEqual(['RegisterReferral']);
+  });
+
+  /**
+   * ⚠️ ELEME SLICE'TAN ÖNCE. Tam akıştan dilimleyip sonra elemek, elenen adım
+   * dilimin İÇİNDEyse yığını bir adım kısa bırakırdı — Arkadaş kullanıcısı
+   * Step13'te devam ederken geri tuşu ona ait olmayan bir soruya düşerdi.
+   */
+  it('Arkadaş modunda flörte özel adımı yığından eliyor', () => {
+    const stack = registrationResumeStack('RegisterStep13', 'Friends');
+    expect(stack).not.toContain('RegisterStep10');
+    expect(stack).toEqual([
+      'RegisterReferral',
+      'RegisterStep3',
+      'RegisterStep5',
+      'RegisterStep6',
+      'RegisterStep7',
+      'RegisterStep8',
+      'RegisterStep9',
+      'RegisterStep12',
+      'RegisterStepMode',
+      'RegisterStep13',
+    ]);
+  });
+
+  it('Flört modunda tam akış korunuyor', () => {
+    expect(registrationResumeStack('RegisterStep13', 'Dating')).toContain(
+      'RegisterStep10',
+    );
+    // Mod bilinmiyorsa da eleme YOK: o noktada kullanıcı mod adımına gelmemiş.
+    expect(registrationResumeStack('RegisterStep13', '')).toContain('RegisterStep10');
+    expect(registrationResumeStack('RegisterStep13', null)).toContain('RegisterStep10');
+  });
+});
+
+describe('stepsForMode / stepNumbersForMode', () => {
+  it('mod yoksa tam akış', () => {
+    expect(stepsForMode(undefined)).toEqual([...REGISTRATION_FLOW]);
+    expect(stepsForMode('')).toHaveLength(REGISTRATION_FLOW.length);
+    expect(stepsForMode('Dating')).toHaveLength(REGISTRATION_FLOW.length);
+  });
+
+  it('Arkadaş modunda akış tam bir adım kısalıyor', () => {
+    const friends = stepsForMode('Friends');
+    expect(friends).toHaveLength(REGISTRATION_FLOW.length - DATING_ONLY_STEPS.size);
+    expect(friends).not.toContain('RegisterStep10');
+    // Mod adımının kendisi İKİ modda da var — eleme yalnız flörte özel adımlara.
+    expect(friends).toContain('RegisterStepMode');
+  });
+
+  /**
+   * Barın paydası da kısalmak zorunda: sabit paydayla Arkadaş kullanıcısı son
+   * adımda %100'e varmaz, barda bir dilim boş kalır.
+   */
+  it('bar paydası moda göre', () => {
+    expect(stepNumbersForMode('Friends')).not.toContain(10);
+    expect(stepNumbersForMode('Friends')).toContain(MODE_STEP_NUMBER);
+    expect(stepNumbersForMode('Dating').length).toBeGreaterThan(
+      stepNumbersForMode('Friends').length,
+    );
   });
 });
 

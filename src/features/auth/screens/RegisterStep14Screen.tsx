@@ -30,16 +30,30 @@ import { showInfoToast } from "@/shared/services/toaster";
 import { useForm } from "react-hook-form";
 import { zodResolver } from "@hookform/resolvers/zod";
 import { lifestyleSchema, LifestyleForm } from "@/shared/schemas/formSchemas";
+import {
+  resolveLocalized,
+  useFriendshipIntents,
+} from "@/shared/queries/commonQueries";
+import i18n from "@/shared/i18n";
 import { colors } from "../../../shared/theme/colors";
 
-// İlişki niyeti satırı — tek seçim. Satır başındaki niyet ikonu KALDIRILDI:
+// Niyet satırı — MODA GÖRE tek ya da çoklu seçim. Satır başındaki niyet ikonu KALDIRILDI:
 // ekran tek soruya indi, seçenekler yalnız metin + seçim işareti.
 //
 // Metin backend'in kısa etiketi ("Uzun süreli") DEĞİL, i18n'deki birinci ağız
 // cümlesi ("Uzun süreli bir ilişki tercih ederim"). Anahtar enumName; backend
 // yeni bir değer eklerse `defaultValue` ile etikete düşüyor, satır boş kalmıyor.
-const IntentOptionItem = memo(({ option, isSelected, onToggle }: any) => {
+const IntentOptionItem = memo(({ option, isSelected, onToggle, friends }: any) => {
   const { t } = useTranslation();
+  // Flört: i18n'deki birinci ağız cümlesi ("Uzun süreli bir ilişki tercih
+  // ederim"), backend etiketi yedek. Arkadaş: aynı desen ama kendi anahtar
+  // ailesinden; sunucu etiketi `display` çift dilli geldiği için `resolveLocalized`
+  // ile çözülüyor (ham obje render edilirse React patlar).
+  const label = friends
+    ? t(`discover.friendshipIntents.${option.enumName}`, {
+        defaultValue: resolveLocalized(option.display, i18n.language, option.name),
+      })
+    : t(`auth.step14.intents.${option.enumName}`, { defaultValue: option.name });
   return (
     <AnimatedPressable
       onPress={() => onToggle(option.enumName)}
@@ -51,7 +65,7 @@ const IntentOptionItem = memo(({ option, isSelected, onToggle }: any) => {
       {/* lineHeight (22) = kutunun boyu (22): satır yüksekliğini HER ZAMAN metin
           belirliyor, işaret gelince satır uzayıp altındakileri itmiyor. */}
       <Text style={{ color: isSelected ? colors.text : colors.textSecondary, fontSize: 16, lineHeight: 22, fontWeight: "500", flex: 1, marginRight: 12 }}>
-        {t(`auth.step14.intents.${option.enumName}`, { defaultValue: option.name })}
+        {label}
       </Text>
       {/* Çıplak tik DEĞİL, kutu: aynı ilişki niyeti listesi keşif filtresinde ve
           profil düzenlemede de var, üçü aynı işareti taşımalı (bkz.
@@ -96,8 +110,23 @@ export default function RegisterStep14Screen({ navigation }: NativeStackScreenPr
   const dispatch = useAppDispatch();
   const profile = useAppSelector((s) => (s as any).profile || {});
 
+  /**
+   * MOD DALLANMASI. Flört'te soru tek seçimli ilişki niyeti; Arkadaş'ta ÇOKLU
+   * seçimli arkadaşlık niyeti (sunucuda bitmask). İki ayrı ekran yapılmadı
+   * çünkü iskelet, başlık şeridi, ilerleme çubuğu, satır bileşeni ve zorunluluk
+   * kuralı birebir aynı — ayrı dosya iki kopya bakım demekti.
+   */
+  const mode = useAppSelector(
+    (s) => ((s as any).auth?.registrationForm?.mode as string) || "",
+  );
+  const isFriends = mode === "Friends";
+
   const [relationshipIntents, setRelationshipIntents] = useState([]);
   const [loadingRelationshipIntents, setLoadingRelationshipIntents] = useState(false);
+
+  // Arkadaşlık niyetleri react-query'den (ilişki niyetleri staticGet ile elle
+  // çekiliyor — o yol tarihsel, dokunulmadı; yenisi mevcut hook'u kullanıyor).
+  const friendshipIntentsQuery = useFriendshipIntents();
 
   const { setValue, watch } = useForm<LifestyleForm>({
     resolver: zodResolver(lifestyleSchema),
@@ -109,6 +138,16 @@ export default function RegisterStep14Screen({ navigation }: NativeStackScreenPr
 
   const relationshipIntent = watch("relationshipIntent");
 
+  // Arkadaşlık niyetleri RHF DIŞINDA: şema tek stringlik `relationshipIntent`
+  // alanı için yazılmış ve submit yolunda resolver hiç çalışmıyor (doğrulama
+  // imperative — bkz. handleNext). Dizi alanını şemaya sokmak iki modun
+  // doğrulamasını birbirine bağlardı.
+  const [friendshipIntents, setFriendshipIntents] = useState<string[]>(() =>
+    Array.isArray(profile.friendshipIntents)
+      ? profile.friendshipIntents.filter((v: any) => typeof v === "string")
+      : [],
+  );
+
   // Başlık şeridinin blur zemini scroll'a bağlı beliriyor (0→60).
   const scrollY = useSharedValue(0);
   const scrollHandler = useAnimatedScrollHandler((e) => {
@@ -116,8 +155,10 @@ export default function RegisterStep14Screen({ navigation }: NativeStackScreenPr
   });
 
   useEffect(() => {
-    fetchRelationshipIntents();
-  }, []);
+    // Flört listesi yalnız o modda çekiliyor: Arkadaş kullanıcısı için istek
+    // ölü yük olurdu (ve kayıt akışı istek selini bilerek ince tutuyor).
+    if (!isFriends) fetchRelationshipIntents();
+  }, [isFriends]);
 
   // staticGet (axios) kullan, ham fetch değil: bu listelerin `name`/`display`
   // alanları backend'de Accept-Language'e göre render ediliyor ve header'ı sadece
@@ -142,14 +183,32 @@ export default function RegisterStep14Screen({ navigation }: NativeStackScreenPr
     dispatch(updateMultipleFields({ relationshipIntent: next === "" ? null : next }));
   }, [relationshipIntent, dispatch, setValue]);
 
+  /** Çoklu seçim: dokunuş ekler/çıkarır, en az bir tane handleNext'te zorunlu. */
+  const toggleFriendshipIntent = useCallback(
+    (enumName: string) => {
+      if (!enumName) return;
+      setFriendshipIntents((prev) => {
+        const next = prev.includes(enumName)
+          ? prev.filter((v) => v !== enumName)
+          : [...prev, enumName];
+        dispatch(updateMultipleFields({ friendshipIntents: next }));
+        return next;
+      });
+    },
+    [dispatch],
+  );
+
   // Adım ZORUNLU: seçim yapılmadan geçilmiyor (eskiden "Atla" ile geçilebilen
   // isteğe bağlı bir adımdı). Doğrulama imperative — Step13/Step17'deki
   // yaklaşımın aynısı, resolver submit yolunda kullanılmıyor.
   const handleNext = () => {
-    if (!relationshipIntent) {
+    const missing = isFriends ? friendshipIntents.length === 0 : !relationshipIntent;
+    if (missing) {
       showInfoToast({
         title: t('common.error'),
-        message: t('auth.step14.requiredError'),
+        message: isFriends
+          ? t('discover.mode.intentsRequired')
+          : t('auth.step14.requiredError'),
         variant: "error",
       });
       return;
@@ -157,7 +216,20 @@ export default function RegisterStep14Screen({ navigation }: NativeStackScreenPr
     navigation.navigate("RegisterStep16");
   };
 
-  const isLoading = loadingRelationshipIntents;
+  const isLoading = isFriends
+    ? friendshipIntentsQuery.isLoading
+    : loadingRelationshipIntents;
+
+  // Listeyi ve seçim kuralını tek yerde çöz: aşağıdaki render iki dalı
+  // bilmiyor, yalnız "seçenekler + bu seçili mi + dokununca ne olur" biliyor.
+  const options: any[] = isFriends
+    ? friendshipIntentsQuery.data ?? []
+    : (relationshipIntents as any[]);
+  const isSelected = (enumName: string) =>
+    isFriends
+      ? friendshipIntents.includes(enumName)
+      : enumName === relationshipIntent;
+  const onToggle = isFriends ? toggleFriendshipIntent : toggleRelationshipIntent;
 
   return (
     <View className="flex-1" style={{ backgroundColor: colors.bg }}>
@@ -172,9 +244,13 @@ export default function RegisterStep14Screen({ navigation }: NativeStackScreenPr
         }}
       >
         <View className="flex flex-col gap-2">
-          <Text className="text-4xl font-bold" style={{ color: colors.text }}>{t('auth.step14.title')}</Text>
+          <Text className="text-4xl font-bold" style={{ color: colors.text }}>
+            {isFriends ? t('discover.mode.intentsTitle.Friends') : t('auth.step14.title')}
+          </Text>
           <Text className="text-[18px] font-normal mb-6" style={{ color: colors.textSecondary }}>
-            {t('auth.step14.description')}
+            {isFriends
+              ? t('discover.mode.intentsDescription.Friends')
+              : t('auth.step14.description')}
           </Text>
         </View>
 
@@ -185,10 +261,19 @@ export default function RegisterStep14Screen({ navigation }: NativeStackScreenPr
             {Array.from({ length: 5 }).map((_, i) => <SkeletonSimpleOption key={i} />)}
           </View>
         ) : (
-          (relationshipIntents as any[]).length > 0 && (
+          options.length > 0 && (
             <View style={{ marginTop: 8, gap: 2 }}>
-              {(relationshipIntents as any[]).map((opt) => (
-                <IntentOptionItem key={opt.id} option={opt} isSelected={opt.enumName === relationshipIntent} onToggle={toggleRelationshipIntent} />
+              {options.map((opt) => (
+                <IntentOptionItem
+                  // `id` iki listede de var ama Arkadaş listesi bitmask
+                  // değerleri taşıyor (1,2,4…) — anahtar olarak enumName daha
+                  // güvenli, backend yeni değer eklerse çakışma olmuyor.
+                  key={opt.enumName}
+                  option={opt}
+                  isSelected={isSelected(opt.enumName)}
+                  onToggle={onToggle}
+                  friends={isFriends}
+                />
               ))}
             </View>
           )

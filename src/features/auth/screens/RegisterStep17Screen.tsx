@@ -52,6 +52,11 @@ export default function RegisterStep17Screen({ navigation }: Props) {
   const { t } = useTranslation();
   const dispatch = useAppDispatch();
   const prompts = useAppSelector((state) => state.profile.prompts);
+  // Prompt kataloğu seçilen MODA göre süzülüyor: flörte özel sorular Arkadaş
+  // profilinde seçilemiyor (bkz. promptAllowsMode). Mod kayıt formunda.
+  const mode = useAppSelector(
+    (state) => ((state as any).auth?.registrationForm?.mode as string) || "",
+  );
 
   // Başlık şeridinin blur zemini scroll'a bağlı beliriyor (0→60).
   const scrollY = useSharedValue(0);
@@ -171,6 +176,7 @@ export default function RegisterStep17Screen({ navigation }: Props) {
               <View style={{ height: 20 }} />
 
               <PromptsEditor
+            mode={mode}
                 ref={editorRef}
                 value={prompts ?? []}
                 onChange={handleChange}

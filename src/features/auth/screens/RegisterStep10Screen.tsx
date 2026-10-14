@@ -62,7 +62,7 @@ export default function RegisterStep10Screen({ navigation }: NativeStackScreenPr
 
   const handleNext = handleSubmit(({ interestedIn }) => {
     dispatch(updateMultipleFields({ interestedIn }));
-    navigation.navigate("RegisterStep12");
+    navigation.navigate("RegisterStep13");
   });
 
   return (

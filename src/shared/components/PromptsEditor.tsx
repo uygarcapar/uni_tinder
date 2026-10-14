@@ -58,6 +58,11 @@ type Props = {
   InputComponent?: React.ComponentType<any>;
   onInputFocus?: () => void;
   onInputBlur?: () => void;
+  /**
+   * Hangi modun profili doldurulyor ("Dating" | "Friends") — seçici kataloğu
+   * buna göre süzüyor. Verilmezse süzme YOK (eski çağıranlar bozulmaz).
+   */
+  mode?: string | null;
 };
 
 /**
@@ -372,6 +377,7 @@ const PromptsEditor = forwardRef<PromptsEditorHandle, Props>(function PromptsEdi
   InputComponent = TextInput,
   onInputFocus,
   onInputBlur,
+  mode,
 }, ref) {
   const { t, i18n } = useTranslation();
   const { data: groups } = usePrompts();
@@ -593,6 +599,7 @@ const PromptsEditor = forwardRef<PromptsEditorHandle, Props>(function PromptsEdi
             ? usedKeys.filter((_, i) => i !== pickerFor)
             : usedKeys
         }
+        mode={mode}
         selectedKey={
           pickerFor !== null && pickerFor >= 0 ? value[pickerFor]?.promptKey : null
         }

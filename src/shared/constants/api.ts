@@ -296,6 +296,9 @@ export const API_ENDPOINTS = {
   GET_ALCOHOL_USAGES: "/api/common/alcohol-usages",
   GET_RELIGIOUS_VIEWS: "/api/common/religious-views",
   GET_RELATIONSHIP_INTENTS: "/api/common/relationship-intents",
+  // Arkadaşlık niyetleri — ilişki niyetinin Arkadaş modu karşılığı. ÇOKLU
+  // seçim (bitmask), ilişki niyeti ise tek seçim: iki ayrı uç, iki ayrı alan.
+  GET_FRIENDSHIP_INTENTS: "/api/common/friendship-intents",
   GET_DISTRICTS_BY_CITY: (cityId: number | string) => `/api/common/cities/${cityId}/districts`,
 
   // Anonim — login ekranından önce de çağrılır. Backend client'ın sürümünü

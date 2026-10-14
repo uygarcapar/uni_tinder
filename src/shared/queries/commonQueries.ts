@@ -110,6 +110,14 @@ export type PromptOption = {
   enumName: string;
   maxLength?: number;
   isActive?: boolean;
+  /**
+   * Prompt'un hangi modlarda seçilebildiği ("Dating" | "Friends").
+   *
+   * Sunucu her prompt için dönüyor; ALANI OLMAYAN prompt İKİ MODDA DA
+   * geçerli sayılıyor (eski sunucu / eksik alan → kısıtlama uydurmuyoruz).
+   * Süzme `selectablePrompts`te.
+   */
+  modes?: string[];
 };
 
 export type PromptGroupOption = {
@@ -145,6 +153,7 @@ export const commonKeys = {
   hobbies: ["common", "hobbies"] as const,
   prompts: ["common", "prompts"] as const,
   relationshipIntents: ["common", "relationshipIntents"] as const,
+  friendshipIntents: ["common", "friendshipIntents"] as const,
   districts: (cityId: number | string) =>
     ["common", "districts", cityId] as const,
   departments: ["common", "departments"] as const,
@@ -283,21 +292,44 @@ export const findPrompt = (
     : undefined;
 
 /**
+ * Prompt bu modda seçilebilir mi?
+ *
+ * `mode` verilmediyse ya da prompt `modes` taşımıyorsa EVET: eksik bilgiden
+ * kısıtlama türetmek, sunucu alanı göndermeyen bir sürümde kataloğu bomboş
+ * bırakırdı (prompt adımı kayıt akışında zorunlu — boş liste kullanıcıyı
+ * kilitler).
+ */
+export const promptAllowsMode = (
+  prompt: Pick<PromptOption, "modes">,
+  mode?: string | null,
+): boolean => {
+  if (!mode) return true;
+  const modes = prompt.modes;
+  if (!Array.isArray(modes) || modes.length === 0) return true;
+  return modes.includes(mode);
+};
+
+/**
  * Seçim listesinde gösterilecekler: pasifler ve kullanıcının zaten kullandığı
  * anahtarlar elenir (aynı prompt iki kez seçilemez — backend `UT-2203`).
  */
 export const selectablePrompts = (
   groups: PromptGroupOption[] | undefined,
   usedKeys: readonly string[],
+  mode?: string | null,
 ): PromptGroupOption[] =>
   (groups ?? [])
     .map((g) => ({
       ...g,
       prompts: (g.prompts ?? []).filter(
-        (p) => p.isActive !== false && !usedKeys.includes(p.enumName),
+        (p) =>
+          p.isActive !== false &&
+          !usedKeys.includes(p.enumName) &&
+          promptAllowsMode(p, mode),
       ),
     }))
     .filter((g) => g.prompts.length > 0);
+
 
 // İlişki niyeti listesi — keşif filtresindeki çoklu seçim pill'lerini doldurur.
 // ProfileScreen aynı endpoint'i staticGet ile çekiyor; staticGet oturum-boyu tek
@@ -312,6 +344,28 @@ export function useRelationshipIntents() {
       if (!res?.isSuccess || !Array.isArray(res.result)) return [];
       // enumName'i olmayan kayıt filtreye gönderilemez (backend enum string
       // bekliyor) — listede de gösterme.
+      return res.result.filter((x: any) => !!x?.enumName);
+    },
+    staleTime: Infinity,
+  });
+}
+
+/**
+ * Arkadaşlık niyetleri — ilişki niyetinin Arkadaş modu karşılığı.
+ *
+ * `RelationshipIntentOption` ile AYNI şekli taşıyor (id/name/display/enumName)
+ * ve bilerek aynı tipi kullanıyor: iki liste de aynı satır bileşenini besliyor,
+ * ayrı bir tip ikisini aynı yerde render etmeyi zorlaştırırdı. Fark ÜRÜNDE:
+ * bu liste ÇOKLU seçim (sunucuda bitmask), ilişki niyeti tek seçim.
+ */
+export function useFriendshipIntents() {
+  return useQuery({
+    queryKey: commonKeys.friendshipIntents,
+    queryFn: async (): Promise<RelationshipIntentOption[]> => {
+      const res = (await staticGet(
+        API_ENDPOINTS.GET_FRIENDSHIP_INTENTS,
+      )) as any;
+      if (!res?.isSuccess || !Array.isArray(res.result)) return [];
       return res.result.filter((x: any) => !!x?.enumName);
     },
     staleTime: Infinity,

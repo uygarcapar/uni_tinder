@@ -137,6 +137,7 @@ const initialState: AuthState = {
     email: '',
     referralCode: null,
     referralCodeToasted: null,
+    mode: '',
   },
 };
 
@@ -219,6 +220,9 @@ const authSlice = createSlice({
           // kalan turda ise bir sonraki kayıt kendi kodunu sormalı.
           referralCode: null,
           referralCodeToasted: null,
+          // Mod da sıfırlanıyor: yeni tur kendi modunu sormalı. Kalsaydı
+          // ilerleme çubuğu ilk adımda bile kısalmış paydayla açılırdı.
+          mode: '',
         };
       },
       // prepare: argümansız çağrı (kayıt başarıyla bittiğinde) tam temizlik.

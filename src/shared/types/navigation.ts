@@ -55,6 +55,10 @@ export type AuthStackParamList = {
   RegisterStep9: undefined;
   RegisterStep10: undefined;
   RegisterStep12: undefined;
+  // Mod seçimi (Flört / Arkadaş) — boy adımından sonra. Parametre YOK: seçim
+  // `authSlice.registrationForm.mode` alanına yazılıyor, çünkü kendisinden
+  // sonraki beş ekranın içeriğini belirliyor (bkz. registrationFlow.ts).
+  RegisterStepMode: undefined;
   RegisterStep13: undefined;
   // Sorular (prompt'lar) — akışta Step13 ile Step14 arasında, bkz.
   // registrationFlow.ts (sıra numarayla değil o diziyle belirleniyor).

@@ -28,6 +28,12 @@ type Props = {
   usedKeys: readonly string[];
   /** Düzenlenen slotun mevcut anahtarı — listede seçili görünür. */
   selectedKey?: string | null;
+  /**
+   * Hangi modun profili doldurulyor ("Dating" | "Friends"). Katalog buna göre
+   * süzülüyor: flörte özel prompt'lar Arkadaş profilinde seçilemiyor.
+   * Verilmezse süzme YOK (bkz. promptAllowsMode).
+   */
+  mode?: string | null;
   onSelect: (enumName: string) => void;
 };
 
@@ -47,6 +53,7 @@ export default function PromptPickerModal({
   groups,
   usedKeys,
   selectedKey,
+  mode,
   onSelect,
 }: Props) {
   const { t, i18n } = useTranslation();
@@ -66,7 +73,7 @@ export default function PromptPickerModal({
 
   const visibleGroups = useMemo(() => {
     const q = search.trim().toLocaleLowerCase("tr");
-    return selectablePrompts(groups, usedKeys)
+    return selectablePrompts(groups, usedKeys, mode)
       .map((g) => ({
         ...g,
         prompts: q
@@ -76,7 +83,7 @@ export default function PromptPickerModal({
           : g.prompts,
       }))
       .filter((g) => g.prompts.length > 0);
-  }, [groups, usedKeys, search, label]);
+  }, [groups, usedKeys, mode, search, label]);
 
   const isEmpty = visibleGroups.length === 0;
 
