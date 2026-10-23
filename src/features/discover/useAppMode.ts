@@ -1,7 +1,7 @@
 import { useCallback, useEffect, useState } from "react";
 import { useAppSelector } from "@/shared/hooks/redux";
 import uiBus from "@/shared/services/uiBus";
-import { loadAppMode, saveAppMode } from "./modePrefs";
+import { loadAppMode, peekAppMode, saveAppMode } from "./modePrefs";
 import { DEFAULT_APP_MODE, isAppMode, type AppMode } from "./modeTheme";
 
 /**
@@ -56,11 +56,11 @@ export function useAppMode(): {
   const setMode = useCallback(
     (next: AppMode) => {
       if (!isAppMode(next)) return;
-      // ÖNCE diske, SONRA olay: olayı dinleyen bir ekran hemen diski okursa
-      // (ör. kendi effect'inde) taze değeri bulsun.
-      saveAppMode(userId, next);
+      writeAppMode(userId, next);
+      // Kendi state'i olaydan BAĞIMSIZ hizalanıyor: `writeAppMode` değer
+      // zaten aynıysa olay atmıyor, ama bu hook'un çağıranı yine de güncel
+      // değeri görmeli.
       setLocal(next);
-      uiBus.emit(APP_MODE_EVENT, { mode: next });
     },
     [userId],
   );
@@ -75,4 +75,30 @@ export function useAppMode(): {
  */
 export function readAppModeFor(userId?: string | null): AppMode {
   return userId ? loadAppMode(userId) : DEFAULT_APP_MODE;
+}
+
+/**
+ * Hook'suz YAZMA — bir ekranın içinde olmayan yollar için (ör. bildirimden
+ * yönlendirme: `AppNavigator > routeFromNotification`).
+ *
+ * ⚠️ SIRA BAĞLAYICI: önce diske, sonra olay. Olayı dinleyen bir ekran hemen
+ * diski okursa (ör. kendi effect'inde) taze değeri bulsun.
+ *
+ * Değer DEĞİŞMEDİYSE olay atılmıyor ve `false` dönüyor: mod değişimi
+ * tüketicilerde pahalı (Beğeniler iki listesini boşaltıp yeniden çekiyor,
+ * Keşif destesini tazeliyor) — "aynı moda geç" demek o işi bedava yapmak
+ * olurdu. Dönüş değeri çağıranın ikinci bir tazeleme atıp atmayacağına karar
+ * vermesi için (bkz. bildirim yolundaki `likesDirty`).
+ *
+ * @returns Mod gerçekten değişti mi (yani olay atıldı mı).
+ */
+export function writeAppMode(
+  userId: string | null | undefined,
+  next: AppMode,
+): boolean {
+  if (!isAppMode(next)) return false;
+  const changed = peekAppMode(userId) !== next;
+  saveAppMode(userId, next);
+  if (changed) uiBus.emit(APP_MODE_EVENT, { mode: next });
+  return changed;
 }

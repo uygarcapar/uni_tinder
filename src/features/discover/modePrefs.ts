@@ -18,8 +18,11 @@ import { DEFAULT_APP_MODE, isAppMode, type AppMode } from "./modeTheme";
  * Disk yalnız SON SEÇİMİ hatırlar. Kullanıcının o modun profilini açıp
  * açmadığı sunucunun bilgisidir (`modes: {dating, friends}`) ve her istekte
  * yeniden doğrulanır; diske yazılsaydı başka cihazda açılan profil burada
- * bayat "kapalı" görünürdü. Seçili mod sunucuda kapalıysa ekran CTA'ya düşer,
- * disk değeri DOKUNULMAZ — profil açılınca seçim yerinde bulunur.
+ * bayat "kapalı" görünürdü. Kullanıcının AÇIK SEÇİMİ sunucuda kapalıysa ekran
+ * CTA'ya düşer, disk değeri DOKUNULMAZ — profil açılınca seçim yerinde bulunur.
+ * Tek istisna seçimin HİÇ OLMADIĞI hâl (bkz. `peekAppMode`): orada varsayılan
+ * Dating'i göstermek, Arkadaş olarak kaydolmuş kullanıcıya sahip olmadığı modu
+ * göstermek olurdu.
  */
 
 const KEY_PREFIX = "appMode:";
@@ -33,23 +36,37 @@ interface StoredMode {
 const keyFor = (userId: string) => `${KEY_PREFIX}${userId}`;
 
 /**
+ * Diskte GEÇERLİ bir seçim var mı — varsa o, yoksa `null`.
+ *
+ * `loadAppMode`ten farkı tam olarak bu ayrım: "kullanıcı Dating seçti" ile
+ * "hiç seçim yok, varsayılan Dating" arasında. Çağıran yer mod uzlaştırması
+ * (bkz. DiscoverScreen > açık mod uzlaştırması): AÇIK OLMAYAN bir modda
+ * açılmışsa, seçim AÇIKSA dokunulmuyor (kullanıcının kararı, ekran kurulum
+ * CTA'sına düşer), seçim YOKSA açık moda kaydırılıyor — varsayılanın
+ * kullanıcının hiç sahip olmadığı bir modu göstermesi hata.
+ */
+export function peekAppMode(userId?: string | null): AppMode | null {
+  if (!userId) return null;
+  const raw = appPrefs.getString(keyFor(userId));
+  if (!raw) return null;
+  try {
+    const parsed = JSON.parse(raw) as StoredMode;
+    if (!parsed || parsed.v !== SCHEMA_VERSION) return null;
+    // Bilinmeyen değer (eski sürüm / kurcalanmış disk) sorgu parametresine
+    // girmemeli: sunucu 400 döndürür.
+    return isAppMode(parsed.mode) ? parsed.mode : null;
+  } catch {
+    return null;
+  }
+}
+
+/**
  * Diskten oku. Yazılmamış / bozuk / eski şema / bilinmeyen değer →
  * `DEFAULT_APP_MODE` (Dating) — sunucunun "mode yok = Dating" kuralının
  * istemci aynası.
  */
 export function loadAppMode(userId?: string | null): AppMode {
-  if (!userId) return DEFAULT_APP_MODE;
-  const raw = appPrefs.getString(keyFor(userId));
-  if (!raw) return DEFAULT_APP_MODE;
-  try {
-    const parsed = JSON.parse(raw) as StoredMode;
-    if (!parsed || parsed.v !== SCHEMA_VERSION) return DEFAULT_APP_MODE;
-    // Bilinmeyen değer (eski sürüm / kurcalanmış disk) sorgu parametresine
-    // girmemeli: sunucu 400 döndürür.
-    return isAppMode(parsed.mode) ? parsed.mode : DEFAULT_APP_MODE;
-  } catch {
-    return DEFAULT_APP_MODE;
-  }
+  return peekAppMode(userId) ?? DEFAULT_APP_MODE;
 }
 
 export function saveAppMode(

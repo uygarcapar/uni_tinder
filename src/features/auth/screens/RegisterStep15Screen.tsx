@@ -43,6 +43,8 @@ import * as Location from "expo-location";
 import { Plus, X } from "@/shared/icons";
 import SFIcon from "@/shared/components/SFIcon";
 import { saveLastLoginEmail } from "@/features/auth/lastEmail";
+import { saveAppMode } from "@/features/discover/modePrefs";
+import { isAppMode } from "@/features/discover/modeTheme";
 import RegisterProgressBar from "@/features/auth/components/RegisterProgressBar";
 import RegisterStickyFooter from "@/features/auth/components/RegisterStickyFooter";
 import RegisterBackButton from "@/features/auth/components/RegisterBackButton";
@@ -244,6 +246,12 @@ export default function RegisterStep15Screen({ navigation }: NativeStackScreenPr
   const loading = useAppSelector((s) => (s as any).profile.loading);
   const registrationEmail = useAppSelector((s) => (s as any).auth.registrationEmail);
   const emailVerifiedToken = useAppSelector((s) => (s as any).auth.emailVerifiedToken);
+  // Kayıtta seçilen mod (Flört / Arkadaş) — uygulamaya girerken mod tercihine
+  // yazılıyor (bkz. enterApp). Taslak `clearRegistrationForm` ile silindiği
+  // için değer ORADAN DEĞİL buradan okunmalı.
+  const registeredMode = useAppSelector(
+    (s) => (s as any).auth?.registrationForm?.mode,
+  );
 
   const [isDraggingPhoto, setIsDraggingPhoto] = useState(false);
   // Ana fotoğraf hatası aldıktan sonra açılan seçim modu: fotoğrafı silmek
@@ -553,6 +561,18 @@ export default function RegisterStep15Screen({ navigation }: NativeStackScreenPr
       if (!response?.isSuccess) { return; }
 
       const enterApp = () => {
+        /**
+         * ⚠️ MOD TERCİHİ setUserAndToken'dan ÖNCE yazılıyor.
+         *
+         * O dispatch navigator'ı uygulamaya çeviriyor ve Keşif mount olurken
+         * modu DİSKTEN okuyor (useAppMode'un initializer'ı — uiBus replay
+         * yapmıyor, sonradan emit etmek bu okumayı yakalamaz). Yazılmazsa
+         * Arkadaş olarak kaydolan kullanıcı Keşif'i "Flört" başlığıyla
+         * açıyordu: disk boş → DEFAULT_APP_MODE (Dating).
+         */
+        if (isAppMode(registeredMode)) {
+          saveAppMode(response.result.user?.id, registeredMode);
+        }
         dispatch(setUserAndToken({ user: response.result.user, token: response.result.token, refreshToken: response.result.refreshToken }));
         // Kayıt da bir "giriş": çıkış yapıp dönen yeni kullanıcı adresini
         // login ekranında önden dolu bulsun. Cevaptaki adres kanonik (backend

@@ -12,6 +12,7 @@ import { RotateCcw } from "@/shared/icons";
 import SFIcon from "@/shared/components/SFIcon";
 import { colors as theme, withAlpha } from "@/shared/theme/colors";
 import { HAS_LIQUID_GLASS } from "@/shared/theme/glass";
+import { modeAccent, DEFAULT_APP_MODE, type AppMode } from "../modeTheme";
 
 /**
  * Kaçırılan eşleşme kartının SAĞ ÜST köşesindeki cam kurtarma butonu.
@@ -29,8 +30,8 @@ import { HAS_LIQUID_GLASS } from "@/shared/theme/glass";
  *
  * Stil `.glass` DEĞİL `.glassProminent`: buton bir FOTOĞRAFIN üstünde duruyor
  * ve sade cam neredeyse berrak kalıyor — parlak bir kapakta glif yıkanırdı.
- * Tint `litPlus`: kolondaki kurtar glifiyle AYNI renk, iki giriş de tek
- * aksiyon olarak okunsun.
+ * Tint MODUN vurgusu (`modeAccent`): kolondaki kurtar glifiyle AYNI renk, iki
+ * giriş de tek aksiyon olarak okunsun — Friends'te ikisi birlikte yeşile döner.
  *
  * ⚠️ SwiftUI YOLUNA KAPI `HAS_LIQUID_GLASS`, `Platform.OS === "ios"` DEĞİL.
  * iOS 26 altında bu buton SwiftUI'dan HİÇBİR ŞEY kazanmıyordu: `glassProminent`
@@ -121,9 +122,20 @@ type Props = {
   onPress: () => void;
   /** VoiceOver etiketi — buton metin taşımıyor, sadece glif var. */
   label: string;
+  /**
+   * Kurtarmanın yapıldığı mod — hem cam tint'ini hem camsız dolguyu veriyor.
+   * Varsayılan Dating, yani mod geçmeyen eski çağıran bugünkü kırmızıda kalır.
+   */
+  mode?: AppMode;
 };
 
-function RecoverGlassButton({ onPress, label }: Props) {
+function RecoverGlassButton({
+  onPress,
+  label,
+  mode = DEFAULT_APP_MODE,
+}: Props) {
+  const accent = modeAccent(mode);
+
   if (HAS_LIQUID_GLASS) {
     return (
       <Host style={{ width: RECOVER_GLASS_SIZE, height: RECOVER_GLASS_SIZE }}>
@@ -136,7 +148,7 @@ function RecoverGlassButton({ onPress, label }: Props) {
             // zorunda (bu dosyanın başındaki "iki hâl ayrışamaz" kuralı).
             // Kontrol payı kabuğun çapını büyütüyor; gerekçenin tamamı
             // CardActionGlassButton'ın modifier listesinde.
-            tint(theme.litPlus),
+            tint(accent),
             frame({ width: RECOVER_GLASS_SIZE, height: RECOVER_GLASS_SIZE }),
             a11yLabel(label),
           ]}
@@ -166,7 +178,7 @@ function RecoverGlassButton({ onPress, label }: Props) {
         borderCurve: "continuous",
         alignItems: "center",
         justifyContent: "center",
-        backgroundColor: theme.litPlus,
+        backgroundColor: accent,
         borderWidth: StyleSheet.hairlineWidth,
         borderColor: withAlpha(theme.onMedia, 0.35),
       }}

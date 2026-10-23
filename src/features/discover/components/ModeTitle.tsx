@@ -47,7 +47,12 @@ const ModeTitle = memo(function ModeTitle({
       }}
     >
       <TouchableOpacity
-        activeOpacity={0.6}
+        // BASIŞ SÖNMESİ YOK (istek). Varsayılan opaklık düşüşü burada iki
+        // sorun doğuruyordu: başlık kapak fotoğrafının üstünde duruyor ve
+        // sönerken bir an okunmaz hâle geliyor, üstelik dokunuşun açtığı şey
+        // tam ekran bir sheet — geri bildirimi zaten sheet'in kendisi
+        // veriyor, araya giren sönme iki hareketi üst üste bindiriyor.
+        activeOpacity={1}
         onPress={onPress}
         // Dokunma hedefi metinden bir tık geniş (parmak için), ama satırın
         // tamamı kadar değil.
@@ -56,12 +61,24 @@ const ModeTitle = memo(function ModeTitle({
       >
         <Text
           style={{
-            color: colors.text,
-            fontSize: 17,
+            // SABİT BEYAZ (`onMedia`), moda dönen `text` DEĞİL (istek: "light
+            // mode'da en üstteki title'ı beyazla yaz"). Başlık her zaman tam
+            // ekran kapak fotoğrafının üstünde duruyor — kartın "kapalı" hâli
+            // (zemini chrome olan, koyu mürekkebin doğru olduğu düzen) 2026-10
+            // temizliğinde kalktı, yani tema mürekkebinin gerekçesi de kalmadı.
+            // Açık temada koyu yazı açık fotoğrafta da koyu fotoğrafta da
+            // gölgeye bel bağlıyordu; beyaz + aşağıdaki gölge iki temada aynı
+            // okunurluğu veriyor (kartın diğer kapak glifleriyle de aynı aile).
+            color: colors.onMedia,
+            // 17 → 21. Başlık tam ekran bir kartın üstünde, iki yanındaki
+            // 48pt'lik cam butonların arasında duruyor; 17 o ölçekte navigasyon
+            // başlığından çok bir alt etiket gibi okunuyordu. 21 iki butonla
+            // optik olarak aynı ağırlıkta — daha büyüğü (24+) satırı cam
+            // butonların yüksekliğinden taşırıyor.
+            fontSize: 21,
             fontWeight: "700",
-            // Fotoğrafın ÜSTÜNDE duruyor olabilir (kart tam ekran): gölge
-            // olmadan açık fotoğrafta kayboluyordu. `onMedia` kullanılmadı —
-            // kart kapalıyken zemin chrome, orada beyaz yazı ters düşerdi.
+            // Fotoğrafın ÜSTÜNDE duruyor (kart tam ekran): beyaz yazı da gölge
+            // olmadan açık fotoğrafta kayboluyor.
             textShadowColor: "rgba(0,0,0,0.35)",
             textShadowRadius: 6,
             textShadowOffset: { width: 0, height: 1 },
@@ -72,8 +89,11 @@ const ModeTitle = memo(function ModeTitle({
         <SFIcon
           name="chevron.down"
           fallback={ChevronDown}
-          size={13}
-          color={colors.text}
+          // Punto 17→21'e çıkınca 13 küçük kaldı: chevron başlığın parçası,
+          // ondan bağımsız bir glif değil — oran korunuyor.
+          size={15}
+          // Başlığın mürekkebiyle AYNI aile: chevron yazının parçası.
+          color={colors.onMedia}
           strokeWidth={3}
           weight="bold"
         />

@@ -760,9 +760,16 @@ function PhotoHighlightRing({ borderRadius }: { borderRadius: number }) {
           borderRadius,
           borderCurve: "continuous",
           borderWidth: 3,
-          // Boş deste / boş beğeni ekranlarındaki "Kaydırmaya başla" butonuyla
-          // aynı kırmızı (EmptyState CTA dolgusu) — primary'nin bir tık
-          // doygunu, vurgu bu yüzden kart kenarlarında daha net okunuyor.
+          // litPlus kırmızısı — primary'nin bir tık doygunu, vurgu bu yüzden
+          // kart kenarlarında daha net okunuyor.
+          //
+          // ⚠️ MODLA DÖNMÜYOR, bilerek. Eskiden "Kaydırmaya başla" CTA'sıyla
+          // aynı renk olduğu yazılıydı; o CTA artık `modeAccent` okuyor
+          // (Friends'te yeşil), bu halka okumuyor. İki gerekçe: fotoğraflar
+          // iki modun PAYLAŞTIĞI veri (modun kendi içeriği prompt + niyet),
+          // ve bu halka kalıcı bir yüzey değil — bir kez atıp sönen darbe.
+          // Yeşile çevirmek istenirse `editMode` iki seviye aşağı prop olarak
+          // geçirilmeli; bileşen modül seviyesinde.
           borderColor: colors.litPlus,
         },
         style,

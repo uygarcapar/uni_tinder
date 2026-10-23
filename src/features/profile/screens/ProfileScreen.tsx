@@ -100,6 +100,12 @@ import SelfieVerifiedBadge from "@/features/profile/components/SelfieVerifiedBad
 import SelfieVerificationRow from "@/features/profile/components/SelfieVerificationRow";
 import { resolveSelfieVerified } from "@/features/profile/selfie/selfieVerification";
 import { confirmMainPhotoChange } from "@/features/profile/selfie/confirmMainPhotoChange";
+// Mod halkası + avatara basılı tutunca açılan seçici. Mod durumunun tek
+// kaynağı Keşif tarafı (useAppMode) — bu ekran onu OKUYOR, kendi kopyasını
+// tutmuyor.
+import { useAppMode } from "@/features/discover/useAppMode";
+import { modeFireGradient, type AppMode } from "@/features/discover/modeTheme";
+import ModeSelectorSheet from "@/features/discover/components/ModeSelectorSheet";
 
 import { LinearGradient } from "expo-linear-gradient";
 import { BlurView } from "expo-blur";
@@ -258,57 +264,213 @@ function SkeletonBox({
   );
 }
 
+/**
+ * Avatarın çevresindeki MOD HALKASI — Instagram story halkasının kalıbı:
+ * gradyan bir çember, içinde zemin renginde bir boşluk, en içte fotoğraf.
+ *
+ * Halka seçili modu söylüyor (Flört'te kırmızı-turuncu, Arkadaş'ta yeşil —
+ * `modeFireGradient`, yani Fire/Spark butonu ve MatchModal perdesiyle AYNI
+ * gradyan). Avatara BASILI TUTMAK mod seçiciyi açıyor; bu yüzden halka
+ * dekor değil, bir kontrolün göstergesi.
+ *
+ * ⚠️ DIŞ ÖLÇÜ DEĞİŞMİYOR: halka `size`ın İÇİNE çiziliyor, fotoğraf
+ * `size - 2*(KALINLIK + BOŞLUK)`a küçülüyor. Halkayı dışa eklemek hero
+ * satırının yüksekliğini ve yanındaki metin kolonunun hizasını kaydırırdı.
+ *
+ * ÜÇ KATMAN, içe doğru: gradyan halka → `bg` renginde boşluk → fotoğraf.
+ * Boşluk ŞEFFAF DEĞİL ama `surface` de DEĞİL, tam olarak avatarın arkasındaki
+ * renk (`bg`). Şeffaf bırakılsa gradyan fotonun kenarına değiyor ve halka
+ * fotonun parçası gibi okunuyor; `surface` ile çizilse (ilk hâl buydu) boşluk
+ * yerine soluk gri bir İKİNCİ halka çıkıyor — hero satırının kendi zemini yok,
+ * kökün `bg`i üstünde duruyor.
+ *
+ * Kalınlık 3 / boşluk 3 — halka 80pt'lik avatarda net bir çerçeve. Önceki
+ * 1.75/2 cihazda fazla silikti; buradan sonrası (4+) fotoğrafı kendi içine
+ * hapsedip hero satırında avatardan çok halka okutuyor. Boşluk kalınlıkla eşit
+ * kalıyor: halkanın fotodan ayrı bir şey olduğunu okutan şey o aralık,
+ * kapanırsa halka fotonun kenarı gibi görünüyor.
+ *
+ * Fotoğrafın çapı bu iki sayıdan türüyor (80 - 2*(3+3) = 68pt) — fotoyu
+ * küçültmenin yolu halkayı/boşluğu kalınlaştırmak, `size`ı düşürmek DEĞİL.
+ */
+const AVATAR_RING_WIDTH = 3;
+const AVATAR_RING_GAP = 3;
+
+/**
+ * Halkanın gradyan ŞİDDETİ — 0 düz renk (gradyan hiç yok), 1 gradyanın tamamı.
+ * Halka düz `modeFireTint` zemin üstüne bu opaklıkta çizilen tam-aralık
+ * gradyandan oluşuyor, yani sayı doğrudan "ne kadar gradyan" demek.
+ *
+ * ⚠️ GRADYANI DURAKLARLA (start/end) AZALTMAYA ÇALIŞMA. LinearGradient
+ * aralığın DIŞINDA renkleri uçlara kilitliyor: duraklar daraldıkça geçiş
+ * yumuşamıyor, tam tersi ortada keskin bir çizgiye sıkışıp halka iki parçalı
+ * düz renge dönüyor. Duraklar bu yüzden 0.15/0.85'te (tam aralık) sabit —
+ * şiddeti ayarlayan şey bu opaklık.
+ */
+const AVATAR_RING_GRADIENT_STRENGTH = 0.22;
+
 // ─── Hero avatar — image yüklenirken skeleton overlay ────────────────────────
-function HeroAvatar({ uri, size = 80, onPress, loading = false }) {
+function HeroAvatar({
+  uri,
+  size = 80,
+  onPress,
+  onLongPress,
+  loading = false,
+  ringColors = null,
+}) {
   // expo-image — memory+disk cache → tab değişiminde avatar anında gelir.
   // İlk yüklemede `loading` (parent'tan) veya imgLoading ile skeleton göster.
   const [imgLoading, setImgLoading] = useState(!!uri);
 
   const showSkeleton = loading || (uri && imgLoading);
+  // Halka yoksa foto tam ölçüde: eski görünüm birebir korunuyor.
+  const inset = ringColors ? AVATAR_RING_WIDTH + AVATAR_RING_GAP : 0;
+  const photoSize = size - inset * 2;
+  // Boşluk katmanının çapı — halkanın bittiği yer.
+  const gapSize = size - AVATAR_RING_WIDTH * 2;
+
   return (
-    <TouchableOpacity
-      // Basılıyken sönme YOK: avatar zaten önizlemeye açılıyor, araya giren
-      // opacity düşüşü fotoyu bir an soluklaştırıyordu.
+    <AnimatedPressable
+      // Basılıyken SÖNME yok, KÜÇÜLME var: opacity düşüşü fotoyu bir an
+      // soluklaştırıyordu, ölçek ise fotoğrafa dokunmadan "bastım" diyor.
+      // 0.96 — sayfadaki kartların 0.97'sinden bir tık derin, çünkü avatar
+      // onlardan çok küçük ve aynı oran burada fark edilmiyordu.
       activeOpacity={1}
+      pressScale={0.96}
       onPress={onPress}
+      onLongPress={onLongPress}
+      // Varsayılan (~500ms) uzun geldi: halkanın kısayolu olduğu keşfedilsin
+      // diye basış biraz daha erken "uzun" sayılıyor. Daha kısası (250) normal
+      // dokunuşu yutuyordu — önizleme açılmaz oluyordu.
+      delayLongPress={340}
       style={{
         width: size,
         height: size,
         borderRadius: size / 2,
         borderCurve: "continuous",
-        overflow: "hidden",
-        backgroundColor: colors.surface,
         alignItems: "center",
         justifyContent: "center",
       }}
     >
-      {uri ? (
-        <Image
-          source={{ uri }}
-          style={{ width: "100%", height: "100%" }}
-          contentFit="cover"
-          cachePolicy="memory-disk"
-          transition={150}
-          onLoad={() => setImgLoading(false)}
-          onError={() => setImgLoading(false)}
-        />
-      ) : loading ? null : (
-        <SFIcon name="person.fill" fallback={UserRound} size={40} color={colors.text} strokeWidth={1.5} />
-      )}
-      {showSkeleton && (
+      {/* Halka EN ALTTA, fotoğrafın kabı onun üstünde: çember tam çiziliyor ve
+          foto kabı ortasını kapatıyor — maskeleme gerekmiyor.
+
+          İKİ KATMAN: düz tint zemin + üstünde düşük opaklıkta gradyan. Halka
+          böylece neredeyse tek renk, gradyan yalnız bir ipucu; şiddeti tek bir
+          sayıdan (AVATAR_RING_GRADIENT_STRENGTH) ayarlanıyor. Renkleri burada
+          DEĞİŞTİRME: `modeFireGradient` Fire butonu, rozetler ve MatchModal
+          perdesiyle paylaşılan token.
+
+          ⚠️ UÇLAR İÇE ALINMIŞ (0/1 DEĞİL) ve TAM ARALIK kalıyor. Gradyan
+          dikdörtgen bir kutuyu boyuyor ama görünen şey o kutunun içine
+          çizilmiş bir ÇEMBERİN ince kenarı — kutunun köşeleri boş. Uçlar tam
+          köşede olduğunda ilk/son durak görünmeyen köşelere düşüyor. Uçları
+          BİRBİRİNE YAKLAŞTIRMAK gradyanı azaltmıyor, LinearGradient aralık
+          dışını uçlara kilitlediği için ortada keskin bir çizgi bırakıyor.
+
+          Sweep LİNEER, konik DEĞİL: expo-linear-gradient konik vermiyor ve
+          ince bir halkada köşegen lineer sweep gözle konikten ayrılmıyor
+          (kayıt kartlarındaki gradyanla da aynı yön). */}
+      {ringColors ? (
         <View
+          pointerEvents="none"
           style={{
             position: "absolute",
             top: 0,
             left: 0,
             right: 0,
             bottom: 0,
+            borderRadius: size / 2,
+            borderCurve: "continuous",
+            // Zemin rampanın ORTA durağı. `modeFireGradient` koyu→orta→parlak
+            // sıralı (Friends #0fae57 / #12c96a / #2bff8a): ilk durak
+            // buton/perde tonu, halkayı koyu yeşile düşürüyor; son durak
+            // dalganın parlak ucu, düz renk olarak fazla açık kalıyordu. Orta
+            // durak ikisinin arası ve zaten modun vurgu tonu (friendsAccent'in
+            // komşusu). Son-1 ile türetiliyor ki iki duraklı bir gradyana
+            // düşülse de ilk durağa (koyu uca) kaymasın.
+            backgroundColor: ringColors[Math.max(0, ringColors.length - 2)],
+            overflow: "hidden",
           }}
         >
-          <SkeletonBox width={size} height={size} borderRadius={size / 2} />
+          <LinearGradient
+            colors={ringColors}
+            start={{ x: 0.15, y: 0.15 }}
+            end={{ x: 0.85, y: 0.85 }}
+            style={{
+              flex: 1,
+              opacity: AVATAR_RING_GRADIENT_STRENGTH,
+            }}
+          />
         </View>
-      )}
-    </TouchableOpacity>
+      ) : null}
+
+      {/* BOŞLUK KATMANI — halka ile foto arasındaki 2pt'yi çizen şey bu.
+          Zemin `bg`, `surface` DEĞİL: avatarın ARKASINDA ne varsa boşluk da o
+          olmalı, yoksa boşluk "boşluk" değil ikinci bir soluk halka gibi
+          okunuyor (hero satırının kendi zemini yok, kökün `bg`i üstünde
+          duruyor — bkz. ekran kökü). Fotonun kabının zemini ayrı ve `surface`
+          kalıyor: o, foto yokken glifin/iskeletin ardındaki yüzey. */}
+      {ringColors ? (
+        <View
+          pointerEvents="none"
+          style={{
+            position: "absolute",
+            width: gapSize,
+            height: gapSize,
+            borderRadius: gapSize / 2,
+            borderCurve: "continuous",
+            backgroundColor: colors.bg,
+          }}
+        />
+      ) : null}
+
+      <View
+        style={{
+          width: photoSize,
+          height: photoSize,
+          borderRadius: photoSize / 2,
+          borderCurve: "continuous",
+          overflow: "hidden",
+          // Foto YOKKEN glifin/iskeletin ardındaki yüzey (boşluğu bu DEĞİL,
+          // üstteki `bg` katmanı çiziyor).
+          backgroundColor: colors.surface,
+          alignItems: "center",
+          justifyContent: "center",
+        }}
+      >
+        {uri ? (
+          <Image
+            source={{ uri }}
+            style={{ width: "100%", height: "100%" }}
+            contentFit="cover"
+            cachePolicy="memory-disk"
+            transition={150}
+            onLoad={() => setImgLoading(false)}
+            onError={() => setImgLoading(false)}
+          />
+        ) : loading ? null : (
+          <SFIcon name="person.fill" fallback={UserRound} size={40} color={colors.text} strokeWidth={1.5} />
+        )}
+        {showSkeleton && (
+          <View
+            style={{
+              position: "absolute",
+              top: 0,
+              left: 0,
+              right: 0,
+              bottom: 0,
+            }}
+          >
+            <SkeletonBox
+              width={photoSize}
+              height={photoSize}
+              borderRadius={photoSize / 2}
+            />
+          </View>
+        )}
+      </View>
+    </AnimatedPressable>
   );
 }
 
@@ -595,7 +757,10 @@ import EditProfileForm, {
 import { hydrateProfileForm } from "@/features/profile/utils/hydrateProfileForm";
 import { useQueryClient } from "@tanstack/react-query";
 import { swipeKeys } from "@/features/discover/swipeQueries";
-import { colors, gradients, ink, onMediaAt, isLight } from "../../../shared/theme/colors";
+import { colors, ink, onMediaAt, isLight } from "../../../shared/theme/colors";
+// Upsell kartının zemini: gradyan + (varsa) fotoğraf + perde. Marka gradyanı
+// artık bu modülün içinde, ekranın `gradients` ithali bu yüzden kalktı.
+import { PlusCardArt } from "@/features/profile/plusCardArt";
 import {
   glassFallback,
   glassFallbackFill,
@@ -889,6 +1054,14 @@ export default function ProfileScreen() {
   const [highlightPhotoId, setHighlightPhotoId] = useState<string | null>(null);
   const [previewVisible, setPreviewVisible] = useState(false);
 
+  /**
+   * SEÇİLİ MOD — Keşif ve Beğeniler'le PAYLAŞILAN tek kaynak (bkz. useAppMode).
+   * Burada iki işi var: avatarın çevresindeki halkanın rengi, ve avatara
+   * basılı tutunca açılan seçicinin işaretlediği kart.
+   */
+  const { mode, setMode } = useAppMode();
+  const [modePickerVisible, setModePickerVisible] = useState(false);
+
   // ── Premium teaser fiyatı (inline upsell kartı için) ──────────────────────
   // Inline kartta hardcoded "249.99 ₺ / Ay" yerine RC offering'ten okunan canlı
   // monthly fiyatı gösterilir. RC configure değilse veya offering boşsa generic
@@ -918,6 +1091,23 @@ export default function ProfileScreen() {
 
   // ── Profil verisi ──────────────────────────────────────────────────────────
   const [myProfile, setMyProfile] = useState(null);
+
+  /**
+   * Açık mod haritası — profilin KENDİSİNDEN türetiliyor, ek tur YOK: bu ekran
+   * `myProfile`ı zaten yüklüyor (Keşif'te ayrı bir `getMyProfile` çağrısı var
+   * çünkü orada profil state'i tutulmuyor).
+   *
+   * Profil gelmediyse `undefined` = "bilinmiyor" ve seçici kısıt çizmiyor —
+   * olmayan bir kapı uydurmamak doğru taraf (ModeSelectorSheet'teki aynı not).
+   */
+  const openModes = useMemo(() => {
+    const modes = (myProfile as any)?.modes;
+    if (!modes || typeof modes !== "object") return undefined;
+    return {
+      Dating: modes.dating !== false,
+      Friends: modes.friends === true,
+    } as Partial<Record<AppMode, boolean>>;
+  }, [myProfile]);
   const [visibilitySheetVisible, setVisibilitySheetVisible] = useState(false);
   const [referralSheetVisible, setReferralSheetVisible] = useState(false);
   // Hero butonu iki listeyi değil TEK MODU gösteriyor (backend 2026-09-10'dan
@@ -2221,11 +2411,16 @@ export default function ProfileScreen() {
                     gap: HERO_GAP,
                   }}
                 >
+                  {/* Halka seçili modu söylüyor, basılı tutmak değiştiriyor —
+                      gerekçe HeraAvatar'ın üstündeki mod halkası notunda.
+                      Dokunuş eski işini yapmaya devam ediyor (önizleme). */}
                   <HeroAvatar
                     uri={mainPhoto}
                     size={HERO_AVATAR}
                     loading={!myProfile}
                     onPress={() => mainPhoto && setPreviewVisible(true)}
+                    onLongPress={() => setModePickerVisible(true)}
+                    ringColors={modeFireGradient(mode)}
                   />
 
                   <View style={{ flex: 1, justifyContent: "space-between" }}>
@@ -2254,6 +2449,19 @@ export default function ProfileScreen() {
                       >
                         {myProfile?.displayName || user?.firstName || ""}
                       </Text>
+                      {/* Fotoğraf doğrulama rozeti — premium rozetinden AYRI bir
+                          işaret. `isSelfieVerified` bilerek `isVerified`e
+                          katılmıyor; alan hiç gelmezse hiçbir şey çizilmiyor.
+                          SIRA her yerde aynı: isim → doğrulama → plus. */}
+                      <SelfieVerifiedBadge
+                        verified={resolveSelfieVerified(myProfile)}
+                        size={HERO_VERIFIED_SIZE}
+                        // Rozetin varsayılanı BEYAZ çünkü her kullanıldığı yer
+                        // foto/perde üstü. Hero MEDYA DEĞİL, uygulama zemini
+                        // (`bg`) üstünde: beyaz açık modda kaybolurdu → ismin
+                        // mürekkebi (`text`). Tek istisna burası.
+                        color={colors.text}
+                      />
                       {isPremium && (
                         // Zemin/çap İSTİSNASI GİTTİ: işaret artık daire değil,
                         // marka renginde bir yazı — `bg` üstünde de kart
@@ -2261,13 +2469,6 @@ export default function ProfileScreen() {
                         // türüyor (bkz. PremiumBadge).
                         <PremiumBadge fontSize={HERO_NAME_FONT} />
                       )}
-                      {/* Fotoğraf doğrulama rozeti — premium rozetinden AYRI bir
-                          işaret. `isSelfieVerified` bilerek `isVerified`e
-                          katılmıyor; alan hiç gelmezse hiçbir şey çizilmiyor. */}
-                      <SelfieVerifiedBadge
-                        verified={resolveSelfieVerified(myProfile)}
-                        size={HERO_VERIFIED_SIZE}
-                      />
                     </View>
 
                     {Platform.OS === "ios" ? (
@@ -2422,10 +2623,7 @@ export default function ProfileScreen() {
                       pressScale={0.97}
                       onPress={goToPlusPage}
                     >
-                      <LinearGradient
-                        colors={gradients.litPlusCard}
-                        start={{ x: 0, y: 0 }}
-                        end={{ x: 1, y: 1 }}
+                      <View
                         style={{
                           borderRadius: 40,
                           borderCurve: "continuous",
@@ -2437,6 +2635,12 @@ export default function ProfileScreen() {
                           elevation: 5,
                         }}
                       >
+                        {/* Zemin: gradyan (+ varsa fotoğraf ve perdesi).
+                            Kabuk artık LinearGradient DEĞİL düz bir View —
+                            dolgu üç katmana çıktı ve üçü de `absoluteFill`,
+                            kartın boyunu yine aşağıdaki içerik veriyor. */}
+                        <PlusCardArt surface="upsell" />
+
                         {/* Top Banner Section */}
                         {/* Başlığın sağında bir zamanlar marka alevi vardı,
                             KALDIRILDI (plus sayfasındaki plan kartındaki eşiyle
@@ -2589,7 +2793,7 @@ export default function ProfileScreen() {
                             </Text>
                           </View>
                         </View>
-                      </LinearGradient>
+                      </View>
                     </AnimatedPressable>
                   </View>
                 )}
@@ -2853,6 +3057,29 @@ export default function ProfileScreen() {
               <EditProfileFormSkeleton />
             ))}
         </ProfileEditModal>
+
+        {/* ══ MOD SEÇİCİ — avatara basılı tutunca ══
+            Keşif başlığındaki seçicinin AYNISI (tek bileşen, iki giriş).
+            Kapalı bir mod seçilirse kurulumu burada TEKRAR ÇİZMİYORUZ: Keşif'in
+            `ModeSetupSheet`i submit/hata/uçuş durumunu kendi içinde tutuyor ve
+            ikinci bir kopya iki ayrı kurulum akışı demek olurdu. Bunun yerine
+            profil düzenleme açılıyor — orada mod anahtarı ve `ModeClosedNotice`
+            zaten var, yani kullanıcı kapalı modun alanlarını doldurduğu YERE
+            gidiyor. */}
+        <ModeSelectorSheet
+          visible={modePickerVisible}
+          onClose={() => setModePickerVisible(false)}
+          mode={mode}
+          openModes={openModes}
+          onSelect={setMode}
+          onOpenProfile={() => {
+            // Seçici kendini zaten kapattı (bkz. handlePress); düzenleme
+            // sheet'i gecikmeyle açılıyor — iki bottom sheet'in aynı anda
+            // canlı kalmaması kuralı aşağıdaki önizleme↔düzenleme yolunda
+            // ayrıntılı yazılı.
+            setTimeout(() => setEditVisible(true), 400);
+          }}
+        />
 
         {/* ══ PREVİEW MODALI (ARTIK ORIJINAL MODAL) ══ */}
         <PreviewModal

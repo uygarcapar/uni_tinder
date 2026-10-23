@@ -7,6 +7,7 @@ import PromptsEditor, {
   type PromptsEditorHandle,
 } from "@/shared/components/PromptsEditor";
 import RegisterOptionCheckbox from "@/features/auth/components/RegisterOptionCheckbox";
+import { useKeyboardAwareField } from "@/shared/hooks/useKeyboardAwareField";
 import {
   resolveLocalized,
   useFriendshipIntents,
@@ -192,6 +193,22 @@ export default function ModeSetupSheet({
 
   const shownError = errorText ?? localError;
 
+  /**
+   * Prompt cevapları sheet'in DİBİNDE (niyet listesinin altında) ve çok
+   * satırlı: klavye açılınca yazdığın alan klavyenin altında kalıyordu.
+   * Anchor View ölçülüp modal'ın scroll'u alanın alt kenarı klavyenin hemen
+   * üstüne gelecek şekilde kaydırılıyor — profil düzenlemedeki prompt
+   * alanlarıyla aynı mekanizma (bkz. useKeyboardAwareField).
+   *
+   * Bu sheet'te zaten gereken iki koşul var: input `BottomSheetTextInput`
+   * (aşağıda) ve kap AppModal, yani hook scroll view'ı context'ten bulabiliyor.
+   */
+  const {
+    anchorRef: promptsAnchorRef,
+    onFocus: onPromptsFocus,
+    onBlur: onPromptsBlur,
+  } = useKeyboardAwareField();
+
   return (
     <AppModal
       visible={visible}
@@ -325,20 +342,26 @@ export default function ModeSetupSheet({
         title={t("discover.mode.promptsTitle")}
         description={t("discover.mode.promptsDescription")}
       >
-        <PromptsEditor
-          ref={editorRef}
-          // Katalog bu modun prompt'larıyla süzülüyor (bkz. promptAllowsMode).
-          mode={mode}
-          value={prompts}
-          onChange={handlePromptsChange}
-          fieldErrors={promptIssues}
-          // Sheet içinde ŞART: düz TextInput'ta gorhom klavye target'ını set
-          // etmiyor ve sheet klavye davranışını atlıyor.
-          InputComponent={BottomSheetTextInput}
-          // Burada en az 1 zorunlu (sunucu da öyle) — sonuncuyu silmek
-          // kullanıcıyı gönderemediği bir durumda bırakırdı.
-          allowRemoveLast={false}
-        />
+        {/* ⚠️ `collapsable={false}`: RN bu View'ı optimize edip native ağaçtan
+            düşürürse `measureInWindow` ölçemez, scroll hesabı çalışmaz. */}
+        <View ref={promptsAnchorRef} collapsable={false}>
+          <PromptsEditor
+            ref={editorRef}
+            // Katalog bu modun prompt'larıyla süzülüyor (bkz. promptAllowsMode).
+            mode={mode}
+            value={prompts}
+            onChange={handlePromptsChange}
+            fieldErrors={promptIssues}
+            // Sheet içinde ŞART: düz TextInput'ta gorhom klavye target'ını set
+            // etmiyor ve sheet klavye davranışını atlıyor.
+            InputComponent={BottomSheetTextInput}
+            // Burada en az 1 zorunlu (sunucu da öyle) — sonuncuyu silmek
+            // kullanıcıyı gönderemediği bir durumda bırakırdı.
+            allowRemoveLast={false}
+            onInputFocus={onPromptsFocus}
+            onInputBlur={onPromptsBlur}
+          />
+        </View>
       </Section>
 
       {shownError ? (

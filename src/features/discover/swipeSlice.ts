@@ -1,5 +1,10 @@
 import { createSlice, createAsyncThunk, PayloadAction } from "@reduxjs/toolkit";
 import swipeService from "@/features/discover/swipeService";
+// ⚠️ `useAppMode`tan DEĞİL `modePrefs`ten okunuyor: o modül react-redux
+// hook'ları çekiyor ve bu slice'ın ona bağlanması gereksiz bir bağ olurdu
+// (swipeKeys'in ayrı dosyada tutulmasıyla aynı gerekçe). Disk zaten tercihin
+// tek kaynağı; `loadAppMode` userId yokken varsayılana düşüyor.
+import { loadAppMode } from "@/features/discover/modePrefs";
 import type { SwipeState } from "@/shared/types";
 
 /**
@@ -21,8 +26,28 @@ import type { SwipeState } from "@/shared/types";
  */
 export const fetchWhoLikedMe = createAsyncThunk(
   "swipe/fetchWhoLikedMe",
-  async (_: void, { rejectWithValue }) => {
-    const res = (await swipeService.getWhoLikedMe()) as any;
+  async (_: void, { getState, rejectWithValue }) => {
+    /**
+     * ⚠️ MOD, ARGÜMAN DEĞİL BURADA ÇÖZÜLÜYOR.
+     *
+     * Gönderilmezse sunucu Dating sayıyor (eski istemci sözleşmesi) ve rozet +
+     * `whoLikedMeIds` kümesi Arkadaş modunda yanlış modun verisini taşır:
+     * rozetteki sayı listede bulunmaz, Keşif de "bu kişi beni beğenmişti"
+     * sorusunu öbür modun kümesinden cevaplar (deste mod başına).
+     *
+     * Çözümün thunk'ın İÇİNDE olması kasıtlı: üç çağıran da (hub reconcile,
+     * bağlantı turu, foreground turu) `AppNavigator`da sabit referanslı
+     * callback'lerin içinde ve modu kapanıştan okusalar bayat değere
+     * tutunurlardı. Tercihin kaynağı zaten disk (bkz. modePrefs), state'ten
+     * gereken tek şey anahtarın kullanıcı kimliği.
+     */
+    const userId = (getState() as any)?.auth?.user?.id;
+    const res = (await swipeService.getWhoLikedMe(
+      1,
+      10,
+      10,
+      loadAppMode(userId),
+    )) as any;
     if (!res?.isSuccess || !res?.result) return rejectWithValue(null);
     const r = res.result;
     return {
