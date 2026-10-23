@@ -4,10 +4,10 @@ import {
   Alert,
   Keyboard,
   Text,
-  TouchableOpacity,
   TouchableWithoutFeedback,
   View,
 } from "react-native";
+import { KeyboardStickyView } from "react-native-keyboard-controller";
 import { OtpInput, type OtpInputRef } from "react-native-otp-entry";
 import { useTranslation } from "react-i18next";
 import type { NativeStackScreenProps } from "@react-navigation/native-stack";
@@ -25,15 +25,23 @@ import {
   extractReferralCode,
   normalizeReferralCode,
 } from "@/features/auth/referralCode";
-import { colors, ink } from "@/shared/theme/colors";
+import { colors } from "@/shared/theme/colors";
 import { devLog } from "@/shared/utils/devLog";
 
 /**
  * Davet kodu adımı — sihirbazın İLK ekranı (bkz. registrationFlow.ts).
  *
- * 🔴 OPSİYONEL BİR ADIM. "Devam" kod boşken de aktif, "Atla" belirgin: davet
- * edilmemiş kullanıcıyı geçemeyeceği bir kapıya dayamak kaydın en pahalı
- * yerinde (henüz hiçbir şey yatırmamışken) terk üretir.
+ * 🔴 OPSİYONEL BİR ADIM. Davet edilmemiş kullanıcıyı geçemeyeceği bir kapıya
+ * dayamak kaydın en pahalı yerinde (henüz hiçbir şey yatırmamışken) terk
+ * üretir — o yüzden kod boşken de çıkış yolu var.
+ *
+ * ÇIKIŞ TEK BUTONDA: ayrı bir "Atla" bağlantısı YOK, alttaki tek CTA kod
+ * eksikken "Atla", 5 hane dolunca "Devam Et" yazıyor. İkisi yan yana
+ * durduğunda footer iki karar sunuyordu ("Devam" da kod boşken geçiyordu, yani
+ * aynı şeyi iki buton yapıyordu); tek buton o anda yapılabilen tek şeyi
+ * söylüyor. Buton KLAVYENİN ÜSTÜNE yapışık (KeyboardStickyView) — OTP
+ * kutuları açılışta odaklandığı için klavye hep açık, normal akıştaki footer
+ * klavyenin altında kalıyordu.
  *
  * 🔴 DAVET EDENİN ADI GÖSTERİLMİYOR (ürün kararı, plan §0): ekran yalnız "kod
  * geçerli / bulamadık" diyor. Aksi halde kod deneyerek isim toplanabilirdi;
@@ -205,8 +213,6 @@ export default function RegisterReferralScreen({
     otpRef.current?.setValue(extractReferralCode(raw));
   }, []);
 
-  const handleContinue = () => goNext(complete ? code : null);
-
   const handleSkip = () => {
     Keyboard.dismiss();
     dispatch(updateRegistrationField({ field: "referralCode", value: null }));
@@ -215,6 +221,14 @@ export default function RegisterReferralScreen({
     // bırakmıyor (Step3'ün geri butonu zaten kaydı bırakma onayına gidiyor).
     navigation.reset({ index: 0, routes: [{ name: "RegisterStep3" }] });
   };
+
+  /**
+   * Tek CTA. Kod 5 haneyse "Devam Et" (kodu forma yazıp ilerle), eksikse
+   * "Atla" — yarım kod GÖNDERİLMEZ (bkz. goNext), dolayısıyla eksik koddaki
+   * basış gerçekten atlamaktır ve `handleSkip`in temizliği/`reset`i doğru
+   * davranış.
+   */
+  const handleCta = () => (complete ? goNext(code) : handleSkip());
 
   return (
     <View className="flex-1" style={{ backgroundColor: colors.bg }}>
@@ -316,38 +330,31 @@ export default function RegisterReferralScreen({
         </View>
       </TouchableWithoutFeedback>
 
-      <View className="px-6 pb-8 pt-4">
-        <AnimatedPressable
-          onPress={handleContinue}
-          testID="referral-continue"
-          style={{
-            borderRadius: 999,
-            borderCurve: "continuous",
-            overflow: "hidden",
-            backgroundColor: colors.inverseSurface,
-          }}
-        >
-          <Text
-            className="py-[20px] font-bold text-[15px] text-center"
-            style={{ color: colors.onInverseSurface }}
+      {/* Diğer kayıt adımlarıyla aynı yapışma (Step1/5/6/7, Login): klavye
+          açılınca buton onun üstüne biniyor. `opened: 15` o adımlardaki
+          değerin aynısı — pb-8'in bıraktığı boşluğu klavye açıkken kısıyor. */}
+      <KeyboardStickyView offset={{ closed: 0, opened: 15 }}>
+        {/* Zemin opak: kap yukarı kaydığında altından OTP kutuları geçiyor. */}
+        <View className="px-6 pb-8 pt-4" style={{ backgroundColor: colors.bg }}>
+          <AnimatedPressable
+            onPress={handleCta}
+            testID="referral-continue"
+            style={{
+              borderRadius: 999,
+              borderCurve: "continuous",
+              overflow: "hidden",
+              backgroundColor: colors.inverseSurface,
+            }}
           >
-            {t("auth.referral.continue")}
-          </Text>
-        </AnimatedPressable>
-
-        {/* "Atla" BELİRGİN, gizli bir bağlantı değil: adım opsiyonel olduğunu
-            kendisi söylemeli, kullanıcı çıkışı aramak zorunda kalmamalı. */}
-        <TouchableOpacity
-          activeOpacity={0.7}
-          onPress={handleSkip}
-          testID="referral-skip"
-          style={{ alignSelf: "center", paddingHorizontal: 24, paddingVertical: 16 }}
-        >
-          <Text className="font-medium text-[15px]" style={{ color: ink(0.6) }}>
-            {t("auth.referral.skip")}
-          </Text>
-        </TouchableOpacity>
-      </View>
+            <Text
+              className="py-[20px] font-bold text-[15px] text-center"
+              style={{ color: colors.onInverseSurface }}
+            >
+              {complete ? t("auth.referral.continue") : t("auth.referral.skip")}
+            </Text>
+          </AnimatedPressable>
+        </View>
+      </KeyboardStickyView>
     </View>
   );
 }

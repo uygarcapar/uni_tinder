@@ -2,12 +2,14 @@
  * Davet kodu adımı — sihirbazın ilk ekranı.
  *
  * Suite'in koruduğu dört karar:
- *   1. Adım OPSİYONEL: kod boşken de "Devam" çalışıyor.
- *   2. Geçersiz kod akışı DURDURMUYOR (uyarı gösterilir, Devam hâlâ aktif) —
- *      ama KENDİ KENDİNE de ilerlemiyor, kullanıcı yazdığını düzeltebilsin.
+ *   1. Adım OPSİYONEL ve çıkış TEK BUTONDA: kod eksikken CTA "Atla" yazıyor ve
+ *      basıldığında gerçekten atlıyor (kodu temizleyip Step3'e reset).
+ *   2. Geçersiz kod akışı DURDURMUYOR (uyarı gösterilir, CTA "Devam Et" olarak
+ *      çalışır) — ama KENDİ KENDİNE de ilerlemiyor, kullanıcı yazdığını
+ *      düzeltebilsin.
  *   3. Geçerli kodda ekran RegisterStep2'nin `onFilled`'ı gibi davranıyor:
  *      buton beklemeden kodu yazıp Step3'e geçiyor.
- *   4. "Atla" kodu gerçekten TEMİZLİYOR — yarım kalmış bir kod sessizce
+ *   4. Atlama kodu gerçekten TEMİZLİYOR — yarım kalmış bir kod sessizce
  *      register-and-complete'e sızmamalı.
  *
  * ⚠️ SONUÇ ARTIK TOAST'TA. Ekran valid/invalid'i satır olarak çizmiyor, uygulama
@@ -68,8 +70,12 @@ const typeCode = async (tree: any, raw: string) => {
 };
 
 describe('boş kod', () => {
-  it('"Devam" kod girilmeden de ilerletiyor ve kodu null yazıyor', () => {
+  it('CTA "Atla" yazıyor ve kodu null yazarak ilerletiyor', () => {
     const tree = setup();
+    // Tek buton: eksik kodda etiket "Atla" (ayrı bir atla bağlantısı YOK).
+    expect(tree.getByText(copy.skip)).toBeTruthy();
+    expect(tree.queryByText(copy.continue)).toBeNull();
+
     fireEvent.press(tree.getByTestId('referral-continue'));
 
     expect(mockDispatch).toHaveBeenCalledWith(
@@ -77,7 +83,10 @@ describe('boş kod', () => {
         payload: { field: 'referralCode', value: null },
       }),
     );
-    expect(nav.navigate).toHaveBeenCalledWith('RegisterStep3');
+    expect(nav.reset).toHaveBeenCalledWith({
+      index: 0,
+      routes: [{ name: 'RegisterStep3' }],
+    });
   });
 
   it('hiçbir hüküm bildirmiyor — "kontrol edilmedi" söylenecek bir şey değil', () => {
@@ -156,6 +165,10 @@ describe('dolu kod', () => {
     // düzeltebilsin (çıkış yolu yine "Devam"/"Atla").
     expect(nav.navigate).not.toHaveBeenCalled();
 
+    // Kod DOLU → etiket "Devam Et": geçersizlik atlamaya çevirmiyor, kod yine
+    // gönderiliyor (kararı sunucu veriyor).
+    expect(tree.getByText(copy.continue)).toBeTruthy();
+
     fireEvent.press(tree.getByTestId('referral-continue'));
     // Kod yine GÖNDERİLİYOR: geçerlilik kaydın değil hediyenin koşulu, karar
     // sunucunun. Yanlış hatırlanan bir kod kullanıcıyı kayıt olamaz yapmamalı.
@@ -193,12 +206,15 @@ describe('Atla', () => {
   beforeEach(() => jest.useFakeTimers());
   afterEach(() => jest.useRealTimers());
 
-  it('girilmiş kodu TEMİZLİYOR ve Step3\'e reset atıyor', async () => {
+  it('yarım kod girilmişken CTA atlıyor: kodu TEMİZLİYOR ve Step3\'e reset atıyor', async () => {
     const tree = setup();
-    await typeCode(tree, 'AK7M2');
+    // YARIM kod: 5 hane dolduğu an etiket "Devam Et"e dönüyor, yani atlama
+    // yolu yalnız eksik koddayken var. Yarım kod zaten gönderilmiyor.
+    await typeCode(tree, 'AK7');
+    expect(tree.getByText(copy.skip)).toBeTruthy();
     mockDispatch.mockClear();
 
-    fireEvent.press(tree.getByTestId('referral-skip'));
+    fireEvent.press(tree.getByTestId('referral-continue'));
 
     expect(mockDispatch).toHaveBeenCalledWith(
       expect.objectContaining({
