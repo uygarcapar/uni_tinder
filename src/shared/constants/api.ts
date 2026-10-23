@@ -277,6 +277,59 @@ export const API_ENDPOINTS = {
   // ve alsoBlock yine çalışıyor); hedef targetType + postId/replyId ile veriliyor.
   FEED_REPORTS: "/api/feed/reports",
 
+  // ── Kampüs Anları (campus moments) ────────────────────────────────────────
+  // Tam ekran kampüs haritasının üstünde yaşayan, 24 SAATTE KAYBOLAN
+  // tek-fotoğraflık anlar ve onlar üzerinden eşleşme. Sözleşmenin tamamı ve
+  // gerekçeleri repo kökündeki `backend_campus_moments_2026-10.md` dosyasında.
+  //
+  // ⚠️ KAPSAM KADEMELİ. Poligon verisi backend'de parti parti toplanıyor;
+  // poligonu olmayan kampüste `/me` → `enabled:false` ve `boundary` →
+  // `polygon:null` geliyor. Bu bir HATA DEĞİL, "bu kampüste henüz yok" demek.
+  //
+  // Kampüs sınırı. Daire geofence için, poligon karar için (ikisi birden
+  // gerekiyor — işletim sistemi yalnız daire kabul ediyor, daire ise kampüsün
+  // yanındaki mahalleyi de içine alıyor).
+  // ⚠️ Yanıttaki `domain` KANONİK yazım: `bogazici.edu.tr` sorana `boun.edu.tr`
+  // dönüyor. Kullanıcının e-posta domain'iyle string karşılaştırma yapma.
+  CAMPUS_BOUNDARY: (domain?: string | null) =>
+    `/api/campus/boundary${
+      domain ? `?domain=${encodeURIComponent(domain)}` : ""
+    }`,
+  // Yüzeyin durumu: kota + kapılar + bugünün anı. `/api/feed/me` ikizi.
+  // ⚠️ `isInCampus` alanı YOK ve istenmedi: bu yanıt cache'leniyor, konum ise
+  // saniyelik. Kampüs kapısı her zaman anlık okumadan geliyor.
+  CAMPUS_ME: "/api/campus/me",
+  // GET: liste (cursor). POST: paylaş — gövdede konum alanları da var, çünkü
+  // "kampüsteyim" kararının OTORİTESİ SUNUCU (istemci kapısı yalnız UX).
+  CAMPUS_MOMENTS: "/api/campus/moments",
+  // Presigned S3. Yükleme imzası kısa (5 dk); OKUMA tarafı imzasız ve
+  // `photoUrl` 24 saat sabit, yani disk cache anahtarı olarak kullanılabilir.
+  CAMPUS_MOMENTS_UPLOAD_URL: "/api/campus/moments/upload-url",
+  // DELETE: soft delete ve GÜNÜN HAKKINI GERİ VERMİYOR (`postedToday` true
+  // kalıyor) — akışın "pencerede yazılan her satır sayılır" kuralı.
+  CAMPUS_MOMENT: (id: string) =>
+    `/api/campus/moments/${encodeURIComponent(id)}`,
+  /**
+   * GEÇME — ⚠️ `/api/swipe/Pass` DEĞİL ve bu çok bilinçli.
+   *
+   * Swipe satırı `UNIQUE(ActorId, TargetId, Mode)`; geçme oraya yazsaydı
+   * kampüste geçilen kişi Keşif destesinden de 3 gün düşerdi. Geçmek sınırsız
+   * olduğu için kullanıcı anlara hızlıca bakarak kendi keşif havuzunu hiçbir
+   * kota harcamadan boşaltır, ertesi gün boş destenin sebebini göremezdi.
+   *
+   * Ayrıca `PassHandler`'ın yan etkileri burada zararlı: "bir eşleşmeyi
+   * kaçırdın" bildirimi olmayan bir kaybı duyurup olmayan bir geri-almayı
+   * gösterirdi.
+   *
+   * BEĞENME ise `/api/swipe/Like`ta kalıyor (`source: "CampusMoment"` +
+   * `momentId` ile) — orada "aynı beğeni" istenen şeyin ta kendisi.
+   */
+  CAMPUS_MOMENT_PASS: (id: string) =>
+    `/api/campus/moments/${encodeURIComponent(id)}/pass`,
+  // Kampüse giriş/çıkış. Push kararı SUNUCUDA: bildirim ancak görülecek bir şey
+  // varsa anlamlı ("bugün 7 an") ve cihaz kaç an olduğunu bilmiyor.
+  CAMPUS_PRESENCE: "/api/campus/presence",
+
   GET_GENDERS: "/api/common/genders",
   GET_CITIES: "/api/common/cities",
   GET_DISTRICTS: "/api/common/cities",

@@ -67,6 +67,7 @@ import {
   SunMoon,
   Camera,
   LayoutList,
+  MapPin,
   MessageSquareText,
   MessageCircle,
   ShieldCheck,
@@ -114,6 +115,19 @@ import {
 } from "@/shared/debug/authDiagnostics";
 import { isTokenStoreDegraded } from "@/shared/utils/tokenStorage";
 import { isAppStoreDegraded } from "@/shared/store/mmkvStorage";
+/**
+ * ⚠️ YALNIZ bu modülden import ediliyor: `campusPresence` (expo-location) ve
+ * `campusService` (api → expo winter fetch) buraya GİRMEMELİ — ikisi de bu
+ * ekranın test süitini açılamaz hâle getiriyor. Araç onları kendi içinde
+ * tembel `require` ile alıyor (gerekçe reportSimulatedEntry).
+ */
+import {
+  campusSimulatedPoint,
+  clearSimulatedCampusLocation,
+  describeSimulateResult,
+  reportSimulatedEntry,
+  simulateCampusLocation,
+} from "@/features/campus/campusDevLocation";
 import {
   premiumSyncUserKey,
   readPendingPremiumSync,
@@ -703,6 +717,51 @@ export default function SettingsScreen() {
   };
 
   /**
+   * ── KAMPÜS KONUM SİMÜLASYONU (yalnız DEV) ────────────────────────────────
+   *
+   * Kampüs anları yüzeyinin tamamı "şu an kampüste misin" sorusuna bağlı ve o
+   * soru masa başında her zaman "hayır". Bu menü okula gitmeden denemeyi
+   * sağlıyor: konum kampüsün İÇİNDEN DOĞRULANMIŞ bir noktaya sabitleniyor, yani
+   * hem istemci kapısı ("+" butonu) açılıyor hem GÖNDERİLEN koordinat kampüste
+   * oluyor — sunucu da doğruladığı için ikincisi olmadan paylaşım reddedilirdi.
+   *
+   * "Kampüse girdim" presence ucuna Enter atıyor, yani BİLDİRİM YOLUNUN
+   * tamamını tetikliyor. Bildirimi SUNUCU gönderiyor (karar onun: kaç an var,
+   * günde kaç kez, kullanıcının tercihi) — cihazda yerel bildirim kurmuyoruz.
+   * Hangi gerekçeyle atılacağı (an var / ilki senden gelsin / hiç) araç
+   * modülünde hesaplanıp ekrana basılıyor.
+   */
+  const handleCampusSimMenu = () => {
+    const active = campusSimulatedPoint();
+    const status = active
+      ? `AÇIK · ${active.domain}\n${active.latitude.toFixed(5)}, ${active.longitude.toFixed(5)}`
+      : "KAPALI — gerçek GPS kullanılıyor";
+
+    const enter = async () => {
+      const { title, message } = await reportSimulatedEntry();
+      Alert.alert(title, message);
+    };
+
+    const turnOn = () => {
+      // Metin ve sebep çözümü araç modülünde (gerekçe describeSimulateResult).
+      const { title, message } = describeSimulateResult(simulateCampusLocation());
+      Alert.alert(title, message);
+    };
+
+    Alert.alert("Kampüs simülasyonu", status, [
+      active
+        ? {
+            text: "Simülasyonu kapat",
+            style: "destructive" as const,
+            onPress: () => clearSimulatedCampusLocation(),
+          }
+        : { text: "Kampüste say", onPress: turnOn },
+      { text: "Kampüse girdim (presence)", onPress: () => { void enter(); } },
+      { text: "Kapat", style: "cancel" },
+    ]);
+  };
+
+  /**
    * Gizli teşhis girişi — ortam satırına uzun basınca hangi rapor olduğunu
    * sorar. Tek girişte toplamanın sebebi: ikinci bir gizli jest (çift dokunuş,
    * beş dokunuş…) hem keşfedilemez hem de öğretilemez oluyor; sahadaki kişiye
@@ -719,6 +778,9 @@ export default function SettingsScreen() {
               text: "Toast galerisi",
               onPress: () => navigation.navigate("ToastGallery"),
             },
+            // Rapor değil, bir TEST ARACI — girişi burada, çünkü yukarıdaki
+            // gerekçe ikinci bir gizli jest icat etmeyi yasaklıyor.
+            { text: "Kampüs simülasyonu", onPress: handleCampusSimMenu },
           ]
         : []),
       { text: "Oturum", onPress: () => { void handleAuthDiagnostics(); } },
@@ -1073,6 +1135,21 @@ export default function SettingsScreen() {
           value={prefs?.feedAlerts ?? true}
           disabled={!prefs}
           onToggle={() => togglePref('feedAlerts')}
+        />
+      ) : null}
+      {/* Kampüs anları — "kampüsüne vardın" bildirimi.
+          ⚠️ Anın KALDIRILDIĞI bildirimi bu anahtardan MUAF (sunucuda
+          SystemAlerts'ten okunuyor): kullanıcı kampüs bildirimlerini kapatsa
+          da fotosunun düştüğünü duymak zorunda — `photoModerationAlerts` ve
+          `feedAlerts`taki aynı özen. */}
+      {feedEnabledForSession() ? (
+        <SettingsToggleRow
+          icon={<SFIcon name="mappin.and.ellipse" fallback={MapPin} size={18} color={colors.text} strokeWidth={1.5} />}
+          title={t('settings.campusAlerts.title')}
+          subtitle={t('settings.campusAlerts.subtitle')}
+          value={prefs?.campusAlerts ?? true}
+          disabled={!prefs}
+          onToggle={() => togglePref('campusAlerts')}
         />
       ) : null}
     </SettingsList>

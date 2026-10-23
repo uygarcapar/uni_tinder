@@ -50,13 +50,49 @@ export type NotificationType =
   // NotificationsScreen listesinde hiç görünmüyorlar. Tip yine de burada,
   // çünkü push yönlendirmesi onları tanımak zorunda.
   | 'FeedDailyRefill'
-  | 'FeedDailyUnused';
+  | 'FeedDailyUnused'
+  /**
+   * Kampüs Anları — kullanıcı kendi kampüsünün sınırına girdiğinde.
+   *
+   * ⚠️ `relatedEntityId` KULLANILMIYOR; ek alan `campusDomain` (KANONİK
+   * yazım). Dedupe anahtarına da o eklendi — akış push'larındaki kazanın
+   * aynısı olurdu: aynı pencerede iki farklı kampüs bildirimi gelirse ikincisi
+   * yutulurdu.
+   *
+   * Kampüs başına GÜNDE BİR KEZ atılıyor. Tek tip, İKİ GEREKÇE — ek alan
+   * `data.intent` hangisi olduğunu söylüyor:
+   *   • `"Nearby"` → o gün paylaşılmış an var ("bugün N an paylaşıldı").
+   *   • `"Prompt"` → yüzey boş ve kullanıcı bugün paylaşmamış ("ilki senden
+   *     gelsin"). Eski kapı yalnız an VARKEN açıldığı için kampüse ilk varan
+   *     kişi hiç bildirim almıyordu; yüzeyin boş kalmasının sebebi buydu.
+   *
+   * ⚠️ `intent` OKUNMASI GEREKMİYOR: yönlendirme ikisinde de aynı ekrana
+   * gidiyor ve günlük hak iki gerekçe arasında PAYLAŞILIYOR (aynı gün ikinci
+   * bildirim yok), yani dedupe anahtarına da girmemeli.
+   *
+   * Metinler sunucudan, alıcının dilinde geliyor — istemci `title`/`body`yi
+   * ham basıyor.
+   */
+  | 'CampusMomentsNearby'
+  /**
+   * Kampüs anın kaldırıldı (moderasyon/admin). `relatedEntityId` = momentId.
+   *
+   * ⚠️ `campusAlerts` tercihinden MUAF — sunucuda `SystemAlerts`a bağlı.
+   * Kullanıcı kampüs davetlerini kapatsa da fotosunun düştüğünü duymak
+   * zorunda (`photoModerationAlerts`taki aynı özen).
+   */
+  | 'CampusMomentModerated';
 
 /**
  * Akış bildirimleri — geldiklerinde akış listeleri ve/veya kota bayat oluyor.
  * `REFERRAL_NOTIFICATION_TYPES` ile aynı rol: tek liste, iki tüketici
  * (yönlendirme ve cache invalidation).
  */
+export const CAMPUS_NOTIFICATION_TYPES = [
+  'CampusMomentsNearby',
+  'CampusMomentModerated',
+] as const;
+
 export const FEED_NOTIFICATION_TYPES = [
   'FeedReply',
   'FeedLikeMilestone',

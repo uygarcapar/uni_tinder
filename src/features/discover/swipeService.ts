@@ -57,6 +57,39 @@ const modeParam = (mode?: string | null): string =>
 const modeBody = (mode?: string | null): Record<string, string> =>
   mode ? { mode } : {};
 
+/**
+ * Kararın HANGİ YÜZEYDEN geldiği — kampüs anları için.
+ *
+ * `mode` ile aynı sözleşme: alan ya dolu gider ya HİÇ gitmez. Gönderilmediğinde
+ * sunucu bugünkü davranışı birebir uyguluyor (Keşif kotası düşer, normal akış).
+ *
+ * `source: "CampusMoment"` görüldüğünde sunucu:
+ *  • Keşif'in günlük `remainingSwipes` kotasını TÜKETMİYOR,
+ *  • kampüsün günlük karar kotasını uyguluyor (free 1, premium sınırsız),
+ *  • satıra `Source` yazıyor → Rewind o satırı SEÇMİYOR (kampüs beğenisi geri
+ *    alınamaz; aksi hâlde Keşif'te rewind'e basan kullanıcı farkında olmadan
+ *    kampüs beğenisini siler).
+ *
+ * `momentId` hem denetim hem IDEMPOTENCY anahtarı: aynı `(actor, momentId)`
+ * ikinci kez gelirse kota ikinci kez yenmiyor.
+ *
+ * ⚠️ GEÇME BU YOLDAN GİTMİYOR. Kampüs `Pass`'i `/api/campus/moments/{id}/pass`
+ * ucunda; swipe satırı yazsaydı kampüste geçilen kişi Keşif destesinden de 3 gün
+ * düşerdi (gerekçe: api.ts > CAMPUS_MOMENT_PASS).
+ */
+export interface SwipeSourceArgs {
+  source?: "CampusMoment" | null;
+  momentId?: string | null;
+}
+
+const sourceBody = (args?: SwipeSourceArgs): Record<string, string> => {
+  if (!args?.source) return {};
+  return {
+    source: args.source,
+    ...(args.momentId ? { momentId: args.momentId } : {}),
+  };
+};
+
 class SwipeService {
   /**
    * Deste isteği. `?expandRadius=true` KALDIRILDI (2026-08-22): tek seferlik
@@ -88,8 +121,18 @@ class SwipeService {
     };
   }
 
-  async likeUser(targetUserId: string, _token?: string | null, mode?: string | null) {
-    return api.post(API_ENDPOINTS.SWIPE_LIKE, { targetUserId, swipeType: 'like', ...modeBody(mode) });
+  async likeUser(
+    targetUserId: string,
+    _token?: string | null,
+    mode?: string | null,
+    source?: SwipeSourceArgs,
+  ) {
+    return api.post(API_ENDPOINTS.SWIPE_LIKE, {
+      targetUserId,
+      swipeType: 'like',
+      ...modeBody(mode),
+      ...sourceBody(source),
+    });
   }
 
   async passUser(targetUserId: string, _token?: string | null, mode?: string | null) {

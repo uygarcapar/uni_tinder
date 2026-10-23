@@ -112,7 +112,13 @@ const ROW_GAP = 10;
  * içinde. Yarıçap büyür ya da dolgu küçülürse bu toplam yeniden kontrol
  * edilmeli; eşiğe yaklaşınca avatarın sol-üst yuvarlağı kırpılır.
  */
-const ROW_RADIUS = 34;
+/**
+ * ⚠️ DIŞA AÇIK, çünkü ikinci bir tüketicisi var: boş durumun paneli
+ * (FeedListPage > FeedEmptyWrap) üst köşelerinde AYNI yarıçapı kullanıyor —
+ * iki yerde elle yazılsaydı boş sayfa ile dolu sayfa arasında geçerken köşe
+ * eğrisi oynardı.
+ */
+export const ROW_RADIUS = 34;
 
 export const feedRowShell = () => ({
   backgroundColor: colors.surface,

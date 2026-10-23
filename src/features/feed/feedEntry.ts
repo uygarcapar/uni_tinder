@@ -55,12 +55,27 @@ let pendingPage: FeedPageKey | null = null;
  * (routeFromNotification) bu durumda Bildirimler'e düşmek zorunda: sekmesi
  * olmayan bir özelliğin push'u ölü tap üretmemeli.
  */
-export function openFeed(page: FeedPageKey = "feed"): boolean {
+export function openFeed(
+  page: FeedPageKey = "feed",
+  options?: {
+    /**
+     * Tam ekran kampüs haritasını da aç — kampüs anı bildirimi buradan
+     * geliyor. Sayfa isteğinden AYRI bir bayrak: bildirim "akışı aç" demiyor,
+     * "kampüsteki anlara bak" diyor ve o yüzey haritanın üstünde.
+     *
+     * ⚠️ `pendingPage` gibi KALICI DEĞİL: harita isteği yalnız ekran
+     * ayaktayken anlamlı. Ekran kapalıysa olay düşüyor ve kullanıcı akış
+     * sekmesine normal şekilde giriyor — bayat bir "harita aç" isteğinin
+     * günler sonra tetiklenmesindense doğru taraf bu.
+     */
+    expandMap?: boolean;
+  },
+): boolean {
   if (!feedEnabledForSession()) return false;
   pendingPage = page;
   // ÖNCE haber ver: ekran ayaktaysa sekme öne gelmeden sayfası çevrilmiş olur,
   // kullanıcı geçişin ortasında akış sayfasını görmez.
-  uiBus.emit(FEED_OPEN_EVENT, { page });
+  uiBus.emit(FEED_OPEN_EVENT, { page, expandMap: options?.expandMap === true });
   if (navigationRef.isReady()) {
     // `as any`: iç içe navigator'ların param tipleri kök tipe bağlı değil —
     // AppNavigator'daki diğer sekme yönlendirmeleriyle aynı kaçış.

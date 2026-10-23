@@ -1147,6 +1147,20 @@ export const selectIsPremium = (state: any): boolean => {
 export const selectPremiumResolved = (state: any): boolean =>
   state?.subscription?.statusResolvedAt != null;
 
+/**
+ * Elimizdeki premium YALNIZ satın alma anındaki optimistic yazım mı — backend
+ * henüz teyit etmedi mi?
+ *
+ * `applyStatus` kanonik bir `isPremium:true` yazdığı an damga siliniyor, yani
+ * `true→false` geçişi tam olarak "webhook indi, backend artık premium diyor"
+ * demek. Premium'a bağlı SUNUCU KARARLARINI (akış filtre kilitleri, kampüs
+ * kotası) ikinci kez tazelemek için bu geçiş gerekiyor: optimistic pencerede
+ * atılan tazeleme isteği backend'in HENÜZ premium görmediği cevabı alıp
+ * cache'e taze olarak yazıyor ve kilitler orada donup kalıyor.
+ */
+export const selectPremiumOptimistic = (state: any): boolean =>
+  state?.subscription?.optimisticPremiumAt != null;
+
 export const selectSubscription = (state: any): SubscriptionState => state?.subscription;
 export const selectSyncPending = (state: any): boolean =>
   !!state?.subscription?.syncPending;

@@ -34,11 +34,12 @@ import SheetBlurBackdrop from "@/shared/components/SheetBlurBackdrop";
  *     köşesi olan bir yüzey taşıyan sheet'ler (kart önizlemeleri) ikisini de
  *     o yüzeyle eşitlemek zorunda
  *
- * Internal: present() çağrısı bir frame ertelenir (requestAnimationFrame).
- * gorhom v5.2.14 + reanimated 4.3.1'de useEffect tick'inde present() çağırmak
- * BottomSheetModal'ın internal animated value'larının initialize olmasından
- * önce geliyor → no-op veya kararsız state. Bir frame beklemek, mount commit'i
- * + reanimated UI thread sync tamamlandığı için güvenli timing sağlar.
+ * Internal: present() çağrısı varsayılan olarak ~100ms ertelenir
+ * (`presentDelayMs`). gorhom v5.2.14 + reanimated 4.3.1'de useEffect tick'inde
+ * present() çağırmak BottomSheetModal'ın internal animated value'larının
+ * initialize olmasından önce geliyor → no-op veya kararsız state. Erteleme o
+ * yarışı kapatıyor; BAŞKA BİR ANİMASYONLA eşzamanlı açılması gereken sheet'ler
+ * `presentDelayMs={0}` geçebiliyor (koşulu prop'un notunda).
  *
  * Köprü TEK YÖNLÜ DEĞİL: sheet kapandığında (kullanıcı, stack ya da
  * kilitlenme) parent'a `onClose` ile haber verilir. Verilmezse `visible`
@@ -116,6 +117,46 @@ export default function AppBottomSheet({
   // sorusunu buna soruyor, 0 ile doğan bir değer sheet daha açılmadan
   // "açık" cevabı verir.
   animatedIndex: animatedIndexProp,
+  /**
+   * AÇILIŞ/KAPANIŞ EĞRİSİ — gorhom'a doğrudan gidiyor.
+   *
+   * Verilmezse gorhom'un varsayılanı: iOS'ta aşırı sönümlü bir yay
+   * (damping 500, stiffness 1000, mass 3), Android'de kendi timing'i. O
+   * varsayılan tek başına iyi ama BAŞKA BİR ANİMASYONLA eşzamanlı olması
+   * gereken sheet'ler için yanlış: yay ne zaman "oturduğu" eşik değerleriyle
+   * (restDisplacementThreshold) belirlendiği için süresi mesafeye göre
+   * değişiyor ve sabit süreli bir eğriyle hizalanamıyor.
+   *
+   * ⚠️ TEK CONFIG, İKİ YÖN: gorhom açılışta da kapanışta da bunu kullanıyor.
+   * Yönleri ayrı eğrilerle sürmek `snapToIndex`/`dismiss` çağrılarına config
+   * geçirmeyi gerektirir; çağıranlar bugün buna ihtiyaç duymuyor.
+   *
+   * ⚠️ `duration` ya da `easing` İÇEREN bir nesne gorhom'a TIMING demek,
+   * içermeyen SPRING (bkz. `utilities/animate`). Yarım bırakılmış bir nesne
+   * (ör. yalnız `damping`) sessizce yay yoluna düşer.
+   */
+  animationConfigs,
+  /**
+   * `present()` ÖNCESİ BEKLEME — varsayılan 100ms (gerekçe dosya başında).
+   *
+   * 0 geçmenin KOŞULU var: bu gorhom örneği `visible` true olduğu anda ZATEN
+   * UZUN SÜREDİR mount'lu olmalı (yani `<AppBottomSheet>` koşulsuz render
+   * ediliyor, "açılırken mount edilen" bir ağacın içinde değil). Erteleme
+   * mount commit'i ile present() arasındaki yarışı kapatmak için var; aynı
+   * turda mount edilmeyen bir örnek için gereksiz ve yalnız gecikme üretiyor.
+   *
+   * ⚠️ ŞU AN HİÇBİR ÇAĞIRAN VERMİYOR. Tek kullanıcısı kampüs anları sheet'iydi
+   * (tam ekran haritayla eşzamanlı kalkmak zorundaydı ve 100ms gözle
+   * görünüyordu); o yüzey modal olmaktan çıkıp düz bir şeride dönüştü
+   * (CampusMomentsStrip). Prop duruyor çünkü aynı ihtiyaç — "başka bir
+   * animasyonla aynı anda kalkmak" — her sheet'te doğabilir ve gerekçesinin
+   * yeniden keşfedilmesi gerekmesin.
+   *
+   * ⚠️ 0 olsa bile sheet aynı karede kalkmıyor: gorhom'un `handlePresent`i
+   * kendi içinde bir rAF erteliyor ve portal içeriği o turda mount olup
+   * ölçülüyor. Burada kazanılan şey o zincire BİNEN 100ms.
+   */
+  presentDelayMs = 100,
 }: any) {
   const ref = useRef(null);
   // gorhom'un `handleDismiss` bir state machine bug'ı taşıyor:
@@ -201,9 +242,12 @@ export default function AppBottomSheet({
     // present()'i bir frame değil ~6 frame ertele — gorhom'un içsel mount +
     // provider registration + portal sync hızlı JS'te tek-rAF ile settle
     // olamıyor (devtools açıkken çalışıp kapalıyken çalışmama paterni).
+    //
+    // Uzun süredir mount'lu bir örnekte o yarış yok ve çağıran `presentDelayMs`
+    // ile ertelemeyi kaldırabiliyor (koşulu prop'un notunda).
     const presentId = setTimeout(() => {
       ref.current?.present?.();
-    }, 100);
+    }, presentDelayMs);
 
     // WATCHDOG — "açılmayan modal" kilidinin tek çıkış kapısı.
     //
@@ -251,7 +295,7 @@ export default function AppBottomSheet({
       clearTimeout(presentId);
       clearTimeout(watchdogId);
     };
-  }, [visible, notifyClose, isOnScreen]);
+  }, [visible, notifyClose, isOnScreen, presentDelayMs]);
 
   const renderBackdrop = useCallback(
     (props) => {
@@ -381,6 +425,8 @@ export default function AppBottomSheet({
       handleIndicatorStyle={handleIndicatorStyle}
       stackBehavior={stackBehavior}
       topInset={topInset}
+      // Verilmezse gorhom varsayılanı (gerekçe prop'ta).
+      animationConfigs={animationConfigs}
       backgroundStyle={{
         backgroundColor: colors.bg,
         borderTopLeftRadius: cornerRadius,

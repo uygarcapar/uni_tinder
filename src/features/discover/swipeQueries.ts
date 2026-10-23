@@ -290,6 +290,19 @@ type SwipeVariables = {
   direction: string;
   userId: string;
   mode?: string | null;
+  /**
+   * Kararın hangi yüzeyden geldiği — şu an yalnız "CampusMoment".
+   *
+   * ⚠️ Verildiğinde KEŞİF SAYAÇLARINA DOKUNULMUYOR (bkz. onMutate). Sunucu da
+   * `remainingSwipes`i tüketmiyor; istemcide düşürseydik kullanıcı Keşif'e
+   * geçtiğinde sayacın gözle azaldığını görür ve hakkını kaybettiğini sanardı.
+   *
+   * Yalnız BEĞENİ bu yoldan gidiyor; kampüs GEÇME'si `/api/campus/...` ucunda
+   * (gerekçe swipeService > SwipeSourceArgs).
+   */
+  source?: "CampusMoment" | null;
+  /** Denetim + idempotency: aynı `(actor, momentId)` kotayı iki kez yemiyor. */
+  momentId?: string | null;
 };
 
 export function useSwipeMutation() {
@@ -298,12 +311,16 @@ export function useSwipeMutation() {
     // `mode` HER AKSİYONDA taşınıyor: sunucu swipe satırını o modun altına
     // yazıyor ve karşılıklı beğeni kontrolü AYNI modda yapılıyor (çapraz-mod
     // beğeni eşleşme üretmiyor).
-    mutationFn: ({ direction, userId, mode }: SwipeVariables) => {
+    mutationFn: ({ direction, userId, mode, source, momentId }: SwipeVariables) => {
       if (direction === "up") return swipeService.fireUser(userId, null, mode);
       if (direction === "left") return swipeService.passUser(userId, null, mode);
-      return swipeService.likeUser(userId, null, mode);
+      return swipeService.likeUser(userId, null, mode, { source, momentId });
     },
-    onMutate: ({ direction }: SwipeVariables) => {
+    onMutate: ({ direction, source }: SwipeVariables) => {
+      // ⚠️ KAMPÜS DALI: bu yüzeyin kararı Keşif ekonomisine yazılmıyor —
+      // sunucu `remainingSwipes`i tüketmiyor, istemci de sayacı düşürmüyor.
+      // Kampüs kotası ayrı ve `/api/campus/me`den geliyor.
+      if (source === "CampusMoment") return;
       qc.setQueryData(swipeKeys.stats, (prev: any) => {
         if (!prev) return prev;
         const next = { ...prev };
