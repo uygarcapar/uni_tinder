@@ -5,8 +5,9 @@ import i18n from "@/shared/i18n";
 import { colors } from "@/shared/theme/colors";
 
 /**
- * "Fotoğraf doğrulandı" rozeti — ismin sağında, premium rozetinin (PremiumBadge)
- * yanında ve aynı hizada. ÖLÇÜSÜ ONDAN BAĞIMSIZ: premium yuvarlak zeminli bir
+ * "Fotoğraf doğrulandı" rozeti — ismin HEMEN sağında (premium işaretinden ÖNCE:
+ * doğrulama ismin bir parçası gibi okunmalı, araya ürün işareti girmemeli) ve
+ * aynı hizada. ÖLÇÜSÜ PREMIUM'DAN BAĞIMSIZ: premium yuvarlak zeminli bir
  * chip, bu çıplak bir sembol — aynı sayıya bağlanırlarsa biri diğerini bozuyor.
  *
  * 🔴 METİN: "Fotoğraf Doğrulandı", "Kimlik Doğrulandı" DEĞİL. Bu akış kimliği
@@ -35,10 +36,20 @@ export const selfieBadgeSize = (fontSize: number): number =>
 export default function SelfieVerifiedBadge({
   verified,
   size = 16,
+  color = colors.onMedia,
   style,
 }: {
   verified: boolean | null | undefined;
   size?: number;
+  /**
+   * Varsayılan BEYAZ (`onMedia`): rozetin durduğu yerlerin neredeyse tamamı
+   * foto/perde üstü (kart kapağı, sticky başlık, Likes kartı) — orada beyaz
+   * ismin kendisiyle aynı mürekkep ve her iki modda sabit.
+   *
+   * Medya DIŞINDA (profil hero'su gibi uygulama zemini üstünde) beyaz açık
+   * modda kaybolur: oralar bu prop'la `text` geçmek ZORUNDA.
+   */
+  color?: string;
   /**
    * `PremiumBadge` ile aynı kaçış: baseline hizalı satırlarda çağıran
    * `alignSelf: "center"` vermek zorunda — bir View'ın baseline'ı ALT kenarıdır,
@@ -59,10 +70,12 @@ export default function SelfieVerifiedBadge({
         name="checkmark.seal.fill"
         fallback={BadgeCheck}
         size={size}
-        // Yeşil DEĞİL, marka rengi: yeşil sistem "başarı" tonu ve ekranda
-        // premium rozeti, isim ve bu sembol yan yanayken tek yabancı renk oydu.
-        color={colors.primary}
-        fill={colors.primary}
+        // Ne yeşil ne marka rengi: BEYAZ (istek). Yeşil sistem "başarı" tonuydu,
+        // marka rengi ise satırdaki `plus` işaretiyle aynı mürekkebe düşüyordu —
+        // iki ayrı sinyal tek renk olunca okunmuyordu. Beyaz rozeti ismin
+        // mürekkebine bağlar, renk yalnız premium'da kalır.
+        color={color}
+        fill={color}
         weight="semibold"
         strokeWidth={2}
       />
