@@ -70,7 +70,12 @@ const setup = (over: Partial<React.ComponentProps<typeof FeedComposerSheet>> = {
   return { onSend, onClose, onAnonymousPaywall, ...utils };
 };
 
-/** Konu seçimi — gönderimin ÖN KOŞULU (zorunlu alan, ön seçim yok). */
+/**
+ * Konu seçimi — gönderimin ÖN KOŞULU (en az biri zorunlu, ön seçim yok).
+ *
+ * ÇOKLU seçim: aynı çipe tekrar dokunmak onu BIRAKIYOR, başka bir çipe
+ * dokunmak öncekini bırakmıyor (bkz. "çoklu konu seçimi" suite'i).
+ */
 const pickTopic = (key = 'Roommate') => {
   fireEvent.press(screen.getByText(topicLabelFor(key)));
 };
@@ -123,7 +128,7 @@ describe('temel akış', () => {
     const { onSend } = setup();
     await typeAndSend('  Kütüphane kaçta açılıyor?  ');
     // Baştaki/sondaki boşluk kırpılıyor (sunucu da normalize ediyor).
-    expect(onSend).toHaveBeenCalledWith('Kütüphane kaçta açılıyor?', false, 'Roommate');
+    expect(onSend).toHaveBeenCalledWith('Kütüphane kaçta açılıyor?', false, ['Roommate']);
   });
 
   it('boş metinle gönderilemez', async () => {
@@ -184,7 +189,67 @@ describe('kota bitti — composer kilitli', () => {
   it('remaining null + kapı kapalı değil → gönderim normal', async () => {
     const { onSend } = setup({ quotaExhausted: false, remaining: null });
     await typeAndSend('merhaba');
-    expect(onSend).toHaveBeenCalledWith('merhaba', false, 'Roommate');
+    expect(onSend).toHaveBeenCalledWith('merhaba', false, ['Roommate']);
+  });
+});
+
+/**
+ * ÇOKLU KONU SEÇİMİ (istek).
+ *
+ * Eskiden tek seçimdi ve ikinci çipe dokunmak birincinin yerine geçiyordu.
+ * Test edilen üç şey:
+ *  1. İkinci çip ÖNCEKİNİ BIRAKMIYOR — `onSend` iki anahtar taşıyor.
+ *  2. Seçili çipe tekrar dokunmak onu bırakıyor (çoklu seçimde geri almanın
+ *     tek yolu; olmasa kullanıcı sheet'i kapatıp yazdığını kaybederdi).
+ *  3. HEPSİ bırakılırsa gönderim yine kapanıyor — en az bir konu ZORUNLU.
+ */
+describe('çoklu konu seçimi', () => {
+  it('iki konu seçilince İKİSİ de gönderiliyor', async () => {
+    const { onSend } = setup();
+    typeBody('iki etiketli gönderi');
+    await act(async () => {});
+    pickTopic('Roommate');
+    pickTopic('Event');
+    fireEvent.press(screen.getByText(sendLabel()));
+    await act(async () => {});
+    // Dokunma SIRASI korunuyor; kanoniklik (sıralama/tekilleştirme) servis
+    // katmanının işi (bkz. feedService.createPost > normalizeTopicSelection).
+    expect(onSend).toHaveBeenCalledWith('iki etiketli gönderi', false, [
+      'Roommate',
+      'Event',
+    ]);
+  });
+
+  it('seçili çipe tekrar dokunmak onu BIRAKIR', async () => {
+    const { onSend } = setup();
+    typeBody('tek etiket kaldı');
+    await act(async () => {});
+    pickTopic('Roommate');
+    pickTopic('Event');
+    pickTopic('Roommate');
+    fireEvent.press(screen.getByText(sendLabel()));
+    await act(async () => {});
+    expect(onSend).toHaveBeenCalledWith('tek etiket kaldı', false, ['Event']);
+  });
+
+  it('TÜM konular bırakılırsa gönderilemez — en az biri zorunlu', async () => {
+    const { onSend } = setup();
+    typeBody('etiketsiz');
+    await act(async () => {});
+    pickTopic('Roommate');
+    pickTopic('Roommate');
+    fireEvent.press(screen.getByText(sendLabel()));
+    await act(async () => {});
+    expect(onSend).not.toHaveBeenCalled();
+  });
+
+  it('hiç konu seçilmeden gönderilemez (ön seçim YOK)', async () => {
+    const { onSend } = setup();
+    typeBody('konusuz gönderi');
+    await act(async () => {});
+    fireEvent.press(screen.getByText(sendLabel()));
+    await act(async () => {});
+    expect(onSend).not.toHaveBeenCalled();
   });
 });
 
@@ -196,7 +261,7 @@ describe('anonim kapısı', () => {
     const sw = screen.UNSAFE_getByType(require('react-native').Switch);
     fireEvent(sw, 'valueChange', true);
     await typeAndSend('anonim gönderi');
-    expect(onSend).toHaveBeenCalledWith('anonim gönderi', true, 'Roommate');
+    expect(onSend).toHaveBeenCalledWith('anonim gönderi', true, ['Roommate']);
   });
 
   it('paywall → kilit metni çizilir ve gönderi ANONİM OLMADAN gider', async () => {
@@ -212,7 +277,7 @@ describe('anonim kapısı', () => {
     fireEvent(sw, 'valueChange', true);
     await typeAndSend('deneme');
     // UT-7305 yenmesin diye gönderi NORMAL gidiyor.
-    expect(onSend).toHaveBeenCalledWith('deneme', false, 'Roommate');
+    expect(onSend).toHaveBeenCalledWith('deneme', false, ['Roommate']);
   });
 
   it('paywall → anahtara dokunuş SHEET\'İ KAPATIR, sonra Plus açar', () => {

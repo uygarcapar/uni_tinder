@@ -2,6 +2,7 @@ import api from "@/shared/services/api";
 import { API_ENDPOINTS } from "@/shared/constants/api";
 import { FEED_CODES } from "@/shared/constants/responseCodes";
 import { markFeedDisabled } from "./feedFlag";
+import { normalizeTopicSelection } from "./feedTopics";
 import type {
   FeedAcceptReplyResult,
   FeedCreatePostResult,
@@ -100,9 +101,27 @@ class FeedService {
     params.set("sort", args.sort);
     params.set("interest", args.interest);
     params.set("kind", args.kind);
-    // "all" = filtre yok → parametre HİÇ gönderilmiyor. Boş/"all" göndermek
-    // sunucuda enum çözümlemesini patlatır (`university`nin aynı kuralı).
-    if (args.topic && args.topic !== "all") params.set("topic", args.topic);
+    /**
+     * KONU FİLTRESİ — çoklu seçim, İKİ PARAMETRE.
+     *
+     * Boş seçim = filtre yok → hiçbir parametre gönderilmiyor. Boş string
+     * göndermek sunucuda enum çözümlemesini patlatır (`university`nin aynı
+     * kuralı).
+     *
+     * ⚠️ `topic` VE `topics` BİRLİKTE gönderiliyor ve bu bilinçli:
+     *  • `topics` yeni sözleşme (virgüllü liste) — backend tanıdığında çoklu
+     *    filtre olduğu gibi çalışıyor, istemci sürümü beklenmiyor.
+     *  • `topic` geriye uyum: BUGÜNKÜ sunucu yalnız onu okuyor, yani çoklu
+     *    seçimde fiilen İLK (alfabetik) konu süzülüyor. Eksik bir filtre,
+     *    yanlış bir filtreden iyi — hiç parametre göndermemek kullanıcıya
+     *    seçmediği konuları gösterirdi.
+     * Backend `topics`i tanıdığında buradan `topic` SİLİNEBİLİR.
+     */
+    const topics = normalizeTopicSelection(args.topics);
+    if (topics.length > 0) {
+      params.set("topic", topics[0]);
+      params.set("topics", topics.join(","));
+    }
     if (args.cursor) params.set("cursor", args.cursor);
     if (typeof args.page === "number" && args.page > 0) {
       params.set("page", String(args.page));
@@ -126,18 +145,31 @@ class FeedService {
   }
 
   /**
-   * `topic` ZORUNLU (yeni sözleşme): composer seçilmeden gönder butonunu
+   * KONU ZORUNLU: composer en az bir konu seçilmeden gönder butonunu
    * aktifleştirmiyor. Wire'da opsiyonel kalmaya devam ediyor çünkü sunucu eski
    * istemcilerin konusuz gönderilerini "General" sayıyor — ama bu sürüm her
    * zaman açıkça gönderiyor.
+   *
+   * ⚠️ İKİ ALAN BİRLİKTE (`getPosts` konu filtresiyle aynı gerekçe):
+   * `topics` yeni çoklu sözleşme, `topic` ise BUGÜNKÜ sunucunun okuduğu tek
+   * alan. Backend `topics`i tanıyana kadar çoklu seçimde yalnız İLK konu
+   * kaydediliyor — kullanıcı arayüzde üç etiket seçse de gönderi tek etiketle
+   * yayına giriyor. Backend sözleşmeyi açtığında buradan `topic` silinebilir.
    */
   createPost(
     body: string,
     isAnonymous: boolean,
-    topic: string,
+    topics: readonly string[],
   ): Promise<FeedCreatePostResult> {
+    const selected = normalizeTopicSelection(topics);
     return guard(
-      () => api.post(API_ENDPOINTS.FEED_POSTS, { body, isAnonymous, topic }),
+      () =>
+        api.post(API_ENDPOINTS.FEED_POSTS, {
+          body,
+          isAnonymous,
+          topic: selected[0],
+          topics: selected,
+        }),
       (res) => {
         const result = requireResult<any>(res, "createPost");
         return {

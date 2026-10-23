@@ -11,12 +11,7 @@ import {
   sectionGroupStyle,
   SECTION_GROUP_PAD_H,
 } from "@/shared/theme/sectionGroup";
-import type {
-  FeedInterest,
-  FeedKind,
-  FeedSort,
-  FeedTopicFilter,
-} from "../feedTypes";
+import type { FeedInterest, FeedKind, FeedSort } from "../feedTypes";
 
 /**
  * Akış filtre sheet'i — sıralama · ilgi alanı · paylaşım tipi.
@@ -32,7 +27,8 @@ export interface FeedFilterValue {
   sort: FeedSort;
   interest: FeedInterest;
   kind: FeedKind;
-  topic: FeedTopicFilter;
+  /** Seçili konular — ÇOKLU, boş dizi = "tüm konular". */
+  topics: string[];
 }
 
 export interface FeedFilterSheetProps {
@@ -49,8 +45,9 @@ export interface FeedFilterSheetProps {
    * çıkmadan filtrede görünmesi için liste İÇERİDE SABİT YAZILMIYOR.
    */
   topicKeys: string[];
+  /** Anahtar → hashtag etiket ("#ders grubu"); biçim ekranın kararı. */
   topicLabelFor: (key: string) => string;
-  /** "Tüm konular" satırının etiketi. */
+  /** "Tüm konular" çipinin etiketi — HASHTAG DEĞİL, bir konu değil çünkü. */
   topicAllLabel: string;
 }
 
@@ -62,7 +59,7 @@ const DEFAULTS: FeedFilterValue = {
   sort: "new",
   interest: "all",
   kind: "all",
-  topic: "all",
+  topics: [],
 };
 
 export default function FeedFilterSheet({
@@ -137,24 +134,28 @@ export default function FeedFilterSheet({
         title={t("feed.filter.topic")}
         description={t("feed.filter.topicDesc")}
         first
+        // ÇİP AKIŞI GRUP KUTUSUNA GİRMİYOR: `sectionGroup.ts`'in başlığındaki
+        // kural — kapsüllerden oluşan bir gövde kutuya alındığında çerçeve
+        // içinde çerçeve çıkıyor (keşif filtresi ve profil düzenlemenin bu
+        // kutudan muaf tutulmasının aynı gerekçesi). Bölüm ayrımını burada
+        // başlık + açıklama taşıyor.
+        bare
       >
-        {/* "Tümü" + katalog. Tek seçim: çoklu seçim satır bileşeni bu
-            sheet'te yok ve sunucu da tek konu filtreliyor. */}
-        <OptionRow
-          label={topicAllLabel}
-          selected={draft.topic === "all"}
-          onPress={() => setDraft((d) => ({ ...d, topic: "all" }))}
+        <TopicChips
+          keys={topicKeys}
+          selected={draft.topics}
+          labelFor={topicLabelFor}
+          allLabel={topicAllLabel}
+          onToggle={(key) =>
+            setDraft((d) => ({
+              ...d,
+              topics: d.topics.includes(key)
+                ? d.topics.filter((k) => k !== key)
+                : [...d.topics, key],
+            }))
+          }
+          onClear={() => setDraft((d) => ({ ...d, topics: [] }))}
         />
-        {topicKeys.map((key) => (
-          <OptionRow
-            key={key}
-            label={topicLabelFor(key)}
-            selected={draft.topic === key}
-            onPress={() =>
-              setDraft((d) => ({ ...d, topic: key as FeedTopicFilter }))
-            }
-          />
-        ))}
       </Section>
 
       <Section
@@ -234,12 +235,20 @@ function Section({
   description,
   locked,
   first,
+  bare,
   children,
 }: {
   title: string;
   /** Başlığın altındaki tek cümle — profil düzenlemedeki `*Desc` satırları. */
   description: string;
   locked?: boolean;
+  /**
+   * Gövde GRUP KUTUSUNA ALINMIYOR — çip/kapsül akışı için.
+   *
+   * `sectionGroup.ts`'in kuralı: kutu "bir listenin satırları" dili, kendi
+   * çerçevesi olan elemanlar içine konduğunda çerçeve içinde çerçeve çıkıyor.
+   */
+  bare?: boolean;
   /**
    * İlk bölüm — bölümler arası 28'lik pay BURADA UYGULANMIYOR.
    *
@@ -324,8 +333,92 @@ function Section({
           OptionRow) — Ayarlar'daki kuralın aynısı: dokunulabilir alan ve
           ileride gelebilecek bir basılı zemin kutunun kenarından kenarına
           uzasın, metin yine kenarlıktan içeri çekilsin. */}
-      <View style={sectionGroupStyle()}>{children}</View>
+      {bare ? children : <View style={sectionGroupStyle()}>{children}</View>}
     </View>
+  );
+}
+
+/**
+ * Konu çipleri — ÇOKLU seçim, "tüm konular" dahil.
+ *
+ * SATIR DEĞİL ÇİP (istek): konu artık bir hashtag ve yedi etiket iki satırda
+ * aynı anda görünüyor — tik'li satır listesinde aynı yedi seçenek sheet'in
+ * yarısını yiyor, sıralama/paylaşım tipi bölümleri kaydırmadan hiç
+ * görünmüyordu.
+ *
+ * ⚠️ "TÜM KONULAR" BİR ÇİP AMA BİR KONU DEĞİL: seçimi TEMİZLİYOR ve yalnız
+ * hiçbir konu seçili değilken dolu çiziliyor. Hashtag biçimi de almıyor — `#`
+ * sunucunun kataloğundaki şeylerin işareti. Bu çipin varlığı bilinçli: tek tek
+ * dokunarak seçimi boşaltmak (çoklu seçimin tek geri alma yolu) üç seçili
+ * konuda üç dokunuş eder, "tümü" bir dokunuşta aynı yere götürüyor.
+ *
+ * Çip biçimi composer'ınkiyle (FeedComposerSheet > TopicChips) AYNI ölçülerde:
+ * aynı kataloğu iki ayrı yazımla göstermek iki ayrı liste gibi okunur.
+ */
+function TopicChips({
+  keys,
+  selected,
+  labelFor,
+  allLabel,
+  onToggle,
+  onClear,
+}: {
+  keys: string[];
+  selected: string[];
+  labelFor: (key: string) => string;
+  allLabel: string;
+  onToggle: (key: string) => void;
+  onClear: () => void;
+}) {
+  return (
+    <View style={{ flexDirection: "row", flexWrap: "wrap", gap: 8 }}>
+      <Chip label={allLabel} active={selected.length === 0} onPress={onClear} />
+      {keys.map((key) => (
+        <Chip
+          key={key}
+          label={labelFor(key)}
+          active={selected.includes(key)}
+          onPress={() => onToggle(key)}
+        />
+      ))}
+    </View>
+  );
+}
+
+/** Tek çip — seçili DOLGULU, seçilmemiş yalnız kenarlıklı (uygulama dili). */
+function Chip({
+  label,
+  active,
+  onPress,
+}: {
+  label: string;
+  active: boolean;
+  onPress: () => void;
+}) {
+  return (
+    <TouchableOpacity
+      activeOpacity={0.7}
+      onPress={onPress}
+      style={{
+        paddingHorizontal: 14,
+        paddingVertical: 8,
+        borderRadius: 999,
+        borderCurve: "continuous",
+        borderWidth: active ? 0 : 0.5,
+        borderColor: colors.hairlineStrong,
+        backgroundColor: active ? colors.inverseSurface : "transparent",
+      }}
+    >
+      <Text
+        style={{
+          color: active ? colors.onInverseSurface : colors.text,
+          fontSize: 13.5,
+          fontWeight: "600",
+        }}
+      >
+        {label}
+      </Text>
+    </TouchableOpacity>
   );
 }
 

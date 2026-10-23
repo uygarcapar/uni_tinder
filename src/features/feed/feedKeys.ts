@@ -31,7 +31,13 @@ export const feedKeys = {
       p.sort,
       p.interest,
       p.kind,
-      p.topic,
+      // Konular TEK BİR STRING'E katlanıyor: dizi olarak bırakılsa React
+      // Query onu derin karşılaştırdığı için sorun olmazdı, ama anahtarın
+      // KANONİK olması gerekiyor — ["Event","Advice"] ile ["Advice","Event"]
+      // aynı listeyi iki kez çekerdi. Sıralama `normalizeTopicSelection`da,
+      // burada DEĞİL: imzayı kuran taraf (filtre sheet'i / disk) zaten kanonik
+      // veriyor, burada yeniden sıralamak o sözleşmeyi gizlerdi.
+      p.topics.join(","),
     ] as const,
   mine: ["feed", "mine"] as const,
   /**

@@ -137,14 +137,14 @@ describe('sanitizeFeedParams — Plus\'tan düşme', () => {
 });
 
 /**
- * ŞEMA GÖÇÜ v1 → v2 (`topic` alanı eklendi).
+ * ŞEMA GÖÇÜ v1 → v2 (`topic` eklendi) → v3 (`topic` → `topics`, çoklu).
  *
  * Sürüm atlamada VARSAYILANA DÜŞMEK yerine GÖÇÜRÜYORUZ ve test edilen şey bu:
- * kullanıcının kampüs/sıralama tercihi onun kurduğu bir şey, yeni bir alan
- * eklendi diye sıfırlanması kazanılmış bir ayarı kaybettirirdi.
+ * kullanıcının kampüs/sıralama tercihi onun kurduğu bir şey, konu alanının
+ * şekli değişti diye sıfırlanması kazanılmış bir ayarı kaybettirirdi.
  */
-describe('şema göçü — v1 kaydı okunabilir', () => {
-  it('v1 kaydının tercihleri KORUNUYOR, topic "all"a tamamlanıyor', () => {
+describe('şema göçü — v1/v2 kaydı okunabilir', () => {
+  it('v1 kaydının tercihleri KORUNUYOR, topics boş diziye tamamlanıyor', () => {
     appPrefs.set(
       `feedFilters:${USER}`,
       JSON.stringify({
@@ -160,7 +160,7 @@ describe('şema göçü — v1 kaydı okunabilir', () => {
       sort: 'popular',
       interest: 'mine',
       kind: 'anonymous',
-      topic: 'all',
+      topics: [],
     });
   });
 
@@ -174,9 +174,27 @@ describe('şema göçü — v1 kaydı okunabilir', () => {
     expect(loadFeedParams(USER)).toEqual(DEFAULT_FEED_PARAMS);
   });
 
-  it('v2 gidiş-dönüş — topic korunuyor', () => {
-    saveFeedParams(USER, params({ topic: 'Roommate' }));
-    expect(loadFeedParams(USER).topic).toBe('Roommate');
+  it('v2 → v3: TEK `topic` tek elemanlı diziye göçüyor', () => {
+    appPrefs.set(
+      `feedFilters:${USER}`,
+      JSON.stringify({ ...params(), v: 2, topic: 'Roommate' }),
+    );
+    expect(loadFeedParams(USER).topics).toEqual(['Roommate']);
+  });
+
+  it('v2 → v3: `topic: "all"` BOŞ DİZİ (filtrenin yokluğu)', () => {
+    // "all" bir konu değil; diziye konsaydı sunucuya konu parametresi olarak
+    // giderdi ve enum çözümlemesi patlardı.
+    appPrefs.set(
+      `feedFilters:${USER}`,
+      JSON.stringify({ ...params(), v: 2, topic: 'all' }),
+    );
+    expect(loadFeedParams(USER).topics).toEqual([]);
+  });
+
+  it('v3 gidiş-dönüş — çoklu seçim korunuyor', () => {
+    saveFeedParams(USER, params({ topics: ['Advice', 'Event'] }));
+    expect(loadFeedParams(USER).topics).toEqual(['Advice', 'Event']);
   });
 
   it('TANIMADIĞI konu anahtarını da koruyor', () => {
@@ -185,17 +203,23 @@ describe('şema göçü — v1 kaydı okunabilir', () => {
     // DOĞRULAMIYOR, yalnız tipe bakıyor.
     appPrefs.set(
       `feedFilters:${USER}`,
-      JSON.stringify({ ...params(), v: 2, topic: 'BrandNewTopic' }),
+      JSON.stringify({ ...params(), v: 3, topics: ['BrandNewTopic'] }),
     );
-    expect(loadFeedParams(USER).topic).toBe('BrandNewTopic');
+    expect(loadFeedParams(USER).topics).toEqual(['BrandNewTopic']);
   });
 
-  it('string olmayan topic "all"a düşüyor', () => {
+  it('string olmayan / mükerrer değerler ayıklanıyor, sıra kanonik', () => {
+    // Kanoniklik query key'in şartı: ["Event","Advice"] ile tersi aynı listeyi
+    // iki kez çekerdi (bkz. feedKeys.posts).
     appPrefs.set(
       `feedFilters:${USER}`,
-      JSON.stringify({ ...params(), v: 2, topic: 42 }),
+      JSON.stringify({
+        ...params(),
+        v: 3,
+        topics: ['Event', 42, 'Advice', 'Event', '', 'all'],
+      }),
     );
-    expect(loadFeedParams(USER).topic).toBe('all');
+    expect(loadFeedParams(USER).topics).toEqual(['Advice', 'Event']);
   });
 });
 
@@ -210,6 +234,14 @@ describe('activeFilterCount — "Filtre" pill rozeti', () => {
     expect(
       activeFilterCount(params({ sort: 'top', interest: 'mine', kind: 'anonymous' })),
     ).toBe(3);
+  });
+
+  it('KAÇ konu seçili olursa olsun konu 1 sayılır', () => {
+    // Rozet "kaç FİLTRE varsayılandan sapmış" diyor, "kaç konu seçili"
+    // demiyor — üç konuda 3 artsaydı yanındaki filtrelerle aynı ölçekte
+    // konuşmazdı. Hangi konular seçili bilgisini konu pill'i veriyor.
+    expect(activeFilterCount(params({ topics: ['Event'] }))).toBe(1);
+    expect(activeFilterCount(params({ topics: ['Event', 'Advice', 'Social'] }))).toBe(1);
   });
 
   it('university rozete SAYILMAZ — kendi pill\'inde zaten görünüyor', () => {
