@@ -25,6 +25,33 @@ export function clamp(v: number, lo: number, hi: number): number {
 }
 
 /**
+ * 3:4 PENCERE — kırpma ekranı ile kamera ekranının ORTAK kadrajı.
+ *
+ * İkisinde de aynı olmak zorunda: kamera bu pencerenin içinde önizleme
+ * gösteriyor, çekilen kare de doğrudan kırpıcıya gidiyor. Formül ayrı yazılsaydı
+ * çekimden kırpmaya geçişte kadraj kayardı.
+ *
+ * Pencere TAM GENİŞLİK ve ekranın tam ortasında; dikey pay iki chrome bandının
+ * BÜYÜĞÜNDEN hesaplanıyor (merkez ekranın merkezi olduğu için sığma sınırı
+ * büyük olan banda göre). 3:4 tam genişlikte sığmıyorsa — küçük cihazlarda —
+ * genişlik o paya göre küçülüyor.
+ */
+export function frameWindow(a: {
+  screenW: number;
+  screenH: number;
+  headerH: number;
+  footerH: number;
+  aspectW: number;
+  aspectH: number;
+}): { winW: number; winH: number } {
+  const { screenW, screenH, headerH, footerH, aspectW, aspectH } = a;
+  const chrome = Math.max(headerH, footerH);
+  const availH = Math.max(120, screenH - chrome * 2);
+  const winW = Math.min(screenW, (availH * aspectW) / aspectH);
+  return { winW, winH: (winW * aspectH) / aspectW };
+}
+
+/**
  * Görüntüyü pencereye TAM KAPLATAN taban ölçek.
  *
  * `max()` bağlayıcı ekseni seçtiği için `scale = 1`'de hem `dispW >= winW` hem

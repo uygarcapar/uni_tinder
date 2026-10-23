@@ -48,6 +48,7 @@ export { default as ClipboardPaste } from "lucide-react-native/icons/clipboard-p
 export { default as Clock } from "lucide-react-native/icons/clock";
 export { default as Code } from "lucide-react-native/icons/code";
 export { default as Copy } from "lucide-react-native/icons/copy";
+export { default as Crop } from "lucide-react-native/icons/crop";
 export { default as Delete } from "lucide-react-native/icons/delete";
 export { default as Dog } from "lucide-react-native/icons/dog";
 export { default as Download } from "lucide-react-native/icons/download";

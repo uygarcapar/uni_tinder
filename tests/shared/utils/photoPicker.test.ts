@@ -8,16 +8,23 @@ import {
   recropExistingPhoto,
 } from '@/shared/utils/photoPicker';
 import { presentCropper } from '@/shared/components/cropper/cropperBridge';
+import { presentCameraCapture } from '@/shared/components/camera/cameraBridge';
 import { forgetPhoto } from '@/shared/utils/photoStore';
 
 jest.mock('@/shared/components/cropper/cropperBridge', () => ({
   presentCropper: jest.fn(),
+}));
+jest.mock('@/shared/components/camera/cameraBridge', () => ({
+  presentCameraCapture: jest.fn(),
 }));
 jest.mock('@/shared/utils/photoStore', () => ({
   forgetPhoto: jest.fn(),
 }));
 
 const mockPresent = presentCropper as jest.MockedFunction<typeof presentCropper>;
+const mockShoot = presentCameraCapture as jest.MockedFunction<
+  typeof presentCameraCapture
+>;
 const mockForget = forgetPhoto as jest.MockedFunction<typeof forgetPhoto>;
 const mockDownload = File.downloadFileAsync as jest.Mock;
 const mockLibrary = ImagePicker.launchImageLibraryAsync as jest.Mock;
@@ -36,9 +43,13 @@ beforeEach(() => {
   // clearAllMocks `mockResolvedValueOnce` kuyruğunu BOŞALTMIYOR: tüketilmemiş
   // bir "once" bir sonraki teste sızıp yanlış sonuç döndürüyordu.
   mockPresent.mockReset();
+  mockShoot.mockReset();
   mockLibrary.mockReset();
   mockCamera.mockReset();
   mockGetCameraPerm.mockResolvedValue({ granted: true, canAskAgain: true, status: 'granted' });
+  // Varsayılan: uygulama içi kamera yok → sistem kamerası yedeği. Yeni yolu
+  // sınayan testler bunu kendi içinde eziyor.
+  mockShoot.mockResolvedValue({ status: 'unavailable' });
 });
 
 describe('pickAndCropPhotos', () => {
@@ -173,6 +184,88 @@ describe('captureAndCropPhoto', () => {
     mockPresent.mockResolvedValue({ status: 'skipped' });
 
     await expect(captureAndCropPhoto()).resolves.toBeNull();
+  });
+
+  describe('uygulama içi kamera', () => {
+    const shot = (uri: string, width = 3024, height = 4032) => ({
+      status: 'captured' as const,
+      shot: { uri, width, height },
+    });
+
+    it('kareyi SİSTEM kamerasına hiç uğramadan kırpıcıya verir', async () => {
+      mockShoot.mockResolvedValue(shot('file:///cache/shot.jpg'));
+      mockPresent.mockResolvedValue(done('file:///shot-crop.jpg'));
+
+      await expect(captureAndCropPhoto()).resolves.toMatchObject({
+        uri: 'file:///shot-crop.jpg',
+      });
+      // İkinci onay ekranının kaynağı buydu: artık hiç açılmıyor.
+      expect(mockCamera).not.toHaveBeenCalled();
+      expect(mockPresent.mock.calls[0][0]).toMatchObject({
+        uri: 'file:///cache/shot.jpg',
+        srcWidth: 3024,
+        srcHeight: 4032,
+      });
+      // Tek fotoğraflık akış — sayaç gönderilmiyor.
+      expect(mockPresent.mock.calls[0][0].index).toBeUndefined();
+    });
+
+    it('kırpıcıdaki ✕ kamerayı YENİDEN açar (yeniden çek)', async () => {
+      mockShoot
+        .mockResolvedValueOnce(shot('file:///cache/first.jpg'))
+        .mockResolvedValueOnce(shot('file:///cache/second.jpg'));
+      mockPresent
+        .mockResolvedValueOnce({ status: 'skipped' })
+        .mockResolvedValueOnce(done('file:///second-crop.jpg'));
+
+      await expect(captureAndCropPhoto()).resolves.toMatchObject({
+        uri: 'file:///second-crop.jpg',
+      });
+      expect(mockShoot).toHaveBeenCalledTimes(2);
+      // İptal edilen kare diskte kalmıyor.
+      expect(mockForget).toHaveBeenCalledWith('file:///cache/first.jpg');
+    });
+
+    it('kamerada iptal → null, kırpıcı hiç açılmaz', async () => {
+      mockShoot.mockResolvedValue({ status: 'cancelled' });
+
+      await expect(captureAndCropPhoto()).resolves.toBeNull();
+      expect(mockPresent).not.toHaveBeenCalled();
+      expect(mockCamera).not.toHaveBeenCalled();
+    });
+
+    it('çekim teknik olarak patlarsa sistem kamerasına DÜŞMEZ', async () => {
+      mockShoot.mockResolvedValue({ status: 'failed', error: new Error('native') });
+
+      await expect(captureAndCropPhoto()).resolves.toBeNull();
+      expect(mockCamera).not.toHaveBeenCalled();
+    });
+
+    it('native boyut vermezse ölçüyü kendisi okur', async () => {
+      mockShoot.mockResolvedValue(shot('file:///cache/shot.jpg', 0, 0));
+      mockPresent.mockResolvedValue(done('file:///shot-crop.jpg'));
+      jest
+        .spyOn(Image, 'getSize')
+        .mockImplementation(((_uri: string, success: any) => success(1200, 1600)) as any);
+
+      await captureAndCropPhoto();
+
+      expect(mockPresent.mock.calls[0][0]).toMatchObject({
+        srcWidth: 1200,
+        srcHeight: 1600,
+      });
+    });
+
+    it('overlay bağlı değilse sistem kamerası yedeği çalışır', async () => {
+      mockShoot.mockResolvedValue({ status: 'unavailable' });
+      mockCamera.mockResolvedValue({ canceled: false, assets: [asset('file:///shot.jpg')] });
+      mockPresent.mockResolvedValue(done('file:///shot-crop.jpg'));
+
+      await expect(captureAndCropPhoto()).resolves.toMatchObject({
+        uri: 'file:///shot-crop.jpg',
+      });
+      expect(mockCamera).toHaveBeenCalledTimes(1);
+    });
   });
 });
 
