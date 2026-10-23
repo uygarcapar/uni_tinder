@@ -3,5 +3,7 @@
   "NSPhotoLibraryUsageDescription": "Lit needs photo library access so you can choose your profile photos.",
   "NSCameraUsageDescription": "Lit needs camera access so you can take a profile photo and verify that the photos are really you.",
   "NSLocationWhenInUseUsageDescription": "Lit needs your location to show your city and the people near you.",
+  "NSLocationAlwaysAndWhenInUseUsageDescription": "Lit uses your location in the background to let you know when you arrive on your campus and to let you post while you are there. Lit does not track you continuously; it only knows when you cross your own campus boundary.",
+  "NSLocationAlwaysUsageDescription": "Lit uses your location in the background to let you know when you arrive on your campus and to let you post while you are there. Lit does not track you continuously; it only knows when you cross your own campus boundary.",
   "NSMotionUsageDescription": "Lit uses motion data to orient the camera correctly while you take a photo and to improve location accuracy."
 }
