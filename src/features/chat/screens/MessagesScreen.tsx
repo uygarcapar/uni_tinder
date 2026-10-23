@@ -70,6 +70,9 @@ import {
 } from "@/features/chat/chatHydrate";
 import { debugLastMessageRows } from "@/features/chat/chatRepository";
 import EmptyState from "@/shared/components/EmptyState";
+// Ekran kromunun mod vurgusu (gerekçe `accent`in yanında).
+import { useAppMode } from "@/features/discover/useAppMode";
+import { modeAccent } from "@/features/discover/modeTheme";
 import type PagerView from "react-native-pager-view";
 import PagerTabBar, {
   AnimatedPagerView,
@@ -154,6 +157,20 @@ export default function MessagesScreen() {
   // pager'ın sayfa genişliğiyle BİREBİR olmalı, yoksa üstteki blok sayfalardan
   // hızlı/yavaş kayar. Sabit değil hook: dönme ve iPad split view'da değişiyor.
   const { width: SCREEN_W } = useWindowDimensions();
+
+  /**
+   * Ekrandaki dolgulu yüzeylerin rengi — başlıktaki Plus pill'i, satırdaki
+   * "Sınırlı" rozeti ve boş durumun "Eşleşme bul" CTA'sı.
+   *
+   * Liste 2026-10-21'den beri SEÇİLİ MODUN sohbetlerini gösteriyor (eşleşme
+   * mod başına, bkz. `modeConversations`), yani ekrandaki her satır zaten bu
+   * modun — rengin satır başına çözülmesine gerek yok. Modu BİLİNMEYEN satır
+   * (eski sunucu / yerel olarak açılmış) iki modda da görünüyor ve o modun
+   * rengini alıyor; alternatifi satır başına iki ayrı renk taşımaktı, ki
+   * "Sınırlı" rozeti bir KOTA işareti, mod işareti değil.
+   */
+  const { mode: selectedMode } = useAppMode();
+  const accent = modeAccent(selectedMode);
 
   // Alan-bazlı seç: chat bucket'ı olarak seçince Immer her chat dispatch'inde
   // yeni bucket referansı üretiyor ve MessagesScreen alakasız her mesaj/typing/
@@ -643,6 +660,35 @@ export default function MessagesScreen() {
   // sayfa da aynı anda canlı ve her biri kendi dizisini istiyor. Kapanmış
   // (isActive=false) sohbetler SADECE "Kapalı"da görünür; "Tümü" ve
   // "Okunmamış" yalnız aktifleri listeler. Arama sorgusu üçüne de uygulanıyor —
+  /**
+   * ── MOD SÜZGECİ ───────────────────────────────────────────────────────────
+   * Eşleşme 2026-10-21'den beri MOD BAŞINA: aynı çiftin Flört ve Arkadaş
+   * sohbeti AYRI iki satır (bu yüzden liste anahtarı `conversationId`).
+   *
+   * Süzme SUNUCUDA DEĞİL BURADA, bilinçli bir sapma (sunucunun önerisi
+   * "`?mode=` ile çek, mod değişince listeyi boşalt"tı):
+   *   • delta-sync ucu (`/messages/changes`) mod süzgeci TAŞIMIYOR — tüm
+   *     modların satırları zaten geliyor ve SQLite aynası hepsini tutmak
+   *     zorunda (soğuk açılışta okuma yolu diskten besleniyor),
+   *   • liste sayfalanmıyor, yani tam liste elimizde; moda göre çekmek ikinci
+   *     bir mekanizma + mod geçişinde boş liste + bayat watermark riski
+   *     demekti,
+   *   • bu hâliyle mod geçişi AĞA HİÇ ÇIKMIYOR — liste anında dönüyor.
+   *
+   * ⚠️ MODU OLMAYAN satır ELENMİYOR (`!c.mode`): alanı göndermeyen bir sunucu
+   * sürümünde ya da yerel olarak (MatchNotification'dan) modsuz açılmış bir
+   * satırda elemek, kullanıcının sohbetlerini kaybettirirdi. Sekme rozeti de
+   * AYNI kuralı uyguluyor (bkz. chatSlice > selectUnreadForMode) — ayrışırsa
+   * rozet listede olmayan bir mesajı sayar.
+   */
+  const modeConversations = useMemo(
+    () =>
+      (conversations || []).filter(
+        (c: any) => !c.mode || c.mode === selectedMode,
+      ),
+    [conversations, selectedMode],
+  );
+
   // sekme değiştirmek aramayı sıfırlamıyor.
   const conversationsByTab = useMemo(() => {
     const q = searchQuery.trim().toLowerCase();
@@ -651,7 +697,7 @@ export default function MessagesScreen() {
     const all = [];
     const unread = [];
     const closed = [];
-    for (const c of conversations) {
+    for (const c of modeConversations) {
       if (!matches(c)) continue;
       if (!c.isActive) {
         closed.push(c);
@@ -661,7 +707,7 @@ export default function MessagesScreen() {
       if (c.unreadCount > 0) unread.push(c);
     }
     return { all, unread, closed };
-  }, [conversations, searchQuery]);
+  }, [modeConversations, searchQuery]);
 
   // Arama çubuğunun üstündeki bölüm başlığı — aktif sekmeye göre. Beğeniler
   // ekranındaki `sectionTitle` ile aynı kalıp: pill filtrenin adı, başlık
@@ -703,7 +749,7 @@ export default function MessagesScreen() {
     let all = 0;
     let unread = 0;
     let closed = 0;
-    for (const c of conversations) {
+    for (const c of modeConversations) {
       if (!c.isActive) {
         closed += 1;
         continue;
@@ -712,7 +758,7 @@ export default function MessagesScreen() {
       if (c.unreadCount > 0) unread += 1;
     }
     return { all, unread, closed };
-  }, [conversations]);
+  }, [modeConversations]);
 
   // ⚠️ Sıra pager sayfalarının sırasıyla BİREBİR: alt çizginin interpolasyonu
   // sayfa indeksinden besleniyor, iki liste ayrışırsa çizgi yanlış sekmeye
@@ -956,6 +1002,7 @@ export default function MessagesScreen() {
         voiceDurationMs={voiceDurationByConvId[item.conversationId]}
         onOpen={handleRowOpen}
         onLongPress={handleRowLongPress}
+        accent={accent}
       />
     ),
     [
@@ -965,6 +1012,7 @@ export default function MessagesScreen() {
       voiceDurationByConvId,
       handleRowOpen,
       handleRowLongPress,
+      accent,
     ],
   );
 
@@ -1053,6 +1101,10 @@ export default function MessagesScreen() {
                   topOffset={0}
                   buttonLabel={t("chat.messages.findMatch")}
                   buttonLabelColor={colors.onMediaInverse}
+                  // CTA kullanıcıyı Keşif'e gönderiyor ve Keşif SEÇİLİ MODDA
+                  // açılıyor — butonun gideceği yerin rengini taşıması doğru
+                  // olan (EmptyState'in varsayılanı sabit litPlus).
+                  buttonColor={accent}
                   onButtonPress={() => navigation.navigate("Discover")}
                 />
               </View>
@@ -1278,10 +1330,10 @@ export default function MessagesScreen() {
                     // showUnlimitedUpsell) — kaydırırken başlıkla birlikte
                     // girip çıkması için hücrenin içinde duruyor.
                     // Dolgu/mürekkep satırlardaki "Sınırlı" rozetiyle ve
-                    // Beğeniler'deki pill'le AYNI (litPlus + onMediaInverse):
-                    // uygulamada "bu premium'a bakıyor" dili tek. Yazı `text`
-                    // olamaz — açık modda beyaza döner ve dolgunun üstünde
-                    // kaybolur.
+                    // Beğeniler'deki pill'le AYNI (mod vurgusu +
+                    // onMediaInverse): uygulamada "bu premium'a bakıyor" dili
+                    // tek. Yazı `text` olamaz — açık modda beyaza döner ve
+                    // dolgunun üstünde kaybolur.
                     <AnimatedPressable
                       pressScale={0.96}
                       onPress={() => openLitPlus()}
@@ -1291,7 +1343,7 @@ export default function MessagesScreen() {
                         flexShrink: 0,
                         borderRadius: 999,
                         borderCurve: "continuous",
-                        backgroundColor: colors.litPlus,
+                        backgroundColor: accent,
                         paddingHorizontal: 12,
                         paddingVertical: 6,
                       }}
@@ -1577,6 +1629,10 @@ const ConversationRow = memo(function ConversationRow({
   voiceDurationMs,
   onOpen,
   onLongPress,
+  // "Sınırlı" rozetinin dolgusu — SEÇİLİ MODUN vurgusu. Rozet bir MOD işareti
+  // DEĞİL (kota işareti), ama ekranda duran yüzey kullanıcının içinde olduğu
+  // modu yansıtmalı; gerekçe ekranın `accent` notunda.
+  accent,
 }: any) {
   const { t } = useTranslation();
   const isUnread = conv.unreadCount > 0;
@@ -1805,7 +1861,7 @@ const ConversationRow = memo(function ConversationRow({
               {/* Kapalı sohbette çizilmiyor: oraya zaten mesaj atılamıyor,
                   rozet yalnız gürültü olurdu.
                   Dolgu/mürekkep Beğeniler'deki "Beğenenleri gör" pill'iyle
-                  AYNI (litPlus + onMediaInverse) — uygulamada "bu premium'a
+                  AYNI (mod vurgusu + onMediaInverse) — uygulamada "bu premium'a
                   bakıyor" dili tek. */}
               {isLimited && conv.isActive && (
                 <View
@@ -1813,7 +1869,7 @@ const ConversationRow = memo(function ConversationRow({
                     flexShrink: 0,
                     borderRadius: 999,
                     borderCurve: "continuous",
-                    backgroundColor: colors.litPlus,
+                    backgroundColor: accent,
                     paddingHorizontal: 8,
                     paddingVertical: 2,
                   }}

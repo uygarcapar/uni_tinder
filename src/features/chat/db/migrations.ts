@@ -175,12 +175,31 @@ CREATE INDEX idx_messages_unsent ON messages (send_state, sent_at_ms, id)
   WHERE send_state <> 'sent';
 `;
 
+/**
+ * v6 — `mode`: sohbetin ait olduğu uygulama modu ("Dating" | "Friends").
+ *
+ * Eşleşme 2026-10-21'den beri MOD BAŞINA (backend: `UNIQUE(UserIdA, UserIdB,
+ * Mode)`), yani aynı çiftin iki ayrı sohbeti olabiliyor ve liste onları moda
+ * göre ayırmak zorunda.
+ *
+ * Kolon diskte OLMAK ZORUNDA, yalnız redux'ta değil: okuma yolu soğuk açılışta
+ * SQLite'tan besleniyor (bkz. chatFlags / hydrateConversations). Taşımasaydı
+ * ağ cevabı gelene kadar liste iki modun sohbetlerini karışık gösterirdi —
+ * mod ayrımının en görünür olduğu yer tam da o ilk kareler.
+ *
+ * NULL = "sunucu söylemedi" (eski sürüm / yerel olarak açılmış satır) ve bu
+ * `'Dating'` ile AYNI ŞEY DEĞİL: süzgeç NULL satırı elemiyor, yoksa alanı
+ * göndermeyen bir sunucuda liste bomboş görünürdü.
+ */
+const V6 = `ALTER TABLE conversations ADD COLUMN mode TEXT;`;
+
 export const MIGRATIONS: { version: number; up: (db: ChatDbDriver) => void }[] = [
   { version: 1, up: (db) => db.exec(V1) },
   { version: 2, up: (db) => db.exec(V2) },
   { version: 3, up: (db) => db.exec(V3) },
   { version: 4, up: (db) => db.exec(V4) },
   { version: 5, up: (db) => db.exec(V5) },
+  { version: 6, up: (db) => db.exec(V6) },
 ];
 
 export const CHAT_DB_VERSION = MIGRATIONS[MIGRATIONS.length - 1].version;

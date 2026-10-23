@@ -9,6 +9,8 @@ import MessagesScreen from "@/features/chat/screens/MessagesScreen";
 import FeedScreen from "@/features/feed/screens/FeedScreen";
 import { feedEnabledForSession } from "@/features/feed/feedFlag";
 import { useAppSelector } from "@/shared/hooks/redux";
+import { selectUnreadForMode } from "@/features/chat/chatSlice";
+import { useAppMode } from "@/features/discover/useAppMode";
 import type { TabParamList } from "@/shared/types/navigation";
 import { colors } from "../shared/theme/colors";
 import { useProfileTabAvatarIcon } from "./profileTabAvatar";
@@ -125,7 +127,16 @@ const messageTabIcon = ({ focused }: TabIconArgs) =>
 
 export default function TabNavigator() {
   const { t } = useTranslation();
-  const unreadTotal = useAppSelector((s) => (s as any).chat.unreadTotal as number);
+  /**
+   * Mesaj rozeti SEÇİLİ MODUN okunmamışları — eşleşme (ve sohbet) 2026-10-21'den
+   * beri mod başına. `chat.unreadTotal` modsuz olduğu için doğrudan okunmuyor;
+   * selector satırlardan topluyor, liste henüz yoksa o alana düşüyor (gerekçe
+   * selectUnreadForMode'da).
+   */
+  const { mode: selectedMode } = useAppMode();
+  const unreadTotal = useAppSelector((s) =>
+    selectUnreadForMode(s, selectedMode),
+  );
   // Beğeniler rozeti = beni beğenenler. Eskiden buraya karar bekleyen AKIŞ
   // YANITLARI da toplanıyordu (iki sayaç slice'ta ayrı duruyordu çünkü
   // `whoLikedMeCount` id kümesinden türüyor ve yanıt sayısı oraya yazılsaydı

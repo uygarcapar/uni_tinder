@@ -116,6 +116,8 @@ export interface ConversationRow {
   sort_order: number;
   closed_by_me: number | null;
   closed_reason: string | null;
+  /** v6 — "Dating" | "Friends"; NULL = sunucu söylemedi (≠ Dating). */
+  mode: string | null;
 }
 
 /**
@@ -158,6 +160,9 @@ export function rowToConversation(row: ConversationRow): ConversationListItemDto
     closedByMe: row.closed_by_me == null ? undefined : row.closed_by_me === 1,
     closedReason: row.closed_reason ?? undefined,
     deactivatedByMe: row.deactivated_by_me == null ? undefined : row.deactivated_by_me === 1,
+    // ÜÇ DURUMLU değil ama aynı aile: NULL → `undefined` ("bilmiyoruz"), mod
+    // süzgeci bu satırı ELEMİYOR (bkz. ConversationListItemDto.mode).
+    mode: row.mode ?? undefined,
   };
 }
 

@@ -245,6 +245,23 @@ export interface MessageDto {
 export interface ConversationListItemDto {
   conversationId: string;
   matchId?: string;
+  /**
+   * Sohbetin ait olduğu mod ("Dating" | "Friends") — eşleşme MOD BAŞINA
+   * (backend 2026-10-21: `UNIQUE(UserIdA, UserIdB, Mode)`), yani aynı çiftin
+   * iki modda İKİ AYRI sohbeti olabiliyor ve liste anahtarı bu yüzden
+   * `conversationId` olmak zorunda (partnerUserId çakışır).
+   *
+   * ⚠️ `undefined` = SUNUCU SÖYLEMİYOR, "Dating" DEĞİL. Mod süzgeci bu
+   * durumda satırı ELEMİYOR (bkz. MessagesScreen > modeConversations): alanı
+   * göndermeyen bir sunucu sürümünde ya da yerel olarak açılmış eski bir
+   * satırda elemek, kullanıcının bütün sohbetlerini kaybettirirdi.
+   *
+   * Listeyi `?mode=` ile çekMİYORUZ (sunucunun önerisinin aksine): delta-sync
+   * ucu (`/messages/changes`) mod süzgeci TAŞIMIYOR ve SQLite aynası tüm
+   * modları tutmak zorunda — ayrımı istemci bu alanla yapıyor, böylece mod
+   * geçişi ağa hiç çıkmıyor.
+   */
+  mode?: string;
   partnerUserId: string;
   partnerDisplayName: string;
   partnerProfileImageUrl?: string;

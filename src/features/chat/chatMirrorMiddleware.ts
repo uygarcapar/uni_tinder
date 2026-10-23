@@ -248,6 +248,11 @@ function mirror(action: any, getState: () => any): void {
           partnerDisplayName: p.matchedUserName,
           partnerProfileImageUrl: p.matchedUserPhoto,
           matchedAt: p.matchedAt,
+          // Eşleşmenin modu payload'dan (`MatchNotification.mode`) — yeni
+          // sohbet daha ilk karede doğru sekmede dursun. Alan yoksa `null`
+          // kalıyor ve satır iki sekmede de görünüyor; `/conversations`
+          // cevabı modu yazınca kendiliğinden yerine oturuyor.
+          mode: p.mode ?? null,
         });
       }
       return;
