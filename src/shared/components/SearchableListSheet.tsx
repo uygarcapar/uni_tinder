@@ -64,6 +64,13 @@ const ACTION_SIZE = GLASS_ICON_CLEAR_SIZE;
 const defaultLabelOf = (item: any) => item?.name ?? "";
 
 /**
+ * Satırın sağındaki kutu — şehir/kampüs seçicilerle AYNI ölçü (bkz.
+ * CityPickerModal, FeedUniversitySheet). Uygulamada "uzun listeden seç"
+ * sheet'lerinin tek işaret dili bu; sayı üç dosyada da 22.
+ */
+const CHECKBOX_SIZE = 22;
+
+/**
  * Header'ın YUVARLAK cam ikon butonu — X (sol) ve onay (sağ) TEK buradan
  * çıkıyor, yani ölçü/malzeme/glif puntosu iki uçta birebir aynı.
  *
@@ -151,10 +158,21 @@ const renderHeaderIconButton = (
 // taşıyan uçlar (bölümler) bunu geçip resolveLocalized ile çözmeli, yoksa
 // backend'in dil tercihi istemcininkinden ayrıştığında liste yanlış dilde çıkar.
 //
+// SATIR GÖRÜNÜMÜ ŞEHİR SEÇİCİNİN BİREBİR KALIBI (bkz. CityPickerModal,
+// FeedUniversitySheet): dolgusuz satır + sağda sabit yuvarlak kare kutu,
+// seçiliyken dolu + beyaz tik. Eskiden seçili satır `hairline` kapsül dolgusuna
+// bürünüp sağına sade bir ✓ koyuyordu; aynı işi yapan üç sheet'in üçü de artık
+// aynı işareti çiziyor.
+//
 // Single mode (default):
 //   - initialValue: enumName (string)
-//   - item tap → onConfirm(enumName) anında, sheet kapanır
-//   - "Bitti" → onConfirm(localValue) (initial value)
+//   - item tap → YALNIZ taslağı değiştirir (sheet kapanmaz)
+//   - "Bitti" (header'daki ✓) → onConfirm(draft)
+//
+// ⚠️ SEÇİM ONAYLI. Eskiden satıra dokunmak doğrudan `onConfirm` çağırıp sheet'i
+// kapatıyordu; header'da X + ✓ duran bir sheet'te o iki buton anlamsız kalıyor
+// (FeedUniversitySheet'te aynı gerekçeyle değişti). Dokunuş taslağı yazar,
+// uygulayan şey ✓, X ise taslağı atar.
 //
 // Multi mode (multi={true}):
 //   - initialSelectedValues: enumName array
@@ -176,8 +194,19 @@ const SearchableListSheet = ({
   const { t } = useTranslation();
   const isValid =
     initialValue !== null && initialValue !== undefined && initialValue !== "";
+  /**
+   * LİSTENİN BAŞINA ALINAN anahtar — taslak DEĞİL.
+   *
+   * Sıralama taslağa bakarsa satıra dokunan kullanıcı seçtiğini parmağının
+   * altından kaybediyor: liste anında yeniden diziliyor ve seçilen en tepeye
+   * uçuyor (bkz. CityPickerModal'daki aynı not). Bu değer prop'tan geliyor ve
+   * sheet açıkken değişmiyor — bileşen her açılışta yeniden mount ediliyor.
+   */
   const localValue = isValid ? String(initialValue) : "";
   const [search, setSearch] = useState("");
+  // Single mode'un taslağı. Mount = açılış (çağıran koşullu mount ediyor), bu
+  // yüzden prop'u izleyen bir efekt gerekmiyor.
+  const [draft, setDraft] = useState(localValue);
   const [localSet, setLocalSet] = useState(() =>
     multi ? new Set(initialSelectedValues) : null,
   );
@@ -216,7 +245,9 @@ const SearchableListSheet = ({
 
   const isItemSelected = (item) => {
     if (multi) return localSet?.has(item.enumName) ?? false;
-    return item.enumName === localValue;
+    // İşaret TASLAĞA bakıyor (sıralamanın baktığı `localValue`e değil):
+    // dokunulan satırın kutusu anında doluyor, yeri değişmeden.
+    return item.enumName === draft;
   };
 
   const handleItemPress = (item) => {
@@ -235,7 +266,7 @@ const SearchableListSheet = ({
         return next;
       });
     } else {
-      onConfirm(item.enumName);
+      setDraft(item.enumName);
     }
   };
 
@@ -243,7 +274,7 @@ const SearchableListSheet = ({
     if (multi) {
       onConfirm(Array.from(localSet ?? []));
     } else {
-      onConfirm(localValue);
+      onConfirm(draft);
     }
   };
 
@@ -349,54 +380,62 @@ const SearchableListSheet = ({
           const isSelected = isItemSelected(item);
           return (
             <TouchableOpacity
-              activeOpacity={0.7}
+              // activeOpacity 1 — basılı tutarken solma yok. Tek geri bildirim
+              // seçimin kendisi (sağdaki kutu). Şehir/kampüs seçicilerle aynı.
+              activeOpacity={1}
               onPress={() => handleItemPress(item)}
+              // ZEMİN HİÇ DEĞİŞMİYOR: seçili satır eskiden `hairline` kapsül
+              // dolgusuna bürünüyordu, seçimi söyleyen tek şey artık sağdaki
+              // kutu. Dolgu kalkınca `borderRadius`/`overflow` da işsiz kaldı
+              // (yuvarlatacak yüzey yok) ve satırın kendi yatay payı düştü:
+              // metin artık arama input'uyla aynı hizada (kap zaten 16 veriyor).
               style={{
-                paddingVertical: 20,
-                paddingHorizontal: 16,
+                paddingVertical: 18,
                 flexDirection: "row",
                 alignItems: "center",
-                borderCurve: "continuous",
-                overflow: "hidden",
-                borderRadius: 999,
-                backgroundColor: isSelected
-                  ? colors.hairline
-                  : "transparent",
-                position: "relative",
               }}
             >
               <Text
                 style={{
                   color: isSelected ? colors.text : colors.textSecondary,
                   fontSize: 16,
-                  fontWeight: "400",
+                  // 400 → 500: kutu taşıyan satırların ağırlığı (bkz.
+                  // CityPickerModal); 400 o kutunun yanında silik kalıyor.
+                  fontWeight: "500",
                   flex: 1,
-                  marginRight: 32,
+                  marginRight: 12,
                 }}
               >
                 {labelOf(item)}
               </Text>
-              {isSelected && (
-                <View
-                  pointerEvents="none"
-                  style={{
-                    position: "absolute",
-                    right: 16,
-                    top: 0,
-                    bottom: 0,
-                    justifyContent: "center",
-                  }}
-                >
+              {/* ⚠️ Kutu HER ZAMAN çiziliyor, koşullu olan yalnız içindeki tik:
+                  yoksa seçim anında metin alanı genişleyip satır yana kayıyor. */}
+              <View
+                style={{
+                  width: CHECKBOX_SIZE,
+                  height: CHECKBOX_SIZE,
+                  borderRadius: 7,
+                  borderCurve: "continuous",
+                  borderWidth: isSelected ? 0 : 1.5,
+                  borderColor: colors.hairlineStrong,
+                  backgroundColor: isSelected
+                    ? colors.inverseSurface
+                    : "transparent",
+                  alignItems: "center",
+                  justifyContent: "center",
+                }}
+              >
+                {isSelected && (
                   <SFIcon
                     name="checkmark"
                     fallback={Check}
-                    size={18}
-                    color={colors.text}
-                    strokeWidth={2.5}
+                    size={14}
+                    color={colors.onInverseSurface}
+                    strokeWidth={3}
                     weight="bold"
                   />
-                </View>
-              )}
+                )}
+              </View>
             </TouchableOpacity>
           );
         }}

@@ -28,12 +28,30 @@ import { colors, ink } from "@/shared/theme/colors";
  * Bir sayıyı burada değiştirirken MessagesScreen'deki çubuğa da bak — ölçü
  * `SEARCH_BAR_HEIGHT` üzerinden ortak, renk/punto elle eşlenmiş durumda.
  *
- * ⚠️ BÜYÜTEÇ AKIŞTA, mutlak DEĞİL. Eski yazımda ikon `position: absolute` +
- * `top/bottom: 0` ile KAPSÜLÜN merkezine, metin ise input'un kendi ölçtüğü
- * satır kutusuna oturuyordu; iki merkez çakışmadığı için yazı ikonun altında
- * kalıyordu (sabit yükseklik + `paddingVertical: 0` da düzeltmedi). Tek satırda
- * `alignItems: "center"` ikisini aynı eksene bağlıyor. Bu yüzden kapsül input'ta
- * değil TAŞIYICIDA; input'a yükseklik/dikey dolgu vermek hizayı geri bozar.
+ * ⚠️ 🔴 KAPSÜL BİR `TouchableOpacity` DEĞİL — KLAVYE O YÜZDEN AÇILMIYORDU.
+ *
+ * Eski yazımda kapsül bir `TouchableOpacity`ydi ve `onPress` input'un ref'i
+ * üzerinden `focus()` çağırıyordu. Input'a basınca HİÇBİR ŞEY olmuyordu:
+ * `BottomSheetTextInput` gövdesinde `react-native-gesture-handler`'ın
+ * `TextInput`i (native `NativeViewGestureHandler` sarmalı) ve bir RN
+ * Touchable'ın İÇİNDE o dokunuş iki tarafın arasında kalıyor — RN responder'ı
+ * press'i tamamlamıyor, native handler da input'u odaklamıyor. Bu, toast
+ * içindeki yutulan dokunuşla aynı aile (RNGH ↔ RN touch iç içe).
+ *
+ * Çözüm: ARADAN RN TOUCHABLE'I KALDIRMAK. Kapsül düz bir `View`; dokunuşu
+ * input'un KENDİSİ alıyor (gorhom'un bu bileşeni tam olarak bunun için var) ve
+ * odak için ref'e hiç ihtiyaç kalmıyor.
+ *
+ * ⚠️ BÜYÜTEÇ MUTLAK ve `pointerEvents="none"`, input ise KAPSÜLÜ DOLDURUYOR
+ * (`alignSelf: "stretch"`). İkisi birlikte olmak ZORUNDA:
+ *   • İkon akışta kalsaydı dokunulabilir bir komşu olurdu ve kapsülün solunda
+ *     odaklamayan ölü bir şerit bırakırdı.
+ *   • Bir tur ikon mutlak yapıldı ama input GERİLMEDİ: o zaman ikon KAPSÜLÜN
+ *     merkezine, yazı input'un kendi ölçtüğü satır kutusuna oturdu ve yazı
+ *     ikonun altında kaldı. Input kapsülü doldurduğunda iki merkez aynı kutu.
+ * Input'a dikey DOLGU/YÜKSEKLİK verme (`padding: 0` kalmalı) — hizayı yine
+ * bozar; dikey ortalama tek satırlık alanın kendi davranışı
+ * (+ Android için `textAlignVertical`).
  *
  * ⚠️ PLACEHOLDER YOK ve `placeholder` PROP'U DA YOK — kasıtlı, Mesajlar'daki
  * çubukta da yok. Boş kapsülde yalnız büyüteç duruyor; "Üniversite ara" gibi bir
@@ -43,6 +61,11 @@ import { colors, ink } from "@/shared/theme/colors";
  * `BottomSheetTextInput` kullanılıyor (düz `TextInput` değil): beş çağıranın
  * hepsi bir bottom sheet'in içinde ve klavye açılınken sheet'in üst durağa
  * çıkması buna bağlı.
+ *
+ * ⚠️ Ref YALNIZ `clear()` için duruyor, odak için DEĞİL (yukarıdaki kural).
+ * gorhom'un `useImperativeHandle`ı boş bağımlılıkla kurulu ve RNGH'nin kendi
+ * sarmalından `null` dönebiliyor; odağı ona bağlamak sessizce çalışmayan bir
+ * input demek.
  */
 
 /**
@@ -96,9 +119,7 @@ export default function SheetSearchInput({
   };
 
   return (
-    <TouchableOpacity
-      activeOpacity={1}
-      onPress={() => inputRef.current?.focus()}
+    <View
       style={[
         {
           flexDirection: "row",
@@ -109,7 +130,6 @@ export default function SheetSearchInput({
           borderCurve: "continuous",
           overflow: "hidden",
           paddingHorizontal: 16,
-          gap: 8,
           // Üstte başlık/header ile arasında nefes, altta listeyle.
           marginTop: 10,
           marginBottom: 12,
@@ -117,7 +137,20 @@ export default function SheetSearchInput({
         style,
       ]}
     >
-      <View style={{ flexShrink: 0 }}>
+      {/* Büyüteç DOKUNUŞ ALMIYOR: kapsülün tamamı input'un dokunma alanı
+          olmalı, yoksa solda odaklamayan bir şerit kalır (gerekçe dosya
+          başında). Mutlak konum da bu yüzden — akışta kalsa input'un yerini
+          daraltırdı. */}
+      <View
+        pointerEvents="none"
+        style={{
+          position: "absolute",
+          left: 16,
+          top: 0,
+          bottom: 0,
+          justifyContent: "center",
+        }}
+      >
         <SFIcon
           name="magnifyingglass"
           fallback={Search}
@@ -137,9 +170,18 @@ export default function SheetSearchInput({
         autoCapitalize="none"
         style={{
           flex: 1,
+          // ⚠️ Kapsülü DOLDURUYOR: dokunuşu input'un kendisi alsın ve yazı
+          // ikonla aynı kutuda ortalansın (gerekçe dosya başında).
+          alignSelf: "stretch",
+          // İkonun 18'i + eski satırın 8'lik aralığı — yazı tam eskisi gibi
+          // 42. pikselden başlıyor.
+          marginLeft: 26,
           color: colors.text,
           fontSize: 18,
           padding: 0,
+          // iOS tek satırlık alanı kendi ortalıyor; Android'de EditText üstten
+          // hizalıyor ve gerilmiş alanda yazı tepeye kaçıyor.
+          textAlignVertical: "center",
         }}
       />
       {hasText && (
@@ -180,6 +222,6 @@ export default function SheetSearchInput({
           </TouchableOpacity>
         </Animated.View>
       )}
-    </TouchableOpacity>
+    </View>
   );
 }
