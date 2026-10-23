@@ -40,6 +40,7 @@ import {
   TOP_HIT_EPS,
   isNearBottom,
 } from "./cardScrollTuning";
+import { PREVIEW_COVER_ASPECT } from "./cardPreviewGeometry";
 
 // Native gesture varsa GestureDetector ile sarar (SwipeWrapper ile simultaneous için);
 // yoksa (PreviewModal gibi standalone kullanımlarda) düz render eder.
@@ -275,20 +276,17 @@ const { height } = Dimensions.get("window");
  */
 const CARD_BOX_FALLBACK_HEIGHT = height;
 
-// Kapaktaki serbest alev → sağ üstte ASILI KALAN cam buton geçişi
-// (bkz. FireGlassButton). İkisi aynı noktada duruyor ve çekme oranı
-// (cardExpandAnim) bu bantlarda ilerledikçe biri sönerken diğeri beliriyor:
-// jest yarıda bırakılırsa geçiş de yarıda kalır, parmakla geri sarılabilir.
+// Şeridin sağ ucunda ASILI KALAN cam butonun belirme bandı: çekme oranı
+// (cardExpandAnim / chromeAnim) bu bantta ilerledikçe buton açılıyor, jest
+// yarıda bırakılırsa geçiş de yarıda kalır — parmakla geri sarılabilir.
 //
-// Bantlar KASTEN üst üste biniyor (0.30-0.45): kesişimde iki katman da yarı
-// saydam olduğu için tek bir şeklin kabuk değiştirmesi gibi okunuyor — arka
-// arkaya kaybolan/beliren iki ayrı öğe gibi değil.
-// Geçiş YALNIZ opaklıkla: bir dönem serbest glyph cam butonun içindekinin
-// ölçüsüne doğru küçülüyordu, ama iki şekil aynı noktada olduğu için küçülme
-// "kabuk değiştirme" değil "bir şey gitti, başka bir şey geldi" gibi
-// okunuyordu. İkisi de ölçüsünü KORUYOR.
-const FIRE_MORPH_IN_START = 0.3;
-const FIRE_MORPH_IN_END = 0.8;
+// TARİHÇE: sayılar kapaktaki SERBEST ALEV ile cam Fire butonunun çapraz
+// sönmesinden kalma (adları da `FIRE_MORPH_*`ydı). Serbest alev kalktı, sonra
+// Fire'ın kendisi de şeritten çıktı — oradaki buton artık BEĞEN (bkz.
+// aşağıdaki sticky blok). Bant aynı: devredilen şey şeridin ucundaki yuva,
+// içine hangi glif oturduğu değil.
+const STICKY_ACTION_IN_START = 0.3;
+const STICKY_ACTION_IN_END = 0.8;
 
 // Kapak fotoğrafındaki isim satırının puntosu. 36 → 32 → 28 küçüldü; rozet
 // ondan TÜRETİLDİĞİ için sayı burada duruyor, JSX'te değil.
@@ -481,6 +479,21 @@ const COVER_ACTION_PILLS_GAP = COVER_UNI_PILLS_GAP + COVER_UNI_ROW_PAD;
  */
 const COVER_ACTION_RIGHT =
   CHROME_EDGE_INSET + (DISCOVER_GLASS_BUTTON_SIZE - COVER_ACTION_SIZE) / 2;
+
+/**
+ * ÖNİZLEMEDEKİ aksiyon kolonunun ana fotoğrafın ALT kenarına payı (px).
+ *
+ * Keşif'teki ikizinin tabanı isim bloğundan ve ortak nokta satırından türüyor
+ * (COVER_NAME_BOTTOM + coverPillsHeight…): orada kolonun altında yazı var.
+ * Önizlemede o krom hiç çizilmiyor — fotoğrafın dibi aynı zamanda ilk
+ * detent'in dibi (bkz. PREVIEW_COVER_ASPECT) — yani pay doğrudan kenara
+ * veriliyor ve sağ payla AYNI sayıda: kolon köşeye eşit uzaklıkta oturuyor.
+ *
+ * 16, fotoğrafın 40'lık alt köşe yarıçapının içinde kalıyor: daire merkezi
+ * köşenin eğrilik merkezine 2.8px uzakta ve 26 yarıçapla toplasa bile 40'ı
+ * aşmıyor, yani buton fotoğrafın dışına taşmıyor.
+ */
+const PREVIEW_COVER_ACTION_BOTTOM = CHROME_EDGE_INSET;
 
 /*
  * `COVER_FIRE_GLYPH_SIZE` (34) KALDIRILDI: kolondaki alev canvas'ının cam
@@ -753,16 +766,11 @@ const SECTION_PHOTO_ASPECT = 4 / 5;
 /**
  * Önizlemenin TAM KENAR ana fotoğrafının oranı (bkz. SectionPhoto > bleed).
  *
- * Bölüm fotoğraflarından UZUN, bilerek (istek): o blok artık panelin dolgusunun
- * dışına taşıyor, yani 32px daha geniş çiziliyor ve aynı oranda kalsa kutu
- * boyuyla birlikte "basık" okunuyordu. Sticky şerit de üstünde durduğu için
- * fotoğrafın kendi yüzüne kalan alan kısalıyor.
- *
- * 4/5 (1.25w) → 3/4 (1.33w) → 7/10 (1.43w), ikisi de istek: tek ayar noktası
- * burası, fotoğrafın yüksekliğini oynatmak isteyen `SECTION_PHOTO_ASPECT`e
- * dokunmamalı — o diğer bütün bölüm fotoğraflarının ritmi.
+ * SAYI AYRI MODÜLDE (cardPreviewGeometry): aynı oranı kartı taşıyan sheet'ler de
+ * okuyor — ilk detentleri bu bloğun boyu (bkz. oradaki not). Buradaki yalnız
+ * yerel ad.
  */
-const SECTION_PHOTO_BLEED_ASPECT = 7 / 10;
+const SECTION_PHOTO_BLEED_ASPECT = PREVIEW_COVER_ASPECT;
 // Bölüm kutularının yarıçapı ile aynı (bkz. hobiler/yaşam tarzı/bio kutuları).
 const SECTION_PHOTO_RADIUS = 40;
 // Kapak fotoğrafının yarıçapı ARTIK BURADA DEĞİL: kabukla aynı sayı olmak
@@ -1301,7 +1309,17 @@ function SectionPhoto({
 }: {
   uri: string;
   onNotePress?: () => void;
-  /** Önizleme (Profil / Likes / Chat kartı): fotoğrafın altında not kutusu yok. */
+  /**
+   * Kutuyu zorla kapat. ARTIK TEK MÜŞTERİSİ var: kapaktaki not kutusunu KENDİ
+   * çizen Keşif kapağı (orada foto üstünde ikinci bir kutu olurdu).
+   *
+   * ⚠️ `previewMode` İLE SÜRÜLMÜYOR ARTIK: önizleme kartlarında not kutusunun
+   * olmaması `onNote`un verilmemesinden geliyordu ve iki kapı aynı şeyi
+   * söylüyordu — ta ki akış kartı çıkana kadar. O kart `previewMode` ile açılıyor
+   * AMA not gönderebiliyor (bkz. feedCardActions); `previewMode` kapısı orada
+   * `onNote`u sessizce ölü bırakıyordu. Tek kapı kaldı: kutu `onNotePress`
+   * verildiyse çizilir (bkz. noteHandler → `onNote` yokken `undefined`).
+   */
   hideNote?: boolean;
   /**
    * TAM KENAR — yalnız önizlemenin ANA (ilk) fotoğrafı: kartın tepesine ve iki
@@ -1806,8 +1824,13 @@ interface SwipeCardProps {
    *
    * VERİLMEZSE not kutuları hiç çizilmez: kendi profilini önizlediğin yerde
    * (ProfileScreen > PreviewModal) ve Likes önizlemesinde kendine/karşı tarafa
-   * not gönderilemez. `previewMode` de aynı sonucu verir, ama bu prop'un yokluğu
-   * daha açık bir sözleşme — çağıran "not gönderilebilir" demediyse gönderilemez.
+   * not gönderilemez. TEK KAPI BU PROP.
+   *
+   * ⚠️ `previewMode` BİR DÖNEM AYNI SONUCU VERİYORDU ve kutular ona da bağlıydı;
+   * "iki kapı da aynı şeyi söylüyor" diye zararsız görünüyordu. Zararsız
+   * değildi: akış kartı `previewMode` ile açılıyor AMA not gönderebiliyor, o
+   * yüzden `onNote` orada sessizce ÖLÜ kaldı — kart not kutusu olmadan açıldı.
+   * Gate'ler kaldırıldı (bkz. SectionPhoto > hideNote).
    */
   onNote?: (target: NoteTarget) => void;
   /**
@@ -3217,9 +3240,9 @@ export default function SwipeCard({
    */
 
   /**
-   * Asılı cam buton — serbest alevin tersi bantta belirir. Konumu burada YOK:
-   * cornerDrop sabit olduğu için statik style'da duruyor (bkz. aşağıdaki
-   * `top`), animasyonlu bir layout prop'u da olmuyor.
+   * Şeridin sağ ucundaki ASILI cam buton (beğen) — kart açılırken belirir.
+   * Konumu burada YOK: cornerDrop sabit olduğu için statik style'da duruyor
+   * (bkz. aşağıdaki `top`), animasyonlu bir layout prop'u da olmuyor.
    *
    * GİZLEME ÖLÇEKLE, OPAKLIKLA DEĞİL. `opacity: p` ile gizleniyordu ve cam
    * yüzeyler alfayla KAYBOLMUYOR: alfa 0'da bile native taraf efekti çizmeye
@@ -3230,17 +3253,17 @@ export default function SwipeCard({
    * hiç layout almıyor ve cam geri geldiğinde ilk `layoutSubviews` turunu
    * kaçırıp boş kalabiliyor (efekt o turda kuruluyor).
    */
-  const fireStickyStyle = useAnimatedStyle(() => {
+  const stickyActionStyle = useAnimatedStyle(() => {
     const p = Math.min(
       1,
       Math.max(
         0,
-        (chromeAnim.value - FIRE_MORPH_IN_START) /
-          (FIRE_MORPH_IN_END - FIRE_MORPH_IN_START),
+        (chromeAnim.value - STICKY_ACTION_IN_START) /
+          (STICKY_ACTION_IN_END - STICKY_ACTION_IN_START),
       ),
     );
     return {
-      // Geçiş OPAKLIKLA, boy sabit — serbest alevle çapraz sönüyorlar.
+      // Geçiş OPAKLIKLA, boy sabit.
       opacity: p,
       // Ölçek yalnız bir AÇMA/KAPAMA anahtarı, animasyon değil: cam yüzeyler
       // alfa 0'da bile çizilmeye devam ediyor (kapalı kartta sağ üstte duran
@@ -3472,7 +3495,6 @@ export default function SwipeCard({
   const photo6Section = extraPhotos[4] ? (
       <SectionPhoto
         uri={extraPhotos[4]}
-        hideNote={previewMode}
         onNotePress={noteHandler(photoNoteTarget(5))}
       />
     
@@ -3819,9 +3841,14 @@ export default function SwipeCard({
                 altından başlıyor ve fotoğrafın altındaki nefesi kendi üst
                 dolgusu veriyor.
 
-                Not kutusu yok: önizlemedeki bütün bölüm fotoğraflarıyla aynı
-                kural (bkz. SectionPhoto prop'ları). Pinch ile büyütme ise
-                AÇIK — o da hepsiyle aynı kural.
+                NOT KUTUSU `onNote`A BAĞLI (hedef: ana fotoğraf, index 0 —
+                Keşif'te kapağın kolonundaki kutuyla AYNI hedef). Çağıran not
+                gönderemiyorsa (Profil önizlemesi, "seni beğenenler", sohbet
+                kartı) `onNote` hiç verilmiyor ve kutu çizilmiyor; akış kartı
+                veriyor çünkü orada not geçerli bir sinyal — Flört'te zorunlu
+                iki yoldan biri (bkz. feedCardActions).
+
+                Pinch ile büyütme de AÇIK — o bütün fotoğraflarla aynı kural.
 
                 Top'a çarpma zoom'unu da BU blok taşıyor: Discover'da geri
                 bildirimi tam ekran kapak veriyor, önizlemede kapak hiç
@@ -3829,14 +3856,93 @@ export default function SwipeCard({
                 görsel karşılığı yoktu. Sadece ANA fotoğraf — aşağıdaki bölüm
                 fotoğrafları çarpma anında ekranda bile değil. */}
             {previewMode && allPhotos[0] && (
-              <SectionPhoto
-                uri={allPhotos[0]}
-                hideNote
-                // Tam kenar: üstten ve yanlardan boşluk yok — YALNIZ bu foto
-                // (bkz. SectionPhoto > bleed).
-                bleed
-                zoomStyle={photoZoomStyle}
-              />
+              // Kap `position: "relative"` — aksiyon kolonu fotoğrafın ALT
+              // SAĞINA mutlak oturuyor ve o kolon SectionPhoto'nun KARDEŞİ,
+              // çocuğu DEĞİL: fotoğrafın kutusunda `overflow: "hidden"` ve
+              // içinde zoom transform'u var; cam butonlar o zincirin altında
+              // ya kırpılır ya da (kimliksel olmayan ata transform'u yüzünden)
+              // efektlerini hiç render etmez.
+              <View style={{ position: "relative" }}>
+                <SectionPhoto
+                  uri={allPhotos[0]}
+                  onNotePress={noteHandler(photoNoteTarget(0))}
+                  // Tam kenar: üstten ve yanlardan boşluk yok — YALNIZ bu foto
+                  // (bkz. SectionPhoto > bleed).
+                  bleed
+                  zoomStyle={photoZoomStyle}
+                />
+
+                {/* ── ÖNİZLEMENİN AKSİYON KOLONU (istek) ──────────────────────
+                    "sadece ana fotonun sağ altında tik ve x butonları olsun
+                    aynı discoverscreendeki swipecard gibi".
+
+                    Keşif'in kapak kolonu BURADA ÇİZİLEMİYOR: o kolon tam ekran
+                    kapak dalının içinde ve kapak önizlemede hiç render
+                    edilmiyor (bkz. aşağıdaki `!previewMode` kapısı) — kartın
+                    "kapağı" burada akışın ilk fotoğrafı. O yüzden kolonun
+                    önizleme ikizi bu blokta duruyor; kabuk, çap, boşluk ve
+                    sıra (tik · X · Fire) Keşif'tekiyle AYNI sabitlerden
+                    geliyor, yani iki bağlamda tek bir buton dili var.
+
+                    `onPress` doğrudan çağıranın karar yoluna gidiyor: sheet
+                    isteği atıp kapanıyor (bkz. LikerSwipeModal >
+                    triggerAction / triggerFire). `hideActions` (okunur kart —
+                    "kaçırdıkların", kendi profilini önizleme) bütün kolonu
+                    kaldırıyor. */}
+                {!hideActions && !!(onPass || onLike || (!hideFire && onFire)) && (
+                  <View
+                    style={{
+                      position: "absolute",
+                      right: COVER_ACTION_RIGHT,
+                      bottom: PREVIEW_COVER_ACTION_BOTTOM,
+                      alignItems: "center",
+                      gap: COVER_ACTION_GAP,
+                    }}
+                    // Kolonun kendi kutusu dokunma yemiyor, butonlar yiyor:
+                    // aradaki boşluklar fotoğrafın pinch jestine kalsın.
+                    pointerEvents="box-none"
+                  >
+                    {onLike && (
+                      <CardChromeGlassButton
+                        onPress={onLike}
+                        label={t("likes.likeButton")}
+                        systemName="checkmark"
+                        fallback={Check}
+                        size={COVER_ACTION_SIZE}
+                        onMedia
+                      />
+                    )}
+                    {onPass && (
+                      <CardChromeGlassButton
+                        onPress={onPass}
+                        label={t("likes.passButton")}
+                        systemName="xmark"
+                        fallback={X}
+                        size={COVER_ACTION_SIZE}
+                        onMedia
+                      />
+                    )}
+                    {/* FIRE — kolonun DİBİ, Keşif'teki sırayla aynı.
+                        Önizlemede bir dönem yalnız şeridin sağ ucundaki sticky
+                        ikizi vardı ve o buton ÖLÜYDÜ: `pointerEvents`i
+                        `expanded`a bağlı ve sheet kartı `expanded={false}` ile
+                        açıyor, üstelik sheet kendi şeridini aynı köşeye
+                        çiziyordu (üç nokta onun altında kalıyordu). O dal
+                        artık önizlemede hiç çizilmiyor (bkz. oradaki
+                        `!previewMode`), Fire'ın tek yeri burası. */}
+                    {!hideFire && onFire && (
+                      <FireGlassButton
+                        onPress={onFire}
+                        // Etiket moda göre: Flört'te "Fire", Arkadaş'ta "Spark".
+                        label={t(modeFireNameKey(mode))}
+                        mode={mode}
+                        variant="clear"
+                        size={COVER_ACTION_SIZE}
+                      />
+                    )}
+                  </View>
+                )}
+              </View>
             )}
 
             {/* Photo Gallery — expanded olurken borderRadius 40→0 anime.
@@ -4199,7 +4305,7 @@ export default function SwipeCard({
                   butonun kendi basma animasyonu var, kolonun yok. */}
               {(!!onMenu || (!!onNote && !previewMode && allPhotos.length > 0) ||
                 (!hideActions && !hideFire) ||
-                (!hideActions && !previewMode && !!(onPass || onLike))) &&
+                (!hideActions && !!(onPass || onLike))) &&
                 measuredCardHeight > 0 && (
               <Animated.View
                 style={[
@@ -4260,12 +4366,12 @@ export default function SwipeCard({
                   onPass): kota kapısı, kilit ve kartın uçuşu orada tek
                   elden sürülüyor (bkz. DiscoverScreen > handleLikeButton).
 
-                  ÖNİZLEMEDE ÇİZİLMİYOR (`!previewMode`, not kutusundaki
-                  kuralın aynısı): Beğeniler'den açılan kart (LikerSwipeModal)
-                  da `onPass`/`onLike` veriyor ama orada jest DURUYOR ve
-                  sheet'in kendi aksiyon yolu var — bu iki daire yalnız
-                  Keşif'teki jestsiz destenin telafisi. */}
-              {!hideActions && !previewMode && onLike && (
+                  BU DAL YALNIZ KEŞİF: bütün blok tam ekran kapağın içinde ve
+                  kapak önizlemede hiç render edilmiyor, o yüzden buradaki
+                  gereksiz `!previewMode` kapıları kaldırıldı. Önizlemenin
+                  (Beğeniler · Sohbet · Akış) kendi tik/X kolonu AYRI ve ana
+                  fotoğrafın üstünde — bkz. "ÖNİZLEMENİN AKSİYON KOLONU". */}
+              {!hideActions && onLike && (
                 <CardChromeGlassButton
                   onPress={onLike}
                   label={t("likes.likeButton")}
@@ -4275,7 +4381,7 @@ export default function SwipeCard({
                   onMedia
                 />
               )}
-              {!hideActions && !previewMode && onPass && (
+              {!hideActions && onPass && (
                 <CardChromeGlassButton
                   onPress={onPass}
                   label={t("likes.passButton")}
@@ -4416,19 +4522,21 @@ export default function SwipeCard({
                         {profile.displayName}
                         {ageSuffix}
                       </Text>
+                      {/* Foto doğrulama rozeti — premium rozetinden AYRI bir
+                          işaret, `isVerified`e de katılmıyor. Alan gelmezse
+                          (backend'in bu sürümü yok) hiçbir şey çizilmiyor.
+                          SIRA: isim → doğrulama → plus. Doğrulama ismin devamı
+                          gibi okunmalı, araya ürün işareti GİRMEMELİ. */}
+                      <SelfieVerifiedBadge
+                        verified={profile.isSelfieVerified}
+                        size={selfieBadgeSize(CARD_NAME_FONT)}
+                      />
                       {profile.isPremium && (
                         // İşaretin rengi MODLA DÖNMÜYOR: marka tonu `litPlus`,
                         // satırdaki sabit beyaz isim gibi foto üstünde her iki
                         // modda aynı (bkz. PremiumBadge).
                         <PremiumBadge fontSize={CARD_NAME_FONT} />
                       )}
-                      {/* Foto doğrulama rozeti — premium rozetinden AYRI bir
-                          işaret, `isVerified`e de katılmıyor. Alan gelmezse
-                          (backend'in bu sürümü yok) hiçbir şey çizilmiyor. */}
-                      <SelfieVerifiedBadge
-                        verified={profile.isSelfieVerified}
-                        size={selfieBadgeSize(CARD_NAME_FONT)}
-                      />
                     </View>
                   </Animated.View>
 
@@ -5060,7 +5168,6 @@ export default function SwipeCard({
                 {extraPhotos[0] && (
                   <SectionPhoto
                     uri={extraPhotos[0]}
-                    hideNote={previewMode}
                     onNotePress={noteHandler(photoNoteTarget(1))}
                   />
                 )}
@@ -5205,7 +5312,6 @@ export default function SwipeCard({
                 {extraPhotos[1] && (
                   <SectionPhoto
                     uri={extraPhotos[1]}
-                    hideNote={previewMode}
                     onNotePress={noteHandler(photoNoteTarget(2))}
                   />
                 )}
@@ -5339,7 +5445,7 @@ export default function SwipeCard({
                         (NOTE_GLYPH_SIZE_PROMPT): boşlukta mürekkep yok,
                         hitbox'ın payını da bırakınca alt bant butonlu haline
                         göre şişkin duruyordu. */}
-                    {!!onNote && !previewMode && !!prompt.promptKey ? (
+                    {!!onNote && !!prompt.promptKey ? (
                       <View style={{ marginTop: -NOTE_BOX_PROMPT_PULL }}>
                         <NoteBox
                           onPress={noteHandler(promptNoteTarget(prompt.promptKey))}
@@ -5363,7 +5469,6 @@ export default function SwipeCard({
                   {promptGapPhotos.has(index) && (
                     <SectionPhoto
                       uri={extraPhotos[promptGapPhotos.get(index)!]}
-                      hideNote={previewMode}
                       onNotePress={noteHandler(
                         photoNoteTarget(promptGapPhotos.get(index)! + 1),
                       )}
@@ -5456,7 +5561,6 @@ export default function SwipeCard({
                   <SectionPhoto
                     key={`extra-${index}`}
                     uri={uri}
-                    hideNote={previewMode}
                     // `extraPhotos` ana fotoğrafı atlayarak başlıyor
                     // (allPhotos.slice(1)) → profildeki gerçek index +1.
                     onNotePress={noteHandler(photoNoteTarget(index + 1))}
@@ -5499,50 +5603,60 @@ export default function SwipeCard({
                         pullToward="right"
                       />
                     )}
-                    <TouchableOpacity
-                      onPress={onPass}
-                      activeOpacity={0.7}
-                      style={{
-                        width: 75,
-                        height: 75,
-                        borderRadius: 38,
-                        alignItems: "center",
-                        justifyContent: "center",
-                      }}
-                    >
-                      <View pointerEvents="none">
-                        <SFIcon
-                          name="xmark"
-                          fallback={X}
-                          size={75}
-                          color={actionGlyphColor}
-                          strokeWidth={5}
-                          weight="heavy"
-                        />
-                      </View>
-                    </TouchableOpacity>
-                    <TouchableOpacity
-                      onPress={onLike}
-                      activeOpacity={0.8}
-                      style={{
-                        width: 75,
-                        height: 75,
-                        borderRadius: 38,
-                        alignItems: "center",
-                        justifyContent: "center",
-                      }}
-                    >
-                      <View pointerEvents="none">
-                        <SFIcon
-                          name="checkmark"
-                          fallback={Check}
-                          size={75}
-                          color={actionGlyphColor}
-                          strokeWidth={5}
-                          weight="heavy"
-                        />
-                      </View>
-                    </TouchableOpacity>
+                    {/* ⚠️ HER GLİF KENDİ HANDLER'INA BAĞLI — satır ikisini
+                        birden varsaymıyor. Akışın Flört kartında düz beğeni YOK
+                        (bkz. feedCardActions): `onLike` verilmiyor ve o dalda
+                        koşulsuz çizilen bir tik, basıldığında hiçbir şey
+                        yapmayan ölü bir buton olurdu. Kapaktaki cam kolon da
+                        aynı kuralla çiziliyor (yukarıda). */}
+                    {onPass && (
+                      <TouchableOpacity
+                        onPress={onPass}
+                        activeOpacity={0.7}
+                        style={{
+                          width: 75,
+                          height: 75,
+                          borderRadius: 38,
+                          alignItems: "center",
+                          justifyContent: "center",
+                        }}
+                      >
+                        <View pointerEvents="none">
+                          <SFIcon
+                            name="xmark"
+                            fallback={X}
+                            size={75}
+                            color={actionGlyphColor}
+                            strokeWidth={5}
+                            weight="heavy"
+                          />
+                        </View>
+                      </TouchableOpacity>
+                    )}
+                    {onLike && (
+                      <TouchableOpacity
+                        onPress={onLike}
+                        activeOpacity={0.8}
+                        style={{
+                          width: 75,
+                          height: 75,
+                          borderRadius: 38,
+                          alignItems: "center",
+                          justifyContent: "center",
+                        }}
+                      >
+                        <View pointerEvents="none">
+                          <SFIcon
+                            name="checkmark"
+                            fallback={Check}
+                            size={75}
+                            color={actionGlyphColor}
+                            strokeWidth={5}
+                            weight="heavy"
+                          />
+                        </View>
+                      </TouchableOpacity>
+                    )}
                     {/* Engelle — tikin SAĞINDA. */}
                     {onBlock && (
                       <ModerationIconButton
@@ -5694,15 +5808,27 @@ export default function SwipeCard({
         />
       )}
 
-      {/* Fire Button — ŞERİTTEKİ duruş: sticky. Scroll'un DIŞINDA, kart
+      {/* BEĞEN (tik) — ŞERİDİN SAĞ UCU, duruş: sticky. Scroll'un DIŞINDA, kart
           çerçevesine göre konumlu → içerik altından akıp giderken buton
           şeridin sağ ucunda asılı kalıyor.
 
-          KABUK RENKSİZ, İÇİ RENKLİ (istek): `FireGlassButton`ın BERRAK cam
-          varyantı — satırın sol ucundaki yukarı okla (CardScrollTopGlassButton)
-          BİREBİR aynı malzeme, yani şeridin iki ucu tek bir buton dili.
-          Bir dönem aynı bileşenin `glassProminent` + turuncu tint'li hâliydi:
-          kabuğun KENDİSİ renkliydi, glif beyaza yıkanıyordu.
+          ── BURASI FIRE'DI (istek: "header'da sağ üstte fire yerine like") ───
+          Yuvada `FireGlassButton`ın berrak cam varyantı duruyordu (Flört'te
+          kırmızı Fire / Arkadaş'ta yeşil Spark). Artık İKİ MODDA DA beğen:
+          glif `checkmark`, yani kapaktaki aksiyon kolonunun tepesindeki tikin
+          aynısı. Fire o kolonda ve aşağı çekiş jestinde duruyor, yani ikinci
+          bir girişi vardı; beğen ise açık kartta en çok istenen aksiyon ve
+          şerit onu bir ekran boyu yukarıda sunuyor.
+
+          Mod artık bu yuvada hiç okunmuyor — renk de moda dönmüyor; buton
+          kapaktaki tik/X/üç nokta ile tek malzeme, tek mürekkep.
+
+          KABUK: `CardChromeGlassButton` — satırın sol ucundaki yukarı okla
+          (CardScrollTopGlassButton) ve kapak kolonunun daireleriyle BİREBİR
+          aynı berrak cam zinciri (glassIconClearGlyph), yani şeridin iki ucu
+          tek bir buton dili. Fire'ın `glassProminent` + turuncu tint'li hâli
+          bir dönem denenip geri alınmıştı; renkli kabuk gitti, şimdi glif de
+          nötr.
 
           Bir tur da `CardSectionBox glass` ile denendi (kapaktaki aksiyon
           kolonunun diskiyle aynı sarmalayıcı) ve geri alındı: o, oktaki native
@@ -5717,11 +5843,16 @@ export default function SwipeCard({
           Yalnız TOP kart: cardExpandAnim global, arkadaki kartlar da bu bandı
           okur; onlar için native host kurmanın karşılığı yok (üstteki kart
           hepsini örtüyor). */}
-      {!hideActions &&
-        !hideFire &&
+      {/* ÖNİZLEMEDE ÇİZİLMİYOR (`!previewMode`): orada bu buton şeridin sağ
+          ucunda ÖLÜ duruyordu — `pointerEvents`i `expanded`a bağlı ve sheet
+          kartı `expanded={false}` ile açıyor — ve sheet'in kendi şeridindeki
+          üç noktayla aynı köşeye biniyordu. Önizlemenin beğen/geç kolonu ana
+          fotoğrafın üstünde (yukarıda). */}
+      {!previewMode &&
+        !hideActions &&
         isTopCard &&
         profileReady &&
-        onFire && (
+        onLike && (
           <Animated.View
             style={[
               {
@@ -5729,27 +5860,28 @@ export default function SwipeCard({
                 // Köşe diyagonalinin biraz altı, SABİT (bkz. cornerDrop).
                 // ŞERİDİN SAĞ UCU: aynı bandın solundaki isimle ve devirden
                 // önce oradaki filtre butonuyla aynı çizgide (kenar payı
-                // CHROME_EDGE_INSET = 16). Dikeyde yüzen butonun kutusuna
-                // ORTALANIYOR — cam Fire kabuğu (44) onlardan (48) kısa.
-                // Yüzen butonlarla AYNI ÇAPTA (ortak sayı), yani dikeyde
-                // telafi payı yok: aynı `top`, aynı kutu.
+                // CHROME_EDGE_INSET = 16). Yüzen butonlarla AYNI ÇAPTA (ortak
+                // sayı), yani dikeyde telafi payı yok: aynı `top`, aynı kutu.
                 top: insets.top + cornerDrop,
                 right: CHROME_EDGE_INSET,
                 width: DISCOVER_GLASS_BUTTON_SIZE,
                 height: DISCOVER_GLASS_BUTTON_SIZE,
               },
-              fireStickyStyle,
+              stickyActionStyle,
             ]}
             // Collapsed'ken görünmez ama hâlâ fotoğrafın üstünde duruyor —
-            // kapalıyken dokunmayı altındaki serbest aleve bırak.
+            // kapalıyken dokunmayı kapağın kendi katmanlarına bırak.
             pointerEvents={expanded ? "auto" : "none"}
           >
-            <FireGlassButton
-              onPress={onFire}
-              label={t(modeFireNameKey(mode))}
-              mode={mode}
-              variant="clear"
+            <CardChromeGlassButton
+              onPress={onLike}
+              label={t("likes.likeButton")}
+              systemName="checkmark"
+              fallback={Check}
               size={DISCOVER_GLASS_BUTTON_SIZE}
+              // Şerit açık kartta da KOYU rampanın üstünde duruyor (bkz.
+              // CardStickyHeader) — glif iki temada da beyaz.
+              onMedia
             />
           </Animated.View>
         )}

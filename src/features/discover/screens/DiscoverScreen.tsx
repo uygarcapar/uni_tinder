@@ -14,23 +14,17 @@ import {
   Alert,
   Dimensions,
   AppState,
-  Modal,
   Linking,
   StyleSheet,
 } from "react-native";
-import { appPrefs } from "../../../shared/utils/appPrefs";
-import { setSwipeTutorialBlocking } from "@/features/discover/swipeTutorialGate";
 import { GestureHandlerRootView } from "react-native-gesture-handler";
 import Animated, {
   useSharedValue,
   withTiming,
   withRepeat,
-  withDelay,
-  withSequence,
   runOnJS,
   useAnimatedStyle,
   useAnimatedReaction,
-  interpolate,
   cancelAnimation,
   Easing,
 } from "react-native-reanimated";
@@ -49,8 +43,6 @@ import {
   RotateCcw,
   SlidersHorizontal,
   Search,
-  ArrowLeft,
-  ArrowRight,
   Lock,
 } from "@/shared/icons";
 import SFIcon from "@/shared/components/SFIcon";
@@ -66,11 +58,10 @@ import FilterModal from "@/features/discover/components/FilterModal";
 import ProfileOptionsSheet from "@/features/discover/components/ProfileOptionsSheet";
 import ReportModal from "@/shared/components/ReportModal";
 import moderationService from "@/shared/services/moderationService";
-import { CURRENT_KVKK_VERSION } from "@/features/auth/screens/KVKKConsentScreen";
 // `WaveFillLogo` ARTIK ÇİZİLMİYOR (istek): Keşif'in üstündeki dekoratif logo
 // kaldırıldı, yerinde yalnız iki cam buton kaldı. Bileşen duruyor — başka bir
 // yüzeye konmak istenirse hazır.
-import { colors, ink, scrimAt } from "../../../shared/theme/colors";
+import { colors, ink } from "../../../shared/theme/colors";
 import { chromeBlurTint } from "@/shared/theme/blur";
 import {
   usePotentialMatches,
@@ -113,7 +104,8 @@ import ModeTitle from "../components/ModeTitle";
 import ModeSelectorSheet from "../components/ModeSelectorSheet";
 import ModeSetupSheet from "../components/ModeSetupSheet";
 import { useAppMode } from "../useAppMode";
-import type { AppMode } from "../modeTheme";
+import { APP_MODES, modeAccent, type AppMode } from "../modeTheme";
+import { peekAppMode } from "../modePrefs";
 import profileService from "@/features/profile/profileService";
 import {
   CARD_FACE_CORNER_RADIUS,
@@ -624,12 +616,17 @@ const EmptyDiscoverCard = ({
   secondaryLabel = null,
   onSecondary = null,
   busy = false,
+  mode,
   topInset,
   coverBottomInset,
 }: {
   title?: string | null;
   actionLabel?: string | null;
   onAction?: (() => void) | null;
+  // Aksiyon pill'inin dolgusu bu moddan çözülüyor (Friends'te yeşil).
+  // PROP, çünkü bu kart Keşif'in çocuğu ve Keşif zaten seçili modu tutuyor —
+  // bileşenin ikinci bir kaynaktan okuması iki gerçek yaratırdı.
+  mode: AppMode;
   // İkincil çıkış yolu — pratikte hep "Mesafe sınırını kaldır". Sebebin kendi
   // aksiyonunun YERİNE geçmiyor, altına düz metin bağlantı olarak ekleniyor:
   // deste hangi sebeple boşalırsa boşalsın mesafe sınırı hâlâ açık duruyorsa
@@ -699,7 +696,7 @@ const EmptyDiscoverCard = ({
                 borderCurve: "continuous",
                 paddingHorizontal: 20,
                 paddingVertical: 12,
-                backgroundColor: colors.litPlus,
+                backgroundColor: modeAccent(mode),
                 opacity: busy ? 0.5 : 1,
               }}
             >
@@ -841,7 +838,7 @@ export default function DiscoverScreen() {
 
   // Deste ilerlemesi hesap bazlı saklanıyor (bkz. deckProgress.ts). Selector
   // burada, ref'lerden ÖNCE okunuyor: aşağıdaki lazy initializer'lar userId'ye
-  // ihtiyaç duyuyor. Tutorial bayrağı da aynı değeri kullanır.
+  // ihtiyaç duyuyor.
   const currentUserId = useAppSelector((s) => s.auth.user?.id);
   // İlerleme de mod başına: tek anahtar olsaydı Arkadaş'ta ilerlemek Flört
   // destesinin demirini ezer, kullanıcı dönünce desteyi yabancı yerden sürdürürdü.
@@ -1473,6 +1470,28 @@ export default function DiscoverScreen() {
     Partial<Record<AppMode, boolean>> | undefined
   >(undefined);
 
+  /**
+   * AÇIK MOD UZLAŞTIRMASI — ekran, kullanıcının sahip OLMADIĞI modda açılmasın.
+   *
+   * Mod tercihi diskte ve yazılmamışsa `DEFAULT_APP_MODE` (Dating) oluyor.
+   * Arkadaş olarak kaydolmuş / Flört profili hiç açmamış kullanıcıda bu
+   * varsayılan yanlış başlığı ("Flört") ve kapalı modun kurulum CTA'sını
+   * gösteriyordu.
+   *
+   * ⚠️ AÇIK SEÇİME DOKUNULMUYOR (`peekAppMode !== null`): kullanıcı bilerek
+   * Flört'ü seçip profilini kapatmışsa ekranın onu Arkadaş'a kaydırması,
+   * seçimini elinden almak olur — o yol kurulum CTA'sına düşmeye devam ediyor
+   * (bkz. modePrefs başlığı). Burada düzeltilen yalnız SEÇİM YOKLUĞU.
+   */
+  const reconcileMode = useEvent((resolved: Record<AppMode, boolean>) => {
+    if (resolved[mode]) return;
+    if (peekAppMode(currentUserId) !== null) return;
+    const fallback = APP_MODES.find((m) => resolved[m]);
+    // İkisi de kapalı görünüyorsa (beklenmiyor) mod olduğu gibi kalıyor:
+    // uydurulmuş bir geçiş, kurulum CTA'sından daha kötü.
+    if (fallback) setMode(fallback);
+  });
+
   // Açık mod haritası profilden okunuyor. `getMyProfile` kendi içinde TTL +
   // in-flight dedupe'lu, yani açılıştaki diğer turlarla aynı isteğe biniyor.
   useEffect(() => {
@@ -1483,10 +1502,12 @@ export default function DiscoverScreen() {
         if (!alive) return;
         const modes = profile?.modes;
         if (modes && typeof modes === "object") {
-          setOpenModes({
+          const resolved = {
             Dating: modes.dating !== false,
             Friends: modes.friends === true,
-          });
+          };
+          setOpenModes(resolved);
+          reconcileMode(resolved);
         }
       } catch {
         // Bilinmiyor olarak kalıyor — seçici kısıt çizmiyor, sunucu reddederse
@@ -2130,192 +2151,21 @@ export default function DiscoverScreen() {
     }
   });
 
-  // ─── Tutorial (ilk giriş kart swipe demo) ────────────────────────────────
-  // Flag hesap bazlı: aynı cihazda açılan yeni hesap jesti hiç görmemiş bir
-  // kullanıcıdır, tekrar göstermek gerekir.
-  const TUTORIAL_TX = 55; // like/pass threshold (85) altında
-  const TUTORIAL_SWING_DURATION = 550;
-  const TUTORIAL_STORAGE_KEY = "discoverSwipeTutorialShown";
-  // Görünürlük kapısı en fazla bu kadar bekler (bkz. tutorialResolved).
-  const TUTORIAL_GATE_MAX_WAIT = 8000;
-  // currentUserId yukarıda, deste hidrasyonundan önce okunuyor.
-  // KVKK onay sheet'i navigator'ın üstünde açılıyor; onaylanana kadar Discover
-  // odaklı sayılsa da kart modalın arkasında kalıyor. Tutorial'ı onay sonrasına ertele.
-  const kvkkAccepted = useAppSelector(
-    (s) => s.auth.kvkkVersion === CURRENT_KVKK_VERSION,
-  );
-  const tutorialTx = useSharedValue(0);
-  const tutorialOpacity = useSharedValue(0);
-  const [tutorialActive, setTutorialActive] = useState(false);
-  // "Oynuyor mu" guard'ı + aynı mount'ta tekrar oynamasın diye tek seferlik gate.
-  const tutorialLiveRef = useRef(false);
-  const tutorialDoneRef = useRef(false);
-  const screenFocused = useIsFocused();
-
   /**
-   * Görünürlük kapısı (`ProfileHiddenGate`) demoyu beklesin mi?
+   * İLK GİRİŞ SWIPE DEMOSU KALDIRILDI (istek: "swipe sağ sol tutoriallarını
+   * kaldır artık swipe yok").
    *
-   * Kapı kartın ÜSTÜNDE açılıyor; profili havuzda görünmeyen (fotoğrafları
-   * incelemede olan) YENİ kullanıcıda demo kapının arkasında oynayıp bir daha
-   * oynamamak üzere "görüldü" işaretleniyordu. Kapı, demo çözülene kadar
-   * bekletiliyor — bkz. swipeTutorialGate.ts.
+   * Öğrettiği jest ortada yok: yatay swipe 2026-10-13'te sökülmüştü (bkz.
+   * SwipeWrapper > "YATAY SWIPE JESTİ KALDIRILDI") ve karar kapaktaki tik/X cam
+   * butonlarında. Demo o günden beri olmayan bir hareketi tarif ediyordu.
    *
-   * "Çözüldü" = oynadı/yarıda kesildi, ya da oynamayacağı kesinleşti: bayrak
-   * zaten yazılı (mount'ta senkron okunuyor — kapı bir kare bile boşuna
-   * gecikmesin), demo edilecek kart yok, ya da güvenlik süresi doldu. Süre
-   * kaçışı olmadan deste hiç gelmezse kapı sonsuza dek kapalı kalır ve
-   * kullanıcı profilinin neden gizli olduğunu HİÇ öğrenemezdi.
-   *
-   * currentUserId'nin mount'ta dolu olduğu varsayımı yukarıdaki deste
-   * hidrasyonuyla (loadDeckProgress) aynı: bu ekran main navigator altında.
+   * Birlikte giden parçalar: `discoverSwipeTutorialShown` bayrağı (MMKV'de kalan
+   * eski kayıtlar artık okunmuyor, zararsız), demonun perdesi + okları, ve
+   * görünürlük/konum kapılarını bekleten `swipeTutorialGate` modülü — kapılar
+   * (ProfileHiddenGate · LocationAccessGate) artık doğrudan açılıyor.
    */
-  const [tutorialResolved, setTutorialResolved] = useState(() =>
-    currentUserId
-      ? appPrefs.getBoolean(`${TUTORIAL_STORAGE_KEY}:${currentUserId}`) === true
-      : true,
-  );
-
-  useEffect(() => {
-    setSwipeTutorialBlocking(!tutorialResolved && screenFocused);
-  }, [tutorialResolved, screenFocused]);
-  // Ekran ağaçtan kalkarsa bayrak asılı kalmasın (kapıyı kilitler).
-  useEffect(() => () => setSwipeTutorialBlocking(false), []);
-
-  // markSeen=true → demo sonuna kadar oynadı, flag yazılır. Ekran erkenden
-  // arkaplana düşerse yazılmaz; bir sonraki açılışta tekrar oynar.
-  const stopTutorial = useEvent((markSeen: boolean) => {
-    if (!tutorialLiveRef.current) return;
-    tutorialLiveRef.current = false;
-    // markSeen'den BAĞIMSIZ: demo bu mount'ta bir daha oynamıyor
-    // (tutorialDoneRef), kapıyı daha fazla bekletmenin anlamı yok.
-    setTutorialResolved(true);
-    cancelAnimation(tutorialTx);
-    cancelAnimation(tutorialOpacity);
-    tutorialTx.value = withTiming(0, { duration: 150 });
-    tutorialOpacity.value = withTiming(0, { duration: 150 }, () => {
-      runOnJS(setTutorialActive)(false);
-    });
-    if (markSeen && currentUserId) {
-      appPrefs.set(`${TUTORIAL_STORAGE_KEY}:${currentUserId}`, true);
-    }
-  });
-
-  // Ekran arkaplana/başka route'a düşerse demoyu boşluğa oynatma.
-  useEffect(() => {
-    if (!screenFocused) stopTutorial(false);
-  }, [screenFocused, stopTutorial]);
-
-  const hasCardToDemo = potentialMatches.length > 0;
-
-  /**
-   * Demonun oynayabilmesi için deste YETMİYOR, EKRANDA GERÇEK KART OLMALI.
-   *
-   * `potentialMatches` diskten hidrasyonla (loadDeckProgress) ya da taze
-   * istekle mount'un ilk karelerinde dolabiliyor; kart ise kapak fotoğrafı
-   * hazır olmadan mount EDİLMİYOR, o arada ekranda `SkeletonCard` duruyor (bkz.
-   * firstPhotoReady). Demo yalnız `!loading && hasCardToDemo`ya bakıyordu, yani
-   * uygulama açılır açılmaz İSKELETİN üstünde oynuyordu: salınan bir kart yok,
-   * oklar ve perde boşluğa geliyor ve bitişte "görüldü" yazıldığı için jest bir
-   * daha da gösterilmiyordu.
-   *
-   * KAPIYI (`tutorialResolved`) BU DEĞİL `hasCardToDemo` SÜRÜYOR ve öyle
-   * kalmalı: kapı "demo oynamayacağı kesinleşti mi" diye soruyor, fotoğraf
-   * beklenirken cevap "henüz bilinmiyor"dur. Buraya bağlanırsa deste varken bile
-   * kapı hemen açılıp demoyu kaçırırdı; fotoğraf hiç gelmezse de
-   * TUTORIAL_GATE_MAX_WAIT zaten kurtarıyor.
-   *
-   * `coverSettled` DE ŞART, aynı gerekçenin devamı: kart mount olduktan sonra
-   * da kapağın alt chrome'u ölçülene kadar iskelet onun ÜSTÜNDE duruyor (bkz.
-   * coverSettled). O perdenin ardında oynayan demo de görülmez. İkisi sırayla
-   * geldiği için kilitlenme yok — ölçüm haberi gelmezse 600 ms'lik güvenlik ağı
-   * coverSettled'ı zaten açıyor.
-   */
-  const cardReadyToDemo = hasCardToDemo && firstPhotoReady && coverSettled;
-
-  // Demo oynamayacağı kesinleşince kapıyı serbest bırak. Oynamaya başladıysa
-  // (tutorialActive) karışma: bitişte stopTutorial zaten çözüyor. KVKK onayı
-  // beklenirken saat işletilmiyor — onay sheet'i uzun sürerse kapı, demo hiç
-  // oynamadan açılırdı.
-  useEffect(() => {
-    if (tutorialResolved || tutorialActive) return;
-    if (!loading && !hasCardToDemo) {
-      setTutorialResolved(true);
-      return;
-    }
-    if (!kvkkAccepted) return;
-    const id = setTimeout(
-      () => setTutorialResolved(true),
-      TUTORIAL_GATE_MAX_WAIT,
-    );
-    return () => clearTimeout(id);
-  }, [tutorialResolved, tutorialActive, loading, hasCardToDemo, kvkkAccepted]);
-
-  useEffect(() => {
-    // İSKELETİN üstünde oynamasın: gerçek kart mount olana kadar bekle (bkz.
-    // cardReadyToDemo).
-    if (loading || !cardReadyToDemo || !currentUserId) return;
-    if (!screenFocused || tutorialDoneRef.current) return;
-    // KVKK onay sheet'i kapanmadan tutorial oynatma (kart modalın arkasında kalır).
-    if (!kvkkAccepted) return;
-    // MMKV senkron — eski AsyncStorage.then() + cancelled-guard yarışı kalktı.
-    if (appPrefs.getBoolean(`${TUTORIAL_STORAGE_KEY}:${currentUserId}`)) return;
-    tutorialDoneRef.current = true;
-    tutorialLiveRef.current = true;
-    setTutorialActive(true);
-    tutorialTx.value = 0;
-    tutorialOpacity.value = withDelay(400, withTiming(1, { duration: 250 }));
-    tutorialTx.value = withDelay(
-      600,
-      withSequence(
-        withTiming(TUTORIAL_TX, {
-          duration: TUTORIAL_SWING_DURATION,
-          easing: Easing.inOut(Easing.cubic),
-        }),
-        withTiming(-TUTORIAL_TX, {
-          duration: TUTORIAL_SWING_DURATION * 1.4,
-          easing: Easing.inOut(Easing.cubic),
-        }),
-        withTiming(
-          0,
-          {
-            duration: TUTORIAL_SWING_DURATION,
-            easing: Easing.inOut(Easing.cubic),
-          },
-          () => {
-            runOnJS(stopTutorial)(true);
-          },
-        ),
-      ),
-    );
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [loading, cardReadyToDemo, currentUserId, screenFocused, kvkkAccepted]);
-
-  // Stack entry (undo / filtre sonrası yandan giriş) + tutorial salınımı tek
-  // animated style'da: iki ayrı style'ın `transform` key'i flatten'da birbirini
-  // ezer, sonuncusu kazanırdı → entry animasyonu hiç görünmezdi.
   const cardStackStyle = useAnimatedStyle(() => ({
-    transform: [
-      { translateX: stackEntryX.value + tutorialTx.value },
-      {
-        rotate: `${interpolate(tutorialTx.value, [-SCREEN_WIDTH, 0, SCREEN_WIDTH], [-15, 0, 15])}deg`,
-      },
-    ],
-  }));
-
-  const tutorialOverlayStyle = useAnimatedStyle(() => ({
-    opacity: tutorialOpacity.value,
-  }));
-
-  const tutorialLeftArrowStyle = useAnimatedStyle(() => ({
-    transform: [
-      { translateX: interpolate(tutorialTx.value, [-TUTORIAL_TX, 0], [-16, 0], "clamp") },
-    ],
-  }));
-
-  const tutorialRightArrowStyle = useAnimatedStyle(() => ({
-    transform: [
-      { translateX: interpolate(tutorialTx.value, [0, TUTORIAL_TX], [0, 16], "clamp") },
-    ],
+    transform: [{ translateX: stackEntryX.value }],
   }));
 
   /**
@@ -3100,7 +2950,6 @@ export default function DiscoverScreen() {
           <SkeletonCard coverBottomInset={coverBottomInset} />
         ) : potentialMatches.length > currentIndex ? (
           <Animated.View
-            pointerEvents={tutorialActive ? "none" : "auto"}
             style={[{ flex: 1, position: "relative" }, cardStackStyle]}
           >
             {renderStack()}
@@ -3123,6 +2972,7 @@ export default function DiscoverScreen() {
             secondaryLabel={emptyCopy?.secondaryLabel ?? null}
             onSecondary={removeDistanceLimit}
             busy={ignoreDistanceMutation.isPending}
+            mode={mode}
             // Yüzen chrome satırının gerçek boyu: şerit cam butondan kısa
             // olabilir, o yüzden aşağıdaki satırla AYNI max okunuyor.
             topInset={
@@ -3307,6 +3157,8 @@ export default function DiscoverScreen() {
           setNoteError(null);
         }}
         onSend={handleSendNote}
+        // Keşif'te not seçili modda gidiyor (akışın `cardMode` dalının aksine).
+        mode={mode}
         target={noteRequest?.target ?? null}
         prompts={noteRequest?.profile?.prompts ?? null}
         photoUri={
@@ -3369,41 +3221,6 @@ export default function DiscoverScreen() {
           if (result?.blocked && reportTarget) dropProfileFromDeck(reportTarget);
         }}
       />
-
-      {/* Ekran içi absolute overlay tab bar'ı kapatamıyor — floating bar
-          navigator tarafında, ekranın üstünde ayrı render ediliyor. Kendi
-          penceresi olan RN Modal demo bitene kadar tab dokunuşlarını da yutar. */}
-      <Modal
-        visible={tutorialActive}
-        transparent
-        statusBarTranslucent
-        animationType="none"
-        onRequestClose={() => {}}
-      >
-        <Animated.View
-          style={[
-            {
-              flex: 1,
-              backgroundColor: scrimAt(0.45),
-              flexDirection: "row",
-              alignItems: "center",
-              justifyContent: "space-between",
-              paddingHorizontal: 24,
-            },
-            tutorialOverlayStyle,
-          ]}
-        >
-          {/* Oklar `onMedia` (sabit beyaz), `text` DEĞİL: perde iki modda da
-              siyah (scrimAt) — moda dönen mürekkep açık temada siyah oku siyah
-              perdeye çiziyordu. */}
-          <Animated.View style={tutorialLeftArrowStyle}>
-            <SFIcon name="arrow.left" fallback={ArrowLeft} size={64} color={colors.onMedia} strokeWidth={1.5} />
-          </Animated.View>
-          <Animated.View style={tutorialRightArrowStyle}>
-            <SFIcon name="arrow.right" fallback={ArrowRight} size={64} color={colors.onMedia} strokeWidth={1.5} />
-          </Animated.View>
-        </Animated.View>
-      </Modal>
     </GestureHandlerRootView>
   );
 }
