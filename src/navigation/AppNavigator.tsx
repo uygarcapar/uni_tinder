@@ -78,6 +78,7 @@ import {
   reconcileIfMismatched,
   resolvePendingPremiumSync,
   selectIsPremium,
+  selectPremiumOptimistic,
   setPremium,
 } from '@/features/profile/subscriptionSlice';
 import { hasWitnessedPurchase, premiumSyncUserKey } from '@/features/profile/pendingPremiumSync';
@@ -101,6 +102,13 @@ import { sendLocationHeartbeat, clearLocationHeartbeatState } from '@/features/p
 import notificationsService from '@/features/notifications/notificationsService';
 import { queryClient } from '@/shared/queries/queryClient';
 import { swipeKeys } from '@/features/discover/swipeQueries';
+// Hub olaylarının mod süzgeci + mod değişiminde rozet tazelemesi için.
+import {
+  APP_MODE_EVENT,
+  readAppModeFor,
+  writeAppMode,
+} from '@/features/discover/useAppMode';
+import { isAppMode } from '@/features/discover/modeTheme';
 import { referralKeys } from '@/features/profile/referralKeys';
 import { REFERRAL_NOTIFICATION_TYPES } from '@/features/notifications/notificationsService';
 import { checkPendingNotices, markNoticeSeen } from '@/features/notifications/pendingNoticesService';
@@ -156,6 +164,7 @@ import {
   shouldProbeFeedFlag,
 } from '@/features/feed/feedFlag';
 import { openFeed } from '@/features/feed/feedEntry';
+import { campusKeys } from '@/features/campus/campusKeys';
 import { feedKeys } from '@/features/feed/feedKeys';
 import feedService from '@/features/feed/feedService';
 import { useAppDispatch, useAppSelector } from '@/shared/hooks/redux';
@@ -487,6 +496,9 @@ export default function AppNavigator() {
   // Abonelik bitiş timer'ı için (aşağıdaki efekt). `selectIsPremium` expiresAt'i
   // client-side de doğruluyor, o yüzden bitiş anında kendiliğinden false'a döner.
   const isPremiumNow = useAppSelector(selectIsPremium);
+  // Satın alma anındaki optimistic yazım hâlâ ayakta mı (backend teyit etmedi).
+  // Aşağıdaki tier efekti bunu da okuyor; gerekçesi selector'ün notunda.
+  const premiumOptimistic = useAppSelector(selectPremiumOptimistic);
   const premiumExpiresAt = useAppSelector(
     (s) => (s as any).subscription?.expiresAt as string | null,
   );
@@ -758,13 +770,29 @@ export default function AppNavigator() {
   // (premium bitti ama "sınırsız swipe" yazıyor gibi). Geçişi tek yerden
   // duyurmak, her ekranın kendi tazeleme yamasını yazmasından daha güvenli —
   // eski hâlde her ekran bunu ayrı ayrı ve eksik yapıyordu.
-  const prevPremiumTierRef = useRef(isPremiumNow);
+  //
+  // ⚠️ AKIŞ VE KAMPÜS DE BU LİSTEDE: `/api/feed/me` filtre KİLİTLERİNİ taşıyor
+  // (`canUseKindFilter`, `canPickUniversity` — kilit kararının sahibi sunucu,
+  // tier slice'ı değil) ve `/api/campus/me` kotayı. Burada olmadıkları için
+  // Plus alan kullanıcı akışta kilitli filtre görmeye devam ediyordu: slice
+  // anında premium'a geçiyor ama o iki yanıt kendi cache'inde donuyor ve
+  // React Query bir daha fetch etmiyor (sorgu mount'lu, 30sn bayatlama tek
+  // başına refetch tetiklemiyor) — ekran yeniden mount edilene kadar kilitli.
+  //
+  // İKİ KEZ tazeleniyor (bayrak + optimistic damga): satın almadaki optimistic
+  // yazım da efekti koşturuyor, ama o anda backend webhook'u henüz inmemiş
+  // olabilir ve cevap "hakkın yok" diye TAZE yazılır. Damganın silinmesi
+  // (= kanonik premium:true) ikinci turu açıyor.
+  const prevPremiumTierRef = useRef(`${isPremiumNow}:${premiumOptimistic}`);
   useEffect(() => {
-    if (prevPremiumTierRef.current === isPremiumNow) return;
-    prevPremiumTierRef.current = isPremiumNow;
+    const signature = `${isPremiumNow}:${premiumOptimistic}`;
+    if (prevPremiumTierRef.current === signature) return;
+    prevPremiumTierRef.current = signature;
     queryClient.invalidateQueries({ queryKey: swipeKeys.stats });
     queryClient.invalidateQueries({ queryKey: swipeKeys.filters });
-  }, [isPremiumNow, queryClient]);
+    queryClient.invalidateQueries({ queryKey: feedKeys.me });
+    queryClient.invalidateQueries({ queryKey: campusKeys.me });
+  }, [isPremiumNow, premiumOptimistic, queryClient]);
 
   // Abonelik bitiş anında tek atımlık tazeleme (§6-6). Kullanıcı uygulamayı
   // açık bırakırsa premium UI'ı bitişten sonra da göstermeye devam ediyordu;
@@ -1035,6 +1063,27 @@ export default function AppNavigator() {
       // Birisi seni Like/Fire attı ama henüz match değil.
       realtimeService.on('IncomingLike', (payload) => {
         if (!mounted) return;
+        /**
+         * ⚠️ ÖBÜR MODUN BEĞENİSİ SESSİZ. Beğeniler ekranı, rozet ve Keşif'in
+         * `whoLikedMeIds` kümesi SEÇİLİ MODUN verisi (sunucu listeyi `mode` ile
+         * süzüyor). Arkadaş modunda gelen bir beğeni Flört'teyken rozete
+         * yazılsaydı sayı listede bulunmayan bir karta işaret eder, toast'a
+         * basan kullanıcı da boş bir listeye düşerdi.
+         *
+         * Olay kaybolmuyor: kullanıcı o moda geçtiğinde liste ve rozet kanonik
+         * cevapla yeniden çekiliyor (bkz. LikesScreen mod değişimi effect'i).
+         *
+         * ALAN YOKSA bastırma YAPILMIYOR: eski sunucu/olay şeması `mode`
+         * taşımıyorsa bugünkü davranış korunur — bilinmeyen bir modu "öbür mod"
+         * saymak bütün beğenileri sessize alırdı.
+         */
+        const likeMode = payload?.mode;
+        if (
+          isAppMode(likeMode) &&
+          likeMode !== readAppModeFor(store.getState()?.auth?.user?.id)
+        ) {
+          return;
+        }
         dispatch(addWhoLikedMe(payload?.likerUserId));
         uiBus.emit('incomingLike', payload);
         scheduleLikesReconcile();
@@ -1055,6 +1104,10 @@ export default function AppNavigator() {
           senderName: identityLocked ? null : payload?.likerDisplayName,
           photoUrl: identityLocked ? null : payload?.likerPhotoUrl,
           preview: payload?.notePreview ?? null,
+          // Ürünün adı OLAYIN modundan ("Fire" / "Spark"). Buraya kadar gelen
+          // olay zaten seçili modun (çapraz-mod yukarıda bastırılıyor) ama ad
+          // yine payload'dan okunuyor: tek doğruluk kaynağı olay.
+          mode: isAppMode(likeMode) ? likeMode : undefined,
         });
       }),
       // Karşı taraf eşleşmeyi kaldırdı. BİLDİRİM GÖSTERİLMEZ (ürün kararı:
@@ -1349,6 +1402,21 @@ export default function AppNavigator() {
       // ekran bildirimin anlattığından önceki hâli gösterirdi.
       realtimeService.on('PhotoModerationChanged', (payload) => {
         if (!mounted) return;
+        /**
+         * ⚠️ AYNI EVENT İKİ YÜZEYİ TAŞIYOR (2026-10-22). Payload'a `surface`
+         * eklendi: "ProfilePhoto" | "CampusMoment". Alan YOKSA eski sözleşme,
+         * yani profil fotoğrafı.
+         *
+         * Ayrım şart: kampüs anı `Photos` tablosunda değil (`photoId: null`)
+         * ve profil görünürlüğünü etkilemiyor. Ayrılmasaydı bir kampüs anının
+         * reddi profil cache'ini boşuna patlatır, "bekleyen foto" bayrağını
+         * yanlış kurar ve kullanıcıya profil fotoğrafı reddedilmiş gibi
+         * görünürdü.
+         */
+        if ((payload as any)?.surface === 'CampusMoment') {
+          queryClient.invalidateQueries({ queryKey: campusKeys.all });
+          return;
+        }
         profileService.bustProfileCache();
         const nextVisibility = normalizeProfileVisibility(payload);
         if (nextVisibility) setProfileVisibility(nextVisibility);
@@ -1398,6 +1466,32 @@ export default function AppNavigator() {
             dispatch(fetchSubscriptionStatus());
           }
         }
+      }),
+      /**
+       * Mod değişimi → rozet + liker id kümesi YENİ MODUN cevabından.
+       *
+       * İkisi de mod başına (sunucu `mode` ile süzüyor) ve Beğeniler ekranı
+       * mount DEĞİLSE kimse onları tazelemiyordu: kullanıcı Arkadaş'a geçtiğinde
+       * sekmede flört beğenilerinin sayısı duruyor, Keşif de "bu kişi beni
+       * beğenmişti" sorusunu öbür modun kümesinden cevaplıyordu.
+       *
+       * Ekran MOUNT'SA (ki genelde öyle: boot'ta preload ediliyor) iş ona
+       * bırakılıyor — kendi mod effect'i tek istekle hem listeyi hem rozeti
+       * aynı cevaptan yazıyor. `likesDirty` dinleyicisi "ekran ayakta mı"nın
+       * vekili; olayı EMİT ETMİYORUZ, yalnız kendi turumuzu atlıyoruz (emit
+       * edilseydi ekran modu henüz render etmemiş hâlde bayat modla bir istek
+       * daha atardı — hub reconcile yolunun aksine burada tetikleyici
+       * değişimin KENDİSİ zaten ekranın elinde).
+       */
+      uiBus.on(APP_MODE_EVENT, () => {
+        if (!mounted) return;
+        // Mesaj rozeti satırlardan türüyor (mod süzgeçli selector) ve mod
+        // değişiminde kendiliğinden doğruya dönüyor; buradaki tur yalnız
+        // SATIR YOKKEN devreye giren yedeği (`unreadTotal` =
+        // `/unread-count?mode=`) tazeliyor.
+        dispatch(fetchUnreadCount());
+        if (uiBus.hasListeners('likesDirty')) return;
+        dispatch(fetchWhoLikedMe());
       }),
     ];
 
@@ -1506,7 +1600,9 @@ export default function AppNavigator() {
     // Olmasalardı pencere içindeki her `FeedReply` "FeedReply::"ye çöker ve
     // ikinci yanıt bildirimine basmak hiçbir şey yapmazdı — yukarıdaki Like
     // fıkrasının birebir aynısı.
-    const dedupeKey = `${data.type}:${data.conversationId || data.relatedEntityId || data.replyId || data.postId || ''}:${data.timestamp || ''}`;
+    // `campusDomain` anahtarda: kampüs push'u relatedEntityId taşımıyor ve
+    // onsuz aynı pencerede gelen ikinci kampüs bildirimi yutulurdu.
+    const dedupeKey = `${data.type}:${data.conversationId || data.relatedEntityId || data.replyId || data.postId || data.campusDomain || ''}:${data.timestamp || ''}`;
     const now = Date.now();
     if (
       dedupeKey === lastRoutedNotificationRef.current &&
@@ -1587,18 +1683,69 @@ export default function AppNavigator() {
         navigationRef.navigate('Notifications' as never);
         return;
       }
+      /**
+       * KAMPÜS ANLARI — kullanıcı kendi kampüsüne vardı.
+       *
+       * Hedef akış sekmesi DEĞİL, akışın üstündeki TAM EKRAN HARİTA: bildirim
+       * "kampüste bugün şu kadar an var" diyor ve o yüzey orada açılıyor.
+       * `openFeed` sekmeyi öne getirip haritayı da açıyor.
+       *
+       * Akış bayrağı kapalıysa `openFeed` false dönüyor ve bildirim
+       * Bildirimler listesine düşüyor — olmayan bir ekrana kapı açmıyoruz.
+       */
+      case 'CampusMomentsNearby': {
+        if (openFeed('feed', { expandMap: true })) return;
+        navigationRef.navigate('Notifications' as never);
+        return;
+      }
+      /**
+       * Kampüs anın kaldırıldı. Hedef yine harita yüzeyi: kullanıcı kendi anını
+       * orada görüyor ve `moderation` bloğu neden düştüğünü söylüyor.
+       * Liste bayat olabilir → önce cache temizliği.
+       */
+      case 'CampusMomentModerated': {
+        queryClient.invalidateQueries({ queryKey: campusKeys.all });
+        if (openFeed('feed', { expandMap: true })) return;
+        navigationRef.navigate('Notifications' as never);
+        return;
+      }
       case 'Like':
       case 'SuperLike':
       // Not da bir beğeni — hedefi Likes ekranı. Ayrı bir kart açmıyor:
       // yorum zaten liker kartının içinde duruyor.
       case 'Note': {
+        /**
+         * ⚠️ MOD DEVRİ (push `extraData.mode`, backend 2026-10-21).
+         *
+         * Beğeniler ekranı SEÇİLİ MODUN listesini çekiyor. Bildirim öbür modun
+         * beğenisine aitse ve mod devredilmezse ekran boş açılıyor: bildirim
+         * "bir şey var" diyor, liste "yok" diyor.
+         *
+         * Yazmak GÜVENLİ ve bilgi veriyor: bir modda beğeni ALMAK o modun
+         * profilinin açık olduğunu kanıtlıyor (kapalı modda havuza girmiyorsun),
+         * yani seçimi oraya çekmek kullanıcıyı sahip olmadığı bir moda
+         * düşürmüyor.
+         *
+         * Alan yoksa (eski sunucu / eski push) hiçbir şey yapılmıyor — bugünkü
+         * davranış. İstemci modu TAHMİN ETMİYOR.
+         */
+        const likeMode = data?.mode;
+        const switchedMode =
+          isAppMode(likeMode) &&
+          writeAppMode(store.getState()?.auth?.user?.id, likeMode);
+
         // Bildirimden gelen kullanıcı o beğeniyi listede görmeyi bekliyor →
         // LikesScreen'in tazelik eşiğini ATLAT. Ekranın kendi focus/foreground
         // tazelemesi "30 sn'den eskiyse çek" diyor; kısa bir arka plan turundan
         // (uygulamayı 10 sn kapatıp bildirime basmak) sonra bu eşik tutuyor ve
         // liste bayat kalıyordu. Navigate'ten ÖNCE emit ediyoruz ki istek ekran
         // görünür olmadan yola çıksın.
-        uiBus.emit('likesDirty');
+        //
+        // MOD DEĞİŞTİYSE emit EDİLMİYOR: o yol ekranda zaten tam bir yeniden
+        // kurulum tetikliyor (iki liste boşalıyor, damgalar sıfırlanıyor) ve
+        // buradan atılan tazeleme ekran modu henüz render etmemiş hâlde BAYAT
+        // modla bir istek daha açardı (cevabı mod guard'ına takılıp atılırdı).
+        if (!switchedMode) uiBus.emit('likesDirty');
         // Likes tab HomeTabs stack'inin altında — nested navigate
         navigationRef.navigate('HomeTabs' as never, { screen: 'Likes' } as never);
         return;

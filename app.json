@@ -139,13 +139,16 @@
         "expo-location",
         {
           "locationWhenInUsePermission": "Lit needs your location to show your city and the people near you.",
-          "locationAlwaysPermission": false,
-          "locationAlwaysAndWhenInUsePermission": false,
+          "locationAlwaysPermission": "Lit uses your location in the background to let you know when you arrive on your campus and to let you post while you are there. Lit does not track you continuously; it only knows when you cross your own campus boundary.",
+          "locationAlwaysAndWhenInUsePermission": "Lit uses your location in the background to let you know when you arrive on your campus and to let you post while you are there. Lit does not track you continuously; it only knows when you cross your own campus boundary.",
           "motionUsagePermission": "Lit uses motion data to orient the camera correctly while you take a photo and to improve location accuracy.",
           "isIosBackgroundLocationEnabled": false,
-          "isAndroidBackgroundLocationEnabled": false
+          "isAndroidBackgroundLocationEnabled": true,
+          "isAndroidForegroundServiceEnabled": false
         }
       ],
+      "./plugins/withoutBackgroundFetch",
+      "expo-task-manager",
       [
         "@sentry/react-native",
         {

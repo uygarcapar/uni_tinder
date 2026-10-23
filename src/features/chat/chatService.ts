@@ -138,8 +138,18 @@ export const chatService = {
     }
   },
 
-  async getUnreadCount(): Promise<number> {
-    const res = await api.get(API_ENDPOINTS.MESSAGES_UNREAD_COUNT);
+  /**
+   * Okunmamış TOPLAM — sekme rozetinin sunucu tarafı.
+   *
+   * `mode` verilince yalnız o modun sohbetleri sayılıyor (backend 2026-10-21).
+   * Vermemek "tüm modlar" demek ve rozet o modda olmayan mesajları da sayardı:
+   * "rozet 3, sohbet 2". Rozetin asıl kaynağı artık satırların kendisi (bkz.
+   * chatSlice > selectUnreadForMode); bu sayı liste HENÜZ YOKKEN (soğuk açılış,
+   * hydrate öncesi) devreye giren yedek — o yüzden o da mod kapsamlı olmalı.
+   */
+  async getUnreadCount(mode?: string | null): Promise<number> {
+    const query = mode ? `?mode=${encodeURIComponent(mode)}` : '';
+    const res = await api.get(`${API_ENDPOINTS.MESSAGES_UNREAD_COUNT}${query}`);
     return (res as any).result?.unreadCount ?? 0;
   },
 

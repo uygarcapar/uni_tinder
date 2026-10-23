@@ -1,4 +1,4 @@
-import { memo, useCallback } from "react";
+import { memo, useCallback, useMemo } from "react";
 import { Pressable, Text, View } from "react-native";
 import { Image } from "expo-image";
 import { useTranslation } from "react-i18next";
@@ -11,11 +11,11 @@ import toDisplayLowercase from "@/shared/utils/textCase";
 import { anonymousLabelKey } from "../feedPolicy";
 // Kart `/api/feed/me`yi GÖRMÜYOR (prop olarak inmesi listedeki her satıra bir
 // nesne daha taşımak olurdu), o yüzden etiket i18n yedeğinden çözülüyor —
-// `topicLabel(key, null)` tam bunun için null kabul ediyor. Sunucunun kendi
+// `topicHashtag(key, null)` tam bunun için null kabul ediyor. Sunucunun kendi
 // etiketi composer ve filtrede kullanılıyor; oralarda `me` zaten elde.
-import { topicLabel } from "../feedTopics";
+import { topicHashtag } from "../feedTopics";
 import { feedRowShell } from "../feedRowShell";
-import type { FeedPostDto } from "../feedTypes";
+import type { FeedPostDto, FeedTopic } from "../feedTypes";
 
 /**
  * Akış gönderi kartı — sadece YAZI (fotoğraf yok, gönderi altında yorum yok).
@@ -49,6 +49,15 @@ export interface FeedPostCardProps {
   /** Durum rozeti metni (Gönderilerim) — sayfanın `postPresentation`ı çözüyor. */
   statusLabel?: string | null;
   statusTone?: "neutral" | "warning" | "danger";
+  /**
+   * BEĞENİLMİŞ kalbin dolgusu — seçili modun vurgusu (`modeAccent`).
+   *
+   * Gönderi beğenisi kişi beğenisi DEĞİL (içeriğe tepki, eşleşme üretmiyor) ama
+   * ekranda duran yüzey yine moda ait: Arkadaş modunda yeşil bir akışta kırmızı
+   * kalp, ekranın tek dating işareti olarak kalıyordu. Verilmezse (iskelet /
+   * modu bilmeyen çağıran) bugünkü kırmızı.
+   */
+  likedAccent?: string;
 }
 
 /**
@@ -133,6 +142,7 @@ function FeedPostCardBase({
   onPressReplyCount,
   statusLabel,
   statusTone = "neutral",
+  likedAccent = colors.errorStrong,
 }: FeedPostCardProps) {
   const { t } = useTranslation();
 
@@ -177,6 +187,22 @@ function FeedPostCardBase({
       : statusTone === "warning"
         ? colors.warning
         : colors.textMuted;
+
+  /**
+   * Çizilecek konular — `topics` varsa O, yoksa tek `topic`.
+   *
+   * ⚠️ İKİ ALAN BİRDEN OKUNUYOR ve sıra önemli: composer çoklu seçimi
+   * gönderiyor ama BUGÜNKÜ sunucu yanıtta yalnız `topic` dolduruyor
+   * (feedTypes > FeedPostDto.topics). `topics` açıldığında kart kendiliğinden
+   * hepsini çiziyor, istemci sürümü beklenmiyor.
+   *
+   * Boş/undefined alanlar süzülüyor: ikisi de yoksa blok hiç çizilmiyor
+   * (varsayılan "Genel" UYDURULMUYOR).
+   */
+  const topics = useMemo(() => {
+    const list = post.topics?.length ? post.topics : [post.topic];
+    return list.filter((key): key is FeedTopic => typeof key === "string" && !!key);
+  }, [post.topics, post.topic]);
 
   return (
     <View style={feedRowShell()}>
@@ -368,35 +394,52 @@ function FeedPostCardBase({
           çıktı (istek). `formatExpiresIn` feedText'te duruyor ve testleri de —
           gönderinin ömrü hâlâ ürünün bir kuralı, yalnız kartta yazmıyor. */}
 
-      {/* ── Konu çipi ──────────────────────────────────────────────────────
-          Gövdenin ALTINDA, aksiyon satırının üstünde. Dokunulabilir DEĞİL:
-          kartta bir filtre kısayolu olsaydı kullanıcı listeyi istemeden
-          daraltır ve geri dönmenin yolunu aramak zorunda kalırdı — konu
-          seçimi filtrenin işi.
+      {/* ── Konu etiketleri ───────────────────────────────────────────────
+          Gövdenin ALTINDA, aksiyon satırının üstünde — YERİ DEĞİŞMEDİ.
+          Dokunulabilir DEĞİL: kartta bir filtre kısayolu olsaydı kullanıcı
+          listeyi istemeden daraltır ve geri dönmenin yolunu aramak zorunda
+          kalırdı — konu seçimi filtrenin işi.
+
+          ⚠️ KAPSÜL KALDIRILDI (istek). Eskiden `surface2` dolgulu bir çipti ve
+          9'luk yatay payı etiketi gövde metninden 9pt içeri itiyordu: kartın
+          sol kenarı üç farklı hizada başlıyordu (avatar · gövde · çip). Artık
+          düz metin, yani sol kenarı gövdeyle BİREBİR aynı — hizayı kuran şey
+          dolgunun yokluğu, negatif bir pay değil.
+
+          Punto da gövdeyle AYNI (BODY_FONT_SIZE, 12 değil): etiket kartın
+          künyesi değil, yazının bir parçası gibi okunsun. Ayrımı `#` ve
+          `textSecondary` grisi taşıyor — gövde metni `text`.
 
           Alan gelmezse çizilmiyor (varsayılan "Genel" UYDURULMUYOR: konusuz
           bir gönderiyi etiketlemek yanlış bilgi olurdu). */}
-      {post.topic ? (
-        <View style={{ flexDirection: "row", marginTop: 10 }}>
-          <View
-            style={{
-              paddingHorizontal: 9,
-              paddingVertical: 4,
-              borderRadius: 999,
-              borderCurve: "continuous",
-              backgroundColor: colors.surface2,
-            }}
-          >
+      {topics.length > 0 ? (
+        <View
+          style={{
+            flexDirection: "row",
+            flexWrap: "wrap",
+            // Etiketler arası pay GÖVDE PUNTOSUNA göre: aynı satırda iki
+            // hashtag yan yana dururken 8 onları tek bir kelime öbeği gibi
+            // gösteriyordu, 12 ayırıyor ama satır sarmasını da bozmuyor.
+            columnGap: 12,
+            rowGap: 2,
+            marginTop: 10,
+          }}
+        >
+          {topics.map((key) => (
             <Text
+              key={key}
               style={{
                 color: colors.textSecondary,
-                fontSize: 12,
-                fontWeight: "600",
+                fontSize: BODY_FONT_SIZE,
+                lineHeight: BODY_LINE_HEIGHT,
+                // Gövdeyle aynı puntoda ama aynı AĞIRLIKTA değil (500 / 400):
+                // etiket satırı gövdenin devamı gibi okunmasın.
+                fontWeight: "500",
               }}
             >
-              {topicLabel(post.topic, null)}
+              {topicHashtag(key, null)}
             </Text>
-          </View>
+          ))}
         </View>
       ) : null}
 
@@ -421,7 +464,7 @@ function FeedPostCardBase({
               outline ayrımı aynı glyph'in iki hâli — şekil değişmiyor, yalnız
               dolgu ile kontur yer değiştiriyor. */}
           {post.likedByMe ? (
-            <HeartGlyph size={LIKE_HEART_BOX} color={colors.errorStrong} />
+            <HeartGlyph size={LIKE_HEART_BOX} color={likedAccent} />
           ) : (
             <HeartGlyph
               size={LIKE_HEART_BOX}

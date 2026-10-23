@@ -5,6 +5,11 @@ export default function AnimatedPressable({
   onPress,
   onPressIn,
   onPressOut,
+  // Uzun basış İKİSİ BİRDEN geçiyor: `delayLongPress` olmadan çağıran eşiği
+  // ayarlayamıyor ve TouchableOpacity'nin ~500ms'lik varsayılanına mahkûm
+  // kalıyordu (bkz. HeroAvatar — mod seçici orada 340'a çekiliyor).
+  onLongPress,
+  delayLongPress,
   onLayout,
   style,
   // `style` içteki TouchableOpacity'ye gidiyor; bu ise dıştaki ölçek
@@ -55,6 +60,8 @@ export default function AnimatedPressable({
         onPressIn={handlePressIn}
         onPressOut={handlePressOut}
         onPress={onPress}
+        onLongPress={onLongPress}
+        delayLongPress={delayLongPress}
         onLayout={onLayout}
         disabled={disabled}
         style={style}

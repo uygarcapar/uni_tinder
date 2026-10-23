@@ -4,6 +4,11 @@ import { Image as ExpoImage } from 'expo-image';
 import { colors } from '../../theme/colors';
 import ToastShell from './ToastShell';
 import {
+  DEFAULT_APP_MODE,
+  modeFireNameKey,
+  type AppMode,
+} from '../../../features/discover/modeTheme';
+import {
   ToastIconGlyph,
   toastIconBackground,
   type ToastIconKind,
@@ -15,11 +20,31 @@ export type LikeToastProps = {
   photoUrl?: string | null;
   /** Yalnız `kind: 'note'` — yorumun ilk ~60 karakteri (IncomingLike.notePreview). */
   preview?: string | null;
+  /**
+   * OLAYIN modu (`IncomingLike.mode`) — ekranın seçili modu DEĞİL.
+   *
+   * Tek işi ürünün adını seçmek: Flört'te "Fire", Arkadaş'ta "Spark". Olaydan
+   * okunmasının sebebi MatchModal perdesindeki kuralın aynısı — bildirim
+   * kullanıcı öbür moddayken (ya da arka planda) gelebiliyor. Verilmezse
+   * Dating, yani modu bilmeyen çağıran (ör. debug kataloğu) bugünkü adı görür.
+   *
+   * ⚠️ DAİRENİN RENGİ MODLA DÖNMÜYOR, bilerek: dolgu Bildirimler listesindeki
+   * Fire rozetiyle TEK KAYNAK (bkz. theme/badge.ts) ve o liste satırları mod
+   * bilgisi taşımıyor (backend talebi C bekliyor). Yalnız toast yeşile
+   * dönseydi aynı olay iki yüzeyde iki renkte görünürdü.
+   */
+  mode?: AppMode;
 };
 
 // Tap → Likes ekranı; kapı `showLikeToast` içinde notifier seviyesinde
 // (gerekçe ToastShell'in tepesinde).
-export default function LikeToast({ kind, senderName, photoUrl, preview }: LikeToastProps) {
+export default function LikeToast({
+  kind,
+  senderName,
+  photoUrl,
+  preview,
+  mode = DEFAULT_APP_MODE,
+}: LikeToastProps) {
   const isSuper = kind === 'fire';
   const isNote = kind === 'note';
   // Notta kimlik free alıcıya da AÇIK (sözleşme §6) — çağıran adı hiç
@@ -29,9 +54,12 @@ export default function LikeToast({ kind, senderName, photoUrl, preview }: LikeT
   // satıra koymak jenerik duruyordu. Ad yoksa (düz beğenide premium olmayan
   // alıcı — kimlik kilidi AppNavigator'da) jenerik varyanta düşülüyor.
   const kindKey = isNote ? 'note' : isSuper ? 'fire' : 'like';
+  // `fire` her iki varyanta da geçiyor: yalnız Fire metinleri onu kullanıyor,
+  // diğerlerinde kullanılmayan bir enterpolasyon parametresi zararsız.
+  const fire = t(modeFireNameKey(mode));
   const title = senderName
-    ? t(`likeToast.${kindKey}`, { name: senderName })
-    : t(`likeToast.${kindKey}NoName`);
+    ? t(`likeToast.${kindKey}`, { name: senderName, fire })
+    : t(`likeToast.${kindKey}NoName`, { fire });
   // Not önizlemesi başlığın altına: ürünün değeri yorumun kendisi. Diğer
   // durumlarda alt satır ne yapılacağını söylüyor — isim yukarı taşındı.
   const subtitle = (isNote ? preview : null) || t('likeToast.cta');

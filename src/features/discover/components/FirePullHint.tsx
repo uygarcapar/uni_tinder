@@ -16,6 +16,10 @@ import { useTranslation } from "react-i18next";
 // iki katman notu. Eşik hâlâ ORANI üreten sayı (SwipeWrapper), buranın ondan
 // haberi olmasına gerek yok.
 import { cardPullProgress } from "@/shared/services/uiBus";
+import {
+  DISCOVER_GLASS_BUTTON_SIZE,
+  DISCOVER_HEADER_HEIGHT,
+} from "@/features/discover/components/discoverHeaderMetrics";
 import { colors as theme, scrimAt } from "@/shared/theme/colors";
 
 /**
@@ -53,9 +57,15 @@ import { colors as theme, scrimAt } from "@/shared/theme/colors";
  *   • ŞERİT PERDESİ — kartın ALTINDA (zIndex 5), eskisi gibi. Kartın terk
  *     ettiği bandı karartıyor; maskeye gerek yok, kartın kendisi maskeliyor.
  *   • İPUCU BANDI — kartın ÜSTÜNDE (zIndex 100, yatay rozetle aynı kat).
- *     Ekranın tepesine sabit, yüksekliği güvenli alan + bir satır: üstten
- *     aşağı sönen bir gradyan ve ortasında yazı. Kart altından kayıp gidiyor,
- *     yazı yerinde duruyor — pull-to-refresh başlığının davranışı.
+ *     Ekranın tepesine sabit, yüksekliği güvenli alan + yüzen chrome satırı +
+ *     bir satır: üstten aşağı sönen bir gradyan ve içinde yazı. Kart altından
+ *     kayıp gidiyor, yazı yerinde duruyor — pull-to-refresh başlığının
+ *     davranışı.
+ *
+ *     YAZI MOD BAŞLIĞININ ALTINDA. Band ekranın 0'ından başlıyor ama yazı
+ *     chrome satırını (geri al · MOD ADI · filtre) atlayıp altından başlıyor:
+ *     güvenli alanın hemen altına konduğu dönemde "bırak" yazısı Flört /
+ *     Arkadaş başlığının üstüne biniyordu (bkz. TEXT_TOP_GAP).
  *
  * YAZIYI ŞERİDİN İÇİNDE TUTMAYA ÇALIŞMA: eşiği büyütmek gerekir (çekişin
  * asimptotu 100 px, bkz. SwipeWrapper'daki rubber-band) ve jestin hissi o
@@ -103,19 +113,49 @@ const TEXT_FULL = 0.34;
 const SWAP_MS = 160;
 
 /**
- * İpucu bandının güvenli alanın ALTINDA kapladığı yer (px) — bir satır yazı +
- * gradyanın sönmesi için nefes. Band yazıyı taşıyor, perde değil: ekranın
- * tepesinden başlıyor ki durum çubuğunun ardı da kararsın.
+ * KEŞİF'İN YÜZEN CHROME SATIRININ BOYU — yazının sıfır noktası bu satırın
+ * ALTI (bkz. TEXT_TOP_GAP). DiscoverScreen'deki satırla AYNI max okunuyor:
+ * satır cam butondan kısa olabilir, kutunun boyu ikisinin büyüğü.
  */
-const BAND_BELOW_INSET = 52;
+const HEADER_ROW = Math.max(DISCOVER_HEADER_HEIGHT, DISCOVER_GLASS_BUTTON_SIZE);
 
 /**
- * Yazının bandın içindeki yeri — güvenli alan çizgisinin hemen altı.
+ * Yazı ile üstündeki chrome satırının arasındaki nefes payı.
+ */
+const TEXT_GAP_BELOW_HEADER = 8;
+
+/**
+ * Yazının güvenli alan çizgisinden ölçülen yeri.
+ *
+ * ⚠️ MOD BAŞLIĞININ ALTINDA (2026-10-21 düzeltmesi). Bir dönem `6`'ydı, yani
+ * yazı doğrudan güvenli alanın altındaydı — tam olarak yüzen chrome satırının
+ * içi: solda geri al, sağda filtre, ORTADA mod adı (Flört / Arkadaş, bkz.
+ * ModeTitle). İpucu o başlığın üstüne biniyordu ("release to send fire" ile
+ * dating/friends başlığı çakışıyordu). Satırın tamamını atlayıp altından
+ * başlıyor.
+ *
  * Eskiden yazı çekişle birlikte AŞAĞI iniyordu (`p × THRESHOLD/2`) çünkü
  * kartın terk ettiği şeridin ortasında durması gerekiyordu; band kartın
  * üstüne alınınca o hesap düştü (bkz. dosya başındaki iki katman notu).
  */
-const TEXT_TOP_GAP = 6;
+const TEXT_TOP_GAP = HEADER_ROW + TEXT_GAP_BELOW_HEADER;
+
+/**
+ * Yazının altında gradyanın sönmesi için kalan pay (px) — bir satır yazı +
+ * nefes.
+ */
+const BAND_BELOW_TEXT = 46;
+
+/**
+ * İpucu bandının güvenli alanın ALTINDA kapladığı yer (px). Band yazıyı
+ * taşıyor, perde değil: ekranın tepesinden başlıyor ki durum çubuğunun ardı da
+ * kararsın.
+ *
+ * TÜRETİLMİŞ, sabit değil: yazı mod başlığının altına inince band onu içinde
+ * tutmak için o kadar uzamak ZORUNDA — yoksa yazı bandın dışına, yani
+ * fotoğrafın perdesiz kısmına düşüyor.
+ */
+const BAND_BELOW_INSET = TEXT_TOP_GAP + BAND_BELOW_TEXT;
 
 /**
  * Yazının çekişle birlikte indiği KÜÇÜK pay (px). Sıfır da olabilirdi; bu
@@ -174,7 +214,8 @@ function FirePullHint({ topInset = 0 }: Props) {
   }));
 
   /**
-   * Yazı bloğu: bandın içinde, güvenli alan çizgisinin hemen altında SABİT.
+   * Yazı bloğu: bandın içinde, yüzen chrome satırının (mod başlığı) ALTINDA
+   * SABİT.
    *
    * Çekişle birlikte inen hâli (`p × THRESHOLD/2`) kartın altında kaldığı
    * için kaldırıldı — tarihçesi dosya başındaki iki katman notunda. Kalan
@@ -247,8 +288,8 @@ function FirePullHint({ topInset = 0 }: Props) {
 
       {/* İPUCU BANDI — KARTIN ÜSTÜNDE (gerekçesi dosya başında).
           Ekranın tepesine sabit; kart altından kayıp giderken yazı yerinde
-          duruyor. Yükseklik güvenli alan + bir satır: gradyan o satırın
-          altında sönüyor, yani kartın geri kalanı kararmıyor.
+          duruyor. Yükseklik güvenli alan + chrome satırı + bir satır yazı:
+          gradyan onun altında sönüyor, yani kartın geri kalanı kararmıyor.
           zIndex 100 — rozetle (SwipeOverlay) aynı kat, kartın (10) üstü. */}
       <Animated.View
         pointerEvents="none"
@@ -273,7 +314,8 @@ function FirePullHint({ topInset = 0 }: Props) {
         <Animated.View
           style={[
             // Yazı güvenli alanın ALTINDA: band ekranın 0'ından başlıyor ama
-            // yazı saatin/adanın ardına düşemez (bkz. `topInset`).
+            // yazı saatin/adanın ardına düşemez (bkz. `topInset`) — üstelik
+            // mod başlığının da altında (bkz. TEXT_TOP_GAP).
             {
               position: "absolute",
               top: topInset + TEXT_TOP_GAP,

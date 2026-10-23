@@ -30,6 +30,11 @@ import {
   clampNoteText,
 } from "@/features/discover/noteTarget";
 import type { NoteTarget, ProfilePromptCard } from "@/shared/types";
+import {
+  modeAccent,
+  DEFAULT_APP_MODE,
+  type AppMode,
+} from "@/features/discover/modeTheme";
 
 /**
  * Not yazma sheet'i — kartta bir fotoğrafın ya da prompt cevabının altındaki
@@ -343,16 +348,19 @@ function SendButton({
   control,
   sending,
   onPress,
+  accent,
 }: {
   control: Control<NoteForm>;
   sending: boolean;
   onPress: () => void;
+  /** Modun vurgusu (bkz. NoteComposerModalProps > mode). */
+  accent: string;
 }) {
   const { t } = useTranslation();
   const { isValid } = useFormState({ control });
 
   return (
-    // Dolu litPlus: kartta bastığı not balonuyla aynı renk. Metin boşken
+    // Dolu vurgu: kartta bastığı not balonuyla aynı renk. Metin boşken
     // nötr/soluk, gönderim uçuşta iken RENK KALIYOR (spinner beyaz; gri zeminde
     // kaybolurdu), yalnız basılamıyor.
     <TouchableOpacity
@@ -365,7 +373,7 @@ function SendButton({
         borderRadius: 999,
         borderCurve: "continuous",
         overflow: "hidden",
-        backgroundColor: isValid ? theme.litPlus : ink(0.15),
+        backgroundColor: isValid ? accent : ink(0.15),
         paddingVertical: 18,
         alignItems: "center",
         justifyContent: "center",
@@ -409,6 +417,16 @@ export interface NoteComposerModalProps {
   sending?: boolean;
   /** Gönderim hatası — çözülmüş metin. Sheet AÇIK kalır, metin korunur. */
   errorText?: string | null;
+  /**
+   * Notun gönderileceği MOD — gönder butonunun dolgusunu veriyor.
+   *
+   * ⚠️ PROP, `useAppMode()` DEĞİL. Bu modal iki yerden açılıyor ve ikisinde
+   * mod farklı çözülüyor: Keşif'te seçili mod, AKIŞ'ta kartın modu
+   * (`resolveCardMode` → sunucunun `availableModes`i). Akışta seçili mod
+   * okunursa Dating'deyken Friends-only bir yazarın kartında kırmızı buton
+   * çıkar — aksiyon yeşil modda gidiyorken.
+   */
+  mode?: AppMode;
 }
 
 export default function NoteComposerModal({
@@ -423,6 +441,7 @@ export default function NoteComposerModal({
   maxLength,
   sending = false,
   errorText = null,
+  mode = DEFAULT_APP_MODE,
 }: NoteComposerModalProps) {
   const { t } = useTranslation();
   const { height: windowHeight } = useWindowDimensions();
@@ -639,7 +658,12 @@ export default function NoteComposerModal({
           </Text>
         )}
 
-        <SendButton control={control} sending={sending} onPress={submit} />
+        <SendButton
+          control={control}
+          sending={sending}
+          onPress={submit}
+          accent={modeAccent(mode)}
+        />
       </View>
 
       {!!errorText && (

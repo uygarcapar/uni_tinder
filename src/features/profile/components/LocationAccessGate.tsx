@@ -2,7 +2,6 @@ import { useCallback, useEffect, useState } from "react";
 import * as Location from "expo-location";
 import LocationPermissionSheet from "@/features/auth/components/LocationPermissionSheet";
 import { sendLocationHeartbeat } from "@/features/profile/locationHeartbeat";
-import { useSwipeTutorialBlocking } from "@/features/discover/swipeTutorialGate";
 import { whenAppShellReady } from "@/shared/bootPhase";
 import { devLog } from "@/shared/utils/devLog";
 
@@ -52,12 +51,11 @@ export default function LocationAccessGate({
   const [needed, setNeeded] = useState(
     () => !!userKey && checkedUserKey === userKey && permissionMissing,
   );
-  /**
-   * Discover'ın ilk giriş swipe demosu oynarken açılmasın —
-   * `ProfileHiddenGate` ile birebir aynı gerekçe: kapı kartın üstünde duruyor,
-   * demo arkasında oynayıp "görüldü" işaretleniyor ve jest hiç görülmüyor.
+  /*
+   * SWIPE DEMOSU BEKLEME SIRASI KALDIRILDI: kapı bir süre Discover'ın ilk giriş
+   * demosunu bekliyordu; demo (ve öğrettiği swipe jesti) tamamen kalktı, gate
+   * modülü de silindi. `ProfileHiddenGate`'te aynı temizlik.
    */
-  const tutorialBlocking = useSwipeTutorialBlocking();
 
   useEffect(() => {
     if (!userKey) return;
@@ -116,7 +114,7 @@ export default function LocationAccessGate({
    */
   return (
     <LocationPermissionSheet
-      visible={needed && !blocked && !tutorialBlocking}
+      visible={needed && !blocked}
       onGranted={handleGranted}
       layout="page"
       dismissible={false}

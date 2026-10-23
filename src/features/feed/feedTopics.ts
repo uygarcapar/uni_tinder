@@ -1,5 +1,6 @@
 import i18n from "@/shared/i18n";
 import { resolveLocalized } from "@/shared/queries/commonQueries";
+import toDisplayLowercase from "@/shared/utils/textCase";
 import type { FeedMeDto, FeedTopic, FeedTopicOption } from "./feedTypes";
 
 /**
@@ -75,7 +76,53 @@ export function topicLabel(
   return i18n.t(`feed.topics.${key}`, { defaultValue: key });
 }
 
+/**
+ * Konunun HASHTAG biçimi — `#` + küçük harf etiket (istek).
+ *
+ * Konu artık ürünün dilinde bir etiket, bir kategori adı değil: kartta
+ * gövdeyle aynı puntoda ve pay almadan duruyor (bkz. FeedPostCard), yani
+ * "Ev arkadaşı" gibi başlık kalıbı orada cümlenin içine giren bir şey gibi
+ * okunuyordu. `#` ve küçük harf onu ayıran tek işaret.
+ *
+ * ⚠️ Küçük harf `textTransform` ile DEĞİL `toDisplayLowercase` ile: RN'in iOS
+ * uygulaması locale'den bağımsız ve "İ"yi iki noktalı bir i'ye çeviriyor
+ * (gerekçe textCase.ts'te).
+ *
+ * ⚠️ BOŞLUKLAR KALIYOR — "#ders grubu", "#dersgrubu" DEĞİL. Etiketin sahibi
+ * sunucu ve çift dilli: kelimeleri birleştirmek "#lost&found" gibi uydurma
+ * yazımlar üretirdi. Birden fazla etiket yan yana dizildiğinde ayrımı yapan
+ * şey her birinin başındaki `#`.
+ */
+export function topicHashtag(
+  key: string,
+  me: FeedMeDto | undefined | null,
+): string {
+  return `#${toDisplayLowercase(topicLabel(key, me))}`;
+}
+
 /** Filtre satırındaki "Tüm konular" etiketi. */
 export function topicAllLabel(): string {
   return i18n.t("feed.topics.all", { defaultValue: "Tüm konular" });
+}
+
+/**
+ * Konu seçiminin KANONİK biçimi: tekilleştirilmiş + sıralı.
+ *
+ * Çoklu seçimde dokunma SIRASI bir bilgi değil, ama sıra query key'e girerse
+ * ["Event","Advice"] ile ["Advice","Event"] iki ayrı infinite query doğurur ve
+ * aynı liste iki kez çekilir. Sunucuya giden parametre de, cache anahtarı da
+ * (bkz. feedKeys.posts) bu fonksiyondan geçiyor.
+ */
+export function normalizeTopicSelection(
+  keys: readonly string[] | null | undefined,
+): string[] {
+  if (!Array.isArray(keys)) return [];
+  const seen = new Set<string>();
+  for (const raw of keys) {
+    const key = typeof raw === "string" ? raw.trim() : "";
+    // "all" bir konu DEĞİL, filtrenin yokluğu — boş seçimle aynı şey, o yüzden
+    // listeye girmiyor (eski tek-seçim şemasından okunan değerler için kapı).
+    if (key && key !== "all") seen.add(key);
+  }
+  return [...seen].sort();
 }

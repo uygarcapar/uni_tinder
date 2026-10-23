@@ -4,6 +4,7 @@ import type { ImagePickerAsset } from 'expo-image-picker';
 import { Directory, File, Paths } from 'expo-file-system';
 
 import { presentCropper } from '@/shared/components/cropper/cropperBridge';
+import { presentCameraCapture } from '@/shared/components/camera/cameraBridge';
 import { devLog } from './devLog';
 import { forgetPhoto } from './photoStore';
 
@@ -27,6 +28,11 @@ export type PickedPhoto = {
  * iOS'ta her zaman KARE ve multi-select ile birlikte çalışmıyor; 3:4 (900x1200)
  * profil formatını üretemezdi. Boyut/kalite burada sabitlenir, upload'a hiçbir
  * zaman ham 48MP fotoğraf gitmez.
+ *
+ * ÇEKİM: uygulama içi kamera (bkz. CameraCaptureOverlay) — sistem kamerası
+ * yalnızca overlay bağlı değilse devreye giren yedek. Gerekçesi uzun uzun
+ * `captureAndCropPhoto`ın başında: eski yol deklanşörden sonra ikinci bir onay
+ * ekranı getiriyordu.
  *
  * İptal HATA DEĞİLDİR: iptal edilen fotoğraf atlanır, hiç seçim kalmazsa boş
  * dizi döner. Kamera izni reddi çağırana fırlar.
@@ -133,9 +139,27 @@ export const pickAndCropPhotos = async (maxFiles: number): Promise<PickedPhoto[]
  * Kamerayla çek + aynı 3:4 kırpma. Tek fotoğraf döner; çekim ya da kırpma
  * iptal edilirse null.
  *
+ * ══════════════════════════════════════════════════════════════════════════
+ * ÇEKİM UYGULAMA İÇİNDE — SİSTEM KAMERASI ARTIK YALNIZCA YEDEK.
+ * ══════════════════════════════════════════════════════════════════════════
+ * `launchCameraAsync` (UIImagePickerController) deklanşörden sonra KENDİ
+ * "Tekrar Çek / Fotoğrafı Kullan" ekranını açıyordu: kullanıcı orada onaylıyor,
+ * hemen ardından kırpma ekranı açılıp bir daha onaylatıyordu. Üstelik o
+ * ekranda "kullan" dediği kadraj 3:4 pencereyle ilgisizdi. Artık çekim
+ * CameraCaptureOverlay'de ve kare DOĞRUDAN kırpıcıya gidiyor — tek onay,
+ * kırpıcının "Kaydet"i.
+ *
+ * KIRPICIDAKİ ✕ = YENİDEN ÇEK: kamera akışında `skipped`in "sıradaki
+ * fotoğrafa geç" gibi bir anlamı yok (tek fotoğraf var), o yüzden döngü
+ * kamerayı yeniden açıyor. Kullanıcı kamerada ✕'e basarsa akış biter.
+ *
+ * Overlay bağlı değilse (host sökülmüş, test ortamı) eski ImagePicker yoluna
+ * düşüyoruz — fotoğraf eklemek hiç çalışmamasından iyi.
+ *
  * İzni native hata kodunu ayrıştırmak yerine AÇIKÇA soruyoruz — çağıranlar
  * `E_NO_CAMERA_PERMISSION` bekliyor ve `canAskAgain` ile "Ayarlar" butonu
- * gösterebiliyorlar.
+ * gösterebiliyorlar. İzin ImagePicker üzerinden soruluyor, expo-camera ile
+ * AYNI native izin (NSCameraUsageDescription); iki yolda da geçerli.
  */
 export const captureAndCropPhoto = async (): Promise<PickedPhoto | null> => {
   let permission = await ImagePicker.getCameraPermissionsAsync();
@@ -149,6 +173,51 @@ export const captureAndCropPhoto = async (): Promise<PickedPhoto | null> => {
     throw error;
   }
 
+  // Sonsuz döngü yok: her tur kullanıcıdan YENİ bir deklanşör basışı istiyor,
+  // kamerada iptal (ya da teknik hata) anında çıkıyor.
+  for (;;) {
+    const outcome = await presentCameraCapture();
+
+    if (outcome.status === 'unavailable') return captureWithSystemCamera();
+    if (outcome.status === 'cancelled') return null;
+    if (outcome.status === 'failed') {
+      devLog('📷 [photoPicker] çekim başarısız', outcome.error);
+      return null;
+    }
+
+    const { shot } = outcome;
+    // Boyut native'den gelmezse (0) ölçüyü kendimiz okuyoruz — kırpma
+    // geometrisinin tek girdisi bu.
+    const size =
+      shot.width > 0 && shot.height > 0
+        ? { width: shot.width, height: shot.height }
+        : await measure(shot.uri);
+    if (!size) {
+      forgetPhoto(shot.uri);
+      return null;
+    }
+
+    const cropped = await presentCropper({
+      uri: shot.uri,
+      srcWidth: size.width,
+      srcHeight: size.height,
+    });
+
+    // Kameranın cache kopyası her hâlükârda ölü: kırpma çıktısı ayrı bir dosya.
+    forgetPhoto(shot.uri);
+
+    if (cropped.status === 'done') return cropped.photo;
+    if (cropped.status === 'skipped') continue; // ✕ → kameraya dön
+    if (cropped.status === 'failed') {
+      devLog('📷 [photoPicker] kırpma başarısız', cropped.error);
+    }
+    // `aborted` (kırpma ekranı söküldü) ve `failed` → akış sessizce biter.
+    return null;
+  }
+};
+
+/** Uygulama içi kamera yoksa eski yol. Çift onay burada KALIYOR — bilerek. */
+const captureWithSystemCamera = async (): Promise<PickedPhoto | null> => {
   const result = await ImagePicker.launchCameraAsync({
     mediaTypes: ['images'],
     allowsEditing: false,

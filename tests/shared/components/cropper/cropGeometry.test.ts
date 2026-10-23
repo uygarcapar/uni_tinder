@@ -1,6 +1,7 @@
 import {
   clamp,
   coverScale,
+  frameWindow,
   maxOffset,
   maxZoom,
   toSourceRect,
@@ -195,5 +196,41 @@ describe('toSourceRect', () => {
       // aşamasında görünür bir esneme üretmiyor.
       expect(Math.abs(rect.height - (rect.width * 4) / 3)).toBeLessThanOrEqual(1);
     }
+  });
+});
+
+describe('frameWindow', () => {
+  const window = (overrides: Partial<Parameters<typeof frameWindow>[0]> = {}) =>
+    frameWindow({
+      screenW: 390,
+      screenH: 844,
+      headerH: 115,
+      footerH: 118,
+      aspectW: 3,
+      aspectH: 4,
+      ...overrides,
+    });
+
+  it('tipik telefonda TAM GENİŞLİK verir (kırpma hiçbir şey atmadan başlıyor)', () => {
+    const { winW, winH } = window();
+    expect(winW).toBe(390);
+    expect(winH).toBeCloseTo(520);
+  });
+
+  it('chrome yer bırakmazsa genişliği kısar, oranı KORUR', () => {
+    // Kısa ekran + yüksek chrome: 3:4 tam genişlikte sığmıyor.
+    const { winW, winH } = window({ screenH: 667, headerH: 140, footerH: 180 });
+    expect(winW).toBeLessThan(390);
+    expect(winH / winW).toBeCloseTo(4 / 3);
+  });
+
+  it('dikey payı iki bandın BÜYÜĞÜNDEN hesaplar (pencere ekranın ortasında)', () => {
+    // Küçük bandı büyütmek sonucu değiştirmemeli, büyüğü büyütmek küçültmeli.
+    expect(window({ screenH: 667, headerH: 120, footerH: 180 })).toEqual(
+      window({ screenH: 667, headerH: 20, footerH: 180 }),
+    );
+    expect(window({ screenH: 667, headerH: 120, footerH: 220 }).winW).toBeLessThan(
+      window({ screenH: 667, headerH: 120, footerH: 180 }).winW,
+    );
   });
 });

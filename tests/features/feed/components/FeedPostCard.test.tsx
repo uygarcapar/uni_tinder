@@ -13,7 +13,9 @@
  */
 
 import { render, screen, fireEvent } from '@testing-library/react-native';
-import FeedPostCard from '@/features/feed/components/FeedPostCard';
+import FeedPostCard, {
+  BODY_FONT_SIZE,
+} from '@/features/feed/components/FeedPostCard';
 import type { FeedPostDto, FeedReplyState } from '@/features/feed/feedTypes';
 import tr from '@/shared/i18n/translations/tr';
 
@@ -343,5 +345,56 @@ describe('Gönderilerim varyantı', () => {
     render(<FeedPostCard post={post({ status: 'PendingReview', replyCount: 3 })} />);
     expect(screen.queryByText(tr.feed.mine.status.PendingReview)).toBeNull();
     expect(screen.queryByText('3 yanıt')).toBeNull();
+  });
+});
+
+/**
+ * KONU ETİKETLERİ (istek, 2026-10-15).
+ *
+ * Üç kural birlikte test ediliyor:
+ *  1. `#` + KÜÇÜK HARF — ve küçük harf `textTransform` ile değil
+ *     `toDisplayLowercase` ile (Türkçe "İ" tuzağı, bkz. utils/textCase.ts).
+ *  2. GÖVDEYLE AYNI PUNTO ve kapsül YOK: etiketin sol kenarı gövde metniyle
+ *     birebir hizalı olmalı — eski çipin 9'luk yatay payı onu içeri itiyordu.
+ *  3. ÇOKLU: `topics` doluysa hepsi, yoksa tek `topic`. İkisi de yoksa blok
+ *     HİÇ çizilmiyor (varsayılan "Genel" uydurulmuyor).
+ */
+describe('konu etiketleri', () => {
+  it('tek konu "#küçük harf" çizilir', () => {
+    render(<FeedPostCard post={post({ topic: 'Roommate' })} />);
+    // tr sözlüğünde "Ev arkadaşı".
+    expect(screen.getByText('#ev arkadaşı')).toBeTruthy();
+    expect(screen.queryByText('Ev arkadaşı')).toBeNull();
+  });
+
+  it('gövdeyle AYNI punto ve KAPSÜL YOK (sol kenar hizası)', () => {
+    render(<FeedPostCard post={post({ topic: 'Event' })} />);
+    const label = screen.getByText('#etkinlik');
+    const style = Array.isArray(label.props.style)
+      ? Object.assign({}, ...label.props.style)
+      : label.props.style;
+    expect(style.fontSize).toBe(BODY_FONT_SIZE);
+    // Kapsülün izi: yatay pay. Metnin kendisinde de, sarmalayıcısında da
+    // olmamalı — varsa etiket gövdeden içeri kaymış demektir.
+    expect(style.paddingHorizontal).toBeUndefined();
+    expect(label.parent?.props.style?.paddingHorizontal).toBeUndefined();
+  });
+
+  it('`topics` doluysa HEPSİ çizilir', () => {
+    render(
+      <FeedPostCard post={post({ topic: 'Event', topics: ['Event', 'Advice'] })} />,
+    );
+    expect(screen.getByText('#etkinlik')).toBeTruthy();
+    expect(screen.getByText('#tavsiye')).toBeTruthy();
+  });
+
+  it('`topics` yoksa tek `topic`e düşülür (sunucu henüz dizi dönmüyor)', () => {
+    render(<FeedPostCard post={post({ topic: 'Advice', topics: undefined })} />);
+    expect(screen.getByText('#tavsiye')).toBeTruthy();
+  });
+
+  it('konu YOKSA blok hiç çizilmiyor — "#genel" UYDURULMUYOR', () => {
+    render(<FeedPostCard post={post({ topic: undefined, topics: undefined })} />);
+    expect(screen.queryByText('#genel')).toBeNull();
   });
 });

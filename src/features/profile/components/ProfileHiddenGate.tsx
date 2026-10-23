@@ -1,11 +1,10 @@
-import { useCallback, useEffect, useRef, useState } from "react";
+import { useCallback, useEffect, useState } from "react";
 import SheetBlurBackdrop from "@/shared/components/SheetBlurBackdrop";
 import { View, Text, TouchableOpacity } from "react-native";
 
 import { EyeOff, ShieldAlert, Camera } from "@/shared/icons";
 import { useTranslation } from "react-i18next";
 import AppBottomSheet from "@/shared/components/AppBottomSheet";
-import { useSwipeTutorialBlocking } from "@/features/discover/swipeTutorialGate";
 import SFIcon, { type SFSymbol } from "@/shared/components/SFIcon";
 import { colors, ink } from "@/shared/theme/colors";
 import type { ProfileVisibility } from "@/features/profile/photoModeration";
@@ -91,27 +90,15 @@ export default function ProfileHiddenGate({
   }, [state, awaitingReview]);
 
   /**
-   * SIRA: Discover'ın ilk giriş swipe demosu oynarken (ya da oynamak üzereyken)
-   * kapı açılmıyor. Kapı kartın üstünde duruyor; yeni kullanıcının fotoğrafları
-   * incelemede olduğu için ikisi AYNI ANDA çıkıyor ve demo kapının arkasında
-   * oynayıp "görüldü" işaretleniyordu — jest hiç görülmeden kayboluyordu.
-   * Demo bitince bayrak düşüyor ve kapı normal şekilde açılıyor.
+   * SWIPE DEMOSU BEKLEME SIRASI KALDIRILDI: kapı bir süre Discover'ın ilk giriş
+   * demosunu bekliyordu (kapı kartın üstünde açılıyor, demo arkasında oynayıp
+   * "görüldü" işaretleniyordu). Demo tamamen kalktı — öğrettiği swipe jesti de
+   * yok (bkz. SwipeWrapper) — ve `swipeTutorialGate` modülü silindi. Kapı artık
+   * doğrudan açılıyor; kapanış da hep KULLANICININ kapanışı, o yüzden
+   * programatik kapanışı ayırt eden `blockingRef` de kalktı.
    */
-  const tutorialBlocking = useSwipeTutorialBlocking();
-  /**
-   * Demo yüzünden kapanış PROGRAMATİK: AppBottomSheet `visible=false` görünce
-   * dismiss ediyor, gorhom da onDismiss → `onClose` çağırıyor. Bunu "kullanıcı
-   * kapattı" saymak, bekleme kipindeki kapıyı bir daha AÇILMAMAK üzere gömerdi
-   * (dismissed yalnız state değişiminde sıfırlanıyor). Kapanış anında bayrağı
-   * okuyabilmek için ref: onDismiss kapanma animasyonundan sonra geliyor.
-   */
-  const blockingRef = useRef(false);
-  useEffect(() => {
-    blockingRef.current = tutorialBlocking;
-  }, [tutorialBlocking]);
-
   const open =
-    !!state && state !== "Visible" && !suspended && !dismissed && !tutorialBlocking;
+    !!state && state !== "Visible" && !suspended && !dismissed;
 
   useEffect(() => {
     onOpenChange?.(open);
@@ -142,10 +129,7 @@ export default function ProfileHiddenGate({
     <AppBottomSheet
       visible={open}
       snapPoints={["58%"]}
-      onClose={() => {
-        if (blockingRef.current) return;
-        setDismissed(true);
-      }}
+      onClose={() => setDismissed(true)}
       backdropComponent={renderBackdrop}
       // Her durumda aşağı çekilerek kapanır — bilgilendirme, kapı değil.
       enablePanDownToClose

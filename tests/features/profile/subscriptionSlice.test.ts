@@ -51,6 +51,7 @@ import subscriptionReducer, {
   refreshEntitlementsForPaywall,
   resolvePendingPremiumSync,
   selectIsPremium,
+  selectPremiumOptimistic,
   setPremium,
   syncSubscriptionWithRetry,
 } from '@/features/profile/subscriptionSlice';
@@ -1064,5 +1065,46 @@ describe('SubscriptionChanged (hub)', () => {
     await store.dispatch(fetchSubscriptionStatus() as any);
 
     expect(selectIsPremium(store.getState())).toBe(true);
+  });
+});
+
+/**
+ * Premium'un SUNUCU KARARLARINA yansıması — "Plus aldım ama akış filtreleri
+ * kilitli kaldı" semptomunun slice tarafı.
+ *
+ * Kilit kararının sahibi `/api/feed/me` (`canUseKindFilter`), tier slice'ı
+ * değil. O yanıtı tazeleyen efekt (AppNavigator) tek başına `isPremium`
+ * geçişine bakamaz: satın almadaki optimistic yazım da bir geçiştir ve o anda
+ * backend webhook'u henüz inmemiş olabilir — cevap "hakkın yok" diye TAZE
+ * yazılır ve kilit orada donar. İkinci turu açan sinyal, damganın silinmesi.
+ */
+describe('selectPremiumOptimistic', () => {
+  it('is false before any purchase', () => {
+    const store = makeStore();
+    expect(selectPremiumOptimistic(store.getState())).toBe(false);
+  });
+
+  it('flags the purchase window and clears it when the backend confirms', async () => {
+    const store = makeStore();
+    store.dispatch(setPremium({ isPremium: true, optimistic: true }));
+    // Satın alma anı: premium zaten true, ama backend henüz konuşmadı — bu iki
+    // durum AYNI `isPremium` değerini paylaşıyor, ayıran tek şey bu bayrak.
+    expect(selectIsPremium(store.getState())).toBe(true);
+    expect(selectPremiumOptimistic(store.getState())).toBe(true);
+
+    mockGet.mockResolvedValue({ result: activeStatus });
+    await store.dispatch(fetchSubscriptionStatus() as any);
+
+    expect(selectIsPremium(store.getState())).toBe(true);
+    expect(selectPremiumOptimistic(store.getState())).toBe(false);
+  });
+
+  it('stays false for a premium that came straight from the backend', async () => {
+    const store = makeStore();
+    mockGet.mockResolvedValue({ result: activeStatus });
+    await store.dispatch(fetchSubscriptionStatus() as any);
+
+    expect(selectIsPremium(store.getState())).toBe(true);
+    expect(selectPremiumOptimistic(store.getState())).toBe(false);
   });
 });

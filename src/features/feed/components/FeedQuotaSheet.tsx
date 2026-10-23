@@ -24,6 +24,13 @@ export interface FeedQuotaSheetProps {
   /** Free kullanıcıya yumuşak Plus satırı; premium'da hiç çizilmiyor. */
   showPlusOffer: boolean;
   onPlusPress: () => void;
+  /**
+   * Plus satırının dolgusu — SEÇİLİ MODUN vurgusu (`modeAccent`). Prop, sabit
+   * değil: Arkadaş modunda açılan sheet'te kırmızı bir buton, ekranın geri
+   * kalanı yeşilken tek başına dating'e işaret ediyordu. Verilmezse (eski
+   * çağıran) bugünkü kırmızı.
+   */
+  accent?: string;
 }
 
 export default function FeedQuotaSheet({
@@ -32,6 +39,7 @@ export default function FeedQuotaSheet({
   nextResetAt,
   showPlusOffer,
   onPlusPress,
+  accent = colors.litPlus,
 }: FeedQuotaSheetProps) {
   const { t } = useTranslation();
   const resetLine = formatQuotaReset(nextResetAt, t);
@@ -66,7 +74,7 @@ export default function FeedQuotaSheet({
             paddingHorizontal: 18,
             borderRadius: 999,
             borderCurve: "continuous",
-            backgroundColor: colors.litPlus,
+            backgroundColor: accent,
             alignItems: "center",
           }}
         >

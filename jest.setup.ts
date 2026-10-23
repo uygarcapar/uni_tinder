@@ -204,6 +204,28 @@ jest.mock('expo-haptics', () => ({
   ImpactFeedbackStyle: { Light: 'light', Medium: 'medium', Heavy: 'heavy', Rigid: 'rigid', Soft: 'soft' },
   NotificationFeedbackType: { Success: 'success', Warning: 'warning', Error: 'error' },
 }));
+// Klavye katmanı — native. Paket import edildiği anda (modül gövdesinde)
+// NativeEventEmitter kuruyor ve bağlanmamış TurboModule yüzünden suite'i
+// "doesn't seem to be linked" hatasıyla düşürüyor; yani KeyboardStickyView'lı
+// bir ekranı render ETMESEN de import etmek yetiyor. Sarmalayıcılar host
+// component olarak mock'lanıyor (children render edilsin), handler/olay
+// yüzeyleri no-op: testler klavye animasyonunu ölçmüyor.
+jest.mock('react-native-keyboard-controller', () => ({
+  KeyboardProvider: 'KeyboardProvider',
+  KeyboardStickyView: 'KeyboardStickyView',
+  KeyboardAvoidingView: 'KeyboardAvoidingView',
+  KeyboardGestureArea: 'KeyboardGestureArea',
+  KeyboardController: {
+    dismiss: jest.fn(() => Promise.resolve()),
+    setFocusTo: jest.fn(),
+    setInputMode: jest.fn(),
+    setDefaultMode: jest.fn(),
+  },
+  KeyboardEvents: { addListener: jest.fn(() => ({ remove: jest.fn() })) },
+  useGenericKeyboardHandler: jest.fn(),
+  useKeyboardHandler: jest.fn(),
+  useReanimatedKeyboardAnimation: () => ({ height: { value: 0 }, progress: { value: 0 } }),
+}));
 jest.mock('expo-symbols', () => ({ SymbolView: 'SymbolView' }));
 jest.mock('expo-linear-gradient', () => ({ LinearGradient: 'LinearGradient' }));
 // transform allowlist dışında; host component olarak mock'lanınca maskeli

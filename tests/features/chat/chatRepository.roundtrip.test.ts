@@ -66,6 +66,7 @@ describe('şema sürümü', () => {
     db.exec('ALTER TABLE conversations DROP COLUMN closed_by_me'); // v4
     db.exec('ALTER TABLE conversations DROP COLUMN closed_reason');
     db.exec('DROP INDEX idx_messages_unsent'); // v5
+    db.exec('ALTER TABLE conversations DROP COLUMN mode'); // v6
     db.exec('PRAGMA user_version = 1');
 
     __resetChatDbForTests();
@@ -80,6 +81,12 @@ describe('şema sürümü', () => {
     ]);
     // v3 de uygulanmış.
     expect(upgraded.getAll('SELECT key FROM meta')).toEqual([]);
+    // v6: sohbet satırı modu taşıyor (NULL = sunucu söylemedi, ≠ Dating).
+    expect(
+      upgraded
+        .getAll<{ name: string }>('PRAGMA table_info(conversations)')
+        .map((c) => c.name),
+    ).toContain('mode');
   });
 });
 

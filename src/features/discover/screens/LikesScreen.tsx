@@ -54,6 +54,7 @@ import {
   useSwipeStats,
 } from "@/features/discover/swipeQueries";
 import { useAppMode } from "@/features/discover/useAppMode";
+import { modeAccent, modeFireNameKey } from "@/features/discover/modeTheme";
 import {
   fetchMissedMatches,
   recoverMissedMatch,
@@ -174,11 +175,18 @@ const LikesListHeader = memo(function LikesListHeader({
   description,
   actionLabel,
   onActionPress,
+  accent,
 }: {
   title: string;
   description: string;
   actionLabel: string | null;
   onActionPress: (() => void) | null;
+  /**
+   * Pill'in dolgusu — SEÇİLİ MODUN vurgusu (`modeAccent`): Flört'te litPlus
+   * kırmızısı, Arkadaş'ta friends yeşili. Prop, modül sabiti değil: bu ekran
+   * iki modu da çiziyor ve renk dışarıdan geliyor (memo primitif kalsın).
+   */
+  accent: string;
 }) {
   if (!title) return null;
   return (
@@ -216,11 +224,20 @@ const LikesListHeader = memo(function LikesListHeader({
           {title}
         </Text>
         {!!actionLabel && !!onActionPress && (
-          // Zemin `litPlus` — "Seni beğenenleri gör" CTA'sıyla AYNI dolgu;
-          // ekranda tek bir "bu satın almalı" dili olsun (hangi sheet'e gittiği
-          // sekmeye göre değişse de, bkz. headerActionFor).
+          // Zemin SEÇİLİ MODUN vurgusu — "Seni beğenenleri gör" CTA'sıyla AYNI
+          // dolgu; ekranda tek bir "bu satın almalı" dili olsun (hangi sheet'e
+          // gittiği sekmeye göre değişse de, bkz. headerActionFor).
+          //
+          // ⚠️ MOD'A BAĞLI (2026-10-21): eskiden sabit `litPlus` kırmızısıydı
+          // ve Arkadaş modunda ekranın geri kalanı (boş durum CTA'sı, karttaki
+          // tik, Spark rozeti) yeşile dönerken bu pill kırmızı kalıyordu —
+          // kullanıcının gördüğü tek kırmızı yüzey. Satın alma yüzeyleri
+          // (`PurchaseSections`, `PremiumFlame`) BİLEREK dating-markalı kalıyor;
+          // ayrım "bu ekranın modu" ile "global satın alma" arasında.
+          //
           // Yazı `text` olamaz (açık modda beyaza döner, dolgunun üstünde
-          // kaybolur); sabit dolguların mürekkebi `onMediaInverse`.
+          // kaybolur); sabit dolguların mürekkebi `onMediaInverse` — iki vurgu
+          // da orta tonlu, ikisinin üstünde de siyah okunuyor.
           <AnimatedPressable
             pressScale={0.96}
             onPress={onActionPress}
@@ -230,7 +247,7 @@ const LikesListHeader = memo(function LikesListHeader({
               flexShrink: 0,
               borderRadius: 999,
               borderCurve: "continuous",
-              backgroundColor: colors.litPlus,
+              backgroundColor: accent,
               paddingHorizontal: 12,
               paddingVertical: 6,
             }}
@@ -333,6 +350,33 @@ export default function LikesScreen() {
   // geçmek bu ekranı da arkadaş beğenilerine kapsıyor. Beğeni listesi,
   // kaçırdıklar, liker profili ve kurtarma — hepsi mod başına.
   const { mode } = useAppMode();
+  /**
+   * Modun REF AYNASI — render sırasında yazılıyor (`likesRef` ile aynı kalıp).
+   *
+   * ⚠️ ŞART, kolaylık değil: bu ekrandaki çekme fonksiyonlarının (`loadMissed`,
+   * `loadMissedCount`, `fetchWhoLikedMe`) deps'i BOŞ/sabit — kimlikleri effect
+   * bağımlılığı ve her mod değişiminde yeniden kurulmaları abonelikleri
+   * resubscribe ettirirdi. Kapanıştan okunan `mode` ise İLK RENDER'da donuyor
+   * (ekran boot'ta preload edilip hiç unmount olmuyor, bkz. görünürlük
+   * tazelemesi notu) — yani mod değişse de istekler eski modun parametresiyle
+   * giderdi. Çözüm: kimlik sabit, değer ref'ten.
+   */
+  const modeRef = useRef(mode);
+  modeRef.current = mode;
+  // Ekrandaki dolgulu yüzeylerin rengi — başlık pill'i, boş durum CTA'ları ve
+  // karttaki tik aynı tondan okur (Arkadaş'ta hiçbiri kırmızı kalmasın).
+  const accent = modeAccent(mode);
+  /**
+   * Ürünün o moddaki GÖRÜNEN adı — Flört'te "Fire", Arkadaş'ta "Spark"
+   * (modeFireNameKey, tek kaynak).
+   *
+   * Ekrandaki Fire metinleri bu adı `{{fire}}` ile enterpole ediyor
+   * (`likes.tabFire`, `headerFire`, `descFire`, `firePill`, `emptyFire*`):
+   * iki ayrı anahtar çifti yazmak aynı cümleyi iki yerde tutmak olurdu ve
+   * ikinci bir mod eklenirse katlanırdı. TR'de çoğul eki metnin içinde
+   * (`{{fire}}'lar`) — iki ad için de aynı yazım.
+   */
+  const fireName = t(modeFireNameKey(mode));
   const pagerRef = useRef<PagerView>(null);
   // Pager'ın ANLIK konumu — tam sayı değil, kaydırma sürerken 1.0 → 1.37 → 2.0
   // diye akıyor. Alt çizgi bunu okuyor, dolayısıyla parmakla yarım sayfa çekip
@@ -522,8 +566,13 @@ export default function LikesScreen() {
     // eskiden HER tazelemede iskelete düşüp geri dönüyordu (boş → iskelet →
     // boş), oysa ekranda zaten bir cevap duruyor.
     if (!missedLoadedRef.current) setMissedLoading(true);
+    // Mod ref'ten: bu fonksiyonun deps'i boş (gerekçe modeRef'te).
+    const requestMode = modeRef.current;
     try {
-      const page = await fetchMissedMatches(1, 20, mode);
+      const page = await fetchMissedMatches(1, 20, requestMode);
+      // Cevap yolda gelirken mod değiştiyse bu sayfa ÖBÜR MODUN — yazma.
+      // Taze mod kendi turunu zaten başlattı (bkz. mod değişimi effect'i).
+      if (modeRef.current !== requestMode) return;
       setMissed(page.profiles);
       // Adet listenin uzunluğundan DEĞİL zarftan: `profiles` ilk sayfa, sayı
       // tüm kümeyi anlatmalı.
@@ -537,9 +586,14 @@ export default function LikesScreen() {
       // Hatada da işaretleniyor: yoksa istek düşen kullanıcı sonsuza kadar
       // iskelete bakardı. Tazelik damgası (lastMissedFetchRef) yalnız başarıda
       // yazıldığı için bir sonraki girişte istek koşulsuz yineleniyor.
-      missedLoadedRef.current = true;
-      setMissedLoaded(true);
-      setMissedLoading(false);
+      //
+      // ⚠️ Bayat modun turu "ilk tur bitti" DEMİYOR: taze modun listesi henüz
+      // yolda ve iskeleti burada kapatmak bir kare "kimse yok" gösterirdi.
+      if (modeRef.current === requestMode) {
+        missedLoadedRef.current = true;
+        setMissedLoaded(true);
+        setMissedLoading(false);
+      }
       missedInFlightRef.current = false;
     }
   }, []);
@@ -561,8 +615,11 @@ export default function LikesScreen() {
     if (now - lastMissedFetchRef.current < LIKES_STALE_MS) return;
     if (now - lastMissedCountFetchRef.current < LIKES_STALE_MS) return;
     missedCountInFlightRef.current = true;
+    const requestMode = modeRef.current;
     try {
-      const page = await fetchMissedMatches(1, 1, mode);
+      const page = await fetchMissedMatches(1, 1, requestMode);
+      // Bayat modun adedi pill'e yazılmaz (listedeki aynı kural).
+      if (modeRef.current !== requestMode) return;
       setMissedTotal(page.totalProfiles);
       lastMissedCountFetchRef.current = Date.now();
     } catch {
@@ -649,8 +706,10 @@ export default function LikesScreen() {
   // PreviewModal'da SwipeCard layout'unu reuse ederek gösteriyoruz.
   const [previewVisible, setPreviewVisible] = useState(false);
   const [previewProfile, setPreviewProfile] = useState(null);
-  // Açılan kartın SWIPE'sız olup olmadığı — "kaçırdıkların" sekmesinde kart
-  // yalnız okunur açılır (bkz. LikerSwipeModal `swipeDisabled`).
+  // Açılan kart YALNIZ OKUNUR mu — "kaçırdıkların" sekmesinde kartta karar
+  // butonları (kapaktaki tik/X, panelin X/tik satırı, Fire) çizilmiyor; bkz.
+  // LikerSwipeModal `swipeDisabled`. Ad jest zamanından kalma: swipe kalktı,
+  // bayrağın işi aynı — wire/prop adı olduğu için öyle bırakıldı.
   //
   // Sekmeye render anında bakmak yerine AÇILIŞTA dondurmasının sebebi kapanış:
   // `previewVisible` false olduktan sonra sheet hâlâ ekranda kayıyor ve o sırada
@@ -769,11 +828,13 @@ export default function LikesScreen() {
           : tabKey === "like"
           ? t("likes.headerLike")
           : tabKey === "fire"
-            ? t("likes.headerFire")
+            ? t("likes.headerFire", { fire: fireName })
             : tabKey === "note"
               ? t("likes.headerNote")
               : t("likes.headerAll"),
-    [t],
+    // `fireName` bağımlılıkta: mod değişince başlık "Fire'lar" → "Spark'lar"
+    // olmalı, memo bayat kalmamalı.
+    [t, fireName],
   );
 
   // Başlığın SAĞINDAKİ pill. Her sekmede aynı görev: bu sekmede kilidi/eksiği
@@ -882,11 +943,16 @@ export default function LikesScreen() {
         return recoveryAccessText ? `${desc} ${recoveryAccessText}` : desc;
       }
       if (tabKey === "like") return t("likes.descLike");
-      if (tabKey === "fire") return t("likes.descFire");
+      if (tabKey === "fire") return t("likes.descFire", { fire: fireName });
       if (tabKey === "note") return t("likes.descNote");
       return t("likes.descAll");
     },
-    [statsQuery.data?.missedMatchLookbackDays, recoveryAccessText, t],
+    [
+      statsQuery.data?.missedMatchLookbackDays,
+      recoveryAccessText,
+      t,
+      fireName,
+    ],
   );
 
   // `silent`: listeyi ekranda tutarak tazele. Görünürlük tazelemesinde (focus /
@@ -899,6 +965,10 @@ export default function LikesScreen() {
       // (loading) async güncellendiği için guard ref ile senkron tutulur.
       if (whoLikedMeInFlightRef.current) return;
       whoLikedMeInFlightRef.current = true;
+      // Mod ref'ten (gerekçe modeRef'te): bu fonksiyonun kimliği üç effect'in
+      // bağımlılığı, mod kapanıştan okunsa hem kimlik her geçişte değişirdi
+      // hem de ekran hiç unmount olmadığı için ilk modda donardı.
+      const requestMode = modeRef.current;
       try {
         // `hasLoadedOnceRef` ikinci bir kilit: çağıran `silent` demeyi unutsa bile
         // ilk yüklemeden sonrası asla skeleton'a düşmez.
@@ -912,11 +982,19 @@ export default function LikesScreen() {
         // Premium daha hiç doğrulanamadıysa (ilk çekim hata aldı) sessiz tazeleme
         // de profili dener — yoksa buton, ekran remount olana kadar gizli kalırdı.
         const [data, profile] = await Promise.all([
-          swipeService.getWhoLikedMe(page),
+          // ⚠️ MOD PARAMETRESİ ŞART. Gönderilmezse sunucu Dating sayıyor (eski
+          // istemci sözleşmesi) — Arkadaş modundayken ekran flört beğenilerini
+          // listeliyordu. İki modun beğenileri hiçbir yerde karışmamalı.
+          swipeService.getWhoLikedMe(page, 10, 10, requestMode),
           silent && premiumCheckedRef.current
             ? Promise.resolve(null)
             : profileService.getMyProfile().catch(() => null),
         ]);
+
+        // Cevap yolda gelirken mod değiştiyse bu liste ÖBÜR MODUN. Yazılsaydı
+        // kullanıcı Arkadaş'a geçtiği hâlde flört beğenilerine bakardı —
+        // ayrıca rozet/`whoLikedMeIds` de yanlış modun kümesiyle dolardı.
+        if (modeRef.current !== requestMode) return;
 
         if (profile) {
           premiumCheckedRef.current = true;
@@ -1006,8 +1084,13 @@ export default function LikesScreen() {
         // Hata da olsa "ilk yükleme bitti": başarısız çekim ekranı boş duruma
         // düşürür, bir sonraki tazeleme onu sessizce doldurur (bkz.
         // lastLikesFetchRef damgası — hatada 0'da kalır, koşulsuz yeniden denenir).
-        hasLoadedOnceRef.current = true;
-        setLoading(false);
+        //
+        // ⚠️ Bayat modun turu iskeleti KAPATMIYOR: taze modun listesi yolda,
+        // burada kapatmak bir kare "hiç beğenin yok" gösterirdi.
+        if (modeRef.current === requestMode) {
+          hasLoadedOnceRef.current = true;
+          setLoading(false);
+        }
         whoLikedMeInFlightRef.current = false;
       }
     },
@@ -1041,6 +1124,60 @@ export default function LikesScreen() {
   useEffect(() => {
     fetchWhoLikedMe();
   }, [fetchWhoLikedMe]);
+
+  /**
+   * ── MOD DEĞİŞİMİ ──────────────────────────────────────────────────────────
+   * Keşif'te Arkadaş'a geçmek bu ekranı da arkadaş beğenilerine kapsıyor
+   * (useAppMode'un tek zihinsel modeli). Ekran hiç unmount olmadığı için
+   * geçişi BURADA karşılamak zorundayız.
+   *
+   * Eldeki iki liste öbür modun kartlarını taşıyor: ekranda bırakılsaydı
+   * kullanıcı Arkadaş'tayken flört beğenilerine bakar, dokunduğunda da o
+   * kişinin profili flört moduyla açılırdı. Bu yüzden liste BOŞALTILIYOR ve
+   * iskelet geri açılıyor (`hasLoadedOnceRef` sıfırlanıyor) — mod değişimi
+   * kullanıcının başlattığı bir eylem, kısa bir yükleme beklenen şey.
+   *
+   * Damgalar da sıfırlanıyor: 30 sn'lik tazelik penceresi "aynı modun listesi"
+   * için anlamlı, mod değişiminde isteği koşulsuz istiyoruz.
+   *
+   * ⚠️ UÇAN İSTEKLER iptal edilmiyor, yazımları ELENİYOR (her çekim kendi
+   * `requestMode`unu `modeRef` ile karşılaştırıyor). In-flight bayrakları
+   * burada elle düşürülüyor ki bayat tur yeni turu kilitlemesin.
+   */
+  const prevModeRef = useRef(mode);
+  useEffect(() => {
+    if (prevModeRef.current === mode) return;
+    prevModeRef.current = mode;
+
+    whoLikedMeInFlightRef.current = false;
+    hasLoadedOnceRef.current = false;
+    lastLikesFetchRef.current = 0;
+    setLikes([]);
+    setCurrentPage(1);
+    setHasNextPage(false);
+    setLoading(true);
+
+    missedInFlightRef.current = false;
+    missedCountInFlightRef.current = false;
+    missedLoadedRef.current = false;
+    lastMissedFetchRef.current = 0;
+    lastMissedCountFetchRef.current = 0;
+    setMissed([]);
+    setMissedLoaded(false);
+    // Adet "bilinmiyor"a döner (0 DEĞİL — bkz. missedTotal): öbür modun sayısı
+    // pill'de kalsaydı yeni modda yanlış bir rakam dururdu.
+    setMissedTotal(null);
+
+    fetchWhoLikedMe();
+    // Kaçırdıkların yalnız o sekme AÇIKKEN çekiliyor (ekran preload edildiği
+    // için koşulsuz çekmek her mod geçişine bir istek eklerdi); kapalıyken
+    // sayı turu sekmeye dönünce kendi guard'ından geçecek.
+    if (activeTab === "missed") loadMissed({ force: true });
+    // `activeTab` KASITLI olarak bağımlılık değil: effect yalnız mod
+    // değişiminde iş yapıyor, sekme değişiminde yeniden koşması gereksiz
+    // (sekmenin kendi effect'i var). Değer okunuyor, izlenmiyor.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [mode, fetchWhoLikedMe, loadMissed]);
 
   // ============ Görünürlük tazelemesi ============
   // Bu ekran DiscoverScreen'in `navigation.preload("Likes")` çağrısıyla boot'ta
@@ -1114,10 +1251,10 @@ export default function LikesScreen() {
   // Karta tıklayınca:
   //   - Premium DEĞİL ve normal like → PurchaseModal aç (upsell).
   //   - Premium ise VEYA beğeni zaten açıksa (Fire / NOT — bkz.
-  //     `isUnlockedLike`) → LikerProfile detayını çek + interactive
-  //     SwipeWrapper'lı LikerSwipeModal'ı aç. Kullanıcı sağa/sola kaydırıp
-  //     like/pass yapabilir; mutual like ise backend match yaratır, global
-  //     MatchModal açılır.
+  //     `isUnlockedLike`) → LikerProfile detayını çek + LikerSwipeModal'ı aç.
+  //     Kararı ana fotoğrafın sağ altındaki tik/X cam butonları veriyor (swipe
+  //     jesti YOK — bkz. LikerSwipeModal'ın başındaki not); mutual like ise
+  //     backend match yaratır, global MatchModal açılır.
   // İstisna kartın görselindekiyle AYNI kaptan geliyor: kart blur'suz
   // gösterilip dokununca paywall açmak, gönderenin satın aldığı şeyi teslim
   // etmemek olurdu.
@@ -1144,7 +1281,15 @@ export default function LikesScreen() {
       setPreviewProfile(null);
       setPreviewLoading(true);
       try {
-        const res = await swipeService.getLikerProfileDetail(likerUserId, mode);
+        // Mod ref'ten: bu kapanışın bağımlılıklarında `mode` YOK (memo'lu
+        // karta prop olarak gidiyor, her mod geçişinde kimliğinin değişmesi
+        // bütün listeyi yeniden çizdirirdi) ve ekran hiç unmount olmadığı için
+        // kapanıştan okunan değer ilk modda donuyordu — kart o zaman öbür modun
+        // prompt/niyet verisiyle açılıyordu (bkz. modeRef).
+        const res = await swipeService.getLikerProfileDetail(
+          likerUserId,
+          modeRef.current,
+        );
         if (res?.isSuccess && res?.result) {
           setPreviewProfile(res.result);
           // Kaçırılan eşleşmede yanıt yolu TEK: kurtarma. Detayda swipe açık
@@ -1244,7 +1389,10 @@ export default function LikesScreen() {
       // free bu satıra hiç gelmiyor. Harcanan bir sayı olmadığı için ne iyimser
       // düşüş ne kanonik tazeleme kaldı (ikisi birlikte 2026-08-24'teki "kota
       // 5/5'te takılı kalıyor" bug'ı içindi).
-      const request = recoverMissedMatch(userId, mode);
+      // Mod ref'ten (gerekçe modeRef'te): kurtarma isteği SEÇİLİ modun altına
+      // yazılmalı, kapanışın donmuş değerinin altına değil — yanlış modda
+      // kurtarma sunucuda "açılmamış mod" reddine düşer.
+      const request = recoverMissedMatch(userId, modeRef.current);
       // Hata yolundaki doğrulama çekimi kartın düşmesinden SONRA olmalı: kart
       // uçarken gelen taze liste onu yerinde tutar, uçuş yarıda kalırdı. Yanıt
       // çıkıştan önce de sonra da gelebildiği için iki yön de bu iki bayrakla
@@ -1334,7 +1482,7 @@ export default function LikesScreen() {
 
   /**
    * Karttaki yuvarlak X / ✓ butonları — LikerSwipeModal'ı açmadan doğrudan
-   * pas/beğeni. Sonuç tarafı modal'daki jestle BİREBİR aynı yolu kullanıyor
+   * pas/beğeni. Sonuç tarafı modal'daki butonlarla BİREBİR aynı yolu kullanıyor
    * (`useSwipeMutation` + `handleLikerSwiped`): liste/rozet düşmesi, kaçırılan
    * eşleşme toast'ı ve mutual like'ta MatchNotification akışı tek yerden gelir.
    *
@@ -1575,7 +1723,7 @@ export default function LikesScreen() {
       { key: "like", label: t("likes.tabLike"), count: likeCounts.like },
       {
         key: "fire",
-        label: t("likes.tabFire"),
+        label: t("likes.tabFire", { fire: fireName }),
         count: likeCounts.fire,
       },
       { key: "note", label: t("likes.tabNote"), count: likeCounts.note },
@@ -1588,7 +1736,7 @@ export default function LikesScreen() {
       // `feedEnabledForSession()` kapısı da gereksizleşti: ekranda akışa ait
       // hiçbir şey kalmadı.
     ],
-    [t, likeCounts, missedTotal],
+    [t, likeCounts, missedTotal, fireName],
   );
 
   // Pill'e basınca pager'a sayfa değiştirmesini söylüyoruz; `activeTab` state'i
@@ -1668,6 +1816,7 @@ export default function LikesScreen() {
         description={tabDescriptionFor(tabKey)}
         actionLabel={headerAction?.label ?? null}
         onActionPress={headerAction?.onPress ?? null}
+        accent={accent}
       />
     );
   };
@@ -1709,9 +1858,13 @@ export default function LikesScreen() {
             text={t("likes.emptyMissed")}
             subtitle={missedEmptySubtitle}
             buttonLabel={t("likes.startSwipingButton")}
-            // Etiket koyuda da SİYAH: `text` koyu modda beyaza dönüp litPlus
-            // dolgunun üstünde duruyordu, burada sabit mürekkep isteniyor.
+            // Etiket koyuda da SİYAH: `text` koyu modda beyaza dönüp dolgunun
+            // üstünde duruyordu, burada sabit mürekkep isteniyor. Mürekkep
+            // MODLA DEĞİŞMİYOR — iki vurgu da (kırmızı/yeşil) orta tonlu,
+            // ikisinin üstünde de siyah okunuyor.
             buttonLabelColor={colors.onMediaInverse}
+            // Kullanıcıyı Keşif'e gönderen CTA → seçili modun rengi.
+            buttonColor={accent}
             onButtonPress={() => navigation.navigate("Discover")}
           />
         </View>
@@ -1732,7 +1885,7 @@ export default function LikesScreen() {
           topOffset={0}
           text={
             tabKey === "fire"
-              ? t("likes.emptyFire")
+              ? t("likes.emptyFire", { fire: fireName })
               : tabKey === "note"
                 ? t("likes.emptyNote")
                 : tabKey === "like"
@@ -1741,7 +1894,7 @@ export default function LikesScreen() {
           }
           subtitle={
             tabKey === "fire"
-              ? t("likes.emptyFireSubtitle")
+              ? t("likes.emptyFireSubtitle", { fire: fireName })
               : tabKey === "note"
                 ? t("likes.emptyNoteSubtitle")
                 : tabKey === "like"
@@ -1753,6 +1906,7 @@ export default function LikesScreen() {
           // / profilimi geliştir) tek bir "kaydırmaya başla" aksiyonuna indi.
           buttonLabel={t("likes.startSwipingButton")}
           buttonLabelColor={colors.onMediaInverse}
+          buttonColor={accent}
           onButtonPress={() => navigation.navigate("Discover")}
         />
       </View>
@@ -1801,7 +1955,8 @@ export default function LikesScreen() {
             onLike={handleLikeCard}
             likeLabel={t("likes.likeButton")}
             recoverLabel={t("likes.recoverButton")}
-            fireLabel={t("likes.firePill")}
+            mode={mode}
+            fireLabel={t("likes.firePill", { fire: fireName })}
             resolveIntentLabel={resolveIntentLabel}
             exitDirection={exitingIds[item.userId || item.likerUserId] ?? null}
           />

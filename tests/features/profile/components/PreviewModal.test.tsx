@@ -65,13 +65,18 @@ jest.mock('@/shared/components/SheetBlurBackdrop', () => {
   };
 });
 
+// Props'u da kaydediyor: detentler (snapPoints) ürün kararı — kart "önce
+// yalnız ana fotoğraf" açılıyor (bkz. cardPreviewGeometry) ve o sayı elle
+// yazılmış olsa fotoğrafın dibi ile sheet'in dibi ayrışır.
 jest.mock('@/shared/components/AppBottomSheet', () => {
   const React = require('react');
   const { View } = require('react-native');
   return {
     __esModule: true,
-    default: ({ visible, children }: any) =>
-      visible ? React.createElement(View, { testID: 'app-modal' }, children) : null,
+    default: ({ visible, children, ...rest }: any) => {
+      (globalThis as any).__sheetProps = rest;
+      return visible ? React.createElement(View, { testID: 'app-modal' }, children) : null;
+    },
   };
 });
 jest.mock('@/features/discover/components/SwipeCard', () => {
@@ -84,9 +89,10 @@ jest.mock('@/features/discover/components/SwipeCard', () => {
   };
 });
 
-import { ActivityIndicator } from 'react-native';
+import { ActivityIndicator, Dimensions } from 'react-native';
 import { render } from '@testing-library/react-native';
 import PreviewModal from '@/features/profile/components/PreviewModal';
+import { previewCoverHeight } from '@/features/discover/components/cardPreviewGeometry';
 
 describe('PreviewModal', () => {
   it('renders nothing when visible=false', () => {
@@ -109,6 +115,23 @@ describe('PreviewModal', () => {
     );
     expect(getByTestId('swipe-card')).toBeTruthy();
     expect(getByText('42')).toBeTruthy();
+  });
+
+  it('ilk detent ana fotoğrafın boyu, ikincisi tam ekran', () => {
+    render(<PreviewModal visible onClose={jest.fn()} profile={{ id: '1' }} />);
+    const { width, height } = Dimensions.get('window');
+    // insets üstteki mock'ta 0 → tam ekran durağı pencere boyu.
+    expect((globalThis as any).__sheetProps.snapPoints).toEqual([
+      Math.round(previewCoverHeight(width)),
+      height,
+    ]);
+  });
+
+  it('detentler profil yüklenirken DEĞİŞMİYOR (sheet zıplamasın)', () => {
+    render(<PreviewModal visible onClose={jest.fn()} profile={null} />);
+    const loading = (globalThis as any).__sheetProps.snapPoints;
+    render(<PreviewModal visible onClose={jest.fn()} profile={{ id: '1' }} />);
+    expect((globalThis as any).__sheetProps.snapPoints).toEqual(loading);
   });
 
   it('renders an ActivityIndicator when profile is missing', () => {

@@ -438,20 +438,36 @@ describe('PlusPage — purchase flow', () => {
     expect(mockPurchasePackage).not.toHaveBeenCalled();
   });
 
-  // Rozetin tabanı HAFTALIK plan: haftalık maliyeti en düşük periyot
-  // işaretleniyor (taban aylık olsaydı aylık kendini işaretleyemezdi).
-  // ₺19.99/hafta → 4.345 haftalık karşılığı ₺86.86; ₺49.99'luk aylık daha ucuz.
-  // Rozet artık hesaplanmış yüzde DEĞİL, sabit "En iyi" etiketi — şeritteki
-  // kapsül dar, iki haneli yüzde etiketi periyot adını taşırıyordu.
-  it('badges the cheapest-per-week period as best value', async () => {
+  /**
+   * "EN İYİ" ROZETİ KALDIRILDI (2026-09-18, `003c0c5`) — ve bu test o kararı
+   * koruyor, eski davranışı değil.
+   *
+   * Tarihçe iki adımlı: önce hesaplanmış yüzde ("%42 tasarruf") sabit bir
+   * "En iyi" etiketine indi (şeritteki kapsül dar, iki haneli yüzde periyot
+   * adını taşırıyordu), sonra rozet tamamen kalktı — bölme artık TEK çocuk
+   * taşıyor (bkz. PurchaseSections > plan-pill).
+   *
+   * ⚠️ Bu test kaldırmadan sonra BİR AY KIRMIZI KALDI (`plan-pill-best-monthly`
+   * arıyordu). Bayat kırmızı bir test yalnız gürültü değil: paket sürekli
+   * kırmızı olduğu için gerçek regresyonlar da fark edilmiyordu. Silmek yerine
+   * yönü çevrildi ki rozet yanlışlıkla geri gelirse haber versin.
+   *
+   * `plusPage.bestValue` i18n anahtarı (tr "En iyi" / en "Best") rozet
+   * kalkınca öksüz kalmıştı; 2026-10-22'de iki dilden de SİLİNDİ. Rozet geri
+   * gelirse metin de yeniden eklenecek.
+   */
+  it('plan şeridinde rozet YOK — yalnız periyot etiketleri', async () => {
     mockGetOfferings.mockResolvedValue(twoPlanOffering);
     const tree = setup();
     await waitFor(() => tree.getByTestId('plan-pill-monthly'));
 
-    expect(tree.getByTestId('plan-pill-best-monthly')).toBeTruthy();
-    expect(tree.getByText('En iyi')).toBeTruthy();
-    // Taban planın kendisinde rozet YOK.
+    expect(tree.queryByTestId('plan-pill-best-monthly')).toBeNull();
     expect(tree.queryByTestId('plan-pill-best-weekly')).toBeNull();
+    expect(tree.queryByText('En iyi')).toBeNull();
+
+    // Şeridin kendisi duruyor: iki periyot, ikisi de seçilebilir.
+    expect(tree.getByTestId('plan-pill-weekly')).toBeTruthy();
+    expect(tree.getByTestId('plan-pill-monthly')).toBeTruthy();
   });
 
   it('hides the period strip when the catalog has a single plan', async () => {

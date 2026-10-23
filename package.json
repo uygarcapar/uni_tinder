@@ -65,6 +65,7 @@
     "expo-status-bar": "~56.0.4",
     "expo-store-review": "~56.0.3",
     "expo-symbols": "~56.0.6",
+    "expo-task-manager": "~56.0.27",
     "expo-updates": "~56.0.23",
     "expo-video": "~56.1.4",
     "i18next": "^26.3.6",

@@ -968,15 +968,16 @@ export default function CardStickyHeader({
           {profile?.displayName}
           {ageSuffix}
         </Text>
-        {/* İşaret isimle ORANLI kalmak zorunda — oranı elle tutmuyoruz,
-            `PremiumBadge` puntodan çıkarıyor. */}
-        {profile?.isPremium && <PremiumBadge fontSize={TITLE_FONT} />}
         {/* Foto doğrulama rozeti — premium'dan AYRI işaret, `isVerified`e
-            katılmıyor. Alan gelmezse hiçbir şey çizilmiyor. */}
+            katılmıyor. Alan gelmezse hiçbir şey çizilmiyor. SIRA her yerde
+            aynı: isim → doğrulama → plus (bkz. SelfieVerifiedBadge). */}
         <SelfieVerifiedBadge
           verified={profile?.isSelfieVerified}
           size={selfieBadgeSize(TITLE_FONT)}
         />
+        {/* İşaret isimle ORANLI kalmak zorunda — oranı elle tutmuyoruz,
+            `PremiumBadge` puntodan çıkarıyor. */}
+        {profile?.isPremium && <PremiumBadge fontSize={TITLE_FONT} />}
         {/* AKTİFLİK İŞARETİ BURADAN KALKTI (istek) — gerekçe yukarıda,
             bayrağın kaldırıldığı yerde. */}
       </Animated.View>

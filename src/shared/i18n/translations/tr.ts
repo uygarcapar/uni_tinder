@@ -4,11 +4,23 @@ const tr = {
     cancel: 'İptal',
     done: 'Bitti',
     cropper: {
-      title: 'Fotoğrafı Düzenle',
+      // `title` ve `progress` KALKTI: başlıkta artık yazı yok, chrome tamamen
+      // yuvarlak cam butonlardan oluşuyor (sol ✕, sağda Kırp + Sıfırla).
+      crop: 'Kırp',
       save: 'Kaydet',
       reset: 'Sıfırla',
-      progress: '{{index}} / {{total}}',
       failed: 'Fotoğraf işlenemedi, tekrar dene.',
+    },
+    // Uygulama içi kamera. Metinlerin hepsi EKRAN OKUYUCU için — chrome'da
+    // yazı yok, kırpma ekranıyla aynı dil (yuvarlak cam butonlar + deklanşör).
+    camera: {
+      capture: 'Fotoğraf çek',
+      flip: 'Kamerayı çevir',
+      flash: {
+        off: 'Flaş kapalı',
+        auto: 'Flaş otomatik',
+        on: 'Flaş açık',
+      },
     },
     crashTitle: 'Bir şeyler ters gitti',
     crashSubtitle:
@@ -74,6 +86,13 @@ const tr = {
       // bildirimlerinin de susacağını sanmasın.
       subtitle:
         'Gönderine gelen yanıtlar, beğeni eşikleri ve akşam hatırlatması. Moderasyon ve kısıt bildirimleri bu ayardan etkilenmez.',
+    },
+    campusAlerts: {
+      title: 'Kampüs bildirimleri',
+      // Muafiyet AÇIKÇA yazılı (feedAlerts'teki aynı özen): kapatan kullanıcı
+      // anının kaldırıldığını da duymayacağını sanmasın.
+      subtitle:
+        'Kampüsüne vardığında, o gün paylaşılmış anlar varsa haber veririz. Anının kaldırıldığı bildirimi bu ayardan etkilenmez.',
     },
     photoModerationAlerts: {
       title: 'Fotoğraf Bildirimleri',
@@ -696,7 +715,11 @@ const tr = {
       description: 'En az bir soruyu cevapla. Kartında en çok okunan bölüm burası — istersen üçe kadar çıkabilirsin.',
     },
     stepMode: {
-      title: 'Burada ne arıyorsun?',
+      // Başlık HEADER'DA (hobiler adımıyla aynı yapı) ve geri butonuyla aynı
+      // satırda ortalanıyor: "Burada ne arıyorsun?" o satıra sığmıyordu. Kısa
+      // hâli Step14'ün "Ne Arıyorsun?"uyla da karışmıyor — orası niyet, burası
+      // mod. "Mod" sözcüğü kullanıcıya yabancı değil, açıklama zaten kullanıyor.
+      title: 'Modunu seç',
       description:
         'Seçtiğin moda göre profilini kuruyoruz. Diğerini sonradan da açabilirsin.',
       // Adım ZORUNLU ve ön-seçimi YOK: ön-seçim olsaydı kullanıcı farkında
@@ -1030,13 +1053,23 @@ const tr = {
         Friends: 'Spark',
       },
       // Seçici sheet'i: başlık + her modun bir satırlık açıklaması.
-      pickerTitle: 'Nasıl tanışmak istiyorsun?',
+      // Başlık soru DEĞİL eylem adı: kayıt adımı "Nasıl tanışmak istiyorsun?"
+      // diye soruyor çünkü seçim orada ilk kez yapılıyor; burada kullanıcı
+      // zaten bir moddadır ve yaptığı şey geçiş.
+      pickerTitle: 'Modu değiştir',
       description: {
         Dating: 'Flört için tanış — karşılıklı beğeniyle eşleşin.',
         Friends: 'Kampüsten arkadaş bul — yalnız aynı cinsiyetten kişiler.',
       },
       // Profili açılmamış mod satırı: CTA + mini kurulum akışı.
       openCta: 'Profili aç',
+      // Seçicide HENÜZ AÇILMAMIŞ modun kartındaki alt satır. `openCta`dan
+      // ayrı: o bir BUTON etiketi (boş deste aksiyonu), bu ise kartın
+      // açıklama satırı ve hedefi adıyla söylüyor.
+      switchTo: {
+        Dating: 'Flört moduna geç',
+        Friends: 'Arkadaş moduna geç',
+      },
       openTitle: {
         Dating: 'Flört profilini aç',
         Friends: 'Arkadaş profilini aç',
@@ -1203,6 +1236,10 @@ const tr = {
       // Başlıkla aynı ayrım: aboneye satış cümlesi değil, zaten sahip olduğu
       // şeyi anlatan bir cümle yazıyor.
       descriptionPremium: 'Bütün plus özellikleri açık. Aboneliğinin durumu aşağıdaki kartta.',
+      // Plus sayfasının başlık altı cümlesine EKLENİYOR (iki durumda da).
+      // Tek üyelik iki modu birden kapsıyor — kullanıcı Arkadaş modundayken
+      // "bu sayfa Flört'ün aboneliği mi" diye düşünmesin.
+      descriptionModes: 'Üyeliğin Flört ve Arkadaş modlarında birlikte geçerli.',
       pricing: '{{price}} / Ay',
       pricingPrefix: '',
       pricingSuffix: "'dan başlayan planlar",
@@ -1500,7 +1537,10 @@ const tr = {
     // Çoğullaşmayan iki sekme: "Tümü" ve "Kaçırdıkların" — onlar bir ürünün
     // değil, bir kesitin adı.
     tabLike: 'Beğeniler',
-    tabFire: 'Fire\'lar',
+    // Ürün adı MODA GÖRE: Flört'te "Fire", Arkadaş'ta "Spark" (bkz.
+    // modeFireNameKey). Ekran adı `{{fire}}` ile enterpole ediyor — iki ayrı
+    // anahtar çifti yazmak aynı cümleyi iki yerde tutmak olurdu.
+    tabFire: '{{fire}}\'lar',
     // Not gönderenler kendi sekmesinde: not bir beğeninin üstüne binen ayrı
     // ürün, "Beğeniler" sekmesinde de görünseydi aynı kart iki yerde çıkardı.
     tabNote: 'Not\'lar',
@@ -1522,7 +1562,7 @@ const tr = {
     // sekme aynı başlığı taşırdı.
     headerAll: 'Tüm gelenler',
     headerLike: 'Beğeniler',
-    headerFire: 'Fire\'lar',
+    headerFire: '{{fire}}\'lar',
     headerNote: 'Not\'lar',
     // Kaçırdıkların sekmesinin büyük başlığı. Burada başlık bir zamanlar
     // bakiyenin kendisiydi ("Kurtarma hakkın: 3/5"); bakiye açıklama satırına
@@ -1532,7 +1572,7 @@ const tr = {
     // aramak gerekirdi.
     headerMissed: 'Kaçırdıkların',
     infoDescription:
-      'Seni beğenen ve sana Fire gönderen kişiler burada toplanır. Kartın sağındaki butonlarla geçebilir ya da beğenip anında eşleşebilirsin.',
+      'Seni beğenen ve sana {{fire}} gönderen kişiler burada toplanır. Kartın sağındaki butonlarla geçebilir ya da beğenip anında eşleşebilirsin.',
     // Büyük başlığın ALTINDAKİ tek cümlelik açıklama. Kapatılabilir açıklama
     // kartının (LikesInfoCard) yerini aldı: kart aynı bilgiyi daha uzun
     // anlatıyordu ve başlığın altında kalıcı bir satır varken ikisi üst üste
@@ -1540,7 +1580,7 @@ const tr = {
     // yazısı, ikinci bir paragraf değil.
     descAll: 'Seni beğenen herkes burada toplanır.',
     descLike: 'Sana normal beğeni gönderenler burada listelenir.',
-    descFire: 'Sana Fire gönderenlerin kartları bulanıklaşmadan gelir.',
+    descFire: 'Sana {{fire}} gönderenlerin kartları bulanıklaşmadan gelir.',
     descNote: 'Fotoğrafına ya da soru cevabına not yazanlar burada.',
     // Pencere uzunluğu backend'den geliyor; gelmediyse sayısız varyant
     // (gömülü bir "30 gün" değiştiği gün yalan söylerdi).
@@ -1560,9 +1600,10 @@ const tr = {
     // FirePillBadge) cümlenin yerini ALMIYOR, yanında duruyor.
     // "Fire" TR'de de İngilizce yazılıyor — sekme adı (tabFire) ve
     // ürünün mağazadaki adı da öyle; ekranın içinde iki farklı ad olmasın.
-    firePill: 'Sana Fire gönderdi',
-    emptyFire: 'Henüz Fire yok.',
-    emptyFireSubtitle: 'Sana Fire gönderen birileri olduğunda burada görünecek.',
+    firePill: 'Sana {{fire}} gönderdi',
+    emptyFire: 'Henüz {{fire}} yok.',
+    emptyFireSubtitle:
+      'Sana {{fire}} gönderen birileri olduğunda burada görünecek.',
     emptyLike: 'Henüz beğeni yok.',
     emptyLikeSubtitle: 'Yeni beğeniler geldikçe burada listelenecek.',
     emptyAll: 'Henüz seni beğenen kimse yok.',
@@ -1640,8 +1681,11 @@ const tr = {
   likeToast: {
     like: '{{name}} seni beğendi',
     likeNoName: 'Birisi seni beğendi',
-    fire: '{{name}} sana Fire attı!',
-    fireNoName: 'Sana Fire attı!',
+    // Ürün adı MODA GÖRE ({{fire}}): Flört'te "Fire", Arkadaş'ta "Spark".
+    // Olayın modu hub payload'ından geliyor (IncomingLike.mode, 2026-10-21) —
+    // toast ekranın seçili modundan DEĞİL olayın kendisinden okuyor.
+    fire: '{{name}} sana {{fire}} attı!',
+    fireNoName: 'Sana {{fire}} attı!',
     note: '{{name}} sana not gönderdi',
     noteNoName: 'Sana not gönderildi',
     // Alt satır: notta yorumun önizlemesi basılıyor, diğerlerinde bu.
@@ -2343,7 +2387,6 @@ const tr = {
     discount: '%{{percent}} indirim',
     // Periyot şeridindeki rozet: en çok tasarruf ettiren plan. Rozet DAR
     // (etiketin yanına sığıyor) — bir iki kelimeyi geçmesin.
-    bestValue: 'En iyi',
     errors: {
       packageNotFound: 'Paket bulunamadı.',
       // RC kimliği anonim/yabancı kaldığında satın alma HİÇ başlatılmıyor
@@ -2514,7 +2557,7 @@ const tr = {
 
     filter: {
       topic: 'Konu',
-      topicDesc: 'Akışı tek bir konuya kısıtla.',
+      topicDesc: 'Akışı seçtiğin konulara kısıtla.',
       title: 'Filtre',
       // Her başlığın altındaki tek cümle — profil düzenlemedeki `*Desc`
       // satırlarının karşılığı. Kısa tutuldu: üç bölüm üst üste duruyor.
@@ -2526,13 +2569,23 @@ const tr = {
       kindDesc: 'Anonim ve normal gönderileri birlikte ya da ayrı gör.',
       reset: 'Sıfırla',
     },
+    // ── Kampüs Anları ────────────────────────────────────────────────────
+    // Tam ekran kampüs haritasının üstünde, 24 saatte kaybolan tek-fotoğraflık
+    // anlar. Sözleşme: repo kökü > backend_campus_moments_2026-10.md
+
     university: {
       title: 'Kampüs seç',
       own: 'Kendi kampüsüm',
     },
 
+    // Pill'lerin altındaki açık harita bandı — ekran okuyucuya ne olacağını
+    // söyleyen tek yer (bant görsel olarak yalnız harita).
+    map: {
+      expandHint: 'Haritayı tam ekran aç',
+    },
+
     composer: {
-      topicLabel: 'Konu seç',
+      topicLabel: 'Konu seç (birden fazla seçebilirsin)',
       title: 'Gönderi paylaş',
       placeholder: 'Kampüse ne söylemek istersin?',
       anonymousLabel: 'Anonim paylaş',
@@ -2657,6 +2710,110 @@ const tr = {
       'UT-7330': 'Kendi gönderini beğenemezsin.',
       'UT-7340': 'Bu içeriği zaten şikayet ettin.',
       'UT-7341': 'Kendi içeriğini şikayet edemezsin.',
+    },
+  },
+
+  campus: {
+    title: 'Kampüs Anları',
+      headerTitleOne: '{{count}} an · {{campus}}',
+      headerTitleOther: '{{count}} an · {{campus}}',
+    // Üst chrome'daki SABİT etiket — cam X'in yanında. Sayı/kampüs adı
+    // taşımıyor: ikisi de şeridin tepesindeki başlıkta ve iki başlık aynı
+    // anda ekranda (bkz. CampusMapTitle > variant).
+    headerTitleShort: 'Anlar',
+    momentCountOne: '{{count}} an',
+    momentCountOther: '{{count}} an',
+    openHint: 'Kampüs anlarını aç',
+    shareHint: 'Kampüs anı paylaş',
+    age: '{{age}}',
+    like: 'Beğen',
+    pass: 'Geç',
+    remove: 'Kaldır',
+    mine: 'Senin anın',
+    underReview: 'İnceleniyor',
+    // Şeridin başındaki artı kutusu (eski sağ üst "+" cam butonunun yerine).
+    shareBox: 'Anını paylaş',
+    // Dolgu kutularının bilgileri — boş durumun yerine geçiyor, sırası her
+    // açılışta karışıyor (bkz. CampusMomentsStrip > INFO_KEYS).
+    //
+    // ⚠️ İKİ KELİME. Önce tam cümlelerdi ("Paylaşılan anlar 24 saat sonra
+    // kaybolur.") ve kutunun dibinde 15pt'lik üç satıra sarıyordu: yan yana
+    // üç kutu bir paragraf tahtasına dönüyordu. Sonra tek kelimeye indi
+    // (Geçici / Gizli) ve bu sefer kural kayboldu — "Gizli" neyin gizli
+    // olduğunu söylemiyor. İki kelime ortası: hâlâ bir ETİKET, ama özneli.
+    //
+    // Uzatma: kutu en dar cihazda 200pt kare, metin en fazla İKİ satır ve
+    // sığmazsa küçülerek sığıyor (adjustsFontSizeToFit) — üçüncü bir kelime
+    // etiketi sessizce 18pt'lik bir alt yazıya çeviriyor.
+    //
+    // ⚠️ BU DİZELER HİÇ ÇİZİLMİYOR. Kelime fotoğraftaki duvara basılı geliyor
+    // ve kutu üstüne bir şey yazmıyor (bkz. CampusInfoBox); buradaki metin
+    // yalnız VoiceOver'ın okuduğu şey — yani KAREDEKİ YAZIYLA AYNI kalmak
+    // zorunda. Dizeyi düzeltip kareyi bırakmak sessizce iki farklı kural
+    // gösterir.
+    //
+    // insideOnly duvarda noktasız ("KAMPUSTE") ama burada doğru Türkçe:
+    // görünen yazı ile okunan metnin ufak İMLA farkı kabul edilebilir, ANLAM
+    // farkı değil.
+    //
+    // ⚠️ ÜÇ TANE — şerit tam üç dolgu kutusu alıyor (MIN_STRIP_BOXES).
+    // Buradaki havuz `CampusMomentsStrip > INFO_KEYS` ile aynı olmak zorunda;
+    // "karşılıklı beğeni" ve "konum gizli" kareleri yazısız kaldığı için
+    // havuzdan çıkarıldı (istek: "sadece fotolu olanlar olsun").
+    info: {
+      expiry: '24 saat',
+      insideOnly: 'Yalnız kampüste',
+      daily: 'Günde bir',
+    },
+    // Geri sayım — "18 sa", "41 dk", "birazdan"
+    expiresInHours: '{{count}} sa',
+    expiresInMinutes: '{{count}} dk',
+    expiresSoon: 'birazdan',
+    empty: {
+      title: 'Bugün kampüste kimse paylaşmamış',
+      bodyInside: 'İlk anı sen paylaş — 24 saat boyunca kampüsteki herkes görür.',
+      bodyOutside: 'Kampüse geldiğinde sen de paylaşabilirsin.',
+        cta: 'İlk anı sen paylaş',
+    },
+    composer: {
+      title: 'Kampüs anın',
+      hint: 'Bugün bir kez paylaşabilirsin ve değiştiremezsin.',
+      share: 'Paylaş',
+      sharing: 'Paylaşılıyor…',
+      removeConfirmTitle: 'Anını kaldır',
+      removeConfirmBody: 'Kaldırırsan bugün yeniden paylaşamazsın.',
+      removeConfirmCta: 'Kaldır',
+      cancel: 'Vazgeç',
+    },
+    permission: {
+      title: 'Kampüse vardığında haberin olsun',
+      body: 'Konum iznini "Her zaman"a alırsan, kampüsüne girdiğinde sana haber veririz. Lit seni sürekli takip etmez; yalnızca kendi kampüsünün sınırına girip çıktığını bilir.',
+      allow: 'Her zaman izin ver',
+      later: 'Şimdilik hayır',
+      openSettings: 'Ayarlar\'ı aç',
+      deniedBody: 'İzni Ayarlar\'dan "Her zaman"a alabilirsin. Vermezsen de kampüsteyken paylaşabilirsin — yalnızca bildirim gelmez.',
+    },
+    // Hata kodları — sunucu mesajı boş gelirse devreye giriyor.
+    codes: {
+      generic: 'Bir şeyler ters gitti. Birazdan tekrar dene.',
+      'UT-7401': 'Kampüs anları bu kampüste henüz açık değil.',
+      'UT-7402': 'Önce profilini tamamlaman gerekiyor.',
+      'UT-7403': 'Bugünkü anını zaten paylaştın.',
+      'UT-7404': 'Bu fotoğraf kurallara uymuyor.',
+      'UT-7405': 'Fotoğraf çok büyük.',
+      'UT-7406': 'Yükleme bağlantısı geçersiz. Tekrar dene.',
+      'UT-7407': 'Şu an kampüste paylaşım yapamazsın.',
+      'UT-7410': 'Paylaşmak için kampüs sınırları içinde olmalısın.',
+      'UT-7411': 'Konumun yeterince net değil. Açık bir alana çıkıp tekrar dene.',
+      'UT-7412': 'Sahte konum açıkken paylaşamazsın.',
+      'UT-7413': 'Konum bilgin eskimiş. Tekrar dene.',
+      'UT-7414': 'Kampüsün için bu özellik henüz hazır değil.',
+      'UT-7415': 'Konumun doğrulanamadı. Biraz sonra tekrar dene.',
+      'UT-7420': 'Bugünlük beğenin bitti.',
+      'UT-7421': 'Bu an artık yok.',
+      'UT-7422': 'Kendi anına karar veremezsin.',
+      'UT-7424': 'Bu kişiye zaten karar vermiştin.',
+      'UT-7430': 'Çok hızlısın. Biraz bekle.',
     },
   },
 

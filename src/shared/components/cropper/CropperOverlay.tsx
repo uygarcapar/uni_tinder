@@ -27,23 +27,30 @@ import {
   controlSize,
   font,
   frame,
-  labelStyle,
   tint,
 } from "@expo/ui/swift-ui/modifiers";
-import { RotateCcw, X } from "@/shared/icons";
+import { Crop, RotateCcw, X } from "@/shared/icons";
 
-import SFIcon, { type SFSymbol } from "@/shared/components/SFIcon";
 import AnimatedPressable from "@/shared/components/AnimatedPressable";
+import MediaChromeIconButton from "@/shared/components/MediaChromeIconButton";
 import { colors, isLight, onMediaAt, scrimAt } from "@/shared/theme/colors";
 import { glassFallback, HAS_LIQUID_GLASS } from "@/shared/theme/glass";
-import { persistPickedPhoto } from "@/shared/utils/photoStore";
+import { showInfoToast } from "@/shared/services/toaster";
+import { forgetPhoto, persistPickedPhoto } from "@/shared/utils/photoStore";
 import { devLog } from "@/shared/utils/devLog";
 import {
   bindCropper,
   type CropOutcome,
   type CropRequest,
 } from "./cropperBridge";
-import { clamp, coverScale, maxOffset, maxZoom, toSourceRect } from "./cropGeometry";
+import {
+  clamp,
+  coverScale,
+  frameWindow,
+  maxOffset,
+  maxZoom,
+  toSourceRect,
+} from "./cropGeometry";
 
 /**
  * Uygulama içi 3:4 kırpma ekranı (Apple Photos düzeni).
@@ -66,8 +73,17 @@ const OUT_W = 900;
 const OUT_H = 1200;
 const QUALITY = 0.85;
 
-/** Ölçek 1'in altına inebildiği lastik bölge — bırakınca 1'e yaylanır. */
-const RUBBER_MIN = 0.85;
+/**
+ * Ölçek TABANI — ve artık SERT bir taban.
+ *
+ * Eskiden 0.85'lik bir lastik bölge vardı (bırakınca 1'e yaylanıyordu). O bölge
+ * taban ölçeğin tanımıyla çelişiyor: `scale = 1` "fotoğrafın eni ekranın eni"
+ * demek, yani 1'in altındaki her değer fotoğrafı sağdan ve soldan ekranın
+ * içine çekip iki yanda boşluk açıyor. Parmak kalkınca geri yaylanıyor olması
+ * yetmiyordu — en zoom out'ta görülen kare o anda yanlış. Taban 1'de sert:
+ * daha fazla uzaklaştırma denemesi hiç hareket etmiyor.
+ */
+const MIN_SCALE = 1;
 const SPRING = { damping: 20, stiffness: 180, mass: 0.9 };
 
 /**
@@ -75,8 +91,8 @@ const SPRING = { damping: 20, stiffness: 180, mass: 0.9 };
  *
  * `scaleChange` = current.scale / previous.scale ve UIPinchGestureRecognizer
  * parmak sayısı değiştiğinde `scale`'i yeniden tabanlıyor. O karede oran
- * saçmalıyor (0.2 gibi) ve görüntü tek frame'de RUBBER_MIN'e çakılıp bırakınca
- * 1'e yaylanıyordu — kullanıcıya "zoom'um kayboldu" olarak görünen ikinci yol.
+ * saçmalıyor (0.2 gibi) ve görüntü tek frame'de tabana çakılıyordu — kullanıcıya
+ * "zoom'um kayboldu" olarak görünen ikinci yol.
  * 60fps'te insan parmağı bir karede %25'ten fazla açamaz.
  */
 const MAX_SCALE_STEP = 1.25;
@@ -102,11 +118,31 @@ const TAP_SLOP = 24;
  * (bkz. ChatScreen header notu). Tam ekran bir overlay'de bu "butonlar köşeden
  * yerine sıçradı" olarak görünürdü.
  */
-const ICON_BTN = 44;
 const CTA_W = 132;
 const CTA_H = 52;
 
+/**
+ * Ara kırpmaların JPEG kalitesi — final kaydın QUALITY'sinden YÜKSEK.
+ *
+ * Kullanıcı üst üste kırpabiliyor ve her kırpma yeniden JPEG kodluyor, yani
+ * nesil kaybı birikiyor. Ara adımlarda 0.95: dosya biraz büyük ama o dosya
+ * yalnız bu ekranda yaşıyor, upload'a giden sürüm son adımda bir kez
+ * QUALITY ile kodlanıyor. Ara adımlar ayrıca OUT_W/OUT_H'ye KÜÇÜLTÜLMÜYOR —
+ * her kırpmada ölçeklemek çözünürlüğü basamak basamak düşürürdü.
+ */
+const STEP_QUALITY = 0.95;
+
 type Session = { request: CropRequest; settle: (outcome: CropOutcome) => void };
+
+/**
+ * Ekranda ÜZERİNDE ÇALIŞILAN fotoğraf.
+ *
+ * Oturum boyunca değişiyor: "Kırp"a her basış, seçilen kareyi gerçekten kesip
+ * sonucu buraya koyuyor — fotoğrafın yeni hâli o. Kullanıcı sonra onun üstüne
+ * tekrar kırpabiliyor (baştan yeni bir foto eklemiş gibi), Sıfırla ise
+ * oturumun ilk fotoğrafına (`session.request`) döndürüyor.
+ */
+type Working = { uri: string; w: number; h: number };
 
 export default function CropperOverlay() {
   const { t } = useTranslation();
@@ -115,12 +151,42 @@ export default function CropperOverlay() {
 
   const [session, setSession] = useState<Session | null>(null);
   const [busy, setBusy] = useState(false);
+  /**
+   * Kırpma çerçevesi AÇIK MI — ekran artık kırpma kipinde BAŞLAMIYOR.
+   *
+   * Açılışta görülen şey fotoğrafın kendisi: tam ekran, karartmasız, ızgarasız.
+   * Çerçeve ancak başlıktaki "Kırp" butonuna basılınca iniyor. Gerekçe: kullanıcı
+   * seçtiği kareyi önce BÜTÜN olarak görmek istiyor; kırpma isteğe bağlı bir
+   * düzenleme adımı, akışın zorunlu durağı değil (çerçeveye hiç dokunulmazsa
+   * `CropOutcome.adjusted` de false kalıyor).
+   */
+  const [cropping, setCropping] = useState(false);
+  const [working, setWorking] = useState<Working | null>(null);
+  /**
+   * Fotoğraf bu oturumda DEĞİŞTİ Mİ — `CropOutcome.adjusted` için.
+   *
+   * Kadrajın kimlik olmaması tek başına yetmiyor: "Kırp" uygulandıktan sonra
+   * kadraj kimliğe dönüyor (yeni foto çerçevenin tamamı) ama fotoğraf artık
+   * kullanıcının kestiği kare. Bayrak olmasa o durum "hiç dokunmadı" sayılırdı.
+   */
+  const [edited, setEdited] = useState(false);
 
   const scale = useSharedValue(1);
   const tx = useSharedValue(0);
   const ty = useSharedValue(0);
   const gestureActive = useSharedValue(0);
   const atEdge = useSharedValue(false);
+  /**
+   * Kadrajın KALICI hâli — "ev".
+   *
+   * Kırpma kipinde her jest bittiğinde buraya yazılıyor; kip DIŞINDAKİ pinch
+   * (peek) bırakılınca buraya geri yaylanıyor. Tabana (1/0/0) geri dönmüyor:
+   * kullanıcı daha önce kırptıysa fotoğrafın yeni hâli bu ve yakından bakmak
+   * onu bozmamalı. Sıfırlamanın tek yolu Sıfırla butonu.
+   */
+  const homeS = useSharedValue(1);
+  const homeX = useSharedValue(0);
+  const homeY = useSharedValue(0);
   /** Aktif pinch'in son bilinen parmak sayısı (tabanlama sıçramasını yakalar). */
   const pinchPointers = useSharedValue(0);
 
@@ -141,25 +207,80 @@ export default function CropperOverlay() {
     const headerH = insets.top + 56;
     // 16 (üst pad) + CTA + 16 (alt pad).
     const footerH = insets.bottom + 32 + CTA_H;
-    const availW = screenW - 32;
-    const availH = Math.max(120, screenH - headerH - footerH - 24);
-    const winW = Math.min(availW, (availH * ASPECT_W) / ASPECT_H);
-    const winH = (winW * ASPECT_H) / ASPECT_W;
-    return {
+    /**
+     * Pencere TAM GENİŞLİK, EKRANIN tam ortasında ve dikey payı iki chrome'un
+     * BÜYÜĞÜNDEN hesaplanıyor (merkez için bkz. winCY).
+     *
+     * Eskiden iki yanda 16pt pay vardı ve seçili alan fotoğrafın eninden dar
+     * kalıyordu: taban ölçek eni ekrana oturttuğu için kullanıcı, kendi
+     * fotoğrafının eninin bir kısmı çerçevenin DIŞINDA kalmış hâlde başlıyordu.
+     * Tam genişlikte 3:4 bir kaynakta çerçeve fotoğrafa BİREBİR oturuyor
+     * (baseScale'in iki kolu eşitleniyor), yani kırpma "hiçbir şeyi atmadan"
+     * başlıyor.
+     *
+     * Dikey pay chrome'un KENDİ yüksekliği (eski +12'lik ek pay kalktı, aksi
+     * halde kısa telefonlarda tam genişliğe yer kalmıyordu): 3:4 pencere
+     * ekrana sığmıyorsa — küçük cihazlarda — genişlik o paya göre küçülüyor.
+     *
+     * Formül kamera ekranıyla PAYLAŞILIYOR (frameWindow): çekilen kare doğrudan
+     * buraya geliyor, iki kadrajın aynı olması gerekiyor.
+     */
+    const { winW, winH } = frameWindow({
+      screenW,
+      screenH,
       headerH,
       footerH,
+      aspectW: ASPECT_W,
+      aspectH: ASPECT_H,
+    });
+    return {
+      headerH,
       winW,
       winH,
       winCX: screenW / 2,
-      winCY: headerH + 12 + availH / 2,
+      /**
+       * Merkez EKRANIN merkezi.
+       *
+       * Eskiden `headerH + 12 + availH/2` idi — iki chrome bandının farkı kadar
+       * (tipik telefonda ~1.5pt) yukarıda kalıyordu. Fotoğraf pencere merkezine
+       * göre konumlandığı için o fark doğrudan üst/alt boşluklara geçiyor ve
+       * eşit olması gereken iki şerit farklı çıkıyor; asimetri de "altta siyah
+       * bir alan kalmış" diye okunuyor. Ekran merkezi iki şeridi eşitliyor ve
+       * öteleme sınırlarını simetrik tutuyor.
+       */
+      winCY: screenH / 2,
     };
   }, [insets.top, insets.bottom, screenW, screenH]);
 
-  const srcW = session?.request.srcWidth ?? 1;
-  const srcH = session?.request.srcHeight ?? 1;
+  // Geometrinin girdisi oturumun İLK fotoğrafı değil, ÜZERİNDE ÇALIŞILAN
+  // fotoğraf: her uygulanan kırpmadan sonra kaynak boyutları değişiyor.
+  const srcW = working?.w ?? 1;
+  const srcH = working?.h ?? 1;
+  /**
+   * Taban ölçek GENİŞLİĞE oturuyor: `scale = 1`'de fotoğrafın eni ekranın eni.
+   *
+   * Ekranı KAPLATMAK (coverScale(screen)) denendi ve geri alındı: telefon
+   * ekranı 3:4'ten çok daha uzun olduğu için kaplama bağlayıcı ekseni YÜKSEKLİK
+   * yapıyor ve 3:4 bir fotoğrafın eninin ~%40'ı ekranın dışında kalıyordu —
+   * kullanıcı kendi fotoğrafını hiç bütün göremiyordu. Genişliğe oturtunca
+   * kare enden ene dolu; artan dikey alan üstte ve altta SİMETRİK boşluk olarak
+   * kalıyor (pencere ekranın tam ortasında, bkz. layout) — asimetrik olduğu
+   * sürece hata gibi okunan şey buydu, simetrik hâli kasıtlı bir çerçeve.
+   *
+   * `max()` ile pencere kaplaması ZORUNLU TUTULUYOR: kırpma penceresi 3:4, yani
+   * eninden uzun. Yatay/kare bir kaynakta yalnız genişliğe oturan ölçek
+   * pencerenin altını üstünü boş bırakırdı ve kullanıcının gördüğü kare ile
+   * `toSourceRect`in döndürdüğü kare AYRIŞIRDI (o fonksiyon oranı kaynağın
+   * içinde zorla düzeltiyor). Böyle kaynaklarda bir miktar yan kırpma
+   * kaçınılmaz: 3:4 bir pencere kareden en alır.
+   */
   const baseScale = useMemo(
-    () => coverScale(srcW, srcH, layout.winW, layout.winH),
-    [srcW, srcH, layout.winW, layout.winH],
+    () =>
+      Math.max(
+        screenW / Math.max(1, srcW),
+        coverScale(srcW, srcH, layout.winW, layout.winH),
+      ),
+    [srcW, srcH, screenW, layout.winW, layout.winH],
   );
   const maxScale = useMemo(
     () => maxZoom(baseScale, layout.winW, OUT_W),
@@ -171,13 +292,28 @@ export default function CropperOverlay() {
     scale.value = 1;
     tx.value = 0;
     ty.value = 0;
+    // "Ev" de sıfırlanıyor: kadraj oturum başına, sıradaki fotoğrafın kırpması
+    // öncekinin ölçeğini devralmamalı (kayıt akışı 6 fotoğrafı arka arkaya
+    // açıyor).
+    homeS.value = 1;
+    homeX.value = 0;
+    homeY.value = 0;
     gestureActive.value = 0;
     atEdge.value = false;
     pinchPointers.value = 0;
     latest.current = { s: 1, tx: 0, ty: 0 };
     setBusy(false);
+    setCropping(false);
+    setEdited(false);
+    setWorking({
+      uri: request.uri,
+      // `?? 1` korunuyor: sistem boyut vermediyse alan 0 gelebiliyor ve
+      // cropGeometry sıfırı kendi içinde karşılıyor (bkz. coverScale).
+      w: request.srcWidth ?? 1,
+      h: request.srcHeight ?? 1,
+    });
     setSession({ request, settle });
-  }, [scale, tx, ty, gestureActive, atEdge, pinchPointers]);
+  }, [scale, tx, ty, homeS, homeX, homeY, gestureActive, atEdge, pinchPointers]);
 
   useEffect(() => {
     bindCropper(present);
@@ -204,18 +340,59 @@ export default function CropperOverlay() {
   }, []);
 
   // ------------------------------------------------------------------ jestler
-  const { winW, winH, winCX, winCY } = layout;
+  const { winCX, winCY } = layout;
+
+  /**
+   * Öteleme sınırı EKSENE GÖRE farklı kutudan — ikisinin gerekçesi de ayrı.
+   *
+   *   YATAY → EKRAN. Taban ölçek eni ekrana oturttuğu için `scale = 1`'de pay
+   *     tam olarak SIFIR: fotoğraf en zoom out'ta yana hiç kaymıyor, iki kenar
+   *     da ekranın kenarında. Pencere sınırı burada da pay bırakıyordu ve
+   *     kaydırınca bir yanda siyah şerit açılıyordu.
+   *
+   *   DİKEY → PENCERE. Fotoğraf pencereden uzun olduğunda (ekran 3:4'ten uzun,
+   *     yani 9:16 bir kaynakta çerçevenin altında ve üstünde fotoğraf kalıyor)
+   *     kullanıcı o bandı seçebilmek ZORUNDA — ekran sınırı burada payı
+   *     sıfırlayıp fotoğrafın en üstünü ve en altını kırpılamaz yapıyordu.
+   *     Bedeli, fotoğrafı kaydırınca telefonun üst/alt kenarıyla çerçeve
+   *     arasında kalan alanın boşalması: orası SİYAH (kökün zemini scrimAt(1)),
+   *     kasıtlı bir çerçeve boşluğu.
+   *
+   * Tam genişlikte 3:4 bir kaynakta dikey pay yine SIFIR: çerçeve fotoğrafa
+   * birebir oturuyor, kaydıracak bir şey yok (bkz. layout). Yani "en zoom
+   * out'ta kıpırdamıyor" kuralı o kaynaklarda kendiliğinden tutuyor.
+   *
+   * Eksen başına kural SABİT — ölçeğe göre kutu değiştirmek olmaz: fotoğraf
+   * ekranı kaplamaya başladığı karede sınır pencereden ekrana atlar ve görüntü
+   * ortaya SIÇRAR.
+   */
+  const clampW = screenW;
+  const clampH = layout.winH;
 
   const edgeHaptic = useCallback(() => {
     Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light).catch(() => {});
   }, []);
 
+  /**
+   * KİP DIŞINDA YALNIZ PINCH, o da KALICI DEĞİL.
+   *
+   * Kaydırma ve çift dokunuş `enabled(cropping)` ile kapalı: kip dışında
+   * yapılmış bir kadraj değişikliği, çerçeve hiç açılmamışken sessizce çıktıya
+   * geçerdi ("crop'a basmadan zoom yapıyor olmam croplamasın").
+   *
+   * Pinch ise HER ZAMAN açık ama kip kapalıyken bir BAKIŞ (peek): parmaklar
+   * kalkınca `settleBack` kadrajı tabana geri yaylandırıyor, yani fotoğrafa
+   * yakından bakmak çıktıyı değiştirmiyor. Kalıcı kadraj yalnız kırpma kipinde.
+   *
+   * Kapı `enabled` ile kuruluyor; `ComposedGesture`da o metot YOK, bu yüzden
+   * tanıyıcılara ayrı ayrı veriliyor.
+   */
   const gestures = useMemo(() => {
     const clampTranslate = (notify: boolean) => {
       "worklet";
       const pps = baseScale * scale.value;
-      const mx = maxOffset(srcW * pps, winW);
-      const my = maxOffset(srcH * pps, winH);
+      const mx = maxOffset(srcW * pps, clampW);
+      const my = maxOffset(srcH * pps, clampH);
       const nx = clamp(tx.value, -mx, mx);
       const ny = clamp(ty.value, -my, my);
       const hit = nx !== tx.value || ny !== ty.value;
@@ -237,19 +414,40 @@ export default function CropperOverlay() {
       "worklet";
       gestureActive.value = 0;
       atEdge.value = false;
-      if (scale.value < 1) {
-        // Lastik bölgeden 1'e dön. Hedefleri ÖNCE hesaplıyoruz: `withSpring`
-        // atandığı anda `.value` animasyonun okunması güvenilmez oluyor.
-        const mx = maxOffset(srcW * baseScale, winW);
-        const my = maxOffset(srcH * baseScale, winH);
-        const targetX = clamp(tx.value, -mx, mx);
-        const targetY = clamp(ty.value, -my, my);
-        scale.value = withSpring(1, SPRING);
-        tx.value = withSpring(targetX, SPRING);
-        ty.value = withSpring(targetY, SPRING);
-        runOnJS(commit)(1, targetX, targetY);
+      // Kip KAPALIYSA jest bir bakıştı: kadraj "ev"e geri dönüyor (taban değil,
+      // kullanıcının en son kırptığı hâl). `cropping` worklet'e memo kurulurken
+      // DEĞERİYLE yakalanıyor ve memo bu state'e bağımlı, yani kip değişiminde
+      // zincir yeniden kuruluyor.
+      if (!cropping) {
+        scale.value = withSpring(homeS.value, SPRING);
+        tx.value = withSpring(homeX.value, SPRING);
+        ty.value = withSpring(homeY.value, SPRING);
+        runOnJS(commit)(homeS.value, homeX.value, homeY.value);
         return;
       }
+      if (scale.value < MIN_SCALE) {
+        // Taban sert olduğu için buraya normalde HİÇ girilmiyor; yay (underdamped
+        // SPRING) 1'in bir tık altına sarktığında devreye giren emniyet kemeri.
+        // Hedefleri ÖNCE hesaplıyoruz: `withSpring` atandığı anda `.value`
+        // animasyonun okunması güvenilmez oluyor.
+        const mx = maxOffset(srcW * baseScale, clampW);
+        const my = maxOffset(srcH * baseScale, clampH);
+        const targetX = clamp(tx.value, -mx, mx);
+        const targetY = clamp(ty.value, -my, my);
+        scale.value = withSpring(MIN_SCALE, SPRING);
+        tx.value = withSpring(targetX, SPRING);
+        ty.value = withSpring(targetY, SPRING);
+        homeS.value = MIN_SCALE;
+        homeX.value = targetX;
+        homeY.value = targetY;
+        runOnJS(commit)(MIN_SCALE, targetX, targetY);
+        return;
+      }
+      // Kırpma kipinde biten her jest kadrajı KALICI yapıyor: hem "ev" hem de
+      // onayın okuduğu `latest` buradan yazılıyor.
+      homeS.value = scale.value;
+      homeX.value = tx.value;
+      homeY.value = ty.value;
       runOnJS(commit)(scale.value, tx.value, ty.value);
     };
 
@@ -259,6 +457,7 @@ export default function CropperOverlay() {
      * yazımlarını her frame silerdi.
      */
     const pan = Gesture.Pan()
+      .enabled(cropping)
       .onStart(() => {
         "worklet";
         gestureActive.value = 1;
@@ -271,6 +470,8 @@ export default function CropperOverlay() {
       })
       .onFinalize(settleBack);
 
+    // `enabled` YOK: kip dışında da yakınlaştırılabiliyor, bırakınca geri
+    // dönüyor (bkz. settleBack).
     const pinch = Gesture.Pinch()
       .onStart((e) => {
         "worklet";
@@ -289,7 +490,7 @@ export default function CropperOverlay() {
         if (!Number.isFinite(e.scaleChange) || e.scaleChange <= 0) return;
         const prev = scale.value;
         const step = clamp(e.scaleChange, 1 / MAX_SCALE_STEP, MAX_SCALE_STEP);
-        const next = clamp(prev * step, RUBBER_MIN, maxScale);
+        const next = clamp(prev * step, MIN_SCALE, maxScale);
         const k = next / prev;
         // Parmakların altındaki nokta sabit kalsın: f = t + p·s, p sabit
         // tutulunca t' = f + (t − f)·(s'/s).
@@ -298,13 +499,15 @@ export default function CropperOverlay() {
         scale.value = next;
         tx.value = fx + (tx.value - fx) * k;
         ty.value = fy + (ty.value - fy) * k;
-        // Lastik bölgede (scale < 1) clamp'lemiyoruz; yoksa geri yaylanma
-        // sırasında görüntü kenara yapışır.
-        if (next >= 1) clampTranslate(false);
+        // Taban sert: ölçek 1'in altına inemediği için her karede clamp'leniyor
+        // (eski lastik bölgede, geri yaylanırken görüntü kenara yapışmasın diye
+        // atlanıyordu).
+        clampTranslate(false);
       })
       .onFinalize(settleBack);
 
     const doubleTap = Gesture.Tap()
+      .enabled(cropping)
       .numberOfTaps(2)
       .maxDuration(260)
       .maxDistance(TAP_SLOP)
@@ -313,27 +516,33 @@ export default function CropperOverlay() {
         // İkinci savunma hattı: tanıyıcı yine de iki parmakla biterse bu bir
         // pinch'tir, çift dokunuş değil.
         if (e.numberOfPointers > 1) return;
-        const target = scale.value > 1.05 ? 1 : Math.min(2.2, maxScale);
+        const target = scale.value > 1.05 ? MIN_SCALE : Math.min(2.2, maxScale);
         const k = target / scale.value;
         const fx = e.x - winCX;
         const fy = e.y - winCY;
         const nextX = fx + (tx.value - fx) * k;
         const nextY = fy + (ty.value - fy) * k;
         const pps = baseScale * target;
-        const mx = maxOffset(srcW * pps, winW);
-        const my = maxOffset(srcH * pps, winH);
+        const mx = maxOffset(srcW * pps, clampW);
+        const my = maxOffset(srcH * pps, clampH);
         const finalX = clamp(nextX, -mx, mx);
         const finalY = clamp(nextY, -my, my);
         scale.value = withSpring(target, SPRING);
         tx.value = withSpring(finalX, SPRING);
         ty.value = withSpring(finalY, SPRING);
+        // Çift dokunuş yalnız kipin İÇİNDE açık → sonucu kalıcı.
+        homeS.value = target;
+        homeX.value = finalX;
+        homeY.value = finalY;
         runOnJS(commit)(target, finalX, finalY);
       });
 
     return Gesture.Simultaneous(pinch, pan, doubleTap);
   }, [
-    baseScale, maxScale, srcW, srcH, winW, winH, winCX, winCY,
-    scale, tx, ty, gestureActive, atEdge, pinchPointers, commit, edgeHaptic,
+    cropping,
+    baseScale, maxScale, srcW, srcH, clampW, clampH, winCX, winCY,
+    scale, tx, ty, homeS, homeX, homeY,
+    gestureActive, atEdge, pinchPointers, commit, edgeHaptic,
   ]);
 
   const imageStyle = useAnimatedStyle(() => ({
@@ -348,30 +557,102 @@ export default function CropperOverlay() {
     opacity: withTiming(gestureActive.value ? 1 : 0.25, { duration: 160 }),
   }));
 
+  /**
+   * Çerçeve katmanının (karartma + ızgara + köşe tırnakları) iniş/kalkışı.
+   *
+   * Katman AĞAÇTA KALIYOR, yalnız opaklığı dönüyor: koşullu render'da karartmanın
+   * dört dikdörtgeni ilk karede birden belirip göz kırpıyordu. Katmanın içinde
+   * cam YOK — üstteki butonlar bu View'ın KARDEŞİ, yoksa animasyonlu opaklık
+   * liquid glass'ı sessizce düşürürdü (bkz. shared/theme/glass.ts notları).
+   */
+  const frameStyle = useAnimatedStyle(
+    () => ({ opacity: withTiming(cropping ? 1 : 0, { duration: 180 }) }),
+    [cropping],
+  );
+
   // ------------------------------------------------------------------ eylemler
-  const handleReset = () => {
+  /**
+   * Kadrajı tabana (tam genişlik, ortalanmış) döndürür — "ev" dahil.
+   *
+   * `animated` AYRIMI ŞART: fotoğrafın KENDİSİ de değiştiğinde (kırpma uygulandı
+   * ya da Sıfırla özgün dosyaya döndü) yay kullanılamaz — yeni görüntü eski
+   * kadrajın altında bir an yanlış ölçekte/yerde durur, sonra yerine kayar.
+   * Fotoğraf aynı kalıyorsa (kadrajı yalnız geri alma) yay doğru geri bildirim.
+   */
+  const resetTransform = useCallback((animated: boolean) => {
+    scale.value = animated ? withSpring(MIN_SCALE, SPRING) : MIN_SCALE;
+    tx.value = animated ? withSpring(0, SPRING) : 0;
+    ty.value = animated ? withSpring(0, SPRING) : 0;
+    homeS.value = MIN_SCALE;
+    homeX.value = 0;
+    homeY.value = 0;
+    latest.current = { s: MIN_SCALE, tx: 0, ty: 0 };
+  }, [scale, tx, ty, homeS, homeX, homeY]);
+
+  /**
+   * Ara dosyayı (uygulanmış bir kırpmanın çıktısı) siler.
+   *
+   * Oturumun ÖZGÜN dosyasına asla dokunmuyor: onun sahibi picker ve Sıfırla
+   * ona dönüyor. Ara dosyalar manipülatörün cache'inde birikiyordu — üst üste
+   * kırpma artık mümkün olduğu için sayıları da kullanıcıya bağlı.
+   */
+  const dropStale = (candidate: string, originalUri: string) => {
+    if (candidate !== originalUri) forgetPhoto(candidate);
+  };
+
+  /**
+   * Kırpma kipini açar/kapatır — kadraja DOKUNMAZ.
+   *
+   * Kipten çıkmak bir VAZGEÇME değil: seçilen kare fotoğrafın yeni hâli, kip
+   * kapanınca da öyle kalıyor (bir dönem iki yönde de sıfırlıyordu ve
+   * kullanıcının yaptığı kırpma kip kapatılınca siliniyordu). Geri alma yolu
+   * ayrı bir buton — Sıfırla.
+   *
+   * Kipe İLK girişte kadraj zaten tabanda: kip dışındaki pinch kalıcı değil
+   * (bkz. settleBack), yani "kırpma en zoom out'tan başlar" kuralı kendiliğinden
+   * tutuyor; ikinci girişte ise kullanıcı bıraktığı yerden devam ediyor.
+   */
+  const handleToggleCrop = () => {
+    if (busy) return;
     Haptics.selectionAsync().catch(() => {});
-    scale.value = withSpring(1, SPRING);
-    tx.value = withSpring(0, SPRING);
-    ty.value = withSpring(0, SPRING);
-    latest.current = { s: 1, tx: 0, ty: 0 };
+    setCropping((on) => !on);
+  };
+
+  /**
+   * Sıfırla — kadrajı DA fotoğrafı DA oturumun başına döndürür.
+   *
+   * "Kırp" artık gerçekten kesiyor, yani geri alınacak şey yalnız ölçek/öteleme
+   * değil; uygulanan kırpmaların tamamı. İlk fotoğrafa dönmek yeterli: ara
+   * dosyalar zaten `session.request.uri`den türüyor, o dosya oturum boyunca
+   * duruyor.
+   */
+  const handleReset = () => {
+    if (busy || !session || !working) return;
+    Haptics.selectionAsync().catch(() => {});
+    const original = session.request.uri;
+    const photoChanges = working.uri !== original;
+    resetTransform(!photoChanges);
+    setEdited(false);
+    if (photoChanges) {
+      dropStale(working.uri, original);
+      setWorking({
+        uri: original,
+        w: session.request.srcWidth ?? 1,
+        h: session.request.srcHeight ?? 1,
+      });
+    }
   };
 
   const handleCancel = () => {
     if (busy) return;
+    // Vazgeçildi: uygulanmış kırpmaların çıktısı artık çöp.
+    if (session && working) dropStale(working.uri, session.request.uri);
     finish({ status: "skipped" });
   };
 
-  const handleConfirm = async () => {
-    if (!session || busy) return;
-    setBusy(true);
-
-    // Kimlik dönüşümü = kullanıcı çerçeveye hiç dokunmadı. Yeniden kırpma
-    // akışının bunu bilmesi gerekiyor (bkz. CropOutcome.adjusted).
-    const { s, tx: dx, ty: dy } = latest.current;
-    const adjusted = s !== 1 || dx !== 0 || dy !== 0;
-
-    const rect = toSourceRect({
+  /** Pencerenin o anki kadrajına karşılık gelen KAYNAK dikdörtgeni. */
+  const currentRect = () =>
+    toSourceRect({
       srcW, srcH,
       winW: layout.winW,
       winH: layout.winH,
@@ -383,10 +664,78 @@ export default function CropperOverlay() {
       aspectH: ASPECT_H,
     });
 
+  /**
+   * "Kırp" — seçilen kareyi GERÇEKTEN keser ve üzerinde çalışılan fotoğrafı
+   * onunla değiştirir.
+   *
+   * Sonrası baştan fotoğraf eklemiş gibi: yeni foto çerçevenin tamamı olduğu
+   * için kadraj kimliğe dönüyor, kip kapanıyor ve kullanıcı istiyorsa onun
+   * ÜSTÜNE tekrar kırpabiliyor. Ara adım OUT_W/OUT_H'ye küçültülmüyor ve
+   * STEP_QUALITY ile kodlanıyor (bkz. o sabit).
+   *
+   * Kadraj kimlikse hiç kodlama YAPILMIYOR: kare fotoğrafın tamamı demek, tek
+   * etkisi bir nesil JPEG kaybı olurdu.
+   */
+  const handleApplyCrop = async () => {
+    if (!session || !working || busy) return;
+    const rect = currentRect();
+    const whole =
+      rect.originX === 0 &&
+      rect.originY === 0 &&
+      rect.width >= srcW &&
+      rect.height >= srcH;
+    if (whole) {
+      setCropping(false);
+      return;
+    }
+
+    setBusy(true);
+    const context = ImageManipulator.manipulate(working.uri);
+    let ref: Awaited<ReturnType<typeof context.renderAsync>> | null = null;
+    try {
+      context.crop(rect);
+      ref = await context.renderAsync();
+      const result = await ref.saveAsync({ compress: STEP_QUALITY, format: SaveFormat.JPEG });
+      resetTransform(false);
+      dropStale(working.uri, session.request.uri);
+      setWorking({
+        uri: result.uri,
+        // Dönen ölçü KAYNAKTAN okunuyor (rect değil): manipülatör taşan
+        // dikdörtgeni sessizce küçültebiliyor ve geometri bayat boyutla
+        // çalışırsa kadraj fotoğraftan kayıyor.
+        w: result.width,
+        h: result.height,
+      });
+      setEdited(true);
+      setCropping(false);
+    } catch (error) {
+      // Oturum KAPATILMIYOR: elindeki foto hâlâ geçerli, kullanıcı yeniden
+      // deneyebilir ya da olduğu gibi kaydedebilir.
+      devLog("✂️ [cropper] kırpma uygulanamadı", error);
+      showInfoToast({ message: t("common.cropper.failed"), variant: "error" });
+    } finally {
+      ref?.release?.();
+      context.release?.();
+      setBusy(false);
+    }
+  };
+
+  const handleConfirm = async () => {
+    if (!session || !working || busy) return;
+    setBusy(true);
+
+    // Kimlik dönüşümü + hiç uygulanmış kırpma yok = kullanıcı çerçeveye hiç
+    // dokunmadı. Yeniden kırpma akışının bunu bilmesi gerekiyor (bkz.
+    // CropOutcome.adjusted).
+    const { s, tx: dx, ty: dy } = latest.current;
+    const adjusted = edited || s !== 1 || dx !== 0 || dy !== 0;
+
+    const rect = currentRect();
+
     // EXIF yönü ELLE işlenmiyor: manipulate() her zaman başa bir
     // fix-orientation dönüşümü ekliyor ve picker görsel olarak DİK boyut
     // raporluyor — yani asset.width/height ile crop() aynı piksel uzayında.
-    const context = ImageManipulator.manipulate(session.request.uri);
+    const context = ImageManipulator.manipulate(working.uri);
     let ref: Awaited<ReturnType<typeof context.renderAsync>> | null = null;
     try {
       context.crop(rect).resize({ width: OUT_W, height: OUT_H });
@@ -394,6 +743,8 @@ export default function CropperOverlay() {
       const result = await ref.saveAsync({ compress: QUALITY, format: SaveFormat.JPEG });
       const fileName = `photo_${Date.now()}.jpg`;
       const uri = await persistPickedPhoto(result.uri, fileName);
+      // Ara dosya tüketildi: kalıcı dizine taşınan RENDER çıktısı, bu değil.
+      dropStale(working.uri, session.request.uri);
       finish({ status: "done", photo: { uri, mime: "image/jpeg", fileName }, adjusted });
     } catch (error) {
       devLog("✂️ [cropper] kırpma başarısız", error);
@@ -407,10 +758,13 @@ export default function CropperOverlay() {
     }
   };
 
-  if (!session) return null;
+  if (!session || !working) return null;
 
-  const { index, total, uri } = session.request;
-  const showCounter = (total ?? 1) > 1 && index != null;
+  // Çizilen fotoğraf `session.request` DEĞİL, üzerinde çalışılan kopya:
+  // uygulanan her kırpma bunu değiştiriyor. (`request.index` / `request.total`
+  // bilerek okunmuyor — köprü onları hâlâ taşıyor, çoklu seçimde sırayı kuran
+  // kod oradan besleniyor, ama chrome'da artık sayaç yok.)
+  const { uri } = working;
   const dispW = srcW * baseScale;
   const dispH = srcH * baseScale;
 
@@ -451,8 +805,9 @@ export default function CropperOverlay() {
       </GestureDetector>
 
       {/* Karartma: pencerenin dört yanına dikdörtgen. Yuvarlak delik svg
-          maskesi gerektirirdi; Apple Photos da keskin köşe kullanıyor. */}
-      <View pointerEvents="none" style={StyleSheet.absoluteFill}>
+          maskesi gerektirirdi; Apple Photos da keskin köşe kullanıyor.
+          Tamamı KIRPMA KİPİNE bağlı — kip kapalıyken fotoğraf çıplak. */}
+      <Animated.View pointerEvents="none" style={[StyleSheet.absoluteFill, frameStyle]}>
         <View style={{ position: "absolute", left: 0, right: 0, top: 0, height: winTop, backgroundColor: scrim }} />
         <View style={{ position: "absolute", left: 0, right: 0, top: winTop + layout.winH, bottom: 0, backgroundColor: scrim }} />
         <View style={{ position: "absolute", left: 0, width: winLeft, top: winTop, height: layout.winH, backgroundColor: scrim }} />
@@ -479,14 +834,14 @@ export default function CropperOverlay() {
         </Animated.View>
 
         <CornerTicks left={winLeft} top={winTop} width={layout.winW} height={layout.winH} />
-      </View>
+      </Animated.View>
 
       {/* ------------------------------------------------------------ başlık */}
       <View
         pointerEvents="box-none"
         style={{ position: "absolute", left: 0, right: 0, top: 0, height: layout.headerH, paddingTop: insets.top, paddingHorizontal: 16, flexDirection: "row", alignItems: "center", justifyContent: "space-between" }}
       >
-        <ChromeIconButton
+        <MediaChromeIconButton
           systemImage="xmark"
           fallbackIcon={X}
           label={t("common.cancel")}
@@ -494,118 +849,67 @@ export default function CropperOverlay() {
           disabled={busy}
         />
 
-        {showCounter ? (
-          <View style={{ paddingHorizontal: 12, paddingVertical: 6, borderRadius: 999, backgroundColor: colors.mediaChipBg }}>
-            <Text style={{ color: colors.onMedia, fontSize: 13, fontWeight: "600" }}>
-              {t("common.cropper.progress", { index, total })}
-            </Text>
-          </View>
-        ) : (
-          <Text style={{ color: colors.onMedia, fontSize: 19, fontWeight: "700" }}>
-            {t("common.cropper.title")}
-          </Text>
-        )}
+        {/* Düzenleme ikilisi SAĞDA, yan yana: Kırp + Sıfırla. Başlığın ortası
+            boş — ortada duran buton, iki köşedeki butonla eşit ağırlıkta
+            okunuyor ve hangisinin kadrajı değiştirdiği belirsiz kalıyordu.
+            Solda yalnız vazgeçme yolu (✕), sağda karede oynayan iki eylem. */}
+        <View style={{ flexDirection: "row", alignItems: "center", gap: 10 }}>
+          {/* Başlık YAZISININ yerini alan buton: metin hiçbir şey yapmıyordu,
+              oysa ekranın tek öğrenilmesi gereken eylemi bu. Açık hâlde glif
+              turuncuya dönüyor — çerçevenin açık olduğunu rozetle değil butonun
+              kendisiyle söylüyor. */}
+          <MediaChromeIconButton
+            systemImage="crop"
+            fallbackIcon={Crop}
+            label={t("common.cropper.crop")}
+            onPress={handleToggleCrop}
+            disabled={busy}
+            active={cropping}
+          />
 
-        {/* Sıfırla ARTIK BURADA: alt barda üç buton yan yanayken "İptal" hem
-            başlıkta hem altta duruyordu. Apple Photos düzeni — iptal ve sıfırla
-            üstte, tek birincil eylem altta. */}
-        <ChromeIconButton
-          systemImage="arrow.counterclockwise"
-          fallbackIcon={RotateCcw}
-          label={t("common.cropper.reset")}
-          onPress={handleReset}
-          disabled={busy}
-        />
+          {/* Sıfırla kip DIŞINDA da canlı: kırpma kipten çıkınca KALICI, yani
+              geri alınacak bir kadraj orada da var — kadrajı geri almanın tek
+              yolu bu buton (bkz. handleToggleCrop). */}
+          <MediaChromeIconButton
+            systemImage="arrow.counterclockwise"
+            fallbackIcon={RotateCcw}
+            label={t("common.cropper.reset")}
+            onPress={handleReset}
+            disabled={busy}
+          />
+        </View>
       </View>
 
       {/* -------------------------------------------------------------- alt bar
-          pointerEvents VERİLMİYOR (box-none DEĞİL): opak şerit dokunuşları
-          yutmalı, yoksa altındaki GestureDetector'a düşüp görüntü kayardı. */}
+          ZEMİNSİZ ve `box-none`: eskiden opak bir şerit (scrimAt(0.9)) vardı ve
+          dokunuşları bilerek yutuyordu, ama fotoğrafın alt kenarını da kesiyordu
+          — kullanıcıya "Kaydet'in arkası siyah" olarak görünen şey buydu. Şerit
+          kalkınca o bölge yüksek bir kaynakta doğrudan fotoğraf, kısa bir
+          kaynakta çerçevenin kendi boşluğu; butonun DIŞINA düşen dokunuş da
+          artık GestureDetector'a gidiyor, yani orada da kaydırıp
+          yakınlaştırılıyor.
+
+          İÇİNDE TEK ÖĞE + `flex-end`: sağ padding başlıktakiyle (16) aynı, yani
+          Kaydet'in sağ kenarı üstteki "Sıfırla"nın sağ kenarıyla aynı dikey
+          hatta oturuyor. Sayaç çipi ("2 / 6") KALDIRILDI — kaç fotoğraftan
+          kaçıncısında olduğunu kayıt akışının kendi ilerleme göstergesi zaten
+          söylüyordu, burada ikinci bir sayaç yalnız kareyi kalabalıklaştırıyor
+          (`space-between` düzeni de onunla birlikte gitti). */}
       <View
-        // Sağ padding başlıktakiyle (16) aynı: Kaydet, üstteki "Sıfırla"
-        // butonuyla aynı dikey hatta oturuyor.
-        style={{ position: "absolute", left: 0, right: 0, bottom: 0, paddingBottom: insets.bottom + 16, paddingTop: 16, paddingHorizontal: 16, backgroundColor: scrimAt(0.9), alignItems: "flex-end" }}
+        pointerEvents="box-none"
+        style={{ position: "absolute", left: 0, right: 0, bottom: 0, paddingBottom: insets.bottom + 16, paddingTop: 16, paddingHorizontal: 16, alignItems: "flex-end" }}
       >
+        {/* TEK BUTON, İKİ İŞ — kipe göre: çerçeve açıkken "Kırp" (seçilen kareyi
+            uygular, foto onun yerine geçer), kapalıyken "Kaydet" (elindeki
+            fotoğrafı akışa verir). İkinci bir buton eklenmedi: aynı yerde iki
+            birincil eylem, hangisinin kadrajı bitirdiği belirsiz kalıyordu. */}
         <ChromeConfirmButton
-          label={t("common.cropper.save")}
-          onPress={handleConfirm}
+          label={cropping ? t("common.cropper.crop") : t("common.cropper.save")}
+          onPress={cropping ? handleApplyCrop : handleConfirm}
           busy={busy}
         />
       </View>
     </View>
-  );
-}
-
-/**
- * Chrome'un yuvarlak ikon butonu (kapat / sıfırla).
- *
- * iOS'ta @expo/ui'nin native SwiftUI Button'ı — uygulamanın geri kalanıyla
- * (AppModal, ChatScreen header, RegisterBackButton) aynı liquid glass dili.
- * Zemin fotoğraf olduğu için tint `onMedia`: tema ne olursa olsun beyaz kalır.
- */
-function ChromeIconButton({
-  systemImage,
-  fallbackIcon,
-  label,
-  onPress,
-  disabled,
-}: {
-  systemImage: SFSymbol;
-  fallbackIcon: any;
-  label: string;
-  onPress: () => void;
-  disabled?: boolean;
-}) {
-  if (Platform.OS === "ios") {
-    return (
-      // Basılamaz hâl `onPress`i no-op'a çevirerek veriliyor: SwiftUI butonuna
-      // disabled geçmek label'ı da soluklaştırıp koyu zeminde okunmaz yapıyor.
-      <Host style={{ width: ICON_BTN, height: ICON_BTN, opacity: disabled ? 0.5 : 1 }}>
-        <SwiftUIButton
-          label={label}
-          systemImage={systemImage}
-          onPress={disabled ? () => {} : onPress}
-          modifiers={[
-            buttonStyle("glass"),
-            tint(colors.onMedia),
-            controlSize("large"),
-            labelStyle("iconOnly"),
-            font({ size: 17, weight: "semibold" }),
-            frame({ width: ICON_BTN, height: ICON_BTN }),
-            // iOS 26 altında glass .automatic'e düşüyor → zeminsiz kalıyor.
-            // Medya üstünde çalışan koyu çip + açık kenar veriyoruz.
-            ...glassFallback({
-              shape: "circle",
-              backgroundColor: colors.mediaChipBg,
-              borderColor: onMediaAt(0.35),
-            }),
-          ]}
-        />
-      </Host>
-    );
-  }
-
-  return (
-    <AnimatedPressable
-      onPress={onPress}
-      disabled={disabled}
-      accessibilityRole="button"
-      accessibilityLabel={label}
-      hitSlop={10}
-      style={{
-        width: ICON_BTN,
-        height: ICON_BTN,
-        borderRadius: 999,
-        alignItems: "center",
-        justifyContent: "center",
-        backgroundColor: colors.mediaChipBg,
-        opacity: disabled ? 0.5 : 1,
-      }}
-    >
-      <View pointerEvents="none">
-        <SFIcon name={systemImage} fallback={fallbackIcon} size={18} strokeWidth={2.5} color={colors.onMedia} weight="semibold" />
-      </View>
-    </AnimatedPressable>
   );
 }
 

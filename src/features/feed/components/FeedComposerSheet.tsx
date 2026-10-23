@@ -70,10 +70,15 @@ const styles = StyleSheet.create({
 export interface FeedComposerSheetProps {
   visible: boolean;
   onClose: () => void;
-  onSend: (body: string, isAnonymous: boolean, topic: string) => void;
+  /** ÇOKLU konu: dizi hep en az bir eleman taşır (gönder butonunun kapısı). */
+  onSend: (body: string, isAnonymous: boolean, topics: string[]) => void;
   /** Konu kataloğu — `/api/feed/me`den çözülmüş anahtarlar (feedTopics.ts). */
   topicKeys: string[];
-  /** Anahtar → görünen ad. Sunucu etiketi öncelikli (bkz. topicLabel). */
+  /**
+   * Anahtar → görünen etiket. Hashtag biçimi ("#ders grubu") BURADAN geliyor,
+   * çip içinde `#` eklenmiyor: etiketin yazımına ekran karar veriyor
+   * (bkz. feedTopics > topicHashtag).
+   */
   topicLabelFor: (key: string) => string;
   /** `/api/feed/me`den; gelmemişse istemci tavanına düşülür. */
   maxLength?: number | null;
@@ -127,21 +132,38 @@ export default function FeedComposerSheet({
 
   const [isAnonymous, setIsAnonymous] = useState(false);
   /**
-   * Seçili konu — ZORUNLU, ÖN SEÇİM YOK.
+   * Seçili konular — ÇOKLU, EN AZ BİRİ ZORUNLU, ÖN SEÇİM YOK.
    *
    * Varsayılan bir konu olsaydı kullanıcıların çoğu düşünmeden onu gönderir ve
    * alan hiçbir şey ayırt etmezdi; zorunlu bir alanın anlamı seçimin bir karar
    * olmasından geliyor (kayıttaki mod adımının aynı gerekçesi).
+   *
+   * ⚠️ ÜST SINIR YOK. Kataloğun tamamını seçmek anlamsız ama istemci kendi
+   * kafasından bir tavan (3 gibi) koymuyor: o sayının sahibi sunucu ve henüz
+   * söylemedi — uydurulmuş bir sınır, sunucu daha azını kabul ederse geç
+   * kalmış bir hataya, daha fazlasını kabul ederse yok yere kısıta döner.
    */
-  const [topic, setTopic] = useState<string | null>(null);
+  const [topics, setTopics] = useState<string[]>([]);
 
   useEffect(() => {
     if (visible) {
       reset({ body: "" });
       setIsAnonymous(false);
-      setTopic(null);
+      setTopics([]);
     }
   }, [visible, reset]);
+
+  /**
+   * Çipe dokunma = AÇ/KAPA. Seçili çipe tekrar dokunmak onu bırakıyor — çoklu
+   * seçimde tek yol bu (tek seçimdeki "başkasına dokun" kaçışı artık yok,
+   * seçimi geri almanın başka bir yolu olmazsa kullanıcı sheet'i kapatıp
+   * yazdığını kaybetmek zorunda kalırdı).
+   */
+  const toggleTopic = useCallback((key: string) => {
+    setTopics((prev) =>
+      prev.includes(key) ? prev.filter((k) => k !== key) : [...prev, key],
+    );
+  }, []);
 
   const { anchorRef, onFocus, onBlur } = useKeyboardAwareField();
 
@@ -152,8 +174,8 @@ export default function FeedComposerSheet({
     if (quotaExhausted) return;
     // ÜÇÜNCÜ KAPI (butonun `disabled`ı ve kota kapısına ek): klavyedeki
     // "gönder" butonun pasifliğini görmüyor.
-    if (!topic) return;
-    onSend(body.trim(), isAnonymous, topic);
+    if (topics.length === 0) return;
+    onSend(body.trim(), isAnonymous, topics);
   });
 
   // Kapanış animasyonu boyunca içerik boşalmasın diye son değerler ref'te
@@ -254,9 +276,9 @@ export default function FeedComposerSheet({
             klavye düşerdi (bu dosyanın başlığındaki kural). */}
         <TopicChips
           keys={topicKeys}
-          selected={topic}
+          selected={topics}
           labelFor={topicLabelFor}
-          onSelect={setTopic}
+          onToggle={toggleTopic}
         />
 
         <View
@@ -324,8 +346,8 @@ export default function FeedComposerSheet({
         <SendButton
           control={control}
           sending={sending}
-          // Konu seçilmeden gönderim YOK — butonun kendisi de pasif.
-          locked={quotaExhausted || !topic}
+          // Hiç konu seçilmeden gönderim YOK — butonun kendisi de pasif.
+          locked={quotaExhausted || topics.length === 0}
           onPress={submit}
           university={shownUniversity ?? null}
         />
@@ -335,7 +357,7 @@ export default function FeedComposerSheet({
 }
 
 /**
- * Konu çipleri — tek seçim, ZORUNLU.
+ * Konu çipleri — ÇOKLU seçim, en az biri ZORUNLU.
  *
  * MODÜL SEVİYESİNDE (render içinde değil): bu dosyanın üç alt bileşeni de
  * öyle ve sebebi somut — render'da tanımlanan bir bileşen her tuşta yeni bir
@@ -348,18 +370,21 @@ export default function FeedComposerSheet({
  *
  * Seçili çip DOLGULU (`inverseSurface`), seçilmemiş çip yalnız KENARLIKLI —
  * uygulamanın her yerindeki seçim dili (bkz. RegisterStep10 kartları,
- * FilterModal pill'leri).
+ * FilterModal pill'leri). Çoklu seçimde TİK İKONU EKLENMEDİ: dolgunun kendisi
+ * zaten "seçili" diyor ve etiketin yanına giren bir glif, satır sarması
+ * hesabını da (iki satıra sığan yedi çip) bozardı.
  */
 const TopicChips = memo(function TopicChips({
   keys,
   selected,
   labelFor,
-  onSelect,
+  onToggle,
 }: {
   keys: string[];
-  selected: string | null;
+  /** Seçili anahtarlar — boş dizi = hiçbiri (gönder butonu pasif). */
+  selected: string[];
   labelFor: (key: string) => string;
-  onSelect: (key: string) => void;
+  onToggle: (key: string) => void;
 }) {
   const { t } = useTranslation();
   return (
@@ -372,16 +397,21 @@ const TopicChips = memo(function TopicChips({
           marginBottom: 10,
         }}
       >
+        {/* Etiket çoklu seçimi AÇIKÇA söylüyor ("birden fazla seçebilirsin"):
+            çipler tek seçimli bir şeritten görsel olarak ayırt edilemiyor
+            (aynı kapsül, aynı dolgu dili), yani ikinci çipe dokunmayı denemek
+            kullanıcıya kalıyordu. Ayrı bir açıklama satırı değil, başlığın
+            kendisi — blok 18'lik payıyla aynı yükseklikte kalsın. */}
         {t("feed.composer.topicLabel")}
       </Text>
       <View style={{ flexDirection: "row", flexWrap: "wrap", gap: 8 }}>
         {keys.map((key) => {
-          const active = selected === key;
+          const active = selected.includes(key);
           return (
             <TouchableOpacity
               key={key}
               activeOpacity={0.7}
-              onPress={() => onSelect(key)}
+              onPress={() => onToggle(key)}
               style={{
                 paddingHorizontal: 14,
                 paddingVertical: 8,

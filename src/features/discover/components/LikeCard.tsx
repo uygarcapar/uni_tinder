@@ -32,6 +32,7 @@ import { Image } from "expo-image";
 import { LinearGradient } from "expo-linear-gradient";
 import { BlurView } from "expo-blur";
 import MaskedView from "@react-native-masked-view/masked-view";
+import { DEFAULT_APP_MODE, modeAccent, modeFireTint } from "../modeTheme";
 import { easeGradient } from "react-native-easing-gradient";
 import Animated, {
   Easing,
@@ -64,7 +65,6 @@ import CardActionGlassButton from "@/features/discover/components/CardActionGlas
 import {
   colors,
   darkColors,
-  gradients,
   ink,
   isLight,
   onMediaAt,
@@ -682,10 +682,12 @@ function useGlassPhase(enabled: boolean) {
  * Kalp cümlenin yerine GEÇMİYOR, yanında duruyor: yazı ne olduğunu söylüyor,
  * kalp onu bir bakışta seçilir kılıyor (bkz. i18n likes.firePill).
  *
- * Zemin `litPlus` — başlığın yanındaki "Beğenenleri gör" pill'iyle (bkz.
- * LikesListHeader) BİREBİR aynı dolgu, mürekkebi de aynı: `onMediaInverse`,
- * yani sabit koyu. `text` OLAMAZ, açık modda beyaza dönüp dolgunun üstünde
- * kaybolurdu; `onMedia` da olamaz, aynı sebeple ters yönde.
+ * Zemin SEÇİLİ MODUN vurgusu (`modeAccent`) — başlığın yanındaki "Beğenenleri
+ * gör" pill'iyle (bkz. LikesListHeader) BİREBİR aynı dolgu, mürekkebi de aynı:
+ * `onMediaInverse`, yani sabit koyu. `text` OLAMAZ, açık modda beyaza dönüp
+ * dolgunun üstünde kaybolurdu; `onMedia` da olamaz, aynı sebeple ters yönde.
+ * Mürekkep MODLA DÖNMÜYOR: iki vurgu da (kırmızı/yeşil) orta tonlu, ikisinin
+ * üstünde de siyah okunuyor.
  *
  * ⚠️ Burada CAM YOK, bilerek: dolgu opak: `GlassView`in altındaki hiçbir şey
  * görünmeyeceği için efekt yalnız maliyet olurdu (liste hücrelerinde geri
@@ -698,7 +700,7 @@ function useGlassPhase(enabled: boolean) {
  * ⚠️ Pill SOLMUYOR, kayboluyor: not açılınca `LikeCard` onu tamamen KALDIRIYOR
  * (gerekçe orada). Buraya fade/scale animasyonu EKLEME.
  */
-function FirePill({ label }: { label: string }) {
+function FirePill({ label, accent }: { label: string; accent: string }) {
   return (
     <View
       style={{
@@ -712,13 +714,14 @@ function FirePill({ label }: { label: string }) {
         flexDirection: "row",
         alignItems: "center",
         gap: LIKE_CARD_PILL_ICON_GAP,
-        backgroundColor: colors.litPlus,
+        backgroundColor: accent,
       }}
     >
       {/* Kalbin altında disk YOK, glif doğrudan dolgunun üstünde duruyor.
-          Rengi yazıyla AYNI ve SABİT (`onMediaInverse`): kırmızı dolgu modla
-          dönmediği için üstündeki hiçbir şey de dönmemeli — açık modda da
-          siyah. `ink()`/`colors.text` kullanma, ikisi de açık modda çevrilir. */}
+          Rengi yazıyla AYNI ve SABİT (`onMediaInverse`): dolgu TEMAYLA
+          dönmediği için (yalnız MODLA dönüyor) üstündeki hiçbir şey de
+          dönmemeli — açık modda da siyah. `ink()`/`colors.text` kullanma,
+          ikisi de açık modda çevrilir. */}
       <FireGlyph
         size={LIKE_CARD_PILL_ICON_SIZE}
         color={colors.onMediaInverse}
@@ -1457,6 +1460,10 @@ function LikeCard({
   onLike = undefined,
   likeLabel = undefined,
   recoverLabel = undefined,
+  // Kartın ait olduğu mod — köşedeki kurtarma butonunun rengini veriyor
+  // (Friends'te yeşil). Varsayılanı Dating, yani geçmeyen çağıran bugünkü
+  // kırmızıda kalıyor.
+  mode = DEFAULT_APP_MODE,
   // Köşedeki İKİNCİ buton — yalnız akış yanıtlarında (bkz. FeedReplyCard).
   // Verilmezse köşe eskisi gibi tek butonlu kalıyor; gerekçe butonun yanında.
   onSkip = undefined,
@@ -1847,6 +1854,7 @@ function LikeCard({
               <RecoverGlassButton
                 onPress={handleRecoverPress}
                 label={recoverLabel}
+                mode={mode}
               />
             ) : (
               // Beğeni kartlarında köşedeki tek buton BEĞEN. "Geç" burada
@@ -1857,13 +1865,17 @@ function LikeCard({
               //
               // Kabuk kurtarma butonuyla AYNI ölçüde ve o da prominent:
               // ikisi aynı köşenin iki hâli, biri sade cam olsaydı sekme
-              // değiştirince köşe zayıflıyormuş gibi okunurdu. Renk
-              // kolondaki tikin rengi (Fire kalbinin kırmızısı).
+              // değiştirince köşe zayıflıyormuş gibi okunurdu.
+              //
+              // Renk Fire/Spark kalbinin tonu ve MODLA DÖNÜYOR
+              // (`modeFireTint`): kurtarma butonu (RecoverGlassButton) zaten
+              // modun rengini alıyordu, tik sabit kırmızı kalınca Arkadaş
+              // modunda aynı köşenin iki hâli iki ayrı renkte çiziliyordu.
               <CardActionGlassButton
                 variant="prominent"
                 name="checkmark"
                 fallback={Check}
-                tintColor={gradients.swipeHeart[0]}
+                tintColor={modeFireTint(mode)}
                 glyphColor={colors.onMedia}
                 size={CARD_CORNER_GLASS_SIZE}
                 glyphSize={CARD_CORNER_GLYPH_SIZE}
@@ -2016,7 +2028,7 @@ function LikeCard({
                     tahminleri bunu saymıyor. Bilinçli: ölçüm zaten `onLayout`ile
                     düzeliyor, sapma yalnız ilk karede ve perdede görünmüyor. */}
                 {item.isSuperLike && !!fireLabel && !noteExpanded && (
-                  <FirePill label={fireLabel} />
+                  <FirePill label={fireLabel} accent={modeAccent(mode)} />
                 )}
                 <Animated.View
                   style={[
@@ -2053,19 +2065,10 @@ function LikeCard({
                       {`, ${item.age}`}
                     </Text>
                   )}
-                  {/* Premium işareti — kart başlıklarındakinin AYNISI, yaşın
-                      sağında; ölçü isim puntosundan türüyor (bkz. PremiumBadge).
-                      `alignSelf` YOK: işaret artık daire değil metin, satırın
-                      baseline hizası onu ismin tabanına oturtuyor — daire
-                      döneminde gereken `center` yamasının işi bitti. */}
-                  {item.isPremium && (
-                    <PremiumBadge
-                      fontSize={LIKE_CARD_NAME_SIZE}
-                      style={{ marginLeft: 4 }}
-                    />
-                  )}
-                  {/* Foto doğrulama rozeti — premium'un sağında, AYNI hizalama
-                      kuralıyla (baseline satırında alignSelf şart). */}
+                  {/* Foto doğrulama rozeti — yaşın HEMEN sağında, premium'dan
+                      ÖNCE (bkz. SelfieVerifiedBadge: sıra isim → doğrulama →
+                      plus). Hizalama kuralı aynı: baseline satırında alignSelf
+                      şart. */}
                   <SelfieVerifiedBadge
                     verified={item.isSelfieVerified}
                     size={selfieBadgeSize(LIKE_CARD_NAME_SIZE)}
@@ -2075,6 +2078,17 @@ function LikeCard({
                       alignSelf: "center",
                     }}
                   />
+                  {/* Premium işareti — kart başlıklarındakinin AYNISI, satırın
+                      SONUNDA; ölçü isim puntosundan türüyor (bkz. PremiumBadge).
+                      `alignSelf` YOK: işaret artık daire değil metin, satırın
+                      baseline hizası onu ismin tabanına oturtuyor — daire
+                      döneminde gereken `center` yamasının işi bitti. */}
+                  {item.isPremium && (
+                    <PremiumBadge
+                      fontSize={LIKE_CARD_NAME_SIZE}
+                      style={{ marginLeft: 4 }}
+                    />
+                  )}
                 </Animated.View>
                 {/* Üniversite — isim/yaş satırının ALTINDA, aynı bloğun
                     ikinci satırı. `identityStyle` ile isimle birlikte solar:
@@ -2217,8 +2231,8 @@ function LikeCard({
                         backgroundColor: barFill,
                       }}
                     />
-                    {/* Rozet açık karttakiyle AYNI ölçü ve renk (marka
-                        rengi): doğrulanmış olmak kimlik değil, güven sinyali —
+                    {/* Rozet açık karttakiyle AYNI ölçü ve renk (beyaz):
+                        doğrulanmış olmak kimlik değil, güven sinyali —
                         free'ye verilebilecek en ucuz ve en ikna edici ipucu. */}
                     <SelfieVerifiedBadge
                       verified={item.isSelfieVerified}

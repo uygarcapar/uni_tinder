@@ -1,29 +1,37 @@
 import { useEffect, useRef, useState } from "react";
 import uiBus from "@/shared/services/uiBus";
 import LazyChunkBoundary from "@/shared/components/LazyChunkBoundary";
-import lazyChunk from "@/shared/components/lazyChunk";
-// Süre canvas ile PAYLAŞILAN modülden geliyor: flameWavePath Skia'ya
-// dokunmadığı için import etmek lazy chunk'ı buraya çekmiyor. Elle kopyalanan
-// iki sabit olarak tutulduğunda biri güncellenip diğeri bayat kalmıştı.
+// Süre canvas ile PAYLAŞILAN modülden geliyor: elle kopyalanan iki sabit olarak
+// tutulduğunda biri güncellenip diğeri bayat kalmıştı.
 import { FLAME_WAVE_MS } from "@/features/discover/components/flameWavePath";
-
 /**
- * Skia'nın JS modülü ağır ve kök ağaçta duruyoruz (bkz. AppNavigator) —
- * statik import edilseydi her cold start'ta bedavaya evaluate edilirdi.
- * Canvas ayrı chunk'ta: ilk Fire'a kadar yüklenmiyor.
+ * ── CANVAS ARTIK LAZY CHUNK'TA DEĞİL (2026-10-16) ───────────────────────────
  *
- * `React.lazy` DEĞİL (bkz. lazyChunk): chunk gelmezse render'da fırlatmak yerine
- * sessizce atlanıyor — dev'de kırmızı "Render Error" perdesi açılmıyor.
+ * Burada `lazyChunk(() => import("./FireFlameCanvas"))` vardı; gerekçe
+ * "Skia'nın JS modülü ağır, kök ağaçta statik import her cold start'ta
+ * bedavaya evaluate eder"di. GEREKÇE GEÇERSİZ: AppNavigator → TabNavigator →
+ * profileTabAvatar zinciri Skia'yı ZATEN statik import ediyor, yani modül her
+ * cold start'ta ana bundle'da evaluate ediliyor. Erteleme hiçbir şey
+ * kazandırmıyordu.
+ *
+ * Karşılığında ÖDENEN bedel ağırdı: chunk isteği patlarsa lazyChunk reddi
+ * promise seviyesinde yutuyor ve bileşen sessizce `null` çiziyor — kutlama
+ * kayboluyor, deste FireFlame'in yedek `flameSweepCover` zamanlayıcısıyla yine
+ * ilerliyor, yani hata hiçbir yere YANSIMIYOR. Dev'de bu teorik değil: Metro'nun
+ * HMR soketi bir kez düştükten sonra o oturumdaki her chunk isteği patlıyor
+ * (bkz. lazyChunk'taki not) ve alev uygulama reload edilene kadar bir daha
+ * görünmüyor. "Beğeni/geç/Fire/not atıyorum, alev gelmiyor" tam bu.
+ *
+ * LazyChunkBoundary DURUYOR: kapsamı chunk değil, canvas'ın KENDİ render'ında
+ * çıkan hata (Skia path'i kurulamadı) — kutlama atlanır, ekran gitmez.
  */
-const FlameCanvas = lazyChunk(
-  () => import("@/features/discover/components/FireFlameCanvas"),
-);
+import FlameCanvas from "@/features/discover/components/FireFlameCanvas";
 
 /**
  * Kart değişimini bekleten taraf (bkz. flameSweep) "flameSweepCover" olayını
  * dinliyor ve onu normalde CANVAS yayınlıyor — kendi animasyon saatinden, tam
- * ekranı kapattığı anda. Canvas hiç çizemezse (lazy chunk yüklenemedi, Skia
- * path'i kurulamadı) o olay hiç gelmez ve kart sonsuza kadar askıda kalırdı.
+ * ekranı kapattığı anda. Canvas hiç çizemezse (Skia path'i kurulamadı, render
+ * boundary'ye düştü) o olay hiç gelmez ve kart sonsuza kadar askıda kalırdı.
  * Bu yüzden olayı burada da, geniş bir gecikmeyle, yedek olarak yayınlıyoruz:
  * kutlama atlanabilir, deste durmaz.
  */
@@ -52,7 +60,7 @@ export default function FireFlame() {
       if (timer) clearTimeout(timer);
       if (fallback) clearTimeout(fallback);
       // Pay bilerek geniş: sayaç OLAY anında başlıyor, animasyon ise canvas
-      // mount olup (ilk seferde lazy chunk çözülerek) efekt çalıştığında.
+      // mount olup efekt çalıştığında (ilk kutlamada silüetler de kuruluyor).
       // Dar payla ilk kutlamada dalga bitmeden sökülebiliyordu. Fazladan
       // bekleyen canvas boşta duruyor — animasyonu bitmiş, çizimi ekran dışı.
       timer = setTimeout(() => setRunId(null), FLAME_WAVE_MS + 400);

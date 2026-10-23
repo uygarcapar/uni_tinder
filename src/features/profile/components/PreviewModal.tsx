@@ -1,10 +1,11 @@
-import { useCallback } from "react";
+import { useCallback, useMemo } from "react";
 import SheetBlurBackdrop from "@/shared/components/SheetBlurBackdrop";
-import { View, ActivityIndicator } from "react-native";
+import { View, ActivityIndicator, useWindowDimensions } from "react-native";
 
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { useSharedValue } from "react-native-reanimated";
 import SwipeCard from "@/features/discover/components/SwipeCard";
+import { previewCoverHeight } from "@/features/discover/components/cardPreviewGeometry";
 import CardGlassBackdrop from "@/features/discover/components/CardGlassBackdrop";
 import CardSheetScrollView from "@/features/discover/components/CardSheetScrollView";
 import CardStickyHeader, {
@@ -36,8 +37,28 @@ export default function PreviewModal({
   onEdit,
 }: any) {
   const insets = useSafeAreaInsets();
+  const { width: windowWidth, height: windowHeight } = useWindowDimensions();
   // Top'a çarpma zoom'u — scroll CardSheetScrollView'da, foto katmanı SwipeCard'da.
   const photoZoom = useSharedValue(0);
+
+  /**
+   * DETENTLER: ① yalnız ana fotoğraf ② tam ekran (istek: "ilk açıldığında
+   * snappoint sadece ana foto kadarı açılsın").
+   *
+   * Beğeniler'den açılan kartla (LikerSwipeModal) AYNI kural ve aynı türetme —
+   * uzun gerekçe orada. Kısası: ilk durak ana fotoğraf bloğunun boyunun ta
+   * kendisi (previewCoverHeight), dizi açıkken uzunluk değiştirmiyor, dar
+   * ekranda tek detente düşüyor.
+   *
+   * BURADA EK BİR SEBEP VAR: profil bu sheet'e `null` gelip sonradan dolabiliyor
+   * (yüklenirken spinner çiziliyor). Detentleri profile/fotoğrafa bağlamak,
+   * veri gelince sheet'i kendiliğinden yeni bir yüksekliğe zıplatırdı.
+   */
+  const snapPoints = useMemo(() => {
+    const full = windowHeight - insets.top;
+    const cover = Math.round(previewCoverHeight(windowWidth));
+    return cover < full ? [cover, full] : [full];
+  }, [windowWidth, windowHeight, insets.top]);
   /*
    * `scrollY` KALDIRILDI: ham scroll konumunu CardSheetScrollView'dan alıp
    * sticky şeride veriyordu, tek müşterisi oradaki "24 saat içerisinde aktif"
@@ -86,7 +107,11 @@ export default function PreviewModal({
     <AppBottomSheet
       visible={visible}
       onClose={onClose}
-      snapPoints={["100%"]}
+      // İKİ DETENT: ana fotoğraf → tam ekran (yukarıda `snapPoints`). Bir
+      // dönem tek detent `["100%"]` idi; yüzde yerine artık piksel geliyor,
+      // ikisi aynı tepeyi veriyor (yüzde de containerHeight − topInset'ten
+      // hesaplanıyordu).
+      snapPoints={snapPoints}
       // SAFE-AREA ÇİZGİSİNE: kart Keşif'te expand edilince tam buraya oturuyor
       // (bkz. SwipeWrapper > HEADER_COVER / DISCOVER_CARD_EXPAND_LIFT) ve
       // uygulamanın tam ekran sheet'leri de (profil düzenleme / filtreler —

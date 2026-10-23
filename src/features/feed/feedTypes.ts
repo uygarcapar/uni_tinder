@@ -35,7 +35,13 @@ export type FeedTopic =
   | "Advice"
   | "Social";
 
-/** Filtrede "hepsi" seçeneği — sunucuya parametre GÖNDERİLMİYOR demek. */
+/**
+ * Filtrede "hepsi" seçeneği.
+ *
+ * ⚠️ ARTIK FİLTRE İMZASINDA KULLANILMIYOR — konu filtresi ÇOKLU seçim
+ * (`FeedListParams.topics: string[]`, boş dizi = hepsi). Tip yalnız diskteki
+ * v2 tercihini okumak için duruyor (bkz. feedPrefs > loadFeedParams).
+ */
 export type FeedTopicFilter = FeedTopic | "all";
 
 /** `/api/feed/me`den gelen konu kataloğu — etiket çift dilli. */
@@ -98,10 +104,23 @@ export interface FeedPostDto {
   isAnonymous: boolean;
   /**
    * Gönderinin konusu. Eski sunucu alanı göndermiyorsa `undefined` —
-   * kart çipi o zaman çizilmiyor (varsayılan "General" UYDURULMUYOR:
+   * kart etiketi o zaman çizilmiyor (varsayılan "General" UYDURULMUYOR:
    * konusuz bir gönderiyi "Genel" diye etiketlemek yanlış bilgi olurdu).
+   *
+   * ⚠️ TEK KONU: composer ÇOKLU seçiyor ama wire hâlâ bu alanı taşıyor.
+   * Okuma tarafı `topics` varsa ONU, yoksa buna düşüyor (resolvePostTopics).
    */
   topic?: FeedTopic;
+  /**
+   * Gönderinin konuları — ÇOKLU seçimin wire karşılığı.
+   *
+   * ⚠️ SUNUCU HENÜZ BU ALANI DÖNMÜYOR. İstemci çoklu seçimi gönderiyor
+   * (`topics` + geriye uyum için `topic`), backend sözleşmeyi tanıyana kadar
+   * yanıtta yalnız `topic` dolu geliyor ve kart tek etiket çiziyor. Alan
+   * burada, sunucu tarafı açıldığında istemci sürümü beklenmesin diye duruyor
+   * (konu kataloğunun `/me`den okunmasıyla aynı gerekçe).
+   */
+  topics?: FeedTopic[];
   authorCategory: FeedAuthorCategory | null;
   /** Normal gönderide dolu; ANONİM gönderide HER ZAMAN null. */
   author: FeedAuthorDto | null;
@@ -209,8 +228,17 @@ export interface FeedListParams {
   sort: FeedSort;
   interest: FeedInterest;
   kind: FeedKind;
-  /** "all" = konu filtresi yok (parametre hiç gönderilmez). */
-  topic: FeedTopicFilter;
+  /**
+   * Seçili konular — ÇOKLU, BOŞ DİZİ = konu filtresi yok.
+   *
+   * Eski `topic: FeedTopicFilter` alanının yerini aldı; "all" diye bir değer
+   * ARTIK YOK, filtrenin yokluğu boş diziyle söyleniyor (tek yönlü: `["all"]`
+   * gibi bir şey üretmeyin, `normalizeTopicSelection` onu ayıklıyor).
+   *
+   * ⚠️ SIRA ÖNEMSİZ AMA KANONİK OLMALI: query key'in parçası olduğu için
+   * sıralanmış+tekil hâlde tutuluyor (bkz. normalizeTopicSelection).
+   */
+  topics: string[];
 }
 
 /**

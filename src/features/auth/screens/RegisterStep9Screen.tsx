@@ -1,7 +1,8 @@
-import { useCallback, useState } from "react";
-import { View, Text } from "react-native";
+import { useCallback, useRef, useState } from "react";
+import { ActivityIndicator, View, Text } from "react-native";
 import { NativeStackScreenProps } from "@react-navigation/native-stack";
 import { useFocusEffect } from "@react-navigation/native";
+import * as Location from "expo-location";
 import type { AuthStackParamList } from "@/shared/types/navigation";
 import { useAppDispatch } from "@/shared/hooks/redux";
 import { updateMultipleFields } from "@/features/profile/profileSlice";
@@ -30,6 +31,22 @@ import { useTranslation } from "react-i18next";
  * metni ikinci kez okuyup ikinci kez butona basmasın, sheet açılır açılmaz izin
  * isteği kendiliğinden gitsin. Odakla açılan İLK sheet'te bu bayrak kapalı
  * (priming önce okunsun).
+ *
+ * ── İZİN ZATEN VARSA ADIM KENDİ GEÇİYOR ────────────────────────────────────
+ *
+ * İlk odakta önce `getForegroundPermissionsAsync` soruluyor: izin verilmişse
+ * sheet HİÇ AÇILMIYOR, koordinat okunup Step12'ye geçiliyor. Priming'in tek
+ * işi sistem dialogunu bağlamıyla göstermek; izin duruyorken o dialog zaten
+ * çıkmayacağı için sheet kullanıcıya "izin ver"e bastırdığı tek bir ekstra
+ * tıklamadan başka bir şey yapmıyordu.
+ *
+ * ⚠️ YALNIZ İLK ODAKTA (`autoAdvancedRef`). Step12'nin geri butonu buraya
+ * dönüyor; her odakta geçersek o buton ölürdü — kullanıcı Step8'e inemezdi.
+ * Dönüş turunda eski davranış aynen duruyor (sheet açılır).
+ *
+ * İzin var ama fix YOKSA (kapalı alan / GPS kapalı) otomatik geçiş sessizce
+ * priming sheet'ine düşüyor: butonu olan bir yüzey gerekiyor, kullanıcı
+ * tekrar deneyebilsin.
  */
 export default function RegisterStep9Screen({ navigation }: NativeStackScreenProps<AuthStackParamList, 'RegisterStep9'>) {
   const { t } = useTranslation();
@@ -37,15 +54,14 @@ export default function RegisterStep9Screen({ navigation }: NativeStackScreenPro
 
   const [sheetVisible, setSheetVisible] = useState(false);
   const [autoRequest, setAutoRequest] = useState(false);
-
-  // Ekran odaklanınca sheet açılır; Step10'a geçerken (blur) kendiliğinden kapanır.
-  useFocusEffect(
-    useCallback(() => {
-      setAutoRequest(false);
-      setSheetVisible(true);
-      return () => setSheetVisible(false);
-    }, []),
-  );
+  // Otomatik geçiş denemesi sürüyor mu? Sticky buton o sırada spinner'a
+  // dönüyor: `getCurrentPositionAsync` saniyeler sürebiliyor ve o boşlukta
+  // "izin ver" butonu duruyorsa kullanıcı basıp aynı okumayı ikinci kez
+  // başlatıyor.
+  const [autoChecking, setAutoChecking] = useState(false);
+  // Otomatik geçiş bu mount'ta DENENDİ mi? Dönüş turunda tekrar denenmemeli
+  // (bkz. dosya başı — Step12'nin geri butonu).
+  const autoAdvancedRef = useRef(false);
 
   // Sticky buton: sheet'i geri açar VE sheet'teki butona basılmış gibi izin
   // isteğini tetikler. İki state aynı render'da batch'lendiği için sheet
@@ -74,6 +90,67 @@ export default function RegisterStep9Screen({ navigation }: NativeStackScreenPro
       throw err;
     }
   }, [dispatch, navigation]);
+
+  /**
+   * Odakta: izin varsa geç, yoksa priming sheet'ini aç. Blur'da sheet
+   * kendiliğinden kapanır (Step12'ye geçişte de bu yol çalışıyor).
+   *
+   * `cancelled`: izin sorusu/koordinat okuması uçarken kullanıcı geri
+   * gidebiliyor. Bayrak olmadan ekran blur olduktan SONRA navigate ya da
+   * sheet açılması mümkün — ikisi de kullanıcıyı bıraktığı yerden koparırdı.
+   */
+  useFocusEffect(
+    useCallback(() => {
+      let cancelled = false;
+
+      const openPriming = () => {
+        setAutoRequest(false);
+        setSheetVisible(true);
+      };
+
+      if (autoAdvancedRef.current) {
+        openPriming();
+        return () => setSheetVisible(false);
+      }
+      autoAdvancedRef.current = true;
+      setAutoChecking(true);
+
+      (async () => {
+        let granted = false;
+        try {
+          const { status } = await Location.getForegroundPermissionsAsync();
+          granted = status === "granted";
+        } catch (err) {
+          // İzin DURUMU okunamadı — izin yok saymak doğru taraf: priming
+          // sheet'i zaten kullanıcıya soracak.
+          devLog("[step9] permission check failed:", err);
+        }
+        if (cancelled) return;
+
+        let advanced = false;
+        if (granted) {
+          try {
+            await captureAndContinue();
+            advanced = true;
+          } catch {
+            // Fix alınamadı; gerekçe captureAndContinue'da loglandı.
+          }
+        }
+
+        // ⚠️ Spinner `cancelled`a BAKMADAN kapanıyor: başarılı geçişte blur
+        // cleanup'ı bayrağı zaten çevirmiş oluyor, orada erken dönülürse ekran
+        // (yığında mount kalıyor) sonsuza kadar spinner'lı butonla duruyordu.
+        setAutoChecking(false);
+        if (advanced || cancelled) return;
+        openPriming();
+      })();
+
+      return () => {
+        cancelled = true;
+        setSheetVisible(false);
+      };
+    }, [captureAndContinue]),
+  );
 
   return (
     <View className="flex-1" style={{ backgroundColor: colors.bg }}>
@@ -114,15 +191,31 @@ export default function RegisterStep9Screen({ navigation }: NativeStackScreenPro
         </Text>
       </View>
 
-      {/* Sticky Button — sheet swipe ile kapatıldıysa geri açar ve izni ister */}
+      {/* Sticky Button — sheet swipe ile kapatıldıysa geri açar ve izni ister.
+          Otomatik geçiş denenirken spinner: o sırada basılırsa aynı koordinat
+          okuması ikinci kez başlıyor (sheet'in kendi busy mantığıyla aynı
+          gerekçe, bkz. LocationPermissionSheet). */}
       <View className="px-8 pb-8 pt-4">
         <AnimatedPressable
           onPress={reopenSheetAndRequest}
-          style={{ borderRadius: 999, borderCurve: "continuous", overflow: "hidden", backgroundColor: colors.inverseSurface }}
+          disabled={autoChecking}
+          style={{
+            borderRadius: 999,
+            borderCurve: "continuous",
+            overflow: "hidden",
+            backgroundColor: colors.inverseSurface,
+            opacity: autoChecking ? 0.5 : 1,
+          }}
         >
-          <Text className="py-[20px] font-bold text-[15px] text-center" style={{ color: colors.onInverseSurface }}>
-            {t('auth.step9.allowButton')}
-          </Text>
+          {autoChecking ? (
+            <View style={{ paddingVertical: 18 }}>
+              <ActivityIndicator color={colors.onInverseSurface} />
+            </View>
+          ) : (
+            <Text className="py-[20px] font-bold text-[15px] text-center" style={{ color: colors.onInverseSurface }}>
+              {t('auth.step9.allowButton')}
+            </Text>
+          )}
         </AnimatedPressable>
       </View>
 

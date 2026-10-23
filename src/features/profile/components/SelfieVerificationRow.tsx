@@ -177,7 +177,10 @@ export default function SelfieVerificationRow({
             farklı iki gri yan yana duramaz. Bir ara ikisi de `ink(0.55)` idi
             çünkü `textSecondary` o zaman başka bir griydi; ayrım paletten
             kalktı (bkz. colors.ts → textSecondary ≡ textMuted). */}
-        <Text style={{ color: colors.textMuted, fontSize: 13, lineHeight: 18 }}>
+        {/* Ölçü de aynı kaynaktan: 14/20, ProfileScreen'deki tamamlama
+            akordiyonlarının açıklamasıyla birebir. İkisi sayfada alt alta
+            düşüyor ve 13/18'de bu satır komşusundan bir tık küçük duruyordu. */}
+        <Text style={{ color: colors.textMuted, fontSize: 14, lineHeight: 20 }}>
           {subtitle}
         </Text>
       </View>

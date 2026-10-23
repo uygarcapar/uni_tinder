@@ -38,12 +38,22 @@ export type UniversityOption = {
   name: string;
   display?: string | LocalizedText;
   /**
-   * ── Harita alanları (`?distinct=true` ile) ───────────────────────────────
+   * ── Harita alanları ──────────────────────────────────────────────────────
+   *
+   * ⚠️ `distinct=true` GEREKTİRMİYOR — bir süre bu yorumda öyle yazıyordu ve
+   * yanlıştı. Sunucu koordinatı HER iki listede de gönderiyor (ölçüldü:
+   * non-distinct 207/207, distinct 205/205). `distinct` yalnız kayıt SAYISINI
+   * düşürüyor.
    *
    * `canonicalDomain`: çoklu domain'li üniversiteler (ör. `boun.edu.tr` +
    * `bogazici.edu.tr`) `distinct=true` ile TEK kayda iniyor; bu alan o tek
-   * kaydın kimliği. Haritada `distinct` kullanılmazsa aynı kampüse iki pin
-   * düşer.
+   * kaydın kimliği. Haritada ÇOKLU PIN çizilecekse `distinct` şart, yoksa aynı
+   * kampüse iki pin düşer.
+   *
+   * ⚠️ TEK bir kampüsün koordinatını ararken `distinct` KULLANMA: o liste alias
+   * domainleri düşürüyor (`bau.edu.tr` distinct listede YOK, ne `domain` ne
+   * `canonicalDomain` olarak) ve domain'i alias olan kullanıcı hiçbir kayda
+   * eşleşmiyor.
    *
    * `isApproximate`: koordinat il merkezi (kampüs koordinatı değil).
    * ⚠️ PIN İÇİN yeterli, MESAFE HESABI İÇİN KULLANILMAZ — eşleşme mesafesi
@@ -221,9 +231,12 @@ export function useGenders() {
 // bekliyor, o yüzden listeyi okurken de normalize edip tekilleştiriyoruz
 // (aynı domain iki isimle gelirse picker'da çift satır çıkmasın).
 /**
- * @param distinct Çoklu domain'li üniversiteleri TEK kanonik kayda indirir —
- *   HARİTA İÇİN ZORUNLU (aksi halde aynı kampüse iki pin düşer). Seçici
- *   listelerinde KAPALI: kullanıcı kendi domain'ini aramak isteyebilir.
+ * @param distinct Çoklu domain'li üniversiteleri TEK kanonik kayda indirir.
+ *   ÇOKLU PIN çizen bir harita için gerekli (aksi halde aynı kampüse iki pin
+ *   düşer). Her yerde KAPALI olmalı: hem seçicide (kullanıcı kendi domain'ini
+ *   aramak isteyebilir) hem tek-kampüs koordinat aramasında — distinct liste
+ *   alias domainleri düşürüyor, bkz. UniversityOption'ın harita notu.
+ *   Koordinat alanları distinct'e BAĞLI DEĞİL, ikisinde de geliyor.
  */
 export function useUniversities(distinct = false) {
   return useQuery({
@@ -245,6 +258,20 @@ export function useUniversities(distinct = false) {
           domain,
           name: item?.name || domain,
           display: item?.display,
+          // ⚠️ HARİTA ALANLARI DA TAŞINMAK ZORUNDA. Bir süre bu üç alanla
+          // sınırlıydı: tip `lat`/`lon`/`canonicalDomain`/`isApproximate`
+          // ilan ediyordu ama mapper onları düşürüyordu, yani sunucu
+          // koordinatı gönderse bile istemciye hiç ulaşmıyordu ve haritayı
+          // okuyan her yüzey (akış şeridi) koordinat yok sayıp SESSİZCE
+          // çizmiyordu. Tipin alan ilan etmesi onu taşıdığı anlamına gelmez.
+          //
+          // `latitude`/`longitude` de okunuyor: aynı bilgi kart DTO'larında o
+          // adlarla geliyor ve iki adlandırma arasında kalmak bir alan adı
+          // hatasını boş haritaya çeviriyor (universityGeo'daki aynı kural).
+          canonicalDomain: item?.canonicalDomain,
+          lat: item?.lat ?? item?.latitude,
+          lon: item?.lon ?? item?.longitude,
+          isApproximate: item?.isApproximate,
         });
       }
       return out;

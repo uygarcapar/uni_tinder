@@ -54,6 +54,12 @@ import FirePullHint, {
   FIRE_PULL_SCRIM_ALPHA,
 } from '@/features/discover/components/FirePullHint';
 import { colors } from '@/shared/theme/colors';
+// Eşikler SABİT SAYI DEĞİL, chrome satırının gerçek ölçüsünden türüyor —
+// satır büyüdüğünde test kendiliğinden doğru kalsın.
+import {
+  DISCOVER_GLASS_BUTTON_SIZE,
+  DISCOVER_HEADER_HEIGHT,
+} from '@/features/discover/components/discoverHeaderMetrics';
 import tr from '@/shared/i18n/translations/tr';
 import en from '@/shared/i18n/translations/en';
 
@@ -230,22 +236,41 @@ describe('FirePullHint', () => {
     expect(band.height).toBeLessThan(64 + 120);
   });
 
-  it('yazı güvenli alanın ALTINDAN başlıyor', () => {
-    // Band ekranın 0'ından başlıyor ama yazı saatin/adanın ardına düşemez.
+  /**
+   * YAZI MOD BAŞLIĞININ ALTINDAN BAŞLIYOR (2026-10-21 düzeltmesi).
+   *
+   * Bir dönem güvenli alanın hemen altındaydı (`TEXT_TOP_GAP = 6`) ve tam
+   * olarak yüzen chrome satırının içine düşüyordu: solda geri al, sağda
+   * filtre, ORTADA mod adı. "Bırak" ipucu Flört/Arkadaş başlığının üstüne
+   * biniyordu. Artık satırın tamamı atlanıyor.
+   *
+   * ⚠️ Testler bu düzeltmeden sonra bir gün bayat kaldı ve kırmızıydı —
+   * eşikler o yüzden SABİT SAYI değil, chrome satırının ölçüsünden türüyor.
+   * Satır büyürse test kendiliğinden doğru kalıyor.
+   */
+  const HEADER_ROW = Math.max(
+    DISCOVER_HEADER_HEIGHT,
+    DISCOVER_GLASS_BUTTON_SIZE,
+  );
+
+  it('yazı CHROME SATIRININ altından başlıyor (mod başlığına binmiyor)', () => {
     pull.value = 1;
     const block = textBlockStyle(render(<FirePullHint topInset={64} />)) as any;
-    expect(block.top).toBeGreaterThanOrEqual(64);
-    // Bandın içinde kalıyor: yazı bandın dibinden taşarsa perdesiz, çıplak
-    // fotoğrafın üstünde okunur.
-    expect(block.top).toBeLessThan(64 + 52);
+    // Güvenli alan + chrome satırı: yazı mod başlığının altında.
+    expect(block.top).toBeGreaterThanOrEqual(64 + HEADER_ROW);
+    // Bandın içinde kalıyor: dibinden taşarsa perdesiz, çıplak fotoğrafın
+    // üstünde okunur.
+    expect(block.top).toBeLessThan(64 + HEADER_ROW + 40);
   });
 
-  it('topInset verilmezse yazı da kabın tepesinden başlıyor', () => {
+  it('topInset verilmezse chrome satırı yine atlanıyor', () => {
     // Varsayılan 0 — bileşen safe-area'ya kendisi bağlanmıyor, ölçüyü çağıran
-    // veriyor (bkz. prop notu).
+    // veriyor (bkz. prop notu). Ama chrome satırı safe-area'dan BAĞIMSIZ:
+    // inset olmadan da yazı o satırın altında başlamalı.
     pull.value = 1;
     const block = textBlockStyle(render(<FirePullHint />)) as any;
-    expect(block.top).toBeLessThan(10);
+    expect(block.top).toBeGreaterThanOrEqual(HEADER_ROW);
+    expect(block.top).toBeLessThan(HEADER_ROW + 40);
   });
 
   it('her iki metin de iki dilde tanımlı', () => {

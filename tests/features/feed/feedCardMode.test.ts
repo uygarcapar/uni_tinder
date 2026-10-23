@@ -6,7 +6,11 @@
  * seçim ve yanlış dalın hiçbir görünür belirtisi yok.
  */
 
-import { resolveCardMode, normalizeModes } from "@/features/feed/feedCardMode";
+import {
+  feedCardActions,
+  resolveCardMode,
+  normalizeModes,
+} from "@/features/feed/feedCardMode";
 
 describe("resolveCardMode", () => {
   it("seçili mod uygunsa ONU kullanıyor", () => {
@@ -45,6 +49,44 @@ describe("resolveCardMode", () => {
     expect(resolveCardMode(["StudyPartner", "Friends"], "Dating")).toBe("Friends");
     // Küçük harf de geçersiz: wire değerleri PascalCase.
     expect(resolveCardMode(["dating"], "Dating")).toBeNull();
+  });
+});
+
+/**
+ * Kartta hangi aksiyonların çizildiği.
+ *
+ * Test edilen şey SESSİZ GERİLEME: Flört'te düz beğeni geri gelirse akış bir
+ * tek dokunuşla bedelsiz beğeni dağıtan yüzeye dönüyor ve kural yalnız burada
+ * yazılı (sunucu düz beğeniyi iki modda da kabul ediyor — bkz. fonksiyonun
+ * notu). Ters yönde de aynı: Arkadaş'ta beğeni kapanırsa kullanıcının elinde
+ * yalnız bedelli iki yol kalıyor.
+ */
+describe("feedCardActions", () => {
+  it("FLÖRT: düz beğeni YOK, Fire ve not var", () => {
+    expect(feedCardActions("Dating")).toEqual({
+      like: false,
+      fire: true,
+      note: true,
+    });
+  });
+
+  it("ARKADAŞ: hepsi serbest — not da dahil", () => {
+    expect(feedCardActions("Friends")).toEqual({
+      like: true,
+      fire: true,
+      note: true,
+    });
+  });
+
+  it("mod yoksa hiçbiri — kart SALT OKUNUR", () => {
+    // `resolveCardMode` null döndüğünde ekran PreviewModal'a düşüyor; yine de
+    // üç kapı da kapalı olmalı, "mod yok ama beğeni var" diye bir ara durum
+    // oluşmasın.
+    expect(feedCardActions(null)).toEqual({
+      like: false,
+      fire: false,
+      note: false,
+    });
   });
 });
 

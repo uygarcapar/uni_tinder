@@ -273,6 +273,19 @@ type AppModalProps = {
   // Opt-in: aynı header'ı kullanan sheet'lerin hepsi henüz çevrilmedi.
   clearGlassHeader?: boolean;
   /**
+   * Header'ın YUVARLAK İKON butonlarının (X ve varsa ✓) glifi SABİT BEYAZ
+   * (`onMedia`) çizilir — moda dönen `text` yerine.
+   *
+   * Gerekçe `clearGlassHeader` ile aynı aileden: o yolda butonun kendi kabuğu
+   * yok, glif ARKASINDAKİ YÜZEYİN üstünde duruyor. İçerik fotoğraf/gradyan ise
+   * (ModeSelectorSheet'in 3:2 mod kartları, sheet'in payına taşan cam X tam
+   * onların üstünde yüzüyor) açık temada koyu mürekkep o zeminde kayboluyor.
+   *
+   * Opt-in ve yalnız İKON butonları: metin butonları (Kaydet/Sıfırla) tema
+   * mürekkebinde kalıyor — onlar hiçbir zaman medyanın üstüne binmiyor.
+   */
+  onMediaHeaderIcons?: boolean;
+  /**
    * Header'ın buton satırının (X · başlık · aksiyon) modal'ın TEPESİNE uzaklığı.
    * Varsayılan `MODAL_HEADER_ROW_TOP`.
    *
@@ -359,6 +372,7 @@ export default function AppModal({
   leftIconLabel = "Sıfırla",
   clearGlassActions = false,
   clearGlassHeader = false,
+  onMediaHeaderIcons = false,
   headerButtonTop = MODAL_HEADER_ROW_TOP,
   closeSide,
   titleAlwaysVisible = false,
@@ -471,6 +485,11 @@ export default function AppModal({
    * aynı cam malzemede ve aynı glif ölçüsünde duruyor. Gövde eskiden X'e özel
    * inline duruyordu; ✓ eklenirken kopyalanmasın diye buraya alındı.
    */
+  // Yuvarlak ikon butonlarının glif/tint rengi — bkz. `onMediaHeaderIcons`.
+  // Spinner'ın mürekkebi BUNUN DIŞINDA (tema): yükleniyorken butonun kendi
+  // opak zemini (`hairlineSoft`) çiziliyor, arkadaki medya görünmüyor.
+  const iconGlyphColor = onMediaHeaderIcons ? colors.onMedia : colors.text;
+
   const renderIconButton = (
     symbol: SFSymbol,
     fallback: LucideIcon,
@@ -524,7 +543,7 @@ export default function AppModal({
               onPress={handlePress}
               modifiers={[
                 buttonStyle("plain"),
-                tint(colors.text),
+                tint(iconGlyphColor),
                 frame({ width: ACTION_HEIGHT, height: ACTION_HEIGHT }),
                 accessibilityLabel(label),
                 ...glassFallback({ shape: "circle" }),
@@ -532,7 +551,7 @@ export default function AppModal({
             >
               <SwiftUIImage
                 systemName={symbol}
-                color={colors.text}
+                color={iconGlyphColor}
                 modifiers={glassIconClearGlyph()}
               />
             </SwiftUIButton>
@@ -544,7 +563,7 @@ export default function AppModal({
               modifiers={[
                 buttonStyle("glass"),
                 controlSize("large"),
-                tint(colors.text),
+                tint(iconGlyphColor),
                 labelStyle("iconOnly"),
                 font({ size: 17, weight: "medium" }),
                 // Default capsule yerine tam circle — iconOnly buton kare/yuvarlak görünsün.
@@ -580,7 +599,7 @@ export default function AppModal({
           name={symbol}
           fallback={fallback}
           size={20}
-          color={colors.text}
+          color={iconGlyphColor}
           strokeWidth={2}
           weight="semibold"
           style={{ pointerEvents: "none" }}

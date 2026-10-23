@@ -1,65 +1,48 @@
-import { useCallback, useEffect, useRef, useState } from "react";
+import { useCallback, useEffect, useMemo, useState } from "react";
 import SheetBlurBackdrop from "@/shared/components/SheetBlurBackdrop";
-import { View, Modal, Dimensions, Alert } from "react-native";
+import { View, Alert, useWindowDimensions } from "react-native";
 import { useTranslation } from "react-i18next";
 
-import { Gesture, GestureDetector } from "react-native-gesture-handler";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
-import Animated, {
-  useAnimatedReaction,
-  useSharedValue,
-  useAnimatedStyle,
-  withSpring,
-  withTiming,
-  withSequence,
-  withDelay,
-  runOnJS,
-  interpolate,
-  cancelAnimation,
-  Easing,
-} from "react-native-reanimated";
-import * as Haptics from "expo-haptics";
-import { appPrefs } from "../../../shared/utils/appPrefs";
-import { ArrowLeft, ArrowRight } from "@/shared/icons";
-import SFIcon from "@/shared/components/SFIcon";
+import { useSharedValue } from "react-native-reanimated";
 import AppBottomSheet from "@/shared/components/AppBottomSheet";
 import SwipeCard from "@/features/discover/components/SwipeCard";
+import { previewCoverHeight } from "@/features/discover/components/cardPreviewGeometry";
 import CardGlassBackdrop from "@/features/discover/components/CardGlassBackdrop";
 import CardSheetScrollView from "@/features/discover/components/CardSheetScrollView";
 import CardStickyHeader, {
   CARD_CHROME_TOP_DROP,
   CARD_EXPANDED_CORNER_RADIUS,
 } from "@/features/discover/components/CardStickyHeader";
-import SwipeOverlay from "@/features/discover/components/SwipeOverlay";
 import ProfileOptionsSheet from "@/features/discover/components/ProfileOptionsSheet";
-import { photoPinchActive } from "@/shared/components/pinchZoom";
 import ReportModal from "@/shared/components/ReportModal";
 import moderationService from "@/shared/services/moderationService";
 import { useSwipeMutation } from "@/features/discover/swipeQueries";
-import { useAppSelector } from "@/shared/hooks/redux";
-import { useEvent } from "@/shared/hooks/useEvent";
-import { colors } from "../../../shared/theme/colors";
-
-const { width, height: SCREEN_HEIGHT } = Dimensions.get("window");
-const SWIPE_THRESHOLD = 85;
-const EXIT_DISTANCE = width * 1.2;
-const EXIT_DURATION = 180;
-const FADE_OUT_DURATION = 350;
-const TUTORIAL_TX = 55; // threshold (85) altında — like/pass tetiklenmesin
-const TUTORIAL_SWING_DURATION = 550;
-const TUTORIAL_STORAGE_KEY = "likerSwipeTutorialShown";
-
-const exitConfig = { duration: EXIT_DURATION, easing: Easing.out(Easing.cubic) };
-const fadeOutConfig = { duration: FADE_OUT_DURATION };
-const springConfig = { damping: 16, stiffness: 380, mass: 1 };
-
-function triggerHaptic() {
-  Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
-}
 
 /**
- * @param swipeDisabled Kart yalnız OKUNUR açılır: yatay jest, X/tik satırı ve
- *   Fire yok; şikayet/engelle kalır. "Kaçırdıkların" sekmesi için —
+ * ── YATAY SWIPE JESTİ KALDIRILDI (istek: "artık swipe yok") ─────────────────
+ *
+ * Kart buradan da parmakla savrulmuyor. Keşif'teki destede 2026-10-13'te
+ * yapılan temizliğin aynısı (bkz. SwipeWrapper > "YATAY SWIPE JESTİ
+ * KALDIRILDI"): karar KAPAKTAKİ tik/X cam butonlarında — fotoğrafın sağ alt
+ * kolonunda, Keşif'tekiyle birebir aynı bileşen ve aynı sıra.
+ *
+ * Birlikte giden parçalar:
+ *   • `tx` + `rotate` (kartın eğilerek kayması) ve yana UÇUŞ animasyonu
+ *     (`EXIT_DISTANCE`): karar anında kart yerinde duruyor, sheet kapanıyor.
+ *   • `SwipeOverlay` (sürükleme oranıyla yanan büyük tik/çarpı rozeti) —
+ *     sürüklenecek bir şey yok, rozetin sürecek sinyali de.
+ *   • Pinch sırasında yatay sürüklemeyi geri alan `cancelDragForPinch` +
+ *     `photoPinchActive` reaksiyonu: artık iki jest çakışmıyor.
+ *   • Eşik haptic'i (`SWIPE_THRESHOLD`) ve sheet'in `failOffsetX` ayarı —
+ *     ikincisi yalnız yatay jestin sheet'ten önce davranabilmesi için vardı,
+ *     kalkınca aşağı çekerek kapatma varsayılan davranışına döndü.
+ *   • İLK AÇILIŞ DEMOSU (`likerSwipeTutorialShown` bayrağı, perde + sağa/sola
+ *     salınan oklar): öğrettiği hareket ortada yok. MMKV'de kalan eski bayrak
+ *     artık okunmuyor, zararsız.
+ *
+ * @param swipeDisabled Kart yalnız OKUNUR açılır: X/tik satırı ve Fire yok;
+ *   şikayet/engelle kalır. "Kaçırdıkların" sekmesi için —
  *   orada verilebilecek tek yanıt KURTARMA (hak harcar, bkz. LikesScreen'deki
  *   `handleRecover`) ve liste kartı da zaten sadece o butonu çiziyor. Detay
  *   açıldığında swipe'ın canlı kalması, listede olmayan bir aksiyonu (pas /
@@ -71,8 +54,9 @@ function triggerHaptic() {
  *
  *   AKIŞ YANITLARI İÇİN: orada karar bir beğeni değil, yanıtın KABULÜ ya da
  *   REDDİ (ayrı uçlar, ayrı kotalar — bkz. feedQueries > useAcceptReply /
- *   useDismissReply). Sağ = kabul, sol = geç. Jest, X/tik satırı ve
- *   moderasyon aynen çalışıyor; değişen tek şey kararın gittiği yer.
+ *   useDismissReply). Sağ (tik) = kabul, sol (X) = geç. Kapaktaki butonlar,
+ *   X/tik satırı ve moderasyon aynen çalışıyor; değişen tek şey kararın
+ *   gittiği yer.
  *
  *   ⚠️ `onSwipe` yolundaki ENGELLEME dalı bundan etkilenmiyor: engelleme her
  *   iki modda da moderasyon servisinden geçiyor ve `onSwipe?.(userId,
@@ -93,6 +77,23 @@ function triggerHaptic() {
  * @param onNote Not kutularını açan kapı. `SwipeCard` sözleşmesi gereği
  *   VERİLMEZSE not kutuları HİÇ çizilmiyor — "seni beğenenler"de not zaten
  *   gönderilmiş olabiliyor ve ikinci bir not kanalı kafa karıştırırdı.
+ *
+ * @param allowLike DÜZ BEĞENİ (tik) çizilsin mi. Varsayılan AÇIK: "seni
+ *   beğenenler"de kartın tek anlamlı cevabı o. Akışın FLÖRT kartı kapatıyor —
+ *   orada sinyal ya Fire ya not olmak zorunda (bkz. feedCardActions). Kapalıyken
+ *   `onLike` SwipeCard'a hiç verilmiyor, yani ne kapaktaki cam tik ne de panelin
+ *   dibindeki büyük tik çiziliyor; X (geç) ve moderasyon aynen duruyor.
+ *
+ * @param fireBlocked Fire kotası/bakiyesi TÜKENMİŞ. Buton çizilmeye devam
+ *   ediyor ama basıldığında istek ATILMIYOR: `onFireBlocked` çağrılıyor ve
+ *   kararı çağıran veriyor (Keşif'te toast + paket sheet'i — bkz. DiscoverScreen
+ *   > showFireLimitUi). Butonu gizlemek yanlış olurdu: satın alınabilir bir
+ *   ürünün kapısı o.
+ *
+ *   ⚠️ Kapı BURADA ŞART, çünkü sunucunun reddi `uiBus` ile duyuruluyor ve o
+ *   olayı YALNIZ Keşif dinliyor; Keşif lazy mount olduğu için akıştan atılan
+ *   Fire tükenmişken hiçbir geri bildirim üretmiyordu (feedEntry.ts'teki aynı
+ *   tuzak).
  */
 export default function LikerSwipeModal({
   visible,
@@ -103,12 +104,44 @@ export default function LikerSwipeModal({
   swipeDisabled = false,
   mode,
   allowFire = false,
+  allowLike = true,
+  fireBlocked = false,
+  onFireBlocked,
   onNote,
   superLikesRemaining,
 }: any) {
   const swipeMutation = useSwipeMutation();
   const { t } = useTranslation();
   const insets = useSafeAreaInsets();
+  const { width: windowWidth, height: windowHeight } = useWindowDimensions();
+
+  /**
+   * DETENTLER: ① yalnız ana fotoğraf ② tam ekran (istek: "ilk açıldığında
+   * snappoint sadece ana foto kadarı açılsın").
+   *
+   * İlk durak ana fotoğraf bloğunun boyunun TA KENDİSİ (bkz.
+   * previewCoverHeight): kart "kapak kadar" açılıyor, kararın iki butonu
+   * (fotoğrafın sağ altındaki tik/X) ilk karede elin altında ve detaylar yukarı
+   * çekilince geliyor. Sayı elle yazılmıyor — fotoğrafın oranından türüyor,
+   * yoksa sheet'in dibi ile fotoğrafın dibi birbirinden kayıyor.
+   *
+   * İçerik en üstteyken yukarı çekiş sheet'i ikinci durağa taşıyor (gorhom'un
+   * scrollable koordinasyonu, bkz. CardSheetScrollView); aşağı çekiş ilk
+   * duraktan kapatıyor.
+   *
+   * SABİT İKİ ELEMAN, fotoğrafın varlığına göre DEĞİŞMİYOR: dizi açıkken
+   * uzunluk değiştirirse gorhom mevcut index'i başka bir yüksekliğe eşliyor ve
+   * sheet kendiliğinden zıplıyor. Fotoğrafsız profilde de aynı ilk durak
+   * kullanılıyor (orada "kapak" yok ama aynı yükseklik makul bir ön bakış).
+   *
+   * Dar/alçak ekranda ilk durak tam ekranı aşabiliyor (oran 1.43w): o zaman tek
+   * detente düşülüyor — artan snapPoints şartı gorhom'un sözleşmesi.
+   */
+  const snapPoints = useMemo(() => {
+    const full = windowHeight - insets.top;
+    const cover = Math.round(previewCoverHeight(windowWidth));
+    return cover < full ? [cover, full] : [full];
+  }, [windowWidth, windowHeight, insets.top]);
   // Şikayet edilen kullanıcı — sheet kapandıktan SONRA açılan ReportModal'ın
   // hedefi. Sheet'in `profile`'ı o an null'lanabildiği için ayrı tutulur.
   const [reportTarget, setReportTarget] = useState<string | null>(null);
@@ -116,7 +149,6 @@ export default function LikerSwipeModal({
   // Kart sheet'inin ÜSTÜNE biniyor, onu kapatmıyor.
   const [optionsOpen, setOptionsOpen] = useState(false);
 
-  const tx = useSharedValue(0);
   // Top'a çarpma zoom'u — scroll CardSheetScrollView'da, foto katmanı SwipeCard'da.
   const photoZoom = useSharedValue(0);
   /*
@@ -143,88 +175,13 @@ export default function LikerSwipeModal({
    * (`glassPanel`), zemin çizmek onun altında görünmez bir katman olurdu.
    */
   const backdropUri: string | undefined = profile?.photos?.[0];
-  const overlayDragX = useSharedValue(0);
-  const overlayOpacity = useSharedValue(1);
-  const hasVibrated = useSharedValue(false);
-
-  // Tutorial flag'i hesap bazlı: aynı cihazda açılan yeni hesap jesti hiç
-  // görmemiş bir kullanıcıdır, tekrar göstermek gerekir.
-  const currentUserId = useAppSelector((s) => s.auth.user?.id);
-  const tutorialOpacity = useSharedValue(0);
-  const [tutorialActive, setTutorialActive] = useState(false);
-  const tutorialLiveRef = useRef(false);
-
-  // markSeen=true → demo sonuna kadar oynadı, flag yazılır. Sheet erkenden
-  // kapanırsa yazılmaz; kullanıcı jesti görmemiş sayılır, tekrar oynar.
-  const stopTutorial = useEvent((markSeen: boolean) => {
-    if (!tutorialLiveRef.current) return;
-    tutorialLiveRef.current = false;
-    cancelAnimation(tutorialOpacity);
-    tutorialOpacity.value = withTiming(0, { duration: 150 }, () => {
-      runOnJS(setTutorialActive)(false);
-    });
-    if (markSeen && currentUserId) {
-      appPrefs.set(`${TUTORIAL_STORAGE_KEY}:${currentUserId}`, true);
-    }
-  });
 
   useEffect(() => {
-    if (!visible) {
-      stopTutorial(false);
-      // Kart kapandıysa üstündeki menü de kapanır: sheet kapanışı menüden
-      // geçmeyen yollardan da gelebiliyor (swipe, backdrop, liste tazelemesi).
-      setOptionsOpen(false);
-      tx.value = 0;
-      overlayDragX.value = 0;
-      overlayOpacity.value = 1;
-      hasVibrated.value = false;
-      tutorialOpacity.value = 0;
-      setTutorialActive(false);
-      return;
-    }
-
-    if (!currentUserId) return;
-    // Jest kapalıyken demo da oynamaz — öğretilecek bir hareket yok. Bayrak da
-    // YAZILMIYOR (erken `return`): burada "gördü" saymak, kullanıcının jesti
-    // gerçekten kullanabileceği ilk kartta demoyu yutardı.
-    if (swipeDisabled) return;
-    // MMKV senkron — eski AsyncStorage.then() + cancelled-guard yarışı kalktı.
-    if (appPrefs.getBoolean(`${TUTORIAL_STORAGE_KEY}:${currentUserId}`)) return;
-    tutorialLiveRef.current = true;
-    setTutorialActive(true);
-    // Sheet slide-up animasyonu bitince başlat.
-    tutorialOpacity.value = withDelay(400, withTiming(1, { duration: 250 }));
-    tx.value = withDelay(
-      600,
-      withSequence(
-        withTiming(TUTORIAL_TX, {
-          duration: TUTORIAL_SWING_DURATION,
-          easing: Easing.inOut(Easing.cubic),
-        }),
-        withTiming(-TUTORIAL_TX, {
-          duration: TUTORIAL_SWING_DURATION * 1.4,
-          easing: Easing.inOut(Easing.cubic),
-        }),
-        withTiming(
-          0,
-          { duration: TUTORIAL_SWING_DURATION, easing: Easing.inOut(Easing.cubic) },
-          () => {
-            runOnJS(stopTutorial)(true);
-          },
-        ),
-      ),
-    );
-  }, [
-    visible,
-    currentUserId,
-    swipeDisabled,
-    tx,
-    overlayDragX,
-    overlayOpacity,
-    hasVibrated,
-    tutorialOpacity,
-    stopTutorial,
-  ]);
+    // Kart kapandıysa üstündeki menü de kapanır: sheet kapanışı menüden
+    // geçmeyen yollardan da gelebiliyor (buton kararı, backdrop, liste
+    // tazelemesi).
+    if (!visible) setOptionsOpen(false);
+  }, [visible]);
 
   const handleSwipe = (direction: "left" | "right") => {
     // Karar devredilmişse keşif ucuna HİÇ dokunulmuyor (bkz. `onDecide`):
@@ -292,16 +249,22 @@ export default function LikerSwipeModal({
   }, [profile?.userId, onClose, onSwipe, t]);
 
   /**
-   * Fire/Spark — YATAY ÇIKIŞ ANİMASYONU YOK.
+   * Fire/Spark — ÇIKIŞ ANİMASYONU YOK; tik/X ile aynı sessizlik.
    *
-   * `triggerAction` kartı yana uçuruyor (sağ/sol kararın görsel karşılığı);
-   * Fire'ın yönü "up" ve onun görsel karşılığı kartın yana gitmesi DEĞİL,
-   * alev kutlaması — o da global (MatchModal / FireFlame, bkz. flameSweep).
-   * Kartı yana uçurmak iki animasyonu üst üste bindiriyordu.
+   * Fire'ın yönü "up" ve görsel karşılığı kartın hareketi DEĞİL, alev
+   * kutlaması — o da global (MatchModal / FireFlame, bkz. flameSweep).
    *
    * Modal kapanıyor: karar verildi, kartta yapacak bir şey kalmadı.
    */
   const triggerFire = () => {
+    // Kota/bakiye bitmiş: istek ATILMIYOR. Kart da KAPANMIYOR — kararı çağıran
+    // veriyor (toast + paket sheet'i) ve kullanıcı vazgeçerse kaldığı kartta
+    // kalıyor. Sunucuya gönderip reddi beklemek, geri bildirimi `uiBus`a (yani
+    // yalnız Keşif'in dinlediği bir kanala) bırakmak olurdu.
+    if (fireBlocked) {
+      onFireBlocked?.();
+      return;
+    }
     const userId = profile?.userId;
     if (userId) {
       swipeMutation.mutate({ direction: "up", userId, mode });
@@ -310,143 +273,20 @@ export default function LikerSwipeModal({
     onClose?.();
   };
 
+  /**
+   * Tik / X — kararın TEK yolu (jest yok, bkz. dosyanın başındaki not).
+   *
+   * Kapaktaki cam butonlar ve panelin dibindeki büyük X/tik satırı aynı
+   * fonksiyona bağlı: kart yerinde kalıyor, istek atılıyor ve sheet kapanıyor.
+   * Keşif'teki jestsiz deste de aynı şekilde davranıyor.
+   */
   const triggerAction = (direction: "left" | "right") => {
-    const to = direction === "right" ? EXIT_DISTANCE : -EXIT_DISTANCE;
-    const overlayTarget =
-      direction === "right" ? SWIPE_THRESHOLD : -SWIPE_THRESHOLD;
-    overlayDragX.value = withTiming(overlayTarget, exitConfig);
-    overlayOpacity.value = withTiming(0, fadeOutConfig);
-    tx.value = withTiming(to, exitConfig, () => {
-      runOnJS(handleSwipe)(direction);
-    });
+    handleSwipe(direction);
   };
-
-  // Fotoğraf iki parmakla büyütülmeye başladı: o ana kadar birikmiş yatay
-  // sürükleme geri alınıyor. Pinch'in iki parmağı ortak hareket ettiğinde jest
-  // tek parmaklı bir swipe'tan ayırt edilemiyor ve kart yana eğiliyordu
-  // (Discover'daki destede aynı kaçış var — bkz. SwipeWrapper).
-  const cancelDragForPinch = () => {
-    "worklet";
-    hasVibrated.value = false;
-    tx.value = withSpring(0, springConfig);
-    overlayDragX.value = withSpring(0, springConfig);
-    overlayOpacity.value = 1;
-  };
-
-  useAnimatedReaction(
-    () => photoPinchActive.value,
-    (active, prev) => {
-      if (active && !prev) cancelDragForPinch();
-    },
-  );
-
-  const horizontalPan = Gesture.Pan()
-    // Demo `tx`'i sürüyor; aynı anda kullanıcı da sürükleyemesin.
-    // `swipeDisabled` → jest hiç kurulmaz (bkz. prop). Jesti açık bırakıp
-    // `handleSwipe`i susturmak yetmezdi: kart yine parmakla eğilir, tik/çarpı
-    // perdesi (SwipeOverlay) yine yanar, yani ekran olmayan bir aksiyonu vaat
-    // ederdi.
-    // Üstüne bir sheet bindiyse (menü / şikayet) de kapalı: o sheet'in perdesi
-    // dokunuşu zaten yutuyor ama jesti açık bırakmak, perdenin kenarından
-    // sızan bir sürüklemenin ALTTAKİ kartı savurmasına açık kapı bırakırdı.
-    .enabled(!tutorialActive && !swipeDisabled && !optionsOpen && !reportTarget)
-    .activeOffsetX([-10, 10])
-    .failOffsetY([-15, 15])
-    .onUpdate((event) => {
-      "worklet";
-      // Foto büyütülüyor → kart kıpırdamasın (bkz. cancelDragForPinch).
-      if (photoPinchActive.value) return;
-      const delta = event.translationX;
-      const absDelta = Math.abs(delta);
-      const max = 400;
-      const c = 1.2;
-      const damped = (absDelta * max * c) / (max + c * absDelta);
-      const signed = delta < 0 ? -damped : damped;
-      tx.value = signed;
-      overlayDragX.value = signed;
-
-      if (!hasVibrated.value && Math.abs(signed) > SWIPE_THRESHOLD) {
-        hasVibrated.value = true;
-        runOnJS(triggerHaptic)();
-      }
-      if (hasVibrated.value && Math.abs(signed) < SWIPE_THRESHOLD) {
-        hasVibrated.value = false;
-      }
-    })
-    .onEnd((event) => {
-      "worklet";
-      hasVibrated.value = false;
-
-      // Parmaklar kalktı ama büyütme kapanışı sürüyor: bu jest pinch'in
-      // parçasıydı, swipe olarak yorumlanmamalı (bayrak kapanış animasyonunun
-      // SONUNDA düşüyor — bkz. photoPinchActive).
-      if (photoPinchActive.value) {
-        cancelDragForPinch();
-        return;
-      }
-
-      const VELOCITY_THRESHOLD = 2500;
-      const VELOCITY_MIN_DISPLACEMENT = 60;
-      const goRight =
-        tx.value > SWIPE_THRESHOLD ||
-        (event.velocityX > VELOCITY_THRESHOLD &&
-          tx.value > VELOCITY_MIN_DISPLACEMENT);
-      const goLeft =
-        tx.value < -SWIPE_THRESHOLD ||
-        (event.velocityX < -VELOCITY_THRESHOLD &&
-          tx.value < -VELOCITY_MIN_DISPLACEMENT);
-
-      if (goRight) {
-        overlayDragX.value = withTiming(SWIPE_THRESHOLD, exitConfig);
-        overlayOpacity.value = withTiming(0, fadeOutConfig);
-        tx.value = withTiming(EXIT_DISTANCE, exitConfig, () => {
-          runOnJS(handleSwipe)("right");
-        });
-      } else if (goLeft) {
-        overlayDragX.value = withTiming(-SWIPE_THRESHOLD, exitConfig);
-        overlayOpacity.value = withTiming(0, fadeOutConfig);
-        tx.value = withTiming(-EXIT_DISTANCE, exitConfig, () => {
-          runOnJS(handleSwipe)("left");
-        });
-      } else {
-        tx.value = withSpring(0, springConfig);
-        overlayDragX.value = withSpring(0, springConfig);
-        overlayOpacity.value = 1;
-      }
-    });
-
-  const animatedStyle = useAnimatedStyle(() => {
-    const rotate = interpolate(tx.value, [-width, 0, width], [-15, 0, 15]);
-    return {
-      transform: [{ translateX: tx.value }, { rotate: `${rotate}deg` }] as any,
-    };
-  });
-
-
-  const tutorialOverlayStyle = useAnimatedStyle(() => ({
-    opacity: tutorialOpacity.value,
-  }));
-
-  const leftArrowStyle = useAnimatedStyle(() => ({
-    transform: [
-      { translateX: interpolate(tx.value, [-TUTORIAL_TX, 0], [-16, 0], "clamp") },
-    ],
-  }));
-
-  const rightArrowStyle = useAnimatedStyle(() => ({
-    transform: [
-      { translateX: interpolate(tx.value, [0, TUTORIAL_TX], [0, 16], "clamp") },
-    ],
-  }));
 
   const renderBackdrop = useCallback(
-    (props: any) => (
-      <SheetBlurBackdrop
-        {...props}
-        pressBehavior={tutorialActive ? "none" : "close"}
-      />
-    ),
-    [tutorialActive],
+    (props: any) => <SheetBlurBackdrop {...props} />,
+    [],
   );
 
   return (
@@ -454,18 +294,16 @@ export default function LikerSwipeModal({
       <AppBottomSheet
         visible={visible}
         onClose={onClose}
-        // TEK DETENT, TAM EKRAN — diğer kart sheet'leriyle (PreviewModal) aynı:
-        // sheet safe-area çizgisinde açılıyor, Keşif'te expand edilen kartın
+        // İKİ DETENT: ana fotoğraf → tam ekran (yukarıda `snapPoints`).
+        // Üst durak safe-area çizgisinde, Keşif'te expand edilen kartın
         // oturduğu yerde (bkz. SwipeWrapper > HEADER_COVER) ve uygulamanın tam
         // ekran sheet'leriyle (AppModal `fullScreen`) aynı tepede.
         //
-        // TARİHÇE: [ekranın %85'i, SCREEN_HEIGHT - insets.top] idi — kart önce
-        // alt detent'te açılıyor, tepeye ancak elle çekilince geliyordu.
-        // Alt detent kaldırıldı: kartı okumak için ikinci bir jest gerekiyordu
-        // ve aşağı çekiş artık tek adımda kapatıyor (yine PreviewModal gibi).
-        // Sonra tek detent bir süre SCREEN_HEIGHT + topInset 0 ile telefonun en
-        // tepesindeydi; safe-area'ya geri çekildi.
-        snapPoints={[SCREEN_HEIGHT - insets.top]}
+        // TARİHÇE: bir dönem [ekranın %85'i, tam ekran] idi ve alt durak elle
+        // seçilmiş bir yüzdeydi; "kartı okumak için ikinci bir jest gerekiyor"
+        // diye tek detente indirildi. Alt durak şimdi geri geldi ama artık
+        // KEYFİ DEĞİL — ana fotoğrafın boyu (istek).
+        snapPoints={snapPoints}
         topInset={insets.top}
         handleComponent={null}
         backdropComponent={renderBackdrop}
@@ -475,153 +313,146 @@ export default function LikerSwipeModal({
         // kırpmayı kartın kabuğu yapıyor.)
         cornerRadius={CARD_EXPANDED_CORNER_RADIUS}
         cornerCurve="continuous"
-        // Sheet KIRPMASIN — köşeyi aşağıdaki dönen kart kendi çiziyor.
-        // Kırpma burada kalırsa kutu eksenlere sabit, kart ise yana kayarken
-        // eğiliyor: kartın üst köşeleri sheet'in düz kenarında dilimleniyor,
-        // Keşif'te olmayan bir "çerçeve içinde kalmış" görüntüsü çıkıyordu.
+        // Sheet KIRPMASIN — köşeyi aşağıdaki kart kabuğu kendi çiziyor
+        // (gerekçe kabuğun style'ında).
         clipContent={false}
         backgroundStyle={{ backgroundColor: "transparent" }}
-        enablePanDownToClose={!tutorialActive}
-        enableContentPanningGesture={!tutorialActive}
-        enableHandlePanningGesture={!tutorialActive}
-        // Sheet'in kendi pan'i yatay hareketi kapmasın: 10px yatay geçince
-        // fail eder, kartın horizontalPan'i aktive olur. Dikeyde ise 10px'ten
-        // sonra sheet devralır → pan-down-to-close korunur.
+        enablePanDownToClose
+        enableContentPanningGesture
+        enableHandlePanningGesture
+        // Sheet'in kendi pan'i eşiksiz çalışıyordu: iki parmak fotoğrafın
+        // üstünde birbirinden uzaklaşırken en ufak dikey kayma bile "aşağı
+        // çekip kapat" olarak yakalanıp pinch'i (PinchZoomable) kesebiliyordu.
+        // 10px pay büyütmenin önce aktive olmasına yetiyor; kapatma ve üst
+        // detente çekme jestleri o eşikten sonra aynen çalışıyor (PreviewModal
+        // ile aynı ayar).
+        //
+        // ⚠️ `failOffsetX` BURADA YOK ARTIK: o, yatay swipe jestinin sheet'ten
+        // önce davranabilmesi içindi (jest kalktı, bkz. dosyanın başı). Geri
+        // koyma — diyagonal bir çekişte sheet'in pan'ini öldürüp kapatmayı
+        // engelliyor.
         activeOffsetY={[-10, 10]}
-        failOffsetX={[-10, 10]}
       >
         <View style={{ flex: 1, position: "relative" }}>
           {profile && (
-            <GestureDetector gesture={horizontalPan}>
-              <Animated.View
-                pointerEvents={tutorialActive ? "none" : "auto"}
-                style={[
-                  {
-                    flex: 1,
-                    // KART KABUĞU BURADA KAPANIYOR, sheet'te değil
-                    // (bkz. yukarıdaki `clipContent={false}`). Kırpma bu
-                    // view'in KENDİ koordinatında yapıldığı için köşeler
-                    // döndürmeyle birlikte eğiliyor: kart Keşif'teki gibi tek
-                    // parça bir yüzey olarak yatıyor, sabit bir çerçevenin
-                    // kenarında dilimlenmiyor.
-                    //
-                    // Yarıçap = KEŞİF KARTININ YÜZÜ: sheet safe-area
-                    // çizgisinde açılıyor, yani üst köşeler donanım
-                    // maskesinden uzak ve kartın Keşif'teki köşesinden
-                    // ayrılması için bir sebep yok (bkz.
-                    // CARD_EXPANDED_CORNER_RADIUS'un tarihçesi). Kabuk,
-                    // şeridin kırpması ve sheet clip'i aynı sayıyı okumak
-                    // zorunda — üçüncü kopya için bkz. CARD_CORNER_RADIUS notu.
-                    //
-                    // `borderCurve: "continuous"` aşağıda ve ŞART: zincirdeki
-                    // her yüzey squircle çizmeli, yoksa aynı yarıçapta bile
-                    // eğriler kenar boyunca birbirini kesiyor.
-                    //
-                    // ALT KÖŞELER KARE, bilerek: kartın dibi ekranın dibi,
-                    // orayı yuvarlatmak duran kartta ekranın alt köşelerinden
-                    // arkadaki perdeyi sızdırırdı.
-                    borderTopLeftRadius: CARD_EXPANDED_CORNER_RADIUS,
-                    borderTopRightRadius: CARD_EXPANDED_CORNER_RADIUS,
-                    borderCurve: "continuous",
-                    overflow: "hidden",
-                  },
-                  animatedStyle,
-                ]}
+            <View
+              style={{
+                flex: 1,
+                // KART KABUĞU BURADA KAPANIYOR, sheet'te değil
+                // (bkz. yukarıdaki `clipContent={false}`).
+                //
+                // Yarıçap = KEŞİF KARTININ YÜZÜ: sheet safe-area
+                // çizgisinde açılıyor, yani üst köşeler donanım
+                // maskesinden uzak ve kartın Keşif'teki köşesinden
+                // ayrılması için bir sebep yok (bkz.
+                // CARD_EXPANDED_CORNER_RADIUS'un tarihçesi). Kabuk,
+                // şeridin kırpması ve sheet clip'i aynı sayıyı okumak
+                // zorunda — üçüncü kopya için bkz. CARD_CORNER_RADIUS notu.
+                //
+                // `borderCurve: "continuous"` aşağıda ve ŞART: zincirdeki
+                // her yüzey squircle çizmeli, yoksa aynı yarıçapta bile
+                // eğriler kenar boyunca birbirini kesiyor.
+                //
+                // ALT KÖŞELER KARE, bilerek: kartın dibi ekranın dibi,
+                // orayı yuvarlatmak duran kartta ekranın alt köşelerinden
+                // arkadaki perdeyi sızdırırdı.
+                borderTopLeftRadius: CARD_EXPANDED_CORNER_RADIUS,
+                borderTopRightRadius: CARD_EXPANDED_CORNER_RADIUS,
+                borderCurve: "continuous",
+                overflow: "hidden",
+              }}
+            >
+              {/* Kartın sabit zemini — ana fotoğrafın blur'lu hali.
+                  SHEET ÇİZİYOR, kart değil: burada scroll kartın DIŞINDA ve
+                  kayan şey kartın kendisi, zemin kartın içinde olsaydı
+                  içerikle birlikte kayardı (bkz. CardGlassBackdrop ve
+                  SwipeCard'daki `glassPanel` notu). Scroll'un DIŞINDA: dikey
+                  scroll'da yerinde kalır — sticky şeritle aynı kural.
+                  Sırası önemli: scroll'un ÖNÜNDE, her şeyin altında. */}
+              {backdropUri && <CardGlassBackdrop uri={backdropUri} />}
+
+              {/* Scroll'u CardSheetScrollView yapar — sheet'in scrollable
+                  koordinasyonu buna bağlı: içerik en üstteyken aşağı çekince
+                  sheet sürüklenip kapanır. SwipeCard'ın kendi ScrollView'ı
+                  (expanded={false}) kapalı; ikisi birden açık olsa içteki
+                  native scroll dikey jesti yutup kapatmayı bloke ediyordu.
+                  Bounce/zoom davranışı Discover'daki kartla aynı. */}
+              <CardSheetScrollView
+                style={{ flex: 1 }}
+                contentContainerStyle={{ paddingBottom: 0 }}
+                zoomImpact={photoZoom}
+                // Zemin varken alt uçtaki bounce boşluğunu o dolduruyor;
+                // kuyruk onun üstüne opak bir şerit çizerdi.
+                fillOverscroll={!backdropUri}
               >
-                {/* Kartın sabit zemini — ana fotoğrafın blur'lu hali.
-                    SHEET ÇİZİYOR, kart değil: burada scroll kartın DIŞINDA ve
-                    kayan şey kartın kendisi, zemin kartın içinde olsaydı
-                    içerikle birlikte kayardı (bkz. CardGlassBackdrop ve
-                    SwipeCard'daki `glassPanel` notu). Yatay pan'in İÇİNDE ama
-                    scroll'un DIŞINDA: kart yana kayarken zemin onunla gider,
-                    dikey scroll'da yerinde kalır — sticky şeritle aynı kural.
-                    Sırası önemli: scroll'un ÖNÜNDE, her şeyin altında. */}
-                {backdropUri && <CardGlassBackdrop uri={backdropUri} />}
-
-                {/* Scroll'u CardSheetScrollView yapar — sheet'in scrollable
-                    koordinasyonu buna bağlı: içerik en üstteyken aşağı çekince
-                    sheet sürüklenip kapanır. SwipeCard'ın kendi ScrollView'ı
-                    (expanded={false}) kapalı; ikisi birden açık olsa içteki
-                    native scroll dikey jesti yutup kapatmayı bloke ediyordu.
-                    Bounce/zoom davranışı Discover'daki kartla aynı. */}
-                <CardSheetScrollView
-                  style={{ flex: 1 }}
-                  contentContainerStyle={{ paddingBottom: 0 }}
-                  scrollEnabled={!tutorialActive}
-                  zoomImpact={photoZoom}
-                  // Zemin varken alt uçtaki bounce boşluğunu o dolduruyor;
-                  // kuyruk onun üstüne opak bir şerit çizerdi.
-                  fillOverscroll={!backdropUri}
-                >
-                  <SwipeCard
-                    profile={profile}
-                    previewMode
-                    expanded={false}
-                    // Fire varsayılan olarak KAPALI (gerekçe yukarıda);
-                    // akış kartı onu açıyor.
-                    hideFire={!allowFire}
-                    // Kartın Fire/Spark rengi ve adı moda göre.
-                    mode={mode}
-                    // `onNote` verilmezse SwipeCard not kutularını hiç
-                    // çizmiyor — kapı tek yerde.
-                    onNote={onNote}
-                    superLikesRemaining={superLikesRemaining}
-                    // Jest kapalıysa kartın altındaki X/tik satırı da kalkar:
-                    // ikisi AYNI aksiyonun iki yolu, birini bırakmak kapıyı
-                    // kapatmamak olurdu. Moderasyon ikonları kalır — SwipeCard
-                    // `hideActions` halinde onları kendi ortalanmış satırında
-                    // çiziyor (bkz. showModeration).
-                    hideActions={swipeDisabled}
-                    zoomImpact={photoZoom}
-                    onPass={() => triggerAction("left")}
-                    onLike={() => triggerAction("right")}
-                    // Fire keşifteki ile AYNI yön: "up". `allowFire` kapalıysa
-                    // buton hiç çizilmiyor, bu kol da ölü kalıyor.
-                    onFire={allowFire ? triggerFire : undefined}
-                    onReport={handleReportPress}
-                    onBlock={handleBlockPress}
-                  />
-                </CardSheetScrollView>
-
-                {/* Kartın sabit başlığı: isim/yaş YALNIZ burada — kartın
-                    içinde ayrıca çizilmiyor, o yüzden scroll beklemeden açık
-                    duruyor. Scroll'un DIŞINDA ama yatay pan'in İÇİNDE: kart
-                    yana kayarken şerit onunla gider, dikey scroll'da yerinde
-                    kalır. */}
-                <CardStickyHeader
+                <SwipeCard
                   profile={profile}
-                  alwaysOpen
-                  // Keşif'teki köşe butonlarıyla AYNI pay. Sheet artık
-                  // safe-area'nın altında başladığı için sıfır — sabit yine de
-                  // okunuyor ki iki bağlam ayrışmasın (bkz.
-                  // CARD_CHROME_TOP_DROP).
-                  topInset={CARD_CHROME_TOP_DROP}
-                  // Bandın kendi kırpması — sarmalayıcı kabukla AYNI sayı ve
-                  // aynı eğri. Kabuktan yuvarlak kalırsa üst köşelerde kabuğun
-                  // içinde kalan ama bandın dışına düşen, camsız bir dilim
-                  // görünür.
-                  radius={CARD_EXPANDED_CORNER_RADIUS}
-                  // Sohbetten açılan profil önizlemesindeki üç noktanın aynısı
-                  // — kart tam ekranı kapladığı için ekranın kendi başlığı
-                  // erişilemez oluyor. Açtığı menü orada dört satır, burada
-                  // İKİ: henüz eşleşme yok (bkz. ProfileOptionsSheet).
-                  onMenu={() => setOptionsOpen(true)}
-                  // Sol uçtaki cam "kapat" — sohbet/profil önizlemesindekinin
-                  // aynısı. Sheet'in kendi kapanış yolundan geçiyor (`onClose`
-                  // parent'ın `visible`ını düşürüyor); aşağı çekme jesti de
-                  // yatay swipe de aynen duruyor.
-                  onClose={onClose}
-                  // `progress` VERİLMİYOR → şerit hiç sönmüyor; gerekçe
-                  // yukarıda, kaldırılan hook'un yerinde.
+                  previewMode
+                  expanded={false}
+                  // Fire varsayılan olarak KAPALI (gerekçe yukarıda);
+                  // akış kartı onu açıyor.
+                  hideFire={!allowFire}
+                  // Kartın Fire/Spark rengi ve adı moda göre.
+                  mode={mode}
+                  // `onNote` verilmezse SwipeCard not kutularını hiç
+                  // çizmiyor — kapı tek yerde.
+                  onNote={onNote}
+                  superLikesRemaining={superLikesRemaining}
+                  // Okunur kartta (swipeDisabled) kapaktaki tik/X ve
+                  // panelin dibindeki X/tik satırı birlikte kalkar: ikisi
+                  // AYNI aksiyonun iki yolu, birini bırakmak kapıyı
+                  // kapatmamak olurdu. Moderasyon ikonları kalır — SwipeCard
+                  // `hideActions` halinde onları kendi ortalanmış satırında
+                  // çiziyor (bkz. showModeration).
+                  hideActions={swipeDisabled}
+                  zoomImpact={photoZoom}
+                  onPass={() => triggerAction("left")}
+                  // DÜZ BEĞENİ opt-out: `allowLike` kapalıyken prop hiç
+                  // verilmiyor → SwipeCard tiki ne kapakta ne panelin dibinde
+                  // çiziyor (bkz. prop'un notu). `undefined` vermek ŞART,
+                  // "çizilsin ama basılmasın" DEĞİL: ölü buton kullanıcıya
+                  // olmayan bir yol gösterir.
+                  onLike={allowLike ? () => triggerAction("right") : undefined}
+                  // Fire keşifteki ile AYNI yön: "up". `allowFire` kapalıysa
+                  // buton hiç çizilmiyor, bu kol da ölü kalıyor.
+                  onFire={allowFire ? triggerFire : undefined}
+                  onReport={handleReportPress}
+                  onBlock={handleBlockPress}
                 />
-              </Animated.View>
-            </GestureDetector>
-          )}
+              </CardSheetScrollView>
 
-          {/* Overlay kartın DIŞINDA — DiscoverScreen'deki gibi. İçeride olsaydı
-              kart translate'i ile overlay'in kendi translate'i toplanıp tik/çarpı
-              ekran dışına çıkıyordu. */}
-          <SwipeOverlay dragX={overlayDragX} opacity={overlayOpacity} />
+              {/* Kartın sabit başlığı: isim/yaş YALNIZ burada — kartın
+                  içinde ayrıca çizilmiyor, o yüzden scroll beklemeden açık
+                  duruyor. Scroll'un DIŞINDA: dikey scroll'da yerinde
+                  kalır. */}
+              <CardStickyHeader
+                profile={profile}
+                alwaysOpen
+                // Keşif'teki köşe butonlarıyla AYNI pay. Sheet artık
+                // safe-area'nın altında başladığı için sıfır — sabit yine de
+                // okunuyor ki iki bağlam ayrışmasın (bkz.
+                // CARD_CHROME_TOP_DROP).
+                topInset={CARD_CHROME_TOP_DROP}
+                // Bandın kendi kırpması — sarmalayıcı kabukla AYNI sayı ve
+                // aynı eğri. Kabuktan yuvarlak kalırsa üst köşelerde kabuğun
+                // içinde kalan ama bandın dışına düşen, camsız bir dilim
+                // görünür.
+                radius={CARD_EXPANDED_CORNER_RADIUS}
+                // Sohbetten açılan profil önizlemesindeki üç noktanın aynısı
+                // — kart tam ekranı kapladığı için ekranın kendi başlığı
+                // erişilemez oluyor. Açtığı menü orada dört satır, burada
+                // İKİ: henüz eşleşme yok (bkz. ProfileOptionsSheet).
+                onMenu={() => setOptionsOpen(true)}
+                // Sol uçtaki cam "kapat" — sohbet/profil önizlemesindekinin
+                // aynısı. Sheet'in kendi kapanış yolundan geçiyor (`onClose`
+                // parent'ın `visible`ını düşürüyor); aşağı çekerek kapatma
+                // jesti de aynen duruyor.
+                onClose={onClose}
+                // `progress` VERİLMİYOR → şerit hiç sönmüyor; gerekçe
+                // yukarıda, kaldırılan hook'un yerinde.
+              />
+            </View>
+          )}
         </View>
       </AppBottomSheet>
 
@@ -661,52 +492,6 @@ export default function LikerSwipeModal({
           onClose?.();
         }}
       />
-
-      {/* Ayrı bir RN Modal: sheet'in de üstünde kendi penceresi olduğu için
-          demo bitene kadar tüm dokunmaları yutar. */}
-      <Modal
-        visible={visible && tutorialActive}
-        transparent
-        statusBarTranslucent
-        animationType="none"
-        onRequestClose={() => {}}
-      >
-        <Animated.View
-          style={[
-            {
-              flex: 1,
-              backgroundColor: colors.mediaScrimSoft,
-              flexDirection: "row",
-              alignItems: "center",
-              justifyContent: "space-between",
-              paddingHorizontal: 24,
-            },
-            tutorialOverlayStyle,
-          ]}
-        >
-          {/* Oklar `onMedia` (sabit beyaz), `text` DEĞİL: perde iki modda da
-              siyah (mediaScrimSoft) — moda dönen mürekkep açık temada siyah
-              oku siyah perdeye çiziyordu. */}
-          <Animated.View style={leftArrowStyle}>
-            <SFIcon
-              name="arrow.left"
-              fallback={ArrowLeft}
-              size={64}
-              color={colors.onMedia}
-              strokeWidth={1.5}
-            />
-          </Animated.View>
-          <Animated.View style={rightArrowStyle}>
-            <SFIcon
-              name="arrow.right"
-              fallback={ArrowRight}
-              size={64}
-              color={colors.onMedia}
-              strokeWidth={1.5}
-            />
-          </Animated.View>
-        </Animated.View>
-      </Modal>
     </>
   );
 }

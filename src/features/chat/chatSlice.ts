@@ -3,6 +3,9 @@ import chatService, { HISTORY_PAGE_SIZE } from '@/features/chat/chatService';
 import { messageContentEqual } from '@/features/chat/messageEquality';
 import { contentTypeToNumber } from '@/features/chat/contentType';
 import { utcTime } from '@/shared/utils/dateUtc';
+// Mod tercihi diskten — `useAppMode`tan DEĞİL (o modül react-redux hook'ları
+// çekiyor; swipeSlice'taki aynı gerekçe).
+import { loadAppMode } from '@/features/discover/modePrefs';
 import { chatErrorCodeOf, chatErrorEffect } from '@/shared/constants/responseCodes';
 import type {
   ChatState,
@@ -84,7 +87,17 @@ export const fetchHistory = createAsyncThunk(
 
 export const fetchUnreadCount = createAsyncThunk(
   'chat/fetchUnreadCount',
-  async () => chatService.getUnreadCount() as Promise<number>
+  /**
+   * ⚠️ MOD ARGÜMAN DEĞİL, BURADA ÇÖZÜLÜYOR — `swipeSlice.fetchWhoLikedMe`
+   * ile aynı gerekçe: çağıranların hepsi (AppNavigator'ın bağlantı/foreground
+   * turları, outbox, ekranlar) sabit referanslı callback'lerin içinde ve modu
+   * kapanıştan okusalar bayat değere tutunurlardı. Tercihin kaynağı disk
+   * (modePrefs); state'ten gereken tek şey anahtarın kullanıcı kimliği.
+   */
+  async (_: void, { getState }) => {
+    const userId = (getState() as any)?.auth?.user?.id;
+    return chatService.getUnreadCount(loadAppMode(userId)) as Promise<number>;
+  }
 );
 
 export const fetchChatQuota = createAsyncThunk(
@@ -1089,5 +1102,31 @@ export const {
   resetChat,
   decrementQuotaLocally,
 } = chatSlice.actions;
+
+/**
+ * Sekme rozetinin SAYISI — SEÇİLİ MODUN okunmamışları.
+ *
+ * Kaynak satırların kendisi, `unreadTotal` DEĞİL: o alan modsuz (sunucunun
+ * toplamı + iyimser artış/azalışlar) ve Arkadaş modunda Flört mesajlarını da
+ * sayardı — "rozet 3, sohbet 2" vakasının mod hâli. Satırlardan toplamak
+ * güvenli, çünkü `/conversations` SAYFALANMIYOR: liste tamsa toplam da tam.
+ *
+ * MODU OLMAYAN satır (sunucu söylemiyor / yerel olarak açılmış) SAYILIYOR —
+ * listede de görünüyor (bkz. MessagesScreen > modeConversations). İki yer aynı
+ * kuralı paylaşmak zorunda, yoksa rozet listede olmayan bir mesajı sayar.
+ *
+ * Liste HENÜZ YOKSA (soğuk açılış, hydrate öncesi) `unreadTotal`a düşülüyor:
+ * o değer `/unread-count?mode=` ile çekiliyor, yani o da mod kapsamlı.
+ */
+export const selectUnreadForMode = (state: any, mode: string): number => {
+  const rows: ConversationListItemDto[] = state?.chat?.conversations ?? [];
+  if (!rows.length) return state?.chat?.unreadTotal ?? 0;
+  let total = 0;
+  for (const c of rows) {
+    if (c.mode && c.mode !== mode) continue;
+    total += c.unreadCount || 0;
+  }
+  return total;
+};
 
 export default chatSlice.reducer;

@@ -859,12 +859,19 @@ export function insertConversationFromMatch(p: {
   partnerDisplayName: string;
   partnerProfileImageUrl?: string;
   matchedAt: string;
+  /**
+   * Eşleşmenin modu — `MatchNotification.mode` (payload'da yoksa `undefined`
+   * bırakılır, "Dating" VARSAYILMAZ). Satır buradan doğduğu için mod ancak
+   * burada yazılabiliyor: `/conversations` cevabı gelene kadar yeni sohbet
+   * aksi hâlde modsuz durur ve iki sekmede birden görünürdü.
+   */
+  mode?: string | null;
 }): void {
   getChatDb().run(
     `INSERT INTO conversations (conversation_id, match_id, partner_user_id,
        partner_display_name, partner_profile_image_url, last_message_at,
-       last_message_at_ms, unread_count, is_active, sort_order)
-     VALUES (?,?,?,?,?,?,?,0,1,-1)
+       last_message_at_ms, unread_count, is_active, sort_order, mode)
+     VALUES (?,?,?,?,?,?,?,0,1,-1,?)
      ON CONFLICT(conversation_id) DO NOTHING`,
     [
       p.conversationId,
@@ -874,6 +881,7 @@ export function insertConversationFromMatch(p: {
       p.partnerProfileImageUrl ?? null,
       p.matchedAt ?? null,
       p.matchedAt ? utcTime(p.matchedAt) : 0,
+      p.mode ?? null,
     ],
   );
 }
@@ -1183,8 +1191,8 @@ export function upsertConversations(
            last_message_at_ms, last_message_content_type, unread_count, is_active,
            is_unlimited, remaining_messages, requires_premium, restorable_until,
            restorable_until_known, deactivated_by_me, sort_order,
-           closed_by_me, closed_reason)
-         VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)
+           closed_by_me, closed_reason, mode)
+         VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)
          ON CONFLICT(conversation_id) DO UPDATE SET
            match_id                  = excluded.match_id,
            partner_user_id           = excluded.partner_user_id,
@@ -1240,7 +1248,13 @@ export function upsertConversations(
                                 ELSE NULL END,
            closed_reason = CASE WHEN excluded.is_active = 0
                                 THEN COALESCE(excluded.closed_reason, conversations.closed_reason)
-                                ELSE NULL END`,
+                                ELSE NULL END,
+
+           -- (6) MOD: sunucu söylüyorsa onun, SUSUYORSA eldeki korunuyor.
+           -- Körlemesine yazmak, alanı taşımayan bir yazıcıdan (eski sürüm ya
+           -- da ileride eklenecek bir yol) gelen tek satırın modu silmesine ve
+           -- sohbetin iki modda birden görünmesine yol açardı.
+           mode = COALESCE(excluded.mode, conversations.mode)`,
         [
           c.conversationId,
           c.matchId ?? null,
@@ -1269,6 +1283,7 @@ export function upsertConversations(
           index,
           c.closedByMe === undefined ? null : c.closedByMe ? 1 : 0,
           c.closedReason ?? null,
+          c.mode ?? null,
           active,
         ],
       );

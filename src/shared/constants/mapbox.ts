@@ -17,6 +17,21 @@ export const MAPBOX_STYLE_DARK = "uygarcapar/cmoydix5b000501sh01nchpmh";
 /** Açık tema haritası — Studio'daki açık kardeş stil. */
 export const MAPBOX_STYLE_LIGHT = "uygarcapar/cmt75ib0000as01sgh2auhnfd";
 
+/**
+ * MAPBOX'IN KENDİ VARSAYILAN SOKAK HARİTASI.
+ *
+ * Studio stillerimiz bilinçli olarak neredeyse boş: kartın arkasında duran bir
+ * dokuya ihtiyaç vardı, yol adı ya da park okunmasına değil. Kampüs yüzeyinde
+ * soru değişiyor — kullanıcı "kampüsüm neresi" diye bakıyor ve orada yolların,
+ * yeşil alanların, bina adlarının görünmesi işin kendisi.
+ *
+ * ⚠️ TEMADAN BAĞIMSIZ, tek stil. `streets-v12` açık bir harita ve koyu temada
+ * da öyle kalıyor: yüzey bir İLLÜSTRASYON taşıyor (kampüs diorama'sı) ve onun
+ * paleti de temadan bağımsız — ikisi birlikte her iki temada aynı görünüyor.
+ * Koyu bir kardeş stile geçilirse figürün tonları yeniden denenmeli.
+ */
+export const MAPBOX_STYLE_DEFAULT = "mapbox/streets-v12";
+
 // Style'ı her güncelleyip Publish ettiğinde bu sayıyı +1 yap: URL cache
 // anahtarı olduğu için (expo-image disk cache + Mapbox CDN) sürüm artmadan
 // eski görsel dönmeye devam eder.

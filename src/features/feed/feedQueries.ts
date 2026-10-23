@@ -442,13 +442,16 @@ export function useCreatePost() {
     mutationFn: ({
       body,
       isAnonymous,
-      topic,
+      topics,
     }: {
       body: string;
       isAnonymous: boolean;
-      /** Zorunlu konu — composer seçilmeden gönderime izin vermiyor. */
-      topic: string;
-    }) => feedService.createPost(body, isAnonymous, topic),
+      /**
+       * Zorunlu konular — composer en az biri seçilmeden gönderime izin
+       * vermiyor. ÇOKLU; wire'a nasıl indiği feedService.createPost'ta.
+       */
+      topics: string[];
+    }) => feedService.createPost(body, isAnonymous, topics),
     onSuccess: (result) => {
       writeFeedQuota(qc, result.quota);
       // Gönderilerim'i invalidate ETMİYORUZ, yeni gönderiyi ÖNE EKLİYORUZ:

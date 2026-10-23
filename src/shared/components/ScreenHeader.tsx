@@ -48,6 +48,33 @@ export default function ScreenHeader({
   // başlığını İÇERİKTE büyük olarak taşıyan ekranlar (Beğeniler, Mesajlar).
   // Orada header başlığı da hep görünseydi aynı başlık ekranda iki kez yazardı.
   titleOnScroll = showLogo,
+  /**
+   * Scroll'la beliren BULANIK ZEMİN çizilsin mi.
+   *
+   * Varsayılan `true` — uygulamadaki her ekranda içerik şeridin altından
+   * geçiyor ve zemin onu okunur tutuyor.
+   *
+   * `false` YALNIZ kendi zeminini taşıyan ekranlar için: akışta tam ekran
+   * kampüs haritası var ve onun kendi progressive blur'u ZATEN bu bandı
+   * kaplıyor (bkz. FeedMapStrip). İkisi üst üste binince kullanıcı aşağı
+   * kaydırdıkça tepede ikinci bir perde beliriyordu.
+   *
+   * ⚠️ BEDELİ VAR: kaydırıldıkça kartlar şeridin altına giriyor ve zemin
+   * olmadan sekme adları opak bir kartın üstünde kalıyor. Kapatan ekran bu
+   * okunurluğu kendi katmanıyla sağlamak zorunda.
+   */
+  background = true,
+  /**
+   * Bulanık zeminin YÜKSEKLİĞİ. Verilmezse şeridin tamamı (`insets.top + 90`).
+   *
+   * Akış bunu KISA veriyor: yalnız sekme şeridinin altına kadar. Sebebi iki
+   * katmanın üst üste binmesi — kampüs haritasının kendi progressive blur'u
+   * başlığı ve pill'leri zaten kaplıyor, şeridin tam boy zemini de çizilince
+   * aşağı kaydırdıkça tepede ikinci bir perde beliriyordu. Kısa zemin yalnız
+   * SEKMELERİ kurtarıyor: kartlar şeridin altına girdiğinde harita blur'u
+   * onların ARKASINDA kalıyor ve oraya yetişemiyor.
+   */
+  backgroundHeight,
 }: any) {
   const insets = useSafeAreaInsets();
 
@@ -139,6 +166,7 @@ export default function ScreenHeader({
       {/* SENİN ÖRNEĞİNDEKİ PROGRESSIVE BLUR SARMALAYICISI
         Scroll yapıldıkça headerBackgroundStyle sayesinde yavaşça belirir.
       */}
+      {background ? (
       <Animated.View
         style={[
           {
@@ -146,7 +174,7 @@ export default function ScreenHeader({
             top: 0,
             left: 0,
             right: 0,
-            height: headerH,
+            height: backgroundHeight ?? headerH,
           },
           headerBackgroundStyle,
         ]}
@@ -177,6 +205,7 @@ export default function ScreenHeader({
           />
         </MaskedView>
       </Animated.View>
+      ) : null}
 
       {/* --- İçerikler (Başlık, Logo, Buton) --- */}
       {title ? (

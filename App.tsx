@@ -26,6 +26,7 @@ import { colors } from "./src/shared/theme/colors";
 import RenderHudOverlay from "./src/shared/debug/RenderHudOverlay";
 import PinchZoomOverlay from "./src/shared/components/PinchZoomOverlay";
 import CropperOverlay from "./src/shared/components/cropper/CropperOverlay";
+import CameraCaptureOverlay from "./src/shared/components/camera/CameraCaptureOverlay";
 import SelfieVerificationOverlay from "./src/features/profile/selfie/SelfieVerificationOverlay";
 import { PERF_HUD } from "./src/shared/debug/flags";
 import { StatusBar } from "expo-status-bar";
@@ -208,6 +209,15 @@ function App() {
                     açılırdı. `key={mode}` remount'unun da dışında: tema değişimi
                     kırpma ortasında promise'i düşürmemeli. */}
                 <CropperOverlay />
+                {/* Uygulama içi kamera — cropper ile AYNI gerekçeyle
+                    BottomSheetModalProvider'ın DIŞINDA (portal host'u
+                    children'dan sonra boyanıyor, içeride kalsa profil
+                    düzenleme modalının altında açılırdı) ve `key={mode}`
+                    remount'unun dışında. Cropper'ın ALTINDA: akış çek → kırp
+                    sırayla gidiyor, kamera kapanmadan kırpıcı açılmıyor, ama
+                    bir kare üst üste bindiğinde üstte kalması gereken kırpma
+                    ekranı. */}
+                <CameraCaptureOverlay />
                 {/* Selfie doğrulama — cropper ile AYNI gerekçeyle
                     BottomSheetModalProvider'ın dışında: kamera, profil
                     düzenleme modalının (o da bir sheet) altında kalmamalı.

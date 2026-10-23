@@ -9,7 +9,6 @@ import {
 } from "react-native";
 import * as Haptics from "expo-haptics";
 import { X, Check, Info, ShoppingBag } from "@/shared/icons";
-import { LinearGradient } from "expo-linear-gradient";
 import SFIcon from "@/shared/components/SFIcon";
 import SkeletonBox from "@/shared/components/SkeletonBox";
 import AnimatedPressable from "@/shared/components/AnimatedPressable";
@@ -27,7 +26,11 @@ import {
   subscriptionRenewalNote,
   useSubscriptionView,
 } from "@/features/profile/subscriptionView";
-import { colors, gradients, ink, onMediaAt } from "@/shared/theme/colors";
+// Plan kartının zemini upsell kartıyla ORTAK (gradyan + varsa fotoğraf).
+import { PlusCardArt } from "@/features/profile/plusCardArt";
+import { useAppMode } from "@/features/discover/useAppMode";
+import { modeFireTint } from "@/features/discover/modeTheme";
+import { colors, ink, onMediaAt } from "@/shared/theme/colors";
 
 /**
  * Plan kartının yarıçapı — iskelet de aynı sayıyı kullanıyor. 40, çünkü
@@ -45,10 +48,20 @@ const PLAN_CARD_RADIUS = 40;
  * boş boş uzuyordu. Bedeli: `checkIntroEligibility` cevabı deneme satırını
  * getirirse kart bir kez uzar.
  *
+ * 208 → 216: fiyat 18pt'den 26pt'ye çıktı ve satır kutusu ~8pt büyüdü. Fiyat
+ * puntosuna dokunan bu sayıyı da güncellesin — yoksa katalog gelince kart
+ * iskeletin bıraktığı boşluğu taşırır ve sayfa bir kez zıplar.
+ *
  * İçerik daha kısa olduğunda fark alta düşüyor, dağılmıyor: alt şerit
  * `marginTop: "auto"` ile kartın dibine çivili (bkz. renderItem).
+ *
+ * Deneme satırı artık kartın İLK karesinde geliyor (iskelet eligibility cevabını
+ * da bekliyor — bkz. usePurchaseFlow > introPending), yani kart "sonradan
+ * uzamıyor"; hak kazanılmış kullanıcıda iskeletten kart boyuna geçiş tek karede
+ * oluyor. Satır koşullu olduğu için iskelet ona yer AYIRAMIYOR: ayırsa hak
+ * kazanmayan kullanıcıda kart açılırken kısalırdı.
  */
-const PLAN_CARD_HEIGHT = 208;
+const PLAN_CARD_HEIGHT = 216;
 
 /**
  * lit plus paywall'ının görsel parçaları. Tek kabı var: ProfileScreen'in "plus"
@@ -166,6 +179,31 @@ function SelectedBadge({ active, label, loading }: any) {
 }
 
 /**
+ * Kartın gövdesindeki AÇIKLAMA SATIRLARININ ortak tipografisi: plan cümlesi
+ * ("Kısa bir deneme için…") ve deneme uyarısı ("İlk 3 gün ücretsiz…").
+ *
+ * TEK KAYNAK, çünkü ikisi tek bir paragraf gibi okunmalı: alt alta iki satırın
+ * puntosu/satır boşluğu birbirinden ayrılınca ikincisi ilkinin dipnotu gibi
+ * duruyordu (önce 13/17 ve 13/16 vardı). Birinin boyunu değiştiren ikisini
+ * birden değiştirsin.
+ *
+ * Ton `onMediaMuted`: kartın kendi medya dolgusunun üstünde, fiyattan bir adım
+ * geride.
+ *
+ * Sabit değil FONKSİYON: palet mutable ve modül gövdesi uygulama ömründe bir kez
+ * çalışıyor — `colors` modül kapsamında okunursa ilk temanın değeri donar. Tema
+ * değişiminde kök remount olduğu için RENDER sırasında okumak güvenli
+ * (bkz. shared/theme/colors.ts).
+ */
+const planDescText = () =>
+  ({
+    color: colors.onMediaMuted,
+    fontSize: 13,
+    fontWeight: "400",
+    lineHeight: 17,
+  }) as const;
+
+/**
  * Kartın periyoda göre değişen bilgisinin (fiyat + açıklama) tazelenmesi.
  *
  * KAPSAM DAR ve öyle kalmalı: kartın tamamı — marka kelimesi, alev, alt şerit —
@@ -221,16 +259,9 @@ function PlanFacts({ plan, t, isTrialEligible, isPremium, premiumNote }: any) {
   // DEĞİL — periyot yazmak yanlış bilgi olurdu.
   if (isPremium) {
     return premiumNote ? (
-      <Text
-        style={{
-          color: colors.onMediaMuted,
-          fontSize: 13,
-          fontWeight: "400",
-          lineHeight: 17,
-        }}
-      >
-        {premiumNote}
-      </Text>
+      // Satın alınabilir kartın açıklama satırlarıyla aynı tipografi: kartın
+      // gövdesi iki halde de aynı yerde, aynı puntoda okunuyor.
+      <Text style={planDescText()}>{premiumNote}</Text>
     ) : null;
   }
 
@@ -272,8 +303,12 @@ function PlanFacts({ plan, t, isTrialEligible, isPremium, premiumNote }: any) {
         <Text
           style={{
             color: colors.onMedia,
-            fontSize: 18,
-            fontWeight: "400",
+            // Kartın gövdesindeki en büyük sayı: fiyat, marka kelimesinden
+            // sonra okunan ikinci şey. Punto büyüyünce kartın BOYU da
+            // büyüyor — PLAN_CARD_HEIGHT (iskeletin ayırdığı yer) bu satıra
+            // bağlı, ikisi birlikte değişir.
+            fontSize: 26,
+            fontWeight: "600",
           }}
         >
           {plan.priceString ?? "—"}
@@ -282,7 +317,9 @@ function PlanFacts({ plan, t, isTrialEligible, isPremium, premiumNote }: any) {
           <Text
             style={{
               color: colors.onMediaMuted,
-              fontSize: 15,
+              // Fiyatla birlikte büyüdü ama ORANI korunarak: bu fiyatın
+              // birimi, onunla aynı ağırlıkta okunmamalı.
+              fontSize: 16,
               fontWeight: "400",
               marginLeft: 5,
             }}
@@ -292,28 +329,13 @@ function PlanFacts({ plan, t, isTrialEligible, isPremium, premiumNote }: any) {
         ) : null}
       </View>
       {planDesc ? (
-        <Text
-          style={{
-            color: colors.onMediaMuted,
-            fontSize: 13,
-            fontWeight: "400",
-            marginTop: 6,
-            lineHeight: 17,
-          }}
-        >
-          {planDesc}
-        </Text>
+        <Text style={[planDescText(), { marginTop: 6 }]}>{planDesc}</Text>
       ) : null}
       {planShowTrial && (
-        <Text
-          style={{
-            color: colors.onMediaMuted,
-            fontSize: 13,
-            fontWeight: "400",
-            marginTop: 4,
-            lineHeight: 16,
-          }}
-        >
+        // Deneme uyarısı plan cümlesiyle AYNI tipografide (bkz. planDescText) —
+        // ikisi kartın tek açıklama bloğu. Yalnız üst payı daha dar: cümlenin
+        // devamı gibi okunsun.
+        <Text style={[planDescText(), { marginTop: 4 }]}>
           {t('purchase.cta.trialDisclaimer', { days: planTrialDays, price: plan.priceString ?? "—", period: planPeriodLabel })}
         </Text>
       )}
@@ -552,6 +574,19 @@ export function PurchaseHeading({ flow }: { flow: PurchaseFlow }) {
             ? 'discover.premium.descriptionPremium'
             : 'discover.premium.description',
         )}
+        {/* Mod notu AYNI PARAGRAFTA, ayrı bir satır değil: iki moda birden
+            geçerli olmak aboneliğin bir özelliği, sayfanın ikinci bir
+            duyurusu değil.
+
+            Abone olan da görüyor: "ikisinde birden geçerli" satın alma
+            öncesi bir vaat değil, üyeliğin kapsamı.
+
+            YALNIZ BURADA — ProfileScreen'in upsell kartı aynı
+            `description` anahtarını okuyor ama orada metin üç satıra
+            kırpılıyor (`numberOfLines={3}`) ve dördüncü cümle tabloyu
+            iteceğine görünmeden kesilirdi. */}
+        {" "}
+        {t('discover.premium.descriptionModes')}
       </Text>
     </View>
   );
@@ -800,6 +835,10 @@ export function PurchasePlanCarousel({ flow }: { flow: PurchaseFlow }) {
   // Mağaza linki YALNIZ yapılacak iş varken kalıyor (ödeme sorunu / iptal):
   // ikisi de uygulama içinden düzeltilemiyor ve üyelik kartı silindiğinden beri
   // bu kart oraya açılan TEK kapı (bkz. subscriptionNeedsStoreAction).
+  // İndirim pill'inin rengi buna bağlı (Flört kırmızı / Arkadaş yeşil).
+  // Kartın ZEMİNİ moda göre DÖNMÜYOR: gradyan markanın kendisi, mod vurgusu
+  // değil — dönen tek şey kartın üstündeki o tek rozet.
+  const { mode } = useAppMode();
   const subscriptionView = useSubscriptionView();
   const needsStoreAction =
     isPremium && subscriptionNeedsStoreAction(subscriptionView.kind);
@@ -889,26 +928,23 @@ export function PurchasePlanCarousel({ flow }: { flow: PurchaseFlow }) {
           minHeight: PLAN_CARD_HEIGHT,
           borderRadius: PLAN_CARD_RADIUS,
           borderCurve: "continuous",
-          // Çerçeve: `hairline` DEĞİL `mediaHairline`. İkisi de %10'luk
-          // bir çizgi ama hairline modla dönüyor — açık modda siyaha
-          // dönüp kırmızı kartın üstünde koyu bir kontur bırakırdı.
-          borderWidth: 0.5,
-          borderColor: colors.mediaHairline,
+          // ÇERÇEVE YOK. Eskiden %10'luk bir `mediaHairline` konturu vardı;
+          // zemin düz gradyanken kartın kenarını sayfadan ayırıyordu, zemin
+          // fotoğraf olunca kareyi çerçeveye alan ince bir çizgiye dönüştü.
+          // Kenarı artık fotoğrafın kendi kontrastı çiziyor.
           overflow: "hidden",
         }}
       >
-        {/* Dolgu ProfileScreen'deki upsell kartının gradyanının TA
-            KENDİSİ (litPlusCard) — iki yüzey aynı kart ailesinden
-            okunsun diye.
+        {/* Dolgu ProfileScreen'deki upsell kartının zemininin TA KENDİSİ
+            (PlusCardArt) — iki yüzey aynı kart ailesinden okunsun diye.
+            Gradyan, varsa fotoğraf ve perdesi orada; buradaki View yalnız
+            payları kuruyor.
 
             Dolgu MEDYA sayıldığı için içindeki bütün mürekkep `onMedia`
             ailesinden, yani her iki modda da BEYAZ: `text` açık modda
             siyaha döner ve kırmızı gradyanda okunmazdı (palet
             sözleşmesi, colors.ts). */}
-        <LinearGradient
-          colors={gradients.litPlusCard}
-          start={{ x: 0, y: 0 }}
-          end={{ x: 1, y: 1 }}
+        <View
           style={{
             // Dolgu kartın `minHeight`ini doldurmalı, yoksa kısa
             // içerikte altta zeminsiz bir şerit kalırdı.
@@ -921,6 +957,12 @@ export function PurchasePlanCarousel({ flow }: { flow: PurchaseFlow }) {
             paddingBottom: 30,
           }}
         >
+          {/* Zemin. `contentPosition` SAĞ: kart deneme satırıyla bir kez
+              uzadığında `cover` yatayda kırpıyor ve sağ kenar sabitlenince
+              kırpılan yer fotoğrafın boş sol tarafı oluyor — kadrajdaki
+              insanlar yerinde kalıyor, metnin altındaki boşluk da. */}
+          <PlusCardArt surface="plan" contentPosition="right" />
+
           {/* Ad satırı: marka kelimesi + (abonede) durum rozeti, ikisi
               bitişik. Satırın sağ ucunda bir zamanlar marka alevi duruyordu,
               KALDIRILDI (ProfileScreen'in upsell kartındaki eşiyle birlikte) —
@@ -1048,12 +1090,14 @@ export function PurchasePlanCarousel({ flow }: { flow: PurchaseFlow }) {
                   kadar kısalıyordu. Görünmez kopya boyu sabitliyor,
                   `space-between` de rozeti sağda tutuyor. */}
               {
-                // Şeritteki "Best" rozetiyle AYNI kırmızı ve AYNI beyaz
-                // yazı — ikisi de aynı bilgiyi taşıyor.
+                // Dolgu MODA GÖRE: Flört'te marka kırmızısı, Arkadaş'ta
+                // yeşil (`modeFireTint` — Fire/Spark butonuyla aynı kaynak).
+                // Sabit kırmızı, Arkadaş modundaki kullanıcıya uygulamanın
+                // geri kalanında hiç görmediği bir renk gösteriyordu.
                 //
-                // Dolgu kartın kendi kırmızısından koyu ama yakın: ince
-                // beyaz çizgi pill'i zeminden koparıyor. (Cam bir sürümü
-                // denendi, kartın gradyanını sadece karartıyordu.)
+                // Beyaz yazı ve ince beyaz çizgi iki modda da aynı: ikisi de
+                // medya mürekkebi, pill'i zeminden koparan şey o çizgi.
+                // (Cam bir sürümü denendi, zemini sadece karartıyordu.)
                 <View
                   testID={
                     planSavings != null
@@ -1072,7 +1116,7 @@ export function PurchasePlanCarousel({ flow }: { flow: PurchaseFlow }) {
                     borderRadius: 999,
                     borderCurve: "continuous",
                     overflow: "hidden",
-                    backgroundColor: gradients.swipeHeart[0],
+                    backgroundColor: modeFireTint(mode),
                     borderWidth: 0.5,
                     borderColor: onMediaAt(0.4),
                   }}
@@ -1095,7 +1139,7 @@ export function PurchasePlanCarousel({ flow }: { flow: PurchaseFlow }) {
               />
             </View>
           )}
-        </LinearGradient>
+        </View>
       </AnimatedPressable>
       {/* Sayfa noktaları KALDIRILDI: hangi periyotta olunduğunu artık üstteki
           pill şeridi söylüyor, iki gösterge aynı şeyi anlatıyordu. */}

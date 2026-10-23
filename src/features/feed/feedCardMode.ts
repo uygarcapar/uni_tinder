@@ -34,6 +34,42 @@ export function resolveCardMode(
 }
 
 /**
+ * Kartta HANGİ AKSİYONLAR çizilecek — moda göre, saf fonksiyonda.
+ *
+ * ── Kural (istek) ───────────────────────────────────────────────────────────
+ * • FLÖRT'te DÜZ BEĞENİ YOK. Sinyal ya Fire ya da not olmak zorunda: ikisi de
+ *   bir bedel taşıyor (Fire kotadan/krediden, not ayrı consumable'dan) ve ikisi
+ *   de karşı tarafa NEDEN'i gösteriyor — not yorumuyla, Fire alevle. Akış
+ *   kampüsün açık meydanı; oradan tek dokunuşla dağıtılan bedelsiz beğeni
+ *   flörtü gürültüye çeviriyordu.
+ * • ARKADAŞ'ta HER ŞEY SERBEST, not da dahil. Arkadaşlıkta "kendini kanıtla"
+ *   kapısı yok: düz beğeni de, Spark da, not da açık.
+ * • Mod YOKSA (`resolveCardMode` null döndü) hiçbiri — kart salt okunur.
+ *
+ * ⚠️ Karar `cardMode` ile veriliyor, Keşif'te SEÇİLİ modla değil: aksiyon hangi
+ * modda GİDİYORSA kuralı o mod koyuyor. Yazar yalnız Flört'te açıkken kullanıcı
+ * Arkadaş sekmesinde olsa bile gidecek şey bir flört beğenisidir.
+ *
+ * ⚠️ Bu yalnız İSTEMCİ KAPISI. Sunucu düz beğeniyi Flört'te de kabul ediyor
+ * (Keşif'teki deste aynı ucu kullanıyor) — buradaki iş butonu hiç çizmemek,
+ * "gönder ama reddedilsin" değil.
+ */
+export type FeedCardActions = {
+  /** Düz beğeni (tik butonu) çizilsin mi. */
+  like: boolean;
+  /** Fire/Spark butonu çizilsin mi. */
+  fire: boolean;
+  /** Fotoğraf/prompt altındaki not kutuları çizilsin mi. */
+  note: boolean;
+};
+
+export function feedCardActions(mode: AppMode | null): FeedCardActions {
+  if (mode === "Friends") return { like: true, fire: true, note: true };
+  if (mode === "Dating") return { like: false, fire: true, note: true };
+  return { like: false, fire: false, note: false };
+}
+
+/**
  * Sunucudan gelen listeyi temizler: bilinmeyen değerler ELENİYOR.
  *
  * Tanınmayan bir mod sorgu parametresine girerse sunucu 400 döner; ayrıca

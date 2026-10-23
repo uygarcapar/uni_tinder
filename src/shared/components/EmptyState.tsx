@@ -21,6 +21,15 @@ export default function EmptyState({
   // Pill'in yazı rengi. Varsayılan `text` (modla döner); litPlus dolgunun
   // üstünde koyu mürekkep isteyen çağıranlar `onMediaInverse` geçiyor.
   buttonLabelColor = colors.text,
+  // Pill'in DOLGUSU. Varsayılan litPlus kırmızısı; Keşif/Beğeniler gibi
+  // MOD yüzeyleri `modeAccent(mode)` geçiyor (Friends'te yeşil).
+  //
+  // ⚠️ Neden prop, neden burada mod okunmuyor: bu bileşenin 12 çağıranı var ve
+  // çoğu mod yüzeyi DEĞİL (sohbet, bildirimler, engellenenler, profil, akış).
+  // İçinde `useAppMode()` çağrılsa Friends moduna geçen kullanıcının sohbet
+  // boş durumu da yeşile dönerdi — mod rengi "seçili mod" değil "bu yüzey
+  // hangi modun işini yapıyor" demek. Karar çağıranda.
+  buttonColor = colors.litPlus,
 }: any) {
   return (
     <View
@@ -89,8 +98,8 @@ export default function EmptyState({
       )}
 
       {/* Aksiyon butonu — DiscoverScreen'in boş deste kartındaki pill'in aynısı
-          (litPlus zemin, 999 radius, 15/600 metin). Orada sola yaslı duruyor,
-          burada boş durumun geri kalanı gibi ortalanır. */}
+          (999 radius, 15/600 metin, dolgu `buttonColor`). Orada sola yaslı
+          duruyor, burada boş durumun geri kalanı gibi ortalanır. */}
       {!!buttonLabel && !!onButtonPress && (
         <TouchableOpacity
           onPress={onButtonPress}
@@ -102,7 +111,7 @@ export default function EmptyState({
             borderCurve: "continuous",
             paddingHorizontal: 20,
             paddingVertical: 12,
-            backgroundColor: colors.litPlus,
+            backgroundColor: buttonColor,
           }}
         >
           {/* `buttonBusy`: aksiyon uçuşta. Etiket KALDIRILMIYOR, yalnız
