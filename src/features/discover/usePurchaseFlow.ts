@@ -44,6 +44,13 @@ import { showInfoToast } from "@/shared/services/toaster";
 // native promise'inin bir garantisi yok; spinner'ı süresiz asılı bırakmamak için.
 const OFFERING_FETCH_TIMEOUT_MS = 20000;
 
+// Deneme hak kazanma sorgusu için tavan. Kart artık bu cevabı BEKLİYOR (bkz.
+// introPending), yani takılan bir native promise kartı sonsuza kadar iskelette
+// tutardı. Tavanda boş haritaya düşüyoruz: deneme satırı çizilmez, kartın geri
+// kalanı görünür. Katalogdan çok daha kısa — sorgu zaten yereldeki
+// StoreKit/RC cache'inden dönüyor.
+const INTRO_ELIGIBILITY_TIMEOUT_MS = 4000;
+
 // Plan kartının genişliği — yalnız İSKELET için: gerçek kart artık tek ve kabına
 // geriliyor. (Kartlar bir zamanlar yatay bir listeydi; kaydırma offset'i
 // PLAN_SNAP ve kartlar arası PLAN_CARD_GAP onunla birlikte kaldırıldı.)
@@ -392,17 +399,38 @@ export function usePurchaseFlow({ active, onCompleted, onSuccess }: Options) {
   useEffect(() => {
     if (!active || !introProductKey) return;
     let cancelled = false;
+    const timeoutId = setTimeout(() => {
+      if (!cancelled && mountedRef.current) setIntroEligibility({});
+    }, INTRO_ELIGIBILITY_TIMEOUT_MS);
     checkIntroEligibility(introProductKey.split("|")).then((map) => {
       if (!cancelled && mountedRef.current) setIntroEligibility(map);
     });
     return () => {
       cancelled = true;
+      clearTimeout(timeoutId);
     };
   }, [active, introProductKey]);
   const isTrialEligible = useCallback(
     (productId) => Boolean(productId && introEligibility?.[productId]),
     [introEligibility],
   );
+
+  // KART İSKELETİ ELIGIBILITY CEVABINI DA BEKLİYOR.
+  //
+  // Katalog gelir gelmez kart çiziliyordu, ama deneme satırı katalogdan SONRA
+  // gelen İKİNCİ bir cevaba bağlı (yukarıdaki effect: plans → productId'ler →
+  // checkIntroEligibility). Sonuç olarak kartın metinleri tek tek açılıyordu:
+  // önce fiyat + plan cümlesi, bir süre sonra altına deneme satırı — ve o satır
+  // geldiğinde kart bir kez uzayıp altındaki tabloyu aşağı itiyordu.
+  //
+  // Bu bayrakla iskelet iki cevap da elde olana kadar duruyor; kart tek karede,
+  // bütün satırlarıyla birden açılıyor. Takılan sorguya karşı tavan var (bkz.
+  // INTRO_ELIGIBILITY_TIMEOUT_MS).
+  //
+  // ABONEDE beklenmiyor: kartın gövdesinde deneme satırı hiç çizilmiyor (tek
+  // bir durum cümlesi var — bkz. PlanFacts), bekleyecek bir cevap yok.
+  const introPending =
+    !isPremium && introProductKey !== "" && introEligibility === null;
 
   // Seçim boşsa default'a düş (plan listesi geç geldiğinde de burası doldurur).
   useEffect(() => {
@@ -554,7 +582,10 @@ export function usePurchaseFlow({ active, onCompleted, onSuccess }: Options) {
     t,
     isPremium,
     plans,
-    loadingOffering,
+    // Kabın gördüğü tek "yükleniyor": katalog VE deneme hak kazanma cevabı.
+    // İkisi ayrı ayrı sızınca kartın metinleri iki dalgada geliyordu (bkz.
+    // introPending).
+    loadingOffering: loadingOffering || introPending,
     selectedPlan,
     selectedPeriod,
     setSelectedPeriod,
