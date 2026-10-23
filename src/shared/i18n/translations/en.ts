@@ -4,11 +4,21 @@ const en = {
     cancel: 'Cancel',
     done: 'Done',
     cropper: {
-      title: 'Edit Photo',
+      crop: 'Crop',
       save: 'Save',
       reset: 'Reset',
-      progress: '{{index}} / {{total}}',
       failed: 'The photo could not be processed, please try again.',
+    },
+    // In-app camera. These labels are for screen readers only — the chrome has
+    // no text (round glass buttons + shutter), same as the cropper.
+    camera: {
+      capture: 'Take photo',
+      flip: 'Flip camera',
+      flash: {
+        off: 'Flash off',
+        auto: 'Flash automatic',
+        on: 'Flash on',
+      },
     },
     crashTitle: 'Something went wrong',
     crashSubtitle:
@@ -72,6 +82,11 @@ const en = {
       title: 'Feed notifications',
       subtitle:
         'Replies to your posts, like milestones and the evening reminder. Moderation and restriction notices are not affected by this setting.',
+    },
+    campusAlerts: {
+      title: 'Campus alerts',
+      subtitle:
+        'We let you know when you arrive on campus, if anyone posted that day. Alerts about your moment being removed are not affected by this setting.',
     },
     photoModerationAlerts: {
       title: 'Photo Notifications',
@@ -693,7 +708,9 @@ const en = {
       description: 'Answer at least one prompt. This is the most-read part of your card — add up to three if you like.',
     },
     stepMode: {
-      title: 'What are you here for?',
+      // Short because it lives in the header row next to the back button
+      // (same structure as the hobbies step); the old sentence did not fit.
+      title: 'Pick your mode',
       description:
         'We build your profile around the mode you pick. You can open the other one later.',
       // The step is REQUIRED with NO pre-selection: a default would sign people
@@ -1025,12 +1042,23 @@ const en = {
         Dating: 'Fire',
         Friends: 'Spark',
       },
-      pickerTitle: 'How do you want to meet?',
+      // Seçici sheet'inin başlığı. Soru DEĞİL eylem adı: kayıt adımı "Nasıl
+      // tanışmak istiyorsun?" diye soruyor çünkü orada seçim ilk kez
+      // yapılıyor; burada kullanıcı zaten bir moddadır ve yaptığı şey geçiş.
+      pickerTitle: 'Switch mode',
       description: {
         Dating: 'Meet for dating — match when you both like each other.',
         Friends: 'Find friends on campus — same gender only.',
       },
       openCta: 'Open profile',
+      // Seçicide HENÜZ AÇILMAMIŞ modun kartındaki alt satır. `openCta`dan
+      // ayrı: o bir BUTON etiketi (boş deste aksiyonu), bu ise kartın
+      // açıklama satırı ve hedefi adıyla söylüyor — kullanıcı neye geçtiğini
+      // kartın üstünde okuyor.
+      switchTo: {
+        Dating: 'Switch to dating',
+        Friends: 'Switch to friends',
+      },
       openTitle: {
         Dating: 'Open your dating profile',
         Friends: 'Open your friends profile',
@@ -1194,6 +1222,10 @@ const en = {
       // Same split as the title: subscribers get a sentence about what they
       // already have, not a pitch for something they have already bought.
       descriptionPremium: 'Every plus feature is unlocked. Your subscription status is on the card below.',
+      // Appended to the line under the plus page title (in both states).
+      // One membership covers both modes — a user sitting in Friends mode
+      // should not wonder whether this is the Dating subscription.
+      descriptionModes: 'Your membership works across both Dating and Friends.',
       pricing: '{{price}} / month',
       pricingPrefix: 'Plans starting from ',
       pricingSuffix: '',
@@ -1486,7 +1518,9 @@ const en = {
     // (headerLike/headerFire/headerNote) — see the Turkish file. 'All' and
     // 'Missed' stay as they are: they name a slice, not a product.
     tabLike: 'Likes',
-    tabFire: 'Fires',
+    // Product name follows the MODE: "Fire" in Dating, "Spark" in Friends
+    // (see modeFireNameKey). The screen interpolates `{{fire}}`.
+    tabFire: '{{fire}}s',
     // Notes get their own tab — see the Turkish file for why they are excluded
     // from the "Likes" tab.
     tabNote: 'Notes',
@@ -1501,18 +1535,18 @@ const en = {
     // Turkish file.
     headerAll: 'All incoming',
     headerLike: 'Likes',
-    headerFire: 'Fires',
+    headerFire: '{{fire}}s',
     headerNote: 'Notes',
     // Big title for the missed tab — it used to be the balance itself
     // ("Recoveries left: 3/5"); the balance moved into the description line
     // (see descMissed*). Same wording as the pill (tabMissed) on purpose.
     headerMissed: 'Missed',
     infoDescription:
-      'Everyone who liked you or sent you a Fire shows up here. Use the buttons next to a card to pass, or like them back to match instantly.',
+      'Everyone who liked you or sent you a {{fire}} shows up here. Use the buttons next to a card to pass, or like them back to match instantly.',
     // See tr.ts for why this replaced the dismissible info card.
     descAll: 'Everyone who liked you collects here.',
     descLike: 'People who sent you a regular like are listed here.',
-    descFire: 'Cards from people who sent you a Fire arrive unblurred.',
+    descFire: 'Cards from people who sent you a {{fire}} arrive unblurred.',
     descNote: 'People who wrote a note on your photo or prompt answer.',
     descMissed: 'People you passed on who had liked you stay here for a while.',
     descMissedDays:
@@ -1523,9 +1557,10 @@ const en = {
     likeButton: 'Like',
     // Pill above the name row — see the Turkish file for why it is fire
     // only; the badge beside it sits next to the sentence, it does not replace it.
-    firePill: 'Sent you a Fire',
-    emptyFire: 'No Fires yet.',
-    emptyFireSubtitle: 'When someone sends you a Fire, they will appear here.',
+    firePill: 'Sent you a {{fire}}',
+    emptyFire: 'No {{fire}}s yet.',
+    emptyFireSubtitle:
+      'When someone sends you a {{fire}}, they will appear here.',
     emptyLike: 'No likes yet.',
     emptyLikeSubtitle: 'New likes will be listed here as they come in.',
     emptyAll: 'No one has liked you yet.',
@@ -1602,8 +1637,10 @@ const en = {
   likeToast: {
     like: '{{name}} liked you',
     likeNoName: 'Someone liked you',
-    fire: '{{name}} sent you a Fire!',
-    fireNoName: 'You got a Fire!',
+    // Product name follows the MODE ({{fire}}) — the event's own mode, from
+    // the hub payload (IncomingLike.mode), not the screen's selected mode.
+    fire: '{{name}} sent you a {{fire}}!',
+    fireNoName: 'You got a {{fire}}!',
     note: '{{name}} sent you a note',
     noteNoName: 'You got a note',
     // Subtitle: notes show the note preview instead, everything else shows this.
@@ -2283,7 +2320,6 @@ const en = {
     discount: '{{percent}}% off',
     // Badge on the period strip: the plan that saves the most. The badge is
     // NARROW (it sits next to the label) — keep it to a word or two.
-    bestValue: 'Best',
     errors: {
       packageNotFound: 'Package not found.',
       // Shown when the RevenueCat identity is still anonymous/foreign, in which
@@ -2451,7 +2487,7 @@ const en = {
 
     filter: {
       topic: 'Topic',
-      topicDesc: 'Narrow the feed down to a single topic.',
+      topicDesc: 'Narrow the feed down to the topics you pick.',
       title: 'Filter',
       // One line under each title — the counterpart of the `*Desc` rows in
       // profile editing. Kept short: three sections stack up.
@@ -2463,13 +2499,23 @@ const en = {
       kindDesc: 'See anonymous and regular posts together or apart.',
       reset: 'Reset',
     },
+    // ── Campus Moments ───────────────────────────────────────────────────
+    // Single-photo moments that live 24 hours, on top of the full-screen campus
+    // map. Contract: repo root > backend_campus_moments_2026-10.md
+
     university: {
       title: 'Pick a campus',
       own: 'My campus',
     },
 
+    // The open map band under the pills — the only place that tells a screen
+    // reader what the tap does (the band is just map, visually).
+    map: {
+      expandHint: 'Open the map full screen',
+    },
+
     composer: {
-      topicLabel: 'Pick a topic',
+      topicLabel: 'Pick topics (you can choose more than one)',
       title: 'Share a post',
       placeholder: 'What do you want to tell your campus?',
       anonymousLabel: 'Post anonymously',
@@ -2583,6 +2629,88 @@ const en = {
       'UT-7330': 'You cannot like your own post.',
       'UT-7340': 'You already reported this content.',
       'UT-7341': 'You cannot report your own content.',
+    },
+  },
+
+  campus: {
+    title: 'Campus Moments',
+      headerTitleOne: '{{count}} moment on {{campus}}',
+      headerTitleOther: '{{count}} moments on {{campus}}',
+    // Fixed label in the top chrome — count and campus live in the strip's
+    // own title now (see CampusMapTitle > variant).
+    headerTitleShort: 'Moments',
+    momentCountOne: '{{count}} moment',
+    momentCountOther: '{{count}} moments',
+    openHint: 'Open campus moments',
+    shareHint: 'Share a campus moment',
+    age: '{{age}}',
+    like: 'Like',
+    pass: 'Pass',
+    remove: 'Remove',
+    mine: 'Your moment',
+    underReview: 'Under review',
+    // The plus box at the head of the strip (replaces the old top-right "+").
+    shareBox: 'Share yours',
+    // Filler box copy — replaces the empty state; order is shuffled on every
+    // open (see CampusMomentsStrip > INFO_KEYS).
+    //
+    // ⚠️ NEVER DRAWN: the word is printed inside the photo — in TURKISH —
+    // and the box draws nothing on top. These strings survive as the
+    // VoiceOver label only, which is why they stay English: a screen reader
+    // should speak the user's language even when the picture cannot.
+    // Reasoning on the Turkish side.
+    info: {
+      expiry: '24 hours',
+      insideOnly: 'On campus',
+      daily: 'Once a day',
+    },
+    expiresInHours: '{{count}}h',
+    expiresInMinutes: '{{count}}m',
+    expiresSoon: 'soon',
+    empty: {
+      title: 'Nobody has posted on campus today',
+      bodyInside: 'Be the first — everyone on campus sees it for 24 hours.',
+      bodyOutside: 'You can post once you are on campus.',
+        cta: 'Share the first moment',
+    },
+    composer: {
+      title: 'Your campus moment',
+      hint: 'You can post once a day and you cannot change it.',
+      share: 'Share',
+      sharing: 'Sharing…',
+      removeConfirmTitle: 'Remove your moment',
+      removeConfirmBody: 'If you remove it, you cannot post again today.',
+      removeConfirmCta: 'Remove',
+      cancel: 'Cancel',
+    },
+    permission: {
+      title: 'Know when you get to campus',
+      body: 'Set location access to "Always" and we will let you know when you arrive on your campus. Lit does not track you continuously; it only knows when you cross your own campus boundary.',
+      allow: 'Always allow',
+      later: 'Not now',
+      openSettings: 'Open Settings',
+      deniedBody: 'You can switch it to "Always" in Settings. Even without it you can post while on campus — you just will not get a heads-up.',
+    },
+    codes: {
+      generic: 'Something went wrong. Try again in a moment.',
+      'UT-7401': 'Campus moments are not open on this campus yet.',
+      'UT-7402': 'Complete your profile first.',
+      'UT-7403': 'You already posted your moment today.',
+      'UT-7404': 'This photo does not follow the rules.',
+      'UT-7405': 'That photo is too large.',
+      'UT-7406': 'Upload link is invalid. Try again.',
+      'UT-7407': 'You cannot post on campus right now.',
+      'UT-7410': 'You need to be inside campus to post.',
+      'UT-7411': 'Your location is not precise enough. Step outside and try again.',
+      'UT-7412': 'You cannot post with mock location turned on.',
+      'UT-7413': 'Your location reading is stale. Try again.',
+      'UT-7414': 'This is not ready for your campus yet.',
+      'UT-7415': 'We could not verify your location. Try again shortly.',
+      'UT-7420': 'You are out of likes for today.',
+      'UT-7421': 'This moment is gone.',
+      'UT-7422': 'You cannot decide on your own moment.',
+      'UT-7424': 'You already decided on this person.',
+      'UT-7430': 'Too fast. Give it a second.',
     },
   },
 
