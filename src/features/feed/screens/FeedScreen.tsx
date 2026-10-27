@@ -2450,11 +2450,17 @@ export default function FeedScreen() {
         onPageSelected={handlePageSelected}
         onPageScrollStateChanged={handlePageScrollStateChanged}
       >
+        {/* ⚠️ SAYFA KABININ ZEMİNİ ŞEFFAF: harita artık pager'ın ARKASINDA
+            (bkz. oradaki not) ve sayfanın kendi zemini onu örterdi.
+            `collapsable={false}` de şart — stili yalnız `flex: 1` olan `View`
+            native ağaçta doğmuyor ve çocukların zIndex'i köke taşınıyor
+            (proje notu).
+
+            ⚠️ YORUM `map`İN DIŞINDA: ok fonksiyonunun gövdesine, dönen
+            elemanın yanına konan `{/* … *\/}` JSX değil, blok içinde bir
+            ifadedir ve dosya hiç ayrışmaz (bkz. feedMapBackdrop.test.ts >
+            "akış ekranı ayrışıyor"). */}
         {PAGES.map((key) => (
-          {/* ⚠️ ZEMİN ŞEFFAF: harita artık pager'ın ARKASINDA (bkz. oradaki
-              not) ve sayfanın kendi zemini onu örterdi. `collapsable={false}`
-              de şart — stili yalnız `flex: 1` olan `View` native ağaçta
-              doğmuyor ve çocukların zIndex'i köke taşınıyor (proje notu). */}
           <View
             key={key}
             style={{ flex: 1, backgroundColor: "transparent" }}

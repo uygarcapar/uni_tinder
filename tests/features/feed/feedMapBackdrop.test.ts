@@ -32,6 +32,35 @@ const SOURCE = readFileSync(
   'utf8',
 );
 
+/**
+ * ⚠️🔴 EKRAN AYRIŞIYOR MU — kaynak-okuyan testlerin KÖR NOKTASI.
+ *
+ * Bu dosyadaki (ve kardeşlerindeki) iddialar `FeedScreen.tsx`i METİN olarak
+ * okuyor; hiçbiri onu derlemiyor. `npm run type-check` de kurtarmıyor:
+ * `tsconfig.test.json`ın `include`u yalnız `tests/` ve mock'lar, yani `src/`
+ * tsc'ye HİÇ girmiyor ve hiçbir test bu ekranı import etmiyor.
+ *
+ * Sonuç: dosya hiç ayrışmıyor olsa bile bütün süit yeşil kalıyor ve hata ancak
+ * Metro'da, cihazda patlıyor. Bu tam olarak bir kere oldu — `PAGES.map`in ok
+ * fonksiyonu gövdesine, dönen elemanın DIŞINA bir `{/* … *\/}` konuldu; JSX
+ * yorumu orada JSX değil, blok içinde bir ifade. Kapı artık burada.
+ */
+describe('akış ekranı ayrışıyor', () => {
+  it('FeedScreen.tsx SÖZDİZİMSEL OLARAK geçerli', () => {
+    // eslint-disable-next-line @typescript-eslint/no-require-imports
+    const ts = require('typescript');
+    const out = ts.transpileModule(SOURCE, {
+      fileName: 'FeedScreen.tsx',
+      reportDiagnostics: true,
+      compilerOptions: { jsx: ts.JsxEmit.Preserve, target: ts.ScriptTarget.ES2020 },
+    });
+    const errors = (out.diagnostics ?? []).map((d: any) =>
+      ts.flattenDiagnosticMessageText(d.messageText, ' '),
+    );
+    expect(errors).toEqual([]);
+  });
+});
+
 describe('harita iki sekmenin ortak zemini', () => {
   it('PAGER`IN ARKASINDA — sayfanın içinde değil', () => {
     const map = SOURCE.indexOf('{mapHero}');
