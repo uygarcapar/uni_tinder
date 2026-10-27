@@ -1,6 +1,10 @@
 import {
+  feedMapCampusColumn,
+  feedMapExpandScale,
   feedMapFraming,
+  feedMapHorizontal,
   type FeedMapFramingArgs,
+  type FeedMapHorizontalArgs,
 } from '@/features/feed/components/feedMapFraming';
 import { MAP_MOTION_MS } from '@/features/feed/components/feedMapMotion';
 
@@ -196,19 +200,42 @@ describe('harita kadraj geçişi', () => {
     );
   });
 
-  it('iskelet ÜÇ koşulun hepsini bekliyor ve kalıcı olamıyor', () => {
-    // Ölçüm + doğru URL'in İNMESİ: ikisi de bitmeden harita gösterilmiyor.
-    expect(SOURCE).toContain(
-      '(heroReady && loadedUri !== null && loadedUri === mapUri)',
+  it('iskelet DÖRT koşulun hepsini bekliyor ve kalıcı olamıyor', () => {
+    // Ölçüm + SINIRIN İNMESİ + doğru URL'in inmesi: hiçbiri eksikken harita
+    // gösterilmiyor. `boundaryPending` burada şart — o olmadan okul
+    // değiştirmek ara hâlleri (3B figür → ara kadraj → poligon) gösteriyordu.
+    expect(SOURCE).toMatch(
+      /const settled =\s*\n\s*heroReady &&\s*\n\s*!boundaryPending &&\s*\n\s*loadedUri !== null &&\s*\n\s*loadedUri === mapUri;/,
     );
     // Yüklenen URL karşılaştırmalı: kadraj değişince iskelet geri gelmeli.
     expect(SOURCE).toContain('onLoad={() => setLoadedUri(mapUri)}');
     // Hata da "oturdu" sayılıyor — çevrimdışında iskelet asılı kalmasın.
     expect(SOURCE).toContain('onError={() => setLoadedUri(mapUri)}');
-    // Güvenlik ağı: iki sinyalden biri hiç gelmezse süre dolunca açılıyor.
+    // Güvenlik ağı: sinyallerden biri hiç gelmezse süre dolunca açılıyor.
     expect(SOURCE).toContain('setForcedUri(mapUri), SKELETON_WATCHDOG_MS');
-    // Kampüs değişiminin yönlü hareketi iskeletle kapatılmıyor.
-    expect(SOURCE).toContain('!mapSettled && previous === null');
+  });
+
+  /**
+   * ⚠️🔴 KAMPÜS DEĞİŞİMİNDE DE İSKELET — eski kuralın TERSİ.
+   *
+   * Burada bir dönem `!mapSettled && previous === null` çivili duruyordu:
+   * "kampüs değişiminin yönlü hareketi iskeletle kapatılmaz". İstek bunu
+   * reddetti ("direkt her şey skeletonda olsun, bitince direkt son hâlini
+   * göreyim") çünkü o yol ara hâlleri gösteriyordu. İskelet artık yalnız
+   * `revealed`e bakıyor; `previous` kapısı geri eklenirse belirti de geri
+   * gelir.
+   */
+  it('iskelet kampüs değişiminde de duruyor — `previous` kapısı YOK', () => {
+    expect(SOURCE).toContain('const skeletonWanted = !revealed;');
+    expect(SOURCE).not.toContain('previous === null');
+  });
+
+  /**
+   * 3B figür "sınır yok" demek; sınır HENÜZ İNMEDİYSE bu yanlış bir iddia.
+   * Kapı kaldırılırsa okul değiştirirken bina bir an görünür (istek: olmasın).
+   */
+  it('3B okul figürü AÇILMADAN ÖNCE çizilmiyor', () => {
+    expect(SOURCE).toContain('{heroReady && revealed && !showShape ? (');
   });
 });
 
@@ -246,7 +273,11 @@ describe('harita sönümlemesi', () => {
   });
 
   it('harita katmanı LİSTEDEN ÖNCE çiziliyor — kartlar üstte', () => {
-    const hero = SCREEN.indexOf('{key === "feed" ? mapHero : null}');
+    // ⚠️ ÇAPA DEĞİŞTİ, KURAL DEĞİL: harita artık pager'ın İÇİNDE DEĞİL
+    // ARKASINDA (iki sekmenin ortak zemini — bkz. feedMapBackdrop.test.ts).
+    // "Önce harita, sonra liste" sırası aynen duruyor, yalnız harita bir
+    // katman yukarıdan, kökten çiziliyor.
+    const hero = SCREEN.indexOf('{mapHero}');
     const list = SCREEN.indexOf('key === "feed" ? listSlideStyle : null');
     expect(hero).toBeGreaterThan(-1);
     expect(list).toBeGreaterThan(hero);
@@ -356,9 +387,11 @@ describe('haritanın genel bulanıklığı', () => {
     // ⚠️ İKİ BLUR TEK DEĞERDEN: ayrı yazıldıkları dönemde biri çekmeye
     // bağlıydı, diğeri doğrudan ilerlemeye — ekranın üstü bir anda açılırken
     // zemin yavaşça netleşiyordu, yani tek hareket iki hızda görünüyordu.
-    expect(MAP).toContain('const blurDim = useDerivedValue(');
-    expect(MAP).toContain('blurReveal.value *');
-    expect(MAP).toContain('pullProgress.value * MAP_PULL_SHARE');
+    //
+    // ⚠️ ÇEKMENİN ÇARPANI KALKTI (jest üründen çıktı, istek): değer artık tek
+    // terim. Korunan kural ÇARPANIN SAYISI DEĞİL, iki katmanın AYNI değeri
+    // okuması — ikinci bir terim eklenecekse ikisine birden eklenmeli.
+    expect(MAP).toContain('const blurDim = useDerivedValue(() => blurReveal.value)');
     expect(MAP).not.toContain('opacity: 1 - expandProgress.value');
     // Her iki katman da aynı türetilmiş değeri okuyor.
     const dimReaders = MAP.split('opacity: blurDim.value').length - 1;
@@ -370,5 +403,115 @@ describe('haritanın genel bulanıklığı', () => {
     const figure = MAP.indexOf('<CampusFigure');
     expect(blur).toBeGreaterThan(-1);
     expect(figure).toBeGreaterThan(blur);
+  });
+});
+
+/**
+ * YATAY KADRAJ — kampüs akışta SOLDA, tam ekranda ortada.
+ *
+ * Buradaki değişmez KAPSAMA: kutu sola uzatılarak kampüs sola alınıyor ve
+ * kayma boyunca kutunun ekranı kaplaması bozulmamak zorunda. Bozulursa belirti
+ * haritanın kenarında bir ŞERİT olur (sayfanın zemini) — dikeyde yaşanmış,
+ * gerekçesi `feedMapFraming` içinde yazılı.
+ */
+describe('feedMapHorizontal', () => {
+  const WIDTH = 393;
+  const COLUMN = feedMapCampusColumn(WIDTH);
+
+  const H = (over?: Partial<FeedMapHorizontalArgs>) =>
+    feedMapHorizontal({
+      viewportWidth: WIDTH,
+      columnWidth: COLUMN,
+      ready: true,
+      ...over,
+    });
+
+  it('kampüs SÜTUNUN ortasında — ekranın ortasında DEĞİL', () => {
+    const h = H();
+    expect(h.campusScreenX).toBeCloseTo(COLUMN / 2, 6);
+    expect(h.campusScreenX).toBeLessThan(WIDTH / 2);
+  });
+
+  it('kutu ekranı KAPLIYOR: sol kenar dışarıda, sağ kenar tam ekranın sağında', () => {
+    const h = H();
+    expect(h.imageLeft).toBeLessThan(0);
+    expect(h.imageLeft + h.boxWidth).toBeCloseTo(WIDTH, 6);
+  });
+
+  it('kutunun MERKEZİ kampüs noktası — `cover` oraya oturtuyor', () => {
+    const h = H();
+    expect(h.imageLeft + h.boxWidth / 2).toBeCloseTo(h.campusScreenX, 6);
+  });
+
+  it('TAM EKRANDA kampüs ortaya dönüyor ve kenar AÇILMIYOR', () => {
+    const h = H();
+    expect(h.campusScreenX + h.mapShiftX).toBeCloseTo(WIDTH / 2, 6);
+    // Kayma sonrası kutu hâlâ ekranı kaplıyor (iki uç da dışarıda/kenarda).
+    expect(h.imageLeft + h.mapShiftX).toBeLessThanOrEqual(0);
+    expect(h.imageLeft + h.boxWidth + h.mapShiftX).toBeGreaterThanOrEqual(
+      WIDTH,
+    );
+  });
+
+  it('ölçüm gelmeden kutu KAYMIYOR — kampüs ortada', () => {
+    const h = H({ ready: false });
+    expect(h).toEqual({
+      imageLeft: 0,
+      boxWidth: WIDTH,
+      campusScreenX: WIDTH / 2,
+      mapShiftX: 0,
+    });
+  });
+
+  it('sütun ekranın yarısından genişse kayma YOK — tek yönlü', () => {
+    const h = H({ columnWidth: WIDTH });
+    expect(h.campusScreenX).toBeCloseTo(WIDTH / 2, 6);
+    expect(h.mapShiftX).toBeCloseTo(0, 6);
+    expect(h.boxWidth).toBeCloseTo(WIDTH, 6);
+  });
+});
+
+/**
+ * TAM EKRANDA POLİGONA YAKINLAŞMA.
+ *
+ * İsteğin iki yarısı da burada çivili: "biraz zoom in" VE "ekrandan
+ * taşmayacak şekilde". İkincisi sabit bir çarpanla sağlanamıyor — kampüsler
+ * arasında 50 kat büyüklük farkı var (tek bina ↔ 4 km²), o yüzden ölçek
+ * şeklin GERÇEK ekran ölçüsünden türüyor.
+ */
+describe('feedMapExpandScale', () => {
+  const FIT = (over?: Partial<Parameters<typeof feedMapExpandScale>[0]>) =>
+    feedMapExpandScale({
+      shapeWidth: 120,
+      shapeHeight: 90,
+      viewportWidth: 393,
+      viewportHeight: 600,
+      padding: 96,
+      maxScale: 1.8,
+      ...over,
+    });
+
+  it('küçük şekilde TAVANDA duruyor — sonsuza büyümüyor', () => {
+    expect(FIT({ shapeWidth: 20, shapeHeight: 20 })).toBe(1.8);
+  });
+
+  it('ölçek SIĞAN eksenden geliyor', () => {
+    // Dar ve UZUN şekil: yükseklik sınırlıyor → (600−96)/480 = 1.05.
+    expect(FIT({ shapeWidth: 40, shapeHeight: 480 })).toBeCloseTo(1.05, 2);
+  });
+
+  it('ölçeklenen şekil kenar payının İÇİNDE kalıyor — taşma yok', () => {
+    const shape = { shapeWidth: 200, shapeHeight: 150 };
+    const scale = FIT(shape);
+    expect(shape.shapeWidth * scale).toBeLessThanOrEqual(393 - 96 + 0.01);
+    expect(shape.shapeHeight * scale).toBeLessThanOrEqual(600 - 96 + 0.01);
+  });
+
+  it('şekil zaten ekrandan büyükse 1 — tam ekrana geçerken UZAKLAŞMIYOR', () => {
+    expect(FIT({ shapeWidth: 900, shapeHeight: 700 })).toBe(1);
+  });
+
+  it('ölçüsüz şekilde 1 — sıfıra bölme yok', () => {
+    expect(FIT({ shapeWidth: 0, shapeHeight: 0 })).toBe(1);
   });
 });

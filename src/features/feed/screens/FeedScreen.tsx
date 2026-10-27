@@ -1,17 +1,12 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
-import {
-  Alert,
-  Pressable,
-  Text,
-  useWindowDimensions,
-  View,
-} from "react-native";
+import { Alert, Text, useWindowDimensions, View } from "react-native";
 import { useTranslation } from "react-i18next";
 import { useFocusEffect, useNavigation } from "@react-navigation/native";
 import type PagerView from "react-native-pager-view";
 import Animated, {
+  Extrapolation,
+  interpolate,
   runOnJS,
-  useAnimatedReaction,
   useDerivedValue,
   useAnimatedScrollHandler,
   useAnimatedStyle,
@@ -27,9 +22,8 @@ import ScreenHeader, {
   SCREEN_HEADER_TITLE_HEIGHT,
 } from "@/shared/components/ScreenHeader";
 import EmptyState from "@/shared/components/EmptyState";
-import SFIcon from "@/shared/components/SFIcon";
 import AnimatedPressable from "@/shared/components/AnimatedPressable";
-import { LayoutList, X } from "@/shared/icons";
+import { LayoutList, Pencil, Plus, SlidersHorizontal, X } from "@/shared/icons";
 import DiscoverHeaderGlassButton from "@/features/discover/components/DiscoverHeaderGlassButton";
 import { colors, withAlpha } from "@/shared/theme/colors";
 import uiBus from "@/shared/services/uiBus";
@@ -39,7 +33,7 @@ import { refreshEntitlementsForPaywall } from "@/features/profile/subscriptionSl
 import { openLitPlus } from "@/features/profile/litPlusEntry";
 import PreviewModal from "@/features/profile/components/PreviewModal";
 import { useAppMode } from "@/features/discover/useAppMode";
-import { modeAccent } from "@/features/discover/modeTheme";
+import { modeAccent, modeFireGradient } from "@/features/discover/modeTheme";
 import {
   useNoteMutation,
   useSwipeStats,
@@ -49,6 +43,7 @@ import NotePurchaseModal from "@/features/discover/components/NotePurchaseModal"
 import FirePurchaseModal from "@/features/discover/components/FirePurchaseModal";
 import { formatResetTime } from "@/features/discover/quotaFormat";
 import type { NoteTarget } from "@/shared/types";
+import { useFeedFlight } from "../feedCardFlight";
 import { feedCardActions, resolveCardMode } from "../feedCardMode";
 import { feedKeys } from "../feedKeys";
 import FilterPills from "@/shared/components/FilterPills";
@@ -60,30 +55,31 @@ import FeedFilterSheet, {
   type FeedFilterValue,
 } from "../components/FeedFilterSheet";
 import FeedUniversitySheet from "../components/FeedUniversitySheet";
-import FeedMapStrip, { FEED_MAP_BAND_HEIGHT } from "../components/FeedMapStrip";
+import FeedMapStrip from "../components/FeedMapStrip";
+import FeedMomentsPeek from "../components/FeedMomentsPeek";
 import {
   MAP_CHROME_FADE_MS,
   MAP_MOTION_MS,
-  MAP_PULL_EXPAND_PX,
-  MAP_PULL_SHARE,
+  MAP_POLYGON_DRAW_MS,
   MAP_STRIP_ENTRY_MS,
   mapMotionEasing,
 } from "../components/feedMapMotion";
 import { useCampusSurface } from "@/features/campus/useCampusSurface";
 import CampusMomentsStrip, {
-  CAMPUS_STRIP_SCRIM_FADE,
+  campusStripScrimFade,
   campusStripHeight,
   campusStripScrimHeight,
 } from "@/features/campus/components/CampusMomentsStrip";
+// ⚠️ `CAMPUS_MAP_CHROME_TOP`/`_ROW` ARTIK OKUNMUYOR: üst köşe satırı kalıcı
+// oldu ve konumunu `ScreenHeader`ın buton yuvasından alıyor (bkz. "ÜST KÖŞE
+// BUTONLARI"). O iki sayı yalnız perdenin boyunu besliyor, orası değişmedi.
 import CampusMapScrim, {
-  CAMPUS_MAP_CHROME_ROW,
-  CAMPUS_MAP_CHROME_TOP,
   campusMapTopScrimHeight,
 } from "@/features/campus/components/CampusMapScrim";
 import CampusMapTitle from "@/features/campus/components/CampusMapTitle";
 import CampusMomentComposer from "@/features/campus/components/CampusMomentComposer";
 import CampusAlwaysPrimingSheet from "@/features/campus/components/CampusAlwaysPrimingSheet";
-import PhotoSourceSheet from "@/shared/components/PhotoSourceSheet";
+import ReportModal from "@/shared/components/ReportModal";
 import {
   activeFilterCount,
   loadFeedParams,
@@ -158,7 +154,11 @@ import {
 import { useFeedAuthorProfile, useFeedReplierProfile } from "../feedQueries";
 // Haritanın poligonu GÖSTERİLEN kampüsün — kullanıcının kendisininki
 // `useCampusSurface`te ve o yalnız konum kararı için (gerekçe aşağıda).
-import { useCampusBoundary } from "@/features/campus/campusQueries";
+import {
+  useCampusBoundary,
+  useCampusMomentProfile,
+} from "@/features/campus/campusQueries";
+import type { CampusMomentDto } from "@/features/campus/campusTypes";
 import LikerSwipeModal from "@/features/discover/components/LikerSwipeModal";
 import type {
   FeedListParams,
@@ -229,14 +229,11 @@ const DESC_TRAILING_LEADING = (DESC_LINE_HEIGHT - DESC_FONT_SIZE) / 2;
 const PILL_ROW_GAP = TITLE_BLOCK_GAP + DESC_TRAILING_LEADING;
 
 /**
- * Sağ alttaki "paylaş" butonu — DAİRE, yani genişlik = yükseklik.
- *
- * Glifin ölçüsü ayrı sabit ve İKİ YERDE kullanılıyor: SFIcon'un `size`ı ve onu
- * saran kutunun kenarı. İkisi ayrışırsa glif dairenin ortasından kayar (native
- * sembolün doğal ölçüsü `size`la birebir aynı değil).
+ * ⚠️ `FAB_SIZE` / `FAB_GLYPH` KALDIRILDI: sağ alttaki yuvarlak "paylaş"
+ * butonu üründen çıktı ve composer'ın girişi başlığın sağ üstündeki kalem
+ * butonu oldu (istek). Ölçüleri geri koyacak olan için FAB'ın kendi yerinde
+ * duran notta (render ağacında) yazılı.
  */
-const FAB_SIZE = 52;
-const FAB_GLYPH = 22;
 
 /**
  * Sayfanın büyük başlık BLOĞU — Mesajlar ekranındaki başlığın birebir kalıbı:
@@ -254,11 +251,23 @@ function FeedSectionTitle({
   actionLabel,
   onActionPress,
   accent,
+  trailing = null,
 }: {
   title: string;
   description: string;
   actionLabel: string | null;
   onActionPress: (() => void) | null;
+  /**
+   * BLOĞUN SAĞ UCU — anların üçlü destesi (istek: "akış title'ı ve desc'in
+   * aynı hizasında en sağda").
+   *
+   * ⚠️ BAŞLIK SATIRININ İÇİNDE DEĞİL, İKİ SATIRIN YANINDA: başlık satırına
+   * konsaydı açıklamanın üstünde kalır ve bloğun dikey ortasına denk gelmezdi.
+   * Burada sarmalayıcı bir satır var, deste onun dikey ortasında.
+   *
+   * Yalnız AKIŞ sayfasında veriliyor (Gönderilerim'de kampüs anları yok).
+   */
+  trailing?: React.ReactNode;
   /**
    * Pill'in dolgusu — SEÇİLİ MODUN vurgusu (`modeAccent`): Flört'te litPlus
    * kırmızısı, Arkadaş'ta friends yeşili. Prop, modül sabiti değil: akış iki
@@ -275,8 +284,14 @@ function FeedSectionTitle({
         // Blok artık iki satır (başlık + açıklama); altındaki pay doğrudan
         // filtre satırıyla/ilk kartla arasındaki nefes.
         marginBottom: TITLE_BLOCK_GAP,
+        // ⚠️ SATIR: metin bloğu solda, deste sağ uçta ve DİKEY ORTADA.
+        flexDirection: "row",
+        alignItems: "center",
       }}
     >
+      {/* Metin bloğu — `flex: 1` desteye yer bırakıyor, uzun başlık/açıklama
+          onu satır dışına itmek yerine kendisi kırpılıyor. */}
+      <View style={{ flex: 1 }}>
       {/* Başlık satırı — metin ve (varsa) hemen SAĞINDA Plus pill'i. */}
       <View style={{ flexDirection: "row", alignItems: "center", gap: 10 }}>
         <Text
@@ -357,6 +372,8 @@ function FeedSectionTitle({
       >
         {description}
       </Text>
+      </View>
+      {trailing}
     </View>
   );
 }
@@ -431,54 +448,22 @@ export default function FeedScreen() {
   const feedScrollY = useSharedValue(0);
 
   /**
-   * PARMAK LİSTEDE Mİ — `onBeginDrag`/`onEndDrag` arası.
-   *
-   * Reanimated'ın scroll handler'ı çok olaylı biçimde kurulduğunda (aşağıdaki
-   * nesne) bu olayların hepsine birden bağlanıyor; `onScroll` prop'u tek
-   * başına yeterli.
+   * KARTLARIN ÜST BANTTA YAPIŞMASI — tüm hesap `feedCardFlight`te; burada
+   * yalnız akış offset'i bağlanıyor. YALNIZ AKIŞ SAYFASINA veriliyor (aşağıda).
    */
-  const feedDragging = useSharedValue(false);
+  const flight = useFeedFlight(feedScrollY);
 
   /**
-   * ÇEKME GERÇEKTEN BAŞLADI MI — "momentum bounce"u çekmeden ayıran kilit.
-   *
-   * ── Yaşanan hata ─────────────────────────────────────────────────────────
-   * Kullanıcı listeyi hızlıca YUKARI savuruyor; momentum tepeye varıyor ve
-   * lastik eşiği AŞACAK kadar taşıyor. Offset'e bakan bir kapı bunu "çekme"
-   * sanıyordu: gönderiler momentumla zıplıyor, chrome/sekmeler/kutular %45
-   * yola çıkıp geri dönüyor, üstüne harita kendiliğinden açılıyordu. Tarif
-   * birebir buydu — "görüntü kirliliği".
-   *
-   * ── Kural ────────────────────────────────────────────────────────────────
-   * Çekme yalnız PARMAK LİSTEDEYKEN başlayabiliyor. Bir kez başladıktan sonra
-   * kilit, offset sıfıra DÖNENE kadar açık kalıyor — yani parmak kalktıktan
-   * sonra lastik geri yaylanırken chrome da onunla birlikte yumuşakça geri
-   * geliyor (kilit parmakla düşseydi orada sert bir sıçrama olurdu).
-   *
-   * Momentum yolunda ise parmak zaten yok: kilit hiç açılmıyor, hiçbir katman
-   * kıpırdamıyor ve harita açılmıyor.
+   * ⚠️ ÇEKME KİLİTLERİ KALDIRILDI (`feedDragging` / `feedPullEngaged`): aşağı
+   * çekmek artık haritayı açmıyor, YENİLİYOR (istek). O iki değer yalnız
+   * "momentum bounce'u gerçek çekmeden ayır" işini yapıyordu ve o ayrımın tek
+   * müşterisi haritayı açan eşikti.
    */
-  const feedPullEngaged = useSharedValue(false);
-
   const feedScrollHandler = useAnimatedScrollHandler({
     onScroll: (e) => {
       const y = e.contentOffset.y;
       scrollY.value = y;
       feedScrollY.value = y;
-      // ⚠️ SIRA ÖNEMLİ: önce sıfırlama (tepeye dönüş kilidi her hâlükârda
-      // kapatıyor), sonra parmakla açma. Tersi sırada tek bir karede açılıp
-      // kapanabiliyordu.
-      if (y >= 0) {
-        feedPullEngaged.value = false;
-      } else if (feedDragging.value && y < -2) {
-        feedPullEngaged.value = true;
-      }
-    },
-    onBeginDrag: () => {
-      feedDragging.value = true;
-    },
-    onEndDrag: () => {
-      feedDragging.value = false;
     },
   });
 
@@ -932,6 +917,18 @@ export default function FeedScreen() {
     replyId?: string | null;
     isAnonymous: boolean;
   } | null>(null);
+
+  /**
+   * KAMPÜS ANI ŞİKAYETİ — kartın natif uzun basış menüsünden.
+   *
+   * ⚠️ AKIŞIN ŞİKAYET UCU DEĞİL (`FeedReportSheet` / `POST /api/feed/reports`):
+   * o uç gönderi/yanıt hedefliyor ve gövdesinde `reportedUserId` yok. Kampüs
+   * anının bir SAHİBİ var (`moment.userId`, swipe hedefiyle aynı id), yani
+   * doğru uç genel moderasyon ucu — profil ve sohbet şikayetleriyle aynı form.
+   */
+  const [reportMoment, setReportMoment] = useState<CampusMomentDto | null>(
+    null,
+  );
 
   const handlePostMenu = useCallback(
     (post: FeedPostDto) => {
@@ -1520,15 +1517,24 @@ export default function FeedScreen() {
    * ÜÇ ayrı durum tutuluyor, bilerek:
    *   • `mapProgress` — animasyonu süren paylaşılan değer (UI thread).
    *   • `mapExpanded` — MANTIKSAL durum. Açılışta ve kapanışta ANINDA dönüyor;
-   *     anlar sheet'i, pager kilidi ve FAB bunu okuyor.
-   *   • `mapChromeMounted` — kapanışta GECİKEN mount kapısı, yalnız cam
-   *     butonlar (X ve "+") için.
+   *     pager kilidi, kampüs sorguları ve ÜST KÖŞE BUTONLARININ SEMBOLÜ bunu
+   *     okuyor.
+   *   • `mapChromeMounted` — kapanışta GECİKEN mount kapısı; perdeler ve anlar
+   *     şeridi için (ikisi de kapanış animasyonu boyunca ekranda kalmalı).
    *
-   * X bir SwiftUI cam butonu ve camın kuralı sert: ata zincirinde kimliksel
+   * ⚠️ CAM BUTONLAR ARTIK BU KAPILARDAN GEÇMİYOR. Eskiden akışın
+   * filtre/kalem butonları harita açılırken SÖKÜLÜYOR, haritanın X'i ile
+   * paylaş butonu ise açılış bittikten sonra SIFIRDAN mount ediliyordu —
+   * kullanıcının gördüğü şey köşelerin bir anlık boşalıp yeniden çizilmesiydi
+   * (istek: "butonlar değişsin, yok olup baştan çizilmesin"). İki uçta artık
+   * TEK VE SÜREKLİ bir satır var; değişen yalnız sembol ve aksiyon (bkz.
+   * "ÜST KÖŞE BUTONLARI" bloğu).
+   *
+   * Camın kuralı sert ve bu tasarımın sebebi o: ata zincirinde kimliksel
    * olmayan bir transform ya da opacity<1 gören cam SESSİZCE hiç render
-   * edilmiyor (bkz. proje notu). O yüzden X'e animasyon takılmıyor, kapanırken
-   * de animasyon BİTTİKTEN SONRA unmount ediliyor — ölçek/opaklıkla
-   * belirtilse efekt büyük olasılıkla hiç çizilmezdi.
+   * edilmiyor (bkz. proje notu). Yani butonlar ne söndürülebilir ne
+   * ötelenebilir — kalıcı satır transformsuz bir kapta duruyor ve devri native
+   * tarafta, sembolün kendi çapraz sönümüyle yapıyor.
    *
    * ⚠️ MANTIKSAL DURUM NEDEN GECİKEN KAPIDAN AYRILDI (yaşanan hata):
    * ikisi tek state'ti ve kapanışta yalnız `finished` iken `false` oluyordu.
@@ -1541,6 +1547,8 @@ export default function FeedScreen() {
    * yalnız cam butonların unmount'u animasyona bağlı ve o da gecikirse
    * yalnızca bir butonun 280ms fazla durmasına yol açıyor.
    */
+  // ⚠️ `width` ARTIK OKUNMUYOR: tek müşterisi bandın sağ yarısıydı (anların
+  // satırının genişliği ve poligonun sütunu) ve bant kaldırıldı.
   const { height: windowHeight } = useWindowDimensions();
   /**
    * Listenin üst payı — JS tarafında BİR KEZ sayıya indiriliyor.
@@ -1568,47 +1576,42 @@ export default function FeedScreen() {
   const mapGenRef = useRef(0);
 
   /**
-   * ÇEKMENİN DONDURULMUŞ ORANI — açılış anında ne kadar çekilmişti.
+   * POLİGONUN ÇİZİLME ORANI — 0 hiç çizilmemiş, 1 tam çizili.
    *
-   * Chrome çekerken yukarı gidiyor (bkz. chromeSlideStyle) ve o pay canlı
-   * `feedScrollY`den türüyor. Eşik geçildiği an iki şey birden oluyor: harita
-   * açılmaya başlıyor VE `scrollEnabled` kapandığı için liste 0'a snap'liyor.
-   * Canlı değer o karede sıfırlanıyor, yani chrome'un ödünç aldığı pay bir
-   * anda geri veriliyordu — gözle görülür bir ZIPLAMA (başlık aşağı düşüp
-   * sonra yukarı kalkıyor).
+   * ⚠️ AKIŞTA SIFIR KALIYOR: bant kaldırıldı ve poligon akışta HİÇ çizilmiyor
+   * (istek: "çizilmesin ama o moments kısmına geçince çizgi animasyonla
+   * yavaşça çizilsin"). Değer yalnız tam ekrana geçişte 1'e gidiyor.
    *
-   * Çare: açılış anındaki oran dondurulup animasyon boyunca o kullanılıyor;
-   * ilerleme büyüdükçe `(1 - ilerleme)` ile kendiliğinden sönüyor.
+   * ⚠️ ÇİZİM HARİTANIN HAREKETİNDEN SONRA başlıyor (gecikme `expandMap`te):
+   * kadraj kayarken başlayan bir çizim "kayan bir çizgi" gibi okunuyordu.
+   *
+   * ⚠️ KAPANIŞTA GERİ SİLİNMİYOR, ANINDA SIFIRLANIYOR: akış zaten şekli
+   * çizmiyor, yani kapanırken ekranda kalan son şeyin bir çizgi parçası
+   * olmaması gerekiyor.
    */
-  const mapPullFrozen = useSharedValue(0);
+  const polygonReveal = useSharedValue(0);
 
   /**
-   * ŞERİDİN CAM BUTONLARININ MOUNT KAPISI — açılış animasyonu bitti mi.
-   *
-   * Kutuların karar çifti SwiftUI camı ve camın kuralı sert: ata zincirinde
-   * kimliksel olmayan bir transform gören cam SESSİZCE hiç render edilmiyor ve
-   * sonradan düzelmiyor (proje notu). Şerit aşağıdan `translateY` ile geldiği
-   * için animasyon boyunca o zincir kimliksel değil — butonlar ancak şerit
-   * yerine oturduktan sonra mount edilebilir.
-   *
-   * ⚠️ NEDEN ZAMANLAYICI, `withTiming` CALLBACK'İ DEĞİL: Reanimated bir
-   * animasyonun ÜZERİNE yazıldığında eskisinin callback'ini `finished: false`
-   * ile çağırıyor (bu dosyada bir kez kanlı bir hata üretti, bkz. kuşak notu).
-   * Açılış kesilip yeniden başlatılırsa (banda iki kez dokunmak) callback'e
-   * dayanan bayrak hiç true olmaz ve kullanıcı KARAR VEREMEYEN bir şeritte
-   * kalırdı. Süre sabit (`MAP_MOTION_MS`), zamanlayıcı birebir aynı anı veriyor
-   * ve kesilme onu etkilemiyor.
+   * ⚠️ `mapActionsReady` KALDIRILDI — şeridin kartlarındaki cam tik/X satırı
+   * kaldırıldığı için (gerekçe CampusMomentCard'ın başında) kapının müşterisi
+   * kalmadı. Şeride cam bir yüzey geri eklenecekse kapı da geri gelmeli ve
+   * kuralı şuydu: ata zincirinde kimliksel olmayan bir transform gören cam
+   * SESSİZCE hiç render edilmiyor, sonradan da düzelmiyor (proje notu); şerit
+   * aşağıdan `translateY` ile geldiği için cam ancak ŞERİDİN girişi de
+   * bittiğinde (`MAP_MOTION_MS + MAP_STRIP_ENTRY_MS`) mount edilebiliyordu.
+   * Bayrak bir ZAMANLAYICIYLA kuruluyordu, `withTiming` callback'iyle değil:
+   * üzerine yazılan animasyon eskisinin callback'ini `finished:false` ile
+   * çağırıyor ve banda iki kez dokunmak bayrağı kalıcı olarak false bırakırdı.
    */
-  const [mapActionsReady, setMapActionsReady] = useState(false);
 
   /**
-   * ÜST CHROME'UN (cam X + başlık) MOUNT KAPISI — açılış animasyonu bitti mi.
-   *
-   * Kutuların kapısından AYRI, çünkü iki an farklı: üst chrome harita yerine
-   * oturduğunda (`MAP_MOTION_MS`), kutuların cam butonları ise ŞERİDİN kendi
-   * girişi de bittiğinde (`+ MAP_STRIP_ENTRY_MS`) mount edilebiliyor.
+   * ⚠️ `mapChromeReady` KALDIRILDI — tek müşterisi üst chrome satırının mount
+   * kapısıydı (cam X + paylaş butonu, açılış animasyonu BİTTİKTEN SONRA mount
+   * ediliyorlardı ki `Host` kurulumu geçişin karesine düşüp parmağın altında
+   * takılma yapmasın). Satır artık hiç sökülmüyor: akışın filtre/kalem
+   * butonlarının TA KENDİSİ sembolünü değiştiriyor, yani geçişte kurulacak
+   * yeni bir `Host` yok ve beklenecek bir şey de yok.
    */
-  const [mapChromeReady, setMapChromeReady] = useState(false);
 
   /**
    * ŞERİDİN KENDİ GİRİŞİ — 0 ekranın altında, 1 yerinde.
@@ -1644,16 +1647,9 @@ export default function FeedScreen() {
 
   const expandMap = useCallback(() => {
     mapGenRef.current += 1;
-    // Çekmenin o andaki payı DONDURULUYOR (gerekçe `mapPullFrozen`de).
-    // Butondan açılışta `feedScrollY` 0 civarı, yani pay da 0 — fark yok.
-    mapPullFrozen.value = Math.min(
-      Math.max(-feedScrollY.value / MAP_PULL_EXPAND_PX, 0),
-      1,
-    );
     setMapExpanded(true);
     setMapChromeMounted(true);
     clearMapActionsTimer();
-    setMapActionsReady(false);
     // Şerit haritayla BİRLİKTE iniyor: kendi süresiyle inse harita kapandıktan
     // sonra ekranın dibinde asılı kalırdı.
     mapStripEntry.value = withTiming(0, {
@@ -1666,14 +1662,12 @@ export default function FeedScreen() {
       duration: MAP_MOTION_MS,
       easing: mapMotionEasing,
     });
-    setMapChromeReady(false);
     // Şerit ekranın ALTINDA bekliyor; girişi haritanın hareketi bitince
     // başlıyor (gerekçe `mapStripEntry`de).
     mapStripEntry.value = 0;
     mapChromeFade.value = 0;
     mapTimersRef.current = [
       setTimeout(() => {
-        setMapChromeReady(true);
         // Perdeler, başlık ve pill YAVAŞÇA beliriyor (gerekçe
         // `mapChromeFade`de); kutular da aynı anda aşağıdan yola çıkıyor.
         mapChromeFade.value = withTiming(1, {
@@ -1684,13 +1678,23 @@ export default function FeedScreen() {
           duration: MAP_STRIP_ENTRY_MS,
           easing: mapMotionEasing,
         });
+        /**
+         * SINIR KENDİNİ ÇİZİYOR — kadraj oturduktan SONRA (istek).
+         *
+         * ⚠️ AYNI ZAMANLAYICININ İÇİNDE, ayrı bir `setTimeout` DEĞİL: kapanış
+         * bekleyen zamanlayıcıların hepsini iptal ediyor (`clearMapActionsTimer`)
+         * ve ayrı bir kuyruk, açılışın ortasında kapatılan haritada çizimi
+         * başlatmaya devam ederdi.
+         *
+         * ⚠️ `Easing.out` DEĞİL `mapMotionEasing` (inOut): çizginin ucu iki uçta
+         * da yumuşak hızlanıp yavaşlıyor, yani "fırlayıp oturan" değil kenarı
+         * TAKİP EDEN bir uç okunuyor.
+         */
+        polygonReveal.value = withTiming(1, {
+          duration: MAP_POLYGON_DRAW_MS,
+          easing: mapMotionEasing,
+        });
       }, MAP_MOTION_MS),
-      // ⚠️ Kutuların cam butonları ŞERİT DE OTURDUKTAN sonra: animasyonlu bir
-      // atanın altında doğan cam sessizce hiç çizilmiyor (proje notu).
-      setTimeout(
-        () => setMapActionsReady(true),
-        MAP_MOTION_MS + MAP_STRIP_ENTRY_MS,
-      ),
     ];
     // ⚠️ Süre ve eğri `feedMapMotion`dan — AÇILIŞ VE KAPANIŞ AYNI (gerekçe
     // orada: ayrı eğriyle açılış "fırlıyor" gibi okunuyordu). Anlar şeridi bu
@@ -1701,11 +1705,10 @@ export default function FeedScreen() {
     });
   }, [
     clearMapActionsTimer,
-    feedScrollY,
     mapChromeFade,
     mapProgress,
-    mapPullFrozen,
     mapStripEntry,
+    polygonReveal,
   ]);
 
   // Abonelik `expandMap`i doğrudan göremiyor (daha yukarıda kuruluyor) → köprü.
@@ -1717,56 +1720,12 @@ export default function FeedScreen() {
   }, [expandMap]);
 
   /**
-   * YUKARIDAN AŞAĞI ÇEKİNCE TAM EKRAN HARİTA — pull-to-refresh'in yerine.
-   *
-   * ⚠️ KAPILAR REF'TEN OKUNUYOR, state'ten DEĞİL: tetik UI thread'deki bir
-   * reaksiyondan geliyor ve `runOnJS` ile çağrılan fonksiyon bir kez kurulup
-   * uzun süre yaşıyor. State okunsaydı bayat bir closure "harita kapalı"
-   * sanıp açık haritanın üstüne ikinci bir açılış animasyonu bindirirdi.
-   */
-  const mapExpandedRef = useRef(false);
-  mapExpandedRef.current = mapExpanded;
-  const activeTabRef = useRef(activeTab);
-  activeTabRef.current = activeTab;
-  const expandFromPull = useCallback(() => {
-    if (mapExpandedRef.current) return;
-    // ⚠️ YALNIZ AKIŞ SAYFASINDA: Gönderilerim'de harita yok ve orada çekmek
-    // hâlâ yenileme (bkz. onRefresh).
-    if (activeTabRef.current !== "feed") return;
-    expandMap();
-  }, [expandMap]);
-
-  /**
-   * Eşiğin GEÇİLDİĞİ AN tetikleniyor — parmağın bırakılması beklenmiyor
-   * (gerekçe `MAP_PULL_EXPAND_PX`te).
-   *
-   * ⚠️ `prev === null` İLK TUR: reaksiyon mount'ta bir kez karşılaştırmasız
-   * koşuyor ve o turda tetiklenirse ekran açılır açılmaz harita açılırdı.
-   *
-   * ⚠️ Yalnız KENARDA: eşik geçildikten sonra offset bir süre daha negatif
-   * kalıyor (lastik geri yaylanıyor), yani her karede tetiklenmemesi için
-   * karşılaştırma şart.
-   *
-   * ⚠️ `feedPullEngaged` ŞART: momentumla tepeye varan bir savurma lastiği
-   * eşiği aşacak kadar taşıyor ve bu kapı olmadan harita kendiliğinden
-   * açılıyordu (gerekçe o değerin yanında).
-   */
-  useAnimatedReaction(
-    () => feedPullEngaged.value && feedScrollY.value <= -MAP_PULL_EXPAND_PX,
-    (crossed, prev) => {
-      if (prev === null || !crossed || crossed === prev) return;
-      runOnJS(expandFromPull)();
-    },
-  );
-
-  /**
-   * Cam butonların unmount'u — yalnız kendi kuşağı hâlâ geçerliyse.
+   * Perdelerin ve şeridin unmount'u — yalnız kendi kuşağı hâlâ geçerliyse.
    * `runOnJS` için ayrı bir fonksiyon: worklet içinden ref okunmuyor.
    */
   const finishMapCollapse = useCallback((gen: number) => {
     if (gen !== mapGenRef.current) return;
     setMapChromeMounted(false);
-    setMapChromeReady(false);
   }, []);
 
   const collapseMap = useCallback(() => {
@@ -1775,11 +1734,9 @@ export default function FeedScreen() {
     // anlar şeridi, pager kilidi ve FAB buna bağlı ve kesilen bir animasyon
     // onları açık/kilitli bırakıyordu (gerekçe yukarıda).
     setMapExpanded(false);
-    // Kutuların cam butonları ANINDA sökülüyor: şerit aşağı ötelenmeye
-    // başladığı an ata zinciri kimliksel olmaktan çıkıyor ve orada duran cam
-    // zaten çizilmez (gerekçe `mapActionsReady`de).
+    // Bekleyen chrome zamanlayıcısı iptal: kapanış açılışın ortasında gelirse
+    // (banda dokunup hemen X) chrome kapanmış haritanın üstünde beliriyordu.
     clearMapActionsTimer();
-    setMapActionsReady(false);
     // Şerit haritayla BİRLİKTE iniyor: kendi süresiyle inse harita kapandıktan
     // sonra ekranın dibinde asılı kalırdı.
     mapStripEntry.value = withTiming(0, {
@@ -1792,11 +1749,9 @@ export default function FeedScreen() {
       duration: MAP_MOTION_MS,
       easing: mapMotionEasing,
     });
-    // ⚠️ KAPANIŞIN BAŞINDA SIFIR: terim `(1 - ilerleme)` ile çarpıldığı için o
-    // an katkısı zaten 0 ve sıfırlamak görünmüyor. Yapılmazsa kapanış
-    // bittiğinde (ilerleme 0) donmuş pay yeniden devreye girip chrome'u
-    // ekranın dışında bırakıyordu.
-    mapPullFrozen.value = 0;
+    // Sınır ANINDA sıfırlanıyor (gerekçe `polygonReveal`de): akış şekli
+    // çizmiyor, kapanışta geri silinen bir çizgi görünmemeli.
+    polygonReveal.value = 0;
     mapProgress.value = withTiming(
       0,
       { duration: MAP_MOTION_MS, easing: mapMotionEasing },
@@ -1811,46 +1766,41 @@ export default function FeedScreen() {
     finishMapCollapse,
     mapChromeFade,
     mapProgress,
-    mapPullFrozen,
     mapStripEntry,
+    polygonReveal,
   ]);
 
   /**
-   * ÇEKMENİN ORANI — 0 (çekilmedi) → 1 (eşiğe varıldı).
+   * LİSTENİN ÖTELEMESİ — gönderiler tam ekran haritada AŞAĞI kayıyor.
    *
-   * ⚠️ Açılış başladıktan sonra CANLI offset okunmuyor, donmuş oran
-   * kullanılıyor: `scrollEnabled` kapandığı an liste 0'a dönüyor ve canlı
-   * değerle sürülen her katman bir anda geri düşerdi (uzun gerekçe
-   * `mapPullFrozen`de).
+   * ⚠️ ÇEKMENİN TELAFİSİ KALDIRILDI. Burada uzun bir "eksik pay" hesabı vardı
+   * (`max(donmuş − canlı, 0)`): eşik geçildiği an `scrollEnabled` kapanıyor,
+   * iOS süren sürüklemeyi iptal ediyor ve lastiğin nasıl toplandığı garanti
+   * olmadığı için gönderiler ya zıplıyor ya iki kat aşağı düşüyordu. Çekme
+   * jesti üründen çıkınca (istek) o yarışın tamamı da gitti — açılış artık
+   * yalnız BUTONDAN (anlar destesi) geliyor ve o anda liste 0'da duruyor.
+   *
+   * ⚠️ TÜRETİLMİŞ DEĞER OLARAK, doğrudan stilin içinde DEĞİL: chrome bu ağacın
+   * ÇOCUĞU ve ötelemenin TAMAMINI geri almak zorunda (bkz. chromeSlideStyle).
    */
-  const mapPull = useDerivedValue(() => {
-    if (mapProgress.value > 0) return mapPullFrozen.value;
-    // ⚠️ MOMENTUM BOUNCE ÇEKME DEĞİL: kilit kapalıysa hiçbir katman kıpırdamaz
-    // (gerekçe `feedPullEngaged`de).
-    if (!feedPullEngaged.value) return 0;
-    return Math.min(Math.max(-feedScrollY.value / MAP_PULL_EXPAND_PX, 0), 1);
-  });
+  const listOffsetPx = useDerivedValue(
+    () => mapProgress.value * windowHeight,
+  );
 
   /**
-   * HARMANLANMIŞ SÜRÜCÜ — "açılışın ne kadarı tamamlandı", parmak dahil.
+   * ÜST BLOĞUN ÇIKIŞI — başlık + pill satırı ve sekme şeridi AYNI sayıyı
+   * okuyor.
    *
-   * Çekerken katman kendi yolunun `MAP_PULL_SHARE` kadarını alıyor; animasyon
-   * başlayınca ilerleme devralıyor ve çekmenin payı `(1 - ilerleme)` ile
-   * sönüyor.
+   * ⚠️ ÇEKMENİN FAZI KALDIRILDI: değer iki fazlıydı (parmak çekerken
+   * `pullLiftPx`e kadar, eşik geçilince tam kalkışa kadar) ve iki fazın tek
+   * sayıda toplanması geçişte hız sıçramasını önlemek içindi. Çekme gidince tek
+   * faz kaldı.
    *
-   * ⚠️ TÜKETİCİSİ AZALDI, formül aynı kaldı: sekme şeridi (Akış /
-   * Gönderilerim). Kutuların şeridi ve ekranın perdeleri bir dönem bunu
-   * okuyordu; kutular artık çekmeye DEĞİL kendi girişine bağlı (istek, bkz.
-   * `mapStripEntry`) ve perdeler onunla aynı aileye döndü.
-   *
-   * Chrome (başlık + pill satırı) BUNU OKUMUYOR, kendi formülü var: o listenin
-   * ÇOCUĞU, yani lastiğin aşağı itmesini de iptal etmek zorunda
-   * (bkz. chromeSlideStyle). Haritanın blur'u ise ham `mapPull`ı okuyor.
+   * ⚠️ İKİ TÜKETİCİ, TEK SAYI: chrome ve sekme şeridi. Şerit onu KENDİ çıkışına
+   * kırpıyor — gerekçe `headerSlideStyle`da.
    */
-  const mapDrive = useDerivedValue(
-    () =>
-      mapProgress.value +
-      (1 - mapProgress.value) * mapPull.value * MAP_PULL_SHARE,
+  const exitPx = useDerivedValue(
+    () => mapProgress.value * (listTopPadding + chromeHeight),
   );
 
   /**
@@ -1858,93 +1808,51 @@ export default function FeedScreen() {
    * görünmez kılıyor; opaklık KULLANILMIYOR çünkü chrome da bu ağacın içinde
    * ve iki kez sönerdi.
    */
-  const listSlideStyle = useAnimatedStyle(() => {
-    /**
-     * ⚠️ ÇEKMENİN YALNIZ *KAYBEDİLEN* PAYI GERİ VERİLİYOR.
-     *
-     * Eşik geçildiği an `scrollEnabled` kapanıyor ve iOS süren sürüklemeyi
-     * iptal ediyor. Ama NASIL iptal ettiği garanti değil: içeriği aynı karede
-     * 0'a snap'leyebiliyor da, lastiği kendi süresinde geri yaylandırabiliyor
-     * da. İlk sürümde açılış anındaki pay KOŞULSUZ ekleniyordu ve bu ikinci
-     * durumda ZIPLAMA üretiyordu — lastik hâlâ gönderileri 92pt aşağıda
-     * tutarken telafi de 92pt ekliyor, yani gönderiler bir anda iki kat aşağı
-     * düşüyordu.
-     *
-     * Doğru hesap "layout şu an ne kadarını veriyor" sorusunu sormak:
-     *
-     *     eksik = max(dondurulmuş_pay − canlı_offset, 0)
-     *
-     * Snap olursa `canlı` aynı karede 0 olur ve eksik tam payı kapatır;
-     * yaylanma olursa eksik onunla birlikte BÜYÜR. İki yolda da ekrandaki
-     * konum kesintisiz.
-     *
-     * ⚠️ `(1 - ilerleme)` İLE ÇARPILMIYOR: yaylanma animasyonun ortasında
-     * biterse (ör. ilerleme 0.8) çarpan telafinin büyük kısmını yutar ve tam o
-     * anda bir sıçrama doğar. Çarpansız fazlalık yalnız gönderileri ekranın
-     * dışında bir miktar daha aşağıda bırakıyor — görünmeyen bir bedel.
-     */
-    const frozenPx = mapPullFrozen.value * MAP_PULL_EXPAND_PX;
-    const livePx = Math.max(-feedScrollY.value, 0);
-    const missing = Math.max(frozenPx - livePx, 0);
-    return {
-      transform: [{ translateY: mapProgress.value * windowHeight + missing }],
-    };
-  });
+  const listSlideStyle = useAnimatedStyle(() => ({
+    transform: [{ translateY: listOffsetPx.value }],
+  }));
 
   /**
-   * Chrome'un ötelemesi — İKİ İŞ ÜST ÜSTE:
+   * Chrome'un (başlık + pill satırı) tam ekran haritada ÇIKIŞI.
    *
-   *  1. YAPIŞMA (scroll). Başlık ve pill satırı, ilk gönderi pill'lerin altına
-   *     VARANA KADAR ekranda duruyor; o noktadan sonra listeyle birlikte yukarı
-   *     çıkıyor. Chrome listenin BAŞLIĞI, yani normalde içerikle birlikte
-   *     kayıyor — yerinde durması için scroll'un TAM TERSİ kadar geri
-   *     ötelenmesi gerekiyor (`+feedScrollY`).
+   * ⚠️🔴 YAPIŞMA KALDIRILDI. Blok eskiden ilk 120pt boyunca (bandın boyu)
+   * scroll'un tam tersi kadar ötelenerek YERİNDE duruyordu: pill'lerin altında
+   * haritanın açıkta kaldığı bir bant vardı ve chrome o bant tükenene kadar
+   * ekranda kalıyordu. Bant kaldırıldı (istek: "direkt pill'lerin altında
+   * postlar olsun"), yani yapışacak bir şey yok — chrome artık listenin sıradan
+   * bir başlığı ve içerikle birlikte kayıyor. `feedScrollY`yi okuyan terim
+   * tamamen gitti; onunla birlikte "aşağı çekerken chrome yerinde dursun"
+   * davranışı da (çekme jesti üründen çıktı, aşağı çekmek artık yeniliyor).
    *
-   *     Yapışma mesafesi = FEED_MAP_BAND_HEIGHT, yani pill'lerin altındaki açık
-   *     harita bandı. O bant tükendiğinde ilk kart pill satırının `PILL_ROW_GAP`
-   *     kadar altına gelmiş oluyor (bloklar arası tasarlanan nefes) ve öteleme
-   *     sabitlendiği için chrome oradan sonra kartlarla aynı hızda çıkıyor —
-   *     kart chrome'u asla yakalamıyor, yani üst üste binme yok.
+   * ⚠️ LİSTENİN ÖTELEMESİNİN TAMAMI İPTAL EDİLİYOR (`- listOffsetPx`): chrome
+   * listenin ÇOCUĞU, yani iki transform üst üste biniyor. Net konum =
+   * liste(+L) + chrome(−L − çıkış) = −çıkış.
    *
-   *     ⚠️ ALT SINIR YOK, bilerek: YUKARIDAN AŞAĞI ÇEKERKEN (negatif offset)
-   *     chrome yine YERİNDE DURUYOR. Öteleme o aralıkta negatif oluyor ve
-   *     listenin aşağı esnemesini birebir iptal ediyor; aşağı inen tek şey
-   *     gönderiler, başlık ile pill satırı kıpırdamıyor (istek). Alt sınır 0
-   *     olsaydı chrome de aşağı esner, yani "sayfanın tamamı aşağı kayıyor"
-   *     görüntüsü çıkardı.
+   * ⚠️🔴 ÇEKME TERİMİ DENENDİ VE GERİ ALINDI — `Math.min(feedScrollY, 0)`.
    *
-   *     Yenileme çarkı da bu yüzden kendi yerini biliyor: pill'lerin altı
-   *     çekme boyunca sabit kaldığı için `refreshOffset` sabit bir sayı
-   *     (bkz. FeedListPage > refreshOffset).
+   * İstek "pull to refresh için piller ve üstü sabit kalsın"dı ve hesap
+   * doğruydu: lastik aşağı esnerken `contentOffset` negatif oluyor, içeriğin
+   * tamamı (chrome dahil — o listenin BAŞLIĞI) o kadar aşağı çiziliyor, aynı
+   * sayı kadar yukarı ötelemek onu birebir iptal ediyor.
    *
-   *  2. TAM EKRAN HARİTA. Chrome ekranın tepesinden tamamen çıkıyor. ⚠️ Öteleme
-   *     listenin ötelemesini de İPTAL etmek zorunda: chrome listenin çocuğu,
-   *     yani iki transform üst üste biniyor. Net konum = liste(+H) + chrome(−H −
-   *     kalkış) = −kalkış. Kalkış = üst pay + chrome yüksekliği.
+   * ⚠️ BEDELİ TİTREME OLDU ve yapısal: lastik NATİF olarak her karede
+   * (ProMotion'da 120Hz) hareket ediyor, telafi ise SCROLL OLAYINDAN türüyor ve
+   * akış listesi 16ms'de (≈60Hz) olay veriyor. Yani chrome içeriğin bir kare
+   * gerisinden geliyor ve tam olarak şikâyet edilen yerde — başlık + açıklama +
+   * pill satırında — titriyor.
    *
-   * ⚠️ İKİSİ ÇARPIŞIYOR, o yüzden yapışma `(1 − ilerleme)` ile sönüyor:
-   * kullanıcı KAYDIRMIŞKEN haritayı açarsa chrome yapışma payı (en fazla 120)
-   * kadar aşağıda kalır ve ekranın tepesinde asılı kalan bir başlık görünürdü.
+   * ⚠️ OLAY HIZINI 1'E ÇEKMEK ÇÖZÜM DEĞİL: o, başlığın alfayla sönen kademeli
+   * blur'unu titretiyor (bkz. FeedListPage > scrollEventThrottle, aynı gün
+   * yaşandı ve geri alındı). İki titreme arasında seçim yapmak gerekiyordu;
+   * standart davranış (her şeyin lastikle birlikte inmesi) ikisini de üretmiyor.
+   *
+   * ⚠️ LİSTENİN ÖTELEMESİNİN TAMAMI İPTAL EDİLİYOR (`- listOffsetPx`): chrome
+   * listenin ÇOCUĞU, yani iki transform üst üste biniyor. Net konum =
+   * liste(+L) + chrome(−L − çıkış) = −çıkış.
    */
-  const chromeSlideStyle = useAnimatedStyle(() => {
-    const lift = listTopPadding + chromeHeight;
-    const stick = Math.min(feedScrollY.value, FEED_MAP_BAND_HEIGHT);
-    /**
-     * 3. ÇEKMEYE BAĞLI ÖN ÇIKIŞ (istek). Parmak aşağı çekerken chrome yukarı
-     * doğru yola çıkıyor: oran `mapPull`dan, mesafe kendi çıkışının
-     * `MAP_PULL_SHARE` kadarı. Donmuş/canlı ayrımı o değerin içinde.
-     */
-    const pullLift = mapPull.value * lift * MAP_PULL_SHARE;
-    return {
-      transform: [
-        {
-          translateY:
-            (stick - pullLift) * (1 - mapProgress.value) -
-            mapProgress.value * (windowHeight + lift),
-        },
-      ],
-    };
-  });
+  const chromeSlideStyle = useAnimatedStyle(() => ({
+    transform: [{ translateY: -exitPx.value - listOffsetPx.value }],
+  }));
 
   /**
    * Sekme şeridi de YUKARI kayıyor — X ile aynı köşeyi paylaşıyorlar (ikisi de
@@ -1952,20 +1860,52 @@ export default function FeedScreen() {
    * ve blur'u opaklıkla söndürmek titreme üretiyor.
    */
   /**
-   * Üst chrome'un (başlık + Plus pill'i) sönmesi — gerekçe `mapChromeFade`de.
+   * ⚠️ `mapChromeFadeStyle` KALDIRILDI — tek müşterisi üst başlıktı ve o artık
+   * `mapTitleFadeStyle`i okuyor (gerekçe hemen aşağıda). `mapChromeFade`
+   * paylaşılan DEĞERİ duruyor: perdeler onu doğrudan prop olarak alıyor.
    */
-  const mapChromeFadeStyle = useAnimatedStyle(() => ({
-    opacity: mapChromeFade.value,
+
+  /**
+   * HARİTA BAŞLIĞININ ("Anlar") ÇAPRAZ SÖNÜMÜ — sekme şeridinin yerine geçiyor.
+   *
+   * ⚠️ `mapChromeFade` DEĞİL `mapProgress` (istek: "title da yok olup baştan
+   * çizilmesin"). Perdeler haritanın hareketi BİTTİKTEN sonra kendi süresiyle
+   * beliriyor (gerekçe `mapChromeFade`de, istek üzerine öyle) ve başlık onlara
+   * bağlıyken sıra şöyle oluyordu: sekmeler yukarı kayıp gidiyor → üst şerit
+   * bir süre BOŞ kalıyor → başlık sıfırdan beliriyor. Artık aynı hareketin
+   * içinde: şerit çıkarken başlık giriyor, yani köşe hiç boşalmıyor.
+   *
+   * ⚠️ İKİNCİ YARIDA (0.45→1): şeridin kendi çıkışı `exitPx`e kırpılı, yani
+   * hareketin ilk yarısında bitiyor. Başlık baştan açılsaydı iki yazı aynı
+   * merkezde üst üste binerdi.
+   */
+  const mapTitleFadeStyle = useAnimatedStyle(() => ({
+    opacity: interpolate(
+      mapProgress.value,
+      [0.45, 1],
+      [0, 1],
+      Extrapolation.CLAMP,
+    ),
   }));
 
-  const headerSlideStyle = useAnimatedStyle(() => ({
-    // Kalkış = listenin üst payı, yani şeridin bandının tamamı.
+  const headerSlideStyle = useAnimatedStyle(() => {
+    // Kalkış = listenin üst payı, yani şeridin kendi zemininin tamamı
+    // (`backgroundHeight` birebir o sayı): orada şerit tam olarak ekranın
+    // dışında.
     //
-    // ⚠️ `mapDrive`, `mapProgress` DEĞİL: akış/Gönderilerim sekmeleri de
-    // ÇEKMEYE BAĞLI yukarı gidiyor (istek). Şerit listenin DIŞINDA, yani
-    // lastikten etkilenmiyor — chrome'daki iptal terimi burada gerekmiyor.
-    transform: [{ translateY: -mapDrive.value * listTopPadding }],
-  }));
+    // ⚠️ CHROME'UN SAYISINI OKUYOR (istek: "aynı oranda gitsinler beraber",
+    // "aynı hızda yukarı doğru gitsin") — kendi mesafesinin oranı DEĞİL; uzun
+    // gerekçe `exitPx`te. Şerit listenin DIŞINDA: chrome'daki iptal terimi
+    // burada gerekmiyor.
+    //
+    // ⚠️ KENDİ ÇIKIŞINA KIRPILIYOR: chrome'un yolu daha uzun (üst pay + chrome
+    // yüksekliği) ve kırpılmazsa şerit kendi hedefini AŞAR, sonra animasyon
+    // devralınca geri iner — tek karelik bir geri tepme. Kırpma yüzünden şerit
+    // chrome'dan ÖNCE duruyor, ama durduğu yer ekranın dışı: görünen tek şey
+    // ikisinin aynı hızda birlikte çıkması.
+    const exit = Math.min(exitPx.value, listTopPadding);
+    return { transform: [{ translateY: -exit }] };
+  });
 
   /**
    * KAMPÜS HARİTASI ZEMİNİ — EKRANIN TAMAMINI kaplıyor (istek: zeminin dibi de
@@ -1977,8 +1917,13 @@ export default function FeedScreen() {
    * dikey kayması (kampüsü açık bandın ortasına getiren hesap). Üst pay +
    * chrome + bant.
    *
-   * Yalnız AKIŞ sekmesinde: Gönderilerim kampüs filtresi taşımıyor, harita da
-   * bir kampüs göstergesi.
+   * ⚠️ İKİ SEKMEDE DE, BİREBİR AYNI (istek). Bir dönem yalnız Akış'taydı ve
+   * gerekçesi "Gönderilerim kampüs filtresi taşımıyor, harita da bir kampüs
+   * göstergesi"ydi; o gerekçe haritayı sayfanın parçası sayıyordu, oysa o
+   * ekranın ZEMİNİ. Kadraj Akış'ın chrome yüksekliğinden türümeye devam
+   * ediyor (`heroHeight`) — Akış sayfası pager'da mount'lu kaldığı için
+   * `chromeHeight` Gönderilerim'deyken de geçerli ve iki sekmede aynı
+   * görüntüyü veren şey tam olarak bu.
    */
   /**
    * KAMPÜS ANLARI — tam ekran haritanın üstündeki yüzey.
@@ -2008,6 +1953,63 @@ export default function FeedScreen() {
     onPaywall: openPaywall,
   });
 
+  /**
+   * ── AN KARTINA DOKUNMAK → KİŞİNİN PROFİL KARTI (istek) ───────────────────
+   *
+   * Şeridin kartlarındaki cam tik/X satırı kaldırıldı; karar artık profil
+   * kartında veriliyor. Düzen akışın YAZAR KARTIYLA birebir aynı
+   * (`LikerSwipeModal` + `onDecide`) ve bu bilinçli: aynı jest, aynı sheet,
+   * aynı moderasyon satırları — kullanıcı iki yüzeyde iki ayrı kart dili
+   * görmüyor.
+   *
+   * ⚠️ HEDEF STATE'TE TUTULUYOR, yalnız `userId` DEĞİL: karar sarmalayıcısı
+   * anın KENDİSİNİ istiyor (`campus.like` gövdeye `momentId` koyuyor, kota
+   * sunucuda onunla idempotent) ve kart kapanırken `profile` bir kare
+   * null'lanabiliyor.
+   */
+  const [momentTarget, setMomentTarget] = useState<CampusMomentDto | null>(
+    null,
+  );
+  const momentProfile = useCampusMomentProfile(
+    momentTarget?.userId ?? null,
+    selectedMode,
+  );
+
+  /**
+   * ⚠️ UCUN REDDİ SESSİZ KALMIYOR: kampüs sözleşmesinde an sahibinin profilini
+   * veren bir uç yok ve ödünç alınan `LikerProfile` bu kümeye kapalı olabilir
+   * (uzun gerekçe `useCampusMomentProfile`te). Kart açılmazsa kullanıcı
+   * "dokundum, hiçbir şey olmadı" görmek zorunda değil — toast çıkıyor ve
+   * hedef düşüyor, yani ikinci dokunuş yeniden deniyor.
+   */
+  useEffect(() => {
+    if (!momentTarget || !momentProfile.isError) return;
+    setMomentTarget(null);
+    showInfoToast({
+      title: t("campus.title"),
+      message: t("campus.codes.generic"),
+    });
+  }, [momentProfile.isError, momentTarget, t]);
+
+  /**
+   * Profil kartından verilen karar — KAMPÜS yoluna gidiyor, keşif swipe'ına
+   * DEĞİL (bu yüzden `onDecide`; bkz. o prop'un notu).
+   *
+   * Sağ = beğen (`/api/swipe/Like` + `source: "CampusMoment"` + `momentId`),
+   * sol = geç (kampüs-yerel uç, Keşif destesine dokunmuyor). İkisinin AYRI
+   * uçlar olmasının gerekçesi `campusTypes > CampusDecisionExtras`ta.
+   */
+  const handleMomentDecide = useCallback(
+    (direction: "left" | "right") => {
+      const moment = momentTarget;
+      setMomentTarget(null);
+      if (!moment) return;
+      if (direction === "right") campus.like(moment);
+      else campus.pass(moment);
+    },
+    [campus, momentTarget],
+  );
+
   const mapHero = (
     <FeedMapStrip
       // ⚠️ `campusDomain`in KENDİSİ — satır burada yeniden türetilmiyor. İki
@@ -2022,14 +2024,17 @@ export default function FeedScreen() {
        * Üstteki okunabilirlik bandı ÇEKMEYE BAĞLI da sönüyor (istek): chrome
        * parmakla yukarı çıkarken onu koruyan blur da birlikte açılıyor.
        */
-      pullProgress={mapPull}
-      heroHeight={
-        // ⚠️ Bant AYRICA ekleniyor: ölçülen blok artık yalnız başlık + pill
-        // satırı (bant yapışan bloğun dışına çıktı, gerekçe listHeader'da).
-        chromeHeight > 0
-          ? listTopPadding + chromeHeight + FEED_MAP_BAND_HEIGHT
-          : 0
-      }
+      // Kontur YALNIZ tam ekrana geçince kenarı boyunca çiziliyor; akışta 0
+      // (gerekçe `polygonReveal`de).
+      polygonReveal={polygonReveal}
+      /**
+       * ⚠️ BANT TERİMİ KALKTI: pill'lerin altındaki açık harita bandı
+       * kaldırıldı (istek), yani perdenin bittiği çizgi = chrome'un dibi.
+       * `bandHeight` de 0 — perde artık banda sarkmıyor, pill satırının
+       * hemen altında bitiyor.
+       */
+      heroHeight={chromeHeight > 0 ? listTopPadding + chromeHeight : 0}
+      bandHeight={0}
       /**
        * Tam ekranda kampüs noktası EKRANIN ortasına değil, anlar ŞERİDİNİN
        * ÜSTÜNDE kalan alanın ortasına geliyor. Yükseklik şeridin kendi
@@ -2043,16 +2048,71 @@ export default function FeedScreen() {
       }
       /**
        * Sınır varsa harita izometrik diorama yerine GERÇEK POLİGONU çiziyor.
-       * Poligonu olmayan kampüslerde (sunucuda hâlâ 25 tane) diorama duruyor —
-       * orada çizilecek bir sınır yok.
+       * Poligonu olmayan kampüslerde (sunucuda hâlâ 25 tane) daireden türeyen
+       * kaba bir parsel çiziliyor; diorama yalnız ikisi de yokken kalıyor.
        *
        * ⚠️ SINIR `campus.boundary`DEN DEĞİL `mapBoundaryQuery`DEN: ilki her
        * zaman kullanıcının KENDİ kampüsünün ve haritaya verildiğinde kadrajı
        * seçili kampüsten koparıyor (uzun gerekçe `mapBoundaryQuery`de).
        */
       boundary={mapBoundaryQuery.data ?? null}
+      /**
+       * "SINIR HENÜZ İNMEDİ" — `null`ın iki anlamını ayıran bayrak.
+       *
+       * Okul değiştirildiğinde sorgu anahtarı domain başına olduğu için yeni
+       * kampüsün verisi gelene kadar `data` undefined kalıyor; şerit bunu
+       * "poligonu yok" sanıp ara hâlleri çiziyordu (3B figür → ara kadraj →
+       * poligon). Bayrak açıkken şerit iskelette bekliyor (gerekçe
+       * FeedMapStrip > boundaryPending).
+       *
+       * ⚠️ `isPending` DEĞİL `isLoading`: ilki DEVRE DIŞI sorguda da `true`
+       * (domain yok → `enabled: false`), yani kampüsü çözülmemiş kullanıcıda
+       * iskelet süresiz kalırdı. `isLoading` = "fiilen çekiliyor ve veri yok".
+       *
+       * ⚠️ Arka plan tazelemesi (`isFetching`) KASITLI OLARAK DAHİL DEĞİL:
+       * elimizde disk kopyası varken onu çizmek doğru, iskelete dönmek
+       * kullanıcıya sebepsiz bir yükleme göstermek olurdu.
+       */
+      boundaryPending={mapBoundaryQuery.isLoading}
+      /**
+       * ⚠️ `asideCampus` VERİLMİYOR (varsayılan `false`) → KAMPÜS ORTADA.
+       * Prop, bandın SAĞINDA kutular varken poligonu sol sütuna çeken şeydi;
+       * bant kaldırılınca (istek) sütun diye bir şey kalmadı. Prop'un kendisi
+       * duruyor: tam ekran yüzeyi ileride yana yerleşen bir düzen isterse
+       * hesap yerinde.
+       */
     />
   );
+
+  /**
+   * ANLARIN ÜÇLÜ DESTESİ — başlık satırının sağ ucunda.
+   *
+   * ⚠️ BANDIN SAĞ YARISINDAKİ SÜZÜLEN KARELERİN YERİNE GELDİ (istek). O satır
+   * haritanın KARDEŞİYDİ (listenin arkasında, sabit); bu deste başlık bloğunun
+   * İÇİNDE, yani listeyle birlikte kayıyor. Fark artık bir sorun değil: hizasını
+   * koruması gereken bir poligon yok (akışta şekil hiç çizilmiyor).
+   *
+   * ⚠️ `campus.available` KAPISI DURUYOR: kampüsü çözülmemiş ya da yüzeyi
+   * kapalı kullanıcıda deste HİÇ çizilmiyor — boş bir gri kare, olmayan bir
+   * özelliği vaat ederdi.
+   *
+   * Dokununca tam ekran harita açılıyor: bandın butonu ve çekme jesti
+   * kaldırıldığı için haritanın TEK girişi bu (istek).
+   */
+  const momentsPeek = campus.available ? (
+    <FeedMomentsPeek
+      moments={campus.moments}
+      onPress={expandMap}
+      accessibilityLabel={campusLabel ?? t("campus.title")}
+      /**
+       * Kenarda dolaşan çizginin rengi — SEÇİLİ MODUN Fire ailesi (istek:
+       * "moda göre yeşil veya kırmızı-turuncu"). `modeAccent` DEĞİL
+       * `modeFireGradient`: ilki düz bir ton (Flört'te #ff3d3d), istenen
+       * kırmızı-TURUNCU ise bu gradyanın son durağı (#ff452a).
+       */
+      gradient={modeFireGradient(selectedMode)}
+    />
+  ) : null;
 
   const filterRow = (
     // Alt pay PILL_ROW_GAP: ham marjı değil, açıklamayla pill'ler arasındaki
@@ -2095,6 +2155,9 @@ export default function FeedScreen() {
         // kullanıcıya satın aldığı şeyi tekrar satmıyor.
         onActionPress={showPlusUpsell ? openPaywall : null}
         accent={accent}
+        // Anların destesi YALNIZ AKIŞTA: Gönderilerim bir yönetim listesi,
+        // kampüs anlarıyla ilgisi yok (aynı kapı harita zemininde de var).
+        trailing={key === "mine" ? null : momentsPeek}
       />
     );
 
@@ -2113,6 +2176,8 @@ export default function FeedScreen() {
         // Akış sayfası KENDİ offset'ini de yazıyor (yapışan chrome ona bakıyor
         // — gerekçe feedScrollY'de); Gönderilerim ortak değeri yazmakla kalıyor.
         scrollHandler={isMine ? scrollHandler : feedScrollHandler}
+        // Uçuş yalnız akışta (gerekçe prop'un tanımında).
+        flight={isMine ? null : flight}
         loading={loading}
         showSkeleton={loading && skeletonReady}
         // İskelet de kartın `variant`ını almalı: Gönderilerim'in satırında
@@ -2178,37 +2243,17 @@ export default function FeedScreen() {
                 {title}
                 {filterRow}
               </Animated.View>
-              {/* PİLL'LERLE İLK GÖNDERİ ARASINDAKİ BOŞLUK — haritanın açıkta
-                  kaldığı bant (istek) ve TAM EKRAN HARİTAYI AÇAN BUTON.
+              {/* ⚠️🔴 PİLL'LERLE İLK GÖNDERİ ARASINDAKİ BANT KALDIRILDI
+                  (istek: "piller ile postlar arasında kalan map poligon
+                  kısmını kaldırıyoruz, direkt pill'lerin altında postlar
+                  olsun"). Orada 120pt'lik, zemini olmayan bir `Pressable`
+                  vardı: haritanın açıkta kaldığı tek yer VE tam ekranı açan
+                  buton. İkisi de gitti — haritanın girişi artık başlığın
+                  sağındaki anlar destesi (bkz. momentsPeek), harita zemini ise
+                  yalnız kartların aralarından görünüyor.
 
-                  ⚠️ BUTON BURADA, haritanın kendi katmanında DEĞİL. Katman
-                  listenin arkasında; oraya konan dokunma hedefi hiç
-                  tetiklenmiyor çünkü liste (ScrollView) ekranın tamamını
-                  kaplıyor ve iOS hit-test'i olayı kardeşe düşürmüyor (uzun
-                  gerekçe FeedMapStrip'in başında). Dokunuşu zaten alan ağaç
-                  liste, o yüzden buton listenin içindeki bu boşluk.
-
-                  Görsel geri bildirim YOK (`pressed` kullanılmıyor): zemini
-                  olmayan bir alanı söndürmek haritayı titretirdi, geri bildirim
-                  zaten açılma animasyonunun kendisi.
-
-                  ⚠️ YAPIŞAN BLOĞUN DIŞINDA, onun çocuğu DEĞİL. Chrome
-                  yapışırken (bkz. chromeSlideStyle) çocuklarının hepsi scroll
-                  kadar AŞAĞI ötelenir; bant içeride kalsaydı ilk kartın üstüne
-                  biner ve zIndex yüzünden kartın üst satırındaki dokunuşları
-                  (yazara git) yutardı. Dışarıda yerinde kalıyor; kartlar ondan
-                  SONRA çizildiği için kaydırınca üstünü örtüyorlar, yani buton
-                  yalnız bant GÖRÜNÜRKEN basılabiliyor — istenen de bu.
-
-                  ⚠️ Chrome'un ÖLÇÜLEN yüksekliğine dahil DEĞİL artık →
-                  `heroHeight` bandı AYRICA ekliyor (bkz. mapHero). */}
-              <Pressable
-                onPress={expandMap}
-                accessibilityRole="button"
-                accessibilityLabel={campusLabel ?? t("feed.university.own")}
-                accessibilityHint={t("feed.map.expandHint")}
-                style={{ height: FEED_MAP_BAND_HEIGHT }}
-              />
+                  ⚠️ `heroHeight` de bant terimini kaybetti (bkz. mapHero):
+                  perde pill satırının hemen altında bitiyor. */}
             </>
           )
         }
@@ -2218,32 +2263,47 @@ export default function FeedScreen() {
           }
         }}
         /**
-         * AKIŞTA PULL-TO-REFRESH YOK (istek) — çekmek HARİTAYI AÇIYOR.
+         * PULL-TO-REFRESH — İKİ SAYFADA DA (akışta GERİ GELDİ).
          *
-         * Aynı jest iki işi birden yapamaz: aşağı çekerken gönderiler iniyor,
-         * başlık ve pill satırı yerinde duruyor (bkz. chromeSlideStyle) ve
-         * açılan boşluktan harita görünüyor — yani jestin kendisi zaten
-         * "haritayı aç" diyor. Çarkın orada belirmesi o okunuşu bozuyordu.
-         * Eşiği geçince tam ekran harita açılıyor (bkz. pullExpandReaction).
+         * ⚠️🔴 AKIŞTA BİR DÖNEM YOKTU: aynı jest tam ekran haritayı açıyordu
+         * ("aşağı çekerken gönderiler iniyor, açılan boşluktan harita görünüyor")
+         * ve çarkın orada belirmesi o okunuşu bozuyordu. O jest kaldırıldı
+         * (istek) — haritanın girişi başlığın sağındaki anlar destesi oldu, yani
+         * çekme boşa düştü ve bir akışın en beklenen jesti olarak geri verildi.
          *
-         * ⚠️ AKIŞ ARTIK ELLE YENİLENMİYOR ve bu bilinçli bir takas. Tazelik üç
-         * yoldan geliyor: sekmeye her dönüşte `visited` sorgusu, push/SignalR
-         * köprüsü (FEED_DIRTY_EVENT) ve 30sn'lik tazelik penceresi. Gönderilerim
-         * sayfasında çark DURUYOR — orada harita yok, jest de boşa gidiyordu.
+         * Tazeliğin öteki üç yolu duruyor: sekmeye her dönüşte `visited`
+         * sorgusu, push/SignalR köprüsü (FEED_DIRTY_EVENT) ve 30sn'lik tazelik
+         * penceresi. Çark onların yerine değil, kullanıcının "şimdi bak"
+         * demesinin yolu.
+         *
+         * ⚠️ `refetch()` DEĞİL ilk sayfaya dönüş: kullanıcının "yukarı çekme"den
+         * anladığı şey listenin BAŞINA dönmesi; `refetch` yüklenmiş bütün
+         * sayfaları tazeleyip kaydırma konumunu koruyor.
          */
-        onRefresh={
-          isMine
-            ? () => {
-                // `refetch()` DEĞİL... (aşağıdaki not) — burada tek sayfaya
-                // dönmek doğrusu, kullanıcının "yukarı çekme"den anladığı da bu.
-                query.refetch?.();
-                meQuery.refetch?.();
-              }
-            : undefined
-        }
-        refreshing={
-          isMine ? query.isRefetching && !query.isFetchingNextPage : false
-        }
+        onRefresh={() => {
+          query.refetch?.();
+          meQuery.refetch?.();
+        }}
+        refreshing={query.isRefetching && !query.isFetchingNextPage}
+        /**
+         * ⚠️🔴 ÇARKIN YERİ VARSAYILANDA — "chrome'un dibi" denendi ve GERİ
+         * ALINDI (`refreshOffset = listTopPadding + chromeHeight`, ~300px).
+         *
+         * İstek "altında postların üstünde sadece activity indicator"dı ama
+         * native `UIRefreshControl`de o sayı ÇARKIN YERİ DEĞİL, EŞİĞİN DE
+         * YERİ: kontrol o kadar aşağıya taşınınca tetiklemek için ~300px
+         * çekmek gerekiyordu (şikâyet birebir: "çok fazla aşağı çekmem
+         * gerekiyo").
+         *
+         * Varsayılan (bulanık şeridin dibi) hem normal bir çekme mesafesi
+         * veriyor hem de çarkı doğru yere koyuyor: içerik lastikle birlikte
+         * iniyor ve çark şeridin altında AÇILAN boşlukta beliriyor.
+         *
+         * ⚠️ Çarkı pill'lerin altına almanın tek yolu kendi göstergemizi
+         * çizmek (mutlak konumlu bir `ActivityIndicator` + eşik reaksiyonu) ve
+         * o da pill'lerin sabit kalmasını gerektiriyor — yukarıdaki titreme
+         * notu tam olarak oranın duvarı.
+         */
         empty={
           disabledError ? (
             disabledEmpty(!isMine)
@@ -2298,11 +2358,76 @@ export default function FeedScreen() {
     );
   };
 
+  /**
+   * SOL KÖŞENİN AKIŞ AKSİYONU — pill'lerin açtığı sheet'in TA KENDİSİ.
+   * Satır içinde `() => setFilterVisible(true)` yazılsaydı her render'da yeni
+   * bir fonksiyon doğar ve `memo`lu cam buton boşuna yeniden çizilirdi.
+   */
+  const openFilter = useCallback(() => setFilterVisible(true), []);
+
+  /**
+   * SAĞ KÖŞENİN AKSİYONU — tek buton, iki hâl (akış: kalem, harita: artı).
+   *
+   * ⚠️ PROPS OLARAK HESAPLANIYOR, İKİ JSX DALI OLARAK DEĞİL: `{a ? <B/> :
+   * <C/>}` aynı tipte iki eleman olsa da okunurluk adına iki ayrı dal yazmak
+   * kolayca iki ayrı JSX konumuna kayıyor ve o anda React butonu unmount edip
+   * yeniden mount ediyor — cam bir `Host`u geçişin ortasında yeniden kurmak tam
+   * olarak kaçınılan şey (bkz. satırın başındaki not).
+   *
+   * `null` = köşede buton YOK; yalnız haritada ve yalnız paylaşım hakkı
+   * yokken (gerekçe JSX'te).
+   */
+  const rightCorner = mapExpanded
+    ? campus.canShare
+      ? {
+          systemName: "plus" as const,
+          fallback: Plus,
+          onPress: campus.captureMoment,
+          label: t("campus.shareBox"),
+        }
+      : null
+    : {
+        systemName: "square.and.pencil" as const,
+        fallback: Pencil,
+        onPress: openComposer,
+        label: t("feed.empty.cta"),
+      };
+
   return (
     <View style={{ flex: 1, backgroundColor: colors.bg }}>
+      {/* ── HARİTA ZEMİNİ — İKİ SEKMENİN ORTAK VE SABİT TABANI ─────────────
+          Katman sırası: harita < pager < sekme şeridi < perdeler < köşe
+          butonları. Kaydırırken harita yerinde kalıyor, gönderiler üstünden
+          akıyor; yatay geçişte de sayfalar onun ÜSTÜNDEN kayıyor.
+          Gerekçenin tamamı FeedMapStrip'in başında.
+
+          ⚠️🔴 BİR DÖNEM PAGER'IN İÇİNDEYDİ ve o not "pager'ın dışına değil,
+          sayfanın içine" diyordu — gerekçesi iOS'ta `AnimatedPagerView`in
+          native bir sayfa denetleyicisi olması ve KENDİ zeminiyle arkasındaki
+          katmanı örtme riskiydi. O yazımda harita yalnız Akış sayfasının
+          çocuğuydu: Gönderilerim'e kaydırınca sayfayla birlikte yana gidiyor,
+          arkada düz `colors.bg` kalıyordu — yani harita ekranın zemini değil,
+          bir sayfanın parçası gibi okunuyordu (istek: "tablar arası geçişte
+          arkaplanda kalsın").
+
+          Risk ortadan kalkmadı, KARŞILANDI: pager'a ve iki sayfa kabına açık
+          `backgroundColor: "transparent"` veriliyor (hemen aşağıda). Oradaki
+          şeffaflık bu katmanı taşıyor — biri düşerse harita hiç görünmez.
+
+          ⚠️ ÇIPLAK KARDEŞ, sarmalayıcısı YOK: `FeedMapStrip`in kökü zaten
+          `absoluteFill`. Animasyonlu bir kaba konsaydı ata zincirinde
+          opacity<1 / kimliksel olmayan transform gören SwiftUI camı (köşe
+          butonları) sessizce hiç çizilmezdi — proje notu. `zIndex` de
+          verilmiyor: sıralamayı kardeş sırası kuruyor (zIndex sızıntısı). */}
+      {mapHero}
       <AnimatedPagerView
         ref={pagerRef}
-        style={{ flex: 1 }}
+        /**
+         * ⚠️ ZEMİN ŞEFFAF — haritanın görünmesinin tek şartı: pager iOS'ta
+         * native bir sayfa denetleyicisi ve kendi zeminiyle arkasındakini
+         * örtüyor (bkz. haritanın yukarıdaki notu).
+         */
+        style={{ flex: 1, backgroundColor: "transparent" }}
         /**
          * TAM EKRAN HARİTADAYKEN YATAY JEST KAPALI.
          *
@@ -2326,21 +2451,19 @@ export default function FeedScreen() {
         onPageScrollStateChanged={handlePageScrollStateChanged}
       >
         {PAGES.map((key) => (
-          <View key={key} style={{ flex: 1 }} collapsable={false}>
-            {/* HARİTA ZEMİNİ — listeden ÖNCE, yani ARKASINDA. Sıra bilinçli:
-                harita (sabit) < liste içeriği (kayan, kartlar opak) < sekme
-                şeridi. Kaydırırken harita yerinde kalıyor, gönderiler
-                üstünden akıyor. Gerekçenin tamamı FeedMapStrip'in başında.
-
-                ⚠️ PAGER'IN DIŞINA DEĞİL, SAYFANIN İÇİNE konuyor. Pager
-                ekranın kökünde kardeş olarak da çizilebilirdi ama iOS'ta
-                `AnimatedPagerView` native bir sayfa denetleyicisi ve KENDİ
-                zeminini taşıyor — arkasına konulan katmanı örtme riski var.
-                Sayfanın içinde o risk yok: kap şeffaf bir `View`. */}
-            {key === "feed" ? mapHero : null}
+          {/* ⚠️ ZEMİN ŞEFFAF: harita artık pager'ın ARKASINDA (bkz. oradaki
+              not) ve sayfanın kendi zemini onu örterdi. `collapsable={false}`
+              de şart — stili yalnız `flex: 1` olan `View` native ağaçta
+              doğmuyor ve çocukların zIndex'i köke taşınıyor (proje notu). */}
+          <View
+            key={key}
+            style={{ flex: 1, backgroundColor: "transparent" }}
+            collapsable={false}
+          >
             {/* Liste tam ekran harita hâlinde AŞAĞI kayıyor. Sarmalayıcı
-                yalnız akış sayfasında animasyonlu: Gönderilerim'de harita yok,
-                orada transform kimliksel kalmalı. */}
+                yalnız akış sayfasında animasyonlu: tam ekran harita YALNIZ
+                Akış'tan açılıyor (anlar destesi orada) ve açıkken pager jesti
+                kilitli, yani Gönderilerim'in transformu kimliksel kalmalı. */}
             <Animated.View
               style={[{ flex: 1 }, key === "feed" ? listSlideStyle : null]}
             >
@@ -2381,23 +2504,45 @@ export default function FeedScreen() {
            * hizasında değil.
            */
           backgroundHeight={insets.top + SCREEN_HEADER_TITLE_HEIGHT + 14}
+          /**
+           * ŞERİT ORTADA, İKİ UCUNDA CAM BUTON — PROFİL EKRANININ DÜZENİ
+           * (istek: "aynı profil kısmı gibi tabları ortaya al, solda ve sağda
+           * buton olsun glass").
+           *
+           * ⚠️ ESKİ HÂLİ SOLA HİZALIYDI ve gerekçesi "şerit sayfanın büyük
+           * başlığıyla aynı sol hattan başlasın"dı (Mesajlar/Beğeniler'deki
+           * kurulum). O gerekçe hâlâ doğru ama artık GEÇERSİZ: iki ucu buton
+           * tuttuğu için sola hizalı bir şerit sol butonun altına girerdi.
+           * Profil'de de aynı sebeple ortada.
+           */
           centerSlot={
-            // ⚠️ `width: "100%"` sarmalayıcı ZORUNLU: slot'un alignItems'ı
-            // içeriğe göre daraltıyor, şerit o zaman ortada sıkışıyor.
-            <View style={{ width: "100%" }}>
-              <PagerTabBar
-                tabs={tabs}
-                activeTab={activeTab}
-                offset={pagerOffset}
-                onPress={handleTabChange}
-                // ORTALANMIYOR — Mesajlar ve Beğeniler ekranlarındaki kurulumun
-                // aynısı: şerit tam genişlikte duruyor ve sayfanın büyük
-                // başlığıyla AYNI sol hattan (HEADER_LEFT_INSET) başlıyor.
-                // Ortalanmış şerit başlıkla iki ayrı sol kenar veriyordu.
-                inset={HEADER_LEFT_INSET}
-              />
-            </View>
+            <PagerTabBar
+              tabs={tabs}
+              activeTab={activeTab}
+              offset={pagerOffset}
+              onPress={handleTabChange}
+              centered
+            />
           }
+          /**
+           * ⚠️🔴 KÖŞE BUTONLARI BU ŞERİDİN İÇİNDE DEĞİL — ve bu cam yüzünden
+           * ZORUNLU, tercih değil.
+           *
+           * Butonlar SwiftUI camı; ata zincirinde KİMLİKSEL OLMAYAN bir
+           * transform gören cam sessizce hiç render edilmiyor (proje notu) ve
+           * sonradan da düzelmiyor. Bu şerit tam ekran haritada yukarı
+           * ÖTELENİYOR (bkz. headerSlideStyle), yani butonlar burada
+           * dursalardı geçiş boyunca ata transformu kimliksiz olurdu.
+           *
+           * Eskiden çözüm `!mapChromeMounted` KAPISIYDI: akışta mount, harita
+           * açılırken unmount, kapanış bitince yeniden mount. Camı kurtarıyordu
+           * ama köşeleri boşaltıyordu — yerine geçen X/paylaş da açılış
+           * bittikten sonra sıfırdan doğuyordu. İkisi birlikte "butonlar yok
+           * olup baştan çiziliyor" şikâyetinin tamamı.
+           *
+           * Satır artık öteleme GÖRMEYEN kardeş bir kapta ve hiç sökülmüyor
+           * (bkz. "ÜST KÖŞE BUTONLARI" bloğu). Şeridin işi yalnız sekmeler.
+           */
         />
       </Animated.View>
 
@@ -2441,158 +2586,150 @@ export default function FeedScreen() {
             progress={mapChromeFade}
             edge="bottom"
             /**
-             * ŞERİDİN TAMAMI + kuyruk: perde kutuların ÜSTÜNE kadar çıkıyor,
-             * çünkü başlık artık orada duruyor (istek). Tarihçe ve "levha"
-             * uyarısı `campusStripScrimHeight`te.
+             * ŞERİDİN TAMAMI + kısa bir kuyruk: perde kutuların ve başlığın
+             * ÜSTÜNE çıkıyor ama orada bitiyor. Tarihçe ve "levha" uyarısı
+             * `campusStripScrimHeight`te.
              */
             height={campusStripScrimHeight(windowHeight, insets.bottom)}
             /**
-             * ⚠️ SÖNÜM KISA (istek: "blur başlığa kadar gelsin"). Varsayılan
-             * reçete bandın YARISINDA sönüyor; 430pt'lik bir bantta bu, sönümün
-             * kutuların ortasında başlaması ve başlığın hizasında alfanın
-             * ~0.05'e düşmesi demek — perde fiilen başlığa varmıyordu. Sönüm
-             * artık başlığın ÜSTÜNDEKİ kuyruğa sığıyor (gerekçe sabitin
-             * yanında), yani başlık ve kutular perdenin dolu kısmında.
+             * SÖNÜM UZUN VE İÇERİKTEN TÜRÜYOR (istek: "progressive olsun,
+             * gittikçe azalsın; başlığın üstünde çok gözükmesin").
+             *
+             * ⚠️ İKİ KISA SÖNÜM DENENDİ VE İKİSİ DE YANLIŞTI: bandın yarısı
+             * (varsayılan) başlığı çıplak bırakıyordu, 32pt ise perdeyi
+             * başlığın tepesine kadar TAM GÜÇTE getirip orada kesiyordu.
+             * Hesap artık başlık satırı + kutuların üst yarısı kadar — yani
+             * perde dipten yukarı doğru gerçekten AZALIYOR (gerekçe
+             * `campusStripScrimFade`de).
              */
-            fadePx={CAMPUS_STRIP_SCRIM_FADE}
+            fadePx={campusStripScrimFade(windowHeight)}
           />
         </>
       ) : null}
 
-      {/* TAM EKRAN HARİTADAN ÇIKIŞ — sol üstte yuvarlak cam X.
-          ⚠️ ANİMASYON YOK ve bu bilinçli: buton SwiftUI cam butonu, ata
-          zincirinde kimliksel olmayan transform ya da opacity<1 gören cam
-          sessizce HİÇ render edilmiyor (proje notu: "tekrar denemek çare
-          değil"). Giriş anında mount, çıkışta animasyon bittikten sonra
-          unmount — ölçek/opaklıkla belirtilse efekt büyük olasılıkla hiç
-          çizilmezdi.
-          Konum sekme şeridinin SOL hattıyla aynı: şerit yukarı kayıp yerini
-          buna bırakıyor. */}
-      {/**
-       * ⚠️ MOUNT EŞİKTE DEĞİL, AÇILIŞ BİTTİKTEN SONRA.
-       *
-       * Bu satırdaki X bir SwiftUI cam butonu, yani mount'u bir native
-       * `Host`/`RNHostView` kurulumu demek — pahalı ve ilk kullanımda daha da
-       * pahalı (proje notu). Eşik geçildiği karede zaten dört setState, bir
-       * `withTiming` ve `scrollEnabled` değişimi var; cam butonun kurulumu da
-       * aynı kareye düşünce parmak altında gözle görülür bir TAKILMA oluyordu
-       * (şikâyet birebir buydu).
-       *
-       * Kapı `mapChromeReady` ile açılıyor (haritanın hareketi kadar sonra,
-       * bkz. oradaki zamanlayıcı notu) — butonun giriş animasyonu zaten yok,
-       * yani 280ms sonra belirmesi hareketi bozmuyor.
-       *
-       * ⚠️ `|| !mapExpanded` KAPANIŞ İÇİN: `mapChromeReady` kapanış BİTİNCE
-       * düşüyor ama mantıksal durum kapanışın BAŞINDA düşüyor; ikinci koşul
-       * olmasa satır kapanış boyunca ekranda kalır mı kalmaz mı sorusu
-       * `mapChromeReady`ye kalırdı. Bu hâliyle satır kapanış BİTENE kadar
-       * (yani `mapChromeMounted` sönene kadar) ekranda kalıyor ve başlık o
-       * sırada yavaşça sönüyor.
-       */}
-      {mapChromeMounted && (mapChromeReady || !mapExpanded) ? (
+      {/* ── ÜST KÖŞE BUTONLARI — AKIŞ VE TAM EKRAN HARİTA İÇİN TEK SATIR ───
+          Sol: filtre ⇄ X (çıkış). Sağ: kalem (composer) ⇄ artı (anı paylaş).
+
+          ⚠️🔴 SATIR SÖKÜLMÜYOR, SEMBOLÜ DEĞİŞİYOR (istek: "butonlar değişsin,
+          şu anda yok olup baştan çiziliyor"). Eskiden iki ayrı satır vardı:
+          akışın filtre/kalem ikilisi `ScreenHeader`ın içindeydi ve harita
+          açılırken SÖKÜLÜYORDU (şerit ötelendiği için cam ata transformu
+          kimliksizdi), haritanın X/artı ikilisi ise bu konumda AÇILIŞ BİTTİKTEN
+          SONRA sıfırdan mount ediliyordu (`Host` kurulumu geçişin karesine
+          düşmesin diye). Sonuç: köşeler ~280ms boş kalıyor, sonra iki yeni cam
+          buton doğuyordu.
+
+          Tek satırın kazandırdığı üç şey:
+            • Köşe hiç boşalmıyor — glif native tarafta çapraz sönümle
+              devrediliyor (bkz. DiscoverHeaderGlassButton > symbolPhase).
+            • Geçişin karesinde kurulan `Host` YOK, yani gecikmeli mount
+              kapısına (`mapChromeReady`) da gerek kalmadı.
+            • Cam kuralı yapısal olarak sağlanıyor: kap mutlak, transformsuz ve
+              opaklığı hiç animasyonlanmıyor (ata zincirinde kimliksel olmayan
+              transform ya da opacity<1 gören cam SESSİZCE hiç render
+              edilmiyor — proje notu).
+
+          ⚠️ KONUM `ScreenHeader`IN BUTON YUVASIYLA BİREBİR: `insets.top`,
+          50 (SCREEN_HEADER_TITLE_HEIGHT) yüksekliğinde satır, iki yanda 16.
+          Haritanın eski satırı 5pt aşağıdaydı (CAMPUS_MAP_CHROME_TOP) ve o
+          sayı artık YALNIZ üst perdenin boyunu besliyor — perde satırı
+          fazlasıyla örtüyor. Başlığın (sekmelerin) hizası korunmak zorunda:
+          butonlar sekme şeridiyle aynı merkezde duruyor.
+
+          ⚠️ KARDEŞ SIRASI: perdelerden SONRA yazılıyor, yani onların üstünde
+          çiziliyor. zIndex verilmiyor (bkz. proje notu: zIndex sızıntısı). */}
+      <View
+        pointerEvents="box-none"
+        style={{
+          position: "absolute",
+          top: insets.top,
+          left: HEADER_LEFT_INSET,
+          right: HEADER_LEFT_INSET,
+          height: SCREEN_HEADER_TITLE_HEIGHT,
+          justifyContent: "center",
+        }}
+      >
+        {/* HARİTA BAŞLIĞI ("Anlar") — SEKME ŞERİDİNİN YERİNE GEÇİYOR.
+            Akışta opaklığı 0 ve MOUNT'LU KALIYOR: `variant="short"` sabit bir
+            etiket (veriye bakmıyor), yani bedava duruyor ve geçişin karesinde
+            mount edilecek bir şey kalmıyor. Sönümü `mapProgress`ten —
+            sekmelerin çıkışıyla çakışsın diye (gerekçe `mapTitleFadeStyle`de).
+
+            ⚠️ MUTLAK VE BUTONLARDAN ÖNCE: Keşif başlığındaki kalıbın aynısı —
+            ortalanmış öğe satırın akışına girerse butonların genişliği onu
+            merkezden kaydırıyor; önce yazılması da butonların dokunma alanını
+            üstte tutuyor. */}
+        {campus.available ? (
+          <Animated.View
+            style={[
+              { position: "absolute", left: 0, right: 0, alignItems: "center" },
+              mapTitleFadeStyle,
+            ]}
+            pointerEvents="none"
+          >
+            <CampusMapTitle
+              variant="short"
+              moments={campus.moments}
+              campusLabel={campusLabel}
+            />
+          </Animated.View>
+        ) : null}
+
         <View
-          // ⚠️ SATIR: X, başlık ve pill AYNI merkezde (Keşif şeridindeki
-          // kural). Kabuk `box-none`: kendisi dokunuş yakalamıyor, içindeki
-          // kontroller yakalıyor — tam genişlikte bir kap haritanın üstünde
-          // duran her dokunuşu yutardı.
           pointerEvents="box-none"
           style={{
-            position: "absolute",
-            top: insets.top + CAMPUS_MAP_CHROME_TOP,
-            left: HEADER_LEFT_INSET,
-            right: HEADER_LEFT_INSET,
-            height: CAMPUS_MAP_CHROME_ROW,
-            justifyContent: "center",
+            flexDirection: "row",
+            alignItems: "center",
+            justifyContent: "space-between",
           }}
         >
-          {/* ETİKET EKRANIN ORTASINDA (istek), X'in yanında DEĞİL.
-              ⚠️ MUTLAK VE KONTROLLERDEN ÖNCE: Keşif başlığındaki kalıbın
-              aynısı — ortalanmış öğe satırın akışına girerse X ve pill'in
-              genişliği onu merkezden kaydırıyor; önce yazılması da sonraki
-              kardeşlerin (butonların) dokunma alanını üstte tutuyor. */}
-          {campus.available ? (
-            <Animated.View
-              style={[
-                {
-                  position: "absolute",
-                  left: 0,
-                  right: 0,
-                  alignItems: "center",
-                },
-                mapChromeFadeStyle,
-              ]}
-              pointerEvents="none"
-            >
-              <CampusMapTitle
-                variant="short"
-                moments={campus.moments}
-                campusLabel={campusLabel}
-              />
-            </Animated.View>
-          ) : null}
+          {/* SOL — AKIŞTA FİLTRE, HARİTADA ÇIKIŞ.
+              Filtre buraya konmuştu çünkü pill satırı listeyle birlikte yukarı
+              kayıyor ve iki kart aşağıda sıralamayı değiştirmek için başa
+              dönmek gerekiyordu; `setFilterVisible` pill'lerin açtığı
+              `FeedFilterSheet`in TA KENDİSİ (ikinci bir filtre yüzeyi iki ayrı
+              "seçili değer" kaynağı demekti).
+              Haritada aynı köşe ÇIKIŞ: tek çıkış yolu bu (pager jesti de
+              kapalı, bkz. `scrollEnabled`). */}
+          <DiscoverHeaderGlassButton
+            systemName={mapExpanded ? "xmark" : "slider.horizontal.3"}
+            fallback={mapExpanded ? X : SlidersHorizontal}
+            onPress={mapExpanded ? collapseMap : openFilter}
+            label={mapExpanded ? t("common.close") : t("feed.filter.title")}
+            // Sembol devrinin anahtarı — iki hâl, iki değer.
+            symbolPhase={mapExpanded ? 1 : 0}
+          />
 
-          <View
-            pointerEvents="box-none"
-            style={{
-              flexDirection: "row",
-              alignItems: "center",
-              justifyContent: "space-between",
-            }}
-          >
-            {/* ⚠️ CAM X SÖNEN KABIN DIŞINDA ve öyle kalmak zorunda: ata
-                zincirinde opacity<1 gören SwiftUI camı sessizce hiç
-                çizilmiyor (proje notu). Buton sönümün BAŞLADIĞI anda mount,
-                kapanış BİTİNCE unmount ediliyor — yani başlıkla aynı pencerede
-                beliriyor/gidiyor ama kendisi sönmüyor. */}
+          {/* SAĞ — AKIŞTA KALEM (gönderi composer'ı), HARİTADA ARTI (anı
+              paylaş).
+
+              ⚠️ TEK ELEMAN, İKİ AKSİYON: props önceden hesaplanıyor
+              (`rightCorner`) çünkü iki ayrı JSX dalı yazılsa React onları
+              farklı konumlar sayıp butonu unmount/mount ederdi — tam olarak
+              kaçınılan şey.
+
+              ⚠️ ÖLÜ BUTON ÇİZİLMİYOR: haritada `canShare` yoksa (kampüs
+              dışındasın, bugün paylaştın ya da özellik kapalı) buton HİÇ yok —
+              basınca sunucunun reddettiği bir artı kullanıcıyı her seferinde
+              kandırırdı (sebebi şeridin ilk dolgu kutusunda yazıyor). Bu TEK
+              dalda köşe boşalıyor ve devri de olmuyor; alternatifi sönük ama
+              basılabilir bir buton olurdu.
+
+              ⚠️ `openComposer`IN TA KENDİSİ, yeni bir yol değil: kısıt/kota
+              sıralamasının tek sahibi o fonksiyon (bkz. composeGate).
+              Kampüs tarafında da aynısı: kaynak sheet'i yok, doğrudan ön
+              kamera (gerekçeler useCampusSurface > captureMoment'te). */}
+          {rightCorner ? (
             <DiscoverHeaderGlassButton
-              systemName="xmark"
-              fallback={X}
-              onPress={collapseMap}
-              label={t("common.close")}
+              systemName={rightCorner.systemName}
+              fallback={rightCorner.fallback}
+              onPress={rightCorner.onPress}
+              label={rightCorner.label}
+              symbolPhase={mapExpanded ? 1 : 0}
             />
-
-            {/* SAĞDAKİ PLUS PILL'İ — BAŞLIKLA AYNI SÖNÜMDE (istek: "headerdaki
-                buton da header'la beraber yok olup gelsin"). Pill düz RN, yani
-                camın kuralı onu bağlamıyor; kendi sönen kabında duruyor.
-                ⚠️ Yalnız Plus DEĞİLSE. Reçete LikesScreen'in başlık
-                pill'inden: yarıçap 999, dolgu modun aksanı, mürekkep
-                `onMediaInverse`, 13/700 — iki ekranda iki ayrı pill dili
-                olmasının sebebi yok.
-                ⚠️ `premiumResolved` kapısı `showPlusUpsell`in içinde:
-                abonelik slice'ı persist edilmediği için reload'da premium
-                kullanıcı bir an `isPremium:false` doğuyor ve pill çizilip
-                hemen kaybolurdu. */}
-            {showPlusUpsell ? (
-              <Animated.View style={mapChromeFadeStyle}>
-                <AnimatedPressable
-                  pressScale={0.96}
-                  onPress={openPaywall}
-                  accessibilityRole="button"
-                  hitSlop={8}
-                  style={{
-                    flexShrink: 0,
-                    borderRadius: 999,
-                    borderCurve: "continuous",
-                    backgroundColor: modeAccent(selectedMode),
-                    paddingHorizontal: 12,
-                    paddingVertical: 6,
-                  }}
-                >
-                  <Text
-                    style={{
-                      color: colors.onMediaInverse,
-                      fontSize: 13,
-                      fontWeight: "700",
-                    }}
-                  >
-                    {t("feed.header.plusAction")}
-                  </Text>
-                </AnimatedPressable>
-              </Animated.View>
-            ) : null}
-          </View>
+          ) : null}
         </View>
-      ) : null}
+      </View>
 
       {/* KAMPÜS ANLARI ŞERİDİ — haritanın dibinde, kutu kutu.
           Pager'ın DIŞINDA: X ile kardeş.
@@ -2618,38 +2755,70 @@ export default function FeedScreen() {
           // hareketine bağlı — harita tam ekrana oturduktan SONRA aşağıdan
           // geliyorlar (gerekçe `mapStripEntry`de).
           progress={mapStripEntry}
-          actionsReady={mapActionsReady}
-          mode={selectedMode}
           moments={campus.moments}
           // Başlık şeridin TEPESİNDE — "7 an · Kampüs Adı" (bkz.
           // CampusMapTitle'daki tarihçe); üstteki chrome yalnız "Anlar".
           campusLabel={campusLabel}
           loading={campus.loading}
-          // "+" kutusu ÖLÜ ÇİZİLMİYOR: kampüs dışındaysa ya da bugün
-          // paylaşmışsa kutu hiç yok (eski sağ üst cam butonundaki aynı kural).
+          // ⚠️ ŞERİTTE ARTIK BİR "+" KUTUSU ÇİZİLMİYOR: aksiyon haritanın sağ
+          // üstündeki cam butona döndü (yukarıda). Bu bayrağın şeritteki tek
+          // işi, paylaşamıyorsan SEBEBİNİ söyleyen dolgu kutusunu başa almak
+          // (bkz. CampusMomentsStrip > pinnedInfoKey).
           canShare={campus.canShare}
-          // Artı kutusu yokken SEBEBİ ilk dolgu kutusunda yazıyor — kaldırılan
-          // boş durumun tek işi buydu (bkz. CampusMomentsStrip > pinnedInfoKey).
           isInsideCampus={campus.inside}
-          onShare={campus.openSourceSheet}
-          onLike={campus.like}
-          onPass={campus.pass}
+          // KARTA DOKUNUNCA PROFİL (istek): karar kartta değil, açılan profil
+          // kartında (bkz. handleMomentDecide). Kendi anım şeritte zaten
+          // dokunulamaz — kapı orada kesiliyor.
+          onOpenProfile={setMomentTarget}
           onRemove={campus.remove}
+          // Şikayet kartın UZUN BASIŞ menüsünden geliyor (natif), kartta
+          // buton yok — formu burada açıyoruz çünkü `ReportModal` bir sheet
+          // ve şeridin içinden açılırsa şeridin `translateY`si altında kalır.
+          onReport={setReportMoment}
           onEndReached={campus.fetchNextPage}
-          busyMomentId={campus.busyMomentId}
         />
       ) : null}
 
-      {/* ⚠️ Kaynak seçimi: aksiyon sheet KAPANDIKTAN SONRA tetikleniyor
-          (PhotoSourceSheet'in kendi kuralı — gorhom kapanırken PHPicker sunmak
-          iOS'ta "already presenting" no-op'una düşüyor). */}
-      <PhotoSourceSheet
-        visible={campus.sourceSheetOpen}
-        onClose={campus.closeSourceSheet}
-        onCamera={campus.pickFromCamera}
-        onGallery={campus.pickFromGallery}
+      {/* AN SAHİBİNİN PROFİL KARTI — şeritteki karta dokununca.
+
+          ⚠️ ŞERİDİN KAPISININ DIŞINDA (`mapChromeMounted`), kardeşi: kart
+          açıkken harita kapanabiliyor (kullanıcı sheet'i aşağı çekerken
+          arkadaki X'e de basabilir) ve modal şeridin kapısının içinde olsaydı
+          animasyonun ortasında SÖKÜLÜRDÜ — gorhom kapanışı yarıda kalan bir
+          sheet geride bırakıyor (o kilidin tarihçesi CampusMomentsStrip'in
+          başında).
+
+          ⚠️ AKIŞIN YAZAR KARTIYLA AYNI BİLEŞEN, İKİNCİ BİR ÖRNEĞİ: aynı
+          sheet'i iki hedefle paylaşmak demek `profile`ı ve karar yolunu tek
+          state'te birleştirmek demekti ve iki yüzeyin karar uçları AYRI
+          (yazar → keşif swipe'ı, an → kampüs beğenisi + kampüs pass'i).
+
+          ⚠️ `onDecide` ŞART: verilmezse modal kendi `useSwipeMutation`ını
+          çağırıyor, yani beğeni `source: "CampusMoment"` OLMADAN gidiyor ve
+          kampüs kotası yerine keşif kotası yanıyor (pass ise hiç
+          gönderilmemesi gereken bir `SwipeAction` satırı yazıyor).
+
+          ⚠️ FIRE/NOT YOK: kampüs beğenisinin tek yolu `source`lu Like ucu.
+          Fire butonu basılsa `/api/swipe/SuperLike`a kampüs kaynağı olmadan
+          giderdi — anı değil, Keşif'teki kişiyi Fire'lamış olurdun. */}
+      <LikerSwipeModal
+        visible={!!momentTarget && !!momentProfile.data}
+        profile={momentProfile.data}
+        onClose={() => setMomentTarget(null)}
+        // ⚠️ ANIN MODU, ekranın seçili modu DEĞİL (useCampusSurface > pass'teki
+        // aynı kural): liste moda göre geliyor ama kart elde bayatlamışsa
+        // ikisi ayrışabilir ve karar yanlış modun altına yazılırdı.
+        mode={momentTarget?.mode ?? selectedMode}
+        allowFire={false}
+        allowLike
+        onDecide={handleMomentDecide}
       />
 
+      {/* ⚠️ `PhotoSourceSheet` KALDIRILDI (istek: "artıya basınca galeri filan
+          sunmasın direkt kamerayı açsın"). Kampüs anı anlık bir çekim olmak
+          zorunda — galeriden seçilen eski bir fotoğraf "şu anda buradayım"
+          cümlesini kuramıyor. Sheet bileşeni duruyor, profil/kayıt akışları
+          hâlâ kullanıyor. */}
       <CampusMomentComposer
         visible={campus.composerOpen}
         onClose={campus.closeComposer}
@@ -2669,75 +2838,17 @@ export default function FeedScreen() {
         onGranted={campus.onPrimingGranted}
       />
 
-      {/* "Paylaş" FAB — pager'ın DIŞINDA (sayfalarla kaymasın) ve yalnız Akış
-          ile Gönderilerim sayfalarında. Yanıtlar sayfasında paylaşmak bağlamsız
-          olurdu.
-          ⚠️ Gizleme OPACITY ile değil koşullu render ile: cam/blur yüzeylerde
-          ata zincirindeki opacity<1 efekti tamamen öldürüyor (bkz. proje notu).
-          `composeGate` "unknown" iken buton NORMAL çiziliyor — kilit çizmek
-          /me gelene kadar olmayan bir kısıt uydururdu. */}
-      {/* ⚠️ `!mapChromeMounted`: tam ekran haritada FAB çizilmemeli — kampüs
-          anları sheet'i oraya açılıyor ve ikisi üst üste biniyor. Gizleme
-          KOŞULLU RENDER ile (opacity ile değil, aynı cam kuralı).
-          Mantıksal durum DEĞİL geciken kapı okunuyor: mantıksal durum kapanışın
-          BAŞINDA düşüyor, FAB o anda belirse kapanış animasyonu boyunca
-          sheet'in üstünde dururdu. */}
-      {gate.kind !== "restricted" && !mapChromeMounted ? (
-        <Pressable
-          onPress={openComposer}
-          // ETİKET KALDIRILDI (istek) → kapsül artık YUVARLAK bir buton.
-          // `paddingHorizontal` yerine `width: height` ve `borderRadius: 999`:
-          // yatay pay bırakılsa daire değil hap biçiminde kalırdı.
-          accessibilityRole="button"
-          // Yazı gidince buton ne yaptığını kendi söylemiyor — erişilebilirlik
-          // etiketi ZORUNLU, yoksa ekran okuyucuda isimsiz bir düğme kalıyor.
-          accessibilityLabel={t("feed.empty.cta")}
-          style={{
-            position: "absolute",
-            right: 16,
-            // 92 = tab bar + nefes payı.
-            bottom: 92,
-            width: FAB_SIZE,
-            height: FAB_SIZE,
-            borderRadius: 999,
-            borderCurve: "continuous",
-            backgroundColor: colors.inverseSurface,
-            alignItems: "center",
-            justifyContent: "center",
-            shadowColor: colors.shadow,
-            shadowOpacity: 0.18,
-            shadowRadius: 12,
-            shadowOffset: { width: 0, height: 4 },
-            elevation: 4,
-          }}
-        >
-          {/* ⚠️ GLİFİN DIŞ KUTUSU AÇIK: Pressable'ın `alignItems/justifyContent`
-              center'ı tek başına yetmiyor. SFIcon native bir sembol çiziyor ve
-              o görünümün doğal ölçüsü `size`la birebir aynı değil; dairenin
-              ortası ikonun gerçek kutusuna göre hesaplanınca glif birkaç pt
-              kayıyor (bakiye rozetindeki aynı tuzak, bkz. FeedQuotaBadge).
-              Sabit kare kutu + içinde ortalama glifi bilinen bir eksene
-              oturtuyor.
-              17 → 22: glif etiketin yanında küçük bir işaretti, şimdi butonun
-              TEK içeriği — 52'lik dairede 17 kaybolup gidiyordu. */}
-          <View
-            style={{
-              width: FAB_GLYPH,
-              height: FAB_GLYPH,
-              alignItems: "center",
-              justifyContent: "center",
-            }}
-          >
-            <SFIcon
-              name="square.and.pencil"
-              fallback={LayoutList}
-              size={FAB_GLYPH}
-              color={colors.onInverseSurface}
-              strokeWidth={2}
-            />
-          </View>
-        </Pressable>
-      ) : null}
+      {/* ⚠️🔴 SAĞ ALTTAKİ FAB KALDIRILDI — composer'ın girişi BAŞLIĞIN SAĞ
+          ÜSTÜNDEKİ KALEM butonu oldu (istek). İki giriş aynı ekranda aynı
+          sheet'i açıyordu; biri gitmek zorundaydı ve sabit başlıktaki buton
+          kaydırma konumundan bağımsız, FAB ise tab bar'ın üstünde bir
+          katmandı.
+
+          Geri konacaksa kaydı duruyor: 52pt'lik yuvarlak `Pressable`, sağ 16 /
+          alt 92 (tab bar + nefes), zemin `inverseSurface`, glif
+          "square.and.pencil" 22pt ve kapısı `gate.kind !== "restricted" &&
+          !mapChromeMounted` idi. Boş durumun butonu zaten `openComposer`ı
+          doğrudan çağırıyor (bkz. empty), yani FAB'ın gidişi onu etkilemiyor. */}
 
       <FeedComposerSheet
         visible={composerVisible}
@@ -2793,6 +2904,18 @@ export default function FeedScreen() {
         postId={reportTarget?.postId}
         replyId={reportTarget?.replyId}
         isAnonymousTarget={reportTarget?.isAnonymous ?? false}
+      />
+
+      {/* KAMPÜS ANI ŞİKAYETİ — profil/sohbet ile AYNI form ve AYNI uç.
+          ⚠️ `campusMomentId` gövdeye ekleniyor ki moderatör hangi fotoğrafın
+          şikayet edildiğini görsün; sunucu alanı henüz okumuyorsa sessizce
+          yok sayıyor (not şikayetindeki `noteId` ile aynı sözleşme) —
+          şikayetin kendisi her hâlükârda kaydediliyor. */}
+      <ReportModal
+        visible={!!reportMoment}
+        onClose={() => setReportMoment(null)}
+        reportedUserId={reportMoment?.userId}
+        campusMomentId={reportMoment?.id}
       />
 
       <FeedFilterSheet
