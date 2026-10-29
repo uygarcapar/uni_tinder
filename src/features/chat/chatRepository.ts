@@ -3,6 +3,7 @@ import {
   rowToConversation,
   type ConversationRow,
   type MessageRow,
+  type SendAttemptRow,
   type SendState,
   type SyncStateRow,
 } from '@/features/chat/db/rows';
@@ -734,10 +735,19 @@ export function applyDeletionTombstone(p: {
 export function removeConversationLocally(conversationId: string): void {
   const db = getChatDb();
   db.transaction(() => {
+    // send_attempts'in conversation_id kolonu YOK (v7 — muhasebe cmid'e bağlı,
+    // sohbete değil); bu yüzden messages SİLİNMEDEN ÖNCE, hâlâ mevcutken,
+    // cmid'leri üzerinden JOIN edip bu sohbete ait olanları buluyoruz.
+    db.run(
+      `DELETE FROM send_attempts WHERE client_message_id IN (
+         SELECT client_message_id FROM messages
+          WHERE conversation_id = ? AND client_message_id IS NOT NULL
+       )`,
+      [conversationId],
+    );
     db.run('DELETE FROM messages WHERE conversation_id = ?', [conversationId]);
     db.run('DELETE FROM conversations WHERE conversation_id = ?', [conversationId]);
     db.run('DELETE FROM sync_state WHERE conversation_id = ?', [conversationId]);
-    db.run('DELETE FROM outbox WHERE conversation_id = ?', [conversationId]);
   });
 }
 
@@ -1149,7 +1159,7 @@ export function clearAllChatData(): void {
     db.run('DELETE FROM messages');
     db.run('DELETE FROM conversations');
     db.run('DELETE FROM sync_state');
-    db.run('DELETE FROM outbox');
+    db.run('DELETE FROM send_attempts');
     // Watermark arşivle AYNI anda gitmek zorunda: kalsaydı yeni kullanıcı
     // "her şeyi görmüşüm" sanıp aradaki değişiklikleri hiç çekmezdi.
     db.run('DELETE FROM meta');
@@ -1289,4 +1299,72 @@ export function upsertConversations(
       );
     });
   });
+}
+
+// ── send_attempts: gönderim kuyruğunun disk muhasebesi (v7) ────────────────
+//
+// Mesaj GÖVDESİ burada taşınmıyor — tek kaynak `messages` satırı (eşleşme
+// client_message_id ile). Bu tablo yalnız outbox.ts'in bugüne kadar process
+// ömürlü bir Map'te tuttuğu muhasebeyi diske taşıyor: deneme sayısı, backoff
+// (`next_eligible_at_ms`), kalıcı başarısızlık ve kota tahsilat bayrağı.
+// Yazan/okuyan taraf outbox.ts — bkz. migrations.ts V7 yorumu.
+
+export function readSendAttempts(): SendAttemptRow[] {
+  return getChatDb().getAll<SendAttemptRow>('SELECT * FROM send_attempts');
+}
+
+export function upsertSendAttempt(row: SendAttemptRow): void {
+  getChatDb().run(
+    `INSERT INTO send_attempts (
+       client_message_id, attempts, first_seen_at_ms, next_eligible_at_ms,
+       permanent, quota_charged, origin, last_error
+     ) VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+     ON CONFLICT(client_message_id) DO UPDATE SET
+       attempts = excluded.attempts,
+       first_seen_at_ms = excluded.first_seen_at_ms,
+       next_eligible_at_ms = excluded.next_eligible_at_ms,
+       permanent = excluded.permanent,
+       quota_charged = excluded.quota_charged,
+       origin = excluded.origin,
+       last_error = excluded.last_error`,
+    [
+      row.client_message_id,
+      row.attempts,
+      row.first_seen_at_ms,
+      row.next_eligible_at_ms,
+      row.permanent,
+      row.quota_charged,
+      row.origin,
+      row.last_error,
+    ],
+  );
+}
+
+export function deleteSendAttempts(clientMessageIds: string[]): void {
+  if (!clientMessageIds.length) return;
+  const holes = clientMessageIds.map(() => '?').join(',');
+  getChatDb().run(
+    `DELETE FROM send_attempts WHERE client_message_id IN (${holes})`,
+    clientMessageIds,
+  );
+}
+
+/**
+ * Artık kuyrukta olmaması gereken muhasebe satırlarını siler: karşılık gelen
+ * mesaj GÖNDERİLMİŞ (`send_state = 'sent'`) ya da hiç yok. `send_state <>
+ * 'sent'` terimi mantıksal fazlalık ama idx_messages_unsent'i açan anahtar —
+ * terim AYNEN kalmalı, bkz. migrations.ts V5 yorumundaki tam gerekçe.
+ */
+export function pruneOrphanSendAttempts(): number {
+  const db = getChatDb();
+  const before = db.getFirst<{ n: number }>('SELECT COUNT(*) AS n FROM send_attempts')?.n ?? 0;
+  db.run(`
+    DELETE FROM send_attempts
+     WHERE NOT EXISTS (
+       SELECT 1 FROM messages
+        WHERE messages.client_message_id = send_attempts.client_message_id
+          AND messages.send_state <> 'sent'
+     )`);
+  const after = db.getFirst<{ n: number }>('SELECT COUNT(*) AS n FROM send_attempts')?.n ?? 0;
+  return before - after;
 }

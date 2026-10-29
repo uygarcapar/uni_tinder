@@ -44,7 +44,7 @@ describe('şema v3 — meta tablosu', () => {
         "SELECT name FROM sqlite_master WHERE type = 'table' AND name NOT LIKE 'sqlite_%' ORDER BY name",
       )
       .map((t) => t.name);
-    expect(tables).toEqual(['conversations', 'messages', 'meta', 'outbox', 'sync_state']);
+    expect(tables).toEqual(['conversations', 'messages', 'meta', 'send_attempts', 'sync_state']);
   });
 });
 

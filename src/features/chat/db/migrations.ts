@@ -193,6 +193,36 @@ CREATE INDEX idx_messages_unsent ON messages (send_state, sent_at_ms, id)
  */
 const V6 = `ALTER TABLE conversations ADD COLUMN mode TEXT;`;
 
+/**
+ * v7 — `send_attempts`: gönderim kuyruğunun disk muhasebesi, `outbox` düşürüldü.
+ *
+ * `outbox` v1'den beri şemada ama HİÇ YAZILMADI — ona dokunan tek satır
+ * `DELETE FROM outbox` (temizlik yollarındaki boş süpürme). Gönderim
+ * muhasebesi (deneme sayısı/backoff/permanent/quota_charged) bugüne kadar
+ * outbox.ts'teki process-ömürlü bir Map'te yaşıyordu; bu sürüm onu diske
+ * taşımanın deposu.
+ *
+ * `outbox`'u OLDUĞU GİBİ yeniden kullanmak seçenek değildi: `payload_json
+ * NOT NULL` taşıyor, yani mesaj gövdesinin İKİNCİ bir kopyasını dayatırdı.
+ * Gövdenin tek kaynağı `messages` satırı (client_message_id ile eşleşiyor)
+ * — bu tablo o yüzden KASTEN gövdesiz, yalnız muhasebe kolonları taşıyor.
+ * Aynı sebepten `conversation_id` de yok: muhasebe mesaj kimliğine (cmid)
+ * bağlı, sohbete değil; sohbet gerekiyorsa `messages` üzerinden JOIN edilir.
+ */
+const V7 = `
+DROP TABLE outbox;
+CREATE TABLE send_attempts (
+  client_message_id   TEXT PRIMARY KEY,
+  attempts            INTEGER NOT NULL DEFAULT 0,
+  first_seen_at_ms    INTEGER NOT NULL,
+  next_eligible_at_ms INTEGER NOT NULL DEFAULT 0,
+  permanent           INTEGER NOT NULL DEFAULT 0,
+  quota_charged       INTEGER NOT NULL DEFAULT 0,
+  origin              TEXT,
+  last_error          TEXT
+);
+`;
+
 export const MIGRATIONS: { version: number; up: (db: ChatDbDriver) => void }[] = [
   { version: 1, up: (db) => db.exec(V1) },
   { version: 2, up: (db) => db.exec(V2) },
@@ -200,6 +230,7 @@ export const MIGRATIONS: { version: number; up: (db: ChatDbDriver) => void }[] =
   { version: 4, up: (db) => db.exec(V4) },
   { version: 5, up: (db) => db.exec(V5) },
   { version: 6, up: (db) => db.exec(V6) },
+  { version: 7, up: (db) => db.exec(V7) },
 ];
 
 export const CHAT_DB_VERSION = MIGRATIONS[MIGRATIONS.length - 1].version;

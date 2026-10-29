@@ -175,3 +175,21 @@ export interface SyncStateRow {
   has_hidden_history: number;
   last_synced_at_ms: number | null;
 }
+
+/**
+ * `send_attempts` satırı (v7) — gönderim kuyruğunun disk muhasebesi.
+ *
+ * Mesaj GÖVDESİ taşımaz: tek kaynak `messages.client_message_id` satırı,
+ * burası yalnız deneme sayacı/backoff/permanent/quota_charged için var
+ * (bkz. migrations.ts V7 yorumu).
+ */
+export interface SendAttemptRow {
+  client_message_id: string;
+  attempts: number;
+  first_seen_at_ms: number;
+  next_eligible_at_ms: number;
+  permanent: number;
+  quota_charged: number;
+  origin: string | null;
+  last_error: string | null;
+}

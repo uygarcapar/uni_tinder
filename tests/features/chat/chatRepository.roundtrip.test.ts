@@ -67,6 +67,21 @@ describe('şema sürümü', () => {
     db.exec('ALTER TABLE conversations DROP COLUMN closed_reason');
     db.exec('DROP INDEX idx_messages_unsent'); // v5
     db.exec('ALTER TABLE conversations DROP COLUMN mode'); // v6
+    // v7: send_attempts'i düşür, v1'den beri var olan (ve v7'nin düşürdüğü)
+    // outbox'ı geri kur — aksi halde v7 kendi DROP TABLE outbox'ında patlar.
+    db.exec('DROP TABLE send_attempts');
+    db.exec(`CREATE TABLE outbox (
+      seq                 INTEGER PRIMARY KEY AUTOINCREMENT,
+      client_message_id   TEXT NOT NULL UNIQUE,
+      conversation_id     TEXT NOT NULL,
+      kind                TEXT NOT NULL,
+      payload_json        TEXT NOT NULL,
+      state               TEXT NOT NULL DEFAULT 'queued',
+      attempts            INTEGER NOT NULL DEFAULT 0,
+      next_attempt_at_ms  INTEGER NOT NULL DEFAULT 0,
+      last_error          TEXT,
+      created_at_ms       INTEGER NOT NULL
+    )`);
     db.exec('PRAGMA user_version = 1');
 
     __resetChatDbForTests();
@@ -87,6 +102,14 @@ describe('şema sürümü', () => {
         .getAll<{ name: string }>('PRAGMA table_info(conversations)')
         .map((c) => c.name),
     ).toContain('mode');
+    // v7: outbox düşmüş, send_attempts yeniden kurulmuş.
+    expect(
+      upgraded
+        .getAll<{ name: string }>(
+          "SELECT name FROM sqlite_master WHERE type = 'table' AND name IN ('outbox', 'send_attempts')",
+        )
+        .map((t) => t.name),
+    ).toEqual(['send_attempts']);
   });
 });
 
