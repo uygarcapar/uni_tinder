@@ -5,9 +5,20 @@ jest.mock('@/features/chat/chatService', () => ({
   HISTORY_PAGE_SIZE: 50,
 }));
 jest.mock('@/shared/services/networkStatus', () => ({ isOfflineNow: jest.fn(() => false) }));
+// `@/shared/store` tek Redux singleton'ı — modülü GERÇEK kurarsak redux-persist
+// + MMKV + bütün diğer slice'lar da yüklenir (gereksiz ve yan etkili). Sahte
+// `dispatch`'i buradan izlemek, bu dosyanın importu olmayan bir fonksiyonun
+// `fetchHistory` thunk'ını GLOBAL store'a dispatch etmesi gibi gerçek bir
+// sızıntıyı yakalar — ayrı/yerel bir store'un boş kalması hiçbir şey ispatlamaz
+// (round'un imzasında dispatch/store parametresi yok, kendi store'unu
+// oluşturamaz; sızabileceği TEK yer bu singleton).
+jest.mock('@/shared/store', () => ({
+  __esModule: true,
+  store: { dispatch: jest.fn(), getState: jest.fn(() => ({})) },
+}));
 
 import * as SQLite from 'expo-sqlite';
-import { configureStore } from '@reduxjs/toolkit';
+import { store } from '@/shared/store';
 import { openChatDb, __resetChatDbForTests } from '@/features/chat/db/chatDb';
 import {
   readBackfillTargets,
@@ -21,9 +32,12 @@ import {
   recordRateLimitHeaders,
   __resetRateLimitBudgetForTests,
 } from '@/shared/services/rateLimitBudget';
-import { RATE_LIMIT_RESERVE, BACKFILL_PAGE_SIZE } from '@/features/chat/backfillPolicy';
+import {
+  RATE_LIMIT_RESERVE,
+  BACKFILL_PAGE_SIZE,
+  PAGE_DELAY_MS,
+} from '@/features/chat/backfillPolicy';
 import { runBackfillRound, __resetBackfillForTests } from '@/features/chat/chatBackfill';
-import chatReducer from '@/features/chat/chatSlice';
 import type { MessageDto } from '@/shared/types';
 
 /**
@@ -75,6 +89,7 @@ beforeEach(() => {
   getMessageHistory.mockReset();
   mockIsOfflineNow.mockReset();
   mockIsOfflineNow.mockReturnValue(false);
+  (store.dispatch as jest.Mock).mockClear();
   jest.useFakeTimers();
 });
 
@@ -89,20 +104,16 @@ describe('runBackfillRound', () => {
       page([msg('m1', 'conv-1', '2026-10-20T10:00:00.000Z')]),
     );
 
-    // AYRI bir store — "import kontrolü" değil, gerçek bir Redux state'inin
-    // tur boyunca hiç değişmediğini (dispatch edilmediğini) ölçmek için.
-    // `fetchHistory` thunk'ı burada kullanılsaydı bucket dolardı; bu test
-    // SADECE o dalın hiç tetiklenmediğini yakalar.
-    const store = configureStore({ reducer: { chat: chatReducer } });
-
     const result = await runBackfillRound(() => null);
 
     expect(result).toEqual({ ran: true, pages: 1, messages: 1, completed: ['conv-1'] });
     // Disk — tur gerçekten yazdı mı (boş no-op'u "redux'a dokunmadı" diye
     // yanlış yeşile düşürmemek için).
     expect(readWindow('conv-1', 10).map((r) => r.id)).toEqual(['m1']);
-    // Redux — hiç dokunulmadı.
-    expect(store.getState().chat.messagesByConv).toEqual({});
+    // Redux — GLOBAL store singleton'ına HİÇ dispatch edilmedi. `fetchHistory`
+    // thunk'ı (ya da başka bir action) burada çağrılsaydı — round'un tek
+    // ulaşabileceği store bu olduğundan — bu iddia kırılırdı.
+    expect(store.dispatch).not.toHaveBeenCalled();
   });
 
   it('cursor ilerliyor, bir sonraki tur kaldığı yerden devam ediyor', async () => {
@@ -168,7 +179,13 @@ describe('runBackfillRound', () => {
   });
 
   it('tur ortasında offline olursa duruyor ve ilerleme diskte kalıyor', async () => {
-    insertConversation('conv-1', 1_000);
+    // GERÇEKÇİ şekil: bağlantı koptuğunda devam eden istek BAŞARIYLA
+    // dönmez, PATLAR (ağ hatası) — "istekler hâlâ başarıyla dönüyor ama
+    // isOfflineNow() true diyor" senaryosu gerçekte olmaz ve tam da bu
+    // yanlış şekil yüzünden (önceki sürümde) istek PATLADIĞINDA offline
+    // kontrolünün hiç çalışmadığı fark edilmemişti.
+    insertConversation('conv-1', 2_000);
+    insertConversation('conv-2', 1_000);
     recordRateLimitHeaders({ 'x-ratelimit-remaining': '500' }); // kota BOL — yalnız offline'ı izole etmek için
     getMessageHistory
       .mockResolvedValueOnce(
@@ -177,38 +194,60 @@ describe('runBackfillRound', () => {
           hasMore: true,
         }),
       )
-      .mockResolvedValueOnce(
-        page([msg('m2', 'conv-1', '2026-10-20T10:01:00.000Z')], {
-          nextCursor: 'cursor-3',
-          hasMore: true,
-        }),
-      );
-    // 1. sayfa sonrası kontrol: online (devam et). 2. sayfa sonrası: offline (dur).
-    mockIsOfflineNow.mockReturnValueOnce(false).mockReturnValue(true);
+      .mockRejectedValueOnce(new Error('bağlantı koptu')); // conv-1'in 2. sayfası
+    // 1. ve 2. istekten ÖNCEKİ kontrol: online (ikisi de denensin). 2. istek
+    // PATLADIKTAN SONRA, conv-2'ye geçmeden ÖNCEKİ kontrol: offline.
+    mockIsOfflineNow.mockReturnValueOnce(false).mockReturnValueOnce(false).mockReturnValue(true);
 
     const promise = runBackfillRound(() => null);
     await jest.advanceTimersByTimeAsync(2000);
     const result = await promise;
 
-    expect(getMessageHistory).toHaveBeenCalledTimes(2); // 3. sayfa hiç istenmedi
-    expect(result.pages).toBe(2);
-    // İlerleme diskte: her iki mesaj da yazılmış, cursor 2. sayfanınkine ilerlemiş.
-    expect(readWindow('conv-1', 10).map((r) => r.id).sort()).toEqual(['m1', 'm2']);
-    expect(readBackfillTargets(10)).toEqual([{ conversationId: 'conv-1', cursor: 'cursor-3' }]);
+    // conv-2'ye HİÇ sıra gelmedi — 3. çağrı yok.
+    expect(getMessageHistory).toHaveBeenCalledTimes(2);
+    expect(getMessageHistory).not.toHaveBeenCalledWith('conv-2', expect.anything());
+    expect(result.pages).toBe(1);
+    // İlerleme diskte: başarılı 1. sayfanın mesajı yazılmış, cursor onun
+    // nextCursor'ına ilerlemiş — patlayan 2. sayfa cursor'ı GERİ ALMADI.
+    expect(readWindow('conv-1', 10).map((r) => r.id)).toEqual(['m1']);
+    expect(
+      readBackfillTargets(10).find((t) => t.conversationId === 'conv-1')?.cursor,
+    ).toBe('cursor-2');
+    // conv-2 dokunulmadan kaldı — bir sonraki tur baştan deneyecek.
+    expect(
+      readBackfillTargets(10).find((t) => t.conversationId === 'conv-2')?.cursor,
+    ).toBeNull();
+  });
+
+  it('tur başlarken bile kalan kota rezervin altındaysa hiç istek atmıyor', async () => {
+    // Turun İLK isteği de kontrole tabi: kullanıcı o anda kendi sohbetini
+    // sayfalıyor olabilir, backfill bir slot daha harcayıp onu 429'a
+    // yaklaştırmamalı.
+    insertConversation('conv-1', 1_000);
+    recordRateLimitHeaders({ 'x-ratelimit-remaining': String(RATE_LIMIT_RESERVE - 1) });
+
+    const result = await runBackfillRound(() => null);
+
+    expect(getMessageHistory).not.toHaveBeenCalled();
+    expect(result).toEqual({ ran: true, pages: 0, messages: 0, completed: [] });
   });
 
   it('kalan kota rezervin altına inince tur ortasında duruyor', async () => {
     insertConversation('conv-1', 1_000);
-    // Rezervin (RATE_LIMIT_RESERVE) KESİNLİKLE altında, ama null DEĞİL —
-    // "bilmiyorum" (probe) dalıyla karışmasın, gerçekten "düşük kota" dalı
-    // koşsun.
-    recordRateLimitHeaders({ 'x-ratelimit-remaining': String(RATE_LIMIT_RESERVE - 1) });
-    getMessageHistory.mockResolvedValueOnce(
-      page([msg('m1', 'conv-1', '2026-10-20T10:00:00.000Z')], {
+    // Başlangıçta BOL — turun İLK isteği serbest geçsin (bu "tur başlarken
+    // bile..." testinin bir TEKRARI olmasın, oradan ayıran şey tam bu).
+    recordRateLimitHeaders({ 'x-ratelimit-remaining': '500' });
+    // chatService tamamen mock'lu, GERÇEK interceptor'dan geçmiyor — 1.
+    // sayfanın YANITI kotayı rezervin altına düşürdüğünü burada kendi
+    // elimizle taklit ediyoruz (gerçekte bunu api.ts'teki
+    // `recordRateLimitHeaders(response.headers)` yapardı).
+    getMessageHistory.mockImplementationOnce(async () => {
+      recordRateLimitHeaders({ 'x-ratelimit-remaining': String(RATE_LIMIT_RESERVE - 1) });
+      return page([msg('m1', 'conv-1', '2026-10-20T10:00:00.000Z')], {
         nextCursor: 'cursor-2',
         hasMore: true, // kota engellemeseydi 2. sayfa istenecekti
-      }),
-    );
+      });
+    });
 
     const result = await runBackfillRound(() => null);
 
@@ -228,7 +267,12 @@ describe('runBackfillRound', () => {
       .mockResolvedValueOnce(page([msg('m1', 'conv-2', '2026-10-20T10:00:00.000Z')]));
 
     const promise = runBackfillRound(() => null);
-    await jest.advanceTimersByTimeAsync(2000);
+    // conv-1'in isteği reddedildi ama PAGE_DELAY_MS henüz dolmadı — conv-2
+    // SOHBET SINIRINI AŞAN gecikmede beklemede, hemen denenmiyor.
+    await jest.advanceTimersByTimeAsync(0);
+    expect(getMessageHistory).toHaveBeenCalledTimes(1);
+
+    await jest.advanceTimersByTimeAsync(PAGE_DELAY_MS);
     const result = await promise;
 
     expect(getMessageHistory).toHaveBeenCalledTimes(2); // conv-2'ye devam etti

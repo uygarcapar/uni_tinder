@@ -554,6 +554,14 @@ api.interceptors.response.use(
   async (error) => {
     const originalRequest: TimedConfig & { _retry?: boolean; _retryCount?: number } = error.config;
 
+    // Başarı dalındaki aynı yan kanal: 429'un gövdesi de bu header'ı taşıyor
+    // (bkz. backfill planı) ve ÖNCEDEN burada hiç okunmuyordu — bir 429'dan
+    // sonra defter son BAŞARILI yanıtın (muhtemelen bol) değerinde donup
+    // kalıyor, bir sonraki tetikleyici aynı duvara kontrolsüz çarpıyordu.
+    // `error.response` yoksa (ağ hatası) `undefined` geçilir — recordRateLimitHeaders
+    // bunu zaten "bilinmiyor" (`null`) sayıyor, burada ayrıca dallanmaya gerek yok.
+    recordRateLimitHeaders(error.response?.headers);
+
     // Timeout teşhisi: hangi istek, hangi ekrandan atıldı, kaç ms sonra düştü.
     // console.warn (devLog değil) — release/TestFlight build'de de görünsün,
     // timeout'lar cihazda tekrar üretiliyor. Ağ tamamen kopuksa ayrı satır:

@@ -35,7 +35,10 @@ export interface BackfillRoundResult {
   ran: boolean;
   /** Bu turda gerçekten atılan (başarıyla cevaplanan) sayfa sayısı. */
   pages: number;
-  /** Bu turda diske yazılan toplam mesaj sayısı. */
+  /** Bu turda başarıyla cevaplanan sayfaların TOPLAM mesaj sayısı — "yeni
+   *  eklenen" değil: `backfill_cursor` sıfırdan başladığından, ekranın zaten
+   *  sayfaladığı bir sohbetin 1. sayfası burada da gelebilir ve o satırlar
+   *  zaten diskte olsa da bu sayaca girer. */
   messages: number;
   /** Bu turda `backfill_done` işaretlenen sohbetler. */
   completed: string[];
@@ -72,6 +75,29 @@ async function run(getActiveConversationId: () => string | null): Promise<Backfi
     let cursor = target.cursor;
 
     for (let page = 0; page < MAX_PAGES_PER_CONVERSATION; page++) {
+      // ÖNCE kontrol, SONRA istek — tam tersi (eski hâl) üç şeyi delerdi:
+      // (1) offline, bir istek PATLAYIP `break`'e düştüğünde hiç görülmüyordu
+      //     (okuma yalnız BAŞARILI sayfanın ardından yapılıyordu), yani
+      //     bağlantı koptuğunda tur yine de kalan her hedefi tek tek
+      //     deneyip hepsinde hata yiyordu; (2) turun İLK isteği hiç
+      //     denetlenmiyordu — kota zaten rezervin altındaysa (kullanıcı o
+      //     anda kendi sohbetini sayfalıyor) tur yine de bir slot harcardı;
+      //     (3) bu da (2)'nin özel hâli: soğuk açılış probu bile BURADA,
+      //     `pagesThisRound: 0` ile değerlendiriliyor. Kontrol burada
+      //     olunca probe kuralıyla ÇATIŞMIYOR: `remaining: null` ve
+      //     `pagesThisRound: 0` iken `shouldStopRound` false döner, yani
+      //     ilk prob sayfası yine çekilir — sadece artık rezervin zaten
+      //     altındaysa o ilk sayfa da hiç denenmez.
+      if (
+        shouldStopRound({
+          pagesThisRound: result.pages,
+          offline: isOfflineNow(),
+          remaining: remainingNow(),
+        })
+      ) {
+        return result;
+      }
+
       if (!firstRequest) await delay(PAGE_DELAY_MS);
       firstRequest = false;
 
@@ -90,6 +116,10 @@ async function run(getActiveConversationId: () => string | null): Promise<Backfi
         }
         // Bu sohbete özel geçici arıza (ağ/5xx/vb). Cursor'a DOKUNMA — bir
         // sonraki tur aynı yerden dener. Turu ÖLDÜRME, sıradaki hedefe geç.
+        // NOT: bu catch'in dışına (applyHistoryPage/setBackfillCursor) hiçbir
+        // şey SIZDIRILMAMALI — birkaç test (429, "istek patlarsa") unmock'lu
+        // bir sonraki çağrının gürültüyle patlamasına güveniyor; try bloğunu
+        // genişletmek o testleri sessizce köreltir.
         break;
       }
 
@@ -97,26 +127,17 @@ async function run(getActiveConversationId: () => string | null): Promise<Backfi
       repo.setBackfillCursor(target.conversationId, historyPage.nextCursor);
       cursor = historyPage.nextCursor;
       result.pages++;
+      // Bu turda SUNUCUDAN gelip diske yazılan mesaj sayısı — "backfill_cursor
+      // sıfırdan başlıyor" yüzünden ekranın zaten sayfaladığı bir sohbetin
+      // 1. sayfası burada da çekilebilir; o durumda bu sayaç "YENİ eklenen"
+      // değil, "bu turda İŞLENEN" mesaj sayısını verir.
       result.messages += historyPage.messages?.length ?? 0;
 
-      let conversationDone = false;
       if (isConversationComplete(historyPage)) {
         repo.markBackfillDone(target.conversationId);
         result.completed.push(target.conversationId);
-        conversationDone = true;
+        break; // sıradaki hedefe geç
       }
-
-      if (
-        shouldStopRound({
-          pagesThisRound: result.pages,
-          offline: isOfflineNow(),
-          remaining: remainingNow(),
-        })
-      ) {
-        return result;
-      }
-
-      if (conversationDone) break; // sıradaki hedefe geç
     }
   }
 
