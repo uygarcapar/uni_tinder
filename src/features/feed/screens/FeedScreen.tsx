@@ -172,7 +172,14 @@ import type { CampusMomentDto } from "@/features/campus/campusTypes";
 // ⚠️ `LikerSwipeModal` KAMPÜS YOLUNDA KULLANILMIYOR: an kartı artık profil
 // açmıyor. Akışın yazar kartı hâlâ bu bileşeni çiziyor, o yüzden import duruyor.
 import LikerSwipeModal from "@/features/discover/components/LikerSwipeModal";
-import CampusMomentExpandOverlay from "@/features/campus/components/CampusMomentExpandOverlay";
+import CampusMomentExpandOverlay, {
+  EXPAND_MS,
+} from "@/features/campus/components/CampusMomentExpandOverlay";
+import { likeWithFlameSweep } from "@/features/campus/campusMomentLikeSweep";
+import {
+  releaseFlameSweep,
+  runFlameSweep,
+} from "@/features/discover/flameSweep";
 import type { ExpandRect } from "@/features/campus/campusExpandGeometry";
 import type {
   FeedListParams,
@@ -2037,16 +2044,64 @@ export default function FeedScreen() {
     () => resolveOpenMoment(campus.moments, momentTarget?.id ?? null),
     [campus.moments, momentTarget?.id],
   );
+  /** Kart küçülüyor — yüzey hâlâ ağaçta (bkz. overlay > `collapsing`). */
+  const [momentCollapsing, setMomentCollapsing] = useState(false);
+  /** Park eden alev dalgasının aboneliği — sökülürken salıveriliyor. */
+  const momentSweepUnsub = useRef<(() => void) | null>(null);
 
   /**
-   * TİK — beğeni gidiyor, Keşif'in alev süpürmesi oynuyor ve kart ÖRTÜNÜN
-   * ALTINDA küçülüp kapanıyor (bkz. Task 5'teki `handleMomentLike`).
+   * ══════════════════════════════════════════════════════════════════════════
+   * TİK — beğeni gider, ALEV oynar, kart ÖRTÜNÜN ALTINDA küçülür.
+   * ══════════════════════════════════════════════════════════════════════════
+   * Sıralamanın kendisi saf bir modülde ve testli (`likeWithFlameSweep`);
+   * burada yalnız o sıralamanın ekrandaki karşılıkları bağlanıyor.
+   *
+   * ⚠️ ALEV KATMANI GLOBAL: `<FireFlame />` AppNavigator'da mount, `uiBus`
+   * üzerinden konuşuyor — yani Keşif dışından tetiklenebiliyor ve BURAYA YENİ
+   * BİR ALEV KATMANI KURULMUYOR.
+   *
+   * ⚠️ `hold: true` ŞART: dalga tam kapalıyken PARK EDİYOR ve bizi bekliyor.
+   * Parksız bir süpürmede örtü kendi takvimiyle açılır, küçülen kart görünür —
+   * Keşif'te aynı tuzağa düşülmüştü (giden kart görünüyordu).
+   *
+   * ⚠️ KÜÇÜLME BİTMEDEN `releaseFlameSweep` ÇAĞRILMAZ: salıverilen dalga örtüyü
+   * açıyor. İkisi arasındaki tek bağ bu zamanlayıcı — `EXPAND_MS` overlay'in
+   * kendi süresi, iki yerde ayrı yazılırsa örtü erken açılır.
    */
   const handleMomentLike = useCallback(() => {
     if (!openMoment) return;
-    campus.like(openMoment);
-    setMomentTarget(null);
+    const moment = openMoment;
+    likeWithFlameSweep({
+      exhausted: campus.decisionsExhausted,
+      like: () => campus.like(moment),
+      startSweep: (onCovered) => {
+        momentSweepUnsub.current?.();
+        momentSweepUnsub.current = runFlameSweep(onCovered, { hold: true });
+      },
+      collapse: () => {
+        setMomentCollapsing(true);
+        setTimeout(() => {
+          setMomentTarget(null);
+          setMomentCollapsing(false);
+          momentSweepUnsub.current = null;
+          releaseFlameSweep();
+        }, EXPAND_MS);
+      },
+    });
   }, [campus, openMoment]);
+
+  /**
+   * ⚠️ PARK EDEN DALGAYI SÖKÜLÜRKEN DE SALIVER: ekran kapanırsa (sekme
+   * değişimi, logout) örtüyü açacak kimse kalmıyor ve kullanıcı alevle kaplı
+   * bir ekranda kalıyordu.
+   */
+  useEffect(
+    () => () => {
+      momentSweepUnsub.current?.();
+      momentSweepUnsub.current = null;
+    },
+    [],
+  );
 
   const mapHero = (
     <FeedMapStrip
@@ -2883,6 +2938,7 @@ export default function FeedScreen() {
         // kart elde bayatlamışsa ikisi ayrışabilir.
         mode={openMoment?.mode ?? selectedMode}
         busy={campus.busyMomentId === openMoment?.id}
+        collapsing={momentCollapsing}
         onLike={handleMomentLike}
         onClose={() => setMomentTarget(null)}
       />

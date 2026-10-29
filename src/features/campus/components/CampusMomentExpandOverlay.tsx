@@ -86,6 +86,14 @@ export interface CampusMomentExpandOverlayProps {
   mode: AppMode;
   /** Beğeni isteği uçuyor — tik kilitli (çift tik tek karar). */
   busy: boolean;
+  /**
+   * KÜÇÜLME FAZI — alev örtüsü kapandı, kart yerine dönüyor.
+   *
+   * ⚠️ YÜZEY HEMEN SÖKÜLMÜYOR: sökülseydi küçülecek bir şey kalmazdı. Ekran
+   * önce bu bayrağı kaldırıyor, `EXPAND_MS` sonra `moment`i null'lıyor
+   * (bkz. FeedScreen > `handleMomentLike`).
+   */
+  collapsing?: boolean;
   onLike: () => void;
   onClose: () => void;
 }
@@ -95,6 +103,7 @@ const CampusMomentExpandOverlay = memo(function CampusMomentExpandOverlay({
   frame,
   mode,
   busy,
+  collapsing = false,
   onLike,
   onClose,
 }: CampusMomentExpandOverlayProps) {
@@ -150,6 +159,23 @@ const CampusMomentExpandOverlay = memo(function CampusMomentExpandOverlay({
     return () => clearTimeout(timer);
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [moment?.id]);
+
+  /**
+   * KÜÇÜLME — örtü kapandıktan sonra kart başlangıç karesine dönüyor.
+   *
+   * ⚠️ CAM AYNI KARDE SÖKÜLÜYOR (`settled` false): küçülme bir transform ve
+   * camın altında kaldığı an zaten çizilmez; üstelik giden kartın üstünde
+   * basılabilir bir buton kalması ikinci bir beğeni demekti.
+   */
+  useEffect(() => {
+    if (!collapsing) return;
+    setSettled(false);
+    progress.value = withTiming(0, {
+      duration: EXPAND_MS,
+      easing: Easing.in(Easing.cubic),
+    });
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [collapsing]);
 
   const cardStyle = useAnimatedStyle(() => {
     const { start, target } = geometry;

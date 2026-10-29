@@ -544,6 +544,15 @@ export function useCampusSurface({
     moments,
     loading: momentsQuery.isLoading,
     decisionsRemaining,
+    /**
+     * GÜNLÜK KARAR HAKKI BİTTİ Mİ.
+     *
+     * ⚠️ DIŞA VERİLİYOR çünkü ALEVİN KAPISI bu: hak bitmişken `like` yalnız
+     * paywall açıp dönüyor, yani gönderilmiş bir beğeni yok — kutlama
+     * oynasaydı kullanıcı geri alınamaz kararını harcadığını sanırdı
+     * (bkz. campusMomentLikeSweep).
+     */
+    decisionsExhausted,
     busyMomentId,
     /** Sheet'in sonsuz listesi. */
     fetchNextPage: momentsQuery.hasNextPage

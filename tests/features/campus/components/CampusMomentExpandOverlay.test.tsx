@@ -86,6 +86,25 @@ it('tike basınca onLike, perdeye basınca onClose', () => {
  * Beğeni geri alınamıyor (free kullanıcının günlük tek kampüs kararı) ve iki
  * istek iki kota demek. Kapı `busy`: ekran isteği uçarken bayrağı kaldırıyor.
  */
+/**
+ * KÜÇÜLME FAZI — alev örtüsü KAPALIYKEN koşuyor.
+ *
+ * ⚠️ CAM ÖNCE SÖKÜLÜYOR: küçülme bir transform ve cam onun altında kalırsa
+ * zaten çizilmez; üstelik kart giderken basılabilir bir buton kalması
+ * ikinci bir beğeni demekti.
+ */
+it('küçülürken cam buton SÖKÜLÜYOR', () => {
+  const tree = mount();
+  settle();
+  expect(tree.getByLabelText('Beğen')).toBeTruthy();
+  tree.rerender(
+    <SafeAreaProvider initialMetrics={{ frame: frameMetrics, insets }}>
+      <CampusMomentExpandOverlay {...base} collapsing />
+    </SafeAreaProvider>,
+  );
+  expect(tree.queryByLabelText('Beğen')).toBeNull();
+});
+
 it('busy iken tik ikinci kez çağırmıyor', () => {
   const onLike = jest.fn();
   const tree = mount({ busy: true, onLike });
