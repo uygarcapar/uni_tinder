@@ -77,7 +77,8 @@ import CampusMapScrim, {
   campusMapTopScrimHeight,
 } from "@/features/campus/components/CampusMapScrim";
 import CampusMapTitle from "@/features/campus/components/CampusMapTitle";
-import CampusMomentComposer from "@/features/campus/components/CampusMomentComposer";
+// ⚠️ `CampusMomentComposer` ARTIK İMPORT EDİLMİYOR: onay sheet'i akıştan çıktı
+// (gerekçe aşağıda, kampüs sheet'lerinin yerindeki notta).
 import CampusAlwaysPrimingSheet from "@/features/campus/components/CampusAlwaysPrimingSheet";
 import ReportModal from "@/shared/components/ReportModal";
 import {
@@ -2176,6 +2177,13 @@ export default function FeedScreen() {
         // Akış sayfası KENDİ offset'ini de yazıyor (yapışan chrome ona bakıyor
         // — gerekçe feedScrollY'de); Gönderilerim ortak değeri yazmakla kalıyor.
         scrollHandler={isMine ? scrollHandler : feedScrollHandler}
+        /**
+         * ⚠️ HANDLER'IN YAZDIĞI DEĞERLE AYNI OLMAK ZORUNDA: çekme göstergesi
+         * lastiğin negatif offset'ini okuyor ve sayfa kendi offset'ini hangi
+         * değere yazıyorsa onu görmeli. Akış `feedScrollY`ye de yazıyor ama
+         * paylaşılan `scrollY` ikisinde de taze (bkz. feedScrollHandler).
+         */
+        scrollY={scrollY}
         // Uçuş yalnız akışta (gerekçe prop'un tanımında).
         flight={isMine ? null : flight}
         loading={loading}
@@ -2384,6 +2392,7 @@ export default function FeedScreen() {
           fallback: Plus,
           onPress: campus.captureMoment,
           label: t("campus.shareBox"),
+          testID: "feed-btn-campus",
         }
       : null
     : {
@@ -2391,10 +2400,11 @@ export default function FeedScreen() {
         fallback: Pencil,
         onPress: openComposer,
         label: t("feed.empty.cta"),
+        testID: "feed-btn-compose",
       };
 
   return (
-    <View style={{ flex: 1, backgroundColor: colors.bg }}>
+    <View testID="feed-screen" style={{ flex: 1, backgroundColor: colors.bg }}>
       {/* ── HARİTA ZEMİNİ — İKİ SEKMENİN ORTAK VE SABİT TABANI ─────────────
           Katman sırası: harita < pager < sekme şeridi < perdeler < köşe
           butonları. Kaydırırken harita yerinde kalıyor, gönderiler üstünden
@@ -2587,6 +2597,19 @@ export default function FeedScreen() {
              * zorunlu oldu, yoksa yazı çıplak haritanın üstünde kalıyor.
              */
             height={campusMapTopScrimHeight(insets.top)}
+            /**
+             * ÜST BANT CHROME MALZEMESİ (istek: "en tepedeki progressive
+             * siyahlık olmasın, açık modda beyaz olsun — akış sayfasının
+             * header'ındaki gibi"): bu bandın altında fotoğraf değil harita
+             * var, üstünde de uygulamanın chrome'u (başlık + iki cam buton)
+             * duruyor. Akışta tam aynı yerde `FeedMapStrip`in üst blur'u var
+             * ve biri açılırken diğeri sönüyor; biri siyah biri modla dönen
+             * olduğunda geçişte tonu atlıyordu.
+             *
+             * ⚠️ ALT BANT `media` KALIYOR (varsayılan): orada şeridin
+             * FOTOĞRAFLARI var, beyaz perde onları yıkıyor.
+             */
+            tone="chrome"
           />
           <CampusMapScrim
             progress={mapChromeFade}
@@ -2704,6 +2727,16 @@ export default function FeedScreen() {
             label={mapExpanded ? t("common.close") : t("feed.filter.title")}
             // Sembol devrinin anahtarı — iki hâl, iki değer.
             symbolPhase={mapExpanded ? 1 : 0}
+            // ⚠️ MÜREKKEP İKİ HÂLDE DE TEMANIN — açık modda siyah glif.
+            // Keşif'te bu butonlar kapak FOTOĞRAFININ üstünde yüzüyor ve orada
+            // beyaz glif doğru; BURADA iki hâlde de altlarında fotoğraf YOK:
+            // akışta şeridin üst blur'u, haritada CampusMapScrim'in üst bandı
+            // var ve İKİSİ DE chrome reçetesi, yani açık temada zemin
+            // beyazlıyor (haritanın bandı bu turda eşitlendi, istek). Berrak
+            // cam zemini koyulaştırmadığı için beyaz glif açık modda
+            // kayboluyordu (proje notu: "berrak cam + açık zemin = kayıp beyaz
+            // mürekkep"). Sabit değer yazılmıyor, prop okunur kalsın diye.
+            onSurface
           />
 
           {/* SAĞ — AKIŞTA KALEM (gönderi composer'ı), HARİTADA ARTI (anı
@@ -2731,7 +2764,10 @@ export default function FeedScreen() {
               fallback={rightCorner.fallback}
               onPress={rightCorner.onPress}
               label={rightCorner.label}
+              testID={rightCorner.testID}
               symbolPhase={mapExpanded ? 1 : 0}
+              // Sol köşeyle AYNI kural — gerekçe orada.
+              onSurface
             />
           ) : null}
         </View>
@@ -2820,24 +2856,23 @@ export default function FeedScreen() {
         onDecide={handleMomentDecide}
       />
 
-      {/* ⚠️ `PhotoSourceSheet` KALDIRILDI (istek: "artıya basınca galeri filan
-          sunmasın direkt kamerayı açsın"). Kampüs anı anlık bir çekim olmak
-          zorunda — galeriden seçilen eski bir fotoğraf "şu anda buradayım"
-          cümlesini kuramıyor. Sheet bileşeni duruyor, profil/kayıt akışları
-          hâlâ kullanıyor. */}
-      <CampusMomentComposer
-        visible={campus.composerOpen}
-        onClose={campus.closeComposer}
-        photoUri={campus.photoUri}
-        mode={selectedMode}
-        sharing={campus.sharing}
-        errorText={campus.shareError}
-        onShare={campus.share}
-      />
+      {/* ⚠️ KAMPÜS ANI PAYLAŞIMINDA ARTIK HİÇBİR SHEET YOK.
+          İki adım sırayla kaldırıldı:
+            • `PhotoSourceSheet` (kamera/galeri seçimi) — kampüs anı anlık bir
+              çekim olmak zorunda, galeriden seçilen eski bir fotoğraf "şu anda
+              buradayım" cümlesini kuramıyor. Bileşen duruyor, profil/kayıt
+              akışları hâlâ kullanıyor.
+            • `CampusMomentComposer` (önizleme + paylaş onayı) — istek: "direkt
+              çektiğim ekranda foto static kalsın, oradan göndere basınca
+              göndereyim, ekstra modal filan açma". Önizleme, paylaş düğmesi ve
+              satır içi hata kamera ekranına taşındı (bkz. CameraCaptureOverlay
+              > donmuş kare ve cameraBridge > `commit`). Bileşen dosyası
+              silinmedi ama MOUNT EDİLMİYOR; geri konacaksa `useCampusSurface`
+              artık `composerOpen`/`share`/`shareError` vermiyor. */}
 
       {/* "Her zaman" konum izni — İLK PAYLAŞIMDAN SONRA bir kez soruluyor
-          (gerekçe useCampusSurface > share). Kapatılabilir: izin olmadan da
-          özellik çalışıyor, yalnız bildirim gelmiyor. */}
+          (gerekçe useCampusSurface > captureMoment). Kapatılabilir: izin
+          olmadan da özellik çalışıyor, yalnız bildirim gelmiyor. */}
       <CampusAlwaysPrimingSheet
         visible={campus.primingOpen}
         onClose={campus.closePriming}

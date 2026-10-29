@@ -235,7 +235,12 @@ import SelfieVerifiedBadge, {
   selfieBadgeSize,
 } from "@/features/profile/components/SelfieVerifiedBadge";
 import FireGlassButton from "./FireGlassButton";
-import { DEFAULT_APP_MODE, modeFireNameKey, type AppMode } from "../modeTheme";
+import {
+  DEFAULT_APP_MODE,
+  modeFireNameKey,
+  modeFireTint,
+  type AppMode,
+} from "../modeTheme";
 import CardStickyHeader, {
   CARD_CHROME_TOP_DROP,
   CARD_EXPANDED_CORNER_RADIUS,
@@ -411,6 +416,27 @@ const COVER_ACTION_SIZE = DISCOVER_GLASS_BUTTON_SIZE;
  * büyüyor; fazla açmak üst butonu kapağın orta bandına taşır.
  */
 const COVER_ACTION_GAP = 18;
+
+/**
+ * ⚠️ KARAR İKİLİSİNİN (tik · X) GLİF PUNTOSU İÇİN AYRI SABİT YOK (istek,
+ * 2026-10-27: "tik ve x butonlarının icon boyutunu kaydırınca çıkan headerdaki
+ * tik boyutu kadar yap").
+ *
+ * İkisi de `CardChromeGlassButton`a punto GEÇMİYOR, yani glif ortak cam ikon
+ * butonundan geliyor: camlı yolda GLASS_ICON_BUTTON.icon (17), camsız yolda
+ * CARD_CHROME_FALLBACK_ICON_SIZE (22). Şeridin sağ ucundaki beğen butonu da
+ * (aşağıda, "BEĞEN (tik) — ŞERİDİN SAĞ UCU") tam olarak böyle kurulu ve
+ * kaydırma devrinde kapaktaki tikin yerini alıyor — iki sayı ayrışınca aynı
+ * işaret devrin ortasında büyüyüp küçülüyordu.
+ *
+ * 17 → 28 → 24 → 17. Ara sayıların gerekçesi "hemen altındaki Fire 29pt çiziyor
+ * (FIRE_GLASS_GLYPH_SIZE), yanında 17pt tik yarım işaret gibi okunuyor"du; 28
+ * ayrıca Beğeniler'in 72'lik kart köşesinden kopyaydı ve 48'lik kabukta cam
+ * kenarına dayanıyordu. Bu tur iriliği değil ŞERİTLE TUTARLILIĞI seçti.
+ *
+ * Kabuk hiçbir turda değişmedi: çap COVER_ACTION_SIZE'da sabit, dokunma alanı
+ * da öyle (nedeni glassIconClearGlyph > `frame` + `contentShape`).
+ */
 
 /**
  * Kapağın alt chrome'unun (sol yazı bloğu + sağ buton kolonu) fotoğrafın ALT
@@ -3904,16 +3930,23 @@ export default function SwipeCard({
                   >
                     {onLike && (
                       <CardChromeGlassButton
+                        testID="preview-btn-like"
                         onPress={onLike}
                         label={t("likes.likeButton")}
                         systemName="checkmark"
                         fallback={Check}
                         size={COVER_ACTION_SIZE}
                         onMedia
+                        // Boyalı tik KEŞİF'TEKİYLE AYNI (istek: "Beğeniler'den
+                        // girilen kartlar için de geçerli"). Glif puntosu da
+                        // orada olduğu gibi ortak sayıda — bkz. kapak
+                        // kolonundaki "GLİF PUNTOSU İÇİN AYRI SABİT YOK" notu.
+                        surfaceTint={modeFireTint(mode ?? DEFAULT_APP_MODE)}
                       />
                     )}
                     {onPass && (
                       <CardChromeGlassButton
+                        testID="preview-btn-pass"
                         onPress={onPass}
                         label={t("likes.passButton")}
                         systemName="xmark"
@@ -3932,6 +3965,7 @@ export default function SwipeCard({
                         `!previewMode`), Fire'ın tek yeri burası. */}
                     {!hideFire && onFire && (
                       <FireGlassButton
+                        testID="preview-btn-fire"
                         onPress={onFire}
                         // Etiket moda göre: Flört'te "Fire", Arkadaş'ta "Spark".
                         label={t(modeFireNameKey(mode))}
@@ -4109,9 +4143,15 @@ export default function SwipeCard({
                     contentFit="cover"
                     cachePolicy="memory-disk"
                     recyclingKey={allPhotos[0]}
-                    // Üst kart decode kuyruğunda önceliklidir; alttaki kart
-                    // düşük öncelikle arkada yüklenir (algılanan hız).
-                    priority={isTopCard ? "high" : "low"}
+                    // Üst kart decode kuyruğunda önceliklidir.
+                    //
+                    // ALTTAKİ KART "low" DEĞİL "normal" (2026-10-26): "low" o
+                    // fotoğrafı kuyruğun DİBİNE atıyordu, oysa bir sonraki
+                    // basışta ÜSTE ÇIKACAK kart o. Decode yetişmediğinde dalga
+                    // çekilirken giden kart görünüyordu. Asıl çözüm kapağın
+                    // önceden prefetch'i (bkz. DiscoverScreen > warmCovers); bu
+                    // da aynı yarışı kapatıyor.
+                    priority={isTopCard ? "high" : "normal"}
                     transition={150}
                     // Yalnız modül seviyesindeki cache'e yazıyor: bu kart
                     // artık "yüklendi mi" diye bir STATE tutmuyor (kapak
@@ -4373,27 +4413,46 @@ export default function SwipeCard({
                   fotoğrafın üstünde — bkz. "ÖNİZLEMENİN AKSİYON KOLONU". */}
               {!hideActions && onLike && (
                 <CardChromeGlassButton
+                  testID="discover-btn-like"
                   onPress={onLike}
                   label={t("likes.likeButton")}
                   systemName="checkmark"
                   fallback={Check}
                   size={COVER_ACTION_SIZE}
                   onMedia
+                  // TİK ARTIK BOYALI (istek: "aynı Beğeniler'deki kırmızı tik
+                  // gibi"): kabuk modun aksiyon rengine boyanıyor, glif beyaz.
+                  // X bilerek berrak kalıyor — ayrımın gerekçesi
+                  // CardActionGlassButton > `variant` notunda: iki buton da
+                  // renkli olsaydı kolon iki lekeye dönüp olumlu aksiyon öne
+                  // çıkmıyordu.
+                  //
+                  // Renk MODLA dönüyor (Flört kırmızı / Arkadaş yeşil), tıpkı
+                  // Beğeniler'in kart köşesindeki tik gibi — sabit kırmızı
+                  // bırakmak Arkadaş modunda aynı kolonu iki renge bölerdi.
+                  //
+                  // GLİF PUNTOSU GEÇİLMİYOR: şeridin sağ ucundaki beğen
+                  // butonuyla aynı sayı olmalı (bkz. yukarıdaki sabit notu).
+                  surfaceTint={modeFireTint(mode ?? DEFAULT_APP_MODE)}
                 />
               )}
               {!hideActions && onPass && (
                 <CardChromeGlassButton
+                  testID="discover-btn-pass"
                   onPress={onPass}
                   label={t("likes.passButton")}
                   systemName="xmark"
                   fallback={X}
                   size={COVER_ACTION_SIZE}
                   onMedia
+                  // Kabuk berrak (yukarıdaki not); glif tikle AYNI puntoda —
+                  // ikisi de ortak sayıda, ikili tek iriliğte okunmalı.
                 />
               )}
 
               {!hideActions && !hideFire && onFire && (
                 <FireGlassButton
+                  testID="discover-btn-fire"
                   onPress={onFire}
                   // Etiket moda göre: Flört'te "Fire", Arkadaş'ta "Spark".
                   label={t(modeFireNameKey(mode))}
@@ -5874,6 +5933,7 @@ export default function SwipeCard({
             pointerEvents={expanded ? "auto" : "none"}
           >
             <CardChromeGlassButton
+              testID="discover-btn-like-sticky"
               onPress={onLike}
               label={t("likes.likeButton")}
               systemName="checkmark"
