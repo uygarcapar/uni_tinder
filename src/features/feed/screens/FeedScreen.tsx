@@ -1014,12 +1014,18 @@ export default function FeedScreen() {
   const authorHasLikedMe = useMemo(
     () =>
       authorLikedMe(authorProfile.data, (userId) =>
-        // `store.getState()` — `useAppSelector` DEĞİL (bkz. swipeSlice.ts:137,
-        // render churn). Değer kart açılırken bir kez çözülüyor: hâlin kart
-        // ortasında değişmesi kullanıcının elindeki butonları altından çeker.
-        hasLikedMe(store.getState(), userId),
+        // Yerel küme SEÇİLİ MODUN likerlarını tutuyor (fetchWhoLikedMe >
+        // loadAppMode, bkz. swipeSlice.ts:30-43'teki not). `cardMode`
+        // `selectedMode`'dan ayrıştığında (yazar başka modda açık) o kümeye
+        // bakmak BAŞKA modun sinyaliyle kabul/reddet çizer — oysa kabul
+        // `cardMode`'da gidecek ve X'in beğenisi öbür modda durduğu için
+        // eşleşme OLUŞMAZ (sunucu mutual'ı bulamaz), ret ise zaten bekleyen
+        // birine boşa gider. Modlar ayrışınca güvenli taraf: normal karta düş.
+        // (`store.getState()` — `useAppSelector` DEĞİL, bkz. swipeSlice.ts:137,
+        // render churn; değer kart açılırken bir kez çözülüyor.)
+        cardMode === selectedMode && hasLikedMe(store.getState(), userId),
       ),
-    [authorProfile.data],
+    [authorProfile.data, cardMode, selectedMode],
   );
 
   /**
@@ -1236,6 +1242,11 @@ export default function FeedScreen() {
       // (bkz. swipeSlice > removeWhoLikedMe'nin notu).
       if (hasLikedMe(store.getState(), userId)) {
         dispatch(removeWhoLikedMe(userId));
+        // Beğeniler ekranı mount'sa listesinden düşürsün — o ekran lazy
+        // mount edip mount kalıyor, kendiliğinden tazelenmiyor (Keşif'teki
+        // aynı çift: DiscoverScreen.tsx:2540 · :2713). Kabul SignalR'daki
+        // "match" olayıyla örtük kapsanıyor; ret için tek kapsayan bu satır.
+        uiBus.emit("likerHandled", { userId });
       }
     },
     [dispatch, qc, previewPostId],

@@ -95,10 +95,16 @@ export function feedCardActions(
  * tespit (bkz. `feedCardActions`'ın "BEĞENİLMİŞ" hâli).
  *
  * İki kaynağın OR'u (bkz. DiscoverScreen'deki aynı kalıp): sunucunun profil
- * bayrağı VEYA yerel "beni beğenenler" kümesi. İkisi gerekli, çünkü hiçbiri
- * tek başına tam değil: sunucu bayrağı tam kapsama verir ama her profil
- * yanıtında dönüp dönmediği garanti değil; yerel küme garanti dönüyor ama
- * yalnız ilk sayfayı tutuyor (`getWhoLikedMe(1,10,10,mode)`, bkz.
+ * bayrağı VEYA yerel "beni beğenenler" kümesi.
+ *
+ * ⚠️ Bayrak tarafı BUGÜN CANLI KAPSAMA DEĞİL: `api.ts > FEED_POST_AUTHOR_PROFILE`
+ * açıkça yazıyor — gövde `GET /api/swipe/LikerProfile/{id}` ile birebir aynı
+ * `ProfileCardDto`, "beğeniye özel alanlar — hasLikedMe, note — burada dolu
+ * GELMEZ". Yani `hasLikedMe === true` dalı bugün için İLERİYE DÖNÜK kablolama;
+ * sunucu bir gün bu uçta da alanı doldurursa kod zaten doğru tarafta olsun
+ * diyedir, şu an pratikte hiçbir isteği true yapmaz. Gerçek kapsama tamamen
+ * yerel kümeden geliyor ve o küme de TAM değil — yalnız seçili modun
+ * likerlarının ilk sayfasını tutuyor (`getWhoLikedMe(1,10,10,mode)`, bkz.
  * `swipeSlice > applyWhoLikedMe`). Yanlış pozitif zaten bekleyen birine Fire
  * yakılmasını önlerken; yanlış negatif kullanıcıya hiçbir şey yapmayan iki
  * buton (Fire/not) gösteriyor.
