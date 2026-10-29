@@ -3883,8 +3883,10 @@ export default function SwipeCard({
                 Keşif'te kapağın kolonundaki kutuyla AYNI hedef). Çağıran not
                 gönderemiyorsa (Profil önizlemesi, "seni beğenenler", sohbet
                 kartı) `onNote` hiç verilmiyor ve kutu çizilmiyor; akış kartı
-                veriyor çünkü orada not geçerli bir sinyal — Flört'te zorunlu
-                iki yoldan biri (bkz. feedCardActions).
+                veriyor çünkü orada not geçerli bir sinyal — NORMAL hâlde
+                Fire'la zorunlu iki yoldan biri, İKİ MODDA DA AYNI (Flört'e
+                özel değil; beğenilmiş hâlde ikisi de kapanıyor, bkz.
+                feedCardActions).
 
                 Pinch ile büyütme de AÇIK — o bütün fotoğraflarla aynı kural.
 
@@ -5711,15 +5713,21 @@ export default function SwipeCard({
                       />
                     )}
                     {/* ⚠️ HER GLİF KENDİ HANDLER'INA BAĞLI — satır ikisini
-                        birden varsaymıyor. Akışın Flört kartında düz beğeni YOK
-                        (bkz. feedCardActions): `onLike` verilmiyor ve o dalda
-                        koşulsuz çizilen bir tik, basıldığında hiçbir şey
-                        yapmayan ölü bir buton olurdu. Kapaktaki cam kolon da
-                        aynı kuralla çiziliyor (yukarıda). */}
+                        birden varsaymıyor. Akışın NORMAL hâlinde düz beğeni
+                        YOK, iki modda da (bkz. feedCardActions): `onLike`
+                        verilmiyor ve o dalda koşulsuz çizilen bir tik,
+                        basıldığında hiçbir şey yapmayan ölü bir buton olurdu.
+                        BEĞENİLMİŞ hâlde ise tersi — tik/X açık, not tamamen
+                        kapalı. Kapaktaki cam kolon da aynı kuralla çiziliyor
+                        (yukarıda). */}
                     {onPass && (
                       <TouchableOpacity
                         onPress={onPass}
                         activeOpacity={0.7}
+                        // VoiceOver bu güne kadar hiç konuşmuyordu (öncesinde
+                        // etiket/testID yoktu) — gerçek erişilebilirlik açığı,
+                        // kapak kolonundaki cam butonla aynı etikete bağlandı.
+                        accessibilityLabel={t('likes.passButton')}
                         style={{
                           width: 75,
                           height: 75,
@@ -5744,6 +5752,8 @@ export default function SwipeCard({
                       <TouchableOpacity
                         onPress={onLike}
                         activeOpacity={0.8}
+                        // Aynı açık — bkz. X'in üstündeki not.
+                        accessibilityLabel={t('likes.likeButton')}
                         style={{
                           width: 75,
                           height: 75,

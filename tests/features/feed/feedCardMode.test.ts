@@ -157,10 +157,15 @@ describe("authorLikedMe", () => {
     },
   );
 
-  it("profil yoksa false — kart henüz yüklenmemiş", () => {
-    expect(authorLikedMe(null, allLocal)).toBe(false);
-    expect(authorLikedMe(undefined, allLocal)).toBe(false);
-  });
+  // `typeof profile !== "object"` dalı: profil yokluğu yalnız null/undefined
+  // DEĞİL, bir primitif de olabilir (ör. sorgu henüz çözülmemiş bir id string'i
+  // döndürüyorsa) — ikisi de "yok" sayılmalı.
+  it.each([null, undefined, "u1", 5])(
+    "profil yoksa (%p) false — kart henüz yüklenmemiş",
+    (profile) => {
+      expect(authorLikedMe(profile, allLocal)).toBe(false);
+    },
+  );
 });
 
 describe("normalizeModes", () => {
