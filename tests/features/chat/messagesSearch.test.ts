@@ -25,4 +25,31 @@ describe('conversationMatchesQuery', () => {
     const conv = { partnerDisplayName: 'Ayşe', lastMessagePreview: 'merhaba' };
     expect(conversationMatchesQuery(conv, 'zeynep')).toBe(false);
   });
+
+  /**
+   * iOS'ta otomatik düzeltme ÖNERİSİNİ KABUL ETMEK sonuna bir boşluk koyuyor:
+   * kullanıcı adı yazıp öneriye dokunuyor ve liste bomboş oluyordu. Eski kod
+   * `searchQuery.trim().toLowerCase()` ile kırpıyordu; `foldTr` kırpmıyor ve
+   * boşluk yalnız "boş sorgu" kısa devresinde kırpılıyordu, EŞLEŞMEDE ham
+   * sorgu kullanılıyordu.
+   */
+  describe('baştaki/sondaki boşluk eşleşmeyi bozmuyor', () => {
+    const conv = { partnerDisplayName: 'İrem', lastMessagePreview: null };
+
+    it.each([
+      ['sonda boşluk', 'irem '],
+      ['başta boşluk', ' irem'],
+      ['iki yanda boşluk', '  irem  '],
+      ['sekme', '\tirem\t'],
+      ['satır sonu', 'irem\n'],
+    ])('%s', (_label, query) => {
+      expect(conversationMatchesQuery(conv, query)).toBe(true);
+    });
+
+    it('kelime ARASINDAKİ boşluğa dokunmuyor', () => {
+      const c = { partnerDisplayName: 'Elif İnci', lastMessagePreview: null };
+      expect(conversationMatchesQuery(c, ' elif inci ')).toBe(true);
+      expect(conversationMatchesQuery(c, 'elifinci')).toBe(false);
+    });
+  });
 });

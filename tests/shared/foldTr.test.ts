@@ -12,6 +12,14 @@ describe('foldTr', () => {
     ['Çağla', 'cagla'],
     ['ÜMİT', 'umit'],
     ['Gülşah', 'gulsah'],
+    // BÜYÜK aksanlı sesliler: harf haritası yalnız küçüklerini (â/î/û)
+    // taşıyordu, büyüğü haritadan geçmeyip `toLowerCase()`tan aksanıyla
+    // çıkıyordu — yani `Âdem` → `âdem` ve `adem` sorgusu kaçırıyordu. Aksan
+    // sınıfının tamamını birleşen-işaret süzgeci kapatıyor (bkz. foldTr).
+    ['Âdem', 'adem'],
+    ['ÂDEM', 'adem'],
+    ['Îlker', 'ilker'],
+    ['Ûmit', 'umit'],
   ])('%s içinde "%s" bulunuyor', (name, query) => {
     expect(foldTr(name).includes(foldTr(query))).toBe(true);
   });
