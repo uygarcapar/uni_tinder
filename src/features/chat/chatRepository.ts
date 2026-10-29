@@ -294,10 +294,15 @@ export function readConversationsByIds(
  * kalıyor ve `_failed` olmadığı için "tekrar dene" bile çıkmıyor.
  *
  * `failed`'a çevirmek bilgiyi KAYBETMİYOR, sahipliği kullanıcıya veriyor:
- * balonda yeniden deneme çıkar. Otomatik yeniden göndermek DOĞRU DEĞİL —
- * mesaj sunucuya gitmiş ama ack'i görülmemiş olabilir ve `clientMessageId`
- * idempotency'si backend tarafında henüz teyitli değil; o teyit gelene kadar
- * kendiliğinden tekrar göndermek sessiz mükerrer mesaj riski.
+ * balonda yeniden deneme çıkar. Otomatik yeniden göndermek burada YAPILMAZ —
+ * kullanıcı asılı bir "gönderiliyor" spinner'ı görmesin, balonda "tekrar dene"
+ * butonu çıksın (sessiz otomatik tekrar outbox.flushOutbox'ın işi, burası
+ * yalnız açılış uzlaştırması). `clientMessageId` idempotency'si artık ENDİŞE
+ * DEĞİL: `(SenderId, ClientMessageId)` üzerinde filtreli UNIQUE index var,
+ * backend 2026-10-06'da sözleşmeyi dondurdu ve 2026-10-27'de yeniden teyit
+ * edildi — garanti zaman penceresine değil index'e dayanıyor, satırın ömrü
+ * mesajın retention'ı (730 gün). Kanonik yorum: outboxPolicy.isEligible içindeki
+ * "KAPISI KALDIRILDI (2026-10-06)" notu.
  *
  * @returns failed'a çevrilen satır sayısı (teşhis için).
  */

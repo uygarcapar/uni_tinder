@@ -13,9 +13,14 @@
  * "zaten listede olan bir satırı ağa taşımak" ile ilgileniyor; bu yüzden
  * `appendOptimisticMessage` ve `markMessageEntering` burada İMPORT EDİLMEZ.
  *
- * Kalıcılık YOK (bilinçli): `chatPersistTransform` `_pending`/`_failed` mesajları
- * zaten diske yazmıyor, uygulama kapanınca kayboluyorlar. Buradaki deneme
- * sayaçları da process ile ölüyor — iki ömür birebir örtüşüyor.
+ * Balon kalıcılığı YOK (bilinçli): `chatPersistTransform` `_pending`/`_failed`
+ * mesajları zaten diske yazmıyor, uygulama kapanınca kayboluyorlar. Deneme
+ * MUHASEBESİ (sayaç/backoff/permanent/quota_charged) artık FARKLI: `attempts`
+ * Map'i hâlâ var (gerekçe: `MessageDto`'ya alan eklemek bubble'ı yapısal
+ * değişiklik sayardı — commit-storm riski) ama şimdi `send_attempts` (v7)
+ * tablosunun ÖNBELLEĞİ — process ölse de disk hayatta kalıyor. Asıl kazanç
+ * `quotaCharged`: eskiden restart sonrası sıfırlanıp ack'i kaybolmuş mesajın
+ * başarılı tekrarı kotayı ikinci kez düşürebiliyordu.
  */
 import {
   conversationDeactivated,
@@ -34,8 +39,16 @@ import { enqueueSend } from "@/features/chat/sendQueue";
 import { sendVoiceMessage } from "@/features/chat/voiceSend";
 import { inFlightPull } from "@/features/chat/chatDeltaSync";
 import { readFailedOutboxFromLocal } from "@/features/chat/chatHydrate";
-import { clearVoiceMediaUrl, setVoiceMediaUrl } from "@/features/chat/chatRepository";
 import {
+  clearVoiceMediaUrl,
+  deleteSendAttempts,
+  readSendAttempts,
+  setVoiceMediaUrl,
+  upsertSendAttempt,
+} from "@/features/chat/chatRepository";
+import {
+  attemptEntryFromRow,
+  attemptRowFromEntry,
   backoffDelayMs,
   classifySendError,
   isEligible,
@@ -88,6 +101,14 @@ let wakeTimer: ReturnType<typeof setTimeout> | null = null;
 let roundNeedsConversationRefetch = false;
 /** Turda 429 / `RATE_LIMITED` görüldü — kalan mesajlar bir sonraki tura. */
 let roundRateLimited = false;
+/**
+ * `loadAttemptsFromDisk` tur başına BİR kez gerçek okuma yapsın diye. Process
+ * ömrü boyunca ikinci çağrı no-op — `attempts` Map'i artık diskten daha taze.
+ * `resetOutbox` bu bayrağı da sıfırlar: testlerde process ölümünü taklit eden
+ * fonksiyon bu, bayrak hayatta kalırsa "restart sonrası disk okunuyor mu"
+ * iddiasını sınayan hiçbir test gerçek bir disk okuması GÖRMEZ.
+ */
+let loadedFromDisk = false;
 
 const dispatch = (action: any) => (store.dispatch as any)(action);
 
@@ -107,6 +128,42 @@ function newEntry(now: number): AttemptEntry {
     permanent: false,
     quotaCharged: false,
   };
+}
+
+/**
+ * Turun başında BİR kez: `send_attempts` tablosundaki satırları Map'e açar.
+ *
+ * Fresh process'te Map boş başlıyor — restart öncesi `quotaCharged`/backoff
+ * bilgisi olmadan outbox eski hâline (process ölürse muhasebe kaybolur) geri
+ * dönerdi. Var olan bir Map girdisinin ÜZERİNE yazmaktan çekinmiyoruz: bu
+ * fonksiyon zaten yalnız bayrak false'ken (yani Map ya boş ya da hiç
+ * dokunulmamış) çalışıyor.
+ */
+export function loadAttemptsFromDisk(): void {
+  if (loadedFromDisk) return;
+  loadedFromDisk = true;
+  for (const row of readSendAttempts()) {
+    attempts.set(row.client_message_id, attemptEntryFromRow(row));
+  }
+}
+
+/**
+ * Map YAZIMININ tek kapısı: `attempts.set` yerine HER YERDE bu çağrılır, yoksa
+ * iki yazım ayrışır (biri Map'i güncelleyip diski unutabilir) ve disk Map'ten
+ * geriye düşer — restart'ta geriye düşmüş veriye güvenmiş oluruz.
+ */
+export function rememberAttempt(clientMessageId: string, entry: AttemptEntry): void {
+  attempts.set(clientMessageId, entry);
+  try {
+    upsertSendAttempt(attemptRowFromEntry(clientMessageId, entry));
+  } catch {
+    // Disk yazımı patlarsa bu turun davranışı değişmez (Map zaten güncel);
+    // kaybedilen tek şey bir restart'ın bu adımı görmesi.
+  }
+}
+
+export function peekAttempt(clientMessageId: string): AttemptEntry | undefined {
+  return attempts.get(clientMessageId);
 }
 
 /**
@@ -147,7 +204,10 @@ function touchEntry(clientMessageId: string): AttemptEntry {
 function chargeQuotaOnce(conversationId: string, clientMessageId: string) {
   const entry = attempts.get(clientMessageId);
   if (entry?.quotaCharged) return;
-  if (entry) entry.quotaCharged = true;
+  if (entry) {
+    entry.quotaCharged = true;
+    rememberAttempt(clientMessageId, entry);
+  }
   dispatch(decrementQuotaLocally({ conversationId }));
 }
 
@@ -161,20 +221,41 @@ function noteFailure(
   entry.origin = origin;
   entry.permanent = !retryable || entry.attempts >= MAX_ATTEMPTS;
   entry.nextEligibleAt = Date.now() + backoffDelayMs(entry.attempts);
+  rememberAttempt(clientMessageId, entry);
   return entry;
 }
 
 function markPermanent(clientMessageId: string) {
   const entry = touchEntry(clientMessageId);
   entry.permanent = true;
+  rememberAttempt(clientMessageId, entry);
 }
 
-/** Ack gelmiş/mesaj gitmiş kayıtları at — harita yalnız bekleyenleri taşısın. */
-function pruneAttempts(failedNow: any[]) {
+/**
+ * Ack gelmiş/mesaj gitmiş kayıtları at — harita yalnız bekleyenleri taşısın.
+ *
+ * Diskten de silinir: yoksa `send_attempts` tabloda sonsuza dek birikir (Map
+ * eviction'ı — MAX_TRACKED — KASITLI olarak diski silmiyor, ama bu doğal
+ * "işim bitti" yolu silmeli, yoksa `pruneOrphanSendAttempts`e kadar her gönderilmiş
+ * mesajın muhasebesi diskte gezer).
+ */
+export function pruneAttempts(failedNow: any[]) {
   if (!attempts.size) return;
   const alive = new Set(failedNow.map((m) => m.clientMessageId));
+  const gone: string[] = [];
   for (const key of [...attempts.keys()]) {
-    if (!alive.has(key)) attempts.delete(key);
+    if (!alive.has(key)) {
+      attempts.delete(key);
+      gone.push(key);
+    }
+  }
+  if (gone.length) {
+    try {
+      deleteSendAttempts(gone);
+    } catch {
+      // Silinmezse pruneOrphanSendAttempts bir sonraki fırsatta temizler;
+      // Map zaten doğru, kullanıcıya görünen davranış değişmez.
+    }
   }
 }
 
@@ -234,6 +315,10 @@ function armAckWatchdog(d: OutgoingDescriptor) {
     // düşmüştü. İşaretlemezsek elle yapılan başarılı deneme kotayı İKİNCİ kez
     // düşürürdü — bugünkü kodda ulaşılması zor, otomatik kuyrukla kolay.
     entry.quotaCharged = true;
+    // noteFailure zaten bir rememberAttempt yaptı ama o çağrı anında
+    // quotaCharged hâlâ false'tu — bu satırdaki değişikliği de diske yaz,
+    // yoksa tam da bu task'ın önlemeye çalıştığı çift düşme burada YAŞAR.
+    rememberAttempt(clientMessageId, entry);
   }, SEND_ACK_TIMEOUT_MS);
   ackTimers.set(clientMessageId, timer);
 }
@@ -460,6 +545,10 @@ export async function flushOutbox(
   let sent = 0;
   let items: any[] = [];
   try {
+    // Turun başında BİR kez: process yeni başladıysa `attempts` Map'i diskten
+    // dolar (bayrak sonraki turlarda no-op yapıyor — bkz. loadAttemptsFromDisk).
+    loadAttemptsFromDisk();
+
     // Uçuşta bir yakalama turu varsa ÖNCE onu bekle: aynı tetiklerden ikisi
     // birden ateşleniyor ve delta turu bizim mesajımızı geri getirdiğinde satır
     // kendiliğinden `sent`e dönüyor — yani ack'i kaybolmuş ama aslında gitmiş
@@ -517,11 +606,19 @@ export async function flushOutbox(
   }
 }
 
-/** Oturum kapanışı ve testler — bekleyen her şeyi bırak. */
+/**
+ * Oturum kapanışı ve testler — bekleyen her şeyi bırak. DİSKE DOKUNMAZ: logout
+ * temizliği `clearAllChatData`'nın işi (bkz. chatRepository). Testlerde bu
+ * fonksiyon process ölümünü taklit etmek için kullanılıyor, bu yüzden
+ * `loadedFromDisk` bayrağı da sıfırlanıyor — yoksa `loadAttemptsFromDisk`
+ * ikinci kez hiçbir şey yapmaz ve "restart sonrası disk okunuyor" testi
+ * aslında restart'tan ÖNCEki Map'i göreceği için hiçbir şey kanıtlamaz.
+ */
 export function resetOutbox(): void {
   for (const timer of ackTimers.values()) clearTimeout(timer);
   ackTimers.clear();
   attempts.clear();
+  loadedFromDisk = false;
   if (wakeTimer) {
     clearTimeout(wakeTimer);
     wakeTimer = null;

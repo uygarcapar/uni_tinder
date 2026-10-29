@@ -15,6 +15,7 @@ import { VoiceTooLargeError } from "@/features/chat/voiceSend";
 import { isVoiceMessage, voiceErrorCode } from "@/features/chat/voiceMessage";
 import { chatErrorCodeOf, chatErrorEffect } from "@/shared/constants/responseCodes";
 import { utcTime } from "@/shared/utils/dateUtc";
+import type { SendAttemptRow } from "@/features/chat/db/rows";
 
 /**
  * `interactive` = kullanıcı fiilen o sohbette ve bu gönderimi kendisi tetikledi
@@ -107,6 +108,49 @@ export type AttemptEntry = {
   /** `decrementQuotaLocally` bu mesaj için atıldı mı (çift düşmeyi engeller). */
   quotaCharged: boolean;
 };
+
+/**
+ * `send_attempts` satırı → bellekteki `AttemptEntry`.
+ *
+ * Bilinmeyen/bozuk `origin` (eski bir şemadan kalmış ya da ileride eklenecek
+ * bir değer) sessizce `"throw"`a düşer: o alan yalnız teşhis amaçlı — tanınmayan
+ * bir değer yüzünden sessiz yeniden denemeyi YANLIŞLIKLA kapatmak (bkz.
+ * isEligible) kullanıcıyı "tekrar dene" butonuna mahkûm ederdi.
+ */
+export function attemptEntryFromRow(row: SendAttemptRow): AttemptEntry {
+  return {
+    attempts: row.attempts,
+    firstSeenAt: row.first_seen_at_ms,
+    nextEligibleAt: row.next_eligible_at_ms,
+    origin: row.origin === "ackTimeout" ? "ackTimeout" : "throw",
+    permanent: row.permanent === 1,
+    quotaCharged: row.quota_charged === 1,
+  };
+}
+
+/**
+ * Bellekteki `AttemptEntry` → `send_attempts` satırı.
+ *
+ * `last_error` burada hiç doldurulmuyor: `AttemptEntry`'de karşılığı yok (teşhis
+ * alanı şimdilik kullanılmıyor) ve `MessageDto`/`AttemptEntry`'ye yeni alan
+ * EKLEMİYORUZ — eklemek `attempts` sayacını bubble'ın yapısal eşitliğine
+ * (messageEquality) sızdırırdı (bkz. outbox.ts dosya başı yorumu).
+ */
+export function attemptRowFromEntry(
+  clientMessageId: string,
+  entry: AttemptEntry,
+): SendAttemptRow {
+  return {
+    client_message_id: clientMessageId,
+    attempts: entry.attempts,
+    first_seen_at_ms: entry.firstSeenAt,
+    next_eligible_at_ms: entry.nextEligibleAt,
+    permanent: entry.permanent ? 1 : 0,
+    quota_charged: entry.quotaCharged ? 1 : 0,
+    origin: entry.origin,
+    last_error: null,
+  };
+}
 
 /** Sessiz denemenin tavanı. Aşılınca balon `_failed` kalır, elle buton çalışır. */
 export const MAX_ATTEMPTS = 5;
