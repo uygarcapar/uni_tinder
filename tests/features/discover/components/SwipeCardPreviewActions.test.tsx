@@ -169,4 +169,36 @@ describe('SwipeCard previewMode note boxes', () => {
     const tree = renderCard({ hideActions: true, onNote: () => {} });
     expect(tree.getAllByText('glyph:note.boxLabel')).toHaveLength(1);
   });
+
+  /**
+   * Review (2. tur) Important #1: dış kapı artık saf `&&` değil — not dalı
+   * (`!!onNote && allPhotos.length > 0`) `hideActions=true` olsa bile kolonu
+   * AÇIYOR. O açılış kararın butonlarını da birlikte sızdırmamalı: tik/X
+   * kendi içinde AYRICA `!hideActions &&` taşımak zorunda (Keşif'in kapak
+   * kolonundaki kalıbın aynısı). `onLike`/`onPass` bağımsız bayraklarla hâlâ
+   * veriliyor — bu senaryo "okunur kart" prodüksiyonda da mümkün (örn. bir
+   * üst ekran `hideActions` ile kararları kapatırken handler'ları olduğu gibi
+   * geçirmeyi unutursa).
+   *
+   * Fire'ın kendi kapısı aynı satırda (`!hideActions && !hideFire && onFire`)
+   * ama burada AYRI bir test yok: `FireGlassButton` SwiftUI tarafında
+   * `label`i modifier zincirinden alıyor ve bu dosyanın jest.setup.ts tabanı
+   * o zinciri gerçek bir RN düğümüne bağlamıyor (yalnız "patlamasın" diyor,
+   * bkz. oradaki not) — ne metin ne testID yüzeye çıkıyor, yani varlığını/
+   * yokluğunu RTL'den sorgulamak bu mock katmanında kontrollü değil, şans
+   * eseri geçerdi. Tik/X ile aynı kod yolunu (aynı outer/inner kapı kalıbı)
+   * paylaştığı için bu ikisinin kilitlenmesi Fire dalını da fiilen koruyor.
+   */
+  it('hideActions + onNote birlikteyken tik/X kolonda sızmıyor', () => {
+    const tree = renderCard({
+      hideActions: true,
+      onNote: () => {},
+      onLike: () => {},
+      onPass: () => {},
+    });
+    expect(tree.queryByText('chrome:likes.likeButton')).toBeNull();
+    expect(tree.queryByText('chrome:likes.passButton')).toBeNull();
+    // Not kutusu bu senaryoda hâlâ çizilmeli — sadece karar butonları gitmeli.
+    expect(tree.getAllByText('glyph:note.boxLabel')).toHaveLength(1);
+  });
 });

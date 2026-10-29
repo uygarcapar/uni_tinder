@@ -1336,15 +1336,20 @@ function SectionPhoto({
   uri: string;
   onNotePress?: () => void;
   /**
-   * Kutuyu zorla kapat. İKİ müşterisi var, ikisi de aynı gerekçeyle: not
-   * kutusunu o bağlamda KENDİ AKSİYON KOLONU çiziyor, yani fotoğrafın kendi
-   * katmanındaki kutu mükerrer olurdu —
-   *   1. Keşif kapağı (tam ekran kapak kolonu, `!previewMode` dalı),
-   *   2. Önizlemenin ana fotoğrafı (bkz. "ÖNİZLEMENİN AKSİYON KOLONU") — bir
-   *      dönem burada `onNotePress` veriliyordu ve kolon AYRICA kendi
-   *      `NoteBox`ını çiziyordu; iki bağımsız katman aynı köşeyi (sağ alt)
-   *      hedefleyip üst üste biniyordu. `hideNote` o ikinci kaynağı kapatıp
-   *      köşeyi kolona TEK sahipli bırakıyor.
+   * Kutuyu zorla kapat. TEK MÜŞTERİSİ var: önizlemenin ANA fotoğrafı (bkz.
+   * çağrıldığı yer, "ÖNİZLEMENİN AKSİYON KOLONU"). Not kutusu artık o
+   * kolonun İÇİNDE çiziliyor (tik · X · Fire · not); bu prop olmasaydı
+   * `SectionPhoto`nun kendi tam-genişlikte mutlak katmanı (`alignSelf:
+   * flex-end`) AYRICA bir kutu çizerdi ve iki bağımsız katman aynı köşeyi
+   * (sağ alt) hedefleyip üst üste binerdi.
+   *
+   * ⚠️ Keşif'in tam ekran kapağı bu prop'un müşterisi DEĞİL — kapak kendi
+   * fotoğrafını `SectionPhoto` ÜZERİNDEN çizmiyor (ayrı bir
+   * `MaskedView`/`CoverMeltBand` yolu), dolayısıyla `hideNote`u hiç
+   * göremiyor. Kapaktaki not kutusu da kendi aksiyon kolonunun içinde
+   * doğuyor (bkz. oradaki `NoteBox onPhoto` çağrısı) — AYNI fikir, AYRI
+   * kod yolu. Burada grep'le `hideNote` ararsan kapakta hiçbir şey
+   * bulamazsın; bu kasıtlı, iki yol birbirine bağlı değil.
    *
    * ⚠️ `previewMode` İLE SÜRÜLMÜYOR ARTIK: önizleme kartlarında not kutusunun
    * olmaması `onNote`un verilmemesinden geliyordu ve iki kapı aynı şeyi
@@ -3938,7 +3943,18 @@ export default function SwipeCard({
                     "kaçırdıkların", kendi profilini önizleme) karar
                     butonlarını kaldırıyor ama NOTU DEĞİL (bkz. aşağıdaki
                     koşulun not dalı — `hideActions`'ın dışında): not bağımsız
-                    bir sinyal, okunur kartta bile geçerli olabilir. */}
+                    bir sinyal, okunur kartta bile geçerli olabilir.
+
+                    ⚠️ DIŞ KAPI ARTIK SAF `&&` DEĞİL (not dalı `||` ile
+                    açılabiliyor) — yani dış kapı açıldı diye üç karar
+                    butonunun çizileceği ANLAMINA GELMİYOR. Üçü de (tik, X,
+                    Fire) kendi içinde AYRICA `!hideActions &&` taşıyor, tıpkı
+                    Keşif'in kapak kolonundaki `!hideActions && onLike` /
+                    `!hideActions && onPass` / `!hideActions && !hideFire &&
+                    onFire` kalıbıyla (bkz. aşağıdaki kapak bloğu). Bu olmadan
+                    `hideActions=true` + `onNote` + (bağımsız bir bayrakla
+                    hâlâ verilen) `onLike`/`onPass`/`onFire` kombinasyonunda
+                    "okunur kart" üstüne karar butonları sızardı. */}
                 {((!hideActions &&
                   !!(onPass || onLike || (!hideFire && onFire))) ||
                   (!!onNote && allPhotos.length > 0)) && (
@@ -3954,7 +3970,7 @@ export default function SwipeCard({
                     // aradaki boşluklar fotoğrafın pinch jestine kalsın.
                     pointerEvents="box-none"
                   >
-                    {onLike && (
+                    {!hideActions && onLike && (
                       <CardChromeGlassButton
                         testID="preview-btn-like"
                         onPress={onLike}
@@ -3970,7 +3986,7 @@ export default function SwipeCard({
                         surfaceTint={modeFireTint(mode ?? DEFAULT_APP_MODE)}
                       />
                     )}
-                    {onPass && (
+                    {!hideActions && onPass && (
                       <CardChromeGlassButton
                         testID="preview-btn-pass"
                         onPress={onPass}
@@ -3989,7 +4005,7 @@ export default function SwipeCard({
                         çiziyordu (üç nokta onun altında kalıyordu). O dal
                         artık önizlemede hiç çizilmiyor (bkz. oradaki
                         `!previewMode`), Fire'ın tek yeri burası. */}
-                    {!hideFire && onFire && (
+                    {!hideActions && !hideFire && onFire && (
                       <FireGlassButton
                         testID="preview-btn-fire"
                         onPress={onFire}
