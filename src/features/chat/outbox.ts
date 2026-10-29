@@ -536,6 +536,15 @@ export async function retryFailedMessage(
   message: any,
   opts: { mode: SendMode },
 ): Promise<void> {
+  // `sendOutgoing`'in KENDİ çağrısı GEÇ KALIR: aşağıdaki `attempts.get` ondan
+  // ÖNCE çalışıyor. Cold start'ta (hiçbir flush turu koşmadı → Map boş/
+  // yüklenmemiş) bu satır olmadan `prev` HEP `undefined` bulunur, interactive'in
+  // "backoff'u/permanent'i EZ" sözleşmesi tamamen atlanır ve disk'teki eski
+  // `permanent`/yüksek `attempts` satırı AYNEN kalır — bir sonraki başarısız
+  // denemede `touchEntry` o eski (ezilmemiş) kaydı büyütüp kalıcıya çevirebilir.
+  // Kullanıcı açıkça "tekrar dene" dedi; bu satır olmadan İLK dokunuş sessizce
+  // kaybolur (ikinci manuel dokunuş kurtarır, bu yüzden Critical değil Important).
+  loadAttemptsFromDisk();
   if (!message?._failed) return;
   const d = messageToDescriptor(message);
   if (!d) {

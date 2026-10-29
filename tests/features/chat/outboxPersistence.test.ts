@@ -54,7 +54,7 @@ jest.mock('@/shared/store', () => ({
 
 import * as SQLite from 'expo-sqlite';
 import { openChatDb, __resetChatDbForTests } from '@/features/chat/db/chatDb';
-import { readSendAttempts } from '@/features/chat/chatRepository';
+import { readSendAttempts, upsertSendAttempt } from '@/features/chat/chatRepository';
 import type { SendAttemptRow } from '@/features/chat/db/rows';
 import {
   attemptEntryFromRow,
@@ -279,6 +279,63 @@ describe('cold start — hiçbir round koşmadan ilk çağrı sendOutgoing', () 
     // `sendOutgoing` → `chargeQuotaOnce`'a kadar TAM akış işliyor.
 
     expect(decrementQuotaLocally).not.toHaveBeenCalled();
+    // İKİNCİ iddia ŞART: `chargeQuotaOnce`'ın Map-miss read-through'u (Important 2)
+    // da TEK BAŞINA `decrementQuotaLocally`'i engelleyebilir — disk satırını okur,
+    // `quotaCharged`i görür, `rememberAttempt` ÇAĞIRMADAN döner. Yani üstteki
+    // iddia tek başına `loadAttemptsFromDisk`'in BU çağrıda gerçekten çalıştığını
+    // KANITLAMAZ. Yalnız `loadAttemptsFromDisk` Map'e yazar; read-through yazmaz.
+    expect(peekAttempt(CMID)?.quotaCharged).toBe(true);
+  });
+});
+
+describe('retryFailedMessage interactive — DİSK TEK KAYNAKKEN override çalışmalı', () => {
+  const CONV = 'conv-1';
+
+  const failedMessage = (over: Record<string, unknown> = {}) => ({
+    conversationId: CONV,
+    clientMessageId: CMID,
+    content: 'tekrar deniyorum',
+    contentType: 0,
+    _failed: true,
+    ...over,
+  });
+
+  /**
+   * IMPORTANT (review bulgusu, 2. tur): interactive override `const prev =
+   * attempts.get(...)` ile başlıyor — `sendOutgoing`'in kendi
+   * `loadAttemptsFromDisk` çağrısı bundan SONRA gelir. Cold start'ta
+   * (hiçbir flush turu koşmadı, Map'e hiçbir şey yüklenmedi) bu satır
+   * olmadan `prev` HEP `undefined` bulunur, override TAMAMEN atlanır ve
+   * disk'teki eski `permanent: 1`/yüksek `attempts` satırı AYNEN kalır —
+   * bir sonraki başarısız denemede `touchEntry` o eski kaydı büyütüp
+   * kalıcıya çevirebilir (round 1'in düzelttiği senaryo geri gelir).
+   *
+   * Yukarıdaki iki "retryFailedMessage interactive" testi Map'i
+   * `rememberAttempt` ile dolduruyor — `prev` ORADA HER ZAMAN bulunur, bu
+   * yüzden bu regresyonu YAKALAYAMAZLAR. Burada kayıt YALNIZ diske
+   * `upsertSendAttempt` ile yazılıyor, Map'e hiç dokunulmuyor.
+   */
+  it('Map hiç yüklenmemişken bile override diske yazılıyor, quotaCharged korunuyor', () => {
+    upsertSendAttempt(
+      attemptRowFromEntry(CMID, entry({ attempts: 5, permanent: true, quotaCharged: true })),
+    );
+    expect(peekAttempt(CMID)).toBeUndefined(); // Map boş — kayıt YALNIZ diskte
+
+    // Ağ cevabı hiç gelmesin — bu testin ilgilendiği şey override'ın SENKRON
+    // kısmı, `sendOutgoing`'in await'ine kadar bile gitmeden.
+    (chatServiceMock.sendMessage as jest.Mock).mockImplementationOnce(
+      () => new Promise(() => {}),
+    );
+    void retryFailedMessage(failedMessage(), { mode: 'interactive' });
+
+    const rows = readSendAttempts();
+    expect(rows).toHaveLength(1);
+    expect(rows[0]).toMatchObject({
+      client_message_id: CMID,
+      attempts: 0,
+      permanent: 0,
+      quota_charged: 1, // kullanıcının "tekrar dene"si daha önce düşmüş kotayı GERİ VERMEZ
+    });
   });
 });
 
