@@ -32,11 +32,25 @@ const USED_KEYS = [
   'campus.momentCountOther',
   'campus.openHint',
   'campus.shareHint',
-  'campus.like',
-  'campus.pass',
+  // ⚠️ `campus.like` / `campus.pass` LİSTEDEN DÜŞTÜ: kartın cam tik/X satırı
+  // kaldırıldı ve karar profil kartına taşındı (orada etiketler
+  // `discover.*`tan geliyor). Dizeler sözlükte duruyor — kararın kampüse özel
+  // bir etiketi gerekirse yeniden çağrılacaklar; bu liste yalnız KODUN
+  // GERÇEKTEN çağırdığı yolları doğruluyor.
+  'campus.shareBox',
+  // ⚠️ `campus.openProfile` LİSTEDEN DÜŞTÜ: karta dokunmak artık profil
+  // açmıyor, kartı büyütüyor. Dize sözlükte duruyor (aynı kural
+  // `campus.like`/`campus.pass` notunda).
+  'campus.openCard',
   'campus.remove',
-  'campus.mine',
+  // ⚠️ `campus.mine` DE LİSTEDEN DÜŞTÜ: kendi anımın rozeti artık YALNIZ
+  // "inceleniyor" diyor, "Senin anın" kaldırıldı (istek — gerekçe
+  // CampusMomentCard'daki rozet blokunda). Dize sözlükte duruyor, aynı kural
+  // yukarıdaki `campus.like`/`campus.pass` notunda.
   'campus.underReview',
+  // Reddedilen an rozetinin metni — "İnceleniyor"dan ayrı (gerekçe
+  // CampusMomentCard'daki rozet blokunda).
+  'campus.photoRemoved',
   'campus.expiresInHours',
   'campus.expiresInMinutes',
   'campus.expiresSoon',

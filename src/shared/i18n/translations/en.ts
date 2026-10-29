@@ -14,6 +14,12 @@ const en = {
     camera: {
       capture: 'Take photo',
       flip: 'Flip camera',
+      // Shown on the in-place confirm path (see cameraBridge > `commit`): the
+      // frame freezes on screen, this sits left of the caller's send button.
+      retake: 'Retake',
+      // The only visible text on the screen. Usually means "camera is not ready
+      // yet", so pressing again fixes it.
+      failed: 'The photo could not be taken, please try again.',
       flash: {
         off: 'Flash off',
         auto: 'Flash automatic',
@@ -2130,7 +2136,6 @@ const en = {
     edit: {
       button: 'Edit Profile',
       title: 'Edit Profile',
-      previewButton: 'How do people see me?',
       bioPlaceholder: 'Tell us about yourself...',
       selectLanguage: 'Select Language',
       loading: 'Loading...',
@@ -2517,11 +2522,14 @@ const en = {
     },
 
     composer: {
-      topicLabel: 'Pick topics (you can choose more than one)',
+      // "(you can choose more than one)" removed — see tr.ts.
+      topicLabel: 'Pick topics',
+      // One line under the title (with info.circle) — see tr.ts.
+      topicDesc: 'Pick at least one topic; your post shows up for people filtering it.',
       title: 'Share a post',
       placeholder: 'What do you want to tell your campus?',
       anonymousLabel: 'Post anonymously',
-      anonymousHint: 'Your name and photo stay hidden; only your gender shows.',
+      // `anonymousHint` removed — see tr.ts.
       anonymousLocked: 'Anonymous posting is a Lit Plus feature.',
       anonymousRestricted: 'You cannot post anonymously for a while.',
       // `universityHint` ("This post will appear in the … feed.") was removed:
@@ -2641,6 +2649,14 @@ const en = {
     // Fixed label in the top chrome — count and campus live in the strip's
     // own title now (see CampusMapTitle > variant).
     headerTitleShort: 'Moments',
+    // The grey line UNDER the strip's title. The title says how many; this
+    // says what the screen is.
+    //
+    // ⚠️ MUST STAY SHORT: drawn at 16pt on ONE line, shrinking to fit (see
+    // CampusMomentsStrip > DESC_*). A longer sentence silently drops it to
+    // 13-14pt and breaks the type relationship with the title — extra rules
+    // belong in the filler boxes (campus.info.*).
+    headerSubtitle: 'Posted on campus, gone in 24 hours',
     momentCountOne: '{{count}} moment',
     momentCountOther: '{{count}} moments',
     openHint: 'Open campus moments',
@@ -2651,8 +2667,18 @@ const en = {
     remove: 'Remove',
     mine: 'Your moment',
     underReview: 'Under review',
-    // The plus box at the head of the strip (replaces the old top-right "+").
+    // Rejected moment — MUST differ from "under review": on rejection the S3
+    // object is deleted (backend confirmation 2026-10-29), so that card will
+    // never fill. Saying "pending" put the user in an endless wait.
+    photoRemoved: "Couldn't be published",
+    // The small plus box to the right of the strip's title. The box draws NO
+    // text — this string is the VoiceOver label only (see CampusAddChip).
     shareBox: 'Share yours',
+    // The card's tap label — the card is now a door to the person's profile
+    // (the check/cross row was removed, see CampusMomentCard).
+    // See the Turkish note: no longer called, kept for the profile endpoint.
+    openProfile: "Open {{name}}'s profile",
+    openCard: "Expand {{name}}'s card",
     // Filler box copy — replaces the empty state; order is shuffled on every
     // open (see CampusMomentsStrip > INFO_KEYS).
     //
@@ -2793,7 +2819,7 @@ const en = {
       unblockConfirm: 'Unblock',
       unblockError: 'Could not unblock.',
       loadError: 'Blocked users could not be loaded.',
-      blockedAt: 'Blocked on {{date}}',
+      nameWithAge: '{{name}}, {{age}}',
     },
   },
   // Force / soft update gate. The body text normally comes from the backend
