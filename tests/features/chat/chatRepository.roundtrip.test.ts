@@ -114,6 +114,10 @@ describe('şema sürümü', () => {
         )
         .map((t) => t.name),
     ).toEqual(['send_attempts']);
+    // v8: backfill'in ilerleme kolonu sync_state'e geri geldi.
+    expect(
+      upgraded.getAll<{ name: string }>('PRAGMA table_info(sync_state)').map((c) => c.name),
+    ).toContain('backfill_cursor');
   });
 });
 

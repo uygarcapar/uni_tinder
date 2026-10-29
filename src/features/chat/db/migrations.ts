@@ -239,7 +239,7 @@ CREATE TABLE send_attempts (
  * ── `next_cursor` neden paylaşılamaz ────────────────────────────────────────
  * O kolon EKRANIN sayfalamasına ait, backfill'inki arka planda sayfa sayfa
  * inen ayrı bir tur. `pruneExpiredMessages` dokunduğu HER sohbette
- * `next_cursor`'ı NULL'luyor (ölçüldü — bkz. bu dosyanın altındaki
+ * `next_cursor`'ı NULL'luyor (ölçüldü — bkz. chatRepository.ts'teki
  * pruneExpiredMessages: budama eski uçtan kestiği için derin cursor yerel
  * aralığın ALTINI işaret eder hâle gelir, delik üretmemek için sıfırlanır).
  * Backfill aynı kolonu kullansaydı her haftalık retention turu onun geri

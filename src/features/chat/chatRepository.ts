@@ -1414,6 +1414,15 @@ export interface BackfillTarget {
  *
  * `conversations` ile LEFT JOIN: `sync_state` satırı henüz yoksa (hiç
  * sayfalama/backfill denenmemiş sohbet) da hedef, cursor `null` döner.
+ *
+ * `conversation_id` tiebreaker'ı şart: `last_message_at_ms` nullable ve hiç
+ * mesajlaşılmamış sohbetler hepsi NULL'da eşitleniyor — tek kolonlu sıra
+ * SQLite'ın eşit satırları hangi fiziksel sırada döndürdüğüne (belirsiz)
+ * bağlı kalırdı, küçük bir `limit` altında round'lar tekrar üretilemez olurdu.
+ *
+ * `limit` negatifse SQLite onu "sınırsız" sayar (`LIMIT -1` davranışı) — çağıran
+ * yanlışlıkla negatif geçerse "en çok limit tane" sözü bozulup tüm bitmemiş
+ * arşiv dönerdi; `Math.max(0, limit)` bu durumu sıfıra sabitliyor.
  */
 export function readBackfillTargets(limit: number): BackfillTarget[] {
   return getChatDb()
@@ -1422,9 +1431,9 @@ export function readBackfillTargets(limit: number): BackfillTarget[] {
          FROM conversations c
          LEFT JOIN sync_state s ON s.conversation_id = c.conversation_id
         WHERE COALESCE(s.backfill_done, 0) = 0
-        ORDER BY c.last_message_at_ms DESC
+        ORDER BY c.last_message_at_ms DESC, c.conversation_id ASC
         LIMIT ?`,
-      [limit],
+      [Math.max(0, limit)],
     )
     .map((row) => ({ conversationId: row.conversation_id, cursor: row.cursor }));
 }

@@ -16,7 +16,7 @@ import {
   MESSAGE_RETENTION_DAYS,
   pruneExpiredMessages,
 } from '@/features/chat/chatRepository';
-import { MIGRATIONS, runMigrations } from '@/features/chat/db/migrations';
+import { CHAT_DB_VERSION, MIGRATIONS, runMigrations } from '@/features/chat/db/migrations';
 import { clear as clearMessageCache } from '@/features/chat/messageCache';
 import type { MessageDto } from '@/shared/types';
 
@@ -75,6 +75,30 @@ describe('backfill ilerleme kolonları (v8)', () => {
     expect(targets).toEqual(['conv-yeni', 'conv-orta', 'conv-eski']);
   });
 
+  it('last_message_at_ms eşit olan sohbetlerde sıra conversation_id ile SABİT', () => {
+    // Tek kolonlu ORDER BY'da eşit satırların hangi fiziksel sırada geldiği
+    // SQLite'ın iç detayı — tiebreaker olmadan round'lar her çalışmada farklı
+    // bir satırı "önce" seçebilirdi. Aynı zaman damgasını kasten paylaştırıyoruz.
+    const db = getChatDb();
+    insertConversation(db, 'conv-b', 5_000);
+    insertConversation(db, 'conv-a', 5_000);
+    insertConversation(db, 'conv-c', 5_000);
+
+    const targets = readBackfillTargets(10).map((t) => t.conversationId);
+
+    expect(targets).toEqual(['conv-a', 'conv-b', 'conv-c']);
+  });
+
+  it('hiç mesajlaşılmamış (last_message_at_ms NULL) sohbet de hedef, en sona düşer', () => {
+    const db = getChatDb();
+    insertConversation(db, 'conv-mesajli', 1_000);
+    insertConversation(db, 'conv-hic-mesajsiz', null);
+
+    const targets = readBackfillTargets(10).map((t) => t.conversationId);
+
+    expect(targets).toEqual(['conv-mesajli', 'conv-hic-mesajsiz']);
+  });
+
   it('markBackfillDone edilen sohbet targets listesinde ÇIKMIYOR', () => {
     const db = getChatDb();
     insertConversation(db, 'conv-bitti', 2_000);
@@ -123,7 +147,10 @@ describe('backfill ilerleme kolonları (v8)', () => {
     saveMessage(aged('m-cursor', 'conv-cursor', WELL_PAST), 'conv-cursor');
     saveMessage(aged('m-done', 'conv-done', WELL_PAST), 'conv-done');
 
-    pruneExpiredMessages(NOW);
+    // `toBe(2)`: iki eski mesaj da GERÇEKTEN silinmeli — yoksa affected listesi
+    // boş kalır ve aşağıdaki "dokunulmadı" iddiası "hiçbir şey olmadı" için
+    // yanlış sebeple yeşile düşer (RETENTION_SLACK_DAYS büyürse bu test fail eder).
+    expect(pruneExpiredMessages(NOW)).toBe(2);
 
     const targets = readBackfillTargets(10);
     expect(targets.find((t) => t.conversationId === 'conv-cursor')?.cursor).toBe(
@@ -132,7 +159,7 @@ describe('backfill ilerleme kolonları (v8)', () => {
     expect(targets.some((t) => t.conversationId === 'conv-done')).toBe(false);
   });
 
-  it('v7 veritabanı v8’e yükselince mesaj/sohbet/sync_state satırları duruyor', () => {
+  it('v7 veritabanı EN SON sürüme yükselince mesaj/sohbet/sync_state satırları duruyor', () => {
     const db = rawDriverOnEmptyDisk();
     stampV7(db);
 
@@ -152,7 +179,9 @@ describe('backfill ilerleme kolonları (v8)', () => {
 
     runMigrations(db);
 
-    expect(db.getFirst<{ user_version: number }>('PRAGMA user_version')?.user_version).toBe(8);
+    expect(db.getFirst<{ user_version: number }>('PRAGMA user_version')?.user_version).toBe(
+      CHAT_DB_VERSION,
+    );
     expect(db.getAll('SELECT id FROM messages')).toEqual([{ id: 'm-eski' }]);
     expect(db.getAll('SELECT conversation_id FROM conversations')).toEqual([
       { conversation_id: 'conv-eski' },
