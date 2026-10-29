@@ -951,6 +951,7 @@ const tr = {
       permissionBody: 'Sesli mesaj gönderebilmen için Ayarlar’dan mikrofon izni ver.',
       failed: 'Kayıt başlatılamadı',
       sendFailed: 'Sesli mesaj gönderilemedi',
+      recordingGone: 'Ses kaydı bulunamadı, yeniden kaydet',
       tooLarge: 'Kayıt çok büyük, daha kısa bir mesaj dene',
       badFormat: 'Kayıt biçimi desteklenmiyor, tekrar dene',
     },
@@ -980,6 +981,7 @@ const tr = {
     },
     send: {
       failed: 'Mesaj gönderilemedi.',
+      lateDelivered: 'Bekleyen mesajın gönderildi',
     },
     // Backend sohbet hata kodları (UT-67xx). Anahtarlar kodun kendisi:
     // metin koda bağlanır, backend `message`'ına DEĞİL (bkz. responseCodes.ts).

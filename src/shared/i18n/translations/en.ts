@@ -940,6 +940,7 @@ const en = {
       permissionBody: 'Allow microphone access in Settings to send voice messages.',
       failed: 'Could not start recording',
       sendFailed: 'Voice message could not be sent',
+      recordingGone: 'Voice recording is missing, please record again',
       tooLarge: 'Recording is too large, try a shorter one',
       badFormat: 'Recording format is not supported, try again',
     },
@@ -969,6 +970,7 @@ const en = {
     },
     send: {
       failed: 'Message could not be sent.',
+      lateDelivered: 'Your pending message was sent',
     },
     // Backend chat error codes (UT-67xx). Keys are the codes themselves: text
     // is bound to the code, never to the backend `message` (see responseCodes.ts).
