@@ -64,6 +64,11 @@ describe('SwipeCard previewMode cover actions', () => {
     const tree = renderCard({ onPass: () => {}, onLike: () => {} });
     expect(tree.getByText('chrome:likes.likeButton')).toBeTruthy();
     expect(tree.getByText('chrome:likes.passButton')).toBeTruthy();
+    // Panel dibindeki X/tik (SwipeCard:~5720/~5746) — kapak kolonundan AYRI
+    // bir buton çifti, kendi accessibilityLabel'ı var (gerçek VoiceOver
+    // açığı burada kapandı, bkz. aşağıdaki opt-out testinin notu).
+    expect(tree.getByLabelText('likes.passButton')).toBeTruthy();
+    expect(tree.getByLabelText('likes.likeButton')).toBeTruthy();
   });
 
   it('hides them when hideActions', () => {
@@ -90,10 +95,20 @@ describe('SwipeCard previewMode cover actions', () => {
    * X OPT-OUT — akışın NORMAL kartı (bkz. feedCardActions): `onPass`
    * verilmiyor ve X HİÇBİR yerde çizilmiyor. Akışta kart karşı taraftan gelen
    * bir sinyale cevap değil; reddedilecek bir şey yok.
+   *
+   * ⚠️ Önceden bu test yalnız kapak kolonunu (`CardChromeGlassButton` mock'u,
+   * `queryByText('chrome:...')`) kontrol ediyordu ve "HİÇBİR yerde" iddiasını
+   * ISPATLAMIYORDU: panelin dibindeki X çıplak bir `TouchableOpacity` + `SFIcon`
+   * (SwipeCard:~5721) — metin yok, testID yok, o güne kadar accessibilityLabel
+   * da yoktu, yani suite'in görebileceği hiçbir iz bırakmıyordu (gerçek bir
+   * VoiceOver açığıydı). Butona şimdi `accessibilityLabel={t('likes.passButton')}`
+   * eklendi (bkz. SwipeCard'daki not) — artık `queryByLabelText` ile İKİ
+   * butonu da (kapak + panel) tek sorguda kapatıyoruz.
    */
   it('onPass verilmezse X çizilmiyor', () => {
     const tree = renderCard({ onFire: () => {} });
     expect(tree.queryByText('chrome:likes.passButton')).toBeNull();
+    expect(tree.queryByLabelText('likes.passButton')).toBeNull();
   });
 
   /**
