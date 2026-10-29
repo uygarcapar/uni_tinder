@@ -241,7 +241,7 @@ describe('retryFailedMessage interactive — EZİLMİŞ muhasebe diske de yazıl
   });
 });
 
-describe('cold start — hiçbir round koşmadan ilk çağrı sendOutgoing', () => {
+describe('cold start — retryFailedMessage hiçbir round koşmadan kotayı ikinci kez düşürmüyor', () => {
   const CONV = 'conv-1';
 
   const failedMessage = (over: Record<string, unknown> = {}) => ({
@@ -254,22 +254,27 @@ describe('cold start — hiçbir round koşmadan ilk çağrı sendOutgoing', () 
   });
 
   /**
-   * CRITICAL (review bulgusu): `loadAttemptsFromDisk`'in tek üretim çağrı
-   * noktası `flushOutbox`'ın turuydu. O turun ÜÇ tetikleyicisi de (online,
-   * foreground, reconnect) GEÇİŞ bazlı — cold start'ta ateşlenecek önceki bir
-   * durum yok; `scheduleWake` de zaten koşmuş bir turu gerektiriyor. Yani
-   * kullanıcı uygulamayı açıp DOĞRUDAN "tekrar dene"ye bastığında
-   * `retryFailedMessage` → `sendOutgoing` hiçbir round'u BEKLEMEDEN çalışıyor
-   * ve Map'i hiç kimse doldurmamış oluyordu.
+   * Bu test NE'yi KANITLIYOR: cold start'ta (hiçbir flush turu koşmadı —
+   * online/foreground/reconnect hepsi geçiş bazlı, scheduleWake zaten koşmuş
+   * bir turu gerektiriyor) kullanıcı doğrudan "tekrar dene"ye basarsa
+   * `retryFailedMessage` kotayı İKİNCİ KEZ DÜŞÜRMÜYOR.
+   *
+   * NE'yi KANITLAMIYOR: `retryFailedMessage`'ın KENDİ `loadAttemptsFromDisk`
+   * çağrısı VAR (round 2'nin fix'i) — bu test o çağrıyı `sendOutgoing`'in
+   * kendi çağrısından AYIRAMAZ, ikisi de bu senaryoda Map'i doldurur. Aynı
+   * garanti `sendOutgoing`'in kendi çağrısı için AYRICA ve DOĞRUDAN
+   * pin'leniyor (bkz. altta "sendOutgoing kendi loadAttemptsFromDisk'ini
+   * yapıyor" describe bloğu — `ChatScreen`'in composer gönderim yolu
+   * `retryFailedMessage`'dan hiç geçmeden `sendOutgoing`'i DOĞRUDAN çağırıyor).
    *
    * Senaryo: önceki process'te hub'dan giden mesajın ack'i hiç gelmedi,
    * `armAckWatchdog` kotayı düşürüp diske `quota_charged = 1` yazdı, balon
    * `failed`/`permanent` kaldı. Bu testte `loadAttemptsFromDisk()` ELLE
    * ÇAĞRILMIYOR (diğer tüm testlerin yaptığının TERSİ) — asıl cold start bu:
    * `resetOutbox()` Map'i ve bayrağı sıfırlıyor, hiçbir şey onu yeniden
-   * doldurmuyor, TEK giriş noktası `sendOutgoing`'in KENDİ çağrısı.
+   * doldurmuyor.
    */
-  it('retryFailedMessage → sendOutgoing kendi loadAttemptsFromDisk’ini yapmazsa kota ikinci kez düşerdi', async () => {
+  it('kota ikinci kez düşmüyor, muhasebe Map’e de geri yüklenmiş oluyor', async () => {
     rememberAttempt(CMID, entry({ attempts: 5, permanent: true, quotaCharged: true }));
     resetOutbox(); // process ölümü
     expect(peekAttempt(CMID)).toBeUndefined(); // Map boş, disk HİÇ okunmadı
@@ -282,9 +287,43 @@ describe('cold start — hiçbir round koşmadan ilk çağrı sendOutgoing', () 
     // İKİNCİ iddia ŞART: `chargeQuotaOnce`'ın Map-miss read-through'u (Important 2)
     // da TEK BAŞINA `decrementQuotaLocally`'i engelleyebilir — disk satırını okur,
     // `quotaCharged`i görür, `rememberAttempt` ÇAĞIRMADAN döner. Yani üstteki
-    // iddia tek başına `loadAttemptsFromDisk`'in BU çağrıda gerçekten çalıştığını
-    // KANITLAMAZ. Yalnız `loadAttemptsFromDisk` Map'e yazar; read-through yazmaz.
+    // iddia tek başına BİR `loadAttemptsFromDisk` çağrısının BU akışta gerçekten
+    // çalıştığını KANITLAMAZ. Yalnız `loadAttemptsFromDisk` Map'e yazar;
+    // read-through yazmaz — ama bu akışta HEM `retryFailedMessage`'ın HEM
+    // `sendOutgoing`'in kendi çağrısı var, bu iddia ikisini AYIRT ETMEZ.
     expect(peekAttempt(CMID)?.quotaCharged).toBe(true);
+  });
+});
+
+describe('sendOutgoing kendi loadAttemptsFromDisk’ini yapıyor (composer yolu, retryFailedMessage’dan GEÇMİYOR)', () => {
+  /**
+   * `ChatScreen`'in composer gönderim yolu (`ChatScreen.tsx:1111`, `:1158`)
+   * `sendOutgoing`'i DOĞRUDAN çağırıyor, `retryFailedMessage`'dan hiç
+   * geçmiyor — yani `retryFailedMessage`'ın kendi `loadAttemptsFromDisk`
+   * çağrısı bu yolu HİÇ kapsamıyor. `sendOutgoing`'in kendi çağrısı, üstteki
+   * "cold start" testinin pin'leyemediği, gerçek ve bağımsız bir sözleşme.
+   *
+   * `decrementQuotaLocally` çağrılmadı iddiası TEK BAŞINA bunu KANITLAMAZ:
+   * `chargeQuotaOnce`'ın kendi Map-miss read-through'u (Important 2) da aynı
+   * disk satırını AYRICA ve BAĞIMSIZ okuyup aynı sonucu verir — bu TAM OLARAK
+   * üstteki "cold start" testinde düzeltilen aynı maskeleme. Ayırt edici iddia
+   * `peekAttempt(...)?.quotaCharged === true`: bunu yalnız Map'i YAZAN
+   * `loadAttemptsFromDisk` sağlayabilir, read-through yalnız yerel bir
+   * değişken kurup `rememberAttempt` ÇAĞIRMADAN döner.
+   */
+  it('Map boş/yüklenmemişken bile quota_charged’ı görür, kotayı ikinci kez düşürmez', async () => {
+    upsertSendAttempt(
+      attemptRowFromEntry('cmid-composer', entry({ quotaCharged: true })),
+    );
+    expect(peekAttempt('cmid-composer')).toBeUndefined(); // Map boş — kayıt YALNIZ diskte
+
+    await sendOutgoing(
+      { kind: 'text', conversationId: 'conv-1', clientMessageId: 'cmid-composer', content: 'x' },
+      { mode: 'interactive' },
+    );
+
+    expect(decrementQuotaLocally).not.toHaveBeenCalled();
+    expect(peekAttempt('cmid-composer')?.quotaCharged).toBe(true);
   });
 });
 

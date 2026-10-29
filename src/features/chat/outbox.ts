@@ -441,13 +441,14 @@ export async function sendOutgoing(
   d: OutgoingDescriptor,
   opts: { mode: SendMode },
 ): Promise<void> {
-  // BURADA — flushOutbox'ın turunun başı YETMEZ: `retryFailedMessage`'ın
-  // interactive dalı (kullanıcı "tekrar dene" butonuna basar) `flushOutbox`
-  // turunu hiç ÇALIŞTIRMADAN direkt buraya düşer. Cold start'ta hiçbir round
-  // koşmadıysa (`online`/`foreground`/`reconnect` hepsi geçiş-tetiklemeli,
-  // `scheduleWake` de önceki bir round'u gerektirir) Map boş kalır ve
-  // `chargeQuotaOnce` diskteki `quotaCharged`'ı GÖRMEDEN kotayı ikinci kez
-  // düşürür. Bayrak korumalı olduğu için ikinci ve sonraki çağrılarda no-op.
+  // BURADA — flushOutbox'ın turunun başı YETMEZ: `ChatScreen`'in composer
+  // gönderim yolu (`appendOutgoing`'den sonra) `sendOutgoing`'i DOĞRUDAN
+  // çağırıyor, `retryFailedMessage`'dan HİÇ geçmiyor — kendi `loadAttemptsFromDisk`
+  // çağrısı (round 1) bu yolu kapsamıyor. Cold start'ta hiçbir round koşmadıysa
+  // (`online`/`foreground`/`reconnect` hepsi geçiş-tetiklemeli, `scheduleWake`
+  // de önceki bir round'u gerektirir) Map boş kalır ve `chargeQuotaOnce`
+  // diskteki `quotaCharged`'ı GÖRMEDEN kotayı ikinci kez düşürür. Bayrak
+  // korumalı olduğu için ikinci ve sonraki çağrılarda no-op.
   loadAttemptsFromDisk();
   const { conversationId, clientMessageId, replyToMessageId } = d;
   try {
@@ -544,6 +545,9 @@ export async function retryFailedMessage(
   // denemede `touchEntry` o eski (ezilmemiş) kaydı büyütüp kalıcıya çevirebilir.
   // Kullanıcı açıkça "tekrar dene" dedi; bu satır olmadan İLK dokunuş sessizce
   // kaybolur (ikinci manuel dokunuş kurtarır, bu yüzden Critical değil Important).
+  // Ayrıca: "cold start kotayı ikinci kez düşürmüyor" testinin dayandığı Map
+  // doluşu da BU satırdan geliyor (o test `sendOutgoing`'in kendi çağrısını
+  // AYIRT EDEMEZ, ikisi de burada aynı sonucu üretir — bkz. outboxPersistence.test.ts).
   loadAttemptsFromDisk();
   if (!message?._failed) return;
   const d = messageToDescriptor(message);
