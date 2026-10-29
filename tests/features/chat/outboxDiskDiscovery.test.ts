@@ -157,7 +157,7 @@ describe('mergeFailedOutbox', () => {
 });
 
 // ── Yakalama turunun gönderim turunu beklemesi ──────────────────────────────
-describe('delta turu önce (inFlightPull)', () => {
+describe('delta turu önce (pullBeforeSend)', () => {
   it('delta mesajı geri getirip satırı sent yaptıysa kuyrukta görünmüyor', () => {
     // Ack kaybolmuş gönderim: diskte failed duruyor.
     saveMessage(msg('m1'), CONV, 'failed');
