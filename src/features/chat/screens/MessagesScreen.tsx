@@ -52,6 +52,8 @@ import {
   isVoiceMessage,
 } from "@/features/chat/voiceMessage";
 import { contentTypeToNumber } from "@/features/chat/contentType";
+import { conversationMatchesQuery } from "@/features/chat/conversationSearch";
+import { foldTr } from "@/shared/utils/foldTr";
 import {
   formatRestoreWindow,
   resolveClosedByMe,
@@ -691,14 +693,14 @@ export default function MessagesScreen() {
 
   // sekme değiştirmek aramayı sıfırlamıyor.
   const conversationsByTab = useMemo(() => {
-    const q = searchQuery.trim().toLowerCase();
-    const matches = (c: any) =>
-      !q || (c.partnerDisplayName || "").toLowerCase().includes(q);
+    // Katlama bir kez burada, for döngüsünden önce — her satırda tekrar
+    // katlamak yerine tek sorgu stringini katlayıp aynen geçiyoruz.
+    const q = foldTr(searchQuery);
     const all = [];
     const unread = [];
     const closed = [];
     for (const c of modeConversations) {
-      if (!matches(c)) continue;
+      if (!conversationMatchesQuery(c, q)) continue;
       if (!c.isActive) {
         closed.push(c);
         continue;
