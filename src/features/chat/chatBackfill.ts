@@ -4,7 +4,7 @@ import { isOfflineNow } from '@/shared/services/networkStatus';
 import { remainingNow } from '@/shared/services/rateLimitBudget';
 import {
   BACKFILL_PAGE_SIZE,
-  MAX_PAGES_PER_ROUND,
+  MAX_REQUESTS_PER_ROUND,
   MAX_PAGES_PER_CONVERSATION,
   PAGE_DELAY_MS,
   selectBackfillTargets,
@@ -56,20 +56,28 @@ function isRateLimited(error: unknown): boolean {
 async function run(getActiveConversationId: () => string | null): Promise<BackfillRoundResult> {
   const result: BackfillRoundResult = { ran: true, pages: 0, messages: 0, completed: [] };
 
-  // `readBackfillTargets`'a verilen tavan MAX_PAGES_PER_ROUND: bir turun en
-  // çok bu kadar sayfa isteyebileceği bilindiğinden, her hedef en az bir
-  // sayfaya karşılık geldiği için turun hiçbir zaman bundan fazla hedefe
-  // ihtiyacı olmaz (aktif sohbet elenince bile pay kalır).
+  // `readBackfillTargets`'a verilen tavan MAX_REQUESTS_PER_ROUND: bir turun en
+  // çok bu kadar İSTEK atabileceği bilindiğinden, her hedef en az bir isteğe
+  // karşılık geldiği için turun hiçbir zaman bundan fazla hedefe ihtiyacı
+  // olmaz (aktif sohbet elenince bile pay kalır).
   const targets = selectBackfillTargets(
-    repo.readBackfillTargets(MAX_PAGES_PER_ROUND),
+    repo.readBackfillTargets(MAX_REQUESTS_PER_ROUND),
     getActiveConversationId(),
   );
 
-  // İki ardışık sayfa isteği arasında PAGE_DELAY_MS bekleniyor — SOHBET
-  // SINIRINI AŞAN bir kural: kovayı dolduran şey toplam istek hızı, hangi
-  // sohbete gittiği değil. İlk istekten önce beklemiyoruz (gecikecek bir şey
-  // yok).
+  // İki ardışık istek arasında PAGE_DELAY_MS bekleniyor — SOHBET SINIRINI
+  // AŞAN bir kural: kovayı dolduran şey toplam istek hızı, hangi sohbete
+  // gittiği değil. İlk istekten önce beklemiyoruz (gecikecek bir şey yok).
   let firstRequest = true;
+
+  // `shouldStopRound`'a giden sayaç — DENEME sayısı, BAŞARILI sayfa sayısı
+  // DEĞİL (bkz. backfillPolicy.shouldStopRound'daki `attemptsThisRound`
+  // yorumu). `result.pages` kasıtlı AYRI kalıyor: o "kaç sayfa gerçekten
+  // yazıldı" diye raporluyor, bu ise "kovadan kaç slot harcandı" diye
+  // bütçeyi besliyor — ikisini aynı sayaçla ölçmek, art arda gelen genel
+  // hatalarda (5xx fırtınası vb.) turu hiç durdurmazdı: her başarısız istek
+  // bedava sayılırdı.
+  let attempts = 0;
 
   for (const target of targets) {
     let cursor = target.cursor;
@@ -83,14 +91,18 @@ async function run(getActiveConversationId: () => string | null): Promise<Backfi
       //     denetlenmiyordu — kota zaten rezervin altındaysa (kullanıcı o
       //     anda kendi sohbetini sayfalıyor) tur yine de bir slot harcardı;
       //     (3) bu da (2)'nin özel hâli: soğuk açılış probu bile BURADA,
-      //     `pagesThisRound: 0` ile değerlendiriliyor. Kontrol burada
+      //     `attemptsThisRound: 0` ile değerlendiriliyor. Kontrol burada
       //     olunca probe kuralıyla ÇATIŞMIYOR: `remaining: null` ve
-      //     `pagesThisRound: 0` iken `shouldStopRound` false döner, yani
-      //     ilk prob sayfası yine çekilir — sadece artık rezervin zaten
-      //     altındaysa o ilk sayfa da hiç denenmez.
+      //     `attemptsThisRound: 0` iken `shouldStopRound` false döner, yani
+      //     ilk prob denemesi yine yapılır — sadece artık rezervin zaten
+      //     altındaysa o ilk deneme de hiç yapılmaz. NOT: prob BAŞARISIZ
+      //     olsa bile (ağ hatası/5xx) `attempts` yine 1'e çıkmış olacak ve
+      //     bir sonraki döngüde `remaining` hâlâ null ise tur kapanacak —
+      //     başarısız bir prob bütçe hakkında hiçbir şey öğretmedi, ikinci
+      //     bir kör denemeye de izin verilmiyor (bkz. backfillPolicy.ts).
       if (
         shouldStopRound({
-          pagesThisRound: result.pages,
+          attemptsThisRound: attempts,
           offline: isOfflineNow(),
           remaining: remainingNow(),
         })
@@ -100,6 +112,7 @@ async function run(getActiveConversationId: () => string | null): Promise<Backfi
 
       if (!firstRequest) await delay(PAGE_DELAY_MS);
       firstRequest = false;
+      attempts++; // İSTEK ATILIYOR — sonucu ne olursa olsun bir DENEME sayılır.
 
       let historyPage: repo.HistoryPage;
       try {

@@ -26,20 +26,20 @@ describe('selectBackfillTargets', () => {
 describe('shouldStopRound', () => {
   it('tur tavanı dolunca duruyor', () => {
     expect(
-      shouldStopRound({ pagesThisRound: 30, offline: false, remaining: 1000 }),
+      shouldStopRound({ attemptsThisRound: 30, offline: false, remaining: 1000 }),
     ).toBe(true);
   });
 
   it('offline olunca duruyor', () => {
     expect(
-      shouldStopRound({ pagesThisRound: 0, offline: true, remaining: 1000 }),
+      shouldStopRound({ attemptsThisRound: 0, offline: true, remaining: 1000 }),
     ).toBe(true);
   });
 
   it('kalan kota rezervin ALTINDA olunca duruyor', () => {
     expect(
       shouldStopRound({
-        pagesThisRound: 1,
+        attemptsThisRound: 1,
         offline: false,
         remaining: RATE_LIMIT_RESERVE - 1,
       }),
@@ -49,7 +49,7 @@ describe('shouldStopRound', () => {
   it('kalan kota rezervin TAM ÜSTÜNDE olunca durmuyor', () => {
     expect(
       shouldStopRound({
-        pagesThisRound: 1,
+        attemptsThisRound: 1,
         offline: false,
         remaining: RATE_LIMIT_RESERVE + 1,
       }),
@@ -59,27 +59,29 @@ describe('shouldStopRound', () => {
   it('kalan kota rezerve TAM EŞİTKEN durmuyor (sınır katı `<`, `<=` değil)', () => {
     expect(
       shouldStopRound({
-        pagesThisRound: 1,
+        attemptsThisRound: 1,
         offline: false,
         remaining: RATE_LIMIT_RESERVE,
       }),
     ).toBe(false);
   });
 
-  it('kalan kota BİLİNMİYORSA (null) ve hiç sayfa çekilmemişse DURMUYOR — prob dalı', () => {
-    // Kota hiç bilinmiyorken (cold start) ilk sayfaya (prob) izin verilmeli;
+  it('kalan kota BİLİNMİYORSA (null) ve hiç DENEME yapılmamışsa DURMUYOR — prob dalı', () => {
+    // Kota hiç bilinmiyorken (cold start) ilk denemeye (prob) izin verilmeli;
     // yoksa backfill soğuk açılışta hiç başlamaz (bkz. shouldStopRound yorumu).
     expect(
-      shouldStopRound({ pagesThisRound: 0, offline: false, remaining: null }),
+      shouldStopRound({ attemptsThisRound: 0, offline: false, remaining: null }),
     ).toBe(false);
   });
 
-  it('kalan kota BİLİNMİYORSA ve bir sayfa zaten çekildiyse duruyor', () => {
-    // Prob sayfası (ilk sayfa) bütçeyi doldurması gereken sayfaydı; hâlâ
-    // bilinmiyorsa (başlık hiç gelmedi) ikinci sayfaya geçmek kör harcama
-    // olurdu — tur burada kapanır.
+  it('kalan kota BİLİNMİYORSA ve bir deneme zaten yapıldıysa duruyor — BAŞARISIZ denemede de', () => {
+    // `attemptsThisRound` DENEME sayar, BAŞARI saymaz: prob isteği 5xx/ağ
+    // hatasıyla patlamış olsa bile (hiç header gelmedi, kota hâlâ null) bu
+    // dal yine tetiklenir. Kasıtlı: başarısız bir prob bütçe hakkında hiçbir
+    // şey öğretmedi, bu yüzden ikinci bir kör deneme de izin VERİLMEZ —
+    // "prob başarısız olursa tekrar dene" burada bilerek YOK.
     expect(
-      shouldStopRound({ pagesThisRound: 1, offline: false, remaining: null }),
+      shouldStopRound({ attemptsThisRound: 1, offline: false, remaining: null }),
     ).toBe(true);
   });
 

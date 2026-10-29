@@ -15,12 +15,21 @@ import type { BackfillTarget } from "@/features/chat/chatRepository";
 /** Sunucudan tek seferde istenecek mesaj sayısı. */
 export const BACKFILL_PAGE_SIZE = 50;
 
-/** Bir turda toplam en çok kaç sayfa çekilir — sohbet sayısı ne olursa olsun. */
-export const MAX_PAGES_PER_ROUND = 30;
+/**
+ * Bir turda toplam en çok kaç İSTEK atılır — sohbet sayısı ne olursa olsun.
+ *
+ * Birim bilerek "istek", "başarılı sayfa" DEĞİL: backend'in kovası (200/60sn)
+ * DENEMEYİ sayıyor, sonucunu değil — 5xx/ağ hatası da bir slot yakıyor. Bu
+ * tavanı başarı sayısıyla ölçmek, art arda gelen genel hatalarda (ör. bir 5xx
+ * fırtınası — ki tam o anda sunucuyu 30 istek daha dövmek en kötü zaman)
+ * turu hiç durdurmazdı: her başarısız istek "bedava" sayılır, round toplam
+ * istek hacmi bakımından sınırsız kalırdı.
+ */
+export const MAX_REQUESTS_PER_ROUND = 30;
 
 /**
  * Tek sohbet için bir turda en çok kaç sayfa çekilir. Tavan olmadan tek bir
- * çok uzun sohbet MAX_PAGES_PER_ROUND'ın tamamını yiyip diğer sohbetleri
+ * çok uzun sohbet MAX_REQUESTS_PER_ROUND'ın tamamını yiyip diğer sohbetleri
  * turdan dışlardı.
  */
 export const MAX_PAGES_PER_CONVERSATION = 6;
@@ -63,36 +72,45 @@ export function selectBackfillTargets(
  *
  * Kontroller KOD SIRASIYLA (üçü de birbirini dışlar, en fazla biri gerçek
  * "dur" kararını verir):
- *  1. Tur tavanı (MAX_PAGES_PER_ROUND) doldu mu.
+ *  1. Tur tavanı (MAX_REQUESTS_PER_ROUND) doldu mu.
  *  2. Cihaz offline mı — ağ yokken istek denemenin anlamı yok.
  *  3. Kalan kota BİLİNMİYOR (`remainingNow()` henüz hiçbir yanıt görmediği
- *     için `null`) ama bu turda ZATEN bir sayfa çekildiyse.
+ *     için `null`) ama bu turda ZATEN bir istek YAPILDIYSA.
  *  4. (yalnız kota BİLİNİYORSA değerlendirilir) kalan kota rezervin altına
  *     indi mi — tam rezerve EŞİT kalan henüz "altında" sayılmaz, `<` katı.
+ *
+ * `attemptsThisRound` DENEME sayısı, BAŞARILI sayfa sayısı DEĞİL — çağıran
+ * bunu her istekten ÖNCE artırmalı (bkz. chatBackfill.ts). Birim burada
+ * kasıtlı: kovayı dolduran şey sunucunun saydığı istek sayısı, bizim "işe
+ * yaradı mı" hükmümüz değil; başarıyla ölçseydik art arda gelen genel
+ * hatalar (5xx fırtınası vb.) turu hiç durdurmazdı.
  *
  * Üçüncü kontrol kasıtlı: "bilinmiyorsa hiç başlama" tek başına backfill'i
  * SOĞUK AÇILIŞTA asla çalıştırmazdı — `remainingNow()` uygulama hiçbir API
  * yanıtı görmeden `null` kalır, ve Discover'da gezip Mesajlar'a hiç
  * girmeyen bir kullanıcı o yanıtı asla üretmeyebilir. Bunun yerine bütçe
- * bilinmediğinde turun TEK bir sayfaya ("prob") izin verilir: o sayfanın
- * yanıtı bütçeyi doldurur, sonraki her sayfa rezerve göre karar verir. Prob
- * sonrası kota hâlâ bilinmiyorsa (başlık hiç gelmiyor — eski sunucu ya da
- * proxy siliyor) tur bir sayfada kapanır: backfill sürünerek ilerler, ölmez,
- * ve turun ikinci sayfaya geçmesi bu fonksiyon seviyesinde engellenir (asıl
- * ağ isteğini kimin, nasıl attığı bu dosyanın bilgisi dışında).
- *
- * `pagesThisRound` parametresi zaten vardı — probun "en fazla bir sayfa"
- * kuralı ekstra bir alan gerektirmiyor.
+ * bilinmediğinde turun TEK bir DENEMEYE ("prob") izin verilir: o denemenin
+ * yanıtı (başarılıysa) bütçeyi doldurur, sonraki her istek rezerve göre
+ * karar verir. Prob BAŞARISIZ olsa bile (ağ hatası, 5xx — hiçbir header
+ * gelmez) `attemptsThisRound` yine 1'e çıkar ve tur yine kapanır: başarısız
+ * bir prob bütçe hakkında hiçbir şey öğretmedi, bu YÜZDEN ikinci bir kör
+ * denemeye de izin vermemeli — "prob başarısız olursa tekrar dene" YANLIŞ
+ * okuma, kasıtlı olarak daha SIKI: bilmediğimiz kotaya karşı ikinci bir
+ * deneme de kör harcama. Prob (başarılı ama) sonrası kota hâlâ bilinmiyorsa
+ * (başlık hiç gelmiyor — eski sunucu ya da proxy siliyor) tur yine bir
+ * denemede kapanır: backfill sürünerek ilerler, ölmez, ve turun ikinci
+ * denemeye geçmesi bu fonksiyon seviyesinde engellenir (asıl ağ isteğini
+ * kimin, nasıl attığı bu dosyanın bilgisi dışında).
  */
 export function shouldStopRound(opts: {
-  pagesThisRound: number;
+  attemptsThisRound: number;
   offline: boolean;
   remaining: number | null;
 }): boolean {
-  const { pagesThisRound, offline, remaining } = opts;
-  if (pagesThisRound >= MAX_PAGES_PER_ROUND) return true;
+  const { attemptsThisRound, offline, remaining } = opts;
+  if (attemptsThisRound >= MAX_REQUESTS_PER_ROUND) return true;
   if (offline) return true;
-  if (remaining === null) return pagesThisRound >= 1;
+  if (remaining === null) return attemptsThisRound >= 1;
   return remaining < RATE_LIMIT_RESERVE;
 }
 

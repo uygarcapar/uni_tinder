@@ -20,6 +20,7 @@ jest.mock('@/shared/store', () => ({
 import * as SQLite from 'expo-sqlite';
 import { store } from '@/shared/store';
 import { openChatDb, __resetChatDbForTests } from '@/features/chat/db/chatDb';
+import * as repo from '@/features/chat/chatRepository';
 import {
   readBackfillTargets,
   setBackfillCursor,
@@ -36,6 +37,7 @@ import {
   RATE_LIMIT_RESERVE,
   BACKFILL_PAGE_SIZE,
   PAGE_DELAY_MS,
+  MAX_REQUESTS_PER_ROUND,
 } from '@/features/chat/backfillPolicy';
 import { runBackfillRound, __resetBackfillForTests } from '@/features/chat/chatBackfill';
 import type { MessageDto } from '@/shared/types';
@@ -262,6 +264,11 @@ describe('runBackfillRound', () => {
     insertConversation('conv-1', 2_000);
     insertConversation('conv-2', 1_000);
     setBackfillCursor('conv-1', 'cursor-eski');
+    // Kota BOL VE BİLİNİYOR — bu testin konusu hata-sonrası devam etmek,
+    // probe kuralı DEĞİL. Kota null kalsaydı conv-1'in BAŞARISIZ denemesi
+    // bile `attempts`'i 1'e çıkarır ve probe kuralı conv-2'den önce turu
+    // kapatırdı (bkz. backfillPolicy.ts — kasıtlı, ayrı test bunu kilitliyor).
+    recordRateLimitHeaders({ 'x-ratelimit-remaining': '500' });
     getMessageHistory
       .mockRejectedValueOnce(new Error('ağ hatası'))
       .mockResolvedValueOnce(page([msg('m1', 'conv-2', '2026-10-20T10:00:00.000Z')]));
@@ -298,6 +305,45 @@ describe('runBackfillRound', () => {
     expect(
       readBackfillTargets(10).find((t) => t.conversationId === 'conv-1')?.cursor,
     ).toBe('cursor-eski');
+  });
+
+  it('art arda gelen GENEL hatalarda (5xx fırtınası) turu MAX_REQUESTS_PER_ROUND İSTEĞİNDE durduruyor — hedef sayısı fazla olsa bile', async () => {
+    // `readBackfillTargets`'ı DOĞRUDAN sahteliyoruz. Gerçek SQL yoluyla 35
+    // sohbet eklesek bu test HİÇBİR ŞEY kanıtlamazdı: chatBackfill.ts zaten
+    // `repo.readBackfillTargets(MAX_REQUESTS_PER_ROUND)` çağırıyor, yani
+    // sorgunun KENDİSİ hedef listesini 30'da keser — `shouldStopRound`'un
+    // DENEME sayısını doğru sayıp saymadığından BAĞIMSIZ olarak çağrı sayısı
+    // 30 çıkardı (doğrulandı: `attemptsThisRound`'u `result.pages`'e
+    // indiren bir mutasyonla bu test, okuma katmanı sahtelenmeden, YANLIŞLIKLA
+    // YEŞİL kalıyordu). Tavanın üstünde hedef üretmenin tek yolu okuma
+    // katmanını bypass etmek.
+    const TARGET_COUNT = MAX_REQUESTS_PER_ROUND + 5;
+    const manyTargets = Array.from({ length: TARGET_COUNT }, (_, i) => ({
+      conversationId: `conv-${i}`,
+      cursor: null,
+    }));
+    const readTargetsSpy = jest
+      .spyOn(repo, 'readBackfillTargets')
+      .mockReturnValue(manyTargets);
+
+    // Offline DEĞİL, kota SAĞLIKLI — bu ikisi turu durdurmasın, yalnız
+    // "istek sayısı" tavanı izole edilsin.
+    recordRateLimitHeaders({ 'x-ratelimit-remaining': '500' });
+    getMessageHistory.mockRejectedValue(new Error('5xx fırtınası')); // HER istek patlıyor, hiçbiri 429 değil
+
+    const promise = runBackfillRound(() => null);
+    await jest.advanceTimersByTimeAsync(TARGET_COUNT * PAGE_DELAY_MS);
+    const result = await promise;
+    readTargetsSpy.mockRestore();
+
+    // Tavan DENEME sayısında duruyor, başarı sayısında DEĞİL — bu sayaç
+    // `result.pages` (başarı) ile karıştırılırsa bu test hiç kırılmaz
+    // çünkü hiçbir istek zaten başarıya ulaşmıyor; asıl doğrulama request
+    // sayısının tam olarak tavanda kesilmesi, hedeflerin hepsinin (35)
+    // denenmemesi.
+    expect(getMessageHistory).toHaveBeenCalledTimes(MAX_REQUESTS_PER_ROUND);
+    expect(result.pages).toBe(0);
+    expect(result.completed).toEqual([]);
   });
 
   it('aynı anda iki tur koşmuyor (in-flight)', async () => {
