@@ -25,6 +25,7 @@ import {
   clearRefreshInflight,
   markSessionLost,
 } from '@/shared/debug/authDiagnostics';
+import { recordRateLimitHeaders } from '@/shared/services/rateLimitBudget';
 
 let currentAccessToken: string | null = null;
 let currentLanguage: 'tr' | 'en' = 'tr';
@@ -542,7 +543,14 @@ const logNetworkFailure = (kind: 'TIMEOUT' | 'NETWORK' | 'SERVER', config: Timed
 };
 
 api.interceptors.response.use(
-  (response) => response.data,
+  (response) => {
+    // Yan kanal: dönüş şeklini (response.data) DEĞİŞTİRMEDEN kalan rate
+    // limit kotasını deftere yazıyoruz. `response.data` döndürmek yerine
+    // AxiosResponse'u geçirmek onlarca çağrı yerini kırardı — bu yüzden
+    // header okuma burada, dönüş aynı kalıyor.
+    recordRateLimitHeaders(response.headers);
+    return response.data;
+  },
   async (error) => {
     const originalRequest: TimedConfig & { _retry?: boolean; _retryCount?: number } = error.config;
 
