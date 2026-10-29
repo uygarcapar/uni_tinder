@@ -1351,9 +1351,15 @@ export function deleteSendAttempts(clientMessageIds: string[]): void {
 
 /**
  * Artık kuyrukta olmaması gereken muhasebe satırlarını siler: karşılık gelen
- * mesaj GÖNDERİLMİŞ (`send_state = 'sent'`) ya da hiç yok. `send_state <>
- * 'sent'` terimi mantıksal fazlalık ama idx_messages_unsent'i açan anahtar —
- * terim AYNEN kalmalı, bkz. migrations.ts V5 yorumundaki tam gerekçe.
+ * mesaj GÖNDERİLMİŞ (`send_state = 'sent'`) ya da hiç yok.
+ *
+ * `messages.send_state <> 'sent'` burada V5'teki gibi fazlalık bir terim
+ * DEĞİL — "orphan"ın bizzat TANIMI. Eşlenik tek bir `send_state` koşulu var
+ * ve o koşul bu satırın kalıp kalmayacağını belirliyor; indeks açma amaçlı
+ * bir eşlik değil (bu NOT EXISTS alt sorgusu zaten `idx_messages_cmid`'i
+ * kullanıyor, `idx_messages_unsent`'i değil). Terimi silersen prune
+ * "gönderilmiş + yetim satırları sil"den "yalnız yetimleri sil"e döner ve
+ * gönderilmiş mesajların muhasebesi diskte SONSUZA KADAR birikir.
  */
 export function pruneOrphanSendAttempts(): number {
   const db = getChatDb();

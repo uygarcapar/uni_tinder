@@ -14,6 +14,7 @@ import {
   deleteSendAttempts,
   pruneOrphanSendAttempts,
   clearAllChatData,
+  removeConversationLocally,
   saveMessage,
 } from '@/features/chat/chatRepository';
 import type { SendAttemptRow } from '@/features/chat/db/rows';
@@ -96,10 +97,14 @@ describe('send_attempts: yazıp geri okuma', () => {
     saveMessage(msg('m-pending'), CONV, 'pending');
     upsertSendAttempt(row({ client_message_id: 'cmid-m-sent' }));
     upsertSendAttempt(row({ client_message_id: 'cmid-m-pending' }));
+    // Asıl yetim şekli: messages'ta HİÇ karşılığı olmayan satır — fonksiyonun
+    // kendi yorumundaki "ya da hiç yok" dalı, retention budamasından sonra
+    // gerçekte ortaya çıkan durum.
+    upsertSendAttempt(row({ client_message_id: 'cmid-yok' }));
 
     const removed = pruneOrphanSendAttempts();
 
-    expect(removed).toBe(1);
+    expect(removed).toBe(2);
     expect(readSendAttempts().map((r) => r.client_message_id)).toEqual(['cmid-m-pending']);
   });
 
@@ -109,6 +114,23 @@ describe('send_attempts: yazıp geri okuma', () => {
     clearAllChatData();
 
     expect(readSendAttempts()).toEqual([]);
+  });
+
+  it('removeConversationLocally yalnız silinen sohbetin muhasebesini siliyor', () => {
+    // send_attempts'in conversation_id kolonu yok — silme messages'taki cmid
+    // eşleşmesi üzerinden JOIN'le çalışıyor ve messages SİLİNMEDEN ÖNCE
+    // koşmak zorunda (bkz. removeConversationLocally yorumu). Bu test tam da
+    // o sırayı ve `client_message_id IS NOT NULL` korumasını kilitliyor —
+    // ikisi de bozulursa hiçbir satır silinmez ve bu testsiz fark edilmez.
+    const CONV_B = 'conv-2';
+    saveMessage(msg('m-a'), CONV, 'pending'); // cmid: cmid-m-a
+    saveMessage(msg('m-b', { conversationId: CONV_B }), CONV_B, 'pending'); // cmid: cmid-m-b
+    upsertSendAttempt(row({ client_message_id: 'cmid-m-a' }));
+    upsertSendAttempt(row({ client_message_id: 'cmid-m-b' }));
+
+    removeConversationLocally(CONV);
+
+    expect(readSendAttempts().map((r) => r.client_message_id)).toEqual(['cmid-m-b']);
   });
 
   it('v6 veritabanı v7’ye yükselince mesaj ve sohbet satırları duruyor', () => {
