@@ -56,6 +56,16 @@ describe('shouldStopRound', () => {
     ).toBe(false);
   });
 
+  it('kalan kota rezerve TAM EŞİTKEN durmuyor (sınır katı `<`, `<=` değil)', () => {
+    expect(
+      shouldStopRound({
+        pagesThisRound: 1,
+        offline: false,
+        remaining: RATE_LIMIT_RESERVE,
+      }),
+    ).toBe(false);
+  });
+
   it('kalan kota BİLİNMİYORSA (null) ve hiç sayfa çekilmemişse DURMUYOR — prob dalı', () => {
     // Kota hiç bilinmiyorken (cold start) ilk sayfaya (prob) izin verilmeli;
     // yoksa backfill soğuk açılışta hiç başlamaz (bkz. shouldStopRound yorumu).
@@ -79,5 +89,9 @@ describe('shouldStopRound', () => {
 
   it('nextCursor null olan sayfa da TAMAM sayıyor (hasMore true gelse bile)', () => {
     expect(isConversationComplete({ hasMore: true, nextCursor: null })).toBe(true);
+  });
+
+  it('hasMore true ve nextCursor doluysa TAMAM sayılmıyor', () => {
+    expect(isConversationComplete({ hasMore: true, nextCursor: 'abc' })).toBe(false);
   });
 });

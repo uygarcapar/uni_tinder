@@ -29,11 +29,12 @@ export const MAX_PAGES_PER_CONVERSATION = 6;
 export const PAGE_DELAY_MS = 1000;
 
 /**
- * `MessagesController`'ın paylaşımlı kovasından (200/60sn) backfill'in asla
- * dokunmayacağı pay. Kullanıcının kendi etkileşimi (geçmiş sayfalama,
- * `/changes`, reveal-history, silme, reaksiyon) aynı kovadan çekiyor — bu
- * rezervin altına inince durmak, arka plandaki backfill'in kullanıcıyı 429'a
- * doğru itmemesini sağlıyor.
+ * `MessagesController`'ın paylaşımlı kovasından (200/60sn) kullanıcının kendi
+ * etkileşimi (geçmiş sayfalama, `/changes`, reveal-history, silme, reaksiyon)
+ * için ayrılmış pay — backfill `shouldStopRound`'da kalan kota bu sayının
+ * altına inince turu kapatır. Bu sayı yalnız bir eşik: eşikten sonra ne
+ * olacağı (istek atılır mı, ne zaman) bu dosyanın bilgisi dışında, o yüzden
+ * burada "429 yemez" gibi bir sonuç iddia edilmiyor.
  */
 export const RATE_LIMIT_RESERVE = 80;
 
@@ -60,14 +61,16 @@ export function selectBackfillTargets(
 /**
  * Tur burada mı bitiyor?
  *
- * Kontroller sırayla:
+ * Kontroller KOD SIRASIYLA (üçü de birbirini dışlar, en fazla biri gerçek
+ * "dur" kararını verir):
  *  1. Tur tavanı (MAX_PAGES_PER_ROUND) doldu mu.
  *  2. Cihaz offline mı — ağ yokken istek denemenin anlamı yok.
- *  3. Kalan kota rezervin altına indi mi.
- *  4. Kalan kota BİLİNMİYOR (`remainingNow()` henüz hiçbir yanıt görmediği
+ *  3. Kalan kota BİLİNMİYOR (`remainingNow()` henüz hiçbir yanıt görmediği
  *     için `null`) ama bu turda ZATEN bir sayfa çekildiyse.
+ *  4. (yalnız kota BİLİNİYORSA değerlendirilir) kalan kota rezervin altına
+ *     indi mi — tam rezerve EŞİT kalan henüz "altında" sayılmaz, `<` katı.
  *
- * Dördüncü kontrol kasıtlı: "bilinmiyorsa hiç başlama" tek başına backfill'i
+ * Üçüncü kontrol kasıtlı: "bilinmiyorsa hiç başlama" tek başına backfill'i
  * SOĞUK AÇILIŞTA asla çalıştırmazdı — `remainingNow()` uygulama hiçbir API
  * yanıtı görmeden `null` kalır, ve Discover'da gezip Mesajlar'a hiç
  * girmeyen bir kullanıcı o yanıtı asla üretmeyebilir. Bunun yerine bütçe
