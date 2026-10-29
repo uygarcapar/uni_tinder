@@ -133,7 +133,19 @@ describe('messageToDescriptor', () => {
       clientMessageId: 'cm1',
       content: 'selam',
       replyToMessageId: 'm9',
+      sentAt: null,
     });
+  });
+
+  it('sentAt taşınır — geç gönderim bildirimi mesajın KENDİ damgasına ihtiyaç duyuyor', () => {
+    const d = messageToDescriptor({
+      conversationId: 'c1',
+      clientMessageId: 'cm1',
+      content: 'selam',
+      contentType: 0,
+      sentAt: '2026-10-27T10:00:00.000Z',
+    });
+    expect(d).toMatchObject({ sentAt: '2026-10-27T10:00:00.000Z' });
   });
 
   it('boş/boşluk metni gönderilemez (sunucu UT-6710 verirdi)', () => {

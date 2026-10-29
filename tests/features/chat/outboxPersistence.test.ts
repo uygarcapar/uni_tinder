@@ -48,6 +48,9 @@ jest.mock('@/features/chat/chatDeltaSync', () => ({ inFlightPull: jest.fn(() => 
 jest.mock('@/shared/services/analytics', () => ({ analytics: { capture: jest.fn() } }));
 jest.mock('@/shared/services/networkStatus', () => ({ isOfflineNow: jest.fn(() => false) }));
 jest.mock('@/shared/services/toaster', () => ({ showInfoToast: jest.fn() }));
+// i18n MOCK'LANMIYOR — jest.setup.ts gerçek sözlüğü (tr) yüklüyor, bu dosyadaki
+// geç-gönderim bildirim testleri gerçek `chat.send.lateDelivered` metnini
+// doğruluyor (bkz. aşağıdaki describe bloğu).
 jest.mock('@/shared/store', () => ({
   store: { getState: jest.fn(() => ({})), dispatch: jest.fn() },
 }));
@@ -60,6 +63,8 @@ import {
   attemptEntryFromRow,
   attemptRowFromEntry,
   isEligible,
+  isLateDelivery,
+  LATE_SEND_NOTICE_MS,
   type AttemptEntry,
 } from '@/features/chat/outboxPolicy';
 import {
@@ -73,6 +78,7 @@ import {
 } from '@/features/chat/outbox';
 import chatServiceMock from '@/features/chat/chatService';
 import { decrementQuotaLocally } from '@/features/chat/chatSlice';
+import { showInfoToast } from '@/shared/services/toaster';
 
 /**
  * Outbox muhasebesinin (deneme sayısı/backoff/permanent/quota_charged) diske
@@ -105,6 +111,7 @@ beforeEach(() => {
   // kullanıp tüketiyor, bir testten kalan bir "Once" bir sonrakine sızmaz.
   (chatServiceMock.sendMessage as jest.Mock).mockClear();
   (decrementQuotaLocally as unknown as jest.Mock).mockClear();
+  (showInfoToast as jest.Mock).mockClear();
 });
 
 describe('attemptRowFromEntry / attemptEntryFromRow', () => {
@@ -406,5 +413,107 @@ describe('MAX_TRACKED tahliyesi Map’ten düşürür, DİSKTEN DÜŞÜRMEZ', ()
     expect(peekAttempt(OLDEST)).toBeUndefined(); // Map'ten düştü
     // Disk hâlâ taşıyor — MAX_TRACKED diski BAĞLAMIYOR.
     expect(readSendAttempts().map((r) => r.client_message_id)).toContain(OLDEST);
+  });
+});
+
+describe('isLateDelivery', () => {
+  it('1 saatten eski sentAt -> true', () => {
+    const now = Date.now();
+    expect(isLateDelivery(now - LATE_SEND_NOTICE_MS - 1, now)).toBe(true);
+  });
+
+  it('10 dakikalık sentAt -> false', () => {
+    const now = Date.now();
+    expect(isLateDelivery(now - 10 * 60_000, now)).toBe(false);
+  });
+
+  it('tam sınırda (=== LATE_SEND_NOTICE_MS) -> false, sınır KATI', () => {
+    const now = Date.now();
+    expect(isLateDelivery(now - LATE_SEND_NOTICE_MS, now)).toBe(false);
+  });
+});
+
+describe('sendOutgoing başarı dalı — geç gönderim bildirimi', () => {
+  /**
+   * Yaş sınırı kalktı (bkz. outboxPolicy.LATE_SEND_NOTICE_MS yorumu) — bu
+   * dört test onun yerine konan şeyi kilitliyor: sessiz turda BAŞARIYLA giden
+   * eski bir mesaj kullanıcıya söyleniyor, ama yalnız sessiz modda ve tur
+   * başına en fazla bir kez.
+   */
+  const CONV = 'conv-1';
+  const late = () => new Date(Date.now() - LATE_SEND_NOTICE_MS - 60_000).toISOString();
+  const fresh = () => new Date(Date.now() - 60_000).toISOString();
+
+  it('silent + geç mesaj başarıyla gidince bildirim gösteriliyor', async () => {
+    await sendOutgoing(
+      {
+        kind: 'text',
+        conversationId: CONV,
+        clientMessageId: 'cmid-late-1',
+        content: 'x',
+        sentAt: late(),
+      },
+      { mode: 'silent' },
+    );
+
+    expect(showInfoToast).toHaveBeenCalledWith({
+      message: 'Bekleyen mesajın gönderildi',
+      variant: 'info',
+    });
+  });
+
+  it('silent + taze mesaj -> bildirim YOK (her başarılı sessiz gönderim toast açmasın)', async () => {
+    await sendOutgoing(
+      {
+        kind: 'text',
+        conversationId: CONV,
+        clientMessageId: 'cmid-fresh',
+        content: 'x',
+        sentAt: fresh(),
+      },
+      { mode: 'silent' },
+    );
+
+    expect(showInfoToast).not.toHaveBeenCalled();
+  });
+
+  it('interactive + geç mesaj -> bildirim YOK (kullanıcı zaten ekranda, "tekrar dene"nin sonucunu görüyor)', async () => {
+    await sendOutgoing(
+      {
+        kind: 'text',
+        conversationId: CONV,
+        clientMessageId: 'cmid-late-interactive',
+        content: 'x',
+        sentAt: late(),
+      },
+      { mode: 'interactive' },
+    );
+
+    expect(showInfoToast).not.toHaveBeenCalled();
+  });
+
+  it('tur başına en fazla bir bildirim — ikinci geç mesaj ikinci toast açmıyor', async () => {
+    await sendOutgoing(
+      {
+        kind: 'text',
+        conversationId: CONV,
+        clientMessageId: 'cmid-late-a',
+        content: 'x',
+        sentAt: late(),
+      },
+      { mode: 'silent' },
+    );
+    await sendOutgoing(
+      {
+        kind: 'text',
+        conversationId: CONV,
+        clientMessageId: 'cmid-late-b',
+        content: 'x',
+        sentAt: late(),
+      },
+      { mode: 'silent' },
+    );
+
+    expect(showInfoToast).toHaveBeenCalledTimes(1);
   });
 });

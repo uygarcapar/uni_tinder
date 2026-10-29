@@ -53,13 +53,13 @@ import {
   backoffDelayMs,
   classifySendError,
   isEligible,
+  isLateDelivery,
   mergeFailedOutbox,
   messageToDescriptor,
   needsVoiceReupload,
   selectFailedOutbox,
   MAX_ATTEMPTS,
   MAX_PER_FLUSH,
-  OUTBOX_DISK_MAX_AGE_MS,
   type AttemptEntry,
   type FailOrigin,
   type FailureClass,
@@ -73,6 +73,7 @@ import { isOfflineNow } from "@/shared/services/networkStatus";
 import { showInfoToast } from "@/shared/services/toaster";
 import { store } from "@/shared/store";
 import { devLog } from "@/shared/utils/devLog";
+import { utcTime } from "@/shared/utils/dateUtc";
 import type { MessageDto } from "@/shared/types";
 
 /**
@@ -102,6 +103,12 @@ let wakeTimer: ReturnType<typeof setTimeout> | null = null;
 let roundNeedsConversationRefetch = false;
 /** Turda 429 / `RATE_LIMITED` görüldü — kalan mesajlar bir sonraki tura. */
 let roundRateLimited = false;
+/**
+ * Sessiz turda "bekleyen mesajın gönderildi" bildirimi tur başına EN FAZLA
+ * bir kez gösterilsin — yirmi mesajlık birikmiş bir kuyruk yirmi toast açmasın
+ * (bkz. isLateDelivery, sendOutgoing'in başarı dalı).
+ */
+let roundLateNoticeShown = false;
 /**
  * `loadAttemptsFromDisk` tur başına BİR kez gerçek okuma yapsın diye. Process
  * ömrü boyunca ikinci çağrı no-op — `attempts` Map'i artık diskten daha taze.
@@ -509,6 +516,20 @@ export async function sendOutgoing(
     // balon aynı dosyadan çalmaya devam eder.
     if (result) dispatch(messageSent(result));
     chargeQuotaOnce(conversationId, clientMessageId);
+    // Yaş sınırı kalktığı için (bkz. outboxPolicy.LATE_SEND_NOTICE_MS) eski bir
+    // mesaj da sessizce gidebiliyor — "habersiz" kalmasın diye burada söylüyoruz.
+    // Yalnız `silent`: interactive'te kullanıcı zaten ekranda, "tekrar dene"nin
+    // sonucunu görüyor, ikinci bir toast gürültü olur. Tur başına BİR kez:
+    // birikmiş yirmi mesajlık bir kuyruk yirmi toast açmasın.
+    if (
+      opts.mode === "silent" &&
+      !roundLateNoticeShown &&
+      d.sentAt &&
+      isLateDelivery(utcTime(d.sentAt), Date.now())
+    ) {
+      roundLateNoticeShown = true;
+      showInfoToast({ message: i18n.t("chat.send.lateDelivered") as string, variant: "info" });
+    }
   } catch (err: any) {
     let fc = classifySendError(err, d.kind);
     // Tamamlanmış sandığımız yükleme ölmüş (UT-6605: S3 nesnesi 7 günlük yetim
@@ -616,6 +637,7 @@ export async function flushOutbox(
   lastFlushAt = startedAt;
   roundNeedsConversationRefetch = false;
   roundRateLimited = false;
+  roundLateNoticeShown = false;
   let sent = 0;
   let items: any[] = [];
   try {
@@ -644,14 +666,15 @@ export async function flushOutbox(
     // İki kaynak: ekrandaki bucket'lar (canlı) + ARŞİV (tam). Disk şart, çünkü
     // bucket yalnız açılmış sohbetler için var — yeniden başlatmadan sonra
     // kullanıcı o sohbete girmedikçe oradaki başarısız mesaj hiçbir tura
-    // görünmüyordu. Diskten gelenlerde yaş sınırı mesajın KENDİ damgası
-    // (gerekçe: OUTBOX_DISK_MAX_AGE_MS).
+    // görünmüyordu. Diskten gelenlerde YAŞ SINIRI YOK (2026-10-29'da kalktı,
+    // bkz. outboxPolicy.LATE_SEND_NOTICE_MS yorumu): backend aynı
+    // `clientMessageId`'yi mesaj satırı yaşadığı sürece (730 gün) idempotent
+    // kabul ediyor, yani "çok eski" diye bir mesajı arşivden hiç çıkarmamak
+    // için teknik bir sebep kalmadı. Eski sınırın ürün argümanı (habersiz
+    // göndermemek) burada DEĞİL `sendOutgoing`'in başarı dalında çözülüyor.
     // Liste YAKALAMA TURUNDAN SONRA kuruluyor: delta'nın `sent`e çevirdiği
     // satırlar artık hiç görünmüyor.
-    items = mergeFailedOutbox(
-      selectFailedOutbox(state),
-      readFailedOutboxFromLocal({ sinceMs: startedAt - OUTBOX_DISK_MAX_AGE_MS }),
-    );
+    items = mergeFailedOutbox(selectFailedOutbox(state), readFailedOutboxFromLocal());
     pruneAttempts(items);
     if (!items.length) return;
 
@@ -700,4 +723,5 @@ export function resetOutbox(): void {
   flushing = false;
   lastFlushAt = 0;
   roundNeedsConversationRefetch = false;
+  roundLateNoticeShown = false;
 }

@@ -332,9 +332,10 @@ export function failStalePendingSends(): number {
  * girmedikçe oradaki başarısız mesaj hiçbir tura görünmüyordu. Arşiv kalıcı
  * olduğundan doğru kaynak disk.
  *
- * @param sinceMs  bundan ESKİ mesajlar dönmez — sessiz devam ettirmenin yaş
- *                 sınırı (bkz. outboxPolicy.OUTBOX_DISK_MAX_AGE_MS). Elle
- *                 "tekrar dene" bu yoldan geçmiyor, o yüzden sınırsız kalıyor.
+ * @param sinceMs  bundan ESKİ mesajlar dönmez. Sessiz tur bu parametreyi artık
+ *                 HİÇ VERMİYOR (yaş sınırı 2026-10-29'da kalktı, bkz.
+ *                 outboxPolicy.LATE_SEND_NOTICE_MS yorumu) — alan genel amaçlı
+ *                 bir filtre olarak duruyor, varsayılanı (0) sınırsız demek.
  * @param limit    tur başına tavan; patolojik bir arşiv tek turda yüz istek
  *                 üretmesin.
  */

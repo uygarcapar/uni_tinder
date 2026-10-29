@@ -53,6 +53,8 @@ export type OutgoingDescriptor =
       clientMessageId: string;
       content: string;
       replyToMessageId?: string | null;
+      /** Mesajın KENDİ zaman damgası — geç gönderim bildirimi için (bkz. isLateDelivery). */
+      sentAt?: string | null;
     }
   | {
       kind: "voice";
@@ -65,6 +67,7 @@ export type OutgoingDescriptor =
       durationMs: number;
       waveformPeaks?: string | null;
       replyToMessageId?: string | null;
+      sentAt?: string | null;
     };
 
 export type FailureReason =
@@ -168,17 +171,36 @@ export const MAX_ATTEMPTS = 5;
  */
 export const MAX_AGE_MS = 30 * 60_000;
 /**
- * DİSKTEN bulunan başarısız mesajın sessiz tura girebileceği en büyük yaş —
- * ölçü mesajın KENDİ `sentAt`'i, çünkü `firstSeenAt` yeniden başlatmadan sonra
- * "şimdi" olur ve yaş sınırı anlamını yitirirdi.
- *
- * 2 saat bir ÜRÜN kararı, teknik bir sınır değil: kullanıcının sabah yazıp
- * gitmediğini gördüğü bir mesajı akşam habersiz göndermek doğru olmaz. Elle
- * "tekrar dene" bu sınıra TABİ DEĞİL (interactive her şeyi ezer) — yani eski
- * bir mesaj hiçbir zaman gönderilemez hâle gelmiyor, yalnız kararı kullanıcı
- * veriyor.
+ * DİSKTEN bulunan başarısız mesajın sessiz tura girebileceği YAŞ SINIRI
+ * KALKTI (2026-10-29). Burada `OUTBOX_DISK_MAX_AGE_MS` (2 saat) vardı;
+ * kaldırılma gerekçesi idempotency DEĞİL — backend'in aynı `clientMessageId`'yi
+ * mesaj satırı yaşadığı sürece (730 gün) idempotent kabul etmesi zaten
+ * FailOrigin'in gerekçesiydi ve o teknik soru çözülmüştü. Eski yorumun asıl
+ * sahip olduğu ÜRÜN argümanı BAŞKA bir şeydi ve hâlâ geçerli: kullanıcının
+ * sabah yazıp gitmediğini gördüğü bir mesajı akşam habersiz göndermek doğru
+ * olmaz. Sorun sınırın kendisi değil "habersiz" kelimesiydi — o yüzden sınırı
+ * silmek yetmiyor, CEVAPLAMAK gerekiyor: mesaj artık yaşı ne olursa olsun
+ * gönderiliyor, ama sessiz turda `LATE_SEND_NOTICE_MS`'ten eski bir mesaj
+ * BAŞARIYLA gittiğinde kullanıcıya söyleniyor (bkz. isLateDelivery ve
+ * outbox.sendOutgoing'in başarı dalı). Elle "tekrar dene" bu bildirime hiç
+ * girmez (yalnız `silent` modda gösteriliyor) — kullanıcı o an zaten ekranda.
  */
-export const OUTBOX_DISK_MAX_AGE_MS = 2 * 60 * 60_000;
+export const LATE_SEND_NOTICE_MS = 60 * 60_000;
+
+/**
+ * Mesajın `sentAt`'inden bu yana geçen süre bildirim sınırını AŞTI mı? —
+ * ölçü mesajın KENDİ `sentAt`'i (`AttemptEntry.firstSeenAt` DEĞİL), çünkü
+ * `firstSeenAt` süreç yeniden başladığında "şimdi" olur ve kullanıcının
+ * sohbette hâlâ gördüğü eski saatle ilişkisini kaybeder.
+ *
+ * Sınır KATI (`>`, `>=` değil): tam `LATE_SEND_NOTICE_MS` yaşındaki mesaj
+ * henüz "geç" sayılmıyor, eşiğin TAM ÜSTÜNDEKİ bir mesaj kesin sayılıyor —
+ * eşitlik anında değil.
+ */
+export function isLateDelivery(sentAtMs: number, nowMs: number): boolean {
+  return nowMs - sentAtMs > LATE_SEND_NOTICE_MS;
+}
+
 /**
  * Tek sessiz turda denenecek en çok mesaj. Sunucu sınırı **dakikada 30**
  * (HTTP ve hub için ayrı ayrı); altında kalmak hem o sırada kullanıcının elle
@@ -371,6 +393,7 @@ export function messageToDescriptor(m: any): OutgoingDescriptor | null {
   const clientMessageId = m?.clientMessageId;
   if (!conversationId || !clientMessageId) return null;
   const replyToMessageId = m?.replyTo?.id ?? null;
+  const sentAt = typeof m?.sentAt === "string" ? m.sentAt : null;
 
   if (isVoiceMessage(m?.contentType)) {
     const localUri = typeof m?._localUri === "string" && m._localUri ? m._localUri : null;
@@ -385,12 +408,13 @@ export function messageToDescriptor(m: any): OutgoingDescriptor | null {
       durationMs: Number(m?.durationMs) || 0,
       waveformPeaks: m?.waveformPeaks ?? undefined,
       replyToMessageId,
+      sentAt,
     };
   }
 
   const content = typeof m?.content === "string" ? m.content : "";
   if (!content.trim()) return null;
-  return { kind: "text", conversationId, clientMessageId, content, replyToMessageId };
+  return { kind: "text", conversationId, clientMessageId, content, replyToMessageId, sentAt };
 }
 
 /**
