@@ -75,7 +75,8 @@ export function selectBackfillTargets(
  * yanıtı bütçeyi doldurur, sonraki her sayfa rezerve göre karar verir. Prob
  * sonrası kota hâlâ bilinmiyorsa (başlık hiç gelmiyor — eski sunucu ya da
  * proxy siliyor) tur bir sayfada kapanır: backfill sürünerek ilerler, ölmez,
- * ama kullanıcıyı asla kör biçimde harcamaz.
+ * ve turun ikinci sayfaya geçmesi bu fonksiyon seviyesinde engellenir (asıl
+ * ağ isteğini kimin, nasıl attığı bu dosyanın bilgisi dışında).
  *
  * `pagesThisRound` parametresi zaten vardı — probun "en fazla bir sayfa"
  * kuralı ekstra bir alan gerektirmiyor.
