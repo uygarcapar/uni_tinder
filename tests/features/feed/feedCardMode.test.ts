@@ -54,13 +54,21 @@ describe("resolveCardMode", () => {
 });
 
 /**
- * Kartta hangi aksiyonların çizildiği.
+ * Kartta hangi aksiyonların çizildiği — artık üç hâlli karar.
  *
- * Test edilen şey SESSİZ GERİLEME: Flört'te düz beğeni geri gelirse akış bir
- * tek dokunuşla bedelsiz beğeni dağıtan yüzeye dönüyor ve kural yalnız burada
- * yazılı (sunucu düz beğeniyi iki modda da kabul ediyor — bkz. fonksiyonun
- * notu). Ters yönde de aynı: Arkadaş'ta beğeni kapanırsa kullanıcının elinde
- * yalnız bedelli iki yol kalıyor.
+ * Test edilen üç ayrı SESSİZ GERİLEME:
+ * 1. MOD KAPISININ EZİLMESİ: `hasLikedMe` true'ya bakıp mod kontrolü atlanırsa
+ *    (ya da dal sırası tersine çevrilirse) modsuz bir kartta sunucunun
+ *    reddedeceği bir kabul/reddet çifti çizilir.
+ * 2. like/pass'İN AYRIŞMASI: biri unutulup öbürü elden çıkarsa (ör. yalnız
+ *    `like` güncellenip `pass` eski değerinde kalırsa) tam olarak bu işin
+ *    düzelttiği hataya dönülür — tek başına duran bir X.
+ * 3. MOD FARKININ NORMAL HÂLE SIZMASI: Arkadaş'ta normal hâlde düz beğeni geri
+ *    açılırsa (ya da Flört'te kapanırsa) akış tek dokunuşla bedelsiz beğeni
+ *    dağıtan yüzeye döner. Bu riskin ayrı bir Arkadaş testi gerektirmesinin
+ *    sebebi somut: kural 2026-10-22'de açıldı, 2026-10-28'de bir kez kapatılıp
+ *    aynı turda geri alındı — yani tam bu hat önceden salınmış, test o
+ *    salınımı dondurmak için var.
  */
 describe("feedCardActions", () => {
   it("NORMAL (Flört): yalnız Fire ve not — X ve tik YOK", () => {
