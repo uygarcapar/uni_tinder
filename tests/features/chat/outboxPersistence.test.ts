@@ -16,7 +16,13 @@ jest.mock('@/features/chat/chatSlice', () => ({
   removeOptimisticMessage: jest.fn(),
   retryOptimisticMessage: jest.fn(),
 }));
-jest.mock('@/features/chat/chatService', () => ({ __esModule: true, default: {} }));
+jest.mock('@/features/chat/chatService', () => ({
+  __esModule: true,
+  // `sendMessage` KASITLI OLARAK hiç çözülmeyen bir promise döner: "tekrar
+  // dene" testinde gönderimin tam ortasında uygulamanın öldüğünü taklit etmek
+  // için — gerçek ağ çağrısı asla senkron bitmez, mock de bitmemeli.
+  default: { sendMessage: jest.fn(() => new Promise(() => {})) },
+}));
 jest.mock('@/features/chat/quotaPaywall', () => ({ openQuotaPaywall: jest.fn() }));
 jest.mock('@/features/chat/realtimeService', () => ({
   __esModule: true,
@@ -51,6 +57,7 @@ import {
   pruneAttempts,
   rememberAttempt,
   resetOutbox,
+  retryFailedMessage,
 } from '@/features/chat/outbox';
 
 /**
@@ -153,5 +160,57 @@ describe('pruneAttempts', () => {
 
     expect(peekAttempt('cmid-dead')).toBeUndefined();
     expect(readSendAttempts().map((r) => r.client_message_id)).toEqual(['cmid-alive']);
+  });
+});
+
+describe('retryFailedMessage interactive — EZİLMİŞ muhasebe diske de yazılmalı', () => {
+  const CONV = 'conv-1';
+
+  const failedMessage = (over: Record<string, unknown> = {}) => ({
+    conversationId: CONV,
+    clientMessageId: CMID,
+    content: 'tekrar deniyorum',
+    contentType: 0,
+    _failed: true,
+    ...over,
+  });
+
+  /**
+   * Senaryo: balon kalıcı (`permanent`) olarak işaretlenmiş, kullanıcı "tekrar
+   * dene"ye basıyor. `retryFailedMessage`'ın interactive dalı Map'teki kaydı
+   * EZER (attempts→0, permanent→false) ama gönderim ASENKRON — bu test gönderim
+   * TAM O SIRADA kesilip uygulamanın öldüğünü taklit ediyor (chatService.sendMessage
+   * mock'u hiç çözülmeyen bir promise döndürüyor, tıpkı gerçek bir ağ isteğinin
+   * sonucu hiç gelmemiş hâli gibi).
+   *
+   * Reset'in DİSKE de yazılmadığı sürümde: disk eski `permanent: 1` satırını
+   * taşımaya devam eder, restart sonrası `isEligible` onu görür ve kullanıcının
+   * açıkça "tekrar dene" dediği mesaj BİR DAHA HİÇ denenmez — persistence'tan
+   * ÖNCEki hâlden (kayıt yokken isEligible(undefined) hep true dönerdi) daha
+   * kötü bir sonuç. Bu test tam bunu kilitliyor.
+   */
+  it('kalıcı/yüksek-deneme kaydı reset sırasında diske de yazılıyor — restart sonrası sessiz tur engellenmiyor', () => {
+    rememberAttempt(CMID, entry({ attempts: 5, permanent: true, quotaCharged: false }));
+
+    void retryFailedMessage(failedMessage(), { mode: 'interactive' });
+    // `retryFailedMessage` await EDİLMİYOR: sendOutgoing'in ağ çağrısı (mock)
+    // hiç çözülmediği için bu noktada hâlâ "gönderim uçuşta" durumundayız —
+    // tam da "uygulama bu sırada öldü" anının senkron karşılığı.
+
+    resetOutbox(); // process ölümü
+    loadAttemptsFromDisk();
+
+    expect(isEligible(peekAttempt(CMID), Date.now(), 'silent')).toBe(true);
+  });
+
+  it('quotaCharged daha önce düşmüşse "tekrar dene" onu GERİ VERMİYOR', () => {
+    rememberAttempt(CMID, entry({ attempts: 5, permanent: true, quotaCharged: true }));
+
+    void retryFailedMessage(failedMessage(), { mode: 'interactive' });
+
+    resetOutbox();
+    loadAttemptsFromDisk();
+
+    expect(peekAttempt(CMID)?.quotaCharged).toBe(true);
   });
 });

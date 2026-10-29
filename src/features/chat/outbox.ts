@@ -502,7 +502,8 @@ export async function retryFailedMessage(
   }
   if (opts.mode === "interactive") {
     // Kullanıcı niyeti backoff'u ve `permanent`i EZER — elle buton asla ölü
-    // olmamalı. `quotaCharged` korunuyor (çift düşme guard'ı).
+    // olmamalı. `quotaCharged` korunuyor (çift düşme guard'ı — kullanıcının
+    // "tekrar dene" demesi daha önce düşmüş kotayı GERİ VERMEZ).
     const prev = attempts.get(d.clientMessageId);
     if (prev) {
       prev.attempts = 0;
@@ -510,6 +511,15 @@ export async function retryFailedMessage(
       prev.nextEligibleAt = 0;
       prev.origin = "throw";
       prev.permanent = false;
+      // DİSKE DE yaz: yazmazsak diskte eski `permanent: 1`/yüksek `attempts`
+      // satırı kalır. Gönderim TAM BU SIRADA kesilip uygulama kapanırsa
+      // restart sonrası `failStalePendingSends` satırı `failed`e çevirir,
+      // sessiz tur diskten okunan eski (ezilmemiş) muhasebeyle karşılaşır ve
+      // `isEligible` `permanent`i görüp mesajı SONSUZA DEK atlar — kullanıcı
+      // açıkça "tekrar dene" dediği mesajın bir daha hiç gönderilmemesi,
+      // persistence öncesi (kayıt hiç yokken isEligible(undefined) true
+      // dönerdi) durumdan daha kötü bir sonuç olurdu.
+      rememberAttempt(d.clientMessageId, prev);
     }
   }
   dispatch(
