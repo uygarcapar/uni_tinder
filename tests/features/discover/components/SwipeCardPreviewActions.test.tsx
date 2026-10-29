@@ -85,6 +85,33 @@ describe('SwipeCard previewMode cover actions', () => {
     expect(tree.queryByText('chrome:likes.likeButton')).toBeNull();
     expect(tree.getByText('chrome:likes.passButton')).toBeTruthy();
   });
+
+  /**
+   * X OPT-OUT — akışın NORMAL kartı (bkz. feedCardActions): `onPass`
+   * verilmiyor ve X HİÇBİR yerde çizilmiyor. Akışta kart karşı taraftan gelen
+   * bir sinyale cevap değil; reddedilecek bir şey yok.
+   */
+  it('onPass verilmezse X çizilmiyor', () => {
+    const tree = renderCard({ onFire: () => {} });
+    expect(tree.queryByText('chrome:likes.passButton')).toBeNull();
+  });
+
+  /**
+   * Review Focus #4: `onPass` gidince panelin dibindeki X/tik satırı da
+   * düşüyor (`showActionsRow` ikisine bağlı) — ŞİKAYET ve ENGELLE onunla
+   * birlikte kaybolmamalı, kartın en alttaki moderasyon girişi orası.
+   * `showModerationRow = showModeration && !showActionsRow` (SwipeCard:2888)
+   * bunu zaten çözüyor; bu test o davranışı KİLİTLİYOR.
+   */
+  it('X gitse de şikayet/engelle duruyor', () => {
+    const tree = renderCard({
+      onFire: () => {},
+      onReport: () => {},
+      onBlock: () => {},
+    });
+    expect(tree.getByLabelText('profile.card.reportAccount')).toBeTruthy();
+    expect(tree.getByLabelText('profile.card.blockAccount')).toBeTruthy();
+  });
 });
 
 /**

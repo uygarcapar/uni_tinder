@@ -79,10 +79,21 @@ import { useSwipeMutation } from "@/features/discover/swipeQueries";
  *   gönderilmiş olabiliyor ve ikinci bir not kanalı kafa karıştırırdı.
  *
  * @param allowLike DÜZ BEĞENİ (tik) çizilsin mi. Varsayılan AÇIK: "seni
- *   beğenenler"de kartın tek anlamlı cevabı o. Akışın FLÖRT kartı kapatıyor —
- *   orada sinyal ya Fire ya not olmak zorunda (bkz. feedCardActions). Kapalıyken
- *   `onLike` SwipeCard'a hiç verilmiyor, yani ne kapaktaki cam tik ne de panelin
- *   dibindeki büyük tik çiziliyor; X (geç) ve moderasyon aynen duruyor.
+ *   beğenenler"de kartın tek anlamlı cevabı o. Akışta tik yalnız BEĞENİLMİŞ
+ *   kartta var (karşı taraf seni zaten beğenmişse kabul/reddet çiftini
+ *   kuruyor, bkz. feedCardActions); akışın NORMAL kartında kapalı — orada
+ *   sinyal ya Fire ya not olmak zorunda. Kapalıyken `onLike` SwipeCard'a hiç
+ *   verilmiyor, yani ne kapaktaki cam tik ne de panelin dibindeki büyük tik
+ *   çiziliyor; X (geç) ve moderasyon aynen duruyor.
+ *
+ * @param allowPass X (geç) çizilsin mi. Varsayılan AÇIK: "seni beğenenler"de
+ *   kartın iki anlamlı cevabından biri o (diğeri `allowLike`). Akışın NORMAL
+ *   kartı bunu kapatıyor — kart karşı taraftan gelen bir sinyale cevap değil,
+ *   kendi açtığın profil; reddedilecek bir şey yok. Akışın BEĞENİLMİŞ kartı
+ *   açık bırakıyor, orada `allowLike` ile birlikte kabul/reddet çiftini
+ *   kuruyor. Kapalıyken `onPass` SwipeCard'a `undefined` geçiyor —
+ *   `allowLike`'ın aynı kuralı: `undefined` ŞART, "çizilsin ama basılmasın"
+ *   DEĞİL, ölü buton kullanıcıya olmayan bir yol gösterir.
  *
  * @param fireBlocked Fire kotası/bakiyesi TÜKENMİŞ. Buton çizilmeye devam
  *   ediyor ama basıldığında istek ATILMIYOR: `onFireBlocked` çağrılıyor ve
@@ -105,6 +116,7 @@ export default function LikerSwipeModal({
   mode,
   allowFire = false,
   allowLike = true,
+  allowPass = true,
   fireBlocked = false,
   onFireBlocked,
   onNote,
@@ -406,7 +418,10 @@ export default function LikerSwipeModal({
                   // çiziyor (bkz. showModeration).
                   hideActions={swipeDisabled}
                   zoomImpact={photoZoom}
-                  onPass={() => triggerAction("left")}
+                  // X opt-out: akışın NORMAL kartında reddedilecek bir sinyal
+                  // yok (kendi açtığın profil), `allowPass` onu kapatıyor.
+                  // `undefined` vermek ŞART — aynı gerekçe `allowLike` ile.
+                  onPass={allowPass ? () => triggerAction("left") : undefined}
                   // DÜZ BEĞENİ opt-out: `allowLike` kapalıyken prop hiç
                   // verilmiyor → SwipeCard tiki ne kapakta ne panelin dibinde
                   // çiziyor (bkz. prop'un notu). `undefined` vermek ŞART,
