@@ -1394,3 +1394,61 @@ export function pruneOrphanSendAttempts(): number {
   const after = db.getFirst<{ n: number }>('SELECT COUNT(*) AS n FROM send_attempts')?.n ?? 0;
   return before - after;
 }
+
+// ── backfill: arka plan geçmiş indirme turunun ilerleme damgası (v8) ───────
+//
+// `sync_state.next_cursor`/`has_more` EKRANIN sayfalamasına ait ve
+// `pruneExpiredMessages` dokunduğu her sohbette `next_cursor`'ı NULL'luyor —
+// backfill bu kolonları paylaşsaydı retention turu onun geri dönüş noktasını
+// da silerdi (bkz. migrations.ts V8 yorumu). Policy/round/tetikleyiciler bu
+// dosyanın işi değil (Task 2/3) — burası yalnız depo.
+
+export interface BackfillTarget {
+  conversationId: string;
+  cursor: string | null;
+}
+
+/**
+ * Henüz bitmemiş (`backfill_done` NULL ya da 0) sohbetler, en son
+ * konuşulandan geriye — en çok `limit` tane.
+ *
+ * `conversations` ile LEFT JOIN: `sync_state` satırı henüz yoksa (hiç
+ * sayfalama/backfill denenmemiş sohbet) da hedef, cursor `null` döner.
+ */
+export function readBackfillTargets(limit: number): BackfillTarget[] {
+  return getChatDb()
+    .getAll<{ conversation_id: string; cursor: string | null }>(
+      `SELECT c.conversation_id AS conversation_id, s.backfill_cursor AS cursor
+         FROM conversations c
+         LEFT JOIN sync_state s ON s.conversation_id = c.conversation_id
+        WHERE COALESCE(s.backfill_done, 0) = 0
+        ORDER BY c.last_message_at_ms DESC
+        LIMIT ?`,
+      [limit],
+    )
+    .map((row) => ({ conversationId: row.conversation_id, cursor: row.cursor }));
+}
+
+/**
+ * Sohbetin backfill cursor'unu yazar. `sync_state` satırı yoksa açar —
+ * bu çağrı ekranın hiç sayfalama yapmadığı bir sohbette de gelebilir.
+ */
+export function setBackfillCursor(conversationId: string, cursor: string | null): void {
+  getChatDb().run(
+    `INSERT INTO sync_state (conversation_id, backfill_cursor) VALUES (?, ?)
+     ON CONFLICT(conversation_id) DO UPDATE SET backfill_cursor = excluded.backfill_cursor`,
+    [conversationId, cursor],
+  );
+}
+
+/**
+ * Sohbetin geçmişi tamamen indi — `readBackfillTargets` bir daha onu
+ * döndürmez (bkz. yukarıdaki WHERE koşulu).
+ */
+export function markBackfillDone(conversationId: string): void {
+  getChatDb().run(
+    `INSERT INTO sync_state (conversation_id, backfill_done) VALUES (?, 1)
+     ON CONFLICT(conversation_id) DO UPDATE SET backfill_done = 1`,
+    [conversationId],
+  );
+}

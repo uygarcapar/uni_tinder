@@ -18,7 +18,7 @@ import {
   saveMessage,
 } from '@/features/chat/chatRepository';
 import type { SendAttemptRow } from '@/features/chat/db/rows';
-import { MIGRATIONS, runMigrations } from '@/features/chat/db/migrations';
+import { CHAT_DB_VERSION, MIGRATIONS, runMigrations } from '@/features/chat/db/migrations';
 import { clear as clearMessageCache } from '@/features/chat/messageCache';
 import type { MessageDto } from '@/shared/types';
 
@@ -182,14 +182,16 @@ describe('send_attempts: yazıp geri okuma', () => {
    * 6'da takılır, `openChatDb` atar ve ayna kendini devre dışı bırakırdı —
    * yayınlandıktan sonra düzeltilemeyecek bir satırda toplam bir bedel.
    */
-  it('outbox tablosu olmayan v6 diski de v7’ye yükseliyor', () => {
+  it('outbox tablosu olmayan v6 diski de EN SON sürüme yükseliyor', () => {
     const db = rawDriverOnEmptyDisk();
     stampV6(db);
     db.exec('DROP TABLE outbox');
 
     expect(() => runMigrations(db)).not.toThrow();
 
-    expect(db.getFirst<{ user_version: number }>('PRAGMA user_version')?.user_version).toBe(7);
+    expect(db.getFirst<{ user_version: number }>('PRAGMA user_version')?.user_version).toBe(
+      CHAT_DB_VERSION,
+    );
     expect(
       db.getAll("SELECT name FROM sqlite_master WHERE type = 'table' AND name = 'send_attempts'"),
     ).toEqual([{ name: 'send_attempts' }]);

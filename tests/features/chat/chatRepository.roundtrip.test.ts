@@ -82,6 +82,10 @@ describe('şema sürümü', () => {
       last_error          TEXT,
       created_at_ms       INTEGER NOT NULL
     )`);
+    // v8: backfill'in ilerleme kolonlarını düşür — yoksa v8 kendi ADD
+    // COLUMN'unda "duplicate column name" ile patlar.
+    db.exec('ALTER TABLE sync_state DROP COLUMN backfill_cursor');
+    db.exec('ALTER TABLE sync_state DROP COLUMN backfill_done');
     db.exec('PRAGMA user_version = 1');
 
     __resetChatDbForTests();

@@ -231,6 +231,33 @@ CREATE TABLE send_attempts (
 );
 `;
 
+/**
+ * v8 — backfill'in KENDİ cursor'u (`backfill_cursor`) ve KENDİ "tamam"
+ * damgası (`backfill_done`); ekranın sayfalama kolonlarıyla (`next_cursor`,
+ * `has_more`) KASTEN paylaşılmıyor.
+ *
+ * ── `next_cursor` neden paylaşılamaz ────────────────────────────────────────
+ * O kolon EKRANIN sayfalamasına ait, backfill'inki arka planda sayfa sayfa
+ * inen ayrı bir tur. `pruneExpiredMessages` dokunduğu HER sohbette
+ * `next_cursor`'ı NULL'luyor (ölçüldü — bkz. bu dosyanın altındaki
+ * pruneExpiredMessages: budama eski uçtan kestiği için derin cursor yerel
+ * aralığın ALTINI işaret eder hâle gelir, delik üretmemek için sıfırlanır).
+ * Backfill aynı kolonu kullansaydı her haftalık retention turu onun geri
+ * dönüş noktasını da silerdi — backfill ilerlemişken sıfırdan başlamaya
+ * zorlanırdı.
+ *
+ * ── `backfill_done`, `has_more`'dan neden türetilemez ───────────────────────
+ * Aynı budama `has_more`'a DOKUNMUYOR — yalnız `oldest_loaded_sent_at_ms` ve
+ * `next_cursor` güncelleniyor. Yani prune sonrası "cursor kayboldu, has_more
+ * eski değerinde kaldı" normal bir hâl: bu ikili "yarım ama cursor'suz" ile
+ * "gerçekten bitti" durumlarını AYIRT EDEMEZ — ikisinde de elde kalan tek
+ * bilgi aynı.
+ */
+const V8 = `
+ALTER TABLE sync_state ADD COLUMN backfill_cursor TEXT;
+ALTER TABLE sync_state ADD COLUMN backfill_done INTEGER NOT NULL DEFAULT 0;
+`;
+
 export const MIGRATIONS: { version: number; up: (db: ChatDbDriver) => void }[] = [
   { version: 1, up: (db) => db.exec(V1) },
   { version: 2, up: (db) => db.exec(V2) },
@@ -239,6 +266,7 @@ export const MIGRATIONS: { version: number; up: (db: ChatDbDriver) => void }[] =
   { version: 5, up: (db) => db.exec(V5) },
   { version: 6, up: (db) => db.exec(V6) },
   { version: 7, up: (db) => db.exec(V7) },
+  { version: 8, up: (db) => db.exec(V8) },
 ];
 
 export const CHAT_DB_VERSION = MIGRATIONS[MIGRATIONS.length - 1].version;
