@@ -15,13 +15,13 @@ import {
 import AnimatedPressable from "@/shared/components/AnimatedPressable";
 import formatRelativeTime from "@/shared/utils/formatRelativeTime";
 import { devLog } from "@/shared/utils/devLog";
-import { API_BASE_URL } from "@/shared/constants/api";
 import { colors, scrimAt } from "@/shared/theme/colors";
 import {
   CampusOutlinedBox,
   type CampusBoxMetrics,
 } from "./CampusInfoBox";
 import type { ExpandRect } from "../campusExpandGeometry";
+import { campusPhotoUri } from "../campusPhotoUri";
 import type { CampusMomentDto } from "../campusTypes";
 
 /**
@@ -266,31 +266,7 @@ const CampusMomentCard = memo(function CampusMomentCard({
    * ekleniyor, ne o ne bu ise (çıplak key) `null` dönüyor — uydurma bir yol
    * kurup 404'e düşmek, boş kalmaktan daha kötü (teşhisi de gizler).
    */
-  const photoUri = useMemo(() => {
-    /**
-     * ⚠️🔴 REDDEDİLMİŞ ANIN DOSYASI ARTIK YOK — İSTEK HİÇ KURULMUYOR.
-     *
-     * Backend teyidi (2026-10-29): red kararında `RemovedAt` yazılırken S3
-     * nesnesi SİLİNİYOR, ama DTO yine URL üretiyor. Yani reddedilmiş anda
-     * `photoUrl` "okunabilir bir dize ama ölü nesne" — istek 404 dönüyor.
-     *
-     * İstemci o isteği hiç kurmuyor: her kart açılışında kesin 404 alacak bir
-     * indirme denemesi, `expo-image`in yeniden deneme turlarını ve gereksiz
-     * ağ trafiğini doğuruyor. Kutu doğrudan "kaldırıldı" hâline düşüyor.
-     *
-     * ⚠️ BACKEND'DEN `photoUrl: null` İSTENDİ (bkz. backend_sorular). Alan
-     * null gelmeye başlasa bile bu dal KALMALI: eski sürümler ve yoldaki
-     * cache'lenmiş yanıtlar hâlâ ölü dizeyi taşıyor.
-     */
-    if (moment.moderation?.status === "Rejected") return null;
-
-    const raw = moment.photoUrl;
-    if (typeof raw !== "string" || !raw.trim()) return null;
-    const url = raw.trim();
-    if (/^(https?:|file:|data:|asset:)/i.test(url)) return url;
-    if (url.startsWith("/")) return `${API_BASE_URL}${url}`;
-    return null;
-  }, [moment.moderation?.status, moment.photoUrl]);
+  const photoUri = useMemo(() => campusPhotoUri(moment), [moment]);
 
   /**
    * ⚠️🔴 KULLANILAMAZ URL'İ DEV'DE DUYULUR YAP — `onError`in GÖRMEDİĞİ dal.

@@ -450,11 +450,19 @@ export function useCampusSurface({
    * aynısı; eşleşme yanıtta gelmiyor, SignalR `MatchNotification` üzerinden
    * mevcut `MatchModal` açılıyor (bu yola hiç dokunulmuyor).
    */
+  /**
+   * ⚠️ SONUÇ DÖNDÜRÜYOR (`true` = karar KAYDEDİLDİ).
+   *
+   * Çağıran kutlamayı buna bağlıyor: istemcinin kota bayrağı yetmiyor, çünkü
+   * `/campus/me` tazelenmeden atılan ikinci bir beğeniyi SUNUCU reddediyor
+   * (`UT-7420`) ve kutlama o reddi göremezse kullanıcı kaydedilmemiş bir
+   * kararı kaydedilmiş sanıyor (gerekçe campusMomentLikeSweep > `abort`).
+   */
   const like = useCallback(
-    async (moment: CampusMomentDto) => {
+    async (moment: CampusMomentDto): Promise<boolean> => {
       if (decisionsExhausted) {
         onPaywall();
-        return;
+        return false;
       }
       setBusyMomentId(moment.id);
       try {
@@ -467,6 +475,7 @@ export function useCampusSurface({
         });
         // Kota sunucu doğrusundan gelsin — istemci düşürmüyor.
         refreshCampus();
+        return true;
       } catch (err) {
         const code = campusCodeOf(err);
         lastErrorRef.current = errorTextOf(err);
@@ -483,6 +492,7 @@ export function useCampusSurface({
            */
           removeMomentFromCaches(qc, moment.id);
         }
+        return false;
       } finally {
         setBusyMomentId(null);
       }

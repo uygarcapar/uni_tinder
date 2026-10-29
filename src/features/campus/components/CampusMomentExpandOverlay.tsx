@@ -20,6 +20,7 @@ import {
   campusExpandGeometry,
   type ExpandRect,
 } from "../campusExpandGeometry";
+import { campusPhotoUri } from "../campusPhotoUri";
 import type { CampusMomentDto } from "../campusTypes";
 
 /**
@@ -111,6 +112,24 @@ const CampusMomentExpandOverlay = memo(function CampusMomentExpandOverlay({
   const insets = useSafeAreaInsets();
   const { width: screenW, height: screenH } = useWindowDimensions();
 
+  /**
+   * ⚠️🔴 KÜÇÜLÜRKEN GÖSTERİLEN AN DONDURULUYOR.
+   *
+   * Çağıran anı CANLI listeden çözüyor (bayat veri göstermemek için doğru) ama
+   * beğeni başarılı olunca liste tazeleniyor ve karar verilmiş an listeden
+   * DÜŞÜYOR. Yarışın kaybedildiği hâlde `moment` tam küçülme sırasında `null`
+   * oluyor, yüzey anında sökülüyor ve kart küçülmeden yok oluyor.
+   * Küçülme başladıktan sonra gösterilen şey son bilinen an.
+   */
+  const lastShownRef = useRef<CampusMomentDto | null>(null);
+  if (moment) lastShownRef.current = moment;
+  const shown = moment ?? (collapsing ? lastShownRef.current : null);
+
+  const photoUri = useMemo(
+    () => (shown ? campusPhotoUri(shown) : null),
+    [shown],
+  );
+
   const geometry = useMemo(
     () =>
       campusExpandGeometry({
@@ -131,6 +150,17 @@ const CampusMomentExpandOverlay = memo(function CampusMomentExpandOverlay({
    * çağıran iki kez kapanmayı iki ayrı olay sanıyordu.
    */
   const closedRef = useRef(false);
+  /**
+   * ⚠️🔴 KARAR BİR KEZ — ve kilit `busy`DEN AYRI.
+   *
+   * `busy` isteğin ÖMRÜ kadar: mutasyon `finally`de temizliyor, yani 120ms'lik
+   * bir RTT'de bayrak t=120'de düşüyor. Buton ise alev örtüsü kapanana kadar
+   * (~215ms) ekranda — aradaki pencerede sıradan bir çift dokunuş İKİNCİ BİR
+   * BEĞENİ gönderiyor ve uçan alev dalgasını iptal edip yeniden başlatıyor.
+   * Kilit kararın kendisine ait: basıldıysa bir daha basılamaz, yeni an
+   * açılınca sıfırlanıyor.
+   */
+  const decidedRef = useRef(false);
 
   /**
    * ⚠️🔴 BAĞIMLILIK YALNIZ `moment?.id` — ne `moment` NESNESİ ne `progress`.
@@ -149,6 +179,7 @@ const CampusMomentExpandOverlay = memo(function CampusMomentExpandOverlay({
   useEffect(() => {
     if (!moment) return;
     closedRef.current = false;
+    decidedRef.current = false;
     setSettled(false);
     progress.value = 0;
     progress.value = withTiming(1, {
@@ -188,7 +219,22 @@ const CampusMomentExpandOverlay = memo(function CampusMomentExpandOverlay({
     };
   });
 
-  const scrimStyle = useAnimatedStyle(() => ({ opacity: progress.value }));
+  /**
+   * PERDE KARTTAN HIZLI AÇILIYOR — ORİJİNALİ ÖRTMEK İÇİN.
+   *
+   * ⚠️ ŞERİTTEKİ KART UÇUŞ BOYUNCA YERİNDE DURUYOR (gizlenmiyor): kart bir
+   * SwiftUI `ContextMenu` host'u taşıyor ve `opacity: 0` ile gizlemek projenin
+   * en sert tuzağına giriyor — opaklığı 1'in altına inen bir atanın altındaki
+   * SwiftUI yüzeyi SESSİZCE çizilmiyor ve sonradan DÜZELMİYOR. Yani kartı
+   * gizlemenin bedeli, geri geldiğinde menüsü ölü bir kart olabilir.
+   *
+   * Çözüm perdede: perde hareketin ilk %45'inde tam güce çıkıyor, yani kopya
+   * havalanırken orijinal çoktan örtülmüş oluyor. Kartın kendi hareketi
+   * değişmiyor.
+   */
+  const scrimStyle = useAnimatedStyle(() => ({
+    opacity: Math.min(1, progress.value / 0.45),
+  }));
 
   const close = () => {
     if (closedRef.current) return;
@@ -209,7 +255,7 @@ const CampusMomentExpandOverlay = memo(function CampusMomentExpandOverlay({
     })
     .runOnJS(true);
 
-  if (!moment) return null;
+  if (!shown) return null;
 
   return (
     <View style={StyleSheet.absoluteFill}>
@@ -246,12 +292,16 @@ const CampusMomentExpandOverlay = memo(function CampusMomentExpandOverlay({
             cardStyle,
           ]}
         >
+          {/* ⚠️ HAM `photoUrl` DEĞİL ortak çözücü: göreli yol tabana bağlanıyor,
+              reddedilmiş anda istek hiç kurulmuyor. Burada yüzeyin TAMAMI
+              fotoğraf, yani çözülemeyen bir adres koca bir boş dikdörtgen
+              demek (gerekçe campusPhotoUri'de). */}
           <Image
-            source={{ uri: moment.photoUrl }}
+            source={photoUri ? { uri: photoUri } : null}
             style={StyleSheet.absoluteFill}
             contentFit="cover"
             cachePolicy="memory-disk"
-            recyclingKey={moment.photoUrl}
+            recyclingKey={photoUri ?? shown.id}
           />
           {/* Dipteki perde — ad/yaşın okunurluğu fotoğrafa bırakılmıyor. */}
           <LinearGradient
@@ -278,8 +328,8 @@ const CampusMomentExpandOverlay = memo(function CampusMomentExpandOverlay({
               numberOfLines={1}
               style={{ color: colors.onMedia, fontSize: 28, fontWeight: "700" }}
             >
-              {moment.displayName}
-              {typeof moment.age === "number" ? `, ${moment.age}` : null}
+              {shown.displayName}
+              {typeof shown.age === "number" ? `, ${shown.age}` : null}
             </Text>
           </View>
         </Animated.View>
@@ -307,7 +357,8 @@ const CampusMomentExpandOverlay = memo(function CampusMomentExpandOverlay({
             label={t("campus.like")}
             busy={busy}
             onPress={() => {
-              if (busy) return;
+              if (busy || decidedRef.current) return;
+              decidedRef.current = true;
               onLike();
             }}
           />

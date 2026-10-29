@@ -87,6 +87,44 @@ it('tike basınca onLike, perdeye basınca onClose', () => {
  * istek iki kota demek. Kapı `busy`: ekran isteği uçarken bayrağı kaldırıyor.
  */
 /**
+ * ⚠️🔴 KARAR BİR KEZ — `busy` BU İŞİ GÖRMÜYOR.
+ *
+ * `busy` isteğin ÖMRÜ kadar (mutasyon `finally`de temizliyor), oysa buton
+ * alev örtüsü kapanana kadar ekranda kalıyor. 120ms'lik bir RTT'de bayrak
+ * t=120'de düşüyor ve t≈170'teki ikinci dokunuş İKİNCİ BİR BEĞENİ gönderiyor —
+ * üstelik uçan alev dalgasını da iptal edip yeniden başlatıyor. Kilit kararın
+ * kendisine ait: bir kez basıldıysa bir daha basılamaz.
+ */
+it('TİKE İKİ KEZ basılsa bile tek karar — `busy` düşse de', () => {
+  const onLike = jest.fn();
+  const tree = mount({ onLike });
+  settle();
+  fireEvent.press(tree.getByLabelText('Beğen'));
+  fireEvent.press(tree.getByLabelText('Beğen'));
+  expect(onLike).toHaveBeenCalledTimes(1);
+});
+
+/**
+ * KÜÇÜLME SIRASINDA YÜZEY AYAKTA KALIYOR — an listeden düşse bile.
+ *
+ * ⚠️ BU BİR YARIŞ: beğeni başarılı olunca liste tazeleniyor ve karar verilmiş
+ * an listeden DÜŞÜYOR; gösterilen an canlı listeden çözüldüğü için yüzey tam
+ * küçülürken `moment: null` alabiliyor. O hâlde kart küçülmeden YOK oluyor ve
+ * örtü açıldığında geriye hiçbir şey kalmıyor — "giden kartın görünmesi"
+ * tuzağının aynadaki hâli.
+ */
+it('küçülürken an listeden düşse bile kart EKRANDA kalıyor', () => {
+  const tree = mount();
+  settle();
+  tree.rerender(
+    <SafeAreaProvider initialMetrics={{ frame: frameMetrics, insets }}>
+      <CampusMomentExpandOverlay {...base} moment={null} collapsing />
+    </SafeAreaProvider>,
+  );
+  expect(tree.queryByLabelText('Kapat')).not.toBeNull();
+});
+
+/**
  * KÜÇÜLME FAZI — alev örtüsü KAPALIYKEN koşuyor.
  *
  * ⚠️ CAM ÖNCE SÖKÜLÜYOR: küçülme bir transform ve cam onun altında kalırsa

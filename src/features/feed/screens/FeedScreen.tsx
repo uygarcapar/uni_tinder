@@ -2074,6 +2074,14 @@ export default function FeedScreen() {
     likeWithFlameSweep({
       exhausted: campus.decisionsExhausted,
       like: () => campus.like(moment),
+      /**
+       * SUNUCU REDDETTİ (kota/ağ): kart KAPANMIYOR, yalnız dalga salıveriliyor.
+       * Kullanıcı aynı kartla kalıyor ve paywall'ı `like` zaten açtı.
+       */
+      abort: () => {
+        momentSweepUnsub.current = null;
+        releaseFlameSweep();
+      },
       startSweep: (onCovered) => {
         momentSweepUnsub.current?.();
         momentSweepUnsub.current = runFlameSweep(onCovered, { hold: true });
