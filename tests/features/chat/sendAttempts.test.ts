@@ -118,10 +118,17 @@ describe('send_attempts: yazıp geri okuma', () => {
 
   it('removeConversationLocally yalnız silinen sohbetin muhasebesini siliyor', () => {
     // send_attempts'in conversation_id kolonu yok — silme messages'taki cmid
-    // eşleşmesi üzerinden JOIN'le çalışıyor ve messages SİLİNMEDEN ÖNCE
-    // koşmak zorunda (bkz. removeConversationLocally yorumu). Bu test tam da
-    // o sırayı ve `client_message_id IS NOT NULL` korumasını kilitliyor —
-    // ikisi de bozulursa hiçbir satır silinmez ve bu testsiz fark edilmez.
+    // eşleşmesi üzerinden alt sorguyla çalışıyor, bu yüzden messages
+    // SİLİNMEDEN ÖNCE koşmak zorunda (bkz. removeConversationLocally
+    // yorumu): alt sorgu messages'ı okuyor, o satırlar gitmişse hangi
+    // cmid'lerin bu sohbete ait olduğunu bir daha bulamaz. Bu test tam o
+    // sırayı kilitliyor — sıra bozulursa (messages önce silinirse) bu
+    // sohbetin send_attempts satırı hiç silinmez ve test kırmızıya düşer.
+    // (`client_message_id IS NOT NULL` koruması ayrı bir konu — IN listesini
+    // NULL'dan temiz tutuyor ama davranışı değiştirmiyor: eşleşen bir satır
+    // `TRUE OR UNKNOWN` = TRUE olduğu için NULL varken de silinir. O yüzden
+    // bu test onu KİLİTLEMİYOR, kilitleyemez de — gözlenebilir bir davranış
+    // farkı yok.)
     const CONV_B = 'conv-2';
     saveMessage(msg('m-a'), CONV, 'pending'); // cmid: cmid-m-a
     saveMessage(msg('m-b', { conversationId: CONV_B }), CONV_B, 'pending'); // cmid: cmid-m-b
