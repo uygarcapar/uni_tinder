@@ -291,6 +291,16 @@ describe('beğeni', () => {
     expect(onToggleLike).toHaveBeenCalledWith(expect.objectContaining({ id: '1' }));
   });
 
+  // ⚠️ Beğenisi olmayan gönderide SAYI HİÇ ÇİZİLMİYOR (istek): kalbin yanındaki
+  // "0" bir ölçü yerine boş bir sonuç bildirisi gibi okunuyordu. Kalp yerinde
+  // kalıyor — kaybolan yalnız metin.
+  it('beğeni yokken sayı çizilmez ("0" yazmıyor)', () => {
+    render(<FeedPostCard post={post({ likeCount: 0 })} />);
+    expect(screen.queryByText('0')).toBeNull();
+    // Kart ve satırın geri kalanı yerinde.
+    expect(screen.getByText('Yarın kütüphane kaçta açılıyor?')).toBeTruthy();
+  });
+
   it('kendi gönderinde basılamaz (UT-7330 duvarına yürütmüyoruz)', () => {
     const onToggleLike = jest.fn();
     render(<FeedPostCard post={post({ isMine: true })} onToggleLike={onToggleLike} />);
@@ -367,17 +377,92 @@ describe('konu etiketleri', () => {
     expect(screen.queryByText('Ev arkadaşı')).toBeNull();
   });
 
-  it('gövdeyle AYNI punto ve KAPSÜL YOK (sol kenar hizası)', () => {
+  /**
+   * ⚠️🔴 ÖLÇÜ ARTIK GÖVDEDEN DEĞİL TARİHTEN (istek: "hashtag rengi tarihle
+   * aynı olsun, boyutu da"). Etiket gövdenin bir parçası değil, satırın
+   * KÜNYESİ: isim/tarih satırıyla aynı punto (15) ve aynı gri.
+   *
+   * ⚠️ AĞIRLIK TARİHTEN AYRI (500, 400 DEĞİL) — sonraki bir istek: "bi tık
+   * daha bold yap, 400'se 500 yap". 15pt'lik gri yazı kapsülün dolgusunun
+   * içinde 400'de silik okunuyordu. Punto ve renk hâlâ tarihin ölçüsü.
+   *
+   * ⚠️ ÜÇ YÜZEY TEK SAYIYI OKUYOR (`feedTopicPill > TOPIC_TEXT`): kart,
+   * filtre sheet'inin çipi ve composer'ın çipi. Buradaki sayı değişecekse
+   * orası değişmeli.
+   *
+   * ⚠️ `BODY_FONT_SIZE` İLE EŞLEŞTİRME GERİ GELMEMELİ: gövde "bi tık artır"
+   * istekleriyle büyüyor (15.5 → 16.5) ve etiket onunla birlikte büyümemeli.
+   */
+  it('TARİHLE aynı ölçüde', () => {
     render(<FeedPostCard post={post({ topic: 'Event' })} />);
     const label = screen.getByText('#etkinlik');
     const style = Array.isArray(label.props.style)
       ? Object.assign({}, ...label.props.style)
       : label.props.style;
-    expect(style.fontSize).toBe(BODY_FONT_SIZE);
-    // Kapsülün izi: yatay pay. Metnin kendisinde de, sarmalayıcısında da
-    // olmamalı — varsa etiket gövdeden içeri kaymış demektir.
-    expect(style.paddingHorizontal).toBeUndefined();
-    expect(label.parent?.props.style?.paddingHorizontal).toBeUndefined();
+    expect(style.fontSize).toBe(15);
+    expect(style.fontSize).not.toBe(BODY_FONT_SIZE);
+    expect(style.fontWeight).toBe('500');
+    // Tarihin token'ı (`textMuted`) — ikisi bir gün ayrışırsa birlikte
+    // ayrışmaları gerekiyor.
+    expect(style.color).toBe('#8E8E93');
+  });
+
+  /**
+   * ── KAPSÜL GERİ GELDİ: DOLGULU, ÇERÇEVESİZ ───────────────────────────────
+   *
+   * İstek iki turda buraya geldi: "etrafına border koy" → "borderi sil,
+   * arkaplan rengi olsun, hafif temanın tersi, opacity az, px biraz daha az".
+   *
+   * ⚠️🔴 KALDIRILMASININ SEBEBİ DOLGU DEĞİL, HİZAYDI: eski çipin 9'luk yatay
+   * payı etiketi gövde metninden içeri itiyor ve kartın sol kenarı üç farklı
+   * hizada başlıyordu. O tespit hâlâ geçerli — bu yüzden pay küçük VE satır
+   * aynı sayı kadar sola çekiliyor. İki sayının AYNI kalması bu testin asıl
+   * konusu: ayrışırlarsa kapsül sessizce hizadan kayar ve belirti "kart biraz
+   * bozuk duruyor" gibi okunur.
+   */
+  it('dolgulu ama ÇERÇEVESİZ — kenarı gövdenin sol kenarında', () => {
+    render(<FeedPostCard post={post({ topic: 'Event' })} />);
+    const label = screen.getByText('#etkinlik');
+    const style = Array.isArray(label.props.style)
+      ? Object.assign({}, ...label.props.style)
+      : label.props.style;
+
+    // ⚠️ ÇERÇEVE YOK: yazıyla aynı tondaki bir kontur, 15pt'lik bir etiketin
+    // etrafında yazıdan daha baskın okunuyordu.
+    expect(style.borderWidth).toBeUndefined();
+    /**
+     * ⚠️ DOLGU TEMANIN TERSİ ve HAFİF (`ink`): koyuda beyaz, açıkta siyah —
+     * kapsül iki temada da zeminden bir kademe ayrılıyor. Sabit bir yüzey
+     * tokenı (eski `surface2`) birinde zemine karışırdı.
+     *
+     * ⚠️ TESTLER KOYU PALETTE KOŞUYOR (jest varsayılanı), o yüzden beklenen
+     * değer BEYAZ. Polaritenin kendisi `ink()`in testinde çivili; burada
+     * korunan şey "sabit bir yüzey tokenı DEĞİL, düşük alfalı zıt mürekkep".
+     */
+    expect(style.backgroundColor).toMatch(/^rgba\(255,255,255,0\.0[0-9]\)$/);
+
+    // Pay küçük ve satırın negatif payıyla BİREBİR eşit.
+    //
+    // ⚠️ SATIR `label.parent` DEĞİL: RNTL'in ağacında Text ile sarmalayıcı
+    // View'ın arasında ara düğümler var. Aranan şey satırın kendi imzası —
+    // sarabilen tek kap o.
+    const findRow = (node: any): any => {
+      if (!node) return null;
+      const s = Array.isArray(node.props?.style)
+        ? Object.assign({}, ...node.props.style)
+        : node.props?.style;
+      if (s?.flexWrap === 'wrap' && s?.flexDirection === 'row') return s;
+      const kids = Array.isArray(node.children) ? node.children : [];
+      for (const kid of kids) {
+        const hit = findRow(kid);
+        if (hit) return hit;
+      }
+      return null;
+    };
+    const rowStyle = findRow(screen.toJSON());
+    expect(rowStyle).toBeTruthy();
+    expect(style.paddingHorizontal).toBeLessThanOrEqual(4);
+    expect(rowStyle.marginLeft).toBe(-style.paddingHorizontal);
   });
 
   it('`topics` doluysa HEPSİ çizilir', () => {

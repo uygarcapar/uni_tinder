@@ -43,8 +43,7 @@ const { readFileSync } = require('fs') as {
 
 import {
   MAP_MOTION_MS,
-  MAP_PULL_SHARE,
-  MAP_PULL_EXPAND_PX,
+  MAP_POLYGON_DRAW_MS,
 } from '@/features/feed/components/feedMapMotion';
 
 const SOURCE = readFileSync(
@@ -57,6 +56,25 @@ const STRIP_SOURCE = readFileSync(
 );
 const CARD_SOURCE = readFileSync(
   'src/features/campus/components/CampusMomentCard.tsx',
+  'utf8',
+);
+/**
+ * ⚠️ `STRIP_SOURCE` TAM EKRANIN ŞERİDİ (CampusMomentsStrip). Haritanın kendi
+ * katmanı ve bandın uçuşan kareleri AYRI dosyalar — ikisi de aşağıda ayrı
+ * sabitlerde. Yanlış sabite bakan bir `toContain` sessizce geçmez, ama
+ * sessizce YANLIŞ ŞEYİ çiviler.
+ */
+const MAP_SOURCE = readFileSync(
+  'src/features/feed/components/FeedMapStrip.tsx',
+  'utf8',
+);
+/**
+ * ⚠️ `BAND_SOURCE` KALDIRILDI: bandın sağ yarısındaki süzülen kareler
+ * (`FeedBandMoments`) dosyasıyla birlikte silindi (istek). Yerine gelen üçlü
+ * deste `PEEK_SOURCE`ta.
+ */
+const PEEK_SOURCE = readFileSync(
+  'src/features/feed/components/FeedMomentsPeek.tsx',
   'utf8',
 );
 
@@ -119,33 +137,77 @@ describe('tam ekran harita durumu', () => {
     expect(SOURCE).toContain('scrollEnabled={!mapExpanded}');
   });
 
-  it('cam X AÇILIŞ BİTTİKTEN SONRA mount ediliyor — eşikte takılma olmasın', () => {
+  it('cam butonlar HİÇ SÖKÜLMÜYOR — köşeler mount kapısı okumuyor', () => {
     /**
-     * ⚠️ BU KAPI DEĞİŞTİ. Eskiden `mapChromeMounted` ile eşik karesinde mount
-     * ediliyordu; X bir SwiftUI cam butonu, yani mount'u native bir
-     * `Host`/`RNHostView` kurulumu demek. O kurulum dört setState + bir
-     * `withTiming` + `scrollEnabled` değişimiyle aynı kareye düşünce parmak
-     * altında gözle görülür bir TAKILMA oluyordu.
+     * ⚠️🔴 BU KAPI TAMAMEN KALKTI (istek: "butonlar değişsin, şu anda yok olup
+     * baştan çiziliyor").
      *
-     * `|| !mapExpanded` kapanış için: `mapActionsReady` kapanışın BAŞINDA
-     * düşüyor ve tek başına okunsa X harita küçülmeye başladığı an yok olurdu.
+     * Tarihçe: akışın filtre/kalem ikilisi `ScreenHeader`ın içindeydi ve
+     * `!mapChromeMounted` kapısıyla harita açılırken SÖKÜLÜYORDU (şerit
+     * ötelendiği için cam ata transformu kimliksizdi); haritanın X/artı
+     * ikilisi ise `mapChromeReady` ile AÇILIŞ BİTTİKTEN SONRA sıfırdan mount
+     * ediliyordu (`Host` kurulumu geçişin karesine düşüp parmak altında
+     * takılma yapmasın diye). İkisi birlikte köşeleri ~280ms boşaltıyordu.
+     *
+     * Artık tek ve KALICI bir satır var; değişen yalnız sembol ve aksiyon.
+     * Geçişin karesinde kurulan `Host` olmadığı için geciken kapıya da gerek
+     * kalmadı — bayrak koduyla birlikte silindi.
      */
-    // ⚠️ Kapı `mapChromeReady` (haritanın hareketi kadar sonra).
-    // `mapActionsReady`den AYRI: o, kutuların cam butonları için ve şeridin
-    // girişi de bittiğinde açılıyor.
+    // ⚠️ METİN DEĞİL KULLANIM: bayrağın adı iki notta anılmaya devam ediyor
+    // (projenin kuralı — kaldırmanın gerekçesi orada yazılı), o yüzden
+    // TERS TIRNAK İÇİNDE OLMAYAN bir geçiş aranıyor.
+    expect(SOURCE).not.toMatch(/[^`]mapChromeReady/);
+    // Satır bir kapının ARDINDA DEĞİL: `mapExpanded` yalnız sembolü seçiyor.
     expect(SOURCE).toContain(
-      '{mapChromeMounted && (mapChromeReady || !mapExpanded) ? (',
+      'systemName={mapExpanded ? "xmark" : "slider.horizontal.3"}',
+    );
+    expect(SOURCE).toContain('onPress={mapExpanded ? collapseMap : openFilter}');
+    // Cam kuralı yapısal: kap transformsuz ve opaklığı animasyonlanmıyor.
+    const row = SOURCE.slice(SOURCE.indexOf('── ÜST KÖŞE BUTONLARI'));
+    const rowBlock = row.slice(0, row.indexOf('KAMPÜS ANLARI ŞERİDİ'));
+    expect(rowBlock).not.toContain('<Animated.View\n        style={[\n          {');
+    expect(rowBlock).not.toContain('translateY');
+  });
+
+  it('sembol DEVREDİLİYOR — native çapraz sönüm anahtarı veriliyor', () => {
+    /**
+     * Glif native bir SwiftUI `Image` ve sembol adı bir PROP — Reanimated'in
+     * dokunabileceği bir yüzey yok. Devri SwiftUI'ın kendi
+     * `.animation(_:value:)`i sürüyor ve o modifier yalnız number/boolean
+     * alıyor, yani sembol adı anahtar olarak geçemiyor → `symbolPhase`.
+     *
+     * ⚠️ İKİ BUTON DA anahtarı vermek zorunda: biri verilmezse o köşe
+     * sembolünü anında takas eder ve iki köşe farklı anlarda değişir.
+     */
+    expect(SOURCE).toMatch(/symbolPhase=\{mapExpanded \? 1 : 0\}[\s\S]*symbolPhase=\{mapExpanded \? 1 : 0\}/);
+    const BUTTON_SOURCE = readFileSync(
+      'src/features/discover/components/DiscoverHeaderGlassButton.tsx',
+      'utf8',
+    );
+    // Sembolün geçişi `contentTransition`dan, süresi `animation`dan.
+    expect(BUTTON_SOURCE).toContain('contentTransition("opacity")');
+    expect(BUTTON_SOURCE).toContain('animKey');
+    // ⚠️ SIRA: `contentTransition` animasyondan ÖNCE (SwiftUI'da daha içte),
+    // yoksa değişen içerik animasyonun kapsamına girmeden takas edilir.
+    expect(BUTTON_SOURCE.indexOf('contentTransition("opacity")')).toBeLessThan(
+      BUTTON_SOURCE.indexOf('animation(\n                  Animation.easeOut('),
     );
   });
 
-  it('başlık ÜST BANDIN içinde ve EKRANIN ORTASINDA', () => {
-    // İstek: başlık kutuların üstünden Keşif şeridinin hizasına taşındı, sonra
-    // o satırın ORTASINA alındı. Satırın ölçüsü perdenin sahibinde.
-    expect(SOURCE).toContain('top: insets.top + CAMPUS_MAP_CHROME_TOP');
-    expect(SOURCE).toContain('height: CAMPUS_MAP_CHROME_ROW');
+  it('başlık KALICI SATIRIN ortasında ve sekmelerin hizasında', () => {
+    /**
+     * ⚠️ SATIRIN KONUMU ARTIK `ScreenHeader`IN BUTON YUVASINDAN: `insets.top`
+     * + 50'lik satır. Eskiden haritanın kendi satırı 5pt aşağıdaydı
+     * (`CAMPUS_MAP_CHROME_TOP`) ve o sayı yalnız PERDENİN boyunu besliyor —
+     * butonlar sekme şeridiyle aynı merkezde durmak zorunda, çünkü biri
+     * diğerinin yerine geçiyor.
+     */
+    expect(SOURCE).toContain('top: insets.top,');
+    expect(SOURCE).toContain('height: SCREEN_HEADER_TITLE_HEIGHT,');
+    expect(SOURCE).not.toMatch(/CAMPUS_MAP_CHROME_(TOP|ROW)[,\n ]*$/m);
     expect(SOURCE).toContain('<CampusMapTitle');
-    // ⚠️ MUTLAK ORTALAMA: etiket satırın AKIŞINA girerse X ve pill'in
-    // genişliği onu merkezden kaydırır (Keşif başlığındaki aynı kalıp).
+    // ⚠️ MUTLAK ORTALAMA: etiket satırın AKIŞINA girerse butonların genişliği
+    // onu merkezden kaydırır (Keşif başlığındaki aynı kalıp).
     const titleBlock = SOURCE.slice(
       SOURCE.indexOf('{campus.available ? ('),
       SOURCE.indexOf('<CampusMapTitle'),
@@ -155,41 +217,79 @@ describe('tam ekran harita durumu', () => {
     // ⚠️ Kap `box-none`: tam genişlikte bir satır haritanın üstündeki her
     // dokunuşu yutardı, kontroller ise dokunuşu almaya devam etmeli.
     expect(SOURCE).toContain('pointerEvents="box-none"');
-    // Perde de aynı formülden — bant kısalırsa yazı çıplak haritada kalır.
+    // Perde kendi formülünden — bant kısalırsa yazı çıplak haritada kalır.
     expect(SOURCE).toContain('campusMapTopScrimHeight(insets.top)');
   });
 
-  it('başlığın SAĞINDA Plus pill\'i — yalnız Plus DEĞİLSE', () => {
+  it('sağ köşe TEK ELEMAN, iki aksiyon — ölü buton çizilmiyor', () => {
     /**
-     * İstek: "sağında, plus değilse, LikesScreen'deki gibi bir buton olsun".
-     * Reçete oradan: yarıçap 999, dolgu modun aksanı, mürekkep
-     * `onMediaInverse`, 13/700.
+     * ⚠️ PROPS ÖNCEDEN HESAPLANIYOR (`rightCorner`), iki JSX dalı DEĞİL: iki
+     * ayrı dal kolayca iki ayrı JSX konumuna kayıyor ve React o anda butonu
+     * unmount edip yeniden mount ediyor — cam bir `Host`u geçişin ortasında
+     * yeniden kurmak tam olarak kaçınılan şey.
      *
-     * ⚠️ `showPlusUpsell` kapısı `premiumResolved` de içeriyor: abonelik
-     * slice'ı persist edilmediği için reload'da premium kullanıcı bir an
-     * `isPremium:false` doğuyor ve pill çizilip hemen kaybolurdu — premium'a
-     * premium satmak en pahalı yanılma yönü.
+     * ⚠️ TEK İSTİSNA `canShare`: haritada paylaşım hakkı yoksa köşe BOŞ
+     * (kampüs dışındasın / bugün paylaştın / özellik kapalı). Basınca
+     * sunucunun reddettiği bir artı kullanıcıyı her seferinde kandırırdı.
      */
-    const row = SOURCE.slice(
-      SOURCE.indexOf('{mapChromeMounted && (mapChromeReady || !mapExpanded) ? ('),
-    );
-    const pill = row.slice(0, row.indexOf('KAMPÜS ANLARI ŞERİDİ'));
-    expect(pill).toContain('{showPlusUpsell ? (');
-    expect(pill).toContain('onPress={openPaywall}');
-    expect(pill).toContain('backgroundColor: modeAccent(selectedMode)');
-    expect(pill).toContain('t("feed.header.plusAction")');
+    expect(SOURCE).toContain('const rightCorner = mapExpanded');
+    expect(SOURCE).toContain('? campus.canShare');
+    expect(SOURCE).toContain('systemName: "plus" as const');
+    expect(SOURCE).toContain('systemName: "square.and.pencil" as const');
+    // ⚠️ KAYNAK SHEET'İ DEĞİL, DOĞRUDAN KAMERA (istek): "galeri filan
+    // sunmasın". Ekranda `PhotoSourceSheet` artık hiç mount edilmiyor.
+    expect(SOURCE).toContain('onPress: campus.captureMoment');
+    expect(SOURCE).not.toMatch(/<PhotoSourceSheet/);
+    const row = SOURCE.slice(SOURCE.indexOf('── ÜST KÖŞE BUTONLARI'));
+    const rowBlock = row.slice(0, row.indexOf('KAMPÜS ANLARI ŞERİDİ'));
+    // Pill'in kendisi bu satırdan gitti: "Daha fazla paylaş" hâlâ var ama
+    // chrome'un kendi aksiyon yuvasında (akıştaki Plus upsell'i), köşede değil.
+    expect(rowBlock).not.toContain('t("feed.header.plusAction")');
+    // `DiscoverHeaderGlassButton` satırda İKİ kez — daha fazlası dallanmaya
+    // (ve unmount'a) dönmüş olduğunun işareti.
+    expect(rowBlock.match(/<DiscoverHeaderGlassButton/g)).toHaveLength(2);
   });
 
-  it('alt perdenin SÖNÜMÜ kısa — blur başlığa kadar geliyor', () => {
-    // Varsayılan reçete bandın yarısında sönüyor; 430pt'lik bir bantta bu,
-    // başlığın hizasında alfanın ~0.05'e düşmesi demek.
-    expect(SOURCE).toContain('fadePx={CAMPUS_STRIP_SCRIM_FADE}');
+  it('alt perdenin SÖNÜMÜ ÖLÇÜDEN türüyor — dipten yukarı azalıyor', () => {
+    /**
+     * ⚠️ SABİT SAYI DEĞİL (istek: "progressive olsun, gittikçe azalsın").
+     * İki sabit denendi: bandın yarısı başlığı çıplak bırakıyordu, 32pt ise
+     * perdeyi başlığın tepesine kadar tam güçte getirip orada kesiyordu.
+     * Sönüm artık başlık satırı + kutuların üst yarısı kadar ve kutu boyu
+     * ekranla büyüdüğü için ölçüye bağlı olmak zorunda.
+     */
+    expect(SOURCE).toContain('fadePx={campusStripScrimFade(windowHeight)}');
+    expect(SOURCE).not.toContain('CAMPUS_STRIP_SCRIM_FADE');
   });
 
-  it('FAB GECİKEN kapıyı okuyor', () => {
-    // Mantıksal durum kapanışın başında düşüyor; FAB o anda belirse kapanış
-    // animasyonu boyunca şeridin üstünde dururdu.
-    expect(SOURCE).toContain('!mapChromeMounted ? (');
+  it('BAŞLIĞIN CAM BUTONLARI GECİKEN kapıyı okuyor', () => {
+    /**
+     * ⚠️ BU TEST FAB'DAN DEVRALDI: sağ alttaki yuvarlak paylaş butonu
+     * kaldırıldı (composer'ın girişi başlığın sağ üstündeki kalem oldu) ama
+     * kuralın kendisi aynı kapıya taşındı — ve orada DAHA SERT bir gerekçesi
+     * var: butonlar SwiftUI camı ve ata zincirinde kimliksel olmayan bir
+     * transform gören cam sessizce hiç render edilmiyor. Başlık tam ekran
+     * haritada ÖTELENİYOR, yani geçiş boyunca ata transformu kimliksiz.
+     *
+     * Mantıksal durum (`mapExpanded`) kapanışın BAŞINDA düşüyor; butonlar onu
+     * okusa öteleme hâlâ kimliksizken doğarlardı.
+     */
+    // ⚠️ KAPI KALKTI, SATIR ŞERİTTEN ÇIKTI: butonlar artık `ScreenHeader`ın
+    // yuvalarında DEĞİL (şerit ötelendiği için cam orada yaşayamıyor) —
+    // ötelenmeyen kardeş bir satırda duruyorlar ve sökülmüyorlar. Gerekçenin
+    // tamamı "cam butonlar HİÇ SÖKÜLMÜYOR" testinde.
+    expect(SOURCE).not.toMatch(/leftButton=\{/);
+    expect(SOURCE).not.toMatch(/rightButton=\{/);
+    // Kalem composer'ı, slider filtre sheet'ini açıyor — ikisi de MEVCUT yol.
+    expect(SOURCE).toContain('onPress: openComposer');
+    expect(SOURCE).toContain('const openFilter = useCallback(() => setFilterVisible(true), []);');
+    // Şerit ORTADA (Profil'in düzeni), sola hizalı inset gitti.
+    expect(SOURCE).toContain('centered\n            />');
+    // FAB tamamen gitti: ikinci bir composer girişi kalmadı.
+    // ⚠️ METİN DEĞİL KULLANIM: ölçüleri geri koyacak olan için adı iki notta
+    // anılmaya devam ediyor (projenin kuralı).
+    expect(SOURCE).not.toMatch(/width: FAB_SIZE/);
+    expect(SOURCE).not.toMatch(/const FAB_SIZE =/);
   });
 });
 
@@ -211,7 +311,6 @@ describe('harita + şerit eşzamanlılığı', () => {
      * ikinci bir zamanlama kaynağı yok.
      */
     expect(SOURCE).toContain('progress={mapStripEntry}');
-    expect(SOURCE).toContain('mapProgress.value +\n      (1 - mapProgress.value) * mapPull.value * MAP_PULL_SHARE');
     // Şeridin içinde ikinci bir zamanlama kaynağı olmamalı: `withTiming`/
     // `withSpring` görünürse eşzamanlılık yine ayara dönmüş olur.
     expect(STRIP_SOURCE).not.toMatch(/withTiming|withSpring/);
@@ -243,28 +342,83 @@ describe('harita + şerit eşzamanlılığı', () => {
     expect(region).not.toMatch(/duration:\s*\d/);
   });
 
-  it('kutuların CAM butonları yalnız şerit OTURDUKTAN SONRA mount ediliyor', () => {
-    // ⚠️ Camın kuralı: ata zincirinde kimliksel olmayan transform gören cam
-    // sessizce hiç çizilmiyor ve sonradan düzelmiyor. Şerit `translateY` ile
-    // geldiği için kapı zorunlu.
-    expect(CARD_SOURCE).toContain(') : actionsReady ? (');
-    expect(STRIP_SOURCE).toContain('actionsReady={actionsReady}');
-    expect(SOURCE).toContain('actionsReady={mapActionsReady}');
+  it('KARTTA KARAR ÇİFTİ YOK — dokunuş kartı BÜYÜTÜYOR', () => {
+    /**
+     * ⚠️ BU KURAL TERSİNE DÖNDÜ (istek: "tik ve x'i kaldır, direkt basınca
+     * userin profiline gitsin"). Eski hâli: fotoğrafın sağ altında cam tik/X
+     * ve onların MOUNT KAPISI (`actionsReady`) — animasyonlu bir atanın
+     * altında doğan cam sessizce hiç çizilmediği için şerit yerine oturmadan
+     * mount edilemiyorlardı.
+     *
+     * Butonlar kalkınca kapının müşterisi de kalmadı; üç dosyadan birlikte
+     * silindi. Camın kuralı değişmedi — şeride cam bir yüzey geri eklenirse
+     * kapı da geri gelmeli (gerekçeler yorumlarda duruyor, o yüzden METİN
+     * değil KULLANIM aranıyor).
+     */
+    // ⚠️ METİN DEĞİL KULLANIM: kartın `Host` notu `CardActionGlassButton`ın
+    // "sabit ölçü" kuralına atıf yapıyor ve yapmaya devam etmeli.
+    expect(CARD_SOURCE).not.toMatch(/actionsReady[?:,=}]/);
+    expect(CARD_SOURCE).not.toMatch(/<CardActionGlassButton/);
+    expect(CARD_SOURCE).not.toMatch(/^import .*CardActionGlassButton/m);
+    expect(STRIP_SOURCE).not.toMatch(/actionsReady[?:,=}]/);
+    expect(SOURCE).not.toMatch(/mapActionsReady[?:,=)]/);
+
+    // Kararın yeni yolu: kart dokunuşu → şerit → ekran → BÜYÜYEN KART.
+    // ⚠️ Dokunuş artık ölçüm yapıyor: kart kendi penceresini ölçüp anla
+    // BİRLİKTE yukarı veriyor (büyüme o kareden başlıyor).
+    expect(CARD_SOURCE).toContain('onPress={onPress ? handlePress : undefined}');
+    expect(CARD_SOURCE).toContain('measureInWindow');
+    expect(STRIP_SOURCE).toContain(
+      'onPress={item.moment.isMine ? undefined : onOpenCard}',
+    );
+    // ⚠️ Şerit artık anı DEĞİL kimliğini + ölçülen kareyi yukarı veriyor:
+    // gösterilen an her render canlı listeden çözülüyor (`resolveOpenMoment`),
+    // böylece an düşünce yüzey kendiliğinden kapanıyor.
+    expect(SOURCE).toContain('setMomentTarget({ id: moment.id, frame })');
   });
 
-  it('mount kapısı ZAMANLAYICIYLA açılıyor, animasyon callback\'iyle DEĞİL', () => {
+  it('kararı BÜYÜYEN KART veriyor ve KAMPÜS ucuna gidiyor', () => {
+    /**
+     * ⚠️ PROFİL KARTI (`LikerSwipeModal`) BU YOLDAN ÇIKTI: ödünç alınan uç
+     * bizi beğenmemiş biri için 404 veriyor (backend teyidi), kampüse özel uç
+     * henüz yok. Karar artık büyüyen kartın cam tikinde.
+     *
+     * ⚠️ BEĞENİ YİNE `campus.like`TAN GEÇİYOR ve bu şart: gövdeye
+     * `source: "CampusMoment"` + `momentId` koyan, kotayı ve paywall'ı
+     * yöneten tek yer orası. Doğrudan `useSwipeMutation` çağrılsaydı kampüs
+     * kotası yerine keşif kotası yanardı.
+     */
+    const overlay = SOURCE.slice(SOURCE.indexOf('<CampusMomentExpandOverlay'));
+    expect(overlay.slice(0, overlay.indexOf('/>'))).toContain(
+      'onLike={handleMomentLike}',
+    );
+    const like = SOURCE.slice(
+      SOURCE.indexOf('const handleMomentLike = useCallback('),
+    );
+    expect(like).toContain('campus.like(moment)');
+    // Kutlama kotaya BAĞLI: hak bitmişken alev oynamıyor.
+    expect(like).toContain('exhausted: campus.decisionsExhausted');
+    expect(like).toContain('runFlameSweep(onCovered, { hold: true })');
+  });
+
+  it('üst chrome\'un kapısı ZAMANLAYICIYLA açılıyor, animasyon callback\'iyle DEĞİL', () => {
     // Reanimated üzerine yazılan animasyonun callback'ini `finished: false`
     // ile çağırıyor; açılış kesilirse (banda iki kez dokunmak) callback'e
-    // dayanan bayrak hiç true olmaz ve kullanıcı karar veremeyen bir şeritte
-    // kalırdı.
+    // dayanan bayrak hiç true olmaz ve kullanıcı çıkışı olmayan bir haritada
+    // kalırdı (cam X bu kapıdan mount ediliyor).
     const expandBody = SOURCE.slice(
       SOURCE.indexOf('const expandMap = useCallback('),
       SOURCE.indexOf('expandMapRef.current = expandMap'),
     );
-    expect(expandBody).toContain('setMapActionsReady(true)');
+    // ⚠️ ARTIK CAM BUTONUN KAPISI DEĞİL (o satır hiç sökülmüyor): zamanlayıcı
+    // perdeleri, şeridin girişini ve sınırın çizimini başlatıyor. Gerekçe
+    // aynı — kesilen bir animasyonun callback'ine bağlanan hiçbir şey
+    // güvenilir değil.
+    expect(expandBody).toContain('mapChromeFade.value = withTiming(1, {');
     expect(expandBody).toContain('}, MAP_MOTION_MS)');
-    // Kapanışta ANINDA düşüyor: öteleme başladığı an cam zaten çizilmez.
-    expect(collapseBody).toContain('setMapActionsReady(false)');
+    // Kapanışta bekleyen zamanlayıcı iptal: yoksa chrome kapanmış haritanın
+    // üstünde beliriyordu.
+    expect(collapseBody).toContain('clearMapActionsTimer()');
   });
 
   it('`available` kapısı ÖNCEDEN ısıtılıyor', () => {
@@ -314,120 +468,183 @@ describe('harita + şerit eşzamanlılığı', () => {
 });
 
 /**
- * AŞAĞI ÇEKMEK HARİTAYI AÇIYOR — akışta pull-to-refresh YOK.
+ * HARİTANIN GİRİŞİ: ÇEKME JESTİ KALDIRILDI, YERİNE ANLARIN DESTESİ.
  *
- * İstek: "postları yukarıdan aşağı çekince activity indicator olmasın,
- * threshold olsun, geçince expanded map olsun". Jest zaten o anlama geliyordu:
- * çekerken gönderiler iniyor, başlık ve pill satırı yerinde duruyor ve açılan
- * boşluktan harita görünüyor — çarkın orada belirmesi okunuşu bozuyordu.
+ * ⚠️🔴 ÜÇ ŞEY BİRLİKTE GİTTİ (istek): pill'lerin altındaki 120pt'lik bant (ve
+ * onun tam ekranı açan `Pressable`ı), bandın sağındaki süzülen kareler, ve
+ * YUKARIDAN AŞAĞI ÇEKME jesti. Gönderiler artık doğrudan pill'lerin altında
+ * başlıyor; haritanın tek girişi başlığın sağ ucundaki üçlü deste
+ * (`FeedMomentsPeek`) ve aşağı çekmek yine YENİLİYOR.
  *
- * ⚠️ TAKAS: akış artık ELLE yenilenmiyor. Tazelik sekmeye dönüşte açılan
- * sorgu, push/SignalR köprüsü ve 30sn'lik pencereden geliyor; Gönderilerim
- * sayfasında çark duruyor (orada harita yok).
+ * Buradaki testlerin işi geri sızmayı yakalamak: çekmeyle açılan bir yol
+ * eklenirse `onRefresh` ile aynı jeste iki iş biner ve ikisi de bozulur.
  */
-describe('çekerek açma', () => {
-  it('akışta RefreshControl HİÇ takılmıyor — yalnız Gönderilerim', () => {
-    // `onRefresh` verilmezse `FeedListPage` kontrolü hiç kurmuyor.
-    expect(SOURCE).toContain('onRefresh={\n          isMine');
-    expect(SOURCE).toContain('isMine ? query.isRefetching && !query.isFetchingNextPage : false');
+describe('haritanın girişi', () => {
+  it('ÇEKME JESTİ YOK — eşik, kilit ve tetiğin hiçbiri kalmadı', () => {
+    /**
+     * ⚠️ METİN DEĞİL KULLANIM aranıyor: kaldırılan mekanizmaların adı
+     * gerekçelerde ANILMAYA DEVAM EDİYOR (bu projenin kuralı) ve anmalı —
+     * geri eklemek isteyen kişi neyin neden gittiğini orada buluyor.
+     */
+    expect(SOURCE).not.toMatch(/feedPullEngaged\.value/);
+    expect(SOURCE).not.toMatch(/feedDragging\.value/);
+    expect(SOURCE).not.toMatch(/mapPullFrozen\.value/);
+    expect(SOURCE).not.toMatch(/expandFromPull\(/);
+    expect(SOURCE).not.toMatch(/-MAP_PULL_EXPAND_PX/);
+    // Çekmeyi okuyan scroll olayları da gitti: handler yalnız offset yazıyor.
+    expect(SOURCE).not.toContain('onBeginDrag:');
+    expect(SOURCE).not.toContain('onEndDrag:');
+  });
+
+  it('PULL-TO-REFRESH İKİ SAYFADA DA — akışta geri geldi', () => {
+    // ⚠️ `isMine` koşulu KALKTI: çark artık akışta da var.
+    expect(SOURCE).toContain('onRefresh={() => {');
+    expect(SOURCE).toContain(
+      'refreshing={query.isRefetching && !query.isFetchingNextPage}',
+    );
     const LIST = readFileSync(
       'src/features/feed/components/FeedListPage.tsx',
       'utf8',
     );
     expect(LIST).toContain('onRefresh && isActive ? (');
-    // Çarkın akışa özel konumu (`refreshOffset`) artık ölü — prop kaldırıldı.
-    // ⚠️ Metin değil KULLANIM aranıyor: kaldırılma gerekçesi yorumda duruyor
-    // ve durmaya devam etmeli.
-    expect(LIST).not.toMatch(/refreshOffset[?:,=]/);
   });
 
-  it('eşik TEK KAYNAKTA ve makul bir menzilde', () => {
-    expect(SOURCE).toContain('-MAP_PULL_EXPAND_PX');
-    // Küçük bir sayı her fling'de kazara açıyor, büyüğü parmağın menzilinden
-    // çıkıyor (gerekçe sabitin yanında).
-    expect(MAP_PULL_EXPAND_PX).toBeGreaterThanOrEqual(64);
-    expect(MAP_PULL_EXPAND_PX).toBeLessThanOrEqual(140);
+  it('TEK GİRİŞ: anların destesi haritayı açıyor', () => {
+    expect(SOURCE).toContain('<FeedMomentsPeek');
+    expect(SOURCE).toContain('onPress={expandMap}');
+    // Deste yalnız AKIŞ sayfasının başlığında.
+    expect(SOURCE).toContain('trailing={key === "mine" ? null : momentsPeek}');
+    // Bandın butonu ve kareleri tamamen gitti.
+    expect(SOURCE).not.toContain('FeedBandMoments');
+    expect(SOURCE).not.toContain('FEED_MAP_BAND_HEIGHT');
+    expect(SOURCE).not.toContain('feed.map.expandHint');
   });
 
-  it('MOMENTUM BOUNCE çekme sayılmıyor — parmak kilidi', () => {
-    /**
-     * ── Yaşanan hata ───────────────────────────────────────────────────────
-     * Liste hızlıca YUKARI savruluyor; momentum tepeye varıyor ve lastik eşiği
-     * AŞACAK kadar taşıyor. Offset'e bakan bir kapı bunu çekme sanıyordu:
-     * chrome/sekmeler/kutular %45 yola çıkıp geri dönüyor, üstüne harita
-     * kendiliğinden açılıyordu ("görüntü kirliliği").
-     *
-     * Kural: çekme yalnız PARMAK LİSTEDEYKEN başlayabilir. Kilit bir kez
-     * açıldıktan sonra offset sıfıra dönene kadar açık kalıyor — parmak
-     * kalktıktan sonra lastik geri yaylanırken chrome da onunla yumuşakça
-     * geri geliyor (kilit parmakla düşseydi orada sert bir sıçrama olurdu).
-     */
-    expect(SOURCE).toContain('onBeginDrag: () => {');
-    expect(SOURCE).toContain('onEndDrag: () => {');
-    expect(SOURCE).toContain('} else if (feedDragging.value && y < -2) {');
-    // Tepeye dönüş kilidi HER HÂLÜKÂRDA kapatıyor (sıra önemli).
-    expect(SOURCE).toContain('if (y >= 0) {\n        feedPullEngaged.value = false;');
-    // İki tüketici de kilidi okuyor: görsel pay ve tetik.
-    expect(SOURCE).toContain('if (!feedPullEngaged.value) return 0;');
+  it('BANT KALKTI: perde pill satırının altında bitiyor', () => {
+    // `heroHeight` bant terimini kaybetti, `bandHeight` de sıfır.
     expect(SOURCE).toContain(
-      '() => feedPullEngaged.value && feedScrollY.value <= -MAP_PULL_EXPAND_PX',
+      'heroHeight={chromeHeight > 0 ? listTopPadding + chromeHeight : 0}',
     );
+    expect(SOURCE).toContain('bandHeight={0}');
   });
 
-  it('tetik eşiğin GEÇİLDİĞİ AN — ve yalnız kenarda', () => {
-    const body = SOURCE.slice(
-      SOURCE.indexOf('const expandFromPull = useCallback('),
+  it('CHROME SCROLL OFFSET\'İNİ HİÇ OKUMUYOR — iki tur da geri alındı', () => {
+    /**
+     * ⚠️🔴 İKİ AYRI DENEME, İKİSİ DE GERİ ALINDI:
+     *  1. POZİTİF tarafta 120pt'lik YAPIŞMA (bandın boyu) — bant kaldırılınca
+     *     dayanaksız kaldı.
+     *  2. NEGATİF tarafta ÇEKME TELAFİSİ ("piller ve üstü sabit kalsın") —
+     *     lastik natif olarak her karede hareket ediyor, telafi ise 16ms'lik
+     *     scroll olayından türüyordu: chrome bir kare geriden geliyor ve tam
+     *     olarak başlık/açıklama/pill satırında TİTRİYOR. Olay hızını 1'e
+     *     çekmek de çözüm değil — o, başlığın alfayla sönen blur'unu titretiyor
+     *     (aynı gün yaşandı, bkz. FeedListPage > scrollEventThrottle).
+     *
+     * Kalan kural: chrome scroll'u HİÇ okumuyor, yalnız tam ekran geçişinin
+     * iki terimini taşıyor.
+     */
+    expect(SOURCE).toContain(
+      'transform: [{ translateY: -exitPx.value - listOffsetPx.value }]',
     );
-    // ⚠️ `prev === null` ilk tur kapısı: olmasa ekran açılır açılmaz harita
-    // açılırdı. `crossed === prev` ise lastik geri yaylanırken her karede
-    // tetiklenmeyi engelliyor.
-    expect(body).toContain('if (prev === null || !crossed || crossed === prev) return;');
-    expect(body).toContain('runOnJS(expandFromPull)()');
+    expect(SOURCE).not.toMatch(/translateY:\s*\n?\s*Math\.min\(feedScrollY/);
+    expect(SOURCE).not.toContain('const stick = Math.min(feedScrollY.value');
+    /**
+     * ⚠️🔴 ÇARKIN KONUMLANDIRMA PROP'U HİÇ YOK — ve bu iddia DEĞİŞTİ.
+     *
+     * Burada bir dönem `progressViewOffset={insets.top +
+     * SCREEN_HEADER_TITLE_HEIGHT}` ÇAKILIYDI, yani "varsayılan yerinde"
+     * sayılıyordu. Değilmiş: aynı prop, yalnız daha küçük bir sayıyla. RN'in
+     * kaynağında (RCTRefreshControl.m) o sayı kontrolün FRAME'ini itiyor ve
+     * eşik frame'e bağlı — 109pt de tıpkı 300 gibi 109pt fazla çekme demek.
+     * Şikâyet ("çok fazla aşağı çekiyorum") bu yüzden iki tur sonra da
+     * sürüyordu ve BU TEST onu kural diye koruyordu.
+     *
+     * Eşik artık native'de, görünen çark bizim. Tam kural ve gerekçe:
+     * tests/features/feed/feedRefreshControl.test.ts.
+     */
+    expect(SOURCE).not.toMatch(/refreshOffset=\{/);
+    const LIST = readFileSync(
+      'src/features/feed/components/FeedListPage.tsx',
+      'utf8',
+    );
+    expect(LIST).not.toMatch(/^\s*progressViewOffset=/m);
   });
 
-  it('kapılar REF\'ten okunuyor — bayat closure açık haritayı yeniden açamaz', () => {
-    // ⚠️ Dilim `expandFromPull`dan İLERİYE: `useAnimatedReaction` dosyanın
-    // başındaki import'ta da geçiyor, ofsetsiz arama boş dilim veriyor.
-    const start = SOURCE.indexOf('const expandFromPull = useCallback(');
-    const body = SOURCE.slice(start, SOURCE.indexOf('useAnimatedReaction(', start));
-    expect(body).toContain('if (mapExpandedRef.current) return;');
-    expect(body).toContain('if (activeTabRef.current !== "feed") return;');
+  it('SINIR TAM EKRANDA KENDİNİ ÇİZİYOR — akışta hiç çizilmiyor', () => {
+    // Akışta 0'da duruyor; 1'e yalnız açılış zamanlayıcısında gidiyor.
+    expect(SOURCE).toContain('const polygonReveal = useSharedValue(0)');
+    expect(SOURCE).toContain('polygonReveal.value = withTiming(1, {');
+    expect(SOURCE).toContain('duration: MAP_POLYGON_DRAW_MS');
+    // ⚠️ Çizim haritanın hareketi BİTİNCE: aynı zamanlayıcının içinde.
+    const timer = SOURCE.slice(
+      SOURCE.indexOf('mapTimersRef.current = ['),
+      SOURCE.indexOf('mapProgress.value = withTiming(1, {'),
+    );
+    expect(timer).toContain('polygonReveal.value = withTiming(1, {');
+    // ⚠️ BİLEREK UZUN: açılışın içinde kaybolursa şeklin KURULDUĞU görünmüyor.
+    expect(MAP_POLYGON_DRAW_MS).toBeGreaterThan(MAP_MOTION_MS * 3);
   });
 });
 
 /**
- * ÇEKME İLE AÇILIŞ ARASINDA KESİNTİ OLMAMALI.
+ * AÇILIŞIN KATMANLARI — ÇEKME FAZI OLMADAN.
  *
- * Eşik geçildiği an `scrollEnabled` kapanıyor ve iOS süren sürüklemeyi iptal
- * edip içeriği 0'a snap'liyor. O tek karede iki şey birden kayboluyor:
- * gönderilerin lastikten gelen aşağı konumu ve chrome'un ödünç aldığı yukarı
- * pay. Animasyon henüz 0'da olduğu için ikisi de ZIPLAMA olarak görünüyordu —
- * başlık aşağı düşüp yukarı kalkıyor, gönderiler aşağı inmeden önce yukarı
- * sıçrıyor.
+ * Burada bir zamanlar "çekme → açılış sürekliliği" vardı: eşik geçildiği an
+ * `scrollEnabled` kapanıyor, iOS sürüklemeyi iptal ediyor ve o tek karede
+ * gönderilerin lastikten gelen konumu ile chrome'un ödünç aldığı pay birden
+ * kayboluyordu (iki ayrı ZIPLAMA). Çözüm donmuş orandı; çekme jesti üründen
+ * çıkınca (istek) yarışın tamamı da gitti.
  *
- * Çare donmuş oran: açılış anındaki çekme payı saklanıp animasyon boyunca
- * `(1 - ilerleme)` ile söndürülüyor.
+ * Kalan kurallar açılışın KENDİ katmanlarıyla ilgili: tek öteleme kaynağı,
+ * şeridin kendi girişi, chrome'un yavaş sönümü ve sınırın kendini çizmesi.
  */
-describe('çekme → açılış sürekliliği', () => {
-  it('her katman ÇEKERKEN yola çıkıyor — açılış parmakla başlıyor', () => {
-    // ⚠️ 1.0 olamaz: katmanlar eşikte tamamen çıkarsa çekmenin iptal
-    // edilebilir olduğu hissi kayboluyor (gerekçe sabitin yanında).
-    expect(MAP_PULL_SHARE).toBeGreaterThan(0);
-    expect(MAP_PULL_SHARE).toBeLessThan(1);
+describe('açılışın katmanları', () => {
+  it('ZOOM TEK SÜRÜCÜDEN — çekmenin payı kalmadı', () => {
+    /**
+     * Bir dönem yakınlaşmanın `MAP_PULL_ZOOM_SHARE` kadarı parmakla alınıyordu
+     * ("hafif çekerken zoom atıyor gibi olsun"); çekme jesti üründen çıkınca
+     * (istek) o terimin sürücüsü de gitti.
+     *
+     * ⚠️ ÜÇ TÜKETİCİ AYNI DEĞERİ OKUMAK ZORUNDA: haritanın kutusu, blur
+     * deliğinin maskesi ve perdelerin üstüne taşınan poligon. Biri ayrışırsa
+     * açılırken delik ya da şekil haritadan kayar.
+     */
+    // ⚠️ METİN DEĞİL KULLANIM: iki adın ikisi de gerekçelerde anılıyor.
+    expect(MAP_SOURCE).not.toMatch(/\* MAP_PULL_ZOOM_SHARE/);
+    expect(MAP_SOURCE).not.toMatch(/pullProgress\s*\?/);
+    expect(MAP_SOURCE).not.toMatch(/^\s+pullProgress,$/m);
+    expect(MAP_SOURCE).toContain(
+      '() => 1 + (expandScale - 1) * expandProgress.value,',
+    );
+    expect(MAP_SOURCE.match(/\{ scale: zoom\.value \}/g)).toHaveLength(3);
+    // Dikey terim de dört kopyada tek kaynaktan (`centerY`).
+    expect(MAP_SOURCE.match(/\{ translateY: centerY\.value \}/g)).toHaveLength(
+      4,
+    );
+  });
 
-    // ── TEK SÜRÜCÜ, ÇOK TÜKETİCİ ──────────────────────────────────────────
-    // Çekmenin payı tek bir türetilmiş değerde harmanlanıyor; ayrı ayrı
-    // yazılsalar biri değiştiğinde diğerleri geride kalırdı.
-    expect(SOURCE).toContain('const mapDrive = useDerivedValue(');
-    // Sekme şeridi (Akış / Gönderilerim) — istek.
-    expect(SOURCE).toContain('translateY: -mapDrive.value * listTopPadding');
-    // Tüketici: sekme şeridi (yukarıdaki satır). Kutular ve perdeler bir
-    // dönem bunu okuyordu, artık okumuyorlar (istek).
-    // Chrome kendi formülünü kullanıyor (listenin çocuğu, lastiği de iptal
-    // etmek zorunda) ama oranı AYNI kaynaktan okuyor.
-    expect(SOURCE).toContain('mapPull.value * lift * MAP_PULL_SHARE');
-    // Üst bandın blur'u da çekmeye bağlı (harita katmanına geçiyor).
-    expect(SOURCE).toContain('pullProgress={mapPull}');
+  it('poligon sönümlemenin ve blur`un ÜSTÜNDE, iskeletin ALTINDA', () => {
+    const dim = MAP_SOURCE.indexOf('backgroundColor: scrimAt(MAP_DIM_ALPHA)');
+    const blur = MAP_SOURCE.indexOf('intensity={MAP_OVERVIEW_BLUR}');
+    const lifted = MAP_SOURCE.lastIndexOf('<CampusPolygonOverlay');
+    const skeleton = MAP_SOURCE.indexOf('{skeletonMounted ? (');
+    expect(dim).toBeGreaterThan(-1);
+    expect(blur).toBeGreaterThan(-1);
+    expect(skeleton).toBeGreaterThan(-1);
+    expect(lifted).toBeGreaterThan(dim);
+    expect(lifted).toBeGreaterThan(blur);
+    // Harita kurulmadan şekil görünmemeli.
+    expect(lifted).toBeLessThan(skeleton);
+
+    // ⚠️ GEOMETRİ KOPYASI ŞART: kutunun yerleşimi + transformu haritayla
+    // birebir olmazsa tam ekrana geçerken şekil haritadan ayrılır.
+    expect(MAP_SOURCE).toContain('polygonBoxStyle');
+    // ⚠️ Kampüs değişiminin geçişi de kopyalanmış: yoksa yeni şekil, ESKİ
+    // haritanın üstünde tam opak olarak 280ms durur.
+    expect(MAP_SOURCE).toContain('polygonIncomingStyle');
+    // ⚠️ BLUR DELİĞİ DURUYOR: işi şekil değil İÇİNDEKİ harita — kampüsün
+    // sokakları akışta da net kalıyor.
+    expect(MAP_SOURCE).toContain('<CampusPolygonBlurMask');
   });
 
   it('KUTULAR ÇEKMEYE BAĞLI DEĞİL — kendi girişleri var', () => {
@@ -445,70 +662,75 @@ describe('çekme → açılış sürekliliği', () => {
     expect(collapseBody).toContain('mapStripEntry.value = withTiming(0, {');
   });
 
-  it('kutuların CAM butonları ŞERİT DE oturduktan sonra mount ediliyor', () => {
-    // Şeridin girişi de bir `translateY`: animasyonlu atanın altında doğan cam
-    // sessizce hiç çizilmiyor, yani kapı iki animasyonun TOPLAMI kadar sonra
-    // açılmak zorunda.
-    expect(SOURCE).toContain('MAP_MOTION_MS + MAP_STRIP_ENTRY_MS,');
-  });
-
-  it('açılış başlayınca CANLI offset okunmuyor — donmuş oran', () => {
-    // Tek yerde: `mapPull`. Tüketicilerin hiçbiri `feedScrollY`yi kendi
-    // başına yorumlamıyor.
-    expect(SOURCE).toContain(
-      'if (mapProgress.value > 0) return mapPullFrozen.value;',
+  it('ŞERİDİN GİRİŞİ haritanın hareketi BİTİNCE başlıyor', () => {
+    /**
+     * ⚠️ Burada bir zamanlar "cam butonlar iki animasyonun TOPLAMI kadar sonra
+     * mount edilir" kuralı vardı (`MAP_MOTION_MS + MAP_STRIP_ENTRY_MS`) ve
+     * butonlarla birlikte düştü (gerekçe yukarıdaki "KARTTA KARAR ÇİFTİ YOK"
+     * testinde). Şeridin kendi girişi duruyor: aynı zamanlayıcının içinde,
+     * yani harita oturduktan SONRA kendi eğrisiyle aşağıdan geliyor.
+     */
+    const timer = SOURCE.slice(
+      SOURCE.indexOf('mapTimersRef.current = ['),
+      SOURCE.indexOf('mapProgress.value = withTiming(1, {'),
     );
+    expect(timer).toContain('mapStripEntry.value = withTiming(1, {');
+    expect(timer).toContain('duration: MAP_STRIP_ENTRY_MS');
+    expect(timer).toContain('}, MAP_MOTION_MS)');
   });
 
-  it('liste telafisi LAYOUT-FARKINDALIKLI — koşulsuz pay zıplama üretiyordu', () => {
+  it('öteleme TEK KAYNAKTA — liste ekliyor, chrome aynısını çıkarıyor', () => {
+    expect(SOURCE).toContain('const listOffsetPx = useDerivedValue(');
+    expect(SOURCE).toContain('translateY: listOffsetPx.value }],');
+    // Chrome AYNI değeri çıkarıyor (tek satır, scroll terimi YOK).
+    expect(SOURCE).toContain(
+      'transform: [{ translateY: -exitPx.value - listOffsetPx.value }]',
+    );
+    // Eski hâli: chrome kendi içinde `windowHeight`i yeniden yazıyordu.
+    expect(SOURCE).not.toContain('mapProgress.value * (windowHeight + lift)');
+  });
+
+  it('SINIR KAPANIŞTA ANINDA sıfırlanıyor — geri silinmiyor', () => {
+    // Akış şekli hiç çizmiyor, yani kapanırken ekranda kalan son şey bir
+    // çizgi parçası olmamalı. Geri silme animasyonu BİLEREK yok.
+    expect(collapseBody).toContain('polygonReveal.value = 0;');
+  });
+
+  it('PERDELER yavaşça sönüyor, BAŞLIK ise sekmelerle ÇAPRAZ', () => {
     /**
-     * `scrollEnabled` kapandığında iOS sürüklemeyi ya aynı karede 0'a
-     * snap'liyor ya da lastiği kendi süresinde geri yaylandırıyor. Koşulsuz
-     * eklenen pay ikinci durumda ZIPLAMA üretiyordu: lastik gönderileri hâlâ
-     * aşağıda tutarken telafi de aynı payı ekliyor.
+     * ⚠️ İKİ AYRI DEĞER VE AYRIŞMALARI KASITLI.
      *
-     * Doğru hesap "layout şu an ne kadarını veriyor": eksik = donmuş − canlı.
-     */
-    expect(SOURCE).toContain('const livePx = Math.max(-feedScrollY.value, 0);');
-    expect(SOURCE).toContain('const missing = Math.max(frozenPx - livePx, 0);');
-    // ⚠️ `(1 - ilerleme)` ÇARPANI YOK: yaylanma animasyonun ortasında biterse
-    // çarpan telafiyi yutar ve tam o anda sıçrama doğar.
-    expect(SOURCE).toContain('mapProgress.value * windowHeight + missing');
-  });
-
-  it('donmuş oran KAPANIŞIN BAŞINDA sıfırlanıyor', () => {
-    // Kapanış bittiğinde (ilerleme 0) pay yeniden devreye girerse chrome
-    // ekranın dışında kalıyor. O anda terim `(1 - ilerleme)` ile çarpıldığı
-    // için sıfırlamanın kendisi görünmüyor.
-    expect(collapseBody).toContain('mapPullFrozen.value = 0;');
-  });
-
-  it('üst chrome KOMPLE ve YAVAŞÇA sönüyor — başlık + pill birlikte', () => {
-    /**
-     * ⚠️ `mapProgress` DEĞİL (istek): haritayla aynı 280ms'de belirdiğinde
-     * ekranın iki ucu "bir anda" oluşuyor gibi okunuyordu. Kendi süresiyle ve
-     * harita oturduktan SONRA açılıyor; kapanışta haritayla birlikte sönüyor.
+     * Perdeler `mapChromeFade`: haritayla aynı 280ms'de belirdiklerinde
+     * ekranın iki ucu "bir anda" karanlıklaşıyor gibi okunuyordu (istek) —
+     * kendi süresiyle ve harita oturduktan SONRA açılıyorlar.
      *
-     * Pill de AYNI kapta (istek: "headerdaki buton da header'la beraber yok
-     * olup gelsin") — düz RN olduğu için camın kuralı onu bağlamıyor.
+     * Başlık `mapProgress` (istek: "title da yok olup baştan çizilmesin"):
+     * perdelere bağlıyken sıra "sekmeler gidiyor → şerit boş kalıyor → başlık
+     * sıfırdan beliriyor" oluyordu. Artık aynı hareketin içinde, sekmelerin
+     * çıkışıyla çakışıyor; ikinci yarıda açılıyor ki iki yazı aynı merkezde
+     * üst üste binmesin.
      */
-    expect(SOURCE).toContain('opacity: mapChromeFade.value');
+    expect(SOURCE).toContain('progress={mapChromeFade}');
     expect(SOURCE).toContain('mapChromeFade.value = withTiming(1, {');
     expect(SOURCE).toContain('duration: MAP_CHROME_FADE_MS');
     expect(collapseBody).toContain('mapChromeFade.value = withTiming(0, {');
-    // Perdeler de aynı değeri okuyor: "expanded olunca bir anda oluşmasın".
-    expect(SOURCE).toContain('progress={mapChromeFade}');
-    const pill = SOURCE.slice(SOURCE.indexOf('{showPlusUpsell ? ('));
-    expect(pill.slice(0, 200)).toContain('mapChromeFadeStyle');
-    // ⚠️ Opaklık yalnız YAZININ kabında: cam X aynı satırda ve ata
-    // zincirindeki opacity<1 camı sessizce hiç çizdirmiyor.
+    // Başlık perdenin değerini ARTIK OKUMUYOR — kendi çapraz sönümü var.
+    // ⚠️ METİN DEĞİL KULLANIM: adı kaldırıldığını söyleyen notta anılıyor.
+    expect(SOURCE).not.toMatch(/[^`]mapChromeFadeStyle/);
+    expect(SOURCE).toContain('const mapTitleFadeStyle = useAnimatedStyle');
+    const titleFade = SOURCE.slice(
+      SOURCE.indexOf('const mapTitleFadeStyle'),
+      SOURCE.indexOf('const campus = useCampusSurface'),
+    );
+    expect(titleFade).toContain('mapProgress.value');
+    expect(titleFade).toContain('[0.45, 1]');
     /**
      * Sönüm cam butona VARMADAN kapanmak zorunda: ata zincirinde opacity<1
      * gören SwiftUI camı sessizce hiç çizilmiyor. Etiket kaynakta butondan
      * ÖNCE yazılıyor (mutlak ortalama) ama KARDEŞ — aradaki kapanış etiketi
      * bunu kanıtlıyor.
      */
-    const fadeAt = SOURCE.indexOf('mapChromeFadeStyle,');
+    const fadeAt = SOURCE.indexOf('mapTitleFadeStyle,');
     const buttonAt = SOURCE.indexOf('<DiscoverHeaderGlassButton', fadeAt);
     const between = SOURCE.slice(fadeAt, buttonAt);
     expect(between).toContain('</Animated.View>');
