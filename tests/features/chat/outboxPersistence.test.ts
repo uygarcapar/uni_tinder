@@ -68,6 +68,7 @@ import {
   type AttemptEntry,
 } from '@/features/chat/outboxPolicy';
 import {
+  flushOutbox,
   loadAttemptsFromDisk,
   peekAttempt,
   pruneAttempts,
@@ -77,8 +78,10 @@ import {
   sendOutgoing,
 } from '@/features/chat/outbox';
 import chatServiceMock from '@/features/chat/chatService';
+import { pullBeforeSend } from '@/features/chat/chatDeltaSync';
 import { decrementQuotaLocally } from '@/features/chat/chatSlice';
 import { showInfoToast } from '@/shared/services/toaster';
+import { store } from '@/shared/store';
 
 /**
  * Outbox muhasebesinin (deneme sayısı/backoff/permanent/quota_charged) diske
@@ -112,6 +115,8 @@ beforeEach(() => {
   (chatServiceMock.sendMessage as jest.Mock).mockClear();
   (decrementQuotaLocally as unknown as jest.Mock).mockClear();
   (showInfoToast as jest.Mock).mockClear();
+  (pullBeforeSend as jest.Mock).mockClear();
+  (store.getState as jest.Mock).mockReturnValue({});
 });
 
 describe('attemptRowFromEntry / attemptEntryFromRow', () => {
@@ -515,5 +520,31 @@ describe('sendOutgoing başarı dalı — geç gönderim bildirimi', () => {
     );
 
     expect(showInfoToast).toHaveBeenCalledTimes(1);
+  });
+});
+
+describe('flushOutbox — pullBeforeSend’e giden getter gerçek activeConversationId’i taşıyor', () => {
+  /**
+   * Review bulgusu: `pullBeforeSend`e `null` döndüren bir getter geçilirse,
+   * bu tur AÇARSA `upsertConversations` tam o sırada okunan sohbette bile
+   * unread'i sunucudan geldiği gibi yazar (koruma satırı `? = conversation_id`
+   * karşılaştırmasına bakıyor — bkz. chatRepository). Burada chatRepository
+   * tarafı test EDİLMİYOR (`pullBeforeSend` burada mock, gerçek tur koşmuyor);
+   * bu test SADECE outbox'ın store'dan doğru getter'ı kurup pullBeforeSend'e
+   * geçtiğini kilitliyor — getter sabit `null` dönseydi ya da hiç
+   * çağrılmasaydı bu test kırılırdı.
+   */
+  it('getter çağrıldığında store’daki chat.activeConversationId’i döndürüyor', async () => {
+    (store.getState as jest.Mock).mockReturnValue({
+      auth: { isAuthenticated: false }, // flushOutbox pull'dan sonra burada dönsün, yeterli
+      chat: { activeConversationId: 'conv-active' },
+    });
+
+    await flushOutbox('timer');
+
+    expect(pullBeforeSend).toHaveBeenCalledTimes(1);
+    const getter = (pullBeforeSend as jest.Mock).mock.calls[0][0];
+    expect(typeof getter).toBe('function');
+    expect(getter()).toBe('conv-active');
   });
 });

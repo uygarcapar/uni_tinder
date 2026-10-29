@@ -652,8 +652,14 @@ export async function flushOutbox(
     // düşüyor. Önce yakalamak gereksiz bir `send` isteğini önlüyor: istek
     // idempotent ama dakikada 30'luk sayaç isteği reddetmeden ÖNCE artıyor,
     // yani mükerrer gönderim bir hak harcıyor.
+    //
+    // Gerçek `activeConversationId`'i veriyoruz (null değil): bu tur AÇARSA
+    // `upsertConversations` sırasında açık sohbetin unread'ini koruyan satır
+    // tam bu değere bakıyor (bkz. chatRepository). `startDeltaSync`'in
+    // `fire()`'ı da aynı getter'ı kullanıyor — chatMirrorMiddleware.ts:88 ile
+    // simetrik, store burada zaten import'ta (satır 661'de de okunuyor).
     try {
-      await pullBeforeSend();
+      await pullBeforeSend(() => (store.getState() as any)?.chat?.activeConversationId ?? null);
     } catch {
       // Yakalama turu patladıysa gönderim turu yine de koşsun.
     }
