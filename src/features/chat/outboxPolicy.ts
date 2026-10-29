@@ -101,16 +101,58 @@ export type FailureClass = {
   refetchConversations: boolean;
 };
 
+/**
+ * Sessiz denemelerin NEDEN durduğu. İki sebep aynı şey DEĞİL ve process
+ * ömrünü atlatma hakları da aynı değil:
+ *
+ *  terminal → mesaj kaç kez denenirse denensin başaramaz: kota bitti, sohbet
+ *             kapandı, girdi geçersiz, sesli mesajın kaydı düştü. Diske yazılır
+ *             ve restart'ı ATLATIR — tekrar denemek kullanıcıya hiçbir şey
+ *             kazandırmaz, yalnız boşa istek harcar.
+ *  budget   → hata GEÇİCİYDİ ama bu oturumun deneme tavanı (MAX_ATTEMPTS)
+ *             doldu. Diske sebebi yazılır ama `rebaseAttemptOnLoad` YENİ
+ *             OTURUMDA temizler: "sabah gitmeyen mesaj akşam wifi gelince
+ *             gider" vaadinin dayandığı şey bu.
+ */
+export type PermanenceReason = "terminal" | "budget";
+
 export type AttemptEntry = {
   attempts: number;
   firstSeenAt: number;
   nextEligibleAt: number;
   origin: FailOrigin;
-  /** Kalıcı hata ya da tavan doldu → sessiz denemeler durur. */
-  permanent: boolean;
+  /**
+   * Sessiz denemeler durdu mu, durduysa NEDEN (null = durmadı).
+   *
+   * Düz bir `permanent: boolean` DEĞİL, çünkü muhasebe diske indiği andan beri
+   * "durdu" bilgisi tek başına yetmiyor: bayrağın hangi sebepten konduğu, bir
+   * sonraki process'in o bayrağa uyup uymayacağını belirliyor (bkz.
+   * PermanenceReason, rebaseAttemptOnLoad). Boolean + ayrı bir sebep alanı
+   * ikisinin ayrışabileceği bir değişmez yaratırdı; tek alan o riski
+   * tanımdan siliyor.
+   */
+  permanentReason: PermanenceReason | null;
   /** `decrementQuotaLocally` bu mesaj için atıldı mı (çift düşmeyi engeller). */
   quotaCharged: boolean;
 };
+
+/**
+ * Bir başarısızlıktan sonra sessiz denemeler durur mu, dururlarsa NEDEN.
+ *
+ * `noteFailure` eskiden `!retryable || attempts >= MAX_ATTEMPTS` ile tek bir
+ * boolean üretiyordu; iki dalı burada ayırmak kalıcılığın diske yazılan
+ * sebebini veriyor. SIRA önemli: kalıcı bir hata tavanla AYNI ANDA olabilir
+ * (5. denemede 402) ve o satır `terminal` sayılmalı — bütçe sayılsaydı yeni
+ * oturum ona boşa bir deneme daha harcardı.
+ */
+export function permanenceAfterFailure(
+  retryable: boolean,
+  attempts: number,
+): PermanenceReason | null {
+  if (!retryable) return "terminal";
+  if (attempts >= MAX_ATTEMPTS) return "budget";
+  return null;
+}
 
 /**
  * `send_attempts` satırı → bellekteki `AttemptEntry`.
@@ -119,6 +161,13 @@ export type AttemptEntry = {
  * bir değer) sessizce `"throw"`a düşer: o alan yalnız teşhis amaçlı — tanınmayan
  * bir değer yüzünden sessiz yeniden denemeyi YANLIŞLIKLA kapatmak (bkz.
  * isEligible) kullanıcıyı "tekrar dene" butonuna mahkûm ederdi.
+ *
+ * `permanent = 1` ama sebebi OKUNAMIYOR (null ya da tanınmayan bir değer:
+ * sebep yazılmaya başlamadan önce yazılmış bir satır) → `budget` sayılır.
+ * İki yanlış tahminin maliyeti simetrik değil: terminal bir satırı bütçe
+ * sanmak yeni oturumda tek bir boşa deneme harcar (ardından yine terminal
+ * işaretlenir), bütçe satırını terminal sanmak kullanıcının yazdığı mesajı
+ * BİR DAHA HİÇ göndermemek olur.
  */
 export function attemptEntryFromRow(row: SendAttemptRow): AttemptEntry {
   return {
@@ -126,7 +175,8 @@ export function attemptEntryFromRow(row: SendAttemptRow): AttemptEntry {
     firstSeenAt: row.first_seen_at_ms,
     nextEligibleAt: row.next_eligible_at_ms,
     origin: row.origin === "ackTimeout" ? "ackTimeout" : "throw",
-    permanent: row.permanent === 1,
+    permanentReason:
+      row.permanent === 1 ? (row.last_error === "terminal" ? "terminal" : "budget") : null,
     quotaCharged: row.quota_charged === 1,
   };
 }
@@ -134,18 +184,14 @@ export function attemptEntryFromRow(row: SendAttemptRow): AttemptEntry {
 /**
  * Bellekteki `AttemptEntry` → `send_attempts` satırı.
  *
- * `last_error` burada hiç doldurulmuyor: `AttemptEntry`'de karşılığı yok (teşhis
- * alanı şimdilik kullanılmıyor) ve `MessageDto`/`AttemptEntry`'ye yeni alan
- * EKLEMİYORUZ — eklemek `attempts` sayacını bubble'ın yapısal eşitliğine
- * (messageEquality) sızdırırdı (bkz. outbox.ts dosya başı yorumu).
+ * Kalıcılığın SEBEBİ `last_error` kolonunda taşınıyor. Kolon v7 şemasında
+ * zaten vardı ve hiç yazılmıyordu; sebebi oraya koymak v8 migration'ı
+ * gerektirmiyor. Kolon adı artık taşıdığı şeyi tam anlatmıyor — adı korumanın
+ * gerekçesi yayınlanmış bir migration'ı düzenlememek; değerler bir hata metni
+ * DEĞİL, `PermanenceReason`'ın kapalı kümesi.
  *
- * DİKKAT — bu her zaman `null` yazmak, `upsertSendAttempt`'in
- * `ON CONFLICT ... DO UPDATE SET last_error = excluded.last_error` cümlesiyle
- * birleşince şu anlama geliyor: `rememberAttempt` her çağrıldığında (yani her
- * deneme/backoff/permanent/quotaCharged değişiminde) satırın `last_error`
- * kolonunu `null`a EZER. Bugün zararsız — hiçbir yazıcı oraya gerçek bir hata
- * metni yazmıyor — ama ileride bir teşhis amaçlı yazıcı eklenirse, bu
- * fonksiyonun varlığı o veriyi sessizce silecektir.
+ * `permanent` kolonu bundan TÜRETİLİYOR (`permanentReason !== null`), ayrı bir
+ * doğruluk kaynağı değil: sorgular hâlâ `permanent`e bakabilsin diye duruyor.
  */
 export function attemptRowFromEntry(
   clientMessageId: string,
@@ -156,18 +202,51 @@ export function attemptRowFromEntry(
     attempts: entry.attempts,
     first_seen_at_ms: entry.firstSeenAt,
     next_eligible_at_ms: entry.nextEligibleAt,
-    permanent: entry.permanent ? 1 : 0,
+    permanent: entry.permanentReason ? 1 : 0,
     quota_charged: entry.quotaCharged ? 1 : 0,
     origin: entry.origin,
-    last_error: null,
+    last_error: entry.permanentReason,
+  };
+}
+
+/**
+ * Diskten okunan kaydın OTURUMA AİT alanlarını sıfırlar.
+ *
+ * `attempts` ve `firstSeenAt` diske yazılmaya başlayınca iki OTURUM İÇİ bütçe
+ * (MAX_ATTEMPTS ve MAX_AGE_MS) sessizce ÖMÜRLÜK bütçeye dönüştü. Somut sonucu:
+ * sabah 09:00'da zayıf hücrede 5 denemeyi yakan mesaj 12:00'de wifi'ye
+ * geçildiğinde arşiv sorgusundan GELİYOR (yaş sınırı kaldırıldı, bkz.
+ * LATE_SEND_NOTICE_MS) ama `isEligible` onu bu oturumda ve sonraki her
+ * oturumda atıyordu — "bekleyen mesajın gönderildi" bildirimi de böylece
+ * yalnız hiç muhasebe satırı olmayan mesajlar için çalışıyordu.
+ *
+ * SIFIRLANMAYANLAR ve gerekçeleri:
+ *  - `quotaCharged`: branch'in var olma sebebi. Sıfırlanırsa ack'i görülmemiş
+ *    mesajın başarılı tekrarı kotayı ikinci kez düşürür.
+ *  - `permanentReason === "terminal"`: mesaj zaten başaramaz, yeni oturuma
+ *    hak tanımak yalnız boşa istek demek.
+ *  - `nextEligibleAt`: mutlak zaman damgası, kendiliğinden geçmişte kalıyor —
+ *    sıfırlamak gerçek bir backoff penceresinin ortasında onu iptal ederdi.
+ */
+export function rebaseAttemptOnLoad(entry: AttemptEntry, nowMs: number): AttemptEntry {
+  return {
+    ...entry,
+    attempts: 0,
+    firstSeenAt: nowMs,
+    permanentReason: entry.permanentReason === "terminal" ? "terminal" : null,
   };
 }
 
 /** Sessiz denemenin tavanı. Aşılınca balon `_failed` kalır, elle buton çalışır. */
 export const MAX_ATTEMPTS = 5;
 /**
- * Yarım saattir gitmeyen mesajı otomatik denemeyi bırak — OTURUM İÇİ ölçü:
- * sayaç mesajı ilk gördüğümüz andan (`firstSeenAt`) işliyor.
+ * Yarım saattir gitmeyen mesajı otomatik denemeyi bırak — ölçü OTURUM İÇİ:
+ * sayaç mesajı ilk gördüğümüz andan (`firstSeenAt`) işliyor ve `firstSeenAt`
+ * her process açılışında "şimdi"ye çekiliyor.
+ *
+ * Bu "oturum içi"liği artık otomatik DEĞİL, `rebaseAttemptOnLoad` sağlıyor:
+ * muhasebe diske indiği için `firstSeenAt` restart'ı kendiliğinden atlatıyor
+ * ve rebase olmasa bu sınır ÖMÜRLÜK olurdu (gerekçesi orada).
  */
 export const MAX_AGE_MS = 30 * 60_000;
 /**
@@ -189,9 +268,12 @@ export const LATE_SEND_NOTICE_MS = 60 * 60_000;
 
 /**
  * Mesajın `sentAt`'inden bu yana geçen süre bildirim sınırını AŞTI mı? —
- * ölçü mesajın KENDİ `sentAt`'i (`AttemptEntry.firstSeenAt` DEĞİL), çünkü
- * `firstSeenAt` süreç yeniden başladığında "şimdi" olur ve kullanıcının
- * sohbette hâlâ gördüğü eski saatle ilişkisini kaybeder.
+ * ölçü mesajın KENDİ `sentAt`'i (`AttemptEntry.firstSeenAt` DEĞİL). İki sebep:
+ * muhasebe kaydı hiç olmayabilir (ilk denemede gitmiş eski bir arşiv satırı),
+ * ve `firstSeenAt` zaten "mesajın yaşı" değil "bu oturumda ne zamandan beri
+ * uğraşıyoruz" demek — `rebaseAttemptOnLoad` onu her açılışta "şimdi"ye
+ * çekiyor. Kullanıcının sohbette gördüğü saatle ilişkisi olan tek alan
+ * `sentAt`.
  *
  * Sınır KATI (`>`, `>=` değil): tam `LATE_SEND_NOTICE_MS` yaşındaki mesaj
  * henüz "geç" sayılmıyor, eşiğin TAM ÜSTÜNDEKİ bir mesaj kesin sayılıyor —
@@ -516,7 +598,7 @@ export function isEligible(
 ): boolean {
   if (mode === "interactive") return true;
   if (!entry) return true;
-  if (entry.permanent) return false;
+  if (entry.permanentReason) return false;
   // `origin === "ackTimeout"` KAPISI KALDIRILDI (2026-10-06): send artık
   // cmid üzerinden idempotent (gerekçe: FailOrigin). Ack'i görülmemiş gönderim
   // de sessizce denenebiliyor — "uygulamayı kapattım, mesaj kendi kendine

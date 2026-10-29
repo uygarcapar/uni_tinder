@@ -289,7 +289,7 @@ describe('isEligible', () => {
     firstSeenAt: NOW,
     nextEligibleAt: NOW,
     origin: 'throw',
-    permanent: false,
+    permanentReason: null,
     quotaCharged: false,
     ...over,
   });
@@ -304,7 +304,8 @@ describe('isEligible', () => {
   });
 
   it('kalıcı hata ve tavan sessiz denemeyi durdurur', () => {
-    expect(isEligible(entry({ permanent: true }), NOW, 'silent')).toBe(false);
+    expect(isEligible(entry({ permanentReason: 'terminal' }), NOW, 'silent')).toBe(false);
+    expect(isEligible(entry({ permanentReason: 'budget' }), NOW, 'silent')).toBe(false);
     expect(isEligible(entry({ attempts: MAX_ATTEMPTS }), NOW, 'silent')).toBe(false);
   });
 
@@ -332,7 +333,7 @@ describe('isEligible', () => {
   });
 
   it('kullanıcı tetiklediğinde hiçbir kapı bağlamaz', () => {
-    const dead = entry({ permanent: true, attempts: 99, nextEligibleAt: NOW + 60_000 });
+    const dead = entry({ permanentReason: 'terminal', attempts: 99, nextEligibleAt: NOW + 60_000 });
     expect(isEligible(dead, NOW, 'interactive')).toBe(true);
   });
 });

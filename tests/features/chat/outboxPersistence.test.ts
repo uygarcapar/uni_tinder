@@ -57,7 +57,8 @@ jest.mock('@/shared/store', () => ({
 
 import * as SQLite from 'expo-sqlite';
 import { openChatDb, __resetChatDbForTests } from '@/features/chat/db/chatDb';
-import { readSendAttempts, upsertSendAttempt } from '@/features/chat/chatRepository';
+import { readSendAttempts, saveMessage, upsertSendAttempt } from '@/features/chat/chatRepository';
+import { clear as clearMessageCache } from '@/features/chat/messageCache';
 import type { SendAttemptRow } from '@/features/chat/db/rows';
 import {
   attemptEntryFromRow,
@@ -65,8 +66,13 @@ import {
   isEligible,
   isLateDelivery,
   LATE_SEND_NOTICE_MS,
+  MAX_AGE_MS,
+  MAX_ATTEMPTS,
+  permanenceAfterFailure,
+  rebaseAttemptOnLoad,
   type AttemptEntry,
 } from '@/features/chat/outboxPolicy';
+import type { MessageDto } from '@/shared/types';
 import {
   flushOutbox,
   loadAttemptsFromDisk,
@@ -95,20 +101,47 @@ import { VOICE_CONTENT_TYPE } from '@/features/chat/voiceMessage';
 const { __resetAllDatabases } = SQLite as unknown as { __resetAllDatabases: () => void };
 
 const CMID = 'cmid-1';
+const CONV_ID = 'conv-1';
 
 const entry = (over: Partial<AttemptEntry> = {}): AttemptEntry => ({
   attempts: 1,
   firstSeenAt: Date.now(),
   nextEligibleAt: 0,
   origin: 'throw',
-  permanent: false,
+  permanentReason: null,
   quotaCharged: false,
   ...over,
 });
 
+/** Ham `send_attempts` satırı — şema şekli, `AttemptEntry`'den bağımsız. */
+const diskRow = (over: Partial<SendAttemptRow> = {}): SendAttemptRow => ({
+  client_message_id: CMID,
+  attempts: 0,
+  first_seen_at_ms: Date.now(),
+  next_eligible_at_ms: 0,
+  permanent: 0,
+  quota_charged: 0,
+  origin: 'throw',
+  last_error: null,
+  ...over,
+});
+
+const archivedMessage = (over: Partial<MessageDto> = {}): MessageDto =>
+  ({
+    id: 'srv-1',
+    conversationId: CONV_ID,
+    senderId: 'me',
+    content: 'arşivdeki mesaj',
+    contentType: 0,
+    sentAt: new Date(Date.now() - 60_000).toISOString(),
+    clientMessageId: CMID,
+    ...over,
+  }) as MessageDto;
+
 beforeEach(() => {
   __resetChatDbForTests();
   __resetAllDatabases();
+  clearMessageCache();
   openChatDb();
   resetOutbox();
   // Çağrı geçmişini sıfırla ama varsayılan implementasyonu KORU (mockReset
@@ -122,21 +155,37 @@ beforeEach(() => {
 });
 
 describe('attemptRowFromEntry / attemptEntryFromRow', () => {
-  it('gidiş-dönüş kaydı birebir koruyor (permanent/quotaCharged boolean <-> 0/1 dahil)', () => {
-    const e = entry({ attempts: 3, nextEligibleAt: 5_000, permanent: true, quotaCharged: true });
+  it('gidiş-dönüş kaydı birebir koruyor (permanentReason/quotaCharged <-> 0/1 + last_error dahil)', () => {
+    const e = entry({
+      attempts: 3,
+      nextEligibleAt: 5_000,
+      permanentReason: 'terminal',
+      quotaCharged: true,
+    });
     const row = attemptRowFromEntry(CMID, e);
 
     expect(row.permanent).toBe(1);
     expect(row.quota_charged).toBe(1);
+    // Kalıcılığın SEBEBİ `last_error`da taşınıyor (v7 şemasında zaten vardı).
+    expect(row.last_error).toBe('terminal');
     expect(attemptEntryFromRow(row)).toEqual(e);
   });
 
-  it('false bayraklar 0 olarak yazılıyor, geri dönüşte false kalıyor', () => {
-    const e = entry({ permanent: false, quotaCharged: false });
+  it('bütçe kalıcılığı da sebebiyle birlikte gidip geliyor', () => {
+    const e = entry({ attempts: 5, permanentReason: 'budget' });
+    const row = attemptRowFromEntry(CMID, e);
+
+    expect(row).toMatchObject({ permanent: 1, last_error: 'budget' });
+    expect(attemptEntryFromRow(row)).toEqual(e);
+  });
+
+  it('kalıcı olmayan kayıt 0 + null olarak yazılıyor, geri dönüşte aynı kalıyor', () => {
+    const e = entry({ permanentReason: null, quotaCharged: false });
     const row = attemptRowFromEntry(CMID, e);
 
     expect(row.permanent).toBe(0);
     expect(row.quota_charged).toBe(0);
+    expect(row.last_error).toBeNull();
     expect(attemptEntryFromRow(row)).toEqual(e);
   });
 
@@ -184,15 +233,173 @@ describe('disk round trip — process ölümünü resetOutbox taklit ediyor', ()
   });
 });
 
-describe('pruneAttempts', () => {
-  it('Map’ten düşen kaydı diskten de siliyor', () => {
+describe('pruneAttempts — YALNIZ Map tahliyesi', () => {
+  /**
+   * `pruneAttempts`'in girdisi turun BAŞARISIZ anlık görüntüsü: hem duruma
+   * süzülmüş (`send_state = 'failed'`) hem tavanlı (`readFailedSends` limit 50).
+   * "Bu listede yok" = "işi bitti" DEĞİL. Disk silmesi bu listeden sürülürse
+   * uçuştaki (`pending`) bir tekrar denemenin `quota_charged`/`permanent`
+   * kaydı silinir — tam da bu dalın önlemeye çalıştığı şey (bkz. aşağıdaki
+   * flushOutbox testi). Diskin tek silicisi `pruneOrphanSendAttempts`.
+   */
+  it('Map’ten düşürüyor ama DİSKTEN DÜŞÜRMÜYOR', () => {
     rememberAttempt('cmid-alive', entry());
     rememberAttempt('cmid-dead', entry());
 
     pruneAttempts([{ clientMessageId: 'cmid-alive' }]);
 
     expect(peekAttempt('cmid-dead')).toBeUndefined();
-    expect(readSendAttempts().map((r) => r.client_message_id)).toEqual(['cmid-alive']);
+    expect(readSendAttempts().map((r) => r.client_message_id).sort()).toEqual([
+      'cmid-alive',
+      'cmid-dead',
+    ]);
+  });
+});
+
+describe('flushOutbox turu — uçuştaki tekrar denemenin disk kaydını SİLMİYOR', () => {
+  /**
+   * Ulaşılabilir sıra: hub'dan giden mesajın ack'i hiç gelmedi → `armAckWatchdog`
+   * diske `quota_charged = 1` yazdı → kullanıcı "tekrar dene"ye bastı, satır
+   * `pending`e döndü ve gönderim yavaş (ses yüklemesi / zayıf hücre) → bu arada
+   * bir tur ateşledi (MIN_FLUSH_INTERVAL_MS yalnız 3 saniye).
+   *
+   * `pending` satır NE `readFailedSends`'e (süzgeç `send_state = 'failed'`) NE
+   * `selectFailedOutbox`'a (`_failed` şartı) giriyor, yani `items` listesinde
+   * YOK. Disk silmesi o listeden sürüldüğü sürece bu tur kaydı siler, bir
+   * sonraki hata `quotaCharged: false` ile sıfırdan bir kayıt açar ve nihayet
+   * başarılı olan deneme kotayı İKİNCİ kez düşürür — bu branch'in var olma
+   * sebebi olan garantinin tam tersi.
+   */
+  it('pending mesajın quota_charged kaydı tur sonunda duruyor', async () => {
+    saveMessage(archivedMessage(), CONV_ID, 'pending');
+    upsertSendAttempt(diskRow({ quota_charged: 1, permanent: 1, last_error: 'terminal' }));
+    (store.getState as jest.Mock).mockReturnValue({
+      auth: { isAuthenticated: true },
+      chat: { activeConversationId: null },
+    });
+
+    await flushOutbox('timer');
+
+    const rows = readSendAttempts();
+    expect(rows).toHaveLength(1);
+    expect(rows[0]).toMatchObject({ client_message_id: CMID, quota_charged: 1, permanent: 1 });
+  });
+
+  /**
+   * Diskin gerçek silicisi: mesaj `sent` ya da hiç yok. Bu tur başına bir kez
+   * koşuyor — yoksa `send_attempts` gönderilmiş her mesajın muhasebesini bir
+   * sonraki açılışa kadar taşırdı (açılıştaki çağrı: chatMirrorMiddleware).
+   */
+  it('gönderilmiş mesajın kaydı tur içinde temizleniyor', async () => {
+    saveMessage(archivedMessage(), CONV_ID); // varsayılan send_state 'sent'
+    upsertSendAttempt(diskRow({ quota_charged: 1 }));
+    upsertSendAttempt(diskRow({ client_message_id: 'cmid-messages-tablosunda-yok' }));
+    (store.getState as jest.Mock).mockReturnValue({
+      auth: { isAuthenticated: true },
+      chat: { activeConversationId: null },
+    });
+
+    await flushOutbox('timer');
+
+    expect(readSendAttempts()).toEqual([]);
+  });
+});
+
+describe('kalıcılığın SEBEBİ — tavan dolması vs. asla başaramayacak mesaj', () => {
+  /**
+   * `attempts`/`firstSeenAt` diske yazılmaya başlayınca iki OTURUM İÇİ bütçe
+   * sessizce ÖMÜRLÜK bütçeye dönüştü: sabah 09:00'da zayıf hücrede 5 denemeyi
+   * yakan mesaj, 12:00'de wifi'ye geçildiğinde arşiv sorgusundan GELİYOR (yaş
+   * sınırı bu branch'te kalktı) ama `isEligible` onu `permanent` + yaş
+   * kapısında atıyordu — bu oturumda ve sonraki her oturumda. Branch'in ikinci
+   * vaadi ("sabah gitmeyen mesaj akşam wifi gelince gider") ve onun karşılığı
+   * olan geç-gönderim bildirimi böylece yalnız HİÇ muhasebe satırı olmayan
+   * mesajlar için çalışıyordu.
+   *
+   * Ayrım `last_error` kolonunda taşınıyor (v7 şemasında zaten var, v8 yok):
+   * `'budget'` = tavan doldu, yeni oturumda yeniden hak verilir; `'terminal'`
+   * = kaç denerse denesin başaramaz (kota bitti, sohbet gitti, girdi geçersiz,
+   * ses kaydı düştü).
+   */
+  it('tavan dolduğu için kalıcı olan kayıt restart sonrası YENİDEN uygun', () => {
+    const threeHoursAgo = Date.now() - 3 * 60 * 60_000;
+    upsertSendAttempt(
+      diskRow({
+        attempts: MAX_ATTEMPTS,
+        first_seen_at_ms: threeHoursAgo,
+        permanent: 1,
+        last_error: 'budget',
+        quota_charged: 1,
+      }),
+    );
+
+    resetOutbox(); // process ölümü
+    loadAttemptsFromDisk();
+
+    expect(isEligible(peekAttempt(CMID), Date.now(), 'silent')).toBe(true);
+    // Rebase BÜTÇEYİ sıfırlıyor, kota guard'ını SIFIRLAMIYOR.
+    expect(peekAttempt(CMID)?.quotaCharged).toBe(true);
+  });
+
+  it('terminal kayıt restart sonrası hâlâ uygun DEĞİL, quotaCharged de duruyor', () => {
+    upsertSendAttempt(
+      diskRow({ attempts: 1, permanent: 1, last_error: 'terminal', quota_charged: 1 }),
+    );
+
+    resetOutbox();
+    loadAttemptsFromDisk();
+
+    expect(isEligible(peekAttempt(CMID), Date.now(), 'silent')).toBe(false);
+    expect(peekAttempt(CMID)?.quotaCharged).toBe(true);
+  });
+
+  /**
+   * Sebebi OKUNAMAYAN satır (bu değişiklikten önce yazılmış `permanent = 1`,
+   * ya da ileride eklenecek bilinmeyen bir değer) BÜTÇE sayılıyor. Yanlış
+   * tahminin iki maliyeti simetrik DEĞİL: bütçe sanıp bir kez daha denemek
+   * terminal bir mesajda tek bir boşa istek (ardından yine terminal
+   * işaretlenir), terminal sanmak ise kullanıcının yazdığı mesajı BİR DAHA
+   * HİÇ göndermemek olurdu.
+   */
+  it('sebebi bilinmeyen kalıcı satır bütçe sayılıyor — mesaj sonsuza kilitlenmiyor', () => {
+    upsertSendAttempt(diskRow({ attempts: MAX_ATTEMPTS, permanent: 1, last_error: null }));
+
+    resetOutbox();
+    loadAttemptsFromDisk();
+
+    expect(isEligible(peekAttempt(CMID), Date.now(), 'silent')).toBe(true);
+  });
+
+  it('permanenceAfterFailure: retryable olmayan hata terminal, tavan dolması bütçe', () => {
+    expect(permanenceAfterFailure(false, 1)).toBe('terminal');
+    expect(permanenceAfterFailure(true, MAX_ATTEMPTS)).toBe('budget');
+    expect(permanenceAfterFailure(true, MAX_ATTEMPTS - 1)).toBeNull();
+    // Tavan dolmuş AMA hata da kalıcı → terminal kazanır: tekrar denemek
+    // bütçeden bağımsız olarak başarısız olur.
+    expect(permanenceAfterFailure(false, MAX_ATTEMPTS)).toBe('terminal');
+  });
+
+  it('rebaseAttemptOnLoad yaş sayacını da sıfırlıyor — MAX_AGE_MS yeniden oturum içi', () => {
+    const old = entry({ firstSeenAt: Date.now() - MAX_AGE_MS - 60_000, attempts: 3 });
+    const now = Date.now();
+
+    const rebased = rebaseAttemptOnLoad(old, now);
+
+    expect(rebased).toMatchObject({ attempts: 0, firstSeenAt: now });
+    expect(isEligible(rebased, now, 'silent')).toBe(true);
+  });
+
+  it('noteFailure tavanı doldurduğunda diske "budget" yazılıyor', async () => {
+    for (let i = 0; i < MAX_ATTEMPTS; i++) {
+      (chatServiceMock.sendMessage as jest.Mock).mockRejectedValueOnce(new Error('ağ hatası'));
+      await sendOutgoing(
+        { kind: 'text', conversationId: CONV_ID, clientMessageId: CMID, content: 'x' },
+        { mode: 'interactive' },
+      );
+    }
+
+    const rows = readSendAttempts();
+    expect(rows[0]).toMatchObject({ attempts: MAX_ATTEMPTS, permanent: 1, last_error: 'budget' });
   });
 });
 
@@ -223,7 +430,11 @@ describe('retryFailedMessage interactive — EZİLMİŞ muhasebe diske de yazıl
    * kötü bir sonuç. Bu test tam bunu kilitliyor.
    */
   it('kalıcı/yüksek-deneme kaydı reset sırasında diske de yazılıyor — restart sonrası sessiz tur engellenmiyor', () => {
-    rememberAttempt(CMID, entry({ attempts: 5, permanent: true, quotaCharged: false }));
+    // Sebep bilerek TERMINAL: `loadAttemptsFromDisk`'in rebase'i bütçe
+    // kalıcılığını zaten temizliyor, yani `permanentReason: 'budget'` ile bu
+    // test override diske hiç yazılmasa da yeşil kalır ve kilitlediği
+    // regresyonu kaçırırdı. Elle "tekrar dene" TERMINAL işareti de ezmeli.
+    rememberAttempt(CMID, entry({ attempts: 5, permanentReason: 'terminal', quotaCharged: false }));
     // Bu TEK çağrıda ağ cevabı hiç gelmesin — "gönderim uçuşta" anını taklit.
     (chatServiceMock.sendMessage as jest.Mock).mockImplementationOnce(
       () => new Promise(() => {}),
@@ -241,7 +452,7 @@ describe('retryFailedMessage interactive — EZİLMİŞ muhasebe diske de yazıl
   });
 
   it('quotaCharged daha önce düşmüşse "tekrar dene" onu GERİ VERMİYOR', () => {
-    rememberAttempt(CMID, entry({ attempts: 5, permanent: true, quotaCharged: true }));
+    rememberAttempt(CMID, entry({ attempts: 5, permanentReason: 'terminal', quotaCharged: true }));
     (chatServiceMock.sendMessage as jest.Mock).mockImplementationOnce(
       () => new Promise(() => {}),
     );
@@ -276,6 +487,12 @@ describe('retryFailedMessage — düşmüş ses kaydı (mediaUrl VE localUri yok
    */
   it('kalıcı işaret restart sonrası diskten de görülüyor — silent tur artık denemiyor', async () => {
     await retryFailedMessage(failedVoiceMessage(), { mode: 'interactive' });
+
+    // Sebep DİSKE yazılmalı: `loadAttemptsFromDisk` yeni oturumda yalnız
+    // TERMINAL kalıcılığı koruyor, tavan dolmasını (budget) sıfırlıyor. Sebep
+    // yazılmazsa bu satır "sebebi bilinmeyen" dalına düşer, bütçe sayılır ve
+    // her açılış bir boşa deneme harcar.
+    expect(readSendAttempts()[0]).toMatchObject({ permanent: 1, last_error: 'terminal' });
 
     resetOutbox(); // process ölümü
     loadAttemptsFromDisk();
@@ -318,7 +535,7 @@ describe('retryFailedMessage — mediaUrl VAR, localUri yok: kalıcı hata DEĞ�
     expect(sendVoiceMessage).toHaveBeenCalled();
     // `markPermanent` null dalında ÇAĞRILMADIYSA Map'te bu id için hiç kayıt
     // açılmamış olur (chargeQuotaOnce Map-miss'te okur ama yazmaz) — null
-    // dalına hiç girilmediğinin dolaylı ama doğrudan kanıtı.
+    // dalına hiç girilmediğinin dolaylı ama yeterli kanıtı.
     expect(peekAttempt(CMID)).toBeUndefined();
     expect(showInfoToast).not.toHaveBeenCalled();
   });
@@ -358,7 +575,7 @@ describe('cold start — retryFailedMessage hiçbir round koşmadan kotayı ikin
    * doldurmuyor.
    */
   it('kota ikinci kez düşmüyor, muhasebe Map’e de geri yüklenmiş oluyor', async () => {
-    rememberAttempt(CMID, entry({ attempts: 5, permanent: true, quotaCharged: true }));
+    rememberAttempt(CMID, entry({ attempts: 5, permanentReason: 'terminal', quotaCharged: true }));
     resetOutbox(); // process ölümü
     expect(peekAttempt(CMID)).toBeUndefined(); // Map boş, disk HİÇ okunmadı
 
@@ -439,7 +656,7 @@ describe('retryFailedMessage interactive — DİSK TEK KAYNAKKEN override çalı
    */
   it('Map hiç yüklenmemişken bile override diske yazılıyor, quotaCharged korunuyor', () => {
     upsertSendAttempt(
-      attemptRowFromEntry(CMID, entry({ attempts: 5, permanent: true, quotaCharged: true })),
+      attemptRowFromEntry(CMID, entry({ attempts: 5, permanentReason: 'terminal', quotaCharged: true })),
     );
     expect(peekAttempt(CMID)).toBeUndefined(); // Map boş — kayıt YALNIZ diskte
 

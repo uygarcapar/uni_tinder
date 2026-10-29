@@ -21,6 +21,12 @@
  * tablosunun ÖNBELLEĞİ — process ölse de disk hayatta kalıyor. Asıl kazanç
  * `quotaCharged`: eskiden restart sonrası sıfırlanıp ack'i kaybolmuş mesajın
  * başarılı tekrarı kotayı ikinci kez düşürebiliyordu.
+ *
+ * Muhasebenin TAMAMI restart'ı atlatmıyor ve atlatmamalı: deneme bütçesi
+ * (`attempts`) ile yaş tabanı (`firstSeenAt`) tasarımı gereği OTURUM İÇİ,
+ * `loadAttemptsFromDisk` onları `rebaseAttemptOnLoad` ile sıfırlıyor. Yoksa
+ * sabah tavanı yakan mesaj akşam wifi gelince de gönderilmezdi — bu modülün
+ * ikinci vaadi tam bu (bkz. outboxPolicy.rebaseAttemptOnLoad).
  */
 import {
   conversationDeactivated,
@@ -41,7 +47,7 @@ import { pullBeforeSend } from "@/features/chat/chatDeltaSync";
 import { readFailedOutboxFromLocal } from "@/features/chat/chatHydrate";
 import {
   clearVoiceMediaUrl,
-  deleteSendAttempts,
+  pruneOrphanSendAttempts,
   readSendAttempt,
   readSendAttempts,
   setVoiceMediaUrl,
@@ -58,6 +64,8 @@ import {
   mergeFailedOutbox,
   messageToDescriptor,
   needsVoiceReupload,
+  permanenceAfterFailure,
+  rebaseAttemptOnLoad,
   selectFailedOutbox,
   MAX_ATTEMPTS,
   MAX_PER_FLUSH,
@@ -134,7 +142,7 @@ function newEntry(now: number): AttemptEntry {
     firstSeenAt: now,
     nextEligibleAt: 0,
     origin: "throw",
-    permanent: false,
+    permanentReason: null,
     quotaCharged: false,
   };
 }
@@ -157,13 +165,24 @@ function newEntry(now: number): AttemptEntry {
  * taraflarındaki aynı asimetriyi (bkz. `rememberAttempt`, `pruneAttempts`)
  * burada da koruyoruz: bir sonraki çağrı (sonraki `sendOutgoing`/`flushOutbox`
  * turu) yeniden dener.
+ *
+ * Satır OLDUĞU GİBİ Map'e girmiyor: `rebaseAttemptOnLoad` oturuma ait alanları
+ * (deneme sayacı ve yaş tabanı) sıfırlıyor, kota guard'ı ile terminal kalıcılık
+ * duruyor. Gerekçesi o fonksiyonda — özetle bu iki bütçe diske inerken sessizce
+ * ömürlük bütçeye dönüşmüştü. Rebase DİSKE GERİ YAZILMIYOR: idempotent (her
+ * açılış aynı sonucu üretir) ve 200 satırlık bir tabloyu açılışta baştan sona
+ * yazmanın karşılığı yok; satır bir sonraki gerçek mutasyonda güncellenir.
  */
 export function loadAttemptsFromDisk(): void {
   if (loadedFromDisk) return;
   try {
+    const now = Date.now();
     for (const row of readSendAttempts()) {
       if (!attempts.has(row.client_message_id)) {
-        attempts.set(row.client_message_id, attemptEntryFromRow(row));
+        attempts.set(
+          row.client_message_id,
+          rebaseAttemptOnLoad(attemptEntryFromRow(row), now),
+        );
       }
     }
     loadedFromDisk = true;
@@ -174,7 +193,7 @@ export function loadAttemptsFromDisk(): void {
 
 /**
  * Map yazımının normal kapısı: deneme muhasebesini MUTASYONDAN SONRA diske
- * yazan her yer (`chargeQuotaOnce`, `noteFailure`, `markPermanent`,
+ * yazan her yer (`chargeQuotaOnce`, `noteFailure`, `markTerminal`,
  * `armAckWatchdog`, `retryFailedMessage`) bunu çağırır — yoksa iki yazım
  * ayrışır (biri Map'i güncelleyip diski unutabilir) ve disk Map'ten geriye
  * düşer, restart'ta geriye düşmüş veriye güvenmiş oluruz.
@@ -270,43 +289,50 @@ function noteFailure(
   const entry = touchEntry(clientMessageId);
   entry.attempts += 1;
   entry.origin = origin;
-  entry.permanent = !retryable || entry.attempts >= MAX_ATTEMPTS;
+  entry.permanentReason = permanenceAfterFailure(retryable, entry.attempts);
   entry.nextEligibleAt = Date.now() + backoffDelayMs(entry.attempts);
   rememberAttempt(clientMessageId, entry);
   return entry;
 }
 
-function markPermanent(clientMessageId: string) {
+/**
+ * "Bu mesaj kaç kez denenirse denensin başaramaz" — `terminal`, yani restart'ı
+ * ATLATAN kalıcılık (bkz. outboxPolicy.PermanenceReason).
+ *
+ * Adı bilerek `markPermanent` değil: iki kalıcılık sebebi var ve bu fonksiyon
+ * yalnız birini kurabilir. Tavan dolmasını (`budget`) `noteFailure` kendi
+ * hesaplıyor; buradan geçen hiçbir çağrı bütçeyle ilgili değil (kota bitti,
+ * sohbet gitti, ses kaydı düştü).
+ */
+function markTerminal(clientMessageId: string) {
   const entry = touchEntry(clientMessageId);
-  entry.permanent = true;
+  entry.permanentReason = "terminal";
   rememberAttempt(clientMessageId, entry);
 }
 
 /**
- * Ack gelmiş/mesaj gitmiş kayıtları at — harita yalnız bekleyenleri taşısın.
+ * Ack gelmiş/mesaj gitmiş kayıtları Map'ten at — harita yalnız bekleyenleri
+ * taşısın.
  *
- * Diskten de silinir: yoksa `send_attempts` tabloda sonsuza dek birikir (Map
- * eviction'ı — MAX_TRACKED — KASITLI olarak diski silmiyor, ama bu doğal
- * "işim bitti" yolu silmeli, yoksa `pruneOrphanSendAttempts`e kadar her gönderilmiş
- * mesajın muhasebesi diskte gezer).
+ * YALNIZ MAP. Diske dokunmaması zorunlu, çünkü girdisi bu turun BAŞARISIZ
+ * anlık görüntüsü ve o liste "işi bitenler"i vermiyor: hem duruma süzülmüş
+ * (`readFailedSends` → `send_state = 'failed'`, `selectFailedOutbox` → `_failed`)
+ * hem tavanlı (limit 50, ESKİDEN YENİYE — yani en yeni hatalar listenin
+ * DIŞINDA kalıyor). Uçuştaki bir tekrar deneme (`retryOptimisticMessage`
+ * satırı `pending`e çevirir) ikisinde de yok; disk silmesi bu listeden
+ * sürülürse o kaydın `quota_charged`/`terminal` işareti silinir, sonraki hata
+ * sıfırdan bir kayıt açar ve nihayet başarılı olan deneme kotayı İKİNCİ kez
+ * düşürür — bu modülün diske inmiş olmasının tek sebebi tam bunu önlemekti.
+ *
+ * Diskin silicisi `pruneOrphanSendAttempts`: yüklemi ("mesaj `sent` ya da hiç
+ * yok") duruma değil GERÇEĞE bakıyor ve tavansız. Tur başına bir kez
+ * `flushOutbox`'tan, açılışta bir kez `startChatMirror`'dan çağrılıyor.
  */
 export function pruneAttempts(failedNow: any[]) {
   if (!attempts.size) return;
   const alive = new Set(failedNow.map((m) => m.clientMessageId));
-  const gone: string[] = [];
   for (const key of [...attempts.keys()]) {
-    if (!alive.has(key)) {
-      attempts.delete(key);
-      gone.push(key);
-    }
-  }
-  if (gone.length) {
-    try {
-      deleteSendAttempts(gone);
-    } catch {
-      // Silinmezse pruneOrphanSendAttempts bir sonraki fırsatta temizler;
-      // Map zaten doğru, kullanıcıya görünen davranış değişmez.
-    }
+    if (!alive.has(key)) attempts.delete(key);
   }
 }
 
@@ -329,7 +355,7 @@ function scheduleWake() {
     // için o kayıtlar da sessizce denenebiliyor (bkz. outboxPolicy.FailOrigin).
     // Elenmeye devam etseydi ack'i kaybolmuş mesaj backoff zamanlayıcısıyla hiç
     // denenmez, yalnız bir sonraki foreground/reconnect'i beklerdi.
-    if (entry.permanent) continue;
+    if (entry.permanentReason) continue;
     if (entry.attempts >= MAX_ATTEMPTS) continue;
     if (entry.nextEligibleAt > now && entry.nextEligibleAt < soonest) {
       soonest = entry.nextEligibleAt;
@@ -399,7 +425,7 @@ function handleFailure(
     // "görüntülendi" hunisini şişirirdi. Balon da SİLİNMEZ — bakılmayan bir
     // sohbette kullanıcının yazdığı metni habersiz yok etmek olurdu.
     dispatch(failOptimisticMessage({ conversationId, clientMessageId }));
-    markPermanent(clientMessageId);
+    markTerminal(clientMessageId);
     return;
   }
 
@@ -561,12 +587,14 @@ export async function retryFailedMessage(
 ): Promise<void> {
   // `sendOutgoing`'in KENDİ çağrısı GEÇ KALIR: aşağıdaki `attempts.get` ondan
   // ÖNCE çalışıyor. Cold start'ta (hiçbir flush turu koşmadı → Map boş/
-  // yüklenmemiş) bu satır olmadan `prev` HEP `undefined` bulunur, interactive'in
-  // "backoff'u/permanent'i EZ" sözleşmesi tamamen atlanır ve disk'teki eski
-  // `permanent`/yüksek `attempts` satırı AYNEN kalır — bir sonraki başarısız
-  // denemede `touchEntry` o eski (ezilmemiş) kaydı büyütüp kalıcıya çevirebilir.
-  // Kullanıcı açıkça "tekrar dene" dedi; bu satır olmadan İLK dokunuş sessizce
-  // kaybolur (ikinci manuel dokunuş kurtarır, bu yüzden Critical değil Important).
+  // yüklenmemiş) bu satır olmadan `prev` HEP `undefined` bulunur ve
+  // interactive'in "muhasebeyi EZ" sözleşmesi tamamen atlanır. Gönderimin
+  // kendisi yine olur (interactive `isEligible`'ı zaten es geçiyor); kaybedilen
+  // şey DİSKE yazılan sıfırlama. Bedeli TERMINAL sebepli satırlarda gerçek:
+  // `rebaseAttemptOnLoad` yalnız bütçe kalıcılığını temizliyor, terminal işaret
+  // yeni oturumda da duruyor — yani kullanıcı "tekrar dene" dedikten sonra bu
+  // gönderim de başarısız olursa mesaj bir daha hiçbir SESSİZ tura girmez
+  // (ikinci manuel dokunuş kurtarır, bu yüzden Critical değil Important).
   // Ayrıca: "cold start kotayı ikinci kez düşürmüyor" testinin dayandığı Map
   // doluşu da BU satırdan geliyor (o test `sendOutgoing`'in kendi çağrısını
   // AYIRT EDEMEZ, ikisi de burada aynı sonucu üretir — bkz. outboxPersistence.test.ts).
@@ -581,7 +609,7 @@ export async function retryFailedMessage(
     // bekleme günler sürebilir ve yerel dosya iOS'un habersiz sildiği cache
     // dizininde yaşıyor; kullanıcıya NEDEN söylemeden sonsuza dek "tekrar
     // dene"ye bastırmak hiçbir zaman başarıya ulaşmayacak bir döngü kurar.
-    if (message?.clientMessageId) markPermanent(message.clientMessageId);
+    if (message?.clientMessageId) markTerminal(message.clientMessageId);
     if (opts.mode === "interactive") {
       // Metin SEBEBE göre seçiliyor: yalnız "ses kaydı gitti" durumunda net
       // cümle — metin mesajının boş içeriği gibi diğer null sebeplerinde bu
@@ -596,24 +624,26 @@ export async function retryFailedMessage(
     return;
   }
   if (opts.mode === "interactive") {
-    // Kullanıcı niyeti backoff'u ve `permanent`i EZER — elle buton asla ölü
-    // olmamalı. `quotaCharged` korunuyor (çift düşme guard'ı — kullanıcının
-    // "tekrar dene" demesi daha önce düşmüş kotayı GERİ VERMEZ).
+    // Kullanıcı niyeti backoff'u ve kalıcılığı (sebebi ne olursa olsun) EZER —
+    // elle buton asla ölü olmamalı. `quotaCharged` korunuyor (çift düşme
+    // guard'ı — kullanıcının "tekrar dene" demesi daha önce düşmüş kotayı
+    // GERİ VERMEZ).
     const prev = attempts.get(d.clientMessageId);
     if (prev) {
       prev.attempts = 0;
       prev.firstSeenAt = Date.now();
       prev.nextEligibleAt = 0;
       prev.origin = "throw";
-      prev.permanent = false;
-      // DİSKE DE yaz: yazmazsak diskte eski `permanent: 1`/yüksek `attempts`
-      // satırı kalır. Gönderim TAM BU SIRADA kesilip uygulama kapanırsa
-      // restart sonrası `failStalePendingSends` satırı `failed`e çevirir,
-      // sessiz tur diskten okunan eski (ezilmemiş) muhasebeyle karşılaşır ve
-      // `isEligible` `permanent`i görüp mesajı SONSUZA DEK atlar — kullanıcı
-      // açıkça "tekrar dene" dediği mesajın bir daha hiç gönderilmemesi,
-      // persistence öncesi (kayıt hiç yokken isEligible(undefined) true
-      // dönerdi) durumdan daha kötü bir sonuç olurdu.
+      prev.permanentReason = null;
+      // DİSKE DE yaz: yazmazsak diskte eski satır kalır. Gönderim TAM BU SIRADA
+      // kesilip uygulama kapanırsa restart sonrası `failStalePendingSends`
+      // satırı `failed`e çevirir ve sessiz tur diskten okunan eski (ezilmemiş)
+      // muhasebeyle karşılaşır. Sebebi TERMINAL olan bir satırda sonuç
+      // `rebaseAttemptOnLoad`a rağmen kalıcı: `isEligible` mesajı SONSUZA DEK
+      // atlar, yani kullanıcının açıkça "tekrar dene" dediği mesaj bir daha hiç
+      // gönderilmez — persistence öncesi (kayıt hiç yokken isEligible(undefined)
+      // true dönerdi) durumdan daha kötü bir sonuç. (Sebebi BÜTÇE olan satırda
+      // rebase zaten kurtarırdı; yazımın gerekçesi o dal değil bu.)
       rememberAttempt(d.clientMessageId, prev);
     }
   }
@@ -691,6 +721,17 @@ export async function flushOutbox(
     // satırlar artık hiç görünmüyor.
     items = mergeFailedOutbox(selectFailedOutbox(state), readFailedOutboxFromLocal());
     pruneAttempts(items);
+    // DİSK temizliği `items`'tan SÜRÜLMEZ (gerekçe: pruneAttempts yorumu) —
+    // yüklemi gerçeğe bakan ve tavansız olan budama burada, tur başına bir kez.
+    // Açılıştaki çağrı (startChatMirror) tek başına yetmiyordu: uygulama günlerce
+    // açık kalabiliyor ve bu arada gönderilen her mesajın muhasebe satırı
+    // tabloda birikirdi.
+    try {
+      pruneOrphanSendAttempts();
+    } catch {
+      // Ayna sözleşmesi: SQL hatası turu da sohbeti de kilitlemez. Satırlar
+      // bir sonraki turda/açılışta temizlenir.
+    }
     if (!items.length) return;
 
     for (const m of items) {
