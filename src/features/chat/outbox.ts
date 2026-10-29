@@ -54,6 +54,7 @@ import {
   classifySendError,
   isEligible,
   isLateDelivery,
+  isVoiceRecordingGone,
   mergeFailedOutbox,
   messageToDescriptor,
   needsVoiceReupload,
@@ -573,13 +574,22 @@ export async function retryFailedMessage(
   if (!message?._failed) return;
   const d = messageToDescriptor(message);
   if (!d) {
-    // Neredeyse tek sebebi: sesli mesajın yerel dosyası düşmüş. Eskiden bu
-    // mesaj sessizce metin yoluna düşüp `content: ""` gönderiyor ve sunucudan
-    // UT-6710 alıyordu — balon bir daha asla düzelmiyordu.
+    // Neredeyse tek sebebi: sesli mesajın yerel dosyası düşmüş VE yükleme
+    // (adım 2) hiç tamamlanmamış. Eskiden bu mesaj sessizce metin yoluna
+    // düşüp `content: ""` gönderiyor ve sunucudan UT-6710 alıyordu — balon
+    // bir daha asla düzelmiyordu. Kuyruk artık kalıcı (Task 3) olduğu için bu
+    // bekleme günler sürebilir ve yerel dosya iOS'un habersiz sildiği cache
+    // dizininde yaşıyor; kullanıcıya NEDEN söylemeden sonsuza dek "tekrar
+    // dene"ye bastırmak hiçbir zaman başarıya ulaşmayacak bir döngü kurar.
     if (message?.clientMessageId) markPermanent(message.clientMessageId);
     if (opts.mode === "interactive") {
+      // Metin SEBEBE göre seçiliyor: yalnız "ses kaydı gitti" durumunda net
+      // cümle — metin mesajının boş içeriği gibi diğer null sebeplerinde bu
+      // cümle yanlış olurdu, onlar genel metni almaya devam ediyor.
       showInfoToast({
-        message: i18n.t("chat.voice.sendFailed") as string,
+        message: i18n.t(
+          isVoiceRecordingGone(message) ? "chat.voice.recordingGone" : "chat.voice.sendFailed",
+        ) as string,
         variant: "error",
       });
     }

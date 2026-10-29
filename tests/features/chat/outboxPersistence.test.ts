@@ -82,6 +82,8 @@ import { pullBeforeSend } from '@/features/chat/chatDeltaSync';
 import { decrementQuotaLocally } from '@/features/chat/chatSlice';
 import { showInfoToast } from '@/shared/services/toaster';
 import { store } from '@/shared/store';
+import { sendVoiceMessage } from '@/features/chat/voiceSend';
+import { VOICE_CONTENT_TYPE } from '@/features/chat/voiceMessage';
 
 /**
  * Outbox muhasebesinin (deneme sayısı/backoff/permanent/quota_charged) diske
@@ -250,6 +252,75 @@ describe('retryFailedMessage interactive — EZİLMİŞ muhasebe diske de yazıl
     loadAttemptsFromDisk();
 
     expect(peekAttempt(CMID)?.quotaCharged).toBe(true);
+  });
+});
+
+describe('retryFailedMessage — düşmüş ses kaydı (mediaUrl VE localUri yok)', () => {
+  const CONV = 'conv-1';
+
+  const failedVoiceMessage = (over: Record<string, unknown> = {}) => ({
+    conversationId: CONV,
+    clientMessageId: CMID,
+    contentType: VOICE_CONTENT_TYPE,
+    durationMs: 4000,
+    _failed: true,
+    ...over,
+  });
+
+  /**
+   * Senaryo: kuyruk artık kalıcı (Task 3) — sesli mesaj günlerce beklerken
+   * iOS cache'i `_localUri`yi silmiş, yükleme (adım 2) de hiç tamamlanmamış
+   * (`mediaUrl` yok). `messageToDescriptor` bu satırı asla tanıma çeviremez;
+   * `silent` turun bunu bir daha hiç denememesi gerekiyor, yoksa arka plan
+   * sonsuza dek aynı imkânsız denemeyi tekrarlar.
+   */
+  it('kalıcı işaret restart sonrası diskten de görülüyor — silent tur artık denemiyor', async () => {
+    await retryFailedMessage(failedVoiceMessage(), { mode: 'interactive' });
+
+    resetOutbox(); // process ölümü
+    loadAttemptsFromDisk();
+
+    expect(isEligible(peekAttempt(CMID), Date.now(), 'silent')).toBe(false);
+  });
+
+  it('interactive modda "yeniden kaydet" metni gösteriliyor, genel sesli hata metni DEĞİL', async () => {
+    await retryFailedMessage(failedVoiceMessage(), { mode: 'interactive' });
+
+    expect(showInfoToast).toHaveBeenCalledWith({
+      message: 'Ses kaydı bulunamadı, yeniden kaydet',
+      variant: 'error',
+    });
+  });
+});
+
+describe('retryFailedMessage — mediaUrl VAR, localUri yok: kalıcı hata DEĞİL', () => {
+  const CONV = 'conv-1';
+
+  /**
+   * Yükleme adımı (adım 2) daha önce tamamlanmış, `mediaUrl` diskte duruyor —
+   * yerel dosyanın iOS cache'inden silinmiş olması bu satır için önemsiz.
+   * `messageToDescriptor` yine bir tanım üretmeli; "ses kaydı gitti" dalına
+   * hiç girilmemeli.
+   */
+  it('tanım üretiliyor ve gönderim 3. adımdan sürüyor (markPermanent çağrılmıyor)', async () => {
+    await retryFailedMessage(
+      {
+        conversationId: CONV,
+        clientMessageId: CMID,
+        contentType: VOICE_CONTENT_TYPE,
+        mediaUrl: 'https://cdn.example/voice.m4a',
+        durationMs: 4000,
+        _failed: true,
+      },
+      { mode: 'interactive' },
+    );
+
+    expect(sendVoiceMessage).toHaveBeenCalled();
+    // `markPermanent` null dalında ÇAĞRILMADIYSA Map'te bu id için hiç kayıt
+    // açılmamış olur (chargeQuotaOnce Map-miss'te okur ama yazmaz) — null
+    // dalına hiç girilmediğinin dolaylı ama doğrudan kanıtı.
+    expect(peekAttempt(CMID)).toBeUndefined();
+    expect(showInfoToast).not.toHaveBeenCalled();
   });
 });
 

@@ -418,6 +418,21 @@ export function messageToDescriptor(m: any): OutgoingDescriptor | null {
 }
 
 /**
+ * `messageToDescriptor` null döndüğünde outbox'ın hangi metni göstereceğini
+ * ayırt eder: sesli mesaj hem yerel dosyasını hem yükleme URL'ini kaybetmişse
+ * (kuyruk kalıcı olduğu için günlerce bekleyip iOS cache'inin sildiği durum)
+ * "yeniden kaydet" söylemek doğru, ama metin mesajının boş içeriği gibi diğer
+ * null sebeplerinde bu cümle yanlış olurdu — o yüzden kontrol SADECE bu
+ * koşulu (ses + ikisi de yok) doğruluyor, "null mı" sorusunu değil.
+ */
+export function isVoiceRecordingGone(m: any): boolean {
+  if (!isVoiceMessage(m?.contentType)) return false;
+  const localUri = typeof m?._localUri === "string" && m._localUri;
+  const mediaUrl = typeof m?.mediaUrl === "string" && m.mediaUrl;
+  return !localUri && !mediaUrl;
+}
+
+/**
  * TÜM sohbetlerdeki başarısız mesajlar, ESKİDEN YENİYE.
  *
  * Bucket'lar en yeniden eskiye dizili; tek sohbetlik eski çözüm diziyi ters
