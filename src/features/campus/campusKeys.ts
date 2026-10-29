@@ -21,4 +21,15 @@ export const campusKeys = {
   boundary: (domain: string) => ["campus", "boundary", domain] as const,
   momentsRoot: ["campus", "moments"] as const,
   moments: (mode: string) => ["campus", "moments", mode] as const,
+  /**
+   * An sahibinin profil kartı — karta dokununca açılan yüzeyin verisi.
+   *
+   * ⚠️ `momentsRoot`UN ALTINDA DEĞİL ve olmaması şart: listeyi toptan
+   * invalidate eden yollar (`useRefreshCampus`, paylaşım sonrası) profil
+   * kartını da düşürürdü — kart AÇIKKEN altından veri çekmek demek.
+   * Anahtar kullanıcı + mod: aynı kişinin iki moddaki kartı farklı
+   * (prompt seti, niyet alanı).
+   */
+  momentProfile: (userId: string, mode: string) =>
+    ["campus", "momentProfile", userId, mode] as const,
 };

@@ -1,4 +1,10 @@
-import type { CampusGeometry, GeoRing } from "./campusTypes";
+import type {
+  CampusCircle,
+  CampusGeometry,
+  GeoPolygon,
+  GeoPosition,
+  GeoRing,
+} from "./campusTypes";
 
 /**
  * KAMPÜS POLİGONUNU HARİTANIN ÜSTÜNE OTURTMA — Web Mercator.
@@ -154,6 +160,240 @@ export function projectCampusGeometry(
     }));
 }
 
+/**
+ * KUTUYU KAPLAYAN, POLİGON ŞEKLİNDE DELİNMİŞ bir SVG `path`i.
+ *
+ * Akışta haritanın blur'u bu şekille maskeleniyor: zemin bulanık kalıyor,
+ * kampüsün içi net (bkz. CampusPolygonBlurMask).
+ *
+ * ⚠️ TEK PATH OLMAK ZORUNDA, `fillRule="evenodd"` ile. Maskede çocuklar
+ * birbirini silemez — şeffaf bir çocuk atasının opaklığını geri almaz — yani
+ * delik ancak aynı yolun alt yolları arasındaki sarılma sayısından doğar:
+ *   dikdörtgen (1) dolu → blur var, dış halka (2) boş → kampüs net,
+ *   avlu (3) dolu → blur var.
+ *
+ * ⚠️ HALKA ÇIKMAZSA DÜZ DİKDÖRTGEN DÖNÜYOR: boş bir maske blur'un tamamını
+ * yok ederdi, yani "deliği çizemedim" hatası "zemin bir anda netleşti" olarak
+ * görünürdü. Deliksiz maske = blur'un maskesiz hâli.
+ */
+export function campusBlurHolePath(
+  geometry: CampusGeometry,
+  args: CampusProjectionArgs,
+): string {
+  const { boxWidth, boxHeight } = args;
+  const rings = projectCampusGeometry(
+    geometry,
+    args,
+    boxWidth / 2,
+    boxHeight / 2,
+  )
+    .flatMap((polygon) => [polygon.outer, ...polygon.holes])
+    .map(ringToSubpath)
+    .filter(Boolean);
+
+  return [`M0,0H${boxWidth}V${boxHeight}H0Z`, ...rings].join(" ");
+}
+
+/**
+ * `"x,y x,y …"` → kapalı bir alt yol. Üç noktadan azı alan oluşturmuyor.
+ *
+ * ⚠️ DIŞARI AÇIK: blur maskesi dışında `CampusPolygonOverlay` de kullanıyor.
+ * Poligon artık GRADYANLA dolduruluyor ve gradyanda delik ancak `evenodd`
+ * ile açılıyor — yani orada da halkalar tek bir path'in alt yolları olmak
+ * zorunda. İki yerin aynı yardımcıyı paylaşması şart: ayrı yazılsalardı
+ * delik hesabı maske ile dolgu arasında sessizce ayrışırdı.
+ */
+export function ringToSubpath(points: string): string {
+  const pairs = points.split(" ").filter(Boolean);
+  if (pairs.length < 3) return "";
+  return `M${pairs.join("L")}Z`;
+}
+
+/**
+ * Halkanın EKRAN UZAYINDAKİ çevresi (pt) — `ringToSubpath`in ÖLÇÜSÜ.
+ *
+ * Tek müşterisi konturun kenar boyunca silinmesi (`CampusPolygonOverlay` >
+ * dissolve): `strokeDasharray` bir UZUNLUK istiyor ve o uzunluk şeklin kendi
+ * çevresi olmak zorunda, yoksa silinme ya şekli bitiremiyor ya da ortasında
+ * tamamlanıyor.
+ *
+ * ⚠️ KAPANIŞ SEGMENTİ DAHİL (`% length`): `ringToSubpath` yolu `Z` ile
+ * kapatıyor, yani son noktadan ilkine dönen kenar da çiziliyor. GeoJSON
+ * halkaları ilk noktayı sonda tekrar ettiği için o segment çoğu zaman sıfır
+ * uzunlukta — zararsız, ama tekrar etmeyen bir halkada eksik sayılırdı.
+ *
+ * ⚠️ AYNI GİRDİ BİÇİMİ (`"x,y x,y …"`) ve aynı eşik (üç noktadan azı alan
+ * oluşturmuyor → 0): iki fonksiyon aynı halkayı farklı sayıyorsa dash deseni
+ * çizilen yolla uyuşmaz.
+ */
+export function ringPerimeter(points: string): number {
+  const pairs = points.split(" ").filter(Boolean);
+  if (pairs.length < 3) return 0;
+  let total = 0;
+  for (let i = 0; i < pairs.length; i += 1) {
+    const [ax, ay] = pairs[i].split(",");
+    const [bx, by] = pairs[(i + 1) % pairs.length].split(",");
+    const dx = Number(bx) - Number(ax);
+    const dy = Number(by) - Number(ay);
+    total += Math.sqrt(dx * dx + dy * dy);
+  }
+  return total;
+}
+
+// ── Poligonu olmayan kampüs: daireden KABA BİR PARSEL ──────────────────────
+
+/** Dünyanın ortalama yarıçapı (m) — metre → derece çevrimi için. */
+const EARTH_RADIUS_M = 6371008.8;
+
+/**
+ * Birim karenin çevresi — KÖŞE ve KENAR ORTASI dönüşümlü (çift index köşe).
+ *
+ * Kenar ortalarının ayrıca nokta olması şart: bozulma yalnız köşelere
+ * uygulanırsa şekil "köşeleri oynamış ama kenarları cetvelle çizilmiş" bir
+ * dörtgen olarak kalıyor. Orta noktalar kenarların da hafifçe içe/dışa
+ * kıvrılmasını sağlıyor.
+ */
+const SQUARE_OUTLINE: ReadonlyArray<readonly [number, number]> = [
+  [1, 1],
+  [0, 1],
+  [-1, 1],
+  [-1, 0],
+  [-1, -1],
+  [0, -1],
+  [1, -1],
+  [1, 0],
+];
+
+/**
+ * BOZULMA MİKTARLARI — "bi tık" (istek). Birim: yarım kenar oranı.
+ *
+ * Köşeler kenar ortalarından daha serbest: gözün "bu kare düzgün değil"
+ * dediği şey ağırlıkla köşelerin hizası. 820m yarıçaplı bir kampüste 0.09 ≈
+ * 74m, yani ekranda görünür ama "çizim hatası" değil "parsel böyle" olarak
+ * okunuyor. Büyütülürse şekil dörtgenliğini kaybediyor; 0.2 civarında amip
+ * oluyor.
+ *
+ * ⚠️ ÖLÇEK RADYAL: nokta merkezden uzaklığıyla çarpılıyor, yani açısal sıra
+ * KORUNUYOR ve halka kendini kesemiyor. Serbest (x,y) kaydırma bu garantiyi
+ * kaybettiriyor ve `evenodd` dolgu kendi kendini delen bir şekilde ters
+ * dönüyor.
+ */
+const CORNER_JITTER = 0.09;
+const EDGE_JITTER = 0.05;
+
+/** Karenin eksenlerden sapması (radyan ≈ ±7°). Gerekçe aşağıda. */
+const MAX_TILT = 0.12;
+
+/**
+ * Deterministik 32-bit tohum — AYNI KAMPÜS HER ZAMAN AYNI ŞEKİL.
+ *
+ * ⚠️ `Math.random` OLMAZ: şekil her render'da yeniden üretiliyor (memo
+ * bağımlılığı değişince de) ve rastgele olsa kampüs ekranda her seferinde
+ * başka bir dörtgen olarak çizilirdi — üstelik kampüs değişimi geçişinde
+ * giden ve gelen kare aynı okulun iki ayrı şekli olurdu.
+ *
+ * 1e5 ölçeği ≈ 1m çözünürlük: aynı kampüsün koordinatı sunucuda yuvarlanıp
+ * birkaç metre oynasa bile tohum değişmez.
+ */
+function shapeSeed(lat: number, lon: number): number {
+  const a = Math.imul(Math.round(lat * 1e5) | 0, 0x85ebca6b);
+  const b = Math.imul(Math.round(lon * 1e5) | 0, 0xc2b2ae35);
+  return (a ^ b ^ 0x9e3779b9) >>> 0;
+}
+
+/** mulberry32 — kısa, tohumlu, dağılımı bu iş için fazlasıyla yeterli. */
+function mulberry32(seed: number): () => number {
+  let s = seed >>> 0;
+  return () => {
+    s = (s + 0x6d2b79f5) >>> 0;
+    let t = s;
+    t = Math.imul(t ^ (t >>> 15), t | 1);
+    t ^= t + Math.imul(t ^ (t >>> 7), t | 61);
+    return ((t ^ (t >>> 14)) >>> 0) / 4294967296;
+  };
+}
+
+/**
+ * DAİRE → ÇİZİLEBİLİR GEOMETRİ: hafifçe BOZULMUŞ bir KARE.
+ *
+ * Sunucuda hâlâ poligonu olmayan kampüsler var (sözleşme notu: ~25 tane) ve
+ * orada eskiden temsilî bir izometrik bina çiziliyordu (`CampusFigure`). İstek
+ * onu kaldırdı: "poligon yoksa o bölgeyi çiz, sonuçta merkezini biliyoruz".
+ * Merkez zaten elimizde — `/campus/boundary`nin `circle` alanı (işletim
+ * sistemi geofence'inin tetiği, bkz. campusTypes > CampusCircle).
+ *
+ * ⚠️ ŞEKİL DAİRE DEĞİL KARE, VE DÜZGÜN KARE DE DEĞİL (istek: "yuvarlak değil
+ * kare çiz ama tam düzgün kare olmasına bi tık boz"). Üç ayrı bozulma var ve
+ * üçü birden gerekli:
+ *   1. köşeler radyal olarak oynuyor (`CORNER_JITTER`),
+ *   2. kenar ortaları da oynuyor — kenarlar cetvel gibi düz kalmasın,
+ *   3. karenin tamamı eksenlerden ~±7° dönük (`MAX_TILT`).
+ * Dönüklük olmadan şekil ekranda "ekranla hizalı bir dikdörtgen", yani bir
+ * arayüz kutusu gibi okunuyor; kampüs parseli olarak okunması için haritanın
+ * kendi ızgarasıyla hizasız olması gerekiyor.
+ *
+ * ⚠️ BOZULMA DETERMİNİSTİK: tohum merkez koordinatından (`shapeSeed`), yani
+ * aynı kampüs her açılışta aynı dörtgen, farklı kampüsler farklı dörtgen.
+ *
+ * ⚠️ ÇİZİM İÇİN, KARAR İÇİN DEĞİL. "Kampüsteyim" kararını YALNIZ gerçek
+ * poligon veriyor (gerekçe `campusBoundary.ts` başında: Boğaziçi'nin dairesi
+ * Bebek'in yarısını içine alıyor). Bu fonksiyonun ürettiği halkayı
+ * `campusCanPost` benzeri bir kapıya SOKMAYIN — hem sunucunun kapısını
+ * istemcide genişletmiş olursunuz hem de kapıyı UYDURULMUŞ bir kenara
+ * bağlarsınız.
+ *
+ * ⚠️ AYRI BİR BİLEŞEN DEĞİL, GEOMETRİ: şekil gerçek poligonun yerine aynı
+ * boru hattına giriyor — kadraj (`fitZoom` ile banda oturma), blur deliği,
+ * tam ekranda yakınlaşma ve kampüs değişimi geçişi hiç değişmeden çalışıyor.
+ * SVG'de bir `<Rect>` çizmek bunların HEPSİNİ ayrıca yazmak demekti.
+ *
+ * ── Metre → derece ─────────────────────────────────────────────────────────
+ * Hesap METRİK uzayda yapılıyor (döndürme ancak orada doğru), çevrim en sonda:
+ * enlemde sabit (`r / R`), boylamda enlemle birlikte açılıyor (`/ cos φ`) —
+ * 41°'de bir boylam derecesi bir enlem derecesinin ~%75'i kadar. Bölme
+ * atlanırsa kare kuzey-güney basık bir dikdörtgen olur.
+ *
+ * ⚠️ EKRANDA DA KARE: Mercator açı koruyan (konformal) bir projeksiyon, yani
+ * kampüs ölçeğinde metrik kare ekranda da kare kalıyor; ayrıca bir düzeltme
+ * GEREKMİYOR.
+ *
+ * Yarım kenar = dairenin yarıçapı, yani kare dairenin DIŞINA değil içine
+ * teğet: kapsadığı alan dairenin kabaca dörtte üçü. Daireyle aynı sınır
+ * kutusunu korumak kadrajı da koruyor.
+ */
+export function campusAreaGeometry(circle: CampusCircle): GeoPolygon {
+  const rand = mulberry32(shapeSeed(circle.lat, circle.lon));
+  const tilt = (rand() * 2 - 1) * MAX_TILT;
+  const sin = Math.sin(tilt);
+  const cosT = Math.cos(tilt);
+
+  const metersToLat = 180 / (Math.PI * EARTH_RADIUS_M);
+  // Kutuplara yakın `cos` sıfıra gidiyor; kampüs enlemlerinde imkânsız ama
+  // bölen sıfırlanırsa halka Infinity'lerle dolar ve path sessizce ölür.
+  const cosLat = Math.max(Math.cos((circle.lat * Math.PI) / 180), 1e-6);
+
+  const ring: GeoRing = SQUARE_OUTLINE.map(([ux, uy], i) => {
+    const jitter = i % 2 === 0 ? CORNER_JITTER : EDGE_JITTER;
+    const scale = (1 + (rand() * 2 - 1) * jitter) * circle.radiusMeters;
+    // Metrik düzlem: x doğu, y kuzey.
+    const mx = ux * scale;
+    const my = uy * scale;
+    const rx = mx * cosT - my * sin;
+    const ry = mx * sin + my * cosT;
+    return [
+      circle.lon + (rx * metersToLat) / cosLat,
+      circle.lat + ry * metersToLat,
+    ] as GeoPosition;
+  });
+
+  // GeoJSON halkası KAPALI: son nokta ilkinin aynısı. `ringToSubpath` yolu
+  // zaten `Z` ile kapatıyor ama halka başka bir tüketiciye (sınır kutusu,
+  // ileride bir nokta testi) de gidiyor ve orada eksik kapanış sessiz bir hata.
+  ring.push([...ring[0]] as GeoPosition);
+
+  return { type: "Polygon", coordinates: [ring] };
+}
+
 // ── Kadraj: poligonu görünür alana oturtma ─────────────────────────────────
 
 export interface GeoBounds {
@@ -187,6 +427,27 @@ export function geometryBounds(geometry: CampusGeometry): GeoBounds | null {
 
   if (!Number.isFinite(minLon) || !Number.isFinite(minLat)) return null;
   return { minLon, minLat, maxLon, maxLat };
+}
+
+/**
+ * Sınırın EKRANDAKİ ölçüsü (pt) — verilen zoom ve `cover` ölçeğinde.
+ *
+ * `fitZoom`un tersi: o "şu alana sığan zoom" diyor, bu "şu zoomda kaç pt
+ * tutuyor". Tam ekrana geçerken poligona ne kadar yakınlaşılabileceği buradan
+ * hesaplanıyor (bkz. FeedMapStrip > `expandScale`) — tahminle yapılsa şekil
+ * bazı kampüslerde ekrandan taşardı.
+ */
+export function boundsScreenSize(
+  bounds: GeoBounds,
+  zoom: number,
+  scale: number,
+): { width: number; height: number } {
+  const sw = lonLatToWorld(bounds.minLon, bounds.minLat, zoom);
+  const ne = lonLatToWorld(bounds.maxLon, bounds.maxLat, zoom);
+  return {
+    width: Math.abs(ne.x - sw.x) * scale,
+    height: Math.abs(sw.y - ne.y) * scale,
+  };
 }
 
 /** Sınır kutusunun merkezi — haritanın merkezi bu oluyor. */

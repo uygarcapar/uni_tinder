@@ -103,11 +103,27 @@ export default function CampusMapTitle({
     <Text
       numberOfLines={1}
       style={{
-        // ⚠️ `colors.text` DEĞİL: yazı siyah perdenin (scrimAt) üstünde
-        // duruyor ve o perde temayla DÖNMÜYOR — açık temada koyu bir yazı
-        // kendi perdesinin içinde kaybolurdu. Medya mürekkebi her iki temada
-        // beyaz (bkz. CampusMapScrim'deki aynı gerekçe).
-        color: colors.onMedia,
+        /**
+         * MÜREKKEP İKİ VARYANTTA DA TEMANIN — açık modda SİYAH.
+         *
+         * Bir tur `short` ("Anlar") medya mürekkebinde (açık modda da beyaz)
+         * duruyordu, çünkü üst perde SABİT SİYAHTI. O perde akış sayfasının
+         * header blur'uyla eşitlendi ve artık modla dönüyor, yani açık modda
+         * BEYAZLIYOR (CampusMapScrim > tone="chrome"). Beyaz perde üstünde
+         * beyaz yazı kaybolurdu — `veil()`in kendi uyarısı bu: perdeyi
+         * çevirince üstündeki mürekkebi de çevir. Yanındaki cam X/artı da aynı
+         * turda tema mürekkebine geçti (FeedScreen > `onSurface`).
+         *
+         * `count` ("7 an · Kampüs") başından beri tema mürekkebinde: o satır
+         * ALT perdenin İÇ ucunda, maskenin şeffafa erittiği kuyrukta duruyor
+         * (CampusMapScrim > SCRIM_TO + maskFor) ve açık temada orada harita
+         * zaten açık kalıyordu.
+         *
+         * ⚠️ FOTOĞRAF ÜSTÜNDEKİ MÜREKKEP BUNDAN AYRI: kartın dibindeki ad/zaman
+         * satırı medya mürekkebinde KALIYOR (CampusMomentCard) — orada altta
+         * gerçekten bir fotoğraf var, harita değil.
+         */
+        color: colors.text,
         fontSize: TITLE_FONT,
         lineHeight: TITLE_LINE,
         fontWeight: "700",

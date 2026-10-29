@@ -5,12 +5,17 @@ import {
 } from '@/features/campus/campusStripBoxes';
 
 /**
- * ŞERİDİN DİZİLİMİ — dört durumun kesişimi.
+ * ŞERİDİN DİZİLİMİ — üç durumun kesişimi.
  *
  * Şerit modalın yerini aldı ve onunla birlikte klasik boş durum da kalktı:
  * boşluğun yerinde artık ikonlu/gradyanlı DOLGU kutuları duruyor. Yani "hiç an
- * yok" artık bir ekran değil, bir dizilim — ve dizilim dört girdiye bağlı
- * (paylaşabiliyor mu, yükleniyor mu, kaç an var, neden paylaşamıyor).
+ * yok" artık bir ekran değil, bir dizilim — ve dizilim üç girdiye bağlı
+ * (yükleniyor mu, kaç an var, hangi bilgi kutusu başta).
+ *
+ * ⚠️ DÖRDÜNCÜ GİRDİ (`canShare`) BU HESAPTAN ÇIKTI: şeridin başındaki tam boy
+ * paylaşma kutusu kaldırıldı ve aksiyon BAŞLIK SATIRINA taşındı (gerekçe
+ * campusStripBoxes'ın başında). Artı kutusu testleri de onunla birlikte
+ * düştü — şerit artık yalnız gösterilecek içerikten oluşuyor.
  *
  * Bu dallar bir `useMemo`nun içinde gözle doğrulanamıyordu; hesap saf modüle
  * taşındı, buradaki testler de sözleşmesi.
@@ -25,31 +30,15 @@ const build = (args: Record<string, unknown> = {}) =>
   buildStripBoxes<TestMoment>({
     moments: [],
     idOf: (m) => m.id,
-    canShare: false,
     loading: false,
     infoKeys: KEYS,
     ...args,
   });
 
 describe('şeridin dizilimi', () => {
-  it('artı kutusu ŞERİDİN BAŞINDA ve yalnız paylaşabiliyorken', () => {
-    const withAdd = build({ canShare: true });
-    expect(withAdd[0].add).toBe(true);
-
-    // ⚠️ ÖLÜ KUTU ÇİZİLMİYOR: kampüs dışındaysa ya da bugün paylaşmışsa artı
-    // HİÇ yok — basınca hata veren bir aksiyon kullanıcıyı kandırır.
-    expect(build({ canShare: false }).some((b) => b.add)).toBe(false);
-  });
-
-  it('gerçek anlar artıdan SONRA, verildikleri sırada', () => {
-    const boxes = build({ canShare: true, moments: [M('x'), M('y')] });
-    expect(boxes.map((b) => b.moment?.id ?? b.key)).toEqual([
-      'add',
-      'x',
-      'y',
-      // Tek/iki an kalınca dolgu devreye giriyor (aşağıdaki test).
-      expect.stringContaining('info-'),
-    ]);
+  it('gerçek anlar EN BAŞTA, verildikleri sırada', () => {
+    const boxes = build({ moments: [M('x'), M('y')] });
+    expect(boxes.map((b) => b.moment?.id ?? b.key)).toEqual(['x', 'y']);
   });
 
   it('hiç an yokken şerit DOLGUYLA doluyor — boş durum YOK', () => {
@@ -61,7 +50,21 @@ describe('şeridin dizilimi', () => {
     expect(boxes[0].infoKey).toBe('a');
   });
 
-  it('dolgu yalnız TAVANA KADAR — yeterince an varsa hiç eklenmiyor', () => {
+  /**
+   * ⚠️ TEK AN BİLE DOLGUYU TAMAMEN KAPATIYOR (istek: "bir an varsa bizim 3
+   * default empty state kartları gözükmesin").
+   *
+   * Eskiden dolgu TAVANA KADAR tamamlıyordu (1 an + 2 dolgu) ve kural
+   * anlatan kutular gerçek anların yanında içeriğin devamı gibi okunuyordu.
+   * Tavan testi o yüzden bu ikisiyle değişti: kutu sayısı artık an sayısı.
+   */
+  it('TEK an varken dolgu YOK — şerit yalnız o an', () => {
+    const boxes = build({ moments: [M('x')] });
+    expect(boxes).toHaveLength(1);
+    expect(boxes.some((b) => b.infoKey)).toBe(false);
+  });
+
+  it('tavanın ÜSTÜNDE de dolgu yok — kutu sayısı an sayısı', () => {
     const boxes = build({ moments: [M('1'), M('2'), M('3'), M('4')] });
     expect(boxes).toHaveLength(4);
     expect(boxes.some((b) => b.infoKey)).toBe(false);
@@ -81,14 +84,8 @@ describe('şeridin dizilimi', () => {
     expect(boxes[0].moment?.id).toBe('x');
   });
 
-  it('yükleme turunda da artı kutusu BAŞTA kalıyor', () => {
-    const boxes = build({ loading: true, canShare: true });
-    expect(boxes[0].add).toBe(true);
-    expect(boxes.slice(1).every((b) => b.skeleton)).toBe(true);
-  });
-
   it('anahtarlar türler arasında ÇAKIŞMIYOR', () => {
-    const boxes = build({ canShare: true, moments: [M('info-a')] });
+    const boxes = build({ moments: [M('info-a')] });
     const keys = boxes.map((b) => b.key);
     expect(new Set(keys).size).toBe(keys.length);
   });

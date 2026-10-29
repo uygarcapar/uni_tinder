@@ -1,8 +1,14 @@
 import { memo, useMemo } from "react";
-import Svg, { Polygon } from "react-native-svg";
-import { colors, withAlpha } from "@/shared/theme/colors";
+import Animated, {
+  useAnimatedProps,
+  type SharedValue,
+} from "react-native-reanimated";
+import Svg, { Path } from "react-native-svg";
+import { ink } from "@/shared/theme/colors";
 import {
   projectCampusGeometry,
+  ringPerimeter,
+  ringToSubpath,
   type CampusProjectionArgs,
 } from "../campusProjection";
 import type { CampusGeometry } from "../campusTypes";
@@ -15,8 +21,14 @@ import type { CampusGeometry } from "../campusTypes";
  * bir yerde" ile "okulun sınırı tam burası" arasındaki fark. Poligon elimizde
  * varken temsilî bir bina çizmek, elde olan bilgiyi saklamak olurdu.
  *
- * Poligonu olmayan kampüslerde (sunucuda hâlâ 25 tane) diorama duruyor —
- * orada çizilecek bir sınır yok.
+ * ⚠️ GELEN GEOMETRİ GERÇEK SINIR OLMAK ZORUNDA DEĞİL. Poligonu olmayan
+ * kampüslerde (sunucuda hâlâ ~25 tane) çağıran `circle` alanından hafifçe
+ * BOZULMUŞ bir KARE üretip buraya onu veriyor (istek: "poligon yoksa o
+ * bölgeyi kare çiz ama tam düzgün kare olmasın, bi tık boz" — bkz.
+ * campusProjection > campusAreaGeometry ve FeedMapStrip > displayGeometry).
+ * Bu dosya aradaki farkı GÖRMÜYOR ve görmemeli: ikisi de halka listesi, ikisi
+ * de aynı konturla çiziliyor. Diorama yalnız ikisi de yokken (sınır inmedi /
+ * il merkezi) kalıyor.
  *
  * ── Şekil haritanın KADRAJINA bağlı ────────────────────────────────────────
  * Çizim Mercator projeksiyonuyla görüntünün merkezinden türüyor
@@ -25,26 +37,39 @@ import type { CampusGeometry } from "../campusTypes";
  * onu haritayla aynı `Animated.View`in çocuğu yapıyor. Ayrı bir katmana
  * konsaydı açılma animasyonu boyunca haritadan kayardı.
  *
- * ── Neden dolgu AÇIK, kenar KOYU ───────────────────────────────────────────
- * Harita artık Mapbox'ın kendi sokak stili, yani altında yol/park/bina var.
- * Opak bir dolgu onların hepsini örter ve "kampüsüm neresi" sorusunu yine
- * cevapsız bırakırdı. Düşük alfalı dolgu alanı işaretliyor, kenar sınırı
- * söylüyor.
+ * ── YALNIZ KENAR: DOLGU YOK ────────────────────────────────────────────────
+ * Poligon artık bir YÜZEY değil, bir ÇİZGİ (istek: "sadece etrafı çizilsin,
+ * border gibi"). Altındaki harita hiçbir yerde perdelenmiyor; sınır bir alanı
+ * boyamıyor, sadece gösteriyor.
  *
- * ── RENK SABİT SİYAH — MOD AKSANI DA DEĞİL, TEMA MÜREKKEBİ DE DEĞİL ────────
- * Kenar ve dolgu eskiden seçili modun aksanındaydı (Flört'te kırmızı,
- * Arkadaş'ta yeşil). 2026-10-22 isteği: sınır bir MOD bilgisi değil, haritanın
- * kendi dili → kenar tam siyah, dolgu aynı siyahın düşük alfalısı.
+ * ⚠️🔴 DOLGU TARİHÇESİ — DÖRT TUR, HEPSİ AYNI ŞİKÂYETTE BİTTİ: üç duraklı
+ * mod gradyanı (alfa 0.45→0.15) → "puslu, alta doğru eriyor"; düz mod tinti
+ * 0.34 → yine "puslu, üstünde overlay kalmış gibi"; perdelerin üstüne taşınan
+ * aynı dolgu → yine fazla. Her turda azaltılan şey alfaydı ve sorun alfa
+ * değildi: DOLU bir yüzey, kartlarla aynı ekranda bir leke olarak okunuyor.
+ * Kenar o yüzden dolgunun "incesi" değil, ondan BAŞKA bir şey.
  *
- * ⚠️ `ink()` KULLANILMIYOR ve bu BİLİNÇLİ bir istisna: o yardımcı temayla
- * dönüyor (koyuda beyaz) ve bir tur öyle yazıldı, istenen bu değil — siyah HER
- * İKİ TEMADA da siyah kalıyor (açık istek).
+ * ⚠️ DOLGU GERİ İSTENİRSE: `fill="none"` yerine alfalı bir ton konulabilir ama
+ * kontur KALMALI — eski turların tamamında şeklin nerede bittiğini söyleyen
+ * tek şey alfaydı ve harita koyulaştıkça zayıflıyordu.
  *
- * Bedeli biliniyor: harita stili temayla dönüyor (bkz. mapbox.ts), yani koyu
- * temada koyu bir zeminin üstünde siyah sınırın kontrastı düşük. Sınır çizgisi
- * yine de görünür çünkü Mapbox'ın koyu stili tam siyah değil; okunurluk
- * yetmezse çözüm renk DEĞİL kalınlık ya da ince bir beyaz dış hat (çift
- * kontur) olur.
+ * ── RENK MODDAN DEĞİL TEMADAN: `ink(1)` ────────────────────────────────────
+ * Koyu temada BEYAZ, açık temada SİYAH (istek birebir). `ink()` tanımı gereği
+ * moda ZIT mürekkep, yani tam bu iş için var.
+ *
+ * ⚠️ MOD RENGİ (Flört kırmızısı / Arkadaş yeşili) KALDIRILDI ve `mode` prop'u
+ * da onunla gitti — FeedMapStrip'ten ve FeedScreen'den gelen zincir dahil.
+ * Gerekçe 2026-10-22'de yazılmış olanın aynısı: "sınır bir MOD bilgisi değil,
+ * haritanın kendi dili". Geri istenirse `modeFireTint(mode)` tek satır, ama
+ * prop zincirinin tamamı yeniden kurulmak zorunda.
+ *
+ * ⚠️ TEMAYLA DÖNMEK ZORUNDA: altındaki harita 2026-10-27'den beri tema başına
+ * ayrı stil çiziyor (bkz. mapbox.ts > MAPBOX_STYLE_CAMPUS_LIGHT). Sabit bir
+ * renk iki zeminden birinde kaybolurdu — beyaz kontur açık haritada, siyah
+ * kontur koyu haritada.
+ *
+ * ⚠️ PALET MUTABLE: `ink()` RENDER SIRASINDA çağrılıyor. Modül seviyesinde bir
+ * sabite alınırsa tema çevrildiğinde eski renk kalır.
  *
  * ── MERKEZ NOKTASI KALDIRILDI (2026-10-22 isteği) ──────────────────────────
  * Poligonun ortasında aksan renkli bir daire ve altında yumuşak bir hale vardı
@@ -60,44 +85,150 @@ import type { CampusGeometry } from "../campusTypes";
  */
 
 /**
- * Kenar kalınlıkları.
+ * KONTURUN KALINLIĞI — sınırı söyleyen tek şey.
  *
- * ⚠️ İKİSİ BİRLİKTE DÜŞÜYOR, oran korunuyor: dış halka deliğin kenarından
- * belirgin şekilde kalın olmak zorunda — ikisi eşitlenince "kampüsün sınırı"
- * ile "avlunun sınırı" aynı ağırlıkta okunuyor ve şekil düzleşiyor.
+ * ⚠️ 2 → 2.5 (istek: "bi tık kalınlaştır"). 2, 2026-10-22'de kaldırılan eski
+ * konturun kalınlığıydı; dolgu gidince çizgi tek başına kaldı ve o ölçüde
+ * biraz cılız duruyordu.
+ *
+ * ⚠️ BİRİM EKRAN PUNTOSU: `<Svg>`in genişliği kutunun genişliğiyle aynı ve
+ * `viewBox` YOK, yani yol koordinatları doğrudan ekran uzayında. Buradaki sayı
+ * gördüğün kalınlık.
+ *
+ * ⚠️ TAM EKRANDA ÖLÇEKLE BÜYÜYOR: katman poligona yakınlaşırken `scale`
+ * alıyor (FeedMapStrip > `zoom`) ve kontur onunla birlikte kalınlaşıyor. Akışta
+ * ölçülen bir sayı, tam ekranda `expandScale` kadar daha kalın görünür —
+ * "tam ekranda çok kalın" denirse çözüm bu sayı değil, konturu ölçekten muaf
+ * tutmaktır (RN transform'u `vectorEffect`i dinlemiyor, yani kontur
+ * `expandScale`in tersiyle çarpılmak zorunda).
  */
-const OUTER_STROKE = 2;
-const HOLE_STROKE = 1.25;
+const STROKE_WIDTH = 2.5;
 
 /**
- * Sınırın rengi — SABİT siyah, temadan BAĞIMSIZ (gerekçe dosya başında).
- * `colors.*`tan okunmuyor: paletteki her mürekkep temayla dönüyor.
+ * ── KONTURUN KENAR BOYUNCA ÇİZİLMESİ (istek) ────────────────────────────────
+ *
+ * "o moments kısmına geçince üç kareye dokunup çizgi animasyonla, çizgi
+ * şeklinde yavaşça çizilsin poligon."
+ *
+ * Belirme bir SÖNME DEĞİL: çizginin UCU kenar boyunca ilerliyor, arkasında
+ * kalan kısım çizilmiş oluyor. Yani şekil opaklaşmıyor, kendi sınırını takip
+ * ederek KURULUYOR.
+ *
+ * Uygulama `strokeDasharray` + `strokeDashoffset`: desen tek bir çizgi (şeklin
+ * çevresi kadar) ve bir o kadar boşluk; offset `çevre`den 0'a inerken görünen
+ * pay `[0, çevre − offset]` olarak büyüyor. `opacity` KULLANILMIYOR — o, şeklin
+ * tamamını birden belirirdi ve istenen tam olarak onun tersi.
+ *
+ * ⚠️ YÖN BİR TUR TERSİYDİ: akışta kaydırmaya bağlı SİLİNME olarak yazılmıştı
+ * (offset 0 → çevre). Akışta poligon artık hiç çizilmiyor (bant kaldırıldı),
+ * yani aynı mekanizma tam ekrana geçişte TERS yönde kullanılıyor. Sabitin
+ * kendisi değişmedi, yalnız `reveal`in anlamı: 0 = hiç çizilmemiş.
+ *
+ * ⚠️ DESEN ALT YOL BAŞINA SIFIRLANIYOR (SVG sözleşmesi): avlular kendi
+ * kenarlarını kendi başlarına çiziyor. Uzunluk EN UZUN halkadan alındığı için
+ * (bkz. aşağı) kısa halkalar yolun sonuna doğru hızlı tamamlanıyor; hepsi
+ * `reveal = 1`de birlikte bitiyor. Her halkanın kendi oranında çizilmesi için
+ * halka başına ayrı `<Path>` gerekirdi ve o TEK PATH kuralını kırar (gerekçe
+ * `path`in notunda).
+ *
+ * ⚠️ `strokeLinecap` VARSAYILANDA ("butt") BIRAKILIYOR: yuvarlak bir uç,
+ * ilerleyen baş kısmında yarım daire bir damla bırakıyor ve çizgi "akıyor" gibi
+ * okunuyor. Düz kesim, kenarı takip eden temiz bir uç veriyor.
  */
-const STROKE = "#000000";
-/** Alanı işaretleyen dolgu — altındaki sokak dokusu okunmaya devam etmeli. */
-const FILL_ALPHA = 0.18;
-/** Deliğin kenarı dış halkadan SOLUK: avlu sınırı kampüs sınırı değil. */
-const HOLE_STROKE_ALPHA = 0.6;
-
 export interface CampusPolygonOverlayProps {
   geometry: CampusGeometry;
   projection: CampusProjectionArgs;
+  /**
+   * 0 = kontur HİÇ çizilmemiş, 1 = şekil tam çizili.
+   *
+   * Opsiyonel ve VERİLMEZSE DESEN DE KURULMUYOR (şekil tam çizili): kampüs
+   * yüzeyinin kendi haritası şekli her zaman tam çiziyor, oraya boş bir
+   * animasyon bağlamanın karşılığı yok.
+   *
+   * Değeri çağıran üretiyor (tam ekrana geçişin ardından, bkz. feedMapMotion >
+   * MAP_POLYGON_DRAW_MS): bu bileşen haritanın açılıp kapandığını bilmiyor —
+   * tek işi şekli çizmek ve ne kadarının çizildiğini okumak.
+   */
+  reveal?: SharedValue<number>;
 }
+
+/**
+ * ⚠️ `Path`in animasyonlu hâli MODÜL DÜZEYİNDE: `createAnimatedComponent`
+ * render içinde çağrılırsa her çizimde YENİ bir bileşen tipi doğar ve React
+ * ağacı her karede yeniden mount eder (SVG'de bu, şeklin yanıp sönmesi olarak
+ * görünür).
+ */
+const AnimatedPath = Animated.createAnimatedComponent(Path);
 
 const CampusPolygonOverlay = memo(function CampusPolygonOverlay({
   geometry,
   projection,
+  reveal,
 }: CampusPolygonOverlayProps) {
   const { boxWidth, boxHeight } = projection;
   const originX = boxWidth / 2;
   const originY = boxHeight / 2;
 
-  const polygons = useMemo(
-    () => projectCampusGeometry(geometry, projection, originX, originY),
-    [geometry, projection, originX, originY],
-  );
+  /**
+   * ⚠️ TEK PATH — ve dolgu gidince de TEK KALMAK ZORUNDA.
+   *
+   * Eskiden dış halka ile delikler ayrı `Polygon`lardı; delik altındaki
+   * haritayı geri getiren bir silgi değil, üstüne çizilen soluk bir kapaktı.
+   * Tek path'te delik alt yollar arasındaki sarılma sayısından doğuyor
+   * (`fillRule="evenodd"`): dış halka dolu, avlu boş.
+   *
+   * ⚠️ `fillRule` DOLGU GİTSE DE DURUYOR: tek masrafı yok ve dolgu geri
+   * eklenirse delikler kendiliğinden doğru çalışıyor.
+   *
+   * ⚠️ KONTUR HER ALT YOLU ÇİZİYOR — yani avluların kenarı da (tek path, ayrı
+   * ayrı kontrol edilemezler). İSTENEN DE BU: avlu da kampüsün sınırı.
+   *
+   * Blur maskesi aynı kuralı ve aynı yardımcıyı (`ringToSubpath`) paylaşıyor —
+   * ayrı yazılsalardı delik hesabı ikisi arasında sessizce ayrışırdı.
+   */
+  /**
+   * Yol VE çizilmenin ölçüsü AYNI HESAPTAN: desenin uzunluğu şeklin kendi
+   * çevresi olmak zorunda (gerekçe `ringPerimeter`da) ve iki ayrı `useMemo`
+   * zamanla ayrışır — biri halkayı eler, öteki elemez.
+   *
+   * ⚠️ UZUNLUK EN UZUN HALKADAN: desen alt yol başına sıfırlandığı için tek bir
+   * sayı tüm halkaları kapsamak zorunda. En uzunu seçmek "hiçbir halka
+   * `reveal = 1`den önce tamamlanmasın ve hiçbiri eksik kalmasın" demek —
+   * toplam alınsaydı en uzun halka bile yarı yolda kalırdı.
+   */
+  const { path, dashLength } = useMemo(() => {
+    const rings = projectCampusGeometry(
+      geometry,
+      projection,
+      originX,
+      originY,
+    ).flatMap((polygon) => [polygon.outer, ...polygon.holes]);
+    return {
+      path: rings.map(ringToSubpath).filter(Boolean).join(" "),
+      // 1 taban: sıfır uzunlukta bir desen SVG'de "desen yok" demek, yani
+      // şekil silinmek yerine tam çizili kalırdı.
+      dashLength: Math.max(1, ...rings.map(ringPerimeter)),
+    };
+  }, [geometry, projection, originX, originY]);
 
-  if (!polygons.length) return null;
+  /**
+   * ⚠️ `reveal` YOKKEN DE HOOK ÇAĞRILIYOR (React kuralı) ama aşağıda prop
+   * olarak BAĞLANMIYOR — koşul JSX'te, hook'ta değil. O dalda offset 0, yani
+   * desen kurulsa bile şekil tam çizili olurdu.
+   */
+  const dashProps = useAnimatedProps(() => ({
+    strokeDashoffset: (1 - (reveal ? reveal.value : 1)) * dashLength,
+  }));
+
+  /**
+   * ⚠️ `<Defs>` + ÖRNEĞE ÖZEL ID İHTİYACI DA GRADYANLA BİRLİKTE GİTTİ. Akışta
+   * haritanın çapraz geçişi sırasında bu bileşen AYNI ANDA İKİ KEZ canlı
+   * (giden ve gelen kare) ve iki `<Defs>` aynı gradyan adını tanımlıyordu;
+   * biri sökülünce diğerinin dolgusu kayboluyordu ("poligon bazen renksiz").
+   * Düz dolguda paylaşılan bir ad yok. Gradyan geri gelirse `useId()`li id de
+   * geri gelmek ZORUNDA.
+   */
+  if (!path) return null;
 
   return (
     <Svg
@@ -106,34 +237,30 @@ const CampusPolygonOverlay = memo(function CampusPolygonOverlay({
       height={boxHeight}
       style={{ position: "absolute", left: 0, top: 0 }}
     >
-      {polygons.map((polygon, i) => (
-        <Polygon
-          key={`outer-${i}`}
-          points={polygon.outer}
-          fill={withAlpha(STROKE, FILL_ALPHA)}
-          stroke={STROKE}
-          strokeWidth={OUTER_STROKE}
-          strokeLinejoin="round"
-        />
-      ))}
+      {/* ⚠️ `fill="none"` — DOLGU YOK, yalnız kontur (gerekçe dosya başında).
+          "transparent" yerine "none": SVG'de ikisi aynı sonucu veriyor ama
+          `none` "boyama yok" demek, yani dolgu hesabı hiç kurulmuyor.
 
-      {/* DELİKLER — avlu/iç boşluk. Dış halkayla aynı dolguyla değil, haritanın
-          kendisiyle doldurulamıyor (SVG'de delik `fill-rule` ile olurdu ama
-          `Polygon` tek halka alıyor); bu yüzden delik, altındaki haritayı geri
-          getiren bir "silgi" olarak değil, kendi ince kenarıyla çiziliyor.
-          Alan olarak dolgusu YOK: içi kampüs sayılmıyor ve öyle de görünüyor. */}
-      {polygons.flatMap((polygon, i) =>
-        polygon.holes.map((hole, j) => (
-          <Polygon
-            key={`hole-${i}-${j}`}
-            points={hole}
-            fill={colors.mediaScrimSoft}
-            stroke={withAlpha(STROKE, HOLE_STROKE_ALPHA)}
-            strokeWidth={HOLE_STROKE}
-            strokeLinejoin="round"
-          />
-        )),
-      )}
+          ⚠️ RENK RENDER SIRASINDA OKUNUYOR (`ink(1)`): koyuda beyaz, açıkta
+          siyah. Modül sabitine alınırsa tema çevrilince eski renk kalır.
+
+          ⚠️ `strokeLinejoin="round"`: kampüs sınırları çok kırıklı poligonlar
+          ve keskin birleşimlerde SVG konturu dışa doğru uzun sivriler
+          (miter spike) çıkarıyor — 2.5pt'de bunlar şeklin dışında iğneler
+          olarak görünüyor. */}
+      <AnimatedPath
+        d={path}
+        fill="none"
+        stroke={ink(1)}
+        strokeWidth={STROKE_WIDTH}
+        strokeLinejoin="round"
+        fillRule="evenodd"
+        // ⚠️ İKİSİ BİRLİKTE: desen olmadan offset'in hiçbir etkisi yok, offset
+        // olmadan desen şekli "tam çizili" göstermekle kalır. `reveal`
+        // verilmediğinde ikisi de kurulmuyor (gerekçe prop'un notunda).
+        strokeDasharray={reveal ? [dashLength, dashLength] : undefined}
+        animatedProps={reveal ? dashProps : undefined}
+      />
     </Svg>
   );
 });

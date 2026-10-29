@@ -5,7 +5,15 @@ import { useTranslation } from "react-i18next";
 import { useAppSelector } from "@/shared/hooks/redux";
 import { appPrefs } from "@/shared/utils/appPrefs";
 import { devLog } from "@/shared/utils/devLog";
-import { pickAndCropPhotos, captureAndCropPhoto } from "@/shared/utils/photoPicker";
+// ⚠️ `pickAndCropPhotos` / `captureAndCropPhoto` ARTIK KULLANILMIYOR: kampüs
+// anında galeri yolu da kırpma ekranı da kaldırıldı (gerekçe `captureMoment`te).
+// `captureRawPhoto` da düştü: kare artık kamera ekranında duruyor ve gönderim
+// oradan tetikleniyor (`captureAndSendPhoto`).
+import {
+  captureAndSendPhoto,
+  fitPhotoForUpload,
+  type RawShot,
+} from "@/shared/utils/photoPicker";
 import { forgetPhoto } from "@/shared/utils/photoStore";
 import { useSwipeMutation } from "@/features/discover/swipeQueries";
 import type { AppMode } from "@/features/discover/modeTheme";
@@ -26,7 +34,10 @@ import {
   usePassCampusMoment,
   useRefreshCampus,
 } from "./campusQueries";
-import { resolveCampusPresence } from "./campusPresence";
+import {
+  resolveCampusPresence,
+  resolveCampusPresenceHint,
+} from "./campusPresence";
 import { syncCampusGeofence } from "./campusGeofence";
 import type { CampusMomentDto } from "./campusTypes";
 
@@ -157,6 +168,37 @@ export function useCampusSurface({
     refreshPresence(false);
   }, [enabled, refreshPresence]);
 
+  /**
+   * UCUZ İPUCU — akışın bandındaki "paylaşabilirsin" kartı için.
+   *
+   * ⚠️ YÜZEY KAPALIYKEN DE KOŞUYOR ve bu, konumu ısıtmama kuralını BOZMUYOR:
+   * `resolveCampusPresenceHint` GPS'i uyandırmıyor, işletim sisteminin son
+   * bilinen konumunu okuyor (gerekçe orada). Yüksek doğruluklu okuma hâlâ
+   * yalnız harita açıldığında ve paylaşım anında.
+   *
+   * ⚠️ `inside`la BİRLEŞTİRİLMİYOR, ayrı tutuluyor: `inside` paylaşımın
+   * kapısı ve onu bir tahminle doldurmak sunucunun reddedeceği bir "+"
+   * butonu çizerdi. İpucu yalnız bandın küçük kartını açıyor.
+   */
+  const [insideHint, setInsideHint] = useState(false);
+  useEffect(() => {
+    if (!available) {
+      setInsideHint(false);
+      return;
+    }
+    let alive = true;
+    resolveCampusPresenceHint({ domain, boundary })
+      .then((hint) => {
+        if (alive) setInsideHint(hint);
+      })
+      .catch(() => {
+        /* no-op — ipucu yoksa kart da yok. */
+      });
+    return () => {
+      alive = false;
+    };
+  }, [available, boundary, domain]);
+
   /** Sınır indiğinde/değiştiğinde geofence'i senkronla (izin varsa). */
   useEffect(() => {
     if (!boundary) return;
@@ -178,56 +220,44 @@ export function useCampusSurface({
     decisionsRemaining <= 0;
 
   // ── Paylaşım akışı ────────────────────────────────────────────────────────
-  const [sourceSheetOpen, setSourceSheetOpen] = useState(false);
-  const [composerOpen, setComposerOpen] = useState(false);
-  const [photo, setPhoto] = useState<{ uri: string; mime: string } | null>(null);
-  const [shareError, setShareError] = useState<string | null>(null);
+  /**
+   * ⚠️ ELDE KARE TUTAN STATE KALMADI (`shot`) ve ONAY SHEET'İ DE (`composerOpen`,
+   * `shareError`) — ikisi de kamera ekranına taşındı.
+   *
+   * İstek birebir: "direkt çektiğim ekranda foto static kalsın, oradan göndere
+   * basınca göndereyim, ekstra modal filan açma". Kare artık kamera ekranının
+   * penceresinde donuyor, paylaş düğmesi ve satır içi hata da orada
+   * (bkz. photoPicker > `captureAndSendPhoto` ve cameraBridge > `commit`).
+   *
+   * Yani bu kanca artık kareyi SAKLAMIYOR, yalnız gönderme işini veriyor:
+   * `shareShot` bir kez koşan saf bir iş, hata metnini DÖNDÜRÜYOR (state'e
+   * yazmıyor) çünkü o metni gösterecek yüzey kamera ekranı.
+   */
   const [primingOpen, setPrimingOpen] = useState(false);
 
   /** Paylaşım kapısı: açık + kampüste + bugün paylaşmamış. */
   const canShare = available && inside && !me?.postedToday;
 
-  const openSourceSheet = useCallback(() => {
-    setShareError(null);
-    setSourceSheetOpen(true);
-  }, []);
-
-  const handlePicked = useCallback((picked: { uri: string; mime: string } | null) => {
-    if (!picked) return;
-    setPhoto(picked);
-    setComposerOpen(true);
-  }, []);
-
   /**
-   * ⚠️ Seçiciler sheet KAPANDIKTAN SONRA açılıyor (PhotoSourceSheet'in kuralı):
-   * gorhom kapanma animasyonundayken PHPicker sunmak iOS'ta "already
-   * presenting" no-op'una düşüyor.
+   * ══════════════════════════════════════════════════════════════════════════
+   * "+" DOĞRUDAN KAMERAYI AÇIYOR — KAYNAK SEÇİMİ VE KIRPICI YOK (istek).
+   * ══════════════════════════════════════════════════════════════════════════
+   * İstek birebir: "artıya basınca galeri filan sunmasın, direkt kamerayı
+   * açsın ve ön kamerayla açılsın ilk; çekince de preview olarak dursun
+   * ekranda, loading'e girmesin; sonra da yollayayım".
+   *
+   * Akış artık TEK dokunuş + TEK onay: `+` → kamera (ön) → önizleme sheet'i →
+   * paylaş. Kaldırılan iki adım:
+   *   • `PhotoSourceSheet` (kamera/galeri seçimi) — bir kampüs anı "şu anda
+   *     burada olmanın" kanıtı, galeriden seçilen eski bir fotoğraf o cümleyi
+   *     kuramıyor. Seçenek sunmak kuralı da zayıflatıyordu.
+   *   • kırpma ekranı — kamera zaten 3:4 çekiyor ve kullanıcının deklanşöre
+   *     basarken gördüğü pencere TAM OLARAK o kare, yani kırpıcı aynı kareyi
+   *     ikinci kez onaylatmaktan başka bir şey yapmıyordu.
+   *
+   * ⚠️ GALERİ YOLU TAMAMEN KALKTI (`pickAndCropPhotos` çağrısı yok): geri
+   * isteniyorsa kuralın kendisi (yalnız anlık çekim) yeniden tartışılmalı.
    */
-  const pickFromGallery = useCallback(async () => {
-    try {
-      const photos = await pickAndCropPhotos(1);
-      handlePicked(photos?.[0] ?? null);
-    } catch (err) {
-      devLog("[campus] gallery pick failed:", err);
-    }
-  }, [handlePicked]);
-
-  const pickFromCamera = useCallback(async () => {
-    try {
-      const picked = await captureAndCropPhoto();
-      handlePicked(picked);
-    } catch (err) {
-      devLog("[campus] camera capture failed:", err);
-    }
-  }, [handlePicked]);
-
-  const closeComposer = useCallback(() => {
-    setComposerOpen(false);
-    setShareError(null);
-    if (photo?.uri) forgetPhoto(photo.uri);
-    setPhoto(null);
-  }, [photo?.uri]);
-
   /** Kod → gösterilecek metin. SUNUCU MESAJI ÖNCE, i18n yedek. */
   const errorTextOf = useCallback(
     (err: unknown): string => {
@@ -239,9 +269,21 @@ export function useCampusSurface({
     [t],
   );
 
-  const share = useCallback(async () => {
-    if (!photo?.uri) return;
-    setShareError(null);
+  /**
+   * ══════════════════════════════════════════════════════════════════════════
+   * KAREYİ GÖNDER — kamera ekranının "Paylaş" düğmesinin arkasındaki iş.
+   * ══════════════════════════════════════════════════════════════════════════
+   * ⚠️ HATA METNİNİ DÖNDÜRÜYOR, state'e YAZMIYOR: metni gösterecek yüzey artık
+   * bu kancanın değil, kamera ekranının (donmuş karenin altındaki satır).
+   * Sözleşme `cameraBridge > commit`te: `null` = başarılı, string = hata.
+   *
+   * ⚠️ EKRAN AÇIK KALDIĞI İÇİN hata DALLARININ HEPSİ "tekrar denenebilir"
+   * olmak zorunda: kare elde duruyor, kullanıcı aynı kareyle tekrar basabilir
+   * ya da yeniden çekebilir. Bu yüzden hiçbir dalda ham kare unutulmuyor —
+   * silinen tek dosya ölçeklenmiş KOPYA (onu her deneme yeniden üretiyor).
+   */
+  const shareShot = useCallback(
+    async (shot: RawShot): Promise<string | null> => {
     try {
       /**
        * ⚠️ KONUM TAM BURADA ve TAZE okunuyor (`force: true`).
@@ -256,35 +298,53 @@ export function useCampusSurface({
         force: true,
       });
       if (!presence.inside || !presence.fix) {
-        setShareError(t(`campus.codes.${CAMPUS_CODES.OUT_OF_CAMPUS}`));
         setInside(false);
-        return;
+        return t(`campus.codes.${CAMPUS_CODES.OUT_OF_CAMPUS}`);
       }
+
+      /**
+       * ⚠️ ÖLÇEKLEME TAM BURADA — çekimden hemen sonra DEĞİL (istek:
+       * "çekince loading'e girmesin").
+       *
+       * Ham kare 12MP'e kadar çıkıyor ve yüklemeye o hâliyle gidemez; kırpıcı
+       * kaldırıldığı için küçültmeyi yapan tek yer bu. Deklanşörle önizleme
+       * arasına konsaydı kullanıcı tam o anda bir yükleme görürdü; burada
+       * zaten bir yükleme durumu var (gönder düğmesinin göstergesi, S3 PUT).
+       *
+       * `null` = manipülatör hatası. Mesaj genel: kullanıcının yapabileceği
+       * bir şey yok, fotoğraf elde duruyor ve tekrar basabilir.
+       */
+      const photo = await fitPhotoForUpload(shot);
+      if (!photo) return t("campus.codes.generic");
 
       const file = new File(photo.uri);
       const sizeBytes = Number(file.size ?? 0);
       if (!sizeBytes) {
-        setShareError(t("campus.codes.generic"));
-        return;
+        forgetPhoto(photo.uri);
+        return t("campus.codes.generic");
       }
       /**
        * Boyut kapısı İSTEMCİDE DE var.
        *
        * Sunucu zaten 1. adımda (upload-url) reddediyor, yani bant genişliği
-       * çöpe gitmiyor — ama kullanıcının EMEĞİ gidiyor: fotoğrafı seçti,
-       * kırptı, "paylaş"a bastı ve ancak o anda "çok büyük" duydu. Sınır
-       * `/me`den geliyor; alan yoksa kontrol YAPILMIYOR (uydurma bir tavan
-       * koymaktansa sunucunun reddetmesi doğru).
+       * çöpe gitmiyor — ama kullanıcının EMEĞİ gidiyor: fotoğrafı çekti,
+       * "paylaş"a bastı ve ancak o anda "çok büyük" duydu. Sınır `/me`den
+       * geliyor; alan yoksa kontrol YAPILMIYOR (uydurma bir tavan koymaktansa
+       * sunucunun reddetmesi doğru).
+       *
+       * ⚠️ KONTROL ÖLÇEKLENMİŞ DOSYADA: ham kare neredeyse her zaman tavanı
+       * aşıyor (12MP JPEG birkaç MB), yani ham boyuta bakmak kullanıcıyı
+       * yükleyebileceği bir fotoğraf için reddetmek olurdu.
        */
       const maxBytes = me?.photoMaxBytes ?? null;
       if (maxBytes && sizeBytes > maxBytes) {
-        setShareError(t(`campus.codes.${CAMPUS_CODES.PHOTO_TOO_LARGE}`));
-        return;
+        forgetPhoto(photo.uri);
+        return t(`campus.codes.${CAMPUS_CODES.PHOTO_TOO_LARGE}`);
       }
 
       await createMoment.mutateAsync({
         fileUri: photo.uri,
-        contentType: photo.mime || "image/jpeg",
+        contentType: photo.mime,
         sizeBytes,
         body: {
           mode,
@@ -296,13 +356,78 @@ export function useCampusSurface({
         },
       });
 
-      closeComposer();
+      /**
+       * ⚠️ İKİ DOSYA DA TÜKETİLDİ: yükleme bitti.
+       *   • ölçeklenmiş kopya — yüklenen dosyanın kendisi,
+       *   • HAM kare — eskiden onay sheet'i kapanırken unutuluyordu
+       *     (`closeComposer`), o sheet kalkınca sahipsiz kaldı. Yalnız BAŞARI
+       *     dalında: hata dallarında kare elde durmak zorunda (kullanıcı aynı
+       *     kareyle tekrar deneyebiliyor, gerekçe fonksiyonun başında).
+       */
+      forgetPhoto(photo.uri);
+      forgetPhoto(shot.uri);
+      return null;
+    } catch (err) {
+      return errorTextOf(err);
+    }
+    },
+    [
+      boundary,
+      createMoment,
+      domain,
+      errorTextOf,
+      me?.photoMaxBytes,
+      mode,
+      t,
+    ],
+  );
+
+  /**
+   * ══════════════════════════════════════════════════════════════════════════
+   * "+" DOĞRUDAN KAMERAYI AÇIYOR — ve AKIŞIN TAMAMI O EKRANDA BİTİYOR.
+   * ══════════════════════════════════════════════════════════════════════════
+   * İstek birebir: "direkt çektiğim ekranda foto static kalsın, orada çekince
+   * sonra oradan göndere basınca göndereyim, ekstra modal filan açma".
+   *
+   * Akış TEK ekran: `+` → kamera (ön) → deklanşör → kare pencerede DONUYOR →
+   * Paylaş. Üç adım sırayla kaldırıldı:
+   *   • `PhotoSourceSheet` (kamera/galeri seçimi),
+   *   • kırpma ekranı (kamera zaten 3:4 çekiyor, pencere tam o kare),
+   *   • onay sheet'i `CampusMomentComposer` — önizlemesi, paylaş düğmesi ve
+   *     satır içi hatası kamera ekranına taşındı.
+   *
+   * ⚠️ GALERİ YOLU TAMAMEN KALKTI (`pickAndCropPhotos` çağrısı yok): geri
+   * isteniyorsa kuralın kendisi (yalnız anlık çekim) yeniden tartışılmalı.
+   */
+  const captureMoment = useCallback(async () => {
+    try {
+      const result = await captureAndSendPhoto({
+        facing: "front",
+        commitLabel: t("campus.composer.share"),
+        commit: shareShot,
+      });
+
+      /**
+       * ⚠️ HATA YALNIZ YEDEK YOLDAN gelir (sistem kamerası — simülatör ya da
+       * overlay sökülmüş). Uygulama içi kamerada metin ZATEN karenin altında
+       * gösterildi; burada ikinci kez söylemek aynı hatayı iki yerde yazmak
+       * olurdu. Gerekçe photoPicker > `SendShotResult`ta.
+       */
+      if (result.error) {
+        devLog("[campus] paylaşım başarısız (yedek yol)", result.error);
+        return;
+      }
+      if (!result.sent) return;
 
       /**
        * "Her zaman" iznini TAM BURADA soruyoruz — kullanıcı az önce bir an
        * paylaştı, yani yüzeyi kullandığını gösterdi. Açılışta ya da "+"ya
        * basar basmaz sormak hem niyet anından uzak hem de paylaşım akışını
        * kesiyor. Bir kez soruluyor (latch), reddedilirse bir daha sorulmuyor.
+       *
+       * ⚠️ KAMERA EKRANI KAPANDIKTAN SONRA: sheet, kamera katmanının ALTINDA
+       * kalırdı (o katman NotifierWrapper'ın bile üstünde çiziliyor). Paylaşım
+       * işinin içinde değil, bu yüzden burada.
        */
       if (userId) {
         const key = `${ASKED_KEY_PREFIX}${userId}`;
@@ -312,20 +437,9 @@ export function useCampusSurface({
         }
       }
     } catch (err) {
-      setShareError(errorTextOf(err));
+      devLog("[campus] camera capture failed:", err);
     }
-  }, [
-    boundary,
-    closeComposer,
-    createMoment,
-    domain,
-    errorTextOf,
-    me?.photoMaxBytes,
-    mode,
-    photo,
-    t,
-    userId,
-  ]);
+  }, [shareShot, t, userId]);
 
   // ── Karar yolu ────────────────────────────────────────────────────────────
   const [busyMomentId, setBusyMomentId] = useState<string | null>(null);
@@ -394,6 +508,20 @@ export function useCampusSurface({
     [deleteMoment],
   );
 
+  /**
+   * ⚠️🔴 SAHTE ANLAR KALDIRILDI (istek: "test verilerini kaldır moments'ten").
+   *
+   * Burada `devCampusMoments(mode)` gerçek anların ARDINA ekleniyordu —
+   * `__DEV__` kapılı, prod'da boş dizi dönen bir yerleşim iskelesi
+   * (`campusDevMoments.ts`, dosyasıyla birlikte silindi). Tek noktadan
+   * girmesinin sebebi yüzeyin çok tüketicisi olmasıydı: anların kare satırı,
+   * tam ekran şerit ve haritanın sayacı hepsi BU diziyi okuyor — mock'u
+   * bileşenlerden birine koymak diğerlerini boş bırakıyordu.
+   *
+   * Geri gerekirse kural aynı: tek nokta BURASI, gerçek anların ARDINA, ve
+   * `__DEV__` kapısı şart (kalıcı bir anahtara bağlanmamalı — aylar sonra
+   * "kampüste 5 kişi var" diye bakıp gerçek sanma riski).
+   */
   const moments = momentsQuery.data?.items ?? [];
 
   return {
@@ -405,6 +533,14 @@ export function useCampusSurface({
     inside,
     /** "+" çizilsin mi. */
     canShare,
+    /**
+     * AKIŞIN BANDINDAKİ ipucu kartı çizilsin mi — `canShare`ın UCUZ kardeşi.
+     *
+     * ⚠️ İkisi karıştırılmamalı: bu, son bilinen konuma dayanan bir TAHMİN ve
+     * yalnız "kampüsteysen paylaşabilirsin" ipucunu açıyor. Gerçek paylaşım
+     * kapısı `canShare` (taze, yüksek doğruluklu okuma).
+     */
+    canShareHint: available && insideHint && !me?.postedToday,
     moments,
     loading: momentsQuery.isLoading,
     decisionsRemaining,
@@ -415,18 +551,29 @@ export function useCampusSurface({
       : undefined,
 
     // Akışlar
-    openSourceSheet,
-    sourceSheetOpen,
-    closeSourceSheet: useCallback(() => setSourceSheetOpen(false), []),
-    pickFromGallery,
-    pickFromCamera,
+    /**
+     * "+" → DOĞRUDAN KAMERA (ön), kaynak sheet'i ve kırpıcı YOK.
+     *
+     * ⚠️ `openSourceSheet` / `pickFromGallery` / `pickFromCamera` üçlüsü
+     * KALDIRILDI: kampüs anı anlık bir çekim olmak zorunda (gerekçe
+     * `captureMoment`te). Ekranda `PhotoSourceSheet` de artık mount
+     * edilmiyor.
+     */
+    captureMoment,
 
-    composerOpen,
-    closeComposer,
-    photoUri: photo?.uri ?? null,
-    sharing: createMoment.isPending,
-    shareError,
-    share,
+    /**
+     * ⚠️ ONAY SHEET'İNİN BEŞ PROP'U KALDIRILDI: `composerOpen`,
+     * `closeComposer`, `photoUri`, `shareError`, `share`.
+     *
+     * Hepsi kamera ekranına taşındı (istek: "ekstra modal filan açma"):
+     * önizleme donmuş kare, paylaş düğmesi alt barda, hata karenin altında,
+     * gönderim göstergesi düğmenin kendisinde. `CampusMomentComposer` artık
+     * mount EDİLMİYOR; geri isteniyorsa `shareShot`un hata metnini DÖNDÜRDÜĞÜNÜ
+     * (state'e yazmadığını) unutma.
+     *
+     * `sharing` de gitti: tek müşterisi o sheet'in düğmesiydi ve `createMoment
+     * .isPending`i artık kamera ekranının `busy`si temsil ediyor.
+     */
 
     primingOpen,
     closePriming: useCallback(() => setPrimingOpen(false), []),

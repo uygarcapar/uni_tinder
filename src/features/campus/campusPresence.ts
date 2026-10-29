@@ -233,6 +233,77 @@ export async function resolveCampusPresence(args?: {
   };
 }
 
+/**
+ * ── UCUZ CEVAP: "BÜYÜK İHTİMALLE KAMPÜSTE Mİ" ──────────────────────────────
+ *
+ * GPS'i UYANDIRMIYOR. İşletim sisteminin elindeki SON BİLİNEN konumu okuyor
+ * (`getLastKnownPositionAsync`), yani pil maliyeti sıfır ve cevap anında.
+ *
+ * ── Neden ayrı bir yol var ─────────────────────────────────────────────────
+ * Akışın bandında kampüsteyken "paylaşabilirsin" diyen küçük bir kart duruyor
+ * (bkz. FeedBandMoments) ve o kart akış her açıldığında karar vermek zorunda.
+ * `resolveCampusPresence` orada KULLANILAMAZ: yüksek doğruluklu tek atımlık
+ * okuma (12sn tavan) ve bu dosyanın kendi uyarısı "her akış mount'unda
+ * tetiklemek pili yakar" diyor — `useCampusSurface` konumu tam bu yüzden
+ * ısıtmıyor.
+ *
+ * ⚠️ BU BİR KAPI DEĞİL, İPUCU. Paylaşımın gerçek kapısı değişmedi: "+"
+ * basıldığında ve gövde kurulurken yine `force: true` ile TAZE okuma yapılıyor
+ * (bkz. `share`). Son bilinen konum dakikalarca eski olabilir; yanlış tarafa
+ * hata yaparsa kullanıcı kampüs dışındayken bir ipucu kartı görür ve dokununca
+ * gerçek kapı onu zaten durdurur.
+ *
+ * ⚠️ `isConfidentlyInsideCampus`ten geçiyor, ham poligon testinden DEĞİL: son
+ * bilinen konum çoğu zaman düşük doğruluklu (hücre/Wi-Fi) ve belirsizlik payı
+ * sınırı aşıyorsa cevap "hayır" olmak zorunda.
+ */
+export async function resolveCampusPresenceHint(args?: {
+  domain?: string | null;
+  boundary?: CampusBoundaryDto | null;
+}): Promise<boolean> {
+  const boundary =
+    args?.boundary ??
+    (args?.domain ? readCachedBoundary(args.domain) : null) ??
+    null;
+  if (!boundary) return false;
+
+  // DEV simülasyonu burada da en önde — gerçek yolun aynısı.
+  const simulated = simulatedCampusFix();
+  const fix = simulated ?? freshFix(Date.now()) ?? (await lastKnownFix());
+  if (!fix) return false;
+
+  return isConfidentlyInsideCampus(
+    fix.latitude,
+    fix.longitude,
+    fix.accuracyMeters,
+    boundary,
+  );
+}
+
+/** İşletim sisteminin önbelleğindeki konum — izin yoksa/kayıt yoksa `null`. */
+async function lastKnownFix(): Promise<CampusFix | null> {
+  try {
+    const perm = await Location.getForegroundPermissionsAsync();
+    if (perm.status !== "granted") return null;
+    const position = await Location.getLastKnownPositionAsync({
+      // Bundan eski bir kayıt kampüs kararı için anlamsız; kullanıcı o süre
+      // içinde şehir değiştirmiş olabilir.
+      maxAge: 15 * 60_000,
+    });
+    if (!position) return null;
+    return {
+      latitude: position.coords.latitude,
+      longitude: position.coords.longitude,
+      accuracyMeters: position.coords.accuracy ?? null,
+      isMocked: (position as any).mocked === true,
+      capturedAt: new Date(position.timestamp || Date.now()).toISOString(),
+    };
+  } catch (err) {
+    devLog("[campus] last known fix failed:", err);
+    return null;
+  }
+}
+
 /** Logout / kampüs değişimi — bir sonraki okuma taze olsun. */
 export function clearCampusFixCache(): void {
   cachedFix = null;

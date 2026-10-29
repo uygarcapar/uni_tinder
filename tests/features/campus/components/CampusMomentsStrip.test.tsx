@@ -1,0 +1,68 @@
+import { fireEvent, render, waitFor } from '@testing-library/react-native';
+import { SafeAreaProvider } from 'react-native-safe-area-context';
+import { makeMutable } from 'react-native-reanimated';
+import CampusMomentsStrip from '@/features/campus/components/CampusMomentsStrip';
+import type { CampusMomentDto } from '@/features/campus/campusTypes';
+
+/**
+ * ŞERİDİN DOKUNUŞ SÖZLEŞMESİ.
+ *
+ * Şerit karar vermiyor, yalnız dokunuşu yukarı veriyor — ve dokunuş artık
+ * profil değil BÜYÜYEN KARTI açıyor. Burada çivilenen iki şey:
+ *   • kartın ölçülen karesi de yukarı geçiyor (hareket oradan başlıyor),
+ *   • KENDİ anım dokunulamaz (UT-7422) — kart erişilebilirlik ağacında buton
+ *     bile değil.
+ */
+
+const moment = (over?: Partial<CampusMomentDto>): CampusMomentDto => ({
+  id: '1',
+  userId: 'u1',
+  displayName: 'Ada',
+  age: 21,
+  photoUrl: 'https://cdn.test/1.jpg',
+  createdAt: new Date().toISOString(),
+  expiresAt: new Date(Date.now() + 3 * 3_600_000).toISOString(),
+  mode: 'Dating',
+  isMine: false,
+  ...over,
+});
+
+const frameMetrics = { x: 0, y: 0, width: 393, height: 852 };
+const insets = { top: 59, left: 0, right: 0, bottom: 34 };
+
+const mount = (
+  over: Partial<React.ComponentProps<typeof CampusMomentsStrip>> = {},
+) => {
+  const onOpenCard = jest.fn();
+  const tree = render(
+    <SafeAreaProvider initialMetrics={{ frame: frameMetrics, insets }}>
+      <CampusMomentsStrip
+        progress={makeMutable(1)}
+        moments={[moment()]}
+        campusLabel="Test"
+        loading={false}
+        canShare
+        isInsideCampus
+        onOpenCard={onOpenCard}
+        onRemove={jest.fn()}
+        onReport={jest.fn()}
+        {...over}
+      />
+    </SafeAreaProvider>,
+  );
+  return { tree, onOpenCard };
+};
+
+it('karta basınca onOpenCard an ve kareyle çağrılıyor', async () => {
+  const { tree, onOpenCard } = mount();
+  fireEvent.press(tree.getByLabelText(/Ada/));
+  // Çağrı asenkron: kart önce kendi penceresini ölçüyor (CampusMomentCard).
+  await waitFor(() => expect(onOpenCard).toHaveBeenCalledTimes(1));
+  expect(onOpenCard.mock.calls[0][0].id).toBe('1');
+});
+
+it('KENDİ anım dokunulamaz — onOpenCard çağrılmıyor', () => {
+  const { tree, onOpenCard } = mount({ moments: [moment({ isMine: true })] });
+  expect(tree.queryByLabelText(/Ada/)).toBeNull();
+  expect(onOpenCard).not.toHaveBeenCalled();
+});
