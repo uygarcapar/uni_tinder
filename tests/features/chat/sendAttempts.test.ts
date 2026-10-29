@@ -54,7 +54,9 @@ const row = (over: Partial<SendAttemptRow> = {}): SendAttemptRow => ({
   next_eligible_at_ms: 2_000,
   permanent: 0,
   quota_charged: 0,
-  origin: 'manual',
+  // Gerçek bir `FailOrigin` değeri — 'manual' hiçbir yazıcının üretemediği bir
+  // değerdi ve okuyana var olmayan bir kaynak sınıfı varmış gibi görünüyordu.
+  origin: 'throw',
   last_error: null,
   ...over,
 });
@@ -65,6 +67,40 @@ beforeEach(() => {
   clearMessageCache();
   openChatDb();
 });
+
+/**
+ * "Diski" tamamen silip migration'ları HİÇ çalıştırmamış ham bir sürücü açar —
+ * `openChatDb` dosyayı zaten v7'ye taşıdığı için eski bir sürümü taklit
+ * etmenin tek yolu bu.
+ */
+const rawDriverOnEmptyDisk = (): ChatDbDriver => {
+  __resetChatDbForTests();
+  __resetAllDatabases();
+  const raw = SQLite.openDatabaseSync(CHAT_DB_NAME);
+  return {
+    getAll: (sql, params = []) => raw.getAllSync(sql, params),
+    getFirst: (sql, params = []) => raw.getFirstSync(sql, params),
+    run: (sql, params = []) => {
+      raw.runSync(sql, params);
+    },
+    exec: (sql) => raw.execSync(sql),
+    transaction: (fn) => raw.withTransactionSync(fn),
+    close: () => raw.closeSync(),
+  };
+};
+
+/**
+ * Ham sürücüyle v1..v6'yı MIGRATIONS dizisinden tek tek koşturup
+ * `user_version`'ı 6'da damgalar — v6 şemasının ikinci bir el yazımı KOPYASI
+ * (ayrı bir doğruluk kaynağı) üretmemenin yolu bu.
+ */
+const stampV6 = (db: ChatDbDriver) => {
+  for (const migration of MIGRATIONS) {
+    if (migration.version > 6) continue;
+    migration.up(db);
+  }
+  db.exec('PRAGMA user_version = 6');
+};
 
 describe('send_attempts: yazıp geri okuma', () => {
   it('yazıp geri okuyor', () => {
@@ -140,34 +176,33 @@ describe('send_attempts: yazıp geri okuma', () => {
     expect(readSendAttempts().map((r) => r.client_message_id)).toEqual(['cmid-m-b']);
   });
 
+  /**
+   * V7'nin `DROP TABLE` satırı `IF EXISTS`li. Olmasaydı `outbox`u olmayan bir
+   * v6 diski her açılışta migration transaction'ını geri alır, `user_version`
+   * 6'da takılır, `openChatDb` atar ve ayna kendini devre dışı bırakırdı —
+   * yayınlandıktan sonra düzeltilemeyecek bir satırda toplam bir bedel.
+   */
+  it('outbox tablosu olmayan v6 diski de v7’ye yükseliyor', () => {
+    const db = rawDriverOnEmptyDisk();
+    stampV6(db);
+    db.exec('DROP TABLE outbox');
+
+    expect(() => runMigrations(db)).not.toThrow();
+
+    expect(db.getFirst<{ user_version: number }>('PRAGMA user_version')?.user_version).toBe(7);
+    expect(
+      db.getAll("SELECT name FROM sqlite_master WHERE type = 'table' AND name = 'send_attempts'"),
+    ).toEqual([{ name: 'send_attempts' }]);
+  });
+
   it('v6 veritabanı v7’ye yükselince mesaj ve sohbet satırları duruyor', () => {
     // beforeEach'in openChatDb()'si bu dosyayı ZATEN v7'ye taşımış — üstüne
     // v1 migration'ını (CREATE TABLE conversations...) tekrar koşmak "tablo
     // zaten var" hatası verir. Gerçek bir v6 kurulumunu taklit etmek için
     // "diski" tamamen silip ham sürücüyle (openChatDb'nin DIŞINDAN,
     // migrations'ı HİÇ çalıştırmadan) sıfırdan açıyoruz.
-    __resetChatDbForTests();
-    __resetAllDatabases();
-    const raw = SQLite.openDatabaseSync(CHAT_DB_NAME);
-    const db: ChatDbDriver = {
-      getAll: (sql, params = []) => raw.getAllSync(sql, params),
-      getFirst: (sql, params = []) => raw.getFirstSync(sql, params),
-      run: (sql, params = []) => {
-        raw.runSync(sql, params);
-      },
-      exec: (sql) => raw.execSync(sql),
-      transaction: (fn) => raw.withTransactionSync(fn),
-      close: () => raw.closeSync(),
-    };
-
-    // Ham sürücüyle v1..v6'yı MIGRATIONS dizisinden tek tek koşturup
-    // user_version'ı 6'da damgalıyoruz — v6 şemasının ikinci bir el yazımı
-    // KOPYASI (ayrı bir doğruluk kaynağı) üretmemenin yolu bu.
-    for (const migration of MIGRATIONS) {
-      if (migration.version > 6) continue;
-      migration.up(db);
-    }
-    db.exec('PRAGMA user_version = 6');
+    const db = rawDriverOnEmptyDisk();
+    stampV6(db);
 
     db.run(
       `INSERT INTO conversations (conversation_id, partner_user_id) VALUES (?, ?)`,

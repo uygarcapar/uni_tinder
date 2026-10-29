@@ -208,9 +208,17 @@ const V6 = `ALTER TABLE conversations ADD COLUMN mode TEXT;`;
  * — bu tablo o yüzden KASTEN gövdesiz, yalnız muhasebe kolonları taşıyor.
  * Aynı sebepten `conversation_id` de yok: muhasebe mesaj kimliğine (cmid)
  * bağlı, sohbete değil; sohbet gerekiyorsa `messages` üzerinden JOIN edilir.
+ *
+ * Düşürme `IF EXISTS`li: migration'lar tek transaction'da koşuyor ve
+ * yayınlandıktan sonra DÜZELTİLEMİYOR. `outbox` herhangi bir sebeple yoksa
+ * (elle müdahale edilmiş bir geliştirici DB'si, yarım kalmış bir kurtarma)
+ * çıplak `DROP` her açılışta transaction'ı geri alır: `PRAGMA user_version`
+ * 6'da takılır, `openChatDb` atar ve ayna kendini devre dışı bırakır — sohbet
+ * local-first yolunu tamamen kaybeder. Ulaşılabilirliği neredeyse sıfır,
+ * bedeli toplam.
  */
 const V7 = `
-DROP TABLE outbox;
+DROP TABLE IF EXISTS outbox;
 CREATE TABLE send_attempts (
   client_message_id   TEXT PRIMARY KEY,
   attempts            INTEGER NOT NULL DEFAULT 0,

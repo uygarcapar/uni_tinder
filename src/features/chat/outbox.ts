@@ -685,6 +685,14 @@ export async function flushOutbox(
     // dolar (bayrak sonraki turlarda no-op yapıyor — bkz. loadAttemptsFromDisk).
     loadAttemptsFromDisk();
 
+    // ⚠️ OTURUM KAPISI YAKALAMA TURUNDAN ÖNCE. Aşağıdaki `pullBeforeSend` bir
+    // `/api/messages/changes` isteği AÇABİLİYOR; kapı yalnız await'ten sonra
+    // olsaydı o istek temizlenmiş token'la gidebilirdi. Bugünkü dört tetiğin
+    // dördü de yukarı akışta kimlik korumalı, ama `online` tetiği bir
+    // `setTimeout` — o gecikmenin içine düşen bir logout tam bu pencereyi
+    // açıyor ve 401 yolları bu uygulamanın tarihçesinde en kırılgan alan.
+    if (!store.getState()?.auth?.isAuthenticated) return;
+
     // Yakalama turu varsa ÖNCE onu bekle; yoksa VE tabandan beri 10sn geçtiyse
     // `pullBeforeSend` yeni bir tur AÇAR (backend'in açık ricası). Sebep: delta
     // turu bizim mesajımızı geri getirdiğinde satır kendiliğinden `sent`e
@@ -705,7 +713,9 @@ export async function flushOutbox(
     }
 
     const state: any = store.getState();
-    // Oturum yoksa denemenin anlamı yok; 401'e yanıp deneme hakkı yakardı.
+    // İKİNCİ kez okunuyor, mükerrer değil: yukarıdaki kapıdan beri bir await
+    // geçti ve oturum tam o pencerede kapanmış olabilir. Oturum yoksa gönderimi
+    // denemenin anlamı yok; 401'e yanıp deneme hakkı yakardı.
     if (!state?.auth?.isAuthenticated) return;
 
     // İki kaynak: ekrandaki bucket'lar (canlı) + ARŞİV (tam). Disk şart, çünkü

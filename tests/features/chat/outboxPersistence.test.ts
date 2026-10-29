@@ -823,8 +823,12 @@ describe('flushOutbox — pullBeforeSend’e giden getter gerçek activeConversa
    * çağrılmasaydı bu test kırılırdı.
    */
   it('getter çağrıldığında store’daki chat.activeConversationId’i döndürüyor', async () => {
+    // `isAuthenticated: true` ŞART: oturum kapısı artık yakalama turundan ÖNCE
+    // (temizlenmiş token'la `/changes` atılmasın diye), yani `false` ile
+    // `pullBeforeSend`e hiç gelinmiyor. Tur bundan sonra boş kuyrukta
+    // kendiliğinden bitiyor — bu testin ilgilendiği tek şey geçilen getter.
     (store.getState as jest.Mock).mockReturnValue({
-      auth: { isAuthenticated: false }, // flushOutbox pull'dan sonra burada dönsün, yeterli
+      auth: { isAuthenticated: true },
       chat: { activeConversationId: 'conv-active' },
     });
 
