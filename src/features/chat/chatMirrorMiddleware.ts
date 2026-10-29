@@ -63,6 +63,12 @@ export function startChatMirror(store?: {
     if (__DEV__ && stale > 0) {
       console.log(`[chatMirror] ${stale} asılı gönderim failed'a çevrildi`);
     }
+    // `send_attempts` (outbox muhasebesi) kendi başına BÜYÜYEBİLİR bir tablo:
+    // Map'in MAX_TRACKED tavanı yalnız bellek tarafını sınırlıyor, diske hiç
+    // dokunmuyor (bilerek — bkz. outbox.ts touchEntry/pruneAttempts yorumu).
+    // Tablonun gerçek sınırını bu satır çiziyor; ilk okumadan ÖNCE koşmalı ki
+    // gönderilmiş/yetim satırlar birikmeden temizlensin.
+    repo.pruneOrphanSendAttempts();
   } catch (error) {
     console.error('[chatMirror] başlatılamadı, ayna devre dışı:', error);
     started = false;

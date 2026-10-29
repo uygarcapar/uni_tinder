@@ -18,10 +18,21 @@ jest.mock('@/features/chat/chatSlice', () => ({
 }));
 jest.mock('@/features/chat/chatService', () => ({
   __esModule: true,
-  // `sendMessage` KASITLI OLARAK hiç çözülmeyen bir promise döner: "tekrar
-  // dene" testinde gönderimin tam ortasında uygulamanın öldüğünü taklit etmek
-  // için — gerçek ağ çağrısı asla senkron bitmez, mock de bitmemeli.
-  default: { sendMessage: jest.fn(() => new Promise(() => {})) },
+  // Varsayılan: BAŞARILI gönderim (bir sonraki mikro-görevde çözülür). Tekil
+  // testler `mockImplementationOnce`/`mockRejectedValueOnce` ile ezer — "hiç
+  // çözülmeyen" ya da "reddeden" davranış yalnız onu gerektiren testte.
+  default: {
+    sendMessage: jest.fn(() =>
+      Promise.resolve({
+        id: 'server-id',
+        conversationId: 'conv-1',
+        clientMessageId: 'cmid-1',
+        content: 'ok',
+        contentType: 0,
+        sentAt: new Date().toISOString(),
+      }),
+    ),
+  },
 }));
 jest.mock('@/features/chat/quotaPaywall', () => ({ openQuotaPaywall: jest.fn() }));
 jest.mock('@/features/chat/realtimeService', () => ({
@@ -58,7 +69,10 @@ import {
   rememberAttempt,
   resetOutbox,
   retryFailedMessage,
+  sendOutgoing,
 } from '@/features/chat/outbox';
+import chatServiceMock from '@/features/chat/chatService';
+import { decrementQuotaLocally } from '@/features/chat/chatSlice';
 
 /**
  * Outbox muhasebesinin (deneme sayısı/backoff/permanent/quota_charged) diske
@@ -86,6 +100,11 @@ beforeEach(() => {
   __resetAllDatabases();
   openChatDb();
   resetOutbox();
+  // Çağrı geçmişini sıfırla ama varsayılan implementasyonu KORU (mockReset
+  // implementasyonu da silerdi) — tekil testler Once-ezmesini kendi içinde
+  // kullanıp tüketiyor, bir testten kalan bir "Once" bir sonrakine sızmaz.
+  (chatServiceMock.sendMessage as jest.Mock).mockClear();
+  (decrementQuotaLocally as unknown as jest.Mock).mockClear();
 });
 
 describe('attemptRowFromEntry / attemptEntryFromRow', () => {
@@ -191,6 +210,10 @@ describe('retryFailedMessage interactive — EZİLMİŞ muhasebe diske de yazıl
    */
   it('kalıcı/yüksek-deneme kaydı reset sırasında diske de yazılıyor — restart sonrası sessiz tur engellenmiyor', () => {
     rememberAttempt(CMID, entry({ attempts: 5, permanent: true, quotaCharged: false }));
+    // Bu TEK çağrıda ağ cevabı hiç gelmesin — "gönderim uçuşta" anını taklit.
+    (chatServiceMock.sendMessage as jest.Mock).mockImplementationOnce(
+      () => new Promise(() => {}),
+    );
 
     void retryFailedMessage(failedMessage(), { mode: 'interactive' });
     // `retryFailedMessage` await EDİLMİYOR: sendOutgoing'in ağ çağrısı (mock)
@@ -205,6 +228,9 @@ describe('retryFailedMessage interactive — EZİLMİŞ muhasebe diske de yazıl
 
   it('quotaCharged daha önce düşmüşse "tekrar dene" onu GERİ VERMİYOR', () => {
     rememberAttempt(CMID, entry({ attempts: 5, permanent: true, quotaCharged: true }));
+    (chatServiceMock.sendMessage as jest.Mock).mockImplementationOnce(
+      () => new Promise(() => {}),
+    );
 
     void retryFailedMessage(failedMessage(), { mode: 'interactive' });
 
@@ -212,5 +238,77 @@ describe('retryFailedMessage interactive — EZİLMİŞ muhasebe diske de yazıl
     loadAttemptsFromDisk();
 
     expect(peekAttempt(CMID)?.quotaCharged).toBe(true);
+  });
+});
+
+describe('cold start — hiçbir round koşmadan ilk çağrı sendOutgoing', () => {
+  const CONV = 'conv-1';
+
+  const failedMessage = (over: Record<string, unknown> = {}) => ({
+    conversationId: CONV,
+    clientMessageId: CMID,
+    content: 'tekrar deniyorum',
+    contentType: 0,
+    _failed: true,
+    ...over,
+  });
+
+  /**
+   * CRITICAL (review bulgusu): `loadAttemptsFromDisk`'in tek üretim çağrı
+   * noktası `flushOutbox`'ın turuydu. O turun ÜÇ tetikleyicisi de (online,
+   * foreground, reconnect) GEÇİŞ bazlı — cold start'ta ateşlenecek önceki bir
+   * durum yok; `scheduleWake` de zaten koşmuş bir turu gerektiriyor. Yani
+   * kullanıcı uygulamayı açıp DOĞRUDAN "tekrar dene"ye bastığında
+   * `retryFailedMessage` → `sendOutgoing` hiçbir round'u BEKLEMEDEN çalışıyor
+   * ve Map'i hiç kimse doldurmamış oluyordu.
+   *
+   * Senaryo: önceki process'te hub'dan giden mesajın ack'i hiç gelmedi,
+   * `armAckWatchdog` kotayı düşürüp diske `quota_charged = 1` yazdı, balon
+   * `failed`/`permanent` kaldı. Bu testte `loadAttemptsFromDisk()` ELLE
+   * ÇAĞRILMIYOR (diğer tüm testlerin yaptığının TERSİ) — asıl cold start bu:
+   * `resetOutbox()` Map'i ve bayrağı sıfırlıyor, hiçbir şey onu yeniden
+   * doldurmuyor, TEK giriş noktası `sendOutgoing`'in KENDİ çağrısı.
+   */
+  it('retryFailedMessage → sendOutgoing kendi loadAttemptsFromDisk’ini yapmazsa kota ikinci kez düşerdi', async () => {
+    rememberAttempt(CMID, entry({ attempts: 5, permanent: true, quotaCharged: true }));
+    resetOutbox(); // process ölümü
+    expect(peekAttempt(CMID)).toBeUndefined(); // Map boş, disk HİÇ okunmadı
+
+    await retryFailedMessage(failedMessage(), { mode: 'interactive' });
+    // Bu çağrı BEKLENİYOR: varsayılan mock gönderimi başarıyla çözüyor,
+    // `sendOutgoing` → `chargeQuotaOnce`'a kadar TAM akış işliyor.
+
+    expect(decrementQuotaLocally).not.toHaveBeenCalled();
+  });
+});
+
+describe('MAX_TRACKED tahliyesi Map’ten düşürür, DİSKTEN DÜŞÜRMEZ', () => {
+  /**
+   * Controller ruling: `MAX_TRACKED` sınırı yalnız Map için — disk sınırını
+   * `pruneOrphanSendAttempts` çiziyor. Bu test şimdiye kadar hiçbir şey
+   * KİLİTLEMİYORDU: `touchEntry`'nin tahliyesi zaten Map'ten siliyordu ama
+   * diskin HÂLÂ sahip olduğunu doğrulayan bir test yoktu.
+   */
+  it('tahliye edilen en eski kayıt send_attempts tablosunda kalıyor', async () => {
+    const OLDEST = 'cmid-oldest';
+    const base = Date.now() - 1_000_000;
+    rememberAttempt(OLDEST, entry({ firstSeenAt: base }));
+    for (let i = 1; i < 200; i++) {
+      rememberAttempt(`cmid-${i}`, entry({ firstSeenAt: base + i }));
+    }
+    expect(readSendAttempts()).toHaveLength(200);
+
+    // Bu TEK çağrı reddediyor: `noteFailure` → `touchEntry` 201. kaydı (yeni
+    // bir clientMessageId) açarken MAX_TRACKED'ı aşıyor ve `firstSeenAt`'i en
+    // küçük olan (OLDEST) kaydı Map'ten düşürüyor.
+    (chatServiceMock.sendMessage as jest.Mock).mockRejectedValueOnce(new Error('ağ hatası'));
+    await sendOutgoing(
+      { kind: 'text', conversationId: 'conv-1', clientMessageId: 'cmid-yeni', content: 'x' },
+      { mode: 'silent' },
+    );
+
+    expect(peekAttempt(OLDEST)).toBeUndefined(); // Map'ten düştü
+    // Disk hâlâ taşıyor — MAX_TRACKED diski BAĞLAMIYOR.
+    expect(readSendAttempts().map((r) => r.client_message_id)).toContain(OLDEST);
   });
 });

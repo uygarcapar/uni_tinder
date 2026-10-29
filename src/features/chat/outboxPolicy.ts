@@ -135,6 +135,14 @@ export function attemptEntryFromRow(row: SendAttemptRow): AttemptEntry {
  * alanı şimdilik kullanılmıyor) ve `MessageDto`/`AttemptEntry`'ye yeni alan
  * EKLEMİYORUZ — eklemek `attempts` sayacını bubble'ın yapısal eşitliğine
  * (messageEquality) sızdırırdı (bkz. outbox.ts dosya başı yorumu).
+ *
+ * DİKKAT — bu her zaman `null` yazmak, `upsertSendAttempt`'in
+ * `ON CONFLICT ... DO UPDATE SET last_error = excluded.last_error` cümlesiyle
+ * birleşince şu anlama geliyor: `rememberAttempt` her çağrıldığında (yani her
+ * deneme/backoff/permanent/quotaCharged değişiminde) satırın `last_error`
+ * kolonunu `null`a EZER. Bugün zararsız — hiçbir yazıcı oraya gerçek bir hata
+ * metni yazmıyor — ama ileride bir teşhis amaçlı yazıcı eklenirse, bu
+ * fonksiyonun varlığı o veriyi sessizce silecektir.
  */
 export function attemptRowFromEntry(
   clientMessageId: string,

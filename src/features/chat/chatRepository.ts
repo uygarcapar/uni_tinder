@@ -1318,6 +1318,20 @@ export function readSendAttempts(): SendAttemptRow[] {
   return getChatDb().getAll<SendAttemptRow>('SELECT * FROM send_attempts');
 }
 
+/**
+ * TEK satır — PK (`client_message_id`) ile. `readSendAttempts()`'in tamamı
+ * değil: outbox.ts bunu yalnız `chargeQuotaOnce`'ta Map'te MISS olduğunda
+ * (`MAX_TRACKED` tahliyesi diski silmiyor ama Map'i siliyor) tek bir kaydın
+ * `quota_charged`'ını sormak için çağırıyor — kota ikinci kez düşmesin diye
+ * tüm tabloyu okumaya gerek yok.
+ */
+export function readSendAttempt(clientMessageId: string): SendAttemptRow | null {
+  return getChatDb().getFirst<SendAttemptRow>(
+    'SELECT * FROM send_attempts WHERE client_message_id = ?',
+    [clientMessageId],
+  );
+}
+
 export function upsertSendAttempt(row: SendAttemptRow): void {
   getChatDb().run(
     `INSERT INTO send_attempts (

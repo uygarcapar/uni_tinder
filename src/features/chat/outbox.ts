@@ -42,6 +42,7 @@ import { readFailedOutboxFromLocal } from "@/features/chat/chatHydrate";
 import {
   clearVoiceMediaUrl,
   deleteSendAttempts,
+  readSendAttempt,
   readSendAttempts,
   setVoiceMediaUrl,
   upsertSendAttempt,
@@ -131,26 +132,50 @@ function newEntry(now: number): AttemptEntry {
 }
 
 /**
- * Turun başında BİR kez: `send_attempts` tablosundaki satırları Map'e açar.
+ * Turun başında/her gönderimde BİR kez: `send_attempts` tablosundaki satırları
+ * Map'e açar.
  *
  * Fresh process'te Map boş başlıyor — restart öncesi `quotaCharged`/backoff
  * bilgisi olmadan outbox eski hâline (process ölürse muhasebe kaybolur) geri
- * dönerdi. Var olan bir Map girdisinin ÜZERİNE yazmaktan çekinmiyoruz: bu
- * fonksiyon zaten yalnız bayrak false'ken (yani Map ya boş ya da hiç
- * dokunulmamış) çalışıyor.
+ * dönerdi. VAR OLAN bir Map girdisinin üzerine YAZILMAZ (`has` koruması):
+ * fresh process'te İLK round'dan önce bir gönderim zaten başarısız olup Map'e
+ * taze bir kayıt açmış olabilir (bkz. sendOutgoing'in kendi çağrısı) — disk
+ * okuması o CANLI kaydı eski hâliyle ezmemeli.
+ *
+ * Okuma PATLARSA bayrak `true` YAPILMAZ: `getChatDb()` tembel açılıyor, bozuk
+ * bir DB/migration burada atabilir. Bayrak erken `true` olsaydı süreç ömrü
+ * boyunca disk bir daha hiç okunmaz, Map kalıcı olarak boş kalır ve tam bu
+ * task'ın önlediği çift düşme (kota/çift gönderim) geri gelirdi — yazım
+ * taraflarındaki aynı asimetriyi (bkz. `rememberAttempt`, `pruneAttempts`)
+ * burada da koruyoruz: bir sonraki çağrı (sonraki `sendOutgoing`/`flushOutbox`
+ * turu) yeniden dener.
  */
 export function loadAttemptsFromDisk(): void {
   if (loadedFromDisk) return;
-  loadedFromDisk = true;
-  for (const row of readSendAttempts()) {
-    attempts.set(row.client_message_id, attemptEntryFromRow(row));
+  try {
+    for (const row of readSendAttempts()) {
+      if (!attempts.has(row.client_message_id)) {
+        attempts.set(row.client_message_id, attemptEntryFromRow(row));
+      }
+    }
+    loadedFromDisk = true;
+  } catch {
+    // Bayrak false kaldı — bir sonraki çağrı yeniden okumayı dener.
   }
 }
 
 /**
- * Map YAZIMININ tek kapısı: `attempts.set` yerine HER YERDE bu çağrılır, yoksa
- * iki yazım ayrışır (biri Map'i güncelleyip diski unutabilir) ve disk Map'ten
- * geriye düşer — restart'ta geriye düşmüş veriye güvenmiş oluruz.
+ * Map yazımının normal kapısı: deneme muhasebesini MUTASYONDAN SONRA diske
+ * yazan her yer (`chargeQuotaOnce`, `noteFailure`, `markPermanent`,
+ * `armAckWatchdog`, `retryFailedMessage`) bunu çağırır — yoksa iki yazım
+ * ayrışır (biri Map'i güncelleyip diski unutabilir) ve disk Map'ten geriye
+ * düşer, restart'ta geriye düşmüş veriye güvenmiş oluruz.
+ *
+ * İKİ İSTİSNA bilerek bunu ATLAR: `touchEntry`'nin BOŞ `newEntry` için attığı
+ * `attempts.set` (çağıran zaten hemen ardından mutasyon yapıp bu fonksiyonu
+ * kendisi çağırıyor — burada persist etmek sadece anlamsız bir "boş satır"
+ * yazardı) ve `loadAttemptsFromDisk`'in disk→Map yazımı (veri ZATEN diskten
+ * geliyor, geri yazmanın bir anlamı yok).
  */
 export function rememberAttempt(clientMessageId: string, entry: AttemptEntry): void {
   attempts.set(clientMessageId, entry);
@@ -200,9 +225,27 @@ function touchEntry(clientMessageId: string): AttemptEntry {
  * satır yazsaydı harita sohbet boyunca şişer, tavana dayanınca da gerçek
  * bekleyen kayıtları tahliye ederdi. Çift düşme riskinin tek yolu zaten önce
  * başarısız olmaktan geçiyor ve o yolda kayıt hazır (bkz. armAckWatchdog).
+ *
+ * Map MISS'te TEK SATIR disk okuması (controller ruling — YALNIZ BURADA):
+ * `touchEntry`'nin `MAX_TRACKED` tahliyesi bu kaydı Map'ten düşürmüş olabilir
+ * (disk hâlâ tutuyor, bkz. touchEntry/pruneAttempts yorumları). Burada
+ * yokluğun maliyeti GERÇEK — kota ikinci kez düşer. `isEligible`/backoff'ta
+ * aynı read-through YOK: oradaki yokluk ucuz (en kötü ihtimal bir backoff
+ * sıfırlanır) ve read-through'u her Map-miss'e yaymak Map'in amacını (hızlı,
+ * disk'e dokunmayan process-içi erişim) baltalardı.
  */
 function chargeQuotaOnce(conversationId: string, clientMessageId: string) {
-  const entry = attempts.get(clientMessageId);
+  let entry = attempts.get(clientMessageId);
+  if (!entry) {
+    try {
+      const row = readSendAttempt(clientMessageId);
+      if (row) entry = attemptEntryFromRow(row);
+    } catch {
+      // Okuma patlarsa entry `undefined` kalır — aşağıdaki "kayıt yok" dalına
+      // düşer, davranış bu düzeltmeden ÖNCEki hâle geri döner (yeni bir
+      // regresyon değil, status quo).
+    }
+  }
   if (entry?.quotaCharged) return;
   if (entry) {
     entry.quotaCharged = true;
@@ -398,6 +441,14 @@ export async function sendOutgoing(
   d: OutgoingDescriptor,
   opts: { mode: SendMode },
 ): Promise<void> {
+  // BURADA — flushOutbox'ın turunun başı YETMEZ: `retryFailedMessage`'ın
+  // interactive dalı (kullanıcı "tekrar dene" butonuna basar) `flushOutbox`
+  // turunu hiç ÇALIŞTIRMADAN direkt buraya düşer. Cold start'ta hiçbir round
+  // koşmadıysa (`online`/`foreground`/`reconnect` hepsi geçiş-tetiklemeli,
+  // `scheduleWake` de önceki bir round'u gerektirir) Map boş kalır ve
+  // `chargeQuotaOnce` diskteki `quotaCharged`'ı GÖRMEDEN kotayı ikinci kez
+  // düşürür. Bayrak korumalı olduğu için ikinci ve sonraki çağrılarda no-op.
+  loadAttemptsFromDisk();
   const { conversationId, clientMessageId, replyToMessageId } = d;
   try {
     let result: MessageDto | null = null;
