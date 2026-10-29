@@ -1,6 +1,12 @@
-jest.mock('react-native-reanimated', () =>
-  require('react-native-reanimated/src/mock')
-);
+// ⚠️ `useReducedMotion` MOCK'TA YOK: reanimated'ın kendi mock dosyasında o
+// satır `// useReducedMotion: ADD ME IF NEEDED` diye duruyor, yani çağıran
+// bileşen "is not a function" ile düşüyor. Testlerde hareket AÇIK kabul
+// ediliyor (false): animasyonlu yol varsayılan yol, kapalı yol ayrıca test
+// edilecekse bu suite içinde ezilir.
+jest.mock('react-native-reanimated', () => ({
+  ...require('react-native-reanimated/src/mock'),
+  useReducedMotion: () => false,
+}));
 import 'react-native-gesture-handler/jestSetup';
 // i18n'i gerçek sözlükle başlat (lng: 'tr') — bileşenler t() ile Türkçe
 // render eder, testler kullanıcı-görünür metni assert eder.
@@ -102,8 +108,26 @@ jest.mock('@expo/ui/swift-ui', () => {
     Host: ({ children }: any) => children ?? null,
     RNHostView: ({ children }: any) => React.createElement(View, null, children),
     Image: () => null,
-    Button: ({ onPress, children }: any) =>
-      React.createElement(TouchableOpacity, { onPress }, children ?? null),
+    // `label` erişilebilirlik adına da yazılıyor: natif menü satırları
+    // (ContextMenu.Items) metin ÇOCUĞU taşımıyor, sadece bu prop'u — testler
+    // onları başka türlü bulamazdı. Cam butonlar etiketlerini `modifiers`
+    // üzerinden verdiği için çakışma yok.
+    Button: ({ onPress, children, label }: any) =>
+      React.createElement(
+        TouchableOpacity,
+        { onPress, accessibilityLabel: label },
+        children ?? null,
+      ),
+    ContextMenu: Object.assign(
+      ({ children }: any) => React.createElement(View, null, children),
+      {
+        Trigger: ({ children }: any) =>
+          React.createElement(View, null, children),
+        Items: ({ children }: any) => React.createElement(View, null, children),
+        Preview: ({ children }: any) =>
+          React.createElement(View, null, children),
+      },
+    ),
   };
 });
 
@@ -117,6 +141,7 @@ jest.mock('@expo/ui/swift-ui/modifiers', () => {
   const modifier = (...args: unknown[]) => ({ __modifier: true, args });
   return {
     __esModule: true,
+    accessibilityIdentifier: modifier,
     accessibilityLabel: modifier,
     background: modifier,
     buttonBorderShape: modifier,
