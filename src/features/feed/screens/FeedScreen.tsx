@@ -38,13 +38,19 @@ import {
   useNoteMutation,
   useSwipeStats,
 } from "@/features/discover/swipeQueries";
+import { hasLikedMe, removeWhoLikedMe } from "@/features/discover/swipeSlice";
+import { store } from "@/shared/store";
 import NoteComposerModal from "@/features/discover/components/NoteComposerModal";
 import NotePurchaseModal from "@/features/discover/components/NotePurchaseModal";
 import FirePurchaseModal from "@/features/discover/components/FirePurchaseModal";
 import { formatResetTime } from "@/features/discover/quotaFormat";
 import type { NoteTarget } from "@/shared/types";
 import { useFeedFlight } from "../feedCardFlight";
-import { feedCardActions, resolveCardMode } from "../feedCardMode";
+import {
+  authorLikedMe,
+  feedCardActions,
+  resolveCardMode,
+} from "../feedCardMode";
 import { feedKeys } from "../feedKeys";
 import FilterPills from "@/shared/components/FilterPills";
 import {
@@ -1002,13 +1008,32 @@ export default function FeedScreen() {
     [authorProfile.data, selectedMode],
   );
 
+  // Yazar beni daha önce beğenmiş mi — tespitin kuralları (bayrak katılığı,
+  // `userId` kapısı, OR'un gerekçesi) `authorLikedMe`'nin içinde ve orada test
+  // altında, burada tekrar edilmiyor.
+  const authorHasLikedMe = useMemo(
+    () =>
+      authorLikedMe(authorProfile.data, (userId) =>
+        // `store.getState()` — `useAppSelector` DEĞİL (bkz. swipeSlice.ts:137,
+        // render churn). Değer kart açılırken bir kez çözülüyor: hâlin kart
+        // ortasında değişmesi kullanıcının elindeki butonları altından çeker.
+        hasLikedMe(store.getState(), userId),
+      ),
+    [authorProfile.data],
+  );
+
   /**
-   * Kartta HANGİ AKSİYONLAR var — moda göre (istek):
-   *   • FLÖRT: düz beğeni YOK. Zorunlu iki yol Fire ve not.
-   *   • ARKADAŞ: hepsi serbest (beğeni · Spark · not).
-   * Karar saf fonksiyonda, kartın modundan türüyor (bkz. feedCardActions).
+   * Kartta HANGİ AKSİYONLAR var — moda VE "yazar beni beğenmiş mi"ye göre
+   * (istek). Üç hâl (bkz. feedCardActions'ın kendi doc'u):
+   *   • NORMAL (henüz beğenilmemiş): yalnız Fire/Spark + not, X ve tik YOK.
+   *   • BEĞENİLMİŞ: kabul (tik) + reddet (X), Fire ve not YOK.
+   *   • MOD YOK (`cardMode` null): hiçbiri — kart salt okunur.
+   * Karar saf fonksiyonda (bkz. feedCardActions).
    */
-  const cardActions = useMemo(() => feedCardActions(cardMode), [cardMode]);
+  const cardActions = useMemo(
+    () => feedCardActions(cardMode, authorHasLikedMe),
+    [cardMode, authorHasLikedMe],
+  );
 
   // Fire bakiyesi kartta rozet olarak gösteriliyor (keşifteki kartla aynı
   // sözleşme). Deste sorgusuyla AYNI cache — ek tur yok.
@@ -1027,6 +1052,10 @@ export default function FeedScreen() {
    * Flört kartında bu kapı artık ÜRÜNÜN BELKEMİĞİ: beğeni kaldırıldığı için
    * tükenmiş Fire sessiz kalırsa kullanıcının elinde yalnız not kalıyor ve
    * nedenini hiçbir yerden okuyamıyor.
+   *
+   * ⚠️ Bu kapı artık YALNIZ NORMAL kartta anlamlı: beğenilmiş hâlde Fire
+   * butonu zaten hiç çizilmiyor (bkz. cardActions.fire), dolayısıyla burada
+   * hesaplanan değerin o hâlde okunacağı bir yer yok.
    */
   const fireQuotaExhausted = useMemo(() => {
     const rem = statsQuery.data?.superLikesRemaining;
@@ -1192,7 +1221,7 @@ export default function FeedScreen() {
    * ENGELLEME dalı ayrı: yazarın TÜM gönderileri listeden düşmeli.
    */
   const handleAuthorSwipe = useCallback(
-    (_userId: string, direction: string) => {
+    (userId: string, direction: string) => {
       qc.invalidateQueries({
         queryKey: feedKeys.authorProfile(previewPostId ?? ""),
       });
@@ -1201,8 +1230,15 @@ export default function FeedScreen() {
         // tazelemek yeterli, elle budamaya gerek yok.
         qc.invalidateQueries({ queryKey: feedKeys.postsRoot });
       }
+      // Kabul ya da reddetten sonra rozet ANINDA düşsün — Keşif'teki aynı kalıp
+      // (`DiscoverScreen.tsx:2537` · `2711`). Kapı `hasLikedMe`: kümede olmayan bir
+      // id için sayacı düşürmek, sayfalanmamış toplamı sessizce bozar
+      // (bkz. swipeSlice > removeWhoLikedMe'nin notu).
+      if (hasLikedMe(store.getState(), userId)) {
+        dispatch(removeWhoLikedMe(userId));
+      }
     },
-    [qc, previewPostId],
+    [dispatch, qc, previewPostId],
   );
 
   const universityGate = universityPickerGate(me);
@@ -2993,19 +3029,24 @@ export default function FeedScreen() {
       />
 
       {/* ── YAZAR KARTI ────────────────────────────────────────────────────
-          Normal gönderinin yazarına dokunulunca profil kartı açılıyor. İKİ
-          AYRI MODAL, çünkü iki ayrı ürün durumu var:
+          Normal gönderinin yazarına dokunulunca profil kartı açılıyor. ÜÇ
+          AYRI HÂL var, ikisi aynı modalda (bkz. feedCardActions):
 
-          (a) AKSİYON ALINABİLİYOR (`cardMode` dolu) → `LikerSwipeModal`:
-              aksiyonlar o modda. HANGİLERİ olduğu moda bağlı (istek, bkz.
-              feedCardActions): ARKADAŞ'ta hepsi serbest (beğeni · Spark · not),
-              FLÖRT'te düz beğeni YOK — sinyal ya Fire ya not. Eşleşme kanalı
-              artık bu — yanıt butonunun yerini aldı.
+          (a) NORMAL (`cardMode` dolu, yazar beni beğenmemiş) →
+              `LikerSwipeModal`, Fire/Spark + not açık, tik ve X yok. Akışta
+              kart karşı taraftan gelen bir sinyale cevap DEĞİL — sen kendi
+              isteğinle profile giriyorsun, düz beğeni/reddetme anlamsız.
 
-          (b) ALINAMIYOR (`cardMode` null: sunucu hiçbir modu uygun görmedi ya
-              da alanı hiç göndermedi) → `PreviewModal`, salt okunur. Olmayan
-              bir hakkı varsayıp reddedilecek bir buton göstermek, kullanıcıya
-              iki kez kaybettirirdi.
+          (b) BEĞENİLMİŞ (`cardMode` dolu, yazar beni beğenmiş) → AYNI
+              `LikerSwipeModal`, ama tik (kabul) ve X (reddet) açık, Fire ve
+              not kapalı — karşı taraf seni zaten beğenmiş, üstüne yükseltecek
+              bir sinyal yok. Eşleşme kanalı artık bu — yanıt butonunun yerini
+              aldı.
+
+          (c) MOD YOK (`cardMode` null: sunucu hiçbir modu uygun görmedi ya da
+              alanı hiç göndermedi) → `PreviewModal`, salt okunur. Olmayan bir
+              hakkı varsayıp reddedilecek bir buton göstermek, kullanıcıya iki
+              kez kaybettirirdi.
 
           Anonim gönderide bu yol HİÇ açılmıyor (FeedPostCard'daki kapı):
           kart açılsa anonim yazarın kimliği ifşa olurdu. */}
@@ -3017,12 +3058,16 @@ export default function FeedScreen() {
           // Aksiyonun modu — swipe isteğine iliştiriliyor ve kartın
           // Fire/Spark rengini belirliyor.
           mode={cardMode}
-          // Akış kartında Fire ANLAMLI: karşı tarafın seni beğenip
-          // beğenmediğini bilmiyorsun ("seni beğenenler"de anlamsızdı).
+          // Fire yalnız NORMAL kartta: beğenilmiş hâlde karşı taraf seni zaten
+          // beğenmiş, üstüne yükseltecek bir sinyal yok — Fire de not de kapanıyor.
           allowFire={cardActions.fire}
-          // FLÖRT'TE DÜZ BEĞENİ YOK (istek): tik ne kapakta ne panelin dibinde
-          // çiziliyor, X (geç) ve moderasyon duruyor. Arkadaş'ta açık.
+          // Tik = KABUL, yalnız beğenilmiş kartta çiziliyor. Normal kartta
+          // (ister Flört ister Arkadaş) düz beğeni akışta hiç yok — sinyal ya
+          // Fire ya not.
           allowLike={cardActions.like}
+          // X = REDDET, yalnız beğenilmiş kartta: normal kartta reddedilecek
+          // bir sinyal yok (kendi isteğinle girdiğin profile X anlamsız).
+          allowPass={cardActions.pass}
           // Tükenmiş Fire'ı sunucuya gönderip reddi beklemiyoruz: reddin geri
           // bildirimi `uiBus` üstünden YALNIZ Keşif'e gidiyor ve o sekme lazy
           // mount — akışta hiçbir şey olmamış gibi görünürdü.
