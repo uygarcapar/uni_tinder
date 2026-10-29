@@ -216,6 +216,33 @@ async function run(getActiveConversationId: () => string | null): Promise<PullRe
 const MIN_PULL_INTERVAL_MS = 10_000;
 let lastPullAt = 0;
 
+/**
+ * Gönderimden önce yakalama turu garantiler — `outbox.flushOutbox`'ın
+ * TEK çağıranı.
+ *
+ * `inFlightPull()`in aksine burası tur AÇABİLİR: uçuşta tur yoksa ve
+ * `fire()`in kullandığı AYNI `lastPullAt` tabanın (MIN_PULL_INTERVAL_MS)
+ * dışındaysa yeni bir yakalama turu başlatıp onu döndürür — backend'in açık
+ * ricası, çünkü delta turu bizim mesajımızı geri getirdiğinde satır
+ * kendiliğinden `sent`e dönüyor (UPSERT'in varsayılanı) ve mükerrer `send`
+ * isteği hem gereksiz hem de dakikada 30'luk sayaçtan bir hak harcıyor.
+ * Taban içindeyse `null`: outbox her tetikte (ağ/foreground/reconnect/timer)
+ * koşuyor, buradan koşulsuz tur açmak `/changes` çağrılarını da o sıklıkta
+ * çoğaltırdı — tabanın kendisi tam bunu önlemek için var.
+ */
+export function pullBeforeSend(
+  getActiveConversationId: () => string | null = () => null,
+): Promise<PullResult | null> {
+  const existing = inFlightPull();
+  if (existing) return existing;
+
+  const now = Date.now();
+  if (now - lastPullAt < MIN_PULL_INTERVAL_MS) return Promise.resolve(null);
+
+  lastPullAt = now;
+  return pullChanges(getActiveConversationId);
+}
+
 export interface DeltaSyncDeps {
   getActiveConversationId: () => string | null;
   /**

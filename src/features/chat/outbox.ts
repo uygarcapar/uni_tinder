@@ -37,7 +37,7 @@ import { openQuotaPaywall } from "@/features/chat/quotaPaywall";
 import realtimeService from "@/features/chat/realtimeService";
 import { enqueueSend } from "@/features/chat/sendQueue";
 import { sendVoiceMessage } from "@/features/chat/voiceSend";
-import { inFlightPull } from "@/features/chat/chatDeltaSync";
+import { pullBeforeSend } from "@/features/chat/chatDeltaSync";
 import { readFailedOutboxFromLocal } from "@/features/chat/chatHydrate";
 import {
   clearVoiceMediaUrl,
@@ -645,18 +645,17 @@ export async function flushOutbox(
     // dolar (bayrak sonraki turlarda no-op yapıyor — bkz. loadAttemptsFromDisk).
     loadAttemptsFromDisk();
 
-    // Uçuşta bir yakalama turu varsa ÖNCE onu bekle: aynı tetiklerden ikisi
-    // birden ateşleniyor ve delta turu bizim mesajımızı geri getirdiğinde satır
-    // kendiliğinden `sent`e dönüyor — yani ack'i kaybolmuş ama aslında gitmiş
-    // mesaj kuyruktan düşüyor. Beklemek gereksiz bir `send` isteğini önlüyor
-    // (sunucu sınırı: dakikada 30). Tur AÇMIYORUZ.
-    const pull = inFlightPull();
-    if (pull) {
-      try {
-        await pull;
-      } catch {
-        // Yakalama turu patladıysa gönderim turu yine de koşsun.
-      }
+    // Yakalama turu varsa ÖNCE onu bekle; yoksa VE tabandan beri 10sn geçtiyse
+    // `pullBeforeSend` yeni bir tur AÇAR (backend'in açık ricası). Sebep: delta
+    // turu bizim mesajımızı geri getirdiğinde satır kendiliğinden `sent`e
+    // dönüyor — ack'i kaybolmuş ama aslında gitmiş mesaj kuyruktan kendiliğinden
+    // düşüyor. Önce yakalamak gereksiz bir `send` isteğini önlüyor: istek
+    // idempotent ama dakikada 30'luk sayaç isteği reddetmeden ÖNCE artıyor,
+    // yani mükerrer gönderim bir hak harcıyor.
+    try {
+      await pullBeforeSend();
+    } catch {
+      // Yakalama turu patladıysa gönderim turu yine de koşsun.
     }
 
     const state: any = store.getState();

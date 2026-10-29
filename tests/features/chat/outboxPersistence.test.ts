@@ -44,7 +44,7 @@ jest.mock('@/features/chat/voiceSend', () => ({
   sendVoiceMessage: jest.fn(),
   VoiceTooLargeError: class VoiceTooLargeError extends Error {},
 }));
-jest.mock('@/features/chat/chatDeltaSync', () => ({ inFlightPull: jest.fn(() => null) }));
+jest.mock('@/features/chat/chatDeltaSync', () => ({ pullBeforeSend: jest.fn(() => null) }));
 jest.mock('@/shared/services/analytics', () => ({ analytics: { capture: jest.fn() } }));
 jest.mock('@/shared/services/networkStatus', () => ({ isOfflineNow: jest.fn(() => false) }));
 jest.mock('@/shared/services/toaster', () => ({ showInfoToast: jest.fn() }));
