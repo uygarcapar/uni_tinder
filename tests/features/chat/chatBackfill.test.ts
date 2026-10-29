@@ -145,6 +145,7 @@ describe('runBackfillRound', () => {
     expect(getMessageHistory).toHaveBeenLastCalledWith('conv-1', {
       cursor: 'cursor-2',
       pageSize: BACKFILL_PAGE_SIZE,
+      skip429Retry: true,
     });
     expect(round2.completed).toEqual(['conv-1']);
   });
@@ -290,6 +291,26 @@ describe('runBackfillRound', () => {
     ).toBe('cursor-eski');
   });
 
+  it('BAŞARISIZ prob da hakkı tüketir — ikinci bir isteğe izin vermeden turu kapatıyor', async () => {
+    // Kota hiç BİLİNMİYOR (cold start, `recordRateLimitHeaders` hiç
+    // çağrılmadı) — probe kuralı en çok BİR DENEMEYE izin verir. Bu deneme
+    // BAŞARISIZ olsa bile (burada genel bir ağ hatası, 429 DEĞİL) hak
+    // tükenmiş sayılır: başarısız bir prob bütçe hakkında hiçbir şey
+    // öğretmedi, ikinci bir kör isteğe de izin verilmiyor (bkz.
+    // backfillPolicy.shouldStopRound'daki prob yorumu). Yukarıdaki "istek
+    // patlarsa" testi bunun TAM TERSİNİ (kota bilinirken devam ediyor)
+    // kilitliyor; bu test probun kendisini.
+    insertConversation('conv-1', 2_000);
+    insertConversation('conv-2', 1_000);
+    getMessageHistory.mockRejectedValueOnce(new Error('ağ hatası')); // conv-1'in probu
+
+    const result = await runBackfillRound(() => null);
+
+    expect(getMessageHistory).toHaveBeenCalledTimes(1); // conv-2'ye HİÇ sıra gelmedi
+    expect(result.pages).toBe(0);
+    expect(result.completed).toEqual([]);
+  });
+
   it('429 alınca turu kesiyor ve cursor\'a dokunmuyor', async () => {
     insertConversation('conv-1', 2_000);
     insertConversation('conv-2', 1_000);
@@ -326,24 +347,30 @@ describe('runBackfillRound', () => {
       .spyOn(repo, 'readBackfillTargets')
       .mockReturnValue(manyTargets);
 
-    // Offline DEĞİL, kota SAĞLIKLI — bu ikisi turu durdurmasın, yalnız
-    // "istek sayısı" tavanı izole edilsin.
-    recordRateLimitHeaders({ 'x-ratelimit-remaining': '500' });
-    getMessageHistory.mockRejectedValue(new Error('5xx fırtınası')); // HER istek patlıyor, hiçbiri 429 değil
+    try {
+      // Offline DEĞİL, kota SAĞLIKLI — bu ikisi turu durdurmasın, yalnız
+      // "istek sayısı" tavanı izole edilsin.
+      recordRateLimitHeaders({ 'x-ratelimit-remaining': '500' });
+      getMessageHistory.mockRejectedValue(new Error('5xx fırtınası')); // HER istek patlıyor, hiçbiri 429 değil
 
-    const promise = runBackfillRound(() => null);
-    await jest.advanceTimersByTimeAsync(TARGET_COUNT * PAGE_DELAY_MS);
-    const result = await promise;
-    readTargetsSpy.mockRestore();
+      const promise = runBackfillRound(() => null);
+      await jest.advanceTimersByTimeAsync(TARGET_COUNT * PAGE_DELAY_MS);
+      const result = await promise;
 
-    // Tavan DENEME sayısında duruyor, başarı sayısında DEĞİL — bu sayaç
-    // `result.pages` (başarı) ile karıştırılırsa bu test hiç kırılmaz
-    // çünkü hiçbir istek zaten başarıya ulaşmıyor; asıl doğrulama request
-    // sayısının tam olarak tavanda kesilmesi, hedeflerin hepsinin (35)
-    // denenmemesi.
-    expect(getMessageHistory).toHaveBeenCalledTimes(MAX_REQUESTS_PER_ROUND);
-    expect(result.pages).toBe(0);
-    expect(result.completed).toEqual([]);
+      // Tavan DENEME sayısında duruyor, başarı sayısında DEĞİL. Yalnız
+      // `expect(result.pages).toBe(0)` bu mutasyona KÖR — hiçbir istek
+      // zaten başarıya ulaşmadığından o iddia her hâlükârda doğru. Sayacı
+      // yakalayan asıl iddia çağrı SAYISI: `attemptsThisRound`'u
+      // `result.pages`'e indiren bir mutasyonla bu sayı 35'e çıkıyor
+      // (doğrulandı) — tavan hiç tutmuyor.
+      expect(getMessageHistory).toHaveBeenCalledTimes(MAX_REQUESTS_PER_ROUND);
+      expect(result.pages).toBe(0);
+      expect(result.completed).toEqual([]);
+    } finally {
+      // `finally`: yukarıdaki `await`lerden biri beklenmedik şekilde
+      // reddetse bile spy dosyanın geri kalanına SIZMASIN.
+      readTargetsSpy.mockRestore();
+    }
   });
 
   it('aynı anda iki tur koşmuyor (in-flight)', async () => {

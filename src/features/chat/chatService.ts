@@ -1,5 +1,5 @@
 import { File, UploadType } from 'expo-file-system';
-import api from '@/shared/services/api';
+import api, { SKIP_429_RETRY } from '@/shared/services/api';
 import { API_ENDPOINTS } from '@/shared/constants/api';
 import { normalizeUtcFields } from '@/shared/utils/dateUtc';
 
@@ -64,13 +64,25 @@ export const chatService = {
 
   async getMessageHistory(
     conversationId: string,
-    { cursor, pageSize = HISTORY_PAGE_SIZE }: { cursor?: string | null; pageSize?: number } = {}
+    {
+      cursor,
+      pageSize = HISTORY_PAGE_SIZE,
+      skip429Retry,
+    }: { cursor?: string | null; pageSize?: number; skip429Retry?: boolean } = {}
   ) {
     const params = new URLSearchParams();
     if (cursor) params.append('cursor', cursor);
     params.append('pageSize', String(pageSize));
     const url = `${API_ENDPOINTS.MESSAGES_HISTORY_CURSOR(conversationId)}?${params.toString()}`;
-    const res = await api.get(url);
+    // `skip429Retry` çağırana göre AYRI: ekranın kullanıcı tetikli sayfalaması
+    // (fetchHistory thunk'ı) 429'da interceptor'ın 3 denemelik otomatik
+    // backoff'unu İSTİYOR — sayfa er ya da geç yüklenir, kullanıcı bunu hiç
+    // görmez. Backfill'in round-cap'i ise bu retry'ı GÖREMİYOR: interceptor
+    // içeride 3 kez daha deniyor, `chatBackfill.ts`'teki `attempts` sayacı
+    // bunu tek istek sayıyor — kovayı tam da en dolu olduğu anda 4 katına
+    // kadar yanlış ölçerdi. Bu yüzden bayrak uç (endpoint) seviyesinde DEĞİL,
+    // çağrı seviyesinde: yalnız backfill AÇIKÇA `true` geçiyor.
+    const res = await api.get(url, skip429Retry ? SKIP_429_RETRY : undefined);
     return normalizeUtcFields(
       (res as any).result || {
         conversationId,

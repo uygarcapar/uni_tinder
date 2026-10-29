@@ -119,6 +119,13 @@ async function run(getActiveConversationId: () => string | null): Promise<Backfi
         historyPage = await chatService.getMessageHistory(target.conversationId, {
           cursor,
           pageSize: BACKFILL_PAGE_SIZE,
+          // `api.ts`'in 429 interceptor'ı varsayılan olarak 3 kez daha
+          // DENER (backoff'lu) — ekranın kullanıcı tetikli sayfalaması bunu
+          // İSTER, ama burada istemeyiz: o 3 ekstra deneme bu dosyanın hiç
+          // GÖRMEDİĞİ yerde olur, `attempts` onları tek istek sayar ve
+          // 429 dalımız (aşağıda) kovayı tam dolu anında 4 katına kadar
+          // yanlış ölçer. Bu yüzden backfill AÇIKÇA kapatıyor.
+          skip429Retry: true,
         });
       } catch (error) {
         if (isRateLimited(error)) {
@@ -129,10 +136,11 @@ async function run(getActiveConversationId: () => string | null): Promise<Backfi
         }
         // Bu sohbete özel geçici arıza (ağ/5xx/vb). Cursor'a DOKUNMA — bir
         // sonraki tur aynı yerden dener. Turu ÖLDÜRME, sıradaki hedefe geç.
-        // NOT: bu catch'in dışına (applyHistoryPage/setBackfillCursor) hiçbir
-        // şey SIZDIRILMAMALI — birkaç test (429, "istek patlarsa") unmock'lu
-        // bir sonraki çağrının gürültüyle patlamasına güveniyor; try bloğunu
-        // genişletmek o testleri sessizce köreltir.
+        // NOT: `applyHistoryPage`/`setBackfillCursor` BİLEREK bu try'ın
+        // DIŞINDA (başarı yolunda) — tehlike onları try'ın İÇİNE ÇEKMEK:
+        // birkaç test (429, "istek patlarsa") unmock'lu bir sonraki çağrının
+        // gürültüyle patlamasına güveniyor; try bloğunu genişletmek o
+        // testleri sessizce köreltir.
         break;
       }
 

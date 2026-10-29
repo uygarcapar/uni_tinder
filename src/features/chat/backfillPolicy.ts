@@ -70,7 +70,7 @@ export function selectBackfillTargets(
 /**
  * Tur burada mı bitiyor?
  *
- * Kontroller KOD SIRASIYLA (üçü de birbirini dışlar, en fazla biri gerçek
+ * Kontroller KOD SIRASIYLA (dördü de birbirini dışlar, en fazla biri gerçek
  * "dur" kararını verir):
  *  1. Tur tavanı (MAX_REQUESTS_PER_ROUND) doldu mu.
  *  2. Cihaz offline mı — ağ yokken istek denemenin anlamı yok.
