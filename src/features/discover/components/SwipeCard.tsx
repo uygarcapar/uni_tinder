@@ -1336,8 +1336,15 @@ function SectionPhoto({
   uri: string;
   onNotePress?: () => void;
   /**
-   * Kutuyu zorla kapat. ARTIK TEK MÜŞTERİSİ var: kapaktaki not kutusunu KENDİ
-   * çizen Keşif kapağı (orada foto üstünde ikinci bir kutu olurdu).
+   * Kutuyu zorla kapat. İKİ müşterisi var, ikisi de aynı gerekçeyle: not
+   * kutusunu o bağlamda KENDİ AKSİYON KOLONU çiziyor, yani fotoğrafın kendi
+   * katmanındaki kutu mükerrer olurdu —
+   *   1. Keşif kapağı (tam ekran kapak kolonu, `!previewMode` dalı),
+   *   2. Önizlemenin ana fotoğrafı (bkz. "ÖNİZLEMENİN AKSİYON KOLONU") — bir
+   *      dönem burada `onNotePress` veriliyordu ve kolon AYRICA kendi
+   *      `NoteBox`ını çiziyordu; iki bağımsız katman aynı köşeyi (sağ alt)
+   *      hedefleyip üst üste biniyordu. `hideNote` o ikinci kaynağı kapatıp
+   *      köşeyi kolona TEK sahipli bırakıyor.
    *
    * ⚠️ `previewMode` İLE SÜRÜLMÜYOR ARTIK: önizleme kartlarında not kutusunun
    * olmaması `onNote`un verilmemesinden geliyordu ve iki kapı aynı şeyi
@@ -3891,7 +3898,12 @@ export default function SwipeCard({
               <View style={{ position: "relative" }}>
                 <SectionPhoto
                   uri={allPhotos[0]}
-                  onNotePress={noteHandler(photoNoteTarget(0))}
+                  // Not kutusu BURADAN kolona taşındı (bkz. aşağıdaki
+                  // "ÖNİZLEMENİN AKSİYON KOLONU" notu) — `onNotePress`
+                  // verilmiyor, `hideNote` zorla kapatıyor. İkisi birden
+                  // olmazsa (örn. yalnız `hideNote` unutulursa) aynı hedefi
+                  // (index 0) gösteren iki daire aynı köşede üst üste biner.
+                  hideNote
                   // Tam kenar: üstten ve yanlardan boşluk yok — YALNIZ bu foto
                   // (bkz. SectionPhoto > bleed).
                   bleed
@@ -3907,15 +3919,29 @@ export default function SwipeCard({
                     edilmiyor (bkz. aşağıdaki `!previewMode` kapısı) — kartın
                     "kapağı" burada akışın ilk fotoğrafı. O yüzden kolonun
                     önizleme ikizi bu blokta duruyor; kabuk, çap, boşluk ve
-                    sıra (tik · X · Fire) Keşif'tekiyle AYNI sabitlerden
+                    sıra (tik · X · Fire · not) Keşif'tekiyle AYNI sabitlerden
                     geliyor, yani iki bağlamda tek bir buton dili var.
+
+                    DÖRDÜNCÜ HALKA — NOT: bir dönem kutu burada değil,
+                    `SectionPhoto`nun KENDİ tam-genişlikte mutlak katmanındaydı
+                    (`alignSelf: flex-end` ile sağ alta oturuyordu) ve bu kolon
+                    da AYRICA sağ alta oturuyordu — iki bağımsız katman aynı
+                    köşeyi hedefleyince `NoteBox onPhoto` ile `FireGlassButton`
+                    (ikisi de aynı çap, aynı cam kabuk: COVER_ACTION_SIZE) üst
+                    üste biniyordu. Not artık kolonun İÇİNDE doğuyor, yani
+                    "fotoğrafın sağ alt köşesi" artık TEK sahipli — çakışma
+                    yapısal olarak imkânsız.
 
                     `onPress` doğrudan çağıranın karar yoluna gidiyor: sheet
                     isteği atıp kapanıyor (bkz. LikerSwipeModal >
                     triggerAction / triggerFire). `hideActions` (okunur kart —
-                    "kaçırdıkların", kendi profilini önizleme) bütün kolonu
-                    kaldırıyor. */}
-                {!hideActions && !!(onPass || onLike || (!hideFire && onFire)) && (
+                    "kaçırdıkların", kendi profilini önizleme) karar
+                    butonlarını kaldırıyor ama NOTU DEĞİL (bkz. aşağıdaki
+                    koşulun not dalı — `hideActions`'ın dışında): not bağımsız
+                    bir sinyal, okunur kartta bile geçerli olabilir. */}
+                {((!hideActions &&
+                  !!(onPass || onLike || (!hideFire && onFire))) ||
+                  (!!onNote && allPhotos.length > 0)) && (
                   <View
                     style={{
                       position: "absolute",
@@ -3973,6 +3999,12 @@ export default function SwipeCard({
                         variant="clear"
                         size={COVER_ACTION_SIZE}
                       />
+                    )}
+                    {/* NOT — kolonun DİBİ, Keşif'teki sırayla aynı (tik · X ·
+                        Fire · not). Hedef Keşif'teki KAPAĞIN kutusuyla aynı
+                        fotoğraf (bkz. yukarıdaki `onNotePress` notu). */}
+                    {!!onNote && allPhotos.length > 0 && (
+                      <NoteBox onPress={noteHandler(photoNoteTarget(0))} onPhoto />
                     )}
                   </View>
                 )}

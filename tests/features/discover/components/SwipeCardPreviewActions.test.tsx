@@ -146,4 +146,27 @@ describe('SwipeCard previewMode note boxes', () => {
       promptKey: null,
     });
   });
+
+  /**
+   * Review Focus #5: kutu artık AKSİYON KOLONUNUN İÇİNDE (Keşif kapağıyla aynı
+   * dizilim: tik · X · Fire · not). Ana fotoğrafın kendi kutusu `hideNote` ile
+   * bırakılmazsa index 0'ı hedefleyen İKİ kutu çıkar — ve o iki daire aynı
+   * köşede üst üste biner (bu işin düzelttiği hata).
+   *
+   * Fixture'da tek fotoğraf, prompt yok → doğru sayı TAM 1.
+   */
+  it('Fire ile birlikte TEK not kutusu var (mükerrer yok)', () => {
+    const tree = renderCard({ onNote: () => {}, onFire: () => {} });
+    expect(tree.getAllByText('glyph:note.boxLabel')).toHaveLength(1);
+  });
+
+  /**
+   * Kolon not İÇİN de doğuyor: Keşif'teki koşulun (`!!onNote &&
+   * allPhotos.length > 0`) aynısı. `hideActions` yalnız karar butonlarını
+   * kaldırıyor, notu değil — yoksa kutu taşındığı yerle birlikte kaybolurdu.
+   */
+  it('hideActions iken kutu hâlâ çiziliyor', () => {
+    const tree = renderCard({ hideActions: true, onNote: () => {} });
+    expect(tree.getAllByText('glyph:note.boxLabel')).toHaveLength(1);
+  });
 });
