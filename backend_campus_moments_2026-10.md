@@ -500,3 +500,64 @@ yalnız fiilen kampüste olunarak test edilebiliyor.
 `GET /api/campus/me` → `enabled: false` dönüyor, yani istemcide sheet hiç açılmıyor.
 Test hesaplarımızda açılması ilk sırada — bildirim talebinin de, paylaşım akışının da
 önkoşulu.
+
+---
+
+# EK — 2026-10-29: `photoUrl` **403 veriyor**, §4 uygulanmamış
+
+Paylaşım akışının tamamı çalışıyor (upload-url → S3 PUT → `POST /moments` → liste),
+**ama hiçbir anın fotoğrafı gösterilemiyor.** Kart çiziliyor, ad/saat doğru, yerinde
+yalnız boş bir zemin duruyor.
+
+## Kanıt
+
+İstemciye DEV-only bir teşhis kondu (`CampusMomentCard`, release'de çizilmiyor) ve kartın
+üstünde şunu yazdı:
+
+```
+YÜKLENEMEDİ
+Download marked as failed because of invalid response status code 403
+https://universitytinder-media.s3.us-east-1.amazonaws.com/…
+```
+
+Yani `photoUrl` **kovanın çıplak nesne adresi**. Kova gizli olduğu için GET 403 dönüyor.
+Fotoğraf paylaşıldıktan **4 dakika sonra** denendi — "imza süresi doldu" ile
+açıklanamaz; adres zaten imza taşımıyor.
+
+## İstenen (yeni bir şey değil — §4'ün kendisi)
+
+`GET /api/campus/moments` ve `POST /api/campus/moments` yanıtlarındaki `photoUrl`
+**okunabilir** olmalı, iki seçenekten biriyle:
+
+- **(a) tercih edilen:** presigned **GET** URL, ömrü anın `expiresAt`ini AŞSIN (≥25 saat).
+  ⚠️ Yükleme için verilen presigned **PUT** URL'i okumaya yaramıyor; ayrı imza gerekiyor.
+- (b) nesneleri CDN üstünden imzasız ama tahmin edilemez (opak key) servis etmek.
+
+Kısa ömürlü imza (ör. 15 dk) **işe yaramaz**: an 24 saat yaşıyor, liste disk cache'inde
+duruyor ve cache anahtarı URL'in kendisi — kart birkaç saat sonra kendiliğinden kararır.
+Gerekçenin tamamı §4'te.
+
+## Doğrulama
+
+Aynı teşhis etiketi düzeltmeden sonra imzayı özetliyor (`host` + `X-Amz-Signature` var mı
++ `X-Amz-Expires`), yani tek bir açılışta hem 403'ün bittiği hem de ömrün yeterli olduğu
+görülebiliyor. Beklenen: imza VAR ve `X-Amz-Expires ≥ 90000` (25 saat).
+
+## İstemci tarafında ne yapıldı
+
+Hiçbir şey — yapılamaz, imzayı istemci atamaz. Yalnız iki şey eklendi:
+1. göreli/boş `photoUrl` gelirse artık API tabanına bağlanıyor (bu vaka DEĞİL, adres
+   mutlak geliyordu),
+2. yukarıdaki DEV teşhisi — bu rapor onun çıktısı.
+
+## ⚠️ Hangi seçenek seçilirse seçilsin: **URL'İN KENDİSİ SABİT KALMALI**
+
+İstemcide fotoğrafın disk cache anahtarı **URL dizesinin kendisi** (expo-image). Presigned
+yolunda (a) imza HER YANITTA yeniden üretilirse `X-Amz-Date`/`X-Amz-Signature` değişir →
+aynı fotoğraf her liste tazelemesinde **yeni bir dosya** sayılır ve baştan indirilir. Anlar
+şeridi her harita açılışında tazeleniyor, yani bu pratikte "cache yok" demek.
+
+İstenen: bir anın `photoUrl`i, anın ömrü boyunca **birebir aynı dize** olsun — imza kayıt
+anında bir kez üretilip saklansın (ya da deterministik üretilsin), her istekte yeniden
+imzalanmasın. Seçenek (b) (opak key'li CDN yolu) bu sorunu tanım gereği taşımıyor; bu
+yüzden mümkünse **(b) tercih edilir.**
