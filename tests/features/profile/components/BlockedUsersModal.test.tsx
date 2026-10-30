@@ -48,9 +48,12 @@ describe('BlockedUsersModal', () => {
 
   it('renders a card per blocked user', async () => {
     const tree = setup();
-    await waitFor(() => tree.getByText('Ramiz'));
-    expect(tree.getByText('23 · Bilgi Üniversitesi')).toBeTruthy();
-    expect(tree.getByText('24 Temmuz 2026 tarihinde engellendi')).toBeTruthy();
+    // ⚠️ SATIR DÜZENİ DEĞİŞTİ: ad ve yaş TEK satırda birleşti
+    // (`moderation.blocked.nameWithAge`), üniversite ayrı satırda ve
+    // "… tarihinde engellendi" satırı KALDIRILDI. Test eski üç satırlık
+    // düzeni arıyordu.
+    await waitFor(() => tree.getByText('Ramiz, 23'));
+    expect(tree.getByText('Bilgi Üniversitesi')).toBeTruthy();
   });
 
   it('shows the empty state when nobody is blocked', async () => {
@@ -86,7 +89,7 @@ describe('BlockedUsersModal', () => {
     });
 
     expect(mockUnblockUser).toHaveBeenCalledWith('u-1');
-    await waitFor(() => expect(tree.queryByText('Ramiz')).toBeNull());
+    await waitFor(() => expect(tree.queryByText('Ramiz, 23')).toBeNull());
   });
 
   it('keeps the row and Alerts when unblocking fails', async () => {
@@ -101,6 +104,6 @@ describe('BlockedUsersModal', () => {
     });
 
     expect(Alert.alert).toHaveBeenLastCalledWith('Hata', 'Engel kaldırılamadı.');
-    expect(tree.getByText('Ramiz')).toBeTruthy();
+    expect(tree.getByText('Ramiz, 23')).toBeTruthy();
   });
 });
