@@ -1,4 +1,4 @@
-import { foldTr } from "@/shared/utils/foldTr";
+import { foldTr } from '@/shared/utils/foldTr';
 
 /**
  * Arama KARARLARI — saf fonksiyon, yan etki YOK.

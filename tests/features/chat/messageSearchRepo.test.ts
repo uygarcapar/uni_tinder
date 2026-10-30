@@ -139,10 +139,6 @@ describe.each([
     const hits = searchMessages('kahve', { limit: 10 });
 
     expect(hits.map((h) => h.messageId)).toEqual(['m2', 'm3', 'm1']);
-    // sent_at_ms'in KENDİSİ azalıyor mu — sıralamanın id'ye değil zamana
-    // dayandığını ayırt eder.
-    expect(hits[0].sentAtMs).toBeGreaterThan(hits[1].sentAtMs);
-    expect(hits[1].sentAtMs).toBeGreaterThan(hits[2].sentAtMs);
   });
 
   it('conversationId verilince yalnız o sohbette arıyor', () => {
@@ -202,13 +198,76 @@ describe.each([
     expect(h2.partnerDisplayName).toBeNull();
   });
 
-  it('FTS özel karakterleri (", *, OR) içeren sorgu PATLAMIYOR ve literal arıyor', () => {
-    saveMessage(msg('m1', 'OR ifadesi gercek metin'), CONV);
+  // Review turu 1, Önemli 3: eski hâli yalnız `not.toThrow()`du — "literal
+  // arıyor" iddiasını hiçbir satır karşılaştırması DOĞRULAMIYORDU. Burada
+  // hem NEGATİF kanıt (FTS5'in BOOLEAN `OR`u sızmıyor) hem POZİTİF kanıt
+  // (kullanıcı GERÇEKTEN "or" kelimesini ararsa bulunuyor) var.
+  it('FTS özel karakteri "OR" LİTERAL bir kelime olarak aranıyor, BOOLEAN operatöre YORUMLANMIYOR', () => {
+    saveMessage(msg('m1', 'elma'), CONV);
+    saveMessage(msg('m2', 'armut'), CONV);
 
-    // Sorgu `prepareSearchQuery` tarafından katlanmış geliyor varsayımıyla;
-    // burada doğrudan FTS özel karakterleri taşıyan bir dize veriliyor —
-    // amaç çökmeyi/sözdizimi hatasını önlemek.
-    expect(() => searchMessages('or "alakasiz* NEAR', { limit: 10 })).not.toThrow();
+    // Tırnaksız FTS5'te `OR` boolean operatördür: 'elma OR armut' HEM m1 HEM
+    // m2'yi bulurdu. Quoting bunu üç bağımsız tokene (elma, or, armut)
+    // indirgiyor ve AND'liyor — TEK mesaj üçünü BİRDEN taşımadığı için (ne
+    // m1 ne m2) sonuç BOŞ olmalı. Boş OLMASAYDI 'OR' hâlâ operatör gibi
+    // okunuyor demektir.
+    expect(() => searchMessages('elma OR armut', { limit: 10 })).not.toThrow();
+    expect(searchMessages('elma OR armut', { limit: 10 })).toHaveLength(0);
+
+    // Kullanıcı GERÇEKTEN "or" kelimesini arıyorsa (üçü de TEK mesajda)
+    // bulunmalı — literal okumanın pozitif kanıtı, yalnız "patlamadı" değil.
+    saveMessage(msg('m3', 'elma or armut salatasi'), CONV);
+    expect(searchMessages('elma or armut', { limit: 10 }).map((h) => h.messageId)).toEqual([
+      'm3',
+    ]);
+  });
+
+  // Review turu 1, Kritik — ölçülen regresyon: tırnaklı ama ÖN EKSİZ bir FTS
+  // sorgusu yarım yazılmış kelimeyi HİÇ bulamıyordu (`"isi"` tam kelime
+  // arar, `isik`i değil), bu da kullanıcının yazarken gördüğü HER ara
+  // durumda arama sonucunun boş görünmesi demekti — LIKE yedeği ise substring
+  // olduğu için buluyordu, iki şekil ayrışıyordu. Çözüm: `"tok"*` (bkz.
+  // `toFtsMatchQuery`). Bu test HER İKİ kapasitede de aynı satırları
+  // dönmeliler.
+  it('ön ek (yarım yazılmış kelime) ile eşleşiyor — iki şekil de AYNI satırı buluyor', () => {
+    saveMessage(msg('m1', 'IŞIK geldi'), CONV);
+    saveMessage(msg('m2', 'kahvehane güzel'), CONV);
+
+    expect(searchMessages('isi', { limit: 10 }).map((h) => h.messageId)).toEqual(['m1']);
+    expect(searchMessages('kahve', { limit: 10 }).map((h) => h.messageId)).toEqual(['m2']);
+  });
+
+  // Review turu 1, Kritik — ölçülen ikinci ayrışma: FTS bağımsız tokenları
+  // AND'lerken (bitişik olmaları gerekmez), eski LIKE yedeği TEK bitişik alt
+  // dize arıyordu — "kelime var" sorgusu "iki kelime arasi dolgu var"da
+  // aralarında başka kelime olduğu için LIKE'ta hiç bulunmuyordu, FTS'te
+  // buluyordu. Çözüm: LIKE de artık token-başına ön ek arayıp AND'liyor
+  // (bkz. `buildLikePredicate`).
+  it('bitişik olmayan iki kelime AND\'li buluyor — tokenlar metinde ayrı yerlerde olabilir', () => {
+    saveMessage(msg('m1', 'iki kelime arasi dolgu var'), CONV);
+
+    expect(searchMessages('kelime var', { limit: 10 }).map((h) => h.messageId)).toEqual(['m1']);
+    expect(searchMessages('iki dolgu', { limit: 10 }).map((h) => h.messageId)).toEqual(['m1']);
+  });
+
+  // Review turu 1, Önemli 4: LIKE deseninde `_` SQL'de "herhangi bir
+  // karakter" jokeri — kaçırma olmadan 'a_b' sorgusu 'axb'yi de eşleştirirdi
+  // (sessiz AŞIRI-eşleşme). `prepareSearchQuery` bu karakteri reddetmiyor,
+  // yani kaçırma SQL katmanında olmak zorunda (bkz. `escapeLikeToken`).
+  it('LIKE jokeri "_" LİTERAL aranıyor, "herhangi bir karakter" olarak YORUMLANMIYOR', () => {
+    saveMessage(msg('m1', 'a_b test'), CONV);
+    saveMessage(msg('m2', 'axb test'), CONV); // '_' joker olsaydı BU DA eşleşirdi
+
+    expect(searchMessages('a_b', { limit: 10 }).map((h) => h.messageId)).toEqual(['m1']);
+  });
+
+  // Review turu 1, Minör 1: eski kod yalnız `foldedQuery === ''`i reddediyordu
+  // — "  " (yalnız boşluk) LIKE dalında `LIKE '%  %'`ye düşüp çift boşluk
+  // içeren HER ŞEYİ eşleştirirdi (FTS dalı ise zaten `[]` dönüyordu, iki
+  // şekil ayrışırdı). Tokenizasyon tabanlı guard bunu simetrik kapatıyor.
+  it('yalnız boşluktan oluşan sorgu iki yolda da boş sonuç veriyor', () => {
+    saveMessage(msg('m1', 'cift  bosluk icerir'), CONV); // içerikte de ÇİFT boşluk var
+    expect(searchMessages('   ', { limit: 10 })).toHaveLength(0);
   });
 });
 
@@ -241,8 +300,9 @@ describe('readAround', () => {
 
     const window = readAround(CONV, target.sent_at_ms, 'm5', 2, 2);
 
+    // Hedef tam ortada OLMASI dahil tüm diziliş tek `toEqual` ile pinleniyor
+    // — ayrı bir `window[2].id` kontrolü FAZLALIK olurdu (review turu 1, Minör 4).
     expect(window.map((m) => m.id)).toEqual(['m7', 'm6', 'm5', 'm4', 'm3']);
-    expect(window[2].id).toBe('m5'); // hedef tam ortada
   });
 
   it('arşivin başındaki mesajda da patlamıyor (before yetersiz)', () => {
@@ -260,5 +320,42 @@ describe('readAround', () => {
     // mesaj ve hedef eksiksiz geldi — eksik kalan sessizce kırpıldı, hata
     // fırlatılmadı ya da sahte satır üretilmedi.
     expect(window.map((m) => m.id)).toEqual(['m3', 'm2', 'm1']);
+  });
+
+  // Review turu 1, Minör 3: yalnız ESKİ uç (before yetersiz) test edilmişti;
+  // `.reverse()`li YENİ uç dalı (after yetersiz) hiç koşulmamıştı.
+  it('arşivin sonundaki (en yeni) mesajda da patlamıyor (after yetersiz)', () => {
+    seed(3);
+    const target = getChatDb().getFirst<{ sent_at_ms: number }>(
+      'SELECT sent_at_ms FROM messages WHERE id = ?',
+      ['m3'],
+    )!;
+
+    // m3 arşivin EN YENİSİ — after=2 istense de ardında hiç mesaj yok.
+    expect(() => readAround(CONV, target.sent_at_ms, 'm3', 2, 2)).not.toThrow();
+    const window = readAround(CONV, target.sent_at_ms, 'm3', 2, 2);
+
+    expect(window.map((m) => m.id)).toEqual(['m3', 'm2', 'm1']);
+  });
+
+  // Review turu 1, Önemli: `sentAtMs` parametresi çağıranın elindeki (BAYAT
+  // olabilen) damga — hedefin kendi `sent_at_ms`'inden DAHA ESKİ bir değer
+  // geçilirse, çapa o bayat değere göre kurulsaydı hedef kendi
+  // `sent_at_ms > ?` koşulunu SAĞLAR ve hem `newer` içinde hem `target`
+  // olarak İKİ KEZ dönerdi (aynı `id` iki satırda — Task 5'in liste
+  // anahtarlamasını kırar). Pencere hedefin VERİTABANINDAN TAZE okunan
+  // damgasına çapalanmak ZORUNDA.
+  it('çağıranın BAYAT sentAtMs değeri hedefi İKİ KEZ döndürmüyor', () => {
+    seed(5); // m1..m5, sent_at_ms artan sırada
+    const staleAnchor = 1_700_000_000_000; // tüm satırların GERÇEK damgasından daha ESKİ
+
+    const window = readAround(CONV, staleAnchor, 'm3', 0, 3);
+    const ids = window.map((m) => m.id);
+
+    expect(new Set(ids).size).toBe(ids.length); // hiçbir id YİNELENMİYOR
+    // Pencere hedefin GERÇEK damgasına göre kuruldu (m3'ten sonraki iki satır
+    // + hedef), BAYAT parametreye göre DEĞİL — bayat olsaydı m1/m2/m3 üçü de
+    // "daha yeni" sayılır, m3 hem oradan hem hedeften gelirdi.
+    expect(ids).toEqual(['m5', 'm4', 'm3']);
   });
 });

@@ -142,6 +142,17 @@ export function pruneOrphanSearchIndex(): number {
 }
 
 /**
+ * Katlanmış sorguyu boşluğa göre tokenlara böler. Boş/yalnız-boşluk girişte
+ * `[]` — İKİ SQL şeklinin de "arama yok" kararını AYNI yerden alması için
+ * (review turu 1: whitespace-only girişte FTS `[]` dönerken LIKE eski kodda
+ * `LIKE '%  %'`yi çalıştırıp çift boşluk içeren HER ŞEYİ eşleştiriyordu —
+ * iki şekil burada da ayrışmasın diye tokenizasyon tek yerde).
+ */
+function tokenizeFolded(folded: string): string[] {
+  return folded.split(/\s+/).filter(Boolean);
+}
+
+/**
  * Katlanmış kullanıcı sorgusunu FTS5 `MATCH` ifadesine dönüştürür.
  *
  * ⚠️ Ham sorgu doğrudan `MATCH`e verilmiyor: FTS5'in kendi operatör sözdizimi
@@ -150,17 +161,57 @@ export function pruneOrphanSearchIndex(): number {
  * hatası (kullanıcıya çökme gibi görünür), en kötü ihtimalle yanlış/şişirilmiş
  * sonuç. Çözüm: her kelimeyi kendi çift tırnağına sarmak. FTS5'te tırnaklı bir
  * dize LİTERAL'dir — içindeki `*`/`OR`/`NEAR`/`:` harf olarak okunur, operatör
- * olarak değil. Tırnaklı iki token art arda geldiğinde FTS5 bunları üstü kapalı
- * AND ile birleştirir (bkz. FTS5 query syntax: dizili tokenlar arasında
- * operatör yoksa varsayılan AND), yani "güneş" "ışık" ikisini de ARAYAN bir
- * sorgu üretir — kullanıcının LIKE'tan beklediği "her iki kelime de geçsin"
- * sezgisiyle örtüşüyor. Dize içindeki `"` kendisi `""`ye katlanır — FTS5'in
- * tırnaklı dize içinde tırnak kaçırma kuralı budur.
+ * olarak değil. Dize içindeki `"` kendisi `""`ye katlanır — FTS5'in tırnaklı
+ * dize içinde tırnak kaçırma kuralı budur.
+ *
+ * ── ÖN EK operatörü tırnağın DIŞINDA ─────────────────────────────────────────
+ * `"tok"*` — kapanış tırnağından HEMEN SONRA `*`. Tırnağın İÇİNDE olsaydı
+ * (`"tok*"`) literal okunur, yıldız harf sayılırdı ve "kahve" asla
+ * "kahvehane"yi bulamazdı (review turu 1'in ölçtüğü Kritik: kullanıcının
+ * YARIM yazdığı HER kelime FTS yolunda boş sonuç veriyordu — bu yol
+ * pratikte HERKESİN yolu). Tırnağın dışına koymak payload'ı literal TUTARKEN
+ * (kaçış hâlâ çalışıyor) prefix aramayı AÇIYOR.
+ *
+ * Tokenlar ARALARINDA bağımsız: art arda gelen `"a"* "b"*` FTS5'te üstü
+ * kapalı AND'dir, bitişik olmaları GEREKMEZ — "ali vel" → "ali veli"yi bulur,
+ * aralarında başka kelime olsa da. Bu, LIKE yedeğinin de kopyalaması gereken
+ * TAM kural (bkz. `buildLikePredicate`): "her token, cümlenin BİR yerinde,
+ * kelime BAŞI olarak geçsin; tokenların kendisi bitişik olmak zorunda değil."
  */
-function toFtsMatchQuery(folded: string): string | null {
-  const tokens = folded.split(/\s+/).filter(Boolean);
+function toFtsMatchQuery(tokens: string[]): string | null {
   if (!tokens.length) return null;
-  return tokens.map((t) => `"${t.replace(/"/g, '""')}"`).join(' ');
+  return tokens.map((t) => `"${t.replace(/"/g, '""')}"*`).join(' ');
+}
+
+/** LIKE desenlerinde ÖZEL anlamı olan üç karakteri kaçırır: `\`, `%`, `_`. */
+function escapeLikeToken(token: string): string {
+  return token.replace(/[\\%_]/g, (c) => `\\${c}`);
+}
+
+/**
+ * LIKE yedeğinin `toFtsMatchQuery` ile AYNI kuralı (yukarıdaki yorum) ifade
+ * eden hâli: her token için "cümle BAŞINDA" ya da "bir BOŞLUKTAN SONRA"
+ * geçsin (= kelime başı ön ek), tüm tokenlar AND'li ama ARALARINDA bitişik
+ * olmak zorunda değil.
+ *
+ * `content_folded` boşlukla ayrılmış katlanmış kelimelerin dizisi (bkz.
+ * `searchableFolded`), yani "kelime başı" `LIKE 'tok%' OR LIKE '% tok%'`
+ * ikilisiyle TAM ifade edilebiliyor — ayrı bir tokenizer kurmaya gerek yok.
+ *
+ * `ESCAPE '\'` ŞART: kaçırma olmadan kullanıcının yazdığı `_` (SQL'de "her
+ * hangi bir karakter") ve `%` (SQL'de "her hangi bir dizi") LITERAL değil
+ * JOKER okunur — `a_b` sorgusu `axb`yi de eşleştirirdi (review turu 1,
+ * Önemli 4). `prepareSearchQuery` bu karakterleri REDDETMİYOR (yalnız bir
+ * harf/rakam şartı var), yani kaçırma burada, SQL katmanında olmak zorunda.
+ */
+function buildLikePredicate(tokens: string[]): { sql: string; params: SqlValue[] } {
+  const params: SqlValue[] = [];
+  const clauses = tokens.map((t) => {
+    const esc = escapeLikeToken(t);
+    params.push(`${esc}%`, `% ${esc}%`);
+    return "(m.content_folded LIKE ? ESCAPE '\\' OR m.content_folded LIKE ? ESCAPE '\\')";
+  });
+  return { sql: clauses.join(' AND '), params };
 }
 
 /**
@@ -170,7 +221,16 @@ function toFtsMatchQuery(folded: string): string | null {
  * o karar `messageSearch.ts`in işi, burası saf SQL).
  *
  * İKİ SQL ŞEKLİ TAŞIR — `isFtsAvailable()`e göre FTS `MATCH` ya da
- * `content_folded LIKE` yedeği. İkisi de AYNI şeyi vermek zorunda:
+ * `content_folded LIKE` yedeği. İkisi de AYNI SEMANTİĞİ uygulamak zorunda —
+ * "her token, metinde bir KELİME BAŞI ön eki olarak geçsin, tokenlar
+ * ARALARINDA bitişik olmak zorunda değil, tüm tokenlar sağlanmalı (AND)"
+ * (bu iddia test ediliyor: bkz. messageSearchRepo.test.ts'teki prefix ve
+ * bitişik-olmayan iki-kelime testleri, her iki kapasitede de). Eski yorum
+ * burada "LIKE'ın her-şey-tek-alt-dize sezgisiyle örtüşüyor" diyordu —
+ * YANLIŞTI: LIKE `%query%` tek bir bitişik alt dize arıyordu, FTS bağımsız
+ * tokenları AND'liyordu, ikisi farklı sonuç veriyordu (review turu 1,
+ * Kritik). Kural artık İKİSİNDE DE `buildLikePredicate`/`toFtsMatchQuery`
+ * yorumlarındaki tanım.
  *  • AYNI kolon: `content` DEĞİL `content_folded` — ham `content` üzerinden
  *    aramak Türkçe katlama bug'ını (ı/İ/I/i karışıklığı) diriltirdi, bu
  *    tasarımın tamamının önlemeye çalıştığı şey.
@@ -190,6 +250,8 @@ export function searchMessages(
   const db = getChatDb();
   const conversationId = opts.conversationId ?? null;
   const offset = opts.offset ?? 0;
+  const tokens = tokenizeFolded(foldedQuery);
+  if (!tokens.length) return [];
 
   type Row = {
     id: string;
@@ -201,7 +263,7 @@ export function searchMessages(
 
   let rows: Row[];
   if (isFtsAvailable()) {
-    const matchQuery = toFtsMatchQuery(foldedQuery);
+    const matchQuery = toFtsMatchQuery(tokens);
     if (matchQuery === null) return [];
     rows = db.getAll<Row>(
       `SELECT m.id AS id, m.conversation_id AS conversation_id, m.sent_at_ms AS sent_at_ms,
@@ -217,18 +279,18 @@ export function searchMessages(
       [matchQuery, conversationId, conversationId, opts.limit, offset],
     );
   } else {
-    if (!foldedQuery) return [];
+    const predicate = buildLikePredicate(tokens);
     rows = db.getAll<Row>(
       `SELECT m.id AS id, m.conversation_id AS conversation_id, m.sent_at_ms AS sent_at_ms,
               m.content AS content, c.partner_display_name AS partner_display_name
          FROM messages m
          LEFT JOIN conversations c ON c.conversation_id = m.conversation_id
-        WHERE m.content_folded LIKE ('%' || ? || '%')
+        WHERE ${predicate.sql}
           AND m.deleted_at IS NULL
           AND (? IS NULL OR m.conversation_id = ?)
         ORDER BY m.sent_at_ms DESC, m.id DESC
         LIMIT ? OFFSET ?`,
-      [foldedQuery, conversationId, conversationId, opts.limit, offset],
+      [...predicate.params, conversationId, conversationId, opts.limit, offset],
     );
   }
 
@@ -576,9 +638,20 @@ export function readOlder(
  * değil. Hedef artık yoksa (olağanüstü durum) sessizce atlanır, pencere yine
  * de geri döner.
  *
+ * ⚠️ Çevre sorgularının ÇAPASI, parametre `sentAtMs` DEĞİL, hedefin
+ * VERİTABANINDAN TAZE okunan `sent_at_ms`'i (`target?.sent_at_ms ?? sentAtMs`
+ * — satır bulunamazsa geriye düşülecek tek değer parametre zaten). Çağıran
+ * (arama sonucu) elindeki damga BAYATLAMIŞ olabilir; parametreyle çapalasaydık
+ * ve o değer satırın gerçek `sent_at_ms`'inin ALTINDA kalsaydı hedef kendi
+ * `sent_at_ms > ?` koşulunu SAĞLAR ve hem `newer` içinde hem `target` olarak
+ * İKİ KEZ dönerdi — aynı `id` iki satırda, Task 5'in liste anahtarlamasını
+ * kırardı (review turu 1, Önemli).
+ *
  * Arşivin UCUNDA (hedeften önce `before` kadar eski mesaj yoksa) PATLAMAZ:
  * `LIMIT` zaten eldeki kadarını döner, eksik kalanı sıfırla doldurmaya gerek
- * yok — çağıran dizinin kısalığından "daha eski yok"u zaten çıkarabilir.
+ * yok — çağıran dizinin kısalığından "daha eski yok"u zaten çıkarabilir. Aynı
+ * şey `after` ucu için de geçerli (bkz. messageSearchRepo.test.ts'in newer-uç
+ * testi).
  */
 export function readAround(
   conversationId: string,
@@ -593,6 +666,7 @@ export function readAround(
     'SELECT * FROM messages WHERE id = ? AND conversation_id = ?',
     [messageId, conversationId],
   );
+  const anchorMs = target?.sent_at_ms ?? sentAtMs;
 
   // Hedeften DAHA YENİ satırlar: en yakından en uzağa almak için ASC sorgulanır
   // (LIMIT bu yüzden "hedefe en yakın" olanları seçer), sonra dizi ters çevrilip
@@ -603,7 +677,7 @@ export function readAround(
        WHERE conversation_id = ?
          AND (sent_at_ms > ? OR (sent_at_ms = ? AND id > ?))
        ORDER BY sent_at_ms ASC, id ASC LIMIT ?`,
-      [conversationId, sentAtMs, sentAtMs, messageId, after],
+      [conversationId, anchorMs, anchorMs, messageId, after],
     )
     .reverse();
 
@@ -613,7 +687,7 @@ export function readAround(
      WHERE conversation_id = ?
        AND (sent_at_ms < ? OR (sent_at_ms = ? AND id < ?))
      ORDER BY sent_at_ms DESC, id DESC LIMIT ?`,
-    [conversationId, sentAtMs, sentAtMs, messageId, before],
+    [conversationId, anchorMs, anchorMs, messageId, before],
   );
 
   const rows = [...newer, ...(target ? [target] : []), ...older];
