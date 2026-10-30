@@ -1750,20 +1750,45 @@ function ChatScreen({
     }
   }, [inlineSearchOpen, inlineSearchDebounced, conversationId]);
 
-  // Sonuç KÜMESİ değiştiğinde (yeni sorgu) başlangıç konumu EN YENİ eşleşme —
-  // kullanıcı genelde az önce konuşulan bir şeyi arıyor, en eskiden başlamak
-  // onu yanlış uca gönderirdi. Bu efekt next/prev'den TETİKLENMEZ (onlar yalnız
-  // `inlineSearchIndex`i değiştirir, `inlineSearchHits` referansı AYNI kalır).
-  useEffect(() => {
-    setInlineSearchIndex(inlineSearchHits.length ? inlineSearchHits.length - 1 : 0);
-  }, [inlineSearchHits]);
+  // Sonuç KÜMESİ değişti mi (yeni sorgu) — `inlineSearchHits` bir hop'ta
+  // (next/prev) AYNI referansı taşır, yalnız YENİ bir arama sonucunda değişir.
+  const prevInlineSearchHitsRef = useRef<any[] | null>(null);
 
-  // Seçili eşleşmeye atla — Task 5'in YERELDEN okuyan yolu (`hydrateAroundMessage`)
-  // BİREBİR, ikinci bir atlama mekanizması icat edilmedi. Bulunduysa pencere
-  // hedefi kapsayacak şekilde değişir (isWindowed:true); scroll+highlight
-  // aşağıdaki efekt pencerenin DOLMASINI bekleyip yapıyor.
+  /**
+   * Seçili eşleşmeye atla — Task 5'in YERELDEN okuyan yolu
+   * (`hydrateAroundMessage`) BİREBİR, ikinci bir atlama mekanizması icat
+   * edilmedi. Bulunduysa pencere hedefi kapsayacak şekilde değişir
+   * (isWindowed:true); scroll+highlight aşağıdaki efekt pencerenin
+   * DOLMASINI bekleyip yapıyor.
+   *
+   * ── Tek efekte BİLEREK birleşik: "başlangıç indeksi" + "atlama" ──────────
+   * Önceki sürüm bunları İKİ ayrı efekte ayırmıştı (biri `inlineSearchIndex`i
+   * length-1'e çeken, biri de o index'le atlayan). Aynı commit'te render
+   * sırasına göre İKİNCİ efekt HENÜZ GÜNCELLENMEMİŞ eski `inlineSearchIndex`le
+   * (örn. 0) çalışıyor, EN ESKİ eşleşmeye bir kere atlıyor, sonra state
+   * güncellenince İKİNCİ bir render'da doğru (en yeni) hedefe tekrar
+   * atlıyordu — kullanıcı gözünde kısa bir "yanlış mesaja zıplayıp hemen
+   * düzelme" kırpışması, ayrıca gereksiz bir `hydrateAroundMessage` turu.
+   * Burada yeni bir sonuç kümesi geldiğinde ÖNCE index state'i güncellenip
+   * efekt erken dönüyor (bir sonraki render'da `isNewHitSet` artık false,
+   * index ZATEN doğru) — atlama TEK SEFERDE, doğru hedefle oluyor.
+   */
   useEffect(() => {
-    if (!inlineSearchHits.length) return;
+    if (!inlineSearchHits.length) {
+      prevInlineSearchHitsRef.current = inlineSearchHits;
+      return;
+    }
+    const isNewHitSet = prevInlineSearchHitsRef.current !== inlineSearchHits;
+    prevInlineSearchHitsRef.current = inlineSearchHits;
+    if (isNewHitSet) {
+      // En yeni eşleşme — kullanıcı genelde az önce konuşulan bir şeyi arıyor,
+      // en eskiden başlamak onu yanlış uca gönderirdi.
+      const startIndex = inlineSearchHits.length - 1;
+      if (startIndex !== inlineSearchIndex) {
+        setInlineSearchIndex(startIndex);
+        return; // Üstteki yorum: atlama bir sonraki (doğru index'li) render'a bırakılıyor.
+      }
+    }
     const hit = inlineSearchHits[inlineSearchIndex];
     if (!hit) return;
     const found = hydrateAroundMessage(

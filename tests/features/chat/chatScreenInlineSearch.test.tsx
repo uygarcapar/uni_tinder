@@ -389,6 +389,11 @@ describe('sohbet içinde arama', () => {
     // başlamak kullanıcıyı yanlış uca gönderirdi.
     expect(screen.getByText('3/3')).toBeTruthy();
     expect(mockHighlightMessage).toHaveBeenLastCalledWith('m-newest');
+    // Başlangıç indeksi EN ESKİYE (0) düşüp sonra düzeltilmiyor — TEK atlama.
+    // Bu, "iki ayrı efekt" sürümünün ürettiği (önce en eskiye, sonra en
+    // yeniye zıplayan) kırpışmayı pinliyor: kırılırsa bu sayı 2'ye çıkar.
+    expect(mockHydrateAroundMessage).toHaveBeenCalledTimes(1);
+    expect(mockHighlightMessage).toHaveBeenCalledTimes(1);
 
     await act(async () => {
       fireEvent.press(screen.getByTestId('chat-inline-search-prev'));
