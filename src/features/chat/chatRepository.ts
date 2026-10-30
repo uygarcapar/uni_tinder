@@ -525,14 +525,33 @@ export function applyHistoryPage(
       // Daha eski sayfa: kesinlikle yerel aralığın altında, çakışma sorusu yok.
       upsertMessages(db, pageMessages, conversationId);
       const existing = readSyncState(conversationId);
+      const floorMs = existing?.oldest_loaded_sent_at_ms ?? null;
       const nextOldest =
         pageOldestMs === null
-          ? (existing?.oldest_loaded_sent_at_ms ?? null)
-          : Math.min(existing?.oldest_loaded_sent_at_ms ?? Number.POSITIVE_INFINITY, pageOldestMs);
+          ? floorMs
+          : Math.min(floorMs ?? Number.POSITIVE_INFINITY, pageOldestMs);
+
+      // `next_cursor`/`has_more` EKRANIN sayfalama durumu ve bu dalı ekran ile
+      // backfill PAYLAŞIYOR. Sayfanın cursor'ı ancak sayfa yerel tabanı
+      // gerçekten aşağı taşıyorsa o durumun doğru DEVAMI olur: backfill'in
+      // `backfill_cursor`'ı NULL'dan başladığı için her sohbetteki ilk isteği
+      // sayfa-1'i (en YENİ sayfayı) getiriyor ve onun cursor'ını yazmak ekranın
+      // ulaştığı derinliği GERİ ALIYORDU — `has_more = 0` olan (sonuna kadar
+      // okunmuş) bir sohbet bile yeniden "devam ediyor"a dönüyordu. Ekranın
+      // kendi derin sayfaları HER ZAMAN tabanı aşağı taşır, yani onlar için bu
+      // kapı no-op (bkz. chatRepository.contiguity.test.ts).
+      const extendsFloor = pageOldestMs !== null && (floorMs === null || pageOldestMs < floorMs);
+      // Tek istisna: sayfa "arşiv bitti" diyorsa (cursor YOK + hasMore false)
+      // yazmak hiçbir sayfayı yeniden indirtemez, yalnız sayfalamayı kapatır —
+      // ekranın son `loadOlder` isteği tam sınıra denk geldiğinde dönen BOŞ
+      // sayfa bu; elenirse o sohbet her soğuk açılışta bayat cursor'la bir
+      // istek daha harcardı.
+      const reportsEnd = page.hasMore === false && page.nextCursor === null;
       writeSyncState(db, conversationId, {
         oldestLoadedSentAtMs: nextOldest,
-        nextCursor: page.nextCursor,
-        hasMore: page.hasMore,
+        ...(extendsFloor || reportsEnd
+          ? { nextCursor: page.nextCursor, hasMore: page.hasMore }
+          : {}),
       });
       return;
     }

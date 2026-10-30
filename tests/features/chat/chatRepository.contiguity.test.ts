@@ -70,6 +70,90 @@ describe('applyHistoryPage — append (yukarı kaydırma)', () => {
   });
 });
 
+describe('applyHistoryPage — append, EKRANIN cursor\'ını GERİ ALMIYOR', () => {
+  // `append` dalı ekranın sayfalamasıyla (`next_cursor`/`has_more`) backfill
+  // turunun AYNI yazma yolunu paylaşıyor. Backfill'in `backfill_cursor`'ı
+  // NULL'dan başladığı için her sohbet için İLK isteği sayfa-1'i (en YENİ
+  // sayfayı) getiriyor; o sayfanın cursor'ını yazmak ekranın ulaştığı derinliği
+  // GERİ ALIYORDU. Aşağıdaki testler yazmanın yalnız sayfa yerel tabanı aşağı
+  // taşıdığında (ya da "arşiv bitti" dediğinde) yapıldığını kilitliyor.
+
+  it('yerel tabanı GENİŞLETMEYEN sayfa next_cursor/has_more\'a DOKUNMUYOR', () => {
+    // Ekran: sayfa-1 reconcile + bir derin sayfa → taban m1, cursor 'c3'.
+    applyHistoryPage(CONV, page([4, 5, 6], { nextCursor: 'c2', hasMore: true }), {
+      append: false,
+    });
+    applyHistoryPage(CONV, page([1, 2, 3], { nextCursor: 'c3', hasMore: true }), {
+      append: true,
+    });
+    expect(readSyncState(CONV)!.next_cursor).toBe('c3');
+
+    // Backfill'in o sohbetteki İLK isteği: sayfa-1, `append: true` ile. Taban
+    // aşağı taşınmıyor; 'c2' yazılsaydı ekran bir sonraki soğuk açılışta
+    // ZATEN DİSKTE olan sayfaları yeniden indirmeye başlardı.
+    applyHistoryPage(CONV, page([4, 5, 6], { nextCursor: 'c2', hasMore: true }), {
+      append: true,
+    });
+
+    const sync = readSyncState(CONV)!;
+    expect(sync.next_cursor).toBe('c3');
+    expect(sync.has_more).toBe(1);
+    expect(sync.oldest_loaded_sent_at_ms).toBe(BASE + 60_000);
+  });
+
+  it('SONUNA KADAR okunmuş sohbet (has_more 0 + next_cursor NULL) öyle KALIYOR', () => {
+    applyHistoryPage(CONV, page([1, 2, 3], { nextCursor: null, hasMore: false }), {
+      append: false,
+    });
+    expect(readSyncState(CONV)!.has_more).toBe(0);
+
+    applyHistoryPage(CONV, page([2, 3], { nextCursor: 'c2', hasMore: true }), { append: true });
+
+    // Bu en kötü hâl: "geçmişin sonuna geldim" durumu `has_more = 1`e dönerse
+    // ekran tüm sohbeti baştan indirmeye kalkıyordu.
+    const sync = readSyncState(CONV)!;
+    expect(sync.has_more).toBe(0);
+    expect(sync.next_cursor).toBeNull();
+  });
+
+  it('tabanı GENİŞLETEN derin sayfa cursor\'ı YİNE ilerletiyor — ekranın sayfalaması değişmedi', () => {
+    // Ekranın kendi derin sayfalaması HER ZAMAN tabanı aşağı taşır, yani
+    // yukarıdaki kapı onun için no-op. Bu testin sayfa-1 reconcile'ı
+    // `oldest_loaded_sent_at_ms`'i kuruyor; kapı "taban NULL" kolayına
+    // kaçmadan değerlendiriliyor.
+    applyHistoryPage(CONV, page([4, 5, 6], { nextCursor: 'c2', hasMore: true }), {
+      append: false,
+    });
+    applyHistoryPage(CONV, page([1, 2, 3], { nextCursor: 'c3', hasMore: true }), {
+      append: true,
+    });
+
+    const sync = readSyncState(CONV)!;
+    expect(sync.next_cursor).toBe('c3');
+    expect(sync.has_more).toBe(1);
+    expect(sync.oldest_loaded_sent_at_ms).toBe(BASE + 60_000);
+  });
+
+  it('sayfa "arşiv bitti" diyorsa (boş sayfa, hasMore false) has_more KAPANIYOR', () => {
+    // Tabanı genişletmeyen ama cursor'suz + hasMore:false gelen sayfa: ekranın
+    // son `loadOlder` isteği tam sınıra denk gelince böyle dönüyor. Yazmak
+    // burada güvenli — `next_cursor = NULL` + `has_more = 0` hiçbir sayfayı
+    // YENİDEN indirtemez, yalnız sayfalamayı kapatır. Kapı bunu da elese
+    // ekran her soğuk açılışta bayat cursor'la bir istek daha harcardı.
+    applyHistoryPage(CONV, page([1, 2, 3], { nextCursor: 'c3', hasMore: true }), {
+      append: false,
+    });
+
+    applyHistoryPage(CONV, { messages: [], nextCursor: null, hasMore: false }, { append: true });
+
+    const sync = readSyncState(CONV)!;
+    expect(sync.has_more).toBe(0);
+    expect(sync.next_cursor).toBeNull();
+    // Boş sayfa tabanı GERİ almadı.
+    expect(sync.oldest_loaded_sent_at_ms).toBe(BASE + 60_000);
+  });
+});
+
 describe('applyHistoryPage — page-1 reconcile', () => {
   it('ilk çekim: gap yok, sync_state kurulur', () => {
     applyHistoryPage(CONV, page([1, 2, 3], { nextCursor: 'c1', hasMore: true }), {
