@@ -7,6 +7,7 @@ import {
 import { BACKFILL_MAX_FAILURES } from '@/features/chat/backfillPolicy';
 import {
   rowToConversation,
+  rowToMessage,
   type ConversationRow,
   type MessageRow,
   type MutationKind,
@@ -16,6 +17,7 @@ import {
   type SyncStateRow,
 } from '@/features/chat/db/rows';
 import { ContentType, contentTypeToNumber } from '@/features/chat/contentType';
+import type { MessageSearchHit } from '@/features/chat/messageSearch';
 import { rekey as rekeyCache } from '@/features/chat/messageCache';
 import { normalizeMessage } from '@/features/chat/normalizeMessage';
 import { utcTime } from '@/shared/utils/dateUtc';
@@ -137,6 +139,106 @@ export function pruneOrphanSearchIndex(): number {
      )`);
   const after = db.getFirst<{ n: number }>('SELECT COUNT(*) AS n FROM messages_fts')?.n ?? 0;
   return before - after;
+}
+
+/**
+ * Katlanmış kullanıcı sorgusunu FTS5 `MATCH` ifadesine dönüştürür.
+ *
+ * ⚠️ Ham sorgu doğrudan `MATCH`e verilmiyor: FTS5'in kendi operatör sözdizimi
+ * var (`"`, `*`, `AND/OR/NOT`, `NEAR`, `col:`) ve kullanıcı "ışık*" ya da "a
+ * OR b" yazdığında bunlar ARAMA OPERATÖRÜ sanılır — en iyi ihtimalle sözdizimi
+ * hatası (kullanıcıya çökme gibi görünür), en kötü ihtimalle yanlış/şişirilmiş
+ * sonuç. Çözüm: her kelimeyi kendi çift tırnağına sarmak. FTS5'te tırnaklı bir
+ * dize LİTERAL'dir — içindeki `*`/`OR`/`NEAR`/`:` harf olarak okunur, operatör
+ * olarak değil. Tırnaklı iki token art arda geldiğinde FTS5 bunları üstü kapalı
+ * AND ile birleştirir (bkz. FTS5 query syntax: dizili tokenlar arasında
+ * operatör yoksa varsayılan AND), yani "güneş" "ışık" ikisini de ARAYAN bir
+ * sorgu üretir — kullanıcının LIKE'tan beklediği "her iki kelime de geçsin"
+ * sezgisiyle örtüşüyor. Dize içindeki `"` kendisi `""`ye katlanır — FTS5'in
+ * tırnaklı dize içinde tırnak kaçırma kuralı budur.
+ */
+function toFtsMatchQuery(folded: string): string | null {
+  const tokens = folded.split(/\s+/).filter(Boolean);
+  if (!tokens.length) return null;
+  return tokens.map((t) => `"${t.replace(/"/g, '""')}"`).join(' ');
+}
+
+/**
+ * Yerel mesaj arşivinde arama — Faz 4'ün aranan şeyi. `foldedQuery`
+ * ÇAĞIRANIN `prepareSearchQuery`den geçirdiği, zaten katlanmış/kırpılmış bir
+ * dize olmak ZORUNDA (bu fonksiyon onu tekrar katlamaz, boşsa da reddetmez —
+ * o karar `messageSearch.ts`in işi, burası saf SQL).
+ *
+ * İKİ SQL ŞEKLİ TAŞIR — `isFtsAvailable()`e göre FTS `MATCH` ya da
+ * `content_folded LIKE` yedeği. İkisi de AYNI şeyi vermek zorunda:
+ *  • AYNI kolon: `content` DEĞİL `content_folded` — ham `content` üzerinden
+ *    aramak Türkçe katlama bug'ını (ı/İ/I/i karışıklığı) diriltirdi, bu
+ *    tasarımın tamamının önlemeye çalıştığı şey.
+ *  • AYNI süzgeç: `deleted_at IS NULL` — silinmiş mesaj ARTIK indeksten
+ *    ÇIKARILMIYOR (bkz. applyDeleted/applyDeletionTombstone yorumları), yani
+ *    süzme SORGU anında yapılmak ZORUNDA; iki şekilden biri bunu unutursa o
+ *    yol silinmiş mesajı sızdırır.
+ *  • AYNI sıra: `sent_at_ms DESC, id DESC` — en yeniden eskiye, aynı
+ *    milisaniyedeki mesajlar için kararlı tiebreaker (readOlder ile aynı
+ *    gerekçe).
+ *  • AYNI sonuç şekli: `MessageSearchHit`.
+ */
+export function searchMessages(
+  foldedQuery: string,
+  opts: { conversationId?: string; limit: number; offset?: number },
+): MessageSearchHit[] {
+  const db = getChatDb();
+  const conversationId = opts.conversationId ?? null;
+  const offset = opts.offset ?? 0;
+
+  type Row = {
+    id: string;
+    conversation_id: string;
+    sent_at_ms: number;
+    content: string;
+    partner_display_name: string | null;
+  };
+
+  let rows: Row[];
+  if (isFtsAvailable()) {
+    const matchQuery = toFtsMatchQuery(foldedQuery);
+    if (matchQuery === null) return [];
+    rows = db.getAll<Row>(
+      `SELECT m.id AS id, m.conversation_id AS conversation_id, m.sent_at_ms AS sent_at_ms,
+              m.content AS content, c.partner_display_name AS partner_display_name
+         FROM messages_fts f
+         JOIN messages m ON m.rowid = f.rowid
+         LEFT JOIN conversations c ON c.conversation_id = m.conversation_id
+        WHERE f.content_folded MATCH ?
+          AND m.deleted_at IS NULL
+          AND (? IS NULL OR m.conversation_id = ?)
+        ORDER BY m.sent_at_ms DESC, m.id DESC
+        LIMIT ? OFFSET ?`,
+      [matchQuery, conversationId, conversationId, opts.limit, offset],
+    );
+  } else {
+    if (!foldedQuery) return [];
+    rows = db.getAll<Row>(
+      `SELECT m.id AS id, m.conversation_id AS conversation_id, m.sent_at_ms AS sent_at_ms,
+              m.content AS content, c.partner_display_name AS partner_display_name
+         FROM messages m
+         LEFT JOIN conversations c ON c.conversation_id = m.conversation_id
+        WHERE m.content_folded LIKE ('%' || ? || '%')
+          AND m.deleted_at IS NULL
+          AND (? IS NULL OR m.conversation_id = ?)
+        ORDER BY m.sent_at_ms DESC, m.id DESC
+        LIMIT ? OFFSET ?`,
+      [foldedQuery, conversationId, conversationId, opts.limit, offset],
+    );
+  }
+
+  return rows.map((r) => ({
+    messageId: r.id,
+    conversationId: r.conversation_id,
+    sentAtMs: r.sent_at_ms,
+    content: r.content,
+    partnerDisplayName: r.partner_display_name,
+  }));
 }
 
 function messageParams(
@@ -453,6 +555,69 @@ export function readOlder(
      ORDER BY sent_at_ms DESC, id DESC LIMIT ?`,
     [conversationId, before.sentAtMs, before.sentAtMs, before.id, limit],
   );
+}
+
+/**
+ * Arama sonucuna dokununca açılan PENCERE — roadmap 4.3'ün başlığı. Sunucuda
+ * bu işi yapan bir endpoint YOK (arşivin tamamı yerelde), yani bu SAF YEREL
+ * bir okuma: ağ turu yok, bekleme yok.
+ *
+ * Hedefi `before`/`after` kadar çevresiyle birlikte, hedefi İÇEREREK, en
+ * yeniden eskiye (arşivin geri kalanıyla aynı sıra) döner: `[...daha yeni
+ * (ters çevrilmiş, en yeni başta), hedef, ...daha eski (DESC)]`.
+ *
+ * Keyset tiebreaker `readOlder` ile AYNI gerekçe: aynı milisaniyede birden
+ * fazla mesaj varsa yalnız zamana bakan bir karşılaştırma mesaj atlar/yineler.
+ *
+ * Hedef satırı AYRI bir `SELECT ... WHERE id = ?` ile okunuyor (etraftaki iki
+ * sorgunun LIMIT'i hedefi kapsamıyor) — arama sonucu listelendiği andan bu
+ * okuma anına kadar hedefin içeriği değişmiş olabilir (düzenleme/silme), yani
+ * burada her zaman GÜNCEL hâl gösteriliyor, arama indeksindeki eski kopya
+ * değil. Hedef artık yoksa (olağanüstü durum) sessizce atlanır, pencere yine
+ * de geri döner.
+ *
+ * Arşivin UCUNDA (hedeften önce `before` kadar eski mesaj yoksa) PATLAMAZ:
+ * `LIMIT` zaten eldeki kadarını döner, eksik kalanı sıfırla doldurmaya gerek
+ * yok — çağıran dizinin kısalığından "daha eski yok"u zaten çıkarabilir.
+ */
+export function readAround(
+  conversationId: string,
+  sentAtMs: number,
+  messageId: string,
+  before: number,
+  after: number,
+): MessageDto[] {
+  const db = getChatDb();
+
+  const target = db.getFirst<MessageRow>(
+    'SELECT * FROM messages WHERE id = ? AND conversation_id = ?',
+    [messageId, conversationId],
+  );
+
+  // Hedeften DAHA YENİ satırlar: en yakından en uzağa almak için ASC sorgulanır
+  // (LIMIT bu yüzden "hedefe en yakın" olanları seçer), sonra dizi ters çevrilip
+  // genel en-yeniden-eskiye sıraya (en uzak önce) oturtulur.
+  const newer = db
+    .getAll<MessageRow>(
+      `SELECT * FROM messages
+       WHERE conversation_id = ?
+         AND (sent_at_ms > ? OR (sent_at_ms = ? AND id > ?))
+       ORDER BY sent_at_ms ASC, id ASC LIMIT ?`,
+      [conversationId, sentAtMs, sentAtMs, messageId, after],
+    )
+    .reverse();
+
+  // Hedeften DAHA ESKİ satırlar: zaten en-yeniden-eskiye — ek işlem yok.
+  const older = db.getAll<MessageRow>(
+    `SELECT * FROM messages
+     WHERE conversation_id = ?
+       AND (sent_at_ms < ? OR (sent_at_ms = ? AND id < ?))
+     ORDER BY sent_at_ms DESC, id DESC LIMIT ?`,
+    [conversationId, sentAtMs, sentAtMs, messageId, before],
+  );
+
+  const rows = [...newer, ...(target ? [target] : []), ...older];
+  return rows.map(rowToMessage);
 }
 
 /** Yerel arşivde bu sohbetten kaç satır var — indeksli COUNT, render sırasında güvenli. */
