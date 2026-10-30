@@ -362,16 +362,20 @@ describe('handlePickReaction — kuyruğa bağlı', () => {
     expect(mockFlushPendingMutations).toHaveBeenCalledWith('interactive');
   });
 
-  it('tepki ağ hatasında ARTIK GERİ ALINMIYOR — emoji yerinde kalıyor', async () => {
-    // Ayırt edici iddia: bu fazın tamamı bu satır. Eski kodda ağ çağrısı
-    // ChatScreen'in KENDİ try/catch'inde yakalanıp `prev` listesi geri
-    // dispatch ediliyordu (ChatScreen.tsx'in eski handlePickReaction'ı).
-    // `flushPendingMutations` gerçekte asla reject ETMEZ (her satırın
-    // hatasını kendi içinde yutup bir sonuç nesnesi döner — pendingMutations.ts),
-    // yani bu sahte round "rejected" sayısı 1 olan bir sonuç veriyor: bir
-    // satır KALICI olarak reddedildi. Eğer ChatScreen hâlâ KENDİ geri alma
-    // kodunu taşısaydı o kod burada da devreye girip İKİNCİ bir
-    // reactionsChanged dispatch'i üretirdi — taşımadığı için tek kalıyor.
+  it('tur sonucu ne olursa olsun ikinci dispatch yok — çağrı fire-and-forget', async () => {
+    // Bu test ağ hatasını SİMÜLE ETMİYOR ve kuyruk-açık yolda edemez:
+    // `mockAddReaction`/`mockRemoveReaction` artık hiç çağrılmıyor, çağrı
+    // `void flushPendingMutations(...)` ile fire-and-forget — ChatScreen onun
+    // dönüşünü HİÇ okumuyor. Burada pinlenen şey ondan ayrı: tur ne dönerse
+    // dönsün (burada "bir satır kalıcı reddedildi" sonucu veriyoruz), ChatScreen
+    // o sonucu İŞLEMİYOR — gelecekte biri flush promise'ine bir `.then()`
+    // takıp sonucuna göre ikinci bir dispatch eklerse bu test kırılır.
+    //
+    // "Ağ hatasında artık emoji geri alınmıyor" iddiasının kendisi BURADA
+    // pinlenmiyor — o round katmanında, pendingMutations.test.ts'teki
+    // "ağ hatası: satır KALIYOR, attempts artıyor, backoff yazılıyor, toast
+    // YOK" testinde kilitli. Bu dosya yalnız ÇAĞRI NOKTASININ (ChatScreen'in)
+    // tur sonucuna bakıp ikinci bir şey yapmadığını kanıtlıyor.
     mockFlushPendingMutations.mockImplementation(() =>
       Promise.resolve({ ran: true, done: 0, retried: 0, rejected: 1 }),
     );
@@ -413,6 +417,31 @@ describe('handlePickReaction — kuyruğa bağlı', () => {
       messageId: MESSAGE_ID,
       conversationId: CONVERSATION_ID,
       desired: '🔥',
+      serverBase: '😀',
+    });
+  });
+
+  it('toggle-off: kendi emojime tekrar basınca desired null, serverBase hâlâ benim emojim', async () => {
+    // serverBase'in İKİNCİ yarısı: hiçbir şey EKLENMİYORSA (desired: null),
+    // turun hangi emojiyi sileceğini bilmesi için TEK bilgi serverBase'tir.
+    // Burası boşsa/yanlışsa silme round'da sessizce kaybolur — bu yüzden
+    // `applyReactionPick`'in toggle-off dalı (addEmoji===null) ayrıca pinli.
+    (MessageActionSheetMock as any).__setEmoji('😀');
+    renderChatScreen(
+      buildMessage({
+        reactions: [{ emoji: '😀', count: 1, userIds: [MY_USER_ID] }],
+      }),
+    );
+
+    await longPressBubble();
+    await act(async () => {
+      fireEvent.press(screen.getByTestId('action-pick-reaction'));
+    });
+
+    expect(mockEnqueueReaction).toHaveBeenCalledWith({
+      messageId: MESSAGE_ID,
+      conversationId: CONVERSATION_ID,
+      desired: null,
       serverBase: '😀',
     });
   });
