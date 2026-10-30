@@ -200,6 +200,10 @@ export function hydrateConversation(
         nextCursor: sync?.next_cursor ?? null,
         hasMore: rows.length >= limit || !!sync?.has_more,
         hasHiddenHistory: !!sync?.has_hidden_history,
+        // Arşivin DİBİ (en yeni sayfa) — pencereli DEĞİL. Açıkça `false`:
+        // sohbete "taze" girmek (ya da ChatScreen'in "son mesaja dön"ü) önceki
+        // bir hedefli ziyaretten kalmış `isWindowed`i burada TEMİZLER.
+        isWindowed: false,
       }),
     );
     return true;
@@ -277,6 +281,12 @@ export function hydrateAroundMessage(
         nextCursor: sync?.next_cursor ?? null,
         hasMore: true,
         hasHiddenHistory: !!sync?.has_hidden_history,
+        // Review turu 1, Önemli 4 — bu bucket ARTIK PENCERELİ: `receiveMessage`
+        // bu bayrak açıkken canlı mesajı bitiştirmeyi BIRAKIYOR (bkz.
+        // chatSlice.ts'teki kendi yorumu). Temizlenmesi İKİ yoldan biriyle:
+        // sohbete taze girmek (hydrateConversation, isWindowed:false) ya da
+        // ChatScreen'in "son mesaja dön" aksiyonu (aynı fonksiyonu çağırıyor).
+        isWindowed: true,
       }),
     );
     return true;

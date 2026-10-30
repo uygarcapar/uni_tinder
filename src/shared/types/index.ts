@@ -335,6 +335,18 @@ export interface MessageBucket {
    * açınca) false'a döner.
    */
   hasHiddenHistory?: boolean;
+  /**
+   * Faz 4 — bu pencere arşivin DİBİ (en yeni sayfa) DEĞİL, arama sonucundan
+   * atlanan bir HEDEFİN ETRAFI (`chatHydrate.hydrateAroundMessage`). `true`
+   * iken `receiveMessage` CANLI gelen mesajı bu bucket'a BİTİŞTİRMİYOR — iki
+   * yıl önceki bir pencerenin yanına "son mesaj" gibi yapışması, kullanıcıya
+   * hiç göstermemekten daha YANILTICI (mesaj zaten diskte, kullanıcı güncele
+   * dönünce görür). `hydrateConversation`in normal hot-window hydrate'i bu
+   * bayrağı HER ZAMAN `false`a çeker — sohbete "taze" girmek ya da ChatScreen'in
+   * "son mesaja dön" aksiyonu bu şekilde temizleniyor, ayrı bir "clear" action'a
+   * gerek yok.
+   */
+  isWindowed?: boolean;
 }
 
 export interface TypingEntry {

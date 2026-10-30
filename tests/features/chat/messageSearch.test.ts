@@ -1,4 +1,8 @@
-import { MIN_SEARCH_LENGTH, prepareSearchQuery } from '@/features/chat/messageSearch';
+import {
+  MIN_SEARCH_LENGTH,
+  prepareSearchQuery,
+  highlightSegments,
+} from '@/features/chat/messageSearch';
 
 /**
  * `messageSearch.ts` SAF — bu dosya store/DB/network kurmuyor, hiçbir
@@ -54,5 +58,59 @@ describe('prepareSearchQuery', () => {
   it('çok tokenlı sorguda YALNIZ BİRİ eşiği geçse yeterli — "ali v" reddedilmiyor', () => {
     expect(prepareSearchQuery('ali v')).toBe('ali v');
     expect(prepareSearchQuery('v ali')).toBe('v ali');
+  });
+});
+
+/**
+ * Review turu 1, Önemli 1 — önceki sürüm `content`i katlanmamış bir regex'le
+ * arayıp parçayı `toLocaleLowerCase('tr')` ile katlanmış bir `matchSet`e karşı
+ * kontrol ediyordu. "IŞIK" sorgusu "isik" (içerikte KATLANMIŞ hâliyle duran,
+ * gerçekçi bir mesaj: kullanıcı Türkçe klavyesiz "isik" yazmış) içeriğinde HİÇ
+ * BULUNAMIYORDU — regex harfi harfine "IŞIK" arıyor, katlanmış içeriği hiç
+ * görmüyordu. Satır dönüyordu (SQL katlanmış arıyor) ama vurgu asla
+ * ÇİZİLMİYORDU. Bu suite artık `highlightSegments`i `messageSearch.ts`e
+ * taşındığı (ve `tokenizeFolded`i paylaştığı) için PİNLİYOR.
+ */
+describe('highlightSegments', () => {
+  it('"ISIK" sorgusu katlanmış "isik" içeriğini VURGULUYOR — eski regex hatası', () => {
+    const segs = highlightSegments('isik aciyor', 'isik');
+    expect(segs.map((s) => ({ text: s.text, match: s.match }))).toEqual([
+      { text: 'isik', match: true },
+      { text: ' aciyor', match: false },
+    ]);
+  });
+
+  it('Türkçe katlanmış sorgu orijinal (katlanmamış) içerikteki karşılığını buluyor: "isik" → "IŞIK"', () => {
+    const segs = highlightSegments('IŞIK yanıyor', 'isik');
+    expect(segs[0]).toEqual({ text: 'IŞIK', match: true });
+    expect(segs[1].match).toBe(false);
+  });
+
+  it('kelime İÇİNDE geçen bir alt dizeyi vurgulamıyor — yalnız kelime BAŞI', () => {
+    // searchMessages'ın kendisi "yanlışinema" gibi bir satırı HİÇ döndürmez
+    // (kelime başı ön ek kuralı, chatRepository.ts); vurgu da aynı kuralı
+    // uygulamak zorunda, yoksa SQL'in asla üretmeyeceği bir eşleşmeyi çizer.
+    const segs = highlightSegments('yanlışinema oldu', 'sinema');
+    expect(segs.every((s) => !s.match)).toBe(true);
+  });
+
+  it('eşleşme YOKSA tüm içerik tek, vurgusuz parça', () => {
+    expect(highlightSegments('merhaba dünya', 'zeynep')).toEqual([
+      { text: 'merhaba dünya', match: false },
+    ]);
+  });
+
+  it('MIN_SEARCH_LENGTH altındaki token vurguya KATILMIYOR (kozmetik filtre)', () => {
+    // "sinema g" — ikinci kelimeye yeni başlanmış, gerçekçi bir yazma anı.
+    // SQL tarafı "g"yi hâlâ dar bir AND terimi olarak kullanıyor (DEĞİŞMEDİ),
+    // ama her tek harfi ekranda kalınlaştırmak salt gürültü olurdu.
+    const segs = highlightSegments('git sinemaya', 'sinema g');
+    const bolded = segs.filter((s) => s.match).map((s) => s.text);
+    expect(bolded).toEqual(['sinema']);
+  });
+
+  it('boş sorguda/içerikte çökmeden vurgusuz tek parça döner', () => {
+    expect(highlightSegments('merhaba', '')).toEqual([{ text: 'merhaba', match: false }]);
+    expect(highlightSegments('', 'merhaba')).toEqual([{ text: '', match: false }]);
   });
 });

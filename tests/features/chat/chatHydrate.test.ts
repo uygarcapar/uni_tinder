@@ -79,6 +79,10 @@ describe('hydrateConversation', () => {
     expect(actions).toHaveLength(1);
     expect(actions[0].type).toBe('chat/hydrateWindow');
     expect(actions[0].payload.messages.map((m: MessageDto) => m.id)).toEqual(['m3', 'm2', 'm1']);
+    // Review turu 1, Önemli 4 — bu normal (hot-window) hydrate AÇIKÇA
+    // `isWindowed: false` yazıyor: hedefli bir önceki ziyaretten kalmış
+    // bayrağı sohbete taze girildiğinde TEMİZLEYEN mekanizma budur.
+    expect(actions[0].payload.isWindowed).toBe(false);
   });
 
   it('arşiv boşsa false döner ve HİÇ dispatch etmez', () => {
@@ -164,6 +168,10 @@ describe('hydrateAroundMessage', () => {
     expect(actions[0].type).toBe('chat/hydrateWindow');
     // before=1, after=1 → hedefin bir öncesi + hedef + bir sonrası (en yeniden eskiye).
     expect(actions[0].payload.messages.map((m: MessageDto) => m.id)).toEqual(['m4', 'm3', 'm2']);
+    // Review turu 1, Önemli 4 — bu pencere arşivin DİBİ DEĞİL, bucket
+    // PENCERELİ işaretlenmek ZORUNDA (receiveMessage'ın canlı-mesaj
+    // bitiştirmesini kapatan bayrak budur).
+    expect(actions[0].payload.isWindowed).toBe(true);
   });
 
   it('hedef arşivde YOK: dispatch YAPILMAZ, false döner — çağıran normal açılışa düşsün', () => {

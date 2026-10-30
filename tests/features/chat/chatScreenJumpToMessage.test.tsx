@@ -204,7 +204,7 @@ import { Provider } from 'react-redux';
 import { configureStore } from '@reduxjs/toolkit';
 import { render, screen, act } from '@testing-library/react-native';
 import { NavigationContainer } from '@react-navigation/native';
-import chatReducer, { hydrateWindow } from '@/features/chat/chatSlice';
+import chatReducer, { hydrateWindow, receiveMessage } from '@/features/chat/chatSlice';
 import ChatScreen from '@/features/chat/screens/ChatScreen';
 
 const CONVERSATION_ID = 'conv-1';
@@ -237,6 +237,8 @@ function buildStore() {
         // koşuluna BAĞLI OLMADIĞINI (merge edilen layout effect) ayrıca
         // sınamaya gerek yok burada — asıl iddia network çağrısı tarafında.
         messagesByConv: {},
+        typingByConv: {},
+        presenceByUser: {},
         quotaByConv: {},
         quotaMetaByConv: {},
         unreadTotal: 0,
@@ -401,5 +403,111 @@ describe('hedefli açılış — arama sonucundan mesaja atlama', () => {
     // ÇAĞRILDI — hedefsiz açılışla AYNI yol.
     expect(mockHydrateConversation).toHaveBeenCalledWith(expect.any(Function), CONVERSATION_ID);
     expect(mockGetMessageHistory).toHaveBeenCalled();
+  });
+});
+
+/**
+ * Review turu 1, Önemli 4 — pencereli (hedefli) bucket: "son mesaja dön"
+ * banner'ı + canlı mesajın BİTİŞTİRİLMEMESİ. `receiveMessage`in kendi
+ * reducer-seviyesi davranışı `chatSlice.windowedBucket.test.ts`te pinli; bu
+ * suite ÇAĞRI NOKTASINI (ChatScreen'in banner'ı gösterip göstermediğini,
+ * banner'a basınca ne çağırdığını) sınıyor — GERÇEK chatSlice reducer'ı
+ * kullanılıyor (`hydrateWindow`/`receiveMessage` mock DEĞİL), yalnız
+ * `chatHydrate` mock'lu.
+ */
+describe('pencereli bucket — "son mesaja dön" banner\'ı', () => {
+  it('hedef bulunduğunda banner çıkar; canlı mesaj pencereye BİTİŞMİYOR', async () => {
+    hydrateAroundImpl = (dispatch) => {
+      dispatch(
+        hydrateWindow({
+          conversationId: CONVERSATION_ID,
+          messages: [
+            {
+              id: TARGET_ID,
+              conversationId: CONVERSATION_ID,
+              senderId: PARTNER_USER_ID,
+              content: 'selam',
+              contentType: 0,
+              sentAt: new Date(TARGET_SENT_AT_MS).toISOString(),
+            },
+          ],
+          nextCursor: null,
+          hasMore: true,
+          hasHiddenHistory: false,
+          isWindowed: true,
+        }),
+      );
+      return true;
+    };
+
+    const { store } = renderChatScreen({ withTarget: true });
+    await act(async () => {});
+
+    expect(screen.getByTestId('chat-go-to-latest')).toBeTruthy();
+
+    // Realtime'dan canlı mesaj gelir — gerçek reducer, bucket PENCERELİ.
+    await act(async () => {
+      store.dispatch(
+        receiveMessage({
+          id: 'live-1',
+          conversationId: CONVERSATION_ID,
+          senderId: PARTNER_USER_ID,
+          content: 'az önce geldi',
+          contentType: 0,
+          sentAt: new Date().toISOString(),
+        } as any),
+      );
+    });
+
+    // Hedef balon HÂLÂ orada, canlı mesaj İÇİN YENİ bir balon YOK — iki yıl
+    // önceki pencereye "son mesaj" gibi yapışmadı.
+    expect(screen.getByTestId(`bubble-${TARGET_ID}`)).toBeTruthy();
+    expect(screen.queryByTestId('bubble-live-1')).toBeNull();
+  });
+
+  it('hedef bulunamayan normal açılışta banner ÇIKMAZ', async () => {
+    hydrateAroundImpl = () => false;
+    mockHasLocalHistory.mockReturnValue(false);
+
+    renderChatScreen({ withTarget: true });
+    await act(async () => {});
+
+    expect(screen.queryByTestId('chat-go-to-latest')).toBeNull();
+  });
+
+  it('banner\'a basınca hydrateConversation (hot-window) çağrılır', async () => {
+    hydrateAroundImpl = (dispatch) => {
+      dispatch(
+        hydrateWindow({
+          conversationId: CONVERSATION_ID,
+          messages: [
+            {
+              id: TARGET_ID,
+              conversationId: CONVERSATION_ID,
+              senderId: PARTNER_USER_ID,
+              content: 'selam',
+              contentType: 0,
+              sentAt: new Date(TARGET_SENT_AT_MS).toISOString(),
+            },
+          ],
+          nextCursor: null,
+          hasMore: true,
+          hasHiddenHistory: false,
+          isWindowed: true,
+        }),
+      );
+      return true;
+    };
+
+    renderChatScreen({ withTarget: true });
+    await act(async () => {});
+
+    mockHydrateConversation.mockClear();
+    await act(async () => {
+      const { fireEvent } = require('@testing-library/react-native');
+      fireEvent.press(screen.getByTestId('chat-go-to-latest'));
+    });
+
+    expect(mockHydrateConversation).toHaveBeenCalledWith(expect.any(Function), CONVERSATION_ID);
   });
 });

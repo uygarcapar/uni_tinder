@@ -858,6 +858,11 @@ const en = {
       searchMessagesTitle: 'Messages',
       searchMessagesEmpty: 'No messages found',
     },
+    // Phase 4 / Task 5 — targeted-open (jump from search result) banner.
+    // Shows on a windowed bucket, returns the user to the latest messages.
+    jumpBanner: {
+      goToLatest: 'Go to latest',
+    },
     // The restore window length lives in BACKEND config — never hardcode "24
     // hours" here; the remaining time is derived from the `restorableUntil`
     // timestamp and printed as {{time}} (see features/chat/restoreWindow.ts).

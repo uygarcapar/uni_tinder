@@ -245,6 +245,83 @@ describe('MessagesScreen — global aramada mesaj bölümü', () => {
     expect(screen.getAllByTestId('msgs-message-hit-m1').length).toBeGreaterThan(0);
   });
 
+  /**
+   * Review turu 1, Önemli 3 — sorgu yalnız mesaj İÇERİĞİNDE geçip hiçbir
+   * partner adında geçmediğinde (bu bölümün VAR OLMA sebebinin TAM KENDİSİ:
+   * arama partner adıyla sınırlı olsaydı Task 4'e hiç gerek kalmazdı)
+   * `conversationsByTab` BOŞ kalıyor ve eskiden tam ekranı kaplayan "'yarın'
+   * bulunamadı" durumu çiziliyordu — asıl istenen mesaj sonuçları bu devasa
+   * bloğun ALTINDA, kaydırmadan görünmeyen bir yere düşüyordu. Önceki
+   * testlerin hiçbiri bunu YAKALAYAMAZDI: RNTL ağacı SORGULUYOR, layout'u
+   * DEĞİL — iki blok da ağaçta birden var olabiliyordu, sorun yalnız GÖRSEL
+   * konumdaydı. Bu test `msgs-conv-notfound`in YOKLUĞUNU dogrudan pinliyor.
+   */
+  it('mesaj sonucu varken sohbet "bulunamadı" tam ekranı bastırılıyor', async () => {
+    mockSearchMessages.mockReturnValue([
+      {
+        messageId: 'm1',
+        conversationId: CONVERSATION_ID,
+        sentAtMs: Date.now(),
+        content: 'yarın sinemaya gidelim mi',
+        partnerDisplayName: 'Ayşe',
+      },
+    ]);
+    renderMessagesScreen();
+
+    const input = searchBox();
+    fireEvent(input, 'focus');
+    jest.useFakeTimers();
+    try {
+      // "yarın" — partner adı "Ayşe"de GEÇMİYOR, yalnız mesaj içeriğinde.
+      fireEvent(input, 'changeText', 'yarın');
+      act(() => {
+        jest.advanceTimersByTime(1000);
+      });
+    } finally {
+      jest.useRealTimers();
+    }
+    await act(async () => {});
+
+    expect(screen.queryAllByTestId('msgs-conv-notfound')).toHaveLength(0);
+    expect(screen.getAllByTestId('msgs-message-section').length).toBeGreaterThan(0);
+  });
+
+  /**
+   * Review turu 1, Önemli 2 — önceki sürümde debounce'ı SÖKÜP state'i senkron
+   * yazsaydık bu dosyadaki HİÇBİR test kırılmıyordu: hepsi TEK `changeText`ten
+   * sonra `advanceTimersByTime` çağırıyor, yani zamanlayıcının GERÇEKTEN var
+   * olduğunu hiçbiri sınamıyordu (Test 1 yalnız `prepareSearchQuery===null`
+   * kapısını pinliyor). Bu test debounce PENCERESİNİN İÇİNDE art arda iki
+   * `changeText` gönderip SQL'in yalnız SONUNCU değerle VE TEK SEFER
+   * çağrıldığını kanıtlıyor — zamanlayıcı silinirse ('si' ve 'sin' için ayrı
+   * ayrı, senkron) bu test `toHaveBeenCalledTimes(1)` iddiasında kırılır.
+   */
+  it('debounce penceresi içinde art arda yazılan iki değer SQL\'e TEK seferde gidiyor', async () => {
+    renderMessagesScreen();
+
+    const input = searchBox();
+    fireEvent(input, 'focus');
+    jest.useFakeTimers();
+    try {
+      fireEvent(input, 'changeText', 'si');
+      // Debounce süresinin (220ms) İÇİNDE — zamanlayıcı henüz dolmadı.
+      act(() => {
+        jest.advanceTimersByTime(100);
+      });
+      expect(mockSearchMessages).not.toHaveBeenCalled();
+      fireEvent(input, 'changeText', 'sin');
+      act(() => {
+        jest.advanceTimersByTime(1000);
+      });
+    } finally {
+      jest.useRealTimers();
+    }
+    await act(async () => {});
+
+    expect(mockSearchMessages).toHaveBeenCalledTimes(1);
+    expect(mockSearchMessages).toHaveBeenCalledWith('sin', { limit: expect.any(Number) });
+  });
+
   it('sonuç yokken "mesaj bulunamadı" satırı çıkıyor — bölüm sessizce kaybolmuyor', async () => {
     mockSearchMessages.mockReturnValue([]);
     renderMessagesScreen();

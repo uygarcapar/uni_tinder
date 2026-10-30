@@ -437,15 +437,26 @@ const chatSlice = createSlice({
         nextCursor: string | null;
         hasMore: boolean;
         hasHiddenHistory: boolean;
+        /**
+         * Faz 4 — bu pencere hedef-etrafı mı (bkz. MessageBucket.isWindowed).
+         * BİLEREK OPSİYONEL DEĞİL DAVRANIŞ OLARAK varsayılan: verilmezse
+         * `false`a DÜŞER (`!!undefined`) — yani `hydrateConversation`in normal
+         * hot-window çağrıları bu alanı hiç geçmeden önceki pencereli bayrağı
+         * TEMİZLER. "Sohbete taze girmek flag'i temizler" kuralı burada,
+         * çağıranın ayrıca bir "clear" action'ı çağırmasına GEREK YOK.
+         */
+        isWindowed?: boolean;
       }>,
     ) => {
-      const { conversationId, messages, nextCursor, hasMore, hasHiddenHistory } = action.payload;
+      const { conversationId, messages, nextCursor, hasMore, hasHiddenHistory, isWindowed } =
+        action.payload;
       const bucket = state.messagesByConv[conversationId] ?? emptyBucket();
       bucket.messages = messages;
       bucket.nextCursor = nextCursor;
       bucket.hasMore = hasMore;
       bucket.hasHiddenHistory = hasHiddenHistory;
       bucket.loading = false;
+      bucket.isWindowed = !!isWindowed;
       state.messagesByConv[conversationId] = bucket;
     },
 
@@ -517,7 +528,17 @@ const chatSlice = createSlice({
 
       if (bucket.messages.some((m) => m.id === msg.id)) return;
 
-      bucket.messages = [msg, ...bucket.messages];
+      // Review turu 1, Önemli 4 — bucket PENCERELİYSE (hedef-etrafı, bkz.
+      // MessageBucket.isWindowed) canlı mesaj BİTİŞTİRİLMİYOR. Mesaj ZATEN
+      // DİSKE indi (mirror middleware ayrı bir yoldan yazıyor) — burada
+      // eklemezsek kullanıcı "son mesaja dön"e basıp hot window'u yeniden
+      // okuyunca zaten orada bulacak. Eklerse iki yıl önceki bir pencerenin
+      // hemen yanına "en son mesaj" gibi yapışır — hiç göstermemekten daha
+      // YANILTICI bir sonuç, çünkü sohbet sanki O NOKTADA devam ediyormuş
+      // gibi okunur.
+      if (!bucket.isWindowed) {
+        bucket.messages = [msg, ...bucket.messages];
+      }
       state.messagesByConv[msg.conversationId] = bucket;
       updateConversationLastMessage(state, msg);
 

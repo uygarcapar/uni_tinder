@@ -406,6 +406,12 @@ function ChatScreen({
   const hasHiddenHistory = useAppSelector(
     (s: any) => s.chat.messagesByConv[conversationId]?.hasHiddenHistory ?? false,
   );
+  // Faz 4 / Task 5 — bucket arşivin DİBİ değil, hedefli atlamanın ETRAFINDA
+  // açıldıysa `true` (bkz. MessageBucket.isWindowed yorumu). Banner'ın tek
+  // görevi: kullanıcıya nerede olduğunu söylemek + geri dönüş sunmak.
+  const isWindowed = useAppSelector(
+    (s: any) => !!s.chat.messagesByConv[conversationId]?.isWindowed,
+  );
   const quota = useAppSelector((s: any) => s.chat.quotaByConv?.[conversationId]);
 
   const [replyTo, setReplyTo] = useState<any>(null);
@@ -775,7 +781,11 @@ function ChatScreen({
   // Faz 4 / Task 5 — hedefli açılış (arama sonucundan atlama) BULUNDUYSA
   // hedef mesajın id'si; aşağıdaki iki yer bunu okuyor:
   //  • mount init effect'i (aşağıda, ~840 civarı): hedef bulunduysa reconcile
-  //    fetchHistory'yi ATLAR — AĞA HİÇ ÇIKILMASIN diyen Task 5 sözü burada.
+  //    fetchHistory'yi ATLAR — Task 5'in sözü BUNUNLA SINIRLI: geçmiş ucuna
+  //    (history fetch) hiç gidilmiyor. Aynı init effect'i `joinConversation`,
+  //    `fetchChatQuota` ve (ayrı bir effect'te) `markRead`i YİNE DE çağırıyor —
+  //    "ağa hiç çıkılmıyor" GENİŞ bir iddia OLMAZDI, DOĞRU iddia yalnız "geçmiş
+  //    turu yok".
   //  • listSettled effect'i: liste oturunca scrollToIndex + highlightMessage.
   // `null` iki ayrı durumu kapsıyor: hedef param'ı hiç verilmedi YA DA
   // verildi ama arşivde bulunamadı — ikisinde de normal açılış izleniyor.
@@ -1596,6 +1606,27 @@ function ChatScreen({
     }
   }, []);
 
+  /**
+   * "Son mesaja dön" — pencereli (hedefli atlama) bir bucket'tan çıkış kapısı.
+   * `hydrateConversation`in kendisi `isWindowed:false` yazdığı için (bkz.
+   * chatHydrate.ts yorumu) ayrı bir "temizle" action'ına gerek yok: hot
+   * window'u yeniden okumak bayrağı KENDİLİĞİNDEN düşürüyor.
+   *
+   * Otomatik rehydrate (ör. bir sonraki canlı mesajda) BİLEREK YOK — kullanıcı
+   * az önce BİLEREK bir hedefe atladı, canlı mesaj gelince onu oradan
+   * koparmak tam istediği şeyi (hedefte kalmak) elinden alırdı. Dönüş kararı
+   * KULLANICIYA ait.
+   */
+  const handleGoToLatest = useCallback(() => {
+    hydrateConversation(dispatch, conversationId);
+    // Yeni pencere EN YENİDEN başlıyor — liste dibe otursun.
+    requestAnimationFrame(() => {
+      try {
+        listRef.current?.scrollToEnd?.({ animated: true });
+      } catch {}
+    });
+  }, [dispatch, conversationId]);
+
   const handleUnmatch = useCallback(async () => {
     try {
       const res = await chatService.deactivateConversation(conversationId);
@@ -1980,6 +2011,47 @@ function ChatScreen({
           />
         </View>
       </View>
+
+      {/* "Son mesaja dön" — SADECE pencereli (hedefli atlama) bucket'ta çıkar.
+          Header'ın blur overlay'inin HEMEN ALTINDA, kendi küçük kapsülü. */}
+      {isWindowed && (
+        <View
+          pointerEvents="box-none"
+          style={{
+            position: "absolute",
+            top: insets.top + HEADER_CONTENT,
+            left: 0,
+            right: 0,
+            alignItems: "center",
+            zIndex: 11,
+          }}
+        >
+          <TouchableOpacity
+            testID="chat-go-to-latest"
+            onPress={handleGoToLatest}
+            activeOpacity={0.8}
+            style={{
+              flexDirection: "row",
+              alignItems: "center",
+              backgroundColor: colors.surface,
+              borderRadius: 999,
+              borderCurve: "continuous",
+              paddingHorizontal: 14,
+              paddingVertical: 8,
+              marginTop: 6,
+              shadowColor: "#000",
+              shadowOpacity: 0.15,
+              shadowRadius: 6,
+              shadowOffset: { width: 0, height: 2 },
+              elevation: 3,
+            }}
+          >
+            <Text style={{ color: colors.text, fontSize: 13, fontWeight: "600" }}>
+              {t("chat.jumpBanner.goToLatest")}
+            </Text>
+          </TouchableOpacity>
+        </View>
+      )}
 
       {/* iOS'ta KeyboardGestureArea YOK (çalışan eski build'deki gibi): 1.22.x'in
           iOS tarafındaki InvisibleInputAccessoryView makinesi (statik 66pt offset,

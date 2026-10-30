@@ -869,6 +869,11 @@ const tr = {
       searchMessagesTitle: 'Mesajlar',
       searchMessagesEmpty: 'Mesaj bulunamadı',
     },
+    // Faz 4 / Task 5 — hedefli açılış (arama sonucundan atlama) banner'ı.
+    // Pencereli bucket'ta ÇIKAR, kullanıcıyı sohbetin EN YENİSİNE döndürür.
+    jumpBanner: {
+      goToLatest: 'Son mesaja dön',
+    },
     // Geri alma penceresinin uzunluğu BACKEND config'inden geliyor — metinlerde
     // "24 saat" HARDCODE EDİLMEZ, süre `restorableUntil` damgasından hesaplanıp
     // {{time}} olarak basılır (bkz. features/chat/restoreWindow.ts).

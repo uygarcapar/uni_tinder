@@ -73,6 +73,7 @@ import {
 import { debugLastMessageRows, searchMessages } from "@/features/chat/chatRepository";
 import {
   prepareSearchQuery,
+  highlightSegments,
   type MessageSearchHit,
 } from "@/features/chat/messageSearch";
 import EmptyState from "@/shared/components/EmptyState";
@@ -172,44 +173,6 @@ function logVoiceDurationMiss(conversationId: string, lastMessageAtMs: number) {
   } catch (error) {
     console.log(`[messages] ses süresi çözülemedi · conv=${conversationId} · arşiv okunamadı:`, error);
   }
-}
-
-/**
- * Mesaj sonucu satırındaki içeriği, kullanıcının YAZDIĞI (katlanmamış) sorgu
- * kelimelerine göre parçalara ayırır — kalın basılacak parça `match: true`.
- *
- * ⚠️ BİLEREK `foldTr`/`tokenizeFolded` KULLANMIYOR: arama eşleşmesinin kendisi
- * (hangi satırların döneceği) `searchMessages`in katlanmış/FTS yoluyla kararlı
- * — burası yalnız KOZMETİK, zaten dönmüş bir satırın İÇİNDE hangi alt dizenin
- * vurgulanacağını buluyor. Katlanmış bir token'ı (ör. Türkçe ı/İ/I/i tek harfe
- * inmiş hâli) ham `content` üzerinde ARAMAK pozisyon eşlemesi gerektirirdi
- * (`foldTr`nin NFD/aksan-düşürme adımı uzunluğu KORUMUYOR) — bu karmaşıklığa
- * değmeyecek kadar küçük bir kazanç (vurgu yalnız görsel, yokluğu bir
- * DOĞRULUK hatası değil). Sonuç: Türkçe ı/İ/I/i ya da aksan farkı içeren bir
- * eşleşme (ör. kullanıcı "İREM" yazdı, mesaj "irem" geçiyor) satır İÇİNDE
- * BULUNUR ama VURGULANMAZ — bilinen, kabul edilmiş bir kozmetik boşluk.
- */
-function highlightSegments(
-  content: string,
-  rawQuery: string,
-): { text: string; match: boolean }[] {
-  const tokens = Array.from(
-    new Set((rawQuery.match(/[\p{L}\p{N}]+/gu) ?? []).filter(Boolean)),
-  );
-  if (!tokens.length) return [{ text: content, match: false }];
-  // Uzun token önce: "sel" ve "selam" birlikte geçtiğinde kısa olan uzun
-  // olanın bir parçasını yemesin (alternation ilk eşleşeni seçer).
-  const sorted = [...tokens].sort((a, b) => b.length - a.length);
-  const escaped = sorted.map((t) => t.replace(/[.*+?^${}()|[\]\\]/g, "\\$&"));
-  const re = new RegExp(`(${escaped.join("|")})`, "giu");
-  const matchSet = new Set(sorted.map((t) => t.toLocaleLowerCase("tr")));
-  return content
-    .split(re)
-    .filter((part) => part.length > 0)
-    .map((part) => ({
-      text: part,
-      match: matchSet.has(part.toLocaleLowerCase("tr")),
-    }));
 }
 
 export default function MessagesScreen() {
@@ -1205,8 +1168,16 @@ export default function MessagesScreen() {
             LIST_BOTTOM_GAP,
         }}
         ListEmptyComponent={
-          isSearchActive && searchQuery.trim().length > 0 ? (
-            <View className="flex-1 items-center justify-center pb-[60%] px-8">
+          // `!showMessageSection` EKLENDİ (review turu 1, Önemli 3): mesaj
+          // bölümü dolu/boş fark etmez, GÖRÜNÜYORSA bu tam-ekran "sohbet
+          // bulunamadı" durumu BASILMIYOR. Önceden bu ikisi AYNI ANDA
+          // çizilebiliyordu: aranan kelime yalnız mesaj İÇERİĞİNDE geçip
+          // hiçbir partner adında geçmediğinde (ki bu bölümün VAR OLMA
+          // sebebinin TAM KENDİSİ) `conversationsByTab` boş kalıyor, bu dal
+          // `pb-[60%]` ile ekranı dolduruyor ve asıl istenen mesaj sonuçları
+          // bir tam ekran AŞAĞIDA, kaydırılmadan görünmeyen bir yere düşüyordu.
+          isSearchActive && searchQuery.trim().length > 0 && !showMessageSection ? (
+            <View testID="msgs-conv-notfound" className="flex-1 items-center justify-center pb-[60%] px-8">
               <SFIcon
                 name="magnifyingglass"
                 fallback={Search}
@@ -1301,7 +1272,7 @@ export default function MessagesScreen() {
                       numberOfLines={2}
                       style={{ color: colors.textSecondary, fontSize: 14, marginTop: 2 }}
                     >
-                      {highlightSegments(hit.content, searchQuery).map((seg, i) => (
+                      {highlightSegments(hit.content, messageSearchQuery ?? "").map((seg, i) => (
                         <Text
                           key={i}
                           style={
