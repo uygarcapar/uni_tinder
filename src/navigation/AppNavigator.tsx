@@ -128,6 +128,7 @@ import FireFlame from '@/features/discover/components/FireFlame';
 import realtimeService from '@/features/chat/realtimeService';
 import { clearAllDrafts } from '@/features/chat/draftStore';
 import { flushOutbox, resetOutbox } from '@/features/chat/outbox';
+import { flushPendingMutations } from '@/features/chat/pendingMutations';
 import {
   receiveMessage,
   messageSent,
@@ -834,6 +835,11 @@ export default function AppNavigator() {
     // Temizlik YOK (bilinçli): outbox ekranın değil uygulamanın servisi, bu
     // efekt sökülse bile turun çalışması doğru davranış.
     setTimeout(() => void flushOutbox('online'), OUTBOX_ONLINE_DELAY_MS);
+    // Mutasyon kuyruğu (reaksiyon/silme) da gönderimle AYNI anda anlamlı hâle
+    // geliyor — ayrı bir zamanlayıcı KURULMUYOR, çünkü ikinci bir tempo kaynağı
+    // paylaşılan `messaging_default` rate-limit kovasının iki bağımsız
+    // tüketicisi demek olurdu (bkz. pendingMutations.ts dosya başı notu).
+    setTimeout(() => void flushPendingMutations('online'), OUTBOX_ONLINE_DELAY_MS);
     if (
       Date.now() - lastSubscriptionRefreshRef.current <=
       SUBSCRIPTION_REFRESH_THROTTLE_MS
@@ -1451,6 +1457,7 @@ export default function AppNavigator() {
           // güvenilir tetik bu (ağ durumu hiç değişmediği için online geçişi
           // ateşlenmiyor).
           void flushOutbox('reconnect');
+          void flushPendingMutations('reconnect');
           // Kopukluk penceresinde atılan `SubscriptionChanged` KAYBOLDU — hub
           // event'leri kalıcı değil, kimse yeniden göndermiyor. Bu olmadan
           // "metroda premium iptal edildi, yüzeye çıkınca uygulama hâlâ premium
@@ -1892,6 +1899,9 @@ export default function AppNavigator() {
     // tazeliği kapısından SONRA çalışıyor (bkz. AppState listener'ı) — bayat
     // token'la denemeler 401'e yanıp deneme hakkı harcardı.
     void flushOutbox('foreground');
+    // Aynı gerekçeyle token tazeliği kapısından SONRA: bayat token'la deneme
+    // mutasyon kuyruğu için de aynı şekilde 401 harcardı.
+    void flushPendingMutations('foreground');
     // Şehir/ilçe backend'de konumdan türetiliyor → her foreground'da tek
     // atımlık koordinat. İzin yoksa/GPS yoksa sessizce no-op.
     sendLocationHeartbeat();

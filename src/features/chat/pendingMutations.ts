@@ -75,6 +75,7 @@ import { messageEdited, reactionsChanged } from "@/features/chat/chatSlice";
 import { chatErrorText } from "@/shared/constants/responseCodes";
 import i18n from "@/shared/i18n";
 import { isOfflineNow } from "@/shared/services/networkStatus";
+import { CHAT_MUTATION_QUEUE_ENABLED } from "@/shared/store/chatFlags";
 import { remainingNow } from "@/shared/services/rateLimitBudget";
 import { showInfoToast } from "@/shared/services/toaster";
 import { store } from "@/shared/store";
@@ -381,6 +382,17 @@ let inFlight: Promise<FlushResult> | null = null;
  * `chatBackfill.runBackfillRound`'ın `inFlight` kalıbının aynısı.
  */
 export async function flushPendingMutations(trigger: string): Promise<FlushResult> {
+  // Kill-switch. Task 5'in üç tetiği (AppNavigator.tsx) de aynı bayrağa
+  // bakıp kapalıyken BU fonksiyonu hiç çağırmıyor — yani bu satır TEKRARLI
+  // bir kapı: bugün üretimde turu tetikleyen tek yol o üç çağrı noktası
+  // olduğu için bu satır olmadan da ağa istek gitmezdi. Kazandırdığı şey,
+  // `flushPendingMutations` export edilmiş olduğu için ileride bayrağa
+  // bakmayı unutan bir çağıran eklenirse ağ tarafının yine burada kapanmış
+  // olması (bkz. chatBackfill.ts'teki `runBackfillRound` kapısı, aynı
+  // gerekçe). Satır KORUNUR — kapatmak veri kaybettirmez.
+  if (!CHAT_MUTATION_QUEUE_ENABLED) {
+    return { ran: false, done: 0, retried: 0, rejected: 0 };
+  }
   if (isOfflineNow()) {
     return { ran: false, done: 0, retried: 0, rejected: 0 };
   }
