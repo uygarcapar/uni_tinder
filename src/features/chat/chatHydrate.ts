@@ -1,5 +1,6 @@
 import {
   countMessages,
+  readAround,
   readConversations,
   readConversationsByIds,
   readFailedSends,
@@ -206,6 +207,81 @@ export function hydrateConversation(
     // Disk okunamadıysa eski davranışa düş (ağdan çek) — sohbet açılmamazlık
     // etmesin.
     console.error('[chatHydrate] hydrate başarısız:', error);
+    return false;
+  }
+}
+
+// Hedef mesajın ÖNÜ/ARKASI — `HOT_WINDOW`ın yarısı kadar her iki yönde,
+// böylece toplam pencere boyutu mertebe olarak hot window ile aynı kalıyor.
+export const JUMP_WINDOW_BEFORE = 30;
+export const JUMP_WINDOW_AFTER = 30;
+
+/**
+ * Faz 4 — arama sonucundan mesaja atlama (Task 5). Hedef mesajın ETRAFINI
+ * `readAround` ile YERELDEN okuyup store'a yazar; AĞA HİÇ ÇIKILMAZ
+ * (`readAround` saf SQLite okuması — roadmap 4.3'ün "yerel yolun en büyük
+ * avantajı" dediği tam olarak bu).
+ *
+ * `false` dönen İKİ ayrı durum var, ikisi de çağıranı AYNI yere (normal açılış)
+ * gönderir:
+ *  • local-first kapalı / id'ler boş — SQLite'a hiç gidilmedi.
+ *  • hedef satır okunan pencerede YOK — `readAround`ın kendi sözleşmesi gereği
+ *    (hedef artık arşivde yoksa sessizce atlanır, pencere yine de döner) bu,
+ *    "mesaj hiç senkronize olmamış" ya da "id bayat" durumunu ayırt edemeyen
+ *    bir sinyal; ayrım ÖNEMLİ DEĞİL, ikisinde de kullanıcıya gösterilecek
+ *    hedef yok.
+ *
+ * ⚠️ Hedef BULUNAMADIĞINDA dispatch YAPILMAZ — bulunamayan bir pencereyi yine
+ * de yazmak (ör. yalnız `sentAtMs` civarındaki rastgele satırları) çağıranın
+ * "normal açılışa düş" dalını (ChatScreen'in `hadInitialMessagesRef`/hot-window
+ * hydrate'i) YANLIŞ bir pencereyle önceden doldurup o dalın çalışmasını
+ * engellerdi.
+ */
+export function hydrateAroundMessage(
+  dispatch: (action: any) => void,
+  conversationId: string,
+  sentAtMs: number,
+  messageId: string,
+  before = JUMP_WINDOW_BEFORE,
+  after = JUMP_WINDOW_AFTER,
+): boolean {
+  if (!CHAT_SQLITE_ENABLED || !conversationId || !messageId) return false;
+  try {
+    const rows = readAround(conversationId, sentAtMs, messageId, before, after);
+    if (!rows.some((r) => r.id === messageId)) return false;
+
+    const sync = readSyncState(conversationId);
+    dispatch(
+      hydrateWindow({
+        conversationId,
+        // `projectWindow` (hydrateConversation'ın yolu) DEĞİL: o fonksiyon
+        // HAM `MessageRow`ları `messageCache`in identity map'inden geçirip
+        // DTO'ya çeviriyor — `readAround` ise kendi `rowToMessage`ıyla DTO'yu
+        // ZATEN üretmiş döner (bkz. chatRepository.readAround). İkinci bir
+        // dönüşüm hem tip hatası (DTO'yu Row bekleyen bir fonksiyona vermek)
+        // hem de `rowToMessage`ın DTO alanlarını Row alanı sanıp çökmesi
+        // olurdu. Bilinen bedel: bu pencerenin nesneleri `messageCache`in
+        // identity map'ine KAYITLI DEĞİL, yani aynı mesaj daha sonra normal
+        // yoldan (ör. yukarı kaydırma) tekrar okunursa BİR KEZLİK fazladan
+        // nesne/render olur — işlevsel bir hata değil, nadir bir yolun
+        // (hedefe atlama) ödediği küçük, kabul edilmiş bir performans bedeli.
+        messages: rows,
+        // Bu pencere arşivin DİBİ değil, hedefin ETRAFI — `hasMore` bilerek
+        // sabit `true`: yukarı kaydırma `loadOlderLocalFirst`a düşüyor, o da
+        // diskte başka satır yoksa kendi 'exhausted' sonucuyla zaten güvenli
+        // durur. `nextCursor` ise sync_state'in GENEL (en yeni sayfa) imleci —
+        // bu ORTA pencere için tam doğru değil ama bugün yalnız yerel tükenip
+        // ağa düşüldüğünde kullanılıyor, o da nadir bir yol; bilinen, kabul
+        // edilmiş bir yaklaşıklık (hydrateConversation'daki tam isabetin
+        // aksine).
+        nextCursor: sync?.next_cursor ?? null,
+        hasMore: true,
+        hasHiddenHistory: !!sync?.has_hidden_history,
+      }),
+    );
+    return true;
+  } catch (error) {
+    console.error('[chatHydrate] hedef etrafı okunamadı:', error);
     return false;
   }
 }

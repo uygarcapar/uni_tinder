@@ -77,6 +77,7 @@ import { newClientMessageId } from "@/features/chat/clientMessageId";
 import {
   hasLocalHistory,
   hydrateConversation,
+  hydrateAroundMessage,
   loadOlderLocalFirst,
 } from "@/features/chat/chatHydrate";
 import { markMessageEntering } from "@/features/chat/enterAnimation";
@@ -273,6 +274,10 @@ function ChatScreen({
     conversationId,
     partner: routePartner,
     isActive: routeIsActive,
+    // Faz 4 — arama sonucundan hedefli açılış (Task 5). İKİSİ BİRDEN
+    // gelmeyince (MessagesScreen'in normal `openChat`'i gibi) hiç etkisi yok.
+    targetMessageId,
+    targetSentAtMs,
   } = route.params;
   const dispatch = useAppDispatch();
   const insets = useSafeAreaInsets();
@@ -767,11 +772,33 @@ function ChatScreen({
   const entryStartedAtRef = useRef(0);
   if (entryStartedAtRef.current === 0) entryStartedAtRef.current = Date.now();
 
+  // Faz 4 / Task 5 — hedefli açılış (arama sonucundan atlama) BULUNDUYSA
+  // hedef mesajın id'si; aşağıdaki iki yer bunu okuyor:
+  //  • mount init effect'i (aşağıda, ~840 civarı): hedef bulunduysa reconcile
+  //    fetchHistory'yi ATLAR — AĞA HİÇ ÇIKILMASIN diyen Task 5 sözü burada.
+  //  • listSettled effect'i: liste oturunca scrollToIndex + highlightMessage.
+  // `null` iki ayrı durumu kapsıyor: hedef param'ı hiç verilmedi YA DA
+  // verildi ama arşivde bulunamadı — ikisinde de normal açılış izleniyor.
+  const jumpTargetRef = useRef<string | null>(null);
+
   // Local-first giriş: diski BOYAMADAN ÖNCE store'a al (useEffect boyama
   // sonrası çalışır → bir kare boş liste görünürdü). MessagesScreen zaten
   // navigate'ten önce hydrate ettiyse burası no-op: projectWindow aynı dizi
   // referansını döndürür, Immer değişiklik saymaz.
   useLayoutEffect(() => {
+    if (targetMessageId && targetSentAtMs != null) {
+      // Hedefli açılış — pencere YERELDEN `readAround` ile okunur (ağ YOK).
+      // `messages.length === 0` koşuluna BAĞLI DEĞİL: bu sohbete DAHA ÖNCE
+      // girilmiş olabilir (bucket zaten dolu), ama o pencere hedefi
+      // KAPSAMAYABİLİR — her hedefli girişte yeniden okunur ve bulunduysa
+      // pencere hedefi kapsayacak şekilde DEĞİŞTİRİLİR.
+      const found = hydrateAroundMessage(dispatch, conversationId, targetSentAtMs, targetMessageId);
+      if (found) {
+        jumpTargetRef.current = targetMessageId;
+        return;
+      }
+      // Hedef arşivde yok — normal açılışa düş (aşağıdaki dal).
+    }
     if (messages.length === 0) hydrateConversation(dispatch, conversationId);
     // conversationId dışındaki bağımlılıklar kasten yok: bu yalnız GİRİŞ anına ait.
     // eslint-disable-next-line react-hooks/exhaustive-deps
@@ -837,11 +864,35 @@ function ChatScreen({
   }, [listSettled]);
   const showEntrySkeleton = !!hadInitialMessagesRef.current && !listSettled;
 
+  // Hedefli açılış liste OTURUNCA hedefe kaydırıp kısa süre vurguluyor —
+  // ChatMessageList'in gerçek yanıt (reply) kartının izlediği AYNI yol
+  // (handleScrollToReplyTarget / messageHighlight), tekrar icat edilmedi.
+  useEffect(() => {
+    if (!listSettled || !jumpTargetRef.current) return;
+    const id = jumpTargetRef.current;
+    jumpTargetRef.current = null;
+    const idx = renderedDataRef.current.findIndex((m: any) => m.id === id);
+    if (idx < 0) return;
+    try {
+      // animated:false — kullanıcı az önce arama sonucuna dokundu, açılışta
+      // bir de kaydırma animasyonu beklemek gecikme hissi verirdi; hedefte
+      // doğrudan belirip vurgulanması yeterli.
+      listRef.current?.scrollToIndex({ index: idx, animated: false, viewPosition: 0.5 });
+    } catch {}
+    highlightMessage(id);
+  }, [listSettled]);
+
   useEffect(() => {
     let mounted = true;
     (async () => {
       try {
-        if (!hadInitialMessagesRef.current) {
+        if (jumpTargetRef.current) {
+          // Hedefli açılış BULUNDU: pencere zaten `hydrateAroundMessage` ile
+          // YERELDEN dolduruldu. Bu turun reconcile fetch'i (cursor:null →
+          // sohbetin EN YENİ sayfası) hedefin bulunduğu yerle ilgisiz VE bir
+          // ağ turu demek — Task 5'in "ağ turu YOK" sözünü bozardı. Bilerek
+          // ATLANIYOR; normal yukarı kaydırma zaten diskten devam ediyor.
+        } else if (!hadInitialMessagesRef.current) {
           await dispatch(fetchHistory({ conversationId, cursor: null, pageSize: HISTORY_PAGE_SIZE }));
         } else {
           // Bucket dolu = MMKV hydrate'i ya da önceki oturum — anında render edildi

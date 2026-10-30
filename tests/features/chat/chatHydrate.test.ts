@@ -6,6 +6,7 @@ import { applyHistoryPage, upsertMessage } from '@/features/chat/chatRepository'
 import {
   hasLocalHistory,
   hydrateConversation,
+  hydrateAroundMessage,
   loadOlderLocalFirst,
   HOT_WINDOW,
 } from '@/features/chat/chatHydrate';
@@ -148,6 +149,38 @@ describe('loadOlderLocalFirst', () => {
 
     // Aynı mesaj iki ayrı nesne olsaydı LegendList onu yapısal değişim sayardı.
     expect(m2FromOlder).toBe(m2FromWindow);
+  });
+});
+
+describe('hydrateAroundMessage', () => {
+  it('hedef arşivde: pencere ETRAFIYLA yazılır (ağ yok), true döner', () => {
+    seed([1, 2, 3, 4, 5]);
+    const { dispatch, actions } = collector();
+
+    const found = hydrateAroundMessage(dispatch, CONV, msg(3).sentAt ? Date.parse(msg(3).sentAt as string) : 0, 'm3', 1, 1);
+
+    expect(found).toBe(true);
+    expect(actions).toHaveLength(1);
+    expect(actions[0].type).toBe('chat/hydrateWindow');
+    // before=1, after=1 → hedefin bir öncesi + hedef + bir sonrası (en yeniden eskiye).
+    expect(actions[0].payload.messages.map((m: MessageDto) => m.id)).toEqual(['m4', 'm3', 'm2']);
+  });
+
+  it('hedef arşivde YOK: dispatch YAPILMAZ, false döner — çağıran normal açılışa düşsün', () => {
+    seed([1, 2, 3]);
+    const { dispatch, actions } = collector();
+
+    const found = hydrateAroundMessage(dispatch, CONV, BASE, 'm-does-not-exist', 5, 5);
+
+    expect(found).toBe(false);
+    expect(actions).toHaveLength(0);
+  });
+
+  it('boş conversationId/messageId\'de false — SQLite\'a hiç gidilmez', () => {
+    const { dispatch, actions } = collector();
+    expect(hydrateAroundMessage(dispatch, '', BASE, 'm1', 5, 5)).toBe(false);
+    expect(hydrateAroundMessage(dispatch, CONV, BASE, '', 5, 5)).toBe(false);
+    expect(actions).toHaveLength(0);
   });
 });
 

@@ -8,6 +8,12 @@ export type RootStackParamList = {
       profileImageUrl?: string;
     };
     isActive?: boolean;
+    // Faz 4 — global aramadan bir mesaj sonucuna dokununca atlanacak hedef.
+    // İKİSİ BİRDEN ya da HİÇBİRİ: `targetSentAtMs` yalnız `readAround`ın
+    // `sentAtMs` parametresine düşen ÇAPA (hedef bayatlamışsa diskten TAZE
+    // okunan damga onun yerine geçiyor, bkz. chatRepository.readAround).
+    targetMessageId?: string;
+    targetSentAtMs?: number;
   };
   Notifications: undefined;
   // Ayarlar. Modal değil ekran: Profil'deki dişliden (ve uiBus'taki
