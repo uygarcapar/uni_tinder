@@ -353,9 +353,20 @@ const CampusMomentCard = memo(function CampusMomentCard({
         fire(width_ > 0 && height_ > 0 ? { x, y, width: width_, height: height_ } : null);
       });
     }
-    // Güvence: ölçüm aynı tick'te dönmezse bir sonraki tick'te kareyi
-    // beklemeden açıyoruz.
-    setTimeout(() => fire(null), 0);
+    /**
+     * ⚠️🔴 GÜVENCE GECİKMELİ OLMAK ZORUNDA — `0` YARIŞI KAZANIYORDU.
+     *
+     * `measureInWindow` sonucu natif taraftan bir sonraki UI tick'inde
+     * geliyor; `setTimeout(…, 0)` ise JS kuyruğunun hemen başında koşuyor.
+     * Yani güvence neredeyse HER ZAMAN önce ateşleniyordu: kare hep `null`
+     * geçiyor, büyüyen kart uçmadan doğrudan hedef boyunda açılıyordu
+     * (cihazda "kopya gibi duruyor" diye görüldü).
+     *
+     * 120ms: ölçümün normalde bir kare sürdüğü düşünülürse fazlasıyla cömert
+     * ve yalnız ölçüm HİÇ dönmediğinde ödeniyor — o dalda kart 120ms geç
+     * açılıyor, ki alternatifi hiç açılmaması.
+     */
+    setTimeout(() => fire(null), 120);
   }, [moment, onPress]);
 
   /**

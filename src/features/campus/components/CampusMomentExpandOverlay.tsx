@@ -190,6 +190,19 @@ const CampusMomentExpandOverlay = memo(function CampusMomentExpandOverlay({
    * Hareketi başlatan şey KARTIN KİMLİĞİ: aynı an için bir kez, başka an için
    * yeniden.
    */
+  /**
+   * ⚠️ GÜVENCE: an dışarıdan kaldırıldıysa dondurma her hâlükârda biter.
+   *
+   * Yukarıdaki zamanlayıcı kaçırılırsa (ekran sökülüp geri gelirse, kapanış
+   * başka bir yoldan tetiklenirse) yüzey ağaçta kalmaya devam ederdi. Bu
+   * effect o kalıntıyı imkânsız kılıyor — küçülme `collapsing` prop'uyla
+   * sürüyorsa ona dokunmuyor, o çağıranın takvimine bağlı.
+   */
+  useEffect(() => {
+    if (moment || collapsing) return;
+    setSelfCollapsing(false);
+  }, [collapsing, moment]);
+
   useEffect(() => {
     if (!moment) return;
     closedRef.current = false;
@@ -279,7 +292,19 @@ const CampusMomentExpandOverlay = memo(function CampusMomentExpandOverlay({
     if (closedRef.current) return;
     closedRef.current = true;
     setSelfCollapsing(true);
-    setTimeout(onClose, EXPAND_MS);
+    setTimeout(() => {
+      /**
+       * ⚠️🔴 DONDURMA DA BİTİYOR — sırası önemli.
+       *
+       * Küçülme sırasında gösterilen an donduruluyor (`shown`), yoksa liste
+       * tazelenip anı düşürdüğünde kart küçülmeden yok oluyor. Ama dondurma
+       * KAPANIŞLA BİRLİKTE bitmezse çağıran anı null'ladığında yüzey ağaçta
+       * KALIYOR: perdesiz, camsız, donmuş bir kart haritanın üstünde duruyor
+       * (cihazda görülen hata buydu). Bayrak önce düşüyor, `onClose` sonra.
+       */
+      setSelfCollapsing(false);
+      onClose();
+    }, EXPAND_MS);
   };
 
   /**

@@ -100,6 +100,35 @@ it('perdeye basınca kart önce KÜÇÜLÜYOR, sonra kapanıyor', () => {
   expect(onClose).toHaveBeenCalledTimes(1);
 });
 
+/**
+ * ⚠️🔴 KAPANIŞTAN SONRA YÜZEY AĞAÇTA KALMAMALI.
+ *
+ * Cihazda görülen hata buydu: perdeye basınca kart küçülüyor, çağıran anı
+ * null'lıyor ama overlay EKRANDA KALIYORDU — perdesiz, camsız, donmuş bir
+ * kart haritanın üstünde duruyordu.
+ *
+ * Sebep küçülme sırasında anı DONDURAN dal: `moment` null olduğunda gösterilen
+ * şey son bilinen an oluyor ve o dondurma bitmiyordu, çünkü bayrağı sıfırlayan
+ * tek yer YENİ bir an gelmesiydi. Kapanış, dondurmayı da bitirmek zorunda.
+ */
+it('kapanış bitince an null gelince yüzey SÖKÜLÜYOR', () => {
+  const onClose = jest.fn();
+  const tree = mount({ onClose });
+  settle();
+  fireEvent.press(tree.getByLabelText('Kapat'));
+  act(() => {
+    jest.advanceTimersByTime(EXPAND_MS);
+  });
+  expect(onClose).toHaveBeenCalledTimes(1);
+  // Çağıran anı kaldırdı:
+  tree.rerender(
+    <SafeAreaProvider initialMetrics={{ frame: frameMetrics, insets }}>
+      <CampusMomentExpandOverlay {...base} moment={null} />
+    </SafeAreaProvider>,
+  );
+  expect(tree.queryByLabelText('Kapat')).toBeNull();
+});
+
 it('kapanış İKİ KEZ tetiklenmiyor — perdeye üst üste basılsa da', () => {
   const onClose = jest.fn();
   const tree = mount({ onClose });
