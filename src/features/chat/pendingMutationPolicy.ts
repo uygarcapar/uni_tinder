@@ -132,11 +132,13 @@ export function nextEligibleAt(attempts: number, nowMs: number): number {
  * AYNISI DEĞİL ve ikisi de bilerek daha cömert:
  *
  *  - Deneme sayısı 10: `attempts` yalnız gerçekten ağa çıkıp başarısız olan
- *    turlarda artıyor (offline tur erken dönüyor). Backoff 5 dakikada
- *    tavanlandığı için 10 deneme ~45 dakikalık ısrarlı bir arıza penceresi
- *    demek. 5'te kesmek bir deploy penceresinde (iki-üç dakika 5xx) saniyeler
- *    içinde tükenir ve kullanıcının tepkisini geri alırdı — tam olarak bu
- *    fazın engellemek için var olduğu kayıp.
+ *    turlarda artıyor (offline tur erken dönüyor). Backoff'ların toplamı 10
+ *    denemede ~18 dakika (4+8+16+32+64+128+256+300+300 sn); gerçek duvar
+ *    süresi daha uzun, çünkü tur yalnız dört tetikten biri gelince koşuyor.
+ *    5 deneme ise toplam ~1 dakikalık backoff demek ve iki-üç dakika süren
+ *    bir 5xx penceresini (deploy) atlatmaya YETMEZ — orada kesmek kullanıcının
+ *    tepkisini geri alırdı, tam olarak bu fazın engellemek için var olduğu
+ *    kayıp.
  *  - Yaş 24 saat: outbox'ın 30 dakikası OTURUM İÇİ ölçülüyor
  *    (`rebaseAttemptOnLoad` `firstSeenAt`'i her açılışta "şimdi"ye çekiyor);
  *    burada öyle bir rebase YOK, `first_seen_at_ms` emrin verildiği gerçek
