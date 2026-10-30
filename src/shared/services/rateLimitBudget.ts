@@ -11,9 +11,14 @@
  * yine `response.data` döndürmeye devam eder (bkz. api.ts response
  * interceptor'ındaki tek satır).
  *
+ * Defteri YALNIZ `/api/messages/` istekleri besliyor (interceptor'daki
+ * `isMessagingBucketRequest` kapısı): `X-RateLimit-Remaining` kova başına bir
+ * sayı, bu defter ise tek sayı — başka bir controller'ın kalanını buraya
+ * yazmak "bol kota var" yanılgısı üretirdi.
+ *
  * `networkStatus.ts`'teki modül-içi tek-kaynak kalıbının aynısı — ama React
- * aboneliği YOK: kimse bu değeri render etmiyor, yalnız (henüz yazılmamış)
- * backfill turu imperatif olarak okuyacak.
+ * aboneliği YOK: kimse bu değeri render etmiyor, yalnız `chatBackfill.ts`'in
+ * turu imperatif olarak okuyor.
  */
 
 let remaining: number | null = null;

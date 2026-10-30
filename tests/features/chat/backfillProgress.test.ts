@@ -24,7 +24,8 @@ import type { MessageDto } from '@/shared/types';
 /**
  * `sync_state.backfill_cursor` / `backfill_done` (v8) — backfill'in kendi
  * ilerleme damgası. Burada yalnız depo katmanı (okuma/yazma/migration) test
- * ediliyor; Task 2/3 bu API'yi tüketecek, round'u ve tetikleyicileri kuracak.
+ * ediliyor; bu API'yi tüketen tur ve tetikleyiciler `chatBackfill.ts`'te
+ * (testleri chatBackfill.test.ts / chatBackfill.triggers.test.ts).
  */
 
 const { __resetAllDatabases } = SQLite as unknown as { __resetAllDatabases: () => void };

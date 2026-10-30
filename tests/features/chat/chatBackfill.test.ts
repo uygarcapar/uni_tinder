@@ -58,7 +58,7 @@ import type { MessageDto } from '@/shared/types';
 /**
  * Round'un kendisi: `chatService.getMessageHistory` mock'lanır, SQLite
  * GERÇEKTİR (expo-sqlite mock'u → better-sqlite3). Amaç depo/politika
- * entegrasyonunu doğrulamak — Task 1/2/3 ayrı test dosyalarında saf/izole
+ * entegrasyonunu doğrulamak — depo/defter/politika ayrı test dosyalarında saf/izole
  * doğrulandı, burada hepsi birlikte GERÇEK çalışıyor mu bakılıyor.
  */
 

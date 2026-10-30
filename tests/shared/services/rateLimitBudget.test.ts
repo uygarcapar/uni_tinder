@@ -9,7 +9,7 @@
  * `remainingNow()` testlerinin odağı: değer bilinmiyorsa `null` dönmeli,
  * ASLA bir sayı (200 vb.) ya da `Infinity` varsayılmamalı — aksi halde
  * "bilmiyorum" ile "bol var" ayrımı kaybolur ve temkinli davranması gereken
- * taraf (Task 3) güveniyormuş gibi davranır.
+ * taraf (`backfillPolicy.shouldStopRound`) güveniyormuş gibi davranır.
  */
 
 import {

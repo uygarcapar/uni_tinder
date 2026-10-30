@@ -174,6 +174,12 @@ export interface SyncStateRow {
   has_more: number;
   has_hidden_history: number;
   last_synced_at_ms: number | null;
+  /** v8 — backfill'in KENDİ devam noktası; ekranın `next_cursor`'ı DEĞİL
+   *  (budama onu NULL'luyor, bkz. migrations.ts V8). */
+  backfill_cursor: string | null;
+  /** v8 — arşivin tamamı indi mi (0/1). Tek yönlü mandal; söken yollar
+   *  `clearAllChatData()` ve `clearBackfillDone`. */
+  backfill_done: number;
 }
 
 /**

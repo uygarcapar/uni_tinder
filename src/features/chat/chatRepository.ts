@@ -1420,7 +1420,8 @@ export function pruneOrphanSendAttempts(): number {
 // `pruneExpiredMessages` dokunduğu her sohbette `next_cursor`'ı NULL'luyor —
 // backfill bu kolonları paylaşsaydı retention turu onun geri dönüş noktasını
 // da silerdi (bkz. migrations.ts V8 yorumu). Policy/round/tetikleyiciler bu
-// dosyanın işi değil (Task 2/3) — burası yalnız depo.
+// dosyanın işi değil (`backfillPolicy.ts` + `chatBackfill.ts`) — burası yalnız
+// depo.
 
 export interface BackfillTarget {
   conversationId: string;

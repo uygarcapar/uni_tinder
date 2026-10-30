@@ -2,8 +2,8 @@
  * Backfill KARARLARI — saf fonksiyonlar, yan etki YOK.
  *
  * Ayrı dosya olmasının tek sebebi test edilebilirlik: isteği atan, zamanlayan
- * ve diske yazan turdan (henüz yazılmamış `backfillRound.ts`) ayrıldığında
- * geriye kalan her şey "girdi → çıktı" hâline geliyor ve jest'te gerçek
+ * ve diske yazan turdan (`chatBackfill.ts`) ayrıldığında geriye kalan her şey
+ * "girdi → çıktı" hâline geliyor ve jest'te gerçek
  * store/SQL/timer zinciri kurmadan doğrulanabiliyor (bkz. outboxPolicy.ts —
  * aynı ayrımın gönderim tarafındaki ikizi).
  *
@@ -47,7 +47,7 @@ export const PAGE_DELAY_MS = 1000;
  */
 export const RATE_LIMIT_RESERVE = 80;
 
-/** Uygulama açılışından backfill'in ilk turuna kadar beklenecek süre (Task 5 kullanıyor). */
+/** Uygulama açılışından backfill'in ilk turuna kadar beklenecek süre (`chatBackfill.startBackfill` kullanıyor). */
 export const BACKFILL_BOOT_DELAY_MS = 10_000;
 
 /**
@@ -70,8 +70,9 @@ export function selectBackfillTargets(
 /**
  * Tur burada mı bitiyor?
  *
- * Kontroller KOD SIRASIYLA (dördü de birbirini dışlar, en fazla biri gerçek
- * "dur" kararını verir):
+ * Kontroller KOD SIRASIYLA — sıra kısa devre: hangisi önce doğru çıkarsa "dur"
+ * kararını o verir (koşullar birbirini DIŞLAMIYOR; ör. offline ile tavanın
+ * dolması aynı anda doğru olabilir):
  *  1. Tur tavanı (MAX_REQUESTS_PER_ROUND) doldu mu.
  *  2. Cihaz offline mı — ağ yokken istek denemenin anlamı yok.
  *  3. Kalan kota BİLİNMİYOR (`remainingNow()` henüz hiçbir yanıt görmediği

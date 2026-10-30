@@ -58,12 +58,13 @@ function isRateLimited(error: unknown): boolean {
 async function run(getActiveConversationId: () => string | null): Promise<BackfillRoundResult> {
   const result: BackfillRoundResult = { ran: true, pages: 0, messages: 0, completed: [] };
 
-  // `readBackfillTargets`'a verilen tavan MAX_REQUESTS_PER_ROUND: bir turun en
-  // çok bu kadar İSTEK atabileceği bilindiğinden, her hedef en az bir isteğe
-  // karşılık geldiği için turun hiçbir zaman bundan fazla hedefe ihtiyacı
-  // olmaz (aktif sohbet elenince bile pay kalır).
+  // Tavan `MAX_REQUESTS_PER_ROUND + 1`: her hedef en az bir isteğe karşılık
+  // geldiği için tur bundan fazla hedefi zaten kullanamaz, ama `+1` olmadan
+  // `selectBackfillTargets` aktif sohbeti eleyince elde 29 hedef kalıyordu ve
+  // tur 30 istek bütçesine HİÇ ulaşamıyordu. Elenen sohbet sayısı en çok BİR
+  // (aktif olan), o yüzden tam bir fazlası yeterli.
   const targets = selectBackfillTargets(
-    repo.readBackfillTargets(MAX_REQUESTS_PER_ROUND),
+    repo.readBackfillTargets(MAX_REQUESTS_PER_ROUND + 1),
     getActiveConversationId(),
   );
 
@@ -123,10 +124,11 @@ async function run(getActiveConversationId: () => string | null): Promise<Backfi
           pageSize: BACKFILL_PAGE_SIZE,
           // `api.ts`'in 429 interceptor'ı varsayılan olarak 3 kez daha
           // DENER (backoff'lu) — ekranın kullanıcı tetikli sayfalaması bunu
-          // İSTER, ama burada istemeyiz: o 3 ekstra deneme bu dosyanın hiç
-          // GÖRMEDİĞİ yerde olur, `attempts` onları tek istek sayar ve
-          // 429 dalımız (aşağıda) kovayı tam dolu anında 4 katına kadar
-          // yanlış ölçer. Bu yüzden backfill AÇIKÇA kapatıyor.
+          // İSTER, backfill istemez: retry başarıya ulaşırsa aşağıdaki 429
+          // dalı HİÇ çalışmaz, yani tur duvarı göremeden tam dibinde devam
+          // eder; üstelik arka plan işi çağrının içinde ~7 sn beklemiş olur.
+          // (Bütçe ölçümü gerekçe DEĞİL: 429 slot harcamıyor — bkz.
+          // chatService.getMessageHistory'deki uzun not.)
           skip429Retry: true,
         });
       } catch (error) {
@@ -138,11 +140,10 @@ async function run(getActiveConversationId: () => string | null): Promise<Backfi
         }
         // Bu sohbete özel geçici arıza (ağ/5xx/vb). Cursor'a DOKUNMA — bir
         // sonraki tur aynı yerden dener. Turu ÖLDÜRME, sıradaki hedefe geç.
-        // NOT: `applyHistoryPage`/`setBackfillCursor` BİLEREK bu try'ın
-        // DIŞINDA (başarı yolunda) — tehlike onları try'ın İÇİNE ÇEKMEK:
-        // birkaç test (429, "istek patlarsa") unmock'lu bir sonraki çağrının
-        // gürültüyle patlamasına güveniyor; try bloğunu genişletmek o
-        // testleri sessizce köreltir.
+        // NOT: try YALNIZ ağ çağrısını sarıyor; `applyHistoryPage`/
+        // `setBackfillCursor` bilerek DIŞINDA. Genişletilirse diske yazarken
+        // çıkan bir SQL hatası da "geçici ağ arızası" gibi yutulur ve tur
+        // sessizce ilerlemeden döner.
         break;
       }
 
