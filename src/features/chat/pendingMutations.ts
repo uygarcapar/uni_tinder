@@ -43,10 +43,16 @@
  * geçtiğini izliyor (`sendRow`'un `progress.baseRemoved`'ı) ve bu hâlde
  * `base`i boş geçerek yalnız BENİM payımı siliyor.
  *
+ * Aynı defterin (`SendProgress`) ikinci işi BAŞARI tarafında: emir uygulanıp
+ * satır bekleme penceresinde yeni bir niyetle değiştiyse hayatta kalan
+ * satırın `base`i sunucunun yeni hâline çekilir (`rebaseSupersededReactionBase`)
+ * — yoksa sıradaki tur "kaldır"ı atlar ve eskisi hâlâ sunucudayken yenisini
+ * ekler.
+ *
  * ── Bekleme penceresinde sunucu listesi mükerrer yazabilir (KAPSAM DIŞI) ────
  * Bir satır backoff'ta beklerken (en çok 5 dk) hub/delta yolu AYNI mesaj için
  * sunucunun kanonik reaksiyon listesini KOŞULSUZ dispatch ediyor
- * (AppNavigator'daki `MessageReactionsChanged` işleyicisi) ve ayna onu diske
+ * (AppNavigator'daki `ReactionsChanged` işleyicisi) ve ayna onu diske
  * yazıyor — yani başka bir kullanıcının aynı mesaja tepkisi, benim henüz
  * uygulanmamış optimistik emojimi ekrandan ve diskten SİLİYOR; bir sonraki
  * deneme başarınca geri geliyor. Sonuç NİHAYETİNDE TUTARLI, veri kaybı yok;
@@ -76,6 +82,7 @@ import {
   pruneOrphanPendingMutations,
   readMessageSendState,
   readPendingMutations,
+  updatePendingMutationPayload,
   upsertPendingMutation,
 } from "@/features/chat/chatRepository";
 import type { MutationKind, PendingMutationRow } from "@/features/chat/db/rows";
@@ -85,6 +92,7 @@ import {
   coalesceReaction,
   isMutationExpired,
   nextEligibleAt,
+  rebaseReactionBase,
   shouldStopFlush,
   type DeletePayload,
   type MutationOutcome,
@@ -260,13 +268,72 @@ function revertDelete(row: PendingMutationRow): void {
 }
 
 /**
- * Emrin ağda NEREYE kadar geldiği. İki çağrılı reaksiyon emrinde (önce
- * `removeReaction(base)`, sonra `addReaction(desired)`) ilki geçip ikincisi
- * KALICI reddedilebiliyor; geri alma `base`i o hâlde geri koymamalı (bkz.
- * dosya başı not).
+ * Bu turda sunucuda BENİM adıma FİİLEN ne yapıldı — iki bayrak, tek defter.
+ * İkisi de "sunucu şu an benim için ne tutuyor" sorusunun parçası, o yüzden
+ * ayrı ayrı değil birlikte okunuyor (`serverHeldForMe`).
+ *
+ *  - `baseRemoved`: `removeReaction(base)` GEÇTİ. Kalıcı ret sonrası geri
+ *    alma `base`i geri koymamalı (sunucuda artık yok — bkz. dosya başı not).
+ *  - `addedDesired`: `addReaction(desired)` GEÇTİ. Satır bekleme penceresinde
+ *    yeni bir niyetle değiştiyse, hayatta kalan satırın `base`i bu emojiye
+ *    çekilmek zorunda; yoksa sıradaki tur "kaldır"ı atlayıp ikinci bir chip
+ *    açar (bkz. `rebaseSupersededReactionBase`).
+ *
+ * İkisi de false ise bu tur sunucuya hiç dokunmadı ve sunucunun hâli
+ * hakkında YENİ bilgi yok.
  */
 interface SendProgress {
   baseRemoved: boolean;
+  addedDesired: boolean;
+}
+
+/**
+ * Turun bittiği anda sunucunun benim adıma tuttuğu emoji; `undefined` =
+ * BİLİNMİYOR (bu tur hiç çağrı yapmadı, bkz. SendProgress).
+ */
+function serverHeldForMe(
+  sent: ReactionPayload,
+  progress: SendProgress,
+): string | null | undefined {
+  if (progress.addedDesired) return sent.desired;
+  if (progress.baseRemoved) return null;
+  return undefined;
+}
+
+/**
+ * Üstünden geçilmiş BAŞARI: emir uygulandı ama satır bekleme penceresinde
+ * yeni bir niyetle değişti, o yüzden silinmedi. Hayatta kalan satırın `base`i
+ * artık sunucudaki gerçeği göstermiyor — tazeliyoruz.
+ *
+ * Yazma, OKUNAN yüke koşullu (`updatePendingMutationPayload`): hesap ondan
+ * türedi. `desired`e dokunulmuyor — kullanıcının en son niyeti o.
+ */
+function rebaseSupersededReactionBase(
+  row: PendingMutationRow,
+  sent: ReactionPayload | null,
+  progress: SendProgress,
+): void {
+  if (!sent) return;
+  const serverEmoji = serverHeldForMe(sent, progress);
+  if (serverEmoji === undefined) return;
+
+  const surviving = findExistingRow(row.message_id, "reaction");
+  if (!surviving) return;
+  let parsed: ReactionPayload;
+  try {
+    parsed = JSON.parse(surviving.payload_json);
+  } catch {
+    // Bozuk yükü burada ONARMIYORUZ: sıradaki tur onu parse hatasıyla alıp
+    // kalıcı ret dalına koyuyor (zehir hap koruması).
+    return;
+  }
+  if (parsed.base === serverEmoji) return;
+  updatePendingMutationPayload(
+    row.message_id,
+    "reaction",
+    surviving.payload_json,
+    JSON.stringify(rebaseReactionBase(parsed, serverEmoji)),
+  );
 }
 
 /** Tek satırı ağa taşır. `done` dışındaki dönüşler YALNIZ throw ile gelir. */
@@ -287,6 +354,7 @@ async function sendRow(
     }
     if (p.desired) {
       serverReactions = await chatService.addReaction(row.message_id, p.desired);
+      progress.addedDesired = true;
     }
     // Sunucu tam listeyi dönüyor → kanonikleştir. Hiç çağrı yapılmadıysa
     // (desired ve base ikisi de null — enqueue'nin normalde üretmediği, ama
@@ -314,8 +382,14 @@ export interface FlushResult {
   /**
    * Sonucu YAZILAMAYAN satır sayısı: tur ağı beklerken kullanıcı aynı mesaja
    * yeni bir emir verdi, yani diskteki yük artık gönderilen yük DEĞİL. O satır
-   * yerinde bırakılıyor (ne silinir ne backoff'a sokulur) ve `dirty` sayesinde
-   * bir sonraki tur onu alıyor.
+   * yerinde bırakılıyor (ne silinir ne backoff'a sokulur) ve `dirty` aynı
+   * flush içinde bir tur DAHA ister.
+   *
+   * O tur GARANTİ DEĞİL: zincir `MAX_ROUNDS_PER_FLUSH`e dayanmış olabilir ya
+   * da sıradaki tur bütçe rezervinde (`shouldStopFlush`) kısılabilir. İkisinde
+   * de satır diskte kalır ve ekran eski niyeti göstermeye devam eder — toast
+   * YOK, düzelmesi bir sonraki tetiğe (ya da kullanıcının yeni bir
+   * etkileşimine) kalır.
    */
   superseded: number;
 }
@@ -400,13 +474,17 @@ async function run(): Promise<FlushResult> {
     // (sil/deneme işle) bu string karşılaştırılıyor. Beklerken kullanıcı yeni
     // bir emir verdiyse diskteki yük değişmiş olur ve sonuç o satıra İŞLENMEZ.
     const sentPayloadJson = row.payload_json;
-    const progress: SendProgress = { baseRemoved: false };
+    const progress: SendProgress = { baseRemoved: false, addedDesired: false };
 
     let outcome: MutationOutcome;
     let err: unknown = null;
     if (isMutationExpired(row.attempts, row.first_seen_at_ms, Date.now())) {
       // Deneme hakkı ya da yaş doldu (bkz. pendingMutationPolicy'deki
-      // MUTATION_MAX_ATTEMPTS/MUTATION_MAX_AGE_MS gerekçesi): emir KALICI ret
+      // MUTATION_MAX_ATTEMPTS/MUTATION_MAX_AGE_MS gerekçesi). DİKKAT: bu
+      // kontrol yukarıdaki `send_state === 'sent'` kapısının ARDINDA —
+      // gönderilmemiş bir mesajın arkasındaki satır bu satıra hiç gelmez,
+      // yani yaş tavanından MUAFTIR (kasıtlı: mesaj hâlâ tekrar denenebilir,
+      // emri yaşından ötürü düşürmek yanlış varsayılan olurdu). Emir KALICI ret
       // gibi bitirilir — silinir, geri alınır, sebebi söylenir. `err` null
       // kalıyor; `chatErrorText` kodsuz/gövdesiz hatada fallback anahtarına
       // düşüyor, yani kullanıcı jenerik "olmadı" metnini görür.
@@ -440,7 +518,14 @@ async function run(): Promise<FlushResult> {
         if (deletePendingMutationIfPayload(row.message_id, row.kind, sentPayloadJson)) {
           result.done += 1;
         } else {
+          // Emir UYGULANDI (sunucu değişti) ama satır bekleme penceresinde
+          // yeni bir niyetle değişti. Hayatta kalan satırın `base`i sunucudaki
+          // yeni gerçeğe çekilmezse sıradaki tur "kaldır"ı atlar ve ikincisini
+          // EKLER — kullanıcı başına tek reaksiyon kuralı istemcide kırılırdı.
           result.superseded += 1;
+          if (row.kind === "reaction") {
+            rebaseSupersededReactionBase(row, payload as ReactionPayload | null, progress);
+          }
         }
       } else if (outcome === "retry") {
         const attempts = row.attempts + 1;

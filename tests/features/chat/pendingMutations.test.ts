@@ -546,14 +546,68 @@ describe('pendingMutations: tur', () => {
       first.resolve([]);
       await flush;
 
-      // Ayırt edici: eski kod `deletePendingMutation(msg-1, reaction)` ile ❤️
+      // Ayırt edici 1: eski kod `deletePendingMutation(msg-1, reaction)` ile ❤️
       // satırını SİLİYOR, ikinci çağrı HİÇ yapılmıyordu (kuyruk boş, ekranda
       // sunucunun kanonikleştirdiği 😀 kalıyordu).
       expect(addReaction.mock.calls).toEqual([
         ['msg-1', '😀'],
         ['msg-1', '❤️'],
       ]);
+      // Ayırt edici 2: ❤️ eklenmeden ÖNCE 😀 KALDIRILMALI. İlk emir başarıyla
+      // uygulandığı için sunucuda artık 😀 duruyor; hayatta kalan satırın
+      // `base`i (coalesceReaction onu İLK emrin base'ine — null'a — çiviliyor)
+      // tazelenmezse sıradaki tur "kaldır"ı atlar ve kullanıcı başına tek
+      // reaksiyon kuralı istemcide kırılır: iki chip birden partner'a yayılır.
+      expect(removeReaction).toHaveBeenCalledWith('msg-1', '😀');
+      expect(removeReaction.mock.invocationCallOrder[0]).toBeLessThan(
+        addReaction.mock.invocationCallOrder[1],
+      );
       expect(readPendingMutations()).toHaveLength(0);
+    });
+
+    it('üstünden geçilen BAŞARI hayatta kalan satırın base\'ini sunucudaki emojiye çekiyor', async () => {
+      insertMessage('msg-1', 'sent');
+      enqueueReaction({ messageId: 'msg-1', conversationId: CONV, desired: '😀', serverBase: null });
+      const first = suspendFirstAddReaction();
+
+      const flush = flushPendingMutations('test');
+      enqueueReaction({ messageId: 'msg-1', conversationId: CONV, desired: '❤️', serverBase: null });
+      // Takip turunu kısıyoruz: diskte kalan satırın HÂLİ ölçülebilsin.
+      (remainingNow as jest.Mock).mockReturnValue(MUTATION_RATE_RESERVE - 1);
+      first.resolve([]);
+      await flush;
+
+      const [row] = readPendingMutations();
+      // desired DOKUNULMAZ (kullanıcının son niyeti), base sunucudaki gerçeğe
+      // (😀) çekilir. Eski kod burada base'i null bırakıyordu.
+      expect(JSON.parse(row.payload_json)).toEqual({ desired: '❤️', base: '😀' });
+      // Muhasebe korunuyor: hayatta kalan satır YENİ bir niyet.
+      expect(row.attempts).toBe(0);
+      expect(row.next_eligible_at_ms).toBe(0);
+    });
+
+    it('üstünden geçilen KALDIRMA emri base\'i NULL\'a çekiyor — olmayan emojiyi silmeye çalışmıyor', async () => {
+      insertMessage('msg-1', 'sent');
+      // Tek çağrılı kaldırma: desired null, base 😀 → yalnız removeReaction.
+      enqueueReaction({ messageId: 'msg-1', conversationId: CONV, desired: null, serverBase: '😀' });
+      let release!: (v: any) => void;
+      removeReaction.mockImplementationOnce(
+        () =>
+          new Promise((res) => {
+            release = res;
+          }),
+      );
+
+      const flush = flushPendingMutations('test');
+      enqueueReaction({ messageId: 'msg-1', conversationId: CONV, desired: '❤️', serverBase: null });
+      (remainingNow as jest.Mock).mockReturnValue(MUTATION_RATE_RESERVE - 1);
+      release([]);
+      await flush;
+
+      const [row] = readPendingMutations();
+      // Sunucuda benim adıma artık hiçbir şey yok → base null. Çivilenmiş 😀
+      // kalsaydı sıradaki tur var olmayan bir emojiyi kaldırmaya çalışırdı.
+      expect(JSON.parse(row.payload_json)).toEqual({ desired: '❤️', base: null });
     });
 
     it('retry dalı: bekleme sırasında gelen emir eski yükle VE eski backoff\'la EZİLMİYOR', async () => {

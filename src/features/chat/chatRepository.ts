@@ -1539,6 +1539,36 @@ export function deletePendingMutationIfPayload(
 }
 
 /**
+ * YALNIZ `payload_json`'ı yazar, muhasebe kolonlarına (attempts/backoff/
+ * last_error) ve `first_seen_at_ms`'e DOKUNMAZ.
+ *
+ * Tek çağıranı turun "üstünden geçilmiş başarı" dalı: tamamlanan emir
+ * sunucudaki gerçeği değiştirdiği için hayatta kalan satırın `base`i
+ * tazelenmek zorunda (bkz. pendingMutationPolicy.rebaseReactionBase).
+ * Muhasebe korunuyor, çünkü hayatta kalan satır YENİ bir niyet: `enqueue*`
+ * onu `attempts: 0`/backoff'suz yazdı ve öyle kalmalı.
+ *
+ * `expectedPayloadJson` koşulu: yazılan değer, OKUNAN değerden hesaplandı;
+ * koşul o hesabın dayanağının hâlâ yerinde olmasını şart koşuyor. Bugün
+ * okuma ile yazma arasına kimse giremez (sürücü senkron, JS tek iş
+ * parçacıklı) — koşul bu değişmez bozulursa yazmanın sessizce yanlış satıra
+ * inmesini engelliyor.
+ */
+export function updatePendingMutationPayload(
+  messageId: string,
+  kind: MutationKind,
+  expectedPayloadJson: string,
+  nextPayloadJson: string,
+): void {
+  getChatDb().run(
+    `UPDATE pending_mutations
+        SET payload_json = ?
+      WHERE message_id = ? AND kind = ? AND payload_json = ?`,
+    [nextPayloadJson, messageId, kind, expectedPayloadJson],
+  );
+}
+
+/**
  * Başarısız denemenin muhasebesi — KOLON KAPSAMLI: yalnız `attempts`,
  * `next_eligible_at_ms`, `last_error` yazılır.
  *

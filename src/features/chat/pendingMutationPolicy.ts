@@ -64,6 +64,29 @@ export function coalesceDelete(existing: DeletePayload | null, forEveryone: bool
   return { forEveryone: existing ? existing.forEveryone || forEveryone : forEveryone };
 }
 
+/**
+ * ÜSTÜNDEN GEÇİLMİŞ (superseded) bir emrin ardından hayatta kalan satırın
+ * `base`ini sunucunun YENİ gerçeğine çeker.
+ *
+ * Neden gerekli: `coalesceReaction` `base`i İLK emrin gördüğü sunucu değerine
+ * ÇİVİLİYOR ve bu, emir henüz uygulanmamışken doğru. Ama tur o ilk emri
+ * BAŞARIYLA uygulayıp (sunucuda artık `desired` duruyor) satır bekleme
+ * penceresinde yeni bir niyetle değiştiyse, çivilenmiş `base` artık BAYAT:
+ * sunucuda duran emoji ondan farklı. Bir sonraki tur `base`e bakıp "kaldırma"
+ * isteğini atlar (`sendRow`'un `p.base && p.base !== p.desired` kapısı) ve
+ * eskisi hâlâ sunucudayken yenisini EKLER — kullanıcı başına tek reaksiyon
+ * kuralı istemci tarafında kırılır, iki chip birden partner'a yayılır.
+ *
+ * `serverEmoji` = turun BİTTİĞİ anda sunucunun benim adıma tuttuğu emoji
+ * (`null` = hiçbiri). `desired` DOKUNULMAZ: kullanıcının en son niyeti odur.
+ */
+export function rebaseReactionBase(
+  surviving: ReactionPayload,
+  serverEmoji: string | null,
+): ReactionPayload {
+  return { desired: surviving.desired, base: serverEmoji };
+}
+
 export type MutationOutcome = "done" | "retry" | "rejected";
 
 /**

@@ -9,6 +9,7 @@ import {
   deletePendingMutation,
   deletePendingMutationIfPayload,
   markPendingMutationAttempt,
+  updatePendingMutationPayload,
   pruneOrphanPendingMutations,
   readMessageSendState,
   saveMessage,
@@ -334,5 +335,41 @@ describe('pending_mutations: yük kapsamlı sonuç yazımı', () => {
       }),
     ).toBe(false);
     expect(readPendingMutations()).toHaveLength(0);
+  });
+});
+
+describe('pending_mutations: yalnız yük yazımı (base rebase)', () => {
+  it('updatePendingMutationPayload yalnız payload_json\'ı yazıyor, muhasebeye/yaşa dokunmuyor', () => {
+    insertMessage('msg-1', 'sent');
+    upsertPendingMutation(
+      row({ message_id: 'msg-1', attempts: 0, first_seen_at_ms: 1_000, next_eligible_at_ms: 0 }),
+    );
+
+    updatePendingMutationPayload(
+      'msg-1',
+      'reaction',
+      '{"desired":"😀","base":null}',
+      '{"desired":"😀","base":"❤️"}',
+    );
+
+    const [updated] = readPendingMutations();
+    expect(updated.payload_json).toBe('{"desired":"😀","base":"❤️"}');
+    expect(updated.attempts).toBe(0);
+    expect(updated.next_eligible_at_ms).toBe(0);
+    expect(updated.first_seen_at_ms).toBe(1_000);
+  });
+
+  it('updatePendingMutationPayload beklenen yük tutmuyorsa HİÇBİR ŞEY yazmıyor', () => {
+    insertMessage('msg-1', 'sent');
+    upsertPendingMutation(row({ message_id: 'msg-1', payload_json: '{"desired":"🔥","base":null}' }));
+
+    updatePendingMutationPayload(
+      'msg-1',
+      'reaction',
+      '{"desired":"😀","base":null}',
+      '{"desired":"😀","base":"❤️"}',
+    );
+
+    expect(readPendingMutations()[0].payload_json).toBe('{"desired":"🔥","base":null}');
   });
 });
