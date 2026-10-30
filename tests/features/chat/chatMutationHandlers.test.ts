@@ -236,7 +236,11 @@ import { Provider } from 'react-redux';
 import { configureStore } from '@reduxjs/toolkit';
 import { render, fireEvent, screen, act } from '@testing-library/react-native';
 import { NavigationContainer } from '@react-navigation/native';
-import chatReducer, { reactionsChanged, messageDeleted } from '@/features/chat/chatSlice';
+import chatReducer, {
+  messageDeleted,
+  messageSent,
+  reactionsChanged,
+} from '@/features/chat/chatSlice';
 import ChatScreen from '@/features/chat/screens/ChatScreen';
 import * as MessageActionSheetMock from '@/features/chat/components/MessageActionSheet';
 
@@ -317,9 +321,9 @@ function renderChatScreen(message: any) {
   return { store };
 }
 
-async function longPressBubble() {
+async function longPressBubble(id: string = MESSAGE_ID) {
   await act(async () => {
-    fireEvent(screen.getByTestId(`bubble-${MESSAGE_ID}`), 'longPress');
+    fireEvent(screen.getByTestId(`bubble-${id}`), 'longPress');
   });
 }
 
@@ -473,5 +477,94 @@ describe('handleDelete — kuyruğa bağlı', () => {
     expect(deleteDispatches).toHaveLength(1);
 
     alertSpy.mockRestore();
+  });
+});
+
+/**
+ * ÖNEMLİ 5 — menü hedefi uzun-basış anındaki KOPYA; menü açıkken gelen
+ * gönderim ack'i (`messageSent`) kaydın id'sini YERİNDE değiştiriyor
+ * (temp- → sunucu id'si). Handler canlı kaydı yalnız `target.id` ile ararsa
+ * bulamaz, bayat kopyaya düşer ve emri ÖLÜ bir temp id ile kuyruğa yazar —
+ * bir sonraki turun yetim budaması onu sessizce siler. Çözüm: aramada
+ * `clientMessageId`'yi de denemek.
+ */
+describe('menü açıkken gelen ack (temp id → sunucu id)', () => {
+  const CMID = 'cmid-1';
+
+  it('tepki emri canlı SUNUCU id\'siyle kuyruğa yazılıyor, ölü temp id ile DEĞİL', async () => {
+    (MessageActionSheetMock as any).__setEmoji('😀');
+    const { store } = renderChatScreen(
+      buildMessage({ id: 'temp-1', clientMessageId: CMID, senderId: MY_USER_ID, reactions: [] }),
+    );
+
+    await longPressBubble('temp-1');
+    // ACK: aynı clientMessageId, GERÇEK id — reducer kaydı yerinde değiştirir.
+    await act(async () => {
+      store.dispatch(
+        messageSent(
+          buildMessage({ id: 'msg-real', clientMessageId: CMID, senderId: MY_USER_ID }) as any,
+        ),
+      );
+    });
+    await act(async () => {
+      fireEvent.press(screen.getByTestId('action-pick-reaction'));
+    });
+
+    expect(mockEnqueueReaction).toHaveBeenCalledWith({
+      messageId: 'msg-real',
+      conversationId: CONVERSATION_ID,
+      desired: '😀',
+      serverBase: null,
+    });
+  });
+
+  it('optimistik dispatch de canlı id\'ye gidiyor — ekranda emoji BELİRİYOR', async () => {
+    (MessageActionSheetMock as any).__setEmoji('😀');
+    const { store } = renderChatScreen(
+      buildMessage({ id: 'temp-1', clientMessageId: CMID, senderId: MY_USER_ID, reactions: [] }),
+    );
+
+    await longPressBubble('temp-1');
+    await act(async () => {
+      store.dispatch(
+        messageSent(
+          buildMessage({ id: 'msg-real', clientMessageId: CMID, senderId: MY_USER_ID }) as any,
+        ),
+      );
+    });
+    await act(async () => {
+      fireEvent.press(screen.getByTestId('action-pick-reaction'));
+    });
+
+    // Ayırt edici: bayat id'ye yapılan dispatch reducer'da no-op olurdu
+    // (o id listede yok) — kullanıcı hiçbir şey olmadığını görürdü.
+    const reactions = (store.getState() as any).chat.messagesByConv[CONVERSATION_ID].messages.find(
+      (m: any) => m.id === 'msg-real',
+    )?.reactions;
+    expect(reactions).toEqual([{ emoji: '😀', count: 1, userIds: [MY_USER_ID] }]);
+  });
+
+  it('silme emri de canlı SUNUCU id\'siyle kuyruğa yazılıyor', async () => {
+    const { store } = renderChatScreen(
+      buildMessage({ id: 'temp-1', clientMessageId: CMID, senderId: MY_USER_ID }),
+    );
+
+    await longPressBubble('temp-1');
+    await act(async () => {
+      store.dispatch(
+        messageSent(
+          buildMessage({ id: 'msg-real', clientMessageId: CMID, senderId: MY_USER_ID }) as any,
+        ),
+      );
+    });
+    await act(async () => {
+      fireEvent.press(screen.getByTestId('action-delete'));
+    });
+
+    expect(mockEnqueueDelete).toHaveBeenCalledWith({
+      messageId: 'msg-real',
+      conversationId: CONVERSATION_ID,
+      forEveryone: false,
+    });
   });
 });

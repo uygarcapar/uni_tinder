@@ -1345,8 +1345,20 @@ function ChatScreen({
       if (!target) return;
       // actionTarget uzun-basış anındaki kopya — o sırada gelen hub event'i
       // reaction'ları değiştirmiş olabilir, taze kaydı store'dan al.
+      //
+      // Arama `clientMessageId`'yi DE deniyor: menü açıkken gönderim ack'i
+      // gelirse `messageSent` kaydın id'sini YERİNDE değiştiriyor (temp- →
+      // sunucu id'si), yani yalnız `target.id` ile arayan bir lookup kaydı
+      // BULAMAZ ve bayat kopyaya düşerdi. Sonucu iki kat kötü: optimistik
+      // dispatch artık var olmayan bir id'ye gidip no-op olur (kullanıcı
+      // hiçbir şey olmadığını görür) ve emir ÖLÜ bir temp id ile kuyruğa
+      // yazılır — bir sonraki turun yetim budaması onu sessizce siler.
       const message =
-        messagesRef.current.find((m) => m.id === target.id) || target;
+        messagesRef.current.find(
+          (m) =>
+            m.id === target.id ||
+            (target.clientMessageId && m.clientMessageId === target.clientMessageId),
+        ) || target;
       const prev = message.reactions || [];
       const { next, removeEmoji, addEmoji } = applyReactionPick(
         prev,
@@ -1433,8 +1445,18 @@ function ChatScreen({
   }, []);
 
   const handleDelete = useCallback(
-    async (message: any, forEveryone: boolean) => {
-      if (!message) return;
+    async (target: any, forEveryone: boolean) => {
+      if (!target) return;
+      // `handlePickReaction` ile AYNI sebep: menü hedefi uzun-basış anındaki
+      // kopya, menü açıkken gelen ack id'yi yerinde değiştirmiş olabilir.
+      // `clientMessageId` üzerinden de arıyoruz — yoksa silme emri ölü bir
+      // temp id ile kuyruğa yazılır ve yetim budaması onu sessizce siler.
+      const message =
+        messagesRef.current.find(
+          (m) =>
+            m.id === target.id ||
+            (target.clientMessageId && m.clientMessageId === target.clientMessageId),
+        ) || target;
       dispatch(
         messageDeleted({
           messageId: message.id,
