@@ -345,6 +345,13 @@ export interface MessageBucket {
    * bayrağı HER ZAMAN `false`a çeker — sohbete "taze" girmek ya da ChatScreen'in
    * "son mesaja dön" aksiyonu bu şekilde temizleniyor, ayrı bir "clear" action'a
    * gerek yok.
+   *
+   * ⚠️ Bayrak PENCERENİN İÇERİĞİNDEN türüyor, hangi kod yolunun yazdığından
+   * DEĞİL (review turu 4, Önemli 2): hedefin etrafı okunurken pencere arşivin
+   * dibine DEĞİYORSA (`chatRepository.readAround` → `reachesNewest`) bayrak
+   * `false` kalıyor. Pencereye mesaj ekleyen her yol tek bir kapıdan geçiyor
+   * (`chatSlice`in `prependToBucket`u) — bayrağı her çağrı yeri elle
+   * korumuyor.
    */
   isWindowed?: boolean;
 }

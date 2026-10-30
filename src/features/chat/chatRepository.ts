@@ -722,6 +722,20 @@ export function readOlder(
  * yok — çağıran dizinin kısalığından "daha eski yok"u zaten çıkarabilir. Aynı
  * şey `after` ucu için de geçerli (bkz. messageSearchRepo.test.ts'in newer-uç
  * testi).
+ *
+ * ── `reachesNewest` — pencere "ŞU AN"ı kapsıyor mu (review turu 4, Önemli 2) ─
+ * `newer` sorgusu `after`tan AZ satır döndürdüyse hedeften daha yeni satır
+ * KALMAMIŞ demektir: pencere arşivin DİBİNE, yani canlı sohbete değiyor.
+ * Çağıran (`chatHydrate.hydrateAroundMessage`) `isWindowed` bayrağını BUNDAN
+ * türetiyor — bayrağın "hangi kod yolundan geçtim" yerine "pencere gerçekten
+ * neyi gösteriyor" sorusuna cevap vermesi, her çağrı yerine elle bir kapı
+ * dikmekten (dört tur boyunca yapılan şey) yapısal olarak daha güçlü.
+ *
+ * Tam `after` satır dönerse `false` — "tam sınırda ve daha fazlası yok" hâli
+ * burada PENCERELİ sayılıyor. Bu yön KASITLI: fazladan bir satır daha okumak
+ * (`after + 1`) sorguyu da pencereyi de değiştirirdi; sınır durumunun bedeli
+ * yalnız gereksiz bir "son mesaja dön" kapsülü, tersi ise canlı mesajın
+ * sessizce yutulması.
  */
 export function readAround(
   conversationId: string,
@@ -729,7 +743,7 @@ export function readAround(
   messageId: string,
   before: number,
   after: number,
-): MessageDto[] {
+): { messages: MessageDto[]; reachesNewest: boolean } {
   const db = getChatDb();
 
   const target = db.getFirst<MessageRow>(
@@ -741,15 +755,14 @@ export function readAround(
   // Hedeften DAHA YENİ satırlar: en yakından en uzağa almak için ASC sorgulanır
   // (LIMIT bu yüzden "hedefe en yakın" olanları seçer), sonra dizi ters çevrilip
   // genel en-yeniden-eskiye sıraya (en uzak önce) oturtulur.
-  const newer = db
-    .getAll<MessageRow>(
-      `SELECT * FROM messages
-       WHERE conversation_id = ?
-         AND (sent_at_ms > ? OR (sent_at_ms = ? AND id > ?))
-       ORDER BY sent_at_ms ASC, id ASC LIMIT ?`,
-      [conversationId, anchorMs, anchorMs, messageId, after],
-    )
-    .reverse();
+  const newerAsc = db.getAll<MessageRow>(
+    `SELECT * FROM messages
+     WHERE conversation_id = ?
+       AND (sent_at_ms > ? OR (sent_at_ms = ? AND id > ?))
+     ORDER BY sent_at_ms ASC, id ASC LIMIT ?`,
+    [conversationId, anchorMs, anchorMs, messageId, after],
+  );
+  const newer = [...newerAsc].reverse();
 
   // Hedeften DAHA ESKİ satırlar: zaten en-yeniden-eskiye — ek işlem yok.
   const older = db.getAll<MessageRow>(
@@ -761,7 +774,7 @@ export function readAround(
   );
 
   const rows = [...newer, ...(target ? [target] : []), ...older];
-  return rows.map(rowToMessage);
+  return { messages: rows.map(rowToMessage), reachesNewest: newerAsc.length < after };
 }
 
 /** Yerel arşivde bu sohbetten kaç satır var — indeksli COUNT, render sırasında güvenli. */

@@ -1785,22 +1785,19 @@ function ChatScreen({
   /**
    * Seçili eşleşmeye atla.
    *
-   * ── Kritik düzeltme (review turu 1) — hedef ZATEN hot window'daysa
-   *    ASLA pencereleme ────────────────────────────────────────────────────
-   * `hydrateAroundMessage` KOŞULSUZ `isWindowed:true` yazıyor (chatHydrate.ts)
-   * — "hedefin etrafında bir pencere açıldı" bayrağı, hedef arşivin dibinde
-   * olsa bile. Başlangıç konumu EN YENİ eşleşme (aşağıda) olduğu için, az önce
-   * konuşulan bir kelimeyi aramak PRATİKTE her zaman "hedef zaten mevcut hot
-   * window'da" durumuna denk geliyordu — yine de bayrak dikiliyor, canlı
-   * mesajlar `receiveMessage`in pencereli-bucket dalına düşüp SESSİZCE
-   * yutuluyordu (brief'in uyardığı "dördüncü kapı", ama bu sefer YENİ bir
-   * YAZMA noktası DEĞİL, var olan yazmaya YENİ bir ERİŞİLEBİLİRLİK yolu).
-   * Çözüm burada: hedef `messages` (mevcut bucket) içinde VE bucket henüz
-   * pencereli DEĞİLSE, `hydrateAroundMessage`e HİÇ gitmiyoruz — zaten
-   * "şu an"dayız, pencerelemeye gerek yok, direkt kaydır+vurgula (aşağıdaki
-   * ayrı dal). Bucket ÖNCEDEN pencereliyse (kullanıcı hâlâ eski bir
-   * hedefte) yine `hydrateAroundMessage`e gidiyoruz — o zaten "şu an"dan
-   * ayrılmış durumda, yeni hedefe göre merkezlenmesi DOĞRU.
+   * ── Hedef ZATEN görünür listede ise pencere HİÇ okunmuyor ───────────────
+   * Bu kapı artık BAYRAK için değil (review turu 4, Önemli 2):
+   * `hydrateAroundMessage` `isWindowed`i pencerenin arşivin dibine değip
+   * değmediğinden TÜRETİYOR, yani hot window içindeki bir hedefe atlamak zaten
+   * bayrağı DİKMİYOR — kapı kalksa da canlı mesaj yutulmaz. Kalma gerekçesi
+   * daha mütevazı ve ölçülebilir: hedef mevcut bucket'ta GÖRÜNÜRken
+   * `hydrateAroundMessage` çağırmak bucket'ın `messages` dizisini komple
+   * değiştirir (LegendList için yapısal değişim) ve yukarı kaydırmayla
+   * yüklenmiş sayfaları hedefin ±30'luk penceresine indirir — kullanıcı aynı
+   * sorgu içinde next/prev'e bastıkça bu her hop'ta tekrarlanır. Hedef zaten
+   * ekrandaysa doğru hamle yalnız kaydırıp vurgulamak (aşağıdaki ayrı dal).
+   * Bucket ÖNCEDEN pencereliyse yine `hydrateAroundMessage`e gidiyoruz — o
+   * zaten "şu an"dan ayrılmış durumda, yeni hedefe göre merkezlenmesi DOĞRU.
    *
    * Task 5'in YERELDEN okuyan yolu (`hydrateAroundMessage`) BİREBİR
    * kullanılıyor, ikinci bir atlama mekanizması icat edilmedi.

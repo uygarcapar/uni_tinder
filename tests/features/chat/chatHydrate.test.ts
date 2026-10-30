@@ -168,10 +168,24 @@ describe('hydrateAroundMessage', () => {
     expect(actions[0].type).toBe('chat/hydrateWindow');
     // before=1, after=1 → hedefin bir öncesi + hedef + bir sonrası (en yeniden eskiye).
     expect(actions[0].payload.messages.map((m: MessageDto) => m.id)).toEqual(['m4', 'm3', 'm2']);
-    // Review turu 1, Önemli 4 — bu pencere arşivin DİBİ DEĞİL, bucket
-    // PENCERELİ işaretlenmek ZORUNDA (receiveMessage'ın canlı-mesaj
+    // Review turu 1, Önemli 4 — bu pencere arşivin DİBİ DEĞİL (m5 duruyor),
+    // bucket PENCERELİ işaretlenmek ZORUNDA (receiveMessage'ın canlı-mesaj
     // bitiştirmesini kapatan bayrak budur).
     expect(actions[0].payload.isWindowed).toBe(true);
+  });
+
+  // Review turu 4, Önemli 2 — Task 6'nın çağrı-yeri kapısının YAPISAL hâli.
+  it('hedef hot window\'un İÇİNDEYSE (pencere arşivin dibine değiyor) isWindowed FALSE', () => {
+    seed([1, 2, 3]);
+    const { dispatch, actions } = collector();
+
+    // Hedef en yeni mesaj: etrafındaki pencere "şu an"ı kapsıyor. Bayrak
+    // dikilirse `receiveMessage` canlı mesajı SESSİZCE yutar ve kullanıcı
+    // canlı sohbete baktığını sanır.
+    const found = hydrateAroundMessage(dispatch, CONV, BASE + 3 * 60_000, 'm3', 2, 2);
+
+    expect(found).toBe(true);
+    expect(actions[0].payload.isWindowed).toBe(false);
   });
 
   it('hedef arşivde YOK: dispatch YAPILMAZ, false döner — çağıran normal açılışa düşsün', () => {

@@ -264,7 +264,13 @@ export function hydrateAroundMessage(
 ): boolean {
   if (!CHAT_SQLITE_ENABLED || !conversationId || !messageId) return false;
   try {
-    const rows = readAround(conversationId, sentAtMs, messageId, before, after);
+    const { messages: rows, reachesNewest } = readAround(
+      conversationId,
+      sentAtMs,
+      messageId,
+      before,
+      after,
+    );
     if (!rows.some((r) => r.id === messageId)) return false;
 
     const sync = readSyncState(conversationId);
@@ -294,12 +300,20 @@ export function hydrateAroundMessage(
         nextCursor: sync?.next_cursor ?? null,
         hasMore: true,
         hasHiddenHistory: !!sync?.has_hidden_history,
-        // Review turu 1, Önemli 4 — bu bucket ARTIK PENCERELİ: `receiveMessage`
-        // bu bayrak açıkken canlı mesajı bitiştirmeyi BIRAKIYOR (bkz.
-        // chatSlice.ts'teki kendi yorumu). Temizlenmesi İKİ yoldan biriyle:
-        // sohbete taze girmek (hydrateConversation, isWindowed:false) ya da
-        // ChatScreen'in "son mesaja dön" aksiyonu (aynı fonksiyonu çağırıyor).
-        isWindowed: true,
+        // Bayrak PENCERENİN KENDİSİNDEN türüyor, hangi fonksiyonun çağrıldığından
+        // DEĞİL (review turu 4, Önemli 2). `receiveMessage` bu bayrak açıkken
+        // canlı mesajı bitiştirmeyi bırakıyor (bkz. chatSlice.ts'teki yorumu) —
+        // o bastırma yalnız pencere GERÇEKTEN mid-archive ise doğru. Eski hâl
+        // KOŞULSUZ `true` yazıyordu ve "az önce konuşulan bir kelimeyi aramak"
+        // pratikte her zaman hot window'un İÇİNDE bir hedefe denk geliyordu:
+        // kullanıcı canlı sohbete bakıyor sanıyor, gelen mesajlar SESSİZCE
+        // yutuluyordu. `readAround` cevabı zaten biliyor (`reachesNewest`:
+        // hedeften daha yeni satır kalmadı = pencere arşivin dibine değiyor).
+        //
+        // Temizlenmenin diğer yolları aynen duruyor: sohbete taze girmek
+        // (hydrateConversation, isWindowed:false), ChatScreen'in "son mesaja
+        // dön"ü ve `fetchHistory`nin cursor:null dalı.
+        isWindowed: !reachesNewest,
       }),
     );
     return true;

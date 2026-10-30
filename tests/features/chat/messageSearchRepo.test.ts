@@ -339,7 +339,9 @@ describe('readAround', () => {
 
     // Hedef tam ortada OLMASI dahil tüm diziliş tek `toEqual` ile pinleniyor
     // — ayrı bir `window[2].id` kontrolü FAZLALIK olurdu (review turu 1, Minör 4).
-    expect(window.map((m) => m.id)).toEqual(['m7', 'm6', 'm5', 'm4', 'm3']);
+    expect(window.messages.map((m) => m.id)).toEqual(['m7', 'm6', 'm5', 'm4', 'm3']);
+    // Arşivde m8..m10 DURUYOR — bu pencere "şu an"a değmiyor.
+    expect(window.reachesNewest).toBe(false);
   });
 
   it('arşivin başındaki mesajda da patlamıyor (before yetersiz)', () => {
@@ -356,7 +358,7 @@ describe('readAround', () => {
     // İstenen before=2 yerine 0 döndü (daha fazlası YOK), ama daha yeni iki
     // mesaj ve hedef eksiksiz geldi — eksik kalan sessizce kırpıldı, hata
     // fırlatılmadı ya da sahte satır üretilmedi.
-    expect(window.map((m) => m.id)).toEqual(['m3', 'm2', 'm1']);
+    expect(window.messages.map((m) => m.id)).toEqual(['m3', 'm2', 'm1']);
   });
 
   // Review turu 1, Minör 3: yalnız ESKİ uç (before yetersiz) test edilmişti;
@@ -372,7 +374,7 @@ describe('readAround', () => {
     expect(() => readAround(CONV, target.sent_at_ms, 'm3', 2, 2)).not.toThrow();
     const window = readAround(CONV, target.sent_at_ms, 'm3', 2, 2);
 
-    expect(window.map((m) => m.id)).toEqual(['m3', 'm2', 'm1']);
+    expect(window.messages.map((m) => m.id)).toEqual(['m3', 'm2', 'm1']);
   });
 
   // Review turu 1, Önemli: `sentAtMs` parametresi çağıranın elindeki (BAYAT
@@ -387,12 +389,44 @@ describe('readAround', () => {
     const staleAnchor = 1_700_000_000_000; // tüm satırların GERÇEK damgasından daha ESKİ
 
     const window = readAround(CONV, staleAnchor, 'm3', 0, 3);
-    const ids = window.map((m) => m.id);
+    const ids = window.messages.map((m) => m.id);
 
     expect(new Set(ids).size).toBe(ids.length); // hiçbir id YİNELENMİYOR
     // Pencere hedefin GERÇEK damgasına göre kuruldu (m3'ten sonraki iki satır
     // + hedef), BAYAT parametreye göre DEĞİL — bayat olsaydı m1/m2/m3 üçü de
     // "daha yeni" sayılır, m3 hem oradan hem hedeften gelirdi.
     expect(ids).toEqual(['m5', 'm4', 'm3']);
+  });
+
+  // Review turu 4, Önemli 2: `isWindowed` bayrağı ARTIK bu alandan türüyor.
+  // Yalnız dizilişi test etmek buna KÖR kalırdı — `reachesNewest` sabit
+  // `false` dönen bir mutasyon (eski davranışın aynısı) tüm diğer readAround
+  // testlerinden GEÇİYOR.
+  it('pencere arşivin DİBİNE değiyorsa reachesNewest TRUE', () => {
+    seed(5);
+    const target = getChatDb().getFirst<{ sent_at_ms: number }>(
+      'SELECT sent_at_ms FROM messages WHERE id = ?',
+      ['m4'],
+    )!;
+
+    // m4'ten daha yeni YALNIZ m5 var, after=3 istendi → 3'ten AZ satır döndü,
+    // yani pencerenin YENİ ucunda başka satır KALMADI: bu pencere "şu an"ı
+    // kapsıyor ve bucket PENCERELİ sayılmamalı.
+    const window = readAround(CONV, target.sent_at_ms, 'm4', 2, 3);
+
+    expect(window.messages.map((m) => m.id)).toEqual(['m5', 'm4', 'm3', 'm2']);
+    expect(window.reachesNewest).toBe(true);
+  });
+
+  it('en yeni mesajın KENDİSİ hedefse reachesNewest TRUE', () => {
+    seed(5);
+    const target = getChatDb().getFirst<{ sent_at_ms: number }>(
+      'SELECT sent_at_ms FROM messages WHERE id = ?',
+      ['m5'],
+    )!;
+
+    const window = readAround(CONV, target.sent_at_ms, 'm5', 2, 2);
+
+    expect(window.reachesNewest).toBe(true);
   });
 });
