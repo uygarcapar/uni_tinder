@@ -129,6 +129,7 @@ import realtimeService from '@/features/chat/realtimeService';
 import { clearAllDrafts } from '@/features/chat/draftStore';
 import { flushOutbox, resetOutbox } from '@/features/chat/outbox';
 import { flushPendingMutations } from '@/features/chat/pendingMutations';
+import { runBackfillRound } from '@/features/chat/chatBackfill';
 import {
   receiveMessage,
   messageSent,
@@ -1933,6 +1934,13 @@ export default function AppNavigator() {
     // Aynı gerekçeyle token tazeliği kapısından SONRA: bayat token'la deneme
     // mutasyon kuyruğu için de aynı şekilde 401 harcardı.
     void flushPendingMutations('foreground');
+    // Backfill'in İKİNCİ tetiği. `chatMirrorMiddleware.startBackfill` boot'ta
+    // TEK bir tur zamanlıyor (KALIYOR) — büyük bir arşiv tek tetikle onlarca
+    // açılış sürüyordu, Faz 4'ün aramasının üzerine kurulacağı arşiv o kadar
+    // geç tamamlanırsa "bulamadı" ile "henüz inmedi" ayrışmaz. `runBackfillRound`
+    // kendi `inFlight`/kill-switch kapısını taşıyor, aktif sohbeti
+    // `store.getState()`ten okuyor — chatMirrorMiddleware'deki aynı kalıp.
+    void runBackfillRound(() => (store.getState() as any).chat?.activeConversationId ?? null);
     // Şehir/ilçe backend'de konumdan türetiliyor → her foreground'da tek
     // atımlık koordinat. İzin yoksa/GPS yoksa sessizce no-op.
     sendLocationHeartbeat();

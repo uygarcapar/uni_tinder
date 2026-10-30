@@ -37,6 +37,7 @@ import * as repo from '@/features/chat/chatRepository';
 import {
   readBackfillTargets,
   setBackfillCursor,
+  bumpBackfillFailure,
   readWindow,
 } from '@/features/chat/chatRepository';
 import { clear as clearMessageCache } from '@/features/chat/messageCache';
@@ -51,6 +52,7 @@ import {
   BACKFILL_PAGE_SIZE,
   PAGE_DELAY_MS,
   MAX_REQUESTS_PER_ROUND,
+  BACKFILL_MAX_FAILURES,
 } from '@/features/chat/backfillPolicy';
 import { runBackfillRound, __resetBackfillForTests } from '@/features/chat/chatBackfill';
 import type { MessageDto } from '@/shared/types';
@@ -121,7 +123,7 @@ describe('runBackfillRound', () => {
 
     const result = await runBackfillRound(() => null);
 
-    expect(result).toEqual({ ran: true, pages: 1, messages: 1, completed: ['conv-1'] });
+    expect(result).toEqual({ ran: true, pages: 1, messages: 1, completed: ['conv-1'], attempts: 1 });
     // Disk — tur gerçekten yazdı mı (boş no-op'u "redux'a dokunmadı" diye
     // yanlış yeşile düşürmemek için).
     expect(readWindow('conv-1', 10).map((r) => r.id)).toEqual(['m1']);
@@ -145,7 +147,7 @@ describe('runBackfillRound', () => {
     const round1 = await runBackfillRound(() => null);
     expect(round1.pages).toBe(1);
     expect(getMessageHistory).toHaveBeenCalledTimes(1);
-    expect(readBackfillTargets(10)).toEqual([{ conversationId: 'conv-1', cursor: 'cursor-2' }]);
+    expect(readBackfillTargets(10)).toEqual([{ conversationId: 'conv-1', cursor: 'cursor-2', failures: 0 }]);
 
     // İkinci tur: artık bol kota biliniyor — kaldığı cursor'dan devam eder.
     recordRateLimitHeaders({ 'x-ratelimit-remaining': '500' });
@@ -177,7 +179,7 @@ describe('runBackfillRound', () => {
     const round2 = await runBackfillRound(() => null);
 
     expect(getMessageHistory).toHaveBeenCalledTimes(1);
-    expect(round2).toEqual({ ran: true, pages: 0, messages: 0, completed: [] });
+    expect(round2).toEqual({ ran: true, pages: 0, messages: 0, completed: [], attempts: 0 });
   });
 
   it('AKTİF sohbeti atlıyor', async () => {
@@ -245,7 +247,7 @@ describe('runBackfillRound', () => {
     const result = await runBackfillRound(() => null);
 
     expect(getMessageHistory).not.toHaveBeenCalled();
-    expect(result).toEqual({ ran: true, pages: 0, messages: 0, completed: [] });
+    expect(result).toEqual({ ran: true, pages: 0, messages: 0, completed: [], attempts: 0 });
   });
 
   it('kalan kota rezervin altına inince tur ortasında duruyor', async () => {
@@ -271,7 +273,7 @@ describe('runBackfillRound', () => {
     expect(result.pages).toBe(1);
     expect(result.completed).toEqual([]);
     // İlerleme KORUNDU — bir sonraki tur burada devam edecek.
-    expect(readBackfillTargets(10)).toEqual([{ conversationId: 'conv-1', cursor: 'cursor-2' }]);
+    expect(readBackfillTargets(10)).toEqual([{ conversationId: 'conv-1', cursor: 'cursor-2', failures: 0 }]);
   });
 
   it('istek patlarsa o sohbeti bırakıp tura devam ediyor, cursor GERİ GİTMİYOR', async () => {
@@ -355,6 +357,7 @@ describe('runBackfillRound', () => {
     const manyTargets = Array.from({ length: TARGET_COUNT }, (_, i) => ({
       conversationId: `conv-${i}`,
       cursor: null,
+      failures: 0,
     }));
     const readTargetsSpy = jest
       .spyOn(repo, 'readBackfillTargets')
@@ -384,6 +387,71 @@ describe('runBackfillRound', () => {
       // reddetse bile spy dosyanın geri kalanına SIZMASIN.
       readTargetsSpy.mockRestore();
     }
+  });
+
+  it('üst üste BACKFILL_MAX_FAILURES hata alan sohbet artık SLOT YAKMIYOR', async () => {
+    // Ayırt edici: muhasebe olmasaydı bu sohbet yine hedef listesinde çıkar
+    // ve her turda bir istek (slot) giderdi — `conv-saglam`'a sıra gelmeden
+    // önce kovayı yerdi.
+    insertConversation('conv-bozuk', 2_000);
+    insertConversation('conv-saglam', 1_000);
+    for (let i = 0; i < BACKFILL_MAX_FAILURES; i++) {
+      bumpBackfillFailure('conv-bozuk');
+    }
+    getMessageHistory.mockResolvedValueOnce(
+      page([msg('m1', 'conv-saglam', '2026-10-20T10:00:00.000Z')]),
+    );
+
+    const result = await runBackfillRound(() => null);
+
+    // `conv-bozuk` HİÇ çağrılmadı — tek istek `conv-saglam`'a gitti.
+    expect(getMessageHistory).toHaveBeenCalledTimes(1);
+    expect(getMessageHistory).not.toHaveBeenCalledWith('conv-bozuk', expect.anything());
+    expect(result.completed).toEqual(['conv-saglam']);
+  });
+
+  it('başarılı sayfa, sohbetin kalıcı-hata sayacını sıfırlıyor', async () => {
+    insertConversation('conv-1', 1_000);
+    bumpBackfillFailure('conv-1');
+    bumpBackfillFailure('conv-1');
+    // Sayaç BACKFILL_MAX_FAILURES'a henüz ulaşmadı (2 < 3) — hedef listesinde
+    // kalmalı, aksi hâlde aşağıdaki istek hiç atılmaz.
+    getMessageHistory.mockResolvedValueOnce(
+      page([msg('m1', 'conv-1', '2026-10-20T10:00:00.000Z')], {
+        nextCursor: 'cursor-2',
+        hasMore: true,
+      }),
+    );
+
+    await runBackfillRound(() => null);
+
+    // Sayaç sıfırlandıysa `readBackfillTargets` bu sohbeti `failures: 0` ile
+    // döner — sıfırlanmasaydı 2 kalır ve bu iddia kırılırdı.
+    expect(readBackfillTargets(10)).toEqual([
+      { conversationId: 'conv-1', cursor: 'cursor-2', failures: 0 },
+    ]);
+  });
+
+  it('BackfillRoundResult.attempts atılan isteği sayıyor, başarılı sayfayı değil', async () => {
+    // İki sayfa: ilki 200 (pages++), ikincisi genel bir hatayla patlıyor
+    // (pages'e girmiyor ama attempts'e giriyor) → pages 1, attempts 2.
+    insertConversation('conv-1', 1_000);
+    recordRateLimitHeaders({ 'x-ratelimit-remaining': '500' }); // kota BİLİNİYOR — probe kuralı araya girmesin
+    getMessageHistory
+      .mockResolvedValueOnce(
+        page([msg('m1', 'conv-1', '2026-10-20T10:00:00.000Z')], {
+          nextCursor: 'cursor-2',
+          hasMore: true,
+        }),
+      )
+      .mockRejectedValueOnce(new Error('sunucu hatası'));
+
+    const promise = runBackfillRound(() => null);
+    await jest.advanceTimersByTimeAsync(PAGE_DELAY_MS);
+    const result = await promise;
+
+    expect(result.pages).toBe(1);
+    expect(result.attempts).toBe(2);
   });
 
   it('aynı anda iki tur koşmuyor (in-flight)', async () => {

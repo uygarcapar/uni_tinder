@@ -131,7 +131,7 @@ describe('backfill ilerleme kolonları (v8)', () => {
     // değil — ikisini birlikte sıfırlamak diskte olan sayfaları yeniden
     // indirtirdi.
     expect(readBackfillTargets(10)).toEqual([
-      { conversationId: 'conv-gizli', cursor: 'cursor-yarida' },
+      { conversationId: 'conv-gizli', cursor: 'cursor-yarida', failures: 0 },
     ]);
   });
 
@@ -152,7 +152,9 @@ describe('backfill ilerleme kolonları (v8)', () => {
 
     setBackfillCursor('conv-1', 'cursor-abc');
 
-    expect(readBackfillTargets(10)).toEqual([{ conversationId: 'conv-1', cursor: 'cursor-abc' }]);
+    expect(readBackfillTargets(10)).toEqual([
+      { conversationId: 'conv-1', cursor: 'cursor-abc', failures: 0 },
+    ]);
   });
 
   it('limit tavanına uyuyor', () => {
@@ -167,7 +169,7 @@ describe('backfill ilerleme kolonları (v8)', () => {
     insertConversation(db, 'conv-cursursuz', 1_000);
 
     expect(readBackfillTargets(10)).toEqual([
-      { conversationId: 'conv-cursursuz', cursor: null },
+      { conversationId: 'conv-cursursuz', cursor: null, failures: 0 },
     ]);
   });
 

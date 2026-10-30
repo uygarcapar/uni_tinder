@@ -44,6 +44,11 @@ export interface BackfillRoundResult {
   messages: number;
   /** Bu turda `backfill_done` işaretlenen sohbetler. */
   completed: string[];
+  /** Bu turda ATILAN istek sayısı (başarılı sayfa DEĞİL) — `shouldStopRound`'a
+   *  giden `attemptsThisRound` sayacının dışa aktarılmış hâli; pacing
+   *  sabitlerini (bkz. backfillPolicy.ts) gerçek cihaz ölçümüyle ayarlamak
+   *  için. */
+  attempts: number;
 }
 
 function delay(ms: number): Promise<void> {
@@ -56,7 +61,7 @@ function isRateLimited(error: unknown): boolean {
 }
 
 async function run(getActiveConversationId: () => string | null): Promise<BackfillRoundResult> {
-  const result: BackfillRoundResult = { ran: true, pages: 0, messages: 0, completed: [] };
+  const result: BackfillRoundResult = { ran: true, pages: 0, messages: 0, completed: [], attempts: 0 };
 
   // Tavan `MAX_REQUESTS_PER_ROUND + 1`: her hedef en az bir isteğe karşılık
   // geldiği için tur bundan fazla hedefi zaten kullanamaz, ama `+1` olmadan
@@ -116,6 +121,9 @@ async function run(getActiveConversationId: () => string | null): Promise<Backfi
       if (!firstRequest) await delay(PAGE_DELAY_MS);
       firstRequest = false;
       attempts++; // İSTEK ATILIYOR — sonucu ne olursa olsun bir DENEME sayılır.
+      result.attempts = attempts; // Her artıştan hemen sonra — fonksiyonun hangi
+      // noktadan `return result` ile çıktığından BAĞIMSIZ, dışa dönen değer
+      // hep en güncel `attempts`'i taşısın.
 
       let historyPage: repo.HistoryPage;
       try {
@@ -144,11 +152,20 @@ async function run(getActiveConversationId: () => string | null): Promise<Backfi
         // `setBackfillCursor` bilerek DIŞINDA. Genişletilirse diske yazarken
         // çıkan bir SQL hatası da "geçici ağ arızası" gibi yutulur ve tur
         // sessizce ilerlemeden döner.
+        //
+        // 429 BURAYA HİÇ GELMEZ (üstte erken `return`) — sayaç yalnız bu
+        // sohbete ÖZGÜ kalıcı hatalarda artıyor; kova paylaşımlı 429'u
+        // sohbetin kendisi bozukmuş gibi saymak, kullanıcının o anda kendi
+        // trafiğiyle üretmiş olabileceği bir hatayı bu sohbete fatura ederdi.
+        repo.bumpBackfillFailure(target.conversationId);
         break;
       }
 
       repo.applyHistoryPage(target.conversationId, historyPage, { append: true });
       repo.setBackfillCursor(target.conversationId, historyPage.nextCursor);
+      // Başarılı sayfa önceki art arda hataları siler — geçici bir arızadan
+      // kurtulan sohbet rafa kalkmaz (bkz. backfillPolicy.isConversationShelved).
+      repo.clearBackfillFailures(target.conversationId);
       cursor = historyPage.nextCursor;
       result.pages++;
       // Bu turda SUNUCUDAN gelip diske yazılan mesaj sayısı — "backfill_cursor
@@ -186,7 +203,7 @@ export function runBackfillRound(
   // kazanabilir (bkz. dosya başı yorumu) — o çağıran bayrağa bakmayı
   // unutursa bile ağ tarafı burada kapanmış olur.
   if (!CHAT_BACKFILL_ENABLED) {
-    return Promise.resolve({ ran: false, pages: 0, messages: 0, completed: [] });
+    return Promise.resolve({ ran: false, pages: 0, messages: 0, completed: [], attempts: 0 });
   }
   if (inFlight) return inFlight;
   inFlight = run(getActiveConversationId).finally(() => {

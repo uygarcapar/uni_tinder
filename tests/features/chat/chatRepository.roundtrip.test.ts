@@ -89,6 +89,9 @@ describe('şema sürümü', () => {
     // v9: pending_mutations'ı düşür — yoksa v9 kendi CREATE TABLE'ında
     // "table already exists" ile patlar.
     db.exec('DROP TABLE pending_mutations');
+    // v10: backfill'in kalıcı-hata sayacını düşür — yoksa v10 kendi ADD
+    // COLUMN'unda "duplicate column name" ile patlar.
+    db.exec('ALTER TABLE sync_state DROP COLUMN backfill_failures');
     db.exec('PRAGMA user_version = 1');
 
     __resetChatDbForTests();

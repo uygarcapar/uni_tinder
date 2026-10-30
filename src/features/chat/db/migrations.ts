@@ -291,6 +291,27 @@ CREATE TABLE pending_mutations (
 );
 `;
 
+/**
+ * v10 — Faz 3'ten devreden iki ön koşul; backfill tarafı burada, Task 2'nin
+ * `messages.content_folded`'ı (arama için katlanmış içerik) aynı sürüme
+ * ekleniyor. Bu dal UNRELEASED bir branch'te: ikisi ayrı migration'lar DEĞİL,
+ * tek v10'un iki eklentisi.
+ *
+ * ── `backfill_failures` ─────────────────────────────────────────────────────
+ * Bir sohbetin backfill turunda üst üste aldığı KALICI hata sayısı (429 HARİÇ
+ * — o kova paylaşımlı, sohbetin kendisi bozuk demek değil). `conversations`
+ * unmatch'te de SATIRI KORUYOR (bkz. chatRepository.ts), yani kalıcı şekilde
+ * 4xx/5xx döndüren bir sohbet aksi hâlde her turda bir istek (slot) yakmaya
+ * devam ederdi — `readBackfillTargets`'ın `last_message_at_ms DESC LIMIT 30`
+ * tavanı altında bu, canlı sohbetleri turdan dışlayabilir. Eşik
+ * `backfillPolicy.BACKFILL_MAX_FAILURES`; sayaç başarılı bir sayfada sıfırlanır
+ * (bkz. chatRepository.clearBackfillFailures) — geçici bir arızadan kurtulan
+ * sohbet rafa kalkmaz.
+ */
+const V10 = `
+ALTER TABLE sync_state ADD COLUMN backfill_failures INTEGER NOT NULL DEFAULT 0;
+`;
+
 export const MIGRATIONS: { version: number; up: (db: ChatDbDriver) => void }[] = [
   { version: 1, up: (db) => db.exec(V1) },
   { version: 2, up: (db) => db.exec(V2) },
@@ -301,6 +322,7 @@ export const MIGRATIONS: { version: number; up: (db: ChatDbDriver) => void }[] =
   { version: 7, up: (db) => db.exec(V7) },
   { version: 8, up: (db) => db.exec(V8) },
   { version: 9, up: (db) => db.exec(V9) },
+  { version: 10, up: (db) => db.exec(V10) },
 ];
 
 export const CHAT_DB_VERSION = MIGRATIONS[MIGRATIONS.length - 1].version;

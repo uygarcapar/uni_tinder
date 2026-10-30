@@ -51,20 +51,46 @@ export const RATE_LIMIT_RESERVE = 80;
 export const BACKFILL_BOOT_DELAY_MS = 10_000;
 
 /**
- * Turda ziyaret edilecek hedefler — aktif sohbet ELENİR, kalanların SIRASI
- * korunur.
+ * Üst üste bu kadar KALICI hata (429 hariç) alan bir sohbet `isConversationShelved`
+ * ile raftan sayılır — bkz. aşağıdaki fonksiyon ve migrations.ts V10 yorumu.
+ */
+export const BACKFILL_MAX_FAILURES = 3;
+
+/**
+ * Bir sohbet turdan DÜŞMELİ mi?
+ *
+ * `failures` 429 SAYMAZ (kova paylaşımlı, bu kodu sohbetin kendisi değil
+ * kullanıcının kendi trafiği de üretebilir — bkz. chatBackfill.ts'teki 429
+ * dalı, orada sayaç hiç artırılmıyor). Sayaç yalnız o sohbete özgü kalıcı
+ * hatalarda (ağ/5xx, bkz. chatBackfill.ts'teki catch) artıyor ve başarılı bir
+ * sayfada sıfırlanıyor (`chatRepository.clearBackfillFailures`) — yani eşiğe
+ * ulaşmak "üst üste" olmak zorunda, toplamda değil.
+ */
+export function isConversationShelved(failures: number): boolean {
+  return failures >= BACKFILL_MAX_FAILURES;
+}
+
+/**
+ * Turda ziyaret edilecek hedefler — aktif sohbet VE rafa kalkmış sohbetler
+ * ELENİR, kalanların SIRASI korunur.
  *
  * Aktif sohbeti elemenin sebebi: kullanıcı o sohbeti zaten açıp canlı
  * sayfalıyor, backfill'in aynı sohbete arkadan sayfa istemesi hem gereksiz
  * (kullanıcının kendi isteği zaten geçmişi indiriyor) hem de aynı kovadan
  * ikinci kez harcama demek.
+ *
+ * Rafa kalkmış sohbeti elemenin sebebi: `readBackfillTargets` yalnız
+ * `backfill_done`a bakıyor, kalıcı arızalı bir sohbet (`isConversationShelved`
+ * true) orada hâlâ hedef olarak çıkar — elemek burada olmazsa her tur ona bir
+ * istek (slot) harcardı.
  */
 export function selectBackfillTargets(
   targets: BackfillTarget[],
   activeConversationId: string | null,
 ): BackfillTarget[] {
-  if (!activeConversationId) return targets;
-  return targets.filter((t) => t.conversationId !== activeConversationId);
+  return targets.filter(
+    (t) => t.conversationId !== activeConversationId && !isConversationShelved(t.failures),
+  );
 }
 
 /**

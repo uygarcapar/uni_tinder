@@ -1652,6 +1652,10 @@ export function readMessageSendState(messageId: string): SendState | null {
 export interface BackfillTarget {
   conversationId: string;
   cursor: string | null;
+  /** Art arda kaç kez KALICI hata (429 hariç) aldı — bkz.
+   *  `backfillPolicy.isConversationShelved`. Başarılı bir sayfada
+   *  `clearBackfillFailures` ile sıfırlanır. */
+  failures: number;
 }
 
 /**
@@ -1659,7 +1663,12 @@ export interface BackfillTarget {
  * konuşulandan geriye — en çok `limit` tane.
  *
  * `conversations` ile LEFT JOIN: `sync_state` satırı henüz yoksa (hiç
- * sayfalama/backfill denenmemiş sohbet) da hedef, cursor `null` döner.
+ * sayfalama/backfill denenmemiş sohbet) da hedef, cursor `null` ve
+ * `failures` 0 döner.
+ *
+ * Rafa kalkmış (failures eşiği aşmış) sohbetler BURADA elenmiyor —
+ * `selectBackfillTargets` (saf, backfillPolicy.ts) eliyor; bu sorgu yalnız
+ * `backfill_done`a bakıyor, `failures`'ı taşımak çağıranın işi.
  *
  * `conversation_id` tiebreaker'ı şart: `last_message_at_ms` nullable ve hiç
  * mesajlaşılmamış sohbetler hepsi NULL'da eşitleniyor — tek kolonlu sıra
@@ -1672,8 +1681,9 @@ export interface BackfillTarget {
  */
 export function readBackfillTargets(limit: number): BackfillTarget[] {
   return getChatDb()
-    .getAll<{ conversation_id: string; cursor: string | null }>(
-      `SELECT c.conversation_id AS conversation_id, s.backfill_cursor AS cursor
+    .getAll<{ conversation_id: string; cursor: string | null; failures: number }>(
+      `SELECT c.conversation_id AS conversation_id, s.backfill_cursor AS cursor,
+              COALESCE(s.backfill_failures, 0) AS failures
          FROM conversations c
          LEFT JOIN sync_state s ON s.conversation_id = c.conversation_id
         WHERE COALESCE(s.backfill_done, 0) = 0
@@ -1681,7 +1691,7 @@ export function readBackfillTargets(limit: number): BackfillTarget[] {
         LIMIT ?`,
       [Math.max(0, limit)],
     )
-    .map((row) => ({ conversationId: row.conversation_id, cursor: row.cursor }));
+    .map((row) => ({ conversationId: row.conversation_id, cursor: row.cursor, failures: row.failures }));
 }
 
 /**
@@ -1693,6 +1703,33 @@ export function setBackfillCursor(conversationId: string, cursor: string | null)
     `INSERT INTO sync_state (conversation_id, backfill_cursor) VALUES (?, ?)
      ON CONFLICT(conversation_id) DO UPDATE SET backfill_cursor = excluded.backfill_cursor`,
     [conversationId, cursor],
+  );
+}
+
+/**
+ * Sohbetin backfill kalıcı-hata sayacını BİR artırır. `sync_state` satırı
+ * yoksa açar. 429 bu sayacı ARTIRMIYOR — çağıran (`chatBackfill.ts`) o kodu
+ * erken `return` ile ele alıyor, buraya hiç gelmiyor (kova paylaşımlı, bu
+ * sohbetin kendisi bozuk demek değil).
+ */
+export function bumpBackfillFailure(conversationId: string): void {
+  getChatDb().run(
+    `INSERT INTO sync_state (conversation_id, backfill_failures) VALUES (?, 1)
+     ON CONFLICT(conversation_id) DO UPDATE SET backfill_failures = backfill_failures + 1`,
+    [conversationId],
+  );
+}
+
+/**
+ * Sohbetin backfill kalıcı-hata sayacını SIFIRLAR — başarılı bir sayfa
+ * önceki art arda hataları siler, geçici bir arızadan kurtulan sohbet rafa
+ * kalkmaz.
+ */
+export function clearBackfillFailures(conversationId: string): void {
+  getChatDb().run(
+    `INSERT INTO sync_state (conversation_id, backfill_failures) VALUES (?, 0)
+     ON CONFLICT(conversation_id) DO UPDATE SET backfill_failures = 0`,
+    [conversationId],
   );
 }
 

@@ -1,14 +1,21 @@
 import {
+  BACKFILL_MAX_FAILURES,
   RATE_LIMIT_RESERVE,
   isConversationComplete,
+  isConversationShelved,
   selectBackfillTargets,
   shouldStopRound,
 } from '@/features/chat/backfillPolicy';
 import type { BackfillTarget } from '@/features/chat/chatRepository';
 
-const target = (conversationId: string, cursor: string | null = null): BackfillTarget => ({
+const target = (
+  conversationId: string,
+  cursor: string | null = null,
+  failures = 0,
+): BackfillTarget => ({
   conversationId,
   cursor,
+  failures,
 });
 
 describe('selectBackfillTargets', () => {
@@ -20,6 +27,11 @@ describe('selectBackfillTargets', () => {
   it('aktif sohbet yoksa listeyi aynen döndürüyor', () => {
     const targets = [target('a'), target('b')];
     expect(selectBackfillTargets(targets, null)).toEqual(targets);
+  });
+
+  it('rafa kalkmış (üst üste BACKFILL_MAX_FAILURES hatalı) sohbeti de eliyor', () => {
+    const targets = [target('a'), target('bozuk', null, BACKFILL_MAX_FAILURES), target('c')];
+    expect(selectBackfillTargets(targets, null)).toEqual([target('a'), target('c')]);
   });
 });
 
@@ -95,5 +107,12 @@ describe('shouldStopRound', () => {
 
   it('hasMore true ve nextCursor doluysa TAMAM sayılmıyor', () => {
     expect(isConversationComplete({ hasMore: true, nextCursor: 'abc' })).toBe(false);
+  });
+});
+
+describe('isConversationShelved', () => {
+  it('üst üste BACKFILL_MAX_FAILURES hata alan sohbet seçilmiyor', () => {
+    expect(isConversationShelved(BACKFILL_MAX_FAILURES - 1)).toBe(false);
+    expect(isConversationShelved(BACKFILL_MAX_FAILURES)).toBe(true);
   });
 });
