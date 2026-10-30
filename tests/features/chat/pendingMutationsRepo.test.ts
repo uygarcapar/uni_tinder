@@ -169,6 +169,70 @@ describe('pending_mutations: yazıp geri okuma', () => {
     expect(readPendingMutations().some((r) => r.message_id === 'temp-1')).toBe(false);
   });
 
+  // Review round 2: hedefte (sunucu id'sinde) AYNI `kind`'dan ÇAKIŞAN bir satır
+  // zaten varsa çıplak `UPDATE` PK'yi (`message_id`, `kind`) çiftler ve UNIQUE
+  // hatası fırlatırdı — `upsertMessage` HER mesajın geçtiği yol olduğu için bu,
+  // mirror'ın catch-all'ında sessizce yutulup mesajın DİSKE HİÇ YAZILMAMASI
+  // anlamına gelirdi. Taşınan (eski id'deki) emir KAZANMALI — bkz.
+  // chatRepository.ts'teki "Rekey'in PK çatışması" notu.
+  it('rekey hedefte ÇAKIŞAN (aynı kind) bir satır varsa PATLAMAZ; TAŞINAN emir KAZANIR', () => {
+    const cmid = 'cmid-collide';
+    upsertMessage(getChatDb(), msg('temp-1', { clientMessageId: cmid }), CONV, 'pending');
+    // Taşınacak (eski id'deki) emir: TAZE niyet.
+    upsertPendingMutation(
+      row({
+        message_id: 'temp-1',
+        kind: 'reaction',
+        payload_json: '{"desired":"😀","base":null}',
+        attempts: 5,
+        first_seen_at_ms: 1_000,
+      }),
+    );
+    // Hedefte (sunucu id'sinde) ZATEN duran ÇAKIŞAN satır: ESKİ niyet.
+    upsertPendingMutation(
+      row({
+        message_id: 'msg-real',
+        kind: 'reaction',
+        payload_json: '{"desired":"❤️","base":null}',
+        attempts: 9,
+        first_seen_at_ms: 500,
+      }),
+    );
+
+    expect(() => {
+      upsertMessage(getChatDb(), msg('msg-real', { clientMessageId: cmid }), CONV, 'sent');
+    }).not.toThrow();
+
+    const rows = readPendingMutations();
+    // Çoğalma YOK: çakışan hedef satırı silinip taşınanın yerine geçti.
+    expect(rows).toHaveLength(1);
+    expect(rows[0].message_id).toBe('msg-real');
+    expect(rows[0].kind).toBe('reaction');
+    // TAŞINAN (eski id'deki, "taze niyet") kazandı — hedefte duran ESKİ
+    // satırın verileri değil.
+    expect(rows[0].payload_json).toBe('{"desired":"😀","base":null}');
+    expect(rows[0].attempts).toBe(5);
+    expect(rows[0].first_seen_at_ms).toBe(1_000);
+  });
+
+  it('rekey hedefte FARKLI kind\'tan bir satır varsa İKİSİNİ de korur (çakışma yok)', () => {
+    const cmid = 'cmid-no-collide';
+    upsertMessage(getChatDb(), msg('temp-1', { clientMessageId: cmid }), CONV, 'pending');
+    upsertPendingMutation(row({ message_id: 'temp-1', kind: 'reaction' }));
+    upsertPendingMutation(
+      row({ message_id: 'msg-real', kind: 'delete', payload_json: '{"forEveryone":true}' }),
+    );
+
+    upsertMessage(getChatDb(), msg('msg-real', { clientMessageId: cmid }), CONV, 'sent');
+
+    const rows = readPendingMutations();
+    expect(rows).toHaveLength(2);
+    expect(rows.map((r) => `${r.message_id}:${r.kind}`).sort()).toEqual([
+      'msg-real:delete',
+      'msg-real:reaction',
+    ]);
+  });
+
   it('upsertMessage rekey YOKKEN (aynı id) pending_mutations satırına DOKUNMUYOR', () => {
     insertMessage('msg-1', 'sent');
     upsertPendingMutation(row({ message_id: 'msg-1' }));

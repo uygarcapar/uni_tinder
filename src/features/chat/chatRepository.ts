@@ -148,6 +148,23 @@ WHERE messages.sender_id            IS NOT excluded.sender_id
  * verdiği emir hiç ağa çıkmadan kaybolur. `messageCache`'in `rekey`'iyle AYNI
  * satırda olması bilinçli: ikisi de bu id değişiminin aynı anki sonucu, iki
  * ayrı mekanizma icat etmek yerine mevcut tek noktaya eklendi.
+ *
+ * ── Rekey'in PK çatışması: BİLEREK çözülüyor, PATLAMIYOR ────────────────────
+ * `pending_mutations`'ın PK'si `(message_id, kind)` — tablonun KENDİSİ "aynı
+ * mesajın aynı türden ikinci emri birinciyi EZER" (last-writer-wins) diyor,
+ * ayrı bir `op_id` yok (bkz. migrations.ts V9). Hedef id'de (`raw.id`) ZATEN
+ * aynı `kind`'dan bir satır duruyorsa çıplak `UPDATE` bu PK'yi çiftler ve
+ * UNIQUE hatası fırlatır — `upsertMessage` HER gelen mesajın geçtiği yol
+ * olduğu için bu, mirror'ın catch-all'ında (chatMirrorMiddleware.ts) sessizce
+ * yutulup mesajın DİSKE HİÇ YAZILMAMASI anlamına gelir. Bugünkü değişmezlerle
+ * (bir cmid'nin TEK aktif id'si var, rekey bir geçişte BİR kez ateşlenir) bu
+ * çatışma kurulamadı, ama tablo PK çatışmasına zaten bir cevap veriyor —
+ * burada ondan FARKLI davranmak (throw) tutarsızlık olurdu. Çözüm: hedefte
+ * ÇAKIŞAN (aynı `kind`) satırı taşımadan ÖNCE sil — TAŞINAN (eski id'deki)
+ * emir KAZANIR. Gerekçe: rekey ack ANINDA çalışıyor, yani eski id'deki satır
+ * bu mesaj için bilinen EN SON kullanıcı niyetini taşıyor; hedefte duran satır
+ * (nasıl oluştuysa) daha ESKİ bir niyeti temsil eder ve `upsertPendingMutation`
+ * ZATEN "son yazan kazanır" diyor — burada da aynı kural uygulanıyor.
  */
 export function upsertMessage(
   db: ChatDbDriver,
@@ -167,6 +184,14 @@ export function upsertMessage(
         cmid,
       ]);
       rekeyCache(conversationId, existing.id, raw.id);
+      // Hedefte (raw.id) aynı `kind`'dan ÇAKIŞAN bir satır varsa önce o silinir
+      // — taşınan (eski id'deki) emir kazanır, bkz. yukarıdaki not.
+      db.run(
+        `DELETE FROM pending_mutations
+          WHERE message_id = ?
+            AND kind IN (SELECT kind FROM pending_mutations WHERE message_id = ?)`,
+        [raw.id, existing.id],
+      );
       db.run('UPDATE pending_mutations SET message_id = ? WHERE message_id = ?', [
         raw.id,
         existing.id,
