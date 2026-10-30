@@ -5,6 +5,19 @@ jest.mock('@/features/chat/chatService', () => ({
   HISTORY_PAGE_SIZE: 50,
 }));
 jest.mock('@/shared/services/networkStatus', () => ({ isOfflineNow: jest.fn(() => false) }));
+// Bayrak AÇIK sabitleniyor. Bu dosya `runBackfillRound`u 17 yerde çağırıyor ve
+// bayrağı GERÇEK sabitten okursa `CHAT_BACKFILL_ENABLED = false` yapmak —
+// chatFlags.ts'in OTA geri dönüşü olarak BELGELEDİĞİ hamle — bu suite'i
+// kırmızıya çevirir. Kullandığında suite'i kızartan bir kill-switch'i operatör
+// çevirmeye çekinir, yani anahtarın değeri testlerin kırılganlığına feda
+// edilmiş olur. Kapalı hâlin kapı testi chatBackfill.killSwitch.test.ts'te.
+// (Aynı gerekçe ve aynı kalıp: chatDeltaSync.test.ts.)
+jest.mock('@/shared/store/chatFlags', () => ({
+  CHAT_PERSIST_ENABLED: false,
+  CHAT_SQLITE_ENABLED: true,
+  CHAT_DELTA_SYNC_ENABLED: true,
+  CHAT_BACKFILL_ENABLED: true,
+}));
 // `@/shared/store` tek Redux singleton'ı — modülü GERÇEK kurarsak redux-persist
 // + MMKV + bütün diğer slice'lar da yüklenir (gereksiz ve yan etkili). Sahte
 // `dispatch`'i buradan izlemek, bu dosyanın importu olmayan bir fonksiyonun

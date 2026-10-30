@@ -1,5 +1,4 @@
 jest.mock('expo-sqlite');
-jest.mock('react-native-mmkv');
 jest.mock('@/features/chat/chatService', () => ({
   __esModule: true,
   default: { getMessageHistory: jest.fn() },
@@ -92,8 +91,12 @@ describe('bayrak kapalı', () => {
       await jest.advanceTimersByTimeAsync(BACKFILL_BOOT_DELAY_MS);
 
       expect(getMessageHistory).not.toHaveBeenCalled();
-      // Söker çağrılabilir olmalı — çağıran (stopChatMirror) bayrağa bakmıyor.
-      expect(() => stop()).not.toThrow();
+      // `stop()` burada ÇAĞRILIYOR ama assert EDİLMİYOR: çağıran tarafta
+      // `stopBackfill?.()` var, yani fonksiyon dönmese bile patlamazdı —
+      // "not.toThrow()" iddiası adlandırdığı kırılmayı yakalayamaz. Dönüş
+      // tipini (`() => void`) zaten üstteki `typeof` kontrolü ve tip sistemi
+      // kapıyor.
+      stop();
     } finally {
       jest.useRealTimers();
     }
