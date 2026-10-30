@@ -44,10 +44,10 @@ import type { SendState } from '@/features/chat/db/rows';
 
 /**
  * `CHAT_MUTATION_QUEUE_ENABLED` — bu kapı turun İÇİNDE, `flushPendingMutations`'ın
- * başında. AppNavigator'daki üç tetik (online/reconnect/foreground) bu
+ * başında. AppNavigator'daki dört tetik (boot/online/reconnect/foreground) bu
  * fonksiyonu KOŞULSUZ çağırıyor, bayrağa bakmıyor. Bugün ağ tarafını kapalı
  * tutan şey bu satır DEĞİL, Task 4'ün ÇAĞRI NOKTASI kapısı (ChatScreen'in
- * handler'ları): bayrak kapalıyken kuyruğa hiç satır YAZILMIYOR, yani üç
+ * handler'ları): bayrak kapalıyken kuyruğa hiç satır YAZILMIYOR, yani dört
  * tetik her çalıştığında boş bir kuyruğu tur'a sokuyor — atılacak istek
  * zaten yok. Bu ikinci kapı o yüzden TEKRARLIDIR. Kazandırdığı şey, ileride
  * ChatScreen'in kapısından geçmeyen bir enqueue yolu (ya da bayrağa bakmayı
@@ -58,7 +58,9 @@ import type { SendState } from '@/features/chat/db/rows';
  * Boş kuyrukta "istek atılmadı" iddiası hiçbir şey ispatlamaz — bayrak açık
  * olsa da atılacak istek olmazdı. Bu yüzden önce bir satır yazılıyor ve
  * ayrıca o satırın KORUNDUĞU (silinmediği) de doğrulanıyor: bayrağı kapatmak
- * veri kaybettirmemeli.
+ * veri kaybettirmemeli. Ama KORUNMAK ≠ uygulanmak: kapı draining'den ÖNCE
+ * döndüğü için o satırlar MAHSUR kalır (ne sunucuya gider ne ekranda geri
+ * alınır) — bkz. chatFlags.ts'teki not.
  */
 
 const { __resetAllDatabases } = SQLite as unknown as { __resetAllDatabases: () => void };

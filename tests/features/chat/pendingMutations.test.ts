@@ -33,7 +33,11 @@ import { isOfflineNow } from '@/shared/services/networkStatus';
 import { remainingNow } from '@/shared/services/rateLimitBudget';
 import { showInfoToast } from '@/shared/services/toaster';
 import { store } from '@/shared/store';
-import { MUTATION_RATE_RESERVE } from '@/features/chat/pendingMutationPolicy';
+import {
+  MUTATION_MAX_AGE_MS,
+  MUTATION_MAX_ATTEMPTS,
+  MUTATION_RATE_RESERVE,
+} from '@/features/chat/pendingMutationPolicy';
 import type { MessageDto } from '@/shared/types';
 import type { SendState } from '@/features/chat/db/rows';
 import {
@@ -435,30 +439,47 @@ describe('pendingMutations: tur', () => {
       );
     });
 
-    it('kalıcı ret: base DOLUYSA ve aynı emojiye BAŞKASI da basmışsa, o chip\'e GERİ EKLENİYOR (artmıyor kaybolmuyor)', async () => {
+    it('kalıcı ret: remove BAŞARMIŞSA base GERİ KONMUYOR (minör 6) — sunucuda artık yok', async () => {
       insertMessage('msg-1', 'sent');
       enqueueReaction({ messageId: 'msg-1', conversationId: CONV, desired: '❤️', serverBase: '😀' });
       setStoreMessages([
         { id: 'msg-1', conversationId: CONV, reactions: [{ emoji: '😀', count: 2, userIds: ['me', 'other'] }] },
       ]);
-      removeReaction.mockResolvedValue([{ emoji: '😀', count: 1, userIds: ['other'] }]);
-      addReaction.mockRejectedValue({ response: { data: { errorCode: 'UT-6731' } } });
+      removeReaction.mockResolvedValue([{ emoji: '😀', count: 1, userIds: ['other'] }]); // GEÇTİ
+      addReaction.mockRejectedValue({ response: { data: { errorCode: 'UT-6731' } } }); // kalıcı ret
 
       await flushPendingMutations('test');
 
-      // revert STORE'u okur (remove'un ağ cevabını DEĞİL): benim payım silinir
-      // (count 2→1, userIds→['other']), sonra base ('😀') GERİ KONUR — var
-      // olan chip'e eklenir (increment dalı), YENİ bir chip AÇILMAZ.
+      // Ayırt edici: eski kod `base`i ('😀') yerel listeye GERİ EKLİYORDU —
+      // oysa remove sunucuda GEÇMİŞTİ, yani yerel durum sunucunun bilmediği
+      // bir reaksiyonu iddia ediyordu. Doğru sonuç: yalnız benim payım silinir
+      // (count 2→1, userIds→['other']), base geri KONMAZ.
+      expect(lastReactionsDispatched()).toEqual([{ emoji: '😀', count: 1, userIds: ['other'] }]);
+    });
+
+    it('kalıcı ret remove\'un KENDİSİNDEN gelirse base GERİ KONUYOR — var olan chip\'e ekleniyor', async () => {
+      insertMessage('msg-1', 'sent');
+      enqueueReaction({ messageId: 'msg-1', conversationId: CONV, desired: '❤️', serverBase: '😀' });
+      setStoreMessages([
+        { id: 'msg-1', conversationId: CONV, reactions: [{ emoji: '😀', count: 2, userIds: ['me', 'other'] }] },
+      ]);
+      // Remove HİÇ geçmedi → base sunucuda DURUYOR, geri konması doğru.
+      removeReaction.mockRejectedValue({ response: { data: { errorCode: 'UT-6740' } } });
+
+      await flushPendingMutations('test');
+
+      expect(addReaction).not.toHaveBeenCalled();
+      // base ('😀') var olan chip'e eklenir (increment dalı), YENİ chip AÇILMAZ.
       expect(lastReactionsDispatched()).toEqual([{ emoji: '😀', count: 2, userIds: ['other', 'me'] }]);
     });
 
-    it('kalıcı ret: base DOLUYSA ve o emojiye yalnız BEN basmışsam, strip sonrası YENİ chip AÇILIYOR', async () => {
+    it('kalıcı ret remove\'dan gelir ve o emojiye yalnız BEN basmışsam, strip sonrası YENİ chip AÇILIYOR', async () => {
       insertMessage('msg-1', 'sent');
       enqueueReaction({ messageId: 'msg-1', conversationId: CONV, desired: '❤️', serverBase: '😀' });
       setStoreMessages([
         { id: 'msg-1', conversationId: CONV, reactions: [{ emoji: '😀', count: 1, userIds: ['me'] }] },
       ]);
-      addReaction.mockRejectedValue({ response: { data: { errorCode: 'UT-6731' } } });
+      removeReaction.mockRejectedValue({ response: { data: { errorCode: 'UT-6740' } } });
 
       await flushPendingMutations('test');
 
@@ -467,11 +488,222 @@ describe('pendingMutations: tur', () => {
       // zorunda.
       expect(lastReactionsDispatched()).toEqual([{ emoji: '😀', count: 1, userIds: ['me'] }]);
     });
+
+    // Minör 7
+    it('mesaj YÜKLÜ DEĞİLKEN kalıcı ret TOAST GÖSTERMİYOR — referansı olmayan hata metni yok', async () => {
+      insertMessage('msg-1', 'sent');
+      enqueueReaction({ messageId: 'msg-1', conversationId: CONV, desired: '😀', serverBase: null });
+      addReaction.mockRejectedValue({ response: { data: { errorCode: 'UT-6731' } } });
+
+      const r = await flushPendingMutations('test');
+
+      // Ayırt edici: geri alma tasarımla no-op (bucket yok), yani ekranda da
+      // diskte de hiçbir şey değişmiyor — toast da atılmamalı. Satır yine
+      // silinmiş olmalı (kalıcı ret).
+      expect(r.rejected).toBe(1);
+      expect(showInfoToast).not.toHaveBeenCalled();
+      expect(readPendingMutations()).toHaveLength(0);
+    });
+  });
+
+  /**
+   * KRİTİK 1 — tur UÇARKEN verilen yeni niyet.
+   *
+   * Tur satırı okuyup ağı bekliyor; o pencerede kullanıcı aynı mesaja ikinci
+   * bir emoji seçiyor (`enqueue*` PK üzerinden satırı EZİYOR). Eski kod her iki
+   * sonuç dalında da BAYAT anlık görüntüyle yazıyordu:
+   *   • done   → anahtarla koşulsuz DELETE, yeni yükü yok ederdi
+   *   • retry  → tam upsert, eski yükü geri yazıp üstüne backoff bindirirdi
+   * Üstüne, eşzamanlı `flushPendingMutations` uçuştaki tura KATILDIĞI için
+   * hayatta kalan niyet için hiç tur kalmıyordu.
+   */
+  describe('uçuştaki tur ile yarışan yeni niyet (Kritik 1)', () => {
+    /** `addReaction`ın ilk çağrısını ASKIDA bırakır; çözümü/ret'i test verir. */
+    function suspendFirstAddReaction(): { resolve: (v: any) => void; reject: (e: any) => void } {
+      let resolve!: (v: any) => void;
+      let reject!: (e: any) => void;
+      addReaction.mockImplementationOnce(
+        () =>
+          new Promise((res, rej) => {
+            resolve = res;
+            reject = rej;
+          }),
+      );
+      return {
+        resolve: (v) => resolve(v),
+        reject: (e) => reject(e),
+      };
+    }
+
+    it('done dalı: bekleme sırasında gelen emir diskte KALIYOR ve AYNI flush içinde gönderiliyor', async () => {
+      insertMessage('msg-1', 'sent');
+      enqueueReaction({ messageId: 'msg-1', conversationId: CONV, desired: '😀', serverBase: null });
+      const first = suspendFirstAddReaction();
+
+      const flush = flushPendingMutations('test');
+      // Tur 😀 ile ağda askıda. Kullanıcı ikinci emojiyi seçiyor.
+      enqueueReaction({ messageId: 'msg-1', conversationId: CONV, desired: '❤️', serverBase: null });
+      first.resolve([]);
+      await flush;
+
+      // Ayırt edici: eski kod `deletePendingMutation(msg-1, reaction)` ile ❤️
+      // satırını SİLİYOR, ikinci çağrı HİÇ yapılmıyordu (kuyruk boş, ekranda
+      // sunucunun kanonikleştirdiği 😀 kalıyordu).
+      expect(addReaction.mock.calls).toEqual([
+        ['msg-1', '😀'],
+        ['msg-1', '❤️'],
+      ]);
+      expect(readPendingMutations()).toHaveLength(0);
+    });
+
+    it('retry dalı: bekleme sırasında gelen emir eski yükle VE eski backoff\'la EZİLMİYOR', async () => {
+      insertMessage('msg-1', 'sent');
+      enqueueReaction({ messageId: 'msg-1', conversationId: CONV, desired: '😀', serverBase: null });
+      const first = suspendFirstAddReaction();
+
+      const flush = flushPendingMutations('test');
+      enqueueReaction({ messageId: 'msg-1', conversationId: CONV, desired: '❤️', serverBase: null });
+      // Takip turunu BİLEREK kısıyoruz (bütçe rezervin altına indi): böylece
+      // diskte kalan satırın hâli ölçülebiliyor — yeni niyetin kendisi mi
+      // yoksa turun geri yazdığı bayat kopya mı?
+      (remainingNow as jest.Mock).mockReturnValue(MUTATION_RATE_RESERVE - 1);
+      first.reject(new Error('Network Error'));
+      await flush;
+
+      const [row] = readPendingMutations();
+      // Ayırt edici: eski kod payload_json'ı 😀'ya geri çevirip attempts=1 ve
+      // ~4sn'lik bir backoff yazıyordu — kullanıcının ekranda gördüğü ❤️
+      // niyeti hem diskten hem ağdan siliniyordu.
+      expect(JSON.parse(row.payload_json)).toEqual({ desired: '❤️', base: null });
+      expect(row.attempts).toBe(0);
+      expect(row.next_eligible_at_ms).toBe(0);
+      expect(row.last_error).toBeNull();
+    });
+
+    it('uçuştaki tura KATILAN çağıran da kendi niyetinin gönderildiği turu görüyor', async () => {
+      insertMessage('msg-1', 'sent');
+      enqueueReaction({ messageId: 'msg-1', conversationId: CONV, desired: '😀', serverBase: null });
+      const first = suspendFirstAddReaction();
+
+      const flush = flushPendingMutations('a');
+      // ChatScreen'in ikinci dokunuşta yaptığının aynısı: enqueue + flush.
+      // İkinci flush uçuştaki tura KATILIR (inFlight döner) — eski kodda bu,
+      // yeni niyet için hiç tur koşulmaması demekti.
+      enqueueReaction({ messageId: 'msg-1', conversationId: CONV, desired: '❤️', serverBase: null });
+      const joined = flushPendingMutations('b');
+      first.resolve([]);
+      await Promise.all([flush, joined]);
+
+      expect(addReaction).toHaveBeenCalledWith('msg-1', '❤️');
+      expect(readPendingMutations()).toHaveLength(0);
+    });
+
+    it('zincir TAVANLI: her turda yeni emir gelse bile flush sonsuza dek koşmuyor', async () => {
+      insertMessage('msg-1', 'sent');
+      enqueueReaction({ messageId: 'msg-1', conversationId: CONV, desired: '😀', serverBase: null });
+      // Her gönderim, gönderim ANINDA yeni bir niyet yazıyor → `dirty` her tur
+      // sonunda yine kalkmış. Tavan olmasaydı bu döngü hiç bitmezdi.
+      addReaction.mockImplementation(async (_id: string, emoji: string) => {
+        enqueueReaction({
+          messageId: 'msg-1',
+          conversationId: CONV,
+          desired: `${emoji}+`,
+          serverBase: null,
+        });
+        return [];
+      });
+
+      await flushPendingMutations('test');
+
+      // MAX_ROUNDS_PER_FLUSH = 3 → en çok 3 istek; satır diskte KALIR (emir
+      // kaybolmuyor, bir sonraki tetiği bekler).
+      expect(addReaction).toHaveBeenCalledTimes(3);
+      expect(readPendingMutations()).toHaveLength(1);
+    });
+  });
+
+  /**
+   * ÖNEMLİ 3 — sonsuz tekrarın tavanı. `classifyMutationError` bilinmeyen her
+   * hatada 'retry' döndüğü için tavan olmadan satır ömürlük bir arka plan
+   * isteğine dönüşüyordu ve kullanıcıya hiçbir şey söylenmiyordu.
+   */
+  describe('deneme/yaş tavanı (Önemli 3)', () => {
+    const loadedStore = () =>
+      setStoreMessages([
+        { id: 'msg-1', conversationId: CONV, reactions: [{ emoji: '😀', count: 1, userIds: ['me'] }] },
+      ]);
+
+    it('deneme tavanına varan satır AĞA ÇIKMADAN bitiyor: silinir, geri alınır, sebebi söylenir', async () => {
+      insertMessage('msg-1', 'sent');
+      loadedStore();
+      upsertPendingMutation({
+        message_id: 'msg-1',
+        kind: 'reaction',
+        conversation_id: CONV,
+        payload_json: JSON.stringify({ desired: '😀', base: null }),
+        attempts: MUTATION_MAX_ATTEMPTS,
+        first_seen_at_ms: Date.now(),
+        next_eligible_at_ms: 0,
+        last_error: 'Network Error',
+      });
+
+      const r = await flushPendingMutations('test');
+
+      // Ayırt edici: tavan olmasaydı satır bir kez DAHA ağa çıkar (retry) ve
+      // diskte kalırdı.
+      expect(addReaction).not.toHaveBeenCalled();
+      expect(r.rejected).toBe(1);
+      expect(readPendingMutations()).toHaveLength(0);
+      expect(lastReactionsDispatched()).toEqual([]); // geri alındı
+      expect(showInfoToast).toHaveBeenCalledWith(expect.objectContaining({ variant: 'error' }));
+    });
+
+    it('yaş tavanını dolduran satır da aynı şekilde bitiyor (attempts düşük olsa bile)', async () => {
+      insertMessage('msg-1', 'sent');
+      loadedStore();
+      upsertPendingMutation({
+        message_id: 'msg-1',
+        kind: 'reaction',
+        conversation_id: CONV,
+        payload_json: JSON.stringify({ desired: '😀', base: null }),
+        attempts: 1,
+        first_seen_at_ms: Date.now() - MUTATION_MAX_AGE_MS - 1,
+        next_eligible_at_ms: 0,
+        last_error: null,
+      });
+
+      const r = await flushPendingMutations('test');
+
+      expect(addReaction).not.toHaveBeenCalled();
+      expect(r.rejected).toBe(1);
+      expect(readPendingMutations()).toHaveLength(0);
+    });
+
+    it('tavanın ALTINDAKİ satır normal şekilde gönderiliyor', async () => {
+      insertMessage('msg-1', 'sent');
+      upsertPendingMutation({
+        message_id: 'msg-1',
+        kind: 'reaction',
+        conversation_id: CONV,
+        payload_json: JSON.stringify({ desired: '😀', base: null }),
+        attempts: MUTATION_MAX_ATTEMPTS - 1,
+        first_seen_at_ms: Date.now() - MUTATION_MAX_AGE_MS + 60_000,
+        next_eligible_at_ms: 0,
+        last_error: null,
+      });
+
+      await flushPendingMutations('test');
+
+      expect(addReaction).toHaveBeenCalledWith('msg-1', '😀');
+    });
   });
 
   describe('bozuk payload ve satır-seviyeli dayanıklılık (minörler)', () => {
     it('bozuk payload_json KALICI sayılır: satır silinir, SONSUZA DEK retry YAPILMAZ', async () => {
       insertMessage('msg-1', 'sent');
+      // Mesaj Redux'ta YÜKLÜ: toast iddiası ancak böyle anlamlı (yüklü
+      // değilken toast bilerek bastırılıyor, bkz. minör 7 testi).
+      setStoreMessages([{ id: 'msg-1', conversationId: CONV, reactions: [] }]);
       upsertPendingMutation({
         message_id: 'msg-1',
         kind: 'reaction',
@@ -496,14 +728,14 @@ describe('pendingMutations: tur', () => {
       expect(showInfoToast).toHaveBeenCalledWith(expect.objectContaining({ variant: 'error' }));
     });
 
-    it('bir satırın defter yazımı (deletePendingMutation) patlarsa TUR ÇÖKMÜYOR, diğer satır işleniyor', async () => {
+    it('bir satırın defter yazımı (deletePendingMutationIfPayload) patlarsa TUR ÇÖKMÜYOR, diğer satır işleniyor', async () => {
       insertMessage('msg-1', 'sent');
       insertMessage('msg-2', 'sent');
       enqueueReaction({ messageId: 'msg-1', conversationId: CONV, desired: '😀', serverBase: null });
       enqueueReaction({ messageId: 'msg-2', conversationId: CONV, desired: '😀', serverBase: null });
 
       const spy = jest
-        .spyOn(chatRepo, 'deletePendingMutation')
+        .spyOn(chatRepo, 'deletePendingMutationIfPayload')
         .mockImplementationOnce(() => {
           throw new Error('disk patladı');
         });
