@@ -293,6 +293,27 @@ function ChatScreen({
       (c: any) => c.conversationId === conversationId,
     )?.partnerProfileImageUrl,
   );
+  /**
+   * Sohbetin MODU — profil kartını açan istek bunu taşımak ZORUNDA.
+   *
+   * `LikerProfile` ucunun güvenlik kapısı mod kapsamlı: swipe satırını
+   * `(actor, target, mode)` tekilliğinde arıyor ve bulamazsa 404 (UT-2101)
+   * dönüyor. Mod gönderilmezse sunucu Dating sayıyor — yani ARKADAŞ modundaki
+   * her eşleşme 404 alıp aşağıdaki minimal fallback'e düşüyordu: kart isim ve
+   * fotoğrafla açılıyor, prompt/yaş/üniversite/ilgi alanları SESSİZCE
+   * kayboluyordu. Eşleşmeler mod başına ayrı (UNIQUE(A,B,Mode)), o yüzden
+   * doğru mod olmadan satır bulunamaz.
+   *
+   * ⚠️ Alan BOŞ OLABİLİR: modu göndermeyen bir sunucudan gelen eski satırlarda
+   * yok (MessagesScreen'in süzgeci de bu yüzden `!c.mode` satırını elemiyor).
+   * O durumda `undefined` geçiyoruz ve sunucu Dating'e düşüyor — bugünkü
+   * davranışın ta kendisi, yani gerileme değil.
+   */
+  const convMode = useAppSelector((s: any) =>
+    s.chat.conversations.find(
+      (c: any) => c.conversationId === conversationId,
+    )?.mode,
+  );
 
   // Alan bazında birleştiriyoruz: NotificationsScreen gibi bazı çağrılar partner
   // nesnesini kısmi gönderiyor (foto var, isim yok) — nesneyi komple seçmek o
@@ -1604,12 +1625,22 @@ function ChatScreen({
       photos: partner.profileImageUrl ? [partner.profileImageUrl] : [],
     };
     try {
-      const res: any = await swipeService.getLikerProfileDetail(partner.userId);
+      // MOD ŞART — gerekçesi `convMode`'un kendi notunda: mod olmadan sunucu
+      // Dating sayıyor ve Arkadaş eşleşmeleri 404'e düşüp fallback'le açılıyordu.
+      const res: any = await swipeService.getLikerProfileDetail(
+        partner.userId,
+        convMode,
+      );
       setProfileDetail(res?.isSuccess && res?.result ? res.result : fallback);
     } catch {
       setProfileDetail(fallback);
     }
-  }, [partner?.userId, partner?.displayName, partner?.profileImageUrl]);
+  }, [
+    partner?.userId,
+    partner?.displayName,
+    partner?.profileImageUrl,
+    convMode,
+  ]);
 
   // ── Data (kronolojik + separator) ────────────────────────────────────────
   const showHiddenHistoryGate = hasHiddenHistory && !revealBlocked;
@@ -1778,7 +1809,7 @@ function ChatScreen({
   );
 
   return (
-    <View className="flex-1" style={{ backgroundColor: colors.bg }}>
+    <View testID="chat-screen" className="flex-1" style={{ backgroundColor: colors.bg }}>
       {/* Header overlay (progressive blur) */}
       <View
         pointerEvents="box-none"
