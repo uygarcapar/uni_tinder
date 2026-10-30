@@ -13,10 +13,12 @@ import {
   setBackfillCursor,
   markBackfillDone,
   clearBackfillDone,
+  bumpBackfillFailure,
   saveMessage,
   MESSAGE_RETENTION_DAYS,
   pruneExpiredMessages,
 } from '@/features/chat/chatRepository';
+import { BACKFILL_MAX_FAILURES } from '@/features/chat/backfillPolicy';
 import { CHAT_DB_VERSION, MIGRATIONS, runMigrations } from '@/features/chat/db/migrations';
 import { clear as clearMessageCache } from '@/features/chat/messageCache';
 import type { MessageDto } from '@/shared/types';
@@ -162,6 +164,23 @@ describe('backfill ilerleme kolonları (v8)', () => {
     for (let i = 0; i < 5; i += 1) insertConversation(db, `conv-${i}`, 1_000 + i);
 
     expect(readBackfillTargets(2)).toHaveLength(2);
+  });
+
+  it('rafa kalkmış (üst üste BACKFILL_MAX_FAILURES hatalı) sohbet LIMIT PENCERESİNE hiç GİRMİYOR', () => {
+    // Ayırt edici: eleme `LIMIT`'TEN SONRA (ör. çağıranın kendi filtresinde)
+    // yapılsaydı bu sohbet yine de pencereyi doldururdu ve dar bir `limit`
+    // altında arkadaki canlı sohbeti dışarıda bırakırdı — tam da bu testin
+    // ayırt etmesi gereken hata. `limit=1` bunu zorluyor: rafa kalkmış sohbet
+    // en yeni konuşulan (pencereye İLK girecek olan) olmasına rağmen dönen
+    // tek satır canlı sohbet olmalı.
+    const db = getChatDb();
+    insertConversation(db, 'conv-rafa', 2_000); // en yeni — eleme yoksa pencereyi o doldururdu
+    insertConversation(db, 'conv-canli', 1_000);
+    for (let i = 0; i < BACKFILL_MAX_FAILURES; i += 1) bumpBackfillFailure('conv-rafa');
+
+    const targets = readBackfillTargets(1);
+
+    expect(targets).toEqual([{ conversationId: 'conv-canli', cursor: null, failures: 0 }]);
   });
 
   it('sync_state satırı HİÇ YOKKEN de hedef döndürüyor (cursor null)', () => {

@@ -77,12 +77,18 @@ export function isConversationShelved(failures: number): boolean {
  * Aktif sohbeti elemenin sebebi: kullanıcı o sohbeti zaten açıp canlı
  * sayfalıyor, backfill'in aynı sohbete arkadan sayfa istemesi hem gereksiz
  * (kullanıcının kendi isteği zaten geçmişi indiriyor) hem de aynı kovadan
- * ikinci kez harcama demek.
+ * ikinci kez harcama demek. Bu eleme SQL'e TAŞINAMAZ:
+ * `getActiveConversationId()` çağrı anında belli oluyor, sorgu zamanında değil.
  *
- * Rafa kalkmış sohbeti elemenin sebebi: `readBackfillTargets` yalnız
- * `backfill_done`a bakıyor, kalıcı arızalı bir sohbet (`isConversationShelved`
- * true) orada hâlâ hedef olarak çıkar — elemek burada olmazsa her tur ona bir
- * istek (slot) harcardı.
+ * Rafa kalkmış sohbetleri elemek ise burada İKİNCİL bir güvenlik ağı —
+ * ASIL eleme artık `readBackfillTargets`'ın WHERE'inde, LIMIT'TEN ÖNCE
+ * (bkz. chatRepository.ts'teki o fonksiyonun yorumu: eleme LIMIT'ten SONRA
+ * olsaydı pencere rafa kalkmış satırlarla dolup canlı sohbetleri dışarıda
+ * bırakabilirdi — tam da bu muhasebenin önlemesi gereken "crowd out"
+ * hatası). Buradaki filtre o garantiye GÜVENMİYOR: `selectBackfillTargets`
+ * saf bir fonksiyon, `readBackfillTargets` dışındaki bir kaynaktan (ör. test,
+ * ileride başka bir okuma yolu) gelen hedef listesinde de aynı kuralı
+ * uyguluyor — eşiğin TEK sayısal kaynağı yine `BACKFILL_MAX_FAILURES`.
  */
 export function selectBackfillTargets(
   targets: BackfillTarget[],

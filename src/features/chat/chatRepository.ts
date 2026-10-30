@@ -1,4 +1,5 @@
 import { getChatDb, type ChatDbDriver, type SqlValue } from '@/features/chat/db/chatDb';
+import { BACKFILL_MAX_FAILURES } from '@/features/chat/backfillPolicy';
 import {
   rowToConversation,
   type ConversationRow,
@@ -1659,16 +1660,26 @@ export interface BackfillTarget {
 }
 
 /**
- * Henüz bitmemiş (`backfill_done` NULL ya da 0) sohbetler, en son
- * konuşulandan geriye — en çok `limit` tane.
+ * Henüz bitmemiş (`backfill_done` NULL ya da 0) VE rafa kalkmamış
+ * (`backfill_failures` eşiğin altında) sohbetler, en son konuşulandan geriye
+ * — en çok `limit` tane.
  *
  * `conversations` ile LEFT JOIN: `sync_state` satırı henüz yoksa (hiç
  * sayfalama/backfill denenmemiş sohbet) da hedef, cursor `null` ve
  * `failures` 0 döner.
  *
- * Rafa kalkmış (failures eşiği aşmış) sohbetler BURADA elenmiyor —
- * `selectBackfillTargets` (saf, backfillPolicy.ts) eliyor; bu sorgu yalnız
- * `backfill_done`a bakıyor, `failures`'ı taşımak çağıranın işi.
+ * ── Rafa kalkmış sohbetler NEDEN BURADA (LIMIT'TEN ÖNCE) eleniyor ───────────
+ * Eleme burada olmazsa — ör. `selectBackfillTargets`e bırakılsaydı —
+ * `LIMIT` rafa kalkmış satırları da "aday" sayıp pencereyi onlarla
+ * doldururdu: `last_message_at_ms DESC` sırasında birkaç sohbet aynı anda
+ * eşiğe ulaşırsa (ör. bir 5xx fırtınası), bu satırlar pencerenin ÖNÜNDE
+ * oturur, canlı sohbetler pencerenin DIŞINA taşar ve post-filter sonrası
+ * hedef sayısı `MAX_REQUESTS_PER_ROUND`'ın altında kalır — tur kendi
+ * bütçesini dolduramaz, tam da bu muhasebenin önlemesi gereken "crowd out"
+ * hatası. Eleme LIMIT'ten ÖNCE (WHERE'de) olunca pencere yalnız gerçek
+ * adaylardan oluşuyor; `selectBackfillTargets` hâlâ aktif sohbeti eliyor
+ * (o eleme SQL'e taşınamaz, `getActiveConversationId()` çağrı zamanında
+ * belli oluyor) ama rafa kalkma burada KESİN, tek kaynak bu sorgu.
  *
  * `conversation_id` tiebreaker'ı şart: `last_message_at_ms` nullable ve hiç
  * mesajlaşılmamış sohbetler hepsi NULL'da eşitleniyor — tek kolonlu sıra
@@ -1687,9 +1698,10 @@ export function readBackfillTargets(limit: number): BackfillTarget[] {
          FROM conversations c
          LEFT JOIN sync_state s ON s.conversation_id = c.conversation_id
         WHERE COALESCE(s.backfill_done, 0) = 0
+          AND COALESCE(s.backfill_failures, 0) < ?
         ORDER BY c.last_message_at_ms DESC, c.conversation_id ASC
         LIMIT ?`,
-      [Math.max(0, limit)],
+      [BACKFILL_MAX_FAILURES, Math.max(0, limit)],
     )
     .map((row) => ({ conversationId: row.conversation_id, cursor: row.cursor, failures: row.failures }));
 }

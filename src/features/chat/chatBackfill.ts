@@ -66,8 +66,13 @@ async function run(getActiveConversationId: () => string | null): Promise<Backfi
   // Tavan `MAX_REQUESTS_PER_ROUND + 1`: her hedef en az bir isteğe karşılık
   // geldiği için tur bundan fazla hedefi zaten kullanamaz, ama `+1` olmadan
   // `selectBackfillTargets` aktif sohbeti eleyince elde 29 hedef kalıyordu ve
-  // tur 30 istek bütçesine HİÇ ulaşamıyordu. Elenen sohbet sayısı en çok BİR
-  // (aktif olan), o yüzden tam bir fazlası yeterli.
+  // tur 30 istek bütçesine HİÇ ulaşamıyordu. BURADAN SONRA elenen sohbet
+  // sayısı en çok BİR (aktif olan) — rafa kalkmış sohbetler artık BU
+  // ÇAĞRIDAN ÖNCE, `readBackfillTargets`'ın WHERE'inde elendi (LIMIT'ten
+  // önce, bkz. chatRepository.ts'teki o fonksiyonun yorumu), yani onlar bu
+  // `+1` hesabına hiç girmiyor. `selectBackfillTargets`'ın kendi rafa-kalkma
+  // filtresi burada ikincil bir güvenlik ağı (bkz. backfillPolicy.ts) — bu
+  // listede zaten rafa kalkmış hedef OLMAMALI, o yüzden pratikte no-op.
   const targets = selectBackfillTargets(
     repo.readBackfillTargets(MAX_REQUESTS_PER_ROUND + 1),
     getActiveConversationId(),

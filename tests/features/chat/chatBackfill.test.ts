@@ -341,6 +341,45 @@ describe('runBackfillRound', () => {
     expect(
       readBackfillTargets(10).find((t) => t.conversationId === 'conv-1')?.cursor,
     ).toBe('cursor-eski');
+    // Ayırt edici: 429, conv-1'in KALICI-hata sayacını ARTIRMAMALI — kova
+    // paylaşımlı, bu kodu kullanıcının kendi trafiği de üretebilir. Sayaç
+    // artsaydı (ör. `bumpBackfillFailure` 429 dalına taşınsaydı) birkaç
+    // ardışık 429 sağlıklı bir sohbeti rafa kaldırır, arşivi SESSİZCE
+    // küçültürdü.
+    expect(
+      readBackfillTargets(10).find((t) => t.conversationId === 'conv-1')?.failures,
+    ).toBe(0);
+  });
+
+  it('LIMIT penceresinde birden çok rafa kalkmış sohbet olsa bile tur MAX_REQUESTS_PER_ROUND canlı hedefe ulaşıyor', async () => {
+    // Ayırt edici: eleme `readBackfillTargets`'ın WHERE'inde (LIMIT'ten ÖNCE)
+    // DEĞİL de LIMIT'ten SONRA (ör. yalnız `selectBackfillTargets`'ta)
+    // yapılsaydı, en yeni konuşulan birkaç sohbet rafa kalkmış olduğunda
+    // pencereyi onlar doldurur, canlı sohbetler `LIMIT`'in dışına taşar ve
+    // tur kendi `MAX_REQUESTS_PER_ROUND` bütçesinin altında kalırdı — tam da
+    // bu muhasebenin önlemesi gereken "crowd out" hatası.
+    const SHELVED_COUNT = 3;
+    for (let i = 0; i < SHELVED_COUNT; i += 1) {
+      // En YENİ konuşulanlar — eleme LIMIT'ten sonra olsaydı pencerenin
+      // ÖNÜNÜ bunlar tutardı.
+      insertConversation(`conv-rafa-${i}`, 1_000_000 + i);
+      for (let j = 0; j < BACKFILL_MAX_FAILURES; j += 1) bumpBackfillFailure(`conv-rafa-${i}`);
+    }
+    for (let i = 0; i < MAX_REQUESTS_PER_ROUND; i += 1) {
+      insertConversation(`conv-canli-${i}`, 1_000 + i);
+    }
+    recordRateLimitHeaders({ 'x-ratelimit-remaining': '10000' }); // kota BOL BİLİNİYOR — yalnız istek sayısı tavanı izole edilsin
+    getMessageHistory.mockResolvedValue(page([])); // her istek tek sayfada tamamlanıyor
+
+    const promise = runBackfillRound(() => null);
+    await jest.advanceTimersByTimeAsync(MAX_REQUESTS_PER_ROUND * PAGE_DELAY_MS);
+    const result = await promise;
+
+    expect(getMessageHistory).toHaveBeenCalledTimes(MAX_REQUESTS_PER_ROUND);
+    for (let i = 0; i < SHELVED_COUNT; i += 1) {
+      expect(getMessageHistory).not.toHaveBeenCalledWith(`conv-rafa-${i}`, expect.anything());
+    }
+    expect(result.attempts).toBe(MAX_REQUESTS_PER_ROUND);
   });
 
   it('art arda gelen GENEL hatalarda (5xx fırtınası) turu MAX_REQUESTS_PER_ROUND İSTEĞİNDE durduruyor — hedef sayısı fazla olsa bile', async () => {
