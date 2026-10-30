@@ -91,46 +91,79 @@ export function feedCardActions(
 }
 
 /**
- * Yazar beni daha önce beğenmiş mi — kartın HANGİ HÂLDE doğacağını belirleyen
- * tespit (bkz. `feedCardActions`'ın "BEĞENİLMİŞ" hâli).
+ * Yazarın BEKLEYEN bir beğenisi var mı — kartın "BEĞENİLMİŞ" hâlinde doğup
+ * doğmayacağını belirleyen tespit (bkz. `feedCardActions`).
  *
  * İki kaynağın OR'u (bkz. DiscoverScreen'deki aynı kalıp): sunucunun profil
  * bayrağı VEYA yerel "beni beğenenler" kümesi.
  *
- * ⚠️ Bayrak tarafı BUGÜN CANLI KAPSAMA DEĞİL: `api.ts > FEED_POST_AUTHOR_PROFILE`
- * açıkça yazıyor — gövde `GET /api/swipe/LikerProfile/{id}` ile birebir aynı
- * `ProfileCardDto`, "beğeniye özel alanlar — hasLikedMe, note — burada dolu
- * GELMEZ". Yani `hasLikedMe === true` dalı bugün için İLERİYE DÖNÜK kablolama;
- * sunucu bir gün bu uçta da alanı doldurursa kod zaten doğru tarafta olsun
- * diyedir, şu an pratikte hiçbir isteği true yapmaz. Gerçek kapsama tamamen
- * yerel kümeden geliyor ve o küme de TAM değil — yalnız seçili modun
- * likerlarının ilk sayfasını tutuyor (`getWhoLikedMe(1,10,10,mode)`, bkz.
- * `swipeSlice > applyWhoLikedMe`). Yanlış pozitif zaten bekleyen birine Fire
- * yakılmasını önlerken; yanlış negatif kullanıcıya hiçbir şey yapmayan iki
- * buton (Fire/not) gösteriyor.
+ * ── Sunucu kolu (2026-10-30'dan beri CANLI) ─────────────────────────────────
+ * Bir dönem ÖLÜYDÜ: `api.ts > FEED_POST_AUTHOR_PROFILE` "beğeniye özel alanlar
+ * — hasLikedMe, note — burada dolu GELMEZ" diyordu ve bu dal hiçbir isteği true
+ * yapmıyordu. Backend alanı doldurdu (`FeedReplyQueryService` →
+ * `GetSwipeActionAsync(authorId, userId, mode)`); artık asıl kapsama bu koldan
+ * geliyor. ⚠️ `api.ts`'teki o yorum bayatladıysa düzelt.
+ *
+ * Bayrak MOD KAPSAMLI: istekteki `?mode=` için hesaplanıyor, yani "bu kişi beni
+ * BU MODDA beğenmiş mi". Çapraz mod üretmiyor.
+ *
+ * ── Yerel kol (hâlâ yedek, hâlâ EKSİK) ──────────────────────────────────────
+ * Yalnız SEÇİLİ MODUN likerlarının ilk sayfasını tutuyor
+ * (`getWhoLikedMe(1,10,10,mode)`, bkz. `swipeSlice > applyWhoLikedMe`). Sunucu
+ * kolu canlandığı için artık asıl taşıyıcı değil ama duruyor: liste ucu free'de
+ * de tam geliyor ve canlı `IncomingLike` kümeye anında yazıyor, yani sunucu
+ * yanıtı bayatken bile doğru cevabı verebiliyor.
+ *
+ * ⚠️ Bu kol SEÇİLİ moda bağlı olduğu için ÇAĞIRAN TARAFTA `cardMode ===
+ * selectedMode` kapısıyla sarılıyor (bkz. FeedScreen). Buraya taşımaya kalkma:
+ * fonksiyon modu bilmiyor ve bilmemeli.
+ *
+ * ── Üç dışlama ──────────────────────────────────────────────────────────────
+ * Soru "beni beğendi mi" DEĞİL, "BEKLEYEN bir kararı var mı". Üçü de
+ * bekleyenliği öldürüyor:
+ *
+ * 1. `userId` boşsa (yok/null/"") bayrak true olsa BİLE false. Aksi halde
+ *    kabul/reddet çizilir ama `LikerSwipeModal > handleSwipe` userId'siz yalnız
+ *    kartı kapatıyor — basılınca hiçbir şey yapmayan iki buton.
+ * 2. `isMatched === true` → ZATEN EŞLEŞTİK. Backend'in uyarısı: karşılıklı
+ *    beğenide `hasLikedMe` YİNE true dönüyor. Bu dışlama olmazsa eşleştiğin
+ *    birinin gönderisine girince kart "kabul et / reddet" ile açılır ve olmayan
+ *    bir bekleyen karar ima eder.
+ * 3. `myLikeDate` dolu → BEN ONU ZATEN BEĞENDİM. Kabul edilecek bir şey yok;
+ *    beğenim sunucuda duruyor, karşı taraf beğenmediyse eşleşme de yok.
  *
  * Yüklem (`likedLocally`) olarak alınıyor, doğrudan store'a bağlanmıyor:
  * fonksiyon SAF kalsın, Redux'u da hangi store şekli kullandığını da bilmesin.
  *
- * ⚠️ `userId` kapısı ÖNCE: boşsa (yok/null/"") bayrak true olsa BİLE false
- * dönüyor. Aksi halde kabul/reddet çizilir ama `LikerSwipeModal >
- * handleSwipe` userId'siz yalnız kartı kapatıyor — basılınca hiçbir şey
- * yapmayan iki buton.
+ * ⚠️ Karşılaştırmalar KATI (`=== true`, `typeof ... === "string"`). Gevşetilirse
+ * ("Boolean(...)") sunucudan gelen "false" string'i de true sayılır. Katılığın
+ * güvenli tarafı: bilinmiyorsa normal kart.
  *
- * ⚠️ Bayrak karşılaştırması KATI `=== true`. Gevşetilirse ("Boolean(...)")
- * sunucudan gelen "false" string'i de true sayılır ve kullanıcıya yanlış hâl
- * gösterilir. Katı karşılaştırmanın güvenli tarafı: bilinmiyorsa normal kart.
+ * ⚠️ PREMIUM KAPISI BURADA DEĞİL. Bu fonksiyon bir OLGU döndürüyor ("bekleyen
+ * beğeni var mı"), İZİN değil. Tier kararı çağıranda (bkz. FeedScreen >
+ * `authorHasLikedMe`) çünkü premium'un tek kaynağı bir hook
+ * (`usePremiumTier`) ve saf fonksiyon ona bağlanamaz.
+ *
+ * ⚠️ `likedMeAt` ve `isSuperLike` de bu uçta artık dolu geliyor ama BURADA
+ * OKUNMUYOR: ikisi de "ne zaman / nasıl beğendi" bilgisi, bekleyenliği
+ * değiştirmiyor. `isSuperLike` ileride kartta "Fire'la beğendi" ayrımını
+ * mümkün kılar — bilinçli olarak kapsam dışı.
  */
 export function authorLikedMe(
   profile: unknown,
   likedLocally: (userId: string) => boolean,
 ): boolean {
   if (profile == null || typeof profile !== "object") return false;
-  const { userId, hasLikedMe } = profile as {
+  const { userId, hasLikedMe, isMatched, myLikeDate } = profile as {
     userId?: unknown;
     hasLikedMe?: unknown;
+    isMatched?: unknown;
+    myLikeDate?: unknown;
   };
   if (typeof userId !== "string" || userId === "") return false;
+  // Bekleyenliği öldüren iki durum — gerekçeleri yukarıda (2) ve (3).
+  if (isMatched === true) return false;
+  if (typeof myLikeDate === "string" && myLikeDate !== "") return false;
   if (hasLikedMe === true) return true;
   return likedLocally(userId);
 }

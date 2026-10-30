@@ -166,6 +166,60 @@ describe("authorLikedMe", () => {
       expect(authorLikedMe(profile, allLocal)).toBe(false);
     },
   );
+
+  /**
+   * ── BEKLEYENLİĞİ ÖLDÜREN DURUMLAR ────────────────────────────────────────
+   * Soru "beni beğendi mi" DEĞİL, "bekleyen bir kararı var mı". Backend'in
+   * açık uyarısı: karşılıklı beğenide `hasLikedMe` YİNE true dönüyor. Bu
+   * dışlamalar olmazsa eşleştiğin birinin gönderisine girince kart
+   * "kabul et / reddet" ile açılıp olmayan bir bekleyen karar ima ediyor.
+   */
+  it("ZATEN EŞLEŞTİYSEK false — hasLikedMe true olsa BİLE", () => {
+    expect(
+      authorLikedMe({ userId: "u1", hasLikedMe: true, isMatched: true }, noneLocal),
+    ).toBe(false);
+    // Yerel kol da aynı kapıya tabi: eşleşme kümedeki id'yi geçersiz kılıyor.
+    expect(authorLikedMe({ userId: "u1", isMatched: true }, allLocal)).toBe(false);
+  });
+
+  it("BEN ONU ZATEN BEĞENDİYSEM false — kabul edilecek bir şey yok", () => {
+    expect(
+      authorLikedMe(
+        { userId: "u1", hasLikedMe: true, myLikeDate: "2026-10-29T10:00:00Z" },
+        noneLocal,
+      ),
+    ).toBe(false);
+    expect(
+      authorLikedMe({ userId: "u1", myLikeDate: "2026-10-29T10:00:00Z" }, allLocal),
+    ).toBe(false);
+  });
+
+  /**
+   * `myLikeDate` KATI string kontrolü: alan yoksa (`undefined`) ya da boş
+   * string geldiyse "beğenmedim" demektir. Düz `!= null` yazımı boş string'i
+   * "beğendim" sayıp özelliği sessizce kapatırdı.
+   */
+  it.each([undefined, null, ""])(
+    "myLikeDate boşsa (%p) bekleyenlik DURUYOR",
+    (myLikeDate) => {
+      expect(
+        authorLikedMe({ userId: "u1", hasLikedMe: true, myLikeDate }, noneLocal),
+      ).toBe(true);
+    },
+  );
+
+  /**
+   * `isMatched` de KATI `=== true`: boolean olmayan bir değer (ör. sunucu
+   * "false" string'i gönderirse) bekleyenliği öldürmemeli.
+   */
+  it.each(["true", "false", 1, 0, {}])(
+    "isMatched boolean değilse (%p) yok sayılıyor",
+    (isMatched) => {
+      expect(
+        authorLikedMe({ userId: "u1", hasLikedMe: true, isMatched }, noneLocal),
+      ).toBe(true);
+    },
+  );
 });
 
 describe("normalizeModes", () => {
