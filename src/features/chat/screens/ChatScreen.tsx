@@ -101,7 +101,7 @@ import { useRevealGesture } from "@/features/chat/components/useRevealGesture";
 import { REVEAL_MAX } from "@/features/chat/components/RevealContext";
 import { highlightMessage } from "@/features/chat/components/messageHighlight";
 import { searchMessages } from "@/features/chat/chatRepository";
-import { prepareSearchQuery } from "@/features/chat/messageSearch";
+import { prepareSearchQuery, SEARCH_DEBOUNCE_MS } from "@/features/chat/messageSearch";
 import { ChatTypingRow } from "@/features/chat/components/ChatBottomSpacer";
 import MessageSkeleton from "@/features/chat/components/MessageSkeleton";
 import MessageActionSheet from "@/features/chat/components/MessageActionSheet";
@@ -167,14 +167,17 @@ const HEADER_CONTENT = 8 + 65 + 6 + PILL_H + 8;
 // glif zincirini de onlarla aynı yerden alıyorlar (glassIconClearGlyph). Buton
 // tarafındaki kurulum tuzakları hâlâ GLASS_ICON_BUTTON'ın başında yazılı.
 const HEADER_ACTION_SIZE = GLASS_ICON_CLEAR_SIZE;
-// Faz 4 / Task 6 — MessagesScreen'in global mesaj aramasıyla (bkz. orada
-// MESSAGE_SEARCH_DEBOUNCE_MS) AYNI sabit: ikisi de "SQLite'a vuran senkron
-// sorgu, her tuş vuruşunda değil" gerekçesini paylaşıyor.
-const INLINE_SEARCH_DEBOUNCE_MS = 220;
 // Tek sohbete sınırlı sorgu — global aramadaki 20'lik tavanın aksine burada
 // pratikte bir sohbetin eşleşme sayısı zaten küçük, yine de sınırsız SELECT'e
 // karşı bir tavan konuyor (YAGNI: ikinci bir "daha fazla yükle" UI'ı yok).
+// Tavana TAKILINCA sayaç `/200` basıp bunun TOPLAM olduğunu YALANLAMASIN diye
+// aşağıda `inlineSearchTotalLabel` "200+" gösteriyor (bkz. render'daki yorum).
 const INLINE_SEARCH_LIMIT = 200;
+// "Son mesaja dön" banner'ının YAKLAŞIK yüksekliği (pill paddingVertical 8×2 +
+// metin satırı + marginTop 6, bkz. aşağıdaki pill stilinin kendisi) — arama
+// çubuğu ikisi AYNI ANDA görünür olduğunda (bkz. Kritik düzeltme: banner artık
+// arama açıkken GİZLENMİYOR) bu kadar aşağı itiliyor, üst üste binmesinler.
+const GO_TO_LATEST_BANNER_HEIGHT = 54;
 
 // ── TEŞHİS ANAHTARI ─────────────────────────────────────────────────────────
 // true yap → balonlar reanimated'siz/ref'siz/reveal'siz DÜZ View+Text çizilir.
@@ -450,6 +453,13 @@ function ChatScreen({
     string | null
   >(null);
   const [inlineSearchIndex, setInlineSearchIndex] = useState(0);
+  // Review turu 1, Minor 6 — next/prev TEK eşleşmede index'i DEĞİŞTİRMİYOR
+  // ((0+1)%1 === 0), yani `inlineSearchIndex` state'i aynı değere set edilirdi
+  // ve React re-render'ı BAŞTAN ATLARDI — kullanıcı "tekrar vurgula" niyetiyle
+  // bastığında hiçbir şey olmazdı. Bu sayaç HER basışta artıyor (index aynı
+  // kalsa bile) ve aşağıdaki atlama efektinin bağımlılığında — "aynı hedefe
+  // tekrar atla" niyetini index DEĞİŞMESE de canlı tutuyor.
+  const [inlineSearchHopNonce, setInlineSearchHopNonce] = useState(0);
   // Bir hop (next/prev) `hydrateAroundMessage`i TETİKLER ama pencere bir sonraki
   // render'da (bucket dispatch sonrası) dolar — liste bu ref'e bakıp hedefi
   // GÖRÜNCE kaydırıp vurguluyor. `jumpTargetRef`in (hedefli AÇILIŞ) birebir
@@ -473,11 +483,22 @@ function ChatScreen({
   const deliveredAckedRef = useRef(new Set<string>());
   const renderedDataRef = useRef<any[]>([]);
   const messagesRef = useRef<MessageDto[]>(messages);
+  // Faz 4 / Task 6 — sohbet içi arama'nın "hedef zaten hot window'da mı"
+  // kontrolü BUNU okuyor (aşağıda). REAKTİF bağımlılık DEĞİL, bilerek ref:
+  // o kontrolün yaşadığı efekt `hydrateAroundMessage` dispatch ediyor, bu da
+  // `messages`/`isWindowed`i DEĞİŞTİRİYOR — ikisi reaktif bağımlılık olsaydı
+  // (ilk denemede ÖYLEYDİ) efekt kendi dispatch'inin ürettiği değişiklikle
+  // TEKRAR tetiklenip sonsuz döngüye giriyordu (jest "Maximum update depth
+  // exceeded" ile yakaladı). Ref, aynı taze değeri DÖNGÜ YARATMADAN okutuyor.
+  const isWindowedRef = useRef(isWindowed);
   const quotaRef = useRef(quota);
   const lastReadSentAtRef = useRef(0);
   useEffect(() => {
     messagesRef.current = messages;
   }, [messages]);
+  useEffect(() => {
+    isWindowedRef.current = isWindowed;
+  }, [isWindowed]);
   useEffect(() => {
     quotaRef.current = quota;
   }, [quota]);
@@ -1687,24 +1708,33 @@ function ChatScreen({
   }, [dispatch, conversationId]);
 
   /**
-   * Faz 4 / Task 6 — sohbet içi arama kapanışı. Her alanı TEK TEK sıfırlıyor:
-   * yarım kalmış bir debounce zamanlayıcısı ya da bekleyen bir atlama hedefi
-   * bir sonraki açılışta "eski sorgudan kalma" bir sıçramaya yol açmasın.
+   * Faz 4 / Task 6 — sohbet içi arama durumunu SIFIRLAR (state ONLY, yan
+   * etkisiz). `handleCloseInlineSearch` (kullanıcının X'e basması) bunun
+   * üstüne `Keyboard.dismiss()` ekliyor; `conversationId` değişince çalışan
+   * sigorta efekti SADECE bunu çağırıyor — Review turu 1, Minor 7: o efekt
+   * MOUNT'ta da (conversationId her zaman "değişir", ilk değer de bir
+   * değişimdir) çalışıyor ve klavyeyi kapatmak orada alakasız bir yan etki
+   * olurdu (arama henüz açılmamışken klavyeye dokunmanın hiçbir anlamı yok).
    */
-  const handleCloseInlineSearch = useCallback(() => {
-    Keyboard.dismiss();
+  const resetInlineSearchState = useCallback(() => {
     setInlineSearchOpen(false);
     setInlineSearchQuery("");
     setInlineSearchDebounced(null);
     setInlineSearchIndex(0);
+    setInlineSearchHopNonce(0);
     pendingInlineSearchJumpRef.current = null;
   }, []);
+
+  const handleCloseInlineSearch = useCallback(() => {
+    Keyboard.dismiss();
+    resetInlineSearchState();
+  }, [resetInlineSearchState]);
 
   // `conversationId` DEĞİŞİRSE (ekran örneği yeniden kullanılırsa — bugün
   // navigator'da olmuyor ama ucuz bir sigorta) ESKİ sohbetin tutulan sonuç
   // listesini YENİ sohbette göstermeye devam etmek yanlış mesaja atlardı.
   useEffect(() => {
-    handleCloseInlineSearch();
+    resetInlineSearchState();
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [conversationId]);
 
@@ -1712,6 +1742,8 @@ function ChatScreen({
   // `null` (eşik altı/boş) döndüğünde ANINDA temizlenir, bir sonraki debounce
   // turuna bağlanmaz — MessagesScreen'in aynı kuralının (bkz. orada "⚠️
   // Geçersiz sorguda debounce BEKLENMİYOR" yorumu) burada da geçerli.
+  // `SEARCH_DEBOUNCE_MS` messageSearch.ts'ten PAYLAŞILAN tek kaynak (Review
+  // turu 1, Minor 8 — iki ekran aynı sayıyı ayrı ayrı tanımlıyordu).
   useEffect(() => {
     if (!inlineSearchOpen) return;
     const prepared = prepareSearchQuery(inlineSearchQuery);
@@ -1721,7 +1753,7 @@ function ChatScreen({
     }
     const timer = setTimeout(
       () => setInlineSearchDebounced(prepared),
-      INLINE_SEARCH_DEBOUNCE_MS,
+      SEARCH_DEBOUNCE_MS,
     );
     return () => clearTimeout(timer);
   }, [inlineSearchQuery, inlineSearchOpen]);
@@ -1729,11 +1761,9 @@ function ChatScreen({
   /**
    * Eşleşmeler TEK SEFERDE çekiliyor — sorgu DEĞİŞMEDİKÇE next/prev hop'ları
    * SQL'i tekrar tetiklemiyor (karar: tutulan liste, hop başına yeniden
-   * sorgu DEĞİL). `searchMessages` newest-first döner; burada kronolojik
-   * (eski→yeni) sıraya çevriliyor — mesaj listesinin kendi okuma sırasıyla
-   * (bkz. messagesWithSeparators'daki `chronological = ...reverse()`) AYNI
-   * yön olsun diye. "İleri" bu sırada bir SONRAKİ (daha yeni) eşleşmeye,
-   * "geri" bir ÖNCEKİ (daha eski) eşleşmeye gider — sayaç bu sırayla uyumlu.
+   * sorgu DEĞİL). `searchMessages` newest-first döner — burada da AYNI
+   * sırada bırakılıyor (artık yeniden sıralanmıyor, bkz. "İleri/geri yönü"
+   * notu aşağıda) — index 0 = EN YENİ eşleşme = sayaçta "1".
    */
   const inlineSearchHits = useMemo(() => {
     if (!inlineSearchOpen || !inlineSearchDebounced) return [];
@@ -1741,9 +1771,7 @@ function ChatScreen({
       return searchMessages(inlineSearchDebounced, {
         conversationId,
         limit: INLINE_SEARCH_LIMIT,
-      })
-        .slice()
-        .sort((a: any, b: any) => a.sentAtMs - b.sentAtMs);
+      });
     } catch (error) {
       console.error("[chat] sohbet içi arama başarısız:", error);
       return [];
@@ -1755,23 +1783,38 @@ function ChatScreen({
   const prevInlineSearchHitsRef = useRef<any[] | null>(null);
 
   /**
-   * Seçili eşleşmeye atla — Task 5'in YERELDEN okuyan yolu
-   * (`hydrateAroundMessage`) BİREBİR, ikinci bir atlama mekanizması icat
-   * edilmedi. Bulunduysa pencere hedefi kapsayacak şekilde değişir
-   * (isWindowed:true); scroll+highlight aşağıdaki efekt pencerenin
-   * DOLMASINI bekleyip yapıyor.
+   * Seçili eşleşmeye atla.
+   *
+   * ── Kritik düzeltme (review turu 1) — hedef ZATEN hot window'daysa
+   *    ASLA pencereleme ────────────────────────────────────────────────────
+   * `hydrateAroundMessage` KOŞULSUZ `isWindowed:true` yazıyor (chatHydrate.ts)
+   * — "hedefin etrafında bir pencere açıldı" bayrağı, hedef arşivin dibinde
+   * olsa bile. Başlangıç konumu EN YENİ eşleşme (aşağıda) olduğu için, az önce
+   * konuşulan bir kelimeyi aramak PRATİKTE her zaman "hedef zaten mevcut hot
+   * window'da" durumuna denk geliyordu — yine de bayrak dikiliyor, canlı
+   * mesajlar `receiveMessage`in pencereli-bucket dalına düşüp SESSİZCE
+   * yutuluyordu (brief'in uyardığı "dördüncü kapı", ama bu sefer YENİ bir
+   * YAZMA noktası DEĞİL, var olan yazmaya YENİ bir ERİŞİLEBİLİRLİK yolu).
+   * Çözüm burada: hedef `messages` (mevcut bucket) içinde VE bucket henüz
+   * pencereli DEĞİLSE, `hydrateAroundMessage`e HİÇ gitmiyoruz — zaten
+   * "şu an"dayız, pencerelemeye gerek yok, direkt kaydır+vurgula (aşağıdaki
+   * ayrı dal). Bucket ÖNCEDEN pencereliyse (kullanıcı hâlâ eski bir
+   * hedefte) yine `hydrateAroundMessage`e gidiyoruz — o zaten "şu an"dan
+   * ayrılmış durumda, yeni hedefe göre merkezlenmesi DOĞRU.
+   *
+   * Task 5'in YERELDEN okuyan yolu (`hydrateAroundMessage`) BİREBİR
+   * kullanılıyor, ikinci bir atlama mekanizması icat edilmedi.
    *
    * ── Tek efekte BİLEREK birleşik: "başlangıç indeksi" + "atlama" ──────────
    * Önceki sürüm bunları İKİ ayrı efekte ayırmıştı (biri `inlineSearchIndex`i
-   * length-1'e çeken, biri de o index'le atlayan). Aynı commit'te render
-   * sırasına göre İKİNCİ efekt HENÜZ GÜNCELLENMEMİŞ eski `inlineSearchIndex`le
-   * (örn. 0) çalışıyor, EN ESKİ eşleşmeye bir kere atlıyor, sonra state
-   * güncellenince İKİNCİ bir render'da doğru (en yeni) hedefe tekrar
-   * atlıyordu — kullanıcı gözünde kısa bir "yanlış mesaja zıplayıp hemen
-   * düzelme" kırpışması, ayrıca gereksiz bir `hydrateAroundMessage` turu.
-   * Burada yeni bir sonuç kümesi geldiğinde ÖNCE index state'i güncellenip
-   * efekt erken dönüyor (bir sonraki render'da `isNewHitSet` artık false,
-   * index ZATEN doğru) — atlama TEK SEFERDE, doğru hedefle oluyor.
+   * çeken, biri de o index'le atlayan). Aynı commit'te render sırasına göre
+   * İKİNCİ efekt HENÜZ GÜNCELLENMEMİŞ eski index'le çalışıp YANLIŞ hedefe bir
+   * kere atlıyor, sonra state güncellenince İKİNCİ bir render'da doğru
+   * hedefe tekrar atlıyordu — kısa bir "yanlış mesaja zıplayıp hemen düzelme"
+   * kırpışması, ayrıca gereksiz bir `hydrateAroundMessage` turu. Burada yeni
+   * bir sonuç kümesi geldiğinde ÖNCE index state'i güncellenip efekt erken
+   * dönüyor (bir sonraki render'da `isNewHitSet` artık false, index ZATEN
+   * doğru) — atlama TEK SEFERDE, doğru hedefle oluyor.
    */
   useEffect(() => {
     if (!inlineSearchHits.length) {
@@ -1782,15 +1825,38 @@ function ChatScreen({
     prevInlineSearchHitsRef.current = inlineSearchHits;
     if (isNewHitSet) {
       // En yeni eşleşme — kullanıcı genelde az önce konuşulan bir şeyi arıyor,
-      // en eskiden başlamak onu yanlış uca gönderirdi.
-      const startIndex = inlineSearchHits.length - 1;
-      if (startIndex !== inlineSearchIndex) {
-        setInlineSearchIndex(startIndex);
+      // en eskiden başlamak onu yanlış uca gönderirdi. Index 0 = en yeni.
+      if (inlineSearchIndex !== 0) {
+        setInlineSearchIndex(0);
         return; // Üstteki yorum: atlama bir sonraki (doğru index'li) render'a bırakılıyor.
       }
     }
-    const hit = inlineSearchHits[inlineSearchIndex];
+    // Clamp — bu render'da hits KÜÇÜLDÜYSE (ör. 5→2) ve index state'i henüz
+    // güncellenmediyse (bir alttaki "yeni sorgu değil ama eski index artık
+    // aralık dışı" durumu next/prev'de OLMAZ, ama savunma ucuz) sınırın
+    // dışına taşmasın.
+    const safeIndex = Math.min(inlineSearchIndex, inlineSearchHits.length - 1);
+    const hit = inlineSearchHits[safeIndex];
     if (!hit) return;
+    // REF okuması (reaktif state DEĞİL) — üstteki `isWindowedRef` yorumuna
+    // bkz.: `messages`/`isWindowed` bu efektin bağımlılığında OLSAYDI, az
+    // sonraki `hydrateAroundMessage` dispatch'i ikisini de değiştirip aynı
+    // hit için efekti SONSUZ DÖNGÜYE sokardı.
+    const alreadyPresent =
+      !isWindowedRef.current &&
+      messagesRef.current.some((m: any) => m.id === hit.messageId);
+    if (alreadyPresent) {
+      // Hedef ZATEN "şu an" — pencerelemeye hiç gerek yok (üstteki yorum).
+      const idx = renderedDataRef.current.findIndex(
+        (m: any) => m.id === hit.messageId,
+      );
+      if (idx < 0) return;
+      try {
+        listRef.current?.scrollToIndex({ index: idx, animated: true, viewPosition: 0.5 });
+      } catch {}
+      highlightMessage(hit.messageId);
+      return;
+    }
     const found = hydrateAroundMessage(
       dispatch,
       conversationId,
@@ -1798,37 +1864,83 @@ function ChatScreen({
       hit.messageId,
     );
     if (found) pendingInlineSearchJumpRef.current = hit.messageId;
-  }, [inlineSearchIndex, inlineSearchHits, dispatch, conversationId]);
+  }, [
+    inlineSearchIndex,
+    inlineSearchHits,
+    inlineSearchHopNonce,
+    dispatch,
+    conversationId,
+  ]);
 
   // `messages` bucket'ı güncellenince (yukarıdaki hydrateAroundMessage'ın
   // dispatch'i) pencere artık hedefi kapsıyor — hedefli AÇILIŞın izlediği
   // AYNI kaydırma/vurgu yolu (bkz. ~890 civarı "listSettled" efekti): burada
   // liste zaten oturmuş olduğu için `listSettled`e gerek yok, direkt `messages`
   // değişimine bağlanıyor.
+  //
+  // Review turu 1, Minor 5 — ref Task 5'teki `jumpTargetRef` ile "BİREBİR"
+  // olduğu iddia edilmişti ama BURADA değildi: Task 5 ref'i `findIndex`TEN
+  // ÖNCE temizliyor (yukarıdaki ~897. satır), bu efekt ÖNCEKİ sürümde SONRA
+  // temizliyordu. Fark reachable: FTS eşleşmesi `renderedData`dan filtrelenmiş
+  // bir satırsa (ör. "sadece benden sil" ile silinmiş, ya da bir sistem
+  // mesajı) `idx < 0` olur, erken `return` ref'i TEMİZLEMEDEN çıkardı — ref
+  // silahlı kalır, alakasız bir SONRAKİ `messages` değişimi (ör. canlı bir
+  // mesaj) stale hedefe sıçrardı. Şimdi id OKUNUR OKUNMAZ temizleniyor.
   useEffect(() => {
     const id = pendingInlineSearchJumpRef.current;
     if (!id) return;
+    pendingInlineSearchJumpRef.current = null;
     const idx = renderedDataRef.current.findIndex((m: any) => m.id === id);
     if (idx < 0) return;
-    pendingInlineSearchJumpRef.current = null;
     try {
       listRef.current?.scrollToIndex({ index: idx, animated: true, viewPosition: 0.5 });
     } catch {}
     highlightMessage(id);
   }, [messages]);
 
-  // Eşleşme yokken ikisi de no-op — "bir şey yapmıyor" sözü burada: state hiç
-  // değişmiyor, dolayısıyla üstteki atlama efekti de HİÇ TETİKLENMİYOR.
+  /**
+   * İleri/geri yönü (review turu 1, Important 2) — `searchMessages` newest-
+   * first döner, index 0 = en yeni = sayaçta "1". WhatsApp/Telegram
+   * kuralı: BİRİNCİL yön (ilk basılan buton, "ileri") GEÇMİŞE gider —
+   * başlangıç "1/N"den basınca "2/N"e, yani bir SONRAKİ (daha eski)
+   * eşleşmeye. Önceki sürüm başlangıcı "en eski→en yeni" sıralı dizinin SON
+   * elemanına koyup "ileri"yi +1 yapıyordu — iki karar AYRI AYRI
+   * gerekçelendirilmiş ama BİRLİKTE kontrol edilmemişti: başlangıç
+   * konumunda "ileri" basmak `(len-1+1)%len === 0`'a, yani doğruca EN ESKİ
+   * eşleşmeye sarıyordu (5/5 → 1/5). Burada TEK sarma noktası "geri"de
+   * (daha yeniye doğru, index 0'dan index `len-1`e) — o yönde zaten
+   * "aramada daha yeni yok" sezgisiyle örtüşen, daha az doğal olan jest.
+   */
   const handleInlineSearchNext = useCallback(() => {
     if (!inlineSearchHits.length) return;
     setInlineSearchIndex((i) => (i + 1) % inlineSearchHits.length);
+    setInlineSearchHopNonce((n) => n + 1);
   }, [inlineSearchHits.length]);
   const handleInlineSearchPrev = useCallback(() => {
     if (!inlineSearchHits.length) return;
     setInlineSearchIndex(
       (i) => (i - 1 + inlineSearchHits.length) % inlineSearchHits.length,
     );
+    setInlineSearchHopNonce((n) => n + 1);
   }, [inlineSearchHits.length]);
+
+  // Review turu 1, Minor 9 — tavana (`INLINE_SEARCH_LIMIT`) TAKILAN bir sorgu
+  // sayaçta "`/200`" basıp bunun TOPLAM eşleşme sayısı olduğunu YALANLARDI
+  // (200'ün ÜZERİNDE eşleşme olabilir, biz yalnız ilk 200'ü okuduk). "+"
+  // ekleyip dürüst kalıyoruz.
+  const inlineSearchTotalLabel =
+    inlineSearchHits.length >= INLINE_SEARCH_LIMIT
+      ? `${INLINE_SEARCH_LIMIT}+`
+      : String(inlineSearchHits.length);
+  // Review turu 1, Minor 4 — yeni (daha kısa) bir sonuç kümesi geldiğinde bir
+  // render boyunca `inlineSearchIndex` henüz eski (daha büyük) değerinde
+  // kalabiliyor (üstteki efekt bunu DÜZELTİYOR ama bir render SONRA) — sayaç
+  // o ara karede "5/2" gibi aralık dışı bir değer basmasın diye render'da
+  // AYRICA clamp'leniyor.
+  const inlineSearchDisplayIndex = Math.min(
+    inlineSearchIndex,
+    Math.max(inlineSearchHits.length - 1, 0),
+  );
 
   const handleUnmatch = useCallback(async () => {
     try {
@@ -2219,17 +2331,26 @@ function ChatScreen({
         </View>
       </View>
 
-      {/* Sohbet içi arama çubuğu (Faz 4 / Task 6) — "Son mesaja dön" banner'ının
-          AYNI konumunda (header'ın hemen altı); ikisi aynı anda anlamlı değil
-          (biri "pencereden çıkış" biri "pencere içinde ara"), bu yüzden arama
-          açıkken go-to-latest BASTIRILIYOR — kullanıcı önce aramayı kapatıp
-          sonra dönebilir. */}
+      {/* Sohbet içi arama çubuğu (Faz 4 / Task 6).
+          ── Kritik düzeltme (review turu 1) — banner ARTIK bastırılmıyor ──
+          Önceki sürüm arama açıkken "Son mesaja dön" banner'ını hiç
+          göstermiyordu. O banner pencereli (isWindowed) bir bucket'tan ÇIKIŞ
+          kapısı — tam da arama bir hedefe atlayıp bucket'ı pencerelediği
+          anda o kapıyı GİZLEMEK, kullanıcıyı "şu an"dan koptuğunun TEK
+          işaretinden mahrum bırakıyordu (ve kapatınca da state'i aynen
+          bırakıyordu, bkz. handleCloseInlineSearch). Artık "isWindowed ⇒
+          banner görünür" KOŞULSUZ — ikisi aynı anda açıksa arama çubuğu
+          banner'ın ALTINA kayıyor (GO_TO_LATEST_BANNER_HEIGHT), üst üste
+          binmesinler. */}
       {inlineSearchOpen ? (
         <View
           pointerEvents="box-none"
           style={{
             position: "absolute",
-            top: insets.top + HEADER_CONTENT,
+            top:
+              insets.top +
+              HEADER_CONTENT +
+              (isWindowed ? GO_TO_LATEST_BANNER_HEIGHT : 0),
             left: 16,
             right: 16,
             zIndex: 11,
@@ -2268,8 +2389,8 @@ function ChatScreen({
                 style={{ color: colors.textSecondary, fontSize: 13, fontWeight: "600" }}
               >
                 {t("chat.inlineSearch.counter", {
-                  current: inlineSearchIndex + 1,
-                  total: inlineSearchHits.length,
+                  current: inlineSearchDisplayIndex + 1,
+                  total: inlineSearchTotalLabel,
                 })}
               </Text>
             ) : inlineSearchDebounced ? (
@@ -2308,10 +2429,10 @@ function ChatScreen({
         </View>
       ) : null}
 
-      {/* "Son mesaja dön" — SADECE pencereli (hedefli atlama) bucket'ta VE arama
-          KAPALIYKEN çıkar (yukarıdaki not). Header'ın blur overlay'inin HEMEN
-          ALTINDA, kendi küçük kapsülü. */}
-      {isWindowed && !inlineSearchOpen && (
+      {/* "Son mesaja dön" — SADECE pencereli (hedefli atlama) bucket'ta çıkar,
+          arama açık olsa da olmasa da (üstteki Kritik düzeltme notu). Header'ın
+          blur overlay'inin HEMEN ALTINDA, kendi küçük kapsülü. */}
+      {isWindowed && (
         <View
           pointerEvents="box-none"
           style={{

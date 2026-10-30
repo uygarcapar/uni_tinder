@@ -74,6 +74,7 @@ import { debugLastMessageRows, searchMessages } from "@/features/chat/chatReposi
 import {
   prepareSearchQuery,
   highlightSegments,
+  SEARCH_DEBOUNCE_MS,
   type MessageSearchHit,
 } from "@/features/chat/messageSearch";
 import EmptyState from "@/shared/components/EmptyState";
@@ -117,12 +118,13 @@ const MESSAGE_SEARCH_LIMIT = 20;
 /**
  * `searchMessages` SQLite'a vuran, tüm arşivi tarayan senkron bir sorgu (bkz.
  * chatRepository.searchMessages'ın FTS/LIKE yorumu) — `conversationsByTab`ın
- * bellek-içi `includes`ı gibi HER TUŞ VURUŞUNDA çalıştırılamaz. 220ms yazı
- * temposunun arasına sığacak kadar kısa (art arda tuşlarda SQL hiç
- * tetiklenmez), kullanıcının "yazmayı bıraktım" anını kaçıracak kadar uzun
- * değil.
+ * bellek-içi `includes`ı gibi HER TUŞ VURUŞUNDA çalıştırılamaz. `SEARCH_DEBOUNCE_MS`
+ * (messageSearch.ts — ChatScreen'in sohbet-içi aramasıyla PAYLAŞILAN tek
+ * kaynak, bkz. orada "review turu 1" yorumu) 220ms yazı temposunun arasına
+ * sığacak kadar kısa (art arda tuşlarda SQL hiç tetiklenmez), kullanıcının
+ * "yazmayı bıraktım" anını kaçıracak kadar uzun değil.
  */
-const MESSAGE_SEARCH_DEBOUNCE_MS = 220;
+const MESSAGE_SEARCH_DEBOUNCE_MS = SEARCH_DEBOUNCE_MS;
 
 /**
  * Pager'ın anlık konumundan sürülen yatay kayma — üç sayfalık bir şeridi

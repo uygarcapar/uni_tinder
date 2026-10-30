@@ -20,6 +20,17 @@ import { foldTr } from '@/shared/utils/foldTr';
 export const MIN_SEARCH_LENGTH = 2;
 
 /**
+ * `searchMessages` SQLite'a vuran, senkron bir sorgu — hem global aramanın
+ * (MessagesScreen) hem sohbet içi aramanın (ChatScreen) debounce'u bu YÜZDEN
+ * var ve bu YÜZDEN aynı süre: ikisi de "SQL'e her tuş vuruşunda değil, yazı
+ * duraksayınca" kuralını paylaşıyor. Review turu 1 — iki ekran bu sabiti ayrı
+ * ayrı `220` olarak KOPYALAMIŞTI, "aynı gerekçe" diye yorumda yazıp aslında
+ * paylaşmıyordu; biri değişip diğeri unutulsa sessizce ayrışırdı. Tek kaynak
+ * burada.
+ */
+export const SEARCH_DEBOUNCE_MS = 220;
+
+/**
  * Katlanmış sorguyu FTS5'in `unicode61` tokenizer'ıyla AYNI sınırda böler:
  * harf/rakam (`\p{L}\p{N}`) TOKEN, geri kalan HER ŞEY (boşluk, noktalama,
  * sembol: `%`, `_`, `&`, `'`, …) AYRAÇ ve ATILIR. Boş/yalnız-ayraç girişte
