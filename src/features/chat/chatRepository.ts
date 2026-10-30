@@ -285,6 +285,20 @@ function buildLikePredicate(tokens: string[]): { sql: string; params: SqlValue[]
  *  • AYNI SORGU tokenizasyonu: `tokenizeFolded` ikisinin de GİRDİSİ — "100%"
  *    HER İKİ yolda da TEK token "100"a iner (review turu 2 ruling'i,
  *    `tokenizeFolded`'daki yorum).
+ *  • AYNI mod süzgeci (aşağıdaki not).
+ *
+ * ── `mode` — Flört ve Arkadaş AYRI DÜNYALAR (review turu 4, Önemli 4) ───────
+ * Bu uygulamada mod başına ayrı sohbet var (`UNIQUE(A,B,Mode)`), beğeniler ve
+ * hub rozetleri de mod süzgeçli ve süzme İSTEMCİDE yapılıyor (bkz.
+ * MessagesScreen'in `modeConversations`u). Mod geçilmezse global arama bu
+ * değişmezi deliyordu: Flört modundayken Mesajlar bölümü Arkadaş mesajlarını
+ * listeliyor ve dokununca ÖTEKİ modun sohbetine navigasyon yapıyordu.
+ *
+ * `c.mode IS NULL` EŞLEŞİYOR sayılıyor — ekranın `!c.mode ||` toleransının
+ * aynısı: alanı göndermeyen bir sunucu sürümünde ya da `MatchNotification`dan
+ * modsuz açılmış bir satırda elemek, kullanıcıya mesajlarını KAYBETTİRİRDİ.
+ * Sohbet İÇİ arama mod geçmiyor ve geçmemeli: `conversationId` ile tek bir
+ * sohbete zaten kilitli, o sohbetin modu ne ise aramanın kapsamı odur.
  *
  * ── RESIDUAL — belgelenmiş, KASITLI olarak DÜZELTİLMEDİ ─────────────────────
  * Yukarıdaki değişmez yalnız SORGU tarafı için. BELGE (mesaj içeriği) tarafı
@@ -315,10 +329,11 @@ function buildLikePredicate(tokens: string[]): { sql: string; params: SqlValue[]
  */
 export function searchMessages(
   foldedQuery: string,
-  opts: { conversationId?: string; limit: number; offset?: number },
+  opts: { conversationId?: string; mode?: string | null; limit: number; offset?: number },
 ): MessageSearchHit[] {
   const db = getChatDb();
   const conversationId = opts.conversationId ?? null;
+  const mode = opts.mode ?? null;
   const offset = opts.offset ?? 0;
   const tokens = tokenizeFolded(foldedQuery);
   if (!tokens.length) return [];
@@ -344,9 +359,10 @@ export function searchMessages(
         WHERE f.content_folded MATCH ?
           AND m.deleted_at IS NULL
           AND (? IS NULL OR m.conversation_id = ?)
+          AND (? IS NULL OR c.mode IS NULL OR c.mode = ?)
         ORDER BY m.sent_at_ms DESC, m.id DESC
         LIMIT ? OFFSET ?`,
-      [matchQuery, conversationId, conversationId, opts.limit, offset],
+      [matchQuery, conversationId, conversationId, mode, mode, opts.limit, offset],
     );
   } else {
     const predicate = buildLikePredicate(tokens);
@@ -358,9 +374,10 @@ export function searchMessages(
         WHERE ${predicate.sql}
           AND m.deleted_at IS NULL
           AND (? IS NULL OR m.conversation_id = ?)
+          AND (? IS NULL OR c.mode IS NULL OR c.mode = ?)
         ORDER BY m.sent_at_ms DESC, m.id DESC
         LIMIT ? OFFSET ?`,
-      [...predicate.params, conversationId, conversationId, opts.limit, offset],
+      [...predicate.params, conversationId, conversationId, mode, mode, opts.limit, offset],
     );
   }
 

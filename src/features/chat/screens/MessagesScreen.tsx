@@ -772,12 +772,22 @@ export default function MessagesScreen() {
   const messageHits: MessageSearchHit[] = useMemo(() => {
     if (!isSearchActive || !messageSearchQuery) return [];
     try {
-      return searchMessages(messageSearchQuery, { limit: MESSAGE_SEARCH_LIMIT });
+      // `mode` ŞART (review turu 4, Önemli 4): sohbet listesi
+      // `modeConversations` ile mod başına süzülüyor ve bu uygulamanın
+      // değişmezi Flört/Arkadaş'ın AYRI DÜNYALAR olması. Mod geçilmezse
+      // Flört modundayken bu bölüm Arkadaş mesajlarını listeler ve dokunmak
+      // öteki modun sohbetine navigasyon yapardı. Modsuz satırlar
+      // ELENMİYOR — `modeConversations`'ın `!c.mode ||` toleransının aynısı,
+      // kuralın tek kaynağı `searchMessages` (bkz. oradaki yorum).
+      return searchMessages(messageSearchQuery, {
+        mode: selectedMode,
+        limit: MESSAGE_SEARCH_LIMIT,
+      });
     } catch (error) {
       console.error("[messages] mesaj araması başarısız:", error);
       return [];
     }
-  }, [isSearchActive, messageSearchQuery]);
+  }, [isSearchActive, messageSearchQuery, selectedMode]);
 
   // Bölümün KENDİSİ (başlık + satırlar/"bulunamadı") bu bayrağa bağlı —
   // `prepareSearchQuery` `null` döndüğü sürece (eşik altı sorgu) bölüm HİÇ

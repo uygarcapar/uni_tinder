@@ -237,7 +237,15 @@ describe('MessagesScreen — global aramada mesaj bölümü', () => {
     }
     await act(async () => {});
 
-    expect(mockSearchMessages).toHaveBeenCalledWith('sinema', { limit: expect.any(Number) });
+    // Review turu 4, Önemli 4 — `mode` ŞART: sohbet listesi mod başına
+    // süzülüyor (Flört/Arkadaş AYRI DÜNYALAR), mesaj araması süzülmezse
+    // Flört modundayken Arkadaş mesajları listeleniyor ve dokununca öteki
+    // modun sohbetine navigasyon yapılıyordu. Mod süzgecinin SQL tarafı
+    // messageSearchRepo.test.ts'te; burada sınanan şey EKRANIN onu GEÇMESİ.
+    expect(mockSearchMessages).toHaveBeenCalledWith('sinema', {
+      mode: 'Dating',
+      limit: expect.any(Number),
+    });
     // Üç sekme sayfası (Tümü/Okunmamış/Kapalı) aynı anda canlı (bkz. ekranın
     // kendi "ÜÇ SEKMENİN HEPSİ birden" notu) — bölüm HER sayfada belirir, bu
     // yüzden `getAllByTestId`. Tekil `getByTestId` burada YANLIŞ iddia olurdu.
@@ -319,7 +327,10 @@ describe('MessagesScreen — global aramada mesaj bölümü', () => {
     await act(async () => {});
 
     expect(mockSearchMessages).toHaveBeenCalledTimes(1);
-    expect(mockSearchMessages).toHaveBeenCalledWith('sin', { limit: expect.any(Number) });
+    expect(mockSearchMessages).toHaveBeenCalledWith('sin', {
+      mode: 'Dating',
+      limit: expect.any(Number),
+    });
   });
 
   it('sonuç yokken "mesaj bulunamadı" satırı çıkıyor — bölüm sessizce kaybolmuyor', async () => {

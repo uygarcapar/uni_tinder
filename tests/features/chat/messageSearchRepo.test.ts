@@ -53,6 +53,13 @@ function insertConversation(
   );
 }
 
+function setConversationMode(conversationId: string, mode: string): void {
+  getChatDb().run('UPDATE conversations SET mode = ? WHERE conversation_id = ?', [
+    mode,
+    conversationId,
+  ]);
+}
+
 function ftsRowsFor(id: string): { content_folded: string }[] {
   return getChatDb().getAll<{ content_folded: string }>(
     'SELECT content_folded FROM messages_fts WHERE message_id = ?',
@@ -155,6 +162,30 @@ describe.each([
     expect(hitsScoped).toHaveLength(1);
     expect(hitsScoped[0].messageId).toBe('m1');
     expect(hitsScoped[0].conversationId).toBe(CONV);
+  });
+
+  // Review turu 4, Önemli 4 — Flört/Arkadaş AYRI DÜNYALAR (UNIQUE(A,B,Mode)).
+  it('mode verilince yalnız o modun sohbetlerinde arıyor, MODSUZ satır ELENMİYOR', () => {
+    setConversationMode(CONV, 'Dating');
+    setConversationMode(OTHER_CONV, 'Friends');
+    insertConversation('c3', 'Modsuz'); // sunucu alanı göndermemiş / MatchNotification'dan açılmış
+    saveMessage(msg('m1', 'ortak kelime', { conversationId: CONV }), CONV);
+    saveMessage(msg('m2', 'ortak kelime', { conversationId: OTHER_CONV }), OTHER_CONV);
+    saveMessage(msg('m3', 'ortak kelime', { conversationId: 'c3' }), 'c3');
+
+    // Mod GEÇİLMEZSE (eski davranış) üçü de dönüyor — ayırt edici bu.
+    expect(searchMessages('ortak', { limit: 10 }).map((h) => h.messageId).sort()).toEqual([
+      'm1',
+      'm2',
+      'm3',
+    ]);
+
+    const dating = searchMessages('ortak', { mode: 'Dating', limit: 10 });
+    // Öteki MODUN mesajı (m2) YOK; modsuz satır (m3) VAR.
+    expect(dating.map((h) => h.messageId).sort()).toEqual(['m1', 'm3']);
+
+    const friends = searchMessages('ortak', { mode: 'Friends', limit: 10 });
+    expect(friends.map((h) => h.messageId).sort()).toEqual(['m2', 'm3']);
   });
 
   it('limit/offset sayfalıyor', () => {
