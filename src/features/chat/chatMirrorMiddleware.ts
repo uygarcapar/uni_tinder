@@ -103,6 +103,13 @@ export function startChatMirror(store?: {
   try {
     openChatDb();
     importLegacyChatCache();
+    // Backfill hata sayacı AÇILIŞ BAŞINA sıfırlanıyor (review turu 4,
+    // Kritik): raf "üst üste hata" muhasebesi ve o muhasebenin işi oturum
+    // içinde slot yakmayı durdurmak — ömür boyu sürmesi, on dakikalık bir
+    // kesintiyi KALICI olarak yarım bir arşive (ve aramanın "o mesaj yok"
+    // demesine) çeviriyordu. Gerekçenin tamamı
+    // `chatRepository.resetBackfillFailures`'ta.
+    repo.resetBackfillFailures();
     // Saklama penceresi — sunucunun MessageRetentionJob'ı ile aynı. Açılışta
     // bir kez, indeksli tek DELETE. Sunucudan sinyal beklemiyor: o iş hard
     // delete yapıyor ve arkasında hiç iz bırakmıyor.

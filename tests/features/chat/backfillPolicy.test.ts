@@ -2,6 +2,7 @@ import {
   BACKFILL_MAX_FAILURES,
   RATE_LIMIT_RESERVE,
   isConversationComplete,
+  isConversationFault,
   isConversationShelved,
   selectBackfillTargets,
   shouldStopRound,
@@ -114,5 +115,39 @@ describe('isConversationShelved', () => {
   it('üst üste BACKFILL_MAX_FAILURES hata alan sohbet seçilmiyor', () => {
     expect(isConversationShelved(BACKFILL_MAX_FAILURES - 1)).toBe(false);
     expect(isConversationShelved(BACKFILL_MAX_FAILURES)).toBe(true);
+  });
+});
+
+/**
+ * Review turu 4, Kritik — sayacın adı "kalıcı"ydı ama kapsamı "429 dışında
+ * HER ŞEY"di: bir 5xx fırtınası ya da on dakikalık bağlantı kopması üç turda
+ * TÜM sohbetleri rafa kaldırıyor, arşivi kalıcı olarak yarım bırakıyor ve
+ * arama "o mesaj yok" diyordu.
+ */
+describe('isConversationFault', () => {
+  it('429 OLMAYAN 4xx bu sohbete özgü arıza SAYILIYOR', () => {
+    expect(isConversationFault(404)).toBe(true); // sohbet sunucuda yok
+    expect(isConversationFault(403)).toBe(true); // erişim yok
+    expect(isConversationFault(400)).toBe(true); // cursor kabul edilmiyor
+    expect(isConversationFault(499)).toBe(true);
+  });
+
+  it('5xx SAYILMIYOR — sunucu hakkında, bu sohbet hakkında değil', () => {
+    expect(isConversationFault(500)).toBe(false);
+    expect(isConversationFault(502)).toBe(false);
+    expect(isConversationFault(503)).toBe(false);
+  });
+
+  it('durum kodu OLMAYAN hata (ağ kopması/timeout) SAYILMIYOR', () => {
+    expect(isConversationFault(null)).toBe(false);
+  });
+
+  it('429 SAYILMIYOR — kova paylaşımlı, kodu kullanıcının kendi trafiği üretebilir', () => {
+    expect(isConversationFault(429)).toBe(false);
+  });
+
+  it('2xx/3xx SAYILMIYOR — hata dalına düşen bir yanıt bile olsa sohbet suçlu değil', () => {
+    expect(isConversationFault(200)).toBe(false);
+    expect(isConversationFault(304)).toBe(false);
   });
 });

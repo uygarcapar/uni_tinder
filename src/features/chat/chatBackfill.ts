@@ -13,6 +13,7 @@ import {
   selectBackfillTargets,
   shouldStopRound,
   isConversationComplete,
+  isConversationFault,
 } from '@/features/chat/backfillPolicy';
 
 /**
@@ -55,9 +56,14 @@ function delay(ms: number): Promise<void> {
   return new Promise((resolve) => setTimeout(resolve, ms));
 }
 
-/** 429 — kova paylaşımlı, bu kodu kullanıcının kendi isteği de üretebilir. */
-function isRateLimited(error: unknown): boolean {
-  return (error as { response?: { status?: number } } | undefined)?.response?.status === 429;
+/**
+ * Hata yanıtının HTTP durumu — yanıt hiç oluşmadıysa (ağ kopması, timeout,
+ * JS hatası) `null`. Durum kodunun YOKLUĞU da bir bilgi: `isConversationFault`
+ * onu "bu sohbet hakkında kanıt DEĞİL" diye okuyor.
+ */
+function httpStatusOf(error: unknown): number | null {
+  const status = (error as { response?: { status?: number } } | undefined)?.response?.status;
+  return typeof status === 'number' ? status : null;
 }
 
 async function run(getActiveConversationId: () => string | null): Promise<BackfillRoundResult> {
@@ -145,24 +151,29 @@ async function run(getActiveConversationId: () => string | null): Promise<Backfi
           skip429Retry: true,
         });
       } catch (error) {
-        if (isRateLimited(error)) {
+        const status = httpStatusOf(error);
+        if (status === 429) {
           // Kova paylaşımlı: devam etmek kullanıcının kendi okumalarını da
           // 429'a sokar. Cursor'a DOKUNULMADI — bir sonraki tur burada
           // denemeye devam eder.
           return result;
         }
-        // Bu sohbete özel geçici arıza (ağ/5xx/vb). Cursor'a DOKUNMA — bir
-        // sonraki tur aynı yerden dener. Turu ÖLDÜRME, sıradaki hedefe geç.
+        // Bu sayfa alınamadı. Cursor'a DOKUNMA — bir sonraki tur aynı yerden
+        // dener. Turu ÖLDÜRME, sıradaki hedefe geç.
         // NOT: try YALNIZ ağ çağrısını sarıyor; `applyHistoryPage`/
         // `setBackfillCursor` bilerek DIŞINDA. Genişletilirse diske yazarken
-        // çıkan bir SQL hatası da "geçici ağ arızası" gibi yutulur ve tur
-        // sessizce ilerlemeden döner.
+        // çıkan bir SQL hatası da ağ arızası gibi yutulur ve tur sessizce
+        // ilerlemeden döner.
         //
-        // 429 BURAYA HİÇ GELMEZ (üstte erken `return`) — sayaç yalnız bu
-        // sohbete ÖZGÜ kalıcı hatalarda artıyor; kova paylaşımlı 429'u
-        // sohbetin kendisi bozukmuş gibi saymak, kullanıcının o anda kendi
-        // trafiğiyle üretmiş olabileceği bir hatayı bu sohbete fatura ederdi.
-        repo.bumpBackfillFailure(target.conversationId);
+        // Sayaç yalnız BU SOHBETE ÖZGÜ, tekrar denemekle geçmeyecek hatalarda
+        // artıyor — karar `backfillPolicy.isConversationFault`ta (429 olmayan
+        // 4xx). 5xx ve durum kodsuz hatalar (ağ kopması) SAYILMIYOR: sunucu ya
+        // da bağlantı hakkında bir şey söylüyorlar, bu sohbet hakkında değil,
+        // ve onları saymak bir 5xx fırtınasının üç turda TÜM sohbetleri rafa
+        // kaldırmasına yetiyordu (review turu 4, Kritik).
+        if (isConversationFault(status)) {
+          repo.bumpBackfillFailure(target.conversationId);
+        }
         break;
       }
 

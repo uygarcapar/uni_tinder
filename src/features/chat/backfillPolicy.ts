@@ -51,20 +51,58 @@ export const RATE_LIMIT_RESERVE = 80;
 export const BACKFILL_BOOT_DELAY_MS = 10_000;
 
 /**
- * Üst üste bu kadar KALICI hata (429 hariç) alan bir sohbet `isConversationShelved`
- * ile raftan sayılır — bkz. aşağıdaki fonksiyon ve migrations.ts V10 yorumu.
+ * Üst üste bu kadar KALICI hata (bkz. `isConversationFault`) alan bir sohbet
+ * `isConversationShelved` ile raftan sayılır — bkz. aşağıdaki fonksiyon ve
+ * migrations.ts V10 yorumu.
  */
 export const BACKFILL_MAX_FAILURES = 3;
 
 /**
+ * Bu hata BU SOHBETİN bozuk olduğuna dair kanıt mı — yani `backfill_failures`
+ * sayacını artırmalı mı?
+ *
+ * ── Review turu 4, Kritik: sayacın adı "kalıcı", kapsamı "her şey"di ───────
+ * Önceki hâl 429 DIŞINDAKİ HER hatada sayacı artırıyordu: bir 5xx fırtınası
+ * ya da on dakikalık bir bağlantı kopması, tur başına 30 sohbete kadar üç
+ * tur içinde HER sohbeti rafa kaldırıyordu — ve raf (o zamanki hâliyle)
+ * KALICIYDI, yani geçici bir arıza arşivi kalıcı olarak YARIM bırakıyordu.
+ * Aramanın tamamı o arşivin kapanmış olmasına dayanıyor ("bulamadı"yı "yok"
+ * sanmamak için), yani bedeli SESSİZ ve YANILTICI bir eksiklikti.
+ *
+ * Kural artık ADIYLA aynı: yalnız 429 OLMAYAN bir 4xx bu sohbete özgü,
+ * tekrar denemekle geçmeyecek bir arıza anlatıyor (404 — sohbet sunucuda yok;
+ * 403 — erişim yok; 400 — cursor'umuz kabul edilmiyor). 5xx SUNUCU hakkında,
+ * durum kodu HİÇ OLMAYAN hata (ağ kopması, timeout) BAĞLANTI hakkında bir
+ * şey söylüyor — ikisi de bu sohbetin kendisiyle ilgili DEĞİL ve ikisinde de
+ * doğru davranış bir sonraki turda aynı yerden tekrar denemek.
+ *
+ * 429 ayrıca ele alınıyor (çağıran turu erken kesiyor, buraya hiç gelmiyor)
+ * ama kapı BURADA da kapalı: bu fonksiyon `chatBackfill.ts`in akışından
+ * BAĞIMSIZ olarak doğru olmalı.
+ *
+ * @param status hata yanıtının HTTP durumu; yanıt hiç oluşmadıysa `null`.
+ */
+export function isConversationFault(status: number | null): boolean {
+  if (status === null || status === 429) return false;
+  return status >= 400 && status < 500;
+}
+
+/**
  * Bir sohbet turdan DÜŞMELİ mi?
  *
- * `failures` 429 SAYMAZ (kova paylaşımlı, bu kodu sohbetin kendisi değil
- * kullanıcının kendi trafiği de üretebilir — bkz. chatBackfill.ts'teki 429
- * dalı, orada sayaç hiç artırılmıyor). Sayaç yalnız o sohbete özgü kalıcı
- * hatalarda (ağ/5xx, bkz. chatBackfill.ts'teki catch) artıyor ve başarılı bir
- * sayfada sıfırlanıyor (`chatRepository.clearBackfillFailures`) — yani eşiğe
- * ulaşmak "üst üste" olmak zorunda, toplamda değil.
+ * `failures` yalnız `isConversationFault` sayan hatalarda artıyor (yukarıdaki
+ * yorum: 429 ve 5xx/ağ hataları SAYILMIYOR) ve başarılı bir sayfada
+ * sıfırlanıyor (`chatRepository.clearBackfillFailures`) — yani eşiğe ulaşmak
+ * "üst üste" olmak zorunda, toplamda değil.
+ *
+ * ── Raf OTURUM BAŞINA, kalıcı DEĞİL ─────────────────────────────────────────
+ * `chatMirrorMiddleware.startChatMirror` her açılışta sayacı TÜM satırlarda
+ * sıfırlıyor (`chatRepository.resetBackfillFailures`). Bu olmadan raf, bir
+ * kez kalkınca ömür boyu kalıyordu: `readBackfillTargets` rafa kalkmış satırı
+ * bir daha DÖNDÜRMÜYOR, dolayısıyla o sohbet bir daha BAŞARILI sayfa da
+ * alamıyor ve sayacını sıfırlatacak tek olay hiç gerçekleşemiyordu.
+ * Muhasebenin asıl işi "deterministik bozuk bir sohbet her turda bir slot
+ * yakmasın" — o iş OTURUM içinde zaten yapılıyor.
  */
 export function isConversationShelved(failures: number): boolean {
   return failures >= BACKFILL_MAX_FAILURES;

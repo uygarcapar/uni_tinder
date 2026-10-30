@@ -351,6 +351,46 @@ describe('runBackfillRound', () => {
     ).toBe(0);
   });
 
+  // Review turu 4, Kritik — sayaç ARTIK yalnız bu sohbete ÖZGÜ (429 olmayan
+  // 4xx) hatalarda artıyor. Eski hâl 429 dışında HER hatada artırıyordu ve
+  // raf o zaman KALICIYDI: tek bir 5xx fırtınası arşivi sessizce ve kalıcı
+  // olarak yarım bırakıyordu.
+  it('5xx, sohbetin KALICI-hata sayacını ARTIRMIYOR', async () => {
+    insertConversation('conv-1', 1_000);
+    getMessageHistory.mockRejectedValueOnce({ response: { status: 503 } });
+
+    await runBackfillRound(() => null);
+
+    expect(getMessageHistory).toHaveBeenCalledTimes(1);
+    expect(
+      readBackfillTargets(10).find((t) => t.conversationId === 'conv-1')?.failures,
+    ).toBe(0);
+  });
+
+  it('durum kodu OLMAYAN hata (ağ kopması) da sayacı ARTIRMIYOR', async () => {
+    insertConversation('conv-1', 1_000);
+    getMessageHistory.mockRejectedValueOnce(new Error('Network Error'));
+
+    await runBackfillRound(() => null);
+
+    expect(
+      readBackfillTargets(10).find((t) => t.conversationId === 'conv-1')?.failures,
+    ).toBe(0);
+  });
+
+  it('404 (sohbet sunucuda YOK) sayacı ARTIRIYOR — muhasebenin asıl müşterisi', async () => {
+    // Kontrol grubu: fix "sayacı tamamen söktü" olmasın. Deterministik bozuk
+    // bir sohbet oturum içinde yine üç denemeden sonra slot yakmayı bırakmalı.
+    insertConversation('conv-1', 1_000);
+    getMessageHistory.mockRejectedValueOnce({ response: { status: 404 } });
+
+    await runBackfillRound(() => null);
+
+    expect(
+      readBackfillTargets(10).find((t) => t.conversationId === 'conv-1')?.failures,
+    ).toBe(1);
+  });
+
   it('LIMIT penceresinde birden çok rafa kalkmış sohbet olsa bile tur MAX_REQUESTS_PER_ROUND canlı hedefe ulaşıyor', async () => {
     // Ayırt edici: eleme `readBackfillTargets`'ın WHERE'inde (LIMIT'ten ÖNCE)
     // DEĞİL de LIMIT'ten SONRA (ör. yalnız `selectBackfillTargets`'ta)

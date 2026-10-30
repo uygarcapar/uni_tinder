@@ -20,6 +20,8 @@ import {
   __resetChatMirrorForTests,
 } from '@/features/chat/chatMirrorMiddleware';
 import { startBackfill } from '@/features/chat/chatBackfill';
+import { bumpBackfillFailure, readBackfillTargets } from '@/features/chat/chatRepository';
+import { BACKFILL_MAX_FAILURES } from '@/features/chat/backfillPolicy';
 import { clear as clearMessageCache } from '@/features/chat/messageCache';
 
 /**
@@ -59,6 +61,33 @@ describe('startChatMirror → backfill bağlantısı', () => {
     // açtığı sohbete backfill sayfası isterdi.
     const deps = mockStartBackfill.mock.calls[0][0];
     expect(deps.getActiveConversationId()).toBe('conv-acik');
+  });
+
+  /**
+   * Review turu 4, Kritik — RAFI SÖKEN YOL. Bu testten önce hiç yoktu:
+   * `backfillPolicy.test.ts` ve `chatBackfill.test.ts` rafın KURULMASINI ve
+   * başarılı sayfada sıfırlanmasını pinliyordu, ama rafa kalkmış bir sohbet
+   * `readBackfillTargets`ın WHERE'inde ELENDİĞİ için bir daha HİÇ denenmiyor,
+   * dolayısıyla o "başarılı sayfa" hiç gerçekleşemiyordu — raf kurulumun
+   * ömrü boyunca kalıyordu ve arama o sohbetin mesajları için "yok" diyordu.
+   */
+  it('AÇILIŞ, rafa kalkmış sohbeti geri alıyor (hata sayacı sıfırlanıyor)', () => {
+    openChatDb().run(
+      `INSERT INTO conversations (conversation_id, partner_user_id, last_message_at_ms)
+       VALUES (?, ?, ?)`,
+      ['conv-rafa', 'partner-1', 1_000],
+    );
+    for (let i = 0; i < BACKFILL_MAX_FAILURES; i += 1) bumpBackfillFailure('conv-rafa');
+    // Rafa kalktı: hedef listesinde YOK (bu satır olmadan testin ikinci
+    // yarısı hiçbir şey ispatlamazdı).
+    expect(readBackfillTargets(10)).toEqual([]);
+
+    // YENİ AÇILIŞ.
+    startChatMirror(storeStub(null));
+
+    expect(readBackfillTargets(10)).toEqual([
+      { conversationId: 'conv-rafa', cursor: null, failures: 0 },
+    ]);
   });
 
   it('stopChatMirror söken fonksiyonu çağırıyor — bekleyen tur iptal ediliyor', () => {

@@ -2251,6 +2251,30 @@ export function bumpBackfillFailure(conversationId: string): void {
 }
 
 /**
+ * TÜM sohbetlerin backfill hata sayacını sıfırlar — açılış başına BİR kez
+ * (`chatMirrorMiddleware.startChatMirror`).
+ *
+ * ── Rafın ömrü: OTURUM, ömür boyu DEĞİL (review turu 4, Kritik) ────────────
+ * `readBackfillTargets` rafa kalkmış satırı WHERE'inde ELİYOR, yani o sohbet
+ * bir daha HEDEF OLMUYOR; sayacı sıfırlatan tek olay ise BAŞARILI bir sayfa
+ * (`clearBackfillFailures`). İkisi birlikte kapalı bir döngü kuruyordu: rafa
+ * kalkan sohbet bir daha denenmediği için bir daha başarılı olamıyor,
+ * dolayısıyla raf KURULUMUN ÖMRÜ BOYUNCA kalıyordu (`clearAllChatData`
+ * dışında söken yok). Geçici bir arıza böylece arşivi kalıcı olarak yarım
+ * bırakıyor ve arama "o mesaj yok" diyordu.
+ *
+ * Sıfırlama açılışta: muhasebenin anlattığı şey ("üst üste" — migrations V10
+ * yorumu) OTURUM içinde aynen korunuyor; deterministik bozuk bir sohbet
+ * oturum içinde üç denemeden sonra yine slot yakmayı bırakıyor.
+ *
+ * `WHERE backfill_failures <> 0`: sıfır satıra dokunmamak, çoğu açılışta
+ * UPDATE'i no-op'a indiriyor.
+ */
+export function resetBackfillFailures(): void {
+  getChatDb().run('UPDATE sync_state SET backfill_failures = 0 WHERE backfill_failures <> 0');
+}
+
+/**
  * Sohbetin backfill kalıcı-hata sayacını SIFIRLAR — başarılı bir sayfa
  * önceki art arda hataları siler, geçici bir arızadan kurtulan sohbet rafa
  * kalkmaz.
