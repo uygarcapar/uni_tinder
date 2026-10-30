@@ -34,4 +34,25 @@ describe('prepareSearchQuery', () => {
   it('baştaki/sondaki boşluk kırpılıyor, ortadaki korunuyor', () => {
     expect(prepareSearchQuery('  iki kelime  ')).toBe('iki kelime');
   });
+
+  // Review turu 3, Önemli — `MIN_SEARCH_LENGTH` BYPASS ediliyordu: ham dize
+  // uzunluğu 2 karakterdi ('a%') ve bir harf taşıyordu, eski kontrol bunu
+  // GEÇERLİ sayıyordu. Tokenize edilince TEK harfli 'a' tokenine iniyor —
+  // yani arşivin TAMAMI üzerinde bir harflik bir ön ek taraması
+  // (debouncesız bir arama kutusunda, bkz. Task 4'ün `onChangeText`i).
+  it('MIN_SEARCH_LENGTH token BAZINDA uygulanıyor — "a%" ayraç atılınca tek harfe iniyor, BYPASS edilemiyor', () => {
+    expect(prepareSearchQuery('a%')).toBeNull();
+    expect(prepareSearchQuery('a_')).toBeNull();
+    expect(prepareSearchQuery('.a.')).toBeNull();
+  });
+
+  // Review turu 3 — karar: HERHANGİ BİR token eşiği geçerse YETERLİ, hepsinin
+  // geçmesi GEREKMEZ. "ali v" kullanıcının yazarken geçtiği gerçekçi bir ara
+  // durum (ikinci kelimeye yeni başlamış); tüm tokenları şart koşsaydık bu
+  // dizi TAMAMEN reddedilir ve "ali" ile zaten görünen sonuçlar ekrandan
+  // kaybolurdu.
+  it('çok tokenlı sorguda YALNIZ BİRİ eşiği geçse yeterli — "ali v" reddedilmiyor', () => {
+    expect(prepareSearchQuery('ali v')).toBe('ali v');
+    expect(prepareSearchQuery('v ali')).toBe('v ali');
+  });
 });

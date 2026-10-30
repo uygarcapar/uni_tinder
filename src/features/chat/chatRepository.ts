@@ -17,7 +17,7 @@ import {
   type SyncStateRow,
 } from '@/features/chat/db/rows';
 import { ContentType, contentTypeToNumber } from '@/features/chat/contentType';
-import type { MessageSearchHit } from '@/features/chat/messageSearch';
+import { tokenizeFolded, type MessageSearchHit } from '@/features/chat/messageSearch';
 import { rekey as rekeyCache } from '@/features/chat/messageCache';
 import { normalizeMessage } from '@/features/chat/normalizeMessage';
 import { utcTime } from '@/shared/utils/dateUtc';
@@ -59,10 +59,39 @@ const MESSAGE_COLUMNS = `
  * demek (v10 öncesi arşiv) ve `backfillContentFolded` tam o satırları
  * seçiyor; buradan NULL yazsaydık sesli mesajlar her doldurma turunda
  * yeniden seçilir, hiç dolmaz ve tur sıfıra inmezdi.
+ *
+ * ── TÜM boşluk TEK boşluğa katlanıyor (review turu 3) ───────────────────────
+ * `foldTr` KASITLI olarak boşluğa dokunmuyor ("KIRPMAZ" — kendi yorumu), yani
+ * satır sonu (`\n`, `\r\n`), sekme ve NBSP gibi karakterler ÖNCEDEN buraya
+ * kadar DEĞİŞMEDEN geliyordu. `buildLikePredicate`in dayandığı öncül
+ * ("kelime başı" ön eki `'tok%' OR '% tok%'` ikilisiyle ifade edilebilir,
+ * çünkü `content_folded` SADECE tek boşlukla ayrılmış kelimeler dizisi)
+ * bu yüzden YANLIŞTI: satır ikinci satırdaki kelime bir boşluktan SONRA
+ * değil bir `\n`den sonra geliyordu, LIKE deseni onu HİÇ bulamıyordu — ÇOK
+ * satırlı bir mesaj (sohbette NADİR DEĞİL, aksine SIK) ikinci satırdan sonra
+ * aranamaz hâle geliyordu. `.replace(/\s+/g, ' ')` bu öncülü GERÇEK yapıyor:
+ * her boşluk-sınıfı karakter (ve ardışık dizisi) TEK boşluğa iniyor.
+ *
+ * İKİ DÜRÜSTLÜK NOTU:
+ *  1. Bu yalnız YENİ yazılan/güncellenen satırları kapsıyor. Diskte DURAN
+ *     satırlar eski (katlanmamış) boşluklarını KORUYOR ve `backfillContentFolded`
+ *     onları YENİDEN ziyaret ETMEZ — seçimi `content_folded IS NULL`, bu
+ *     satırların kolonu zaten DOLU (NULL değil), yani "tur sıfıra inene
+ *     kadar tekrar tekrar çağır" döngüsü bu satırları asla seçmez. Kapatmak
+ *     `UPDATE messages SET content_folded = NULL` + yeniden doldurma turu
+ *     gerektirirdi — burada YAPILMADI, bilerek: aşağıdaki not bunun neden
+ *     düşük öncelikli olduğunu açıklıyor.
+ *  2. Bu yalnız LIKE YOLUNU düzeltiyor. FTS zaten kendi `unicode61`
+ *     tokenizer'ında `\n`/`\t`/NBSP'yi AYRAÇ sayıyordu (satırlar zaten doğru
+ *     tokenlara bölünüyordu) — ayrışma yalnız LIKE'ın ham dizeyi birebir
+ *     taraması YÜZÜNDENDİ. Ve LIKE, `isFtsAvailable()` false DÖNMEDİKÇE hiç
+ *     koşmuyor; bu projede o bayrağı kapatan bir yol YOK (bkz. chatDb.ts'teki
+ *     `isFtsAvailable` yorumu). Yani bu, bugün KULLANICIYA görünen bir
+ *     düzeltme DEĞİL — yedek yolun KALİTESİ için.
  */
 function searchableFolded(content: string, contentType: number, isSystem: boolean): string {
   if (contentType !== ContentType.Text || isSystem) return '';
-  return foldTr(content).trim();
+  return foldTr(content).replace(/\s+/g, ' ').trim();
 }
 
 /**
@@ -142,31 +171,10 @@ export function pruneOrphanSearchIndex(): number {
 }
 
 /**
- * Katlanmış sorguyu FTS5'in `unicode61` tokenizer'ıyla AYNI sınırda böler:
- * harf/rakam (`\p{L}\p{N}`) TOKEN, geri kalan HER ŞEY (boşluk, noktalama,
- * sembol: `%`, `_`, `&`, `'`, …) AYRAÇ ve ATILIR. Boş/yalnız-ayraç girişte
- * `[]`.
- *
- * ── DEĞİŞMEZ (review turu 2'nin ruling'i): SORGU iki şekilde de AYNI
- *    tokenlara bölünüyor ──────────────────────────────────────────────────
- * `toFtsMatchQuery` ve `buildLikePredicate` bu fonksiyonun döndürdüğü AYNI
- * `tokens` dizisini alıyor. Kullanıcının yazdığı "100%" HER İKİ yolda da TEK
- * token "100"a iner, "Ayşe'nin" HER İKİ yolda da ["ayse","nin"]'e (katlama
- * önce geçmiş olmalı). Review turu 1'de LIKE tarafı ham sorguyu yalnız
- * BOŞLUĞA göre bölüyordu ve bu yüzden "100%" FTS'te "100"a inip "100" geçen
- * HER ŞEYİ bulurken, LIKE'ta kaçırılmış LİTERAL "100%"yi arayıp yalnız o TAM
- * diziyi buluyordu — iki şekil kullanıcının GERÇEKTE yazdığı bir girdide
- * (arama kutusuna "%" ya da "'" YAZMAK sıra dışı değil) ayrışıyordu. Tokenize
- * kararını SQL'den ÖNCE, SORGU üzerinde, TEK yerde vermek bunu kapatıyor —
- * ayrıntı ve BELGE tarafındaki kapatılmayan residual için `searchMessages`
- * yorumuna bkz.
- */
-function tokenizeFolded(folded: string): string[] {
-  return folded.match(/[\p{L}\p{N}]+/gu) ?? [];
-}
-
-/**
- * Katlanmış kullanıcı sorgusunu FTS5 `MATCH` ifadesine dönüştürür.
+ * Katlanmış kullanıcı sorgusunu FTS5 `MATCH` ifadesine dönüştürür. Girdi
+ * (`tokens`) `@/features/chat/messageSearch`teki `tokenizeFolded`den gelir —
+ * o fonksiyon `prepareSearchQuery`nin uzunluk kapısıyla da PAYLAŞILDIĞI için
+ * `messageSearch.ts`de yaşıyor, burada DEĞİL (bkz. oradaki yorum).
  *
  * ⚠️ Ham sorgu doğrudan `MATCH`e verilmiyor: FTS5'in kendi operatör sözdizimi
  * var (`"`, `*`, `AND/OR/NOT`, `NEAR`, `col:`) ve kullanıcı "ışık*" ya da "a
@@ -206,6 +214,14 @@ function toFtsMatchQuery(tokens: string[]): string | null {
  * `tokenizeFolded`da SESSİZCE değişmesine bağımlı kalmasın diye (review turu
  * 1, Önemli 4'ün orijinal bulgusu: kaçırmasız `a_b` sorgusu `axb`yi de
  * eşleştiriyordu). Maliyeti sıfıra yakın, bırakılması ucuz bir sigorta.
+ *
+ * ⚠️ BİLEREK TEST EDİLMİYOR: `messageSearchRepo.test.ts`in `searchMessages`
+ * dosyasındaki testlerden GEÇMESİ bu fonksiyonun davranışının PİNLENDİĞİ
+ * anlamına GELMİYOR — bugünkü `tokenizeFolded` ile hiçbir token `%`/`_`
+ * taşımadan buraya ulaşamıyor, yani bu dosyadaki test sayısı ne olursa olsun
+ * bu kodun KENDİSİ hiçbir testte GERÇEKTEN çalışmıyor (yalnız no-op geçiyor).
+ * Dosyaya "kapsanıyor" diye bakıp geçme — kasıtlı, test EDİLEMEYEN bir
+ * sigorta.
  */
 function escapeLikeToken(token: string): string {
   return token.replace(/[\\%_]/g, (c) => `\\${c}`);
@@ -218,8 +234,15 @@ function escapeLikeToken(token: string): string {
  * olmak zorunda değil.
  *
  * `content_folded` boşlukla ayrılmış katlanmış kelimelerin dizisi (bkz.
- * `searchableFolded`), yani "kelime başı" `LIKE 'tok%' OR LIKE '% tok%'`
- * ikilisiyle TAM ifade edilebiliyor — ayrı bir tokenizer kurmaya gerek yok.
+ * `searchableFolded`'daki `.replace(/\s+/g, ' ')` — review turu 3'ten ÖNCE bu
+ * öncül YANLIŞTI: `\n`/`\r\n`/sekme/NBSP değişmeden kalıyordu, yani ikinci
+ * SATIRDAKİ kelime bir boşluktan SONRA değil bir satır sonundan sonra
+ * geliyordu ve `'% tok%'` onu hiç BULAMIYORDU — çok satırlı mesaj, sohbette
+ * SIK rastlanan bir girdi şekli, ikinci satırdan sonra ARANAMAZ hâldeydi).
+ * Öncül artık YENİ yazılan satırlar için DOĞRU; eski satırlar ve kapatılmayan
+ * residual için `searchableFolded`/`searchMessages` yorumlarına bkz. "Kelime
+ * başı" bu sayede `LIKE 'tok%' OR LIKE '% tok%'` ikilisiyle TAM ifade
+ * edilebiliyor — ayrı bir tokenizer kurmaya gerek yok.
  */
 function buildLikePredicate(tokens: string[]): { sql: string; params: SqlValue[] } {
   const params: SqlValue[] = [];
@@ -263,25 +286,32 @@ function buildLikePredicate(tokens: string[]): { sql: string; params: SqlValue[]
  *    HER İKİ yolda da TEK token "100"a iner (review turu 2 ruling'i,
  *    `tokenizeFolded`'daki yorum).
  *
- * ── RESIDUAL — belgelenmiş, KASITLI olarak DÜZELTİLMEDİ (review turu 2) ─────
+ * ── RESIDUAL — belgelenmiş, KASITLI olarak DÜZELTİLMEDİ ─────────────────────
  * Yukarıdaki değişmez yalnız SORGU tarafı için. BELGE (mesaj içeriği) tarafı
  * hâlâ FARKLI yollardan geçiyor: FTS indeksi `content_folded`ı KENDİ
  * `unicode61` tokenizer'ıyla böler (bkz. chatDb.ts'teki `CREATE_MESSAGES_FTS`),
- * LIKE ise aynı kolonu HAM DİZE olarak LIKE'lar. Yani arşivde "a&b" diye
- * YAZILMIŞ bir mesaj FTS indeksinde `["a","b"]`'ye bölünür ama LIKE'ın
- * gördüğü `content_folded` hâlâ bitişik "a&b"dir — "b" sorgusu o satırı
- * FTS'te BULUR, LIKE'ta BULAMAZ. Kapatmak `content_folded`ı YAZMA ANINDA
- * (Task 2'nin yazıcı kapısı, `searchableFolded`) noktalamadan arındırıp
- * TÜM arşivi yeniden indekslemeyi gerektirirdi: kelimenin İÇİNDE sembol
- * geçen (nadir) bir mesaj girdi şekli için orantısız büyük bir değişiklik.
- * Bilerek BIRAKILDI — ayrıca bu residual yalnız LIKE YOLUNDA yaşıyor ve
- * `expo-sqlite@56.0.6` FTS5'i HER İKİ platformda da derliyor, bu projede
- * `expo.sqlite.enableFTS` kapatma bayrağı YOK (bkz. chatDb.ts'teki
+ * LIKE ise aynı kolonu HAM DİZE olarak LIKE'lar.
+ *
+ * Review turu 2'de bu residual "ÇOK satırlı mesaj" (`\n` sonrası kelimeler)
+ * dahil GENİŞ bir sınıf olarak değerlendirilmişti — bu YANLIŞTI ve review
+ * turu 3'te düzeltildi: boşluk sınıfı (satır sonu, sekme, NBSP) artık
+ * `searchableFolded`de TEK boşluğa katlanıyor (bkz. oradaki yorum), yani çok
+ * satırlı mesaj — sohbette NADİR DEĞİL, aksine SIK — residual'ın DIŞINDA.
+ * GERİYE KALAN, GERÇEKTEN nadir olan şekil: kelimenin İÇİNDE noktalama/sembol
+ * geçmesi ("a&b" gibi YAZILMIŞ bir mesaj). FTS indeksinde bu `["a","b"]`'ye
+ * bölünür ama LIKE'ın gördüğü `content_folded` hâlâ bitişik "a&b"dir — "b"
+ * sorgusu o satırı FTS'te BULUR, LIKE'ta BULAMAZ. Kapatmak `content_folded`ı
+ * YAZMA ANINDA (Task 2'nin yazıcı kapısı, `searchableFolded`) TÜM noktalamayı
+ * da ayraca çevirip TÜM arşivi yeniden indekslemeyi gerektirirdi — kelimenin
+ * İÇİNDE sembol geçen bu GERÇEKTEN nadir girdi şekli için orantısız büyük bir
+ * değişiklik. Bilerek BIRAKILDI — ayrıca bu residual yalnız LIKE YOLUNDA
+ * yaşıyor ve `expo-sqlite@56.0.6` FTS5'i HER İKİ platformda da derliyor, bu
+ * projede `expo.sqlite.enableFTS` kapatma bayrağı YOK (bkz. chatDb.ts'teki
  * `isFtsAvailable` yorumu) — yani bugün HİÇBİR canlı derleme LIKE yoluna HİÇ
  * GİRMİYOR; yedek yalnız o bayrak bir gün AÇILIRSA aramayı BRICK etmek yerine
- * YAVAŞ-ama-ÇALIŞIR'a indirmek için var. Bu ikisinin ikisi birden (nadir
- * girdi şekli + bugün koşmayan yol) residual'ı DÜZELTMEYE değmez kılıyor —
- * ama "iki şekil HER DURUMDA özdeş" diye OKUNMASIN, öyle değil.
+ * YAVAŞ-ama-ÇALIŞIR'a indirmek için var. Bu ikisinin ikisi birden (GERÇEKTEN
+ * nadir girdi şekli + bugün koşmayan yol) residual'ı DÜZELTMEYE değmez
+ * kılıyor — ama "iki şekil HER DURUMDA özdeş" diye OKUNMASIN, öyle değil.
  */
 export function searchMessages(
   foldedQuery: string,

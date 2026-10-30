@@ -286,6 +286,26 @@ describe.each([
     saveMessage(msg('m1', 'cift  bosluk icerir'), CONV); // içerikte de ÇİFT boşluk var
     expect(searchMessages('   ', { limit: 10 })).toHaveLength(0);
   });
+
+  // Review turu 3, Önemli — ölçülen regresyon: çok satırlı bir mesajda
+  // ikinci satırdaki kelime LIKE yolunda ASLA bulunmuyordu, çünkü
+  // `searchableFolded` boşluk SINIFI karakterlere (`\n`, `\r\n`, sekme, NBSP)
+  // dokunmuyordu ve `buildLikePredicate`in "kelime başı = BOŞLUKTAN sonra"
+  // varsayımı satır sonlarında YANLIŞ çıkıyordu. Çok satırlı mesaj sohbette
+  // NADİR DEĞİL — bu, önceki round'un "residual" diye bıraktığı şeyin asıl
+  // (ve artık kapanan) örneğiydi. `searchableFolded`deki
+  // `.replace(/\s+/g, ' ')` tüm bu karakterleri TEK boşluğa indiriyor.
+  it('çok satırlı / sekmeli / NBSP\'li mesajlar iki yolda da AYNI şekilde bulunuyor', () => {
+    saveMessage(msg('m1', 'merhaba\ndunya'), CONV);
+    saveMessage(msg('m2', 'satir1\r\nsatir2'), CONV);
+    saveMessage(msg('m3', 'proje\tplani'), CONV);
+    saveMessage(msg('m4', 'ali veli'), CONV); // NBSP (U+00A0)
+
+    expect(searchMessages('dunya', { limit: 10 }).map((h) => h.messageId)).toEqual(['m1']);
+    expect(searchMessages('satir2', { limit: 10 }).map((h) => h.messageId)).toEqual(['m2']);
+    expect(searchMessages('plani', { limit: 10 }).map((h) => h.messageId)).toEqual(['m3']);
+    expect(searchMessages('veli', { limit: 10 }).map((h) => h.messageId)).toEqual(['m4']);
+  });
 });
 
 describe('readAround', () => {
