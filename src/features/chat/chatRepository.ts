@@ -137,6 +137,17 @@ WHERE messages.sender_id            IS NOT excluded.sender_id
  * id'ye bakarsak aynı mantıksal mesaj İKİ SATIR olurdu (ve kısmi unique index
  * bunu reddedip yazmayı patlatırdı). Eşleşme bulunduğunda satırın id'si yerinde
  * güncellenir ve identity map aynı anahtara taşınır.
+ *
+ * `pending_mutations` da AYNI satırda REKEY edilir: bir reaksiyon/silme emri
+ * mesaj hâlâ `pending`ken (optimistik `temp-<cmid>` id'siyle) kuyruğa
+ * girebiliyor (`MessageActionSheet`'in reaksiyon/silme aksiyonlarında gönderim
+ * durumu gate'i YOK — bkz. pendingMutations.ts'in `send_state !== 'sent'`
+ * atlama adımı, tam bunun için var). `pending_mutations`'ın FK/cascade'i yok;
+ * rekey edilmezse emir eski id'ye bağlı kalır ve ack'ten sonraki ilk turda
+ * `pruneOrphanPendingMutations` onu YETİM sayıp sessizce SİLER — kullanıcının
+ * verdiği emir hiç ağa çıkmadan kaybolur. `messageCache`'in `rekey`'iyle AYNI
+ * satırda olması bilinçli: ikisi de bu id değişiminin aynı anki sonucu, iki
+ * ayrı mekanizma icat etmek yerine mevcut tek noktaya eklendi.
  */
 export function upsertMessage(
   db: ChatDbDriver,
@@ -156,6 +167,10 @@ export function upsertMessage(
         cmid,
       ]);
       rekeyCache(conversationId, existing.id, raw.id);
+      db.run('UPDATE pending_mutations SET message_id = ? WHERE message_id = ?', [
+        raw.id,
+        existing.id,
+      ]);
     }
   }
   db.run(UPSERT_MESSAGE, messageParams(raw, conversationId, sendState));

@@ -10,7 +10,9 @@ import {
   pruneOrphanPendingMutations,
   readMessageSendState,
   saveMessage,
+  upsertMessage,
 } from '@/features/chat/chatRepository';
+import { getChatDb } from '@/features/chat/db/chatDb';
 import type { PendingMutationRow } from '@/features/chat/db/rows';
 import { clear as clearMessageCache } from '@/features/chat/messageCache';
 import type { MessageDto } from '@/shared/types';
@@ -139,5 +141,41 @@ describe('pending_mutations: yazıp geri okuma', () => {
 
     expect(readMessageSendState('msg-1')).toBe('pending');
     expect(readMessageSendState('msg-yok')).toBeNull();
+  });
+
+  // Review round 1, Important 3: `upsertMessage` cmid→server-id rewrite'ında
+  // `messages.id`'yi yerinde değiştiriyor (bkz. chatRepository.ts). Bir
+  // reaksiyon/silme emri mesaj hâlâ `pending`ken (temp id) kuyruğa girmiş
+  // olabilir — `pending_mutations`'ın FK/cascade'i yok, rekey edilmezse emir
+  // eski id'ye bağlı kalıp bir sonraki turda `pruneOrphanPendingMutations`
+  // tarafından YETİM sayılıp sessizce silinir (kullanıcının emri hiç ağa
+  // çıkmadan kaybolur).
+  it('upsertMessage cmid rekey\'inde pending_mutations.message_id da REKEY EDİLİYOR', () => {
+    const cmid = 'cmid-rekey';
+    // Optimistik satır: temp id + clientMessageId, henüz `pending`.
+    upsertMessage(getChatDb(), msg('temp-1', { clientMessageId: cmid }), CONV, 'pending');
+    upsertPendingMutation(row({ message_id: 'temp-1', kind: 'reaction' }));
+    upsertPendingMutation(row({ message_id: 'temp-1', kind: 'delete', payload_json: '{"forEveryone":false}' }));
+
+    // ACK: sunucu gerçek id ile geldi.
+    upsertMessage(getChatDb(), msg('msg-real', { clientMessageId: cmid }), CONV, 'sent');
+
+    const rows = readPendingMutations();
+    expect(rows).toHaveLength(2); // çoğalmadı, ikisi de taşındı
+    expect(rows.map((r) => r.message_id)).toEqual(['msg-real', 'msg-real']);
+    expect(rows.map((r) => r.kind).sort()).toEqual(['delete', 'reaction']);
+    // Eski id ADINA artık hiçbir satır yok — orphan olarak silinmeyi
+    // beklemiyor, taşınmış.
+    expect(readPendingMutations().some((r) => r.message_id === 'temp-1')).toBe(false);
+  });
+
+  it('upsertMessage rekey YOKKEN (aynı id) pending_mutations satırına DOKUNMUYOR', () => {
+    insertMessage('msg-1', 'sent');
+    upsertPendingMutation(row({ message_id: 'msg-1' }));
+
+    upsertMessage(getChatDb(), msg('msg-1'), CONV, 'sent');
+
+    expect(readPendingMutations()).toHaveLength(1);
+    expect(readPendingMutations()[0].message_id).toBe('msg-1');
   });
 });

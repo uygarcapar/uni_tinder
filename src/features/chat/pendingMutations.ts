@@ -1,5 +1,5 @@
 /**
- * Mutasyon kuyruğu TURU — reaksiyon/silme emirlerinin AĞA bir kez taşınması.
+ * Mutasyon kuyruğu TURU — reaksiyon/silme emirlerinin AĞA taşınması.
  *
  * Bugüne kadar bu emirler (ChatScreen'in `handlePickReaction`/`handleDelete`
  * yolları) yalnız optimistik uygulanıyordu: ağ çağrısı başarısız olunca
@@ -7,6 +7,17 @@
  * (`pending_mutations` tablosu) ve Task 2 (`pendingMutationPolicy.ts`, saf
  * birleştirme/sınıflandırma) bu ayrımın iki yarısı; burası üçüncü yarı: diskten
  * okuyup isteği atan, sonucu diske/REDUX'a yazan taraf.
+ *
+ * ── "Bir kez" DEĞİL, EN AZ BİR KEZ ───────────────────────────────────────────
+ * Eşzamanlı tur koşmaz (`inFlight`), ama bir satırın ağ çağrısı dönüp
+ * `deletePendingMutation` çalışmadan ÖNCE süreç ölürse (ya da bookkeeping'in
+ * kendisi patlarsa, aşağıdaki per-satır try/catch'e bak) emir bir SONRAKİ
+ * turda tekrar gönderilir. Bu TASARIMLA tolere ediliyor: backend reaksiyon/
+ * silme uçlarını bunun için idempotent dondurdu (silmede UT-6720 = "zaten
+ * silinmiş" = `done`; reaksiyonda sunucu tam listeyi döndüğü için ikinci bir
+ * `addReaction` aynı emojiyi tekrar eklemiyor, sadece aynı sonucu bir daha
+ * veriyor). Yani kayıp YOK ama mükerrer istek OLABİLİR — kullanıcıya görünen
+ * fark yok.
  *
  * ── Satır başına HİÇBİR İÇ BELLEK (no cache) ────────────────────────────────
  * `outbox.ts`'teki `attempts` Map'inin tarihçesi iki ayrı bug üretti: soğuk
@@ -23,9 +34,17 @@
  * event'i ya da geçmiş sayfası düzeltir. Kuyruk bir anlık görüntü (snapshot)
  * tutsaydı o görüntü de aynı sebepten bayat olurdu (başka kullanıcının
  * reaksiyonu emrin verildiği an ile şimdi arasında değişmiş olabilir) —
- * snapshot tutmak bu sorunu ÇÖZMEZ, yalnız gizler. Silmede de aynı sınır
- * geçerli: geri alma yalnız `deletedAt`/`deletedForEveryone` bayraklarını
- * geri çeker, orijinal `content`'i GERİ GETİRMEZ (bu satırda hiç saklanmadı).
+ * snapshot tutmak bu sorunu ÇÖZMEZ, yalnız gizler.
+ *
+ * Mesaj Redux'ta YÜKLÜ DEĞİLSE (sohbet kapalı, bucket hiç kurulmamış) geri
+ * alma HİÇ dispatch ETMİYOR: `reactionsChanged`'i mirror (`chatMirrorMiddleware`)
+ * KOŞULSUZ işliyor (`repo.applyReactions`), yani boş bir listeden türetilen
+ * "yeni" liste diskteki TÜM reaksiyonları (başka kullanıcılarınkini de) silerdi
+ * — bu, "tazelenmiyor"dan çok daha kötü bir sonuç ("siliniyor"). Aynı sınır
+ * silmede de geçerli: geri alma yalnız `deletedAt`/`deletedForEveryone`
+ * bayraklarını geri çeker ve bunu da YALNIZ mesaj Redux'ta yüklüyken yapar
+ * (eksik alanlarla `saveMessage`'ı — `messageEdited`'in mirror karşılığı —
+ * çağırmak `NOT NULL` kolonları boş geçip satırı bozardı).
  *
  * ── Rate limit paylaşımlı ────────────────────────────────────────────────────
  * Reaksiyon/silme uçları `messaging_default` kovasını (`MessagesController`
@@ -60,6 +79,7 @@ import { remainingNow } from "@/shared/services/rateLimitBudget";
 import { showInfoToast } from "@/shared/services/toaster";
 import { store } from "@/shared/store";
 import { devLog } from "@/shared/utils/devLog";
+import type { MessageDto, MessageReactionDto } from "@/shared/types";
 
 const dispatch = (action: any) => (store.dispatch as any)(action);
 
@@ -68,7 +88,7 @@ function myUserId(): string | undefined {
   return auth?.user?.userId || auth?.user?.id;
 }
 
-function findMessage(conversationId: string, messageId: string): any | null {
+function findMessage(conversationId: string, messageId: string): MessageDto | null {
   const messages = (store.getState() as any)?.chat?.messagesByConv?.[conversationId]?.messages;
   if (!Array.isArray(messages)) return null;
   return messages.find((m: any) => m?.id === messageId) ?? null;
@@ -134,13 +154,19 @@ export function enqueueDelete(args: {
 
 /**
  * Kalıcı ret sonrası reaksiyonu geri alır: listeden BENİM emojim çıkarılır,
- * `base` varsa yerine geri konur. Bkz. dosya başı not — DİĞER kullanıcıların
- * sayıları burada tazelenmiyor, bu TAM bir geri alma değil.
+ * `base` varsa yerine geri konur.
+ *
+ * Mesaj Redux'ta YÜKLÜ DEĞİLSE (`findMessage` null) HİÇBİR ŞEY dispatch
+ * ETMEZ — bkz. dosya başı not. Boş bir `prev`den türetilmiş bir liste
+ * mirror'da `repo.applyReactions` ile KOŞULSUZ yazılır ve diskteki TÜM
+ * reaksiyonları (başkalarınınkini de) silerdi.
  */
 function revertReaction(row: PendingMutationRow, payload: ReactionPayload): void {
-  const uid = myUserId();
   const current = findMessage(row.conversation_id, row.message_id);
-  const prev: any[] = Array.isArray(current?.reactions) ? current.reactions : [];
+  if (!current) return;
+
+  const uid = myUserId();
+  const prev: MessageReactionDto[] = Array.isArray(current.reactions) ? current.reactions : [];
 
   const stripped = prev
     .map((r) =>
@@ -177,33 +203,38 @@ function revertReaction(row: PendingMutationRow, payload: ReactionPayload): void
 
 /**
  * Kalıcı ret sonrası silmeyi geri alır. Yalnız bayraklar geri çekilir —
- * orijinal `content` bu satırda hiç saklanmadığı için GERİ GETİRİLEMEZ (bkz.
- * dosya başı not).
+ * orijinal `content` bu satırda hiç saklanmadığı için GERİ GETİRİLEMEZ.
+ *
+ * Mesaj Redux'ta YÜKLÜ DEĞİLSE dispatch ETMEZ: mirror `chat/messageEdited`'i
+ * `repo.saveMessage` (TÜM kolonların upsert'i) ile işliyor — eksik alanlarla
+ * (örn. `sentAt` NOT NULL) çağırmak satırı bozardı. `current` DOLUYSA onu
+ * olduğu gibi spread edip yalnız iki bayrağı eziyoruz — eksik alan yok.
  */
 function revertDelete(row: PendingMutationRow): void {
+  const current = findMessage(row.conversation_id, row.message_id);
+  if (!current) return;
   dispatch(
     messageEdited({
-      id: row.message_id,
-      conversationId: row.conversation_id,
+      ...current,
       deletedAt: null,
       deletedForEveryone: false,
-    } as any),
+    } as MessageDto),
   );
 }
 
 /** Tek satırı ağa taşır. `done` dışındaki dönüşler YALNIZ throw ile gelir. */
-async function sendRow(row: PendingMutationRow): Promise<void> {
+async function sendRow(row: PendingMutationRow, payload: ReactionPayload | DeletePayload): Promise<void> {
   if (row.kind === "reaction") {
-    const payload: ReactionPayload = JSON.parse(row.payload_json);
-    let serverReactions: any;
+    const p = payload as ReactionPayload;
+    let serverReactions: MessageReactionDto[] | undefined;
     // Sıra önemli: `base` hâlâ sunucuda dururken `desired` eklenirse backend
     // kullanıcı başına tek reaksiyon kuralını delmiş olur (bkz. ChatScreen'in
     // aynı sırayı koruyan `handlePickReaction`'ı).
-    if (payload.base && payload.base !== payload.desired) {
-      serverReactions = await chatService.removeReaction(row.message_id, payload.base);
+    if (p.base && p.base !== p.desired) {
+      serverReactions = await chatService.removeReaction(row.message_id, p.base);
     }
-    if (payload.desired) {
-      serverReactions = await chatService.addReaction(row.message_id, payload.desired);
+    if (p.desired) {
+      serverReactions = await chatService.addReaction(row.message_id, p.desired);
     }
     // Sunucu tam listeyi dönüyor → kanonikleştir. Hiç çağrı yapılmadıysa
     // (desired ve base ikisi de null — enqueue'nin normalde üretmediği, ama
@@ -218,8 +249,8 @@ async function sendRow(row: PendingMutationRow): Promise<void> {
       );
     }
   } else {
-    const payload: DeletePayload = JSON.parse(row.payload_json);
-    await chatService.deleteMessage(row.message_id, payload.forEveryone);
+    const p = payload as DeletePayload;
+    await chatService.deleteMessage(row.message_id, p.forEveryone);
   }
 }
 
@@ -238,8 +269,11 @@ async function run(): Promise<FlushResult> {
   // yığılmasın.
   try {
     pruneOrphanPendingMutations();
-  } catch {
+  } catch (e) {
     // SQL hatası turu kilitlemez — satırlar bir sonraki turda temizlenir.
+    // Diğer swallow'larla aynı davranış (bkz. chatMirrorMiddleware.ts), ama
+    // ARTIK SESSİZ DEĞİL: kalıcı bir SQL arızası burada iz bırakmalı.
+    devLog("⚠️ [pendingMutations] yetim satır budaması başarısız", e);
   }
 
   let opsDone = 0;
@@ -250,52 +284,90 @@ async function run(): Promise<FlushResult> {
     if (shouldStopFlush(remainingNow(), opsDone)) break;
 
     // 1) optimistik kimlik sunucuda yok — satır KALIR, mesaj gönderilince
-    // sıradaki tur onu alır.
+    // sıradaki tur onu alır. Bu artık SAVUNMACI değil: mesaj hâlâ `pending`ken
+    // (temp id) reaksiyon/silme verilebiliyor (MessageActionSheet'te gönderim
+    // durumu gate'i yok) — ack geldiğinde `upsertMessage` bu satırı REKEY eder
+    // (bkz. chatRepository.ts), yani bu satır eninde sonunda `sent` id'siyle
+    // tekrar görünür.
     if (readMessageSendState(row.message_id) !== "sent") continue;
     // 2) backoff dolmadı.
     if (row.next_eligible_at_ms > Date.now()) continue;
 
     opsDone += 1;
-    let outcome: MutationOutcome;
-    let err: unknown = null;
+
+    let payload: ReactionPayload | DeletePayload | null = null;
+    let parseError: unknown = null;
     try {
-      await sendRow(row);
-      outcome = "done";
+      payload = JSON.parse(row.payload_json);
     } catch (e) {
-      err = e;
-      outcome = classifyMutationError(e, row.kind);
+      parseError = e;
     }
 
-    if (outcome === "done") {
-      deletePendingMutation(row.message_id, row.kind);
-      result.done += 1;
-    } else if (outcome === "retry") {
-      const attempts = row.attempts + 1;
-      upsertPendingMutation({
-        ...row,
-        attempts,
-        next_eligible_at_ms: nextEligibleAt(attempts, Date.now()),
-        last_error: err instanceof Error ? err.message : String(err),
-      });
-      result.retried += 1;
+    let outcome: MutationOutcome;
+    let err: unknown = null;
+    if (parseError) {
+      // Bozuk payload KALICI bir hata: `classifyMutationError` kodsuz bir
+      // hatada 'retry' döner, yani bu satır her turda AYNI parse hatasıyla
+      // sonsuza dek denenirdi (zehir hap). Pratikte yalnız bu modülün kendi
+      // `JSON.stringify` çıktısı buraya yazılır, yani ulaşılması GÜÇ — ama
+      // ulaşırsa 'retry' yanlış kaderdir.
+      err = parseError;
+      outcome = "rejected";
     } else {
-      // rejected: satır AYNI ANDA silinir (kalıcı ret burada "tekrar dene"
-      // hâli DEĞİL) + geri alma + toast.
-      deletePendingMutation(row.message_id, row.kind);
-      if (row.kind === "reaction") {
-        revertReaction(row, JSON.parse(row.payload_json));
-      } else {
-        revertDelete(row);
+      try {
+        await sendRow(row, payload as ReactionPayload | DeletePayload);
+        outcome = "done";
+      } catch (e) {
+        err = e;
+        outcome = classifyMutationError(e, row.kind);
       }
-      showInfoToast({
-        message: chatErrorText(
-          err,
-          (k: string) => i18n.t(k) as string,
-          row.kind === "reaction" ? "errors.generic" : "chat.deleteMessage.error",
-        ),
-        variant: "error",
-      });
-      result.rejected += 1;
+    }
+
+    try {
+      if (outcome === "done") {
+        deletePendingMutation(row.message_id, row.kind);
+        result.done += 1;
+      } else if (outcome === "retry") {
+        const attempts = row.attempts + 1;
+        upsertPendingMutation({
+          ...row,
+          attempts,
+          next_eligible_at_ms: nextEligibleAt(attempts, Date.now()),
+          last_error: err instanceof Error ? err.message : String(err),
+        });
+        result.retried += 1;
+      } else {
+        // rejected: satır AYNI ANDA silinir (kalıcı ret burada "tekrar dene"
+        // hâli DEĞİL) + geri alma + toast. Geri alma yalnız payload
+        // başarıyla parse edildiyse VE (reaksiyonda) mesaj yüklüyse çalışır —
+        // bkz. revertReaction/revertDelete'in kendi no-op kapıları.
+        deletePendingMutation(row.message_id, row.kind);
+        if (row.kind === "reaction" && payload) {
+          revertReaction(row, payload as ReactionPayload);
+        } else if (row.kind === "delete") {
+          revertDelete(row);
+        }
+        showInfoToast({
+          message: chatErrorText(
+            err,
+            (k: string) => i18n.t(k) as string,
+            row.kind === "reaction" ? "errors.generic" : "chat.deleteMessage.error",
+          ),
+          variant: "error",
+        });
+        result.rejected += 1;
+      }
+    } catch (bookkeepingErr) {
+      // Bu satırın disk/redux muhasebesi patladı ama ağ isteği çoğu zaman
+      // ZATEN gitmişti (idempotent uçlar — bkz. dosya başı "en az bir kez"
+      // notu). TUR burada çökmez: sıradaki satıra geçilir, bu satır bir
+      // sonraki turda (durumuna göre) yeniden ele alınır.
+      devLog(
+        "⚠️ [pendingMutations] satır sonucu yazılamadı",
+        row.message_id,
+        row.kind,
+        bookkeepingErr,
+      );
     }
   }
 

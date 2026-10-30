@@ -25,7 +25,8 @@ jest.mock('@/shared/store', () => ({
 
 import * as SQLite from 'expo-sqlite';
 import { openChatDb, __resetChatDbForTests } from '@/features/chat/db/chatDb';
-import { readPendingMutations, saveMessage } from '@/features/chat/chatRepository';
+import * as chatRepo from '@/features/chat/chatRepository';
+import { readPendingMutations, saveMessage, upsertPendingMutation } from '@/features/chat/chatRepository';
 import { clear as clearMessageCache } from '@/features/chat/messageCache';
 import chatService from '@/features/chat/chatService';
 import { isOfflineNow } from '@/shared/services/networkStatus';
@@ -123,16 +124,26 @@ describe('pendingMutations: tur', () => {
     expect(readPendingMutations()).toHaveLength(1);
   });
 
-  it('mesaj gönderildikten sonra aynı satır uygulanıyor', async () => {
-    insertMessage('msg-1', 'pending');
-    enqueueReaction({ messageId: 'msg-1', conversationId: CONV, desired: '😀', serverBase: null });
+  // Review Focus 3 (düzeltilmiş): gerçek senaryo optimistik TEMP id'den
+  // sunucu id'sine REKEY'i de kapsıyor — `MessageActionSheet`'in gönderim
+  // durumu gate'i yok, yani kullanıcı mesaj hâlâ `pending`ken (temp id)
+  // reaksiyon verebiliyor. Önceki taslak `insertMessage('msg-1','sent')`
+  // (id-koruyan upsert) kullanıyordu ve bu, ack'in id'yi DEĞİŞTİRDİĞİ gerçek
+  // yolu hiç test ETMİYORDU — `upsertMessage`'daki rekey satırı silinse bile
+  // bu taslak yeşil kalırdı. Şimdi id değişiyor; `chatRepository.upsertMessage`
+  // `pending_mutations.message_id`'yi REKEY ETMEZSE bu test KIRMIZI olur.
+  it('mesaj gönderildikten sonra aynı satır uygulanıyor (temp id → sunucu id rekey)', async () => {
+    const cmid = 'cmid-1';
+    saveMessage(msg('temp-cmid-1', { clientMessageId: cmid }), CONV, 'pending');
+    enqueueReaction({ messageId: 'temp-cmid-1', conversationId: CONV, desired: '😀', serverBase: null });
 
     // ilk turda pending, satır ağa çıkmıyor
     await flushPendingMutations('test');
     expect(addReaction).not.toHaveBeenCalled();
 
-    // mesaj gönderildi, sonra ikinci tur (upsert aynı id'yi günceller)
-    insertMessage('msg-1', 'sent');
+    // ACK: sunucu gerçek id ile geldi — upsertMessage id'yi (ve pending_mutations
+    // satırını) REKEY eder.
+    saveMessage(msg('msg-1', { clientMessageId: cmid }), CONV, 'sent');
     await flushPendingMutations('test');
 
     expect(addReaction).toHaveBeenCalledWith('msg-1', '😀');
@@ -206,6 +217,7 @@ describe('pendingMutations: tur', () => {
     const [row] = readPendingMutations();
     expect(row.attempts).toBe(1);
     expect(row.next_eligible_at_ms).toBeGreaterThan(Date.now());
+    expect(row.last_error).toBe('Network Error');
     expect(showInfoToast).not.toHaveBeenCalled();
   });
 
@@ -308,5 +320,208 @@ describe('pendingMutations: tur', () => {
     await flushPendingMutations('test');
 
     expect(readPendingMutations().map((r) => r.message_id)).toEqual([]);
+  });
+
+  // ── Review round 1 fixes ────────────────────────────────────────────────
+
+  describe('enqueue* sözleşmesi', () => {
+    it('yeni emir attempts/next_eligible_at_ms SIFIRLAR, first_seen_at_ms KORUR', () => {
+      insertMessage('msg-1', 'sent');
+      enqueueReaction({ messageId: 'msg-1', conversationId: CONV, desired: '😀', serverBase: null });
+      const [firstRow] = readPendingMutations();
+      const originalFirstSeen = firstRow.first_seen_at_ms;
+
+      // Satırı eski bir backoff'a sahipmiş gibi işaretle (başarısız bir
+      // turdan kalmış gibi) — gerçek dünyada `run()`'ın 'retry' dalı yazar.
+      upsertPendingMutation({
+        ...firstRow,
+        attempts: 3,
+        next_eligible_at_ms: Date.now() + 60_000,
+        last_error: 'önceki hata',
+      });
+
+      // Kullanıcı YENİ bir emoji seçti — yeni niyet eski backoff'u miras
+      // ALMAMALI, ama satırın yaşı (first_seen_at_ms) korunmalı.
+      enqueueReaction({ messageId: 'msg-1', conversationId: CONV, desired: '❤️', serverBase: null });
+
+      const [row] = readPendingMutations();
+      expect(row.attempts).toBe(0);
+      expect(row.next_eligible_at_ms).toBe(0);
+      expect(row.first_seen_at_ms).toBe(originalFirstSeen);
+    });
+
+    it('enqueueDelete de aynı kuralı izliyor: attempts SIFIRLANIR, first_seen_at_ms KORUNUR', () => {
+      insertMessage('msg-1', 'sent');
+      enqueueDelete({ messageId: 'msg-1', conversationId: CONV, forEveryone: false });
+      const [firstRow] = readPendingMutations();
+      const originalFirstSeen = firstRow.first_seen_at_ms;
+
+      upsertPendingMutation({ ...firstRow, attempts: 2, next_eligible_at_ms: Date.now() + 30_000 });
+      enqueueDelete({ messageId: 'msg-1', conversationId: CONV, forEveryone: true });
+
+      const [row] = readPendingMutations();
+      expect(row.attempts).toBe(0);
+      expect(row.next_eligible_at_ms).toBe(0);
+      expect(row.first_seen_at_ms).toBe(originalFirstSeen);
+    });
+  });
+
+  describe('geri alma — Important 1/2 (reviewer düzeltmeleri)', () => {
+    it('mesaj Redux\'ta YÜKLÜ DEĞİLKEN kalıcı ret, reactionsChanged HİÇ dispatch ETMİYOR', async () => {
+      // Bütçe/diğer testlerden farklı olarak store BOŞ bırakılıyor (beforeEach
+      // zaten setStoreMessages([]) yapıyor) — bucket yok, findMessage null döner.
+      insertMessage('msg-1', 'sent');
+      enqueueReaction({ messageId: 'msg-1', conversationId: CONV, desired: '😀', serverBase: null });
+      addReaction.mockRejectedValue({ response: { data: { errorCode: 'UT-6731' } } });
+
+      const r = await flushPendingMutations('test');
+
+      expect(r.rejected).toBe(1);
+      // Ayırt edici: eski davranış boş bir `prev`den türetilmiş `reactions: []`
+      // dispatch ederdi — mirror bunu KOŞULSUZ yazar ve diskteki (başka
+      // kullanıcılara ait olabilecek) TÜM reaksiyonları silerdi. Düzeltme
+      // sonrası bucket yokken dispatch HİÇ yapılmıyor.
+      expect(store.dispatch).not.toHaveBeenCalledWith(
+        expect.objectContaining({ type: 'chat/reactionsChanged' }),
+      );
+    });
+
+    it('silmede kalıcı ret VE mesaj Redux\'ta yüklüyken, TAM mesaj nesnesiyle messageEdited dispatch ediliyor', async () => {
+      insertMessage('msg-1', 'sent');
+      enqueueDelete({ messageId: 'msg-1', conversationId: CONV, forEveryone: false });
+      const loaded = {
+        id: 'msg-1',
+        conversationId: CONV,
+        senderId: 'me',
+        content: 'merhaba',
+        contentType: 0,
+        sentAt: '2026-10-29T10:00:00.000Z',
+        deletedAt: '2026-10-29T10:05:00.000Z',
+        deletedForEveryone: false,
+      };
+      setStoreMessages([loaded]);
+      deleteMessage.mockRejectedValue({ response: { data: { errorCode: 'UT-6725' } } }); // DELETE_SYSTEM → actionRejected
+
+      await flushPendingMutations('test');
+
+      // Ayırt edici: eksik alanlı (yalnız id/conversationId/bayraklar) bir
+      // payload DEĞİL — mirror'ın `saveMessage`'ı (tüm kolon upsert'i,
+      // `sent_at` NOT NULL dahil) bunu kabul edebilsin diye TÜM alanlar
+      // (content, senderId, sentAt...) korunuyor, yalnız iki bayrak eziliyor.
+      expect(store.dispatch).toHaveBeenCalledWith(
+        expect.objectContaining({
+          type: 'chat/messageEdited',
+          payload: expect.objectContaining({
+            id: 'msg-1',
+            content: 'merhaba',
+            senderId: 'me',
+            sentAt: '2026-10-29T10:00:00.000Z',
+            deletedAt: null,
+            deletedForEveryone: false,
+          }),
+        }),
+      );
+    });
+
+    it('silmede kalıcı ret VE mesaj Redux\'ta YÜKLÜ DEĞİLKEN, messageEdited HİÇ dispatch EDİLMİYOR', async () => {
+      insertMessage('msg-1', 'sent');
+      enqueueDelete({ messageId: 'msg-1', conversationId: CONV, forEveryone: false });
+      deleteMessage.mockRejectedValue({ response: { data: { errorCode: 'UT-6725' } } });
+
+      await flushPendingMutations('test');
+
+      expect(store.dispatch).not.toHaveBeenCalledWith(
+        expect.objectContaining({ type: 'chat/messageEdited' }),
+      );
+    });
+
+    it('kalıcı ret: base DOLUYSA ve aynı emojiye BAŞKASI da basmışsa, o chip\'e GERİ EKLENİYOR (artmıyor kaybolmuyor)', async () => {
+      insertMessage('msg-1', 'sent');
+      enqueueReaction({ messageId: 'msg-1', conversationId: CONV, desired: '❤️', serverBase: '😀' });
+      setStoreMessages([
+        { id: 'msg-1', conversationId: CONV, reactions: [{ emoji: '😀', count: 2, userIds: ['me', 'other'] }] },
+      ]);
+      removeReaction.mockResolvedValue([{ emoji: '😀', count: 1, userIds: ['other'] }]);
+      addReaction.mockRejectedValue({ response: { data: { errorCode: 'UT-6731' } } });
+
+      await flushPendingMutations('test');
+
+      // revert STORE'u okur (remove'un ağ cevabını DEĞİL): benim payım silinir
+      // (count 2→1, userIds→['other']), sonra base ('😀') GERİ KONUR — var
+      // olan chip'e eklenir (increment dalı), YENİ bir chip AÇILMAZ.
+      expect(lastReactionsDispatched()).toEqual([{ emoji: '😀', count: 2, userIds: ['other', 'me'] }]);
+    });
+
+    it('kalıcı ret: base DOLUYSA ve o emojiye yalnız BEN basmışsam, strip sonrası YENİ chip AÇILIYOR', async () => {
+      insertMessage('msg-1', 'sent');
+      enqueueReaction({ messageId: 'msg-1', conversationId: CONV, desired: '❤️', serverBase: '😀' });
+      setStoreMessages([
+        { id: 'msg-1', conversationId: CONV, reactions: [{ emoji: '😀', count: 1, userIds: ['me'] }] },
+      ]);
+      addReaction.mockRejectedValue({ response: { data: { errorCode: 'UT-6731' } } });
+
+      await flushPendingMutations('test');
+
+      // strip sonrası liste BOŞ (count 0 → filtrelendi) — base'in restore'u
+      // "var olana ekle" dalını DEĞİL, "yeni chip ekle" dalını kullanmak
+      // zorunda.
+      expect(lastReactionsDispatched()).toEqual([{ emoji: '😀', count: 1, userIds: ['me'] }]);
+    });
+  });
+
+  describe('bozuk payload ve satır-seviyeli dayanıklılık (minörler)', () => {
+    it('bozuk payload_json KALICI sayılır: satır silinir, SONSUZA DEK retry YAPILMAZ', async () => {
+      insertMessage('msg-1', 'sent');
+      upsertPendingMutation({
+        message_id: 'msg-1',
+        kind: 'reaction',
+        conversation_id: CONV,
+        payload_json: '{bozuk json',
+        attempts: 0,
+        first_seen_at_ms: Date.now(),
+        next_eligible_at_ms: 0,
+        last_error: null,
+      });
+
+      const r = await flushPendingMutations('test');
+
+      // Ayırt edici: `classifyMutationError` kodsuz bir hatada 'retry' döner
+      // — parse hatası ÖZEL OLARAK ele alınmazsa bu satır 'retry' sayılır,
+      // attempts artar ve backoff'la SONSUZA DEK aynı parse hatasıyla
+      // yeniden denenirdi (zehir hap). Burada 'rejected' olmalı.
+      expect(r.rejected).toBe(1);
+      expect(r.retried).toBe(0);
+      expect(readPendingMutations()).toHaveLength(0);
+      expect(addReaction).not.toHaveBeenCalled();
+      expect(showInfoToast).toHaveBeenCalledWith(expect.objectContaining({ variant: 'error' }));
+    });
+
+    it('bir satırın defter yazımı (deletePendingMutation) patlarsa TUR ÇÖKMÜYOR, diğer satır işleniyor', async () => {
+      insertMessage('msg-1', 'sent');
+      insertMessage('msg-2', 'sent');
+      enqueueReaction({ messageId: 'msg-1', conversationId: CONV, desired: '😀', serverBase: null });
+      enqueueReaction({ messageId: 'msg-2', conversationId: CONV, desired: '😀', serverBase: null });
+
+      const spy = jest
+        .spyOn(chatRepo, 'deletePendingMutation')
+        .mockImplementationOnce(() => {
+          throw new Error('disk patladı');
+        });
+
+      try {
+        const r = await flushPendingMutations('test');
+
+        // Ayırt edici: eski kod bir satırın defter yazımı patlarsa TÜM
+        // promise'i reject ederdi — ikinci satır hiç işlenmezdi. Burada
+        // ikisi de AĞA gitmiş olmalı (network çağrısı defterden ÖNCE).
+        expect(addReaction).toHaveBeenCalledTimes(2);
+        // İlk satırın muhasebesi patladı (sayılmadı), ikincisi normal bitti.
+        expect(r.done).toBe(1);
+        // msg-1 satırı disk yazımı patladığı için HÂLÂ kuyrukta.
+        expect(readPendingMutations().map((row) => row.message_id)).toEqual(['msg-1']);
+      } finally {
+        spy.mockRestore();
+      }
+    });
   });
 });
