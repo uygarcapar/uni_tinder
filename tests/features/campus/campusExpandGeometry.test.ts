@@ -1,3 +1,4 @@
+import { readFileSync } from 'fs';
 import {
   BUTTON_COLUMN,
   campusExpandGeometry,
@@ -67,6 +68,27 @@ it('ölçüm varsa başlangıç verilen kare', () => {
  * Köşe farkı yazılırsa kart küçükken şeridin yanına düşüyor.
  */
 describe('campusExpandTransform', () => {
+  /**
+   * ⚠️🔴 UI THREAD'DE KOŞUYOR → `"worklet"` DİREKTİFİ ŞART.
+   *
+   * Fonksiyon `useAnimatedStyle`in içinden çağrılıyor, yani JS thread'de
+   * değil UI thread'de. İşaretlenmemiş bir fonksiyonu oradan çağırmak
+   * uygulamayı FATAL ile düşürüyor:
+   *   "[Worklets] Tried to synchronously call a non-worklet function".
+   *
+   * Direktif kaynak metninden aranıyor çünkü jest'in babel geçişi worklet
+   * imzasını (`__workletHash`) iliştirmiyor — yani çalışma zamanından
+   * doğrulanamıyor. Kaynak nöbetçisi bu sınıfı kapatan tek şey.
+   */
+  it('UI thread\'de koşuyor — `worklet` direktifi duruyor', () => {
+    const source = readFileSync(
+      'src/features/campus/campusExpandGeometry.ts',
+      'utf8',
+    );
+    const fn = source.slice(source.indexOf('export function campusExpandTransform'));
+    expect(fn.slice(0, fn.indexOf('return'))).toContain('"worklet"');
+  });
+
   const start = { x: 20, y: 600, width: 167, height: 222 };
   const target = { x: 68, y: 200, width: 257, height: 342 };
 

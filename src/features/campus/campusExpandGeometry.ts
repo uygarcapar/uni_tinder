@@ -115,12 +115,24 @@ export interface ExpandTransform {
  * ⚠️ ÖTELEME ÖLÇEKTEN BAĞIMSIZ HESAPLANIYOR: RN önce `translate` sonra `scale`
  * uyguluyor (dizideki sıra), yani öteleme ölçeklenmemiş uzayda. Sıra
  * değişirse bu hesap da değişmeli.
+ *
+ * ⚠️ `"worklet"` DİREKTİFİ GÖVDENİN İLK SATIRI — gerekçe orada.
  */
 export function campusExpandTransform(
   start: ExpandRect,
   target: ExpandRect,
   p: number,
 ): ExpandTransform {
+  /**
+   * ⚠️🔴 UI THREAD'DE KOŞUYOR. `useAnimatedStyle`in içinden çağrılıyor, yani
+   * JS thread'de değil. Direktif olmadan uygulama FATAL ile düşüyor:
+   * "[Worklets] Tried to synchronously call a non-worklet function". Bir kez
+   * cihazda yaşandı; kaynak nöbetçisi testte duruyor.
+   *
+   * ⚠️ Direktif fonksiyonu JS tarafında bozmuyor — düz bir dize ifadesi, yani
+   * node'daki testler aynen koşuyor.
+   */
+  "worklet";
   const startScale = target.width > 0 ? start.width / target.width : 1;
   const scale = startScale + (1 - startScale) * p;
 
