@@ -542,25 +542,45 @@ const logNetworkFailure = (kind: 'TIMEOUT' | 'NETWORK' | 'SERVER', config: Timed
   );
 };
 
+/**
+ * Rate limit defteri YALNIZ `MessagesController` kovasından beslenir.
+ *
+ * `X-RateLimit-Remaining` KOVA BAŞINA bir sayı: backend'de en az iki politika
+ * var (`messaging_default` 200/60sn ve `auth` 5/dk — aşağıdaki 429 dalının
+ * yorumu). Defter tek sayı tutuyor, yani her yanıttan yazmak iki yönde de
+ * yanlış olurdu: (a) başka controller'lar kendi kovalarından header
+ * dönüyorsa, bir feed yanıtının "480 kaldı"sı messaging kovası hakkında
+ * hiçbir şey söylemediği hâlde backfill'e "bol kota" dedirtirdi — tam da
+ * güvensiz olmaması gereken yön; (b) header'sız yanıtlar defteri `null`a
+ * çevirirdi ve bu, turun sayfalar arası 1 sn beklemesinde araya giren
+ * alakasız TEK bir istekle turu kapatmaya yeterdi (prob kuralı).
+ */
+const MESSAGING_BUCKET_PATH = '/api/messages/';
+const isMessagingBucketRequest = (config: { url?: string } | undefined): boolean =>
+  (config?.url ?? '').includes(MESSAGING_BUCKET_PATH);
+
 api.interceptors.response.use(
   (response) => {
     // Yan kanal: dönüş şeklini (response.data) DEĞİŞTİRMEDEN kalan rate
     // limit kotasını deftere yazıyoruz. `response.data` döndürmek yerine
     // AxiosResponse'u geçirmek onlarca çağrı yerini kırardı — bu yüzden
     // header okuma burada, dönüş aynı kalıyor.
-    recordRateLimitHeaders(response.headers);
+    if (isMessagingBucketRequest(response.config)) recordRateLimitHeaders(response.headers);
     return response.data;
   },
   async (error) => {
     const originalRequest: TimedConfig & { _retry?: boolean; _retryCount?: number } = error.config;
 
-    // Başarı dalındaki aynı yan kanal: 429'un gövdesi de bu header'ı taşıyor
-    // (bkz. backfill planı) ve ÖNCEDEN burada hiç okunmuyordu — bir 429'dan
-    // sonra defter son BAŞARILI yanıtın (muhtemelen bol) değerinde donup
-    // kalıyor, bir sonraki tetikleyici aynı duvara kontrolsüz çarpıyordu.
-    // `error.response` yoksa (ağ hatası) `undefined` geçilir — recordRateLimitHeaders
-    // bunu zaten "bilinmiyor" (`null`) sayıyor, burada ayrıca dallanmaya gerek yok.
-    recordRateLimitHeaders(error.response?.headers);
+    // Başarı dalındaki aynı yan kanal (aynı kova kapısıyla): 429'un gövdesi de
+    // bu header'ı taşıyor (bkz. backfill planı) ve ÖNCEDEN burada hiç
+    // okunmuyordu — bir 429'dan sonra defter son BAŞARILI yanıtın (muhtemelen
+    // bol) değerinde donup kalıyor, bir sonraki tetikleyici aynı duvara
+    // kontrolsüz çarpıyordu. `error.response` yoksa (ağ hatası) `undefined`
+    // geçilir — recordRateLimitHeaders bunu zaten "bilinmiyor" (`null`)
+    // sayıyor, burada ayrıca dallanmaya gerek yok.
+    if (isMessagingBucketRequest(originalRequest)) {
+      recordRateLimitHeaders(error.response?.headers);
+    }
 
     // Timeout teşhisi: hangi istek, hangi ekrandan atıldı, kaç ms sonra düştü.
     // console.warn (devLog değil) — release/TestFlight build'de de görünsün,

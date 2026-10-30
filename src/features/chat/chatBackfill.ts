@@ -1,5 +1,6 @@
 import chatService from '@/features/chat/chatService';
 import * as repo from '@/features/chat/chatRepository';
+import realtimeService from '@/features/chat/realtimeService';
 import { isOfflineNow } from '@/shared/services/networkStatus';
 import { remainingNow } from '@/shared/services/rateLimitBudget';
 import { CHAT_BACKFILL_ENABLED } from '@/shared/store/chatFlags';
@@ -209,6 +210,10 @@ export interface BackfillDeps {
  * ilk istek de (varsa) await'siz atıldığı için bu dosyada "senkron tur"
  * riski yalnız burada, zamanlayıcıyı unutup `runBackfillRound`'u doğrudan
  * çağırmaktan gelebilir.
+ *
+ * Gecikme KİMLİK kapısı değil, yalnız zamanlama: 10 saniye "token yerine
+ * oturdu" demiyor. Kapı ateşlenme anındaki `realtimeService.isConnected()`
+ * (aşağıda) — `startDeltaSync`'in kullandığı sinyalin aynısı.
  */
 export function startBackfill(deps: BackfillDeps): () => void {
   // Kill-switch — `runBackfillRound`'daki kapının TEKRARI değil, ÖNCESİ:
@@ -219,6 +224,19 @@ export function startBackfill(deps: BackfillDeps): () => void {
   if (!CHAT_BACKFILL_ENABLED) return () => {};
 
   const timer = setTimeout(() => {
+    // KİMLİK KAPISI — `startDeltaSync`'in boot'ta doğrudan çekmeme
+    // gerekçesinin aynısı: token henüz yerinde olmayabiliyor (bozuk/silinmiş
+    // token deposu, yarım refresh penceresi — ikisi de bu projede yaşandı) ve
+    // o hâlde atılan istek en iyi ihtimalle boşa gider, kötü ihtimalle
+    // 401/refresh yollarını — bir turda 30 isteğe kadar — tetikler. Hub
+    // yalnız kimlik doğrulandıktan sonra bağlanıyor, yani bağlantının kendisi
+    // "token yerinde" demek.
+    //
+    // Bağlı DEĞİLSE bu tur ATLANIR ve yeniden denenmez: bu dalın tek
+    // tetikleyicisi boot (foreground/reconnect tetikleyicisi bilerek bir
+    // sonraki fazda) — yani kazanılan güvenlik, atlanan turun bedeli. Geçmiş
+    // bir sonraki açılışta inmeye devam ediyor; ilerleme diskte duruyor.
+    if (!realtimeService.isConnected()) return;
     void runBackfillRound(deps.getActiveConversationId);
   }, BACKFILL_BOOT_DELAY_MS);
 

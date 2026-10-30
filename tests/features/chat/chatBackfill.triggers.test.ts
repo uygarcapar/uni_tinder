@@ -15,6 +15,15 @@ jest.mock('@/shared/store/chatFlags', () => ({
   CHAT_DELTA_SYNC_ENABLED: true,
   CHAT_BACKFILL_ENABLED: true,
 }));
+// Hub, tetikleyicinin KİMLİK kapısı (bkz. chatBackfill.startBackfill). Gerçek
+// servis `@/shared/services/api`yi ve SignalR'ı çekiyor; burada ihtiyaç duyulan
+// tek şey bağlantının açık/kapalı olması. `mock` öneki şart: factory'ler
+// hoist ediliyor.
+const mockHub = { connected: true };
+jest.mock('@/features/chat/realtimeService', () => ({
+  __esModule: true,
+  default: { isConnected: () => mockHub.connected },
+}));
 
 import * as SQLite from 'expo-sqlite';
 import chatService from '@/features/chat/chatService';
@@ -66,6 +75,7 @@ beforeEach(() => {
   openChatDb();
   __resetBackfillForTests();
   getMessageHistory.mockReset();
+  mockHub.connected = true;
   jest.useFakeTimers({ doNotFake: ['setImmediate'] });
 });
 
@@ -87,6 +97,24 @@ describe('startBackfill', () => {
     insertConversation('conv-1', 1_000);
 
     startBackfill({ getActiveConversationId: () => null });
+
+    expect(getMessageHistory).not.toHaveBeenCalled();
+  });
+
+  it('hub BAĞLI DEĞİLKEN gecikme dolsa bile tur koşmuyor — kimlik kapısı', async () => {
+    // `startDeltaSync`'in boot'ta doğrudan çekmeme gerekçesinin aynısı: bu
+    // kod store modülü yüklenirken çalışıyor, token henüz yerinde
+    // olmayabiliyor (bozuk/silinmiş token deposu, yarım refresh penceresi —
+    // ikisi de bu projede yaşandı). Kapı olmadan tur t+10sn'de 30 isteğe
+    // kadar kimlikli istek atıp her birinde 401/refresh makinesini
+    // çalıştırabiliyordu. Hub yalnız kimlik doğrulandıktan sonra bağlanıyor,
+    // yani bağlantının kendisi "token yerinde" demek.
+    insertConversation('conv-1', 1_000);
+    getMessageHistory.mockResolvedValueOnce(page([msg('m1', 'conv-1', '2026-10-20T10:00:00.000Z')]));
+    mockHub.connected = false;
+
+    startBackfill({ getActiveConversationId: () => null });
+    await jest.advanceTimersByTimeAsync(BACKFILL_BOOT_DELAY_MS);
 
     expect(getMessageHistory).not.toHaveBeenCalled();
   });
