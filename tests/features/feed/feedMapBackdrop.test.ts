@@ -88,8 +88,11 @@ describe('harita iki sekmenin ortak zemini', () => {
   });
 
   it('HARİTA ÇIPLAK KARDEŞ — animasyonlu kap yok, zIndex yok', () => {
-    const root = SOURCE.indexOf(
-      '<View style={{ flex: 1, backgroundColor: colors.bg }}>',
+    // ⚠️ `testID` İDDİAYA DAHİL DEĞİL: kural kökün KİMLİĞİ değil, kökle harita
+    // arasında animasyonlu kap / zIndex olmaması. Köke e2e seçicisi eklemek
+    // bu sözleşmeyi ihlal etmiyor, o yüzden çapa prop'a toleranslı.
+    const root = SOURCE.search(
+      /<View (?:testID="[^"]*" )?style=\{\{ flex: 1, backgroundColor: colors\.bg \}\}>/,
     );
     expect(root).toBeGreaterThan(-1);
     expect(root).toBeLessThan(SOURCE.indexOf('{mapHero}'));
