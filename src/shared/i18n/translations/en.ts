@@ -853,6 +853,10 @@ const en = {
       today: 'Today',
       yesterday: 'Yesterday',
       notFound: "'{{query}}' not found",
+      // Phase 4 — global search's third section: matched messages, below the
+      // conversations.
+      searchMessagesTitle: 'Messages',
+      searchMessagesEmpty: 'No messages found',
     },
     // The restore window length lives in BACKEND config — never hardcode "24
     // hours" here; the remaining time is derived from the `restorableUntil`

@@ -864,6 +864,10 @@ const tr = {
       today: 'Bugün',
       yesterday: 'Dün',
       notFound: "'{{query}}' bulunamadı",
+      // Faz 4 — global aramadaki üçüncü bölüm: sohbetlerin ALTINDA, eşleşen
+      // mesajların listesi.
+      searchMessagesTitle: 'Mesajlar',
+      searchMessagesEmpty: 'Mesaj bulunamadı',
     },
     // Geri alma penceresinin uzunluğu BACKEND config'inden geliyor — metinlerde
     // "24 saat" HARDCODE EDİLMEZ, süre `restorableUntil` damgasından hesaplanıp

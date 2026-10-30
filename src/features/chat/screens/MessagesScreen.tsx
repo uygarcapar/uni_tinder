@@ -70,7 +70,11 @@ import {
   hydrateConversation,
   readVoiceDurationsFromLocal,
 } from "@/features/chat/chatHydrate";
-import { debugLastMessageRows } from "@/features/chat/chatRepository";
+import { debugLastMessageRows, searchMessages } from "@/features/chat/chatRepository";
+import {
+  prepareSearchQuery,
+  type MessageSearchHit,
+} from "@/features/chat/messageSearch";
 import EmptyState from "@/shared/components/EmptyState";
 // Ekran kromunun mod vurgusu (gerekçe `accent`in yanında).
 import { useAppMode } from "@/features/discover/useAppMode";
@@ -98,6 +102,26 @@ import { chromeBlurTint } from "@/shared/theme/blur";
 const TAB_BAR_HEIGHT = 64;
 const TAB_BAR_BOTTOM_GAP = -10;
 const LIST_BOTTOM_GAP = 16;
+
+/**
+ * Mesaj sonuçları — Task 4. Sabit tavan (top-N), SAYFALANMIYOR: `searchMessages`
+ * `limit`/`offset` destekliyor ama global arşiv araması pratikte ilk ekrana
+ * sığan sonuç kadarıyla ilgilenir (kullanıcı daha dar bir sonuç istiyorsa
+ * sorguyu daraltır) — ikinci bir "daha fazla yükle" UI'ı bu fazın kapsamı
+ * DIŞINDA (YAGNI). Sayı sohbet listesinin görünür satır sayısıyla aynı
+ * mertebede, ekranı doldurmaya yeter.
+ */
+const MESSAGE_SEARCH_LIMIT = 20;
+
+/**
+ * `searchMessages` SQLite'a vuran, tüm arşivi tarayan senkron bir sorgu (bkz.
+ * chatRepository.searchMessages'ın FTS/LIKE yorumu) — `conversationsByTab`ın
+ * bellek-içi `includes`ı gibi HER TUŞ VURUŞUNDA çalıştırılamaz. 220ms yazı
+ * temposunun arasına sığacak kadar kısa (art arda tuşlarda SQL hiç
+ * tetiklenmez), kullanıcının "yazmayı bıraktım" anını kaçıracak kadar uzun
+ * değil.
+ */
+const MESSAGE_SEARCH_DEBOUNCE_MS = 220;
 
 /**
  * Pager'ın anlık konumundan sürülen yatay kayma — üç sayfalık bir şeridi
@@ -148,6 +172,44 @@ function logVoiceDurationMiss(conversationId: string, lastMessageAtMs: number) {
   } catch (error) {
     console.log(`[messages] ses süresi çözülemedi · conv=${conversationId} · arşiv okunamadı:`, error);
   }
+}
+
+/**
+ * Mesaj sonucu satırındaki içeriği, kullanıcının YAZDIĞI (katlanmamış) sorgu
+ * kelimelerine göre parçalara ayırır — kalın basılacak parça `match: true`.
+ *
+ * ⚠️ BİLEREK `foldTr`/`tokenizeFolded` KULLANMIYOR: arama eşleşmesinin kendisi
+ * (hangi satırların döneceği) `searchMessages`in katlanmış/FTS yoluyla kararlı
+ * — burası yalnız KOZMETİK, zaten dönmüş bir satırın İÇİNDE hangi alt dizenin
+ * vurgulanacağını buluyor. Katlanmış bir token'ı (ör. Türkçe ı/İ/I/i tek harfe
+ * inmiş hâli) ham `content` üzerinde ARAMAK pozisyon eşlemesi gerektirirdi
+ * (`foldTr`nin NFD/aksan-düşürme adımı uzunluğu KORUMUYOR) — bu karmaşıklığa
+ * değmeyecek kadar küçük bir kazanç (vurgu yalnız görsel, yokluğu bir
+ * DOĞRULUK hatası değil). Sonuç: Türkçe ı/İ/I/i ya da aksan farkı içeren bir
+ * eşleşme (ör. kullanıcı "İREM" yazdı, mesaj "irem" geçiyor) satır İÇİNDE
+ * BULUNUR ama VURGULANMAZ — bilinen, kabul edilmiş bir kozmetik boşluk.
+ */
+function highlightSegments(
+  content: string,
+  rawQuery: string,
+): { text: string; match: boolean }[] {
+  const tokens = Array.from(
+    new Set((rawQuery.match(/[\p{L}\p{N}]+/gu) ?? []).filter(Boolean)),
+  );
+  if (!tokens.length) return [{ text: content, match: false }];
+  // Uzun token önce: "sel" ve "selam" birlikte geçtiğinde kısa olan uzun
+  // olanın bir parçasını yemesin (alternation ilk eşleşeni seçer).
+  const sorted = [...tokens].sort((a, b) => b.length - a.length);
+  const escaped = sorted.map((t) => t.replace(/[.*+?^${}()|[\]\\]/g, "\\$&"));
+  const re = new RegExp(`(${escaped.join("|")})`, "giu");
+  const matchSet = new Set(sorted.map((t) => t.toLocaleLowerCase("tr")));
+  return content
+    .split(re)
+    .filter((part) => part.length > 0)
+    .map((part) => ({
+      text: part,
+      match: matchSet.has(part.toLocaleLowerCase("tr")),
+    }));
 }
 
 export default function MessagesScreen() {
@@ -711,6 +773,54 @@ export default function MessagesScreen() {
     return { all, unread, closed };
   }, [modeConversations, searchQuery]);
 
+  // ── Mesaj araması (Task 4) ────────────────────────────────────────────────
+  // `searchQuery` conversationsByTab'ı HER TUŞ VURUŞUNDA süzüyor — o bellek-içi
+  // bir `includes`, ucuz. `searchMessages` ise SQLite'a vuran, TÜM ARŞİVİ
+  // tarayan senkron bir sorgu (bkz. MESSAGE_SEARCH_DEBOUNCE_MS yorumu); onu
+  // aynı undebounced yolda çağırmak her tuş vuruşunu bir tam-arşiv taramasına
+  // çevirirdi. Çözüm: SQL'e giden değer AYRI bir state'te, DEBOUNCE'LU.
+  //
+  // ⚠️ Geçersiz sorguda (`prepareSearchQuery` → `null`) debounce BEKLENMİYOR,
+  // ANINDA temizleniyor: bölüm "sessizce kaybolmalı" (eşik altı ya da arama
+  // kapandı) ve bunu bir sonraki debounce turuna bağlamak bayat sonuçları bir
+  // kare daha ekranda tutardı.
+  const [messageSearchQuery, setMessageSearchQuery] = useState<string | null>(
+    null,
+  );
+  useEffect(() => {
+    const prepared = prepareSearchQuery(searchQuery);
+    if (prepared === null) {
+      setMessageSearchQuery(null);
+      return;
+    }
+    const timer = setTimeout(
+      () => setMessageSearchQuery(prepared),
+      MESSAGE_SEARCH_DEBOUNCE_MS,
+    );
+    return () => clearTimeout(timer);
+  }, [searchQuery]);
+
+  // `isSearchActive` AYRICA okunuyor (yalnız `messageSearchQuery`ye güvenmek
+  // yerine): bugün `closeSearch` searchQuery'yi de temizlediği için ikisi
+  // birlikte düşüyor, ama bu ikinci kilit gelecekte ayrışmalarına karşı ucuz
+  // bir sigorta — arama KAPALIYKEN bölüm asla görünmemeli.
+  const messageHits: MessageSearchHit[] = useMemo(() => {
+    if (!isSearchActive || !messageSearchQuery) return [];
+    try {
+      return searchMessages(messageSearchQuery, { limit: MESSAGE_SEARCH_LIMIT });
+    } catch (error) {
+      console.error("[messages] mesaj araması başarısız:", error);
+      return [];
+    }
+  }, [isSearchActive, messageSearchQuery]);
+
+  // Bölümün KENDİSİ (başlık + satırlar/"bulunamadı") bu bayrağa bağlı —
+  // `prepareSearchQuery` `null` döndüğü sürece (eşik altı sorgu) bölüm HİÇ
+  // render edilmiyor; bugünkü sohbet süzgeci (`conversationsByTab`) ise boş
+  // sorguda hepsini göstermeye AYNEN devam ediyor (iki kural bilerek farklı,
+  // bkz. messageSearch.ts > MIN_SEARCH_LENGTH yorumu).
+  const showMessageSection = isSearchActive && !!messageSearchQuery;
+
   // Arama çubuğunun üstündeki bölüm başlığı — aktif sekmeye göre. Beğeniler
   // ekranındaki `sectionTitle` ile aynı kalıp: pill filtrenin adı, başlık
   // listenin ne olduğu.
@@ -891,6 +1001,39 @@ export default function MessagesScreen() {
       });
     },
     [dispatch, navigation],
+  );
+
+  /**
+   * Mesaj arama sonucuna dokununca — Task 5. `openChat`tan BİLEREK FARKLI:
+   * burada `hydrateConversation` (hot window'u EN YENİDEN okuyan) ÇAĞRILMIYOR.
+   * ChatScreen mount olduğunda `messages.length === 0` kontrolüyle normal
+   * hot-window'u mu yoksa `hydrateAroundMessage`in hedef-etrafı penceresini mi
+   * yazacağına karar veriyor (bkz. ChatScreen'in birleşik layout effect'i) —
+   * burada ÖNCEDEN hot window'u yazsaydık bucket DOLU gelirdi ve o karar hiç
+   * çalışmazdı, kullanıcı "hedefe atla" dediği hâlde sohbetin EN ÜSTÜNDE
+   * açılırdı.
+   */
+  const openMessageHit = useCallback(
+    (hit: MessageSearchHit) => {
+      const conv = (conversations || []).find(
+        (c: any) => c.conversationId === hit.conversationId,
+      );
+      dispatch(setActiveConversation(hit.conversationId));
+      InteractionManager.runAfterInteractions(() => {
+        (navigation as any).navigate("Chat", {
+          conversationId: hit.conversationId,
+          partner: {
+            userId: conv?.partnerUserId,
+            displayName: conv?.partnerDisplayName ?? hit.partnerDisplayName ?? undefined,
+            profileImageUrl: conv?.partnerProfileImageUrl,
+          },
+          isActive: conv?.isActive,
+          targetMessageId: hit.messageId,
+          targetSentAtMs: hit.sentAtMs,
+        });
+      });
+    },
+    [conversations, dispatch, navigation],
   );
 
   // Basılı tutma artık Alert AÇMIYOR: ChatScreen'deki 3 nokta menüsünün
@@ -1111,6 +1254,77 @@ export default function MessagesScreen() {
                 />
               </View>
             )
+          ) : null
+        }
+        ListFooterComponent={
+          // `showMessageSection` zaten `prepareSearchQuery` `null`ken (eşik
+          // altı sorgu) ya da arama kapalıyken `false` — bölüm o durumlarda
+          // HİÇ RENDER EDİLMİYOR, ekran sohbet listesinden fazlasını göstermez.
+          showMessageSection ? (
+            <View testID="msgs-message-section" className="px-4 pt-4">
+              <Text
+                style={{
+                  color: colors.textSecondary,
+                  fontSize: 13,
+                  fontWeight: "700",
+                }}
+              >
+                {t("chat.messages.searchMessagesTitle")}
+              </Text>
+              {messageHits.length > 0 ? (
+                messageHits.map((hit) => (
+                  <TouchableOpacity
+                    key={hit.messageId}
+                    testID={`msgs-message-hit-${hit.messageId}`}
+                    activeOpacity={0.7}
+                    onPress={() => openMessageHit(hit)}
+                    style={{ paddingVertical: 10 }}
+                  >
+                    <View
+                      style={{
+                        flexDirection: "row",
+                        justifyContent: "space-between",
+                        alignItems: "center",
+                      }}
+                    >
+                      <Text
+                        numberOfLines={1}
+                        style={{ color: colors.text, fontWeight: "600", fontSize: 15, flexShrink: 1 }}
+                      >
+                        {hit.partnerDisplayName || t("chat.defaultUserName")}
+                      </Text>
+                      <Text style={{ color: colors.textSecondary, fontSize: 12, marginLeft: 8 }}>
+                        {formatRelativeTime(new Date(hit.sentAtMs).toISOString(), t)}
+                      </Text>
+                    </View>
+                    <Text
+                      numberOfLines={2}
+                      style={{ color: colors.textSecondary, fontSize: 14, marginTop: 2 }}
+                    >
+                      {highlightSegments(hit.content, searchQuery).map((seg, i) => (
+                        <Text
+                          key={i}
+                          style={
+                            seg.match
+                              ? { color: colors.text, fontWeight: "700" }
+                              : undefined
+                          }
+                        >
+                          {seg.text}
+                        </Text>
+                      ))}
+                    </Text>
+                  </TouchableOpacity>
+                ))
+              ) : (
+                <Text
+                  testID="msgs-message-section-empty"
+                  style={{ color: colors.textSecondary, fontSize: 14, paddingVertical: 10 }}
+                >
+                  {t("chat.messages.searchMessagesEmpty")}
+                </Text>
+              )}
+            </View>
           ) : null
         }
       />
@@ -1435,6 +1649,7 @@ export default function MessagesScreen() {
                       pointerEvents={isSearchActive ? "auto" : "none"}
                     >
                       <TouchableOpacity
+                        testID="msgs-search-close"
                         onPress={closeSearch}
                         hitSlop={10}
                         activeOpacity={0.7}
@@ -1493,6 +1708,7 @@ export default function MessagesScreen() {
                       </View>
                       {isActiveCell ? (
                         <TextInput
+                          testID="msgs-search-input"
                           ref={searchInputRef}
                           defaultValue=""
                           onChangeText={setSearchQuery}
