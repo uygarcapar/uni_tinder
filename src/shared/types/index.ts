@@ -349,9 +349,14 @@ export interface MessageBucket {
    * ⚠️ Bayrak PENCERENİN İÇERİĞİNDEN türüyor, hangi kod yolunun yazdığından
    * DEĞİL (review turu 4, Önemli 2): hedefin etrafı okunurken pencere arşivin
    * dibine DEĞİYORSA (`chatRepository.readAround` → `reachesNewest`) bayrak
-   * `false` kalıyor. Pencereye mesaj ekleyen her yol tek bir kapıdan geçiyor
-   * (`chatSlice`in `prependToBucket`u) — bayrağı her çağrı yeri elle
-   * korumuyor.
+   * `false` kalıyor.
+   *
+   * Pencereye TEK MESAJLIK bir baş yazımı yapan her yol tek bir kapıdan
+   * geçiyor (`chatSlice`in `prependToBucket`u) — o yazımlarda bayrağı artık
+   * her çağrı yeri elle korumuyor. TOPLU dizi birleştirmeleri bu kapının
+   * DIŞINDA (bugün yalnız `chatSlice.mergeLocalWindow`) ve bayrağı kendi
+   * çağrı yerlerinde koruyorlar (`applyLocalDelta`ın `if (bucket.isWindowed)
+   * continue`su) — review turu 5, Minör 3.
    */
   isWindowed?: boolean;
 }

@@ -155,7 +155,7 @@ const emptyBucket = (): MessageBucket => ({
 });
 
 /**
- * Bir mesajı bucket'ın BAŞINA (listede en yeni uç) eklemenin TEK KAPISI.
+ * TEK bir mesajı bucket'ın BAŞINA (listede en yeni uç) eklemenin TEK KAPISI.
  *
  * ── Neden bir chokepoint (review turu 4, Önemli 3) ──────────────────────────
  * `isWindowed` bayrağı dört tur boyunca KAPI KAPI yamanmıştı: `receiveMessage`,
@@ -168,9 +168,22 @@ const emptyBucket = (): MessageBucket => ({
  * yapışıyordu — bayrağın önlemek için var olduğu TAM ŞEY.
  *
  * Bayrağı tek bir fonksiyonda okumak, yeni bir yazıcının kapıyı GÖRMEDEN
- * açmasını engelliyor: bucket'a mesaj eklemenin başka bir yolu yok, ve
- * `origin` seçmek zorunlu olduğu için yeni çağıran "bu mesaj kimden" sorusuna
- * cevap vermek ZORUNDA.
+ * açmasını engelliyor ve `origin` seçmek zorunlu olduğu için yeni çağıran
+ * "bu mesaj kimden" sorusuna cevap vermek ZORUNDA.
+ *
+ * ── KAPSAM: "tek mesajlık baş yazımı" — HER yazım DEĞİL ─────────────────────
+ * Review turu 5, Minör 3: bu yorum önce "bucket'a mesaj eklemenin başka bir
+ * yolu yok" diyordu ve bu YANLIŞTI. `mergeLocalWindow` (yukarıda) `fresh`
+ * dizisini `[...fresh, ...bucket.messages]` ile BU KAPIDAN GEÇMEDEN önüne
+ * ekliyor — dizi-birleştirme bir toplu okuma yansıtması, tek tek mesaj
+ * eklemesi değil, ve `origin` kavramı orada anlamsız (gelen pencere diskin
+ * kendisi). Orada bayrak ÇAĞRI YERİNDE korunuyor: tek çağıranı
+ * `applyLocalDelta` ve o da döngüsünde `if (bucket.isWindowed) continue`
+ * diyor (aşağıda, delta dalı). İddia bu yüzden DARALTILDI — garanti edilen
+ * şey: pencereli bir bucket'a TEK MESAJLIK bir baş yazımı bu fonksiyondan
+ * geçmeden olamaz. Toplu birleştirme yolları (bugün yalnız bir tane, private)
+ * İSTİSNA ve kendi kapılarını taşımak zorunda; üçüncü bir toplu yol açan
+ * kişi `applyLocalDelta`daki o `continue`yu kopyalamak zorunda.
  *
  * `origin`:
  *  • `'remote'` — karşı taraftan ya da BAŞKA bir yoldan gelen (realtime,

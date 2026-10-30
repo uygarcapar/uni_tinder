@@ -659,12 +659,15 @@ export function upsertMessage(
   // delta turu) buradan geçiyor — katlanmış kolon ve indeks satırı bu TEK
   // kapıda yazılıyor, çağrı yerlerinde değil.
   //
-  // Koşulsuz: satır hiç değişmemiş olsa bile indeks tazeleniyor. Bu, YALNIZ
-  // yeniden-upsert edilen satırları onarır — başka bir deyişle, kapasite
-  // kapalıyken yazılmış (dolayısıyla `content_folded`ı NULL OLMAYAN) bir satır
-  // kapasite sonradan açılsa bile buradan da, doldurma turundan da geçmez.
-  // Bilinen boşluk; kapanışı tek satır: `UPDATE messages SET content_folded =
-  // NULL` dedikten sonra boot'taki doldurma turu indeksi baştan kurar.
+  // Koşulsuz: satır hiç değişmemiş olsa bile indeks tazeleniyor. Ama bu
+  // YALNIZ yeniden-upsert edilen satırları onarıyor — kapasite kapalıyken
+  // yazılmış (dolayısıyla `content_folded`ı NULL OLMAYAN) bir satır, kapasite
+  // sonradan açılsa bile ne buradan ne doldurma turunun `IS NULL` seçiminden
+  // geçer. O boşluğu BURASI kapatmıyor; kapatan yer AÇILIŞ:
+  // `reseedSearchIndexIfEmpty` indeksi boş ama "indekslendim" diyen satırları
+  // dolu bulduğunda kolonu NULL'layıp işi doldurma turuna devrediyor (bkz. o
+  // fonksiyonun yorumu, review turu 4, Önemli 6). Yani buradaki tazeleme
+  // artık tek onarım yolu değil, YAZMA ANINDAKİ yol.
   syncFtsRow(db, id, folded);
 }
 

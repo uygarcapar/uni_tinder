@@ -131,16 +131,20 @@ export interface SearchHighlightSegment {
  * ── Çözüm: pozisyon-korumalı katlama ─────────────────────────────────────────
  * `content`in HER karakteri TEK TEK `foldTr`dan geçirilip katlanmış çıktı
  * dizisi oluşturuluyor, her katlanmış karakterin HANGİ orijinal karaktere ait
- * olduğu `indexMap`te tutuluyor. Eşleşme TAMAMEN katlanmış uzayda aranıyor —
- * SQL'le AYNI KATLAMA KURALI (`foldTr`), ama AYNI ALAN DEĞİL: buradaki katlama
- * karakter BAŞINA yapılıyor (ayrıştırılmış bir girdi, `foldTr(dizinin tamamı)`
- * ile birebir aynı sonucu vermeyebilir) ve `searchableFolded`in yaptığı
- * `\s+ → ' '` katlaması BURADA YOK. İkisi de bugün görünür bir davranış
- * farkı üretmiyor (vurgu kozmetik; aradaki fark en kötü ihtimalle bir
- * aralığın çizilmemesi), ama "aynı alan" diye OKUNMASIN —
- * sonra `indexMap` ile orijinal metindeki
- * karşılık gelen ARALIĞA geri dönülüyor — "IŞIK" sorgusu "IŞIK" içeriğinde artık
- * doğru vurgulanıyor (bkz. messageSearch.test.ts > ISIK/isik testi).
+ * olduğu `indexMap`te tutuluyor. Eşleşme TAMAMEN katlanmış uzayda aranıyor,
+ * sonra `indexMap` ile orijinal metindeki karşılık gelen ARALIĞA geri
+ * dönülüyor — "IŞIK" sorgusu "IŞIK" içeriğinde artık doğru vurgulanıyor
+ * (bkz. messageSearch.test.ts > ISIK/isik testi).
+ *
+ * ── Aranan uzay SQL'le AYNI KURAL, ama AYNI ALAN DEĞİL ──────────────────────
+ * Review turu 4, Minör 8: eski yorum "SQL'in gördüğü alanın AYNISI" diyordu ve
+ * bu fazla iddiaydı. Katlama kuralı aynı (`foldTr`, tek kaynak), ALAN iki
+ * noktada ayrışıyor: (1) buradaki katlama KARAKTER BAŞINA yapılıyor, yani
+ * ayrıştırılmış (NFD) bir girdide `foldTr(dizinin tamamı)` ile birebir aynı
+ * sonucu vermeyebilir; (2) `searchableFolded`in yaptığı `\s+ → ' '` katlaması
+ * BURADA YOK. İkisi de bugün görünür bir davranış farkı üretmiyor — vurgu
+ * kozmetik, en kötü ihtimalle bir aralık çizilmez — ama "aynı alan" diye
+ * OKUNMASIN.
  *
  * `foldTr` tek karakter başına çoğunlukla TEK (bazen SIFIR, aksan işareti tek
  * başına nadir bir girdiyse) katlanmış karakter üretir — NFD ayrıştırması +
