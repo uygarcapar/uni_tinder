@@ -809,7 +809,20 @@ function ChatScreen({
       }
       // Hedef arşivde yok — normal açılışa düş (aşağıdaki dal).
     }
-    if (messages.length === 0) hydrateConversation(dispatch, conversationId);
+    if (messages.length === 0) {
+      hydrateConversation(dispatch, conversationId);
+    } else if (isWindowed) {
+      // Review turu 3, Önemli — HEDEFSİZ giriş (bildirim/toast/başka bir yol,
+      // openChat'in kendi hydrateConversation prewarm'ı DIŞINDA) bu bucket'ı
+      // ÖNCEKİ bir hedefli ziyaretten PENCERELİ bulabilir. `messages.length===0`
+      // kontrolü bunu YAKALAMAZ: bucket DOLU (hâlâ mid-archive pencere), yalnız
+      // bayrağı `false`a çekmek YETMEZ — içerik hâlâ eski pencere olurdu ve
+      // receiveMessage/applyLocalDelta "güncel" sanıp sessizce canlı mesaj
+      // eklemeye başlardı (adjacency bug'ı, tersten). Hedefsiz giriş TAZE bir
+      // hydrate istiyor: `hydrateConversation` hem içeriği hot window'a
+      // çevirir hem `isWindowed:false` yazar (bkz. chatHydrate.ts).
+      hydrateConversation(dispatch, conversationId);
+    }
     // conversationId dışındaki bağımlılıklar kasten yok: bu yalnız GİRİŞ anına ait.
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [conversationId]);
@@ -1127,6 +1140,17 @@ function ChatScreen({
       const isShortContent =
         !!stBeforeSend && stBeforeSend.contentLength <= stBeforeSend.scrollLength + 1;
       const wasAtEnd = !!stBeforeSend?.isWithinMaintainScrollAtEndThreshold;
+      // Review turu 3 — bucket PENCERELİYSE (hedefli atlamadan kalmış,
+      // mid-archive bir görünüm) göndermek BURADA, ekleme'den ÖNCE pencereyi
+      // temizliyor. Gerekçe round 1'in receiveMessage/applyLocalDelta
+      // kuralıyla AYNI (adjacency yanıltıcı) ama çözüm TERS: karşı tarafın
+      // mesajını BASTIRMAK doğruydu (mesaj zaten diskte, kullanıcı istemeden
+      // geldi), kullanıcının KENDİ gönderdiği mesajını bastırmak ise mesajın
+      // GÖZ ÖNÜNDE KAYBOLMASI demek olurdu — kendi payı. Gönderim ise
+      // kullanıcının "şimdi buradayım" dediği EN AÇIK an; `hydrateConversation`
+      // hot window'u okuyup `isWindowed:false` yazıyor, optimistic balon o
+      // TAZE pencerenin ÜSTÜNE biniyor (aşağıdaki dispatch sırası önemli).
+      if (isWindowed) hydrateConversation(dispatch, conversationId);
       // Balon listeye girerken alttan süzülsün (bkz. enterAnimation.ts) — kayıt
       // dispatch'ten ÖNCE bırakılmalı, ilk render hemen ardından geliyor.
       markMessageEntering(optimistic.clientMessageId);
@@ -1167,7 +1191,7 @@ function ChatScreen({
         }, 100);
       }
     },
-    [conversationId, dispatch, pinShortListToEnd],
+    [conversationId, dispatch, isWindowed, pinShortListToEnd],
   );
 
   const handleSend = useCallback(

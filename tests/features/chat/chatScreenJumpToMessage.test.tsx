@@ -168,10 +168,22 @@ jest.mock('@/features/chat/components/ReplySwipeRow', () => ({
   default: ({ children }: any) => children,
 }));
 
-jest.mock('@/features/chat/components/MessageComposer', () => ({
-  __esModule: true,
-  default: () => null,
-}));
+// `onSend` testID'li bir Pressable üzerinden ERİŞİLEBİLİR — "gönderince
+// pencere temizlenir" testinin tek giriş kapısı budur (handleSend/
+// appendOutgoing ekranın İÇİNDE, dışarıdan çağrılamıyor).
+jest.mock('@/features/chat/components/MessageComposer', () => {
+  const React = require('react');
+  const { Pressable } = require('react-native');
+  return {
+    __esModule: true,
+    default: ({ onSend }: any) =>
+      React.createElement(Pressable, {
+        testID: 'composer-send',
+        onPress: () =>
+          onSend?.({ content: 'merhaba', clientMessageId: 'cmid-1' }),
+      }),
+  };
+});
 
 jest.mock('@/features/chat/components/ConversationOptionsSheet', () => ({
   __esModule: true,
@@ -202,7 +214,7 @@ jest.mock('@/features/chat/components/MessageActionSheet', () => ({
 import React from 'react';
 import { Provider } from 'react-redux';
 import { configureStore } from '@reduxjs/toolkit';
-import { render, screen, act } from '@testing-library/react-native';
+import { render, screen, act, fireEvent } from '@testing-library/react-native';
 import { NavigationContainer } from '@react-navigation/native';
 import chatReducer, { hydrateWindow, receiveMessage } from '@/features/chat/chatSlice';
 import ChatScreen from '@/features/chat/screens/ChatScreen';
@@ -218,7 +230,7 @@ function authReducer(state = { user: { userId: MY_USER_ID, id: MY_USER_ID } }) {
   return state;
 }
 
-function buildStore() {
+function buildStore(initialBucket?: any) {
   return configureStore({
     reducer: { chat: chatReducer, auth: authReducer },
     preloadedState: {
@@ -233,10 +245,12 @@ function buildStore() {
             mode: 'Dating',
           },
         ],
-        // Bucket BİLEREK boş: hedefli açılışın `messages.length === 0`
-        // koşuluna BAĞLI OLMADIĞINI (merge edilen layout effect) ayrıca
-        // sınamaya gerek yok burada — asıl iddia network çağrısı tarafında.
-        messagesByConv: {},
+        // Bucket BİLEREK boş (varsayılan): hedefli açılışın `messages.length
+        // === 0` koşuluna BAĞLI OLMADIĞINI ayrıca sınamaya gerek yok burada —
+        // asıl iddia network çağrısı tarafında. `initialBucket` yalnız bu
+        // varsayılanı EZMEK isteyen testler için (ör. dolu-ama-pencereli
+        // bucket senaryosu).
+        messagesByConv: initialBucket ? { [CONVERSATION_ID]: initialBucket } : {},
         typingByConv: {},
         presenceByUser: {},
         quotaByConv: {},
@@ -249,8 +263,8 @@ function buildStore() {
   });
 }
 
-function renderChatScreen(opts: { withTarget: boolean }) {
-  const store = buildStore();
+function renderChatScreen(opts: { withTarget: boolean; initialBucket?: any }) {
+  const store = buildStore(opts.initialBucket);
   const navigation: any = { goBack: jest.fn(), setOptions: jest.fn() };
   const route: any = {
     params: {
@@ -504,10 +518,170 @@ describe('pencereli bucket — "son mesaja dön" banner\'ı', () => {
 
     mockHydrateConversation.mockClear();
     await act(async () => {
-      const { fireEvent } = require('@testing-library/react-native');
       fireEvent.press(screen.getByTestId('chat-go-to-latest'));
     });
 
     expect(mockHydrateConversation).toHaveBeenCalledWith(expect.any(Function), CONVERSATION_ID);
+  });
+});
+
+/**
+ * Review turu 3, Önemli — `messages.length === 0` koşulu "bucket DOLU ama
+ * ÖNCEKİ bir hedefli ziyaretten PENCERELİ kalmış" durumunu YAKALAMIYORDU:
+ * hedefSİZ bir girişte (bildirim/toast/başka bir navigate yolu — hepsi AYNI
+ * route param şeklini kullanıyor, bu test onların HİÇBİRİNE özel değil, route
+ * param'ında hedef OLMAMASINA özel) bucket dolu diye hydrate hiç çağrılmıyor
+ * ve pencere SONSUZA DEK öyle kalıyordu.
+ */
+describe('hedefsiz giriş — dolu ama PENCERELİ bucket', () => {
+  it('bucket dolu+pencereliyken hedefsiz girişte hydrateConversation YİNE DE çağrılır', async () => {
+    renderChatScreen({
+      withTarget: false,
+      initialBucket: {
+        messages: [
+          {
+            id: TARGET_ID,
+            conversationId: CONVERSATION_ID,
+            senderId: PARTNER_USER_ID,
+            content: 'eski pencere',
+            contentType: 0,
+            sentAt: new Date(TARGET_SENT_AT_MS).toISOString(),
+          },
+        ],
+        nextCursor: null,
+        hasMore: true,
+        hasHiddenHistory: false,
+        loading: false,
+        isWindowed: true,
+      },
+    });
+    await act(async () => {});
+
+    // `messages.length === 0` YANLIŞ olurdu (bucket dolu) — bu çağrı yalnız
+    // `isWindowed` kontrolü EKLENDİYSE gelir.
+    expect(mockHydrateConversation).toHaveBeenCalledWith(expect.any(Function), CONVERSATION_ID);
+  });
+
+  it('bucket dolu VE pencereli DEĞİLKEN hedefsiz girişte hydrateConversation ÇAĞRILMAZ — kontrol grubu', async () => {
+    // Bu, var olan "dolu bucket'ı gereksiz yeniden okuma" optimizasyonunun
+    // KORUNDUĞUNU kanıtlıyor — fix'in bu dalı GENİŞLETMEDİĞİNİ gösteren test.
+    renderChatScreen({
+      withTarget: false,
+      initialBucket: {
+        messages: [
+          {
+            id: TARGET_ID,
+            conversationId: CONVERSATION_ID,
+            senderId: PARTNER_USER_ID,
+            content: 'güncel pencere',
+            contentType: 0,
+            sentAt: new Date(TARGET_SENT_AT_MS).toISOString(),
+          },
+        ],
+        nextCursor: null,
+        hasMore: true,
+        hasHiddenHistory: false,
+        loading: false,
+        isWindowed: false,
+      },
+    });
+    await act(async () => {});
+
+    expect(mockHydrateConversation).not.toHaveBeenCalled();
+  });
+});
+
+/**
+ * Review turu 3 — kendi gönderdiğimiz mesaj da pencereye BİTİŞMEMELİ. Çözüm
+ * `receiveMessage`den FARKLI: mesajı BASTIRMAK (göstermemek) kullanıcının
+ * KENDİ gönderdiği şeyin gözünün önünde KAYBOLMASI olurdu — bunun yerine
+ * gönderim ANINDA pencere TEMİZLENİP (hydrateConversation, hot window +
+ * isWindowed:false) optimistic balon o TAZE pencerenin üstüne biniyor.
+ */
+describe('gönderirken pencere temizleniyor', () => {
+  it('pencereliyken gönderince ÖNCE hot window okunur, SONRA optimistic balon o pencerenin üstüne biner', async () => {
+    // Giriş yolu `hydrateAroundMessage` (hedefli atlama) — BİLEREK
+    // `hydrateConversation` DEĞİL: mount sırasında pencereyi KURAN yol bu
+    // olmalı, aksi halde "hedefsiz girişte dolu+pencereli bucket" fix'i
+    // (üstteki describe) mount ANINDA zaten temizler ve gönderim anındaki
+    // ayrı guard'ı hiç test edemeyiz (bucket mount'ta çoktan temiz olurdu).
+    hydrateAroundImpl = (dispatch) => {
+      dispatch(
+        hydrateWindow({
+          conversationId: CONVERSATION_ID,
+          messages: [
+            {
+              id: TARGET_ID,
+              conversationId: CONVERSATION_ID,
+              senderId: PARTNER_USER_ID,
+              content: 'iki yıl önceki mesaj',
+              contentType: 0,
+              sentAt: new Date(TARGET_SENT_AT_MS).toISOString(),
+            },
+          ],
+          nextCursor: null,
+          hasMore: true,
+          hasHiddenHistory: false,
+          isWindowed: true,
+        }),
+      );
+      return true;
+    };
+    // Gönderim anında ÇAĞRILACAK `hydrateConversation` GERÇEK bir dispatch
+    // yapıyor (mock'un implementasyonu) — ÇAĞRI SIRASINI (hydrate → append)
+    // ve SONUÇ içeriğini (eski pencere GİTTİ, hot window + optimistic VAR)
+    // birlikte kanıtlamak için.
+    mockHydrateConversation.mockImplementation((dispatch: any) => {
+      dispatch(
+        hydrateWindow({
+          conversationId: CONVERSATION_ID,
+          messages: [
+            {
+              id: 'hot-1',
+              conversationId: CONVERSATION_ID,
+              senderId: PARTNER_USER_ID,
+              content: 'güncel mesaj',
+              contentType: 0,
+              sentAt: new Date().toISOString(),
+            },
+          ],
+          nextCursor: null,
+          hasMore: true,
+          hasHiddenHistory: false,
+          isWindowed: false,
+        }),
+      );
+      return true;
+    });
+
+    renderChatScreen({ withTarget: true });
+    await act(async () => {});
+    // Mount'ta hedef BULUNDU dalı çalıştı (`hydrateAroundMessage`),
+    // `hydrateConversation` HENÜZ çağrılmadı — sıfırlamaya bile gerek yok ama
+    // açık olsun diye temizliyoruz.
+    mockHydrateConversation.mockClear();
+
+    await act(async () => {
+      fireEvent.press(screen.getByTestId('composer-send'));
+    });
+
+    expect(mockHydrateConversation).toHaveBeenCalledWith(expect.any(Function), CONVERSATION_ID);
+    // Eski pencerenin mesajı GİTTİ, hot window + kendi gönderdiğimiz balon VAR.
+    expect(screen.queryByTestId(`bubble-${TARGET_ID}`)).toBeNull();
+    expect(screen.getByTestId('bubble-hot-1')).toBeTruthy();
+    expect(screen.getByTestId('bubble-temp-cmid-1')).toBeTruthy();
+  });
+
+  it('pencereli DEĞİLKEN gönderince hydrateConversation ÇAĞRILMAZ — kontrol grubu', async () => {
+    renderChatScreen({ withTarget: false });
+    await act(async () => {});
+    mockHydrateConversation.mockClear();
+
+    await act(async () => {
+      fireEvent.press(screen.getByTestId('composer-send'));
+    });
+
+    expect(mockHydrateConversation).not.toHaveBeenCalled();
+    expect(screen.getByTestId('bubble-temp-cmid-1')).toBeTruthy();
   });
 });

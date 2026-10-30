@@ -255,3 +255,63 @@ describe('chatSlice fetchHistory.fulfilled (append=false) reconcile merge', () =
     expect(bucket.hasMore).toBe(false);
   });
 });
+
+/**
+ * Faz 4 / Task 5 review turu 3, Önemli — bu dal (append=false) HER ZAMAN
+ * `cursor:null` çekiyor, yani arşivin EN YENİ sayfasını. Pencereli (hedefli
+ * atlama) bir bucket'a bu sayfa gelirse (mid-archive pencereyle ÇAKIŞMAZ,
+ * `windowsOverlap` false çıkar, `tail` boş kalır) bucket ARTIK hot window
+ * gösteriyor ama `isWindowed` temizlenmezse `receiveMessage`/`applyLocalDelta`
+ * o bucket'ı SONSUZA DEK canlı mesajlara kapalı tutardı — kullanıcı en güncel
+ * görünümdeyken bile. Bu, round 1'in önlemeye çalıştığı şeyin TERS (ve daha
+ * kötü, çünkü SESSİZ) hâli.
+ */
+describe('fetchHistory.fulfilled — isWindowed temizliği', () => {
+  it('append=false (reconcile) pencereli bucket\'ın bayrağını TEMİZLER', () => {
+    const prev = stateWith({
+      messages: [msg('old-1', 1)],
+      isWindowed: true,
+    });
+
+    const next = reducer(
+      prev,
+      reconcile({
+        messages: [msg('new-1', 100)],
+        nextCursor: null,
+        hasMore: true,
+      }),
+    );
+
+    expect(next.messagesByConv[CID].isWindowed).toBe(false);
+  });
+
+  it('append=true (yukarı sayfalama) bayrağa DOKUNMUYOR — kontrol grubu', () => {
+    // append=true hiçbir zaman arşivin dibini çekmiyor (cursor dolu, derin
+    // sayfa); pencereli bir bucket'ta yukarı kaydırma devam ederken bayrağın
+    // KENDİLİĞİNDEN düşmemesi gerekiyor — bu test fix'in append dalını da
+    // yanlışlıkla etkilemediğini kanıtlıyor.
+    const prev = stateWith({
+      messages: [msg('m2', 2), msg('m1', 1)],
+      nextCursor: 'p1',
+      hasMore: true,
+      isWindowed: true,
+    });
+
+    const next = reducer(
+      prev,
+      fetchHistory.fulfilled(
+        {
+          conversationId: CID,
+          append: true,
+          messages: [msg('m0', 0)],
+          nextCursor: null,
+          hasMore: false,
+        } as any,
+        'req-3',
+        { conversationId: CID, cursor: 'p1', pageSize: 30 },
+      ),
+    );
+
+    expect(next.messagesByConv[CID].isWindowed).toBe(true);
+  });
+});

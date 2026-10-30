@@ -991,6 +991,17 @@ const chatSlice = createSlice({
           bucket.nextCursor = nextCursor;
           bucket.hasMore = hasMore;
         } else {
+          // Review turu 3, Önemli — bu dal HER ZAMAN `cursor:null` (arşivin EN
+          // YENİ sayfası) çekiyor, `append` dalının aksine. Pencereli (hedefli
+          // atlama) bir bucket'a bu sayfa gelirse (mid-archive pencereyle
+          // ÇAKIŞMADIĞI için aşağıdaki `windowsOverlap` false çıkar, `tail` boş
+          // kalır ve `next` SADECE server'ın en yeni sayfası olur) bucket ARTIK
+          // hot window gösteriyor ama `isWindowed` hâlâ `true` kalıyordu —
+          // `receiveMessage`/`applyLocalDelta` o bucket'ı SONSUZA DEK canlı
+          // mesajlara kapalı tutardı, kullanıcı en güncel görünümdeyken bile.
+          // `hydrateConversation`in `isWindowed:false` yazdığı AYNI gerekçe
+          // burada da geçerli: bu da arşivin dibini gösteren bir pencere.
+          bucket.isWindowed = false;
           // Reconcile MERGE — körlemesine REPLACE değil. REPLACE her chat girişinde
           // tüm mesaj referanslarını yenileyip (LegendList "structural data change"
           // → tam container reset) yüklenmiş 2.+ sayfaları atıyordu; kullanıcı o
