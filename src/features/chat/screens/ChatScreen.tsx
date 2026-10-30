@@ -81,6 +81,12 @@ import {
 } from "@/features/chat/chatHydrate";
 import { markMessageEntering } from "@/features/chat/enterAnimation";
 import { applyReactionPick } from "@/features/chat/reactionPick";
+import {
+  enqueueReaction,
+  enqueueDelete,
+  flushPendingMutations,
+} from "@/features/chat/pendingMutations";
+import { CHAT_MUTATION_QUEUE_ENABLED } from "@/shared/store/chatFlags";
 import { getDraft, setDraft } from "@/features/chat/draftStore";
 import { sendOutgoing, retryFailedMessage } from "@/features/chat/outbox";
 import { openQuotaPaywall as openChatQuotaPaywall } from "@/features/chat/quotaPaywall";
@@ -1355,6 +1361,30 @@ function ChatScreen({
           reactions: next,
         }),
       );
+
+      if (CHAT_MUTATION_QUEUE_ENABLED) {
+        // Kuyruk devraldı: ağ çağrısı, sunucu kanonikleştirmesi (server tüm
+        // listeyi dönüyordu, şimdi bunu tur yapıyor — bkz. pendingMutations.ts
+        // sendRow) ve KALICI ret sonrası geri alma artık turun işi. Burada
+        // yalnız niyet diske yazılıp tur tetiklenir; ne await edilir ne de
+        // hata burada yakalanır — ağ hatasında İKİNCİ bir geri alma YOK.
+        // serverBase BENİM prev'deki emojim (removeEmoji/addEmoji'den DEĞİL,
+        // `prev`teki userIds'imden): tur kalıcı ret sonrası buna geri döner.
+        const mine = prev.find(
+          (r: any) =>
+            myUserId && Array.isArray(r.userIds) && r.userIds.includes(myUserId),
+        );
+        enqueueReaction({
+          messageId: message.id,
+          conversationId: message.conversationId,
+          desired: addEmoji,
+          serverBase: mine ? mine.emoji : null,
+        });
+        void flushPendingMutations("interactive");
+        return;
+      }
+
+      // ── Bayrak KAPALI: kuyruk öncesi davranış, harfiyen ──────────────────
       try {
         let server: any;
         if (removeEmoji) {
@@ -1405,11 +1435,6 @@ function ChatScreen({
   const handleDelete = useCallback(
     async (message: any, forEveryone: boolean) => {
       if (!message) return;
-      const snapshot = {
-        content: message.content,
-        deletedAt: message.deletedAt ?? null,
-        deletedForEveryone: message.deletedForEveryone ?? false,
-      };
       dispatch(
         messageDeleted({
           messageId: message.id,
@@ -1418,6 +1443,34 @@ function ChatScreen({
           deletedAt: new Date().toISOString(),
         }),
       );
+
+      if (CHAT_MUTATION_QUEUE_ENABLED) {
+        // Kuyruk devraldı: eski UT-6720 (mesaj sunucuda ZATEN YOK) dalı ve
+        // "silinemedi" Alert'i ile birlikte kalktı — `classifyMutationError`
+        // (pendingMutationPolicy.ts) o kodu silme için 'done' sayıyor, yani
+        // turun kendisi aynı sonuca (sessizce "silinmiş kabul et") ulaşıyor.
+        // Geçmişi tazeleyen refetch de kalktı: tazelik artık delta-sync'in işi,
+        // burada özel bir dal tutmaya gerek yok. KALICI ret dışında geri alma
+        // YOK; o da turun işi (revertDelete, pendingMutations.ts) — burada
+        // snapshot TUTULMUYOR çünkü eski kodun snapshot'tan geri yazdığı kısmi
+        // `MessageDto` (`as any` ile) `messageEdited`'in mirror karşılığını
+        // eksik alanlarla çağırıp satırı bozuyordu; Task 3 kendi geri alma
+        // kopyasını (current'ı tam spread ederek) ayrı çözdü.
+        enqueueDelete({
+          messageId: message.id,
+          conversationId: message.conversationId,
+          forEveryone,
+        });
+        void flushPendingMutations("interactive");
+        return;
+      }
+
+      // ── Bayrak KAPALI: kuyruk öncesi davranış, harfiyen ──────────────────
+      const snapshot = {
+        content: message.content,
+        deletedAt: message.deletedAt ?? null,
+        deletedForEveryone: message.deletedForEveryone ?? false,
+      };
       try {
         await chatService.deleteMessage(message.id, forEveryone);
       } catch (err: any) {

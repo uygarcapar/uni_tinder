@@ -49,3 +49,21 @@ export const CHAT_DELTA_SYNC_ENABLED = true;
  * kaybettirmez, yalnız arşivin geri kalanı ağdan sayfalanmaya devam eder.
  */
 export const CHAT_BACKFILL_ENABLED = true;
+
+/**
+ * Reaksiyon/silme mutasyon kuyruğu (`pendingMutations.ts`).
+ *
+ * AÇIKKEN: `ChatScreen`'in `handlePickReaction`/`handleDelete`'i artık ağı
+ * DOĞRUDAN çağırmıyor — optimistik dispatch'ten sonra niyet
+ * `pending_mutations` tablosuna yazılır, ağ çağrısını ve KALICI ret sonrası
+ * geri almayı tur (`flushPendingMutations`) üstlenir. Ağ hatasında İKİNCİ bir
+ * geri alma YOK — tek sahip tur, o da yalnız `rejected` dalında.
+ *
+ * Kapatmak bugünkü (kuyruk ÖNCESİ) davranışa tam döner: ekran yine doğrudan
+ * REST'e gider, hata ANINDA (optimistik listeyi geri dispatch ederek) geri
+ * alınır, kuyruğa HİÇ satır yazılmaz. Bu bayrak yalnız ÇAĞRI NOKTASINI kapatır
+ * — turun kendisi (Task 5'in ayrı gate'i) burada yok, yani diskte o ana kadar
+ * yazılmış satır varsa (örn. bayrak sonradan kapatıldıysa) bir sonraki tur
+ * onu yine de göndermeye çalışır.
+ */
+export const CHAT_MUTATION_QUEUE_ENABLED = true;
