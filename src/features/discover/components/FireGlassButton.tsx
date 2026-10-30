@@ -2,6 +2,7 @@ import { memo } from "react";
 import { Platform, StyleSheet, TouchableOpacity, View } from "react-native";
 import { Host, Button as SwiftUIButton, RNHostView } from "@expo/ui/swift-ui";
 import {
+  accessibilityIdentifier as a11yId,
   accessibilityLabel as a11yLabel,
   buttonBorderShape,
   buttonStyle,
@@ -262,9 +263,16 @@ type Props = {
    * varsayılanda kalıyor.
    */
   size?: number;
+  /**
+   * e2e seçicisi. SwiftUI tarafında `accessibilityIdentifier`
+   * modifier'ına, Android/iOS<26 dalında `testID` prop'una gidiyor —
+   * yani aynı seçici iki yolda da çalışıyor.
+   */
+  testID?: string;
 };
 
 function FireGlassButton({
+  testID,
   onPress,
   label,
   variant = "prominent",
@@ -321,6 +329,7 @@ function FireGlassButton({
                 ]
               : []),
             a11yLabel(label),
+              ...(testID ? [a11yId(testID)] : []),
             // iOS 26 altında glassProminent de sessizce .automatic'e düşüyor
             // (bkz. ViewModifierRegistry) → kabuğu biz çiziyoruz: aynı kırmızı,
             // camsız düz daire. strokeBorder frame'den SONRA gelmeli.
@@ -353,6 +362,7 @@ function FireGlassButton({
       activeOpacity={0.8}
       hitSlop={12}
       accessibilityRole="button"
+      testID={testID}
       accessibilityLabel={label}
       style={{
         width: size,

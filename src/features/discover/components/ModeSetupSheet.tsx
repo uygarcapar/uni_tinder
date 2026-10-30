@@ -2,7 +2,7 @@ import { useCallback, useEffect, useRef, useState } from "react";
 import { ActivityIndicator, Text, TouchableOpacity, View } from "react-native";
 import { BottomSheetTextInput } from "@gorhom/bottom-sheet";
 import { useTranslation } from "react-i18next";
-import AppModal, { SHEET_PICKER_SNAP_POINTS } from "@/shared/components/AppModal";
+import AppModal from "@/shared/components/AppModal";
 import PromptsEditor, {
   type PromptsEditorHandle,
 } from "@/shared/components/PromptsEditor";
@@ -47,6 +47,13 @@ import type { AppMode } from "../modeTheme";
  * taşıyor, bkz. RegisterStep10Screen).
  */
 const INTERESTED_IN_KEYS = ["Men", "Women", "NonBinary"] as const;
+/**
+ * Prompt alanı odaktayken formun dibine eklenen kaydırma payı (bkz.
+ * `promptsFocused`). 180 ≈ bir prompt slotunun yüksekliği: son slot
+ * düzenlenirken bile hook'un alanı klavyenin üstüne çekmesine yetiyor, daha
+ * büyüğü kaydırmanın dibinde boş bir bant bırakıyor.
+ */
+const PROMPTS_KEYBOARD_ROOM = 180;
 const INTERESTED_IN_LABEL_KEY: Record<string, string> = {
   Men: "male",
   Women: "female",
@@ -209,15 +216,87 @@ export default function ModeSetupSheet({
     onBlur: onPromptsBlur,
   } = useKeyboardAwareField();
 
+  /**
+   * ── Kaydırma payı ─────────────────────────────────────────────────────────
+   * Yukarıdaki hook alanı yukarı KAYDIRARAK klavyenin üstüne alıyor, yani
+   * yalnız alanın ALTINDA kaydırılacak kadar içerik varsa iş görüyor. Prompt
+   * editörü formun dibinde: altında "Profili aç" butonundan başka bir şey yok
+   * ve son slot düzenlenirken kaydırma içeriğin sonuna çarpıp duruyor.
+   *
+   * Pay YALNIZ odakta ekleniyor — sabit verilseydi klavye kapalıyken butonun
+   * altında kocaman bir boşluk kalırdı.
+   *
+   * ⚠️ ODAK BIRAKMA GECİKMELİ: slottan slota geçerken (ya da "Bitir" pilinde)
+   * blur ile yeni focus ayrı karelerde geliyor; payı blur'da anında düşürmek
+   * aradaki karede içeriği kısaltıp scroll'u geri çekiyor, hook da o kısalmış
+   * içeriğe göre ölçtüğü için alan klavyenin altında kalıyordu. Gecikme yeni
+   * odak gelirse iptal ediliyor, yani pay aradaki boşlukta durmuyor.
+   */
+  const [promptsFocused, setPromptsFocused] = useState(false);
+  const roomTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const clearRoomTimer = useCallback(() => {
+    if (roomTimer.current) {
+      clearTimeout(roomTimer.current);
+      roomTimer.current = null;
+    }
+  }, []);
+  const handlePromptsFocus = useCallback(() => {
+    clearRoomTimer();
+    setPromptsFocused(true);
+    onPromptsFocus();
+  }, [clearRoomTimer, onPromptsFocus]);
+  const handlePromptsBlur = useCallback(() => {
+    clearRoomTimer();
+    roomTimer.current = setTimeout(() => {
+      roomTimer.current = null;
+      setPromptsFocused(false);
+    }, 250);
+    onPromptsBlur();
+  }, [clearRoomTimer, onPromptsBlur]);
+  // Sheet kapanınca pay da gitsin (bir sonraki açılış temiz başlasın).
+  useEffect(() => {
+    if (!visible) {
+      clearRoomTimer();
+      setPromptsFocused(false);
+    }
+  }, [visible, clearRoomTimer]);
+  useEffect(() => clearRoomTimer, [clearRoomTimer]);
+
   return (
     <AppModal
       visible={visible}
       onClose={onClose}
       title={t(`discover.mode.openTitle.${mode}`)}
-      snapPoints={SHEET_PICKER_SNAP_POINTS}
+      /**
+       * BAŞLIK SOLDA, X'in solunda (istek). Ortalanan başlık bu sheet'te
+       * scroll'u bekliyordu ve kullanıcı formun başında hangi modun profilini
+       * açtığını yazıyla hiç görmüyordu — tek işareti içeriğin ilk cümlesiydi.
+       */
+      titleAlign="left"
+      /**
+       * TEK DURAK (`fullScreen` → ["100%"]). Burada `SHEET_PICKER_SNAP_POINTS`
+       * (%75 + %100) vardı ve sheet %75'te açılıyordu: prompt alanına odak
+       * gelince klavye sheet'i üst durağa taşıyor (keyboardBehavior "extend"),
+       * yani alanın ekrandaki yeri ölçüldükten SONRA ~%25 yukarı kayıyordu.
+       * useKeyboardAwareField'ın hesabı o kaymayı göremediği için alan
+       * klavyenin üstüne oturmuyordu. Tek duraklı sheet klavyeyle kıpırdamıyor
+       * → ölçüm = son hâl.
+       *
+       * Form zaten uzun (iki/üç bölüm + prompt editörü); %75'in verdiği "altta
+       * desteden bir şerit görünüyor" kazancı, kurulum akışında okunacak bir
+       * şey değildi.
+       */
       fullScreen
       closeButton
       clearGlassHeader
+      /**
+       * ⚠️ `keyboardBehavior` AÇIKÇA "extend" (varsayılanın da aynısı, niyet
+       * yazılı dursun): sheet tam ekranda, "interactive" onu klavye kadar daha
+       * yukarı itmeye çalışıp header'ı çentiğe sokar, "fillParent" ise
+       * topInset'i yok sayar. "extend" içerik yüksekliğini klavye kadar
+       * kısaltıyor — kaydırılabilir alanın dibi tam klavyenin üstü.
+       */
+      keyboardBehavior="extend"
       contentContainerStyle={{ paddingBottom: 28 }}
     >
       <Text
@@ -358,8 +437,8 @@ export default function ModeSetupSheet({
             // Burada en az 1 zorunlu (sunucu da öyle) — sonuncuyu silmek
             // kullanıcıyı gönderemediği bir durumda bırakırdı.
             allowRemoveLast={false}
-            onInputFocus={onPromptsFocus}
-            onInputBlur={onPromptsBlur}
+            onInputFocus={handlePromptsFocus}
+            onInputBlur={handlePromptsBlur}
           />
         </View>
       </Section>
@@ -402,6 +481,10 @@ export default function ModeSetupSheet({
           {submitting ? t("discover.mode.opening") : t("discover.mode.openSubmit")}
         </Text>
       </TouchableOpacity>
+
+      {/* Prompt alanı odaktayken formun dibine eklenen kaydırma payı (gerekçe
+          `promptsFocused`ın yanında). Görünür bir şey değil, yalnız yer. */}
+      {promptsFocused ? <View style={{ height: PROMPTS_KEYBOARD_ROOM }} /> : null}
     </AppModal>
   );
 }

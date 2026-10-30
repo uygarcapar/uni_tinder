@@ -214,6 +214,70 @@ function bottomNotchDepth(tongueHeight: number): number {
  */
 const COVER_LEAD_MS = 40;
 
+/**
+ * ── ÖRTÜ PARKI: DALGA, YENİ KART BOYANANA KADAR BEKLİYOR ───────────────────
+ *
+ * Yukarıdaki pay (COVER_LEAD_MS) kart değişimine ~200 ms bırakıyor ve o pay BAZEN
+ * YETMİYOR. Kritik penceredeki iş küçültüldü (bkz. DiscoverScreen > deckSettled)
+ * ve gelen kartın kapağı önceden decode ediliyor (bkz. warmCovers), ama ikisi de
+ * OLASILIK düşürüyor — garanti vermiyor. Yavaş cihazda ağır bir kare denk
+ * geldiğinde dalga, eski kart hâlâ boyalıyken çekiliyordu: "alev gidince gitmesi
+ * gereken kart bir süre duruyor".
+ *
+ * GARANTİ, SÜREYİ UZATMAKLA DEĞİL BEKLEMEKLE geliyor: dalga ekranı tam
+ * kapattığında orada PARK EDİYOR ve yeni kart gerçekten boyanınca yoluna devam
+ * ediyor (bkz. FireFlameCanvas'ın iki fazı · flameSweep > releaseFlameSweep).
+ * Yani bedel GECİKME, görünür bir kart değişimi değil — flameSweep'teki kuralın
+ * aynısı.
+ *
+ * ── PARK TAVANSIZ, SADECE EMNİYET VALFİ VAR (istek, 2026-10-27) ───────────
+ *
+ * Bir tur bu sayı 400 ms'lik bir TAVANDI ve tavan dolduğunda dalga yoluna devam
+ * ediyordu — yani kötü koşulda (zayıf şarj · termal kısma · yavaş ağ) bug geri
+ * gelebiliyordu. İstek bunu kapattı: "alev ekranı kapladığı yerde dursun, her
+ * şey render olana kadar beklesin, bitince yukarı çıkmaya devam etsin."
+ *
+ * Yani artık bir tavan değil VALF: dalga, salıverilmezse bu kadar bekler. Sayı
+ * normal yolun (iki kare + bir decode turu) kat kat üstünde, bilerek — işi
+ * "kutlamayı kısa tutmak" değil, EKRANI SONSUZA KADAR KAPLI BIRAKMAMAK. Buraya
+ * gelmek bir hata demek (beklenmeyen bir dal salıvermedi), ürün kararı değil.
+ *
+ * ⚠️ PARK, BU SÜRE BOYUNCA DONUK DURAMAZ. Dillerin 14 fps'lik oynaması JS'e
+ * bağlı (bkz. FireFlameCanvas > FlameWaveLayer) ve beklediğimiz şey tam da JS'in
+ * tıkanması; park uzadıkça alev "dondu" görünürdü. Bu yüzden parkın canlılığı
+ * UI thread'inde: ilerleme, örtme noktasıyla `holdCeilProgress` arasında
+ * yavaşça nefes alıyor (aşağıdaki geometri + canvas'ın park fazı) ve flicker
+ * park boyunca DURAKLIYOR — o anda JS bütçesi commit'in.
+ */
+export const COVER_HOLD_LIMIT_MS = 8000;
+
+/**
+ * Parkın nefes periyodu (tek yön). Yavaş: hareket "dalga ilerliyor" değil
+ * "alev olduğu yerde canlı" okunacak kadar.
+ */
+export const HOLD_BREATHE_MS = 900;
+
+/**
+ * Salıvermede nefesin sıfıra çekilme süresi.
+ *
+ * Nefes `progress`in ÜSTÜNE binen ayrı bir kanal (bkz. FireFlameCanvas >
+ * `breathe`); çıkışta sıfıra inmesi gerekiyor ki yukarı süpürmeyi tek kaynak
+ * (progress) sürsün. Kısa: çıkışın ~900 ms'lik yolunun başında bitiyor, yani
+ * hız kırılması gözle yakalanmıyor.
+ */
+export const HOLD_BREATHE_EXIT_MS = 180;
+
+/**
+ * Nefesin üst ucu, kaplama penceresinin NERESİNDE dursun.
+ *
+ * 0 = örtme noktası (nefes yok), 1 = pencerenin ta ucu (şeridin alt kenarı
+ * ekranın dibine değdiği an — bir piksel şaşsa zemin görünür). Ortada
+ * durmak hem gözle fark edilen bir salınım veriyor hem de iki yönde de
+ * kaplama payı bırakıyor; pencerenin kendisi ekran oranına göre değiştiği
+ * için ORAN olarak yazılı, piksel/ms olarak değil.
+ */
+const HOLD_CEIL_RATIO = 0.5;
+
 /** Dalganın ekran ölçüsüne göre yerleşimi + kart değişiminin yapılacağı an. */
 export interface FlameWaveGeometry {
   /** En uzun üst alev dilinin boyu (salınım öncesi). */
@@ -225,6 +289,32 @@ export interface FlameWaveGeometry {
   endY: number;
   /** Animasyon BAŞINDAN, dalganın ekranı tam kapattığı ana kadar geçen ms. */
   coverMs: number;
+  /**
+   * Örtme anının İLERLEMEDEKİ karşılığı — parkın başladığı nokta.
+   *
+   * `coverMs / FLAME_WAVE_MS`in ta kendisi (süpürme doğrusal). Yine de burada
+   * duruyor: canvas'ın onu yeniden türetmesi, geometri bir gün doğrusal
+   * olmayan bir eğriye geçerse sessizce bayatlardı.
+   */
+  coverProgress: number;
+  /**
+   * Parkın nefesinin ÜST ucu — buraya kadar çıkmak hâlâ tam kaplama.
+   *
+   * `coverProgress` ile bunun arası, dalganın ekranı kesintisiz kapattığı
+   * pencerenin güvenli yarısı. İkisi eşitse (aşırı uzun/geniş ekranda pencere
+   * yok denecek kadar kısa) park nefes almıyor, sabit duruyor — kaplamayı
+   * riske atmaktan iyidir.
+   */
+  holdCeilProgress: number;
+  /**
+   * Kaplamanın BİTTİĞİ an: kesintisiz şeridin alt kenarı ekranın dibine kadar
+   * çekildi, bundan sonrası delikli — zemin görünür.
+   *
+   * Dışa açık, çünkü parkın değişmezi bu: `holdCeilProgress` bunu GEÇEMEZ.
+   * İçeride bırakılsaydı nefesin sınırları "öyle hesaplanıyordur" diye
+   * varsayılırdı; böyle test edilebiliyor.
+   */
+  uncoverProgress: number;
 }
 
 /**
@@ -273,13 +363,32 @@ export function flameWaveGeometry(
   // kapatıyor) ortaya nişan al — orası "en çok kapalı" an.
   const ms =
     outMs - inMs > COVER_LEAD_MS ? inMs + COVER_LEAD_MS : (inMs + outMs) / 2;
+  const coverMs = Math.round(Math.min(FLAME_WAVE_MS, Math.max(0, ms)));
+
+  // Park, örtme noktasında DURUYOR ve orada nefes alıyor. Nefesin üst ucu
+  // `pOut`a (kaplamanın bittiği an) kadar gidebilir; oraya kadar GİTMİYOR —
+  // HOLD_CEIL_RATIO kadarını kullanıp kalanını pay olarak bırakıyor.
+  //
+  // `Math.max(coverProgress, ...)`: aşırı uzun ekranda `ms` pencerenin ORTASI
+  // olarak seçiliyor ve `pOut`un ötesine düşebiliyor; tavanın park noktasından
+  // aşağı inmesi nefesi kaplamanın DIŞINA taşırırdı. O dalda ikisi eşitleniyor,
+  // yani park sabit duruyor.
+  const coverProgress = coverMs / FLAME_WAVE_MS;
+  const uncoverProgress = Math.min(1, Math.max(0, pOut));
+  const holdCeilProgress = Math.max(
+    coverProgress,
+    coverProgress + (uncoverProgress - coverProgress) * HOLD_CEIL_RATIO,
+  );
 
   return {
     tongueHeight,
     bandHeight,
     startY,
     endY,
-    coverMs: Math.round(Math.min(FLAME_WAVE_MS, Math.max(0, ms))),
+    coverMs,
+    coverProgress,
+    holdCeilProgress,
+    uncoverProgress,
   };
 }
 

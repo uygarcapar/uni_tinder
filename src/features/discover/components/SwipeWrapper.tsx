@@ -611,11 +611,18 @@ function SwipeWrapper({
       onSwipe(direction, profile.userId, true);
       return;
     }
-    flameCoverUnsub.current = runFlameSweep(() => {
-      flameCoverUnsub.current = null;
-      collapseUnderCover();
-      onSwipe(direction, profile.userId);
-    });
+    // `hold`: dalga, deste ilerleyip yeni kart EKRANA BOYANANA kadar ekranı
+    // kapalı tutuyor (bkz. runFlameSweep > hold · DiscoverScreen >
+    // tryReleaseFlame). Örtme anı değişime ~200 ms bırakıyordu ve o pay bazen
+    // yetmiyordu: dalga, eski kart hâlâ boyalıyken çekiliyordu.
+    flameCoverUnsub.current = runFlameSweep(
+      () => {
+        flameCoverUnsub.current = null;
+        collapseUnderCover();
+        onSwipe(direction, profile.userId);
+      },
+      { hold: true },
+    );
   };
   // Kart örtme anından ÖNCE ağaçtan düşerse (deste tazelendi, sekme değişti,
   // tema remount'u) dinleyici arkada kalmasın.

@@ -53,6 +53,13 @@ export function modeAccent(mode: AppMode): string {
 }
 
 /**
+ * ⚠️ `modePillFill` KALDIRILDI. Mod anahtarının (EditProfileForm > ModeSwitch)
+ * kayan dolgusu bir tur mod renkleriyle çizildi (Dating turuncu / Friends
+ * yeşil) ve geri alındı — şerit artık `inverseSurface` ile polarite çeviriyor,
+ * yani moda bağlı bir dolgu tonuna ihtiyaç yok. Gerekçe o bileşenin başında.
+ */
+
+/**
  * Fire/Spark kalbinin dolgu gradyanı — buton, kart yanması, alev dalgası ve
  * MatchModal perdesi AYNI gradyandan okur (swipeHeart'ın "tek ateş" kuralı
  * moda taşındı).

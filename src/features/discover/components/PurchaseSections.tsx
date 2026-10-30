@@ -27,7 +27,7 @@ import {
   useSubscriptionView,
 } from "@/features/profile/subscriptionView";
 // Plan kartının zemini upsell kartıyla ORTAK (gradyan + varsa fotoğraf).
-import { PlusCardArt } from "@/features/profile/plusCardArt";
+import { PlusCardArt, isPlusArtWarm } from "@/features/profile/plusCardArt";
 import { useAppMode } from "@/features/discover/useAppMode";
 import { modeFireTint } from "@/features/discover/modeTheme";
 import { colors, ink, onMediaAt } from "@/shared/theme/colors";
@@ -862,6 +862,19 @@ export function PurchasePlanCarousel({ flow }: { flow: PurchaseFlow }) {
     [selectedPeriod, setSelectedPeriod],
   );
 
+  // Kartın İKİNCİ kapısı: katalog geldi ama zemin fotoğrafı daha boyanmadı.
+  //
+  // Kart fotoğrafsız hâlinde tam opak kırmızı-turuncu bir gradyan (bkz.
+  // PlusCardArt) — kapı olmadan katalogla birlikte doğuyor ve asset çözülene
+  // kadar bir an marka karesi olarak yanıp sönüyordu. Beklerken iskelet
+  // DURUYOR: boyu zaten gerçek kartla aynı, yani kapanırken sayfa oynamıyor.
+  //
+  // İlk açılıştan sonra fotoğraf expo-image'ın bellek önbelleğinde: aynı
+  // oturumda sayfaya tekrar girildiğinde kapı `isPlusArtWarm` ile BAŞTAN açık,
+  // yoksa her girişte bir kare iskelet yanıp sönerdi.
+  const [artReady, setArtReady] = useState(() => isPlusArtWarm("plan"));
+  const handleArtReady = useCallback(() => setArtReady(true), []);
+
   if (loadingOffering) return <PlanCarouselSkeleton showPills={!isPremium} />;
   if (plans.length === 0 || !selectedPlan) return null;
 
@@ -892,50 +905,53 @@ export function PurchasePlanCarousel({ flow }: { flow: PurchaseFlow }) {
           t={t}
         />
       )}
-      <AnimatedPressable
-        testID={`plan-card-${plan.period}`}
-        pressScale={0.97}
-        onPress={() => {
-          // Abonede dokunuş YALNIZ yapılacak bir iş varken bir yere
-          // gidiyor (ödeme sorunu / iptal → mağaza). Olağan abonelikte
-          // kart tamamen ölü: `disabled` yüzünden buraya hiç girmiyor,
-          // basılma ölçeği bile çalışmıyor.
-          if (isPremium) {
-            if (needsStoreAction) openStoreSubscriptions();
-            return;
+      {/* Kart + (zemin boyanana kadar) onu örten iskelet. Kap `position`
+          vermiyor — RN'de varsayılan `relative`, iskelet ona göre geriliyor. */}
+      <View>
+        <AnimatedPressable
+          testID={`plan-card-${plan.period}`}
+          pressScale={0.97}
+          onPress={() => {
+            // Abonede dokunuş YALNIZ yapılacak bir iş varken bir yere
+            // gidiyor (ödeme sorunu / iptal → mağaza). Olağan abonelikte
+            // kart tamamen ölü: `disabled` yüzünden buraya hiç girmiyor,
+            // basılma ölçeği bile çalışmıyor.
+            if (isPremium) {
+              if (needsStoreAction) openStoreSubscriptions();
+              return;
+            }
+            handlePurchase(plan);
+          }}
+          disabled={
+            purchasing ||
+            restoring ||
+            loadingOffering ||
+            (isPremium && !needsStoreAction)
           }
-          handlePurchase(plan);
-        }}
-        disabled={
-          purchasing ||
-          restoring ||
-          loadingOffering ||
-          (isPremium && !needsStoreAction)
-        }
-        // Boyun TABANI `minHeight` (kart artık tek; yatay listenin
-        // "kardeşe gerilme" zinciri kalktı). Tabanın üstünde kalan boy
-        // ise periyottan BAĞIMSIZ: içeriğin plana göre değişen iki yeri
-        // de kendi içinde sabitlendi — fiyat bloğu en uzun periyodun
-        // boyunda (PlanFactsBlock), alt şeritteki indirim pill'i yokken
-        // de görünmez olarak çiziliyor. Yani şeritten periyot değişince
-        // kart oynamıyor; yalnız `checkIntroEligibility` cevabı deneme
-        // satırını getirdiğinde bir kez uzuyor (bkz. PLAN_CARD_HEIGHT).
-        style={{
-          // Kart kabın tam genişliği: sayfanın 20px gutter'ı zaten
-          // dışarıda (bkz. PlusPage), burada ikinci bir pay yok.
-          alignSelf: "stretch",
-          // Zemin: iskeletin ayırdığı boy (bkz. PLAN_CARD_HEIGHT).
-          minHeight: PLAN_CARD_HEIGHT,
-          borderRadius: PLAN_CARD_RADIUS,
-          borderCurve: "continuous",
-          // ÇERÇEVE YOK. Eskiden %10'luk bir `mediaHairline` konturu vardı;
-          // zemin düz gradyanken kartın kenarını sayfadan ayırıyordu, zemin
-          // fotoğraf olunca kareyi çerçeveye alan ince bir çizgiye dönüştü.
-          // Kenarı artık fotoğrafın kendi kontrastı çiziyor.
-          overflow: "hidden",
-        }}
-      >
-        {/* Dolgu ProfileScreen'deki upsell kartının zemininin TA KENDİSİ
+          // Boyun TABANI `minHeight` (kart artık tek; yatay listenin
+          // "kardeşe gerilme" zinciri kalktı). Tabanın üstünde kalan boy
+          // ise periyottan BAĞIMSIZ: içeriğin plana göre değişen iki yeri
+          // de kendi içinde sabitlendi — fiyat bloğu en uzun periyodun
+          // boyunda (PlanFactsBlock), alt şeritteki indirim pill'i yokken
+          // de görünmez olarak çiziliyor. Yani şeritten periyot değişince
+          // kart oynamıyor; yalnız `checkIntroEligibility` cevabı deneme
+          // satırını getirdiğinde bir kez uzuyor (bkz. PLAN_CARD_HEIGHT).
+          style={{
+            // Kart kabın tam genişliği: sayfanın 20px gutter'ı zaten
+            // dışarıda (bkz. PlusPage), burada ikinci bir pay yok.
+            alignSelf: "stretch",
+            // Zemin: iskeletin ayırdığı boy (bkz. PLAN_CARD_HEIGHT).
+            minHeight: PLAN_CARD_HEIGHT,
+            borderRadius: PLAN_CARD_RADIUS,
+            borderCurve: "continuous",
+            // ÇERÇEVE YOK. Eskiden %10'luk bir `mediaHairline` konturu vardı;
+            // zemin düz gradyanken kartın kenarını sayfadan ayırıyordu, zemin
+            // fotoğraf olunca kareyi çerçeveye alan ince bir çizgiye dönüştü.
+            // Kenarı artık fotoğrafın kendi kontrastı çiziyor.
+            overflow: "hidden",
+          }}
+        >
+          {/* Dolgu ProfileScreen'deki upsell kartının zemininin TA KENDİSİ
             (PlusCardArt) — iki yüzey aynı kart ailesinden okunsun diye.
             Gradyan, varsa fotoğraf ve perdesi orada; buradaki View yalnız
             payları kuruyor.
@@ -944,26 +960,30 @@ export function PurchasePlanCarousel({ flow }: { flow: PurchaseFlow }) {
             ailesinden, yani her iki modda da BEYAZ: `text` açık modda
             siyaha döner ve kırmızı gradyanda okunmazdı (palet
             sözleşmesi, colors.ts). */}
-        <View
-          style={{
-            // Dolgu kartın `minHeight`ini doldurmalı, yoksa kısa
-            // içerikte altta zeminsiz bir şerit kalırdı.
-            flex: 1,
-            paddingHorizontal: 20,
-            // Üst pay alttan KÜÇÜK ve öyle kalmalı: "plus" 55pt ve
-            // Duckie'nin satır kutusu harflerin üstünde kendi boşluğunu
-            // taşıyor, iki sayı eşitlenince kart tepeden fazla açılıyor.
-            paddingTop: 18,
-            paddingBottom: 30,
-          }}
-        >
-          {/* Zemin. `contentPosition` SAĞ: kart deneme satırıyla bir kez
+          <View
+            style={{
+              // Dolgu kartın `minHeight`ini doldurmalı, yoksa kısa
+              // içerikte altta zeminsiz bir şerit kalırdı.
+              flex: 1,
+              paddingHorizontal: 20,
+              // Üst pay alttan KÜÇÜK ve öyle kalmalı: "plus" 55pt ve
+              // Duckie'nin satır kutusu harflerin üstünde kendi boşluğunu
+              // taşıyor, iki sayı eşitlenince kart tepeden fazla açılıyor.
+              paddingTop: 18,
+              paddingBottom: 30,
+            }}
+          >
+            {/* Zemin. `contentPosition` SAĞ: kart deneme satırıyla bir kez
               uzadığında `cover` yatayda kırpıyor ve sağ kenar sabitlenince
               kırpılan yer fotoğrafın boş sol tarafı oluyor — kadrajdaki
               insanlar yerinde kalıyor, metnin altındaki boşluk da. */}
-          <PlusCardArt surface="plan" contentPosition="right" />
+            <PlusCardArt
+              surface="plan"
+              contentPosition="right"
+              onArtReady={handleArtReady}
+            />
 
-          {/* Ad satırı: marka kelimesi + (abonede) durum rozeti, ikisi
+            {/* Ad satırı: marka kelimesi + (abonede) durum rozeti, ikisi
               bitişik. Satırın sağ ucunda bir zamanlar marka alevi duruyordu,
               KALDIRILDI (ProfileScreen'in upsell kartındaki eşiyle birlikte) —
               kartın kırmızı-turuncu gradyanı markayı zaten taşıyor.
@@ -971,30 +991,30 @@ export function PurchasePlanCarousel({ flow }: { flow: PurchaseFlow }) {
               Satır yine de bir satır: rozet "plus+"a yapışık kalmalı,
               ortalanmamalı. Uzun etikette kırpılan rozettir, marka kelimesi
               değil — `flexShrink` rozetin kendisinde (bkz. PlanStatusPill). */}
-          <View
-            style={{
-              marginBottom: 6,
-              flexDirection: "row",
-              alignItems: "center",
-              gap: 10,
-            }}
-          >
-            <PlanBrandWord size={55} color={colors.onMedia} />
-            {isPremium && <PlanStatusPill label={subscriptionView.badge} />}
-          </View>
-          {/* Kartın gövdesi. Satın alınabilir hâlde periyoda göre DEĞİŞEN
+            <View
+              style={{
+                marginBottom: 6,
+                flexDirection: "row",
+                alignItems: "center",
+                gap: 10,
+              }}
+            >
+              <PlanBrandWord size={55} color={colors.onMedia} />
+              {isPremium && <PlanStatusPill label={subscriptionView.badge} />}
+            </View>
+            {/* Kartın gövdesi. Satın alınabilir hâlde periyoda göre DEĞİŞEN
               bilgi — fiyat + açıklama (ve varsa deneme uyarısı) — ve boyu
               bütün periyotların en uzunu kadar sabit: seçim değişince kart
               oynamıyor. Abonede tek bir durum cümlesi (bkz. PlanFactsBlock). */}
-          <PlanFactsBlock
-            plans={plans}
-            plan={plan}
-            t={t}
-            isTrialEligible={isTrialEligible}
-            isPremium={isPremium}
-            premiumNote={premiumNote}
-          />
-          {/* Kartın alt şeridi: solda indirim, sağda eylem rozeti.
+            <PlanFactsBlock
+              plans={plans}
+              plan={plan}
+              t={t}
+              isTrialEligible={isTrialEligible}
+              isPremium={isPremium}
+              premiumNote={premiumNote}
+            />
+            {/* Kartın alt şeridi: solda indirim, sağda eylem rozeti.
               `marginTop: "auto"` şeridi kartın dibine iter — kartlar
               eşit boya gerildiği için kısa kartlarda üstte kalan boşluk
               buraya düşüyor ve üç kartın şeridi aynı hizada oluyor.
@@ -1003,144 +1023,166 @@ export function PurchasePlanCarousel({ flow }: { flow: PurchaseFlow }) {
               durumda tek bir eylem butonu) alıyor: indirim yüzdesi satın
               alma bilgisi, satın alacak bir şey kalmayan kartta yeri
               yok. */}
-          {isPremium ? (
-            needsStoreAction ? (
-              // YALNIZ ödeme sorunu / iptal: kapsül buton, kartın kendi
-              // dokunuşunu etiketliyor. Kendi TouchableOpacity'si YOK —
-              // kartın kendisi zaten mağazaya götürüyor, içine ikinci bir
-              // dokunma hedefi koymak aynı eylemi iki kez tanımlardı.
-              <View
-                testID={`plan-card-manage-${plan.period}`}
-                style={{
-                  marginTop: "auto",
-                  paddingTop: 20,
-                }}
-              >
+            {isPremium ? (
+              needsStoreAction ? (
+                // YALNIZ ödeme sorunu / iptal: kapsül buton, kartın kendi
+                // dokunuşunu etiketliyor. Kendi TouchableOpacity'si YOK —
+                // kartın kendisi zaten mağazaya götürüyor, içine ikinci bir
+                // dokunma hedefi koymak aynı eylemi iki kez tanımlardı.
                 <View
+                  testID={`plan-card-manage-${plan.period}`}
                   style={{
-                    borderWidth: 0.5,
-                    borderColor: onMediaAt(0.5),
-                    borderRadius: 999,
-                    borderCurve: "continuous",
-                    overflow: "hidden",
-                    paddingVertical: 17,
-                    alignItems: "center",
-                    justifyContent: "center",
+                    marginTop: "auto",
+                    paddingTop: 20,
+                  }}
+                >
+                  <View
+                    style={{
+                      borderWidth: 0.5,
+                      borderColor: onMediaAt(0.5),
+                      borderRadius: 999,
+                      borderCurve: "continuous",
+                      overflow: "hidden",
+                      paddingVertical: 17,
+                      alignItems: "center",
+                      justifyContent: "center",
+                    }}
+                  >
+                    <Text
+                      style={{
+                        color: colors.onMedia,
+                        fontSize: 14,
+                        fontWeight: "700",
+                      }}
+                    >
+                      {manageLabel}
+                    </Text>
+                  </View>
+                </View>
+              ) : renewalNote ? (
+                // Olağan abonelik: tek satır BİLGİ, buton değil. Kapsül
+                // çerçevesi yok — çerçeve "basılabilir" diyor, oysa kart
+                // artık ölü. Etiket ve tarih TEK parça: ayrı ton ve ayrı
+                // ağırlık da denendi, ikisi de satırı tek cümle yerine
+                // "başlık + değer" gibi gösteriyordu — oysa okunan şey tek
+                // bir not.
+                <View
+                  testID={`plan-card-renewal-${plan.period}`}
+                  style={{
+                    marginTop: "auto",
+                    paddingTop: 20,
                   }}
                 >
                   <Text
                     style={{
-                      color: colors.onMedia,
                       fontSize: 14,
-                      fontWeight: "700",
+                      fontWeight: "400",
+                      color: onMediaAt(0.55),
                     }}
                   >
-                    {manageLabel}
+                    {renewalNote.date
+                      ? `${renewalNote.label} ${renewalNote.date}`
+                      : renewalNote.label}
                   </Text>
                 </View>
-              </View>
-            ) : renewalNote ? (
-              // Olağan abonelik: tek satır BİLGİ, buton değil. Kapsül
-              // çerçevesi yok — çerçeve "basılabilir" diyor, oysa kart
-              // artık ölü. Etiket ve tarih TEK parça: ayrı ton ve ayrı
-              // ağırlık da denendi, ikisi de satırı tek cümle yerine
-              // "başlık + değer" gibi gösteriyordu — oysa okunan şey tek
-              // bir not.
+              ) : null
+            ) : (
               <View
-                testID={`plan-card-renewal-${plan.period}`}
                 style={{
                   marginTop: "auto",
                   paddingTop: 20,
+                  flexDirection: "row",
+                  // `flex-end`, `center` DEĞİL: indirim pill'i (dolgu + çerçeve)
+                  // rozetten birkaç px yüksek ve şerit dibe çivili olduğu için
+                  // fazlalık YUKARI doğru büyüyor. Ortalamada rozet, pill'in
+                  // olduğu planlarda o farkın yarısı kadar yukarı kayıyordu —
+                  // periyot değiştikçe "Abone Ol" yerinde durmuyordu. Dibe
+                  // hizalanınca rozetin alt kenarı sabit.
+                  alignItems: "flex-end",
+                  justifyContent: "space-between",
                 }}
               >
-                <Text
-                  style={{
-                    fontSize: 14,
-                    fontWeight: "400",
-                    color: onMediaAt(0.55),
-                  }}
-                >
-                  {renewalNote.date
-                    ? `${renewalNote.label} ${renewalNote.date}`
-                    : renewalNote.label}
-                </Text>
-              </View>
-            ) : null
-          ) : (
-            <View
-              style={{
-                marginTop: "auto",
-                paddingTop: 20,
-                flexDirection: "row",
-                // `flex-end`, `center` DEĞİL: indirim pill'i (dolgu + çerçeve)
-                // rozetten birkaç px yüksek ve şerit dibe çivili olduğu için
-                // fazlalık YUKARI doğru büyüyor. Ortalamada rozet, pill'in
-                // olduğu planlarda o farkın yarısı kadar yukarı kayıyordu —
-                // periyot değiştikçe "Abone Ol" yerinde durmuyordu. Dibe
-                // hizalanınca rozetin alt kenarı sabit.
-                alignItems: "flex-end",
-                justifyContent: "space-between",
-              }}
-            >
-              {/* Haftalıkta yok: tasarruf hesabının tabanı o plan
+                {/* Haftalıkta yok: tasarruf hesabının tabanı o plan
                   (bkz. computeSavings), kendine göre indirimi olmuyor.
                   YİNE DE ÇİZİLİYOR, yalnız görünmez: pill sağdaki rozetten
                   birkaç piksel yüksek ve şerit kartın dibine çivili olduğu
                   için, çizilmediği periyotta şerit — dolayısıyla kart — o
                   kadar kısalıyordu. Görünmez kopya boyu sabitliyor,
                   `space-between` de rozeti sağda tutuyor. */}
-              {
-                // Dolgu MODA GÖRE: Flört'te marka kırmızısı, Arkadaş'ta
-                // yeşil (`modeFireTint` — Fire/Spark butonuyla aynı kaynak).
-                // Sabit kırmızı, Arkadaş modundaki kullanıcıya uygulamanın
-                // geri kalanında hiç görmediği bir renk gösteriyordu.
-                //
-                // Beyaz yazı ve ince beyaz çizgi iki modda da aynı: ikisi de
-                // medya mürekkebi, pill'i zeminden koparan şey o çizgi.
-                // (Cam bir sürümü denendi, zemini sadece karartıyordu.)
-                <View
-                  testID={
-                    planSavings != null
-                      ? `plan-card-discount-${plan.period}`
-                      : undefined
-                  }
-                  pointerEvents="none"
-                  accessibilityElementsHidden={planSavings == null}
-                  importantForAccessibility={
-                    planSavings == null ? "no-hide-descendants" : "auto"
-                  }
-                  style={{
-                    opacity: planSavings != null ? 1 : 0,
-                    paddingHorizontal: 9,
-                    paddingVertical: 4,
-                    borderRadius: 999,
-                    borderCurve: "continuous",
-                    overflow: "hidden",
-                    backgroundColor: modeFireTint(mode),
-                    borderWidth: 0.5,
-                    borderColor: onMediaAt(0.4),
-                  }}
-                >
-                  <Text
+                {
+                  // Dolgu MODA GÖRE: Flört'te marka kırmızısı, Arkadaş'ta
+                  // yeşil (`modeFireTint` — Fire/Spark butonuyla aynı kaynak).
+                  // Sabit kırmızı, Arkadaş modundaki kullanıcıya uygulamanın
+                  // geri kalanında hiç görmediği bir renk gösteriyordu.
+                  //
+                  // Beyaz yazı ve ince beyaz çizgi iki modda da aynı: ikisi de
+                  // medya mürekkebi, pill'i zeminden koparan şey o çizgi.
+                  // (Cam bir sürümü denendi, zemini sadece karartıyordu.)
+                  <View
+                    testID={
+                      planSavings != null
+                        ? `plan-card-discount-${plan.period}`
+                        : undefined
+                    }
+                    pointerEvents="none"
+                    accessibilityElementsHidden={planSavings == null}
+                    importantForAccessibility={
+                      planSavings == null ? "no-hide-descendants" : "auto"
+                    }
                     style={{
-                      color: colors.onMedia,
-                      fontSize: 12,
-                      fontWeight: "700",
+                      opacity: planSavings != null ? 1 : 0,
+                      paddingHorizontal: 9,
+                      paddingVertical: 4,
+                      borderRadius: 999,
+                      borderCurve: "continuous",
+                      overflow: "hidden",
+                      backgroundColor: modeFireTint(mode),
+                      borderWidth: 0.5,
+                      borderColor: onMediaAt(0.4),
                     }}
                   >
-                    {t("purchase.discount", { percent: planSavings ?? 0 })}
-                  </Text>
-                </View>
-              }
-              <SelectedBadge
-                active
-                loading={purchasing}
-                label={t("purchase.cta.subscribe")}
-              />
-            </View>
-          )}
-        </View>
-      </AnimatedPressable>
+                    <Text
+                      style={{
+                        color: colors.onMedia,
+                        fontSize: 12,
+                        fontWeight: "700",
+                      }}
+                    >
+                      {t("purchase.discount", { percent: planSavings ?? 0 })}
+                    </Text>
+                  </View>
+                }
+                <SelectedBadge
+                  active
+                  loading={purchasing}
+                  label={t("purchase.cta.subscribe")}
+                />
+              </View>
+            )}
+          </View>
+        </AnimatedPressable>
+        {/* Perde: kartın ÜSTÜNDE duran iskelet (kartı `opacity` ile gizlemek
+            DEĞİL — gizli kart yine de boyanıyor olsun ki fotoğraf çözülsün).
+            Dokunuşu da yutuyor: altında satın almayı başlatan bir basma
+            hedefi var. */}
+        {!artReady && (
+          <SkeletonBox
+            // Boy KARTTAN alınıyor (inset 0), sabit PLAN_CARD_HEIGHT değil:
+            // deneme satırı gelmiş kart o tabanın üstüne çıkabiliyor ve
+            // perdenin altında ince bir kırmızı şerit kalırdı. `width` yalnız
+            // shimmer'ın ölçüsü için.
+            width={PLAN_CARD_WIDTH}
+            borderRadius={PLAN_CARD_RADIUS}
+            style={{
+              position: "absolute",
+              left: 0,
+              right: 0,
+              top: 0,
+              bottom: 0,
+            }}
+          />
+        )}
+      </View>
       {/* Sayfa noktaları KALDIRILDI: hangi periyotta olunduğunu artık üstteki
           pill şeridi söylüyor, iki gösterge aynı şeyi anlatıyordu. */}
     </View>

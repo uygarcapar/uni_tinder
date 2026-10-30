@@ -14,6 +14,7 @@ import {
   Easing,
   useDerivedValue,
   useSharedValue,
+  withRepeat,
   withTiming,
 } from "react-native-reanimated";
 import { FLAME_PATH } from "@/shared/components/icons/FlameGlyph";
@@ -29,9 +30,12 @@ import {
   buildFlameWave,
   flameCurtainGeometry,
   flameWaveGeometry,
+  COVER_HOLD_LIMIT_MS,
   FLAME_WAVE_MS,
   FLICKER_FPS,
   FLICKER_FRAMES,
+  HOLD_BREATHE_EXIT_MS,
+  HOLD_BREATHE_MS,
   type FlameWaveGeometry,
   type WaveApi,
 } from "./flameWavePath";
@@ -150,11 +154,36 @@ function FlameWaveLayer({
   wave,
   width,
   progress,
+  breathe,
+  breatheSpan = 0,
+  parked = false,
   mode = DEFAULT_APP_MODE,
 }: {
   wave: Wave;
   width: number;
   progress: SharedValue<number>;
+  /**
+   * Parkın nefesi, 0..1 — `progress`in ÜSTÜNE binen AYRI kanal.
+   *
+   * ⚠️ NEDEN AYRI: nefes bir tur doğrudan `progress`i sürüyordu ve çıkışın
+   * süresi "kalan yol" olarak `progress.value` JS'ten OKUNARAK hesaplanıyordu.
+   * O okuma bayat: Reanimated'ın native mutable'ı her runtime için ayrı bir
+   * değer kapanışı tutuyor ve animasyonu UI runtime'ı sürüyor, yani JS tarafı
+   * kendisine son yazılan şeyi görüyor (bir sayı değil, animasyon tanımı).
+   * Süre çöp çıkıyor, dalga da ya ışınlanıyor ya sürünüyordu.
+   *
+   * Kanal ayrılınca `progress` park boyunca TAM OLARAK `coverProgress`te
+   * duruyor → çıkış süresi sabit ve bilinir (`FLAME_WAVE_MS - coverMs`), yani
+   * orijinal süpürmenin ikinci yarısının birebir aynısı. Okumaya gerek yok.
+   */
+  breathe?: SharedValue<number>;
+  /** Nefesin ilerlemedeki genliği (`holdCeilProgress - coverProgress`). */
+  breatheSpan?: number;
+  /**
+   * Dalga, kart değişimini bekleyerek park ediyor mu (bkz. FireFlameCanvas'ın
+   * park fazı). Park boyunca titreşim DURUYOR — gerekçe aşağıda.
+   */
+  parked?: boolean;
   /** Alevin rengi — Flört ateşi / Arkadaş Spark'ı. */
   mode?: AppMode;
 }) {
@@ -162,19 +191,37 @@ function FlameWaveLayer({
   // oluyor, 60 fps'lik öteleme ise React'e hiç uğramıyor.
   const [tick, setTick] = useState(0);
   useEffect(() => {
+    /**
+     * ── PARKTA TİTREŞİM YOK, BİLEREK ──────────────────────────────────────
+     *
+     * Park tam o anda yeni kartın React commit'ini bekliyor, yani JS thread'i
+     * tıkanmak ÜZERE. Saniyede 14 render oraya ekleyecek en son şey; aralık
+     * zaten tıkanma sırasında ya gecikir ya hiç koşmaz, üstelik commit'i de
+     * yavaşlatır.
+     *
+     * CANLILIK KAYBOLMUYOR, yerini UI thread'ine bırakıyor: park, ilerlemeyi
+     * nefes gibi gidip getirerek 60 fps'te oynuyor (ve `waveOffset`in yalpası
+     * da ilerlemeden türüyor, yani şerit yanal olarak da salınıyor). Donuk
+     * görünen bir park ile tıkanmış bir JS thread'i aynı anda olurdu.
+     */
+    if (parked) return;
     const id = setInterval(
       () => setTick((v) => v + 1),
       Math.round(1000 / FLICKER_FPS),
     );
     return () => clearInterval(id);
-  }, []);
+  }, [parked]);
 
   const { startY, endY, tongueHeight, bandHeight } = wave;
 
   const transform = useDerivedValue(() => {
-    const o = waveOffset(progress.value, startY, endY);
+    // Nefes toplamsal: park dışında `breathe` sıfır, yani süpürme etkilenmiyor.
+    // Üst ucu geometriden sınırlı (holdCeilProgress ≤ uncoverProgress), o yüzden
+    // hiçbir fazda kaplamanın dışına çıkmıyor.
+    const p = progress.value + (breathe ? breathe.value * breatheSpan : 0);
+    const o = waveOffset(p, startY, endY);
     return [{ translateY: o.y }, { translateX: o.x }];
-  }, [startY, endY]);
+  }, [startY, endY, breatheSpan]);
 
   const path = frameAt(wave, tick, width);
   if (!path) return null;
@@ -206,7 +253,19 @@ function FlameWaveLayer({
   );
 }
 
-export default function FireFlameCanvas({ mode }: { mode?: AppMode } = {}) {
+export default function FireFlameCanvas({
+  mode,
+  hold,
+}: {
+  mode?: AppMode;
+  /**
+   * Dalga, ekranı tam kapattığı yerde PARK ETSİN mi (bkz. flameSweep >
+   * runFlameSweep'in `hold` notu). Park, kart değişiminin dalganın arka
+   * kenarından sırıtmasını yapısal olarak bitiriyor; bedeli kutlamanın
+   * değişim bitene kadar uzaması (tavansız — bkz. COVER_HOLD_LIMIT_MS).
+   */
+  hold?: boolean;
+} = {}) {
   // Modül seviyesinde Dimensions.get() DEĞİL: iPad split-view'da pencere
   // yeniden boyutlandığında o değer bayatlar. Hook her mount'ta güncelini verir.
   const { width, height } = useWindowDimensions();
@@ -220,14 +279,25 @@ export default function FireFlameCanvas({ mode }: { mode?: AppMode } = {}) {
   // hiç ilerlemiyordu. withTiming UI thread'inde kendi başına dönüyor;
   // React'in kaç kez render olduğu onu ilgilendirmiyor.
   const progress = useSharedValue(0);
-  const { coverMs } = wave;
+  /** Parkın nefesi, 0..1 — ayrı kanal (gerekçe FlameWaveLayer'ın prop'unda). */
+  const breathe = useSharedValue(0);
+  const { coverMs, coverProgress, holdCeilProgress } = wave;
+  const breatheSpan = holdCeilProgress - coverProgress;
+  /** Park sürüyor mu — titreşimi duraklatan bayrak (bkz. FlameWaveLayer). */
+  const [parked, setParked] = useState(false);
   useEffect(() => {
-    progress.value = withTiming(1, {
-      duration: FLAME_WAVE_MS,
-      // Süpürme hissi için ivmelenmeye gerek yok: giriş ve çıkış zaten ekran
-      // dışında oluyor, ease sadece ortadaki geçişi yavaşlatırdı.
-      easing: Easing.linear,
-    });
+    progress.value = withTiming(
+      // Park edecekse ilk faz yalnız örtme noktasına kadar sürülüyor; kalan yol
+      // salıverilince (aşağıdaki effect) tamamlanıyor.
+      hold ? coverProgress : 1,
+      {
+        duration: hold ? coverMs : FLAME_WAVE_MS,
+        // Süpürme hissi için ivmelenmeye gerek yok: giriş ve çıkış zaten ekran
+        // dışında oluyor, ease sadece ortadaki geçişi yavaşlatırdı. Doğrusal
+        // olması parkın da şartı: iki fazın ekleme yerinde hız değişmiyor.
+        easing: Easing.linear,
+      },
+    );
     // Kart değişimi bu ana KİLİTLİ (bkz. flameSweep — Fire de not da):
     // dalga ekranı tam kapatınca deste ilerliyor, kullanıcı değişimi görmüyor.
     //
@@ -237,10 +307,132 @@ export default function FireFlameCanvas({ mode }: { mode?: AppMode } = {}) {
     // yarısındayken açıkta yapılırdı.
     const cover = setTimeout(() => uiBus.emit("flameSweepCover"), coverMs);
     return () => clearTimeout(cover);
-  }, [progress, coverMs]);
+  }, [progress, coverMs, coverProgress, hold]);
+
+  /**
+   * ── İKİNCİ FAZ: PARKTAN ÇIKIŞ ─────────────────────────────────────────────
+   *
+   * `hold` yokken bu effect hiç kurulmuyor ve yukarıdaki TEK `withTiming` aynen
+   * eskisi gibi çalışıyor — iki fazın ekleme yeri (farklı karelerde kurulan iki
+   * animasyon) beklemeyen çağıranlara bir karelik takılma riski bindirmesin.
+   *
+   * Tavan ŞART: salıverecek kimse çıkmazsa (beklenmeyen bir dal, çağıran
+   * ağaçtan düştü) dalga ekranın ortasında asılı kalırdı. Sayaç örtme anından
+   * DEĞİL mount'tan sayıyor, yukarıdaki `cover` sayacıyla aynı saati paylaşsın.
+   */
+  useEffect(() => {
+    if (!hold) return;
+    let valve: ReturnType<typeof setTimeout> | null = null;
+    /** Park başladı mı — erken gelen salıverme buna bakıyor. */
+    let armed = false;
+    /** Salıverme park başlamadan geldi: park açılır açılmaz çıkılacak. */
+    let wanted = false;
+    let left = false;
+
+    const leave = () => {
+      if (left) return;
+      left = true;
+      unsub();
+      if (valve) clearTimeout(valve);
+      valve = null;
+      setParked(false);
+      // Nefesi sıfıra çek: yukarı süpürmeyi TEK kaynak (progress) sürsün.
+      breathe.value = withTiming(0, { duration: HOLD_BREATHE_EXIT_MS });
+      /**
+       * ── ÇIKIŞ SABİT SÜRELİ: ORİJİNAL SÜPÜRMENİN İKİNCİ YARISI ─────────
+       *
+       * `progress` park boyunca TAM OLARAK `coverProgress`te durduğu için
+       * (nefes ayrı kanalda) kalan yol bilinir: `FLAME_WAVE_MS - coverMs`.
+       * Yani dalga, hiç park etmemiş gibi aynı hızla yukarı süpürüp çıkıyor ve
+       * alt kenarın alev dilleri ekranı baştan aşağı geçiyor.
+       *
+       * ⚠️ BURADA `progress.value` OKUNMAZ. Bir tur "kalan yolu oku, süreyi
+       * ona göre ver" denendi ve BOZDU: Reanimated'ın native mutable'ı her
+       * runtime için ayrı değer kapanışı tutuyor, animasyonu UI runtime'ı
+       * sürüyor; JS tarafından okunan şey bayat. Süre çöp çıkıyor ve dalga
+       * "bir anda yok oluyor" (ya da sürünüyor).
+       */
+      progress.value = withTiming(1, {
+        duration: FLAME_WAVE_MS - coverMs,
+        easing: Easing.linear,
+      });
+    };
+
+    /**
+     * Salıverme park BAŞLAMADAN gelebiliyor: örtme olayı ile park aynı gecikmeli
+     * iki sayaç ve araya React'in commit'i + bir rAF giriyor (bkz.
+     * DiscoverScreen > tryReleaseFlame). Bir tur bu durumda olay YUTULUYORDU ve
+     * park, salıverecek kimse kalmadığı için 8 saniyelik valfe kadar bekliyordu
+     * — "ekran kapanıyor, öyle bekliyor" tam buydu.
+     *
+     * Artık HATIRLANIYOR: hemen uygulamak dalgayı yarı yolda hızlandırırdı, o
+     * yüzden bayrak bırakılıyor ve park açıldığı anda çıkışa geçiliyor.
+     */
+    const unsub = uiBus.on("flameSweepRelease", () => {
+      if (armed) leave();
+      else wanted = true;
+    });
+
+    const arm = setTimeout(() => {
+      armed = true;
+      // Beklenen haber çoktan gelmiş: park etmeye hiç gerek yok, dalga
+      // doğrudan yoluna devam ediyor (devir zaten örtünün altında oldu).
+      if (wanted) {
+        leave();
+        return;
+      }
+      setParked(true);
+      /**
+       * ── PARKIN NEFESİ: CANLILIK UI THREAD'İNDE ────────────────────────
+       *
+       * Park, "bekliyorum" demenin GÖRÜNEN hâli olmak zorunda: beklediğimiz
+       * şey JS'in tıkanması ve titreşim de JS'e bağlı (bkz. FlameWaveLayer),
+       * yani donuk bir resim bırakmak tam da en kötü anda olurdu.
+       *
+       * `withRepeat(..., -1, true)`: nefes 0↔1 arasında gidip geliyor ve
+       * transform'da `breatheSpan` ile ölçeklenip ilerlemenin ÜSTÜNE biniyor.
+       * Genliğin üst ucu `holdCeilProgress`, o da geometriden kaplamanın
+       * içinde kalacak şekilde türüyor — nefes hiçbir fazda kartı açığa
+       * çıkarmıyor. Hareket UI thread'inde: React'in kaç kez render olduğu
+       * onu ilgilendirmiyor.
+       *
+       * `Easing.inOut`: uçlarda yavaşlayıp dönüyor, yani "ileri geri sürülen
+       * bir şerit" değil nefes gibi okunuyor.
+       */
+      if (breatheSpan > 0) {
+        breathe.value = withRepeat(
+          withTiming(1, {
+            duration: HOLD_BREATHE_MS,
+            easing: Easing.inOut(Easing.sin),
+          }),
+          -1,
+          true,
+        );
+      }
+      // EMNİYET VALFİ, tavan DEĞİL (bkz. flameWavePath > COVER_HOLD_LIMIT_MS):
+      // buraya gelmek "salıverecek kimse çıkmadı" demek, yani bir hata — işi
+      // ekranı sonsuza kadar kaplı bırakmamak.
+      valve = setTimeout(leave, COVER_HOLD_LIMIT_MS);
+    }, coverMs);
+
+    return () => {
+      left = true;
+      clearTimeout(arm);
+      unsub();
+      if (valve) clearTimeout(valve);
+    };
+  }, [progress, breathe, coverMs, breatheSpan, hold]);
 
   return (
-    <FlameWaveLayer wave={wave} width={width} progress={progress} mode={mode} />
+    <FlameWaveLayer
+      wave={wave}
+      width={width}
+      progress={progress}
+      breathe={breathe}
+      breatheSpan={breatheSpan}
+      parked={parked}
+      mode={mode}
+    />
   );
 }
 

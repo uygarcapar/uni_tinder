@@ -116,3 +116,23 @@ export function discoverTabBarInset(bottomSafeInset: number): number {
  * ona eşitlenmişti; sonra hepsi ortak başlık ölçüsüne indi.
  */
 export const DISCOVER_GLASS_BUTTON_SIZE = 48;
+
+/**
+ * Yüzen üst chrome'un MÜREKKEBİ zemin değişince ne kadar sürede devriliyor.
+ *
+ * Neden bir geçiş var: deste tükenince (EmptyDiscoverCard) header'ın ARDINDAKİ
+ * şey fotoğraf olmaktan çıkıp düz `colors.surface` oluyor. Açık modda beyaz
+ * mürekkep orada kayboluyor, yani başlık ve cam butonların glifleri tema
+ * mürekkebine dönmek zorunda — ANINDA dönerse kartın yerini boş kartın alması
+ * sırasında şerit "yanıp sönüyor" gibi okunuyor.
+ *
+ * İKİ TARAF DA AYNI SAYIYI OKUMAK ZORUNDA (ayrışırlarsa başlık ile butonlar
+ * farklı anlarda kararıyor), ama iki FARKLI motor sürüyor:
+ *   - ModeTitle                 → Reanimated CSS transition (RN view),
+ *   - DiscoverHeaderGlassButton → SwiftUI `.animation(_:value:)` (cam glif
+ *     native tarafta, RN stiliyle animasyonlanamıyor).
+ *
+ * 200ms: küçük bir durum değişimi (bkz. geçiş süreleri tablosu) — 300+ bu
+ * ölçekte sürükleniyor, 100 altında geçiş olduğu fark edilmiyor.
+ */
+export const DISCOVER_HEADER_INK_FADE_MS = 200;

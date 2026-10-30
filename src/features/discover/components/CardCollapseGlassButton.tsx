@@ -2,6 +2,7 @@ import { memo } from "react";
 import { Platform, StyleSheet, TouchableOpacity, View } from "react-native";
 import { Host, Button as SwiftUIButton, RNHostView } from "@expo/ui/swift-ui";
 import {
+  accessibilityIdentifier as a11yId,
   accessibilityLabel as a11yLabel,
   buttonBorderShape,
   buttonStyle,
@@ -130,9 +131,15 @@ type Props = {
   onPress: () => void;
   /** VoiceOver etiketi — buton metin taşımıyor, sadece glif var. */
   label: string;
+  /**
+   * e2e seçicisi. SwiftUI tarafında `accessibilityIdentifier`
+   * modifier'ına, Android/iOS<26 dalında `testID` prop'una gidiyor —
+   * yani aynı seçici iki yolda da çalışıyor.
+   */
+  testID?: string;
 };
 
-function CardCollapseGlassButton({ onPress, label }: Props) {
+function CardCollapseGlassButton({ onPress, label, testID }: Props) {
   if (Platform.OS === "ios") {
     return (
       // Sarmalayıcı iOS 26 ALTINDA zemini veriyor, 26+'da hiç render olmuyor.
@@ -180,6 +187,7 @@ function CardCollapseGlassButton({ onPress, label }: Props) {
               // biri alıp diğeri almazsa şeridin iki ucu farklı görünür.
               ...glassClearShadow(),
               a11yLabel(label),
+              ...(testID ? [a11yId(testID)] : []),
               // iOS 26 altında glassEffect sessizce no-op → kabuğun KENARINI
               // biz çiziyoruz, zemini sarmalayıcı.
               ...glassFallback({ shape: "circle" }),
@@ -201,6 +209,7 @@ function CardCollapseGlassButton({ onPress, label }: Props) {
       activeOpacity={0.8}
       hitSlop={8}
       accessibilityRole="button"
+      testID={testID}
       accessibilityLabel={label}
       style={{
         width: CARD_COLLAPSE_GLASS_SIZE,

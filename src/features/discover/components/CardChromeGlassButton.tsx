@@ -6,6 +6,7 @@ import {
   Image as SwiftUIImage,
 } from "@expo/ui/swift-ui";
 import {
+  accessibilityIdentifier as a11yId,
   accessibilityLabel as a11yLabel,
   buttonStyle,
   frame,
@@ -99,17 +100,52 @@ type Props = {
    * bandın üstünde yazı beyaz, iki köşedeki glif siyah çiziliyordu.
    */
   onMedia?: boolean;
+  /**
+   * ⚠️ GLİF PUNTOSU PROP'U YOK (2026-10-27'de kaldırıldı). Bir dönem
+   * `glyphSize` vardı ve yalnız Keşif kapağının karar ikilisi (tik · X) daha
+   * iri bir sayı geçiyordu; istek üzerine o ikili de kaydırınca şeridin sağ
+   * ucunda beliren tikle aynı puntoya döndü (bkz. SwipeCard > "GLİF PUNTOSU
+   * İÇİN AYRI SABİT YOK"), yani bu kabuğun TÜM kullanıcıları ortak sayıda.
+   *
+   * Punto artık tek kaynaktan: camlı yolda `GLASS_ICON_BUTTON.icon` (ortak
+   * zincirden, glassIconClearGlyph), camsız yolda FALLBACK_ICON_SIZE. Geri
+   * gerekirse iki yola BİRDEN verilmeli — biri atlanırsa aynı işaret iOS 26
+   * ile Android'de ayrışır.
+   */
+  /**
+   * Verilirse kabuk berrak cam değil BU RENGE boyalı cam olur ve glif beyaza
+   * (`onMedia`) sabitlenir — Beğeniler'in kart köşesindeki kırmızı tikin
+   * (CardActionGlassButton, variant "prominent") bu kabuktaki karşılığı.
+   *
+   * Çap ve dokunma alanı berrak kardeşleriyle aynı kalıyor; nasıl olduğu
+   * glassIconClearGlyph > `surfaceTint` notunda.
+   */
+  surfaceTint?: string;
+  /**
+   * e2e seçicisi. SwiftUI tarafında `accessibilityIdentifier`
+   * modifier'ına, Android/iOS<26 dalında `testID` prop'una gidiyor —
+   * yani aynı seçici iki yolda da çalışıyor.
+   */
+  testID?: string;
 };
 
 function CardChromeGlassButton({
+  testID,
   onPress,
   label,
   systemName,
   fallback,
   size = CARD_CHROME_GLASS_SIZE,
   onMedia = false,
+  surfaceTint,
 }: Props) {
-  const ink = onMedia ? glassOnMediaInk() : theme.text;
+  // Boyalı kabukta mürekkep SABİT beyaz: tint iki temada da aynı ton (kartın
+  // kırmızı/yeşil aksiyon rengi), tema metni üstünde okunmazdı.
+  const ink = surfaceTint
+    ? theme.onMedia
+    : onMedia
+      ? glassOnMediaInk()
+      : theme.text;
 
   if (Platform.OS === "ios") {
     return (
@@ -136,13 +172,27 @@ function CardChromeGlassButton({
               // label prop'u yok (glif children olarak veriliyor) → erişilebilir
               // ad modifier'dan gelmeli, yoksa VoiceOver butonu isimsiz okuyor.
               a11yLabel(label),
-              ...glassFallback({ shape: "circle" }),
+              ...(testID ? [a11yId(testID)] : []),
+              // 26 ALTINDA cam no-op → boyalı kabuğu biz çiziyoruz: aynı renk,
+              // camsız düz daire (FireGlassButton'ın prominent fallback'iyle
+              // aynı kural). Berrak yolda dolgu YOK, yalnız ince kenar.
+              ...glassFallback(
+                surfaceTint
+                  ? {
+                      shape: "circle",
+                      backgroundColor: surfaceTint,
+                      borderColor: withAlpha(theme.onMedia, 0.35),
+                    }
+                  : { shape: "circle" },
+              ),
             ]}
           >
             <SwiftUIImage
               systemName={systemName}
               color={ink}
-              modifiers={glassIconClearGlyph(size)}
+              // Punto geçilmiyor: ortak cam ikon butonunun sayısı (bkz.
+              // Props > "GLİF PUNTOSU PROP'U YOK").
+              modifiers={glassIconClearGlyph(size, { surfaceTint })}
             />
           </SwiftUIButton>
         </Host>
@@ -158,6 +208,7 @@ function CardChromeGlassButton({
       activeOpacity={0.8}
       hitSlop={8}
       accessibilityRole="button"
+      testID={testID}
       accessibilityLabel={label}
       style={{
         width: size,
@@ -166,9 +217,11 @@ function CardChromeGlassButton({
         borderCurve: "continuous",
         alignItems: "center",
         justifyContent: "center",
-        backgroundColor: withAlpha(theme.text, 0.08),
+        backgroundColor: surfaceTint ?? withAlpha(theme.text, 0.08),
         borderWidth: StyleSheet.hairlineWidth,
-        borderColor: theme.hairlineStrong,
+        borderColor: surfaceTint
+          ? withAlpha(theme.onMedia, 0.35)
+          : theme.hairlineStrong,
       }}
     >
       <SFIcon
