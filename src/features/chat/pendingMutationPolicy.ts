@@ -106,10 +106,62 @@ const NEXT_ELIGIBLE_MAX_MS = 300_000;
 
 /**
  * Bir sonraki deneme ne zaman uygun — `send`in eğrisiyle aynı aile: 2sn
- * tabanlı üstel, 5 dakikada tavanlanıyor (2 / 4 / 8 / ... / 300 saniye).
+ * tabanlı üstel, 5 dakikada tavanlanıyor.
+ *
+ * ÇAĞRI SÖZLEŞMESİ: `attempts` ARTIRILMIŞ sayaçtır (tur başarısızlıktan sonra
+ * `row.attempts + 1` ile çağırıyor). Yani pratikte görülen bekleme dizisi
+ * 4 / 8 / 16 / ... / 300 saniye — ilk tekrar 2sn DEĞİL 4sn sonra. Burada
+ * `attempts`'i bir azaltıp "2sn"yi geri getirmedim: 2sn, kullanıcının aynı
+ * mesaja ikinci bir emir vermesine bile yetmeyecek kadar kısa ve paylaşımlı
+ * `messaging_default` kovasına ilk saniyelerde en çok yükü bindiren değer.
+ * Düzeltilen şey eğri değil, onu yanlış anlatan cümleydi.
  */
 export function nextEligibleAt(attempts: number, nowMs: number): number {
   return nowMs + Math.min(NEXT_ELIGIBLE_BASE_MS * 2 ** attempts, NEXT_ELIGIBLE_MAX_MS);
+}
+
+/**
+ * Sessiz denemenin TAVANI. `classifyMutationError` bilinmeyen/kodsuz her
+ * hatada 'retry' döndüğü için bu tavan olmadan bir satır SONSUZA DEK
+ * denenirdi (tek mesajda ısrarlı 500, tanınmayan yeni bir kod, bozuk bir
+ * gateway cevabı): paylaşımlı kovaya ömürlük bir arka plan isteği, kullanıcıya
+ * da hiçbir haber. Tavana varan satır KALICI RET gibi bitirilir — silinir,
+ * geri alınır, sebebi söylenir.
+ *
+ * Sayılar `outboxPolicy`'nin (MAX_ATTEMPTS = 5, MAX_AGE_MS = 30 dk)
+ * AYNISI DEĞİL ve ikisi de bilerek daha cömert:
+ *
+ *  - Deneme sayısı 10: `attempts` yalnız gerçekten ağa çıkıp başarısız olan
+ *    turlarda artıyor (offline tur erken dönüyor). Backoff 5 dakikada
+ *    tavanlandığı için 10 deneme ~45 dakikalık ısrarlı bir arıza penceresi
+ *    demek. 5'te kesmek bir deploy penceresinde (iki-üç dakika 5xx) saniyeler
+ *    içinde tükenir ve kullanıcının tepkisini geri alırdı — tam olarak bu
+ *    fazın engellemek için var olduğu kayıp.
+ *  - Yaş 24 saat: outbox'ın 30 dakikası OTURUM İÇİ ölçülüyor
+ *    (`rebaseAttemptOnLoad` `firstSeenAt`'i her açılışta "şimdi"ye çekiyor);
+ *    burada öyle bir rebase YOK, `first_seen_at_ms` emrin verildiği gerçek
+ *    anı taşıyor ve ölçü ÖMÜRLÜK. Kanonik senaryo (uçakta tepki, saatler
+ *    sonra iniş) 30 dakikada DÜŞERDİ. 24 saat sonra ise ekranda duran iddiayı
+ *    sürdürmek yanlış: o kadar eski bir emir artık kullanıcının beklediği şey
+ *    değil, ekranı gerçeğe döndürmek daha dürüst.
+ */
+export const MUTATION_MAX_ATTEMPTS = 10;
+export const MUTATION_MAX_AGE_MS = 24 * 60 * 60_000;
+
+/**
+ * Bu emir bitti mi — deneme hakkı ya da yaşı doldu mu?
+ *
+ * Saf karar; turun `rejected` dalını (sil + geri al + toast) tetikler.
+ * `first_seen_at_ms` kolonunun TEK yaş okuyucusu burası — kolonun diğer
+ * kullanımı `ORDER BY` (bkz. readPendingMutations).
+ */
+export function isMutationExpired(
+  attempts: number,
+  firstSeenAtMs: number,
+  nowMs: number,
+): boolean {
+  if (attempts >= MUTATION_MAX_ATTEMPTS) return true;
+  return nowMs - firstSeenAtMs >= MUTATION_MAX_AGE_MS;
 }
 
 /** Bir turda flush edilecek en çok emir sayısı. */
@@ -121,6 +173,14 @@ export const MAX_OPS_PER_FLUSH = 20;
  * backfillPolicy.RATE_LIMIT_RESERVE — aynı fikrin backfill tarafındaki
  * ikizi, ama rezerv sayısı bilerek farklı: bu kuyruk kullanıcının kendi
  * etkileşimi, ayrı bir bütçe payı istiyor).
+ *
+ * YAKLAŞIK bir taban, kesin değil: turun saydığı `opsDone` SATIR sayısı, İSTEK
+ * sayısı değil — `base !== desired` olan bir reaksiyon emri iki çağrı atıyor
+ * (remove + add), yani 20 satırlık bir tur en kötü hâlde 40 istek harcayıp
+ * kalan kotayı bu sayının altına (~18) indirebilir. Bilerek böyle: backfill
+ * tarafı 80 rezerv ettiği için paylaşımlı kovada soğurulacak pay var ve satır
+ * başına istek sayısını önceden saymak turu, kazandırdığından fazla
+ * karmaşıklaştırırdı.
  */
 export const MUTATION_RATE_RESERVE = 20;
 

@@ -1,9 +1,12 @@
 import {
   MAX_OPS_PER_FLUSH,
+  MUTATION_MAX_AGE_MS,
+  MUTATION_MAX_ATTEMPTS,
   MUTATION_RATE_RESERVE,
   classifyMutationError,
   coalesceDelete,
   coalesceReaction,
+  isMutationExpired,
   nextEligibleAt,
   shouldStopFlush,
 } from '@/features/chat/pendingMutationPolicy';
@@ -63,7 +66,10 @@ describe('classifyMutationError', () => {
     expect(classifyMutationError({ response: { status: 503, data: {} } }, 'delete')).toBe('retry');
   });
 
-  it('429 retry — slot harcamadığı için ceza yok', () => {
+  // İSİM DÜZELTİLDİ: eskiden "slot harcamadığı için ceza yok" diyordu, oysa
+  // cezasız bir yol YOK — tur 429'da da `attempts`i artırıp backoff yazıyor,
+  // 500'le birebir aynı. Bu test yalnız SINIFLANDIRMAYI pinliyor.
+  it('429 retry olarak sınıflandırılıyor (5xx ile aynı dal)', () => {
     expect(classifyMutationError({ response: { status: 429, data: {} } }, 'reaction')).toBe('retry');
   });
 });
@@ -72,6 +78,33 @@ describe('nextEligibleAt', () => {
   it('üstel ve 5 dakikada tavanlanıyor', () => {
     expect(nextEligibleAt(0, 1_000)).toBe(3_000);
     expect(nextEligibleAt(10, 1_000)).toBe(301_000);
+  });
+
+  // Dokümantasyon düzeltmesinin (minör 11) pinlenmesi: turun çağrı sözleşmesi
+  // ARTIRILMIŞ sayaç olduğu için pratikte GÖRÜLEN ilk bekleme 2sn DEĞİL 4sn.
+  it('turun çağırdığı gibi (artırılmış attempts) ilk tekrar 4sn sonra', () => {
+    const now = 1_000;
+    expect(nextEligibleAt(0 + 1, now)).toBe(now + 4_000);
+    expect(nextEligibleAt(1 + 1, now)).toBe(now + 8_000);
+  });
+});
+
+describe('isMutationExpired', () => {
+  it('deneme tavanına varan emir bitiyor, bir eksiği devam ediyor', () => {
+    const now = 1_000_000;
+    expect(isMutationExpired(MUTATION_MAX_ATTEMPTS - 1, now, now)).toBe(false);
+    expect(isMutationExpired(MUTATION_MAX_ATTEMPTS, now, now)).toBe(true);
+  });
+
+  it('yaş tavanını dolduran emir bitiyor — ölçü ÖMÜRLÜK (first_seen_at_ms)', () => {
+    const now = 1_000_000_000;
+    expect(isMutationExpired(0, now - MUTATION_MAX_AGE_MS + 1, now)).toBe(false);
+    expect(isMutationExpired(0, now - MUTATION_MAX_AGE_MS, now)).toBe(true);
+  });
+
+  it('uzun bir uçuş (saatler) yaş tavanını DOLDURMUYOR — fazın kanonik senaryosu', () => {
+    const now = 1_000_000_000;
+    expect(isMutationExpired(0, now - 8 * 60 * 60_000, now)).toBe(false);
   });
 });
 
