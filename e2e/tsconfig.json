@@ -1,0 +1,45 @@
+{
+  // STANDALONE — expo/tsconfig.base'i BİLEREK extend etmiyor.
+  //
+  // Kök tsconfig `types: ["jest"]` ve RN/JSX ayarlarıyla geliyor; e2e tarafında
+  // `describe/it` mocha'dan, global `$`/`browser` ise @wdio/globals'tan geliyor.
+  // İkisini aynı projede birleştirmek jest ile mocha tiplerini çakıştırıyor ve
+  // `browser` hiç tanınmıyor. Kök tsconfig'e karşılık gelen `exclude: ["e2e"]`
+  // satırı bu dosyanın ikizi — biri olmadan diğeri anlamsız.
+  "compilerOptions": {
+    "target": "ES2022",
+    "lib": ["ES2022"],
+    "module": "ESNext",
+    "moduleResolution": "bundler",
+    "strict": true,
+    "noUncheckedIndexedAccess": true,
+    // `noUnusedLocals` BİLEREK kapalı: bu proje ürün kaynağından saf TS
+    // modülleri (i18n sözlükleri, API uç listesi, REGISTRATION_FLOW) include
+    // ediyor ve tsc program ÜYESİ her dosyada hata bildiriyor. Açık olsaydı
+    // ürün tarafındaki kullanılmayan bir sabit `npm run e2e:type-check`i
+    // kırardı — yanlış bir bağ. e2e kodunun kullanılmayan değişkenleri
+    // ESLint'e bırakılıyor.
+    "noUnusedLocals": false,
+    "skipLibCheck": true,
+    "esModuleInterop": true,
+    "allowSyntheticDefaultImports": true,
+    "resolveJsonModule": true,
+    "noEmit": true,
+    "types": ["node", "mocha", "expect-webdriverio", "@wdio/globals/types"],
+    // `baseUrl` YOK — TS 6'da deprecated (TS5101). `paths` baseUrl olmadan bu
+    // dosyanın KENDİ dizinine göre çözülüyor, yani `../src/*`.
+    "paths": {
+      "@/*": ["../src/*"]
+    }
+  },
+  // `src/` tarafından SADECE saf TS modülleri import ediliyor (i18n sözlükleri,
+  // API uç listesi, kayıt akışı dizisi). Bütün `src/**` include EDİLMİYOR:
+  // .tsx dosyaları RN tiplerini çeker ve bu proje onları tanımıyor.
+  "include": [
+    "**/*.ts",
+    "../src/shared/i18n/translations/tr.ts",
+    "../src/shared/i18n/translations/en.ts",
+    "../src/shared/constants/api.ts",
+    "../src/features/auth/registrationFlow.ts"
+  ]
+}
