@@ -2,8 +2,10 @@ import chatService from '@/features/chat/chatService';
 import * as repo from '@/features/chat/chatRepository';
 import { isOfflineNow } from '@/shared/services/networkStatus';
 import { remainingNow } from '@/shared/services/rateLimitBudget';
+import { CHAT_BACKFILL_ENABLED } from '@/shared/store/chatFlags';
 import {
   BACKFILL_PAGE_SIZE,
+  BACKFILL_BOOT_DELAY_MS,
   MAX_REQUESTS_PER_ROUND,
   MAX_PAGES_PER_CONVERSATION,
   PAGE_DELAY_MS,
@@ -26,12 +28,11 @@ import {
  */
 
 export interface BackfillRoundResult {
-  /** Tur gerçekten koştu mu. Bu dosyada tek kaynaktan çağrıldığında hep
-   *  `true` — bayrak/gating kararı (CHAT_BACKFILL_ENABLED) `startBackfill`
-   *  tetikleyicisinin işi, `chatDeltaSync.pullBeforeSend`'in `pullChanges`'i
-   *  çağırmadan ÖNCE bayrağa bakması gibi. Alan `PullResult.ran` ile aynı
-   *  şekli taşısın diye duruyor; bu turun kendisi hiçbir koşulda `false`
-   *  dönmüyor. */
+  /** Tur gerçekten koştu mu. Bayrak (`CHAT_BACKFILL_ENABLED`) kapalıyken
+   *  `runBackfillRound` hiç istek atmadan `false` döner — `startBackfill`
+   *  tetikleyicisindeki gating'in TEKRARI, ikinci bir giriş noktası
+   *  açılırsa (bkz. dosya başı notu) kill-switch'in yine de görünür olması
+   *  için. Alan `PullResult.ran` ile aynı şekli taşıyor. */
   ran: boolean;
   /** Bu turda gerçekten atılan (başarıyla cevaplanan) sayfa sayısı. */
   pages: number;
@@ -176,11 +177,54 @@ let inFlight: Promise<BackfillRoundResult> | null = null;
 export function runBackfillRound(
   getActiveConversationId: () => string | null,
 ): Promise<BackfillRoundResult> {
+  // Kill-switch. `startBackfill` da aynı bayrağa bakıyor ve kapalıyken
+  // timer'ı hiç kurmuyor — bu satır olmadan da bugün tek giriş yolundan
+  // (`startBackfill`) istek gitmiyor. Burada da olması TEKRARLI kapı:
+  // `runBackfillRound` export edilmiş ve ileride başka bir çağıran
+  // kazanabilir (bkz. dosya başı yorumu) — o çağıran bayrağa bakmayı
+  // unutursa bile ağ tarafı burada kapanmış olur.
+  if (!CHAT_BACKFILL_ENABLED) {
+    return Promise.resolve({ ran: false, pages: 0, messages: 0, completed: [] });
+  }
   if (inFlight) return inFlight;
   inFlight = run(getActiveConversationId).finally(() => {
     inFlight = null;
   });
   return inFlight;
+}
+
+export interface BackfillDeps {
+  getActiveConversationId: () => string | null;
+}
+
+/**
+ * Boot tetiği — açılıştan `BACKFILL_BOOT_DELAY_MS` sonra TEK bir tur
+ * zamanlar; söken fonksiyonu döner (bkz. `chatDeltaSync.startDeltaSync`'in
+ * aynı kalıbı).
+ *
+ * Gecikme kasıtlı: bu fonksiyon da store modülü yüklenirken çalışıyor,
+ * yani redux-persist rehydrate ve token henüz yerinde olmayabilir —
+ * doğrudan çağrı ilk kareyi geciktirir ve en iyi ihtimalle boşa gider.
+ * Zamanlayıcı senkron KURULUYOR ama senkron ATEŞLENMİYOR; `run` içindeki
+ * ilk istek de (varsa) await'siz atıldığı için bu dosyada "senkron tur"
+ * riski yalnız burada, zamanlayıcıyı unutup `runBackfillRound`'u doğrudan
+ * çağırmaktan gelebilir.
+ */
+export function startBackfill(deps: BackfillDeps): () => void {
+  // Kill-switch — `runBackfillRound`'daki kapının TEKRARI değil, ÖNCESİ:
+  // bayrak kapalıyken zamanlayıcıyı hiç KURMAMAK, kapalı bir turu
+  // zamanında ateşleyip sonra `ran:false` ile boşa döndürmekten daha
+  // ucuz. İkisi birden gerekli çünkü `runBackfillRound` ayrı ayrı
+  // çağrılabilir bir giriş noktası.
+  if (!CHAT_BACKFILL_ENABLED) return () => {};
+
+  const timer = setTimeout(() => {
+    void runBackfillRound(deps.getActiveConversationId);
+  }, BACKFILL_BOOT_DELAY_MS);
+
+  return () => {
+    clearTimeout(timer);
+  };
 }
 
 /** Yalnız test içindir. */

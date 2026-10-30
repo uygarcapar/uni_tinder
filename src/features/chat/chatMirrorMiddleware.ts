@@ -3,6 +3,7 @@ import * as repo from '@/features/chat/chatRepository';
 import { openChatDb } from '@/features/chat/db/chatDb';
 import { importLegacyChatCache } from '@/features/chat/db/importLegacyCache';
 import { startDeltaSync } from '@/features/chat/chatDeltaSync';
+import { startBackfill } from '@/features/chat/chatBackfill';
 import { applyDeltaFromLocal, hydrateConversationList } from '@/features/chat/chatHydrate';
 import { fetchConversations } from '@/features/chat/chatSlice';
 import { clear as clearMessageCache, projectWindow } from '@/features/chat/messageCache';
@@ -35,6 +36,7 @@ let failureCount = 0;
 const MAX_LOGGED_FAILURES = 5;
 
 let stopDeltaSync: (() => void) | null = null;
+let stopBackfill: (() => void) | null = null;
 
 /**
  * Store kurulduktan sonra bir kez — DB'yi açar, eski MMKV blob'unu taşır,
@@ -97,12 +99,20 @@ export function startChatMirror(store?: {
       store.dispatch(fetchConversations({ force: true }));
     },
   });
+
+  // Bayrak kapalıyken startBackfill no-op döndürüyor; burada koşul yok —
+  // startDeltaSync'in hemen üstündeki satırla aynı gerekçe.
+  stopBackfill = startBackfill({
+    getActiveConversationId: () => store.getState()?.chat?.activeConversationId ?? null,
+  });
 }
 
 /** Logout / teardown. */
 export function stopChatMirror(): void {
   stopDeltaSync?.();
   stopDeltaSync = null;
+  stopBackfill?.();
+  stopBackfill = null;
 }
 
 export function __resetChatMirrorForTests(): void {
