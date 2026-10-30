@@ -8,7 +8,8 @@ import { LinearGradient } from "expo-linear-gradient";
 import { BlurView } from "expo-blur";
 import MaskedView from "@react-native-masked-view/masked-view";
 import { easeGradient } from "react-native-easing-gradient";
-import { scrimAt } from "@/shared/theme/colors";
+import { scrimAt, veil } from "@/shared/theme/colors";
+import { chromeBlurTint } from "@/shared/theme/blur";
 import { DISCOVER_GLASS_BUTTON_SIZE } from "@/features/discover/components/discoverHeaderMetrics";
 
 /**
@@ -21,16 +22,28 @@ import { DISCOVER_GLASS_BUTTON_SIZE } from "@/features/discover/components/disco
  * Düz alfalı bir perde dokuyu soluklaştırıp DESENİNİ bırakıyor — ince beyaz
  * yol çizgileri metnin harflerinin arasından geçiyor. Blur deseni ÇÖZÜYOR.
  *
- * ── MALZEME KEŞİF KARTININ HEADER'IYLA AYNI (istek) ───────────────────────
- * Maske `CardStickyHeader`ın duraklarıyla (0.99 → black → transparent), zemin
- * da onun rampasıyla: `scrimAt(0.42) → scrimAt(0.10)` + blur 22 **"dark"**.
+ * ── İKİ BANT, İKİ MALZEME (`tone`) ────────────────────────────────────────
+ * Maske ikisinde de `CardStickyHeader`ın duraklarıyla (0.99 → black →
+ * transparent); AYRIŞAN ŞEY ZEMİN:
  *
- * ⚠️ UYGULAMANIN CHROME REÇETESİ (`veil()` + `chromeBlurTint()`) BURADA
- * YANLIŞ ve bir kez öyle yazıldı: o reçete moda dönüyor, yani açık temada
- * perdeyi BEYAZLATIYOR. Bu perde bir FOTOĞRAFIN (harita görüntüsünün) üstünde
- * duruyor ve beyaz bir perde haritayı yıkıyor — kartın başlık şeridinde aynı
- * gerekçe uzun uzun yazılı. Perde iki temada da siyah, üstündeki yazı da
- * medya mürekkebi.
+ *   `media`  (ALT bant) — `scrimAt(0.42) → scrimAt(0.10)` + blur 22 "dark",
+ *            yani iki temada da SİYAH. Altında anlar şeridinin kutuları, yani
+ *            FOTOĞRAFLAR var ve beyaz bir perde onları yıkıyor; şeridin kendi
+ *            yazıları da bu yüzden medya mürekkebinde kalıyor.
+ *
+ *   `chrome` (ÜST bant) — akış sayfasının header blur'uyla BİREBİR (istek:
+ *            "en tepedeki progressive siyahlık olmasın, açık modda beyaz
+ *            olsun"): `veil(0.92) → veil(0.15)` + `chromeBlurTint()`. Bu bant
+ *            fotoğraf değil, UYGULAMA CHROME'U taşıyor — başlık ("Anlar") ve
+ *            iki cam köşe butonu. `FeedMapStrip`in üst blur'u akışta aynı
+ *            yerde, aynı sayılarla duruyor; biri açılırken diğeri söndüğü için
+ *            ikisi farklı renkte olduğunda geçişte ten değişiyordu.
+ *
+ * ⚠️ PERDEYİ ÇEVİRİNCE ÜSTÜNDEKİ MÜREKKEP DE ÇEVRİLMEK ZORUNDA (`veil`in
+ * kendi uyarısı): üst bandın başlığı ve butonları artık TEMA mürekkebinde
+ * (bkz. CampusMapTitle ve FeedScreen'deki `onSurface`) — açık modda beyaz
+ * perde üstünde beyaz glif kaybolurdu. Alt bant siyah kaldığı için oradaki
+ * medya mürekkebi de olduğu gibi duruyor.
  *
  * ── Haritayla birlikte açılıyor ────────────────────────────────────────────
  * Opaklık `progress`ten (yani `mapProgress`): akışta perde YOK, tam ekranda
@@ -65,9 +78,17 @@ function maskFor(solidShare: number) {
   });
 }
 
-/** Perdenin rampası — kartın başlık şeridi ve kapak dibiyle aynı sayılar. */
+/** `media` rampası — kartın başlık şeridi ve kapak dibiyle aynı sayılar. */
 const SCRIM_FROM = 0.42;
 const SCRIM_TO = 0.1;
+
+/**
+ * `chrome` rampası — `FeedMapStrip`in üst blur'uyla (ve `ScreenHeader`ın başlık
+ * blur'uyla) AYNI iki sayı. Burada elle başka bir değer yazılırsa akıştan tam
+ * ekrana geçişte perdenin tonu atlıyor.
+ */
+const VEIL_FROM = 0.92;
+const VEIL_TO = 0.15;
 
 /** Blur'un gücü — yine aynı reçete. */
 const BLUR_INTENSITY = 22;
@@ -124,6 +145,15 @@ export interface CampusMapScrimProps {
    * yatıştırmak, o yüzden sönüm başlığın ÜSTÜNDE kalan kuyruğa sığmak zorunda.
    */
   fadePx?: number;
+  /**
+   * ZEMİNİN MALZEMESİ — `media` (sabit siyah) ya da `chrome` (modla dönen).
+   * Hangi bandın hangisini aldığı ve neden, dosyanın başında.
+   *
+   * Varsayılan `media`: perdenin altında fotoğraf varsayımı güvenli olan taraf
+   * (yanlış seçilirse beyaz bir perde fotoğrafı yıkıyor, tersi yalnız biraz
+   * koyu kalıyor).
+   */
+  tone?: "media" | "chrome";
 }
 
 const CampusMapScrim = memo(function CampusMapScrim({
@@ -131,10 +161,15 @@ const CampusMapScrim = memo(function CampusMapScrim({
   edge,
   height,
   fadePx,
+  tone = "media",
 }: CampusMapScrimProps) {
   const fadeStyle = useAnimatedStyle(() => ({ opacity: progress.value }));
 
   const isTop = edge === "top";
+  // ⚠️ `veil()`/`chromeBlurTint()` MUTABLE paletten okuyor: tema değişiminde
+  // kök remount ediliyor (proje notu), yani memo'lu bu bileşen de yeniden
+  // doğuyor — değerleri render içinde okumak doğru olan.
+  const isChrome = tone === "chrome";
 
   // ⚠️ Kırpma şart: `fadePx` banttan büyükse `solidShare` negatife düşüyor ve
   // `easeGradient` sıralı olmayan duraklarla sessizce bozuk bir maske üretiyor.
@@ -172,17 +207,23 @@ const CampusMapScrim = memo(function CampusMapScrim({
         }
         style={StyleSheet.absoluteFill}
       >
-        {/* Perde SABİT SİYAH, temayla DÖNMEZ — gerekçe dosyanın başında.
-            Üstteki maske de siyah/şeffaf ama o bir ALFA maskesi, renk değil. */}
+        {/* ZEMİN — `media` dalında sabit siyah, `chrome` dalında moda uyan
+            (koyuda siyah, açıkta BEYAZ). Gerekçe dosyanın başında.
+            Üstteki maske her iki dalda siyah/şeffaf kalıyor: o bir ALFA
+            maskesi, renk değil. */}
         <LinearGradient
-          colors={[scrimAt(SCRIM_FROM), scrimAt(SCRIM_TO)]}
+          colors={
+            isChrome
+              ? [veil(VEIL_FROM), veil(VEIL_TO)]
+              : [scrimAt(SCRIM_FROM), scrimAt(SCRIM_TO)]
+          }
           start={{ x: 0.5, y: isTop ? 0 : 1 }}
           end={{ x: 0.5, y: isTop ? 1 : 0 }}
           style={StyleSheet.absoluteFill}
         />
         <BlurView
           intensity={BLUR_INTENSITY}
-          tint="dark"
+          tint={isChrome ? chromeBlurTint() : "dark"}
           style={StyleSheet.absoluteFill}
         />
       </MaskedView>

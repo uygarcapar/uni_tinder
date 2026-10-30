@@ -2,6 +2,7 @@ import { memo, type ReactNode } from "react";
 import { Platform, StyleSheet, TouchableOpacity, View } from "react-native";
 import { Host, Button as SwiftUIButton, RNHostView } from "@expo/ui/swift-ui";
 import {
+  accessibilityIdentifier as a11yId,
   accessibilityLabel as a11yLabel,
   buttonStyle,
   contentShape,
@@ -47,9 +48,15 @@ type Props = {
   size: number;
   /** RN tarafında çizilen glif. Kabuğa ortalanıyor. */
   children: ReactNode;
+  /**
+   * e2e seçicisi. SwiftUI tarafında `accessibilityIdentifier`
+   * modifier'ına, Android/iOS<26 dalında `testID` prop'una gidiyor —
+   * yani aynı seçici iki yolda da çalışıyor.
+   */
+  testID?: string;
 };
 
-function CardGlyphGlassButton({ onPress, label, size, children }: Props) {
+function CardGlyphGlassButton({ onPress, label, size, children, testID }: Props) {
   // Glif kabı: ölçü SwiftUI'a `matchContents` ile veriliyor, o yüzden kutu
   // kabuğun tamamı kadar ve glif içinde ortalı. `pointerEvents none` —
   // dokunmayı SwiftUI butonu karşılasın, RNHostView'ın handler'ı araya
@@ -94,6 +101,7 @@ function CardGlyphGlassButton({ onPress, label, size, children }: Props) {
               // label prop'u YOK (glif children) → erişilebilir ad modifier'dan
               // gelmeli, yoksa VoiceOver butonu isimsiz okuyor.
               a11yLabel(label),
+              ...(testID ? [a11yId(testID)] : []),
               // 26 altında berrak camın yerine yalnız ince bir kenar: orada
               // görünmesi gereken şey camın kırılması, dolu bir daire değil.
               ...glassFallback({ shape: "circle" }),
@@ -113,6 +121,7 @@ function CardGlyphGlassButton({ onPress, label, size, children }: Props) {
       activeOpacity={0.8}
       hitSlop={8}
       accessibilityRole="button"
+      testID={testID}
       accessibilityLabel={label}
       style={{
         width: size,

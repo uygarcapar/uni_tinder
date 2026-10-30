@@ -134,13 +134,16 @@ function ReasonRow({
   label,
   selected,
   onPress,
+  testID,
 }: {
   label: string;
   selected: boolean;
   onPress: () => void;
+  testID?: string;
 }) {
   return (
     <TouchableOpacity
+      testID={testID}
       onPress={onPress}
       activeOpacity={1}
       accessibilityRole="radio"
@@ -192,6 +195,11 @@ export default function ReportModal({
   conversationId,
   messageId,
   noteId,
+  /**
+   * Şikayet edilen kampüs anı — kartın natif uzun basış menüsünden geliyor.
+   * Sunucu alanı tanımıyorsa sessizce yok sayıyor (bkz. moderationService).
+   */
+  campusMomentId,
   onSuccess,
   // gorhom stackBehavior — BAŞKA BİR SHEET'İN ÜSTÜNE açılırken "push" verilir
   // (bkz. LikerSwipeModal). Varsayılan gorhom'da "switch": alttaki sheet
@@ -264,6 +272,7 @@ export default function ReportModal({
         // Not şikayeti: moderatör panelinde yorumun metni de görünsün diye.
         // Notu olmayan kartlarda undefined → gövdeye hiç yazılmaz.
         noteId,
+        campusMomentId,
         alsoBlock,
       });
       const finish = () => {
@@ -354,6 +363,7 @@ export default function ReportModal({
             {REASON_ORDER.map((key) => (
               <ReasonRow
                 key={key}
+                testID={`report-reason-${key}`}
                 label={t(`moderation.report.reasons.${key}`)}
                 selected={value === key}
                 onPress={() => onChange(key)}

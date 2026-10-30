@@ -21,6 +21,148 @@
  * dokunmak) kutunun kıpırdamaması hâlâ doğru davranış.
  */
 
+/**
+ * ── YATAY: KAMPÜS SOLDA, SAĞI ANLARA AYRILIYOR ─────────────────────────────
+ *
+ * Akışta bandın içinde iki şey var (istek): SOLDA kampüsün poligonu, SAĞINDA
+ * anların küçük kartları. Yani kampüs noktası artık ekranın yatay ortasında
+ * DEĞİL, solda bir sütunun ortasında duruyor.
+ *
+ * ⚠️ Kaydırma DİKEYDEKİNİN BİREBİR AYNISI ve başka türlü yapılamıyor:
+ * görüntü kutuya `cover` ile oturuyor ve kampüs noktası KUTUNUN MERKEZİ. Nokta
+ * sola alınacaksa kutunun merkezi sola alınmak zorunda; kutu ekranı kaplamaya
+ * devam edeceği için de SOLA DOĞRU UZUYOR (sol ucu ekranın dışında).
+ *
+ * Harita URL'inin merkezini kaydırmak da denenebilirdi ve YANLIŞ olurdu: tam
+ * ekrana geçerken kampüs ortaya dönmek zorunda ve bir URL animasyonla
+ * değişemez. Kutu çözümünde dönüş tek bir `translateX`.
+ */
+
+/**
+ * Poligonun durduğu SOL SÜTUN — ekran genişliğinin oranı.
+ *
+ * 0.42: bandın kalan ~%58'i (eksi sağ pay) iki küçük karta yetiyor. Sütun
+ * büyütülürse kartlar sığmıyor, küçültülürse poligon bandın içinde bir lekeye
+ * dönüyor — `fitZoom` şekli bu sütuna sığdırdığı için sayı doğrudan kampüsün
+ * ekrandaki boyu demek.
+ */
+export const FEED_MAP_CAMPUS_COLUMN_SHARE = 0.42;
+
+export function feedMapCampusColumn(viewportWidth: number): number {
+  return Math.round(viewportWidth * FEED_MAP_CAMPUS_COLUMN_SHARE);
+}
+
+export interface FeedMapHorizontalArgs {
+  /** Katmanın genişliği (= ekran). */
+  viewportWidth: number;
+  /** Kampüsün ortalanacağı sol sütun (bkz. `feedMapCampusColumn`). */
+  columnWidth: number;
+  /** Ölçümler geldi mi — gelmeden kutu kaydırılmıyor. */
+  ready: boolean;
+}
+
+export interface FeedMapHorizontal {
+  /** Görüntü kutusunun sol kenarı (negatif, ekran dışında). */
+  imageLeft: number;
+  /** Kutunun genişliği — sağ kenarı ekranın sağ kenarında. */
+  boxWidth: number;
+  /** Kampüs noktasının AKIŞ hâlindeki ekran x'i. */
+  campusScreenX: number;
+  /** Tam ekrana geçerken kutunun yatay kayması (pozitif = sağa). */
+  mapShiftX: number;
+}
+
+export function feedMapHorizontal({
+  viewportWidth,
+  columnWidth,
+  ready,
+}: FeedMapHorizontalArgs): FeedMapHorizontal {
+  const centered = viewportWidth / 2;
+  if (!ready) {
+    return {
+      imageLeft: 0,
+      boxWidth: viewportWidth,
+      campusScreenX: centered,
+      mapShiftX: 0,
+    };
+  }
+
+  /**
+   * ⚠️ SAĞA KAYDIRMA YOK (üst sınır ekranın ortası). Sütun ekranın yarısından
+   * genişse kampüs zaten ortada ya da sağda olurdu ve o durumda kutuyu
+   * uzatmanın karşılığı yok: dikeydeki `Math.min(0, …)` kırpmasının aynısı,
+   * kayma tek yönlü.
+   */
+  const campusScreenX = Math.min(Math.max(columnWidth / 2, 0), centered);
+
+  /**
+   * Kutunun SOLA uzayan payı: merkez `campusScreenX`e inerken sağ kenarın
+   * ekranın sağ kenarında kalması için gereken fazlalık.
+   *   sol = merkez − genişlik/2,  sağ = merkez + genişlik/2 = ekran
+   *   → genişlik = 2·(ekran − merkez) + ... → fazlalık = ekran − 2·merkez
+   */
+  const extraLeft = viewportWidth - 2 * campusScreenX;
+
+  return {
+    imageLeft: -extraLeft,
+    boxWidth: viewportWidth + extraLeft,
+    campusScreenX,
+    // Tam ekranda kampüs ORTAYA dönüyor. Kayma fazlalığın yarısı, yani kutunun
+    // sol ucu hâlâ ekranın dışında (−fazlalık/2): kayarken kenar açılmıyor.
+    mapShiftX: centered - campusScreenX,
+  };
+}
+
+export interface FeedMapExpandScaleArgs {
+  /** Poligonun ekrandaki ölçüsü (pt), ölçeksiz hâli. */
+  shapeWidth: number;
+  shapeHeight: number;
+  /** Tam ekranda şeklin oturacağı alan. */
+  viewportWidth: number;
+  viewportHeight: number;
+  /** Kenarlardan bırakılacak TOPLAM nefes (pt). */
+  padding: number;
+  /** Tavan — bundan fazla yakınlaşma yok. */
+  maxScale: number;
+}
+
+/**
+ * TAM EKRANA GEÇERKEN POLİGONA NE KADAR YAKLAŞILABİLİR (istek: "biraz zoom in,
+ * ekrandan taşmayacak şekilde").
+ *
+ * Kadraj akıştaki BANDA göre kuruluyor (poligon 120pt'lik bir bandın sol
+ * sütununa sığdırılıyor), yani tam ekranda aynı şekil koca bir ekranın
+ * ortasında küçücük kalıyor. Yakınlaşma bir `scale` transformu — yeni bir
+ * görüntü istenmiyor, URL değişmiyor.
+ *
+ * ⚠️ TAVAN İKİ TARAFLI: sayıyı sabit vermek (ör. 1.5) küçük kampüste iyi, ODTÜ
+ * gibi dört kilometrelik bir sınırda şekli ekranın dışına taşırıyor — istek
+ * zaten "taşmayacak şekilde". Ölçek şeklin GERÇEK ölçüsünden türüyor ve iki
+ * eksenin küçüğü seçiliyor.
+ *
+ * ⚠️ ASLA 1'İN ALTINA İNMEZ: şekil zaten ekrandan büyükse (olabiliyor, kadraj
+ * banda göre) küçültmek "geri zoom" demek olurdu ve kullanıcı tam ekrana
+ * geçerken haritanın uzaklaştığını görürdü.
+ *
+ * ⚠️ `scale` görüntüyü BÜYÜTÜYOR, yani statik harita o oranda yumuşuyor.
+ * Tavanın asıl sebebi bu: 2'nin üstünde sokak adları dağılmaya başlıyor.
+ */
+export function feedMapExpandScale({
+  shapeWidth,
+  shapeHeight,
+  viewportWidth,
+  viewportHeight,
+  padding,
+  maxScale,
+}: FeedMapExpandScaleArgs): number {
+  if (shapeWidth <= 0 || shapeHeight <= 0) return 1;
+  const availableW = Math.max(viewportWidth - padding, 1);
+  const availableH = Math.max(viewportHeight - padding, 1);
+  const fit = Math.min(availableW / shapeWidth, availableH / shapeHeight);
+  if (!Number.isFinite(fit)) return 1;
+  return Math.min(Math.max(fit, 1), maxScale);
+}
+
 export interface FeedMapFramingArgs {
   /**
    * Ekranın tepesinden chrome'un bittiği yerin `bandHeight` kadar altına.

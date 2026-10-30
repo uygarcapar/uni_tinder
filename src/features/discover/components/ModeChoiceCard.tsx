@@ -1,15 +1,16 @@
-import { useEffect, useRef } from "react";
+import { useEffect, useRef, useState } from "react";
 import { Animated, StyleSheet, Text, TouchableOpacity, View } from "react-native";
 import { Image } from "expo-image";
 import { LinearGradient } from "expo-linear-gradient";
 import { useTranslation } from "react-i18next";
 import SFIcon from "@/shared/components/SFIcon";
+import SkeletonBox from "@/shared/components/SkeletonBox";
 import { ChevronRight } from "@/shared/icons";
 import { colors, isLight, scrimAt } from "@/shared/theme/colors";
 // Görsel haritası kayıt tarafında doğdu ve ORADA KALIYOR (kayıt adımına
 // dokunulmadı, istek) — bu kart onu okuyan ikinci tüketici.
 import { MODE_CARD_ART } from "@/features/auth/modeCardArt";
-import { modeFireGradient, type AppMode } from "../modeTheme";
+import type { AppMode } from "../modeTheme";
 
 /**
  * MOD SEÇİM KARTI — zemini fotoğraf olan 3:2 kart. Tek tüketicisi çalışma
@@ -29,12 +30,20 @@ import { modeFireGradient, type AppMode } from "../modeTheme";
  * Ortak bir şeyi (renk, oran, perde) değiştirirken diğerine de bakmak gerekir;
  * paylaşılan tek kaynak `modeTheme` ve `modeCardArt`.
  *
- * ÜÇ KATMAN, HEPSİ KALICI:
- *   1. Modun gradyanı (`modeFireGradient`) — fotoğraf yüklenirken kartın
- *      kendisi bu, yüklendikten sonra da altta durup şeffaf kenar/yavaş ağ
- *      boşluğunu kapatıyor.
- *   2. Fotoğraf (bkz. modeCardArt — harita BOŞ olabilir).
- *   3. Okunabilirlik perdesi (kart fotolarındaki perdenin birebir aynısı).
+ * KATMANLAR:
+ *   1. NÖTR GRİ ZEMİN (`surface`) — foto yüklenirken kart bu, yüklendikten
+ *      sonra da altta durup şeffaf kenarı kapatıyor.
+ *
+ *      ⚠️ MODUN GRADYANI DEĞİL (istek). Zemin bir süre `modeFireGradient`ti ve
+ *      fotoğraf çözülene kadar kart turuncu/yeşil düz bir yüzey olarak
+ *      çiziliyordu: kullanıcı onu yükleniyor diye değil KARTIN RENGİ diye
+ *      okuyor, foto gelince de renk bir anda altından çekiliyordu. Yükleniyor
+ *      hâlini söyleyen şey artık (2)'deki iskelet, yani bekleyişin dili
+ *      uygulamanın geri kalanıyla aynı.
+ *   2. İSKELET — yalnız foto GELMEDEN. Paketli asset'te pratikte tek kare
+ *      görünüyor; yolu açık tutan şey soğuk başlangıç/ağır decode.
+ *   3. Fotoğraf (bkz. modeCardArt — harita BOŞ olabilir).
+ *   4. Okunabilirlik perdesi (kart fotolarındaki perdenin birebir aynısı).
  *
  * SEÇİMİ YALNIZ KARTIN KENDİSİ SÖYLÜYOR: seçili olmayan kartın GÖRSELİ bir
  * perdeyle sönüyor, seçilen tam renginde açılıyor. Ne kutu ne kenarlık var —
@@ -124,6 +133,15 @@ export default function ModeChoiceCard({
    */
   const markIn = useRef(new Animated.Value(active ? 1 : 0)).current;
   const art = MODE_CARD_ART[mode];
+  /**
+   * Foto çözüldü mü — iskeletin tek anahtarı. Harita boşsa (`!art`) beklenen
+   * bir şey yok, baştan `true`: boş haritada sonsuza kadar parlayan bir iskelet
+   * "birazdan gelecek" diye yalan söylerdi, kart o yolda nötr zeminde kalıyor.
+   *
+   * `onError` da `true` yazıyor (aşağıda): asset çözülemediyse bekleyiş bitti,
+   * yalnız sonucu yok.
+   */
+  const [artReady, setArtReady] = useState(!art);
 
   useEffect(() => {
     Animated.spring(markIn, {
@@ -167,35 +185,45 @@ export default function ModeChoiceCard({
           justifyContent: "flex-end",
         }}
       >
-        {/* 1. Modun gradyanı — fotoğraf yüklenirken kart bu, yüklendikten
-            sonra da altta duruyor (bkz. dosya başı üç katman notu). */}
-        <LinearGradient
-          colors={modeFireGradient(mode)}
-          start={{ x: 0, y: 0 }}
-          end={{ x: 1, y: 1 }}
-          style={StyleSheet.absoluteFill}
+        {/* 1. Nötr zemin — modun gradyanı DEĞİL (bkz. dosya başı katman notu). */}
+        <View
+          style={[StyleSheet.absoluteFill, { backgroundColor: colors.surface }]}
         />
 
-        {/* 2. Fotoğraf. Harita boşken hiç çizilmiyor (modeCardArt). */}
+        {/* 2. İskelet — foto gelene kadar. Yarıçap 0: kartın kendi
+            `overflow: hidden`ı köşeleri çoktan kırpıyor, ikinci bir yarıçap
+            kenarda bir piksellik iç çerçeve bırakıyor. */}
+        {!artReady ? (
+          <SkeletonBox
+            borderRadius={0}
+            style={StyleSheet.absoluteFill}
+          />
+        ) : null}
+
+        {/* 3. Fotoğraf. Harita boşken hiç çizilmiyor (modeCardArt). */}
         {art ? (
           <Image
             source={art}
             style={StyleSheet.absoluteFill}
             contentFit="cover"
             // Paketli asset anında geliyor; geçiş yine de var — asset
-            // önbellekten çözülürken tek karelik sıçramayı yumuşatıyor.
+            // önbellekten çözülürken tek karelik sıçramayı yumuşatıyor ve
+            // iskeletten fotoğrafa devri de bu taşıyor.
             transition={200}
+            onLoad={() => setArtReady(true)}
+            // Çözülemeyen asset'te iskelet SONSUZA KADAR parlamasın.
+            onError={() => setArtReady(true)}
             accessible={false}
           />
         ) : null}
 
-        {/* 3. Okunabilirlik perdesi — yazı bunun üstünde. */}
+        {/* 4. Okunabilirlik perdesi — yazı bunun üstünde. */}
         <LinearGradient
           colors={[cardScrim(CARD_SCRIM_TOP), cardScrim(CARD_SCRIM_BOTTOM)]}
           style={StyleSheet.absoluteFill}
         />
 
-        {/* 4. SEÇİM PERDESİ — seçili olmayan kart geri çekiliyor.
+        {/* 5. SEÇİM PERDESİ — seçili olmayan kart geri çekiliyor.
             `markIn`den besleniyor — kartın tek durum hareketi.
             `clamp` şart: yay 1'i aşıyor ve interpolasyon varsayılanda uçları
             uzatıp negatif opaklık üretiyor.
@@ -264,9 +292,15 @@ export default function ModeChoiceCard({
           </Text>
           <Text
             style={{
-              // Tam beyaz: `onMediaMuted` (beyaz %70) perdenin üstünde fazla
-              // geri çekiliyordu, kartta okunacak tek cümle bu.
-              color: colors.onMedia,
+              /**
+               * AÇIK GRİ (istek), tam beyaz DEĞİL. Bir süre `onMedia`ydı ve
+               * mod adıyla aynı mürekkebi paylaşıyordu: iki satır aynı sesle
+               * konuşunca kartın hangi satırı başlık olduğu kayboluyordu.
+               * `onMediaMuted` (beyaz %70) başlığın altında ikinci kademe
+               * olarak okunuyor; aşağıdaki chevron da aynı mürekkepte —
+               * ikisi birlikte "ikincil bilgi + buradan devam" satırı.
+               */
+              color: colors.onMediaMuted,
               fontSize: 14,
               lineHeight: 19,
               marginTop: -1,
@@ -303,13 +337,17 @@ export default function ModeChoiceCard({
               Eskiden yalnız `!open` idi ve açık-ama-seçili-olmayan kart
               dokunulabilir olduğu hâlde hiçbir işaret taşımıyordu.
 
+              Mürekkebi ALT SATIRIN mürekkebi (`onMediaMuted`, açık gri —
+              istek): chevron o satırın hizasında duruyor ve onun devamı, mod
+              adıyla aynı kademede bir işaret değil.
+
               `pointerEvents: none` — dokunuş kartın tamamına ait. */}
           {!active ? (
             <SFIcon
               name="chevron.right"
               fallback={ChevronRight}
               size={20}
-              color={colors.onMedia}
+              color={colors.onMediaMuted}
               strokeWidth={2.5}
               weight="semibold"
               style={{ pointerEvents: "none" }}

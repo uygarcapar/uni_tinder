@@ -80,5 +80,14 @@ module.exports = {
 
   testMatch: ['<rootDir>/tests/**/?(*.)+(spec|test).[jt]s?(x)'],
 
-  testPathIgnorePatterns: ['/node_modules/', '/ios/', '/android/'],
+  // Appium spec'leri (kökteki `e2e/`) jest'in ortamında koşamaz — orada
+  // `browser`/`$` global'leri yok. Çit KÖKE SABİTLİ (`<rootDir>/e2e/`):
+  // çıplak '/e2e/' deseni `tests/e2e/selectorCoverage.test.ts`i de yiyordu,
+  // yani e2e'yi koruyan testi e2e çiti öldürüyordu.
+  testPathIgnorePatterns: [
+    '/node_modules/',
+    '/ios/',
+    '/android/',
+    '<rootDir>/e2e/',
+  ],
 };

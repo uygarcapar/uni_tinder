@@ -3,6 +3,7 @@ import * as repo from '@/features/chat/chatRepository';
 import { openChatDb } from '@/features/chat/db/chatDb';
 import { importLegacyChatCache } from '@/features/chat/db/importLegacyCache';
 import { startDeltaSync } from '@/features/chat/chatDeltaSync';
+import { startBackfill } from '@/features/chat/chatBackfill';
 import { applyDeltaFromLocal, hydrateConversationList } from '@/features/chat/chatHydrate';
 import { fetchConversations } from '@/features/chat/chatSlice';
 import { clear as clearMessageCache, projectWindow } from '@/features/chat/messageCache';
@@ -35,6 +36,7 @@ let failureCount = 0;
 const MAX_LOGGED_FAILURES = 5;
 
 let stopDeltaSync: (() => void) | null = null;
+let stopBackfill: (() => void) | null = null;
 
 /**
  * Store kurulduktan sonra bir kez — DB'yi açar, eski MMKV blob'unu taşır,
@@ -63,6 +65,12 @@ export function startChatMirror(store?: {
     if (__DEV__ && stale > 0) {
       console.log(`[chatMirror] ${stale} asılı gönderim failed'a çevrildi`);
     }
+    // `send_attempts` (outbox muhasebesi) kendi başına BÜYÜYEBİLİR bir tablo:
+    // Map'in MAX_TRACKED tavanı yalnız bellek tarafını sınırlıyor, diske hiç
+    // dokunmuyor (bilerek — bkz. outbox.ts touchEntry/pruneAttempts yorumu).
+    // Tablonun gerçek sınırını bu satır çiziyor; ilk okumadan ÖNCE koşmalı ki
+    // gönderilmiş/yetim satırlar birikmeden temizlensin.
+    repo.pruneOrphanSendAttempts();
   } catch (error) {
     console.error('[chatMirror] başlatılamadı, ayna devre dışı:', error);
     started = false;
@@ -91,12 +99,20 @@ export function startChatMirror(store?: {
       store.dispatch(fetchConversations({ force: true }));
     },
   });
+
+  // Bayrak kapalıyken startBackfill no-op döndürüyor; burada koşul yok —
+  // startDeltaSync'in hemen üstündeki satırla aynı gerekçe.
+  stopBackfill = startBackfill({
+    getActiveConversationId: () => store.getState()?.chat?.activeConversationId ?? null,
+  });
 }
 
 /** Logout / teardown. */
 export function stopChatMirror(): void {
   stopDeltaSync?.();
   stopDeltaSync = null;
+  stopBackfill?.();
+  stopBackfill = null;
 }
 
 export function __resetChatMirrorForTests(): void {
@@ -236,7 +252,15 @@ function mirror(action: any, getState: () => any): void {
       return;
 
     case 'chat/historyRevealed':
-      if (p?.conversationId) repo.setHiddenHistory(p.conversationId, false);
+      if (p?.conversationId) {
+        repo.setHiddenHistory(p.conversationId, false);
+        // Backfill mandalı da sökülüyor: kilitli arşivi olan sohbet turdan
+        // `messages: [] / hasMore: false` cevabı alıp "tamam" damgalanmış
+        // olabilir. Kilit açıldığı anda damga kalkmazsa o sohbetin geçmişi
+        // bir daha indirilmez — `backfill_done`'u temizleyen başka yol yok
+        // (bkz. chatRepository.clearBackfillDone).
+        repo.clearBackfillDone(p.conversationId);
+      }
       return;
 
     case 'chat/matchNotification':

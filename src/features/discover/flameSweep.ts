@@ -32,9 +32,27 @@ import uiBus from "@/shared/services/uiBus";
  * kendisi ve canvas hiç çizemezse devreye giren yedek zamanlayıcı (bkz.
  * FireFlame) — ilki alınıp abonelik hemen bırakılıyor.
  *
+ * ── `hold`: DALGA, DEĞİŞİM BİTENE KADAR PARK EDİYOR ────────────────────────
+ *
+ * Örtme anı kart değişimine ~200 ms bırakıyor (bkz. flameWavePath >
+ * COVER_LEAD_MS) ve o pay bazen yetmiyordu: dalga, eski kart hâlâ boyalıyken
+ * çekiliyor, kullanıcı "gitmesi gereken kartı" görüyordu. `hold: true` ile
+ * dalga ekranı tam kapattığı yerde DURUYOR; yoluna ancak çağıran
+ * `releaseFlameSweep()` deyince devam ediyor. BEKLEME TAVANSIZ — tek sınır,
+ * ekranı sonsuza kadar kaplı bırakmamak için duran emniyet valfi
+ * (COVER_HOLD_LIMIT_MS). Park donuk değil: canlılığı UI thread'inde nefes alan
+ * bir salınım taşıyor (bkz. FireFlameCanvas'ın park fazı).
+ *
+ * Yani `hold` isteyen çağıran, SALIVERMEKLE DE YÜKÜMLÜ. Salıvermeyi "iş bitti"
+ * anına değil "yeni kart ekrana BOYANDI" anına bağlamak gerekiyor: React'in
+ * commit'i bitmiş olması henüz boyandığı anlamına gelmiyor (bkz. DiscoverScreen
+ * > tryReleaseFlame, dep'siz effect + bir kare).
+ *
  * @returns Aboneliği iptal eden fonksiyon. Çağıran, örtme anından ÖNCE
  * ağaçtan düşebiliyorsa (deste tazelendi, ekran değişti, tema remount'u)
  * temizlikte bunu çağırmalı; yoksa `onCovered` sökülmüş bir ağaca yazar.
+ * İPTAL AYNI ZAMANDA SALIVERİYOR: park sırasında ağaçtan düşen bir çağıranın
+ * dalgası tavana kadar asılı kalırdı.
  */
 /**
  * ── EŞLEŞME DALI: PERDE ÖNCE, DEĞİŞİM ARKASINDA (istek, 2026-10-13) ─────────
@@ -104,10 +122,16 @@ export function runMatchCurtain(onCovered: () => void): () => void {
     if (done) return;
     done = true;
     cleanup();
-    sweepUnsub = runFlameSweep(() => {
-      sweepUnsub = null;
-      onCovered();
-    });
+    // `hold`: bu dalın `onCovered`ı da desteyi ilerletiyor, yani buradaki
+    // değişim de üstteki kartın MOUNT'unu bekliyor (bkz. runFlameSweep > hold).
+    // Salıveren taraf aynı: DiscoverScreen > tryReleaseFlame.
+    sweepUnsub = runFlameSweep(
+      () => {
+        sweepUnsub = null;
+        onCovered();
+      },
+      { hold: true },
+    );
   };
   unsubs.push(uiBus.on("matchCurtainCover", finish));
   // Bildirim geldi: artık perdeyi beklemek güvenli, süreyi uzat.
@@ -127,7 +151,11 @@ export function runMatchCurtain(onCovered: () => void): () => void {
   };
 }
 
-export function runFlameSweep(onCovered: () => void): () => void {
+export function runFlameSweep(
+  onCovered: () => void,
+  opts?: { hold?: boolean },
+): () => void {
+  const hold = !!opts?.hold;
   let done = false;
   const unsub = uiBus.on("flameSweepCover", () => {
     if (done) return;
@@ -135,9 +163,23 @@ export function runFlameSweep(onCovered: () => void): () => void {
     unsub();
     onCovered();
   });
-  uiBus.emit("flameSweep");
+  uiBus.emit("flameSweep", { hold });
   return () => {
     done = true;
     unsub();
+    // Park eden bir dalga bırakmıyoruz: çağıran ağaçtan düştüyse onu
+    // salıverecek kimse kalmadı.
+    if (hold) releaseFlameSweep();
   };
+}
+
+/**
+ * Park eden dalgayı salıver — "yeni kart ekrana boyandı" demenin tek yolu.
+ *
+ * Park etmeyen bir dalgada (ya da hiç dalga yokken) NO-OP: canvas olayı yalnız
+ * `hold` ile mount edildiyse dinliyor. Bu yüzden çağıranın "acaba bekleyen var
+ * mı" diye bir bayrak tutması gerekmiyor.
+ */
+export function releaseFlameSweep(): void {
+  uiBus.emit("flameSweepRelease");
 }

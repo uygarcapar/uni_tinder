@@ -360,6 +360,44 @@ export function glassIconClearGlyph(
    * dairesi ile dokunma alanı hiçbir ölçüde ayrışmıyor.
    */
   size: number = GLASS_ICON_CLEAR_SIZE,
+  {
+    iconSize = GLASS_ICON_BUTTON.icon,
+    surfaceTint,
+  }: {
+    /**
+     * Çizilen glifin PUNTOSU — kabuğun çapından BAĞIMSIZ.
+     *
+     * Varsayılan ortak sayı (17) ve ŞU AN ZİNCİRİN BÜTÜN KULLANICILARI onda
+     * kalıyor — başlıklardaki geri/menü de, kart üstündeki tik/X/üç nokta da.
+     * Bir dönem Keşif kapağının karar ikilisi (tik · X) daha iri bir sayı
+     * geçiyordu ("komşusu Fire 29pt çiziyor, yanında 17pt tik yarım işaret
+     * gibi duruyor"); istek üzerine geri alındı, gerekçe SwipeCard > "GLİF
+     * PUNTOSU İÇİN AYRI SABİT YOK".
+     *
+     * Kabuğu BÜYÜTMÜYOR: çap bu zincirde `frame`den geliyor (yukarıdaki not),
+     * glif kutunun içinde ortalı çiziliyor — yani punto, dokunma alanını ve
+     * kardeş butonlarla ölçü birliğini bozmadan oynatılabiliyor.
+     */
+    iconSize?: number;
+    /**
+     * Verilirse kabuk BERRAK değil o renge BOYALI cam olur (SwiftUI'ın
+     * `glassProminent` buton stilinin bu zincirdeki karşılığı: `.regular`
+     * malzeme + `.tint(renk)`).
+     *
+     * NEDEN BUTON STİLİ DEĞİL: `buttonStyle("glassProminent")` kabuğu label'ın
+     * çevresine controlSize payı ekleyerek doğuruyor, yani çapı `frame`
+     * belirlemiyor (bkz. GLASS_ICON_BUTTON'ın 2. tuzağı + FireGlassButton >
+     * FIRE_GLASS_LABEL_BOX). Aynı kolonda berrak kardeşleriyle BİREBİR aynı
+     * çapta kalması gereken bir buton o yoldan çizilemiyor — tint'i camın
+     * kendisine vermek çapı `frame`de bırakıyor.
+     *
+     * ⚠️ `clear` ile DEĞİL `regular` ile boyanıyor: berrak varyant zemini
+     * karartmıyor/doldurmuyor, üstüne konan tint yalnız bir ton olarak
+     * görünüyor ve beyaz glif açık fotoğraflarda kayboluyor (aynı tuzak:
+     * FireGlassButton > `variant` notu).
+     */
+    surfaceTint?: string;
+  } = {},
 ): ModifierConfig[] {
   return [
     // Kabuk artık ondan doğmuyor ama `controlSize` DURUYOR: ortamdaki
@@ -367,13 +405,15 @@ export function glassIconClearGlyph(
     // Symbol'ü bir tık küçük çizdirirdi. Buradaki tek işi bu.
     controlSize("extraLarge"),
     // `size` prop'u DEĞİL font modifier'ı — bkz. GLASS_ICON_BUTTON.
-    font({ size: GLASS_ICON_BUTTON.icon, weight: GLASS_ICON_BUTTON.weight }),
+    font({ size: iconSize, weight: GLASS_ICON_BUTTON.weight }),
     frame({ width: size, height: size }),
     contentShape(shapes.circle()),
     glassEffect({
       // interactive: basış morph'u artık buton stilinden değil camdan geliyor;
       // `.plain` hiçbir görsel geri bildirim vermiyor.
-      glass: { variant: "clear", interactive: true },
+      glass: surfaceTint
+        ? { variant: "regular", interactive: true, tint: surfaceTint }
+        : { variant: "clear", interactive: true },
       shape: "circle",
     }),
     // Açık modda beyaz zeminden ayrılsın diye ufak gölge; koyuda ve 26 altında

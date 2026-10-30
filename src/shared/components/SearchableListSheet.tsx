@@ -326,7 +326,7 @@ const SearchableListSheet = ({
   }, [scrollY, titleTriggered]);
 
   return (
-    <View style={{ flex: 1 }}>
+    <View testID="sheet-searchable-list" style={{ flex: 1 }}>
       <AnimatedBottomSheetFlatList
         data={orderedItems}
         keyExtractor={(item) => String(item.id)}
@@ -380,6 +380,9 @@ const SearchableListSheet = ({
           const isSelected = isItemSelected(item);
           return (
             <TouchableOpacity
+              // Satır kimliği `item.id` — etiket i18n ve dile göre değişiyor
+              // (labelOf), id değişmiyor.
+              testID={`sheet-row-${item.id}`}
               // activeOpacity 1 — basılı tutarken solma yok. Tek geri bildirim
               // seçimin kendisi (sağdaki kutu). Şehir/kampüs seçicilerle aynı.
               activeOpacity={1}

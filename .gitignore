@@ -53,3 +53,10 @@ assets/fourstack/*.mov
 .icon-preview/
 .flame-preview/
 .splash-preview.html
+
+# e2e (Appium + WebdriverIO)
+# `.env` deseni yalnız tam adı `.env` olan dosyayı yakalıyor, `.env*.local` da
+# tutmuyor → e2e'nin ortam dosyası açıkça listelenmek zorunda.
+e2e/.env.e2e
+e2e/.artifacts/
+e2e/.appium/

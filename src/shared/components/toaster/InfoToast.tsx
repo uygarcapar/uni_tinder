@@ -10,7 +10,7 @@ import {
 export type InfoToastProps = {
   title?: string;
   message: string;
-  variant?: 'success' | 'error';
+  variant?: 'success' | 'error' | 'info';
   /**
    * Ürüne bağlı toast'larda (Fire kotası, not gönderimi, paket satın alma)
    * solda o ürünün simgesi çizilir. Verilmezse toast düz metin kalır — jenerik

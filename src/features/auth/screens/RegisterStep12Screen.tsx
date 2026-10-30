@@ -125,7 +125,7 @@ export default function RegisterStep12Screen({ navigation }: NativeStackScreenPr
   });
 
   return (
-    <View className="flex-1" style={{ backgroundColor: colors.bg }}>
+    <View testID="reg-step12-screen" className="flex-1" style={{ backgroundColor: colors.bg }}>
       {/* Header */}
       <View className="pt-16 pb-6 px-6" style={{ backgroundColor: colors.bg }}>
         <RegisterBackButton onPress={() => navigation.goBack()} />
@@ -145,6 +145,10 @@ export default function RegisterStep12Screen({ navigation }: NativeStackScreenPr
           <View className="mb-4">
             <Text className="text-[14px] font-semibold mb-2" style={{ color: colors.neutral200 }}>{t('auth.step12.heightLabel')}</Text>
             <View
+              // Cetvelin PAN KABI. e2e burayı ölçüp W3C pointer dizisiyle
+              // sürüklüyor: onPanResponderMove yalnız gestureState.dx okuyup
+              // deltaCm = round(dx / usable * RANGE) yapıyor, momentum yok.
+              testID="reg-step12-ruler"
               {...panResponder.panHandlers}
               onLayout={(e) => {
                 const w = e.nativeEvent.layout.width;
@@ -209,6 +213,9 @@ export default function RegisterStep12Screen({ navigation }: NativeStackScreenPr
                 </View>
                 <View pointerEvents="none" style={{ paddingHorizontal: 20, paddingVertical: 20, alignItems: "center", justifyContent: "center" }}>
                   <Animated.Text
+                    // e2e sürükleme sonrası gerçekleşen cm'yi BURADAN okuyor
+                    // (ekran görüntüsü karşılaştırması değil).
+                    testID="reg-step12-value"
                     style={{
                       color: colors.text,
                       fontSize: 22,

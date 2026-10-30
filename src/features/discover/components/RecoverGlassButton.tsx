@@ -2,6 +2,7 @@ import { memo } from "react";
 import { StyleSheet, TouchableOpacity, View } from "react-native";
 import { Host, Button as SwiftUIButton, RNHostView } from "@expo/ui/swift-ui";
 import {
+  accessibilityIdentifier as a11yId,
   accessibilityLabel as a11yLabel,
   buttonBorderShape,
   buttonStyle,
@@ -127,9 +128,16 @@ type Props = {
    * Varsayılan Dating, yani mod geçmeyen eski çağıran bugünkü kırmızıda kalır.
    */
   mode?: AppMode;
+  /**
+   * e2e seçicisi. SwiftUI tarafında `accessibilityIdentifier`
+   * modifier'ına, Android/iOS<26 dalında `testID` prop'una gidiyor —
+   * yani aynı seçici iki yolda da çalışıyor.
+   */
+  testID?: string;
 };
 
 function RecoverGlassButton({
+  testID,
   onPress,
   label,
   mode = DEFAULT_APP_MODE,
@@ -151,6 +159,7 @@ function RecoverGlassButton({
             tint(accent),
             frame({ width: RECOVER_GLASS_SIZE, height: RECOVER_GLASS_SIZE }),
             a11yLabel(label),
+              ...(testID ? [a11yId(testID)] : []),
           ]}
         >
           <RNHostView matchContents>
@@ -170,6 +179,7 @@ function RecoverGlassButton({
       activeOpacity={0.8}
       hitSlop={8}
       accessibilityRole="button"
+      testID={testID}
       accessibilityLabel={label}
       style={{
         width: RECOVER_GLASS_SIZE,

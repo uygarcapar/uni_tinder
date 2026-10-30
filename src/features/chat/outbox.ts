@@ -13,9 +13,20 @@
  * "zaten listede olan bir satırı ağa taşımak" ile ilgileniyor; bu yüzden
  * `appendOptimisticMessage` ve `markMessageEntering` burada İMPORT EDİLMEZ.
  *
- * Kalıcılık YOK (bilinçli): `chatPersistTransform` `_pending`/`_failed` mesajları
- * zaten diske yazmıyor, uygulama kapanınca kayboluyorlar. Buradaki deneme
- * sayaçları da process ile ölüyor — iki ömür birebir örtüşüyor.
+ * Balon kalıcılığı YOK (bilinçli): `chatPersistTransform` `_pending`/`_failed`
+ * mesajları zaten diske yazmıyor, uygulama kapanınca kayboluyorlar. Deneme
+ * MUHASEBESİ (sayaç/backoff/permanent/quota_charged) artık FARKLI: `attempts`
+ * Map'i hâlâ var (gerekçe: `MessageDto`'ya alan eklemek bubble'ı yapısal
+ * değişiklik sayardı — commit-storm riski) ama şimdi `send_attempts` (v7)
+ * tablosunun ÖNBELLEĞİ — process ölse de disk hayatta kalıyor. Asıl kazanç
+ * `quotaCharged`: eskiden restart sonrası sıfırlanıp ack'i kaybolmuş mesajın
+ * başarılı tekrarı kotayı ikinci kez düşürebiliyordu.
+ *
+ * Muhasebenin TAMAMI restart'ı atlatmıyor ve atlatmamalı: deneme bütçesi
+ * (`attempts`) ile yaş tabanı (`firstSeenAt`) tasarımı gereği OTURUM İÇİ,
+ * `loadAttemptsFromDisk` onları `rebaseAttemptOnLoad` ile sıfırlıyor. Yoksa
+ * sabah tavanı yakan mesaj akşam wifi gelince de gönderilmezdi — bu modülün
+ * ikinci vaadi tam bu (bkz. outboxPolicy.rebaseAttemptOnLoad).
  */
 import {
   conversationDeactivated,
@@ -32,20 +43,32 @@ import { openQuotaPaywall } from "@/features/chat/quotaPaywall";
 import realtimeService from "@/features/chat/realtimeService";
 import { enqueueSend } from "@/features/chat/sendQueue";
 import { sendVoiceMessage } from "@/features/chat/voiceSend";
-import { inFlightPull } from "@/features/chat/chatDeltaSync";
+import { pullBeforeSend } from "@/features/chat/chatDeltaSync";
 import { readFailedOutboxFromLocal } from "@/features/chat/chatHydrate";
-import { clearVoiceMediaUrl, setVoiceMediaUrl } from "@/features/chat/chatRepository";
 import {
+  clearVoiceMediaUrl,
+  pruneOrphanSendAttempts,
+  readSendAttempt,
+  readSendAttempts,
+  setVoiceMediaUrl,
+  upsertSendAttempt,
+} from "@/features/chat/chatRepository";
+import {
+  attemptEntryFromRow,
+  attemptRowFromEntry,
   backoffDelayMs,
   classifySendError,
   isEligible,
+  isLateDelivery,
+  isVoiceRecordingGone,
   mergeFailedOutbox,
   messageToDescriptor,
   needsVoiceReupload,
+  permanenceAfterFailure,
+  rebaseAttemptOnLoad,
   selectFailedOutbox,
   MAX_ATTEMPTS,
   MAX_PER_FLUSH,
-  OUTBOX_DISK_MAX_AGE_MS,
   type AttemptEntry,
   type FailOrigin,
   type FailureClass,
@@ -59,6 +82,7 @@ import { isOfflineNow } from "@/shared/services/networkStatus";
 import { showInfoToast } from "@/shared/services/toaster";
 import { store } from "@/shared/store";
 import { devLog } from "@/shared/utils/devLog";
+import { utcTime } from "@/shared/utils/dateUtc";
 import type { MessageDto } from "@/shared/types";
 
 /**
@@ -88,6 +112,20 @@ let wakeTimer: ReturnType<typeof setTimeout> | null = null;
 let roundNeedsConversationRefetch = false;
 /** Turda 429 / `RATE_LIMITED` görüldü — kalan mesajlar bir sonraki tura. */
 let roundRateLimited = false;
+/**
+ * Sessiz turda "bekleyen mesajın gönderildi" bildirimi tur başına EN FAZLA
+ * bir kez gösterilsin — yirmi mesajlık birikmiş bir kuyruk yirmi toast açmasın
+ * (bkz. isLateDelivery, sendOutgoing'in başarı dalı).
+ */
+let roundLateNoticeShown = false;
+/**
+ * `loadAttemptsFromDisk` tur başına BİR kez gerçek okuma yapsın diye. Process
+ * ömrü boyunca ikinci çağrı no-op — `attempts` Map'i artık diskten daha taze.
+ * `resetOutbox` bu bayrağı da sıfırlar: testlerde process ölümünü taklit eden
+ * fonksiyon bu, bayrak hayatta kalırsa "restart sonrası disk okunuyor mu"
+ * iddiasını sınayan hiçbir test gerçek bir disk okuması GÖRMEZ.
+ */
+let loadedFromDisk = false;
 
 const dispatch = (action: any) => (store.dispatch as any)(action);
 
@@ -104,9 +142,80 @@ function newEntry(now: number): AttemptEntry {
     firstSeenAt: now,
     nextEligibleAt: 0,
     origin: "throw",
-    permanent: false,
+    permanentReason: null,
     quotaCharged: false,
   };
+}
+
+/**
+ * Turun başında/her gönderimde BİR kez: `send_attempts` tablosundaki satırları
+ * Map'e açar.
+ *
+ * Fresh process'te Map boş başlıyor — restart öncesi `quotaCharged`/backoff
+ * bilgisi olmadan outbox eski hâline (process ölürse muhasebe kaybolur) geri
+ * dönerdi. VAR OLAN bir Map girdisinin üzerine YAZILMAZ (`has` koruması):
+ * fresh process'te İLK round'dan önce bir gönderim zaten başarısız olup Map'e
+ * taze bir kayıt açmış olabilir (bkz. sendOutgoing'in kendi çağrısı) — disk
+ * okuması o CANLI kaydı eski hâliyle ezmemeli.
+ *
+ * Okuma PATLARSA bayrak `true` YAPILMAZ: `getChatDb()` tembel açılıyor, bozuk
+ * bir DB/migration burada atabilir. Bayrak erken `true` olsaydı süreç ömrü
+ * boyunca disk bir daha hiç okunmaz, Map kalıcı olarak boş kalır ve tam bu
+ * task'ın önlediği çift düşme (kota/çift gönderim) geri gelirdi — yazım
+ * taraflarındaki aynı asimetriyi (bkz. `rememberAttempt`, `pruneAttempts`)
+ * burada da koruyoruz: bir sonraki çağrı (sonraki `sendOutgoing`/`flushOutbox`
+ * turu) yeniden dener.
+ *
+ * Satır OLDUĞU GİBİ Map'e girmiyor: `rebaseAttemptOnLoad` oturuma ait alanları
+ * (deneme sayacı ve yaş tabanı) sıfırlıyor, kota guard'ı ile terminal kalıcılık
+ * duruyor. Gerekçesi o fonksiyonda — özetle bu iki bütçe diske inerken sessizce
+ * ömürlük bütçeye dönüşmüştü. Rebase DİSKE GERİ YAZILMIYOR: idempotent (her
+ * açılış aynı sonucu üretir) ve 200 satırlık bir tabloyu açılışta baştan sona
+ * yazmanın karşılığı yok; satır bir sonraki gerçek mutasyonda güncellenir.
+ */
+export function loadAttemptsFromDisk(): void {
+  if (loadedFromDisk) return;
+  try {
+    const now = Date.now();
+    for (const row of readSendAttempts()) {
+      if (!attempts.has(row.client_message_id)) {
+        attempts.set(
+          row.client_message_id,
+          rebaseAttemptOnLoad(attemptEntryFromRow(row), now),
+        );
+      }
+    }
+    loadedFromDisk = true;
+  } catch {
+    // Bayrak false kaldı — bir sonraki çağrı yeniden okumayı dener.
+  }
+}
+
+/**
+ * Map yazımının normal kapısı: deneme muhasebesini MUTASYONDAN SONRA diske
+ * yazan her yer (`chargeQuotaOnce`, `noteFailure`, `markTerminal`,
+ * `armAckWatchdog`, `retryFailedMessage`) bunu çağırır — yoksa iki yazım
+ * ayrışır (biri Map'i güncelleyip diski unutabilir) ve disk Map'ten geriye
+ * düşer, restart'ta geriye düşmüş veriye güvenmiş oluruz.
+ *
+ * İKİ İSTİSNA bilerek bunu ATLAR: `touchEntry`'nin BOŞ `newEntry` için attığı
+ * `attempts.set` (çağıran zaten hemen ardından mutasyon yapıp bu fonksiyonu
+ * kendisi çağırıyor — burada persist etmek sadece anlamsız bir "boş satır"
+ * yazardı) ve `loadAttemptsFromDisk`'in disk→Map yazımı (veri ZATEN diskten
+ * geliyor, geri yazmanın bir anlamı yok).
+ */
+export function rememberAttempt(clientMessageId: string, entry: AttemptEntry): void {
+  attempts.set(clientMessageId, entry);
+  try {
+    upsertSendAttempt(attemptRowFromEntry(clientMessageId, entry));
+  } catch {
+    // Disk yazımı patlarsa bu turun davranışı değişmez (Map zaten güncel);
+    // kaybedilen tek şey bir restart'ın bu adımı görmesi.
+  }
+}
+
+export function peekAttempt(clientMessageId: string): AttemptEntry | undefined {
+  return attempts.get(clientMessageId);
 }
 
 /**
@@ -143,11 +252,32 @@ function touchEntry(clientMessageId: string): AttemptEntry {
  * satır yazsaydı harita sohbet boyunca şişer, tavana dayanınca da gerçek
  * bekleyen kayıtları tahliye ederdi. Çift düşme riskinin tek yolu zaten önce
  * başarısız olmaktan geçiyor ve o yolda kayıt hazır (bkz. armAckWatchdog).
+ *
+ * Map MISS'te TEK SATIR disk okuması (controller ruling — YALNIZ BURADA):
+ * `touchEntry`'nin `MAX_TRACKED` tahliyesi bu kaydı Map'ten düşürmüş olabilir
+ * (disk hâlâ tutuyor, bkz. touchEntry/pruneAttempts yorumları). Burada
+ * yokluğun maliyeti GERÇEK — kota ikinci kez düşer. `isEligible`/backoff'ta
+ * aynı read-through YOK: oradaki yokluk ucuz (en kötü ihtimal bir backoff
+ * sıfırlanır) ve read-through'u her Map-miss'e yaymak Map'in amacını (hızlı,
+ * disk'e dokunmayan process-içi erişim) baltalardı.
  */
 function chargeQuotaOnce(conversationId: string, clientMessageId: string) {
-  const entry = attempts.get(clientMessageId);
+  let entry = attempts.get(clientMessageId);
+  if (!entry) {
+    try {
+      const row = readSendAttempt(clientMessageId);
+      if (row) entry = attemptEntryFromRow(row);
+    } catch {
+      // Okuma patlarsa entry `undefined` kalır — aşağıdaki "kayıt yok" dalına
+      // düşer, davranış bu düzeltmeden ÖNCEki hâle geri döner (yeni bir
+      // regresyon değil, status quo).
+    }
+  }
   if (entry?.quotaCharged) return;
-  if (entry) entry.quotaCharged = true;
+  if (entry) {
+    entry.quotaCharged = true;
+    rememberAttempt(clientMessageId, entry);
+  }
   dispatch(decrementQuotaLocally({ conversationId }));
 }
 
@@ -159,18 +289,46 @@ function noteFailure(
   const entry = touchEntry(clientMessageId);
   entry.attempts += 1;
   entry.origin = origin;
-  entry.permanent = !retryable || entry.attempts >= MAX_ATTEMPTS;
+  entry.permanentReason = permanenceAfterFailure(retryable, entry.attempts);
   entry.nextEligibleAt = Date.now() + backoffDelayMs(entry.attempts);
+  rememberAttempt(clientMessageId, entry);
   return entry;
 }
 
-function markPermanent(clientMessageId: string) {
+/**
+ * "Bu mesaj kaç kez denenirse denensin başaramaz" — `terminal`, yani restart'ı
+ * ATLATAN kalıcılık (bkz. outboxPolicy.PermanenceReason).
+ *
+ * Adı bilerek `markPermanent` değil: iki kalıcılık sebebi var ve bu fonksiyon
+ * yalnız birini kurabilir. Tavan dolmasını (`budget`) `noteFailure` kendi
+ * hesaplıyor; buradan geçen hiçbir çağrı bütçeyle ilgili değil (kota bitti,
+ * sohbet gitti, ses kaydı düştü).
+ */
+function markTerminal(clientMessageId: string) {
   const entry = touchEntry(clientMessageId);
-  entry.permanent = true;
+  entry.permanentReason = "terminal";
+  rememberAttempt(clientMessageId, entry);
 }
 
-/** Ack gelmiş/mesaj gitmiş kayıtları at — harita yalnız bekleyenleri taşısın. */
-function pruneAttempts(failedNow: any[]) {
+/**
+ * Ack gelmiş/mesaj gitmiş kayıtları Map'ten at — harita yalnız bekleyenleri
+ * taşısın.
+ *
+ * YALNIZ MAP. Diske dokunmaması zorunlu, çünkü girdisi bu turun BAŞARISIZ
+ * anlık görüntüsü ve o liste "işi bitenler"i vermiyor: hem duruma süzülmüş
+ * (`readFailedSends` → `send_state = 'failed'`, `selectFailedOutbox` → `_failed`)
+ * hem tavanlı (limit 50, ESKİDEN YENİYE — yani en yeni hatalar listenin
+ * DIŞINDA kalıyor). Uçuştaki bir tekrar deneme (`retryOptimisticMessage`
+ * satırı `pending`e çevirir) ikisinde de yok; disk silmesi bu listeden
+ * sürülürse o kaydın `quota_charged`/`terminal` işareti silinir, sonraki hata
+ * sıfırdan bir kayıt açar ve nihayet başarılı olan deneme kotayı İKİNCİ kez
+ * düşürür — bu modülün diske inmiş olmasının tek sebebi tam bunu önlemekti.
+ *
+ * Diskin silicisi `pruneOrphanSendAttempts`: yüklemi ("mesaj `sent` ya da hiç
+ * yok") duruma değil GERÇEĞE bakıyor ve tavansız. Tur başına bir kez
+ * `flushOutbox`'tan, açılışta bir kez `startChatMirror`'dan çağrılıyor.
+ */
+export function pruneAttempts(failedNow: any[]) {
   if (!attempts.size) return;
   const alive = new Set(failedNow.map((m) => m.clientMessageId));
   for (const key of [...attempts.keys()]) {
@@ -197,7 +355,7 @@ function scheduleWake() {
     // için o kayıtlar da sessizce denenebiliyor (bkz. outboxPolicy.FailOrigin).
     // Elenmeye devam etseydi ack'i kaybolmuş mesaj backoff zamanlayıcısıyla hiç
     // denenmez, yalnız bir sonraki foreground/reconnect'i beklerdi.
-    if (entry.permanent) continue;
+    if (entry.permanentReason) continue;
     if (entry.attempts >= MAX_ATTEMPTS) continue;
     if (entry.nextEligibleAt > now && entry.nextEligibleAt < soonest) {
       soonest = entry.nextEligibleAt;
@@ -234,6 +392,10 @@ function armAckWatchdog(d: OutgoingDescriptor) {
     // düşmüştü. İşaretlemezsek elle yapılan başarılı deneme kotayı İKİNCİ kez
     // düşürürdü — bugünkü kodda ulaşılması zor, otomatik kuyrukla kolay.
     entry.quotaCharged = true;
+    // noteFailure zaten bir rememberAttempt yaptı ama o çağrı anında
+    // quotaCharged hâlâ false'tu — bu satırdaki değişikliği de diske yaz,
+    // yoksa tam da bu task'ın önlemeye çalıştığı çift düşme burada YAŞAR.
+    rememberAttempt(clientMessageId, entry);
   }, SEND_ACK_TIMEOUT_MS);
   ackTimers.set(clientMessageId, timer);
 }
@@ -263,7 +425,7 @@ function handleFailure(
     // "görüntülendi" hunisini şişirirdi. Balon da SİLİNMEZ — bakılmayan bir
     // sohbette kullanıcının yazdığı metni habersiz yok etmek olurdu.
     dispatch(failOptimisticMessage({ conversationId, clientMessageId }));
-    markPermanent(clientMessageId);
+    markTerminal(clientMessageId);
     return;
   }
 
@@ -313,6 +475,15 @@ export async function sendOutgoing(
   d: OutgoingDescriptor,
   opts: { mode: SendMode },
 ): Promise<void> {
+  // BURADA — flushOutbox'ın turunun başı YETMEZ: `ChatScreen`'in composer
+  // gönderim yolu (`appendOutgoing`'den sonra) `sendOutgoing`'i DOĞRUDAN
+  // çağırıyor, `retryFailedMessage`'dan HİÇ geçmiyor — kendi `loadAttemptsFromDisk`
+  // çağrısı (round 1) bu yolu kapsamıyor. Cold start'ta hiçbir round koşmadıysa
+  // (`online`/`foreground`/`reconnect` hepsi geçiş-tetiklemeli, `scheduleWake`
+  // de önceki bir round'u gerektirir) Map boş kalır ve `chargeQuotaOnce`
+  // diskteki `quotaCharged`'ı GÖRMEDEN kotayı ikinci kez düşürür. Bayrak
+  // korumalı olduğu için ikinci ve sonraki çağrılarda no-op.
+  loadAttemptsFromDisk();
   const { conversationId, clientMessageId, replyToMessageId } = d;
   try {
     let result: MessageDto | null = null;
@@ -372,6 +543,20 @@ export async function sendOutgoing(
     // balon aynı dosyadan çalmaya devam eder.
     if (result) dispatch(messageSent(result));
     chargeQuotaOnce(conversationId, clientMessageId);
+    // Yaş sınırı kalktığı için (bkz. outboxPolicy.LATE_SEND_NOTICE_MS) eski bir
+    // mesaj da sessizce gidebiliyor — "habersiz" kalmasın diye burada söylüyoruz.
+    // Yalnız `silent`: interactive'te kullanıcı zaten ekranda, "tekrar dene"nin
+    // sonucunu görüyor, ikinci bir toast gürültü olur. Tur başına BİR kez:
+    // birikmiş yirmi mesajlık bir kuyruk yirmi toast açmasın.
+    if (
+      opts.mode === "silent" &&
+      !roundLateNoticeShown &&
+      d.sentAt &&
+      isLateDelivery(utcTime(d.sentAt), Date.now())
+    ) {
+      roundLateNoticeShown = true;
+      showInfoToast({ message: i18n.t("chat.send.lateDelivered") as string, variant: "info" });
+    }
   } catch (err: any) {
     let fc = classifySendError(err, d.kind);
     // Tamamlanmış sandığımız yükleme ölmüş (UT-6605: S3 nesnesi 7 günlük yetim
@@ -400,31 +585,66 @@ export async function retryFailedMessage(
   message: any,
   opts: { mode: SendMode },
 ): Promise<void> {
+  // `sendOutgoing`'in KENDİ çağrısı GEÇ KALIR: aşağıdaki `attempts.get` ondan
+  // ÖNCE çalışıyor. Cold start'ta (hiçbir flush turu koşmadı → Map boş/
+  // yüklenmemiş) bu satır olmadan `prev` HEP `undefined` bulunur ve
+  // interactive'in "muhasebeyi EZ" sözleşmesi tamamen atlanır. Gönderimin
+  // kendisi yine olur (interactive `isEligible`'ı zaten es geçiyor); kaybedilen
+  // şey DİSKE yazılan sıfırlama. Bedeli TERMINAL sebepli satırlarda gerçek:
+  // `rebaseAttemptOnLoad` yalnız bütçe kalıcılığını temizliyor, terminal işaret
+  // yeni oturumda da duruyor — yani kullanıcı "tekrar dene" dedikten sonra bu
+  // gönderim de başarısız olursa mesaj bir daha hiçbir SESSİZ tura girmez
+  // (ikinci manuel dokunuş kurtarır, bu yüzden Critical değil Important).
+  // Ayrıca: "cold start kotayı ikinci kez düşürmüyor" testinin dayandığı Map
+  // doluşu da BU satırdan geliyor (o test `sendOutgoing`'in kendi çağrısını
+  // AYIRT EDEMEZ, ikisi de burada aynı sonucu üretir — bkz. outboxPersistence.test.ts).
+  loadAttemptsFromDisk();
   if (!message?._failed) return;
   const d = messageToDescriptor(message);
   if (!d) {
-    // Neredeyse tek sebebi: sesli mesajın yerel dosyası düşmüş. Eskiden bu
-    // mesaj sessizce metin yoluna düşüp `content: ""` gönderiyor ve sunucudan
-    // UT-6710 alıyordu — balon bir daha asla düzelmiyordu.
-    if (message?.clientMessageId) markPermanent(message.clientMessageId);
+    // Neredeyse tek sebebi: sesli mesajın yerel dosyası düşmüş VE yükleme
+    // (adım 2) hiç tamamlanmamış. Eskiden bu mesaj sessizce metin yoluna
+    // düşüp `content: ""` gönderiyor ve sunucudan UT-6710 alıyordu — balon
+    // bir daha asla düzelmiyordu. Kuyruk artık kalıcı (Task 3) olduğu için bu
+    // bekleme günler sürebilir ve yerel dosya iOS'un habersiz sildiği cache
+    // dizininde yaşıyor; kullanıcıya NEDEN söylemeden sonsuza dek "tekrar
+    // dene"ye bastırmak hiçbir zaman başarıya ulaşmayacak bir döngü kurar.
+    if (message?.clientMessageId) markTerminal(message.clientMessageId);
     if (opts.mode === "interactive") {
+      // Metin SEBEBE göre seçiliyor: yalnız "ses kaydı gitti" durumunda net
+      // cümle — metin mesajının boş içeriği gibi diğer null sebeplerinde bu
+      // cümle yanlış olurdu, onlar genel metni almaya devam ediyor.
       showInfoToast({
-        message: i18n.t("chat.voice.sendFailed") as string,
+        message: i18n.t(
+          isVoiceRecordingGone(message) ? "chat.voice.recordingGone" : "chat.voice.sendFailed",
+        ) as string,
         variant: "error",
       });
     }
     return;
   }
   if (opts.mode === "interactive") {
-    // Kullanıcı niyeti backoff'u ve `permanent`i EZER — elle buton asla ölü
-    // olmamalı. `quotaCharged` korunuyor (çift düşme guard'ı).
+    // Kullanıcı niyeti backoff'u ve kalıcılığı (sebebi ne olursa olsun) EZER —
+    // elle buton asla ölü olmamalı. `quotaCharged` korunuyor (çift düşme
+    // guard'ı — kullanıcının "tekrar dene" demesi daha önce düşmüş kotayı
+    // GERİ VERMEZ).
     const prev = attempts.get(d.clientMessageId);
     if (prev) {
       prev.attempts = 0;
       prev.firstSeenAt = Date.now();
       prev.nextEligibleAt = 0;
       prev.origin = "throw";
-      prev.permanent = false;
+      prev.permanentReason = null;
+      // DİSKE DE yaz: yazmazsak diskte eski satır kalır. Gönderim TAM BU SIRADA
+      // kesilip uygulama kapanırsa restart sonrası `failStalePendingSends`
+      // satırı `failed`e çevirir ve sessiz tur diskten okunan eski (ezilmemiş)
+      // muhasebeyle karşılaşır. Sebebi TERMINAL olan bir satırda sonuç
+      // `rebaseAttemptOnLoad`a rağmen kalıcı: `isEligible` mesajı SONSUZA DEK
+      // atlar, yani kullanıcının açıkça "tekrar dene" dediği mesaj bir daha hiç
+      // gönderilmez — persistence öncesi (kayıt hiç yokken isEligible(undefined)
+      // true dönerdi) durumdan daha kötü bir sonuç. (Sebebi BÜTÇE olan satırda
+      // rebase zaten kurtarırdı; yazımın gerekçesi o dal değil bu.)
+      rememberAttempt(d.clientMessageId, prev);
     }
   }
   dispatch(
@@ -457,39 +677,71 @@ export async function flushOutbox(
   lastFlushAt = startedAt;
   roundNeedsConversationRefetch = false;
   roundRateLimited = false;
+  roundLateNoticeShown = false;
   let sent = 0;
   let items: any[] = [];
   try {
-    // Uçuşta bir yakalama turu varsa ÖNCE onu bekle: aynı tetiklerden ikisi
-    // birden ateşleniyor ve delta turu bizim mesajımızı geri getirdiğinde satır
-    // kendiliğinden `sent`e dönüyor — yani ack'i kaybolmuş ama aslında gitmiş
-    // mesaj kuyruktan düşüyor. Beklemek gereksiz bir `send` isteğini önlüyor
-    // (sunucu sınırı: dakikada 30). Tur AÇMIYORUZ.
-    const pull = inFlightPull();
-    if (pull) {
-      try {
-        await pull;
-      } catch {
-        // Yakalama turu patladıysa gönderim turu yine de koşsun.
-      }
+    // Turun başında BİR kez: process yeni başladıysa `attempts` Map'i diskten
+    // dolar (bayrak sonraki turlarda no-op yapıyor — bkz. loadAttemptsFromDisk).
+    loadAttemptsFromDisk();
+
+    // ⚠️ OTURUM KAPISI YAKALAMA TURUNDAN ÖNCE. Aşağıdaki `pullBeforeSend` bir
+    // `/api/messages/changes` isteği AÇABİLİYOR; kapı yalnız await'ten sonra
+    // olsaydı o istek temizlenmiş token'la gidebilirdi. Bugünkü dört tetiğin
+    // dördü de yukarı akışta kimlik korumalı, ama `online` tetiği bir
+    // `setTimeout` — o gecikmenin içine düşen bir logout tam bu pencereyi
+    // açıyor ve 401 yolları bu uygulamanın tarihçesinde en kırılgan alan.
+    if (!store.getState()?.auth?.isAuthenticated) return;
+
+    // Yakalama turu varsa ÖNCE onu bekle; yoksa VE tabandan beri 10sn geçtiyse
+    // `pullBeforeSend` yeni bir tur AÇAR (backend'in açık ricası). Sebep: delta
+    // turu bizim mesajımızı geri getirdiğinde satır kendiliğinden `sent`e
+    // dönüyor — ack'i kaybolmuş ama aslında gitmiş mesaj kuyruktan kendiliğinden
+    // düşüyor. Önce yakalamak gereksiz bir `send` isteğini önlüyor: istek
+    // idempotent ama dakikada 30'luk sayaç isteği reddetmeden ÖNCE artıyor,
+    // yani mükerrer gönderim bir hak harcıyor.
+    //
+    // Gerçek `activeConversationId`'i veriyoruz (null değil): bu tur AÇARSA
+    // `upsertConversations` sırasında açık sohbetin unread'ini koruyan satır
+    // tam bu değere bakıyor (bkz. chatRepository). `startDeltaSync`'in
+    // `fire()`'ı da aynı getter'ı kullanıyor — chatMirrorMiddleware.ts:88 ile
+    // simetrik, store burada zaten import'ta (satır 661'de de okunuyor).
+    try {
+      await pullBeforeSend(() => (store.getState() as any)?.chat?.activeConversationId ?? null);
+    } catch {
+      // Yakalama turu patladıysa gönderim turu yine de koşsun.
     }
 
     const state: any = store.getState();
-    // Oturum yoksa denemenin anlamı yok; 401'e yanıp deneme hakkı yakardı.
+    // İKİNCİ kez okunuyor, mükerrer değil: yukarıdaki kapıdan beri bir await
+    // geçti ve oturum tam o pencerede kapanmış olabilir. Oturum yoksa gönderimi
+    // denemenin anlamı yok; 401'e yanıp deneme hakkı yakardı.
     if (!state?.auth?.isAuthenticated) return;
 
     // İki kaynak: ekrandaki bucket'lar (canlı) + ARŞİV (tam). Disk şart, çünkü
     // bucket yalnız açılmış sohbetler için var — yeniden başlatmadan sonra
     // kullanıcı o sohbete girmedikçe oradaki başarısız mesaj hiçbir tura
-    // görünmüyordu. Diskten gelenlerde yaş sınırı mesajın KENDİ damgası
-    // (gerekçe: OUTBOX_DISK_MAX_AGE_MS).
+    // görünmüyordu. Diskten gelenlerde YAŞ SINIRI YOK (2026-10-29'da kalktı,
+    // bkz. outboxPolicy.LATE_SEND_NOTICE_MS yorumu): backend aynı
+    // `clientMessageId`'yi mesaj satırı yaşadığı sürece (730 gün) idempotent
+    // kabul ediyor, yani "çok eski" diye bir mesajı arşivden hiç çıkarmamak
+    // için teknik bir sebep kalmadı. Eski sınırın ürün argümanı (habersiz
+    // göndermemek) burada DEĞİL `sendOutgoing`'in başarı dalında çözülüyor.
     // Liste YAKALAMA TURUNDAN SONRA kuruluyor: delta'nın `sent`e çevirdiği
     // satırlar artık hiç görünmüyor.
-    items = mergeFailedOutbox(
-      selectFailedOutbox(state),
-      readFailedOutboxFromLocal({ sinceMs: startedAt - OUTBOX_DISK_MAX_AGE_MS }),
-    );
+    items = mergeFailedOutbox(selectFailedOutbox(state), readFailedOutboxFromLocal());
     pruneAttempts(items);
+    // DİSK temizliği `items`'tan SÜRÜLMEZ (gerekçe: pruneAttempts yorumu) —
+    // yüklemi gerçeğe bakan ve tavansız olan budama burada, tur başına bir kez.
+    // Açılıştaki çağrı (startChatMirror) tek başına yetmiyordu: uygulama günlerce
+    // açık kalabiliyor ve bu arada gönderilen her mesajın muhasebe satırı
+    // tabloda birikirdi.
+    try {
+      pruneOrphanSendAttempts();
+    } catch {
+      // Ayna sözleşmesi: SQL hatası turu da sohbeti de kilitlemez. Satırlar
+      // bir sonraki turda/açılışta temizlenir.
+    }
     if (!items.length) return;
 
     for (const m of items) {
@@ -517,11 +769,19 @@ export async function flushOutbox(
   }
 }
 
-/** Oturum kapanışı ve testler — bekleyen her şeyi bırak. */
+/**
+ * Oturum kapanışı ve testler — bekleyen her şeyi bırak. DİSKE DOKUNMAZ: logout
+ * temizliği `clearAllChatData`'nın işi (bkz. chatRepository). Testlerde bu
+ * fonksiyon process ölümünü taklit etmek için kullanılıyor, bu yüzden
+ * `loadedFromDisk` bayrağı da sıfırlanıyor — yoksa `loadAttemptsFromDisk`
+ * ikinci kez hiçbir şey yapmaz ve "restart sonrası disk okunuyor" testi
+ * aslında restart'tan ÖNCEki Map'i göreceği için hiçbir şey kanıtlamaz.
+ */
 export function resetOutbox(): void {
   for (const timer of ackTimers.values()) clearTimeout(timer);
   ackTimers.clear();
   attempts.clear();
+  loadedFromDisk = false;
   if (wakeTimer) {
     clearTimeout(wakeTimer);
     wakeTimer = null;
@@ -529,4 +789,5 @@ export function resetOutbox(): void {
   flushing = false;
   lastFlushAt = 0;
   roundNeedsConversationRefetch = false;
+  roundLateNoticeShown = false;
 }

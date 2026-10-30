@@ -81,6 +81,7 @@ export default function PhotoSourceSheet({
         </Text>
 
         <SourceRow
+          testID="sheet-photo-camera"
           icon="camera.fill"
           fallback={Camera}
           label={t("profile.photos.sourceCamera")}
@@ -88,6 +89,7 @@ export default function PhotoSourceSheet({
         />
         <View style={{ height: 12 }} />
         <SourceRow
+          testID="sheet-photo-gallery"
           icon="photo.on.rectangle.angled"
           fallback={Images}
           label={t("profile.photos.sourceGallery")}
@@ -103,14 +105,17 @@ function SourceRow({
   fallback,
   label,
   onPress,
+  testID,
 }: {
   icon: SFSymbol;
   fallback: typeof Camera;
   label: string;
   onPress: () => void;
+  testID?: string;
 }) {
   return (
     <AnimatedPressable
+      testID={testID}
       onPress={onPress}
       pressBounciness={0}
       accessibilityRole="button"

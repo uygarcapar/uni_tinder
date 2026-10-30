@@ -16,6 +16,12 @@ const tr = {
     camera: {
       capture: 'Fotoğraf çek',
       flip: 'Kamerayı çevir',
+      // YERİNDE ONAY yolunda çıkan düğme (bkz. cameraBridge > `commit`): kare
+      // ekranda donuyor, solda bu, sağda çağıranın gönder düğmesi.
+      retake: 'Yeniden çek',
+      // Ekrandaki TEK görünür metin. Çoğu zaman "kamera henüz hazır değil"
+      // demek, yani tekrar basmak çözüyor.
+      failed: 'Fotoğraf çekilemedi, tekrar dene.',
       flash: {
         off: 'Flaş kapalı',
         auto: 'Flaş otomatik',
@@ -951,6 +957,7 @@ const tr = {
       permissionBody: 'Sesli mesaj gönderebilmen için Ayarlar’dan mikrofon izni ver.',
       failed: 'Kayıt başlatılamadı',
       sendFailed: 'Sesli mesaj gönderilemedi',
+      recordingGone: 'Ses kaydı bulunamadı, yeniden kaydet',
       tooLarge: 'Kayıt çok büyük, daha kısa bir mesaj dene',
       badFormat: 'Kayıt biçimi desteklenmiyor, tekrar dene',
     },
@@ -980,6 +987,7 @@ const tr = {
     },
     send: {
       failed: 'Mesaj gönderilemedi.',
+      lateDelivered: 'Bekleyen mesajın gönderildi',
     },
     // Backend sohbet hata kodları (UT-67xx). Anahtarlar kodun kendisi:
     // metin koda bağlanır, backend `message`'ına DEĞİL (bkz. responseCodes.ts).
@@ -2182,7 +2190,6 @@ const tr = {
     edit: {
       button: 'Profili Düzenle',
       title: 'Profili Düzenle',
-      previewButton: 'İnsanlar beni nasıl görüyor?',
       bioPlaceholder: 'Bize kendinden bahset...',
       selectLanguage: 'Dil Seç',
       loading: 'Yükleniyor...',
@@ -2585,11 +2592,21 @@ const tr = {
     },
 
     composer: {
-      topicLabel: 'Konu seç (birden fazla seçebilirsin)',
+      // "(birden fazla seçebilirsin)" KALDIRILDI (istek): etiket artık blok
+      // başlığı gibi duruyor (beyaz, büyük punto) ve parantezli bir talimat o
+      // ölçekte başlıktan çok uyarı gibi okunuyordu.
+      topicLabel: 'Konu seç',
+      // Başlığın altındaki tek cümle (info.circle ile) — filtre sheet'indeki
+      // `filter.topicDesc`in composer karşılığı. Zorunlu alan olduğunu ve
+      // seçimin ne işe yaradığını söyleyen tek yer.
+      topicDesc: 'En az bir konu seç; gönderin o konuyu süzenlerin akışında görünür.',
       title: 'Gönderi paylaş',
       placeholder: 'Kampüse ne söylemek istersin?',
       anonymousLabel: 'Anonim paylaş',
-      anonymousHint: 'İsmin ve fotoğrafın görünmez, sadece cinsiyetin görünür.',
+      // `anonymousHint` ("İsmin ve fotoğrafın görünmez…") KALDIRILDI (istek):
+      // anahtarın adı zaten "Anonim paylaş" ve açıklama satırı kapalı dalda
+      // (paywall/kısıt) duran METİNLE aynı yeri paylaşıyordu — serbest dalda
+      // orası artık boş kalıyor.
       anonymousLocked: 'Anonim paylaşım Lit Plus ile.',
       anonymousRestricted: 'Bir süre anonim paylaşım yapamazsın.',
       // `universityHint` ("Bu gönderi {{university}} akışında görünecek.")
@@ -2721,6 +2738,15 @@ const tr = {
     // taşımıyor: ikisi de şeridin tepesindeki başlıkta ve iki başlık aynı
     // anda ekranda (bkz. CampusMapTitle > variant).
     headerTitleShort: 'Anlar',
+    // Şeridin tepesindeki başlığın ALTINDAKİ gri satır. Başlık sayıyı
+    // söylüyor, bu satır ekranın NE olduğunu söylüyor.
+    //
+    // ⚠️ KISA KALMAK ZORUNDA: 16 puntoda TEK satır çiziliyor ve sığmazsa
+    // küçülüyor (bkz. CampusMomentsStrip > DESC_*). Cümleyi uzatmak satırı
+    // sessizce 13-14pt'ye indiriyor ve başlıkla arasındaki tipografi farkı
+    // bozulur — yeni bir kural eklenecekse dolgu kutularına (campus.info.*)
+    // girmeli, buraya değil.
+    headerSubtitle: 'Kampüste paylaşılan, 24 saatlik anlar',
     momentCountOne: '{{count}} an',
     momentCountOther: '{{count}} an',
     openHint: 'Kampüs anlarını aç',
@@ -2731,8 +2757,22 @@ const tr = {
     remove: 'Kaldır',
     mine: 'Senin anın',
     underReview: 'İnceleniyor',
-    // Şeridin başındaki artı kutusu (eski sağ üst "+" cam butonunun yerine).
+    // REDDEDİLEN an — "İnceleniyor"dan AYRI olmak zorunda: redde fotoğrafın
+    // S3 nesnesi siliniyor (backend teyidi 2026-10-29), yani o kart bir daha
+    // dolmayacak. "Bekliyor" demek kullanıcıyı sonu olmayan bir beklemeye
+    // sokuyordu.
+    photoRemoved: 'Yayınlanamadı',
+    // Başlık satırının sağındaki küçük artı kutusu. Kutuda YAZI YOK — bu dize
+    // yalnız VoiceOver etiketi (bkz. CampusAddChip). Etiket bir dönem şeridin
+    // başındaki tam boy kutunun altında ÇİZİLİYORDU.
     shareBox: 'Anını paylaş',
+    // Kartın dokunma etiketi — kart artık kişinin profilini açan bir kapı
+    // (tik/X satırı kaldırıldı, bkz. CampusMomentCard).
+    // ⚠️ ARTIK ÇAĞRILMIYOR: karta dokunmak profil değil KARTIN KENDİSİNİ
+    // büyütüyor. Dize duruyor — profil ucu (`/campus/moments/{id}/profile`)
+    // gelince o yol geri açılacak.
+    openProfile: '{{name}} profilini aç',
+    openCard: '{{name}} kartını büyüt',
     // Dolgu kutularının bilgileri — boş durumun yerine geçiyor, sırası her
     // açılışta karışıyor (bkz. CampusMomentsStrip > INFO_KEYS).
     //
@@ -2898,7 +2938,9 @@ const tr = {
       unblockConfirm: 'Engeli Kaldır',
       unblockError: 'Engel kaldırılamadı.',
       loadError: 'Engellenenler listesi yüklenemedi.',
-      blockedAt: '{{date}} tarihinde engellendi',
+      // Satır başlığı — kartlardaki "İsim, yaş" düzeni. Engelleme tarihi
+      // satırı kaldırıldı (`blockedAt` anahtarı da onunla gitti).
+      nameWithAge: '{{name}}, {{age}}',
     },
   },
   // Zorunlu / önerilen güncelleme kapısı. Gövde metni normalde backend'den

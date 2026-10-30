@@ -1,6 +1,7 @@
 import {
   campusCardHeight,
   campusStripHeight,
+  campusStripScrimFade,
   campusStripScrimHeight,
 } from '@/features/campus/components/CampusMomentsStrip';
 import {
@@ -67,21 +68,23 @@ describe('kutu ve şerit ölçüleri', () => {
     expect(strip).toBeGreaterThan(campusCardHeight(852));
   });
 
-  it('ALT PERDE BAŞLIĞIN ORTASINDA bitiyor', () => {
+  it('ALT PERDE BAŞLIĞIN TEPESİNİ AŞIYOR — sönüm yazının ÜSTÜNDE', () => {
     /**
-     * Bu sayı üç kez ters yöne gitti, sırası önemli:
+     * Bu sayı dört kez ters yöne gitti, sırası önemli:
      *   1. Perde şeridin tamamıydı (+40) → "blur çok fazla", ekranın alt
      *      yarısı bulanık bir levha.
      *   2. Kutuların ALTINA indirildi → kutular opak, arkalarına perde
      *      gerekmiyordu.
      *   3. BAŞLIK ŞERİDİN TEPESİNE TAŞINDI → perdenin yine yukarı çıkması
      *      gerekti, yoksa başlık çıplak haritanın üstünde kalıyordu.
-     *   4. Şimdi başlığın TEPESİNİ DE AŞMIYOR (istek: "başlığın ortasına
-     *      kadar gelsin") — yarım satır geri çekildi.
-     *
-     * Sönümün nereye düştüğü ayrı bir ayar (`CAMPUS_STRIP_SCRIM_FADE`):
-     * geometri bandın BİTTİĞİ yeri, o da son 32pt'nin şeffaflaşmasını
-     * söylüyor.
+     *   4. Yarım başlık satırı geri çekildi ("başlığın ortasına kadar") →
+     *      sönüm tam yazının hizasına denk geldi, yani yazının ÜSTÜ yeniden
+     *      çıplak haritada kaldı.
+     *   5. Şeridin tamamı + 32 → perde başlığın 32pt üstünde TAM GÜÇTE
+     *      bitiyordu, yani levha + ani kesim.
+     *   6. ŞİMDİ: şerit + 16'lık KUYRUK. Asıl düzeltme boyda değil SÖNÜMDE
+     *      (aşağıdaki test): uzun sönüm perdeyi dipten yukarı doğru gerçekten
+     *      azaltıyor ve başlığın üstünde sıfıra varıyor.
      */
     for (const [height, bottom] of [
       [667, 0],
@@ -90,10 +93,37 @@ describe('kutu ve şerit ölçüleri', () => {
     ] as const) {
       const strip = campusStripHeight(height, bottom);
       const scrim = campusStripScrimHeight(height, bottom);
-      // Yarım başlık satırı kadar KISA: 27/2 = 13.5 → 14.
-      expect(strip - scrim).toBe(14);
+      // Kuyruk perdenin dili kadar: `CardStickyHeader`ın CHROME_BAND_TAIL'ı.
+      expect(scrim - strip).toBe(16);
       // Yine de kutuların üstüne geçiyor: başlık orada.
       expect(scrim).toBeGreaterThan(campusCardHeight(height));
+    }
+  });
+
+  it('SÖNÜM UZUN — başlık satırı + kutuların üst yarısı kadar', () => {
+    /**
+     * İstek: "progressive olsun, gittikçe azalsın; başlığın üstünde çok
+     * gözükmesin". Kısa sönüm (32) bandı levhaya çeviriyordu, bandın yarısı
+     * (varsayılan reçete) ise başlığı çıplak bırakıyordu. Doğru aralık
+     * ikisinin arasında ve ÖLÇÜYE BAĞLI: sabit bir sayı küçük telefonda
+     * bandın tamamını, tablette küçük bir ucunu kaplıyor.
+     */
+    for (const [height, bottom] of [
+      [667, 0],
+      [852, 34],
+      [932, 34],
+      [1400, 34],
+    ] as const) {
+      const fade = campusStripScrimFade(height);
+      const band = campusStripScrimHeight(height, bottom);
+      // Başlık satırını AŞIYOR: sönüm yazının hizasında başlamıyor, oraya
+      // çoktan zayıflamış hâlde geliyor.
+      expect(fade).toBeGreaterThan(37);
+      // Kutuların içine iniyor ama dibe varmıyor — perdenin TAM GÜÇTE olduğu
+      // bir alt bölüm kalmak zorunda (sekme şeridinin arkası).
+      expect(fade).toBeLessThan(band);
+      expect(fade).toBeGreaterThan(campusCardHeight(height) * 0.4);
+      expect(fade).toBeLessThan(campusCardHeight(height) + 37);
     }
   });
 

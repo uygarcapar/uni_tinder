@@ -6,11 +6,7 @@ import { openChatDb, __resetChatDbForTests } from '@/features/chat/db/chatDb';
 import { readFailedSends, saveMessage } from '@/features/chat/chatRepository';
 import { readFailedOutboxFromLocal } from '@/features/chat/chatHydrate';
 import { clear as clearMessageCache, projectWindow } from '@/features/chat/messageCache';
-import {
-  mergeFailedOutbox,
-  messageToDescriptor,
-  OUTBOX_DISK_MAX_AGE_MS,
-} from '@/features/chat/outboxPolicy';
+import { mergeFailedOutbox, messageToDescriptor } from '@/features/chat/outboxPolicy';
 import { readWindow } from '@/features/chat/chatRepository';
 import type { MessageDto } from '@/shared/types';
 
@@ -69,18 +65,6 @@ describe('readFailedSends', () => {
     expect(readFailedSends().map((r) => r.id)).toEqual(['m-eski', 'm-yeni']);
   });
 
-  it('yaş sınırından eski mesajı döndürmüyor', () => {
-    saveMessage(
-      msg('m-dün', { sentAt: iso(NOW - OUTBOX_DISK_MAX_AGE_MS - 1_000) }),
-      CONV,
-      'failed',
-    );
-    saveMessage(msg('m-taze'), CONV, 'failed');
-
-    const ids = readFailedSends({ sinceMs: NOW - OUTBOX_DISK_MAX_AGE_MS }).map((r) => r.id);
-    expect(ids).toEqual(['m-taze']);
-  });
-
   it('tur başına tavanı var', () => {
     for (let i = 0; i < 5; i++) {
       saveMessage(msg(`m${i}`, { sentAt: iso(NOW - (10 - i) * 1_000) }), CONV, 'failed');
@@ -120,6 +104,22 @@ describe('readFailedOutboxFromLocal', () => {
 
     expect(readFailedOutboxFromLocal()[0]).toBe(onScreen[0]);
   });
+
+  it('iki gün önceki başarısız mesaj da arşivden dönüyor — yaş sınırı kalktı', () => {
+    // Eskiden (OUTBOX_DISK_MAX_AGE_MS = 2 saat) bu mesaj burada hiç görünmezdi.
+    // Sınır kalktı (bkz. outboxPolicy.LATE_SEND_NOTICE_MS): backend aynı
+    // clientMessageId'yi mesaj satırı yaşadığı sürece (730 gün) idempotent
+    // kabul ediyor, yani artık "çok eski" diye bir mesajı arşivden hiç
+    // çıkarmamak için teknik bir sebep yok.
+    saveMessage(
+      msg('m-iki-gün-önce', { sentAt: iso(NOW - 2 * 24 * 60 * 60_000) }),
+      CONV,
+      'failed',
+    );
+
+    const ids = readFailedOutboxFromLocal().map((m) => m.id);
+    expect(ids).toEqual(['m-iki-gün-önce']);
+  });
 });
 
 describe('mergeFailedOutbox', () => {
@@ -157,7 +157,7 @@ describe('mergeFailedOutbox', () => {
 });
 
 // ── Yakalama turunun gönderim turunu beklemesi ──────────────────────────────
-describe('delta turu önce (inFlightPull)', () => {
+describe('delta turu önce (pullBeforeSend)', () => {
   it('delta mesajı geri getirip satırı sent yaptıysa kuyrukta görünmüyor', () => {
     // Ack kaybolmuş gönderim: diskte failed duruyor.
     saveMessage(msg('m1'), CONV, 'failed');

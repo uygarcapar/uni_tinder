@@ -12,9 +12,25 @@
     "test": "jest",
     "test:watch": "jest --watch",
     "test:ci": "jest --ci --coverage",
-    "lint": "eslint src",
+    "lint": "eslint src e2e",
     "type-check": "tsc --noEmit -p tsconfig.test.json",
-    "devtools": "react-devtools"
+    "type-check:src": "tsc --noEmit -p tsconfig.json",
+    "devtools": "react-devtools",
+    "e2e:fixtures": "node scripts/gen-e2e-fixtures.js",
+    "e2e:setup": "node --import tsx e2e/support/setup.ts",
+    "e2e:prebuild": "expo prebuild --platform ios",
+    "e2e:build": "node --import tsx e2e/support/build.ts",
+    "e2e:boot": "node --import tsx e2e/support/bootDevice.ts",
+    "e2e:seed": "node --import tsx e2e/seed/cli.ts",
+    "e2e:metro": "node --import tsx e2e/support/metro.ts",
+    "e2e:type-check": "tsc --noEmit -p e2e/tsconfig.json",
+    "e2e": "node --import tsx ./node_modules/@wdio/cli/bin/wdio.js run e2e/wdio.conf.ts",
+    "e2e:smoke": "E2E_SUITE=smoke npm run e2e",
+    "e2e:auth": "E2E_SUITE=auth npm run e2e",
+    "e2e:core": "E2E_SUITE=core npm run e2e",
+    "e2e:full": "E2E_SUITE=full npm run e2e",
+    "e2e:monkey": "E2E_SUITE=monkey npm run e2e",
+    "e2e:report": "allure generate e2e/.artifacts/allure -o e2e/.artifacts/allure-html --clean && allure open e2e/.artifacts/allure-html"
   },
   "dependencies": {
     "@expo/ui": "~56.0.23",
@@ -96,6 +112,15 @@
     "redux-persist": "^6.0.0",
     "zod": "^4.4.3"
   },
+  "expo": {
+    "autolinking": {
+      "ios": {
+        "buildFromSource": [
+          "expo-camera"
+        ]
+      }
+    }
+  },
   "private": true,
   "devDependencies": {
     "@babel/core": "^7.29.0",
@@ -104,22 +129,39 @@
     "@testing-library/jest-native": "^5.4.3",
     "@testing-library/react-native": "^13.3.3",
     "@types/jest": "^29.5.14",
+    "@types/mocha": "^10.0.10",
     "@types/react": "^19.2.17",
+    "@wdio/allure-reporter": "^9.32.0",
+    "@wdio/appium-service": "^9.32.0",
+    "@wdio/cli": "^9.32.0",
+    "@wdio/globals": "^9.31.3",
+    "@wdio/junit-reporter": "^9.32.0",
+    "@wdio/local-runner": "^9.32.0",
+    "@wdio/mocha-framework": "^9.32.0",
+    "@wdio/spec-reporter": "^9.32.0",
+    "@wdio/types": "^9.32.0",
     "@welldone-software/why-did-you-render": "^10.0.1",
+    "appium": "^2.19.0",
+    "appium-xcuitest-driver": "^9.10.5",
     "babel-jest": "^29.7.0",
     "babel-preset-expo": "~56.0.0",
     "better-sqlite3": "^13.0.3",
+    "dotenv": "^16.6.1",
     "eslint": "^9.39.4",
     "eslint-plugin-react": "^7.37.5",
     "eslint-plugin-react-hooks": "^5.2.0",
     "eslint-plugin-react-native": "^4.1.0",
+    "expect-webdriverio": "^6.1.0",
+    "form-data": "^4.0.6",
     "jest": "^29.7.0",
     "patch-package": "^8.0.1",
     "react-devtools": "^6.1.5",
     "react-test-renderer": "^19.2.3",
     "tailwindcss": "^3.3.2",
+    "tsx": "^4.23.15",
     "typescript": "^6.0.3",
-    "typescript-eslint": "^8.61.1"
+    "typescript-eslint": "^8.61.1",
+    "webdriverio": "^9.32.0"
   },
   "reanimated": {
     "staticFeatureFlags": {}

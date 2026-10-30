@@ -4,8 +4,12 @@ import { colors } from "@/shared/theme/colors";
  * BÖLÜM KUTUSU — "bir listenin satırları tek bir gri kutunun içinde" dili.
  *
  * Kullanıldığı yerler: Ayarlar'ın kök kategori listesi ve kategori sayfaları
- * (bkz. SettingsScreen > SettingsList), Gizlilik'teki rıza anahtarları, akış
- * filtre sheet'inin seçenek listeleri (bkz. FeedFilterSheet > Section).
+ * (bkz. SettingsScreen > SettingsList) ve Gizlilik'teki rıza anahtarları.
+ *
+ * AKIŞ FİLTRE SHEET'İ de bir süre buradaydı, 2026-10-27'de ÇIKTI (istek):
+ * Ayarlar'da kutunun içinde gidilen satırlar var, akış filtresinde ise üç kısa
+ * radyo/onay listesi — kutu onları sayfadan kopuk üç ada gibi gösteriyordu
+ * (bkz. FeedFilterSheet > Section).
  *
  * KEŞİF FİLTRESİ ve PROFİL DÜZENLEME bunun DIŞINDA (istek, 2026-10-13):
  * oradaki bölümlerin gövdesi bir liste değil — pill akışı, mesafe dial'i,

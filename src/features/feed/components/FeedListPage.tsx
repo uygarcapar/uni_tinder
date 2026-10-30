@@ -1,9 +1,24 @@
 import { useMemo } from "react";
-import { RefreshControl, View, type ListRenderItem } from "react-native";
-import Animated, { LinearTransition } from "react-native-reanimated";
+import {
+  ActivityIndicator,
+  FlatList,
+  RefreshControl,
+  View,
+  type ListRenderItem,
+} from "react-native";
+import Animated, {
+  Extrapolation,
+  LinearTransition,
+  createAnimatedComponent,
+  interpolate,
+  useAnimatedStyle,
+  type SharedValue,
+} from "react-native-reanimated";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { SCREEN_HEADER_TITLE_HEIGHT } from "@/shared/components/ScreenHeader";
 import { colors } from "@/shared/theme/colors";
+import type { FeedFlight } from "../feedCardFlight";
+import FeedFlightCell, { FeedFlightContext } from "./FeedFlightCell";
 // Yan pay `feedRowShell`den geliyor: satır kabuğu da onu okuyor (çizgiyi ekran
 // kenarına taşıyan negatif marj için) ve tek kaynak orada olmak zorunda — ters
 // yön döngü yapardı (bu dosya iskeleti import ediyor, iskelet de kabuğu).
@@ -39,6 +54,22 @@ export function feedListTopPadding(insetTop: number): number {
 /** Satır kaybolunca altındakiler boşluğa YAVAŞÇA kayar, yerlerine zıplamaz. */
 const ROW_LAYOUT_TRANSITION = LinearTransition.duration(220);
 
+/**
+ * UÇUŞ YOLUNUN LİSTESİ — `Animated.FlatList` DEĞİL, çıplak animasyonlu FlatList.
+ *
+ * Gerekçe tek satır: Reanimated'ın hazır listesi kendi
+ * `CellRendererComponent`ini dayatıyor ve kartın içerik uzayındaki y'sini
+ * ölçmenin başka yolu yok (uzun gerekçe FeedFlightCell'in başında). Kaybedilen
+ * tek şey `itemLayoutAnimation`, onu da hücre kendi `layout` prop'uyla
+ * karşılıyor.
+ */
+// Jenerik bir liste `createAnimatedComponent`tan tipli geçmiyor (kütüphane
+// kendi FlatList sarmalayıcısında da aynı kaçışı kullanıyor); prop'lar aşağıda
+// tek bir nesnede tiplenerek kuruluyor.
+const FlightFlatList = createAnimatedComponent(
+  FlatList,
+) as unknown as React.ComponentType<Record<string, unknown>>;
+
 export interface FeedListPageProps<T> {
   data: T[];
   renderItem: ListRenderItem<T>;
@@ -46,6 +77,12 @@ export interface FeedListPageProps<T> {
   /** Bu sayfa önde mi — scrollY ve RefreshControl bağlanması buna bakıyor. */
   isActive: boolean;
   scrollHandler?: any;
+  /**
+   * Listenin offset'i — YALNIZ kendi çekme göstergemiz için (bkz.
+   * FeedRefreshSpinner). Verilmezse gösterge yalnız `refreshing`e bakıyor,
+   * yani çekerken sessiz kalıyor ama tetiklenince yine görünüyor.
+   */
+  scrollY?: SharedValue<number>;
   /** İskelet çizilsin mi (ilk yükleme, gecikme penceresinden sonra). */
   showSkeleton?: boolean;
   /**
@@ -71,6 +108,16 @@ export interface FeedListPageProps<T> {
    */
   onRefresh?: () => void;
   refreshing?: boolean;
+  /**
+   * Kartların uçuşu — VERİLMEZSE sayfa düz liste olarak çiziliyor.
+   *
+   * ⚠️ VARSAYILAN YOK, bilerek: uçuş yalnız AKIŞ sayfasının davranışı (istek
+   * "akış kısmında"). Gönderilerim bir yönetim listesi; orada kartın
+   * kendiliğinden kaçması gönderiyi silmiş gibi okunuyor. Sessizce miras
+   * alınmasın diye bu sayfa listenin TÜRÜNÜ de değiştiriyor (bkz.
+   * FlightFlatList).
+   */
+  flight?: FeedFlight | null;
 }
 
 export default function FeedListPage<T>({
@@ -79,6 +126,7 @@ export default function FeedListPage<T>({
   keyExtractor,
   isActive,
   scrollHandler,
+  scrollY,
   showSkeleton = false,
   skeletonVariant = "feed",
   loading = false,
@@ -87,6 +135,7 @@ export default function FeedListPage<T>({
   onEndReached,
   onRefresh,
   refreshing = false,
+  flight = null,
 }: FeedListPageProps<T>) {
   const insets = useSafeAreaInsets();
 
@@ -116,26 +165,52 @@ export default function FeedListPage<T>({
     empty
   );
 
-  return (
-    <Animated.FlatList
-      data={data}
-      renderItem={renderItem}
-      keyExtractor={keyExtractor}
-      onScroll={isActive ? scrollHandler : undefined}
-      scrollEventThrottle={16}
-      itemLayoutAnimation={ROW_LAYOUT_TRANSITION}
-      ListHeaderComponent={listHeader}
-      ListEmptyComponent={emptyComponent}
-      contentContainerStyle={
-        data.length === 0 && !showSkeleton
-          ? emptyListContentStyle
-          : listContentStyle
-      }
-      onEndReached={onEndReached}
-      // 0.5 ≈ bir ekran boyu kala: cursor turu kullanıcı dibe varmadan dönsün.
-      onEndReachedThreshold={0.5}
-      showsVerticalScrollIndicator={false}
-      refreshControl={
+  // Prop'lar TEK nesnede: iki liste yolu (düz / uçuşlu) aynı yapılandırmayı
+  // paylaşmak zorunda — ikisi elle yazılsaydı biri değiştiğinde iki sayfa
+  // sessizce ayrışırdı.
+  const listProps = {
+    data,
+    renderItem,
+    keyExtractor,
+    onScroll: isActive ? scrollHandler : undefined,
+    /**
+     * ⚠️🔴 16 — VE 1'E ÇEKİLMEMELİ. Bir tur uçuş yolunda 1 denendi (gerekçe:
+     * kartın konumu scroll olayından türüyor, 16 ≈ 60Hz ProMotion'da 120Hz
+     * kaydırmanın yarı frekansı) ve GERİ ALINDI: şikâyet "sayfa ilk açıldığında
+     * kaydırırken header sürekli titriyor"du.
+     *
+     * ── Sebep ────────────────────────────────────────────────────────────────
+     * `ScreenHeader`ın bandı bir KADEMELİ BLUR (MaskedView + LinearGradient +
+     * BlurView) ve OPAKLIKLA söndürülüyor: `scrollY` [0, 60] aralığında
+     * interpolate ediliyor (bkz. ScreenHeader > headerBackgroundStyle). Alfası
+     * değişen bir blur her güncellemede offscreen pass + yeniden derleme
+     * demek; bu projenin kendi kuralı da bunu yazıyor ("blur'u opaklıkla
+     * söndürmek titreme üretiyor", bkz. FeedScreen > sekme şeridinin notu).
+     * Olay hızını ikiye katlamak o pencerede titremeyi görünür hâle getiriyor —
+     * ve pencere tam olarak "tepedeyken kaydırmaya başlamak".
+     *
+     * ⚠️ Projedeki HER liste 16'da (LikesScreen, MessagesScreen,
+     * ChatMessageList, kayıt adımları). Akışı tek başına ayırmak, header'ı
+     * yalnız bu sekmede titreten şey oldu.
+     *
+     * Yapışmanın 60Hz'de kalmasının bedeli: 110px'lik yapışma penceresinde
+     * dönüşüm her İKİ karede bir güncelleniyor. Takas bilinçli — kartın
+     * yapışmasındaki ince kademelenme, her kaydırma başında titreyen bir
+     * başlıktan iyidir. Asıl çözüm bu sayı değil, başlığın blur'unu alfayla
+     * söndürmeyi bırakmak (ama o `ScreenHeader` ve BÜTÜN ekranları etkiler).
+     */
+    scrollEventThrottle: 16,
+    ListHeaderComponent: listHeader,
+    ListEmptyComponent: emptyComponent,
+    contentContainerStyle:
+      data.length === 0 && !showSkeleton
+        ? emptyListContentStyle
+        : listContentStyle,
+    onEndReached,
+    // 0.5 ≈ bir ekran boyu kala: cursor turu kullanıcı dibe varmadan dönsün.
+    onEndReachedThreshold: 0.5,
+    showsVerticalScrollIndicator: false,
+    refreshControl:
         // ⚠️ YALNIZ aktif sayfada ve yalnız onRefresh verilmişse. PagerView
         // içinde dikey çekme yatay sayfa jestiyle yarışabiliyor; arka plandaki
         // sayfalara da takmak yarışı üçe katlardı.
@@ -143,22 +218,110 @@ export default function FeedListPage<T>({
           <RefreshControl
             refreshing={refreshing}
             onRefresh={onRefresh}
-            tintColor={colors.textSecondary}
-            colors={[colors.text]}
-            progressBackgroundColor={colors.bg}
-            // ⚠️ contentContainerStyle'ın paddingTop'u spinner'ı KAPSAMIYOR:
-            // spinner scroll 0'da doğuyor, yani bulanık header'ın ALTINDA
-            // kalıyordu. Bu onu şeridin altına indiriyor.
-            //
-            // ⚠️ `refreshOffset` PROP'U KALDIRILDI: tek müşterisi akış sayfası
-            // ve orada çark artık HİÇ YOK — aşağı çekmek haritayı açıyor
-            // (gerekçe FeedScreen > onRefresh). Çarkı olan tek sayfa
-            // Gönderilerim ve orada varsayılan yer doğru.
-            progressViewOffset={insets.top + SCREEN_HEADER_TITLE_HEIGHT}
+            /**
+             * ⚠️🔴 NATİVE ÇARK GÖRÜNMEZ — kontrol yalnız JESTİ ve EŞİĞİ
+             * taşıyor, görünen gösterge bizim (bkz. FeedRefreshSpinner).
+             *
+             * Konumlandırma prop'u (`progressViewOffset` / eski `refreshOffset`)
+             * ARTIK HİÇ VERİLMİYOR ve geri gelmemeli: RN'in kendi kaynağında
+             * (RCTRefreshControl.m > _applyProgressViewOffset) o sayı
+             * kontrolün FRAME'ini aşağı itiyor, `UIRefreshControl` de eşiği
+             * kendi frame'ine göre ölçüyor. Yani sayı çarkın yeri DEĞİL,
+             * EŞİĞİN DE YERİ: 109pt aşağı itilen kontrol 109pt fazla çekme
+             * istiyor. Şikâyet üç turdur aynıydı ("çok fazla aşağı çekiyorum")
+             * ve iki tur yanlış yerde arandı — sayı küçültüldü, tuzak kaldı.
+             *
+             * Offset'siz hâlde native çark scroll view'ın tepesinde, yani
+             * DURUM ÇUBUĞUNUN ALTINDA doğuyor; görünür bırakılsa oradan yanıp
+             * sönerdi. Şeffaf: eşik native mesafesinde kalıyor, görünen şeyi
+             * biz çiziyoruz.
+             */
+            tintColor="transparent"
+            colors={["transparent"]}
+            progressBackgroundColor="transparent"
           />
-        ) : undefined
-      }
-    />
+        ) : undefined,
+  };
+
+  const list = flight ? (
+    <FeedFlightContext.Provider value={flight}>
+      <FlightFlatList {...listProps} CellRendererComponent={FeedFlightCell} />
+    </FeedFlightContext.Provider>
+  ) : (
+    <Animated.FlatList {...listProps} itemLayoutAnimation={ROW_LAYOUT_TRANSITION} />
+  );
+
+  // Çekme göstergesi olmayan sayfa (onRefresh yok / arkadaki sayfa) listeyi
+  // ÇIPLAK döndürüyor: gereksiz bir kap native ağaca bir katman daha ekler.
+  if (!onRefresh || !isActive) return list;
+
+  return (
+    // ⚠️ `collapsable={false}`: stili yalnız `flex: 1` olan bir `View` native
+    // ağaçta doğmuyor ve çocuklarının zIndex'i köke taşınıyor (proje notu) —
+    // gösterge listenin üstünde kalmak zorunda.
+    <View style={{ flex: 1 }} collapsable={false}>
+      {list}
+      <FeedRefreshSpinner
+        refreshing={refreshing}
+        scrollY={scrollY}
+        // Başlık şeridinin DİBİ: gösterge sekmelerin altında beliriyor, durum
+        // çubuğunun altında değil (native çarkın offset'siz hâlinin sorunu).
+        top={insets.top + SCREEN_HEADER_TITLE_HEIGHT}
+      />
+    </View>
+  );
+}
+
+/**
+ * ÇEKME GÖSTERGESİ — native çarkın yerine geçen, KENDİ çizdiğimiz çark.
+ *
+ * Varlık sebebi `RefreshControl`ün yanındaki uzun notta: konumlandırma prop'u
+ * eşiği de ittiği için "görünür çark" ile "kısa çekme" aynı knob'da
+ * çatışıyordu. Burada ikisi ayrı: eşik native'de, konum burada.
+ *
+ * ⚠️ ÇEKERKEN DE TEPKİ VERİYOR, yalnız `refreshing`e bakmıyor: tetiklenmeden
+ * önce hiçbir şey göstermeyen bir yüzey, parmağın altında "bir şey oluyor mu?"
+ * sorusunu bırakıyor — native çarkın lastikle birlikte gelmesinin tek işi
+ * buydu. Opaklık `scrollY`nin NEGATİF değerinden (lastik esnemesi) türüyor.
+ *
+ * ⚠️ `pointerEvents="none"`: gösterge listenin ÜSTÜNDE duruyor, dokunuşu
+ * yutarsa altındaki ilk kart basılamaz hâle gelir.
+ *
+ * ⚠️ Opaklık animasyonu burada GÜVENLİ (projenin "cam/blur'u alfayla söndürme"
+ * kuralının kapsamı değil): bu bir `ActivityIndicator`, offscreen pass
+ * gerektiren bir malzeme değil.
+ */
+function FeedRefreshSpinner({
+  refreshing,
+  scrollY,
+  top,
+}: {
+  refreshing: boolean;
+  scrollY?: SharedValue<number>;
+  top: number;
+}) {
+  const style = useAnimatedStyle(() => {
+    if (refreshing) return { opacity: 1 };
+    if (!scrollY) return { opacity: 0 };
+    // Lastik aşağı esnerken `contentOffset.y` NEGATİF oluyor; çekme mesafesi
+    // onun işareti değişmiş hâli. 8 ölü bölge (momentum sekmesi göstergeyi
+    // çağırmasın), 56 native tetikleme eşiğine yakın.
+    const pull = Math.max(0, -scrollY.value);
+    return {
+      opacity: interpolate(pull, [8, 56], [0, 1], Extrapolation.CLAMP),
+    };
+  });
+
+  return (
+    <Animated.View
+      pointerEvents="none"
+      style={[
+        { position: "absolute", top, left: 0, right: 0, alignItems: "center" },
+        style,
+      ]}
+    >
+      <ActivityIndicator color={colors.textSecondary} />
+    </Animated.View>
   );
 }
 
@@ -203,9 +366,14 @@ const EMPTY_PANEL_BOUNCE_OVERSHOOT = 420;
  * görünüş. Varsayılan KAPALI: yeni bir boş durum ekleyen biri panelin
  * sahipliğini düşünmek zorunda kalsın, sessizce miras almasın.
  *
- * Panel açıkken: gönderi yüzeyi kılığında bir modal (istek: "arka planı boş
- * olmasın, post arka plan rengi/border/borderCurve'ü olan bir modal olsun;
- * alttan ve yanlardan doldursun").
+ * Panel açıkken: SAYFA ZEMİNİ (`colors.bg`) rengiyle alttan ve yanlardan
+ * taşan düz bir yüzey. Bir ara gönderi yüzeyi kılığında (`colors.surface` +
+ * `ROW_RADIUS` + üst hairline) bir modal denendi ve geri alındı (istek:
+ * "arkaplan rengi bizim normal arkaplan rengi olsun sayfaların ve üstte
+ * border belli oluyor, border kaldır"): kart görünümü boş durumu sayfadan
+ * ayrı bir levha gibi gösteriyordu, üst çizgi de ekranın ortasında asılı
+ * duran bir ayraç olarak okunuyordu. Kalan tek iş TAŞMA (bkz. aşağı) —
+ * yüzeyin kendisi artık sayfadan ayırt edilemiyor.
  *
  * İÇERİĞİN YERİ DEĞİŞMEDİ: ölçüler MESAJLAR ekranından — orada da `flex-1
  * items-center justify-center` ve `pb-[40%]` var (bkz. MessagesScreen >
@@ -213,10 +381,10 @@ const EMPTY_PANEL_BOUNCE_OVERSHOOT = 420;
  * sekmelerden birkaç puan aşağıda duruyordu. Zemin eklenirken bu üçlüye
  * DOKUNULMADI; eklenen tek şey yüzeyin kendisi.
  *
- * ZEMİN: `colors.surface` + `ROW_RADIUS` + `borderCurve: continuous` üçü de
- * `feedRowShell`in TA KENDİSİ (tek kaynak). Boş sayfa ile dolu sayfa aynı
- * pager'da yan yana kaydırılıyor; ayrı bir gri ya da ayrı bir yarıçap ikisini
- * iki ayrı ürün gibi gösterirdi.
+ * ZEMİN: `colors.bg` — kardeş sekmelerin (Mesajlar, Bildirimler, Keşif) sayfa
+ * zemininin TA KENDİSİ. Boş sayfa ile dolu sayfa aynı pager'da yan yana
+ * kaydırılıyor; boş tarafa ayrı bir gri vermek ikisini iki ayrı ürün gibi
+ * gösteriyordu.
  *
  * ⚠️ SABİT YÜKSEKLİK YOK, PANEL KALAN ALANI DOLDURUYOR — bir ara 280'lik bir
  * kart denendi ve reddedildi (istek): ekranın altında bir şerit `bg` kalıyordu
@@ -238,12 +406,13 @@ const EMPTY_PANEL_BOUNCE_OVERSHOOT = 420;
  * sayfanın dibine oturan bir yüzey; 10'luk pay onu yine "asılı levha"ya
  * çeviriyordu. Yani liste payı `-LIST_H_PADDING` ile TAMAMEN geri alınıyor.
  *
- * ⚠️ YALNIZ ÜST KÖŞELER YUVARLAK, YALNIZ ÜST ÇERÇEVE VAR: panelin alt ve yan
- * kenarları ekranın dışında kalıyor, oraya çizilen yarıçap/çizgi görünmüyordu
- * ama köşe eğrisi iki yanda görünür bir "kırpılmış köşe" bırakıyordu. Çerçeve
- * değeri ProfileScreen'in bölümlerinden (0.5 / `colors.hairline` — bkz.
- * profile/components/SelfieVerificationRow:154), `colors.border` DEĞİL: bu bir
- * kutu kenarı, sayfa zemini üstündeki ayraç değil.
+ * ⚠️ ÜST YARIÇAP KALIYOR, ÇERÇEVE GİTTİ: üst hairline (0.5 /
+ * `colors.hairline`) KALDIRILDI — zemin sayfa rengine dönünce ekranda görünen
+ * tek işaret o oldu ve "sayfanın ortasına çizilmiş bir çizgi" gibi okunuyordu.
+ * `ROW_RADIUS` + `borderCurve: continuous` ise DURUYOR (istek: "border
+ * radiusu kaldırma"): panelin alt ve yan kenarları ekranın dışında kalıyor,
+ * yuvarlaklık yalnız üstte çalışıyor ve satır kabuğuyla (`feedRowShell`) aynı
+ * değer olmak zorunda — silmeye kalkma.
  *
  * ⚠️ `EmptyState`in kendi `topOffset`u da SIFIRLANMALI (varsayılanı 24).
  * Mesajlar `topOffset={0}` geçiyor; sarmalayıcı zaten dikeyde ortalıyor,
@@ -289,12 +458,10 @@ export function FeedEmptyWrap({
         // onun yarısı kadar aşağı kayıyor — metnin yeri bu değişiklikte
         // oynamamalı.
         paddingBottom: overshoot,
-        backgroundColor: colors.surface,
+        backgroundColor: colors.bg,
         borderTopLeftRadius: ROW_RADIUS,
         borderTopRightRadius: ROW_RADIUS,
         borderCurve: "continuous",
-        borderTopWidth: 0.5,
-        borderColor: colors.hairline,
       }}
     >
       {content}

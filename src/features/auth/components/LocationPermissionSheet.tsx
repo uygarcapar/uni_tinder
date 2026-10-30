@@ -71,6 +71,12 @@ interface LocationPermissionSheetProps {
    * da çizilmiyor: sürüklenemeyen bir sheet'te tutamaç yalan söylüyor.
    */
   dismissible?: boolean;
+  /**
+   * e2e kök işaretçisi. Kapatılamaz kapı kipinde (LocationAccessGate)
+   * `gate-location` veriliyor — maymunun "kapanmayan modal" dedektörü
+   * `gate-*` öneklerini MUAF tutuyor, çünkü kapanmaması gereken şeyler bunlar.
+   */
+  testID?: string;
 }
 
 export default function LocationPermissionSheet({
@@ -80,6 +86,7 @@ export default function LocationPermissionSheet({
   onGranted,
   layout = "centered",
   dismissible = true,
+  testID = "sheet-location",
 }: LocationPermissionSheetProps) {
   const { t } = useTranslation();
   const { height: windowHeight } = useWindowDimensions();
@@ -205,6 +212,8 @@ export default function LocationPermissionSheet({
   const primaryButton = (
     <View style={{ width: "100%" }}>
       <AnimatedPressable
+        // Tek CTA: izin reddedilmemişse "İzin Ver", reddedilmişse "Ayarlar".
+        testID="sheet-location-allow"
         onPress={denied ? handleOpenSettings : handleRequest}
         disabled={busy}
         style={{
@@ -261,6 +270,7 @@ export default function LocationPermissionSheet({
 
   const retryLink = denied ? (
     <TouchableOpacity
+      testID="sheet-location-retry"
       onPress={handleRequest}
       disabled={busy}
       activeOpacity={0.8}
@@ -304,7 +314,7 @@ export default function LocationPermissionSheet({
     >
       {page ? (
         <BottomSheetView style={{ paddingTop: dismissible ? 12 : 36 }}>
-          <View style={{ paddingHorizontal: 24, gap: 8 }}>
+          <View testID={testID} style={{ paddingHorizontal: 24, gap: 8 }}>
             <Text style={{ color: colors.text, fontSize: 36, fontWeight: "700" }}>
               {denied ? t("auth.step9.deniedTitle") : t("auth.step9.title")}
             </Text>
@@ -359,6 +369,7 @@ export default function LocationPermissionSheet({
             paddingBottom: 32,
             alignItems: "center",
           }}
+          testID={testID}
         >
           <View style={{ marginBottom: 24 }}>{iconCircle}</View>
 

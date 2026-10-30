@@ -408,7 +408,7 @@ export default function RegisterStep16Screen({
   const alcoholIcon = getAlcoholIcon();
 
   return (
-    <View className="flex-1" style={{ backgroundColor: colors.bg }}>
+    <View testID="reg-step16-screen" className="flex-1" style={{ backgroundColor: colors.bg }}>
       <Reanimated.ScrollView
         onScroll={scrollHandler}
         scrollEventThrottle={16}
@@ -569,7 +569,7 @@ export default function RegisterStep16Screen({
             className="flex-row items-center justify-between"
           >
             <RegisterBackButton onPress={() => navigation.goBack()} />
-            <TouchableOpacity activeOpacity={0.9} onPress={handleSkip}>
+            <TouchableOpacity testID="reg-step16-skip" activeOpacity={0.9} onPress={handleSkip}>
               <Text
                 className="text-[16px] font-semibold"
                 style={{ color: colors.textSecondary }}
@@ -586,6 +586,7 @@ export default function RegisterStep16Screen({
       {/* Sticky Button */}
       <RegisterStickyFooter>
         <AnimatedPressable
+          testID="reg-btn-next"
           style={{
             borderRadius: 999,
             borderCurve: "continuous",

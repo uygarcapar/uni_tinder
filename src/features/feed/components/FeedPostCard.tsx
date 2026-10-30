@@ -5,7 +5,10 @@ import { useTranslation } from "react-i18next";
 import { MoreHorizontal, User } from "@/shared/icons";
 import SFIcon from "@/shared/components/SFIcon";
 import HeartGlyph from "@/shared/components/HeartGlyph";
-import { colors } from "@/shared/theme/colors";
+import { colors, ink } from "@/shared/theme/colors";
+// Kapsülün ölçüleri ORTAK: filtre sheet'i ve composer'ın çipleri de aynı
+// sayıları okuyor (gerekçe: feedTopicPill).
+import { TOPIC_FILL_ALPHA, TOPIC_TEXT, topicPillInk } from "./feedTopicPill";
 import formatRelativeTime from "@/shared/utils/formatRelativeTime";
 import toDisplayLowercase from "@/shared/utils/textCase";
 import { anonymousLabelKey } from "../feedPolicy";
@@ -88,6 +91,44 @@ export const BLOCK_GAP = 12;
  */
 export const BODY_FONT_SIZE = 16.5;
 export const BODY_LINE_HEIGHT = 22.5;
+
+/**
+ * KONU ETİKETİNİN YATAY PAYI — "biraz daha azalt" (istek, iki tur: 9 → 6 → 4).
+ *
+ * ⚠️ İKİ YERDE OKUNUYOR ve aynı sayı olmak ZORUNDA: çipin `paddingHorizontal`ı
+ * ve satırın negatif `marginLeft`i. Ayrışırlarsa kapsülün kenarı gövde
+ * metninin sol kenarından kayar — kaldırılan eski çipin tek gerçek kusuru
+ * buydu (gerekçe kullanıldığı yerde).
+ *
+ * ⚠️ 4, ÇERÇEVE GİTTİĞİ İÇİN MÜMKÜN: konturlu hâlinde bu pay çizgiyi yazıya
+ * değdiriyordu. Dolgulu kapsülde sınır yazının kendisi değil, dolgunun kenarı
+ * — 4pt orada hâlâ nefes bırakıyor. Daha aşağısı (2) kapsülü yazının arka
+ * planı gibi gösteriyor, "etiket" okunuşunu bitiriyor.
+ *
+ * ⚠️ YALNIZ KARTIN SAYISI: bir tur filtre/composer çipleriyle ortaklandı ve
+ * geri alındı (istek) — gerekçe feedTopicPill'in başında.
+ */
+const TOPIC_PAD_H = 4;
+
+/**
+ * KAPSÜLÜN DOLGU YOĞUNLUĞU — "hafif, opacity'yi biraz da azalt" (istek).
+ *
+ * ⚠️ `ink()` ile birlikte okunmalı: ton temanın TERSİ (açıkta siyah, koyuda
+ * beyaz), yani bu alfa "ne kadar zıt" demek. 0.08 kartın zemininden ayrılan en
+ * ince kademe: açık temada ≈#EBEBEB, koyu temada ≈#1E1E1E.
+ *
+ * ⚠️ `colors.hairline` (0.1) ÖZELLİKLE KULLANILMADI: o token ÇİZGİ için var ve
+ * bir çizginin alfası bir YÜZEYİN alfasından farklı okunuyor (aynı değer geniş
+ * bir alanda daha ağır). İsteğin yönü de aşağıydı.
+ *
+ * ⚠️ 0.12 ÜSTÜ: kapsül kartın üstünde ayrı bir yüzey gibi duruyor ve eski
+ * `surface2` çipinin "etiket bir buton mu?" sorusuna geri dönülüyor.
+ *
+ * ⚠️ SAYININ KENDİSİ ARTIK `feedTopicPill`DE (yukarıda import ediliyor):
+ * filtre sheet'inin ve composer'ın çipleri de aynı görünüşe bağlandı (istek)
+ * ve üç yüzey tek sayıyı okumak zorunda. Gerekçeler burada kaldı — kapsülün
+ * sahibi hâlâ bu kart.
+ */
 
 /**
  * Beğeni kalbinin ölçüleri.
@@ -400,18 +441,28 @@ function FeedPostCardBase({
           listeyi istemeden daraltır ve geri dönmenin yolunu aramak zorunda
           kalırdı — konu seçimi filtrenin işi.
 
-          ⚠️ KAPSÜL KALDIRILDI (istek). Eskiden `surface2` dolgulu bir çipti ve
-          9'luk yatay payı etiketi gövde metninden 9pt içeri itiyordu: kartın
-          sol kenarı üç farklı hizada başlıyordu (avatar · gövde · çip). Artık
-          düz metin, yani sol kenarı gövdeyle BİREBİR aynı — hizayı kuran şey
-          dolgunun yokluğu, negatif bir pay değil.
+          ── KAPSÜL GERİ GELDİ (istek: önce "border koy", sonra "borderi sil,
+          arkaplan rengi olsun") ───────────────────────────────────────────────
+          Eskiden `surface2` DOLGULU bir çipti ve kaldırılmasının sebebi dolgu
+          değil, 9'luk yatay payıydı: kartın sol kenarı üç farklı hizada
+          başlıyordu (avatar · gövde · çip). O tespit hâlâ geçerli, o yüzden bu
+          turda pay KÜÇÜK (`TOPIC_PAD_H` = 4) ve satır aynı sayı kadar SOLA
+          çekiliyor — kapsülün KENARI gövde metninin sol kenarıyla birebir
+          hizalı, yani ekranda yine tek bir hiza var.
 
-          Punto da gövdeyle AYNI (BODY_FONT_SIZE, 12 değil): etiket kartın
-          künyesi değil, yazının bir parçası gibi okunsun. Ayrımı `#` ve
-          `textSecondary` grisi taşıyor — gövde metni `text`.
+          ⚠️ HİZALANAN ŞEY KENAR, YAZI DEĞİL: çerçeveli bir kutuda gözün
+          hizaladığı şey kutunun kenarı. Negatif pay olmasa kapsül gövdeden
+          `TOPIC_PAD_H` kadar içeri kaçardı; yazıyı hizalamak için negatif pay
+          verilmese de kenar dışarı taşardı. İkisinden biri seçilmek zorunda.
 
-          Alan gelmezse çizilmiyor (varsayılan "Genel" UYDURULMUYOR: konusuz
-          bir gönderiyi etiketlemek yanlış bilgi olurdu). */}
+          ⚠️ NEGATİF PAY KARTIN DOLGUSUNUN İÇİNE TAŞIYOR, dışına değil: satır
+          kartın kendi yatay payının (LIST_H_PADDING ailesi) içinde duruyor ve
+          `TOPIC_PAD_H` o payın çok altında. Büyütülürse kapsül kartın kenarına
+          dayanır.
+
+          Punto, ağırlık ve renk TARİHTEN geliyor (aşağıdaki blok). Alan
+          gelmezse çizilmiyor (varsayılan "Genel" UYDURULMUYOR: konusuz bir
+          gönderiyi etiketlemek yanlış bilgi olurdu). */}
       {topics.length > 0 ? (
         <View
           style={{
@@ -420,21 +471,84 @@ function FeedPostCardBase({
             // Etiketler arası pay GÖVDE PUNTOSUNA göre: aynı satırda iki
             // hashtag yan yana dururken 8 onları tek bir kelime öbeği gibi
             // gösteriyordu, 12 ayırıyor ama satır sarmasını da bozmuyor.
+            //
+            // ⚠️ KAPSÜLLERİN ARASINDAKİ boşluk: `columnGap` kenar kutuları
+            // arasında ölçülüyor, yani yatay pay eklenmesi aradaki GÖRÜNEN
+            // açıklığı değiştirmiyor.
             columnGap: 12,
             rowGap: 2,
             marginTop: 10,
+            // Kapsülün kenarını gövdenin sol kenarına getiren tek şey
+            // (gerekçe yukarıda). Sarmalayıcıda, ilk çipte DEĞİL: satır
+            // sarabiliyor ve ikinci satırın ilk çipi de aynı hizaya düşmek
+            // zorunda.
+            marginLeft: -TOPIC_PAD_H,
           }}
         >
           {topics.map((key) => (
             <Text
               key={key}
               style={{
-                color: colors.textSecondary,
-                fontSize: BODY_FONT_SIZE,
-                lineHeight: BODY_LINE_HEIGHT,
-                // Gövdeyle aynı puntoda ama aynı AĞIRLIKTA değil (500 / 400):
-                // etiket satırı gövdenin devamı gibi okunmasın.
-                fontWeight: "500",
+                /**
+                 * ⚠️🔴 ARTIK GÖVDENİN DEĞİL, TARİHİN ÖLÇÜSÜ (istek: "hashtag
+                 * rengi tarihle aynı olsun, boyutu da").
+                 *
+                 * Punto 15 ve renk `textMuted` tarihten geliyor (ağırlık
+                 * ARTIK AYRI — gerekçesi aşağıda). Yani etiket gövdenin bir
+                 * parçası değil, satırın KÜNYESİ — isim/tarih satırıyla aynı
+                 * aileden.
+                 *
+                 * ⚠️ `textSecondary` → `textMuted`: İKİSİ ŞU AN AYNI DEĞER
+                 * (iki palette de #8E8E93), yani bu tur ekranda bir renk
+                 * değişimi DEĞİL. Token yine de tarihin token'ına çevrildi:
+                 * ikisi bir gün ayrışırsa birlikte ayrışmaları gerekiyor.
+                 *
+                 * ⚠️ `lineHeight` ORANDAN: gövdenin 1.36'sı (15 × 1.36 ≈ 20.5).
+                 * Tarihte `lineHeight` yok çünkü o tek satır; buradaki satır
+                 * SARIYOR (`flexWrap` + `rowGap`) ve tanımsız bırakılırsa iki
+                 * satırlı etiket öbeği sıkışık okunuyor.
+                 *
+                 * ⚠️ Gövdenin sabitleri (BODY_FONT_SIZE / BODY_LINE_HEIGHT)
+                 * BİLEREK KULLANILMIYOR: gövde "bi tık artır" istekleriyle
+                 * büyüdüğünde (15.5 → 16.5) etiket onunla birlikte büyümemeli.
+                 */
+                color: topicPillInk(),
+                ...TOPIC_TEXT,
+                /**
+                 * ⚠️ AĞIRLIK TARİHTEN AYRILDI (istek: "bi tık daha bold yap,
+                 * 400'se 500 yap"): punto ve renk hâlâ tarihin ölçüsü, ağırlık
+                 * ARTIK DEĞİL. 15pt'lik gri bir yazı kapsülün içinde tarihten
+                 * daha silik okunuyordu; 500 onu zeminden ayırıyor, 600 ise
+                 * etiketi gövdeyle rekabet eder hâle getiriyordu.
+                 */
+                /**
+                 * ── DOLGU, ÇERÇEVE DEĞİL (istek, ikinci tur) ───────────────
+                 *
+                 * ⚠️ ÇERÇEVE SİLİNDİ: bir tur 1px `textMuted` konturu vardı.
+                 * Yazıyla aynı tondaki bir çizgi, 15pt'lik bir etiketin
+                 * etrafında yazıdan daha BASKIN okunuyordu — kapsül etiketi
+                 * taşımak yerine ona rakip oluyordu. Dolgu aynı işi (etiketi
+                 * bir kutuya alma) gürültü çıkarmadan yapıyor.
+                 *
+                 * ⚠️ RENK TEMANIN TERSİ (`ink`): açık temada siyah, koyu
+                 * temada beyaz — yani kapsül her iki temada da kartın
+                 * zemininden bir kademe AYRILIYOR. Sabit bir gri (`surface2`,
+                 * eski çipin dolgusu) bunu yapamıyor: tema tokenları
+                 * ailesinden türüyor ve koyuda neredeyse siyah, açıkta
+                 * neredeyse beyaz, yani birinde zemine karışıyor.
+                 *
+                 * ⚠️ PALET MUTABLE: `ink()` RENDER SIRASINDA çağrılıyor.
+                 * Modül sabitine alınırsa tema çevrildiğinde eski renk kalır.
+                 *
+                 * ⚠️ Yarıçap KAPSÜL: kutu ≈23.5pt (20.5 satır + 2×1.5 pay) ve
+                 * 12 onu tam yuvarlatıyor. Köşeli bir kutu uygulamada "seçili
+                 * pill" ailesinden ayrışırdı.
+                 */
+                backgroundColor: ink(TOPIC_FILL_ALPHA),
+                borderRadius: 12,
+                borderCurve: "continuous",
+                paddingHorizontal: TOPIC_PAD_H,
+                paddingVertical: 1.5,
               }}
             >
               {topicHashtag(key, null)}
@@ -454,6 +568,7 @@ function FeedPostCardBase({
         {/* Kendi gönderini beğenemezsin (UT-7330) → buton hiç çizilmiyor,
             yalnız sayı duruyor. */}
         <Pressable
+          testID={`feed-card-like-${post.id}`}
           onPress={handleLike}
           disabled={post.isMine || !onToggleLike}
           hitSlop={8}
@@ -484,24 +599,60 @@ function FeedPostCardBase({
               strokeWidth={1.3}
             />
           )}
-          <Text
-            style={{
-              marginLeft: LIKE_COUNT_MARGIN,
-              // 13.5 → 15: satırın geri kalanı (yanıt sayısı, yanıt butonu)
-              // 13.5'te duruyor ama bu sayı artık 24pt'lik bir kalbin yanında
-              // ve o ölçüde ufak kalıyordu.
-              fontSize: 15,
-              fontWeight: "600",
-              // ⚠️ Sayı KALBİN RENGİNDE, kendi grisinde değil (istek): boş
-              // kalpte kontur `textMuted` çiziliyor, `textSecondary` onun
-              // yanında daha koyu bir ikinci gri olarak okunuyordu. İki eleman
-              // tek bir ölçüyü söylüyor, tek renkten olmalı — dolu dalda da
-              // ikisi birlikte kırmızıya geçiyor.
-              color: post.likedByMe ? colors.errorStrong : colors.textMuted,
-            }}
-          >
-            {post.likeCount}
-          </Text>
+          {/* ⚠️ SIFIR HİÇ YAZILMIYOR (istek): beğenisi olmayan gönderide
+              kalbin yanında duran "0", bir ölçü yerine boş bir sonuç bildirisi
+              gibi okunuyordu — üstelik kendi gönderinde (buton pasif) tek
+              başına kalan rakam bir eylem değil, bir yoklukdu. Satırın
+              yapısına dokunmadan yalnız METİN düşüyor: kalp yerinde kalıyor,
+              `LIKE_COUNT_MARGIN` de metinle birlikte gidiyor, yani boş bir pay
+              kalbi sola kaydırmıyor.
+
+              ⚠️ `post.likeCount > 0` yazımı KASITLI (`!== 0` değil): sunucu
+              alanı hiç göndermezse (`undefined`) de sayı çizilmiyor. */}
+          {post.likeCount > 0 ? (
+            <Text
+              style={{
+                marginLeft: LIKE_COUNT_MARGIN,
+                // 13.5 → 15: satırın geri kalanı (yanıt sayısı, yanıt butonu)
+                // 13.5'te duruyor ama bu sayı artık 24pt'lik bir kalbin
+                // yanında ve o ölçüde ufak kalıyordu.
+                fontSize: 15,
+              /**
+               * 400 → 500 (istek: "weight'i bi tık artır").
+               *
+               * ⚠️ KALBİN ÇİZGİSİYLE EŞLEŞME BİLİNÇLİ OLARAK BIRAKILDI. Eski
+               * kural "kalbin strokewidth'i ile aynı weight" idi ve sayıyı
+               * 400'e çiviliyordu: kalbin konturu ekranda ≈1.23pt (1.3 viewBox
+               * birimi × ≈0.95, gerekçe `strokeWidth`in yanında) ve SF Pro'nun
+               * 15pt'teki dikey gövdesi Regular ≈1.2pt. Yeni istek bir tık
+               * kalın istiyor; 500 (Medium ≈1.5pt) o tık. ÜST SINIR 600: eski
+               * turda denenmiş ve "kalbin iki katı mürekkep" diye geri
+               * alınmıştı (Semibold ≈1.9pt).
+               *
+               * ⚠️ PUNTOYLA BAĞLI: 15 büyütülürse gövde de kalınlaşır, yani
+               * ayarlanacak şey yine bu ağırlık.
+               */
+                fontWeight: "500",
+                /**
+                 * ⚠️🔴 SAYI RENKTEN BAĞIMSIZ GRİ — BEĞENİLİ HÂLDE DE (istek).
+                 *
+                 * Bu kural TERSİNE DÖNDÜ. Eski gerekçe: "iki eleman tek bir
+                 * ölçüyü söylüyor, tek renkten olmalı" — dolu dalda kalp ve
+                 * sayı birlikte kırmızıya geçiyordu. İstek bunu reddetti: renk
+                 * DURUMU söylüyor (beğendim mi), sayı ise bir ÖLÇÜ (kaç kişi
+                 * beğendi) ve ölçünün benim kararımla renk değiştirmesi için
+                 * bir sebep yok. Durumu taşıyan tek eleman kalp.
+                 *
+                 * ⚠️ `textSecondary` DEĞİL `textMuted`: boş kalpte kontur da
+                 * bu griyle çiziliyor, yani ikisi aynı gri. İki ayrı gri yan
+                 * yana durduğunda biri "soluk", öteki "daha soluk" okunuyordu.
+                 */
+                color: colors.textMuted,
+              }}
+            >
+              {post.likeCount}
+            </Text>
+          ) : null}
         </Pressable>
 
         {/* Esnek boşluk: beğeni solda, (Gönderilerim'de) yanıt sayısı sağ uçta.

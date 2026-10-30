@@ -119,6 +119,7 @@ import {
   frame,
   fixedSize,
   accessibilityLabel,
+  accessibilityIdentifier as a11yIdentifier,
 } from "@expo/ui/swift-ui/modifiers";
 
 // REANIMATED & GESTURE HANDLER IMPORTLARI
@@ -2275,7 +2276,7 @@ export default function ProfileScreen() {
   }, [loading, completionMetrics]);
 
   return (
-    <GestureHandlerRootView style={{ flex: 1 }}>
+    <GestureHandlerRootView testID="profile-screen" style={{ flex: 1 }}>
       <View style={{ flex: 1, backgroundColor: colors.bg }}>
         <StatusBar barStyle={isLight() ? "dark-content" : "light-content"} />
 
@@ -2874,6 +2875,7 @@ export default function ProfileScreen() {
                   <SwiftUIButton
                     onPress={() => navigation.navigate("Notifications")}
                     modifiers={[
+                      a11yIdentifier("profile-btn-notifications"),
                       // Kabuk YOK, cam glifin üstünde: berrak camın buton stili
                       // karşılığı olmadığı için — gerekçenin tamamı
                       // glassIconClearGlyph'in başında.
@@ -2933,6 +2935,7 @@ export default function ProfileScreen() {
                   <SwiftUIButton
                     onPress={() => navigation.navigate("Settings")}
                     modifiers={[
+                      a11yIdentifier("profile-btn-settings"),
                       // Çan butonuyla birebir aynı — bkz. glassIconClearGlyph.
                       buttonStyle("plain"),
                       tint(colors.text),
@@ -3046,10 +3049,12 @@ export default function ProfileScreen() {
                 highlightPhotoId={highlightPhotoId}
                 onAddPhoto={handleAddPhoto}
                 onPhotoPress={handlePhotoPress}
-                onPreview={() => {
-                  setEditVisible(false);
-                  setTimeout(() => setPreviewVisible(true), 400);
-                }}
+                // `onPreview` GİTTİ: formdaki "İnsanlar beni nasıl görüyor?"
+                // butonu kaldırıldı (gerekçe EditProfileForm'da, butonun
+                // yerinde). Aşağıdaki `PreviewModal` + `previewVisible` state'i
+                // KASITLI duruyor — onu da silmek önizleme kartını, kartın
+                // sticky şeridini ve `CardEditGlassButton`ı birden söker;
+                // girişin nereye taşınacağına karar verilene kadar dursun.
                 onSavingChange={setSavingProfile}
                 onSaved={handleFormSaved}
               />

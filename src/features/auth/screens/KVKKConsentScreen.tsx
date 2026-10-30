@@ -71,6 +71,7 @@ export default function KVKKConsentScreen({ visible }) {
           }}
         >
           <TouchableOpacity
+            testID="gate-kvkk-checkbox"
             activeOpacity={0.8}
             onPress={() => setAgreed((v) => !v)}
             style={{
@@ -112,6 +113,8 @@ export default function KVKKConsentScreen({ visible }) {
           </TouchableOpacity>
 
           <TouchableOpacity
+            // Checkbox işaretlenmeden PASİF — kapının iddiası bu.
+            testID="gate-kvkk-accept"
             onPress={handleAccept}
             disabled={loading || !agreed}
             activeOpacity={0.85}

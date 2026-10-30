@@ -20,9 +20,49 @@ export type CameraShot = {
   height: number;
 };
 
+/**
+ * ÇEKİM İSTEĞİ — çağıranın kameraya söyleyebildiği tek şey.
+ *
+ * `facing`: ekran hangi kamerayla AÇILSIN. Kullanıcı yine çevirebiliyor; bu
+ * yalnız başlangıç. Kampüs anları "ön kamerayla açılsın" diyor (istek): orada
+ * paylaşılan şey kişinin kendisi, yani her seferinde çevirmek zorunda kalmak
+ * fazladan bir dokunuş. Profil/kayıt akışları varsayılanda (arka) kalıyor —
+ * oraya bir kıyafet/ortam fotoğrafı da girebiliyor.
+ */
+export type CameraRequest = {
+  facing?: "front" | "back";
+  /**
+   * ── YERİNDE ONAY (istek: "çektiğim ekranda foto static kalsın, oradan
+   * gönder'e basınca göndereyim, ekstra modal filan açma") ──────────────────
+   *
+   * Verilirse ekran deklanşörden sonra KAPANMIYOR: kare pencerenin içinde
+   * donuyor ve altta bir gönder düğmesi çıkıyor. Düğmeye basılınca iş BURADA
+   * yapılıyor — `commit` çözülene kadar ekran açık, düğmede dönen bir gösterge
+   * var ve dönen metin satır içinde hata olarak basılıyor.
+   *
+   * Dönüş sözleşmesi: `null` = başarılı (ekran kapanır), string = HATA METNİ
+   * (ekran açık kalır, kullanıcı yeniden çekebilir ya da tekrar deneyebilir).
+   *
+   * ⚠️ NEDEN ÇAĞIRANIN FONKSİYONU, bir `onCaptured` callback'i DEĞİL: gönderme
+   * işi (ölçekleme + S3 + kayıt) saniyeler sürüyor ve o sürenin görünür olduğu
+   * yer bu ekran olmak zorunda. Ekran kapanıp iş arkada koşsaydı kullanıcı
+   * "oldu mu olmadı mı" sorusuyla haritaya dönerdi — kaldırılan onay sheet'i de
+   * tam bu yüzden `sharing` boyunca kapanmıyordu.
+   *
+   * Verilmezse davranış ESKİSİ GİBİ: kare çekilir, ekran kapanır, `captured`
+   * sonucu çağırana döner (profil/kayıt akışları bu dalda — orada çekimden
+   * sonra kırpıcı açılıyor).
+   */
+  commit?: (shot: CameraShot) => Promise<string | null>;
+  /** Gönder düğmesinin metni — yoksa ortak "Kaydet". */
+  commitLabel?: string;
+};
+
 export type CameraOutcome =
   /** Kullanıcı deklanşöre bastı, kare diskte. */
   | { status: "captured"; shot: CameraShot }
+  /** Yerinde onay yolu: `commit` başarıyla koştu, iş BİTTİ (bkz. `commit`). */
+  | { status: "committed" }
   /** Kullanıcı vazgeçti (✕). */
   | { status: "cancelled" }
   /** Kamera ekranı yok/söküldü — çağıran ImagePicker yoluna düşmeli. */
@@ -31,11 +71,11 @@ export type CameraOutcome =
   | { status: "failed"; error: unknown };
 
 type Settle = (outcome: CameraOutcome) => void;
-type Presenter = (settle: Settle) => void;
+type Presenter = (request: CameraRequest, settle: Settle) => void;
 
 let presenter: Presenter | null = null;
 
-type QueueEntry = { resolve: Settle };
+type QueueEntry = { request: CameraRequest; resolve: Settle };
 const queue: QueueEntry[] = [];
 let inFlight: QueueEntry | null = null;
 
@@ -44,7 +84,7 @@ const drain = () => {
   const next = queue.shift();
   if (!next) return;
   inFlight = next;
-  presenter((outcome) => {
+  presenter(next.request, (outcome) => {
     // Aynı istek iki kez sonuçlanamaz (iptal ile hata aynı karede düşerse) —
     // yoksa kuyruk bir adım kayar ve yanlış promise çözülür.
     if (inFlight !== next) return;
@@ -79,13 +119,18 @@ export function isCameraCaptureAvailable() {
  * ASLA ASILI KALMAZ: host bağlı değilse (testler, teardown penceresi) anında
  * `unavailable` çözülür.
  */
-export function presentCameraCapture(): Promise<CameraOutcome> {
+export function presentCameraCapture(
+  request: CameraRequest = {},
+): Promise<CameraOutcome> {
   if (!presenter) {
     devLog("📸 [camera] host bağlı değil, sistem kamerasına düşülüyor");
     return Promise.resolve({ status: "unavailable" });
   }
   return new Promise<CameraOutcome>((resolve) => {
-    queue.push({ resolve });
+    // ⚠️ İstek KUYRUKTA taşınıyor, modül seviyesinde bir "son istek"
+    // değişkeninde DEĞİL: iki çağrı üst üste gelirse (kırpıcıdaki ✕ ile
+    // kameraya dönüş) ikincisinin ayarı birincinin oturumuna sızardı.
+    queue.push({ request, resolve });
     drain();
   });
 }

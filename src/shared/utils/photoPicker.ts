@@ -3,10 +3,21 @@ import * as ImagePicker from 'expo-image-picker';
 import type { ImagePickerAsset } from 'expo-image-picker';
 import { Directory, File, Paths } from 'expo-file-system';
 
+import { ImageManipulator, SaveFormat } from 'expo-image-manipulator';
+
 import { presentCropper } from '@/shared/components/cropper/cropperBridge';
-import { presentCameraCapture } from '@/shared/components/camera/cameraBridge';
+import {
+  presentCameraCapture,
+  type CameraRequest,
+} from '@/shared/components/camera/cameraBridge';
+import {
+  centerCropRect,
+  OUTPUT_H,
+  OUTPUT_QUALITY,
+  OUTPUT_W,
+} from '@/shared/components/cropper/cropGeometry';
 import { devLog } from './devLog';
-import { forgetPhoto } from './photoStore';
+import { forgetPhoto, persistPickedPhoto } from './photoStore';
 
 export type PickedPhoto = {
   uri: string;
@@ -33,6 +44,13 @@ export type PickedPhoto = {
  * yalnızca overlay bağlı değilse devreye giren yedek. Gerekçesi uzun uzun
  * `captureAndCropPhoto`ın başında: eski yol deklanşörden sonra ikinci bir onay
  * ekranı getiriyordu.
+ *
+ * ── İKİ ÇEKİM YOLU VAR, karıştırma ─────────────────────────────────────────
+ *   `captureAndCropPhoto` → çek + KIRPMA EKRANI + kalıcı dosya. Profil ve
+ *                           kayıt akışları: kadrajı kullanıcı seçiyor.
+ *   `captureRawPhoto`     → çek ve HAM kareyi dön, kırpma ekranı YOK. Kampüs
+ *                           anları (istek). Ölçekleme ayrı ve sonradan:
+ *                           `fitPhotoForUpload`.
  *
  * İptal HATA DEĞİLDİR: iptal edilen fotoğraf atlanır, hiç seçim kalmazsa boş
  * dizi döner. Kamera izni reddi çağırana fırlar.
@@ -136,6 +154,27 @@ export const pickAndCropPhotos = async (maxFiles: number): Promise<PickedPhoto[]
 };
 
 /**
+ * Kamera izni — İKİ çekim yolunun ORTAK kapısı (kırpıcılı ve kırpıcısız).
+ *
+ * İzni native hata kodunu ayrıştırmak yerine AÇIKÇA soruyoruz: çağıranlar
+ * `E_NO_CAMERA_PERMISSION` bekliyor ve `canAskAgain` ile "Ayarlar" butonu
+ * gösterebiliyorlar. İzin ImagePicker üzerinden soruluyor, expo-camera ile
+ * AYNI native izin (NSCameraUsageDescription); iki yolda da geçerli.
+ */
+const ensureCameraPermission = async (): Promise<void> => {
+  let permission = await ImagePicker.getCameraPermissionsAsync();
+  if (!permission.granted && permission.canAskAgain) {
+    permission = await ImagePicker.requestCameraPermissionsAsync();
+  }
+  if (!permission.granted) {
+    const error: any = new Error('camera permission denied');
+    error.code = CAMERA_PERMISSION_ERROR;
+    error.canAskAgain = permission.canAskAgain;
+    throw error;
+  }
+};
+
+/**
  * Kamerayla çek + aynı 3:4 kırpma. Tek fotoğraf döner; çekim ya da kırpma
  * iptal edilirse null.
  *
@@ -156,27 +195,20 @@ export const pickAndCropPhotos = async (maxFiles: number): Promise<PickedPhoto[]
  * Overlay bağlı değilse (host sökülmüş, test ortamı) eski ImagePicker yoluna
  * düşüyoruz — fotoğraf eklemek hiç çalışmamasından iyi.
  *
- * İzni native hata kodunu ayrıştırmak yerine AÇIKÇA soruyoruz — çağıranlar
- * `E_NO_CAMERA_PERMISSION` bekliyor ve `canAskAgain` ile "Ayarlar" butonu
- * gösterebiliyorlar. İzin ImagePicker üzerinden soruluyor, expo-camera ile
- * AYNI native izin (NSCameraUsageDescription); iki yolda da geçerli.
+ * ⚠️ KAMPÜS ANLARI BU YOLU KULLANMIYOR: orada kırpma ekranı da yok (bkz.
+ * `captureRawPhoto`). İki yolu ayrı tutmanın sebebi ürün: profil fotoğrafının
+ * kadrajını kullanıcı seçiyor, kampüs anının kadrajı ise kameranın
+ * penceresinin kendisi.
  */
-export const captureAndCropPhoto = async (): Promise<PickedPhoto | null> => {
-  let permission = await ImagePicker.getCameraPermissionsAsync();
-  if (!permission.granted && permission.canAskAgain) {
-    permission = await ImagePicker.requestCameraPermissionsAsync();
-  }
-  if (!permission.granted) {
-    const error: any = new Error('camera permission denied');
-    error.code = CAMERA_PERMISSION_ERROR;
-    error.canAskAgain = permission.canAskAgain;
-    throw error;
-  }
+export const captureAndCropPhoto = async (
+  options: CameraRequest = {},
+): Promise<PickedPhoto | null> => {
+  await ensureCameraPermission();
 
   // Sonsuz döngü yok: her tur kullanıcıdan YENİ bir deklanşör basışı istiyor,
   // kamerada iptal (ya da teknik hata) anında çıkıyor.
   for (;;) {
-    const outcome = await presentCameraCapture();
+    const outcome = await presentCameraCapture(options);
 
     if (outcome.status === 'unavailable') return captureWithSystemCamera();
     if (outcome.status === 'cancelled') return null;
@@ -184,6 +216,10 @@ export const captureAndCropPhoto = async (): Promise<PickedPhoto | null> => {
       devLog('📷 [photoPicker] çekim başarısız', outcome.error);
       return null;
     }
+    // ⚠️ `committed` BU YOLDA İMKÂNSIZ: yerinde onay yalnız `commit` verildiğinde
+    // açılıyor ve bu çağrı onu geçmiyor (kadrajı kullanıcı kırpıcıda seçiyor).
+    // Kontrol tip daraltması için duruyor, bir dal olarak değil.
+    if (outcome.status === 'committed') return null;
 
     const { shot } = outcome;
     // Boyut native'den gelmezse (0) ölçüyü kendimiz okuyoruz — kırpma
@@ -216,14 +252,295 @@ export const captureAndCropPhoto = async (): Promise<PickedPhoto | null> => {
   }
 };
 
-/** Uygulama içi kamera yoksa eski yol. Çift onay burada KALIYOR — bilerek. */
-const captureWithSystemCamera = async (): Promise<PickedPhoto | null> => {
-  const result = await ImagePicker.launchCameraAsync({
-    mediaTypes: ['images'],
-    allowsEditing: false,
-    exif: false,
-    base64: false,
+/** Kırpıcıdan GEÇMEYEN çekimin çıktısı — ham kamera karesi. */
+export type RawShot = {
+  uri: string;
+  /** `0` gelebilir (native vermediyse); `fitPhotoForUpload` o zaman ölçüyor. */
+  width: number;
+  height: number;
+};
+
+/**
+ * ══════════════════════════════════════════════════════════════════════════
+ * ŞİŞMİŞ KARE = expo-camera PATCH'İ BU BİNARY'DE YOK (teşhis kancası).
+ * ══════════════════════════════════════════════════════════════════════════
+ * `patches/expo-camera+56.0.8.patch` olmadan `ExpoCameraUtils
+ * .normalizeOrientation` `UIGraphicsImageRenderer`a format VERMİYOR ve bitmap
+ * EKRAN ölçeğiyle (iPhone'da 3.0) doğuyor: kare her kenarda 3 kat, piksel
+ * sayısında 9 KAT. Belirtisi uygulamanın deklanşörden ~5sn sonra SESSİZCE
+ * ölmesi (jetsam; natif istisna JS'e gelmiyor, `catch` hiç çalışmıyor) —
+ * cihaz log'unda `JetsamEvent … largestProcess: Lit … reason:
+ * "per-process-limit"`.
+ *
+ * Teşhisi 5 saniyeye indiren tek şey bu satır: patch yüklüyse 12MP bir
+ * telefonun karesi ~3000×4000 gelir, patch düşmüşse ~9000×12000. Yani bu
+ * uyarıyı gören kişinin yapacağı şey kodu kurcalamak DEĞİL, NATIVE REBUILD
+ * (`npx expo run:ios --device`) — Metro reload yetmez, patch Swift tarafında.
+ *
+ * ⚠️ Eşik 5000: 48MP telefonların ham karesi 8064 ve o YASAL (patch tavanı
+ * 12MP ama tavanın üstündeki tek ölçü varsa ona düşüyor). 5000 ile 9072
+ * arasında bir kare üretebilecek bir cihaz bilmiyoruz; yanlış pozitif olsa da
+ * bedeli bir log satırı.
+ */
+const INFLATED_LONG_EDGE = 5000;
+
+const warnIfFrameInflated = (width: number, height: number): void => {
+  const longEdge = Math.max(width, height);
+  if (longEdge <= INFLATED_LONG_EDGE) return;
+  devLog(
+    '📷 [photoPicker] 🔴 KARE ŞİŞMİŞ — expo-camera patch\'i bu BINARY\'de yok gibi. ' +
+      'NATIVE REBUILD gerekiyor (npx expo run:ios --device); Metro reload yetmez.',
+    { width, height },
+  );
+};
+
+/**
+ * ══════════════════════════════════════════════════════════════════════════
+ * ÇEK VE DOĞRUDAN DÖN — KIRPMA EKRANI YOK (kampüs anları, istek).
+ * ══════════════════════════════════════════════════════════════════════════
+ * `captureAndCropPhoto`ın kırpıcısız kardeşi. İstek birebir şuydu: "artıya
+ * basınca galeri filan sunmasın direkt kamerayı açsın, çekince de preview
+ * olarak dursun ekranda, loading'e girmesin, sonra da yollayayım".
+ *
+ * Yani akış: deklanşör → ÖNİZLEME (paylaşım onayı) → paylaş. Arada kırpma
+ * ekranı yok ve olmasına gerek de yok: kamera 3:4 çekiyor ve kullanıcının
+ * deklanşöre basarken gördüğü pencere TAM OLARAK o kare (bkz.
+ * CameraCaptureOverlay > `pictureSize`/`frameWindow`). Kırpıcı o kareyi
+ * yeniden onaylatmaktan başka bir şey yapmıyordu.
+ *
+ * ⚠️ BU YOL AYRICA DAHA AZ BELLEK: kırpıcı 12MP kareyi JS tarafında bir kez
+ * daha decode + render ediyor (`ImageManipulator`) ve o adım kampüs akışında
+ * çekimden sonra uygulamanın ölmesinin en olası ikinci sebebiydi (ilki native
+ * çekimin kendisi, bkz. `patches/expo-camera+56.0.8.patch`). Ölçekleme artık
+ * paylaşma anında, TEK seferde yapılıyor (`fitPhotoForUpload`).
+ *
+ * ⚠️ DOSYA HAM VE BÜYÜK: döndürülen URI kameranın cache kopyası, 12MP'e kadar.
+ * Yüklemeye GİTMEZ — çağıran paylaşırken `fitPhotoForUpload`dan geçirmek
+ * zorunda. Önizlemede sorun değil: expo-image dosyayı gösterim ölçeğinde
+ * çözüyor.
+ *
+ * Overlay bağlı değilse (simülatör, test) sistem kamerasına düşüyor; orada
+ * ikinci onay ekranı var ama fotoğraf eklemek hiç çalışmamasından iyi.
+ */
+export const captureRawPhoto = async (
+  options: CameraRequest = {},
+): Promise<RawShot | null> => {
+  await ensureCameraPermission();
+
+  const outcome = await presentCameraCapture(options);
+
+  if (outcome.status === 'captured') {
+    const { shot } = outcome;
+    warnIfFrameInflated(shot.width, shot.height);
+    return { uri: shot.uri, width: shot.width, height: shot.height };
+  }
+  // Yerinde onay bu çağrıda açılmıyor (`commit` geçilmiyor) — tip daraltması.
+  if (outcome.status === 'committed') return null;
+  if (outcome.status === 'cancelled') return null;
+  if (outcome.status === 'failed') {
+    devLog('📷 [photoPicker] çekim başarısız', outcome.error);
+    return null;
+  }
+
+  // `unavailable` → sistem kamerası. Burada kırpma YOK (bu yolun tamamı
+  // kırpıcısız); gelen asset'i ham kare gibi geçiriyoruz.
+  let result: ImagePicker.ImagePickerResult;
+  try {
+    result = await ImagePicker.launchCameraAsync({
+      mediaTypes: ['images'],
+      allowsEditing: false,
+      exif: false,
+      base64: false,
+      cameraType: options.facing === 'front'
+        ? ImagePicker.CameraType.front
+        : ImagePicker.CameraType.back,
+    });
+  } catch (error) {
+    devLog('📷 [photoPicker] sistem kamerası açılamadı', error);
+    return null;
+  }
+  if (result.canceled || !result.assets?.length) return null;
+  const [asset] = result.assets;
+  return { uri: asset.uri, width: asset.width ?? 0, height: asset.height ?? 0 };
+};
+
+/**
+ * `captureAndSendPhoto`ın sonucu.
+ *
+ * `error` YALNIZ YEDEK YOLDA dolu: uygulama içi kamera ekranı açıldıysa hata
+ * metni ORADA satır içinde gösterildi ve kullanıcı aynı kareyle tekrar
+ * deneyebildi — çağıranın ikinci bir yerde aynı şeyi söylemesi gürültü. Sistem
+ * kamerasına düşülen dalda (simülatör, overlay söküldü) gösterecek bir yüzey
+ * yok, o yüzden metin çağırana veriliyor.
+ */
+export type SendShotResult = { sent: boolean; error: string | null };
+
+/**
+ * ══════════════════════════════════════════════════════════════════════════
+ * ÇEK → KARE EKRANDA DONSUN → AYNI EKRANDAN GÖNDER (istek).
+ * ══════════════════════════════════════════════════════════════════════════
+ * İstek birebir: "fotoyu çektikten sonra loader geliyor hâlâ kamera
+ * çalışırken, çok uzun sürüyor; direkt çektiğim ekranda foto static kalsın,
+ * oradan göndere basınca göndereyim, ekstra modal filan açma".
+ *
+ * `captureRawPhoto`dan farkı TEK ŞEY: kare çekildikten sonra ekran KAPANMIYOR.
+ * Önizleme ve onay kameranın kendi penceresinde oluyor, gönderme işini de
+ * `commit` orada koşturuyor (gösterge gönder düğmesinde, hata satır içinde).
+ * Yani akış tek ekran: deklanşör → donmuş kare → gönder.
+ *
+ * KALDIRDIĞI ADIM: çekimden sonra açılan onay sheet'i (`CampusMomentComposer`).
+ * O sheet önizleme + paylaş düğmesi + satır içi hatadan oluşuyordu; üçü de
+ * buraya taşındı, yani kaybolan bir yetenek yok — kaybolan şey bir modal.
+ *
+ * ⚠️ `commit` SANİYELER SÜRER ve ekran o boyunca açık kalır: sözleşme
+ * `cameraBridge > commit`te (null = başarılı, string = satır içi hata).
+ *
+ * ⚠️ HAM DOSYANIN SAHİBİ `commit`: başarıda da hatada da silme/saklama kararı
+ * onun (kampüs yolunda `fitPhotoForUpload` ayrı bir dosya üretiyor ve ham kare
+ * yalnız başarıdan sonra unutuluyor).
+ */
+export const captureAndSendPhoto = async (options: {
+  facing?: 'front' | 'back';
+  /** Gönder düğmesinin metni — kampüste "Paylaş". */
+  commitLabel?: string;
+  commit: (shot: RawShot) => Promise<string | null>;
+}): Promise<SendShotResult> => {
+  await ensureCameraPermission();
+
+  const outcome = await presentCameraCapture({
+    facing: options.facing,
+    commitLabel: options.commitLabel,
+    commit: (shot) => {
+      warnIfFrameInflated(shot.width, shot.height);
+      return options.commit({
+        uri: shot.uri,
+        width: shot.width,
+        height: shot.height,
+      });
+    },
   });
+
+  if (outcome.status === 'committed') return { sent: true, error: null };
+  if (outcome.status === 'failed') {
+    devLog('📷 [photoPicker] çekim başarısız', outcome.error);
+    return { sent: false, error: null };
+  }
+  // ⚠️ `captured` BU YOLDA GELMEZ: `commit` verildiği için ekran kareyi kendi
+  // içinde tutuyor. Yine de yutulmuyor — gelirse kare kaybolmuş olur.
+  if (outcome.status === 'captured') {
+    devLog('📷 [photoPicker] 🔴 yerinde onay yolunda `captured` döndü');
+    forgetPhoto(outcome.shot.uri);
+    return { sent: false, error: null };
+  }
+  if (outcome.status === 'cancelled') return { sent: false, error: null };
+
+  /**
+   * `unavailable` → SİSTEM KAMERASI. Orada ikinci onay ekranı sistemin
+   * kendisinde ("Tekrar Çek / Fotoğrafı Kullan"), yani önizleme yine var;
+   * gönderme işi buradan tetikleniyor ve hata metni ÇAĞIRANA dönüyor (gerekçe
+   * `SendShotResult`ta).
+   */
+  let result: ImagePicker.ImagePickerResult;
+  try {
+    result = await ImagePicker.launchCameraAsync({
+      mediaTypes: ['images'],
+      allowsEditing: false,
+      exif: false,
+      base64: false,
+      cameraType:
+        options.facing === 'front'
+          ? ImagePicker.CameraType.front
+          : ImagePicker.CameraType.back,
+    });
+  } catch (error) {
+    devLog('📷 [photoPicker] sistem kamerası açılamadı', error);
+    return { sent: false, error: null };
+  }
+  if (result.canceled || !result.assets?.length) {
+    return { sent: false, error: null };
+  }
+  const [asset] = result.assets;
+  const failure = await options.commit({
+    uri: asset.uri,
+    width: asset.width ?? 0,
+    height: asset.height ?? 0,
+  });
+  return { sent: !failure, error: failure ?? null };
+};
+
+/**
+ * HAM KAREYİ YÜKLEME ÇIKTISINA ÇEVİRİR — sessiz, arayüzsüz.
+ *
+ * Kırpıcının son adımının (`handleConfirm`) kullanıcı kadrajı olmayan hâli:
+ * ortadan 3:4 kes, `OUTPUT_W×OUTPUT_H`ye ölçekle, `OUTPUT_QUALITY` ile JPEG
+ * kaydet ve kalıcı dizine taşı. Kaynak zaten 3:4 ise kesilen tek bir piksel
+ * bile yok (bkz. `centerCropRect`).
+ *
+ * ⚠️ NEDEN PAYLAŞMA ANINDA, ÇEKİMDEN HEMEN SONRA DEĞİL: istek "çekince
+ * loading'e girmesin"di. Ölçekleme 12MP bir karede yüz milisaniyeleri alıyor
+ * ve deklanşörle önizleme arasına girerse kullanıcı tam o anda bir yükleme
+ * görüyor. Paylaşma anında ise zaten bir yükleme durumu var (S3 PUT).
+ *
+ * ⚠️ `release()` İHMAL EDİLEMEZ: 12MP bir kaynakta sızdırılan tek bir ImageRef
+ * ~50 MB ve bu yol her paylaşımda koşuyor.
+ */
+export const fitPhotoForUpload = async (
+  shot: RawShot,
+): Promise<PickedPhoto | null> => {
+  const size =
+    shot.width > 0 && shot.height > 0
+      ? { width: shot.width, height: shot.height }
+      : await measure(shot.uri);
+  if (!size) return null;
+
+  const rect = centerCropRect({
+    srcW: size.width,
+    srcH: size.height,
+    aspectW: 3,
+    aspectH: 4,
+  });
+
+  const context = ImageManipulator.manipulate(shot.uri);
+  let ref: Awaited<ReturnType<typeof context.renderAsync>> | null = null;
+  try {
+    context.crop(rect).resize({ width: OUTPUT_W, height: OUTPUT_H });
+    ref = await context.renderAsync();
+    const result = await ref.saveAsync({
+      compress: OUTPUT_QUALITY,
+      format: SaveFormat.JPEG,
+    });
+    const fileName = `photo_${Date.now()}.jpg`;
+    const uri = await persistPickedPhoto(result.uri, fileName);
+    return { uri, mime: 'image/jpeg', fileName };
+  } catch (error) {
+    devLog('📷 [photoPicker] yükleme ölçeklemesi başarısız', error);
+    return null;
+  } finally {
+    ref?.release?.();
+    context.release?.();
+  }
+};
+
+/**
+ * Uygulama içi kamera yoksa eski yol. Çift onay burada KALIYOR — bilerek.
+ *
+ * FAIL-SOFT: bu yola düşmenin en sık sebebi kamera DONANIMININ olmaması
+ * (simülatör) ve `launchCameraAsync` orada fırlatıyor. Çağıranların üçü de
+ * hatayı yutup logluyor; yine de null'a çevirip tek bir davranış bırakıyoruz.
+ */
+const captureWithSystemCamera = async (): Promise<PickedPhoto | null> => {
+  let result: ImagePicker.ImagePickerResult;
+  try {
+    result = await ImagePicker.launchCameraAsync({
+      mediaTypes: ['images'],
+      allowsEditing: false,
+      exif: false,
+      base64: false,
+    });
+  } catch (error) {
+    devLog('📷 [photoPicker] sistem kamerası açılamadı', error);
+    return null;
+  }
 
   if (result.canceled || !result.assets?.length) return null;
   const [photo] = await cropSequentially(result.assets.slice(0, 1));

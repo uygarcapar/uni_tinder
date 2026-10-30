@@ -4,13 +4,17 @@ import { useTranslation } from "react-i18next";
 import AppModal, {
   SHEET_PICKER_SNAP_POINTS,
 } from "@/shared/components/AppModal";
+import AnimatedPressable from "@/shared/components/AnimatedPressable";
 import SFIcon from "@/shared/components/SFIcon";
 import { Check, Info, Lock } from "@/shared/icons";
-import { colors } from "@/shared/theme/colors";
+import { colors, ink } from "@/shared/theme/colors";
+// Çipin seçilmemiş hâli AKIŞ KARTINDAKİ hashtag kapsülünün ta kendisi —
+// ölçüler oradan geliyor, burada yeniden yazılmıyor (gerekçe: Chip).
 import {
-  sectionGroupStyle,
-  SECTION_GROUP_PAD_H,
-} from "@/shared/theme/sectionGroup";
+  TOPIC_FILL_ALPHA,
+  TOPIC_TEXT,
+  topicPillInk,
+} from "./feedTopicPill";
 import type { FeedInterest, FeedKind, FeedSort } from "../feedTypes";
 
 /**
@@ -134,12 +138,6 @@ export default function FeedFilterSheet({
         title={t("feed.filter.topic")}
         description={t("feed.filter.topicDesc")}
         first
-        // ÇİP AKIŞI GRUP KUTUSUNA GİRMİYOR: `sectionGroup.ts`'in başlığındaki
-        // kural — kapsüllerden oluşan bir gövde kutuya alındığında çerçeve
-        // içinde çerçeve çıkıyor (keşif filtresi ve profil düzenlemenin bu
-        // kutudan muaf tutulmasının aynı gerekçesi). Bölüm ayrımını burada
-        // başlık + açıklama taşıyor.
-        bare
       >
         <TopicChips
           keys={topicKeys}
@@ -225,17 +223,46 @@ export default function FeedFilterSheet({
 }
 
 /**
+ * BİR BÖLÜMÜN İÇERİĞİYLE SONRAKİ BAŞLIK ARASINDAKİ BOŞLUK.
+ *
+ * ⚠️ "İçeriğin altındaki boşluk" diye ayrı bir sayı YOK: `children` bölümün
+ * kabının İÇİNDE duruyor ve kabın alt payı yok — o boşluğu SONRAKİ bölümün
+ * `marginTop`u veriyor. Ayarlanacak sayı burası.
+ *
+ * 20 → 40 → 48 → 60, üç istek üst üste: önce "boşluklar profil düzenleme
+ * modalındaki gibi olsun" (orada bölüm sarmalayıcısı 28 + başlık bloğu 12 =
+ * 40), sonra "içeriklerin altına biraz daha boşluk ver", sonra "daha da artır".
+ *
+ * ⚠️ 20, GRUP KUTUSU KALKINCA 28'DEN DÜŞÜRÜLMÜŞTÜ: kutu iki bölümün arasına
+ * kendi kenarlığını koyuyordu ve 28 o çizgiyle birlikte ölçülmüştü. Çizgi
+ * gidince boşluğun tek başına ayırması gerekti — düşürmek değil, ARTIRMAK
+ * gerekiyormuş; bu üç tur onu düzeltiyor.
+ *
+ * ⚠️ BU SAYI PROFİL DÜZENLEME RİTMİNDEN ARTIK KASITLI OLARAK AYRI (20px): o
+ * eşitlik bir istekti ve sonraki iki istek onun üstüne geldi. Geri
+ * eşitlenecekse EditProfileForm'un 13 bölümü de birlikte değişmeli; yalnız
+ * burayı 40'a döndürmek üç turluk kararı sessizce siler.
+ *
+ * ⚠️ İLK BÖLÜM MUAF (`first` → 4): içerik kabı header'a zaten
+ * MODAL_HEADER_HEIGHT ayırıyor, üstüne bölüm payı binince ilk başlık
+ * butonlardan ~114 aşağıda kalıyor ve sheet boş açılmış gibi duruyordu.
+ */
+const SECTION_GAP = 60;
+
+/**
  * Bölüm başlığı — PROFİL DÜZENLEME ekranındaki bölüm başlığının birebir kalıbı
- * (bkz. EditProfileForm: `marginTop: 28`, başlık 20/600 `text`, altında 16
- * nefes). Eskiden 13/600 `textSecondary` küçük bir etiketti ve seçenekleri
- * dolgulu bir kutuya alıyordu — iki ekran aynı soruyu iki ayrı dille soruyordu.
+ * (bkz. EditProfileForm: başlık 20/600 `text`, altında açıklama + nefes).
+ * Eskiden 13/600 `textSecondary` küçük bir etiketti.
+ *
+ * GÖVDE KUTUSUZ — hepsi için. Bir ara seçenek listeleri `sectionGroupStyle()`
+ * gri kutusuna giriyordu (çip akışı `bare` ile muaftı); 2026-10-27'de kutu
+ * tümden kalktı ve `bare` propuyla birlikte gitti.
  */
 function Section({
   title,
   description,
   locked,
   first,
-  bare,
   children,
 }: {
   title: string;
@@ -243,28 +270,33 @@ function Section({
   description: string;
   locked?: boolean;
   /**
-   * Gövde GRUP KUTUSUNA ALINMIYOR — çip/kapsül akışı için.
+   * İlk bölüm — bölümler arası pay BURADA UYGULANMIYOR.
    *
-   * `sectionGroup.ts`'in kuralı: kutu "bir listenin satırları" dili, kendi
-   * çerçevesi olan elemanlar içine konduğunda çerçeve içinde çerçeve çıkıyor.
-   */
-  bare?: boolean;
-  /**
-   * İlk bölüm — bölümler arası 28'lik pay BURADA UYGULANMIYOR.
-   *
-   * İçerik kabı header'a zaten MODAL_HEADER_HEIGHT (74) ayırıyor; üstüne 28 + 12
-   * binince ilk başlık header butonlarından ~114 aşağıda kalıyor ve sheet boş
-   * açılmış gibi duruyordu. Bölümler arasındaki ritim bozulmadan yalnız tepedeki
-   * fazlalık alınıyor.
+   * İçerik kabı header'a zaten MODAL_HEADER_HEIGHT (74) ayırıyor; üstüne bölüm
+   * payı binince ilk başlık header butonlarından ~114 aşağıda kalıyor ve sheet
+   * boş açılmış gibi duruyordu. Bölümler arasındaki ritim bozulmadan yalnız
+   * tepedeki fazlalık alınıyor — ama SIFIR da değil: başlık bulanık header'ın
+   * alt kenarına yapışmasın.
    */
   first?: boolean;
   children: React.ReactNode;
 }) {
   return (
-    <View style={{ marginTop: first ? 0 : 28 }}>
-      {/* Başlık bloğu profil düzenlemedeki kalıbın aynısı: dikey yığın, üst pay
-          12, başlığın altında 6, açıklamanın altında 12 (orada `mb-3`). */}
-      <View style={{ marginTop: 12, marginBottom: 10 }}>
+    // ⚠️ İÇERİĞİN ALTINDAKİ BOŞLUK BURADA: bir bölümün içeriğiyle SONRAKİ
+    // başlık arasındaki nefesi, sonraki bölümün `marginTop`u veriyor
+    // (`children` bu kabın İÇİNDE — aşağıya bak). Tarihçe ve gerekçe
+    // `SECTION_GAP`te.
+    <View style={{ marginTop: first ? 4 : SECTION_GAP }}>
+      {/* Başlık bloğu profil düzenlemedeki kalıbın aynısı: başlığın altında 6,
+          açıklamanın altında 12 + blokun kendi 10'u = 22.
+
+          ⚠️ BLOĞUN `marginBottom`U GERİ GELDİ (istek: boşluklar profil
+          düzenleme modalındaki gibi olsun). Bir dönem YOKTU ve gerekçesi
+          "açıklamanın 12'si zaten o işi yapıyor, ikisi üst üste binince gövde
+          başlıktan 22 aşağıda kalıyor"du — ama EditProfileForm'un sayısı tam
+          olarak O 22 (başlık bloğu `marginBottom: 10` + açıklama `mb-3`).
+          Yani eski not 22'yi fazlalık sanıyordu; hedef ritmin kendisiymiş. */}
+      <View style={{ marginBottom: 10 }}>
         <View
           style={{
             flexDirection: "row",
@@ -290,16 +322,25 @@ function Section({
         </View>
         {/* Açıklama satırı — profil düzenlemedeki `info.circle` + 14/400
             `textSecondary` ikilisinin birebir aynısı. `flex: 1` + `paddingRight`
-            uzun cümle glifin altına taşmak yerine sarsın diye. */}
+            uzun cümle glifin altına taşmak yerine sarsın diye.
+
+            ⚠️ GLİF METNİN TAMAMINA GÖRE ORTADA (istek), İLK SATIRA GÖRE DEĞİL.
+            Önceki yazım `alignItems: "flex-start"` + `marginTop: (20 - 18) / 2`
+            ile glifi ilk satırın ortasına oturtuyordu; cümle iki satıra sarınca
+            ikon bloğun tepesinde asılı kalıyor ve satırla hizasız okunuyordu.
+            Keşif filtresindeki ikizi (FilterModal > FilterSection) zaten
+            `center` — iki filtre yüzeyi artık aynı dili konuşuyor. */}
         <View
           style={{
             flexDirection: "row",
-            alignItems: "flex-start",
+            alignItems: "center",
             gap: 8,
             marginBottom: 12,
             paddingRight: 16,
           }}
         >
+          {/* ⚠️ `marginTop` NUDGE'I YOK: kap ortalıyor, üstüne eklenen her px
+              glifi merkezden kaydırır. */}
           <SFIcon
             name="info.circle"
             fallback={Info}
@@ -307,8 +348,6 @@ function Section({
             color={colors.textSecondary}
             strokeWidth={2}
             weight="semibold"
-            // Glif ilk satırın ortasına otursun: (satır boyu - glif) / 2.
-            style={{ marginTop: (20 - 18) / 2 }}
           />
           <Text
             style={{
@@ -323,17 +362,19 @@ function Section({
           </Text>
         </View>
       </View>
-      {/* Seçenekler GRUP KUTUSUNDA — Ayarlar'daki liste kutusunun aynısı
-          (bkz. sectionGroupStyle). Eskiden satırlar doğrudan sayfa zemini
-          üstünde duruyordu ve yan payını modal'ın içerik kabından alıyordu;
-          Ayarlar'ın listeleri kutuya girdikten sonra aynı soruyu soran iki
-          sheet iki ayrı dille soruyor oldu.
+      {/* ⚠️ GRUP KUTUSU KALDIRILDI (istek, 2026-10-27) — seçenekler artık
+          doğrudan sheet zemininin üstünde. Buraya `sectionGroupStyle()`'ı geri
+          getirmeden önce: kutu Ayarlar'ın liste dili ve bu sheet ona
+          benzetilmişti, ama Ayarlar'da kutunun içinde GİDİLEN satırlar var;
+          burada içerik üç kısa radyo/onay listesi ve gri kutu onları sayfadan
+          kopuk üç ada gibi gösteriyordu. Keşif filtresi (FilterModal) ve profil
+          düzenleme de aynı gerekçeyle kutudan muaf (bkz. sectionGroup.ts) —
+          "filtrede seçenek işaretle" dili artık üç ekranda tek.
 
-          Satırların yatay payı KUTUDA DEĞİL satırın kendisinde (bkz.
-          OptionRow) — Ayarlar'daki kuralın aynısı: dokunulabilir alan ve
-          ileride gelebilecek bir basılı zemin kutunun kenarından kenarına
-          uzasın, metin yine kenarlıktan içeri çekilsin. */}
-      {bare ? children : <View style={sectionGroupStyle()}>{children}</View>}
+          Bölüm ayrımını başlık + açıklama taşıyor; satırların yatay payı da
+          kalktı (bkz. OptionRow), yani metin başlıkla aynı sol kenara
+          hizalanıyor. */}
+      {children}
     </View>
   );
 }
@@ -385,7 +426,28 @@ function TopicChips({
   );
 }
 
-/** Tek çip — seçili DOLGULU, seçilmemiş yalnız kenarlıklı (uygulama dili). */
+/**
+ * Tek çip — SEÇİLMEMİŞ hâli AKIŞ KARTINDAKİ hashtag kapsülü, SEÇİLİ hâli ters
+ * yüzey (istek: "arkaplanını, text rengini ve size'ını aynı postlardaki gibi
+ * yap").
+ *
+ * ⚠️ İSTEK SEÇİLMEMİŞ HÂLE UYGULANDI, İKİSİNE BİRDEN DEĞİL: kartın kapsülünün
+ * durumu yok, çipin var. Seçili dal da `ink(0.08)` olsaydı seçim görünmez
+ * olurdu — kullanıcının hangi konuları süzdüğünü okumasının tek yolu bu.
+ * Ayrım hâlâ güçlü: ikisi de DOLGULU, biri silik gri biri ters yüzey.
+ *
+ * ⚠️ KENARLIK SİLİNDİ (iki dalda da). Kartın kapsülünde yok ve orada bir
+ * dönem denenip kaldırılmıştı: yazıyla aynı tondaki bir çizgi 15pt'lik
+ * etiketin etrafında yazıdan daha baskın okunuyor, kapsül etiketi taşımak
+ * yerine ona rakip oluyordu. Dolgu aynı işi gürültüsüz yapıyor.
+ * ⚠️ Kenarlığın ESKİ İŞİ (sabit kalınlıkla satır sarmasını kilitlemek) de
+ * düştü: artık iki dalda da kenarlık YOK, yani seçim çipin ölçüsünü hiç
+ * değiştirmiyor — komşu çipleri kaydıran yarış yapısal olarak kapandı.
+ *
+ * ⚠️ PAY VE YARIÇAP KARTTAN KOPYALANMADI (14/8 ve 999 duruyor): kartta kapsül
+ * satır içi bir etiket, burada DOKUNMA HEDEFİ. Kartın 4/1.5'i buraya
+ * konulsaydı çip ~24pt'ye inip basılamaz hâle gelirdi.
+ */
 function Chip({
   label,
   active,
@@ -396,29 +458,36 @@ function Chip({
   onPress: () => void;
 }) {
   return (
-    <TouchableOpacity
-      activeOpacity={0.7}
+    // ⚠️ DOKUNMA GERİ BİLDİRİMİ SÖNME DEĞİL ÖLÇEK (istek: "basınca hover
+    // olmasın, scale olsun ufak"). `AnimatedPressable`in varsayılanı tam bu:
+    // `activeOpacity: 1` (TouchableOpacity'nin 0.7'lik soluklaşması YOK) +
+    // basılıyken 0.97 ölçek. Composer'daki ikiziyle (FeedComposerSheet >
+    // TopicChips) AYNI bileşen — aynı çipin iki yüzeyde iki farklı basılma
+    // hissi olmasın. Sayılar elle verilmiyor: varsayılan tek kaynak.
+    <AnimatedPressable
       onPress={onPress}
       style={{
+        // ⚠️ KUTU KARTTAN KOPYALANMADI (bir tur denendi, geri alındı — istek):
+        // kartta kapsül satır içi bir etiket, burada DOKUNMA HEDEFİ. Kartın
+        // 4/1.5'i buraya konulunca çip ~24pt'ye iniyor.
         paddingHorizontal: 14,
         paddingVertical: 8,
         borderRadius: 999,
         borderCurve: "continuous",
-        borderWidth: active ? 0 : 0.5,
-        borderColor: colors.hairlineStrong,
-        backgroundColor: active ? colors.inverseSurface : "transparent",
+        backgroundColor: active
+          ? colors.inverseSurface
+          : ink(TOPIC_FILL_ALPHA),
       }}
     >
       <Text
         style={{
-          color: active ? colors.onInverseSurface : colors.text,
-          fontSize: 13.5,
-          fontWeight: "600",
+          ...TOPIC_TEXT,
+          color: active ? colors.onInverseSurface : topicPillInk(),
         }}
       >
         {label}
       </Text>
-    </TouchableOpacity>
+    </AnimatedPressable>
   );
 }
 
@@ -449,13 +518,14 @@ function OptionRow({
     <TouchableOpacity
       activeOpacity={1}
       onPress={onPress}
+      // ⚠️ YATAY PAY YOK. Eskiden grup kutusunun iç payı (20) buradaydı; kutu
+      // kalkınca o pay satırları başlığın sol kenarından içeri kaydıran
+      // sahipsiz bir girinti oluyordu. Yan nefesi artık modal'ın içerik kabı
+      // veriyor — keşif filtresindeki CheckRow'un aynısı.
       style={{
         flexDirection: "row",
         alignItems: "center",
         justifyContent: "space-between",
-        // Grup kutusunun iç payı (bkz. SECTION_GROUP_PAD_H): metin kutunun
-        // kenarlığına yapışmasın. Kutuda değil burada — gerekçe Section'da.
-        paddingHorizontal: SECTION_GROUP_PAD_H,
       }}
     >
       {/* flex:1 + paddingRight — uzun etiket tik kutusunun altına taşmak

@@ -132,18 +132,20 @@ export function pullChanges(
 /**
  * Uçuştaki tur varsa onu döndürür — YOKSA BAŞLATMAZ.
  *
- * Tek tüketicisi outbox: gönderim turu, aynı anda koşan bir yakalama turunu
- * beklemeli. Sebebi somut — delta turu bizim mesajımızı geri getirdiğinde
- * satır `send_state='sent'`e dönüyor (UPSERT'in varsayılanı), yani "ack'i
- * kaybolmuş ama aslında gitmiş" mesaj kuyruktan KENDİLİĞİNDEN düşüyor. Önce
- * beklemek, gereksiz bir `send` isteğini ve dakikada 30'luk sınırdan bir hak
- * harcamayı önlüyor.
+ * MODÜL İÇİ: tek çağıranı aşağıdaki `pullBeforeSend` (outbox eskiden bunu
+ * doğrudan kullanıyordu, artık `pullBeforeSend`ten geçiyor). Dışa açılırsa
+ * "tur açmayan" bu dalın `pullBeforeSend`in taban kontrolünü atlamak için
+ * kullanılması kolaylaşır.
  *
- * Tur başlatmaması şart: outbox her tetikte (ağ, foreground, reconnect, timer)
- * çalışıyor ve buradan tur açmak `/changes` çağrılarını çoğaltırdı — o turun
- * kendi aralığı (MIN_PULL_INTERVAL_MS) var.
+ * Ayrı bir fonksiyon olmasının sebebi `inFlight`in yalın okunmasının bir
+ * ANLAMI olması: gönderim turu, aynı anda koşan bir yakalama turunu beklemek
+ * zorunda. Sebebi somut — delta turu bizim mesajımızı geri getirdiğinde satır
+ * `send_state='sent'`e dönüyor (UPSERT'in varsayılanı), yani "ack'i kaybolmuş
+ * ama aslında gitmiş" mesaj kuyruktan KENDİLİĞİNDEN düşüyor. Önce beklemek,
+ * gereksiz bir `send` isteğini ve dakikada 30'luk sınırdan bir hak harcamayı
+ * önlüyor.
  */
-export function inFlightPull(): Promise<PullResult> | null {
+function inFlightPull(): Promise<PullResult> | null {
   return inFlight;
 }
 
@@ -215,6 +217,43 @@ async function run(getActiveConversationId: () => string | null): Promise<PullRe
  */
 const MIN_PULL_INTERVAL_MS = 10_000;
 let lastPullAt = 0;
+
+/**
+ * Gönderimden önce yakalama turu garantiler. Tek çağıranı
+ * `outbox.flushOutbox`.
+ *
+ * `inFlightPull()`in aksine burası tur AÇABİLİR: uçuşta tur yoksa ve
+ * `fire()`in kullandığı AYNI `lastPullAt` tabanın (MIN_PULL_INTERVAL_MS)
+ * dışındaysa yeni bir yakalama turu başlatıp onu döndürür — backend'in açık
+ * ricası, çünkü delta turu bizim mesajımızı geri getirdiğinde satır
+ * kendiliğinden `sent`e dönüyor (UPSERT'in varsayılanı) ve mükerrer `send`
+ * isteği hem gereksiz hem de dakikada 30'luk sayaçtan bir hak harcıyor.
+ * Taban içindeyse `null`: outbox her tetikte (ağ/foreground/reconnect/timer)
+ * koşuyor, buradan koşulsuz tur açmak `/changes` çağrılarını da o sıklıkta
+ * çoğaltırdı — tabanın kendisi tam bunu önlemek için var.
+ */
+export function pullBeforeSend(
+  getActiveConversationId: () => string | null = () => null,
+): Promise<PullResult | null> {
+  const existing = inFlightPull();
+  if (existing) return existing;
+
+  // Kill-switch. Ağ tarafı `run()`ın ilk satırında zaten kapanıyor, yani bu
+  // satır olmadan da bayrak kapalıyken `/changes`e istek GİTMİYORDU; kapı
+  // burada da olsun, çünkü (a) kapalı bayrakla boşa bir tur açmanın
+  // (promise + `lastPullAt` ilerletmesi) anlamı yok, (b) `startDeltaSync`
+  // dışındaki TEK tur başlatan yol burası ve kill-switch'in burada görünür
+  // olmaması okuyanı "demek ki gönderim yolu bayrağa tabi değil" sonucuna
+  // götürüyordu. Uçuştaki tur yukarıda zaten döndürüldü: bayrak gönderim
+  // turunun BEKLEME sözleşmesini bozmuyor, yalnız tur AÇMAYI kapılıyor.
+  if (!CHAT_DELTA_SYNC_ENABLED) return Promise.resolve(null);
+
+  const now = Date.now();
+  if (now - lastPullAt < MIN_PULL_INTERVAL_MS) return Promise.resolve(null);
+
+  lastPullAt = now;
+  return pullChanges(getActiveConversationId);
+}
 
 export interface DeltaSyncDeps {
   getActiveConversationId: () => string | null;

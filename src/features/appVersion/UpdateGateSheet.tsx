@@ -96,6 +96,7 @@ export default function UpdateGateSheet({
       handleIndicatorStyle={{ backgroundColor: ink(0.25) }}
     >
       <View
+        testID="gate-update"
         style={{
           flex: 1,
           paddingHorizontal: 24,
@@ -163,6 +164,7 @@ export default function UpdateGateSheet({
         {(isMaintenance || canOpenStore) && (
           <View style={{ width: "100%" }}>
             <AnimatedPressable
+              testID="gate-update-cta"
               onPress={isMaintenance ? onRetry : openStore}
               disabled={rechecking}
               style={{

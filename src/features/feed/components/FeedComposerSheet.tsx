@@ -14,8 +14,17 @@ import { useTranslation } from "react-i18next";
 import { useController, useForm, useFormState, type Control } from "react-hook-form";
 import { zodResolver } from "@hookform/resolvers/zod";
 import AppModal from "@/shared/components/AppModal";
+import AnimatedPressable from "@/shared/components/AnimatedPressable";
+import SFIcon from "@/shared/components/SFIcon";
+import { Info } from "@/shared/icons";
 import { useKeyboardAwareField } from "@/shared/hooks/useKeyboardAwareField";
-import { colors } from "@/shared/theme/colors";
+import { colors, ink } from "@/shared/theme/colors";
+// Çipin seçilmemiş hâli AKIŞ KARTINDAKİ hashtag kapsülü — ölçüler oradan.
+import {
+  TOPIC_FILL_ALPHA,
+  TOPIC_TEXT,
+  topicPillInk,
+} from "./feedTopicPill";
 import { feedPostSchema } from "@/shared/schemas/formSchemas";
 import FeedQuotaBadge from "./FeedQuotaBadge";
 import {
@@ -227,6 +236,17 @@ export default function FeedComposerSheet({
       keyboardBehavior="interactive"
       // X yok: swipe-down ve backdrop zaten kapatıyor.
       closeButton={false}
+      // ⚠️ `paddingTop` ELLE VERİLİYOR ve bu KASITLI — `contentContainerStyle`
+      // AppModal'ın varsayılanının ÜSTÜNE yazıldığı için buradaki sayı
+      // içeriğin header'a bırakılan payını (MODAL_HEADER_HEIGHT = 74) EZİYOR.
+      //
+      // Bir tur varsayılana (74) bırakıldı — "boşluklar filtre modalındaki gibi
+      // olsun" isteğiyle — ve GERİ ALINDI (istek: "üstten çok boşluk kalmış").
+      // Gerekçesi şu: filtre sheet'inin header'ında iki buton var (✓ / sıfırla)
+      // ve 74 onların bandı; BU sheet'in header'ında hiçbir buton yok
+      // (`closeButton={false}`), yani 74'ün koruduğu alanın çoğu boş kalıyor ve
+      // bakiye rozeti bandın çok altından başlıyordu. Filtreyle eşlenen şey
+      // bandın ölçüsü değil, konu bloğunun başlık kalıbı (bkz. TopicChips).
       contentContainerStyle={{ paddingTop: 20, paddingBottom: 28 }}
     >
       {/* Bakiye rozeti yanıt composer'ıyla ORTAK bileşen (bkz. FeedQuotaBadge):
@@ -297,19 +317,27 @@ export default function FeedComposerSheet({
             <Text style={{ fontSize: 15.5, fontWeight: "600", color: colors.text }}>
               {t("feed.composer.anonymousLabel")}
             </Text>
-            {/* Açıklama grisi `textSecondary` DEĞİL `textMuted`: hemen altındaki
-                "bu gönderi X akışında görünecek" satırı da aynı gride ve ikisi
-                aynı işi yapıyor (başlığın altındaki açıklama). İki ayrı gri üst
-                üste gelince blok üç katmanlı bir metin yığınına dönüyordu. */}
-            <Text
-              style={{ fontSize: 12.5, color: colors.textMuted, marginTop: 2 }}
-            >
-              {anonymousGate.kind === "paywall"
-                ? t("feed.composer.anonymousLocked")
-                : anonymousGate.kind === "restricted"
-                  ? t("feed.composer.anonymousRestricted")
-                  : t("feed.composer.anonymousHint")}
-            </Text>
+            {/* ⚠️ AÇIKLAMA SATIRI YALNIZ KAPALI DALLARDA. Serbest dalda
+                ("İsmin ve fotoğrafın görünmez…") KALDIRILDI (istek): anonim
+                paylaşmanın ne yaptığını anahtarın adı zaten söylüyor, satır
+                bloğu üç katmanlı bir metin yığınına çeviriyordu.
+
+                Kilit/kısıt dallarında KALIYOR ve kalmak zorunda: orada satır
+                açıklama değil, anahtarın neden tepkisiz olduğunu söyleyen tek
+                şey (kilit ikonu bu bloktan daha önce kaldırıldı).
+
+                Açıklama grisi `textSecondary` DEĞİL `textMuted` — blokun kendi
+                tarihi, bkz. composer başlığı. */}
+            {anonymousGate.kind === "paywall" ||
+            anonymousGate.kind === "restricted" ? (
+              <Text
+                style={{ fontSize: 12.5, color: colors.textMuted, marginTop: 2 }}
+              >
+                {anonymousGate.kind === "paywall"
+                  ? t("feed.composer.anonymousLocked")
+                  : t("feed.composer.anonymousRestricted")}
+              </Text>
+            ) : null}
           </View>
 
           {/* Paywall dalında anahtar YERİNE dokunulabilir bir sarmalayıcı:
@@ -388,50 +416,117 @@ const TopicChips = memo(function TopicChips({
 }) {
   const { t } = useTranslation();
   return (
-    <View style={{ marginTop: 18 }}>
-      <Text
-        style={{
-          color: colors.textSecondary,
-          fontSize: 13,
-          fontWeight: "600",
-          marginBottom: 10,
-        }}
-      >
-        {/* Etiket çoklu seçimi AÇIKÇA söylüyor ("birden fazla seçebilirsin"):
-            çipler tek seçimli bir şeritten görsel olarak ayırt edilemiyor
-            (aynı kapsül, aynı dolgu dili), yani ikinci çipe dokunmayı denemek
-            kullanıcıya kalıyordu. Ayrı bir açıklama satırı değil, başlığın
-            kendisi — blok 18'lik payıyla aynı yükseklikte kalsın. */}
-        {t("feed.composer.topicLabel")}
-      </Text>
+    // ⚠️ Üst pay 18 → 28 (istek: boşluklar filtre modalındaki gibi): başlık
+    // artık 20 puntoluk bir BÖLÜM başlığı ve altında bir açıklama satırı var,
+    // 18'lik nefes o bloğu metin alanına yapıştırıyordu. 28, filtre sheet'inin
+    // türediği profil düzenleme ritminin bölüm payı (bkz. FeedFilterSheet >
+    // SECTION_GAP'in tarihçesi); oradaki 60 BURAYA KONULAMAZ — composer'ın
+    // içeriği 9 satıra kadar büyüyor ve gönder butonu tavana dayanıyor.
+    <View style={{ marginTop: 28 }}>
+      {/* Başlık bloğu FİLTRE SHEET'İNİN `Section`ının birebir kalıbı: başlığın
+          altında 6, açıklamanın altında 12 + blokun kendi 10'u = 22.
+
+          ⚠️ PUNTO 18 → 20 (istek: filtre modalıyla aynı olsun). Eski gerekçe
+          "burası bir sheet BÖLÜMÜ değil, metin alanının altındaki bir blok"du
+          ve 18'i bilerek bir tık altta tutuyordu; istek o ayrımı reddetti —
+          konu seçimi iki yüzeyde de aynı şey ve iki ayrı puntoyla yazılması
+          aynı kataloğu iki ayrı liste gibi gösteriyordu.
+
+          "(birden fazla seçebilirsin)" metinden ÇIKTI — bkz. tr.ts. */}
+      <View style={{ marginBottom: 10 }}>
+        <Text
+          style={{
+            color: colors.text,
+            fontSize: 20,
+            fontWeight: "600",
+            marginBottom: 6,
+          }}
+        >
+          {t("feed.composer.topicLabel")}
+        </Text>
+        {/* Açıklama satırı — filtre sheet'indeki `info.circle` + 14/400
+            `textSecondary` ikilisinin aynısı (o da profil düzenlemeden
+            geliyor). `flex: 1` + `paddingRight` uzun cümle glifin altına
+            taşmak yerine sarsın.
+
+            ⚠️ GLİF METNİN TAMAMINA GÖRE ORTADA (`center`), İLK SATIRA GÖRE
+            DEĞİL ve `marginTop` NUDGE'I YOK: kap ortalıyor, üstüne eklenen her
+            px glifi merkezden kaydırır (filtre sheet'inde aynı not). */}
+        <View
+          style={{
+            flexDirection: "row",
+            alignItems: "center",
+            gap: 8,
+            marginBottom: 12,
+            paddingRight: 16,
+          }}
+        >
+          <SFIcon
+            name="info.circle"
+            fallback={Info}
+            size={18}
+            color={colors.textSecondary}
+            strokeWidth={2}
+            weight="semibold"
+          />
+          <Text
+            style={{
+              color: colors.textSecondary,
+              fontSize: 14,
+              lineHeight: 20,
+              fontWeight: "400",
+              flex: 1,
+            }}
+          >
+            {t("feed.composer.topicDesc")}
+          </Text>
+        </View>
+      </View>
       <View style={{ flexDirection: "row", flexWrap: "wrap", gap: 8 }}>
         {keys.map((key) => {
           const active = selected.includes(key);
           return (
-            <TouchableOpacity
+            /* ⚠️ DOKUNMA GERİ BİLDİRİMİ SÖNME DEĞİL ÖLÇEK (istek: "basınca
+               hover olmasın, scale olsun ufak"). `AnimatedPressable`in
+               varsayılanı tam bu: `activeOpacity: 1` (yani TouchableOpacity'nin
+               0.7'lik soluklaşması YOK) + basılıyken 0.97 ölçek, bırakınca
+               yaylanma. Filtre sheet'indeki ikiziyle (FeedFilterSheet > Chip)
+               AYNI bileşen — iki yüzeyde aynı çipin iki farklı basılma hissi
+               olmasın.
+
+               ⚠️ `activeOpacity`/`pressScale` ELLE VERİLMİYOR: sayı uygulamanın
+               geri kalanıyla tek yerden (AnimatedPressable'ın varsayılanı)
+               gelsin. */
+            <AnimatedPressable
               key={key}
-              activeOpacity={0.7}
               onPress={() => onToggle(key)}
               style={{
+                // ⚠️ KUTU KARTTAN KOPYALANMADI (geri alındı — istek); gerekçe
+                // filtre sheet'inin Chip'inde.
                 paddingHorizontal: 14,
                 paddingVertical: 8,
                 borderRadius: 999,
                 borderCurve: "continuous",
-                borderWidth: active ? 0 : 0.5,
-                borderColor: colors.hairlineStrong,
-                backgroundColor: active ? colors.inverseSurface : "transparent",
+                // ⚠️ KENARLIK SİLİNDİ — çipin görünüşü akış kartındaki hashtag
+                // kapsülüne bağlandı (istek) ve orada kenarlık YOK; gerekçesi
+                // filtre sheet'inin Chip'inde uzun uzun yazılı.
+                // Kenarlığın eski işi (sabit kalınlıkla satır sarmasını
+                // kilitlemek) de düştü: iki dalda da kenarlık olmayınca seçim
+                // çipin ölçüsünü hiç değiştirmiyor.
+                backgroundColor: active
+                  ? colors.inverseSurface
+                  : ink(TOPIC_FILL_ALPHA),
               }}
             >
               <Text
                 style={{
-                  color: active ? colors.onInverseSurface : colors.text,
-                  fontSize: 13.5,
-                  fontWeight: "600",
+                  ...TOPIC_TEXT,
+                  color: active ? colors.onInverseSurface : topicPillInk(),
                 }}
               >
                 {labelFor(key)}
               </Text>
-            </TouchableOpacity>
+            </AnimatedPressable>
           );
         })}
       </View>

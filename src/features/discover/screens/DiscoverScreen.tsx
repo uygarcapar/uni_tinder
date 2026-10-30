@@ -91,6 +91,7 @@ import { resolveEmptyDeckCopy } from "@/features/discover/emptyDeckCopy";
 import { SUPPORT_EMAIL } from "@/shared/constants/support";
 import { showInfoToast, showMissedMatchToast } from "@/shared/services/toaster";
 import {
+  releaseFlameSweep,
   runFlameSweep,
   runMatchCurtain,
 } from "@/features/discover/flameSweep";
@@ -178,6 +179,29 @@ const COVER_SETTLE_TIMEOUT_MS = 600;
  * yolun tıkandığı hâl için.
  */
 const STACK_ENTRY_SETTLE_TIMEOUT_MS = 240;
+
+/**
+ * ── FOTO KAPISININ AYRI (VE KISA) BÜTÇESİ ─────────────────────────────────
+ *
+ * Alev parkı TAVANSIZ (bkz. flameWavePath > COVER_HOLD_LIMIT_MS): yeni kart
+ * boyanana kadar bekliyor. Ama parkın iki kapısı AYNI ŞEYİ ÖDEMİYOR:
+ *
+ *   • COMMIT kapısı — kapanmazsa ekranda hâlâ ESKİ kart duruyor, yani düzeltmeye
+ *     çalıştığımız bug'ın ta kendisi. Sınırsız beklemeye değer.
+ *   • KAPAK FOTOĞRAFI kapısı — kapanmazsa yeni kart kendi opak zemini
+ *     (`theme.surface`) ve paneliyle çiziliyor, fotoğraf 150 ms'lik geçişle
+ *     sonradan doluyor. Yani bedel KOZMETİK ve "yükleniyor" gibi okunuyor.
+ *
+ * İkisine aynı süreyi vermek, yavaş ağda HER kaydırmada kutlamayı saniyelerce
+ * uzatmak olurdu — kozmetik bir kusur için. Bu yüzden foto kapısı kendi
+ * bütçesiyle çalışıyor: dolduğunda dalga salıveriliyor, commit kapısı zaten
+ * kapanmış oluyor.
+ *
+ * 1200 ms: prefetch normalde kart sıraya girdiğinde (bir-iki kaydırma önce)
+ * başlıyor, yani buraya gelmek "ağ gerçekten kötü" demek. Kısaltmak yavaş ağda
+ * boş kapağı daha sık gösterir, uzatmak kutlamayı sürükler.
+ */
+const COVER_WAIT_BUDGET_MS = 1200;
 
 /*
  * ── `REWIND_SLOT_WARMUP_MS` KALDIRILDI ────────────────────────────────────
@@ -1644,6 +1668,90 @@ export default function DiscoverScreen() {
   const stackEntryX = useSharedValue(0);
 
   /**
+   * ── DALGA, YENİ KART BOYANANA KADAR PARKTA BEKLİYOR ───────────────────────
+   *
+   * Kart değişimi alevin ekranı tam kapattığı pencerede oluyor (bkz. flameSweep)
+   * ve o pencere ~200 ms. İçine sığması gereken iş küçük değildi: taze bir
+   * `SwipeCard` mount'u (destenin önü), bir unmount (yuvanın altı), kalan iki
+   * kartın yeniden render'ı, üstüne gelen kartın kapağının decode'u. Pencere
+   * aşıldığında dalga, ESKİ kart hâlâ boyalıyken çekiliyordu — "alev gidince
+   * gitmesi gereken kart bir süre duruyor".
+   *
+   * Üç katman birlikte çalışıyor:
+   *   1. Pencereye giren iş küçültüldü — yeni arka kartın mount'u dışarı
+   *      taşındı (`deckSettled`, bkz. renderStack).
+   *   2. Gelen kartın kapağı önceden decode ediliyor (`warmCovers`).
+   *   3. Yine yetmezse DALGA BEKLİYOR: `releaseFlameSweep` ancak iki kapı da
+   *      kapandığında çağrılıyor. Üçüncüsü GARANTİ, ilk ikisi olasılık —
+   *      ilk ikisi olmasa da bug çıkmaz, yalnız her kutlama parkta bekler.
+   *
+   * İKİ KAPI:
+   *   • Örtünün altında gerçekten bir devir bekliyor olmalı (`pendingRelease`).
+   *   • Yeni üst kartın kapağı decode edilmiş olmalı (`warmCovers`).
+   * Kalıbı `tryCommitRewind`/`rewindCovered` ikizinden alıyor: hangi kapı sonra
+   * kapanırsa salıvermeyi o tetikliyor, sıra önemli değil.
+   *
+   * ⚠️ BURADA, DESTEYİ SÜREN HER ŞEYDEN ÖNCE tanımlı: `commitRewind`,
+   * `advanceDeck` ve `dropProfileFromDeck` üçü de bu bayrakları yazıyor.
+   */
+  const warmCovers = useRef(new Set<string>());
+  const pendingRelease = useRef(false);
+  /**
+   * Destenin önündeki YENİ arka kart mount edildi mi.
+   *
+   * Devir karesinde `false`: o karede yalnız index kayıyor, `idx+2` çizilmiyor.
+   * Kart boyanıp dalga salıverildiğinde `true` oluyor ve arka kart ORADA mount
+   * ediliyor. Kaybı yok — sonraki basışa saniyeler var, ısınmaya fazlasıyla
+   * yetiyor (bkz. SwipeCard > PANEL_WARMUP_MS 240 ms).
+   */
+  const [deckSettled, setDeckSettled] = useState(true);
+
+  /** Foto kapısının kendi bütçesi (bkz. COVER_WAIT_BUDGET_MS). */
+  const coverWaitTimeout = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const clearCoverWait = () => {
+    if (coverWaitTimeout.current) clearTimeout(coverWaitTimeout.current);
+    coverWaitTimeout.current = null;
+  };
+
+  const tryReleaseFlame = useEvent((force = false) => {
+    if (!pendingRelease.current) return;
+    const uri = potentialMatches[currentIndex]?.photos?.[0];
+    if (!force && uri && !warmCovers.current.has(uri)) {
+      // Kapak henüz decode edilmedi: dalga beklesin — ama KENDİ bütçesiyle,
+      // parkın tavansızlığıyla değil (gerekçe COVER_WAIT_BUDGET_MS'te).
+      // Sayaç yalnız BİR KEZ kuruluyor: her yeniden deneme onu sıfırlasaydı
+      // (her commit bu kapıya uğruyor) bütçe hiç dolmazdı.
+      if (!coverWaitTimeout.current) {
+        coverWaitTimeout.current = setTimeout(() => {
+          coverWaitTimeout.current = null;
+          tryReleaseFlame(true);
+        }, COVER_WAIT_BUDGET_MS);
+      }
+      return;
+    }
+    clearCoverWait();
+    pendingRelease.current = false;
+    // Commit bitti ≠ ekrana BOYANDI. Bir kare daha bekleniyor; alev o ana kadar
+    // ekranı kapatmaya devam ediyor.
+    requestAnimationFrame(() => {
+      releaseFlameSweep();
+      // ⚠️ SALIVERMEDEN SONRA, aynı karede değil: `setDeckSettled` yeni arka
+      // kartın mount'unu başlatıyor ve onu salıvermeyle AYNI tick'e koymak o
+      // mount'u kritik pencereye geri sokardı (bkz. renderStack > deckSettled).
+      // Burada dalga çekilmeye başlamış, üstteki kart çoktan boyanmış durumda.
+      setDeckSettled(true);
+    });
+  });
+
+  /**
+   * Devir karesinden SONRA koşuyor — `pendingEntryKick` ile aynı dep'siz effect
+   * kalıbı: buraya gelindiğinde yeni üst kart ağaçta.
+   */
+  useEffect(() => {
+    tryReleaseFlame();
+  });
+
+  /**
    * ── YANDAN GİREN DESTE ÖLÇÜLDÜKTEN SONRA KAYIYOR ──────────────────────────
    *
    * Filtre kaydetme ve mesafe sınırını kaldırma, destenin ÜST kartını SIFIRDAN
@@ -1785,6 +1893,14 @@ export default function DiscoverScreen() {
     // geçtiği ilk karede zaten yanda duruyor, yolunu ondan sonra alıyor.
     cardEntryX.value = -CARD_ENTRY_DISTANCE;
     pendingEntryKick.current = true;
+    // Dalga bu devrin de boyanmasını bekliyor (bkz. tryReleaseFlame).
+    //
+    // `deckSettled` BURADA KULLANILMIYOR, ileri yönün aksine: geri alırken
+    // taze mount eden kart ARKADAKİ değil YUVADAKİ (idx-2); `nextProfile`
+    // (idx) ise bir kare önce üstte duran, çoktan kurulu kart. Onu çizimden
+    // çıkarmak bir mount kazandırmıyor, kurulu bir kartı söküp bir kare sonra
+    // geri getiriyor olurdu.
+    pendingRelease.current = true;
     setCurrentIndex((i) => Math.max(0, i - 1));
   }, [cardEntryX]);
 
@@ -1854,11 +1970,18 @@ export default function DiscoverScreen() {
     // Bir önceki alev hâlâ bekliyorsa dinleyicisi bırakılıyor: her basış kendi
     // örtmesini bekler.
     rewindFlameUnsub.current?.();
-    rewindFlameUnsub.current = runFlameSweep(() => {
-      rewindFlameUnsub.current = null;
-      rewindCovered.current = true;
-      tryCommitRewind();
-    });
+    // `hold`: üçüncü kapı. İlk ikisi (alev örttü + kart ölçüldü) devrin NE ZAMAN
+    // olacağını söylüyor; bu da dalgaya "devir ekrana boyanana kadar bekle"
+    // diyor — ölçüm haberi geciktiğinde (taze deste · destenin sonu) devir
+    // dalganın arka kenarına kayabiliyordu.
+    rewindFlameUnsub.current = runFlameSweep(
+      () => {
+        rewindFlameUnsub.current = null;
+        rewindCovered.current = true;
+        tryCommitRewind();
+      },
+      { hold: true },
+    );
   }, [tryCommitRewind]);
 
   // Ekran ağaçtan düşerse (sekme değişti, tema remount'u) örtme dinleyicileri
@@ -1919,6 +2042,7 @@ export default function DiscoverScreen() {
     () => () => {
       if (stackEntryTimeout.current) clearTimeout(stackEntryTimeout.current);
       if (rewindTimeout.current) clearTimeout(rewindTimeout.current);
+      if (coverWaitTimeout.current) clearTimeout(coverWaitTimeout.current);
     },
     [],
   );
@@ -1993,12 +2117,63 @@ export default function DiscoverScreen() {
     ExpoImage.prefetch(uri)
       .catch(() => {})
       .finally(() => {
+        // İlk kartın kapağı da ISINMIŞ sayılıyor: aynı anda açılıp hemen
+        // kaydıran kullanıcıda salıverme kapısı bunu okuyor (bkz. warmCovers).
+        warmCovers.current.add(uri);
         if (!cancelled) setFirstPhotoReady(true);
       });
     return () => {
       cancelled = true;
     };
   }, [potentialMatches, firstPhotoReady]);
+
+  /**
+   * ── GELECEK İKİ KARTIN KAPAĞI ÖNCEDEN DECODE EDİLİYOR ─────────────────────
+   *
+   * Yukarıdaki not "sonraki kartların fotoğrafları zaten arka planda prefetch
+   * ediliyor (bkz. SwipeCard)" diyordu ve YANLIŞTI: oradaki döngü `photos[0]`ı
+   * bilerek atlıyor (kapak zaten `Image` src'iyle yükleniyor diye) ve yalnız
+   * ÜST kart için koşuyor. Yani sıradaki kartın KAPAĞINI kimse ısıtmıyordu;
+   * arka kart onu kendi `priority`siyle, en iyi hâlde "normal" olarak çekiyor.
+   *
+   * Decode yetişmeyince alev çekilirken giden kart görünüyordu: deste, dalganın
+   * tam örttüğü ~200 ms'lik pencerede ilerliyor ve o pencereye bir de ağ turu
+   * sığmıyor. Kapağı ÖNCEDEN çekmek o yarışı tamamen kaldırıyor — basış anında
+   * fotoğraf çoktan cache'te.
+   *
+   * İKİ KART İLERİ: biri sıradaki (bir sonraki basışta üste çıkacak), biri onun
+   * ardındaki (hızlı arka arkaya basışta sıradaki o olacak). Daha ileri gitmek
+   * bir faydası olmayan trafiğe dönüşüyor — kullanıcı o kartlara gelmeden deste
+   * tazelenebiliyor.
+   *
+   * ÜSTTEKİ KART DA LİSTEDE (`currentIndex`), fotoğrafı neredeyse her zaman
+   * çoktan yüklenmiş olsa bile. Sebep salıverme kapısının KİLİTLENMEMESİ: deste
+   * altımızdan değişebiliyor (polling refetch, demir hizalaması, filtre
+   * kaydetme → index 0) ve o durumda üstteki kartın URI'si kümeye hiç
+   * girmemiş olurdu — kapı hiç açılmaz, `deckSettled` kalıcı olarak `false`
+   * kalırdı. Bedel: cold start'ta ilk kartın prefetch'i `firstPhotoReady` ile
+   * aynı URI için iki kez istenebiliyor (expo-image aynı URI'yi birleştiriyor,
+   * ikincisi cache isabeti).
+   *
+   * Küme KALICI (ref): kart ağaçtan düşse de, index geri alınsa da "bu URI
+   * decode edildi" bilgisi geçerli kalıyor. Salıverme kapısı onu okuyor.
+   */
+  useEffect(() => {
+    [currentIndex, currentIndex + 1, currentIndex + 2].forEach((i) => {
+      const uri = potentialMatches[i]?.photos?.[0];
+      if (!uri || warmCovers.current.has(uri)) return;
+      ExpoImage.prefetch(uri, "memory-disk")
+        .catch(() => {})
+        // `finally`: yükleme PATLASA DA işaretleniyor — `firstPhotoReady` ile
+        // aynı gerekçe. Beklenen fotoğraf hiç gelmeyecekse dalgayı parkta
+        // tutmak, görünür bir kart değişiminden de kötü (asılı kalan kutlama).
+        .finally(() => {
+          warmCovers.current.add(uri);
+          // Dalga bu fotoğrafı bekliyor olabilir.
+          tryReleaseFlame();
+        });
+    });
+  }, [potentialMatches, currentIndex, tryReleaseFlame]);
 
   /**
    * Kapağın alt chrome'u (yazı bloğu + sağ buton kolonu) yerine oturdu mu —
@@ -2323,6 +2498,11 @@ export default function DiscoverScreen() {
       // ikinci kez yazmak zararsız (ham atama).
       deckHoldRef.current = false;
       resetCardExpandState();
+      // Dalga, bu devrin ekrana boyanmasını BEKLİYOR (bkz. tryReleaseFlame) ve
+      // yeni arka kart bu karede çizilmiyor — ikisi de `setCurrentIndex`ten
+      // ÖNCE işaretleniyor ki devir karesi ilk hâlinden itibaren doğru olsun.
+      pendingRelease.current = true;
+      setDeckSettled(false);
       setCurrentIndex((i) => i + 1);
     };
     if (matching) {
@@ -2540,6 +2720,10 @@ export default function DiscoverScreen() {
     // top kart varsa baseline reset'i zaten aynı işi yapıyor, burada ikinci kez
     // sıfırlamak zararsız — index değişmeden ÖNCE olması boş desteyi kurtarır.
     resetCardExpandState();
+    // `advanceDeck`teki ikilinin aynısı: dalga bu devrin boyanmasını bekliyor,
+    // yeni arka kart devir karesinde çizilmiyor.
+    pendingRelease.current = true;
+    setDeckSettled(false);
     setCurrentIndex((i) => i + 1);
   });
 
@@ -2643,10 +2827,15 @@ export default function DiscoverScreen() {
       // Kutlama Fire'ın AYNISI (bkz. flameSweep): alev ekranı süpürüyor
       // ve kart, ekran tam kapalıyken desteden düşüyor.
       noteFlameUnsub.current?.();
-      noteFlameUnsub.current = runFlameSweep(() => {
-        noteFlameUnsub.current = null;
-        dropProfileFromDeck(userId);
-      });
+      // `hold`: kart buradan da desteden düşüyor, yani değişim yine dalganın
+      // örtüsünü bekliyor (bkz. runFlameSweep > hold · tryReleaseFlame).
+      noteFlameUnsub.current = runFlameSweep(
+        () => {
+          noteFlameUnsub.current = null;
+          dropProfileFromDeck(userId);
+        },
+        { hold: true },
+      );
     } catch (e: any) {
       const code = e?.response?.data?.code ?? null;
 
@@ -2809,6 +2998,42 @@ export default function DiscoverScreen() {
     !deckSkeletonOnly && potentialMatches.length > currentIndex && !coverSettled;
 
   /**
+   * Yüzen üst chrome'un (başlık + iki cam buton) ARDINDA fotoğraf OLMADIĞI her
+   * hâl. Üçü var ve zeminleri birebir aynı (`colors.surface`):
+   *
+   *   • Deste tükendi → EmptyDiscoverCard.
+   *   • İskelet tek başına → SkeletonCard (`deckSkeletonOnly`).
+   *   • İskelet perde olarak → kart mount edildi ama kapağı ölçülmedi,
+   *     ekranda duran şey hâlâ iskelet (`deckSkeletonOverlay`).
+   *
+   * Açık modda beyaz mürekkep (`onMedia`) o zeminde kayboluyor (istek: "skeleton
+   * loading'teyken light mode'da başlık ve butonların üstündeki beyaz ikonlar
+   * görünmüyor; iskelettekiler siyah olsun, sonra beyaza dönsün") → başlık ve
+   * glifler tema mürekkebine dönüyor, geçiş yumuşak (bkz.
+   * DISCOVER_HEADER_INK_FADE_MS). Koyu modda `colors.text` zaten #FFFFFF, yani
+   * orada görünür bir devir hiç yok — bayrak MODA DEĞİL ZEMİNE bakıyor.
+   *
+   * PERDE DE SAYILMAK ZORUNDA: dışarıda bırakılsa mürekkep perde İNMEDEN
+   * beyazlar, yani okunmaz pencere perdenin boyu kadar geri gelirdi. Devir
+   * böylece tam DOĞRU karede oluyor: perde kalkıp kapak fotoğrafı ekrana
+   * gelirken, beyazlamanın bir karşılığı olduğu anda.
+   *
+   * KAYDIRMA BAŞINA FLICKER YOK: `coverSettled` kart başına sıfırlanmıyor,
+   * yalnız deste tümden boşalınca (bkz. oradaki not) — perde dalı bu yüzden
+   * sadece ilk devirde ve boş desteye takviye gelince tetikleniyor.
+   *
+   * ⚠️ İSKELET BİTERKEN CHROME'UN TAMAMEN KAYBOLMASI BAŞKA BİR BUG'DI ve bu
+   * bayrakla İLGİSİ YOKTU (kaybolan şey mürekkep değil header katmanıydı, cam
+   * daireler dahil, iki temada da) — sebebi ve düzeltmesi kart kabında, bkz.
+   * `collapsable={false}` notu. İkisini karıştırmamak gerekiyor: burası yalnız
+   * OKUNURLUK, orası KATMAN.
+   */
+  const headerOnSurface =
+    deckSkeletonOnly ||
+    deckSkeletonOverlay ||
+    potentialMatches.length <= currentIndex;
+
+  /**
    * Yanda park etmiş desteyi BEKLETMEYECEK hâller: ekranda gerçek bir kart yok
    * (iskelet ya da boş durum). Bekleyen tavan dolana kadar durmasın — orada
    * ölçüm haberi verecek bir kart da yok, perdeyi/boş kartı 240ms geciktirmenin
@@ -2817,6 +3042,12 @@ export default function DiscoverScreen() {
   useEffect(() => {
     if (deckSkeletonOnly || !deckHasCard) {
       releaseStackEntry();
+      // Devir ortasında deste boşaldı (ya da iskelete düştü): boyanmasını
+      // beklediğimiz kart yok. Bayrakları bırak, yoksa `deckSettled` kalıcı
+      // olarak `false` kalır ve deste bir daha arka kart çizmezdi.
+      pendingRelease.current = false;
+      clearCoverWait();
+      setDeckSettled(true);
       // Deste çizilmiyor = yuva da yok. Bayrağı `renderStack` yazıyor ve o
       // şu an hiç çağrılmıyor; bayat kalırsa geri al basışı kartı mount
       // edilmiş sanıp beklemeden üste alırdı.
@@ -2860,9 +3091,30 @@ export default function DiscoverScreen() {
      * [önceki, üstteki, sonraki] geliyor ve ters çevirmek üstteki kartı ortaya
      * atıyordu. Sıra artık okunduğu gibi: son eleman üstte duran kart.
      */
-    const painted = [slotProfile, nextProfile, topProfile].filter(
-      (p): p is NonNullable<typeof p> => !!p,
-    );
+    /**
+     * ── YENİ ARKA KARTIN MOUNT'U DEVİR KARESİNDE DEĞİL ────────────────────
+     *
+     * Deste ilerlerken `painted` [idx-1, idx+1, idx] → [idx, idx+2, idx+1]
+     * oluyordu: `idx+2` TAM O KAREDE sıfırdan mount ediliyor. Alevin tam örttüğü
+     * pencere ~200 ms ve o mount (kart ağacı + ölçüm turu + cam kutular) onun
+     * içinde en pahalı iş; pencere aşıldığında dalga, eski kart hâlâ boyalıyken
+     * çekiliyordu.
+     *
+     * Devir karesinde o kart ÇİZİLMİYOR; dalga salıverilirken geliyor (bkz.
+     * deckSettled). Pencereye giren iş kalan iki kartın yeniden render'ına
+     * iniyor.
+     *
+     * ⚠️ BASTIRILAN ŞEY YALNIZ ÇİZİM — `slotProfile`ın KOŞULU hâlâ gerçek
+     * `nextProfile`ı okuyor (yukarı bak). Koşula da girseydi giden kart aynı
+     * karede sökülürdü, yani kazanmak istediğimiz şeyin tam tersi. Yuvanın
+     * "açığa çıkma" riski bu tek karede yok: üstteki kart tam ekran opak ve o
+     * pencerede sürüklenebilen bir şey de yok (çıkış jesti kaldırıldı).
+     */
+    const painted = [
+      slotProfile,
+      deckSettled ? nextProfile : undefined,
+      topProfile,
+    ].filter((p): p is NonNullable<typeof p> => !!p);
     return painted
       .map((profile) => {
         const isTopCard = profile.userId === topProfile?.userId;
@@ -2917,7 +3169,7 @@ export default function DiscoverScreen() {
   };
 
   return (
-    <GestureHandlerRootView style={{ flex: 1, backgroundColor: colors.bg }}>
+    <GestureHandlerRootView testID="discover-screen" style={{ flex: 1, backgroundColor: colors.bg }}>
       {/* ── KART: TAM EKRAN ──────────────────────────────────────────────────
           Kap ne üstten ne alttan pay bırakıyor. Kapak fotoğrafı durum
           çubuğunun ardından geçip ekranın tepesine, yüzen tab bar'ın ardından
@@ -2937,7 +3189,34 @@ export default function DiscoverScreen() {
           eski paylarıyla duruyordu. Metni ve butonu durum çubuğunun / tab
           bar'ın ardına girmesin diye kart kendi içinde pay bırakıyor (bkz.
           EmptyDiscoverCard > topInset/coverBottomInset). */}
-      <View style={{ flex: 1 }}>
+      {/* ⚠️ `collapsable={false}` DEKORATİF DEĞİL, BU KABIN TEK İŞİ O ──────────
+          Kabın kendi stili yalnız `flex: 1`, yani Fabric onu DÜZLEŞTİRİYOR:
+          görsel özelliği olmayan (zemin / kenarlık / opaklık / transform /
+          zIndex / testID / erişilebilirlik) ve `collapsable` olan her View
+          native ağaçta hiç doğmuyor (ViewShadowNode::initialize →
+          FormsView + FormsStackingContext trait'leri DÜŞÜYOR).
+
+          Bedeli ÇOCUKLARIN KATMANI: kap bir "stacking context" kurmayınca
+          içindeki zIndex'ler bir üst kaba, yani bu ekranın köküne taşınıyor ve
+          orada YÜZEN HEADER'LA yarışıyorlar. Aşağıdaki iskelet perdesinin
+          `zIndex: 60`ı tam bunu yapıyordu: perde, kendisinden SONRA yazılan
+          header şeridinin de ÜSTÜNE çıkıyor ve başlık + iki cam buton perde
+          indiği an görünmez oluyordu. Kullanıcıya "iskelet biterken, tam kart
+          fotoğrafı gelecekken butonlar ve başlık gidiyor, sonra geri geliyor"
+          olarak okunuyordu — iki temada da, çünkü ortada bir renk sorunu YOK:
+          katman örtülüyordu. Perdenin ömrü bu pencerenin birebir kendisi
+          (mount: iskelet bitti · unmount: `coverSettled`).
+
+          Aynı sızıntıdan etkilenen İKİNCİ katman FirePullHint'in ipucu bandı
+          (`zIndex: 100`): çekişte header'ın üstüne siyah gradyan düşürüyordu,
+          oysa o perde "camı da glifi de boğar" diye bilerek kaldırılmıştı
+          (bkz. aşağıdaki "FIRE ÇEKİŞİNİN HEADER PERDESİ DE KALDIRILDI" notu).
+
+          HEADER'A zIndex VERMEK ÇÖZÜM DEĞİL: şeritten sonra yazılan sheet'ler
+          (mod seçici, filtre) 0'da kalıyor, header'ı 100'e çıkarmak onu açık
+          bir sheet'in de üstüne koyardı. Doğru kapı sızıntıyı KAYNAĞINDA
+          durdurmak — deste + perde bu kabın içinde kalır, header dışında. */}
+      <View collapsable={false} style={{ flex: 1 }}>
         {deckSkeletonOnly ? (
           /* İSKELET KABIN İÇİNDE KALIR, kartın kabuğu gibi TAŞMAZ. Bir tur
              `marginBottom: -tabBarOccupied` verilmişti (kabuk ekranın dibine
@@ -3011,8 +3290,12 @@ export default function DiscoverScreen() {
           bileşenin başlığında (iki cam butonun 16pt insets'i kaymasın).
 
           KARTTAN SONRA YAZILIYOR: aynı ata içinde sonraki kardeş üstte
-          çizilir, yani `zIndex` gerekmiyor. `box-none` — satırın boş orta
-          kısmı kartın jestlerini (swipe, pull) yutmamalı.
+          çizilir, yani `zIndex` gerekmiyor — AMA bu yalnız kart kabı kendi
+          stacking context'ini kurduğu sürece doğru. Kurmadığı sürüm ekranda
+          görüldü: destenin ve iskelet perdesinin zIndex'leri köke taşınıp bu
+          şeridin üstüne çıkıyordu (bkz. kart kabındaki `collapsable={false}`
+          notu). `box-none` — satırın boş orta kısmı kartın jestlerini (swipe,
+          pull) yutmamalı.
 
           KART AÇILINCA SÖNÜYOR (headerRevealStyle): kart artık açılırken
           kalkmadığı için bu satır kendiliğinden örtülmüyor. */}
@@ -3039,11 +3322,18 @@ export default function DiscoverScreen() {
       >
         {/* Absolute ortalı — butonlardan ÖNCE yazılıyor ki onların dokunma
             alanı üstte kalsın (aynı ata, sonraki kardeş üstte çizilir). */}
-        <ModeTitle mode={mode} onPress={() => setModePickerVisible(true)} />
+        <ModeTitle
+          testID="discover-btn-mode"
+          mode={mode}
+          onPress={() => setModePickerVisible(true)}
+          onSurface={headerOnSurface}
+        />
 
         <DiscoverHeaderGlassButton
+          testID="discover-btn-rewind"
           systemName="arrow.counterclockwise"
           fallback={RotateCcw}
+          onSurface={headerOnSurface}
           // Keşif'in bütün cam butonları tek çapta (bkz.
           // DISCOVER_GLASS_BUTTON_SIZE) — devirde şeridin uçlarındaki okun ve
           // Fire'ın yerini alıyorlar.
@@ -3069,8 +3359,10 @@ export default function DiscoverScreen() {
         />
 
         <DiscoverHeaderGlassButton
+          testID="discover-btn-filter"
           systemName="slider.horizontal.3"
           fallback={SlidersHorizontal}
+          onSurface={headerOnSurface}
           size={DISCOVER_GLASS_BUTTON_SIZE}
           onPress={() => setFilterVisible(true)}
           label={t("discover.filters.title")}

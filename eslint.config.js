@@ -51,6 +51,67 @@ module.exports = tseslint.config(
     rules: { 'no-console': 'off' },
   },
   {
+    // ── e2e (Appium + WebdriverIO) ──────────────────────────────────────────
+    // Burada iki YASAK var ve ikisi de performans/doğruluk kararı, stil değil.
+    files: ['e2e/**/*.ts'],
+    languageOptions: {
+      globals: {
+        // @wdio/globals — runtime'da enjekte ediliyor, tipleri e2e/tsconfig.json'da.
+        browser: 'readonly',
+        driver: 'readonly',
+        $: 'readonly',
+        $$: 'readonly',
+        expect: 'readonly',
+        describe: 'readonly',
+        it: 'readonly',
+        before: 'readonly',
+        beforeEach: 'readonly',
+        after: 'readonly',
+        afterEach: 'readonly',
+        process: 'readonly',
+        console: 'readonly',
+      },
+    },
+    rules: {
+      // Betikler ve raporlar bilerek console'a yazıyor.
+      'no-console': 'off',
+      'no-restricted-syntax': [
+        'error',
+        {
+          // XPath YASAK: XCUITest'te tüm sayfa kaynağı XML'e serialize edilip
+          // XPath motoruna veriliyor. Bu ekranlar derin (SwipeCard.tsx 287 KB)
+          // ve tek sorgu 3-8 sn sürüyor; snapshotMaxDepth kırpınca da SESSİZCE
+          // boş dönüyor. `~` ise WDA'da doğrudan identifier eşleşmesi (50-200 ms).
+          selector:
+            "CallExpression[callee.name=/^\\$\\$?$/] > Literal[value=/^(\\/\\/|xpath=|\\.\\/\\/)/]",
+          message:
+            'XPath yasak (XCUITest\'te 3-8 sn + sessiz boş dönüş). `~id`, ' +
+            '`-ios predicate string:` ya da `-ios class chain:` kullan.',
+        },
+        {
+          selector:
+            "MemberExpression[object.name='browser'][property.name='$'] ~ Literal[value=/^\\/\\//]",
+          message: 'XPath yasak — bkz. e2e/support/selectors.ts seçici hiyerarşisi.',
+        },
+        {
+          // `browser.pause` YASAK: sabit bekleme flake üretiyor ve gizliyor.
+          // Yerine support/driver.ts'in açık koşullu beklemeleri ya da
+          // `waitForDisplayed` kullanılıyor. Tek meşru istisna sheet detent'i
+          // ve o da Page Object içinde gerekçeli duruyor.
+          selector: "MemberExpression[object.name='browser'][property.name='pause']",
+          message:
+            'browser.pause yasak — koşullu bekleme kullan (waitForDisplayed / browser.waitUntil). ' +
+            'Kasıtlı insan gecikmeleri yalnız e2e/human/ içinde.',
+        },
+      ],
+    },
+  },
+  {
+    // human/ katmanındaki gecikmeler KASITLI: insan tepki süresi modeli.
+    files: ['e2e/human/**/*.ts'],
+    rules: { 'no-restricted-syntax': 'off' },
+  },
+  {
     ignores: [
       'node_modules/**',
       'ios/**',

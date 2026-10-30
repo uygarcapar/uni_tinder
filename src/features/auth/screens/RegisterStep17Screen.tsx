@@ -138,7 +138,7 @@ export default function RegisterStep17Screen({ navigation }: Props) {
   };
 
   return (
-    <View className="flex-1" style={{ backgroundColor: colors.bg }}>
+    <View testID="reg-step17-screen" className="flex-1" style={{ backgroundColor: colors.bg }}>
       <KeyboardAvoidingView
         style={{ flex: 1 }}
         behavior={Platform.OS === "ios" ? "padding" : undefined}
@@ -210,6 +210,7 @@ export default function RegisterStep17Screen({ navigation }: Props) {
 
       <RegisterStickyFooter>
         <AnimatedPressable
+          testID="reg-btn-next"
           onPress={handleNext}
           style={{
             borderRadius: 999,

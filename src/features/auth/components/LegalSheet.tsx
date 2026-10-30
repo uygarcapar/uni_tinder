@@ -1,10 +1,7 @@
-import { View, Text, TouchableOpacity } from "react-native";
-import { BottomSheetScrollView } from "@gorhom/bottom-sheet";
+import { View, Text } from "react-native";
 import { useTranslation } from "react-i18next";
-import { FileText, ShieldCheck, X } from "@/shared/icons";
-import AppBottomSheet from "@/shared/components/AppBottomSheet";
+import AppModal, { SHEET_TOP_RADIUS_LARGE } from "@/shared/components/AppModal";
 import PolicyMarkdown from "@/shared/components/PolicyMarkdown";
-import SFIcon from "@/shared/components/SFIcon";
 import { colors } from "@/shared/theme/colors";
 
 export type LegalDocument = "terms" | "privacy";
@@ -17,14 +14,19 @@ export type LegalDocument = "terms" | "privacy";
  * iki ayrı i18n bloğunda tutarsak biri güncellenip diğeri bayatlıyor. Burada
  * yalnız başlık/açıklama ayrı (`auth.legal.privacy.*`), çünkü onay ekranının
  * açıklaması "okuyup onayla" diyor, salt okunur görünümde yanlış duruyor.
+ *
+ * Kabuk `AppModal` — uygulamanın tek modal yapısı. Önceden ham `AppBottomSheet`
+ * üstüne elle yazılmış bir başlık satırı (ikon + 22px başlık + yuvarlak X)
+ * duruyordu; o düzen uygulamanın geri kalanındaki progressive-blur header'dan
+ * ayrı kalıyordu. Başlık artık header'ın işi (`titleAlign="left"` → hep görünür,
+ * X'in solunda), ikon da onunla birlikte kalktı: AppModal header'ında ikon slotu
+ * yok ve aynı başlığı iki kez yazmanın anlamı yoktu.
  */
 const DOCS = {
   terms: {
     headerPrefix: "auth.legal.terms",
     sectionPrefix: "auth.legal.terms",
     sectionCount: 8,
-    sfIcon: "doc.text.fill",
-    fallbackIcon: FileText,
   },
   privacy: {
     headerPrefix: "auth.legal.privacy",
@@ -33,8 +35,6 @@ const DOCS = {
     // rızası). `tr.ts`/`en.ts`'teki bölüm sayısıyla birebir olmalı; fazlası boş
     // başlık, eksiği sessizce kırpılmış metin.
     sectionCount: 15,
-    sfIcon: "checkmark.shield.fill",
-    fallbackIcon: ShieldCheck,
   },
 } as const;
 
@@ -52,116 +52,60 @@ export default function LegalSheet({ document, onClose }: LegalSheetProps) {
   const doc = DOCS[document ?? "terms"];
 
   return (
-    <AppBottomSheet
+    <AppModal
       visible={!!document}
       onClose={onClose}
-      snapPoints={["92%"]}
-      handleComponent={null}
+      title={t(`${doc.headerPrefix}.title`)}
+      // Uzun okuma metni — sheet en üste kadar açılıyor (topInset safe area,
+      // yani header çentiğin altında kalıyor). Köşe yarıçapı da tam ekrana
+      // yakın açılan sheet'lerin opt-in'i: aynı 36 bu boyda daha keskin
+      // okunuyordu.
+      fullScreen
+      cornerRadius={SHEET_TOP_RADIUS_LARGE}
+      // X, ProfileEditModal'ın (ve profil başlığındaki çan/ayarların) BİREBİR
+      // aynı butonu: kabuğu olmayan berrak cam, yuvarlak, GLASS_ICON_CLEAR_SIZE
+      // çapında. Ölçüyü bu knob veriyor — satırın kendi payları (üstten 20,
+      // sağdan 16) ikisinde de varsayılan ve ikisi de `fullScreen`, yani
+      // buton ekranın sağına/üstüne ProfileEditModal'ın onay butonuyla aynı
+      // uzaklıkta duruyor.
+      clearGlassHeader
+      // Başlık belgenin kimliği; scroll'u bekleyip belirmesinin anlamı yok.
+      titleAlign="left"
+      // Metnin son satırı ekranın dibine yapışmasın. Header payı (74) ve yatay
+      // pay (20) AppModal'dan geliyor.
+      contentContainerStyle={{ paddingBottom: 56 }}
     >
-      <View
+      <Text
         style={{
-          flex: 1,
-          backgroundColor: colors.bg,
-          borderTopLeftRadius: 36,
-          borderTopRightRadius: 36,
-          overflow: "hidden",
+          color: colors.textSecondary,
+          fontSize: 14,
+          lineHeight: 20,
+          marginTop: 4,
+          marginBottom: 20,
         }}
       >
-        <View
-          style={{
-            paddingHorizontal: 24,
-            paddingTop: 24,
-            paddingBottom: 12,
-            flexDirection: "row",
-            alignItems: "center",
-            gap: 12,
-          }}
-        >
-          <SFIcon
-            name={doc.sfIcon}
-            fallback={doc.fallbackIcon}
-            size={26}
-            color={colors.text}
-            strokeWidth={1.5}
-            style={{ pointerEvents: "none" }}
-          />
-          <Text
-            style={{
-              color: colors.text,
-              fontSize: 22,
-              fontWeight: "700",
-              flex: 1,
-            }}
-          >
-            {t(`${doc.headerPrefix}.title`)}
-          </Text>
+        {t(`${doc.headerPrefix}.description`)}
+      </Text>
 
-          <TouchableOpacity
-            onPress={onClose}
-            activeOpacity={0.7}
-            accessibilityRole="button"
-            accessibilityLabel={t("common.close")}
-            hitSlop={{ top: 12, bottom: 12, left: 12, right: 12 }}
-            style={{
-              width: 32,
-              height: 32,
-              borderRadius: 999,
-              alignItems: "center",
-              justifyContent: "center",
-              backgroundColor: colors.hairlineSoft,
-            }}
-          >
-            <SFIcon
-              name="xmark"
-              fallback={X}
-              size={14}
-              color={colors.textSecondary}
-              strokeWidth={2}
-              weight="semibold"
+      <View style={{ gap: 16 }}>
+        {Array.from({ length: doc.sectionCount }, (_, i) => i + 1).map((n) => (
+          <View key={n} style={{ gap: 6 }}>
+            <Text
+              style={{
+                color: colors.text,
+                fontSize: 20,
+                fontWeight: "600",
+                marginBottom: 12,
+              }}
+            >
+              {t(`${doc.sectionPrefix}.sectionTitle${n}`)}
+            </Text>
+            <PolicyMarkdown
+              source={t(`${doc.sectionPrefix}.section${n}Content`)}
             />
-          </TouchableOpacity>
-        </View>
-
-        <Text
-          style={{
-            color: colors.textSecondary,
-            fontSize: 14,
-            lineHeight: 20,
-            paddingHorizontal: 24,
-            marginBottom: 8,
-          }}
-        >
-          {t(`${doc.headerPrefix}.description`)}
-        </Text>
-
-        <BottomSheetScrollView
-          style={{ flex: 1, marginHorizontal: 16 }}
-          contentContainerStyle={{ paddingBottom: 64 }}
-          showsVerticalScrollIndicator={false}
-        >
-          <View style={{ padding: 8, gap: 16 }}>
-            {Array.from({ length: doc.sectionCount }, (_, i) => i + 1).map(
-              (n) => (
-                <View key={n} style={{ gap: 6 }}>
-                  <Text
-                    style={{
-                      color: colors.text,
-                      fontSize: 20,
-                      fontWeight: "600",
-                      marginBottom: 12,
-                    }}
-                  >
-                    {t(`${doc.sectionPrefix}.sectionTitle${n}`)}
-                  </Text>
-                  <PolicyMarkdown
-                    source={t(`${doc.sectionPrefix}.section${n}Content`)}
-                  />
-                </View>
-              ),
-            )}
           </View>
-        </BottomSheetScrollView>
+        ))}
       </View>
-    </AppBottomSheet>
+    </AppModal>
   );
 }

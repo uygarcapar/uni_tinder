@@ -40,7 +40,7 @@ export default function RegisterStep5Screen({ navigation }: NativeStackScreenPro
   });
 
   return (
-    <View className="flex-1" style={{ backgroundColor: colors.bg }}>
+    <View testID="reg-step5-screen" className="flex-1" style={{ backgroundColor: colors.bg }}>
       <View className="pt-16 pb-6 px-6" style={{ backgroundColor: colors.bg }}>
         <RegisterBackButton onPress={() => navigation.goBack()} />
       </View>
@@ -106,6 +106,7 @@ export default function RegisterStep5Screen({ navigation }: NativeStackScreenPro
       <KeyboardStickyView offset={{ closed: 0, opened: 15 }}>
         <View className="px-6 pb-8 pt-4">
           <AnimatedPressable
+            testID="reg-btn-next"
             onPress={handleNext}
             style={{
               borderRadius: 999,

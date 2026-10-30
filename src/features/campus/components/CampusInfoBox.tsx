@@ -1,13 +1,12 @@
 import { memo } from "react";
-import { StyleSheet, Text, View } from "react-native";
+import { StyleSheet, View } from "react-native";
 import { Image } from "expo-image";
-import AnimatedPressable from "@/shared/components/AnimatedPressable";
 import { campusInfoArtFor } from "@/features/campus/campusInfoArt";
-import { Plus } from "@/shared/icons";
 import { colors, withAlpha } from "@/shared/theme/colors";
 
 /**
- * KAMPÜS ŞERİDİNİN "DOLGU" KUTULARI — poster kutusu ve paylaşma kutusu.
+ * KAMPÜS ŞERİDİNİN "DOLGU" KUTULARI — poster karesi ve ÇERÇEVELİ KUTU reçetesi
+ * (şeridin anı kartı da onu çiziyor).
  *
  * ── Neden boş durum YERİNE kutular ─────────────────────────────────────────
  * Şeritte önce klasik bir boş durum vardı (büyük glif + başlık + alt satır) ve
@@ -30,18 +29,29 @@ import { colors, withAlpha } from "@/shared/theme/colors";
  *     bir şey kalmadı.
  * Kalan tek çizim sol üstteki lit imzası, gerekçesi LOGO sabitlerinde.
  *
- * ── İkisi AYNI KABUK, iki zemin ────────────────────────────────────────────
- * Kabuk — ölçü, yarıçap, köşe eğrisi — tek yerde duruyor: iki ayrı dosyaya
- * bölünse şeritte yan yana duran iki kutu kaçınılmaz olarak ayrışırdı.
- * Zeminleri AYRI: poster kutusunda fotoğraf, paylaşma kutusunda temanın düz
- * rengi (gerekçe `CampusAddBox`ta).
+ * ── AYNI REÇETENİN İKİ ÖLÇEĞİ ──────────────────────────────────────────────
+ * Çerçeveli kabuk — ölçü, çizgi, boşluk, yarıçap, köşe eğrisi — tek yerde
+ * duruyor: ayrı dosyalara bölünse yan yana duran kutular kaçınılmaz olarak
+ * ayrışırdı. ÜÇ okuyucu var (`CampusOutlinedBox` + `campusBoxMetrics`):
+ *   • şeridin anı kartları (`CampusMomentCard`, 222pt boyunda),
+ *   • şeridin poster kareleri (`CampusInfoBox`, aynı boy),
+ *   • akış başlığındaki anlar destesi (FeedMomentsPeek, 42pt — ölçüleri
+ *     reçeteden DEĞİL elle, gerekçesi orada).
+ *
+ * ⚠️ `BoxShell` KALDIRILDI: kart çerçeveye alınırken (istek) poster karesi de
+ * aynı kabuğa taşındı, yani bu dosyada artık TEK kutu uygulaması var.
+ *
+ * ⚠️ PAYLAŞMA KUTUSU BU DOSYADAN TAMAMEN ÇIKTI (istek): önce tam boy
+ * "Share yours" kutusu, sonra onun yerine konan küçük çerçevesiz kutu
+ * kaldırıldı. Aksiyon haritanın sağ üstündeki cam yuvarlak butonda —
+ * tarihçesi ve geri koyma reçetesi dosyanın SONUNDAKİ notta.
  */
 
 /** Kutunun köşesi — `CampusMomentCard` ile AYNI olmak zorunda (yan yana). */
 const BOX_RADIUS = 28;
 
 /**
- * PAYLAŞMA KUTUSUNUN ÇERÇEVESİ — Profil'deki avatar halkasının kuralı.
+ * KUTUNUN ÇERÇEVESİ — Profil'deki avatar halkasının kuralı.
  *
  * Üç katman, dıştan içe: GRİ ÇİZGİ → BOŞLUK → dolu blok. Avatarda da aynı
  * sıra var (gradyan halka → boşluk → fotoğraf) ve oradaki ders şu: boşluk
@@ -54,21 +64,25 @@ const BOX_RADIUS = 28;
  * en dışta, BOŞLUK ZEMİNSİZ, yani arkadan HARİTA görünüyor (istek).
  *
  * ⚠️ DIŞ ÖLÇÜ DEĞİŞMİYOR — çizgi de boşluk da kutunun içinden yer alıyor.
- * Dışa eklenseydi paylaşma kutusu şeritte poster karelerinden birkaç pt
- * büyük olur ve `snapToInterval` ile kayardı.
+ * Dışa eklenseydi çerçeveli kutu şeritte komşularından birkaç pt büyük olur
+ * ve yan yana dizilen kutular hizasını kaybederdi.
  *
- * Sayılar avatarınkinden (3/3) büyük: orada halka 80pt'lik bir dairede,
- * burada 200–300pt'lik bir karede duruyor ve aynı oran gözle görünmüyordu.
- * Ayar üç turda geldi: 2/14 → 4/8 → 6/5 → 7/4 (istek, üç kez "boşluğu azalt
- * kenarı kalınlaştır"). Çizgi artık boşluktan KALIN — avatardaki eşit orandan
- * bilerek ayrışıyor: orada halka 80pt'lik bir dairenin dekoru, burada 200pt+
- * bir kutunun haritanın üstünde kendini taşıyan kenarı.
+ * ── ⚠️🔴 SAYILAR İNCELDİ: 7/4 → 3/2 (istek: "borderi incelt, ufak") ────────
+ * Tarihçe önce ters yöne gitmişti: 2/14 → 4/8 → 6/5 → 7/4, üç tur boyunca
+ * "boşluğu azalt kenarı kalınlaştır". O ayar KARE ve 222pt'lik bir kutuda
+ * yapıldı; kutu 3:4'e geçip 167pt'ye daralınca aynı çizgi kartın içini yemeye
+ * başladı ve kutu "çerçevenin içindeki küçük fotoğraf" gibi okundu.
  *
- * ⚠️ BOŞLUK 4'ÜN ALTINA İNMESİN: 3'te çizgi ile blok arasındaki hava bir
- * render artefaktı gibi okunmaya başlıyor (ölçü @3x'te 9px) ve çerçeve
- * yeniden "kutunun kendi kenarı" hâline dönüyor — bu düzenin tamamı o
- * okunuşu kırmak için var. Daha kalın bir kenar isteniyorsa boşluğu değil
- * `RING_WIDTH`i büyüt; 10 civarı iç bloğu artı + yazıya dar getiriyor.
+ * 3/2, akış başlığındaki anlar destesinin (FeedMomentsPeek > BOX_RING/BOX_GAP)
+ * BİREBİR AYNI sayıları: iki yüzeyin oranı da (3:4) çizgi kalınlığı da aynı
+ * olunca deste şeridin küçültülmüş hâli gibi okunuyor. Kalınlaştırılacaksa
+ * iki yer birden düşünülmeli.
+ *
+ * ⚠️ ÇİZGİ BOŞLUKTAN KALIN KALMAK ZORUNDA (avatardaki eşit orandan bilerek
+ * ayrışıyor): eşitlenirse çerçeve yine "kutunun kendi kenarı" gibi okunuyor ve
+ * bu düzenin tamamı o okunuşu kırmak için var. 3/2 o yüzden TABAN — boşluk
+ * @3x'te 6px, bir tık daha inince çizgi ile blok arasındaki hava bir render
+ * artefaktına dönüyor.
  *
  * ⚠️ RENK `colors.border` DEĞİL `colors.textMuted` (istek: "gri olsun").
  * `border` temanın yüzey ailesinden türüyor ve koyu temada #3A3A3A —
@@ -81,8 +95,56 @@ const BOX_RADIUS = 28;
  * bir renk tema değişiminde bayat kalıyor (colors.ts'in iki kuralından
  * biri). Ölçüler sabit, renk inline okunuyor.
  */
-const RING_WIDTH = 7;
-const RING_GAP = 4;
+const RING_WIDTH = 3;
+const RING_GAP = 2;
+
+/**
+ * Yukarıdaki üç sayının ölçüldüğü BOY — 222pt (şeritteki kutunun tipik
+ * YÜKSEKLİĞİ, bkz. CampusMomentsStrip > CARD_HEIGHT_RATIO).
+ *
+ * ⚠️ ÖLÇÜ ARTIK BOY, kutunun kenarı değil: kutu 3:4 olduğu için kare bir
+ * referans kalmadı ve çağıran yükseklik geçiyor (gerekçe şeritte,
+ * `boxMetrics`in yanında).
+ *
+ * Reçete başka bir ölçüde kullanılacaksa sayılar ORANLA taşınıyor, elle
+ * yeniden seçilmiyor: iki yerde ayrı ayrı ayarlanan bir çerçeve kaçınılmaz
+ * olarak ayrışır ve küçük kutu "aynı kart değil" gibi okunur.
+ */
+const CAMPUS_BOX_REF_SIZE = 222;
+
+export interface CampusBoxMetrics {
+  ring: number;
+  gap: number;
+  radius: number;
+}
+
+/**
+ * Çerçeve reçetesinin verilen ölçüdeki karşılığı.
+ *
+ * ⚠️ TABANLAR VAR: oran küçük bir kutuda boşluğu yarım pt'ye indiriyor ve o
+ * ölçüde hava bir render artefaktı gibi okunuyor (aynı uyarının referans
+ * boydaki hâli `RING_GAP`te). 2pt @3x'te 6px — en küçük görünür hava.
+ *
+ * ⚠️ REÇETE İNCELDİKTEN SONRA (3/2) referans boyun ALTINDA pratikte hep
+ * tabanlara çöküyor: 3/2 zaten tabanın bir tık üstü. Yani ölçeklemenin asıl
+ * işi kalan tek sayıda — köşede.
+ */
+export function campusBoxMetrics(size: number): CampusBoxMetrics {
+  const scale = size / CAMPUS_BOX_REF_SIZE;
+  const gap = Math.max(2, Math.round(RING_GAP * scale));
+  return {
+    /**
+     * ⚠️ ÇİZGİ BOŞLUKTAN KALIN KALMAK ZORUNDA — reçetenin kendisi bu (gerekçe
+     * `RING_WIDTH`te). `gap + 1` tabanı İNCELTMEDEN SONRA ASIL İŞİ YAPAN
+     * SATIR: 3/2'de oran zaten tabana yakın ve ölçek küçüldükçe iki sayı da
+     * 2'ye çöküyor — bu taban olmasa çerçeve küçük kutuda eşitlenip "kutunun
+     * kendi kenarı" gibi okunmaya başlıyor.
+     */
+    ring: Math.max(2, Math.round(RING_WIDTH * scale), gap + 1),
+    gap,
+    radius: Math.round(BOX_RADIUS * scale),
+  };
+}
 
 /**
  * İÇERİDEKİ BLOĞUN ZEMİNİ — GRİ (istek).
@@ -121,61 +183,16 @@ const LOGO_W = 54;
 const LOGO_H = 24;
 const LOGO_INSET = 16;
 
-interface ShellProps {
-  width: number;
-  height: number;
-  children: React.ReactNode;
-  /**
-   * DOLU DEĞİL, ÇERÇEVELİ: kabuk zeminsiz kalıyor ve dış kenarına gri bir
-   * çizgi çiziliyor. Paylaşma kutusunun kabuğu bu — gerekçe `CampusAddBox`ta.
-   */
-  outlined?: boolean;
-  /**
-   * Kutunun kendi metni YOK (kelime karede yazılı) — kuralı taşıyan tek yer
-   * burası. Verilmezse kabuk erişilebilirlik ağacında görünmüyor.
-   */
-  accessibilityLabel?: string;
-}
+/**
+ * ⚠️ ORTAK KABUK (`BoxShell`) KALDIRILDI. Dolgu kutusu artık şeridin kartıyla
+ * AYNI çerçeveyi çiziyor (`CampusOutlinedBox`, istek: "etrafına aynı şekilde
+ * border da ekleyelim") ve kabuğun iki dalı da (çerçeveli / düz zeminli) onun
+ * içinde zaten var — ikinci bir uygulama tutmak iki yüzeyi ayrıştırmaktan
+ * başka bir şey yapmıyordu. Çerçevesiz bir kutu geri gerekirse `ring`/`gap`
+ * 0 geçilir, kabuğu geri yazmaya gerek yok.
+ */
 
-/** Ortak kabuk: ölçü + köşe. Zemini çağıran koyuyor. */
-function BoxShell({
-  width,
-  height,
-  children,
-  outlined,
-  accessibilityLabel,
-}: ShellProps) {
-  return (
-    <View
-      accessible={accessibilityLabel ? true : undefined}
-      accessibilityLabel={accessibilityLabel}
-      style={{
-        width,
-        height,
-        borderRadius: BOX_RADIUS,
-        borderCurve: "continuous",
-        overflow: "hidden",
-        ...(outlined
-          ? {
-              // ZEMİN YOK: çerçeve ile içerideki blok arasından HARİTA
-              // görünüyor (istek). `transparent` yazmak yerine alan hiç
-              // verilmiyor — RN'de zemin zaten varsayılan olarak yok.
-              borderWidth: RING_WIDTH,
-              borderColor: colors.textMuted,
-            }
-          : {
-              // Fotoğraf çözülene kadar görünen tek şey — kutu o bir karede
-              // beyaz/boş parlamıyor.
-              backgroundColor: colors.surface2,
-            }),
-      }}
-    >
-      {children}
-    </View>
-  );
-}
-
-export interface CampusInfoBoxProps {
+export interface CampusInfoBoxProps extends CampusBoxMetrics {
   width: number;
   height: number;
   /** Zemin fotoğrafını seçen anahtar — metnin i18n anahtarıyla AYNI. */
@@ -189,17 +206,34 @@ export interface CampusInfoBoxProps {
   text: string;
 }
 
-/** POSTER KUTUSU — kare + sol üstte imza, başka hiçbir şey. */
+/** POSTER KUTUSU — çerçeve + afiş + sol üstte imza, başka hiçbir şey. */
 export const CampusInfoBox = memo(function CampusInfoBox({
   width,
   height,
+  ring,
+  gap,
+  radius,
   infoKey,
   text,
 }: CampusInfoBoxProps) {
   const source = campusInfoArtFor(infoKey);
 
   return (
-    <BoxShell width={width} height={height} accessibilityLabel={text}>
+    <CampusOutlinedBox
+      width={width}
+      height={height}
+      ring={ring}
+      gap={gap}
+      radius={radius}
+      // Afiş çözülene kadar görünen tek şey — kutu o bir karede beyaz/boş
+      // parlamıyor. ⚠️ Çerçevenin gri dolgusu (FILL_ALPHA) BURADA YANLIŞ:
+      // altında bir fotoğraf var, yani blok yüzeyin kendisi değil zemini.
+      // ⚠️ ANI KARTIYLA AYNI TOKEN (`surface4`) — uzun gerekçe orada
+      // (CampusMomentCard > `fill`). Pratikte görünmüyor (kare gömülü bir
+      // varlık, ilk karede hazır) ama iki foto zemininin ayrışmasına gerek yok.
+      fill={colors.surface4}
+      accessibilityLabel={text}
+    >
       {source ? (
         <>
           {/* Kareye HİÇBİR MÜDAHALE YOK: ne bulanıklık, ne perde, ne renk.
@@ -234,111 +268,155 @@ export const CampusInfoBox = memo(function CampusInfoBox({
           </View>
         </>
       ) : null}
-    </BoxShell>
+    </CampusOutlinedBox>
   );
 });
 
-export interface CampusAddBoxProps {
+export interface CampusOutlinedBoxProps extends CampusBoxMetrics {
   width: number;
   height: number;
-  onPress: () => void;
-  label: string;
+  children?: React.ReactNode;
+  accessibilityLabel?: string;
+  /**
+   * İÇ BLOĞUN ZEMİNİ — verilmezse ortak gri (`FILL_ALPHA`).
+   *
+   * ⚠️ ORTAK GRİ, FOTOĞRAF TAŞIYAN KUTUDA YANLIŞ: blok orada bir yüzey değil,
+   * fotoğrafın ALTINDAKİ zemin ve yarı saydam gri, foto çözülürken haritayı
+   * kutunun içinden gösteriyor. O yüzden şeridin anı kartı da poster karesi de
+   * `colors.surface2` geçiyor — "o bir karede beyaz/boş parlamasın" zemini.
+   *
+   * ⚠️ VARSAYILAN BİLEREK `undefined`: zemin kararı buraya TAŞINMADI. Prop
+   * verilmeyen tek çağrı akış destesinin kutuları ve onlar ortak gride
+   * KALIYOR — boş kutu orada "burada bir şey yok ama koyabilirsin" demek
+   * zorunda, yani gri dolgunun kendisi bilgi.
+   */
+  fill?: string;
+  /**
+   * ÇİZGİ İLE İÇ BLOK ARASINDAKİ BOŞLUĞUN ZEMİNİ — verilmezse ŞEFFAF.
+   *
+   * ⚠️ VARSAYILANI DEĞİŞTİRME: boşluğun şeffaflığı bu çerçevenin tasarım
+   * kararı (gerekçe `RING_WIDTH`te) — Profil'deki avatar halkasının kuralı,
+   * "arkada ne varsa" onunla çiziliyor ve şeritte arkada HARİTA var.
+   *
+   * ⚠️ TEK MÜŞTERİSİ: akış başlığındaki anlar destesi (istek: "ana kare ile
+   * border'ı arasındaki boşlukta boşluk yerine arkaplan rengi olsun direkt o
+   * sayfanın"). Orada kutular haritanın üstünde DEĞİL sayfanın başlık
+   * satırında duruyor ve şeffaf boşluk, arkadan geçen bulanık haritayı iki
+   * çizgi arasında bir şerit olarak gösteriyordu.
+   */
+  gapFill?: string;
 }
 
 /**
- * PAYLAŞMA KUTUSU — şeridin BAŞINDA: ORTADA artı, ALTINDA tek satır.
+ * ÇERÇEVELİ KUTU — üç katman, dıştan içe: GRİ ÇİZGİ → BOŞLUK → dolu blok.
+ * Gerekçeler `RING_WIDTH`/`FILL_ALPHA`da.
  *
- * ⚠️ Eskiden bu bir sağ üst köşe cam butonuydu ("+"). Şeride taşındı: aksiyon
- * artık desteyle aynı hatta ve "ilk kutu sensin" okunuşunu veriyor.
+ * ⚠️ TEK UYGULAMA: şeridin anı kartı, şeridin poster karesi ve akış
+ * başlığındaki deste ÜÇÜ DE bunu çiziyor. Ölçüler dışarıdan geliyor
+ * (`campusBoxMetrics` ya da elle), yani iki boy aynı reçetenin iki ölçeği —
+ * kopyalanmış iki kutu değil.
  *
- * ⚠️ ZEMİN DÜZ TEK RENK (istek) — modun aksanından türeyen gradyan KALKTI.
- * Gradyan şeridin tek "boş" yüzeyini de renkli bir lekeye çeviriyordu ve
- * yanındaki üç poster zaten renk taşıyor; aksiyon kutusunun işi dikkat
- * çekmek değil, DURMAK.
- *
- * ⚠️ KUTUDA MOD RENGİ HİÇ KALMADI ve bu yüzden `mode` prop'u da kalktı:
- * önce zemin gradyanı, sonra artının arkasındaki aksan dairesi, en son da
- * glifin kendi aksan rengi gitti (yerine `colors.text`). Mod bağı şeridin
- * geri kalanında duruyor — gerçek anların karar butonları ve başlık.
- *
- * ⚠️ ÖLÜ BUTON ÇİZİLMİYOR — çağıran yalnız `canShare` iken mount ediyor
- * (kampüs dışındaysa, bugün paylaşmışsa ya da özellik kapalıysa kutu HİÇ yok).
- * Basınca hata veren bir artı kullanıcıyı her seferinde kandırırdı.
+ * ⚠️ KARTIN İÇİNDE DOKUNUŞUN ALTINDA duruyor, üstünde değil: şeridin kartı
+ * basılı tutulduğunda iOS natif context menüsüyle KALKIYOR ve kalkan şeyin
+ * çerçeveyi de taşıması gerekiyor (bkz. CampusMomentCard > `surface`).
  */
-export const CampusAddBox = memo(function CampusAddBox({
+export const CampusOutlinedBox = memo(function CampusOutlinedBox({
   width,
   height,
-  onPress,
-  label,
-}: CampusAddBoxProps) {
+  ring,
+  gap,
+  radius,
+  children,
+  accessibilityLabel,
+  fill,
+  gapFill,
+}: CampusOutlinedBoxProps) {
   return (
-    <AnimatedPressable
-      pressScale={0.97}
-      onPress={onPress}
-      accessibilityRole="button"
-      accessibilityLabel={label}
+    <View
+      accessible={accessibilityLabel ? true : undefined}
+      accessibilityLabel={accessibilityLabel}
+      style={{
+        width,
+        height,
+        borderRadius: radius,
+        borderCurve: "continuous",
+        overflow: "hidden",
+        // ZEMİN YOK: çerçeve ile içerideki blok arasından HARİTA görünüyor
+        // (istek). `transparent` yazmak yerine alan hiç verilmiyor.
+        borderWidth: ring,
+        borderColor: colors.textMuted,
+      }}
     >
-      <BoxShell width={width} height={height} outlined>
-        {/* BOŞLUK KATMANI — çerçeve ile içerideki blok arasındaki hava.
-            Zemini YOK: Profil'de avatarın halkası ile fotoğrafı arasındaki
-            boşluk "arkada ne varsa" onunla çiziliyor; burada arkada HARİTA
-            var, yani boşluk gerçekten boş (istek). Kabuğun `overflow:
-            hidden`ı sayesinde içerideki blok köşelerden taşmıyor. */}
+      {/* BOŞLUK KATMANI — çerçeve ile içerideki blok arasındaki hava.
+          Zemini YOK: Profil'de avatarın halkası ile fotoğrafı arasındaki
+          boşluk "arkada ne varsa" onunla çiziliyor; burada arkada HARİTA
+          var, yani boşluk gerçekten boş (istek). Kabuğun `overflow: hidden`ı
+          sayesinde içerideki blok köşelerden taşmıyor. */}
+      <View
+        style={{
+          flex: 1,
+          padding: gap,
+          // ⚠️ `undefined` = ŞEFFAF ve varsayılan o (gerekçe prop'un notunda).
+          backgroundColor: gapFill,
+          alignItems: "stretch",
+          justifyContent: "center",
+        }}
+      >
+        {/* İÇERİDEKİ BLOK — kutunun tek dolu yüzeyi, çerçeveyle aynı griden
+            (gerekçe FILL_ALPHA'da). `fill` verilirse o kazanıyor — tek
+            müşterisi ve gerekçesi prop'un yanında. */}
         <View
           style={{
             flex: 1,
-            padding: RING_GAP,
-            alignItems: "stretch",
+            backgroundColor: fill ?? withAlpha(colors.textMuted, FILL_ALPHA),
+            // ⚠️ İç yarıçap, bloğun dış kenardan TOPLAM uzaklığı kadar
+            // düşüyor: çizgi RN'de kutunun İÇİNE çiziliyor, yani çocuk zaten
+            // `ring` içeriden başlıyor, üstüne `gap` padding biniyor. Yalnız
+            // boşluk çıkarılsaydı iç köşe dış kenarla kesişirdi (iç içe iki
+            // eğri kuralı).
+            borderRadius: radius - (ring + gap),
+            borderCurve: "continuous",
+            /**
+             * ⚠️🔴 KIRPMA YALNIZ BOŞLUK VARKEN — animasyonlu kutuda ikinci
+             * maske KIRILMAYA yol açıyor.
+             *
+             * Boşluk varken (şeridin 222pt'lik kutusu, gap 4) iç köşe dış
+             * köşeden belirgin biçimde farklı ve bloğu dolduran çocuk ona
+             * oturmak zorunda: kabuğun kendi `overflow: hidden`ı yalnız DIŞ
+             * köşeyi kırpıyor, iç köşeyi değil.
+             *
+             * Boşluk SIFIRKEN (akışın bandındaki kareler) iki maske pratikte
+             * AYNI eğri — aralarında yalnız `ring` kadar, yani bir saç teli
+             * kadar fark var. İkisi birden kırptığında neredeyse üst üste
+             * binen iki antialias kenarı oluşuyor ve kutu her karede yeniden
+             * rasterize edilirken (süzülme) köşeler titreyip kopuyor.
+             * Tek maske bırakılınca kırpma işini dıştaki yapıyor ve çocuk
+             * aynı köşeye zaten doğru oturuyor.
+             *
+             * ⚠️ `borderRadius` DURUYOR: bloğun gri dolgusunun şekli ondan
+             * geliyor. Kalkan tek şey KIRPMA.
+             */
+            overflow: gap > 0 ? "hidden" : "visible",
+            alignItems: "center",
             justifyContent: "center",
           }}
         >
-          {/* İÇERİDEKİ BLOK — kutunun tek dolu yüzeyi, çerçeveyle aynı
-              griden (gerekçe FILL_ALPHA'da). */}
-          <View
-            style={{
-              flex: 1,
-              backgroundColor: withAlpha(colors.textMuted, FILL_ALPHA),
-              // ⚠️ İç yarıçap, bloğun dış kenardan TOPLAM uzaklığı kadar
-              // düşüyor: çizgi RN'de kutunun İÇİNE çiziliyor, yani çocuk
-              // zaten `RING_WIDTH` içeriden başlıyor, üstüne `RING_GAP`
-              // padding biniyor. Yalnız boşluk çıkarılsaydı iç köşe dış
-              // kenarla kesişirdi (iç içe iki eğri kuralı).
-              borderRadius: BOX_RADIUS - (RING_WIDTH + RING_GAP),
-              borderCurve: "continuous",
-              alignItems: "center",
-              justifyContent: "center",
-            }}
-          >
-            {/* ÇIPLAK ARTI, BÜYÜK (istek).
-              ⚠️ Arkasında 62pt'lik aksan rengi bir daire vardı ve gerekçesi
-              "kutunun ortasındaki çıplak bir glif dokunulabilir olduğunu
-              söylemiyor"du. Düz zemine geçince o kapsül kutunun içinde ikinci
-              bir kutuya dönüştü; dokunulabilirliği artık BÜYÜKLÜK taşıyor —
-              76pt'lik bir artı yüzeyin tek odağı ve altındaki satır onu
-              adlandırıyor.
-
-              ⚠️ RENK AKSAN DEĞİL `colors.text` (istek: "siyah veya beyaz"):
-              koyu temada beyaz, açık temada siyah. Glif bir dönem modun
-              aksanındaydı; çerçeve gelince kutuda iki ayrı vurgu oluyordu ve
-              mod bağı zaten şeridin geri kalanında (gerçek anların karar
-              butonları, başlık) duruyor. */}
-            <Plus size={76} color={colors.text} strokeWidth={2} />
-            <Text
-              numberOfLines={2}
-              style={{
-                marginTop: 14,
-                paddingHorizontal: 14,
-                textAlign: "center",
-                color: colors.text,
-                fontSize: 14.5,
-                fontWeight: "600",
-              }}
-            >
-              {label}
-            </Text>
-          </View>
+          {children}
         </View>
-      </BoxShell>
-    </AnimatedPressable>
+      </View>
+    </View>
   );
 });
+
+/**
+ * ⚠️ `CampusAddChip` KALDIRILDI (istek) — başlık satırının sağındaki küçük
+ * çerçevesiz paylaşma kutusu buradaydı ve bir tur bile yaşadı. Aksiyon
+ * haritanın SAĞ ÜST köşesindeki cam yuvarlak butona döndü (ilk hâli de o
+ * ydu; bkz. FeedScreen > kampüs paylaş butonu).
+ *
+ * Geri istenirse reçete şuydu: kare, `campusBoxMetrics(size).radius`,
+ * `withAlpha(colors.textMuted, FILL_ALPHA)` dolgu, ÇERÇEVE YOK ve artı glifi
+ * karenin ~%58'i — tam boy kutunun 0.34 oranı küçük ölçekte glifi NOKTA gibi
+ * gösteriyordu. Dikey dokunma payı da satırın boyuyla sınırlıydı: iOS
+ * hit-test'i atanın sınırları dışına çıkan `hitSlop`u denemiyor.
+ */

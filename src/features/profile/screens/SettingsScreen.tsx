@@ -1490,6 +1490,10 @@ export default function SettingsScreen() {
               handleDiagnosticsMenu). Kök listede duruyor: bir kategoriye ait
               değil ve tek elle ulaşılabilir yer burası. */}
           <TouchableOpacity
+            // e2e: kampüs simülasyonunun ve teşhis raporlarının TEK girişi.
+            // Metin `LIT · dev`/`LIT · release` arasında değiştiği için
+            // metinle adreslenemez — seçici şart.
+            testID="settings-env-row"
             activeOpacity={1}
             onLongPress={handleDiagnosticsMenu}
             delayLongPress={1200}

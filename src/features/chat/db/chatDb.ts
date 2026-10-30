@@ -103,7 +103,7 @@ export function destroyChatDb(): void {
       current.transaction(() => {
         current.run('DELETE FROM messages');
         current.run('DELETE FROM conversations');
-        current.run('DELETE FROM outbox');
+        current.run('DELETE FROM send_attempts');
         current.run('DELETE FROM sync_state');
         current.run('DELETE FROM meta');
       });

@@ -10,6 +10,10 @@ import type { AppMode } from "@/features/discover/modeTheme";
 import { campusKeys } from "./campusKeys";
 import { isMomentLive } from "./campusCountdown";
 import campusService from "./campusService";
+// ⚠️ Kampüs katmanının swipe servisine tek bağı: an sahibinin profil kartı
+// (gerekçe `useCampusMomentProfile`te — kampüs sözleşmesinde böyle bir uç yok).
+// Karar yolu da zaten swipe ucuna gidiyor (bkz. useCampusSurface > like).
+import swipeService from "@/features/discover/swipeService";
 import {
   isBoundaryStale,
   readCachedBoundary,
@@ -90,6 +94,27 @@ export function isCachedBoundaryStale(
 // ─────────────────────────────────────────────────────────────────────────────
 
 /**
+ * AÇIK OLAN BÜYÜK KARTIN ANI — kimlikten CANLI listeye çözülüyor.
+ *
+ * ⚠️ EKRAN ANIN KOPYASINI SAKLAMIYOR, YALNIZ KİMLİĞİNİ. Kopya saklansaydı
+ * şu iki hâl sessizce yanlış olurdu:
+ *   • an süresi dolar ya da `UT-7424` ile listeden düşer → ekranda artık var
+ *     olmayan bir kartın üstünde "beğen" butonu durur,
+ *   • liste tazelenir ve anın alanları değişir (moderasyon durumu, foto) →
+ *     büyük kart bayat veriyi gösterir.
+ * Kimlikten çözmek ikisini birden kapatıyor: an listeden düşünce bu fonksiyon
+ * `null` dönüyor ve yüzey kendiliğinden kapanıyor — ayrı bir effect'e,
+ * dolayısıyla ayrı bir "kapanmayı unutma" hatasına yer kalmıyor.
+ */
+export function resolveOpenMoment(
+  moments: CampusMomentDto[],
+  openId: string | null,
+): CampusMomentDto | null {
+  if (!openId) return null;
+  return moments.find((moment) => moment.id === openId) ?? null;
+}
+
+/**
  * Süresi dolmuş anları ele — liste AÇIKKEN de ölebiliyorlar.
  *
  * Kural `campusCountdown.isMomentLive`te tek kaynakta: rozetin "süre bitti"
@@ -160,6 +185,61 @@ export function useCampusMoments(
     // Infinite query'de refetch TÜM sayfaları baştan çeker; tazeleme bilinçli
     // (pull-to-refresh / sheet açılışı).
     refetchOnMount: false,
+  });
+}
+
+/**
+ * ANIN SAHİBİNİN PROFİL KARTI — karta dokununca açılan şey.
+ *
+ * Kartların tik/X satırı kaldırıldı ve karar profil kartına taşındı (gerekçe
+ * CampusMomentCard'ın başında), yani bu sorgu o yüzeyin kapısı.
+ *
+ * ⚠️🔴 UÇ ÖDÜNÇ: `GET /api/swipe/LikerProfile/{userId}` çağrılıyor çünkü
+ * kampüs sözleşmesinde an sahibinin profilini veren bir uç YOK
+ * (`backend_campus_moments_2026-10.md`de profil bahsi hiç geçmiyor). Akış aynı
+ * ihtiyaç için KENDİ ucunu aldı (`/api/feed/posts/{id}/author-profile`,
+ * gövdesi "LikerProfile ile BİREBİR aynı ProfileCardDto") — yani doğru çözüm
+ * burada da kampüse özel bir uç:
+ *     GET /api/campus/moments/{id}/profile   (aynı ProfileCardDto)
+ * Uç geldiğinde bu fonksiyonun İÇİ değişir, çağıranı değişmez.
+ *
+ * ⚠️ RİSK AÇIK YAZILI: `LikerProfile` adı ve akışın ayrı uç alma ihtiyacı
+ * ucun "beni beğenenler" kümesine kapalı olabileceğini söylüyor. Reddederse
+ * (404/403) kart AÇILMIYOR ve çağıran kullanıcıya bir toast gösteriyor —
+ * sessiz bir dokunuş bırakmamak için (bkz. FeedScreen > handleMomentPress).
+ *
+ * Mod anahtarın İÇİNDE: kart moda göre farklı prompt seti ve niyet alanı
+ * taşıyor (feedQueries > useFeedAuthorProfile'daki aynı kural).
+ */
+export function useCampusMomentProfile(
+  userId: string | null,
+  mode: AppMode | null,
+) {
+  return useQuery({
+    queryKey: campusKeys.momentProfile(userId ?? "", mode ?? "default"),
+    /**
+     * ZARF BURADA AÇILIYOR: swipe uçları `{ isSuccess, result }` döndürüyor ve
+     * `isSuccess:false` bir HTTP hatası DEĞİL — açılmazsa çağıran "veri geldi
+     * ama boş" diye okuyup kartı boş açardı. Başarısızlık `isError`a
+     * çevriliyor, yani tek bir dal kullanıcıya toast gösteriyor.
+     */
+    queryFn: async () => {
+      const res: any = await swipeService.getLikerProfileDetail(
+        userId as string,
+        mode,
+      );
+      if (!res?.isSuccess || !res?.result) {
+        throw new Error("campus:momentProfileUnavailable");
+      }
+      return res.result;
+    },
+    enabled: !!userId,
+    // Kart açıkken bayatlamasın diye kısa değil: sheet kapanıp açılınca aynı
+    // veriyi tekrar çekmek gereksiz tur.
+    staleTime: 5 * 60 * 1000,
+    // ⚠️ RETRY YOK: uç bu kümeye kapalıysa cevap 404 ve üç kez denemek
+    // kullanıcıyı boş bir yüzeyde saniyelerce bekletir.
+    retry: false,
   });
 }
 

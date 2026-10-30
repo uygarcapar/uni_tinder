@@ -256,7 +256,10 @@ describe('çoklu konu seçimi', () => {
 describe('anonim kapısı', () => {
   it('allowed → anahtar açılabilir ve isAnonymous true gider', async () => {
     const { onSend } = setup({ anonymousGate: ALLOWED });
-    expect(screen.getByText(tr.feed.composer.anonymousHint)).toBeTruthy();
+    // Serbest dalda AÇIKLAMA SATIRI YOK (istek): "İsmin ve fotoğrafın
+    // görünmez…" kaldırıldı, satır yalnız kilit/kısıt dallarında çiziliyor.
+    expect(screen.queryByText(tr.feed.composer.anonymousLocked)).toBeNull();
+    expect(screen.queryByText(tr.feed.composer.anonymousRestricted)).toBeNull();
 
     const sw = screen.UNSAFE_getByType(require('react-native').Switch);
     fireEvent(sw, 'valueChange', true);
@@ -300,10 +303,9 @@ describe('anonim kapısı', () => {
     expect(sw.props.disabled).toBe(true);
   });
 
-  it('unknown → KİLİT METNİ YOK, normal ipucu çizilir', () => {
+  it('unknown → KİLİT METNİ YOK (hiç açıklama satırı yok)', () => {
     // /me gelmemişken kilit göstermek olmayan bir kısıt uydururdu.
     setup({ anonymousGate: UNKNOWN });
-    expect(screen.getByText(tr.feed.composer.anonymousHint)).toBeTruthy();
     expect(screen.queryByText(tr.feed.composer.anonymousLocked)).toBeNull();
     expect(screen.queryByText(tr.feed.composer.anonymousRestricted)).toBeNull();
   });

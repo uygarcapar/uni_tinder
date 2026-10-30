@@ -12,6 +12,14 @@ import { hasLiquidGlassSurface } from "@/shared/theme/glass";
  * bir rampa vardı; ikisi de kalktı. Zemin artık kartın kendi kapak fotoğrafı,
  * kırılmış hâliyle.
  *
+ * YALNIZ KART YÜZEYLERİNİN ZEMİNİ, ve prop'u bu yüzden `uri`: iki kez (akış
+ * kartı — bkz. FeedPostCard, ve plus sayfası) bu bileşen başka bir yüzeye
+ * ithal edilip paketli bir asset verilmesi denendi, ikisi de istek üzerine
+ * GERİ ALINDI. Prop'u paketli asset alacak şekilde genelleştirmek tek satır,
+ * ama o satırı yazan kişi aşağıdaki sayıların sahibi de olur: buradaki
+ * bulanıklık bütçesi KART için ayarlı (üstünde cam bölüm kutuları var, zeminde
+ * perde yok). Yeni bir okuyucu gelecekse bunu bilerek gelsin.
+ *
  * SCROLL'UN DIŞINDA çiziliyor, kart kabuğuna mutlak (bkz. SwipeCard —
  * ScrollWrapper'ın hemen öncesindeki çağrı): içerik üstünden akıp giderken
  * zemin KIPIRDAMIYOR. Bir dönem panelin içindeydi ve panel scroll içeriğinin

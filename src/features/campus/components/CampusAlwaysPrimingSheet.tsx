@@ -7,7 +7,7 @@ import AppBottomSheet from "@/shared/components/AppBottomSheet";
 import AnimatedPressable from "@/shared/components/AnimatedPressable";
 import SFIcon from "@/shared/components/SFIcon";
 import { Navigation } from "@/shared/icons";
-import { colors } from "@/shared/theme/colors";
+import { colors, ink } from "@/shared/theme/colors";
 
 /**
  * "HER ZAMAN" KONUM İZNİ — priming sheet'i.
@@ -129,27 +129,23 @@ export default function CampusAlwaysPrimingSheet({
       onClose={onClose}
       enableDynamicSizing
       enablePanDownToClose
+      // gorhom'un varsayılan tutamacı sabit gri (#80808080) — açık modda zemine
+      // gömülüyor. `ink` tema ile dönüyor, kardeş sheet'lerle de aynı değer.
+      handleIndicatorStyle={{ backgroundColor: ink(0.25) }}
     >
       {/* ⚠️ `BottomSheetView` ZORUNLU (gerekçe CampusMomentComposer'da):
           `enableDynamicSizing`in detentini ölçen tek şey bu bileşen. */}
       <BottomSheetView
         style={{ paddingHorizontal: 24, paddingTop: 8, paddingBottom: 28 }}
       >
-        <View
-          style={{
-            width: 56,
-            height: 56,
-            borderRadius: 28,
-            alignItems: "center",
-            justifyContent: "center",
-            backgroundColor: colors.surface3,
-            marginBottom: 16,
-          }}
-        >
+        {/* İkon kendi başına duruyor: altındaki gri daire ikonu "bir yüzeyin
+            içine konmuş" gösteriyordu, oysa buradaki tek iş niyeti anlatmak.
+            Daire kalkınca ikonun ölçüsü serbest — ortada ve iri. */}
+        <View style={{ alignItems: "center", marginTop: 8, marginBottom: 20 }}>
           <SFIcon
             name="location.fill"
             fallback={Navigation}
-            size={26}
+            size={64}
             color={colors.text}
           />
         </View>

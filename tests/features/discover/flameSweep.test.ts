@@ -19,7 +19,11 @@ jest.mock('@/shared/services/uiBus', () => ({
   },
 }));
 
-import { runFlameSweep, runMatchCurtain } from '@/features/discover/flameSweep';
+import {
+  releaseFlameSweep,
+  runFlameSweep,
+  runMatchCurtain,
+} from '@/features/discover/flameSweep';
 
 /** Canvas'ın (ya da yedek zamanlayıcının) "ekranı kapattım" haberi. */
 const fireCover = () =>
@@ -40,9 +44,40 @@ describe('flameSweep', () => {
     // İki iş birden: dalgayı tetiklemek ve kart değişimini onun saatine
     // bağlamak. Abonelik olmadan deste hiç ilerlemezdi.
     const unsub = runFlameSweep(() => {});
-    expect(mockEmit).toHaveBeenCalledWith('flameSweep', undefined);
+    expect(mockEmit).toHaveBeenCalledWith('flameSweep', { hold: false });
     expect(mockListeners.get('flameSweepCover')?.size).toBe(1);
     unsub();
+  });
+
+  it('park İSTENMEDİKÇE istenmiyor — beklemeyen çağıran bedel ödemiyor', () => {
+    // `hold`, dalganın örtme noktasında DURMASI demek (bkz. canvas'ın iki fazı)
+    // ve bekleme TAVANSIZ. Varsayılan olarak açık olsaydı desteyi ilerletmeyen
+    // her kutlama, kendisini salıverecek kimse olmadığı için emniyet valfi
+    // dolana kadar (saniyeler) ekranda asılı kalırdı.
+    const unsub = runFlameSweep(() => {});
+    expect(mockEmit).toHaveBeenCalledWith('flameSweep', { hold: false });
+    unsub();
+    // Beklemeyen dalgada iptal, salıverme olayı da yaymıyor.
+    expect(mockEmit).not.toHaveBeenCalledWith('flameSweepRelease', undefined);
+  });
+
+  it('hold: true dalgayı parka yolluyor', () => {
+    runFlameSweep(() => {}, { hold: true });
+    expect(mockEmit).toHaveBeenCalledWith('flameSweep', { hold: true });
+  });
+
+  it('releaseFlameSweep salıverme olayını yayıyor', () => {
+    releaseFlameSweep();
+    expect(mockEmit).toHaveBeenCalledWith('flameSweepRelease', undefined);
+  });
+
+  it('park sırasında iptal SALIVERİYOR — asılı kalan alev yok', () => {
+    // Park eden dalgayı salıverecek olan çağıranın kendisi. Ağaçtan düşerse
+    // (sekme değişti, deste tazelendi) salıverecek kimse kalmıyor ve dalga
+    // ekranın ortasında, tavan dolana kadar asılı kalırdı.
+    const cancel = runFlameSweep(() => {}, { hold: true });
+    cancel();
+    expect(mockEmit).toHaveBeenCalledWith('flameSweepRelease', undefined);
   });
 
   it('onCovered TAM BİR KEZ çalışıyor', () => {
@@ -95,8 +130,9 @@ describe('flameSweep', () => {
     jest.advanceTimersByTime(1499);
     expect(mockEmit).not.toHaveBeenCalled();
     jest.advanceTimersByTime(2);
-    // Alev başladı ama deste HENÜZ ilerlemedi: örtme bekleniyor.
-    expect(mockEmit).toHaveBeenCalledWith('flameSweep', undefined);
+    // Alev başladı ama deste HENÜZ ilerlemedi: örtme bekleniyor. `hold`:
+    // bu dalın devri de kartın boyanmasını bekliyor.
+    expect(mockEmit).toHaveBeenCalledWith('flameSweep', { hold: true });
     expect(advance).not.toHaveBeenCalled();
     fireCover();
     expect(advance).toHaveBeenCalledTimes(1);
@@ -141,7 +177,7 @@ describe('flameSweep', () => {
     runMatchCurtain(advance);
     fireMatch();
     jest.advanceTimersByTime(5001);
-    expect(mockEmit).toHaveBeenCalledWith('flameSweep', undefined);
+    expect(mockEmit).toHaveBeenCalledWith('flameSweep', { hold: true });
     expect(advance).not.toHaveBeenCalled();
     fireCover();
     expect(advance).toHaveBeenCalledTimes(1);

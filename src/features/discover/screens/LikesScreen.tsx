@@ -1978,7 +1978,7 @@ export default function LikesScreen() {
   };
 
   return (
-    <View className="flex-1" style={{ backgroundColor: colors.bg }}>
+    <View testID="likes-screen" className="flex-1" style={{ backgroundColor: colors.bg }}>
       {/* Sekmeler bir pager — geçişi native yapıyor: eski sayfa çıkarken yeni
           sayfa giriyor, ikisi aynı anda ekranda. Elle yazılmış çıkış/giriş
           animasyonu bunu veremiyordu (tek liste vardı, iki içerik aynı anda
@@ -2025,6 +2025,7 @@ export default function LikesScreen() {
           // kap içeriği kadar daralır ve şerit ortalanmış bir blok olurdu.
           <View style={{ width: "100%" }}>
             <PagerTabBar
+              testIDPrefix="likes-tab"
               tabs={tabs}
               activeTab={activeTab}
               offset={pagerOffset}

@@ -1,5 +1,5 @@
 import { File, UploadType } from 'expo-file-system';
-import api from '@/shared/services/api';
+import api, { SKIP_429_RETRY } from '@/shared/services/api';
 import { API_ENDPOINTS } from '@/shared/constants/api';
 import { normalizeUtcFields } from '@/shared/utils/dateUtc';
 
@@ -64,13 +64,32 @@ export const chatService = {
 
   async getMessageHistory(
     conversationId: string,
-    { cursor, pageSize = HISTORY_PAGE_SIZE }: { cursor?: string | null; pageSize?: number } = {}
+    {
+      cursor,
+      pageSize = HISTORY_PAGE_SIZE,
+      skip429Retry,
+    }: { cursor?: string | null; pageSize?: number; skip429Retry?: boolean } = {}
   ) {
     const params = new URLSearchParams();
     if (cursor) params.append('cursor', cursor);
     params.append('pageSize', String(pageSize));
     const url = `${API_ENDPOINTS.MESSAGES_HISTORY_CURSOR(conversationId)}?${params.toString()}`;
-    const res = await api.get(url);
+    // `skip429Retry` çağırana göre AYRI: ekranın kullanıcı tetikli sayfalaması
+    // (fetchHistory thunk'ı) 429'da interceptor'ın 3 denemelik otomatik
+    // backoff'unu İSTİYOR — sayfa er ya da geç yüklenir, kullanıcı bunu hiç
+    // görmez. Backfill İSTEMİYOR, iki sebeple:
+    //  • Tur 429'u GÖRMELİ ki DURSUN. Retry başarıya ulaşırsa duvar
+    //    SAKLANIYOR: tur "sayfa geldi" deyip tam duvarın dibinde devam
+    //    ediyor, oysa kova kullanıcıyla PAYLAŞIMLI ve 429'un tek doğru
+    //    cevabı turu kesmek.
+    //  • Arka plan işi çağrının içinde ~7 sn (1+2+4) beklememeli: tur o süre
+    //    boyunca kilitli kalıyor ve duvara 3 kez daha vuruyor.
+    // Gerekçe bütçe ÖLÇÜMÜ DEĞİL: backend'in sayacı 429'u slot olarak
+    // yazmıyor (bkz. plan, backend kısıtı notu), yani retry'lanıp 429 yiyen
+    // denemeler `chatBackfill.ts`'teki `attempts` sayacını yanlış ölçmüyor.
+    // Bayrak bu yüzden uç (endpoint) seviyesinde DEĞİL çağrı seviyesinde:
+    // yalnız backfill AÇIKÇA `true` geçiyor.
+    const res = await api.get(url, skip429Retry ? SKIP_429_RETRY : undefined);
     return normalizeUtcFields(
       (res as any).result || {
         conversationId,

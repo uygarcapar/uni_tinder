@@ -56,6 +56,7 @@ const IntentOptionItem = memo(({ option, isSelected, onToggle, friends }: any) =
     : t(`auth.step14.intents.${option.enumName}`, { defaultValue: option.name });
   return (
     <AnimatedPressable
+      testID={`reg-intent-${option.enumName}`}
       onPress={() => onToggle(option.enumName)}
       // Yaylanma KAPALI: bırakınca scale 1'i aşarsa tam genişlikteki satır
       // seçim anında büyüyüp kayıyormuş gibi görünüyor (bkz. AnimatedPressable).
@@ -232,7 +233,7 @@ export default function RegisterStep14Screen({ navigation }: NativeStackScreenPr
   const onToggle = isFriends ? toggleFriendshipIntent : toggleRelationshipIntent;
 
   return (
-    <View className="flex-1" style={{ backgroundColor: colors.bg }}>
+    <View testID="reg-step14-screen" className="flex-1" style={{ backgroundColor: colors.bg }}>
       <Reanimated.ScrollView
         onScroll={scrollHandler}
         scrollEventThrottle={16}
@@ -302,7 +303,7 @@ export default function RegisterStep14Screen({ navigation }: NativeStackScreenPr
 
       {/* Sticky Button */}
       <RegisterStickyFooter>
-        <AnimatedPressable style={{ borderRadius: 999, borderCurve: "continuous", overflow: "hidden", backgroundColor: colors.inverseSurface }} onPress={handleNext}>
+        <AnimatedPressable testID="reg-btn-next" style={{ borderRadius: 999, borderCurve: "continuous", overflow: "hidden", backgroundColor: colors.inverseSurface }} onPress={handleNext}>
           <Text className="py-[20px] font-bold text-[15px] text-center" style={{ color: colors.onInverseSurface }}>
             {t('common.continueButton')}
           </Text>

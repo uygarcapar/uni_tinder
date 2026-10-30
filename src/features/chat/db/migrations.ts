@@ -193,6 +193,71 @@ CREATE INDEX idx_messages_unsent ON messages (send_state, sent_at_ms, id)
  */
 const V6 = `ALTER TABLE conversations ADD COLUMN mode TEXT;`;
 
+/**
+ * v7 — `send_attempts`: gönderim kuyruğunun disk muhasebesi, `outbox` düşürüldü.
+ *
+ * `outbox` v1'den beri şemada ama HİÇ YAZILMADI — ona dokunan tek satır
+ * `DELETE FROM outbox` (temizlik yollarındaki boş süpürme). Gönderim
+ * muhasebesi (deneme sayısı/backoff/permanent/quota_charged) bugüne kadar
+ * outbox.ts'teki process-ömürlü bir Map'te yaşıyordu; bu sürüm onu diske
+ * taşımanın deposu.
+ *
+ * `outbox`'u OLDUĞU GİBİ yeniden kullanmak seçenek değildi: `payload_json
+ * NOT NULL` taşıyor, yani mesaj gövdesinin İKİNCİ bir kopyasını dayatırdı.
+ * Gövdenin tek kaynağı `messages` satırı (client_message_id ile eşleşiyor)
+ * — bu tablo o yüzden KASTEN gövdesiz, yalnız muhasebe kolonları taşıyor.
+ * Aynı sebepten `conversation_id` de yok: muhasebe mesaj kimliğine (cmid)
+ * bağlı, sohbete değil; sohbet gerekiyorsa `messages` üzerinden JOIN edilir.
+ *
+ * Düşürme `IF EXISTS`li: migration'lar tek transaction'da koşuyor ve
+ * yayınlandıktan sonra DÜZELTİLEMİYOR. `outbox` herhangi bir sebeple yoksa
+ * (elle müdahale edilmiş bir geliştirici DB'si, yarım kalmış bir kurtarma)
+ * çıplak `DROP` her açılışta transaction'ı geri alır: `PRAGMA user_version`
+ * 6'da takılır, `openChatDb` atar ve ayna kendini devre dışı bırakır — sohbet
+ * local-first yolunu tamamen kaybeder. Ulaşılabilirliği neredeyse sıfır,
+ * bedeli toplam.
+ */
+const V7 = `
+DROP TABLE IF EXISTS outbox;
+CREATE TABLE send_attempts (
+  client_message_id   TEXT PRIMARY KEY,
+  attempts            INTEGER NOT NULL DEFAULT 0,
+  first_seen_at_ms    INTEGER NOT NULL,
+  next_eligible_at_ms INTEGER NOT NULL DEFAULT 0,
+  permanent           INTEGER NOT NULL DEFAULT 0,
+  quota_charged       INTEGER NOT NULL DEFAULT 0,
+  origin              TEXT,
+  last_error          TEXT
+);
+`;
+
+/**
+ * v8 — backfill'in KENDİ cursor'u (`backfill_cursor`) ve KENDİ "tamam"
+ * damgası (`backfill_done`); ekranın sayfalama kolonlarıyla (`next_cursor`,
+ * `has_more`) KASTEN paylaşılmıyor.
+ *
+ * ── `next_cursor` neden paylaşılamaz ────────────────────────────────────────
+ * O kolon EKRANIN sayfalamasına ait, backfill'inki arka planda sayfa sayfa
+ * inen ayrı bir tur. `pruneExpiredMessages` dokunduğu HER sohbette
+ * `next_cursor`'ı NULL'luyor (ölçüldü — bkz. chatRepository.ts'teki
+ * pruneExpiredMessages: budama eski uçtan kestiği için derin cursor yerel
+ * aralığın ALTINI işaret eder hâle gelir, delik üretmemek için sıfırlanır).
+ * Backfill aynı kolonu kullansaydı her haftalık retention turu onun geri
+ * dönüş noktasını da silerdi — backfill ilerlemişken sıfırdan başlamaya
+ * zorlanırdı.
+ *
+ * ── `backfill_done`, `has_more`'dan neden türetilemez ───────────────────────
+ * Aynı budama `has_more`'a DOKUNMUYOR — yalnız `oldest_loaded_sent_at_ms` ve
+ * `next_cursor` güncelleniyor. Yani prune sonrası "cursor kayboldu, has_more
+ * eski değerinde kaldı" normal bir hâl: bu ikili "yarım ama cursor'suz" ile
+ * "gerçekten bitti" durumlarını AYIRT EDEMEZ — ikisinde de elde kalan tek
+ * bilgi aynı.
+ */
+const V8 = `
+ALTER TABLE sync_state ADD COLUMN backfill_cursor TEXT;
+ALTER TABLE sync_state ADD COLUMN backfill_done INTEGER NOT NULL DEFAULT 0;
+`;
+
 export const MIGRATIONS: { version: number; up: (db: ChatDbDriver) => void }[] = [
   { version: 1, up: (db) => db.exec(V1) },
   { version: 2, up: (db) => db.exec(V2) },
@@ -200,6 +265,8 @@ export const MIGRATIONS: { version: number; up: (db: ChatDbDriver) => void }[] =
   { version: 4, up: (db) => db.exec(V4) },
   { version: 5, up: (db) => db.exec(V5) },
   { version: 6, up: (db) => db.exec(V6) },
+  { version: 7, up: (db) => db.exec(V7) },
+  { version: 8, up: (db) => db.exec(V8) },
 ];
 
 export const CHAT_DB_VERSION = MIGRATIONS[MIGRATIONS.length - 1].version;

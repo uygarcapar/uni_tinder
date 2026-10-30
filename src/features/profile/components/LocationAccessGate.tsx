@@ -114,6 +114,7 @@ export default function LocationAccessGate({
    */
   return (
     <LocationPermissionSheet
+      testID="gate-location"
       visible={needed && !blocked}
       onGranted={handleGranted}
       layout="page"

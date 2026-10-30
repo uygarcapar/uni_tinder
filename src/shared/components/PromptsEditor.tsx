@@ -189,6 +189,10 @@ const PromptRow = memo(function PromptRow({
         }}
       >
         <TouchableOpacity
+          // Yuva İNDEKSLE adreslenebiliyor: prompt anahtarı seçilmeden önce
+          // yuvanın kimliği yok, e2e ise boş yuvayı doldurmak için ona
+          // dokunmak zorunda.
+          testID={`prompt-slot-${index}-pick`}
           activeOpacity={0.7}
           onPress={() => onPickPrompt(index)}
           style={{
@@ -224,6 +228,7 @@ const PromptRow = memo(function PromptRow({
         </TouchableOpacity>
         {isEditing && (
           <TouchableOpacity
+            testID={`prompt-slot-${index}-remove`}
             activeOpacity={0.7}
             onPress={() => onRemove(index)}
             hitSlop={8}
@@ -255,6 +260,7 @@ const PromptRow = memo(function PromptRow({
             name="answer"
             render={({ field: { onChange, value } }) => (
               <InputComponent
+                testID={`prompt-slot-${index}-answer`}
                 ref={setInputRef}
                 value={value}
                 editable={isEditing}
@@ -306,6 +312,7 @@ const PromptRow = memo(function PromptRow({
               metne basınca da düzenleme açılsın diye üstte şeffaf katman. */}
           {!isEditing && (
             <Pressable
+              testID={`prompt-slot-${index}-edit`}
               onPress={() => onBeginEdit(index)}
               style={StyleSheet.absoluteFill}
               accessibilityLabel={t('profile.prompts.editAnswer')}
@@ -314,6 +321,7 @@ const PromptRow = memo(function PromptRow({
         </View>
 
         <TouchableOpacity
+          testID={`prompt-slot-${index}-commit`}
           activeOpacity={1}
           onPress={() => (isEditing ? commit() : onBeginEdit(index))}
           style={{
@@ -566,6 +574,7 @@ const PromptsEditor = forwardRef<PromptsEditorHandle, Props>(function PromptsEdi
 
       {canAdd && (
         <TouchableOpacity
+          testID="prompt-add"
           activeOpacity={1}
           onPress={() => openPicker(-1)}
           style={{

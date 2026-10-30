@@ -9,12 +9,33 @@ import { modeAccent, type AppMode } from "@/features/discover/modeTheme";
 import { colors } from "@/shared/theme/colors";
 
 /**
- * Paylaşım onayı — kırpılmış fotoğrafın önizlemesi ve "paylaş".
+ * ⚠️🔴 BU SHEET ARTIK MOUNT EDİLMİYOR — AKIŞTAN ÇIKTI (2026-10-28, istek).
  *
- * ── Neden ayrı bir onay adımı var ──────────────────────────────────────────
- * Kural sert: GÜNDE 1 FOTO ve DEĞİŞTİRİLEMEZ. Kırpıcıdan çıkan fotoğraf
- * doğrudan yayına gitseydi kullanıcı yanlış kareyi 24 saat taşırdı. Buradaki
- * tek cümle (`composer.hint`) o kuralı paylaşmadan ÖNCE söylüyor.
+ * İstek birebir: "direkt çektiğim ekranda foto static kalsın, orada çekince
+ * sonra oradan göndere basınca göndereyim, ekstra modal filan açma". Üç işi de
+ * kamera ekranı devraldı:
+ *   • önizleme → pencerede DONMUŞ kare (CameraCaptureOverlay > `shot`),
+ *   • paylaş düğmesi + göstergesi → alt bardaki gönder düğmesi,
+ *   • satır içi hata → karenin altındaki satır.
+ * Bağlantı sözleşmesi `cameraBridge > commit` (null = başarılı, string = hata).
+ *
+ * Dosya SİLİNMEDİ çünkü aşağıdaki iki kural hâlâ okunmaya değer (ham kare ≠
+ * yüklenen dosya; hata yüzeyi kapanmaz). Geri konacaksa `useCampusSurface`
+ * artık `composerOpen`/`photoUri`/`sharing`/`shareError`/`share` VERMİYOR —
+ * `shareShot` hata metnini state'e yazmıyor, DÖNDÜRÜYOR.
+ *
+ * ── Paylaşım onayı — ÇEKİLEN KARENİN ÖNİZLEMESİ ve "paylaş" ────────────────
+ *
+ * ── Bir dönem akıştaki TEK onaydı ──────────────────────────────────────────
+ * Kampüs akışında kırpma ekranı kaldırıldı (gerekçe useCampusSurface >
+ * `captureMoment`): deklanşörden sonra kare DOĞRUDAN buraya geliyor, yani bu
+ * sheet hem önizleme hem onay. Kural sert — GÜNDE 1 FOTO ve DEĞİŞTİRİLEMEZ —
+ * ve buradaki tek cümle (`composer.hint`) onu paylaşmadan ÖNCE söylüyor.
+ *
+ * ⚠️ GÖSTERİLEN DOSYA HAM KARE, yüklenecek olan DEĞİL: ölçekleme paylaşma
+ * anında yapılıyor (`fitPhotoForUpload`) çünkü istek "çekince loading'e
+ * girmesin"di. Önizleme için sorun değil — expo-image dosyayı gösterim
+ * ölçeğinde çözüyor, tam çözünürlükte decode etmiyor.
  *
  * ── Hata burada kalıyor ────────────────────────────────────────────────────
  * Konum reddi (UT-7410/7411/7412/7413/7415) ya da kota/moderasyon hatasında
@@ -26,7 +47,10 @@ import { colors } from "@/shared/theme/colors";
 export interface CampusMomentComposerProps {
   visible: boolean;
   onClose: () => void;
-  /** Kırpıcıdan çıkan yerel dosya (3:4, 900×1200). */
+  /**
+   * Kameradan çıkan HAM yerel dosya (3:4, 12MP'e kadar). Yüklenen kopya bu
+   * değil — gerekçe dosyanın başında.
+   */
   photoUri: string | null;
   mode: AppMode;
   sharing: boolean;
@@ -94,7 +118,9 @@ export default function CampusMomentComposer({
             style={{
               marginTop: 16,
               width: previewWidth,
-              // Kırpıcının çıktı oranı — 3:4.
+              // Kameranın ve yükleme çıktısının oranı — 3:4. Ham kare de aynı
+              // orandan geliyor (`pictureSize="Photo"`), yani `cover` hiçbir
+              // şey kırpmıyor: kullanıcı çekerken gördüğü kareyi görüyor.
               height: Math.round(previewWidth / (3 / 4)),
               borderRadius: 20,
               backgroundColor: colors.surface2,

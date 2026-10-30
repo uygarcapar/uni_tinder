@@ -271,12 +271,32 @@ describe('PlusPage — render & loading', () => {
 
   // Eligibility cevabı gelmeden deneme metni GÖSTERİLMEZ: aksi halde ineligible
   // kullanıcıda bir kare "ücretsiz" yanıp sönerdi.
-  it('does not promise a trial while eligibility is still pending', async () => {
+  /**
+   * ⚠️ SÖZLEŞME DEĞİŞTİ: kart deneme cevabını BEKLİYOR.
+   *
+   * Eskiden kart katalog gelir gelmez çiziliyor, deneme satırı sonradan
+   * ekleniyordu — metinler iki dalgada geldiği için kart gözle "kıpırdıyordu".
+   * Artık iskelet iki cevap da elde olana kadar duruyor (usePurchaseFlow >
+   * `introPending`).
+   *
+   * Bu testin ASIL İŞİ o yüzden değişti: takılan bir deneme sorgusunun kartı
+   * SONSUZA KADAR iskelette bırakmadığını çiviliyor. Tavan dolunca kart
+   * açılıyor ve deneme satırı çizilmiyor — yani kimse satın alamaz hâlde
+   * kalmıyor.
+   */
+  it('takılan deneme sorgusu kartı kilitlemiyor — tavanda kart açılıyor, deneme vaadi YOK', async () => {
+    jest.useFakeTimers();
     mockGetOfferings.mockResolvedValue(monthlyOffering);
     mockCheckIntroEligibility.mockReturnValue(new Promise(() => {}));
     const tree = setup();
-    await waitFor(() => tree.getByTestId('plan-card-monthly'));
+    // Katalog çözülsün, sonra deneme sorgusunun tavanı dolsun (4sn).
+    await act(async () => {});
+    await act(async () => {
+      jest.advanceTimersByTime(4000);
+    });
+    await waitFor(() => expect(tree.getByTestId('plan-card-monthly')).toBeTruthy());
     expect(tree.queryByText(/gün ücretsiz kullanabilirsin/)).toBeNull();
+    jest.useRealTimers();
   });
 
   // Olağan abonelikte kart bir SATIŞ yüzeyi değil: alt satırında yalnız

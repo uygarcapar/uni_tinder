@@ -59,7 +59,6 @@ import {
   PawPrint,
   Ban,
   Fish,
-  IdCardLanyard,
   type LucideIcon,
 } from "@/shared/icons";
 import { ZODIAC_GLYPH_ICONS } from "@/shared/components/ZodiacIcon";
@@ -109,7 +108,6 @@ import PromptsEditor, { type PromptsEditorHandle } from "@/shared/components/Pro
 import {
   APP_MODES,
   DEFAULT_APP_MODE,
-  modeAccent,
   type AppMode,
 } from "@/features/discover/modeTheme";
 import { useFriendshipIntents } from "@/shared/queries/commonQueries";
@@ -406,22 +404,6 @@ function OptionPill({
 const CHECKBOX_SIZE = 22;
 
 /**
- * Mod anahtarı — formun hangi modun profilini düzenlediğini seçen segmented
- * kontrol.
- *
- * MODÜL SEVİYESİNDE (bu dosyanın diğer alt bileşenleri gibi): render içinde
- * tanımlanan bir bileşen her tuşta yeni bir tip olur, React onu yeni bir ağaç
- * sayıp altındaki input'ları remount eder ve klavye düşer.
- *
- * SEGMENT RENGİ MODUN RENGİ (`modeAccent`): kullanıcı Keşif'teki mod
- * başlığında, sohbet listesindeki halkada ve burada AYNI rengi görüyor —
- * ilişkiyi bir kez öğrenip her yerde tanıyor.
- *
- * Kapalı modun segmentinde nokta SÖNÜK: "burada bir şey var ama henüz açık
- * değil" demek. Segment yine SEÇİLEBİLİR — seçince editör yerine "Profili aç"
- * CTA'sı çıkıyor, yani kapalı modu keşfetmenin yolu bu.
- */
-/**
  * Kapalı modun yerine çizilen bilgi satırı.
  *
  * Profil AÇMA akışı burada DEĞİL (Keşif'teki mod seçicisinin mini kurulumunda):
@@ -457,30 +439,137 @@ const ModeClosedNotice = React.memo(function ModeClosedNotice({
   );
 });
 
+/**
+ * Şeridin iç payı — kayan dolgu bu payın İÇİNDE hareket ediyor. Kapsülün
+ * ölçüsünden çıkarılacak miktar da bu (iki yandan, yani 2×).
+ */
+const MODE_STRIP_PADDING = 4;
+
+/**
+ * Mod anahtarı — formun hangi modun profilini düzenlediğini seçen segmented
+ * kontrol.
+ *
+ * MODÜL SEVİYESİNDE (bu dosyanın diğer alt bileşenleri gibi): render içinde
+ * tanımlanan bir bileşen her tuşta yeni bir tip olur, React onu yeni bir ağaç
+ * sayıp altındaki input'ları remount eder ve klavye düşer.
+ *
+ * ── Kabuk: Plus sayfasının PERİYOT ŞERİDİ ──────────────────────────────────
+ * Düzen `PurchaseSections > PlanPeriodPills` ile aynı sözleşmede (hairline
+ * kapsül + `overflow: hidden` + bölme başına eşit genişlik + `translateX` ile
+ * KAYAN TEK DOLGU). Önceden iki ayrı kutu vardı ve seçim kutunun zemininin
+ * dolup boşalmasıyla anlatılıyordu — iki mod arasında geçiş "bir şey
+ * söndü, öteki yandı" gibi okunuyordu, oysa burada yapılan şey TEK bir
+ * seçimi taşımak.
+ *
+ * Dolgu UI thread'inde: yalnız `translateX`, layout commit'i yok.
+ *
+ * ── Dolgu POLARİTE ÇEVİRİYOR, mod rengi DEĞİL ──────────────────────────────
+ * `inverseSurface` + `onInverseSurface`: açık modda siyah dolgu/beyaz etiket,
+ * koyu modda beyaz dolgu/siyah etiket.
+ *
+ * Bir tur mod renkleriyle (Dating turuncu / Friends yeşil) denendi ve GERİ
+ * ALINDI: şerit o hâlde bir seçim kontrolünden çok bir durum rozetine
+ * benziyordu, üstelik dolgu kayarken renk de geçtiği için gözü seçimden çok
+ * geçişin kendisi tutuyordu. Mod rengini şeritte aramak gerekmiyor — kullanıcı
+ * onu Keşif başlığında ve sohbet listesindeki halkada zaten görüyor; buradaki
+ * işi yalnız "hangi profili düzenliyorum" sorusunu cevaplamak.
+ *
+ * Tek renk olduğu için `interpolateColor` da GİTTİ: dolgunun zemini düz bir
+ * stil, animasyonlu olan yalnız konumu.
+ *
+ * ── Noktalar KALDIRILDI ────────────────────────────────────────────────────
+ * Etiketlerin önünde modun vurgu renginde birer nokta vardı; kapalı modda sönük
+ * çiziliyordu ("bölüm var ama profil açılmamış"). Üçü birden kalktı: kapsül ve
+ * polarite çeviren dolgu şeridin bütün işini zaten yapıyordu, nokta sadece
+ * etiketi merkezden kaydırıyordu.
+ *
+ * Kapalı mod sinyali KAYBOLMADI, yer değiştirdi: segment seçilince editörün
+ * yerine `ModeClosedNotice` + "Profili aç" CTA'sı çıkıyor — kapalı modu
+ * keşfetmenin yolu buydu, nokta yalnız ön habercisiydi. Geri isteyen önce
+ * etiketi merkezde tutmanın yolunu çözsün.
+ */
 const ModeSwitch = React.memo(function ModeSwitch({
   value,
   onChange,
-  friendsOpen,
-  datingOpen,
 }: {
   value: AppMode;
   onChange: (mode: AppMode) => void;
-  friendsOpen: boolean;
-  datingOpen: boolean;
 }) {
   const { t } = useTranslation();
+  // Kapsülün İÇ genişliği (payın içi). Ölçüm gelmeden dolgu çizilmiyor: ilk
+  // karede bölme genişliği bilinmiyor ve "%50"lik bir kutu kayma hedefini
+  // ıskalardı.
+  const [stripWidth, setStripWidth] = useState(0);
+  const slotWidth = stripWidth > 0 ? stripWidth / APP_MODES.length : 0;
+  const activeIndex = Math.max(0, APP_MODES.indexOf(value));
+
+  // Dolgunun konumu — bölme indeksi cinsinden (0 veya 1), piksel değil.
+  // Pikselle tutulsaydı `slotWidth` ölçümü geldiğinde değer bayat kalırdı.
+  const slide = useSharedValue(activeIndex);
+
+  useEffect(() => {
+    // ÜSTÜ AŞMAYAN yay (kritik sönümlü): kapsül `overflow: hidden` olduğu için
+    // taşan bir dolgu uçta kırpılır ve kayma "duvara çarpma" gibi görünür —
+    // periyot şeridindeki aynı gerekçe.
+    slide.value = withSpring(activeIndex, {
+      damping: 22,
+      stiffness: 200,
+      mass: 0.6,
+    });
+  }, [activeIndex, slide]);
+
+  // ⚠️ WORKLET'TE YALNIZ KONUM VAR, RENK YOK — ve renk buraya geri konmamalı:
+  // `colors` okumaları düz JS; UI thread'inden çağrılan bir palet getter'ı
+  // uygulamayı ÖLÜMCÜL hatayla düşürüyor ("Tried to synchronously call a
+  // non-worklet function"). Renk gerekirse önce render'da bir string'e çözülüp
+  // closure'a öyle girmeli.
+  const fillStyle = useAnimatedStyle(() => ({
+    transform: [{ translateX: slide.value * slotWidth }],
+  }));
+
   return (
     <View
+      onLayout={(e) => {
+        const w = e.nativeEvent.layout.width - MODE_STRIP_PADDING * 2;
+        setStripWidth((prev) => (Math.abs(prev - w) > 0.5 ? w : prev));
+      }}
       style={{
         flexDirection: "row",
-        gap: 8,
+        padding: MODE_STRIP_PADDING,
         marginTop: 8,
         marginBottom: 4,
+        borderRadius: 999,
+        borderCurve: "continuous",
+        borderWidth: 0.5,
+        borderColor: colors.hairline,
+        // Kayan dolguyu kapsül şekline kırpan şey bu — olmadan dolgu
+        // köşelerden taşar.
+        overflow: "hidden",
       }}
     >
+      {slotWidth > 0 && (
+        <Animated.View
+          pointerEvents="none"
+          style={[
+            {
+              position: "absolute",
+              top: MODE_STRIP_PADDING,
+              bottom: MODE_STRIP_PADDING,
+              left: MODE_STRIP_PADDING,
+              width: slotWidth,
+              borderRadius: 999,
+              borderCurve: "continuous",
+              // Polarite çeviren dolgu — açıkta siyah, koyuda beyaz. Palet
+              // mutable olduğu için render'da okunuyor; tema değişiminde kök
+              // remount olduğundan bu yeterli (bkz. shared/theme/colors.ts).
+              backgroundColor: colors.inverseSurface,
+            },
+            fillStyle,
+          ]}
+        />
+      )}
       {APP_MODES.map((mode) => {
         const active = value === mode;
-        const open = mode === "Friends" ? friendsOpen : datingOpen;
         return (
           <TouchableOpacity
             key={mode}
@@ -488,32 +577,23 @@ const ModeSwitch = React.memo(function ModeSwitch({
             onPress={() => onChange(mode)}
             style={{
               flex: 1,
-              flexDirection: "row",
               alignItems: "center",
               justifyContent: "center",
-              gap: 7,
-              paddingVertical: 12,
-              borderRadius: 14,
-              borderCurve: "continuous",
-              borderWidth: active ? 0 : 0.5,
-              borderColor: colors.hairline,
-              backgroundColor: active ? colors.surface3 : "transparent",
+              paddingVertical: 9,
             }}
           >
-            <View
-              style={{
-                width: 8,
-                height: 8,
-                borderRadius: 4,
-                backgroundColor: modeAccent(mode),
-                // Kapalı modda nokta sönük: bölüm var ama profil açılmamış.
-                opacity: open ? 1 : 0.35,
-              }}
-            />
             <Text
+              // Ağırlık ve punto SABİT: seçilince kalınlaşan etiket genişler ve
+              // altındaki dolgu hedefini ıskalardı (periyot şeridindeki aynı
+              // gerekçe).
+              numberOfLines={1}
               style={{
-                color: active ? colors.text : colors.textSecondary,
-                fontSize: 15,
+                // Dolgu polarite çevirdiği için etiket de çeviriyor: siyah
+                // dolgunun üstünde beyaz, beyaz dolgunun üstünde siyah.
+                // `onMedia` DEĞİL — o her iki temada beyaz ve koyu modun beyaz
+                // dolgusunda etiket görünmez olurdu.
+                color: active ? colors.onInverseSurface : colors.textSecondary,
+                fontSize: 14,
                 fontWeight: "600",
               }}
             >
@@ -1273,7 +1353,6 @@ const EditProfileForm = forwardRef(function EditProfileForm(
     highlightPhotoId = null,
     onAddPhoto,
     onPhotoPress,
-    onPreview,
     onSavingChange,
     onSaved,
   }: any,
@@ -2218,50 +2297,20 @@ const EditProfileForm = forwardRef(function EditProfileForm(
           `stage` kapısı YOK: mod seçimi kademeli mount'un en başında görünmeli
           — kullanıcı hangi profili düzenlediğini bilmeden ada/fotoğrafa
           bakmaya başlamamalı. */}
-      <ModeSwitch
-        value={editMode}
-        onChange={setEditMode}
-        friendsOpen={friendsOpen}
-        datingOpen={datingOpen}
-      />
+      {/* `friendsOpen`/`datingOpen` ARTIK GEÇİLMİYOR: şerit kapalı modu
+          işaretleyen sönük noktayı taşımıyor (gerekçe ModeSwitch'in başında).
+          İki bayrak hâlâ canlı — editörün yerine `ModeClosedNotice` çizen
+          `activeModeOpen` onlardan türüyor. */}
+      <ModeSwitch value={editMode} onChange={setEditMode} />
 
-      {/* Kartımı Önizle — stage 1 */}
-      {stage >= 1 && (
-        <TouchableOpacity
-          activeOpacity={0.85}
-          onPress={onPreview}
-          style={{ marginTop: 8, marginBottom: 16 }}
-        >
-          <View
-            className="border-[0.5px]"
-            style={{
-              borderColor: colors.hairline,
-              backgroundColor: colors.surface,
-              borderRadius: 999,
-              borderCurve: "continuous",
-              overflow: "hidden",
-              padding: 16,
-              flexDirection: "row",
-              alignItems: "center",
-              justifyContent: "center",
-              gap: 12,
-            }}
-          >
-            <SFIcon
-              name="lanyardcard.fill"
-              fallback={IdCardLanyard}
-              size={20}
-              color={colors.textSecondary}
-              strokeWidth={1.5}
-            />
-            <Text
-              style={{ color: colors.textSecondary, fontWeight: "500", fontSize: 14 }}
-            >
-              {t('profile.edit.previewButton')}
-            </Text>
-          </View>
-        </TouchableOpacity>
-      )}
+      {/* ⚠️ "İnsanlar beni nasıl görüyor?" BUTONU KALDIRILDI (ürün kararı).
+          Mod anahtarının hemen altında, formun ilk alanından önce duruyordu.
+
+          Sonucu: `PreviewModal`ın (ProfileScreen) ARTIK GİRİŞİ YOK — bu buton
+          oraya açılan tek kapıydı. Modal ve içindeki `CardEditGlassButton`
+          (önizleme→düzenleme yolu) yerinde duruyor ama erişilemez. Önizlemeyi
+          geri isteyen önce girişin NEREDE olacağına karar vermeli; aynı butonu
+          buraya geri koymak kaldırılma gerekçesini geri getirir. */}
 
       {/* İsim — stage 1. Tek alan iki yeri birden güncelliyor: kartta görünen
           ad (UserProfile.DisplayName) ve mail/JWT'deki ad (FirstName). Backend
@@ -2401,6 +2450,7 @@ const EditProfileForm = forwardRef(function EditProfileForm(
                   }}
                 >
                   <TouchableOpacity
+                    testID="profile-btn-add-photo"
                     activeOpacity={1}
                     onPress={onAddPhoto}
                     disabled={savingPhoto}

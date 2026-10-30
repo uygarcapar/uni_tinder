@@ -163,10 +163,24 @@ import { useFeedAuthorProfile, useFeedReplierProfile } from "../feedQueries";
 // `useCampusSurface`te ve o yalnız konum kararı için (gerekçe aşağıda).
 import {
   useCampusBoundary,
-  useCampusMomentProfile,
+  // ⚠️ `useCampusMomentProfile` ARTIK ÇAĞRILMIYOR: an kartı profil açmıyor
+  // (gerekçe `momentTarget`in yanında). Kanca duruyor — kampüse özel uç
+  // gelince profil yolu onunla geri açılacak.
+  resolveOpenMoment,
 } from "@/features/campus/campusQueries";
 import type { CampusMomentDto } from "@/features/campus/campusTypes";
+// ⚠️ `LikerSwipeModal` KAMPÜS YOLUNDA KULLANILMIYOR: an kartı artık profil
+// açmıyor. Akışın yazar kartı hâlâ bu bileşeni çiziyor, o yüzden import duruyor.
 import LikerSwipeModal from "@/features/discover/components/LikerSwipeModal";
+import CampusMomentExpandOverlay, {
+  EXPAND_MS,
+} from "@/features/campus/components/CampusMomentExpandOverlay";
+import { likeWithFlameSweep } from "@/features/campus/campusMomentLikeSweep";
+import {
+  releaseFlameSweep,
+  runFlameSweep,
+} from "@/features/discover/flameSweep";
+import type { ExpandRect } from "@/features/campus/campusExpandGeometry";
 import type {
   FeedListParams,
   FeedPostDto,
@@ -2024,60 +2038,99 @@ export default function FeedScreen() {
   });
 
   /**
-   * ── AN KARTINA DOKUNMAK → KİŞİNİN PROFİL KARTI (istek) ───────────────────
+   * ── AN KARTINA DOKUNMAK → KART BÜYÜYOR (profil DEĞİL) ────────────────────
    *
-   * Şeridin kartlarındaki cam tik/X satırı kaldırıldı; karar artık profil
-   * kartında veriliyor. Düzen akışın YAZAR KARTIYLA birebir aynı
-   * (`LikerSwipeModal` + `onDecide`) ve bu bilinçli: aynı jest, aynı sheet,
-   * aynı moderasyon satırları — kullanıcı iki yüzeyde iki ayrı kart dili
-   * görmüyor.
+   * ⚠️ PROFİL YOLU KAPANDI ve bu yalnız bir ürün kararı değil: ödünç alınan uç
+   * (`/api/swipe/LikerProfile`) sert bir beğeni kapısı taşıyor, bizi beğenmemiş
+   * biri için **404** dönüyor (backend teyidi). Kampüse özel uç
+   * (`GET /api/campus/moments/{id}/profile`) istendi, yazılmadı. Yani kart bir
+   * kapıydı ama arkasında oda yoktu.
    *
-   * ⚠️ HEDEF STATE'TE TUTULUYOR, yalnız `userId` DEĞİL: karar sarmalayıcısı
-   * anın KENDİSİNİ istiyor (`campus.like` gövdeye `momentId` koyuyor, kota
-   * sunucuda onunla idempotent) ve kart kapanırken `profile` bir kare
-   * null'lanabiliyor.
+   * Yerine: kart şeritteki yerinden ekranın ortasına uçup büyüyor, sağındaki
+   * cam tik beğeniyi gönderiyor (bkz. CampusMomentExpandOverlay).
+   *
+   * ⚠️ STATE YALNIZ KİMLİK + ÖLÇÜLEN KARE TUTUYOR, anın KOPYASINI değil:
+   * gösterilen an her render canlı listeden çözülüyor (`resolveOpenMoment`),
+   * böylece an süresi dolup listeden düştüğünde yüzey kendiliğinden kapanıyor
+   * ve bayat veri gösterilmiyor (uzun gerekçe o fonksiyonda).
+   *
+   * ⚠️ `useCampusMomentProfile` ÇAĞRISI VE HATA TOAST'I KALDIRILDI — profil ucu
+   * gelince ikisi de geri gelecek. Kanca duruyor.
    */
-  const [momentTarget, setMomentTarget] = useState<CampusMomentDto | null>(
-    null,
+  const [momentTarget, setMomentTarget] = useState<{
+    id: string;
+    frame: ExpandRect | null;
+  } | null>(null);
+
+  const openMoment = useMemo(
+    () => resolveOpenMoment(campus.moments, momentTarget?.id ?? null),
+    [campus.moments, momentTarget?.id],
   );
-  const momentProfile = useCampusMomentProfile(
-    momentTarget?.userId ?? null,
-    selectedMode,
-  );
+  /** Kart küçülüyor — yüzey hâlâ ağaçta (bkz. overlay > `collapsing`). */
+  const [momentCollapsing, setMomentCollapsing] = useState(false);
+  /** Park eden alev dalgasının aboneliği — sökülürken salıveriliyor. */
+  const momentSweepUnsub = useRef<(() => void) | null>(null);
 
   /**
-   * ⚠️ UCUN REDDİ SESSİZ KALMIYOR: kampüs sözleşmesinde an sahibinin profilini
-   * veren bir uç yok ve ödünç alınan `LikerProfile` bu kümeye kapalı olabilir
-   * (uzun gerekçe `useCampusMomentProfile`te). Kart açılmazsa kullanıcı
-   * "dokundum, hiçbir şey olmadı" görmek zorunda değil — toast çıkıyor ve
-   * hedef düşüyor, yani ikinci dokunuş yeniden deniyor.
+   * ══════════════════════════════════════════════════════════════════════════
+   * TİK — beğeni gider, ALEV oynar, kart ÖRTÜNÜN ALTINDA küçülür.
+   * ══════════════════════════════════════════════════════════════════════════
+   * Sıralamanın kendisi saf bir modülde ve testli (`likeWithFlameSweep`);
+   * burada yalnız o sıralamanın ekrandaki karşılıkları bağlanıyor.
+   *
+   * ⚠️ ALEV KATMANI GLOBAL: `<FireFlame />` AppNavigator'da mount, `uiBus`
+   * üzerinden konuşuyor — yani Keşif dışından tetiklenebiliyor ve BURAYA YENİ
+   * BİR ALEV KATMANI KURULMUYOR.
+   *
+   * ⚠️ `hold: true` ŞART: dalga tam kapalıyken PARK EDİYOR ve bizi bekliyor.
+   * Parksız bir süpürmede örtü kendi takvimiyle açılır, küçülen kart görünür —
+   * Keşif'te aynı tuzağa düşülmüştü (giden kart görünüyordu).
+   *
+   * ⚠️ KÜÇÜLME BİTMEDEN `releaseFlameSweep` ÇAĞRILMAZ: salıverilen dalga örtüyü
+   * açıyor. İkisi arasındaki tek bağ bu zamanlayıcı — `EXPAND_MS` overlay'in
+   * kendi süresi, iki yerde ayrı yazılırsa örtü erken açılır.
    */
-  useEffect(() => {
-    if (!momentTarget || !momentProfile.isError) return;
-    setMomentTarget(null);
-    showInfoToast({
-      title: t("campus.title"),
-      message: t("campus.codes.generic"),
+  const handleMomentLike = useCallback(() => {
+    if (!openMoment) return;
+    const moment = openMoment;
+    likeWithFlameSweep({
+      exhausted: campus.decisionsExhausted,
+      like: () => campus.like(moment),
+      /**
+       * SUNUCU REDDETTİ (kota/ağ): kart KAPANMIYOR, yalnız dalga salıveriliyor.
+       * Kullanıcı aynı kartla kalıyor ve paywall'ı `like` zaten açtı.
+       */
+      abort: () => {
+        momentSweepUnsub.current = null;
+        releaseFlameSweep();
+      },
+      startSweep: (onCovered) => {
+        momentSweepUnsub.current?.();
+        momentSweepUnsub.current = runFlameSweep(onCovered, { hold: true });
+      },
+      collapse: () => {
+        setMomentCollapsing(true);
+        setTimeout(() => {
+          setMomentTarget(null);
+          setMomentCollapsing(false);
+          momentSweepUnsub.current = null;
+          releaseFlameSweep();
+        }, EXPAND_MS);
+      },
     });
-  }, [momentProfile.isError, momentTarget, t]);
+  }, [campus, openMoment]);
 
   /**
-   * Profil kartından verilen karar — KAMPÜS yoluna gidiyor, keşif swipe'ına
-   * DEĞİL (bu yüzden `onDecide`; bkz. o prop'un notu).
-   *
-   * Sağ = beğen (`/api/swipe/Like` + `source: "CampusMoment"` + `momentId`),
-   * sol = geç (kampüs-yerel uç, Keşif destesine dokunmuyor). İkisinin AYRI
-   * uçlar olmasının gerekçesi `campusTypes > CampusDecisionExtras`ta.
+   * ⚠️ PARK EDEN DALGAYI SÖKÜLÜRKEN DE SALIVER: ekran kapanırsa (sekme
+   * değişimi, logout) örtüyü açacak kimse kalmıyor ve kullanıcı alevle kaplı
+   * bir ekranda kalıyordu.
    */
-  const handleMomentDecide = useCallback(
-    (direction: "left" | "right") => {
-      const moment = momentTarget;
-      setMomentTarget(null);
-      if (!moment) return;
-      if (direction === "right") campus.like(moment);
-      else campus.pass(moment);
+  useEffect(
+    () => () => {
+      momentSweepUnsub.current?.();
+      momentSweepUnsub.current = null;
     },
-    [campus, momentTarget],
+    [],
   );
 
   const mapHero = (
@@ -2877,10 +2930,14 @@ export default function FeedScreen() {
           // (bkz. CampusMomentsStrip > pinnedInfoKey).
           canShare={campus.canShare}
           isInsideCampus={campus.inside}
-          // KARTA DOKUNUNCA PROFİL (istek): karar kartta değil, açılan profil
-          // kartında (bkz. handleMomentDecide). Kendi anım şeritte zaten
-          // dokunulamaz — kapı orada kesiliyor.
-          onOpenProfile={setMomentTarget}
+          // KARTA DOKUNUNCA KART BÜYÜYOR (profil DEĞİL — gerekçe
+          // `momentTarget`in yanında). Kendi anım şeritte zaten dokunulamaz,
+          // kapı orada kesiliyor.
+          onOpenCard={(moment, frame) => setMomentTarget({ id: moment.id, frame })}
+          // ⚠️ AÇIK KART ŞERİTTE ÇİZİLMİYOR: büyüyen kart ayrı bir görünüm ve
+          // ikisi bir arada görünürse hareket "kopyalandı" diye okunuyor
+          // (gerekçe şeritteki `openMomentId`de). Küçülme bitene kadar sürüyor.
+          openMomentId={momentTarget?.id ?? null}
           onRemove={campus.remove}
           // Şikayet kartın UZUN BASIŞ menüsünden geliyor (natif), kartta
           // buton yok — formu burada açıyoruz çünkü `ReportModal` bir sheet
@@ -2890,39 +2947,34 @@ export default function FeedScreen() {
         />
       ) : null}
 
-      {/* AN SAHİBİNİN PROFİL KARTI — şeritteki karta dokununca.
+      {/* BÜYÜYEN AN KARTI — şeritteki karta dokununca.
 
-          ⚠️ ŞERİDİN KAPISININ DIŞINDA (`mapChromeMounted`), kardeşi: kart
-          açıkken harita kapanabiliyor (kullanıcı sheet'i aşağı çekerken
-          arkadaki X'e de basabilir) ve modal şeridin kapısının içinde olsaydı
-          animasyonun ortasında SÖKÜLÜRDÜ — gorhom kapanışı yarıda kalan bir
-          sheet geride bırakıyor (o kilidin tarihçesi CampusMomentsStrip'in
-          başında).
+          ⚠️ ŞERİDİN KAPISININ DIŞINDA (`mapChromeMounted`), KARDEŞİ: kart
+          açıkken harita kapanabiliyor ve yüzey şeridin kapısının içinde olsaydı
+          animasyonun ortasında SÖKÜLÜRDÜ.
 
-          ⚠️ AKIŞIN YAZAR KARTIYLA AYNI BİLEŞEN, İKİNCİ BİR ÖRNEĞİ: aynı
-          sheet'i iki hedefle paylaşmak demek `profile`ı ve karar yolunu tek
-          state'te birleştirmek demekti ve iki yüzeyin karar uçları AYRI
-          (yazar → keşif swipe'ı, an → kampüs beğenisi + kampüs pass'i).
+          ⚠️🔴 AYNI SEBEPLE CAM DA BURADA ÇİZİLEBİLİYOR: şerit `translateY` ile
+          geliyor, yani onun ALTINDA doğan bir cam buton hiç render edilmez
+          (projenin en sert tuzağı). Overlay kendi kapısını kendi kuruyor —
+          kart yerine oturana kadar cam mount edilmiyor.
 
-          ⚠️ `onDecide` ŞART: verilmezse modal kendi `useSwipeMutation`ını
-          çağırıyor, yani beğeni `source: "CampusMoment"` OLMADAN gidiyor ve
-          kampüs kotası yerine keşif kotası yanıyor (pass ise hiç
-          gönderilmemesi gereken bir `SwipeAction` satırı yazıyor).
-
-          ⚠️ FIRE/NOT YOK: kampüs beğenisinin tek yolu `source`lu Like ucu.
-          Fire butonu basılsa `/api/swipe/SuperLike`a kampüs kaynağı olmadan
-          giderdi — anı değil, Keşif'teki kişiyi Fire'lamış olurdun. */}
-      <LikerSwipeModal
-        visible={!!momentTarget && !!momentProfile.data}
-        profile={momentProfile.data}
+          ⚠️ BURADA BİR `LikerSwipeModal` VARDI (an sahibinin profil kartı) ve
+          `handleMomentDecide` ile kampüs beğenisine/pass'ine bağlıydı. İkisi de
+          kaldırıldı: ödünç uç 404 veriyor (backend teyidi), kampüse özel uç
+          henüz yok. Uç gelince geri gelecek olan düzen şuydu — `onDecide` ŞART
+          (yoksa beğeni `source: "CampusMoment"` olmadan gider, kampüs yerine
+          keşif kotası yanar) ve FIRE/NOT KAPALI (kampüs kaynağını taşımıyorlar,
+          basılsa Keşif'teki kişiye giderdi). */}
+      <CampusMomentExpandOverlay
+        moment={openMoment}
+        frame={momentTarget?.frame ?? null}
+        // ⚠️ ANIN MODU, ekranın seçili modu DEĞİL: liste moda göre geliyor ama
+        // kart elde bayatlamışsa ikisi ayrışabilir.
+        mode={openMoment?.mode ?? selectedMode}
+        busy={campus.busyMomentId === openMoment?.id}
+        collapsing={momentCollapsing}
+        onLike={handleMomentLike}
         onClose={() => setMomentTarget(null)}
-        // ⚠️ ANIN MODU, ekranın seçili modu DEĞİL (useCampusSurface > pass'teki
-        // aynı kural): liste moda göre geliyor ama kart elde bayatlamışsa
-        // ikisi ayrışabilir ve karar yanlış modun altına yazılırdı.
-        mode={momentTarget?.mode ?? selectedMode}
-        allowFire={false}
-        allowLike
-        onDecide={handleMomentDecide}
       />
 
       {/* ⚠️ KAMPÜS ANI PAYLAŞIMINDA ARTIK HİÇBİR SHEET YOK.

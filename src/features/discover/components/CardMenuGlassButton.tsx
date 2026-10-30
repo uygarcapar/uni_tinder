@@ -23,11 +23,14 @@ type Props = {
   size?: number;
   /** Glif foto üstü mürekkeple çizilsin — gerekçesi ortak dosyada. */
   onMedia?: boolean;
+  /** e2e seçicisi — ortak kabuğa (CardChromeGlassButton) geçiyor. */
+  testID?: string;
 };
 
-function CardMenuGlassButton({ onPress, label, size, onMedia }: Props) {
+function CardMenuGlassButton({ onPress, label, size, onMedia, testID }: Props) {
   return (
     <CardChromeGlassButton
+      testID={testID}
       onPress={onPress}
       label={label}
       size={size}

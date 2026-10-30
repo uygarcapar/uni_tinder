@@ -62,6 +62,7 @@ import RecoverGlassButton, {
   RECOVER_GLASS_SIZE,
 } from "@/features/discover/components/RecoverGlassButton";
 import CardActionGlassButton from "@/features/discover/components/CardActionGlassButton";
+import { CARD_CHROME_FALLBACK_ICON_SIZE } from "@/features/discover/components/CardChromeGlassButton";
 import {
   colors,
   darkColors,
@@ -75,6 +76,7 @@ import { chromeBlurTint } from "@/shared/theme/blur";
 import {
   glassColorScheme,
   hasLiquidGlassSurface,
+  GLASS_ICON_BUTTON,
   HAS_LIQUID_GLASS,
 } from "@/shared/theme/glass";
 
@@ -245,17 +247,38 @@ const cardPhotoScrim = (alpha: number): string =>
 // kesilmiş görünür, o eşik ~1pt — yani 6 hem belirgin biçimde köşeye yakın hem
 // kavisten uzak. Sıfıra indirmek kabuğu kartın kenarına yapıştırır.
 const CARD_TOP_RIGHT_INSET = 6;
-// Köşedeki cam butonun çapı ve glifi — kurtar ve beğen TEK ölçüden besleniyor:
-// ikisi aynı köşenin sekmeye göre değişen iki hâli, ayrı sayılara
-// bağlansalardı sekme değiştirince köşe büyüyüp küçülüyormuş gibi okunurdu.
-// Glif kabuğa göre dock'un oranından daha küçük — gerekçesi
-// RECOVER_GLASS_GLYPH_SIZE'ın yanında.
-// ⚠️ Sayılar SABİT DEĞİL: camsız yolda (iOS 26 altı + Android) ikisi de bir
-// kademe küçülüyor, çünkü orada kabuk düz ve opak bir disk. Gerekçe yine
-// RECOVER_GLASS_SIZE'ın yanında — buradaki iki sabit oradan türer, elle sayı
+// Köşedeki cam butonun ÇAPI — kurtar ve beğen TEK ölçüden besleniyor: ikisi
+// aynı köşenin sekmeye göre değişen iki hâli, ayrı sayılara bağlansalardı sekme
+// değiştirince köşe büyüyüp küçülüyormuş gibi okunurdu.
+// ⚠️ Sayı SABİT DEĞİL: camsız yolda (iOS 26 altı + Android) bir kademe
+// küçülüyor, çünkü orada kabuk düz ve opak bir disk. Gerekçe
+// RECOVER_GLASS_SIZE'ın yanında — buradaki sabitler oradan türer, elle sayı
 // yazma.
 const CARD_CORNER_GLASS_SIZE = RECOVER_GLASS_SIZE;
-const CARD_CORNER_GLYPH_SIZE = RECOVER_GLASS_GLYPH_SIZE;
+// Köşedeki tik/X'in ÇİZİLEN puntosu (istek, 2026-10-27: Keşif'teki tik/X ile
+// aynı irilik, o da kaydırınca şeritte beliren tikin puntosunda). Kaynağı
+// Keşif'in kart chrome'u: camlı yolda ortak cam ikon butonunun sayısı
+// (GLASS_ICON_BUTTON.icon = 17), camsız yolda onun fallback puntosu — elle sayı
+// yazmak aynı işareti iki ekranda sessizce ayrıştırıyor.
+//
+// Eskiden kurtarma butonunun glifiyle (RECOVER_GLASS_GLYPH_SIZE, 28/21) aynıydı
+// ve köşe ikilisi Keşif'tekinden belirgin iriydi.
+const CARD_CORNER_GLYPH_SIZE = HAS_LIQUID_GLASS
+  ? GLASS_ICON_BUTTON.icon
+  : CARD_CHROME_FALLBACK_ICON_SIZE;
+// ⚠️ KUTU, ÇİZİLEN İŞARET DEĞİL (bkz. CardActionGlassButton > `glyphBoxSize`):
+// camlı yolda çemberin ÇAPINI `frame` değil glifin kutusu belirliyor, yani bu
+// sayı küçülürse köşedeki DAİRE de küçülür. Bu yüzden işaret küçülürken kutu
+// kurtarma butonunun glifinde kalıyor (istek: "iconunu küçült butonu değil") —
+// kurtar/beğen aynı köşenin sekmeye göre değişen iki hâli, çapları ayrışamaz.
+//
+// `max`: camsız yolda kutu (21) ortak fallback puntosundan (22) küçük kalıyor
+// ve işaret kutudan taşardı. Orada kabuk zaten RN kutusundan (48) doğuyor, yani
+// kutuyu büyütmek daireye dokunmuyor.
+const CARD_CORNER_GLYPH_BOX = Math.max(
+  RECOVER_GLASS_GLYPH_SIZE,
+  CARD_CORNER_GLYPH_SIZE,
+);
 // Köşedeki kolonda birden fazla buton varken (akış yanıtında üç: tik, X, üç
 // nokta — bkz. `onSkip`/`onMenu`) aralarındaki pay. Kabuk ölçüsünden türüyor:
 // butonlar küçüldüğünde boşluk da küçülsün.
@@ -1872,13 +1895,17 @@ function LikeCard({
               // modun rengini alıyordu, tik sabit kırmızı kalınca Arkadaş
               // modunda aynı köşenin iki hâli iki ayrı renkte çiziliyordu.
               <CardActionGlassButton
+                testID="likes-accept"
                 variant="prominent"
                 name="checkmark"
                 fallback={Check}
                 tintColor={modeFireTint(mode)}
                 glyphColor={colors.onMedia}
                 size={CARD_CORNER_GLASS_SIZE}
+                // İşaret Keşif'in tik/X'iyle aynı puntoda, DAİRE eskisi gibi:
+                // çapı kutu belirliyor (bkz. iki sabitin yanındaki not).
                 glyphSize={CARD_CORNER_GLYPH_SIZE}
+                glyphBoxSize={CARD_CORNER_GLYPH_BOX}
                 // `busy` YOK: istek fire-and-forget gidiyor ve kart aynı karede
                 // düşüyor, beklenen bir yanıt yok. Free kullanıcıda da
                 // dönmemeli — tek "bekleme" paywall öncesi sessiz entitlement
@@ -1899,6 +1926,7 @@ function LikeCard({
                 CardActionGlassButton'ın `variant` notunda. */}
             {onSkip ? (
               <CardActionGlassButton
+                testID="likes-reject"
                 variant="clear"
                 name="xmark"
                 fallback={X}
@@ -1906,6 +1934,7 @@ function LikeCard({
                 glyphColor={colors.onMedia}
                 size={CARD_CORNER_GLASS_SIZE}
                 glyphSize={CARD_CORNER_GLYPH_SIZE}
+                glyphBoxSize={CARD_CORNER_GLYPH_BOX}
                 onPress={handleSkip}
                 label={skipLabel}
               />

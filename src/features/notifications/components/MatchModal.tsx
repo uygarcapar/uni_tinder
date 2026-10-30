@@ -541,6 +541,7 @@ export default function MatchModal({ match, myPhoto, onClose, onSendMessage }: a
                   DEĞİL `onMediaInverse`: dolgu iki modda da beyaz (onMedia),
                   `text` koyu modda beyaza dönüp butonda kaybolurdu. */}
               <TouchableOpacity
+                testID="modal-match-send"
                 activeOpacity={1}
                 onPress={() => startClose(() => onSendMessage?.(match.conversationId))}
                 onPressIn={() => handlePressIn(sendScale)}
@@ -562,6 +563,7 @@ export default function MatchModal({ match, myPhoto, onClose, onSendMessage }: a
               className="mt-3"
             >
               <TouchableOpacity
+                testID="modal-match-close"
                 activeOpacity={1}
                 onPress={() => startClose(onClose)}
                 onPressIn={() => handlePressIn(backScale)}

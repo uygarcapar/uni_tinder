@@ -21,7 +21,7 @@ import {
   saveMessage,
   setSyncWatermark,
 } from '@/features/chat/chatRepository';
-import { pullChanges, __resetDeltaSyncForTests } from '@/features/chat/chatDeltaSync';
+import { pullChanges, pullBeforeSend, __resetDeltaSyncForTests } from '@/features/chat/chatDeltaSync';
 import { clear as clearMessageCache } from '@/features/chat/messageCache';
 import { CHAT_ERROR_CODES } from '@/shared/constants/responseCodes';
 import type { MessageDto } from '@/shared/types';
@@ -280,5 +280,46 @@ describe('retentionWindowDays', () => {
     await pullChanges();
 
     expect(getRetentionWindowDays()).toBe(730);
+  });
+});
+
+// ── pullBeforeSend — gönderimden önce yakalama (bkz. outbox.flushOutbox) ────
+describe('pullBeforeSend', () => {
+  it('uçuşta tur varken yeni istek atmaz, AYNI turu döndürür', async () => {
+    let resolvePull: (value: unknown) => void = () => {};
+    getChanges.mockImplementationOnce(
+      () => new Promise((resolve) => { resolvePull = resolve; }),
+    );
+    const inFlight = pullChanges();
+
+    const result = pullBeforeSend();
+
+    // Referans eşitliği: tur AÇILMADI, uçuştaki aynı promise geri verildi.
+    expect(result).toBe(inFlight);
+    expect(getChanges).toHaveBeenCalledTimes(1);
+
+    resolvePull({ watermark: 'wm-1', hasMore: false });
+    await inFlight;
+  });
+
+  it('tur yok, son turdan beri taban geçti → yeni tur başlatır', async () => {
+    getChanges.mockResolvedValueOnce({ watermark: 'wm-1', hasMore: false });
+
+    const result = await pullBeforeSend();
+
+    expect(getChanges).toHaveBeenCalledTimes(1);
+    expect(result?.ran).toBe(true);
+  });
+
+  it('tur yok, son tur 10sn içinde → null döner, istek atmaz', async () => {
+    getChanges.mockResolvedValueOnce({ watermark: 'wm-1', hasMore: false });
+    // Tabanı dolduruyor — `fire()`in kullandığı AYNI `lastPullAt`.
+    await pullBeforeSend();
+    getChanges.mockClear();
+
+    const result = await pullBeforeSend();
+
+    expect(result).toBeNull();
+    expect(getChanges).not.toHaveBeenCalled();
   });
 });

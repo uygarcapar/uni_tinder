@@ -38,3 +38,14 @@ export const CHAT_SQLITE_ENABLED = true;
  * eder.
  */
 export const CHAT_DELTA_SYNC_ENABLED = true;
+
+/**
+ * Backfill — arşivi arka planda geri dolduran tur (`chatBackfill.ts`).
+ *
+ * Boot'tan `BACKFILL_BOOT_DELAY_MS` sonra tek turu tetikler; tur kendi
+ * içinde sayfalayıp `backfill_cursor`/`backfill_done` ilerletir. Kapatmak
+ * güvenli: tur hiç BAŞLAMAZ (ileride yazılacak hiçbir satır yazılmaz) ama
+ * o ana kadar diske yazılmış satırlar YERİNDE kalır — geri almak veri
+ * kaybettirmez, yalnız arşivin geri kalanı ağdan sayfalanmaya devam eder.
+ */
+export const CHAT_BACKFILL_ENABLED = true;

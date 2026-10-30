@@ -18,7 +18,8 @@ import { easeGradient } from "react-native-easing-gradient";
 import { chromeBlurTint } from "@/shared/theme/blur";
 import {
   buildMapboxStaticUrl,
-  MAPBOX_STYLE_DEFAULT,
+  MAPBOX_STYLE_CAMPUS_DARK,
+  MAPBOX_STYLE_CAMPUS_LIGHT,
 } from "@/shared/constants/mapbox";
 import { isLight, scrimAt, veil } from "@/shared/theme/colors";
 import SkeletonBox from "@/shared/components/SkeletonBox";
@@ -26,15 +27,19 @@ import type { UniversityOption } from "@/shared/queries/commonQueries";
 import { resolveUniversityCoordinate } from "../universityGeo";
 import CampusFigure, { CAMPUS_FIGURE_ANCHOR } from "./CampusFigure";
 import CampusPolygonOverlay from "@/features/campus/components/CampusPolygonOverlay";
-import { feedMapFraming } from "./feedMapFraming";
-// Blur'un geri gelmesi haritanın hareketiyle aynı sayıda (gerekçe aşağıda).
+import CampusPolygonBlurMask from "@/features/campus/components/CampusPolygonBlurMask";
 import {
-  MAP_MOTION_MS,
-  MAP_PULL_SHARE,
-  mapMotionEasing,
-} from "./feedMapMotion";
+  feedMapCampusColumn,
+  feedMapExpandScale,
+  feedMapFraming,
+  feedMapHorizontal,
+} from "./feedMapFraming";
+// Blur'un geri gelmesi haritanın hareketiyle aynı sayıda (gerekçe aşağıda).
+import { MAP_MOTION_MS, mapMotionEasing } from "./feedMapMotion";
 import {
   boundsCenter,
+  boundsScreenSize,
+  campusAreaGeometry,
   coverScale,
   fitZoom,
   geometryBounds,
@@ -92,7 +97,10 @@ import type {
  * (feedRowShell), listenin kabına DEĞİL — yukarıdaki (2) o yüzden çalışmıyor.
  *
  * ── Katmanlar, alttan üste ──────────────────────────────────────────────────
- *   1. Mapbox statik görüntüsü — kampüs BANDIN ortasında (bkz. imageTop)
+ *   1. Mapbox statik görüntüsü — kampüs BANDIN SOL SÜTUNUNDA (dikeyde
+ *      bkz. imageTop, yatayda bkz. feedMapHorizontal). Bandın sağ yarısı
+ *      anların küçük kartlarına ayrılı ve o satır bu katmanın DIŞINDA,
+ *      kardeşi (bkz. FeedBandMoments).
  *   2. SÖNÜMLEME — görüntünün tamamına çekilen ince siyah perde (istek:
  *      "harita çok parlak"). Sabit, animasyonsuz; bkz. MAP_DIM_ALPHA.
  *   3. GENEL BULANIKLIK — akışta zemin yumuşak, tam ekranda çözülüyor
@@ -145,28 +153,40 @@ import type {
 export interface FeedMapStripProps {
   /** Seçili kampüsün domain'i; `null` = kullanıcının kendi kampüsü. */
   domain: string | null;
+  /**
+   * ⚠️ `mode` PROP'U KALDIRILDI — bu katman artık MOD-NÖTR. Tek müşterisi
+   * poligonun dolgu rengiydi; poligon yalnız kontura indi ve rengi temadan
+   * alıyor (bkz. CampusPolygonOverlay). Harita stili, kadraj ve bant hiçbir
+   * zaman moda bakmıyordu.
+   *
+   * Geri gerekirse zincir üç dosya: FeedScreen → buraya → overlay.
+   */
   /** Sunucudan gelen üniversite kaydı (geo alanları buradan). */
   option?: UniversityOption | null;
   /**
    * TAM EKRAN HARİTA ilerlemesi (0 → 1). Katman bunu yalnız KADRAJ için
-   * okuyor: açılırken kampüs noktası bandın ortasından EKRANIN ortasına
-   * kayıyor, yoksa "tam ekran harita" hâlinde bina tepede sıkışık kalırdı.
+   * okuyor: açılırken kampüs noktası bandın sol sütunundan EKRANIN ortasına
+   * kayıyor (iki eksende birden), yoksa "tam ekran harita" hâlinde kampüs
+   * tepede ve solda sıkışık kalırdı.
    *
    * ⚠️ Animasyonu SÜREN değer değil, yalnız okunan: açma/kapama ve bütün
    * kardeş katmanların (liste, chrome, sekme şeridi) ötelemesi FeedScreen'de.
    */
   expandProgress: SharedValue<number>;
   /**
-   * ÇEKMENİN ORANI (0 → 1) — eşiğe ne kadar kaldı.
+   * KONTURUN ÇİZİLME ORANI (0 → 1) — şekil kenarı boyunca kendini çiziyor
+   * (istek: "üç kareye dokunup çizgi animasyonla yavaşça çizilsin").
    *
-   * Katman bunu yalnız ÜST BANDIN sönmesi için okuyor: chrome parmakla yukarı
-   * çıkarken onu okunur kılan blur da birlikte açılıyor (istek). Kadraj ve
-   * genel bulanıklık bunu KULLANMIYOR — harita çekerken yerinde duruyor.
+   * ⚠️🔴 AKIŞTA 0 OLMAK ZORUNDA: bant kaldırıldı ve poligon akışta HİÇ
+   * çizilmiyor (istek: "çizilmesin ama o moments kısmına geçince çizilsin").
+   * Değeri çağıran sürüyor (bkz. FeedScreen > polygonReveal).
    *
-   * Opsiyonel: Gönderilerim sayfasında çekme haritayı açmıyor (orada harita da
-   * yok) ve bu katmanın bir çekme kavramı olmak zorunda değil.
+   * ⚠️ İKİ POLİGONA DA veriliyor (gelen + giden kadraj): biri atlanırsa kampüs
+   * değişiminde iki farklı oran üst üste görünür.
+   *
+   * Opsiyonel: verilmezse şekil her zaman tam çizili.
    */
-  pullProgress?: SharedValue<number>;
+  polygonReveal?: SharedValue<number>;
   /**
    * HERO yüksekliği — ekranın tepesinden (status bar dahil) chrome'un bittiği
    * yerin `bandHeight` kadar altına. Çağıran ölçüyor: üst pay + chrome'un
@@ -174,7 +194,7 @@ export interface FeedMapStripProps {
    *
    * ⚠️ HARİTANIN yüksekliği DEĞİL: görüntü ekranın TAMAMINI kaplıyor (istek).
    * Bu sayı iki şeyi konumlandırıyor — okunabilirlik perdesinin bittiği çizgi
-   * ve görüntünün dikey kayması (kampüsü bandın ortasına getiren `imageTop`).
+   * ve görüntünün dikey kayması (kampüsü bandın hizasına getiren `imageTop`).
    * Perdenin üç durağı bu bandın oranlarına göre ayarlı; tam ekrana yayılsa
    * pill'lerin arkası açılıp dip gereksiz karanlıklaşırdı.
    *
@@ -204,6 +224,42 @@ export interface FeedMapStripProps {
    * hâlâ yok, orada diorama duruyor.
    */
   boundary?: CampusBoundaryDto | null;
+  /**
+   * SINIR HÂLÂ YOLDA MI — `boundary === null`ın İKİ ANLAMINI ayıran şey.
+   *
+   * `null` iki ayrı durumu birden söylüyordu: "bu kampüsün poligonu yok"
+   * (nihai) ve "poligon henüz inmedi" (geçici). Şerit ikisini ayırt edemediği
+   * için geçici hâli nihai sanıp ÇİZİYORDU ve okul değiştirmek şu sırayı
+   * üretiyordu: eski harita → bir an 3B okul figürü (sınır yok sanıldı) →
+   * koordinat kadrajıyla bir harita → sınır indi → yeni kadraj → poligon.
+   * Kullanıcının gördüğü: "3B okul anlık geliyor, poligon gelip gidip bir daha
+   * geliyor" (istek birebir).
+   *
+   * Bu bayrak açıkken şerit HİÇBİR ARA HÂLİ GÖSTERMİYOR: iskelet duruyor ve
+   * iş bitince son hâl bir kerede açılıyor (bkz. `revealed`).
+   *
+   * ⚠️ "VERİ YOK AMA İSTEK DE YOK" HÂLİ BURAYA GİRMEMELİ (React Query'de
+   * devre dışı sorgu `isPending` döner): çağıran `isLoading` geçiyor, yani
+   * "fiilen çekiliyor ve henüz veri yok". Aksi hâlde kampüsü olmayan
+   * kullanıcıda iskelet süresiz kalırdı.
+   */
+  boundaryPending?: boolean;
+  /**
+   * BANDIN SAĞINDA GÖSTERİLECEK BİR ŞEY VAR MI — poligon sola mı çekilsin.
+   *
+   * `true` iken kampüs bandın SOL sütununda duruyor ve sağı anların küçük
+   * kartlarına kalıyor (bkz. FeedBandMoments). `false` iken (hiç an yok ve
+   * paylaşım ipucu da yok) kartlar hiç çizilmiyor, o yüzden poligon ORTADA
+   * duruyor — istek: "atılmış post yoksa ortada dursun".
+   *
+   * ⚠️ KUTU GEOMETRİSİ İKİ HÂLDE DE AYNI, yalnız `translateX` değişiyor ve
+   * animasyonlu. Hizayı kutuya (dolayısıyla kadraja ve URL'e) bağlamak cazip
+   * ama YANLIŞ: anlar sorgusu cevapladığı anda zoom ve merkez değişir, yani
+   * yeni bir görüntü inene kadar iskelet açılır — soğuk başlangıçta harita
+   * "kıpırdayıp yerine oturuyor" olurdu. Bu dosyanın ve `feedMapFraming`in
+   * tüm kadraj kuralları o belirtiden türedi.
+   */
+  asideCampus?: boolean;
 }
 
 /**
@@ -211,6 +267,25 @@ export interface FeedMapStripProps {
  * yüksekliği; zeminin dibi böylece bugün olduğu yerde kalıyor (istek).
  */
 export const FEED_MAP_BAND_HEIGHT = 120;
+
+/**
+ * KAMPÜSÜN SIĞDIRILDIĞI NOMİNAL YÜKSEKLİK — artık EKRANDA BİR BANT DEĞİL.
+ *
+ * ⚠️🔴 `bandHeight` PROP'UNDAN AYRILDI, ve ayrılma sebebi şu: akışta pill'lerin
+ * altındaki açık harita bandı KALDIRILDI (istek), yani çağıran `bandHeight`i 0
+ * veriyor. O sayı iki işi birden yapıyordu:
+ *   (a) okunabilirlik perdesinin bittiği çizgi — 0 DOĞRU olan (perde pill
+ *       satırının hemen altında bitiyor),
+ *   (b) poligonun sığdırıldığı kutunun yüksekliği — 0 BURADA ANLAMSIZ:
+ *       `fitZoom` sıfır yüksekliğe sığdırmaya çalışıp zoom'u tabana
+ *       (`MAP_ZOOM_CITY`) çakıyor ve kampüs ŞEHİR ölçeğinde kalıyordu.
+ *
+ * Bu sayı artık ekranda bir yere karşılık gelmiyor; işi yalnız "başlangıç
+ * zoom'u ne olsun". Küçük kalmak ZORUNDA: tam ekrana geçişte üstüne
+ * `expandScale` (tavan 1.5) biniyor ve başlangıç zoom'u tam ekrana göre
+ * seçilirse o yakınlaşma görünmez olur (gerekçe `feedMapExpandScale`de).
+ */
+const CAMPUS_FIT_VIEWPORT_H = FEED_MAP_BAND_HEIGHT;
 
 /**
  * Perdenin üç durağı. TEPE sekme şeridinin ve başlığın arkası — orada metin
@@ -275,14 +350,70 @@ const MAP_ZOOM_MAX = 16.5;
 const POLYGON_FIT_PADDING = 32;
 
 /**
- * İstenen görüntünün ölçüsü — DİKEY ve dar.
+ * POLİGONU OLMAYAN KAMPÜSTE KADRAJIN GERİ ÇEKİLMESİ (zoom kademesi).
  *
- * Kutu artık ekrandan DAHA UZUN (bkz. imageTop): ~0.35–0.37 en/boy. `cover`
- * görüntüyü kutuya yüksekliğinden oturttuğu için kareye yakın bir istek
- * yanlardan ağır kırpılır, yani boşuna indirilen piksel olur. 440×1200 o orana
- * yakın; Mapbox tavanı 1280 olduğu için @2x ile birlikte hâlâ sınır içinde.
+ * İstek: "poligonu yoksa üninin biraz daha zoom out olsun". Gerekçesi ürün
+ * tarafında da duruyor: o kampüslerde çizilen şekil UYDURULMUŞ (daireden
+ * türeyen kaba bir parsel, bkz. campusProjection > campusAreaGeometry).
+ * Gerçek sınırda kadraj şekle sokulabiliyor çünkü her kenarı bir bilgi;
+ * uydurulmuş şekilde aynı yakınlık, olmayan bir kesinliği gösteriyor. Bir tık
+ * uzaklaşmak çevreyi (sokaklar, deniz, yeşil alan) kadraja sokuyor ve kullanıcı
+ * "okul şu civarda" cevabını şeklin kenarından değil HARİTADAN okuyor.
+ *
+ * ⚠️ BİRİM ZOOM KADEMESİ, PT DEĞİL: Mercator'da her kademe iki kat, yani 0.45
+ * ≈ %27 geri çekilme (2^0.45 ≈ 1.37). Şekil bantta aynı oranda küçülüyor.
+ *
+ * ⚠️ `POLYGON_FIT_PADDING`i büyütmek AYNI ŞEY DEĞİL: pay pt cinsinden ve küçük
+ * bir kampüste etkisi orantısız büyük olurdu (tavana dayanmış `fitZoom`u hiç
+ * kıpırdatmazken, bant yüksekliğinin yarısını yiyebilir). Kademe çıkarmak her
+ * ölçekte aynı oranda geri çekiyor.
  */
-const MAP_IMAGE_WIDTH = 440;
+const SYNTHETIC_ZOOM_OUT = 0.45;
+
+/**
+ * TAM EKRANDA şeklin kenarlardan bırakacağı TOPLAM nefes (pt).
+ *
+ * Banttaki 32'den büyük ve olmak zorunda: orada şekil zaten küçük bir
+ * dikdörtgenin içinde, burada ekranın kenarlarında üst chrome (cam X + başlık)
+ * ve altta anlar şeridinin tepesi var. 96 → kenar başına 48.
+ */
+const EXPAND_FIT_PADDING = 96;
+
+/**
+ * Yakınlaşmanın TAVANI.
+ *
+ * Harita STATİK bir görüntü: `scale` onu büyütüyor, yani her kat YUMUŞAMA
+ * demek. @2x indirilen görüntü 3x ekranda zaten ~1:1 piksel yoğunluğunda;
+ * 1.5'te sokak adları hâlâ okunuyor, 2'ye doğru dağılmaya başlıyor.
+ *
+ * ⚠️ TAVAN ÇOĞU KAMPÜSTE BAĞLAYICI OLAN SINIR. Kadraj banda göre kurulduğu
+ * için şekil tam ekranda bol bol yer buluyor (ölçülen: orta boy bir kampüste
+ * sığdıran oran ~2.4), yani pratikte seçilen sayı budur — "ekrandan taşmama"
+ * koşulu yalnız çok geniş kampüslerde devreye giriyor.
+ *
+ * "Biraz zoom in" isteğinin karşılığı da bu: yakınlaşma bir ODAK sinyali,
+ * haritayı değiştirmek değil.
+ */
+const EXPAND_ZOOM_MAX = 1.5;
+
+/**
+ * İstenen görüntünün ölçüsü — DİKEY, kutunun oranına yakın.
+ *
+ * `cover` görüntüyü kutuya iki orandan BÜYÜĞÜYLE oturtuyor, yani istek kutunun
+ * oranından uzaklaştıkça fazlalık kırpılıyor: boşuna indirilen piksel.
+ *
+ * ⚠️ 440 → 700 BÜYÜDÜ ve sebebi kutunun kendisi: kampüs sola alınınca kutu
+ * SOLA DOĞRU UZADI (bkz. feedMapHorizontal), iPhone ölçülerinde ~393 yerine
+ * ~610pt. Eski istekle ölçek genişlikten bağlanıyordu (610/440 = 1.39) ve
+ * görüntü %39 BÜYÜTÜLEREK çiziliyordu — harita gözle görülür şekilde
+ * yumuşuyordu. 700'de ölçek yine yükseklikten bağlanıyor, yani büyütme yok.
+ *
+ * ⚠️ TAVAN 1280 (Mapbox Static Images API, @2x öncesi mantıksal ölçü): 700 ×
+ * 1200 sınırın içinde. Sütun oranı değiştirilirse bu sayı da yeniden
+ * hesaplanmalı — kutunun eni/boyu oranı (≈ boxWidth/boxHeight) ile bu isteğin
+ * oranı ayrışırsa ya büyütme ya israf başlıyor.
+ */
+const MAP_IMAGE_WIDTH = 700;
 const MAP_IMAGE_HEIGHT = 1200;
 
 /**
@@ -319,10 +450,20 @@ const SKELETON_FADE_MS = 180;
 /**
  * HARİTANIN SÖNÜMLEMESİ — görüntünün tamamına çekilen ince siyah perde.
  *
- * Mapbox'ın sokak stili (MAPBOX_STYLE_DEFAULT) beyaz zeminli ve kalabalık:
+ * 0.18 sayısı, kampüs stili AÇIK ZEMİNLİ bir sokak haritasıyken ölçüldü:
  * tam ekranda ekranın tamamı parlıyordu, akışta da kartların arasından
  * fazla göze çarpıyordu (istek: "mapin üstüne ufak bir siyah overlay ekle,
  * çok parlak").
+ *
+ * Stil bir ara uyduya (satellite-streets-v12) alınmıştı, 2026-10-27'de yine
+ * sokak haritasına döndü — ama bu sefer TEMA BAŞINA ayrı (MAPBOX_STYLE_CAMPUS_
+ * LIGHT/DARK). 0.18 açık zeminli sokak haritasıyla ölçülmüştü, yani açık
+ * temada yeniden ÖLÇÜLDÜĞÜ ilk hâline döndü.
+ *
+ * ⚠️ KOYU TEMADA YENİDEN ÖLÇÜLMEDİ: koyu stil zaten karanlık ve üstüne siyah
+ * perde biniyor. Cihazda koyu temada harita "ölü" görünüyorsa çare tek bir
+ * sayı değil — perdeyi temaya göre ayırmak gerekir (koyuda ~0.08). Blur ya da
+ * poligon maskesini kurcalama, belirti oradan gelmiyor.
  *
  * ⚠️ `veil()` DEĞİL `scrimAt()`: perde her iki temada SİYAH. Açık temada
  * beyazlatmak haritayı daha da parlatırdı — uygulamanın medya perdeleri
@@ -348,6 +489,11 @@ const MAP_DIM_ALPHA = 0.18;
  * ⚠️ AZ OLMAK ZORUNDA: 14 kampüsün dokusunu (ada, yollar, yeşil alan) bırakıp
  * yalnız detayı yumuşatıyor. 25'in üstünde zemin tanınmaz bir lekeye dönüyor
  * ve "burası benim kampüsüm" okunuşu kayboluyor.
+ *
+ * ⚠️ POLİGONUN İÇİ BU BLUR'UN DIŞINDA: sınır varken katman kampüs şeklinde
+ * delinmiş oluyor (bkz. CampusPolygonBlurMask ve aşağıdaki 3. katman). Yani
+ * "zemin yumuşak" kuralı yalnız kampüsün DIŞI için geçerli — asıl gösterilmek
+ * istenen alan akışta da net.
  */
 const MAP_OVERVIEW_BLUR = 14;
 
@@ -375,11 +521,13 @@ const FeedMapStrip = memo(function FeedMapStrip({
   domain,
   option,
   expandProgress,
-  pullProgress,
+  polygonReveal,
   heroHeight,
-  bandHeight = FEED_MAP_BAND_HEIGHT,
+  bandHeight = 0,
   expandedBottomInset = 0,
   boundary = null,
+  boundaryPending = false,
+  asideCampus = false,
 }: FeedMapStripProps) {
   const { width: windowWidth, height: windowHeight } = useWindowDimensions();
   /**
@@ -440,15 +588,81 @@ const FeedMapStrip = memo(function FeedMapStrip({
   });
 
   /**
+   * YATAY KADRAJ — kampüs akışta SOLDA, tam ekranda ortada.
+   *
+   * Sütunun genişliği bandın sağ yarısını anların küçük kartlarına bırakıyor;
+   * aynı sayıyı o satır da okuyor (bkz. FeedBandMoments), iki yerde elle
+   * yazılsaydı poligon ile kartlar üst üste binerdi.
+   */
+  const campusColumn = feedMapCampusColumn(windowWidth);
+  const { imageLeft, boxWidth, campusScreenX, mapShiftX } = feedMapHorizontal({
+    viewportWidth: windowWidth,
+    columnWidth: campusColumn,
+    ready: heroReady,
+  });
+
+  /**
    * Ekran pt / harita px oranı. `contentFit="cover"` ile BİREBİR aynı hesap;
    * hem poligonun çizimi hem sığdığı zoom buna bağlı.
+   *
+   * ⚠️ `windowWidth` DEĞİL `boxWidth`: kutu ekrandan geniş (sola uzuyor) ve
+   * ölçek kutudan okunmak zorunda — tahmin edilirse poligon haritadan farklı
+   * ölçekte çizilir (aynı tuzağın dikey hâli `boxHeight`te yazılı).
    */
   const mapScale = coverScale({
     imageWidth: MAP_IMAGE_WIDTH,
     imageHeight: MAP_IMAGE_HEIGHT,
-    boxWidth: windowWidth,
+    boxWidth,
     boxHeight,
   });
+
+  /**
+   * ── ÇİZİLEN ŞEKİL: POLİGON VARSA O, YOKSA KABA BİR PARSEL ────────────────
+   *
+   * Poligonu olmayan kampüslerde (sunucuda hâlâ ~25 tane) eskiden temsilî bir
+   * izometrik bina (`CampusFigure`) duruyordu; istek onu kaldırdı: "poligon
+   * yoksa o bölgeyi kare çiz ama tam düzgün kare olmasın, bi tık boz".
+   * Merkez `/campus/boundary`nin `circle` alanı; şeklin kendisi (hafifçe
+   * bozulmuş, eksenlerden dönük bir kare) `campusAreaGeometry`de.
+   *
+   * ⚠️ AYNI DEĞİŞKEN AŞAĞIDAKİ HER YERE GİDİYOR — kadraj, blur deliği, tam
+   * ekranda yakınlaşma, kampüs değişimi geçişi ve çizimin kendisi. Uydurulan
+   * şekil gerçek poligonun YERİNE geçtiği için beşi de hiç değişmedi; biri
+   * `boundary.polygon`a dönerse o yüzey poligonsuz kampüste sessizce boş
+   * kalır.
+   *
+   * ⚠️ UYDURULMUŞLUK KADRAJA DA YANSIYOR: şekil gerçek olmadığı için harita
+   * bir tık daha UZAKTAN çerçeveleniyor (bkz. `SYNTHETIC_ZOOM_OUT`).
+   *
+   * ⚠️ `isApproximate` KAPISI: kayıt kampüs değil İL MERKEZİ olduğunda şekil
+   * ÇİZİLMİYOR. Orada koordinat bir okulu değil bir şehri işaret ediyor, yani
+   * "okul şu kutunun içinde" iddiası yanlış olurdu (sözleşmedeki aynı kapı:
+   * `isApproximate: true` → yüzey kapalı). O kampüslerde diorama duruyor.
+   *
+   * ⚠️ KAPI SUNUCUNUN BAYRAĞI, yerel koordinat tablosunun (`universityGeo`)
+   * `isApproximate`i DEĞİL. İkisi ayrışabiliyor: tabloda kampüs koordinatı
+   * olmayan bir okulda yerel bayrak "yaklaşık" der ama sunucunun dairesi
+   * gerçektir — ve kadraj zaten o dairenin merkezinden türüyor, yani haritanın
+   * ortası şekille birlikte doğru yere gidiyor. Yerel bayrağı da kapıya
+   * koymak, elimizde doğru veri varken çizmeyi reddetmek olurdu.
+   *
+   * ⚠️ YALNIZ ÇİZİM. "Kampüsteyim" kararı hâlâ YALNIZ gerçek poligondan
+   * (gerekçe campusProjection > campusAreaGeometry ve campusBoundary başı).
+   */
+  const displayGeometry = useMemo<CampusGeometry | null>(() => {
+    if (boundary?.polygon) return boundary.polygon;
+    if (!boundary?.circle || boundary.isApproximate) return null;
+    return campusAreaGeometry(boundary.circle);
+  }, [boundary?.circle, boundary?.isApproximate, boundary?.polygon]);
+
+  /**
+   * Çizilen şekil GERÇEK Mİ — kadrajın uzaklığı buna bakıyor.
+   *
+   * ⚠️ `displayGeometry`nin kimliğinden türemek YETMEZ: ikisi de aynı tipte
+   * bir halka listesi. Kaynağı `boundary.polygon` olup olmadığına bakmak
+   * zorunda, yoksa "uydurulmuş" bilgisi kaybolur.
+   */
+  const syntheticShape = Boolean(displayGeometry) && !boundary?.polygon;
 
   // ── 2) KADRAJ ─────────────────────────────────────────────────────────────
   /**
@@ -456,10 +670,16 @@ const FeedMapStrip = memo(function FeedMapStrip({
    * ayrışırsa poligon haritadan farklı ölçekte çizilir ve hata "biraz kaymış"
    * gibi görünür, sebebi görünmez.
    *
-   * Poligon varsa merkez ve zoom SINIRDAN türüyor: şekil, pill'lerin altında
+   * Çizilecek bir şekil varsa (poligon ya da uydurulmuş parsel — bkz.
+   * `displayGeometry`) merkez ve zoom ŞEKİLDEN türüyor: pill'lerin altında
    * açıkta kalan BANDIN içine tam oturuyor. Sabit 14 kullanılsaydı Boğaziçi
-   * gibi küçük bir kampüs bandın ortasında kaybolur, ODTÜ gibi 4 km² bir
-   * kampüs ise banttan taşardı — iki uç aynı sayıyla idare edilemiyor.
+   * gibi küçük bir kampüs sütunun ortasında kaybolur, ODTÜ gibi 4 km² bir
+   * kampüs ise sütundan taşardı — iki uç aynı sayıyla idare edilemiyor.
+   * Uydurulmuş şekilde aynı mesele yarıçapla geliyor: sunucu 150m ile 5km
+   * arasında herhangi bir sayı dönebiliyor.
+   *
+   * ⚠️ POLİGONSUZ KAMPÜSTE BİR TIK DAHA UZAK (istek: "poligonu yoksa üninin
+   * biraz daha zoom out olsun"). Gerekçe `SYNTHETIC_ZOOM_OUT`ta.
    *
    * ⚠️ Bant yüksekliği KÜÇÜK (120pt) ve sınırlayıcı eksen genelde o. Genişlik
    * ekran kadar, yani yatay uzanan bir kampüs bile dikeyde sıkışıyor.
@@ -470,8 +690,7 @@ const FeedMapStrip = memo(function FeedMapStrip({
       : MAP_ZOOM_CAMPUS;
     if (!coordinate) return { zoom: fallbackZoom, lat: 0, lon: 0 };
 
-    const geometry = boundary?.polygon ?? null;
-    const bounds = geometry ? geometryBounds(geometry) : null;
+    const bounds = displayGeometry ? geometryBounds(displayGeometry) : null;
     if (!bounds) {
       return {
         zoom: fallbackZoom,
@@ -480,22 +699,41 @@ const FeedMapStrip = memo(function FeedMapStrip({
       };
     }
 
+    const fit = fitZoom({
+      bounds,
+      // ⚠️ EKRAN GENİŞLİĞİ DEĞİL SOL SÜTUN: şekil bandın tamamına değil,
+      // kendisine ayrılan sütuna sığmak zorunda — sağ yarıda anların
+      // kartları duruyor. Ekran genişliği verilseydi geniş bir kampüs
+      // kartların altına uzanırdı.
+      viewportWidth: campusColumn,
+      // ⚠️ `bandHeight` DEĞİL: o artık 0 (bant kaldırıldı) ve sıfıra sığdırmak
+      // zoom'u şehir ölçeğine çakıyor — gerekçe sabitin kendi notunda.
+      viewportHeight: CAMPUS_FIT_VIEWPORT_H,
+      scale: mapScale,
+      // Şekil bandın kenarlarına yapışmasın; üstte pill'ler, altta ilk kart.
+      padding: POLYGON_FIT_PADDING,
+      minZoom: MAP_ZOOM_CITY,
+      // Tek binalık bir kampüste zoom 18'e fırlamasın — o ölçekte harita
+      // "neresi" sorusunu değil "hangi oda" sorusunu cevaplar.
+      maxZoom: MAP_ZOOM_MAX,
+    });
+
     return {
       ...boundsCenter(bounds),
-      zoom: fitZoom({
-        bounds,
-        viewportWidth: windowWidth,
-        viewportHeight: bandHeight,
-        scale: mapScale,
-        // Şekil bandın kenarlarına yapışmasın; üstte pill'ler, altta ilk kart.
-        padding: POLYGON_FIT_PADDING,
-        minZoom: MAP_ZOOM_CITY,
-        // Tek binalık bir kampüste zoom 18'e fırlamasın — o ölçekte harita
-        // "neresi" sorusunu değil "hangi oda" sorusunu cevaplar.
-        maxZoom: MAP_ZOOM_MAX,
-      }),
+      // ⚠️ TABANA KIRPILIYOR: `fitZoom` zaten `MAP_ZOOM_CITY`de duruyor ve
+      // çıkarma onu altına indirebilir — 5 km'lik bir yarıçapta harita
+      // ilçeden şehre düşerdi.
+      zoom: syntheticShape
+        ? Math.max(fit - SYNTHETIC_ZOOM_OUT, MAP_ZOOM_CITY)
+        : fit,
     };
-  }, [bandHeight, boundary?.polygon, coordinate, mapScale, windowWidth]);
+  }, [
+    campusColumn,
+    coordinate,
+    displayGeometry,
+    mapScale,
+    syntheticShape,
+  ]);
 
   const mapZoom = framing.zoom;
   const mapUri = useMemo(() => {
@@ -507,23 +745,26 @@ const FeedMapStrip = memo(function FeedMapStrip({
       longitude: framing.lon,
       // Yaklaşık koordinat (il merkezi) ŞEHİR ölçeğinde — gerekçe sabitlerde.
       zoom: mapZoom,
-      // Mapbox'ın kendi sokak haritası — Studio stillerimiz kampüs okumak için
-      // fazla boş (gerekçe mapbox.ts > MAPBOX_STYLE_DEFAULT).
-      style: MAPBOX_STYLE_DEFAULT,
+      // Kampüse özel Studio stili — kartın arkasındaki stiller kampüs okumak
+      // için fazla boş (gerekçe mapbox.ts > MAPBOX_STYLE_CAMPUS_LIGHT).
+      // ⚠️ `campusMapStyle()` DEĞİL, `light` üzerinden: seçim memo'nun GERÇEK
+      // bağımlılığı olsun diye — fonksiyonu içeride çağırmak isLight()'ı
+      // memo'dan gizler ve tema değişince URL bayat kalır.
+      style: light ? MAPBOX_STYLE_CAMPUS_LIGHT : MAPBOX_STYLE_CAMPUS_DARK,
       // ⚠️ DİKEY İSTENİYOR, eski 600×240 DEĞİL: görüntü ekranın tamamını
       // kaplıyor ve kutusu ekrandan da uzun (bkz. imageTop).
       width: MAP_IMAGE_WIDTH,
       height: MAP_IMAGE_HEIGHT,
     });
-    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [coordinate, framing.lat, framing.lon, light, mapZoom]);
 
   /**
    * Poligonun projeksiyon argümanları — görüntü kutusunun GERÇEK ölçüsü.
    *
-   * Kutu `top: imageTop, bottom: 0` ile tanımlı, yani yüksekliği
-   * `viewportHeight - imageTop`. Poligon `cover` ölçeğini bu kutudan
-   * hesaplıyor; kutu değişirse (tema, ekran) şekil kendiliğinden uyuyor.
+   * Kutu `top: imageTop, left: imageLeft` ile tanımlı; iki ölçüsü de
+   * `feedMapFraming`/`feedMapHorizontal`tan geliyor. Poligon `cover` ölçeğini
+   * bu kutudan hesaplıyor; kutu değişirse (tema, ekran) şekil kendiliğinden
+   * uyuyor.
    *
    * ⚠️ Sheet'in payı buraya GİRMİYOR — kutu artık ondan bağımsız (gerekçe
    * `mapShift`te).
@@ -538,18 +779,11 @@ const FeedMapStrip = memo(function FeedMapStrip({
             zoom: mapZoom,
             imageWidth: MAP_IMAGE_WIDTH,
             imageHeight: MAP_IMAGE_HEIGHT,
-            boxWidth: windowWidth,
+            boxWidth,
             boxHeight,
           }
         : null,
-    [
-      boxHeight,
-      coordinate,
-      framing.lat,
-      framing.lon,
-      mapZoom,
-      windowWidth,
-    ],
+    [boxHeight, boxWidth, coordinate, framing.lat, framing.lon, mapZoom],
   );
 
   /**
@@ -563,8 +797,48 @@ const FeedMapStrip = memo(function FeedMapStrip({
     locations: BLUR_MASK_LOCATIONS,
   };
 
-  /** Sınır varsa poligon, yoksa diorama — ikisi birden ÇİZİLMİYOR. */
-  const showPolygon = Boolean(boundary?.polygon) && Boolean(projection);
+  /**
+   * Çizilecek bir şekil (poligon ya da uydurulmuş parsel) varsa O, yoksa
+   * diorama — ikisi birden ÇİZİLMİYOR.
+   */
+  const showShape = Boolean(displayGeometry) && Boolean(projection);
+
+  /**
+   * TAM EKRANDA ŞEKLE YAKINLAŞMA (istek: "biraz zoom in, ekrandan
+   * taşmayacak şekilde"). Hesap saf modülde; buradaki iş yalnız girdileri
+   * toplamak.
+   *
+   * ⚠️ YALNIZ ÇİZİLEN BİR ŞEKİL VARKEN (poligon ya da parsel). Diorama bir
+   * İŞARET, ölçeği bir bilgi taşımıyor; üstelik figür bu kutunun DIŞINDA
+   * (kendi katmanı) ve kutuyu büyütmek onu olduğu yerde bırakıp haritayı
+   * altından kaydırırdı.
+   *
+   * ⚠️ Alan şeridin ÜSTÜNDE kalan kısım: kampüs noktası da oraya ortalanıyor
+   * (bkz. `mapShift`). Ekranın tamamı verilseydi şekil anlar şeridinin
+   * arkasına taşardı.
+   */
+  const expandScale = useMemo(() => {
+    if (!showShape || !displayGeometry) return 1;
+    const bounds = geometryBounds(displayGeometry);
+    if (!bounds) return 1;
+    const shape = boundsScreenSize(bounds, mapZoom, mapScale);
+    return feedMapExpandScale({
+      shapeWidth: shape.width,
+      shapeHeight: shape.height,
+      viewportWidth: windowWidth,
+      viewportHeight: Math.max(viewportHeight - expandedBottomInset, 1),
+      padding: EXPAND_FIT_PADDING,
+      maxScale: EXPAND_ZOOM_MAX,
+    });
+  }, [
+    displayGeometry,
+    expandedBottomInset,
+    mapScale,
+    mapZoom,
+    showShape,
+    viewportHeight,
+    windowWidth,
+  ]);
 
   // ── Kampüs değişimi: yönlü süzülme + çapraz geçiş ────────────────────────
   /**
@@ -595,7 +869,7 @@ const FeedMapStrip = memo(function FeedMapStrip({
     ? {
         uri: mapUri,
         projection,
-        geometry: showPolygon ? (boundary?.polygon ?? null) : null,
+        geometry: showShape ? displayGeometry : null,
         center: { lat: framing.lat, lon: framing.lon },
         campus: domain,
       }
@@ -632,7 +906,7 @@ const FeedMapStrip = memo(function FeedMapStrip({
      * Çapraz sönme de denendi ve istenmedi: kullanıcının gördüğü şey "harita
      * kıpırdıyor, yerine oturuyor" oluyordu. Kadrajın toparlanması bir HAREKET
      * değil, bir YÜKLENME — gösterilecek doğru şey hareket değil iskelet
-     * (bkz. aşağıdaki `mapSettled`). Yeni URL sessizce takılıyor, iskelet
+     * (bkz. aşağıdaki `settled`). Yeni URL sessizce takılıyor, iskelet
      * görüntü inene kadar üstünü kapatıyor.
      *
      * Yönlü süzülme YALNIZ gerçek kampüs değişiminde kalıyor: orası kullanıcının
@@ -764,24 +1038,18 @@ const FeedMapStrip = memo(function FeedMapStrip({
   );
 
   /**
-   * İKİ BLUR'UN TEK OPAKLIĞI — yavaş eğri × çekmenin payı.
+   * İKİ BLUR'UN TEK OPAKLIĞI.
    *
    * ⚠️ İki katman (haritanın geneli ve üstteki okunabilirlik bandı) AYNI
-   * değerden sürülüyor. Ayrı yazıldıkları dönemde biri çekmeye bağlıydı, diğeri
-   * doğrudan ilerlemeye — ekranın üstü bir anda açılırken zemin yavaşça
-   * netleşiyordu, yani tek bir hareket iki hızda görünüyordu.
+   * değerden sürülüyor. Ayrı yazıldıkları dönemde ekranın üstü bir anda
+   * açılırken zemin yavaşça netleşiyordu, yani tek bir hareket iki hızda
+   * görünüyordu.
    *
-   * Çarpanların işi ayrı:
-   *   • `blurReveal` — eşik geçildikten sonraki YAVAŞ çözülme (MAP_FOCUS_MS),
-   *   • `pullProgress` — parmağın sürdüğü erken kısım (MAP_PULL_SHARE).
-   * Çekme geri alınırsa ikinci çarpan kendiliğinden 1'e dönüyor; ayrı bir
-   * "iptal" yolu yok.
+   * ⚠️ ÇEKMENİN PAYI KALDIRILDI: aşağı çekme jesti üründen çıktı (istek), yani
+   * `pullProgress` çarpanının sürücüsü de yok. Kalan tek şey eşik geçildikten
+   * sonraki yavaş çözülme (`blurReveal`, MAP_FOCUS_MS).
    */
-  const blurDim = useDerivedValue(
-    () =>
-      blurReveal.value *
-      (1 - (pullProgress ? pullProgress.value * MAP_PULL_SHARE : 0)),
-  );
+  const blurDim = useDerivedValue(() => blurReveal.value);
   const overviewBlurStyle = useAnimatedStyle(() => ({
     opacity: blurDim.value,
   }));
@@ -832,9 +1100,10 @@ const FeedMapStrip = memo(function FeedMapStrip({
   /**
    * TAM EKRANA GEÇERKEN KADRAJIN TOPARLANMASI — harita ve figür AYNI deltayla.
    *
-   * Kampüs noktası akışta bandın ortasında (ekranın üst üçte biri); tam ekranda
-   * sheet'in üstünde kalan alanın ortasına geliyor. Delta `feedMapFraming`den
-   * (kapsama paylarına kırpılmış).
+   * Kampüs noktası akışta bandın SOL SÜTUNUNUN ortasında; tam ekranda hem
+   * yatayda ekranın ortasına hem dikeyde sheet'in üstünde kalan alanın
+   * ortasına geliyor. İki delta da saf modüllerden (kapsama paylarına
+   * kırpılmış): dikey `feedMapFraming`, yatay `feedMapHorizontal`.
    *
    * ⚠️ İKİ AYRI HOOK, tek stil iki bileşene VERİLMİYOR: Reanimated aynı
    * animasyonlu stilin paylaşılmasından şikâyet ediyor (ve paylaşılan stil bir
@@ -846,59 +1115,248 @@ const FeedMapStrip = memo(function FeedMapStrip({
    * ⚠️ Figür haritayla AYNI deltayı almak zorunda, yoksa tam ekrana geçerken
    * bina kendi noktasından kopar.
    */
+  /**
+   * KAMPÜS YANA ÇEKİLDİ Mİ — 0 ortada, 1 sol sütunda.
+   *
+   * Paylaşılmış an (ya da paylaşım ipucu) yokken bandın sağında çizilecek bir
+   * şey yok ve poligon ortaya dönüyor (istek). Kutu ve kadraj DEĞİŞMİYOR,
+   * yalnız bu değer kayıyor — gerekçesi `asideCampus` prop'unda.
+   *
+   * ⚠️ İlk kare animasyonsuz: paylaşılan değer hedefiyle doğuyor, efekt de
+   * aynı hedefe `withTiming` açtığı için mount'ta hareket görünmüyor.
+   */
+  const aside = useSharedValue(asideCampus ? 1 : 0);
+  useEffect(() => {
+    aside.value = withTiming(asideCampus ? 1 : 0, {
+      duration: MAP_MOTION_MS,
+      easing: mapMotionEasing,
+    });
+  }, [aside, asideCampus]);
+
+  /**
+   * YATAY KAYMA — tek formül, iki iş.
+   *
+   *   tam ekran (expand=1) → her hâlde ORTADA
+   *   akış + yanda (aside=1) → sol sütunda (kayma yok)
+   *   akış + yalnız (aside=0) → ORTADA
+   *
+   * ⚠️ İki değer ÇARPILIYOR, toplanmıyor: ayrı ayrı eklenseydi hem yana çekik
+   * hem tam ekran olan bir karede kayma iki kez uygulanırdı.
+   *
+   * ⚠️ ÇEKMENİN PAYI KALDIRILDI (`centerDrive` ile birlikte): aşağı çekme
+   * jesti üründen çıktı, yani ortalanmanın tamamı yine açılış animasyonunda
+   * oluyor.
+   */
+  const shiftX = useDerivedValue(
+    () => mapShiftX * (1 - aside.value * (1 - expandProgress.value)),
+  );
+
+  /**
+   * DİKEY KAYMA — bandın hizasından ekranın ortasına.
+   *
+   * ⚠️🔴 DÖRT STİL DE BUNU OKUMAK ZORUNDA (görüntü, figür, poligon, blur
+   * deliği). Geometri dört kez kopyalanmış durumda ve gerekçesi
+   * `polygonBoxStyle`ın başında; dikey terim tek bir türetilmiş değerde
+   * toplandı ki yeni bir sürücü dördüne BİRDEN girsin. Biri atlanırsa poligon
+   * haritadan ayrılır ya da blur deliği şekilden kayar — sessiz bir hata.
+   */
+  const centerY = useDerivedValue(() => expandProgress.value * mapShift);
+
+  /**
+   * POLİGONA YAKINLAŞMA — 1'den `expandScale`a.
+   *
+   * ⚠️ TEK SÜRÜCÜ: `expandProgress`. Bir dönem çekmenin İPUCU kadar payı da
+   * (`MAP_PULL_ZOOM_SHARE`) biniyordu — "hafif çekerken zoom atıyor gibi olsun,
+   * asıl animasyon bırakınca" isteği. Çekme jesti üründen çıkınca (istek) o
+   * terimin sürücüsü de gitti.
+   *
+   * ⚠️ MASKE AYNI DEĞERİ OKUMAK ZORUNDA (`maskExpandStyle`): blur deliği
+   * poligonun üstünde durmalı, yoksa delik şekilden kayar.
+   */
+  const zoom = useDerivedValue(
+    () => 1 + (expandScale - 1) * expandProgress.value,
+  );
+
   const imageExpandStyle = useAnimatedStyle(() => ({
-    transform: [{ translateY: expandProgress.value * mapShift }],
+    // ⚠️ SIRA ÖNEMLİ: önce öteleme, sonra ölçek. Ölçeğin merkezi görünümün
+    // ORTASI ve o nokta kampüsün kendisi (kutu `cover` ile oraya oturuyor),
+    // yani bu sırada yakınlaşma kampüs noktasını yerinde tutuyor. Ters sırada
+    // öteleme de ölçekle çarpılır ve kadraj kayardı.
+    //
+    // `as any`: farklı şekilli transform girdileri birleşim tipi doğuruyor ve
+    // Reanimated'ın `DefaultStyle`ına oturmuyor (yukarıdaki aynı kaçış).
+    transform: [
+      { translateX: shiftX.value },
+      { translateY: centerY.value },
+      { scale: zoom.value },
+    ] as any,
   }));
   const figureExpandStyle = useAnimatedStyle(() => ({
-    transform: [{ translateY: expandProgress.value * mapShift }],
+    // ⚠️ FİGÜR ÖLÇEKLENMİYOR: yakınlaşma yalnız poligonlu kampüslerde var ve
+    // orada figür zaten çizilmiyor (`expandScale` o yüzden 1 döner). Buraya
+    // ölçek eklemek, ileride ikisi birlikte çizilirse binayı haritayla
+    // birlikte büyütürdü — diorama bir işaret, ölçeği bilgi taşımıyor.
+    transform: [
+      { translateX: shiftX.value },
+      { translateY: centerY.value },
+    ] as any,
+  }));
+  /**
+   * Blur deliğinin maskesi de AYNI deltayla kayıyor (bkz. aşağıdaki 3. katman).
+   *
+   * ⚠️ Delik haritanın kutusuna ÇİVİLİ olmak zorunda: tam ekrana geçerken blur
+   * 760ms'de çözülüyor ama kadraj 280ms'de yerine oturuyor — maske yerinde
+   * kalsaydı o aralıkta delik poligondan ayrılıp zeminin rastgele bir yerinde
+   * net bir leke bırakırdı.
+   */
+  const maskExpandStyle = useAnimatedStyle(() => ({
+    // ⚠️ HARİTANIN TRANSFORMUNUN BİREBİR AYNISI (ölçek dahil): delik poligonun
+    // üstünde durmak zorunda ve blur, kadraj oturduktan sonra da bir süre
+    // çözülmeye devam ediyor.
+    //
+    // `as any`: farklı şekilli transform girdileri birleşim tipi doğuruyor ve
+    // Reanimated'ın `DefaultStyle`ına oturmuyor (yukarıdaki aynı kaçış).
+    transform: [
+      { translateX: shiftX.value },
+      { translateY: centerY.value },
+      { scale: zoom.value },
+    ] as any,
   }));
 
   /**
-   * ── HARİTA "KENDİNE GELENE" KADAR İSKELET ─────────────────────────────────
+   * ── POLİGON PERDELERİN ÜSTÜNE TAŞINDI (istek) ─────────────────────────────
    *
-   * İstek: kullanıcı haritanın kuruluşunu izlemesin. Kuruluş üç adımdan
-   * oluşuyor ve üçü de ayrı anlarda tamamlanıyor:
+   * Şekil bir dönem haritanın KARDEŞİ ve aynı kutunun İÇİNDEYDİ; üstünde iki
+   * perde vardı (sönümleme + genel blur) ve ikisi de onu eziyordu. Akışta
+   * sayfanın tamamı "üstünde bir overlay kalmış gibi puslu" görünüyordu ve
+   * şikâyet poligonun kendi tonu üzerineydi. Perdelere DOKUNULMADI (karar:
+   * "bunları azaltma, poligonu bunların tepesine taşı"): onların işi kartların
+   * dikkati kazanması ve sayıları ölçülmüş (bkz. MAP_DIM_ALPHA /
+   * MAP_OVERVIEW_BLUR). Değişen tek şey SIRA.
+   *
+   * ⚠️🔴 TAŞIMANIN BEDELİ GEOMETRİNİN KOPYALANMASI. Şekil coğrafi olarak
+   * görüntünün merkezine bağlı: kutunun yerleşimi (`imageLeft/boxWidth/
+   * imageTop`) ve transformu (kayma + ölçek) BİREBİR aynı olmak zorunda, yoksa
+   * poligon tam ekrana geçerken haritadan ayrılır. Aynı bedel blur deliğinde de
+   * ödeniyor (`maskExpandStyle`) — paylaşılmış bir `useAnimatedStyle` Reanimated
+   * tarafında şikâyet üretiyor ve bir tüketici sökülünce diğerinde bozuluyor,
+   * o yüzden üç kopya var. ÜÇÜ BİRLİKTE DEĞİŞMEK ZORUNDA (figürle birlikte
+   * dört; DİKEY terimi `centerY`de, YATAY terim `shiftX`te toplandı — ikisi de
+   * tek kaynak, yani yeni bir sürücü dördüne birden giriyor).
+   *
+   * ⚠️ BLUR DELİĞİ DURUYOR: poligon artık blur'un üstünde ama deliğin işi
+   * şeklin kendisi değil, İÇİNDEKİ HARİTA — kampüsün sokakları akışta da net
+   * kalıyor (istek). Delik kaldırılırsa şekil net, içi bulanık olur.
+   */
+  const polygonBoxStyle = useAnimatedStyle(() => ({
+    transform: [
+      { translateX: shiftX.value },
+      { translateY: centerY.value },
+      { scale: zoom.value },
+    ] as any,
+  }));
+  /**
+   * Taşınan poligonun KAMPÜS DEĞİŞİMİ geçişi — `incomingStyle`ın kopyası.
+   *
+   * ⚠️ ZORUNLU: şekil görüntünün kutusundan çıkınca o kutunun çapraz sönmesini
+   * de kaybediyor. Kopyalanmasaydı kampüs değişiminde yeni şekil tam opak ve
+   * yeni konumda, ESKİ haritanın üstünde 280ms boyunca durur — yani bir süre
+   * yanlış kampüsün sınırı çizilmiş olurdu.
+   *
+   * ⚠️ GİDEN ŞEKİL TAŞINMADI, bilerek: giden kadrajın içinde kaldı ve onunla
+   * birlikte sönüyor. Oraya da ayrı bir kopya açmak dördüncü bir hook demekti;
+   * kazancı 280ms'lik bir geçişte sönmekte olan bir şeklin bir tık daha koyu
+   * olması. Geçişin kendisi tutarlı: biri sönerken öteki açılıyor.
+   */
+  const polygonIncomingStyle = useAnimatedStyle(() => {
+    const v = vectorRef.current;
+    const p = transition.value;
+    const slide = v ? v.distance * (1 - p) : 0;
+    return {
+      opacity: p,
+      transform: [
+        { translateX: v ? v.dx * slide : 0 },
+        { translateY: v ? v.dy * slide : 0 },
+        { scale: v ? TRANSITION_SCALE + (1 - TRANSITION_SCALE) * p : 1 },
+      ] as any,
+    };
+  });
+
+  /**
+   * ── HER ŞEY BİTENE KADAR İSKELET, SONRA SON HÂL BİR KEREDE ────────────────
+   *
+   * İstek: kullanıcı haritanın kuruluşunu izlemesin — "direkt her şey
+   * skeletonda olsun, bitince direkt son hâlini göreyim". Kuruluş DÖRT adımdan
+   * oluşuyor ve hepsi ayrı anlarda tamamlanıyor:
    *   1. ÖLÇÜMLER (`heroReady`) — chrome'un yüksekliği ve katmanın boyu. Bunlar
    *      gelmeden kutu kaydırılmıyor, yani görüntü bir kare yanlış yerde durur.
-   *   2. KADRAJ — sınır poligonu indiğinde merkez/zoom değişiyor, yani URL
-   *      değişiyor (soğuk başlangıçta bir kez).
-   *   3. GÖRÜNTÜNÜN KENDİSİ — Mapbox'tan inip çözülene kadar kutu BOŞ, yani
-   *      arkasındaki zemin (siyah) görünüyor.
-   * Üçü bitmeden ekranda "kıpırdayan, yerine oturan" bir harita vardı; artık
+   *   2. SINIR (`boundaryPending`) — inmeden önce "sınır yok" sanılıyor ve
+   *      diorama çiziliyordu; okul değiştirmenin en görünür kusuru buydu
+   *      (gerekçe prop'un yanında).
+   *   3. KADRAJ — sınır indiğinde merkez/zoom, yani URL değişiyor.
+   *   4. GÖRÜNTÜNÜN KENDİSİ — Mapbox'tan inip çözülene kadar kutu BOŞ, yani
+   *      arkasındaki zemin görünüyor.
+   * Dördü bitmeden ekranda "kıpırdayan, yerine oturan" bir harita vardı; artık
    * onun yerinde shimmer'lı bir iskelet duruyor.
    *
    * ⚠️ `loadedUri` KARŞILAŞTIRMALI tutuluyor, boolean DEĞİL: kadraj değişince
    * yüklenen URL bayatlıyor ve iskelet yeni görüntü inene kadar geri gelmek
-   * zorunda (yoksa aradaki boşlukta yine siyah kutu görünür).
+   * zorunda (yoksa aradaki boşlukta yine boş kutu görünür).
    *
-   * ⚠️ `previous` varken iskelet YOK: o yalnız gerçek kampüs değişiminde
-   * doluyor ve orada ekranda ESKİ harita duruyor — üstünü iskeletle kapatmak
-   * bilinçli bir aksiyonun hareketini öldürürdü.
+   * ⚠️🔴 ESKİ KURAL TERSİNE DÖNDÜ: "`previous` varken iskelet YOK" yazıyordu —
+   * gerekçe "ekranda eski harita duruyor, üstünü iskeletle kapatmak bilinçli
+   * bir aksiyonun hareketini öldürür"dü. İstek bunu reddetti, çünkü o yolda
+   * kampüs değişimi ARA HÂLLERİ gösteriyordu (3B figür → ara kadraj → poligon).
+   * İskelet artık kampüs değişiminde DE duruyor.
+   *
+   * ⚠️ YÖNLÜ SÜZÜLME (`previous`/`CampusMapTransition`) SÖKÜLMEDİ ama artık
+   * büyük ölçüde iskeletin ALTINDA koşuyor: 280ms'lik geçiş, görüntü inene
+   * kadar süren iskeletten kısa. Görünür kaldığı tek yer, görüntünün
+   * önbellekten geldiği hızlı geçişler (iskelet bir an açılıp sönüyor ve
+   * altından süzülme görünüyor). Hareketi tamamen geri istersek şart, bu
+   * bloğun `boundaryPending` kapısı KALMALI — kusur hareketten değil ara
+   * hâllerden geliyordu.
    */
   const [loadedUri, setLoadedUri] = useState<string | null>(null);
 
   /**
    * GÜVENLİK AĞI — iskelet EKRANDA KALICI OLAMAZ.
    *
-   * İki kapısı da sessizce gelmeyebilir: `onLoad` görüntü katmanı geri
-   * bildirimsiz düşerse hiç tetiklenmiyor, `heroReady` ise iki `onLayout`a
-   * bağlı. İkisinden biri gelmezse eski davranış "harita biraz yanlış yerde"
-   * iken yenisi "harita HİÇ YOK" olurdu — kabul edilemez takas. Süre dolunca
-   * elimizdeki ne varsa açılıyor (perde + figür, görüntü inince o da gelir).
+   * Üç kapısı da sessizce gelmeyebilir: `onLoad` görüntü katmanı geri
+   * bildirimsiz düşerse hiç tetiklenmiyor, `heroReady` iki `onLayout`a bağlı,
+   * `boundaryPending` ise ağ cevabına. Biri gelmezse eski davranış "harita
+   * biraz yanlış yerde" iken yenisi "harita HİÇ YOK" olurdu — kabul edilemez
+   * takas. Süre dolunca elimizdeki ne varsa açılıyor (perde + figür, görüntü
+   * inince o da gelir).
    *
-   * Bayrak URL BAŞINA: kadraj değişince yeni görüntü için ağ sıfırdan kuruluyor.
+   * ⚠️ SINIR BEKLERKEN DE SAYIYOR: `settled` artık `boundaryPending`i de
+   * görüyor, yani sorgu asılı kalırsa sayaç yine 2.5sn sonra açıyor. Bayrak
+   * URL BAŞINA ve o sırada URL ara kadrajın URL'i — yani güvenlik ağı
+   * bilinçli olarak ARA HÂLİ açıyor. İstenen bu: ara hâl, hiç harita
+   * olmamasından iyi.
    */
   const [forcedUri, setForcedUri] = useState<string | null>(null);
-  const mapSettled =
-    (heroReady && loadedUri !== null && loadedUri === mapUri) ||
-    (mapUri !== null && forcedUri === mapUri);
-  const skeletonWanted = !mapSettled && previous === null;
+  const settled =
+    heroReady &&
+    !boundaryPending &&
+    loadedUri !== null &&
+    loadedUri === mapUri;
+  /**
+   * ARA HÂL ÇİZİLEBİLİR Mİ — hem iskeletin hem FİGÜRÜN kapısı.
+   *
+   * ⚠️ Figür de buna bağlı: iskelet onu zaten örtüyor ama güvenlik ağı
+   * iskeleti kaldırdığında figürün "sınır yok" diye çizilmesi yalnız o
+   * durumda doğru. İki kapıyı tek değişkende tutmak ikisinin ayrışmasını
+   * imkânsız kılıyor.
+   */
+  const revealed = settled || (mapUri !== null && forcedUri === mapUri);
+  const skeletonWanted = !revealed;
 
   useEffect(() => {
-    if (mapSettled || !mapUri) return;
+    if (revealed || !mapUri) return;
     const id = setTimeout(() => setForcedUri(mapUri), SKELETON_WATCHDOG_MS);
     return () => clearTimeout(id);
-  }, [mapSettled, mapUri]);
+  }, [revealed, mapUri]);
 
   /**
    * İskelet SÖNEREK kalkıyor (sert bir pop yerine), o yüzden mount'u kendi
@@ -941,15 +1399,16 @@ const FeedMapStrip = memo(function FeedMapStrip({
         setLayerHeight((prev) => (Math.abs(prev - h) < 0.5 ? prev : h));
       }}
     >
-      {/* 1. Harita — kutusu ekrandan UZUN ve yukarı kaymış, kampüs böylece
-          bandın ortasına geliyor (gerekçe `imageTop`te); tam ekrana açılırken
+      {/* 1. Harita — kutusu ekrandan hem UZUN hem GENİŞ, yukarı ve sola
+          kaymış: kampüs böylece bandın SOL SÜTUNUNUN ortasına geliyor
+          (gerekçe `imageTop` ve `feedMapHorizontal`da); tam ekrana açılırken
           kadraj ortalanıyor (`imageExpandStyle`). */}
       <Animated.View
         style={[
           {
             position: "absolute",
-            left: 0,
-            right: 0,
+            left: imageLeft,
+            width: boxWidth,
             top: imageTop,
             bottom: 0,
           },
@@ -975,6 +1434,11 @@ const FeedMapStrip = memo(function FeedMapStrip({
               <CampusPolygonOverlay
                 geometry={previous.geometry}
                 projection={previous.projection}
+                // ⚠️ GİDEN KADRAJIN ŞEKLİ DE AYNI ORANDA ÇİZİLİ: kampüs
+                // tam ekranda değiştirilirse giden şekil tam çizili, gelen
+                // yarım kalmış olurdu ve 280ms boyunca iki farklı sınır üst
+                // üste dururdu.
+                reveal={polygonReveal}
               />
             ) : null}
           </Animated.View>
@@ -997,7 +1461,7 @@ const FeedMapStrip = memo(function FeedMapStrip({
             //
             // ⚠️ İSKELETİN KALKMA SİNYALİ BU. Hangi URL'in indiği kaydediliyor,
             // "indi mi" bayrağı DEĞİL: kadraj değişince eski kayıt bayatlamalı
-            // (gerekçe `mapSettled`te). Önbellekten gelen görüntüde de
+            // (gerekçe `settled`te). Önbellekten gelen görüntüde de
             // tetikleniyor, yani ikinci açılışta iskelet bir kare görünüp
             // kalkıyor.
             onLoad={() => setLoadedUri(mapUri)}
@@ -1007,15 +1471,9 @@ const FeedMapStrip = memo(function FeedMapStrip({
             onError={() => setLoadedUri(mapUri)}
           />
 
-          {/* ⚠️ POLİGON HARİTANIN KARDEŞİ VE AYNI KUTUNUN İÇİNDE. Ayrı bir
-              katmana konsaydı tam ekrana geçerken kadraj kayarken haritadan
-              ayrılırdı — şekil coğrafi olarak görüntünün merkezine bağlı. */}
-          {showPolygon && projection && boundary?.polygon ? (
-            <CampusPolygonOverlay
-              geometry={boundary.polygon}
-              projection={projection}
-            />
-          ) : null}
+          {/* ⚠️ POLİGON ARTIK BURADA DEĞİL — perdelerin ÜSTÜNE taşındı
+              (aşağıdaki 5. katman, gerekçe `polygonBoxStyle`da). Geri
+              getirilecek olursa sönümleme ve blur onu yeniden eziyor. */}
         </Animated.View>
       </Animated.View>
 
@@ -1024,8 +1482,10 @@ const FeedMapStrip = memo(function FeedMapStrip({
           geçerken `translateY` ile kayıyor ve perde onunla birlikte kayarsa
           kayma payı kadar bir ucu sönümsüz kalırdı. Katmanın tamamını
           kaplıyor, yani kutu nereye kayarsa kaysın perde yerinde.
-          ⚠️ POLİGONUN ÜSTÜNDE (o kutunun içinde) ama FİGÜRÜN ALTINDA: okul
-          figürü bir işaret, perdenin onu soluklaştırması istenmiyor. */}
+          ⚠️ FİGÜRÜN VE POLİGONUN ALTINDA: ikisi de bir İŞARET, perdenin onları
+          soluklaştırması istenmiyor. Poligon bir dönem perdenin ALTINDAYDI
+          (haritanın kutusunun içinde) ve istenmedi — gerekçe
+          `polygonBoxStyle`da. */}
       <View
         pointerEvents="none"
         style={[
@@ -1037,22 +1497,85 @@ const FeedMapStrip = memo(function FeedMapStrip({
       {/* 3. GENEL BULANIKLIK — akışta var, tam ekranda çözülüyor.
           Gerekçe MAP_OVERVIEW_BLUR / MAP_FOCUS_MS'te.
 
-          ⚠️ FİGÜRÜN ALTINDA: okul figürü bir işaret, bulanıklaşmamalı. Poligon
-          ise görüntünün kutusunda, yani zeminle birlikte yumuşuyor — o haritanın
-          bir parçası.
+          ⚠️ FİGÜRÜN ALTINDA: okul figürü bir işaret, bulanıklaşmamalı.
 
           ⚠️ KUTUNUN DIŞINDA (sönümlemeyle aynı gerekçe): kutu tam ekrana
           geçerken kayıyor, blur onunla kayarsa kayma payı kadar bir uç keskin
-          kalırdı. */}
+          kalırdı.
+
+          ── POLİGONUN İÇİ DELİK ───────────────────────────────────────────
+          Sınır varken blur katmanının kampüs şeklinde bir deliği var: zemin
+          bulanık, KAMPÜS NET (istek). Zemini yumuşatmanın sebebi gönderilerle
+          dikkat için yarışmaması; kampüsün kendisi ise yarışan değil, asıl
+          söylenen şey.
+
+          ⚠️ Maske kutuyu TAMAMEN kaplıyor ve kayma kutuyu asla katmanın
+          dışına çıkaramıyor (`mapShift ≤ -imageTop`, bkz. feedMapFraming),
+          yani delik dışında blur her yerde — maskesiz hâliyle birebir aynı.
+
+          ⚠️🔴 DİKİŞ ARTIK ÇIPLAK. Eskiden net/bulanık geçişi `CampusPolygonOverlay`in
+          2pt'lik konturu örtüyordu ve bu not "kenar kaldırılırsa dikiş çıplak
+          kalır" diye uyarıyordu. Kenar kaldırıldı (istek: "bordersiz olsun"),
+          yani uyarı gerçekleşti: sınırda blur'un kesildiği çizgiyi gizleyen
+          bir şey yok.
+
+          Yerine geçen tek şey poligonun dolgusu (CampusPolygonOverlay >
+          FILL_ALPHA) ve o SAYDAM — keskin bir çizgi gibi örtmüyor. Dikiş
+          cihazda göze batarsa seçenekler: deliğin kenarını yumuşatmak
+          (maskeye blur'lu bir geçiş eklemek) ya da o alfayı yükseltmek.
+          Konturu geri koymak İSTEK DIŞI.
+
+          ⚠️ Dolgu artık DÜZ (gradyan kaldırıldı, istek: "puslu görünüyor"),
+          yani dikişi örten yoğunluk sınırın her yerinde AYNI — eskiden
+          gradyanın soluk ucuna düşen kenarlarda daha da zayıftı.
+
+          ⚠️ POLİGONUN ÇİZİMİ ARTIK BU KATMANIN ÜSTÜNDE (5. katman), yani blur
+          onu hiç görmüyor. DELİK YİNE GEREKLİ: işi şekil değil İÇİNDEKİ
+          HARİTA — kampüsün sokakları akışta da net kalıyor. */}
       <Animated.View
         pointerEvents="none"
         style={[StyleSheet.absoluteFill, overviewBlurStyle]}
       >
-        <BlurView
-          intensity={MAP_OVERVIEW_BLUR}
-          tint={chromeBlurTint()}
-          style={StyleSheet.absoluteFill}
-        />
+        {showShape && projection && displayGeometry ? (
+          <MaskedView
+            style={StyleSheet.absoluteFill}
+            maskElement={
+              <View style={StyleSheet.absoluteFill}>
+                {/* Maske haritanın kutusuyla AYNI yerde ve AYNI transform'la —
+                    ayrışırsa delik poligondan kayar. */}
+                <Animated.View
+                  style={[
+                    {
+                      position: "absolute",
+                      left: imageLeft,
+                      width: boxWidth,
+                      top: imageTop,
+                      bottom: 0,
+                    },
+                    maskExpandStyle,
+                  ]}
+                >
+                  <CampusPolygonBlurMask
+                    geometry={displayGeometry}
+                    projection={projection}
+                  />
+                </Animated.View>
+              </View>
+            }
+          >
+            <BlurView
+              intensity={MAP_OVERVIEW_BLUR}
+              tint={chromeBlurTint()}
+              style={StyleSheet.absoluteFill}
+            />
+          </MaskedView>
+        ) : (
+          <BlurView
+            intensity={MAP_OVERVIEW_BLUR}
+            tint={chromeBlurTint()}
+            style={StyleSheet.absoluteFill}
+          />
+        )}
       </Animated.View>
 
       {/* 4. PROGRESSIVE BLUR — ekranın tepesinden pill'lerin altına.
@@ -1112,21 +1635,86 @@ const FeedMapStrip = memo(function FeedMapStrip({
         </Animated.View>
       ) : null}
 
-      {/* 5. İZOMETRİK OKUL FİGÜRÜ — kampüsün TAM durduğu noktada.
+      {/* 5. KAMPÜSÜN SINIRI — PERDELERİN ÜSTÜNDE (istek).
+          Şekil poligon ya da (poligon yoksa) KABA BİR PARSEL — ikisi aynı
+          geometri boru hattından geçiyor, bkz. `displayGeometry`.
+          Uzun gerekçe ve kopyalanan geometrinin bedeli `polygonBoxStyle`da.
+
+          ⚠️ SIRA: sönümleme (2) ve genel blur (3) ARTIK ALTINDA, iskelet (6)
+          hâlâ üstünde — harita kurulmadan şekil görünmemeli.
+
+          ⚠️ Üstteki okunabilirlik bandı (4) da altında kalıyor. Akışta ikisi
+          zaten kesişmiyor (bant pill'lerin altında bitiyor, poligon bandın
+          içinde) ama tam ekranda poligon yukarı çıkıyor: orada perde de
+          sönüyor, yani sıra görünmüyor. Yine de "perdelerin üstünde" kuralını
+          bozmamak için buraya konuldu.
+
+          ⚠️ İÇ İÇE İKİ KATMAN: dıştaki kutunun geometrisi (haritayla birebir),
+          içteki kampüs değişiminin geçişi. Tek katmanda iki transform dizisi
+          birleştirilebilirdi ama sıra sessizce bozulur — iç içe yazmak
+          parent/child sırasını Yoga'ya bırakıyor. */}
+      {showShape && projection && displayGeometry ? (
+        <Animated.View
+          pointerEvents="none"
+          style={[
+            {
+              position: "absolute",
+              left: imageLeft,
+              width: boxWidth,
+              top: imageTop,
+              bottom: 0,
+            },
+            polygonBoxStyle,
+          ]}
+        >
+          <Animated.View
+            pointerEvents="none"
+            style={[StyleSheet.absoluteFill, polygonIncomingStyle]}
+          >
+            <CampusPolygonOverlay
+              geometry={displayGeometry}
+              projection={projection}
+              // Kontur tam ekrana geçince kenarı boyunca kendini çiziyor
+              // (istek) — gerekçe feedMapMotion > MAP_POLYGON_DRAW_MS.
+              reveal={polygonReveal}
+            />
+          </Animated.View>
+        </Animated.View>
+      ) : null}
+
+      {/* 6. İZOMETRİK OKUL FİGÜRÜ — kampüsün TAM durduğu noktada.
           `top` çapanın oranıyla geri alınıyor: binanın OTURDUĞU yer kutunun
           ortası değil (figür yukarı uzuyor), bkz. CAMPUS_FIGURE_ANCHOR.
           Haritayla AYNI deltayla kayıyor, yoksa tam ekrana geçerken bina
           noktasından kopardı.
 
           ⚠️ Perdeden SONRA: perde figürün üstünden geçse bina tepeye yakın
-          kısmında soluklaşırdı. */}
-      {heroReady && !showPolygon ? (
+          kısmında soluklaşırdı.
+
+          ⚠️ SON ÇARE OLDU: artık yalnız çizilecek HİÇBİR şekil yokken
+          (ne poligon ne parsel: sınır inmedi, çevrimdışı ya da koordinat
+          il merkezi) görünüyor. Poligonsuz kampüslerde yerini daireden
+          türeyen kaba parsel aldı (bkz. `displayGeometry`).
+
+          ⚠️🔴 `revealed` KAPISI ZORUNLU, iskeletin örtmesine GÜVENİLMEZ.
+          Okul değiştirildiğinde sınır bir süre `null` kalıyor ve bu dal
+          "sınır yok" diye okuyor; eskiden o anda bina ÇİZİLİYORDU ve kampüs
+          değişiminde iskelet kapalı olduğu için ekranda bir an görünüyordu
+          (istek: "3B okul görüntüsü anlık geliyor, olmasın"). Kapı kaldırılırsa
+          belirti aynı yoldan geri gelir: iskeletin kalkma anı ile sınırın
+          inme anı arasındaki her kare bina çizer. */}
+      {heroReady && revealed && !showShape ? (
         <Animated.View
           style={[
             {
               position: "absolute",
               left: 0,
-              right: 0,
+              // ⚠️ KUTU KAMPÜS NOKTASINDA BİTİYOR, ekranı kaplamıyor: figür
+              // `alignItems: "center"` ile kutunun ortasına oturuyor ve o orta
+              // artık ekranın ortası DEĞİL, sol sütunun ortası (haritanın
+              // kampüs noktasıyla aynı x). Tam genişlik bırakılsaydı poligonlu
+              // kampüslerde şekil solda, poligonsuzlarda bina ortada kalırdı.
+              width: campusScreenX * 2,
               top:
                 campusScreenY - CAMPUS_FIGURE_HEIGHT * CAMPUS_FIGURE_ANCHOR.y,
               alignItems: "center",
@@ -1138,7 +1726,7 @@ const FeedMapStrip = memo(function FeedMapStrip({
         </Animated.View>
       ) : null}
 
-      {/* 6. İSKELET — HARİTA KURULANA KADAR KATMANIN TAMAMI.
+      {/* 7. İSKELET — HARİTA KURULANA KADAR KATMANIN TAMAMI.
           ⚠️ EN SONDA, yani katmanın her şeyinin ÜSTÜNDE: görüntü, perde ve
           figür/poligon birlikte kapanmak zorunda. Figür ölçümlerle birlikte
           belirdiği için ayrı bırakılsa iskeletin üstünde tek başına duran bir

@@ -32,11 +32,14 @@ type Props = {
   label: string;
   /** Kabuğun çapı — gerekçesi ortak dosyada (CardChromeGlassButton). */
   size?: number;
+  /** e2e seçicisi — ortak kabuğa (CardChromeGlassButton) geçiyor. */
+  testID?: string;
 };
 
-function CardScrollTopGlassButton({ onPress, label, size }: Props) {
+function CardScrollTopGlassButton({ onPress, label, size, testID }: Props) {
   return (
     <CardChromeGlassButton
+      testID={testID}
       onPress={onPress}
       label={label}
       size={size}

@@ -3,6 +3,7 @@ import {
   rowToConversation,
   type ConversationRow,
   type MessageRow,
+  type SendAttemptRow,
   type SendState,
   type SyncStateRow,
 } from '@/features/chat/db/rows';
@@ -293,10 +294,15 @@ export function readConversationsByIds(
  * kalıyor ve `_failed` olmadığı için "tekrar dene" bile çıkmıyor.
  *
  * `failed`'a çevirmek bilgiyi KAYBETMİYOR, sahipliği kullanıcıya veriyor:
- * balonda yeniden deneme çıkar. Otomatik yeniden göndermek DOĞRU DEĞİL —
- * mesaj sunucuya gitmiş ama ack'i görülmemiş olabilir ve `clientMessageId`
- * idempotency'si backend tarafında henüz teyitli değil; o teyit gelene kadar
- * kendiliğinden tekrar göndermek sessiz mükerrer mesaj riski.
+ * balonda yeniden deneme çıkar. Otomatik yeniden göndermek burada YAPILMAZ —
+ * kullanıcı asılı bir "gönderiliyor" spinner'ı görmesin, balonda "tekrar dene"
+ * butonu çıksın (sessiz otomatik tekrar outbox.flushOutbox'ın işi, burası
+ * yalnız açılış uzlaştırması). `clientMessageId` idempotency'si artık ENDİŞE
+ * DEĞİL: `(SenderId, ClientMessageId)` üzerinde filtreli UNIQUE index var,
+ * backend 2026-10-06'da sözleşmeyi dondurdu ve 2026-10-27'de yeniden teyit
+ * edildi — garanti zaman penceresine değil index'e dayanıyor, satırın ömrü
+ * mesajın retention'ı (730 gün). Kanonik yorum: outboxPolicy.isEligible içindeki
+ * "KAPISI KALDIRILDI (2026-10-06)" notu.
  *
  * @returns failed'a çevrilen satır sayısı (teşhis için).
  */
@@ -326,9 +332,10 @@ export function failStalePendingSends(): number {
  * girmedikçe oradaki başarısız mesaj hiçbir tura görünmüyordu. Arşiv kalıcı
  * olduğundan doğru kaynak disk.
  *
- * @param sinceMs  bundan ESKİ mesajlar dönmez — sessiz devam ettirmenin yaş
- *                 sınırı (bkz. outboxPolicy.OUTBOX_DISK_MAX_AGE_MS). Elle
- *                 "tekrar dene" bu yoldan geçmiyor, o yüzden sınırsız kalıyor.
+ * @param sinceMs  bundan ESKİ mesajlar dönmez. Sessiz tur bu parametreyi artık
+ *                 HİÇ VERMİYOR (yaş sınırı 2026-10-29'da kalktı, bkz.
+ *                 outboxPolicy.LATE_SEND_NOTICE_MS yorumu) — alan genel amaçlı
+ *                 bir filtre olarak duruyor, varsayılanı (0) sınırsız demek.
  * @param limit    tur başına tavan; patolojik bir arşiv tek turda yüz istek
  *                 üretmesin.
  */
@@ -518,14 +525,33 @@ export function applyHistoryPage(
       // Daha eski sayfa: kesinlikle yerel aralığın altında, çakışma sorusu yok.
       upsertMessages(db, pageMessages, conversationId);
       const existing = readSyncState(conversationId);
+      const floorMs = existing?.oldest_loaded_sent_at_ms ?? null;
       const nextOldest =
         pageOldestMs === null
-          ? (existing?.oldest_loaded_sent_at_ms ?? null)
-          : Math.min(existing?.oldest_loaded_sent_at_ms ?? Number.POSITIVE_INFINITY, pageOldestMs);
+          ? floorMs
+          : Math.min(floorMs ?? Number.POSITIVE_INFINITY, pageOldestMs);
+
+      // `next_cursor`/`has_more` EKRANIN sayfalama durumu ve bu dalı ekran ile
+      // backfill PAYLAŞIYOR. Sayfanın cursor'ı ancak sayfa yerel tabanı
+      // gerçekten aşağı taşıyorsa o durumun doğru DEVAMI olur: backfill'in
+      // `backfill_cursor`'ı NULL'dan başladığı için her sohbetteki ilk isteği
+      // sayfa-1'i (en YENİ sayfayı) getiriyor ve onun cursor'ını yazmak ekranın
+      // ulaştığı derinliği GERİ ALIYORDU — `has_more = 0` olan (sonuna kadar
+      // okunmuş) bir sohbet bile yeniden "devam ediyor"a dönüyordu. Ekranın
+      // kendi derin sayfaları HER ZAMAN tabanı aşağı taşır, yani onlar için bu
+      // kapı no-op (bkz. chatRepository.contiguity.test.ts).
+      const extendsFloor = pageOldestMs !== null && (floorMs === null || pageOldestMs < floorMs);
+      // Tek istisna: sayfa "arşiv bitti" diyorsa (cursor YOK + hasMore false)
+      // yazmak hiçbir sayfayı yeniden indirtemez, yalnız sayfalamayı kapatır —
+      // ekranın son `loadOlder` isteği tam sınıra denk geldiğinde dönen BOŞ
+      // sayfa bu; elenirse o sohbet her soğuk açılışta bayat cursor'la bir
+      // istek daha harcardı.
+      const reportsEnd = page.hasMore === false && page.nextCursor === null;
       writeSyncState(db, conversationId, {
         oldestLoadedSentAtMs: nextOldest,
-        nextCursor: page.nextCursor,
-        hasMore: page.hasMore,
+        ...(extendsFloor || reportsEnd
+          ? { nextCursor: page.nextCursor, hasMore: page.hasMore }
+          : {}),
       });
       return;
     }
@@ -734,10 +760,19 @@ export function applyDeletionTombstone(p: {
 export function removeConversationLocally(conversationId: string): void {
   const db = getChatDb();
   db.transaction(() => {
+    // send_attempts'in conversation_id kolonu YOK (v7 — muhasebe cmid'e bağlı,
+    // sohbete değil); bu yüzden messages SİLİNMEDEN ÖNCE, hâlâ mevcutken,
+    // cmid'leri üzerinden JOIN edip bu sohbete ait olanları buluyoruz.
+    db.run(
+      `DELETE FROM send_attempts WHERE client_message_id IN (
+         SELECT client_message_id FROM messages
+          WHERE conversation_id = ? AND client_message_id IS NOT NULL
+       )`,
+      [conversationId],
+    );
     db.run('DELETE FROM messages WHERE conversation_id = ?', [conversationId]);
     db.run('DELETE FROM conversations WHERE conversation_id = ?', [conversationId]);
     db.run('DELETE FROM sync_state WHERE conversation_id = ?', [conversationId]);
-    db.run('DELETE FROM outbox WHERE conversation_id = ?', [conversationId]);
   });
 }
 
@@ -1149,7 +1184,7 @@ export function clearAllChatData(): void {
     db.run('DELETE FROM messages');
     db.run('DELETE FROM conversations');
     db.run('DELETE FROM sync_state');
-    db.run('DELETE FROM outbox');
+    db.run('DELETE FROM send_attempts');
     // Watermark arşivle AYNI anda gitmek zorunda: kalsaydı yeni kullanıcı
     // "her şeyi görmüşüm" sanıp aradaki değişiklikleri hiç çekmezdi.
     db.run('DELETE FROM meta');
@@ -1289,4 +1324,181 @@ export function upsertConversations(
       );
     });
   });
+}
+
+// ── send_attempts: gönderim kuyruğunun disk muhasebesi (v7) ────────────────
+//
+// Mesaj GÖVDESİ burada taşınmıyor — tek kaynak `messages` satırı (eşleşme
+// client_message_id ile). Bu tablo yalnız outbox.ts'in bugüne kadar process
+// ömürlü bir Map'te tuttuğu muhasebeyi diske taşıyor: deneme sayısı, backoff
+// (`next_eligible_at_ms`), kalıcı başarısızlık ve kota tahsilat bayrağı.
+// Yazan/okuyan taraf outbox.ts — bkz. migrations.ts V7 yorumu.
+
+export function readSendAttempts(): SendAttemptRow[] {
+  return getChatDb().getAll<SendAttemptRow>('SELECT * FROM send_attempts');
+}
+
+/**
+ * TEK satır — PK (`client_message_id`) ile. `readSendAttempts()`'in tamamı
+ * değil: outbox.ts bunu yalnız `chargeQuotaOnce`'ta Map'te MISS olduğunda
+ * (`MAX_TRACKED` tahliyesi diski silmiyor ama Map'i siliyor) tek bir kaydın
+ * `quota_charged`'ını sormak için çağırıyor — kota ikinci kez düşmesin diye
+ * tüm tabloyu okumaya gerek yok.
+ */
+export function readSendAttempt(clientMessageId: string): SendAttemptRow | null {
+  return getChatDb().getFirst<SendAttemptRow>(
+    'SELECT * FROM send_attempts WHERE client_message_id = ?',
+    [clientMessageId],
+  );
+}
+
+export function upsertSendAttempt(row: SendAttemptRow): void {
+  getChatDb().run(
+    `INSERT INTO send_attempts (
+       client_message_id, attempts, first_seen_at_ms, next_eligible_at_ms,
+       permanent, quota_charged, origin, last_error
+     ) VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+     ON CONFLICT(client_message_id) DO UPDATE SET
+       attempts = excluded.attempts,
+       first_seen_at_ms = excluded.first_seen_at_ms,
+       next_eligible_at_ms = excluded.next_eligible_at_ms,
+       permanent = excluded.permanent,
+       quota_charged = excluded.quota_charged,
+       origin = excluded.origin,
+       last_error = excluded.last_error`,
+    [
+      row.client_message_id,
+      row.attempts,
+      row.first_seen_at_ms,
+      row.next_eligible_at_ms,
+      row.permanent,
+      row.quota_charged,
+      row.origin,
+      row.last_error,
+    ],
+  );
+}
+
+export function deleteSendAttempts(clientMessageIds: string[]): void {
+  if (!clientMessageIds.length) return;
+  const holes = clientMessageIds.map(() => '?').join(',');
+  getChatDb().run(
+    `DELETE FROM send_attempts WHERE client_message_id IN (${holes})`,
+    clientMessageIds,
+  );
+}
+
+/**
+ * Artık kuyrukta olmaması gereken muhasebe satırlarını siler: karşılık gelen
+ * mesaj GÖNDERİLMİŞ (`send_state = 'sent'`) ya da hiç yok.
+ *
+ * `messages.send_state <> 'sent'` burada V5'teki gibi fazlalık bir terim
+ * DEĞİL — "orphan"ın bizzat TANIMI. Eşlenik tek bir `send_state` koşulu var
+ * ve o koşul bu satırın kalıp kalmayacağını belirliyor; indeks açma amaçlı
+ * bir eşlik değil (bu NOT EXISTS alt sorgusu zaten `idx_messages_cmid`'i
+ * kullanıyor, `idx_messages_unsent`'i değil). Terimi silersen prune
+ * "gönderilmiş + yetim satırları sil"den "yalnız yetimleri sil"e döner ve
+ * gönderilmiş mesajların muhasebesi diskte SONSUZA KADAR birikir.
+ */
+export function pruneOrphanSendAttempts(): number {
+  const db = getChatDb();
+  const before = db.getFirst<{ n: number }>('SELECT COUNT(*) AS n FROM send_attempts')?.n ?? 0;
+  db.run(`
+    DELETE FROM send_attempts
+     WHERE NOT EXISTS (
+       SELECT 1 FROM messages
+        WHERE messages.client_message_id = send_attempts.client_message_id
+          AND messages.send_state <> 'sent'
+     )`);
+  const after = db.getFirst<{ n: number }>('SELECT COUNT(*) AS n FROM send_attempts')?.n ?? 0;
+  return before - after;
+}
+
+// ── backfill: arka plan geçmiş indirme turunun ilerleme damgası (v8) ───────
+//
+// `sync_state.next_cursor`/`has_more` EKRANIN sayfalamasına ait ve
+// `pruneExpiredMessages` dokunduğu her sohbette `next_cursor`'ı NULL'luyor —
+// backfill bu kolonları paylaşsaydı retention turu onun geri dönüş noktasını
+// da silerdi (bkz. migrations.ts V8 yorumu). Policy/round/tetikleyiciler bu
+// dosyanın işi değil (`backfillPolicy.ts` + `chatBackfill.ts`) — burası yalnız
+// depo.
+
+export interface BackfillTarget {
+  conversationId: string;
+  cursor: string | null;
+}
+
+/**
+ * Henüz bitmemiş (`backfill_done` NULL ya da 0) sohbetler, en son
+ * konuşulandan geriye — en çok `limit` tane.
+ *
+ * `conversations` ile LEFT JOIN: `sync_state` satırı henüz yoksa (hiç
+ * sayfalama/backfill denenmemiş sohbet) da hedef, cursor `null` döner.
+ *
+ * `conversation_id` tiebreaker'ı şart: `last_message_at_ms` nullable ve hiç
+ * mesajlaşılmamış sohbetler hepsi NULL'da eşitleniyor — tek kolonlu sıra
+ * SQLite'ın eşit satırları hangi fiziksel sırada döndürdüğüne (belirsiz)
+ * bağlı kalırdı, küçük bir `limit` altında round'lar tekrar üretilemez olurdu.
+ *
+ * `limit` negatifse SQLite onu "sınırsız" sayar (`LIMIT -1` davranışı) — çağıran
+ * yanlışlıkla negatif geçerse "en çok limit tane" sözü bozulup tüm bitmemiş
+ * arşiv dönerdi; `Math.max(0, limit)` bu durumu sıfıra sabitliyor.
+ */
+export function readBackfillTargets(limit: number): BackfillTarget[] {
+  return getChatDb()
+    .getAll<{ conversation_id: string; cursor: string | null }>(
+      `SELECT c.conversation_id AS conversation_id, s.backfill_cursor AS cursor
+         FROM conversations c
+         LEFT JOIN sync_state s ON s.conversation_id = c.conversation_id
+        WHERE COALESCE(s.backfill_done, 0) = 0
+        ORDER BY c.last_message_at_ms DESC, c.conversation_id ASC
+        LIMIT ?`,
+      [Math.max(0, limit)],
+    )
+    .map((row) => ({ conversationId: row.conversation_id, cursor: row.cursor }));
+}
+
+/**
+ * Sohbetin backfill cursor'unu yazar. `sync_state` satırı yoksa açar —
+ * bu çağrı ekranın hiç sayfalama yapmadığı bir sohbette de gelebilir.
+ */
+export function setBackfillCursor(conversationId: string, cursor: string | null): void {
+  getChatDb().run(
+    `INSERT INTO sync_state (conversation_id, backfill_cursor) VALUES (?, ?)
+     ON CONFLICT(conversation_id) DO UPDATE SET backfill_cursor = excluded.backfill_cursor`,
+    [conversationId, cursor],
+  );
+}
+
+/**
+ * Sohbetin geçmişi tamamen indi — `readBackfillTargets` bir daha onu
+ * döndürmez (bkz. yukarıdaki WHERE koşulu).
+ */
+export function markBackfillDone(conversationId: string): void {
+  getChatDb().run(
+    `INSERT INTO sync_state (conversation_id, backfill_done) VALUES (?, 1)
+     ON CONFLICT(conversation_id) DO UPDATE SET backfill_done = 1`,
+    [conversationId],
+  );
+}
+
+/**
+ * "Tamam" damgasını SÖKER — sohbet `readBackfillTargets`'a geri girer.
+ *
+ * `backfill_done` tek yönlü bir mandal: `markBackfillDone` dışında yazıcısı
+ * yok ve `clearAllChatData()` haricinde hiçbir tam senkron yolu onu
+ * temizlemiyor. Mandalı yanlış yere basan GERÇEK yol şu: gizli geçmişi olan
+ * (rematch) sohbet sunucudan `messages: [] / hasMore: false` alıyor, round
+ * onu tamam sayıyor — oysa arşiv yalnız KİLİTLİ. Kullanıcı kilidi açınca
+ * (`chat/historyRevealed`) bu fonksiyon çağrılmazsa o sohbetin geçmişi bir
+ * daha hiç indirilmez.
+ *
+ * `backfill_cursor`'a DOKUNMAZ: mandal "bitti mi" sorusuna ait, "nerede
+ * kalmıştım"a değil; ikisini birlikte sıfırlamak diskte olan sayfaları
+ * yeniden indirtirdi. Satır yoksa UPDATE no-op — damga da zaten yoktur.
+ */
+export function clearBackfillDone(conversationId: string): void {
+  getChatDb().run('UPDATE sync_state SET backfill_done = 0 WHERE conversation_id = ?', [
+    conversationId,
+  ]);
 }
