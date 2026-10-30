@@ -382,14 +382,16 @@ let inFlight: Promise<FlushResult> | null = null;
  * `chatBackfill.runBackfillRound`'ın `inFlight` kalıbının aynısı.
  */
 export async function flushPendingMutations(trigger: string): Promise<FlushResult> {
-  // Kill-switch. Task 5'in üç tetiği (AppNavigator.tsx) de aynı bayrağa
-  // bakıp kapalıyken BU fonksiyonu hiç çağırmıyor — yani bu satır TEKRARLI
-  // bir kapı: bugün üretimde turu tetikleyen tek yol o üç çağrı noktası
-  // olduğu için bu satır olmadan da ağa istek gitmezdi. Kazandırdığı şey,
-  // `flushPendingMutations` export edilmiş olduğu için ileride bayrağa
-  // bakmayı unutan bir çağıran eklenirse ağ tarafının yine burada kapanmış
-  // olması (bkz. chatBackfill.ts'teki `runBackfillRound` kapısı, aynı
-  // gerekçe). Satır KORUNUR — kapatmak veri kaybettirmez.
+  // Kill-switch. AppNavigator.tsx'teki üç tetik (online/reconnect/foreground)
+  // bu fonksiyonu KOŞULSUZ çağırır — bayrağa onlar bakmıyor. Bugün ağ
+  // tarafını kapalı tutan şey bu satır DEĞİL, ChatScreen'in çağrı noktası
+  // kapısı (Task 4): bayrak kapalıyken kuyruğa hiç satır YAZILMIYOR, yani
+  // üç tetik her tetiklendiğinde boş bir kuyruğu tur'a sokuyor — atılacak
+  // istek zaten yok. Bu satır o yüzden TEKRARLI: bugünkü boşluğu DEĞİL,
+  // ileride ChatScreen'in kapısından geçmeyen bir enqueue yolu (ya da
+  // bayrağa bakmayı unutan başka bir çağıran) eklenirse diye buradaki ağ
+  // tarafını kapalı tutar (bkz. chatBackfill.ts'teki `runBackfillRound`
+  // kapısı, aynı gerekçe). Satır KORUNUR — kapatmak veri kaybettirmez.
   if (!CHAT_MUTATION_QUEUE_ENABLED) {
     return { ran: false, done: 0, retried: 0, rejected: 0 };
   }

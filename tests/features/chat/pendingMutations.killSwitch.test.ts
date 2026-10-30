@@ -44,13 +44,16 @@ import type { SendState } from '@/features/chat/db/rows';
 
 /**
  * `CHAT_MUTATION_QUEUE_ENABLED` — bu kapı turun İÇİNDE, `flushPendingMutations`'ın
- * başında. Task 4'ün kendi yorumunun söylediği gibi O kapı yalnız ÇAĞRI
- * NOKTASINI (ChatScreen'in handler'ları) kapatıyor; bugün üretimde turu
- * tetikleyen TEK yol Task 5'in üç tetiği olduğu için bu ikinci kapı
- * TEKRARLIDIR — olmasa da ağa istek gitmezdi. Kazandırdığı şey, ileride
- * bayrağa bakmayı unutan bir çağıran eklenirse ağ tarafının yine burada
- * kapanmış olması (bkz. chatBackfill.ts'teki `runBackfillRound` kapısı,
- * aynı gerekçe).
+ * başında. AppNavigator'daki üç tetik (online/reconnect/foreground) bu
+ * fonksiyonu KOŞULSUZ çağırıyor, bayrağa bakmıyor. Bugün ağ tarafını kapalı
+ * tutan şey bu satır DEĞİL, Task 4'ün ÇAĞRI NOKTASI kapısı (ChatScreen'in
+ * handler'ları): bayrak kapalıyken kuyruğa hiç satır YAZILMIYOR, yani üç
+ * tetik her çalıştığında boş bir kuyruğu tur'a sokuyor — atılacak istek
+ * zaten yok. Bu ikinci kapı o yüzden TEKRARLIDIR. Kazandırdığı şey, ileride
+ * ChatScreen'in kapısından geçmeyen bir enqueue yolu (ya da bayrağa bakmayı
+ * unutan başka bir çağıran) eklenirse ağ tarafının yine burada kapanmış
+ * olması (bkz. chatBackfill.ts'teki `runBackfillRound` kapısı, aynı
+ * gerekçe).
  *
  * Boş kuyrukta "istek atılmadı" iddiası hiçbir şey ispatlamaz — bayrak açık
  * olsa da atılacak istek olmazdı. Bu yüzden önce bir satır yazılıyor ve
