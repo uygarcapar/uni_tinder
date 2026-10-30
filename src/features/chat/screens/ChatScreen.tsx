@@ -10,6 +10,7 @@ import { useTranslation } from "react-i18next";
 import {
   View,
   Text,
+  TextInput,
   TouchableOpacity,
   Alert,
   Platform,
@@ -54,7 +55,7 @@ import { NativeStackScreenProps } from "@react-navigation/native-stack";
 import { useFocusEffect } from "@react-navigation/native";
 import type { RootStackParamList } from "@/shared/types/navigation";
 import { useAppDispatch, useAppSelector } from "@/shared/hooks/redux";
-import { ChevronLeft, MoreVertical } from "@/shared/icons";
+import { ChevronLeft, MoreVertical, Search, ChevronUp, ChevronDown, X } from "@/shared/icons";
 import SFIcon from "@/shared/components/SFIcon";
 import * as Haptics from "expo-haptics";
 import {
@@ -99,6 +100,8 @@ import ChatMessageList from "@/features/chat/components/ChatMessageList";
 import { useRevealGesture } from "@/features/chat/components/useRevealGesture";
 import { REVEAL_MAX } from "@/features/chat/components/RevealContext";
 import { highlightMessage } from "@/features/chat/components/messageHighlight";
+import { searchMessages } from "@/features/chat/chatRepository";
+import { prepareSearchQuery } from "@/features/chat/messageSearch";
 import { ChatTypingRow } from "@/features/chat/components/ChatBottomSpacer";
 import MessageSkeleton from "@/features/chat/components/MessageSkeleton";
 import MessageActionSheet from "@/features/chat/components/MessageActionSheet";
@@ -164,6 +167,14 @@ const HEADER_CONTENT = 8 + 65 + 6 + PILL_H + 8;
 // glif zincirini de onlarla aynı yerden alıyorlar (glassIconClearGlyph). Buton
 // tarafındaki kurulum tuzakları hâlâ GLASS_ICON_BUTTON'ın başında yazılı.
 const HEADER_ACTION_SIZE = GLASS_ICON_CLEAR_SIZE;
+// Faz 4 / Task 6 — MessagesScreen'in global mesaj aramasıyla (bkz. orada
+// MESSAGE_SEARCH_DEBOUNCE_MS) AYNI sabit: ikisi de "SQLite'a vuran senkron
+// sorgu, her tuş vuruşunda değil" gerekçesini paylaşıyor.
+const INLINE_SEARCH_DEBOUNCE_MS = 220;
+// Tek sohbete sınırlı sorgu — global aramadaki 20'lik tavanın aksine burada
+// pratikte bir sohbetin eşleşme sayısı zaten küçük, yine de sınırsız SELECT'e
+// karşı bir tavan konuyor (YAGNI: ikinci bir "daha fazla yükle" UI'ı yok).
+const INLINE_SEARCH_LIMIT = 200;
 
 // ── TEŞHİS ANAHTARI ─────────────────────────────────────────────────────────
 // true yap → balonlar reanimated'siz/ref'siz/reveal'siz DÜZ View+Text çizilir.
@@ -421,6 +432,30 @@ function ChatScreen({
   const [reportOpen, setReportOpen] = useState(false);
   const [profileVisible, setProfileVisible] = useState(false);
   const [profileDetail, setProfileDetail] = useState<any>(null);
+
+  // ── Faz 4 / Task 6 — sohbet içinde arama ────────────────────────────────
+  // `inlineSearchOpen` false iken arama çubuğu HİÇ render edilmiyor — bir
+  // önceki sorgunun kalıntısı (eşleşme listesi/pencere) kapalı sheet'lerde
+  // olduğu gibi yeniden açılışta sessizce canlanmasın diye `handleCloseInlineSearch`
+  // hepsini birden sıfırlıyor.
+  const [inlineSearchOpen, setInlineSearchOpen] = useState(false);
+  const [inlineSearchQuery, setInlineSearchQuery] = useState("");
+  // SQL'e giden değer AYRI bir state'te, DEBOUNCE'LU — MessagesScreen'in global
+  // mesaj aramasıyla (bkz. orada MESSAGE_SEARCH_DEBOUNCE_MS yorumu) AYNI
+  // gerekçe: `conversationId` filtresi sorguyu küçültür ama BEDAVA yapmaz,
+  // hâlâ SQLite'a vuran senkron bir çağrı — her tuş vuruşunda çalıştırmak
+  // yazarken listeyi "titretir". Aynı 220ms sabiti kullanılıyor, ayrı bir
+  // değer icat edilmedi.
+  const [inlineSearchDebounced, setInlineSearchDebounced] = useState<
+    string | null
+  >(null);
+  const [inlineSearchIndex, setInlineSearchIndex] = useState(0);
+  // Bir hop (next/prev) `hydrateAroundMessage`i TETİKLER ama pencere bir sonraki
+  // render'da (bucket dispatch sonrası) dolar — liste bu ref'e bakıp hedefi
+  // GÖRÜNCE kaydırıp vurguluyor. `jumpTargetRef`in (hedefli AÇILIŞ) birebir
+  // aynısı, ayrı bir bayrak icat edilmedi — ikisi de "pencere YENİ dolduruldu,
+  // sıradaki render'da kaydır" sözleşmesini paylaşıyor.
+  const pendingInlineSearchJumpRef = useRef<string | null>(null);
 
   // Kota dolduğunda TEK çıkış: Premium modalı. Gövde ekran dışına taşındı
   // (quotaPaywall.ts) — gönderim yolu artık outbox'ta ve 402'yi orası da
@@ -1651,6 +1686,125 @@ function ChatScreen({
     });
   }, [dispatch, conversationId]);
 
+  /**
+   * Faz 4 / Task 6 — sohbet içi arama kapanışı. Her alanı TEK TEK sıfırlıyor:
+   * yarım kalmış bir debounce zamanlayıcısı ya da bekleyen bir atlama hedefi
+   * bir sonraki açılışta "eski sorgudan kalma" bir sıçramaya yol açmasın.
+   */
+  const handleCloseInlineSearch = useCallback(() => {
+    Keyboard.dismiss();
+    setInlineSearchOpen(false);
+    setInlineSearchQuery("");
+    setInlineSearchDebounced(null);
+    setInlineSearchIndex(0);
+    pendingInlineSearchJumpRef.current = null;
+  }, []);
+
+  // `conversationId` DEĞİŞİRSE (ekran örneği yeniden kullanılırsa — bugün
+  // navigator'da olmuyor ama ucuz bir sigorta) ESKİ sohbetin tutulan sonuç
+  // listesini YENİ sohbette göstermeye devam etmek yanlış mesaja atlardı.
+  useEffect(() => {
+    handleCloseInlineSearch();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [conversationId]);
+
+  // Debounce: ham yazıyı SQL'e giden değere çevirir. `prepareSearchQuery`
+  // `null` (eşik altı/boş) döndüğünde ANINDA temizlenir, bir sonraki debounce
+  // turuna bağlanmaz — MessagesScreen'in aynı kuralının (bkz. orada "⚠️
+  // Geçersiz sorguda debounce BEKLENMİYOR" yorumu) burada da geçerli.
+  useEffect(() => {
+    if (!inlineSearchOpen) return;
+    const prepared = prepareSearchQuery(inlineSearchQuery);
+    if (prepared === null) {
+      setInlineSearchDebounced(null);
+      return;
+    }
+    const timer = setTimeout(
+      () => setInlineSearchDebounced(prepared),
+      INLINE_SEARCH_DEBOUNCE_MS,
+    );
+    return () => clearTimeout(timer);
+  }, [inlineSearchQuery, inlineSearchOpen]);
+
+  /**
+   * Eşleşmeler TEK SEFERDE çekiliyor — sorgu DEĞİŞMEDİKÇE next/prev hop'ları
+   * SQL'i tekrar tetiklemiyor (karar: tutulan liste, hop başına yeniden
+   * sorgu DEĞİL). `searchMessages` newest-first döner; burada kronolojik
+   * (eski→yeni) sıraya çevriliyor — mesaj listesinin kendi okuma sırasıyla
+   * (bkz. messagesWithSeparators'daki `chronological = ...reverse()`) AYNI
+   * yön olsun diye. "İleri" bu sırada bir SONRAKİ (daha yeni) eşleşmeye,
+   * "geri" bir ÖNCEKİ (daha eski) eşleşmeye gider — sayaç bu sırayla uyumlu.
+   */
+  const inlineSearchHits = useMemo(() => {
+    if (!inlineSearchOpen || !inlineSearchDebounced) return [];
+    try {
+      return searchMessages(inlineSearchDebounced, {
+        conversationId,
+        limit: INLINE_SEARCH_LIMIT,
+      })
+        .slice()
+        .sort((a: any, b: any) => a.sentAtMs - b.sentAtMs);
+    } catch (error) {
+      console.error("[chat] sohbet içi arama başarısız:", error);
+      return [];
+    }
+  }, [inlineSearchOpen, inlineSearchDebounced, conversationId]);
+
+  // Sonuç KÜMESİ değiştiğinde (yeni sorgu) başlangıç konumu EN YENİ eşleşme —
+  // kullanıcı genelde az önce konuşulan bir şeyi arıyor, en eskiden başlamak
+  // onu yanlış uca gönderirdi. Bu efekt next/prev'den TETİKLENMEZ (onlar yalnız
+  // `inlineSearchIndex`i değiştirir, `inlineSearchHits` referansı AYNI kalır).
+  useEffect(() => {
+    setInlineSearchIndex(inlineSearchHits.length ? inlineSearchHits.length - 1 : 0);
+  }, [inlineSearchHits]);
+
+  // Seçili eşleşmeye atla — Task 5'in YERELDEN okuyan yolu (`hydrateAroundMessage`)
+  // BİREBİR, ikinci bir atlama mekanizması icat edilmedi. Bulunduysa pencere
+  // hedefi kapsayacak şekilde değişir (isWindowed:true); scroll+highlight
+  // aşağıdaki efekt pencerenin DOLMASINI bekleyip yapıyor.
+  useEffect(() => {
+    if (!inlineSearchHits.length) return;
+    const hit = inlineSearchHits[inlineSearchIndex];
+    if (!hit) return;
+    const found = hydrateAroundMessage(
+      dispatch,
+      conversationId,
+      hit.sentAtMs,
+      hit.messageId,
+    );
+    if (found) pendingInlineSearchJumpRef.current = hit.messageId;
+  }, [inlineSearchIndex, inlineSearchHits, dispatch, conversationId]);
+
+  // `messages` bucket'ı güncellenince (yukarıdaki hydrateAroundMessage'ın
+  // dispatch'i) pencere artık hedefi kapsıyor — hedefli AÇILIŞın izlediği
+  // AYNI kaydırma/vurgu yolu (bkz. ~890 civarı "listSettled" efekti): burada
+  // liste zaten oturmuş olduğu için `listSettled`e gerek yok, direkt `messages`
+  // değişimine bağlanıyor.
+  useEffect(() => {
+    const id = pendingInlineSearchJumpRef.current;
+    if (!id) return;
+    const idx = renderedDataRef.current.findIndex((m: any) => m.id === id);
+    if (idx < 0) return;
+    pendingInlineSearchJumpRef.current = null;
+    try {
+      listRef.current?.scrollToIndex({ index: idx, animated: true, viewPosition: 0.5 });
+    } catch {}
+    highlightMessage(id);
+  }, [messages]);
+
+  // Eşleşme yokken ikisi de no-op — "bir şey yapmıyor" sözü burada: state hiç
+  // değişmiyor, dolayısıyla üstteki atlama efekti de HİÇ TETİKLENMİYOR.
+  const handleInlineSearchNext = useCallback(() => {
+    if (!inlineSearchHits.length) return;
+    setInlineSearchIndex((i) => (i + 1) % inlineSearchHits.length);
+  }, [inlineSearchHits.length]);
+  const handleInlineSearchPrev = useCallback(() => {
+    if (!inlineSearchHits.length) return;
+    setInlineSearchIndex(
+      (i) => (i - 1 + inlineSearchHits.length) % inlineSearchHits.length,
+    );
+  }, [inlineSearchHits.length]);
+
   const handleUnmatch = useCallback(async () => {
     try {
       const res = await chatService.deactivateConversation(conversationId);
@@ -2027,6 +2181,10 @@ function ChatScreen({
             partner={partner}
             onAvatarPress={openPartnerProfile}
             onBack={() => navigation.goBack()}
+            onSearch={() => {
+              Keyboard.dismiss();
+              setInlineSearchOpen(true);
+            }}
             onMenu={() => {
               Keyboard.dismiss();
               optionsFromProfileRef.current = false;
@@ -2036,9 +2194,99 @@ function ChatScreen({
         </View>
       </View>
 
-      {/* "Son mesaja dön" — SADECE pencereli (hedefli atlama) bucket'ta çıkar.
-          Header'ın blur overlay'inin HEMEN ALTINDA, kendi küçük kapsülü. */}
-      {isWindowed && (
+      {/* Sohbet içi arama çubuğu (Faz 4 / Task 6) — "Son mesaja dön" banner'ının
+          AYNI konumunda (header'ın hemen altı); ikisi aynı anda anlamlı değil
+          (biri "pencereden çıkış" biri "pencere içinde ara"), bu yüzden arama
+          açıkken go-to-latest BASTIRILIYOR — kullanıcı önce aramayı kapatıp
+          sonra dönebilir. */}
+      {inlineSearchOpen ? (
+        <View
+          pointerEvents="box-none"
+          style={{
+            position: "absolute",
+            top: insets.top + HEADER_CONTENT,
+            left: 16,
+            right: 16,
+            zIndex: 11,
+          }}
+        >
+          <View
+            style={{
+              flexDirection: "row",
+              alignItems: "center",
+              backgroundColor: colors.surface,
+              borderRadius: 999,
+              borderCurve: "continuous",
+              paddingHorizontal: 14,
+              paddingVertical: 8,
+              gap: 8,
+              shadowColor: "#000",
+              shadowOpacity: 0.15,
+              shadowRadius: 6,
+              shadowOffset: { width: 0, height: 2 },
+              elevation: 3,
+            }}
+          >
+            <TextInput
+              testID="chat-inline-search-input"
+              autoFocus
+              value={inlineSearchQuery}
+              onChangeText={setInlineSearchQuery}
+              placeholder={t("chat.inlineSearch.placeholder")}
+              placeholderTextColor={colors.textSecondary}
+              style={{ flex: 1, color: colors.text, fontSize: 14, paddingVertical: 2 }}
+              returnKeyType="search"
+            />
+            {inlineSearchHits.length > 0 ? (
+              <Text
+                testID="chat-inline-search-counter"
+                style={{ color: colors.textSecondary, fontSize: 13, fontWeight: "600" }}
+              >
+                {t("chat.inlineSearch.counter", {
+                  current: inlineSearchIndex + 1,
+                  total: inlineSearchHits.length,
+                })}
+              </Text>
+            ) : inlineSearchDebounced ? (
+              <Text
+                testID="chat-inline-search-empty"
+                style={{ color: colors.textSecondary, fontSize: 13 }}
+              >
+                {t("chat.inlineSearch.empty")}
+              </Text>
+            ) : null}
+            <TouchableOpacity
+              testID="chat-inline-search-prev"
+              onPress={handleInlineSearchPrev}
+              hitSlop={8}
+              accessibilityLabel={t("chat.inlineSearch.prevLabel")}
+            >
+              <SFIcon name="chevron.up" fallback={ChevronUp} size={18} color={colors.text} />
+            </TouchableOpacity>
+            <TouchableOpacity
+              testID="chat-inline-search-next"
+              onPress={handleInlineSearchNext}
+              hitSlop={8}
+              accessibilityLabel={t("chat.inlineSearch.nextLabel")}
+            >
+              <SFIcon name="chevron.down" fallback={ChevronDown} size={18} color={colors.text} />
+            </TouchableOpacity>
+            <TouchableOpacity
+              testID="chat-inline-search-close"
+              onPress={handleCloseInlineSearch}
+              hitSlop={8}
+              accessibilityLabel={t("chat.inlineSearch.closeLabel")}
+            >
+              <SFIcon name="xmark" fallback={X} size={18} color={colors.textSecondary} />
+            </TouchableOpacity>
+          </View>
+        </View>
+      ) : null}
+
+      {/* "Son mesaja dön" — SADECE pencereli (hedefli atlama) bucket'ta VE arama
+          KAPALIYKEN çıkar (yukarıdaki not). Header'ın blur overlay'inin HEMEN
+          ALTINDA, kendi küçük kapsülü. */}
+      {isWindowed && !inlineSearchOpen && (
         <View
           pointerEvents="box-none"
           style={{
@@ -2288,7 +2536,7 @@ function ChatScreen({
   );
 }
 
-function ChatHeader({ partner, onBack, onMenu, onAvatarPress }: any) {
+function ChatHeader({ partner, onBack, onMenu, onSearch, onAvatarPress }: any) {
   const { t } = useTranslation();
   const displayName = partner?.displayName || t("chat.defaultUserName");
   return (
@@ -2431,7 +2679,56 @@ function ChatHeader({ partner, onBack, onMenu, onAvatarPress }: any) {
         </View>
       </View>
 
-      <View style={{ position: "absolute", right: 16, top: 8 }}>
+      <View
+        style={{
+          position: "absolute",
+          right: 16,
+          top: 8,
+          flexDirection: "row",
+          alignItems: "center",
+          gap: 4,
+        }}
+      >
+        {/* Sohbet içi arama (Faz 4 / Task 6) — menü butonunun SOLUNA, aynı daire
+            ölçüsüyle eklendi; satırın 3-slot iskeleti (geri/orta/sağ) DEĞİŞMEDİ,
+            sağ slot artık iki buton taşıyor. */}
+        {Platform.OS === "ios" ? (
+          <GlassFallbackSurface
+            shape="circle"
+            width={HEADER_ACTION_SIZE}
+            height={HEADER_ACTION_SIZE}
+          >
+            <Host style={{ width: HEADER_ACTION_SIZE, height: HEADER_ACTION_SIZE }}>
+              <SwiftUIButton
+                testID="chat-search-open"
+                onPress={onSearch}
+                modifiers={[
+                  buttonStyle("plain"),
+                  tint(colors.text),
+                  frame({ width: HEADER_ACTION_SIZE, height: HEADER_ACTION_SIZE }),
+                  accessibilityLabel(t("chat.inlineSearch.openLabel")),
+                  ...glassFallback({ shape: "circle" }),
+                ]}
+              >
+                <SwiftUIImage
+                  systemName="magnifyingglass"
+                  color={colors.text}
+                  modifiers={glassIconClearGlyph()}
+                />
+              </SwiftUIButton>
+            </Host>
+          </GlassFallbackSurface>
+        ) : (
+          <TouchableOpacity
+            testID="chat-search-open"
+            hitSlop={10}
+            className="p-2"
+            onPress={onSearch}
+            accessibilityLabel={t("chat.inlineSearch.openLabel")}
+          >
+            <SFIcon name="magnifyingglass" fallback={Search} size={22} color={colors.textSecondary} />
+          </TouchableOpacity>
+        )}
         {Platform.OS === "ios" ? (
           // Geri butonuyla aynı — zemin sarmalayıcıdan, yalnız iOS 26 altında.
           <GlassFallbackSurface

@@ -863,6 +863,19 @@ const en = {
     jumpBanner: {
       goToLatest: 'Go to latest',
     },
+    // Phase 4 / Task 6 — search within a single conversation. Opens from the
+    // header magnifier, searches only this conversation; next/previous reuse
+    // Task 5's jump window.
+    inlineSearch: {
+      openLabel: 'Search in chat',
+      placeholder: 'Search in this chat',
+      // {{current}}/{{total}} — printed like "2/5".
+      counter: '{{current}}/{{total}}',
+      empty: 'No results',
+      prevLabel: 'Previous result',
+      nextLabel: 'Next result',
+      closeLabel: 'Close search',
+    },
     // The restore window length lives in BACKEND config — never hardcode "24
     // hours" here; the remaining time is derived from the `restorableUntil`
     // timestamp and printed as {{time}} (see features/chat/restoreWindow.ts).

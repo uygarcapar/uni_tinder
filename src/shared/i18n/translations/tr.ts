@@ -874,6 +874,18 @@ const tr = {
     jumpBanner: {
       goToLatest: 'Son mesaja dön',
     },
+    // Faz 4 / Task 6 — sohbet içinde arama. Başlıktaki büyüteçten açılır,
+    // yalnız BU sohbette arar; ileri/geri Task 5'in atlama penceresini kullanır.
+    inlineSearch: {
+      openLabel: 'Sohbette ara',
+      placeholder: 'Bu sohbette ara',
+      // {{current}}/{{total}} — "2/5" gibi basılır.
+      counter: '{{current}}/{{total}}',
+      empty: 'Sonuç yok',
+      prevLabel: 'Önceki sonuç',
+      nextLabel: 'Sonraki sonuç',
+      closeLabel: 'Aramayı kapat',
+    },
     // Geri alma penceresinin uzunluğu BACKEND config'inden geliyor — metinlerde
     // "24 saat" HARDCODE EDİLMEZ, süre `restorableUntil` damgasından hesaplanıp
     // {{time}} olarak basılır (bkz. features/chat/restoreWindow.ts).
