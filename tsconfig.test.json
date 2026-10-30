@@ -1,7 +1,11 @@
 {
   "extends": "./tsconfig.json",
   "compilerOptions": {
-    "types": ["jest"],
+    // "node" EKLENDİ: `tests/` altındaki bir kısım test Node ortamında koşuyor
+    // ve Node global'lerine dokunuyor — `Buffer` (api.tokenGate.test.ts) ve
+    // `fs`/`path`/`__dirname` (e2e/selectorCoverage.test.ts). Bunlar jest
+    // tarafından zaten sağlanıyordu, eksik olan tek şey TİPLERİ idi.
+    "types": ["jest", "node"],
     "noEmit": true
   },
   "include": [

@@ -4,7 +4,12 @@
     "strict": false,
     "allowJs": true,
     "skipLibCheck": true,
-    "types": ["jest"],
+    // "node": repoda Node ortamında koşan kod var — `scripts/*.js`, jest'in
+    // dosya sistemine bakan kaynak testleri (`tests/e2e/*`) ve onların
+    // import ettiği saf e2e modülleri. `exclude` import takibini durdurmuyor,
+    // yani o modüller programa yine giriyor ve `node:crypto` gibi şeyler
+    // tipsiz kalıyordu.
+    "types": ["jest", "node"],
     "paths": {
       "@/*": ["./src/*"]
     }
@@ -14,5 +19,11 @@
     "**/*.tsx",
     ".expo/types/**/*.d.ts",
     "nativewind-env.d.ts"
-  ]
+  ],
+  // e2e/ kendi standalone projesi (e2e/tsconfig.json): mocha + @wdio/globals
+  // tipleriyle derleniyor. Buraya dahil kalsa `types: ["jest"]` altında
+  // derlenir, `browser`/`$` hiç tanınmaz ve editörde yüzlerce hayalet hata
+  // çıkar. `npm run type-check` zaten tsconfig.test.json kullandığı için onun
+  // davranışı bu satırdan ETKİLENMİYOR.
+  "exclude": ["e2e", "node_modules", "ios", "android"]
 }

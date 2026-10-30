@@ -28,6 +28,15 @@ jobs:
       - name: Type-check
         run: npm run type-check
 
+      # e2e katmanının derlenmesi BURADA, Linux'ta, simülatörsüz ve ücretsiz
+      # yapılıyor. Yakaladığı iki şey gerçek:
+      #   • i18n anahtarı yazım hataları (selectors.ts `I18nKey` birleşimi)
+      #   • kayıt akışına adım eklenip e2e'nin sessizce atlaması
+      #     (registerNewUser'daki Record<RegistrationStepRoute, …>)
+      # .env.e2e GEREKMİYOR: tsc modülü çalıştırmıyor, yalnız tip çıkarıyor.
+      - name: E2E type-check
+        run: npm run e2e:type-check
+
       - name: Test
         run: npm run test:ci
         env:
