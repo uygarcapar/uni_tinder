@@ -87,6 +87,21 @@ it('tike basınca onLike, perdeye basınca onClose', () => {
  * istek iki kota demek. Kapı `busy`: ekran isteği uçarken bayrağı kaldırıyor.
  */
 /**
+ * KENDİ ANIMDA KARAR BUTONU YOK — kendine beğeni gönderemezsin (UT-7422).
+ *
+ * Büyüme herkese açık (kendi fotoğrafına da büyük bakabilmelisin), kapı
+ * yalnız tikte. Ölü bir buton çizmek yerine hiç çizilmiyor — kabuğun kendi
+ * kuralı.
+ */
+it('KENDİ anımda cam tik ÇİZİLMİYOR', () => {
+  const tree = mount({ moment: { ...base.moment, isMine: true } });
+  settle();
+  expect(tree.queryByLabelText('Beğen')).toBeNull();
+  // Kapatma yolu duruyor: yüzeyden çıkılabiliyor.
+  expect(tree.queryByLabelText('Kapat')).not.toBeNull();
+});
+
+/**
  * ⚠️🔴 KARAR BİR KEZ — `busy` BU İŞİ GÖRMÜYOR.
  *
  * `busy` isteğin ÖMRÜ kadar (mutasyon `finally`de temizliyor), oysa buton

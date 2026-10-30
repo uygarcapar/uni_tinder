@@ -544,7 +544,12 @@ export default function CampusMomentsStrip({
           // ⚠️ KENDİ ANIM DOKUNULAMAZ: kendine karar veremezsin (UT-7422) ve
           // açılacak bir profil kartı da yok. `onPress` verilmeyince kart
           // erişilebilirlik ağacında da buton gibi görünmüyor.
-          onPress={item.moment.isMine ? undefined : onOpenCard}
+          /* ⚠️ KENDİ ANIM DA AÇILIYOR (istek): kapı artık burada DEĞİL, cam
+             tikte. Dokunuş bir karar değil, büyütüp bakma — eskiden kendi
+             anına dokunmak hiçbir şey yapmıyordu ve yüzey bozuk gibi
+             okunuyordu. "Kendine karar veremezsin" (UT-7422) kuralını butonun
+             kendisi taşıyor (bkz. CampusMomentExpandOverlay). */
+          onPress={onOpenCard}
           onRemove={onRemove}
           onReport={onReport}
         />

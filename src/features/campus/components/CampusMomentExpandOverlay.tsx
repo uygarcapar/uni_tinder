@@ -335,8 +335,13 @@ const CampusMomentExpandOverlay = memo(function CampusMomentExpandOverlay({
         </Animated.View>
       </GestureDetector>
 
-      {/* CAM TİK — kartın KARDEŞİ ve yalnız oturduktan sonra (dosya başı). */}
-      {settled ? (
+      {/* CAM TİK — kartın KARDEŞİ ve yalnız oturduktan sonra (dosya başı).
+
+          ⚠️ KENDİ ANIMDA HİÇ ÇİZİLMİYOR: kendine beğeni gönderemezsin
+          (UT-7422). Büyüme herkese açık — kendi fotoğrafına büyük bakmak bir
+          karar değil — ama buton ölü çizilmek yerine yok sayılıyor (kabuğun
+          kendi kuralı: ölü buton çizilmiyor). */}
+      {settled && !shown.isMine ? (
         <View
           style={{
             position: "absolute",

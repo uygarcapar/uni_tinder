@@ -61,8 +61,17 @@ it('karta basınca onOpenCard an ve kareyle çağrılıyor', async () => {
   expect(onOpenCard.mock.calls[0][0].id).toBe('1');
 });
 
-it('KENDİ anım dokunulamaz — onOpenCard çağrılmıyor', () => {
+/**
+ * ⚠️ KENDİ ANIM DA BÜYÜYOR (istek) — kapı ARTIK ŞERİTTE DEĞİL.
+ *
+ * Eskiden `isMine` kartta `onPress`i hiç vermiyordu, yani kendi anına dokunmak
+ * HİÇBİR ŞEY yapmıyordu ve yüzey bozuk gibi okunuyordu. Gerekçe "kendine karar
+ * veremezsin"di (UT-7422) ama dokunuş artık bir karar değil, büyütüp bakma.
+ * Kural yer değiştirdi: büyüme herkese açık, KARAR BUTONU kendi anımda
+ * çizilmiyor (bkz. overlay testi).
+ */
+it('KENDİ anım da büyüyor — kapı tikte, dokunuşta değil', async () => {
   const { tree, onOpenCard } = mount({ moments: [moment({ isMine: true })] });
-  expect(tree.queryByLabelText(/Ada/)).toBeNull();
-  expect(onOpenCard).not.toHaveBeenCalled();
+  fireEvent.press(tree.getByLabelText(/Ada/));
+  await waitFor(() => expect(onOpenCard).toHaveBeenCalledTimes(1));
 });

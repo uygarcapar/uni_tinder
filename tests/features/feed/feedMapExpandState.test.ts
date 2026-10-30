@@ -58,6 +58,10 @@ const CARD_SOURCE = readFileSync(
   'src/features/campus/components/CampusMomentCard.tsx',
   'utf8',
 );
+const OVERLAY_SOURCE = readFileSync(
+  'src/features/campus/components/CampusMomentExpandOverlay.tsx',
+  'utf8',
+);
 /**
  * ⚠️ `STRIP_SOURCE` TAM EKRANIN ŞERİDİ (CampusMomentsStrip). Haritanın kendi
  * katmanı ve bandın uçuşan kareleri AYRI dosyalar — ikisi de aşağıda ayrı
@@ -368,9 +372,10 @@ describe('harita + şerit eşzamanlılığı', () => {
     // BİRLİKTE yukarı veriyor (büyüme o kareden başlıyor).
     expect(CARD_SOURCE).toContain('onPress={onPress ? handlePress : undefined}');
     expect(CARD_SOURCE).toContain('measureInWindow');
-    expect(STRIP_SOURCE).toContain(
-      'onPress={item.moment.isMine ? undefined : onOpenCard}',
-    );
+    // ⚠️ KAPI ŞERİTTE DEĞİL: kendi anım da büyüyor, karar butonu overlay'de
+    // `isMine` ile kesiliyor.
+    expect(STRIP_SOURCE).toContain('onPress={onOpenCard}');
+    expect(OVERLAY_SOURCE).toContain('settled && !shown.isMine');
     // ⚠️ Şerit artık anı DEĞİL kimliğini + ölçülen kareyi yukarı veriyor:
     // gösterilen an her render canlı listeden çözülüyor (`resolveOpenMoment`),
     // böylece an düşünce yüzey kendiliğinden kapanıyor.
