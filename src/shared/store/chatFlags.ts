@@ -61,9 +61,19 @@ export const CHAT_BACKFILL_ENABLED = true;
  *
  * Kapatmak bugünkü (kuyruk ÖNCESİ) davranışa tam döner: ekran yine doğrudan
  * REST'e gider, hata ANINDA (optimistik listeyi geri dispatch ederek) geri
- * alınır, kuyruğa HİÇ satır yazılmaz. Bu bayrak yalnız ÇAĞRI NOKTASINI kapatır
- * — turun kendisi (Task 5'in ayrı gate'i) burada yok, yani diskte o ana kadar
- * yazılmış satır varsa (örn. bayrak sonradan kapatıldıysa) bir sonraki tur
- * onu yine de göndermeye çalışır.
+ * alınır, kuyruğa HİÇ satır yazılmaz.
+ *
+ * Bayrak İKİ yeri kapatır: çağrı noktasını (ChatScreen) VE turun kendisini —
+ * `flushPendingMutations`'ın ilk satırı bu bayrağa bakıp `ran: false` ile
+ * dönüyor (bkz. pendingMutations.ts). Yani kapatınca ağ tarafı tamamen durur.
+ *
+ * SONUCU TAM OLARAK ŞU: kapatmak veri KAYBETTİRMEZ ama o ana kadar diske
+ * yazılmış satırları MAHSUR BIRAKIR. Tur draining'e hiç gelmediği için o
+ * emirler ne sunucuya uygulanır ne de ekranda geri alınır (yetim budaması
+ * yalnız mesajı silinmiş satırları temizler) — kullanıcı optimistik emojisini
+ * görmeye devam eder, sunucu onu hiç duymaz. Bayrak haftalar sonra yeniden
+ * açılırsa bu emirler BEKLENMEDİK bir anda gönderilir. Bir olay sırasında
+ * acil kapatma hamlesi olarak doğru, ama kalıcı kapatma kararı bu mahsur
+ * kalma hâlini (gerekirse tabloyu elle boşaltmayı) birlikte düşünmeli.
  */
 export const CHAT_MUTATION_QUEUE_ENABLED = true;
