@@ -1480,3 +1480,24 @@ export function markBackfillDone(conversationId: string): void {
     [conversationId],
   );
 }
+
+/**
+ * "Tamam" damgasını SÖKER — sohbet `readBackfillTargets`'a geri girer.
+ *
+ * `backfill_done` tek yönlü bir mandal: `markBackfillDone` dışında yazıcısı
+ * yok ve `clearAllChatData()` haricinde hiçbir tam senkron yolu onu
+ * temizlemiyor. Mandalı yanlış yere basan GERÇEK yol şu: gizli geçmişi olan
+ * (rematch) sohbet sunucudan `messages: [] / hasMore: false` alıyor, round
+ * onu tamam sayıyor — oysa arşiv yalnız KİLİTLİ. Kullanıcı kilidi açınca
+ * (`chat/historyRevealed`) bu fonksiyon çağrılmazsa o sohbetin geçmişi bir
+ * daha hiç indirilmez.
+ *
+ * `backfill_cursor`'a DOKUNMAZ: mandal "bitti mi" sorusuna ait, "nerede
+ * kalmıştım"a değil; ikisini birlikte sıfırlamak diskte olan sayfaları
+ * yeniden indirtirdi. Satır yoksa UPDATE no-op — damga da zaten yoktur.
+ */
+export function clearBackfillDone(conversationId: string): void {
+  getChatDb().run('UPDATE sync_state SET backfill_done = 0 WHERE conversation_id = ?', [
+    conversationId,
+  ]);
+}

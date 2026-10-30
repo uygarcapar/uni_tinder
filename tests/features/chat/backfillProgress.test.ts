@@ -12,6 +12,7 @@ import {
   readBackfillTargets,
   setBackfillCursor,
   markBackfillDone,
+  clearBackfillDone,
   saveMessage,
   MESSAGE_RETENTION_DAYS,
   pruneExpiredMessages,
@@ -108,6 +109,40 @@ describe('backfill ilerleme kolonları (v8)', () => {
 
     const targets = readBackfillTargets(10).map((t) => t.conversationId);
     expect(targets).toEqual(['conv-devam']);
+  });
+
+  it('clearBackfillDone sohbeti hedef listesine GERİ getiriyor, cursor\'a dokunmuyor', () => {
+    // `backfill_done` bir MANDAL: tek yazıcısı `markBackfillDone` ve onu
+    // `clearAllChatData()` dışında hiçbir tam senkron yolu temizlemiyor. Gizli
+    // geçmişi olan (rematch) bir sohbet sunucudan `messages: [] / hasMore:
+    // false` alıp "tamam" damgasını yiyebiliyor; kullanıcı arşivi açtığında
+    // (`chat/historyRevealed`) mandalın SÖKÜLEBİLİR olması şart, yoksa o
+    // sohbetin geçmişi bir daha hiç indirilmiyor.
+    const db = getChatDb();
+    insertConversation(db, 'conv-gizli', 1_000);
+    setBackfillCursor('conv-gizli', 'cursor-yarida');
+    markBackfillDone('conv-gizli');
+    expect(readBackfillTargets(10)).toEqual([]);
+
+    clearBackfillDone('conv-gizli');
+
+    // Cursor KORUNUYOR: mandal "bitti mi" sorusuna ait, "nerede kalmıştım"a
+    // değil — ikisini birlikte sıfırlamak diskte olan sayfaları yeniden
+    // indirtirdi.
+    expect(readBackfillTargets(10)).toEqual([
+      { conversationId: 'conv-gizli', cursor: 'cursor-yarida' },
+    ]);
+  });
+
+  it('clearBackfillDone sync_state satırı YOKKEN satır AÇMIYOR', () => {
+    // Mandal yoksa temizlenecek bir şey de yok; boş bir sync_state satırı
+    // açmak `readBackfillTargets`'ın LEFT JOIN'ini gereksizce besler.
+    const db = getChatDb();
+    insertConversation(db, 'conv-bos', 1_000);
+
+    clearBackfillDone('conv-bos');
+
+    expect(db.getAll('SELECT conversation_id FROM sync_state')).toEqual([]);
   });
 
   it('setBackfillCursor yazdığı cursor targets ile geri geliyor', () => {

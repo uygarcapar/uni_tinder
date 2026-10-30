@@ -252,7 +252,15 @@ function mirror(action: any, getState: () => any): void {
       return;
 
     case 'chat/historyRevealed':
-      if (p?.conversationId) repo.setHiddenHistory(p.conversationId, false);
+      if (p?.conversationId) {
+        repo.setHiddenHistory(p.conversationId, false);
+        // Backfill mandalı da sökülüyor: kilitli arşivi olan sohbet turdan
+        // `messages: [] / hasMore: false` cevabı alıp "tamam" damgalanmış
+        // olabilir. Kilit açıldığı anda damga kalkmazsa o sohbetin geçmişi
+        // bir daha indirilmez — `backfill_done`'u temizleyen başka yol yok
+        // (bkz. chatRepository.clearBackfillDone).
+        repo.clearBackfillDone(p.conversationId);
+      }
       return;
 
     case 'chat/matchNotification':

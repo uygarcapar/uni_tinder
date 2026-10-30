@@ -8,7 +8,7 @@ import {
   startChatMirror,
   __resetChatMirrorForTests,
 } from '@/features/chat/chatMirrorMiddleware';
-import { readWindow, readSyncState } from '@/features/chat/chatRepository';
+import { readWindow, readSyncState, markBackfillDone } from '@/features/chat/chatRepository';
 import { clear as clearMessageCache, projectWindow } from '@/features/chat/messageCache';
 import type { MessageDto } from '@/shared/types';
 
@@ -224,6 +224,21 @@ describe('realtime event\'leri aynalanıyor (AppNavigator\'a dokunmadan)', () =>
 
     dispatch({ type: 'chat/historyRevealed', payload: { conversationId: CONV } });
     expect(readSyncState(CONV)!.has_hidden_history).toBe(0);
+  });
+
+  it('historyRevealed backfill MANDALINI da söküyor — kilitli arşiv "bitti" kalmıyor', () => {
+    // Gizli geçmişi olan sohbet backfill turuna `messages: [] / hasMore:
+    // false` dönüyor ve "tamam" damgalanıyor. Kullanıcı arşivi açtığında
+    // mandal sökülmezse o sohbetin geçmişi bir daha hiç indirilmez —
+    // `backfill_done`'u temizleyen başka hiçbir yol yok (tam senkron da
+    // dokunmuyor, bkz. backfillPolicy.isConversationComplete yorumu).
+    const { dispatch } = makeHarness();
+    markBackfillDone(CONV);
+    expect(readSyncState(CONV)!.backfill_done).toBe(1);
+
+    dispatch({ type: 'chat/historyRevealed', payload: { conversationId: CONV } });
+
+    expect(readSyncState(CONV)!.backfill_done).toBe(0);
   });
 
   it('resetChat arşivi boşaltır — önceki kullanıcının mesajı kalmaz', () => {

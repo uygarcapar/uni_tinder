@@ -121,7 +121,16 @@ export function shouldStopRound(opts: {
  * ayrı bir durum — sunucu `hasMore: true` deyip cursor vermeyebilir (örn.
  * tutarsız bir yanıt) ve cursor olmadan bir sonraki sayfayı isteyemeyiz.
  * Böyle bir sohbeti sonsuza dek "devam ediyor" sayıp her turda yeniden
- * denemek yerine TAMAM say — asıl düzeltme bir sonraki tam senkronda gelir.
+ * denemek yerine TAMAM say.
+ *
+ * Bedeli AÇIK OLSUN: bu karar `backfill_done`u yazdırıyor ve o mandal KALICI
+ * — tam senkron yollarının HİÇBİRİ (`onNeedsFullResync`,
+ * `fetchConversations({force:true})`, delta resync) ona dokunmuyor. Mandalı
+ * söken iki yol var: `clearAllChatData()` (logout) ve gizli arşiv açılınca
+ * `chat/historyRevealed` → `repo.clearBackfillDone` (bkz.
+ * chatMirrorMiddleware.ts). Yani tutarsız yanıt veren bir sohbetin geçmişi o
+ * oturumdan sonra kendiliğinden tamamlanmaz; Faz 4'ün aramasının kapsamını
+ * dürüstçe söylemesi gerekirse okunacak yer `backfill_done` sayısı.
  */
 export function isConversationComplete(page: {
   hasMore: boolean;
