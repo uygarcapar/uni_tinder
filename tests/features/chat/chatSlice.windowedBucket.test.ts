@@ -6,7 +6,12 @@ jest.mock('@react-native-async-storage/async-storage', () =>
 );
 jest.mock('react-native-mmkv'); // <rootDir>/__mocks__/react-native-mmkv.ts
 
-import reducer, { hydrateWindow, receiveMessage } from '@/features/chat/chatSlice';
+import reducer, {
+  appendOptimisticMessage,
+  hydrateWindow,
+  messageSent,
+  receiveMessage,
+} from '@/features/chat/chatSlice';
 
 /**
  * Faz 4 / Task 5 review turu 1, Önemli 4 — "pencereli" (jump) bucket.
@@ -149,5 +154,97 @@ describe('receiveMessage — pencereli bucket canlı mesajı BİTİŞTİRMİYOR'
     );
     const conv = after.conversations.find((c) => c.conversationId === CONV);
     expect(conv?.lastMessagePreview).toBe('mesaj live-1');
+  });
+});
+
+/**
+ * Review turu 4, Önemli 3 — bayrağın BEŞİNCİ kapısı: `messageSent`.
+ *
+ * O reducer İKİ yerden dispatch ediliyor ve ikisi de ekranın gönderim
+ * yolunun (`appendOutgoing`, pencereyi dispatch'ten ÖNCE temizleyen tek yer)
+ * DIŞINDA: `outbox.ts`in gönderim ack'i ve hub'ın `MessageSent` event'i (kendi
+ * mesajın BAŞKA bir cihazdan). Pencereli bucket'ta `clientMessageId` araması
+ * ıskalıyor ve mesaj iki yıl önceki pencerenin yanına yapışıyordu.
+ */
+describe('messageSent — pencereli bucket (Önemli 3)', () => {
+  function windowed(messages: any[]) {
+    return reducer(
+      undefined,
+      hydrateWindow({
+        conversationId: CONV,
+        messages,
+        nextCursor: null,
+        hasMore: true,
+        hasHiddenHistory: false,
+        isWindowed: true,
+      }),
+    );
+  }
+
+  it('clientMessageId ISKALADIĞINDA pencereli bucket\'a BİTİŞTİRMİYOR', () => {
+    const before = windowed([baseMessage('old-1'), baseMessage('old-2')]);
+
+    // Outbox ack'i / başka cihazın MessageSent'i: bu bucket'ta o cmid'li
+    // optimistic balon YOK (pencere mid-archive).
+    const after = reducer(
+      before,
+      messageSent(
+        baseMessage('ack-1', { clientMessageId: 'cmid-yok', senderId: 'me' }) as any,
+      ),
+    );
+
+    expect(after.messagesByConv[CONV].messages.map((m) => m.id)).toEqual(['old-1', 'old-2']);
+  });
+
+  it('pencereli OLMAYAN bucket\'ta messageSent eski davranışı sürdürüyor — BİTİŞTİRİYOR', () => {
+    const normal = reducer(
+      undefined,
+      hydrateWindow({
+        conversationId: CONV,
+        messages: [baseMessage('old-1')],
+        nextCursor: null,
+        hasMore: true,
+        hasHiddenHistory: false,
+      }),
+    );
+    const after = reducer(
+      normal,
+      messageSent(baseMessage('ack-1', { clientMessageId: 'cmid-yok' }) as any),
+    );
+    expect(after.messagesByConv[CONV].messages.map((m) => m.id)).toEqual(['ack-1', 'old-1']);
+  });
+
+  it('cmid EŞLEŞİRSE pencereli bucket\'ta da satır YERİNDE güncellenir', () => {
+    // Kapı "ekleme"ye ait, "güncelleme"ye DEĞİL: pencere içinde duran bir
+    // optimistic balonun ack'i hâlâ işlenmek zorunda, yoksa balon sonsuza dek
+    // "gönderiliyor"da kalırdı.
+    const before = windowed([
+      baseMessage('temp-1', { clientMessageId: 'cmid-1', _pending: true }),
+    ]);
+    const after = reducer(
+      before,
+      messageSent(baseMessage('srv-1', { clientMessageId: 'cmid-1' }) as any),
+    );
+    expect(after.messagesByConv[CONV].messages.map((m) => m.id)).toEqual(['srv-1']);
+  });
+
+  it('kullanıcının KENDİ yazdığı mesaj (appendOptimisticMessage) pencereliyken bile EKLENİR', () => {
+    // Kapının yönü: gelen/ack mesajı bastırılıyor, kullanıcının kendi
+    // gönderimi ASLA — göz önünde kaybolması, canlı bir mesajı kaçırmaktan
+    // daha kötü. (Pencereyi temizleme işi `ChatScreen.appendOutgoing`da.)
+    const warn = jest.spyOn(console, 'warn').mockImplementation(() => {});
+    try {
+      const before = windowed([baseMessage('old-1')]);
+      const after = reducer(
+        before,
+        appendOptimisticMessage({
+          conversationId: CONV,
+          message: baseMessage('temp-1', { clientMessageId: 'cmid-1' }) as any,
+        }),
+      );
+      expect(after.messagesByConv[CONV].messages.map((m) => m.id)).toEqual(['temp-1', 'old-1']);
+    } finally {
+      warn.mockRestore();
+    }
   });
 });

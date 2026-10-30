@@ -154,6 +154,54 @@ const emptyBucket = (): MessageBucket => ({
   loading: false,
 });
 
+/**
+ * Bir mesajı bucket'ın BAŞINA (listede en yeni uç) eklemenin TEK KAPISI.
+ *
+ * ── Neden bir chokepoint (review turu 4, Önemli 3) ──────────────────────────
+ * `isWindowed` bayrağı dört tur boyunca KAPI KAPI yamanmıştı: `receiveMessage`,
+ * `applyLocalDelta`, `fetchHistory`nin cursor:null dalı, `appendOutgoing`...
+ * ve `messageSent` hiç fark edilmeden AÇIK kalmıştı. O reducer iki ayrı yerden
+ * dispatch ediliyor ve ikisi de `appendOutgoing`'in pencere-temizleme yolundan
+ * GEÇMİYOR: `outbox.ts`in gönderim ack'i ve hub'ın `MessageSent` event'i (kendi
+ * mesajın BAŞKA bir cihazdan). İkisinde de `clientMessageId` araması pencereli
+ * bucket'ta ISKALIYOR ve mesaj iki yıl önceki bir pencerenin yanına
+ * yapışıyordu — bayrağın önlemek için var olduğu TAM ŞEY.
+ *
+ * Bayrağı tek bir fonksiyonda okumak, yeni bir yazıcının kapıyı GÖRMEDEN
+ * açmasını engelliyor: bucket'a mesaj eklemenin başka bir yolu yok, ve
+ * `origin` seçmek zorunlu olduğu için yeni çağıran "bu mesaj kimden" sorusuna
+ * cevap vermek ZORUNDA.
+ *
+ * `origin`:
+ *  • `'remote'` — karşı taraftan ya da BAŞKA bir yoldan gelen (realtime,
+ *    gönderim ack'i, başka cihaz). Bucket pencereliyse EKLENMİYOR: mesaj zaten
+ *    diskte, kullanıcı "son mesaja dön"e basınca orada bulacak; pencerenin
+ *    yanına yapıştırmak sohbet O NOKTADA devam ediyormuş gibi okunur ve hiç
+ *    göstermemekten daha YANILTICI olur.
+ *  • `'localSend'` — kullanıcının AZ ÖNCE yazdığı mesaj (optimistic balon).
+ *    ASLA bastırılmıyor: kendi gönderdiği mesajın göz önünde kaybolması, canlı
+ *    bir mesajı kaçırmaktan daha kötü. Pencerenin kendisi bu yolda çağıranın
+ *    sorumluluğu — `ChatScreen.appendOutgoing` dispatch'ten ÖNCE
+ *    `hydrateConversation` ile hot window'a dönüyor (yalnız bayrağı `false`a
+ *    çekmek yetmez, İÇERİK de taze olmalı). Pencere hâlâ açıkken buraya
+ *    gelinmesi o sözleşmenin bozulduğu anlamına geliyor; sessiz kalmıyoruz.
+ */
+function prependToBucket(
+  bucket: MessageBucket,
+  msg: MessageDto,
+  origin: 'remote' | 'localSend',
+): void {
+  if (bucket.isWindowed) {
+    if (origin === 'remote') return;
+    if (__DEV__) {
+      console.warn(
+        '[chat] pencereli bucket\'a yerel gönderim eklendi — çağıran önce hot window\'a dönmeliydi',
+      );
+    }
+  }
+  bucket.messages = [msg, ...bucket.messages];
+}
+
 const initialState: ChatState = {
   conversations: [],
   conversationsLoading: false,
@@ -540,17 +588,10 @@ const chatSlice = createSlice({
 
       if (bucket.messages.some((m) => m.id === msg.id)) return;
 
-      // Review turu 1, Önemli 4 — bucket PENCERELİYSE (hedef-etrafı, bkz.
-      // MessageBucket.isWindowed) canlı mesaj BİTİŞTİRİLMİYOR. Mesaj ZATEN
-      // DİSKE indi (mirror middleware ayrı bir yoldan yazıyor) — burada
-      // eklemezsek kullanıcı "son mesaja dön"e basıp hot window'u yeniden
-      // okuyunca zaten orada bulacak. Eklerse iki yıl önceki bir pencerenin
-      // hemen yanına "en son mesaj" gibi yapışır — hiç göstermemekten daha
-      // YANILTICI bir sonuç, çünkü sohbet sanki O NOKTADA devam ediyormuş
-      // gibi okunur.
-      if (!bucket.isWindowed) {
-        bucket.messages = [msg, ...bucket.messages];
-      }
+      // Pencereli bucket'ta BASTIRILIYOR — kapı ve gerekçesi tek yerde,
+      // `prependToBucket`ta (mesaj zaten diskte; mirror middleware ayrı bir
+      // yoldan yazıyor).
+      prependToBucket(bucket, msg, 'remote');
       state.messagesByConv[msg.conversationId] = bucket;
       updateConversationLastMessage(state, msg);
 
@@ -586,7 +627,16 @@ const chatSlice = createSlice({
         }
       }
       if (!bucket.messages.some((m) => m.id === msg.id)) {
-        bucket.messages = [msg, ...bucket.messages];
+        // `origin: 'remote'` — bu reducer'ın İKİ dispatch yeri de ekranın
+        // gönderim yolunun (`appendOutgoing`) DIŞINDA: `outbox.ts`in gönderim
+        // ack'i ve hub'ın `MessageSent` event'i (kendi mesajın başka bir
+        // cihazdan). İkisinde de kullanıcı "şimdi buradayım" demedi, yani
+        // pencereli bir bucket'ta bastırılması DOĞRU (bkz. prependToBucket).
+        // Pencere açıkken kullanıcının KENDİ yazdığı bir mesaj buraya
+        // gelemez: `appendOutgoing` optimistic balonu eklemeden önce hot
+        // window'a dönüyor, dolayısıyla yukarıdaki `clientMessageId` araması
+        // o balonu BULUR ve bu dala hiç düşmez.
+        prependToBucket(bucket, msg, 'remote');
         updateConversationLastMessage(state, msg);
       }
     },
@@ -848,7 +898,10 @@ const chatSlice = createSlice({
     ) => {
       const { conversationId, message } = action.payload;
       const bucket = state.messagesByConv[conversationId] ?? emptyBucket();
-      bucket.messages = [message, ...bucket.messages];
+      // `origin: 'localSend'` — ASLA bastırılmıyor (bkz. prependToBucket).
+      // Pencereyi temizleme işi çağıranda: `ChatScreen.appendOutgoing` bu
+      // dispatch'ten ÖNCE `hydrateConversation` çağırıyor.
+      prependToBucket(bucket, message, 'localSend');
       state.messagesByConv[conversationId] = bucket;
       updateConversationLastMessage(state, message);
       markConversationReadLocally(state, conversationId);
