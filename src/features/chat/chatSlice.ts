@@ -370,6 +370,18 @@ const chatSlice = createSlice({
         const bucket = state.messagesByConv[conversationId];
         const incoming = windowsByConv[conversationId];
         if (!bucket || !incoming?.length) continue;
+        // Review turu 2, Önemli 4'ün kapanışı — `receiveMessage`deki AYNI
+        // kural burada da geçerli: bucket PENCERELİYSE (hedef-etrafı, bkz.
+        // MessageBucket.isWindowed) delta turunun EN YENİ sayfası (arşivin
+        // DİBİ, `chatHydrate.applyDeltaFromLocal`in okuduğu) bu bucket'a
+        // MERGE EDİLMİYOR. Mesaj ZATEN DİSKE indi — bu reducer'ın GÖREVİ
+        // disk→ekran yansıtması, disk yazımı/watermark ilerlemesi bundan
+        // TAMAMEN BAĞIMSIZ (chatDeltaSync.ts'in `run()`u `applyPage`+
+        // `setSyncWatermark`i BU dispatch'ten ÖNCE ve ondan HİÇ ETKİLENMEDEN
+        // tamamlıyor) — yani burada atlamak hiçbir turu KAYBETMİYOR, yalnız
+        // o turun EKRANA yansımasını `hydrateConversation`in ("son mesaja
+        // dön" / taze giriş) bir sonraki hot-window okumasına BIRAKIYOR.
+        if (bucket.isWindowed) continue;
         mergeLocalWindow(bucket, incoming);
       }
 

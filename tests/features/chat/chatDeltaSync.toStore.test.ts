@@ -17,7 +17,8 @@ import chatService from '@/features/chat/chatService';
 import { openChatDb, __resetChatDbForTests } from '@/features/chat/db/chatDb';
 import { saveMessage, upsertConversations } from '@/features/chat/chatRepository';
 import { pullChanges, __resetDeltaSyncForTests } from '@/features/chat/chatDeltaSync';
-import { applyDeltaFromLocal } from '@/features/chat/chatHydrate';
+import { applyDeltaFromLocal, hydrateConversation } from '@/features/chat/chatHydrate';
+import { readWindow } from '@/features/chat/chatRepository';
 import { clear as clearMessageCache } from '@/features/chat/messageCache';
 import reducer, { hydrateWindow } from '@/features/chat/chatSlice';
 import type { ChatState, ConversationListItemDto, MessageDto } from '@/shared/types';
@@ -321,5 +322,90 @@ describe('sohbet listesi', () => {
 
     expect(store.chat.conversations).toHaveLength(0);
     expect(store.chat.messagesByConv[CONV]).toBeUndefined();
+  });
+});
+
+/**
+ * Faz 4 / Task 5 — review turu 2, Önemli 4'ün kapanışı.
+ *
+ * `receiveMessage`in (realtime push) pencereli bucket'a canlı mesajı
+ * bitiştirmediği kural, delta turunun (foreground/reconnect'te çalışan AYNI
+ * yol) bu ucundan da geçerli olmak zorundaydı — aksi hâlde "pencereye canlı
+ * mesaj bitişmiyor" iddiası YALANDI: kullanıcı iki yıl önceki bir mesaja
+ * atlayıp uygulamayı arka plana alıp dönseydi, delta turu AYNI yanlış
+ * sonucu (bugünün mesajı eski pencereye yapışıyor) farklı bir kapıdan
+ * üretirdi — ve bu kapı, foreground'da HER ZAMAN çalıştığı için `receiveMessage`
+ * (bağlı soket gerektiren) yolundan daha SIK tetiklenen kapı.
+ *
+ * Watermark/disk yazımı bu testlerin KONUSU DEĞİL (ve fonksiyonun kendi
+ * yorumu bunu açıklıyor): `pullChanges()` (chatDeltaSync.run) `applyPage` ile
+ * diske yazıp watermark'ı `applyDeltaFromLocal`den TAMAMEN BAĞIMSIZ, ondan
+ * ÖNCE ilerletiyor — bu testler onu DEĞİŞTİRMEDEN, yalnız disk→Redux
+ * projeksiyonunun pencereli bucket'ı atladığını VE flag temizlenince o
+ * projeksiyonun GÜNCEL hâli (atlanan turun diske yazdığı mesaj dahil)
+ * yakaladığını pinliyor.
+ */
+describe('pencereli (jump) bucket — delta turu', () => {
+  it('pencereliyken gelen delta turu PENCEREYİ BOZMUYOR — mesaj diske yazılıyor ama bucket\'a bitişmiyor', async () => {
+    const target = msg('m-target', { sentAt: T_OLD });
+    saveMessage(target, CONV);
+    const store = makeStore((s) =>
+      reducer(
+        s,
+        hydrateWindow({
+          conversationId: CONV,
+          messages: [target],
+          nextCursor: null,
+          hasMore: true,
+          hasHiddenHistory: false,
+          isWindowed: true,
+        }),
+      ),
+    );
+    expect(bucketOf(store).isWindowed).toBe(true);
+
+    getChanges.mockResolvedValueOnce(page({ messages: [msg('m-live', { sentAt: T_NEW })] }));
+    const result = await pullChanges();
+    applyDeltaFromLocal(store, result.applied);
+
+    // Bucket DEĞİŞMEDİ — canlı mesaj pencereye bitişmedi.
+    expect(bucketOf(store).messages.map((m) => m.id)).toEqual(['m-target']);
+    expect(bucketOf(store).isWindowed).toBe(true);
+
+    // Ama mesaj GERÇEKTEN DİSKE yazıldı — tur KAYBOLMADI, yalnız ekrana
+    // yansıması `hydrateConversation`e (flag temizlenince) bırakıldı.
+    const onDisk = readWindow(CONV, 10).map((r) => r.id);
+    expect(onDisk).toContain('m-live');
+  });
+
+  it('flag temizlenince (hydrateConversation) pencere GÜNCELE DÖNÜYOR — atlanan tur artık görünüyor', async () => {
+    const target = msg('m-target', { sentAt: T_OLD });
+    saveMessage(target, CONV);
+    const store = makeStore((s) =>
+      reducer(
+        s,
+        hydrateWindow({
+          conversationId: CONV,
+          messages: [target],
+          nextCursor: null,
+          hasMore: true,
+          hasHiddenHistory: false,
+          isWindowed: true,
+        }),
+      ),
+    );
+
+    getChanges.mockResolvedValueOnce(page({ messages: [msg('m-live', { sentAt: T_NEW })] }));
+    const result = await pullChanges();
+    applyDeltaFromLocal(store, result.applied);
+    // Önceki testin pinlediği ara durum: pencere hâlâ eski, mesaj diskte.
+    expect(bucketOf(store).messages.map((m) => m.id)).toEqual(['m-target']);
+
+    // "Son mesaja dön" (ChatScreen.handleGoToLatest) TAM OLARAK bunu çağırıyor.
+    hydrateConversation(store.dispatch, CONV);
+
+    // Pencere artık GÜNCEL: delta turunun yazdığı mesaj GÖRÜNÜYOR, flag indi.
+    expect(bucketOf(store).messages.map((m) => m.id)).toEqual(['m-live', 'm-target']);
+    expect(bucketOf(store).isWindowed).toBe(false);
   });
 });

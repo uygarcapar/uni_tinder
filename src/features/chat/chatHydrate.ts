@@ -116,6 +116,18 @@ export function readFailedOutboxFromLocal(opts?: {
  * pratikte bu açık sohbet (ve geçmişte açılmış birkaç tanesi), yani tur başına
  * 0-1 indeksli okuma. Bucket'ı olmayan sohbeti ısıtmak boşa iş olurdu — oraya
  * girildiğinde hydrateConversation zaten diskten okuyor.
+ *
+ * ── PENCERELİ (hedefli atlama) bucket'lar da bu okumadan MUAF ────────────────
+ * Review turu 2, Önemli 4'ün kapanışı: `isWindowed:true` bucket'lar için
+ * `readWindow` (arşivin DİBİ) burada HİÇ OKUNMUYOR — okusak bile
+ * `chatSlice.applyLocalDelta` onu merge etmeyecek (aynı kuralın orada da
+ * yazılı kopyası), yani okuma SAF İSRAF olurdu. `receiveMessage`deki AYNI
+ * gerekçe: mesaj zaten diske indi (bu fonksiyonun ÜSTÜNDEki `chatDeltaSync.run`
+ * `applyPage` ile yazıp watermark'ı BU fonksiyondan TAMAMEN BAĞIMSIZ ilerletti),
+ * iki yıl önceki bir pencereye yapıştırmak hiç göstermemekten daha yanıltıcı.
+ * Pencere "son mesaja dön" (ChatScreen) ya da taze giriş (hydrateConversation)
+ * ile temizlenince hot-window okuması zaten SQLite'taki GÜNCEL hâli görür —
+ * bu turda atlanan hiçbir şey kaybolmuyor, yalnız EKRANA yansıması gecikiyor.
  */
 export function applyDeltaFromLocal(
   store: { getState: () => any; dispatch: (action: any) => void },
@@ -129,7 +141,8 @@ export function applyDeltaFromLocal(
     const buckets = store.getState()?.chat?.messagesByConv ?? {};
     const windowsByConv: Record<string, MessageDto[]> = {};
     for (const conversationId of touched) {
-      if (!buckets[conversationId]) continue;
+      const bucket = buckets[conversationId];
+      if (!bucket || bucket.isWindowed) continue;
       const rows = readWindow(conversationId, HOT_WINDOW);
       if (rows.length) {
         windowsByConv[conversationId] = projectWindow(conversationId, rows);
