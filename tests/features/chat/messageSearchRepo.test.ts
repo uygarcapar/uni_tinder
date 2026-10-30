@@ -250,15 +250,32 @@ describe.each([
     expect(searchMessages('iki dolgu', { limit: 10 }).map((h) => h.messageId)).toEqual(['m1']);
   });
 
-  // Review turu 1, Önemli 4: LIKE deseninde `_` SQL'de "herhangi bir
-  // karakter" jokeri — kaçırma olmadan 'a_b' sorgusu 'axb'yi de eşleştirirdi
-  // (sessiz AŞIRI-eşleşme). `prepareSearchQuery` bu karakteri reddetmiyor,
-  // yani kaçırma SQL katmanında olmak zorunda (bkz. `escapeLikeToken`).
-  it('LIKE jokeri "_" LİTERAL aranıyor, "herhangi bir karakter" olarak YORUMLANMIYOR', () => {
-    saveMessage(msg('m1', 'a_b test'), CONV);
-    saveMessage(msg('m2', 'axb test'), CONV); // '_' joker olsaydı BU DA eşleşirdi
+  // Review turu 1, Önemli 4 — ORİJİNAL TESTİN TARİHÇESİ: burada önceden
+  // 'a_b' sorgusunun 'axb'yi eşleştirmediğini kontrol eden bir test vardı.
+  // Review turu 2'nin `tokenizeFolded`ı (sorguyu `\p{L}\p{N}` sınırında
+  // bölme) devreye girince o senaryo ARTIK ULAŞILAMAZ hâle geldi: 'a_b'
+  // sorgusu SQL'e varmadan ['a','b'] tokenlarına bölünüyor, yani tek bir
+  // LIKE desenin İÇİNDE `_` hiç OLUŞAMIYOR — `escapeLikeToken` artık
+  // SAVUNMA amaçlı (bkz. oradaki yorum), gerçek bir girdi onu hiç
+  // tetiklemiyor. Eski testi KORUMAK (doc'u 'a_b test' tutup) onu yeni
+  // tokenizasyonun KASITLI, belgelenen residual'ına (sembol kelimenin
+  // İÇİNDE → belge tarafı FTS/LIKE'ta farklı tokenize oluyor, bkz.
+  // `searchMessages` yorumundaki "RESIDUAL" bölümü) çarptırıp YANLIŞ
+  // sebeple kırılırdı; o yüzden kaldırıldı, escape mekanizması
+  // `escapeLikeToken`'ın kendi yorumunda gerekçelendi.
 
-    expect(searchMessages('a_b', { limit: 10 }).map((h) => h.messageId)).toEqual(['m1']);
+  // Review turu 2 ruling — ÇEKİRDEK istek: SORGU tarafı iki yolda da AYNI
+  // sınırda (unicode61'inkiyle) tokenize ediliyor. "100%" kullanıcının
+  // GERÇEKTEN yazabileceği bir girdi (fiyat/indirim) — `%` ayraç sayılıp
+  // ATILIYOR, kalan tek token "100" HER İKİ yolda da AYNI. Review turu 1'de
+  // LIKE tarafı ham sorguyu yalnız BOŞLUĞA göre bölüyordu, yani "100%" LIKE'ta
+  // kaçırılmış LİTERAL "100%" arıyordu ve "100 indirim" gibi mesajı ASLA
+  // bulamazdı — FTS ise kendi tokenizer'ıyla zaten "100"a iniyordu. Bu test
+  // o ayrışmanın KAPANDIĞINI iki kapasitede de pinliyor.
+  it('sorgu tarafı unicode61 sınırında tokenize ediliyor — "100%" tek token "100"a iniyor, iki yolda da AYNI', () => {
+    saveMessage(msg('m1', '100 indirim'), CONV);
+
+    expect(searchMessages('100%', { limit: 10 }).map((h) => h.messageId)).toEqual(['m1']);
   });
 
   // Review turu 1, Minör 1: eski kod yalnız `foldedQuery === ''`i reddediyordu

@@ -142,14 +142,27 @@ export function pruneOrphanSearchIndex(): number {
 }
 
 /**
- * Katlanmış sorguyu boşluğa göre tokenlara böler. Boş/yalnız-boşluk girişte
- * `[]` — İKİ SQL şeklinin de "arama yok" kararını AYNI yerden alması için
- * (review turu 1: whitespace-only girişte FTS `[]` dönerken LIKE eski kodda
- * `LIKE '%  %'`yi çalıştırıp çift boşluk içeren HER ŞEYİ eşleştiriyordu —
- * iki şekil burada da ayrışmasın diye tokenizasyon tek yerde).
+ * Katlanmış sorguyu FTS5'in `unicode61` tokenizer'ıyla AYNI sınırda böler:
+ * harf/rakam (`\p{L}\p{N}`) TOKEN, geri kalan HER ŞEY (boşluk, noktalama,
+ * sembol: `%`, `_`, `&`, `'`, …) AYRAÇ ve ATILIR. Boş/yalnız-ayraç girişte
+ * `[]`.
+ *
+ * ── DEĞİŞMEZ (review turu 2'nin ruling'i): SORGU iki şekilde de AYNI
+ *    tokenlara bölünüyor ──────────────────────────────────────────────────
+ * `toFtsMatchQuery` ve `buildLikePredicate` bu fonksiyonun döndürdüğü AYNI
+ * `tokens` dizisini alıyor. Kullanıcının yazdığı "100%" HER İKİ yolda da TEK
+ * token "100"a iner, "Ayşe'nin" HER İKİ yolda da ["ayse","nin"]'e (katlama
+ * önce geçmiş olmalı). Review turu 1'de LIKE tarafı ham sorguyu yalnız
+ * BOŞLUĞA göre bölüyordu ve bu yüzden "100%" FTS'te "100"a inip "100" geçen
+ * HER ŞEYİ bulurken, LIKE'ta kaçırılmış LİTERAL "100%"yi arayıp yalnız o TAM
+ * diziyi buluyordu — iki şekil kullanıcının GERÇEKTE yazdığı bir girdide
+ * (arama kutusuna "%" ya da "'" YAZMAK sıra dışı değil) ayrışıyordu. Tokenize
+ * kararını SQL'den ÖNCE, SORGU üzerinde, TEK yerde vermek bunu kapatıyor —
+ * ayrıntı ve BELGE tarafındaki kapatılmayan residual için `searchMessages`
+ * yorumuna bkz.
  */
 function tokenizeFolded(folded: string): string[] {
-  return folded.split(/\s+/).filter(Boolean);
+  return folded.match(/[\p{L}\p{N}]+/gu) ?? [];
 }
 
 /**
@@ -183,7 +196,17 @@ function toFtsMatchQuery(tokens: string[]): string | null {
   return tokens.map((t) => `"${t.replace(/"/g, '""')}"*`).join(' ');
 }
 
-/** LIKE desenlerinde ÖZEL anlamı olan üç karakteri kaçırır: `\`, `%`, `_`. */
+/**
+ * LIKE desenlerinde ÖZEL anlamı olan üç karakteri kaçırır: `\`, `%`, `_`.
+ *
+ * Review turu 2'den sonra bu fonksiyon artık KEMER + ASKI: `tokenizeFolded`
+ * tokenları yalnız `\p{L}\p{N}`den kurduğu için bir token İÇİNDE `%`/`_`
+ * oluşması ARTIK MÜMKÜN DEĞİL (tokenizer onları ayraç sayıp zaten atıyor).
+ * Yine de BURADA DURUYOR — kaçırma, "tokenlar yalnız alfanümerik" kararının
+ * `tokenizeFolded`da SESSİZCE değişmesine bağımlı kalmasın diye (review turu
+ * 1, Önemli 4'ün orijinal bulgusu: kaçırmasız `a_b` sorgusu `axb`yi de
+ * eşleştiriyordu). Maliyeti sıfıra yakın, bırakılması ucuz bir sigorta.
+ */
 function escapeLikeToken(token: string): string {
   return token.replace(/[\\%_]/g, (c) => `\\${c}`);
 }
@@ -197,12 +220,6 @@ function escapeLikeToken(token: string): string {
  * `content_folded` boşlukla ayrılmış katlanmış kelimelerin dizisi (bkz.
  * `searchableFolded`), yani "kelime başı" `LIKE 'tok%' OR LIKE '% tok%'`
  * ikilisiyle TAM ifade edilebiliyor — ayrı bir tokenizer kurmaya gerek yok.
- *
- * `ESCAPE '\'` ŞART: kaçırma olmadan kullanıcının yazdığı `_` (SQL'de "her
- * hangi bir karakter") ve `%` (SQL'de "her hangi bir dizi") LITERAL değil
- * JOKER okunur — `a_b` sorgusu `axb`yi de eşleştirirdi (review turu 1,
- * Önemli 4). `prepareSearchQuery` bu karakterleri REDDETMİYOR (yalnız bir
- * harf/rakam şartı var), yani kaçırma burada, SQL katmanında olmak zorunda.
  */
 function buildLikePredicate(tokens: string[]): { sql: string; params: SqlValue[] } {
   const params: SqlValue[] = [];
@@ -242,6 +259,29 @@ function buildLikePredicate(tokens: string[]): { sql: string; params: SqlValue[]
  *    milisaniyedeki mesajlar için kararlı tiebreaker (readOlder ile aynı
  *    gerekçe).
  *  • AYNI sonuç şekli: `MessageSearchHit`.
+ *  • AYNI SORGU tokenizasyonu: `tokenizeFolded` ikisinin de GİRDİSİ — "100%"
+ *    HER İKİ yolda da TEK token "100"a iner (review turu 2 ruling'i,
+ *    `tokenizeFolded`'daki yorum).
+ *
+ * ── RESIDUAL — belgelenmiş, KASITLI olarak DÜZELTİLMEDİ (review turu 2) ─────
+ * Yukarıdaki değişmez yalnız SORGU tarafı için. BELGE (mesaj içeriği) tarafı
+ * hâlâ FARKLI yollardan geçiyor: FTS indeksi `content_folded`ı KENDİ
+ * `unicode61` tokenizer'ıyla böler (bkz. chatDb.ts'teki `CREATE_MESSAGES_FTS`),
+ * LIKE ise aynı kolonu HAM DİZE olarak LIKE'lar. Yani arşivde "a&b" diye
+ * YAZILMIŞ bir mesaj FTS indeksinde `["a","b"]`'ye bölünür ama LIKE'ın
+ * gördüğü `content_folded` hâlâ bitişik "a&b"dir — "b" sorgusu o satırı
+ * FTS'te BULUR, LIKE'ta BULAMAZ. Kapatmak `content_folded`ı YAZMA ANINDA
+ * (Task 2'nin yazıcı kapısı, `searchableFolded`) noktalamadan arındırıp
+ * TÜM arşivi yeniden indekslemeyi gerektirirdi: kelimenin İÇİNDE sembol
+ * geçen (nadir) bir mesaj girdi şekli için orantısız büyük bir değişiklik.
+ * Bilerek BIRAKILDI — ayrıca bu residual yalnız LIKE YOLUNDA yaşıyor ve
+ * `expo-sqlite@56.0.6` FTS5'i HER İKİ platformda da derliyor, bu projede
+ * `expo.sqlite.enableFTS` kapatma bayrağı YOK (bkz. chatDb.ts'teki
+ * `isFtsAvailable` yorumu) — yani bugün HİÇBİR canlı derleme LIKE yoluna HİÇ
+ * GİRMİYOR; yedek yalnız o bayrak bir gün AÇILIRSA aramayı BRICK etmek yerine
+ * YAVAŞ-ama-ÇALIŞIR'a indirmek için var. Bu ikisinin ikisi birden (nadir
+ * girdi şekli + bugün koşmayan yol) residual'ı DÜZELTMEYE değmez kılıyor —
+ * ama "iki şekil HER DURUMDA özdeş" diye OKUNMASIN, öyle değil.
  */
 export function searchMessages(
   foldedQuery: string,
