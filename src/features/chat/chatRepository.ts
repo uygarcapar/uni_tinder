@@ -1,4 +1,9 @@
-import { getChatDb, type ChatDbDriver, type SqlValue } from '@/features/chat/db/chatDb';
+import {
+  getChatDb,
+  isFtsAvailable,
+  type ChatDbDriver,
+  type SqlValue,
+} from '@/features/chat/db/chatDb';
 import { BACKFILL_MAX_FAILURES } from '@/features/chat/backfillPolicy';
 import {
   rowToConversation,
@@ -14,6 +19,7 @@ import { ContentType, contentTypeToNumber } from '@/features/chat/contentType';
 import { rekey as rekeyCache } from '@/features/chat/messageCache';
 import { normalizeMessage } from '@/features/chat/normalizeMessage';
 import { utcTime } from '@/shared/utils/dateUtc';
+import { foldTr } from '@/shared/utils/foldTr';
 import type { ConversationListItemDto, MessageDto } from '@/shared/types';
 
 /**
@@ -31,17 +37,63 @@ const MESSAGE_COLUMNS = `
   sent_at, sent_at_ms, read_at, delivered_at, edited_at, deleted_at,
   deleted_for_everyone, media_url, duration_ms, waveform_peaks,
   reply_to_message_id, reply_to_json, reactions_json, is_system_message,
-  is_sender_deleted, localization_key, send_state, local_uri`;
+  is_sender_deleted, localization_key, send_state, local_uri, content_folded`;
 
-function messageParams(raw: MessageDto, conversationId: string, sendState: SendState): SqlValue[] {
+/**
+ * Aranabilir metin. Katlama `foldTr` ile JS'te yapılıyor, FTS'in `unicode61`
+ * tokenizer'ına BIRAKILMIYOR: `ı` (U+0131) aksan değil ayrı bir harf,
+ * `remove_diacritics` onu `i`ye indiremez. Aynı fonksiyon sohbet adı
+ * aramasının da kuralı — iki arama tek kuralı paylaşsın diye.
+ *
+ * YALNIZ metin mesajı indeksleniyor: sesli/görsel mesajın `content`i boş ya da
+ * teknik, indekse girerse kullanıcıya boş gövdeli sonuçlar üretir.
+ *
+ * Sistem mesajı da DIŞARIDA ve ayrı bir bayrakla: `contentType`ı 99 olmak
+ * ZORUNDA DEĞİL (ekranın tamamı `isSystemMessage`e bakıyor, bkz.
+ * ChatScreen.tsx:179) ve gövdesi kullanıcının yazdığı bir şey değil —
+ * sunucunun metni ya da bir `localization_key`.
+ *
+ * Metin olmayanda '' döner, NULL DEĞİL — NULL bu kolonda "hiç hesaplanmadı"
+ * demek (v10 öncesi arşiv) ve `backfillContentFolded` tam o satırları
+ * seçiyor; buradan NULL yazsaydık sesli mesajlar her doldurma turunda
+ * yeniden seçilir, hiç dolmaz ve tur sıfıra inmezdi.
+ */
+function searchableFolded(content: string, contentType: number, isSystem: boolean): string {
+  if (contentType !== ContentType.Text || isSystem) return '';
+  return foldTr(content).trim();
+}
+
+/**
+ * FTS satırını tazeler. Sanal tablonun UNIQUE kısıtı YOK — düzenlenen bir
+ * mesaj çıplak INSERT'le her seferinde bir satır daha biriktirirdi; o yüzden
+ * önce SİL sonra YAZ.
+ */
+function syncFtsRow(db: ChatDbDriver, messageId: string, folded: string): void {
+  if (!isFtsAvailable()) return;
+  db.run('DELETE FROM messages_fts WHERE message_id = ?', [messageId]);
+  if (folded) {
+    db.run('INSERT INTO messages_fts (content_folded, message_id) VALUES (?,?)', [
+      folded,
+      messageId,
+    ]);
+  }
+}
+
+function messageParams(
+  raw: MessageDto,
+  conversationId: string,
+  sendState: SendState,
+): { id: string; folded: string; params: SqlValue[] } {
   const m = normalizeMessage(raw, conversationId);
-  return [
+  const contentType = typeof m.contentType === 'number' ? m.contentType : 0;
+  const folded = searchableFolded(m.content ?? '', contentType, !!m.isSystemMessage);
+  const params: SqlValue[] = [
     m.id,
     m.conversationId ?? conversationId,
     m.clientMessageId ?? null,
     m.senderId ?? null,
     m.content ?? '',
-    typeof m.contentType === 'number' ? m.contentType : 0,
+    contentType,
     m.sentAt,
     utcTime(m.sentAt),
     m.readAt ?? null,
@@ -60,7 +112,9 @@ function messageParams(raw: MessageDto, conversationId: string, sendState: SendS
     m.localizationKey ?? null,
     sendState,
     m._localUri ?? null,
+    folded,
   ];
+  return { id: m.id, folded, params };
 }
 
 /**
@@ -84,7 +138,7 @@ function messageParams(raw: MessageDto, conversationId: string, sendState: SendS
  */
 const UPSERT_MESSAGE = `
 INSERT INTO messages (${MESSAGE_COLUMNS})
-VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)
+VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)
 ON CONFLICT(id) DO UPDATE SET
   client_message_id    = COALESCE(excluded.client_message_id, messages.client_message_id),
   sender_id            = excluded.sender_id,
@@ -108,6 +162,9 @@ ON CONFLICT(id) DO UPDATE SET
   localization_key     = excluded.localization_key,
   send_state           = excluded.send_state,
   local_uri            = COALESCE(excluded.local_uri, messages.local_uri),
+  -- content + content_type TÜREVİ; ayrı bir WHERE terimi yok, ikisi de
+  -- aşağıda zaten karşılaştırılıyor.
+  content_folded       = excluded.content_folded,
   row_version          = messages.row_version + 1
 WHERE messages.sender_id            IS NOT excluded.sender_id
    OR messages.content              IS NOT excluded.content
@@ -197,9 +254,22 @@ export function upsertMessage(
         raw.id,
         existing.id,
       ]);
+      // Arama indeksi `messages.id`ye bağlı ama FK'sı yok: eski id'nin satırı
+      // kalsaydı `messages`ta artık bulunmayan bir id'ye işaret eden kalıcı bir
+      // indeks satırı olurdu.
+      if (isFtsAvailable()) {
+        db.run('DELETE FROM messages_fts WHERE message_id = ?', [existing.id]);
+      }
     }
   }
-  db.run(UPSERT_MESSAGE, messageParams(raw, conversationId, sendState));
+  const { id, folded, params } = messageParams(raw, conversationId, sendState);
+  db.run(UPSERT_MESSAGE, params);
+  // Mesajın diske indiği DÖRT yol da (realtime, messageSent, geçmiş sayfası,
+  // delta turu) buradan geçiyor — katlanmış kolon ve indeks satırı bu TEK
+  // kapıda yazılıyor, çağrı yerlerinde değil. Satır gerçekten değişmemişse
+  // yukarıdaki UPDATE düşer ama indeks yine tazelenir: idempotent ve eksik
+  // kalmış bir indeks satırını kendiliğinden onarıyor.
+  syncFtsRow(db, id, folded);
 }
 
 export function upsertMessages(
@@ -222,6 +292,55 @@ export function saveMessage(
   sendState: SendState = 'sent',
 ): void {
   upsertMessage(getChatDb(), raw, conversationId, sendState);
+}
+
+/**
+ * v10 ÖNCESİNDEN kalan arşivi tek seferlik doldurur; doldurulan satır sayısını
+ * döner. 0 dönene dek tekrar tekrar çağrılacak şekilde tasarlandı.
+ *
+ * Neden şart: v10 kolonu her mevcut satıra NULL olarak ekliyor. Doldurulmazsa
+ * arama o mesajları HİÇ bulamaz — ve bu kullanıcıya "arama bozuk" diye değil
+ * "o mesaj yok" diye görünür, yani sessiz ve yanıltıcı bir eksiklik.
+ *
+ * `content_folded IS NULL` hem seçim hem ilerleme ölçüsü: yazılan her satır
+ * kümeden kalıcı olarak çıkıyor (metin olmayana da '' yazılıyor, NULL değil),
+ * böylece tur monoton ilerliyor ve aynı satırı iki kez saymıyor. Yeniden
+ * başlatmada kaldığı yerden devam eder — ayrı bir imleç tutmaya gerek yok.
+ *
+ * EN YENİDEN geriye: kullanıcının aradığı şey büyük olasılıkla yakın geçmişi,
+ * arşivin kuyruğu beklesin.
+ *
+ * `row_version` BİLEREK artmıyor: bu kolon ekrana projekte edilmiyor, artırmak
+ * tüm arşivi messageCache'in hızlı yolundan düşürür ve karşılığında hiçbir
+ * görsel fark üretmezdi.
+ */
+export function backfillContentFolded(limit: number): number {
+  const db = getChatDb();
+  const rows = db.getAll<{
+    id: string;
+    content: string;
+    content_type: number;
+    is_system_message: number;
+  }>(
+    `SELECT id, content, content_type, is_system_message FROM messages
+     WHERE content_folded IS NULL
+     ORDER BY sent_at_ms DESC
+     LIMIT ?`,
+    [limit],
+  );
+  if (!rows.length) return 0;
+  db.transaction(() => {
+    for (const row of rows) {
+      const folded = searchableFolded(
+        row.content ?? '',
+        row.content_type,
+        !!row.is_system_message,
+      );
+      db.run('UPDATE messages SET content_folded = ? WHERE id = ?', [folded, row.id]);
+      syncFtsRow(db, row.id, folded);
+    }
+  });
+  return rows.length;
 }
 
 // ── Okuma yolu (keyset — asla OFFSET) ───────────────────────────────────────
@@ -1225,6 +1344,9 @@ export function clearAllChatData(): void {
   const db = getChatDb();
   db.transaction(() => {
     db.run('DELETE FROM messages');
+    // Arama indeksi katlanmış da olsa mesaj metnini taşıyor — `messages` ile
+    // AYNI anda gitmeli.
+    if (isFtsAvailable()) db.run('DELETE FROM messages_fts');
     db.run('DELETE FROM conversations');
     db.run('DELETE FROM sync_state');
     db.run('DELETE FROM send_attempts');

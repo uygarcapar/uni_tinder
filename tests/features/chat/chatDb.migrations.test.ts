@@ -18,12 +18,18 @@ function userVersion(db: ChatDbDriver) {
   return db.getFirst<{ user_version: number }>('PRAGMA user_version')?.user_version ?? 0;
 }
 
+/**
+ * `messages_fts_*` gölge tabloları fts5'in KENDİ iç defteri (data/idx/docsize);
+ * şemanın bir parçası değil, sanal tablonun uygulama ayrıntısı. Sanal tablonun
+ * kendisi listede — o, migration zincirinin DIŞINDA ama `openChatDb`ın ürünü.
+ */
 function tableNames(db: ChatDbDriver) {
   return db
     .getAll<{ name: string }>(
       "SELECT name FROM sqlite_master WHERE type = 'table' AND name NOT LIKE 'sqlite_%' ORDER BY name",
     )
-    .map((r) => r.name);
+    .map((r) => r.name)
+    .filter((name) => !name.startsWith('messages_fts_'));
 }
 
 beforeEach(() => {
@@ -39,6 +45,7 @@ describe('chat db migrations', () => {
     expect(tableNames(db)).toEqual([
       'conversations',
       'messages',
+      'messages_fts',
       'meta',
       'pending_mutations',
       'send_attempts',

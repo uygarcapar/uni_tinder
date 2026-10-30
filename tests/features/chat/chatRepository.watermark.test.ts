@@ -43,10 +43,13 @@ describe('şema v3 — meta tablosu', () => {
       .getAll<{ name: string }>(
         "SELECT name FROM sqlite_master WHERE type = 'table' AND name NOT LIKE 'sqlite_%' ORDER BY name",
       )
-      .map((t) => t.name);
+      .map((t) => t.name)
+      // fts5'in gölge tabloları (data/idx/docsize) sanal tablonun iç defteri.
+      .filter((name) => !name.startsWith('messages_fts_'));
     expect(tables).toEqual([
       'conversations',
       'messages',
+      'messages_fts',
       'meta',
       'pending_mutations',
       'send_attempts',

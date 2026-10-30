@@ -46,6 +46,60 @@ function createExpoDriver(db: SQLite.SQLiteDatabase): ChatDbDriver {
 }
 
 let driver: ChatDbDriver | null = null;
+let ftsAvailable = false;
+
+/**
+ * Aramanın FTS5 indeksi — şema zincirinin DIŞINDA, kapasite kapısının ardında.
+ *
+ * Bu, "SQL yalnız chatRepository'de" kuralının TEK istisnası: ifadenin kendisi
+ * kapasite probe'uyla ayrılmaz, ikisini iki dosyaya bölmek kapının açık
+ * unutulmasına davetiye olurdu.
+ *
+ * ── Neden migration zincirinde değil ────────────────────────────────────────
+ * expo-sqlite bugün FTS5'i her iki platformda da derliyor (podspec/gradle/spm
+ * üçü de `-DSQLITE_ENABLE_FTS5=1`) ve projede kapatma bayrağı yok. Ama bir gün
+ * kapatılırsa bu ifade ATAR; zincirin içinde olsaydı atması migration
+ * transaction'ını geri alır, `openChatDb` her açılışta atar ve ayna kendini
+ * devre dışı bırakırdı — sohbet local-first yolunu TAMAMEN kaybeder. Burada
+ * atması ise yalnız aramayı `content_folded` üzerinde LIKE'a düşürür: doğru,
+ * yalnız yavaş. İhtimal aynı, bedeller arasında dağlar var; bu yüzden ifade
+ * sürümsüz, idempotent (`IF NOT EXISTS`) ve try/catch içinde.
+ *
+ * `content_folded` burada da katlanmış metni tutuyor; GÖSTERİLECEK içerik
+ * indekste DEĞİL — arama sonucu `messages` satırına join'lenip orijinal
+ * `content` okunuyor (Task 3'ün `MessageSearchHit`i). İndekste ikinci bir kopya
+ * tutmak, aynı metni iki yerde tazeleme borcu demekti.
+ */
+const CREATE_MESSAGES_FTS = `
+CREATE VIRTUAL TABLE IF NOT EXISTS messages_fts USING fts5(
+  content_folded, message_id UNINDEXED, tokenize='unicode61'
+);`;
+
+function probeFts(db: ChatDbDriver): boolean {
+  try {
+    const row = db.getFirst<{ ok: number }>(
+      "SELECT sqlite_compileoption_used('ENABLE_FTS5') AS ok",
+    );
+    if (!row?.ok) return false;
+    db.exec(CREATE_MESSAGES_FTS);
+    return true;
+  } catch (error) {
+    // Probe "var" dediği hâlde yaratım düşerse (ör. tablo bozuk) arama yine
+    // LIKE'a düşsün; açılışı buradan ASLA patlatma.
+    console.error('messages_fts unavailable, search falls back to LIKE:', error);
+    return false;
+  }
+}
+
+/**
+ * FTS indeksi bu cihazda kullanılabilir mi. `openChatDb` içinde BİR kez
+ * ölçülüyor — yazma kapısı ve arama sorgusu aynı cevabı kullanmak zorunda,
+ * yoksa indekse yazılmamış satırlar FTS yoluyla aranır ve sessizce "sonuç yok"
+ * çıkar.
+ */
+export function isFtsAvailable(): boolean {
+  return ftsAvailable;
+}
 
 /**
  * Veritabanını açar, PRAGMA'ları uygular ve migration'ları çalıştırır.
@@ -68,6 +122,7 @@ export function openChatDb(): ChatDbDriver {
     'PRAGMA journal_mode = WAL; PRAGMA synchronous = NORMAL; PRAGMA foreign_keys = ON;',
   );
   runMigrations(next);
+  ftsAvailable = probeFts(next);
   driver = next;
   return driver;
 }
@@ -85,7 +140,9 @@ export function getChatDb(): ChatDbDriver {
  */
 export function destroyChatDb(): void {
   const current = driver;
+  const hadFts = ftsAvailable;
   driver = null;
+  ftsAvailable = false;
   if (!current) {
     try {
       SQLite.deleteDatabaseSync(CHAT_DB_NAME);
@@ -102,6 +159,9 @@ export function destroyChatDb(): void {
     try {
       current.transaction(() => {
         current.run('DELETE FROM messages');
+        // Arama indeksi katlanmış da olsa ÖNCEKİ kullanıcının mesaj metnini
+        // taşıyor; `messages` ile aynı anda gitmek zorunda.
+        if (hadFts) current.run('DELETE FROM messages_fts');
         current.run('DELETE FROM conversations');
         current.run('DELETE FROM send_attempts');
         current.run('DELETE FROM sync_state');
@@ -118,4 +178,5 @@ export function destroyChatDb(): void {
 /** Yalnız test içindir — modül singleton'ını sıfırlar. */
 export function __resetChatDbForTests(): void {
   driver = null;
+  ftsAvailable = false;
 }

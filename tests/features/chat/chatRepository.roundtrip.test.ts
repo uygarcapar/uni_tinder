@@ -92,6 +92,7 @@ describe('şema sürümü', () => {
     // v10: backfill'in kalıcı-hata sayacını düşür — yoksa v10 kendi ADD
     // COLUMN'unda "duplicate column name" ile patlar.
     db.exec('ALTER TABLE sync_state DROP COLUMN backfill_failures');
+    db.exec('ALTER TABLE messages DROP COLUMN content_folded');
     db.exec('PRAGMA user_version = 1');
 
     __resetChatDbForTests();

@@ -292,10 +292,9 @@ CREATE TABLE pending_mutations (
 `;
 
 /**
- * v10 — Faz 3'ten devreden iki ön koşul; backfill tarafı burada, Task 2'nin
- * `messages.content_folded`'ı (arama için katlanmış içerik) aynı sürüme
- * ekleniyor. Bu dal UNRELEASED bir branch'te: ikisi ayrı migration'lar DEĞİL,
- * tek v10'un iki eklentisi.
+ * v10 — Faz 3'ten devreden ön koşul (`backfill_failures`) ve aramanın
+ * katlanmış içerik kolonu (`content_folded`). Bu dal UNRELEASED bir branch'te:
+ * ikisi ayrı migration'lar DEĞİL, tek v10'un iki eklentisi.
  *
  * ── `backfill_failures` ─────────────────────────────────────────────────────
  * Bir sohbetin backfill turunda üst üste aldığı KALICI hata sayısı (429 HARİÇ
@@ -307,9 +306,32 @@ CREATE TABLE pending_mutations (
  * `backfillPolicy.BACKFILL_MAX_FAILURES`; sayaç başarılı bir sayfada sıfırlanır
  * (bkz. chatRepository.clearBackfillFailures) — geçici bir arızadan kurtulan
  * sohbet rafa kalkmaz.
+ *
+ * ── `content_folded` ────────────────────────────────────────────────────────
+ * Mesaj içeriğinin `foldTr` ile katlanmış hâli; arama BU kolonun üzerinde
+ * koşuyor, böylece Türkçe kuralı (`ı`/`İ` ayrı harf) isim aramasıyla birebir
+ * aynı. Üç durumlu: NULL = "hiç hesaplanmadı" (v10 öncesinden kalan arşiv,
+ * `chatRepository.backfillContentFolded` tek seferlik dolduruyor), '' =
+ * "hesaplandı, indekslenecek metin yok" (sesli/görsel/sistem), dolu = aranabilir
+ * metin. İkisini ayırmak şart: doldurma turu NULL satırları seçiyor, metin
+ * olmayana da NULL yazsaydık o satırlar her turda yeniden seçilip hiç
+ * dolmazdı.
+ *
+ * ── FTS5 sanal tablosu neden BURADA DEĞİL ───────────────────────────────────
+ * Zincirde yalnız `ALTER TABLE ADD COLUMN` var — atması imkânsız bir ifade.
+ * `CREATE VIRTUAL TABLE … USING fts5` ise FTS5 derlenmemiş bir yapıda atar;
+ * burada atmak demek migration transaction'ının geri alınması, `user_version`
+ * ün çakılı kalması, `openChatDb`ın her açılışta atması ve aynanın kendini
+ * devre dışı bırakması demek — yani sohbet local-first yolunu TAMAMEN
+ * kaybeder. Bedel asimetrik: sanal tablo zincir DIŞINDA (chatDb.ts'teki
+ * kapasite kapısının ardında) yaratılamazsa kaybedilen tek şey aramanın hızı
+ * (Task 3 `content_folded` üzerinde LIKE'a düşüyor — doğru, yalnız yavaş);
+ * zincirin içinde yaratılamazsa kaybedilen şey sohbetin tamamı. İhtimali
+ * düşük, bedeli toplam — V7'deki çıplak `DROP TABLE` dersinin aynısı.
  */
 const V10 = `
 ALTER TABLE sync_state ADD COLUMN backfill_failures INTEGER NOT NULL DEFAULT 0;
+ALTER TABLE messages ADD COLUMN content_folded TEXT;
 `;
 
 export const MIGRATIONS: { version: number; up: (db: ChatDbDriver) => void }[] = [
