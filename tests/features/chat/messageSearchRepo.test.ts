@@ -449,6 +449,41 @@ describe('readAround', () => {
     expect(window.reachesNewest).toBe(true);
   });
 
+  // Review turu 5, Minör 2 — SINIR durumu. `after` kadar TAM satır dönen hâl
+  // eskiden `newer.length < after` ile "pencereli" sayılıyordu; bedeli yalnız
+  // gereksiz bir kapsül DEĞİL, Önemli 2'nin bütün konusu: o bucket'ta canlı
+  // mesajlar sessizce yutulur. Sorgu artık `after + 1` isteyip pencereyi
+  // kırpıyor, sınır durumu TAMAMEN kalktı.
+  it('TAM after kadar daha yeni satır varsa (sınır) reachesNewest TRUE ve pencere KIRPILMIŞ', () => {
+    seed(5);
+    const target = getChatDb().getFirst<{ sent_at_ms: number }>(
+      'SELECT sent_at_ms FROM messages WHERE id = ?',
+      ['m3'],
+    )!;
+
+    // m3'ten daha yeni TAM 2 satır var (m4, m5) ve after da 2.
+    const window = readAround(CONV, target.sent_at_ms, 'm3', 1, 2);
+
+    expect(window.reachesNewest).toBe(true);
+    // Prob satırı pencereye GİRMEDİ: after=2 isteniyor, 2 yeni satır var.
+    expect(window.messages.map((m) => m.id)).toEqual(['m5', 'm4', 'm3', 'm2']);
+  });
+
+  it('after kadar daha yeni satır varken DEVAMI da varsa reachesNewest FALSE — prob dışarıda', () => {
+    seed(5);
+    const target = getChatDb().getFirst<{ sent_at_ms: number }>(
+      'SELECT sent_at_ms FROM messages WHERE id = ?',
+      ['m2'],
+    )!;
+
+    // m2'den daha yeni ÜÇ satır var (m3,m4,m5), after=2 → devamı var.
+    const window = readAround(CONV, target.sent_at_ms, 'm2', 1, 2);
+
+    expect(window.reachesNewest).toBe(false);
+    // Prob (m5) pencereye SIZMADI — `after` sözü hâlâ 2.
+    expect(window.messages.map((m) => m.id)).toEqual(['m4', 'm3', 'm2', 'm1']);
+  });
+
   it('en yeni mesajın KENDİSİ hedefse reachesNewest TRUE', () => {
     seed(5);
     const target = getChatDb().getFirst<{ sent_at_ms: number }>(

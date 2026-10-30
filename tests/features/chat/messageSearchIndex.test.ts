@@ -346,6 +346,26 @@ describe('yetim süpürmesinin açılış kapısı', () => {
     expect(repo.isSearchIndexDirty()).toBe(false);
   });
 
+  // Review turu 5, Minör 4 — bayrak DİSKİN durumunu anlatıyor, bu oturumun
+  // kapasitesini DEĞİL. `isFtsAvailable()` kapılı olsaydı: FTS'siz bir
+  // oturumda silinen satırların yetimleri HİÇ işaretlenmez, süpürme artık
+  // koşullu olduğu için kapasiteli hiçbir sonraki açılış onları toplamaz ve
+  // geri kullanılan bir rowid ÇAPASI KAYMIŞ bir indeks satırı bırakır —
+  // bir mesajın metni bir BAŞKASININ kelimeleri altında çıkar.
+  it('FTS KAPALI bir oturumda silme de bayrağı dikiyor', () => {
+    __resetChatDbForTests();
+    __resetAllDatabases();
+    withoutFts5(() => {
+      openChatDb();
+      expect(isFtsAvailable()).toBe(false);
+      saveMessage(msg('m1', 'gidecek', { clientMessageId: 'cmid-1' }), CONV);
+
+      repo.removeByClientMessageId('cmid-1');
+
+      expect(repo.isSearchIndexDirty()).toBe(true);
+    });
+  });
+
   it('retention budaması satır sildiyse süpürme bayraksız da koşuyor', () => {
     // Saklama penceresinin ÇOK dışında bir satır: `pruneExpiredMessages`
     // onu siliyor ve dönüş değeri > 0 oluyor — bayrağa gerek yok.

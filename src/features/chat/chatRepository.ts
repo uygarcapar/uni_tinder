@@ -184,7 +184,19 @@ export function pruneOrphanSearchIndex(): void {
 const SEARCH_INDEX_DIRTY_KEY = 'search_index_dirty';
 
 export function markSearchIndexDirty(): void {
-  if (!isFtsAvailable()) return;
+  // ⚠️ `isFtsAvailable()` KAPISI YOK, bilerek (review turu 5, Minör 4).
+  // Bayrak DİSKİN durumunu anlatıyor, bu oturumun kapasitesini DEĞİL.
+  // Kapılıyken: `probeFts` patlamış bir oturumda (Önemli 6'nın
+  // erişilebilirlik gerekçesinin TAM AYNISI) bir `removeOptimisticMessage`
+  // ya da boşluk-değiştiren sayfa satır siliyor, bayrak HİÇ dikilmiyor ve
+  // kapasiteli hiçbir sonraki açılış o yetimleri süpürmüyordu — süpürme
+  // koşullu hâle geldiği için artık "her açılış zaten süpürüyor" yedeği de
+  // yok. Silinen satır en büyük rowid'yi taşıyorsa bir sonraki INSERT o
+  // rowid'yi geri kullanıyor ve ÇAPASI KAYMIŞ bir indeks satırı kalıyor:
+  // bir mesajın metni bir BAŞKASININ kelimeleri altında çıkıyor (yetim
+  // süpürmesinin yükleminin `IS NOT`la yalnız varlığı değil ÇAPAYI
+  // doğrulamasının sebebi de bu). Bayrak yazmak `meta`ya tek satır — FTS
+  // kapalıyken de ucuz ve zararsız.
   getChatDb().run(
     `INSERT INTO meta (key, value) VALUES (?, '1')
      ON CONFLICT(key) DO UPDATE SET value = '1'`,
@@ -227,16 +239,20 @@ export function clearSearchIndexDirty(): void {
  * meşru biçimde boş) her açılışta tüm arşiv NULL'lanır ve doldurma turu
  * sonsuza dek yeniden koşardı.
  *
- * Maliyet: açılış başına indeksli bir `COUNT(*)` (100k'da 4.7 ms) + ilk
- * eşleşen satıra kadar bir tarama. Boşluk YOKSA ikinci sorgu HİÇ koşmuyor.
+ * Maliyet: açılış başına `SELECT 1 … LIMIT 1` + (yalnız indeks BOŞSA) ilk
+ * eşleşen satıra kadar bir tarama. İlk sorgu `COUNT(*)` DEĞİL, bilerek
+ * (review turu 5, Minör 5): sorulan şey "kaç satır var" değil "HİÇ satır var
+ * mı" ve `COUNT(*)` bunun için tüm indeksi tarıyordu — 100k satırda ölçüm
+ * 3.67 ms'e karşı 0.02 ms. Bu, açılıştaki indeks bakımının GERİYE KALAN tüm
+ * maliyetiydi.
  *
  * @returns onarım tetiklendi mi (yalnız açılış logu/test için).
  */
 export function reseedSearchIndexIfEmpty(): boolean {
   if (!isFtsAvailable()) return false;
   const db = getChatDb();
-  const indexed = db.getFirst<{ n: number }>('SELECT COUNT(*) AS n FROM messages_fts')?.n ?? 0;
-  if (indexed > 0) return false;
+  const indexed = db.getFirst<{ one: number }>('SELECT 1 AS one FROM messages_fts LIMIT 1');
+  if (indexed) return false;
   const claims = db.getFirst<{ one: number }>(
     "SELECT 1 AS one FROM messages WHERE content_folded <> '' LIMIT 1",
   );
@@ -819,18 +835,23 @@ export function readOlder(
  * testi).
  *
  * ── `reachesNewest` — pencere "ŞU AN"ı kapsıyor mu (review turu 4, Önemli 2) ─
- * `newer` sorgusu `after`tan AZ satır döndürdüyse hedeften daha yeni satır
- * KALMAMIŞ demektir: pencere arşivin DİBİNE, yani canlı sohbete değiyor.
- * Çağıran (`chatHydrate.hydrateAroundMessage`) `isWindowed` bayrağını BUNDAN
- * türetiyor — bayrağın "hangi kod yolundan geçtim" yerine "pencere gerçekten
- * neyi gösteriyor" sorusuna cevap vermesi, her çağrı yerine elle bir kapı
- * dikmekten (dört tur boyunca yapılan şey) yapısal olarak daha güçlü.
+ * Hedeften daha yeni satır KALMADIYSA pencere arşivin DİBİNE, yani canlı
+ * sohbete değiyor. Çağıran (`chatHydrate.hydrateAroundMessage`) `isWindowed`
+ * bayrağını BUNDAN türetiyor — bayrağın "hangi kod yolundan geçtim" yerine
+ * "pencere gerçekten neyi gösteriyor" sorusuna cevap vermesi, her çağrı
+ * yerine elle bir kapı dikmekten (dört tur boyunca yapılan şey) yapısal
+ * olarak daha güçlü.
  *
- * Tam `after` satır dönerse `false` — "tam sınırda ve daha fazlası yok" hâli
- * burada PENCERELİ sayılıyor. Bu yön KASITLI: fazladan bir satır daha okumak
- * (`after + 1`) sorguyu da pencereyi de değiştirirdi; sınır durumunun bedeli
- * yalnız gereksiz bir "son mesaja dön" kapsülü, tersi ise canlı mesajın
- * sessizce yutulması.
+ * ⚠️ `newer` sorgusu `after + 1` satır İSTİYOR, döndürülen pencere ise ilk
+ * `after` satıra KIRPILIYOR. Fazladan okunan satır pencereye hiç girmiyor;
+ * tek işi "daha var mı" sorusunu KESİN cevaplamak. Yalnız `after` isteyip
+ * "AZ geldiyse dip" demek, TAM `after` satır dönen hâli ayırt edemiyordu:
+ * "tam sınırda ve daha fazlası yok" ile "tam sınırda ama devamı var" aynı
+ * görünüyordu ve ilki PENCERELİ sayılıyordu — bedeli yalnız gereksiz bir
+ * "son mesaja dön" kapsülü DEĞİL, Önemli 2'nin bütün konusu olan şeyin
+ * kendisi: o bucket'ta canlı mesajlar `receiveMessage`in pencereli dalına
+ * düşüp SESSİZCE yutulur. Bir satır fazla okumak sınır durumunu TAMAMEN
+ * ortadan kaldırıyor (review turu 5, Minör 2).
  */
 export function readAround(
   conversationId: string,
@@ -850,14 +871,19 @@ export function readAround(
   // Hedeften DAHA YENİ satırlar: en yakından en uzağa almak için ASC sorgulanır
   // (LIMIT bu yüzden "hedefe en yakın" olanları seçer), sonra dizi ters çevrilip
   // genel en-yeniden-eskiye sıraya (en uzak önce) oturtulur.
-  const newerAsc = db.getAll<MessageRow>(
+  //
+  // `after + 1` — PROB satırı. Pencereye girmiyor (hemen altta `slice`
+  // ediliyor), yalnız `reachesNewest`i kesinleştiriyor; gerekçe fonksiyon
+  // yorumunda.
+  const newerProbe = db.getAll<MessageRow>(
     `SELECT * FROM messages
      WHERE conversation_id = ?
        AND (sent_at_ms > ? OR (sent_at_ms = ? AND id > ?))
      ORDER BY sent_at_ms ASC, id ASC LIMIT ?`,
-    [conversationId, anchorMs, anchorMs, messageId, after],
+    [conversationId, anchorMs, anchorMs, messageId, after + 1],
   );
-  const newer = [...newerAsc].reverse();
+  const reachesNewest = newerProbe.length <= after;
+  const newer = newerProbe.slice(0, after).reverse();
 
   // Hedeften DAHA ESKİ satırlar: zaten en-yeniden-eskiye — ek işlem yok.
   const older = db.getAll<MessageRow>(
@@ -869,7 +895,7 @@ export function readAround(
   );
 
   const rows = [...newer, ...(target ? [target] : []), ...older];
-  return { messages: rows.map(rowToMessage), reachesNewest: newerAsc.length < after };
+  return { messages: rows.map(rowToMessage), reachesNewest };
 }
 
 /** Yerel arşivde bu sohbetten kaç satır var — indeksli COUNT, render sırasında güvenli. */
