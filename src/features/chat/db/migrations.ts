@@ -258,6 +258,39 @@ ALTER TABLE sync_state ADD COLUMN backfill_cursor TEXT;
 ALTER TABLE sync_state ADD COLUMN backfill_done INTEGER NOT NULL DEFAULT 0;
 `;
 
+/**
+ * v9 — `pending_mutations`: tepki/silme emirlerinin disk muhasebesi.
+ *
+ * ── `payload_json` neden var ────────────────────────────────────────────────
+ * `send_attempts` (v7) kasten gövdesiz, çünkü gövdenin tek kaynağı `messages`
+ * satırı. Burada öyle değil: tepki NİYETİ (`desired`) `messages.reactions_json`'
+ * dan türetilemez — ayna optimistik listeyi zaten yazdı, hangi emojinin BİZİM
+ * niyetimiz olduğu ile sunucudan gelmiş olanı o JSON'dan ayırt edilemez.
+ *
+ * ── `permanent` kolonu neden YOK ────────────────────────────────────────────
+ * Gönderimde kalıcı başarısızlık balonu "tekrar dene" hâlinde bırakıyor, yani
+ * satırın yaşaması gerekiyor. Tepkide/silmede kullanıcıya sunulan tekrar yolu
+ * YOK: kalıcı ret geri alma + toast demek, satır AYNI ANDA silinir. Kolon
+ * olsaydı hiçbir şeyin temizlemediği bir çöp hâli üretirdi.
+ *
+ * ── PK neden `(message_id, kind)` ───────────────────────────────────────────
+ * Ayrı bir `op_id` + bunun üzerine UNIQUE indeks, aynı kısıtın iki kopyası
+ * olurdu. Birleştirme (son-yazan-kazanır) zaten PK çatışmasının kendisi.
+ */
+const V9 = `
+CREATE TABLE pending_mutations (
+  message_id          TEXT NOT NULL,
+  kind                TEXT NOT NULL,
+  conversation_id     TEXT NOT NULL,
+  payload_json        TEXT NOT NULL,
+  attempts            INTEGER NOT NULL DEFAULT 0,
+  first_seen_at_ms    INTEGER NOT NULL,
+  next_eligible_at_ms INTEGER NOT NULL DEFAULT 0,
+  last_error          TEXT,
+  PRIMARY KEY (message_id, kind)
+);
+`;
+
 export const MIGRATIONS: { version: number; up: (db: ChatDbDriver) => void }[] = [
   { version: 1, up: (db) => db.exec(V1) },
   { version: 2, up: (db) => db.exec(V2) },
@@ -267,6 +300,7 @@ export const MIGRATIONS: { version: number; up: (db: ChatDbDriver) => void }[] =
   { version: 6, up: (db) => db.exec(V6) },
   { version: 7, up: (db) => db.exec(V7) },
   { version: 8, up: (db) => db.exec(V8) },
+  { version: 9, up: (db) => db.exec(V9) },
 ];
 
 export const CHAT_DB_VERSION = MIGRATIONS[MIGRATIONS.length - 1].version;

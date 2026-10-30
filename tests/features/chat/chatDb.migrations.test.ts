@@ -40,6 +40,7 @@ describe('chat db migrations', () => {
       'conversations',
       'messages',
       'meta',
+      'pending_mutations',
       'send_attempts',
       'sync_state',
     ]);

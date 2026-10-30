@@ -86,6 +86,9 @@ describe('şema sürümü', () => {
     // COLUMN'unda "duplicate column name" ile patlar.
     db.exec('ALTER TABLE sync_state DROP COLUMN backfill_cursor');
     db.exec('ALTER TABLE sync_state DROP COLUMN backfill_done');
+    // v9: pending_mutations'ı düşür — yoksa v9 kendi CREATE TABLE'ında
+    // "table already exists" ile patlar.
+    db.exec('DROP TABLE pending_mutations');
     db.exec('PRAGMA user_version = 1');
 
     __resetChatDbForTests();

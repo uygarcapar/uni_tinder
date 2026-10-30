@@ -1,0 +1,143 @@
+jest.mock('expo-sqlite');
+jest.mock('react-native-mmkv');
+
+import * as SQLite from 'expo-sqlite';
+import { openChatDb, __resetChatDbForTests } from '@/features/chat/db/chatDb';
+import {
+  readPendingMutations,
+  upsertPendingMutation,
+  deletePendingMutation,
+  pruneOrphanPendingMutations,
+  readMessageSendState,
+  saveMessage,
+} from '@/features/chat/chatRepository';
+import type { PendingMutationRow } from '@/features/chat/db/rows';
+import { clear as clearMessageCache } from '@/features/chat/messageCache';
+import type { MessageDto } from '@/shared/types';
+import type { SendState } from '@/features/chat/db/rows';
+
+/**
+ * `pending_mutations` (v9) — tepki/silme emirlerinin disk muhasebesi.
+ *
+ * Bugüne kadar bu emirler yalnız optimistik olarak uygulanıyordu ve ağ
+ * çağrısı başarısız olunca GERİ ALINIYORDU (bkz. görev metni) — uçakta
+ * verilen bir tepki inince kaybolurdu. Burada yalnız depo katmanı test
+ * ediliyor; policy/flush/ekran kablolaması sonraki görevlerin işi.
+ */
+
+const { __resetAllDatabases } = SQLite as unknown as { __resetAllDatabases: () => void };
+
+const CONV = 'conv-1';
+
+const msg = (id: string, over: Partial<MessageDto> = {}): MessageDto =>
+  ({
+    id,
+    conversationId: CONV,
+    senderId: 'me',
+    content: `içerik ${id}`,
+    contentType: 0,
+    sentAt: '2026-10-29T10:00:00.000Z',
+    clientMessageId: `cmid-${id}`,
+    ...over,
+  }) as MessageDto;
+
+/** `messages`'a gerçek bir satır yazar — prune testleri "mesaj var mı" sorusunu buna bakarak cevaplıyor. */
+const insertMessage = (id: string, sendState: SendState = 'sent') => {
+  saveMessage(msg(id), CONV, sendState);
+};
+
+const row = (over: Partial<PendingMutationRow> = {}): PendingMutationRow => ({
+  message_id: 'msg-1',
+  kind: 'reaction',
+  conversation_id: CONV,
+  payload_json: '{"desired":"😀","base":null}',
+  attempts: 0,
+  first_seen_at_ms: 1_000,
+  next_eligible_at_ms: 0,
+  last_error: null,
+  ...over,
+});
+
+beforeEach(() => {
+  __resetChatDbForTests();
+  __resetAllDatabases();
+  clearMessageCache();
+  openChatDb();
+});
+
+describe('pending_mutations: yazıp geri okuma', () => {
+  it('upsert aynı (message_id, kind) için satır ÇOĞALTMIYOR, ezip güncelliyor', () => {
+    upsertPendingMutation(row({ payload_json: '{"desired":"😀","base":null}' }));
+    upsertPendingMutation(row({ payload_json: '{"desired":"❤️","base":null}', attempts: 3 }));
+
+    const all = readPendingMutations();
+    expect(all).toHaveLength(1);
+    expect(all[0].payload_json).toBe('{"desired":"❤️","base":null}');
+    expect(all[0].attempts).toBe(3);
+  });
+
+  it('aynı mesajın tepki ve silme emirleri AYRI satırlar', () => {
+    upsertPendingMutation(row({ kind: 'reaction' }));
+    upsertPendingMutation(row({ kind: 'delete', payload_json: '{"forEveryone":true}' }));
+
+    expect(readPendingMutations()).toHaveLength(2);
+  });
+
+  it('readPendingMutations first_seen_at_ms ASC sıralı dönüyor', () => {
+    upsertPendingMutation(row({ message_id: 'msg-c', first_seen_at_ms: 3_000 }));
+    upsertPendingMutation(row({ message_id: 'msg-a', first_seen_at_ms: 1_000 }));
+    upsertPendingMutation(row({ message_id: 'msg-b', first_seen_at_ms: 2_000 }));
+
+    expect(readPendingMutations().map((r) => r.message_id)).toEqual([
+      'msg-a',
+      'msg-b',
+      'msg-c',
+    ]);
+  });
+
+  // Review Focus 5: flush ortasında ölüm — satır diskte kalıyor.
+  it('satır yeni bir bağlantıda da okunuyor (kalıcı, process ömürlü değil)', () => {
+    upsertPendingMutation(row({}));
+
+    __resetChatDbForTests(); // aynı dosyaya yeniden bağlan; migration'lar tekrar koşar
+
+    expect(readPendingMutations()).toHaveLength(1);
+  });
+
+  it('deletePendingMutation yalnız verilen (message_id, kind) çiftini siliyor', () => {
+    upsertPendingMutation(row({ message_id: 'msg-a', kind: 'reaction' }));
+    upsertPendingMutation(row({ message_id: 'msg-a', kind: 'delete', payload_json: '{"forEveryone":true}' }));
+    upsertPendingMutation(row({ message_id: 'msg-b', kind: 'reaction' }));
+
+    deletePendingMutation('msg-a', 'reaction');
+
+    const remaining = readPendingMutations().map((r) => `${r.message_id}:${r.kind}`);
+    expect(remaining).toEqual(['msg-a:delete', 'msg-b:reaction']);
+  });
+
+  it('pruneOrphanPendingMutations mesajı OLMAYAN satırı siliyor, olanı bırakıyor', () => {
+    insertMessage('msg-var');
+    upsertPendingMutation(row({ message_id: 'msg-var' }));
+    upsertPendingMutation(row({ message_id: 'msg-yok' }));
+
+    expect(pruneOrphanPendingMutations()).toBe(1);
+    expect(readPendingMutations().map((r) => r.message_id)).toEqual(['msg-var']);
+  });
+
+  // Ayırt edici: prune yalnız YOKLUĞA bakıyor, gönderim durumuna BAKMIYOR.
+  // (`send_attempts`'in aksine — orada 'sent' olmak satırı yetim yapıyor,
+  // burada gönderilmiş olmak mutasyonun ÖN KOŞULU.)
+  it('pruneOrphanPendingMutations gönderilmiş mesajın satırını SİLMİYOR', () => {
+    insertMessage('msg-1', 'sent');
+    upsertPendingMutation(row({ message_id: 'msg-1' }));
+
+    expect(pruneOrphanPendingMutations()).toBe(0);
+  });
+
+  it('readMessageSendState pending mesajı pending, olmayanı null döndürüyor', () => {
+    insertMessage('msg-1', 'pending');
+
+    expect(readMessageSendState('msg-1')).toBe('pending');
+    expect(readMessageSendState('msg-yok')).toBeNull();
+  });
+});

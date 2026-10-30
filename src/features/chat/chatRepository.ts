@@ -3,6 +3,8 @@ import {
   rowToConversation,
   type ConversationRow,
   type MessageRow,
+  type MutationKind,
+  type PendingMutationRow,
   type SendAttemptRow,
   type SendState,
   type SyncStateRow,
@@ -1412,6 +1414,84 @@ export function pruneOrphanSendAttempts(): number {
      )`);
   const after = db.getFirst<{ n: number }>('SELECT COUNT(*) AS n FROM send_attempts')?.n ?? 0;
   return before - after;
+}
+
+// ── pending_mutations: tepki/silme emirlerinin disk muhasebesi (v9) ────────
+//
+// `send_attempts`'in aksine gövdesiz DEĞİL: `payload_json` taşıyor, çünkü
+// tepki niyeti (`desired`) `messages.reactions_json`'dan türetilemez — ayna
+// optimistik listeyi zaten yazdı, hangi emojinin BİZİM niyetimiz olduğu ile
+// sunucudan gelmiş olanı o JSON'dan ayırt edilemez (bkz. migrations.ts V9
+// yorumu). `permanent` kolonu da yok: kalıcı ret burada "tekrar dene" hâli
+// değil, satırın AYNI ANDA silinmesi. Policy/flush bu dosyanın işi değil
+// (sonraki görevler) — burası yalnız depo.
+
+export function readPendingMutations(): PendingMutationRow[] {
+  return getChatDb().getAll<PendingMutationRow>(
+    'SELECT * FROM pending_mutations ORDER BY first_seen_at_ms ASC',
+  );
+}
+
+export function upsertPendingMutation(row: PendingMutationRow): void {
+  getChatDb().run(
+    `INSERT INTO pending_mutations (
+       message_id, kind, conversation_id, payload_json, attempts,
+       first_seen_at_ms, next_eligible_at_ms, last_error
+     ) VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+     ON CONFLICT(message_id, kind) DO UPDATE SET
+       conversation_id = excluded.conversation_id,
+       payload_json = excluded.payload_json,
+       attempts = excluded.attempts,
+       first_seen_at_ms = excluded.first_seen_at_ms,
+       next_eligible_at_ms = excluded.next_eligible_at_ms,
+       last_error = excluded.last_error`,
+    [
+      row.message_id,
+      row.kind,
+      row.conversation_id,
+      row.payload_json,
+      row.attempts,
+      row.first_seen_at_ms,
+      row.next_eligible_at_ms,
+      row.last_error,
+    ],
+  );
+}
+
+export function deletePendingMutation(messageId: string, kind: MutationKind): void {
+  getChatDb().run('DELETE FROM pending_mutations WHERE message_id = ? AND kind = ?', [
+    messageId,
+    kind,
+  ]);
+}
+
+/**
+ * `send_attempts`'in `pruneOrphanSendAttempts`'ından farklı olarak burada
+ * `send_state` terimi YOK: orada 'sent' olmak satırı yetim yapar (muhasebe
+ * artık gerekmez), burada gönderilmiş olmak mutasyonun ÖN KOŞULUdur —
+ * gönderilmemiş bir mesaja tepki/silme emri henüz yetim değildir, sırasını
+ * bekliyordur. Yetimliğin TEK tanımı mesajın hiç olmaması.
+ */
+export function pruneOrphanPendingMutations(): number {
+  const db = getChatDb();
+  const before =
+    db.getFirst<{ n: number }>('SELECT COUNT(*) AS n FROM pending_mutations')?.n ?? 0;
+  db.run(`
+    DELETE FROM pending_mutations
+     WHERE NOT EXISTS (
+       SELECT 1 FROM messages WHERE messages.id = pending_mutations.message_id
+     )`);
+  const after =
+    db.getFirst<{ n: number }>('SELECT COUNT(*) AS n FROM pending_mutations')?.n ?? 0;
+  return before - after;
+}
+
+export function readMessageSendState(messageId: string): SendState | null {
+  const row = getChatDb().getFirst<{ send_state: SendState }>(
+    'SELECT send_state FROM messages WHERE id = ?',
+    [messageId],
+  );
+  return row?.send_state ?? null;
 }
 
 // ── backfill: arka plan geçmiş indirme turunun ilerleme damgası (v8) ───────

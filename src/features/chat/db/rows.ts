@@ -199,3 +199,24 @@ export interface SendAttemptRow {
   origin: string | null;
   last_error: string | null;
 }
+
+export type MutationKind = 'reaction' | 'delete';
+
+/**
+ * `pending_mutations` satırı (v9) — tepki/silme emirlerinin disk muhasebesi.
+ *
+ * `send_attempts`'in aksine gövdesiz DEĞİL: `payload_json` taşıyor, çünkü
+ * tepki niyeti `messages.reactions_json`'dan türetilemez (bkz. migrations.ts
+ * V9 yorumu). `permanent` kolonu yok — kalıcı ret burada satırı SİLER, bir
+ * durumu işaretlemez.
+ */
+export interface PendingMutationRow {
+  message_id: string;
+  kind: MutationKind;
+  conversation_id: string;
+  payload_json: string;
+  attempts: number;
+  first_seen_at_ms: number;
+  next_eligible_at_ms: number;
+  last_error: string | null;
+}
