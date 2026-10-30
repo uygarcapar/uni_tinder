@@ -69,14 +69,46 @@ it('CAM BUTON kart oturmadan YOK, oturunca VAR', () => {
   expect(tree.getByLabelText('Beğen')).toBeTruthy();
 });
 
-it('tike basınca onLike, perdeye basınca onClose', () => {
+it('tike basınca onLike', () => {
   const onLike = jest.fn();
-  const onClose = jest.fn();
-  const tree = mount({ onLike, onClose });
+  const tree = mount({ onLike });
   settle();
   fireEvent.press(tree.getByLabelText('Beğen'));
   expect(onLike).toHaveBeenCalledTimes(1);
+});
+
+/**
+ * ⚠️ KAPANIŞ DA BİR HAREKET — anında sökülmüyor.
+ *
+ * Perdeye basınca yüzey hemen kaldırılırsa kart "pat diye yok oluyor"; oysa
+ * açılışın tersi beklenir: kart şeritteki yerine küçülerek dönsün. Bu yüzden
+ * `onClose` ÇIKIŞ ANİMASYONUNDAN SONRA çağrılıyor — yüzeyi söken çağıran, ve
+ * sökmesi gereken an küçülme bittiğinde.
+ */
+it('perdeye basınca kart önce KÜÇÜLÜYOR, sonra kapanıyor', () => {
+  const onClose = jest.fn();
+  const tree = mount({ onClose });
+  settle();
   fireEvent.press(tree.getByLabelText('Kapat'));
+  // Henüz değil: kart yerine dönüyor.
+  expect(onClose).not.toHaveBeenCalled();
+  // Cam da aynı anda sökülüyor — giden kartın üstünde buton kalmıyor.
+  expect(tree.queryByLabelText('Beğen')).toBeNull();
+  act(() => {
+    jest.advanceTimersByTime(EXPAND_MS);
+  });
+  expect(onClose).toHaveBeenCalledTimes(1);
+});
+
+it('kapanış İKİ KEZ tetiklenmiyor — perdeye üst üste basılsa da', () => {
+  const onClose = jest.fn();
+  const tree = mount({ onClose });
+  settle();
+  fireEvent.press(tree.getByLabelText('Kapat'));
+  fireEvent.press(tree.getByLabelText('Kapat'));
+  act(() => {
+    jest.advanceTimersByTime(EXPAND_MS * 2);
+  });
   expect(onClose).toHaveBeenCalledTimes(1);
 });
 

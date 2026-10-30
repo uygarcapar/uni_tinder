@@ -113,24 +113,6 @@ const CampusMomentExpandOverlay = memo(function CampusMomentExpandOverlay({
   const insets = useSafeAreaInsets();
   const { width: screenW, height: screenH } = useWindowDimensions();
 
-  /**
-   * ⚠️🔴 KÜÇÜLÜRKEN GÖSTERİLEN AN DONDURULUYOR.
-   *
-   * Çağıran anı CANLI listeden çözüyor (bayat veri göstermemek için doğru) ama
-   * beğeni başarılı olunca liste tazeleniyor ve karar verilmiş an listeden
-   * DÜŞÜYOR. Yarışın kaybedildiği hâlde `moment` tam küçülme sırasında `null`
-   * oluyor, yüzey anında sökülüyor ve kart küçülmeden yok oluyor.
-   * Küçülme başladıktan sonra gösterilen şey son bilinen an.
-   */
-  const lastShownRef = useRef<CampusMomentDto | null>(null);
-  if (moment) lastShownRef.current = moment;
-  const shown = moment ?? (collapsing ? lastShownRef.current : null);
-
-  const photoUri = useMemo(
-    () => (shown ? campusPhotoUri(shown) : null),
-    [shown],
-  );
-
   const geometry = useMemo(
     () =>
       campusExpandGeometry({
@@ -146,6 +128,37 @@ const CampusMomentExpandOverlay = memo(function CampusMomentExpandOverlay({
   /** 0 = başlangıç karesi, 1 = hedef kare. */
   const progress = useSharedValue(0);
   const [settled, setSettled] = useState(false);
+  /**
+   * KENDİ KAPANIŞI — perde/jest ile başlayan küçülme.
+   *
+   * ⚠️ `collapsing` PROP'UNDAN AYRI: o beğeni yolunun küçülmesi ve ALEV
+   * ÖRTÜSÜNÜN takvimine bağlı (çağıran, örtü kapandığında kaldırıyor). Bu ise
+   * yüzeyin kendi çıkışı. İkisi aynı animasyonu sürüyor ama tetikleyicileri
+   * ayrı; tek bayrağa bindirilse çağıran kendi kapanışını da "örtü kapandı"
+   * sanardı.
+   */
+  const [selfCollapsing, setSelfCollapsing] = useState(false);
+
+  /**
+   * ⚠️🔴 KÜÇÜLÜRKEN GÖSTERİLEN AN DONDURULUYOR.
+   *
+   * Çağıran anı CANLI listeden çözüyor (bayat veri göstermemek için doğru) ama
+   * beğeni başarılı olunca liste tazeleniyor ve karar verilmiş an listeden
+   * DÜŞÜYOR. Yarışın kaybedildiği hâlde `moment` tam küçülme sırasında `null`
+   * oluyor, yüzey anında sökülüyor ve kart küçülmeden yok oluyor.
+   * Küçülme başladıktan sonra gösterilen şey son bilinen an.
+   */
+  const lastShownRef = useRef<CampusMomentDto | null>(null);
+  if (moment) lastShownRef.current = moment;
+  const shown =
+    moment ?? (collapsing || selfCollapsing ? lastShownRef.current : null);
+
+  const photoUri = useMemo(
+    () => (shown ? campusPhotoUri(shown) : null),
+    [shown],
+  );
+
+
   /**
    * ⚠️ Kapanış bir kez: perde, jest ve tik aynı anda tetiklenebiliyor ve
    * çağıran iki kez kapanmayı iki ayrı olay sanıyordu.
@@ -181,6 +194,7 @@ const CampusMomentExpandOverlay = memo(function CampusMomentExpandOverlay({
     if (!moment) return;
     closedRef.current = false;
     decidedRef.current = false;
+    setSelfCollapsing(false);
     setSettled(false);
     progress.value = 0;
     progress.value = withTiming(1, {
@@ -200,14 +214,14 @@ const CampusMomentExpandOverlay = memo(function CampusMomentExpandOverlay({
    * basılabilir bir buton kalması ikinci bir beğeni demekti.
    */
   useEffect(() => {
-    if (!collapsing) return;
+    if (!collapsing && !selfCollapsing) return;
     setSettled(false);
     progress.value = withTiming(0, {
       duration: EXPAND_MS,
       easing: Easing.in(Easing.cubic),
     });
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [collapsing]);
+  }, [collapsing, selfCollapsing]);
 
   /**
    * ⚠️🔴 HAREKET TRANSFORM — bir dönem `left/top/width/height` idi.
@@ -240,26 +254,32 @@ const CampusMomentExpandOverlay = memo(function CampusMomentExpandOverlay({
   });
 
   /**
-   * PERDE KARTTAN HIZLI AÇILIYOR — ORİJİNALİ ÖRTMEK İÇİN.
+   * PERDE KARTLA BİRLİKTE AÇILIYOR — yavaşça.
    *
-   * ⚠️ ŞERİTTEKİ KART UÇUŞ BOYUNCA YERİNDE DURUYOR (gizlenmiyor): kart bir
-   * SwiftUI `ContextMenu` host'u taşıyor ve `opacity: 0` ile gizlemek projenin
-   * en sert tuzağına giriyor — opaklığı 1'in altına inen bir atanın altındaki
-   * SwiftUI yüzeyi SESSİZCE çizilmiyor ve sonradan DÜZELMİYOR. Yani kartı
-   * gizlemenin bedeli, geri geldiğinde menüsü ölü bir kart olabilir.
-   *
-   * Çözüm perdede: perde hareketin ilk %45'inde tam güce çıkıyor, yani kopya
-   * havalanırken orijinal çoktan örtülmüş oluyor. Kartın kendi hareketi
-   * değişmiyor.
+   * ⚠️ BİR DÖNEM HIZLANDIRILMIŞTI (ilk %45'te tam güç) ve sebebi şuydu:
+   * şeritteki asıl kart uçuş boyunca yerinde duruyordu, perde onu örtmek
+   * zorundaydı. Kart artık şeritte HİÇ ÇİZİLMİYOR (bkz. CampusMomentsStrip >
+   * `openMomentId`), yani örtme işi perdeden alındı ve hızlandırmanın tek
+   * gerekçesi kalmadı — kalsaydı zemin "bir anda siyah oluyor" (kullanıcı
+   * tarifi) hâlinde kalırdı.
    */
-  const scrimStyle = useAnimatedStyle(() => ({
-    opacity: Math.min(1, progress.value / 0.45),
-  }));
+  const scrimStyle = useAnimatedStyle(() => ({ opacity: progress.value }));
 
+  /**
+   * KAPANIŞ DA BİR HAREKET — açılışın tersi.
+   *
+   * Perdeye basmak ya da aşağı çekmek yüzeyi ANINDA söktürmüyor: kart önce
+   * şeritteki yerine küçülüyor, çağıran ancak o bittiğinde haber alıyor.
+   * Anında sökmek kartı "pat diye yok eden" bir kapanış bırakıyordu.
+   *
+   * ⚠️ BİR KEZ: perde, jest ve üst üste basışlar aynı kapanışı tetikleyebilir;
+   * ikinci bir küçülme animasyonu ve ikinci bir `onClose` doğardı.
+   */
   const close = () => {
     if (closedRef.current) return;
     closedRef.current = true;
-    onClose();
+    setSelfCollapsing(true);
+    setTimeout(onClose, EXPAND_MS);
   };
 
   /**
