@@ -250,8 +250,20 @@ export const API_ENDPOINTS = {
   // alır. Sınırsız ve ücretsiz. Yazar kimin beğendiğini HİÇBİR yerde görmüyor.
   FEED_POST_LIKE: (id: string) => `/api/feed/posts/${encodeURIComponent(id)}/like`,
   // Gövde GET /api/swipe/LikerProfile/{id} ile BİREBİR aynı ProfileCardDto →
-  // mevcut profil kartı bileşeni olduğu gibi kullanılabilir (beğeniye özel
-  // alanlar — hasLikedMe, note — burada dolu GELMEZ). Anonim gönderide UT-7312.
+  // mevcut profil kartı bileşeni olduğu gibi kullanılabilir.
+  // Anonim gönderide UT-7312.
+  //
+  // ── BEĞENİYE ÖZEL ALANLAR (2026-10-30 güncellendi) ────────────────────────
+  // Bir dönem "hasLikedMe, note — burada dolu GELMEZ" yazıyordu. ARTIK:
+  //   • `hasLikedMe` · `likedMeAt` · `isSuperLike` DOLU geliyor ve `?mode=`
+  //     kapsamlı — yani "bu kişi beni BU MODDA beğenmiş mi". Akış kartının
+  //     kabul/reddet hâlini bu besliyor (bkz. feedCardMode > authorLikedMe).
+  //     ⚠️ Karşılıklı beğenide `hasLikedMe` YİNE true döner; "bekleyen karar"
+  //     sorusu `isMatched` ve `myLikeDate` ile ayrıştırılmak zorunda.
+  //     ⚠️ Tier kapısı YOK (LikerProfile ile parite) — premium kısıtı
+  //     istemcide (FeedScreen > authorHasLikedMe).
+  //   • `note` HÂLÂ boş geliyor. Sunucuda yeri hazır bırakıldı
+  //     (FeedReplyQueryService), istenirse doldurulacak.
   FEED_POST_AUTHOR_PROFILE: (id: string, mode?: string | null) =>
     `/api/feed/posts/${encodeURIComponent(id)}/author-profile${
       mode ? `?mode=${encodeURIComponent(mode)}` : ""
@@ -291,6 +303,11 @@ export const API_ENDPOINTS = {
   // yanındaki mahalleyi de içine alıyor).
   // ⚠️ Yanıttaki `domain` KANONİK yazım: `bogazici.edu.tr` sorana `boun.edu.tr`
   // dönüyor. Kullanıcının e-posta domain'iyle string karşılaştırma yapma.
+  //
+  // ⚠️ ANONİM DEĞİL — TOKEN İSTİYOR (anonim çağrı 401, 2026-10-29 ölçüldü).
+  // Diğer `/api/common/*` uçlarıyla aynı kefeye koymayın: backend kullanıcıyı
+  // yükleyip `enabled`ı KULLANICI BAZLI bayraktan hesaplıyor
+  // (CampusQueryService), yani anonimleştirmek alanı anlamsızlaştırırdı.
   CAMPUS_BOUNDARY: (domain?: string | null) =>
     `/api/campus/boundary${
       domain ? `?domain=${encodeURIComponent(domain)}` : ""
