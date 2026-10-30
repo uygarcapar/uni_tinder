@@ -72,22 +72,19 @@ const MESSAGE_COLUMNS = `
  * aranamaz hâle geliyordu. `.replace(/\s+/g, ' ')` bu öncülü GERÇEK yapıyor:
  * her boşluk-sınıfı karakter (ve ardışık dizisi) TEK boşluğa iniyor.
  *
- * İKİ DÜRÜSTLÜK NOTU:
- *  1. Bu yalnız YENİ yazılan/güncellenen satırları kapsıyor. Diskte DURAN
- *     satırlar eski (katlanmamış) boşluklarını KORUYOR ve `backfillContentFolded`
- *     onları YENİDEN ziyaret ETMEZ — seçimi `content_folded IS NULL`, bu
- *     satırların kolonu zaten DOLU (NULL değil), yani "tur sıfıra inene
- *     kadar tekrar tekrar çağır" döngüsü bu satırları asla seçmez. Kapatmak
- *     `UPDATE messages SET content_folded = NULL` + yeniden doldurma turu
- *     gerektirirdi — burada YAPILMADI, bilerek: aşağıdaki not bunun neden
- *     düşük öncelikli olduğunu açıklıyor.
- *  2. Bu yalnız LIKE YOLUNU düzeltiyor. FTS zaten kendi `unicode61`
- *     tokenizer'ında `\n`/`\t`/NBSP'yi AYRAÇ sayıyordu (satırlar zaten doğru
- *     tokenlara bölünüyordu) — ayrışma yalnız LIKE'ın ham dizeyi birebir
- *     taraması YÜZÜNDENDİ. Ve LIKE, `isFtsAvailable()` false DÖNMEDİKÇE hiç
- *     koşmuyor; bu projede o bayrağı kapatan bir yol YOK (bkz. chatDb.ts'teki
- *     `isFtsAvailable` yorumu). Yani bu, bugün KULLANICIYA görünen bir
- *     düzeltme DEĞİL — yedek yolun KALİTESİ için.
+ * DÜRÜSTLÜK NOTU: bu yalnız LIKE YOLUNU düzeltiyor. FTS zaten kendi
+ * `unicode61` tokenizer'ında `\n`/`\t`/NBSP'yi AYRAÇ sayıyordu (satırlar zaten
+ * doğru tokenlara bölünüyordu) — ayrışma yalnız LIKE'ın ham dizeyi birebir
+ * taraması YÜZÜNDENDİ. Ve LIKE, `isFtsAvailable()` false DÖNMEDİKÇE hiç
+ * koşmuyor; bu projede o bayrağı kapatan bir yol YOK (bkz. chatDb.ts'teki
+ * `isFtsAvailable` yorumu). Yani bu, bugün KULLANICIYA görünen bir
+ * düzeltme DEĞİL — yedek yolun KALİTESİ için.
+ *
+ * (Review turu 4, Minör 11 — buradaki ikinci not "kolonu eski, katlanmamış
+ * boşluklarıyla diskte duran satırlar" diye bir canlı uyarı anlatıyordu;
+ * öyle satırlar yalnız bu dalın ARA bir commit'inden çıkabilirdi ve o hâl hiç
+ * yayınlanmadı. Yayınlanan v10 kolonu her satıra NULL ekliyor ve doldurma
+ * turu onu BU fonksiyonla yazıyor.)
  */
 function searchableFolded(content: string, contentType: number, isSystem: boolean): string {
   if (contentType !== ContentType.Text || isSystem) return '';
@@ -317,8 +314,8 @@ function escapeLikeToken(token: string): string {
  * SATIRDAKİ kelime bir boşluktan SONRA değil bir satır sonundan sonra
  * geliyordu ve `'% tok%'` onu hiç BULAMIYORDU — çok satırlı mesaj, sohbette
  * SIK rastlanan bir girdi şekli, ikinci satırdan sonra ARANAMAZ hâldeydi).
- * Öncül artık YENİ yazılan satırlar için DOĞRU; eski satırlar ve kapatılmayan
- * residual için `searchableFolded`/`searchMessages` yorumlarına bkz. "Kelime
+ * Öncül artık `content_folded`ı yazan TEK kapı (`searchableFolded`) sayesinde
+ * DOĞRU; kapatılmayan residual için `searchMessages` yorumuna bkz. "Kelime
  * başı" bu sayede `LIKE 'tok%' OR LIKE '% tok%'` ikilisiyle TAM ifade
  * edilebiliyor — ayrı bir tokenizer kurmaya gerek yok.
  */

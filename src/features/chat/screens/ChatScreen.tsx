@@ -1696,9 +1696,21 @@ function ChatScreen({
    * az önce BİLEREK bir hedefe atladı, canlı mesaj gelince onu oradan
    * koparmak tam istediği şeyi (hedefte kalmak) elinden alırdı. Dönüş kararı
    * KULLANICIYA ait.
+   *
+   * ── Sunucu uzlaşması BURADA (review turu 4, Minör 10) ────────────────────
+   * Hedefli açılış reconcile `fetchHistory`sini BİLEREK atlıyor (mount
+   * effect'i, ~975) — doğru, Task 5'in sözü "geçmiş turu yok". Ama o yüzden
+   * ARAMA ÜZERİNDEN girilen bir ekran sunucuyla HİÇ uzlaşmıyordu: pencereli
+   * bucket'ta `receiveMessage` bastırılıyor, delta turu atlanıyor ve "son
+   * mesaja dön" yalnız DİSKİ yeniden okuyordu. Kaçmış bir edit/delete/receipt
+   * (hub event'i uygulama kapalıyken geçtiyse) ancak sohbetten çıkıp girince
+   * düzeliyordu. Burada normal dolu-bucket dalının attığı AYNI
+   * fire-and-forget turu atılıyor: fulfilled server-authoritative REPLACE
+   * ediyor, rejected'da (offline) yerel pencere aynen kalıyor.
    */
   const handleGoToLatest = useCallback(() => {
     hydrateConversation(dispatch, conversationId);
+    dispatch(fetchHistory({ conversationId, cursor: null, pageSize: HISTORY_PAGE_SIZE }));
     // Yeni pencere EN YENİDEN başlıyor — liste dibe otursun.
     requestAnimationFrame(() => {
       try {

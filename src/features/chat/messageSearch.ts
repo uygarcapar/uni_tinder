@@ -131,8 +131,14 @@ export interface SearchHighlightSegment {
  * ── Çözüm: pozisyon-korumalı katlama ─────────────────────────────────────────
  * `content`in HER karakteri TEK TEK `foldTr`dan geçirilip katlanmış çıktı
  * dizisi oluşturuluyor, her katlanmış karakterin HANGİ orijinal karaktere ait
- * olduğu `indexMap`te tutuluyor. Eşleşme TAMAMEN katlanmış uzayda aranıyor
- * (SQL'in gördüğü alanın AYNISI), sonra `indexMap` ile orijinal metindeki
+ * olduğu `indexMap`te tutuluyor. Eşleşme TAMAMEN katlanmış uzayda aranıyor —
+ * SQL'le AYNI KATLAMA KURALI (`foldTr`), ama AYNI ALAN DEĞİL: buradaki katlama
+ * karakter BAŞINA yapılıyor (ayrıştırılmış bir girdi, `foldTr(dizinin tamamı)`
+ * ile birebir aynı sonucu vermeyebilir) ve `searchableFolded`in yaptığı
+ * `\s+ → ' '` katlaması BURADA YOK. İkisi de bugün görünür bir davranış
+ * farkı üretmiyor (vurgu kozmetik; aradaki fark en kötü ihtimalle bir
+ * aralığın çizilmemesi), ama "aynı alan" diye OKUNMASIN —
+ * sonra `indexMap` ile orijinal metindeki
  * karşılık gelen ARALIĞA geri dönülüyor — "IŞIK" sorgusu "IŞIK" içeriğinde artık
  * doğru vurgulanıyor (bkz. messageSearch.test.ts > ISIK/isik testi).
  *

@@ -517,11 +517,17 @@ describe('pencereli bucket — "son mesaja dön" banner\'ı', () => {
     await act(async () => {});
 
     mockHydrateConversation.mockClear();
+    mockGetMessageHistory.mockClear();
     await act(async () => {
       fireEvent.press(screen.getByTestId('chat-go-to-latest'));
     });
 
     expect(mockHydrateConversation).toHaveBeenCalledWith(expect.any(Function), CONVERSATION_ID);
+    // Review turu 4, Minör 10 — hedefli açılış reconcile turunu BİLEREK
+    // atlıyor, dolayısıyla arama üzerinden girilen bir ekran sunucuyla HİÇ
+    // uzlaşmıyordu. "Son mesaja dön" o turu atmak zorunda: aksi hâlde kaçmış
+    // bir edit/delete/receipt ancak sohbetten çıkıp girince düzelir.
+    expect(mockGetMessageHistory).toHaveBeenCalled();
   });
 });
 
