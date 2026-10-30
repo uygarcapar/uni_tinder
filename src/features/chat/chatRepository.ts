@@ -67,16 +67,76 @@ function searchableFolded(content: string, contentType: number, isSystem: boolea
  * FTS satırını tazeler. Sanal tablonun UNIQUE kısıtı YOK — düzenlenen bir
  * mesaj çıplak INSERT'le her seferinde bir satır daha biriktirirdi; o yüzden
  * önce SİL sonra YAZ.
+ *
+ * ⚠️🔴 ANAHTAR `rowid`, `message_id` DEĞİL. `message_id` fts5'te UNINDEXED ve
+ * indekslenemez: `WHERE message_id = ?` tüm indeksi tarar, yani mesaj başına
+ * O(arşiv). Ölçüm (20k satırlık indekse 200 mesajlık sayfa, tek transaction):
+ * message_id ile 249 ms, rowid ile 0.6 ms. `messages.rowid` üzerinden gitmek
+ * her iki ifadeyi de PK aramasına indiriyor. Gerekçenin tamamı ve VACUUM
+ * bağımlılığı chatDb.ts'teki `CREATE_MESSAGES_FTS` yorumunda.
  */
-function syncFtsRow(db: ChatDbDriver, messageId: string, folded: string): void {
+function syncFtsRowAt(
+  db: ChatDbDriver,
+  rowid: number,
+  messageId: string,
+  folded: string,
+): void {
   if (!isFtsAvailable()) return;
-  db.run('DELETE FROM messages_fts WHERE message_id = ?', [messageId]);
+  db.run('DELETE FROM messages_fts WHERE rowid = ?', [rowid]);
   if (folded) {
-    db.run('INSERT INTO messages_fts (content_folded, message_id) VALUES (?,?)', [
+    db.run('INSERT INTO messages_fts (rowid, content_folded, message_id) VALUES (?,?,?)', [
+      rowid,
       folded,
       messageId,
     ]);
   }
+}
+
+function syncFtsRow(db: ChatDbDriver, messageId: string, folded: string): void {
+  if (!isFtsAvailable()) return;
+  const row = db.getFirst<{ rowid: number }>('SELECT rowid FROM messages WHERE id = ?', [
+    messageId,
+  ]);
+  if (!row) return;
+  syncFtsRowAt(db, row.rowid, messageId, folded);
+}
+
+/**
+ * Çapası tutmayan indeks satırlarını siler; silinen satır sayısını döner.
+ * Açılışta bir kez, `pruneOrphanSendAttempts`'in yanında.
+ *
+ * ── Neden silme yollarının HER BİRİNE yazılmadı ─────────────────────────────
+ * Mesaj satırı dört ayrı yerden siliniyor (`pruneExpiredMessages`,
+ * `removeConversationLocally`, `removeByClientMessageId`, geçmiş sayfasının
+ * boşluk-değiştirme dalı) ve her birine ayrı bir DELETE yazmak aynı yüklemin
+ * dördüncü kopyası olurdu — biri unutulduğunda sessizce bozulan türden.
+ * Çapanın kendisi tek bir ifadeyle doğrulanabildiği için tek yer yetiyor.
+ *
+ * ── Neden sadece "şişme" meselesi DEĞİL ─────────────────────────────────────
+ * Arama sonucu zaten `messages`a join'leniyor, yani yetim satır KULLANICIYA
+ * görünmüyor. Mesele gizlilik: `removeConversationLocally` engelleme/hesap
+ * silme yolunun kendisi ("gizlilik aksiyonu, disk değil" diyor kendi yorumu)
+ * ve retention budaması kullanıcı içeriğinin ömrünü belirliyor. Katlanmış
+ * olmak metni içerik olmaktan çıkarmıyor — `clearAllChatData` ve
+ * `destroyChatDb` bu kuralı zaten söylüyor, burası onu kalan yollara uyguluyor.
+ *
+ * Yüklem ÇAPAYI doğruluyor, yalnız varlığı değil: indeks satırının
+ * `message_id`si, aynı rowid'deki mesajın id'siyle aynı olmak ZORUNDA. Böylece
+ * hem mesajı silinmiş satırlar hem (rowid'i bir başkasına denk düşen) kaymış
+ * satırlar aynı ifadeyle gidiyor. `IS NOT` NULL-güvenli: mesaj hiç yoksa alt
+ * sorgu NULL döner ve satır yetim sayılır.
+ */
+export function pruneOrphanSearchIndex(): number {
+  if (!isFtsAvailable()) return 0;
+  const db = getChatDb();
+  const before = db.getFirst<{ n: number }>('SELECT COUNT(*) AS n FROM messages_fts')?.n ?? 0;
+  db.run(`
+    DELETE FROM messages_fts
+     WHERE message_id IS NOT (
+       SELECT id FROM messages WHERE messages.rowid = messages_fts.rowid
+     )`);
+  const after = db.getFirst<{ n: number }>('SELECT COUNT(*) AS n FROM messages_fts')?.n ?? 0;
+  return before - after;
 }
 
 function messageParams(
@@ -185,7 +245,13 @@ WHERE messages.sender_id            IS NOT excluded.sender_id
    OR messages.is_sender_deleted    IS NOT excluded.is_sender_deleted
    OR messages.localization_key     IS NOT excluded.localization_key
    OR messages.send_state           IS NOT excluded.send_state
-   OR messages.client_message_id    IS NOT COALESCE(excluded.client_message_id, messages.client_message_id)`;
+   OR messages.client_message_id    IS NOT COALESCE(excluded.client_message_id, messages.client_message_id)
+   -- Türev olduğu hâlde BURADA OLMAK ZORUNDA: v10 öncesinden kalan satırın
+   -- kolonu NULL ve içeriği değişmeden yeniden yazılabiliyor (reconcile).
+   -- Terim olmasaydı UPDATE düşer, kolon NULL kalır ama FTS satırı yazılırdı:
+   -- aynı mesajı FTS bulur, LIKE yedeği BULAMAZDI — iki arama yolu birbirine
+   -- ters düşerdi.
+   OR messages.content_folded       IS NOT excluded.content_folded`;
 
 /**
  * Tek mesajı yazar.
@@ -254,21 +320,25 @@ export function upsertMessage(
         raw.id,
         existing.id,
       ]);
-      // Arama indeksi `messages.id`ye bağlı ama FK'sı yok: eski id'nin satırı
-      // kalsaydı `messages`ta artık bulunmayan bir id'ye işaret eden kalıcı bir
-      // indeks satırı olurdu.
-      if (isFtsAvailable()) {
-        db.run('DELETE FROM messages_fts WHERE message_id = ?', [existing.id]);
-      }
+      // Arama indeksi için burada YAPILACAK BİR ŞEY YOK: rekey satırın id'sini
+      // YERİNDE güncelliyor, yani `rowid` değişmiyor ve indeks satırı aynı
+      // rowid'de duruyor. Aşağıdaki `syncFtsRow` onu (artık doğru olan
+      // `message_id` çapasıyla) tazeliyor. Anahtar `message_id` olsaydı eski
+      // id'ye bağlı bir satır kalır ve ayrıca silmek gerekirdi.
     }
   }
   const { id, folded, params } = messageParams(raw, conversationId, sendState);
   db.run(UPSERT_MESSAGE, params);
   // Mesajın diske indiği DÖRT yol da (realtime, messageSent, geçmiş sayfası,
   // delta turu) buradan geçiyor — katlanmış kolon ve indeks satırı bu TEK
-  // kapıda yazılıyor, çağrı yerlerinde değil. Satır gerçekten değişmemişse
-  // yukarıdaki UPDATE düşer ama indeks yine tazelenir: idempotent ve eksik
-  // kalmış bir indeks satırını kendiliğinden onarıyor.
+  // kapıda yazılıyor, çağrı yerlerinde değil.
+  //
+  // Koşulsuz: satır hiç değişmemiş olsa bile indeks tazeleniyor. Bu, YALNIZ
+  // yeniden-upsert edilen satırları onarır — başka bir deyişle, kapasite
+  // kapalıyken yazılmış (dolayısıyla `content_folded`ı NULL OLMAYAN) bir satır
+  // kapasite sonradan açılsa bile buradan da, doldurma turundan da geçmez.
+  // Bilinen boşluk; kapanışı tek satır: `UPDATE messages SET content_folded =
+  // NULL` dedikten sonra boot'taki doldurma turu indeksi baştan kurar.
   syncFtsRow(db, id, folded);
 }
 
@@ -310,6 +380,13 @@ export function saveMessage(
  * EN YENİDEN geriye: kullanıcının aradığı şey büyük olasılıkla yakın geçmişi,
  * arşivin kuyruğu beklesin.
  *
+ * ⚠️ Seçimin arkasında KISMİ İNDEKS var (migrations V10:
+ * `idx_messages_unfolded`). Onsuz her çağrı tüm `messages`ı tarayıp sıralardı
+ * — `idx_messages_conv_time` sohbet içi bir sıralama, global sıraya hizmet
+ * edemiyor — ve çağrı döngüyle sürdüğü için maliyet O(n²/limit) olurdu.
+ * Kısmi indeksin güzelliği: doldurma ilerledikçe kendisi boşalıyor, tur
+ * bitince diskte sıfır satır kalıyor.
+ *
  * `row_version` BİLEREK artmıyor: bu kolon ekrana projekte edilmiyor, artırmak
  * tüm arşivi messageCache'in hızlı yolundan düşürür ve karşılığında hiçbir
  * görsel fark üretmezdi.
@@ -317,12 +394,13 @@ export function saveMessage(
 export function backfillContentFolded(limit: number): number {
   const db = getChatDb();
   const rows = db.getAll<{
+    rowid: number;
     id: string;
     content: string;
     content_type: number;
     is_system_message: number;
   }>(
-    `SELECT id, content, content_type, is_system_message FROM messages
+    `SELECT rowid, id, content, content_type, is_system_message FROM messages
      WHERE content_folded IS NULL
      ORDER BY sent_at_ms DESC
      LIMIT ?`,
@@ -336,8 +414,8 @@ export function backfillContentFolded(limit: number): number {
         row.content_type,
         !!row.is_system_message,
       );
-      db.run('UPDATE messages SET content_folded = ? WHERE id = ?', [folded, row.id]);
-      syncFtsRow(db, row.id, folded);
+      db.run('UPDATE messages SET content_folded = ? WHERE rowid = ?', [folded, row.rowid]);
+      syncFtsRowAt(db, row.rowid, row.id, folded);
     }
   });
   return rows.length;
@@ -864,6 +942,12 @@ export function applyDelivered(
   });
 }
 
+/**
+ * ⚠️ `content_folded` ve FTS satırı BİLEREK duruyor — `content` silinse bile.
+ * Silinmiş mesajı arama sonucundan eleyen yer SORGU (Task 3, Review Focus 1);
+ * indeksten çıkarmak, geri alınan bir silmenin yeniden indeksleme istemesi
+ * demekti. "Temizlik" diye buraya bir indeks silme eklemek o kararı bozar.
+ */
 export function applyDeleted(p: {
   messageId: string;
   forEveryone: boolean;
@@ -893,6 +977,9 @@ export function applyDeleted(p: {
  * İçerik HER İKİ durumda da temizleniyor — `deletedForEveryone=false` bile
  * olsa. Sunucu da delta'da metni hiç göndermiyor; yerelde tutmaya devam etmek
  * o kararı boşa çıkarırdı.
+ *
+ * ⚠️ `applyDeleted`'taki ile aynı gerekçe: `content_folded` ve FTS satırı
+ * yerinde bırakılıyor, süzme sorgu anında yapılıyor (Task 3, Review Focus 1).
  */
 export function applyDeletionTombstone(p: {
   messageId: string;

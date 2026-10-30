@@ -69,6 +69,28 @@ let ftsAvailable = false;
  * indekste DEĞİL — arama sonucu `messages` satırına join'lenip orijinal
  * `content` okunuyor (Task 3'ün `MessageSearchHit`i). İndekste ikinci bir kopya
  * tutmak, aynı metni iki yerde tazeleme borcu demekti.
+ *
+ * ── Satırın anahtarı `rowid`, `message_id` DEĞİL ────────────────────────────
+ * ⚠️🔴 `message_id` UNINDEXED: üzerinde indeks YOK ve fts5'te yaratılamaz da.
+ * `WHERE message_id = ?` bu yüzden TÜM indeksi tarıyor (EXPLAIN: "SCAN
+ * messages_fts VIRTUAL TABLE INDEX 0") — yani mesaj başına O(arşiv), bir
+ * geçmiş sayfası boyunca kuadratik. Ölçüldü (better-sqlite3, 20k satırlık
+ * indeks, 200 mesajlık sayfa tek transaction'da): message_id anahtarıyla
+ * 249 ms, rowid anahtarıyla 0.6 ms. Backfill sayfaları JS thread'inde senkron
+ * yazıldığı için bu doğrudan donmuş arayüz demek.
+ *
+ * O yüzden HER yazma/silme `messages.rowid` üzerinden gidiyor (`messages`
+ * rowid'li bir tablo — `id TEXT PRIMARY KEY`, WITHOUT ROWID değil).
+ * `message_id` kolonu yalnız ÇAPA: indeks satırının hangi mesaja ait olduğunu
+ * doğrulanabilir kılıyor (bkz. chatRepository.pruneOrphanSearchIndex) ve
+ * ayıklamada okunabilir tutuyor. ARAMA/SİLME ANAHTARI OLARAK KULLANMA.
+ *
+ * ⚠️ Bu, `VACUUM`a bir bağımlılık doğuruyor: VACUUM rowid'leri yeniden
+ * numaralandırabilir ve indeksin çapaları kayar. Bugün tek VACUUM aşağıdaki
+ * wipe dalında ve orada ZARARSIZ — iki tablo da AYNI transaction'da
+ * boşaltıldıktan sonra çalışıyor, ortada kayacak satır kalmıyor. Başka bir
+ * yere VACUUM eklenecekse arkasından indeks yeniden kurulmalı
+ * (`UPDATE messages SET content_folded = NULL` + boot'taki doldurma turu).
  */
 const CREATE_MESSAGES_FTS = `
 CREATE VIRTUAL TABLE IF NOT EXISTS messages_fts USING fts5(

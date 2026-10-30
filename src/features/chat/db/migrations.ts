@@ -328,10 +328,24 @@ CREATE TABLE pending_mutations (
  * (Task 3 `content_folded` üzerinde LIKE'a düşüyor — doğru, yalnız yavaş);
  * zincirin içinde yaratılamazsa kaybedilen şey sohbetin tamamı. İhtimali
  * düşük, bedeli toplam — V7'deki çıplak `DROP TABLE` dersinin aynısı.
+ *
+ * ── `idx_messages_unfolded` — KISMİ ve kendini boşaltan ─────────────────────
+ * `backfillContentFolded`ın seçimi (`content_folded IS NULL`, `sent_at_ms`
+ * sırayla) başka hiçbir indeksle karşılanamıyor: `idx_messages_conv_time`
+ * SOHBET İÇİ bir sıralama (`conversation_id` öncü kolon), global sıraya
+ * hizmet edemez. Doldurma turu döngüyle çağrıldığı için indekssiz hâl her
+ * çağrıda tam tarama + sıralama, yani O(n²/limit) demekti.
+ *
+ * Kısmi (`WHERE content_folded IS NULL`) olması bir optimizasyon değil
+ * tasarımın kendisi: indeks tam olarak "yapılacak iş"i tutuyor, doldurma
+ * ilerledikçe satırları düşüyor ve tur bitince diskte boş bir kabuk kalıyor.
+ * Tam indeks olsaydı arşivin tamamı kadar yer kaplayıp hiç küçülmezdi.
  */
 const V10 = `
 ALTER TABLE sync_state ADD COLUMN backfill_failures INTEGER NOT NULL DEFAULT 0;
 ALTER TABLE messages ADD COLUMN content_folded TEXT;
+CREATE INDEX idx_messages_unfolded ON messages (sent_at_ms DESC)
+  WHERE content_folded IS NULL;
 `;
 
 export const MIGRATIONS: { version: number; up: (db: ChatDbDriver) => void }[] = [

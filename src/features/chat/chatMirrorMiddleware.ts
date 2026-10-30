@@ -39,6 +39,55 @@ let stopDeltaSync: (() => void) | null = null;
 let stopBackfill: (() => void) | null = null;
 
 /**
+ * v10'un `content_folded` kolonu arşivdeki her satıra NULL olarak eklendi;
+ * doldurulmadan arama o mesajları HİÇ bulamaz ve bu kullanıcıya "arama bozuk"
+ * diye değil "o mesaj yok" diye görünür. Doldurma turunu süren yer burası.
+ *
+ * ── Neden backfill turu DEĞİL ───────────────────────────────────────────────
+ * `chatBackfill` ağa ve paylaşımlı rate-limit kovasına bağlı ve `backfill_done`
+ * çevrilince duruyor. Oraya bağlasaydık arşivi ZATEN tamam olan kullanıcılar —
+ * yani aranacak en çok şeyi olanlar — hiç doldurulmazdı. Bu iş tamamen yerel,
+ * yeri de yerel bakım sırası.
+ *
+ * ── Neden tükenene kadar DEĞİL ──────────────────────────────────────────────
+ * İş senkron ve bu kod ilk okumadan önce, açılış yolunda koşuyor; büyük bir
+ * arşivi tek seferde doldurmak saniyelerce donmuş arayüz demek. Parça parça,
+ * bütçe dolunca bırak: kalan satırlar bir sonraki açılışta devam eder
+ * (`content_folded IS NULL` hem iş kuyruğu hem imleç).
+ *
+ * Sayılar ÖLÇÜLDÜ (better-sqlite3, 100k satırlık arşiv, kısmi indeks
+ * devredeyken): 100'lük parça 4.4 ms, 500'lük 19.2 ms, 2000'lik 65.4 ms —
+ * satır başına 44/38/33 µs, yani çağrı başına ek yük küçük ve büyük parçanın
+ * kazancı hızla azalıyor. 500 seçildi çünkü 2000'lik parça tek ve bölünemez
+ * bir adımda bütçenin yarısını yiyor. 120 ms bütçe bu makinede açılış başına
+ * ~5000 satır; telefonda daha az.
+ *
+ * ⚠️ Yani 100k'lık bir arşiv tek açılışta BİTMİYOR, onlarca açılış sürüyor.
+ * Kabul edilen takas bu: sıra EN YENİDEN geriye olduğu için ilk açılış zaten
+ * kullanıcının aradığı yakın geçmişi indeksliyor, arşivin kuyruğu arkadan
+ * geliyor. Bütçeyi büyütmek doğrudan açılışta donmuş ekran demek.
+ */
+const FOLD_CHUNK = 500;
+const FOLD_BUDGET_MS = 120;
+
+function backfillSearchIndexOnBoot(): void {
+  const startedAt = Date.now();
+  let filled = 0;
+  for (;;) {
+    const n = repo.backfillContentFolded(FOLD_CHUNK);
+    filled += n;
+    // Parçadan az geldiyse kuyruk boşaldı — boşa bir SELECT daha atma.
+    if (n < FOLD_CHUNK) break;
+    if (Date.now() - startedAt >= FOLD_BUDGET_MS) break;
+  }
+  if (__DEV__ && filled > 0) {
+    console.log(
+      `[chatMirror] ${filled} mesaj arama indeksine alındı (${Date.now() - startedAt} ms)`,
+    );
+  }
+}
+
+/**
  * Store kurulduktan sonra bir kez — DB'yi açar, eski MMKV blob'unu taşır,
  * saklama penceresini uygular ve delta-sync tetikleyicilerini kurar.
  *
@@ -71,6 +120,20 @@ export function startChatMirror(store?: {
     // Tablonun gerçek sınırını bu satır çiziyor; ilk okumadan ÖNCE koşmalı ki
     // gönderilmiş/yetim satırlar birikmeden temizlensin.
     repo.pruneOrphanSendAttempts();
+    // Arama indeksinin açılış bakımı KENDİ try'ında: dıştaki catch aynayı
+    // TAMAMEN devre dışı bırakıyor ve bedeller eşit değil. Bozuk bir indeks
+    // yalnız aramayı etkiler (Task 3 `content_folded` üzerinde LIKE'a düşüyor);
+    // onun yüzünden sohbetin local-first yolunu kapatmak, sanal tabloyu
+    // migration zincirine koymakla aynı hatanın tekrarı olurdu.
+    try {
+      // Mesajı silinmiş (ya da rowid'i kaymış) indeks satırları.
+      // `pruneExpiredMessages`'ten SONRA: onun sildiği satırların indeks
+      // karşılıkları da bu turda gitsin.
+      repo.pruneOrphanSearchIndex();
+      backfillSearchIndexOnBoot();
+    } catch (error) {
+      console.error('[chatMirror] arama indeksi bakımı düştü, arama LIKE yolunda:', error);
+    }
   } catch (error) {
     console.error('[chatMirror] başlatılamadı, ayna devre dışı:', error);
     started = false;

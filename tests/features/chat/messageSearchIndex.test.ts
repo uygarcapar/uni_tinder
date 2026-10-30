@@ -1,4 +1,16 @@
 jest.mock('expo-sqlite');
+jest.mock('react-native-mmkv');
+// Açılış sürücüsü testi `startChatMirror`ı çağırıyor; bu ikisi store'lu dalda
+// yaşıyor ve burada hiçbir şey ispatlamıyor (biri hub'a abone olur, diğeri
+// timer kurar).
+jest.mock('@/features/chat/chatDeltaSync', () => ({
+  __esModule: true,
+  startDeltaSync: jest.fn(() => jest.fn()),
+}));
+jest.mock('@/features/chat/chatBackfill', () => ({
+  __esModule: true,
+  startBackfill: jest.fn(() => jest.fn()),
+}));
 
 import * as SQLite from 'expo-sqlite';
 import {
@@ -7,11 +19,18 @@ import {
   isFtsAvailable,
   __resetChatDbForTests,
 } from '@/features/chat/db/chatDb';
+import * as repo from '@/features/chat/chatRepository';
 import {
   backfillContentFolded,
+  pruneOrphanSearchIndex,
   saveMessage,
   upsertMessage,
 } from '@/features/chat/chatRepository';
+import { startBackfill } from '@/features/chat/chatBackfill';
+import {
+  startChatMirror,
+  __resetChatMirrorForTests,
+} from '@/features/chat/chatMirrorMiddleware';
 import { ContentType } from '@/features/chat/contentType';
 import { clear as clearMessageCache } from '@/features/chat/messageCache';
 import type { MessageDto } from '@/shared/types';
@@ -97,9 +116,21 @@ function withoutFts5<T>(fn: () => T): T {
   }
 }
 
+const storeStub = () => ({
+  getState: () => ({ chat: { activeConversationId: null } }),
+  dispatch: jest.fn(),
+});
+
+function rowidOf(id: string): number {
+  return getChatDb().getFirst<{ rowid: number }>('SELECT rowid FROM messages WHERE id = ?', [
+    id,
+  ])!.rowid;
+}
+
 beforeEach(() => {
   __resetChatDbForTests();
   __resetAllDatabases();
+  __resetChatMirrorForTests();
   clearMessageCache();
   openChatDb();
 });
@@ -150,6 +181,61 @@ describe('tek yazıcı kapısı', () => {
     expect(ftsRowsFor('m1')[0].content_folded).toBe('yeni');
   });
 
+  it('indeks satırı mesajın ROWID’sine çapalı — message_id ile aranmıyor', () => {
+    // İlk mesaj indekslenmeyen bir ses: `messages.rowid` 1'de, indeks boş.
+    // Böylece metin mesajının rowid'si (2) ile fts5'in kendi vereceği otomatik
+    // rowid (1) AYRIŞIYOR; satır rowid'siz yazılsaydı bu test kızarırdı.
+    saveMessage(msg('v1', '', { contentType: ContentType.Voice }), CONV);
+    saveMessage(msg('m1', 'merhaba'), CONV);
+    expect(
+      getChatDb().getAll<{ message_id: string }>(
+        'SELECT message_id FROM messages_fts WHERE rowid = ?',
+        [rowidOf('m1')],
+      ),
+    ).toEqual([{ message_id: 'm1' }]);
+  });
+
+  it('doldurma turunun seçimi KISMİ İNDEKSTEN geçiyor — tam tarama değil', () => {
+    const plan = getChatDb()
+      .getAll<{ detail: string }>(
+        `EXPLAIN QUERY PLAN
+         SELECT rowid, id, content, content_type, is_system_message FROM messages
+          WHERE content_folded IS NULL
+          ORDER BY sent_at_ms DESC
+          LIMIT 1`,
+      )
+      .map((r) => r.detail)
+      .join(' | ');
+    // Taranan şey TABLO değil kısmi indeks — yani "yapılacak iş" kümesi; ve
+    // sıralama indeksten geldiği için geçici B-tree kurulmuyor.
+    expect(plan).toContain('idx_messages_unfolded');
+    expect(plan).not.toContain('TEMP B-TREE');
+  });
+
+  it('v10 öncesi satır AYNI içerikle yeniden yazılınca kolon NULL kalmıyor', () => {
+    // Ayırt edici: UPSERT'ün "gerçekten değişti mi" WHERE'inde `content_folded`
+    // terimi olmasaydı UPDATE düşer, kolon NULL kalır ama FTS satırı yazılırdı
+    // — FTS mesajı bulur, LIKE yedeği bulamazdı.
+    const sentAtMs = 1_700_000_000_000;
+    insertRawMessage('eski-1', 'merhaba', sentAtMs);
+    // Satırın KARŞILAŞTIRILAN her alanıyla birebir aynı DTO — tek fark
+    // `content_folded`. Aksi hâlde WHERE başka bir terimden tutar ve test
+    // pinlediğini sandığı şeyi pinlemez.
+    saveMessage(
+      {
+        id: 'eski-1',
+        conversationId: CONV,
+        senderId: null,
+        content: 'merhaba',
+        contentType: ContentType.Text,
+        sentAt: new Date(sentAtMs).toISOString(),
+      } as unknown as MessageDto,
+      CONV,
+    );
+    expect(readContentFolded('eski-1')).toBe('merhaba');
+    expect(ftsRowsFor('eski-1')).toHaveLength(1);
+  });
+
   it('optimistik satır gerçek id ile rekey olunca eski id indekste KALMIYOR', () => {
     saveMessage(msg('temp-cm1', 'merhaba', { clientMessageId: 'cm1' }), CONV, 'pending');
     saveMessage(msg('real-1', 'merhaba', { clientMessageId: 'cm1' }), CONV);
@@ -179,6 +265,76 @@ describe('arşivin tek seferlik doldurulması', () => {
     expect(backfillContentFolded(2)).toBe(0);
     for (let i = 0; i < 5; i += 1) {
       expect(readContentFolded(`eski-${i}`)).toBe(`mesaj ${i}`);
+    }
+  });
+});
+
+describe('yetim indeks satırları', () => {
+  it('mesajı silinmiş indeks satırı gidiyor, duranlar kalıyor', () => {
+    saveMessage(msg('m1', 'kalacak'), CONV);
+    saveMessage(msg('m2', 'gidecek'), CONV);
+    const goneRowid = rowidOf('m2');
+    // Mesajı silen yolların hiçbiri indekse dokunmuyor (bilerek — tek yerde
+    // toplanıyor): engelleme/hesap silme, retention budaması, boşluk değiştirme.
+    getChatDb().run('DELETE FROM messages WHERE id = ?', ['m2']);
+
+    expect(pruneOrphanSearchIndex()).toBe(1);
+    expect(
+      getChatDb().getAll('SELECT rowid FROM messages_fts WHERE rowid = ?', [goneRowid]),
+    ).toEqual([]);
+    expect(ftsRowsFor('m1')).toHaveLength(1);
+  });
+
+  it('çapası kaymış satır da gidiyor — yalnız "mesaj var mı" denmiyor', () => {
+    saveMessage(msg('m1', 'dogru'), CONV);
+    // Yaşayan bir mesajın rowid'sinde BAŞKA bir mesaja ait indeks satırı:
+    // yüklem yalnız varlığa baksaydı bu satır kalır ve 'm1' aratıldığında
+    // başkasının metni eşleşirdi.
+    getChatDb().run('DELETE FROM messages_fts WHERE rowid = ?', [rowidOf('m1')]);
+    getChatDb().run(
+      'INSERT INTO messages_fts (rowid, content_folded, message_id) VALUES (?,?,?)',
+      [rowidOf('m1'), 'baskasinin metni', 'bambaska'],
+    );
+
+    expect(pruneOrphanSearchIndex()).toBe(1);
+    expect(getChatDb().getAll('SELECT rowid FROM messages_fts')).toEqual([]);
+  });
+});
+
+describe('açılış sürücüsü', () => {
+  it('startChatMirror arşivi doldurma turundan geçiriyor', () => {
+    // Ayırt edici: sürücü olmasaydı kolon NULL kalır, arama bu mesajları hiç
+    // bulamaz ve bu kullanıcıya "o mesaj yok" diye görünürdü.
+    // Tarihler TAZE: `startChatMirror` önce `pruneExpiredMessages` koşuyor ve
+    // saklama penceresinin dışındaki satırlar doldurulmadan önce silinirdi.
+    insertRawMessage('eski-1', 'Çağrı', Date.now() - 2000);
+    insertRawMessage('eski-2', 'IŞIK', Date.now() - 1000);
+
+    startChatMirror();
+
+    expect(readContentFolded('eski-1')).toBe('cagri');
+    expect(readContentFolded('eski-2')).toBe('isik');
+    expect(ftsRowsFor('eski-2')).toEqual([{ content_folded: 'isik' }]);
+  });
+
+  it('indeks bakımı patlasa bile ayna AYAKTA kalıyor', () => {
+    // Ayırt edici: kendi try'ı olmasaydı dıştaki catch `started = false` deyip
+    // ERKEN dönerdi — yani bozuk bir arama indeksi sohbetin local-first
+    // yolunu tamamen kapatırdı.
+    const spy = jest
+      .spyOn(repo, 'pruneOrphanSearchIndex')
+      .mockImplementation(() => {
+        throw new Error('indeks bozuk');
+      });
+    // Beklenen hata; test çıktısını kirletmesin.
+    const logged = jest.spyOn(console, 'error').mockImplementation(() => {});
+    try {
+      startChatMirror(storeStub());
+      expect(startBackfill).toHaveBeenCalled();
+      expect(logged).toHaveBeenCalled();
+    } finally {
+      spy.mockRestore();
+      logged.mockRestore();
     }
   });
 });
