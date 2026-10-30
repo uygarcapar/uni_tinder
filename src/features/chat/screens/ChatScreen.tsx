@@ -2401,13 +2401,24 @@ function ChatScreen({
                 {t("chat.inlineSearch.empty")}
               </Text>
             ) : null}
+            {/* Review turu 2, Important — glifler ÖNCEKİ "en eski→en yeni
+                sıralı, ileri=+1" dünyasına göre dikilmişti ve ileri/geri
+                yönü (review turu 1) ters çevrilirken UNUTULDU. `next` artık
+                DAHA ESKİYE gidiyor (yukarıdaki yorum, `handleInlineSearchNext`)
+                ve ekran kronolojik (eski→yeni, `messagesWithSeparators`daki
+                `chronological = ...reverse()`) sıralı olduğu için daha eski
+                bir hedef LİSTEDE YUKARI (küçük index) demek —
+                `scrollToIndex` görünümü YUKARI taşır. Glif de yukarı
+                göstermeli: `next` → chevron.up (yukarı/geçmişe), `prev` →
+                chevron.down (aşağı/şimdiye) — WhatsApp'ın kullandığı eşleşme,
+                `:1902` civarındaki yorumla AYNI. */}
             <TouchableOpacity
               testID="chat-inline-search-prev"
               onPress={handleInlineSearchPrev}
               hitSlop={8}
               accessibilityLabel={t("chat.inlineSearch.prevLabel")}
             >
-              <SFIcon name="chevron.up" fallback={ChevronUp} size={18} color={colors.text} />
+              <SFIcon name="chevron.down" fallback={ChevronDown} size={18} color={colors.text} />
             </TouchableOpacity>
             <TouchableOpacity
               testID="chat-inline-search-next"
@@ -2415,7 +2426,7 @@ function ChatScreen({
               hitSlop={8}
               accessibilityLabel={t("chat.inlineSearch.nextLabel")}
             >
-              <SFIcon name="chevron.down" fallback={ChevronDown} size={18} color={colors.text} />
+              <SFIcon name="chevron.up" fallback={ChevronUp} size={18} color={colors.text} />
             </TouchableOpacity>
             <TouchableOpacity
               testID="chat-inline-search-close"

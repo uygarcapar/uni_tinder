@@ -239,7 +239,7 @@ import { Provider } from 'react-redux';
 import { configureStore } from '@reduxjs/toolkit';
 import { render, screen, act, fireEvent } from '@testing-library/react-native';
 import { NavigationContainer } from '@react-navigation/native';
-import chatReducer, { hydrateWindow, receiveMessage } from '@/features/chat/chatSlice';
+import chatReducer, { hydrateWindow, receiveMessage, messageEdited } from '@/features/chat/chatSlice';
 import ChatScreen from '@/features/chat/screens/ChatScreen';
 import i18n from '@/shared/i18n';
 
@@ -435,9 +435,18 @@ describe('sohbet içinde arama', () => {
     // Açılışta EN YENİ eşleşmeye atlanır, index 0 → sayaçta "1/3".
     expect(screen.getByText('1/3')).toBeTruthy();
     expect(mockHighlightMessage).toHaveBeenLastCalledWith('m-newest');
-    expect(mockScrollToIndex).toHaveBeenLastCalledWith(
-      expect.objectContaining({ index: expect.any(Number) }),
-    );
+    // Review turu 2 — `expect.any(Number)` çağrının OLDUĞUNU kanıtlıyordu,
+    // HANGİ satıra kaydırdığını DEĞİL (yanlış index'e kayan bir hop da
+    // geçerdi). `hydrateAroundImpl` her hop'ta pencereyi TEK mesajlık taze
+    // bir bucket'a çeviriyor (bkz. yukarıdaki `messages: [messageDto(...)]`)
+    // — `withDateSeparators` her zaman tek bir gün separator'ı + o mesajı
+    // üretir (ayrı günler yok, `seenDays` her render'da sıfırdan başlar),
+    // yani hedef satır HER hop'ta deterministik biçimde index 1'de.
+    expect(mockScrollToIndex).toHaveBeenLastCalledWith({
+      index: 1,
+      animated: true,
+      viewPosition: 0.5,
+    });
     // Başlangıç indeksi başka bir değere düşüp sonra düzeltilmiyor — TEK
     // atlama. Bu, "iki ayrı efekt" sürümünün ürettiği (önce yanlış hedefe,
     // sonra doğruya zıplayan) kırpışmayı pinliyor: kırılırsa bu sayı 2'ye çıkar.
@@ -608,6 +617,97 @@ describe('sohbet içinde arama', () => {
 
     expect(screen.getByText('1/200+')).toBeTruthy();
     expect(screen.queryByText('1/200')).toBeNull();
+  });
+
+  /**
+   * Review turu 2, Minor 4 — hiçbir test bir sonuç kümesini KÜÇÜLTMÜYORDU,
+   * yani `inlineSearchDisplayIndex`i (render'daki `Math.min` clamp'i) kaldırıp
+   * çağrı yerlerini çiğ `inlineSearchIndex`e geri çevirsen bile bu suite'in
+   * HİÇBİR testi kırılmazdı. Bu test geç bir index'te PARK EDİP sorguyu
+   * DARALTIYOR ve sayacın hiçbir zaman total'den büyük bir current
+   * BASMADIĞINI doğruluyor.
+   *
+   * ── Dürüstlük notu ───────────────────────────────────────────────────────
+   * RNTL'in `act()`i bir efekt zincirini (burada: "yeni sonuç kümesi → index
+   * sıfırla → bir sonraki render'da doğru hedefe atla") tek çağrıda TAMAMEN
+   * tüketip stabil son duruma kadar akıtıyor — `act()` dönene kadar ara
+   * commit'leri `screen` üzerinden GÖZLEMLEMENİN bilinen bir yolu yok. Yani bu
+   * test clamp'in koruduğu TEK KARELİK ara durumu DOĞRUDAN yakalamıyor;
+   * yakaladığı şey SON (ayarlanmış) durumun hep tutarlı kaldığı — ki bu,
+   * index-sıfırlama efekti (ayrı bir mekanizma) sayesinde clamp OLMASA DA
+   * doğru çıkıyor. Yine de pratik değeri var: index-sıfırlama efekti
+   * BOZULURSA (ör. yanlışlıkla kaldırılırsa) bu test YAKALAR — ki bu,
+   * clamp'in tek başına koruduğundan daha GERÇEKÇİ bir regresyon sınıfı.
+   */
+  it('geç bir index\'te park edip sorgu daraldığında sayaç hiçbir zaman total\'den büyük current basmıyor', async () => {
+    mockSearchMessages.mockReturnValue([
+      hitFixture('m-5', BASE_MS + 5000),
+      hitFixture('m-4', BASE_MS + 4000),
+      hitFixture('m-3', BASE_MS + 3000),
+      hitFixture('m-2', BASE_MS + 2000),
+      hitFixture('m-1', BASE_MS + 1000),
+    ]);
+    hydrateAroundImpl = (dispatch, conversationId, sentAtMs, messageId) => {
+      dispatch(
+        hydrateWindow({
+          conversationId,
+          messages: [messageDto(messageId, sentAtMs)],
+          nextCursor: null,
+          hasMore: true,
+          hasHiddenHistory: false,
+          isWindowed: true,
+        }),
+      );
+      return true;
+    };
+
+    renderChatScreen();
+    await act(async () => {});
+    jest.useFakeTimers();
+    try {
+      openSearchAndType('selam');
+    } finally {
+      jest.useRealTimers();
+    }
+    await act(async () => {});
+    expect(screen.getByText('1/5')).toBeTruthy();
+
+    // Geç bir index'te PARK ET — "4/5".
+    await act(async () => {
+      fireEvent.press(screen.getByTestId('chat-inline-search-next'));
+    });
+    await act(async () => {
+      fireEvent.press(screen.getByTestId('chat-inline-search-next'));
+    });
+    await act(async () => {
+      fireEvent.press(screen.getByTestId('chat-inline-search-next'));
+    });
+    expect(screen.getByText('4/5')).toBeTruthy();
+
+    // Sorguyu DARALT — yeni (daha kısa) sonuç kümesi: 2 eşleşme.
+    mockSearchMessages.mockReturnValue([
+      hitFixture('m-narrow-2', BASE_MS + 2000),
+      hitFixture('m-narrow-1', BASE_MS + 1000),
+    ]);
+    jest.useFakeTimers();
+    try {
+      fireEvent.changeText(
+        screen.getByTestId('chat-inline-search-input'),
+        'selamlar',
+      );
+      act(() => {
+        jest.advanceTimersByTime(1000);
+      });
+    } finally {
+      jest.useRealTimers();
+    }
+    await act(async () => {});
+
+    // Sayaç DOĞRU son durumda — "4/2" gibi aralık dışı bir değer YOK,
+    // yeni kümenin EN YENİSİNE (index 0) dönülmüş: "1/2".
+    expect(screen.getByText('1/2')).toBeTruthy();
+    expect(screen.queryByText(/^[2-9]\/2$/)).toBeNull();
+    expect(screen.queryByText(/^4\//)).toBeNull();
   });
 
   /**
@@ -874,30 +974,45 @@ describe('sohbet içinde arama', () => {
   });
 
   /**
-   * Review turu 1, Minor 5 — Task 5'in `jumpTargetRef`i ref'i `findIndex`TEN
-   * ÖNCE temizliyor (bkz. ChatScreen.tsx ~897. satır); bu ekranın
-   * `pendingInlineSearchJumpRef`i ÖNCEDEN SONRA temizliyordu — bir "miss"te
-   * (hedef `renderedData`da hiç yoksa, ör. arkadan gelen pencere hedefi
-   * içermiyor) ref SİLAHLI kalıp alakasız bir SONRAKİ `messages` değişimini
-   * (örn. yeni bir arama hop'u) etkileyebilirdi. Bu test: ilk hop "miss"
-   * olsa bile (hydrateAroundMessage `found:false` döner) ref tıkanmıyor,
-   * ARDINDAN gelen GEÇERLİ bir hop kendi hedefine doğru highlight'lıyor.
+   * Review turu 2, Minor 5 — review turu 1'in testi `hydrateAroundMessage`i
+   * `found:false` döndürerek "miss" simüle ediyordu, ama o dalda
+   * `pendingInlineSearchJumpRef` HİÇ ARMA EDİLMİYOR (`if (found) ref.current
+   * = ...` — false'ta ref'e hiç dokunulmuyor), yani eski (hatalı) sıralama
+   * ("ref'i `findIndex`TEN SONRA temizle") ile yeni sıralama arasında BU
+   * testte gözlenebilir bir fark YOKTU; kod reverte edilse de test geçerdi.
+   *
+   * Gerçek ayrım noktası `found:true` + hedefin `renderedData`dan FİLTRELENMİŞ
+   * olması (ör. "sadece benden sil" → `deletedAt` var, `deletedForEveryone:
+   * false`, bkz. messagesWithSeparators'daki filtre) — bu durumda ref ARMA
+   * EDİLİYOR ama `findIndex` −1 dönüyor ("miss" ama ref dolu). Eski kod bu
+   * noktada ref'i TEMİZLEMEDEN `return` ediyordu; ref sonsuza dek silahlı
+   * kalıyordu. Hedefin KENDİSİ bir daha asla görünür olmasa bile (silinmiş
+   * mesaj geri gelmez) ref'in GERÇEKTEN temizlenip temizlenmediğini
+   * gözlemlemenin yolu: aynı mesajı (search'ün BİLGİSİ OLMADAN) sonradan
+   * `messageEdited` ile "geri al" (başarısız bir silme isteğinin snapshot
+   * geri yüklemesiyle AYNI yol, bkz. ChatScreen.handleDelete'in catch bloğu)
+   * — mesaj artık `renderedData`da GÖRÜNÜR olur. Eski kod hâlâ silahlı
+   * ref'i okur, `findIndex` artık ≥0 döner, ve kullanıcının çok önce
+   * bıraktığı bir arama hop'u BEKLENMEDİK şekilde kaydırıp vurgular. Yeni
+   * kod ref'i ilk miss'te zaten temizlediği için bu İKİNCİ (alakasız)
+   * `messages` değişiminde hiçbir şey yapmaz.
    */
-  it('bir hop\'un atlaması bulunamasa (miss) bile sıradaki GEÇERLİ hop kendi hedefini vurguluyor', async () => {
-    mockSearchMessages.mockReturnValue([
-      hitFixture('m-newest', BASE_MS + 1000),
-      hitFixture('m-oldest', BASE_MS),
-    ]);
-    // İlk çağrı (en yeni, başlangıç) BULUNAMADI — pencere hiç dispatch
-    // edilmiyor (chatHydrate'in "miss" sözleşmesi).
-    let calls = 0;
+  it('miss\'te (filtrelenmiş hedef) ref temizleniyor — hedef SONRADAN görünür olsa bile eski arama hop\'u onu vurgulamıyor', async () => {
+    const DELETED_ID = 'm-deleted';
+    mockSearchMessages.mockReturnValue([hitFixture(DELETED_ID, BASE_MS)]);
+    // `found:true` — ref ARMA EDİLİYOR — ama pencere hedefi "sadece benden
+    // sil" ile işaretli dispatch ediyor: `messagesWithSeparators`in filtresi
+    // (`!(m.deletedAt && !m.deletedForEveryone)`) onu `renderedData`dan ELER.
     hydrateAroundImpl = (dispatch, conversationId, sentAtMs, messageId) => {
-      calls += 1;
-      if (calls === 1) return false;
       dispatch(
         hydrateWindow({
           conversationId,
-          messages: [messageDto(messageId, sentAtMs)],
+          messages: [
+            messageDto(messageId, sentAtMs, {
+              deletedAt: new Date().toISOString(),
+              deletedForEveryone: false,
+            }),
+          ],
           nextCursor: null,
           hasMore: true,
           hasHiddenHistory: false,
@@ -907,7 +1022,7 @@ describe('sohbet içinde arama', () => {
       return true;
     };
 
-    renderChatScreen();
+    const { store } = renderChatScreen();
     await act(async () => {});
     jest.useFakeTimers();
     try {
@@ -916,14 +1031,28 @@ describe('sohbet içinde arama', () => {
       jest.useRealTimers();
     }
     await act(async () => {});
-    // Miss: hiçbir şey vurgulanmadı.
-    expect(mockHighlightMessage).not.toHaveBeenCalled();
 
+    // Miss: hedef filtrelenmiş, hiçbir şey vurgulanmadı/kaydırılmadı.
+    expect(mockHighlightMessage).not.toHaveBeenCalled();
+    expect(mockScrollToIndex).not.toHaveBeenCalled();
+
+    // Aramayla TAMAMEN alakasız bir sonraki olay: mesaj "geri alınıyor"
+    // (başarısız silme isteğinin snapshot restore'u, bkz. handleDelete'in
+    // catch bloğu — AYNI action). Hedef artık `renderedData`da GÖRÜNÜR.
     await act(async () => {
-      fireEvent.press(screen.getByTestId('chat-inline-search-next'));
+      store.dispatch(
+        messageEdited(
+          messageDto(DELETED_ID, BASE_MS, {
+            deletedAt: undefined,
+            deletedForEveryone: false,
+          }) as any,
+        ),
+      );
     });
-    // Sıradaki (geçerli) hop kendi hedefini vurguladı — miss'ten kalan
-    // hiçbir şey onu bastırmadı/karıştırmadı.
-    expect(mockHighlightMessage).toHaveBeenCalledWith('m-oldest');
+
+    // Ref zaten (ilk miss'te) temizlendiği için bu alakasız değişiklik
+    // çok önceki arama hop'unu DİRİLTMİYOR — ne highlight ne scroll.
+    expect(mockHighlightMessage).not.toHaveBeenCalled();
+    expect(mockScrollToIndex).not.toHaveBeenCalled();
   });
 });
