@@ -1022,11 +1022,33 @@ export default function FeedScreen() {
     [authorProfile.data, selectedMode],
   );
 
-  // Yazar beni daha önce beğenmiş mi — tespitin kuralları (bayrak katılığı,
-  // `userId` kapısı, OR'un gerekçesi) `authorLikedMe`'nin içinde ve orada test
-  // altında, burada tekrar edilmiyor.
+  /**
+   * Yazarın BEKLEYEN bir beğenisi var mı — tespitin kuralları (bayrak katılığı,
+   * `userId` kapısı, eşleşme/kendi beğenim dışlamaları, OR'un gerekçesi)
+   * `authorLikedMe`'nin içinde ve orada test altında, burada tekrar edilmiyor.
+   *
+   * ── PREMIUM KAPISI (istek) ────────────────────────────────────────────────
+   * `isPremium &&`: free kullanıcıda kabul/reddet çifti HİÇ çizilmiyor, kart
+   * normal hâlinde (Fire/Spark + not) açılıyor. "Bu kişi beni beğenmiş"
+   * bilgisi Beğenenler ekranının satış argümanı; backend alanı tier'dan
+   * bağımsız döndürüyor (LikerProfile ile parite) ve kapıyı istemciye bıraktı.
+   *
+   * ⚠️ KAPI İSTEMCİDE OLMAK ZORUNDA, sunucuyu gatelemek YETMEZ: tespitin
+   * ikinci kolu yerel `whoLikedMeIds` kümesi ve o liste ucu premium gating'e
+   * tabi değil (`api.ts > WHO_LIKED_ME`: "kartlar ve totalProfiles free'de de
+   * TAM geliyor"). Sunucu bayrağı kısılsa bile Redux kolu free kullanıcıda
+   * kartı beğenilmiş hâle çevirmeye devam ederdi.
+   *
+   * ⚠️ `premiumResolved` EKLENMİYOR ve bu bilinçli: `isPremium` resolved olana
+   * kadar zaten `false`, yani kapıya bir şey katmıyor (bkz. premiumTier > tipin
+   * notu). Bedeli açık: soğuk açılışın ilk saniyelerinde premium kullanıcı da
+   * normal kart görüyor ve o pencerede zaten bekleyen birine Fire harcayabilir.
+   * Alternatifi bayrak çözülünce butonları elinin altında takla attırmaktı —
+   * kart hâlini bir kez, açılışta çözüyor (aşağıdaki deps).
+   */
   const authorHasLikedMe = useMemo(
     () =>
+      isPremium &&
       authorLikedMe(authorProfile.data, (userId) =>
         // Yerel küme SEÇİLİ MODUN likerlarını tutuyor (fetchWhoLikedMe >
         // loadAppMode, bkz. swipeSlice.ts:30-43'teki not). `cardMode`
@@ -1039,7 +1061,7 @@ export default function FeedScreen() {
         // render churn; değer kart açılırken bir kez çözülüyor.)
         cardMode === selectedMode && hasLikedMe(store.getState(), userId),
       ),
-    [authorProfile.data, cardMode, selectedMode],
+    [authorProfile.data, cardMode, selectedMode, isPremium],
   );
 
   /**
