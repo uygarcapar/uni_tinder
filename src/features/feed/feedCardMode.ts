@@ -102,7 +102,7 @@ export function feedCardActions(
  * — hasLikedMe, note — burada dolu GELMEZ" diyordu ve bu dal hiçbir isteği true
  * yapmıyordu. Backend alanı doldurdu (`FeedReplyQueryService` →
  * `GetSwipeActionAsync(authorId, userId, mode)`); artık asıl kapsama bu koldan
- * geliyor. ⚠️ `api.ts`'teki o yorum bayatladıysa düzelt.
+ * geliyor. `api.ts`'teki sözleşme notu da güncellendi — `note` orada hâlâ boş.
  *
  * Bayrak MOD KAPSAMLI: istekteki `?mode=` için hesaplanıyor, yani "bu kişi beni
  * BU MODDA beğenmiş mi". Çapraz mod üretmiyor.
