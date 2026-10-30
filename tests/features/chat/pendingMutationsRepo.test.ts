@@ -7,6 +7,8 @@ import {
   readPendingMutations,
   upsertPendingMutation,
   deletePendingMutation,
+  deletePendingMutationIfPayload,
+  markPendingMutationAttempt,
   pruneOrphanPendingMutations,
   readMessageSendState,
   saveMessage,
@@ -241,5 +243,96 @@ describe('pending_mutations: yazıp geri okuma', () => {
 
     expect(readPendingMutations()).toHaveLength(1);
     expect(readPendingMutations()[0].message_id).toBe('msg-1');
+  });
+});
+
+/**
+ * Turun sonuç yazımı için YÜK KAPSAMLI iki yazma (Kritik 1'in depo yarısı).
+ *
+ * Tur satırı ağdan ÖNCE okuyor; o pencerede `enqueue*` aynı anahtara yeni bir
+ * niyet yazabiliyor. Anahtarla koşulsuz silmek/tam upsert etmek o niyeti yok
+ * ederdi, bu yüzden iki fonksiyon da `payload_json`'ı koşula alıyor.
+ */
+describe('pending_mutations: yük kapsamlı sonuç yazımı', () => {
+  it('deletePendingMutationIfPayload yük AYNIYSA siler (true)', () => {
+    insertMessage('msg-1', 'sent');
+    upsertPendingMutation(row({ message_id: 'msg-1' }));
+
+    expect(
+      deletePendingMutationIfPayload('msg-1', 'reaction', '{"desired":"😀","base":null}'),
+    ).toBe(true);
+    expect(readPendingMutations()).toHaveLength(0);
+  });
+
+  it('deletePendingMutationIfPayload yük DEĞİŞTİYSE satırı KORUR (false)', () => {
+    insertMessage('msg-1', 'sent');
+    upsertPendingMutation(row({ message_id: 'msg-1', payload_json: '{"desired":"❤️","base":null}' }));
+
+    // Tur '😀' göndermişti; disk artık '❤️' taşıyor → silinmemeli.
+    expect(
+      deletePendingMutationIfPayload('msg-1', 'reaction', '{"desired":"😀","base":null}'),
+    ).toBe(false);
+    expect(readPendingMutations()).toHaveLength(1);
+    expect(readPendingMutations()[0].payload_json).toBe('{"desired":"❤️","base":null}');
+  });
+
+  it('markPendingMutationAttempt YALNIZ üç muhasebe kolonunu yazıyor, yükü/yaşı değiştirmiyor', () => {
+    insertMessage('msg-1', 'sent');
+    upsertPendingMutation(row({ message_id: 'msg-1', attempts: 1, first_seen_at_ms: 1_000 }));
+
+    const applied = markPendingMutationAttempt({
+      messageId: 'msg-1',
+      kind: 'reaction',
+      expectedPayloadJson: '{"desired":"😀","base":null}',
+      attempts: 2,
+      nextEligibleAtMs: 9_000,
+      lastError: 'Network Error',
+    });
+
+    expect(applied).toBe(true);
+    const [updated] = readPendingMutations();
+    expect(updated.attempts).toBe(2);
+    expect(updated.next_eligible_at_ms).toBe(9_000);
+    expect(updated.last_error).toBe('Network Error');
+    expect(updated.payload_json).toBe('{"desired":"😀","base":null}');
+    expect(updated.first_seen_at_ms).toBe(1_000);
+  });
+
+  it('markPendingMutationAttempt yük DEĞİŞTİYSE HİÇBİR ŞEY yazmıyor (false)', () => {
+    insertMessage('msg-1', 'sent');
+    upsertPendingMutation(
+      row({ message_id: 'msg-1', payload_json: '{"desired":"❤️","base":null}', attempts: 0 }),
+    );
+
+    const applied = markPendingMutationAttempt({
+      messageId: 'msg-1',
+      kind: 'reaction',
+      expectedPayloadJson: '{"desired":"😀","base":null}',
+      attempts: 1,
+      nextEligibleAtMs: 9_000,
+      lastError: 'Network Error',
+    });
+
+    // Ayırt edici: yeni niyet `attempts: 0` / backoff'suz yazıldı ve öyle
+    // kalmalı — eski emrin cezası ona işlenmez.
+    expect(applied).toBe(false);
+    const [untouched] = readPendingMutations();
+    expect(untouched.attempts).toBe(0);
+    expect(untouched.next_eligible_at_ms).toBe(0);
+    expect(untouched.last_error).toBeNull();
+  });
+
+  it('markPendingMutationAttempt satır YOKSA false döner, satır yaratmaz', () => {
+    expect(
+      markPendingMutationAttempt({
+        messageId: 'yok',
+        kind: 'reaction',
+        expectedPayloadJson: '{}',
+        attempts: 1,
+        nextEligibleAtMs: 1,
+        lastError: null,
+      }),
+    ).toBe(false);
+    expect(readPendingMutations()).toHaveLength(0);
   });
 });

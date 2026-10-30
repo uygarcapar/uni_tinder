@@ -1506,6 +1506,82 @@ export function deletePendingMutation(messageId: string, kind: MutationKind): vo
 }
 
 /**
+ * Turun sonuç yazımı için KOŞULLU silme: satır yalnız `payload_json` hâlâ
+ * GÖNDERİLEN yük ise silinir.
+ *
+ * Sebep: tur satırı okuyup ağı BEKLERKEN kullanıcı aynı mesaja yeni bir emir
+ * verebiliyor (`enqueue*` PK üzerinden satırı EZER, bkz. yukarıdaki
+ * `upsertPendingMutation`). Anahtarla koşulsuz silmek o YENİ niyeti yok
+ * ederdi — ekranda duran emoji ne diskte ne sunucuda kalırdı. Yük değiştiyse
+ * satır YERİNDE bırakılır, sıradaki tur onu alır.
+ *
+ * Dönüş: bu anahtarda artık satır YOK (silindi ya da zaten yoktu) → true.
+ * `ChatDbDriver.run` etkilenen satır sayısını vermiyor (arayüz bilerek 6
+ * metot — bkz. chatDb.ts), o yüzden sonuç ayrı bir COUNT ile okunuyor; JS
+ * tek iş parçacıklı ve sürücü senkron olduğu için araya başka yazan giremez.
+ */
+export function deletePendingMutationIfPayload(
+  messageId: string,
+  kind: MutationKind,
+  payloadJson: string,
+): boolean {
+  const db = getChatDb();
+  db.run(
+    'DELETE FROM pending_mutations WHERE message_id = ? AND kind = ? AND payload_json = ?',
+    [messageId, kind, payloadJson],
+  );
+  const still =
+    db.getFirst<{ n: number }>(
+      'SELECT COUNT(*) AS n FROM pending_mutations WHERE message_id = ? AND kind = ?',
+      [messageId, kind],
+    )?.n ?? 0;
+  return still === 0;
+}
+
+/**
+ * Başarısız denemenin muhasebesi — KOLON KAPSAMLI: yalnız `attempts`,
+ * `next_eligible_at_ms`, `last_error` yazılır.
+ *
+ * Tam bir `upsertPendingMutation` ile yapılamaz: tur elindeki satırı ağdan
+ * ÖNCE okuyor, yani `payload_json`'ı o bayat anlık görüntüden geri yazmak
+ * bekleme sırasında verilmiş yeni emri EZER (hem yükü eskiye döndürür hem de
+ * onu eski emrin backoff'una sokar). `payload_json` burada hiç yazılmıyor,
+ * üstelik WHERE'e de giriyor: yük değiştiyse bu deneme YENİ niyete hiç
+ * işlenmez (enqueue onu `attempts: 0`/backoff'suz yazdı, öyle kalmalı).
+ *
+ * Dönüş: muhasebe uygulandı mı (false = satır yok ya da yük değişti).
+ */
+export function markPendingMutationAttempt(args: {
+  messageId: string;
+  kind: MutationKind;
+  expectedPayloadJson: string;
+  attempts: number;
+  nextEligibleAtMs: number;
+  lastError: string | null;
+}): boolean {
+  const db = getChatDb();
+  const current = db.getFirst<{ payload_json: string }>(
+    'SELECT payload_json FROM pending_mutations WHERE message_id = ? AND kind = ?',
+    [args.messageId, args.kind],
+  );
+  if (!current || current.payload_json !== args.expectedPayloadJson) return false;
+  db.run(
+    `UPDATE pending_mutations
+        SET attempts = ?, next_eligible_at_ms = ?, last_error = ?
+      WHERE message_id = ? AND kind = ? AND payload_json = ?`,
+    [
+      args.attempts,
+      args.nextEligibleAtMs,
+      args.lastError,
+      args.messageId,
+      args.kind,
+      args.expectedPayloadJson,
+    ],
+  );
+  return true;
+}
+
+/**
  * `send_attempts`'in `pruneOrphanSendAttempts`'ından farklı olarak burada
  * `send_state` terimi YOK: orada 'sent' olmak satırı yetim yapar (muhasebe
  * artık gerekmez), burada gönderilmiş olmak mutasyonun ÖN KOŞULUdur —
