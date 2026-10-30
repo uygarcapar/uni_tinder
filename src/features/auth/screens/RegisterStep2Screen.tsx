@@ -54,6 +54,9 @@ function VerifyButton({
 
   return (
     <AnimatedPressable
+      // e2e bu butona BASMIYOR: 6 hane dolunca `onFilled` zaten doğruluyor.
+      // Yine de adreslenebilir — "kod eksikken buton pasif mi" testi için.
+      testID="reg-step2-verify"
       style={{
         borderRadius: 999,
         borderCurve: "continuous",
@@ -222,7 +225,7 @@ export default function RegisterStep2Screen({ route, navigation }: NativeStackSc
   };
 
   return (
-    <View className="flex-1 -mt-[100px]" style={{ backgroundColor: colors.bg }}>
+    <View testID="reg-step2-screen" className="flex-1 -mt-[100px]" style={{ backgroundColor: colors.bg }}>
       {resendToast && (
         <View
           pointerEvents="none"
@@ -308,6 +311,11 @@ export default function RegisterStep2Screen({ route, navigation }: NativeStackSc
                 }}
                 onFilled={(text) => handleVerify(text)}
                 textInputProps={{
+                  // OtpInput tek bir GİZLİ TextInput + stilli kutular çiziyor;
+                  // testID o gizli input'a düşüyor. e2e `waitForExist` +
+                  // `setValue` ile tek seferde 6 haneyi veriyor (click YOK —
+                  // input görünmez olabilir, `isDisplayed` false döner).
+                  testID: "reg-otp-input",
                   textContentType: "oneTimeCode",
                   autoComplete:
                     Platform.OS === "android" ? "sms-otp" : "one-time-code",
@@ -352,6 +360,7 @@ export default function RegisterStep2Screen({ route, navigation }: NativeStackSc
 
             <View className="flex-row mb-3 justify-center items-center gap-4 py-[15px] pt-0 rounded-full overflow-hidden">
               <TouchableOpacity
+                testID="reg-step2-resend"
                 activeOpacity={0.8}
                 onPress={handleResend}
                 disabled={resendLoading || countdown > 0}
@@ -386,6 +395,7 @@ export default function RegisterStep2Screen({ route, navigation }: NativeStackSc
 
           <View className="items-center mt-4">
             <TouchableOpacity
+              testID="reg-step2-change-email"
               activeOpacity={1}
               onPress={handleGoBack}
               style={{

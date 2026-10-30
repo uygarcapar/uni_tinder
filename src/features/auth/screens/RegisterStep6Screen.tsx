@@ -83,7 +83,7 @@ export default function RegisterStep6Screen({ navigation }: NativeStackScreenPro
   });
 
   return (
-    <View className="flex-1" style={{ backgroundColor: colors.bg }}>
+    <View testID="reg-step6-screen" className="flex-1" style={{ backgroundColor: colors.bg }}>
       <View className="pt-16 pb-6 px-6" style={{ backgroundColor: colors.bg }}>
         <RegisterBackButton onPress={() => navigation.goBack()} />
       </View>
@@ -109,6 +109,7 @@ export default function RegisterStep6Screen({ navigation }: NativeStackScreenPro
                 name="day"
                 render={({ field: { onChange, value } }) => (
                   <TextInput
+                    testID="reg-step6-day"
                     ref={dayRef}
                     style={inputStyle(!!errors.day)}
                     placeholder={t('auth.step6.dayPlaceholder')}
@@ -139,6 +140,7 @@ export default function RegisterStep6Screen({ navigation }: NativeStackScreenPro
                 name="month"
                 render={({ field: { onChange, value } }) => (
                   <TextInput
+                    testID="reg-step6-month"
                     ref={monthRef}
                     style={inputStyle(!!errors.month)}
                     placeholder={t('auth.step6.monthPlaceholder')}
@@ -170,6 +172,7 @@ export default function RegisterStep6Screen({ navigation }: NativeStackScreenPro
                 name="year"
                 render={({ field: { onChange, value } }) => (
                   <TextInput
+                    testID="reg-step6-year"
                     ref={yearRef}
                     style={inputStyle(!!errors.year)}
                     placeholder={t('auth.step6.yearPlaceholder')}
@@ -203,6 +206,7 @@ export default function RegisterStep6Screen({ navigation }: NativeStackScreenPro
       <KeyboardStickyView offset={{ closed: 0, opened: 15 }}>
         <View className="px-6 pb-8 pt-4">
           <AnimatedPressable
+            testID="reg-btn-next"
             onPress={handleNext}
             style={{
               borderRadius: 999,

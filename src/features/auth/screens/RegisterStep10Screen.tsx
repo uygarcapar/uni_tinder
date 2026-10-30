@@ -18,13 +18,15 @@ import { useTranslation } from 'react-i18next';
 
 // Backend InterestedIn enumName ("Men"/"Women"/"NonBinary") bekliyor.
 
-const AnimatedPressable = ({ onPress, style, activeOpacity = 1, children }: any) => {
+// testID açıkça listeleniyor — destructuring yapan bileşende listelenmeyen
+// prop alt bileşene HİÇ geçmiyor.
+const AnimatedPressable = ({ onPress, style, activeOpacity = 1, children, testID }: any) => {
   const scale = useRef(new Animated.Value(1)).current;
   const handlePressIn = () => Animated.spring(scale, { toValue: 0.97, useNativeDriver: true, speed: 20 }).start();
   const handlePressOut = () => Animated.spring(scale, { toValue: 1, useNativeDriver: true, bounciness: 8, speed: 20 }).start();
   return (
     <Animated.View style={{ transform: [{ scale }] }}>
-      <TouchableOpacity activeOpacity={activeOpacity} onPressIn={handlePressIn} onPressOut={handlePressOut} onPress={onPress} style={style}>
+      <TouchableOpacity testID={testID} activeOpacity={activeOpacity} onPressIn={handlePressIn} onPressOut={handlePressOut} onPress={onPress} style={style}>
         {children}
       </TouchableOpacity>
     </Animated.View>
@@ -66,7 +68,7 @@ export default function RegisterStep10Screen({ navigation }: NativeStackScreenPr
   });
 
   return (
-    <View className="flex-1" style={{ backgroundColor: colors.bg }}>
+    <View testID="reg-step10-screen" className="flex-1" style={{ backgroundColor: colors.bg }}>
       {/* Header */}
       <View className="pt-16 pb-6 px-6" style={{ backgroundColor: colors.bg }}>
         <View className="flex-row items-center justify-between">
@@ -90,6 +92,7 @@ export default function RegisterStep10Screen({ navigation }: NativeStackScreenPr
             return (
               <AnimatedPressable
                 key={opt.enumName}
+                testID={`reg-step10-${opt.enumName}`}
                 onPress={() => toggle(opt.enumName)}
                 style={{
                   // 30, butonun yarı yüksekliğinden (≈29) büyüktü: iOS köşeyi
@@ -132,7 +135,7 @@ export default function RegisterStep10Screen({ navigation }: NativeStackScreenPr
 
       <KeyboardStickyView offset={{ closed: 0, opened: 0 }}>
         <View style={{ paddingHorizontal: 32, paddingBottom: 32, paddingTop: 16, backgroundColor: colors.bg }}>
-          <AnimatedPressableShared onPress={handleNext} style={{ borderRadius: 999, overflow: "hidden", backgroundColor: colors.inverseSurface }}>
+          <AnimatedPressableShared testID="reg-btn-next" onPress={handleNext} style={{ borderRadius: 999, overflow: "hidden", backgroundColor: colors.inverseSurface }}>
             <Text style={{ color: colors.onInverseSurface, paddingVertical: 20, fontWeight: "700", fontSize: 15, textAlign: "center" }}>
               {t('common.continueButton')}
             </Text>

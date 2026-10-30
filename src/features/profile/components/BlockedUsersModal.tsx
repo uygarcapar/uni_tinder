@@ -13,7 +13,6 @@ import SFIcon from "@/shared/components/SFIcon";
 import AppModal from "@/shared/components/AppModal";
 import EmptyState from "@/shared/components/EmptyState";
 import moderationService, { BlockedUser } from "@/shared/services/moderationService";
-import { getDateLocale } from "@/shared/i18n/dateLocale";
 import { colors, ink } from "../../../shared/theme/colors";
 
 /**
@@ -88,10 +87,22 @@ export default function BlockedUsersModal({ visible, onClose }: any) {
       // sürükleyince bir kademe geri dönmek yerine her şey kapanıyordu.
       // (Ayarlar artık sheet değil ekran — bu sayfa onun üstünde açılıyor.)
       stackBehavior="push"
-      contentContainerStyle={{ paddingTop: 24, paddingBottom: 32 }}
+      // Header'ın X'i profil düzenleme modalındaki kabukla AYNI: uygulamanın
+      // yuvarlak BERRAK cam ikon ölçüsü (GLASS_ICON_CLEAR_SIZE) ve dolgulu
+      // `.regular` cam yerine berrak cam glif — yani tam yuvarlak, ProfileScreen
+      // başlığındaki çan/ayarlar butonunun aynısı (bkz. AppModal >
+      // clearGlassHeader). Üst/sağ payı AppModal'ın tek yerinden geldiği için
+      // ölçü eşitlenince uzaklık da profil düzenlemeyle birebir oluyor.
+      clearGlassHeader
+      // ⚠️ `paddingTop` VERİLMİYOR ve bu kasıtlı: `contentContainerStyle`
+      // AppModal'ın varsayılanının ÜSTÜNE yazılıyor, yani buradaki bir sayı
+      // içeriğin header'a bırakılan payını (MODAL_HEADER_HEIGHT = 74) EZİYOR.
+      // Eskiden 24 yazıyordu ve listenin ilk satırı — ismiyle birlikte — X
+      // butonunun altında kalıyordu.
+      contentContainerStyle={{ paddingBottom: 32 }}
     >
       {loading && users === null ? (
-        <View style={{ paddingVertical: 48, alignItems: "center" }}>
+        <View style={{ paddingVertical: 24, alignItems: "center" }}>
           <ActivityIndicator size="small" color={colors.textSecondary} />
         </View>
       ) : (users?.length ?? 0) === 0 ? (
@@ -100,7 +111,9 @@ export default function BlockedUsersModal({ visible, onClose }: any) {
           sf="person.fill.xmark"
           text={t('moderation.blocked.empty')}
           subtitle={t('moderation.blocked.emptySubtitle')}
-          topOffset={40}
+          // Üst payı artık içerik kabı veriyor (MODAL_HEADER_HEIGHT) — kendi
+          // 24'ü de sıfırlanıyor, uygulamadaki diğer boş durumlarla aynı.
+          topOffset={0}
         />
       ) : (
         users!.map((user) => (
@@ -118,18 +131,12 @@ export default function BlockedUsersModal({ visible, onClose }: any) {
 }
 
 function BlockedUserRow({ user, pending, onUnblock, t }: any) {
-  const subtitleParts = [
-    user.age ? String(user.age) : null,
-    user.university || null,
-  ].filter(Boolean);
-
-  const blockedAt = user.blockedAt
-    ? new Date(user.blockedAt).toLocaleDateString(getDateLocale(), {
-        day: "numeric",
-        month: "long",
-        year: "numeric",
-      })
-    : null;
+  // Satırın başlığı kartlardaki gibi "İsim, yaş"; altındaki tek satır yalnız
+  // üniversite. Engelleme TARİHİ hiç çizilmiyor: kullanıcının buradaki tek işi
+  // kimi engellediğini tanımak, tarih üçüncü bir satır olarak satırı şişiriyordu.
+  const name = user.age
+    ? t('moderation.blocked.nameWithAge', { name: user.displayName, age: user.age })
+    : user.displayName;
 
   return (
     <View
@@ -174,19 +181,14 @@ function BlockedUserRow({ user, pending, onUnblock, t }: any) {
           numberOfLines={1}
           style={{ color: colors.text, fontSize: 15, fontWeight: "600" }}
         >
-          {user.displayName}
+          {name}
         </Text>
-        {subtitleParts.length > 0 && (
+        {!!user.university && (
           <Text
             numberOfLines={1}
             style={{ color: colors.textSecondary, fontSize: 13, marginTop: 2 }}
           >
-            {subtitleParts.join(" · ")}
-          </Text>
-        )}
-        {blockedAt && (
-          <Text style={{ color: colors.textMuted, fontSize: 11, marginTop: 2 }}>
-            {t('moderation.blocked.blockedAt', { date: blockedAt })}
+            {user.university}
           </Text>
         )}
       </View>

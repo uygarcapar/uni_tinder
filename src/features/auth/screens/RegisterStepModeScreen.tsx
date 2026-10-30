@@ -74,7 +74,7 @@ export default function RegisterStepModeScreen({
   }, [navigation, selected, t]);
 
   return (
-    <View className="flex-1" style={{ backgroundColor: colors.bg }}>
+    <View testID="reg-stepmode-screen" className="flex-1" style={{ backgroundColor: colors.bg }}>
       <View className="pt-16 pb-6 px-6" style={{ backgroundColor: colors.bg }}>
         <View className="flex-row items-center justify-between">
           <RegisterBackButton onPress={() => navigation.goBack()} />
@@ -134,6 +134,7 @@ export default function RegisterStepModeScreen({
         }}
       >
         <AnimatedPressableShared
+          testID="reg-btn-next"
           onPress={handleNext}
           style={{
             borderRadius: 999,
@@ -180,6 +181,8 @@ function ModeCard({
   return (
     <Animated.View style={{ transform: [{ scale }] }}>
       <TouchableOpacity
+        // Mod kimliği enum'dan ("Dating"/"Friends") — kart başlığı i18n.
+        testID={`reg-mode-${mode}`}
         activeOpacity={1}
         onPressIn={() =>
           Animated.spring(scale, {

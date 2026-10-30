@@ -33,13 +33,15 @@ import { useTranslation } from 'react-i18next';
 
 const YEAR_OF_STUDY_VALUES = ["0", "1", "2", "3", "4", "5", "6"];
 
-const AnimatedPressable = ({ onPress, style, activeOpacity = 1, children }: any) => {
+// testID açıkça listeleniyor — destructuring yapan bileşende listelenmeyen
+// prop alt bileşene HİÇ geçmiyor.
+const AnimatedPressable = ({ onPress, style, activeOpacity = 1, children, testID }: any) => {
   const scale = new Animated.Value(1);
   const handlePressIn = () => Animated.spring(scale, { toValue: 0.95, useNativeDriver: true, speed: 20 }).start();
   const handlePressOut = () => Animated.spring(scale, { toValue: 1, useNativeDriver: true, bounciness: 8, speed: 20 }).start();
   return (
     <Animated.View style={{ transform: [{ scale }] }}>
-      <TouchableOpacity activeOpacity={activeOpacity} onPressIn={handlePressIn} onPressOut={handlePressOut} onPress={onPress} style={style}>
+      <TouchableOpacity testID={testID} activeOpacity={activeOpacity} onPressIn={handlePressIn} onPressOut={handlePressOut} onPress={onPress} style={style}>
         {children}
       </TouchableOpacity>
     </Animated.View>
@@ -118,7 +120,7 @@ export default function RegisterStep8Screen({ navigation }: NativeStackScreenPro
   const errorMessage = errors.department?.message || errors.yearOfStudy?.message;
 
   return (
-    <View className="flex-1" style={{ backgroundColor: colors.bg }}>
+    <View testID="reg-step8-screen" className="flex-1" style={{ backgroundColor: colors.bg }}>
       {/* Header */}
       <View className="pt-16 pb-6 px-6" style={{ backgroundColor: colors.bg }}>
         <RegisterBackButton onPress={() => navigation.goBack()} />
@@ -154,6 +156,7 @@ export default function RegisterStep8Screen({ navigation }: NativeStackScreenPro
             <View className="mb-6">
               <Text className="text-[14px] font-semibold mb-2" style={{ color: colors.neutral200 }}>{t('auth.step8.departmentLabel')}</Text>
               <TouchableOpacity
+                testID="reg-step8-department-trigger"
                 style={{
                   borderRadius: 999,
                   borderCurve: "continuous",
@@ -189,6 +192,7 @@ export default function RegisterStep8Screen({ navigation }: NativeStackScreenPro
                 return (
                   <AnimatedPressable
                     key={opt.value}
+                    testID={`reg-step8-class-${opt.value}`}
                     onPress={() => {
                       setValue("yearOfStudy", opt.value, { shouldValidate: true });
                       dispatch(updateMultipleFields({ yearOfStudy: parseInt(opt.value) }));
@@ -221,6 +225,7 @@ export default function RegisterStep8Screen({ navigation }: NativeStackScreenPro
       <KeyboardStickyView offset={{ closed: 0, opened: 0 }}>
         <View className="px-8 pb-8 pt-4" style={{ backgroundColor: colors.bg }}>
           <AnimatedPressableShared
+            testID="reg-btn-next"
             onPress={handleNext}
             style={{ borderRadius: 999, borderCurve: "continuous", overflow: "hidden", backgroundColor: colors.inverseSurface }}
           >

@@ -47,7 +47,9 @@ const categoryOfValue = (
   return cat?.categoryEnumName ?? null;
 };
 
-const AnimatedPressable = ({ onPress, onLayout, style, children }: any) => {
+// testID açıkça listeleniyor — bileşen destructuring yaptığı için
+// listelenmeyen prop TouchableOpacity'ye hiç ulaşmıyor.
+const AnimatedPressable = ({ onPress, onLayout, style, children, testID }: any) => {
   const scale = useRef(new Animated.Value(1)).current;
 
   const handlePressIn = () =>
@@ -68,6 +70,7 @@ const AnimatedPressable = ({ onPress, onLayout, style, children }: any) => {
   return (
     <Animated.View style={{ transform: [{ scale }] }}>
       <TouchableOpacity
+        testID={testID}
         activeOpacity={1}
         onPressIn={handlePressIn}
         onPressOut={handlePressOut}
@@ -144,6 +147,10 @@ export default function GenderCategoryPicker({
           <View key={catEnum}>
             <View style={{ position: "relative" }}>
               <AnimatedPressable
+                // Seçici kimliği `enumName` üzerinden — etiket i18n'e ve
+                // kullanıcının alt-cinsiyet seçimine göre DEĞİŞİYOR
+                // (pillLabel), enumName değişmiyor.
+                testID={`gender-cat-${catEnum}`}
                 onPress={() => handleSelectCategory(category)}
                 onLayout={(e: any) => {
                   const { height } = e.nativeEvent.layout;
@@ -256,6 +263,7 @@ export default function GenderCategoryPicker({
                   return (
                     <AnimatedPressable
                       key={`${catEnum}-${subGender.enumName}`}
+                      testID={`gender-sub-${subGender.enumName}`}
                       onPress={() => handleSelectSubGender(subGender.enumName)}
                       style={{
                         borderRadius: 999,

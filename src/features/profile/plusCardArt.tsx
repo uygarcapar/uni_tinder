@@ -1,3 +1,4 @@
+import { useCallback, useEffect, useRef } from "react";
 import { StyleSheet, View } from "react-native";
 import type { ImageSourcePropType } from "react-native";
 import { Image } from "expo-image";
@@ -34,6 +35,20 @@ export const PLUS_CARD_ART: Partial<Record<PlusSurface, ImageSourcePropType>> =
   };
 
 /**
+ * Bu oturumda zemini BİR KEZ boyanmış yüzeyler.
+ *
+ * Fotoğraf expo-image'ın bellek önbelleğine girdikten sonra kart ilk commit'te
+ * tam hâliyle doğuyor; çağıranın (bkz. `onArtReady`) ikinci girişte iskeleti
+ * yeniden göstermesine gerek yok. Modül seviyesinde: önbellek de uygulama
+ * ömrü boyunca duruyor.
+ */
+const warmedArt = new Set<PlusSurface>();
+
+export function isPlusArtWarm(surface: PlusSurface) {
+  return warmedArt.has(surface) || !PLUS_CARD_ART[surface];
+}
+
+/**
  * Fotoğrafın üstündeki karartma.
  *
  * Fotoğrafın RENGİNE DOKUNULMUYOR — kare olduğu gibi duruyor; bu yalnız düz
@@ -61,6 +76,15 @@ const ART_DIM = 0.58;
 const ART_BLUR = 20;
 
 /**
+ * `onArtReady` için emniyet valfi (ms).
+ *
+ * Kapı KAPALI kalırsa kart hiç görünmez — onu bekleyen tek sinyal `onDisplay`
+ * olmasın. Valf açılırsa en kötü hâl eski davranış: bir anlık turuncu. Süre
+ * paketli bir asset'in çözülmesi için fazlasıyla bol.
+ */
+const ART_READY_TIMEOUT = 1000;
+
+/**
  * Kartların zemini: gradyan → (bulanık) fotoğraf → siyah karartma.
  *
  * Üç katman da `absoluteFill`, yani kabı GERMİYORLAR — kartın boyunu yine
@@ -80,11 +104,44 @@ export function PlusCardArt({
    * kırpılan yer burayla belirleniyor.
    */
   contentPosition,
+  /**
+   * Zemin BOYANDIĞINDA (ya da boyanacak fotoğraf olmadığı anlaşıldığında)
+   * çağrılıyor. Kartı iskeletin altında tutan çağıranlar bunu bekliyor:
+   * gradyan tam opak kırmızı-turuncu, yani fotoğraf gelene kadar kart
+   * görünürse marka karesi bir an "yanıp" sönüyor (bkz. PurchasePlanCarousel).
+   *
+   * `onDisplay` — `onLoad` DEĞİL: ikincisi kaynak çözüldüğünde, henüz view
+   * boyanmadan da atılabiliyor. Hata dalı da haber veriyor, yoksa bozuk bir
+   * asset iskeleti sonsuza kadar ekranda bırakırdı.
+   */
+  onArtReady,
 }: {
   surface: PlusSurface;
   contentPosition?: React.ComponentProps<typeof Image>["contentPosition"];
+  onArtReady?: () => void;
 }) {
   const art = PLUS_CARD_ART[surface];
+
+  // Kapı BİR KEZ açılıyor: boyanma, hata ve valf aynı sinyale bakıyor.
+  const notified = useRef(false);
+  const notifyReady = useCallback(() => {
+    if (notified.current) return;
+    notified.current = true;
+    onArtReady?.();
+  }, [onArtReady]);
+
+  useEffect(() => {
+    // Kapıyı bekleyen kimse yok (ProfileScreen'in upsell kartı) → valfe de
+    // gerek yok.
+    if (!onArtReady) return;
+    // Fotoğrafsız yüzeyde beklenecek bir şey yok: kart gradyanın TA KENDİSİ.
+    if (!art) {
+      notifyReady();
+      return;
+    }
+    const valve = setTimeout(notifyReady, ART_READY_TIMEOUT);
+    return () => clearTimeout(valve);
+  }, [art, onArtReady, notifyReady]);
 
   return (
     <>
@@ -107,9 +164,19 @@ export function PlusCardArt({
             contentFit="cover"
             contentPosition={contentPosition}
             blurRadius={ART_BLUR}
-            // Paketli asset anında geliyor; geçiş yine de var — asset
-            // önbellekten çözülürken tek karelik sıçramayı yumuşatıyor.
-            transition={200}
+            // GEÇİŞ YOK (eskiden 200ms). Crossfade'in altında yanan şey
+            // gradyan, yani yumuşattığı "sıçrama" fiilen 200ms'lik bir turuncu
+            // parlamaydı. Kartın doğumunu artık `onArtReady` bekletiyor:
+            // fotoğraf boyandığı karede geliyor, araya karışacak bir kare yok.
+            transition={0}
+            onDisplay={() => {
+              // "Sıcak" YALNIZ burada işaretleniyor: valf/hata dalından
+              // geçen bir kart önbellekte olmadığı hâlde bir dahaki girişte
+              // iskeleti atlardı.
+              warmedArt.add(surface);
+              notifyReady();
+            }}
+            onError={notifyReady}
             accessible={false}
           />
 

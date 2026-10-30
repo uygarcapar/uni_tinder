@@ -46,7 +46,10 @@ const SCRIM_LOCATIONS: readonly [number, number, number, number] = [0, 0.32, 0.7
 // koyu bölgesinin üstüne çıkarmak; bedeli ~%7 daha fazla büyütme.
 const VIDEO_SHIFT = 64;
 
-const PressableScaleButton = ({ onPress, style, className, children }: any) => {
+// testID açıkça listeleniyor: props `any` olsa da bileşen destructuring
+// yaptığı için listelenmeyen hiçbir prop TouchableOpacity'ye GEÇMİYOR —
+// eklenmeseydi e2e seçicisi sessizce kaybolurdu.
+const PressableScaleButton = ({ onPress, style, className, children, testID }: any) => {
   const scale = useRef(new Animated.Value(1)).current;
 
   const handlePressIn = () => {
@@ -69,6 +72,7 @@ const PressableScaleButton = ({ onPress, style, className, children }: any) => {
   return (
     <Animated.View style={{ transform: [{ scale }] }}>
       <TouchableOpacity
+        testID={testID}
         activeOpacity={1}
         onPressIn={handlePressIn}
         onPressOut={handlePressOut}
@@ -129,7 +133,7 @@ export default function WelcomeScreen({ navigation }: NativeStackScreenProps<Aut
 
       {/* İÇERİK */}
       {/* z-10 vererek içeriği gradientin üstüne çıkardık */}
-      <View className="flex-1 justify-between px-8 py-16 z-10">
+      <View testID="welcome-screen" className="flex-1 justify-between px-8 py-16 z-10">
         {/* Üst Kısım */}
         <View className="flex-1 justify-center items-center">
           <Image
@@ -146,6 +150,7 @@ export default function WelcomeScreen({ navigation }: NativeStackScreenProps<Aut
         <View className="space-y-4 mb-4">
           <View className="flex flex-col gap-3">
             <PressableScaleButton
+              testID="welcome-btn-signup"
               onPress={() => navigation.navigate("RegisterStep1")}
               style={{
                 borderRadius: 999,
@@ -162,6 +167,7 @@ export default function WelcomeScreen({ navigation }: NativeStackScreenProps<Aut
             </PressableScaleButton>
 
             <PressableScaleButton
+              testID="welcome-btn-login"
               onPress={() => navigation.navigate("Login")}
               className="border-[0.5px] py-[20px] items-center"
               style={{

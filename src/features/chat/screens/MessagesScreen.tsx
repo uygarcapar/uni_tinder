@@ -1118,7 +1118,7 @@ export default function MessagesScreen() {
   };
 
   return (
-    <View className="flex-1" style={{ backgroundColor: colors.bg }}>
+    <View testID="msgs-screen" className="flex-1" style={{ backgroundColor: colors.bg }}>
       {/* Sekmeler bir pager: eski sayfa çıkarken yeni sayfa giriyor, ikisi de
           ekranda. Alt çizgi de bu kaydırmanın anlık konumundan sürülüyor.
           ⚠️ Sohbet satırlarındaki sağa kaydırma jesti (ReanimatedSwipeable)
@@ -1187,6 +1187,7 @@ export default function MessagesScreen() {
             // kap içeriği kadar daralır ve şerit ortalanmış bir blok olurdu.
             <View style={{ width: "100%" }}>
               <PagerTabBar
+                testIDPrefix="msgs-tab"
                 tabs={tabs}
                 activeTab={activeTab}
                 offset={pagerOffset}
@@ -1773,6 +1774,9 @@ const ConversationRow = memo(function ConversationRow({
     // Aksiyon KAYBOLMUYOR: şerit zaten kendi onayını atlamıyordu, `onLongPress`
     // akışını tetikliyordu — uzun basış aynı işi yapmaya devam ediyor.
     <TouchableHighlight
+      // Kimlik conversationId'den: liste sırası okunmamışa ve son mesaja
+      // göre değişiyor, indeks kararsız.
+      testID={`msgs-row-${conv.conversationId ?? conv.id}`}
       onPress={handlePress}
       onLongPress={handleLongPress}
       underlayColor={colors.surface3}

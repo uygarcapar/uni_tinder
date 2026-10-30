@@ -49,7 +49,7 @@ export default function RegisterStep3Screen({ navigation }: NativeStackScreenPro
   });
 
   return (
-    <View className="flex-1" style={{ backgroundColor: colors.bg }}>
+    <View testID="reg-step3-screen" className="flex-1" style={{ backgroundColor: colors.bg }}>
       {/* Header */}
       <View className="pt-16 pb-6 px-6" style={{ backgroundColor: colors.bg }}>
         <RegisterBackButton
@@ -102,6 +102,7 @@ export default function RegisterStep3Screen({ navigation }: NativeStackScreenPro
                 name="password"
                 render={({ field: { onChange, value } }) => (
                   <TextInput
+                    testID="reg-step3-password"
                     ref={passwordInputRef}
                     style={{
                       flex: 1,
@@ -151,6 +152,7 @@ export default function RegisterStep3Screen({ navigation }: NativeStackScreenPro
                 name="confirmPassword"
                 render={({ field: { onChange, value } }) => (
                   <TextInput
+                    testID="reg-step3-password-confirm"
                     style={{
                       paddingHorizontal: 16,
                       paddingVertical: 16,
@@ -181,6 +183,7 @@ export default function RegisterStep3Screen({ navigation }: NativeStackScreenPro
       <KeyboardStickyView offset={{ closed: 0, opened: 0 }}>
         <View className="px-6 pb-8 pt-4">
           <AnimatedPressable
+            testID="reg-btn-next"
             onPress={handleNext}
             style={{
               borderRadius: 999,

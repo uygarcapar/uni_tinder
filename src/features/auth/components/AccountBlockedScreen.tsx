@@ -69,6 +69,7 @@ export default function AccountBlockedScreen({ block, onDismiss }: Props) {
       statusBarTranslucent
     >
       <View
+        testID="gate-blocked"
         style={{
           flex: 1,
           backgroundColor: colors.bg,

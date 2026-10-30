@@ -390,6 +390,8 @@ type Props = {
   /** Pager'ın anlık konumu (position + offset). Çizgiyi VE şeridin kaydırmasını bu sürüyor. */
   offset: SharedValue<number>;
   onPress: (key: string, index: number) => void;
+  /** e2e seçici öneki — `<önek>-<tab.key>`. Verilmezse `pager-tab`. */
+  testIDPrefix?: string;
   /** Şeridin sol/sağ payı — çağıranın sayfa payıyla aynı hattan başlasın diye. */
   inset?: number;
   /**
@@ -406,6 +408,7 @@ export default function PagerTabBar({
   activeTab,
   offset,
   onPress,
+  testIDPrefix,
   inset = 16,
   centered = false,
 }: Props) {
@@ -570,6 +573,10 @@ export default function PagerTabBar({
           return (
             <TouchableOpacity
               key={tab.key}
+              // Kimlik tab.key'den (etiket i18n, indeks ise bayraklara
+              // göre kayabiliyor). Önek çağıranın: Beğeniler ve
+              // Sohbetler aynı bileşeni paylaşıyor.
+              testID={`${testIDPrefix ?? "pager-tab"}-${tab.key}`}
               activeOpacity={0.7}
               onLayout={(e) => onTabLayout(tab.key, e)}
               // Şeridi burada kaydırmıyoruz: basış pager'ı çeviriyor, şerit de

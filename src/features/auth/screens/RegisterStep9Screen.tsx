@@ -153,7 +153,7 @@ export default function RegisterStep9Screen({ navigation }: NativeStackScreenPro
   );
 
   return (
-    <View className="flex-1" style={{ backgroundColor: colors.bg }}>
+    <View testID="reg-step9-screen" className="flex-1" style={{ backgroundColor: colors.bg }}>
       {/* Header */}
       <View className="pt-16 pb-6 px-6" style={{ backgroundColor: colors.bg }}>
         <RegisterBackButton onPress={() => navigation.goBack()} />
@@ -197,6 +197,7 @@ export default function RegisterStep9Screen({ navigation }: NativeStackScreenPro
           gerekçe, bkz. LocationPermissionSheet). */}
       <View className="px-8 pb-8 pt-4">
         <AnimatedPressable
+          testID="reg-btn-next"
           onPress={reopenSheetAndRequest}
           disabled={autoChecking}
           style={{

@@ -302,17 +302,21 @@ const MicButton = memo(function MicButton({
   interactive,
   label,
   hidden,
+  testID,
 }: {
   handlers: GestureResponderHandlers;
   opacity: number;
   interactive: boolean;
   label: string;
   /** 1 = kayıt sürüyor, simge görünmesin. Prop DEĞİL shared value — render yok. */
+  /** e2e seçicisi — basılı tut = sesli mesaj. */
+  testID?: string;
   hidden: SharedValue<number>;
 }) {
   const iconStyle = useAnimatedStyle(() => ({ opacity: 1 - hidden.value }));
   return (
     <View
+      testID={testID}
       accessibilityRole="button"
       accessibilityLabel={label}
       {...handlers}
@@ -1240,6 +1244,7 @@ function MessageComposer({
                   {(text || " ") + "​"}
                 </Text>
                 <TextInput
+                  testID="chat-input-text"
                   ref={setInputRef}
                   nativeID="chat-input"
                   // Uncontrolled: taslak yalnız mount'ta basılır (bkz. Props).
@@ -1303,6 +1308,8 @@ function MessageComposer({
                 {/* Basışta opacity DÜŞÜRMÜYORUZ — açık modda solmak butonu açıyor.
                   Yerine siyah scrim bindiriyoruz, iki modda da koyulaşıyor. */}
                 <Pressable
+                  // Kota kilidinde SÖNÜK ama BASILABİLİR — dokunuş paywall açıyor.
+                  testID="chat-btn-send"
                   onPress={handleSend}
                   // Kota kilidinde buton SÖNÜK ama BASILABİLİR: dokunuş
                   // paywall'ı açıyor (bkz. handleSend). Sönük+ölü bir buton,
@@ -1353,6 +1360,7 @@ function MessageComposer({
                 </Pressable>
 
                 <MicButton
+                  testID="chat-btn-mic"
                   handlers={micResponder.panHandlers}
                   opacity={micOpacity}
                   interactive={showMic}

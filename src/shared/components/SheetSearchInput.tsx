@@ -84,12 +84,15 @@ export interface SheetSearchInputProps {
   onChangeText: (text: string) => void;
   /** Taşıyıcıya eklenen stil — boşluk ayarları (ör. `marginTop`) için. */
   style?: StyleProp<ViewStyle>;
+  /** e2e seçicisi; verilmezse `sheet-search-input`. */
+  testID?: string;
 }
 
 export default function SheetSearchInput({
   value,
   onChangeText,
   style,
+  testID = "sheet-search-input",
 }: SheetSearchInputProps) {
   // Ref kendi yüzeyiyle tipleniyor ve prop'a cast ediliyor: `gorhom`'un
   // `BottomSheetTextInput` tipi ref olarak INSTANCE'ı değil gesture-handler'ın
@@ -161,6 +164,7 @@ export default function SheetSearchInput({
         />
       </View>
       <BottomSheetTextInput
+        testID={testID}
         ref={inputRef as never}
         {...(value === undefined ? { defaultValue: "" } : { value })}
         onChangeText={handleChangeText}

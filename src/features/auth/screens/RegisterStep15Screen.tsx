@@ -755,7 +755,7 @@ export default function RegisterStep15Screen({ navigation }: NativeStackScreenPr
   const addPos = getPosition(photos.length);
 
   return (
-    <View className="flex-1" style={{ backgroundColor: colors.bg }}>
+    <View testID="reg-step15-screen" className="flex-1" style={{ backgroundColor: colors.bg }}>
       {/* Header */}
       <View className="pt-16 pb-6 px-6" style={{ backgroundColor: colors.bg }}>
         <RegisterBackButton onPress={() => navigation.goBack()} />
@@ -814,6 +814,7 @@ export default function RegisterStep15Screen({ navigation }: NativeStackScreenPr
           {photos.length < 6 && (
             <View style={{ position: "absolute", left: addPos.x, top: addPos.y, width: ITEM_WIDTH, height: ITEM_HEIGHT }}>
               <TouchableOpacity
+                testID="reg-step15-add"
                 activeOpacity={1}
                 onPress={pickImage}
                 disabled={loading}
@@ -829,6 +830,7 @@ export default function RegisterStep15Screen({ navigation }: NativeStackScreenPr
       {/* Sticky Button */}
       <RegisterStickyFooter>
         <AnimatedPressable
+          testID="reg-step15-submit"
           onPress={handleCompleteProfile}
           disabled={loading || photos.length < 2 || isDraggingPhoto || mainPickMode}
           style={{ borderRadius: 999, borderCurve: "continuous", overflow: "hidden", opacity: loading || photos.length < 2 || isDraggingPhoto || mainPickMode ? 0.5 : 1, backgroundColor: colors.inverseSurface }}

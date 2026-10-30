@@ -434,7 +434,7 @@ export default function NotificationsScreen() {
   );
 
   return (
-    <View className="flex-1" style={{ backgroundColor: colors.bg }}>
+    <View testID="notifications-screen" className="flex-1" style={{ backgroundColor: colors.bg }}>
       <Animated.FlatList
         /* İskelet asgari süresini doldurmadan veri gelirse liste bir an için
            shimmer'ı kesip satırları basardı; o pencerede listeyi boş tutup

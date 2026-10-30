@@ -161,10 +161,29 @@ export function subscribeTokenRefresh(appVersion = '1.0.0'): () => void {
 // setNotificationHandler zaten banner'ı hide ediyor, in-app toaster'ı bozmaz.
 export function subscribeForegroundMessages(): () => void {
   return onMessage(getMessaging(), async (msg: FirebaseMessagingTypes.RemoteMessage) => {
+    // ⚠️ METİNSİZ PUSH YENİDEN DAĞITILMAZ — `?? ''` ile boş başlık/gövde
+    // dispatch edilirse tepsiye (ve bazı yüzeylerde banner olarak) BOMBOŞ bir
+    // bildirim düşüyor: ne başlık ne içerik, sadece uygulama adı. Sahadaki
+    // belirti buydu — premium satın almadan sonra görünüp kaybolan içeriksiz
+    // bildirim; o anda backend birkaç `data`-only sinyal atıyor (abonelik
+    // senkronu gibi) ve metin taşımayan her biri görünür bir bildirime
+    // dönüşüyordu.
+    //
+    // Metin SUNUCUNUN (bkz. bildirim metinleri sözleşmesi): istemci metin
+    // ÜRETMEZ. Dolayısıyla doğru davranış uydurmak değil, GÖSTERMEMEK.
+    // `data`-only push'un işi zaten sessiz: realtime/hub handler'ları ve
+    // cache invalidation'ı tetiklemek, kullanıcıya bir şey söylemek değil.
+    //
+    // `trim()`: tek boşluk taşıyan gövdeler de boş sayılır — "" yerine " "
+    // göndermek metin sahipliğini değiştirmiyor.
+    const title = msg.notification?.title?.trim() ?? '';
+    const body = msg.notification?.body?.trim() ?? '';
+    if (!title && !body) return;
+
     await Notifications.scheduleNotificationAsync({
       content: {
-        title: msg.notification?.title ?? '',
-        body: msg.notification?.body ?? '',
+        title,
+        body,
         data: (msg.data ?? {}) as Record<string, any>,
       },
       trigger: null,

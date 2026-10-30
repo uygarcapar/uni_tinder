@@ -68,6 +68,8 @@ const HobbyItem = memo(({ hobby, isSelected, onPress }: any) => {
   return (
     <Animated.View style={{ transform: [{ scale: scaleValue }] }}>
       <TouchableOpacity
+        // Hobi kimliği enumName — etiket iki dilli (resolveLocalized).
+        testID={`reg-hobby-${hobby.enumName}`}
         activeOpacity={1}
         onPressIn={handlePressIn}
         onPressOut={handlePressOut}
@@ -165,7 +167,7 @@ export default function RegisterStep13Screen({ navigation }: NativeStackScreenPr
   });
 
   return (
-    <View className="flex-1" style={{ backgroundColor: colors.bg }}>
+    <View testID="reg-step13-screen" className="flex-1" style={{ backgroundColor: colors.bg }}>
       <Reanimated.ScrollView
         onScroll={scrollHandler}
         scrollEventThrottle={16}
@@ -265,6 +267,7 @@ export default function RegisterStep13Screen({ navigation }: NativeStackScreenPr
       {/* Sticky Button */}
       <RegisterStickyFooter>
         <AnimatedPressable
+          testID="reg-btn-next"
           onPress={handleNext}
           style={{ borderRadius: 999, borderCurve: "continuous", overflow: "hidden", backgroundColor: colors.inverseSurface }}
         >

@@ -41,6 +41,16 @@ interface ReportArgs {
    */
   noteId?: number | string | null;
   /**
+   * Şikayet edilen KAMPÜS ANI (24 saatlik fotoğraf). Moderatör panelinde
+   * hangi fotoğrafın şikayet edildiği görünsün diye gönderiliyor.
+   *
+   * ⚠️ Sözleşme `noteId` ile AYNI: sunucu alanı tanımıyorsa ya da id
+   * eşleşmiyorsa SESSİZCE yok sayılıyor — şikayet yine kaydediliyor. Yani bu
+   * alanı göndermek şikayeti DÜŞÜRMEZ, yalnız moderatörün anı görmesini
+   * sağlar (uç tarafında alan açıldığında burada değişiklik gerekmiyor).
+   */
+  campusMomentId?: string | null;
+  /**
    * Şikayetle birlikte engelleme yapılsın mı. AÇIKÇA gönderilir — varsayılan
    * uca göre değişiyor (`/api/swipe/Report` true, `/api/moderation/report`
    * false), aynı gövde iki uçta farklı sonuç verir.
@@ -80,6 +90,7 @@ const moderationService = {
     messageId,
     conversationId,
     noteId,
+    campusMomentId,
     alsoBlock,
   }: ReportArgs): Promise<ReportResult> {
     const body: Record<string, any> = { reportedUserId, reason, alsoBlock: !!alsoBlock };
@@ -88,6 +99,7 @@ const moderationService = {
     if (conversationId) body.conversationId = conversationId;
     // `!= null` — id sayı geliyor ve truthy kontrolü 0'ı düşürürdü.
     if (noteId != null) body.noteId = noteId;
+    if (campusMomentId) body.campusMomentId = campusMomentId;
     const res = await api.post(API_ENDPOINTS.MODERATION_REPORT, body);
     const result = (res as any).result;
     return {

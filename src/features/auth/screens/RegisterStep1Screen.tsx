@@ -184,7 +184,7 @@ export default function RegisterStep1Screen({ navigation }: NativeStackScreenPro
   const displayError = errors.email?.message || error;
 
   return (
-    <View className="flex-1" style={{ backgroundColor: colors.bg }}>
+    <View testID="reg-step1-screen" className="flex-1" style={{ backgroundColor: colors.bg }}>
       <View className="pt-16 pb-6 px-6" style={{ backgroundColor: colors.bg }}>
         <RegisterBackButton onPress={() => navigation.goBack()} />
       </View>
@@ -212,6 +212,7 @@ export default function RegisterStep1Screen({ navigation }: NativeStackScreenPro
                 }}
               >
                 <TextInput
+                  testID="reg-step1-email"
                   ref={inputRef}
                   style={{
                     paddingHorizontal: 16,
@@ -255,6 +256,7 @@ export default function RegisterStep1Screen({ navigation }: NativeStackScreenPro
       <KeyboardStickyView offset={{ closed: 0, opened: 15 }}>
         <View className="px-6 pb-8 pt-4" style={{ backgroundColor: colors.bg }}>
           <AnimatedPressable
+            testID="reg-btn-next"
             onPress={handleSendVerification}
             disabled={loading}
             style={{

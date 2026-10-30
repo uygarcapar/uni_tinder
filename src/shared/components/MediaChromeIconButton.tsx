@@ -5,6 +5,7 @@ import {
   Image as SwiftUIImage,
 } from "@expo/ui/swift-ui";
 import {
+  accessibilityIdentifier as a11yId,
   accessibilityLabel as a11yLabel,
   buttonStyle,
   frame,
@@ -45,6 +46,7 @@ import {
 const MEDIA_CHROME_ICON_SIZE = GLASS_ICON_CLEAR_SIZE;
 
 export default function MediaChromeIconButton({
+  testID,
   systemImage,
   fallbackIcon,
   label,
@@ -59,6 +61,8 @@ export default function MediaChromeIconButton({
   disabled?: boolean;
   /** Açık/kapalı bir kipi temsil eden buton (Kırp, flaş) — açıkken glif turuncu. */
   active?: boolean;
+  /** e2e seçicisi — SwiftUI'da accessibilityIdentifier, fallback'te testID. */
+  testID?: string;
 }) {
   const ink = disabled
     ? onMediaAt(0.45)
@@ -94,6 +98,7 @@ export default function MediaChromeIconButton({
                 height: MEDIA_CHROME_ICON_SIZE,
               }),
               a11yLabel(label),
+              ...(testID ? [a11yId(testID)] : []),
               // 26 altında zemin bulanıklıktan geliyor; burada kalan tek iş
               // medya üstünde çalışan açık bir kenar.
               ...glassFallback({ shape: "circle", borderColor: onMediaAt(0.35) }),
@@ -115,6 +120,7 @@ export default function MediaChromeIconButton({
       onPress={onPress}
       disabled={disabled}
       accessibilityRole="button"
+      testID={testID}
       accessibilityLabel={label}
       hitSlop={10}
       style={{

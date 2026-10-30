@@ -59,7 +59,7 @@ export default function LoginScreen({ navigation }: NativeStackScreenProps<AuthS
   });
 
   return (
-    <View className="flex-1" style={{ backgroundColor: colors.bg }}>
+    <View testID="login-screen" className="flex-1" style={{ backgroundColor: colors.bg }}>
       <View style={{ flex: 1 }}>
         {/* Header */}
         <View className="pt-16 pb-6 px-6" style={{ backgroundColor: colors.bg }}>
@@ -99,6 +99,7 @@ export default function LoginScreen({ navigation }: NativeStackScreenProps<AuthS
                 name="email"
                 render={({ field: { onChange, value } }) => (
                   <TextInput
+                    testID="login-input-email"
                     // Kenarlık ve metin rengi tema üzerinden — sabit
                     // `border-white/10` + `text-white` açık modda beyaz
                     // üstüne beyaz kalıyordu (Register ekranlarıyla aynı desen).
@@ -143,6 +144,7 @@ export default function LoginScreen({ navigation }: NativeStackScreenProps<AuthS
                   name="password"
                   render={({ field: { onChange, value } }) => (
                     <TextInput
+                      testID="login-input-password"
                       ref={passwordRef}
                       className="flex-1 text-[18px]" style={{ color: colors.text }}
                       placeholder={t('auth.login.passwordPlaceholder')}
@@ -157,6 +159,7 @@ export default function LoginScreen({ navigation }: NativeStackScreenProps<AuthS
                   )}
                 />
                 <TouchableOpacity
+                  testID="login-btn-toggle-password"
                   activeOpacity={0.7}
                   onPress={() => setShowPassword(!showPassword)}
                   className=""
@@ -172,6 +175,7 @@ export default function LoginScreen({ navigation }: NativeStackScreenProps<AuthS
               </View>
 
               <TouchableOpacity
+                testID="login-btn-forgot"
                 activeOpacity={0.7}
                 onPress={handleForgotPassword}
                 disabled={loading}
@@ -190,6 +194,7 @@ export default function LoginScreen({ navigation }: NativeStackScreenProps<AuthS
       <KeyboardStickyView offset={{ closed: 0, opened: 15 }}>
         <View className="px-8 pb-8 pt-4" style={{ backgroundColor: colors.bg }}>
           <TouchableOpacity
+            testID="login-btn-submit"
             activeOpacity={1}
             onPress={handleLogin}
             disabled={loading}

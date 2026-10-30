@@ -388,6 +388,10 @@ function MessageBubble({
 
   return (
     <Animated.View
+      // Kimlik `clientMessageId ?? id` — outbox'taki mesajın sunucu id'si
+      // henüz yok, ama istemci id'si gönderimden ÖNCE de var
+      // (ChatScreen keyExtractor ile aynı öncelik).
+      testID={`chat-bubble-${message.clientMessageId ?? message.id}`}
       style={{
         marginTop:
           (isGroupStart ? ROW_SPACE + GROUP_GAP : ROW_SPACE) +

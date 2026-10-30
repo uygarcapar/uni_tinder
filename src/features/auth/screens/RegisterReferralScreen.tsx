@@ -231,7 +231,7 @@ export default function RegisterReferralScreen({
   const handleCta = () => (complete ? goNext(code) : handleSkip());
 
   return (
-    <View className="flex-1" style={{ backgroundColor: colors.bg }}>
+    <View testID="reg-referral-screen" className="flex-1" style={{ backgroundColor: colors.bg }}>
       <View className="pt-16 pb-6 px-6" style={{ backgroundColor: colors.bg }}>
         {/* Step3'ün geri butonuyla AYNI davranış: bu ekranın altında bir yığın
             yok (Step2 `reset` ile buraya geçiyor), yani "geri" = kaydı bırak. */}

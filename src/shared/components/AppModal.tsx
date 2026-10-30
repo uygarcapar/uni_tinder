@@ -303,6 +303,20 @@ type AppModalProps = {
   // drill-down sayfalarında ("Geri" butonunun yanında hangi sayfadayız)
   // başlığın scroll'u beklemesi bilgiyi tamamen gizliyordu.
   titleAlwaysVisible?: boolean;
+  /**
+   * Başlığın yerleşimi. Varsayılan `"center"` — satırın ortasında, absolute,
+   * butonlardan bağımsız.
+   *
+   * `"left"` başlığı SATIRIN AKIŞINA, en sola alıyor ve HEP GÖRÜNÜR yapıyor
+   * (scroll'a bağlı fade devre dışı): akışta olan bir başlık belirip kaybolursa
+   * yanındaki butonu kıpırdatır, üstelik bu yolu seçen sheet'lerde başlık
+   * sayfanın kimliği — scroll'u beklemesinin bir anlamı yok.
+   *
+   * ⚠️ X'İN SAĞDA OLDUĞU sheet'ler için (yani `closeSide` verilmemiş ve sağda
+   * aksiyon butonu olmayan hâl): başlık X'in SOLUNDA, onunla aynı satırda
+   * duruyor. X solda olursa başlık onun sağına geçer — o düzen `"center"`in işi.
+   */
+  titleAlign?: "center" | "left";
   // Sheet yüksekliği snapPoints yerine ÖLÇÜLEN İÇERİK kadar olur (gorhom
   // enableDynamicSizing). snapPoints verilmediğinde tek detent içerik
   // yüksekliğidir; maxDynamicContentSize tavanı aşılmaz. Kısa ve sabit içerikli
@@ -376,6 +390,7 @@ export default function AppModal({
   headerButtonTop = MODAL_HEADER_ROW_TOP,
   closeSide,
   titleAlwaysVisible = false,
+  titleAlign = "center",
   dynamicSizing = false,
   maxDynamicContentSize,
   keyboardBehavior,
@@ -436,10 +451,12 @@ export default function AppModal({
       }
     },
   );
+  // Sola yerleşen başlık fade'e GİRMİYOR (bkz. `titleAlign` notu).
+  const titlePinned = titleAlwaysVisible || titleAlign === "left";
   const titleAnimStyle = useAnimatedStyle(() => ({
-    opacity: titleAlwaysVisible ? 1 : titleTriggered.value,
+    opacity: titlePinned ? 1 : titleTriggered.value,
     transform: [
-      { translateY: titleAlwaysVisible ? 0 : 12 * (1 - titleTriggered.value) },
+      { translateY: titlePinned ? 0 : 12 * (1 - titleTriggered.value) },
     ],
   }));
 
@@ -967,34 +984,66 @@ export default function AppModal({
           }}
         >
           <View style={{ paddingVertical: 8 }}>{leftElement}</View>
-          <Animated.View
-            pointerEvents="none"
-            style={[
-              {
-                position: "absolute",
-                top: 0,
-                left: 0,
-                right: 0,
-                bottom: 0,
-                alignItems: "center",
-                justifyContent: "center",
-              },
-              titleAnimStyle,
-            ]}
-          >
-            <Text
-              style={{
-                color: colors.text,
-                fontSize: 18,
-                fontWeight: "700",
-                includeFontPadding: false,
-                textAlignVertical: "center",
-              }}
+          {titleAlign === "left" ? (
+            /* AKIŞTA, butonların KARDEŞİ olarak: `flex: 1` başlığa satırda
+               kalan bütün yeri veriyor, yani sağdaki X'e dayanıp orada
+               kesiliyor (numberOfLines 1). Ortalanan hâlin absolute katmanı
+               burada yanlış olurdu — başlık X'in altından geçer ve uzun bir
+               başlıkta onun üstüne binerdi.
+
+               `pointerEvents: none`: başlık bir hedef değil, altından geçen
+               dokunuşlar (sheet'in kendi pan jesti) yutulmasın. */
+            <Animated.Text
+              pointerEvents="none"
               numberOfLines={1}
+              style={[
+                {
+                  flex: 1,
+                  color: colors.text,
+                  fontSize: 18,
+                  fontWeight: "700",
+                  includeFontPadding: false,
+                  // Soldaki buton varsa ondan nefes payı; yoksa 4 — satırın
+                  // kendi payı 16, içeriğin yatay payı ise 20, yani başlık
+                  // altındaki metin bloğuyla aynı çizgiden başlıyor.
+                  marginLeft: leftElement ? 12 : 4,
+                  marginRight: 12,
+                },
+                titleAnimStyle,
+              ]}
             >
               {title}
-            </Text>
-          </Animated.View>
+            </Animated.Text>
+          ) : (
+            <Animated.View
+              pointerEvents="none"
+              style={[
+                {
+                  position: "absolute",
+                  top: 0,
+                  left: 0,
+                  right: 0,
+                  bottom: 0,
+                  alignItems: "center",
+                  justifyContent: "center",
+                },
+                titleAnimStyle,
+              ]}
+            >
+              <Text
+                style={{
+                  color: colors.text,
+                  fontSize: 18,
+                  fontWeight: "700",
+                  includeFontPadding: false,
+                  textAlignVertical: "center",
+                }}
+                numberOfLines={1}
+              >
+                {title}
+              </Text>
+            </Animated.View>
+          )}
           <View style={{ paddingVertical: 8 }}>{rightElement}</View>
         </View>
       </View>

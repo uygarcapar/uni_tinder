@@ -138,6 +138,7 @@ export default function ProfileHiddenGate({
       enableOverDrag
     >
       <View
+        testID="gate-profile-hidden"
         style={{
           flex: 1,
           backgroundColor: colors.bg,
@@ -225,6 +226,7 @@ export default function ProfileHiddenGate({
         ) : (
           <>
             <TouchableOpacity
+              testID="gate-profile-hidden-add-photo"
               activeOpacity={0.85}
               onPress={onAddPhoto}
               style={{

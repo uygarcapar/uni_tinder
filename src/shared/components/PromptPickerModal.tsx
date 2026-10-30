@@ -162,6 +162,8 @@ export default function PromptPickerModal({
               return (
                 <TouchableOpacity
                   key={prompt.enumName}
+                  // Kimlik enumName — başlık iki dilli (categoryDisplay).
+                  testID={`modal-prompt-${prompt.enumName}`}
                   activeOpacity={1}
                   onPress={() => {
                     onSelect(prompt.enumName);

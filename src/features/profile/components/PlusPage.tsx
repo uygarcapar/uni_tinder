@@ -22,7 +22,18 @@ import {
  * Akış `usePurchaseFlow`ta, görsel parçalar `PurchaseSections`ta; burada yalnız
  * düzen var. Sticky aksiyon şeridi YOK: satın alma plan kartına dokununca
  * başlıyor, geri yükleme ve mağaza uyarısı içeriğin sonunda.
- * Zemin de burada DEĞİL: sayfa şeffaf, arkasında ProfileScreen'in `colors.bg`i.
+ *
+ * ── ZEMİN BURADA DEĞİL: sayfa ŞEFFAF ──────────────────────────────────────
+ * Arkasında ProfileScreen'in `colors.bg`i duruyor.
+ *
+ * Bir tur zemine upsell karesinin bulanık hâli konuldu (açık kartın zeminini
+ * çizen CardGlassBackdrop ithal edilerek) ve GERİ ALINDI (istek). Tekrar
+ * denenecekse kayıt için: sayfanın mürekkebi kartın aksine CAM KUTULARIN
+ * üstünde değil doğrudan zeminde (`PurchaseFeatureTable` → `colors.text`), ve
+ * o zeminde perde yok — yani fotoğrafla yarışan bir yazı sorunu, zemin
+ * koyultularak değil yazıya kendi yüzeyi verilerek çözülür. Ayrıca plan kartı
+ * kendi karesini çiziyor (PlusCardArt `surface="plan"`), yani bulanık sayfanın
+ * üstünde ikinci bir bulanık kare duruyordu.
  */
 
 // Floating tab bar — DiscoverScreen/MessagesScreen ile aynı ölçüler.
