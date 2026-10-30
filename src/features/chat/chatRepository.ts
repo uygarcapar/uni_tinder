@@ -133,23 +133,24 @@ function syncFtsRow(db: ChatDbDriver, messageId: string, folded: string): void {
 }
 
 /**
- * Çapası tutmayan indeks satırlarını siler; silinen satır sayısını döner.
- * Açılışta bir kez, `pruneOrphanSendAttempts`'in yanında.
+ * Çapası tutmayan indeks satırlarını siler. Açılışta, YALNIZ bir yetim
+ * ÜRETİCİSİ koştuysa (bkz. `chatMirrorMiddleware` ve `markSearchIndexDirty`).
  *
  * ── Neden silme yollarının HER BİRİNE yazılmadı ─────────────────────────────
- * Mesaj satırı dört ayrı yerden siliniyor (`pruneExpiredMessages`,
- * `removeConversationLocally`, `removeByClientMessageId`, geçmiş sayfasının
- * boşluk-değiştirme dalı) ve her birine ayrı bir DELETE yazmak aynı yüklemin
- * dördüncü kopyası olurdu — biri unutulduğunda sessizce bozulan türden.
- * Çapanın kendisi tek bir ifadeyle doğrulanabildiği için tek yer yetiyor.
+ * Retention budaması (`pruneExpiredMessages`), `removeByClientMessageId` ve
+ * geçmiş sayfasının boşluk-değiştirme dalı mesaj satırını yüklemleriyle
+ * siliyor; her birine aynı yüklemin bir kopyasını yazmak biri unutulduğunda
+ * sessizce bozulan türden olurdu. Çapanın kendisi tek bir ifadeyle
+ * doğrulanabildiği için tek yer yetiyor. İSTİSNA `removeConversationLocally`:
+ * o yol GİZLİLİK gerekçesiyle var (engelleme/hesap silme) ve indeks satırını
+ * KENDİ transaction'ında siliyor — "bir sonraki açılışta" bir gizlilik
+ * aksiyonu için yeterli değil (review turu 4, Önemli 7).
  *
- * ── Neden sadece "şişme" meselesi DEĞİL ─────────────────────────────────────
- * Arama sonucu zaten `messages`a join'leniyor, yani yetim satır KULLANICIYA
- * görünmüyor. Mesele gizlilik: `removeConversationLocally` engelleme/hesap
- * silme yolunun kendisi ("gizlilik aksiyonu, disk değil" diyor kendi yorumu)
- * ve retention budaması kullanıcı içeriğinin ömrünü belirliyor. Katlanmış
- * olmak metni içerik olmaktan çıkarmıyor — `clearAllChatData` ve
- * `destroyChatDb` bu kuralı zaten söylüyor, burası onu kalan yollara uyguluyor.
+ * ── Dönüş değeri YOK (review turu 4, Önemli 5) ──────────────────────────────
+ * Eski hâl silinen satır sayısını döndürmek için iki `SELECT COUNT(*)`
+ * koşuyordu (100k satırlık indekste 4.7 ms × 2) ve o sayıyı PRODÜKSİYONDA
+ * okuyan hiçbir çağıran yoktu — yalnız test. Test artık indeks satırlarını
+ * kendisi sayıyor; açılış yolu o iki taramayı hiç yapmıyor.
  *
  * Yüklem ÇAPAYI doğruluyor, yalnız varlığı değil: indeks satırının
  * `message_id`si, aynı rowid'deki mesajın id'siyle aynı olmak ZORUNDA. Böylece
@@ -157,17 +158,94 @@ function syncFtsRow(db: ChatDbDriver, messageId: string, folded: string): void {
  * satırlar aynı ifadeyle gidiyor. `IS NOT` NULL-güvenli: mesaj hiç yoksa alt
  * sorgu NULL döner ve satır yetim sayılır.
  */
-export function pruneOrphanSearchIndex(): number {
-  if (!isFtsAvailable()) return 0;
-  const db = getChatDb();
-  const before = db.getFirst<{ n: number }>('SELECT COUNT(*) AS n FROM messages_fts')?.n ?? 0;
-  db.run(`
+export function pruneOrphanSearchIndex(): void {
+  if (!isFtsAvailable()) return;
+  getChatDb().run(`
     DELETE FROM messages_fts
      WHERE message_id IS NOT (
        SELECT id FROM messages WHERE messages.rowid = messages_fts.rowid
      )`);
-  const after = db.getFirst<{ n: number }>('SELECT COUNT(*) AS n FROM messages_fts')?.n ?? 0;
-  return before - after;
+}
+
+/**
+ * Yetim indeks satırı ÜRETMİŞ olabilecek bir silme koştu — bir sonraki açılış
+ * süpürmeyi (`pruneOrphanSearchIndex`) yapsın.
+ *
+ * ── Neden bir bayrak (review turu 4, Önemli 5) ──────────────────────────────
+ * Süpürme KOŞULSUZDU: sıfır yetimle bile her açılışta, ilk okumadan önce
+ * koşuyordu. Oturum içi yetim üreticileri ise NADİR (`removeByClientMessageId`
+ * = gönderilemeyen bir balonun kaldırılması, geçmiş sayfasının gap dalı) ya da
+ * zaten ölçülebilir (`pruneExpiredMessages` sildiği satır sayısını döndürüyor).
+ * Bayrak süpürmeyi "bir şey gerçekten silindi" hâline bağlıyor; tipik açılış
+ * o DELETE'i (100k'da 19 ms, cihazda 5-10 katı) hiç ödemiyor.
+ *
+ * Bayrak `meta`da, MMKV'de DEĞİL: anlattığı şey DİSKTEKİ indeksin durumu, yani
+ * arşivle aynı ömre sahip olmak zorunda (bkz. migrations V3 yorumu —
+ * watermark'ın aynı gerekçesi). `clearAllChatData` `meta`yı boşaltıyor, yani
+ * logout bayrağı da siliyor — doğru: tablolar da boşalıyor.
+ */
+const SEARCH_INDEX_DIRTY_KEY = 'search_index_dirty';
+
+export function markSearchIndexDirty(): void {
+  if (!isFtsAvailable()) return;
+  getChatDb().run(
+    `INSERT INTO meta (key, value) VALUES (?, '1')
+     ON CONFLICT(key) DO UPDATE SET value = '1'`,
+    [SEARCH_INDEX_DIRTY_KEY],
+  );
+}
+
+export function isSearchIndexDirty(): boolean {
+  return (
+    getChatDb().getFirst<{ value: string | null }>('SELECT value FROM meta WHERE key = ?', [
+      SEARCH_INDEX_DIRTY_KEY,
+    ])?.value === '1'
+  );
+}
+
+export function clearSearchIndexDirty(): void {
+  getChatDb().run('DELETE FROM meta WHERE key = ?', [SEARCH_INDEX_DIRTY_KEY]);
+}
+
+/**
+ * KAPASİTESİZ OTURUMUN açtığı sessiz boşluğu kapatır: indeks BOMBOŞ ama
+ * diskte "indekslendim" diyen satırlar varsa `content_folded`ı NULL'layıp
+ * açılıştaki doldurma turuna (`backfillContentFolded`) bırakır.
+ *
+ * ── Kapanan boşluk (review turu 4, Önemli 6) ────────────────────────────────
+ * `isFtsAvailable()` false iken yazılan satır `content_folded`ını DOLU alıyor
+ * (metin olmayanda '' — bkz. `searchableFolded`), yani kapasite sonradan
+ * dönse bile ne yazıcı kapısı (`syncFtsRow`, o satır bir daha upsert
+ * edilmiyor) ne doldurma turu (`WHERE content_folded IS NULL`) onu bir daha
+ * ziyaret ediyordu: o oturumda yazılan mesajlar KALICI olarak aranamaz
+ * kalıyordu ve bu kullanıcıya "arama bozuk" diye değil "o mesaj yok" diye
+ * görünüyordu. `probeFts`in catch'i (bozuk sanal tablo) bu hâli bir derleme
+ * bayrağına ihtiyaç duymadan ERİŞİLEBİLİR kılıyor.
+ *
+ * ── Yüklem neden "messages var mı" DEĞİL ────────────────────────────────────
+ * `content_folded <> ''` İNDEKSLENMESİ GEREKEN bir satır demek (NULL bu
+ * karşılaştırmadan geçmez — onu doldurma turu zaten görüyor; '' olanlar
+ * sesli/görsel/sistem mesajı, indekse HİÇ girmiyorlar). Yüklem yalnız "arşiv
+ * boş değil" olsaydı, SADECE sesli mesajdan oluşan bir arşivde (indeks
+ * meşru biçimde boş) her açılışta tüm arşiv NULL'lanır ve doldurma turu
+ * sonsuza dek yeniden koşardı.
+ *
+ * Maliyet: açılış başına indeksli bir `COUNT(*)` (100k'da 4.7 ms) + ilk
+ * eşleşen satıra kadar bir tarama. Boşluk YOKSA ikinci sorgu HİÇ koşmuyor.
+ *
+ * @returns onarım tetiklendi mi (yalnız açılış logu/test için).
+ */
+export function reseedSearchIndexIfEmpty(): boolean {
+  if (!isFtsAvailable()) return false;
+  const db = getChatDb();
+  const indexed = db.getFirst<{ n: number }>('SELECT COUNT(*) AS n FROM messages_fts')?.n ?? 0;
+  if (indexed > 0) return false;
+  const claims = db.getFirst<{ one: number }>(
+    "SELECT 1 AS one FROM messages WHERE content_folded <> '' LIMIT 1",
+  );
+  if (!claims) return false;
+  db.run("UPDATE messages SET content_folded = NULL WHERE content_folded <> ''");
+  return true;
 }
 
 /**
@@ -1220,6 +1298,9 @@ export function applyHistoryPage(
     );
     result.deletedCount = before - messageCount(db, conversationId);
     result.gapReplaced = true;
+    // Silinen satırların indeks karşılıkları YETİM kaldı — süpürmeyi bir
+    // sonraki açılışa işaretle (bkz. `markSearchIndexDirty`).
+    if (result.deletedCount > 0) markSearchIndexDirty();
     writeSyncState(db, conversationId, {
       oldestLoadedSentAtMs: pageOldestMs,
       nextCursor: page.nextCursor,
@@ -1344,10 +1425,27 @@ export function applyDeletionTombstone(p: {
 /**
  * Sohbet tamamen kaldırıldı (engelleme / hesap silme). Mesajları da gider —
  * gizlilik aksiyonu, disk değil.
+ *
+ * Arama indeksi de BURADA, AYNI transaction'da gidiyor (review turu 4,
+ * Önemli 7): yetim süpürmesi (`pruneOrphanSearchIndex`) onu bir SONRAKİ
+ * açılışta temizliyordu ve bu yol gizlilik gerekçesiyle var — kullanıcı
+ * birini engelleyip uygulamayı bir daha hiç açmazsa o kişinin mesaj metni
+ * (katlanmış olsa da metin) diskte süresiz kalırdı. Süpürmenin "yüklemin
+ * dördüncü kopyasını yazma" gerekçesi retention budaması için makul, gizlilik
+ * aksiyonu için değil.
  */
 export function removeConversationLocally(conversationId: string): void {
   const db = getChatDb();
   db.transaction(() => {
+    // Mesajlar SİLİNMEDEN ÖNCE: alt sorgu o satırları bulabilsin.
+    if (isFtsAvailable()) {
+      db.run(
+        `DELETE FROM messages_fts WHERE rowid IN (
+           SELECT rowid FROM messages WHERE conversation_id = ?
+         )`,
+        [conversationId],
+      );
+    }
     // send_attempts'in conversation_id kolonu YOK (v7 — muhasebe cmid'e bağlı,
     // sohbete değil); bu yüzden messages SİLİNMEDEN ÖNCE, hâlâ mevcutken,
     // cmid'leri üzerinden JOIN edip bu sohbete ait olanları buluyoruz.
@@ -1412,6 +1510,9 @@ export function setSendState(clientMessageId: string, sendState: SendState): voi
 
 export function removeByClientMessageId(clientMessageId: string): void {
   getChatDb().run('DELETE FROM messages WHERE client_message_id = ?', [clientMessageId]);
+  // Yetim indeks satırı bıraktı (indeks `rowid`ye çapalı, mesaj gitti) —
+  // süpürmeyi bir sonraki açılışa işaretle, bkz. `markSearchIndexDirty`.
+  markSearchIndexDirty();
 }
 
 /**

@@ -121,6 +121,10 @@ const storeStub = () => ({
   dispatch: jest.fn(),
 });
 
+function ftsRowCount(): number {
+  return getChatDb().getFirst<{ n: number }>('SELECT COUNT(*) AS n FROM messages_fts')!.n;
+}
+
 function rowidOf(id: string): number {
   return getChatDb().getFirst<{ rowid: number }>('SELECT rowid FROM messages WHERE id = ?', [
     id,
@@ -278,7 +282,10 @@ describe('yetim indeks satırları', () => {
     // toplanıyor): engelleme/hesap silme, retention budaması, boşluk değiştirme.
     getChatDb().run('DELETE FROM messages WHERE id = ?', ['m2']);
 
-    expect(pruneOrphanSearchIndex()).toBe(1);
+    // Satır sayısını TEST sayıyor, fonksiyon DEĞİL (review turu 4, Önemli 5):
+    // dönüş değerini üretmek için koşan iki `SELECT COUNT(*)` açılış yolunda
+    // kimsenin okumadığı bir sayı için 100k satırda 9.4 ms ediyordu.
+    pruneOrphanSearchIndex();
     expect(
       getChatDb().getAll('SELECT rowid FROM messages_fts WHERE rowid = ?', [goneRowid]),
     ).toEqual([]);
@@ -296,8 +303,138 @@ describe('yetim indeks satırları', () => {
       [rowidOf('m1'), 'baskasinin metni', 'bambaska'],
     );
 
-    expect(pruneOrphanSearchIndex()).toBe(1);
+    pruneOrphanSearchIndex();
     expect(getChatDb().getAll('SELECT rowid FROM messages_fts')).toEqual([]);
+  });
+});
+
+/**
+ * Review turu 4, Önemli 5 — süpürme artık KOŞULLU. Ayırt edici: koşulsuz
+ * hâlde (eski davranış) aşağıdaki ilk testte de `pruneOrphanSearchIndex`
+ * çağrılırdı.
+ */
+describe('yetim süpürmesinin açılış kapısı', () => {
+  it('silinen bir şey YOKSA süpürme HİÇ koşmuyor', () => {
+    saveMessage(msg('m1', 'duruyor'), CONV);
+    const spy = jest.spyOn(repo, 'pruneOrphanSearchIndex');
+    try {
+      startChatMirror(storeStub());
+      expect(spy).not.toHaveBeenCalled();
+    } finally {
+      spy.mockRestore();
+    }
+  });
+
+  it('removeByClientMessageId bayrağı dikiyor → SONRAKİ açılış süpürüyor ve bayrağı düşürüyor', () => {
+    saveMessage(msg('m1', 'kalacak'), CONV);
+    saveMessage(msg('m2', 'gidecek', { clientMessageId: 'cmid-2' }), CONV);
+    const goneRowid = rowidOf('m2');
+
+    repo.removeByClientMessageId('cmid-2');
+    expect(repo.isSearchIndexDirty()).toBe(true);
+    // Yetim HENÜZ duruyor — süpürme açılışa ait.
+    expect(
+      getChatDb().getAll('SELECT rowid FROM messages_fts WHERE rowid = ?', [goneRowid]),
+    ).toHaveLength(1);
+
+    startChatMirror(storeStub());
+
+    expect(
+      getChatDb().getAll('SELECT rowid FROM messages_fts WHERE rowid = ?', [goneRowid]),
+    ).toEqual([]);
+    // Bayrak düştü: bir sonraki açılış bedava.
+    expect(repo.isSearchIndexDirty()).toBe(false);
+  });
+
+  it('retention budaması satır sildiyse süpürme bayraksız da koşuyor', () => {
+    // Saklama penceresinin ÇOK dışında bir satır: `pruneExpiredMessages`
+    // onu siliyor ve dönüş değeri > 0 oluyor — bayrağa gerek yok.
+    const old = Date.now() - 900 * 24 * 60 * 60 * 1000;
+    saveMessage(msg('m-eski', 'silinecek', { sentAt: new Date(old).toISOString() }), CONV);
+    const goneRowid = rowidOf('m-eski');
+    expect(repo.isSearchIndexDirty()).toBe(false);
+
+    startChatMirror(storeStub());
+
+    expect(
+      getChatDb().getAll('SELECT rowid FROM messages_fts WHERE rowid = ?', [goneRowid]),
+    ).toEqual([]);
+  });
+});
+
+/**
+ * Review turu 4, Önemli 7 — gizlilik aksiyonu "bir sonraki açılışa"
+ * ERTELENEMEZ: kullanıcı birini engelleyip uygulamayı bir daha hiç açmazsa o
+ * kişinin (katlanmış da olsa) mesaj metni diskte süresiz kalırdı.
+ */
+describe('removeConversationLocally — indeks AYNI ANDA gidiyor', () => {
+  it('sohbet kaldırılınca indeks satırı da ANINDA siliniyor (açılış beklenmiyor)', () => {
+    getChatDb().run(
+      'INSERT INTO conversations (conversation_id, partner_user_id) VALUES (?,?)',
+      [CONV, 'partner-1'],
+    );
+    saveMessage(msg('m1', 'gizli metin'), CONV);
+    expect(ftsRowsFor('m1')).toHaveLength(1);
+
+    repo.removeConversationLocally(CONV);
+
+    expect(ftsRowCount()).toBe(0);
+  });
+
+  it('BAŞKA sohbetin indeks satırına DOKUNMUYOR', () => {
+    for (const id of [CONV, 'c2']) {
+      getChatDb().run(
+        'INSERT INTO conversations (conversation_id, partner_user_id) VALUES (?,?)',
+        [id, `partner-${id}`],
+      );
+    }
+    saveMessage(msg('m1', 'gidecek'), CONV);
+    saveMessage(msg('m2', 'kalacak', { conversationId: 'c2' }), 'c2');
+
+    repo.removeConversationLocally(CONV);
+
+    expect(ftsRowsFor('m1')).toHaveLength(0);
+    expect(ftsRowsFor('m2')).toHaveLength(1);
+  });
+});
+
+/**
+ * Review turu 4, Önemli 6 — kapasitesiz BİR oturum, o oturumda yazılan her
+ * mesajı KALICI olarak aranamaz kılıyordu: satır `content_folded`ını DOLU
+ * alıyor (yani doldurma turunun `IS NULL` seçimine hiç girmiyor) ama indekste
+ * karşılığı yok.
+ */
+describe('kapasitesiz oturumun açtığı boşluk', () => {
+  it('indeks BOŞ ama diskte "indekslendim" diyen satır varsa açılış onu yeniden kuruyor', () => {
+    saveMessage(msg('m1', 'IŞIK'), CONV);
+    // Kapasitesiz bir oturumun bıraktığı hâli taklit et: kolon DOLU, indeks BOŞ.
+    getChatDb().run('DELETE FROM messages_fts');
+    expect(readContentFolded('m1')).toBe('isik');
+    expect(ftsRowCount()).toBe(0);
+
+    startChatMirror(storeStub());
+
+    // Onarım + doldurma turu: satır yeniden indekslendi.
+    expect(ftsRowsFor('m1')).toEqual([{ content_folded: 'isik' }]);
+    expect(repo.searchMessages('isik', { limit: 10 }).map((h) => h.messageId)).toEqual(['m1']);
+  });
+
+  it('indekslenmesi GEREKEN satır yoksa (yalnız sesli mesaj) kolon NULL\'LANMIYOR', () => {
+    // Ayırt edici: yüklem "arşiv boş değil" olsaydı bu arşivde indeks meşru
+    // biçimde boş olduğu için HER açılışta tüm arşiv NULL'lanır ve doldurma
+    // turu sonsuza dek yeniden koşardı.
+    saveMessage(msg('v1', '', { contentType: ContentType.Voice, durationMs: 1200 }), CONV);
+    expect(readContentFolded('v1')).toBe('');
+    expect(ftsRowCount()).toBe(0);
+
+    expect(repo.reseedSearchIndexIfEmpty()).toBe(false);
+    expect(readContentFolded('v1')).toBe('');
+  });
+
+  it('indeks DOLUYSA hiçbir şey yapmıyor', () => {
+    saveMessage(msg('m1', 'duruyor'), CONV);
+    expect(repo.reseedSearchIndexIfEmpty()).toBe(false);
+    expect(readContentFolded('m1')).toBe('duruyor');
   });
 });
 
@@ -321,8 +458,13 @@ describe('açılış sürücüsü', () => {
     // Ayırt edici: kendi try'ı olmasaydı dıştaki catch `started = false` deyip
     // ERKEN dönerdi — yani bozuk bir arama indeksi sohbetin local-first
     // yolunu tamamen kapatırdı.
+    // Patlatılan fonksiyon `reseedSearchIndexIfEmpty`: açılış yolunda
+    // KOŞULSUZ çağrılan tek indeks bakımı o. (Eskiden `pruneOrphanSearchIndex`
+    // patlatılıyordu; süpürme review turu 4, Önemli 5 ile KOŞULLU hâle geldi
+    // ve bu testin kurulumunda hiç çağrılmıyor — spy'ı orada bırakmak testi
+    // sessizce "hiçbir şey patlamadı"ya çevirirdi.)
     const spy = jest
-      .spyOn(repo, 'pruneOrphanSearchIndex')
+      .spyOn(repo, 'reseedSearchIndexIfEmpty')
       .mockImplementation(() => {
         throw new Error('indeks bozuk');
       });

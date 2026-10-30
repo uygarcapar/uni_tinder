@@ -113,7 +113,7 @@ export function startChatMirror(store?: {
     // Saklama penceresi — sunucunun MessageRetentionJob'ı ile aynı. Açılışta
     // bir kez, indeksli tek DELETE. Sunucudan sinyal beklemiyor: o iş hard
     // delete yapıyor ve arkasında hiç iz bırakmıyor.
-    repo.pruneExpiredMessages();
+    const prunedExpired = repo.pruneExpiredMessages();
     // Gönderim sırasında ölen uygulamanın bıraktığı `pending` satırları —
     // onları sürecek kuyruk bellekte olduğu için process ile öldü. OKUMADAN
     // ÖNCE çevrilmeli ki diskten gelen balon "tekrar dene"li doğsun.
@@ -136,7 +136,29 @@ export function startChatMirror(store?: {
       // Mesajı silinmiş (ya da rowid'i kaymış) indeks satırları.
       // `pruneExpiredMessages`'ten SONRA: onun sildiği satırların indeks
       // karşılıkları da bu turda gitsin.
-      repo.pruneOrphanSearchIndex();
+      //
+      // KOŞULLU (review turu 4, Önemli 5): süpürmenin DELETE'i 100k satırlık
+      // bir indekste 19 ms, cihazda 5-10 katı — ve sıfır yetimle bile
+      // koşuyordu. Yetim ÜRETEN yollar ya bu turda ölçülü (`prunedExpired`)
+      // ya da kendilerini işaretliyor (`markSearchIndexDirty`:
+      // `removeByClientMessageId`, geçmiş sayfasının gap dalı).
+      // `removeConversationLocally` artık indeksi KENDİ siliyor, yani burada
+      // beklenmesi gereken bir yetim bırakmıyor.
+      const dirty = repo.isSearchIndexDirty();
+      if (prunedExpired > 0 || dirty) {
+        repo.pruneOrphanSearchIndex();
+        // Bayrak süpürmeden SONRA düşüyor: aradaki bir hata (dıştaki catch'e
+        // DEĞİL, bu try'a düşüyor) bayrağı silmiş olmasın, süpürme bir
+        // sonraki açılışta tekrar denensin.
+        if (dirty) repo.clearSearchIndexDirty();
+      }
+      // Kapasitesiz bir oturumun açtığı sessiz boşluk: indeks boş ama diskte
+      // "indekslendim" diyen satırlar varsa kolon NULL'lanıp doldurma turuna
+      // bırakılıyor (review turu 4, Önemli 6 — gerekçe repo'daki yorumda).
+      // Doldurma turundan ÖNCE koşmak ZORUNDA: işi ona devrediyor.
+      if (repo.reseedSearchIndexIfEmpty() && __DEV__) {
+        console.log('[chatMirror] arama indeksi BOŞ bulundu, katlama kolonu baştan kurulacak');
+      }
       backfillSearchIndexOnBoot();
     } catch (error) {
       console.error('[chatMirror] arama indeksi bakımı düştü, arama LIKE yolunda:', error);
