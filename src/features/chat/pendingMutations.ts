@@ -49,6 +49,22 @@
  * — yoksa sıradaki tur "kaldır"ı atlar ve eskisi hâlâ sunucudayken yenisini
  * ekler.
  *
+ * O defter TUR KAPSAMLI ve bu, üstünden geçilmiş YARIM BAŞARIDA bir boşluk
+ * bırakıyor (KAPSAM DIŞI): `removeReaction(base)` geçip `addReaction(desired)`
+ * ağ hatasına düşerse sonuç 'retry' (ya da kalıcı ret) olur ve o dallar
+ * `rebaseSupersededReactionBase`'i ÇAĞIRMAZ — satır tam o pencerede yeni bir
+ * niyetle değişmişse hayatta kalan satırın `base`i sunucuda ARTIK OLMAYAN bir
+ * emojiyi gösterir. Sıradaki tur o yüzden zaten silinmiş bir reaksiyon için
+ * `removeReaction` atar; backend reaksiyon/silme uçlarını bu faz için
+ * idempotent DONDURDUĞU için bu bir no-op, bedeli paylaşımlı kovadan BİR
+ * boşa istek (hata kataloğunda "reaksiyon bulunamadı" diye bir kod da yok —
+ * bkz. responseCodes.ts'teki UT-673x ailesi, yalnız BAD_EMOJI ve ON_SYSTEM).
+ * Bilerek KAPATILMADI: kapatmak "sunucu benim adıma ne tutuyor"u TURLAR ARASI
+ * kalıcı tutmak demek ve o, bu fazın kapsamından büyük bir tasarım (aynı
+ * gerekçeyle `baseRemoved`'ın turlar arası hâli de kapsam dışı bırakıldı).
+ * Sessiz bir NİYET KAYBI DEĞİL: o istek bir gün kalıcı olarak reddedilse bile
+ * kullanıcı geri almayı ve sebebini söyleyen toast'ı görür.
+ *
  * ── Bekleme penceresinde sunucu listesi mükerrer yazabilir (KAPSAM DIŞI) ────
  * Bir satır backoff'ta beklerken (en çok 5 dk) hub/delta yolu AYNI mesaj için
  * sunucunun kanonik reaksiyon listesini KOŞULSUZ dispatch ediyor
