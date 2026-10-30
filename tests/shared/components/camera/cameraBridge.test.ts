@@ -15,7 +15,7 @@ describe('cameraBridge', () => {
   });
 
   it('bağlı host çekimi geri verir', async () => {
-    bindCamera((settle) => settle({ status: 'captured', shot }));
+    bindCamera((_request, settle) => settle({ status: 'captured', shot }));
 
     await expect(presentCameraCapture()).resolves.toEqual({
       status: 'captured',
@@ -23,9 +23,22 @@ describe('cameraBridge', () => {
     });
   });
 
+  it('BAŞLANGIÇ KAMERASI isteği host\'a geçiyor — ve kuyrukta taşınıyor', () => {
+    // Kampüs anı ön kamerayla açılıyor (istek). Ayar modül seviyesinde bir
+    // "son istek" değişkeninde tutulsaydı, üst üste gelen iki çağrıda
+    // ikincisinin ayarı birincinin oturumuna sızardı.
+    const seen: unknown[] = [];
+    bindCamera((request) => seen.push(request));
+
+    presentCameraCapture({ facing: 'front' });
+    presentCameraCapture();
+
+    expect(seen).toEqual([{ facing: 'front' }]);
+  });
+
   it('istekleri TEK TEK işler (aynı anda iki kamera açılmaz)', async () => {
     const settlers: ((o: any) => void)[] = [];
-    bindCamera((settle) => settlers.push(settle));
+    bindCamera((_request, settle) => settlers.push(settle));
 
     const first = presentCameraCapture();
     const second = presentCameraCapture();
@@ -41,7 +54,7 @@ describe('cameraBridge', () => {
 
   it('aynı isteği iki kez sonuçlandırmak kuyruğu kaydırmaz', async () => {
     const settlers: ((o: any) => void)[] = [];
-    bindCamera((settle) => settlers.push(settle));
+    bindCamera((_request, settle) => settlers.push(settle));
 
     const first = presentCameraCapture();
     const second = presentCameraCapture();

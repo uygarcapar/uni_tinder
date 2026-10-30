@@ -1,22 +1,9 @@
 import { render, fireEvent } from '@testing-library/react-native';
 
 jest.mock('lucide-react-native', () => new Proxy({}, { get: () => () => null }));
-jest.mock('@/shared/components/AppBottomSheet', () => {
-  const React = require('react');
-  const { View } = require('react-native');
-  return {
-    __esModule: true,
-    default: ({ visible, children }: any) =>
-      visible ? React.createElement(View, { testID: 'app-bottom-sheet' }, children) : null,
-  };
-});
-jest.mock('@gorhom/bottom-sheet', () => {
-  const React = require('react');
-  const { View } = require('react-native');
-  return {
-    BottomSheetScrollView: ({ children }: any) => React.createElement(View, null, children),
-  };
-});
+// Sözleşme metinleri uygulamanın tek modal yapısında (AppModal) açılıyor;
+// kabuğun kendisi değil İÇERİĞİ test ediliyor.
+jest.mock('@/shared/components/AppModal');
 jest.mock('react-i18next', () => ({
   useTranslation: () => ({ t: (k: string) => k }),
 }));
@@ -29,7 +16,7 @@ const renderScreen = () => render(<WelcomeScreen navigation={nav} route={{} as a
 
 it('sözleşme metni açılışta kapalı', () => {
   const { queryByTestId } = renderScreen();
-  expect(queryByTestId('app-bottom-sheet')).toBeNull();
+  expect(queryByTestId('app-modal')).toBeNull();
 });
 
 it('Kullanım Koşulları linki sheet\'i koşullar metniyle açıyor', () => {
@@ -37,7 +24,7 @@ it('Kullanım Koşulları linki sheet\'i koşullar metniyle açıyor', () => {
 
   fireEvent.press(getByText('auth.welcome.termsLink'));
 
-  expect(getByTestId('app-bottom-sheet')).toBeTruthy();
+  expect(getByTestId('app-modal')).toBeTruthy();
   expect(getByText('auth.legal.terms.title')).toBeTruthy();
   expect(getByText('auth.legal.terms.sectionTitle1')).toBeTruthy();
   expect(getByText('auth.legal.terms.section8Content')).toBeTruthy();
@@ -55,10 +42,10 @@ it('Gizlilik Politikası linki KVKK bölümlerini gösteriyor', () => {
 });
 
 it('kapat butonu sheet\'i kapatıyor', () => {
-  const { getByText, getByLabelText, queryByTestId } = renderScreen();
+  const { getByText, getByTestId, queryByTestId } = renderScreen();
 
   fireEvent.press(getByText('auth.welcome.termsLink'));
-  fireEvent.press(getByLabelText('common.close'));
+  fireEvent.press(getByTestId('modal-header-close'));
 
-  expect(queryByTestId('app-bottom-sheet')).toBeNull();
+  expect(queryByTestId('app-modal')).toBeNull();
 });

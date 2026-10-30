@@ -1,4 +1,5 @@
 import {
+  centerCropRect,
   clamp,
   coverScale,
   frameWindow,
@@ -232,5 +233,62 @@ describe('frameWindow', () => {
     expect(window({ screenH: 667, headerH: 120, footerH: 220 }).winW).toBeLessThan(
       window({ screenH: 667, headerH: 120, footerH: 180 }).winW,
     );
+  });
+});
+
+/**
+ * KIRPICISIZ YOLUN GEOMETRİSİ — kampüs anları (istek: "artıya basınca direkt
+ * kamera, çekince preview, sonra yolla").
+ *
+ * Orada kullanıcı kadraj seçmiyor: kare, kameranın 3:4 penceresinde ne
+ * gördüyse o. Bu fonksiyon o kareyi yükleme çıktısına çevirirken kullanılan
+ * tek geometri (bkz. photoPicker > fitPhotoForUpload).
+ */
+describe('centerCropRect', () => {
+  it('kaynak ZATEN 3:4 ise hiçbir şey atmıyor', () => {
+    // Kameranın normal hâli (`pictureSize="Photo"` → sensörün 3:4'ü).
+    expect(centerCropRect({ srcW: 3024, srcH: 4032, aspectW: 3, aspectH: 4 })).toEqual({
+      originX: 0,
+      originY: 0,
+      width: 3024,
+      height: 4032,
+    });
+  });
+
+  it('YATAY kaynakta ortadan dikey bir bant alıyor', () => {
+    // Yedek yol (sistem kamerası) 4:3 yatay verebiliyor.
+    const rect = centerCropRect({ srcW: 4032, srcH: 3024, aspectW: 3, aspectH: 4 });
+    expect(rect.height).toBe(3024);
+    expect(rect.width).toBe(2268);
+    // Bant ORTADA: iki yandan eşit pay kesiliyor.
+    expect(rect.originX).toBe(Math.round((4032 - 2268) / 2));
+    expect(rect.originY).toBe(0);
+  });
+
+  it('dönen dikdörtgen TAM SAYILARDA 3:4 — sonraki resize saf ölçekleme', () => {
+    // ⚠️ `toSourceRect`teki aynı kural: iOS'ta CGImage.cropping(to:) taşan
+    // dikdörtgeni HATA VERMEDEN küçültüyor ve çıktı orandan sapıyor.
+    for (const [w, h] of [
+      [3024, 4032],
+      [4032, 3024],
+      [1080, 1920],
+      [1999, 1333],
+      [640, 480],
+    ] as const) {
+      const rect = centerCropRect({ srcW: w, srcH: h, aspectW: 3, aspectH: 4 });
+      expect(rect.width).toBeLessThanOrEqual(w);
+      expect(rect.height).toBeLessThanOrEqual(h);
+      expect(rect.originX + rect.width).toBeLessThanOrEqual(w);
+      expect(rect.originY + rect.height).toBeLessThanOrEqual(h);
+      expect(Math.abs(rect.height - (rect.width * 4) / 3)).toBeLessThanOrEqual(1);
+    }
+  });
+
+  it('bozuk ölçüde ÇÖKMÜYOR — en az 1px bir dikdörtgen dönüyor', () => {
+    // Native boyut vermezse çağıran ölçüyü kendi okuyor; okuma da başarısız
+    // olursa buraya 0 düşebilir ve manipülatör 0'lık rect'te fırlatıyor.
+    const rect = centerCropRect({ srcW: 0, srcH: 0, aspectW: 3, aspectH: 4 });
+    expect(rect.width).toBeGreaterThanOrEqual(1);
+    expect(rect.height).toBeGreaterThanOrEqual(1);
   });
 });
