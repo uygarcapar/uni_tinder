@@ -19,6 +19,61 @@ export type SourceRect = {
   height: number;
 };
 
+/**
+ * YÜKLEME ÇIKTISININ ÖLÇÜSÜ VE KALİTESİ — tek kaynak.
+ *
+ * Uygulamada artık fotoğrafı çıktıya çeviren İKİ yol var:
+ *   • kırpma ekranı (kullanıcı kadrajı seçiyor — CropperOverlay),
+ *   • kırpıcısız yol (kamera karesi doğrudan yükleniyor — kampüs anları,
+ *     bkz. photoPicker > `fitPhotoForUpload`).
+ * İkisi AYNI sayıları kullanmak zorunda: ayrışırlarsa aynı üründe iki farklı
+ * çözünürlük/kalite dolaşır ve `photoMaxBytes` kapısı yalnız birinde tutar.
+ */
+export const OUTPUT_W = 900;
+export const OUTPUT_H = 1200;
+export const OUTPUT_QUALITY = 0.85;
+
+/**
+ * Kaynağın ORTASINDAN istenen orana en büyük dikdörtgen.
+ *
+ * Kırpıcısız yolun geometrisi: kullanıcı kadraj seçmiyor, kare kameranın 3:4
+ * önizleme penceresinde ne görüyorsa o. Kaynak zaten 3:4 ise dikdörtgen
+ * fotoğrafın TAMAMI oluyor (tek bir piksel atılmıyor); 4:3 ya da 16:9 bir
+ * yedek yoldan (sistem kamerası) gelirse orta bant alınıyor.
+ *
+ * ⚠️ SIRA `toSourceRect`TEKİYLE AYNI — yuvarla, oranı yeniden dayat, sonra
+ * kırp: iOS'ta `CGImage.cropping(to:)` taşan dikdörtgeni HATA VERMEDEN
+ * küçültüyor ve çıktı orandan sapıyor. O yüzden w → h → (gerekirse) w.
+ */
+export function centerCropRect(a: {
+  srcW: number;
+  srcH: number;
+  aspectW: number;
+  aspectH: number;
+}): SourceRect {
+  const { srcW, srcH, aspectW, aspectH } = a;
+  if (!(srcW > 0) || !(srcH > 0)) {
+    return { originX: 0, originY: 0, width: Math.max(1, srcW), height: Math.max(1, srcH) };
+  }
+
+  let w = srcW;
+  let h = Math.round((w * aspectH) / aspectW);
+  if (h > srcH) {
+    h = srcH;
+    w = Math.round((h * aspectW) / aspectH);
+    if (w > srcW) w = srcW;
+  }
+  if (w < 1) w = 1;
+  if (h < 1) h = 1;
+
+  return {
+    originX: Math.round((srcW - w) / 2),
+    originY: Math.round((srcH - h) / 2),
+    width: w,
+    height: h,
+  };
+}
+
 export function clamp(v: number, lo: number, hi: number): number {
   "worklet";
   return v < lo ? lo : v > hi ? hi : v;

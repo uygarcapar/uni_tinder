@@ -50,6 +50,9 @@ import {
   maxOffset,
   maxZoom,
   toSourceRect,
+  OUTPUT_H,
+  OUTPUT_QUALITY,
+  OUTPUT_W,
 } from "./cropGeometry";
 
 /**
@@ -69,9 +72,15 @@ import {
 
 const ASPECT_W = 3;
 const ASPECT_H = 4;
-const OUT_W = 900;
-const OUT_H = 1200;
-const QUALITY = 0.85;
+/**
+ * ⚠️ ÇIKTI SAYILARI ARTIK ORTAK MODÜLDE (`cropGeometry > OUTPUT_*`): kırpıcısız
+ * yol da (kamera karesi doğrudan yükleniyor — kampüs anları) aynı ölçüyü ve
+ * kaliteyi kullanmak zorunda. Burada yerel sabit olarak dursalardı iki yol
+ * sessizce ayrışırdı.
+ */
+const OUT_W = OUTPUT_W;
+const OUT_H = OUTPUT_H;
+const QUALITY = OUTPUT_QUALITY;
 
 /**
  * Ölçek TABANI — ve artık SERT bir taban.

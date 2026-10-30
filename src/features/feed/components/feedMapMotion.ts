@@ -35,47 +35,6 @@ export const MAP_MOTION_MS = 280;
 export const mapMotionEasing = Easing.inOut(Easing.cubic);
 
 /**
- * AŞAĞI ÇEKME EŞİĞİ — bu kadar çekilince tam ekran harita açılıyor.
- *
- * Akışta pull-to-refresh KALDIRILDI ve jest haritaya devredildi (gerekçe
- * FeedScreen > onRefresh): çekerken gönderiler iniyor, başlık ve pill satırı
- * yerinde duruyor, açılan boşluktan harita görünüyor — jestin kendisi zaten
- * "haritayı aç" diyor.
- *
- * 92: iOS'un lastik direnci bu mesafede belirgin biçimde sertleşiyor, yani
- * kullanıcı "çektim" dediği anla eşik aynı yere düşüyor. Daha küçük bir sayı
- * (ör. 48) listeyi hızlı bırakan her fling'de kazara haritayı açıyordu;
- * 140 ve üstü ise parmağın rahat menzilinin dışına çıkıyor.
- *
- * ⚠️ TETİK EŞİĞİN GEÇİLMESİ, PARMAĞIN BIRAKILMASI DEĞİL: kullanıcı eşiği
- * geçtiği anda harita açılıyor. "Bırakınca" yapılsaydı jest yarıda kalan bir
- * his veriyordu — ekran çekilirken bekliyor, parmak kalkınca hareket ediyor.
- */
-export const MAP_PULL_EXPAND_PX = 92;
-
-/**
- * ÇEKMENİN ÖNDEN SÜRDÜĞÜ PAY — her katmanın KENDİ mesafesinin bu oranı.
- *
- * Eşik geçilmeden ÖNCE de açılış başlıyor (istek: "title, sekmeler, blur ve
- * kutular da çekmeye bağlı olsun"). Yani açılış dokunuşla değil PARMAKLA
- * başlıyor: kullanıcı eşiğe vardığında her katman kendi yolunun %45'inde ve
- * animasyon onları kaldığı yerden alıyor — "açılış daha smooth" denen şey bu
- * süreklilik.
- *
- * ⚠️ ORAN, PİKSEL DEĞİL ve bu bilinçli: katmanların çıkış mesafeleri çok
- * farklı (sekme şeridi ~100pt, chrome ~210pt, kutuların şeridi ~400pt).
- * Çekilen pikseli hepsine birebir uygulamak sekmeleri eşikten önce tamamen
- * çıkarırken kutuları kıpırdatmıyordu — oranla hepsi aynı NİSPİ yolu alıyor,
- * yani birlikte hareket ediyormuş gibi okunuyor.
- *
- * ⚠️ 1.0 OLAMAZ: katmanlar eşikte tamamen çıkarsa geriye animasyona iş
- * kalmıyor ve kullanıcı eşiği geçmezse her şey ekranın dışından geri dönüyor —
- * çekmenin iptal edilebilir olduğu hissi kayboluyor. 0.45 hem niyeti gösteriyor
- * hem geri dönüşü mümkün bırakıyor.
- */
-export const MAP_PULL_SHARE = 0.45;
-
-/**
  * KUTULARIN ŞERİDİNİN KENDİ GİRİŞİ — harita yerine oturduktan SONRA.
  *
  * ⚠️ ŞERİT ÇEKMEYE BAĞLI DEĞİL (istek). Bir dönem öyleydi: parmak aşağı
@@ -109,3 +68,27 @@ export const MAP_STRIP_ENTRY_MS = 320;
  * üstünde asılı kalan bir başlık görünürdü.
  */
 export const MAP_CHROME_FADE_MS = 420;
+
+/**
+ * ── POLİGONUN ÇİZİLME SÜRESİ (istek) ───────────────────────────────────────
+ *
+ * "üç kareye dokunup çizgi animasyonla, çizgi şeklinde yavaşça çizilsin."
+ *
+ * Kontur kenar boyunca çiziliyor (mekanizma CampusPolygonOverlay > reveal) ve
+ * bu süre o yolun tamamını kapsıyor.
+ *
+ * ⚠️ HARİTANIN HAREKETİNDEN (280) ÇOK UZUN ve bilerek: "yavaşça" denen şey bu.
+ * Sıra böylece dört kademeye oturuyor — harita açılır (280) → chrome yavaşça
+ * belirir (420) → kutular aşağıdan gelir (320) → sınır kendini çizer (1100).
+ * Aynı süreye sıkıştırılsa çizim açılışın içinde kaybolur, yani kullanıcı
+ * şeklin KURULDUĞUNU değil "zaten orada olduğunu" görür.
+ *
+ * ⚠️ ÇİZİM HARİTANIN HAREKETİ BİTTİKTEN SONRA BAŞLIYOR (çağıran geciktiriyor):
+ * kadraj hâlâ kayarken başlayan bir çizim, iki hareketin üst üste binmesi
+ * yüzünden "kayan bir çizgi" gibi okunuyordu.
+ *
+ * ⚠️ KAPANIŞTA AYRI SÜRE YOK: şekil haritayla birlikte (MAP_MOTION_MS)
+ * geri silinmiyor, bir kerede sıfırlanıyor — kapanırken ekranda kalan son şey
+ * bir çizgi parçası olmasın (ve akışta poligon zaten hiç çizilmiyor).
+ */
+export const MAP_POLYGON_DRAW_MS = 1100;

@@ -1,4 +1,4 @@
-import { colors } from "@/shared/theme/colors";
+import { colors, isLight } from "@/shared/theme/colors";
 
 /**
  * Akış satırının kabuğu — gönderi kartı ve iskelet satırı AYNI nesneyi
@@ -120,7 +120,92 @@ const ROW_GAP = 10;
  */
 export const ROW_RADIUS = 34;
 
+/**
+ * BALONCUĞUN GÖLGESİ (istek: "postların arkaplanına theme'e göre gölge ver
+ * hafif ama").
+ *
+ * Renk İKİ MODDA DA SİYAH — `colors.shadow` token'ının sözleşmesi bu ("açık
+ * modda da siyah, sadece daha görünür olurlar"). Moda göre değişen şey OPAKLIK
+ * ve YARIÇAP, çünkü gölgenin işi iki modda farklı:
+ *   • AÇIK MOD: zemin beyaz (#FFFFFF), baloncuk kırık gri (#EFEFF2) — ikisi
+ *     değer olarak çok yakın. Gölge burada kutuyu sayfadan AYIRAN şeyin
+ *     kendisi, o yüzden düşük alfa yeter ama yayılmak zorunda (çerçeve yok,
+ *     bkz. yukarıdaki "ÇERÇEVE YOK" notu).
+ *   • KOYU MOD: zemin #121212, baloncuk #1E1E1E — ayrım zaten var. Siyah gölge
+ *     koyu zeminde ancak yüksek alfada okunuyor; 0.38 kutunun altında hafif bir
+ *     oyuk bırakıyor, bir kenar çizgisi üretmiyor.
+ *
+ * ⚠️ AKIŞ SAYFASINDA ZEMİN HER ZAMAN `bg` DEĞİL: listenin arkasında kampüs
+ * haritası duruyor (FeedScreen > mapHero). Gölge orada daha görünür — kart
+ * haritanın üstünde yüzüyor gibi oluyor, istenen de bu. Koyu moddaki alfa bu
+ * yüzden 0.5'ten 0.38'e indi: harita üstünde 0.5 "hafif" değil, leke gibi
+ * duruyordu.
+ *
+ * ⚠️ FONKSİYON, SABİT DEĞİL — `isLight()` çağrısı RENDER SIRASINDA yapılmak
+ * zorunda (colors.ts mutasyon sözleşmesi; aynı gerekçe `feedRowShell`in kendi
+ * notunda). Modül düzeyinde bir sabit, açıkta doğan satırda koyunun gölgesini
+ * taşırdı. Kök remount ağacı yeniden mount ediyor, yani bu fonksiyon yeni modla
+ * tekrar çağrılıyor.
+ *
+ * ⚠️ `overflow: hidden` HÂLÂ YOK ve olmamalı: gölge kutunun DIŞINA taşıyor,
+ * kabuk kendini kırpsa gölge de kırpılırdı (kabuğun kendi uyarısı yukarıda).
+ * Hücre de kırpmıyor (FlatList hücresine overflow verilmiş değil) — uçuşan
+ * kartın gölgesi ekranın tepesine kadar onunla gidiyor.
+ */
+
+/**
+ * ⚠️🔴 GÖLGE `ROW_GAP`İN İÇİNDE KALMAK ZORUNDA — yayılma buradan türetiliyor,
+ * elle yazılmıyor.
+ *
+ * ── Yaşanan hata ───────────────────────────────────────────────────────────
+ * İlk tur yumuşak bir gölgeydi (kayma 4-6, yarıçap 14-16) ve LİSTE DURURKEN
+ * her kartın gölgesi bir ALTTAKİ KARTIN üstüne biniyordu: boşluk 10, gölgenin
+ * alta taşan payı ~20.
+ *
+ * Görünür olmasının sebebi gölgenin kendisi değil Z-SIRASIYDI: yapışma için
+ * hücreler bir tur ters sıraya alınmıştı (üstteki kart ÖNDE), yani üstteki
+ * kartın gölgesi alttakinin ÜZERİNE düşüyordu.
+ *
+ * ⚠️ O TERS SIRA SONRADAN GERİ ALINDI (bkz. FeedFlightCell'in başındaki
+ * z-sırası notu) — yani bugün alttaki kart gölgeyi zaten örtüyor ve yumuşak bir
+ * gölge de "binmiş" görünmezdi. SAYILAR YİNE DE SIKI BIRAKILDI: boşluğu aşmayan
+ * bir gölge, z-sırası ne olursa olsun komşunun üstüne taşmıyor. Yumuşağa
+ * dönülecekse bilinçli bir karar olmalı, "artık güvenli" diye kendiliğinden
+ * değil.
+ *
+ * ── Kural ──────────────────────────────────────────────────────────────────
+ * kayma + yarıçap ≤ ROW_GAP. Boşluk genişletilirse gölge kendiliğinden
+ * yumuşuyor; daraltılırsa kendiliğinden sıkışıyor. İki moda da AYNI geometri
+ * uygulanıyor (binme sorunu moddan bağımsız); moda göre değişen yalnız alfa.
+ *
+ * ⚠️ Sayı düşerken ALFA YÜKSELDİ: yarıçap yarıya inince aynı alfa "temas
+ * gölgesi" bırakmıyor, hiç bırakmıyordu.
+ */
+const SHADOW_DROP = 2;
+/** 2 = güvenlik payı; gölge boşluğun son pikseline dayanmıyor. */
+const SHADOW_BLUR = Math.max(4, ROW_GAP - SHADOW_DROP - 2);
+
+const feedRowShadow = () =>
+  isLight()
+    ? {
+        shadowColor: colors.shadow,
+        shadowOpacity: 0.1,
+        shadowRadius: SHADOW_BLUR,
+        shadowOffset: { width: 0, height: SHADOW_DROP },
+        // Android'de alfa/yarıçap ayrı ayrı verilemiyor (tek sayı). 2, binme
+        // payını da kapsıyor: elevation'ın taşması kabaca kendi değeri kadar.
+        elevation: 2,
+      }
+    : {
+        shadowColor: colors.shadow,
+        shadowOpacity: 0.42,
+        shadowRadius: SHADOW_BLUR,
+        shadowOffset: { width: 0, height: SHADOW_DROP },
+        elevation: 2,
+      };
+
 export const feedRowShell = () => ({
+  ...feedRowShadow(),
   backgroundColor: colors.surface,
   borderRadius: ROW_RADIUS,
   borderCurve: "continuous" as const,
