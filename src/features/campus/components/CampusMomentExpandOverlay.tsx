@@ -18,6 +18,7 @@ import { modeAccent, type AppMode } from "@/features/discover/modeTheme";
 import { colors, scrimAt } from "@/shared/theme/colors";
 import {
   campusExpandGeometry,
+  campusExpandTransform,
   type ExpandRect,
 } from "../campusExpandGeometry";
 import { campusPhotoUri } from "../campusPhotoUri";
@@ -208,14 +209,33 @@ const CampusMomentExpandOverlay = memo(function CampusMomentExpandOverlay({
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [collapsing]);
 
+  /**
+   * ⚠️🔴 HAREKET TRANSFORM — bir dönem `left/top/width/height` idi.
+   *
+   * Layout özellikleri her karede Yoga geçişi demek: hareket JS'in temposuna
+   * bağlanıyor ve liste/harita meşgulken takılıyor. `translate + scale`
+   * doğrudan kompozitörde çalışıyor — istenen "native smooth" bu.
+   *
+   * Yan kazanç: kart ölçeklendiği için İÇİNDEKİ HER ŞEY (fotoğraf, ad) onunla
+   * birlikte büyüyor, yani şeritteki kart gerçekten "taşınıyor" gibi okunuyor.
+   * Layout animasyonunda yazı sabit kalıp kutu büyüyordu ve kopya hissi tam
+   * oradan doğuyordu.
+   */
   const cardStyle = useAnimatedStyle(() => {
-    const { start, target } = geometry;
-    const p = progress.value;
+    const t = campusExpandTransform(geometry.start, geometry.target, progress.value);
     return {
-      left: start.x + (target.x - start.x) * p,
-      top: start.y + (target.y - start.y) * p,
-      width: start.width + (target.width - start.width) * p,
-      height: start.height + (target.height - start.height) * p,
+      /**
+       * ⚠️ DEMET OLARAK TİPLENİYOR: üç ayrı biçimli nesne bir diziye konunca
+       * TS birleşim türetiyor ve RN'in `transform` tipi onu reddediyor (aynı
+       * hata RegisterStep15'te duruyor). Demet, sırayı da sabitliyor —
+       * `campusExpandTransform` ötelemenin ölçekten ÖNCE uygulandığını
+       * varsayıyor.
+       */
+      transform: [
+        { translateX: t.translateX },
+        { translateY: t.translateY },
+        { scale: t.scale },
+      ] as [{ translateX: number }, { translateY: number }, { scale: number }],
     };
   });
 
@@ -283,7 +303,14 @@ const CampusMomentExpandOverlay = memo(function CampusMomentExpandOverlay({
         <Animated.View
           style={[
             {
+              // ⚠️ KART HEDEF ÖLÇÜSÜNDE DOĞUYOR; şeritteki kareye ölçekle
+              // iniyor (gerekçe campusExpandTransform'da). Layout sabit, yani
+              // hareket boyunca tek bir Yoga geçişi bile yok.
               position: "absolute",
+              left: geometry.target.x,
+              top: geometry.target.y,
+              width: geometry.target.width,
+              height: geometry.target.height,
               borderRadius: RADIUS,
               borderCurve: "continuous",
               overflow: "hidden",

@@ -381,6 +381,21 @@ export interface CampusMomentsStripProps {
    * `null` ise kart yerinde büyüyor (bkz. campusExpandGeometry > `start`).
    */
   onOpenCard: (moment: CampusMomentDto, frame: ExpandRect | null) => void;
+  /**
+   * BÜYÜMÜŞ HÂLDE AÇIK OLAN ANIN KİMLİĞİ — o kart şeritte ÇİZİLMİYOR.
+   *
+   * ⚠️ "KOPYA" HİSSİNİ KIRAN TEK ŞEY BU. Büyüyen kart teknik olarak ayrı bir
+   * görünüm (RN'de bir görünümü ağaçtan ağaca taşımak mümkün değil); kullanıcı
+   * hareketi "taşındı" diye okusun diye aslının o sırada yerinde durmaması
+   * gerekiyor.
+   *
+   * ⚠️ GİZLEME OPAKLIKLA DEĞİL: kart bir SwiftUI `ContextMenu` host'u taşıyor
+   * ve opaklığı 1'in altına inen bir atanın altındaki SwiftUI yüzeyi sessizce
+   * çizilmiyor, üstelik SONRADAN DÜZELMİYOR — kart geri geldiğinde menüsü ölü
+   * olurdu. Kart hiç çizilmiyor, yerinde aynı ölçüde boş bir kutu kalıyor:
+   * liste kaymıyor ve host sökülüp yeniden kuruluyor (o yol temiz).
+   */
+  openMomentId?: string | null;
   onRemove: (moment: CampusMomentDto) => void;
   /**
    * Başkasının anını şikayet et — kartın uzun basış menüsünden (natif).
@@ -398,6 +413,7 @@ export default function CampusMomentsStrip({
   canShare,
   isInsideCampus,
   onOpenCard,
+  openMomentId = null,
   onRemove,
   onReport,
   onEndReached,
@@ -532,6 +548,11 @@ export default function CampusMomentsStrip({
         );
       }
       if (!item.moment) return null;
+      // AÇIK KART ŞERİTTE YOK — yerinde yalnız ölçüsü kadar boşluk
+      // (gerekçe `openMomentId`de).
+      if (item.moment.id === openMomentId) {
+        return <View style={{ width: cardWidth, height: cardHeight }} />;
+      }
       return (
         <CampusMomentCard
           moment={item.moment}
@@ -560,6 +581,7 @@ export default function CampusMomentsStrip({
       cardHeight,
       cardWidth,
       nowMs,
+      openMomentId,
       onOpenCard,
       onRemove,
       onReport,

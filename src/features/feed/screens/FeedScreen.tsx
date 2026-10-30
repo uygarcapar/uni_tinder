@@ -2934,6 +2934,10 @@ export default function FeedScreen() {
           // `momentTarget`in yanında). Kendi anım şeritte zaten dokunulamaz,
           // kapı orada kesiliyor.
           onOpenCard={(moment, frame) => setMomentTarget({ id: moment.id, frame })}
+          // ⚠️ AÇIK KART ŞERİTTE ÇİZİLMİYOR: büyüyen kart ayrı bir görünüm ve
+          // ikisi bir arada görünürse hareket "kopyalandı" diye okunuyor
+          // (gerekçe şeritteki `openMomentId`de). Küçülme bitene kadar sürüyor.
+          openMomentId={momentTarget?.id ?? null}
           onRemove={campus.remove}
           // Şikayet kartın UZUN BASIŞ menüsünden geliyor (natif), kartta
           // buton yok — formu burada açıyoruz çünkü `ReportModal` bir sheet

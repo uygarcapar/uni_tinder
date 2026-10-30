@@ -1,6 +1,7 @@
 import {
   BUTTON_COLUMN,
   campusExpandGeometry,
+  campusExpandTransform,
 } from '@/features/campus/campusExpandGeometry';
 
 /**
@@ -51,4 +52,46 @@ it('ölçüm varsa başlangıç verilen kare', () => {
   const measured = { x: 20, y: 600, width: 167, height: 222 };
   const { start } = campusExpandGeometry({ ...BASE, start: measured });
   expect(start).toEqual(measured);
+});
+
+/**
+ * HAREKET ARTIK TRANSFORM — layout DEĞİL.
+ *
+ * Kart hedef ölçüsünde DOĞUYOR ve başlangıçta küçültülüp şeritteki yerine
+ * taşınıyor; p=1'de dönüşüm kimliğe iniyor. Sebep akıcılık: `left/top/width/
+ * height` her karede Yoga'dan geçiyor, `translate/scale` ise doğrudan
+ * kompozitörde — "native smooth" olan tam bu fark.
+ *
+ * ⚠️ ÖLÇEK MERKEZDEN: RN `transform`u görünümün MERKEZİ etrafında uyguluyor,
+ * bu yüzden öteleme MERKEZLER arasındaki fark (köşeler arasındaki değil).
+ * Köşe farkı yazılırsa kart küçükken şeridin yanına düşüyor.
+ */
+describe('campusExpandTransform', () => {
+  const start = { x: 20, y: 600, width: 167, height: 222 };
+  const target = { x: 68, y: 200, width: 257, height: 342 };
+
+  it('p=1 → kimlik dönüşümü (kart hedefinde)', () => {
+    const t = campusExpandTransform(start, target, 1);
+    expect(t.scale).toBeCloseTo(1, 5);
+    expect(t.translateX).toBeCloseTo(0, 5);
+    expect(t.translateY).toBeCloseTo(0, 5);
+  });
+
+  it('p=0 → kart ŞERİTTEKİ kareye birebir oturuyor', () => {
+    const t = campusExpandTransform(start, target, 0);
+    expect(t.scale).toBeCloseTo(start.width / target.width, 5);
+    // Ölçek merkezden uygulandığı için merkezler çakışmalı.
+    const targetCx = target.x + target.width / 2;
+    const startCx = start.x + start.width / 2;
+    expect(targetCx + t.translateX).toBeCloseTo(startCx, 5);
+    const targetCy = target.y + target.height / 2;
+    const startCy = start.y + start.height / 2;
+    expect(targetCy + t.translateY).toBeCloseTo(startCy, 5);
+  });
+
+  it('p=0.5 → iki uç arasında', () => {
+    const t = campusExpandTransform(start, target, 0.5);
+    expect(t.scale).toBeGreaterThan(start.width / target.width);
+    expect(t.scale).toBeLessThan(1);
+  });
 });

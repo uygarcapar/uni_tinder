@@ -89,3 +89,43 @@ export function campusExpandGeometry({
 
   return { start: start ?? { ...target }, target };
 }
+
+export interface ExpandTransform {
+  translateX: number;
+  translateY: number;
+  scale: number;
+}
+
+/**
+ * ══════════════════════════════════════════════════════════════════════════
+ * HAREKETİN KENDİSİ — TRANSFORM, LAYOUT DEĞİL.
+ * ══════════════════════════════════════════════════════════════════════════
+ * Kart HEDEF ÖLÇÜSÜNDE doğuyor; `p=0`da şeritteki kareye küçültülüp
+ * taşınıyor, `p=1`de dönüşüm kimliğe iniyor.
+ *
+ * ⚠️ NEDEN LAYOUT DEĞİL: `left/top/width/height` her karede Yoga geçişi ve
+ * yeniden ölçüm demek — hareket JS'in temposuna bağlanıyor. `translate/scale`
+ * doğrudan kompozitörde çalışıyor, yani UI thread meşgulken bile akıyor.
+ * "Native smooth" olan tam bu fark.
+ *
+ * ⚠️ ÖLÇEK MERKEZDEN UYGULANIYOR (RN'in `transform` varsayılanı), bu yüzden
+ * öteleme KÖŞELER değil MERKEZLER arasındaki fark. Köşe farkı yazılırsa kart
+ * küçükken şeridin yanına düşüyor — ölçek onu merkeze doğru çektiği için.
+ *
+ * ⚠️ ÖTELEME ÖLÇEKTEN BAĞIMSIZ HESAPLANIYOR: RN önce `translate` sonra `scale`
+ * uyguluyor (dizideki sıra), yani öteleme ölçeklenmemiş uzayda. Sıra
+ * değişirse bu hesap da değişmeli.
+ */
+export function campusExpandTransform(
+  start: ExpandRect,
+  target: ExpandRect,
+  p: number,
+): ExpandTransform {
+  const startScale = target.width > 0 ? start.width / target.width : 1;
+  const scale = startScale + (1 - startScale) * p;
+
+  const dx = start.x + start.width / 2 - (target.x + target.width / 2);
+  const dy = start.y + start.height / 2 - (target.y + target.height / 2);
+
+  return { translateX: dx * (1 - p), translateY: dy * (1 - p), scale };
+}

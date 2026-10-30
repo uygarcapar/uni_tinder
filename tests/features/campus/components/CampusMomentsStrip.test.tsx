@@ -70,6 +70,25 @@ it('karta basınca onOpenCard an ve kareyle çağrılıyor', async () => {
  * Kural yer değiştirdi: büyüme herkese açık, KARAR BUTONU kendi anımda
  * çizilmiyor (bkz. overlay testi).
  */
+/**
+ * ⚠️ UÇAN KARTIN ASLI ŞERİTTE GİZLENİYOR — "kopya" hissini kıran tek şey.
+ *
+ * Büyüyen kart teknik olarak ayrı bir görünüm (RN'de bir görünümü ağaçtan
+ * ağaca TAŞIMAK mümkün değil). Kullanıcının "taşındı" görmesi, aslının o
+ * sırada yerinde durmamasına bağlı: ikisi bir arada görünürse hareket
+ * "kopyalandı" diye okunuyor.
+ *
+ * ⚠️ GİZLEME `opacity` İLE DEĞİL, KART HİÇ ÇİZİLMİYOR (yerinde aynı ölçüde
+ * boş bir kutu kalıyor). Kart bir SwiftUI `ContextMenu` host'u taşıyor ve
+ * opaklığı 1'in altına inen bir atanın altındaki SwiftUI yüzeyi SESSİZCE
+ * çizilmiyor, üstelik sonradan DÜZELMİYOR — kart geri geldiğinde menüsü ölü
+ * olurdu. Sökülüp yeniden kurulmak o tuzağa girmiyor.
+ */
+it('AÇIK olan kart şeritte çizilmiyor — yerinde boşluk kalıyor', () => {
+  const { tree } = mount({ openMomentId: '1' });
+  expect(tree.queryByLabelText(/Ada/)).toBeNull();
+});
+
 it('KENDİ anım da büyüyor — kapı tikte, dokunuşta değil', async () => {
   const { tree, onOpenCard } = mount({ moments: [moment({ isMine: true })] });
   fireEvent.press(tree.getByLabelText(/Ada/));
