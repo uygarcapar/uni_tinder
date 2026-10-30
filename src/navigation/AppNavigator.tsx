@@ -559,6 +559,37 @@ export default function AppNavigator() {
       authDiag('boot-recovery', { not: 'yarım kalmış refresh — koşulsuz deneniyor' });
       void refreshAccessToken();
     }
+    // Mutasyon kuyruğu (reaksiyon/silme) — TEK ATIŞLIK boot tetiği.
+    //
+    // Diğer üç tetik (online/reconnect/foreground) hepsi KENAR tetikli: online
+    // yalnız offline→online geçişinde, reconnect yalnız bir kopuklukTAN SONRA,
+    // foreground yalnız background|inactive→active'de. Kanonik senaryo bu
+    // üçünün HİÇBİRİNİ ateşlemiyor: uçak modunda tepki verildi, iOS uygulamayı
+    // uçuşta öldürdü, inişte yeniden açıldı — uygulama baştan ONLINE, baştan
+    // ACTIVE, hub'ın İLK bağlantısı. Emir diskte duruyor ama "bağlantı
+    // gelince iner" sözü tutulmuyordu (gönderim kuyruğundaki gibi dokunulacak
+    // bir balon da yok).
+    //
+    // Bu bir ZAMANLAYICI DEĞİL: tek atış, mevcut üç tetikle aynı sınıfta bir
+    // dördüncü kenar (açılış). Paylaşımlı `messaging_default` kovasına ikinci
+    // bir tempo kaynağı eklenmiyor (bkz. pendingMutations.ts dosya başı notu).
+    //
+    // TOKEN KAPISINDAN SONRA — `flushOutbox('foreground')`'ın aynı gerekçesi:
+    // bayat token'la atılan denemeler 401'e yanıp deneme hakkı harcar (artık
+    // bir tavanı da var, bkz. MUTATION_MAX_ATTEMPTS). Uzun bir uçuştan sonra
+    // açılışta access token kesinlikle ölmüş olur, o yüzden gerekirse ÖNCE
+    // tazeleniyor (refreshAccessToken single-flight — yukarıdaki kurtarma
+    // çağrısıyla çakışmaz); tazeleme düşerse tur hiç koşmaz, normal 401 yolu
+    // ya da bir sonraki tetik devralır.
+    if (isAuthenticated && token) {
+      void (async () => {
+        if (isTokenExpiringSoon(token, 60) || hasInterruptedRefresh()) {
+          const fresh = await refreshAccessToken();
+          if (!fresh) return;
+        }
+        void flushPendingMutations('boot');
+      })();
+    }
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
