@@ -3,7 +3,7 @@ import chatService from '@/features/chat/chatService';
 import realtimeService from '@/features/chat/realtimeService';
 import * as repo from '@/features/chat/chatRepository';
 import { normalizeMessage } from '@/features/chat/normalizeMessage';
-import { dropCachedMedia } from '@/features/chat/mediaCache';
+import { dropCachedMedia, removeConversationAndMedia } from '@/features/chat/mediaCache';
 import { CHAT_DELTA_SYNC_ENABLED } from '@/shared/store/chatFlags';
 import { chatErrorCodeOf, chatErrorEffect } from '@/shared/constants/responseCodes';
 import type { ConversationListItemDto, MessageDto } from '@/shared/types';
@@ -113,7 +113,10 @@ function applyPage(
   // gelmediğinde kod sessizce atlanıyor.
   for (const r of page.removedConversations ?? []) {
     if (!r?.conversationId) continue;
-    repo.removeConversationLocally(r.conversationId);
+    // Engelleme/hesap silme yolu — o sohbetin önbellek dosyaları da AYNI
+    // ANDA gitmeli (bkz. mediaCache.removeConversationAndMedia'nın yorumu),
+    // bir sonraki açılış süpürmesine bırakılamaz.
+    removeConversationAndMedia(r.conversationId);
     applied.removedConversationIds.push(r.conversationId);
     touched.delete(r.conversationId);
   }

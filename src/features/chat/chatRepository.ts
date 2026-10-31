@@ -1486,6 +1486,28 @@ export function applyDeletionTombstone(p: {
  * dördüncü kopyasını yazma" gerekçesi retention budaması için makul, gizlilik
  * aksiyonu için değil.
  */
+/**
+ * `removeConversationLocally`nin ÖNBELLEK keşfi — o sohbete ait önbellek
+ * kopyalarının yerel yollarını döndürür. Çağıran SATIRLAR SİLİNMEDEN ÖNCE
+ * okumak ZORUNDA: `removeConversationLocally` `local_uri` kolonunu da
+ * götürüyor, sonra sormanın cevabı hep boş gelir.
+ *
+ * SQL burada, dosya silme `mediaCache.ts`te — döngü yüzünden (bu dosya onu
+ * import EDEMEZ, bkz. `removeConversationLocally`'nin başındaki not ve
+ * `mediaCache.wipeMediaCache`'in yorumu). Filtre `readAllCachedUris` ile
+ * AYNI (`media_cached_at_ms IS NOT NULL`): kendi gönderdiğimiz kaydın yolu
+ * kasıtlı dışarıda, o dosya hâlâ outbox'ın mülkü.
+ */
+export function readCachedUrisForConversation(conversationId: string): string[] {
+  return getChatDb()
+    .getAll<{ local_uri: string }>(
+      `SELECT local_uri FROM messages
+        WHERE conversation_id = ? AND media_cached_at_ms IS NOT NULL AND local_uri IS NOT NULL`,
+      [conversationId],
+    )
+    .map((r) => r.local_uri);
+}
+
 export function removeConversationLocally(conversationId: string): void {
   const db = getChatDb();
   db.transaction(() => {

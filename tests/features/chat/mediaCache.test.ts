@@ -18,6 +18,8 @@ jest.mock('expo-file-system', () => {
   const existsByUri = new Map<string, boolean>();
   const sizeByUri = new Map<string, number | null>();
   const deletedPaths: string[] = [];
+  /** `delete()` çağrısında patlaması gereken yollar — Review Focus 3'ün üçüncü testi. */
+  const throwOnDeleteUris = new Set<string>();
   class MockFile {
     uri: string;
     constructor(...parts: any[]) {
@@ -31,6 +33,7 @@ jest.mock('expo-file-system', () => {
       return existsByUri.get(this.uri) ?? true;
     }
     delete() {
+      if (throwOnDeleteUris.has(this.uri)) throw new Error('mock delete failure');
       deletedPaths.push(this.uri);
       existsByUri.set(this.uri, false);
     }
@@ -75,6 +78,7 @@ jest.mock('expo-file-system', () => {
     __existsByUri: existsByUri,
     __sizeByUri: sizeByUri,
     __deletedPaths: deletedPaths,
+    __throwOnDeleteUris: throwOnDeleteUris,
   };
 });
 
@@ -96,6 +100,7 @@ import {
   reconcileMediaCacheDirectory,
   wipeMediaCache,
   dropCachedMedia,
+  removeConversationAndMedia,
 } from '@/features/chat/mediaCache';
 import type { MessageDto } from '@/shared/types';
 
@@ -104,6 +109,7 @@ const fsMock = jest.requireMock('expo-file-system') as {
   __existsByUri: Map<string, boolean>;
   __sizeByUri: Map<string, number | null>;
   __deletedPaths: string[];
+  __throwOnDeleteUris: Set<string>;
 };
 const getMediaUrl = (chatService as any).getMediaUrl as jest.Mock;
 
@@ -144,6 +150,7 @@ beforeEach(() => {
   fsMock.__existsByUri.clear();
   fsMock.__sizeByUri.clear();
   fsMock.__deletedPaths.length = 0;
+  fsMock.__throwOnDeleteUris.clear();
   getMediaUrl.mockReset();
   (File.downloadFileAsync as jest.Mock).mockClear();
 });
@@ -540,5 +547,50 @@ describe('ensureCachedMedia — dosya adı uzantısı (Minor 3, mandated decisio
     expect(result).toBeTruthy();
     const destination = (File.downloadFileAsync as jest.Mock).mock.calls[0][1];
     expect(destination.uri.endsWith('m1.bin')).toBe(true);
+  });
+});
+
+describe('removeConversationAndMedia — Review Focus 3: engelleme/hesap silme sesi de götürüyor', () => {
+  const OTHER_CONV = 'conv-2';
+
+  it('engelleme silmesi o sohbetin önbellek DOSYALARINI da siliyor', () => {
+    saveMessage(msg('m1'), CONV);
+    setMediaCache('m1', `${CACHE_DIR}/m1.m4a`, 10, 1);
+    mockFileExists(`${CACHE_DIR}/m1.m4a`, true);
+
+    removeConversationAndMedia(CONV);
+
+    // Satır gitti (removeConversationLocally'nin kendi davranışı).
+    expect(getChatDb().getFirst('SELECT 1 FROM messages WHERE id = ?', ['m1'])).toBeNull();
+    // Dosya da gitti — reconcileMediaCacheDirectory'nin bir sonraki açılışına
+    // bırakılmadı, hemen silindi.
+    expect(fsMock.__deletedPaths).toContain(`${CACHE_DIR}/m1.m4a`);
+  });
+
+  it('başka sohbetin dosyasına DOKUNMUYOR', () => {
+    saveMessage(msg('m1'), CONV);
+    setMediaCache('m1', `${CACHE_DIR}/m1.m4a`, 10, 1);
+    mockFileExists(`${CACHE_DIR}/m1.m4a`, true);
+    saveMessage(msg('m2', { conversationId: OTHER_CONV }), OTHER_CONV);
+    setMediaCache('m2', `${CACHE_DIR}/m2.m4a`, 10, 1);
+    mockFileExists(`${CACHE_DIR}/m2.m4a`, true);
+
+    removeConversationAndMedia(CONV);
+
+    expect(fsMock.__deletedPaths).toContain(`${CACHE_DIR}/m1.m4a`);
+    expect(fsMock.__deletedPaths).not.toContain(`${CACHE_DIR}/m2.m4a`);
+    // Diğer sohbetin satırı da hayatta — yalnız dosya değil, satır da dokunulmadı.
+    expect(getChatDb().getFirst('SELECT 1 FROM messages WHERE id = ?', ['m2'])).not.toBeNull();
+  });
+
+  it('dosya silme patlasa da satırlar gidiyor', () => {
+    saveMessage(msg('m1'), CONV);
+    setMediaCache('m1', `${CACHE_DIR}/m1.m4a`, 10, 1);
+    mockFileExists(`${CACHE_DIR}/m1.m4a`, true);
+    // delete() GERÇEKTEN patlıyor (izin hatası vb.) — satır yine de gitmeli.
+    fsMock.__throwOnDeleteUris.add(`${CACHE_DIR}/m1.m4a`);
+
+    expect(() => removeConversationAndMedia(CONV)).not.toThrow();
+    expect(getChatDb().getFirst('SELECT 1 FROM messages WHERE id = ?', ['m1'])).toBeNull();
   });
 });

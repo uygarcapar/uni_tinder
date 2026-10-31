@@ -4,8 +4,10 @@ import {
   readAllOwnRecordingUris,
   readCacheEntriesOldestFirst,
   readCachedMessageIds,
+  readCachedUrisForConversation,
   readMediaCache,
   readOwnRecordingUri,
+  removeConversationLocally,
   setMediaCache,
   touchMediaCache,
   type MediaCacheRow,
@@ -301,4 +303,31 @@ export function dropCachedMedia(messageId: string): void {
   if (!row) return;
   deleteIfExists(row.local_uri);
   clearMediaCache([messageId]);
+}
+
+/**
+ * Engelleme/hesap silme yolu (`removeConversationLocally`) bu sohbetin
+ * satırlarını gizlilik gerekçesiyle ERTELEMEDEN siliyor — önbellek dosyaları
+ * da aynı anda gitmeli, açılış süpürmesine (`reconcileMediaCacheDirectory`)
+ * bırakılırsa "bir sonraki açılışa kadar oynatılabilir" demek olur ve bu,
+ * `removeConversationLocally`nin kendi gerekçesiyle çelişir.
+ *
+ * SIRA KRİTİK: yollar satırlar SİLİNMEDEN ÖNCE okunuyor —
+ * `removeConversationLocally` `local_uri` kolonunu da götürüyor, sonra
+ * sormanın cevabı boş gelir.
+ *
+ * Dosya silme PATLARSA (izin, yarış) satırlar yine de gider — `deleteIfExists`
+ * kendi içinde yutuyor; bir gizlilik aksiyonunun satırları dosya sisteminin
+ * keyfine bağlı kalamaz (bkz. `removeConversationLocally`'nin kendi yorumu).
+ *
+ * Döngüden kaçınmak için çağrı yeri burada, `chatRepository.ts`te DEĞİL:
+ * o dosya `mediaCache.ts`i import EDEMEZ (Faz 5'te ölçülen döngü — bu dosya
+ * zaten tersini yapıyor). Aynı seam `wipeMediaCache`/`dropCachedMedia`'da da
+ * var; tek üretim çağıranı (`chatDeltaSync.ts`) artık doğrudan
+ * `repo.removeConversationLocally` yerine bunu çağırıyor.
+ */
+export function removeConversationAndMedia(conversationId: string): void {
+  const uris = readCachedUrisForConversation(conversationId);
+  removeConversationLocally(conversationId);
+  for (const uri of uris) deleteIfExists(uri);
 }
