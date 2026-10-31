@@ -48,10 +48,10 @@ export function totalBytes(entries: { size_bytes: number }[]): number {
  * değil. Tek bir büyük dosya tavanı tek başına aşıyorsa (brief'in üçüncü
  * sorusu) o dosya da silinir: döngü "toplam hâlâ tavanın üstünde mi" diye
  * sorar, "kalan girdi var mı" diye sormaz, yani listenin sonuna gelmeden de
- * durabilir ama son girdide de sonsuza girmez — ya tavanın altına iner ya da
- * girdi tükenir. Alternatif (o dosyayı hiç silmemek) önbelleği sonsuza dek
- * tavanın üstünde tutardı: tek bir büyük indirme tüm tahliye mekanizmasını
- * devre dışı bırakırdı.
+ * durabilir. Alternatif (o dosyayı hiç silmemek, ör. "tek başına tavanı
+ * aşan dosyaya dokunma" istisnası) önbelleği KALICI olarak tavanın üstünde
+ * tutardı: tek bir büyük indirme tüm tahliye mekanizmasını devre dışı
+ * bırakırdı — bu yüzden istisnasız siliniyor.
  *
  * Eşit `media_cached_at_ms` olduğunda sıralama `message_id`ye düşüyor —
  * rastgele bir tiebreak (ör. girdi listesindeki orijinal sıra) iki ayrı

@@ -32,7 +32,7 @@ describe('selectEvictions', () => {
     expect(selectEvictions([e(1, 20), e(2, 50), e(3, 50)], 100)).toEqual(['m1']);
   });
 
-  it('tek dosya tavandan büyükse onu siliyor (sonsuz döngüye girmiyor)', () => {
+  it('tek dosya tavandan büyükse onu siliyor (dokunulmaz istisna yok)', () => {
     expect(selectEvictions([e(1, 500)], 100)).toEqual(['m1']);
   });
 
@@ -43,11 +43,17 @@ describe('selectEvictions', () => {
   it('eşit damgalarda deterministik sıra (message_id) — tahliye kararsız olmasın', () => {
     // m2 ve m3 aynı damgayı (50) taşıyor, m1 daha yeni (100). Toplam 120,
     // tavan 100 → 20 bayt kurtarılmalı: tek başına m2 (10) yetmiyor, m3 (10)
-    // de gitmeli. Sıralamanın eşitlikte message_id'ye düşmesi olmasaydı iki
-    // ayrı çalıştırma m2/m3'ü farklı sırada seçip farklı ARA toplamlar
-    // üretebilirdi (nihai küme burada aynı çıksa da, kararsız bir ara sıra
-    // "neden m3 değil de m2 önce gitti" türünden tekrarlanamaz raporlara yol açar).
-    const entries = [e(1, 100, 100), e(2, 10, 50), e(3, 10, 50)];
+    // de gitmeli. GİRDİ SIRASI KASITLI OLARAK ters: m3 dizide m2'den ÖNCE
+    // geliyor, ama beklenen sonuç yine ['m2', 'm3'] — yani test, Array.sort'un
+    // stabilitesine (giriş sırasını koruma) değil, message_id karşılaştırmasına
+    // dayanıyor. Girdi beklenen sırayla verilseydi tiebreak satırı silinip
+    // stabil sort'a bırakılsa bile aynı sonuç çıkar ve test hiçbir şeyi
+    // PİNLEMEZDİ (bu hata review'de yakalandı — bkz. rapordaki düzeltme notu).
+    const entries = [e(1, 100, 100), e(3, 10, 50), e(2, 10, 50)];
     expect(selectEvictions(entries, 100)).toEqual(['m2', 'm3']);
+  });
+
+  it('toplam tavana TAM eşitse hiçbir şey silmiyor (sınır, fazla silme yok)', () => {
+    expect(selectEvictions([e(1, 60), e(2, 40)], 100)).toEqual([]);
   });
 });
