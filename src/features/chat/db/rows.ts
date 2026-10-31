@@ -227,7 +227,7 @@ export interface SendAttemptRow {
   last_error: string | null;
 }
 
-export type MutationKind = 'reaction' | 'delete';
+export type MutationKind = 'reaction' | 'delete' | 'edit';
 
 /**
  * `pending_mutations` satırı (v9) — tepki/silme emirlerinin disk muhasebesi.

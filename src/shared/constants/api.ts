@@ -201,6 +201,8 @@ export const API_ENDPOINTS = {
   // ConversationHistoryRevealed event'i düşer.
   MESSAGES_REVEAL_HISTORY: (convId: string) => `/api/messages/conversations/${convId}/reveal-history`,
   MESSAGES_DELETE: (msgId: string) => `/api/messages/${msgId}`,
+  // Silme ile AYNI yol, farklı fiil (PATCH) — backend ikisini de /api/messages/{id} altında ayırıyor.
+  MESSAGES_EDIT: (msgId: string) => `/api/messages/${msgId}`,
   MESSAGES_REACTIONS: (msgId: string) => `/api/messages/${msgId}/reactions`,
   MESSAGES_DELIVERED: (msgId: string) => `/api/messages/${msgId}/delivered`,
   MESSAGES_UPLOAD_URL: "/api/messages/upload-url",

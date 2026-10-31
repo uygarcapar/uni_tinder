@@ -65,6 +65,63 @@ export function coalesceDelete(existing: DeletePayload | null, forEveryone: bool
 }
 
 /**
+ * Bir düzenleme emrinin yükü.
+ *
+ * `content`: kullanıcının şu an görmek istediği son metin (son yazan kazanır).
+ * `base`: emrin İLK verildiği anda sunucuda duran içerik — flush'ın "aynı
+ * içerikle retry" durumunu ayırt etmesi için değil (backend artık bunu
+ * idempotent kısa devreyle kendi çözüyor), ama `editRejectReason`'ın
+ * "değişmemiş" kontrolü ekranın o anki en son bilinen sunucu değerine karşı
+ * çalışsın diye taşınıyor — tıpkı `ReactionPayload.base` gibi.
+ */
+export interface EditPayload {
+  content: string;
+  base: string;
+}
+
+/**
+ * Mevcut satır varsa onunla birleştirir; `base` HER ZAMAN eskisinden korunur.
+ *
+ * `coalesceReaction`in birebir aynı mantığı (bkz. o fonksiyonun yorumu):
+ * `serverBase` yalnız hiç bekleyen satır YOKKEN kullanılır, bekleyen satır
+ * VARSA onun `base`i emrin ilk verildiği andaki gerçek değeri taşımaya devam
+ * eder — kullanıcı aynı mesajı art arda birkaç kez düzenlerse `base` ARA
+ * METNE kaymaz.
+ */
+export function coalesceEdit(
+  existing: EditPayload | null,
+  content: string,
+  serverBase: string,
+): EditPayload {
+  return {
+    content,
+    base: existing ? existing.base : serverBase,
+  };
+}
+
+/** Sunucunun da reddettiği (`EmptyContent`/`ContentTooLong`) hallerin istemci tarafı. */
+export const EDIT_MAX_LENGTH = 2000;
+
+/**
+ * Ağa çıkmadan kesilecek haller: boş/yalnız boşluk, tavan üstü, değişmemiş.
+ *
+ * `unchanged` burada bilerek VAR: backend 2026-10-30'dan beri aynı içerikli
+ * bir düzenlemeyi başarıyla no-op sayıyor (idempotent kısa devre), ama bunu
+ * ağa hiç göndermemek kullanıcı deneyimi için daha iyi — composer'ın "kaydet"
+ * butonu anlamsız bir isteği pasif bırakabilir ve paylaşımlı mutasyon
+ * kovasından bir pay harcamaz. Reddin KAYNAĞI değişti (sunucu artık bunu
+ * reddetmiyor), ama istemcinin ağa hiç çıkmama kararı aynı kalıyor — bu
+ * yüzden "işlenmedi" anlamına gelen `null` DEĞİL, kendi nedeni olan bir dal.
+ */
+export function editRejectReason(content: string, base: string): 'empty' | 'tooLong' | 'unchanged' | null {
+  const trimmed = content.trim();
+  if (!trimmed) return 'empty';
+  if (content.length > EDIT_MAX_LENGTH) return 'tooLong';
+  if (content === base) return 'unchanged';
+  return null;
+}
+
+/**
  * ÜSTÜNDEN GEÇİLMİŞ (superseded) bir emrin ardından hayatta kalan satırın
  * `base`ini sunucunun YENİ gerçeğine çeker.
  *

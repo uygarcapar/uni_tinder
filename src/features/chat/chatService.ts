@@ -2,6 +2,7 @@ import { File, UploadType } from 'expo-file-system';
 import api, { SKIP_429_RETRY } from '@/shared/services/api';
 import { API_ENDPOINTS } from '@/shared/constants/api';
 import { normalizeUtcFields } from '@/shared/utils/dateUtc';
+import type { MessageDto } from '@/shared/types';
 
 /**
  * Sunucudan çekilen geçmiş sayfasının boyutu.
@@ -234,6 +235,12 @@ export const chatService = {
     const res = await api.delete(
       `${API_ENDPOINTS.MESSAGES_DELETE(messageId)}?forEveryone=${forEveryone ? 'true' : 'false'}`
     );
+    return normalizeUtcFields((res as any).result);
+  },
+
+  /** PATCH /api/messages/{id} — sunucu güncel MessageDto'yu döner (EditedAt dahil). */
+  async editMessage(messageId: string, content: string): Promise<MessageDto> {
+    const res = await api.patch(API_ENDPOINTS.MESSAGES_EDIT(messageId), { content });
     return normalizeUtcFields((res as any).result);
   },
 

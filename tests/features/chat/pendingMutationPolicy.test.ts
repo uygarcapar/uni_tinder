@@ -1,11 +1,14 @@
 import {
+  EDIT_MAX_LENGTH,
   MAX_OPS_PER_FLUSH,
   MUTATION_MAX_AGE_MS,
   MUTATION_MAX_ATTEMPTS,
   MUTATION_RATE_RESERVE,
   classifyMutationError,
   coalesceDelete,
+  coalesceEdit,
   coalesceReaction,
+  editRejectReason,
   isMutationExpired,
   nextEligibleAt,
   shouldStopFlush,
@@ -34,6 +37,25 @@ describe('coalesceDelete', () => {
   it('silme yalnız tırmanıyor: true geldiyse sonraki false onu DÜŞÜRMÜYOR', () => {
     expect(coalesceDelete({ forEveryone: true }, false)).toEqual({ forEveryone: true });
     expect(coalesceDelete({ forEveryone: false }, true)).toEqual({ forEveryone: true });
+  });
+});
+
+describe('coalesceEdit', () => {
+  it('coalesceEdit son içeriği alıyor, base İLK emrinkini koruyor', () => {
+    const a = coalesceEdit(null, 'ikinci', 'orijinal');
+    const b = coalesceEdit(a, 'ucuncu', 'ikinci');
+    expect(b).toEqual({ content: 'ucuncu', base: 'orijinal' });
+  });
+});
+
+describe('editRejectReason', () => {
+  // Review Focus 5
+  it('editRejectReason: boş, yalnız boşluk, tavan üstü ve DEĞİŞMEMİŞ içeriği kesiyor', () => {
+    expect(editRejectReason('', 'a')).toBe('empty');
+    expect(editRejectReason('   ', 'a')).toBe('empty');
+    expect(editRejectReason('x'.repeat(EDIT_MAX_LENGTH + 1), 'a')).toBe('tooLong');
+    expect(editRejectReason('ayni', 'ayni')).toBe('unchanged');
+    expect(editRejectReason('yeni', 'eski')).toBeNull();
   });
 });
 
@@ -71,6 +93,17 @@ describe('classifyMutationError', () => {
   // 500'le birebir aynı. Bu test yalnız SINIFLANDIRMAYI pinliyor.
   it('429 retry olarak sınıflandırılıyor (5xx ile aynı dal)', () => {
     expect(classifyMutationError({ response: { status: 429, data: {} } }, 'reaction')).toBe('retry');
+  });
+
+  // Review Focus 1
+  it('UT-6723 edit için rejected — pencere dolması MEŞRU ret', () => {
+    expect(classifyMutationError({ response: { data: { errorCode: 'UT-6723' } } }, 'edit')).toBe('rejected');
+  });
+
+  it('edit için ağ hatası retry, kalıcı edit kodları rejected', () => {
+    expect(classifyMutationError(new Error('Network Error'), 'edit')).toBe('retry');
+    for (const code of ['UT-6721', 'UT-6722', 'UT-6724', 'UT-6703'])
+      expect(classifyMutationError({ response: { data: { errorCode: code } } }, 'edit')).toBe('rejected');
   });
 });
 
