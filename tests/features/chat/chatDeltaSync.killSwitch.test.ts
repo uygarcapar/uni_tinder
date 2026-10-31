@@ -14,6 +14,20 @@ jest.mock('@/shared/store/chatFlags', () => ({
   CHAT_DELTA_SYNC_ENABLED: false,
 }));
 
+// Faz 6 periyodik tetiğinin "bayrak kapalı" hâli de BURADA sınanıyor —
+// aynı modül-yükleme kısıtı: `CHAT_DELTA_SYNC_ENABLED` bir kez okunuyor, aynı
+// dosyada açık/kapalı hâl bir arada test edilemiyor.
+const mockAppState: { addEventListener: jest.Mock } = {
+  addEventListener: jest.fn(() => ({ remove: jest.fn() })),
+};
+jest.mock('react-native', () => ({
+  AppState: { addEventListener: (...args: unknown[]) => mockAppState.addEventListener(...args) },
+}));
+jest.mock('@/features/chat/realtimeService', () => ({
+  __esModule: true,
+  default: { on: jest.fn(() => () => {}), isConnected: () => true },
+}));
+
 import * as SQLite from 'expo-sqlite';
 import chatService from '@/features/chat/chatService';
 import { openChatDb, __resetChatDbForTests } from '@/features/chat/db/chatDb';
@@ -50,6 +64,7 @@ beforeEach(() => {
   clearMessageCache();
   openChatDb();
   getChanges.mockReset();
+  mockAppState.addEventListener.mockClear();
 });
 
 describe('bayrak kapalı', () => {
@@ -78,5 +93,15 @@ describe('bayrak kapalı', () => {
       'function',
     );
     expect(getChanges).not.toHaveBeenCalled();
+  });
+
+  // Review Focus 5 — kapı `startDeltaSync`in ilk satırında, periyodik
+  // zamanlayıcının kurulumundan ÖNCE. Ayırt edici iddia `AppState` aboneliğinin
+  // HİÇ açılmaması: kapı olmasaydı `AppState.addEventListener` çağrılır ve
+  // zamanlayıcı kurulurdu — bayrak kapalıyken bile arka planda tur koşardı.
+  it('bayrak kapalıyken zamanlayıcı HİÇ kurulmuyor — AppState aboneliği açılmıyor', () => {
+    startDeltaSync({ getActiveConversationId: () => null, onNeedsFullResync: () => {} });
+
+    expect(mockAppState.addEventListener).not.toHaveBeenCalled();
   });
 });

@@ -221,8 +221,25 @@ async function run(getActiveConversationId: () => string | null): Promise<PullRe
  * ama ardışığı kesmiyor: foreground + reconnect aynı saniyede sırayla
  * gelebiliyor ve ikinci tur boş bir yanıt için bedava değil.
  */
-const MIN_PULL_INTERVAL_MS = 10_000;
+export const MIN_PULL_INTERVAL_MS = 10_000;
 let lastPullAt = 0;
+
+/**
+ * Foreground'da periyodik tazelik turunun aralığı. `MIN_PULL_INTERVAL_MS`ten
+ * UZUN olmak zorunda (bkz. Review Focus 3): kısa olsaydı her atış `fire()`ın
+ * kendi kısıtlayıcısına çarpıp sessizce yutulurdu — görünürde çalışan, aslında
+ * hiçbir şey yapmayan bir zamanlayıcı.
+ *
+ * Paylaşımlı kova (`messaging_default` = 200 istek/60sn, TÜM
+ * MessagesController, kullanıcı başına) zaten geçmiş sayfalama + backfill (80
+ * rezerv) + mutasyon kuyruğu (20 rezerv) tarafından paylaşılıyor; bu tur
+ * DÖRDÜNCÜ tüketici. 3 dakikalık bir periyot kovaya göre ihmal edilebilir
+ * (dakikada en fazla 1/3 istek) ama hub bağlı kalıp bir event kaçırıldığında
+ * ekranı dakikalar içinde taze tutmaya yetiyor — roadmap'in kendi ifadesiyle
+ * "bugün bilinen bir şikâyet üretmeyen" bir deliği kapatmak için yeterince
+ * seyrek. CİHAZDA HİÇ ÖLÇÜLMEDİ: pil etkisi bilinmiyor.
+ */
+export const PERIODIC_PULL_INTERVAL_MS = 180_000;
 
 /**
  * Gönderimden önce yakalama turu garantiler. Tek çağıranı
@@ -322,13 +339,43 @@ export function startDeltaSync(deps: DeltaSyncDeps): () => void {
     if (state === 'connected') void fire('connected');
   });
 
+  // ── Periyodik tazelik turu (Faz 6) ───────────────────────────────────────
+  // Hub bağlı kalıp bir event kaçırırsa yeni bir 'connected' hiç gelmiyor;
+  // kullanıcı uygulamayı arkaya atıp dönene kadar ekran bayat kalıyordu. Bu
+  // zamanlayıcı o deliği kapatıyor — YENİ bir tur mantığı yok, yalnız `fire()`a
+  // seyrek bir ek tetikleyici. Yaşam döngüsü foreground'a bağlı: 'active'te
+  // kuruluyor, background/inactive'te temizleniyor (Review Focus 1).
+  let periodicTimer: ReturnType<typeof setInterval> | null = null;
+
+  const stopPeriodic = () => {
+    if (periodicTimer) {
+      clearInterval(periodicTimer);
+      periodicTimer = null;
+    }
+  };
+
+  const startPeriodic = () => {
+    if (periodicTimer) return; // zaten kurulu — ikinci interval'a gerek yok
+    periodicTimer = setInterval(() => {
+      // Bağlantı kontrolü burada, `fire()`ın throttle'ının İÇİNDE DEĞİL: ikisi
+      // ayrı kısıt. Kopuk hatta istek atmak paylaşımlı kovadan boşa bir slot
+      // yakar; o hâli zaten 'connected' tetiği kapatıyor (Review Focus 4).
+      if (!realtimeService.isConnected()) return;
+      void fire('periodic');
+    }, PERIODIC_PULL_INTERVAL_MS);
+  };
+
   // Arka plandan dönüş. Hub kısa bir arka plandan sonra bağlı kalmış olabilir;
   // o durumda 'connected' hiç yayınlanmaz ve tek yakalama anı burasıdır.
   //
   // `isConnected()` kapısı yine KİMLİK için: bağlantı yoksa token durumu da
   // belirsiz, üstelik bağlantı birazdan kurulacaksa 'connected' zaten çekecek.
   const appStateSub = AppState.addEventListener('change', (next) => {
-    if (next !== 'active') return;
+    if (next !== 'active') {
+      stopPeriodic();
+      return;
+    }
+    startPeriodic();
     if (!realtimeService.isConnected()) return;
     void fire('foreground');
   });
@@ -336,6 +383,7 @@ export function startDeltaSync(deps: DeltaSyncDeps): () => void {
   return () => {
     offConnection();
     appStateSub.remove();
+    stopPeriodic();
   };
 }
 
