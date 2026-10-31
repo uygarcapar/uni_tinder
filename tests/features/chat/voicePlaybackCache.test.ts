@@ -62,7 +62,7 @@ describe('toggleVoicePlayback — kaynak çözümü', () => {
     expect(getVoicePlaybackState().error).toBe(false);
   });
 
-  it('ikinci oynatma ağa çıkmıyor', async () => {
+  it('ikinci oynatma ağa DOĞRUDAN çıkmıyor', async () => {
     ensureCachedMediaMock.mockResolvedValue('file:///cache/msg-a.m4a');
 
     await toggleVoicePlayback('msg-a');

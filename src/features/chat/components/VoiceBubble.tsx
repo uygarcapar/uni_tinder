@@ -363,6 +363,13 @@ function VoiceBubble({
   // Yüklenirken bile kendi kaydımızı dinleyebiliriz (dosya cihazda). Hata
   // durumunda oynatıcı kapalı: o baloncuğa dokunmak yeniden denemek demek.
   const canPlay = !failed && (!!localUri || !pending);
+  // Oynatma hatası (ör. kopya yok + offline) — GÖNDERİM hatasından (yukarıdaki
+  // `failed`) farklı: burada dokunuş hâlâ ETKİN kalmalı (yeniden deneme bunun
+  // üzerinden), sadece `failed`in aynı soluk/pasif görünümünü ödünç alıyoruz ki
+  // balon "her şey yolunda" gibi görünmesin. `canPlay`i DÜŞÜRMÜYORUZ — oraya
+  // eklemek `onToggle`daki `if (!canPlay) return` yüzünden tekrar denemeyi de
+  // kilitlerdi (bkz. voicePlayback.ts'teki kurtarılabilir hata tasarımı).
+  const playbackFailed = isCurrent && playback.error;
 
   const rate = isCurrent ? playback.rate : 1;
   const onCycleRate = useCallback(() => {
@@ -480,6 +487,7 @@ function VoiceBubble({
       >
         {/* Çıplak glif: dolgulu daire kaldırıldı, dokunma alanı hitSlop'ta. */}
         <Pressable
+          testID={`voice-play-${messageId}`}
           onPress={onToggle}
           // Dokunuşu SAHİPLEN: listenin üstündeki blanket tap jesti (bkz.
           // listTapGuard) yoksa klavyeyi kapatıyor — kullanıcı yazdığı mesajı
@@ -493,7 +501,7 @@ function VoiceBubble({
             height: WAVE_H,
             alignItems: "center",
             justifyContent: "center",
-            opacity: canPlay ? 1 : 0.5,
+            opacity: canPlay && !playbackFailed ? 1 : 0.5,
           }}
         >
           {/* Yükleme göstergesi YOK (bilinçli): ses hazır olana kadar simge
