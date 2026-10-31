@@ -958,8 +958,12 @@ const tr = {
     actions: {
       reply: 'Yanıtla',
       copy: 'Kopyala',
+      edit: 'Düzenle',
       deleteForMe: 'Sadece benden sil',
       deleteForEveryone: 'Herkes için sil',
+    },
+    editing: {
+      label: 'Mesajı düzenliyorsun',
     },
     input: {
       placeholder: 'Mesaj...',

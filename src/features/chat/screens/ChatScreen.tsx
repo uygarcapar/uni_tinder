@@ -86,8 +86,10 @@ import { applyReactionPick } from "@/features/chat/reactionPick";
 import {
   enqueueReaction,
   enqueueDelete,
+  enqueueEdit,
   flushPendingMutations,
 } from "@/features/chat/pendingMutations";
+import { editRejectReason } from "@/features/chat/pendingMutationPolicy";
 import { CHAT_MUTATION_QUEUE_ENABLED } from "@/shared/store/chatFlags";
 import { getDraft, setDraft } from "@/features/chat/draftStore";
 import { sendOutgoing, retryFailedMessage } from "@/features/chat/outbox";
@@ -429,6 +431,13 @@ function ChatScreen({
   const quota = useAppSelector((s: any) => s.chat.quotaByConv?.[conversationId]);
 
   const [replyTo, setReplyTo] = useState<any>(null);
+  // Düzenleme hâli — `replyTo`'nun BİREBİR ikizi: composer'ın şeridi aynı
+  // `replyTo`/`onCancelReply` yuvasına bu sahte (reply-şekilli) nesneyi alır
+  // (bkz. aşağıdaki `editingReplyShim`), MessageComposer'a HİÇ DOKUNMADAN aynı
+  // kalıp (şerit + ✕) ödünç alınmış olur. `content` düzenleme ANINDAKİ sunucu
+  // değeri — hem composer'ın ilk doluşu hem `editRejectReason`'ın "değişmemiş"
+  // kıyası hem de kuyruğun `serverBase`'i buradan beslenir.
+  const [editing, setEditing] = useState<any>(null);
   const [actionTarget, setActionTarget] = useState<any>(null);
   const [actionLayout, setActionLayout] = useState<any>(null);
   const [optionsOpen, setOptionsOpen] = useState(false);
@@ -1342,12 +1351,83 @@ function ChatScreen({
     [appendOutgoing, conversationId, myUserId, openQuotaPaywall, setReplyTo],
   );
 
+  // Uzun-bas menüsünden "Düzenle" — `MessageActionSheet.canEdit` zaten
+  // kapıları süzdü (sahiplik/sistem/silinmiş/sesli/pencere/pending), burası
+  // yalnız composer'ı o mesajın İÇERİĞİYLE düzenleme moduna sokuyor.
+  // Yanıt şeridi varsa kapatılır — iki şerit AYNI ANDA gösterilmiyor.
+  const handleEditRequest = useCallback((message: any) => {
+    if (!message) return;
+    setReplyTo(null);
+    setEditing({
+      id: message.id,
+      conversationId: message.conversationId,
+      clientMessageId: message.clientMessageId,
+      content: message.content ?? "",
+    });
+  }, []);
+
+  // ✕ — düzenleme moduna GİRMEDEN ÖNCEKİ hâle döner, mesajın içeriğine
+  // DOKUNMAZ (ne optimistik dispatch ne kuyruk yazımı olur).
+  const handleCancelEdit = useCallback(() => {
+    setEditing(null);
+  }, []);
+
+  // Gönder — optimistik `messageEdited` dispatch → `enqueueEdit` → tur
+  // tetikleme. Reaksiyon/silmeyle AYNI sözleşme: BAŞARISIZLIKTA İKİNCİ bir
+  // geri alma YOK, kalıcı ret sonrası geri almanın TEK sahibi tur
+  // (`revertEdit`, pendingMutations.ts) — burada snapshot TUTULMUYOR.
+  const handleSubmitEdit = useCallback(
+    (content: string) => {
+      const target = editing;
+      setEditing(null);
+      if (!target) return;
+      // `handlePickReaction`/`handleDelete` ile AYNI sebep: menü hedefi
+      // düzenleme moduna girildiği andaki kopya, o sırada gelen bir hub
+      // event'i mesajı değiştirmiş olabilir — taze kaydı store'dan al.
+      const message =
+        messagesRef.current.find(
+          (m) =>
+            m.id === target.id ||
+            (target.clientMessageId && m.clientMessageId === target.clientMessageId),
+        ) || target;
+      // Boş/çok uzun/değişmemiş: AĞA HİÇ ÇIKMA — `editRejectReason` tek
+      // kaynak (composer kendi kopyasını yazmıyor, bkz. pendingMutationPolicy.ts).
+      // Değişmemiş içerikte sessizce düzenleme modundan çıkmak yeterli; boş/
+      // çok uzun durumu composer'ın kendi gönder kilidi zaten büyük ölçüde
+      // elemeli, burası son bir emniyet.
+      const reason = editRejectReason(content, message.content ?? "");
+      if (reason) return;
+      dispatch(
+        messageEdited({
+          ...message,
+          content,
+          editedAt: new Date().toISOString(),
+        } as MessageDto),
+      );
+      enqueueEdit({
+        messageId: message.id,
+        conversationId: message.conversationId,
+        content,
+        serverBase: message.content ?? "",
+      });
+      void flushPendingMutations("interactive");
+    },
+    [dispatch, editing],
+  );
+
   const handleInputSend = useCallback(
     (payload: any) => {
+      // Düzenleme modundayken gönder tuşu YENİ metni normal gönderim yoluna
+      // DEĞİL düzenleme yoluna sokar — composer'ın onSend'i tek giriş kapısı,
+      // ayrım burada yapılıyor.
+      if (editing) {
+        handleSubmitEdit(payload.content);
+        return;
+      }
       handleSend(payload);
       setReplyTo(null);
     },
-    [handleSend],
+    [handleSend, editing, handleSubmitEdit],
   );
   // Boş sohbetteki açılış önerisi chip'i — dokunuş = mesajı olduğu gibi gönder.
   // Kota kilidini composer ile AYNI kuralla okuyoruz (quotaRef, render state'i
@@ -1582,6 +1662,7 @@ function ChatScreen({
 
   const handleReply = useCallback((message: any) => {
     if (!message) return;
+    setEditing(null);
     setReplyTo(buildReplyDraft(message));
   }, []);
 
@@ -2277,6 +2358,27 @@ function ChatScreen({
     (quota?.requiresPremium ||
       (quota?.remainingMessages != null && quota.remainingMessages <= 0));
 
+  // Düzenleme şeridi — ReplyPreview'ın KALIBI birebir ödünç alınıyor:
+  // MessageComposer'ın `replyTo` yuvasına yanıt DEĞİL "şu an düzenlediğin
+  // metin"i taşıyan sahte bir reply nesnesi veriliyor (senderDisplayName
+  // yerine sabit etiket, contentPreview yerine düzenleme taslağı). Composer
+  // ve ReplyPreview'a TEK satır dokunmadan aynı görünüm + ✕ iptal davranışı
+  // elde ediliyor — ikisi `reply`in içeriğine değil ŞEKLİNE bakıyor.
+  const editingReplyShim = editing
+    ? {
+        id: editing.id,
+        senderDisplayName: t("chat.editing.label"),
+        contentPreview: editing.content,
+        contentType: ContentType.Text,
+        isDeleted: false,
+      }
+    : null;
+  // Composer'ın metni `initialText`ten YALNIZ MOUNT'ta okunuyor (uncontrolled
+  // input) — düzenleme moduna girişte/çıkışta TAZE metni basmanın tek yolu
+  // `key` değiştirip bileşeni YENİDEN mount etmek. Normal modda sabit kalır,
+  // ekranın kendisi sohbet başına zaten bir kez mount oluyor.
+  const composerKey = editing ? `edit-${editing.id}` : "compose";
+
   const { colors: headerMaskColors, locations: headerMaskLocations } = useMemo(
     () =>
       easeGradient({
@@ -2531,15 +2633,16 @@ function ChatScreen({
             style={{ position: "absolute", bottom: 0, left: 0, right: 0 }}
           >
             <MessageComposer
+              key={composerKey}
               composerRef={composerRef}
               inputRef={composerInputRef}
               onComposerLayout={onComposerLayout}
-              replyTo={replyTo}
-              onCancelReply={handleCancelReply}
+              replyTo={editing ? editingReplyShim : replyTo}
+              onCancelReply={editing ? handleCancelEdit : handleCancelReply}
               onSend={handleInputSend}
               onTypingChange={handleTypingChange}
-              initialText={initialDraft}
-              onDraftChange={handleDraftChange}
+              initialText={editing ? editing.content : initialDraft}
+              onDraftChange={editing ? undefined : handleDraftChange}
               disabled={!isActive}
               quotaLocked={quotaLocked}
               onLockedPress={handleLockedPress}
@@ -2576,15 +2679,16 @@ function ChatScreen({
             style={{ position: "absolute", bottom: 0, left: 0, right: 0 }}
           >
             <MessageComposer
+              key={composerKey}
               composerRef={composerRef}
               inputRef={composerInputRef}
               onComposerLayout={onComposerLayout}
-              replyTo={replyTo}
-              onCancelReply={handleCancelReply}
+              replyTo={editing ? editingReplyShim : replyTo}
+              onCancelReply={editing ? handleCancelEdit : handleCancelReply}
               onSend={handleInputSend}
               onTypingChange={handleTypingChange}
-              initialText={initialDraft}
-              onDraftChange={handleDraftChange}
+              initialText={editing ? editing.content : initialDraft}
+              onDraftChange={editing ? undefined : handleDraftChange}
               disabled={!isActive}
               quotaLocked={quotaLocked}
               onLockedPress={handleLockedPress}
@@ -2625,6 +2729,7 @@ function ChatScreen({
         onClose={handleActionSheetClose}
         onPickReaction={(emoji: string) => handlePickReaction(actionTarget, emoji)}
         onReply={() => handleReply(actionTarget)}
+        onEdit={() => handleEditRequest(actionTarget)}
         onDelete={(forEveryone: boolean) => handleDelete(actionTarget, forEveryone)}
       />
       <ConversationOptionsSheet

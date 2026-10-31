@@ -948,8 +948,12 @@ const en = {
     actions: {
       reply: 'Reply',
       copy: 'Copy',
+      edit: 'Edit',
       deleteForMe: 'Delete for me',
       deleteForEveryone: 'Delete for everyone',
+    },
+    editing: {
+      label: 'Editing message',
     },
     input: {
       placeholder: 'Message...',

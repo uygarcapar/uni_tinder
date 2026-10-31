@@ -21,7 +21,7 @@ import Animated, {
 import { BlurView } from "expo-blur";
 import { GlassView } from "expo-glass-effect";
 import { glassColorScheme, hasLiquidGlassSurface } from "@/shared/theme/glass";
-import { Reply, Trash2, Copy } from "@/shared/icons";
+import { Reply, Trash2, Copy, Pencil } from "@/shared/icons";
 import SFIcon from "@/shared/components/SFIcon";
 import { useTranslation } from "react-i18next";
 import * as Haptics from "expo-haptics";
@@ -39,6 +39,7 @@ import {
 } from "@/features/chat/components/bubbleStyle";
 import { colors, withAlpha, scrimAt } from "../../../shared/theme/colors";
 import { thinBlurTint } from "@/shared/theme/blur";
+import { utcTime } from "@/shared/utils/dateUtc";
 
 const QUICK_EMOJIS = ["❤️", "😂", "😮", "😢", "🔥", "👍"];
 const { width: SCREEN_WIDTH, height: SCREEN_HEIGHT } = Dimensions.get("window");
@@ -121,6 +122,18 @@ const PANEL_MIN_SCALE_GLASS = 0.18;
 const PANEL_EXIT_SCALE = 0.01;
 
 /**
+ * Düzenleme penceresi — İSTEMCİ TARAFI tahmin, yalnız "Düzenle"yi menüde
+ * GÖSTERİP GÖSTERMEME kararı için. Sunucunun kendi penceresi (UT-6723,
+ * backend 15 dk) ASIL otorite: istemci saati ileri/geri kaymışsa ya seçenek
+ * gereksiz yere görünür kalır (tur zaten reddedip geri alır — pendingMutations.ts
+ * revertEdit) ya da erken kaybolur (zararsız, kullanıcı birkaç dk sonra tekrar
+ * dener). Değer backend'in kendi süresiyle (chat.codes.UT-6723 metni, "15
+ * dakika") AYNI tutulmalı — ayrışırsa seçenek sunucunun daha reddetmediği bir
+ * pencerede kaybolur ya da tersi.
+ */
+export const EDIT_WINDOW_MS = 15 * 60 * 1000;
+
+/**
  * WhatsApp-style mesaj uzun-bas context menu.
  * - Gerçek balon yerinde blur altında kalır; modal içinde birebir KLON render edilir.
  * - Klon, basıldığı konumdan ekranda SABİT bir hedefe animasyonla taşınır —
@@ -136,6 +149,7 @@ export default function MessageActionSheet({
   onClose,
   onPickReaction,
   onReply,
+  onEdit,
   onDelete,
 }: any) {
   const { t } = useTranslation();
@@ -231,6 +245,17 @@ export default function MessageActionSheet({
   if (!message) return null;
 
   const canDelete = isOwn && !message.isSystemMessage && !message.deletedAt;
+  // Her kapı AYRI bir reddin karşılığı: sahiplik dışı/sistem/silinmiş/sesli/
+  // henüz gönderilmemiş/pencere dolmuş — biri bile eksik kontrol edilirse
+  // menü sunucunun KESİN reddedeceği bir eylemi sunar (bkz. dosya başı
+  // EDIT_WINDOW_MS notu — pencere burada yalnız GÖRÜNÜRLÜK, otorite sunucuda).
+  const canEdit =
+    isOwn &&
+    !message.isSystemMessage &&
+    !message.deletedAt &&
+    message.contentType === 0 &&
+    !message._pending &&
+    Date.now() - utcTime(message.sentAt) < EDIT_WINDOW_MS;
 
   // Fallback (layout null): ekran ortası
   const pill = isValidRect(layout)
@@ -247,7 +272,8 @@ export default function MessageActionSheet({
 
   // Aksiyon menüsü yüksekliği satır sayısından hesaplanır (measure beklemeden
   // hedef konumu bilmemiz gerekiyor).
-  const actionRows = 1 + (message.content ? 1 : 0) + (canDelete ? 2 : 0);
+  const actionRows =
+    1 + (message.content ? 1 : 0) + (canEdit ? 1 : 0) + (canDelete ? 2 : 0);
   const actionsH = actionRows * ACTION_ROW_H + ACTIONS_PAD_V * 2;
 
   // ── Sabit hedef konum: tüm stack (emoji + balon + menü) güvenli alanda dikey
@@ -436,6 +462,14 @@ export default function MessageActionSheet({
               label={t("chat.actions.copy")}
               separator={rowSeparator(glass)}
               onPress={handleCopy}
+            />
+          )}
+          {canEdit && (
+            <ActionRow
+              icon={<SFIcon name="pencil" fallback={Pencil} size={20} color={colors.text} />}
+              label={t("chat.actions.edit")}
+              separator={rowSeparator(glass)}
+              onPress={() => runAction(onEdit)}
             />
           )}
           {canDelete && (

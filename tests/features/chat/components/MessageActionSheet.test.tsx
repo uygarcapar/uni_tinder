@@ -76,9 +76,12 @@ jest.mock('react-native-svg', () => {
 
 import * as Clipboard from 'expo-clipboard';
 import { fireEvent, render } from '@testing-library/react-native';
-import MessageActionSheet from '@/features/chat/components/MessageActionSheet';
+import MessageActionSheet, {
+  EDIT_WINDOW_MS,
+} from '@/features/chat/components/MessageActionSheet';
 
-const recent = new Date().toISOString();
+const NOW = Date.now();
+const recent = new Date(NOW).toISOString();
 
 const baseProps = {
   visible: true,
@@ -138,12 +141,6 @@ describe('MessageActionSheet — action visibility', () => {
     expect(tree.queryByText('Kopyala')).toBeNull();
   });
 
-  // MESAJ DÜZENLEME KALDIRILDI (2026-08-21, `222551e`): `onEdit` prop'u,
-  // butonu ve `chat.actions.edit` metni bileşenden tümüyle çıktı; çağıran da
-  // kalmadı. Üç test geride unutulmuştu — biri kırmızıydı, ikisi "Düzenle
-  // görünmüyor" diye BOŞA geçiyordu (hiç çizilmeyen bir şeyin yokluğunu
-  // doğruluyorlardı). Özellik geri gelirse testleri de geri gelsin.
-
   it('shows both delete options when own message', () => {
     const tree = render(
       <MessageActionSheet
@@ -166,6 +163,55 @@ describe('MessageActionSheet — action visibility', () => {
     );
     expect(tree.queryByText('Sadece benden sil')).toBeNull();
     expect(tree.queryByText('Herkes için sil')).toBeNull();
+  });
+});
+
+// MESAJ DÜZENLEME GERİ GELDİ (Faz 4, Task 3): `canEdit` ALTI ayrı kapının
+// (sahiplik/sistem/silinmiş/sesli/pencere/pending) HER BİRİ eksik kontrol
+// edilirse menü sunucunun KESİN reddedeceği bir eylemi sunar — bu yüzden her
+// kapı AYRI bir test, hepsi aynı anda "tamam" olan bir mesajdan TEK bir
+// alanı bozarak.
+function buildEditableMessage(overrides: any = {}) {
+  return {
+    id: 'm1',
+    content: 'merhaba',
+    contentType: 0,
+    sentAt: recent,
+    isSystemMessage: false,
+    deletedAt: null,
+    _pending: false,
+    ...overrides,
+  };
+}
+
+describe('MessageActionSheet — Düzenle görünürlüğü (her kapı ayrı)', () => {
+  it.each([
+    ['başkasının mesajı', {}, false],
+    ['sistem mesajı', { isSystemMessage: true }, true],
+    ['silinmiş', { deletedAt: recent }, true],
+    ['sesli', { contentType: 2 }, true],
+    [
+      'pencere dolmuş',
+      { sentAt: new Date(NOW - EDIT_WINDOW_MS - 1).toISOString() },
+      true,
+    ],
+    ['henüz gönderilmemiş', { _pending: true }, true],
+  ])('%s için Düzenle görünmüyor', (_ad, patch, isOwn) => {
+    const tree = render(
+      <MessageActionSheet
+        {...baseProps}
+        message={buildEditableMessage(patch as any)}
+        isOwn={isOwn as boolean}
+      />
+    );
+    expect(tree.queryByText('Düzenle')).toBeNull();
+  });
+
+  it('kendi taze metin mesajında Düzenle görünüyor', () => {
+    const tree = render(
+      <MessageActionSheet {...baseProps} message={buildEditableMessage()} isOwn />
+    );
+    expect(tree.getByText('Düzenle')).toBeTruthy();
   });
 });
 
@@ -201,6 +247,23 @@ describe('MessageActionSheet — callbacks', () => {
     );
     fireEvent.press(tree.getByText('Yanıtla'));
     expect(onReply).toHaveBeenCalledTimes(1);
+    expect(onClose).toHaveBeenCalledTimes(1);
+  });
+
+  it('calls onEdit then onClose on Düzenle', () => {
+    const onEdit = jest.fn();
+    const onClose = jest.fn();
+    const tree = render(
+      <MessageActionSheet
+        {...baseProps}
+        onEdit={onEdit}
+        onClose={onClose}
+        message={buildEditableMessage()}
+        isOwn
+      />
+    );
+    fireEvent.press(tree.getByText('Düzenle'));
+    expect(onEdit).toHaveBeenCalledTimes(1);
     expect(onClose).toHaveBeenCalledTimes(1);
   });
 
