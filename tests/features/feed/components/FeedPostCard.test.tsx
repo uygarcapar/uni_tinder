@@ -483,3 +483,52 @@ describe('konu etiketleri', () => {
     expect(screen.queryByText('#genel')).toBeNull();
   });
 });
+
+/**
+ * Gönderiye not butonu.
+ *
+ * Test edilen şey ÖLÜ BUTON: kapı tek koşul (`note.state === "Ok"`) ve kart
+ * içinde hiçbir kural yeniden hesaplanmıyor. Alanın hiç gelmediği hâl ve
+ * bilinmeyen bir `state` de "çizme" tarafında kalmak zorunda — aksi halde
+ * buton sunucunun reddettiği bir yere basar ve kullanıcı hata duvarına yürür.
+ */
+describe('not butonu', () => {
+  it('state Ok iken çiziliyor ve onNote çağrılıyor', () => {
+    const onNote = jest.fn();
+    render(
+      <FeedPostCard
+        post={post({ note: { state: 'Ok', availableModes: ['Dating'] } })}
+        onNote={onNote}
+      />,
+    );
+    fireEvent.press(screen.getByTestId('feed-post-note'));
+    expect(onNote).toHaveBeenCalledTimes(1);
+  });
+
+  it('note alanı hiç gelmezse buton çizilmiyor (eski sunucu)', () => {
+    render(<FeedPostCard post={post()} onNote={jest.fn()} />);
+    expect(screen.queryByTestId('feed-post-note')).toBeNull();
+  });
+
+  it('AlreadySent ve AlreadySwiped hâllerinde çizilmiyor', () => {
+    for (const state of ['AlreadySent', 'AlreadySwiped']) {
+      const { unmount } = render(
+        <FeedPostCard post={post({ note: { state } })} onNote={jest.fn()} />,
+      );
+      expect(screen.queryByTestId('feed-post-note')).toBeNull();
+      unmount();
+    }
+  });
+
+  it('bilinmeyen state çizdirmiyor', () => {
+    render(
+      <FeedPostCard post={post({ note: { state: 'SomethingNew' } })} onNote={jest.fn()} />,
+    );
+    expect(screen.queryByTestId('feed-post-note')).toBeNull();
+  });
+
+  it('onNote verilmezse çizilmiyor — basılacak yeri olmayan buton olmaz', () => {
+    render(<FeedPostCard post={post({ note: { state: 'Ok', availableModes: ['Dating'] } })} />);
+    expect(screen.queryByTestId('feed-post-note')).toBeNull();
+  });
+});

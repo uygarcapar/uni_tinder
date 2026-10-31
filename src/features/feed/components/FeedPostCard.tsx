@@ -5,6 +5,7 @@ import { useTranslation } from "react-i18next";
 import { MoreHorizontal, User } from "@/shared/icons";
 import SFIcon from "@/shared/components/SFIcon";
 import HeartGlyph from "@/shared/components/HeartGlyph";
+import NoteGlyph from "@/shared/components/NoteGlyph";
 import { colors, ink } from "@/shared/theme/colors";
 // Kapsülün ölçüleri ORTAK: filtre sheet'i ve composer'ın çipleri de aynı
 // sayıları okuyor (gerekçe: feedTopicPill).
@@ -18,6 +19,14 @@ import { anonymousLabelKey } from "../feedPolicy";
 // etiketi composer ve filtrede kullanılıyor; oralarda `me` zaten elde.
 import { topicHashtag } from "../feedTopics";
 import { feedRowShell } from "../feedRowShell";
+import { canNotePost } from "../feedPostNote";
+import {
+  AVATAR,
+  BLOCK_GAP,
+  BODY_FONT_SIZE,
+  BODY_LINE_HEIGHT,
+} from "../feedPostMetrics";
+import FeedPostBody from "./FeedPostBody";
 import type { FeedPostDto, FeedTopic } from "../feedTypes";
 
 /**
@@ -41,6 +50,12 @@ export interface FeedPostCardProps {
    */
   ownPhotoUrl?: string | null;
   onToggleLike?: (post: FeedPostDto) => void;
+  /**
+   * Gönderiye not bırakma. Buton YALNIZ `post.note.state === "Ok"` iken ve bu
+   * prop verildiğinde çiziliyor — kart başka hiçbir kural hesaplamıyor
+   * (gerekçe: feedPostNote.ts).
+   */
+  onNote?: (post: FeedPostDto) => void;
   onReply?: (post: FeedPostDto) => void;
   onOpenChat?: (conversationId: string | null) => void;
   onReplyPaywall?: (post: FeedPostDto) => void;
@@ -64,33 +79,14 @@ export interface FeedPostCardProps {
 }
 
 /**
- * ⚠️ AŞAĞIDAKİ ÖLÇÜLERİN BİR KISMI DIŞA AÇIK ÇÜNKÜ İSKELET DE ONLARI OKUYOR
- * (bkz. FeedSkeletonList). Bir dönem iki dosyada elle kopyalıydılar ve kart
- * değiştikçe iskelet geride kaldı: üniversite satırı kalkmıştı ama iskelet
- * adın altına ikinci çubuğu çizmeye devam ediyordu, gövde 15.5 → 16.5'e
- * çıkınca da satır boyu eski kalmıştı — yükleme bitince liste zıplıyordu.
- * Yeni bir ölçü iskeletin de bilmesi gerekiyorsa buraya `export` olarak
- * yazılmalı, oraya elle kopyalanmamalı.
- */
-export const AVATAR = 34;
-
-/**
- * Kartın üç bloğu (başlık · gövde · aksiyon satırı) arasındaki TEK pay.
- * İkisi de 12'ydi ve ayrı ayrı yazılıydı; tek sayı olması iskeletin dikey
- * hizasını kartla kilitliyor.
- */
-export const BLOCK_GAP = 12;
-
-/**
- * Gövde metninin ölçüsü.
+ * ⚠️ ÖLÇÜLERİN BİR KISMI ARTIK `../feedPostMetrics`TE ve buradan YENİDEN DIŞA
+ * AÇILIYOR (aşağıdaki `export`). Sebebi döngüsel import: gövde karttan çıkıp
+ * `FeedPostBody`ye taşındı ve o da aynı sayıları okuyor — kart → gövde → kart
+ * olurdu. Gerekçeler (ve "elle kopyalamayın" uyarısı) o dosyada.
  *
- * 15.5 → 16.5 (istek: "bi tık artır"). Gövde artık başlık satırından (15)
- * BÜYÜK ve bu bilinçli: kartın asıl içeriği yazının kendisi, isim/tarih onun
- * künyesi. `lineHeight` birlikte büyüdü — oran 1.36'da sabit tutuldu, yoksa
- * çok satırlı gövde sıkışık okunuyor.
+ * Aşağıda KALAN ölçüler yalnız bu kartın ve iskeletin işine yarıyor.
  */
-export const BODY_FONT_SIZE = 16.5;
-export const BODY_LINE_HEIGHT = 22.5;
+export { AVATAR, BLOCK_GAP, BODY_FONT_SIZE, BODY_LINE_HEIGHT };
 
 /**
  * KONU ETİKETİNİN YATAY PAYI — "biraz daha azalt" (istek, iki tur: 9 → 6 → 4).
@@ -159,6 +155,22 @@ export const LIKE_COUNT_MARGIN =
   LIKE_COUNT_GAP - LIKE_HEART_BOX * ((HEART_GRID - HEART_GLYPH_SPAN) / 2 / HEART_GRID);
 
 /**
+ * Not butonunun ölçüleri — kalbin yanında durduğu için ondan TÜREMİŞ, kendi
+ * başına seçilmiş sayılar değil.
+ *
+ * ⚠️ `NOTE_GLYPH_BOX` kalbin kutusuyla AYNI: iki glyph aynı app-icon'un
+ * parçası ve aynı satırda yan yana duruyor, farklı kutular birini ufak
+ * gösterirdi.
+ *
+ * ⚠️ Araya giren pay `LIKE_COUNT_MARGIN` DEĞİL. O marj kalbin SAĞINDAKİ optik
+ * payı düşerek sayıyı yaklaştırıyor; burada iki glyph var ve ikisinin de kendi
+ * şeffaf payı aralığa katılıyor. İki buton arası, dokunma hedeflerinin
+ * karışmayacağı kadar açık olmalı (hitSlop ikisinde de 8).
+ */
+const NOTE_GLYPH_BOX = LIKE_HEART_BOX;
+const NOTE_BUTTON_MARGIN = 16;
+
+/**
  * Yanıt kapsülünün ölçüleri — AKSİYON SATIRININ YÜKSEKLİĞİNİ VEREN ŞEY.
  * Kalbin kutusu (≈22.8) ve sayı (15 punto) kapsülün içinde kalıyor.
  *
@@ -175,6 +187,7 @@ function FeedPostCardBase({
   variant = "feed",
   ownPhotoUrl = null,
   onToggleLike,
+  onNote,
   onReply,
   onOpenChat,
   onReplyPaywall,
@@ -188,6 +201,7 @@ function FeedPostCardBase({
   const { t } = useTranslation();
 
   const handleLike = useCallback(() => onToggleLike?.(post), [onToggleLike, post]);
+  const handleNote = useCallback(() => onNote?.(post), [onNote, post]);
   const handleMenu = useCallback(() => onMenu?.(post), [onMenu, post]);
   const handleAuthor = useCallback(() => {
     // Anonim gönderide açılacak profil YOK — sunucu da `author: null` yolluyor.
@@ -415,20 +429,12 @@ function FeedPostCardBase({
         ) : null}
       </View>
 
-      {/* ── Gövde ── Satır sonları KORUNUYOR (sunucu en fazla 2 boş satıra
-          normalize ediyor), o yüzden metin olduğu gibi basılıyor. */}
-      <Text
-        style={{
-          // Ölçüler dosyanın başında, `export` olarak: iskelet de aynı
-          // sayılardan çiziliyor (bkz. dosya başındaki not).
-          fontSize: BODY_FONT_SIZE,
-          lineHeight: BODY_LINE_HEIGHT,
-          color: colors.text,
-          marginTop: BLOCK_GAP,
-        }}
-      >
-        {post.body}
-      </Text>
+      {/* ── Gövde ──────────────────────────────────────────────────────────
+          Metin, tıklanabilir adresler ve taşma kapısı `FeedPostBody`de.
+          Ölçüler (BODY_FONT_SIZE / BODY_LINE_HEIGHT / BLOCK_GAP) burada
+          `export` olarak DURUYOR ve oradan okunuyor — iskelet de aynı
+          sayılardan çiziliyor (bkz. dosya başındaki not). */}
+      <FeedPostBody body={post.body} />
 
       {/* GÖVDENİN ALTINDAKİ DURUM SATIRI KALDIRILDI: durum rozeti başlık
           satırına, üç noktanın soluna taşındı; "kalan gün" etiketi ise tümden
@@ -587,7 +593,9 @@ function FeedPostCardBase({
               // orası İÇ kontur: siluetin tamamı mürekkebin içinde kalıyor.
               // Buradaki ORTALANMIŞ kontur aynı sayıda yarısını dışa taşırıyor
               // ve 24pt'ye büyüyen kalpte bu fazlalık kalın okunuyordu.
-              // 1.6 → 1.3 (istek: "biraz azalt").
+              // 1.6 → 1.3 (istek: "biraz azalt") → 1.5 (istek: "bi tık daha
+              // fazla"). Kontur artık griden tema mürekkebine geçtiği için
+              // 1.3 inceliği eskisinden daha ince okunuyordu.
               //
               // ⚠️ BU SAYI PT DEĞİL, VIEWBOX BİRİMİ. Kutu 24'lük grid'de
               // (HEART_VIEWBOX) çiziliyor ve ekrana `LIKE_HEART_BOX` (≈22.8pt)
@@ -595,8 +603,11 @@ function FeedPostCardBase({
               // yazılan sayıdan bir tık İNCE. Glyph'in ölçüsü değişirse bu da
               // değişir; "ince göründü" diye sayıyı büyütmeden önce
               // LIKE_HEART_WIDTH'e bak.
-              stroke={colors.textMuted}
-              strokeWidth={1.3}
+              // ⚠️ GRİ DEĞİL TEMA MÜREKKEBİ (istek): açık modda siyah, koyu
+              // modda beyaz. `textMuted` iki temada da aynı griydi (#8E8E93)
+              // ve kalbi zeminin içinde eritiyordu.
+              stroke={colors.text}
+              strokeWidth={1.5}
             />
           )}
           {/* ⚠️ SIFIR HİÇ YAZILMIYOR (istek): beğenisi olmayan gönderide
@@ -643,9 +654,14 @@ function FeedPostCardBase({
                  * beğendi) ve ölçünün benim kararımla renk değiştirmesi için
                  * bir sebep yok. Durumu taşıyan tek eleman kalp.
                  *
-                 * ⚠️ `textSecondary` DEĞİL `textMuted`: boş kalpte kontur da
-                 * bu griyle çiziliyor, yani ikisi aynı gri. İki ayrı gri yan
-                 * yana durduğunda biri "soluk", öteki "daha soluk" okunuyordu.
+                 * ⚠️ KALPLE AYNI RENK OLMASI KURALI DA DÜŞTÜ (istek): kalbin
+                 * konturu tema mürekkebine çıktı, sayı GRİ kaldı. Yani bu
+                 * satırda iki ayrı renk var ve bu kasıtlı — kalp dokunulan
+                 * şey, sayı yalnız bir ölçü. `stroke` değişince burayı
+                 * EŞLEMEYE ÇALIŞMA.
+                 *
+                 * ⚠️ `textSecondary` DEĞİL `textMuted` (ikisi de #8E8E93; ad
+                 * niyeti taşıyor).
                  */
                 color: colors.textMuted,
               }}
@@ -654,6 +670,37 @@ function FeedPostCardBase({
             </Text>
           ) : null}
         </Pressable>
+
+        {/* Gönderiye not — kalbin HEMEN SAĞINDA, aynı satırda.
+
+            Kapı TEK KOŞUL (`canNotePost`) ve kart burada `likedByMe` /
+            `isMine` / `isAnonymous` OKUMUYOR: sunucu o hâlleri `state`e
+            katlıyor (`OwnPost` / `Anonymous` / `Matched` / `LikedMe` …) ve
+            kuralı ikinci bir yerde tutmak iki kuralın zamanla ayrışması
+            demek — `replyActionFor`un tarihçesinin dersi bu.
+
+            Yanında SAYI YOK: not kaç kişinin bıraktığı bir ölçü değil, bir
+            kez yapılan bir aksiyon. Gönderildikten sonra buton zaten
+            kayboluyor (`AlreadySent`). */}
+        {canNotePost(post.note) && onNote ? (
+          <Pressable
+            testID="feed-post-note"
+            onPress={handleNote}
+            hitSlop={8}
+            accessibilityRole="button"
+            accessibilityLabel={t("feed.noteAccessibility")}
+            style={{ marginLeft: NOTE_BUTTON_MARGIN }}
+          >
+            {/* Kalple AYNI dil: dolgu yok, tema mürekkebinde ince kontur.
+                Dolu hâli YOK — notun "dolu" karşılığı butonun hiç
+                çizilmemesi. */}
+            <NoteGlyph
+              size={NOTE_GLYPH_BOX}
+              stroke={colors.text}
+              strokeWidth={1.5}
+            />
+          </Pressable>
+        ) : null}
 
         {/* Esnek boşluk: beğeni solda, (Gönderilerim'de) yanıt sayısı sağ uçta.
             Yanıt butonu kalktığı için akış sekmesinde sağ uç artık boş —
