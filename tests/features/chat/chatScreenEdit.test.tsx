@@ -242,15 +242,35 @@ jest.mock('@/features/chat/components/MessageComposer', () => {
             props.onDraftChange?.(mockTypedTextAfterMount);
           },
         }),
+        // Gerçek `handleChangeText`in BİREBİR ikizi (sabit bir değerle
+        // EZMİYOR, mevcut metne EKLİYOR) — Review Önemli-3'ün "bir sonraki
+        // tuş vuruşu düzenlenen metni GERÇEK taslak diye diske yazar" iddiasını
+        // doğrudan sınamak için: düzenleme modundan çıkış `getText()`i doğru
+        // RESTORE ETMEDİYSE bu basış `preEditDraft`in değil düzenlenen
+        // içeriğin üstüne eklenir, test bunu yakalar.
+        React.createElement(Pressable, {
+          testID: 'composer-keystroke',
+          onPress: () => {
+            const next = `${text}!`;
+            setLocalText(next);
+            props.onDraftChange?.(next);
+          },
+        }),
         React.createElement(Pressable, {
           testID: 'composer-send',
-          // Review Kritik-2 — gerçek `MessageComposer.handleSend`in GÖNDERİM
-          // SONRASI kendi temizliğinin (MessageComposer.tsx: input/textRef/
-          // draftRef → "", flushDraft()) BİREBİR taklidi, `editing` prop'uyla
-          // AYNI kapı. Bu satırlar EKSİK olsaydı mock `apiRef.setText`in
-          // bastığı değerle hiç YARIŞMAZDI — "taslak … GÖNDER" testi gerçek
-          // kodun kırıldığı durumu YAKALAYAMAZDI (bkz. rapor: bu satırlar
-          // eklenmeden test yeşil kalıyordu, gerçek `handleSend` kırıktı).
+          // Review Kritik-2 — bu BİREBİR bir taklit DEĞİL, İNDİRGENMİŞ bir
+          // model: gerçek `handleSend`in çağrı-noktası SÖZLEŞMESİNİ taklit
+          // ediyor (gönderim sonrası temizlik `editing` prop'u true iken
+          // ATLANIR) ama kendi `draftRef`i yok, unmount flush'ı yok, ve
+          // kapıyı (gerçek bileşendeki gibi) `handleSend`in İÇİNDEN değil
+          // `props.editing`i OKUYARAK açıyor — yani `MessageComposer`in bu
+          // prop'u GERÇEKTEN onurlandırdığını BU test PİNLEMİYOR, yalnız
+          // ChatScreen'in onu doğru geçtiğini. O ikinci iddia artık
+          // `tests/features/chat/components/MessageComposer.test.tsx`te
+          // GERÇEK bileşene karşı ayrı pinli (bkz. rapor, Kritik-1/2 eki).
+          // Bu satırlar EKSİK olsaydı (`editing` hiç okunmasaydı) mock
+          // `apiRef.setText`in bastığı değerle hiç YARIŞMAZDI — "taslak …
+          // GÖNDER" testi gerçek kodun kırıldığı durumu YAKALAYAMAZDI.
           onPress: () => {
             props.onSend?.({ content: mockComposerSendContent, clientMessageId: 'cmid-1' });
             if (!props.editing) {
@@ -690,8 +710,12 @@ describe('ChatScreen — düzenleme modu', () => {
   // ÇIKMAK, ✕/gönder ile çıkmakla AYNI restorasyonu yapmalı. Eskiden yalnız
   // `setEditing(null)` yapıyordu: composer düzenlenen mesajın metnini
   // GÖSTERMEYE DEVAM ederdi, bir sonraki tuş vuruşu onu GERÇEK taslak diye
-  // diske yazardı.
-  it('"Yanıtla" ile düzenleme modundan çıkınca composer preEditDraft\'a döner', async () => {
+  // diske yazardı. Bulgunun TAM İDDİASINI sınamak için çıkıştan SONRA bir
+  // tuş vuruşu simüle ediliyor (`composer-keystroke`, mevcut metne EKLER) —
+  // restorasyon yanlış olsaydı bu vuruş "orijinal metin!" üretir, "yanıtla
+  // öncesi taslak!" DEĞİL (önceki sürümdeki `expect(getDraft(...))` hiçbir
+  // akışta YAZILMADIĞI için her zaman doğruydu — vacuous'tu, bu düzeltiyor).
+  it('"Yanıtla" ile düzenleme modundan çıkınca composer preEditDraft\'a döner, SONRAKİ tuş vuruşu onun üstüne yazar', async () => {
     setDraft(CONVERSATION_ID, 'yanıtla öncesi taslak');
     const store = buildStore(buildMessage());
     renderChatScreen(store);
@@ -712,13 +736,22 @@ describe('ChatScreen — düzenleme modu', () => {
     expect(screen.getByTestId('composer-initial-text').props.children).toBe(
       'yanıtla öncesi taslak',
     );
-    expect(getDraft(CONVERSATION_ID)).toBe('yanıtla öncesi taslak');
+
+    await act(async () => {
+      fireEvent.press(screen.getByTestId('composer-keystroke'));
+    });
+
+    expect(screen.getByTestId('composer-initial-text').props.children).toBe(
+      'yanıtla öncesi taslak!',
+    );
+    expect(getDraft(CONVERSATION_ID)).toBe('yanıtla öncesi taslak!');
   });
 
   // Aynı regresyon, İKİNCİ bağımsız giriş noktası: `ReplySwipeRow`in sola-
   // çekme jesti — `handleReplyBySwipe`, `handleReply`den TAMAMEN AYRI bir
-  // fonksiyon, kendi düzeltmesi gerekiyordu.
-  it('ReplySwipeRow ile düzenleme modundan çıkınca composer preEditDraft\'a döner', async () => {
+  // fonksiyon, kendi düzeltmesi gerekiyordu. Aynı "çıkış SONRASI tuş vuruşu"
+  // sınaması burada da geçerli.
+  it('ReplySwipeRow ile düzenleme modundan çıkınca composer preEditDraft\'a döner, SONRAKİ tuş vuruşu onun üstüne yazar', async () => {
     setDraft(CONVERSATION_ID, 'swipe öncesi taslak');
     const store = buildStore(buildMessage());
     renderChatScreen(store);
@@ -736,14 +769,23 @@ describe('ChatScreen — düzenleme modu', () => {
     expect(screen.getByTestId('composer-initial-text').props.children).toBe(
       'swipe öncesi taslak',
     );
-    expect(getDraft(CONVERSATION_ID)).toBe('swipe öncesi taslak');
+
+    await act(async () => {
+      fireEvent.press(screen.getByTestId('composer-keystroke'));
+    });
+
+    expect(screen.getByTestId('composer-initial-text').props.children).toBe(
+      'swipe öncesi taslak!',
+    );
+    expect(getDraft(CONVERSATION_ID)).toBe('swipe öncesi taslak!');
   });
 
   // Review Önemli-3, ikinci yarı — ZİNCİRLEME düzenleme: A'yı düzenlerken
   // İPTAL ETMEDEN B'ye geçmek. `preEditDraft` ikinci girişte composer'dan
   // YENİDEN okunursa, o an composer'ın gösterdiği şey A'nın düzenlenen
-  // içeriğidir — gerçek taslak KALICI OLARAK kaybolur.
-  it('zincirleme düzenleme: A düzenlenirken B\'ye geçmek orijinal preEditDraft\'ı KORUR', async () => {
+  // içeriğidir — gerçek taslak KALICI OLARAK kaybolur. Aynı "çıkış SONRASI
+  // tuş vuruşu" sınaması: yanlış restorasyon "A mesajı!" üretirdi.
+  it('zincirleme düzenleme: A düzenlenirken B\'ye geçmek orijinal preEditDraft\'ı KORUR, SONRAKİ tuş vuruşu onun üstüne yazar', async () => {
     const SECOND_ID = 'msg-2';
     setDraft(CONVERSATION_ID, 'zincir öncesi taslak');
     const store = buildStore([
@@ -774,6 +816,14 @@ describe('ChatScreen — düzenleme modu', () => {
     expect(screen.getByTestId('composer-initial-text').props.children).toBe(
       'zincir öncesi taslak',
     );
-    expect(getDraft(CONVERSATION_ID)).toBe('zincir öncesi taslak');
+
+    await act(async () => {
+      fireEvent.press(screen.getByTestId('composer-keystroke'));
+    });
+
+    expect(screen.getByTestId('composer-initial-text').props.children).toBe(
+      'zincir öncesi taslak!',
+    );
+    expect(getDraft(CONVERSATION_ID)).toBe('zincir öncesi taslak!');
   });
 });
