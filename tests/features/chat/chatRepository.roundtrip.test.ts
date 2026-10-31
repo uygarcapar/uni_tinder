@@ -96,6 +96,10 @@ describe('şema sürümü', () => {
     // reddediliyor.
     db.exec('DROP INDEX idx_messages_unfolded');
     db.exec('ALTER TABLE messages DROP COLUMN content_folded');
+    // v11: medya önbelleği kolonlarını düşür — yoksa v11 kendi ADD COLUMN'unda
+    // "duplicate column name" ile patlar.
+    db.exec('ALTER TABLE messages DROP COLUMN media_cached_at_ms');
+    db.exec('ALTER TABLE messages DROP COLUMN media_size_bytes');
     db.exec('PRAGMA user_version = 1');
 
     __resetChatDbForTests();

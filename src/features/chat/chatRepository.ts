@@ -530,8 +530,13 @@ function messageParams(
  * güncellemesi sessizce düşer.
  *
  * `client_message_id` ve `local_uri` COALESCE'li — ama gerekçeleri AYRI:
- *  • `local_uri` YALNIZ istemcide var (gönderdiğimiz sesin yerel dosyası),
- *    hiçbir sunucu kopyası taşımıyor. COALESCE olmadan her reconcile silerdi.
+ *  • `local_uri` YALNIZ istemcide var, hiçbir sunucu kopyası taşımıyor —
+ *    COALESCE olmadan her reconcile silerdi. v11'den beri bu alan İKİ
+ *    kaynaktan dolabiliyor: kendi gönderdiğimiz sesin yerel dosyası YA DA
+ *    gelen bir medyanın indirilmiş kopyası (bkz. setMediaCache). İkisini
+ *    AYIRAN kolonun kendisi değil, `media_cached_at_ms`in VARLIĞI: dolu ise
+ *    satır tahliye edilebilir bir önbellek kopyası, NULL ise kendi kaydımız
+ *    (LRU'nun elini hiç sürmediği tek kopya).
  *  • `client_message_id`'yi sunucu geri yansıtıyor (2026-10-06'da doğrulandı:
  *    send yanıtı, hub ack'i, history ve /changes — hepsinde dolu geliyor). Yine
  *    de COALESCE'li, çünkü alan iki durumda boş gelebiliyor: cmid'siz
@@ -1524,6 +1529,145 @@ export function clearVoiceMediaUrl(clientMessageId: string): void {
       WHERE client_message_id = ? AND send_state <> 'sent' AND media_url IS NOT NULL`,
     [clientMessageId],
   );
+}
+
+// ── Medya önbelleği (v11) ────────────────────────────────────────────────────
+
+export interface MediaCacheRow {
+  message_id: string;
+  local_uri: string;
+  media_cached_at_ms: number;
+  size_bytes: number;
+}
+
+/**
+ * Önbellek kaydını yazar/günceller — bu üç kolona (`local_uri`,
+ * `media_cached_at_ms`, `media_size_bytes`) yazan TEK kapı. `voicePlayback.ts`
+ * SQL görmüyor, buradan geçmek zorunda.
+ *
+ * `row_version` BİLEREK artmıyor: bu üçü ekrana projekte edilmiyor (bkz.
+ * rows.ts — `local_uri` zaten taşınıyor ama "ne zaman önbelleğe alındığı"
+ * hiçbir bileşenin render kararına girmiyor), artırmak tüm mesaj akışını
+ * messageCache'in hızlı yolundan düşürürdü karşılığında hiçbir görsel fark
+ * üretmeden.
+ */
+export function setMediaCache(
+  messageId: string,
+  localUri: string,
+  sizeBytes: number,
+  nowMs: number,
+): void {
+  getChatDb().run(
+    `UPDATE messages SET local_uri = ?, media_cached_at_ms = ?, media_size_bytes = ?
+     WHERE id = ?`,
+    [localUri, nowMs, sizeBytes, messageId],
+  );
+}
+
+/**
+ * Oynatma anında okunur; `null` = yerel kopya yok (ya hiç indirilmedi ya da
+ * bu satır kendi gönderdiğimiz kaydın yerel dosyası — `media_cached_at_ms`
+ * NULL kaldığı için bir "önbellek kaydı" SAYILMIYOR; o dosyanın kaynağı ve
+ * ömrü outbox'ın kendi mekanizması, bu kapının işi değil).
+ */
+export function readMediaCache(messageId: string): MediaCacheRow | null {
+  const row = getChatDb().getFirst<{
+    id: string;
+    local_uri: string | null;
+    media_cached_at_ms: number | null;
+    media_size_bytes: number | null;
+  }>(
+    `SELECT id, local_uri, media_cached_at_ms, media_size_bytes FROM messages
+      WHERE id = ? AND media_cached_at_ms IS NOT NULL AND local_uri IS NOT NULL`,
+    [messageId],
+  );
+  if (!row) return null;
+  return {
+    message_id: row.id,
+    local_uri: row.local_uri as string,
+    media_cached_at_ms: row.media_cached_at_ms as number,
+    size_bytes: row.media_size_bytes ?? 0,
+  };
+}
+
+/**
+ * LRU için: tahliye edilebilir satırlar, EN ESKİ ERİŞİM ÖNCE.
+ *
+ * `media_cached_at_ms IS NOT NULL` AYNI şart — kendi gönderdiğimiz kaydın
+ * dosyası bu listeye hiç girmiyor (Task 2'nin tahliyesi onu seçemesin diye,
+ * bkz. migrations.ts V11).
+ *
+ * Mesajın silinmiş olması ya da sohbetin kapanmış olması BİLEREK süzülmüyor:
+ * bu liste "diskte ne kadar yer tutuyoruz" sorusuna cevap, ve silinmiş bir
+ * mesajın önbellek dosyası hâlâ diskte duruyorsa cevaba dahil olmak zorunda
+ * — yoksa Task 2'nin bayt tavanı gerçek kullanımın altını gösterir.
+ * Silinmiş mesajın dosyasını ZORLA temizlemek (UT-6606) ayrı bir yol, burada
+ * değil (Task 3).
+ */
+export function readCacheEntriesOldestFirst(): MediaCacheRow[] {
+  return getChatDb()
+    .getAll<{
+      id: string;
+      local_uri: string;
+      media_cached_at_ms: number;
+      media_size_bytes: number | null;
+    }>(
+      `SELECT id, local_uri, media_cached_at_ms, media_size_bytes FROM messages
+        WHERE media_cached_at_ms IS NOT NULL
+        ORDER BY media_cached_at_ms ASC, id ASC`,
+    )
+    .map((r) => ({
+      message_id: r.id,
+      local_uri: r.local_uri,
+      media_cached_at_ms: r.media_cached_at_ms,
+      size_bytes: r.media_size_bytes ?? 0,
+    }));
+}
+
+/** Erişim damgasını tazeler (LRU'nun "recently used" yarısı). */
+export function touchMediaCache(messageId: string, nowMs: number): void {
+  getChatDb().run(
+    `UPDATE messages SET media_cached_at_ms = ?
+      WHERE id = ? AND media_cached_at_ms IS NOT NULL`,
+    [nowMs, messageId],
+  );
+}
+
+/**
+ * Satırı düşürür (dosyayı SİLMEZ — çağıran siler).
+ *
+ * Yalnız `media_cached_at_ms` / `media_size_bytes` NULL'lanır, `local_uri`'ye
+ * DOKUNULMAZ: dosyayı silen çağıran (Task 3), ve dosya silme işlemi
+ * BAŞARISIZ olursa yol hâlâ burada duruyor olmalı — yoksa o dosya diskte
+ * yetim kalır ve bir daha hiçbir koddan erişilemez.
+ */
+export function clearMediaCache(messageIds: string[]): void {
+  if (!messageIds.length) return;
+  const holes = messageIds.map(() => '?').join(',');
+  getChatDb().run(
+    `UPDATE messages SET media_cached_at_ms = NULL, media_size_bytes = NULL
+      WHERE id IN (${holes})`,
+    messageIds,
+  );
+}
+
+/**
+ * Logout/wipe için: silinecek TÜM yerel yolları döndürür.
+ *
+ * Kendi gönderdiğimiz kaydın yolu KASITLI DIŞARIDA (`media_cached_at_ms IS
+ * NOT NULL` şartı onu eler) — bu fonksiyon "önbellek kopyalarını" listeler,
+ * kendi kaydımızın dosyası bu fazda hâlâ outbox'ın mülkü.
+ *
+ * Bu fonksiyon HENÜZ hiçbir yerden çağrılmıyor — `clearAllChatData`'ya
+ * kablolamak Task 3'ün işi (dosyaları silen yol orada kuruluyor). Burada
+ * yalnız depo fonksiyonu var; logout davranışı bu commit'le DEĞİŞMİYOR.
+ */
+export function readAllCachedUris(): string[] {
+  return getChatDb()
+    .getAll<{ local_uri: string }>(
+      `SELECT local_uri FROM messages WHERE media_cached_at_ms IS NOT NULL`,
+    )
+    .map((r) => r.local_uri);
 }
 
 export function setSendState(clientMessageId: string, sendState: SendState): void {

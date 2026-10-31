@@ -348,6 +348,30 @@ CREATE INDEX idx_messages_unfolded ON messages (sent_at_ms DESC)
   WHERE content_folded IS NULL;
 `;
 
+/**
+ * v11 — `media_cached_at_ms` / `media_size_bytes`: GELEN medyanın yerel kopya
+ * önbelleği.
+ *
+ * `local_uri` (v1) bugüne kadar YALNIZ kendi gönderdiğimiz sesin yerel
+ * dosyasını gösteriyordu; bu sürümle anlamı genişliyor — "bu mesajın
+ * medyasının yerel kopyası", iki kaynaktan dolabiliyor (kendi kaydımız ya da
+ * indirilmiş kopya). İKİNCİ bir yol kolonu AÇILMADI: aynı kolon, iki yazıcı,
+ * iki format bu dosyanın tarihçesinde bir kez yaşandı. Ayrım `local_uri`de
+ * değil, bu iki kolonun VARLIĞINDA: `media_cached_at_ms` dolu = "bu yerel
+ * dosya tahliye edilebilir bir önbellek kopyası"; kendi kaydımız bu damgayı
+ * hiç almaz, bu yüzden LRU tahliyesi (Task 2) onu seçemez — o dosya, yükleme
+ * tamamlanana kadar TEK kopya.
+ *
+ * `media_size_bytes` AYRI kolon, `stat`ten türetilmiyor: tavan BAYT cinsinden
+ * ve her tahliye turunda diskteki her dosyayı tek tek `stat`lamak senkron
+ * açılış yolunu yavaşlatırdı. İndirme anında yazılıyor, bu yüzden diskten
+ * sapması mümkün değil.
+ */
+const V11 = `
+ALTER TABLE messages ADD COLUMN media_cached_at_ms INTEGER;
+ALTER TABLE messages ADD COLUMN media_size_bytes INTEGER;
+`;
+
 export const MIGRATIONS: { version: number; up: (db: ChatDbDriver) => void }[] = [
   { version: 1, up: (db) => db.exec(V1) },
   { version: 2, up: (db) => db.exec(V2) },
@@ -359,6 +383,7 @@ export const MIGRATIONS: { version: number; up: (db: ChatDbDriver) => void }[] =
   { version: 8, up: (db) => db.exec(V8) },
   { version: 9, up: (db) => db.exec(V9) },
   { version: 10, up: (db) => db.exec(V10) },
+  { version: 11, up: (db) => db.exec(V11) },
 ];
 
 export const CHAT_DB_VERSION = MIGRATIONS[MIGRATIONS.length - 1].version;
