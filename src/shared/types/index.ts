@@ -495,11 +495,21 @@ export type PaywallType =
  * hiç bahsi geçmeyen bir fotoğrafın altında yorum görür.
  */
 export interface NoteTarget {
-  kind: "Photo" | "Prompt";
+  kind: "Photo" | "Prompt" | "FeedPost";
   /** 0 = ana fotoğraf. `kind === "Photo"` dışında null. */
   photoIndex: number | null;
   /** Katalog `enumName`'i (ProfilePromptCard.promptKey). `kind === "Prompt"` dışında null. */
   promptKey: string | null;
+  /**
+   * Akış gönderisinin id'si. `kind === "FeedPost"` dışında null.
+   *
+   * ⚠️ `photoIndex` ile AYNI UYARI, aynı sebeple: bu bir GÖNDERİM anahtarı,
+   * kalıcı kimlik değil. Gönderi silinebiliyor, süresi doluyor (`createdAt +
+   * 15 gün`) ya da moderasyondan kalkıyor; sunucu hedefi gönderim anında
+   * çözüp ANLIK GÖRÜNTÜ olarak saklamak zorunda. Saklamazsa alıcı bir gün
+   * bağlamsız bir not okur (bkz. backend_feed_post_note_2026-10-30.md §1).
+   */
+  postId: string | null;
 }
 
 /**
@@ -519,12 +529,25 @@ export interface LikerNote {
   /** ISO + Z. */
   sentAt?: string | null;
   target?: {
-    kind: "Photo" | "Prompt";
+    kind: "Photo" | "Prompt" | "FeedPost";
     photoUrl?: string | null;
     promptKey?: string | null;
     /** İzleyicinin dilinde çözülmüş soru metni. */
     promptDisplay?: string | null;
     promptAnswer?: string | null;
+    /** `kind === "FeedPost"`: notun yazıldığı gönderi. */
+    postId?: string | null;
+    /** Gönderinin GÖNDERİM ANINDAKİ metni (anlık görüntü) — alıntı bloğunda basılıyor. */
+    excerpt?: string | null;
+    /** Gönderinin konusu, PascalCase enum anahtarı (akıştaki `topic` ile aynı küme). */
+    postTopic?: string | null;
+    /** Gönderi silinmiş/kaldırılmış: not yine okunabilir, altına bir satır düşüyor. */
+    postDeleted?: boolean | null;
+    /**
+     * Hazır etiket metni. Akış-yanıtı döneminden kalan yol: doluysa i18n
+     * yedeği yerine bu basılıyor (bkz. LikeNoteBox).
+     */
+    label?: string | null;
   } | null;
 }
 

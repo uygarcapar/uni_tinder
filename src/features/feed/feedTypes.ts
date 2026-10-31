@@ -132,6 +132,32 @@ export interface FeedPostDto {
   /** Yalnız isMine = true iken dolu. */
   replyCount: number | null;
   reply: { state: FeedReplyState; conversationId: string | null };
+  /**
+   * Not butonunun durumu — `reply` gibi, kararı SUNUCU veriyor.
+   *
+   * ⚠️ İstemci bunu YENİDEN HESAPLAMIYOR ve hesaplayamaz: satır yazarın hangi
+   * modlarının izleyiciye uygun olduğunu, yazarın izleyiciyi beğenip
+   * beğenmediğini ya da eşleşilmiş olup olmadığını taşımıyor (o bilgi
+   * `author-profile` ucunda), üstelik not KİŞİ BAŞINA tek gidiyor
+   * (`UT-6404 ALREADY_SWIPED`) ve "bu kişiye daha önce not gitti mi" istemcide
+   * hiç yok — `whoLikedMeIds` yalnız ilk sayfayı tutuyor.
+   *
+   * Alan HİÇ GELMEZSE buton çizilmiyor (`FeedAuthorProfileGate` ile aynı
+   * gerekçe: olmayan bir hakkı varsaymak, reddedilecek bir buton çizmek olur).
+   */
+  note?: FeedPostNoteGate;
+}
+
+/**
+ * ⚠️ `state` STRING, union DEĞİL. Sunucu listeye yeni bir değer eklediğinde
+ * (yeni bir kapalı hâl) eski istemci onu tanımayacak ve `canNotePost` beyaz
+ * liste olduğu için "çizme" tarafında kalacak. Union yazılsaydı tip, gelmesi
+ * beklenen değerleri olduğundan dar gösterirdi.
+ */
+export interface FeedPostNoteGate {
+  state: string;
+  /** Karşılıklı uygun modlar — yalnız `state === "Ok"` iken anlamlı. */
+  availableModes?: string[];
 }
 
 export interface FeedQuotaDto {

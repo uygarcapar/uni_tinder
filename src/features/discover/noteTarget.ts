@@ -57,11 +57,19 @@ export const clampNoteText = (text: string, limit: number): string =>
   noteLength(text) <= limit ? text : [...text].slice(0, limit).join("");
 
 export function photoNoteTarget(photoIndex: number): NoteTarget {
-  return { kind: "Photo", photoIndex, promptKey: null };
+  return { kind: "Photo", photoIndex, promptKey: null, postId: null };
 }
 
 export function promptNoteTarget(promptKey: string): NoteTarget {
-  return { kind: "Prompt", photoIndex: null, promptKey };
+  return { kind: "Prompt", photoIndex: null, promptKey, postId: null };
+}
+
+/**
+ * Akış gönderisi hedefi. Fotoğraf/prompt hedeflerinden farkı yalnız anahtarın
+ * nereden geldiği: not semantiği (kota, tavan, beğeni sayılması) birebir aynı.
+ */
+export function postNoteTarget(postId: string): NoteTarget {
+  return { kind: "FeedPost", photoIndex: null, promptKey: null, postId };
 }
 
 /** İki hedef aynı içeriği mi gösteriyor — composer'ın açık olduğu kutuyu işaretlemek için. */
@@ -71,9 +79,9 @@ export function isSameNoteTarget(
 ): boolean {
   if (!a || !b) return false;
   if (a.kind !== b.kind) return false;
-  return a.kind === "Photo"
-    ? a.photoIndex === b.photoIndex
-    : a.promptKey === b.promptKey;
+  if (a.kind === "Photo") return a.photoIndex === b.photoIndex;
+  if (a.kind === "FeedPost") return a.postId === b.postId;
+  return a.promptKey === b.promptKey;
 }
 
 /**
@@ -89,6 +97,10 @@ export function noteTargetLabel(
   prompts: ProfilePromptCard[] | null | undefined,
   t: (key: string, opts?: Record<string, unknown>) => string,
 ): string {
+  // Gönderi hedefinde başlık JENERİK: gönderinin metni composer'da hedefin
+  // kendi önizlemesi olarak zaten duruyor (bkz. NoteComposerModal >
+  // PostTargetChip), başlıkta ikinci kez tekrarlanması gerekmiyor.
+  if (target.kind === "FeedPost") return t("note.targetPost");
   if (target.kind === "Prompt") {
     const found = (prompts ?? []).find((p) => p.promptKey === target.promptKey);
     return found?.promptDisplay || t("note.targetPrompt");
@@ -104,5 +116,6 @@ export function noteTargetPayload(target: NoteTarget) {
     kind: target.kind,
     photoIndex: target.kind === "Photo" ? target.photoIndex : null,
     promptKey: target.kind === "Prompt" ? target.promptKey : null,
+    postId: target.kind === "FeedPost" ? target.postId : null,
   };
 }
