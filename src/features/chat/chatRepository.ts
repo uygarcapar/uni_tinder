@@ -1545,20 +1545,34 @@ export interface MediaCacheRow {
  * `media_cached_at_ms`, `media_size_bytes`) yazan TEK kapı. `voicePlayback.ts`
  * SQL görmüyor, buradan geçmek zorunda.
  *
- * `row_version` BİLEREK artmıyor ve gerekçe ŞU (Faz 5 review, Kritik 1'den
- * sonra düzeltildi — eski hâli "bu kolonlar projekte edilmiyor" diyordu, bu
- * YANLIŞTI: `local_uri` projekte EDİLİYOR ve `canPlay`/oynatma kaynağı onun
- * üstünde karar veriyor):
+ * ── `row_version` muafiyeti: ne DOĞRU, ne DEĞİL ────────────────────────────
+ * Bu yorum iki kez yanlış yazıldı; üçüncü hâli iddiayı daraltıyor.
  *
- * Bu üç kolonun HİÇBİRİ artık DTO'ya ÇIKMIYOR — `rows.ts` `_localUri`'yi
- * yalnız "kendi kaydımız" satırlarında yazıyor (cmid var + damga yok) ve
- * `setMediaCache` tam olarak o kapıyı KAPATAN kolona yazıyor. Yani bu
- * UPDATE'in projeksiyon çıktısında gözlenebilir bir etkisi yok; sürümü
- * artırmak tüm mesaj akışını messageCache'in hızlı yolundan düşürürdü,
- * karşılığında sıfır görsel fark üretirdi.
+ * (1) İlk hâl "bu üç kolon ekrana projekte edilmiyor" diyordu — YANLIŞTI,
+ *     `local_uri` projekte ediliyordu (Faz 5 review, Kritik 1).
+ * (2) İkinci hâl "artık hiçbiri DTO'ya çıkmıyor, UPDATE'in projeksiyon
+ *     çıktısında gözlenebilir etkisi yok" diyordu — BU DA YANLIŞ: `rows.ts`in
+ *     kapısı `media_cached_at_ms`i GİRDİ olarak kullanıyor, yani bu UPDATE
+ *     cmid TAŞIYAN bir satırda doğru `_localUri` değerini (yol → null)
+ *     DEĞİŞTİRİYOR. `row_version` artmadığı için `messageCache.projectRow`un
+ *     hızlı yolu o oturum boyunca ESKİ nesneyi servis etmeye devam ediyor ve
+ *     DTO bir sonraki açılışa kadar BAYAT kalıyor.
  *
- * DİKKAT: bu kolonlardan biri bir gün ekrana taşınırsa (ör. "çevrimdışı
- * hazır" rozeti) bu muafiyet ÇÖKER — o zaman sürüm artırılmalı.
+ * Yani muafiyetin gerçek gerekçesi "etkisi yok" DEĞİL, "bayatlığı ZARARSIZ":
+ *   • Kendi kaydımız önbelleğe alındığında (dosyası kaybolup yeniden
+ *     indirildiğinde) DTO bir süre recorder yolunu göstermeye devam ediyor —
+ *     o yol zaten ölü, oynatma hata hâline geçiyor ve `player` hiç kurulmadığı
+ *     için BİR SONRAKİ dokunuş tam yükleme akışına düşüyor; açılışta da
+ *     kendiliğinden düzeliyor. Kalıcı bir kilitlenme yok.
+ *   • `clearMediaCache` (tahliye/UT-6606) artık `local_uri`yi de NULL'ladığı
+ *     için ters yönde bayatlık ÖLÜ YOL üretmiyor: eski nesne zaten kapının
+ *     dışında kalan bir satırdan doğmuştu.
+ * Sürümü artırmanın bedeli ise tüm mesaj akışını messageCache'in hızlı
+ * yolundan düşürmek — ölçülmüş bir commit-storm riski (bkz. messageCache.ts).
+ *
+ * DİKKAT: bu kolonlardan biri ekrana GÖRÜNÜR bir şey olarak taşınırsa (ör.
+ * "çevrimdışı hazır" rozeti), ya da bayatlığın kurtarılabilir olmadığı bir
+ * dal eklenirse, muafiyet ÇÖKER — o zaman sürüm artırılmalı.
  */
 export function setMediaCache(
   messageId: string,
@@ -1716,24 +1730,35 @@ export function touchMediaCache(messageId: string, nowMs: number): void {
 }
 
 /**
- * Satırı düşürür (dosyayı SİLMEZ — çağıran siler).
+ * Önbellek kaydını satırdan tamamen düşürür — damga, boyut VE yol (dosyayı
+ * SİLMEZ; onu çağıran siler).
  *
- * Yalnız `media_cached_at_ms` / `media_size_bytes` NULL'lanır, `local_uri`'ye
- * DOKUNULMAZ: dosyayı silen çağıran (Task 3), ve dosya silme işlemi
- * BAŞARISIZ olursa yol hâlâ burada duruyor olmalı — yoksa o dosya diskte
- * yetim kalır ve bir daha hiçbir koddan erişilemez.
+ * ── `local_uri` de NULL'lanıyor (Faz 5 review turu 2, Önemli) ───────────────
+ * İlk hâl yolu KORUYORDU, gerekçesi "dosya silme başarısız olursa yol o
+ * dosyanın tek izi; silmek onu erişilemez bir yetim yapar"dı. O gerekçe ARTIK
+ * GEÇERSİZ: C2'nin açılış uzlaştırması (`mediaCache.reconcileMediaCacheDirectory`)
+ * yetimleri DİZİNİ LİSTELEYEREK buluyor, yani bir dosyayı bulmak için
+ * defterdeki yola hiç ihtiyaç yok.
  *
- * Bu, tahliye edilmiş bir GELEN satırı "damgasız + yollu" hâlde bırakıyor,
- * yani kendi kaydımızla aynı şekle sokuyor. Bu belirsizliği okuyan taraf
- * çözüyor, yazan taraf değil: `readOwnRecordingUri` ve `rows.ts` sahipliği
- * `client_message_id` üzerinden POZİTİF test ediyor (Faz 5 review, Önemli 4).
+ * Yolu bırakmanın bedeli ise ağırdı: cmid TAŞIYAN bir satır önbellekten geçip
+ * sonra tahliye/`dropCachedMedia`/başarısız-yeniden-indirme dallarından birine
+ * düşünce "damga yok + cmid var + önbellek yolu" hâline geliyor, yani
+ * `rows.ts`in kapısından GEÇİYOR ve oynatıcıya ÖLÜ bir yol gidiyordu —
+ * `ensureCachedMedia` hiç çağrılmadığı için var-mı kontrolü, yeniden indirme
+ * ve LRU touch'ın hiçbiri koşmuyordu (Kritik 1'in kendi mesajlarımız için
+ * hayatta kalan hâli). Üstelik açılış süpürmesi dosyanın GERÇEKTEN gittiğini
+ * garanti ettiği için o yol kesin ölüydü: mesaj KALICI olarak çalınamaz.
+ *
+ * `media_cached_at_ms IS NOT NULL` koşulu, "bu kapı outbox'ın TEK referansını
+ * asla silemez"i çağıranın disiplinine değil SQL'e bağlıyor: damgasız bir
+ * satırın (kendi kaydımızın) `local_uri`'si bu UPDATE'ten etkilenmiyor.
  */
 export function clearMediaCache(messageIds: string[]): void {
   if (!messageIds.length) return;
   const holes = messageIds.map(() => '?').join(',');
   getChatDb().run(
-    `UPDATE messages SET media_cached_at_ms = NULL, media_size_bytes = NULL
-      WHERE id IN (${holes})`,
+    `UPDATE messages SET media_cached_at_ms = NULL, media_size_bytes = NULL, local_uri = NULL
+      WHERE id IN (${holes}) AND media_cached_at_ms IS NOT NULL`,
     messageIds,
   );
 }
@@ -1745,10 +1770,12 @@ export function clearMediaCache(messageIds: string[]): void {
  * NOT NULL` şartı onu eler) — bu fonksiyon "önbellek kopyalarını" listeler,
  * kendi kaydımızın dosyası bu fazda hâlâ outbox'ın mülkü.
  *
- * Task 3 ile birlikte artık kablolu: `mediaCache.wipeMediaCache` bu listeyi
- * okuyup dosyaları siliyor, `chatMirrorMiddleware`'in `chat/resetChat`
- * choke-point'i de `clearAllChatData`'dan ÖNCE onu çağırıyor — sıra kritik,
- * tablo boşaldıktan sonra çağrılsaydı bu fonksiyon boş liste görürdü.
+ * ⚠️ ÜRETİMDE ÇAĞIRANI YOK (Faz 5 review turu 2). `wipeMediaCache` eskiden bu
+ * listeyi dolaşıyordu; artık önbellek DİZİNİNİ siliyor (Kritik 2 — defter
+ * dolaşmak, satırı silinmiş dosyaları hiç bulamıyordu). Fonksiyon yalnız
+ * testlerde kaldı: "defterde ne var" sorusunun en doğrudan ifadesi ve
+ * `media_cached_at_ms` filtresinin doğruluğunu oradan okunabilir kılıyor.
+ * Yeni bir üretim çağıranı eklenecekse önce bu notu sil.
  */
 export function readAllCachedUris(): string[] {
   return getChatDb()
@@ -2131,8 +2158,12 @@ export function setSyncWatermark(watermark: string | null): void {
  * önceki yorum olmayan bir kill-switch çağrısı iddia ediyordu).
  *
  * Bu fonksiyonun kendisi medya dosyasına DOKUNMAZ — `mediaCache.wipeMediaCache()`
- * çağırana ait ve SIRAYLA bundan ÖNCE çalışmak zorunda (bkz. readAllCachedUris
- * yorumu).
+ * çağırana ait ve SIRAYLA bundan ÖNCE çalışmak zorunda. Gerekçe artık inen
+ * kopyalar DEĞİL (onlar için dizin topluca siliniyor, defterden bağımsız):
+ * KENDİ kayıtlarımızın dosyaları recorder'ın OS cache dizininde duruyor ve
+ * adresleri YALNIZ `messages.local_uri`de — tablo boşaldıktan sonra
+ * `readAllOwnRecordingUris` boş liste görür ve önceki kullanıcının kendi sesi
+ * diskte kalır.
  */
 export function clearAllChatData(): void {
   const db = getChatDb();
