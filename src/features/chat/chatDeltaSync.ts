@@ -233,11 +233,17 @@ let lastPullAt = 0;
  * Paylaşımlı kova (`messaging_default` = 200 istek/60sn, TÜM
  * MessagesController, kullanıcı başına) zaten geçmiş sayfalama + backfill (80
  * rezerv) + mutasyon kuyruğu (20 rezerv) tarafından paylaşılıyor; bu tur
- * DÖRDÜNCÜ tüketici. 3 dakikalık bir periyot kovaya göre ihmal edilebilir
- * (dakikada en fazla 1/3 istek) ama hub bağlı kalıp bir event kaçırıldığında
- * ekranı dakikalar içinde taze tutmaya yetiyor — roadmap'in kendi ifadesiyle
- * "bugün bilinen bir şikâyet üretmeyen" bir deliği kapatmak için yeterince
- * seyrek. CİHAZDA HİÇ ÖLÇÜLMEDİ: pil etkisi bilinmiyor.
+ * DÖRDÜNCÜ tüketici. Durağan hâlde maliyeti ihmal edilebilir — dakikada en
+ * fazla 1/3 istek (çoğu turda tek sayfa döner). Ancak bu bir TAVAN DEĞİL:
+ * `run()` birikmiş bir watermark farkında `MAX_PAGES` (50) sayfaya kadar art
+ * arda çekebiliyor, yani uzun süre arka planda/offline kalmış bir oturumun
+ * İLK periyodik turu tek seferde 50 isteğe kadar çıkabilir. Bu patlama kovaya
+ * sığıyor (backfill 80 + kuyruk 20 ayrıldıktan sonra sayfalama+delta için kalan
+ * ~100/dk'nın içinde) ama "seyrek" yalnız durağan hâl için geçerli bir sıfat —
+ * birikmiş bir oturumda değil. 3 dakikalık periyot hub bağlı kalıp bir event
+ * kaçırıldığında ekranı dakikalar içinde taze tutmaya yetiyor — roadmap'in
+ * kendi ifadesiyle "bugün bilinen bir şikâyet üretmeyen" bir deliği kapatmak
+ * için yeterince seyrek. CİHAZDA HİÇ ÖLÇÜLMEDİ: pil etkisi bilinmiyor.
  */
 export const PERIODIC_PULL_INTERVAL_MS = 180_000;
 
@@ -345,6 +351,12 @@ export function startDeltaSync(deps: DeltaSyncDeps): () => void {
   // zamanlayıcı o deliği kapatıyor — YENİ bir tur mantığı yok, yalnız `fire()`a
   // seyrek bir ek tetikleyici. Yaşam döngüsü foreground'a bağlı: 'active'te
   // kuruluyor, background/inactive'te temizleniyor (Review Focus 1).
+  //
+  // `inactive`i de durdurma sayıyoruz (iOS'ta bildirim perdesi/çağrı bandı
+  // gibi KISA kesintilerde de geliyor), yani periyot her kesintide sıfırdan
+  // başlıyor — "3 dakikada bir" üst sınır, taban garanti değil. Kabul
+  // edilebilir: sızıntı yok (idempotent startPeriodic), ve her 'active'te
+  // zaten mevcut `fire('foreground')` ayrıca bir tur deniyor.
   let periodicTimer: ReturnType<typeof setInterval> | null = null;
 
   const stopPeriodic = () => {
@@ -379,6 +391,14 @@ export function startDeltaSync(deps: DeltaSyncDeps): () => void {
     if (!realtimeService.isConnected()) return;
     void fire('foreground');
   });
+
+  // Soğuk açılış: RN `'change'` event'i ABONE OLURKEN YAYINLANMIYOR, yani
+  // yukarıdaki handler uygulama zaten foreground'dayken hiç tetiklenmez —
+  // kullanıcı ilk arka plan/öne dönüş turunu yapana kadar zamanlayıcı kurulmaz.
+  // Tam da bu fazın kapatmaya çalıştığı delik: "tek uzun foreground oturumunda"
+  // periyodik tur hiç çalışmazdı. `currentState` zaten mevcut değeri taşıyor,
+  // ekstra bir event beklemeye gerek yok.
+  if (AppState.currentState === 'active') startPeriodic();
 
   return () => {
     offConnection();

@@ -29,15 +29,22 @@ jest.mock('@/features/chat/realtimeService', () => ({
   },
 }));
 
-const mockAppState: { handler: ((s: string) => void) | null; remove: jest.Mock } = {
+// `currentState` eklendi (Critical 1 düzeltmesi): gerçek RN `AppState`
+// aboneliği KURULURKEN bir 'change' event'i yayınlamıyor, yani soğuk açılışta
+// mevcut değeri yalnız `currentState` taşıyor.
+const mockAppState: { handler: ((s: string) => void) | null; remove: jest.Mock; currentState: string } = {
   handler: null,
   remove: jest.fn(),
+  currentState: 'active',
 };
 jest.mock('react-native', () => ({
   AppState: {
     addEventListener: (_e: string, cb: (s: string) => void) => {
       mockAppState.handler = cb;
       return { remove: mockAppState.remove };
+    },
+    get currentState() {
+      return mockAppState.currentState;
     },
   },
 }));
@@ -86,6 +93,7 @@ beforeEach(() => {
   for (const k of Object.keys(mockRealtimeHandlers)) delete mockRealtimeHandlers[k];
   mockAppState.handler = null;
   mockAppState.remove.mockReset();
+  mockAppState.currentState = 'active';
   jest.useFakeTimers({ doNotFake: ['setImmediate'] });
   jest.setSystemTime(new Date('2026-09-18T10:00:00Z'));
   mockHub.connected = true;
@@ -104,6 +112,39 @@ describe('sabit ilişkisi', () => {
 });
 
 describe('periyodik tetik', () => {
+  // Critical 1 — ayırt edici: HİÇBİR 'change' event'i yayınlanmıyor. Gerçek
+  // RN `AppState` aboneliği kurulurken geçmişe dönük bir event atmıyor; uzun
+  // bir foreground oturumunda (uygulama açık, hiç arkaya atılmadan) zamanlayıcı
+  // yalnızca `AppState.currentState` soğuk-açılış okumasıyla kurulabilir.
+  // `mockAppState.handler` BİLEREK hiç çağrılmıyor — çağrılsaydı bu, gerçek
+  // RN'in asla sağlamadığı bir event'i taklit eder ve asıl deliği gizlerdi.
+  it("soğuk açılışta foreground'dayken — hiç AppState event'i olmadan — periyot koşuyor", async () => {
+    mockAppState.currentState = 'active';
+    startDeltaSync(deps());
+    await flush();
+
+    // Henüz hiçbir şey çekmemiş olmalı: 'connected' de 'active' de hiç
+    // yayınlanmadı.
+    expect(getChanges).not.toHaveBeenCalled();
+
+    // Ayırt edici kısım: periyodu ilerletmek, AppState'e hiç dokunmadan.
+    // Zamanlayıcı yalnızca `startDeltaSync` içindeki soğuk-açılış kontrolüyle
+    // kurulduysa bu çağrı üretir; yalnız 'change' handler'ına bağlıysa üretmez.
+    await jest.advanceTimersByTimeAsync(PERIODIC_PULL_INTERVAL_MS);
+
+    expect(getChanges).toHaveBeenCalledTimes(1);
+  });
+
+  it('soğuk açılışta arka plandaysa periyot kurulmuyor', async () => {
+    mockAppState.currentState = 'background';
+    startDeltaSync(deps());
+    await flush();
+
+    await jest.advanceTimersByTimeAsync(PERIODIC_PULL_INTERVAL_MS * 3);
+
+    expect(getChanges).not.toHaveBeenCalled();
+  });
+
   it('foreground + hub bağlıyken periyot dolunca tur koşuyor', async () => {
     startDeltaSync(deps());
 

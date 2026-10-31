@@ -21,7 +21,15 @@ const mockAppState: { addEventListener: jest.Mock } = {
   addEventListener: jest.fn(() => ({ remove: jest.fn() })),
 };
 jest.mock('react-native', () => ({
-  AppState: { addEventListener: (...args: unknown[]) => mockAppState.addEventListener(...args) },
+  AppState: {
+    addEventListener: (...args: unknown[]) => mockAppState.addEventListener(...args),
+    // Üretim kodu soğuk açılışta `currentState`i okuyor (Faz 6) ama bu YALNIZ
+    // bayrak açıkken erişilen bir dal — kapalıyken `startDeltaSync` ilk
+    // satırda dönüyor. Burada yine de tanımlı tutmak, "bayrak kapalı" testini
+    // kodun erişmediği bir alanın undefined olmasına değil, gerçek kapıya
+    // bağlı tutuyor.
+    currentState: 'active',
+  },
 }));
 jest.mock('@/features/chat/realtimeService', () => ({
   __esModule: true,
