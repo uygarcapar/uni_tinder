@@ -397,9 +397,17 @@ function mirror(action: any, getState: () => any): void {
     // süreç sonlandırma sırasına ait ve boşaltılmış tablo zaten okunacak bir
     // şey bırakmıyor.
     case 'chat/resetChat':
-      wipeMediaCache();
-      repo.clearAllChatData();
-      clearMessageCache();
+      // try/finally: wipeMediaCache patlarsa bile (tek tek dosya hatalarını
+      // zaten kendi içinde yutuyor, ama beklenmedik bir şey olabilir) tablo
+      // ve JS heap temizliği ATLANMAMALI — ikisi de gizlilik garantisi,
+      // birinin düşmesi diğerini feda etmemeli. Dış `mirror` try/catch'i de
+      // bunu yutuyor olsa bile, burada açıkça garanti etmek niyeti gösteriyor.
+      try {
+        wipeMediaCache();
+      } finally {
+        repo.clearAllChatData();
+        clearMessageCache();
+      }
       return;
 
     default:

@@ -283,17 +283,25 @@ describe('realtime event\'leri aynalanıyor (AppNavigator\'a dokunmadan)', () =>
     const { dispatch } = makeHarness();
     dispatch({ type: 'chat/receiveMessage', payload: msg(1) });
 
+    // DİKKAT (review Important 1): `expect` BURADA değil, mock'un İÇİNDE
+    // çağrılsaydı test asla kırılamazdı — bu callback `mirror()`'ın try/catch'i
+    // içinde çalışıyor (chatMirrorMiddleware.ts), yani içeride atılan bir
+    // throw sessizce yutulur ve dışarıdaki tek assertion (`toHaveBeenCalledTimes`)
+    // yine de geçerdi. Bunun yerine değeri DIŞARI taşıyıp testin kendi
+    // gövdesinde doğruluyoruz.
+    let idsAtWipeTime: string[] | undefined;
     (wipeMediaCache as jest.Mock).mockImplementation(() => {
-      // wipeMediaCache çalıştığı anda tablo HÂLÂ dolu olmalı — tersi sırada
-      // çağrılsaydı (clearAllChatData'dan sonra) readAllCachedUris boş liste
-      // görür ve dosyalar diskte yetim kalırdı (bkz. chatRepository.ts
-      // readAllCachedUris yorumu).
-      expect(ids()).toEqual(['m1']);
+      idsAtWipeTime = ids();
     });
 
     dispatch({ type: 'chat/resetChat' });
 
     expect(wipeMediaCache).toHaveBeenCalledTimes(1);
+    // wipeMediaCache çalıştığı anda tablo HÂLÂ dolu olmalı — tersi sırada
+    // çağrılsaydı (clearAllChatData'dan sonra) readAllCachedUris boş liste
+    // görür ve dosyalar diskte yetim kalırdı (bkz. chatRepository.ts
+    // readAllCachedUris yorumu).
+    expect(idsAtWipeTime).toEqual(['m1']);
   });
 
   it('resetChat JS HEAP\'ini de temizler — projekte nesneler sızmamalı', () => {

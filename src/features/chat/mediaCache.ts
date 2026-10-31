@@ -4,6 +4,7 @@ import {
   readAllCachedUris,
   readCacheEntriesOldestFirst,
   readMediaCache,
+  readOwnRecordingUri,
   setMediaCache,
   touchMediaCache,
   type MediaCacheRow,
@@ -11,6 +12,11 @@ import {
 import { MEDIA_CACHE_MAX_BYTES, selectEvictions } from '@/features/chat/mediaCachePolicy';
 import chatService from '@/features/chat/chatService';
 import { devLog } from '@/shared/utils/devLog';
+
+/** Log satırını kısaltır — tam stack yerine yalnız mesaj (gürültüsüz dev konsolu). */
+function errMessage(err: unknown): string {
+  return err instanceof Error ? err.message : String(err);
+}
 
 /**
  * Medya önbelleği YÜRÜTÜCÜSÜ — indirme, diskten silme ve Task 1/2'yi
@@ -58,7 +64,7 @@ function deleteIfExists(uri: string): void {
   } catch (err) {
     // Silme başarısız olabilir (izin, dosya zaten yok) — çağıran yine de
     // satırı düşürüyor; aşağıdaki fonksiyonlardaki yorumlara bakın.
-    devLog('🎧 [mediaCache] dosya silinemedi', uri, err);
+    devLog('🎧 [mediaCache] dosya silinemedi', uri, errMessage(err));
   }
 }
 
@@ -83,6 +89,18 @@ export async function ensureCachedMedia(messageId: string): Promise<string | nul
     }
     // Satır var ama dosya yok — yetim referansı düşür, indirmeye devam et.
     clearMediaCache([messageId]);
+  } else {
+    // Önbellek satırı yok — ama bu kendi gönderdiğimiz kaydın dosyası olabilir
+    // (outbox'ın mülkü, `media_cached_at_ms` hiç yazılmadı; bkz. Review
+    // Important 3). Bu durumda ALTTAKİ indirme yoluna HİÇ girilmemeli:
+    // `setMediaCache` çağrılırsa outbox'ın TEK referansı olan `local_uri`
+    // üstüne yazılır ve o dosya bir daha hiçbir koddan — `wipeMediaCache`
+    // dahil — erişilemez hale gelir.
+    const ownUri = readOwnRecordingUri(messageId);
+    if (ownUri && new File(ownUri).exists) return ownUri;
+    // ownUri varken dosya gitmişse outbox'ın koruyacağı bir şey kalmadı —
+    // normal indirme yoluna düşülüyor (aşağısı), bu satır o düşüşü
+    // engellemiyor.
   }
 
   let mediaUrl: string;
@@ -90,16 +108,16 @@ export async function ensureCachedMedia(messageId: string): Promise<string | nul
     const result = await chatService.getMediaUrl(messageId);
     mediaUrl = result.url;
   } catch (err) {
-    devLog('🎧 [mediaCache] getMediaUrl patladı', messageId, err);
+    devLog('🎧 [mediaCache] getMediaUrl patladı', messageId, errMessage(err));
     return null;
   }
   if (!mediaUrl) return null;
 
+  const dir = cacheDirectory();
+  const destination = new File(dir, `${messageId}${extensionFromUrl(mediaUrl)}`);
   try {
-    const dir = cacheDirectory();
     const createOptions: DirectoryCreateOptions = { intermediates: true, idempotent: true };
     if (!dir.exists) dir.create(createOptions);
-    const destination = new File(dir, `${messageId}${extensionFromUrl(mediaUrl)}`);
     const downloadOptions: DownloadOptions = { idempotent: true };
     const downloaded = await File.downloadFileAsync(mediaUrl, destination, downloadOptions);
     const sizeBytes = Number(downloaded.size ?? 0);
@@ -110,7 +128,14 @@ export async function ensureCachedMedia(messageId: string): Promise<string | nul
     evictOverCap();
     return downloaded.uri;
   } catch (err) {
-    devLog('🎧 [mediaCache] indirme patladı', messageId, err);
+    // Yarım kalan indirme defter DIŞI bir dosya bırakabilir (ör. Android'de
+    // gövde akışı hedefe yazılırken bağlantı kopması) — satırsız bir dosya,
+    // `wipeMediaCache`'in ASLA bulamayacağı bir yetim demek (tam bu task'ın
+    // kapatmaya çalıştığı gizlilik şekli). `setMediaCache` hiç çağrılmadıysa
+    // ya da sonrasında bir şey patladıysa bile hedefte kalan her şeyi burada
+    // temizliyoruz.
+    deleteIfExists(destination.uri);
+    devLog('🎧 [mediaCache] indirme patladı', messageId, errMessage(err));
     return null;
   }
 }

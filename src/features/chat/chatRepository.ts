@@ -1591,6 +1591,27 @@ export function readMediaCache(messageId: string): MediaCacheRow | null {
 }
 
 /**
+ * `readMediaCache`'in AYNA GÖRÜNTÜSÜ: önbellek OLMAYAN yerel yol — yalnız
+ * kendi gönderdiğimiz kaydın dosyası (`media_cached_at_ms` NULL). İkisi
+ * birlikte "bu mesajın elimizde yerel bir kopyası var mı" sorusunun TAM
+ * cevabını oluşturuyor; biri önbellek, öbürü outbox'ın mülkü.
+ *
+ * Task 3 review (Important 3): `ensureCachedMedia` bu kapıdan GEÇMEDEN
+ * `setMediaCache` çağırırsa, az önce gönderilmiş kendi sesli mesajımızın TEK
+ * referansı olan `local_uri` üstüne yazılır — o dosya o andan sonra hiçbir
+ * koddan (`wipeMediaCache` dahil) erişilemez hale gelir. Bu fonksiyon tam o
+ * yazmayı engellemek için var.
+ */
+export function readOwnRecordingUri(messageId: string): string | null {
+  const row = getChatDb().getFirst<{ local_uri: string | null }>(
+    `SELECT local_uri FROM messages
+      WHERE id = ? AND media_cached_at_ms IS NULL AND local_uri IS NOT NULL`,
+    [messageId],
+  );
+  return row?.local_uri ?? null;
+}
+
+/**
  * LRU için: tahliye edilebilir satırlar, EN ESKİ ERİŞİM ÖNCE.
  *
  * `media_cached_at_ms IS NOT NULL` AYNI şart — kendi gönderdiğimiz kaydın
@@ -2038,11 +2059,14 @@ export function setSyncWatermark(watermark: string | null): void {
 }
 
 /**
- * Logout dışı toplu temizlik (ör. kill-switch kapanışı) İÇİN DE kullanılıyor,
- * ama asıl çağıran `chat/resetChat` (logout choke-point'i, bkz.
- * chatMirrorMiddleware). Bu fonksiyonun kendisi medya dosyasına DOKUNMAZ —
- * `mediaCache.wipeMediaCache()` çağırana ait ve SIRAYLA bundan ÖNCE
- * çalışmak zorunda (bkz. readAllCachedUris yorumu).
+ * Tek çağıranı `chat/resetChat` (logout choke-point'i, bkz.
+ * chatMirrorMiddleware) — isim "logout dışı toplu temizlik" ima etse de
+ * `src/` içinde başka hiçbir yerden çağrılmıyor (review turu 3 düzeltmesi:
+ * önceki yorum olmayan bir kill-switch çağrısı iddia ediyordu).
+ *
+ * Bu fonksiyonun kendisi medya dosyasına DOKUNMAZ — `mediaCache.wipeMediaCache()`
+ * çağırana ait ve SIRAYLA bundan ÖNCE çalışmak zorunda (bkz. readAllCachedUris
+ * yorumu).
  */
 export function clearAllChatData(): void {
   const db = getChatDb();
