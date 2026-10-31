@@ -1065,13 +1065,25 @@ function ChatScreen({
   // girene kadar gelmiyordu. Artık Task 1'in dördüncü mutasyon türü: niyet
   // diske yazılıp tur tetikleniyor, ne await edilir ne hata burada yakalanır
   // (geri alma YOK, rozet zaten yerelde düştü — bkz. pendingMutations.ts).
+  //
+  // BAYRAK KAPALIYKEN eski yol KORUNUYOR (reaksiyon/silmedeki `else` ile AYNI
+  // gerekçe, bkz. chatFlags.ts: "Kapatmak bugünkü (kuyruk ÖNCESİ) davranışa
+  // TAM döner"): bu çağrı zaten HER ZAMAN "açık"tı (eski kodda flag diye bir
+  // şey yoktu), yani flag kapanınca kuyruğa yazıp hiç DRAIN ETMEMEK (bkz.
+  // `flushPendingMutations`'ın `CHAT_MUTATION_QUEUE_ENABLED` kısa devresi)
+  // okundu bildirimini TAMAMEN susturur — yerini aldığı fire-and-forget'ten
+  // bile KÖTÜ bir sonuç.
   useEffect(() => {
     if (!isActive || !myUserId) return;
     const latest = latestPartnerSentAt(messages, myUserId);
     if (latest > lastReadSentAtRef.current) {
       lastReadSentAtRef.current = latest;
-      enqueueMarkRead(conversationId);
-      void flushPendingMutations("interactive");
+      if (CHAT_MUTATION_QUEUE_ENABLED) {
+        enqueueMarkRead(conversationId);
+        void flushPendingMutations("interactive");
+      } else {
+        chatService.markRead(conversationId).catch(() => {});
+      }
     }
   }, [messages, conversationId, isActive, myUserId]);
 

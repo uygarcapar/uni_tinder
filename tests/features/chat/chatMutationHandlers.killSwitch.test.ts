@@ -63,13 +63,14 @@ jest.mock('@legendapp/list/keyboard', () => ({
 
 const mockEnqueueReaction = jest.fn();
 const mockEnqueueDelete = jest.fn();
+const mockEnqueueMarkRead = jest.fn();
 const mockFlushPendingMutations = jest.fn((..._args: any[]) =>
   Promise.resolve({ ran: true, done: 0, retried: 0, rejected: 0 }),
 );
 jest.mock('@/features/chat/pendingMutations', () => ({
   enqueueReaction: (...args: any[]) => mockEnqueueReaction(...args),
   enqueueDelete: (...args: any[]) => mockEnqueueDelete(...args),
-  enqueueMarkRead: jest.fn(),
+  enqueueMarkRead: (...args: any[]) => mockEnqueueMarkRead(...args),
   flushPendingMutations: (...args: any[]) => mockFlushPendingMutations(...args),
 }));
 
@@ -385,5 +386,24 @@ describe('bayrak kapalı', () => {
     expect(alertSpy).toHaveBeenCalled();
 
     alertSpy.mockRestore();
+  });
+
+  // Review Important 1 — AYIRT EDİCİ: bayrak kapalıyken mark-read de eski
+  // yola (chatService.markRead doğrudan) düşmeli. `enqueueMarkRead` +
+  // `flushPendingMutations` kuyruğa yazar ama bayrak kapalıyken turun kendisi
+  // `flushPendingMutations`'ın İÇİNDEKİ kısa devre yüzünden hiçbir şey
+  // DRAIN ETMEZ (bkz. pendingMutations.ts) — yazıp hiç göndermemek, yerini
+  // aldığı fire-and-forget'ten bile kötü bir sonuç olurdu.
+  it('okundu: eski yol — chatService.markRead DOĞRUDAN çağrılıyor, kuyruğa YAZILMIYOR', async () => {
+    renderChatScreen(buildMessage());
+    // Mount'taki mark-read effect'inin promise'i (chatService.markRead)
+    // mikro görevde çözülüyor.
+    await act(async () => {
+      await Promise.resolve();
+      await Promise.resolve();
+    });
+
+    expect(mockMarkRead).toHaveBeenCalledWith(CONVERSATION_ID);
+    expect(mockEnqueueMarkRead).not.toHaveBeenCalled();
   });
 });

@@ -107,10 +107,14 @@ export function coalesceEdit(
  * `(message_id, kind)` zaten tek satırda tutuyor (bkz. pendingMutations.ts
  * `enqueueMarkRead`). Geri alınacak bir karşılığı da yok — rozet zaten
  * yerelde düştü, `upsertConversations`'ın (2) numaralı kuralı onu koruyor.
+ *
+ * `Record<string, never>` — düz `{}` DEĞİL: `{}` TypeScript'te "herhangi bir
+ * nesne" ile aynı davranır ve `sendRow`'daki
+ * `ReactionPayload | DeletePayload | EditPayload | ReadPayload` birleşimini
+ * anlamsızlaştırırdı (her şey `{}`'ye atanabilir). `Record<string, never>`
+ * birleşimi GERÇEKTEN ayırt edici tutuyor.
  */
-export interface ReadPayload {
-  // boş — kasıtlı
-}
+export type ReadPayload = Record<string, never>;
 
 /** Sunucunun da reddettiği (`EmptyContent`/`ContentTooLong`) hallerin istemci tarafı. */
 export const EDIT_MAX_LENGTH = 2000;
@@ -256,19 +260,49 @@ export const MUTATION_MAX_ATTEMPTS = 10;
 export const MUTATION_MAX_AGE_MS = 24 * 60 * 60_000;
 
 /**
+ * `'read'`e ÖZEL, çok daha dar bir yaş tavanı — review bulgusu (Önemli 3),
+ * plan bunu hiç hesaba katmamıştı.
+ *
+ * Diğer üç tür "kayıp" riskiyle ilgili: emir ne zaman gönderilirse gönderilsin
+ * hâlâ doğru (bir reaksiyon/silme/düzenleme niyeti zamana göre BAYATLAMAZ),
+ * bu yüzden 24 saat gibi cömert bir tavan güvenli. `'read'` TAM TERSİ: bu bir
+ * ŞİMDİ-anlamlı komut ("şu an ekranda gördüklerim okunmuş sayılsın"). Uçakta
+ * sohbeti açıp kapatan, saatler sonra inip bağlanan bir kullanıcı düşün —
+ * partner o arada üç mesaj daha attıysa, saatler sonra gönderilen `markRead`
+ * onları da "okundu" işaretler: partner'a YANLIŞ okundu tiki gider ve
+ * `upsertConversations`'ın (2) numaralı kuralı yalnız yerel 0'ı sunucunun
+ * bayat >0'ına karşı korur — yerel 3'ü sunucunun 0'ına karşı KORUMAZ, yani
+ * rozet de yanlışlıkla temizlenir.
+ *
+ * 5 dakika seçildi: sohbete YENİDEN GİRMEK zaten `enqueueMarkRead`'i tekrar
+ * tetikliyor (bkz. ChatScreen.tsx) — yani "tazeleme" doğal yol zaten var,
+ * bu tavan yalnız ARADA kalan (uygulama arka planda/offline) pencereyi
+ * kapatıyor. Süre dolan satır ağa hiç ÇIKMADAN sessizce düşürülür (bkz. run()
+ * — `'read'` için zaten revert/toast YOK).
+ */
+export const READ_MAX_AGE_MS = 5 * 60_000;
+
+/**
  * Bu emir bitti mi — deneme hakkı ya da yaşı doldu mu?
  *
  * Saf karar; turun `rejected` dalını (sil + geri al + toast) tetikler.
  * `first_seen_at_ms` kolonunun TEK yaş okuyucusu burası — kolonun diğer
  * kullanımı `ORDER BY` (bkz. readPendingMutations).
+ *
+ * `kind` yaş tavanını SEÇMEK için var — `'read'` `READ_MAX_AGE_MS`'e,
+ * diğerleri `MUTATION_MAX_AGE_MS`'e bakar (bkz. o sabitin yorumu). Deneme
+ * tavanı (`MUTATION_MAX_ATTEMPTS`) kind'tan BAĞIMSIZ kalıyor — çok denemiş
+ * olmak zaten her tür için aynı anlama geliyor.
  */
 export function isMutationExpired(
   attempts: number,
   firstSeenAtMs: number,
   nowMs: number,
+  kind: MutationKind,
 ): boolean {
   if (attempts >= MUTATION_MAX_ATTEMPTS) return true;
-  return nowMs - firstSeenAtMs >= MUTATION_MAX_AGE_MS;
+  const ageBoundMs = kind === "read" ? READ_MAX_AGE_MS : MUTATION_MAX_AGE_MS;
+  return nowMs - firstSeenAtMs >= ageBoundMs;
 }
 
 /** Bir turda flush edilecek en çok emir sayısı. */

@@ -39,6 +39,7 @@ import {
   MUTATION_MAX_AGE_MS,
   MUTATION_MAX_ATTEMPTS,
   MUTATION_RATE_RESERVE,
+  READ_MAX_AGE_MS,
 } from '@/features/chat/pendingMutationPolicy';
 import type { MessageDto } from '@/shared/types';
 import type { SendState } from '@/features/chat/db/rows';
@@ -1031,5 +1032,83 @@ describe('pendingMutations: okundu turu', () => {
     const rows = readPendingMutations().filter((r) => r.kind === 'read');
     expect(rows).toHaveLength(2);
     expect(rows.map((r) => r.conversation_id).sort()).toEqual(['conv-1', 'conv-2']);
+  });
+
+  // Review Önemli 3 — AYIRT EDİCİ: diğer üç `enqueue*`nin TERSİ. Reaksiyon/
+  // silme/düzenlemede `first_seen_at_ms` KORUNUR (yaşlanmasın diye); burada
+  // tam tersi doğru olmalı — sohbete yeniden girmek kullanıcının mesajlara
+  // TEKRAR baktığı anlamına gelir, saat o anda YENİDEN BAŞLAMALI. Korunsaydı
+  // READ_MAX_AGE_MS (5 dk) tavanı asla yenilenemeyen bir duvar olurdu.
+  it("enqueueMarkRead ikinci girişte first_seen_at_ms'i İLERİ ALIYOR (diğer enqueue*'ların TERSİ)", () => {
+    const EARLIER = Date.now() - 60_000;
+    upsertPendingMutation({
+      message_id: CONV,
+      kind: 'read',
+      conversation_id: CONV,
+      payload_json: '{}',
+      attempts: 0,
+      next_eligible_at_ms: 0,
+      last_error: null,
+      first_seen_at_ms: EARLIER,
+    });
+
+    enqueueMarkRead(CONV);
+
+    const [row] = readPendingMutations();
+    expect(row.first_seen_at_ms).toBeGreaterThan(EARLIER);
+  });
+
+  // Review Önemli 3 — bir kuyruk turunda READ_MAX_AGE_MS'i (5 dk) dolduran
+  // satır ağa HİÇ ÇIKMADAN sessizce düşürülüyor: geciken bir okundu emri artık
+  // DOĞRU değil (partner'ın o arada attığı yeni mesajları da "okundu" sayar).
+  it('READ_MAX_AGE_MS dolan satır ağa ÇIKMADAN sessizce düşüyor', async () => {
+    upsertPendingMutation({
+      message_id: CONV,
+      kind: 'read',
+      conversation_id: CONV,
+      payload_json: '{}',
+      attempts: 0,
+      next_eligible_at_ms: 0,
+      last_error: null,
+      first_seen_at_ms: Date.now() - READ_MAX_AGE_MS - 1,
+    });
+
+    const r = await flushPendingMutations('test');
+
+    expect(markRead).not.toHaveBeenCalled();
+    expect(r.rejected).toBe(1);
+    expect(readPendingMutations()).toHaveLength(0);
+    expect(showInfoToast).not.toHaveBeenCalled();
+  });
+});
+
+describe('pendingMutations: okundu — hesap/sohbet sınırı temizliği', () => {
+  // Review Önemli 2 — AYIRT EDİCİ: `pruneOrphanPendingMutations` 'read'
+  // satırlarını BİLEREK muaf tutuyor (message_id bir sohbet kimliği, asla
+  // yetim sayılmaz) — yani `clearAllChatData` (logout/hesap değişimi)
+  // kendisi silmezse satır HAYATTA KALIR ve bir sonraki boot flush'ı YENİ
+  // kullanıcının token'ıyla ÖNCEKİ hesabın sohbetine `markRead` gönderir.
+  it("clearAllChatData 'read' satırlarını da siliyor — logout'ta sızıntı YOK", () => {
+    enqueueMarkRead(CONV);
+    expect(readPendingMutations()).toHaveLength(1);
+
+    chatRepo.clearAllChatData();
+
+    expect(readPendingMutations()).toHaveLength(0);
+  });
+
+  // Review Önemli 2 — `removeConversationLocally` (engelleme/hesap silme)
+  // "gizlilik aksiyonu, disk değil" diyor (bkz. fonksiyonun kendi yorumu);
+  // kuyruklu bir 'read' emri bu iddiayı deler, o yüzden AYNI transaction'da
+  // gitmek zorunda.
+  it("removeConversationLocally o sohbetin 'read' satırını siliyor, BAŞKASININKİNE dokunmuyor", () => {
+    const OTHER_CONV = 'other-conv';
+    enqueueMarkRead(CONV);
+    enqueueMarkRead(OTHER_CONV);
+
+    chatRepo.removeConversationLocally(CONV);
+
+    const rows = readPendingMutations().filter((r) => r.kind === 'read');
+    expect(rows.map((r) => r.conversation_id)).toEqual([OTHER_CONV]);
   });
 });

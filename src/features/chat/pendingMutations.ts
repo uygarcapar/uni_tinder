@@ -253,15 +253,22 @@ export function enqueueEdit(args: {
  * PK `(message_id, kind)` sayesinde aynı sohbete tekrar girmenin satır
  * ÇOĞALTMAMASI (`upsertPendingMutation`'ın ON CONFLICT'i zaten bunu veriyor —
  * burada ayrıca bir coalesce fonksiyonuna gerek yok, birleştirilecek alan
- * yok). `first_seen_at_ms` var olan satırdan korunur, diğer `enqueue*`
- * fonksiyonlarıyla AYNI kural.
+ * yok).
+ *
+ * `first_seen_at_ms` BURADA SIFIRLANIR — diğer üç `enqueue*`nin TERSİ kural
+ * (Review Önemli 3). Onlarda korunmasının sebebi bir niyetin art arda
+ * yinelenmesiyle yaşını SIFIRLAMAMAK (yoksa `isMutationExpired` asla
+ * dolmazdı); `'read'`de tam tersi doğru: sohbete YENİDEN GİRMEK kullanıcının
+ * mesajlara TEKRAR baktığı anlamına gelir, yani saat de o anda yeniden
+ * başlamalı. Sıfırlanmasaydı `READ_MAX_AGE_MS` (5 dk) tavanı hiç
+ * YENİLENEMEZ bir duvar olurdu — kullanıcı sohbete defalarca girse bile ilk
+ * giriş anındaki saat işlemeye devam ederdi.
  *
  * Geri alma YOK: okundu bilgisinin geri alınacak optimistik bir karşılığı
  * yok, rozet zaten yerelde düştü ve `upsertConversations`'ın (2) numaralı
  * kuralı onu koruyor (bkz. pendingMutationPolicy.ts'teki `ReadPayload` notu).
  */
 export function enqueueMarkRead(conversationId: string): void {
-  const existingRow = findExistingRow(conversationId, "read");
   const payload: ReadPayload = {};
   upsertPendingMutation({
     message_id: conversationId,
@@ -269,7 +276,7 @@ export function enqueueMarkRead(conversationId: string): void {
     conversation_id: conversationId,
     payload_json: JSON.stringify(payload),
     attempts: 0,
-    first_seen_at_ms: existingRow ? existingRow.first_seen_at_ms : Date.now(),
+    first_seen_at_ms: Date.now(),
     next_eligible_at_ms: 0,
     last_error: null,
   });
@@ -619,7 +626,7 @@ async function run(): Promise<FlushResult> {
 
     let outcome: MutationOutcome;
     let err: unknown = null;
-    if (isMutationExpired(row.attempts, row.first_seen_at_ms, Date.now())) {
+    if (isMutationExpired(row.attempts, row.first_seen_at_ms, Date.now(), row.kind)) {
       // Deneme hakkı ya da yaş doldu (bkz. pendingMutationPolicy'deki
       // MUTATION_MAX_ATTEMPTS/MUTATION_MAX_AGE_MS gerekçesi). DİKKAT: bu
       // kontrol yukarıdaki `send_state === 'sent'` kapısının ARDINDA —

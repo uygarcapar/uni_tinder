@@ -1511,6 +1511,14 @@ export function removeConversationLocally(conversationId: string): void {
     db.run('DELETE FROM messages WHERE conversation_id = ?', [conversationId]);
     db.run('DELETE FROM conversations WHERE conversation_id = ?', [conversationId]);
     db.run('DELETE FROM sync_state WHERE conversation_id = ?', [conversationId]);
+    // 'reaction'/'delete'/'edit' satırları messages ile BİRLİKTE gitmiş olur
+    // (sonraki `pruneOrphanPendingMutations` zaten sweeper), ama 'read'
+    // satırları o süpürgeden MUAF (bkz. pruneOrphanPendingMutations'ın
+    // yorumu) — bu, bu fonksiyonun KENDİ gerekçesiyle (gizlilik aksiyonu,
+    // disk değil — bkz. fonksiyon başı yorum) çelişirdi: engellenen kişinin
+    // sohbetine ait kuyruklu bir okundu niyeti hayatta kalıp sonraki boot
+    // flush'ında sunucuya giderdi.
+    db.run('DELETE FROM pending_mutations WHERE conversation_id = ?', [conversationId]);
   });
 }
 
@@ -2196,6 +2204,15 @@ export function clearAllChatData(): void {
     db.run('DELETE FROM conversations');
     db.run('DELETE FROM sync_state');
     db.run('DELETE FROM send_attempts');
+    // `pending_mutations`'ın 'reaction'/'delete'/'edit' satırları `messages`
+    // silinince bir SONRAKİ turun `pruneOrphanPendingMutations`'ıyla zaten
+    // temizlenirdi, ama 'read' satırları O SÜPÜRGEDEN BİLEREK MUAF (bkz. o
+    // fonksiyonun yorumu — `message_id` orada bir sohbet kimliği taşıyor,
+    // asla yetim sayılmaz). Burada AÇIKÇA silinmezse bir ÖNCEKİ hesabın
+    // okundu niyeti hayatta kalır ve bir sonraki boot flush'ı onu YENİ
+    // kullanıcının token'ıyla sunucuya gönderir — bu fonksiyonun kendisi bir
+    // hesap/oturum sınırı, sessizce sızdırmamalı.
+    db.run('DELETE FROM pending_mutations');
     // Watermark arşivle AYNI anda gitmek zorunda: kalsaydı yeni kullanıcı
     // "her şeyi görmüşüm" sanıp aradaki değişiklikleri hiç çekmezdi.
     db.run('DELETE FROM meta');

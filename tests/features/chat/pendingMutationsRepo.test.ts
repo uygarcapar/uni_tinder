@@ -139,6 +139,21 @@ describe('pending_mutations: yazıp geri okuma', () => {
     expect(pruneOrphanPendingMutations()).toBe(0);
   });
 
+  // Task 1 (chat-local-first-gaps) — AYIRT EDİCİ: `kind = 'read'` satırlarında
+  // `message_id` bir MESAJ değil bir SOHBET kimliği taşıyor (bkz.
+  // db/rows.ts'in PendingMutationRow yorumu); `messages.id` ile hemen hemen
+  // hiç eşleşmez. Bu türü hariç tutmayan bir prune, satırı yazıldığı turun
+  // hemen ardından, hiç gönderilmeden siler — `pendingMutations.test.ts`
+  // bunu modül sınırının ÖTESİNDEN (bir flush turu üzerinden) doğruluyor, bu
+  // test AYNI SQL'i burada, sorumlu olduğu dosyada da pinliyor.
+  it("pruneOrphanPendingMutations 'read' satırını (sohbet kimliğini) mesajsız da SİLMİYOR", () => {
+    // `messages`'ta HİÇBİR satır yok — CONV bir mesaj id'si DEĞİL.
+    upsertPendingMutation(row({ message_id: CONV, kind: 'read', conversation_id: CONV }));
+
+    expect(pruneOrphanPendingMutations()).toBe(0);
+    expect(readPendingMutations()).toHaveLength(1);
+  });
+
   it('readMessageSendState pending mesajı pending, olmayanı null döndürüyor', () => {
     insertMessage('msg-1', 'pending');
 

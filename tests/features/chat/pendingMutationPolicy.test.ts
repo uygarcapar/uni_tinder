@@ -4,6 +4,7 @@ import {
   MUTATION_MAX_AGE_MS,
   MUTATION_MAX_ATTEMPTS,
   MUTATION_RATE_RESERVE,
+  READ_MAX_AGE_MS,
   classifyMutationError,
   coalesceDelete,
   coalesceEdit,
@@ -159,19 +160,32 @@ describe('nextEligibleAt', () => {
 describe('isMutationExpired', () => {
   it('deneme tavanına varan emir bitiyor, bir eksiği devam ediyor', () => {
     const now = 1_000_000;
-    expect(isMutationExpired(MUTATION_MAX_ATTEMPTS - 1, now, now)).toBe(false);
-    expect(isMutationExpired(MUTATION_MAX_ATTEMPTS, now, now)).toBe(true);
+    expect(isMutationExpired(MUTATION_MAX_ATTEMPTS - 1, now, now, 'reaction')).toBe(false);
+    expect(isMutationExpired(MUTATION_MAX_ATTEMPTS, now, now, 'reaction')).toBe(true);
   });
 
   it('yaş tavanını dolduran emir bitiyor — ölçü ÖMÜRLÜK (first_seen_at_ms)', () => {
     const now = 1_000_000_000;
-    expect(isMutationExpired(0, now - MUTATION_MAX_AGE_MS + 1, now)).toBe(false);
-    expect(isMutationExpired(0, now - MUTATION_MAX_AGE_MS, now)).toBe(true);
+    expect(isMutationExpired(0, now - MUTATION_MAX_AGE_MS + 1, now, 'reaction')).toBe(false);
+    expect(isMutationExpired(0, now - MUTATION_MAX_AGE_MS, now, 'reaction')).toBe(true);
   });
 
   it('uzun bir uçuş (saatler) yaş tavanını DOLDURMUYOR — fazın kanonik senaryosu', () => {
     const now = 1_000_000_000;
-    expect(isMutationExpired(0, now - 8 * 60 * 60_000, now)).toBe(false);
+    expect(isMutationExpired(0, now - 8 * 60 * 60_000, now, 'reaction')).toBe(false);
+  });
+
+  // Review Önemli 3 — AYIRT EDİCİ: 'read' GENEL 24 saatlik tavanı DEĞİL,
+  // kendi 5 dakikalık tavanını kullanıyor. `kind` parametresi olmasaydı (ya
+  // da yanlış kind geçirilseydi) bu test MUTATION_MAX_AGE_MS'e göre False
+  // dönerdi.
+  it("'read' GENEL 24 saatlik tavanı DEĞİL, kendi 5 dakikalık tavanını kullanıyor", () => {
+    const now = 1_000_000_000;
+    expect(isMutationExpired(0, now - READ_MAX_AGE_MS + 1, now, 'read')).toBe(false);
+    expect(isMutationExpired(0, now - READ_MAX_AGE_MS, now, 'read')).toBe(true);
+    // Diğer kind'lar için AYNI yaş hâlâ tavana varmamış olmalı — READ_MAX_AGE_MS
+    // << MUTATION_MAX_AGE_MS, tavan `kind`'a göre GERÇEKTEN DEĞİŞİYOR.
+    expect(isMutationExpired(0, now - READ_MAX_AGE_MS, now, 'reaction')).toBe(false);
   });
 });
 
