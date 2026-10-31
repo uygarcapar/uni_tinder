@@ -33,6 +33,7 @@ import { LinearGradient } from "expo-linear-gradient";
 import { BlurView } from "expo-blur";
 import MaskedView from "@react-native-masked-view/masked-view";
 import { DEFAULT_APP_MODE, modeAccent, modeFireTint } from "../modeTheme";
+import { likerNoteTargetView } from "../noteTarget";
 import { easeGradient } from "react-native-easing-gradient";
 import Animated, {
   Easing,
@@ -879,40 +880,23 @@ function NoteBoxSurface() {
 function LikeNoteBox({ note, expanded, onToggle, progress, onExpandInfo }) {
   const { t } = useTranslation();
   const target = note?.target ?? null;
-  const photoUri = target?.kind === "Photo" ? target.photoUrl || null : null;
-  // Alıntı bloğunun metni iki hedeften gelebiliyor: prompt'un CEVABI ya da
-  // (akış yanıtlarında) gönderinin ilk 80 karakteri. İkisi de aynı şeyi
-  // yapıyor — "neye yazıldığını" tek satırda hatırlatıyor — o yüzden tek
-  // değişken, tek blok.
+  // Hedef bloğunun ÜÇ sorusu (başlık / alıntı / fotoğraf) tek saf fonksiyonda:
+  // `likerNoteTargetView`. Kural burada gömülü kalsaydı bu dosya testte render
+  // edilmediği için sessizce bozulabilirdi — gönderi hedefi eklenirken tam o
+  // oldu (bkz. noteTarget.ts).
   //
-  // Prompt'ta yalnız cevap çiziliyor: sorunun kendisi (`promptDisplay`)
-  // bilerek çizilmiyor — gerekçe NOTE_CHIP_* sabitlerinin başında.
-  // Metin yoksa blok HİÇ çizilmiyor (eskiden soru tek başına çiziliyordu):
-  // dikey çizgi + tırnak, neyi alıntıladığını söylemeyen bir işaret olurdu.
-  // Hedefi zaten "promptuna not bıraktı" satırı anlatıyor.
-  const quote =
-    target?.kind === "Prompt"
-      ? target.promptAnswer
-      : target?.kind === "FeedPost"
-        ? target.excerpt
-        : null;
+  // ⚠️ Prompt'ta yalnız CEVAP çiziliyor, sorunun kendisi değil (gerekçe
+  // NOTE_CHIP_* sabitlerinin başında); gönderide alıntı gönderinin gönderim
+  // anındaki metni.
+  const targetView = likerNoteTargetView(target, t);
+  const photoUri = targetView.photoUrl;
+  const quote = targetView.quote;
+  const noteTargetLabel = targetView.label;
+  const removedNotice = targetView.removedNotice;
+  // Metin yoksa alıntı bloğu HİÇ çizilmiyor: dikey çizgi + tırnak, neyi
+  // alıntıladığını söylemeyen bir işaret olurdu. Hedefi zaten başlık anlatıyor.
   const showChip = !!quote;
   const comment = note?.comment ?? "";
-  // Hedefi olmayan notta (eski kayıt / realtime önizleme) satır çizilmiyor:
-  // neye yanıt verildiğini bilmiyorken "bu fotoğrafına" demek uydurma olurdu.
-  //
-  // ⚠️ "FeedPost" hedefinin etiketi ÇEVİRİ ANAHTARI DEĞİL, HAZIR METİN: akışın
-  // kendi cümlesi ("gönderine yanıt verdi") ve zaman damgası çağıran tarafta
-  // birleşiyor (bkz. FeedReplyCard). Kart i18n kararı vermiyor — etiketler
-  // prop'la geliyor (aynı kural likeLabel/recoverLabel/fireLabel'da).
-  const noteTargetLabel =
-    target?.kind === "Photo"
-      ? t("note.leftNoteOnPhoto")
-      : target?.kind === "Prompt"
-        ? t("note.leftNoteOnPrompt")
-        : target?.kind === "FeedPost"
-          ? target.label || null
-          : null;
 
   // Yazının GERÇEK satır geometrisi — görünmez bir kopyadan ölçülüyor (aşağıya
   // bak). `count` satır sayısı, `collapsed` ilk iki satırın kapladığı yükseklik,
@@ -1046,7 +1030,11 @@ function LikeNoteBox({ note, expanded, onToggle, progress, onExpandInfo }) {
     NOTE_BOX_PAD_TOP +
       NOTE_BOX_PAD_BOTTOM +
       (noteTargetLabel ? NOTE_TARGET_LABEL_LINE + NOTE_TARGET_LABEL_GAP : 0) +
-      (showChip ? NOTE_CHIP_HEIGHT + NOTE_CHIP_MARGIN : 0),
+      (showChip ? NOTE_CHIP_HEIGHT + NOTE_CHIP_MARGIN : 0) +
+      // Gönderi kaldırıldığında alıntının altına inen tek satır — hedef
+      // etiketiyle AYNI terim: kutunun tavanı o satırı da saymalı, yoksa not
+      // bir satır eksik yer bulur.
+      (removedNotice ? NOTE_TARGET_LABEL_LINE + NOTE_TARGET_LABEL_GAP : 0),
   );
 
   // ── Açılma ölçüleri ────────────────────────────────────────────────────────
@@ -1249,6 +1237,24 @@ function LikeNoteBox({ note, expanded, onToggle, progress, onExpandInfo }) {
                   {quote}
                 </Text>
               </View>
+              {/* Gönderi silinmiş/kaldırılmış: not YİNE OKUNUYOR (kullanıcının
+                  ödediği şey o), yalnız altına bağlamın artık var olmadığını
+                  söyleyen bir satır düşüyor. */}
+              {!!removedNotice && (
+                <Text
+                  numberOfLines={1}
+                  style={{
+                    color: chipInk,
+                    fontSize: NOTE_TARGET_LABEL_SIZE,
+                    lineHeight: NOTE_TARGET_LABEL_LINE,
+                    fontWeight: "400",
+                    marginLeft: NOTE_CHIP_LINE_W + NOTE_CHIP_LINE_GAP,
+                    marginTop: NOTE_TARGET_LABEL_GAP,
+                  }}
+                >
+                  {removedNotice}
+                </Text>
+              )}
             </View>
           )}
 

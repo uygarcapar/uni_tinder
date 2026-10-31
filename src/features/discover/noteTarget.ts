@@ -1,4 +1,4 @@
-import type { NoteTarget, ProfilePromptCard } from "@/shared/types";
+import type { LikerNote, NoteTarget, ProfilePromptCard } from "@/shared/types";
 
 /**
  * Not (yorumlu beğeni) hedefinin tek kaynağı.
@@ -108,6 +108,71 @@ export function noteTargetLabel(
   return target.photoIndex === 0
     ? t("note.targetMainPhoto")
     : t("note.targetPhoto", { index: (target.photoIndex ?? 0) + 1 });
+}
+
+/**
+ * ALICININ gördüğü notun hedef bloğu — Beğeniler kartındaki kutunun üç sorusu
+ * tek yerde: başlıkta ne yazıyor, alıntı bloğunda ne duruyor, solda fotoğraf
+ * var mı.
+ *
+ * Karar `LikeCard`ın içinde değil BURADA çünkü o dosya (2200+ satır, FlatList
+ * hücresi) testte render edilmiyor; kural orada gömülü kalsaydı "gönderine not
+ * bıraktı" satırının hiç çizilmediği hâl sessizce geçerdi.
+ *
+ * ⚠️ Hedefi olmayan notta (eski kayıt / realtime önizleme) HİÇBİR ŞEY
+ * uydurulmuyor: neye yanıt verildiğini bilmiyorken "bu fotoğrafına" demek
+ * yanlış bilgi olurdu.
+ *
+ * ⚠️ Gönderi dalında `label` (sunucunun hazır metni) i18n yedeğini EZİYOR.
+ * Akış-yanıtı döneminden kalan yol: kart o zaman etiketi prop'la alıyordu ve
+ * kayıtlar hâlâ öyle gelebilir.
+ */
+export function likerNoteTargetView(
+  target: LikerNote["target"],
+  t: (key: string) => string,
+): {
+  label: string | null;
+  quote: string | null;
+  photoUrl: string | null;
+  removedNotice: string | null;
+} {
+  const empty = {
+    label: null,
+    quote: null,
+    photoUrl: null,
+    removedNotice: null,
+  };
+  if (!target) return empty;
+
+  if (target.kind === "Photo") {
+    return {
+      ...empty,
+      label: t("note.leftNoteOnPhoto"),
+      photoUrl: target.photoUrl || null,
+    };
+  }
+
+  if (target.kind === "Prompt") {
+    // Sorunun kendisi (`promptDisplay`) BİLEREK çizilmiyor — gerekçe
+    // LikeCard'daki NOTE_CHIP_* sabitlerinin başında.
+    return {
+      ...empty,
+      label: t("note.leftNoteOnPrompt"),
+      quote: target.promptAnswer || null,
+    };
+  }
+
+  if (target.kind === "FeedPost") {
+    return {
+      ...empty,
+      label: target.label || t("note.leftNoteOnPost"),
+      quote: target.excerpt || null,
+      // Gönderi gitse de NOT OKUNABİLİR kalıyor: kullanıcının ödediği şey o.
+      removedNotice: target.postDeleted ? t("note.postRemoved") : null,
+    };
+  }
+
+  return empty;
 }
 
 /** Gönderim gövdesindeki `target` alanı — null'lar da AÇIKÇA yazılıyor (§2.1). */

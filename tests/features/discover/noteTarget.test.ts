@@ -15,6 +15,7 @@ import {
   postNoteTarget,
   promptNoteTarget,
   isSameNoteTarget,
+  likerNoteTargetView,
 } from "@/features/discover/noteTarget";
 
 describe("noteTargetPayload", () => {
@@ -53,5 +54,67 @@ describe("noteTargetLabel", () => {
     expect(noteTargetLabel(postNoteTarget("p1"), null, t)).toBe(
       "note.targetPost",
     );
+  });
+});
+
+/**
+ * ALICININ gördüğü not — Beğeniler kartındaki kutunun üç sorusu: başlık ne
+ * yazacak, alıntı bloğunda ne duracak, solda fotoğraf var mı.
+ *
+ * Karar burada saf olarak duruyor çünkü `LikeCard` (2200+ satır, FlatList
+ * hücresi) testte render edilmiyor; kutunun kuralı orada gömülü kalsaydı
+ * "gönderine not bıraktı" satırının hiç çizilmediği hâl sessizce geçerdi.
+ */
+describe("likerNoteTargetView", () => {
+  const t = ((k: string) => k) as any;
+
+  it("gönderi hedefi: başlık i18n yedeğinden, alıntı gönderinin anlık görüntüsünden", () => {
+    expect(
+      likerNoteTargetView(
+        { kind: "FeedPost", postId: "p1", excerpt: "Yarın kütüphane kaçta?" },
+        t,
+      ),
+    ).toEqual({
+      label: "note.leftNoteOnPost",
+      quote: "Yarın kütüphane kaçta?",
+      photoUrl: null,
+      removedNotice: null,
+    });
+  });
+
+  it("sunucu hazır etiket gönderirse i18n yerine O basılıyor", () => {
+    expect(
+      likerNoteTargetView(
+        { kind: "FeedPost", postId: "p1", excerpt: "x", label: "gönderine yanıt verdi" },
+        t,
+      ).label,
+    ).toBe("gönderine yanıt verdi");
+  });
+
+  it("gönderi silinmişse not OKUNABİLİR kalıyor, altına bir satır düşüyor", () => {
+    const view = likerNoteTargetView(
+      { kind: "FeedPost", postId: "p1", excerpt: "x", postDeleted: true },
+      t,
+    );
+    expect(view.quote).toBe("x");
+    expect(view.removedNotice).toBe("note.postRemoved");
+  });
+
+  it("foto ve prompt hedefleri bugünkü davranışı koruyor", () => {
+    expect(
+      likerNoteTargetView({ kind: "Photo", photoUrl: "u" }, t),
+    ).toMatchObject({ label: "note.leftNoteOnPhoto", photoUrl: "u", quote: null });
+    expect(
+      likerNoteTargetView({ kind: "Prompt", promptAnswer: "cevap" }, t),
+    ).toMatchObject({ label: "note.leftNoteOnPrompt", quote: "cevap" });
+  });
+
+  it("hedefi olmayan notta hiçbir şey uydurulmuyor", () => {
+    expect(likerNoteTargetView(null, t)).toEqual({
+      label: null,
+      quote: null,
+      photoUrl: null,
+      removedNotice: null,
+    });
   });
 });

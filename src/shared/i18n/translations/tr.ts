@@ -2476,6 +2476,9 @@ const tr = {
     targetMainPhoto: 'Ana fotoğraf',
     targetPhoto: '{{index}}. fotoğraf',
     targetPrompt: 'Soru cevabı',
+    // Akış gönderisi hedefi: başlık JENERİK çünkü gönderinin metni composer'da
+    // hedefin kendi önizlemesi olarak zaten duruyor.
+    targetPost: 'Gönderi',
     // Beğeni kartındaki not kutusu üç satırı aşınca (bkz. LikesScreen).
     seeMore: 'Devamını gör',
     seeLess: 'Daha az göster',
@@ -2485,6 +2488,9 @@ const tr = {
     // orada olmayan bir şeye işaret ediyormuş gibi okunuyordu.
     leftNoteOnPhoto: 'Fotoğrafına not bıraktı',
     leftNoteOnPrompt: 'Cevabına not bıraktı',
+    leftNoteOnPost: 'Gönderine not bıraktı',
+    // Gönderi silinmiş/kaldırılmış — not yine okunuyor, bağlamı yok.
+    postRemoved: 'Gönderi kaldırıldı',
     sentTitle: 'Not\'un gönderildi',
     sentMessage: '{{name}} notunu beğenilerinde görecek.',
     failedTitle: 'Not gönderilemedi',
@@ -2531,6 +2537,20 @@ const tr = {
     tabTitle: 'Akış',
     tabFeed: 'Akış',
     tabMine: 'Gönderilerim',
+    // Gönderi satırındaki not butonunun ERİŞİLEBİLİRLİK etiketi — ekranda
+    // yazı yok, ikon tek başına duruyor.
+    noteAccessibility: 'Gönderiye not bırak',
+
+    // ── Gövdedeki bağlantılar ────────────────────────────────────────────────
+    // ⚠️ `confirmTitle` ADRESİ İÇERMİYOR: alan adı diyaloğun GÖVDESİNDE, tek
+    // başına duruyor. Başlığa gömülürse uzun bir cümlenin içinde kaybolur ve
+    // diyaloğun tek işi (nereye gidildiğini göstermek) boşa çıkar.
+    link: {
+      confirmTitle: 'Bu adrese gidiyorsun',
+      open: 'Devam',
+      openFailed: 'Bu adres açılamadı.',
+      copied: 'Metin kopyalandı',
+    },
 
     // ── Konular (hashtag) ────────────────────────────────────────────────────
     // Etiketler SUNUCUDAN geliyor (`/api/feed/me` → topics); buradakiler
@@ -2827,9 +2847,16 @@ const tr = {
       daily: 'Günde bir',
     },
     // Geri sayım — "18 sa", "41 dk", "birazdan"
+    // ⚠️ KART ARTIK BUNLARI ÇİZMİYOR (2026-10-30): isim-yaşın sağındaki etiket
+    // kalan süreyi değil GEÇEN süreyi söylüyor ("3 saat önce", aşağıda).
+    // Üreteç (`campusCountdownText`) duruyor — geri isteyen tek satırla alır.
     expiresInHours: '{{count}} sa',
     expiresInMinutes: '{{count}} dk',
     expiresSoon: 'birazdan',
+    // Paylaşım üstünden geçen süre — an 24 saat yaşadığı için gün dalı YOK.
+    postedAgoHours: '{{count}} saat önce',
+    postedAgoMinutes: '{{count}} dakika önce',
+    postedJustNow: 'az önce',
     empty: {
       title: 'Bugün kampüste kimse paylaşmamış',
       bodyInside: 'İlk anı sen paylaş — 24 saat boyunca kampüsteki herkes görür.',

@@ -2411,6 +2411,7 @@ const en = {
     targetMainPhoto: 'Main photo',
     targetPhoto: 'Photo {{index}}',
     targetPrompt: 'Prompt answer',
+    targetPost: 'Post',
     // Note box on the like card, when it runs past three lines (see LikesScreen).
     seeMore: 'See more',
     seeLess: 'See less',
@@ -2420,6 +2421,8 @@ const en = {
     // demonstrative read as pointing at something that wasn't there.
     leftNoteOnPhoto: 'Left a note on your photo',
     leftNoteOnPrompt: 'Left a note on your answer',
+    leftNoteOnPost: 'Left a note on your post',
+    postRemoved: 'Post removed',
     sentTitle: 'Note sent',
     sentMessage: '{{name}} will see your note in their likes.',
     failedTitle: "Note couldn't be sent",
@@ -2463,6 +2466,18 @@ const en = {
   // blocked, all three server-side. UT-7306 shows the server `message` verbatim.
   feed: {
     tabTitle: 'Feed',
+    noteAccessibility: 'Leave a note on this post',
+
+    // ── Links in the post body ───────────────────────────────────────────────
+    // ⚠️ `confirmTitle` does NOT contain the address: the host sits in the
+    // dialog BODY, on its own. Buried in a sentence it gets lost, and the
+    // dialog's only job (showing where you are going) is wasted.
+    link: {
+      confirmTitle: 'You are going to this address',
+      open: 'Continue',
+      openFailed: "This address couldn't be opened.",
+      copied: 'Text copied',
+    },
 
     // Large title block — same pattern as Messages: title, Plus pill on its
     // right, one-line description underneath.
@@ -2714,9 +2729,15 @@ const en = {
       insideOnly: 'On campus',
       daily: 'Once a day',
     },
+    // ⚠️ The card no longer draws these (2026-10-30): the label next to the
+    // name shows ELAPSED time ("3 hours ago", below). Generator kept.
     expiresInHours: '{{count}}h',
     expiresInMinutes: '{{count}}m',
     expiresSoon: 'soon',
+    // Time since posting — no "days" branch, a moment lives 24 hours.
+    postedAgoHours: '{{count}}h ago',
+    postedAgoMinutes: '{{count}}m ago',
+    postedJustNow: 'just now',
     empty: {
       title: 'Nobody has posted on campus today',
       bodyInside: 'Be the first — everyone on campus sees it for 24 hours.',
