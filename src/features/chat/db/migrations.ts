@@ -362,10 +362,20 @@ CREATE INDEX idx_messages_unfolded ON messages (sent_at_ms DESC)
  * hiç almaz, bu yüzden LRU tahliyesi (Task 2) onu seçemez — o dosya, yükleme
  * tamamlanana kadar TEK kopya.
  *
+ * Not: bu ayrım "damga NULL ⇒ kendi kaydımız" ÇIKARIMINI vermiyor — ters yön
+ * geçerli DEĞİL. `clearMediaCache` tahliyede damgayı NULL'layıp `local_uri`'yi
+ * bilerek bırakıyor, yani tahliye edilmiş bir GELEN satır da damgasız kalıyor.
+ * Sahiplik `client_message_id` ile POZİTİF test ediliyor (bkz.
+ * `chatRepository.readOwnRecordingUri` ve `db/rows.ts`).
+ *
  * `media_size_bytes` AYRI kolon, `stat`ten türetilmiyor: tavan BAYT cinsinden
  * ve her tahliye turunda diskteki her dosyayı tek tek `stat`lamak senkron
- * açılış yolunu yavaşlatırdı. İndirme anında yazılıyor, bu yüzden diskten
- * sapması mümkün değil.
+ * açılış yolunu yavaşlatırdı. Değer İNDİRME ANINDA bir kez yazılıyor ve bir
+ * daha doğrulanmıyor: diskten SAPABİLİR (dosya uygulama dışından değişirse,
+ * ya da `clearMediaCache` yolu yerinde bırakmışken silme başarısız olmuşsa),
+ * kod bu sapmayı TESPİT ETMİYOR. Sonucu sınırlı ve tek yönlü: tavan yanlış
+ * ölçülür, yani tahliye gereğinden erken ya da geç tetiklenir — veri kaybı ya
+ * da ölü referans üretmez.
  */
 const V11 = `
 ALTER TABLE messages ADD COLUMN media_cached_at_ms INTEGER;

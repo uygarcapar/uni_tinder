@@ -16,12 +16,16 @@ jest.mock('@/features/chat/chatService', () => ({
  */
 jest.mock('expo-file-system', () => {
   const existsByUri = new Map<string, boolean>();
+  const sizeByUri = new Map<string, number | null>();
   const deletedPaths: string[] = [];
   class MockFile {
     uri: string;
-    size = 1000;
     constructor(...parts: any[]) {
       this.uri = parts.map((p) => (typeof p === 'string' ? p : p?.uri ?? '')).join('/');
+    }
+    /** Boyut yola göre AYARLANABİLİR — Minor 6/7 bunu açıp kapatıyor. */
+    get size() {
+      return sizeByUri.has(this.uri) ? sizeByUri.get(this.uri) : 1000;
     }
     get exists() {
       return existsByUri.get(this.uri) ?? true;
@@ -33,11 +37,32 @@ jest.mock('expo-file-system', () => {
   }
   class MockDirectory {
     uri: string;
-    exists = true;
     constructor(...parts: any[]) {
       this.uri = parts.map((p) => (typeof p === 'string' ? p : p?.uri ?? '')).join('/');
     }
+    get exists() {
+      return existsByUri.get(this.uri) ?? true;
+    }
     create() {}
+    /** Dizini silmek ALTINDAKİ her dosyayı da götürüyor — gerçeğin aynası. */
+    delete() {
+      deletedPaths.push(this.uri);
+      existsByUri.set(this.uri, false);
+      for (const [uri, alive] of existsByUri) {
+        if (alive && uri.startsWith(`${this.uri}/`)) existsByUri.set(uri, false);
+      }
+    }
+    /** Yalnız bu dizinin DOĞRUDAN altındaki yaşayan dosyalar. */
+    list() {
+      const prefix = `${this.uri}/`;
+      const out: any[] = [];
+      for (const [uri, alive] of existsByUri) {
+        if (!alive || !uri.startsWith(prefix)) continue;
+        if (uri.slice(prefix.length).includes('/')) continue;
+        out.push(new MockFile(uri));
+      }
+      return out;
+    }
   }
   (MockFile as any).downloadFileAsync = jest.fn(async (_url: string, destination: any) => {
     existsByUri.set(destination.uri, true);
@@ -48,6 +73,7 @@ jest.mock('expo-file-system', () => {
     Directory: MockDirectory,
     Paths: { document: { uri: 'file:///documents' }, cache: { uri: 'file:///caches' } },
     __existsByUri: existsByUri,
+    __sizeByUri: sizeByUri,
     __deletedPaths: deletedPaths,
   };
 });
@@ -56,11 +82,18 @@ import * as SQLite from 'expo-sqlite';
 import { File } from 'expo-file-system';
 import chatService from '@/features/chat/chatService';
 import { openChatDb, getChatDb, __resetChatDbForTests } from '@/features/chat/db/chatDb';
-import { saveMessage, setMediaCache, readMediaCache, readAllCachedUris } from '@/features/chat/chatRepository';
+import {
+  clearMediaCache,
+  readAllCachedUris,
+  readMediaCache,
+  saveMessage,
+  setMediaCache,
+} from '@/features/chat/chatRepository';
 import { clear as clearMessageCache } from '@/features/chat/messageCache';
 import {
   ensureCachedMedia,
   evictOverCap,
+  reconcileMediaCacheDirectory,
   wipeMediaCache,
   dropCachedMedia,
 } from '@/features/chat/mediaCache';
@@ -69,6 +102,7 @@ import type { MessageDto } from '@/shared/types';
 const { __resetAllDatabases } = SQLite as unknown as { __resetAllDatabases: () => void };
 const fsMock = jest.requireMock('expo-file-system') as {
   __existsByUri: Map<string, boolean>;
+  __sizeByUri: Map<string, number | null>;
   __deletedPaths: string[];
 };
 const getMediaUrl = (chatService as any).getMediaUrl as jest.Mock;
@@ -85,9 +119,14 @@ const msg = (id: string, over: Partial<MessageDto> = {}): MessageDto =>
     ...over,
   }) as MessageDto;
 
+/** `mediaCache.cacheDirectory()`in ürettiği yolun aynısı. */
+const CACHE_DIR = 'file:///documents/chat-media-cache';
+
 function mockFileExists(uri: string, value: boolean) {
   fsMock.__existsByUri.set(uri, value);
 }
+
+const mockDirExists = mockFileExists;
 
 /** Ham satır — `readMediaCache`/`readOwnRecordingUri`'nin filtrelediği hâli DEĞİL. */
 function getRawLocalUriRow(messageId: string) {
@@ -103,6 +142,7 @@ beforeEach(() => {
   clearMessageCache();
   openChatDb();
   fsMock.__existsByUri.clear();
+  fsMock.__sizeByUri.clear();
   fsMock.__deletedPaths.length = 0;
   getMediaUrl.mockReset();
   (File.downloadFileAsync as jest.Mock).mockClear();
@@ -143,7 +183,11 @@ describe('ensureCachedMedia — Review Important 3: kendi kaydımızın TEK refe
     // `readMediaCache` bu satırı null döner (kasıtlı, bkz. chatRepository.ts).
     // Düzeltmeden önce bu durum doğrudan indirme + setMediaCache'e düşüyordu,
     // yani outbox'ın TEK referansı olan local_uri üstüne yazılıyordu.
-    saveMessage(msg('m1', { _localUri: 'file:///rec.m4a' }), CONV, 'sent');
+    saveMessage(
+      msg('m1', { clientMessageId: 'cmid-1', _localUri: 'file:///rec.m4a' }),
+      CONV,
+      'sent',
+    );
     mockFileExists('file:///rec.m4a', true);
 
     const result = await ensureCachedMedia('m1');
@@ -159,7 +203,11 @@ describe('ensureCachedMedia — Review Important 3: kendi kaydımızın TEK refe
   });
 
   it('kendi kaydımızın dosyası da gitmişse (nadir) normal indirme yoluna düşüyor', async () => {
-    saveMessage(msg('m1', { _localUri: 'file:///rec.m4a' }), CONV, 'sent');
+    saveMessage(
+      msg('m1', { clientMessageId: 'cmid-1', _localUri: 'file:///rec.m4a' }),
+      CONV,
+      'sent',
+    );
     mockFileExists('file:///rec.m4a', false);
     getMediaUrl.mockResolvedValue({ url: 'https://cdn/m1.m4a', expiresAt: null, durationMs: null });
 
@@ -167,6 +215,30 @@ describe('ensureCachedMedia — Review Important 3: kendi kaydımızın TEK refe
 
     expect(getMediaUrl).toHaveBeenCalledWith('m1');
     expect(result).toBeTruthy();
+  });
+});
+
+describe('ensureCachedMedia — Review Önemli 4: tahliye sonrası sahte "kendi kaydımız"', () => {
+  it('TAHLİYE EDİLMİŞ gelen mesaj kendi kaydımız SANILMIYOR — yeniden indiriyor', async () => {
+    // `clearMediaCache` damgayı NULL'layıp `local_uri`'yi bilerek bırakıyor,
+    // yani tahliye edilmiş bir GELEN satır kendi kaydımızla bayt bayt aynı
+    // şekle giriyor. Sahiplik bir NULL'dan ÇIKARILSAYDI `readOwnRecordingUri`
+    // bu yolu döndürür, ve (dosya silme başarısız olmuşsa) ensureCachedMedia
+    // onu oynatılabilir kaynak diye verirdi: defter DIŞI, asla tahliye
+    // edilmeyen bir dosya — `dropCachedMedia` (UT-6606) durumunda SUNUCUNUN
+    // SİLDİĞİ ses. Burada silme BAŞARISIZ taklit ediliyor (dosya hâlâ var).
+    saveMessage(msg('m1'), CONV); // gelen: cmid YOK
+    setMediaCache('m1', `${CACHE_DIR}/m1.m4a`, 10, 1);
+    clearMediaCache(['m1']); // tahliye: damga gitti, yol kaldı
+    mockFileExists(`${CACHE_DIR}/m1.m4a`, true); // dosya silinemedi
+    getMediaUrl.mockResolvedValue({ url: 'https://cdn/m1.m4a', expiresAt: null, durationMs: null });
+
+    await ensureCachedMedia('m1');
+
+    // Eski yolu "kendi kaydımız" diye kısa devre yapmadı: ağa çıkıp yeniden
+    // indirdi ve satır artık düzgün bir önbellek kaydı (tahliye edilebilir).
+    expect(getMediaUrl).toHaveBeenCalledWith('m1');
+    expect(readMediaCache('m1')).not.toBeNull();
   });
 });
 
@@ -230,35 +302,127 @@ describe('ensureCachedMedia — Review Focus 5: offline ve hata yolları', () =>
   });
 });
 
-describe('wipeMediaCache — Review Focus 3: dosyaların kendisi', () => {
-  it('wipeMediaCache DOSYALARI siliyor, yalnız satırları değil', () => {
+describe('ensureCachedMedia — Review Minor 6/7: ölçülemeyen boyut ve aynı turda tahliye', () => {
+  it('boyut ÖLÇÜLEMEZSE 0 baytlık satır YAZMIYOR — dosyayı bırakmıyor, uzak URL dönüyor', async () => {
     saveMessage(msg('m1'), CONV);
-    saveMessage(msg('m2'), CONV);
-    setMediaCache('m1', 'file:///a.m4a', 10, 1);
-    setMediaCache('m2', 'file:///b.m4a', 10, 2);
+    getMediaUrl.mockResolvedValue({ url: 'https://cdn/m1.m4a', expiresAt: null, durationMs: null });
+    // `size` hem indirme dönüşünde hem yoldan `stat`'ta okunamıyor.
+    fsMock.__sizeByUri.set(`${CACHE_DIR}/m1.m4a`, null);
+
+    const result = await ensureCachedMedia('m1');
+
+    // Eski hâl `Number(size ?? 0)` ile 0 baytlık bir satır yazıyordu: tavanın
+    // HİÇBİR ZAMAN göremeyeceği, sınırsız birikebilen bir girdi.
+    expect(readMediaCache('m1')).toBeNull();
+    expect(fsMock.__deletedPaths).toContain(`${CACHE_DIR}/m1.m4a`);
+    // Oynatma yine de mümkün: imzalı uzak URL (dal öncesi davranışın aynısı).
+    expect(result).toBe('https://cdn/m1.m4a');
+  });
+
+  it('inen dosya AYNI TURDA tahliye edilirse silinmiş yolu DÖNDÜRMÜYOR', async () => {
+    // Tek başına tavanı aşan bir indirme: `evictOverCap` onu meşru aday sayıp
+    // siliyor (mediaCachePolicy'nin "istisnasız siliniyor" kararı). Eski kod
+    // `return downloaded.uri` diyordu — az önce SİLDİĞİ yolu oynatıcıya
+    // veriyordu.
+    saveMessage(msg('m1'), CONV);
+    getMediaUrl.mockResolvedValue({ url: 'https://cdn/m1.m4a', expiresAt: null, durationMs: null });
+    fsMock.__sizeByUri.set(`${CACHE_DIR}/m1.m4a`, 200 * 1024 * 1024 + 1);
+
+    const result = await ensureCachedMedia('m1');
+
+    expect(fsMock.__deletedPaths).toContain(`${CACHE_DIR}/m1.m4a`);
+    expect(result).toBe('https://cdn/m1.m4a');
+  });
+});
+
+describe('wipeMediaCache — Review Focus 3: dosyaların kendisi', () => {
+  it('önbellek DİZİNİNİ siliyor — altındaki dosyalar defterde olmasa bile gidiyor', () => {
+    // Faz 5 review Kritik 2: satır silen dört yol (pruneExpiredMessages,
+    // removeConversationLocally, gap dalı, removeByClientMessageId) dosyayı
+    // diskte bırakıp satırı götürüyor. Defter DOLAŞAN eski wipe o dosyayı
+    // ASLA bulamıyordu — logout'tan sonra önceki kullanıcının sesi cihazda
+    // kalıyordu. Burada m2 tam olarak öyle bir yetim.
+    saveMessage(msg('m1'), CONV);
+    setMediaCache('m1', `${CACHE_DIR}/m1.m4a`, 10, 1);
+    mockFileExists(`${CACHE_DIR}/m1.m4a`, true);
+    mockFileExists(`${CACHE_DIR}/m2-yetim.m4a`, true); // satırı YOK
 
     wipeMediaCache();
 
-    // `readAllCachedUris`'in bir ORDER BY'ı YOK — sıra garanti değil, yalnız
-    // "ikisi de silindi" garanti (review Minor 5: önceki `toEqual` sırayı
-    // iddia ediyordu, SQL bunu hiç vaat etmiyor).
-    expect(fsMock.__deletedPaths).toHaveLength(2);
-    expect(fsMock.__deletedPaths).toEqual(
-      expect.arrayContaining(['file:///a.m4a', 'file:///b.m4a']),
+    expect(fsMock.__deletedPaths).toContain(CACHE_DIR);
+    // Dizin gidince ikisi de gitti — defterde olan da olmayan da.
+    expect(fsMock.__existsByUri.get(`${CACHE_DIR}/m1.m4a`)).toBe(false);
+    expect(fsMock.__existsByUri.get(`${CACHE_DIR}/m2-yetim.m4a`)).toBe(false);
+  });
+
+  it('KENDİ gönderdiğimiz kaydın dosyası da gidiyor (Review Önemli 3)', () => {
+    // `discardVoiceTake` yalnız iptal yollarında koşuyor; GÖNDERİLMİŞ kaydın
+    // dosyası bu düzeltmeden önce hiçbir yolda silinmiyordu, yani logout
+    // "önceki kullanıcının sesi kalmasın" garantisini kendi sesimiz için
+    // VERMİYORDU. Dosya recorder'ın (OS cache) dizininde — önbellek dizinini
+    // silmek onu KAPSAMIYOR, yolu yalnız `local_uri`den okunabiliyor.
+    saveMessage(
+      msg('temp-cmid-1', { clientMessageId: 'cmid-1', _localUri: 'file:///caches/rec.m4a' }),
+      CONV,
+      'sent',
     );
+    mockFileExists('file:///caches/rec.m4a', true);
+
+    wipeMediaCache();
+
+    expect(fsMock.__deletedPaths).toContain('file:///caches/rec.m4a');
   });
 
   it('clearAllChatData önbellek dosyalarını da siliyor', () => {
     saveMessage(msg('m1'), CONV);
-    setMediaCache('m1', 'file:///a.m4a', 10, 1);
+    setMediaCache('m1', `${CACHE_DIR}/m1.m4a`, 10, 1);
 
     // resetChat choke-point'indeki gerçek sıra: satırlar hâlâ okunabilirken
     // önce dosyalar silinir, SONRA tablo boşaltılır (chatMirrorMiddleware).
     const urisBeforeClear = readAllCachedUris();
     wipeMediaCache();
 
-    expect(urisBeforeClear).toEqual(['file:///a.m4a']);
-    expect(fsMock.__deletedPaths).toContain('file:///a.m4a');
+    expect(urisBeforeClear).toEqual([`${CACHE_DIR}/m1.m4a`]);
+    expect(fsMock.__deletedPaths).toContain(CACHE_DIR);
+  });
+});
+
+describe('reconcileMediaCacheDirectory — Review Kritik 2: steady-state yetimler', () => {
+  it('satırı OLMAYAN dosyayı siliyor, satırı olanı KORUYOR', () => {
+    // `pruneExpiredMessages` açılışta tam olarak "eski, gönderilmiş" satırları
+    // siliyor — yani LRU'nun ilk tahliye edeceği dosyaların satırlarını. Dosya
+    // diskte kalıyor: defterdeki toplam KÜÇÜLÜRKEN dizin BÜYÜYOR ve 200 MB
+    // tavanı gerçek disk kullanımını bir süre sonra hiç sınırlamıyor.
+    saveMessage(msg('m1'), CONV);
+    setMediaCache('m1', `${CACHE_DIR}/m1.m4a`, 10, 1);
+    mockFileExists(`${CACHE_DIR}/m1.m4a`, true);
+    // m2'nin satırı silindi (budama/engelleme/gap), dosyası kaldı.
+    mockFileExists(`${CACHE_DIR}/m2.m4a`, true);
+
+    const removed = reconcileMediaCacheDirectory();
+
+    expect(removed).toBe(1);
+    expect(fsMock.__deletedPaths).toEqual([`${CACHE_DIR}/m2.m4a`]);
+    expect(fsMock.__existsByUri.get(`${CACHE_DIR}/m1.m4a`)).toBe(true);
+  });
+
+  it('uzantısız ad da messageId olarak çözülüyor — süpürme KOŞARKEN korunuyor', () => {
+    // Süpürmenin GERÇEKTEN koştuğunu gösteren bir yetim (m9) var; m1 uzantısız
+    // olmasına rağmen hayatta kalıyor. Yetim olmadan bu test, süpürme hiç
+    // çalışmasa bile yeşil kalırdı.
+    saveMessage(msg('m1'), CONV);
+    setMediaCache('m1', `${CACHE_DIR}/m1`, 10, 1);
+    mockFileExists(`${CACHE_DIR}/m1`, true);
+    mockFileExists(`${CACHE_DIR}/m9.m4a`, true);
+
+    expect(reconcileMediaCacheDirectory()).toBe(1);
+    expect(fsMock.__deletedPaths).toEqual([`${CACHE_DIR}/m9.m4a`]);
+    expect(fsMock.__existsByUri.get(`${CACHE_DIR}/m1`)).toBe(true);
+  });
+
+  it('dizin hiç yoksa sessizce 0 dönüyor', () => {
+    mockDirExists(CACHE_DIR, false);
+    expect(reconcileMediaCacheDirectory()).toBe(0);
   });
 });
 
@@ -291,7 +455,11 @@ describe('evictOverCap — Review Focus 2: kendi kaydımıza dokunmama + tavan a
     // konumunda olurdu — yani filtre bozulsaydı tahliyenin İLK hedefi bu
     // dosya olurdu. Asıl silinenin yalnız m1 olduğunu, rec.m4a'nın hiç
     // görünmediğini doğruluyoruz.
-    saveMessage(msg('temp-cmid-1', { _localUri: 'file:///rec.m4a' }), CONV, 'pending');
+    saveMessage(
+      msg('temp-cmid-1', { clientMessageId: 'cmid-1', _localUri: 'file:///rec.m4a' }),
+      CONV,
+      'pending',
+    );
     saveMessage(msg('m1'), CONV);
     const MAX = 200 * 1024 * 1024;
     setMediaCache('m1', 'file:///a.m4a', MAX + 1, 1);

@@ -9,7 +9,7 @@ jest.mock('@/features/chat/mediaCache', () => ({
 // testin konusu toast'ın İÇERİĞİ değil, balonun görünümü.
 jest.mock('@/shared/services/toaster', () => ({ showInfoToast: jest.fn() }));
 
-import { act, render } from '@testing-library/react-native';
+import { act, fireEvent, render } from '@testing-library/react-native';
 import { ensureCachedMedia } from '@/features/chat/mediaCache';
 import {
   stopVoicePlayback,
@@ -56,9 +56,20 @@ describe('VoiceBubble — oynatma hatası görünümü', () => {
     // bu satır silinirse balon idle'dan ayırt edilemez hale gelirdi (reviewer
     // bulgusu: "invisible at the bubble").
     expect(style.opacity).toBe(0.5);
-    // Ama KİLİTLİ DEĞİL: `failed` (gönderim hatası) aksine dokunuş hâlâ etkin
-    // — bir sonraki dokunuş yeniden dener (bkz. voicePlayback.ts recoverable
-    // tasarımı). `disabled` burada false kalmalı.
-    expect(button.props.accessibilityState?.disabled).toBeFalsy();
+
+    // Ama KİLİTLİ DEĞİL: dokunuş hâlâ etkin, bir sonraki dokunuş yeniden
+    // dener (bkz. voicePlayback.ts recoverable tasarımı).
+    //
+    // Bunu GERÇEK bir basışla doğruluyoruz (review Önemli 5). Eski hâli
+    // `accessibilityState?.disabled`ın falsy olmasına bakıyordu — Pressable'a
+    // `disabled` prop'u HİÇ verilmiyor, yani o assertion her zaman geçiyordu.
+    // Tıklanabilirliği kuran şey `onToggle`daki `if (!canPlay) return`; tam
+    // olarak VoiceBubble.tsx:366-371'in uyardığı regresyon (`playbackFailed`i
+    // `canPlay`e eklemek) eski assertion'ı KIRMIYORDU.
+    ensureCachedMediaMock.mockResolvedValue('file:///cache/msg-err.m4a');
+    await act(async () => {
+      fireEvent.press(button);
+    });
+    expect(ensureCachedMediaMock).toHaveBeenCalledTimes(2);
   });
 });
