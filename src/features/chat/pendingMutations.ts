@@ -105,12 +105,14 @@ import type { MutationKind, PendingMutationRow } from "@/features/chat/db/rows";
 import {
   classifyMutationError,
   coalesceDelete,
+  coalesceEdit,
   coalesceReaction,
   isMutationExpired,
   nextEligibleAt,
   rebaseReactionBase,
   shouldStopFlush,
   type DeletePayload,
+  type EditPayload,
   type MutationOutcome,
   type ReactionPayload,
 } from "@/features/chat/pendingMutationPolicy";
@@ -214,6 +216,34 @@ export function enqueueDelete(args: {
 }
 
 /**
+ * Aynı kuraldan: yeni düzenleme niyeti backoff'u miras almaz, yaşı korur.
+ * `base` (emrin ilk verildiği andaki sunucu içeriği) `coalesceEdit` ile
+ * eskisinden korunuyor — kullanıcı art arda metni değiştirse bile `base`
+ * ARA METNE kaymıyor (bkz. pendingMutationPolicy.ts'teki aynı gerekçe).
+ */
+export function enqueueEdit(args: {
+  messageId: string;
+  conversationId: string;
+  content: string;
+  serverBase: string;
+}): void {
+  const existingRow = findExistingRow(args.messageId, "edit");
+  const existing: EditPayload | null = existingRow ? JSON.parse(existingRow.payload_json) : null;
+  const payload = coalesceEdit(existing, args.content, args.serverBase);
+  upsertPendingMutation({
+    message_id: args.messageId,
+    kind: "edit",
+    conversation_id: args.conversationId,
+    payload_json: JSON.stringify(payload),
+    attempts: 0,
+    first_seen_at_ms: existingRow ? existingRow.first_seen_at_ms : Date.now(),
+    next_eligible_at_ms: 0,
+    last_error: null,
+  });
+  dirty = true;
+}
+
+/**
  * Kalıcı ret sonrası reaksiyonu geri alır: listeden BENİM emojim çıkarılır,
  * `base` varsa yerine geri konur.
  *
@@ -279,6 +309,27 @@ function revertDelete(row: PendingMutationRow): void {
       ...current,
       deletedAt: null,
       deletedForEveryone: false,
+    } as MessageDto),
+  );
+}
+
+/**
+ * Kalıcı ret sonrası düzenlemeyi geri alır: içerik `base`e (emrin ilk
+ * verildiği andaki sunucu değeri) döner. Silmedeki `revertDelete` ile AYNI
+ * kalıp: `current`i olduğu gibi spread edip yalnız `content` eziyoruz —
+ * eksik alanlarla `messageEdited`i (mirror'da `saveMessage`, TÜM kolon
+ * upsert'i) çağırmak satırı bozardı.
+ *
+ * Mesaj Redux'ta YÜKLÜ DEĞİLSE dispatch ETMEZ — aynı kapı, aynı gerekçe
+ * (bkz. dosya başı not, `revertReaction`/`revertDelete`).
+ */
+function revertEdit(row: PendingMutationRow, payload: EditPayload): void {
+  const current = findMessage(row.conversation_id, row.message_id);
+  if (!current) return;
+  dispatch(
+    messageEdited({
+      ...current,
+      content: payload.base,
     } as MessageDto),
   );
 }
@@ -355,9 +406,20 @@ function rebaseSupersededReactionBase(
 /** Tek satırı ağa taşır. `done` dışındaki dönüşler YALNIZ throw ile gelir. */
 async function sendRow(
   row: PendingMutationRow,
-  payload: ReactionPayload | DeletePayload,
+  payload: ReactionPayload | DeletePayload | EditPayload,
   progress: SendProgress,
 ): Promise<void> {
+  if (row.kind === "edit") {
+    const p = payload as EditPayload;
+    // Sunucu MessageDto döner — reaksiyonun tam liste dönüşüyle AYNI kalıp:
+    // kanonikleştirme burada, başarı bookkeeping'inden ÖNCE olur. Backend'in
+    // 2026-10-30 idempotent kısa devresi (içerik değişmemişse `EditedAt`e
+    // dokunmadan 200+DTO) bu çağrıyı ASLA reddetmiyor — ayrı bir dal YOK,
+    // "aynı içerikle retry" burada zaten normal `done` yoludur.
+    const dto = await chatService.editMessage(row.message_id, p.content);
+    dispatch(messageEdited(dto));
+    return;
+  }
   if (row.kind === "reaction") {
     const p = payload as ReactionPayload;
     let serverReactions: MessageReactionDto[] | undefined;
@@ -478,7 +540,7 @@ async function run(): Promise<FlushResult> {
 
     opsDone += 1;
 
-    let payload: ReactionPayload | DeletePayload | null = null;
+    let payload: ReactionPayload | DeletePayload | EditPayload | null = null;
     let parseError: unknown = null;
     try {
       payload = JSON.parse(row.payload_json);
@@ -515,7 +577,7 @@ async function run(): Promise<FlushResult> {
       outcome = "rejected";
     } else {
       try {
-        await sendRow(row, payload as ReactionPayload | DeletePayload, progress);
+        await sendRow(row, payload as ReactionPayload | DeletePayload | EditPayload, progress);
         outcome = "done";
       } catch (e) {
         err = e;
@@ -574,13 +636,23 @@ async function run(): Promise<FlushResult> {
             revertReaction(row, progress.baseRemoved ? { ...p, base: null } : p);
           } else if (row.kind === "delete") {
             revertDelete(row);
+          } else if (row.kind === "edit" && payload) {
+            // UT-6723 (pencere kapandı) dahil HER kalıcı ret burada biter:
+            // ekrandaki/diskteki içerik `base`e (sunucunun emrin verildiği
+            // andaki bilinen değeri) döner — sessiz bir niyet kaybı DEĞİL,
+            // toast aşağıda sebebi söylüyor.
+            revertEdit(row, payload as EditPayload);
           }
           if (loaded) {
             showInfoToast({
               message: chatErrorText(
                 err,
                 (k: string) => i18n.t(k) as string,
-                row.kind === "reaction" ? "errors.generic" : "chat.deleteMessage.error",
+                row.kind === "reaction"
+                  ? "errors.generic"
+                  : row.kind === "delete"
+                    ? "chat.deleteMessage.error"
+                    : "chat.editMessage.error",
               ),
               variant: "error",
             });

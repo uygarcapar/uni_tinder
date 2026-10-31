@@ -1007,6 +1007,9 @@ const tr = {
     deleteMessage: {
       error: 'Silme başarısız.',
     },
+    editMessage: {
+      error: 'Düzenleme başarısız.',
+    },
     send: {
       failed: 'Mesaj gönderilemedi.',
       lateDelivered: 'Bekleyen mesajın gönderildi',

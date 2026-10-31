@@ -7,6 +7,7 @@ jest.mock('@/features/chat/chatService', () => ({
     addReaction: jest.fn(() => Promise.resolve([])),
     removeReaction: jest.fn(() => Promise.resolve([])),
     deleteMessage: jest.fn(() => Promise.resolve({})),
+    editMessage: jest.fn(() => Promise.resolve({})),
   },
 }));
 jest.mock('@/shared/services/networkStatus', () => ({ isOfflineNow: jest.fn(() => false) }));
@@ -43,6 +44,7 @@ import type { SendState } from '@/features/chat/db/rows';
 import {
   enqueueReaction,
   enqueueDelete,
+  enqueueEdit,
   flushPendingMutations,
   __resetPendingMutationsForTests,
 } from '@/features/chat/pendingMutations';
@@ -97,6 +99,17 @@ function lastReactionsDispatched(): any[] | undefined {
 const addReaction = chatService.addReaction as jest.Mock;
 const removeReaction = chatService.removeReaction as jest.Mock;
 const deleteMessage = chatService.deleteMessage as jest.Mock;
+const editMessage = chatService.editMessage as jest.Mock;
+
+/** `dispatch` çağrılarından SON `messageEdited` payload'ı. */
+function lastEditedDispatched(): any | undefined {
+  const calls = (store.dispatch as jest.Mock).mock.calls;
+  for (let i = calls.length - 1; i >= 0; i--) {
+    const action = calls[i][0];
+    if (action?.type === 'chat/messageEdited') return action.payload;
+  }
+  return undefined;
+}
 
 beforeEach(() => {
   __resetChatDbForTests();
@@ -107,6 +120,7 @@ beforeEach(() => {
   addReaction.mockReset().mockResolvedValue([]);
   removeReaction.mockReset().mockResolvedValue([]);
   deleteMessage.mockReset().mockResolvedValue({});
+  editMessage.mockReset().mockResolvedValue({});
   (isOfflineNow as jest.Mock).mockReturnValue(false);
   (remainingNow as jest.Mock).mockReturnValue(null);
   (showInfoToast as jest.Mock).mockReset();
@@ -808,6 +822,110 @@ describe('pendingMutations: tur', () => {
       } finally {
         spy.mockRestore();
       }
+    });
+  });
+
+  /**
+   * Turun ÜÇÜNCÜ dalı: düzenleme. Reaksiyon/silme ile AYNI iskelet (payload-
+   * koşullu silme/attempt, dirty/chain, tek-uçuş, yaş tavanı) — burada yalnız
+   * bu dala ÖZGÜ olan iki şey test ediliyor: kanonikleştirme (sunucunun
+   * DTO'su `messageEdited` ile dispatch edilir) ve UT-6723'ün (pencere
+   * kapandı) görünür bir ret olması gerektiği.
+   */
+  describe('pendingMutations: düzenleme turu', () => {
+    it('edit emri sunucuya içerikle gidiyor ve dönen DTO kanonikleştiriliyor', async () => {
+      insertMessage('msg-1', 'sent');
+      enqueueEdit({ messageId: 'msg-1', conversationId: CONV, content: 'yeni içerik', serverBase: 'orijinal' });
+      const dto = { id: 'msg-1', conversationId: CONV, content: 'yeni içerik', editedAt: '2026-10-31T10:00:00.000Z' };
+      editMessage.mockResolvedValue(dto);
+
+      const r = await flushPendingMutations('test');
+
+      expect(editMessage).toHaveBeenCalledWith('msg-1', 'yeni içerik');
+      expect(r.done).toBe(1);
+      expect(readPendingMutations()).toHaveLength(0);
+      expect(store.dispatch).toHaveBeenCalledWith(
+        expect.objectContaining({ type: 'chat/messageEdited', payload: dto }),
+      );
+    });
+
+    // Review Focus 2 — AYIRT EDİCİ: backend kısa devresi 200 döner, hata DEĞİL.
+    it('aynı içerikle retry 200 dönünce BAŞARI sayılıyor, satır siliniyor', async () => {
+      insertMessage('msg-1', 'sent');
+      enqueueEdit({ messageId: 'msg-1', conversationId: CONV, content: 'yeni', serverBase: 'yeni' });
+      editMessage.mockResolvedValue({ id: 'msg-1', content: 'yeni', editedAt: null });
+
+      const r = await flushPendingMutations('test');
+
+      expect(r.done).toBe(1);
+      expect(readPendingMutations()).toHaveLength(0);
+    });
+
+    // Review Focus 1
+    it("UT-6723: satır siliniyor, içerik base'e DÖNÜYOR ve sebep söyleniyor", async () => {
+      insertMessage('msg-1', 'sent');
+      enqueueEdit({ messageId: 'msg-1', conversationId: CONV, content: 'yeni', serverBase: 'orijinal' });
+      setStoreMessages([msg('msg-1', { content: 'yeni' })]);
+      editMessage.mockRejectedValue({ response: { data: { errorCode: 'UT-6723' } } });
+
+      const r = await flushPendingMutations('test');
+
+      expect(r.rejected).toBe(1);
+      expect(readPendingMutations()).toHaveLength(0);
+      expect(lastEditedDispatched().content).toBe('orijinal');
+      expect(showInfoToast).toHaveBeenCalledWith(expect.objectContaining({ variant: 'error' }));
+    });
+
+    it('ağ hatasında satır KALIYOR, attempts artıyor, toast YOK', async () => {
+      insertMessage('msg-1', 'sent');
+      enqueueEdit({ messageId: 'msg-1', conversationId: CONV, content: 'yeni', serverBase: 'orijinal' });
+      editMessage.mockRejectedValue(new Error('Network Error'));
+
+      await flushPendingMutations('test');
+
+      const [row] = readPendingMutations();
+      expect(row.kind).toBe('edit');
+      expect(row.attempts).toBe(1);
+      expect(row.next_eligible_at_ms).toBeGreaterThan(Date.now());
+      expect(row.last_error).toBe('Network Error');
+      expect(showInfoToast).not.toHaveBeenCalled();
+    });
+
+    it("enqueueEdit aynı mesaja ikinci emirde base'i koruyor, backoff'u sıfırlıyor", () => {
+      insertMessage('msg-1', 'sent');
+      enqueueEdit({ messageId: 'msg-1', conversationId: CONV, content: 'birinci', serverBase: 'orijinal' });
+      const [firstRow] = readPendingMutations();
+      const originalFirstSeen = firstRow.first_seen_at_ms;
+
+      // Satırı eski bir backoff'a sahipmiş gibi işaretle — gerçek dünyada
+      // `run()`'ın 'retry' dalı yazar.
+      upsertPendingMutation({
+        ...firstRow,
+        attempts: 4,
+        next_eligible_at_ms: Date.now() + 60_000,
+        last_error: 'önceki hata',
+      });
+
+      // Kullanıcı metni TEKRAR değiştirdi — yeni niyet eski backoff'u miras
+      // ALMAMALI, `base` (sunucunun ilk gördüğü değer) korunmalı.
+      enqueueEdit({ messageId: 'msg-1', conversationId: CONV, content: 'ikinci', serverBase: 'bambaşka-bir-deger' });
+
+      const [row] = readPendingMutations();
+      expect(row.attempts).toBe(0);
+      expect(row.next_eligible_at_ms).toBe(0);
+      expect(row.first_seen_at_ms).toBe(originalFirstSeen);
+      expect(JSON.parse(row.payload_json)).toEqual({ content: 'ikinci', base: 'orijinal' });
+    });
+
+    it('gönderilmemiş mesajın düzenlemesi ağa ÇIKMIYOR, satır kalıyor', async () => {
+      insertMessage('cmid-1', 'pending');
+      enqueueEdit({ messageId: 'cmid-1', conversationId: CONV, content: 'yeni', serverBase: 'orijinal' });
+
+      const r = await flushPendingMutations('test');
+
+      expect(editMessage).not.toHaveBeenCalled();
+      expect(r.done).toBe(0);
+      expect(readPendingMutations()).toHaveLength(1);
     });
   });
 });

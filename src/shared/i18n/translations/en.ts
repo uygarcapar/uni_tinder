@@ -997,6 +997,9 @@ const en = {
     deleteMessage: {
       error: 'Deletion failed.',
     },
+    editMessage: {
+      error: 'Edit failed.',
+    },
     send: {
       failed: 'Message could not be sent.',
       lateDelivered: 'Your pending message was sent',
