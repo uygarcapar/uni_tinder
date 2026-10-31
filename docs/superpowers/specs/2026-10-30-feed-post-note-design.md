@@ -2,6 +2,11 @@
 
 **Tarih:** 2026-10-30 · **Boyut:** proje (sözleşme + üç yüzey)
 
+> **2026-10-31 güncellemesi.** Backend sözleşmeyi kabul etti ve üç parçayı tek sürümde
+> çıkarıyor (`feed.notes.enabled` kill switch'i arkasında). İki değişiklik: `AlreadySent`
+> düştü (not kişi başına tek olduğu için hiç oluşmuyor) ve kapıyı kapatan şey Keşif
+> destesinin gizleme kuralı — beğeni/Fire süresiz, pass yalnız 3 gün.
+
 ## Niyet ve neden
 
 Akışta bir gönderi okuyup o kişiye yazmak isteyen kullanıcının bugünkü yolu
@@ -105,8 +110,8 @@ yanına.
 
 ```
 note: {
-  state: "Ok" | "AlreadySent" | "AlreadySwiped" | "NoMode" | "LikedMe"
-       | "Matched" | "OwnPost" | "Anonymous" | "Restricted",
+  state: "Ok" | "AlreadySwiped" | "NoMode" | "LikedMe" | "Matched"
+       | "OwnPost" | "Anonymous" | "Restricted" | "OtherUniversityRequiresPlus",
   availableModes: string[]   // yalnız state = "Ok" iken anlamlı
 }
 ```
@@ -114,8 +119,8 @@ note: {
 - `Ok` → buton çizilir. `availableModes` bugünkü `FeedAuthorProfileGate` ile
   aynı anlamda; istemci `resolveCardMode` ile hangi modda gideceğini seçiyor ve
   butonun rengi/adı o modun vurgusunu alıyor.
-- `AlreadySent` → bu gönderiye not atılmış (hedef 4'ün kalıcı kaynağı).
-- `AlreadySwiped` → yazara **zaten bir beğeni/not gitmiş** (başka bir
+- `AlreadySwiped` → yazara **zaten bir beğeni/not gitmiş** ya da hedef Keşif destesinde
+  gizli (başka bir
   gönderisinden ya da Keşif'ten). Not bir beğeni olduğu için kişi başına tek
   sefer gidiyor; bu hâl çizilirse buton sunucudan `UT-6404 ALREADY_SWIPED`
   yiyecekti. **Görünür sonucu:** birine not attıktan sonra o kişinin TÜM
@@ -187,9 +192,10 @@ metinsiz; satırın ritmi korunuyor).
   ayrışması demek (`replyActionFor` tarihçesinin dersi).
 - `variant === "mine"` ve modsuz/salt-okunur hâller sunucu tarafında `OwnPost` /
   `NoMode` olarak zaten kapalı; istemci ayrıca bir şey yapmıyor.
-- Not gönderildikten sonra buton **anında** kayboluyor: `patchPostInCaches` ile
-  `note.state = "AlreadySent"` yazılıyor (kalp optimistic'inin aynı yolu).
-  Kalıcılığı sunucu veriyor (A).
+- Not gönderildikten sonra buton **anında** kayboluyor — ve yalnız o satırda değil,
+  **yazarın tüm satırlarında**: `patchAuthorPostsInCaches` ile
+  `note.state = "AlreadySwiped"` yazılıyor. Tek satır yamasaydık aynı yazarın bir alttaki
+  gönderisinde buton kalır ve basınca UT-6404 yerdi. Kalıcılığı sunucu veriyor (A).
 
 ### Gönderim — `FeedScreen`
 

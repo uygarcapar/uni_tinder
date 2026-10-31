@@ -1,5 +1,15 @@
 # Akış gönderisine **not** — üçüncü not hedefi (`FeedPost`) (talep, 2026-10-30)
 
+> **2026-10-31 — KABUL EDİLDİ.** Backend kendi tasarımını yazdı ve üç parçayı da tek
+> sürümde çıkarıyor. Bu doküman İLK TALEP olarak duruyor; aşağıdaki üç madde o turda
+> düzeltildi ve metne işlendi:
+> 1. `AlreadySent` state'i **düştü** — not kişi başına tek olduğu için (`Note` tablosunda
+>    modsuz `UNIQUE(ActorId, TargetId)`) hiç oluşmuyor; tek kapalı hâl `AlreadySwiped`.
+> 2. Gövdedeki alan `userId` değil **`targetUserId`** (istemci zaten öyle gönderiyor).
+> 3. Kapıyı kapatan şey "herhangi bir swipe" değil **Keşif destesinin gizleme kuralı**
+>    (`GetStillHiddenTargetsAsync`, mod başına): beğeni/Fire süresiz, pass yalnız 3 gün.
+>    Yani fotoğrafına bakıp geçtiğin birine, 3 gün sonra akıştan not atılabiliyor.
+
 **Özet.** Not (yorumlu beğeni) bugün iki şeye yazılabiliyor: bir **fotoğrafa** ya da bir
 **prompt cevabına**. Buna üçüncü hedefi ekliyoruz: **akış gönderisi.** Kullanıcı akışta
 okuduğu gönderinin satırındaki butona basıp notu yazacak, not alıcıya *"gönderine not
@@ -69,7 +79,6 @@ tablosu aynen bugünkü gibi. Değişen üç şey var: (A) akış satırında bu
 | state | ne demek | istemci |
 |---|---|---|
 | `Ok` | not atılabilir | **buton çizilir** |
-| `AlreadySent` | bu gönderiye not atılmış | çizilmez |
 | `AlreadySwiped` | yazara daha önce beğeni/not gitmiş (başka gönderi ya da Keşif) | çizilmez |
 | `NoMode` | karşılıklı uygun mod yok | çizilmez |
 | `LikedMe` | yazar izleyiciyi zaten beğenmiş | çizilmez |
@@ -81,7 +90,8 @@ tablosu aynen bugünkü gibi. Değişen üç şey var: (A) akış satırında bu
 - `availableModes` bugünkü `author-profile` yanıtındaki alanla **aynı anlamda** (karşılıklı
   uygun modlar). Notun hangi modda gideceğini istemci bu listeden seçiyor ve butonun
   rengi/adı o modun vurgusunu alıyor.
-- **Alan hiç gelmezse buton çizilmiyor.** Yani sunucu tarafı açılana kadar istemci sürümü
+- **Alan hiç gelmezse — ya da `feed.notes.enabled` kapalıyken `null` gelirse — buton
+  çizilmiyor.** Yani sunucu tarafı açılana kadar istemci sürümü
   beklemek gerekmiyor; `availableModes`in `author-profile`a eklenirken kullandığımız aynı
   gerekçe: *olmayan bir hakkı varsaymak, kullanıcıya reddedilecek bir buton göstermek
   olurdu.*
@@ -99,7 +109,7 @@ Gövdedeki `target` üçüncü türü tanısın; null'lar bugünkü gibi **açı
 
 ```jsonc
 {
-  "userId": "<yazarın userId'si>",
+  "targetUserId": "<yazarın userId'si>",
   "comment": "…",
   "mode": "Dating",
   "target": {

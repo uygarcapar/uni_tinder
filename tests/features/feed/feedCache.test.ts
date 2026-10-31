@@ -15,6 +15,7 @@
 import { QueryClient } from '@tanstack/react-query';
 import { feedKeys } from '@/features/feed/feedKeys';
 import {
+  patchAuthorPostsInCaches,
   patchPostInCaches,
   removePostFromCaches,
   writeFeedQuota,
@@ -278,5 +279,54 @@ describe('optimistic beğeni — anlık yazım + sunucu düzeltmesi', () => {
     expect(restored).toEqual(original);
     expect(restored.pages[0].items[0].likeCount).toBe(5);
     expect(restored.pages[0].items[0].likedByMe).toBe(false);
+  });
+});
+
+/**
+ * YAZAR bazlı yama — not gönderiminin ardından.
+ *
+ * ⚠️ Not KİŞİ BAŞINA tek gidiyor (sunucuda `Note` tablosunda
+ * UNIQUE(ActorId, TargetId)). Yani bir not gittikten sonra o yazarın
+ * HİÇBİR gönderisine ikinci not atılamıyor. Yalnız dokunulan satır
+ * yamalansaydı aynı yazarın bir alttaki gönderisinde buton durmaya devam
+ * eder, basınca sunucudan UT-6404 yerdi — tam olarak kaçındığımız ölü buton.
+ */
+describe('patchAuthorPostsInCaches', () => {
+  const byAuthor = (id: string, userId: string | null) =>
+    post(id, {
+      author: userId
+        ? ({ userId, name: 'Esra', age: 21, mainPhotoUrl: null, universityDisplay: null } as any)
+        : null,
+    });
+
+  it('aynı yazarın TÜM gönderilerini yamalar, başkasınınkine dokunmaz', () => {
+    qc.setQueryData(
+      feedKeys.posts(PARAMS_NEW),
+      infinite([byAuthor('1', 'u1'), byAuthor('2', 'u1'), byAuthor('3', 'u2')]),
+    );
+
+    patchAuthorPostsInCaches(qc, 'u1', (p) => ({
+      ...p,
+      note: { state: 'AlreadySwiped' },
+    }));
+
+    const items = (qc.getQueryData(feedKeys.posts(PARAMS_NEW)) as any).pages[0].items;
+    expect(items[0].note.state).toBe('AlreadySwiped');
+    expect(items[1].note.state).toBe('AlreadySwiped');
+    expect(items[2].note).toBeUndefined();
+  });
+
+  it('ANONİM satır yazarsız geldiği için hiç yamalanmıyor', () => {
+    const anon = byAuthor('1', null);
+    qc.setQueryData(feedKeys.posts(PARAMS_NEW), infinite([anon]));
+    patchAuthorPostsInCaches(qc, 'u1', (p) => ({ ...p, note: { state: 'AlreadySwiped' } }));
+    expect((qc.getQueryData(feedKeys.posts(PARAMS_NEW)) as any).pages[0].items[0]).toBe(anon);
+  });
+
+  it('isabet YOKSA sorgunun referansı korunur (gereksiz render yok)', () => {
+    const data = infinite([byAuthor('1', 'u1')]);
+    qc.setQueryData(feedKeys.posts(PARAMS_NEW), data);
+    patchAuthorPostsInCaches(qc, 'baska-kullanici', (p) => ({ ...p }));
+    expect(qc.getQueryData(feedKeys.posts(PARAMS_NEW))).toBe(data);
   });
 });

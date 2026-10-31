@@ -333,6 +333,52 @@ export function patchPostInCaches(
   qc.setQueriesData({ queryKey: feedKeys.mine }, apply);
 }
 
+/**
+ * Bir YAZARIN tüm gönderilerini yamalar — `patchPostInCaches`in kardeşi, tek
+ * farkı eşleşmenin id ile değil `author.userId` ile kurulması.
+ *
+ * ⚠️ VAR OLMA SEBEBİ: not KİŞİ BAŞINA tek gidiyor (sunucuda `Note` tablosunda
+ * modsuz `UNIQUE(ActorId, TargetId)`; backend tasarımı K1). Bir not gittiğinde
+ * o yazarın yalnız dokunulan gönderisi değil, listede duran DİĞER gönderileri
+ * de kapanıyor. Tek satır yamasaydık aynı yazarın bir alttaki gönderisinde
+ * buton durmaya devam eder, basınca sunucudan UT-6404 yerdi — kaçındığımız
+ * ölü butonun ta kendisi.
+ *
+ * ⚠️ Yazarsız satır (ANONİM gönderi: sunucu `author: null` yolluyor) hiç
+ * eşleşmiyor. Anonim gönderiye zaten not atılamıyor ve kimliği açığa çıkaracak
+ * bir yan etki üretmemesi için eşleştirme yalnız dolu `userId` üzerinden.
+ *
+ * İsabet yoksa referans korunuyor — gerekçe `patchPostInCaches`te.
+ */
+export function patchAuthorPostsInCaches(
+  qc: QueryClient,
+  authorUserId: string,
+  patch: PostPatch,
+): void {
+  const apply = (data: any) => {
+    if (!data?.pages) return data;
+    let hit = false;
+    const pages = data.pages.map((page: FeedPostPageDto) => {
+      const items = page?.items;
+      if (!Array.isArray(items)) return page;
+      let pageHit = false;
+      const nextItems = items.map((item) => {
+        if (!item?.author?.userId || item.author.userId !== authorUserId) {
+          return item;
+        }
+        pageHit = true;
+        return patch(item);
+      });
+      if (!pageHit) return page;
+      hit = true;
+      return { ...page, items: nextItems };
+    });
+    return hit ? { ...data, pages } : data;
+  };
+  qc.setQueriesData({ queryKey: feedKeys.postsRoot }, apply);
+  qc.setQueriesData({ queryKey: feedKeys.mine }, apply);
+}
+
 /** Gönderiyi tüm liste cache'lerinden düşür (UT-7312, silme, şikayet sonrası). */
 export function removePostFromCaches(qc: QueryClient, postId: string): void {
   const apply = (data: any) => {

@@ -29,8 +29,18 @@ describe('akıştan not gönderimi', () => {
     expect(src).toMatch(/postNoteTarget\(\s*post\.id/);
   });
 
-  it('başarılı gönderim satırı AlreadySent’e yamıyor', () => {
-    expect(src).toMatch(/patchPostInCaches[\s\S]{0,300}AlreadySent/);
+  // ⚠️ Yama TEK SATIRA DEĞİL, YAZARIN TÜM GÖNDERİLERİNE: not kişi başına tek
+  // (sunucuda modsuz UNIQUE(ActorId, TargetId) — backend tasarımı K1). Tek
+  // satır yamalansaydı aynı yazarın bir alttaki gönderisinde buton kalır ve
+  // basınca UT-6404 yerdi.
+  //
+  // ⚠️ Değer `AlreadySwiped` — sunucunun göndereceği kelimenin aynısı.
+  // `AlreadySent` sözleşmeden DÜŞTÜ (K2): "bu gönderiye not attın" hâli
+  // kişi-başına-tek kuralı yüzünden hiç oluşmuyor.
+  it('başarılı gönderim YAZARIN TÜM satırlarını AlreadySwiped’e yamıyor', () => {
+    expect(src).toMatch(/patchAuthorPostsInCaches[\s\S]{0,400}AlreadySwiped/);
+    // Tek-satır yamasına geri dönülmesin: gönderi dalında o fonksiyon YOK.
+    expect(src).not.toMatch(/patchPostInCaches\(\s*qc,\s*post\.id[\s\S]{0,200}AlreadySwiped/);
   });
 
   it('UT-6401 paket sheet’ini açıyor', () => {

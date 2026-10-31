@@ -151,7 +151,7 @@ import {
   useMyFeedPosts,
   useOwnFeedAvatar,
   useTogglePostLike,
-  patchPostInCaches,
+  patchAuthorPostsInCaches,
 } from "../feedQueries";
 import {
   anonymousGate,
@@ -1342,13 +1342,19 @@ export default function FeedScreen() {
           mode: req.mode ?? null,
         });
         setNoteRequest(null);
-        // Satırdaki buton ANINDA kaybolsun: bir gönderiye tek not. Kalıcılığı
-        // sunucu veriyor (`note.state` bir sonraki çekimde `AlreadySent`), bu
-        // yama yalnız aradaki boşluğu kapatıyor — ikinci bir dokunuş ikinci bir
-        // kredi harcardı.
-        patchPostInCaches(qc, post.id, (p) => ({
+        // Satırdaki buton ANINDA kaybolsun — ve yalnız bu satırda değil,
+        // YAZARIN TÜM GÖNDERİLERİNDE: not kişi başına tek gidiyor (Note
+        // tablosunda UNIQUE(ActorId, TargetId)), yani bir not sonrası o
+        // yazarın hiçbir gönderisine ikinci not atılamıyor. Tek satırı
+        // yamasaydık aynı yazarın bir alttaki gönderisinde buton durur ve
+        // basınca sunucudan UT-6404 yerdi.
+        //
+        // ⚠️ Değer `AlreadySwiped` — sunucunun bir sonraki çekimde göndereceği
+        // kelimenin AYNISI. (`AlreadySent` sözleşmeden düştü: "bu gönderiye not
+        // attın" hâli kişi-başına-tek kuralı yüzünden hiç oluşmuyor.)
+        patchAuthorPostsInCaches(qc, userId, (p) => ({
           ...p,
-          note: { ...(p.note ?? { state: "Ok" }), state: "AlreadySent" },
+          note: { ...(p.note ?? { state: "Ok" }), state: "AlreadySwiped" },
         }));
         showInfoToast({
           title: t("note.sentTitle"),
