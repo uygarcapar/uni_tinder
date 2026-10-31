@@ -99,6 +99,19 @@ export function coalesceEdit(
   };
 }
 
+/**
+ * Okundu emrinin gövdesi YOK — hedef ve tür her şeyi söylüyor.
+ *
+ * Reaksiyon/silme/düzenlemenin aksine birleştirilecek (coalesce) bir alan
+ * yok: aynı sohbete tekrar "okundu" demek önceki niyeti DEĞİŞTİRMİYOR, PK
+ * `(message_id, kind)` zaten tek satırda tutuyor (bkz. pendingMutations.ts
+ * `enqueueMarkRead`). Geri alınacak bir karşılığı da yok — rozet zaten
+ * yerelde düştü, `upsertConversations`'ın (2) numaralı kuralı onu koruyor.
+ */
+export interface ReadPayload {
+  // boş — kasıtlı
+}
+
 /** Sunucunun da reddettiği (`EmptyContent`/`ContentTooLong`) hallerin istemci tarafı. */
 export const EDIT_MAX_LENGTH = 2000;
 

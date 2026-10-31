@@ -64,6 +64,7 @@ jest.mock('@/features/chat/pendingMutations', () => ({
   enqueueReaction: (...args: any[]) => mockEnqueueReaction(...args),
   enqueueDelete: (...args: any[]) => mockEnqueueDelete(...args),
   enqueueEdit: (...args: any[]) => mockEnqueueEdit(...args),
+  enqueueMarkRead: jest.fn(),
   flushPendingMutations: (...args: any[]) => mockFlushPendingMutations(...args),
 }));
 

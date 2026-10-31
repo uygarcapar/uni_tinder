@@ -69,6 +69,7 @@ const mockFlushPendingMutations = jest.fn((..._args: any[]) =>
 jest.mock('@/features/chat/pendingMutations', () => ({
   enqueueReaction: (...args: any[]) => mockEnqueueReaction(...args),
   enqueueDelete: (...args: any[]) => mockEnqueueDelete(...args),
+  enqueueMarkRead: jest.fn(),
   flushPendingMutations: (...args: any[]) => mockFlushPendingMutations(...args),
 }));
 
@@ -337,6 +338,11 @@ describe('bayrak kapalı', () => {
     (MessageActionSheetMock as any).__setEmoji('😀');
     const { store } = renderChatScreen(buildMessage({ reactions: [] }));
 
+    // Mount'ta mark-read de `flushPendingMutations`'ı tetikleyebilir (Task 1,
+    // ayrı bir çağrı noktası, bu testin konusu DEĞİL) — ayırt edici iddia
+    // tepki aksiyonunun ONU ARTIRMADIĞI, hiç çağrılmadığı değil.
+    const flushCallsBeforeAction = mockFlushPendingMutations.mock.calls.length;
+
     await longPressBubble();
     await act(async () => {
       fireEvent.press(screen.getByTestId('action-pick-reaction'));
@@ -349,7 +355,7 @@ describe('bayrak kapalı', () => {
 
     expect(mockAddReaction).toHaveBeenCalledWith(MESSAGE_ID, '😀');
     expect(mockEnqueueReaction).not.toHaveBeenCalled();
-    expect(mockFlushPendingMutations).not.toHaveBeenCalled();
+    expect(mockFlushPendingMutations.mock.calls.length).toBe(flushCallsBeforeAction);
 
     const message = (store.getState() as any).chat.messagesByConv[CONVERSATION_ID].messages[0];
     expect(message.reactions).toEqual([]);
@@ -359,6 +365,10 @@ describe('bayrak kapalı', () => {
     mockDeleteMessage.mockImplementation(() => Promise.reject(new Error('network down')));
     const alertSpy = jest.spyOn(Alert, 'alert').mockImplementation(() => {});
     renderChatScreen(buildMessage());
+
+    // bkz. yukarıdaki tepki testindeki aynı not: mount'ın mark-read'i ayrı bir
+    // çağrı noktası, bu testin konusu silme aksiyonunun onu TETİKLEMEMESİ.
+    const flushCallsBeforeAction = mockFlushPendingMutations.mock.calls.length;
 
     await longPressBubble();
     await act(async () => {
@@ -371,7 +381,7 @@ describe('bayrak kapalı', () => {
 
     expect(mockDeleteMessage).toHaveBeenCalledWith(MESSAGE_ID, false);
     expect(mockEnqueueDelete).not.toHaveBeenCalled();
-    expect(mockFlushPendingMutations).not.toHaveBeenCalled();
+    expect(mockFlushPendingMutations.mock.calls.length).toBe(flushCallsBeforeAction);
     expect(alertSpy).toHaveBeenCalled();
 
     alertSpy.mockRestore();

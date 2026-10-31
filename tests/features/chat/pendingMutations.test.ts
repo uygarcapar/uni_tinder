@@ -8,6 +8,7 @@ jest.mock('@/features/chat/chatService', () => ({
     removeReaction: jest.fn(() => Promise.resolve([])),
     deleteMessage: jest.fn(() => Promise.resolve({})),
     editMessage: jest.fn(() => Promise.resolve({})),
+    markRead: jest.fn(() => Promise.resolve({})),
   },
 }));
 jest.mock('@/shared/services/networkStatus', () => ({ isOfflineNow: jest.fn(() => false) }));
@@ -45,6 +46,7 @@ import {
   enqueueReaction,
   enqueueDelete,
   enqueueEdit,
+  enqueueMarkRead,
   flushPendingMutations,
   __resetPendingMutationsForTests,
 } from '@/features/chat/pendingMutations';
@@ -100,6 +102,7 @@ const addReaction = chatService.addReaction as jest.Mock;
 const removeReaction = chatService.removeReaction as jest.Mock;
 const deleteMessage = chatService.deleteMessage as jest.Mock;
 const editMessage = chatService.editMessage as jest.Mock;
+const markRead = chatService.markRead as jest.Mock;
 
 /** `dispatch` çağrılarından SON `messageEdited` payload'ı. */
 function lastEditedDispatched(): any | undefined {
@@ -121,6 +124,7 @@ beforeEach(() => {
   removeReaction.mockReset().mockResolvedValue([]);
   deleteMessage.mockReset().mockResolvedValue({});
   editMessage.mockReset().mockResolvedValue({});
+  markRead.mockReset().mockResolvedValue({});
   (isOfflineNow as jest.Mock).mockReturnValue(false);
   (remainingNow as jest.Mock).mockReturnValue(null);
   (showInfoToast as jest.Mock).mockReset();
@@ -958,5 +962,74 @@ describe('pendingMutations: tur', () => {
       expect(r.done).toBe(0);
       expect(readPendingMutations()).toHaveLength(1);
     });
+  });
+});
+
+describe('pendingMutations: okundu turu', () => {
+  // Review Focus 1 — AYIRT EDİCİ: kapı muaf tutmazsa satır sonsuza dek atlanır.
+  // `message_id` kolonuna burada bir MESAJ değil bir SOHBET kimliği yazılıyor
+  // (CONV, `messages` tablosunda hiç yok) — turun gönderim-durumu kapısı VE
+  // `pruneOrphanPendingMutations` bu türü muaf tutmazsa satır hiç ağa
+  // çıkmadan (ya ebediyen atlanarak ya da ilk turda yetim sayılıp silinerek)
+  // kaybolur. Bu test ikisini de aynı anda sınıyor.
+  it('read emri gönderim-durumu kapısına TAKILMIYOR ve sunucuya gidiyor', async () => {
+    enqueueMarkRead(CONV);
+
+    const r = await flushPendingMutations('test');
+
+    expect(markRead).toHaveBeenCalledWith(CONV);
+    expect(r.done).toBe(1);
+    expect(readPendingMutations()).toHaveLength(0);
+  });
+
+  // Review Focus 2
+  it('aynı sohbete ikinci kez girmek satır ÇOĞALTMIYOR', () => {
+    enqueueMarkRead(CONV);
+    enqueueMarkRead(CONV);
+
+    expect(readPendingMutations().filter((r) => r.kind === 'read')).toHaveLength(1);
+  });
+
+  it('ağ hatasında satır KALIYOR ve backoff yazılıyor', async () => {
+    enqueueMarkRead(CONV);
+    markRead.mockRejectedValue(new Error('Network Error'));
+
+    await flushPendingMutations('test');
+
+    const [row] = readPendingMutations();
+    expect(row.kind).toBe('read');
+    expect(row.attempts).toBe(1);
+    expect(row.next_eligible_at_ms).toBeGreaterThan(Date.now());
+    expect(row.last_error).toBe('Network Error');
+    expect(showInfoToast).not.toHaveBeenCalled();
+  });
+
+  it('kalıcı rette satır siliniyor ve TOAST YOK', async () => {
+    // `message_id` bu türde CONV'u taşıyor — AYIRT EDİCİ: Redux'ta `id: CONV`
+    // olan bir "mesaj" varmış gibi davranan bir store kurup `isMessageLoaded`
+    // genel kapısının (mesaj yüklüyse toast göster) BURADA özel olarak
+    // bastırıldığını kanıtlıyoruz. Bu satır olmasaydı (ya da 'read' istisnası
+    // kaldırılsaydı) `findMessage(CONV, CONV)` eşleşir, `loaded` true olur ve
+    // toast YANLIŞLIKLA basılırdı.
+    setStoreMessages([msg(CONV)]);
+    enqueueMarkRead(CONV);
+    // UT-6713 (sohbet bulunamadı) → `conversationGone` → kalıcı ret.
+    markRead.mockRejectedValue({ response: { data: { errorCode: 'UT-6713' } } });
+
+    const r = await flushPendingMutations('test');
+
+    expect(r.rejected).toBe(1);
+    expect(readPendingMutations()).toHaveLength(0);
+    expect(showInfoToast).not.toHaveBeenCalled();
+    expect(store.dispatch).not.toHaveBeenCalled();
+  });
+
+  it('farklı sohbetler ayrı satırlar', () => {
+    enqueueMarkRead('conv-1');
+    enqueueMarkRead('conv-2');
+
+    const rows = readPendingMutations().filter((r) => r.kind === 'read');
+    expect(rows).toHaveLength(2);
+    expect(rows.map((r) => r.conversation_id).sort()).toEqual(['conv-1', 'conv-2']);
   });
 });

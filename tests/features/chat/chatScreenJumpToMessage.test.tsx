@@ -110,6 +110,7 @@ jest.mock('@/features/chat/quotaPaywall', () => ({
 jest.mock('@/features/chat/pendingMutations', () => ({
   enqueueReaction: jest.fn(),
   enqueueDelete: jest.fn(),
+  enqueueMarkRead: jest.fn(),
   flushPendingMutations: jest.fn((..._args: any[]) =>
     Promise.resolve({ ran: true, done: 0, retried: 0, rejected: 0 }),
   ),

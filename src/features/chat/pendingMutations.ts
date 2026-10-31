@@ -117,6 +117,7 @@ import {
   type EditPayload,
   type MutationOutcome,
   type ReactionPayload,
+  type ReadPayload,
 } from "@/features/chat/pendingMutationPolicy";
 import chatService from "@/features/chat/chatService";
 import { messageEdited, reactionsChanged } from "@/features/chat/chatSlice";
@@ -236,6 +237,36 @@ export function enqueueEdit(args: {
     message_id: args.messageId,
     kind: "edit",
     conversation_id: args.conversationId,
+    payload_json: JSON.stringify(payload),
+    attempts: 0,
+    first_seen_at_ms: existingRow ? existingRow.first_seen_at_ms : Date.now(),
+    next_eligible_at_ms: 0,
+    last_error: null,
+  });
+  dirty = true;
+}
+
+/**
+ * Okundu niyetini kuyruğa yazar. `message_id` kolonuna sohbet kimliği
+ * yazılıyor — türü `'read'` olduğunda kolonun anlamı budur (bkz. db/rows.ts).
+ * Gövde YOK (`ReadPayload` boş): hedef ve tür zaten her şeyi söylüyor, tek iş
+ * PK `(message_id, kind)` sayesinde aynı sohbete tekrar girmenin satır
+ * ÇOĞALTMAMASI (`upsertPendingMutation`'ın ON CONFLICT'i zaten bunu veriyor —
+ * burada ayrıca bir coalesce fonksiyonuna gerek yok, birleştirilecek alan
+ * yok). `first_seen_at_ms` var olan satırdan korunur, diğer `enqueue*`
+ * fonksiyonlarıyla AYNI kural.
+ *
+ * Geri alma YOK: okundu bilgisinin geri alınacak optimistik bir karşılığı
+ * yok, rozet zaten yerelde düştü ve `upsertConversations`'ın (2) numaralı
+ * kuralı onu koruyor (bkz. pendingMutationPolicy.ts'teki `ReadPayload` notu).
+ */
+export function enqueueMarkRead(conversationId: string): void {
+  const existingRow = findExistingRow(conversationId, "read");
+  const payload: ReadPayload = {};
+  upsertPendingMutation({
+    message_id: conversationId,
+    kind: "read",
+    conversation_id: conversationId,
     payload_json: JSON.stringify(payload),
     attempts: 0,
     first_seen_at_ms: existingRow ? existingRow.first_seen_at_ms : Date.now(),
@@ -426,9 +457,16 @@ function rebaseSupersededReactionBase(
 /** Tek satırı ağa taşır. `done` dışındaki dönüşler YALNIZ throw ile gelir. */
 async function sendRow(
   row: PendingMutationRow,
-  payload: ReactionPayload | DeletePayload | EditPayload,
+  payload: ReactionPayload | DeletePayload | EditPayload | ReadPayload,
   progress: SendProgress,
 ): Promise<void> {
+  if (row.kind === "read") {
+    // Gövde yok, `row.conversation_id` yeterli — `message_id` kolonundaki
+    // sohbet kimliğiyle AYNI değer (bkz. enqueueMarkRead), ama burada niyet
+    // açık olsun diye `conversation_id` okunuyor.
+    await chatService.markRead(row.conversation_id);
+    return;
+  }
   if (row.kind === "edit") {
     const p = payload as EditPayload;
     // Sunucu MessageDto döner — reaksiyonun tam liste dönüşüyle AYNI kalıp:
@@ -554,13 +592,18 @@ async function run(): Promise<FlushResult> {
     // canlı kaydı `clientMessageId` üzerinden de çözüyor (bkz. ChatScreen'in
     // `handlePickReaction`/`handleDelete`'i) — kuyruğa hiç temp id yazılmaması
     // o kapının işi, burada telafisi YOK.
-    if (readMessageSendState(row.message_id) !== "sent") continue;
+    //
+    // `'read'` bu kapıdan MUAF: o türde `message_id` bir mesaj değil bir
+    // SOHBET kimliği taşıyor (bkz. db/rows.ts) ve bir sohbet kimliği ASLA
+    // `'sent'` görünmez — muaf tutulmazsa satır sonsuza dek burada atlanır
+    // (görünürde kuyrukta duran, hiç gönderilmeyen bir emir).
+    if (row.kind !== "read" && readMessageSendState(row.message_id) !== "sent") continue;
     // 2) backoff dolmadı.
     if (row.next_eligible_at_ms > Date.now()) continue;
 
     opsDone += 1;
 
-    let payload: ReactionPayload | DeletePayload | EditPayload | null = null;
+    let payload: ReactionPayload | DeletePayload | EditPayload | ReadPayload | null = null;
     let parseError: unknown = null;
     try {
       payload = JSON.parse(row.payload_json);
@@ -597,7 +640,11 @@ async function run(): Promise<FlushResult> {
       outcome = "rejected";
     } else {
       try {
-        await sendRow(row, payload as ReactionPayload | DeletePayload | EditPayload, progress);
+        await sendRow(
+          row,
+          payload as ReactionPayload | DeletePayload | EditPayload | ReadPayload,
+          progress,
+        );
         outcome = "done";
       } catch (e) {
         err = e;
@@ -648,7 +695,13 @@ async function run(): Promise<FlushResult> {
           // Geri alma + toast yalnız mesaj Redux'ta yüklüyken (bkz.
           // isMessageLoaded): yüklü değilse `revert*` tasarımla no-op, toast
           // da o yüzden bastırılıyor — referansı olmayan hata metni kalmaz.
-          const loaded = isMessageLoaded(row);
+          //
+          // `'read'` BİLEREK bu kapının dışında: geri alınacak optimistik bir
+          // karşılığı yok (rozet zaten yerelde düştü, `upsertConversations`
+          // koruyor) ve "okundu bildirimi gönderilemedi" demek kullanıcıya
+          // bilgi değil gürültü — `isMessageLoaded` çağrısı bile yapılmıyor,
+          // zaten `message_id` burada bir mesaj değil sohbet kimliği taşıyor.
+          const loaded = row.kind === "read" ? false : isMessageLoaded(row);
           if (row.kind === "reaction" && payload) {
             const p = payload as ReactionPayload;
             // `base` sunucuda ARTIK YOKSA (remove geçti, add kalıcı reddedildi)
@@ -663,6 +716,8 @@ async function run(): Promise<FlushResult> {
             // toast aşağıda sebebi söylüyor.
             revertEdit(row, payload as EditPayload);
           }
+          // `'read'` için ne revert ne toast dalı var — satır yukarıda zaten
+          // sessizce silindi.
           if (loaded) {
             showInfoToast({
               message: chatErrorText(

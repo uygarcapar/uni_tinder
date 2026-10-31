@@ -87,6 +87,7 @@ import {
   enqueueReaction,
   enqueueDelete,
   enqueueEdit,
+  enqueueMarkRead,
   flushPendingMutations,
 } from "@/features/chat/pendingMutations";
 import { editRejectReason } from "@/features/chat/pendingMutationPolicy";
@@ -1056,13 +1057,21 @@ function ChatScreen({
     return () => cancelAnimationFrame(raf);
   }, [messages.length, myUserId]);
 
-  // Mark-read: karşı tarafın yeni mesajı geldiğinde (sentAt ilerleyince) bir kez.
+  // Mark-read: karşı tarafın yeni mesajı geldiğinde (sentAt ilerleyince) bir
+  // kez. Roadmap bunu bilerek kuyruk dışı bırakmıştı ("küçük; kuyruğa almak
+  // bu kadar kazanç için fazla makine olurdu") — iki telafi (sohbete yeniden
+  // girmek tekrar çağırıyor, upsertConversations kural (2) yerel "okundu"yu
+  // koruyor) hâlâ geçerli, ama çağrı HİÇ tutmazsa karşı tarafın tiki yeniden
+  // girene kadar gelmiyordu. Artık Task 1'in dördüncü mutasyon türü: niyet
+  // diske yazılıp tur tetikleniyor, ne await edilir ne hata burada yakalanır
+  // (geri alma YOK, rozet zaten yerelde düştü — bkz. pendingMutations.ts).
   useEffect(() => {
     if (!isActive || !myUserId) return;
     const latest = latestPartnerSentAt(messages, myUserId);
     if (latest > lastReadSentAtRef.current) {
       lastReadSentAtRef.current = latest;
-      chatService.markRead(conversationId).catch(() => {});
+      enqueueMarkRead(conversationId);
+      void flushPendingMutations("interactive");
     }
   }, [messages, conversationId, isActive, myUserId]);
 

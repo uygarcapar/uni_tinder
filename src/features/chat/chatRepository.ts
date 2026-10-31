@@ -2586,6 +2586,12 @@ export function markPendingMutationAttempt(args: {
  * artık gerekmez), burada gönderilmiş olmak mutasyonun ÖN KOŞULUdur —
  * gönderilmemiş bir mesaja tepki/silme emri henüz yetim değildir, sırasını
  * bekliyordur. Yetimliğin TEK tanımı mesajın hiç olmaması.
+ *
+ * `kind = 'read'` satırları BU TANIMIN DIŞINDA bırakılıyor: o türde
+ * `message_id` bir mesaj değil bir SOHBET kimliği taşıyor (bkz. db/rows.ts'in
+ * `PendingMutationRow` yorumu) ve `messages.id` ile neredeyse hiç eşleşmez —
+ * hariç tutulmazsa her `'read'` satırı yazıldığı turun hemen ardından, hiç
+ * gönderilmeden burada silinirdi.
  */
 export function pruneOrphanPendingMutations(): number {
   const db = getChatDb();
@@ -2593,7 +2599,8 @@ export function pruneOrphanPendingMutations(): number {
     db.getFirst<{ n: number }>('SELECT COUNT(*) AS n FROM pending_mutations')?.n ?? 0;
   db.run(`
     DELETE FROM pending_mutations
-     WHERE NOT EXISTS (
+     WHERE kind <> 'read'
+       AND NOT EXISTS (
        SELECT 1 FROM messages WHERE messages.id = pending_mutations.message_id
      )`);
   const after =

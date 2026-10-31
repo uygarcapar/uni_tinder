@@ -227,7 +227,7 @@ export interface SendAttemptRow {
   last_error: string | null;
 }
 
-export type MutationKind = 'reaction' | 'delete' | 'edit';
+export type MutationKind = 'reaction' | 'delete' | 'edit' | 'read';
 
 /**
  * `pending_mutations` satırı (v9) — tepki/silme emirlerinin disk muhasebesi.
@@ -236,6 +236,17 @@ export type MutationKind = 'reaction' | 'delete' | 'edit';
  * tepki niyeti `messages.reactions_json`'dan türetilemez (bkz. migrations.ts
  * V9 yorumu). `permanent` kolonu yok — kalıcı ret burada satırı SİLER, bir
  * durumu işaretlemez.
+ *
+ * `message_id` kolonunun anlamı `'read'` türüyle GENİŞLEDİ: artık "hedef
+ * kimliği" — tür `'read'` olduğunda burada bir mesaj değil bir SOHBET kimliği
+ * durur (`chatService.markRead` mesaj değil sohbet alır). PK `(message_id,
+ * kind)` olduğu için ayrı bir kolon açmaya gerek yok, `kind` zaten hedefin ne
+ * olduğunu söylüyor. İKİ yer bu genişlemeyi hesaba katmak ZORUNDA, yoksa satır
+ * ya sonsuza dek atlanır ya da ilk turda yetim sayılıp silinir:
+ *  - turun gönderim-durumu kapısı (`readMessageSendState`) `'read'` için
+ *    ATLANMALI — bir sohbet kimliği asla `'sent'` görünmez.
+ *  - `pruneOrphanPendingMutations` `'read'` satırlarını hariç tutmalı —
+ *    `messages.id` ile eşleşen bir sohbet kimliği neredeyse hiç olmaz.
  */
 export interface PendingMutationRow {
   message_id: string;

@@ -120,6 +120,25 @@ describe('classifyMutationError', () => {
     // Diğer kind'lar için bu kodun bir anlamı yok — etkilenmemeli (actionRejected).
     expect(classifyMutationError(editDeleted, 'reaction')).toBe('rejected');
   });
+
+  // Task 1 — `'read'` için delete/edit'teki gibi ÖZEL bir istisna dalı YOK:
+  // sınıflandırma tamamen `chatErrorEffect`in genel tablosundan geliyor. Bu
+  // test ileride "read de mesaj gibi messageGone→done olsun" türünden
+  // kasıtsız bir istisna eklenirse kırılır.
+  it("'read' özel bir istisnaya sahip DEĞİL — genel effect tablosuna göre sınıflanıyor", () => {
+    // UT-6713 CONVERSATION_NOT_FOUND → conversationGone → rejected.
+    expect(
+      classifyMutationError({ response: { data: { errorCode: 'UT-6713' } } }, 'read'),
+    ).toBe('rejected');
+    // Kodsuz ağ hatası → retry, diğer kind'larla AYNI.
+    expect(classifyMutationError(new Error('Network Error'), 'read')).toBe('retry');
+    // UT-6720 (MESSAGE_NOT_FOUND) delete için 'done' istisnası taşıyor ama
+    // 'read' için TAŞIMIYOR — mesaj değil sohbet hedefli, istisna kind'a
+    // BAĞLI (bkz. classifyMutationError'daki `kind === 'delete'` koşulu).
+    expect(
+      classifyMutationError({ response: { data: { errorCode: 'UT-6720' } } }, 'read'),
+    ).toBe('rejected');
+  });
 });
 
 describe('nextEligibleAt', () => {
