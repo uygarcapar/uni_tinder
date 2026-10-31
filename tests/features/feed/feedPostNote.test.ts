@@ -169,6 +169,19 @@ describe("postNoteButtonVisible", () => {
     expect(postNoteButtonVisible(post({ author: null }))).toBe(false);
   });
 
+  it("uygun mod YOKSA çizilmiyor — gönderim kapısıyla aynı cevabı vermeli", () => {
+    // ⚠️ Bulgu (gözden geçirme I3): kapı yalnız `state`e bakıyordu, modlara
+    // bakmıyordu. `state: "Ok"` + boş `availableModes` gelen satırda buton
+    // çiziliyor, basınca `postNoteRequest` "none" dönüyor ve HİÇBİR ŞEY
+    // olmuyordu — modülün kendi yorumunun yasakladığı ayrışma.
+    expect(
+      postNoteButtonVisible(post({ note: { state: "Ok", availableModes: [] } })),
+    ).toBe(false);
+    expect(
+      postNoteButtonVisible(post({ note: { state: "Ok" } })),
+    ).toBe(false);
+  });
+
   it("kapı kapalıyken çizilmiyor", () => {
     expect(postNoteButtonVisible(post({ note: { state: "Matched" } }))).toBe(false);
     expect(postNoteButtonVisible(post({ note: undefined }))).toBe(false);

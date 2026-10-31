@@ -1236,6 +1236,14 @@ export default function FeedScreen() {
           mode: cardMode ?? null,
         });
         setNoteRequest(null);
+        // ⚠️ KART YOLUNDAN GİDEN NOT DA KİŞİ SEVİYESİNDE SONUÇ DOĞURUYOR:
+        // sunucu bundan sonra o yazarın TÜM gönderilerinde `AlreadySwiped`
+        // dönecek. Akıştaki satırlar yamalanmazsa kart kapandıktan sonra
+        // listede duran not butonları basılabilir kalır ve UT-6404 yer.
+        patchAuthorPostsInCaches(qc, req.profile.userId, (p) => ({
+          ...p,
+          note: { ...(p.note ?? { state: "Ok" }), state: "AlreadySwiped" },
+        }));
         // TEK ONAY BU SATIR: Keşif'te notun ardından alev süpürmesi ve kartın
         // desteden düşmesi de "gitti" diyordu, akışta öyle bir karşılık YOK —
         // kart kapanıyor ve kullanıcı aynı listeye dönüyor.
@@ -1369,6 +1377,28 @@ export default function FeedScreen() {
         if (code === NOTE_SEND_CODES.NO_BALANCE) {
           setNoteRequest(null);
           setNotePurchaseVisible(true);
+          return;
+        }
+
+        // Kişiye zaten karar verilmiş (UT-6404) — KREDİ HARCANMADI ve bir
+        // daha da gönderilemez. Bu yüzeyin EN OLASI hatası: satırdaki kapı
+        // sayfa çekildiğinde donmuş bir anlık görüntü, kişi o arada Keşif'ten
+        // ya da yazar kartından beğenilmiş olabiliyor. Composer'ı açık
+        // tutmak kullanıcıyı asla çalışmayacak bir Gönder butonuyla baş başa
+        // bırakırdı (Keşif'teki karşılığı: DiscoverScreen > ALREADY_SWIPED).
+        if (code === NOTE_SEND_CODES.ALREADY_SWIPED) {
+          setNoteRequest(null);
+          // Aynı yazarın DİĞER satırları da kapansın: hata zaten "bu kişiye
+          // bir daha olmaz" diyor.
+          patchAuthorPostsInCaches(qc, userId, (p) => ({
+            ...p,
+            note: { ...(p.note ?? { state: "Ok" }), state: "AlreadySwiped" },
+          }));
+          showInfoToast({
+            title: t("note.failedTitle"),
+            message: t(noteSendCodeI18nKey(code) ?? "note.codes.generic"),
+            icon: "note",
+          });
           return;
         }
 

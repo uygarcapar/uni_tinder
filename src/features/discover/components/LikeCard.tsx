@@ -1237,25 +1237,31 @@ function LikeNoteBox({ note, expanded, onToggle, progress, onExpandInfo }) {
                   {quote}
                 </Text>
               </View>
-              {/* Gönderi silinmiş/kaldırılmış: not YİNE OKUNUYOR (kullanıcının
-                  ödediği şey o), yalnız altına bağlamın artık var olmadığını
-                  söyleyen bir satır düşüyor. */}
-              {!!removedNotice && (
-                <Text
-                  numberOfLines={1}
-                  style={{
-                    color: chipInk,
-                    fontSize: NOTE_TARGET_LABEL_SIZE,
-                    lineHeight: NOTE_TARGET_LABEL_LINE,
-                    fontWeight: "400",
-                    marginLeft: NOTE_CHIP_LINE_W + NOTE_CHIP_LINE_GAP,
-                    marginTop: NOTE_TARGET_LABEL_GAP,
-                  }}
-                >
-                  {removedNotice}
-                </Text>
-              )}
             </View>
+          )}
+
+          {/* Gönderi silinmiş/kaldırılmış: not YİNE OKUNUYOR (kullanıcının
+              ödediği şey o), yalnız bağlamın artık var olmadığını söyleyen bir
+              satır düşüyor.
+
+              ⚠️ ALINTI BLOĞUNUN DIŞINDA. İçindeyken `showChip`e (yani
+              `excerpt`in dolu olmasına) bağlıydı: moderasyon kaldırması metni
+              de götürdüğünde satır HİÇ çizilmiyordu — tam da en çok gerektiği
+              hâlde. Yükseklik hesabı (`noteTextMaxHeight`) bu satırı zaten
+              koşulsuz sayıyor, yani iki taraf ancak böyle tutuyor. */}
+          {!!removedNotice && (
+            <Text
+              numberOfLines={1}
+              style={{
+                color: chipInk,
+                fontSize: NOTE_TARGET_LABEL_SIZE,
+                lineHeight: NOTE_TARGET_LABEL_LINE,
+                fontWeight: "400",
+                marginBottom: NOTE_CHIP_MARGIN,
+              }}
+            >
+              {removedNotice}
+            </Text>
           )}
 
           {/* Fotoğraf solda, yazı sağında — birbirlerine göre DİKEYDE ORTALI.

@@ -2498,7 +2498,12 @@ const tr = {
       generic: 'Not gönderilemedi. Biraz sonra tekrar dene.',
       'UT-6401': 'Not hakkın kalmadı.',
       'UT-6402': 'Not\'un boş olamaz ve karakter sınırını aşamaz.',
-      'UT-6403': 'Bu içerik artık profilde değil. Kartı yenileyip tekrar dene.',
+      // ⚠️ İKİ YÜZEYİ birden anlatıyor: hedef bir fotoğraf/prompt olabilir
+      // (profilden kalkmış) ya da bir AKIŞ GÖNDERİSİ (silinmiş, süresi
+      // dolmuş, moderasyondan kalkmış). Eski metin "profilde değil / kartı
+      // yenile" diyordu; gönderi yolunda açılan bir kart olmadığı için ikisi
+      // de yanlıştı.
+      'UT-6403': 'Bu içerik artık yok. Yenileyip tekrar dene.',
       'UT-6404': 'Bu kişiye zaten karar vermiştin.',
       'UT-6405': 'Bu profile artık ulaşılamıyor.',
       'UT-6406': 'Bu not gönderilemedi. Farklı bir şey yazmayı dene.',

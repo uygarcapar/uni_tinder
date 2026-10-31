@@ -1,4 +1,4 @@
-import type { AppMode } from "@/features/discover/modeTheme";
+import { DEFAULT_APP_MODE, type AppMode } from "@/features/discover/modeTheme";
 import { resolveCardMode } from "./feedCardMode";
 import type { FeedPostDto, FeedPostNoteGate } from "./feedTypes";
 
@@ -42,7 +42,17 @@ export function canNotePost(
  * gönderilebilir bir satırı saklamak) doğuyor.
  */
 export function postNoteButtonVisible(post: FeedPostDto): boolean {
-  return canNotePost(post.note) && !!post.author?.userId;
+  if (!canNotePost(post.note)) return false;
+  if (!post.author?.userId) return false;
+  // ⚠️ MOD KAPISI DA BURADA. Sunucu `Ok` derken `availableModes` boş/eksik
+  // gelebiliyor (bayat satır, eksik alan); gönderim tarafı o hâlde "none"
+  // dönüyor, yani buton çizilseydi basmak hiçbir şey yapmazdı.
+  //
+  // `selectedMode` THREAD EDİLMİYOR: `resolveCardMode` listenin BOŞ olduğu
+  // durumda seçili moddan bağımsız olarak `null` dönüyor (bkz. feedCardMode) —
+  // yani hangi mod seçili olursa olsun cevap aynı. Kartın bu kararı vermek
+  // için ekranın modunu bilmesi gerekmiyor.
+  return postNoteMode(post.note, DEFAULT_APP_MODE) !== null;
 }
 
 /**

@@ -2430,7 +2430,7 @@ const en = {
       generic: "Note couldn't be sent. Try again in a moment.",
       'UT-6401': 'You have no notes left.',
       'UT-6402': "Your note can't be empty or exceed the character limit.",
-      'UT-6403': 'That content is no longer on the profile. Refresh the card and try again.',
+      'UT-6403': 'That content is gone. Refresh and try again.',
       'UT-6404': "You've already decided on this person.",
       'UT-6405': 'This profile is no longer available.',
       'UT-6406': "This note couldn't be sent. Try writing something different.",
