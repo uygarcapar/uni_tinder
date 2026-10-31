@@ -1,5 +1,5 @@
 import { memo, useEffect, useMemo, useRef, useState } from "react";
-import { StyleSheet, Text, View, useWindowDimensions } from "react-native";
+import { StyleSheet, View, useWindowDimensions } from "react-native";
 import Animated, {
   Easing,
   useAnimatedStyle,
@@ -8,20 +8,22 @@ import Animated, {
 } from "react-native-reanimated";
 import { Gesture, GestureDetector } from "react-native-gesture-handler";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
-import { Image } from "expo-image";
-import { LinearGradient } from "expo-linear-gradient";
 import { useTranslation } from "react-i18next";
 import AnimatedPressable from "@/shared/components/AnimatedPressable";
 import CardActionGlassButton from "@/features/discover/components/CardActionGlassButton";
 import { Check } from "@/shared/icons";
 import { modeAccent, type AppMode } from "@/features/discover/modeTheme";
 import { colors, scrimAt } from "@/shared/theme/colors";
+import { campusBoxMetrics } from "./CampusInfoBox";
+import CampusMomentFace, {
+  CAMPUS_FACE_CAPTION,
+  CampusMomentCaption,
+} from "./CampusMomentFace";
 import {
   campusExpandGeometry,
   campusExpandTransform,
   type ExpandRect,
 } from "../campusExpandGeometry";
-import { campusPhotoUri } from "../campusPhotoUri";
 import type { CampusMomentDto } from "../campusTypes";
 
 /**
@@ -56,6 +58,36 @@ import type { CampusMomentDto } from "../campusTypes";
  * ⚠️ KAPI ZAMANLAYICIYLA AÇILIYOR, `withTiming` CALLBACK'İYLE DEĞİL: kesilen
  * bir animasyonun callback'i `finished: false` ile geliyor ve bayrak bir daha
  * hiç dönmüyor (aynı hata eski `actionsReady` kapısında yaşandı).
+ *
+ * ══════════════════════════════════════════════════════════════════════════
+ * 🔴 İKİ BİLEŞEN: DIŞI ÖMÜR, İÇİ HAREKET — VE SEBEBİ BİR HATAYDI.
+ * ══════════════════════════════════════════════════════════════════════════
+ * Cihazda görülen hata: "karta basınca kart bir an GİDECEĞİ YERDE, tam
+ * boyunda görünüyor (ışınlanmış gibi), sonra animasyon başlıyor ve kart oraya
+ * yavaşça gidiyor."
+ *
+ * Sebep Reanimated'in `useAnimatedStyle`i: dönen stilin `initial.value`su
+ * hook'un İLK KOŞUŞUNDA bir kez hesaplanıyor (`if (!animatedUpdaterData
+ * .current)`, bkz. node_modules/react-native-reanimated/…/useAnimatedStyle)
+ * ve animasyonlu görünüm mount olduğunda natif tarafa İLK STİL olarak o
+ * veriliyor. Bu dosya ekranın kökünde SÜREKLİ mount'luydu (`moment: null` ile
+ * `null` döndürüyordu), yani hook ilk kez AN YOKKEN koşuyordu: `frame` null →
+ * `geometry.start === geometry.target` → dönüşüm KİMLİK. Kart açıldığında
+ * natif görünüm o kimlik dönüşümüyle doğuyor (hedefte, tam boy) ve ancak bir
+ * sonraki UI karesinde gerçek değere atlıyordu.
+ *
+ * ⚠️ STATİK STİLE BAŞLANGIÇ DÖNÜŞÜMÜ YAZMAK BU HATAYI ÇÖZMÜYOR (denendi):
+ * Reanimated'in stili dizide SONRA geliyor ve `transform`u o taşıyor, yani
+ * bayat `initial` statik değeri EZİYOR.
+ *
+ * Çözüm: hareketi taşıyan her şey (paylaşılan değer + animasyonlu stiller)
+ * yalnız KART AÇIKKEN yaşayan bir çocuk bileşende (`ExpandedSurface`) ve o
+ * bileşen `key={moment.id}` ile mount ediliyor. Hook'lar doğru geometriyle
+ * doğuyor, yani `initial` zaten başlangıç karesi.
+ *
+ * ⚠️ BU AYRIM KORUNMAK ZORUNDA: animasyonlu bir stili, görünümünden ÖNCE
+ * doğan bir bileşene koymak aynı hatayı geri getirir. Dışta kalanlar bilerek
+ * ömür işleri — gösterilen anın dondurulması, kapanışın tek sefer olması.
  */
 
 /**
@@ -69,12 +101,36 @@ export const EXPAND_MS = 320;
 /** Aşağı çekerek kapatma eşiği (pt). */
 const DISMISS_DY = 90;
 
-/** Büyük kartın köşesi — şeritteki kartın köşesinden (28) daha yumuşak değil. */
-const RADIUS = 28;
+/**
+ * DİNLENME HÂLİNİN KÖŞESİ — şeridinkinin bir tık yuvarlağı (istek: "kart
+ * büyürken rounded'ları yavaşça artsın biraz daha").
+ *
+ * ⚠️ ANİMASYON DEĞİL: kart bir `scale` ile büyüdüğü için ekrandaki köşe zaten
+ * kartla birlikte artıyor; burada ayarlanan şey VARIŞ noktası. Çarpanı
+ * `faceScale` yapmak köşeyi iki katına çıkarıyor ve "rounded değişiyor" diye
+ * geri alındı — 1.25 o iki uç arasında bilinçli bir orta.
+ */
+export const RADIUS_GROWTH = 1.25;
 
-/** Yazı bloğunun payları — şeritteki kartla aynı dil, bir tık büyük punto. */
-const TEXT_INSET = 20;
-const TEXT_BOTTOM = 20;
+/**
+ * ══════════════════════════════════════════════════════════════════════════
+ * ⚠️🔴 KARTIN YÜZÜ BURADA YAZILMIYOR — ŞERİDİN KARTININ KENDİSİ.
+ * ══════════════════════════════════════════════════════════════════════════
+ * Bu yüzey kendi düzenini çiziyordu: köşe 28, pay 20, ad 28pt, ZAMAN SATIRI
+ * YOK, çerçeve yok. Şeritteki kart ise 0.5pt kenarlı, ad 20pt ve ALTINDA saat
+ * satırı olan bir kutu. İki düzen ayrı durduğu için dokunuşun ilk karesinde
+ * kart "oynuyordu" (kullanıcı tarifi): yazı kayıyor, saat satırı yok oluyor,
+ * kenar çizgisi kayboluyordu — oysa hareketin tamamı tek bir `scale`, yani
+ * başlangıç karesi şeritteki kartın BİREBİR aynısı olmak zorunda.
+ *
+ * Yüz artık tek yerde (`CampusMomentFace`) ve buradan İKİ ÇARPAN veriliyor:
+ *   • ÇİZGİ/KÖŞE çarpanla büyütülmüş sayılar olarak (istek: "borderi bu son
+ *     yaptığın şekliyle aynı şekilde büyüsün direkt") — kıl çizgi büyük kartta
+ *     da kıl çizgi oranında, kartla birlikte açılan bir kenar;
+ *   • `scale`: ad ve saat de kartla AYNI ORANDA büyüyor (istek). Yazı artık
+ *     fotoğrafın İÇİNDE değil ALTINDA, yani hedef kare fotoğrafı değil TÜM
+ *     ÖĞEYİ kapsıyor (bkz. `captionHeight`).
+ */
 
 export interface CampusMomentExpandOverlayProps {
   /** `null` → yüzey ağaçta HİÇ yok (kamera/kırpıcı kabuklarının kuralı). */
@@ -96,74 +152,66 @@ export interface CampusMomentExpandOverlayProps {
    * (bkz. FeedScreen > `handleMomentLike`).
    */
   collapsing?: boolean;
+  /**
+   * BU AN İÇİN KARAR ZATEN VERİLDİ — cam tik çizilmiyor VE KART DAHA GENİŞ.
+   *
+   * İki tüketicisi var:
+   *   1. tik hiç çizilmiyor (beğenilen kart şeritte kaldığı için kullanıcı
+   *      aynı karta yeniden dokunabiliyor; ikinci beğeni boşa bir istek ve
+   *      `UT-7424` turu demek),
+   *   2. SAĞDAKİ CAM SÜTUNU AYRILMIYOR (istek: "karar verilmiş kartta kart
+   *      sağdan da kaplasın, soldan olduğu kadar") — kart iki yandan simetrik,
+   *      3:4 oranında büyüdüğü kadar büyük. Aynı şey KENDİ anımda da geçerli
+   *      (orada da tik yok, UT-7422); gerekçe `hasDecisionColumn`da.
+   *
+   * Kaynağı `isMomentDecided`: sunucunun `canLike`ı, yoksa oturum kümesi.
+   */
+  decided?: boolean;
   onLike: () => void;
   onClose: () => void;
 }
 
-const CampusMomentExpandOverlay = memo(function CampusMomentExpandOverlay({
+interface ExpandedSurfaceProps {
+  /** Gösterilen an — dondurulmuş olabilir (bkz. dıştaki `shown`). */
+  moment: CampusMomentDto;
+  /** `campusExpandGeometry`nin çıktısı — FOTOĞRAFIN başlangıç ve hedef karesi. */
+  geometry: { start: ExpandRect; target: ExpandRect };
+  /** Küçülme — hem beğeni yolunun hem kendi kapanışının birleşimi. */
+  collapsing: boolean;
+  mode: AppMode;
+  busy: boolean;
+  /** Karar verilmiş — tik yok (gerekçe dıştaki prop'ta). */
+  decided: boolean;
+  onLike: () => void;
+  /** Perde/jest kapanışı — tek sefer kuralı DIŞTA (gerekçe orada). */
+  onRequestClose: () => void;
+}
+
+/**
+ * HAREKETİ TAŞIYAN YÜZEY — perde + uçan/büyüyen kart + cam tik.
+ *
+ * ⚠️🔴 YALNIZ KART AÇIKKEN MOUNT'LU ve bu bir performans tercihi DEĞİL,
+ * doğruluk koşulu: `useAnimatedStyle`in `initial`i hook'un ilk koşuşunda
+ * donuyor ve animasyonlu görünüme İLK STİL olarak veriliyor. Uzun gerekçe
+ * dosyanın başındaki "İKİ BİLEŞEN" blokunda — oraya bakmadan bu bileşeni
+ * ebeveynin içine geri taşıma.
+ */
+const ExpandedSurface = memo(function ExpandedSurface({
   moment,
-  frame,
+  geometry,
+  collapsing,
   mode,
   busy,
-  collapsing = false,
+  decided,
   onLike,
-  onClose,
-}: CampusMomentExpandOverlayProps) {
+  onRequestClose,
+}: ExpandedSurfaceProps) {
   const { t } = useTranslation();
-  const insets = useSafeAreaInsets();
-  const { width: screenW, height: screenH } = useWindowDimensions();
-
-  const geometry = useMemo(
-    () =>
-      campusExpandGeometry({
-        screenW,
-        screenH,
-        topInset: insets.top,
-        bottomInset: insets.bottom,
-        start: frame,
-      }),
-    [frame, insets.bottom, insets.top, screenH, screenW],
-  );
 
   /** 0 = başlangıç karesi, 1 = hedef kare. */
   const progress = useSharedValue(0);
   const [settled, setSettled] = useState(false);
-  /**
-   * KENDİ KAPANIŞI — perde/jest ile başlayan küçülme.
-   *
-   * ⚠️ `collapsing` PROP'UNDAN AYRI: o beğeni yolunun küçülmesi ve ALEV
-   * ÖRTÜSÜNÜN takvimine bağlı (çağıran, örtü kapandığında kaldırıyor). Bu ise
-   * yüzeyin kendi çıkışı. İkisi aynı animasyonu sürüyor ama tetikleyicileri
-   * ayrı; tek bayrağa bindirilse çağıran kendi kapanışını da "örtü kapandı"
-   * sanardı.
-   */
-  const [selfCollapsing, setSelfCollapsing] = useState(false);
 
-  /**
-   * ⚠️🔴 KÜÇÜLÜRKEN GÖSTERİLEN AN DONDURULUYOR.
-   *
-   * Çağıran anı CANLI listeden çözüyor (bayat veri göstermemek için doğru) ama
-   * beğeni başarılı olunca liste tazeleniyor ve karar verilmiş an listeden
-   * DÜŞÜYOR. Yarışın kaybedildiği hâlde `moment` tam küçülme sırasında `null`
-   * oluyor, yüzey anında sökülüyor ve kart küçülmeden yok oluyor.
-   * Küçülme başladıktan sonra gösterilen şey son bilinen an.
-   */
-  const lastShownRef = useRef<CampusMomentDto | null>(null);
-  if (moment) lastShownRef.current = moment;
-  const shown =
-    moment ?? (collapsing || selfCollapsing ? lastShownRef.current : null);
-
-  const photoUri = useMemo(
-    () => (shown ? campusPhotoUri(shown) : null),
-    [shown],
-  );
-
-
-  /**
-   * ⚠️ Kapanış bir kez: perde, jest ve tik aynı anda tetiklenebiliyor ve
-   * çağıran iki kez kapanmayı iki ayrı olay sanıyordu.
-   */
-  const closedRef = useRef(false);
   /**
    * ⚠️🔴 KARAR BİR KEZ — ve kilit `busy`DEN AYRI.
    *
@@ -171,45 +219,22 @@ const CampusMomentExpandOverlay = memo(function CampusMomentExpandOverlay({
    * bir RTT'de bayrak t=120'de düşüyor. Buton ise alev örtüsü kapanana kadar
    * (~215ms) ekranda — aradaki pencerede sıradan bir çift dokunuş İKİNCİ BİR
    * BEĞENİ gönderiyor ve uçan alev dalgasını iptal edip yeniden başlatıyor.
-   * Kilit kararın kendisine ait: basıldıysa bir daha basılamaz, yeni an
-   * açılınca sıfırlanıyor.
+   * Kilit kararın kendisine ait: basıldıysa bir daha basılamaz; yeni an
+   * açılınca bu bileşen zaten yeniden mount ediliyor.
    */
   const decidedRef = useRef(false);
 
   /**
-   * ⚠️🔴 BAĞIMLILIK YALNIZ `moment?.id` — ne `moment` NESNESİ ne `progress`.
+   * AÇILIŞ — mount'ta bir kez.
    *
-   * İkisi de bu effect'i sonsuz bir döngüye sokuyordu ve döngünün belirtisi
-   * SESSİZ: effect'in ilk satırı `setSettled(false)`, yani her yeniden
-   * koşuşta cam kapısı kapanıyor ve buton HİÇ doğmuyordu (testte böyle
-   * yakalandı — zamanlayıcı sayısı turda 1'den 4'e çıkıyordu).
-   *   • `progress` bir paylaşılan değer, sözleşmesi gereği kalıcı bir kimlik —
-   *     ama jest mock'u her render yeni nesne döndürüyor.
-   *   • `moment` NESNESİ liste her tazelendiğinde yeni kopya; kimliği aynı
-   *     olduğu hâlde animasyonu baştan başlatırdı.
-   * Hareketi başlatan şey KARTIN KİMLİĞİ: aynı an için bir kez, başka an için
-   * yeniden.
-   */
-  /**
-   * ⚠️ GÜVENCE: an dışarıdan kaldırıldıysa dondurma her hâlükârda biter.
-   *
-   * Yukarıdaki zamanlayıcı kaçırılırsa (ekran sökülüp geri gelirse, kapanış
-   * başka bir yoldan tetiklenirse) yüzey ağaçta kalmaya devam ederdi. Bu
-   * effect o kalıntıyı imkânsız kılıyor — küçülme `collapsing` prop'uyla
-   * sürüyorsa ona dokunmuyor, o çağıranın takvimine bağlı.
+   * ⚠️ BAĞIMLILIK LİSTESİ BOŞ ve olması gereken bu: bileşen an başına bir kez
+   * yaşıyor (`key={moment.id}`). Eskiden bu effect ebeveyndeydi ve `moment?.id`
+   * ile tetikleniyordu; `moment` NESNESİ ya da `progress` bağımlılığa girdiği
+   * anda effect her renderda yeniden koşuyor, ilk satırı `setSettled(false)`
+   * olduğu için cam kapısı hiç açılmıyordu (testte zamanlayıcı sayısı 1'den
+   * 4'e çıkarak yakalandı).
    */
   useEffect(() => {
-    if (moment || collapsing) return;
-    setSelfCollapsing(false);
-  }, [collapsing, moment]);
-
-  useEffect(() => {
-    if (!moment) return;
-    closedRef.current = false;
-    decidedRef.current = false;
-    setSelfCollapsing(false);
-    setSettled(false);
-    progress.value = 0;
     progress.value = withTiming(1, {
       duration: EXPAND_MS,
       easing: Easing.out(Easing.cubic),
@@ -217,7 +242,7 @@ const CampusMomentExpandOverlay = memo(function CampusMomentExpandOverlay({
     const timer = setTimeout(() => setSettled(true), EXPAND_MS);
     return () => clearTimeout(timer);
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [moment?.id]);
+  }, []);
 
   /**
    * KÜÇÜLME — örtü kapandıktan sonra kart başlangıç karesine dönüyor.
@@ -227,14 +252,14 @@ const CampusMomentExpandOverlay = memo(function CampusMomentExpandOverlay({
    * basılabilir bir buton kalması ikinci bir beğeni demekti.
    */
   useEffect(() => {
-    if (!collapsing && !selfCollapsing) return;
+    if (!collapsing) return;
     setSettled(false);
     progress.value = withTiming(0, {
       duration: EXPAND_MS,
       easing: Easing.in(Easing.cubic),
     });
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [collapsing, selfCollapsing]);
+  }, [collapsing]);
 
   /**
    * ⚠️🔴 HAREKET TRANSFORM — bir dönem `left/top/width/height` idi.
@@ -279,33 +304,107 @@ const CampusMomentExpandOverlay = memo(function CampusMomentExpandOverlay({
   const scrimStyle = useAnimatedStyle(() => ({ opacity: progress.value }));
 
   /**
-   * KAPANIŞ DA BİR HAREKET — açılışın tersi.
+   * ══════════════════════════════════════════════════════════════════════════
+   * AD SATIRI TEK VE KENDİSİ YOL ALIYOR (istek).
+   * ══════════════════════════════════════════════════════════════════════════
+   * İstek birebir: "küçük kartın altındaki yazı opasite azalmasın direkt hiç;
+   * kart büyürken kendisi olması gereken yere animasyonla gitsin; küçülürken
+   * de geri küçüğün olması gereken yere gitsin."
    *
-   * Perdeye basmak ya da aşağı çekmek yüzeyi ANINDA söktürmüyor: kart önce
-   * şeritteki yerine küçülüyor, çağıran ancak o bittiğinde haber alıyor.
-   * Anında sökmek kartı "pat diye yok eden" bir kapanış bırakıyordu.
+   * Bir tur İKİ KOPYA birbirine geçiyordu (içeride sönen + dışarıda beliren).
+   * Kaldırıldı: iki ayrı düğümün sönümü, tek bir satırın taşınması kadar net
+   * okunmuyor — ve istek açıkça opaklığa değil HAREKETE işaret ediyor.
    *
-   * ⚠️ BİR KEZ: perde, jest ve üst üste basışlar aynı kapanışı tetikleyebilir;
-   * ikinci bir küçülme animasyonu ve ikinci bir `onClose` doğardı.
+   * ── Niye `translate`, niye `left/top` değil ────────────────────────────────
+   * Layout prop'u her karede Yoga geçişi demek; satır kartla aynı anda
+   * hareket ediyor ve kart zaten kompozitörde. İkisi ayrı tempoda akarsa yazı
+   * kartın altından kayıyor gibi görünür.
+   *
+   * ── Niye ÖLÇEK YOK ────────────────────────────────────────────────────────
+   * Punto iki uçta da AYNI (taban): şeritte 20pt, dinlenmede 20pt. Yani
+   * hareket saf öteleme — büyüyüp küçülen bir yazı yeniden örneklenirdi.
+   *
+   * ⚠️ HEDEFTEKİ X, YAZININ GENİŞLİĞİNDEN TÜRÜYOR: satır büyük kartın ORTA
+   * altında duracak (istek) ama `textAlign: center` ile ortalanamıyor — o
+   * zaman kutunun kendisi sabit genişlikte olmalı ve başlangıçta (şeridin dar
+   * kutusunda) satır yanlış yerden başlardı. Genişlik `onLayout` ile bir kez
+   * ölçülüyor; ölçüm gelene kadar merkezleme payı 0, yani satır hedefte sola
+   * hizalı duruyor — ilk karede gözle fark edilmeyen, bir kare sonra düzelen
+   * bir fark.
    */
-  const close = () => {
-    if (closedRef.current) return;
-    closedRef.current = true;
-    setSelfCollapsing(true);
-    setTimeout(() => {
-      /**
-       * ⚠️🔴 DONDURMA DA BİTİYOR — sırası önemli.
-       *
-       * Küçülme sırasında gösterilen an donduruluyor (`shown`), yoksa liste
-       * tazelenip anı düşürdüğünde kart küçülmeden yok oluyor. Ama dondurma
-       * KAPANIŞLA BİRLİKTE bitmezse çağıran anı null'ladığında yüzey ağaçta
-       * KALIYOR: perdesiz, camsız, donmuş bir kart haritanın üstünde duruyor
-       * (cihazda görülen hata buydu). Bayrak önce düşüyor, `onClose` sonra.
-       */
-      setSelfCollapsing(false);
-      onClose();
-    }, EXPAND_MS);
-  };
+  const [captionW, setCaptionW] = useState(0);
+
+  /**
+   * ADIN KIRPILMA GENİŞLİĞİ — kartla birlikte açılıyor (istek: "kart küçükken
+   * isim truncate olsun, büyüyünce uzayabilir").
+   *
+   * ⚠️ AYRI BİR STİL, `captionStyle`ın İÇİNDE DEĞİL: `maxWidth` bir LAYOUT
+   * prop'u (yazıyı yeniden ölçüyor), transform ise kompozitör işi. İkisini
+   * aynı nesnede birleştirmek, her karede hem ölçüm hem öteleme demek —
+   * ayrıldıklarında Reanimated yalnız değişeni yazıyor.
+   *
+   * ⚠️ PAY DÜŞÜLÜYOR: satırın kendi sol payı (`CAMPUS_FACE_CAPTION_LEFT`)
+   * kutunun içinde; genişlik ondan düşülmezse uzun ad kartın sağından bir tık
+   * taşıyor.
+   */
+  const captionWidthStyle = useAnimatedStyle(() => {
+    const p = progress.value;
+    const from = geometry.start.width;
+    const to = geometry.target.width;
+    return { maxWidth: from + (to - from) * p };
+  });
+
+  const captionStyle = useAnimatedStyle(() => {
+    const p = progress.value;
+    // Başlangıç: şeritteki kartın SOL ALTI (fotoğrafın hemen altı).
+    const startX = geometry.start.x;
+    const startY = geometry.start.y + geometry.start.height;
+    // Hedef: büyük kartın ORTA altı.
+    const endX =
+      geometry.target.x + Math.max(0, geometry.target.width - captionW) / 2;
+    const endY = geometry.target.y + geometry.target.height;
+    return {
+      transform: [
+        { translateX: startX + (endX - startX) * p },
+        { translateY: startY + (endY - startY) * p },
+      ] as [{ translateX: number }, { translateY: number }],
+    };
+  });
+
+  /**
+   * YÜZÜN ÇARPANI  /**
+   * YÜZÜN ÇARPANI — hedef kare, başlangıç karesinin kaç katı.
+   *
+   * Kart hedef ölçüsünde doğuyor ve `scale` ile şeritteki karesine iniyor
+   * (bkz. campusExpandTransform). Yüzün içindeki sayılar bu çarpanla yazılınca
+   * p=0'da şeridin kartıyla PİKSEL PİKSEL aynı oluyor — "kart oynuyor"
+   * şikâyetini kapatan şey tam bu.
+   *
+   * ⚠️ ÖLÇÜM ALINAMADIYSA 1: `start === target` (uçma fazı düşüyor) ve kart
+   * yerinde büyüyor, yani kıyaslanacak bir şerit karesi de yok.
+   */
+  const faceScale =
+    geometry.start.width > 0 ? geometry.target.width / geometry.start.width : 1;
+
+  /**
+   * ÇERÇEVE ŞERİDİN REÇETESİNDEN, hedef boydan DEĞİL.
+   *
+   * ⚠️ ÖLÇÜ `geometry.start.height`: şerit kutularının metriklerini kendi kutu
+   * BOYUNDAN türetiyor (CampusMomentsStrip > `boxMetrics`) ve başlangıç karesi
+   * tam o kutu. Hedef boy geçilseydi köşe büyük kartta bir kez, küçülürken bir
+   * kez daha ölçeklenir ve şeritteki kartın köşesine oturmazdı.
+   */
+  const metrics = useMemo(
+    () => campusBoxMetrics(geometry.start.height),
+    [geometry.start.height],
+  );
+
+  /**
+   * ⚠️ TEK OKUMA, TİK YOK: "saat" satırı anın paylaşım zamanını yazıyor
+   * (bugün için saat, dün için "Dün") ve bu yüzey saniyeler yaşıyor — şeridin
+   * dakikalık tiki burada bir şey değiştirmezdi.
+   */
+  const nowMs = useMemo(() => Date.now(), []);
 
   /**
    * AŞAĞI ÇEKEREK KAPATMA — jest KARTIN üstünde, perdenin değil.
@@ -316,18 +415,16 @@ const CampusMomentExpandOverlay = memo(function CampusMomentExpandOverlay({
   const pan = Gesture.Pan()
     .activeOffsetY(20)
     .onEnd((e) => {
-      if (e.translationY > DISMISS_DY) close();
+      if (e.translationY > DISMISS_DY) onRequestClose();
     })
     .runOnJS(true);
-
-  if (!shown) return null;
 
   return (
     <View style={StyleSheet.absoluteFill}>
       {/* PERDE — haritanın üstünü yatıştırıyor; dokunuş kapatıyor. */}
       <AnimatedPressable
         pressScale={1}
-        onPress={close}
+        onPress={onRequestClose}
         accessibilityRole="button"
         accessibilityLabel={t("common.close")}
         wrapperStyle={StyleSheet.absoluteFill}
@@ -336,7 +433,11 @@ const CampusMomentExpandOverlay = memo(function CampusMomentExpandOverlay({
         <Animated.View
           style={[
             StyleSheet.absoluteFill,
-            { backgroundColor: scrimAt(0.82) },
+            // ⚠️ STATİK 0 — animasyonlu stilin yetişmediği bir karede perdenin
+            // TAM GÜÇTE boyanmasını (ekranın bir kare siyaha düşmesi) kapatan
+            // kemer. Asıl düzeltme hook'un doğru geometriyle doğması
+            // (dosya başı), bu onun yanındaki ucuz güvence.
+            { backgroundColor: scrimAt(0.82), opacity: 0 },
             scrimStyle,
           ]}
         />
@@ -356,56 +457,105 @@ const CampusMomentExpandOverlay = memo(function CampusMomentExpandOverlay({
               top: geometry.target.y,
               width: geometry.target.width,
               height: geometry.target.height,
-              borderRadius: RADIUS,
-              borderCurve: "continuous",
-              overflow: "hidden",
-              backgroundColor: colors.surface4,
             },
             cardStyle,
           ]}
         >
-          {/* ⚠️ HAM `photoUrl` DEĞİL ortak çözücü: göreli yol tabana bağlanıyor,
-              reddedilmiş anda istek hiç kurulmuyor. Burada yüzeyin TAMAMI
-              fotoğraf, yani çözülemeyen bir adres koca bir boş dikdörtgen
-              demek (gerekçe campusPhotoUri'de). */}
-          <Image
-            source={photoUri ? { uri: photoUri } : null}
-            style={StyleSheet.absoluteFill}
-            contentFit="cover"
-            cachePolicy="memory-disk"
-            recyclingKey={photoUri ?? shown.id}
+          {/* ŞERİDİN KARTININ KENDİSİ — köşe, kıl çizgi, fotoğraf ve ALTINDAKİ
+              isim/yaş/saat hepsi yüzün içinden geliyor. Kabuk burada ÇIPLAK:
+              köşe/kırpma/zemin verilmiyor, yoksa yüzün kendi kutusunun üstünde
+              ikinci bir maske olurdu (iç içe iki eğri = titreyen köşeler, bkz.
+              CampusInfoBox > `overflow`) — üstelik yazı kutunun DIŞINDA, yani
+              burada bir kırpma onu yok ederdi. */}
+          <CampusMomentFace
+            moment={moment}
+            width={geometry.target.width}
+            height={geometry.target.height}
+            /**
+             * ⚠️🔴 ÇİZGİ ÇARPILMIYOR (istek: "0.5px olsun ve kırılma yapmasın,
+             * büyürken kendini korusun").
+             *
+             * Bir tur `ring * faceScale` idi — büyük kartta çizgi iki katına
+             * çıkıyordu. Asıl kusur ise ters uçtaydı: ölçeklenen kartta
+             * 0.5pt'lik bir kenar p=0'da ekranda ~0.23pt'ye iniyor (yarım
+             * pikselin altı) ve cihaz onu yer yer atlıyor — "kırık" kenar.
+             * Çizgi artık her karede `ring / kartın ölçeği` olarak çiziliyor
+             * (bkz. `cardScaleStart`), yani ekranda her zaman tam 0.5pt.
+             */
+            ring={metrics.ring}
+            gap={metrics.gap}
+            cardScaleStart={faceScale > 0 ? 1 / faceScale : 1}
+            /**
+             * ⚠️🔴 KÖŞE ÇARPILMIYOR (istek: "foto büyürken rounded değişiyor,
+             * değişmesin"). Çarpanla çizilen bir köşe ekranda
+             * `radius × faceScale × kartın ölçeği` kadar görünüyor: p=0'da
+             * şeridinkiyle aynı, p=1'de onun iki katı — yani büyüme köşeyi de
+             * büyütüyordu. Çarpansız yazılınca iki DURAN hâl (şerit ve
+             * dinlenme) aynı köşeyi paylaşıyor; uçuş boyunca köşe ölçekle
+             * birlikte küçük kalıyor, o da 320ms.
+             */
+            /**
+             * ══════════════════════════════════════════════════════════════
+             * KÖŞE HAREKETLE BİRLİKTE AÇILIYOR — iki uç + aradaki her kare.
+             * ══════════════════════════════════════════════════════════════
+             * Ekrandaki köşe `çizilen × kartın ölçeği`. Sabit bir çizilen
+             * değerle iki DURAN hâl aynı köşeyi paylaşamıyor ve dokunma/kapanma
+             * anlarında SIÇRIYOR (cihaz şikâyeti: "bir anda köşeleri
+             * değişiyor"). Bu yüzden iki uç ayrı veriliyor:
+             *   • `radiusStart` = şeridin köşesi / başlangıç ölçeği → p=0'da
+             *     ekranda tam şeridinkiyle aynı köşe,
+             *   • `radius` = dinlenme hâli, şeridinkinden `RADIUS_GROWTH`
+             *     kadar yuvarlak (istek: "artacaksa artsın, ama yavaşça").
+             * Arası `progress` ile UI thread'de doluyor.
+             */
+            radius={metrics.radius * RADIUS_GROWTH}
+            radiusStart={
+              faceScale > 0 ? metrics.radius * faceScale : metrics.radius
+            }
+            progress={progress}
+            nowMs={nowMs}
+            /* Gösterge ve rozet kartla aynı oranda. */
+            scale={faceScale}
+            /* ⚠️ AD SATIRI BURADA ÇİZİLMİYOR: tek kopya, kartın kardeşi ve
+               kendi yolunu alıyor (gerekçe `captionStyle`da). */
+            caption={false}
           />
-          {/* Dipteki perde — ad/yaşın okunurluğu fotoğrafa bırakılmıyor. */}
-          <LinearGradient
-            colors={[scrimAt(0), scrimAt(0.72)]}
-            style={{
-              position: "absolute",
-              left: 0,
-              right: 0,
-              bottom: 0,
-              height: 160,
-            }}
-            pointerEvents="none"
-          />
-          <View
-            pointerEvents="none"
-            style={{
-              position: "absolute",
-              left: TEXT_INSET,
-              right: TEXT_INSET,
-              bottom: TEXT_BOTTOM,
-            }}
-          >
-            <Text
-              numberOfLines={1}
-              style={{ color: colors.onMedia, fontSize: 28, fontWeight: "700" }}
-            >
-              {shown.displayName}
-              {typeof shown.age === "number" ? `, ${shown.age}` : null}
-            </Text>
-          </View>
         </Animated.View>
       </GestureDetector>
+
+      {/* AD + YAŞ — DİNLENME KOPYASI: kartın KARDEŞİ, taban puntosunda ve
+          kartın ORTA altında (istek).
+
+          ⚠️ KARTIN İÇİNE KONAMAZ: ölçeklenen bir görünümün içindeki yazı
+          kaçınılmaz olarak ölçekleniyor (ters ölçek denendi, cihazda bozuldu —
+          gerekçe `CampusMomentFace > caption`).
+
+          ⚠️ UYGULAMA ŞERİTTEKİYLE AYNI (`CampusMomentCaption`): iki kopya
+          yazılsaydı ayrışırlardı — bu yüzeyin tüm tarihçesi o hatanın. */}
+      <Animated.View
+        pointerEvents="none"
+        onLayout={(e) => setCaptionW(e.nativeEvent.layout.width)}
+        style={[
+          {
+            position: "absolute",
+            // ⚠️ KÖŞEDEN BAŞLIYOR, konumu TAMAMEN transform taşıyor: `left`/
+            // `top` animasyonu Yoga geçişi demek (gerekçe `captionStyle`da).
+            left: 0,
+            top: 0,
+          },
+          captionStyle,
+        ]}
+      >
+        <CampusMomentCaption
+          moment={moment}
+          nowMs={nowMs}
+          /* ⚠️ MEDYA MÜREKKEBİ: bu satır 0.82 siyah perdenin üstünde (şeritteki
+             kopya tema mürekkebinde — orada alt perde açık modda BEYAZ). */
+          onMedia
+          /* Kırpılma genişliği kartla birlikte açılıyor (istek). */
+          maxWidth={captionWidthStyle}
+        />
+      </Animated.View>
 
       {/* CAM TİK — kartın KARDEŞİ ve yalnız oturduktan sonra (dosya başı).
 
@@ -413,7 +563,7 @@ const CampusMomentExpandOverlay = memo(function CampusMomentExpandOverlay({
           (UT-7422). Büyüme herkese açık — kendi fotoğrafına büyük bakmak bir
           karar değil — ama buton ölü çizilmek yerine yok sayılıyor (kabuğun
           kendi kuralı: ölü buton çizilmiyor). */}
-      {settled && !shown.isMine ? (
+      {settled && !moment.isMine && !decided ? (
         <View
           style={{
             position: "absolute",
@@ -442,6 +592,179 @@ const CampusMomentExpandOverlay = memo(function CampusMomentExpandOverlay({
         </View>
       ) : null}
     </View>
+  );
+});
+
+const CampusMomentExpandOverlay = memo(function CampusMomentExpandOverlay({
+  moment,
+  frame,
+  mode,
+  busy,
+  collapsing = false,
+  decided = false,
+  onLike,
+  onClose,
+}: CampusMomentExpandOverlayProps) {
+  const insets = useSafeAreaInsets();
+  const { width: screenW, height: screenH } = useWindowDimensions();
+
+  /**
+   * KENDİ KAPANIŞI — perde/jest ile başlayan küçülme.
+   *
+   * ⚠️ `collapsing` PROP'UNDAN AYRI: o beğeni yolunun küçülmesi ve ALEV
+   * ÖRTÜSÜNÜN takvimine bağlı (çağıran, örtü kapandığında kaldırıyor). Bu ise
+   * yüzeyin kendi çıkışı. İkisi aynı animasyonu sürüyor ama tetikleyicileri
+   * ayrı; tek bayrağa bindirilse çağıran kendi kapanışını da "örtü kapandı"
+   * sanardı.
+   */
+  const [selfCollapsing, setSelfCollapsing] = useState(false);
+
+  /**
+   * ⚠️🔴 KÜÇÜLÜRKEN GÖSTERİLEN AN DONDURULUYOR.
+   *
+   * Çağıran anı CANLI listeden çözüyor (bayat veri göstermemek için doğru) ama
+   * beğeni başarılı olunca liste tazeleniyor ve karar verilmiş an listeden
+   * DÜŞÜYOR. Yarışın kaybedildiği hâlde `moment` tam küçülme sırasında `null`
+   * oluyor, yüzey anında sökülüyor ve kart küçülmeden yok oluyor.
+   * Küçülme başladıktan sonra gösterilen şey son bilinen an.
+   */
+  const lastShownRef = useRef<CampusMomentDto | null>(null);
+  if (moment) lastShownRef.current = moment;
+  const shown =
+    moment ?? (collapsing || selfCollapsing ? lastShownRef.current : null);
+
+  /**
+   * ══════════════════════════════════════════════════════════════════════════
+   * SAĞDAKİ CAM SÜTUNU AYRILACAK MI — AÇILIŞTA DONDURULUYOR.
+   * ══════════════════════════════════════════════════════════════════════════
+   * Buton iki hâlde hiç çizilmiyor: karar zaten verilmiş (`decided`) ve KENDİ
+   * anım (UT-7422). O hâllerde sütun da ayrılmıyor, yani kart ekranı sağdan da
+   * soldaki pay kadar kaplıyor (istek) — oran 3:4 kaldığı için yalnız daha
+   * büyük bir kutu oluyor.
+   *
+   * ⚠️🔴 NEDEN DONDURULUYOR: `decided` hareketin ORTASINDA değişebiliyor —
+   * beğeni gidince kart o anda "karar verilmiş" oluyor (optimistik küme) ve
+   * tam o sırada KÜÇÜLME animasyonu koşuyor. Değer canlı okunsa hedef kare
+   * küçülmenin ortasında büyür ve kart şeritteki yerine değil başka bir yere
+   * doğru küçülürdü.
+   *
+   * ⚠️ BAĞIMLILIK `shown?.id`, `moment?.id` DEĞİL: çağıran küçülme sırasında
+   * `moment`i null'lıyor (an listeden düşüyor) ve o anda yeniden hesaplanan
+   * bir değer sütunu geri açardı. `shown` küçülme boyunca son bilinen anı
+   * taşıyor, yani kimlik kart sökülene kadar sabit.
+   */
+  const hasDecisionColumn = useMemo(
+    () => !decided && !shown?.isMine,
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+    [shown?.id],
+  );
+
+  const geometry = useMemo(
+    () =>
+      campusExpandGeometry({
+        screenW,
+        screenH,
+        topInset: insets.top,
+        bottomInset: insets.bottom,
+        start: frame,
+        hasDecisionButton: hasDecisionColumn,
+        /**
+         * ⚠️ YAZI KUTUNUN DIŞINDA (istek): isim/yaş/saat fotoğrafın ALTINDA
+         * duruyor ve kartla aynı oranda büyüyor. Hedef kare o yüzden yalnız
+         * fotoğrafı değil TÜM ÖĞEYİ kapsıyor — yoksa yazı güvenli alanın
+         * dışına taşıyor (gerekçe `campusExpandGeometry > captionHeight`).
+         */
+        captionHeight: CAMPUS_FACE_CAPTION,
+      }),
+    [frame, hasDecisionColumn, insets.bottom, insets.top, screenH, screenW],
+  );
+
+  /**
+   * ⚠️ Kapanış bir kez: perde, jest ve tik aynı anda tetiklenebiliyor ve
+   * çağıran iki kez kapanmayı iki ayrı olay sanıyordu.
+   *
+   * ⚠️ BAYRAK DIŞTA, hareketi taşıyan çocukta DEĞİL: çocuk an başına yeniden
+   * mount ediliyor, yani orada tutulan bir "bir kez" kilidi her mount'ta
+   * sıfırlanırdı — oysa kilidin ömrü KAPANIŞIN kendisi kadar.
+   */
+  const closedRef = useRef(false);
+
+  /**
+   * ⚠️ GÜVENCE: an dışarıdan kaldırıldıysa dondurma her hâlükârda biter.
+   *
+   * Aşağıdaki zamanlayıcı kaçırılırsa (ekran sökülüp geri gelirse, kapanış
+   * başka bir yoldan tetiklenirse) yüzey ağaçta kalmaya devam ederdi. Bu
+   * effect o kalıntıyı imkânsız kılıyor — küçülme `collapsing` prop'uyla
+   * sürüyorsa ona dokunmuyor, o çağıranın takvimine bağlı.
+   */
+  useEffect(() => {
+    if (moment || collapsing) return;
+    setSelfCollapsing(false);
+  }, [collapsing, moment]);
+
+  /**
+   * YENİ AN AÇILDI — kapanış kilidi çözülüyor.
+   *
+   * ⚠️ BAĞIMLILIK YALNIZ `moment?.id`, NESNE DEĞİL: liste her tazelendiğinde
+   * yeni bir kopya geliyor ve nesneye bağlanan bir effect her turda koşardı.
+   */
+  useEffect(() => {
+    if (!moment) return;
+    closedRef.current = false;
+    setSelfCollapsing(false);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [moment?.id]);
+
+  /**
+   * KAPANIŞ DA BİR HAREKET — açılışın tersi.
+   *
+   * Perdeye basmak ya da aşağı çekmek yüzeyi ANINDA söktürmüyor: kart önce
+   * şeritteki yerine küçülüyor, çağıran ancak o bittiğinde haber alıyor.
+   * Anında sökmek kartı "pat diye yok eden" bir kapanış bırakıyordu.
+   *
+   * ⚠️ BİR KEZ: perde, jest ve üst üste basışlar aynı kapanışı tetikleyebilir;
+   * ikinci bir küçülme animasyonu ve ikinci bir `onClose` doğardı.
+   */
+  const close = () => {
+    if (closedRef.current) return;
+    closedRef.current = true;
+    setSelfCollapsing(true);
+    setTimeout(() => {
+      /**
+       * ⚠️🔴 DONDURMA DA BİTİYOR — sırası önemli.
+       *
+       * Küçülme sırasında gösterilen an donduruluyor (`shown`), yoksa liste
+       * tazelenip anı düşürdüğünde kart küçülmeden yok oluyor. Ama dondurma
+       * KAPANIŞLA BİRLİKTE bitmezse çağıran anı null'ladığında yüzey ağaçta
+       * KALIYOR: perdesiz, camsız, donmuş bir kart haritanın üstünde duruyor
+       * (cihazda görülen hata buydu). Bayrak önce düşüyor, `onClose` sonra.
+       */
+      setSelfCollapsing(false);
+      onClose();
+    }, EXPAND_MS);
+  };
+
+  if (!shown) return null;
+
+  return (
+    /**
+     * ⚠️🔴 `key` ŞART: hareketi taşıyan bileşen AN BAŞINA yeniden doğmak
+     * zorunda — `useAnimatedStyle`in `initial`i ilk koşuşta donuyor ve
+     * animasyonlu görünüme ilk stil olarak veriliyor (uzun gerekçe dosyanın
+     * başındaki "İKİ BİLEŞEN" blokunda). Anahtar olmadan ikinci bir an eski
+     * anın başlangıç karesinden açılırdı.
+     */
+    <ExpandedSurface
+      key={shown.id}
+      moment={shown}
+      geometry={geometry}
+      collapsing={collapsing || selfCollapsing}
+      mode={mode}
+      busy={busy}
+      decided={decided}
+      onLike={onLike}
+      onRequestClose={close}
+    />
   );
 });
 

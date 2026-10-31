@@ -124,6 +124,32 @@ export interface CampusMomentDto {
   mode: AppMode;
   isMine: boolean;
   /**
+   * BU AN İÇİN BEĞENİ GÖNDEREBİLİR MİYİM — `false` = karar zaten verilmiş.
+   *
+   * ⚠️🔴 TEK MÜŞTERİSİ BÜYÜYEN KARTTAKİ CAM TİK: `false` ise tik hiç
+   * çizilmiyor. Kart görünüyor, açılıyor, fotoğrafına bakılıyor — yalnız karar
+   * butonu yok.
+   *
+   * ⚠️ SUNUCUDA ZORUNLU ALAN (backend 2026-10-30'da uyguladı: süzme kalktı,
+   * karar verilmiş an `canLike: false` ile dönüyor —
+   * `backend_campus_decided_moments_2026-10-30.md`). İSTEMCİDE YİNE DE
+   * OPSİYONEL: diskte/bellekte alanı taşımayan ESKİ yanıtlar olabiliyor ve o
+   * hâlde kapı oturum kümesine düşüyor (`useCampusSurface > likedMoments`).
+   * Bu yüzden kontrol `=== false` — gerekçe `isMomentDecided`ta.
+   *
+   * ⚠️ İSTEMCİ BUNU TÜRETEMİYOR: Keşif kararları istemcide tutulmuyor, kampüs
+   * kotası da `/campus/me`de yalnız SAYI olarak geliyor (kim olduğu yok).
+   * Başka bir cihazdan verilen karar ancak sunucudan öğrenilebiliyor.
+   */
+  canLike?: boolean;
+  /**
+   * ⚠️ `myDecision` İSTENDİ, GELMEDİ ve eklenmesini beklemeyin: talepte
+   * "nice-to-have" olarak soruldu (kart üstünde "beğendin" işareti için),
+   * backend ikisinden birinin yeteceğini söyleyip `canLike`ı seçti. Böyle bir
+   * işaret istenirse ya alan yeniden istenir ya da `canLike === false`
+   * üzerinden çizilir — ama o bayrak "beğendim" ile "geçtim"i AYIRMIYOR.
+   */
+  /**
    * Kanonik moderasyon bloğu — foto dönen her uçla aynı şekil.
    * Başkasının moderasyonda düşmüş anı zaten listeye gelmiyor; bu blok
    * pratikte KENDİ anım için dolu (neden görünmediğini söyleyen tek şey).

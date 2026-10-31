@@ -413,7 +413,7 @@ export async function reportSimulatedEntry(): Promise<{
         isMocked: boolean;
         capturedAt: string;
       }) => Promise<{ inCampus: boolean; momentCountToday: number }>;
-      getMe: () => Promise<{ postedToday: boolean }>;
+      getMe: (mode: "Dating" | "Friends") => Promise<{ postedToday: boolean }>;
     };
   };
 
@@ -430,26 +430,49 @@ export async function reportSimulatedEntry(): Promise<{
     // Bugün paylaşıldı mı — boş yüzeydeki gerekçe seçimi buna bakıyor.
     // Çekilemezse (kapalı yüzey, ağ) kararı "bilinmiyor" diye söylüyoruz;
     // uydurmak aracın tek işini bozardı.
-    const postedToday = await campusService
-      .getMe()
-      .then((me) => me.postedToday)
-      .catch(() => null);
+    //
+    // ⚠️ İKİ MOD BİRDEN çekiliyor: günlük an hakkı mod başına, ama PUSH mod'suz
+    // ("yüzeye davet, belirli desteye değil") ve sunucu kuralı "açık modlardan
+    // EN AZ BİRİNDE hak duruyorsa paylaşabilir sayılır". Tek mod çekilseydi
+    // Dating'de paylaşmış kullanıcı için araç "push beklenmiyor" derdi, oysa
+    // Friends hakkı duruyor ve push gidiyor.
+    //
+    // ⚠️ KAPALI MODU AYIKLAMIYOR: açık mod haritası burada yok ve araç onu
+    // çekmek için ayrı bir uca gitmemeli. Kapalı modun `postedToday: false`u
+    // "hak var" sayılır — yani araç push'u fazladan BEKLEYEBİLİR, eksik değil.
+    const [datingPosted, friendsPosted] = await Promise.all(
+      (["Dating", "Friends"] as const).map((m) =>
+        campusService
+          .getMe(m)
+          .then((me) => me.postedToday)
+          .catch(() => null),
+      ),
+    );
+    // "Hiçbir modda hak kalmadı" ancak İKİSİ DE kesin `true` iken söylenebilir;
+    // biri çekilemediyse karar bilinmiyor.
+    const postedToday =
+      datingPosted === null || friendsPosted === null
+        ? null
+        : datingPosted && friendsPosted;
 
     const expectation =
       res.momentCountToday > 0
         ? 'Push bekleniyor: "bugün N an paylaşıldı" (Nearby).'
         : postedToday === false
-          ? 'Push bekleniyor: "ilki senden gelsin" (Prompt) — yüzey boş ve bugün paylaşmamışsın.'
+          ? 'Push bekleniyor: "ilki senden gelsin" (Prompt) — yüzey boş ve en az bir modda hakkın duruyor.'
           : postedToday === true
-            ? "Push BEKLENMİYOR: yüzey boş ve bugün zaten paylaşmışsın. (Günlük hak yanmadı — an paylaşılırsa Nearby gelebilir.)"
+            ? "Push BEKLENMİYOR: yüzey boş ama İKİ MODDA DA paylaşmışsın. (Günlük hak yanmadı — an paylaşılırsa Nearby gelebilir.)"
             : "Push kararı belirsiz: /campus/me çekilemedi, postedToday bilinmiyor.";
+
+    const posted = (v: boolean | null) =>
+      v === null ? "?" : v ? "evet" : "hayır";
 
     return {
       title: "Kampüse giriş bildirildi",
       message:
         `Sunucu: kampüste=${res.inCampus ? "evet" : "HAYIR"}\n` +
         `bugünkü an sayısı=${res.momentCountToday}\n` +
-        `bugün paylaştın=${postedToday === null ? "?" : postedToday ? "evet" : "hayır"}\n\n` +
+        `bugün paylaştın: Dating=${posted(datingPosted)} · Friends=${posted(friendsPosted)}\n\n` +
         expectation +
         "\n\n⚠️ Günlük hak İKİ GEREKÇE ARASINDA PAYLAŞILIYOR: aynı gün ikinci bir kampüs bildirimi gelmiyor.",
     };

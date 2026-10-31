@@ -34,8 +34,8 @@ export function resolveCardMode(
 }
 
 /**
- * Kartta HANGİ AKSİYONLAR çizilecek — moda VE "yazar beni beğenmiş mi"ye
- * göre, saf fonksiyonda. Üç hâl var:
+ * Kartta HANGİ AKSİYONLAR çizilecek — moda, "yazar beni beğenmiş mi"ye VE
+ * "zaten eşleştik mi"ye göre, saf fonksiyonda. Dört hâl var:
  *
  * ── Kural (istek) ───────────────────────────────────────────────────────────
  * • NORMAL (henüz beğenilmemiş): yalnız Fire/Spark + not, X ve tik YOK. Akışta
@@ -48,10 +48,20 @@ export function resolveCardMode(
  * • BEĞENİLMİŞ: kabul (tik) + reddet (X). Fire ve not YOK — karşı taraf seni
  *   zaten beğenmiş, üstüne yükseltecek bir sinyal yok (`LikerSwipeModal >
  *   allowFire` varsayılanının gerekçesiyle aynı). Bu hâl iki modda da aynı.
+ * • EŞLEŞMİŞ (istek): hiçbiri — Fire de not da çizilmez. Eşleşmiş biriyle
+ *   zaten sohbet kanalı açık; ona akıştan "beğeni sinyali" yollamak ne bir şey
+ *   açıyor ne de bir yere düşüyor, yalnız Fire/not bakiyesini yakıyor. Kabul/
+ *   reddet de yok: ortada bekleyen bir karar YOK.
  * • MOD YOK (`resolveCardMode` null döndü): hiçbiri. Bu kapı EN BAŞTA ve
  *   `hasLikedMe`'yi EZER — sunucu "beni beğenmiş" derken yazarın açık modu
  *   olmayabilir; beğenilmiş hâli modsuzluğu ezerse sunucunun reddedeceği bir
  *   kabul butonu çizilir.
+ *
+ * ⚠️ EŞLEŞME KAPISI `hasLikedMe`'DEN ÖNCE. `authorLikedMe` eşleşmeyi zaten
+ * dışlıyor (orada gerekçesi var) ama burada ikinci kez, bu fonksiyonun KENDİ
+ * değişmezi olarak duruyor: çağıran taraf bayrağı başka bir kaynaktan
+ * besleseydi (ör. yalnız yerel liker kümesi) eşleşmiş bir yazarda kabul/reddet
+ * çizilirdi. Sıra tersine çevrilmemeli.
  *
  * ⚠️ `like`/`pass` bir ÇİFT, ayrı ayrı açılabilen iki bayrak değil: tek başına
  * duran bir X zaten bu işin düzelttiği hataydı. Aynı şekilde `fire`/`note` de
@@ -84,10 +94,33 @@ export type FeedCardActions = {
 export function feedCardActions(
   mode: AppMode | null,
   hasLikedMe: boolean,
+  isMatched: boolean,
 ): FeedCardActions {
-  if (mode == null) return { like: false, pass: false, fire: false, note: false };
+  const none = { like: false, pass: false, fire: false, note: false };
+  if (mode == null) return none;
+  // Eşleşme kapısı beğenilmişliği EZİYOR — gerekçesi yukarıda.
+  if (isMatched) return none;
   if (hasLikedMe) return { like: true, pass: true, fire: false, note: false };
   return { like: false, pass: false, fire: true, note: true };
+}
+
+/**
+ * Yazarla ZATEN EŞLEŞMİŞ miyiz — kartın aksiyonsuz doğmasını belirleyen tespit
+ * (bkz. `feedCardActions`). Bayrak `ProfileCardDto > isMatched`, uç `?mode=`
+ * kapsamlı olduğu için eşleşme de MOD KAPSAMLI: Flört'te eşleştiğin biri
+ * Arkadaş modunda açılan kartta hâlâ Fire/not alabilir — doğru taraf bu,
+ * sohbet kanalı da mod başına ayrı.
+ *
+ * ⚠️ Karşılaştırma KATI (`=== true`): bilinmiyorsa normal kart. Gevşetilirse
+ * ("Boolean(...)") sunucudan gelen "false" string'i aksiyonları sessizce
+ * yutardı — bu yönde hata kullanıcının elinden Fire/not'u alır.
+ *
+ * ⚠️ PREMIUM KAPISI YOK ve olmamalı: bu bir gizleme, bir hak değil. Tier'a
+ * bağlanırsa free kullanıcı eşleştiği birine Fire yakmaya devam eder.
+ */
+export function authorIsMatched(profile: unknown): boolean {
+  if (profile == null || typeof profile !== "object") return false;
+  return (profile as { isMatched?: unknown }).isMatched === true;
 }
 
 /**

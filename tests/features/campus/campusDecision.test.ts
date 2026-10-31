@@ -13,6 +13,10 @@
 import api from '@/shared/services/api';
 import swipeService from '@/features/discover/swipeService';
 import { API_ENDPOINTS } from '@/shared/constants/api';
+import {
+  CAMPUS_CODES,
+  CAMPUS_DROP_CARD_CODES,
+} from '@/features/campus/campusCodes';
 
 jest.mock('@/shared/services/api', () => ({
   __esModule: true,
@@ -66,5 +70,34 @@ describe('swipeService.likeUser — kaynak alanları', () => {
       '/api/campus/moments/4471/pass',
     );
     expect(API_ENDPOINTS.CAMPUS_MOMENT_PASS('4471')).not.toContain('swipe');
+  });
+});
+
+
+/**
+ * KARTI DÜŞÜREN KODLAR — `UT-7424` ARTIK BU KÜMEDE DEĞİL.
+ *
+ * ⚠️🔴 Tarihçe sırası önemli: kod kartı düşürüyordu ve DOĞRUYDU, çünkü liste
+ * karar verilmiş anları SÜZÜYORDU — kod yalnız bir yarış penceresinde gelirdi.
+ * Süzme kalktı (backend 2026-10-30: karar verilmiş an `canLike: false` ile
+ * dönüyor) ve ürün kuralı "beğendiğin kişinin kartı kaybolmasın" oldu. Kartı
+ * düşürmek artık o kuralı tam da kullanıcının dokunuşuyla bozar.
+ *
+ * Kümeye geri eklenirse bu test düşer — kasıtlı.
+ */
+describe('CAMPUS_DROP_CARD_CODES', () => {
+  it('ZATEN KARAR VERİLMİŞ kartı DÜŞÜRMÜYOR', () => {
+    expect(CAMPUS_DROP_CARD_CODES).not.toContain(CAMPUS_CODES.ALREADY_DECIDED);
+  });
+
+  it('hedefin gerçekten ortada olmadığı iki kod duruyor', () => {
+    expect(CAMPUS_DROP_CARD_CODES).toEqual([
+      CAMPUS_CODES.MOMENT_GONE,
+      CAMPUS_CODES.OWN_MOMENT_DECISION,
+    ]);
+  });
+
+  it('KOTA kartı düşürmüyor — kart Plus alındıktan sonra karar verilebilsin', () => {
+    expect(CAMPUS_DROP_CARD_CODES).not.toContain(CAMPUS_CODES.DECISION_QUOTA);
   });
 });

@@ -1,5 +1,6 @@
 import { memo } from "react";
-import { StyleSheet, View } from "react-native";
+import { StyleSheet, View, type ViewStyle } from "react-native";
+import Animated, { type AnimatedStyle } from "react-native-reanimated";
 import { Image } from "expo-image";
 import { campusInfoArtFor } from "@/features/campus/campusInfoArt";
 import { colors, withAlpha } from "@/shared/theme/colors";
@@ -78,11 +79,30 @@ const BOX_RADIUS = 28;
  * olunca deste şeridin küçültülmüş hâli gibi okunuyor. Kalınlaştırılacaksa
  * iki yer birden düşünülmeli.
  *
- * ⚠️ ÇİZGİ BOŞLUKTAN KALIN KALMAK ZORUNDA (avatardaki eşit orandan bilerek
- * ayrışıyor): eşitlenirse çerçeve yine "kutunun kendi kenarı" gibi okunuyor ve
- * bu düzenin tamamı o okunuşu kırmak için var. 3/2 o yüzden TABAN — boşluk
- * @3x'te 6px, bir tık daha inince çizgi ile blok arasındaki hava bir render
- * artefaktına dönüyor.
+ * ── ⚠️🔴 SON HÂLİ: 0.5 / 0 — ÇERÇEVE ARTIK BİR KIL ÇİZGİ (istek) ───────────
+ * "borderlarını 0.5px yap ve border ile foto arasındaki boşluğu kaldır."
+ *
+ * Yukarıdaki üç turun (2/14 → … → 7/4 → 3/2) tamamı aynı soruyu soruyordu:
+ * çerçeve ne kadar kalın olmalı. Cevap sıfıra yakın çıktı — kutu artık
+ * "çerçeveli bir kutu" değil, kenarı KESİLMİŞ bir fotoğraf: çizgi yalnız
+ * fotoğrafın haritadan ayrıldığı yeri işaretliyor.
+ *
+ * ⚠️ BOŞLUK SIFIR OLDUĞU İÇİN ÜÇ KATMANLI DÜZEN FİİLEN İKİYE İNDİ: çizgi →
+ * fotoğraf. Aşağıdaki "boşluk katmanı" yine duruyor (padding 0) ve `gap`
+ * geri verilirse hava da geri geliyor — ama artık ÇİZGİYİ AYRI BİR ŞEY YAPAN
+ * havadan vazgeçildi, yani bu dosyanın eski gerekçesi (avatar halkası:
+ * "boşluk kapanırsa halka fotoğrafın kenarı gibi okunur") BİLEREK TERK EDİLDİ.
+ * Okunuşu da tam olarak o: fotoğrafın kenarı.
+ *
+ * ⚠️ ÇİZGİ ÖLÇEKLENMİYOR, SABİT 0.5 (aşağıdaki `campusBoxMetrics`): 0.5pt
+ * @3x'te 1.5px, yani zaten en ince görünür çizginin sınırında. Ölçekle
+ * çarpılsaydı 42pt'lik bir kutuda 0.1pt'ye iner ve kenar sessizce KAYBOLURDU.
+ *
+ * ⚠️ ESKİ "ÇİZGİ BOŞLUKTAN KALIN" KURALI DA BU YÜZDEN DÜŞTÜ: boşluk 0, yani
+ * karşılaştırılacak bir şey yok. Hava geri konacaksa o kural da geri gelmeli
+ * (çizgi 0.5 kalıp boşluk 2 olursa çerçeve "kutunun kendi kenarı"na döner).
+ *
+ * ── Tarihçe, çünkü sayılar üç kez ters yöne gitti ──────────────────────────
  *
  * ⚠️ RENK `colors.border` DEĞİL `colors.textMuted` (istek: "gri olsun").
  * `border` temanın yüzey ailesinden türüyor ve koyu temada #3A3A3A —
@@ -91,12 +111,41 @@ const BOX_RADIUS = 28;
  * Bir metin rengi olması tesadüf değil: tabloda tek "tema ile dönmeyen
  * gri" o.
  *
+ * ── ⚠️ ÇİZGİ SEYRELTİLDİ: ALFA 0.45 (istek: "borderları daha az belirgin
+ * yap") ────────────────────────────────────────────────────────────────────
+ * Kalınlık zaten tabanda (0.5pt) — daha ince bir çizgi @3x'te 1px'in altına
+ * iner ve cihaza göre ya kaybolur ya aynı kalır. Belirginlik bu yüzden
+ * ALFADAN alınıyor: aynı kıl çizgi, yarı güçte mürekkep.
+ *
+ * ⚠️ İKİ TEMADA DA ÇALIŞIYOR çünkü taban renk tema ile dönmeyen nötr gri:
+ * alfa koyu zeminde de açık zeminde de aynı oranda seyreltiyor. Tema ile
+ * dönen bir mürekkep seyreltildiğinde iki moddan birinde tamamen kaybolurdu.
+ *
+ * ⚠️ ALT SINIR PRATİKTE BURADA: 0.3'ün altında çizgi fotoğrafın açık
+ * bölgelerinde hiç okunmuyor, yani kenar "bazı kartlarda var bazılarında yok"
+ * gibi davranıyor — yokluğundan daha kötüsü o.
+ *
  * ⚠️ Renk SABİTE alınmıyor — palet mutable ve modül seviyesinde türetilen
  * bir renk tema değişiminde bayat kalıyor (colors.ts'in iki kuralından
  * biri). Ölçüler sabit, renk inline okunuyor.
  */
-const RING_WIDTH = 3;
-const RING_GAP = 2;
+const RING_WIDTH = 0.5;
+/**
+ * ⚠️🔴 BOŞLUK İKİ KEZ YÖN DEĞİŞTİRDİ, SON HÂLİ YİNE 0 (istek: "sadece
+ * fotoğraf olsun; border da olsun ama 0.5px, gri").
+ *
+ * Tarihçe kısa ve gerekçeleri birbirine bağlı:
+ *   • 2 → 0: çizgi bir kıl çizgiye indi, hava gereksizdi;
+ *   • 0 → 5: kenar bir ÖMÜR GÖSTERGESİNE dönüştü (kalan süre mod renginde) ve
+ *     fotoğrafa yapışık bir gösterge fotonun kenarı gibi okunuyordu;
+ *   • 5 → 0: gösterge KALDIRILDI (kalan süre yine YAZI oldu, adın sağında),
+ *     yani kenarın tek işi yine fotoğrafı zeminden ayırmak.
+ *
+ * Yani boşluk, çizginin İŞİNE bağlı bir karar: çerçeveyse 0, göstergeyse hava.
+ */
+const RING_GAP = 0;
+/** Çizginin mürekkebi — gerekçe yukarıdaki "SEYRELTİLDİ" notunda. */
+const RING_ALPHA = 0.45;
 
 /**
  * Yukarıdaki üç sayının ölçüldüğü BOY — 222pt (şeritteki kutunun tipik
@@ -121,27 +170,19 @@ export interface CampusBoxMetrics {
 /**
  * Çerçeve reçetesinin verilen ölçüdeki karşılığı.
  *
- * ⚠️ TABANLAR VAR: oran küçük bir kutuda boşluğu yarım pt'ye indiriyor ve o
- * ölçüde hava bir render artefaktı gibi okunuyor (aynı uyarının referans
- * boydaki hâli `RING_GAP`te). 2pt @3x'te 6px — en küçük görünür hava.
+ * ⚠️ ARTIK TEK SAYI ÖLÇEKLENİYOR — KÖŞE. Çizgi (0.5) ve boşluk (0) ölçekten
+ * BAĞIMSIZ sabitler ve gerekçesi `RING_WIDTH`in yanında: 0.5pt zaten görünür
+ * çizginin dibi, oranla çarpılsa küçük kutuda kaybolur; boşluk da kaldırıldı,
+ * yani çarpacak bir şey yok.
  *
- * ⚠️ REÇETE İNCELDİKTEN SONRA (3/2) referans boyun ALTINDA pratikte hep
- * tabanlara çöküyor: 3/2 zaten tabanın bir tık üstü. Yani ölçeklemenin asıl
- * işi kalan tek sayıda — köşede.
+ * ⚠️ TABANLAR (`Math.max(2, …)`) BU YÜZDEN KALKTI: ikisi de kıl çizgiyi
+ * 2pt'ye geri kalınlaştırıyordu — tam olarak isteğin tersi.
  */
 export function campusBoxMetrics(size: number): CampusBoxMetrics {
   const scale = size / CAMPUS_BOX_REF_SIZE;
-  const gap = Math.max(2, Math.round(RING_GAP * scale));
   return {
-    /**
-     * ⚠️ ÇİZGİ BOŞLUKTAN KALIN KALMAK ZORUNDA — reçetenin kendisi bu (gerekçe
-     * `RING_WIDTH`te). `gap + 1` tabanı İNCELTMEDEN SONRA ASIL İŞİ YAPAN
-     * SATIR: 3/2'de oran zaten tabana yakın ve ölçek küçüldükçe iki sayı da
-     * 2'ye çöküyor — bu taban olmasa çerçeve küçük kutuda eşitlenip "kutunun
-     * kendi kenarı" gibi okunmaya başlıyor.
-     */
-    ring: Math.max(2, Math.round(RING_WIDTH * scale), gap + 1),
-    gap,
+    ring: RING_WIDTH,
+    gap: RING_GAP,
     radius: Math.round(BOX_RADIUS * scale),
   };
 }
@@ -305,6 +346,36 @@ export interface CampusOutlinedBoxProps extends CampusBoxMetrics {
    * çizgi arasında bir şerit olarak gösteriyordu.
    */
   gapFill?: string;
+  /**
+   * ÇİZGİNİN MÜREKKEP GÜCÜ — verilmezse seyreltilmiş (`RING_ALPHA`).
+   *
+   * ⚠️ TEK MÜŞTERİSİ AKIŞ BAŞLIĞINDAKİ DESTE: çizgi seyreltilirken (istek
+   * "borderları daha az belirgin yap") istenen yüzey şeridin KARTLARIYDI.
+   * Deste aynı kabuğu çiziyor ama ölçüleri kendi (3/2, gerekçe
+   * FeedMomentsPeek > BOX_RING) ve 42pt'lik bir kutuda 3pt'lik bir çizgi
+   * seyreltilince kutu "soluk" okunuyor — orada çizgi kutunun tek yapısı.
+   * Yani seyreltme ölçüye bağlı bir karar, kabuğun sözleşmesi değil.
+   */
+  ringAlpha?: number;
+  /**
+   * DIŞ KUTUNUN ANİMASYONLU STİLİ — tek müşterisi BÜYÜYEN KARTIN KÖŞESİ.
+   *
+   * ⚠️🔴 KÖŞE NİYE ANİMASYONLU: kart bir `scale` ile büyüyor ve ekrandaki
+   * köşe `çizilen × ölçek`. Çizilen sabit kalırsa iki DURAN hâl aynı köşeyi
+   * paylaşamıyor — şerit 28 çiziyor, büyüyen kart 35 çizip 0.47 ile
+   * küçültüyor (≈16). Dokunma anında köşe SIÇRIYOR; cihazdaki şikâyet
+   * birebir buydu ("bir anda köşeleri değişiyor"). Çizilen yarıçap p ile
+   * birlikte animasyonlanınca ekrandaki köşe iki ucu da tutuyor.
+   */
+  boxStyle?: AnimatedStyle<ViewStyle>;
+  /**
+   * İÇ BLOĞUN ANİMASYONLU STİLİ — aynı sebep, iç köşe için.
+   *
+   * ⚠️ BOŞLUK VARKEN FOTOĞRAFI KIRPAN ŞEY BU BLOK (`overflow: hidden`), yani
+   * dış köşe animasyonlanıp bu sabit kalırsa fotoğrafın köşesi kabuğunkinden
+   * ayrışıyor.
+   */
+  innerStyle?: AnimatedStyle<ViewStyle>;
 }
 
 /**
@@ -330,12 +401,16 @@ export const CampusOutlinedBox = memo(function CampusOutlinedBox({
   accessibilityLabel,
   fill,
   gapFill,
+  ringAlpha = RING_ALPHA,
+  boxStyle,
+  innerStyle,
 }: CampusOutlinedBoxProps) {
   return (
-    <View
+    <Animated.View
       accessible={accessibilityLabel ? true : undefined}
       accessibilityLabel={accessibilityLabel}
-      style={{
+      style={[
+        {
         width,
         height,
         borderRadius: radius,
@@ -344,8 +419,13 @@ export const CampusOutlinedBox = memo(function CampusOutlinedBox({
         // ZEMİN YOK: çerçeve ile içerideki blok arasından HARİTA görünüyor
         // (istek). `transparent` yazmak yerine alan hiç verilmiyor.
         borderWidth: ring,
-        borderColor: colors.textMuted,
-      }}
+        // ⚠️ RENK RENDER SIRASINDA türetiliyor (palet mutable): modül
+        // sabitine alınsa tema çevrildiğinde bayat kalır.
+        borderColor: withAlpha(colors.textMuted, ringAlpha),
+        },
+        // Köşe animasyonu — gerekçe prop'un yanında.
+        boxStyle,
+      ]}
     >
       {/* BOŞLUK KATMANI — çerçeve ile içerideki blok arasındaki hava.
           Zemini YOK: Profil'de avatarın halkası ile fotoğrafı arasındaki
@@ -365,8 +445,9 @@ export const CampusOutlinedBox = memo(function CampusOutlinedBox({
         {/* İÇERİDEKİ BLOK — kutunun tek dolu yüzeyi, çerçeveyle aynı griden
             (gerekçe FILL_ALPHA'da). `fill` verilirse o kazanıyor — tek
             müşterisi ve gerekçesi prop'un yanında. */}
-        <View
-          style={{
+        <Animated.View
+          style={[
+            {
             flex: 1,
             backgroundColor: fill ?? withAlpha(colors.textMuted, FILL_ALPHA),
             // ⚠️ İç yarıçap, bloğun dış kenardan TOPLAM uzaklığı kadar
@@ -399,12 +480,14 @@ export const CampusOutlinedBox = memo(function CampusOutlinedBox({
             overflow: gap > 0 ? "hidden" : "visible",
             alignItems: "center",
             justifyContent: "center",
-          }}
+            },
+            innerStyle,
+          ]}
         >
           {children}
-        </View>
+        </Animated.View>
       </View>
-    </View>
+    </Animated.View>
   );
 });
 

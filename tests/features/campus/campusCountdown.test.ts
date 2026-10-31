@@ -76,3 +76,4 @@ describe('isMomentLive', () => {
     expect(isMomentLive(undefined, NOW)).toBe(true);
   });
 });
+

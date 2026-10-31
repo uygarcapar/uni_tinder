@@ -33,6 +33,46 @@ it('hedef SAĞDA cam sütunu kadar yer bırakıyor — kart ekranın ortasında 
   expect(rightGap).toBeGreaterThanOrEqual(BUTTON_COLUMN);
 });
 
+/**
+ * BUTON YOKSA SÜTUN DA YOK (istek: "karar verilmiş kartta kart sağdan da
+ * kaplasın ve soldan olduğu kadar; oranı da aynı kalsın").
+ *
+ * Buton iki hâlde hiç çizilmiyor — karar zaten verilmiş (`canLike: false`) ve
+ * KENDİ anım (UT-7422). O hâllerde 96pt'lik sütun boş bir şerit olarak
+ * duruyordu: kart sebepsiz sola yatık.
+ *
+ * ⚠️ ÜÇ ŞEY BİRDEN çivileniyor: simetri, 3:4 oranı ve kartın GERÇEKTEN
+ * büyümesi. Oran korunmazsa fotoğraf sessizce farklı kırpılır; büyümezse
+ * isteğin tamamı karşılanmamış olur.
+ */
+it('buton yoksa kart İKİ YANDAN SİMETRİK ve daha geniş — oran bozulmadan', () => {
+  const withButton = campusExpandGeometry({ ...BASE, start: null }).target;
+  const noButton = campusExpandGeometry({
+    ...BASE,
+    start: null,
+    hasDecisionButton: false,
+  }).target;
+
+  const leftGap = noButton.x;
+  const rightGap = BASE.screenW - (noButton.x + noButton.width);
+  expect(rightGap).toBeCloseTo(leftGap, 3);
+
+  expect(noButton.width).toBeGreaterThan(withButton.width);
+  expect(noButton.width / noButton.height).toBeCloseTo(3 / 4, 3);
+  // Güvenli alanı yine taşımıyor.
+  expect(noButton.y).toBeGreaterThanOrEqual(BASE.topInset);
+  expect(noButton.y + noButton.height).toBeLessThanOrEqual(
+    BASE.screenH - BASE.bottomInset,
+  );
+});
+
+it('varsayılan SÜTUNLU — çağıran "buton yok"u açıkça söylemeli', () => {
+  expect(campusExpandGeometry({ ...BASE, start: null }).target).toEqual(
+    campusExpandGeometry({ ...BASE, start: null, hasDecisionButton: true })
+      .target,
+  );
+});
+
 it('güvenli alanın içinde kalıyor — küçük telefonda da', () => {
   for (const screen of [{ screenW: 320, screenH: 568 }, BASE]) {
     const { target } = campusExpandGeometry({ ...BASE, ...screen, start: null });
@@ -115,5 +155,71 @@ describe('campusExpandTransform', () => {
     const t = campusExpandTransform(start, target, 0.5);
     expect(t.scale).toBeGreaterThan(start.width / target.width);
     expect(t.scale).toBeLessThan(1);
+  });
+});
+
+
+/**
+ * ══════════════════════════════════════════════════════════════════════════
+ * AD SATIRI HEDEFİN ALTINDA — PAY SABİT, ÖLÇEKLENMİYOR.
+ * ══════════════════════════════════════════════════════════════════════════
+ * Ad/yaş kutunun DIŞINDA (istek) ve büyüyen kartta kartın KARDEŞİ, taban
+ * puntosunda — yani ölçekle büyümüyor (istek: "isim/yaş büyümesin"). Hedef
+ * kutu bu yüzden YALNIZ FOTOĞRAF, ama güvenli alandan yazının payı önceden
+ * düşülüyor.
+ *
+ * ⚠️🔴 İKİSİ BİRLİKTE DEĞİŞİR: yazı bir gün yeniden ölçeklenirse buradaki
+ * sabit pay da çarpanla çarpılmalı, yoksa ya yazı taşar ya altında boşluk
+ * kalır. Bir tur öyleydi (pay `caption × hedef/başlangıç` idi) ve istek
+ * üzerine geri alındı.
+ */
+describe('alttaki yazı payı', () => {
+  const CAPTION = 34;
+  const START = { x: 20, y: 600, width: 166.5, height: 222 };
+
+  it('yazı payı güvenli alanın İÇİNDEN düşülüyor', () => {
+    const { target } = campusExpandGeometry({
+      ...BASE,
+      start: START,
+      captionHeight: CAPTION,
+    });
+    expect(target.y + target.height + CAPTION).toBeLessThanOrEqual(
+      BASE.screenH - BASE.bottomInset,
+    );
+  });
+
+  it('hedef YALNIZ FOTOĞRAF — 3:4 ve pay dışarıda', () => {
+    const { target } = campusExpandGeometry({
+      ...BASE,
+      start: START,
+      captionHeight: CAPTION,
+    });
+    expect(target.width / target.height).toBeCloseTo(3 / 4, 3);
+  });
+
+  it('GENİŞLİK bağlayıcıyken pay fotoğrafı küçültmüyor', () => {
+    const withCaption = campusExpandGeometry({
+      ...BASE,
+      start: START,
+      captionHeight: CAPTION,
+    }).target;
+    const without = campusExpandGeometry({ ...BASE, start: START }).target;
+    expect(withCaption.height).toBeCloseTo(without.height, 3);
+    // Yine de bir tık yukarı kayıyor: yazı aşağıda yer tutuyor.
+    expect(withCaption.y).toBeLessThan(without.y);
+  });
+
+  it('DİKEY bağlayıcıyken (kısa ekran) fotoğraf payı kadar küçülüyor', () => {
+    const short = { ...BASE, screenH: 420, topInset: 20, bottomInset: 0 };
+    const withCaption = campusExpandGeometry({
+      ...short,
+      start: START,
+      captionHeight: CAPTION,
+    }).target;
+    const without = campusExpandGeometry({ ...short, start: START }).target;
+    expect(withCaption.height).toBeLessThan(without.height);
+    expect(withCaption.y + withCaption.height + CAPTION).toBeLessThanOrEqual(
+      short.screenH - short.bottomInset,
+    );
   });
 });

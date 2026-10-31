@@ -4,13 +4,8 @@ import { useTranslation } from "react-i18next";
 import HeartGlyph from "@/shared/components/HeartGlyph";
 import { colors } from "@/shared/theme/colors";
 import { feedRowShell } from "../feedRowShell";
-import {
-  AVATAR,
-  BLOCK_GAP,
-  BODY_LINE_HEIGHT,
-  LIKE_COUNT_MARGIN,
-  LIKE_HEART_BOX,
-} from "./FeedPostCard";
+import { AVATAR, BLOCK_GAP, BODY_LINE_HEIGHT } from "../feedPostMetrics";
+import { LIKE_COUNT_MARGIN, LIKE_HEART_BOX } from "./FeedPostCard";
 
 /**
  * Akış yükleme iskeleti.
@@ -189,6 +184,27 @@ function Row({
  */
 export type FeedSkeletonVariant = "feed" | "mine";
 
+/**
+ * İSKELET SATIR SAYILARI — yükleme bitince listenin ne kadar zıpladığını
+ * belirleyen tek şey.
+ *
+ * ⚠️ ESKİ DEĞER 3 ve 2'YDİ ve bu ÇOK AZDI. Gövde tavanı 400 kodnokta
+ * (`feedText.FEED_POST_MAX_LENGTH`) ve kartın gövde genişliği ekran − 52pt
+ * (`feedRowShell`: 2×ROW_BLEED + 2×ROW_PAD_H), yani 16.5pt fontta satır başına
+ * ≈38-42 karakter: dolu bir gönderi 10-11 satır. İskelet 2-3 satır varsayınca
+ * gerçek kartlar gelince liste AŞAĞI doğru sıçrıyordu.
+ *
+ * ⚠️ TAVANI TAKLİT ETMEK DE YANLIŞ olurdu: 10 satırlık bir iskelet, kısa
+ * gönderilerin çoğunlukta olduğu bir akışta listeyi YUKARI sıçratır — ve boş
+ * ekranın kendisi "burada çok şey var" diye yanlış bir söz verir.
+ *
+ * Seçilen aralık orta yol: kırpma YAPMADIĞIMIZ için zıplama sıfırlanamaz
+ * (gerekçe: uzunluk kararı, "tamamı görünsün"), amaç ORTALAMA sapmayı
+ * küçültmek. Dizinin kendisi değişken kalıyor — eşit satırlar iskeleti
+ * "yükleniyor" yerine "bozuk" gösteriyor.
+ */
+const BODY_LINES = [4, 6, 3] as const;
+
 function FeedSkeletonListBase({
   count = 3,
   variant = "feed",
@@ -203,7 +219,7 @@ function FeedSkeletonListBase({
         // "yükleniyor" yerine "bozuk" okunurdu.
         <Row
           key={i}
-          lines={i % 2 === 0 ? 3 : 2}
+          lines={BODY_LINES[i % BODY_LINES.length]}
           nameWidth={NAME_BAR_W[i % NAME_BAR_W.length]}
           variant={variant}
         />

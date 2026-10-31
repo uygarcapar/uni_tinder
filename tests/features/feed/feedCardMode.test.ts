@@ -8,6 +8,7 @@
 
 import {
   feedCardActions,
+  authorIsMatched,
   authorLikedMe,
   resolveCardMode,
   normalizeModes,
@@ -54,9 +55,11 @@ describe("resolveCardMode", () => {
 });
 
 /**
- * Kartta hangi aksiyonların çizildiği — artık üç hâlli karar.
+ * Kartta hangi aksiyonların çizildiği — artık DÖRT hâlli karar.
  *
- * Test edilen üç ayrı SESSİZ GERİLEME:
+ * Test edilen dört ayrı SESSİZ GERİLEME:
+ * 0. EŞLEŞMİŞ YAZARDA AKSİYON ÇİZİLMESİ: eşleştiğin kişiye akıştan Fire/not
+ *    yollamak hiçbir kapı açmıyor, yalnız bakiyeyi yakıyor — ve geri alınamaz.
  * 1. MOD KAPISININ EZİLMESİ: `hasLikedMe` true'ya bakıp mod kontrolü atlanırsa
  *    (ya da dal sırası tersine çevrilirse) modsuz bir kartta sunucunun
  *    reddedeceği bir kabul/reddet çifti çizilir.
@@ -71,42 +74,108 @@ describe("resolveCardMode", () => {
  *    salınımı dondurmak için var.
  */
 describe("feedCardActions", () => {
+  const none = { like: false, pass: false, fire: false, note: false };
+
   it("NORMAL (Flört): yalnız Fire ve not — X ve tik YOK", () => {
-    expect(feedCardActions("Dating", false)).toEqual({
+    expect(feedCardActions("Dating", false, false)).toEqual({
       like: false, pass: false, fire: true, note: true,
     });
   });
 
   it("NORMAL (Arkadaş): Flört'le AYNI küme — fark yalnız butonun adında", () => {
-    expect(feedCardActions("Friends", false)).toEqual({
+    expect(feedCardActions("Friends", false, false)).toEqual({
       like: false, pass: false, fire: true, note: true,
     });
   });
 
   it("BEĞENİLMİŞ: kabul + reddet — Fire ve not YOK (iki modda da)", () => {
     const expected = { like: true, pass: true, fire: false, note: false };
-    expect(feedCardActions("Dating", true)).toEqual(expected);
-    expect(feedCardActions("Friends", true)).toEqual(expected);
+    expect(feedCardActions("Dating", true, false)).toEqual(expected);
+    expect(feedCardActions("Friends", true, false)).toEqual(expected);
+  });
+
+  /**
+   * İSTEK: eşleştiğin birinin akış kartında Fire ve not HİÇ çizilmiyor —
+   * kanal zaten açık, o butonlar yalnız bakiye yakıyor.
+   */
+  it("EŞLEŞMİŞ: hiçbir aksiyon — Fire ve not çizilmiyor (iki modda da)", () => {
+    expect(feedCardActions("Dating", false, true)).toEqual(none);
+    expect(feedCardActions("Friends", false, true)).toEqual(none);
+  });
+
+  it("EŞLEŞME beğenilmişliği EZİYOR — kabul/reddet de çizilmiyor", () => {
+    // `authorLikedMe` eşleşmeyi zaten dışlıyor ama bu fonksiyonun KENDİ
+    // değişmezi: bayrak başka bir koldan (ör. yerel liker kümesi) gelseydi
+    // eşleşmiş yazarda olmayan bir bekleyen karar ima edilirdi.
+    expect(feedCardActions("Dating", true, true)).toEqual(none);
+    expect(feedCardActions("Friends", true, true)).toEqual(none);
   });
 
   it("mod yoksa hiçbiri — beğenilmiş olsa BİLE kart salt okunur", () => {
     // Review Focus #1: sunucu "beni beğenmiş" derken yazarın açık modu
     // olmayabilir. Beğenilmiş hâli modsuzluğu EZMEMELİ, yoksa sunucunun
     // reddedeceği bir kabul butonu çizilir.
-    const none = { like: false, pass: false, fire: false, note: false };
-    expect(feedCardActions(null, false)).toEqual(none);
-    expect(feedCardActions(null, true)).toEqual(none);
+    expect(feedCardActions(null, false, false)).toEqual(none);
+    expect(feedCardActions(null, true, false)).toEqual(none);
+    expect(feedCardActions(null, true, true)).toEqual(none);
   });
 
   it("like ve pass her hâlde BİRLİKTE — tek başına X'e dönüş yolu kapalı", () => {
     // Bu işin düzelttiği hata tam olarak tek başına duran bir X'ti.
     for (const mode of ["Dating", "Friends", null] as const) {
       for (const liked of [true, false]) {
-        const a = feedCardActions(mode, liked);
-        expect(a.like).toBe(a.pass);
+        for (const matched of [true, false]) {
+          const a = feedCardActions(mode, liked, matched);
+          expect(a.like).toBe(a.pass);
+        }
       }
     }
   });
+
+  it("fire ve note da her hâlde BİRLİKTE — ikisi bir ÇİFT", () => {
+    for (const mode of ["Dating", "Friends", null] as const) {
+      for (const liked of [true, false]) {
+        for (const matched of [true, false]) {
+          const a = feedCardActions(mode, liked, matched);
+          expect(a.fire).toBe(a.note);
+        }
+      }
+    }
+  });
+});
+
+/**
+ * "Zaten eşleştik mi" — kartın AKSİYONSUZ doğup doğmayacağını belirleyen
+ * tespit. Yanlış negatif eşleştiğin birine Fire yaktırır (geri alınamaz),
+ * yanlış pozitif ise tanımadığın birine hiçbir şey yapamaz hâle getirir.
+ */
+describe("authorIsMatched", () => {
+  it("bayrak true ise eşleşmiş", () => {
+    expect(authorIsMatched({ userId: "u1", isMatched: true })).toBe(true);
+  });
+
+  it("bayrak yoksa ya da false ise eşleşmemiş — normal kart", () => {
+    expect(authorIsMatched({ userId: "u1" })).toBe(false);
+    expect(authorIsMatched({ userId: "u1", isMatched: false })).toBe(false);
+  });
+
+  /**
+   * KATI `=== true`. Gevşetilirse ("Boolean(...)") sunucudan gelen "false"
+   * string'i eşleşme sayılır ve kullanıcının elinden Fire/not sessizce alınır.
+   */
+  it.each(["true", "false", 1, 0, {}])(
+    "bayrak boolean değilse (%p) yok sayılıyor",
+    (isMatched) => {
+      expect(authorIsMatched({ userId: "u1", isMatched })).toBe(false);
+    },
+  );
+
+  it.each([null, undefined, "u1", 5])(
+    "profil yoksa (%p) false — kart henüz yüklenmemiş",
+    (profile) => {
+      expect(authorIsMatched(profile)).toBe(false);
+    },
+  );
 });
 
 /**

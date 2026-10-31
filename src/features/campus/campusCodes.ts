@@ -81,10 +81,17 @@ export const CAMPUS_CODES = {
   /**
    * 409 — hedefe BU MODDA zaten karar verilmiş (son 3 gün içinde beğeni).
    *
-   * ⚠️ Liste bunları süzüyor ama yarış penceresi var: kullanıcı aynı kişiyi
-   * Keşif'te beğenmişken kampüs listesi elinde bayat kalabilir. Kart sessizce
-   * düşürülüyor — kullanıcıya "zaten beğenmiştin" demek, kiminle eşleşmeye
-   * çalıştığını başkasına değil ama kendisine bile gereksiz bir ayrıntı.
+   * ⚠️🔴 ARTIK KARTI DÜŞÜRMÜYOR (2026-10-30). Liste bu anları SÜZÜYORDU ve kod
+   * yalnız yarış penceresinde geliyordu (başka cihazdan/Keşif'ten verilen
+   * karar), o yüzden kartı sessizce düşürmek doğruydu. Süzme kalktı: karar
+   * verilmiş an listede `canLike: false` ile DÖNÜYOR (bkz.
+   * backend_campus_decided_moments_2026-10-30, backend uyguladı) ve ürün kuralı
+   * "kart kaybolmasın". Kartı düşürmek artık o kuralı tam da kullanıcının
+   * dokunuşuyla bozardı — kod geldiğinde kart YERİNDE kalıyor, yalnız karar
+   * verilmiş işaretlenip liste tazeleniyor (bkz. useCampusSurface > `like`).
+   *
+   * Kullanıcıya "zaten beğenmiştin" demiyoruz: tik zaten çizilmeyecek, mesaj
+   * gereksiz bir ayrıntı.
    */
   ALREADY_DECIDED: "UT-7424",
 
@@ -111,10 +118,15 @@ export type CampusCode = (typeof CAMPUS_CODES)[keyof typeof CAMPUS_CODES];
  * değil, kullanıcıyla ilgili. Kart yerinde kalmalı ki kullanıcı Plus aldıktan
  * sonra aynı kişiye karar verebilsin.
  */
+/**
+ * ⚠️🔴 `ALREADY_DECIDED` BU LİSTEDEN ÇIKARILDI (2026-10-30) ve geri konmamalı:
+ * karar verilmiş an artık listede duruyor (`canLike: false`), yani "karar
+ * verilmiş" hâli kartın YOK olması değil TİKİN olmaması. Gerekçe kodun kendi
+ * notunda; kalan iki kodda hedef gerçekten ortada yok.
+ */
 export const CAMPUS_DROP_CARD_CODES: readonly string[] = [
   CAMPUS_CODES.MOMENT_GONE,
   CAMPUS_CODES.OWN_MOMENT_DECISION,
-  CAMPUS_CODES.ALREADY_DECIDED,
 ];
 
 /**

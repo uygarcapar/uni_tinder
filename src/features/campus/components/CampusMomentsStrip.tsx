@@ -16,6 +16,7 @@ import SkeletonBox from "@/shared/components/SkeletonBox";
 import { colors, withAlpha } from "@/shared/theme/colors";
 import { NATIVE_TAB_BAR_HEIGHT } from "@/navigation/tabBarMetrics";
 import CampusMomentCard from "./CampusMomentCard";
+import { CAMPUS_FACE_CAPTION } from "./CampusMomentFace";
 import CampusMapTitle from "./CampusMapTitle";
 import { CampusInfoBox, campusBoxMetrics } from "./CampusInfoBox";
 import { filterLiveMoments } from "../campusQueries";
@@ -130,10 +131,19 @@ const LIFT_BLEED = 28;
  * expandedBottomInset) olduğu yerde kalıyor. Oranı büyütmek isteyen önce o
  * hesabı okumalı.
  */
+/**
+ * ⚠️ ORAN 0.26 → 0.29 (istek: "kartları biraz daha büyüt"). Üç sayı birlikte
+ * okunur ve TAVANI tutan şey yukarıdaki hesap:
+ *   • ALT SINIR (200) KASTEN DEĞİŞMEDİ: SE'de (667) 0.29 zaten 193 veriyor,
+ *     yani o cihaz tabanda kalıyor ve şerit ekranın yarısını aşmıyor (testli
+ *     değişmez). Tabanı büyütmek doğrudan o sınırı kırıyor.
+ *   • ÜST SINIR 300 → 320: oran büyüyünce tablet zaten tavana dayanıyordu,
+ *     yani tavan kalsaydı büyüme büyük ekranlarda hiç görünmezdi.
+ */
 const CARD_ASPECT = 3 / 4;
-const CARD_HEIGHT_RATIO = 0.26;
+const CARD_HEIGHT_RATIO = 0.29;
 const CARD_HEIGHT_MIN = 200;
-const CARD_HEIGHT_MAX = 300;
+const CARD_HEIGHT_MAX = 320;
 
 /** Kutuların altındaki pay (güvenli alan BUNA EK). */
 const BOTTOM_PAD = 16;
@@ -222,6 +232,15 @@ export function campusStripHeight(
   return (
     TITLE_ROW +
     campusCardHeight(windowHeight) +
+    /**
+     * ⚠️ YAZI BLOĞU KUTUNUN DIŞINDA (istek: "isim/yaş kartın altında olsun —
+     * dışında ama altında") ve şeridin boyuna EKLENİYOR, kutudan ÇIKMIYOR:
+     * kutuyu kısaltmak kullanıcının az önce büyüttüğü fotoğrafı geri
+     * küçültürdü. Şerit bu yüzden bir tık uzadı; haritanın kadrajı da aynı
+     * sayıdan türüdüğü için kendiliğinden takip ediyor (bkz. FeedMapStrip >
+     * expandedBottomInset).
+     */
+    CAMPUS_FACE_CAPTION +
     BOTTOM_PAD +
     bottomInset +
     // ⚠️ SEKME ŞERİDİ DE EKLENİYOR: kutular onun üstünde durmak zorunda
@@ -707,7 +726,10 @@ export default function CampusMomentsStrip({
         // Yani `campusStripHeight`in varsayımı korunuyor: liste akışta hâlâ
         // tam `cardHeight` kadar yer kaplıyor.
         style={{
-          height: cardHeight + LIFT_BLEED * 2,
+          // ⚠️ YAZI DA LİSTENİN İÇİNDE: kart artık fotoğraf + altındaki iki
+          // satır (gerekçe `campusStripHeight`te). Pay eklenmezse
+          // `UIScrollView` yazıyı kırpıyor.
+          height: cardHeight + CAMPUS_FACE_CAPTION + LIFT_BLEED * 2,
           marginVertical: -LIFT_BLEED,
         }}
         onEndReached={onEndReached}

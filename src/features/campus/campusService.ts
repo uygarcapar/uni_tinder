@@ -101,9 +101,17 @@ class CampusService {
     );
   }
 
-  getMe(): Promise<CampusMeDto> {
+  /**
+   * Yüzeyin durumu — MOD'LU.
+   *
+   * `mode` BOŞSA parametre HİÇ gönderilmiyor (`getMoments` ile aynı kural):
+   * boş string sunucuda enum çözümlemesini patlatıyor. Parametresiz çağrı
+   * sunucuda `Dating` sayılıyor, diğer mod'lu uçlarla aynı varsayılan.
+   */
+  getMe(mode?: AppMode | null): Promise<CampusMeDto> {
+    const query = mode ? `?mode=${encodeURIComponent(mode)}` : "";
     return guard(
-      () => api.get(API_ENDPOINTS.CAMPUS_ME),
+      () => api.get(`${API_ENDPOINTS.CAMPUS_ME}${query}`),
       (res) => requireResult<CampusMeDto>(res, "me"),
     );
   }
@@ -181,10 +189,22 @@ class CampusService {
   }
 
   /** Kaldır. Günün hakkı GERİ GELMİYOR — metin bunu söylemek zorunda. */
-  deleteMoment(id: string): Promise<void> {
+  /**
+   * Anı kaldır — ⚠️ YANIT SİLİNEN ANIN MODUNU TAŞIYOR ve taşımak zorunda.
+   *
+   * Çağıran `/me`yi o modun anahtarıyla tazeliyor. Mod istemci cache'inden
+   * TÜRETİLEMİYOR: türetmenin tek yolu silinen anı geri okumak, o da
+   * `UT-7421 MOMENT_GONE` dönüyor (⚠️ `UT-7420` DEĞİL — o beğeni kotası).
+   * Yani kart cache'ten düşmüş bir yolda (süre dolması, başka cihazdan silme)
+   * modu öğrenebileceğimiz başka uç yok.
+   *
+   * Alan gelmezse `null` — çağıran köke düşüyor (iki modu da tazelemek,
+   * yanlış modu tazelemekten iyi).
+   */
+  deleteMoment(id: string): Promise<{ mode: AppMode | null }> {
     return guard(
       () => api.delete(API_ENDPOINTS.CAMPUS_MOMENT(id)),
-      () => undefined,
+      (res) => ({ mode: (res?.result?.mode as AppMode) ?? null }),
     );
   }
 

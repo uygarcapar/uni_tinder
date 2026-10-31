@@ -375,7 +375,12 @@ describe('harita + şerit eşzamanlılığı', () => {
     // ⚠️ KAPI ŞERİTTE DEĞİL: kendi anım da büyüyor, karar butonu overlay'de
     // `isMine` ile kesiliyor.
     expect(STRIP_SOURCE).toContain('onPress={onOpenCard}');
-    expect(OVERLAY_SOURCE).toContain('settled && !shown.isMine');
+    // ⚠️ `shown` → `moment`: hareketi taşıyan yüzey ayrı bir çocuk bileşene
+    // taşındı (`ExpandedSurface`) ve dondurma/çözme işi DIŞTA kaldı, yani
+    // çocuk zaten çözülmüş anı prop olarak alıyor. Taşımanın sebebi
+    // Reanimated'in bayat `initial` stili — gerekçe overlay'in başındaki
+    // "İKİ BİLEŞEN" blokunda; kapının kendisi değişmedi.
+    expect(OVERLAY_SOURCE).toContain('settled && !moment.isMine');
     // ⚠️ Şerit artık anı DEĞİL kimliğini + ölçülen kareyi yukarı veriyor:
     // gösterilen an her render canlı listeden çözülüyor (`resolveOpenMoment`),
     // böylece an düşünce yüzey kendiliğinden kapanıyor.
@@ -434,8 +439,11 @@ describe('harita + şerit eşzamanlılığı', () => {
       'src/features/campus/useCampusSurface.ts',
       'utf8',
     );
+    // ⚠️ MOD İLK ARGÜMAN: `/campus/me` mod başına cache'leniyor (`postedToday`
+    // mod başına, backend 2026-10-30). Modsuz ısıtma yanlış anahtarı
+    // doldurur, yani ısıtmamakla aynı şey olurdu.
     expect(SURFACE_SOURCE).toContain(
-      'useCampusMe({ enabled: enabled || prewarm })',
+      'useCampusMe(mode, { enabled: enabled || prewarm })',
     );
     // Anlar listesi de ısıtılıyor — ama KAPININ ARDINDA: yüzeyi kapalı
     // kampüslerde istek atılmıyor (istek: açılınca içerik ORADA olsun).

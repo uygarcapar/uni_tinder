@@ -40,12 +40,36 @@ const PAGE_SIZE = 20;
 // Yüzeyin durumu
 // ─────────────────────────────────────────────────────────────────────────────
 
-export function useCampusMe(options?: { enabled?: boolean }) {
+export function useCampusMe(
+  mode: AppMode | null,
+  options?: { enabled?: boolean },
+) {
   return useQuery({
-    queryKey: campusKeys.me,
-    queryFn: () => campusService.getMe(),
+    queryKey: campusKeys.me(mode ?? "default"),
+    queryFn: () => campusService.getMe(mode),
     enabled: options?.enabled !== false,
     staleTime: CAMPUS_STALE_MS,
+  });
+}
+
+/**
+ * `/me` TAZELEME — mod'lu mu kök mü, ÇAĞIRANIN KARARI.
+ *
+ * Yanıtın iki alanı farklı ölçekte (gerekçe `campusKeys.me`de):
+ *   • `mode` VERİLİNCE yalnız o kopya düşüyor — paylaşım ve silme yolu. Öbür
+ *     modun `postedToday`si bu işten etkilenmedi, onu da düşürmek bedava bir
+ *     GET demek.
+ *   • `null` KÖKÜ düşürüyor — beğeni yolu. Kota küresel olduğu için Dating'de
+ *     harcanan hak Friends'in kopyasında da bayatladı; tek modu düşürmek, mod
+ *     değiştiren kullanıcıya harcanmış hakkı duruyormuş gibi gösterirdi ve
+ *     sunucu `UT-7420` ile reddederdi.
+ */
+export function invalidateCampusMe(
+  qc: QueryClient,
+  mode: AppMode | null,
+): void {
+  qc.invalidateQueries({
+    queryKey: mode ? campusKeys.me(mode) : campusKeys.meRoot,
   });
 }
 
@@ -126,6 +150,75 @@ export function filterLiveMoments(
   nowMs: number,
 ): CampusMomentDto[] {
   return items.filter((m) => isMomentLive(m?.expiresAt, nowMs));
+}
+
+/**
+ * ══════════════════════════════════════════════════════════════════════════
+ * BU AN İÇİN KARAR VERİLDİ Mİ — cam tikin tek kapısı.
+ * ══════════════════════════════════════════════════════════════════════════
+ * İstek: "beğendikten sonra birinin kartı kaybolmasın, kalsın orada hep...
+ * sadece tik çıkmaz bizde." Yani kart duruyor, karar butonu duruyorsa gitmiyor.
+ *
+ * ⚠️🔴 KAPI ŞART, SÜS DEĞİL: karar verilmiş kartta tik çizilirse ikinci bir
+ * beğeni gider, sunucu `UT-7424` döner ve istemci o kodda kartı GERÇEKTEN
+ * siliyor (`removeMomentFromCaches`) — kart tam da kalması istenen yerden,
+ * kullanıcının kendi dokunuşuyla kaybolur.
+ */
+export function isMomentDecided(
+  moment: CampusMomentDto | null | undefined,
+  sessionDecidedIds?: ReadonlySet<string>,
+): boolean {
+  if (!moment) return false;
+  /**
+   * SUNUCU KONUŞTUYSA SON SÖZ ONUN — iki kaynağın sırası bu.
+   *
+   * `canLike` sunucunun bilgisi ve cihazdan bağımsız (başka telefondan verilen
+   * karar da burada görünüyor). Oturum kümesi İKİ pencereyi kapatıyor: beğeni
+   * ile tazelemenin inmesi arasındaki bayat liste, ve alanı hiç göndermeyen
+   * eski bir yanıt (bkz. `CampusMomentDto > canLike`).
+   *
+   * ⚠️ `=== false` KONTROLÜ ŞART, `!moment.canLike` DEĞİL: alan gelmediğinde
+   * `undefined` oluyor ve düz bir olumsuzlama HER kartı "karar verilmiş"
+   * sayardı — yani hiçbir yerde beğeni butonu çizilmezdi.
+   */
+  if (moment.canLike === false) return true;
+  return sessionDecidedIds?.has(moment.id) ?? false;
+}
+
+/**
+ * ══════════════════════════════════════════════════════════════════════════
+ * BEĞENİLEN AN ŞERİTTE KALIYOR — sunucunun DÜŞÜRDÜĞÜ kartı geri koyuyor.
+ * ══════════════════════════════════════════════════════════════════════════
+ * ⚠️🔴 ASIL ÇÖZÜM SUNUCUDA VE GELDİ: süzme kalktı, karar verilmiş an
+ * `canLike: false` ile dönüyor (backend 2026-10-30; talep
+ * `backend_campus_decided_moments_2026-10-30.md`). Yani bu fonksiyon
+ * NORMALDE NO-OP — `kept` içindeki an listede zaten var, eklenecek bir şey
+ * bulunmuyor ve aynı dizi geri dönüyor.
+ *
+ * Durma sebebi tek: alanı/yeni davranışı taşımayan bir sunucu sürümü (ya da
+ * diskte duran eski bir yanıt). O ortamda kart yine şeritte kalıyor. Yüzey
+ * yalnız yeni sürümle konuştuğundan eminsek bu fonksiyon, `useCampusSurface >
+ * likedMoments` ve `isMomentDecided`ın oturum dalı BİRLİKTE silinebilir.
+ *
+ * ⚠️ SIRA `createdAt`E GÖRE YENİDEN KURULUYOR: liste sözleşmesi yeniden-eskiye
+ * (§3) ve tutulan kart listenin kuyruğuna eklenirse şeritte ESKİ bir an en
+ * sağa, yeni anların arkasına düşer — kullanıcı onu "kayboldu" sanır.
+ *
+ * ⚠️ SÜRESİ DOLANLARI TUTMUYOR: 24 saat kuralı beğeniyle delinmiyor (süzgeç
+ * `filterLiveMoments` ve tutulan kart da ondan geçiyor — bu fonksiyon zamanı
+ * hiç bilmiyor).
+ */
+export function mergeKeptMoments(
+  items: CampusMomentDto[],
+  kept: CampusMomentDto[],
+): CampusMomentDto[] {
+  if (kept.length === 0) return items;
+  const present = new Set(items.map((m) => m?.id));
+  const missing = kept.filter((m) => m?.id && !present.has(m.id));
+  if (missing.length === 0) return items;
+  return [...items, ...missing].sort((a, b) =>
+    String(b?.createdAt ?? "").localeCompare(String(a?.createdAt ?? "")),
+  );
 }
 
 /** Aynı id iki sayfada gelirse (kendi anım + cursor yarışı) tekilleştir. */
@@ -312,10 +405,11 @@ export function useCreateCampusMoment() {
       await campusService.uploadToS3(uploadUrl, args.fileUri, args.contentType);
       return campusService.createMoment({ ...args.body, objectKey });
     },
-    onSuccess: (moment) => {
+    onSuccess: (moment, args) => {
       prependMoment(qc, moment);
-      // `postedToday` ve kota sunucu doğrusundan gelsin.
-      qc.invalidateQueries({ queryKey: campusKeys.me });
+      // `postedToday` ve kota sunucu doğrusundan gelsin — YALNIZ paylaşılan
+      // modun kopyası: günlük hak mod başına, öbür mod etkilenmedi.
+      invalidateCampusMe(qc, moment.mode ?? args.body.mode ?? null);
     },
   });
 }
@@ -324,7 +418,12 @@ export function useCreateCampusMoment() {
  * Anı kaldır.
  *
  * ⚠️ GÜNÜN HAKKI GERİ GELMİYOR → `/me` yine de tazeleniyor ama `postedToday`
- * `true` kalacak. Kullanıcıya gösterilen metin bunu söylemek zorunda.
+ * `true` kalacak (silinen anın MODUNDA). Kullanıcıya gösterilen metin bunu
+ * söylemek zorunda.
+ *
+ * ⚠️ TAZELENECEK MOD SUNUCUNUN YANITINDAN, elde kalan karttan DEĞİL: hata
+ * yolunda yanıt yok, orada da köke düşülüyor (gerekçe
+ * `campusService.deleteMoment`ta).
  */
 export function useDeleteCampusMoment() {
   const qc = useQueryClient();
@@ -333,8 +432,8 @@ export function useDeleteCampusMoment() {
     onMutate: (momentId) => {
       removeMomentFromCaches(qc, momentId);
     },
-    onSettled: () => {
-      qc.invalidateQueries({ queryKey: campusKeys.me });
+    onSettled: (res) => {
+      invalidateCampusMe(qc, res?.mode ?? null);
       qc.invalidateQueries({ queryKey: campusKeys.momentsRoot });
     },
   });
@@ -377,11 +476,17 @@ export function useCampusQuota(me: CampusMeDto | undefined) {
   };
 }
 
-/** Sheet açılışında listeyi tazelemek için — tek yerden. */
+/**
+ * Sheet açılışında ve BEĞENİDEN SONRA listeyi tazelemek için — tek yerden.
+ *
+ * ⚠️ `/me` KÖKTEN düşüyor, tek moddan değil: beğeni kotası küresel (gerekçe
+ * `invalidateCampusMe`ta). Paylaşım/silme bu yolu KULLANMIYOR, kendi modunu
+ * düşürüyor.
+ */
 export function useRefreshCampus() {
   const qc = useQueryClient();
   return useCallback(() => {
-    qc.invalidateQueries({ queryKey: campusKeys.me });
+    invalidateCampusMe(qc, null);
     qc.invalidateQueries({ queryKey: campusKeys.momentsRoot });
   }, [qc]);
 }

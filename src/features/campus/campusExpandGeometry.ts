@@ -35,15 +35,51 @@ export interface ExpandGeometryArgs {
    * kapı koymak, ölçüm geri çağırmadığında yüzeyi tamamen ölü bırakırdı.
    */
   start: ExpandRect | null;
+  /**
+   * SAĞDAKİ CAM SÜTUNU AYRILSIN MI — yani karar butonu çizilecek mi.
+   *
+   * ⚠️ VARSAYILAN `true` ve bilerek: sütunsuz hesap kartı butonun ALTINA
+   * sokuyor. Çağıran "buton yok"u AÇIKÇA söylemeli.
+   *
+   * ⚠️ ÇAĞIRAN BUNU AÇILIŞTA DONDURMAK ZORUNDA: değer hareketin ortasında
+   * değişirse (ör. beğeni gidip kart "karar verilmiş"e dönerken) hedef kare
+   * de değişir ve küçülen kart başka bir yere doğru küçülür — gerekçe
+   * CampusMomentExpandOverlay > `hasDecisionColumn`.
+   */
+  hasDecisionButton?: boolean;
+  /**
+   * FOTOĞRAFIN ALTINA AYRILAN SABİT PAY — ad satırı (`CampusMomentFace >
+   * CAMPUS_FACE_CAPTION`).
+   *
+   * ⚠️🔴 HESABA GİRMEK ZORUNDA: ad/yaş kutunun DIŞINDA, altında (istek) ve
+   * güvenli alanın içinde kalmalı. Yalnız fotoğrafa göre hesaplanan bir hedef
+   * yazıyı ekranın dibine (kimi telefonda dışına) taşırıyor.
+   *
+   * ⚠️🔴 ÖLÇEKLENMİYOR, SABİT: yazı büyüyen kartta kartın KARDEŞİ ve taban
+   * puntosunda çiziliyor (istek: "isim/yaş büyümesin"). Bir tur çarpanla
+   * büyüyordu ve hesap da `caption * (width/startWidth)` ile ona uyuyordu —
+   * ikisi birlikte değişmek zorunda, yoksa ya yazı taşar ya altında boşluk
+   * kalır.
+   *
+   * ⚠️ VARSAYILAN 0 — yazısız bir kutu için hesap eski hâline dönüyor.
+   */
+  captionHeight?: number;
 }
 
 /**
  * SAĞDA CAM BUTONA AYRILAN SÜTUN.
  *
- * ⚠️ KART EKRANIN ORTASINDA DEĞİL: buton bu sütunun içinde duruyor ve kart o
- * kadar sola kayıyor. Hesap ortalasaydı buton kartın üstüne binerdi — cam
- * yüzeyde kartın fotoğrafı üstünde duran bir buton, camın kendi zeminini
- * okunamaz yapıyor.
+ * ⚠️ BUTON VARKEN KART EKRANIN ORTASINDA DEĞİL: buton bu sütunun içinde
+ * duruyor ve kart o kadar sola kayıyor. Hesap ortalasaydı buton kartın üstüne
+ * binerdi — cam yüzeyde kartın fotoğrafı üstünde duran bir buton, camın kendi
+ * zeminini okunamaz yapıyor.
+ *
+ * ⚠️🔴 BUTON YOKSA SÜTUN DA YOK (istek: "karar verilmiş kartta kart sağdan da
+ * kaplasın, soldan olduğu kadar"). İki hâlde buton hiç çizilmiyor — karar
+ * zaten verilmiş (`canLike: false`) ve KENDİ anım (UT-7422) — ve o hâllerde
+ * sütun boş bir şerit olarak duruyordu: kart sebepsiz sola yatık, sağında
+ * 96pt'lik bir hiç. Sütun kalkınca kart iki yandan EDGE_PAD ile simetrik
+ * oturuyor ve 3:4 oranında büyüdüğü kadar büyüyor.
  *
  * 96: dock ölçüsündeki cam buton (80) + iki yanında nefes. Küçültülecekse
  * butonun kendi çapı da birlikte düşünülmeli.
@@ -62,6 +98,8 @@ export function campusExpandGeometry({
   topInset,
   bottomInset,
   start,
+  hasDecisionButton = true,
+  captionHeight = 0,
 }: ExpandGeometryArgs): { start: ExpandRect; target: ExpandRect } {
   /**
    * İKİ KISITTAN BAĞLAYICI OLANI SEÇİLİYOR.
@@ -73,16 +111,31 @@ export function campusExpandGeometry({
    * alanı taşardı.
    */
   const availableH = Math.max(0, screenH - topInset - bottomInset - EDGE_PAD * 2);
-  const availableW = Math.max(0, screenW - BUTTON_COLUMN - EDGE_PAD * 2);
+  const availableW = Math.max(
+    0,
+    screenW - (hasDecisionButton ? BUTTON_COLUMN : 0) - EDGE_PAD * 2,
+  );
 
-  const height = Math.min(availableH, availableW / ASPECT);
+  /**
+   * ⚠️ YAZI PAYI DİKEY ALANDAN ÖNCE DÜŞÜLÜYOR: hedef kutu YALNIZ FOTOĞRAF
+   * (hareket onu ölçekliyor), ad satırı ise kartın kardeşi olarak ALTINA
+   * çiziliyor ve ölçeklenmiyor. Pay düşülmezse yazı güvenli alanın dışına
+   * taşıyor.
+   */
+  const usableH = Math.max(0, availableH - captionHeight);
+  const height = Math.min(usableH, availableW / ASPECT);
   const width = height * ASPECT;
 
   const target: ExpandRect = {
     // Yatayda cam sütunu ÇIKARILDIKTAN sonra kalan alanın ortası.
     x: EDGE_PAD + (availableW - width) / 2,
-    // Dikeyde güvenli alanın ortası — chrome üstte, şerit altta kalıyor.
-    y: topInset + EDGE_PAD + (availableH - height) / 2,
+    /**
+     * Dikeyde güvenli alanın ortası — chrome üstte, şerit altta kalıyor.
+     *
+     * ⚠️ ORTALANAN ŞEY FOTOĞRAF + YAZI: `usableH` üzerinden ortalamak kartı
+     * yazının payı kadar yukarı alıyor, yani ikisi birlikte ortada duruyor.
+     */
+    y: topInset + EDGE_PAD + (usableH - height) / 2,
     width,
     height,
   };

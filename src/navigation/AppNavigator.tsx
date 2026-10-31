@@ -824,7 +824,10 @@ export default function AppNavigator() {
     queryClient.invalidateQueries({ queryKey: swipeKeys.stats });
     queryClient.invalidateQueries({ queryKey: swipeKeys.filters });
     queryClient.invalidateQueries({ queryKey: feedKeys.me });
-    queryClient.invalidateQueries({ queryKey: campusKeys.me });
+    // ⚠️ KÖK: `/campus/me` mod başına cache'leniyor ama kota KÜRESEL ve
+    // premium'la kalkan şey o. Tek modu düşürmek, öbür modda kilitli kotayı
+    // bırakırdı (gerekçe campusQueries > invalidateCampusMe).
+    queryClient.invalidateQueries({ queryKey: campusKeys.meRoot });
   }, [isPremiumNow, premiumOptimistic, queryClient]);
 
   // Abonelik bitiş anında tek atımlık tazeleme (§6-6). Kullanıcı uygulamayı

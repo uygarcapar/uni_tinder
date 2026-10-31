@@ -27,6 +27,7 @@ import { campusCodeOf, campusMessageOf } from "./campusService";
 import {
   removeMomentFromCaches,
   useCampusMe,
+  mergeKeptMoments,
   useCampusBoundary,
   useCampusMoments,
   useCreateCampusMoment,
@@ -105,7 +106,17 @@ export function useCampusSurface({
 
   // ⚠️ Yüzey kapalıyken de koşabiliyor: `available` kapısının cevabı dokunuş
   // anında elde olmak zorunda (gerekçe `prewarm`de).
-  const meQuery = useCampusMe({ enabled: enabled || prewarm });
+  // ⚠️ MOD ŞART: `postedToday` mod başına ve modsuz çağrı sunucuda `Dating`e
+  // düşüyor — yani mod verilmezse Friends'te paylaşmış kullanıcıya "+" yanlış
+  // çizilirdi (ya da tersi). Tarihçe `campusKeys.me`de, talep ve backend cevabı
+  // `backend_campus_mode_quota_2026-10-30.md`.
+  //
+  // 🔴 BU KAPI MODUN AÇIK OLDUĞUNU DOĞRULAMIYOR ve `/campus/me` kapalı mod için
+  // de yanıt veriyor (bootstrap ucu): Friends'i hiç açmamış kullanıcıda
+  // `postedToday: false` geliyor, yani "+" çiziliyor ve dokunuş `UT-2304`
+  // yiyor. Eksik olan `/api/profile → modes` okuması (bugün yalnız Keşif,
+  // Profil ve EditProfile okuyor).
+  const meQuery = useCampusMe(mode, { enabled: enabled || prewarm });
   const boundaryQuery = useCampusBoundary(domain, { enabled: enabled || prewarm });
   const refreshCampus = useRefreshCampus();
   const qc = useQueryClient();
@@ -443,6 +454,29 @@ export function useCampusSurface({
 
   // ── Karar yolu ────────────────────────────────────────────────────────────
   const [busyMomentId, setBusyMomentId] = useState<string | null>(null);
+  /**
+   * BU OTURUMDA KARAR VERDİĞİM ANLAR — iki işi var, ikisi de ARA KATMAN.
+   *
+   * ⚠️🔴 ASIL İŞ ARTIK SUNUCUDA: karar verilmiş an listeden SÜZÜLMÜYOR,
+   * `canLike: false` ile dönüyor (backend 2026-10-30'da uyguladı; talep
+   * `backend_campus_decided_moments_2026-10-30.md`). Yani "kart kaybolmasın"
+   * kuralını artık sunucu taşıyor ve bu küme kalıcı çözüm DEĞİL.
+   *
+   * Kalma sebebi ağ turunun kendisi:
+   *   1. beğeniden sonra tazeleme inene kadar elde BAYAT liste var
+   *      (`canLike: true`) — tik o arada çizilmesin;
+   *   2. sunucu sürümü eski olan bir ortamda (alan hiç gelmiyorsa) kart yine
+   *      listeye geri karıştırılabilsin (`mergeKeptMoments`).
+   *
+   * ⚠️ TEK NOKTA BURASI: yüzeyin üç tüketicisi de (akış destesi, tam ekran
+   * şerit, haritanın sayacı) aşağıdaki `moments` dizisini okuyor — tutmayı
+   * bileşenlerden birine koymak diğerlerini eski listeyle bırakırdı (aynı
+   * gerekçe kaldırılan dev mock'larında yazılı).
+   *
+   * ⚠️ OTURUM ÖMÜRLÜ ve öyle kalmalı: kalıcılık sunucunun işi. Tazeleme
+   * geldiğinde `mergeKeptMoments` zaten no-op'a düşüyor (an listede var).
+   */
+  const [likedMoments, setLikedMoments] = useState<CampusMomentDto[]>([]);
   const lastErrorRef = useRef<string | null>(null);
 
   /**
@@ -473,6 +507,20 @@ export function useCampusSurface({
           source: "CampusMoment",
           momentId: moment.id,
         });
+        /**
+         * KARAR VERİLDİ İŞARETİ — tik ANINDA kalkıyor.
+         *
+         * ⚠️ TAZELEMEYİ BEKLEMİYOR: sunucu artık karar verilmiş anı
+         * `canLike: false` ile döndürüyor (backend uyguladı, bkz.
+         * backend_campus_decided_moments_2026-10-30) ama o cevap ağ turu
+         * kadar sonra geliyor. Arada elde BAYAT liste var (`canLike: true`) ve
+         * kullanıcı aynı karta yeniden dokunsa tik çizilir → ikinci beğeni →
+         * `UT-7424`. Yani bu küme artık "kartı tutmak" için değil, OPTİMİSTİK
+         * ARA KATMAN için duruyor.
+         */
+        setLikedMoments((prev) =>
+          prev.some((m) => m.id === moment.id) ? prev : [...prev, moment],
+        );
         // Kota sunucu doğrusundan gelsin — istemci düşürmüyor.
         refreshCampus();
         return true;
@@ -481,15 +529,27 @@ export function useCampusSurface({
         lastErrorRef.current = errorTextOf(err);
         if (code === CAMPUS_CODES.DECISION_QUOTA) {
           onPaywall();
-        } else if (code && CAMPUS_DROP_CARD_CODES.includes(code)) {
+        } else if (code === CAMPUS_CODES.ALREADY_DECIDED) {
           /**
-           * Kart SESSİZCE düşüyor, kota harcanmadı.
+           * ⚠️🔴 ZATEN KARAR VERİLMİŞ — KART KALIYOR, YALNIZ TİK GİDİYOR.
            *
-           * `UT-7424` (zaten karar verilmiş) burada en olası kod: liste
-           * süzülüyor ama kullanıcı başka bir cihazda ya da Keşif'te aynı
-           * kişiyi beğenmiş olabilir. "Zaten beğenmiştin" demek gereksiz bir
-           * ayrıntı; kartın gitmesi yeterli.
+           * Bu kod kartı düşürüyordu ve doğruydu: liste karar verilmiş anları
+           * SÜZÜYORDU, yani kod yalnız bir yarış penceresinde gelirdi (karar
+           * başka cihazdan ya da Keşif'ten verilmiş). Süzme kalktığı için
+           * (`canLike`) kartı silmek artık ürün kuralını — "beğendiğin kişinin
+           * kartı kaybolmasın" — tam da kullanıcının dokunuşuyla bozuyor.
+           *
+           * Doğru davranış kararı KAYDETMEK: kart yerinde kalıyor, tik
+           * çizilmiyor, tazeleme sunucunun `canLike: false`unu getiriyor.
+           * Kota harcanmadı, kullanıcıya mesaj da yok (tik zaten yok).
            */
+          setLikedMoments((prev) =>
+            prev.some((m) => m.id === moment.id) ? prev : [...prev, moment],
+          );
+          refreshCampus();
+        } else if (code && CAMPUS_DROP_CARD_CODES.includes(code)) {
+          // Hedef gerçekten ortada yok (`UT-7421` silinmiş/süresi dolmuş ·
+          // `UT-7422` kendi anım): kart sessizce düşüyor, kota harcanmadı.
           removeMomentFromCaches(qc, moment.id);
         }
         return false;
@@ -532,7 +592,37 @@ export function useCampusSurface({
    * `__DEV__` kapısı şart (kalıcı bir anahtara bağlanmamalı — aylar sonra
    * "kampüste 5 kişi var" diye bakıp gerçek sanma riski).
    */
-  const moments = momentsQuery.data?.items ?? [];
+  /**
+   * ⚠️ GERİ KARIŞTIRMA ARTIK PRATİKTE NO-OP: sunucu karar verilmiş anı zaten
+   * döndürüyor (`canLike`), yani `mergeKeptMoments` eklenecek bir şey
+   * bulamıyor ve aynı diziyi geri veriyor. Yalnız alanı göndermeyen bir sunucu
+   * sürümüne karşı duruyor (gerekçe `likedMoments`te).
+   *
+   * ⚠️ MOD SÜZGECİ ŞART: liste moda göre geliyor (sorgu anahtarında `mode`
+   * var), başka modda beğenilmiş bir an bu listeye girmemeli — kullanıcı
+   * Dating'de beğendiği birini Friends şeridinde görürdü.
+   */
+  const moments = useMemo(
+    () =>
+      mergeKeptMoments(
+        momentsQuery.data?.items ?? [],
+        likedMoments.filter((m) => (m.mode ?? mode) === mode),
+      ),
+    [likedMoments, mode, momentsQuery.data?.items],
+  );
+
+  /**
+   * BU OTURUMDA KARAR VERİLENLERİN KİMLİKLERİ — tik kapısının İKİNCİ kaynağı.
+   *
+   * ⚠️ BİRİNCİ KAYNAK SUNUCU (`canLike`): kapı `isMomentDecided`ta ikisini
+   * sırayla okuyor. Bu küme yalnız tazelemeden önceki pencereyi kapatıyor —
+   * orada tik çizilse ikinci bir beğeni gider ve `UT-7424` dönerdi (artık
+   * kartı düşürmüyor ama boşa bir istek ve bir tazeleme turu).
+   */
+  const decidedMomentIds = useMemo(
+    () => new Set(likedMoments.map((m) => m.id)),
+    [likedMoments],
+  );
 
   return {
     /** Yüzey bu kampüste açık mı. */
@@ -552,6 +642,8 @@ export function useCampusSurface({
      */
     canShareHint: available && insideHint && !me?.postedToday,
     moments,
+    /** Beğenilmiş an kimlikleri — kararı tekrar sormayan yüzeyler için. */
+    decidedMomentIds,
     loading: momentsQuery.isLoading,
     decisionsRemaining,
     /**

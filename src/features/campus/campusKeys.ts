@@ -15,8 +15,26 @@
  */
 export const campusKeys = {
   all: ["campus"] as const,
-  /** Yüzeyin durumu: kota + kapılar + bugünün anı. */
-  me: ["campus", "me"] as const,
+  /**
+   * Yüzeyin durumu: kota + kapılar + bugünün anı — MOD BAŞINA.
+   *
+   * ⚠️ İÇİNDEKİ İKİ ALAN FARKLI ÖLÇEKTE ve ayrımı bilmeden tazeleyen kod
+   * yanlış yapıyor:
+   *   • `postedToday` / `myMomentId` MOD BAŞINA — Dating'de paylaşmak
+   *     Friends'in hakkını yakmıyor, iki modun izleyicisi ayrık.
+   *     ⚠️ SUNUCUDA BİR SÜRE BÖYLE DEĞİLDİ (ölçüldü 2026-10-30: `?mode=` ne
+   *     olursa olsun aynı `postedToday` geliyordu, tek modda paylaşan kullanıcı
+   *     öbür modda "+" butonunu göremiyordu). Backend uyguladı, talep ve
+   *     cevabı: `backend_campus_mode_quota_2026-10-30.md`.
+   *     `?mode=` VERİLMEZSE sunucu `Dating`e düşüyor — modsuz çekmek "küresel"
+   *     DEĞİL, sessizce Dating demek.
+   *   • `quota` KÜRESEL — `?mode=` ne olursa olsun aynı `decisionsRemaining`
+   *     geliyor (ana akıştaki tek `DailySwipeCount` emsali).
+   * Sonucu: paylaşım/silme TEK modu, beğeni KÖKÜ düşürüyor — gerekçe
+   * `invalidateCampusMe`ta.
+   */
+  meRoot: ["campus", "me"] as const,
+  me: (mode: string) => ["campus", "me", mode] as const,
   /** Kampüs sınırı — domain başına, uzun ömürlü. */
   boundary: (domain: string) => ["campus", "boundary", domain] as const,
   momentsRoot: ["campus", "moments"] as const,

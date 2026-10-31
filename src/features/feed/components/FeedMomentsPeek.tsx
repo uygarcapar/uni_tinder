@@ -493,6 +493,16 @@ const PeekBox = memo(function PeekBox({
        * sabitine alınırsa tema çevrildiğinde eski renk kalır.
        */
       gapFill={colors.bg}
+      /**
+       * ⚠️ TAM GÜÇTE MÜREKKEP — kabuğun varsayılanı artık SEYRELTİK (0.45,
+       * istek "borderları daha az belirgin yap") ve o istek ŞERİDİN
+       * KARTLARIYDI: orada çizgi 0.5pt, yani kutunun kenarını işaretleyen bir
+       * kıl. Burada çizgi 3pt ve kutunun TEK yapısı (42pt'lik bir kutuda
+       * fotoğraf neredeyse çizginin içinde) — seyreltilince deste soluk,
+       * "yarım çizilmiş" okunuyor. Kalınlık burada zaten elle yazılı
+       * (BOX_RING), mürekkep de onunla birlikte.
+       */
+      ringAlpha={1}
     >
       {moment ? (
         // ⚠️ `expo-image`: disk+bellek önbelleği sayesinde aynı an sekme

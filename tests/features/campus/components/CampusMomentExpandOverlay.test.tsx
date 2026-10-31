@@ -3,6 +3,8 @@ import { SafeAreaProvider } from 'react-native-safe-area-context';
 import CampusMomentExpandOverlay, {
   EXPAND_MS,
 } from '@/features/campus/components/CampusMomentExpandOverlay';
+import { campusBoxMetrics } from '@/features/campus/components/CampusInfoBox';
+import { RADIUS_GROWTH } from '@/features/campus/components/CampusMomentExpandOverlay';
 import type { CampusMomentDto } from '@/features/campus/campusTypes';
 
 /**
@@ -41,7 +43,15 @@ const base = {
 /** Güvenli alan sağlayıcısı — yüzey `useSafeAreaInsets` okuyor (ev kalıbı). */
 const frameMetrics = { x: 0, y: 0, width: 393, height: 852 };
 const insets = { top: 59, left: 0, right: 0, bottom: 34 };
-const mount = (props: Partial<typeof base> = {}) =>
+/**
+ * ⚠️ TİP `base`TEN DEĞİL BİLEŞENİN KENDİ PROP'LARINDAN: `base` yalnız zorunlu
+ * alanları taşıyor ve `Partial<typeof base>` opsiyonel prop'ları (ör.
+ * `decided`, `collapsing`) tip dışı bırakıyordu — test koşuyor ama `tsc`
+ * patlıyordu.
+ */
+const mount = (
+  props: Partial<React.ComponentProps<typeof CampusMomentExpandOverlay>> = {},
+) =>
   render(
     <SafeAreaProvider initialMetrics={{ frame: frameMetrics, insets }}>
       <CampusMomentExpandOverlay {...base} {...props} />
@@ -225,4 +235,172 @@ it('busy iken tik ikinci kez çağırmıyor', () => {
   settle();
   fireEvent.press(tree.getByLabelText('Beğen'));
   expect(onLike).not.toHaveBeenCalled();
+});
+
+
+/**
+ * KARAR VERİLMİŞ (ya da KENDİ) KARTI SAĞDAN DA EKRANI KAPLIYOR.
+ *
+ * İstek: "karar verilmiş kartta kart sağdan da kaplasın ekranı ve soldan
+ * olduğu kadar, oranı da aynı kalsın; kendi kartım büyüyünce de."
+ *
+ * Sağdaki 96pt'lik sütun CAM BUTON için ayrılıyor; buton çizilmeyen iki hâlde
+ * (karar verilmiş · kendi anım) o sütun boş bir şerit olarak duruyor ve kart
+ * sebepsiz sola yatık kalıyordu.
+ *
+ * ⚠️🔴 İKİNCİ TEST ASIL OLAN: bayrak hareketin ORTASINDA değişebiliyor (beğeni
+ * gidince kart o anda "karar verilmiş" oluyor ve tam o sırada küçülme koşuyor).
+ * Değer canlı okunsa hedef kare küçülmenin ortasında büyür, kart şeritteki
+ * yerine değil başka bir yere doğru küçülürdü. Bu yüzden açılışta donuyor.
+ */
+const cardWidth = (tree: ReturnType<typeof mount>): number => {
+  /**
+   * Kartın kabuğu: `left` + `width` + `height` birlikte yazan tek düğüm.
+   *
+   * ⚠️ `height` ŞART: ad satırı artık kartın KARDEŞİ ve o da `left`/`width`
+   * taşıyor (yüksekliği içeriğinden geliyor, yazılmıyor). Yalnız ikisine
+   * bakan bir arama iki düğüm bulup testi belirsizleştiriyordu.
+   */
+  const found: number[] = [];
+  const walk = (node: any) => {
+    if (!node || typeof node !== 'object') return;
+    const style = node.props?.style;
+    const flat = Array.isArray(style) ? style.flat(9) : [style];
+    for (const s of flat) {
+      if (
+        s &&
+        typeof s === 'object' &&
+        typeof s.left === 'number' &&
+        typeof s.width === 'number' &&
+        typeof s.height === 'number'
+      ) {
+        found.push(s.width);
+      }
+    }
+    (node.children ?? []).forEach(walk);
+  };
+  walk(tree.toJSON());
+  expect(found).toHaveLength(1);
+  return found[0];
+};
+
+it('KARAR VERİLMİŞ kart daha GENİŞ — cam sütunu ayrılmıyor', () => {
+  const normal = mount();
+  settle();
+  const decided = mount({ decided: true });
+  settle();
+  expect(cardWidth(decided)).toBeGreaterThan(cardWidth(normal));
+});
+
+it('KENDİ anım da geniş açılıyor — orada da tik yok', () => {
+  const normal = mount();
+  settle();
+  const mine = mount({ moment: { ...base.moment, isMine: true } });
+  settle();
+  expect(cardWidth(mine)).toBeGreaterThan(cardWidth(normal));
+});
+
+it('⚠️ BAYRAK AÇILIŞTA DONUYOR — kart açıkken genişlik DEĞİŞMİYOR', () => {
+  const tree = mount();
+  settle();
+  const before = cardWidth(tree);
+  // Beğeni gitti: aynı an "karar verilmiş"e döndü ve küçülme başlıyor.
+  tree.rerender(
+    <SafeAreaProvider initialMetrics={{ frame: frameMetrics, insets }}>
+      <CampusMomentExpandOverlay {...base} decided collapsing />
+    </SafeAreaProvider>,
+  );
+  expect(cardWidth(tree)).toBe(before);
+});
+
+
+/**
+ * ⚠️🔴 AD SATIRI TEK KOPYA VE KENDİSİ YOL ALIYOR (istek: "opasite azalmasın
+ * direkt hiç; kendisi olması gereken yere yavaşça gitsin").
+ *
+ * Bir tur İKİ kopya birbirine geçiyordu (içeride sönen + dışarıda beliren).
+ * İki kopya ekranda bir an için iki ad demek; üstelik istek opaklığa değil
+ * HAREKETE işaret ediyordu. Bu test ikinci kopyanın geri gelmesini yakalar.
+ */
+it('ad satırı yüzeyde TAM BİR KEZ çiziliyor', () => {
+  const tree = mount();
+  settle();
+  // ⚠️ KÜÇÜK HARF: ad satırı baş harfi küçültüyor (istek) — `/Ada/` arayan
+  // bir test sessizce "bulunamadı"ya düşüyordu.
+  expect(tree.getAllByText(/ada/)).toHaveLength(1);
+});
+
+/**
+ * ⚠️🔴 KÖŞE ÇARPANDAN MUAF (istek: "foto büyürken rounded değişiyor,
+ * değişmesin"). Çarpanla çizilseydi büyüyen kartın köşesi şeridinkinin iki
+ * katı olurdu; şimdi iki DURAN hâl aynı köşeyi paylaşıyor.
+ */
+it('köşe ŞERİDİNKİNDEN bir tık yuvarlak — ama ÇARPANLA büyümüyor', () => {
+  const tree = mount();
+  settle();
+  const radii: number[] = [];
+  const walk = (node: any) => {
+    if (!node || typeof node !== 'object') return;
+    const style = node.props?.style;
+    const flat = Array.isArray(style) ? style.flat(9) : [style];
+    for (const s of flat) {
+      if (s && typeof s === 'object' && typeof s.borderWidth === 'number') {
+        radii.push(s.borderRadius);
+      }
+    }
+    (node.children ?? []).forEach(walk);
+  };
+  walk(tree.toJSON());
+  // `frame.height` = 222 → reçetenin o boydaki köşesi, bir tık yuvarlatılmış.
+  expect(radii).toContain(campusBoxMetrics(222).radius * RADIUS_GROWTH);
+});
+
+
+/**
+ * ⚠️🔴 KIL ÇİZGİ EKRANDA SABİT 0.5pt — "kırılma" hatasının çivisi.
+ *
+ * Cihaz şikâyeti: "border kırılma yapıyor, büyürken kendini korumuyor."
+ * Sebebi kenarın kartla birlikte ÖLÇEKLENMESİ: 0.5pt'lik bir çizgi kartın
+ * başlangıç ölçeğinde (≈0.24) ekranda 0.12pt'ye iniyor — yarım pikselin
+ * altı, yani cihaz onu yer yer çiziyor yer yer atlıyor.
+ *
+ * Değişmez şu: ÇİZİLEN kalınlık × kartın o anki ölçeği = 0.5. Test
+ * başlangıç karesinde (p=0) bunu ölçüyor; diğer uçta (p=1, ölçek 1) çizilen
+ * değer zaten 0.5 olmak zorunda.
+ */
+it('kenar çizgisi EKRANDA 0.5pt — ölçekle kırılmıyor', () => {
+  const tree = mount();
+  settle();
+
+  const borders: number[] = [];
+  let targetWidth = 0;
+  const walk = (node: any) => {
+    if (!node || typeof node !== 'object') return;
+    const style = node.props?.style;
+    const flat = Array.isArray(style) ? style.flat(9) : [style];
+    for (const s of flat) {
+      if (!s || typeof s !== 'object') continue;
+      if (typeof s.borderWidth === 'number') borders.push(s.borderWidth);
+      // Hedef kare: `left` + `width` + `height` yazan tek düğüm (kartın
+      // kabuğu, bkz. `cardWidth`).
+      if (
+        typeof s.left === 'number' &&
+        typeof s.width === 'number' &&
+        typeof s.height === 'number'
+      ) {
+        targetWidth = s.width;
+      }
+    }
+    (node.children ?? []).forEach(walk);
+  };
+  walk(tree.toJSON());
+
+  // Animasyonlu kalınlık: 0.5 OLMAYAN (telafi edilmiş) değer.
+  const drawn = borders.find((b) => b !== campusBoxMetrics(222).ring);
+  expect(drawn).toBeDefined();
+  expect(targetWidth).toBeGreaterThan(0);
+
+  // p=0'daki kart ölçeği: şerit karesinin eni / hedefin eni.
+  const cardScaleStart = base.frame.width / targetWidth;
+  expect(drawn! * cardScaleStart).toBeCloseTo(campusBoxMetrics(222).ring, 6);
 });

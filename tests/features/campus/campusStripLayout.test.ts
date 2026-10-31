@@ -37,22 +37,35 @@ describe('kutu ve şerit ölçüleri', () => {
     // ⚠️ Sayılar KARE kutuya geçerken düştü (0.30 → 0.26): şerit artık sekme
     // şeridinin de üstünde duruyor ve eski ölçülerle SE'de ekranın yarısını
     // aşıyordu. Kare kutu aynı yükseklikte daha GENİŞ, yani küçülme hissi yok.
+    //
+    // ⚠️ SONRA 0.26 → 0.29 (istek: "biraz daha büyüt"). SE TABANDA KALIYOR
+    // (0.29 × 667 = 193 < 200) ve bu kasıtlı: tabanı da büyütmek aşağıdaki
+    // "şerit ekranın yarısını aşmıyor" değişmezini doğrudan kırıyor.
     expect(campusCardHeight(667)).toBe(200); // SE — alt sınır
-    expect(campusCardHeight(852)).toBe(222); // 15 Pro
-    expect(campusCardHeight(1400)).toBe(300); // tablet — üst sınır
+    expect(campusCardHeight(852)).toBe(247); // 15 Pro
+    expect(campusCardHeight(1400)).toBe(320); // tablet — üst sınır
   });
 
-  it('şerit ekranın yarısını AŞMIYOR', () => {
+  /**
+   * ⚠️🔴 SINIR 0.5'TEN 0.58'E ÇIKTI (2026-10-30) — ve sebebi bir İÇERİK
+   * değişikliği, bir gevşeme değil: isim/yaş/saat kutunun İÇİNDEN ÇIKIP
+   * ALTINA taşındı (istek) ve o blok şeridin boyuna eklendi. Fotoğrafı
+   * kısaltarak sınırı korumak, kullanıcının aynı gün "biraz daha büyüt"
+   * dediği kartı geri küçültmek olurdu.
+   *
+   * Korunan asıl şey ikinci satır: HARİTAYA ekranın %40'ından fazlası
+   * kalıyor. Yüzeyin tamamı "kampüsüm nerede" sorusu üzerine kurulu; şerit
+   * oranı buradan da büyürse o soru kaybolur.
+   */
+  it('şerit ekranın yarısını bir tık aşıyor ama HARİTA %40 üstünde kalıyor', () => {
     for (const [height, bottom] of [
       [667, 0],
       [852, 34],
       [932, 34],
     ] as const) {
       const strip = campusStripHeight(height, bottom);
-      expect(strip).toBeLessThan(height * 0.5);
-      // Harita için anlamlı bir alan kalmalı: yüzeyin tamamı "kampüsüm
-      // nerede" sorusu üzerine kurulu.
-      expect(height - strip).toBeGreaterThan(height * 0.5);
+      expect(strip).toBeLessThan(height * 0.58);
+      expect(height - strip).toBeGreaterThan(height * 0.4);
     }
   });
 
