@@ -494,6 +494,7 @@ describe('ChatScreen — düzenleme modu', () => {
       conversationId: CONVERSATION_ID,
       content: 'yeni metin',
       serverBase: 'orijinal metin',
+      serverBaseEditedAt: null,
     });
     expect(mockFlushPendingMutations).toHaveBeenCalledWith('interactive');
 

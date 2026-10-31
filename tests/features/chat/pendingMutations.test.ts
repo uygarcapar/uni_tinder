@@ -840,7 +840,7 @@ describe('pendingMutations: tur', () => {
   describe('pendingMutations: düzenleme turu', () => {
     it('edit emri sunucuya içerikle gidiyor ve dönen DTO kanonikleştiriliyor', async () => {
       insertMessage('msg-1', 'sent');
-      enqueueEdit({ messageId: 'msg-1', conversationId: CONV, content: 'yeni içerik', serverBase: 'orijinal' });
+      enqueueEdit({ messageId: 'msg-1', conversationId: CONV, content: 'yeni içerik', serverBase: 'orijinal', serverBaseEditedAt: null });
       const dto = { id: 'msg-1', conversationId: CONV, content: 'yeni içerik', editedAt: '2026-10-31T10:00:00.000Z' };
       editMessage.mockResolvedValue(dto);
 
@@ -857,7 +857,7 @@ describe('pendingMutations: tur', () => {
     // Review Focus 2 — AYIRT EDİCİ: backend kısa devresi 200 döner, hata DEĞİL.
     it('aynı içerikle retry 200 dönünce BAŞARI sayılıyor, satır siliniyor', async () => {
       insertMessage('msg-1', 'sent');
-      enqueueEdit({ messageId: 'msg-1', conversationId: CONV, content: 'yeni', serverBase: 'yeni' });
+      enqueueEdit({ messageId: 'msg-1', conversationId: CONV, content: 'yeni', serverBase: 'yeni', serverBaseEditedAt: null });
       editMessage.mockResolvedValue({ id: 'msg-1', content: 'yeni', editedAt: null });
 
       const r = await flushPendingMutations('test');
@@ -869,8 +869,14 @@ describe('pendingMutations: tur', () => {
     // Review Focus 1
     it("UT-6723: satır siliniyor, içerik base'e DÖNÜYOR ve sebep söyleniyor", async () => {
       insertMessage('msg-1', 'sent');
-      enqueueEdit({ messageId: 'msg-1', conversationId: CONV, content: 'yeni', serverBase: 'orijinal' });
-      setStoreMessages([msg('msg-1', { content: 'yeni' })]);
+      enqueueEdit({
+        messageId: 'msg-1',
+        conversationId: CONV,
+        content: 'yeni',
+        serverBase: 'orijinal',
+        serverBaseEditedAt: null,
+      });
+      setStoreMessages([msg('msg-1', { content: 'yeni', editedAt: '2026-10-31T10:00:00.000Z' })]);
       editMessage.mockRejectedValue({ response: { data: { errorCode: 'UT-6723' } } });
 
       const r = await flushPendingMutations('test');
@@ -879,6 +885,52 @@ describe('pendingMutations: tur', () => {
       expect(readPendingMutations()).toHaveLength(0);
       expect(lastEditedDispatched().content).toBe('orijinal');
       expect(showInfoToast).toHaveBeenCalledWith(expect.objectContaining({ variant: 'error' }));
+    });
+
+    // Review Focus 4 — reddedilen düzenleme editedAt'i de geri alıyor (Redux dalı).
+    // base editedAt null (mesaj daha önce HİÇ düzenlenmemiş) → ret → dispatch
+    // edilen editedAt null: metin ESKİ hâline döndü, "düzenlendi" rozeti de
+    // BIRAKILMADI (içerik + rozet AYNI ANDA yalan söylememeli).
+    it("reddedilen düzenleme editedAt'i de geri alıyor (Redux dalı)", async () => {
+      insertMessage('msg-1', 'sent');
+      enqueueEdit({
+        messageId: 'msg-1',
+        conversationId: CONV,
+        content: 'yeni',
+        serverBase: 'orijinal',
+        serverBaseEditedAt: null,
+      });
+      setStoreMessages([msg('msg-1', { content: 'yeni', editedAt: '2026-10-31T10:00:00.000Z' })]);
+      editMessage.mockRejectedValue({ response: { data: { errorCode: 'UT-6723' } } });
+
+      await flushPendingMutations('test');
+
+      expect(lastEditedDispatched().content).toBe('orijinal');
+      expect(lastEditedDispatched().editedAt).toBeNull();
+    });
+
+    // Review Focus 5 — AYIRT EDİCİ: daha önce düzenlenmiş mesajın ikinci
+    // düzenlemesi reddedilince "düzenlendi" rozeti KALIYOR, null'a DÜŞMÜYOR.
+    // baseEditedAt burada CAPTURE EDİLEN bir değer — null VARSAYILMIYOR.
+    it('daha önce düzenlenmiş mesajın ikinci düzenlemesi reddedilince rozet KALIYOR', async () => {
+      insertMessage('msg-1', 'sent');
+      enqueueEdit({
+        messageId: 'msg-1',
+        conversationId: CONV,
+        content: 'üçüncü deneme',
+        serverBase: 'ikinci hal',
+        serverBaseEditedAt: '2026-01-01T00:00:00Z', // mesaj zaten BİR KEZ düzenlenmişti
+      });
+      setStoreMessages([
+        msg('msg-1', { content: 'üçüncü deneme', editedAt: '2026-10-31T10:00:00.000Z' }),
+      ]);
+      editMessage.mockRejectedValue({ response: { data: { errorCode: 'UT-6723' } } });
+
+      await flushPendingMutations('test');
+
+      expect(lastEditedDispatched().content).toBe('ikinci hal');
+      // null'a DÜŞMEDİ — ilk düzenlemenin damgasına döndü, rozet hâlâ görünür.
+      expect(lastEditedDispatched().editedAt).toBe('2026-01-01T00:00:00Z');
     });
 
     // Review Önemli-4, ruling — reaksiyon/silmedeki "Redux'ta yüklü değilse
@@ -895,8 +947,14 @@ describe('pendingMutations: tur', () => {
       insertMessage('msg-1', 'sent');
       // Optimistik düzenlemenin diske ÖNCEDEN yazılmış hâlini simüle et —
       // mirror normalde bunu `chat/messageEdited` dispatch'inden sonra yapar.
-      saveMessage(msg('msg-1', { content: 'yeni' }), CONV);
-      enqueueEdit({ messageId: 'msg-1', conversationId: CONV, content: 'yeni', serverBase: 'orijinal' });
+      saveMessage(msg('msg-1', { content: 'yeni', editedAt: '2026-10-31T10:00:00.000Z' }), CONV);
+      enqueueEdit({
+        messageId: 'msg-1',
+        conversationId: CONV,
+        content: 'yeni',
+        serverBase: 'orijinal',
+        serverBaseEditedAt: null,
+      });
       // setStoreMessages BİLEREK ÇAĞRILMADI — beforeEach'in boş bucket'ı
       // (`setStoreMessages([])`) aynen kalıyor: mesaj Redux'ta YÜKLÜ DEĞİL.
       editMessage.mockRejectedValue({ response: { data: { errorCode: 'UT-6723' } } });
@@ -909,12 +967,16 @@ describe('pendingMutations: tur', () => {
       expect(lastEditedDispatched()).toBeUndefined();
       expect(showInfoToast).not.toHaveBeenCalled();
       // DİSKTE içerik base'e döndü — sunucuyla uzlaştı.
-      expect(chatRepo.findMessageOnDisk(CONV, 'msg-1')?.content).toBe('orijinal');
+      const onDisk = chatRepo.findMessageOnDisk(CONV, 'msg-1');
+      expect(onDisk?.content).toBe('orijinal');
+      // Review Focus 4 — soğuk store dalında da editedAt diske null yazılıyor:
+      // metin eskiye döndüyse rozet de düşmeli, dispatch dalındakiyle AYNI kural.
+      expect(onDisk?.editedAt).toBeNull();
     });
 
     it('ağ hatasında satır KALIYOR, attempts artıyor, toast YOK', async () => {
       insertMessage('msg-1', 'sent');
-      enqueueEdit({ messageId: 'msg-1', conversationId: CONV, content: 'yeni', serverBase: 'orijinal' });
+      enqueueEdit({ messageId: 'msg-1', conversationId: CONV, content: 'yeni', serverBase: 'orijinal', serverBaseEditedAt: null });
       editMessage.mockRejectedValue(new Error('Network Error'));
 
       await flushPendingMutations('test');
@@ -929,7 +991,7 @@ describe('pendingMutations: tur', () => {
 
     it("enqueueEdit aynı mesaja ikinci emirde base'i koruyor, backoff'u sıfırlıyor", () => {
       insertMessage('msg-1', 'sent');
-      enqueueEdit({ messageId: 'msg-1', conversationId: CONV, content: 'birinci', serverBase: 'orijinal' });
+      enqueueEdit({ messageId: 'msg-1', conversationId: CONV, content: 'birinci', serverBase: 'orijinal', serverBaseEditedAt: null });
       const [firstRow] = readPendingMutations();
       const originalFirstSeen = firstRow.first_seen_at_ms;
 
@@ -944,18 +1006,18 @@ describe('pendingMutations: tur', () => {
 
       // Kullanıcı metni TEKRAR değiştirdi — yeni niyet eski backoff'u miras
       // ALMAMALI, `base` (sunucunun ilk gördüğü değer) korunmalı.
-      enqueueEdit({ messageId: 'msg-1', conversationId: CONV, content: 'ikinci', serverBase: 'bambaşka-bir-deger' });
+      enqueueEdit({ messageId: 'msg-1', conversationId: CONV, content: 'ikinci', serverBase: 'bambaşka-bir-deger', serverBaseEditedAt: null });
 
       const [row] = readPendingMutations();
       expect(row.attempts).toBe(0);
       expect(row.next_eligible_at_ms).toBe(0);
       expect(row.first_seen_at_ms).toBe(originalFirstSeen);
-      expect(JSON.parse(row.payload_json)).toEqual({ content: 'ikinci', base: 'orijinal' });
+      expect(JSON.parse(row.payload_json)).toEqual({ content: 'ikinci', base: 'orijinal', baseEditedAt: null });
     });
 
     it('gönderilmemiş mesajın düzenlemesi ağa ÇIKMIYOR, satır kalıyor', async () => {
       insertMessage('cmid-1', 'pending');
-      enqueueEdit({ messageId: 'cmid-1', conversationId: CONV, content: 'yeni', serverBase: 'orijinal' });
+      enqueueEdit({ messageId: 'cmid-1', conversationId: CONV, content: 'yeni', serverBase: 'orijinal', serverBaseEditedAt: null });
 
       const r = await flushPendingMutations('test');
 

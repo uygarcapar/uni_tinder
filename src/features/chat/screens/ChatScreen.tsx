@@ -1498,6 +1498,7 @@ function ChatScreen({
         conversationId: message.conversationId,
         content,
         serverBase: message.content ?? "",
+        serverBaseEditedAt: message.editedAt ?? null,
       });
       void flushPendingMutations("interactive");
     },

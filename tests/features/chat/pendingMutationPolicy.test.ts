@@ -43,9 +43,18 @@ describe('coalesceDelete', () => {
 
 describe('coalesceEdit', () => {
   it('coalesceEdit son içeriği alıyor, base İLK emrinkini koruyor', () => {
-    const a = coalesceEdit(null, 'ikinci', 'orijinal');
-    const b = coalesceEdit(a, 'ucuncu', 'ikinci');
-    expect(b).toEqual({ content: 'ucuncu', base: 'orijinal' });
+    const a = coalesceEdit(null, 'ikinci', 'orijinal', null);
+    const b = coalesceEdit(a, 'ucuncu', 'ikinci', '2026-02-02T00:00:00Z');
+    expect(b).toEqual({ content: 'ucuncu', base: 'orijinal', baseEditedAt: null });
+  });
+
+  // Review Focus 5 — coalesceEdit baseEditedAt'i İLK emrinkinde tutuyor
+  it('coalesceEdit baseEditedAt\'i İLK emrinkinde tutuyor', () => {
+    const a = coalesceEdit(null, 'ikinci', 'orijinal', '2026-01-01T00:00:00Z');
+    const b = coalesceEdit(a, 'ucuncu', 'ikinci', '2026-02-02T00:00:00Z');
+    // İkinci çağrının serverBaseEditedAt'i ('2026-02-02...') KAYMADI —
+    // base ile AYNI kuralla ilk emrin gördüğü değerde kaldı.
+    expect(b.baseEditedAt).toBe('2026-01-01T00:00:00Z');
   });
 });
 

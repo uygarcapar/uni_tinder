@@ -73,29 +73,44 @@ export function coalesceDelete(existing: DeletePayload | null, forEveryone: bool
  * idempotent kısa devreyle kendi çözüyor), ama `editRejectReason`'ın
  * "değişmemiş" kontrolü ekranın o anki en son bilinen sunucu değerine karşı
  * çalışsın diye taşınıyor — tıpkı `ReactionPayload.base` gibi.
+ *
+ * `baseEditedAt`: AYNI emrin gördüğü `editedAt` — `base`in TAM İKİZİ, aynı
+ * kuralla korunuyor. Kalıcı ret sonrası `revertEdit` yalnız `content`i değil
+ * `editedAt`i de bu değere döndürmek ZORUNDA: aksi halde reddedilen bir
+ * düzenleme metni geri alıp "düzenlendi" rozetini BIRAKIR, ki bu yeni bir
+ * yalan olurdu (mesaj hiç değişmemiş gibi görünmeli, metin ESKİ ama rozet
+ * VARSA kalmalı — bkz. `revertEdit`). `null` VARSAYILMAZ: mesaj daha önce
+ * hiç düzenlenmemişse sunucu `editedAt`i zaten `null` taşır, ama daha önce
+ * BİR KEZ düzenlenmiş bir mesajın İKİNCİ düzenlemesi reddedilirse bu alan
+ * o ÖNCEKİ damgayı taşımalı — null'a dönmek "hiç düzenlenmemiş" yalanını
+ * üretir.
  */
 export interface EditPayload {
   content: string;
   base: string;
+  baseEditedAt: string | null;
 }
 
 /**
- * Mevcut satır varsa onunla birleştirir; `base` HER ZAMAN eskisinden korunur.
+ * Mevcut satır varsa onunla birleştirir; `base` ve `baseEditedAt` HER ZAMAN
+ * eskisinden korunur.
  *
  * `coalesceReaction`in birebir aynı mantığı (bkz. o fonksiyonun yorumu):
- * `serverBase` yalnız hiç bekleyen satır YOKKEN kullanılır, bekleyen satır
- * VARSA onun `base`i emrin ilk verildiği andaki gerçek değeri taşımaya devam
- * eder — kullanıcı aynı mesajı art arda birkaç kez düzenlerse `base` ARA
- * METNE kaymaz.
+ * `serverBase`/`serverBaseEditedAt` yalnız hiç bekleyen satır YOKKEN
+ * kullanılır, bekleyen satır VARSA onun `base`i/`baseEditedAt`i emrin ilk
+ * verildiği andaki gerçek değerleri taşımaya devam eder — kullanıcı aynı
+ * mesajı art arda birkaç kez düzenlerse ikisi de ARA DEĞERE kaymaz.
  */
 export function coalesceEdit(
   existing: EditPayload | null,
   content: string,
   serverBase: string,
+  serverBaseEditedAt: string | null,
 ): EditPayload {
   return {
     content,
     base: existing ? existing.base : serverBase,
+    baseEditedAt: existing ? existing.baseEditedAt : serverBaseEditedAt,
   };
 }
 
