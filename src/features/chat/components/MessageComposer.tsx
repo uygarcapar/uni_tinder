@@ -376,6 +376,22 @@ const styles = StyleSheet.create({
   },
 });
 
+/**
+ * Düzenleme modu için imperative API — `ChatScreen` metni `initialText`
+ * (yalnız MOUNT'ta okunan uncontrolled defaultValue) ile DEĞİL, bu ref
+ * üzerinden basar. `key`li remount'un yerine geçiyor: remount, unmount flush'ı
+ * tetikleyip taslağı (draftRef) boş string'le EZİYORDU (bkz. `scheduleDraftSave`
+ * başındaki yeni guard) — aynı örnek canlı kalınca o kapı hiç açılmıyor.
+ * `getText` düzenlemeye GİRMEDEN ÖNCEKİ (yarım yazılmış olabilecek) metni
+ * yakalamak için; `setText` hem o metni GERİ basmak hem düzenlenen mesajın
+ * içeriğini ÖNE basmak için kullanılıyor — ikisi de `silent`: taslak/typing
+ * yan etkisi YOK (bkz. `pushText`).
+ */
+export type ComposerApi = {
+  getText: () => string;
+  setText: (text: string) => void;
+};
+
 type Props = {
   // Opak composer gövdesinin ölçümü (LegendList composer inset hook'una gider).
   // ÖNEMLİ: fade bandı ölçüme DAHİL DEĞİL — inset yalnız opak kısmı rezerve
@@ -385,6 +401,8 @@ type Props = {
   // TextInput'un kendisi — ChatScreen uzun-bas menüsü kapanınca klavyeyi geri
   // açmak için odağı buraya verir.
   inputRef?: React.RefObject<TextInput | null>;
+  // Düzenleme modu imperative API'si — bkz. `ComposerApi` yorumu.
+  apiRef?: React.RefObject<ComposerApi | null>;
   onComposerLayout?: (e: LayoutChangeEvent) => void;
   replyTo?: any;
   onCancelReply?: () => void;
@@ -419,6 +437,7 @@ type Props = {
 function MessageComposer({
   composerRef,
   inputRef: externalInputRef,
+  apiRef,
   onComposerLayout,
   replyTo,
   onCancelReply,
@@ -562,6 +581,14 @@ function MessageComposer({
   );
 
   const scheduleDraftSave = useCallback((value: string) => {
+    // `onDraftChange` VERİLMEDİYSE (ör. ChatScreen düzenleme modundayken
+    // bilerek `undefined` geçiyor) bu girdinin bir TASLAK SAHİBİ yok —
+    // `draftRef`e bile YAZMA. Eskiden draftRef her tuşta koşulsuz güncellenip
+    // yalnız debounce'lu ÇAĞRI atlanıyordu; düzenlenen metin üstüne yazılan
+    // bir tuş vuruşu draftRef'i SESSİZCE kirletiyor, düzenleme bitip gerçek
+    // taslak metni geri basılsa bile draftRef eski (düzenleme) değerde kalıp
+    // ekran kapanınca (`flushDraft`) o kirli değer diske yazılıyordu.
+    if (!onDraftChangeRef.current) return;
     draftRef.current = value;
     if (draftTimer.current) clearTimeout(draftTimer.current);
     draftTimer.current = setTimeout(() => {
@@ -600,6 +627,34 @@ function MessageComposer({
     },
     [emitTyping, scheduleDraftSave],
   );
+
+  // Düzenleme modu için TEK ATIMLIK basış — `applyText`in BİREBİR aynı native
+  // yazma mekanizması (`forced`), ama BİLEREK taslak/typing yan etkisi YOK:
+  // düzenlenen mesajın içeriği bir TASLAK DEĞİL, ekrandan gelip ekrana geri
+  // dönecek geçici bir metin. `scheduleDraftSave` çağrılmadığı için `draftRef`
+  // bu basıştan ETKİLENMİYOR — altında yatan gerçek taslak (varsa) olduğu
+  // gibi korunur.
+  const pushText = useCallback((next: string) => {
+    const caret = next.length;
+    textRef.current = next;
+    selectionRef.current = { start: caret, end: caret };
+    setText(next);
+    setForced({ text: next, selection: { start: caret, end: caret } });
+  }, []);
+
+  // ChatScreen'in düzenleme modu BUNUN üzerinden okuyup yazıyor (bkz. `ComposerApi`
+  // yorumu, Props tanımı) — `key`li remount'un yerine geçti: remount unmount
+  // flush'ı tetikleyip taslağı eziyordu, bu ref aynı örneği canlı tutuyor.
+  useEffect(() => {
+    if (!apiRef) return;
+    apiRef.current = {
+      getText: () => textRef.current,
+      setText: pushText,
+    };
+    return () => {
+      if (apiRef.current) apiRef.current = null;
+    };
+  }, [apiRef, pushText]);
 
   const handleEmojiSelect = useCallback(
     (emoji: string) => {

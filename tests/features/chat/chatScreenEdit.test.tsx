@@ -164,9 +164,18 @@ jest.mock('@/features/chat/components/ReplySwipeRow', () => ({
 
 // Composer: gerçek metin kutusu / klavye / cam YOK — yalnız ChatScreen'in
 // geçtiği prop'lara erişilebilir test-dostu bir kopya. `__getLastProps`
-// her testte son render'daki prop'ları (initialText, replyTo, vb.) döner.
+// her testte son render'daki prop'ları (replyTo vb.) döner.
+//
+// `apiRef` GERÇEK sözleşmeyle taklit ediliyor (bkz. MessageComposer.tsx
+// `ComposerApi`): `getText`/`setText` kalıcı bir React state'e bağlı —
+// `initialText` artık SADECE mount'ta bir kere okunuyor (gerçek bileşendeki
+// gibi), düzenleme moduna giriş/çıkış ekrandan `apiRef.current.setText(...)`
+// ile TETİKLENİYOR. Sahte bir "ekranda initialText değişti" kısayolu
+// KULLANILMIYOR — review'ın yakaladığı remount/draft kaybı hatasını bu mock
+// gerçek bileşen gibi davranmayıp gizlemesin diye.
 let mockLastComposerProps: any = null;
 let mockComposerSendContent = 'merhaba';
+let mockTypedTextAfterMount = '';
 jest.mock('@/features/chat/components/MessageComposer', () => {
   const React = require('react');
   const { View, Pressable, Text } = require('react-native');
@@ -175,17 +184,44 @@ jest.mock('@/features/chat/components/MessageComposer', () => {
     __setComposerSendContent: (content: string) => {
       mockComposerSendContent = content;
     },
+    __setTypedTextAfterMount: (text: string) => {
+      mockTypedTextAfterMount = text;
+    },
     __getLastComposerProps: () => mockLastComposerProps,
-    default: (props: any) => {
+    // İsim BÜYÜK harfle başlıyor: react-hooks/rules-of-hooks bunu bir bileşen
+    // olarak tanısın diye (hook'lar burada GERÇEKTEN çağrılıyor).
+    default: function MockMessageComposer(props: any) {
       mockLastComposerProps = props;
+      const [text, setLocalText] = React.useState(props.initialText ?? '');
+      const textRef = React.useRef(text);
+      textRef.current = text;
+      React.useEffect(() => {
+        if (!props.apiRef) return;
+        props.apiRef.current = {
+          getText: () => textRef.current,
+          setText: (next: string) => setLocalText(next),
+        };
+        return () => {
+          if (props.apiRef.current) props.apiRef.current = null;
+        };
+      }, [props.apiRef]);
       return React.createElement(
         View,
         null,
-        React.createElement(
-          Text,
-          { testID: 'composer-initial-text' },
-          props.initialText ?? '',
-        ),
+        React.createElement(Text, { testID: 'composer-initial-text' }, text),
+        // Gerçek `handleChangeText`in taklidi: kullanıcı MOUNT'TAN SONRA
+        // yazmaya devam eder — `initialText` (ChatScreen'de dondurulmuş
+        // `initialDraft`) artık BAYAT, canlı metin bundan FARKLI. Review'ın
+        // yakaladığı regresyon tam burada yaşıyordu: eski `key`li remount
+        // tasarımı düzenlemeden çıkışta bu CANLI metne değil dondurulmuş
+        // `initialText`e dönerdi.
+        React.createElement(Pressable, {
+          testID: 'composer-type-after-mount',
+          onPress: () => {
+            setLocalText(mockTypedTextAfterMount);
+            props.onDraftChange?.(mockTypedTextAfterMount);
+          },
+        }),
         React.createElement(Pressable, {
           testID: 'composer-send',
           onPress: () =>
@@ -250,9 +286,13 @@ import { Provider } from 'react-redux';
 import { configureStore } from '@reduxjs/toolkit';
 import { render, screen, act, fireEvent } from '@testing-library/react-native';
 import { NavigationContainer } from '@react-navigation/native';
-import chatReducer from '@/features/chat/chatSlice';
+import chatReducer, { hydrateWindow } from '@/features/chat/chatSlice';
 import ChatScreen from '@/features/chat/screens/ChatScreen';
 import * as MessageComposerMock from '@/features/chat/components/MessageComposer';
+// GERÇEK modül (mock'lanmadı) — "taslak diskte de hayatta kalıyor" iddiası
+// MMKV'nin jest mock'una (bkz. __mocks__/react-native-mmkv.ts) karşı sınanıyor,
+// ChatScreen'in iç state'ine değil.
+import { getDraft, setDraft, clearAllDrafts } from '@/features/chat/draftStore';
 
 const CONVERSATION_ID = 'conv-1';
 const MESSAGE_ID = 'msg-1';
@@ -276,7 +316,7 @@ function authReducer(state = { user: { userId: MY_USER_ID, id: MY_USER_ID } }) {
   return state;
 }
 
-function buildStore(message: any) {
+function buildStore(message: any, quotaOverride: any = {}) {
   return configureStore({
     reducer: { chat: chatReducer, auth: authReducer },
     preloadedState: {
@@ -300,7 +340,7 @@ function buildStore(message: any) {
             hasHiddenHistory: false,
           },
         },
-        quotaByConv: {},
+        quotaByConv: { [CONVERSATION_ID]: quotaOverride },
         quotaMetaByConv: {},
         unreadTotal: 0,
         conversationsLoading: false,
@@ -340,6 +380,10 @@ async function openEditMode() {
 
 beforeEach(() => {
   jest.clearAllMocks();
+  // MMKV mock'u modül ömrü boyunca TEK instance (bkz. mmkvStorage.ts) — bir
+  // testin yazdığı taslak testler arası SIZAR, temizlenmezse "taslak hayatta
+  // kaldı" testleri önceki testin kalıntısına karşı yanlışlıkla geçebilir.
+  clearAllDrafts();
   mockLastComposerProps = null;
   mockComposerSendContent = 'yeni metin';
   mockFlushPendingMutations.mockImplementation(() =>
@@ -416,7 +460,12 @@ describe('ChatScreen — düzenleme modu', () => {
     expect((MessageComposerMock as any).__getLastComposerProps().replyTo).toBeNull();
   });
 
-  it('düzenleme kuyruktayken ekran yeniden kurulunca YENİ metin görünüyor', async () => {
+  // Review turu — isim DÜZELTİLDİ: bu dosyada `pendingMutations` tamamen
+  // mock'lu, yani "kuyruktayken" diye bir şey BURADA gözlenemez (kuyruğun
+  // kendi kalıcılığı pendingMutations.test.ts'te pinli). Bu test yalnız
+  // optimistik `dispatch(messageEdited(...))`in REDUX STORE'a (ekranın yeniden
+  // kurulsa bile okuyacağı yere) gerçekten yazıldığını kanıtlıyor.
+  it('optimistik dispatch kalıcı — ekran yeniden kurulunca YENİ metin store\'dan görünüyor', async () => {
     const store = buildStore(buildMessage());
     const first = renderChatScreen(store);
 
@@ -432,5 +481,169 @@ describe('ChatScreen — düzenleme modu', () => {
     await act(async () => {});
 
     expect(screen.getByText('kalıcı yeni metin')).toBeTruthy();
+  });
+
+  // Review Önemli-3 — `editRejectReason`'ın ÇAĞRILDIĞINI pinleyen tek test:
+  // bu satırlar silinse `enqueueEdit` aynı (değişmemiş) içerikle de çağrılırdı.
+  it('değişmemiş içerikle gönderince editRejectReason ağa hiç çıkmasın diyor — enqueueEdit çağrılmaz', async () => {
+    const store = buildStore(buildMessage());
+    renderChatScreen(store);
+
+    await openEditMode();
+    // Orijinal mesajla BİREBİR aynı metin — editRejectReason 'unchanged' döner.
+    (MessageComposerMock as any).__setComposerSendContent('orijinal metin');
+    await act(async () => {
+      fireEvent.press(screen.getByTestId('composer-send'));
+    });
+
+    expect(mockEnqueueEdit).not.toHaveBeenCalled();
+    expect(mockFlushPendingMutations).not.toHaveBeenCalled();
+    // Store'daki içerik de değişmedi (dispatch hiç atılmadı).
+    const state = store.getState();
+    expect(state.chat.messagesByConv[CONVERSATION_ID].messages[0].content).toBe(
+      'orijinal metin',
+    );
+    // Düzenleme modu yine de kapandı — kullanıcı takılı kalmıyor.
+    expect((MessageComposerMock as any).__getLastComposerProps().replyTo).toBeNull();
+  });
+
+  // Review Minör-1 — mesaj düzenleme ANINDA store'dan kaybolmuşsa (`target`e
+  // DÜŞMEDEN) hiçbir dispatch/enqueue olmamalı; `target` NOT NULL kolonları
+  // (senderId/sentAt/contentType) taşımıyor, mirror'a o hâliyle gitmemeli.
+  it('mesaj düzenleme sırasında store\'dan kaybolmuşsa hiçbir dispatch/enqueue olmaz', async () => {
+    const store = buildStore(buildMessage());
+    renderChatScreen(store);
+
+    await openEditMode();
+
+    // Mesaj TAMAMEN kayboldu (örn. arşiv dışı kaldı / pencere değişti).
+    await act(async () => {
+      store.dispatch(
+        hydrateWindow({
+          conversationId: CONVERSATION_ID,
+          messages: [],
+          nextCursor: null,
+          hasMore: false,
+          hasHiddenHistory: false,
+        }),
+      );
+    });
+
+    (MessageComposerMock as any).__setComposerSendContent('yeni metin');
+    await act(async () => {
+      fireEvent.press(screen.getByTestId('composer-send'));
+    });
+
+    expect(mockEnqueueEdit).not.toHaveBeenCalled();
+    expect(mockFlushPendingMutations).not.toHaveBeenCalled();
+  });
+
+  // Review Önemli-2 — düzenleme mesaj HAKKI harcamıyor, kota kilitli bir
+  // kullanıcı "Düzenle"ye basıp bir adım sonra ölü bir paywall'a düşmemeli.
+  it('kota kilitliyken bile composer\'a quotaLocked=false geçiyor (düzenleme hak harcamıyor)', async () => {
+    const store = buildStore(buildMessage(), { requiresPremium: true, isUnlimited: false });
+    renderChatScreen(store);
+    await act(async () => {});
+
+    // Normal moddayken (düzenleme YOK) kilit GERÇEKTEN iniyor — kontrol grubu.
+    expect((MessageComposerMock as any).__getLastComposerProps().quotaLocked).toBe(true);
+
+    await openEditMode();
+
+    expect((MessageComposerMock as any).__getLastComposerProps().quotaLocked).toBe(false);
+
+    // Kilit açılmış gibi davranan composer'dan gönder — kuyruğa ulaşmalı,
+    // paywall'a DEĞİL (paywall zaten mock'ta yok, dolayısıyla kanıt enqueue'nun
+    // GERÇEKTEN çağrıldığı).
+    (MessageComposerMock as any).__setComposerSendContent('yeni metin');
+    await act(async () => {
+      fireEvent.press(screen.getByTestId('composer-send'));
+    });
+    expect(mockEnqueueEdit).toHaveBeenCalled();
+  });
+
+  // Review Önemli-4 — ses tamamen düzenleme dışı: mikrofon `onSendVoice`
+  // `undefined` olunca (composer'ın kendi `micEnabled` hesabı) hiç kayda
+  // başlamıyor; bu da düzenlenen mesaja sahte bir "yanıt" olarak ses
+  // gönderilmesini VE ardından gelen metnin yanlışlıkla düzenlemeye
+  // yönlendirilmesini (editing hiç temizlenmediği için) baştan imkânsız kılıyor.
+  it('düzenlerken composer onSendVoice almaz — mikrofon devre dışı kalır', async () => {
+    const store = buildStore(buildMessage());
+    renderChatScreen(store);
+    await act(async () => {});
+
+    expect(typeof (MessageComposerMock as any).__getLastComposerProps().onSendVoice).toBe(
+      'function',
+    );
+
+    await openEditMode();
+
+    expect((MessageComposerMock as any).__getLastComposerProps().onSendVoice).toBeUndefined();
+  });
+
+  // Review Önemli-1 — composer artık `key`li REMOUNT olmuyor (bkz. ChatScreen
+  // `composerApiRef`/`ComposerApi`): yarım yazılmış bir taslak düzenlemeye
+  // girip çıkınca hem EKRANDA hem DİSKTE (gerçek draftStore + MMKV mock'u)
+  // sağlam kalmalı. Eski remount'lu tasarımda ikinci composer örneği boş
+  // `draftRef`le doğup unmount flush'ında taslağı "" ile EZİYORDU.
+  it('taslak hem ekranda hem diskte hayatta kalır: yaz, MOUNT\'TAN SONRA da yaz → düzenle → iptal', async () => {
+    // `initialDraft` ChatScreen'de MOUNT ANINDA donuyor (useMemo) — asıl sınav
+    // bundan SONRA yazılan metnin de kurtulması: eski `key`li remount
+    // tasarımı düzenlemeden çıkışta bu dondurulmuş (bayat) değere dönerdi,
+    // mount sonrası yazılan hiçbir şeyi BİLMEZDİ.
+    setDraft(CONVERSATION_ID, 'mount anındaki taslak');
+    const store = buildStore(buildMessage());
+    renderChatScreen(store);
+    await act(async () => {});
+
+    expect(screen.getByTestId('composer-initial-text').props.children).toBe(
+      'mount anındaki taslak',
+    );
+
+    (MessageComposerMock as any).__setTypedTextAfterMount('mount SONRASI yazılan taslak');
+    await act(async () => {
+      fireEvent.press(screen.getByTestId('composer-type-after-mount'));
+    });
+    expect(getDraft(CONVERSATION_ID)).toBe('mount SONRASI yazılan taslak');
+
+    await openEditMode();
+    expect(screen.getByTestId('composer-initial-text').props.children).toBe(
+      'orijinal metin',
+    );
+
+    await act(async () => {
+      fireEvent.press(screen.getByTestId('composer-cancel'));
+    });
+
+    // EKRANDA: composer MOUNT SONRASI yazılan (dondurulmuş initialText'ten
+    // FARKLI) taslağa geri döndü.
+    expect(screen.getByTestId('composer-initial-text').props.children).toBe(
+      'mount SONRASI yazılan taslak',
+    );
+    // DİSKTE: gerçek draftStore (MMKV mock'u) hiç bozulmadı — "" ile EZİLMEDİ.
+    expect(getDraft(CONVERSATION_ID)).toBe('mount SONRASI yazılan taslak');
+  });
+
+  it('taslak hem ekranda hem diskte hayatta kalır: yaz, MOUNT\'TAN SONRA da yaz → düzenle → GÖNDER', async () => {
+    setDraft(CONVERSATION_ID, 'mount anındaki taslak 2');
+    const store = buildStore(buildMessage());
+    renderChatScreen(store);
+    await act(async () => {});
+
+    (MessageComposerMock as any).__setTypedTextAfterMount('mount SONRASI yazılan taslak 2');
+    await act(async () => {
+      fireEvent.press(screen.getByTestId('composer-type-after-mount'));
+    });
+
+    await openEditMode();
+    (MessageComposerMock as any).__setComposerSendContent('yeni metin');
+    await act(async () => {
+      fireEvent.press(screen.getByTestId('composer-send'));
+    });
+
+    expect(screen.getByTestId('composer-initial-text').props.children).toBe(
+      'mount SONRASI yazılan taslak 2',
+    );
+    expect(getDraft(CONVERSATION_ID)).toBe('mount SONRASI yazılan taslak 2');
   });
 });

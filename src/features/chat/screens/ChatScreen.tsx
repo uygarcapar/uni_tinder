@@ -436,7 +436,10 @@ function ChatScreen({
   // (bkz. aşağıdaki `editingReplyShim`), MessageComposer'a HİÇ DOKUNMADAN aynı
   // kalıp (şerit + ✕) ödünç alınmış olur. `content` düzenleme ANINDAKİ sunucu
   // değeri — hem composer'ın ilk doluşu hem `editRejectReason`'ın "değişmemiş"
-  // kıyası hem de kuyruğun `serverBase`'i buradan beslenir.
+  // kıyası hem de kuyruğun `serverBase`'i buradan beslenir. `preEditDraft`:
+  // düzenlemeye girmeden ÖNCE composer'da duran (yarım yazılmış olabilecek)
+  // metin — düzenleme bitince (gönder/iptal) composer'a GERİ basılır, review
+  // bulgusu: remount'un draftRef'i boş string'le ezdiği hatanın düzeltmesi.
   const [editing, setEditing] = useState<any>(null);
   const [actionTarget, setActionTarget] = useState<any>(null);
   const [actionLayout, setActionLayout] = useState<any>(null);
@@ -489,6 +492,13 @@ function ChatScreen({
   // Composer TextInput'unun kendisi — uzun-bas menüsü kapanınca klavyeyi geri
   // açmak için odak buraya verilir (composerRef dış kapsayıcı, ölçüm içindir).
   const composerInputRef = useRef<any>(null);
+  // Düzenleme modunun composer'a metin basma/okuma kapısı (bkz. `ComposerApi`,
+  // MessageComposer.tsx). `key`li remount YERİNE geçti — remount composer'ı
+  // unmount edip taslağı boş string'le eziyordu (bkz. handleEditRequest/
+  // handleCancelEdit/handleSubmitEdit yorumları).
+  const composerApiRef = useRef<{ getText: () => string; setText: (text: string) => void } | null>(
+    null,
+  );
   const deliveredAckedRef = useRef(new Set<string>());
   const renderedDataRef = useRef<any[]>([]);
   const messagesRef = useRef<MessageDto[]>(messages);
@@ -1355,22 +1365,33 @@ function ChatScreen({
   // kapıları süzdü (sahiplik/sistem/silinmiş/sesli/pencere/pending), burası
   // yalnız composer'ı o mesajın İÇERİĞİYLE düzenleme moduna sokuyor.
   // Yanıt şeridi varsa kapatılır — iki şerit AYNI ANDA gösterilmiyor.
+  //
+  // `preEditDraft`: composer'da düzenlemeye girmeden ÖNCE duran metin (yarım
+  // yazılmış bir mesaj olabilir) — `composerApiRef.getText()` ile ANLIK
+  // yakalanıyor, çünkü composer artık (review Önemli-1) `key`li remount
+  // OLMUYOR; aynı örnek canlı kalıyor ve biz onun metnini GEÇİCİ olarak
+  // düzenlenen içerikle değiştirip işimiz bitince GERİ basıyoruz.
   const handleEditRequest = useCallback((message: any) => {
     if (!message) return;
+    const preEditDraft = composerApiRef.current?.getText() ?? "";
     setReplyTo(null);
     setEditing({
       id: message.id,
       conversationId: message.conversationId,
       clientMessageId: message.clientMessageId,
       content: message.content ?? "",
+      preEditDraft,
     });
+    composerApiRef.current?.setText(message.content ?? "");
   }, []);
 
-  // ✕ — düzenleme moduna GİRMEDEN ÖNCEKİ hâle döner, mesajın içeriğine
-  // DOKUNMAZ (ne optimistik dispatch ne kuyruk yazımı olur).
+  // ✕ — düzenleme moduna GİRMEDEN ÖNCEKİ hâle döner: composer'ın metni
+  // `preEditDraft`e geri basılır (ne optimistik dispatch ne kuyruk yazımı
+  // olur), gerçek taslak hiç dokunulmamış hâlde kalır.
   const handleCancelEdit = useCallback(() => {
+    composerApiRef.current?.setText(editing?.preEditDraft ?? "");
     setEditing(null);
-  }, []);
+  }, [editing]);
 
   // Gönder — optimistik `messageEdited` dispatch → `enqueueEdit` → tur
   // tetikleme. Reaksiyon/silmeyle AYNI sözleşme: BAŞARISIZLIKTA İKİNCİ bir
@@ -1380,16 +1401,26 @@ function ChatScreen({
     (content: string) => {
       const target = editing;
       setEditing(null);
+      // Düzenleme ANINDA biten (gönderildi/reddedildi/değişmedi) — composer
+      // ne olursa olsun `preEditDraft`e döner, kullanıcı yarım yazdığı
+      // mesajı kaldığı yerden bulur.
+      composerApiRef.current?.setText(target?.preEditDraft ?? "");
       if (!target) return;
       // `handlePickReaction`/`handleDelete` ile AYNI sebep: menü hedefi
       // düzenleme moduna girildiği andaki kopya, o sırada gelen bir hub
       // event'i mesajı değiştirmiş olabilir — taze kaydı store'dan al.
-      const message =
-        messagesRef.current.find(
-          (m) =>
-            m.id === target.id ||
-            (target.clientMessageId && m.clientMessageId === target.clientMessageId),
-        ) || target;
+      // BULUNAMAZSA (Review Minör 1) `target`e DÜŞME: `target` yalnız
+      // {id, conversationId, clientMessageId, content} taşıyor, `senderId`/
+      // `sentAt`/`contentType` gibi NOT NULL kolonlar eksik — mirror
+      // (`chatMirrorMiddleware` → `repo.saveMessage`) bunlarla çağrılırsa
+      // satırı bozardı. Mesaj gerçekten yoksa (silinmiş/arşiv dışı) sessizce
+      // vazgeç.
+      const message = messagesRef.current.find(
+        (m) =>
+          m.id === target.id ||
+          (target.clientMessageId && m.clientMessageId === target.clientMessageId),
+      );
+      if (!message) return;
       // Boş/çok uzun/değişmemiş: AĞA HİÇ ÇIKMA — `editRejectReason` tek
       // kaynak (composer kendi kopyasını yazmıyor, bkz. pendingMutationPolicy.ts).
       // Değişmemiş içerikte sessizce düzenleme modundan çıkmak yeterli; boş/
@@ -2373,11 +2404,20 @@ function ChatScreen({
         isDeleted: false,
       }
     : null;
-  // Composer'ın metni `initialText`ten YALNIZ MOUNT'ta okunuyor (uncontrolled
-  // input) — düzenleme moduna girişte/çıkışta TAZE metni basmanın tek yolu
-  // `key` değiştirip bileşeni YENİDEN mount etmek. Normal modda sabit kalır,
-  // ekranın kendisi sohbet başına zaten bir kez mount oluyor.
-  const composerKey = editing ? `edit-${editing.id}` : "compose";
+  // Düzenlerken mesaj hakkı HARCANMIYOR (zaten gönderilmiş bir mesajın
+  // içeriği değişiyor, yeni bir mesaj doğmuyor) — composer'ın kendi kota
+  // kilidi (`quotaLocked`) burada BİLEREK ezilir, yoksa hakkı biten bir
+  // kullanıcı "Düzenle"ye basıp paywall'a düşer (eylem menüsünde teklif
+  // edilen bir şey bir adım sonra ölü çıkar).
+  const composerQuotaLocked = editing ? false : quotaLocked;
+  // Sesli mesaj düzenleme modunda KAPALI: düzenleme yalnız METİN taşıyor
+  // (`editRejectReason` bunun dışına çıkmıyor), üstelik mikrofon metin boşken
+  // beliriyor (prefill temizlenebilir) ve `onSendVoice` composer'ın
+  // `replyTo`sundaki `id`yi (düzenleme şiminin id'si) `replyToMessageId`
+  // olarak yollardı — düzenlenen mesaja sahte bir "yanıt" doğardı. `onSendVoice`
+  // `undefined` olunca mikrofon görünür ama `micEnabled` false düşüp hiç
+  // kayda başlamaz (bkz. MessageComposer.tsx `micEnabled` tanımı).
+  const composerOnSendVoice = editing ? undefined : handleSendVoice;
 
   const { colors: headerMaskColors, locations: headerMaskLocations } = useMemo(
     () =>
@@ -2633,20 +2673,20 @@ function ChatScreen({
             style={{ position: "absolute", bottom: 0, left: 0, right: 0 }}
           >
             <MessageComposer
-              key={composerKey}
               composerRef={composerRef}
               inputRef={composerInputRef}
+              apiRef={composerApiRef}
               onComposerLayout={onComposerLayout}
               replyTo={editing ? editingReplyShim : replyTo}
               onCancelReply={editing ? handleCancelEdit : handleCancelReply}
               onSend={handleInputSend}
               onTypingChange={handleTypingChange}
-              initialText={editing ? editing.content : initialDraft}
+              initialText={initialDraft}
               onDraftChange={editing ? undefined : handleDraftChange}
               disabled={!isActive}
-              quotaLocked={quotaLocked}
+              quotaLocked={composerQuotaLocked}
               onLockedPress={handleLockedPress}
-              onSendVoice={handleSendVoice}
+              onSendVoice={composerOnSendVoice}
             />
           </KeyboardStickyView>
         </KeyboardGestureArea>
@@ -2679,20 +2719,20 @@ function ChatScreen({
             style={{ position: "absolute", bottom: 0, left: 0, right: 0 }}
           >
             <MessageComposer
-              key={composerKey}
               composerRef={composerRef}
               inputRef={composerInputRef}
+              apiRef={composerApiRef}
               onComposerLayout={onComposerLayout}
               replyTo={editing ? editingReplyShim : replyTo}
               onCancelReply={editing ? handleCancelEdit : handleCancelReply}
               onSend={handleInputSend}
               onTypingChange={handleTypingChange}
-              initialText={editing ? editing.content : initialDraft}
+              initialText={initialDraft}
               onDraftChange={editing ? undefined : handleDraftChange}
               disabled={!isActive}
-              quotaLocked={quotaLocked}
+              quotaLocked={composerQuotaLocked}
               onLockedPress={handleLockedPress}
-              onSendVoice={handleSendVoice}
+              onSendVoice={composerOnSendVoice}
             />
           </KeyboardStickyView>
         </View>

@@ -40,6 +40,7 @@ import {
 import { colors, withAlpha, scrimAt } from "../../../shared/theme/colors";
 import { thinBlurTint } from "@/shared/theme/blur";
 import { utcTime } from "@/shared/utils/dateUtc";
+import { ContentType } from "@/features/chat/contentType";
 
 const QUICK_EMOJIS = ["❤️", "😂", "😮", "😢", "🔥", "👍"];
 const { width: SCREEN_WIDTH, height: SCREEN_HEIGHT } = Dimensions.get("window");
@@ -253,7 +254,7 @@ export default function MessageActionSheet({
     isOwn &&
     !message.isSystemMessage &&
     !message.deletedAt &&
-    message.contentType === 0 &&
+    message.contentType === ContentType.Text &&
     !message._pending &&
     Date.now() - utcTime(message.sentAt) < EDIT_WINDOW_MS;
 
