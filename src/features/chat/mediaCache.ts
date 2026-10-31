@@ -1,8 +1,9 @@
 import { Directory, File, Paths, type DirectoryCreateOptions, type DownloadOptions } from 'expo-file-system';
 import {
   clearMediaCache,
-  readAllCachedUris,
+  readAllOwnRecordingUris,
   readCacheEntriesOldestFirst,
+  readCachedMessageIds,
   readMediaCache,
   readOwnRecordingUri,
   setMediaCache,
@@ -57,6 +58,12 @@ function extensionFromUrl(url: string): string {
   }
 }
 
+/** `<messageId><uzantı>` → `messageId`. Uzantısı yoksa adın kendisi. */
+function messageIdFromFileName(name: string): string {
+  const dot = name.lastIndexOf('.');
+  return dot > 0 ? name.slice(0, dot) : name;
+}
+
 function deleteIfExists(uri: string): void {
   try {
     const file = new File(uri);
@@ -69,7 +76,35 @@ function deleteIfExists(uri: string): void {
 }
 
 /**
- * Yerel kopyayı döndürür; yoksa indirir. `null` = şu an elde edilemiyor.
+ * İnen dosyanın baytı — `null` = ÖLÇÜLEMEDİ (0 DEĞİL, bkz. çağıran).
+ *
+ * `downloadFileAsync` dönüşündeki `size` bazı platformlarda null gelebiliyor
+ * (stat hatası); o durumda yolun kendisinden bir kez daha deneniyor.
+ */
+function resolveSizeBytes(downloaded: File): number | null {
+  const candidates = [downloaded.size, safeFileSize(downloaded.uri)];
+  for (const value of candidates) {
+    const n = Number(value);
+    if (Number.isFinite(n) && n > 0) return n;
+  }
+  return null;
+}
+
+function safeFileSize(uri: string): number | null {
+  try {
+    return new File(uri).size ?? null;
+  } catch {
+    return null;
+  }
+}
+
+/**
+ * Oynatılabilir bir kaynak döndürür; `null` = şu an elde edilemiyor.
+ *
+ * Dönen değer ÇOĞUNLUKLA yerel bir `file://` yolu, ama HER ZAMAN DEĞİL: iki
+ * kenar durumda (boyut ölçülemedi / inen dosya aynı turda tahliye edildi)
+ * imzalı UZAK URL dönüyor. Oynatıcı ikisini de kabul ediyor —
+ * `voicePlayback.ts` `downloadFirst`'ü `file:` ön ekine bakarak seçiyor.
  *
  * Sıra (brief'in sözleşmesi): satırı oku → dosya GERÇEKTEN var mı → varsa
  * `touchMediaCache` + yol dön → yoksa satırı düşür ve indirmeye geç →
@@ -120,12 +155,32 @@ export async function ensureCachedMedia(messageId: string): Promise<string | nul
     if (!dir.exists) dir.create(createOptions);
     const downloadOptions: DownloadOptions = { idempotent: true };
     const downloaded = await File.downloadFileAsync(mediaUrl, destination, downloadOptions);
-    const sizeBytes = Number(downloaded.size ?? 0);
+
+    // Boyut BİLİNMİYORSA satır YAZILMIYOR (review Minor 6). Eski hâl
+    // `Number(downloaded.size ?? 0)` idi: tavanın HİÇBİR ZAMAN göremeyeceği,
+    // 0 bayt iddia eden bir girdi — her biri tavanı gerçek kullanımın altında
+    // ölçtürür ve sınırsız sayıda birikebilir. `downloaded.size` null gelirse
+    // yolun kendisinden bir kez daha `stat` deneniyor; o da sonuç vermezse
+    // kopya diskte BIRAKILMIYOR ve imzalı URL doğrudan oynatıcıya veriliyor —
+    // bu mesaj için çevrimdışı vaadi bu turda gerçekleşmiyor (bir sonraki
+    // oynatma yeniden dener), ama ne yetim dosya ne sahte bir muhasebe kalıyor.
+    const sizeBytes = resolveSizeBytes(downloaded);
+    if (sizeBytes == null) {
+      devLog('🎧 [mediaCache] boyut okunamadı, önbelleğe alınmıyor', messageId);
+      deleteIfExists(downloaded.uri);
+      return mediaUrl;
+    }
+
     setMediaCache(messageId, downloaded.uri, sizeBytes, Date.now());
     // Tavanı aşan tahliye İNDİRMEDEN SONRA çalışır: az önce inen dosyanın
     // kendisi de tavanı tek başına aşabilir ve o da meşru bir aday (bkz.
     // mediaCachePolicy.ts'in "istisnasız siliniyor" gerekçesi).
     evictOverCap();
+    // …ve tam o durumda az önce SİLDİĞİMİZ yolu oynatıcıya veremeyiz (review
+    // Minor 7). Satır hâlâ duruyorsa dosya da duruyor; düşmüşse tahliye bizi
+    // seçti, uzak kaynağa düşüyoruz. 200 MB tavanda sesli mesaj için pratikte
+    // ulaşılmaz, ama kod artık sildiği bir yolu döndürmüyor.
+    if (!readMediaCache(messageId)) return mediaUrl;
     return downloaded.uri;
   } catch (err) {
     // Yarım kalan indirme defter DIŞI bir dosya bırakabilir (ör. Android'de
@@ -165,18 +220,79 @@ export function evictOverCap(): number {
 }
 
 /**
- * Logout/wipe: TÜM önbellek dosyalarını diskten siler.
+ * Logout/wipe: önceki kullanıcının TÜM sesini diskten siler.
  *
- * Satırları BURADA temizlemiyor: çağıran (`chat/resetChat` choke-point'i)
- * zaten `clearAllChatData` ile `messages` tablosunun tamamını boşaltıyor.
- * Sıra kritik — bu fonksiyon tablo hâlâ doluyken, `clearAllChatData`'dan
- * ÖNCE çağrılmalı, yoksa `readAllCachedUris` boş liste görür ve hiçbir dosya
- * silinmeden logout tamamlanır (önceki kullanıcının sesi diskte kalır).
+ * ── Önbellek: DİZİNİN KENDİSİ siliniyor (Faz 5 review, Kritik 2) ───────────
+ * Eskiden `readAllCachedUris()` ile satır satır dolaşılıyordu, yani garanti
+ * "defterde kaydı olan dosyalar" kadardı. Oysa satır silen DÖRT yol var —
+ * `pruneExpiredMessages`, `removeConversationLocally`, geçmiş sayfasının gap
+ * dalı ve `removeByClientMessageId` — ve hiçbiri `mediaCache`'e
+ * ulaşamıyor (Task 3'ün çevrimsel import'tan kaçınmak için kurduğu seam).
+ * Satır gidince dosya defter dışında kalıyordu: ne tahliye görüyordu ne de
+ * logout. Dizini topluca silmek garantiyi TOPLAM yapıyor ve gelecekte
+ * eklenecek her satır-silen yola karşı bağışık — "bu yol da mediaCache'i
+ * çağırmalı" kuralını hiç kimsenin hatırlaması gerekmiyor.
+ *
+ * ── Kendi kayıtlarımız: AYRI dizin, o yüzden ayrı tur (Önemli 3) ───────────
+ * Gönderdiğimiz sesin dosyası recorder'ın (OS cache) dizininde duruyor ve
+ * `discardVoiceTake` yalnız İPTAL yollarında koşuyor — bir kez gönderilmiş
+ * kaydın dosyası hiçbir yolda silinmiyordu. Yollar `messages.local_uri`de
+ * duruyor, o yüzden tabloyu HÂLÂ okuyabiliyorken tek tek siliniyorlar.
+ *
+ * SIRA KRİTİK: bu fonksiyon `clearAllChatData`'dan ÖNCE çağrılmalı — kendi
+ * kayıtlarımızın yolları yalnız tablodan okunabiliyor (dizin adını bilmiyoruz,
+ * expo-audio seçiyor), tablo boşaldıktan sonra o liste boş gelirdi.
  */
 export function wipeMediaCache(): void {
-  for (const uri of readAllCachedUris()) {
+  for (const uri of readAllOwnRecordingUris()) {
     deleteIfExists(uri);
   }
+  try {
+    const dir = cacheDirectory();
+    if (dir.exists) dir.delete();
+  } catch (err) {
+    devLog('🎧 [mediaCache] önbellek dizini silinemedi', errMessage(err));
+  }
+}
+
+/**
+ * Açılış uzlaştırması: defterde karşılığı OLMAYAN önbellek dosyalarını siler.
+ *
+ * `wipeMediaCache`'in dizin silmesi logout'u tamamen kapatıyor ama STEADY
+ * STATE sızıntısını kapatmıyor (Faz 5 review, Kritik 2'nin ikinci yarısı):
+ * satır silen dört yol (başta her açılışta koşan ve tam olarak "eski, çalınmış
+ * sesli mesaj" satırlarını hedefleyen `pruneExpiredMessages`) dosyayı diskte
+ * bırakıp satırı götürüyor. Defterdeki toplam KÜÇÜLÜRKEN dizin BÜYÜYOR, yani
+ * 200 MB tavanı gerçek disk kullanımını bir süre sonra hiç sınırlamıyor.
+ *
+ * Eşleme dosya ADINDAN kuruluyor — `<messageId><uzantı>` tasarım gereği
+ * (bkz. yukarıdaki dizin/ad notu), ayrı bir eşleme tablosu yok. Satırı olan
+ * her dosya korunuyor; geri kalan her şey yetim.
+ *
+ * `pruneExpiredMessages`'ten SONRA koşmalı: aynı turda yetim ettiği dosyalar
+ * da bu turda gitsin, bir sonraki açılışa kalmasın.
+ *
+ * @returns silinen yetim dosya sayısı
+ */
+export function reconcileMediaCacheDirectory(): number {
+  let removed = 0;
+  try {
+    const dir = cacheDirectory();
+    if (!dir.exists) return 0;
+    const tracked = new Set(readCachedMessageIds());
+    for (const entry of dir.list()) {
+      if (entry instanceof Directory) continue;
+      const name = entry.uri.slice(entry.uri.lastIndexOf('/') + 1);
+      if (tracked.has(messageIdFromFileName(name))) continue;
+      deleteIfExists(entry.uri);
+      removed++;
+    }
+  } catch (err) {
+    // Dizin listelenemiyorsa (izin, yarış) sessizce geç: bu bir bakım turu,
+    // açılışı düşürmeye değmez — bir sonraki açılış tekrar dener.
+    devLog('🎧 [mediaCache] yetim süpürmesi patladı', errMessage(err));
+  }
+  return removed;
 }
 
 /** Tek mesajın kopyasını siler (UT-6606, herkesten silme). */

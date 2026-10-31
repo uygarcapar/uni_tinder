@@ -7,7 +7,11 @@ import { startBackfill } from '@/features/chat/chatBackfill';
 import { applyDeltaFromLocal, hydrateConversationList } from '@/features/chat/chatHydrate';
 import { fetchConversations } from '@/features/chat/chatSlice';
 import { clear as clearMessageCache, projectWindow } from '@/features/chat/messageCache';
-import { dropCachedMedia, wipeMediaCache } from '@/features/chat/mediaCache';
+import {
+  dropCachedMedia,
+  reconcileMediaCacheDirectory,
+  wipeMediaCache,
+} from '@/features/chat/mediaCache';
 import { messageContentEqual } from '@/features/chat/messageEquality';
 import type { MessageDto } from '@/shared/types';
 
@@ -163,6 +167,22 @@ export function startChatMirror(store?: {
       backfillSearchIndexOnBoot();
     } catch (error) {
       console.error('[chatMirror] arama indeksi bakımı düştü, arama LIKE yolunda:', error);
+    }
+
+    // Medya önbelleğinin YETİM dosyaları (Faz 5 review, Kritik 2). Satır silen
+    // yollar — başta hemen yukarıdaki `pruneExpiredMessages` — dosyayı diskte
+    // bırakıyor; defter küçülürken dizin büyüyor ve bayt tavanı gerçek disk
+    // kullanımını ölçmez hâle geliyor. Bu tur dizini defterle uzlaştırıyor.
+    // `pruneExpiredMessages`'ten SONRA: onun bu turda yetim ettiği dosyalar
+    // da bu turda gitsin. Kendi try'ında — arama indeksi bakımıyla aynı
+    // gerekçe: bir bakım turunun düşmesi local-first okuma yolunu kapatmamalı.
+    try {
+      const orphans = reconcileMediaCacheDirectory();
+      if (__DEV__ && orphans > 0) {
+        console.log(`[chatMirror] ${orphans} yetim medya dosyası silindi`);
+      }
+    } catch (error) {
+      console.error('[chatMirror] medya yetim süpürmesi düştü:', error);
     }
   } catch (error) {
     console.error('[chatMirror] başlatılamadı, ayna devre dışı:', error);
@@ -383,11 +403,14 @@ function mirror(action: any, getState: () => any): void {
     // güvenlik kapımız bu (AppNavigator'a dokunmuyoruz).
     //
     // ÜÇ temizlik birden şart, bu SIRAYLA:
-    //  • wipeMediaCache — ÖNCE: sesli mesaj dosyalarını diskten siler, bunu
-    //    yaparken `messages` tablosunu hâlâ okuyor (`readAllCachedUris`).
-    //    Sıra tersine çevrilirse tablo boşalmış olur, silinecek yol listesi
-    //    boş gelir ve önceki kullanıcının sesi diskte YETİM kalır — bir
-    //    sonraki kullanıcının cihazında duran gizlilik ihlali.
+    //  • wipeMediaCache — ÖNCE: sesli mesaj dosyalarını diskten siler. İnen
+    //    kopyalar için DİZİNİ topluca siliyor (defterden bağımsız, Faz 5
+    //    review Kritik 2), ama KENDİ kayıtlarımızın yolları hâlâ tablodan
+    //    okunuyor (`readAllOwnRecordingUris` — o dosyalar recorder'ın OS
+    //    cache dizininde, adresleri yalnız `local_uri`de). Sıra tersine
+    //    çevrilirse o liste boş gelir ve önceki kullanıcının KENDİ sesi
+    //    diskte kalır — bir sonraki kullanıcının cihazında duran gizlilik
+    //    ihlali.
     //  • tablolar — diskte önceki kullanıcının mesaj METNİ kalmasın
     //  • messageCache — projekte nesneler JS HEAP'inde yaşıyor; yalnız tabloyu
     //    boşaltmak onları düşürmez ve sonraki kullanıcının ekranına önceki
