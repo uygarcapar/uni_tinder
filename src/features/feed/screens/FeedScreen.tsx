@@ -33,7 +33,13 @@ import { refreshEntitlementsForPaywall } from "@/features/profile/subscriptionSl
 import { openLitPlus } from "@/features/profile/litPlusEntry";
 import PreviewModal from "@/features/profile/components/PreviewModal";
 import { useAppMode } from "@/features/discover/useAppMode";
-import { modeAccent, modeFireGradient } from "@/features/discover/modeTheme";
+import {
+  modeAccent,
+  modeFireGradient,
+  type AppMode,
+} from "@/features/discover/modeTheme";
+import { postNoteTarget } from "@/features/discover/noteTarget";
+import { postNoteRequest } from "../feedPostNote";
 import {
   useNoteMutation,
   useSwipeStats,
@@ -47,6 +53,7 @@ import { formatResetTime } from "@/features/discover/quotaFormat";
 import type { NoteTarget } from "@/shared/types";
 import { useFeedFlight } from "../feedCardFlight";
 import {
+  authorIsMatched,
   authorLikedMe,
   feedCardActions,
   resolveCardMode,
@@ -144,6 +151,7 @@ import {
   useMyFeedPosts,
   useOwnFeedAvatar,
   useTogglePostLike,
+  patchPostInCaches,
 } from "../feedQueries";
 import {
   anonymousGate,
@@ -166,6 +174,7 @@ import {
   // ⚠️ `useCampusMomentProfile` ARTIK ÇAĞRILMIYOR: an kartı profil açmıyor
   // (gerekçe `momentTarget`in yanında). Kanca duruyor — kampüse özel uç
   // gelince profil yolu onunla geri açılacak.
+  isMomentDecided,
   resolveOpenMoment,
 } from "@/features/campus/campusQueries";
 import type { CampusMomentDto } from "@/features/campus/campusTypes";
@@ -1065,16 +1074,29 @@ export default function FeedScreen() {
   );
 
   /**
-   * Kartta HANGİ AKSİYONLAR var — moda VE "yazar beni beğenmiş mi"ye göre
-   * (istek). Üç hâl (bkz. feedCardActions'ın kendi doc'u):
+   * Yazarla ZATEN EŞLEŞTİK mi — kuralları `authorIsMatched`'ın içinde (bayrak
+   * katılığı, mod kapsamı, premium kapısının NEDEN olmadığı).
+   *
+   * ⚠️ `authorHasLikedMe`'nin aksine premium ile sarılmıyor: bu bir gizleme,
+   * bir hak değil.
+   */
+  const authorMatched = useMemo(
+    () => authorIsMatched(authorProfile.data),
+    [authorProfile.data],
+  );
+
+  /**
+   * Kartta HANGİ AKSİYONLAR var — moda, "yazar beni beğenmiş mi"ye VE "zaten
+   * eşleştik mi"ye göre (istek). Dört hâl (bkz. feedCardActions'ın kendi doc'u):
    *   • NORMAL (henüz beğenilmemiş): yalnız Fire/Spark + not, X ve tik YOK.
    *   • BEĞENİLMİŞ: kabul (tik) + reddet (X), Fire ve not YOK.
+   *   • EŞLEŞMİŞ: hiçbiri — zaten açık bir kanal var, yakılacak Fire/not yok.
    *   • MOD YOK (`cardMode` null): hiçbiri — kart salt okunur.
    * Karar saf fonksiyonda (bkz. feedCardActions).
    */
   const cardActions = useMemo(
-    () => feedCardActions(cardMode, authorHasLikedMe),
-    [cardMode, authorHasLikedMe],
+    () => feedCardActions(cardMode, authorHasLikedMe, authorMatched),
+    [cardMode, authorHasLikedMe, authorMatched],
   );
 
   // Fire bakiyesi kartta rozet olarak gösteriliyor (keşifteki kartla aynı
@@ -1156,6 +1178,14 @@ export default function FeedScreen() {
   const [noteRequest, setNoteRequest] = useState<{
     target: NoteTarget;
     profile: any;
+    /**
+     * GÖNDERİ dalında dolu (akış satırındaki not butonu), yazar kartı dalında
+     * null. İki dal aynı composer'ı ve aynı mutasyonu paylaşıyor; ayrışan tek
+     * şey hedefin nereden geldiği ve composer'da hangi önizlemenin çizildiği.
+     */
+    post?: FeedPostDto | null;
+    /** Gönderi dalında notun gideceği mod — kart açılmadığı için `cardMode` yok. */
+    mode?: AppMode | null;
   } | null>(null);
   const [noteError, setNoteError] = useState<string | null>(null);
 
@@ -1254,6 +1284,111 @@ export default function FeedScreen() {
       }
     },
     [cardMode, noteMutation, noteRequest, previewPostId, qc, t],
+  );
+
+  /**
+   * GÖNDERİYE not — akış satırındaki butonun yolu.
+   *
+   * `handleAuthorNote`in kardeşi; iki fark var:
+   *  • Kart AÇILMIYOR, dolayısıyla `authorProfile` sorgusu hiç tetiklenmiyor.
+   *    Hedef satırın kendisinde (`post.id`), alıcı da `post.author.userId`.
+   *  • Kapı ve mod kararı ekranda DEĞİL `postNoteRequest`te. Burada yalnız
+   *    sonucu uyguluyoruz — sıra değişmezi (yazar/mod → bakiye) o modülde
+   *    kilitli, çünkü ikinci bir yerde tekrar yazılsaydı ikisi ayrışırdı.
+   */
+  const handlePostNote = useCallback(
+    (post: FeedPostDto) => {
+      const decision = postNoteRequest(post, notesRemaining, selectedMode);
+      if (decision.action === "none") return;
+      setNoteError(null);
+      if (decision.action === "paywall") {
+        analytics.capture("note_paywall_shown", {
+          reason: decision.paywallReason,
+          surface: "feed_post",
+        });
+        setNotePurchaseVisible(true);
+        return;
+      }
+      setNoteRequest({
+        target: postNoteTarget(post.id),
+        profile: null,
+        post,
+        mode: decision.mode,
+      });
+    },
+    [notesRemaining, selectedMode],
+  );
+
+  const handleSendPostNote = useCallback(
+    async (comment: string) => {
+      const req = noteRequest;
+      const post = req?.post;
+      if (!req || !post) return;
+      const userId = post.author?.userId;
+      if (!userId) return;
+      setNoteError(null);
+      try {
+        await noteMutation.mutateAsync({
+          userId,
+          comment,
+          target: req.target,
+          // Kartın modu YOK (kart açılmadı) — mod kararı `postNoteRequest`ten
+          // geldiği gibi taşınıyor.
+          mode: req.mode ?? undefined,
+        });
+        analytics.capture("note_sent", {
+          targetKind: req.target.kind,
+          surface: "feed_post",
+          mode: req.mode ?? null,
+        });
+        setNoteRequest(null);
+        // Satırdaki buton ANINDA kaybolsun: bir gönderiye tek not. Kalıcılığı
+        // sunucu veriyor (`note.state` bir sonraki çekimde `AlreadySent`), bu
+        // yama yalnız aradaki boşluğu kapatıyor — ikinci bir dokunuş ikinci bir
+        // kredi harcardı.
+        patchPostInCaches(qc, post.id, (p) => ({
+          ...p,
+          note: { ...(p.note ?? { state: "Ok" }), state: "AlreadySent" },
+        }));
+        showInfoToast({
+          title: t("note.sentTitle"),
+          message: t("note.sentMessage", { name: post.author?.name ?? "" }),
+          icon: "note",
+        });
+      } catch (e: any) {
+        const code = e?.response?.data?.code ?? null;
+
+        // Bakiye bitti → composer kapanır, paket sheet'i açılır (kapıdan
+        // geçmişken başka cihazda tükenmiş olabilir).
+        if (code === NOTE_SEND_CODES.NO_BALANCE) {
+          setNoteRequest(null);
+          setNotePurchaseVisible(true);
+          return;
+        }
+
+        // Hedef geçersiz: gönderi silinmiş, süresi dolmuş, moderasyondan
+        // kalkmış ya da bu gönderiye zaten not gitmiş — SATIR BAYAT. Metni
+        // korumanın anlamı yok, aynı hedefe tekrar gönderilse yine düşer.
+        if (code === NOTE_SEND_CODES.INVALID_TARGET) {
+          setNoteRequest(null);
+          qc.invalidateQueries({ queryKey: feedKeys.postsRoot });
+          showInfoToast({
+            title: t("note.failedTitle"),
+            message: t(noteSendCodeI18nKey(code) ?? "note.codes.generic"),
+            icon: "note",
+          });
+          return;
+        }
+
+        // Gerisi: sheet AÇIK kalıyor ve metin korunuyor (composer sözleşmesi).
+        setNoteError(
+          e?.response?.data?.message ??
+            e?.message ??
+            t("common.somethingWentWrong"),
+        );
+      }
+    },
+    [noteMutation, noteRequest, qc, t],
   );
 
   /**
@@ -2320,6 +2455,11 @@ export default function FeedScreen() {
             variant={isMine ? "mine" : "feed"}
             ownPhotoUrl={ownPhotoUrl}
             onToggleLike={handleToggleLike}
+            // Gönderiye not — buton yalnız sunucu `note.state = "Ok"` derken
+            // çiziliyor (kapı kartın içinde, bkz. canNotePost). Gönderilerim
+            // sayfasında da aynı kapı geçerli: kendi gönderinde sunucu
+            // `OwnPost` döndürüyor.
+            onNote={handlePostNote}
             onOpenChat={handleOpenChat}
             onPressAuthor={isMine ? undefined : handlePressAuthor}
             onMenu={handlePostMenu}
@@ -2728,8 +2868,9 @@ export default function FeedScreen() {
              * ve biri açılırken diğeri sönüyor; biri siyah biri modla dönen
              * olduğunda geçişte tonu atlıyordu.
              *
-             * ⚠️ ALT BANT `media` KALIYOR (varsayılan): orada şeridin
-             * FOTOĞRAFLARI var, beyaz perde onları yıkıyor.
+             * ⚠️ ALT BANT DA `chrome` OLDU (aşağıda) — bir dönem burada
+             * "alt bant `media` kalıyor, orada fotoğraflar var" yazıyordu ve
+             * istek üzerine değişti; gerekçe orada.
              */
             tone="chrome"
           />
@@ -2754,6 +2895,23 @@ export default function FeedScreen() {
              * `campusStripScrimFade`de).
              */
             fadePx={campusStripScrimFade(windowHeight)}
+            /**
+             * ⚠️🔴 ALT BANT DA CHROME (istek: "light mode'da alttan gelen
+             * overlay beyaz olsun siyah yerine").
+             *
+             * Bir tur burada bilerek `media` (sabit siyah) duruyordu: bandın
+             * üstünde şeridin FOTOĞRAFLARI var ve beyaz bir perde onları
+             * yıkıyor sanılmıştı. Yıkmıyor, çünkü kutular OPAK — perde yalnız
+             * aralarından ve altlarından görünüyor, yani gerçekte haritanın
+             * üstünde duran bir chrome bandı.
+             *
+             * ⚠️ BU DEĞİŞİKLİK MÜREKKEBİ DE DEĞİŞTİRDİ: kartların altındaki
+             * ad/zaman satırı artık TEMA mürekkebinde (açık modda koyu), yoksa
+             * beyaz perdede beyaz yazı kaybolurdu. Büyüyen kartın kendi
+             * satırı medya mürekkebinde kalıyor — orada perde 0.82 siyah
+             * (bkz. CampusMomentCaption > `onMedia`).
+             */
+            tone="chrome"
           />
         </>
       ) : null}
@@ -2972,6 +3130,11 @@ export default function FeedScreen() {
         // kart elde bayatlamışsa ikisi ayrışabilir.
         mode={openMoment?.mode ?? selectedMode}
         busy={campus.busyMomentId === openMoment?.id}
+        // ⚠️ BEĞENİLEN AN ŞERİTTE KALIYOR → aynı karta ikinci kez
+        // dokunulabiliyor: tik çizilmiyor ve kart sağdaki cam sütunu
+        // ayrılmadan açılıyor (uzun gerekçe overlay'in `decided` prop'unda).
+        // Kaynak sıralı: sunucunun `canLike`ı, yoksa oturum kümesi.
+        decided={isMomentDecided(openMoment, campus.decidedMomentIds)}
         collapsing={momentCollapsing}
         onLike={handleMomentLike}
         onClose={() => setMomentTarget(null)}
@@ -3114,8 +3277,8 @@ export default function FeedScreen() {
       />
 
       {/* ── YAZAR KARTI ────────────────────────────────────────────────────
-          Normal gönderinin yazarına dokunulunca profil kartı açılıyor. ÜÇ
-          AYRI HÂL var, ikisi aynı modalda (bkz. feedCardActions):
+          Normal gönderinin yazarına dokunulunca profil kartı açılıyor. DÖRT
+          AYRI HÂL var, üçü aynı modalda (bkz. feedCardActions):
 
           (a) NORMAL (`cardMode` dolu, yazar beni beğenmemiş) →
               `LikerSwipeModal`, Fire/Spark + not açık, tik ve X yok. Akışta
@@ -3128,7 +3291,12 @@ export default function FeedScreen() {
               bir sinyal yok. Eşleşme kanalı artık bu — yanıt butonunun yerini
               aldı.
 
-          (c) MOD YOK (`cardMode` null: sunucu hiçbir modu uygun görmedi ya da
+          (c) EŞLEŞMİŞ (`isMatched`) → yine AYNI `LikerSwipeModal`, ama HİÇBİR
+              aksiyon yok (istek): eşleştiğin kişiyle kanal zaten açık, Fire ve
+              not oraya bir şey eklemeden bakiyeden düşerdi; kabul/reddet de
+              anlamsız, bekleyen bir karar yok.
+
+          (d) MOD YOK (`cardMode` null: sunucu hiçbir modu uygun görmedi ya da
               alanı hiç göndermedi) → `PreviewModal`, salt okunur. Olmayan bir
               hakkı varsayıp reddedilecek bir buton göstermek, kullanıcıya iki
               kez kaybettirirdi.
@@ -3179,7 +3347,10 @@ export default function FeedScreen() {
           setNoteRequest(null);
           setNoteError(null);
         }}
-        onSend={handleSendAuthorNote}
+        // Hedefin türüne göre iki dal: gönderi (akış satırı) ve yazar kartı.
+        // Mutasyon, kota ve hata tablosu ortak; ayrışan tek şey hedefin
+        // nereden geldiği.
+        onSend={noteRequest?.post ? handleSendPostNote : handleSendAuthorNote}
         target={noteRequest?.target ?? null}
         prompts={noteRequest?.profile?.prompts ?? null}
         // Fotoğrafa yazılan notta hedefin KENDİSİ görünüyor (Keşif'teki
@@ -3192,7 +3363,24 @@ export default function FeedScreen() {
               ] ?? null)
             : null
         }
-        targetName={noteRequest?.profile?.displayName ?? null}
+        // Gönderi önizlemesi — foto thumbnail'inin / prompt chip'inin muadili.
+        // Konu etiketi EKRANDA çözülüyor (`topicLabelFor` sunucunun kataloğunu
+        // `me`den okuyor); composer enum çevirmiyor.
+        postPreview={
+          noteRequest?.post
+            ? {
+                body: noteRequest.post.body,
+                topicLabel: noteRequest.post.topic
+                  ? topicLabelFor(noteRequest.post.topic)
+                  : null,
+              }
+            : null
+        }
+        targetName={
+          noteRequest?.post
+            ? (noteRequest.post.author?.name ?? null)
+            : (noteRequest?.profile?.displayName ?? null)
+        }
         remaining={notesRemaining}
         maxLength={statsQuery.data?.noteMaxLength ?? null}
         sending={noteMutation.isPending}
@@ -3201,7 +3389,7 @@ export default function FeedScreen() {
         // rengi alır; mutasyona geçen değerin aynısı (bkz. handleSendAuthorNote
         // > `mode: cardMode ?? undefined`), böylece renk ile gönderilen mod tek
         // kaynaktan geliyor. `null` → prop varsayılanı (Dating).
-        mode={cardMode ?? undefined}
+        mode={(noteRequest?.post ? noteRequest.mode : cardMode) ?? undefined}
       />
 
       {/* ── CONSUMABLE PAKETLERİ ────────────────────────────────────────────
