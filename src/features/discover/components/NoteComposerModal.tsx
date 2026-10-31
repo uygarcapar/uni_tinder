@@ -246,6 +246,97 @@ function PromptTargetChip({
 }
 
 /**
+ * Akış gönderisi hedefinin bağlamı — prompt chip'inin KARDEŞİ.
+ *
+ * Yerleşim sözleşmesi birebir aynı (kutunun çocuğu değil kardeşi, alt kenarı
+ * kutunun `PREVIEW_INSET` kadar içinde, gerisi yukarı taşıyor, yükseklik
+ * `onHeight` ile ölçülüyor) — üç hedefte de yazı AYNI yerden başlasın diye.
+ *
+ * Prompt chip'inden tek farkı üst satırın ne olduğu: orada sorunun kendisi
+ * var, burada varsa gönderinin KONUSU. Konu yoksa üst satır hiç çizilmiyor ve
+ * chip tek bloğa iniyor — konusuz bir gönderiye uydurma bir etiket koymak
+ * (ör. "Genel") kartın kuralına da aykırı (bkz. FeedPostDto.topic).
+ *
+ * Gönderi metni EN FAZLA İKİ SATIR: burası hedefi hatırlatan bir etiket,
+ * gönderinin okunduğu yer değil — kullanıcı zaten akışta okuyup bastı.
+ */
+function PostTargetChip({
+  body,
+  topicLabel,
+  overhang,
+  onHeight,
+}: {
+  body: string;
+  topicLabel?: string | null;
+  overhang: number;
+  onHeight: (h: number) => void;
+}) {
+  return (
+    <View
+      testID="note-post-chip"
+      pointerEvents="none"
+      onLayout={(e) => onHeight(e.nativeEvent.layout.height)}
+      style={{
+        position: "absolute",
+        top: -overhang,
+        left: THUMB_LEFT,
+        maxWidth: "92%",
+        borderRadius: 40,
+        borderCurve: "continuous",
+        paddingVertical: CHIP_PAD_V,
+        paddingHorizontal: 16,
+        borderWidth: CHIP_BORDER,
+        borderColor: theme.border,
+        backgroundColor: isLight() ? theme.bg : theme.surface,
+      }}
+    >
+      {!!topicLabel && (
+        <Text
+          numberOfLines={1}
+          style={{
+            color: theme.textMuted,
+            fontSize: 16,
+            fontWeight: "600",
+            lineHeight: CHIP_QUESTION_LINE,
+          }}
+        >
+          {topicLabel}
+        </Text>
+      )}
+      <View
+        style={{
+          flexDirection: "row",
+          alignItems: "flex-start",
+          gap: 6,
+          // Konu satırı yoksa üstte boşluk da yok.
+          marginTop: topicLabel ? CHIP_GAP : 0,
+        }}
+      >
+        <SFIcon
+          name="quote.opening"
+          fallback={Pen}
+          size={CHIP_ICON_SIZE}
+          color={theme.text}
+          style={{ marginTop: (CHIP_ANSWER_LINE - CHIP_ICON_SIZE) / 2 }}
+        />
+        <Text
+          numberOfLines={CHIP_ANSWER_MAX_LINES}
+          style={{
+            color: theme.text,
+            fontSize: 22,
+            fontWeight: "600",
+            lineHeight: CHIP_ANSWER_LINE,
+            flexShrink: 1,
+          }}
+        >
+          {body}
+        </Text>
+      </View>
+    </View>
+  );
+}
+
+/**
  * Metin alanı AYRI bir bileşen ve modül seviyesinde tanımlı (render içinde
  * tanımlansaydı her yazışta tip ayrışır, input remount olur ve klavye kapanırdı).
  *
@@ -409,6 +500,12 @@ export interface NoteComposerModalProps {
   prompts?: ProfilePromptCard[] | null;
   /** Foto hedefinde ilgili fotoğrafın uri'si — input kutusuna binen küçük önizleme. */
   photoUri?: string | null;
+  /**
+   * Gönderi hedefinde (akış) gönderinin kendisi — foto thumbnail'inin ve prompt
+   * chip'inin muadili. `topicLabel` ÇÖZÜLMÜŞ metin: konu kataloğu akışta
+   * (`/api/feed/me` + i18n yedeği) çözülüyor, composer enum çevirmiyor.
+   */
+  postPreview?: { body: string; topicLabel?: string | null } | null;
   targetName?: string | null;
   /** Kalan not bakiyesi (kota + kredi). `null` = backend henüz göndermiyor. */
   remaining?: number | null;
@@ -436,6 +533,7 @@ export default function NoteComposerModal({
   target,
   prompts,
   photoUri = null,
+  postPreview = null,
   targetName,
   remaining = null,
   maxLength,
@@ -462,7 +560,12 @@ export default function NoteComposerModal({
   const lastPrompts = useRef<ProfilePromptCard[] | null>(null);
   if (target) lastPrompts.current = prompts ?? null;
   const shownPrompts = target ? prompts : lastPrompts.current;
+  // Gönderi önizlemesi de hedefle birlikte null'a düşüyor → aynı dondurma.
+  const lastPostPreview = useRef<NoteComposerModalProps["postPreview"]>(null);
+  if (target) lastPostPreview.current = postPreview ?? null;
+  const shownPostPreview = target ? postPreview : lastPostPreview.current;
   const showPromptChip = shownTarget?.kind === "Prompt";
+  const showPostChip = shownTarget?.kind === "FeedPost" && !!shownPostPreview;
   // Chip'in ölçülen boyu → taşması. Kutunun İÇİNE giren kısım sabit
   // (PREVIEW_INSET), değişen taşma: cevap iki satıra çıkınca chip yukarı doğru
   // büyüyor, yazının başladığı yer sabit kalıyor.
@@ -489,7 +592,16 @@ export default function NoteComposerModal({
   // başka bir prompt'un altında gönderilmemeli.
   useEffect(() => {
     if (visible) reset({ comment: "" });
-  }, [visible, target?.kind, target?.photoIndex, target?.promptKey, reset]);
+    // `postId` de bağımlılıkta: iki ayrı gönderi aynı `kind`i paylaşıyor ve
+    // biri için yazılan cümle diğerinin altında gönderilmemeli.
+  }, [
+    visible,
+    target?.kind,
+    target?.photoIndex,
+    target?.promptKey,
+    target?.postId,
+    reset,
+  ]);
 
   const submit = handleSubmit(({ comment }) => {
     if (!sending) onSend(comment.trim());
@@ -551,12 +663,13 @@ export default function NoteComposerModal({
         style={{
           marginTop: shownPhotoUri
             ? THUMB_OVERHANG + 6
-            : showPromptChip
+            : showPromptChip || showPostChip
               ? chipOverhang + 6
               : 0,
         }}
       >
         <View
+          testID="note-input-box"
           style={{
             borderRadius: 30,
             borderCurve: "continuous",
@@ -565,7 +678,7 @@ export default function NoteComposerModal({
             // Üst pay iki önizlemede de AYNI: ikisi de kutunun içine
             // PREVIEW_INSET kadar giriyor (bkz. sabitin notu).
             paddingTop:
-              shownPhotoUri || showPromptChip
+              shownPhotoUri || showPromptChip || showPostChip
                 ? INPUT_PAD_TOP_WITH_PREVIEW
                 : INPUT_PAD_TOP,
             paddingBottom: INPUT_PAD_BOTTOM,
@@ -597,6 +710,18 @@ export default function NoteComposerModal({
           <PromptTargetChip
             target={shownTarget}
             prompts={shownPrompts}
+            overhang={chipOverhang}
+            onHeight={setChipHeight}
+          />
+        )}
+
+        {/* Gönderi chip'i — prompt chip'iyle AYNI köşede, aynı ölçü
+            terimleriyle. Üçü (foto / prompt / gönderi) asla bir arada olmuyor:
+            hedef tek. */}
+        {showPostChip && shownPostPreview && (
+          <PostTargetChip
+            body={shownPostPreview.body}
+            topicLabel={shownPostPreview.topicLabel}
             overhang={chipOverhang}
             onHeight={setChipHeight}
           />

@@ -155,10 +155,15 @@ describe('SwipeCard previewMode note boxes', () => {
     const onNote = jest.fn();
     const tree = renderCard({ onNote });
     fireEvent.press(tree.getAllByText('glyph:note.boxLabel')[0]);
+    // ⚠️ `postId: null` de BEKLENİYOR: hedef sözleşmesi üçüncü türü
+    // (`FeedPost`, akış gönderisi) aldı ve ilgisiz alanlar her hedefte AÇIKÇA
+    // null yazılıyor (bkz. noteTargetPayload). Alan burada beklenmezse test
+    // eski şekle çivilenir ve sözleşmenin kendisi bir regresyon gibi görünür.
     expect(onNote).toHaveBeenCalledWith({
       kind: 'Photo',
       photoIndex: 0,
       promptKey: null,
+      postId: null,
     });
   });
 
