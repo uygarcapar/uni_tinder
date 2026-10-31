@@ -1658,9 +1658,10 @@ export function clearMediaCache(messageIds: string[]): void {
  * NOT NULL` şartı onu eler) — bu fonksiyon "önbellek kopyalarını" listeler,
  * kendi kaydımızın dosyası bu fazda hâlâ outbox'ın mülkü.
  *
- * Bu fonksiyon HENÜZ hiçbir yerden çağrılmıyor — `clearAllChatData`'ya
- * kablolamak Task 3'ün işi (dosyaları silen yol orada kuruluyor). Burada
- * yalnız depo fonksiyonu var; logout davranışı bu commit'le DEĞİŞMİYOR.
+ * Task 3 ile birlikte artık kablolu: `mediaCache.wipeMediaCache` bu listeyi
+ * okuyup dosyaları siliyor, `chatMirrorMiddleware`'in `chat/resetChat`
+ * choke-point'i de `clearAllChatData`'dan ÖNCE onu çağırıyor — sıra kritik,
+ * tablo boşaldıktan sonra çağrılsaydı bu fonksiyon boş liste görürdü.
  */
 export function readAllCachedUris(): string[] {
   return getChatDb()
@@ -2036,7 +2037,13 @@ export function setSyncWatermark(watermark: string | null): void {
   );
 }
 
-/** Logout dışı toplu temizlik (ör. kill-switch kapanışı). Dosyayı SİLMEZ. */
+/**
+ * Logout dışı toplu temizlik (ör. kill-switch kapanışı) İÇİN DE kullanılıyor,
+ * ama asıl çağıran `chat/resetChat` (logout choke-point'i, bkz.
+ * chatMirrorMiddleware). Bu fonksiyonun kendisi medya dosyasına DOKUNMAZ —
+ * `mediaCache.wipeMediaCache()` çağırana ait ve SIRAYLA bundan ÖNCE
+ * çalışmak zorunda (bkz. readAllCachedUris yorumu).
+ */
 export function clearAllChatData(): void {
   const db = getChatDb();
   db.transaction(() => {

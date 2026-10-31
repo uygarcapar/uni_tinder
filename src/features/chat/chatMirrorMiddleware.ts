@@ -7,6 +7,7 @@ import { startBackfill } from '@/features/chat/chatBackfill';
 import { applyDeltaFromLocal, hydrateConversationList } from '@/features/chat/chatHydrate';
 import { fetchConversations } from '@/features/chat/chatSlice';
 import { clear as clearMessageCache, projectWindow } from '@/features/chat/messageCache';
+import { dropCachedMedia, wipeMediaCache } from '@/features/chat/mediaCache';
 import { messageContentEqual } from '@/features/chat/messageEquality';
 import type { MessageDto } from '@/shared/types';
 
@@ -329,6 +330,11 @@ function mirror(action: any, getState: () => any): void {
 
     case 'chat/messageDeleted':
       if (p?.messageId) repo.applyDeleted(p);
+      // Herkesten silinen mesajın önbellek kopyası da gitmeli (UT-6606) —
+      // yoksa sunucu nesneyi sildikten sonra bile bizim diskimizde oynatılmaya
+      // devam eder. `applyDeleted` yalnız SQL'i günceller, dosyayı mediaCache
+      // siliyor.
+      if (p?.messageId && p.forEveryone) dropCachedMedia(p.messageId);
       return;
 
     case 'chat/reactionsChanged':
@@ -376,16 +382,22 @@ function mirror(action: any, getState: () => any): void {
     // resetChat logout choke-point'inde geliyor ve chat tarafındaki TEK
     // güvenlik kapımız bu (AppNavigator'a dokunmuyoruz).
     //
-    // İki temizlik birden şart:
-    //  • tablolar — diskte önceki kullanıcının mesajı kalmasın
+    // ÜÇ temizlik birden şart, bu SIRAYLA:
+    //  • wipeMediaCache — ÖNCE: sesli mesaj dosyalarını diskten siler, bunu
+    //    yaparken `messages` tablosunu hâlâ okuyor (`readAllCachedUris`).
+    //    Sıra tersine çevrilirse tablo boşalmış olur, silinecek yol listesi
+    //    boş gelir ve önceki kullanıcının sesi diskte YETİM kalır — bir
+    //    sonraki kullanıcının cihazında duran gizlilik ihlali.
+    //  • tablolar — diskte önceki kullanıcının mesaj METNİ kalmasın
     //  • messageCache — projekte nesneler JS HEAP'inde yaşıyor; yalnız tabloyu
     //    boşaltmak onları düşürmez ve sonraki kullanıcının ekranına önceki
     //    kullanıcının balonları gelebilirdi.
     //
-    // Dosyanın kendisi burada SİLİNMİYOR (chatDb.destroyChatDb) — o, süreç
-    // sonlandırma sırasına ait ve boşaltılmış tablo zaten okunacak bir şey
-    // bırakmıyor.
+    // SQLite dosyasının kendisi burada SİLİNMİYOR (chatDb.destroyChatDb) — o,
+    // süreç sonlandırma sırasına ait ve boşaltılmış tablo zaten okunacak bir
+    // şey bırakmıyor.
     case 'chat/resetChat':
+      wipeMediaCache();
       repo.clearAllChatData();
       clearMessageCache();
       return;

@@ -3,6 +3,7 @@ import chatService from '@/features/chat/chatService';
 import realtimeService from '@/features/chat/realtimeService';
 import * as repo from '@/features/chat/chatRepository';
 import { normalizeMessage } from '@/features/chat/normalizeMessage';
+import { dropCachedMedia } from '@/features/chat/mediaCache';
 import { CHAT_DELTA_SYNC_ENABLED } from '@/shared/store/chatFlags';
 import { chatErrorCodeOf, chatErrorEffect } from '@/shared/constants/responseCodes';
 import type { ConversationListItemDto, MessageDto } from '@/shared/types';
@@ -99,6 +100,11 @@ function applyPage(
   for (const d of page.deletions ?? []) {
     if (!d?.messageId) continue;
     repo.applyDeletionTombstone(d);
+    // UT-6606: delta'dan gelen "herkesten silindi" de önbellek kopyasını
+    // götürmek zorunda — aksi halde yalnız realtime (chatMirrorMiddleware)
+    // yoldan geçen silmeler temizlenir, offline'dayken kaçırılan bir silme
+    // delta'dan geldiğinde dosya diskte yetim kalır.
+    if (d.deletedForEveryone) dropCachedMedia(d.messageId);
     if (d.conversationId) touched.add(d.conversationId);
     applied.deletions.push(d);
   }

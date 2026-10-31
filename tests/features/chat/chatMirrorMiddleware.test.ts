@@ -1,5 +1,11 @@
 jest.mock('expo-sqlite');
 jest.mock('react-native-mmkv');
+// Task 3 kablolaması: gerçek dosya silme mediaCache.test.ts'te birim olarak
+// doğrulandı — burada yalnız "dispatch doğru çağrıyı yapıyor mu" sınanıyor.
+jest.mock('@/features/chat/mediaCache', () => ({
+  dropCachedMedia: jest.fn(),
+  wipeMediaCache: jest.fn(),
+}));
 
 import * as SQLite from 'expo-sqlite';
 import { openChatDb, getChatDb, __resetChatDbForTests } from '@/features/chat/db/chatDb';
@@ -10,6 +16,7 @@ import {
 } from '@/features/chat/chatMirrorMiddleware';
 import { readWindow, readSyncState, markBackfillDone } from '@/features/chat/chatRepository';
 import { clear as clearMessageCache, projectWindow } from '@/features/chat/messageCache';
+import { dropCachedMedia, wipeMediaCache } from '@/features/chat/mediaCache';
 import type { MessageDto } from '@/shared/types';
 
 const { __resetAllDatabases } = SQLite as unknown as { __resetAllDatabases: () => void };
@@ -48,6 +55,8 @@ beforeEach(() => {
   __resetAllDatabases();
   __resetChatMirrorForTests();
   clearMessageCache();
+  (dropCachedMedia as jest.Mock).mockClear();
+  (wipeMediaCache as jest.Mock).mockClear();
   openChatDb();
   startChatMirror();
 });
@@ -181,6 +190,28 @@ describe('realtime event\'leri aynalanıyor (AppNavigator\'a dokunmadan)', () =>
     expect(row.deleted_for_everyone).toBe(1);
   });
 
+  it('messageDeleted forEveryone — Task 3: önbellek kopyasını da düşürüyor (UT-6606)', () => {
+    const { dispatch } = makeHarness();
+    dispatch({ type: 'chat/receiveMessage', payload: msg(1, { mediaUrl: 'media-1' }) });
+    dispatch({
+      type: 'chat/messageDeleted',
+      payload: { messageId: 'm1', conversationId: CONV, forEveryone: true, deletedAt: 'D' },
+    });
+
+    expect(dropCachedMedia).toHaveBeenCalledWith('m1');
+  });
+
+  it('messageDeleted forEveryone=false — önbelleğe DOKUNMUYOR (yalnız göndereni için silindi)', () => {
+    const { dispatch } = makeHarness();
+    dispatch({ type: 'chat/receiveMessage', payload: msg(1, { mediaUrl: 'media-1' }) });
+    dispatch({
+      type: 'chat/messageDeleted',
+      payload: { messageId: 'm1', conversationId: CONV, forEveryone: false, deletedAt: 'D' },
+    });
+
+    expect(dropCachedMedia).not.toHaveBeenCalled();
+  });
+
   it('reactionsChanged aynı içerikte sürümü ARTIRMAZ', () => {
     const { dispatch } = makeHarness();
     dispatch({ type: 'chat/receiveMessage', payload: msg(1) });
@@ -246,6 +277,23 @@ describe('realtime event\'leri aynalanıyor (AppNavigator\'a dokunmadan)', () =>
     dispatch({ type: 'chat/receiveMessage', payload: msg(1) });
     dispatch({ type: 'chat/resetChat' });
     expect(ids()).toEqual([]);
+  });
+
+  it('resetChat — Task 3: wipeMediaCache tablolar boşalmadan ÖNCE çağrılıyor', () => {
+    const { dispatch } = makeHarness();
+    dispatch({ type: 'chat/receiveMessage', payload: msg(1) });
+
+    (wipeMediaCache as jest.Mock).mockImplementation(() => {
+      // wipeMediaCache çalıştığı anda tablo HÂLÂ dolu olmalı — tersi sırada
+      // çağrılsaydı (clearAllChatData'dan sonra) readAllCachedUris boş liste
+      // görür ve dosyalar diskte yetim kalırdı (bkz. chatRepository.ts
+      // readAllCachedUris yorumu).
+      expect(ids()).toEqual(['m1']);
+    });
+
+    dispatch({ type: 'chat/resetChat' });
+
+    expect(wipeMediaCache).toHaveBeenCalledTimes(1);
   });
 
   it('resetChat JS HEAP\'ini de temizler — projekte nesneler sızmamalı', () => {

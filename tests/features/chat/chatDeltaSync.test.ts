@@ -11,6 +11,12 @@ jest.mock('@/shared/store/chatFlags', () => ({
   CHAT_SQLITE_ENABLED: true,
   CHAT_DELTA_SYNC_ENABLED: true,
 }));
+// Task 3 kablolaması: gerçek dosya silme mediaCache.test.ts'te birim olarak
+// doğrulandı — burada yalnız "delta'daki tombstone doğru çağrıyı yapıyor mu"
+// sınanıyor.
+jest.mock('@/features/chat/mediaCache', () => ({
+  dropCachedMedia: jest.fn(),
+}));
 
 import * as SQLite from 'expo-sqlite';
 import chatService from '@/features/chat/chatService';
@@ -23,6 +29,7 @@ import {
 } from '@/features/chat/chatRepository';
 import { pullChanges, pullBeforeSend, __resetDeltaSyncForTests } from '@/features/chat/chatDeltaSync';
 import { clear as clearMessageCache } from '@/features/chat/messageCache';
+import { dropCachedMedia } from '@/features/chat/mediaCache';
 import { CHAT_ERROR_CODES } from '@/shared/constants/responseCodes';
 import type { MessageDto } from '@/shared/types';
 
@@ -58,6 +65,7 @@ beforeEach(() => {
   clearMessageCache();
   openChatDb();
   getChanges.mockReset();
+  (dropCachedMedia as jest.Mock).mockClear();
 });
 
 describe('temel akış', () => {
@@ -134,6 +142,10 @@ describe('deletions[] — messages[] ile KARŞILIKLI DIŞLAYAN', () => {
     expect(row.deleted_for_everyone).toBe(1);
     expect(row.content).toBe('');
     expect(row.media_url).toBeNull();
+    // Task 3: herkesten silinen tombstone önbellek kopyasını da düşürmeli
+    // (UT-6606) — yoksa offline'dayken kaçırılan bir silme delta'dan geldiğinde
+    // dosya diskte sonsuza dek yetim kalır.
+    expect(dropCachedMedia).toHaveBeenCalledWith('m1');
   });
 
   it('deletedForEveryone:false OLSA BİLE içeriği siler', async () => {
@@ -157,6 +169,9 @@ describe('deletions[] — messages[] ile KARŞILIKLI DIŞLAYAN', () => {
 
     expect(rowOf('m1').content).toBe('');
     expect(rowOf('m1').deleted_for_everyone).toBe(0);
+    // Yalnız göndereni için silindi — önbellek kopyasına DOKUNULMAMALI, diğer
+    // taraf hâlâ oynatabiliyor olmalı.
+    expect(dropCachedMedia).not.toHaveBeenCalled();
   });
 
   it('hiç görmediğimiz mesajın tombstone\'u SATIR YARATMAZ', async () => {
