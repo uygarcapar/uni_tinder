@@ -43,6 +43,13 @@ jest.mock('@/shared/services/api', () => ({
   default: { get: jest.fn(), post: jest.fn(), put: jest.fn(), delete: jest.fn() },
 }));
 
+// voicePlayback artık offline hatasını bildirmek için toaster'ı içe aktarıyor;
+// o da react-native-notifier → react-native-gesture-handler zincirine giriyor
+// ve yukarıdaki sade reanimated mock'u GestureDetector'ın beklediği
+// `createAnimatedComponent`ı sağlamadığı için suite'i düşürüyor. Gerçek
+// bildirim davranışı bu testin konusu değil — zincir burada kesiliyor.
+jest.mock('@/shared/services/toaster', () => ({ showInfoToast: jest.fn() }));
+
 jest.mock('lucide-react-native', () =>
   new Proxy({}, { get: () => () => null })
 );

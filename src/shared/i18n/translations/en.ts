@@ -971,6 +971,7 @@ const en = {
       recordingGone: 'Voice recording is missing, please record again',
       tooLarge: 'Recording is too large, try a shorter one',
       badFormat: 'Recording format is not supported, try again',
+      playbackUnavailable: "This voice message can't be opened right now, check your connection and try again",
     },
     emoji: {
       open: 'Emoji',

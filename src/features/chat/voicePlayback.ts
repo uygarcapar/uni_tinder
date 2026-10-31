@@ -6,7 +6,9 @@ import {
   makeMutable,
   withTiming,
 } from "react-native-reanimated";
-import chatService from "@/features/chat/chatService";
+import { ensureCachedMedia } from "@/features/chat/mediaCache";
+import i18n from "@/shared/i18n";
+import { showInfoToast } from "@/shared/services/toaster";
 import { devLog } from "@/shared/utils/devLog";
 
 /**
@@ -356,8 +358,25 @@ export async function toggleVoicePlayback(
   listeners.forEach((l) => l(state));
 
   try {
-    const source = localUri || (await chatService.getMediaUrl(messageId)).url;
+    // `localUri` yalnız KENDİ kaydımızda dolu — bu durumda önbelleğe hiç
+    // sorulmuyor (zaten cihazda, dropCachedMedia/wipeMediaCache'in asla
+    // dokunmadığı outbox dosyası). Diğer her durumda kaynak `ensureCachedMedia`
+    // üzerinden gelir: dosya diskte varsa doğrudan onu döner, yoksa indirir —
+    // ESKİDEN burası doğrudan `chatService.getMediaUrl` çağırırdı, yani her
+    // oynatma (dinlenmiş mesaj bile) ağa çıkardı.
+    const source = localUri || (await ensureCachedMedia(messageId));
     if (seq !== loadSeq) return; // bu arada başka mesaja basıldı
+    if (!source) {
+      // Önbellekte yok ve şu an edinilemiyor (çoğunlukla offline). Burada
+      // `player` HİÇ kurulmadığı için state SESSİZCE loading'de takılı
+      // kalmıyor: hata hâline geçiyoruz ve kullanıcıyı bilgilendiriyoruz.
+      // Kurtarılabilir: `player` null kaldığından bir sonraki dokunuş
+      // yukarıdaki "aynı mesaj" kısa devresine (satır ~325) GİRMİYOR, tam
+      // yükleme akışına düşüp `ensureCachedMedia`yı YENİDEN dener.
+      showInfoToast({ message: i18n.t("chat.voice.playbackUnavailable") as string, variant: "error" });
+      emit({ playing: false, loading: false, error: true });
+      return;
+    }
     // Sessiz moddaki telefonda da çalsın — sesli mesajın beklenen davranışı bu.
     await setAudioModeAsync({ playsInSilentMode: true, allowsRecording: false });
     if (seq !== loadSeq) return;

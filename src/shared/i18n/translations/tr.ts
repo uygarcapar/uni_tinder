@@ -981,6 +981,7 @@ const tr = {
       recordingGone: 'Ses kaydı bulunamadı, yeniden kaydet',
       tooLarge: 'Kayıt çok büyük, daha kısa bir mesaj dene',
       badFormat: 'Kayıt biçimi desteklenmiyor, tekrar dene',
+      playbackUnavailable: 'Bu sesli mesaj şu an açılamıyor, bağlantını kontrol edip tekrar dene',
     },
     emoji: {
       open: 'Emoji',
