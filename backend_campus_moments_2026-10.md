@@ -40,6 +40,12 @@ yalnız butonlardan veriliyor (Keşif'teki aynı karar). Yanlış dokunma olası
 
 ## 2. Buna bağlı bir netleştirme (sormamıştınız, biz söylüyoruz)
 
+> ⚠️🔴 **BU BÖLÜM GEÇERSİZLEŞME TALEBİNDE (2026-10-30).** Aşağıdaki süzme kuralını
+> isteyen biziz ve **geri alınmasını istiyoruz**: karar verilmiş anlar listede KALSIN,
+> yerine DTO'da `canLike: false` gelsin. Gerekçe (kullanıcının tek kararını `UT-7424`
+> yiyen birine harcamaması) artık istemcide karşılanıyor — karar verilmiş kartta beğeni
+> butonu çizilmiyor. Talebin tamamı: `backend_campus_decided_moments_2026-10-30.md`.
+
 Kararlar ikiye ayrılınca §3'teki "zaten karar verilmiş anlar dönmesin" kuralının hangi
 tabloyu okuyacağı belirsizleşiyor. İstediğimiz davranış:
 
