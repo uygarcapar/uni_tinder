@@ -382,6 +382,75 @@ ALTER TABLE messages ADD COLUMN media_cached_at_ms INTEGER;
 ALTER TABLE messages ADD COLUMN media_size_bytes INTEGER;
 `;
 
+/**
+ * v12 — V10'un deliğini kendiliğinden onaran sağaltım migration'ı.
+ *
+ * ── Delik nasıl açıldı ───────────────────────────────────────────────────────
+ * V10 ilk yazıldığında YALNIZ `sync_state.backfill_failures` kolonunu
+ * ekliyordu. Bir geliştirici uygulamayı o ara commit'ten çalıştırdı ve cihazı
+ * `user_version = 10`'da damgalandı. Sonra V10 "dal zaten yayınlanmadı"
+ * gerekçesiyle YERİNDE genişletildi: `messages.content_folded` kolonu ve
+ * `idx_messages_unfolded` indeksi aynı V10'un içine eklendi. Bir sonraki
+ * açılışta runner `user_version = 10` gördü, V10'u `migration.version <=
+ * current` testiyle ATLADI — o iki nesne hiç oluşmadı. V11 normal koştu
+ * (11 > 10), yani cihaz bugün `user_version = 11` ama ortada bir delik var:
+ * `messages.content_folded` yok, `idx_messages_unfolded` yok. Gerekçe
+ * pratikte YANLIŞTI: geliştirici uygulamayı tam da o daldan çalıştırıyordu,
+ * "yayınlanmamış" varsayımı tutmadı.
+ *
+ * ── Ders — BİR DAHA YAYINLANMIŞ MİGRATION'I YERİNDE DÜZENLEME ───────────────
+ * `MIGRATIONS` listesindeki her satır, numarası koşulduğu anda sonsuza kadar
+ * sabittir — branch'in "yayınlanmış" olup olmadığı önemli değil, bir
+ * geliştirici cihazı o numarayı GÖRMÜŞ olabilir. Eksik bırakılan bir şeyi
+ * tamamlamanın tek yolu YENİ bir sürüm numarasıdır (V7'nin DROP TABLE IF
+ * EXISTS dersiyle aynı aile: geçmiş bir adımı güvenilmez varsayıp ileri
+ * doğru onar, geriye dönük asla değiştirme).
+ *
+ * ── Neden JS fonksiyonu, SQL string değil ───────────────────────────────────
+ * SQLite'ta `ADD COLUMN IF NOT EXISTS` yok. Bu migration hem deliği olan
+ * cihazlarda (V10 atlanmış, kolonlar yok) hem SAĞLAM cihazlarda (V10+V11
+ * sırayla koşmuş, kolonlar zaten var) çalışmak zorunda — ikinci grupta tam
+ * NO-OP olması şart, aksi hâlde "duplicate column name" ile migration
+ * transaction'ı geri alınır ve `openChatDb` her açılışta atar. O yüzden `up`
+ * önce `PRAGMA table_info` ile şemayı okuyor, yalnız eksik olanı ekliyor.
+ *
+ * ── `content_folded` eksikken arama indeksi ─────────────────────────────────
+ * Delikli bir cihazda kolon eklendiğinde TÜM satırlar NULL ile başlar — bu,
+ * `backfillContentFolded`in zaten aradığı durumun ta kendisi (seçimi
+ * `content_folded IS NULL`, sürüme bakmıyor). `chatMirrorMiddleware`deki
+ * açılış-anı doldurma turu bu satırları otomatik yakalar; burada İKİNCİ bir
+ * doldurma yazılmadı.
+ */
+function up12(db: ChatDbDriver): void {
+  const messageCols = new Set(
+    db.getAll<{ name: string }>('PRAGMA table_info(messages)').map((c) => c.name),
+  );
+  const syncStateCols = new Set(
+    db.getAll<{ name: string }>('PRAGMA table_info(sync_state)').map((c) => c.name),
+  );
+
+  if (!messageCols.has('content_folded')) {
+    db.exec('ALTER TABLE messages ADD COLUMN content_folded TEXT;');
+  }
+  if (!messageCols.has('media_cached_at_ms')) {
+    db.exec('ALTER TABLE messages ADD COLUMN media_cached_at_ms INTEGER;');
+  }
+  if (!messageCols.has('media_size_bytes')) {
+    db.exec('ALTER TABLE messages ADD COLUMN media_size_bytes INTEGER;');
+  }
+  if (!syncStateCols.has('backfill_failures')) {
+    db.exec(
+      'ALTER TABLE sync_state ADD COLUMN backfill_failures INTEGER NOT NULL DEFAULT 0;',
+    );
+  }
+
+  // V10'daki tanımla BİREBİR aynı — kopyala, ezbere yeniden yazma.
+  db.exec(`
+    CREATE INDEX IF NOT EXISTS idx_messages_unfolded ON messages (sent_at_ms DESC)
+      WHERE content_folded IS NULL;
+  `);
+}
+
 export const MIGRATIONS: { version: number; up: (db: ChatDbDriver) => void }[] = [
   { version: 1, up: (db) => db.exec(V1) },
   { version: 2, up: (db) => db.exec(V2) },
@@ -394,6 +463,7 @@ export const MIGRATIONS: { version: number; up: (db: ChatDbDriver) => void }[] =
   { version: 9, up: (db) => db.exec(V9) },
   { version: 10, up: (db) => db.exec(V10) },
   { version: 11, up: (db) => db.exec(V11) },
+  { version: 12, up: up12 },
 ];
 
 export const CHAT_DB_VERSION = MIGRATIONS[MIGRATIONS.length - 1].version;
