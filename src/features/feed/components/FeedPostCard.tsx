@@ -19,7 +19,7 @@ import { anonymousLabelKey } from "../feedPolicy";
 // etiketi composer ve filtrede kullanılıyor; oralarda `me` zaten elde.
 import { topicHashtag } from "../feedTopics";
 import { feedRowShell } from "../feedRowShell";
-import { canNotePost } from "../feedPostNote";
+import { postNoteButtonVisible } from "../feedPostNote";
 import {
   AVATAR,
   BLOCK_GAP,
@@ -673,7 +673,7 @@ function FeedPostCardBase({
 
         {/* Gönderiye not — kalbin HEMEN SAĞINDA, aynı satırda.
 
-            Kapı TEK KOŞUL (`canNotePost`) ve kart burada `likedByMe` /
+            Kapı TEK YERDE (`postNoteButtonVisible`) ve kart burada `likedByMe` /
             `isMine` / `isAnonymous` OKUMUYOR: sunucu o hâlleri `state`e
             katlıyor (`OwnPost` / `Anonymous` / `Matched` / `LikedMe` …) ve
             kuralı ikinci bir yerde tutmak iki kuralın zamanla ayrışması
@@ -682,7 +682,7 @@ function FeedPostCardBase({
             Yanında SAYI YOK: not kaç kişinin bıraktığı bir ölçü değil, bir
             kez yapılan bir aksiyon. Gönderildikten sonra buton zaten
             kayboluyor (`AlreadySent`). */}
-        {canNotePost(post.note) && onNote ? (
+        {postNoteButtonVisible(post) && onNote ? (
           <Pressable
             testID="feed-post-note"
             onPress={handleNote}

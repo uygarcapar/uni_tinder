@@ -13,6 +13,7 @@
 
 import {
   canNotePost,
+  postNoteButtonVisible,
   postNoteMode,
   postNoteRequest,
 } from "@/features/feed/feedPostNote";
@@ -147,5 +148,29 @@ describe("postNoteRequest", () => {
     expect(
       postNoteRequest(post({ note: { state: "Ok", availableModes: [] } }), null, "Dating"),
     ).toMatchObject({ action: "none", paywallReason: null });
+  });
+});
+
+/**
+ * Butonun ÇİZİLME kapısı, gönderim kapısıyla aynı şeyi söylemek zorunda.
+ *
+ * ⚠️ Bulgu (dalın kendi gözden geçirmesi): `state: "Ok"` gelirken `author`
+ * null olan bir satırda buton çiziliyordu ama `postNoteRequest` "none"
+ * döndüğü için basmak HİÇBİR ŞEY yapmıyordu — ölü buton. Sunucu anonim
+ * gönderide `Anonymous` döndürmeli, ama bayat satır / eski sürüm o hâli
+ * üretebiliyor ve kapı istemcide de tutmalı.
+ */
+describe("postNoteButtonVisible", () => {
+  it("state Ok + yazar varken çiziliyor", () => {
+    expect(postNoteButtonVisible(post())).toBe(true);
+  });
+
+  it("yazar yoksa ÇİZİLMİYOR — basınca hiçbir şey yapmayan buton olmaz", () => {
+    expect(postNoteButtonVisible(post({ author: null }))).toBe(false);
+  });
+
+  it("kapı kapalıyken çizilmiyor", () => {
+    expect(postNoteButtonVisible(post({ note: { state: "Matched" } }))).toBe(false);
+    expect(postNoteButtonVisible(post({ note: undefined }))).toBe(false);
   });
 });

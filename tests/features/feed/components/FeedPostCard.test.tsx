@@ -532,3 +532,13 @@ describe('not butonu', () => {
     expect(screen.queryByTestId('feed-post-note')).toBeNull();
   });
 });
+
+it('state Ok ama yazar null ise buton çizilmiyor (ölü buton)', () => {
+  render(
+    <FeedPostCard
+      post={post({ author: null, note: { state: 'Ok', availableModes: ['Dating'] } })}
+      onNote={jest.fn()}
+    />,
+  );
+  expect(screen.queryByTestId('feed-post-note')).toBeNull();
+});

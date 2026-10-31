@@ -28,6 +28,24 @@ export function canNotePost(
 }
 
 /**
+ * Satırda buton ÇİZİLSİN Mİ — sunucunun kapısı + notun gönderilebilmesi için
+ * gereken asgari veri.
+ *
+ * ⚠️ `author` kontrolü `canNotePost`un İÇİNDE DEĞİL, burada: o fonksiyon
+ * sunucunun kararını okuyor, bu fonksiyon ekranda bir buton çizmeye yetip
+ * yetmediğini söylüyor. Yazarsız bir satırda (anonim gönderi, bayat kayıt,
+ * sunucu `Ok` derken `author: null` yolladı) not gönderilemez — buton
+ * çizilirse basınca HİÇBİR ŞEY olmaz, yani tam olarak kaçındığımız ölü buton.
+ *
+ * ⚠️ Gönderim kapısı (`postNoteRequest`) ile AYNI veriyi okuyor. İkisi
+ * ayrışırsa ya ölü buton (çizip göndermemek) ya da sessiz kayıp (çizmeyip
+ * gönderilebilir bir satırı saklamak) doğuyor.
+ */
+export function postNoteButtonVisible(post: FeedPostDto): boolean {
+  return canNotePost(post.note) && !!post.author?.userId;
+}
+
+/**
  * Not hangi modda gidecek. Kapı kapalıysa mod da yok: `null` dönmesi
  * "gönderim denenmesin" demek.
  *
