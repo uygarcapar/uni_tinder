@@ -1545,11 +1545,20 @@ export interface MediaCacheRow {
  * `media_cached_at_ms`, `media_size_bytes`) yazan TEK kapı. `voicePlayback.ts`
  * SQL görmüyor, buradan geçmek zorunda.
  *
- * `row_version` BİLEREK artmıyor: bu üçü ekrana projekte edilmiyor (bkz.
- * rows.ts — `local_uri` zaten taşınıyor ama "ne zaman önbelleğe alındığı"
- * hiçbir bileşenin render kararına girmiyor), artırmak tüm mesaj akışını
- * messageCache'in hızlı yolundan düşürürdü karşılığında hiçbir görsel fark
- * üretmeden.
+ * `row_version` BİLEREK artmıyor ve gerekçe ŞU (Faz 5 review, Kritik 1'den
+ * sonra düzeltildi — eski hâli "bu kolonlar projekte edilmiyor" diyordu, bu
+ * YANLIŞTI: `local_uri` projekte EDİLİYOR ve `canPlay`/oynatma kaynağı onun
+ * üstünde karar veriyor):
+ *
+ * Bu üç kolonun HİÇBİRİ artık DTO'ya ÇIKMIYOR — `rows.ts` `_localUri`'yi
+ * yalnız "kendi kaydımız" satırlarında yazıyor (cmid var + damga yok) ve
+ * `setMediaCache` tam olarak o kapıyı KAPATAN kolona yazıyor. Yani bu
+ * UPDATE'in projeksiyon çıktısında gözlenebilir bir etkisi yok; sürümü
+ * artırmak tüm mesaj akışını messageCache'in hızlı yolundan düşürürdü,
+ * karşılığında sıfır görsel fark üretirdi.
+ *
+ * DİKKAT: bu kolonlardan biri bir gün ekrana taşınırsa (ör. "çevrimdışı
+ * hazır" rozeti) bu muafiyet ÇÖKER — o zaman sürüm artırılmalı.
  */
 export function setMediaCache(
   messageId: string,
@@ -1592,23 +1601,75 @@ export function readMediaCache(messageId: string): MediaCacheRow | null {
 
 /**
  * `readMediaCache`'in AYNA GÖRÜNTÜSÜ: önbellek OLMAYAN yerel yol — yalnız
- * kendi gönderdiğimiz kaydın dosyası (`media_cached_at_ms` NULL). İkisi
- * birlikte "bu mesajın elimizde yerel bir kopyası var mı" sorusunun TAM
- * cevabını oluşturuyor; biri önbellek, öbürü outbox'ın mülkü.
+ * kendi gönderdiğimiz kaydın dosyası. İkisi birlikte "bu mesajın elimizde
+ * yerel bir kopyası var mı" sorusunun TAM cevabını oluşturuyor; biri önbellek,
+ * öbürü outbox'ın mülkü.
  *
  * Task 3 review (Important 3): `ensureCachedMedia` bu kapıdan GEÇMEDEN
  * `setMediaCache` çağırırsa, az önce gönderilmiş kendi sesli mesajımızın TEK
  * referansı olan `local_uri` üstüne yazılır — o dosya o andan sonra hiçbir
  * koddan (`wipeMediaCache` dahil) erişilemez hale gelir. Bu fonksiyon tam o
  * yazmayı engellemek için var.
+ *
+ * ── Sahiplik POZİTİF test ediliyor (Faz 5 review, Önemli 4) ─────────────────
+ * Eskiden tek şart `media_cached_at_ms IS NULL`di, yani sahiplik bir NULL'dan
+ * ÇIKARILIYORDU. O çıkarım tahliyeden sonra ÇÖKÜYOR: `clearMediaCache` damgayı
+ * NULL'layıp `local_uri`'yi bilerek yerinde bırakıyor, böylece tahliye edilmiş
+ * bir GELEN mesaj satırı kendi kaydımızdan bayt bayt ayırt edilemez hâle
+ * geliyordu — bu fonksiyon o yolu "kendi kaydımız" diye döndürüyor,
+ * `ensureCachedMedia` da (dosya silme başarısız olmuşsa) onu oynatılabilir
+ * kaynak olarak veriyordu: defter DIŞI, asla tahliye edilmeyen bir dosya; ve
+ * `dropCachedMedia` (UT-6606) durumunda SUNUCUNUN SİLDİĞİ ses.
+ *
+ * `client_message_id IS NOT NULL` pozitif kanıt: cmid'i yalnız BİZİM
+ * ürettiğimiz optimistic satır taşıyor (bkz. saveMessage COALESCE kuralı —
+ * sunucu echo'su onu getirmiyor, yerel değer korunuyor), gelen bir mesajda
+ * hiçbir zaman dolmuyor. `media_cached_at_ms IS NULL` şartı DE KALIYOR:
+ * kendi kaydımızın dosyası kaybolup yeniden indirilmişse satırda hem cmid hem
+ * damga bulunur ve o artık outbox'ın değil önbelleğin mülküdür.
  */
 export function readOwnRecordingUri(messageId: string): string | null {
   const row = getChatDb().getFirst<{ local_uri: string | null }>(
     `SELECT local_uri FROM messages
-      WHERE id = ? AND media_cached_at_ms IS NULL AND local_uri IS NOT NULL`,
+      WHERE id = ? AND media_cached_at_ms IS NULL AND client_message_id IS NOT NULL
+        AND local_uri IS NOT NULL`,
     [messageId],
   );
   return row?.local_uri ?? null;
+}
+
+/**
+ * Logout/wipe için: KENDİ KAYITLARIMIZIN yerel dosya yolları (Faz 5 review,
+ * Önemli 3).
+ *
+ * `readAllCachedUris`'in tamamlayıcısı — o önbellek kopyalarını listeliyor, bu
+ * outbox'ın mülkünü. `discardVoiceTake` yalnız İPTAL yollarında koşuyor; bir
+ * kez GÖNDERİLMİŞ kaydın dosyası bu fazdan önce hiçbir yolda silinmiyordu,
+ * yani logout "önceki kullanıcının sesi cihazda kalmasın" garantisini kendi
+ * sesimiz için VERMİYORDU.
+ */
+export function readAllOwnRecordingUris(): string[] {
+  return getChatDb()
+    .getAll<{ local_uri: string }>(
+      `SELECT local_uri FROM messages
+        WHERE media_cached_at_ms IS NULL AND client_message_id IS NOT NULL
+          AND local_uri IS NOT NULL`,
+    )
+    .map((r) => r.local_uri);
+}
+
+/**
+ * Yetim süpürmesi için: önbellek satırı olan TÜM messageId'ler.
+ *
+ * `readCacheEntriesOldestFirst` aynı kümeyi veriyor ama satır gövdesiyle
+ * birlikte; bu kapı yalnız kimlikleri döndürüyor çünkü çağıran (açılıştaki
+ * `reconcileMediaCacheDirectory`) dizini tarayıp "bu dosyanın satırı var mı"
+ * diye soruyor, satırın içeriğiyle hiç ilgilenmiyor.
+ */
+export function readCachedMessageIds(): string[] {
+  return getChatDb()
+    .getAll<{ id: string }>(`SELECT id FROM messages WHERE media_cached_at_ms IS NOT NULL`)
+    .map((r) => r.id);
 }
 
 /**
@@ -1661,6 +1722,11 @@ export function touchMediaCache(messageId: string, nowMs: number): void {
  * DOKUNULMAZ: dosyayı silen çağıran (Task 3), ve dosya silme işlemi
  * BAŞARISIZ olursa yol hâlâ burada duruyor olmalı — yoksa o dosya diskte
  * yetim kalır ve bir daha hiçbir koddan erişilemez.
+ *
+ * Bu, tahliye edilmiş bir GELEN satırı "damgasız + yollu" hâlde bırakıyor,
+ * yani kendi kaydımızla aynı şekle sokuyor. Bu belirsizliği okuyan taraf
+ * çözüyor, yazan taraf değil: `readOwnRecordingUri` ve `rows.ts` sahipliği
+ * `client_message_id` üzerinden POZİTİF test ediyor (Faz 5 review, Önemli 4).
  */
 export function clearMediaCache(messageIds: string[]): void {
   if (!messageIds.length) return;

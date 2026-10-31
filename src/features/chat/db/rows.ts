@@ -31,6 +31,8 @@ export interface MessageRow {
   localization_key: string | null;
   send_state: SendState;
   local_uri: string | null;
+  /** v11 — dolu ise `local_uri` İNDİRİLMİŞ bir önbellek kopyası (bkz. rowToMessage). */
+  media_cached_at_ms: number | null;
   row_version: number;
 }
 
@@ -64,6 +66,30 @@ function parseJson<T>(raw: string | null): T | undefined {
  * aynı sonuç) tek gereksinim; bu yüzden ikisi de her zaman yazılıyor. Redux'ta
  * doğan mesajlarla karşılaştırırken (Faz 2 dual-write assertion'ı) iki tarafı da
  * `!!` ile normalize et — orada `undefined` görülebilir.
+ *
+ * ── `_localUri` YALNIZ KENDİ KAYDIMIZ (Faz 5 review, Kritik 1) ──────────────
+ * v11 ile `local_uri` kolonunun anlamı genişledi: artık GELEN bir medyanın
+ * indirilmiş önbellek kopyasını da tutabiliyor. DTO alanı `_localUri` ise
+ * genişlemedi — tüm tüketicileri (outboxPolicy'nin yükleme kararı,
+ * messageEquality, optimistic balon ve VoiceBubble'ın `localUri` prop'u)
+ * "bu bizim kendi kaydımızın dosyası" varsayımıyla yazıldı.
+ *
+ * Önbellek kopyasını da buradan sızdırmak, oynatma yolunu
+ * `mediaCache.ensureCachedMedia`'nın TAMAMEN DIŞINA çıkarıyordu
+ * (voicePlayback.ts: `localUri || ensureCachedMedia(...)`): dosya yoksa
+ * (yeniden kurulum, konteyner taşıması, tahliye) oynatıcı ÖLÜ bir yol alıyor
+ * ve her yeniden deneme AYNI ölü yola gidiyordu — mesaj KALICI olarak
+ * çalınamaz hâle geliyordu. Üstelik `touchMediaCache` hiç çağrılmadığı için
+ * LRU "en son kullanılan" değil "en son İNDİRİLEN" oluyordu.
+ *
+ * Kapı İKİ koşullu, ikisi de gerekli:
+ *  • `media_cached_at_ms == null` — satır bir önbellek kaydı DEĞİL.
+ *  • `client_message_id != null` — POZİTİF sahiplik kanıtı. Yalnız birinciye
+ *    bakmak yetmiyor: `clearMediaCache` (tahliye) damgayı NULL'layıp yolu
+ *    bırakabiliyor, o anda tahliye edilmiş bir GELEN mesaj birinci koşulu
+ *    sağlıyor. Yalnız ikinciye bakmak da yetmiyor: kendi kaydımızın dosyası
+ *    kaybolup yeniden indirildiğinde satırda hem cmid hem damga bulunuyor.
+ * Aynı ikili `chatRepository.readOwnRecordingUri`'de de uygulanıyor.
  */
 export function rowToMessage(row: MessageRow): MessageDto {
   return {
@@ -90,7 +116,8 @@ export function rowToMessage(row: MessageRow): MessageDto {
     replyTo: parseJson<ReplyPreviewDto>(row.reply_to_json) ?? null,
     _pending: row.send_state === 'pending',
     _failed: row.send_state === 'failed',
-    _localUri: row.local_uri,
+    _localUri:
+      row.media_cached_at_ms == null && row.client_message_id != null ? row.local_uri : null,
   };
 }
 

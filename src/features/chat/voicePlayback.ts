@@ -358,7 +358,12 @@ export async function toggleVoicePlayback(
   listeners.forEach((l) => l(state));
 
   try {
-    // `localUri` yalnız KENDİ kaydımızda dolu — bu durumda önbelleğe hiç
+    // `localUri` yalnız KENDİ kaydımızda dolu — bunu bu dosya değil
+    // PROJEKSİYON garanti ediyor: `db/rows.ts` `_localUri`'yi yalnız cmid'li
+    // ve önbellek damgası OLMAYAN satırlarda yazıyor (Faz 5 review, Kritik 1 —
+    // önceden inen kopyanın yolu da buraya geliyor ve aşağıdaki
+    // `ensureCachedMedia` dalı ikinci açılıştan itibaren HİÇ koşmuyordu).
+    // Bu durumda önbelleğe hiç
     // sorulmuyor (zaten cihazda, dropCachedMedia/wipeMediaCache'in asla
     // dokunmadığı outbox dosyası). Diğer her durumda kaynak `ensureCachedMedia`
     // üzerinden gelir: dosya diskte varsa doğrudan onu döner, yoksa indirir —

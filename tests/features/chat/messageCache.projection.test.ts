@@ -34,6 +34,7 @@ const row = (over: Partial<MessageRow> = {}): MessageRow => ({
   localization_key: null,
   send_state: 'sent',
   local_uri: null,
+  media_cached_at_ms: null,
   row_version: 1,
   ...over,
 });
