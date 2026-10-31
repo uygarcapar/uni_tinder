@@ -380,12 +380,18 @@ const styles = StyleSheet.create({
  * Düzenleme modu için imperative API — `ChatScreen` metni `initialText`
  * (yalnız MOUNT'ta okunan uncontrolled defaultValue) ile DEĞİL, bu ref
  * üzerinden basar. `key`li remount'un yerine geçiyor: remount, unmount flush'ı
- * tetikleyip taslağı (draftRef) boş string'le EZİYORDU (bkz. `scheduleDraftSave`
- * başındaki yeni guard) — aynı örnek canlı kalınca o kapı hiç açılmıyor.
+ * tetikleyip taslağı (draftRef) boş string'le EZİYORDU.
  * `getText` düzenlemeye GİRMEDEN ÖNCEKİ (yarım yazılmış olabilecek) metni
  * yakalamak için; `setText` hem o metni GERİ basmak hem düzenlenen mesajın
  * içeriğini ÖNE basmak için kullanılıyor — ikisi de `silent`: taslak/typing
  * yan etkisi YOK (bkz. `pushText`).
+ *
+ * UYARI (Review Kritik-1 düzeltmesi): remount'u kapatmak TEK BAŞINA yetmedi —
+ * `handleSend`in GÖNDERİM SONRASI kendi temizliği (input/textRef/draftRef →
+ * `""`, `flushDraft()`) `setText`in bastığı değerle AYNI render'da yarışıp onu
+ * eziyordu. Asıl kapı o: `editing` prop'u `handleSend`e bu temizliği
+ * ATLAMASINI söylüyor (bkz. Props.editing yorumu) — `ComposerApi` tek başına
+ * YETERLİ değil, `editing` prop'uyla BİRLİKTE çalışıyor.
  */
 export type ComposerApi = {
   getText: () => string;
@@ -425,6 +431,15 @@ type Props = {
   onSendVoice?: (
     take: VoiceTake & { clientMessageId: string; replyToMessageId?: string },
   ) => void;
+  // Review Kritik-1 — AÇIKKEN `handleSend`'in gönderim-sonrası temizliği
+  // (input/textRef/draftRef'i `""`e çekip `flushDraft()` çağırmak) ATLANIR:
+  // `ChatScreen` metnin SAHİBİ artık (`ComposerApi.setText` ile `preEditDraft`e
+  // geri basacak), composer'ın kendi "gönderdim, temizle" refleksi bu basışla
+  // YARIŞIP onu ezerdi (aynı render'da arka arkaya iki `setText` — SONUNCU
+  // kazanır). Olmadan: ekran `preEditDraft`i gösterecek kadar hızlı basar ama
+  // composer hemen ardından `""`a döner VE `draftRef`i `""`e çekip diske öyle
+  // yazardı — görünen metin kaybolur, taslak diskten SİLİNİR.
+  editing?: boolean;
 };
 
 /**
@@ -449,6 +464,7 @@ function MessageComposer({
   quotaLocked,
   onLockedPress,
   onSendVoice,
+  editing,
 }: Props) {
   const insets = useSafeAreaInsets();
   const { t } = useTranslation();
@@ -631,9 +647,11 @@ function MessageComposer({
   // Düzenleme modu için TEK ATIMLIK basış — `applyText`in BİREBİR aynı native
   // yazma mekanizması (`forced`), ama BİLEREK taslak/typing yan etkisi YOK:
   // düzenlenen mesajın içeriği bir TASLAK DEĞİL, ekrandan gelip ekrana geri
-  // dönecek geçici bir metin. `scheduleDraftSave` çağrılmadığı için `draftRef`
-  // bu basıştan ETKİLENMİYOR — altında yatan gerçek taslak (varsa) olduğu
-  // gibi korunur.
+  // dönecek geçici bir metin. `scheduleDraftSave` burada ÇAĞRILMADIĞI için
+  // `draftRef` BU basıştan etkilenmiyor — ama tek başına YETERLİ değil:
+  // `handleSend`in gönderim-sonrası temizliği (aynı yolu AYRICA kullanır,
+  // `editing` prop'uyla atlanır — bkz. Props.editing) olmasa bu basış bir
+  // render sonra ezilirdi.
   const pushText = useCallback((next: string) => {
     const caret = next.length;
     textRef.current = next;
@@ -711,6 +729,13 @@ function MessageComposer({
       replyToMessageId: replyTo?.id,
       clientMessageId: newClientMessageId(),
     });
+    // DÜZENLEME MODUNDA BURADA DUR (Review Kritik-1): metnin sahibi artık
+    // `onSend` (ChatScreen'in `handleSubmitEdit`'i) — o, bu ÇAĞRININ İÇİNDE
+    // zaten `ComposerApi.setText(preEditDraft)` ile ekranı geri bastı. Aşağıdaki
+    // temizlik (input/textRef/draftRef → "", flushDraft) o basışla AYNI render'da
+    // yarışıp SONUNCU yazan olarak kazanırdı — görünen metin kaybolur, taslak
+    // diskten SİLİNİRDİ (`flushDraft` → `onDraftChange("")`).
+    if (editing) return;
     inputRef.current?.clear();
     setText("");
     textRef.current = "";
@@ -729,6 +754,7 @@ function MessageComposer({
     onLockedPress,
     replyTo?.id,
     flushDraft,
+    editing,
   ]);
 
   // ── Emoji paneli ────────────────────────────────────────────────────────

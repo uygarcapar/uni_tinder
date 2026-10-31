@@ -876,6 +876,37 @@ describe('pendingMutations: tur', () => {
       expect(showInfoToast).toHaveBeenCalledWith(expect.objectContaining({ variant: 'error' }));
     });
 
+    // Review Önemli-4, ruling — reaksiyon/silmedeki "Redux'ta yüklü değilse
+    // dokunma" sınırı BURADA kasten kırılıyor: en-az-bir-kez semantiği
+    // yüzünden `flushPendingMutations('boot')` hiçbir ChatScreen açılmadan
+    // KOŞABİLİYOR (bkz. AppNavigator.tsx) — o an `store.getState()`in bucket'ı
+    // boş (beforeEach'teki `setStoreMessages([])`), yani mesaj Redux'ta YOK.
+    // Dispatch'in sessizce vazgeçmesi SQLite'ı (optimistik düzenleme mirror'dan
+    // zaten oraya yazılmıştı) sunucuyla KALICI OLARAK ayrıştırırdı — hiçbir
+    // sonraki hub/delta turu bu satırın `content`ını yeniden yazmaz. Bu yüzden
+    // diske DOĞRUDAN (Redux'u atlayarak) yazılıyor; toast YİNE DE yok —
+    // gösterecek ekran olmadığı sürece icat edilmiyor.
+    it("UT-6723 + Redux'ta mesaj YOK (soğuk store): disk content base'e dönüyor, dispatch/toast YOK", async () => {
+      insertMessage('msg-1', 'sent');
+      // Optimistik düzenlemenin diske ÖNCEDEN yazılmış hâlini simüle et —
+      // mirror normalde bunu `chat/messageEdited` dispatch'inden sonra yapar.
+      saveMessage(msg('msg-1', { content: 'yeni' }), CONV);
+      enqueueEdit({ messageId: 'msg-1', conversationId: CONV, content: 'yeni', serverBase: 'orijinal' });
+      // setStoreMessages BİLEREK ÇAĞRILMADI — beforeEach'in boş bucket'ı
+      // (`setStoreMessages([])`) aynen kalıyor: mesaj Redux'ta YÜKLÜ DEĞİL.
+      editMessage.mockRejectedValue({ response: { data: { errorCode: 'UT-6723' } } });
+
+      const r = await flushPendingMutations('test');
+
+      expect(r.rejected).toBe(1);
+      expect(readPendingMutations()).toHaveLength(0);
+      // Redux'a HİÇ dispatch edilmedi (gösterecek ekran yok).
+      expect(lastEditedDispatched()).toBeUndefined();
+      expect(showInfoToast).not.toHaveBeenCalled();
+      // DİSKTE içerik base'e döndü — sunucuyla uzlaştı.
+      expect(chatRepo.findMessageOnDisk(CONV, 'msg-1')?.content).toBe('orijinal');
+    });
+
     it('ağ hatasında satır KALIYOR, attempts artıyor, toast YOK', async () => {
       insertMessage('msg-1', 'sent');
       enqueueEdit({ messageId: 'msg-1', conversationId: CONV, content: 'yeni', serverBase: 'orijinal' });

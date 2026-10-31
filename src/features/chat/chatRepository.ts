@@ -715,6 +715,27 @@ export function saveMessage(
 }
 
 /**
+ * Review Önemli-4 (`pendingMutations.revertEdit`) — mesaj Redux'ta YÜKLÜ
+ * DEĞİLKEN (ör. `flushPendingMutations('boot')` hiçbir `ChatScreen` açılmadan
+ * koşuyor) kalıcı reddedilen bir düzenlemeyi geri almanın TEK yolu: diskteki
+ * satırı OLDUĞU GİBİ okuyup yalnız `content`i değiştirip geri yazmak.
+ * `messageParams`e eksik bir `MessageDto` vermek (`senderId`/`sentAt` gibi
+ * NOT NULL kolonları boş geçerek) `UPSERT_MESSAGE`in `ON CONFLICT` dalında bu
+ * alanları NULL'lardı — bu fonksiyon bunun yerine var olan satırı kendi
+ * kaynağından (SQLite, Redux DEĞİL) tam hâliyle döndürüyor.
+ */
+export function findMessageOnDisk(
+  conversationId: string,
+  messageId: string,
+): MessageDto | null {
+  const row = getChatDb().getFirst<MessageRow>(
+    'SELECT * FROM messages WHERE id = ? AND conversation_id = ?',
+    [messageId, conversationId],
+  );
+  return row ? rowToMessage(row) : null;
+}
+
+/**
  * v10 ÖNCESİNDEN kalan arşivi tek seferlik doldurur; doldurulan satır sayısını
  * döner. 0 dönene dek tekrar tekrar çağrılacak şekilde tasarlandı.
  *

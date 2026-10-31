@@ -102,8 +102,23 @@ describe('classifyMutationError', () => {
 
   it('edit için ağ hatası retry, kalıcı edit kodları rejected', () => {
     expect(classifyMutationError(new Error('Network Error'), 'edit')).toBe('retry');
-    for (const code of ['UT-6721', 'UT-6722', 'UT-6724', 'UT-6703'])
+    // UT-6722 (EDIT_DELETED) burada YOK — kendi ayrı testinde 'done' bekleniyor
+    // (bkz. aşağıdaki test): rejected sayılırsa "Düzenleme başarısız." toast'ı
+    // kullanıcının KENDİ silme emrinden sonra gürültü olarak geri döner.
+    for (const code of ['UT-6721', 'UT-6724', 'UT-6703'])
       expect(classifyMutationError({ response: { data: { errorCode: code } } }, 'edit')).toBe('rejected');
+  });
+
+  // Review Minör-8 — aynı mesaja kuyrukta hem edit hem delete varken delete
+  // sunucuya ÖNCE ulaşırsa edit UT-6722 (EDIT_DELETED) ile döner. Bu HATA
+  // değil: kullanıcının SON niyeti (silme) zaten gerçekleşti — 'done' silmede
+  // UT-6720'nin AYNI mantığı (yukarıdaki "silmede UT-6720 BAŞARI" testiyle
+  // simetrik).
+  it('edit için UT-6722 (EDIT_DELETED) done sayılıyor — kullanıcının kendi silmesi, hata değil', () => {
+    const editDeleted = { response: { data: { errorCode: 'UT-6722' } } };
+    expect(classifyMutationError(editDeleted, 'edit')).toBe('done');
+    // Diğer kind'lar için bu kodun bir anlamı yok — etkilenmemeli (actionRejected).
+    expect(classifyMutationError(editDeleted, 'reaction')).toBe('rejected');
   });
 });
 

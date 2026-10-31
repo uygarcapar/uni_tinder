@@ -13,7 +13,7 @@
  * biliyor — disk katmanı (Task 1, `db/rows.ts`) onu opak bir string olarak
  * taşıyor.
  */
-import { chatErrorCodeOf, chatErrorEffect } from "@/shared/constants/responseCodes";
+import { CHAT_ERROR_CODES, chatErrorCodeOf, chatErrorEffect } from "@/shared/constants/responseCodes";
 import type { MutationKind } from "@/features/chat/db/rows";
 
 /**
@@ -116,7 +116,11 @@ export const EDIT_MAX_LENGTH = 2000;
 export function editRejectReason(content: string, base: string): 'empty' | 'tooLong' | 'unchanged' | null {
   const trimmed = content.trim();
   if (!trimmed) return 'empty';
-  if (content.length > EDIT_MAX_LENGTH) return 'tooLong';
+  // Review Minör-9 — `empty` TRIMLENMİŞ uzunluğa bakıyordu, `tooLong` HAM
+  // uzunluğa: aynı değişkenin iki farklı ölçüsü tutarsız okunuyordu (composer
+  // zaten kendi maxLength'iyle ulaşılamaz kılıyor, ama kural kendi içinde
+  // tutarlı olmalı).
+  if (trimmed.length > EDIT_MAX_LENGTH) return 'tooLong';
   if (content === base) return 'unchanged';
   return null;
 }
@@ -169,6 +173,14 @@ export function classifyMutationError(err: unknown, kind: MutationKind): Mutatio
   const code = chatErrorCodeOf(err);
   const effect = chatErrorEffect(code);
   if (effect === "messageGone" && kind === "delete") return "done";
+  // Review Minör-8 — aynı mesaja kuyrukta hem edit hem delete varken delete
+  // sunucuya ÖNCE ulaşırsa (kullanıcı düzenledikten hemen sonra fikrini
+  // değiştirip sildiği gerçek senaryo), edit UT-6722 (EDIT_DELETED) ile
+  // reddedilir. Bu bir HATA değil, kullanıcının SON niyetinin (silme)
+  // gerçekleşmesi — `messageGone`/delete'teki "done" ile AYNI mantık: geri
+  // alma + "Düzenleme başarısız." toast'ı saf gürültü olurdu, ekranda zaten
+  // "Bu mesaj silindi" yazıyor.
+  if (kind === "edit" && code === CHAT_ERROR_CODES.EDIT_DELETED) return "done";
   if (
     effect === "conversationGone" ||
     effect === "messageGone" ||

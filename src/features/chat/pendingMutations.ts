@@ -94,10 +94,12 @@
  */
 import {
   deletePendingMutationIfPayload,
+  findMessageOnDisk,
   markPendingMutationAttempt,
   pruneOrphanPendingMutations,
   readMessageSendState,
   readPendingMutations,
+  saveMessage,
   updatePendingMutationPayload,
   upsertPendingMutation,
 } from "@/features/chat/chatRepository";
@@ -325,13 +327,31 @@ function revertDelete(row: PendingMutationRow): void {
  */
 function revertEdit(row: PendingMutationRow, payload: EditPayload): void {
   const current = findMessage(row.conversation_id, row.message_id);
-  if (!current) return;
-  dispatch(
-    messageEdited({
-      ...current,
-      content: payload.base,
-    } as MessageDto),
-  );
+  if (current) {
+    dispatch(
+      messageEdited({
+        ...current,
+        content: payload.base,
+      } as MessageDto),
+    );
+    return;
+  }
+  // Review Önemli-4, karar: reaksiyon/silmedeki "Redux'ta yüklü değilse
+  // dokunma" sınırı BURADA kopuyor. O sınırın bedeli orada bir chip/bayrağın
+  // tazelenmemesiydi; burada SQLite zaten optimistik düzenlemeyi mirror'dan
+  // (`chat/messageEdited` → `repo.saveMessage`) yazmış durumda — ekran hiç
+  // açılmadan (`flushPendingMutations('boot')`) kalıcı ret gelirse dispatch'in
+  // sessizce vazgeçmesi diski SUNUCUDAN KALICI OLARAK ayrıştırırdı: local-first
+  // okuma yolu (bkz. proje notu) kullanıcıya sunucunun artık tutmadığı bir
+  // içeriği göstermeye devam ederdi, hiçbir sonraki hub/delta turu bunu
+  // ONARMAZ (o turlar yalnız YENİ değişiklikleri taşır, bu satırın `content`ını
+  // yeniden yazmaz). Toast YİNE DE bastırılıyor — çağıran taraftaki `loaded`
+  // kontrolü (bkz. `isMessageLoaded`) zaten Redux'a bakıyor, burası onu
+  // değiştirmiyor; gösterecek ekran yokken toast icat etmek beklemediğimiz
+  // bir yerde patlardı.
+  const onDisk = findMessageOnDisk(row.conversation_id, row.message_id);
+  if (!onDisk) return;
+  saveMessage({ ...onDisk, content: payload.base }, row.conversation_id);
 }
 
 /**

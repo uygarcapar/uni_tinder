@@ -157,10 +157,30 @@ jest.mock('@/features/chat/components/MessageBubble', () => {
   };
 });
 
-jest.mock('@/features/chat/components/ReplySwipeRow', () => ({
-  __esModule: true,
-  default: ({ children }: any) => children,
-}));
+// `children`i olduğu gibi geçiriyor (ÖNCEKİ davranış) + sola-çekme jestinin
+// test-dostu kapısı: `onReply(messageId)`i doğrudan tetikleyen bir Pressable.
+// Review Önemli-3: `handleReplyBySwipe` da (uzun-bas menüsündeki "Yanıtla"
+// kadar) düzenleme modundan BAĞIMSIZ bir giriş noktası — bu testsiz kalsaydı
+// regresyon yalnız `handleReply`de pinlenmiş olurdu.
+jest.mock('@/features/chat/components/ReplySwipeRow', () => {
+  const React = require('react');
+  const { Pressable } = require('react-native');
+  return {
+    __esModule: true,
+    default: ({ children, messageId, onReply }: any) =>
+      React.createElement(
+        React.Fragment,
+        null,
+        children,
+        messageId
+          ? React.createElement(Pressable, {
+              testID: `swipe-reply-${messageId}`,
+              onPress: () => onReply?.(messageId),
+            })
+          : null,
+      ),
+  };
+});
 
 // Composer: gerçek metin kutusu / klavye / cam YOK — yalnız ChatScreen'in
 // geçtiği prop'lara erişilebilir test-dostu bir kopya. `__getLastProps`
@@ -224,8 +244,20 @@ jest.mock('@/features/chat/components/MessageComposer', () => {
         }),
         React.createElement(Pressable, {
           testID: 'composer-send',
-          onPress: () =>
-            props.onSend?.({ content: mockComposerSendContent, clientMessageId: 'cmid-1' }),
+          // Review Kritik-2 — gerçek `MessageComposer.handleSend`in GÖNDERİM
+          // SONRASI kendi temizliğinin (MessageComposer.tsx: input/textRef/
+          // draftRef → "", flushDraft()) BİREBİR taklidi, `editing` prop'uyla
+          // AYNI kapı. Bu satırlar EKSİK olsaydı mock `apiRef.setText`in
+          // bastığı değerle hiç YARIŞMAZDI — "taslak … GÖNDER" testi gerçek
+          // kodun kırıldığı durumu YAKALAYAMAZDI (bkz. rapor: bu satırlar
+          // eklenmeden test yeşil kalıyordu, gerçek `handleSend` kırıktı).
+          onPress: () => {
+            props.onSend?.({ content: mockComposerSendContent, clientMessageId: 'cmid-1' });
+            if (!props.editing) {
+              setLocalText('');
+              props.onDraftChange?.('');
+            }
+          },
         }),
         props.replyTo
           ? React.createElement(Pressable, {
@@ -267,7 +299,7 @@ jest.mock('@/features/chat/components/MessageActionSheet', () => {
   const { View, Pressable } = require('react-native');
   return {
     __esModule: true,
-    default: ({ visible, onEdit }: any) => {
+    default: ({ visible, onEdit, onReply }: any) => {
       if (!visible) return null;
       return React.createElement(
         View,
@@ -275,6 +307,12 @@ jest.mock('@/features/chat/components/MessageActionSheet', () => {
         React.createElement(Pressable, {
           testID: 'action-edit',
           onPress: () => onEdit(),
+        }),
+        // Review Önemli-3 — uzun-bas menüsünün "Yanıtla"sı: düzenleme
+        // modundan BAĞIMSIZ bir çıkış yolu.
+        React.createElement(Pressable, {
+          testID: 'action-reply',
+          onPress: () => onReply(),
         }),
       );
     },
@@ -316,7 +354,8 @@ function authReducer(state = { user: { userId: MY_USER_ID, id: MY_USER_ID } }) {
   return state;
 }
 
-function buildStore(message: any, quotaOverride: any = {}) {
+function buildStore(messageOrMessages: any, quotaOverride: any = {}) {
+  const messages = Array.isArray(messageOrMessages) ? messageOrMessages : [messageOrMessages];
   return configureStore({
     reducer: { chat: chatReducer, auth: authReducer },
     preloadedState: {
@@ -333,7 +372,7 @@ function buildStore(message: any, quotaOverride: any = {}) {
         ],
         messagesByConv: {
           [CONVERSATION_ID]: {
-            messages: [message],
+            messages,
             hasMore: false,
             nextCursor: null,
             loading: false,
@@ -369,9 +408,9 @@ function renderChatScreen(store: any) {
   );
 }
 
-async function openEditMode() {
+async function openEditMode(messageId: string = MESSAGE_ID) {
   await act(async () => {
-    fireEvent(screen.getByTestId(`bubble-${MESSAGE_ID}`), 'longPress');
+    fireEvent(screen.getByTestId(`bubble-${messageId}`), 'longPress');
   });
   await act(async () => {
     fireEvent.press(screen.getByTestId('action-edit'));
@@ -645,5 +684,96 @@ describe('ChatScreen — düzenleme modu', () => {
       'mount SONRASI yazılan taslak 2',
     );
     expect(getDraft(CONVERSATION_ID)).toBe('mount SONRASI yazılan taslak 2');
+  });
+
+  // Review Önemli-3 — düzenleme modundan "Yanıtla" (uzun-bas menüsü) ile
+  // ÇIKMAK, ✕/gönder ile çıkmakla AYNI restorasyonu yapmalı. Eskiden yalnız
+  // `setEditing(null)` yapıyordu: composer düzenlenen mesajın metnini
+  // GÖSTERMEYE DEVAM ederdi, bir sonraki tuş vuruşu onu GERÇEK taslak diye
+  // diske yazardı.
+  it('"Yanıtla" ile düzenleme modundan çıkınca composer preEditDraft\'a döner', async () => {
+    setDraft(CONVERSATION_ID, 'yanıtla öncesi taslak');
+    const store = buildStore(buildMessage());
+    renderChatScreen(store);
+    await act(async () => {});
+
+    await openEditMode();
+    expect(screen.getByTestId('composer-initial-text').props.children).toBe(
+      'orijinal metin',
+    );
+
+    await act(async () => {
+      fireEvent(screen.getByTestId(`bubble-${MESSAGE_ID}`), 'longPress');
+    });
+    await act(async () => {
+      fireEvent.press(screen.getByTestId('action-reply'));
+    });
+
+    expect(screen.getByTestId('composer-initial-text').props.children).toBe(
+      'yanıtla öncesi taslak',
+    );
+    expect(getDraft(CONVERSATION_ID)).toBe('yanıtla öncesi taslak');
+  });
+
+  // Aynı regresyon, İKİNCİ bağımsız giriş noktası: `ReplySwipeRow`in sola-
+  // çekme jesti — `handleReplyBySwipe`, `handleReply`den TAMAMEN AYRI bir
+  // fonksiyon, kendi düzeltmesi gerekiyordu.
+  it('ReplySwipeRow ile düzenleme modundan çıkınca composer preEditDraft\'a döner', async () => {
+    setDraft(CONVERSATION_ID, 'swipe öncesi taslak');
+    const store = buildStore(buildMessage());
+    renderChatScreen(store);
+    await act(async () => {});
+
+    await openEditMode();
+    expect(screen.getByTestId('composer-initial-text').props.children).toBe(
+      'orijinal metin',
+    );
+
+    await act(async () => {
+      fireEvent.press(screen.getByTestId(`swipe-reply-${MESSAGE_ID}`));
+    });
+
+    expect(screen.getByTestId('composer-initial-text').props.children).toBe(
+      'swipe öncesi taslak',
+    );
+    expect(getDraft(CONVERSATION_ID)).toBe('swipe öncesi taslak');
+  });
+
+  // Review Önemli-3, ikinci yarı — ZİNCİRLEME düzenleme: A'yı düzenlerken
+  // İPTAL ETMEDEN B'ye geçmek. `preEditDraft` ikinci girişte composer'dan
+  // YENİDEN okunursa, o an composer'ın gösterdiği şey A'nın düzenlenen
+  // içeriğidir — gerçek taslak KALICI OLARAK kaybolur.
+  it('zincirleme düzenleme: A düzenlenirken B\'ye geçmek orijinal preEditDraft\'ı KORUR', async () => {
+    const SECOND_ID = 'msg-2';
+    setDraft(CONVERSATION_ID, 'zincir öncesi taslak');
+    const store = buildStore([
+      buildMessage({ id: MESSAGE_ID, content: 'A mesajı' }),
+      buildMessage({ id: SECOND_ID, content: 'B mesajı' }),
+    ]);
+    renderChatScreen(store);
+    await act(async () => {});
+
+    // A'yı düzenlemeye gir — preEditDraft burada composer'dan okunur.
+    await openEditMode(MESSAGE_ID);
+    expect(screen.getByTestId('composer-initial-text').props.children).toBe(
+      'A mesajı',
+    );
+
+    // İPTAL ETMEDEN B'yi düzenlemeye geç — composer şu an "A mesajı" gösteriyor,
+    // bu YANLIŞLIKLA preEditDraft sanılmamalı.
+    await openEditMode(SECOND_ID);
+    expect(screen.getByTestId('composer-initial-text').props.children).toBe(
+      'B mesajı',
+    );
+
+    await act(async () => {
+      fireEvent.press(screen.getByTestId('composer-cancel'));
+    });
+
+    // Gerçek (zincirden ÖNCEKİ) taslak geri geldi — "A mesajı" DEĞİL.
+    expect(screen.getByTestId('composer-initial-text').props.children).toBe(
+      'zincir öncesi taslak',
+    );
+    expect(getDraft(CONVERSATION_ID)).toBe('zincir öncesi taslak');
   });
 });

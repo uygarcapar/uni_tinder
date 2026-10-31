@@ -499,6 +499,24 @@ function ChatScreen({
   const composerApiRef = useRef<{ getText: () => string; setText: (text: string) => void } | null>(
     null,
   );
+  // Düzenleme modundan YANIT yoluyla çıkış (uzun-bas menüsü "Yanıtla" VE
+  // `ReplySwipeRow` sola-çekme jesti — ikisi de bağımsız giriş noktaları,
+  // `handleCancelEdit`/`handleSubmitEdit`in BİLMEDİĞİ yollar). Review Önemli-3:
+  // bunlar eskiden yalnız `setEditing(null)` yapıp composer'ın GÖSTERDİĞİ
+  // düzenlenen metni olduğu gibi bırakıyordu — bir sonraki tuş vuruşunda
+  // `onDraftChange` geri bağlanıp o metni GERÇEK taslak diye diske yazardı.
+  // `editing`e bağımlı (fonksiyonel `setEditing` güncelleyicisinin İÇİNDEN
+  // `composerApiRef.setText` çağırmak — başka bir bileşenin state'ini render
+  // fazında güncellemek — React'i haklı olarak uyarıyordu: "Cannot update a
+  // component while rendering a different component"). Küçük bir bedel:
+  // `handleReplyBySwipe`in kimliği artık `editing` değişince de değişiyor,
+  // ama bu KOTA kadar sık değişen bir değer değil — yalnız düzenleme
+  // başlayıp bitince.
+  const exitEditMode = useCallback(() => {
+    if (!editing) return;
+    composerApiRef.current?.setText(editing.preEditDraft ?? "");
+    setEditing(null);
+  }, [editing]);
   const deliveredAckedRef = useRef(new Set<string>());
   const renderedDataRef = useRef<any[]>([]);
   const messagesRef = useRef<MessageDto[]>(messages);
@@ -691,6 +709,10 @@ function ChatScreen({
       // seedNativeScrollState); zaten tohumlandıysa no-op. Şeridi açmadan ÖNCE
       // olmalı — kütüphane inset değişimini gerçek offset'le hesaplasın.
       seedNativeScrollState();
+      // Düzenleme modundaysak önce ondan ÇIK (composer'a preEditDraft geri
+      // basılır) — yoksa composer düzenlenen mesajın metnini göstermeye devam
+      // eder ve bir sonraki tuş vuruşu onu GERÇEK taslak diye diske yazar.
+      exitEditMode();
       setReplyTo(buildReplyDraft(target));
       // Klavye kapalıysa doğrudan aç (WhatsApp): yanıt şeridi belirir belirmez
       // yazmaya başlanabilsin. Sohbet pasif/kota kilitliyken input editable
@@ -703,7 +725,7 @@ function ChatScreen({
       // Klavye de açılacaksa oturmasını bekler.
       pinShortListToEnd(kbClosed);
     },
-    [seedNativeScrollState, focusComposerSoon, pinShortListToEnd],
+    [seedNativeScrollState, focusComposerSoon, pinShortListToEnd, exitEditMode],
   );
 
   // Uzun-bas menüsü açılırken klavye kapanıyor, kapanınca geri açılıyor. Bu iki
@@ -1373,14 +1395,22 @@ function ChatScreen({
   // düzenlenen içerikle değiştirip işimiz bitince GERİ basıyoruz.
   const handleEditRequest = useCallback((message: any) => {
     if (!message) return;
-    const preEditDraft = composerApiRef.current?.getText() ?? "";
     setReplyTo(null);
-    setEditing({
-      id: message.id,
-      conversationId: message.conversationId,
-      clientMessageId: message.clientMessageId,
-      content: message.content ?? "",
-      preEditDraft,
+    setEditing((prev: any) => {
+      // Zincirleme düzenleme (Review Önemli-3): A'yı düzenlerken İPTAL
+      // ETMEDEN B'ye geçmek — `preEditDraft` SADECE İLK girişte composer'dan
+      // okunur. İkinci girişte composer'ın o anki metni artık A'nın
+      // düzenlenen içeriğidir; onu "gerçek taslak" sanıp yakalamak orijinal
+      // taslağı KALICI OLARAK kaybettirirdi (B'den çıkınca A'nın metni geri
+      // gelirdi, kullanıcının asıl yarım yazdığı mesaj değil).
+      const preEditDraft = prev ? prev.preEditDraft : composerApiRef.current?.getText() ?? "";
+      return {
+        id: message.id,
+        conversationId: message.conversationId,
+        clientMessageId: message.clientMessageId,
+        content: message.content ?? "",
+        preEditDraft,
+      };
     });
     composerApiRef.current?.setText(message.content ?? "");
   }, []);
@@ -1391,6 +1421,11 @@ function ChatScreen({
   const handleCancelEdit = useCallback(() => {
     composerApiRef.current?.setText(editing?.preEditDraft ?? "");
     setEditing(null);
+    // Girişte (uzun-bas menüsü kapanışı, `handleActionSheetClose`) klavye geri
+    // açılıyor — çıkışta da TUTARLI olsun diye aynı odak çağrısı. Cihazda
+    // DOĞRULANMADI; burada yalnız iki ucun DAVRANIŞÇA aynı olduğunu garanti
+    // ediyoruz, çalıştığını İDDİA ETMİYORUZ.
+    composerInputRef.current?.focus();
   }, [editing]);
 
   // Gönder — optimistik `messageEdited` dispatch → `enqueueEdit` → tur
@@ -1403,8 +1438,10 @@ function ChatScreen({
       setEditing(null);
       // Düzenleme ANINDA biten (gönderildi/reddedildi/değişmedi) — composer
       // ne olursa olsun `preEditDraft`e döner, kullanıcı yarım yazdığı
-      // mesajı kaldığı yerden bulur.
+      // mesajı kaldığı yerden bulur. Odak çağrısı da (`handleCancelEdit` ile
+      // AYNI gerekçe) her çıkış dalında çalışsın diye ERKEN DÖNÜŞLERDEN ÖNCE.
       composerApiRef.current?.setText(target?.preEditDraft ?? "");
+      composerInputRef.current?.focus();
       if (!target) return;
       // `handlePickReaction`/`handleDelete` ile AYNI sebep: menü hedefi
       // düzenleme moduna girildiği andaki kopya, o sırada gelen bir hub
@@ -1691,11 +1728,14 @@ function ChatScreen({
     [dispatch, myUserId, t],
   );
 
-  const handleReply = useCallback((message: any) => {
-    if (!message) return;
-    setEditing(null);
-    setReplyTo(buildReplyDraft(message));
-  }, []);
+  const handleReply = useCallback(
+    (message: any) => {
+      if (!message) return;
+      exitEditMode();
+      setReplyTo(buildReplyDraft(message));
+    },
+    [exitEditMode],
+  );
 
   const handleDelete = useCallback(
     async (target: any, forEveryone: boolean) => {
@@ -2395,15 +2435,23 @@ function ChatScreen({
   // yerine sabit etiket, contentPreview yerine düzenleme taslağı). Composer
   // ve ReplyPreview'a TEK satır dokunmadan aynı görünüm + ✕ iptal davranışı
   // elde ediliyor — ikisi `reply`in içeriğine değil ŞEKLİNE bakıyor.
-  const editingReplyShim = editing
-    ? {
-        id: editing.id,
-        senderDisplayName: t("chat.editing.label"),
-        contentPreview: editing.content,
-        contentType: ContentType.Text,
-        isDeleted: false,
-      }
-    : null;
+  // Review Minör-7 — `MessageComposer` `memo()`lu ve bu kod tabanında render-
+  // hassas (bkz. dosya başı perf notları); her render'da YENİ bir nesne vermek
+  // `editing` boyunca memo'yu TAMAMEN devre dışı bırakırdı. `useMemo` ile
+  // yalnız `editing`/`t` değişince yeniden kurulur.
+  const editingReplyShim = useMemo(
+    () =>
+      editing
+        ? {
+            id: editing.id,
+            senderDisplayName: t("chat.editing.label"),
+            contentPreview: editing.content,
+            contentType: ContentType.Text,
+            isDeleted: false,
+          }
+        : null,
+    [editing, t],
+  );
   // Düzenlerken mesaj hakkı HARCANMIYOR (zaten gönderilmiş bir mesajın
   // içeriği değişiyor, yeni bir mesaj doğmuyor) — composer'ın kendi kota
   // kilidi (`quotaLocked`) burada BİLEREK ezilir, yoksa hakkı biten bir
@@ -2411,12 +2459,13 @@ function ChatScreen({
   // edilen bir şey bir adım sonra ölü çıkar).
   const composerQuotaLocked = editing ? false : quotaLocked;
   // Sesli mesaj düzenleme modunda KAPALI: düzenleme yalnız METİN taşıyor
-  // (`editRejectReason` bunun dışına çıkmıyor), üstelik mikrofon metin boşken
-  // beliriyor (prefill temizlenebilir) ve `onSendVoice` composer'ın
-  // `replyTo`sundaki `id`yi (düzenleme şiminin id'si) `replyToMessageId`
-  // olarak yollardı — düzenlenen mesaja sahte bir "yanıt" doğardı. `onSendVoice`
-  // `undefined` olunca mikrofon görünür ama `micEnabled` false düşüp hiç
-  // kayda başlamaz (bkz. MessageComposer.tsx `micEnabled` tanımı).
+  // (`editRejectReason` bunun dışına çıkmıyor), üstelik `onSendVoice` composer'ın
+  // `replyTo`sundaki `id`yi (düzenleme şiminin id'si) `replyToMessageId` olarak
+  // yollardı — düzenlenen mesaja sahte bir "yanıt" doğardı. Çoğu zaman mikrofon
+  // zaten GÖRÜNMÜYOR (`MessageComposer.showMic = !hasText`, prefill dolu);
+  // kullanıcı prefill'i TEMİZLERSE (`hasText` false'a düşer) mikrofon geri
+  // belirir — işte o anda `onSendVoice` `undefined` olduğu için `micEnabled`
+  // false düşüp hiç kayda başlamaz (bkz. MessageComposer.tsx `micEnabled`).
   const composerOnSendVoice = editing ? undefined : handleSendVoice;
 
   const { colors: headerMaskColors, locations: headerMaskLocations } = useMemo(
@@ -2687,6 +2736,7 @@ function ChatScreen({
               quotaLocked={composerQuotaLocked}
               onLockedPress={handleLockedPress}
               onSendVoice={composerOnSendVoice}
+              editing={!!editing}
             />
           </KeyboardStickyView>
         </KeyboardGestureArea>
@@ -2733,6 +2783,7 @@ function ChatScreen({
               quotaLocked={composerQuotaLocked}
               onLockedPress={handleLockedPress}
               onSendVoice={composerOnSendVoice}
+              editing={!!editing}
             />
           </KeyboardStickyView>
         </View>
