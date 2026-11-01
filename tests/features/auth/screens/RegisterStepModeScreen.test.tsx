@@ -97,6 +97,20 @@ it('seçimsiz Devam → toast, navigate yok', () => {
   expect(nav.navigate).not.toHaveBeenCalled();
 });
 
+it('içerik kaydırılabilir — iki 3:4 olmayan dev kart küçük ekranda footer altında kalmasın', () => {
+  // Sabit kolonda iki 3:2 kart SE sınıfında ~180pt taşıyor (review bulgusu):
+  // başlık+kartlar+bilgi satırı bir ScrollView içinde, Devam footer'ı dışında.
+  const { getByTestId } = setup();
+  const scroll = getByTestId('reg-stepmode-scroll');
+  expect(scroll).toBeTruthy();
+  const inTree = (node: any): boolean => {
+    if (!node || typeof node === 'string') return false;
+    if (node.props?.testID === 'reg-mode-Friends') return true;
+    return (node.children ?? []).some(inTree);
+  };
+  expect(inTree(scroll)).toBe(true);
+});
+
 it('Friends → RegisterStep13, Dating → RegisterStep10', () => {
   mockAuthState = { registrationForm: { mode: 'Friends' } };
   const friends = setup();

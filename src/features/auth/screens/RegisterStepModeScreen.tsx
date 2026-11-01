@@ -1,5 +1,5 @@
 import { useCallback } from "react";
-import { Text, View } from "react-native";
+import { ScrollView, Text, View } from "react-native";
 import type { NativeStackScreenProps } from "@react-navigation/native-stack";
 import { useTranslation } from "react-i18next";
 import type { AuthStackParamList } from "@/shared/types/navigation";
@@ -86,7 +86,21 @@ export default function RegisterStepModeScreen({
 
       <RegisterProgressBar step={MODE_STEP_NUMBER} />
 
-      <View className="flex-1 px-6 py-6 pt-0">
+      {/* İçerik KAYDIRILABİLİR (Devam footer'ı sabit): iki 3:2 kart + başlık +
+          bilgi satırı sabit kolona sığmıyor — 6.1"te bilgi satırı footer'ın
+          altında kalıyor, SE sınıfında taşma ~180pt ve boşluk kısmak
+          kurtarmıyor. Kartlar tam genişlik 3:2 kalıyor, nefesi scroll veriyor. */}
+      <ScrollView
+        testID="reg-stepmode-scroll"
+        className="flex-1"
+        // px-6 py-6 pt-0'ın karşılığı — contentContainer'da className
+        // kullanmıyoruz (css-interop'un sessiz düşme tuzağından uzak dur).
+        contentContainerStyle={{
+          paddingHorizontal: 24,
+          paddingBottom: 24,
+        }}
+        showsVerticalScrollIndicator={false}
+      >
         <View className="flex flex-col gap-2">
           <Text className="text-4xl font-bold" style={{ color: colors.text }}>
             {t("auth.stepMode.title")}
@@ -129,7 +143,7 @@ export default function RegisterStepModeScreen({
             {t("auth.stepMode.infoText")}
           </Text>
         </View>
-      </View>
+      </ScrollView>
 
       <View
         style={{
