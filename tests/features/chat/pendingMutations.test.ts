@@ -989,9 +989,48 @@ describe('pendingMutations: tur', () => {
       expect(showInfoToast).not.toHaveBeenCalled();
     });
 
+    // Review Minör 4 — sürüm geçişi penceresi: önceki derlemenin yazdığı bir
+    // `edit` satırı `{content, base}` taşır, `baseEditedAt` alanı HİÇ YOK.
+    // `revertEdit` bu anahtarın YOKLUĞUNU `null`dan AYIRT ETMELİ — aksi halde
+    // daha önce düzenlenmiş bir mesajın rozeti, bu satır hâlâ kuyruktayken
+    // gelen bir kalıcı rette haksız yere düşerdi (Task 3'ün önlemeye
+    // çalıştığı TAM O yalan, başka bir yönden).
+    it("önceki derlemenin baseEditedAt'siz edit satırı reddedilince editedAt'e DOKUNULMUYOR", async () => {
+      insertMessage('msg-1', 'sent');
+      // Eski şema: `coalesceEdit` hiç çağrılmadı, satır DOĞRUDAN eski
+      // payload şekliyle yazıldı — `enqueueEdit` kullanılmadı bilerek.
+      upsertPendingMutation({
+        message_id: 'msg-1',
+        kind: 'edit',
+        conversation_id: CONV,
+        payload_json: JSON.stringify({ content: 'yeni', base: 'orijinal' }),
+        attempts: 0,
+        first_seen_at_ms: Date.now(),
+        next_eligible_at_ms: 0,
+        last_error: null,
+      });
+      setStoreMessages([
+        msg('msg-1', { content: 'yeni', editedAt: '2026-10-31T10:00:00.000Z' }),
+      ]);
+      editMessage.mockRejectedValue({ response: { data: { errorCode: 'UT-6723' } } });
+
+      await flushPendingMutations('test');
+
+      expect(lastEditedDispatched().content).toBe('orijinal');
+      // editedAt'e HİÇ DOKUNULMADI — optimistik değer (rozet) aynen kaldı,
+      // `undefined`/`null` YAZILMADI.
+      expect(lastEditedDispatched().editedAt).toBe('2026-10-31T10:00:00.000Z');
+    });
+
     it("enqueueEdit aynı mesaja ikinci emirde base'i koruyor, backoff'u sıfırlıyor", () => {
       insertMessage('msg-1', 'sent');
-      enqueueEdit({ messageId: 'msg-1', conversationId: CONV, content: 'birinci', serverBase: 'orijinal', serverBaseEditedAt: null });
+      enqueueEdit({
+        messageId: 'msg-1',
+        conversationId: CONV,
+        content: 'birinci',
+        serverBase: 'orijinal',
+        serverBaseEditedAt: '2026-01-01T00:00:00Z',
+      });
       const [firstRow] = readPendingMutations();
       const originalFirstSeen = firstRow.first_seen_at_ms;
 
@@ -1005,14 +1044,28 @@ describe('pendingMutations: tur', () => {
       });
 
       // Kullanıcı metni TEKRAR değiştirdi — yeni niyet eski backoff'u miras
-      // ALMAMALI, `base` (sunucunun ilk gördüğü değer) korunmalı.
-      enqueueEdit({ messageId: 'msg-1', conversationId: CONV, content: 'ikinci', serverBase: 'bambaşka-bir-deger', serverBaseEditedAt: null });
+      // ALMAMALI, `base`/`baseEditedAt` (sunucunun ilk gördüğü değerler)
+      // korunmalı. İkinci enqueue'nin serverBaseEditedAt'i BİLEREK FARKLI
+      // ('2026-02-02...') — enqueue→coalesce seam'i bu değerin SIZMADIĞINI
+      // doğrular (Review Minör 5: ikisi de null olsaydı leak testi yanlışlıkla
+      // geçerdi).
+      enqueueEdit({
+        messageId: 'msg-1',
+        conversationId: CONV,
+        content: 'ikinci',
+        serverBase: 'bambaşka-bir-deger',
+        serverBaseEditedAt: '2026-02-02T00:00:00Z',
+      });
 
       const [row] = readPendingMutations();
       expect(row.attempts).toBe(0);
       expect(row.next_eligible_at_ms).toBe(0);
       expect(row.first_seen_at_ms).toBe(originalFirstSeen);
-      expect(JSON.parse(row.payload_json)).toEqual({ content: 'ikinci', base: 'orijinal', baseEditedAt: null });
+      expect(JSON.parse(row.payload_json)).toEqual({
+        content: 'ikinci',
+        base: 'orijinal',
+        baseEditedAt: '2026-01-01T00:00:00Z',
+      });
     });
 
     it('gönderilmemiş mesajın düzenlemesi ağa ÇIKMIYOR, satır kalıyor', async () => {

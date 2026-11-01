@@ -359,7 +359,11 @@ function revertDelete(row: PendingMutationRow): void {
  * verildiği andaki sunucu değeri) döner. Silmedeki `revertDelete` ile AYNI
  * kalıp: `current`i olduğu gibi spread edip yalnız `content`/`editedAt`
  * eziyoruz — eksik alanlarla `messageEdited`i (mirror'da `saveMessage`, TÜM
- * kolon upsert'i) çağırmak satırı bozardı.
+ * kolon upsert'i) çağırmak satırı bozardı. (`...current`/`...onDisk`'in
+ * TÜM kolonları ezip yeniden yazması `revertReaction`/`revertDelete` ile
+ * PAYLAŞILAN bilinen bir risk — bu satır `editedAt`i de kapsama alarak o
+ * riski GENİŞLETİYOR, ama `content`le TUTARLI kalmak (ikisi birlikte doğru/
+ * yanlış) o riski dar tutmaktan daha önemli; bkz. Review Minör 6.)
  *
  * `editedAt` de `payload.baseEditedAt`e dönüyor, `content`in TAM İKİZİ:
  * yalnız metni geri alıp rozeti BIRAKMAK "mesaj hiç değişmemiş GÖRÜNÜYOR ama
@@ -368,17 +372,28 @@ function revertDelete(row: PendingMutationRow): void {
  * `baseEditedAt` o ÖNCEKİ damgayı taşıyor, rozet KALIYOR (bkz.
  * pendingMutationPolicy.ts'teki `EditPayload` notu).
  *
+ * ── Sürüm geçişi penceresi (Review Minör 4) ─────────────────────────────────
+ * Kuyrukta önceki derlemenin yazdığı bir `edit` satırı kalmış olabilir —
+ * o zamanki payload `{content, base}` idi, `baseEditedAt` alanı HİÇ YOK.
+ * `JSON.parse` bunu `undefined` verir, `null` DEĞİL — `?? null` ile
+ * "düzeltmek" tam tersi yalanı üretirdi (önceden düzenlenmiş bir mesajın
+ * rozetini haksız yere düşürmek). Bu yüzden anahtar YOKSA `editedAt`e HİÇ
+ * DOKUNULMUYOR (`current`/`onDisk`in taşıdığı optimistik değer kalıyor).
+ * Bedeli yalnız BU satır sunucuya gidip kalıcı ret alana kadar sürüyor —
+ * yani en fazla bir uygulama güncellemesi kadar bir pencere.
+ *
  * Mesaj Redux'ta YÜKLÜ DEĞİLSE dispatch ETMEZ — aynı kapı, aynı gerekçe
  * (bkz. dosya başı not, `revertReaction`/`revertDelete`).
  */
 function revertEdit(row: PendingMutationRow, payload: EditPayload): void {
+  const hasBaseEditedAt = "baseEditedAt" in payload;
   const current = findMessage(row.conversation_id, row.message_id);
   if (current) {
     dispatch(
       messageEdited({
         ...current,
         content: payload.base,
-        editedAt: payload.baseEditedAt,
+        ...(hasBaseEditedAt ? { editedAt: payload.baseEditedAt } : {}),
       } as MessageDto),
     );
     return;
@@ -399,7 +414,11 @@ function revertEdit(row: PendingMutationRow, payload: EditPayload): void {
   const onDisk = findMessageOnDisk(row.conversation_id, row.message_id);
   if (!onDisk) return;
   saveMessage(
-    { ...onDisk, content: payload.base, editedAt: payload.baseEditedAt },
+    {
+      ...onDisk,
+      content: payload.base,
+      ...(hasBaseEditedAt ? { editedAt: payload.baseEditedAt } : {}),
+    },
     row.conversation_id,
   );
 }
