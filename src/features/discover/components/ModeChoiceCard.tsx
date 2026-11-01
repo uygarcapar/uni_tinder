@@ -5,7 +5,7 @@ import { LinearGradient } from "expo-linear-gradient";
 import { useTranslation } from "react-i18next";
 import SFIcon from "@/shared/components/SFIcon";
 import SkeletonBox from "@/shared/components/SkeletonBox";
-import { ChevronRight } from "@/shared/icons";
+import { Check, ChevronRight } from "@/shared/icons";
 import { colors, isLight, scrimAt } from "@/shared/theme/colors";
 // Görsel haritası kayıt tarafında doğdu ve ORADA KALIYOR (kayıt adımına
 // dokunulmadı, istek) — bu kart onu okuyan ikinci tüketici.
@@ -13,22 +13,20 @@ import { MODE_CARD_ART } from "@/features/auth/modeCardArt";
 import type { AppMode } from "../modeTheme";
 
 /**
- * MOD SEÇİM KARTI — zemini fotoğraf olan 3:2 kart. Tek tüketicisi çalışma
- * anındaki mod seçici (`ModeSelectorSheet`; Keşif başlığı + Profil avatarı).
+ * MOD SEÇİM KARTI — zemini fotoğraf olan 3:2 kart. İki tüketicisi var ve
+ * ikisini `variant` ayırıyor:
+ *   • "switch" (varsayılan) — çalışma anındaki mod seçici (`ModeSelectorSheet`):
+ *     iki kart iki ayrı KAPI — biri girilmiş, öteki geçilecek/açılacak.
+ *     Seçimi perde (parlak/sönük) söylüyor, sağ altta chevron.
+ *   • "select" — kayıt adımı (RegisterStepModeScreen): iki seçenekten birini
+ *     İŞARETLE. Chevron ve "moduna geç" satırı YOK, sağ üstte akış-filtresi
+ *     kalıbında checkbox (yuva hep çizili, tik seçilince). Sönükleştirmeyi
+ *     kart kendisi TÜRETMİYOR: kayıtta ön-seçim yok ve hiçbir şey seçili
+ *     değilken İKİ KART DA TAM PARLAK durmalı — `dimmed`'i ekran veriyor.
  *
- * ── Kayıt adımıyla ilişkisi ─────────────────────────────────────────────────
- * Kart ilk olarak kayıt adımında (RegisterStepModeScreen > ModeCard) doğdu ve
- * seçici ayrı bir satır listesiydi: kullanıcı modları kayıtta fotoğraflı
- * kartlar olarak öğreniyor, sonra onları iki gri satır olarak buluyordu. Bu
- * dosya o görünümü seçiciye taşıyor.
- *
- * ⚠️ KAYIT ADIMI BU BİLEŞENİ KULLANMIYOR, kendi `ModeCard`'ını koruyor (istek:
- * kayıt akışına dokunulmadı). Yani iki kart ayrı dosyada ve farklılaşmaları
- * BEKLENEN — ikisinin işi aynı değil:
- *   • kayıt  → iki seçenekten birini İŞARETLE (seçim kutusu + tik)
- *   • seçici → biri girilmiş, öteki geçilecek/açılacak İKİ KAPI (kutu YOK)
- * Ortak bir şeyi (renk, oran, perde) değiştirirken diğerine de bakmak gerekir;
- * paylaşılan tek kaynak `modeTheme` ve `modeCardArt`.
+ * Kart görünümü böylece tek dosyada: katman/perde/yarıçap cilası değişirse
+ * iki yüzey birden alıyor. Paylaşılan diğer kaynaklar `modeTheme` ve
+ * `modeCardArt`.
  *
  * KATMANLAR:
  *   1. NÖTR GRİ ZEMİN (`surface`) — foto yüklenirken kart bu, yüklendikten
@@ -108,20 +106,43 @@ export interface ModeChoiceCardProps {
   /**
    * Kullanıcı bu modun profilini AÇMIŞ mı. `false` → kartın sağ altında
    * chevron çıkıyor ve alt satır "geç" yerine modun AÇIKLAMASINI yazıyor
-   * (gerekçe o satırın yanında).
+   * (gerekçe o satırın yanında). Yalnız "switch" varyantında anlamlı.
    */
   open?: boolean;
+  /** Kartın hangi yüzey için çizildiği — ayrım dosya başındaki notta. */
+  variant?: "switch" | "select";
+  /**
+   * Yalnız "select": perdeyi dışarıdan sürer. "switch" kendi türetiyor
+   * (`!active`), kayıtta ise "seçim var VE bu kart değil" bilgisi ekranda.
+   */
+  dimmed?: boolean;
+  /** TouchableOpacity'ye geçer (kayıt e2e'si `reg-mode-<mod>` arıyor). */
+  testID?: string;
   onPress: (mode: AppMode) => void;
 }
+
+/**
+ * "select" varyantının checkbox'ı — akış filtresindeki kutunun birebir kalıbı
+ * (FeedFilterSheet > OptionRow): 22×22, köşe 7, yuva HER ZAMAN çizili. Tek
+ * fark mürekkep: foto üstünde tema mürekkebi açık temada kayboluyor, kutu
+ * medya-sabit çiziliyor (çizgi/dolgu `onMedia`, tik `onMediaInverse`).
+ */
+const CHECKBOX_SIZE = 22;
 
 export default function ModeChoiceCard({
   mode,
   active,
   open = true,
+  variant = "switch",
+  dimmed,
+  testID,
   onPress,
 }: ModeChoiceCardProps) {
   const { t } = useTranslation();
   const scale = useRef(new Animated.Value(1)).current;
+  // Perdenin tek girdisi: "switch" kartın parlaklığını active'den türetiyor,
+  // "select" ekranın verdiği dimmed'den (gerekçe props'ta).
+  const lit = variant === "select" ? !dimmed : active;
   /**
    * SEÇİM PERDESİNİN giriş-çıkış değeri. Tek yetkili hareket bu: kullanıcı
    * diğer karta geçtiğinde biri sönüp öteki açılıyor, yani hareketin işi
@@ -131,7 +152,7 @@ export default function ModeChoiceCard({
    * yine de duruyor çünkü açılan kartın bir tık fazla açılıp yerine oturması
    * geçişi "bu seçildi" diye okutan şey.
    */
-  const markIn = useRef(new Animated.Value(active ? 1 : 0)).current;
+  const markIn = useRef(new Animated.Value(lit ? 1 : 0)).current;
   const art = MODE_CARD_ART[mode];
   /**
    * Foto çözüldü mü — iskeletin tek anahtarı. Harita boşsa (`!art`) beklenen
@@ -145,16 +166,17 @@ export default function ModeChoiceCard({
 
   useEffect(() => {
     Animated.spring(markIn, {
-      toValue: active ? 1 : 0,
+      toValue: lit ? 1 : 0,
       useNativeDriver: true,
       speed: 20,
-      bounciness: active ? 12 : 0,
+      bounciness: lit ? 12 : 0,
     }).start();
-  }, [active, markIn]);
+  }, [lit, markIn]);
 
   return (
     <Animated.View style={{ transform: [{ scale }] }}>
       <TouchableOpacity
+        testID={testID}
         activeOpacity={1}
         accessibilityRole="button"
         // Seçim durumu ekran okuyucuya da gidiyor: perde yalnız gözle okunan
@@ -316,8 +338,10 @@ export default function ModeChoiceCard({
                   eksik olan tek şey eylemin adı.
                 • AÇIK ve SEÇİLİ → açıklama. Zaten içinde olduğu moda "geç"
                   demek anlamsız; kart da parlak olan, yani hangisinde
-                  olduğunu perde söylüyor. */}
-            {open && !active
+                  olduğunu perde söylüyor.
+                "select" varyantında üç hâl YOK: kullanıcı modların hiçbirini
+                henüz görmemiş, satır HEP açıklama. */}
+            {variant !== "select" && open && !active
               ? t(`discover.mode.switchTo.${mode}`)
               : t(`discover.mode.description.${mode}`)}
           </Text>
@@ -341,8 +365,12 @@ export default function ModeChoiceCard({
               istek): chevron o satırın hizasında duruyor ve onun devamı, mod
               adıyla aynı kademede bir işaret değil.
 
-              `pointerEvents: none` — dokunuş kartın tamamına ait. */}
-          {!active ? (
+              `pointerEvents: none` — dokunuş kartın tamamına ait.
+
+              "select" varyantında chevron HİÇ yok: kayıttaki kart bir kapı
+              değil, işaretlenen bir seçenek — oranın işareti sağ üstteki
+              checkbox. */}
+          {variant !== "select" && !active ? (
             <SFIcon
               name="chevron.right"
               fallback={ChevronRight}
@@ -354,6 +382,42 @@ export default function ModeChoiceCard({
             />
           ) : null}
         </View>
+
+        {/* "select" CHECKBOX'ı — sağ üstte, yuva HER ZAMAN çizili (kalıp ve
+            mürekkep gerekçesi CHECKBOX_SIZE'ın yanında). Perdenin ÜSTÜNDE:
+            seçilmemiş kart sönükken bile boş kutu "burası işaretlenir" diye
+            okunmalı. */}
+        {variant === "select" ? (
+          <View
+            testID={`mode-card-${mode}-checkbox`}
+            pointerEvents="none"
+            style={{
+              position: "absolute",
+              top: CARD_PAD,
+              right: CARD_PAD,
+              width: CHECKBOX_SIZE,
+              height: CHECKBOX_SIZE,
+              borderRadius: 7,
+              borderCurve: "continuous",
+              borderWidth: active ? 0 : 1.5,
+              borderColor: colors.onMedia,
+              backgroundColor: active ? colors.onMedia : "transparent",
+              alignItems: "center",
+              justifyContent: "center",
+            }}
+          >
+            {active && (
+              <SFIcon
+                name="checkmark"
+                fallback={Check}
+                size={14}
+                color={colors.onMediaInverse}
+                strokeWidth={3}
+                weight="bold"
+              />
+            )}
+          </View>
+        ) : null}
       </TouchableOpacity>
     </Animated.View>
   );

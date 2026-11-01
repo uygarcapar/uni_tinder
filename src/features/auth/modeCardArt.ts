@@ -2,9 +2,10 @@ import type { ImageSourcePropType } from "react-native";
 import type { AppMode } from "@/features/discover/modeTheme";
 
 /**
- * Mod kartlarının zemin fotoğrafları — "Burada ne arıyorsun?" adımı
- * (RegisterStepModeScreen > ModeCard). Kart oranı 3:2, görseller de o oranda
- * üretiliyor.
+ * Mod kartlarının zemin fotoğrafları — ModeChoiceCard'ın zemini; kartı hem
+ * kayıt adımı (RegisterStepModeScreen, "select" varyantı) hem çalışma anındaki
+ * mod seçici (ModeSelectorSheet, "switch") kullanıyor. Kart oranı 3:2,
+ * görseller de o oranda üretiliyor.
  *
  * ⚠️ HARİTA BOŞ OLABİLİR. Var olmayan bir yolu `require` etmek Metro'yu
  * bundle anında düşürür; görseller gelmeden kart modun gradyanıyla çiziliyor
