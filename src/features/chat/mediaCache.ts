@@ -7,6 +7,7 @@ import {
   readCachedUrisForConversation,
   readMediaCache,
   readOwnRecordingUri,
+  readOwnRecordingUrisForConversation,
   removeConversationLocally,
   setMediaCache,
   touchMediaCache,
@@ -306,13 +307,25 @@ export function dropCachedMedia(messageId: string): void {
 }
 
 /**
- * Engelleme/hesap silme yolu (`removeConversationLocally`) bu sohbetin
- * satırlarını gizlilik gerekçesiyle ERTELEMEDEN siliyor — önbellek dosyaları
- * da aynı anda gitmeli, açılış süpürmesine (`reconcileMediaCacheDirectory`)
- * bırakılırsa "bir sonraki açılışa kadar oynatılabilir" demek olur ve bu,
- * `removeConversationLocally`nin kendi gerekçesiyle çelişir.
+ * Engelleme/hesap silme yolunun TEK üretim girişi. Bu sohbetin satırlarını
+ * (`removeConversationLocally`) gizlilik gerekçesiyle ERTELEMEDEN siliyor —
+ * önbellek dosyaları da aynı anda gitmeli, açılış süpürmesine
+ * (`reconcileMediaCacheDirectory`) bırakılırsa "bir sonraki açılışa kadar
+ * oynatılabilir" demek olur ve bu, `removeConversationLocally`nin kendi
+ * gerekçesiyle çelişir.
  *
- * SIRA KRİTİK: yollar satırlar SİLİNMEDEN ÖNCE okunuyor —
+ * ── İKİ liste, tek sebep: önbellek + KENDİ KAYITLARIMIZ ─────────────────────
+ * `readCachedUrisForConversation`in "o dosya hâlâ outbox'ın mülkü" muafiyeti
+ * EVICTION için doğru, BURADA değil: `removeConversationLocally` birazdan
+ * `messages`/`send_attempts`i de siliyor, yani outbox'ın kendisi bu
+ * transaction'da bitiyor — mülkü devralacak kimse kalmıyor. Bu yüzden
+ * `readOwnRecordingUrisForConversation` AYRICA okunuyor: o olmasa, bu
+ * sohbete gönderdiğimiz sesli mesajların dosyası (recorder'ın OS dizininde,
+ * chat-media-cache'in DIŞINDA) süresiz diskte kalırdı — `reconcileMediaCacheDirectory`
+ * onu listeleyemez, `wipeMediaCache` da aynı tabloyu okuyup boş bulur (satır
+ * gitmiş olur).
+ *
+ * SIRA KRİTİK: her İKİ liste de satırlar SİLİNMEDEN ÖNCE okunuyor —
  * `removeConversationLocally` `local_uri` kolonunu da götürüyor, sonra
  * sormanın cevabı boş gelir.
  *
@@ -323,11 +336,13 @@ export function dropCachedMedia(messageId: string): void {
  * Döngüden kaçınmak için çağrı yeri burada, `chatRepository.ts`te DEĞİL:
  * o dosya `mediaCache.ts`i import EDEMEZ (Faz 5'te ölçülen döngü — bu dosya
  * zaten tersini yapıyor). Aynı seam `wipeMediaCache`/`dropCachedMedia`'da da
- * var; tek üretim çağıranı (`chatDeltaSync.ts`) artık doğrudan
- * `repo.removeConversationLocally` yerine bunu çağırıyor.
+ * var; tek üretim çağıranı (`chatDeltaSync.ts`) bunu çağırıyor,
+ * `repo.removeConversationLocally`i DOĞRUDAN DEĞİL (bkz. o testin kendisi,
+ * chatDeltaSync.test.ts).
  */
 export function removeConversationAndMedia(conversationId: string): void {
-  const uris = readCachedUrisForConversation(conversationId);
+  const cachedUris = readCachedUrisForConversation(conversationId);
+  const ownUris = readOwnRecordingUrisForConversation(conversationId);
   removeConversationLocally(conversationId);
-  for (const uri of uris) deleteIfExists(uri);
+  for (const uri of [...cachedUris, ...ownUris]) deleteIfExists(uri);
 }

@@ -16,6 +16,7 @@ jest.mock('@/shared/store/chatFlags', () => ({
 // sınanıyor.
 jest.mock('@/features/chat/mediaCache', () => ({
   dropCachedMedia: jest.fn(),
+  removeConversationAndMedia: jest.fn(),
 }));
 
 import * as SQLite from 'expo-sqlite';
@@ -29,7 +30,7 @@ import {
 } from '@/features/chat/chatRepository';
 import { pullChanges, pullBeforeSend, __resetDeltaSyncForTests } from '@/features/chat/chatDeltaSync';
 import { clear as clearMessageCache } from '@/features/chat/messageCache';
-import { dropCachedMedia } from '@/features/chat/mediaCache';
+import { dropCachedMedia, removeConversationAndMedia } from '@/features/chat/mediaCache';
 import { CHAT_ERROR_CODES } from '@/shared/constants/responseCodes';
 import type { MessageDto } from '@/shared/types';
 
@@ -213,6 +214,32 @@ describe('deletions[] — messages[] ile KARŞILIKLI DIŞLAYAN', () => {
     await pullChanges();
 
     expect(rowOf('m1').row_version).toBe(v);
+  });
+});
+
+describe('removedConversations[] — engelleme/hesap silme', () => {
+  // Review Important 2: bu yol `repo.removeConversationLocally`yi DOĞRUDAN
+  // DEĞİL, `mediaCache.removeConversationAndMedia`yı çağırmalı — aksi halde
+  // o sohbetin önbellek/kendi-kayıt dosyaları diskte kalır (bkz.
+  // mediaCache.test.ts). `removeConversationAndMedia` burada MOCK'LANDIĞI
+  // (no-op) için satırın HÂLÂ DURMASI, çağrının gerçekten orkestratöre
+  // gittiğinin, repo fonksiyonuna sessizce geri dönülmediğinin kanıtı —
+  // geri dönülseydi satır mock'a rağmen giderdi ve bu test YANLIŞ GEÇERDİ.
+  it("removedConversations repo'yu DEĞİL, mediaCache.removeConversationAndMedia'yı çağırıyor", async () => {
+    saveMessage(msg('m1'), CONV);
+    getChanges.mockResolvedValueOnce({
+      watermark: 'wm-2',
+      hasMore: false,
+      removedConversations: [{ conversationId: CONV, reason: 'blocked' }],
+    });
+
+    await pullChanges();
+
+    expect(removeConversationAndMedia).toHaveBeenCalledWith(CONV);
+    // Orkestratör mock'landığı için gerçek silme KOŞMADI — satır hâlâ orada.
+    // Bu, chatDeltaSync'in repo.removeConversationLocally'yi DOĞRUDAN
+    // çağırmadığının kanıtı (öyle olsaydı mock'a rağmen satır giderdi).
+    expect(rowOf('m1')).not.toBeNull();
   });
 });
 

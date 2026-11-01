@@ -583,6 +583,29 @@ describe('removeConversationAndMedia — Review Focus 3: engelleme/hesap silme s
     expect(getChatDb().getFirst('SELECT 1 FROM messages WHERE id = ?', ['m2'])).not.toBeNull();
   });
 
+  // Review Önemli 3 — KENDİ gönderdiğimiz sesli mesajın dosyası, recorder'ın
+  // OS dizininde ("chat-media-cache" DIŞINDA) duruyor ve `media_cached_at_ms`
+  // hiç yazılmadığı için `readCachedUrisForConversation`in filtresinden
+  // GEÇMİYOR — yalnız `readOwnRecordingUrisForConversation` onu buluyor.
+  // Bu test olmadan: engellenen kişiye GÖNDERDİĞİMİZ sesli mesaj dosyası
+  // satır gittikten sonra deftersel izsiz kalır, hiçbir süpürme onu bulamaz.
+  it('engelleme silmesi KENDİ gönderdiğimiz sesli mesajın dosyasını da siliyor', () => {
+    saveMessage(
+      msg('m1', { clientMessageId: 'cmid-1', _localUri: 'file:///own-rec.m4a' }),
+      CONV,
+      'sent',
+    );
+    mockFileExists('file:///own-rec.m4a', true);
+
+    removeConversationAndMedia(CONV);
+
+    expect(getChatDb().getFirst('SELECT 1 FROM messages WHERE id = ?', ['m1'])).toBeNull();
+    // Kendi kaydımız — önbellek kaydı DEĞİL — yine de silindi, "hâlâ
+    // outbox'ın mülkü" muafiyeti bu çağrı bağlamında geçerli değil çünkü
+    // outbox'ın kendisi (messages/send_attempts) aynı anda gitti.
+    expect(fsMock.__deletedPaths).toContain('file:///own-rec.m4a');
+  });
+
   it('dosya silme patlasa da satırlar gidiyor', () => {
     saveMessage(msg('m1'), CONV);
     setMediaCache('m1', `${CACHE_DIR}/m1.m4a`, 10, 1);

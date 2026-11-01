@@ -1475,18 +1475,6 @@ export function applyDeletionTombstone(p: {
 }
 
 /**
- * Sohbet tamamen kaldırıldı (engelleme / hesap silme). Mesajları da gider —
- * gizlilik aksiyonu, disk değil.
- *
- * Arama indeksi de BURADA, AYNI transaction'da gidiyor (review turu 4,
- * Önemli 7): yetim süpürmesi (`pruneOrphanSearchIndex`) onu bir SONRAKİ
- * açılışta temizliyordu ve bu yol gizlilik gerekçesiyle var — kullanıcı
- * birini engelleyip uygulamayı bir daha hiç açmazsa o kişinin mesaj metni
- * (katlanmış olsa da metin) diskte süresiz kalırdı. Süpürmenin "yüklemin
- * dördüncü kopyasını yazma" gerekçesi retention budaması için makul, gizlilik
- * aksiyonu için değil.
- */
-/**
  * `removeConversationLocally`nin ÖNBELLEK keşfi — o sohbete ait önbellek
  * kopyalarının yerel yollarını döndürür. Çağıran SATIRLAR SİLİNMEDEN ÖNCE
  * okumak ZORUNDA: `removeConversationLocally` `local_uri` kolonunu da
@@ -1496,7 +1484,17 @@ export function applyDeletionTombstone(p: {
  * import EDEMEZ, bkz. `removeConversationLocally`'nin başındaki not ve
  * `mediaCache.wipeMediaCache`'in yorumu). Filtre `readAllCachedUris` ile
  * AYNI (`media_cached_at_ms IS NOT NULL`): kendi gönderdiğimiz kaydın yolu
- * kasıtlı dışarıda, o dosya hâlâ outbox'ın mülkü.
+ * kasıtlı dışarıda — AMA bu, genel olarak "o dosya hâlâ outbox'ın mülkü"
+ * demek, BU ÇAĞRI BAĞLAMINDA değil: `removeConversationLocally` birazdan
+ * `messages`/`send_attempts`i de siliyor, yani outbox'ın kendisi de bu
+ * transaction'da bitiyor. Kendi kayıtlarımızın yolu bu yüzden AYRI bir
+ * fonksiyonla (`readOwnRecordingUrisForConversation`, hemen aşağıda) ayrıca
+ * okunuyor — ikisi birlikte "bu sohbete ait diskteki HER ses" kümesini verir.
+ *
+ * ⚠️ DOĞRUDAN ÇAĞIRMAYIN: tek üretim girişi `mediaCache.removeConversationAndMedia`
+ * — bu kapı yalnız OKUYOR, dosya silmiyor. Tek başına (ya da
+ * `removeConversationLocally`'den SONRA) çağrılırsa dosyalar diskte kalır;
+ * sıra da kritik, bkz. o fonksiyonun yorumu.
  */
 export function readCachedUrisForConversation(conversationId: string): string[] {
   return getChatDb()
@@ -1508,6 +1506,53 @@ export function readCachedUrisForConversation(conversationId: string): string[] 
     .map((r) => r.local_uri);
 }
 
+/**
+ * `removeConversationLocally`nin KENDİ KAYIT keşfi — `readAllOwnRecordingUris`
+ * ile AYNI filtre (`media_cached_at_ms IS NULL AND client_message_id IS NOT
+ * NULL`), yalnız TEK sohbete süzülmüş.
+ *
+ * Bu fonksiyon olmadan engelleme/hesap silme yolu yarım kalırdı: gönderdiğimiz
+ * sesli mesajların dosyası recorder'ın OS dizininde durur (chat-media-cache
+ * DEĞİL), yani `reconcileMediaCacheDirectory` onları hiç LİSTELEMEZ — tek
+ * referansları `messages.local_uri`, o da `removeConversationLocally`nin
+ * birazdan sileceği satırda. O satır gidince dosyanın hiçbir deftersel izi
+ * kalmaz: ne açılış süpürmesi bulur, ne `wipeMediaCache` (o da aynı tabloyu
+ * okuyor, tablo o ana kadar boşalmış olur) — engellenen kişiye gönderdiğimiz
+ * ses SÜRESİZ diskte kalırdı. Bkz. `readCachedUrisForConversation`'ın yorumu:
+ * ikisi birlikte tam küme.
+ *
+ * ⚠️ DOĞRUDAN ÇAĞIRMAYIN — aynı gerekçe, `readCachedUrisForConversation`'a bakın.
+ */
+export function readOwnRecordingUrisForConversation(conversationId: string): string[] {
+  return getChatDb()
+    .getAll<{ local_uri: string }>(
+      `SELECT local_uri FROM messages
+        WHERE conversation_id = ? AND media_cached_at_ms IS NULL AND client_message_id IS NOT NULL
+          AND local_uri IS NOT NULL`,
+      [conversationId],
+    )
+    .map((r) => r.local_uri);
+}
+
+/**
+ * Sohbet tamamen kaldırıldı (engelleme / hesap silme). Mesajları da gider —
+ * gizlilik aksiyonu, disk değil.
+ *
+ * Arama indeksi de BURADA, AYNI transaction'da gidiyor (review turu 4,
+ * Önemli 7): yetim süpürmesi (`pruneOrphanSearchIndex`) onu bir SONRAKİ
+ * açılışta temizliyordu ve bu yol gizlilik gerekçesiyle var — kullanıcı
+ * birini engelleyip uygulamayı bir daha hiç açmazsa o kişinin mesaj metni
+ * (katlanmış olsa da metin) diskte süresiz kalırdı. Süpürmenin "yüklemin
+ * dördüncü kopyasını yazma" gerekçesi retention budaması için makul, gizlilik
+ * aksiyonu için değil.
+ *
+ * ⚠️ Önbellek/kendi-kayıt dosyaları BURADA SİLİNMEZ — bu fonksiyon SQL-only
+ * (chatRepository'nin kuralı). Dosyaları silen, bu fonksiyonu çağırmadan
+ * ÖNCE `readCachedUrisForConversation`/`readOwnRecordingUrisForConversation`
+ * ile yolları okuyup SONRA gerçekten silen tek giriş noktası
+ * `mediaCache.removeConversationAndMedia` — bu fonksiyonu DOĞRUDAN
+ * çağırmayın, aksi halde o sohbetin sesleri diskte kalır.
+ */
 export function removeConversationLocally(conversationId: string): void {
   const db = getChatDb();
   db.transaction(() => {
