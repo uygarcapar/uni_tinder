@@ -86,7 +86,20 @@ jest.mock('@/shared/constants/api', () => ({
     PRIVACY_DEACTIVATE: '/privacy/deactivate',
     MODERATION_BLOCKED_USERS: '/moderation/blocked-users',
     MODERATION_BLOCK: (id: string) => `/moderation/block/${id}`,
+    // Kampüs simülasyonunun otomatik Enter'ı campusService üzerinden geçiyor.
+    CAMPUS_PRESENCE: '/campus/presence',
+    CAMPUS_ME: '/campus/me',
   },
+}));
+
+// reportSimulatedEntry tembel require ile campusPresence'ı çekiyor ve o
+// expo-location import ediyor — native modül jest'te yok, import patlamasın.
+// Fonksiyonlar ÇAĞRILMIYOR bile: simüle edilmiş okuma izin kapısının önünde.
+jest.mock('expo-location', () => ({
+  Accuracy: { High: 4 },
+  getForegroundPermissionsAsync: jest.fn(async () => ({ status: 'granted' })),
+  getCurrentPositionAsync: jest.fn(),
+  getLastKnownPositionAsync: jest.fn(async () => null),
 }));
 
 // react-redux/@reduxjs/toolkit ESM-only build ile geliyor ve transformIgnorePatterns
@@ -843,6 +856,112 @@ describe('SettingsScreen — kampüs simülasyonu (DEV)', () => {
       (c) => c[0] === 'Simülasyon kurulamadı',
     );
     expect(result).toBeTruthy();
+  });
+
+  it('"Kampüste say" başarılıysa presence Enter OTOMATİK gidiyor', async () => {
+    // Tasarım kararı: eski ikinci menü adımı ("Kampüse girdim") kendiliğinden
+    // koşuyor — push yolunu tetiklemek için ayrıca basmak gerekmiyor.
+    writeCachedBoundary('bilgiedu.net', {
+      domain: 'bilgiedu.net',
+      isApproximate: false,
+      circle: { lat: 41.08448, lon: 29.05359, radiusMeters: 600 },
+      polygon: {
+        type: 'Polygon',
+        coordinates: [
+          [
+            [29.045, 41.08],
+            [29.062, 41.08],
+            [29.062, 41.089],
+            [29.045, 41.089],
+            [29.045, 41.08],
+          ],
+        ],
+      },
+      version: 'v1',
+      enabled: true,
+    });
+    mockApi.post.mockResolvedValue({
+      isSuccess: true,
+      result: { inCampus: true, momentCountToday: 0 },
+    });
+    mockApi.get.mockResolvedValue({
+      isSuccess: true,
+      result: { postedToday: false },
+    });
+
+    try {
+      const tree = setup((client) => {
+        client.setQueryData(feedKeys.me, { universityDomain: 'bilgiedu.net' });
+      });
+      await pressTurnOn(tree);
+
+      expect(isCampusLocationSimulated()).toBe(true);
+      await waitFor(() =>
+        expect(mockApi.post).toHaveBeenCalledWith(
+          '/campus/presence',
+          expect.objectContaining({ state: 'Enter' }),
+        ),
+      );
+    } finally {
+      appPrefs.remove('campusBoundary:bilgiedu.net');
+    }
+  });
+
+  it('simülasyon KURULAMADIYSA Enter atılmıyor', async () => {
+    // Sınır diskte yok → noBoundary; yanlış koordinatla Enter atmak sunucuyu
+    // UT-7410'a sürüklerdi.
+    const tree = setup((client) => {
+      client.setQueryData(feedKeys.me, { universityDomain: 'bilgiedu.net' });
+    });
+    await pressTurnOn(tree);
+
+    expect(isCampusLocationSimulated()).toBe(false);
+    await act(async () => {});
+    expect(mockApi.post).not.toHaveBeenCalled();
+  });
+
+  it('Enter ağda patlarsa sim AÇIK kalıyor ve hata raporu görünüyor', async () => {
+    writeCachedBoundary('bilgiedu.net', {
+      domain: 'bilgiedu.net',
+      isApproximate: false,
+      circle: { lat: 41.08448, lon: 29.05359, radiusMeters: 600 },
+      polygon: {
+        type: 'Polygon',
+        coordinates: [
+          [
+            [29.045, 41.08],
+            [29.062, 41.08],
+            [29.062, 41.089],
+            [29.045, 41.089],
+            [29.045, 41.08],
+          ],
+        ],
+      },
+      version: 'v1',
+      enabled: true,
+    });
+    mockApi.post.mockRejectedValue(new Error('network down'));
+    mockApi.get.mockRejectedValue(new Error('network down'));
+
+    try {
+      const tree = setup((client) => {
+        client.setQueryData(feedKeys.me, { universityDomain: 'bilgiedu.net' });
+      });
+      await pressTurnOn(tree);
+
+      await waitFor(() =>
+        expect(
+          (Alert.alert as jest.Mock).mock.calls.some(
+            (c) => c[0] === 'Kampüse giriş bildirilemedi',
+          ),
+        ).toBe(true),
+      );
+      // Giriş bildirilemedi diye simülasyon GERİ ALINMIYOR: konum sabitleme
+      // yerel bir araç, Enter yalnız push yolunu tetikliyor.
+      expect(isCampusLocationSimulated()).toBe(true);
+    } finally {
+      appPrefs.remove('campusBoundary:bilgiedu.net');
+    }
   });
 
   it('AÇIK ama YANLIŞ kampüsteyse menü "kendi kampüsüne taşı" sunuyor', async () => {

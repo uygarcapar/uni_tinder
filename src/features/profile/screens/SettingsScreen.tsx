@@ -768,10 +768,15 @@ export default function SettingsScreen() {
       // Metin ve sebep çözümü araç modülünde (gerekçe describeSimulateResult).
       // Yanlış-kampüs onarımı da buradan geçiyor: simulateCampusLocation
       // kaydın üstüne yazıyor, ayrıca "kapat" gerekmiyor.
-      const { title, message } = describeSimulateResult(
-        simulateCampusLocation(myDomain),
-      );
+      const res = simulateCampusLocation(myDomain);
+      const { title, message } = describeSimulateResult(res);
       Alert.alert(title, message);
+      // Başarıda kampüse giriş OTOMATİK bildiriliyor (tasarım kararı): push
+      // yolu için ayrıca "Kampüse girdim"e basmak gerekmiyor — o düğme yalnız
+      // TEKRAR tetiklemek için duruyor. İkinci alert iOS'ta kuyruğa girer;
+      // DEV aracı için kabul edilmiş davranış. Enter patlarsa sim GERİ
+      // ALINMIYOR: konum sabitleme yerel, Enter yalnız push'u tetikliyor.
+      if (res.point) void enter();
     };
 
     Alert.alert("Kampüs simülasyonu", status, [
