@@ -2,8 +2,7 @@
 
 > **Durum: BEKLİYOR.** İstemci tarafı bugün yapıldı (§4): şikayet başarıyla
 > kaydedilince kart, engelleme işaretli olsun olmasın desteden düşüyor. Ama bu
-> koruma **bellek içi ve oturumla sınırlı** — kalıcı eleme ancak sunucuda
-> kurulabilir.
+> korumanın penceresi **15 saniye** — kalıcı eleme ancak sunucuda kurulabilir.
 
 **İki maddelik talep.** Mevcut hiçbir alan değişmiyor, yeni uç yok — yalnız
 iki listenin aday kümesine bir süzgeç ekleniyor:
@@ -61,9 +60,13 @@ getirir — kaynak liste sunucuda süzülmedikçe temizlik kozmetik kalıyor.
   `dropProfileFromDeck` **koşulsuz** çağrılıyor (eskiden yalnız
   `result.blocked` ise). Kart desteden düşüyor, WhoLikedMe rozeti anlık
   temizleniyor, deste sonraki kullanıcıya geçiyor.
-- Yeniden görünmeye karşı tek koruma `swipedAtRef` guard penceresi: **bellek
-  içi** bir Map, yalnız aynı oturumdaki top-up çekişlerini süzüyor. Uygulama
-  yeniden başlayınca ya da pencere dolunca şikayet edilen kişi geri gelir.
+- Aynı davranış Beğeniler modalında da var (`LikerSwipeModal`): şikayet
+  edilen kişi listeden ve rozetten anlık düşüyor.
+- Yeniden görünmeye karşı tek koruma `swipedAtRef` guard penceresi: Map diske
+  yazılıp açılışta geri yükleniyor ama penceresi yalnızca **15 saniye**
+  (`SWIPE_GUARD_MS`) — bilinçli olarak kısa, çünkü pencere "backend bu
+  profili bir daha sunmaz" varsayımını değil, yalnız anlık yarışları örtüyor.
+  Pencere dolunca şikayet edilen kişi geri gelir.
 - Sunucu elemesi canlıya çıktığında istemcide ek değişiklik **gerekmiyor**;
   guard penceresi zararsız bir çift kontrole dönüşür.
 
